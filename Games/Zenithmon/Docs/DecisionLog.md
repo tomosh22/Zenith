@@ -15,6 +15,169 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-08-04 -- ZM-D-184 -- ENGINE + ZM: an unbounded physics substep loop turns a load hitch into a fall-through, and an authored body must not spawn resting exactly on the ground
+
+**What shipped:**
+1. **ENGINE (the root fix):** `Zenith_Physics::Update` caps the fixed-timestep loop at
+   **8 substeps** per call (~133 ms of simulation) and DISCARDS the remainder. The loop
+   was previously unbounded.
+2. **ZM (defence in depth):** `ZM_DawnmereTrainerSpawnY` gives `Npc_RivalVesper` one
+   capsule half-extent of air above his resting centre -- the same treatment
+   `ZM_DawnmereWandererSpawnY` has always given the wanderer. **`Dawnmere.zscen` was
+   re-authored** (his Y moved by +0.9); rotation bytes unchanged.
+3. Boot unit `ZM_Interaction/Vesper_SpawnsClearOfTheGroundNotOnIt`.
+
+**Why:** `Npc_RivalVesper` fell through the terrain intermittently during normal play.
+MEASURED, from a captured `[FallenBody]` report on the user's own Release run:
+
+```
+COLLIDER REBUILT  Npc_RivalVesper y=26.16  framesSinceLoad=2 (0.49s)
+DESCENT ONSET     Npc_RivalVesper y=22.70  vel -8.07  framesSinceLoad=49 (1.25s)
+has left the world y=-50.24  vel=(0.00,-36.14,0.00)  pos.xz=(490.01, 524.00)
+```
+
+* **His XZ never moved** -- exactly his authored `(490, 524)`, XZ velocity exactly
+  zero. He did not walk off anything.
+* **The first two frames after a scene load take ~0.49 s** (asset loads, pipeline
+  creation). The unbounded accumulator drained that as **~29 consecutive 1/60 s
+  substeps**, i.e. half a second of simulation with no render between -- so bodies
+  free-fell through the burst before contact resolution caught them.
+* By frame 2 he had sunk to 26.16 against a measured surface of 25.855. Capsule
+  half-extent 0.9, radius 0.4 -> his **lower sphere centre** was at 25.66, BELOW the
+  terrain's one-sided triangle mesh. Past that point the contact normal inverts and
+  the solver expels the body DOWNWARD. He never came back.
+* **The player cleared it by ~2 cm on the same load** (lower sphere centre 25.97 vs a
+  25.99 surface). That margin is why this presented as an intermittent, ONE-CHARACTER
+  bug rather than as a physics defect -- and why chasing it as a Vesper problem was
+  the wrong frame.
+
+**★ WHAT IT WAS NOT, all three checked and eliminated:** not the serializer
+(ZM-D-179 is sound; `liveBody == authored`), not terrain collision
+(`[TerrainPhysics] body=yes`, and the player stands on it), and not the collider
+rebuild at frame 2 (which happens identically to the player and the wanderer, both
+of whom land).
+
+**★ THE AUTHORING HALF, AND WHY IT IS KEPT EVEN THOUGH THE CAP FIXES THE CASE.** The
+wanderer's authoring comment has documented this hazard since SC8 -- *"spawning it at
+its resting centre puts the capsule inside the mesh, so it is authored clear of the
+surface and gravity settles it from the FRONT side"*. Vesper never got that
+treatment: he was authored at feet + one half-extent, ~13 mm of margin, which is what
+made him the canary. An authored dynamic body should not depend on the solver
+catching it on the very first tick.
+
+**Tests that lock it:** `Vesper_SpawnsClearOfTheGroundNotOnIt` (would have FAILED
+before this change -- it asserts the spawn is strictly above the resting centre by a
+full half-extent, and that the rival and wanderer get the SAME clearance). The engine
+cap has no unit of its own; it is exercised by every ZM automated test that loads
+Dawnmere, and its warning line is observable (`Physics substep cap hit: 8 substeps
+ran and 0.085 s ... DISCARDED (frame dt 0.210 s)` -- fires exactly once, at boot).
+
+**Verified:** ZM boot units 2908 -> **2909**; engine 1284 unmoved.
+`ZM_RivalVesperAuthored_Test` passes with **zero** descent onsets. **★ AND CONFIRMED
+IN THE REPORTED REPRO (2026-08-05)** -- a windowed Release tools build, editor Play,
+in-game Continue -> autosave: Vesper no longer falls. That confirmation is the
+authority here, because **the suite was green throughout the entire period the bug was
+live** (it never reproduced the defect at all), so a passing gate was never evidence
+either way for this one. **Three** authoring
+boots -- Debug x2 AND Release x1 -- all wrote `Dawnmere.zscen` =
+`76E33E5318AF951C212533587F53F76A61F75F4FB64D734CBBFE92B03F3D8709`, which is both the
+ZM-D-148 idempotence proof and a live confirmation that ZM-D-183's cross-configuration
+guarantee holds.
+
+**Reversibility:** the authoring half is trivial to revert (one call site). The substep
+cap is a behaviour change for every game -- reverting it re-opens the fall-through for
+any body authored on the surface, so don't.
+
+**★ THE RULE THIS SETS.** A fixed-timestep loop must be bounded. And an authored
+DYNAMIC body gets clearance above its resting pose, never exact contact -- if a new one
+is added, give it the `*SpawnY` treatment.
+
+---
+
+## 2026-08-04 -- ZM-D-183 -- ENGINE + ZM: an authored rotation that is COMPUTED is build-configuration dependent, so the rival's facing becomes a FROZEN bit pattern and gets a bit-exact committed-bytes guard
+
+**What shipped:**
+1. `Zenith_EditorAutomation::AddStep_SetTransformRotationQuat(x, y, z, w)` -- a new
+   authoring step that sets a quaternion **verbatim**, performing no math. The two
+   existing rotation steps both BUILD a quaternion at authoring time
+   (`SET_TRANSFORM_ROTATION_YAW` runs `glm::angleAxis`, `SET_TRANSFORM_ROTATION` runs
+   `BuildEulerRotation`), and those libm calls do not agree to the last bit between
+   MSVC Debug and Release codegen.
+2. `ZM_DawnmereVesperFacing()` returns four **frozen `std::bit_cast` constants**
+   (`uZM_DAWNMERE_VESPER_FACING_*_BITS`) instead of `AngleAxis(atan2(...))`.
+   `ZM_DawnmereVesperYaw()` survives as the documented derivation and the oracle.
+3. `Npc_RivalVesper` is authored through the new step.
+4. Two boot units: `ZM_Interaction/Vesper_FrozenFacingIsExactlyTheDeclaredBits` and
+   `ZM_CommittedSceneBytes/DawnmereCarriesTheFrozenRivalFacingBitExactly`
+   (new TU `Tests/ZM_Tests_CommittedSceneBytes.cpp`).
+
+**Why:** `Dawnmere.zscen` was coming back modified in `git status` after every
+Release tools boot, always the same 2 bytes -- `Npc_RivalVesper`'s rotation y and w.
+MEASURED, same source, same commit:
+
+| Build | authored y / w |
+|---|---|
+| `Vulkan_vs2022_Debug_Win64_True` | `0x3F7926D9` / `0x3E6B4456` (**the committed bytes**) |
+| `Vulkan_vs2022_Release_Win64_True` | `0x3F7926D8` / `0x3E6B444C` |
+
+So a Release boot dirtied the file and a Debug boot restored it, forever. This
+VIOLATES `ZM_DawnmerePlacement.h`'s opening contract -- that the committed bytes are
+reproducible from COMPILED constants -- because the facing was never a compiled
+constant; it was a runtime `std::atan2` feeding a runtime `sin`/`cos`.
+
+**★ THIS IS NOT ZM-D-179, AND THE INVESTIGATION THAT ASSUMED IT WAS COST A FULL
+CYCLE.** The obvious reading -- serialization writing a live physics body's pose --
+is WRONG, and the evidence that kills it is in the diff itself: `WriteToDataStream`
+takes position and rotation from the SAME source (`PhysicsPoseDiffersFromCache` is
+one OR'd predicate over both), so a body that had moved could not write a drifted
+rotation beside a bit-identical position. Exactly 2 bytes changed, both inside the
+quaternion. `liveBody` equals `authored` in BOTH configs -- the ZM-D-179 fix is
+sound and untouched.
+
+**★ WHY EVERY EXISTING GUARD STAYED GREEN.** Both were structurally blind:
+* `ZM_VerifyAuthoredRivalFacingStep` IS bit-exact, but compares the serialized bytes
+  against `ZM_DawnmereVesperFacing()` evaluated **in the same binary** -- both sides
+  moved together. It logged a clean `authored == serialised == liveBody` while
+  writing bytes that differed from git, and its own `authored=` reference was
+  ALREADY the drifted value. It also only runs on the windowed `AUTHOR_DAWNMERE`
+  boot, which CI never performs (`zm-tests.yml` builds `Vulkan_..._True` but RUNS
+  `Null_..._True`).
+* `ZM_RivalVesperAuthored_Test` runs headless but compares `|dot|` against 0.999,
+  and the drift lands at `1 - |dot| ~ 1e-14` -- six orders below the threshold.
+
+The generalisable lesson: **a guard that compares a value against a re-computation of
+itself cannot detect that the computation moved.** The only comparison that catches a
+per-config authoring drift is one against something that does NOT move with the
+config -- a frozen literal, or the committed file.
+
+**Tests that lock it:** the three divide cleanly and none substitutes for another --
+`Vesper_FacingIsDerivedFromTheTownCentreBearing` (unchanged code, but ZM-D-183
+changed its MEANING: it is now the STALENESS oracle, catching a frozen constant that
+no longer matches the anchors) / `Vesper_FrozenFacingIsExactlyTheDeclaredBits` (a
+CORRUPT or bypassed constant) / `DawnmereCarriesTheFrozenRivalFacingBitExactly` (a
+DRIFTED asset -- the regression test, and it fails on BOTH historical breaks: the
+`a6c66b68` bytes and the pre-fix Release bytes). The frozen-vs-derived comparison is
+deliberately a TOLERANCE: bit-exact there would be permanently red in Release, which
+is the whole finding.
+
+**Verified:** after the fix, a windowed Release tools boot authors
+`authored = serialised = liveBody = 3F7926D9 / 3E6B4456` and leaves
+`Dawnmere.zscen` byte-identical (SHA256 `E7413197...9716`, `git status` clean) --
+the same bytes the Debug boot writes. Boot units 2906 -> **2908**.
+
+**Reversibility:** easy. The step is additive (no existing caller changed); reverting
+the freeze means restoring `AngleAxis(ZM_DawnmereVesperYaw())` and the yaw step --
+which re-opens the ping-pong, so don't.
+
+**★ THE RULE THIS SETS.** Any authored entity whose rotation lands in a COMMITTED
+scene file must use `AddStep_SetTransformRotationQuat` with a frozen constant. The
+yaw/euler steps remain correct for transient or gitignored scenes, where a 1-ULP
+difference has nowhere to show up. Vesper is currently the only non-identity authored
+rotation in this game; identity is exact in every config, which is why the four
+shipped townsfolk never surfaced this.
+
+---
+
 ## 2026-08-02 -- ZM-D-182 -- ENGINE-WIDE: terrain collision moves from 8 m to 4 m quads, and every game's bake stamp is bumped in the same commit because a stale bake loses its physics body outright
 
 **What shipped:** `Flux_TerrainVertexLayout`'s physics chunks move from a density divisor of

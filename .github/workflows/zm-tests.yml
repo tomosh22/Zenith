@@ -194,6 +194,21 @@ jobs:
           #
           # History, newest first (the DERIVATION is the audit trail; the OBSERVED
           # number is the authority):
+          #   2909  ZM-D-184 rival spawn clearance  observed 2026-08-04 on a Null_
+          #                   build. +1: ZM_Interaction/
+          #                   Vesper_SpawnsClearOfTheGroundNotOnIt. The engine half of
+          #                   ZM-D-184 (the physics substep cap) adds no unit of its
+          #                   own; it is covered by the ZM automated tests that load
+          #                   Dawnmere. Engine default stays 1284.
+          #   2908  ZM-D-183 frozen rival facing  observed 2026-08-04 on a Null_
+          #                   build. +2: ZM_Interaction/
+          #                   Vesper_FrozenFacingIsExactlyTheDeclaredBits and the new
+          #                   TU Tests/ZM_Tests_CommittedSceneBytes.cpp's
+          #                   DawnmereCarriesTheFrozenRivalFacingBitExactly -- the
+          #                   first headless guard on the COMMITTED .zscen bytes.
+          #                   Engine-side count unmoved (the new automation step has
+          #                   no unit of its own; it is covered by the ZM units that
+          #                   ride it). Engine default stays 1284.
           #   2906  swapchain policy  observed 2026-08-04 on a Null_ build. +13:
           #                   Flux/Flux_SwapchainPolicy.Tests.inl -- the surface
           #                   preTransform / zero-extent / SUBOPTIMAL-rebuild
@@ -234,7 +249,7 @@ jobs:
           #   2817  ZM-D-173  = 2809 + 8: four ENGINE sensor-raycast units plus
           #                   two camera fixtures and two Home-placement units.
           $exe = 'Games\Zenithmon\Build\output\win64\null_vs2022_debug_win64_true\zenithmon.exe'
-          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 2906 -TimeoutSec 600
+          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 2909 -TimeoutSec 600
           if ($LASTEXITCODE -ne 0) { Write-Error "boot unit tests failed (see log above)"; exit $LASTEXITCODE }
 
       - name: Run Zenithmon tests

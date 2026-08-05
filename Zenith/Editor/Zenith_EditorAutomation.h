@@ -69,6 +69,7 @@ enum class Zenith_EditorActionType
 	SET_TRANSFORM_SCALE,
 	SET_TRANSFORM_ROTATION_YAW,
 	SET_TRANSFORM_ROTATION,         // full XYZ euler (degrees); composes Ry * Rx * Rz
+	SET_TRANSFORM_ROTATION_QUAT,    // verbatim quaternion; the ONLY bit-exact rotation step
 
 	// Light field edits
 	SET_LIGHT_INTENSITY,
@@ -412,6 +413,27 @@ void AddStep_SetTransformYaw(float fYawRadians);
 	// rotation half of the AttachToBone mount convention. Use for the guns' 90deg Z
 	// rest pose where yaw-only is insufficient.
 void AddStep_SetTransformRotationEuler(float fEulerXDeg, float fEulerYDeg, float fEulerZDeg);
+
+	// ★ THE ONLY BIT-EXACT ROTATION STEP. The two steps above BUILD a quaternion
+	// at authoring time -- yaw runs glm::angleAxis (sin/cos of the half angle),
+	// euler runs BuildEulerRotation -- and those are libm calls whose results
+	// differ by 1-2 ULP between build configurations. An entity authored through
+	// them therefore serializes DIFFERENT BYTES from a Debug and a Release tools
+	// build, so a tracked .zscen ping-pongs between two values in git forever.
+	// That is not hypothetical: it is the defect ZM-D-183 fixed for Zenithmon's
+	// Npc_RivalVesper (Games/Zenithmon/Docs/DecisionLog.md).
+	//
+	// This step performs NO MATH -- the components go straight to
+	// Zenith_TransformComponent::SetRotation, which stores them verbatim (it does
+	// not normalize). Use it for EVERY authored entity whose rotation lands in a
+	// COMMITTED scene file; the yaw/euler steps remain fine for a transient or
+	// gitignored one, where a 1-ULP difference has nowhere to show up.
+	//
+	// Argument order is x, y, z, w -- the SERIALIZED order (Zenith_DataStream
+	// writes the quaternion in that order), deliberately NOT glm::quat's (w,x,y,z)
+	// constructor order, so a caller freezing bytes read out of a .zscen types
+	// them in the order they appear in the file.
+void AddStep_SetTransformRotationQuat(float fX, float fY, float fZ, float fW);
 
 	// Light component field edits. Apply to the selected entity's
 	// Zenith_LightComponent — set after AddStep_AddComponent("Light").

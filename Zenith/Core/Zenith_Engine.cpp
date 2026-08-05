@@ -23,6 +23,8 @@
 #include "Scripting/Zenith_GraphNodeRegistry.h"
 #include "AI/Perception/Zenith_PerceptionSystem.h"	// m_pfnSceneDestroyed / m_pfnEntityOwnerSceneChanged thunks
 #include "EntityComponent/Components/Zenith_GraphComponent.h"	// m_pfnSceneLoaded -> BroadcastCustomEvent thunk
+#include "EntityComponent/Zenith_TerrainPhysicsValidate.h"	// m_pfnSceneLoaded -> terrain-collision report
+#include "EntityComponent/Zenith_FallenBodyWatch.h"			// m_pfnSceneLoaded -> re-arm the per-body fall watch
 // Engine-side (NOT the ECS leaf): needed so the m_pfnAddDefaultComponents hook
 // installed below can name Zenith_TransformComponent and add it via the
 // AddComponent<> template. Keeping this name on the engine side is exactly how
@@ -658,6 +660,19 @@ void Zenith_Engine::InitialiseECS()
 		Zenith_PropertyValue xPayload;
 		xPayload.SetString(szCanonicalPath ? szCanonicalPath : "");
 		Zenith_GraphComponent::BroadcastCustomEvent("__SceneLoaded", &xPayload);
+
+		// Terrain collision state, stated at every runtime load and BEFORE the next
+		// physics step can run. A terrain that failed to build a body is silent by
+		// design (see the header), and the symptom is dynamic bodies falling through
+		// the world -- which reads as a gameplay bug rather than an asset one. The
+		// sweep touches only terrain entities, so a scene with none costs nothing.
+		Zenith_ValidateTerrainPhysicsBodies(
+			szCanonicalPath ? szCanonicalPath : "<runtime scene load>");
+
+		// Re-arm the per-body fall watch and restart its frame/time origin, so its
+		// "framesSinceLoad" figure is measured from THIS load -- that number is what
+		// separates "spawned already falling" from "fell during play".
+		Zenith_ResetFallenBodyWatch();
 	};
 	// Scene-owned state living OUTSIDE the ECS. AI perception keeps its agents,
 	// targets and in-flight sounds in per-scene buckets (the per-World-subsystem

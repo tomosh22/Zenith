@@ -97,14 +97,44 @@ Scene bytes are boot-shape-independent (dense authoring-order file indices), so 
 boot must NOT leave a scene modified in `git status`. If one ever does, that is a
 regression of that property -- investigate it rather than just re-committing.
 
-That invariant held again from ZM-D-179 (2026-08-01), which fixed the one instance
-it had ever lost: `Zenith_TransformComponent` used to serialize the LIVE JOLT BODY's
-pose, so any authored entity with a body was saving a rotation that depended on
-physics state, and `Npc_RivalVesper`'s drifted by ~10 ULP in one boot. Serialization
-now emits the transform's own cached pose unless the body has genuinely moved, and a
-tools-only guard bit-compares the rival's serialized rotation with
-`ZM_DawnmereVesperFacing()` immediately before the save. See `Docs/DecisionLog.md`
-ZM-D-179 / `Docs/Questions.md` Q-2026-08-01-002.
+That invariant has been lost **twice**, both times on `Npc_RivalVesper`'s rotation
+and both times with every existing guard green. Read both before touching it:
+
+* **ZM-D-179** (2026-08-01) -- `Zenith_TransformComponent` serialized the LIVE JOLT
+  BODY's pose, so any authored entity with a body saved a rotation that depended on
+  physics state. Serialization now emits the transform's own cached pose unless the
+  body genuinely moved, and a tools-only guard bit-compares the rival's serialized
+  rotation with `ZM_DawnmereVesperFacing()` immediately before the save.
+* **ZM-D-183** (2026-08-04) -- the AUTHORED VALUE ITSELF was build-configuration
+  dependent. `ZM_DawnmereVesperFacing()` was a runtime `std::atan2` fed to
+  `glm::angleAxis`, and MSVC Debug and Release codegen disagree on those by 1-2 ULP,
+  so a **Release** tools boot and a **Debug** tools boot wrote different bytes and
+  the file ping-ponged in git forever. The facing is now four FROZEN `std::bit_cast`
+  constants, authored via `AddStep_SetTransformRotationQuat` (verbatim, no math).
+
+> **★ IF THIS BREAKS A THIRD TIME, DO NOT ASSUME IT IS THE SERIALIZER.** ZM-D-183
+> presented identically to ZM-D-179 and had an unrelated cause. The diff tells you
+> which: `WriteToDataStream` takes position and rotation from the SAME source, so a
+> falling/moved body CANNOT produce a drifted rotation beside a bit-identical
+> position. Rotation-only drift means the authored value moved, not the body.
+>
+> **★ AND DO NOT TRUST THE PRE-SAVE GUARD TO CATCH IT.** It compares the serialized
+> bytes against `ZM_DawnmereVesperFacing()` evaluated in the SAME BINARY, so when the
+> computation itself moves, both sides move together and it logs a clean
+> `authored == serialised == liveBody` while writing bytes that differ from git. The
+> headless guard on the COMMITTED bytes is
+> `Tests/ZM_Tests_CommittedSceneBytes.cpp` -- that is the one that can actually see
+> it, because CI runs `Null_..._True` and never performs the windowed authoring boot
+> the pre-save guard lives on.
+>
+> **★ RULE:** any authored entity whose rotation lands in a COMMITTED scene file uses
+> `AddStep_SetTransformRotationQuat` with a frozen constant. `AddStep_SetTransformYaw`
+> / `...RotationEuler` build their quaternion with libm at authoring time and are only
+> safe for transient or gitignored scenes. (Identity is exact in every config, which
+> is why the four shipped townsfolk never surfaced this.)
+
+See `Docs/DecisionLog.md` ZM-D-179 and ZM-D-183 / `Docs/Questions.md`
+Q-2026-08-01-002.
 
 ## Testing
 

@@ -480,10 +480,58 @@ void Zenith_Physics::Update(float fDt)
 {
 	m_fTimestepAccumulator += fDt;
 
-	while (m_fTimestepAccumulator >= s_fDesiredFramerate)
+	// ★ THE SUBSTEP CAP, AND WHY IT IS LOAD-BEARING RATHER THAN DEFENSIVE.
+	//
+	// This loop used to be unbounded, so ONE long frame ran as many 1/60 s substeps
+	// as it took to drain the accumulator. That is not hypothetical: the first two
+	// frames after a Zenithmon scene load take ~0.49 s between them (asset loads,
+	// pipeline creation), which drained as ~29 CONSECUTIVE substeps with no render
+	// in between -- i.e. half a second of simulation applied to bodies that had just
+	// been created, in one go.
+	//
+	// A body resting exactly on the ground free-falls through that burst before
+	// contact resolution catches it. Measured on Npc_RivalVesper (authored at his
+	// resting centre, feet + one capsule half-extent, so ~13 mm of margin): by the
+	// 2nd frame he had sunk 0.61 m, which puts the capsule's LOWER SPHERE CENTRE
+	// below the terrain's one-sided triangle mesh. Past that point the contact
+	// normal inverts and the solver expels him DOWNWARD -- he falls through the
+	// world and never comes back. The player, authored the same way, cleared it by
+	// ~2 cm on the same load, which is exactly why this presented as an
+	// intermittent, one-character bug rather than as a physics defect.
+	//
+	// Capping at 8 substeps bounds a single Update to ~133 ms of simulation. During
+	// the same 0.49 s hitch a resting body now sinks ~0.09 m instead of ~0.6 m --
+	// comfortably inside penetration recovery. 8 also leaves generous headroom for
+	// ordinary frame times (a 30 fps frame needs 2), so this only ever engages on a
+	// genuine hitch.
+	//
+	// The leftover accumulator is DISCARDED rather than carried. Carrying it is the
+	// spiral of death: the next frame would owe even more substeps, take even
+	// longer, and the sim would never catch up. Dropping it means physics runs
+	// slower than wall-clock across a hitch, which is the standard and correct
+	// trade -- the alternative is bodies teleporting through geometry.
+	constexpr u_int uMAX_SUBSTEPS_PER_UPDATE = 8u;
+
+	u_int uSubsteps = 0u;
+	while (m_fTimestepAccumulator >= s_fDesiredFramerate
+		&& uSubsteps < uMAX_SUBSTEPS_PER_UPDATE)
 	{
 		m_pxPhysicsSystem->Update(static_cast<float>(s_fDesiredFramerate), 1, m_pxTempAllocator, m_pxJobSystem);
 		m_fTimestepAccumulator -= s_fDesiredFramerate;
+		++uSubsteps;
+	}
+
+	if (m_fTimestepAccumulator >= s_fDesiredFramerate)
+	{
+		// Warn rather than log: a frame long enough to hit the cap is itself worth
+		// seeing, and it is rare by construction (boot, scene load, a hitch). If this
+		// appears every frame, the game is simulation-bound and the cap is masking it.
+		Zenith_Warning(LOG_CATEGORY_PHYSICS,
+			"Physics substep cap hit: %u substeps ran and %.3f s of simulation was "
+			"DISCARDED (frame dt %.3f s). Expected at boot / scene load; every frame "
+			"means the game cannot keep up and physics is running in slow motion.",
+			uSubsteps, (float)m_fTimestepAccumulator, fDt);
+		m_fTimestepAccumulator = 0.0;
 	}
 
 	// CRITICAL: Process deferred collision events AFTER physics update completes

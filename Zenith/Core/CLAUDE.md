@@ -39,6 +39,47 @@ Main loop controller and timing manager. Executes frame sequence:
 
 Per-frame timing state (`GetDt()`, `GetTimePassed()`) was moved onto `FrameContext` (Phase 2 refactor) and is read via `g_xEngine.Frame().GetDt()` / `g_xEngine.Frame().GetTimePassed()`. `Zenith_Core` itself exports the main loop (`Zenith_MainLoop`) and the per-frame timer tick (`UpdateTimers`), which writes the new frame's dt / accumulated time into `g_xEngine.Frame()` using a high-resolution clock.
 
+## The log file sink (always on, Windows)
+
+Every `Zenith_Log` / `Zenith_Warning` / `Zenith_Error` line goes to stdout **and** to
+`<exe dir>/Logs/zenith_<YYYYMMDD_HHMMSS>.log`. The path is printed to stdout on the
+first line written, and `Zenith_GetLogFilePath()` returns it. The newest **10** logs
+are kept; older ones are pruned when a new file opens. `Build/output/**` is
+gitignored, so the logs never reach git.
+
+**Why it exists:** the engine used to log only to stdout, so any run *not* launched
+from a redirected shell left no record — precisely the hand-launched runs where a
+human notices something going wrong. Two reproduction logs were lost that way in a
+single debugging session.
+
+**★ THE SINK MUST NOT ALLOCATE, AND THIS IS A HARD CONSTRAINT, NOT A PREFERENCE.**
+The first log line of the process comes from a **static initialiser** (an
+`AssetRegistry` serializable-type registration), long before
+`Zenith_MemoryManagement` is initialised. A first version used `std::filesystem`,
+`std::string` and `Zenith_Vector`; all three route through the tracked global
+`operator new`, and the process died with an access violation on that very first
+line, **before `main`**. The implementation is therefore fixed `char` buffers, raw
+Win32 (`GetModuleFileNameA` / `CreateDirectoryA` / `FindFirstFileA` / `DeleteFileA`)
+and C stdio only, with `Zenith_Mutex_NoProfiling` (the same choice
+`Zenith_MemoryTracker::Mutex` makes, and for the same reason). Do not add a
+convenience that allocates.
+
+**★ IT LIVES IN `Zenith.cpp`, DELIBERATELY.** `Zenith_LogImpl` is `inline` in
+`Zenith.h` — the PCH every library compiles against, including the L0 leaf — so the
+sink symbol must resolve for **every** lib, including the Sentinel link proofs which
+link only `zenithbase.lib` + one leaf. ZenithBase's membership regex
+(`Build/Sharpmake_Zenith.cs`) strips every top-level `Core\Zenith*.cpp` **except
+`Zenith.cpp` and `Zenith_String.cpp`**, so a new `Core/Zenith_LogFileSink.cpp` would
+compile into the aggregate engine lib but *not* into ZenithBase, and the Sentinels
+would fail on an undefined symbol. Re-read that regex before moving it.
+
+Android is excluded (logcat is already a persistent, filterable, timestamped sink,
+and the writable directory is not known this early); non-Windows desktop gets no
+sink rather than an untested POSIX path. Flush is per line — matching the existing
+`fflush(stdout)` — because the runs worth capturing are the ones ending in a crash,
+where a buffered tail is exactly what would be lost. Measured cost: the ZM unit gate
+is **74 s**, unchanged against its ~75 s baseline.
+
 ## ZenithConfig.h
 
 Central configuration avoiding magic numbers scattered in code.

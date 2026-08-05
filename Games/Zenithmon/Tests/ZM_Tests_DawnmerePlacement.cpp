@@ -10,6 +10,7 @@
 // it cannot be the only place the whiteout-softlock claim lives.
 // ============================================================================
 
+#include <bit>       // bit_cast -- the ZM-D-183 frozen-facing bit clauses
 #include <cmath>
 #include <cstring>   // strcmp (the entity-name uniqueness walk)
 #include <limits>    // quiet_NaN / infinity (the half-extent totality sweep)
@@ -582,6 +583,15 @@ ZENITH_TEST(ZM_Interaction, Vesper_PlacementCannotSpawnCampOnTheWhiteoutTarget)
 // convention. Transposing it turns him 90 degrees, the approach never enters his
 // cone, and the only symptom would be an automated test that times out naming a
 // distance.
+//
+// ★ ZM-D-183 CHANGED WHAT THIS TEST MEANS, WITHOUT CHANGING A LINE OF IT. The
+// facing is now a FROZEN bit pattern rather than AngleAxis(ZM_DawnmereVesperYaw()),
+// so the clauses below no longer check that a derivation is self-consistent -- they
+// check that the FROZEN CONSTANT still equals the derivation the anchors imply.
+// That makes this test the STALENESS ORACLE for the frozen block: move
+// fZM_DAWNMERE_VESPER_X/Z or the town centre without re-freezing and it reds here.
+// Keep the comparisons TOLERANCE-based; a bit-exact one would be permanently red
+// in Release (see Vesper_FrozenFacingIsExactlyTheDeclaredBits below).
 ZENITH_TEST(ZM_Interaction, Vesper_FacingIsDerivedFromTheTownCentreBearing)
 {
 	const float fExpectedYaw = std::atan2(
@@ -610,6 +620,138 @@ ZENITH_TEST(ZM_Interaction, Vesper_FacingIsDerivedFromTheTownCentreBearing)
 		VesperPoint(), ZM_DawnmereVesperFacing(), xFront, xTuning));
 	ZENITH_ASSERT_FALSE(ZM_IsTargetInTrainerSightFromRotation(
 		VesperPoint(), ZM_DawnmereVesperFacing(), xBehind, xTuning));
+}
+
+// ============================================================================
+// ZM-D-184 -- AN AUTHORED DYNAMIC BODY MUST NOT SPAWN ON THE SURFACE
+//
+// ★ THIS TEST WOULD HAVE FAILED BEFORE ZM-D-184, WHICH IS THE POINT. The rival was
+// authored at ZM_DawnmereNpcCentreY -- his RESTING centre, feet + one capsule
+// half-extent -- so his capsule touched the ground with ~13 mm of margin, and he
+// fell through the world intermittently.
+//
+// The measured mechanism (full detail in the ZM_DawnmereTrainerSpawnY block in
+// ZM_DawnmerePlacement.h): the first two frames after a scene load take ~0.49 s,
+// which the physics accumulator drained as ~29 consecutive 1/60 s substeps. A body
+// resting exactly on the surface free-falls through that burst; once the capsule's
+// lower SPHERE CENTRE passes below the terrain's one-sided mesh, the contact normal
+// inverts and the solver expels it downward. Observed: 0.61 m of sink by frame 2,
+// then a fall to y = -50 and gone.
+//
+// The engine substep cap is the root fix. This clause pins the SECOND half -- that
+// no authored dynamic body is left depending on the solver catching it on the very
+// first tick -- because that is a property of the CONTENT and nothing else in this
+// file could state it.
+// ============================================================================
+ZENITH_TEST(ZM_Interaction, Vesper_SpawnsClearOfTheGroundNotOnIt)
+{
+	const float fHalfExtent = fZM_HUMAN_BODY_HALF_HEIGHT;
+	const float fRestingCentre =
+		ZM_DawnmereNpcCentreY(ZM_DAWNMERE_NPC_RIVAL_VESPER, fHalfExtent);
+	const float fSpawn = ZM_DawnmereTrainerSpawnY(fHalfExtent);
+
+	// (1) He spawns ABOVE his resting centre by a real margin -- not on it.
+	ZENITH_ASSERT_GT(fSpawn, fRestingCentre,
+		"the authored rival spawns AT his resting centre again. A dynamic capsule "
+		"authored exactly on the surface falls through the world when a long frame "
+		"drains many physics substeps at once -- see ZM-D-184.");
+
+	// (2) The margin is a FULL capsule half-extent, the same clearance the wanderer
+	// has always been given. Stated as an equality rather than "> 0" so a future
+	// edit that shaves it to a token few millimetres reds here rather than silently
+	// re-opening the defect.
+	ZENITH_ASSERT_EQ_FLOAT(fSpawn - fRestingCentre, fHalfExtent, 1.0e-4f,
+		"the rival's spawn clearance is no longer one capsule half-extent");
+
+	// (3) The two spawn helpers agree in SHAPE. If someone re-derives one of them,
+	// the other should move with it -- they exist for the same reason.
+	const float fWandererClearance =
+		ZM_DawnmereWandererSpawnY(fHalfExtent)
+		- ZM_DawnmereNpcCentreY(ZM_DAWNMERE_NPC_WANDERER, fHalfExtent);
+	ZENITH_ASSERT_EQ_FLOAT(fSpawn - fRestingCentre, fWandererClearance, 1.0e-4f,
+		"the rival and the wanderer no longer get the same spawn clearance");
+
+	// (4) TOTALITY, in this file's house style: a degenerate half-extent must not
+	// produce a NaN that would poison a body and a transform.
+	const float fDegenerate = ZM_DawnmereTrainerSpawnY(
+		std::numeric_limits<float>::quiet_NaN());
+	ZENITH_ASSERT_TRUE(std::isfinite(fDegenerate),
+		"ZM_DawnmereTrainerSpawnY returned a non-finite height for a NaN half-extent");
+}
+
+// ============================================================================
+// ZM-D-183 -- THE FROZEN FACING IS STILL THE DERIVED BEARING
+//
+// ZM_DawnmereVesperFacing() is now four frozen bit patterns rather than
+// AngleAxis(atan2(...)), because the computed form authored DIFFERENT scene bytes
+// from a Debug and a Release tools build (full argument in the header). Freezing
+// removes the drift but introduces a new way to be wrong: the constant can go
+// STALE. Move fZM_DAWNMERE_VESPER_X/Z or the town centre and the frozen quaternion
+// silently keeps pointing down the OLD bearing, with every existing clause here
+// still green -- they all reason about the frozen value's self-consistency, never
+// about whether it still matches the anchors.
+//
+// ★ THIS TEST DOES NOT CHECK THE BEARING, AND THAT IS NOT AN OVERSIGHT.
+// Vesper_FacingIsDerivedFromTheTownCentreBearing above ALREADY compares
+// ZM_DawnmereVesperFacing()'s forward vector against the live atan2 derivation to
+// 0.0005 -- so post-freeze it IS the staleness oracle, unchanged and for free.
+// Duplicating it here with a second tolerance would just create two numbers that
+// can disagree. What is genuinely NEW after the freeze, and unchecked anywhere
+// else, is the integrity of the frozen value ITSELF: that the accessor really
+// returns the declared constants, and that those constants are a legal rotation.
+//
+// ★ AND IT IS NOT BIT-EXACT AGAINST THE DERIVATION, WHICH WOULD BE A BUG. The
+// whole finding behind ZM-D-183 is that the derivation's last bits are
+// build-configuration dependent, so a bit-exact frozen-vs-derived assert would be
+// PERMANENTLY RED in Release while green in Debug -- a worse tripwire than none.
+// The bit-exact comparison belongs where the value does NOT move with the config:
+// against the committed file, in ZM_Tests_CommittedSceneBytes.cpp. The three
+// checks divide cleanly and none substitutes for another:
+//   * ...IsDerivedFromTheTownCentreBearing -- STALE constant (right bits, wrong bearing)
+//   * this test                            -- CORRUPT constant (not a rotation, or bypassed)
+//   * ...CommittedSceneBytes               -- DRIFTED asset (right bearing, wrong bits)
+// ============================================================================
+ZENITH_TEST(ZM_Interaction, Vesper_FrozenFacingIsExactlyTheDeclaredBits)
+{
+	const Zenith_Maths::Quat xFrozen = ZM_DawnmereVesperFacing();
+
+	// (1) The accessor really returns the declared constants. Without this, every
+	// other clause in this file would still pass if someone quietly reverted the
+	// body to the computed form and left the constants sitting unused in the
+	// header -- which would silently restore the per-config drift while the
+	// bearing oracle stayed green, because the computed form IS the right bearing.
+	ZENITH_ASSERT_EQ(std::bit_cast<u_int>(xFrozen.x),
+		uZM_DAWNMERE_VESPER_FACING_X_BITS,
+		"ZM_DawnmereVesperFacing() no longer returns the frozen x bits");
+	ZENITH_ASSERT_EQ(std::bit_cast<u_int>(xFrozen.y),
+		uZM_DAWNMERE_VESPER_FACING_Y_BITS,
+		"ZM_DawnmereVesperFacing() no longer returns the frozen y bits");
+	ZENITH_ASSERT_EQ(std::bit_cast<u_int>(xFrozen.z),
+		uZM_DAWNMERE_VESPER_FACING_Z_BITS,
+		"ZM_DawnmereVesperFacing() no longer returns the frozen z bits");
+	ZENITH_ASSERT_EQ(std::bit_cast<u_int>(xFrozen.w),
+		uZM_DAWNMERE_VESPER_FACING_W_BITS,
+		"ZM_DawnmereVesperFacing() no longer returns the frozen w bits");
+
+	// (2) The declared bits are a UNIT quaternion. Hand-editing a bit pattern is
+	// the one way this could stop being one, and a non-unit rotation would be
+	// renormalized by Jolt the instant a body was created from it -- re-opening
+	// exactly the drift the freeze closes, at body-creation time instead of at
+	// build-configuration time.
+	const float fNorm = std::sqrt(
+		xFrozen.x * xFrozen.x + xFrozen.y * xFrozen.y +
+		xFrozen.z * xFrozen.z + xFrozen.w * xFrozen.w);
+	ZENITH_ASSERT_EQ_FLOAT(fNorm, 1.0f, 1.0e-6f,
+		"the frozen facing is not a unit quaternion -- Jolt would renormalize it "
+		"on body creation and the authored bytes would drift again");
+
+	// (3) It is a pure YAW. The authoring contract is a rotation about +Y only; a
+	// non-zero x or z would tilt the sight cone out of the horizontal plane, which
+	// no clause in this file measures and no automated test would name.
+	ZENITH_ASSERT_EQ_FLOAT(xFrozen.x, 0.0f, 0.0f,
+		"the frozen rival facing is not a pure yaw (x component non-zero)");
+	ZENITH_ASSERT_EQ_FLOAT(xFrozen.z, 0.0f, 0.0f,
+		"the frozen rival facing is not a pure yaw (z component non-zero)");
 }
 
 // ============================================================================

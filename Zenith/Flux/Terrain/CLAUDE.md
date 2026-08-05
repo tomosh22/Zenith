@@ -198,6 +198,17 @@ Terrain collision uses separate mesh, not render LODs:
 > CI cannot catch this: `**/Assets/` is gitignored, so every CI run bakes cold and passes while every
 > developer tree with an existing bake silently loses collision. The same applies to any future change
 > that rewrites baked chunk BYTES without changing the file count.
+>
+> **★ IT IS NO LONGER SILENT AT RUNTIME.** `Zenith_ValidateTerrainPhysicsBodies`
+> (`Zenith/EntityComponent/Zenith_TerrainPhysicsValidate.h`) runs at every runtime scene load
+> (the `m_pfnSceneLoaded` hook) and on editor Stopped->Playing, i.e. before the first physics
+> step that could drop a body, and logs one line per terrain:
+> `[TerrainPhysics] context='...' terrain='...' physicsGeometry=yes/NO collider=... terrainVolume=... body=yes/NO`.
+> **When a fall-through is reported, grep the log for `TerrainPhysics` first** -- `body=NO` names
+> this bug outright, and the error line also counts the dynamic bodies that are about to fall.
+> A missing/stale bake is a non-fatal `Zenith_Error` (a cold tree is legitimate and
+> `Zenith_Assert` breaks in every configuration); "geometry loaded but no body" -- which no
+> asset can cause -- asserts.
 
 ### Rendering System
 Terrain submits separate task each frame:

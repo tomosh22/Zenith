@@ -1970,8 +1970,10 @@ namespace
 	// quaternion, so the four shipped NPCs' bytes probably would not move -- but SC8
 	// is the one sub-commit that rewrites a committed scene file, and their step
 	// lists must be untouchable BY CONSTRUCTION rather than by an argument about
-	// angleAxis(0). The yaw step sits between scale and collider so the transform is
-	// fully authored before the body is created.
+	// angleAxis(0). The rotation step sits between scale and collider so the
+	// transform is fully authored before the body is created -- which is also what
+	// keeps ZM-D-183's frozen bits intact: SetRotation lands them in the cache while
+	// there is still no body to normalize them.
 	//
 	// ★ THE COLLIDER IS A DYNAMIC CAPSULE, AND **AABB REMAINS FORBIDDEN HERE
 	// FOREVER**. Two separate reasons now stack on this one line; neither replaces
@@ -2021,14 +2023,20 @@ namespace
 		const char* szName,
 		const Zenith_Maths::Vector3& xCenter,
 		const Zenith_Maths::Vector3& xScale,
-		float fYawRadians,
+		const Zenith_Maths::Quat& xFacing,
 		void (*pfnConfigure)())
 	{
 		xAuto.AddStep_CreateEntity(szName);
 		xAuto.AddStep_SetEntityTransient(false);
 		xAuto.AddStep_SetTransformPosition(xCenter.x, xCenter.y, xCenter.z);
 		xAuto.AddStep_SetTransformScale(xScale.x, xScale.y, xScale.z);
-		xAuto.AddStep_SetTransformYaw(fYawRadians);
+		// ★ ZM-D-183: A QUATERNION, VERBATIM -- NOT AddStep_SetTransformYaw. The
+		// yaw step runs glm::angleAxis engine-side, and that sin/cos differs by
+		// 1-2 ULP between Debug and Release codegen, so this committed scene used
+		// to author different bytes depending on which tools build ran it. This
+		// step performs no math. See Source/World/ZM_DawnmerePlacement.h.
+		xAuto.AddStep_SetTransformRotationQuat(
+			xFacing.x, xFacing.y, xFacing.z, xFacing.w);
 		xAuto.AddStep_AddCollider();
 		xAuto.AddStep_AddColliderShape(
 			COLLISION_VOLUME_TYPE_CAPSULE, RIGIDBODY_TYPE_DYNAMIC);
@@ -2984,10 +2992,18 @@ void Project_RegisterEditorAutomationSteps()
 		// ★ GDD DEVIATION, RECORDED: canon puts rival battle 1 on "Route 1 (L5)".
 		// Route 1 does not exist in S7. When it is authored, move him and re-derive
 		// every separation from scratch (ZM-D-156, Shortfalls).
-		const Zenith_Maths::Vector3 xRivalVesperCenter = ZM_DawnmereNpcAuthoredCenter(
-			ZM_DAWNMERE_NPC_RIVAL_VESPER, fPlayerCapsuleHalfExtent);
+		// ★ ZM-D-184: SPAWNED WITH CLEARANCE, not at his resting centre. He used to
+		// be authored exactly on the surface and fell through the world
+		// intermittently -- the full measurement is in the ZM_DawnmereTrainerSpawnY
+		// block in Source/World/ZM_DawnmerePlacement.h. Gravity settles him back onto
+		// this exact XZ within a second (HoldTrainerStation pins XZ every tick), so
+		// no geometric claim in that header changes.
+		const Zenith_Maths::Vector3 xRivalVesperCenter(
+			ZM_GetDawnmereNpcAnchor(ZM_DAWNMERE_NPC_RIVAL_VESPER).m_fX,
+			ZM_DawnmereTrainerSpawnY(fPlayerCapsuleHalfExtent),
+			ZM_GetDawnmereNpcAnchor(ZM_DAWNMERE_NPC_RIVAL_VESPER).m_fZ);
 		ZM_QueueDawnmereTrainerNpc(xAuto, "Npc_RivalVesper",
-			xRivalVesperCenter, xNpcScale, ZM_DawnmereVesperYaw(),
+			xRivalVesperCenter, xNpcScale, ZM_DawnmereVesperFacing(),
 			&ZM_ConfigureRivalVesperNpc);
 
 		xAuto.AddStep_CreateEntity("DawnmerePreviewCamera");

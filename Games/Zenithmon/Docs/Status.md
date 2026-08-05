@@ -1,6 +1,160 @@
 # Zenithmon Status
 
-**Last updated:** 2026-08-03
+**Last updated:** 2026-08-05
+
+**★ ZM-D-183 (2026-08-04, UNCOMMITTED) -- THE RIVAL'S FACING IS NOW A FROZEN BIT
+PATTERN, AND THE `Dawnmere.zscen` TRIPWIRE IS LIVE AGAIN.** `Dawnmere.zscen` was
+coming back modified after every **Release** tools boot -- always the same 2 bytes,
+`Npc_RivalVesper`'s rotation y and w -- because `ZM_DawnmereVesperFacing()` was a
+runtime `std::atan2` + `glm::angleAxis`, and MSVC Debug and Release codegen disagree
+on those by 1-2 ULP. A Release boot dirtied the file, a Debug boot restored it,
+forever. **Both existing guards were structurally blind** (the bit-exact one compares
+against a re-computation of itself IN THE SAME BINARY and only runs on the windowed
+authoring boot CI never performs; the headless one uses `|dot| >= 0.999` against a
+`1e-14` drift). Fixed by freezing the quaternion as four `std::bit_cast` constants
+and authoring it through a new **`AddStep_SetTransformRotationQuat`** (verbatim, no
+math -- the yaw step ran `angleAxis` engine-side, so freezing the yaw alone would
+have changed nothing). **Boot units 2906 -> 2908** (ZM-D-184 then took it to
+**2909**, which is where `zm-tests.yml` `-Baseline` now sits); engine count unmoved
+at **1284**. Verified: a windowed **Release** tools
+boot now authors `3F7926D9 / 3E6B4456` -- the committed bytes -- and leaves the file
+byte-identical.
+
+> **★ IT IS NOT ZM-D-179, AND ASSUMING IT WAS COSTS A CYCLE.** The falling-body
+> reading is disproved by the diff itself: `WriteToDataStream` takes position and
+> rotation from the SAME source, so a moved body cannot write a drifted rotation
+> beside a bit-identical position. `liveBody == authored` in both configs. See
+> DecisionLog ZM-D-183 for the full evidence and the generalisable rule (**a guard
+> that compares a value against a re-computation of itself cannot detect that the
+> computation moved**).
+
+> **★ ANY authored entity whose rotation lands in a COMMITTED scene must now use
+> `AddStep_SetTransformRotationQuat` with a frozen constant.** Yaw/euler steps stay
+> fine for transient or gitignored scenes. Vesper is this game's only non-identity
+> authored rotation, which is why the four townsfolk never surfaced it.
+
+**★ INSTRUMENTED (2026-08-04, UNCOMMITTED): `Zenith_ValidateTerrainPhysicsBodies`.**
+Every runtime scene load AND editor Stopped->Playing now states terrain collision at
+INFO before the next physics step:
+`[TerrainPhysics] context='...' terrain='DawnmereTerrain' physicsGeometry=yes collider=yes terrainVolume=yes body=yes`.
+**If the fall-through recurs, that line is the whole diagnosis** -- `body=NO` means the
+terrain has no collision (asset/bake problem, see ZM-D-182); `body=yes` means the
+terrain was fine and the cause is elsewhere. Proven non-vacuous: with
+`Physics_0_0.zmesh` corrupted in place it reports `physicsGeometry=NO ... body=NO` and
+errors with **"3 dynamic body(ies) in loaded scenes will FALL THROUGH THE WORLD"** --
+confirming the failure mode hits the **Player and the Wanderer too**, not just Vesper.
+
+> **★ IT IS A LOUD `Zenith_Error`, NOT AN ASSERT, ON THE COMMON CASE -- DELIBERATELY.**
+> A cold or unbaked terrain tree is a legitimate developer state and `Zenith_Assert`
+> breaks in EVERY configuration, so asserting on "no physics geometry" would break every
+> cold box and take the unit gate down with it. The one case that DOES assert is the
+> impossible one -- geometry loaded but still no body -- which no asset can cause.
+
+**★ RESOLVED (2026-08-04, ZM-D-184, UNCOMMITTED) -- THE VESPER FALL-THROUGH.** Root
+cause was **an unbounded physics substep loop**, not anything about Vesper. The first
+two frames after a scene load take ~0.49 s, which `Zenith_Physics::Update` drained as
+**~29 consecutive 1/60 s substeps**; bodies free-fell through that burst, and once a
+capsule's LOWER SPHERE CENTRE passes below the terrain's one-sided mesh the contact
+normal inverts and the solver expels it downward. Vesper sank 0.61 m by frame 2 and
+was gone; **the player cleared it by ~2 cm on the same load**, which is exactly why it
+looked like a one-character bug. Fixed by capping the loop at **8 substeps** (root)
+AND giving the rival a half-extent of spawn clearance like the wanderer has always had
+(defence in depth). **`Dawnmere.zscen` re-authored** -- new SHA256
+`76E33E5318AF951C212533587F53F76A61F75F4FB64D734CBBFE92B03F3D8709`, proven by **three**
+boots (Debug x2 + Release x1, all identical). Boot units 2908 -> **2909**.
+
+> **★ NOT the serializer, NOT terrain collision, NOT the collider rebuild** -- all three
+> were checked and eliminated. See DecisionLog ZM-D-184 for the captured
+> `[FallenBody]` report and the arithmetic.
+
+> **★ CONFIRMED IN REAL PLAY (2026-08-05), not only by the suite.** The user re-ran the
+> ORIGINAL repro -- a windowed Release tools build, editor Play, in-game "Continue" ->
+> autosave -- and Vesper no longer falls. That matters because the automated tests never
+> reproduced the defect in the first place: they were green throughout the whole period
+> the bug was live, so "the suite passes" was never evidence either way here. The
+> reported repro is the authority for this one.
+
+**★ CURRENT COMMITTED-ASSET HASHES (OBSERVED 2026-08-05, after the ZM-D-184
+re-author).** Only `Dawnmere.zscen` moved; the other rows were re-hashed and match
+their previously recorded values exactly.
+
+| Asset | SHA256 |
+|---|---|
+| `Dawnmere.zscen` | `76E33E5318AF951C212533587F53F76A61F75F4FB64D734CBBFE92B03F3D8709` (**proven by THREE boots: Debug x2 + Release x1, all identical**) |
+| `Battle.zscen` | `1BEB0615F7FE62D9439471A4123E1D2140C0053AEC2991B659F7A03288C8C60A` |
+| `FrontEnd.zscen` | `F7209CF525A1C66CF5F95AB68F12814465E419B6DBE200A08939465E608C910B` |
+| `PlayerHome.zscen` | `DBBFB78311A55BBF942A7A5BF9928F43E9493A10CDA89110515A3B6A7987C780` (unchanged) |
+| `ProfLab.zscen` | `1BCAABC9EA4A6FC559727C9573F47F7B7304052C586FB1D0519ADAF73DB75856` (unchanged) |
+| `Dawnmere.znavmesh` | `DCAA84035A258B12FA23627FF719C0567018470C8055A1E0FB54D6C1F1F96E1D` (unchanged) |
+
+> **★ THE PROOF PROTOCOL NOW NAMES THE CONFIGURATION (the ZM-D-183 lesson).** Two boots
+> with matching SHA256 prove determinism only WITHIN one build configuration -- the three
+> boots that resolved Q-2026-08-02-001 were all Debug, which is exactly why ZM-D-183's
+> per-config drift hid behind a green proof. This row was taken from **Debug x2 AND
+> Release x1**, so it proves idempotence and cross-configuration agreement at once.
+
+**★ HISTORICAL (kept for the reasoning trail): what this looked like before it was
+diagnosed.** Reported alongside
+the above and initially assumed to share its cause -- it does not, and ZM-D-183 does
+not address it. NOT reproduced across: `ZM_RivalVesperAuthored_Test` (Debug/Null x2
+and Release -- `idleMax=0.0002 m` against a 0.35 tolerance), `ZM_NpcWander_Test`,
+`ZM_SaveContinue_Test` (both configs), and `ZM_DawnmereNpcGroundTruth_Test`
+(`rayHit=1` at every anchor including Vesper's). The terrain bake on the tree is
+current (all three manifests `ZMTR` v2, 256 Dawnmere physics chunks at 28,201 bytes).
+
+> **★ THE TERRAIN-WIDE HYPOTHESIS IS DEAD (2026-08-04, observed by the user).** The
+> first theory was that the terrain's combined physics body was absent for the opening
+> frames of a runtime load, dropping every dynamic body. **In the reported repro the
+> PLAYER does not fall -- only Vesper does.** A player standing on that terrain proves
+> the terrain body exists, so this is a PER-BODY defect, not a whole-world one. The
+> candidates are now Vesper-specific: tunnelling at walk speed, a collider rebuild, a
+> body spawned inside/beneath geometry, or a per-tick velocity write defeating contact
+> resolution (`ZM_Interactable::HoldTrainerStation` rewrites XZ velocity every tick and
+> copies Y verbatim; `ApplyDrivenBodySetup` locks all three rotation axes and calls
+> `EnforceUpright`). NOT yet bisected.
+
+> **★ ALSO A RED HERRING: `Chunk (X,Y) HIGH source is missing or invalid`.** These
+> appear in bulk in every Dawnmere log and are EXPECTED, not a symptom. The engine grid
+> is 64x64 and Zenithmon bakes a 16x16 export rect, while the streaming manager scans a
+> 16-chunk radius around the camera -- so it constantly asks for render chunks outside
+> the baked region. They say nothing about the camera's position and nothing about
+> physics (these are RENDER chunks; collision is one combined body).
+
+**★ INSTRUMENTED, AND IT HAS ALREADY CAUGHT THE FALL ONCE (`Zenith_FallenBodyWatch`).**
+Three report kinds, all non-fatal: a **fall onset** (sustained descent AND a downward
+speed a walk cannot reach), a **collider rebuild**, and **left the world** (Y < -50).
+
+**★ WHAT THE CAPTURED REPORT ESTABLISHES (2026-08-04, user's Release tools run):**
+```
+'Npc_RivalVesper' (entity 17) has left the world: y=-50.17 ...
+pos=(490.01, -50.17, 524.00) vel=(0.00, -36.13, 0.00) framesSinceLoad=242 timeSinceLoad=4.50s
+```
+* **He never moved horizontally** -- `pos.xz` is his authored `(490, 524)` exactly, and
+  `vel.xz` is exactly zero (so `HoldTrainerStation` was ticking him throughout). **He
+  did not walk off anything.**
+* Back-solving the fall with Jolt's default linear damping (0.05): `v=36.13 m/s` is
+  ~4.07 s of falling over ~75.7 m, so he **started at y ~ 25.5-26.8 -- his authored
+  pose -- about 0.43 s (~23 frames) after the load.** He stood correctly, then sank.
+* That rules out BOTH earlier candidates: not spawned-inside-geometry (that would be
+  `framesSinceLoad` ~0), and not tunnelling at walk speed (he never moved in XZ).
+
+**★ WHAT A HEALTHY RUN SHOWS, so the next capture is read correctly:** every Zenithmon
+human -- player, wanderer AND Vesper -- has its **collider rebuilt at
+`framesSinceLoad~2`** (the explicit `ZM_HumanBody.h` capsule replacing the authored
+one), at uniform scale 0.691, volumeType 3. **This is normal and is NOT the fault**;
+it happens identically on runs where nobody falls, and it is ~20 frames before the
+observed onset. Do not chase it on its own.
+
+> **★ THE ONSET DETECTOR NEEDS THE SPEED CLAUSE, AND HERE IS WHY.** A first version
+> keyed only on "0.5 m of continuous descent" and duly reported the player and the
+> wanderer on a perfectly healthy run -- **a character walking down a slope descends
+> continuously for metres** (observed -1.0 to -3.2 m/s). Free fall is separable by
+> SPEED, not by distance: the real fall measured -36 m/s. The threshold is 8 m/s.
+> If this is ever re-tuned, re-check it against a run where a character walks downhill.
+
+> The `3840 chunk(s) skipped` line in every terrain log is CORRECT and not a symptom:
+> the engine grid is 64x64 = 4096 and Zenithmon bakes a deliberate 16x16 export rect
+> (chunks 0..15 -> world `[0,1024)^2`). Vesper stands in chunk (7,8).
 
 **★ CURRENT BASELINE -- USE THESE NUMBERS, not the older ones quoted further
 down this file (RE-OBSERVED 2026-08-03 after the boot-profiling work, on a
@@ -78,7 +232,7 @@ across boots 2 and 3**, so boot-shape independence holds at the new density too.
 
 | Asset | SHA256 |
 |---|---|
-| `Dawnmere.zscen` | `E7413197370FF760C76DD0D30979436D541B3134EE972729BF429D4C57FA9716` (**re-proven by boots 2+3 above**) |
+| `Dawnmere.zscen` | **SUPERSEDED at ZM-D-184** -- was `E7413197...9716`; see the CURRENT table at the top of this file |
 | `PlayerHome.zscen` | `DBBFB78311A55BBF942A7A5BF9928F43E9493A10CDA89110515A3B6A7987C780` |
 | `ProfLab.zscen` | `1BCAABC9EA4A6FC559727C9573F47F7B7304052C586FB1D0519ADAF73DB75856` |
 | `Dawnmere.znavmesh` | `DCAA84035A258B12FA23627FF719C0567018470C8055A1E0FB54D6C1F1F96E1D` (**unchanged**) |

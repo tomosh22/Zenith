@@ -92,6 +92,30 @@ Vertex decimation uses spatial hashing. Extreme vertices (min/max on each axis) 
 
 **Fixed Timestep:** Physics simulates at constant 60 Hz regardless of frame rate. Time accumulator ensures deterministic behavior.
 
+**★ THE SUBSTEP CAP IS LOAD-BEARING (ZM-D-184).** `Update()` runs at most **8**
+substeps (~133 ms of simulation) per call and **DISCARDS** the leftover accumulator.
+That loop used to be unbounded, and it caused a shipped fall-through bug: the first
+two frames after a scene load take ~0.49 s (asset loads, pipeline creation), which
+drained as **~29 consecutive substeps** — half a second of simulation applied in one
+go to bodies that had just been created. A body resting exactly on the ground
+free-falls through that burst, and once a capsule's **lower sphere centre** passes
+below a one-sided triangle mesh (terrain collision is a surface, not a solid) the
+contact normal inverts and the solver expels it **downward**, permanently. Measured
+on Zenithmon's `Npc_RivalVesper`: 0.61 m of sink by frame 2, then gone; the player
+cleared it by ~2 cm on the same load, which is why it presented as an intermittent
+one-character bug.
+
+Discarding the remainder rather than carrying it is deliberate — carrying it is the
+spiral of death (each frame owes more substeps than the last). The trade is that
+physics runs slower than wall-clock across a hitch, which is correct; the alternative
+is bodies teleporting through geometry. A `Zenith_Warning` fires whenever the cap
+engages: expected once at boot / scene load, and a signal that the game is
+simulation-bound if it fires every frame.
+
+**★ Corollary for content:** an authored DYNAMIC body should spawn with clearance
+above its resting pose, never in exact contact — it must not depend on the solver
+catching it on the first tick. Zenithmon spells this as `ZM_Dawnmere*SpawnY`.
+
 **Thread Safety:** Collision events deferred from worker threads to main thread via mutex-protected queue.
 
 **Gravity:** Per-body gravity control via `SetGravityEnabled()`. Default gravity is -9.81 m/s² on Y-axis (down in left-handed coordinates).

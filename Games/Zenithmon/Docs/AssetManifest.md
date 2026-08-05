@@ -54,18 +54,35 @@ too. The writer now emits dense authoring-order indices, pinned by
 modified in `git status` after a boot, that is a REGRESSION of that property —
 investigate it rather than just re-committing.
 
-**The one KNOWN violation of that rule is CLOSED as of ZM-D-179, and its cause was
-NOT slot allocation.** From ZM-D-173 to ZM-D-178 a windowed tools boot left
-`Assets/Scenes/Dawnmere.zscen` modified by exactly **2 bytes** (offsets 3627 / 3635
-— the low-order mantissa of `Npc_RivalVesper`'s rotation quaternion).
-`Zenith_TransformComponent::WriteToDataStream` was serializing the **live Jolt
-body's** pose, so an authored rotation was a function of physics state; the bytes
-committed at `a6c66b68` are the one boot in five whose state differed, and they are
-provably not `sin`/`cos` of any single float yaw, which rules out codegen drift.
-Serialization now emits the transform's own cached pose unless the body has moved
-past the engine's own `PhysicsPoseDiffersFromCache` threshold. **A dirty `.zscen`
-after a boot is therefore a real signal again — investigate it.** Full diagnosis:
-**Q-2026-08-01-002** in [Questions.md](Questions.md) and ZM-D-179.
+**That rule has been violated TWICE, both times on the same 2 bytes of
+`Npc_RivalVesper`'s rotation, and the two causes were unrelated.** Read both before
+diagnosing a third.
+
+* **ZM-D-179** (closed) — from ZM-D-173 to ZM-D-178 a windowed tools boot left
+  `Assets/Scenes/Dawnmere.zscen` modified by exactly 2 bytes.
+  `Zenith_TransformComponent::WriteToDataStream` was serializing the **live Jolt
+  body's** pose, so an authored rotation was a function of physics state.
+  Serialization now emits the transform's own cached pose unless the body moved past
+  `PhysicsPoseDiffersFromCache`. Diagnosis: **Q-2026-08-01-002**.
+* **ZM-D-183** (closed) — the AUTHORED VALUE ITSELF was build-configuration
+  dependent. `ZM_DawnmereVesperFacing()` was a runtime `std::atan2` fed to
+  `glm::angleAxis`, and MSVC Debug and Release codegen disagree by 1–2 ULP, so the
+  two tools builds wrote different bytes and the file ping-ponged forever. The facing
+  is now four FROZEN `std::bit_cast` constants authored via
+  `AddStep_SetTransformRotationQuat`. Diagnosis: **Q-2026-08-04-001**.
+
+> **★ RETRACTION — an argument that used to sit in this very paragraph was WRONG, and
+> it is what made ZM-D-183 look impossible.** It claimed the drifted bytes were
+> "provably not `sin`/`cos` of any single float yaw, which rules out codegen drift".
+> It does not: `angleAxis` computes `sin(a*0.5)` and `cos(a*0.5)` through separate
+> code paths that can round differently (FMA contraction, vectorised vs scalar libm),
+> so a self-inconsistent pair is *exactly* what codegen drift produces. **Codegen
+> drift was never ruled out, and it turned out to be the cause.**
+
+**A dirty `.zscen` after a boot is a real signal — investigate it.** And when you do:
+position and rotation serialize from the SAME source, so **rotation-only drift beside
+a bit-identical position means the AUTHORED value moved, not the body**. Vary the
+build CONFIGURATION before calling anything unreproducible.
 
 Everything else — creatures, humans, buildings, props, terrain (~641 MB) —
 stays git-ignored. Adopting git-LFS for the heavy families is a separate, still

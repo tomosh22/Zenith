@@ -2,6 +2,7 @@
 
 #include "Zenithmon/Source/World/ZM_DawnmerePlacement.h"
 
+#include <bit>     // bit_cast -- the frozen facing (ZM-D-183)
 #include <cmath>
 
 float ZM_DawnmereVesperYaw()
@@ -15,8 +16,30 @@ float ZM_DawnmereVesperYaw()
 
 Zenith_Maths::Quat ZM_DawnmereVesperFacing()
 {
-	return Zenith_Maths::AngleAxis(
-		ZM_DawnmereVesperYaw(), Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
+	// ZM-D-183: FROZEN BITS, NOT AngleAxis(ZM_DawnmereVesperYaw()). The header
+	// carries the full argument; the one-line version is that atan2 and sin/cos
+	// disagree by 1-2 ULP between Debug and Release codegen, so the computed form
+	// authored two different scene files depending on which tools build ran.
+	//
+	// std::bit_cast rather than a decimal literal: a float literal has to be
+	// written to 9 significant digits to round-trip, and a reader cannot verify by
+	// eye that it did. These ARE the bytes, and the static_asserts below prove the
+	// round trip in both directions at compile time.
+	static_assert(std::bit_cast<u_int>(
+		std::bit_cast<float>(uZM_DAWNMERE_VESPER_FACING_Y_BITS)) ==
+		uZM_DAWNMERE_VESPER_FACING_Y_BITS,
+		"the frozen y component does not round-trip through float");
+	static_assert(std::bit_cast<u_int>(
+		std::bit_cast<float>(uZM_DAWNMERE_VESPER_FACING_W_BITS)) ==
+		uZM_DAWNMERE_VESPER_FACING_W_BITS,
+		"the frozen w component does not round-trip through float");
+
+	// glm::quat's constructor is (w, x, y, z).
+	return Zenith_Maths::Quat(
+		std::bit_cast<float>(uZM_DAWNMERE_VESPER_FACING_W_BITS),
+		std::bit_cast<float>(uZM_DAWNMERE_VESPER_FACING_X_BITS),
+		std::bit_cast<float>(uZM_DAWNMERE_VESPER_FACING_Y_BITS),
+		std::bit_cast<float>(uZM_DAWNMERE_VESPER_FACING_Z_BITS));
 }
 
 // ============================================================================
@@ -125,6 +148,14 @@ float ZM_DawnmereNpcCentreY(u_int uNpc, float fCapsuleHalfExtent)
 {
 	return ZM_DawnmereNpcFeetY(uNpc)
 		+ ZM_SanitiseCapsuleHalfExtent(fCapsuleHalfExtent);
+}
+
+float ZM_DawnmereTrainerSpawnY(float fCapsuleHalfExtent)
+{
+	// Same shape as the wanderer's below, and deliberately so -- see the header for
+	// the measurement that made the rival need it too (ZM-D-184).
+	const float fSanitised = ZM_SanitiseCapsuleHalfExtent(fCapsuleHalfExtent);
+	return ZM_DawnmereNpcCentreY(ZM_DAWNMERE_NPC_RIVAL_VESPER, fSanitised) + fSanitised;
 }
 
 float ZM_DawnmereWandererSpawnY(float fCapsuleHalfExtent)

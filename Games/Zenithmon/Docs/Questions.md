@@ -10,6 +10,49 @@
 
 ## Open
 
+### [RESOLVED] Q-2026-08-04-001 -- `Dawnmere.zscen` came back modified after every tools boot again, 2 bytes, same entity as Q-2026-08-01-002
+
+**RESOLVED 2026-08-04 (ZM-D-183). Cause: the AUTHORED VALUE was build-configuration
+dependent -- NOT the serializer, and NOT a regression of ZM-D-179.**
+`ZM_DawnmereVesperFacing()` was a runtime `std::atan2` fed to `glm::angleAxis`; MSVC Debug
+and Release codegen disagree on those by 1-2 ULP, so a **Release** tools boot authored
+`y=0x3F7926D8 w=0x3E6B444C` and a **Debug** tools boot authored `y=0x3F7926D9 w=0x3E6B4456`
+(the committed bytes). The file ping-ponged between them forever.
+
+**★ THE MIS-DIAGNOSIS THIS EPISODE IS WORTH REMEMBERING FOR, because it is the same shape as
+Q-2026-08-02-001's but in the opposite direction.** The symptom was byte-identical to
+ZM-D-179's, the same entity, the same two float fields -- so the obvious reading was "the
+ZM-D-179 fix regressed" or "a falling body is reaching disk". Both are WRONG, and the diff
+alone disproves them: `WriteToDataStream` takes position and rotation from the SAME source
+(`PhysicsPoseDiffersFromCache` is one OR'd predicate over both), so a body that had moved
+could not write a drifted rotation beside a **bit-identical position**. Exactly 2 bytes
+changed, both inside the quaternion. **Rotation-only drift means the authored value moved,
+not the body.**
+
+**★ AND THE REASON IT SURVIVED SO LONG: the pre-save guard compares a value against a
+re-computation of ITSELF.** `ZM_VerifyAuthoredRivalFacingStep` is genuinely bit-exact, but it
+evaluates `ZM_DawnmereVesperFacing()` *in the same binary* it is checking -- so when the
+computation moved, both sides moved together and it logged a clean
+`authored == serialised == liveBody` while writing bytes that differed from git. Its own
+`authored=` reference was ALREADY the drifted value. That is a general trap, not a local one:
+**a self-referential guard cannot detect that its own reference moved.** The fix is a guard
+against something that does not move with the config -- a frozen literal, and the committed
+file (`Tests/ZM_Tests_CommittedSceneBytes.cpp`).
+
+**★ IT ALSO EXPLAINS A LOOSE END IN ZM-D-179.** That comment records the drifted commit
+`a6c66b68` as "a value no other boot of the same source reproduces". It was reproducible all
+along -- by a Release tools boot. Nobody had varied the configuration, because nothing
+suggested the configuration was a variable.
+
+**★ WHAT THIS CHANGES ABOUT THE TWO-BOOT PROOF PROTOCOL** (Q-2026-08-02-001, ZM-D-148): two
+authoring boots with identical SHA256 prove determinism only **within one build
+configuration**. The three boots that resolved Q-2026-08-02-001 were all `Vulkan_..._True`
+Debug, which is exactly why they agreed and why this defect hid behind a green proof. A
+scene-byte proof should now NAME the configuration, and ideally run one boot of each.
+
+**Guess taken at the time:** none needed -- the Debug/Release split was measured directly by
+running both binaries against the same clean tree.
+
 ### [RESOLVED] Q-2026-08-02-001 -- the working-tree `Dawnmere.zscen` did NOT match the SHA256 the authoring-proof table recorded
 
 **RESOLVED 2026-08-02 (ZM-D-182). Cause: the recorded row was STALE, not a defect.
@@ -176,6 +219,14 @@ lowest-order mantissa bytes of the authored rotation quaternion:
 That is a 1-ULP difference in y and ~10 ULP in w. Position `(490.0, 26.767, 524.0)` and scale
 `(0.8, 1.8, 0.8)` are byte-identical, as is every other entity in the file, and
 `Assets/Navmesh/Dawnmere.znavmesh` stays clean.
+
+> **★ BOTH FIGURES ABOVE ARE HISTORICAL AS OF 2026-08-04/05 — do not read them as current.**
+> The `(0.8, 1.8, 0.8)` scale was replaced by the uniform `fZM_HUMAN_VISUAL_SCALE` at
+> ZM-D-181, and the authored **Y moved from 26.767 to 27.667 at ZM-D-184** (the rival now
+> spawns one capsule half-extent clear of the ground instead of resting exactly on it —
+> he was falling through the world). The *position-is-byte-identical* observation is
+> still the load-bearing part of this entry: rotation-only drift is what proves the
+> authored value moved rather than the body.
 
 **IT IS NOT CAUSED BY THE PROFLAB WORK -- and that was PROVEN, not assumed.** This project's own
 recorded lesson is that *a negative control proves nothing until it flips*, so both arms were run:

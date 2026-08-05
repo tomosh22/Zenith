@@ -410,6 +410,16 @@ namespace
 		xAction.m_afArgs[2] = f3;
 		xActions.PushBack(xAction);
 	}
+	inline void Push(ActionList& xActions, ActionType eType, float f1, float f2, float f3, float f4)
+	{
+		Zenith_EditorAction xAction = {};
+		xAction.m_eType = eType;
+		xAction.m_afArgs[0] = f1;
+		xAction.m_afArgs[1] = f2;
+		xAction.m_afArgs[2] = f3;
+		xAction.m_afArgs[3] = f4;
+		xActions.PushBack(xAction);
+	}
 	inline void Push(ActionList& xActions, ActionType eType, int i1, int i2)
 	{
 		Zenith_EditorAction xAction = {};
@@ -485,6 +495,7 @@ void Zenith_EditorAutomation::AddStep_SetTransformPosition(float fX, float fY, f
 void Zenith_EditorAutomation::AddStep_SetTransformScale   (float fX, float fY, float fZ) { Push(Zenith_EditorAutomation::m_axActions, ActionType::SET_TRANSFORM_SCALE,    fX, fY, fZ); }
 void Zenith_EditorAutomation::AddStep_SetTransformYaw     (float fYawRadians)             { Push(Zenith_EditorAutomation::m_axActions, ActionType::SET_TRANSFORM_ROTATION_YAW, fYawRadians); }
 void Zenith_EditorAutomation::AddStep_SetTransformRotationEuler(float fXDeg, float fYDeg, float fZDeg) { Push(Zenith_EditorAutomation::m_axActions, ActionType::SET_TRANSFORM_ROTATION, fXDeg, fYDeg, fZDeg); }
+void Zenith_EditorAutomation::AddStep_SetTransformRotationQuat(float fX, float fY, float fZ, float fW) { Push(Zenith_EditorAutomation::m_axActions, ActionType::SET_TRANSFORM_ROTATION_QUAT, fX, fY, fZ, fW); }
 
 // ATTACH_TO_BONE packs 2 names + 6 floats (pos[0..2], euler[3..5]) — no Push overload
 // covers that shape, so the action is constructed directly.
@@ -2133,6 +2144,22 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 		Zenith_Assert(pxEntity, "No entity selected for SET_TRANSFORM_ROTATION");
 		const Zenith_Maths::Quat xRot = BuildEulerRotation(
 			xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2]);
+		pxEntity->GetComponent<Zenith_TransformComponent>().SetRotation(xRot);
+		break;
+	}
+
+	case Zenith_EditorActionType::SET_TRANSFORM_ROTATION_QUAT:
+	{
+		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for SET_TRANSFORM_ROTATION_QUAT");
+		// NO MATH, DELIBERATELY -- see the header. The args arrive in SERIALIZED
+		// order (x, y, z, w) and glm::quat's constructor takes (w, x, y, z), so the
+		// reorder here is the whole body of this case. SetRotation stores the value
+		// verbatim (it does not normalize), which is what makes this step the only
+		// way to land a chosen bit pattern in a committed scene file.
+		const Zenith_Maths::Quat xRot(
+			xAction.m_afArgs[3], xAction.m_afArgs[0],
+			xAction.m_afArgs[1], xAction.m_afArgs[2]);
 		pxEntity->GetComponent<Zenith_TransformComponent>().SetRotation(xRot);
 		break;
 	}

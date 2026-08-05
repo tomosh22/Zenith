@@ -130,6 +130,22 @@ inline const char* Zenith_GetLogCategoryName(Zenith_LogCategory eCategory)
 void Zenith_EditorAddLogMessage(const char* szMessage, int eLevel, Zenith_LogCategory eCategory);
 #endif
 
+#ifdef ZENITH_WINDOWS
+// The always-on log file sink (implemented in Zenith.cpp -- see the block comment
+// there for why it lives in THAT file and not a new one: this declaration is
+// reached from an INLINE function in the PCH, so the symbol must resolve for the
+// L0 leaf and every Sentinel link proof too, and it must NOT ALLOCATE because the
+// first log line of the process comes from a static initialiser).
+//
+// Android is excluded because logcat already IS a persistent, timestamped,
+// filterable sink there; other platforms get no sink rather than an untested path.
+void Zenith_LogFileSinkWrite(const char* szMessage, int eLevel);
+
+// Absolute path of this run's log file; empty until the first line is written, and
+// empty forever if the sink could not open one. Never null.
+const char* Zenith_GetLogFilePath();
+#endif
+
 inline void Zenith_LogImpl(Zenith_LogCategory eCategory, int eLevel, const char* szFormat, ...)
 {
 	char buffer[2048];
@@ -163,6 +179,12 @@ inline void Zenith_LogImpl(Zenith_LogCategory eCategory, int eLevel, const char*
 #else
 	printf("%s\n", prefixedBuffer);
 	fflush(stdout);
+#ifdef ZENITH_WINDOWS
+	// Same line, to a file that survives the process. A hand-launched run has no
+	// redirected stdout, and those are precisely the runs where something
+	// interesting happened.
+	Zenith_LogFileSinkWrite(prefixedBuffer, eLevel);
+#endif
 #endif
 #ifdef ZENITH_TOOLS
 	Zenith_EditorAddLogMessage(prefixedBuffer, eLevel, eCategory);

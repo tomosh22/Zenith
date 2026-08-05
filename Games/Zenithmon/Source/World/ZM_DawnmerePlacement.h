@@ -80,11 +80,69 @@ inline constexpr float fZM_DAWNMERE_VESPER_Z = 524.0f;
 // transposing it silently turns him 90 degrees. Never derived via
 // glm::eulerAngles(quat).y, which collapses past 90 degrees off +Z and has already
 // cost this repo a full debugging cycle.
+//
+// ★ THIS IS THE DERIVATION, NOT THE AUTHORED VALUE (ZM-D-183). Nothing that
+// writes the scene calls it any more -- see the frozen block below for why. It
+// survives as the ORACLE the frozen constant is re-checked against, and as the
+// readable statement of where that constant came from.
 float ZM_DawnmereVesperYaw();
 
-// The same facing as a quaternion, built with AngleAxis about +Y. This is the
-// EXACT rotation the authoring writes into the scene, so a test may compare an
-// authored transform against it directly.
+// ============================================================================
+// ZM-D-183 -- THE RIVAL'S FACING IS A FROZEN BIT PATTERN, NOT A COMPUTED VALUE
+//
+// ★ THE DEFECT THIS CLOSES, AND IT IS NOT THE ONE ZM-D-179 CLOSED. This header's
+// opening contract is that the committed Dawnmere.zscen bytes are reproducible
+// from COMPILED constants. The facing was NOT one: it was std::atan2 at runtime,
+// fed to glm::angleAxis, whose sin/cos of the half angle ran again inside the
+// authoring step. Those are libm calls, and MSVC's Debug and Release codegen do
+// not agree on them to the last bit. Measured, on the same source at the same
+// commit:
+//
+//     Vulkan_vs2022_Debug_Win64_True     y=0x3F7926D9  w=0x3E6B4456
+//     Vulkan_vs2022_Release_Win64_True   y=0x3F7926D8  w=0x3E6B444C
+//
+// So a Release tools boot re-authored the scene with a rotation 1 ULP off in y
+// and ~10 in w, a Debug tools boot put it back, and Dawnmere.zscen ping-ponged
+// between two values in git status forever -- which is a permanently disabled
+// tripwire, exactly the state ZM-D-179 was written to end.
+//
+// ★ WHY THE ZM-D-179 GUARD CANNOT SEE THIS, AND WHY NO TOLERANCE TEST CAN EITHER.
+// ZM_VerifyAuthoredRivalFacingStep bit-compares the serialized bytes against
+// ZM_DawnmereVesperFacing() evaluated IN THE SAME BINARY, so both sides moved
+// together and it logged a clean authored == serialised == liveBody while writing
+// bytes that differed from the committed ones. The automated test compares |dot|
+// against 0.999 and the drift lands at 1 - |dot| ~ 1e-14. Both were green
+// throughout. The ONLY thing that can catch a per-config authoring drift is a
+// comparison against a value that does not move with the config -- i.e. this
+// block, and ZM_Tests_CommittedSceneBytes.cpp checking the committed file.
+//
+// ★ WHICH BITS THESE ARE, AND WHY. They are the DEBUG build's -- i.e. the bytes
+// already committed at HEAD. Neither config is more numerically correct; what
+// matters is that ONE value is canonical. Choosing the committed one means the
+// freeze needs no re-author and moves no tracked asset.
+//
+// ★ THE AUTHORING STEP HAD TO CHANGE TOO. AddStep_SetTransformYaw runs
+// glm::angleAxis engine-side, so freezing only the yaw would have left the drift
+// exactly where it was. The rival is authored through
+// AddStep_SetTransformRotationQuat, which performs no math at all. Read that
+// step's comment before authoring any other committed entity with a rotation.
+//
+// ★ WHAT RE-DERIVES THESE. Move fZM_DAWNMERE_VESPER_X/Z or the town centre and
+// these four numbers are stale. Vesper_FrozenFacingStillEncodesTheDerivedBearing
+// reds when that happens (it re-runs the atan2 derivation against them to a
+// tolerance, which is the ONLY comparison that stays valid across configs). To
+// re-freeze: read the `authored=` bits off the [ZM Authoring] line of a windowed
+// DEBUG tools boot, paste them below, re-author Dawnmere, and commit the .zscen
+// in the SAME commit.
+// ============================================================================
+inline constexpr u_int uZM_DAWNMERE_VESPER_FACING_X_BITS = 0x00000000u;
+inline constexpr u_int uZM_DAWNMERE_VESPER_FACING_Y_BITS = 0x3F7926D9u;
+inline constexpr u_int uZM_DAWNMERE_VESPER_FACING_Z_BITS = 0x00000000u;
+inline constexpr u_int uZM_DAWNMERE_VESPER_FACING_W_BITS = 0x3E6B4456u;
+
+// The frozen facing as a quaternion. Bit-identical in every build configuration,
+// which is the entire point -- a test may compare an authored transform, or the
+// committed scene bytes, against it EXACTLY rather than to a tolerance.
 Zenith_Maths::Quat ZM_DawnmereVesperFacing();
 
 // ============================================================================
@@ -226,6 +284,28 @@ float ZM_DawnmereNpcFeetY(u_int uNpc);
 // transform would poison a body, a model matrix and every distance derived from
 // them, and no assertion downstream would name this function.
 float ZM_DawnmereNpcCentreY(u_int uNpc, float fCapsuleHalfExtent);
+
+// The RIVAL's authored SPAWN height: his resting centre plus ONE capsule
+// half-extent of air -- the same treatment, for the same reason, that
+// ZM_DawnmereWandererSpawnY has always given the wanderer.
+//
+// ★ WHY HE NEEDS IT (ZM-D-184). He used to be authored at his resting centre
+// exactly (feet + one half-extent), i.e. with ~13 mm of clearance, and he fell
+// through the world intermittently. MEASURED cause: the first two frames after a
+// scene load take ~0.49 s, which the physics accumulator drained as ~29
+// consecutive 1/60 s substeps; a body resting exactly on the surface free-falls
+// through that burst before contact resolution catches it, and once the capsule's
+// LOWER SPHERE CENTRE passes below the terrain's one-sided mesh the contact normal
+// inverts and the solver expels it downward. He sank 0.61 m by frame 2 and never
+// came back; the player, authored the same way, cleared it by ~2 cm on the same
+// load -- which is why this looked like a one-character bug.
+//
+// The engine-side substep cap (Zenith_Physics::Update) is the ROOT fix and makes
+// this margin unnecessary in that specific case. This clearance is kept anyway,
+// because it removes the zero-margin authoring that made him the canary: an
+// authored body should not depend on the solver catching it on the first tick.
+// Belt AND braces, deliberately.
+float ZM_DawnmereTrainerSpawnY(float fCapsuleHalfExtent);
 
 // The wanderer's authored SPAWN height, which is its centre plus ONE EXTRA capsule
 // half-extent of air. It is the only DYNAMIC body in Dawnmere, and the local

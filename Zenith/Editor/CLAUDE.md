@@ -330,6 +330,34 @@ and appends the slot). Each graph step is wrapped in `GraphActionChecked`,
 which asserts on failure so an authoring typo (wrong node type/occurrence/pin)
 surfaces at boot, not as a silently-empty graph.
 
+**★ AUTHORED ROTATIONS THAT LAND IN A COMMITTED SCENE MUST USE
+`AddStep_SetTransformRotationQuat`.** There are three rotation steps and only one of
+them is byte-stable:
+
+| Step | Authoring-time math | Safe for a COMMITTED `.zscen`? |
+|---|---|---|
+| `AddStep_SetTransformYaw(rad)` | `glm::angleAxis` (sin/cos of the half angle) | **NO** |
+| `AddStep_SetTransformRotationEuler(x,y,z)` | `BuildEulerRotation` | **NO** |
+| `AddStep_SetTransformRotationQuat(x,y,z,w)` | none -- verbatim to `SetRotation` | **YES** |
+
+The first two call libm at authoring time, and MSVC Debug and Release codegen do not
+agree on those to the last bit. An entity authored through them therefore serializes
+**different bytes from a Debug and a Release tools build**, so a tracked scene file
+ping-pongs between two values in `git status` forever — and because the drift is
+1-2 ULP, every tolerance-based guard stays green while it happens. That is not
+hypothetical: it is the defect `Games/Zenithmon/Docs/DecisionLog.md` ZM-D-183 fixed
+for `Npc_RivalVesper`, and it hid behind a *bit-exact* pre-save guard that compared
+the serialized bytes against a re-computation of the same expression **in the same
+binary** (both sides moved together).
+
+The quat step's arguments are in **serialized order (x, y, z, w)** — deliberately not
+`glm::quat`'s `(w, x, y, z)` constructor order — so a caller freezing bytes read out
+of a `.zscen` types them in the order they appear in the file. `SetRotation` stores
+the value verbatim (no normalization), which is what makes a chosen bit pattern
+survive to disk. Yaw/euler remain correct for transient or gitignored scenes, where a
+1-ULP difference has nowhere to show up. (Identity rotations are exact in every
+config, so entities that never rotate are unaffected.)
+
 Material assets are authored the same boot-time way via the `AddStep_Material*`
 verbs (`AddStep_MaterialCreate`, `AddStep_MaterialOpen`,
 `AddStep_MaterialSetParam{Float,Color,Int}`, `AddStep_MaterialSetTexture`,

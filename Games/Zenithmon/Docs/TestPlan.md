@@ -1702,7 +1702,14 @@ change touches `Zenith/` as well as the game.
 **Boot baseline at THIS change: ZM 2863; engine (Null Combat) stays 1242.** The added
 contracts are pure generator/placement checks, so they do not move the 55-test
 automated registry or the cross-game engine suite.
-★ **The CURRENT baseline is ZM 2864** (ZM-D-182 added
+★ **SUPERSEDED -- the CURRENT baseline is ZM 2909** (ZM-D-183 added the two
+committed-scene-bytes guards, 2906 -> 2908; ZM-D-184 added the rival spawn-clearance
+unit, 2908 -> **2909**; `zm-tests.yml` `-Baseline` moved to match). Engine is
+**1284**, registry unmoved at **55**. OBSERVED 2026-08-04 on a clean `Null_` build:
+`2909 ran, 2907 passed, 0 failed, 2 skipped`. The paragraph below is the
+ZM-D-182-era snapshot, kept for the audit trail:
+
+★ **The (ZM-D-182-era) baseline was ZM 2864** (ZM-D-182 added
 `HumanVisual_RestartPreservesTheAnimatorRig`); engine and registry are unmoved at
 1242 / 55. OBSERVED 2026-08-02 on a clean `Null_` build:
 `2864 ran, 2862 passed, 0 failed, 2 skipped`. Status.md's top block is the live
@@ -1890,6 +1897,64 @@ between-tests hook's re-seed (C3) is now
     position is unobservable BY CONSTRUCTION -- no input distinguishes the two
     orderings. **Do not add an assertion that appears to check it; it would be
     checking nothing.**
+
+**#### The committed-scene-bytes guard (ZM-D-183, SHIPPED) -- THREE tests, and none substitutes for another**
+
+The `Dawnmere.zscen` "a boot must not dirty a tracked scene" invariant has now been
+lost twice on the SAME two float fields (`Npc_RivalVesper`'s rotation y and w), each
+time with every existing guard green. The coverage is now split by **what kind of
+wrong** it catches, which is the only division that works here:
+
+| Test | File | Catches | Comparison |
+|---|---|---|---|
+| `ZM_Interaction/Vesper_FacingIsDerivedFromTheTownCentreBearing` | `ZM_Tests_DawnmerePlacement.cpp` | a **STALE** constant -- right bits, wrong bearing (someone moved `fZM_DAWNMERE_VESPER_X/Z` or the town centre without re-freezing) | TOLERANCE (0.0005 on the forward vector) |
+| `ZM_Interaction/Vesper_FrozenFacingIsExactlyTheDeclaredBits` | " | a **CORRUPT or BYPASSED** constant -- the accessor no longer returns the declared bits (e.g. someone reverted it to the computed form), or the bits are not a unit quaternion / not a pure yaw | BIT-EXACT vs the declared constants |
+| `ZM_CommittedSceneBytes/DawnmereCarriesTheFrozenRivalFacingBitExactly` | `ZM_Tests_CommittedSceneBytes.cpp` (**new TU**) | a **DRIFTED ASSET** -- the committed file no longer carries the frozen rotation. **The regression test: it fails on BOTH historical breaks** (`a6c66b68`'s bytes, and the bytes a pre-ZM-D-183 Release tools boot wrote) | BIT-EXACT vs the committed FILE |
+
+★ **The frozen-vs-DERIVED comparison is deliberately a TOLERANCE and making it
+bit-exact would be a bug.** The whole ZM-D-183 finding is that the derivation's last
+bits are build-configuration dependent, so a bit-exact frozen-vs-derived assert is
+green in Debug and **permanently red in Release** -- a worse tripwire than none. The
+bit-exact comparisons go where the value does not move with the config: against the
+declared constants, and against the committed file.
+
+**#### The rival's spawn clearance (ZM-D-184, SHIPPED) -- one unit, and it would have failed the day before**
+
+| Test | File | Catches |
+|---|---|---|
+| `ZM_Interaction/Vesper_SpawnsClearOfTheGroundNotOnIt` | `ZM_Tests_DawnmerePlacement.cpp` | an authored DYNAMIC body placed at its RESTING centre instead of above it |
+
+It asserts the rival's spawn is strictly above his resting centre, that the margin is
+a **full capsule half-extent**, that he and the wanderer get the **same** clearance,
+and that a degenerate half-extent stays finite. **It fails against the code as it
+stood before ZM-D-184**, which is the point: he was authored at feet + one half-extent
+(~13 mm of margin) and fell through the world intermittently.
+
+★ **The engine half of ZM-D-184 -- the 8-substep cap in `Zenith_Physics::Update` --
+has no unit of its own, deliberately.** What it prevents is a whole-frame timing
+condition (a ~0.49 s load hitch draining ~29 consecutive substeps), which a boot unit
+cannot construct and an automated test cannot reliably provoke. It is covered
+observationally instead: every ZM automated test that loads Dawnmere exercises it, and
+the cap logs when it engages (`Physics substep cap hit: 8 substeps ran and 0.085 s ...
+DISCARDED`) -- expected exactly once, at boot.
+
+★ **AND NOTE WHAT THE SUITE DID NOT DO HERE.** Every ZM test was green for the entire
+period the fall-through was live -- `ZM_RivalVesperAuthored_Test` included, measuring
+`idleMax=0.0002 m`. The defect only ever appeared in a windowed Release tools build
+driven through the editor's Play mode and the in-game Continue flow, which no
+automated test reaches. **A green suite was not evidence here**, and the fix was
+confirmed by re-running the reported repro, not by the gate.
+
+★ **Why the third one had to read disk.** Nothing headless checked the bytes that are
+actually in git. The pre-save guard `ZM_VerifyAuthoredRivalFacingStep` is bit-exact
+but (a) compares against a re-computation of itself in the same binary, so it cannot
+see the computation move, and (b) only runs on the windowed `AUTHOR_DAWNMERE` boot,
+which **CI never performs** -- `zm-tests.yml` builds `Vulkan_..._True` but RUNS
+`Null_..._True`. The new TU is format-agnostic on purpose: it searches for the 16-byte
+little-endian quaternion in serialized order rather than parsing the `.zscen`
+container, so it does not rot at the next schema bump. It reports NOT APPLICABLE (a
+warning, not a pass) when the asset is unreachable, e.g. a packaged `--assets-root`
+run.
 
 **#### ZM_PlayerHome -- New Game entry + the warm interior tint (item 1, SHIPPED ZM-D-176/177)**
 

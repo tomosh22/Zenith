@@ -17,6 +17,7 @@
 #include "ZenithECS/Zenith_Entity.h"
 #include "ZenithECS/Zenith_ComponentMeta.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
+#include "EntityComponent/Zenith_TerrainPhysicsValidate.h"   // Stopped -> Playing terrain-collision report
 #include "FileAccess/Zenith_FileAccess.h"
 #include "Flux/Flux_RendererImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
@@ -73,6 +74,13 @@ bool Zenith_Editor::EnterPlayMode()
 			break;
 		}
 	}
+
+	// The OTHER doorway into a physics-simulating world. m_pfnSceneLoaded covers a
+	// runtime LOAD; this covers Stopped -> Playing on a scene that was ALREADY
+	// loaded, where no load hook fires but physics is about to start stepping for
+	// the first time. Together they mean a terrain with no collision is stated
+	// before the first frame that could drop a body through it.
+	Zenith_ValidateTerrainPhysicsBodies("EnterPlayMode");
 
 	Zenith_Log(LOG_CATEGORY_EDITOR, "Editor: Dispatching OnAwake/OnEnable for %u entities", Zenith_EditorSceneAccess::GetEntityCount(pxSceneData));
 	Zenith_ComponentMetaRegistry& xRegistry = Zenith_ComponentMetaRegistry::Get();

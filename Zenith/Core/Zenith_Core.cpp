@@ -17,6 +17,7 @@
 #include "EntityComponent/Zenith_CameraResolve.h"
 #include "EntityComponent/Zenith_PhysicsDebugDraw.h"
 #include "EntityComponent/Zenith_PhysicsTransformSync.h"
+#include "EntityComponent/Zenith_FallenBodyWatch.h"
 #include "EntityComponent/Zenith_UISystem.h"
 #include "Flux/Flux.h"
 #include "Flux/Flux_RendererImpl.h"
@@ -179,6 +180,13 @@ static void UpdateGameLogic(bool bShouldUpdateGameLogic)
 		// Update runs animation/game logic that reads BuildModelMatrix. Must sit between
 		// Physics().Update() and Scenes().Update().
 		Zenith_SyncPhysicsTransforms();
+
+		// Immediately after the sweep, so the poses it just committed are the ones
+		// inspected: report (once per fall) any DYNAMIC body that has left the world.
+		// This is the per-body counterpart to Zenith_ValidateTerrainPhysicsBodies'
+		// whole-world check — see Zenith_FallenBodyWatch.h for why one does not
+		// substitute for the other.
+		Zenith_TickFallenBodyWatch(g_xEngine.Frame().GetDt());
 
 		ZENITH_PROFILING_FUNCTION_WRAPPER(g_xEngine.Scenes().Update, ZENITH_PROFILE_ZONE("Scene Update"), g_xEngine.Frame().GetDt());
 
