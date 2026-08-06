@@ -23,8 +23,12 @@ ImGui-based scene editor for creating, editing, and testing game content. Active
 - `TerrainEditor/` - Terrain sculpting/painting subsystem (`Zenith_TerrainEditor`):
   height brushes (raise/lower/smooth/flatten/set-height/noise/terrace/ramp/
   copy-stamp with radius/strength/falloff), splatmap layer painting (4 material
-  slots, weights kept normalized), grass-density painting (Flux_Grass density
-  map), seeded procedural generation (deterministic integer-hash FBM/ridged),
+  slots, weights kept normalized), grass-density painting and grass-type
+  stamping (the two Flux_Grass maps — a session owns FOUR maps in all,
+  Height / Splat / GrassDensity / GrassType, each with its own texel count and
+  bytes-per-texel, so undo rects are sized per map: 1 byte/texel for GrassType
+  against 4 for the others), seeded procedural generation (deterministic
+  integer-hash FBM/ridged),
   hydraulic+thermal erosion (main-thread sliced or synchronous), auto-splat by
   slope/height rules, region-delta undo, save (.ztxtr to game assets) + full
   bake (chunk re-export + physics + render re-init). Live height edits go ONLY

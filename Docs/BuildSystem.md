@@ -402,7 +402,11 @@ baked paths — overridable at runtime by `--assets-root`, §7).
    by selftest).
 5. Runner/tool outputs go under `Build/artifacts/`; packages under `dist/`.
 6. Config names/paths come from `zenith_config.psd1` accessors, not literals.
-7. Engine unit-test baseline bumps update `Tools/run_unit_gate.ps1` AND
-   `Tools/test_scaffold.ps1` together.
+7. Engine unit-test baseline bumps update FOUR pinned sites in the same
+   commit, each from an OBSERVED run (never arithmetic):
+   `Tools/run_unit_gate.ps1` (`-Baseline` default), the ZM override in
+   `.github/workflows/zm-tests.yml`, this file's two mentions, and
+   `Games/Zenithmon/Docs/Status.md`'s top block. (`Tools/test_scaffold.ps1`
+   pins no number — it inherits the script default.)
 8. Every new script function gets selftest coverage; every new engine
    type/method gets unit coverage.

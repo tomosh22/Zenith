@@ -7,6 +7,7 @@ GLM wrapper with engine-specific extensions.
 - `Zenith_Maths.h/cpp` - Type aliases, wrapper functions
 - `Zenith_Maths_Intersections.h` - Ray intersection tests
 - `Zenith_FrustumCulling.h` - Frustum and AABB utilities
+- `Zenith_Noise.h` - Deterministic integer-hash value noise (see below)
 
 ## GLM Configuration
 
@@ -60,6 +61,35 @@ In `Zenith_FrustumCulling.h`.
 - `GenerateAABBFromVertices()` - Compute tight AABB from vertex positions
 - `TransformAABB()` - Transform AABB by matrix, recalculate axis-aligned bounds
 - `Zenith_Frustum::ExtractFromViewProjection()` - Gribb-Hartmann method to extract planes from matrix
+
+## Noise
+
+In `Zenith_Noise.h`, header-only, in the `Zenith_TerrainNoise` namespace — **not**
+`Zenith_Maths`, despite living here. It sits in Maths because it is runtime-shared:
+the terrain editor's Noise brush, procedural generation and auto-splat jitter all
+consume it, and so does the GPU grass.
+
+- `HashUInt()` / `HashCoords()` - 32-bit avalanche hash; `HashCoords` mixes (x, y, seed)
+- `HashToFloat01()` / `ValueAt()` - uniform `[0,1)` from a hash / from a lattice node
+- `ValueNoise()` - smoothstep-interpolated 2D value noise, `[0,1]`
+- `FBM()` / `RidgedFBM()` - fractal sums over `ValueNoise`, amplitude-normalized to
+  `[0,1]`; octaves clamped to `[1,12]`. Ridged uses a squared tent for sharp crests
+- `XorShift32` - small deterministic PRNG for droplet simulation (erosion)
+
+**Determinism is load-bearing.** RenderTest regenerates its terrain from a fixed
+seed and CI hash-compares the output across runs, and every grass blade is a pure
+function of its lattice node. So: no `std::mt19937` (its stream is
+implementation-defined across standard libraries) and no float-order ambiguity —
+every value derives from integer hashing.
+
+**This header is the SOURCE OF TRUTH for the GPU mirror**,
+`Flux/Shaders/Common/Noise.slang` (`Flux_NoiseHashUInt` / `…HashCoords` / …), a
+function-for-function transcription meant to be diffed against this file side by
+side. The three integer entry points are **bit-exact** on both sides — pure u32
+shift/xor/multiply plus one exactly-representable scale — so any decision keyed
+off the hash is reproducible on the CPU for tests and tooling. `ValueNoise` /
+`FBM` are **not** claimed bit-exact (floor, FMA contraction and float modes all
+differ per target); never gate a CPU/GPU consistency check on those values.
 
 ## Key Concepts
 

@@ -864,8 +864,8 @@ void Flux_GrassImpl::RegisterDebugVariables()
 	xVars.AddFloat({ "Flux", "Grass", "WindStrength" }, m_xWind.m_fStrength, 0.0f, 10.0f);
 	xVars.AddFloat({ "Flux", "Grass", "WindYawDeg" }, m_fWindYawDeg, -180.0f, 180.0f);
 	xVars.AddBoolean({ "Flux", "Grass", "FreezeCulling" }, m_bFreezeCulling);
-	// Storage only this phase: the tile outlines belong on the gameplay-safe debug
-	// primitives channel, which the panel phase wires up.
+	// Storage only: the tile outlines belong on the gameplay-safe debug
+	// primitives channel, which is not wired to this flag yet.
 	xVars.AddBoolean({ "Flux", "Grass", "ShowTileGrid" }, m_bShowTileGrid);
 	// Live A/B on the cascade casters: it drops the shadow partitions out of the
 	// active-slot mask, so it removes the placement work as well as the two draws.

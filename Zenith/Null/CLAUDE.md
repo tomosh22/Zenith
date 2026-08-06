@@ -131,7 +131,9 @@ Null together**. A concept added to only one backend fails `Flux_BackendConforma
 A Null build must never author render content — a null backend would bake garbage
 over good assets. These stay gated on `Zenith_IsNullRenderer()`:
 
-- terrain chunk/texture bakes and grass instance rebuilds (`Zenith_TerrainEditor`),
+- terrain chunk/texture bakes and grass map rebuilds (`Zenith_TerrainEditor`;
+  `RebuildGrass` returns early because the grass coverage/type/height maps land
+  in GPU textures),
 - RenderTest's testbed asset generation,
 - Zenithmon's terrain bake + Dawnmere scene authoring.
 

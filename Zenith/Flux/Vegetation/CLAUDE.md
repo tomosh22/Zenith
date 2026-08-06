@@ -11,9 +11,11 @@ data — the CPU's whole job is to choose which TILES to dispatch and to stage t
 constants.
 
 Regeneration is affordable because a blade is a pure function of its lattice node
-(all per-blade randomness keys off `Zenith_TerrainNoise::HashCoords`), and it is
-*required* because a blade that changed identity between frames would flicker
-under TAA.
+(all per-blade randomness keys off `Flux_NoiseHashCoords` in
+`Shaders/Common/Noise.slang` — the bit-exact GPU mirror of
+`Zenith_TerrainNoise::HashCoords`, so the CPU can reproduce any hash-keyed
+decision), and it is *required* because a blade that changed identity between
+frames would flicker under TAA.
 
 The **one** exception is the [displacement field](#displacement-the-trail-map) —
 a camera-anchored trail map that decays across frames. It is deliberately not
@@ -112,7 +114,7 @@ three wrappers through `GetBladePoolBuffer` / `GetVisibleIndexBuffer` /
 |------|---------|
 | `Flux_GrassImpl.h` | `Flux_GrassImpl` declaration + the GPU-mirror constant blocks (placement/draw constants, wind block, tile record) and the pool/partition capacities |
 | `Flux_Grass.cpp` | Lifecycle, pipelines, GPU + map-texture resources, map build/quantize, CPU queries, stats, debug variables |
-| `Flux_Grass_Frame.cpp` | `SetupRenderGraph`, the per-frame gather, and the four record bodies + the cascade caster |
+| `Flux_Grass_Frame.cpp` | `SetupRenderGraph`, the per-frame gather, and the five record bodies + the cascade caster |
 | `Flux_GrassTypes.h` | **The pure half** — blade record, per-type block, lattice/tile/fade constants, tile selection, clump Voronoi, blade pose. No singleton, no device, no IO |
 | `Flux_GrassTypeTable.h/.cpp` | The unpacked AUTHORING record + the one-way `ToGPU()` projection and its serialization |
 | `Flux_Grass_Shaders.h` | The seven `Flux_ShaderDecl`s owned by the feature + `apxALL[]` |
@@ -280,10 +282,10 @@ Enable / Wind / Displacement / Shadows are `Zenith_GraphicsOptions` flags
 variables. The last two are **set once at boot** from
 `Project_SetGraphicsOptions`; flipping them mid-run is not a supported path.
 
-`m_bGrassEnabled` is read **once per frame into a latch** that the four record
-callbacks and the caster all read. The gather is what decides there is nothing to
-place, so a toggle landing between the two would leave a draw reading indirect
-args whose reset it had already skipped.
+`m_bGrassEnabled` is read **once per frame into a latch** (`m_bEnabledLatched`)
+that all five record callbacks and the caster read. The gather is what decides
+there is nothing to place, so a toggle landing between the two would leave a
+draw reading indirect args whose reset it had already skipped.
 
 ### Debug modes
 
@@ -493,12 +495,39 @@ flags would blank it anyway).
 
 ## Accepted look changes
 
-Grass is now a G-buffer writer at blade depth, which means it **receives SSAO,
-SSGI, SSR, decals and volumetric fog** like any other opaque geometry — it did
-not before, when it was a forward pass over the already-lit HDR scene.
+Blades occupy the G-buffer and the depth buffer, so every screen-space consumer
+downstream of the G-buffer block sees them. Grass therefore looks materially
+different from any capture taken while it was a forward pass over the
+already-lit HDR scene, and all of the following are **deliberate**, not
+regressions to chase:
 
-Grass is also noticeably **brighter than in any capture taken before the
-physically-grounded lighting work**. The old forward term was roughly 7x
-underlit relative to the deferred pipeline; going through `DeferredShading`
-removed that discrepancy. The brightness jump is EXPECTED and correct — do not
-re-tune the type colours to match an old screenshot.
+- **SSAO both ways.** Blades write depth and normals ahead of the SSAO pass, so
+  they receive occlusion *and* cast it — onto the ground, and onto each other in
+  dense patches.
+- **SSGI and SSR include grass.** The rays march the same depth pyramid the
+  blades wrote, so grass occludes them and shows up in reflections and in the
+  bounce. (SSR samples raw albedo by design; a reflected blade is its albedo, not
+  its lit colour.)
+- **Deferred decals land on blades, and there is no way to exclude them.** Decal
+  Apply is a depth-driven volume test with no per-surface opt-out, so a decal
+  volume containing grass projects onto it exactly as onto terrain. Masking
+  vegetation out (a stencil bit, or a G-buffer surface-type tag) is future work —
+  see `Decals/CLAUDE.md`.
+- **Volumetric fog composites at BLADE depth**, not at the ground behind the
+  blade. Near grass therefore fogs less than the terrain it stands on.
+- **Grass is brighter than in any capture taken before the physically-grounded
+  lighting work.** The old forward term was roughly 7x underlit relative to the
+  deferred pipeline; going through `DeferredShading` removed the discrepancy. The
+  brightness jump is EXPECTED and correct — do not re-tune the type colours to
+  match an old screenshot.
+- **`GBUFFER_SHADING_SUBSURFACE` is borrowed, and its constants are tuned for
+  SKIN.** `Flux_DeferredShading.slang`'s subsurface branch wraps the diffuse past
+  the terminator and tints the graze warm-red (0.80, 0.32, 0.24) — plausible on a
+  backlit blade, but it is not a foliage transmission model and nobody fitted it
+  to one. Accepted as-is.
+- **A dedicated `GBUFFER_SHADING_FOLIAGE` is the documented future step.** It
+  would carry green-shifted transmission constants and give decals/SSR a
+  surface-type bit to test, retiring both the borrowed skin tint and the
+  no-exclusion decal behaviour above. There is no such shading model today: the
+  set is `DEFAULT_LIT` / `UNLIT` / `SUBSURFACE` (`Shaders/Common/GBuffer.slang`),
+  and adding one is a G-buffer contract change, not a shader tweak.

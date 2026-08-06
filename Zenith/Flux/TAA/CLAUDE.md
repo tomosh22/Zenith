@@ -109,13 +109,14 @@ Written into the optional 5th MRT only inside the 5-attachment G-buffer pass, by
 `*_ToGBufferVelocity` pipeline variants selected at record time when the latch is on. The shared
 4-target `GBufferOut` (Skybox / Primitives) is never touched.
 
-Four deferred-motion sources, each captured exactly once the temporal resolve made them observable:
+Five deferred-motion sources, each captured exactly once the temporal resolve made them observable:
 | Source | How prev world position is reconstructed |
 |---|---|
 | Camera + static | prev world == current world; motion is pure camera reprojection |
 | Rigid / moving bodies, VAT foliage | `PrevTransforms[objectIndex] * currentLocalPos` (`Flux_PrevTransformCache`, index-locked to the GPU-scene objects) |
 | **Skeletal pose (Stage 4.3b)** | prev pose from a **positions-only** second skinning dispatch using the **previous** bone palette, then `PrevTransforms * prevSkinnedLocalPos` |
 | Terrain | two extra VS mat-muls on the world-space verts (`Flux_Terrain_ToGBufferVelocity`) |
+| Grass blades | the blade pose **rebuilt** against the previous frame's wind block (`GrassPrevWindConstants`, the only prev-frame state the grass VS reads) — a blade has no cached transform, so `Flux_Grass_ToGBufferVelocity` re-runs the shared pose builder rather than reprojecting a static position. Correct only because a blade keeps its identity across frames: it is regenerated every frame as a pure function of its lattice node, so last frame's record described the same blade |
 
 ### Skinned prev-pose indexing (⚠ read before touching it)
 
