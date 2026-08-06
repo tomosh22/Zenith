@@ -26,6 +26,13 @@ namespace
 		Done,
 	};
 
+	// Frames after a load is ISSUED at which the scheduled count is read. The count
+	// is a function of the camera, and the first load and the reload must therefore
+	// sample it at the same point in the follow camera's (deterministic, input-free)
+	// settle — not merely "as soon as it is non-zero", which would compare two
+	// different camera poses and break the exact-equality contract below.
+	constexpr int iCOUNT_SAMPLE_FRAMES = 30;
+
 	GrassTestPhase g_eGrassPhase = GrassTestPhase::Done;
 	int g_iGrassPhaseFrames = 0;
 	bool g_bGrassPrerequisitesPresent = false;
@@ -82,7 +89,10 @@ namespace
 		g_bGrassPassed = false;
 	}
 
-	bool ValidateAppliedGrass(ZM_TerrainGrass& xComponent, u_int& uBladeCountOut)
+	// Everything provable AT APPLY TIME. The scheduled-instance count is NOT here:
+	// the engine publishes it from the frame's gather, which has not run against the
+	// freshly built maps yet, so each caller reads it a frame later.
+	bool ValidateAppliedGrass(ZM_TerrainGrass& xComponent)
 	{
 		Flux_GrassImpl& xGrass = g_xEngine.Grass();
 		if (!xComponent.HasCPUMap())
@@ -99,31 +109,21 @@ namespace
 			FailGrassTest("Dawnmere CPU grass map does not match the exact 1024-square contract");
 			return false;
 		}
-		if (!xGrass.HasDensityMap())
+		if (!xGrass.HasCoverageMap())
 		{
-			FailGrassTest("Dawnmere grass component did not install the Flux density map");
+			FailGrassTest("Dawnmere grass component did not install the Flux coverage map");
 			return false;
 		}
-		if (xGrass.m_uDensityMapWidth != ZM_GrassDensityMap::uEXPECTED_WIDTH)
+		// The engine's coverage map is square, so ONE size pins both axes.
+		if (xGrass.GetCoverageMapSize() != ZM_GrassDensityMap::uEXPECTED_WIDTH)
 		{
-			FailGrassTest("Flux grass density-map width is not 1024");
+			FailGrassTest("Flux grass coverage-map size is not 1024");
 			return false;
 		}
-		if (xGrass.m_uDensityMapHeight != ZM_GrassDensityMap::uEXPECTED_HEIGHT)
-		{
-			FailGrassTest("Flux grass density-map height is not 1024");
-			return false;
-		}
-		if (xGrass.m_xDensityMap.GetSize()
-			!= ZM_GrassDensityMap::uEXPECTED_WIDTH * ZM_GrassDensityMap::uEXPECTED_HEIGHT)
-		{
-			FailGrassTest("Flux grass density-map copied pixel count is not 1,048,576");
-			return false;
-		}
-		if (std::fabs(xGrass.m_fDensityMapWorldSize - ZM_GrassDensityMap::fWORLD_SIZE)
+		if (std::fabs(xGrass.GetCoverageWorldSize() - ZM_GrassDensityMap::fWORLD_SIZE)
 			> 0.0001f)
 		{
-			FailGrassTest("Flux grass density-map world size is not 4096");
+			FailGrassTest("Flux grass coverage-map world size is not 4096");
 			return false;
 		}
 		if (std::fabs(xComponent.GetAppliedDensityScale() - 0.70f) > 0.0001f)
@@ -131,20 +131,9 @@ namespace
 			FailGrassTest("Dawnmere generation did not apply density scale 0.70");
 			return false;
 		}
-		uBladeCountOut = xComponent.GetGeneratedBladeCount();
-		if (uBladeCountOut == 0)
+		if (!xGrass.IsBuilt())
 		{
-			FailGrassTest("Dawnmere grass regeneration produced zero blades");
-			return false;
-		}
-		if (xGrass.GetGeneratedInstanceCount() != uBladeCountOut)
-		{
-			FailGrassTest("captured grass blade count differs from the generated instance array");
-			return false;
-		}
-		if (!xGrass.HasGeneratedInstances() || !xGrass.HasUploadedInstances())
-		{
-			FailGrassTest("Dawnmere grass instances were not generated and uploaded");
+			FailGrassTest("Dawnmere grass maps were not built");
 			return false;
 		}
 		return true;
@@ -209,14 +198,27 @@ static bool Step_ZMGrassRegeneration(int)
 		{
 			return true;
 		}
-		if (!ValidateAppliedGrass(*pxComponent, g_uFirstBladeCount))
+		if (!ValidateAppliedGrass(*pxComponent))
 		{
 			return false;
 		}
 
-		// Proven generated + uploaded; prove grass is DRAWN from the authored
-		// spawn camera before the reload path (closes the generated-but-invisible
-		// gap where a blade-count check passed while zero blades reached screen).
+		// One gather behind the apply: the count this Step reads was published by
+		// the PREVIOUS frame's gather, so the frame that applied the build still
+		// reports zero. The 360-frame phase deadline above bounds the wait.
+		if (g_iGrassPhaseFrames < iCOUNT_SAMPLE_FRAMES)
+		{
+			return true;
+		}
+		g_uFirstBladeCount = g_xEngine.Grass().GetScheduledInstanceCount();
+		if (g_uFirstBladeCount == 0u)
+		{
+			return true;
+		}
+
+		// Proven built + scheduled; prove grass is DRAWN from the authored spawn
+		// camera before the reload path (closes the scheduled-but-invisible gap
+		// where a count check passed while zero blades reached screen).
 		g_eGrassPhase = GrassTestPhase::SpawnVisible;
 		g_iGrassPhaseFrames = 0;
 		return true;
@@ -224,10 +226,12 @@ static bool Step_ZMGrassRegeneration(int)
 
 	case GrassTestPhase::SpawnVisible:
 	{
-		// ExecuteRender recomputes the visible blade count during Render, one
-		// frame behind this Update-phase Step, so allow a bounded settle window
-		// for the follow camera to frame the surrounding lawn.
-		if (g_xEngine.Grass().GetVisibleBladeCount() > 0)
+		// The blade count is a GPU quantity: the readback downloads the indirect
+		// args the placement CS filled during Render, one frame behind this
+		// Update-phase Step, so allow a bounded settle window for the follow
+		// camera to frame the surrounding lawn. This is windowed-only truth,
+		// which is exactly what m_bRequiresGraphics below gates the test on.
+		if (g_xEngine.Grass().ReadbackVisibleBladeCount() > 0)
 		{
 			g_eGrassPhase = GrassTestPhase::Reload;
 			g_iGrassPhaseFrames = 0;
@@ -237,7 +241,7 @@ static bool Step_ZMGrassRegeneration(int)
 		if (g_iGrassPhaseFrames > 60)
 		{
 			FailGrassTest(
-				"Dawnmere grass generated + uploaded but zero blades were visible from the spawn camera");
+				"Dawnmere grass was built + scheduled but zero blades were visible from the spawn camera");
 			return false;
 		}
 		return true;
@@ -246,8 +250,9 @@ static bool Step_ZMGrassRegeneration(int)
 	case GrassTestPhase::Reload:
 	{
 		// SINGLE loads are deferred; do not accidentally inspect the outgoing
-		// instance before its OnDestroy/new-scene replacement has completed.
-		if (g_iGrassPhaseFrames < 5)
+		// instance before its OnDestroy/new-scene replacement has completed. The
+		// same sample point as the first load, for the same camera reason.
+		if (g_iGrassPhaseFrames < iCOUNT_SAMPLE_FRAMES)
 		{
 			return true;
 		}
@@ -266,14 +271,22 @@ static bool Step_ZMGrassRegeneration(int)
 			return true;
 		}
 
-		u_int uReloadedBladeCount = 0;
-		if (!ValidateAppliedGrass(*pxComponent, uReloadedBladeCount))
+		if (!ValidateAppliedGrass(*pxComponent))
 		{
 			return false;
 		}
+
+		// Same one-gather lag as the first load; the phase deadline bounds it.
+		const u_int uReloadedBladeCount = g_xEngine.Grass().GetScheduledInstanceCount();
+		if (uReloadedBladeCount == 0u)
+		{
+			return true;
+		}
+		// EXACT: the tile scheduler is a pure function of camera + maps, so a
+		// reload that re-authored the same world must reproduce the same schedule.
 		if (uReloadedBladeCount != g_uFirstBladeCount)
 		{
-			FailGrassTest("Dawnmere reload changed or accumulated the generated blade count");
+			FailGrassTest("Dawnmere reload changed or accumulated the scheduled instance count");
 			return false;
 		}
 
@@ -292,27 +305,29 @@ static bool Step_ZMGrassRegeneration(int)
 		{
 			return true;
 		}
-		if (g_xEngine.Grass().HasDensityMap())
+		if (g_xEngine.Grass().HasCoverageMap())
 		{
-			FailGrassTest("FrontEnd retained Dawnmere's Flux grass density map");
+			FailGrassTest("FrontEnd retained Dawnmere's Flux grass coverage map");
 			return false;
 		}
-		if (g_xEngine.Grass().GetActiveChunkCount() != 0
-			|| g_xEngine.Grass().GetVisibleBladeCount() != 0)
+		// The reset CS runs on every enabled frame regardless of build state, so a
+		// cleared world zeroes the indirect args and the readback is real zero
+		// rather than the last populated frame's leftovers.
+		if (g_xEngine.Grass().GetVisibleTileCount() != 0
+			|| g_xEngine.Grass().ReadbackVisibleBladeCount() != 0)
 		{
-			FailGrassTest("FrontEnd retained active or visible Dawnmere grass chunks");
+			FailGrassTest("FrontEnd retained visible Dawnmere grass tiles or blades");
 			return false;
 		}
-		if (g_xEngine.Grass().GetChunkCount() != 0)
+		if (g_xEngine.Grass().GetTileCount() != 0)
 		{
-			FailGrassTest("FrontEnd retained Dawnmere grass chunk state");
+			FailGrassTest("FrontEnd retained Dawnmere grass tile state");
 			return false;
 		}
-		if (g_xEngine.Grass().GetGeneratedInstanceCount() != 0
-			|| g_xEngine.Grass().HasGeneratedInstances()
-			|| g_xEngine.Grass().HasUploadedInstances())
+		if (g_xEngine.Grass().GetScheduledInstanceCount() != 0
+			|| g_xEngine.Grass().IsBuilt())
 		{
-			FailGrassTest("FrontEnd retained generated or uploaded Dawnmere grass instances");
+			FailGrassTest("FrontEnd retained a built or scheduled Dawnmere grass state");
 			return false;
 		}
 		g_bGrassPassed = true;
@@ -439,9 +454,9 @@ static bool Step_ZMTerrainGrassResumeRegen(int)
 	switch (g_eResumePhase)
 	{
 	case ResumePhase::AwaitGrass:
-		if (g_xEngine.Grass().GetGeneratedInstanceCount() > 0u)
+		if (g_xEngine.Grass().GetScheduledInstanceCount() > 0u)
 		{
-			g_uResumeBaselineBlades = g_xEngine.Grass().GetGeneratedInstanceCount();
+			g_uResumeBaselineBlades = g_xEngine.Grass().GetScheduledInstanceCount();
 
 			// Stand in for battle entry: clear the engine-owned singleton directly.
 			// The component's m_bGrassApplied latch survives this, which is exactly
@@ -462,7 +477,7 @@ static bool Step_ZMTerrainGrassResumeRegen(int)
 	case ResumePhase::ConfirmCleared:
 		// Capture the cleared count BEFORE driving the restore, so a restore that
 		// silently never ran cannot be mistaken for a clear that never landed.
-		g_uResumeAfterClearBlades = g_xEngine.Grass().GetGeneratedInstanceCount();
+		g_uResumeAfterClearBlades = g_xEngine.Grass().GetScheduledInstanceCount();
 
 		// Drive the seam across every LOADED scene (not just the active one): the
 		// battle path this stands in for leaves the overworld loaded-but-paused
@@ -481,7 +496,7 @@ static bool Step_ZMTerrainGrassResumeRegen(int)
 		return true;
 
 	case ResumePhase::Capture:
-		g_uResumeAfterRegenBlades = g_xEngine.Grass().GetGeneratedInstanceCount();
+		g_uResumeAfterRegenBlades = g_xEngine.Grass().GetScheduledInstanceCount();
 		g_eResumePhase = ResumePhase::Done;
 		return false;
 

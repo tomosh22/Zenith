@@ -63,8 +63,9 @@ void Flux_TranslucencyImpl::BuildPipelines()
 	xSpec.m_eDepthStencilFormat = DEPTH_FORMAT;
 	xSpec.m_pxShader = &m_xShader;
 	xSpec.m_xVertexInputDesc = xVertexDesc;
-	// Depth-test against the opaque scene; never write depth (the graph binds
-	// the scene depth READ-ONLY for this pass — Grass pattern).
+	// Depth-test against the opaque scene; never write depth. The pass declares
+	// the scene depth READ_DEPTH, so the graph binds it as a READ-ONLY depth
+	// attachment — a depth write here would target a read-only attachment.
 	xSpec.m_bDepthTestEnabled = true;
 	xSpec.m_bDepthWriteEnabled = false;
 	xSpec.m_eDepthCompareFunc = DEPTH_COMPARE_FUNC_LESSEQUAL;
@@ -129,8 +130,9 @@ void Flux_TranslucencyImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
 	// Forward pass over the lit HDR scene — registered between SSAO and Fog
 	// in the setup walk (Flux_FeatureRegistry): glass must not be darkened by
-	// SSAO's post-hoc multiply, and fog must composite over it. READ_DEPTH
-	// binds the scene depth as a READ-ONLY depth attachment (Grass pattern).
+	// SSAO's post-hoc multiply, and fog must composite over it. READ_DEPTH is
+	// what gives the pass a depth attachment at all — the graph infers it from
+	// this read and binds the scene depth READ-ONLY (InferPassAttachments).
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
 	const Flux_PassHandle xPass = xGraph.AddPass("Translucency", ExecuteTranslucency)
 		.Prepare([](void* p){ g_xEngine.Translucency().GatherDrawPacket(p); })

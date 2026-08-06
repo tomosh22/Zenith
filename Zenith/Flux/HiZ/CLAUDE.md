@@ -10,8 +10,10 @@ The Hi-Z (Hierarchical Z-Buffer) system generates a depth pyramid from the main 
 
 The HiZ generation pass declares `Reads(scene depth)` and `Writes(HiZ chain)`. Because the render graph topo-sorts on declared dependencies, it automatically runs:
 
-- **after** any pass that writes to scene depth (terrain, opaque static meshes, animated meshes, foliage)
+- **after** any pass that writes to scene depth (terrain, opaque static meshes, animated meshes, instanced foliage, grass)
 - **before** any pass that reads the HiZ chain (SSR raymarch, SSGI raymarch, future occlusion-culling)
+
+Grass blades reach the depth buffer through the `"Grass GBuffer"` pass: they are generated on the GPU every frame and write depth like any other opaque geometry, so the chain built here already includes them. HiZ is **not** an input to grass — the placement compute shader culls whole tiles against CPU-supplied frusta and knows nothing about occlusion. Per-blade HiZ culling is a plausible future hook rather than current behaviour, and would need the HiZ chain declared as a read by the placement pass (transients are deliberately excluded from the graph's cross-frame cyclic seeding, so a previous-frame chain is not available for free).
 
 There is no explicit ordering enum — the dependency declarations alone produce the correct placement.
 

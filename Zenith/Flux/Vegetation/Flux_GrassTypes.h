@@ -36,6 +36,8 @@
 #include "Maths/Zenith_Noise.h"
 #include "Maths/Zenith_FrustumCulling.h"
 
+#include <bit>   // std::bit_cast — the ONLY way to classify a float here; see below
+
 //=============================================================================
 // Bit packing. Every helper is pure and constexpr where the caller may need it
 // in a default member initialiser.
@@ -46,6 +48,26 @@
 constexpr float Flux_GrassSaturate(float fValue)
 {
 	return fValue < 0.0f ? 0.0f : (fValue > 1.0f ? 1.0f : fValue);
+}
+
+// Is this float finite? INTEGER-ONLY, and it must stay that way.
+//
+// Every runtime FLOAT test for a NaN or an infinity — `f != f`, std::isnan,
+// std::isfinite, a comparison against a huge magnitude — is folded to "it's fine"
+// by the float optimizations this engine builds with: the compiler is permitted
+// to assume those values never occur, so the test it is asked to emit is one it
+// has already proved cannot fire. That is not a theoretical hazard; it is what
+// let an authored NaN walk straight through Flux_GrassTypeTable::Validate.
+// Arithmetic on the BIT PATTERN carries no such assumption.
+//
+// IEEE-754 binary32: an all-ones exponent field is a NaN (non-zero mantissa) or
+// an infinity (zero mantissa); every other exponent is finite. Sign is
+// irrelevant, so -inf classifies exactly like +inf.
+constexpr u_int uFLUX_GRASS_FLOAT_EXPONENT_MASK = 0x7F800000u;
+
+inline bool Flux_GrassIsFiniteFloat(float fValue)
+{
+	return (std::bit_cast<u_int>(fValue) & uFLUX_GRASS_FLOAT_EXPONENT_MASK) != uFLUX_GRASS_FLOAT_EXPONENT_MASK;
 }
 
 // packUnorm2x16 semantics, matching GLSL/Slang exactly: each component is
@@ -101,27 +123,37 @@ inline Zenith_Maths::Vector3 Flux_GrassUnpackColourRGB(u_int uPacked)
 		static_cast<float>((uPacked >> 16u) & 0xFFu) * (1.0f / 255.0f));
 }
 
-// The blade record's typeFlags slot.
+// The blade record's typeFlags slot. Bits 10-11 carry the blade's LATTICE CLASS:
+// the vertex stage applies the class fade and cannot recover the class from posWS
+// (the base is jittered and then pulled toward its clump centre), and the 64-byte
+// record has no spare field. Bits 12-15 are reserved.
 namespace Flux_GrassTypeFlags
 {
-	constexpr u_int uTYPE_INDEX_MASK = 0x000000FFu;   // bits 0-7
-	constexpr u_int uFOLDED_BIT      = 0x00000100u;   // bit 8
-	constexpr u_int uLO_MESH_BIT     = 0x00000200u;   // bit 9
-	constexpr u_int uFS_HASH_SHIFT   = 16u;           // bits 16-31
-	constexpr u_int uFS_HASH_MASK    = 0x0000FFFFu;
+	constexpr u_int uTYPE_INDEX_MASK    = 0x000000FFu;   // bits 0-7
+	constexpr u_int uFOLDED_BIT         = 0x00000100u;   // bit 8
+	constexpr u_int uLO_MESH_BIT        = 0x00000200u;   // bit 9
+	constexpr u_int uLATTICE_CLASS_SHIFT = 10u;          // bits 10-11
+	constexpr u_int uLATTICE_CLASS_MASK  = 0x00000003u;
+	constexpr u_int uFS_HASH_SHIFT      = 16u;           // bits 16-31
+	constexpr u_int uFS_HASH_MASK       = 0x0000FFFFu;
 }
 
-constexpr u_int Flux_GrassPackTypeFlags(u_int uTypeIndex, bool bFolded, bool bLOMesh, u_int uFragmentHash)
+constexpr u_int Flux_GrassPackTypeFlags(u_int uTypeIndex, bool bFolded, bool bLOMesh, u_int uLatticeClass, u_int uFragmentHash)
 {
 	return (uTypeIndex & Flux_GrassTypeFlags::uTYPE_INDEX_MASK)
 		| (bFolded ? Flux_GrassTypeFlags::uFOLDED_BIT : 0u)
 		| (bLOMesh ? Flux_GrassTypeFlags::uLO_MESH_BIT : 0u)
+		| ((uLatticeClass & Flux_GrassTypeFlags::uLATTICE_CLASS_MASK) << Flux_GrassTypeFlags::uLATTICE_CLASS_SHIFT)
 		| ((uFragmentHash & Flux_GrassTypeFlags::uFS_HASH_MASK) << Flux_GrassTypeFlags::uFS_HASH_SHIFT);
 }
 
 constexpr u_int Flux_GrassTypeFlagsIndex(u_int uFlags)  { return uFlags & Flux_GrassTypeFlags::uTYPE_INDEX_MASK; }
 constexpr bool  Flux_GrassTypeFlagsIsFolded(u_int uFlags) { return (uFlags & Flux_GrassTypeFlags::uFOLDED_BIT) != 0u; }
 constexpr bool  Flux_GrassTypeFlagsIsLOMesh(u_int uFlags) { return (uFlags & Flux_GrassTypeFlags::uLO_MESH_BIT) != 0u; }
+constexpr u_int Flux_GrassTypeFlagsLatticeClass(u_int uFlags)
+{
+	return (uFlags >> Flux_GrassTypeFlags::uLATTICE_CLASS_SHIFT) & Flux_GrassTypeFlags::uLATTICE_CLASS_MASK;
+}
 constexpr u_int Flux_GrassTypeFlagsFragmentHash(u_int uFlags)
 {
 	return (uFlags >> Flux_GrassTypeFlags::uFS_HASH_SHIFT) & Flux_GrassTypeFlags::uFS_HASH_MASK;
@@ -284,6 +316,341 @@ static_assert(Flux_GrassConfig::fLO_TILE_SIZE / Flux_GrassConfig::fLO_LATTICE_ST
 	"a LO tile must be exactly uTILE_CELLS lattice cells across — same dispatch shape as HI");
 static_assert(Flux_GrassConfig::fLO_TILE_SIZE == Flux_GrassConfig::fHI_TILE_SIZE * 2.0f,
 	"a LO tile must cover exactly four HI tiles, or the coverage test below is wrong");
+
+//=============================================================================
+// Blade mesh index table.
+//
+// There is NO vertex buffer: the blade draw is INDEXED, so SV_VertexID delivers
+// the fetched index VALUE, which is the logical vertex id 0..14. The uint32 index
+// buffer the host uploads must therefore be this table VERBATIM.
+//
+// This is a transcription of kauGRASS_INDEX_TABLE in
+// Zenith/Flux/Shaders/Vegetation/Flux_GrassCommon.slang, which is the
+// AUTHORITATIVE copy — as it is for the per-vertex height/side/piece tables
+// mirrored below it. Entry order, the piece-A/piece-B split and the trailing LO
+// strip must be diffed against that file, not re-derived: the first/count pairs
+// below address ranges INSIDE this table, so a reordering here silently draws
+// different triangles rather than failing to compile.
+//=============================================================================
+
+// One logical blade vertex, before any pose is built from it. Three fields, one
+// per shader-side table (see axBLADE_VERTEX_TABLE below).
+struct Flux_GrassBladeVertex
+{
+	float  m_fU;       // uniform height fraction, PRE-distribution remap
+	float  m_fSide;    // -1 left edge, +1 right edge, 0 at the tip (which is on the spine)
+	u_int8 m_uPiece;   // 0 = piece A (lower), 1 = piece B (upper — the half that folds)
+};
+
+namespace Flux_GrassConfig
+{
+	constexpr u_int uBLADE_VERTEX_COUNT = 15u;
+	constexpr u_int uBLADE_INDEX_COUNT  = 48u;
+
+	constexpr u_int uBLADE_HI_FIRST_INDEX = 0u;
+	constexpr u_int uBLADE_HI_INDEX_COUNT = 33u;   // piece A (18) + piece B (15)
+	constexpr u_int uBLADE_LO_FIRST_INDEX = 33u;
+	constexpr u_int uBLADE_LO_INDEX_COUNT = 15u;   // 2 quads + tip, over a subset of the same verts
+
+	// Per-vertex record. Transcription of kafGRASS_VERT_U / kafGRASS_VERT_SIDE /
+	// kauGRASS_VERT_PIECE in Flux_GrassCommon.slang (AUTHORITATIVE — one array per
+	// field there, one array of records here; the CONTENT is what must be diffed).
+	//
+	// m_fU is the UNIFORM height fraction, before the per-type distribution exponent
+	// remaps it (Flux_GrassRemapHeightT). Piece A covers 0 -> 0.75 in three equal
+	// steps and piece B covers 0.75 -> 1 in three more, so the upper quarter carries
+	// as many rows as the lower three quarters.
+	//
+	// Vertices 6/7 (piece A's top edge) and 8/9 (piece B's seam row) sit at the SAME
+	// u and the SAME side: unfolded they COINCIDE and the two pieces weld into one
+	// surface. Folding rigid-offsets piece B alone, which is what separates them —
+	// see Flux_GrassWeldOffset.
+	constexpr Flux_GrassBladeVertex axBLADE_VERTEX_TABLE[uBLADE_VERTEX_COUNT] =
+	{
+		// --- piece A: 4 rows x 2 columns ---
+		{ 0.0f,        -1.0f, 0u }, { 0.0f,        1.0f, 0u },   // row 0 (base)
+		{ 0.25f,       -1.0f, 0u }, { 0.25f,       1.0f, 0u },   // row 1
+		{ 0.5f,        -1.0f, 0u }, { 0.5f,        1.0f, 0u },   // row 2
+		{ 0.75f,       -1.0f, 0u }, { 0.75f,       1.0f, 0u },   // row 3 (A's top edge)
+		// --- piece B: 3 rows x 2 columns + the tip ---
+		{ 0.75f,       -1.0f, 1u }, { 0.75f,       1.0f, 1u },   // seam row (coincides with row 3)
+		{ 0.83333333f, -1.0f, 1u }, { 0.83333333f, 1.0f, 1u },   // row 1
+		{ 0.91666667f, -1.0f, 1u }, { 0.91666667f, 1.0f, 1u },   // row 2
+		{ 1.0f,         0.0f, 1u },                              // tip, on the spine
+	};
+
+	constexpr u_int auBLADE_INDEX_TABLE[uBLADE_INDEX_COUNT] =
+	{
+		// --- piece A, firstIndex 0, 18 indices ---
+		 0u,  2u,  1u,    1u,  2u,  3u,
+		 2u,  4u,  3u,    3u,  4u,  5u,
+		 4u,  6u,  5u,    5u,  6u,  7u,
+		// --- piece B, continues the HI range to 33 indices ---
+		 8u, 10u,  9u,    9u, 10u, 11u,
+		10u, 12u, 11u,   11u, 12u, 13u,
+		12u, 14u, 13u,
+		// --- LO strip, firstIndex 33, 15 indices ---
+		 0u,  4u,  1u,    1u,  4u,  5u,
+		 4u,  8u,  5u,    5u,  8u,  9u,
+		 8u, 14u,  9u,
+	};
+}
+
+static_assert(Flux_GrassConfig::uBLADE_HI_FIRST_INDEX + Flux_GrassConfig::uBLADE_HI_INDEX_COUNT
+	== Flux_GrassConfig::uBLADE_LO_FIRST_INDEX,
+	"the LO strip must start exactly where the HI range ends — the two ranges tile the table");
+static_assert(Flux_GrassConfig::uBLADE_LO_FIRST_INDEX + Flux_GrassConfig::uBLADE_LO_INDEX_COUNT
+	== Flux_GrassConfig::uBLADE_INDEX_COUNT,
+	"the HI + LO ranges must consume the whole index table");
+static_assert(sizeof(Flux_GrassConfig::auBLADE_INDEX_TABLE) / sizeof(u_int) == Flux_GrassConfig::uBLADE_INDEX_COUNT,
+	"the mirrored index table must be exactly uBLADE_INDEX_COUNT entries");
+
+// A transcription typo that lands out of range would index past the vertex tables
+// on the GPU, which reads as garbage geometry rather than a crash.
+constexpr bool Flux_GrassBladeIndexTableInRange()
+{
+	for (u_int u = 0; u < Flux_GrassConfig::uBLADE_INDEX_COUNT; u++)
+	{
+		if (Flux_GrassConfig::auBLADE_INDEX_TABLE[u] >= Flux_GrassConfig::uBLADE_VERTEX_COUNT)
+		{
+			return false;
+		}
+	}
+	return true;
+}
+static_assert(Flux_GrassBladeIndexTableInRange(),
+	"every blade index must address one of the uBLADE_VERTEX_COUNT logical vertices");
+
+// A transcribed u outside [0,1], a side that is not an edge or the spine, or a
+// piece id above 1 all still compile and all still pose a blade — just the wrong
+// one, everywhere, forever.
+constexpr bool Flux_GrassBladeVertexTableIsWellFormed()
+{
+	for (u_int u = 0; u < Flux_GrassConfig::uBLADE_VERTEX_COUNT; u++)
+	{
+		const Flux_GrassBladeVertex& xVertex = Flux_GrassConfig::axBLADE_VERTEX_TABLE[u];
+		if (xVertex.m_fU < 0.0f || xVertex.m_fU > 1.0f)
+		{
+			return false;
+		}
+		if (xVertex.m_fSide != -1.0f && xVertex.m_fSide != 1.0f && xVertex.m_fSide != 0.0f)
+		{
+			return false;
+		}
+		if (xVertex.m_uPiece > 1u)
+		{
+			return false;
+		}
+	}
+	return true;
+}
+static_assert(Flux_GrassBladeVertexTableIsWellFormed(),
+	"the mirrored vertex table must stay in [0,1] height, +/-1 or 0 side, piece 0 or 1");
+
+//=============================================================================
+// Blade pose. CPU mirror of Flux_GrassBuildBladeVertex in
+// Zenith/Flux/Shaders/Vegetation/Flux_GrassCommon.slang, which is AUTHORITATIVE:
+// the functions below are transcribed from it statement for statement so the two
+// can be diffed. Float agreement across the two languages is NOT claimed (FMA
+// contraction and fast-math modes differ per target); the FORMULAS are.
+//
+// The pose is factored the same way the shader factors it — frame, then control
+// points, then the curve — because that is the only split at which the CPU can
+// evaluate it without a view matrix. Everything downstream of the curve in the
+// shader (screen-space thickening, the normal blend) needs a projection and is
+// deliberately NOT mirrored here.
+//=============================================================================
+
+// Uniform row parameter -> height fraction. An exponent > 1 shortens the steps
+// near the tip, so the curvature the Bezier puts there is actually tessellated.
+inline float Flux_GrassRemapHeightT(float fU, float fDistributionPow)
+{
+	return powf(Flux_GrassSaturate(fU), 1.0f / glm::max(fDistributionPow, 0.01f));
+}
+
+inline Zenith_Maths::Vector3 Flux_GrassBezierPoint(const Zenith_Maths::Vector3& xP0, const Zenith_Maths::Vector3& xP1,
+	const Zenith_Maths::Vector3& xP2, const Zenith_Maths::Vector3& xP3, float fT)
+{
+	const float fInv = 1.0f - fT;
+	return fInv * fInv * fInv * xP0
+		+ 3.0f * fInv * fInv * fT * xP1
+		+ 3.0f * fInv * fT * fT * xP2
+		+ fT * fT * fT * xP3;
+}
+
+inline Zenith_Maths::Vector3 Flux_GrassBezierTangent(const Zenith_Maths::Vector3& xP0, const Zenith_Maths::Vector3& xP1,
+	const Zenith_Maths::Vector3& xP2, const Zenith_Maths::Vector3& xP3, float fT)
+{
+	const float fInv = 1.0f - fT;
+	return 3.0f * fInv * fInv * (xP1 - xP0)
+		+ 6.0f * fInv * fT * (xP2 - xP1)
+		+ 3.0f * fT * fT * (xP3 - xP2);
+}
+
+// The blade's local frame: facing is the direction it leans and bends toward,
+// side is the width axis, grow is the root growth direction after tilt.
+struct Flux_GrassBladeFrame
+{
+	Zenith_Maths::Vector3 m_xFacing{ 0.0f, 0.0f, 1.0f };
+	Zenith_Maths::Vector3 m_xSide{ 1.0f, 0.0f, 0.0f };
+	Zenith_Maths::Vector3 m_xGrow{ 0.0f, 1.0f, 0.0f };
+};
+
+inline Flux_GrassBladeFrame Flux_GrassMakeBladeFrame(const Zenith_Maths::Vector2& xFacingXZ, float fTiltRad)
+{
+	// The 1e-5 nudge is the shader's, not a CPU-side guard: a zero facing would
+	// normalize to NaN and the two sides must degenerate identically.
+	const Zenith_Maths::Vector2 xFacing2 = glm::normalize(xFacingXZ + Zenith_Maths::Vector2(1.0e-5f, 0.0f));
+	const Zenith_Maths::Vector3 xUp(0.0f, 1.0f, 0.0f);
+
+	Flux_GrassBladeFrame xFrame;
+	xFrame.m_xFacing = Zenith_Maths::Vector3(xFacing2.x, 0.0f, xFacing2.y);
+	xFrame.m_xSide = glm::normalize(glm::cross(xUp, xFrame.m_xFacing));
+	xFrame.m_xGrow = glm::normalize(xUp * cosf(fTiltRad) + xFrame.m_xFacing * sinf(fTiltRad));
+	return xFrame;
+}
+
+// The four cubic control points the spine is swept along.
+struct Flux_GrassBladeCurve
+{
+	Zenith_Maths::Vector3 m_xP0{ 0.0f };
+	Zenith_Maths::Vector3 m_xP1{ 0.0f };
+	Zenith_Maths::Vector3 m_xP2{ 0.0f };
+	Zenith_Maths::Vector3 m_xP3{ 0.0f };
+};
+
+// xWindTip is the tip deflection in METRES (the shader's windDir * windGain, where
+// the gain already carries the type's wind response and stiffness). It enters P2 at
+// 4/9 = (2/3)^2 — the deflection weighted by height squared, which is what keeps the
+// blade's base still while its tip travels.
+inline Flux_GrassBladeCurve Flux_GrassBuildBladeCurve(const Zenith_Maths::Vector3& xRoot,
+	const Flux_GrassBladeFrame& xFrame, float fHeight, float fBend, float fSideCurve,
+	const Zenith_Maths::Vector3& xWindTip)
+{
+	Flux_GrassBladeCurve xCurve;
+	xCurve.m_xP0 = xRoot;
+	xCurve.m_xP1 = xRoot + xFrame.m_xGrow * (fHeight * (1.0f / 3.0f));
+	xCurve.m_xP2 = xRoot + xFrame.m_xGrow * (fHeight * (2.0f / 3.0f))
+		+ xFrame.m_xFacing * (fBend * fHeight)
+		+ xFrame.m_xSide * (fSideCurve * fHeight)
+		+ xWindTip * (4.0f / 9.0f);
+	xCurve.m_xP3 = xRoot + xFrame.m_xGrow * fHeight + xWindTip;
+	return xCurve;
+}
+
+// The rigid FOLD offset, in the blade's own frame: x = metres along
+// Flux_GrassBladeFrame::m_xFacing, y = metres along world +Y. Piece A never moves,
+// which is exactly why an unfolded blade welds at the seam and a folded one breaks
+// there instead of shearing.
+struct Flux_GrassFoldOffset
+{
+	float m_fAlongFacing = 0.0f;
+	float m_fAlongUp = 0.0f;
+};
+
+// Mirror of the fold branch in Flux_GrassBuildBladeVertex (Flux_GrassCommon.slang,
+// AUTHORITATIVE). fPushApart is the ALREADY-SCALED push the shader computes —
+// type push-apart * height * (1 - LOD blend) — so this stays a pure function of the
+// vertex id and the fold bit.
+inline Flux_GrassFoldOffset Flux_GrassWeldOffset(u_int uVertexId, bool bFolded, float fPushApart)
+{
+	Flux_GrassFoldOffset xOffset;
+	const u_int uSafe = uVertexId < Flux_GrassConfig::uBLADE_VERTEX_COUNT
+		? uVertexId : Flux_GrassConfig::uBLADE_VERTEX_COUNT - 1u;
+	if (!bFolded || Flux_GrassConfig::axBLADE_VERTEX_TABLE[uSafe].m_uPiece == 0u)
+	{
+		return xOffset;
+	}
+	xOffset.m_fAlongFacing = fPushApart;
+	xOffset.m_fAlongUp = -fPushApart * 0.5f;
+	return xOffset;
+}
+
+//=============================================================================
+// Clump Voronoi. CPU mirror of Flux_GrassFindClump in
+// Zenith/Flux/Shaders/Vegetation/Flux_Grass_Placement.slang, which is
+// AUTHORITATIVE.
+//
+// The site JITTER is integer-hash-derived, so the nine candidate positions are
+// bit-exact across the two languages. The nearest-site choice is a float distance
+// compare and is mirrored STRUCTURALLY: the same nine cells, visited in the same
+// order (dz outer, dx inner), with the same strict-less test — so a tie keeps the
+// FIRST cell visited on both sides.
+//=============================================================================
+
+namespace Flux_GrassConfig
+{
+	// The clump lattice must not collide with the blade lattice, which keys off the
+	// bare seed. Mirrors the `uSeed + 7717u` in Flux_GrassFindClump.
+	constexpr u_int uCLUMP_SEED_OFFSET = 7717u;
+	// Mirrors the `uHash + 5431u` in Flux_GrassPickType.
+	constexpr u_int uTYPE_DITHER_SALT = 5431u;
+	// A zero cell size would divide the world position by zero and place every blade
+	// in one clump at infinity.
+	constexpr float fMIN_CLUMP_SCALE = 0.01f;
+}
+
+struct Flux_GrassClumpCell
+{
+	Zenith_Maths::Vector2 m_xSite{ 0.0f, 0.0f };
+	u_int m_uHash = 0u;
+};
+
+inline Flux_GrassClumpCell Flux_GrassClumpSite(int iCellX, int iCellZ, float fScale, u_int uSeed)
+{
+	Flux_GrassClumpCell xCell;
+	xCell.m_uHash = Zenith_TerrainNoise::HashCoords(iCellX, iCellZ, uSeed + Flux_GrassConfig::uCLUMP_SEED_OFFSET);
+	const Zenith_Maths::Vector2 xJitter(Zenith_TerrainNoise::HashToFloat01(xCell.m_uHash),
+		Zenith_TerrainNoise::HashToFloat01(Zenith_TerrainNoise::HashUInt(xCell.m_uHash)));
+	xCell.m_xSite = (Zenith_Maths::Vector2(static_cast<float>(iCellX), static_cast<float>(iCellZ)) + xJitter) * fScale;
+	return xCell;
+}
+
+struct Flux_GrassClump
+{
+	Zenith_Maths::Vector2 m_xCentre{ 0.0f, 0.0f };
+	Zenith_Maths::Vector2 m_xNormalXZ{ 1.0f, 0.0f };   // unit, centre -> blade
+	float m_fDist01 = 0.0f;                            // distance to the centre over the cell size
+	float m_fHash01 = 0.0f;
+};
+
+// Nine cells is the MINIMUM that guarantees the true nearest site for any jitter
+// inside a cell; a 2x2 search misses it whenever the blade sits near a corner and
+// produces visible clump seams along the cell grid.
+inline Flux_GrassClump Flux_GrassClumpPick(float fWorldX, float fWorldZ, float fClumpScale, u_int uSeed)
+{
+	const float fScale = glm::max(fClumpScale, Flux_GrassConfig::fMIN_CLUMP_SCALE);
+	const Zenith_Maths::Vector2 xWorld(fWorldX, fWorldZ);
+	const int iCellX = static_cast<int>(floorf(fWorldX / fScale));
+	const int iCellZ = static_cast<int>(floorf(fWorldZ / fScale));
+
+	Flux_GrassClump xClump;
+	xClump.m_xCentre = xWorld;
+	float fBestDistSq = 1.0e30f;
+	u_int uBestHash = 0u;
+	for (int iDZ = -1; iDZ <= 1; iDZ++)
+	{
+		for (int iDX = -1; iDX <= 1; iDX++)
+		{
+			const Flux_GrassClumpCell xCell = Flux_GrassClumpSite(iCellX + iDX, iCellZ + iDZ, fScale, uSeed);
+			const Zenith_Maths::Vector2 xDelta = xWorld - xCell.m_xSite;
+			const float fDistSq = glm::dot(xDelta, xDelta);
+			if (fDistSq < fBestDistSq)
+			{
+				fBestDistSq = fDistSq;
+				xClump.m_xCentre = xCell.m_xSite;
+				uBestHash = xCell.m_uHash;
+			}
+		}
+	}
+
+	const Zenith_Maths::Vector2 xOut = xWorld - xClump.m_xCentre;
+	const float fLength = glm::length(xOut);
+	xClump.m_xNormalXZ = fLength > 1.0e-5f ? (xOut / fLength) : Zenith_Maths::Vector2(1.0f, 0.0f);
+	xClump.m_fDist01 = Flux_GrassSaturate(fLength / fScale);
+	xClump.m_fHash01 = Zenith_TerrainNoise::HashToFloat01(uBestHash);
+	return xClump;
+}
 
 // The blade's lattice class. The LO lattice samples every uLO_LATTICE_STRIDE-th
 // node on both axes, so class 0 — and only class 0 — is the set a LO tile
@@ -787,6 +1154,91 @@ inline u_int Flux_GrassSampleTypeIndex(const Flux_GrassMap& xMap, float fWorldX,
 	const u_int uX = Flux_GrassNearestTexel(Flux_GrassMapTexelCoord(fWorldX, xMap.m_uWidth, xMap.m_fWorldSize), xMap.m_uWidth);
 	const u_int uZ = Flux_GrassNearestTexel(Flux_GrassMapTexelCoord(fWorldZ, xMap.m_uHeight, xMap.m_fWorldSize), xMap.m_uHeight);
 	return static_cast<u_int>(static_cast<const u_int8*>(xMap.m_pData)[uZ * xMap.m_uWidth + uX]);
+}
+
+//=============================================================================
+// Dithered type pick. CPU mirror of Flux_GrassPickType in
+// Zenith/Flux/Shaders/Vegetation/Flux_Grass_Placement.slang, which is
+// AUTHORITATIVE.
+//
+// Filtering an INDEX map is meaningless, so the four bilinear weights are used as
+// a probability distribution and ONE WHOLE TEXEL is chosen: the boundary between
+// two types dissolves into a stochastic mix of the two rather than inventing a
+// third. The choice is integer-hash-decided and therefore bit-exact across the two
+// languages; only the weights themselves are float.
+//
+// This is the placement CS's sampler. Flux_GrassSampleTypeIndex above is the
+// QUERY sampler (nearest texel, no hash) — a caller asking "what type is here"
+// must not get a different answer on every call.
+//=============================================================================
+
+// Texel-space position in the CS's convention: UV * dimension - 0.5, so texel k's
+// CENTRE sits at k and the bilinear footprint is [floor, floor + 1].
+inline float Flux_GrassMapTexelSpace(float fWorld, u_int uDimension, float fWorldSize)
+{
+	const float fUV = Flux_GrassSaturate(fWorld / fWorldSize);
+	return fUV * static_cast<float>(uDimension) - 0.5f;
+}
+
+// The four bilinear footprint weights, in the CS's order: weight i sits at texel
+// offset (i & 1, i >> 1).
+inline void Flux_GrassTypeGatherWeights(float fFracX, float fFracZ, float afOutWeight[4])
+{
+	afOutWeight[0] = (1.0f - fFracX) * (1.0f - fFracZ);
+	afOutWeight[1] = fFracX * (1.0f - fFracZ);
+	afOutWeight[2] = (1.0f - fFracX) * fFracZ;
+	afOutWeight[3] = fFracX * fFracZ;
+}
+
+// Which of the four gathered texels this blade takes. The weights sum to 1, so
+// falling out of the loop lands on the last bucket — that IS the CS's behaviour,
+// not a rounding guard bolted on afterwards.
+inline u_int Flux_GrassPickGatherIndex(const float afWeight[4], u_int uHash)
+{
+	const float fPick = Zenith_TerrainNoise::HashToFloat01(
+		Zenith_TerrainNoise::HashUInt(uHash + Flux_GrassConfig::uTYPE_DITHER_SALT));
+	float fAccum = 0.0f;
+	for (u_int u = 0; u < 3u; u++)
+	{
+		fAccum += afWeight[u];
+		if (fPick <= fAccum)
+		{
+			return u;
+		}
+	}
+	return 3u;
+}
+
+inline u_int Flux_GrassClampTexel(int iTexel, u_int uDimension)
+{
+	const int iLast = static_cast<int>(uDimension) - 1;
+	return static_cast<u_int>(iTexel < 0 ? 0 : (iTexel > iLast ? iLast : iTexel));
+}
+
+// Gather the four texels of the bilinear footprint, choose one by the dither, and
+// clamp the byte it holds to the live type count — exactly the CS's chain. The
+// result is ONE gathered texel's byte, never an average of two.
+inline u_int Flux_GrassSampleTypeDithered(const Flux_GrassMap& xMap, float fWorldX, float fWorldZ,
+	u_int uHash, u_int uTypeCount)
+{
+	if (!xMap.IsValid() || xMap.m_eFormat != Flux_GrassMapFormat::U8)
+	{
+		return 0u;
+	}
+	const float fSpaceX = Flux_GrassMapTexelSpace(fWorldX, xMap.m_uWidth, xMap.m_fWorldSize);
+	const float fSpaceZ = Flux_GrassMapTexelSpace(fWorldZ, xMap.m_uHeight, xMap.m_fWorldSize);
+	const float fBaseX = floorf(fSpaceX);
+	const float fBaseZ = floorf(fSpaceZ);
+
+	float afWeight[4];
+	Flux_GrassTypeGatherWeights(fSpaceX - fBaseX, fSpaceZ - fBaseZ, afWeight);
+	const u_int uChosen = Flux_GrassPickGatherIndex(afWeight, uHash);
+
+	const u_int uX = Flux_GrassClampTexel(static_cast<int>(fBaseX) + static_cast<int>(uChosen & 1u), xMap.m_uWidth);
+	const u_int uZ = Flux_GrassClampTexel(static_cast<int>(fBaseZ) + static_cast<int>(uChosen >> 1u), xMap.m_uHeight);
+	const u_int uIndex = static_cast<const u_int8*>(xMap.m_pData)[uZ * xMap.m_uWidth + uX];
+	const u_int uLast = (uTypeCount > 0u ? uTypeCount : 1u) - 1u;
+	return uIndex < uLast ? uIndex : uLast;
 }
 
 //=============================================================================

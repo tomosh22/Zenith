@@ -3,7 +3,7 @@
 Neighborhood-clamped, disocclusion-rejecting temporal resolve over the composited HDR
 scene, driven by per-pixel motion vectors and sub-pixel camera jitter. Registered as the
 `Flux_TAAImpl` render feature **immediately before HDR**, so it resolves the fully-lit HDR
-scene (after DeferredShading / Grass / Translucency / Fog / Particles) and **before** the
+scene (after DeferredShading / Translucency / Fog / Particles) and **before** the
 HDR bloom + tonemap, which read the resolved output through
 `Flux_GraphicsImpl::GetSceneColourForPostFX`.
 

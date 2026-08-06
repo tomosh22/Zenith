@@ -43,17 +43,15 @@ public:
 	bool HasCPUMap() const { return m_xDensityMap.IsLoaded(); }
 	bool IsGrassApplied() const { return m_bGrassApplied; }
 	bool HasTerminalFailure() const { return m_bTerminalFailure; }
-	u_int GetGeneratedBladeCount() const { return m_uGeneratedBladeCount; }
 	float GetAppliedDensityScale() const { return m_fAppliedDensityScale; }
 	uint32_t GetRetryFrameCount() const { return m_uRetryFrameCount; }
 	const ZM_GrassDensityMap& GetDensityMap() const { return m_xDensityMap; }
 
 private:
 	static constexpr uint32_t uGRASS_RETRY_FRAME_CAP = 300;
-	// Blades/m² multiplier at generation (× GrassConfig::uBLADES_PER_SQM = 50).
-	// 0.70 → ~35 blades/m² in fully-painted TALL GRASS; with the per-region chunk LOD in
-	// Flux_Grass, grass near the camera now renders at LOD0 (full density) rather
-	// than the whole terrain collapsing to one distant LOD.
+	// Density multiplier applied to the painted coverage at build time. 0.70 is the
+	// authored Dawnmere look for fully-painted TALL GRASS; a ZM auto-test pins it
+	// through GetAppliedDensityScale(), so it is not a free knob.
 	static constexpr float fGRASS_DENSITY_SCALE = 0.70f;
 
 	bool TryApplyToReadyTerrain();
@@ -67,6 +65,5 @@ private:
 	bool m_bWarned = false;
 	bool m_bHeadless = false;
 	uint32_t m_uRetryFrameCount = 0;
-	u_int m_uGeneratedBladeCount = 0;
 	float m_fAppliedDensityScale = 0.0f;
 };

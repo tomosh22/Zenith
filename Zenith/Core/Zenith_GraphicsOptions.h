@@ -48,7 +48,12 @@ struct Zenith_GraphicsOptions
 	bool m_bSSRRoughnessBlurEnabled = true;
 	bool m_bSSGIDenoiseEnabled = true;
 	bool m_bGrassWindEnabled = true;
-	bool m_bGrassCullingEnabled = true;
+	// SET ONCE AT BOOT, both of them: a game picks its values inside
+	// Project_SetGraphicsOptions and the renderer reads them from then on. Flipping
+	// either mid-run is not a supported path — the Flux/Grass debug-variable tree is
+	// the seam for live experimentation.
+	bool m_bGrassDisplacementEnabled = true;
+	bool m_bGrassShadowsEnabled = true;
 	bool m_bInstancedMeshGPUCullingEnabled = true;
 
 	uint32_t m_uVolFogTechnique = 0;

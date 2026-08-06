@@ -1437,8 +1437,11 @@ void Zenith_TerrainEditor::EndStroke()
 	PushStrokeUndoCommand();
 
 	// Grass placement rebuild is a few hundred ms — stroke-end cadence, never
-	// per dab.
-	if (m_bGrassDirty)
+	// per dab. The sculpt consume runs before the test, not inside it: a stroke
+	// that painted grass AND moved heights must not leave the latch set for the
+	// next stroke to re-trigger on.
+	const bool bSculptedUnderGrass = ConsumeSculptedUnderBuiltGrass();
+	if (m_bGrassDirty || bSculptedUnderGrass)
 	{
 		RebuildGrass();
 	}

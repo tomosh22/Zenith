@@ -54,8 +54,41 @@ namespace Flux_Generated_Vegetation
 		static_assert(offsetof(g_xView_CB, m_ug_uViewSlot) == 468, "g_xView.g_uViewSlot offset drifted from Slang reflection");
 	}
 
-	// ----- Grass (Vegetation/Flux_Grass) -----
-	namespace Grass
+	// ----- Grass_Reset (Vegetation/Flux_Grass_Reset) -----
+	namespace Grass_Reset
+	{
+		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hg_xGlobal{ 0u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_axMaterials{ 0u, 1u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hg_xView{ 1u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xCSM{ 1u, 1u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xShadowMatrices{ 1u, 2u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xLightBuffer{ 1u, 3u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xClusterLightCounts{ 1u, 4u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xClusterLightIndices{ 1u, 5u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xBRDFLUT{ 1u, 6u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xIrradianceMap{ 1u, 7u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xPrefilteredMap{ 1u, 8u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: UnboundedTextureArray
+		inline constexpr Flux_BindingHandle hg_axTextures{ 2u, 0u, FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY, 0u };
+		// kind: RWStructuredBuffer
+		inline constexpr Flux_BindingHandle hIndirectArgs{ 3u, 0u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
+		// kind: RWStructuredBuffer
+		inline constexpr Flux_BindingHandle hBladeCounter{ 3u, 1u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
+	}
+
+	// ----- Grass_Placement (Vegetation/Flux_Grass_Placement) -----
+	namespace Grass_Placement
 	{
 		// kind: ConstantBuffer
 		inline constexpr Flux_BindingHandle hg_xGlobal{ 0u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
@@ -82,16 +115,259 @@ namespace Flux_Generated_Vegetation
 		// kind: UnboundedTextureArray
 		inline constexpr Flux_BindingHandle hg_axTextures{ 2u, 0u, FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY, 0u };
 		// kind: ConstantBuffer
-		inline constexpr Flux_BindingHandle hGrassConstants{ 3u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
-		struct GrassConstants_CB
+		inline constexpr Flux_BindingHandle hGrassPlacementConstants{ 3u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		struct GrassPlacementConstants_CB
 		{
-			unsigned char m_ag_xWindParams[16]; // slang=vector offset=0 arrayCount=4 (no C++ mapping)
-			unsigned char m_ag_xGrassParams[16]; // slang=vector offset=16 arrayCount=4 (no C++ mapping)
-			unsigned char m_ag_xLODDistances[16]; // slang=vector offset=32 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_axFrustumPlanes[288]; // slang=Array offset=0 arrayCount=18 (no C++ mapping)
+			unsigned char m_ag_xWind[48]; // slang=Flux_GrassWindBlock offset=288 arrayCount=0 (no C++ mapping)
+			unsigned char m_ag_xCameraPosWS_HiRadius[16]; // slang=vector offset=336 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_xCoverageMapParams[16]; // slang=vector offset=352 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_xTypeMapParams[16]; // slang=vector offset=368 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_xHeightMapParams[16]; // slang=vector offset=384 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_xSlopeStep_Pad[16]; // slang=vector offset=400 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_xDisplacementParams[16]; // slang=vector offset=416 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_xLoRadius_MaxDist_Density_Pad[16]; // slang=vector offset=432 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_xTileCount_Seed_ActiveSlots_PoolCap[16]; // slang=vector offset=448 arrayCount=4 (no C++ mapping)
 		};
-		static_assert(sizeof(GrassConstants_CB) == 48, "GrassConstants_CB size drifted from Slang reflection");
+		static_assert(sizeof(GrassPlacementConstants_CB) == 464, "GrassPlacementConstants_CB size drifted from Slang reflection");
 		// kind: StructuredBuffer
-		inline constexpr Flux_BindingHandle hInstanceBuffer{ 3u, 1u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		inline constexpr Flux_BindingHandle hTypeParams{ 3u, 1u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hTiles{ 3u, 2u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xHeightMap{ 3u, 3u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xCoverageMap{ 3u, 4u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xTypeMap{ 3u, 5u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xDisplacementMap{ 3u, 6u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: RWStructuredBuffer
+		inline constexpr Flux_BindingHandle hBladePool{ 3u, 7u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
+		// kind: RWStructuredBuffer
+		inline constexpr Flux_BindingHandle hBladeCounter{ 3u, 8u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
+		// kind: RWStructuredBuffer
+		inline constexpr Flux_BindingHandle hVisibleIndices{ 3u, 9u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
+		// kind: RWStructuredBuffer
+		inline constexpr Flux_BindingHandle hIndirectArgs{ 3u, 10u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
+	}
+
+	// ----- Grass_IndirectFixup (Vegetation/Flux_Grass_IndirectFixup) -----
+	namespace Grass_IndirectFixup
+	{
+		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hg_xGlobal{ 0u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_axMaterials{ 0u, 1u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hg_xView{ 1u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xCSM{ 1u, 1u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xShadowMatrices{ 1u, 2u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xLightBuffer{ 1u, 3u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xClusterLightCounts{ 1u, 4u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xClusterLightIndices{ 1u, 5u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xBRDFLUT{ 1u, 6u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xIrradianceMap{ 1u, 7u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xPrefilteredMap{ 1u, 8u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: UnboundedTextureArray
+		inline constexpr Flux_BindingHandle hg_axTextures{ 2u, 0u, FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY, 0u };
+		// kind: RWStructuredBuffer
+		inline constexpr Flux_BindingHandle hIndirectArgs{ 3u, 0u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
+	}
+
+	// ----- Grass_Displacement (Vegetation/Flux_Grass_Displacement) -----
+	namespace Grass_Displacement
+	{
+		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hg_xGlobal{ 0u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_axMaterials{ 0u, 1u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hg_xView{ 1u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xCSM{ 1u, 1u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xShadowMatrices{ 1u, 2u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xLightBuffer{ 1u, 3u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xClusterLightCounts{ 1u, 4u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xClusterLightIndices{ 1u, 5u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xBRDFLUT{ 1u, 6u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xIrradianceMap{ 1u, 7u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xPrefilteredMap{ 1u, 8u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: UnboundedTextureArray
+		inline constexpr Flux_BindingHandle hg_axTextures{ 2u, 0u, FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY, 0u };
+		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hGrassDisplacementConstants{ 3u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		struct GrassDisplacementConstants_CB
+		{
+			unsigned char m_ag_xPrevOriginXZ_Size_Pad[16]; // slang=vector offset=0 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_xNextOriginXZ_Size_Pad[16]; // slang=vector offset=16 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_xDecay_Texel_Pad[16]; // slang=vector offset=32 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_xResolution_MoverCount[16]; // slang=vector offset=48 arrayCount=4 (no C++ mapping)
+		};
+		static_assert(sizeof(GrassDisplacementConstants_CB) == 64, "GrassDisplacementConstants_CB size drifted from Slang reflection");
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xPrevDisplacementTex{ 3u, 1u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: RWTexture
+		inline constexpr Flux_BindingHandle hg_xNextDisplacementTex{ 3u, 2u, FLUX_RESOURCE_KIND_RW_TEXTURE, 1u };
+	}
+
+	// ----- Grass_ToGBuffer (Vegetation/Flux_Grass_ToGBuffer) -----
+	namespace Grass_ToGBuffer
+	{
+		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hg_xGlobal{ 0u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_axMaterials{ 0u, 1u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hg_xView{ 1u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xCSM{ 1u, 1u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xShadowMatrices{ 1u, 2u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xLightBuffer{ 1u, 3u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xClusterLightCounts{ 1u, 4u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xClusterLightIndices{ 1u, 5u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xBRDFLUT{ 1u, 6u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xIrradianceMap{ 1u, 7u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xPrefilteredMap{ 1u, 8u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: UnboundedTextureArray
+		inline constexpr Flux_BindingHandle hg_axTextures{ 2u, 0u, FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY, 0u };
+		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hGrassDrawConstants{ 3u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		struct GrassDrawConstants_CB
+		{
+			unsigned char m_am_xWind[48]; // slang=Flux_GrassWindBlock offset=0 arrayCount=0 (no C++ mapping)
+			unsigned char m_am_xCameraPosWS_HiRadius[16]; // slang=vector offset=48 arrayCount=4 (no C++ mapping)
+			unsigned char m_am_xMinPixelWidth_Thicken_NormalBlend_LODBand[16]; // slang=vector offset=64 arrayCount=4 (no C++ mapping)
+			unsigned char m_am_xMaxDrawDistance_GlossCut_DebugMode_Pad[16]; // slang=vector offset=80 arrayCount=4 (no C++ mapping)
+		};
+		static_assert(sizeof(GrassDrawConstants_CB) == 96, "GrassDrawConstants_CB size drifted from Slang reflection");
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hBladePool{ 3u, 1u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hVisibleIndices{ 3u, 2u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hTypeParams{ 3u, 3u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+	}
+
+	// ----- Grass_ToGBufferVelocity (Vegetation/Flux_Grass_ToGBufferVelocity) -----
+	namespace Grass_ToGBufferVelocity
+	{
+		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hg_xGlobal{ 0u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_axMaterials{ 0u, 1u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hg_xView{ 1u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xCSM{ 1u, 1u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xShadowMatrices{ 1u, 2u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xLightBuffer{ 1u, 3u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xClusterLightCounts{ 1u, 4u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xClusterLightIndices{ 1u, 5u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xBRDFLUT{ 1u, 6u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xIrradianceMap{ 1u, 7u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xPrefilteredMap{ 1u, 8u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: UnboundedTextureArray
+		inline constexpr Flux_BindingHandle hg_axTextures{ 2u, 0u, FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY, 0u };
+		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hGrassDrawConstants{ 3u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		struct GrassDrawConstants_CB
+		{
+			unsigned char m_am_xWind[48]; // slang=Flux_GrassWindBlock offset=0 arrayCount=0 (no C++ mapping)
+			unsigned char m_am_xCameraPosWS_HiRadius[16]; // slang=vector offset=48 arrayCount=4 (no C++ mapping)
+			unsigned char m_am_xMinPixelWidth_Thicken_NormalBlend_LODBand[16]; // slang=vector offset=64 arrayCount=4 (no C++ mapping)
+			unsigned char m_am_xMaxDrawDistance_GlossCut_DebugMode_Pad[16]; // slang=vector offset=80 arrayCount=4 (no C++ mapping)
+		};
+		static_assert(sizeof(GrassDrawConstants_CB) == 96, "GrassDrawConstants_CB size drifted from Slang reflection");
+		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hGrassPrevWindConstants{ 3u, 1u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		struct GrassPrevWindConstants_CB
+		{
+			unsigned char m_am_xDirXZ_Strength_Time[16]; // slang=vector offset=0 arrayCount=4 (no C++ mapping)
+			unsigned char m_am_xFreq_Scroll_Gust_Seed[16]; // slang=vector offset=16 arrayCount=4 (no C++ mapping)
+			unsigned char m_am_xDetailFreq_Speed_Amp[16]; // slang=vector offset=32 arrayCount=4 (no C++ mapping)
+		};
+		static_assert(sizeof(GrassPrevWindConstants_CB) == 48, "GrassPrevWindConstants_CB size drifted from Slang reflection");
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hBladePool{ 3u, 2u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hVisibleIndices{ 3u, 3u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hTypeParams{ 3u, 4u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+	}
+
+	// ----- Grass_ToShadowmap (Vegetation/Flux_Grass_ToShadowmap) -----
+	namespace Grass_ToShadowmap
+	{
+		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hg_xGlobal{ 0u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_axMaterials{ 0u, 1u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hg_xView{ 1u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xCSM{ 1u, 1u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xShadowMatrices{ 1u, 2u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xLightBuffer{ 1u, 3u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xClusterLightCounts{ 1u, 4u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xClusterLightIndices{ 1u, 5u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xBRDFLUT{ 1u, 6u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xIrradianceMap{ 1u, 7u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xPrefilteredMap{ 1u, 8u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: UnboundedTextureArray
+		inline constexpr Flux_BindingHandle hg_axTextures{ 2u, 0u, FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY, 0u };
+		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hGrassDrawConstants{ 3u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		struct GrassDrawConstants_CB
+		{
+			unsigned char m_am_xWind[48]; // slang=Flux_GrassWindBlock offset=0 arrayCount=0 (no C++ mapping)
+			unsigned char m_am_xCameraPosWS_HiRadius[16]; // slang=vector offset=48 arrayCount=4 (no C++ mapping)
+			unsigned char m_am_xMinPixelWidth_Thicken_NormalBlend_LODBand[16]; // slang=vector offset=64 arrayCount=4 (no C++ mapping)
+			unsigned char m_am_xMaxDrawDistance_GlossCut_DebugMode_Pad[16]; // slang=vector offset=80 arrayCount=4 (no C++ mapping)
+		};
+		static_assert(sizeof(GrassDrawConstants_CB) == 96, "GrassDrawConstants_CB size drifted from Slang reflection");
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hBladePool{ 3u, 1u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hVisibleIndices{ 3u, 2u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hTypeParams{ 3u, 3u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
 	}
 
 }

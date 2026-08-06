@@ -374,25 +374,62 @@ bool Zenith_TerrainEditor::BakeFullForTerrainRoot(const std::string& strTerrainR
 	return bSucceeded;
 }
 
+bool Zenith_TerrainEditor::ConsumeSculptedUnderBuiltGrass()
+{
+	// IsBuilt() first: with nothing built there is no push to redo, and the latch
+	// must survive to the one that follows.
+	return g_xEngine.Grass().IsBuilt() && ConsumeHeightsEditedSinceGrassPush();
+}
+
 void Zenith_TerrainEditor::RebuildGrass()
 {
 	m_bGrassDirty = false;
 
-	// Tools-bake semantic: grass instance buffers are GPU-only content, so a
-	// Null build deliberately does not author them (see Zenith/Null/CLAUDE.md).
+	// Tools-bake semantic: the grass maps are GPU textures, so a Null build
+	// deliberately does not author them (see Zenith/Null/CLAUDE.md).
 	if (Zenith_IsNullRenderer())
 	{
 		return;
 	}
-	Zenith_TerrainComponent* pxTerrain = ResolveTargetComponent();
-	if (pxTerrain == nullptr || !pxTerrain->HasPhysicsGeometry())
+	// Placement no longer consumes the terrain's physics mesh, but a session with
+	// no terrain in the world still has nothing to grow grass on.
+	if (ResolveTargetComponent() == nullptr)
 	{
 		return;
 	}
 
-	g_xEngine.Grass().SetDensityMap(m_xGrassDensity.Row(0),
-		uGRASS_DENSITY_SIZE, uGRASS_DENSITY_SIZE, fTERRAIN_WORLD_SIZE);
-	g_xEngine.Grass().GenerateFromTerrain(pxTerrain->GetPhysicsMeshGeometry());
+	Zenith_Assert(m_xHeightfield.GetWidth() == uHEIGHTFIELD_SIZE
+		&& m_xGrassDensity.GetWidth() == uGRASS_DENSITY_SIZE
+		&& m_xGrassType.GetSize() == uGRASS_TYPE_SIZE * uGRASS_TYPE_SIZE,
+		"Grass rebuild reads the session images at their contract sizes");
+
+	// BuildFromMaps takes METRES and the live heightfield is normalized over
+	// fTERRAIN_MAX_HEIGHT, so the scaled copy cannot be elided. Scaling in place
+	// would corrupt the authoring image every other consumer reads.
+	constexpr u_int uHEIGHT_TEXELS = uHEIGHTFIELD_SIZE * uHEIGHTFIELD_SIZE;
+	Zenith_Vector<float> afHeightMetres;
+	afHeightMetres.Resize(uHEIGHT_TEXELS, 0.0f);
+	const float* pfHeightNorm = m_xHeightfield.Row(0);
+	float* pfHeightMetres = afHeightMetres.GetDataPointer();
+	for (u_int u = 0; u < uHEIGHT_TEXELS; u++)
+	{
+		pfHeightMetres[u] = pfHeightNorm[u] * fTERRAIN_MAX_HEIGHT;
+	}
+
+	Flux_GrassImpl::MapSet xMaps;
+	xMaps.pHeight = pfHeightMetres;
+	xMaps.uHeightSize = uHEIGHTFIELD_SIZE;
+	xMaps.pCoverage = m_xGrassDensity.Row(0);
+	xMaps.uCoverageSize = uGRASS_DENSITY_SIZE;
+	xMaps.pType = m_xGrassType.GetDataPointer();
+	xMaps.uTypeSize = uGRASS_TYPE_SIZE;
+	xMaps.fWorldSize = fTERRAIN_WORLD_SIZE;
+
+	Flux_GrassImpl::BuildParams xParams;
+	xParams.m_fDensityScale = 1.0f;
+
+	Flux_GrassImpl& xGrass = g_xEngine.Grass();
+	xGrass.BuildFromMaps(xMaps, xParams);
 }
 
 #endif // ZENITH_TOOLS

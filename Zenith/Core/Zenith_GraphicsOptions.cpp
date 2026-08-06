@@ -55,7 +55,8 @@ void Zenith_GraphicsOptions::RegisterDebugVariables()
 	xDebugVars.AddBoolean({ "Graphics", "SSR", "RoughnessBlur" }, xOpts.m_bSSRRoughnessBlurEnabled);
 	xDebugVars.AddBoolean({ "Graphics", "SSGI", "Denoise" }, xOpts.m_bSSGIDenoiseEnabled);
 	xDebugVars.AddBoolean({ "Graphics", "Grass", "Wind" }, xOpts.m_bGrassWindEnabled);
-	xDebugVars.AddBoolean({ "Graphics", "Grass", "Culling" }, xOpts.m_bGrassCullingEnabled);
+	xDebugVars.AddBoolean({ "Graphics", "Grass", "Displacement" }, xOpts.m_bGrassDisplacementEnabled);
+	xDebugVars.AddBoolean({ "Graphics", "Grass", "Shadows" }, xOpts.m_bGrassShadowsEnabled);
 	xDebugVars.AddBoolean({ "Graphics", "InstancedMeshes", "GPUCulling" }, xOpts.m_bInstancedMeshGPUCullingEnabled);
 
 	xDebugVars.AddUInt32({ "Graphics", "Fog", "Technique" }, xOpts.m_uVolFogTechnique, 0, 3);

@@ -14,17 +14,17 @@
 #include "imgui.h"
 #endif
 
-// Outcome of one TryApplyGrassDensityFromDisk attempt. Defined here (the consumer);
+// Outcome of one TryApplyGrassFromDisk attempt. Defined here (the consumer);
 // the body lives in RenderTest.cpp where the terrain / grass engine systems are
 // reachable.
 enum class RenderTest_GrassApplyResult
 {
-	Applied,          // density map loaded + applied to the (ready) terrain
-	FileMissing,      // the density .ztxtr is absent or failed to parse — give up
+	Applied,          // terrain grass textures loaded + built against the (ready) terrain
+	FileMissing,      // the .ztxtr set is absent or failed to parse — give up
 	TerrainNotReady,  // terrain physics geometry not streamed in yet — retry later
 	SkippedHeadless,  // headless run: Grass owns GPU resources, nothing to do
 };
-RenderTest_GrassApplyResult RenderTest_TryApplyGrassDensityFromDisk();
+RenderTest_GrassApplyResult RenderTest_TryApplyGrassFromDisk();
 
 // Per-launch bootstrap for the RenderTest scene. The testbeds are now baked into
 // the saved scene as authored entities/assets, so the per-launch *state* the old
@@ -84,7 +84,7 @@ public:
 		}
 	}
 
-	// Drive the grass density apply until it succeeds, the file is missing, or the
+	// Drive the grass apply until it succeeds, the files are missing, or the
 	// terrain never becomes ready within the retry budget. Idempotent: once done it
 	// no-ops. Covers the non-tools + runtime/Playing paths (the tools Stopped-view
 	// apply is a separate post-load AddStep_Custom calling the same shared helper).
@@ -95,7 +95,7 @@ public:
 			return;
 		}
 
-		const RenderTest_GrassApplyResult eResult = RenderTest_TryApplyGrassDensityFromDisk();
+		const RenderTest_GrassApplyResult eResult = RenderTest_TryApplyGrassFromDisk();
 		switch (eResult)
 		{
 		case RenderTest_GrassApplyResult::Applied:
@@ -104,7 +104,7 @@ public:
 			break;
 
 		case RenderTest_GrassApplyResult::FileMissing:
-			WarnGrassOnce("[RenderTest] grass density map missing/invalid — grass not applied");
+			WarnGrassOnce("[RenderTest] terrain grass textures missing/invalid — grass not applied");
 			m_bGrassDone = true;
 			break;
 

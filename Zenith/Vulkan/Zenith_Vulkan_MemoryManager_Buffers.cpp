@@ -245,6 +245,25 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateBufferVRAM(const u_int uSize,
 	if (eFlags & 1 << MEMORY_FLAGS__SHADER_READ)
 		eUsageFlags |= vk::BufferUsageFlagBits::eUniformBuffer;
 
+	// vkCmdCopyBuffer requires the SOURCE to carry transfer-src usage
+	// (VUID-vkCmdCopyBuffer-srcBuffer-00118), so DownloadBufferData is only legal
+	// against a buffer that declared it HERE, at creation. Same shape as the
+	// swapchain's screenshot readback, which adds eTransferSrc to the swapchain
+	// IMAGE at creation (Zenith_Vulkan_Swapchain.cpp) rather than at copy time —
+	// a readback helper cannot retrofit usage onto a resource it did not create.
+	//
+	// Scoped to the GPU-WRITABLE families: a storage/UAV or indirect-args buffer
+	// holds values only the GPU knows, which is the only case readback answers a
+	// question the CPU could not already answer. Deliberately NOT a per-buffer
+	// opt-in parameter — a general readback primitive implies generally readable
+	// GPU-writable buffers, and threading a flag through every wrapper would churn
+	// all call sites for no behavioural difference. Declaring the usage is free
+	// unless a copy actually happens: it changes no residency, layout, or
+	// alignment, and needs no capability query (core Vulkan supports transfer-src
+	// on every buffer, unlike the image case the swapchain has to guard).
+	if (eFlags & (1 << MEMORY_FLAGS__UNORDERED_ACCESS | 1 << MEMORY_FLAGS__INDIRECT_BUFFER))
+		eUsageFlags |= vk::BufferUsageFlagBits::eTransferSrc;
+
 	vk::BufferCreateInfo xBufferInfo = vk::BufferCreateInfo()
 		.setSize(uSize)
 		.setUsage(eUsageFlags)

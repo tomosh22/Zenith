@@ -628,9 +628,9 @@ namespace
 		switch (g_eIntPhase)
 		{
 		case InteriorPhase::AwaitDawnmereGrass:
-			if (g_xEngine.Grass().GetGeneratedInstanceCount() > 0u)
+			if (g_xEngine.Grass().GetScheduledInstanceCount() > 0u)
 			{
-				g_uIntDawnmereGrass = g_xEngine.Grass().GetGeneratedInstanceCount();
+				g_uIntDawnmereGrass = g_xEngine.Grass().GetScheduledInstanceCount();
 				g_xEngine.Scenes().LoadSceneByIndex(40, SCENE_LOAD_SINGLE);   // PlayerHome interior
 				g_eIntPhase = InteriorPhase::AwaitInteriorSettle;
 				g_iIntPhaseFrames = 0;
@@ -650,7 +650,7 @@ namespace
 			{
 				return true;
 			}
-			g_uIntInteriorGrass = g_xEngine.Grass().GetGeneratedInstanceCount();
+			g_uIntInteriorGrass = g_xEngine.Grass().GetScheduledInstanceCount();
 			g_eIntPhase = InteriorPhase::Done;
 			return false;
 

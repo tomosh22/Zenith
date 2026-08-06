@@ -149,6 +149,13 @@ public:
 	// must never be called from a frame path. With no allocator (GPU-less boot) the
 	// destination is zero-filled, matching the Null/D3D12 stubs' documented contract
 	// that a headless readback yields zeroes by construction.
+	//
+	// ELIGIBLE SOURCES: buffers created with UNORDERED_ACCESS and/or INDIRECT_BUFFER
+	// memory flags — only those carry the transfer-src usage vkCmdCopyBuffer demands
+	// of a source (see CreateBufferVRAM). Vertex / index / constant buffers do NOT,
+	// and downloading one trips VUID-vkCmdCopyBuffer-srcBuffer-00118 (a validation
+	// break, not a silent wrong answer). That is deliberate: their contents are
+	// CPU-authored, so there is nothing to learn by reading them back.
 	void DownloadBufferData(Flux_VRAMHandle xBufferHandle, void* pDst, size_t uSize);
 
 	// Buffer destruction functions - queue VRAM for deferred deletion

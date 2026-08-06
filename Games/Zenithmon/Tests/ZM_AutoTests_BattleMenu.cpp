@@ -1767,7 +1767,7 @@ namespace
 			g_eBMWalkKey = xChoice.m_eKey;
 
 			// Entry capture: the deterministic overworld grass-blade count (restored on resume).
-			g_uBMEntryGrassBlades = g_xEngine.Grass().GetGeneratedInstanceCount();
+			g_uBMEntryGrassBlades = g_xEngine.Grass().GetScheduledInstanceCount();
 
 			// SC3 exp-persist baseline: capture the persistent lead's exp+level BEFORE
 			// the encounter, so the resume can prove the win wrote progression back
@@ -1943,7 +1943,7 @@ namespace
 				g_xEngine.Scenes().GetActiveScene()).m_iBuildIndex;
 			g_bBMBattleSceneUnloaded = !g_xEngine.Scenes().FindLoadedSceneByPath(
 				std::string(GAME_ASSETS_DIR) + "Scenes/Battle" ZENITH_SCENE_EXT).IsValid();
-			g_uBMGrassAfter = g_xEngine.Grass().GetGeneratedInstanceCount();
+			g_uBMGrassAfter = g_xEngine.Grass().GetScheduledInstanceCount();
 
 			PlayerView xPlayer2;
 			if (FindActivePlayer(xPlayer2))

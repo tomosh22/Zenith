@@ -1,837 +1,862 @@
 #include "Zenith.h"
+#include "Flux/Vegetation/Flux_GrassImpl.h"
 #include "Flux/Vegetation/Flux_Grass_Shaders.h"
 
-#include "Flux/Vegetation/Flux_GrassImpl.h"
 #include "Core/Zenith_Engine.h"
-#include "Core/FrameContext.h"
+#include "Core/Zenith_GraphicsOptions.h"
 #include "Flux/Flux_BackendTypes.h"
 #include "Flux/Flux_GraphicsImpl.h"
-#include "Flux/Flux_RenderTargets.h"
-#include "Flux/HDR/Flux_HDRImpl.h"
-#include "Flux/Slang/Flux_ShaderBinder.h"
-#include "Flux/Shaders/Generated/Vegetation.h" // typed binding handles
-#include "Flux/Terrain/Flux_TerrainConfig.h"
-#include "TaskSystem/Zenith_TaskSystem.h"
-#include "Profiling/Zenith_Profiling.h"
-#include "Maths/Zenith_FrustumCulling.h"
-#include "Core/Zenith_GraphicsOptions.h"
-#include <random>
+#include "Flux/Shadows/Flux_ShadowsImpl.h"      // CSM_FORMAT (shadow caster pipeline)
+#include "Flux/Terrain/Flux_TerrainConfig.h"    // TERRAIN_SIZE (the .ztxtr map footprint)
+#include "AssetHandling/Zenith_TextureAsset.h"  // LoadCPUData (the ONE .ztxtr parser)
+#include "AssetHandling/Zenith_AssetRegistry.h"
+#include "AssetHandling/Zenith_GrassTypeTableAsset.h"
+#include "FileAccess/Zenith_FileAccess.h"
+
 #include <algorithm>
+#include <cmath>
+#include <cstring>
 
 #ifdef ZENITH_TOOLS
 #include "DebugVariables/Zenith_DebugVariables.h"
 #endif
 
-// Phase 7g: subsystem state moved to Flux_GrassImpl held by Zenith_Engine.
+//=============================================================================
+// Flux_Grass — lifecycle, GPU resources, map feeding and the CPU query surface.
+// The per-frame gather, the render-graph declaration and the record callbacks
+// live in Flux_Grass_Frame.cpp.
+//=============================================================================
 
-// Grass constants buffer structure — type is .cpp-local, instance kept file-static.
-struct GrassConstants
+namespace
 {
-	Zenith_Maths::Vector4 m_xWindParams;     // XY = direction, Z = strength, W = time
-	Zenith_Maths::Vector4 m_xGrassParams;    // X = density scale, Y = max distance, Z = debug mode, W = pad
-	Zenith_Maths::Vector4 m_xLODDistances;   // LOD0, LOD1, LOD2, MAX distances
-};
-static GrassConstants s_xGrassConstants;
+	// Map textures are created ONCE at these extents and updated in place, so the
+	// render graph's barrier keys (and the descriptor the placement CS binds) never
+	// move. A Build* supplying different dimensions is rejected rather than silently
+	// resampled — a resample would misalign the CPU queries against the GPU texels.
+	constexpr u_int uGRASS_HEIGHT_TEXTURE_SIZE   = 4096u;
+	constexpr u_int uGRASS_COVERAGE_TEXTURE_SIZE = 1024u;
+	constexpr u_int uGRASS_TYPE_TEXTURE_SIZE     = 1024u;
+	// Neutral 1x1 until the displacement phase lands its 256^2 ping-pong. The
+	// placement CS samples it unconditionally (a branch there would diverge a whole
+	// wave for nothing) and multiplies by a zero push scale, so this is inert.
+	constexpr u_int uGRASS_DISPLACEMENT_TEXTURE_SIZE = 1u;
 
-// Debug variables
-DEBUGVAR u_int dbg_uGrassDebugMode = GRASS_DEBUG_NONE;
-DEBUGVAR float dbg_fGrassDensityScale = 1.0f;
-DEBUGVAR float dbg_fGrassMaxDistance = GrassConfig::fMAX_DISTANCE;
-DEBUGVAR float dbg_fGrassWindStrength = 1.0f;
-DEBUGVAR bool dbg_bGrassShowChunkGrid = false;
-DEBUGVAR bool dbg_bGrassFreezeLOD = false;
-DEBUGVAR u_int dbg_uGrassForcedLOD = 0;
+	// Coarse min/max height band per cell, used only to give each tile an AABB worth
+	// culling. A flat band over hilly ground culls tiles that are plainly visible.
+	constexpr u_int uGRASS_HEIGHT_GRID_CELLS = 64u;
 
-// Simple grass blade mesh (quad with 3 segments)
-struct GrassBladeMesh
-{
-	Flux_VertexBuffer m_xVertexBuffer;
-	Flux_IndexBuffer m_xIndexBuffer;
-};
-static GrassBladeMesh s_xGrassBladeMesh;
+	// Height.ztxtr stores a NORMALIZED heightfield; this is the metre range it spans.
+	// Authoring twin: Zenith_TerrainEditor::fTERRAIN_MAX_HEIGHT — tools-only, so it
+	// cannot be included from a runtime feature.
+	constexpr float fGRASS_TERRAIN_HEIGHT_RANGE = 512.0f;
 
-void Flux_GrassImpl::CreateGrassBladeMesh()
-{
-	// Simple grass blade: 4 vertices, 2 triangles
-	// Oriented along Y-axis, centered at base
-	struct GrassVertex
+	Flux_SurfaceInfo MakeMapSurfaceInfo(TextureFormat eFormat, u_int uSize)
 	{
-		Zenith_Maths::Vector3 m_xPosition;
-		Zenith_Maths::Vector2 m_xUV;
-	};
+		Flux_SurfaceInfo xInfo;
+		xInfo.m_eFormat      = eFormat;
+		xInfo.m_uWidth       = uSize;
+		xInfo.m_uHeight      = uSize;
+		xInfo.m_uDepth       = 1u;
+		xInfo.m_uNumMips     = 1u;
+		xInfo.m_uNumLayers   = 1u;
+		xInfo.m_uMemoryFlags = 1u << MEMORY_FLAGS__SHADER_READ;
+		return xInfo;
+	}
 
-	GrassVertex axVertices[] = {
-		// Bottom-left
-		{ Zenith_Maths::Vector3(-0.5f, 0.0f, 0.0f), Zenith_Maths::Vector2(0.0f, 0.0f) },
-		// Bottom-right
-		{ Zenith_Maths::Vector3(0.5f, 0.0f, 0.0f), Zenith_Maths::Vector2(1.0f, 0.0f) },
-		// Top-left (tip - narrower)
-		{ Zenith_Maths::Vector3(-0.2f, 1.0f, 0.0f), Zenith_Maths::Vector2(0.0f, 1.0f) },
-		// Top-right (tip - narrower)
-		{ Zenith_Maths::Vector3(0.2f, 1.0f, 0.0f), Zenith_Maths::Vector2(1.0f, 1.0f) }
-	};
-
-	u_int auIndices[] = {
-		0, 1, 2,
-		1, 3, 2
-	};
-
-	g_xEngine.FluxMemory().InitialiseVertexBuffer(axVertices, sizeof(axVertices), s_xGrassBladeMesh.m_xVertexBuffer);
-	g_xEngine.FluxMemory().InitialiseIndexBuffer(auIndices, sizeof(auIndices), s_xGrassBladeMesh.m_xIndexBuffer);
+	// A square map with data, and a positive world footprint to divide by.
+	bool MapSourceIsUsable(const void* pData, u_int uSize, u_int uExpectedSize)
+	{
+		return pData != nullptr && uSize == uExpectedSize;
+	}
 }
 
-static void ExecuteRender(Flux_CommandBuffer* pxCmdList, void* pUserData);
-static u_int Flux_Grass_InstanceCountForLOD(u_int uTotal, u_int uLOD);
+//=============================================================================
+// Pipelines
+//=============================================================================
 
 void Flux_GrassImpl::BuildPipelines()
 {
-	// Initialize grass shader
-	m_xGrassShader.Initialise(Flux_GrassShaders::xGrass);
+	// --- compute: reset -> placement -> fixup, plus the not-yet-dispatched
+	// displacement kernel (see the member comment for why it is built anyway) ---
+	m_xResetShader.Initialise(Flux_GrassShaders::xGrass_Reset);
+	Flux_RootSigBuilder::FromReflection(m_xResetRootSig, m_xResetShader.GetReflection());
+	Flux_ComputePipelineBuilder::BuildFromShader(m_xResetPipeline, m_xResetShader, m_xResetRootSig);
 
-	Flux_VertexInputDescription xVertexDesc;
-	xVertexDesc.m_eTopology = MESH_TOPOLOGY_TRIANGLES;
-	xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(Flux_BufferElement(SHADER_DATA_TYPE_FLOAT3));  // POSITION
-	xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(Flux_BufferElement(SHADER_DATA_TYPE_FLOAT2));  // TEXCOORD
-	xVertexDesc.m_xPerVertexLayout.CalculateOffsetsAndStrides();
+	m_xPlacementShader.Initialise(Flux_GrassShaders::xGrass_Placement);
+	Flux_RootSigBuilder::FromReflection(m_xPlacementRootSig, m_xPlacementShader.GetReflection());
+	Flux_ComputePipelineBuilder::BuildFromShader(m_xPlacementPipeline, m_xPlacementShader, m_xPlacementRootSig);
 
-	Flux_PipelineSpecification xPipelineSpec;
-	xPipelineSpec.m_aeColourAttachmentFormats[0] = HDR_SCENE_FORMAT;
-	xPipelineSpec.m_uNumColourAttachments = 1;
-	xPipelineSpec.m_eDepthStencilFormat = DEPTH_FORMAT;
-	xPipelineSpec.m_pxShader = &m_xGrassShader;
-	xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
-	xPipelineSpec.m_bDepthTestEnabled = true;
-	// Depth WRITE must stay off: the graph binds the scene depth as a
-	// READ-ONLY attachment for this pass (WRITE_DSV + READ_DEPTH declaration
-	// => bDepthReadOnly render pass) — blades depth-test against the opaque
-	// scene but never write it.
-	xPipelineSpec.m_bDepthWriteEnabled = false;
-	xPipelineSpec.m_eCullMode = CULL_MODE_NONE;  // Grass is double-sided
+	m_xFixupShader.Initialise(Flux_GrassShaders::xGrass_IndirectFixup);
+	Flux_RootSigBuilder::FromReflection(m_xFixupRootSig, m_xFixupShader.GetReflection());
+	Flux_ComputePipelineBuilder::BuildFromShader(m_xFixupPipeline, m_xFixupShader, m_xFixupRootSig);
 
-	m_xGrassShader.GetReflection().PopulateLayout(xPipelineSpec.m_xPipelineLayout);
+	m_xDisplacementShader.Initialise(Flux_GrassShaders::xGrass_Displacement);
+	Flux_RootSigBuilder::FromReflection(m_xDisplacementRootSig, m_xDisplacementShader.GetReflection());
+	Flux_ComputePipelineBuilder::BuildFromShader(m_xDisplacementPipeline, m_xDisplacementShader, m_xDisplacementRootSig);
 
-	Flux_PipelineBuilder::FromSpecification(m_xGrassPipeline, xPipelineSpec);
+	// --- graphics: the blade draws ---
+	// NO VERTEX INPUT on any of them. The draw is INDEXED against the 48-entry blade
+	// index table, so SV_VertexID delivers the fetched index value; a vertex layout
+	// here would declare bindings nothing ever sets.
+	Flux_VertexInputDescription xNoVertexInput;
+	xNoVertexInput.m_eTopology = MESH_TOPOLOGY_NONE;
+
+	{
+		m_xGBufferShader.Initialise(Flux_GrassShaders::xGrass_ToGBuffer);
+
+		Flux_PipelineSpecification xSpec;
+		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_DIFFUSE]        = MRT_FORMAT_DIFFUSE;
+		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_NORMALSAMBIENT] = MRT_FORMAT_NORMALSAMBIENT;
+		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_MATERIAL]       = MRT_FORMAT_MATERIAL;
+		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_EMISSIVE]       = MRT_FORMAT_EMISSIVE;
+		xSpec.m_uNumColourAttachments = uFLUX_MRT_CORE_COUNT;
+		xSpec.m_eDepthStencilFormat = DEPTH_FORMAT;
+		xSpec.m_pxShader = &m_xGBufferShader;
+		xSpec.m_xVertexInputDesc = xNoVertexInput;
+		// Blades are OPAQUE G-buffer geometry with the SUBSURFACE shading tag, not a
+		// forward blended overlay: they test AND write depth.
+		xSpec.m_bDepthTestEnabled = true;
+		xSpec.m_bDepthWriteEnabled = true;
+		// A blade is a two-sided sliver; the fragment stage flips the lighting normal
+		// on back faces rather than dropping them.
+		xSpec.m_eCullMode = CULL_MODE_NONE;
+		// Flux_BlendState defaults to blend ENABLED with src-alpha/one-minus-src-alpha,
+		// which would alpha-blend the G-buffer targets. Disabled EXPLICITLY on every
+		// target rather than relied on being off.
+		for (Flux_BlendState& xBlend : xSpec.m_axBlendStates)
+		{
+			xBlend.m_bBlendEnabled = false;
+			xBlend.m_eSrcBlendFactor = BLEND_FACTOR_ONE;
+			xBlend.m_eDstBlendFactor = BLEND_FACTOR_ZERO;
+		}
+		m_xGBufferShader.GetReflection().PopulateLayout(xSpec.m_xPipelineLayout);
+		Flux_PipelineBuilder::FromSpecification(m_xGBufferPipeline, xSpec);
+
+	}
+
+	// Velocity variant: identical state, 5 attachments, and its OWN program — the
+	// base's GBufferOut is shared with 4-attachment passes and must not gain a
+	// fifth target. Built from a fresh spec so the reflected layout is this
+	// program's, not the base's with an extra populate on top.
+	{
+		m_xGBufferVelocityShader.Initialise(Flux_GrassShaders::xGrass_ToGBufferVelocity);
+
+		Flux_PipelineSpecification xSpec;
+		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_DIFFUSE]        = MRT_FORMAT_DIFFUSE;
+		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_NORMALSAMBIENT] = MRT_FORMAT_NORMALSAMBIENT;
+		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_MATERIAL]       = MRT_FORMAT_MATERIAL;
+		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_EMISSIVE]       = MRT_FORMAT_EMISSIVE;
+		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_VELOCITY]       = MRT_FORMAT_VELOCITY;
+		xSpec.m_uNumColourAttachments = MRT_INDEX_COUNT;
+		xSpec.m_eDepthStencilFormat = DEPTH_FORMAT;
+		xSpec.m_pxShader = &m_xGBufferVelocityShader;
+		xSpec.m_xVertexInputDesc = xNoVertexInput;
+		xSpec.m_bDepthTestEnabled = true;
+		xSpec.m_bDepthWriteEnabled = true;
+		xSpec.m_eCullMode = CULL_MODE_NONE;
+		for (Flux_BlendState& xBlend : xSpec.m_axBlendStates)
+		{
+			xBlend.m_bBlendEnabled = false;
+			xBlend.m_eSrcBlendFactor = BLEND_FACTOR_ONE;
+			xBlend.m_eDstBlendFactor = BLEND_FACTOR_ZERO;
+		}
+		m_xGBufferVelocityShader.GetReflection().PopulateLayout(xSpec.m_xPipelineLayout);
+		Flux_PipelineBuilder::FromSpecification(m_xGBufferVelocityPipeline, xSpec);
+	}
+
+	{
+		m_xShadowShader.Initialise(Flux_GrassShaders::xGrass_ToShadowmap);
+
+		Flux_PipelineSpecification xSpec;
+		xSpec.m_uNumColourAttachments = 0u;
+		xSpec.m_eDepthStencilFormat = CSM_FORMAT;
+		xSpec.m_pxShader = &m_xShadowShader;
+		xSpec.m_xVertexInputDesc = xNoVertexInput;
+		xSpec.m_eCullMode = CULL_MODE_NONE;
+		// Dynamic bias: the cascade pass sets its own per-cascade value, matching
+		// every other caster.
+		xSpec.m_bDepthBias = true;
+		xSpec.m_bDynamicDepthBias = true;
+		xSpec.m_fDepthBiasConstant = 1.75f;
+		xSpec.m_fDepthBiasSlope = 3.0f;
+		m_xShadowShader.GetReflection().PopulateLayout(xSpec.m_xPipelineLayout);
+		Flux_PipelineBuilder::FromSpecification(m_xShadowPipeline, xSpec);
+	}
 }
+
+//=============================================================================
+// GPU resources
+//=============================================================================
+
+void Flux_GrassImpl::CreateGPUResources()
+{
+	Flux_MemoryManager& xMem = g_xEngine.FluxMemory();
+
+	xMem.InitialiseReadWriteBuffer(nullptr,
+		static_cast<size_t>(uFLUX_GRASS_BLADE_POOL_CAPACITY) * sizeof(Flux_GrassBladeInstance), m_xBladePoolBuffer);
+	xMem.InitialiseReadWriteBuffer(nullptr,
+		static_cast<size_t>(uFLUX_GRASS_VISIBLE_INDEX_CAPACITY) * sizeof(u_int), m_xVisibleIndexBuffer);
+	xMem.InitialiseReadWriteBuffer(nullptr, sizeof(u_int), m_xBladeCounterBuffer);
+	xMem.InitialiseIndirectBuffer(uFLUX_GRASS_INDIRECT_SLOT_COUNT * uFLUX_GRASS_INDIRECT_STRIDE, m_xIndirectArgsBuffer);
+
+	// The index table VERBATIM — the shader's kauGRASS_INDEX_TABLE mirrored into
+	// Flux_GrassConfig::auBLADE_INDEX_TABLE. The reset CS's firstIndex/indexCount
+	// address ranges inside exactly these 48 entries.
+	xMem.InitialiseIndexBuffer(Flux_GrassConfig::auBLADE_INDEX_TABLE,
+		sizeof(Flux_GrassConfig::auBLADE_INDEX_TABLE), m_xBladeIndexBuffer);
+
+	xMem.InitialiseDynamicReadWriteBuffer(nullptr,
+		static_cast<size_t>(uFLUX_GRASS_MAX_TYPES) * sizeof(Flux_GrassTypeParamsGPU), m_xTypeParamsBuffer);
+	xMem.InitialiseDynamicReadWriteBuffer(nullptr,
+		static_cast<size_t>(Flux_GrassConfig::uMAX_TILES) * sizeof(Flux_GrassTileGPU), m_xTileBuffer);
+
+	xMem.InitialiseDynamicConstantBuffer(nullptr, sizeof(Flux_GrassPlacementConstantsGPU), m_xPlacementConstantsBuffer);
+	xMem.InitialiseDynamicConstantBuffer(nullptr, sizeof(Flux_GrassDrawConstantsGPU), m_xDrawConstantsBuffer);
+	xMem.InitialiseDynamicConstantBuffer(nullptr, sizeof(Flux_GrassWindBlockGPU), m_xPrevWindConstantsBuffer);
+
+	// Zero the indirect block once at allocation. The per-frame reset CS rewrites
+	// every live word, but a garbage VkDrawIndexedIndirectCommand read on the very
+	// first frame (before the reset has run) is the classic GPU-TDR landmine.
+	Flux_GrassDrawIndexedIndirectArgs axZeroArgs[uFLUX_GRASS_INDIRECT_SLOT_COUNT] = {};
+	xMem.UploadBufferData(m_xIndirectArgsBuffer.GetBuffer().m_xVRAMHandle, axZeroArgs, sizeof(axZeroArgs));
+}
+
+void Flux_GrassImpl::DestroyGPUResources()
+{
+	Flux_MemoryManager& xMem = g_xEngine.FluxMemory();
+	xMem.DestroyReadWriteBuffer(m_xBladePoolBuffer);
+	xMem.DestroyReadWriteBuffer(m_xVisibleIndexBuffer);
+	xMem.DestroyReadWriteBuffer(m_xBladeCounterBuffer);
+	xMem.DestroyIndirectBuffer(m_xIndirectArgsBuffer);
+	xMem.DestroyIndexBuffer(m_xBladeIndexBuffer);
+	xMem.DestroyDynamicReadWriteBuffer(m_xTypeParamsBuffer);
+	xMem.DestroyDynamicReadWriteBuffer(m_xTileBuffer);
+	xMem.DestroyDynamicConstantBuffer(m_xPlacementConstantsBuffer);
+	xMem.DestroyDynamicConstantBuffer(m_xDrawConstantsBuffer);
+	xMem.DestroyDynamicConstantBuffer(m_xPrevWindConstantsBuffer);
+}
+
+void Flux_GrassImpl::CreateMapTextures()
+{
+	if (Zenith_IsNullRenderer())
+	{
+		// The GPU-less backend's texture calls are no-ops and nothing ever samples
+		// these descriptors, so the 34 MB of zero staging below would be pure cost.
+		// Every CPU-side consequence of a build (maps, tile schedule, stats) still
+		// happens — only the device copy is skipped.
+		return;
+	}
+
+	Flux_MemoryManager& xMem = g_xEngine.FluxMemory();
+
+	// Created from zeroed staging rather than left undefined: an unbuilt world must
+	// sample zero coverage (no grass), not whatever the allocation happened to hold.
+	const Flux_SurfaceInfo xHeightInfo = MakeMapSurfaceInfo(TEXTURE_FORMAT_R16_UNORM, uGRASS_HEIGHT_TEXTURE_SIZE);
+	const Flux_SurfaceInfo xCoverageInfo = MakeMapSurfaceInfo(TEXTURE_FORMAT_R8_UNORM, uGRASS_COVERAGE_TEXTURE_SIZE);
+	const Flux_SurfaceInfo xTypeInfo = MakeMapSurfaceInfo(TEXTURE_FORMAT_R8_UNORM, uGRASS_TYPE_TEXTURE_SIZE);
+	const Flux_SurfaceInfo xDisplacementInfo = MakeMapSurfaceInfo(TEXTURE_FORMAT_R16G16_SFLOAT, uGRASS_DISPLACEMENT_TEXTURE_SIZE);
+
+	Zenith_Vector<u_int8> aucZeros;
+	aucZeros.Resize(uGRASS_HEIGHT_TEXTURE_SIZE * uGRASS_HEIGHT_TEXTURE_SIZE * 2u, static_cast<u_int8>(0));
+	const void* pZeros = aucZeros.GetDataPointer();
+
+	m_xHeightTexture.m_xSurfaceInfo = xHeightInfo;
+	m_xHeightTexture.m_xVRAMHandle = xMem.CreateTextureVRAM(pZeros, xHeightInfo, TEXTURE_MIPS_NONE);
+	m_xHeightTexture.m_xSRV = xMem.CreateShaderResourceView(m_xHeightTexture.m_xVRAMHandle, xHeightInfo, 0u, 1u);
+
+	m_xCoverageTexture.m_xSurfaceInfo = xCoverageInfo;
+	m_xCoverageTexture.m_xVRAMHandle = xMem.CreateTextureVRAM(pZeros, xCoverageInfo, TEXTURE_MIPS_NONE);
+	m_xCoverageTexture.m_xSRV = xMem.CreateShaderResourceView(m_xCoverageTexture.m_xVRAMHandle, xCoverageInfo, 0u, 1u);
+
+	m_xTypeTexture.m_xSurfaceInfo = xTypeInfo;
+	m_xTypeTexture.m_xVRAMHandle = xMem.CreateTextureVRAM(pZeros, xTypeInfo, TEXTURE_MIPS_NONE);
+	m_xTypeTexture.m_xSRV = xMem.CreateShaderResourceView(m_xTypeTexture.m_xVRAMHandle, xTypeInfo, 0u, 1u);
+
+	m_xDisplacementTexture.m_xSurfaceInfo = xDisplacementInfo;
+	m_xDisplacementTexture.m_xVRAMHandle = xMem.CreateTextureVRAM(pZeros, xDisplacementInfo, TEXTURE_MIPS_NONE);
+	m_xDisplacementTexture.m_xSRV = xMem.CreateShaderResourceView(m_xDisplacementTexture.m_xVRAMHandle, xDisplacementInfo, 0u, 1u);
+}
+
+void Flux_GrassImpl::DestroyMapTextures()
+{
+	Flux_MemoryManager& xMem = g_xEngine.FluxMemory();
+	Flux_Texture* apxTextures[4] = { &m_xHeightTexture, &m_xCoverageTexture, &m_xTypeTexture, &m_xDisplacementTexture };
+	for (Flux_Texture* pxTexture : apxTextures)
+	{
+		if (pxTexture->m_xVRAMHandle.IsValid())
+		{
+			xMem.QueueVRAMDeletion(pxTexture->m_xVRAMHandle,
+				Flux_ImageViewHandle(), Flux_ImageViewHandle(), pxTexture->m_xSRV.m_xImageViewHandle);
+		}
+		*pxTexture = Flux_Texture();
+	}
+}
+
+void Flux_GrassImpl::UploadMapTextures()
+{
+	// Headless has no allocator behind the texture handles, so the re-upload is a
+	// no-op that still walks 34 MB of staging. Skipped explicitly: the CPU maps ARE
+	// the query surface, and they are already populated.
+	if (Zenith_IsNullRenderer() || !m_bGPUResourcesReady)
+	{
+		return;
+	}
+
+	Flux_MemoryManager& xMem = g_xEngine.FluxMemory();
+	xMem.UpdateTextureVRAM(m_xHeightTexture.m_xVRAMHandle, m_auHeightTexels.GetDataPointer(), m_xHeightTexture.m_xSurfaceInfo);
+	xMem.UpdateTextureVRAM(m_xCoverageTexture.m_xVRAMHandle, m_aucCoverageTexels.GetDataPointer(), m_xCoverageTexture.m_xSurfaceInfo);
+	xMem.UpdateTextureVRAM(m_xTypeTexture.m_xVRAMHandle, m_aucTypeTexels.GetDataPointer(), m_xTypeTexture.m_xSurfaceInfo);
+}
+
+//=============================================================================
+// Lifecycle
+//=============================================================================
 
 void Flux_GrassImpl::Initialise()
 {
-	CreateGrassBladeMesh();
-	CreateBuffers();
-
 	BuildPipelines();
+	CreateGPUResources();
+	CreateMapTextures();
+	m_bGPUResourcesReady = true;
 
-	// Initialize constants buffer
-	g_xEngine.FluxMemory().InitialiseDynamicConstantBuffer(&s_xGrassConstants, sizeof(GrassConstants), m_xGrassConstantsBuffer);
+	// The type table is global authored content, not scene state: seeded once here
+	// and preserved across every ClearSceneData. The game's authored table, when it
+	// ships one, replaces the seeded defaults right here — before the first gather,
+	// so no frame is ever placed against a table the game did not author.
+	m_xTypeTable = Flux_GrassTypeTable::Defaults();
+	LoadAuthoredTypeTable();
+
+	ClearSceneData();
 
 #ifdef ZENITH_TOOLS
 	RegisterDebugVariables();
 #endif
 
-	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Grass Initialised");
+	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Grass initialised (GPU-driven, %.1f MB)", GetBufferUsageMB());
 }
 
 void Flux_GrassImpl::Shutdown()
 {
-	DestroyBuffers();
-	Flux_MemoryManager& xVulkanMemory = g_xEngine.FluxMemory();
-	xVulkanMemory.DestroyDynamicConstantBuffer(m_xGrassConstantsBuffer);
-	xVulkanMemory.DestroyVertexBuffer(s_xGrassBladeMesh.m_xVertexBuffer);
-	xVulkanMemory.DestroyIndexBuffer(s_xGrassBladeMesh.m_xIndexBuffer);
+	if (m_bGPUResourcesReady)
+	{
+		DestroyGPUResources();
+		DestroyMapTextures();
+		m_bGPUResourcesReady = false;
+	}
+
+	m_xResetPipeline.Reset();
+	m_xPlacementPipeline.Reset();
+	m_xFixupPipeline.Reset();
+	m_xDisplacementPipeline.Reset();
+	m_xGBufferPipeline.Reset();
+	m_xGBufferVelocityPipeline.Reset();
+	m_xShadowPipeline.Reset();
+
+	m_xResetShader.Reset();
+	m_xPlacementShader.Reset();
+	m_xFixupShader.Reset();
+	m_xDisplacementShader.Reset();
+	m_xGBufferShader.Reset();
+	m_xGBufferVelocityShader.Reset();
+	m_xShadowShader.Reset();
+
+	ClearSceneData();
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Grass shut down");
 }
 
 void Flux_GrassImpl::Reset()
 {
-	// Engine-owned scene-state reset. Invoked UNCONDITIONALLY on the SINGLE-load
-	// render-reset path (Zenith_Engine's m_pfnResetRenderSystems hook, fired by
-	// Zenith_SceneSystem::ResetAllRenderSystems on SINGLE teardown) so grass
-	// generated for one scene never leaks into the next. Delegates to the single
-	// full-clear body (ClearSceneData) so scene-state teardown stays one source of
-	// truth: chunk LOD, the CPU instance array, the generated/uploaded flags, the
-	// visible/active counters, and the copied density map are all discarded. The
-	// instance VRAM buffer is engine-owned and stays allocated until Shutdown;
-	// invalidating the upload flag prevents stale bytes from being drawn.
+	// Engine scene-lifecycle hook. It DOUBLE-FIRES at boot and may run before
+	// Initialise, so the whole body has to be idempotent CPU work — which is exactly
+	// what ClearSceneData is.
 	ClearSceneData();
 }
 
 void Flux_GrassImpl::ClearSceneData()
 {
-	// The instance buffer is engine-owned and remains allocated until Shutdown.
-	// Invalidating the upload flag prevents stale bytes from being drawn while
-	// scene-owned CPU generation state and the copied density map are discarded.
-	m_axChunks.Clear();
-	m_axAllInstances.Clear();
-	m_bInstancesGenerated = false;
-	m_bInstancesUploaded = false;
-	m_uVisibleBladeCount = 0;
-	m_uActiveChunkCount = 0;
-	SetDensityMap(nullptr, 0, 0, 0.0f);
+	// Scene-owned state only. The type table, the wind state and every GPU
+	// allocation deliberately survive: the first is authored content, the second is
+	// a global atmosphere setting, and the third is engine-owned until Shutdown.
+	m_auHeightTexels.Clear();
+	m_aucCoverageTexels.Clear();
+	m_aucTypeTexels.Clear();
+	m_uHeightSize = 0u;
+	m_uCoverageSize = 0u;
+	m_uTypeSize = 0u;
+	m_fMapWorldSize = 0.0f;
+	m_fHeightScale = 1.0f;
+	m_fHeightBias = 0.0f;
+
+	m_afTileMinY.Clear();
+	m_afTileMaxY.Clear();
+	m_uHeightGridCells = 0u;
+	m_fHeightGridCellSize = 0.0f;
+
+	m_xTileList.Clear();
+	m_axMovers.Clear();
+	m_uMoverOverflowCount = 0u;
+
+	m_uScheduledInstanceCount = 0u;
+	m_uVisibleTileCount = 0u;
+	m_uTileCount = 0u;
+	m_uSubmittedDrawCount = 0u;
+	m_uCascadeFrustaCount = 0u;
+
+	m_bBuilt = false;
 }
 
-void Flux_GrassImpl::CreateBuffers()
-{
-	// Create instance buffer for grass blade data
-	u_int uBufferSize = GrassConfig::uMAX_TOTAL_INSTANCES * sizeof(GrassBladeInstance);
+//=============================================================================
+// Feeding
+//=============================================================================
 
-	g_xEngine.FluxMemory().InitialiseReadWriteBuffer(nullptr, uBufferSize, m_xInstanceBuffer);
-	m_uAllocatedInstances = GrassConfig::uMAX_TOTAL_INSTANCES;
-}
-
-void Flux_GrassImpl::DestroyBuffers()
+bool Flux_GrassImpl::QuantizeHeightMap(const float* pfHeight, u_int uSize, float fWorldSize)
 {
-	if (m_xInstanceBuffer.GetBuffer().m_xVRAMHandle.IsValid())
+	// The fixed-point range tracks the terrain actually supplied rather than a
+	// global constant, so a shallow map keeps its full 16 bits of resolution.
+	float fMinY = FLT_MAX;
+	float fMaxY = -FLT_MAX;
+	const u_int uTexelCount = uSize * uSize;
+	for (u_int u = 0; u < uTexelCount; u++)
 	{
-		g_xEngine.FluxMemory().DestroyReadWriteBuffer(m_xInstanceBuffer);
+		fMinY = glm::min(fMinY, pfHeight[u]);
+		fMaxY = glm::max(fMaxY, pfHeight[u]);
 	}
-}
-
-void Flux_GrassImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
-{
-	// Forward pass over the lit HDR scene (the setup walk runs this AFTER
-	// DeferredShading, so the HDR clear + lighting have already happened).
-	// READ_DEPTH binds the scene depth as a READ-ONLY depth attachment: the
-	// blades depth-test against the opaque scene without writing depth.
-	// Do NOT clear: both attachments carry live scene contents.
-	xGraph.AddPass("Grass", ExecuteRender)
-		.Writes(g_xEngine.FluxGraphics().GetHDRSceneTarget(),                 RESOURCE_ACCESS_WRITE_RTV)
-		.Reads (g_xEngine.FluxGraphics().GetDepthAttachment(),       RESOURCE_ACCESS_READ_DEPTH);
-}
-
-static void ExecuteRender(Flux_CommandBuffer* pxCmdList, void*)
-{
-	// Static graph trampoline: recover the subsystem once; other engine reaches
-	// (VulkanMemory / Frame / FluxGraphics) go via g_xEngine at point of use.
-	Flux_GrassImpl& xGrass = g_xEngine.Grass();
-
-	const Zenith_GraphicsOptions& xOpts = Zenith_GraphicsOptions::Get();
-	if (!xOpts.m_bGrassEnabled || !xGrass.m_bInstancesUploaded)
+	if (!(fMinY <= fMaxY))
 	{
-		return;
+		return false;   // every texel was NaN
 	}
 
-	// Sync debug variables (continuous parameters)
-	xGrass.m_fDensityScale = dbg_fGrassDensityScale;
-	xGrass.m_fMaxDistance = dbg_fGrassMaxDistance;
-	xGrass.m_fWindStrength = dbg_fGrassWindStrength;
+	m_fHeightBias = fMinY;
+	// A perfectly flat map would divide by zero; 1 m of range quantizes it to the
+	// single value it already is.
+	m_fHeightScale = (fMaxY - fMinY) > 1.0e-4f ? (fMaxY - fMinY) : 1.0f;
+	const float fInvScale = 1.0f / m_fHeightScale;
 
-	// Update visibility and LOD each frame
-	xGrass.UpdateVisibleChunks();
-
-	if (xGrass.m_uVisibleBladeCount == 0)
+	// Cleared first: Resize only value-fills NEW elements, so a rebuild over a
+	// previous map would otherwise keep its tail.
+	m_auHeightTexels.Clear();
+	m_auHeightTexels.Resize(uTexelCount, static_cast<u_int16>(0));
+	u_int16* puTexels = m_auHeightTexels.GetDataPointer();
+	for (u_int u = 0; u < uTexelCount; u++)
 	{
-		return;
+		const float fNormalized = Zenith_Maths::Clamp((pfHeight[u] - m_fHeightBias) * fInvScale, 0.0f, 1.0f);
+		puTexels[u] = static_cast<u_int16>(fNormalized * 65535.0f + 0.5f);
 	}
-
-	// Update constants
-	// Float32 has 24-bit mantissa, giving ~7 decimal digits of precision
-	// Wind frequencies max at 4.1x, so after 10 hours (36000s) we have 147600 which is fine
-	// No need to wrap - doing so causes visible phase jumps in all sine waves
-	double dTime = g_xEngine.Frame().GetTimePassed();
-	float fTime = static_cast<float>(dTime);
-
-	s_xGrassConstants.m_xWindParams = Zenith_Maths::Vector4(
-		xGrass.m_xWindDirection.x,
-		xGrass.m_xWindDirection.y,
-		xOpts.m_bGrassWindEnabled ? xGrass.m_fWindStrength : 0.0f,
-		fTime);
-
-	s_xGrassConstants.m_xGrassParams = Zenith_Maths::Vector4(
-		xGrass.m_fDensityScale,
-		xGrass.m_fMaxDistance,
-		static_cast<float>(dbg_uGrassDebugMode),
-		0.0f);
-
-	s_xGrassConstants.m_xLODDistances = Zenith_Maths::Vector4(
-		GrassConfig::fLOD0_DISTANCE,
-		GrassConfig::fLOD1_DISTANCE,
-		GrassConfig::fLOD2_DISTANCE,
-		xGrass.m_fMaxDistance);
-
-	g_xEngine.FluxMemory().UploadBufferData(xGrass.m_xGrassConstantsBuffer.GetBuffer().m_xVRAMHandle, &s_xGrassConstants, sizeof(GrassConstants));
-
-	pxCmdList->SetPipeline(&xGrass.m_xGrassPipeline);
-	pxCmdList->SetVertexBuffer(s_xGrassBladeMesh.m_xVertexBuffer);
-	pxCmdList->SetIndexBuffer(s_xGrassBladeMesh.m_xIndexBuffer);
-
-	{
-		namespace GR = Flux_Generated_Vegetation::Grass;
-		Flux_ShaderBinder xBinder(*pxCmdList);
-		xBinder.BindCBV(GR::hGrassConstants, &xGrass.m_xGrassConstantsBuffer.GetCBV());
-		xBinder.BindUAV_Buffer(GR::hInstanceBuffer, &xGrass.m_xInstanceBuffer.GetUAV());
-	}
-
-	// One instanced draw per visible chunk. firstInstance = the chunk's base offset
-	// in the shared instance buffer; the shader adds SV_StartInstanceLocation to
-	// recover the global blade index. Each chunk draws the first
-	// InstanceCountForLOD(...) of its (per-chunk shuffled) blades for distance LOD.
-	for (u_int i = 0; i < xGrass.m_axChunks.GetSize(); ++i)
-	{
-		const GrassChunk& xChunk = xGrass.m_axChunks.Get(i);
-		if (!xChunk.m_bVisible || xChunk.m_uInstanceCount == 0)
-		{
-			continue;
-		}
-		const u_int uDrawCount = Flux_Grass_InstanceCountForLOD(xChunk.m_uInstanceCount, xChunk.m_uLOD);
-		if (uDrawCount == 0)
-		{
-			continue;
-		}
-		pxCmdList->DrawIndexed(6, uDrawCount, 0, 0, xChunk.m_uInstanceOffset);
-	}
-}
-
-void Flux_GrassImpl::GenerateGrassForChunk(GrassChunk& xChunk, const Zenith_Maths::Vector3& xCenter)
-{
-	// This function is called by OnTerrainChunkLoaded for individual chunks
-	// For full terrain generation, use GenerateFromTerrain() instead
-	xChunk.m_xCenter = xCenter;
-	xChunk.m_fRadius = GrassConfig::fCHUNK_SIZE * 0.707f;  // Diagonal
-	xChunk.m_uInstanceOffset = 0;
-	xChunk.m_uInstanceCount = 0;  // Will be populated by GenerateFromTerrain
-	xChunk.m_uLOD = 0;
-	xChunk.m_bVisible = false;
-}
-
-static bool Flux_Grass_IsChunkInFrustum(const GrassChunk& xChunk, const Zenith_Frustum& xFrustum)
-{
-	// Convert the chunk's bounding sphere into an AABB and test against the
-	// frustum. Kept as its own helper so UpdateVisibleChunks stays focused on
-	// the culling *policy* rather than the geometry plumbing.
-	Zenith_AABB xChunkAABB;
-	xChunkAABB.m_xMin = xChunk.m_xCenter - Zenith_Maths::Vector3(xChunk.m_fRadius);
-	xChunkAABB.m_xMax = xChunk.m_xCenter + Zenith_Maths::Vector3(xChunk.m_fRadius);
-	return Zenith_FrustumCulling::TestAABBFrustum(xFrustum, xChunkAABB);
-}
-
-static u_int Flux_Grass_PickChunkLOD(float fDistSq)
-{
-	// Pure function: distance squared to LOD index. Forced-LOD override is
-	// applied by the caller so this stays trivially testable.
-	constexpr float fLOD0DistSq = GrassConfig::fLOD0_DISTANCE * GrassConfig::fLOD0_DISTANCE;
-	constexpr float fLOD1DistSq = GrassConfig::fLOD1_DISTANCE * GrassConfig::fLOD1_DISTANCE;
-	constexpr float fLOD2DistSq = GrassConfig::fLOD2_DISTANCE * GrassConfig::fLOD2_DISTANCE;
-
-	if (fDistSq < fLOD0DistSq) return 0;
-	if (fDistSq < fLOD1DistSq) return 1;
-	if (fDistSq < fLOD2DistSq) return 2;
-	return 3;
-}
-
-static u_int Flux_Grass_InstanceCountForLOD(u_int uTotal, u_int uLOD)
-{
-	// LOD0 = 100%, LOD1 = 50%, LOD2 = 25%, LOD3+ = 12.5%.
-	switch (uLOD)
-	{
-	case 0: return uTotal;
-	case 1: return uTotal / 2;
-	case 2: return uTotal / 4;
-	default: return uTotal / 8;
-	}
-}
-
-void Flux_GrassImpl::UpdateVisibleChunks()
-{
-	ZENITH_PROFILE_SCOPE("Grass Culling & LOD");
-	m_uVisibleBladeCount = 0;
-	m_uActiveChunkCount = 0;
-
-	if (m_axChunks.GetSize() == 0)
-	{
-		return;
-	}
-
-	const Zenith_Maths::Vector3& xCamPos = g_xEngine.FluxGraphics().GetCameraPosition();
-	const Zenith_Maths::Matrix4 xViewProj = g_xEngine.FluxGraphics().GetViewProjMatrix();
-	Zenith_Frustum xFrustum;
-	xFrustum.ExtractFromViewProjection(xViewProj);
-
-	const float fMaxDistSq = m_fMaxDistance * m_fMaxDistance;
-
-	for (u_int i = 0; i < m_axChunks.GetSize(); ++i)
-	{
-		GrassChunk& xChunk = m_axChunks.Get(i);
-
-		if (xChunk.m_uInstanceCount == 0)
-		{
-			xChunk.m_bVisible = false;
-			continue;
-		}
-
-		const float fDistSq = glm::distance2(xCamPos, xChunk.m_xCenter);
-
-		// Distance + frustum culling — both gated on the GraphicsOptions toggle so
-		// forcing it off keeps everything visible for debug viewing.
-		if (Zenith_GraphicsOptions::Get().m_bGrassCullingEnabled)
-		{
-			if (fDistSq > fMaxDistSq || !Flux_Grass_IsChunkInFrustum(xChunk, xFrustum))
-			{
-				xChunk.m_bVisible = false;
-				continue;
-			}
-		}
-
-		xChunk.m_uLOD = dbg_bGrassFreezeLOD ? dbg_uGrassForcedLOD : Flux_Grass_PickChunkLOD(fDistSq);
-		xChunk.m_bVisible = true;
-
-		m_uVisibleBladeCount += Flux_Grass_InstanceCountForLOD(xChunk.m_uInstanceCount, xChunk.m_uLOD);
-		m_uActiveChunkCount++;
-	}
-}
-
-void Flux_GrassImpl::UploadInstanceData()
-{
-	if (!m_bInstancesGenerated || m_axAllInstances.GetSize() == 0)
-	{
-		return;
-	}
-
-	if (!m_xInstanceBuffer.GetBuffer().m_xVRAMHandle.IsValid())
-	{
-		Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Grass: Instance buffer not valid, cannot upload");
-		return;
-	}
-
-	// Calculate upload size
-	u_int uUploadSize = static_cast<u_int>(m_axAllInstances.GetSize() * sizeof(GrassBladeInstance));
-	u_int uBufferSize = m_uAllocatedInstances * sizeof(GrassBladeInstance);
-
-	if (uUploadSize > uBufferSize)
-	{
-		Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Grass: Instance data (%u bytes) exceeds buffer size (%u bytes), truncating",
-			uUploadSize, uBufferSize);
-		uUploadSize = uBufferSize;
-	}
-
-	// Upload to GPU
-	g_xEngine.FluxMemory().UploadBufferData(
-		m_xInstanceBuffer.GetBuffer().m_xVRAMHandle,
-		m_axAllInstances.GetDataPointer(),
-		static_cast<size_t>(uUploadSize));
-
-	m_bInstancesUploaded = true;
-	m_uVisibleBladeCount = static_cast<u_int>(m_axAllInstances.GetSize());
-
-	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Grass: Uploaded %u instances (%.2f MB)",
-		m_axAllInstances.GetSize(), uUploadSize / (1024.0f * 1024.0f));
-}
-
-namespace
-{
-	// RNG bundle — one fixed-seed mt19937 shared across all per-blade distributions
-	// so calls that re-generate with the same terrain produce identical output.
-	struct GrassGenRng
-	{
-		std::mt19937 xRng{42};
-		std::uniform_real_distribution<float> xUniform01{0.0f, 1.0f};
-		std::uniform_real_distribution<float> xRotationDist{0.0f, 6.28318f};
-		std::uniform_real_distribution<float> xHeightDist{0.3f, 0.8f};
-		std::uniform_real_distribution<float> xWidthDist{0.02f, 0.05f};
-		std::uniform_real_distribution<float> xBendDist{0.0f, 0.3f};
-		std::uniform_int_distribution<u_int> xGreenDist{180, 255};
-		std::uniform_int_distribution<u_int> xColorOffset{0, 40};
-		std::uniform_real_distribution<float> xColorBlend{0.0f, 1.0f};
-	};
-
-	struct TriangleSamples
-	{
-		Zenith_Maths::Vector3 xPos0;
-		Zenith_Maths::Vector3 xPos1;
-		Zenith_Maths::Vector3 xPos2;
-		Zenith_Maths::Vector3 xNorm0;
-		Zenith_Maths::Vector3 xNorm1;
-		Zenith_Maths::Vector3 xNorm2;
-		float fLerp0;
-		float fLerp1;
-		float fLerp2;
-	};
-
-	// Grass density threshold - only place grass where MaterialLerp < this value.
-	// MaterialLerp = 0 means 100% material 0 (grass), 1 means 100% material 1 (rock/dirt).
-	constexpr float fGRASS_THRESHOLD = 0.5f;
-}
-
-// Generates blades for one triangle. Returns false once the global instance
-// limit is hit so the outer triangle loop can stop early.
-static bool GenerateBladesForTriangle(
-	const TriangleSamples& xTri,
-	u_int uNumBlades,
-	GrassGenRng& xRng,
-	Zenith_Vector<GrassBladeInstance>& xAllInstances,
-	u_int& uTotalBladesGenerated)
-{
-	for (u_int uBlade = 0; uBlade < uNumBlades; ++uBlade)
-	{
-		if (xAllInstances.GetSize() >= GrassConfig::uMAX_TOTAL_INSTANCES)
-		{
-			Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Grass: Hit instance limit (%u)", GrassConfig::uMAX_TOTAL_INSTANCES);
-			return false;
-		}
-
-		// Random barycentric coordinates (reflect if outside the triangle).
-		float fU = xRng.xUniform01(xRng.xRng);
-		float fV = xRng.xUniform01(xRng.xRng);
-		if (fU + fV > 1.0f)
-		{
-			fU = 1.0f - fU;
-			fV = 1.0f - fV;
-		}
-		float fW = 1.0f - fU - fV;
-
-		Zenith_Maths::Vector3 xPosition = xTri.xPos0 * fW + xTri.xPos1 * fU + xTri.xPos2 * fV;
-		Zenith_Maths::Vector3 xNormal = glm::normalize(xTri.xNorm0 * fW + xTri.xNorm1 * fU + xTri.xNorm2 * fV);
-
-		const float fLocalLerp = xTri.fLerp0 * fW + xTri.fLerp1 * fU + xTri.fLerp2 * fV;
-		if (fLocalLerp > fGRASS_THRESHOLD)
-			continue;
-
-		// Offset along normal to prevent z-fighting.
-		xPosition += xNormal * 0.01f;
-
-		GrassBladeInstance xInstance;
-		xInstance.m_xPosition = xPosition;
-		xInstance.m_fRotation = xRng.xRotationDist(xRng.xRng);
-		xInstance.m_fHeight = xRng.xHeightDist(xRng.xRng);
-		xInstance.m_fWidth = xRng.xWidthDist(xRng.xRng);
-		xInstance.m_fBend = xRng.xBendDist(xRng.xRng);
-
-		// ~15% of blades use a dry/yellowed palette for variety.
-		const float fBlend = xRng.xColorBlend(xRng.xRng);
-		const bool bDryGrass = fBlend < 0.15f;
-
-		u_int uR, uG, uB;
-		if (bDryGrass)
-		{
-			uR = 140 + xRng.xColorOffset(xRng.xRng);
-			uG = 150 + xRng.xColorOffset(xRng.xRng);
-			uB = 50 + xRng.xColorOffset(xRng.xRng) / 2;
-		}
-		else
-		{
-			const u_int uBaseGreen = xRng.xGreenDist(xRng.xRng);
-			uR = 40 + xRng.xColorOffset(xRng.xRng);
-			uG = uBaseGreen;
-			uB = 20 + xRng.xColorOffset(xRng.xRng) / 2;
-		}
-		xInstance.m_uColorTint = (255 << 24) | (uB << 16) | (uG << 8) | uR;
-
-		xAllInstances.PushBack(xInstance);
-		uTotalBladesGenerated++;
-	}
+	m_uHeightSize = uSize;
+	m_fMapWorldSize = fWorldSize;
 	return true;
 }
 
-// Partition generated blades into a world-space grid of grass chunks. The
-// instance vector is reordered in place so each chunk's blades are contiguous
-// (each chunk is drawn with firstInstance = its offset); within a chunk the
-// blades are shuffled so LOD reduction (drawing the first N) samples the whole
-// cell rather than a corner. Exact per-chunk bounds drive the distance +
-// frustum culling in UpdateVisibleChunks, so grass near the camera renders at
-// LOD0 while distant regions LOD-down or cull independently.
-static void PartitionInstancesIntoChunks(
-	Zenith_Vector<GrassBladeInstance>& xInstances,
-	Zenith_Vector<GrassChunk>& xChunksOut,
-	float fChunkSize,
-	std::mt19937& xRng)
+void Flux_GrassImpl::QuantizeCoverageMap(const float* pfCoverage, u_int uSize)
 {
-	xChunksOut.Clear();
-	const u_int uCount = static_cast<u_int>(xInstances.GetSize());
-	if (uCount == 0)
+	const u_int uTexelCount = uSize * uSize;
+	m_aucCoverageTexels.Clear();
+	m_aucCoverageTexels.Resize(uTexelCount, static_cast<u_int8>(0));
+	u_int8* pucTexels = m_aucCoverageTexels.GetDataPointer();
+	for (u_int u = 0; u < uTexelCount; u++)
 	{
-		return;
+		const float fValue = Zenith_Maths::Clamp(pfCoverage[u], 0.0f, 1.0f);
+		pucTexels[u] = static_cast<u_int8>(fValue * 255.0f + 0.5f);
 	}
+	m_uCoverageSize = uSize;
+}
 
-	Zenith_Maths::Vector3 xMinBounds(FLT_MAX);
-	Zenith_Maths::Vector3 xMaxBounds(-FLT_MAX);
-	for (u_int i = 0; i < uCount; ++i)
+void Flux_GrassImpl::CopyTypeMap(const u_int8* pucType, u_int uSize)
+{
+	// An absent type map is normal content, not an error: a terrain set baked before
+	// the map existed simply has no file, and all-zero reads as type 0 everywhere.
+	const u_int uTexelCount = uSize * uSize;
+	m_aucTypeTexels.Clear();
+	m_aucTypeTexels.Resize(uTexelCount, static_cast<u_int8>(0));
+	if (pucType != nullptr)
 	{
-		const Zenith_Maths::Vector3& xPos = xInstances.Get(i).m_xPosition;
-		xMinBounds = glm::min(xMinBounds, xPos);
-		xMaxBounds = glm::max(xMaxBounds, xPos);
+		memcpy(m_aucTypeTexels.GetDataPointer(), pucType, uTexelCount);
 	}
+	m_uTypeSize = uSize;
+}
 
-	const float fInvChunk = 1.0f / fChunkSize;
-	const u_int uGridW = static_cast<u_int>((xMaxBounds.x - xMinBounds.x) * fInvChunk) + 1u;
-	const u_int uGridH = static_cast<u_int>((xMaxBounds.z - xMinBounds.z) * fInvChunk) + 1u;
-	const u_int uCellCount = uGridW * uGridH;
+void Flux_GrassImpl::BuildTileHeightGrid(const float* pfHeight, u_int uSize, float fWorldSize)
+{
+	const u_int uCells = uGRASS_HEIGHT_GRID_CELLS;
+	// Cleared first — the accumulation below starts from the sentinels, and a
+	// rebuild that inherited a previous map's extremes would widen every band.
+	m_afTileMinY.Clear();
+	m_afTileMaxY.Clear();
+	m_afTileMinY.Resize(uCells * uCells, FLT_MAX);
+	m_afTileMaxY.Resize(uCells * uCells, -FLT_MAX);
+	m_uHeightGridCells = uCells;
+	m_fHeightGridCellSize = fWorldSize / static_cast<float>(uCells);
 
-	auto CellOf = [&](const GrassBladeInstance& xInst) -> u_int
+	float* pfMin = m_afTileMinY.GetDataPointer();
+	float* pfMax = m_afTileMaxY.GetDataPointer();
+	// uSize is validated a multiple of uCells at Build*; the guard keeps a future
+	// smaller map from dividing by zero rather than trusting that validation.
+	const u_int uTexelsPerCell = glm::max(uSize / uCells, 1u);
+	for (u_int uZ = 0; uZ < uSize; uZ++)
 	{
-		u_int uX = static_cast<u_int>((xInst.m_xPosition.x - xMinBounds.x) * fInvChunk);
-		u_int uZ = static_cast<u_int>((xInst.m_xPosition.z - xMinBounds.z) * fInvChunk);
-		uX = std::min(uX, uGridW - 1u);
-		uZ = std::min(uZ, uGridH - 1u);
-		return uZ * uGridW + uX;
-	};
-
-	// Counting sort by cell → contiguous per-cell ranges (offset + count).
-	Zenith_Vector<u_int> auCellCounts;
-	auCellCounts.Resize(uCellCount, 0u);
-	for (u_int i = 0; i < uCount; ++i)
-	{
-		auCellCounts.Get(CellOf(xInstances.Get(i)))++;
-	}
-
-	Zenith_Vector<u_int> auCellOffsets;
-	auCellOffsets.Resize(uCellCount, 0u);
-	u_int uRunningOffset = 0;
-	for (u_int c = 0; c < uCellCount; ++c)
-	{
-		auCellOffsets.Get(c) = uRunningOffset;
-		uRunningOffset += auCellCounts.Get(c);
-	}
-
-	Zenith_Vector<GrassBladeInstance> xSorted;
-	xSorted.Resize(uCount);
-	Zenith_Vector<u_int> auCursor;
-	auCursor.Resize(uCellCount, 0u);
-	for (u_int c = 0; c < uCellCount; ++c)
-	{
-		auCursor.Get(c) = auCellOffsets.Get(c);
-	}
-	for (u_int i = 0; i < uCount; ++i)
-	{
-		const GrassBladeInstance& xInst = xInstances.Get(i);
-		xSorted.Get(auCursor.Get(CellOf(xInst))++) = xInst;
-	}
-	for (u_int i = 0; i < uCount; ++i)
-	{
-		xInstances.Get(i) = xSorted.Get(i);
-	}
-
-	// One chunk per non-empty cell: shuffle within its range, compute exact bounds.
-	for (u_int c = 0; c < uCellCount; ++c)
-	{
-		const u_int uCellBlades = auCellCounts.Get(c);
-		if (uCellBlades == 0)
+		const u_int uCellZ = glm::min(uZ / uTexelsPerCell, uCells - 1u);
+		const float* pfRow = pfHeight + static_cast<size_t>(uZ) * uSize;
+		for (u_int uX = 0; uX < uSize; uX++)
 		{
-			continue;
+			const u_int uCell = uCellZ * uCells + glm::min(uX / uTexelsPerCell, uCells - 1u);
+			pfMin[uCell] = glm::min(pfMin[uCell], pfRow[uX]);
+			pfMax[uCell] = glm::max(pfMax[uCell], pfRow[uX]);
 		}
-		const u_int uOffset = auCellOffsets.Get(c);
-
-		std::shuffle(
-			xInstances.GetDataPointer() + uOffset,
-			xInstances.GetDataPointer() + uOffset + uCellBlades,
-			xRng);
-
-		Zenith_Maths::Vector3 xCellMin(FLT_MAX);
-		Zenith_Maths::Vector3 xCellMax(-FLT_MAX);
-		for (u_int i = 0; i < uCellBlades; ++i)
-		{
-			const Zenith_Maths::Vector3& xPos = xInstances.Get(uOffset + i).m_xPosition;
-			xCellMin = glm::min(xCellMin, xPos);
-			xCellMax = glm::max(xCellMax, xPos);
-		}
-
-		GrassChunk xChunk;
-		xChunk.m_xCenter = (xCellMin + xCellMax) * 0.5f;
-		xChunk.m_fRadius = glm::length(xCellMax - xCellMin) * 0.5f;
-		xChunk.m_uInstanceOffset = uOffset;
-		xChunk.m_uInstanceCount = uCellBlades;
-		xChunk.m_uLOD = 0;
-		xChunk.m_bVisible = true;
-		xChunksOut.PushBack(xChunk);
 	}
 }
 
-void Flux_GrassImpl::GenerateFromTerrain(const Flux_MeshGeometry& xTerrainMesh)
+bool Flux_GrassImpl::BuildFromMaps(const MapSet& xMaps, const BuildParams& xParams)
 {
-	// Validate terrain mesh has required data
-	if (!xTerrainMesh.m_pxPositions || !xTerrainMesh.m_pxNormals || !xTerrainMesh.m_puIndices)
+	// Everything is validated BEFORE anything is written: a rejected build must
+	// leave the previous world's grass exactly as it was.
+	const bool bHeightOk = MapSourceIsUsable(xMaps.pHeight, xMaps.uHeightSize, uGRASS_HEIGHT_TEXTURE_SIZE);
+	const bool bCoverageOk = MapSourceIsUsable(xMaps.pCoverage, xMaps.uCoverageSize, uGRASS_COVERAGE_TEXTURE_SIZE);
+	const bool bTypeOk = xMaps.pType == nullptr || xMaps.uTypeSize == uGRASS_TYPE_TEXTURE_SIZE;
+	if (!bHeightOk || !bCoverageOk || !bTypeOk || !(xMaps.fWorldSize > 0.0f))
 	{
-		Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Grass: Cannot generate - terrain mesh missing position/normal/index data");
+		Zenith_Log(LOG_CATEGORY_RENDERER,
+			"Flux_Grass: rejected build (height %ux%u want %u, coverage %ux%u want %u, world %.1f m) — prior state kept",
+			xMaps.uHeightSize, xMaps.uHeightSize, uGRASS_HEIGHT_TEXTURE_SIZE,
+			xMaps.uCoverageSize, xMaps.uCoverageSize, uGRASS_COVERAGE_TEXTURE_SIZE, xMaps.fWorldSize);
+		return false;
+	}
+
+	if (!QuantizeHeightMap(xMaps.pHeight, xMaps.uHeightSize, xMaps.fWorldSize))
+	{
+		Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Grass: heightfield has no finite texel — prior state kept");
+		return false;
+	}
+	QuantizeCoverageMap(xMaps.pCoverage, xMaps.uCoverageSize);
+	CopyTypeMap(xMaps.pType, uGRASS_TYPE_TEXTURE_SIZE);
+	BuildTileHeightGrid(xMaps.pHeight, xMaps.uHeightSize, xMaps.fWorldSize);
+
+	SetDensityScale(xParams.m_fDensityScale);
+	UploadMapTextures();
+	m_bBuilt = true;
+
+	Zenith_Log(LOG_CATEGORY_RENDERER,
+		"Flux_Grass: built over %.0f m (height %u^2 in [%.1f, %.1f] m, coverage %u^2, type %u^2)",
+		m_fMapWorldSize, m_uHeightSize, m_fHeightBias, m_fHeightBias + m_fHeightScale, m_uCoverageSize, m_uTypeSize);
+	return true;
+}
+
+bool Flux_GrassImpl::BuildFromTerrainTextures(const std::string& strDir, const BuildParams& xParams)
+{
+	// Height + GrassDensity are REQUIRED; GrassType is optional content.
+	Flux_SurfaceInfo xHeightInfo;
+	Zenith_Vector<uint8_t> aucHeightBytes;
+	if (!Zenith_TextureAsset::LoadCPUData(strDir + "Height" + ZENITH_TEXTURE_EXT, xHeightInfo, aucHeightBytes).IsOk()
+		|| xHeightInfo.m_eFormat != TEXTURE_FORMAT_R32_SFLOAT)
+	{
+		Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Grass: no usable Height%s in '%s'", ZENITH_TEXTURE_EXT, strDir.c_str());
+		return false;
+	}
+
+	Flux_SurfaceInfo xCoverageInfo;
+	Zenith_Vector<uint8_t> aucCoverageBytes;
+	if (!Zenith_TextureAsset::LoadCPUData(strDir + "GrassDensity" + ZENITH_TEXTURE_EXT, xCoverageInfo, aucCoverageBytes).IsOk()
+		|| xCoverageInfo.m_eFormat != TEXTURE_FORMAT_R32_SFLOAT)
+	{
+		Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Grass: no usable GrassDensity%s in '%s'", ZENITH_TEXTURE_EXT, strDir.c_str());
+		return false;
+	}
+
+	Flux_SurfaceInfo xTypeInfo;
+	Zenith_Vector<uint8_t> aucTypeBytes;
+	const bool bHasType = Zenith_TextureAsset::LoadCPUData(strDir + "GrassType" + ZENITH_TEXTURE_EXT, xTypeInfo, aucTypeBytes).IsOk()
+		&& xTypeInfo.m_eFormat == TEXTURE_FORMAT_R8_UNORM
+		&& xTypeInfo.m_uWidth == uGRASS_TYPE_TEXTURE_SIZE;
+
+	// Height.ztxtr is NORMALIZED; BuildFromMaps takes metres. Scaled IN PLACE inside
+	// the loaded buffer so a 4096^2 map does not need a second 64 MB copy.
+	float* pfHeight = reinterpret_cast<float*>(aucHeightBytes.GetDataPointer());
+	const u_int uHeightTexels = xHeightInfo.m_uWidth * xHeightInfo.m_uHeight;
+	for (u_int u = 0; u < uHeightTexels; u++)
+	{
+		pfHeight[u] *= fGRASS_TERRAIN_HEIGHT_RANGE;
+	}
+
+	MapSet xMaps;
+	xMaps.pHeight = pfHeight;
+	xMaps.uHeightSize = xHeightInfo.m_uWidth;
+	xMaps.pCoverage = reinterpret_cast<const float*>(aucCoverageBytes.GetDataPointer());
+	xMaps.uCoverageSize = xCoverageInfo.m_uWidth;
+	xMaps.pType = bHasType ? aucTypeBytes.GetDataPointer() : nullptr;
+	xMaps.uTypeSize = bHasType ? xTypeInfo.m_uWidth : 0u;
+	xMaps.fWorldSize = Flux_TerrainConfig::TERRAIN_SIZE;
+	return BuildFromMaps(xMaps, xParams);
+}
+
+//=============================================================================
+// Types
+//=============================================================================
+
+void Flux_GrassImpl::SetTypeTable(const Flux_GrassTypeTable& xTable)
+{
+	m_xTypeTable = xTable;
+	m_xTypeTable.Validate();
+	// The GPU block is re-uploaded by the next gather (it uploads unconditionally —
+	// 2 KB a frame is far cheaper than tracking a dirty flag across frames in
+	// flight), so there is nothing device-side to do here.
+}
+
+void Flux_GrassImpl::LoadAuthoredTypeTable()
+{
+	// Anchors the asset TU (and its static asset-type registrar) against /OPT:REF —
+	// see Zenith_GrassTypeTableAsset_ForceLink.
+	static const bool ls_bAssetLinked = Zenith_GrassTypeTableAsset_ForceLink();
+	(void)ls_bAssetLinked;
+
+	// The existence check comes FIRST because absence is the normal state: routing a
+	// missing file through the registry would log two load failures on every boot of
+	// every game for a condition that is not one.
+	const std::string strResolved = Zenith_AssetRegistry::ResolvePath(szZENITH_GRASS_TYPE_TABLE_ASSET_PATH);
+	if (!Zenith_FileAccess::FileExists(strResolved.c_str()))
+	{
+		Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Grass: no authored type table at '%s' — using the %u built-in types",
+			szZENITH_GRASS_TYPE_TABLE_ASSET_PATH, m_xTypeTable.GetCount());
 		return;
 	}
 
-	const u_int uNumIndices = xTerrainMesh.GetNumIndices();
-	const u_int uNumTriangles = uNumIndices / 3;
-
-	if (uNumTriangles == 0)
+	// A non-owning view is enough: the table is copied out below and nothing here
+	// holds the asset past this call.
+	const Zenith_GrassTypeTableAsset* pxAsset =
+		Zenith_AssetRegistry::GetView<Zenith_GrassTypeTableAsset>(szZENITH_GRASS_TYPE_TABLE_ASSET_PATH);
+	if (pxAsset == nullptr || !pxAsset->LoadedOk())
 	{
-		Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Grass: Cannot generate - terrain mesh has no triangles");
+		Zenith_Warning(LOG_CATEGORY_RENDERER, "Flux_Grass: '%s' is present but unreadable — keeping the %u built-in types",
+			szZENITH_GRASS_TYPE_TABLE_ASSET_PATH, m_xTypeTable.GetCount());
 		return;
 	}
 
-	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Grass: Generating grass from terrain mesh (%u triangles)...", uNumTriangles);
-
-	m_axAllInstances.Clear();
-	m_axChunks.Clear();
-	m_bInstancesGenerated = false;
-	m_bInstancesUploaded = false;
-
-	const Zenith_Maths::Vector3* pxPositions = xTerrainMesh.m_pxPositions;
-	const Zenith_Maths::Vector3* pxNormals = xTerrainMesh.m_pxNormals;
-	const float* pfMaterialLerps = xTerrainMesh.m_pfMaterialLerps;
-	const Flux_MeshGeometry::IndexType* puIndices = xTerrainMesh.m_puIndices;
-
-	GrassGenRng xRng;
-
-	// Target blades per square meter (adjusted by density scale)
-	const float fBladesPerSqm = static_cast<float>(GrassConfig::uBLADES_PER_SQM) * m_fDensityScale;
-
-	u_int uTotalTrianglesProcessed = 0;
-	u_int uTotalBladesGenerated = 0;
-
-	for (u_int uTri = 0; uTri < uNumTriangles; ++uTri)
-	{
-		const u_int uIdx0 = puIndices[uTri * 3 + 0];
-		const u_int uIdx1 = puIndices[uTri * 3 + 1];
-		const u_int uIdx2 = puIndices[uTri * 3 + 2];
-
-		TriangleSamples xTri;
-		xTri.xPos0 = pxPositions[uIdx0];
-		xTri.xPos1 = pxPositions[uIdx1];
-		xTri.xPos2 = pxPositions[uIdx2];
-		xTri.xNorm0 = pxNormals[uIdx0];
-		xTri.xNorm1 = pxNormals[uIdx1];
-		xTri.xNorm2 = pxNormals[uIdx2];
-		xTri.fLerp0 = pfMaterialLerps ? pfMaterialLerps[uIdx0] : 0.0f;
-		xTri.fLerp1 = pfMaterialLerps ? pfMaterialLerps[uIdx1] : 0.0f;
-		xTri.fLerp2 = pfMaterialLerps ? pfMaterialLerps[uIdx2] : 0.0f;
-
-		const float fAvgLerp = (xTri.fLerp0 + xTri.fLerp1 + xTri.fLerp2) / 3.0f;
-		if (fAvgLerp > fGRASS_THRESHOLD)
-			continue;
-
-		const Zenith_Maths::Vector3 xEdge1 = xTri.xPos1 - xTri.xPos0;
-		const Zenith_Maths::Vector3 xEdge2 = xTri.xPos2 - xTri.xPos0;
-		const float fArea = glm::length(glm::cross(xEdge1, xEdge2)) * 0.5f;
-
-		if (fArea < 0.001f)
-			continue;
-
-		// Density falls off linearly as fAvgLerp approaches the threshold.
-		float fDensityMultiplier = 1.0f - (fAvgLerp / fGRASS_THRESHOLD);
-
-		// Painted density map (terrain editor): sampled at the triangle
-		// centroid and multiplied into the placement density.
-		if (HasDensityMap())
-		{
-			const Zenith_Maths::Vector3 xCentroid = (xTri.xPos0 + xTri.xPos1 + xTri.xPos2) / 3.0f;
-			fDensityMultiplier *= SampleDensityMap(xCentroid.x, xCentroid.z);
-		}
-
-		if (fDensityMultiplier <= 0.0f)
-			continue;
-
-		u_int uNumBlades = static_cast<u_int>(fArea * fBladesPerSqm * fDensityMultiplier);
-		uNumBlades = std::min(uNumBlades, 100u);
-
-		if (!GenerateBladesForTriangle(xTri, uNumBlades, xRng, m_axAllInstances, uTotalBladesGenerated))
-			break;
-
-		uTotalTrianglesProcessed++;
-	}
-
-	m_bInstancesGenerated = true;
-
-	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Grass: Generated %u blades from %u triangles",
-		uTotalBladesGenerated, uTotalTrianglesProcessed);
-
-	// Subdivide the blades into a world-space chunk grid so culling + LOD are
-	// per-region. (A single terrain-spanning chunk forced the entire map to one
-	// LOD picked from its distant centroid, so grass near the camera was wrongly
-	// thinned to LOD3 or vanished entirely.)
-	PartitionInstancesIntoChunks(m_axAllInstances, m_axChunks, GrassConfig::fCHUNK_SIZE, xRng.xRng);
-
-	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Grass: Partitioned %u blades into %u chunks",
-		m_axAllInstances.GetSize(), m_axChunks.GetSize());
-
-	UploadInstanceData();
-	UpdateVisibleChunks();
+	// SetTypeTable copies and validates, so a hand-edited file cannot push an
+	// out-of-range parameter into the placement CS.
+	SetTypeTable(pxAsset->GetTable());
+	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Grass: loaded %u authored grass types from '%s'",
+		m_xTypeTable.GetCount(), szZENITH_GRASS_TYPE_TABLE_ASSET_PATH);
 }
 
-void Flux_GrassImpl::SetDensityMap(const float* pfData, u_int uWidth, u_int uHeight, float fWorldSize)
-{
-	m_xDensityMap.Clear();
-	m_uDensityMapWidth = 0;
-	m_uDensityMapHeight = 0;
-	if (pfData == nullptr || uWidth == 0 || uHeight == 0 || fWorldSize <= 0.0f)
-	{
-		return;
-	}
-	const u_int uCount = uWidth * uHeight;
-	m_xDensityMap.Reserve(uCount);
-	for (u_int u = 0; u < uCount; u++)
-	{
-		m_xDensityMap.PushBack(pfData[u]);
-	}
-	m_uDensityMapWidth = uWidth;
-	m_uDensityMapHeight = uHeight;
-	m_fDensityMapWorldSize = fWorldSize;
-}
+//=============================================================================
+// Tuning
+//=============================================================================
 
-float Flux_GrassImpl::SampleDensityMap(float fWorldX, float fWorldZ) const
-{
-	if (!HasDensityMap())
-	{
-		return 1.0f;
-	}
-	const float fScaleX = static_cast<float>(m_uDensityMapWidth) / m_fDensityMapWorldSize;
-	const float fScaleZ = static_cast<float>(m_uDensityMapHeight) / m_fDensityMapWorldSize;
-	float fPX = std::clamp(fWorldX * fScaleX, 0.0f, static_cast<float>(m_uDensityMapWidth - 1));
-	float fPZ = std::clamp(fWorldZ * fScaleZ, 0.0f, static_cast<float>(m_uDensityMapHeight - 1));
-	const u_int uX0 = static_cast<u_int>(fPX);
-	const u_int uZ0 = static_cast<u_int>(fPZ);
-	const u_int uX1 = std::min(uX0 + 1, m_uDensityMapWidth - 1);
-	const u_int uZ1 = std::min(uZ0 + 1, m_uDensityMapHeight - 1);
-	const float fTX = fPX - static_cast<float>(uX0);
-	const float fTZ = fPZ - static_cast<float>(uZ0);
-	const float* pfMap = m_xDensityMap.GetDataPointer();
-	const float fTop = pfMap[uZ0 * m_uDensityMapWidth + uX0] * (1.0f - fTX) + pfMap[uZ0 * m_uDensityMapWidth + uX1] * fTX;
-	const float fBottom = pfMap[uZ1 * m_uDensityMapWidth + uX0] * (1.0f - fTX) + pfMap[uZ1 * m_uDensityMapWidth + uX1] * fTX;
-	return fTop * (1.0f - fTZ) + fBottom * fTZ;
-}
-
-// Setters with input validation (continuous parameters; on/off lives in Zenith_GraphicsOptions)
 void Flux_GrassImpl::SetDensityScale(float fScale)
 {
-	m_fDensityScale = std::clamp(fScale, 0.0f, 10.0f);
+	m_fDensityScale = Zenith_Maths::Clamp(fScale, 0.0f, 4.0f);
 }
+
 void Flux_GrassImpl::SetMaxDistance(float fDistance)
 {
-	m_fMaxDistance = std::clamp(fDistance, 10.0f, 1000.0f);
+	m_fMaxDistance = Flux_GrassClampMaxDistance(fDistance);
 }
+
+void Flux_GrassImpl::SetWindDirection(float fYawRad)
+{
+	// The YAW is the stored truth and the direction vector is derived each frame:
+	// two representations would let the debug slider and a game-code setter disagree.
+	m_fWindYawDeg = glm::degrees(fYawRad);
+}
+
+float Flux_GrassImpl::GetWindYawRadians() const
+{
+	return glm::radians(m_fWindYawDeg);
+}
+
 void Flux_GrassImpl::SetWindStrength(float fStrength)
 {
-	m_fWindStrength = std::clamp(fStrength, 0.0f, 10.0f);
+	m_xWind.m_fStrength = Zenith_Maths::Clamp(fStrength, 0.0f, 10.0f);
 }
-void Flux_GrassImpl::SetWindDirection(const Zenith_Maths::Vector2& xDirection)
+
+//=============================================================================
+// Displacement movers
+//=============================================================================
+
+void Flux_GrassImpl::SubmitMover(const Mover& xMover)
 {
-	float fLenSq = glm::dot(xDirection, xDirection);
-	if (fLenSq > 0.0001f)
+	if (m_axMovers.GetSize() >= uFLUX_GRASS_MAX_MOVERS)
 	{
-		m_xWindDirection = xDirection / sqrtf(fLenSq);
+		// Dropped, not grown: the list is consumed every frame, so an unbounded one
+		// would let a runaway submitter grow without limit inside a single frame.
+		m_uMoverOverflowCount++;
+		return;
 	}
-	else
-	{
-		m_xWindDirection = Zenith_Maths::Vector2(1.0f, 0.0f);
-	}
+	m_axMovers.PushBack(xMover);
 }
 
-// Getters
-bool Flux_GrassImpl::IsEnabled() const { return Zenith_GraphicsOptions::Get().m_bGrassEnabled; }
-bool Flux_GrassImpl::IsWindEnabled() const { return Zenith_GraphicsOptions::Get().m_bGrassWindEnabled; }
+//=============================================================================
+// CPU queries
+//=============================================================================
 
+Flux_GrassMap Flux_GrassImpl::MakeHeightMapView() const
+{
+	Flux_GrassMap xMap;
+	xMap.m_pData = m_auHeightTexels.GetDataPointer();
+	xMap.m_uWidth = m_uHeightSize;
+	xMap.m_uHeight = m_uHeightSize;
+	xMap.m_fWorldSize = m_fMapWorldSize;
+	xMap.m_eFormat = Flux_GrassMapFormat::U16;
+	xMap.m_fScale = m_fHeightScale;
+	return xMap;
+}
+
+Flux_GrassMap Flux_GrassImpl::MakeCoverageMapView() const
+{
+	Flux_GrassMap xMap;
+	xMap.m_pData = m_aucCoverageTexels.GetDataPointer();
+	xMap.m_uWidth = m_uCoverageSize;
+	xMap.m_uHeight = m_uCoverageSize;
+	xMap.m_fWorldSize = m_fMapWorldSize;
+	xMap.m_eFormat = Flux_GrassMapFormat::U8;
+	return xMap;
+}
+
+Flux_GrassMap Flux_GrassImpl::MakeTypeMapView() const
+{
+	Flux_GrassMap xMap;
+	xMap.m_pData = m_aucTypeTexels.GetDataPointer();
+	xMap.m_uWidth = m_uTypeSize;
+	xMap.m_uHeight = m_uTypeSize;
+	xMap.m_fWorldSize = m_fMapWorldSize;
+	xMap.m_eFormat = Flux_GrassMapFormat::U8;
+	return xMap;
+}
+
+float Flux_GrassImpl::SampleGrassCoverage(float fWorldX, float fWorldZ) const
+{
+	return Flux_GrassSampleMapBilinear(MakeCoverageMapView(), fWorldX, fWorldZ);
+}
+
+u_int8 Flux_GrassImpl::SampleGrassType(float fWorldX, float fWorldZ) const
+{
+	return static_cast<u_int8>(Flux_GrassSampleTypeIndex(MakeTypeMapView(), fWorldX, fWorldZ));
+}
+
+float Flux_GrassImpl::SampleGrassHeight(float fWorldX, float fWorldZ) const
+{
+	// The bias is only meaningful on top of a real sample: an unbuilt map samples
+	// zero, and adding the (stale or default) bias to it would report a height.
+	if (!m_bBuilt)
+	{
+		return 0.0f;
+	}
+	return Flux_GrassSampleMapBilinear(MakeHeightMapView(), fWorldX, fWorldZ) + m_fHeightBias;
+}
+
+//=============================================================================
 // Stats
-float Flux_GrassImpl::GetBufferUsageMB() const { return (m_uVisibleBladeCount * sizeof(GrassBladeInstance)) / (1024.0f * 1024.0f); }
+//=============================================================================
+
+float Flux_GrassImpl::GetBufferUsageMB() const
+{
+	if (!m_bGPUResourcesReady)
+	{
+		return 0.0f;
+	}
+	// The whole persistent footprint, which is CONSTANT after Initialise — nothing
+	// here grows with scene content or with any toggle.
+	size_t ulBytes = 0;
+	ulBytes += static_cast<size_t>(uFLUX_GRASS_BLADE_POOL_CAPACITY) * sizeof(Flux_GrassBladeInstance);
+	ulBytes += static_cast<size_t>(uFLUX_GRASS_VISIBLE_INDEX_CAPACITY) * sizeof(u_int);
+	ulBytes += uFLUX_GRASS_INDIRECT_SLOT_COUNT * uFLUX_GRASS_INDIRECT_STRIDE;
+	ulBytes += sizeof(u_int);
+	ulBytes += sizeof(Flux_GrassConfig::auBLADE_INDEX_TABLE);
+	ulBytes += static_cast<size_t>(uFLUX_GRASS_MAX_TYPES) * sizeof(Flux_GrassTypeParamsGPU);
+	ulBytes += static_cast<size_t>(uGRASS_HEIGHT_TEXTURE_SIZE) * uGRASS_HEIGHT_TEXTURE_SIZE * 2u;
+	ulBytes += static_cast<size_t>(uGRASS_COVERAGE_TEXTURE_SIZE) * uGRASS_COVERAGE_TEXTURE_SIZE;
+	ulBytes += static_cast<size_t>(uGRASS_TYPE_TEXTURE_SIZE) * uGRASS_TYPE_TEXTURE_SIZE;
+	return static_cast<float>(ulBytes) / (1024.0f * 1024.0f);
+}
+
+u_int Flux_GrassImpl::ReadbackVisibleBladeCount()
+{
+	if (!m_bGPUResourcesReady)
+	{
+		return 0u;
+	}
+	// Explicit slow path — DownloadBufferData drains staged writes and idles the
+	// device, so this must never be called from a frame path. Headless it returns
+	// zeroes by construction, which is why it is windowed-only truth.
+	Flux_GrassDrawIndexedIndirectArgs axArgs[uFLUX_GRASS_INDIRECT_SLOT_COUNT] = {};
+	g_xEngine.FluxMemory().DownloadBufferData(m_xIndirectArgsBuffer.GetBuffer().m_xVRAMHandle, axArgs, sizeof(axArgs));
+
+	u_int uTotal = 0u;
+	for (u_int u = 0; u < uFLUX_GRASS_INDIRECT_SLOT_COUNT; u++)
+	{
+		uTotal += axArgs[u].m_uInstanceCount;
+	}
+	return uTotal;
+}
+
+bool Flux_GrassImpl::IsShadowCastingEnabled() const
+{
+	const Zenith_GraphicsOptions& xOpts = Zenith_GraphicsOptions::Get();
+	// Engine-wide shadows AND the per-feature grass-shadow option AND the debug
+	// escape hatch: grass casters are the one caster class cheap enough to keep and
+	// expensive enough to want dropped on its own, so it answers to all three.
+	return xOpts.m_bShadowsEnabled && xOpts.m_bGrassShadowsEnabled && !m_bDisableShadowCasting;
+}
+
+//=============================================================================
+// Debug variables
+//
+// Every one BINDS A MEMBER BY REFERENCE. The retired implementation copied its
+// debug globals over the members inside the record callback each frame, which
+// silently reverted anything game code had set and is what forced Zenithmon to
+// grow a read-back seam to detect the stomp.
+//=============================================================================
 
 #ifdef ZENITH_TOOLS
 void Flux_GrassImpl::RegisterDebugVariables()
 {
-	g_xEngine.DebugVariables().AddUInt32({ "Flux", "Grass", "DebugMode" }, dbg_uGrassDebugMode, 0, GRASS_DEBUG_COUNT - 1);
-	g_xEngine.DebugVariables().AddFloat({ "Flux", "Grass", "DensityScale" }, dbg_fGrassDensityScale, 0.0f, 5.0f);
-	g_xEngine.DebugVariables().AddFloat({ "Flux", "Grass", "MaxDistance" }, dbg_fGrassMaxDistance, 50.0f, 500.0f);
-	g_xEngine.DebugVariables().AddFloat({ "Flux", "Grass", "WindStrength" }, dbg_fGrassWindStrength, 0.0f, 5.0f);
-	g_xEngine.DebugVariables().AddBoolean({ "Flux", "Grass", "ShowChunkGrid" }, dbg_bGrassShowChunkGrid);
-	g_xEngine.DebugVariables().AddBoolean({ "Flux", "Grass", "FreezeLOD" }, dbg_bGrassFreezeLOD);
-	g_xEngine.DebugVariables().AddUInt32({ "Flux", "Grass", "ForcedLOD" }, dbg_uGrassForcedLOD, 0, 3);
+	Zenith_DebugVariables& xVars = g_xEngine.DebugVariables();
+	// 0 None / 1 TypeIndex / 2 Clump / 3 HeightT / 4 LODMesh / 5 LatticeClass /
+	// 6 Normals — the kGRASS_DEBUG_* set in Flux_GrassCommon.slang, which is the
+	// authority. The value rides the draw CB verbatim; Flux_GrassDebugColour tests
+	// 1-5 explicitly and FALLS THROUGH to the world-normal view, so 6 and every
+	// value above it (the slider's 7 included) all read as normals.
+	xVars.AddUInt32({ "Flux", "Grass", "DebugMode" }, m_uDebugMode, 0u, 7u);
+	xVars.AddFloat({ "Flux", "Grass", "DensityScale" }, m_fDensityScale, 0.0f, 4.0f);
+	xVars.AddFloat({ "Flux", "Grass", "MaxDistance" }, m_fMaxDistance,
+		Flux_GrassConfig::fMIN_MAX_DISTANCE, Flux_GrassConfig::fMAX_MAX_DISTANCE);
+	xVars.AddFloat({ "Flux", "Grass", "WindStrength" }, m_xWind.m_fStrength, 0.0f, 10.0f);
+	xVars.AddFloat({ "Flux", "Grass", "WindYawDeg" }, m_fWindYawDeg, -180.0f, 180.0f);
+	xVars.AddBoolean({ "Flux", "Grass", "FreezeCulling" }, m_bFreezeCulling);
+	// Storage only this phase: the tile outlines belong on the gameplay-safe debug
+	// primitives channel, which the panel phase wires up.
+	xVars.AddBoolean({ "Flux", "Grass", "ShowTileGrid" }, m_bShowTileGrid);
+	xVars.AddBoolean({ "Flux", "Grass", "DisableShadowCasting" }, m_bDisableShadowCasting);
+	xVars.AddBoolean({ "Flux", "Grass", "ForceLoBlades" }, m_bForceLoBlades);
+	// Storage only this phase — consumed when the displacement pass lands.
+	xVars.AddBoolean({ "Flux", "Grass", "DebugOrbitDisplacer" }, m_bDebugOrbitDisplacer);
 }
 #endif
 
-// Unit tests for the grass scene-state lifecycle (Reset/ClearSceneData full-clear
-// semantics). Hosted at the bottom of this always-linked feature TU — the same
-// feature-owned idiom as Flux_RenderViews.cpp / Flux_AnimationClip.cpp. The
-// ZENITH_TEST macros self-noop when ZENITH_TESTING is undefined, so this include
-// stays unconditional (matching every other Flux .Tests.inl host).
+//=============================================================================
+// Partition activation
+//=============================================================================
+
+u_int Flux_GrassImpl::ComputeActiveSlotMask() const
+{
+	// The camera partitions are always live. The cascade partitions stay OFF until
+	// the shadow phase feeds REAL cascade frusta: this phase duplicates the camera
+	// frustum into slots 1-2, and culling a cascade partition against the camera's
+	// frustum would populate it with the wrong blades — visibly worse than an empty
+	// cascade, and harder to spot.
+	u_int uMask = (1u << uFLUX_GRASS_SLOT_CAMERA_HI) | (1u << uFLUX_GRASS_SLOT_CAMERA_LO);
+	if (IsShadowCastingEnabled())
+	{
+		for (u_int u = 0; u < m_uCascadeFrustaCount && u < uFLUX_GRASS_MAX_CASCADES; u++)
+		{
+			uMask |= 1u << (uFLUX_GRASS_SLOT_CASCADE_0 + u);
+		}
+	}
+	return uMask;
+}
+
+// Unit tests for the pure grass definitions (Flux_GrassTypes.h) plus the feature's
+// scene-state lifecycle. Hosted at the bottom of this always-linked feature TU —
+// the same feature-owned idiom as Flux_RenderViews.cpp / Flux_AnimationClip.cpp.
+// The ZENITH_TEST macros self-noop when ZENITH_TESTING is undefined, so this
+// include stays unconditional (matching every other Flux .Tests.inl host).
 #include "Flux/Vegetation/Flux_Grass.Tests.inl"

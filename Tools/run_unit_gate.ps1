@@ -69,7 +69,14 @@ param(
     # stroke undo round-trip, GrassType.ztxtr round-trip + absent-file fallback,
     # sculpt-notify latch); GPU-grass overhaul Phase 3
     # (observed 2026-08-06 on a Null_ Combat build).
-    [int]$Baseline = 1326,
+    # 1326 -> 1337: +11 net for the GPU-grass swap -- 3 member-poking legacy grass
+    # tests deleted, 14 added: 4 shader-mirror suites (Bezier/blade-vertex-table/
+    # Voronoi-clump/type-gather), 6 FluxGrassImpl (build rejection/all-zero-type/
+    # unbuilt-zero/reset-idempotence/mover-cap/headless-readback), 4
+    # FluxGrassTypeTable (defaults/clamps incl. bit-classified NaN+Inf replacement/
+    # serialize round-trip/fail-safe reject)
+    # (observed 2026-08-06 on a Null_ Combat build).
+    [int]$Baseline = 1337,
     [int]$TimeoutSec = 180,
     [string]$LogPath = ""
 )

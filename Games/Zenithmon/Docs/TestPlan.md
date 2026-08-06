@@ -1702,9 +1702,9 @@ change touches `Zenith/` as well as the game.
 **Boot baseline at THIS change: ZM 2863; engine (Null Combat) stays 1242.** The added
 contracts are pure generator/placement checks, so they do not move the 55-test
 automated registry or the cross-game engine suite.
-★ **SUPERSEDED -- the CURRENT baseline is ZM 2951, engine 1326**, registry unmoved
+★ **SUPERSEDED -- the CURRENT baseline is ZM 2962, engine 1337**, registry unmoved
 at **55**. OBSERVED 2026-08-06 on clean `Null_` builds:
-`2951 ran, 2949 passed, 0 failed, 2 skipped`. Derivation: ZM-D-183 added the two
+`2962 ran, 2960 passed, 0 failed, 2 skipped`. Derivation: ZM-D-183 added the two
 committed-scene-bytes guards (2906 -> 2908); ZM-D-184 added the rival spawn-clearance
 unit (2908 -> 2909); the 2026-08-05 CommandLine ParseArgs units added 5 ENGINE units
 (engine 1284 -> 1289) and were NOT reflected here, leaving the ZM pin stale at 2909
@@ -1717,9 +1717,11 @@ taking ZM to 2945; its Phase-2 `FluxBufferReadback` units (the
 `DownloadBufferData` headless zero-fill contract) added 2 more ENGINE units
 (engine 1320 -> 1322), taking ZM to 2947; its Phase-3 TerrainEditor GrassType
 units (hard-edged dab, 1-byte-texel undo round-trip, GrassType.ztxtr round-trip,
-sculpt-notify latch) added 4 more ENGINE units (engine 1322 -> **1326**), taking
-ZM to **2951**. `zm-tests.yml` `-Baseline` and
-`run_unit_gate.ps1`'s default both moved to match. The paragraph below is the
+sculpt-notify latch) added 4 more ENGINE units (engine 1322 -> 1326), taking
+ZM to 2951; its Phase-4 swap deleted the 3 legacy member-poking grass tests and
+added 14 (shader mirrors / impl surface / type-table serialization), +11 net
+ENGINE units (engine 1326 -> **1337**), taking ZM to **2962**. `zm-tests.yml`
+`-Baseline` and `run_unit_gate.ps1`'s default both moved to match. The paragraph below is the
 ZM-D-182-era snapshot, kept for the audit trail:
 
 ★ **The (ZM-D-182-era) baseline was ZM 2864** (ZM-D-182 added

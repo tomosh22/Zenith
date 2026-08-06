@@ -2,215 +2,323 @@
 
 ## Overview
 
-Procedural grass rendering system with GPU instancing, wind animation, and LOD-based density management. Designed for large outdoor scenes with millions of grass blades rendered efficiently.
+GPU-driven procedural grass. **Nothing about a blade is persisted.** Every frame
+the feature regenerates every blade from scratch on the GPU: three compute passes
+place and cull them into a fixed-capacity pool, and two indirect draws sweep a
+cubic Bezier blade into the **G-buffer**. There is no CPU instance array, no chunk
+grid and no upload of blade data — the CPU's whole job is to choose which TILES to
+dispatch and to stage the constants.
+
+Regeneration is affordable because a blade is a pure function of its lattice node
+(all per-blade randomness keys off `Zenith_TerrainNoise::HashCoords`), and it is
+*required* because a blade that changed identity between frames would flicker
+under TAA.
 
 ## Architecture
 
 ```
-[Terrain Chunk Loaded]
-         |
-         v
-   Generate Grass
-   (procedural placement)
-         |
-         v
-   [Instance Buffer]
-   (position, rotation, height, color)
-         |
-    +----+----+
-    |         |
-    v         v
- Frustum   LOD
- Culling   Selection
-    |         |
-    +----+----+
-         |
-         v
-   [GPU Instanced Draw]
-         |
-         v
-   Wind Animation
-   (vertex shader)
-         |
-         v
-   [HDR Target with Depth]
+        GatherGrassFrame (main thread, hung on the Placement pass's .Prepare)
+        selects tiles, stages the constants, uploads the frame buffers
+                                |
+                                v
++---------------------+  "Grass Reset"          (CS) zeroes the 16 indirect slots +
+| Reset               |                              the pool cursor, seeds each
++---------------------+                              partition's firstInstance
+                                |
+                                v
++---------------------+  "Grass Placement"      (CS) one thread per lattice cell,
+| Placement           |                              tile-major. Rolls the blade,
++---------------------+                              tests coverage/slope/type/fade,
+                                |                    appends to the pool and to each
+                                |                    view's visible-index partition
+                                v
++---------------------+  "Grass Indirect Fixup" (CS) clamps the instance counts a
+| IndirectFixup       |                              saturated frame overshot
++---------------------+
+                                |
+                                v
++---------------------+  "Grass GBuffer"        2 x DrawIndexedIndirect (HI slot 0,
+| G-buffer draws      |                              LO slot 1) -> 4 core MRTs +
++---------------------+                              scene depth (5 MRTs under the
+                                                     velocity latch)
 ```
+
+The blade draw is **indexed with no vertex buffer**: `SV_VertexID` delivers the
+fetched index value (the logical vertex id 0-14), and `SV_StartInstanceLocation` —
+seeded by the reset CS — carries the partition base, so the vertex stage recovers
+its slice without a per-draw constant. Both draws are recorded unconditionally; an
+empty frame draws `instanceCount 0`, which keeps the command stream identical
+whether or not there is grass.
+
+Blades are **opaque G-buffer geometry with the `GBUFFER_SHADING_SUBSURFACE` tag**,
+not a forward blended overlay. They test *and write* depth, and render
+`CULL_MODE_NONE` (a blade is a two-sided sliver; the fragment stage flips the
+lighting normal on back faces rather than dropping them). The old forward pass's
+self-translucency survives as a sun-driven back-scatter term written into the
+**emissive** channel — back-lit plus through-scatter, weighted by the type's
+base/tip translucency along the blade.
+
+### Pass placement
+
+The four passes are ordered by `DependsOn` edges plus the declared buffer traffic
+(pool / visible list / cursor as UAV, indirect args as `READ_INDIRECT_ARG` at the
+draw). `"Grass GBuffer"` declares `Writes` on all four core MRTs + `WRITE_DSV` on
+scene depth, so the topological sort places the whole chain inside the G-buffer
+block — after Terrain and UnifiedMesh, before Decals / HiZ / SSAO / SSR / SSGI /
+DeferredShading.
+
+The **velocity MRT changes the pass's attachment COUNT, never whether the pass
+exists**: the pass set has to be invariant under the TAA toggle, and the
+record-time pipeline pick reads the same frozen latch the setup does.
+
+The dynamic (frame-indexed) buffers are deliberately **never declared** to the
+graph — `GetBuffer()` returns a different physical buffer per frame in flight, so
+a pointer captured at setup would bind the wrong frame's buffer forever after.
+
+`"Grass Placement"` is **always enabled** and early-outs internally: the graph
+skips the `Prepare` of a disabled pass, so gating the pass on "is there grass this
+frame" would also gate the CPU work that decides it.
 
 ## Files
 
 | File | Purpose |
 |------|---------|
-| `Flux_GrassImpl.h` | `Flux_GrassImpl` class declaration, instance struct, configuration (accessed via `g_xEngine.Grass()`) |
-| `Flux_Grass.cpp` | Implementation - chunk management, rendering |
-| `Flux_Grass_Shaders.h` | Shader program decls owned by the Grass feature |
+| `Flux_GrassImpl.h` | `Flux_GrassImpl` declaration + the GPU-mirror constant blocks (placement/draw constants, wind block, tile record) and the pool/partition capacities |
+| `Flux_Grass.cpp` | Lifecycle, pipelines, GPU + map-texture resources, map build/quantize, CPU queries, stats, debug variables |
+| `Flux_Grass_Frame.cpp` | `SetupRenderGraph`, the per-frame gather, and the four record bodies + the cascade caster |
+| `Flux_GrassTypes.h` | **The pure half** — blade record, per-type block, lattice/tile/fade constants, tile selection, clump Voronoi, blade pose. No singleton, no device, no IO |
+| `Flux_GrassTypeTable.h/.cpp` | The unpacked AUTHORING record + the one-way `ToGPU()` projection and its serialization |
+| `Flux_Grass_Shaders.h` | The seven `Flux_ShaderDecl`s owned by the feature + `apxALL[]` |
+| `Flux_Grass.Tests.inl` | Units for the pure definitions + the scene-state lifecycle, hosted at the bottom of `Flux_Grass.cpp` |
 
 ## Shaders
 
-| Shader | Location | Purpose |
-|--------|----------|---------|
-| `Flux_Grass.slang` | `Shaders/Vegetation/` | Slang module with vertex + fragment stages and inline wind animation (helpers ported from the old `Flux_Wind.fxh`) |
+All in `Shaders/Vegetation/`.
 
-## Configuration Constants
+| Shader | Stage | Purpose |
+|--------|-------|---------|
+| `Flux_GrassCommon.slang` | module | **Authoritative** blade record, index/vertex tables, partition bases + caps, the shared pose builder, the debug-colour set, and THE shared G-buffer write |
+| `Flux_Grass_Reset.slang` | cs | Zeroes the indirect block + pool cursor, seeds per-partition `firstInstance` |
+| `Flux_Grass_Placement.slang` | cs | Per-lattice-node placement, clump Voronoi, per-view frustum cull, partition append |
+| `Flux_Grass_IndirectFixup.slang` | cs | Clamps instance counts against the partition caps |
+| `Flux_Grass_Displacement.slang` | cs | Mover push field — **built, not dispatched** (see Seams) |
+| `Flux_Grass_ToGBuffer.slang` | vs+fs | The 4-MRT blade draw |
+| `Flux_Grass_ToGBufferVelocity.slang` | vs+fs | 5-MRT variant. Blades sway every frame, so its vertex stage rebuilds the pose against the PREVIOUS frame's wind rather than reprojecting a static position |
+| `Flux_Grass_ToShadowmap.slang` | vs+fs | Depth-only caster — **built, not scheduled** (see Seams) |
 
+## The pinned contracts
+
+`Flux_GrassTypes.h` and `Flux_GrassCommon.slang` are **twin authorities**: the
+Slang side is authoritative for the tables and the pose, the C++ side is a
+transcription that `static_assert`s the sizes. Diff them against each other, never
+re-derive either.
+
+| Contract | Value | Where |
+|----------|-------|-------|
+| Blade record | 64 B (16 x 32-bit slots) | `Flux_GrassBladeInstance` |
+| Per-type block | 144 B (36 scalars) — **pack, never grow** | `Flux_GrassTypeParamsGPU` |
+| Blade pool | 1 048 576 blades | `uFLUX_GRASS_BLADE_POOL_CAPACITY` |
+| Visible index list | 1 572 864 uints, four fixed partitions | `uFLUX_GRASS_VISIBLE_INDEX_CAPACITY` |
+| Partition bases / caps | `{0, 524288, 1048576, 1310720}` / `{524288, 524288, 262144, 262144}` | `kauGRASS_PARTITION_BASE/CAP` (Slang) |
+| Indirect slots | 16 (4 live: camera HI/LO + cascade 0/1), 20-byte stride | `uFLUX_GRASS_INDIRECT_*` |
+| Lattice step | HI 0.25 m, LO 0.50 m (stride 2) | `Flux_GrassConfig` |
+| Tile size / cells | HI 16 m, LO 32 m, both 64 x 64 cells | `Flux_GrassConfig` |
+| HI radius | 64 m | `fHI_RADIUS` |
+| Tile cap | 256 per frame, nearest kept | `uMAX_TILES` |
+| Max distance | default 250 m, clamped to [50, 400] | `fDEFAULT/MIN/MAX_MAX_DISTANCE` |
+| Grass types | 16 | `uFLUX_GRASS_MAX_TYPES` |
+| Blade mesh | 15 logical vertices, 48 indices (HI 0-32, LO 33-47) | `auBLADE_INDEX_TABLE` |
+
+> **The partition bases and caps are the dangerous half.** The placement CS writes
+> a survivor at `base[slot] + localIndex`, so a capacity that disagrees does not
+> overflow the buffer — it writes one partition's blades into the NEXT partition's
+> range, and the cascade draws the camera's blades.
+
+Persistent VRAM is **constant after `Initialise`** — ~70 MB of buffers (the pool
+alone is 64 MB) plus 34 MB of map textures (height 4096² R16, coverage and type
+1024² R8). Nothing grows with scene content or with any toggle;
+`GetBufferUsageMB()` reports the whole footprint.
+
+## LOD
+
+Two lattices, not four density tiers. A LO tile's nodes are exactly the
+`(even, even)` subset of the HI lattice, so the HI→LO transition is a **fade**
+rather than a reshuffle: each node's *lattice class* (bits 10-11 of the blade
+record's `typeFlags`) selects a staggered fade band, class 0 never fades (it is
+the set the LO tiles reproduce), and classes 1/2/3 shrink out on translated ramps
+so no two ever pop together. A LO tile is dropped only when all four of the HI
+tiles it covers are already being drawn.
+
+## Public API (`g_xEngine.Grass()`)
+
+**Lifecycle** — `Initialise` / `BuildPipelines` / `SetupRenderGraph` / `Shutdown`
+are registry-driven. `Reset()` is the scene-lifecycle hook (idempotent, safe
+before `Initialise`, double-fires at boot). `ClearSceneData()` drops maps, tiles,
+movers and stats; the **type table, the wind state and every byte of VRAM
+survive it** — VRAM is released only by `Shutdown`.
+
+**Feed**
 ```cpp
-namespace GrassConfig
-{
-    uBLADES_PER_SQM = 50;              // Density at LOD0
-    fLOD0_DISTANCE = 20.0f;            // Full detail
-    fLOD1_DISTANCE = 50.0f;            // Reduced density
-    fLOD2_DISTANCE = 100.0f;           // Billboard
-    fMAX_DISTANCE = 200.0f;            // Culled
-    fCHUNK_SIZE = 64.0f;               // Matches terrain
-    uMAX_INSTANCES_PER_CHUNK = 65536;  // Per-chunk instance limit
-    uMAX_VISIBLE_CHUNKS = 64;          // Simultaneous active chunks
-    uMAX_TOTAL_INSTANCES = 2000000;    // 2M blades max
-}
+// From a terrain texture directory: Height + GrassDensity are REQUIRED,
+// GrassType is optional (absent => every texel type 0). A malformed required
+// map is a hard failure that leaves the prior state completely untouched.
+g_xEngine.Grass().BuildFromTerrainTextures(strTexDir, { .m_fDensityScale = 1.0f });
+
+// The same build from raw CPU pointers (editor live maps + headless tests).
+Flux_GrassImpl::MapSet xMaps{ ... };   // data is COPIED, quantized to the GPU formats
+g_xEngine.Grass().BuildFromMaps(xMaps, xParams);
 ```
 
-## Per-Blade Instance Data (32 bytes)
+**Types** — `SetTypeTable(const Flux_GrassTypeTable&)` copies + validates and
+re-uploads through the next gather; `GetTypeTable()` reads it back.
 
-```cpp
-struct GrassBladeInstance
-{
-    Vector3 m_xPosition;     // World position (12 bytes)
-    float m_fRotation;       // Y-axis rotation (4 bytes)
-    float m_fHeight;         // Blade height (4 bytes)
-    float m_fWidth;          // Blade width (4 bytes)
-    float m_fBend;           // Initial bend (4 bytes)
-    uint m_uColorTint;       // Packed RGBA8 (4 bytes)
-};
-```
+**Tuning** — `SetDensityScale` / `SetMaxDistance` / `SetWindDirection(yawRad)` /
+`SetWindStrength` / `SetDebugMode`, each with a getter. The debug variables bind
+these members **by reference**, so nothing is re-stamped per frame and a value
+written from game code survives.
 
-## Debug Variables (via Zenith_DebugVariables)
+**CPU queries** — `SampleGrassCoverage` (bilinear), `SampleGrassType`
+(nearest-texel, never interpolated), `SampleGrassHeight` (bilinear, metres). They
+read the *same quantized bytes* the GPU textures hold, so the query surface and
+the placement CS cannot drift. **All three return 0 when unbuilt** — a caller with
+no data has to decide what that means.
 
-| Path | Type | Description |
-|------|------|-------------|
-| `Flux/Grass/DebugMode` | uint | Debug visualization mode (0-9) |
-| `Flux/Grass/DensityScale` | float | Density multiplier (0-5) |
-| `Flux/Grass/MaxDistance` | float | Maximum render distance (50-500) |
-| `Flux/Grass/WindStrength` | float | Wind intensity (0-5) |
-| `Flux/Grass/ShowChunkGrid` | bool | Show chunk wireframes |
-| `Flux/Grass/FreezeLOD` | bool | Lock LOD selection |
-| `Flux/Grass/ForcedLOD` | uint | Forced LOD level (0-3) |
+**Stats** — `IsBuilt` / `HasCoverageMap` / `GetCoverageMapSize` /
+`GetCoverageWorldSize` / `GetScheduledInstanceCount` / `GetVisibleTileCount` /
+`GetTileCount` / `GetSubmittedDrawCount` / `GetBufferUsageMB`.
 
-Enable, WindEnabled, and CullingEnabled are controlled via `Zenith_GraphicsOptions` (`m_bGrassEnabled` / `m_bGrassWindEnabled` / `m_bGrassCullingEnabled`), not registered as debug variables.
+**Readback** — `ReadbackVisibleBladeCount()` is an **explicit slow path**: it
+drains staged writes, idles the device, downloads the 320-byte indirect block and
+sums the 16 instance counts. Never call it from a frame path. **Headless it is 0
+by construction** (the GPU-less download zero-fills), so it is *windowed-only
+truth* and must never be asserted on in a `Null_` test.
 
-## Debug Modes
+> **`GetScheduledInstanceCount()` determinism is a CONTRACT, not an implementation
+> detail.** It counts lattice cells over the tiles scheduled *this frame* — the
+> dispatched work, not a blade count. For a fixed camera and fixed maps it is
+> exactly reproducible, because the tile scheduler is a pure function with a total
+> order over its output (nearest-first, tie-broken on LOD then coordinates).
+> Zenithmon suites assert an EXACT restore of this number across battle
+> transitions, so anything that makes tile selection frame-order- or
+> float-accumulation-dependent breaks them.
 
-```cpp
-GRASS_DEBUG_NONE             // Normal rendering
-GRASS_DEBUG_LOD_COLORS       // Green/Yellow/Orange/Red by LOD
-GRASS_DEBUG_CHUNK_BOUNDS     // Wireframe chunk boundaries
-GRASS_DEBUG_DENSITY_HEAT     // Blue=sparse, Red=dense
-GRASS_DEBUG_WIND_VECTORS     // Wind direction arrows
-GRASS_DEBUG_CULLING_RESULT   // Green=visible, Red=culled
-GRASS_DEBUG_BLADE_NORMALS    // Normal direction arrows
-GRASS_DEBUG_HEIGHT_VARIATION // Color by blade height
-GRASS_DEBUG_PLACEMENT_MASK   // Terrain grass/rock mask
-GRASS_DEBUG_BUFFER_USAGE     // Memory stats overlay
-```
+## Authoring flow
 
-## Wind Animation
+1. **Paint the maps** in the terrain editor: the `GrassDensity` tool paints
+   coverage `[0,1]`, the `GrassType` tool stamps the per-texel type index
+   (0 = default, 255 = no grass). Both are 1024² maps over the terrain footprint.
+2. **Bake** them out beside the terrain's other textures as `GrassDensity.ztxtr`
+   (R32_SFLOAT) and `GrassType.ztxtr` (R8_UNORM, POINT-sampled). `Height.ztxtr`
+   (R32_SFLOAT, **normalized** — scaled to metres on load) is the third input.
+   Height and GrassDensity are required; GrassType is optional.
+3. **Feed** the directory to `BuildFromTerrainTextures`. The world footprint is
+   taken from `Flux_TerrainConfig::TERRAIN_SIZE`, not from the files. Coverage and
+   type are quantized to R8 and height to R16 unorm over `[bias, bias + scale]`
+   metres, so the fixed-point range tracks the terrain actually loaded.
+4. **Type parameters** come from `game:Vegetation/GrassTypes.zdata`
+   (`Zenith_GrassTypeTableAsset`) if the game ships one, loaded once at
+   `Initialise` before the first gather. **No game ships one today: absence is the
+   normal path**, and the four seeded built-ins (Meadow / Tall / Dry / Flowers)
+   stand in. A present-but-unreadable file warns and keeps the built-ins.
 
-The wind system uses layered sine waves for natural movement: primary wave (large scale), secondary wave (medium scale), and gust modulation. Waves are based on `dot(worldPos, windDir)` with different frequencies and time offsets. Wind displacement is applied in the vertex shader, scaled by blade height (more movement at tip, none at base).
+The authored record (`Flux_GrassTypeParams`) is plain and unpacked, one field per
+parameter; `ToGPU()` is the **one-way** projection onto the packed 144-byte block.
+Nothing reads back the other way — the packing is a GPU detail and must never
+reach the file.
 
-## LOD System
+## Debug variables (`Flux/Grass/...`, tools builds)
 
-| LOD | Distance | Behavior |
-|-----|----------|----------|
-| LOD0 | 0-20m | Full density, full geometry |
-| LOD1 | 20-50m | 50% density |
-| LOD2 | 50-100m | 25% density, simplified |
-| LOD3 | 100-200m | 12.5% density |
-| Culled | 200m+ | Not rendered |
+| Path | Type | Range | Effect |
+|------|------|-------|--------|
+| `DebugMode` | uint | 0-7 | Fragment debug view (below) |
+| `DensityScale` | float | 0-4 | Multiplies the coverage map into the placement probability |
+| `MaxDistance` | float | 50-400 | Furthest tile ring considered |
+| `WindStrength` | float | 0-10 | Wind gain |
+| `WindYawDeg` | float | -180-180 | **The** wind heading; the direction vector is derived from it each frame, so the slider and `SetWindDirection` can never disagree |
+| `FreezeCulling` | bool | | Holds the tile schedule so you can fly out and inspect it |
+| `ShowTileGrid` | bool | | **Storage only** — the outlines belong on the gameplay-safe primitives channel, which is not wired yet |
+| `DisableShadowCasting` | bool | | Third input to `IsShadowCastingEnabled()`; effective once the caster is scheduled |
+| `ForceLoBlades` | bool | | **Storage only** |
+| `DebugOrbitDisplacer` | bool | | **Storage only** — consumed when the displacement pass lands |
 
-Density reduction happens at generation time by skipping blades based on distance to camera.
+Enable / Wind / Displacement / Shadows are `Zenith_GraphicsOptions` flags
+(`m_bGrassEnabled`, `m_bGrassWindEnabled`, `m_bGrassDisplacementEnabled`,
+`m_bGrassShadowsEnabled`) surfaced under `Graphics/Grass/...`, not feature debug
+variables. The last two are **set once at boot** from
+`Project_SetGraphicsOptions`; flipping them mid-run is not a supported path.
 
-## Pass placement
+`m_bGrassEnabled` is read **once per frame into a latch** that the four record
+callbacks and the caster all read. The gather is what decides there is nothing to
+place, so a toggle landing between the two would leave a draw reading indirect
+args whose reset it had already skipped.
 
-Grass renders in a forward `"Grass"` pass that runs **after** DeferredShading (the HDR clear + lighting have already happened), which declares:
+### Debug modes
 
-- `Reads(scene depth as RESOURCE_ACCESS_READ_DEPTH)` — binds scene depth as a READ-ONLY depth attachment, so blades depth-test against the opaque scene without writing depth
-- `Writes(HDR scene target)` — blends lit grass fragments directly into the HDR scene (not the G-buffer)
+`kGRASS_DEBUG_*` in `Flux_GrassCommon.slang` is the authority. The value rides the
+draw CB verbatim; `Flux_GrassDebugColour` tests 1-5 explicitly and falls through to
+the world-normal view, so **6 and everything above it (the slider's 7 included)
+read as normals**.
 
-Topological sort derives this placement from the declared Reads/Writes (no explicit ordering enum). The pass does NOT clear either attachment — both carry live scene contents.
+| Value | View |
+|-------|------|
+| 0 | None — normal shading |
+| 1 | Type index (hashed colour per type) |
+| 2 | Clump (R = clump hash, G = normalized distance to the clump centre) |
+| 3 | Height t (greyscale along the blade) |
+| 4 | LOD mesh (orange = LO strip, green = HI) |
+| 5 | Lattice class (white / red / green / blue for 0-3) |
+| 6+ | World normal |
 
-This placement gives:
-- Proper depth testing against the already-rendered opaque scene
-- Grass is lit/translucent in the forward shader (self-shades via translucency)
-- Can cast shadows (future)
+A non-zero mode short-circuits the whole surface: the debug colour goes out as
+albedo through the simple `MakeGBuffer` overload (ambient 1, roughness 1, metallic
+0, no emissive, DEFAULT_LIT), so the value is still lit by the deferred pass but
+carries none of the blade's real material.
 
-## Integration Points
+## Wind
 
-**Uses:**
-- `Flux_Graphics::GetHDRSceneTarget()` / scene depth for the forward pass
-- `Flux_Graphics::m_xViewConstantsBuffer` (camera, VIEW set) + `m_xGlobalConstantsBuffer` (sun, GLOBAL set)
-- Terrain mesh geometry for procedural blade placement
+Wind is a **global** three-`float4` block (`Flux_GrassWindBlockGPU`, 48 B): heading
++ strength + time, then frequency / scroll / gust / seed, then the detail
+frequency / speed / tip amplitude. It reaches both the placement CS (which bakes a
+per-blade `windStrength` into the record) and the vertex stage (which deflects the
+Bezier's P2 and P3, weighting the deflection by height² so the base stays still
+while the tip travels).
 
-**Terrain Integration:**
-Grass generation is triggered by handing the subsystem the terrain mesh geometry. `GenerateFromTerrain` distributes blades across the mesh triangles (sampling the optional painted density map at each centroid / blade):
+The **previous** frame's block is captured before each advance and is the only
+previous-frame state the velocity vertex stage reads. On the first frame it equals
+the current block, which reports zero motion rather than a jump.
 
-```cpp
-// xTerrainMesh is the baked terrain Flux_MeshGeometry
-g_xEngine.Grass().GenerateFromTerrain(xTerrainMesh);
-```
+## Headless (`Null_` builds)
 
-**Painted density map** (terrain editor / `GrassDensity.ztxtr`): a `[0,1]` map, row-major over the terrain's world footprint, multiplied into placement density inside `GenerateFromTerrain`:
+Every CPU consequence of a build still happens — maps quantized, tile schedule
+selected, stats updated, type table loaded and validated — because the CPU maps
+*are* the query surface. Only two things are skipped explicitly:
+`CreateMapTextures` / `UploadMapTextures` (34 MB of zero staging against a no-op
+backend) and, by construction, `ReadbackVisibleBladeCount`, which returns 0. The
+four passes are still declared and their callbacks still run against the no-op
+recorder, so a headless run exercises the same code a windowed one does.
 
-```cpp
-g_xEngine.Grass().SetDensityMap(pfData, uWidth, uHeight, fWorldSize); // data is COPIED; nullptr/0 clears
-float fDensity = g_xEngine.Grass().SampleDensityMap(fWorldX, fWorldZ); // bilinear; 1.0 when no map set
-```
+## Seams that are not live yet
 
-## Initialization Order
+- **Shadow casting.** `RenderToShadowMap(cmdBuf, cascade)` and the depth-only
+  pipeline exist and draw the LO partition from indirect slot `2 + cascade`, but
+  no cascade pass calls it and `m_uCascadeFrustaCount` is 0, which keeps slots 2-3
+  out of the active-slot mask. Culling a cascade partition against a duplicated
+  *camera* frustum would fill it with the wrong blades — worse than an empty
+  cascade, and harder to spot.
+- **Displacement.** `SubmitMover` accepts up to 64 immediate-mode movers per frame
+  and the displacement pipeline is built (so the VRAM footprint the TAA toggle
+  stress test pins stays constant), but it is never dispatched and the push scale
+  is 0. The scale is the one slot `m_bGrassDisplacementEnabled` is applied to, so
+  the option is honoured by the VALUE and never by a branch in the CS.
 
-In the **feature-registry order** (`Flux_FeatureRegistry.cpp` `RegisterDefaultFeatures()`), Grass is registered after `Terrain` and `DeferredShading` but **before** `HDR`, so Grass initializes before `Flux_HDR` (init order is dependency-safe beyond "FluxGraphics first" — see [Flux/CLAUDE.md](../CLAUDE.md)).
+## Accepted look changes
 
-The load-bearing ordering is the **render-graph declaration order**: the `"Grass"` pass declares after DeferredShading (so it renders over the lit HDR scene once DeferredShading has cleared and filled the HDR target) but before Fog/Particles (so atmosphere composites over the blades). Terrain is registered before Grass because `GenerateFromTerrain` consumes the terrain mesh for placement.
+Grass is now a G-buffer writer at blade depth, which means it **receives SSAO,
+SSGI, SSR, decals and volumetric fog** like any other opaque geometry — it did
+not before, when it was a forward pass over the already-lit HDR scene.
 
-## Common Operations
-
-### Configure from game code:
-```cpp
-g_xEngine.Grass().SetDensityScale(1.5f);  // 150% density
-g_xEngine.Grass().SetWindStrength(2.0f);   // Strong wind
-g_xEngine.Grass().SetWindDirection(Vector2(1.0f, 0.3f));
-```
-
-### Get stats:
-```cpp
-u_int uBlades = g_xEngine.Grass().GetVisibleBladeCount();
-float fMB = g_xEngine.Grass().GetBufferUsageMB();
-```
-
-## Performance Budget
-
-| Metric | Target |
-|--------|--------|
-| Draw calls | 1 (instanced) |
-| Blades rendered | Up to 2M |
-| GPU time | ~2.0ms (1080p) |
-| VRAM | ~100MB for 2M instances |
-| Instance buffer | 64MB (2M * 32 bytes) |
-
-## Grass Blade Mesh
-
-Simple quad with 4 vertices:
-```
-  (-0.2, 1)---(0.2, 1)   <- Narrow tip
-       |   \   |
-       |    \  |
-       |     \ |
-  (-0.5, 0)---(0.5, 0)   <- Wide base
-```
-
-Oriented along Y-axis, rotated per-instance.
-
-## Future Work
-
-- GPU-based procedural placement (compute shader)
-- Shadow casting support
-- Terrain normal alignment
-- Multiple grass types/textures
-- Interactive bending (player/animals)
-- Seasonal color variation
+Grass is also noticeably **brighter than in any capture taken before the
+physically-grounded lighting work**. The old forward term was roughly 7x
+underlit relative to the deferred pipeline; going through `DeferredShading`
+removed that discrepancy. The brightness jump is EXPECTED and correct — do not
+re-tune the type colours to match an old screenshot.

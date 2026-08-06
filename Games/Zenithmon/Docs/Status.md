@@ -3,13 +3,19 @@
 **Last updated:** 2026-08-06
 
 **★ LIVE BASELINE (OBSERVED 2026-08-06 on clean `Null_` builds):
-ZM boot `2951 ran / 2949 passed / 0 failed / 2 skipped`; engine boot (Null Combat)
-`1326 ran / 1325 passed / 0 failed / 1 skipped`; registry **55**.** This is the
-current pin in `zm-tests.yml` (`-Baseline 2951`) and `run_unit_gate.ps1`
-(default 1326). Grass-overhaul Phase 3 added +4 engine units (TerrainEditor
-GrassType map: dab/undo/ztxtr-round-trip/sculpt-latch), Phase 2 added +2
-(`FluxBufferReadback`, the `DownloadBufferData` headless zero-fill contract),
-both on top of Phase 1's +20 below. **+20 engine units in one commit** (previous pins 2925 / 1300),
+ZM boot `2962 ran / 2960 passed / 0 failed / 2 skipped`; engine boot (Null Combat)
+`1337 ran / 1336 passed / 0 failed / 1 skipped`; registry **55**.** This is the
+current pin in `zm-tests.yml` (`-Baseline 2962`) and `run_unit_gate.ps1`
+(default 1337). The GPU-grass overhaul moved engine units in four steps: Phase 1
++20 (`FluxGrassTypes` pure suite), Phase 2 +2 (`FluxBufferReadback` zero-fill
+contract), Phase 3 +4 (TerrainEditor GrassType map), Phase 4 (THE SWAP) +11 net
+(3 legacy member-poking grass tests deleted, 14 added across shader mirrors /
+impl surface / type-table serialization). ZM's own registrations never moved.
+★ ZM's grass/battle suites were migrated to the new engine API in the swap
+(`GetScheduledInstanceCount` exact-restore contracts held on first windowed run);
+`ZM_DawnmereNpcGroundTruth_Test` is PRE-EXISTING red from ZM-D-184's spawn
+clearance (all its inputs last touched `e2b074bf`) — tracked separately, not a
+grass regression. **+20 engine units in one commit** (previous pins 2925 / 1300),
 all in `Zenith/Flux/Vegetation/Flux_Grass.Tests.inl`: the `FluxGrassTypes` suite
 covering the GPU-grass overhaul's Phase-1 pure functions (`Flux_GrassTypes.h`
 tile selection / wind / map sampling / GPU-record packing) plus pinned

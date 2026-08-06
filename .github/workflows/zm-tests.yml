@@ -194,6 +194,12 @@ jobs:
           #
           # History, newest first (the DERIVATION is the audit trail; the OBSERVED
           # number is the authority):
+          #   2962  GPU-grass overhaul Phase 4 (THE SWAP)  observed 2026-08-06 on a
+          #                   Null_ build. +11 net ENGINE units (1326 -> 1337): the
+          #                   CPU-scatter grass died with its 3 member-poking tests;
+          #                   14 new units cover the GPU pipeline's pure mirrors,
+          #                   impl surface, and type-table serialization. ZM's own
+          #                   registrations unmoved (registry stays 55).
           #   2951  GPU-grass overhaul Phase 3  observed 2026-08-06 on a Null_
           #                   build. +4: TerrainEditor GrassType-map units (hard-edged
           #                   categorical dab, 1-byte-texel stroke-undo round-trip,
@@ -287,7 +293,7 @@ jobs:
           #   2817  ZM-D-173  = 2809 + 8: four ENGINE sensor-raycast units plus
           #                   two camera fixtures and two Home-placement units.
           $exe = 'Games\Zenithmon\Build\output\win64\null_vs2022_debug_win64_true\zenithmon.exe'
-          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 2951 -TimeoutSec 600
+          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 2962 -TimeoutSec 600
           if ($LASTEXITCODE -ne 0) { Write-Error "boot unit tests failed (see log above)"; exit $LASTEXITCODE }
 
       - name: Run Zenithmon tests

@@ -121,7 +121,7 @@ Note: Materials and textures are now in `AssetHandling/` (see AssetHandling/CLAU
 - `SSR/` - Screen-space reflections (see SSR/CLAUDE.md)
 - `SSGI/` - Screen-space global illumination (see SSGI/CLAUDE.md)
 - `Decals/` - Deferred decals (see Decals/CLAUDE.md)
-- `Vegetation/` - Grass / foliage system (see Vegetation/CLAUDE.md)
+- `Vegetation/` - GPU-driven grass (see Vegetation/CLAUDE.md). Three compute passes regenerate every blade from scratch each frame, then two indirect draws write them into the **G-buffer** — blades are opaque geometry lit by DeferredShading, not a forward overlay. Nothing per-blade is persisted or uploaded.
 - `Translucency/` - Forward translucent pass
 - `SDFs/` - Signed distance field rendering
 - `Quads/` - Textured/UI quad rendering

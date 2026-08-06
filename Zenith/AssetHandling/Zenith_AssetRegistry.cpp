@@ -10,6 +10,7 @@
 #include "AssetHandling/Zenith_MeshGeometryAsset.h"
 #include "AssetHandling/Zenith_FontAsset.h"
 #include "AssetHandling/Zenith_BehaviourGraphAsset.h"
+#include "AssetHandling/Zenith_GrassTypeTableAsset.h"
 #include "Prefab/Zenith_Prefab.h"
 #include "Collections/Zenith_Vector.h"
 #include "Profiling/Zenith_Profiling.h"
@@ -282,6 +283,12 @@ void Zenith_AssetRegistry::Initialize()
 	// ZENITH_REGISTER_ASSET_TYPE in Zenith_BehaviourGraphAsset.cpp runs before
 	// s_pxInstance is bound, so the loader half must be registered here.
 	RegisterAssetType<Zenith_BehaviourGraphAsset>();
+
+	// Authored grass type tables (.zdata). Same two-halves reason as above: the
+	// file-scope registrar in Zenith_GrassTypeTableAsset.cpp registers the
+	// serializable-type FACTORY during static init, but the typed loader can only
+	// be registered once s_pxInstance exists.
+	RegisterAssetType<Zenith_GrassTypeTableAsset>();
 
 	// Note: Zenith_MaterialAsset::InitializeDefaults() must be called AFTER Vulkan/VMA
 	// is initialized (after Flux::EarlyInitialise). See InitializeGPUDependentAssets().

@@ -9,6 +9,7 @@
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "EntityComponent/Zenith_CameraResolve.h"       // Zenith_GetMainCameraAcrossScenes -- the walk's live basis
+#include "Flux/Vegetation/Flux_GrassImpl.h"
 #include "Input/Zenith_InputSimulator.h"
 #include "Physics/Zenith_Physics.h"
 #include "ZenithECS/Zenith_Scene.h"
@@ -225,12 +226,17 @@ namespace
 				++uCount;
 				// A Null (headless) build never APPLIES grass -- the blades are
 				// GPU-only content the backend deliberately does not author (see
-				// Zenith/Null/CLAUDE.md) -- so applied-ness / blade count are not
-				// available there. The CPU-side half (density map loaded, no
+				// Zenith/Null/CLAUDE.md) -- so applied-ness / scheduled work are
+				// not available there. The CPU-side half (density map loaded, no
 				// terminal failure) IS, and stays asserted in every config; the
 				// windowed assertion is unchanged.
+				//
+				// The scheduled count comes from the ENGINE, not the component: the
+				// component samples it at apply time, before that build's first
+				// gather has run, so its snapshot is legitimately zero.
 				const bool bGPUHalf = Zenith_IsNullRenderer()
-					|| (xGrass.IsGrassApplied() && xGrass.GetGeneratedBladeCount() > 0u);
+					|| (xGrass.IsGrassApplied()
+						&& g_xEngine.Grass().GetScheduledInstanceCount() > 0u);
 				bReady = xGrass.HasCPUMap() && bGPUHalf
 					&& !xGrass.HasTerminalFailure();
 			});

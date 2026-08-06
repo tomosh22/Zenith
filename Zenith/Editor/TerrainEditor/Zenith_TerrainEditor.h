@@ -487,6 +487,11 @@ private:
 	//--------------------------------------------------------------------------
 	// Grass rebuild (stroke end / bake) — Zenith_TerrainEditor_Bake.cpp
 	//--------------------------------------------------------------------------
+	// True when a height stroke moved the surface under grass that is ALREADY
+	// built; only then is the sculpt latch consumed, so a session with no grass
+	// keeps it for the push that eventually happens. Lives in the bake TU
+	// because Zenith_TerrainEditor.cpp is at its engine-singleton budget.
+	bool ConsumeSculptedUnderBuiltGrass();
 	void RebuildGrass();
 	bool SaveTexturesToPreparedDirectory(const std::string& strTextureDirectory);
 	void BakeMeshesToPreparedDirectory(const std::string& strMeshDirectory);

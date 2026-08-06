@@ -375,6 +375,7 @@ AssetHandling/
   Zenith_ModelAsset.h/cpp     - Model container (meshes + skeleton + materials)
   Zenith_AnimationAsset.h/cpp - Animation clips
   Zenith_BehaviourGraphAsset.h/cpp - Behaviour Graph asset (wraps a serialized Zenith_GraphDefinition; .bgraph)
+  Zenith_GrassTypeTableAsset.h/cpp - Authored grass type table (wraps a Flux_GrassTypeTable; .zdata)
   Zenith_MeshGeometryAsset.h/cpp  - Wrapper for Flux_MeshGeometry
   Zenith_FontAsset.h/cpp          - Font asset (.zfont glyph metrics + atlas)
   Zenith_MaterialParamTable.h/cpp - Material parameter reflection table (names/types/ranges/groups)

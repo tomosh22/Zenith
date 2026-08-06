@@ -901,7 +901,7 @@ namespace
 			// frame, since the player must move to trigger the encounter at all.
 			g_xRTEntryPlayerPos      = xPlayer.m_xPosition;
 			g_xRTEntryOverworldScene = g_xEngine.Scenes().GetActiveScene();
-			g_uRTEntryGrassBlades    = g_xEngine.Grass().GetGeneratedInstanceCount();
+			g_uRTEntryGrassBlades    = g_xEngine.Grass().GetScheduledInstanceCount();
 
 			g_eRTPhase = RTPhase::Baseline;
 			g_iRTPhaseFrames = 0;
@@ -972,7 +972,7 @@ namespace
 					g_xEngine.Scenes().GetActiveScene()).m_iBuildIndex;
 				g_bRTOverworldPausedInBattle =
 					g_xEngine.Scenes().IsScenePaused(g_xRTEntryOverworldScene);
-				g_uRTGrassInBattle = g_xEngine.Grass().GetGeneratedInstanceCount();
+				g_uRTGrassInBattle = g_xEngine.Grass().GetScheduledInstanceCount();
 
 				// The camera switch: the active main camera across scenes is now the
 				// battle scene's own authored main camera.
@@ -1063,7 +1063,7 @@ namespace
 				g_xEngine.Scenes().IsScenePaused(g_xRTEntryOverworldScene);
 			g_bRTBattleSceneUnloaded = !g_xEngine.Scenes().FindLoadedSceneByPath(
 				std::string(GAME_ASSETS_DIR) + "Scenes/Battle" ZENITH_SCENE_EXT).IsValid();
-			g_uRTGrassAfter = g_xEngine.Grass().GetGeneratedInstanceCount();
+			g_uRTGrassAfter = g_xEngine.Grass().GetScheduledInstanceCount();
 
 			PlayerView xPlayer2;
 			if (FindActivePlayer(xPlayer2))

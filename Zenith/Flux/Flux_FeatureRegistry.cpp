@@ -349,6 +349,12 @@ void Flux_FeatureRegistry::RegisterDefaultFeaturesInto(Flux_FeatureRegistry& xRe
 	RegisterFeature<&Zenith_Engine::UnifiedMesh>(xReg, "UnifiedMesh", Flux_UnifiedMeshShaders::apxALL);
 	RegisterFeature<&Zenith_Engine::Shadows>(xReg, "Shadows");
 	RegisterFeature<&Zenith_Engine::Terrain>(xReg, "Terrain", Flux_TerrainShaders::apxALL);
+	// Grass is an opaque G-BUFFER writer — its indirect blade draws write the four
+	// MRTs + depth — so it must declare BEFORE DeferredShading, which reads them.
+	// Its reset/placement/fixup compute passes produce those draws' indirect args
+	// and visible-index partitions, and a reader only links to an EARLIER-declared
+	// writer, so the whole feature belongs here with the other G-buffer writers.
+	RegisterFeature<&Zenith_Engine::Grass>(xReg, "Grass", Flux_GrassShaders::apxALL);
 	RegisterFeature<&Zenith_Engine::Primitives>(xReg, "Primitives", Flux_PrimitivesShaders::apxALL);
 	// Stage 4: InstancedMeshes is now a shader-less registration front-end (the unified path
 	// draws instanced foliage). Registered with the no-shader overload so it owns no programs.
@@ -378,11 +384,6 @@ void Flux_FeatureRegistry::RegisterDefaultFeaturesInto(Flux_FeatureRegistry& xRe
 	RegisterFeature<&Zenith_Engine::DynamicLights>(xReg, "DynamicLights");
 	RegisterFeature<&Zenith_Engine::LightClustering>(xReg, "LightClustering", Flux_LightClusteringShaders::apxALL);
 	RegisterFeature<&Zenith_Engine::DeferredShading>(xReg, "DeferredShading", Flux_DeferredShadingShaders::apxALL);
-	// Grass is a FORWARD pass over the lit HDR scene (depth-tested, read-only depth)
-	// — it must declare AFTER DeferredShading, whose pass CLEARS the HDR target
-	// (declaring Grass earlier put its output before the clear, wiped every frame).
-	// Before Fog/Particles so atmosphere + effects composite over the blades.
-	RegisterFeature<&Zenith_Engine::Grass>(xReg, "Grass", Flux_GrassShaders::apxALL);
 	// Forward translucency after lighting and before Fog: glass is lit in its own
 	// forward pass and fog must composite over it.
 	RegisterFeature<&Zenith_Engine::Translucency>(xReg, "Translucency", Flux_TranslucencyShaders::apxALL);
@@ -400,7 +401,7 @@ void Flux_FeatureRegistry::RegisterDefaultFeaturesInto(Flux_FeatureRegistry& xRe
 	// TAA (temporal anti-aliasing) resolves the fully-composited lit HDR scene BEFORE
 	// the HDR bloom+tonemap read it (they read GetSceneColourForPostFX, which returns
 	// the TAA output when active). Declared after every HDR-scene producer
-	// (DeferredShading/Grass/Translucency/Fog/SDFs/Particles) and before HDR, so
+	// (DeferredShading/Translucency/Fog/SDFs/Particles) and before HDR, so
 	// producer-before-consumer holds both ways. Main view only; when the velocity latch
 	// is off it declares no pass and the seam falls through to raw HDR (byte-identical).
 	RegisterFeature<&Zenith_Engine::TAA>(xReg, "TAA", Flux_TAAShaders::apxALL);

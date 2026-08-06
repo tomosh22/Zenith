@@ -81,7 +81,7 @@
 
 // Per-launch bootstrap (CLI/tuning state + post-terrain grass apply) now that the
 // testbeds are baked into the saved scene. Header-only component; also declares
-// RenderTest_TryApplyGrassDensityFromDisk (defined in this TU).
+// RenderTest_TryApplyGrassFromDisk (defined in this TU).
 #include "RenderTest/Components/RenderTest_BootstrapComponent.h"
 
 #ifdef ZENITH_TOOLS
@@ -119,7 +119,7 @@ static constexpr float fCAMPUS_SHIFT = 1792.0f;   // = fCAMPUS_CX - 256.0f (lega
 // post-scene-load automation step in tools builds (ZENITH_TOOLS-only — the
 // runtime/Playing grass apply is driven by RenderTest_BootstrapComponent).
 #ifdef ZENITH_TOOLS
-static void RenderTest_ApplyGrassDensityFromDisk();
+static void RenderTest_ApplyGrassFromDisk();
 #endif
 
 // Material-showcase testbed: the platform + grid of every shape × material matrix are
@@ -1076,8 +1076,13 @@ static void InitializeRenderTestResources()
 // existed. The runtime chunk-topology validator rejected all 127, so the outer
 // +X/+Z strip had no always-resident LOW geometry and no collision — which is
 // what the smoke's "127 LOW zero-count chunks" was reporting.
+// v9: the recipe now stamps GRASS TYPES (1/2/3) into three of the four spawn-
+// meadow lobes, which adds a GrassType.ztxtr to the saved set. The marker is
+// (version, file presence) and cannot see a recipe change, so without this bump
+// every existing bake would keep its type-less texture set and every blade
+// would stay type 0.
 // Bump this for any baked-BYTE change, not only when the heightfield moves.
-static const char* sk_szTerrainProcMarkerRel = "Terrain/terrain_proc_v8.marker";
+static const char* sk_szTerrainProcMarkerRel = "Terrain/terrain_proc_v9.marker";
 
 static bool RenderTest_TerrainAssetsNeedRegeneration()
 {
@@ -1752,6 +1757,7 @@ void Project_RegisterEditorAutomationSteps()
 		const int iNoise     = static_cast<int>(Zenith_TerrainBrushTool::Noise);
 		const int iStamp     = static_cast<int>(Zenith_TerrainBrushTool::Stamp);
 		const int iGrass     = static_cast<int>(Zenith_TerrainBrushTool::GrassDensity);
+		const int iGrassType = static_cast<int>(Zenith_TerrainBrushTool::GrassType);
 
 		// Start from defaults — the session seeds from any previous bake's
 		// textures on disk, and the splat/grass strokes below BLEND (a re-run
@@ -1843,6 +1849,18 @@ void Project_RegisterEditorAutomationSteps()
 			xAuto.AddStep_TerrainBrushStroke(iGrass, fCAMPUS_CX + 265.0f * cosf(fA),
 				fCAMPUS_CZ + 265.0f * sinf(fA), 95.0f, 1.0f, 0.85f);
 		}
+
+		// Grass TYPES stamped into three of the four spawn-meadow lobes (the
+		// fourth is left at type 0 = Meadow, so one frame shows all four types of
+		// the default table). They sit ON the density dabs above: a type index
+		// only means anything where the coverage map actually placed blades.
+		// A type is CATEGORICAL, so the dab writes it flat inside the falloff and
+		// the brush strength is unused — the last argument IS the type index.
+		xAuto.AddStep_TerrainBrushStroke(iGrassType, fCAMPUS_CX, fCAMPUS_CZ + 74.0f, 50.0f, 1.0f, 1.0f);   // Tall
+		xAuto.AddStep_TerrainBrushStroke(iGrassType, fCAMPUS_CX + 74.0f, fCAMPUS_CZ, 50.0f, 1.0f, 2.0f);   // Dry
+		xAuto.AddStep_TerrainBrushStroke(iGrassType, fCAMPUS_CX - 74.0f, fCAMPUS_CZ, 50.0f, 1.0f, 3.0f);   // Flowers
+		xAuto.AddStep_TerrainBrushStroke(iGrassType, 420.0f + fCAMPUS_SHIFT, 360.0f + fCAMPUS_SHIFT,
+			70.0f, 1.0f, 2.0f);                                                                            // Dry
 
 		// Persist the textures + bake every chunk mesh, then write the marker.
 		xAuto.AddStep_TerrainSaveTextures();
@@ -2213,10 +2231,10 @@ void Project_RegisterEditorAutomationSteps()
 
 	g_xEngine.EditorAutomation().AddStep_LoadInitialScene(&Project_LoadInitialScene);
 
-	// Grass placement needs the loaded terrain's physics mesh; the editor
-	// defers the scene load to the next Update, so apply the painted density
-	// map one automation step (== one frame) later.
-	g_xEngine.EditorAutomation().AddStep_Custom(&RenderTest_ApplyGrassDensityFromDisk);
+	// Grass placement needs the loaded terrain; the editor defers the scene load
+	// to the next Update, so apply the painted maps one automation step (== one
+	// frame) later.
+	g_xEngine.EditorAutomation().AddStep_Custom(&RenderTest_ApplyGrassFromDisk);
 
 	// (The material showcase + jetpack / guns / tennis testbeds are no longer spawned
 	// post-load — they are authored into the saved scene above, before AddStep_SaveScene,
@@ -2251,16 +2269,15 @@ void Project_RegisterEditorAutomationSteps()
 }
 #endif
 
-// Painted grass: load the terrain editor's saved GrassDensity.ztxtr (R32,
-// 1024^2) into the grass system and rebuild blade placement from the terrain's
-// physics mesh. Idempotent + retryable — the result tells the caller (the
-// bootstrap component) whether to retry (terrain not streamed yet) or give up
-// (missing file / headless). Declared in RenderTest_BootstrapComponent.h.
-RenderTest_GrassApplyResult RenderTest_TryApplyGrassDensityFromDisk()
+// Painted grass: rebuild placement from the terrain editor's saved texture set
+// (GrassDensity + GrassType + Height .ztxtr). Idempotent + retryable — the result
+// tells the caller (the bootstrap component) whether to retry (terrain not streamed
+// yet) or give up (missing file / headless). Declared in RenderTest_BootstrapComponent.h.
+RenderTest_GrassApplyResult RenderTest_TryApplyGrassFromDisk()
 {
 	if (Zenith_IsNullRenderer())
 	{
-		return RenderTest_GrassApplyResult::SkippedHeadless;   // no grass GPU buffers on the Null backend
+		return RenderTest_GrassApplyResult::SkippedHeadless;   // no grass GPU textures on the Null backend
 	}
 
 	// Probe terrain readiness FIRST — it's the gate that flips frame-to-frame while
@@ -2282,28 +2299,18 @@ RenderTest_GrassApplyResult RenderTest_TryApplyGrassDensityFromDisk()
 		return RenderTest_GrassApplyResult::TerrainNotReady;   // retry next frame (no disk read yet)
 	}
 
-	const std::string strPath = std::string(GAME_ASSETS_DIR) + "Textures/Terrain/GrassDensity" ZENITH_TEXTURE_EXT;
-	if (!std::filesystem::exists(strPath))
+	const std::string strTerrainTextureDir = std::string(GAME_ASSETS_DIR) + "Textures/Terrain/";
+	if (!std::filesystem::exists(strTerrainTextureDir + "GrassDensity" ZENITH_TEXTURE_EXT))
 	{
 		return RenderTest_GrassApplyResult::FileMissing;
 	}
 
-	// Read through the single .ztxtr parser (no GPU upload) — never hand-parse.
-	Flux_SurfaceInfo xInfo;
-	Zenith_Vector<uint8_t> xBytes;
-	if (!Zenith_TextureAsset::LoadCPUData(strPath, xInfo, xBytes).IsOk()
-		|| xInfo.m_eFormat != TEXTURE_FORMAT_R32_SFLOAT
-		|| static_cast<size_t>(xBytes.GetSize()) != static_cast<size_t>(xInfo.m_uWidth) * xInfo.m_uHeight * sizeof(float))
+	// One call owns the whole load: the .ztxtr parsing, the normalized-to-metres
+	// height scale and the quantization all live behind it.
+	if (!g_xEngine.Grass().BuildFromTerrainTextures(strTerrainTextureDir, Flux_GrassImpl::BuildParams{ 1.0f }))
 	{
-		return RenderTest_GrassApplyResult::FileMissing;   // invalid layout — treat as missing (caller warns once)
+		return RenderTest_GrassApplyResult::FileMissing;   // unusable set — treat as missing (caller warns once)
 	}
-	const int32_t iWidth = static_cast<int32_t>(xInfo.m_uWidth);
-	const int32_t iHeight = static_cast<int32_t>(xInfo.m_uHeight);
-	std::vector<float> xDensity(static_cast<size_t>(iWidth) * iHeight);
-	memcpy(xDensity.data(), xBytes.GetDataPointer(), xBytes.GetSize());
-
-	g_xEngine.Grass().SetDensityMap(xDensity.data(), static_cast<u_int>(iWidth), static_cast<u_int>(iHeight), 4096.0f);
-	g_xEngine.Grass().GenerateFromTerrain(pxTerrain->GetPhysicsMeshGeometry());
 	return RenderTest_GrassApplyResult::Applied;
 }
 
@@ -2312,12 +2319,12 @@ RenderTest_GrassApplyResult RenderTest_TryApplyGrassDensityFromDisk()
 // one idempotent helper and, like master's inline version, logs a diagnostic on the
 // failure paths (the bootstrap warns on the runtime/Playing path instead).
 #ifdef ZENITH_TOOLS
-static void RenderTest_ApplyGrassDensityFromDisk()
+static void RenderTest_ApplyGrassFromDisk()
 {
-	switch (RenderTest_TryApplyGrassDensityFromDisk())
+	switch (RenderTest_TryApplyGrassFromDisk())
 	{
 	case RenderTest_GrassApplyResult::FileMissing:
-		Zenith_Warning(LOG_CATEGORY_TERRAIN, "[RenderTest] grass density map missing/invalid — grass not applied (tools post-load)");
+		Zenith_Warning(LOG_CATEGORY_TERRAIN, "[RenderTest] terrain grass textures missing/invalid — grass not applied (tools post-load)");
 		break;
 	case RenderTest_GrassApplyResult::TerrainNotReady:
 		Zenith_Warning(LOG_CATEGORY_TERRAIN, "[RenderTest] terrain not ready at tools post-load grass step — grass not applied");

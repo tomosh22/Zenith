@@ -219,13 +219,15 @@ void Flux_RenderGraph::InferPassAttachments()
 		}
 
 		// READ_DEPTH binds the resource as a READ-ONLY depth attachment (the
-		// access's documented meaning — depth-tested passes that never write
-		// depth, e.g. forward vegetation over the lit scene). Only WRITE_DSV
-		// was inferred above historically, which left READ_DEPTH passes with
-		// no depth attachment at all — an attachment-count mismatch with any
-		// depth-tested pipeline (latent until Grass, the access's only user,
-		// first rendered). SubmitRecordedLists sees the resource in m_xReads
-		// and flags the render pass bDepthReadOnly.
+		// access's documented meaning — a forward pass that depth-tests against
+		// the opaque scene but never writes depth). Only WRITE_DSV was inferred
+		// above historically, which left READ_DEPTH passes with no depth
+		// attachment at all — an attachment-count mismatch with any depth-tested
+		// pipeline. Translucency is the only declarer of the access today (its
+		// main-view and material-preview passes, Flux_Translucency.cpp), so this
+		// block is the sole reason either gets a depth attachment.
+		// SubmitRecordedLists sees the resource in m_xReads and flags the render
+		// pass bDepthReadOnly.
 		if (!pxPass->m_xDepthStencil.IsValid())
 		{
 			for (Zenith_Vector<Flux_RenderGraph_ResourceUsage>::Iterator it(pxPass->m_xReads); !it.Done(); it.Next())

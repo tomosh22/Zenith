@@ -1,170 +1,47 @@
 #include "Core/Zenith_TestFramework.h"
 #include "Flux/Vegetation/Flux_GrassImpl.h"
 #include "Flux/Vegetation/Flux_GrassTypes.h"
+#include "Flux/Vegetation/Flux_GrassTypeTable.h"
 #include "Core/Zenith_Engine.h"
+#include "DataStream/Zenith_DataStream.h"
 
 // ============================================================================
-// Flux_Grass scene-reset unit tests (S5 item 2, engine E5).
+// Flux_Grass unit tests. Three suites, pinning three different things:
 //
-// Lock the FULL scene-state clear that Flux_GrassImpl::Reset() performs so grass
-// never leaks between scenes. A full Reset() must drop the chunk list, the CPU
-// instance array, the instances-generated / instances-uploaded flags, and the
-// copied painted density map (plus the visible/active counters). The production
-// single-load render-reset hook calls g_xEngine.Grass().Reset(), so these tests
-// pin exactly that behaviour at the API surface.
+//   FluxGrassTypes     — Flux/Vegetation/Flux_GrassTypes.h ONLY: plain structs
+//                        and free functions, no engine singleton, no device, no
+//                        file IO. That includes the CPU MIRRORS of the placement
+//                        compute shader and the vertex stage (blade pose, weld /
+//                        fold, clump Voronoi, dithered type pick) — the .slang
+//                        twin is the authority in every case and each mirror
+//                        names its own.
+//   FluxGrassImpl      — the live g_xEngine.Grass() feature: build validation,
+//                        the CPU query surface, scene-state clearing, movers.
+//   FluxGrassTypeTable — authoring, validation and serialization of the per-type
+//                        parameter table.
 //
-// This file is textually included at the bottom of Flux_Grass.cpp (under
-// ZENITH_TESTING), so it sees Flux_GrassImpl's internals directly.
+// This file is textually included at the bottom of Flux_Grass.cpp (the always-
+// linked feature TU), so it CAN see Flux_GrassImpl's internals — the impl suite
+// deliberately drives the public surface anyway, because that is the surface the
+// render-reset hook and game code actually use.
 //
-// HEADLESS-SAFE — the tests touch CPU-side state ONLY:
-//   * They drive the live, process-wide subsystem via g_xEngine.Grass() rather
-//     than constructing a Flux_GrassImpl on the stack (its GPU pipeline/shader
-//     members' destructors reach g_xEngine.FluxBackend().GetDevice()).
-//   * Scene state is populated with a synthetic density map (SetDensityMap copies
-//     on the CPU) plus hand-built CPU instance/chunk entries and the flags set
-//     directly. GenerateFromTerrain / UploadInstanceData (the GPU-upload paths)
-//     are NEVER called, so no device work happens.
-//   * Reset() itself is CPU-only (clears the vectors + flags + density map; the
-//     engine-owned instance buffer stays allocated), so it is safe to call here.
-// Each test Reset()s the singleton FIRST so a prior test's — or a prior boot
-// phase's — leftovers never taint setup, and again at the end to leave it clean.
+// HEADLESS-SAFE. Nothing here dispatches, records, or reads back GPU content:
+//   * The impl tests drive the process-wide subsystem through g_xEngine.Grass()
+//     rather than constructing a Flux_GrassImpl on the stack (its pipeline and
+//     shader members' destructors reach the backend device).
+//   * Build* / ClearSceneData / the three samplers are pure CPU work: the map
+//     quantize is a CPU copy and UploadMapTextures is a no-op under the null
+//     renderer.
+//   * ReadbackVisibleBladeCount is WINDOWED-ONLY truth (DownloadBufferData
+//     zero-fills without an allocator), so it is asserted only where zero is the
+//     contract rather than an observation.
+//
+// Every impl test starts AND ends with ClearSceneData(), so neither a prior boot
+// phase's grass nor a prior test's leaks into the next. They also build with the
+// default BuildParams, which re-stamps the density scale to 1 — each restores
+// the value it found, because the debug variables bind that member BY REFERENCE
+// and game code is entitled to have written it.
 // ============================================================================
-
-namespace
-{
-	constexpr u_int kGrassTestBladeCount = 3u;
-	constexpr u_int kGrassTestChunkCount = 1u;
-
-	// Fill xGrass with non-empty, GPU-free scene state that a full Reset() must
-	// discard. Returns the number of CPU blade instances pushed so callers can
-	// assert exact per-scene counts (no accumulation across repeated setups).
-	u_int GrassTest_PopulateSceneState(Flux_GrassImpl& xGrass)
-	{
-		// Synthetic painted density map (data is COPIED into the impl; pure CPU).
-		const float afDensity[4] = { 1.0f, 0.5f, 0.25f, 0.75f };
-		xGrass.SetDensityMap(afDensity, 2u, 2u, 64.0f);
-
-		// Hand-built CPU blade instances — bypasses GenerateFromTerrain, which
-		// would upload to the GPU.
-		for (u_int u = 0; u < kGrassTestBladeCount; ++u)
-		{
-			GrassBladeInstance xBlade;
-			xBlade.m_xPosition  = Zenith_Maths::Vector3(static_cast<float>(u), 0.0f, 0.0f);
-			xBlade.m_fRotation  = 0.5f;
-			xBlade.m_fHeight    = 0.6f;
-			xBlade.m_fWidth     = 0.03f;
-			xBlade.m_fBend      = 0.1f;
-			xBlade.m_uColorTint = 0xFF00FF00u;
-			xGrass.m_axAllInstances.PushBack(xBlade);
-		}
-
-		// One contiguous chunk covering those blades.
-		GrassChunk xChunk;
-		xChunk.m_xCenter         = Zenith_Maths::Vector3(0.0f);
-		xChunk.m_fRadius         = 32.0f;
-		xChunk.m_uInstanceOffset = 0u;
-		xChunk.m_uInstanceCount  = kGrassTestBladeCount;
-		xChunk.m_uLOD            = 0u;
-		xChunk.m_bVisible        = true;
-		xGrass.m_axChunks.PushBack(xChunk);
-
-		// Flags + visibility counters set directly — mirrors post-generate/upload
-		// state without touching the GPU.
-		xGrass.m_bInstancesGenerated = true;
-		xGrass.m_bInstancesUploaded  = true;
-		xGrass.m_uVisibleBladeCount  = kGrassTestBladeCount;
-		xGrass.m_uActiveChunkCount   = kGrassTestChunkCount;
-
-		return kGrassTestBladeCount;
-	}
-
-	// Assert xGrass is in the fully-zeroed post-Reset state (via the real public
-	// accessors). szWhen pinpoints which test / phase failed.
-	void GrassTest_AssertFullyCleared(Flux_GrassImpl& xGrass, const char* szWhen)
-	{
-		ZENITH_ASSERT_EQ(xGrass.GetGeneratedInstanceCount(), 0u,
-			"%s: Reset() must drop every generated CPU blade instance", szWhen);
-		ZENITH_ASSERT_FALSE(xGrass.HasGeneratedInstances(),
-			"%s: Reset() must clear the instances-generated flag", szWhen);
-		ZENITH_ASSERT_FALSE(xGrass.HasUploadedInstances(),
-			"%s: Reset() must clear the instances-uploaded flag", szWhen);
-		ZENITH_ASSERT_FALSE(xGrass.HasDensityMap(),
-			"%s: Reset() must discard the copied density map", szWhen);
-		ZENITH_ASSERT_EQ(xGrass.GetChunkCount(), 0u,
-			"%s: Reset() must drop every grass chunk", szWhen);
-		ZENITH_ASSERT_EQ(xGrass.GetVisibleBladeCount(), 0u,
-			"%s: Reset() must zero the visible-blade counter", szWhen);
-		ZENITH_ASSERT_EQ(xGrass.GetActiveChunkCount(), 0u,
-			"%s: Reset() must zero the active-chunk counter", szWhen);
-	}
-}
-
-ZENITH_TEST(Flux_Grass, Reset_ClearsAllSceneData)
-{
-	Flux_GrassImpl& xGrass = g_xEngine.Grass();
-	xGrass.Reset();   // clean baseline (defensive against any prior state)
-
-	const u_int uBlades = GrassTest_PopulateSceneState(xGrass);
-
-	// Sanity: the setup really did leave non-empty scene state, so the clear
-	// assertions below are not vacuously satisfied.
-	ZENITH_ASSERT_EQ(xGrass.GetGeneratedInstanceCount(), uBlades,
-		"setup must leave the CPU instance array populated");
-	ZENITH_ASSERT_TRUE(xGrass.HasGeneratedInstances(),
-		"setup must mark instances generated");
-	ZENITH_ASSERT_TRUE(xGrass.HasUploadedInstances(),
-		"setup must mark instances uploaded");
-	ZENITH_ASSERT_TRUE(xGrass.HasDensityMap(),
-		"setup must install a density map");
-	ZENITH_ASSERT_EQ(xGrass.GetChunkCount(), kGrassTestChunkCount,
-		"setup must leave a grass chunk");
-
-	xGrass.Reset();
-
-	GrassTest_AssertFullyCleared(xGrass, "Reset_ClearsAllSceneData");
-}
-
-ZENITH_TEST(Flux_Grass, Reset_IsIdempotent)
-{
-	Flux_GrassImpl& xGrass = g_xEngine.Grass();
-	xGrass.Reset();
-
-	GrassTest_PopulateSceneState(xGrass);
-
-	// Two Resets back-to-back must be safe (no crash, no counter underflow) and
-	// leave the same fully-zeroed state as a single Reset.
-	xGrass.Reset();
-	xGrass.Reset();
-
-	GrassTest_AssertFullyCleared(xGrass, "Reset_IsIdempotent (second Reset)");
-}
-
-ZENITH_TEST(Flux_Grass, Reset_NoAccumulationAcrossSetup)
-{
-	Flux_GrassImpl& xGrass = g_xEngine.Grass();
-	xGrass.Reset();
-
-	// First "scene".
-	const u_int uFirst = GrassTest_PopulateSceneState(xGrass);
-	ZENITH_ASSERT_EQ(xGrass.GetGeneratedInstanceCount(), uFirst,
-		"first scene's blades must all be present before reset");
-	xGrass.Reset();
-	GrassTest_AssertFullyCleared(xGrass, "Reset_NoAccumulationAcrossSetup (after scene 1)");
-
-	// Second "scene": because Reset() fully drained scene 1, the identical setup
-	// must yield the identical count -- a new scene's grass state does NOT pile on
-	// top of the prior scene's (mirrors the per-scene instance-count assertion).
-	const u_int uSecond = GrassTest_PopulateSceneState(xGrass);
-	ZENITH_ASSERT_EQ(uSecond, uFirst,
-		"a second scene's setup must not accumulate on top of the first");
-	ZENITH_ASSERT_EQ(xGrass.GetGeneratedInstanceCount(), uFirst,
-		"instance count after the second setup must equal a single scene's, not 2x");
-	ZENITH_ASSERT_EQ(xGrass.GetChunkCount(), kGrassTestChunkCount,
-		"chunk count after the second setup must equal a single scene's, not 2x");
-
-	xGrass.Reset();   // leave the shared singleton clean for subsequent tests
-	GrassTest_AssertFullyCleared(xGrass, "Reset_NoAccumulationAcrossSetup (after scene 2)");
-}
 
 // ============================================================================
 // Flux_GrassTypes — the pure GPU-driven grass definitions.
@@ -383,36 +260,70 @@ ZENITH_TEST(FluxGrassTypes, TypeFlagsRoundTrip)
 	{
 		for (u_int uH = 0; uH < 4u; uH++)
 		{
-			for (int iFold = 0; iFold < 2; iFold++)
+			for (u_int uClass = 0; uClass < 4u; uClass++)
 			{
-				for (int iLO = 0; iLO < 2; iLO++)
+				for (int iFold = 0; iFold < 2; iFold++)
 				{
-					const bool bFolded = (iFold != 0);
-					const bool bLOMesh = (iLO != 0);
-					const u_int uFlags = Flux_GrassPackTypeFlags(auTypes[uT], bFolded, bLOMesh, auHashes[uH]);
+					for (int iLO = 0; iLO < 2; iLO++)
+					{
+						const bool bFolded = (iFold != 0);
+						const bool bLOMesh = (iLO != 0);
+						const u_int uFlags = Flux_GrassPackTypeFlags(auTypes[uT], bFolded, bLOMesh, uClass, auHashes[uH]);
 
-					ZENITH_ASSERT_EQ(Flux_GrassTypeFlagsIndex(uFlags), auTypes[uT],
-						"type index must round-trip (type %u, hash %u)", auTypes[uT], auHashes[uH]);
-					ZENITH_ASSERT_EQ(Flux_GrassTypeFlagsIsFolded(uFlags), bFolded,
-						"folded bit must round-trip (type %u)", auTypes[uT]);
-					ZENITH_ASSERT_EQ(Flux_GrassTypeFlagsIsLOMesh(uFlags), bLOMesh,
-						"LO-mesh bit must round-trip (type %u)", auTypes[uT]);
-					ZENITH_ASSERT_EQ(Flux_GrassTypeFlagsFragmentHash(uFlags), auHashes[uH],
-						"fragment hash must round-trip (type %u, hash %u)", auTypes[uT], auHashes[uH]);
+						ZENITH_ASSERT_EQ(Flux_GrassTypeFlagsIndex(uFlags), auTypes[uT],
+							"type index must round-trip (type %u, hash %u)", auTypes[uT], auHashes[uH]);
+						ZENITH_ASSERT_EQ(Flux_GrassTypeFlagsIsFolded(uFlags), bFolded,
+							"folded bit must round-trip (type %u)", auTypes[uT]);
+						ZENITH_ASSERT_EQ(Flux_GrassTypeFlagsIsLOMesh(uFlags), bLOMesh,
+							"LO-mesh bit must round-trip (type %u)", auTypes[uT]);
+						// The vertex stage applies the class fade and cannot recover the
+						// class from posWS (the base is jittered and clump-pulled), so the
+						// class HAS to survive the record.
+						ZENITH_ASSERT_EQ(Flux_GrassTypeFlagsLatticeClass(uFlags), uClass,
+							"lattice class must round-trip (type %u, class %u)", auTypes[uT], uClass);
+						ZENITH_ASSERT_EQ(Flux_GrassTypeFlagsFragmentHash(uFlags), auHashes[uH],
+							"fragment hash must round-trip (type %u, hash %u)", auTypes[uT], auHashes[uH]);
+					}
 				}
 			}
 		}
 	}
 
+	// The class field must be independent of its neighbours in BOTH directions:
+	// bits 10-11 sit between the LO-mesh bit and the reserved 12-15 gap, so a
+	// shift error would either eat the LO flag or bleed into the reserved bits.
+	for (u_int uClass = 0; uClass < 4u; uClass++)
+	{
+		const u_int uClassOnly = Flux_GrassPackTypeFlags(0u, false, false, uClass, 0u);
+		ZENITH_ASSERT_EQ(uClassOnly, uClass << 10u, "the class must occupy bits 10-11 alone (class %u)", uClass);
+		ZENITH_ASSERT_EQ(Flux_GrassTypeFlagsIndex(uClassOnly), 0u, "the class must not reach the type index (class %u)", uClass);
+		ZENITH_ASSERT_FALSE(Flux_GrassTypeFlagsIsFolded(uClassOnly), "the class must not reach the folded bit (class %u)", uClass);
+		ZENITH_ASSERT_FALSE(Flux_GrassTypeFlagsIsLOMesh(uClassOnly), "the class must not reach the LO-mesh bit (class %u)", uClass);
+		ZENITH_ASSERT_EQ(Flux_GrassTypeFlagsFragmentHash(uClassOnly), 0u, "the class must not reach the fragment hash (class %u)", uClass);
+	}
+
+	// Reserved bits 12-15 must stay clear for every legal input, or a later field
+	// added there would decode a value this packer never intended to write.
+	ZENITH_ASSERT_EQ(Flux_GrassPackTypeFlags(0xFFu, true, true, 3u, 0xFFFFu) & 0x0000F000u, 0u,
+		"bits 12-15 are reserved and must be zero even with every other field saturated");
+
 	// Oversized inputs must truncate to their own field, never corrupt the next.
-	const u_int uTruncated = Flux_GrassPackTypeFlags(0x1FFu, false, false, 0x12345u);
+	const u_int uTruncated = Flux_GrassPackTypeFlags(0x1FFu, false, false, 0u, 0x12345u);
 	ZENITH_ASSERT_EQ(Flux_GrassTypeFlagsIndex(uTruncated), 0xFFu, "a 9-bit type index must truncate to 8 bits");
 	ZENITH_ASSERT_FALSE(Flux_GrassTypeFlagsIsFolded(uTruncated), "a 9-bit type index must not spill into the folded bit");
 	ZENITH_ASSERT_FALSE(Flux_GrassTypeFlagsIsLOMesh(uTruncated), "a 9-bit type index must not spill into the LO-mesh bit");
 	ZENITH_ASSERT_EQ(Flux_GrassTypeFlagsFragmentHash(uTruncated), 0x2345u, "a 17-bit fragment hash must truncate to 16 bits");
 
-	ZENITH_ASSERT_EQ(Flux_GrassPackTypeFlags(0u, false, false, 0u), 0u,
+	const u_int uWideClass = Flux_GrassPackTypeFlags(0u, false, false, 0x7u, 0u);
+	ZENITH_ASSERT_EQ(Flux_GrassTypeFlagsLatticeClass(uWideClass), 0x3u, "a 3-bit class must truncate to 2 bits");
+	ZENITH_ASSERT_EQ(uWideClass & 0x0000F000u, 0u, "an oversized class must not spill into the reserved bits");
+
+	ZENITH_ASSERT_EQ(Flux_GrassPackTypeFlags(0u, false, false, 0u, 0u), 0u,
 		"the all-default record must be all zero, so a zeroed buffer decodes to type 0");
+
+	// The four classes the packer must carry are exactly the four the lattice
+	// produces — a wider class space would silently alias in two bits.
+	ZENITH_ASSERT_LT(Flux_GrassLatticeClass(1, 1), 4u, "the lattice must only ever produce classes 0-3");
 }
 
 ZENITH_TEST(FluxGrassTypes, LatticeClassPartitionsParitySpace)
@@ -981,4 +892,1038 @@ ZENITH_TEST(FluxGrassTypes, PipelineVariantSelectionIsATotalFunction)
 		"the velocity variant must classify as a velocity variant");
 	ZENITH_ASSERT_FALSE(Flux_GrassPipelineVariantIsShadow(Flux_GrassPipelineVariant::GBUFFER),
 		"the base variant must not classify as a shadow variant");
+}
+
+// ============================================================================
+// CPU mirrors of the shader. Everything below pins Flux_GrassTypes.h against
+// Zenith/Flux/Shaders/Vegetation/Flux_GrassCommon.slang and
+// Zenith/Flux/Shaders/Vegetation/Flux_Grass_Placement.slang, which are the
+// AUTHORITATIVE copies. Two strengths of claim live here and they are not equal:
+//
+//   * Anything the INTEGER HASH decides — the clump site jitter, the type
+//     dither's roll — is bit-exact across the two languages, because
+//     Common/Noise.slang is a hand-written twin of Zenith_Noise.h.
+//   * Anything float-valued is pinned by PROPERTY (endpoint identity, convex
+//     hull, monotonicity, weld coincidence), never by cross-language bit
+//     equality: FMA contraction and fast-math modes differ per target.
+// ============================================================================
+
+namespace
+{
+	// A deliberately asymmetric blade: a pose with zero bend, zero side curve or
+	// zero wind would pass a Bezier that silently dropped any of those terms.
+	constexpr float fGrassMirrorHeight = 0.6f;
+	constexpr float fGrassMirrorBend = 0.30f;
+	constexpr float fGrassMirrorSideCurve = 0.12f;
+	constexpr float fGrassMirrorTilt = 0.20f;
+
+	Flux_GrassBladeFrame GrassMirrorTest_Frame()
+	{
+		return Flux_GrassMakeBladeFrame(Zenith_Maths::Vector2(1.0f, 0.0f), fGrassMirrorTilt);
+	}
+
+	Flux_GrassBladeCurve GrassMirrorTest_Curve(float fHeight)
+	{
+		return Flux_GrassBuildBladeCurve(Zenith_Maths::Vector3(0.0f), GrassMirrorTest_Frame(), fHeight,
+			fGrassMirrorBend, fGrassMirrorSideCurve, Zenith_Maths::Vector3(0.05f, 0.0f, 0.02f));
+	}
+
+	// Componentwise convex hull of the four control points. A cubic Bezier never
+	// leaves it, so this is the defining property and not a loose bound.
+	bool GrassMirrorTest_InsideHull(const Flux_GrassBladeCurve& xCurve, const Zenith_Maths::Vector3& xPoint)
+	{
+		for (int i = 0; i < 3; i++)
+		{
+			const float fMin = glm::min(glm::min(xCurve.m_xP0[i], xCurve.m_xP1[i]),
+				glm::min(xCurve.m_xP2[i], xCurve.m_xP3[i]));
+			const float fMax = glm::max(glm::max(xCurve.m_xP0[i], xCurve.m_xP1[i]),
+				glm::max(xCurve.m_xP2[i], xCurve.m_xP3[i]));
+			if (xPoint[i] < fMin - 1.0e-6f || xPoint[i] > fMax + 1.0e-6f)
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+}
+
+ZENITH_TEST(FluxGrassTypes, BladeBezierMirrorsTheShaderCurve)
+{
+	const Flux_GrassBladeFrame xFrame = GrassMirrorTest_Frame();
+	const Flux_GrassBladeCurve xCurve = GrassMirrorTest_Curve(fGrassMirrorHeight);
+
+	// The frame the control points are built in. A side axis that is not
+	// perpendicular to the facing skews every blade in the world.
+	ZENITH_ASSERT_EQ_FLOAT(glm::length(xFrame.m_xGrow), 1.0f, 1.0e-5f, "the growth axis must be unit length");
+	ZENITH_ASSERT_EQ_FLOAT(glm::length(xFrame.m_xSide), 1.0f, 1.0e-5f, "the width axis must be unit length");
+	ZENITH_ASSERT_EQ_FLOAT(glm::dot(xFrame.m_xSide, xFrame.m_xFacing), 0.0f, 1.0e-6f,
+		"the width axis must be perpendicular to the facing");
+	ZENITH_ASSERT_EQ_FLOAT(xFrame.m_xSide.y, 0.0f, 0.0f, "the width axis is horizontal — the blade widens sideways, not upward");
+
+	// Endpoints are EXACT in both languages: t = 0 multiplies P1..P3 by zero and
+	// t = 1 multiplies P0..P2 by zero, so no rounding is involved either side.
+	ZENITH_ASSERT_NEAR_VEC3(Flux_GrassBezierPoint(xCurve.m_xP0, xCurve.m_xP1, xCurve.m_xP2, xCurve.m_xP3, 0.0f),
+		xCurve.m_xP0, 0.0f, "t = 0 must land exactly on P0 — the blade's root is authored, not interpolated");
+	ZENITH_ASSERT_NEAR_VEC3(Flux_GrassBezierPoint(xCurve.m_xP0, xCurve.m_xP1, xCurve.m_xP2, xCurve.m_xP3, 1.0f),
+		xCurve.m_xP3, 0.0f, "t = 1 must land exactly on P3 — the tip is where the full wind deflection lands");
+
+	// The control-point construction itself. P1 sits a third of the way up the
+	// growth axis with no bend, curl or wind on it; everything that shapes the
+	// blade enters at P2 and P3.
+	ZENITH_ASSERT_NEAR_VEC3(xCurve.m_xP0, Zenith_Maths::Vector3(0.0f), 0.0f, "P0 is the blade root");
+	ZENITH_ASSERT_NEAR_VEC3(xCurve.m_xP1, xFrame.m_xGrow * (fGrassMirrorHeight / 3.0f), 1.0e-6f,
+		"P1 must sit one third up the growth axis, unshaped");
+
+	// Midpoint: inside the control hull, and strictly between root and tip.
+	const Zenith_Maths::Vector3 xMid = Flux_GrassBezierPoint(xCurve.m_xP0, xCurve.m_xP1, xCurve.m_xP2, xCurve.m_xP3, 0.5f);
+	ZENITH_ASSERT_TRUE(GrassMirrorTest_InsideHull(xCurve, xMid), "a cubic Bezier never leaves its control hull");
+	ZENITH_ASSERT_GT(xMid.y, xCurve.m_xP0.y, "the blade's midpoint must stand above its root");
+	ZENITH_ASSERT_LT(xMid.y, xCurve.m_xP3.y, "... and below its tip");
+
+	// Tangents. At t = 0 the derivative is exactly 3(P1 - P0), i.e. the growth
+	// axis: a blade leaves the ground along the direction it grew.
+	const Zenith_Maths::Vector3 xTangent0 =
+		Flux_GrassBezierTangent(xCurve.m_xP0, xCurve.m_xP1, xCurve.m_xP2, xCurve.m_xP3, 0.0f);
+	ZENITH_ASSERT_GT(glm::length(xTangent0), 0.0f, "the tangent at the root must not be degenerate");
+	ZENITH_ASSERT_NEAR_VEC3(glm::normalize(xTangent0), xFrame.m_xGrow, 1.0e-5f,
+		"the root tangent must BE the growth axis");
+
+	// The vertex stage normalizes this tangent to build the blade's normal, so a
+	// zero anywhere along the spine would produce a NaN normal and a black blade.
+	for (int i = 0; i <= 8; i++)
+	{
+		const float fT = static_cast<float>(i) * 0.125f;
+		const Zenith_Maths::Vector3 xTangent =
+			Flux_GrassBezierTangent(xCurve.m_xP0, xCurve.m_xP1, xCurve.m_xP2, xCurve.m_xP3, fT);
+		ZENITH_ASSERT_GT(glm::length(xTangent), 0.0f, "the spine tangent must never vanish at t=%f", fT);
+		ZENITH_ASSERT_GT(xTangent.y, 0.0f, "the spine must climb everywhere at t=%f — it must not fold back", fT);
+	}
+
+	// Purity: the pose is rebuilt from the record every frame, so a curve that
+	// evaluated differently twice would flicker under TAA.
+	const Flux_GrassBladeCurve xAgain = GrassMirrorTest_Curve(fGrassMirrorHeight);
+	ZENITH_ASSERT_NEAR_VEC3(xAgain.m_xP2, xCurve.m_xP2, 0.0f, "the curve build must be a pure function");
+
+	// ... and a taller blade must actually reach higher.
+	const Flux_GrassBladeCurve xTall = GrassMirrorTest_Curve(fGrassMirrorHeight * 2.0f);
+	ZENITH_ASSERT_GT(xTall.m_xP3.y, xCurve.m_xP3.y, "doubling the height must raise the tip");
+}
+
+ZENITH_TEST(FluxGrassTypes, BladeVertexTableIsTwoWeldedPieces)
+{
+	// Rows come in (left, right) PAIRS at one height, up to the lone tip vertex.
+	for (u_int u = 0; u + 1u < Flux_GrassConfig::uBLADE_VERTEX_COUNT; u += 2u)
+	{
+		const Flux_GrassBladeVertex& xLeft = Flux_GrassConfig::axBLADE_VERTEX_TABLE[u];
+		const Flux_GrassBladeVertex& xRight = Flux_GrassConfig::axBLADE_VERTEX_TABLE[u + 1u];
+		ZENITH_ASSERT_EQ_FLOAT(xLeft.m_fU, xRight.m_fU, 0.0f, "row %u's two edges must sit at one height", u / 2u);
+		ZENITH_ASSERT_EQ_FLOAT(xLeft.m_fSide, -1.0f, 0.0f, "row %u's first vertex is the left edge", u / 2u);
+		ZENITH_ASSERT_EQ_FLOAT(xRight.m_fSide, 1.0f, 0.0f, "row %u's second vertex is the right edge", u / 2u);
+		ZENITH_ASSERT_EQ(static_cast<u_int>(xLeft.m_uPiece), static_cast<u_int>(xRight.m_uPiece),
+			"a row cannot straddle the two pieces (row %u)", u / 2u);
+	}
+
+	const Flux_GrassBladeVertex& xTip = Flux_GrassConfig::axBLADE_VERTEX_TABLE[Flux_GrassConfig::uBLADE_VERTEX_COUNT - 1u];
+	ZENITH_ASSERT_EQ_FLOAT(xTip.m_fU, 1.0f, 0.0f, "the last vertex is the top of the blade");
+	ZENITH_ASSERT_EQ_FLOAT(xTip.m_fSide, 0.0f, 0.0f, "the tip sits ON the spine — it is the one vertex with no side");
+
+	u_int uPieceACount = 0u;
+	u_int uPieceBCount = 0u;
+	for (u_int u = 0; u < Flux_GrassConfig::uBLADE_VERTEX_COUNT; u++)
+	{
+		const u_int uPiece = static_cast<u_int>(Flux_GrassConfig::axBLADE_VERTEX_TABLE[u].m_uPiece);
+		ZENITH_ASSERT_LT(uPiece, 2u, "vertex %u belongs to a piece that does not exist", u);
+		(uPiece == 0u ? uPieceACount : uPieceBCount)++;
+	}
+	ZENITH_ASSERT_EQ(uPieceACount, 8u, "piece A is 4 rows x 2 columns");
+	ZENITH_ASSERT_EQ(uPieceBCount, 7u, "piece B is 3 rows x 2 columns plus the tip");
+
+	// Row heights climb with the vertex id INSIDE a piece. The one step that does
+	// not is the A -> B seam, which is the whole point of the table.
+	for (u_int u = 2; u < Flux_GrassConfig::uBLADE_VERTEX_COUNT; u++)
+	{
+		if (Flux_GrassConfig::axBLADE_VERTEX_TABLE[u].m_uPiece != Flux_GrassConfig::axBLADE_VERTEX_TABLE[u - 2u].m_uPiece)
+		{
+			continue;
+		}
+		ZENITH_ASSERT_GT(Flux_GrassConfig::axBLADE_VERTEX_TABLE[u].m_fU,
+			Flux_GrassConfig::axBLADE_VERTEX_TABLE[u - 2u].m_fU,
+			"row heights must climb inside a piece (vertex %u)", u);
+	}
+
+	// The per-type distribution exponent remaps u -> t. It has to be an
+	// order-preserving map of [0,1] onto itself, or two rows would swap.
+	float fPrevious = -1.0f;
+	for (u_int u = 0; u < Flux_GrassConfig::uBLADE_VERTEX_COUNT; u++)
+	{
+		const float fT = Flux_GrassRemapHeightT(Flux_GrassConfig::axBLADE_VERTEX_TABLE[u].m_fU, 1.6f);
+		ZENITH_ASSERT_GE(fT, 0.0f, "the remapped height must stay in [0,1] (vertex %u)", u);
+		ZENITH_ASSERT_LE(fT, 1.0f, "the remapped height must stay in [0,1] (vertex %u)", u);
+		ZENITH_ASSERT_GE(fT, fPrevious, "the remap must preserve row order (vertex %u)", u);
+		fPrevious = fT;
+	}
+	ZENITH_ASSERT_EQ_FLOAT(Flux_GrassRemapHeightT(0.0f, 1.6f), 0.0f, 0.0f, "the base row stays at the base");
+	ZENITH_ASSERT_EQ_FLOAT(Flux_GrassRemapHeightT(1.0f, 1.6f), 1.0f, 0.0f, "the tip row stays at the tip");
+	ZENITH_ASSERT_EQ_FLOAT(Flux_GrassRemapHeightT(0.5f, 1.0f), 0.5f, 1.0e-6f, "an exponent of one must be the identity");
+	ZENITH_ASSERT_GT(Flux_GrassRemapHeightT(0.5f, 1.6f), 0.5f,
+		"an exponent above one must pack the rows toward the tip — that is what tessellates the curvature");
+	// The remap divides by the exponent, so zero must be clamped rather than
+	// producing an infinity that poses every row at the tip.
+	ZENITH_ASSERT_LE(Flux_GrassRemapHeightT(0.5f, 0.0f), 1.0f, "a zero exponent must clamp, not produce an infinity");
+	ZENITH_ASSERT_GE(Flux_GrassRemapHeightT(0.5f, 0.0f), 0.0f, "a zero exponent must clamp, not produce a NaN");
+
+	// WELD IDENTITY. Unfolded, piece A's top edge (6, 7) and piece B's seam row
+	// (8, 9) are the same two points — same height, same side — and nothing moves
+	// either, so the two disconnected pieces read as one continuous surface.
+	ZENITH_ASSERT_EQ_FLOAT(Flux_GrassConfig::axBLADE_VERTEX_TABLE[6].m_fU,
+		Flux_GrassConfig::axBLADE_VERTEX_TABLE[8].m_fU, 0.0f, "the seam's left edges must share a height");
+	ZENITH_ASSERT_EQ_FLOAT(Flux_GrassConfig::axBLADE_VERTEX_TABLE[7].m_fU,
+		Flux_GrassConfig::axBLADE_VERTEX_TABLE[9].m_fU, 0.0f, "the seam's right edges must share a height");
+	ZENITH_ASSERT_EQ_FLOAT(Flux_GrassConfig::axBLADE_VERTEX_TABLE[6].m_fSide,
+		Flux_GrassConfig::axBLADE_VERTEX_TABLE[8].m_fSide, 0.0f, "the seam's left edges must share a side");
+	ZENITH_ASSERT_EQ_FLOAT(Flux_GrassConfig::axBLADE_VERTEX_TABLE[7].m_fSide,
+		Flux_GrassConfig::axBLADE_VERTEX_TABLE[9].m_fSide, 0.0f, "the seam's right edges must share a side");
+	for (u_int u = 0; u < Flux_GrassConfig::uBLADE_VERTEX_COUNT; u++)
+	{
+		const Flux_GrassFoldOffset xUnfolded = Flux_GrassWeldOffset(u, false, 0.35f);
+		ZENITH_ASSERT_EQ_FLOAT(xUnfolded.m_fAlongFacing, 0.0f, 0.0f, "an unfolded blade must not move vertex %u", u);
+		ZENITH_ASSERT_EQ_FLOAT(xUnfolded.m_fAlongUp, 0.0f, 0.0f, "an unfolded blade must not move vertex %u", u);
+	}
+
+	// FOLDED: piece B moves RIGIDLY and piece A does not move at all. Both seam
+	// edges take the identical offset, so the row translates instead of tearing.
+	const float fPush = 0.35f;
+	for (u_int u = 0; u < 8u; u++)
+	{
+		const Flux_GrassFoldOffset xPieceA = Flux_GrassWeldOffset(u, true, fPush);
+		ZENITH_ASSERT_EQ_FLOAT(xPieceA.m_fAlongFacing, 0.0f, 0.0f, "piece A vertex %u must never receive the fold", u);
+		ZENITH_ASSERT_EQ_FLOAT(xPieceA.m_fAlongUp, 0.0f, 0.0f, "piece A vertex %u must never receive the fold", u);
+	}
+	const Flux_GrassFoldOffset xSeamLeft = Flux_GrassWeldOffset(8u, true, fPush);
+	const Flux_GrassFoldOffset xSeamRight = Flux_GrassWeldOffset(9u, true, fPush);
+	ZENITH_ASSERT_EQ_FLOAT(xSeamLeft.m_fAlongFacing, fPush, 0.0f, "the fold pushes piece B along the blade's facing");
+	ZENITH_ASSERT_EQ_FLOAT(xSeamLeft.m_fAlongUp, -fPush * 0.5f, 0.0f, "... and drops it by half as much");
+	ZENITH_ASSERT_EQ_FLOAT(xSeamRight.m_fAlongFacing, xSeamLeft.m_fAlongFacing, 0.0f,
+		"both seam edges must move identically — an asymmetric offset would shear the row apart");
+	ZENITH_ASSERT_EQ_FLOAT(xSeamRight.m_fAlongUp, xSeamLeft.m_fAlongUp, 0.0f, "both seam edges must move identically");
+	ZENITH_ASSERT_EQ_FLOAT(Flux_GrassWeldOffset(14u, true, fPush).m_fAlongFacing, fPush, 0.0f,
+		"the tip belongs to piece B and folds with the rest of it");
+
+	// The push anneals to zero as a blade converges on the LO silhouette, so it
+	// has to be linear in the value the caller passes — including at zero.
+	ZENITH_ASSERT_EQ_FLOAT(Flux_GrassWeldOffset(8u, true, fPush * 0.5f).m_fAlongFacing, fPush * 0.5f, 0.0f,
+		"the fold must be linear in the push");
+	ZENITH_ASSERT_EQ_FLOAT(Flux_GrassWeldOffset(8u, true, 0.0f).m_fAlongFacing, 0.0f, 0.0f,
+		"a fully annealed fold must be exactly zero, not merely small");
+
+	// The two HI index ranges must address ONE piece each, or "permanently
+	// disconnected pieces" is false and a folded blade tears mid-quad.
+	for (u_int u = 0; u < 18u; u++)
+	{
+		const u_int uVertex = Flux_GrassConfig::auBLADE_INDEX_TABLE[u];
+		ZENITH_ASSERT_EQ(static_cast<u_int>(Flux_GrassConfig::axBLADE_VERTEX_TABLE[uVertex].m_uPiece), 0u,
+			"HI index %u must address piece A", u);
+	}
+	for (u_int u = 18u; u < Flux_GrassConfig::uBLADE_HI_INDEX_COUNT; u++)
+	{
+		const u_int uVertex = Flux_GrassConfig::auBLADE_INDEX_TABLE[u];
+		ZENITH_ASSERT_EQ(static_cast<u_int>(Flux_GrassConfig::axBLADE_VERTEX_TABLE[uVertex].m_uPiece), 1u,
+			"HI index %u must address piece B", u);
+	}
+
+	// The LO strip deliberately reaches into piece B: its upper row is the seam
+	// row, so a folded blade offsets the whole upper half of the strip together
+	// and the strip skews instead of tearing.
+	bool bLoReachesPieceB = false;
+	for (u_int u = Flux_GrassConfig::uBLADE_LO_FIRST_INDEX; u < Flux_GrassConfig::uBLADE_INDEX_COUNT; u++)
+	{
+		const u_int uVertex = Flux_GrassConfig::auBLADE_INDEX_TABLE[u];
+		bLoReachesPieceB = bLoReachesPieceB || (Flux_GrassConfig::axBLADE_VERTEX_TABLE[uVertex].m_uPiece != 0u);
+	}
+	ZENITH_ASSERT_TRUE(bLoReachesPieceB, "the LO strip must reach into piece B — its top row is the seam row and the tip");
+}
+
+ZENITH_TEST(FluxGrassTypes, ClumpPickFindsTheNearestOfNineSites)
+{
+	const float fScale = 3.0f;
+	const u_int uSeed = 1337u;
+
+	for (int i = 0; i < 12; i++)
+	{
+		const float fWorldX = static_cast<float>(i) * 1.7f - 5.0f;
+		const float fWorldZ = static_cast<float>(i) * -2.3f + 4.0f;
+		const Zenith_Maths::Vector2 xWorld(fWorldX, fWorldZ);
+		const Flux_GrassClump xClump = Flux_GrassClumpPick(fWorldX, fWorldZ, fScale, uSeed);
+
+		// Brute-force the SAME nine cells through the same site function: the pick
+		// has to be the nearest, not merely a plausible one. A 2x2 search passes a
+		// centred sample and fails exactly here, on the corner cases — which is
+		// what produces visible clump seams along the cell grid.
+		const int iCellX = static_cast<int>(floorf(fWorldX / fScale));
+		const int iCellZ = static_cast<int>(floorf(fWorldZ / fScale));
+		float fBestDistSq = 1.0e30f;
+		Zenith_Maths::Vector2 xBest(0.0f, 0.0f);
+		for (int iDZ = -1; iDZ <= 1; iDZ++)
+		{
+			for (int iDX = -1; iDX <= 1; iDX++)
+			{
+				const Flux_GrassClumpCell xCell = Flux_GrassClumpSite(iCellX + iDX, iCellZ + iDZ, fScale, uSeed);
+				const Zenith_Maths::Vector2 xDelta = xWorld - xCell.m_xSite;
+				const float fDistSq = glm::dot(xDelta, xDelta);
+				if (fDistSq < fBestDistSq)
+				{
+					fBestDistSq = fDistSq;
+					xBest = xCell.m_xSite;
+				}
+			}
+		}
+		ZENITH_ASSERT_EQ_FLOAT(xClump.m_xCentre.x, xBest.x, 0.0f, "clump centre X at world (%f, %f)", fWorldX, fWorldZ);
+		ZENITH_ASSERT_EQ_FLOAT(xClump.m_xCentre.y, xBest.y, 0.0f, "clump centre Z at world (%f, %f)", fWorldX, fWorldZ);
+
+		ZENITH_ASSERT_GE(xClump.m_fDist01, 0.0f, "the normalized clump distance must not go negative");
+		ZENITH_ASSERT_LE(xClump.m_fDist01, 1.0f, "the normalized clump distance must saturate at the cell size");
+		ZENITH_ASSERT_EQ_FLOAT(glm::length(xClump.m_xNormalXZ), 1.0f, 1.0e-5f,
+			"the outward direction must be unit length — the blade record carries it verbatim");
+		ZENITH_ASSERT_GE(xClump.m_fHash01, 0.0f, "the clump hash is a [0,1) roll");
+		ZENITH_ASSERT_LT(xClump.m_fHash01, 1.0f, "the clump hash is a [0,1) roll");
+
+		// Rebuild stability. A clump that moved between frames would drag every
+		// blade in it, which reads as the whole field crawling.
+		const Flux_GrassClump xAgain = Flux_GrassClumpPick(fWorldX, fWorldZ, fScale, uSeed);
+		ZENITH_ASSERT_EQ_FLOAT(xAgain.m_xCentre.x, xClump.m_xCentre.x, 0.0f, "the clump pick must be a pure function");
+		ZENITH_ASSERT_EQ_FLOAT(xAgain.m_xCentre.y, xClump.m_xCentre.y, 0.0f, "the clump pick must be a pure function");
+		ZENITH_ASSERT_EQ_FLOAT(xAgain.m_fHash01, xClump.m_fHash01, 0.0f, "the clump hash must be a pure function");
+		ZENITH_ASSERT_EQ_FLOAT(xAgain.m_fDist01, xClump.m_fDist01, 0.0f, "the clump distance must be a pure function");
+	}
+
+	// The seed must actually be an input, or "seeded" is a lie. Checked over a
+	// sweep rather than one point: two hashes agreeing at a single position is a
+	// coincidence, not a contract.
+	bool bSeedMatters = false;
+	for (int i = 0; i < 8 && !bSeedMatters; i++)
+	{
+		const float fWorld = static_cast<float>(i) * 1.3f;
+		bSeedMatters = Flux_GrassClumpPick(fWorld, fWorld, fScale, uSeed).m_fHash01
+			!= Flux_GrassClumpPick(fWorld, fWorld, fScale, uSeed + 1u).m_fHash01;
+	}
+	ZENITH_ASSERT_TRUE(bSeedMatters, "two different seeds must not lay down the identical clump lattice");
+
+	// The chosen centre must be REACHABLE. A blade's own cell always holds a site
+	// somewhere inside it, so the nearest of the nine can never be further than the
+	// cell diagonal — a pick beyond that would mean the search left its
+	// neighbourhood, which is the failure a 2x2 search actually produces.
+	for (int i = 0; i < 8; i++)
+	{
+		const float fWorld = static_cast<float>(i) * 4.9f - 11.0f;
+		const Flux_GrassClump xClump = Flux_GrassClumpPick(fWorld, fWorld, fScale, uSeed);
+		const float fDistance = glm::length(Zenith_Maths::Vector2(fWorld, fWorld) - xClump.m_xCentre);
+		ZENITH_ASSERT_LE(fDistance, fScale * 1.4143f,
+			"the picked clump centre must lie within one cell diagonal of the blade (world %f)", fWorld);
+	}
+
+	// A degenerate cell size divides the world position, so it must clamp rather
+	// than place every blade in one clump at infinity.
+	const Flux_GrassClump xDegenerate = Flux_GrassClumpPick(1.0f, 1.0f, 0.0f, uSeed);
+	ZENITH_ASSERT_GE(xDegenerate.m_fDist01, 0.0f, "a zero cell size must clamp, not produce a NaN");
+	ZENITH_ASSERT_LE(xDegenerate.m_fDist01, 1.0f, "a zero cell size must clamp, not produce a NaN");
+	ZENITH_ASSERT_EQ_FLOAT(glm::length(xDegenerate.m_xNormalXZ), 1.0f, 1.0e-5f,
+		"a zero cell size must still yield a usable outward direction");
+}
+
+ZENITH_TEST(FluxGrassTypes, TypeGatherPicksAWholeTexelFromTheFootprint)
+{
+	// The four gather weights are used as a PROBABILITY DISTRIBUTION, so they have
+	// to be one: a set that did not sum to 1 would bias the last bucket.
+	const float afFracs[4] = { 0.0f, 0.25f, 0.5f, 1.0f };
+	for (u_int uX = 0; uX < 4u; uX++)
+	{
+		for (u_int uZ = 0; uZ < 4u; uZ++)
+		{
+			float afWeight[4];
+			Flux_GrassTypeGatherWeights(afFracs[uX], afFracs[uZ], afWeight);
+			float fSum = 0.0f;
+			for (u_int u = 0; u < 4u; u++)
+			{
+				ZENITH_ASSERT_GE(afWeight[u], 0.0f, "a gather weight must not go negative");
+				ZENITH_ASSERT_LE(afWeight[u], 1.0f, "a gather weight must not exceed one");
+				fSum += afWeight[u];
+			}
+			ZENITH_ASSERT_EQ_FLOAT(fSum, 1.0f, 1.0e-6f, "the four gather weights must be a distribution");
+		}
+	}
+
+	// A 2x2 index map over 2 m with the SAME two types in both rows, so the pick
+	// depends on X alone. Types 0 and 5 are adjacent on purpose: any interpolation
+	// would invent 1 to 4, types the author never placed anywhere.
+	const u_int8 aucTypes[4] = { 0u, 5u, 0u, 5u };
+	Flux_GrassMap xMap;
+	xMap.m_pData = aucTypes;
+	xMap.m_uWidth = 2u;
+	xMap.m_uHeight = 2u;
+	xMap.m_fWorldSize = 2.0f;
+	xMap.m_eFormat = Flux_GrassMapFormat::U8;
+
+	// Sitting exactly ON texel 0, the footprint has no weight anywhere else.
+	for (u_int uHash = 0; uHash < 64u; uHash++)
+	{
+		ZENITH_ASSERT_EQ(Flux_GrassSampleTypeDithered(xMap, 0.5f, 0.5f, uHash, 8u), 0u,
+			"a sample centred on texel 0 must not dither off it (hash %u)", uHash);
+	}
+
+	// On the boundary the footprint straddles both texels: every pick must be one
+	// of them, and over enough rolls it must be BOTH — that stochastic mix is what
+	// dissolves the boundary instead of drawing a hard line across the terrain.
+	bool bSawNear = false;
+	bool bSawFar = false;
+	for (u_int uHash = 0; uHash < 64u; uHash++)
+	{
+		const u_int uType = Flux_GrassSampleTypeDithered(xMap, 1.0f, 0.5f, uHash, 8u);
+		ZENITH_ASSERT_TRUE(uType == 0u || uType == 5u,
+			"the boundary pick produced %u, a type outside the gathered footprint (hash %u)", uType, uHash);
+		ZENITH_ASSERT_EQ(Flux_GrassSampleTypeDithered(xMap, 1.0f, 0.5f, uHash, 8u), uType,
+			"the pick must be a pure function of position and hash (hash %u)", uHash);
+		bSawNear = bSawNear || (uType == 0u);
+		bSawFar = bSawFar || (uType == 5u);
+	}
+	ZENITH_ASSERT_TRUE(bSawNear, "the boundary must sometimes take the near texel");
+	ZENITH_ASSERT_TRUE(bSawFar, "the boundary must sometimes take the far texel");
+
+	// The LIVE type count clamps the byte: a map painted with a type the table no
+	// longer carries must fall back to the last live type, never index off the end.
+	ZENITH_ASSERT_EQ(Flux_GrassSampleTypeDithered(xMap, 1.5f, 0.5f, 7u, 4u), 3u,
+		"a byte above the live count must clamp to the last type");
+	ZENITH_ASSERT_EQ(Flux_GrassSampleTypeDithered(xMap, 1.5f, 0.5f, 7u, 1u), 0u,
+		"a single-type table can only ever select type 0");
+	ZENITH_ASSERT_EQ(Flux_GrassSampleTypeDithered(xMap, 1.5f, 0.5f, 7u, 0u), 0u,
+		"a zero type count must behave as one type, not underflow the clamp");
+
+	// An unpainted map is meadow everywhere, whatever the roll.
+	const u_int8 aucZeros[4] = { 0u, 0u, 0u, 0u };
+	Flux_GrassMap xZeroMap = xMap;
+	xZeroMap.m_pData = aucZeros;
+	for (u_int uHash = 0; uHash < 32u; uHash++)
+	{
+		ZENITH_ASSERT_EQ(Flux_GrassSampleTypeDithered(xZeroMap, 1.0f, 1.0f, uHash, 8u), 0u,
+			"an all-zero type map must select type 0 everywhere (hash %u)", uHash);
+	}
+
+	// An absent or non-U8 map is not a type map: the raw byte semantics do not
+	// survive a float or u16 payload, so the pick refuses rather than reinterpreting.
+	const Flux_GrassMap xNull;
+	ZENITH_ASSERT_EQ(Flux_GrassSampleTypeDithered(xNull, 0.0f, 0.0f, 3u, 8u), 0u, "an unset type map must pick type 0");
+	Flux_GrassMap xWrongFormat = xMap;
+	xWrongFormat.m_eFormat = Flux_GrassMapFormat::F32;
+	ZENITH_ASSERT_EQ(Flux_GrassSampleTypeDithered(xWrongFormat, 1.0f, 0.5f, 3u, 8u), 0u,
+		"a non-U8 map must not be reinterpreted as type indices");
+}
+
+// ============================================================================
+// Flux_GrassImpl — the live feature.
+//
+// BuildFromMaps REJECTS any dimension but the fixed texture extents: the map
+// textures are created ONCE at those extents and updated in place, so a resample
+// would misalign the CPU query surface against the GPU texels. There is therefore
+// no "small" legal map set — the smallest legal one is a 4096^2 float
+// heightfield, a 1024^2 float coverage map and a 1024^2 type-byte map, roughly
+// 69 MB.
+//
+// It is owned by a LOCAL in each test that needs it, not by a shared static: a
+// function-local static would still hold those 69 MB when
+// Zenith_MemoryManagement's shutdown leak checkpoint runs, and would be reported
+// as a leak forever after. BuildFromMaps copies (and quantizes) everything it is
+// handed and retains no pointer, so a source that dies with the test is fine.
+// ============================================================================
+
+namespace
+{
+	constexpr u_int uGrassTestHeightSize = 4096u;
+	constexpr u_int uGrassTestCoverageSize = 1024u;
+	constexpr u_int uGrassTestTypeSize = 1024u;
+	constexpr float fGrassTestWorldSize = 4096.0f;    // exactly 1 m per height texel
+	constexpr float fGrassTestCoverage = 0.5f;
+	constexpr float fGrassTestHeightRange = 100.0f;   // metres, across the full +Z span
+
+	// The authored metres at a world Z, before quantization. Texel k sits at world
+	// k (1 m per texel), so this is the same ramp GrassTestMaps writes.
+	float GrassTest_ExpectedHeight(float fWorldZ)
+	{
+		return fWorldZ * (fGrassTestHeightRange / static_cast<float>(uGrassTestHeightSize - 1u));
+	}
+
+	// Height ramps linearly along +Z so the bilinear query has something to
+	// interpolate — a flat map would pass a sampler that ignored its fraction.
+	// Coverage is uniform, and the type map is all zeros (type 0, Meadow).
+	struct GrassTestMaps
+	{
+		GrassTestMaps()
+		{
+			m_afHeight.Resize(uGrassTestHeightSize * uGrassTestHeightSize, 0.0f);
+			float* pfHeight = m_afHeight.GetDataPointer();
+			for (u_int uZ = 0; uZ < uGrassTestHeightSize; uZ++)
+			{
+				const float fRow = GrassTest_ExpectedHeight(static_cast<float>(uZ));
+				float* pfRow = pfHeight + static_cast<size_t>(uZ) * uGrassTestHeightSize;
+				for (u_int uX = 0; uX < uGrassTestHeightSize; uX++)
+				{
+					pfRow[uX] = fRow;
+				}
+			}
+			m_afCoverage.Resize(uGrassTestCoverageSize * uGrassTestCoverageSize, fGrassTestCoverage);
+			m_aucType.Resize(uGrassTestTypeSize * uGrassTestTypeSize, static_cast<u_int8>(0));
+		}
+
+		// An ABSENT type map is normal content (a terrain set baked before the map
+		// existed simply has no file), so both shapes have to be constructible.
+		Flux_GrassImpl::MapSet Get(bool bWithTypeMap) const
+		{
+			Flux_GrassImpl::MapSet xMaps;
+			xMaps.pHeight = m_afHeight.GetDataPointer();
+			xMaps.uHeightSize = uGrassTestHeightSize;
+			xMaps.pCoverage = m_afCoverage.GetDataPointer();
+			xMaps.uCoverageSize = uGrassTestCoverageSize;
+			xMaps.pType = bWithTypeMap ? m_aucType.GetDataPointer() : nullptr;
+			xMaps.uTypeSize = bWithTypeMap ? uGrassTestTypeSize : 0u;
+			xMaps.fWorldSize = fGrassTestWorldSize;
+			return xMaps;
+		}
+
+		Zenith_Vector<float>  m_afHeight;
+		Zenith_Vector<float>  m_afCoverage;
+		Zenith_Vector<u_int8> m_aucType;
+	};
+}
+
+ZENITH_TEST(FluxGrassImpl, Build_RejectsInvalidInput_StateIntact)
+{
+	Flux_GrassImpl& xGrass = g_xEngine.Grass();
+	const float fDensityScaleBefore = xGrass.GetDensityScale();
+	xGrass.ClearSceneData();
+	ZENITH_ASSERT_FALSE(xGrass.IsBuilt(), "the baseline for this test is an unbuilt world");
+
+	const Flux_GrassImpl::BuildParams xParams;
+	const GrassTestMaps xSource;
+	const Flux_GrassImpl::MapSet xEmpty;
+
+	Flux_GrassImpl::MapSet xNoCoverage = xSource.Get(false);
+	xNoCoverage.pCoverage = nullptr;
+	Flux_GrassImpl::MapSet xWrongHeightSize = xSource.Get(false);
+	xWrongHeightSize.uHeightSize = uGrassTestHeightSize / 2u;
+	Flux_GrassImpl::MapSet xZeroWorld = xSource.Get(false);
+	xZeroWorld.fWorldSize = 0.0f;
+	Flux_GrassImpl::MapSet xWrongTypeSize = xSource.Get(true);
+	xWrongTypeSize.uTypeSize = 64u;
+
+	// From UNBUILT. Every one of these is rejected during validation, before a
+	// single texel is written.
+	ZENITH_ASSERT_FALSE(xGrass.BuildFromMaps(xEmpty, xParams), "a default (all-null) map set must be rejected");
+	ZENITH_ASSERT_FALSE(xGrass.BuildFromMaps(xNoCoverage, xParams), "a null coverage map must be rejected");
+	ZENITH_ASSERT_FALSE(xGrass.BuildFromMaps(xWrongHeightSize, xParams),
+		"the map textures are created once at fixed extents, so a differently-sized heightfield must be rejected rather than resampled");
+	ZENITH_ASSERT_FALSE(xGrass.BuildFromMaps(xZeroWorld, xParams), "a map covering no world must be rejected");
+	ZENITH_ASSERT_FALSE(xGrass.BuildFromMaps(xWrongTypeSize, xParams), "a mis-sized type map must be rejected");
+	ZENITH_ASSERT_FALSE(xGrass.IsBuilt(), "no rejection may have marked the world built");
+	ZENITH_ASSERT_FALSE(xGrass.HasCoverageMap(), "no rejection may have installed a coverage map");
+
+	// Now build for real and repeat the rejections: the PRIOR world has to survive
+	// them untouched, which is the whole point of validating before writing.
+	ZENITH_ASSERT_TRUE(xGrass.BuildFromMaps(xSource.Get(true), xParams), "the reference map set must build");
+	ZENITH_ASSERT_TRUE(xGrass.IsBuilt(), "a valid build must mark the world built");
+	const float fCoverageBefore = xGrass.SampleGrassCoverage(100.0f, 100.0f);
+	const float fHeightBefore = xGrass.SampleGrassHeight(100.0f, 1000.0f);
+
+	ZENITH_ASSERT_FALSE(xGrass.BuildFromMaps(xEmpty, xParams), "an all-null rebuild must still be rejected");
+	ZENITH_ASSERT_FALSE(xGrass.BuildFromMaps(xNoCoverage, xParams), "a null-coverage rebuild must still be rejected");
+	ZENITH_ASSERT_FALSE(xGrass.BuildFromMaps(xWrongHeightSize, xParams), "a mis-sized rebuild must still be rejected");
+	ZENITH_ASSERT_FALSE(xGrass.BuildFromMaps(xZeroWorld, xParams), "a zero-world rebuild must still be rejected");
+	ZENITH_ASSERT_FALSE(xGrass.BuildFromMaps(xWrongTypeSize, xParams), "a mis-sized-type rebuild must still be rejected");
+
+	ZENITH_ASSERT_TRUE(xGrass.IsBuilt(), "a rejected rebuild must leave the previous world built");
+	ZENITH_ASSERT_EQ(xGrass.GetCoverageMapSize(), uGrassTestCoverageSize, "... with its coverage map still installed");
+	ZENITH_ASSERT_EQ_FLOAT(xGrass.SampleGrassCoverage(100.0f, 100.0f), fCoverageBefore, 0.0f,
+		"a rejected rebuild must not disturb a single texel of the previous world");
+	ZENITH_ASSERT_EQ_FLOAT(xGrass.SampleGrassHeight(100.0f, 1000.0f), fHeightBefore, 0.0f,
+		"a rejected rebuild must not disturb the previous heightfield");
+
+	xGrass.SetDensityScale(fDensityScaleBefore);
+	xGrass.ClearSceneData();
+}
+
+ZENITH_TEST(FluxGrassImpl, Build_AllZeroTypeMapIsMeadowEverywhere)
+{
+	Flux_GrassImpl& xGrass = g_xEngine.Grass();
+	const float fDensityScaleBefore = xGrass.GetDensityScale();
+	xGrass.ClearSceneData();
+	const Flux_GrassImpl::BuildParams xParams;
+	const GrassTestMaps xSource;
+	const float afProbe[5] = { 0.0f, 1.0f, 1234.5f, 4095.0f, 9999.0f };
+
+	// An ABSENT type map is normal content, not an error: a terrain set baked
+	// before the map existed simply has no file, and type 0 is what it must read as.
+	ZENITH_ASSERT_TRUE(xGrass.BuildFromMaps(xSource.Get(false), xParams), "a build with no type map must succeed");
+	ZENITH_ASSERT_TRUE(xGrass.IsBuilt(), "a build with no type map must still mark the world built");
+	for (u_int u = 0; u < 5u; u++)
+	{
+		ZENITH_ASSERT_EQ(static_cast<u_int>(xGrass.SampleGrassType(afProbe[u], afProbe[4u - u])), 0u,
+			"an absent type map must read as type 0 at x=%f", afProbe[u]);
+	}
+
+	// ... and an explicitly all-zero map must be indistinguishable from an absent one.
+	ZENITH_ASSERT_TRUE(xGrass.BuildFromMaps(xSource.Get(true), xParams), "a build with an all-zero type map must succeed");
+	for (u_int u = 0; u < 5u; u++)
+	{
+		ZENITH_ASSERT_EQ(static_cast<u_int>(xGrass.SampleGrassType(afProbe[u], afProbe[4u - u])), 0u,
+			"an all-zero type map must read as type 0 at x=%f", afProbe[u]);
+	}
+
+	// Coverage reads back what was painted, to the 8-bit texture's precision. The
+	// CPU copy IS the bytes the texture holds, so this is the GPU's view too.
+	ZENITH_ASSERT_TRUE(xGrass.HasCoverageMap(), "a built world must report its coverage map");
+	ZENITH_ASSERT_EQ(xGrass.GetCoverageMapSize(), uGrassTestCoverageSize, "the coverage map keeps its authored size");
+	ZENITH_ASSERT_EQ_FLOAT(xGrass.GetCoverageWorldSize(), fGrassTestWorldSize, 0.0f, "... and its authored world footprint");
+	ZENITH_ASSERT_EQ_FLOAT(xGrass.SampleGrassCoverage(512.0f, 512.0f), fGrassTestCoverage, 1.0f / 255.0f,
+		"coverage must read back what was painted");
+	ZENITH_ASSERT_EQ_FLOAT(xGrass.SampleGrassCoverage(-100.0f, -100.0f), fGrassTestCoverage, 1.0f / 255.0f,
+		"off the map, coverage clamps to the edge texel rather than falling to zero");
+
+	// Height is BILINEAR and in metres. The map ramps along +Z, so a whole-texel
+	// probe pins the ramp and a half-texel probe pins the interpolation itself.
+	ZENITH_ASSERT_EQ_FLOAT(xGrass.SampleGrassHeight(37.0f, 1000.0f), GrassTest_ExpectedHeight(1000.0f), 0.01f,
+		"a whole-texel height probe must return the authored metres");
+	ZENITH_ASSERT_EQ_FLOAT(xGrass.SampleGrassHeight(37.0f, 1000.5f), GrassTest_ExpectedHeight(1000.5f), 0.01f,
+		"a half-texel probe must land half way between two rows — the height query is bilinear");
+	ZENITH_ASSERT_EQ_FLOAT(xGrass.SampleGrassHeight(37.0f, 0.0f), 0.0f, 0.01f, "the ramp starts at zero");
+	ZENITH_ASSERT_GT(xGrass.SampleGrassHeight(37.0f, 2000.0f), xGrass.SampleGrassHeight(37.0f, 1000.0f),
+		"the heightfield must climb along +Z, not along the row-major index");
+
+	xGrass.SetDensityScale(fDensityScaleBefore);
+	xGrass.ClearSceneData();
+}
+
+ZENITH_TEST(FluxGrassImpl, SamplesReturnZeroUnbuilt)
+{
+	Flux_GrassImpl& xGrass = g_xEngine.Grass();
+	xGrass.ClearSceneData();
+
+	// ALL THREE samplers return 0 with no map. The retired SampleDensityMap
+	// returned a neutral 1.0 for "no map", which silently made an unbuilt world
+	// read as fully covered; a caller with no data has to decide what that means,
+	// so this flip is deliberate and is pinned here.
+	const float afProbe[4] = { -1000.0f, 0.0f, 128.5f, 1.0e6f };
+	for (u_int u = 0; u < 4u; u++)
+	{
+		ZENITH_ASSERT_EQ_FLOAT(xGrass.SampleGrassCoverage(afProbe[u], afProbe[u]), 0.0f, 0.0f,
+			"unbuilt coverage must be zero, never a neutral one (probe %f)", afProbe[u]);
+		ZENITH_ASSERT_EQ(static_cast<u_int>(xGrass.SampleGrassType(afProbe[u], afProbe[u])), 0u,
+			"unbuilt type must be zero (probe %f)", afProbe[u]);
+		ZENITH_ASSERT_EQ_FLOAT(xGrass.SampleGrassHeight(afProbe[u], afProbe[u]), 0.0f, 0.0f,
+			"unbuilt height must be zero, not the stale height bias (probe %f)", afProbe[u]);
+	}
+
+	ZENITH_ASSERT_FALSE(xGrass.IsBuilt(), "a cleared world is not built");
+	ZENITH_ASSERT_FALSE(xGrass.HasCoverageMap(), "a cleared world holds no coverage map");
+	ZENITH_ASSERT_EQ(xGrass.GetCoverageMapSize(), 0u, "a cleared world's coverage map has no extent");
+	ZENITH_ASSERT_EQ_FLOAT(xGrass.GetCoverageWorldSize(), 0.0f, 0.0f, "a cleared world covers no world");
+
+	ZENITH_ASSERT_EQ(xGrass.GetScheduledInstanceCount(), 0u, "a cleared world schedules no lattice cells");
+	ZENITH_ASSERT_EQ(xGrass.GetVisibleTileCount(), 0u, "a cleared world dispatches no tiles");
+	ZENITH_ASSERT_EQ(xGrass.GetTileCount(), 0u, "a cleared world culls no tiles");
+	ZENITH_ASSERT_EQ(xGrass.GetSubmittedDrawCount(), 0u, "a cleared world submits no draws");
+	ZENITH_ASSERT_EQ(xGrass.GetMoverCount(), 0u, "a cleared world holds no movers");
+	ZENITH_ASSERT_EQ(xGrass.GetMoverOverflowCount(), 0u, "a cleared world has dropped no movers");
+}
+
+ZENITH_TEST(FluxGrassImpl, ResetIsIdempotentAndPreservesTypeTable)
+{
+	Flux_GrassImpl& xGrass = g_xEngine.Grass();
+	const float fDensityScaleBefore = xGrass.GetDensityScale();
+	// Snapshotted, not assumed to be the defaults: LoadAuthoredTypeTable may have
+	// replaced them at Initialise with a table the game ships, and this test must
+	// hand back exactly what it found.
+	const Flux_GrassTypeTable xTableBefore = xGrass.GetTypeTable();
+	xGrass.ClearSceneData();
+
+	// The type table is AUTHORED content, not scene state: it is seeded once at
+	// Initialise and has to outlive every scene load.
+	Flux_GrassTypeTable xAuthored = Flux_GrassTypeTable::Defaults();
+	xAuthored.SetCount(7u);
+	xAuthored.Get(0u).m_fHeightMin = 0.11f;
+	xAuthored.Get(1u).m_fClumpScale = 9.25f;
+	xAuthored.SetName(0u, "UnitTestMeadow");
+	xGrass.SetTypeTable(xAuthored);
+
+	const Flux_GrassImpl::BuildParams xParams;
+	const GrassTestMaps xSource;
+	ZENITH_ASSERT_TRUE(xGrass.BuildFromMaps(xSource.Get(true), xParams), "the reference map set must build");
+	Flux_GrassImpl::Mover xMover;
+	xMover.m_xPos = Zenith_Maths::Vector3(1.0f, 0.0f, 2.0f);
+	xMover.m_fRadius = 1.5f;
+	xMover.m_fStrength = 1.0f;
+	xGrass.SubmitMover(xMover);
+	ZENITH_ASSERT_EQ(xGrass.GetMoverCount(), 1u, "the setup must leave scene state worth clearing");
+
+	// Reset DOUBLE-FIRES at boot, so idempotency is a contract and not a nicety.
+	xGrass.Reset();
+	xGrass.Reset();
+
+	ZENITH_ASSERT_FALSE(xGrass.IsBuilt(), "Reset must drop the built world");
+	ZENITH_ASSERT_FALSE(xGrass.HasCoverageMap(), "Reset must drop the coverage map");
+	ZENITH_ASSERT_EQ(xGrass.GetCoverageMapSize(), 0u, "Reset must drop the coverage map's extent");
+	ZENITH_ASSERT_EQ(xGrass.GetScheduledInstanceCount(), 0u, "Reset must zero the scheduled cell count");
+	ZENITH_ASSERT_EQ(xGrass.GetVisibleTileCount(), 0u, "Reset must zero the dispatched tile count");
+	ZENITH_ASSERT_EQ(xGrass.GetTileCount(), 0u, "Reset must zero the culled tile count");
+	ZENITH_ASSERT_EQ(xGrass.GetSubmittedDrawCount(), 0u, "Reset must zero the submitted draw count");
+	ZENITH_ASSERT_EQ(xGrass.GetMoverCount(), 0u, "Reset must drop every mover");
+	ZENITH_ASSERT_EQ(xGrass.GetMoverOverflowCount(), 0u, "Reset must zero the mover overflow counter");
+
+	ZENITH_ASSERT_EQ(xGrass.GetTypeTable().GetCount(), 7u, "Reset must NOT touch the authored type table");
+	ZENITH_ASSERT_EQ_FLOAT(xGrass.GetTypeTable().Get(0u).m_fHeightMin, 0.11f, 0.0f,
+		"authored type parameters must survive a scene load");
+	ZENITH_ASSERT_EQ_FLOAT(xGrass.GetTypeTable().Get(1u).m_fClumpScale, 9.25f, 0.0f,
+		"authored type parameters must survive a scene load");
+	ZENITH_ASSERT_STREQ(xGrass.GetTypeTable().GetName(0u).c_str(), "UnitTestMeadow",
+		"authored type names must survive a scene load");
+
+	// Every GPU allocation survives Reset too, so the next scene builds straight
+	// back on top of them without re-creating a single resource.
+	ZENITH_ASSERT_TRUE(xGrass.BuildFromMaps(xSource.Get(true), xParams), "a world must rebuild after a Reset");
+	ZENITH_ASSERT_TRUE(xGrass.IsBuilt(), "the rebuilt world must be built");
+	ZENITH_ASSERT_EQ(xGrass.GetCoverageMapSize(), uGrassTestCoverageSize, "the rebuilt world must reinstall its coverage map");
+
+	// Hand the singleton back the table it had, not this test's.
+	xGrass.SetTypeTable(xTableBefore);
+	xGrass.SetDensityScale(fDensityScaleBefore);
+	xGrass.ClearSceneData();
+}
+
+ZENITH_TEST(FluxGrassImpl, MoverCapAndClear)
+{
+	Flux_GrassImpl& xGrass = g_xEngine.Grass();
+	xGrass.ClearSceneData();
+	ZENITH_ASSERT_EQ(xGrass.GetMoverCount(), 0u, "the baseline for this test is an empty mover list");
+
+	// One submission past the cap. Over-cap movers are DROPPED and counted, never
+	// grown into: the list is consumed by every frame's gather, so an unbounded one
+	// would let a runaway submitter grow without limit inside a single frame.
+	for (u_int u = 0; u < uFLUX_GRASS_MAX_MOVERS + 1u; u++)
+	{
+		Flux_GrassImpl::Mover xMover;
+		xMover.m_xPos = Zenith_Maths::Vector3(static_cast<float>(u), 0.0f, 0.0f);
+		xMover.m_fRadius = 1.0f;
+		xMover.m_fStrength = 1.0f;
+		xGrass.SubmitMover(xMover);
+	}
+
+	ZENITH_ASSERT_EQ(xGrass.GetMoverCount(), uFLUX_GRASS_MAX_MOVERS, "the mover list must stop at its cap");
+	ZENITH_ASSERT_EQ(xGrass.GetMoverOverflowCount(), 1u,
+		"the one dropped submission must be counted — a silent drop is indistinguishable from a mover that did nothing");
+
+	xGrass.ClearSceneData();
+	ZENITH_ASSERT_EQ(xGrass.GetMoverCount(), 0u, "ClearSceneData must drop every mover");
+	ZENITH_ASSERT_EQ(xGrass.GetMoverOverflowCount(), 0u, "ClearSceneData must zero the overflow counter too");
+}
+
+ZENITH_TEST(FluxGrassImpl, ReadbackZeroHeadless)
+{
+	Flux_GrassImpl& xGrass = g_xEngine.Grass();
+	const float fDensityScaleBefore = xGrass.GetDensityScale();
+	xGrass.ClearSceneData();
+	const GrassTestMaps xSource;
+	ZENITH_ASSERT_TRUE(xGrass.BuildFromMaps(xSource.Get(true), Flux_GrassImpl::BuildParams()),
+		"the reference map set must build before a readback means anything");
+
+	// The surviving blade count is a GPU quantity. DownloadBufferData zero-fills
+	// without an allocator, so under the null renderer ZERO is the CONTRACT rather
+	// than an observation — which is exactly why no headless suite may assert a
+	// non-zero blade count. On a windowed build the same call returns real,
+	// frame-dependent truth and is not assertable from a unit test at all, so the
+	// windowed leg deliberately checks nothing.
+	if (Zenith_IsNullRenderer())
+	{
+		ZENITH_ASSERT_EQ(xGrass.ReadbackVisibleBladeCount(), 0u,
+			"a headless readback must be exactly zero — a non-zero one would mean the download invented data");
+	}
+
+	xGrass.SetDensityScale(fDensityScaleBefore);
+	xGrass.ClearSceneData();
+}
+
+// ============================================================================
+// Flux_GrassTypeTable — the AUTHORING side of the per-type parameters.
+//
+// Flux_GrassTypeParams is 43 packed 4-byte fields with no padding, which is both
+// what lets the serializer budget its payload by a FIELD COUNT and what makes a
+// memcmp a legitimate field-by-field compare in this file. DefaultsValidateClean
+// asserts that size first, so a struct that grew padding fails there rather than
+// silently comparing it.
+// ============================================================================
+
+namespace
+{
+	constexpr size_t uGrassTypeParamsBytes = 43u * 4u;
+
+	bool GrassTableTest_ParamsIdentical(const Flux_GrassTypeParams& xA, const Flux_GrassTypeParams& xB)
+	{
+		return memcmp(&xA, &xB, sizeof(Flux_GrassTypeParams)) == 0;
+	}
+
+	// Only the LIVE entries: ReadFromDataStream resets every slot and fills exactly
+	// GetCount() of them, so the tail is defined but not authored.
+	bool GrassTableTest_LiveEntriesIdentical(const Flux_GrassTypeTable& xA, const Flux_GrassTypeTable& xB)
+	{
+		if (xA.GetCount() != xB.GetCount())
+		{
+			return false;
+		}
+		for (u_int u = 0; u < xA.GetCount(); u++)
+		{
+			if (!GrassTableTest_ParamsIdentical(xA.Get(u), xB.Get(u)) || xA.GetName(u) != xB.GetName(u))
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+
+	// A table that is plainly NOT the defaults, so "untouched" cannot pass by
+	// accident against a freshly defaulted one.
+	Flux_GrassTypeTable GrassTableTest_MakeAuthored()
+	{
+		Flux_GrassTypeTable xTable = Flux_GrassTypeTable::Defaults();
+		xTable.SetCount(3u);
+		xTable.SetName(0u, "AuthoredZero");
+		xTable.SetName(2u, "AuthoredTwo");
+		xTable.Get(0u).m_fHeightMax = 1.23f;
+		xTable.Get(1u).m_fSlopeMax = 0.42f;
+		xTable.Get(2u).m_xTipColour = Zenith_Maths::Vector3(0.71f, 0.19f, 0.33f);
+		xTable.Get(2u).m_uVeinTextureIndex = 12u;
+		xTable.Validate();
+		return xTable;
+	}
+}
+
+ZENITH_TEST(FluxGrassTypeTable, DefaultsValidateClean)
+{
+	ZENITH_ASSERT_EQ(sizeof(Flux_GrassTypeParams), uGrassTypeParamsBytes,
+		"the authored record must stay 43 packed 4-byte fields — the serializer budgets its payload from that count, and this file compares entries with memcmp");
+
+	const Flux_GrassTypeTable xTable = Flux_GrassTypeTable::Defaults();
+	ZENITH_ASSERT_EQ(xTable.GetCount(), 4u, "the shipped set is Meadow / Tall / Dry / Flowers");
+	ZENITH_ASSERT_STREQ(xTable.GetName(0u).c_str(), "Meadow",
+		"entry 0 is what an unpainted (all-zero) type map selects, so it must be the ordinary lawn");
+
+	// A default-constructed table IS the authored default set, so the named factory
+	// and the constructor must not have drifted into two different sets.
+	const Flux_GrassTypeTable xConstructed;
+	ZENITH_ASSERT_TRUE(GrassTableTest_LiveEntriesIdentical(xTable, xConstructed),
+		"Defaults() must be exactly a default construction, not a second copy of the set");
+
+	// The shipped defaults must already sit inside every range Validate enforces —
+	// otherwise the engine ships grass it immediately clamps to something else.
+	Flux_GrassTypeTable xValidated = Flux_GrassTypeTable::Defaults();
+	xValidated.Validate();
+	ZENITH_ASSERT_TRUE(GrassTableTest_LiveEntriesIdentical(xTable, xValidated),
+		"validating the defaults must change nothing");
+
+	// ... and Validate is idempotent, so a repeated editor edit cannot walk a value.
+	xValidated.Validate();
+	xValidated.Validate();
+	ZENITH_ASSERT_TRUE(GrassTableTest_LiveEntriesIdentical(xTable, xValidated), "Validate must be idempotent");
+}
+
+ZENITH_TEST(FluxGrassTypeTable, ValidateClampsOutOfRange)
+{
+	// The poison values are built and CLASSIFIED by bit pattern throughout. Nothing
+	// here may ask a float whether it is a NaN: this build's float optimizations let
+	// the compiler assume NaN and infinity never occur, so `f != f` evaluates EQUAL
+	// for a genuine NaN and std::isnan folds to false. That is not a test-harness
+	// quirk — it is the exact reason Validate() had to stop using a float test, and
+	// a float test here would have silently agreed with the broken Validate.
+	const float fNaN = std::bit_cast<float>(0x7FC00000u);
+	const float fPosInf = std::bit_cast<float>(0x7F800000u);
+	const float fNegInf = std::bit_cast<float>(0xFF800000u);
+
+	// IEEE-754 binary32: exponent all-ones + non-zero mantissa is a NaN; exponent
+	// all-ones + zero mantissa is an infinity. Assert the patterns SURVIVED into the
+	// float variables, so a compiler that canonicalized them says so here rather
+	// than by quietly making the rest of this test vacuous.
+	ZENITH_ASSERT_EQ(std::bit_cast<u_int>(fNaN) & 0x7F800000u, 0x7F800000u,
+		"the injected NaN must have an all-ones exponent");
+	ZENITH_ASSERT_NE(std::bit_cast<u_int>(fNaN) & 0x007FFFFFu, 0u,
+		"... and a non-zero mantissa — that is what makes it a NaN and not an infinity");
+	ZENITH_ASSERT_EQ(std::bit_cast<u_int>(fPosInf) & 0x7F800000u, 0x7F800000u, "+inf has an all-ones exponent");
+	ZENITH_ASSERT_EQ(std::bit_cast<u_int>(fPosInf) & 0x807FFFFFu, 0u, "... a zero mantissa and a clear sign bit");
+	ZENITH_ASSERT_EQ(std::bit_cast<u_int>(fNegInf) & 0x807FFFFFu, 0x80000000u, "-inf is +inf with the sign bit set");
+
+	// The shared classifier Validate() now depends on. It must reject all three and
+	// accept ordinary values, including the extremes of the normal range.
+	ZENITH_ASSERT_FALSE(Flux_GrassIsFiniteFloat(fNaN), "a NaN is not finite");
+	ZENITH_ASSERT_FALSE(Flux_GrassIsFiniteFloat(fPosInf), "+inf is not finite");
+	ZENITH_ASSERT_FALSE(Flux_GrassIsFiniteFloat(fNegInf), "-inf is not finite — the sign bit must not reach the test");
+	ZENITH_ASSERT_TRUE(Flux_GrassIsFiniteFloat(0.0f), "zero is finite");
+	ZENITH_ASSERT_TRUE(Flux_GrassIsFiniteFloat(-0.0f), "negative zero is finite");
+	ZENITH_ASSERT_TRUE(Flux_GrassIsFiniteFloat(0.55f), "an ordinary authored value is finite");
+	ZENITH_ASSERT_TRUE(Flux_GrassIsFiniteFloat(-1.0e9f), "a large negative value is finite, merely out of range");
+	ZENITH_ASSERT_TRUE(Flux_GrassIsFiniteFloat(std::bit_cast<float>(0x7F7FFFFFu)), "FLT_MAX is finite");
+	ZENITH_ASSERT_TRUE(Flux_GrassIsFiniteFloat(std::bit_cast<float>(0x00000001u)), "the smallest denormal is finite");
+
+	Flux_GrassTypeTable xTable = Flux_GrassTypeTable::Defaults();
+	Flux_GrassTypeParams& xType = xTable.Get(0u);
+	xType.m_fHeightMin = -5.0f;
+	xType.m_fHeightMax = 1.0e9f;
+	xType.m_fWidthMin = -1.0f;
+	xType.m_fTiltMaxRad = 99.0f;
+	xType.m_fVertexDistributionPow = 0.0f;
+	xType.m_fClumpScale = 0.0f;
+	xType.m_fDensity = 7.0f;
+	xType.m_fAOTipRelease = 0.0f;
+	xType.m_fMaxDrawDistance = 1.0e9f;
+	xType.m_xBaseColour = Zenith_Maths::Vector3(5.0f, -1.0f, 0.5f);
+	// The three non-finite injections, one per kind, in three different fields —
+	// the sanitize step is shared, so this pins that it is applied UNIFORMLY and not
+	// just to whichever field someone once noticed.
+	xType.m_fStiffness = fNaN;
+	xType.m_fRoughnessBase = fPosInf;
+	xType.m_fSpecular = fNegInf;
+
+	xTable.Validate();
+
+	// These ranges are load-bearing, not cosmetic: a zero clump scale divides by
+	// zero in the Voronoi search, a zero distribution exponent divides by zero in
+	// the height remap, and a negative height inverts the blade.
+	ZENITH_ASSERT_GE(xType.m_fHeightMin, 0.01f, "a negative height must clamp up, not invert the blade");
+	ZENITH_ASSERT_LE(xType.m_fHeightMax, 8.0f, "an absurd height must clamp down");
+	ZENITH_ASSERT_LE(xType.m_fHeightMin, xType.m_fHeightMax, "the height pair must come out ordered");
+	ZENITH_ASSERT_GE(xType.m_fWidthMin, 0.001f, "a negative width must clamp up");
+	ZENITH_ASSERT_LE(xType.m_fWidthMin, xType.m_fWidthMax, "the width pair must come out ordered");
+	ZENITH_ASSERT_LE(xType.m_fTiltMaxRad, 1.5f, "tilt is bounded short of a right angle");
+	ZENITH_ASSERT_GE(xType.m_fVertexDistributionPow, 0.25f, "the distribution exponent divides — it can never reach zero");
+	ZENITH_ASSERT_GE(xType.m_fClumpScale, 0.05f, "the clump cell size divides — it can never reach zero");
+	ZENITH_ASSERT_LE(xType.m_fDensity, 1.0f, "density is an acceptance PROBABILITY, so it caps at one");
+	ZENITH_ASSERT_GE(xType.m_fAOTipRelease, 0.01f, "the AO release height divides — it can never reach zero");
+	ZENITH_ASSERT_LE(xType.m_fMaxDrawDistance, Flux_GrassConfig::fMAX_MAX_DISTANCE,
+		"a per-type draw distance must land inside the global band");
+	ZENITH_ASSERT_GE(xType.m_fMaxDrawDistance, Flux_GrassConfig::fMIN_MAX_DISTANCE,
+		"a per-type draw distance must land inside the global band");
+	ZENITH_ASSERT_EQ_FLOAT(xType.m_xBaseColour.x, 1.0f, 0.0f, "an over-bright colour channel must clamp to one");
+	ZENITH_ASSERT_EQ_FLOAT(xType.m_xBaseColour.y, 0.0f, 0.0f, "a negative colour channel must clamp to zero");
+	ZENITH_ASSERT_EQ_FLOAT(xType.m_xBaseColour.z, 0.5f, 0.0f, "an in-range channel must be left exactly alone");
+
+	// The three non-finite fields must be REPLACED with their authored defaults, not
+	// clamped. Clamping is what a plain range test does to them and it is wrong in
+	// both directions: a NaN passes straight through (`x < lo` and `x > hi` are both
+	// false for it) and reaches the GPU as a blade with no size, while an infinity
+	// lands on a range END that the author never asked for. Each expected value is
+	// the field's default, and each differs from what a clamp would have produced —
+	// roughness would be 1.0 (its ceiling) and specular 0.0 (its floor).
+	ZENITH_ASSERT_TRUE(Flux_GrassIsFiniteFloat(xType.m_fStiffness), "no non-finite value may survive Validate");
+	ZENITH_ASSERT_TRUE(Flux_GrassIsFiniteFloat(xType.m_fRoughnessBase), "no non-finite value may survive Validate");
+	ZENITH_ASSERT_TRUE(Flux_GrassIsFiniteFloat(xType.m_fSpecular), "no non-finite value may survive Validate");
+	ZENITH_ASSERT_EQ_FLOAT(xType.m_fStiffness, 0.50f, 0.0f, "a NaN must be replaced with the authored default");
+	ZENITH_ASSERT_EQ_FLOAT(xType.m_fRoughnessBase, 0.55f, 0.0f,
+		"+inf must be replaced with the authored default, not clamped to the range ceiling");
+	ZENITH_ASSERT_EQ_FLOAT(xType.m_fSpecular, 0.35f, 0.0f,
+		"-inf must be replaced with the authored default, not clamped to the range floor");
+
+	// A zero live count would make the placement CS clamp the map's type index
+	// to -1; an overflowing one would index past the table.
+	xTable.SetCount(0u);
+	xTable.Validate();
+	ZENITH_ASSERT_GE(xTable.GetCount(), 1u, "the live type count must never reach zero");
+	xTable.SetCount(uFLUX_GRASS_MAX_TYPES + 5u);
+	xTable.Validate();
+	ZENITH_ASSERT_LE(xTable.GetCount(), uFLUX_GRASS_MAX_TYPES, "the live type count must never exceed the table");
+}
+
+ZENITH_TEST(FluxGrassTypeTable, SerializeRoundTripsExactly)
+{
+	const Flux_GrassTypeTable xSource = GrassTableTest_MakeAuthored();
+
+	Zenith_DataStream xStream;
+	xSource.WriteToDataStream(xStream);
+	xStream.SetCursor(0);
+
+	Flux_GrassTypeTable xLoaded = Flux_GrassTypeTable::Defaults();
+	ZENITH_ASSERT_TRUE(xLoaded.ReadFromDataStream(xStream), "a table this engine wrote must read back");
+
+	ZENITH_ASSERT_EQ(xLoaded.GetCount(), xSource.GetCount(), "the live type count must round-trip");
+	ZENITH_ASSERT_TRUE(GrassTableTest_LiveEntriesIdentical(xSource, xLoaded),
+		"every authored field must round-trip byte for byte — the packed GPU form is a one-way projection, so the file has to carry the unpacked truth");
+	ZENITH_ASSERT_STREQ(xLoaded.GetName(0u).c_str(), "AuthoredZero", "type names must round-trip");
+	ZENITH_ASSERT_STREQ(xLoaded.GetName(1u).c_str(), "Tall", "an unedited name must round-trip too");
+	ZENITH_ASSERT_STREQ(xLoaded.GetName(2u).c_str(), "AuthoredTwo", "type names must round-trip");
+	ZENITH_ASSERT_EQ(xLoaded.Get(2u).m_uVeinTextureIndex, 12u,
+		"a bindless slot is an integer and must not come back float-quantized");
+
+	// The slots past the count are RESET, not left showing the previous (longer)
+	// table's tail: a shorter file must not leave stale types visible behind it.
+	Flux_GrassTypeParams xDefault;
+	xDefault.Validate();
+	for (u_int u = xLoaded.GetCount(); u < uFLUX_GRASS_MAX_TYPES; u++)
+	{
+		ZENITH_ASSERT_TRUE(GrassTableTest_ParamsIdentical(xLoaded.Get(u), xDefault),
+			"slot %u past the live count must be reset, not inherited", u);
+		ZENITH_ASSERT_TRUE(xLoaded.GetName(u).empty(), "slot %u past the live count must carry no name", u);
+	}
+}
+
+ZENITH_TEST(FluxGrassTypeTable, ReadRejectsGarbageAndLeavesTableUntouched)
+{
+	const Flux_GrassTypeTable xReference = GrassTableTest_MakeAuthored();
+	Flux_GrassTypeTable xTable = GrassTableTest_MakeAuthored();
+
+	// A good stream first, so the version word comes from the WRITER rather than a
+	// constant this file would have to keep in step with it by hand.
+	Zenith_DataStream xGood;
+	xTable.WriteToDataStream(xGood);
+	const uint64_t ulWritten = xGood.GetCursor();
+	xGood.SetCursor(0);
+	u_int uVersion = 0u;
+	xGood >> uVersion;
+	ZENITH_ASSERT_GT(ulWritten, static_cast<uint64_t>(16), "the reference payload must be long enough to truncate meaningfully");
+
+	// TRUNCATED. The reader measures the whole payload before it clears a single
+	// slot, because the stream's own bounds checks merely log and return: a
+	// field-by-field read of a short file would leave a table that Validate() then
+	// makes look plausible instead of one that plainly reverted.
+	Zenith_DataStream xTruncated(xGood.GetData(), ulWritten - 8ull);
+	ZENITH_ASSERT_FALSE(xTable.ReadFromDataStream(xTruncated), "a stream that ends part-way through an entry must be rejected");
+	ZENITH_ASSERT_TRUE(GrassTableTest_LiveEntriesIdentical(xTable, xReference),
+		"a rejected read must leave the table untouched, never half-written");
+
+	// ZERO COUNT. SetCount clamps to [1, MAX] on the authoring side, so neither end
+	// can come from a file this engine wrote.
+	Zenith_DataStream xZeroCount;
+	xZeroCount << uVersion;
+	xZeroCount << 0u;
+	xZeroCount.SetCursor(0);
+	ZENITH_ASSERT_FALSE(xTable.ReadFromDataStream(xZeroCount), "a zero type count must be rejected");
+	ZENITH_ASSERT_TRUE(GrassTableTest_LiveEntriesIdentical(xTable, xReference), "a rejected read must leave the table untouched");
+
+	Zenith_DataStream xHugeCount;
+	xHugeCount << uVersion;
+	xHugeCount << (uFLUX_GRASS_MAX_TYPES + 1u);
+	xHugeCount.SetCursor(0);
+	ZENITH_ASSERT_FALSE(xTable.ReadFromDataStream(xHugeCount), "a type count past the table capacity must be rejected");
+	ZENITH_ASSERT_TRUE(GrassTableTest_LiveEntriesIdentical(xTable, xReference), "a rejected read must leave the table untouched");
+
+	// WRONG VERSION. There is no migration path by design: a partially-read table
+	// produces plausible grass, which is far harder to spot than one that reverted.
+	Zenith_DataStream xWrongVersion;
+	xWrongVersion << (uVersion + 1u);
+	xWrongVersion << 4u;
+	xWrongVersion.SetCursor(0);
+	ZENITH_ASSERT_FALSE(xTable.ReadFromDataStream(xWrongVersion), "a table written by another version must be rejected");
+	ZENITH_ASSERT_TRUE(GrassTableTest_LiveEntriesIdentical(xTable, xReference), "a rejected read must leave the table untouched");
+
+	// TOO SHORT FOR EVEN THE HEADER.
+	u_int auStub[1] = { 0u };
+	Zenith_DataStream xStub(auStub, sizeof(auStub));
+	ZENITH_ASSERT_FALSE(xTable.ReadFromDataStream(xStub), "a stream with no room for a header must be rejected");
+	ZENITH_ASSERT_TRUE(GrassTableTest_LiveEntriesIdentical(xTable, xReference), "a rejected read must leave the table untouched");
+
+	// ... and the reader still accepts its OWN stream, so everything above rejected
+	// the garbage rather than the reader having simply stopped working.
+	xGood.SetCursor(0);
+	ZENITH_ASSERT_TRUE(xTable.ReadFromDataStream(xGood), "the reader must still accept a well-formed stream");
+	ZENITH_ASSERT_TRUE(GrassTableTest_LiveEntriesIdentical(xTable, xReference), "a good read must restore the same table");
 }

@@ -66,7 +66,7 @@ xInfo.m_uMemoryFlags = (1 << MEMORY_FLAGS__SHADER_READ) | (1 << MEMORY_FLAGS__UN
 | `CreateRenderTargetVRAM()` | Allocate render target (2D/3D/Cube) |
 | `CreateTextureVRAM()` | Allocate texture with optional data upload |
 | `UploadBufferData()` | Upload data to buffer via staging |
-| `DownloadBufferData()` | Read a buffer back to the CPU. **Explicit-call-only** — drains pending uploads, idles the device, round-trips a throwaway host-visible staging buffer. Never call it from a frame path. |
+| `DownloadBufferData()` | Read a buffer back to the CPU. **Explicit-call-only** — drains pending uploads, idles the device, round-trips a throwaway host-visible staging buffer. Never call it from a frame path. Legal only on `UNORDERED_ACCESS` / `INDIRECT_BUFFER` buffers: `CreateBufferVRAM` grants transfer-src usage to those families alone, and `vkCmdCopyBuffer` rejects any other source. |
 | `QueueVRAMDeletion()` | Deferred deletion for in-flight resources |
 
 ### Staging Buffer

@@ -39,14 +39,22 @@ is one extra full-screen RGBA16F bandwidth, not a permanent allocation.
 
 ## Pass placement
 
-Inserted between the **G-buffer writers** (Terrain, UnifiedMesh, Primitives,
-Skybox — Grass does not qualify because it writes the forward-lit HDR target,
-not G-buffer MRTs) and the
+Inserted between the **G-buffer writers** (Terrain, UnifiedMesh, Grass,
+Primitives, Skybox) and the
 **G-buffer readers** (HiZ, SSR, SSGI, SSAO, DeferredShading). Source-side
 registration order matters — the topo sort's `FindBestWriter` picks the
 nearest writer in declaration order, so registering Decals after the geometry
 block and before HiZ is required. Decals don't touch depth, so HiZ ordering
 relative to Decals is unconstrained.
+
+**Grass receives decals.** It used to be excluded structurally — its forward pass
+blended into the already-lit HDR target and never touched a G-buffer MRT, so
+there was nothing for Decal Apply to blend over. `"Grass GBuffer"` now writes the
+core MRTs and scene depth ahead of Decals, so a decal volume containing blades
+projects onto them exactly as it does onto terrain. There is **no exclusion
+mechanism**: the Apply pass is a depth-driven volume test with no per-surface
+opt-out, so a decal cannot currently be told to skip vegetation. Masking it
+(stencil, or a G-buffer surface-type bit) is future work.
 
 ## Per-attachment blend state
 

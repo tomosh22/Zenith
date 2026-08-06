@@ -108,6 +108,6 @@ ZENITH_TEST(RenderTestTestbed, GrassApplyHeadlessSkips)
 	{
 		ZENITH_SKIP("grass-apply result test is Null-backend-only");
 	}
-	ZENITH_ASSERT_TRUE(RenderTest_TryApplyGrassDensityFromDisk() == RenderTest_GrassApplyResult::SkippedHeadless,
+	ZENITH_ASSERT_TRUE(RenderTest_TryApplyGrassFromDisk() == RenderTest_GrassApplyResult::SkippedHeadless,
 		"Null-backend grass apply must report SkippedHeadless");
 }

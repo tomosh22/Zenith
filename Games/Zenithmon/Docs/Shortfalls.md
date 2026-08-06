@@ -28,11 +28,12 @@ and rewriting it once does not immunise it. Update it in the SAME commit that cl
   approved (ZM-D-112); and S6's dialogue/menu/NPC/shop surface all remain complete.
 - **★ THE LIVE BASELINE IS IN `Status.md`'s TOP BLOCK. READ IT, NOT THIS PARAGRAPH.** As of
   2026-08-06 (OBSERVED on clean `Null_` builds): registry **55**, ZM boot
-  **2951 ran / 2949 passed / 0 failed / 2 skipped**, engine boot **1326**. (+20 engine
+  **2962 ran / 2960 passed / 0 failed / 2 skipped**, engine boot **1337**. (+20 engine
   units for the GPU-grass overhaul Phase-1 `FluxGrassTypes` suite in
   `Zenith/Flux/Vegetation/Flux_Grass.Tests.inl`, +2 for its Phase-2
   `FluxBufferReadback` zero-fill-contract units, +4 for its Phase-3 TerrainEditor
-  GrassType-map units.) (The pre-grass 2026-08-06 figures were
+  GrassType-map units, +11 net for the Phase-4 swap itself — 3 legacy grass tests
+  deleted, 14 added.) (The pre-grass 2026-08-06 figures were
   2925 / 2923 / 1300 — +11 engine units for the terrain pipeline-variant 2x2 +
   `FluxTerrainSourceGrid` suites, correcting a ZM pin already stale by 5; ZM-D-184 stood
   at 2909 / 2907 / 1284; ZM-D-183 at 2908 / 2906; ZM-D-182-era 2864 / 2862 / 1242.) Everything below

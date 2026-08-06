@@ -122,7 +122,11 @@ void ZM_TerrainGrass::RenderPropertiesPanel()
 {
 	ImGui::Text("CPU density: %s", m_xDensityMap.IsLoaded() ? "loaded" : "unloaded");
 	ImGui::Text("Grass applied: %s", m_bGrassApplied ? "true" : "false");
-	ImGui::Text("Generated blades: %u", m_uGeneratedBladeCount);
+	// Read LIVE, never cached: the schedule belongs to the engine's single grass
+	// instance and is republished by every gather, so a value snapshotted at apply
+	// time would be the count from BEFORE this terrain's first gather ran.
+	Flux_GrassImpl& xGrass = g_xEngine.Grass();
+	ImGui::Text("Scheduled instances: %u", xGrass.GetScheduledInstanceCount());
 	ImGui::Text("Physics retry frames: %u", m_uRetryFrameCount);
 }
 #endif
@@ -148,11 +152,13 @@ bool ZM_TerrainGrass::TryApplyToReadyTerrain()
 	// frame. Capture the setter result here, before that later presentation-time
 	// override, so tests observe the density used for this generation.
 	m_fAppliedDensityScale = xGrass.GetDensityScale();
-	xGrass.SetDensityMap(m_xDensityMap.GetPixels(), ZM_GrassDensityMap::uEXPECTED_WIDTH,
-		ZM_GrassDensityMap::uEXPECTED_HEIGHT, ZM_GrassDensityMap::fWORLD_SIZE);
-	xGrass.GenerateFromTerrain(pxTerrain->GetPhysicsMeshGeometry());
+	// The build applies its OWN density scale, so it has to carry the same value
+	// or it would silently reset the engine to 1.0 behind the latch above. It reads
+	// this terrain's baked texture set; m_xDensityMap stays the INDEPENDENT
+	// gameplay copy and is deliberately not fed to Flux.
+	xGrass.BuildFromTerrainTextures(pxTerrain->GetTerrainAssetDirectory(),
+		Flux_GrassImpl::BuildParams{ fGRASS_DENSITY_SCALE });
 
-	m_uGeneratedBladeCount = xGrass.GetGeneratedInstanceCount();
 	m_bGrassApplied = true;
 	return true;
 }
@@ -175,6 +181,5 @@ void ZM_TerrainGrass::ClearComponentState()
 	m_bWarned = false;
 	m_bHeadless = false;
 	m_uRetryFrameCount = 0;
-	m_uGeneratedBladeCount = 0;
 	m_fAppliedDensityScale = 0.0f;
 }
