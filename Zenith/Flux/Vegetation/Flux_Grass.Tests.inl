@@ -2202,3 +2202,99 @@ ZENITH_TEST(FluxGrassTypeTable, ReadRejectsGarbageAndLeavesTableUntouched)
 	ZENITH_ASSERT_TRUE(xTable.ReadFromDataStream(xGood), "the reader must still accept a well-formed stream");
 	ZENITH_ASSERT_TRUE(GrassTableTest_LiveEntriesIdentical(xTable, xReference), "a good read must restore the same table");
 }
+
+ZENITH_TEST(FluxGrassTypeTable, NameAddressedParamsHitTheRightFields)
+{
+	// EXHAUSTIVE, not a sample: every float name is written a value derived from
+	// its index and then read back, so a table row pointing at the WRONG member
+	// (the copy-paste failure this mapping invites) collides with another row's
+	// value and fails here rather than at authoring time.
+	const u_int uFloatCount = Flux_GrassTypeParams::GetFloatParamCount();
+	ZENITH_ASSERT_GT(uFloatCount, 0u, "the float mapping must not be empty");
+
+	Flux_GrassTypeParams xParams;
+	for (u_int u = 0; u < uFloatCount; u++)
+	{
+		const char* szName = Flux_GrassTypeParams::GetFloatParamName(u);
+		ZENITH_ASSERT_TRUE(szName != nullptr, "every in-range float index must name a param");
+		// Distinct per index and outside no field's range, so the write is
+		// unambiguous. Validate() is deliberately NOT run here — the setter must
+		// store verbatim and leave clamping to the caller's explicit step.
+		ZENITH_ASSERT_TRUE(xParams.SetFloatParamByName(szName, 1000.0f + static_cast<float>(u)),
+			"a name from the enumeration must be settable");
+	}
+	for (u_int u = 0; u < uFloatCount; u++)
+	{
+		float fRead = 0.0f;
+		ZENITH_ASSERT_TRUE(xParams.GetFloatParamByName(Flux_GrassTypeParams::GetFloatParamName(u), fRead),
+			"a name from the enumeration must be readable");
+		ZENITH_ASSERT_EQ_FLOAT(fRead, 1000.0f + static_cast<float>(u), 0.0001f,
+			"each name must address its OWN field — a duplicate row would read back another name's value");
+	}
+
+	// Spot-check that the names mean what they say, so an exhaustive-but-shuffled
+	// table (every row distinct, all pointing one field off) still fails.
+	Flux_GrassTypeParams xNamed;
+	ZENITH_ASSERT_TRUE(xNamed.SetFloatParamByName("HeightMax", 2.5f), "HeightMax must be addressable");
+	ZENITH_ASSERT_EQ_FLOAT(xNamed.m_fHeightMax, 2.5f, 0.0001f, "\"HeightMax\" must write m_fHeightMax");
+	ZENITH_ASSERT_TRUE(xNamed.SetFloatParamByName("Density", 0.25f), "Density must be addressable");
+	ZENITH_ASSERT_EQ_FLOAT(xNamed.m_fDensity, 0.25f, 0.0001f, "\"Density\" must write m_fDensity");
+	ZENITH_ASSERT_TRUE(xNamed.SetFloatParamByName("WindResponse", 3.5f), "WindResponse must be addressable");
+	ZENITH_ASSERT_EQ_FLOAT(xNamed.m_fWindResponse, 3.5f, 0.0001f, "\"WindResponse\" must write m_fWindResponse");
+	ZENITH_ASSERT_TRUE(xNamed.SetFloatParamByName("ClumpScale", 7.0f), "ClumpScale must be addressable");
+	ZENITH_ASSERT_EQ_FLOAT(xNamed.m_fClumpScale, 7.0f, 0.0001f, "\"ClumpScale\" must write m_fClumpScale");
+
+	// Colours are a separate table with a separate setter: a colour name must NOT
+	// resolve through the float map, and vice versa, or an authoring script could
+	// write a Vector3's first component and think it set the colour.
+	ZENITH_ASSERT_EQ(Flux_GrassTypeParams::GetColourParamCount(), 2u, "base + tip are the two authored colours");
+	Flux_GrassTypeParams xColoured;
+	ZENITH_ASSERT_TRUE(xColoured.SetColourParamByName("BaseColour", Zenith_Maths::Vector3(0.1f, 0.2f, 0.3f)),
+		"BaseColour must be addressable");
+	ZENITH_ASSERT_TRUE(xColoured.SetColourParamByName("TipColour", Zenith_Maths::Vector3(0.4f, 0.5f, 0.6f)),
+		"TipColour must be addressable");
+	ZENITH_ASSERT_EQ_FLOAT(xColoured.m_xBaseColour.x, 0.1f, 0.0001f, "\"BaseColour\" must write m_xBaseColour");
+	ZENITH_ASSERT_EQ_FLOAT(xColoured.m_xBaseColour.z, 0.3f, 0.0001f, "\"BaseColour\" must write all three components");
+	ZENITH_ASSERT_EQ_FLOAT(xColoured.m_xTipColour.y, 0.5f, 0.0001f, "\"TipColour\" must write m_xTipColour");
+	Zenith_Maths::Vector3 xReadBack(0.0f, 0.0f, 0.0f);
+	ZENITH_ASSERT_TRUE(xColoured.GetColourParamByName("TipColour", xReadBack), "a colour name must be readable");
+	ZENITH_ASSERT_EQ_FLOAT(xReadBack.z, 0.6f, 0.0001f, "the colour round trip must be exact");
+}
+
+ZENITH_TEST(FluxGrassTypeTable, UnknownParamNamesAreRejectedAndWriteNothing)
+{
+	// The whole point of returning false: the Checked wrapper in editor
+	// automation asserts on it, so a typo surfaces at boot instead of shipping
+	// grass that is merely slightly wrong.
+	Flux_GrassTypeParams xParams;
+	const Flux_GrassTypeParams xBefore = xParams;
+
+	float fUnused = -1.0f;
+	ZENITH_ASSERT_FALSE(xParams.SetFloatParamByName("NotAParam", 5.0f), "an unknown float name must be rejected");
+	ZENITH_ASSERT_FALSE(xParams.GetFloatParamByName("NotAParam", fUnused), "an unknown float name must not read");
+	ZENITH_ASSERT_EQ_FLOAT(fUnused, -1.0f, 0.0001f, "a rejected read must not write the out param");
+	ZENITH_ASSERT_FALSE(xParams.SetFloatParamByName(nullptr, 5.0f), "a null name must be rejected, not dereferenced");
+	ZENITH_ASSERT_FALSE(xParams.SetFloatParamByName("", 5.0f), "an empty name must be rejected");
+
+	// Case matters and the C++ member spelling is NOT the authoring vocabulary —
+	// both are the near-misses an author actually types.
+	ZENITH_ASSERT_FALSE(xParams.SetFloatParamByName("heightmax", 5.0f), "the mapping is case-sensitive");
+	ZENITH_ASSERT_FALSE(xParams.SetFloatParamByName("m_fHeightMax", 5.0f), "the C++ field name is not an authoring name");
+
+	// Cross-table misses: a colour is not a float and a float is not a colour.
+	ZENITH_ASSERT_FALSE(xParams.SetFloatParamByName("BaseColour", 5.0f), "a colour must not resolve through the float map");
+	ZENITH_ASSERT_FALSE(xParams.SetColourParamByName("HeightMax", Zenith_Maths::Vector3(1.0f, 1.0f, 1.0f)),
+		"a float must not resolve through the colour map");
+	Zenith_Maths::Vector3 xUnused(-1.0f, -1.0f, -1.0f);
+	ZENITH_ASSERT_FALSE(xParams.GetColourParamByName("NotAColour", xUnused), "an unknown colour name must not read");
+	ZENITH_ASSERT_EQ_FLOAT(xUnused.x, -1.0f, 0.0001f, "a rejected colour read must not write the out param");
+
+	ZENITH_ASSERT_TRUE(GrassTableTest_ParamsIdentical(xParams, xBefore),
+		"every rejected call must leave the record byte-for-byte untouched");
+
+	// Out-of-range enumeration returns nullptr rather than walking off the table.
+	ZENITH_ASSERT_TRUE(Flux_GrassTypeParams::GetFloatParamName(Flux_GrassTypeParams::GetFloatParamCount()) == nullptr,
+		"an out-of-range float index must return nullptr");
+	ZENITH_ASSERT_TRUE(Flux_GrassTypeParams::GetColourParamName(Flux_GrassTypeParams::GetColourParamCount()) == nullptr,
+		"an out-of-range colour index must return nullptr");
+}

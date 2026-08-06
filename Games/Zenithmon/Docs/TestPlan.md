@@ -1702,9 +1702,9 @@ change touches `Zenith/` as well as the game.
 **Boot baseline at THIS change: ZM 2863; engine (Null Combat) stays 1242.** The added
 contracts are pure generator/placement checks, so they do not move the 55-test
 automated registry or the cross-game engine suite.
-★ **SUPERSEDED -- the CURRENT baseline is ZM 2969, engine 1344**, registry unmoved
+★ **SUPERSEDED -- the CURRENT baseline is ZM 2975, engine 1350**, registry unmoved
 at **55**. OBSERVED 2026-08-06 on clean `Null_` builds:
-`2969 ran, 2967 passed, 0 failed, 2 skipped`. Derivation: ZM-D-183 added the two
+`2975 ran, 2973 passed, 0 failed, 2 skipped`. Derivation: ZM-D-183 added the two
 committed-scene-bytes guards (2906 -> 2908); ZM-D-184 added the rival spawn-clearance
 unit (2908 -> 2909); the 2026-08-05 CommandLine ParseArgs units added 5 ENGINE units
 (engine 1284 -> 1289) and were NOT reflected here, leaving the ZM pin stale at 2909
@@ -1723,8 +1723,10 @@ added 14 (shader mirrors / impl surface / type-table serialization), +11 net
 ENGINE units (engine 1326 -> 1337), taking ZM to 2962; its Phase-5 shadow-casting
 units added 3 more ENGINE units (engine 1337 -> 1340), taking ZM to 2965; its
 Phase-6 displacement re-anchor units added 4 more ENGINE units (engine
-1340 -> **1344**), taking ZM to **2969**. `zm-tests.yml` `-Baseline` and
-`run_unit_gate.ps1`'s default both moved to match. The paragraph below is the
+1340 -> 1344), taking ZM to 2969; its Phase-7 types-authoring units added 6
+more ENGINE units (engine 1344 -> **1350**), taking ZM to **2975**.
+`zm-tests.yml` `-Baseline` and `run_unit_gate.ps1`'s default both moved to
+match. The paragraph below is the
 ZM-D-182-era snapshot, kept for the audit trail:
 
 ★ **The (ZM-D-182-era) baseline was ZM 2864** (ZM-D-182 added

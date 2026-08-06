@@ -10,6 +10,12 @@
 #ifdef ZENITH_TESTING
 
 #include "Editor/Zenith_EditorAutomation.h"
+#include "AssetHandling/Zenith_AssetRegistry.h"
+#include "AssetHandling/Zenith_GrassTypeTableAsset.h"
+#include "Flux/Vegetation/Flux_GrassImpl.h"
+
+// GrassTypeSaveGuard restores the real GrassTypes.zdata byte-for-byte.
+#include <fstream>
 
 namespace
 {
@@ -723,6 +729,239 @@ ZENITH_TEST(TerrainEditor, SculptNotifyLatchesOnHeightStroke)
 		// The strokes' commands reference the local editor — clear before scope exit.
 		g_xEngine.UndoSystem().Clear();
 	}
+}
+
+//=============================================================================
+// Grass types — the working copy + the GRASS_TYPES_* automation family.
+//=============================================================================
+
+namespace
+{
+	// GrassTypes_Save has NO path parameter by design: it writes the one
+	// canonical game:Vegetation/GrassTypes.zdata a game boot-loads. A test that
+	// exercises it therefore has to restore the real path, and the ENGINE table
+	// too — Save applies, so a leaked table would change every later test's
+	// grass. Both halves are captured here and put back by the destructor.
+	struct GrassTypeSaveGuard
+	{
+		std::string           m_strResolved;
+		bool                  m_bExisted = false;
+		Zenith_Vector<u_int8> m_xOriginalBytes;
+		Flux_GrassTypeTable   m_xEngineTable;
+
+		GrassTypeSaveGuard()
+		{
+			m_strResolved = Zenith_AssetRegistry::ResolvePath(szZENITH_GRASS_TYPE_TABLE_ASSET_PATH);
+			m_xEngineTable = g_xEngine.Grass().GetTypeTable();
+
+			std::error_code xEC;
+			m_bExisted = std::filesystem::exists(Path(), xEC) && !xEC;
+			if (m_bExisted)
+			{
+				// Byte-exact restore rather than delete-if-we-made-it: a repo that
+				// DOES ship a table must come out of this test unchanged.
+				const uintmax_t ulSize = std::filesystem::file_size(Path(), xEC);
+				if (!xEC && ulSize > 0)
+				{
+					m_xOriginalBytes.Resize(static_cast<u_int>(ulSize), 0u);
+					std::ifstream xIn(Path(), std::ios::binary);
+					xIn.read(reinterpret_cast<char*>(m_xOriginalBytes.GetDataPointer()),
+						static_cast<std::streamsize>(ulSize));
+				}
+			}
+		}
+
+		~GrassTypeSaveGuard()
+		{
+			std::error_code xEC;
+			if (m_bExisted && m_xOriginalBytes.GetSize() > 0)
+			{
+				std::ofstream xOut(Path(), std::ios::binary);
+				xOut.write(reinterpret_cast<const char*>(m_xOriginalBytes.GetDataPointer()),
+					static_cast<std::streamsize>(m_xOriginalBytes.GetSize()));
+			}
+			else
+			{
+				std::filesystem::remove(Path(), xEC);
+			}
+
+			// Through Apply, not a bare SetTypeTable: Save re-placed the grass, so
+			// the blade records standing in the world still carry the test's types
+			// until something re-places them again.
+			Zenith_TerrainEditor& xTerrainEditor = g_xEngine.TerrainEditor();
+			xTerrainEditor.GrassTypes() = m_xEngineTable;
+			xTerrainEditor.GrassTypes_Apply();
+		}
+
+		std::filesystem::path Path() const { return std::filesystem::path(m_strResolved); }
+
+		bool FileExists() const
+		{
+			std::error_code xEC;
+			return std::filesystem::exists(Path(), xEC) && !xEC;
+		}
+	};
+}
+
+ZENITH_TEST(TerrainEditor, GrassTypesWorkingCopyIsolatesTheEngineTable)
+{
+	// The whole point of a working copy: an in-progress edit must never reach
+	// the placement CS, so nothing but Apply/Save may move the engine table.
+	const Flux_GrassTypeTable xEngineBefore = g_xEngine.Grass().GetTypeTable();
+
+	Zenith_TerrainEditor xEditor;
+	xEditor.OpenStandalone();
+
+	// Open seeds the working copy FROM the engine, so an editor booting onto a
+	// game that ships an authored table does not offer to overwrite it with the
+	// built-ins.
+	ZENITH_ASSERT_EQ(xEditor.GrassTypes().GetCount(), xEngineBefore.GetCount(),
+		"opening a session must seed the working copy from the live engine table");
+
+	xEditor.GrassTypes().SetCount(9u);
+	xEditor.GrassTypes().SetName(0u, "WorkingOnly");
+	xEditor.GrassTypes().Get(0u).m_fHeightMax = 4.25f;
+
+	ZENITH_ASSERT_EQ(g_xEngine.Grass().GetTypeTable().GetCount(), xEngineBefore.GetCount(),
+		"editing the working copy must not touch the engine table");
+	ZENITH_ASSERT_STREQ(g_xEngine.Grass().GetTypeTable().GetName(0u).c_str(), xEngineBefore.GetName(0u).c_str(),
+		"editing the working copy must not touch the engine names");
+
+	// Reload discards the edit by re-reading the engine.
+	xEditor.GrassTypes_Reload();
+	ZENITH_ASSERT_EQ(xEditor.GrassTypes().GetCount(), xEngineBefore.GetCount(), "Reload must restore the engine count");
+	ZENITH_ASSERT_STREQ(xEditor.GrassTypes().GetName(0u).c_str(), xEngineBefore.GetName(0u).c_str(),
+		"Reload must restore the engine names");
+
+	// Reset is the OTHER discard: back to the built-ins, engine untouched.
+	xEditor.GrassTypes().SetCount(11u);
+	xEditor.GrassTypes_Reset();
+	ZENITH_ASSERT_EQ(xEditor.GrassTypes().GetCount(), 4u, "Reset must restore the four built-in types");
+	ZENITH_ASSERT_STREQ(xEditor.GrassTypes().GetName(0u).c_str(), "Meadow", "Reset must restore the built-in names");
+	ZENITH_ASSERT_EQ(g_xEngine.Grass().GetTypeTable().GetCount(), xEngineBefore.GetCount(),
+		"Reset must not touch the engine table");
+
+	// Apply is the one verb that does.
+	xEditor.GrassTypes().SetCount(6u);
+	xEditor.GrassTypes().SetName(5u, "AppliedType");
+	xEditor.GrassTypes_Apply();
+	ZENITH_ASSERT_EQ(g_xEngine.Grass().GetTypeTable().GetCount(), 6u, "Apply must push the working copy to the engine");
+	ZENITH_ASSERT_STREQ(g_xEngine.Grass().GetTypeTable().GetName(5u).c_str(), "AppliedType",
+		"Apply must push the working copy names");
+
+	// Apply validates the WORKING copy too, not only the engine copy: a slider
+	// left holding a value the engine clamped would disagree with the screen.
+	xEditor.GrassTypes().Get(0u).m_fClumpScale = 0.0f;   // divides by zero in the Voronoi search
+	xEditor.GrassTypes_Apply();
+	ZENITH_ASSERT_GT(xEditor.GrassTypes().Get(0u).m_fClumpScale, 0.0f,
+		"Apply must clamp the working copy in place, not only the engine copy");
+
+	// The engine table is global state no scene owns — put it back.
+	g_xEngine.Grass().SetTypeTable(xEngineBefore);
+}
+
+ZENITH_TEST(TerrainEditor, GrassTypesAutomationFamilyRoutesEndToEnd)
+{
+	const Flux_GrassTypeTable xEngineBefore = g_xEngine.Grass().GetTypeTable();
+	Zenith_TerrainEditor& xEditor = g_xEngine.TerrainEditor();
+
+	// Sentinel: clearly different from everything the recipe below authors, so a
+	// step that silently no-ops cannot pass by leaving a plausible value behind.
+	xEditor.GrassTypes().SetCount(2u);
+	xEditor.GrassTypes().SetName(4u, "SENTINEL");
+
+	Zenith_EditorAutomation xAuto;
+	xAuto.AddStep_GrassTypesCreate();
+	xAuto.AddStep_GrassTypesSetCount(5);
+	xAuto.AddStep_GrassTypesSetName(4, "Reeds");
+	xAuto.AddStep_GrassTypesSetParamFloat(4, "HeightMax", 2.0f);
+	xAuto.AddStep_GrassTypesSetParamFloat(4, "WindResponse", 2.5f);
+	xAuto.AddStep_GrassTypesSetParamColor(4, "BaseColour", 0.9f, 0.1f, 0.05f);
+	xAuto.AddStep_GrassTypesSetParamColor(4, "TipColour", 0.2f, 0.8f, 0.3f);
+	ZENITH_ASSERT_EQ(xAuto.m_axActions.GetSize(), 7u, "seven steps must be queued");
+
+	// Packing, read BEFORE the drain clears the queue (the SetTreeBrush test
+	// orders it the same way, for the same reason).
+	const Zenith_EditorAction& xNameAction = xAuto.m_axActions.Get(2);
+	ZENITH_ASSERT_TRUE(xNameAction.m_eType == Zenith_EditorActionType::GRASS_TYPES_SET_NAME,
+		"step 2 must be GRASS_TYPES_SET_NAME");
+	ZENITH_ASSERT_EQ(xNameAction.m_aiArgs[0], 4, "the type index packs into aiArgs[0]");
+	ZENITH_ASSERT_STREQ(xNameAction.m_szArg1.c_str(), "Reeds", "the name packs into szArg1");
+	const Zenith_EditorAction& xColourAction = xAuto.m_axActions.Get(5);
+	ZENITH_ASSERT_STREQ(xColourAction.m_szArg1.c_str(), "BaseColour", "the param name packs into szArg1");
+	ZENITH_ASSERT_EQ_FLOAT(xColourAction.m_afArgs[2], 0.05f, 0.0001f, "blue packs into afArgs[2]");
+
+	xAuto.Begin();
+	while (!xAuto.IsComplete())
+	{
+		xAuto.ExecuteNextStep();
+	}
+
+	// Routing: the whole block reached ExecuteGrassTypeAction, which proves every
+	// member sits inside the contiguous range the router compares against.
+	const Flux_GrassTypeTable& xWorking = xEditor.GrassTypes();
+	ZENITH_ASSERT_EQ(xWorking.GetCount(), 5u, "SetCount must reach the working table");
+	ZENITH_ASSERT_STREQ(xWorking.GetName(4u).c_str(), "Reeds", "SetName must reach the working table");
+	ZENITH_ASSERT_EQ_FLOAT(xWorking.Get(4u).m_fHeightMax, 2.0f, 0.0001f, "HeightMax must reach m_fHeightMax");
+	ZENITH_ASSERT_EQ_FLOAT(xWorking.Get(4u).m_fWindResponse, 2.5f, 0.0001f, "WindResponse must reach m_fWindResponse");
+	ZENITH_ASSERT_EQ_FLOAT(xWorking.Get(4u).m_xBaseColour.x, 0.9f, 0.0001f, "BaseColour must reach m_xBaseColour");
+	ZENITH_ASSERT_EQ_FLOAT(xWorking.Get(4u).m_xTipColour.y, 0.8f, 0.0001f, "TipColour must reach m_xTipColour");
+
+	// Create is a full reset, so the sentinel is gone and entries 0..3 are the
+	// built-ins even though the count is now 5.
+	ZENITH_ASSERT_STREQ(xWorking.GetName(0u).c_str(), "Meadow", "Create must seed the built-in set");
+
+	// The engine table is untouched until a Save (or a panel Apply) runs.
+	ZENITH_ASSERT_EQ(g_xEngine.Grass().GetTypeTable().GetCount(), xEngineBefore.GetCount(),
+		"the authoring steps alone must not move the engine table");
+
+	g_xEngine.Grass().SetTypeTable(xEngineBefore);
+}
+
+ZENITH_TEST(TerrainEditor, GrassTypesSaveWritesTheAssetAndApplies)
+{
+	// Restores the real .zdata path AND the engine table on scope exit. Save has
+	// no temp-path variant, so the only honest test is the real path with a
+	// byte-exact restore.
+	GrassTypeSaveGuard xGuard;
+
+	Zenith_EditorAutomation xAuto;
+	xAuto.AddStep_GrassTypesCreate();
+	xAuto.AddStep_GrassTypesSetCount(3);
+	xAuto.AddStep_GrassTypesSetName(2, "SavedType");
+	xAuto.AddStep_GrassTypesSetParamFloat(2, "Density", 0.125f);
+	xAuto.AddStep_GrassTypesSave();
+	xAuto.Begin();
+	while (!xAuto.IsComplete())
+	{
+		xAuto.ExecuteNextStep();
+	}
+
+	ZENITH_ASSERT_TRUE(xGuard.FileExists(), "GrassTypesSave must create the .zdata (parent directories included)");
+
+	// Save applies LAST, so a file that reached disk without taking effect in the
+	// running editor — the one failure an author cannot see — fails here.
+	const Flux_GrassTypeTable& xEngine = g_xEngine.Grass().GetTypeTable();
+	ZENITH_ASSERT_EQ(xEngine.GetCount(), 3u, "Save must apply the saved table to the engine");
+	ZENITH_ASSERT_STREQ(xEngine.GetName(2u).c_str(), "SavedType", "Save must apply the saved names");
+	ZENITH_ASSERT_EQ_FLOAT(xEngine.Get(2u).m_fDensity, 0.125f, 0.0001f, "Save must apply the saved params");
+
+	// The bytes must LOAD back through the real asset path, not merely exist: a
+	// file whose envelope or table version were wrong would still be a file.
+	Zenith_GrassTypeTableAsset* pxLoaded =
+		Zenith_AssetRegistry::GetView<Zenith_GrassTypeTableAsset>(szZENITH_GRASS_TYPE_TABLE_ASSET_PATH);
+	ZENITH_ASSERT_TRUE(pxLoaded != nullptr, "the written file must load through the registry");
+	if (pxLoaded != nullptr)
+	{
+		ZENITH_ASSERT_TRUE(pxLoaded->LoadedOk(), "the written file must pass the fail-safe reader");
+		ZENITH_ASSERT_EQ(pxLoaded->GetTable().GetCount(), 3u, "the round-tripped count must match");
+		ZENITH_ASSERT_STREQ(pxLoaded->GetTable().GetName(2u).c_str(), "SavedType", "the round-tripped name must match");
+		ZENITH_ASSERT_EQ_FLOAT(pxLoaded->GetTable().Get(2u).m_fDensity, 0.125f, 0.0001f,
+			"the round-tripped param must match");
+	}
+	// The registry now caches an asset keyed on the path the guard is about to
+	// restore — drop it rather than leave a stale table for a later GetView.
+	Zenith_AssetRegistry::ForceUnload(szZENITH_GRASS_TYPE_TABLE_ASSET_PATH);
 }
 
 #endif // ZENITH_TESTING

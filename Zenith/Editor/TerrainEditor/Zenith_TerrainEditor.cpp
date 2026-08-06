@@ -175,6 +175,11 @@ void Zenith_TerrainEditor::Open(Zenith_EntityID uTerrainEntity)
 	}
 	m_strAssetSetValidationError.clear();
 
+	// The engine's live table is the session's starting point, not the built-in
+	// set: a game that ships GrassTypes.zdata loaded it at boot, and an editor
+	// that opened on the defaults would silently offer to overwrite it.
+	GrassTypes_Reload();
+
 	// Undo snapshots and dirty masks refer to the previous CPU image contents.
 	// Clear them before reseeding defaults and overlaying this set's files.
 	g_xEngine.UndoSystem().Clear();
@@ -204,6 +209,7 @@ void Zenith_TerrainEditor::OpenStandalone()
 	{
 		LoadImagesFromAssets();
 	}
+	GrassTypes_Reload();
 
 	Zenith_Log(LOG_CATEGORY_EDITOR, "[TerrainEditor] Standalone (component-less) session opened");
 }

@@ -34,7 +34,11 @@ ImGui-based scene editor for creating, editing, and testing game content. Active
   (edits stay visible in Play); interactive brush input is Stopped-only and
   claims viewport clicks ahead of gizmo/picking. Editor automation drives the
   same API via `AddStep_Terrain*` (RenderTest generates its terrain this way,
-  seed 1337).
+  seed 1337). It also owns a **working copy of the grass type table** (
+  `GrassTypes()` + `GrassTypes_Reset/Reload/Apply/Save`): the panel's "Grass
+  Types" section and the `AddStep_GrassTypes*` verbs both edit that one object,
+  and only Apply/Save move the engine's live `Flux_GrassTypeTable`, so a
+  half-typed value can never reach the placement compute shader.
 - `Zenith_EditorAutomation.h/cpp` - Boot-time authoring step queue (scenes, entities,
   components, UI, terrain, Behaviour Graphs); games' `Project_RegisterEditorAutomationSteps`
   enqueue steps, drained before the initial scene load. See "Graph Authoring via
@@ -364,12 +368,55 @@ verbs (`AddStep_MaterialCreate`, `AddStep_MaterialOpen`,
 `AddStep_MaterialSet{Parent,Override,PreviewMesh,PreviewLight}`,
 `AddStep_MaterialSave`), routed to `ExecuteMaterialAction` (see below).
 
-`ExecuteAction` routes three CONTIGUOUS enum ranges to sub-executors before its
-main switch — terrain-editor actions → `ExecuteTerrainEditorAction`, UI actions
-(`CREATE_UI_TEXT` .. `SET_UI_SCROLL_VIEW_CONTENT_SIZE`) → `ExecuteUIAction`, and
-material actions (`MATERIAL_CREATE` .. `MATERIAL_SAVE`) → `ExecuteMaterialAction`
-— keeping the dispatcher inside the complexity gate. Keep those ranges contiguous
-when adding action types.
+Grass type tables are authored the same boot-time way via the `AddStep_GrassTypes*`
+verbs (`AddStep_GrassTypesCreate`, `AddStep_GrassTypesSetCount`,
+`AddStep_GrassTypesSetName`, `AddStep_GrassTypesSetParam{Float,Color}`,
+`AddStep_GrassTypesSave`), routed to `ExecuteGrassTypeAction` (see below). They
+edit `Zenith_TerrainEditor`'s WORKING copy of the `Flux_GrassTypeTable` — the same
+object the terrain editor panel's "Grass Types" section edits, so an authored
+recipe and a human produce the same table. Parameters are addressed **by name**
+(`"HeightMax"`, `"Density"`, `"WindResponse"`, ...; colours `"BaseColour"` /
+`"TipColour"`) through the one name→field mapping in `Flux_GrassTypeTable.cpp`,
+mirroring how the material verbs address the material param table; an unknown name
+asserts at boot via `GrassTypeActionChecked`. `GrassTypesSave` writes
+`game:Vegetation/GrassTypes.zdata` through `Zenith_GrassTypeTableAsset` and then
+applies, so a file that reached disk but never took effect cannot go unnoticed.
+
+### The split dispatcher: twelve contiguous ranges
+
+`ExecuteAction` is a **router, not a switch**. Before its (now small) main switch
+it forwards **twelve CONTIGUOUS enum ranges** to twelve sub-executors, which is
+what keeps the dispatcher inside the complexity gate:
+
+| Range | Sub-executor |
+|---|---|
+| `TERRAIN_EDITOR_SET_ASSET_SET` .. `TERRAIN_EDITOR_EXPORT_CHUNKS_RECT` | `ExecuteTerrainEditorAction` (via `TryRouteTerrainEditorAction`) |
+| `CREATE_UI_TEXT` .. `SET_UI_SCROLL_VIEW_CONTENT_SIZE` | `ExecuteUIAction` |
+| `MATERIAL_CREATE` .. `MATERIAL_SAVE` | `ExecuteMaterialAction` |
+| `GRASS_TYPES_CREATE` .. `GRASS_TYPES_SAVE` | `ExecuteGrassTypeAction` |
+| `SET_CAMERA_POSITION` .. `SET_MAIN_CAMERA` | `ExecuteCameraAction` |
+| `SET_TRANSFORM_POSITION` .. `SET_TRANSFORM_ROTATION_QUAT` | `ExecuteTransformAction` |
+| `SET_LIGHT_INTENSITY` .. `SET_SUN_TIME_OF_DAY` | `ExecuteLightAction` |
+| `GRAPH_OPEN_FRESH` .. `GRAPH_BUILD` | `ExecuteGraphAuthoringAction` |
+| `SET_PARTICLE_CONFIG` .. `SET_PARTICLE_EMITTING` | `ExecuteParticleAction` |
+| `ADD_COLLIDER_SHAPE` .. `SET_MODEL_MATERIAL` | `ExecuteColliderModelAction` |
+| `SET_TERRAIN_MATERIAL` .. `SET_TERRAIN_SPLATMAP_PATH` | `ExecuteTerrainMaterialAction` |
+| `CREATE_PREFAB_FROM_SELECTED` .. `INSTANTIATE_PREFAB` | `ExecutePrefabAction` |
+
+**Ranges are COMPARED, never numbered.** Each row is a pair of `>=` / `<=` tests
+against its block's first and last member, so:
+
+- adding an action type at the **end of a block** is free;
+- adding one **between two members of another block** silently routes it to that
+  block's executor, where it hits the `default: Zenith_Assert` at boot;
+- reordering members **inside** a block is invisible to the router but breaks the
+  payload contract every step's `AddStep_*` packs into.
+
+So every block carries a "must stay CONTIGUOUS" comment naming its first and last
+member. The youngest block (`GRASS_TYPES`) is additionally pinned twice — a
+`static_assert` on its width in `Zenith_EditorAutomation.h` and the
+`Automation, GrassTypesEnumBlockIsContiguous` unit test on each member's position
+plus both neighbouring boundaries.
 
 ## Selection System
 

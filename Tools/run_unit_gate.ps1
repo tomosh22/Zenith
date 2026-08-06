@@ -83,7 +83,11 @@ param(
     # one-texel boundary steps, integral texel shift, frame-rate-independent
     # decay); GPU-grass overhaul Phase 6 (observed 2026-08-06 on a Null_ Combat
     # build).
-    [int]$Baseline = 1344,
+    # 1344 -> 1350: +6 grass-types authoring units (name->field mapping incl.
+    # unknown-name rejection, working-copy isolation, automation family
+    # end-to-end, save-writes-asset-and-applies, enum-block contiguity);
+    # GPU-grass overhaul Phase 7 (observed 2026-08-06 on a Null_ Combat build).
+    [int]$Baseline = 1350,
     [int]$TimeoutSec = 180,
     [string]$LogPath = ""
 )

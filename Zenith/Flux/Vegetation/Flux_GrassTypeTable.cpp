@@ -3,6 +3,8 @@
 
 #include "DataStream/Zenith_DataStream.h"
 
+#include <cstring>
+
 namespace
 {
 	// Bumped whenever a field is added, removed or reordered below. There is no
@@ -60,6 +62,122 @@ namespace
 			ClampFinite(xColour.x, 0.0f, 1.0f, 0.0f),
 			ClampFinite(xColour.y, 0.0f, 1.0f, 0.0f),
 			ClampFinite(xColour.z, 0.0f, 1.0f, 0.0f));
+	}
+
+	//=========================================================================
+	// THE name -> field mapping, in the struct's own declaration order.
+	//
+	// Pointer-to-member rather than a byte offset: the compiler then type-checks
+	// every row against the field it names, so a row that outlives its field
+	// fails to compile instead of writing at a stale offset. The names carry no
+	// scope/type prefix — they are the authoring vocabulary an automation script
+	// and a save file spell out, not C++ identifiers.
+	//=========================================================================
+	struct GrassFloatParamEntry
+	{
+		const char* m_szName;
+		float Flux_GrassTypeParams::* m_pfField;
+	};
+
+	constexpr GrassFloatParamEntry axFLOAT_PARAMS[] =
+	{
+		// --- shape ---
+		{ "HeightMin",             &Flux_GrassTypeParams::m_fHeightMin },
+		{ "HeightMax",             &Flux_GrassTypeParams::m_fHeightMax },
+		{ "WidthMin",              &Flux_GrassTypeParams::m_fWidthMin },
+		{ "WidthMax",              &Flux_GrassTypeParams::m_fWidthMax },
+		{ "TiltMinRad",            &Flux_GrassTypeParams::m_fTiltMinRad },
+		{ "TiltMaxRad",            &Flux_GrassTypeParams::m_fTiltMaxRad },
+		{ "BendMin",               &Flux_GrassTypeParams::m_fBendMin },
+		{ "BendMax",               &Flux_GrassTypeParams::m_fBendMax },
+		{ "SideCurve",             &Flux_GrassTypeParams::m_fSideCurve },
+		{ "VertexDistributionPow", &Flux_GrassTypeParams::m_fVertexDistributionPow },
+		{ "FoldThreshold",         &Flux_GrassTypeParams::m_fFoldThreshold },
+		{ "FoldPushApart",         &Flux_GrassTypeParams::m_fFoldPushApart },
+		{ "TipWidthFrac",          &Flux_GrassTypeParams::m_fTipWidthFrac },
+
+		// --- placement ---
+		{ "Density",               &Flux_GrassTypeParams::m_fDensity },
+		{ "SlopeMax",              &Flux_GrassTypeParams::m_fSlopeMax },
+		{ "MaxDrawDistance",       &Flux_GrassTypeParams::m_fMaxDrawDistance },
+		{ "SlopeAlign",            &Flux_GrassTypeParams::m_fSlopeAlign },
+
+		// --- clump ---
+		{ "ClumpScale",            &Flux_GrassTypeParams::m_fClumpScale },
+		{ "ClumpHeightBoost",      &Flux_GrassTypeParams::m_fClumpHeightBoost },
+		{ "ClumpFacingWeight",     &Flux_GrassTypeParams::m_fClumpFacingWeight },
+		{ "ClumpOutwardWeight",    &Flux_GrassTypeParams::m_fClumpOutwardWeight },
+		{ "ClumpPullToCentre",     &Flux_GrassTypeParams::m_fClumpPullToCentre },
+		{ "ClumpNormalBlendMax",   &Flux_GrassTypeParams::m_fClumpNormalBlendMax },
+
+		// --- appearance ---
+		{ "GlossRepeat",           &Flux_GrassTypeParams::m_fGlossRepeat },
+		{ "RoughnessBase",         &Flux_GrassTypeParams::m_fRoughnessBase },
+		{ "Specular",              &Flux_GrassTypeParams::m_fSpecular },
+		{ "ColourJitter",          &Flux_GrassTypeParams::m_fColourJitter },
+		{ "NormalTilt",            &Flux_GrassTypeParams::m_fNormalTilt },
+		{ "TranslucencyBase",      &Flux_GrassTypeParams::m_fTranslucencyBase },
+		{ "TranslucencyTip",       &Flux_GrassTypeParams::m_fTranslucencyTip },
+		{ "AOBase",                &Flux_GrassTypeParams::m_fAOBase },
+		{ "AOTipRelease",          &Flux_GrassTypeParams::m_fAOTipRelease },
+
+		// --- dynamics ---
+		{ "WindResponse",          &Flux_GrassTypeParams::m_fWindResponse },
+		{ "Stiffness",             &Flux_GrassTypeParams::m_fStiffness },
+	};
+
+	struct GrassColourParamEntry
+	{
+		const char* m_szName;
+		Zenith_Maths::Vector3 Flux_GrassTypeParams::* m_pxField;
+	};
+
+	constexpr GrassColourParamEntry axCOLOUR_PARAMS[] =
+	{
+		{ "BaseColour", &Flux_GrassTypeParams::m_xBaseColour },
+		{ "TipColour",  &Flux_GrassTypeParams::m_xTipColour },
+	};
+
+	constexpr u_int uFLOAT_PARAM_COUNT  = static_cast<u_int>(sizeof(axFLOAT_PARAMS) / sizeof(axFLOAT_PARAMS[0]));
+	constexpr u_int uCOLOUR_PARAM_COUNT = static_cast<u_int>(sizeof(axCOLOUR_PARAMS) / sizeof(axCOLOUR_PARAMS[0]));
+
+	// Every serialized field is reachable by name except the three bindless
+	// texture indices, which the renderer assigns. A field added to the struct
+	// (and therefore to uGRASS_TYPE_PARAMS_FIELDS) without a row here would be
+	// silently unauthorable, so the arithmetic is pinned rather than commented.
+	static_assert(uFLOAT_PARAM_COUNT + uCOLOUR_PARAM_COUNT * 3u + 3u == uGRASS_TYPE_PARAMS_FIELDS,
+		"every serialized field must be either name-addressable or one of the three bindless texture indices");
+
+	const GrassFloatParamEntry* FindFloatParam(const char* szName)
+	{
+		if (szName == nullptr)
+		{
+			return nullptr;
+		}
+		for (u_int u = 0; u < uFLOAT_PARAM_COUNT; u++)
+		{
+			if (strcmp(axFLOAT_PARAMS[u].m_szName, szName) == 0)
+			{
+				return &axFLOAT_PARAMS[u];
+			}
+		}
+		return nullptr;
+	}
+
+	const GrassColourParamEntry* FindColourParam(const char* szName)
+	{
+		if (szName == nullptr)
+		{
+			return nullptr;
+		}
+		for (u_int u = 0; u < uCOLOUR_PARAM_COUNT; u++)
+		{
+			if (strcmp(axCOLOUR_PARAMS[u].m_szName, szName) == 0)
+			{
+				return &axCOLOUR_PARAMS[u];
+			}
+		}
+		return nullptr;
 	}
 }
 
@@ -172,6 +290,73 @@ void Flux_GrassTypeParams::ToGPU(Flux_GrassTypeParamsGPU& xOut) const
 	// --- dynamics ---
 	xOut.m_fWindResponse = m_fWindResponse;
 	xOut.m_fStiffness = m_fStiffness;
+}
+
+bool Flux_GrassTypeParams::SetFloatParamByName(const char* szName, float fValue)
+{
+	const GrassFloatParamEntry* pxEntry = FindFloatParam(szName);
+	if (pxEntry == nullptr)
+	{
+		return false;
+	}
+	// Deliberately NOT validated here: a caller setting several fields of one
+	// pair (HeightMin then HeightMax) would otherwise see the first write
+	// re-ordered against a stale second. Validate() is the caller's step, once.
+	this->*pxEntry->m_pfField = fValue;
+	return true;
+}
+
+bool Flux_GrassTypeParams::GetFloatParamByName(const char* szName, float& fValueOut) const
+{
+	const GrassFloatParamEntry* pxEntry = FindFloatParam(szName);
+	if (pxEntry == nullptr)
+	{
+		return false;
+	}
+	fValueOut = this->*pxEntry->m_pfField;
+	return true;
+}
+
+bool Flux_GrassTypeParams::SetColourParamByName(const char* szName, const Zenith_Maths::Vector3& xColour)
+{
+	const GrassColourParamEntry* pxEntry = FindColourParam(szName);
+	if (pxEntry == nullptr)
+	{
+		return false;
+	}
+	this->*pxEntry->m_pxField = xColour;
+	return true;
+}
+
+bool Flux_GrassTypeParams::GetColourParamByName(const char* szName, Zenith_Maths::Vector3& xColourOut) const
+{
+	const GrassColourParamEntry* pxEntry = FindColourParam(szName);
+	if (pxEntry == nullptr)
+	{
+		return false;
+	}
+	xColourOut = this->*pxEntry->m_pxField;
+	return true;
+}
+
+u_int Flux_GrassTypeParams::GetFloatParamCount()
+{
+	return uFLOAT_PARAM_COUNT;
+}
+
+const char* Flux_GrassTypeParams::GetFloatParamName(u_int uIndex)
+{
+	return uIndex < uFLOAT_PARAM_COUNT ? axFLOAT_PARAMS[uIndex].m_szName : nullptr;
+}
+
+u_int Flux_GrassTypeParams::GetColourParamCount()
+{
+	return uCOLOUR_PARAM_COUNT;
+}
+
+const char* Flux_GrassTypeParams::GetColourParamName(u_int uIndex)
+{
+	return uIndex < uCOLOUR_PARAM_COUNT ? axCOLOUR_PARAMS[uIndex].m_szName : nullptr;
 }
 
 void Flux_GrassTypeParams::WriteToDataStream(Zenith_DataStream& xStream) const

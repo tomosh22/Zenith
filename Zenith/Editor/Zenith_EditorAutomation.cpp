@@ -27,6 +27,7 @@
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "AssetHandling/Zenith_BehaviourGraphAsset.h"
+#include "AssetHandling/Zenith_GrassTypeTableAsset.h"
 #include "Scripting/Zenith_GraphBuilder.h"
 #include "EntityComponent/Zenith_GraphReload.h"
 #include "Prefab/Zenith_Prefab.h"
@@ -696,6 +697,50 @@ void Zenith_EditorAutomation::AddStep_MaterialSetPreviewLight(float fYaw, float 
 	m_axActions.PushBack(xAction);
 }
 
+// ---- Grass-type authoring steps ----
+// The type INDEX rides aiArgs[0] on every step that names one, so the executor
+// reads it from one place; the param name rides szArg1 like the material verbs'.
+
+void Zenith_EditorAutomation::AddStep_GrassTypesCreate() { Push(Zenith_EditorAutomation::m_axActions, ActionType::GRASS_TYPES_CREATE); }
+void Zenith_EditorAutomation::AddStep_GrassTypesSave  () { Push(Zenith_EditorAutomation::m_axActions, ActionType::GRASS_TYPES_SAVE); }
+
+void Zenith_EditorAutomation::AddStep_GrassTypesSetCount(int iCount)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::GRASS_TYPES_SET_COUNT;
+	xAction.m_aiArgs[0] = iCount;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_GrassTypesSetName(int iType, const char* szName)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::GRASS_TYPES_SET_NAME;
+	xAction.m_szArg1 = SafeStr(szName);
+	xAction.m_aiArgs[0] = iType;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_GrassTypesSetParamFloat(int iType, const char* szParam, float fValue)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::GRASS_TYPES_SET_PARAM_FLOAT;
+	xAction.m_szArg1 = SafeStr(szParam);
+	xAction.m_aiArgs[0] = iType;
+	xAction.m_afArgs[0] = fValue;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_GrassTypesSetParamColor(int iType, const char* szParam, float fR, float fG, float fB)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::GRASS_TYPES_SET_PARAM_COLOR;
+	xAction.m_szArg1 = SafeStr(szParam);
+	xAction.m_aiArgs[0] = iType;
+	xAction.m_afArgs[0] = fR; xAction.m_afArgs[1] = fG; xAction.m_afArgs[2] = fB;
+	m_axActions.PushBack(xAction);
+}
+
 void Zenith_EditorAutomation::AddStep_GraphSelectNode(const char* szTypeName, int iOccurrence)
 {
 	Zenith_EditorAction xAction = {};
@@ -1251,6 +1296,15 @@ namespace
 		(void)bOk; (void)szAction; (void)szArg;
 	}
 
+	// Grass-type steps, same contract: an unknown parameter name or an
+	// out-of-range type index is an authoring typo, and a silent no-op would
+	// ship grass that merely looks slightly wrong.
+	void GrassTypeActionChecked(bool bOk, const char* szAction, const char* szArg)
+	{
+		Zenith_Assert(bOk, "EditorAutomation grass-type step %s('%s') failed", szAction, szArg ? szArg : "");
+		(void)bOk; (void)szAction; (void)szArg;
+	}
+
 	// Shared boilerplate for the many field-edit actions that all start with
 	// "get the selected entity, assert it exists". szActionName goes straight
 	// into the assert message, matching what every case used to spell out by
@@ -1284,6 +1338,77 @@ static void ExecuteMaterialAction(const Zenith_EditorAction& xAction)
 	case Zenith_EditorActionType::MATERIAL_SET_PREVIEW_LIGHT:MaterialActionChecked(Zenith_MaterialEditorPanel::Action_SetPreviewLight(xAction.m_afArgs[0], xAction.m_afArgs[1]), "MaterialSetPreviewLight", nullptr); break;
 	default:
 		Zenith_Assert(false, "Non-material action routed to ExecuteMaterialAction");
+		break;
+	}
+}
+
+namespace
+{
+	// Bounds-check BEFORE Flux_GrassTypeTable::Get, which asserts on an
+	// out-of-range index and then clamps to entry 0 — a bad index would
+	// otherwise silently rewrite the default type.
+	bool GrassTypeIndexValid(int iType)
+	{
+		return iType >= 0 && iType < static_cast<int>(uFLUX_GRASS_MAX_TYPES);
+	}
+
+	bool GrassTypeSetCount(Zenith_TerrainEditor& xEditor, int iCount)
+	{
+		// SetCount clamps, so this range test is the ONLY thing that turns an
+		// authoring typo (0, or 20 on a 16-slot table) into a failed step.
+		if (iCount < 1 || iCount > static_cast<int>(uFLUX_GRASS_MAX_TYPES))
+		{
+			return false;
+		}
+		xEditor.GrassTypes().SetCount(static_cast<u_int>(iCount));
+		return true;
+	}
+
+	bool GrassTypeSetName(Zenith_TerrainEditor& xEditor, int iType, const char* szName)
+	{
+		if (!GrassTypeIndexValid(iType) || szName == nullptr || szName[0] == '\0')
+		{
+			return false;
+		}
+		xEditor.GrassTypes().SetName(static_cast<u_int>(iType), szName);
+		return true;
+	}
+
+	bool GrassTypeSetParamFloat(Zenith_TerrainEditor& xEditor, int iType, const char* szParam, float fValue)
+	{
+		return GrassTypeIndexValid(iType) &&
+			xEditor.GrassTypes().Get(static_cast<u_int>(iType)).SetFloatParamByName(szParam, fValue);
+	}
+
+	bool GrassTypeSetParamColour(Zenith_TerrainEditor& xEditor, int iType, const char* szParam,
+		const Zenith_Maths::Vector3& xColour)
+	{
+		return GrassTypeIndexValid(iType) &&
+			xEditor.GrassTypes().Get(static_cast<u_int>(iType)).SetColourParamByName(szParam, xColour);
+	}
+}
+
+// All grass-type authoring actions (GRASS_TYPES_CREATE .. GRASS_TYPES_SAVE,
+// kept CONTIGUOUS in the enum) live in their own executor, mirroring the
+// material / graph / terrain-editor / UI splits — ExecuteAction routes the
+// whole range here.
+//
+// These deliberately do NOT auto-open a terrain-editor session the way the
+// TERRAIN_EDITOR_* steps do: the working table is valid before any session
+// (default-constructed == the built-in set), and opening one would load 80 MB
+// of CPU images to author a 2 KB table.
+static void ExecuteGrassTypeAction(const Zenith_EditorAction& xAction, Zenith_TerrainEditor& xTerrainEditor)
+{
+	switch (xAction.m_eType)
+	{
+	case Zenith_EditorActionType::GRASS_TYPES_CREATE:          xTerrainEditor.GrassTypes_Reset(); break;
+	case Zenith_EditorActionType::GRASS_TYPES_SET_COUNT:       GrassTypeActionChecked(GrassTypeSetCount(xTerrainEditor, xAction.m_aiArgs[0]), "GrassTypesSetCount", nullptr); break;
+	case Zenith_EditorActionType::GRASS_TYPES_SET_NAME:        GrassTypeActionChecked(GrassTypeSetName(xTerrainEditor, xAction.m_aiArgs[0], xAction.m_szArg1.c_str()), "GrassTypesSetName", xAction.m_szArg1.c_str()); break;
+	case Zenith_EditorActionType::GRASS_TYPES_SET_PARAM_FLOAT: GrassTypeActionChecked(GrassTypeSetParamFloat(xTerrainEditor, xAction.m_aiArgs[0], xAction.m_szArg1.c_str(), xAction.m_afArgs[0]), "GrassTypesSetParamFloat", xAction.m_szArg1.c_str()); break;
+	case Zenith_EditorActionType::GRASS_TYPES_SET_PARAM_COLOR: GrassTypeActionChecked(GrassTypeSetParamColour(xTerrainEditor, xAction.m_aiArgs[0], xAction.m_szArg1.c_str(), Zenith_Maths::Vector3(xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2])), "GrassTypesSetParamColor", xAction.m_szArg1.c_str()); break;
+	case Zenith_EditorActionType::GRASS_TYPES_SAVE:            GrassTypeActionChecked(xTerrainEditor.GrassTypes_Save(), "GrassTypesSave", szZENITH_GRASS_TYPE_TABLE_ASSET_PATH); break;
+	default:
+		Zenith_Assert(false, "Non-grass-type action routed to ExecuteGrassTypeAction");
 		break;
 	}
 }
@@ -2466,6 +2591,14 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 		xAction.m_eType <= Zenith_EditorActionType::MATERIAL_SAVE)
 	{
 		ExecuteMaterialAction(xAction);
+		return;
+	}
+
+	// Grass-type authoring actions edit the terrain editor's working table.
+	if (xAction.m_eType >= Zenith_EditorActionType::GRASS_TYPES_CREATE &&
+		xAction.m_eType <= Zenith_EditorActionType::GRASS_TYPES_SAVE)
+	{
+		ExecuteGrassTypeAction(xAction, g_xEngine.TerrainEditor());
 		return;
 	}
 

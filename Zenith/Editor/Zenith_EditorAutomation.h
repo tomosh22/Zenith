@@ -242,6 +242,20 @@ enum class Zenith_EditorActionType
 	TERRAIN_EDITOR_EXPORT_CHUNKS,
 	TERRAIN_EDITOR_EXPORT_CHUNKS_RECT,
 
+	// Grass-type authoring (Zenith_TerrainEditor's WORKING copy of the
+	// Flux_GrassTypeTable — the same object the terrain editor panel edits).
+	// Parameters are addressed BY NAME through Flux_GrassTypeParams' one
+	// name->field mapping, exactly as the material verbs address the material
+	// param table. Every step is CPU + disk only, so the family is headless-safe.
+	// NOTE: this block must stay CONTIGUOUS — ranges are compared, never
+	// numbered (ExecuteAction routes the whole range to ExecuteGrassTypeAction).
+	GRASS_TYPES_CREATE,
+	GRASS_TYPES_SET_COUNT,
+	GRASS_TYPES_SET_NAME,
+	GRASS_TYPES_SET_PARAM_FLOAT,
+	GRASS_TYPES_SET_PARAM_COLOR,
+	GRASS_TYPES_SAVE,	// END of the contiguous GRASS_TYPES range (see GRASS_TYPES_CREATE)
+
 	// Prefab variant authoring (Phase 3 of the readability plan).
 	// CREATE_PREFAB_FROM_SELECTED captures the currently-selected entity into a
 	// new Zenith_Prefab and writes it to disk. CREATE_PREFAB_VARIANT loads a base
@@ -264,6 +278,17 @@ enum class Zenith_EditorActionType
 	// Custom step (game-specific logic as function pointer)
 	CUSTOM_STEP,
 };
+
+// ExecuteAction routes SUB-RANGES to sub-executors with a pair of `>=` / `<=`
+// comparisons against a block's first and last member — so a value inserted
+// into the middle of a block is free, and one inserted BETWEEN two members of
+// the same block silently joins it. Nothing else in this enum is pinned, so
+// this pins the youngest block: GRASS_TYPES_SAVE must stay exactly five past
+// GRASS_TYPES_CREATE, which fails the build the moment a new action type is
+// added inside the range instead of after it.
+static_assert(static_cast<int>(Zenith_EditorActionType::GRASS_TYPES_SAVE) -
+	static_cast<int>(Zenith_EditorActionType::GRASS_TYPES_CREATE) == 5,
+	"the GRASS_TYPES block must stay CONTIGUOUS and six wide — ExecuteAction routes it by range");
 
 //-----------------------------------------------------------------------------
 // Action Data
@@ -601,6 +626,28 @@ void AddStep_MaterialSetOverride(const char* szParamName, bool bOverridden);
 void AddStep_MaterialSetPreviewMesh(int iMesh);
 void AddStep_MaterialSetPreviewLight(float fYaw, float fPitch);
 void AddStep_MaterialSave(const char* szAssetPath);	// nullptr/"" saves to the current path
+
+	//--------------------------------------------------------------------------
+	// Grass-type step helpers (drive Zenith_TerrainEditor's WORKING copy of the
+	// Flux_GrassTypeTable — the same object the terrain editor panel edits, so
+	// an authored recipe and a human produce identical tables).
+	//
+	// Parameter names are the stable strings from Flux_GrassTypeParams' one
+	// name->field mapping ("HeightMax", "Density", "WindResponse", ...); colour
+	// names are "BaseColour" / "TipColour". An unknown name asserts at boot
+	// rather than silently no-op'ing. A typical authoring sequence:
+	//   GrassTypesCreate() -> GrassTypesSetCount(5) ->
+	//   GrassTypesSetName(4, "Reeds") ->
+	//   GrassTypesSetParamFloat(4, "HeightMax", 2.0f) ->
+	//   GrassTypesSetParamColor(4, "BaseColour", 0.1f, 0.3f, 0.05f) ->
+	//   GrassTypesSave().
+	//--------------------------------------------------------------------------
+void AddStep_GrassTypesCreate();	// working copy = the four built-in types
+void AddStep_GrassTypesSetCount(int iCount);	// clamped to [1, uFLUX_GRASS_MAX_TYPES]
+void AddStep_GrassTypesSetName(int iType, const char* szName);
+void AddStep_GrassTypesSetParamFloat(int iType, const char* szParam, float fValue);
+void AddStep_GrassTypesSetParamColor(int iType, const char* szParam, float fR, float fG, float fB);
+void AddStep_GrassTypesSave();	// writes game:Vegetation/GrassTypes.zdata, then applies
 
 	//--------------------------------------------------------------------------
 	// Particle Step Helpers

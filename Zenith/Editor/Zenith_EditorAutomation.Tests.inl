@@ -3261,4 +3261,41 @@ ZENITH_TEST(EditorAutomation, AutomationSessionGating)
 	xAuto.Reset();
 }
 
+//=============================================================================
+// Sub-executor range contiguity
+//=============================================================================
+
+ZENITH_TEST(Automation, GrassTypesEnumBlockIsContiguous)
+{
+	// ExecuteAction dispatches by comparing an action against a block's FIRST
+	// and LAST member — it never enumerates the members in between. So a value
+	// inserted in the middle of a block silently joins it (harmless), while one
+	// inserted anywhere inside a DIFFERENT block's span silently routes to that
+	// block's executor and hits its `default:` assert at boot.
+	//
+	// The header carries a static_assert on the block's width; this pins each
+	// member's position inside it, so a reorder that keeps the width fails here
+	// with the name of the member that moved.
+	const int iFirst = static_cast<int>(Zenith_EditorActionType::GRASS_TYPES_CREATE);
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::GRASS_TYPES_SET_COUNT) - iFirst, 1,
+		"GRASS_TYPES_SET_COUNT must be the second member of the block");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::GRASS_TYPES_SET_NAME) - iFirst, 2,
+		"GRASS_TYPES_SET_NAME must be the third member of the block");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::GRASS_TYPES_SET_PARAM_FLOAT) - iFirst, 3,
+		"GRASS_TYPES_SET_PARAM_FLOAT must be the fourth member of the block");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::GRASS_TYPES_SET_PARAM_COLOR) - iFirst, 4,
+		"GRASS_TYPES_SET_PARAM_COLOR must be the fifth member of the block");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::GRASS_TYPES_SAVE) - iFirst, 5,
+		"GRASS_TYPES_SAVE must END the block — the router compares against it");
+
+	// ... and the block must not have grown INTO its neighbours: the terrain
+	// editor range ends immediately before it, and the prefab range begins
+	// immediately after, so both boundaries are pinned from this side too.
+	ZENITH_ASSERT_EQ(iFirst - static_cast<int>(Zenith_EditorActionType::TERRAIN_EDITOR_EXPORT_CHUNKS_RECT), 1,
+		"the grass-type block must start immediately after the terrain-editor range ends");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::CREATE_PREFAB_FROM_SELECTED) -
+		static_cast<int>(Zenith_EditorActionType::GRASS_TYPES_SAVE), 1,
+		"the prefab block must start immediately after the grass-type range ends");
+}
+
 #endif // ZENITH_TOOLS

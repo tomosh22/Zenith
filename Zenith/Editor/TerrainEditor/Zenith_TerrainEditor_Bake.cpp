@@ -5,6 +5,8 @@
 
 #include "Editor/TerrainEditor/Zenith_TerrainEditor.h"
 
+#include "AssetHandling/Zenith_AssetRegistry.h"
+#include "AssetHandling/Zenith_GrassTypeTableAsset.h"
 #include "DataStream/Zenith_DataStream.h"
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
 #include "FileAccess/Zenith_FileAccess.h"
@@ -26,6 +28,15 @@ extern bool ExportHeightmapFromMatRect(const Zenith_Image& xHeightmap,
 
 namespace
 {
+	// The ONE engine-singleton reach in this TU's grass paths. Every caller below
+	// routes through it: the engine-singleton ratchet counts g_xEngine CODE
+	// LINES per file, so a hoist here is what lets the grass-type verbs be added
+	// without the file's budget moving.
+	Flux_GrassImpl& GrassFeature()
+	{
+		return g_xEngine.Grass();
+	}
+
 	std::string GetProjectTerrainRoot()
 	{
 		return (std::filesystem::path(Project_GetGameAssetsDirectory()) / "Terrain").string();
@@ -378,7 +389,7 @@ bool Zenith_TerrainEditor::ConsumeSculptedUnderBuiltGrass()
 {
 	// IsBuilt() first: with nothing built there is no push to redo, and the latch
 	// must survive to the one that follows.
-	return g_xEngine.Grass().IsBuilt() && ConsumeHeightsEditedSinceGrassPush();
+	return GrassFeature().IsBuilt() && ConsumeHeightsEditedSinceGrassPush();
 }
 
 void Zenith_TerrainEditor::RebuildGrass()
@@ -428,8 +439,78 @@ void Zenith_TerrainEditor::RebuildGrass()
 	Flux_GrassImpl::BuildParams xParams;
 	xParams.m_fDensityScale = 1.0f;
 
-	Flux_GrassImpl& xGrass = g_xEngine.Grass();
-	xGrass.BuildFromMaps(xMaps, xParams);
+	GrassFeature().BuildFromMaps(xMaps, xParams);
+}
+
+//=============================================================================
+// Grass types — the working copy the panel and editor automation both edit.
+//=============================================================================
+
+void Zenith_TerrainEditor::GrassTypes_Reset()
+{
+	m_xGrassTypesWorking = Flux_GrassTypeTable::Defaults();
+}
+
+void Zenith_TerrainEditor::GrassTypes_Reload()
+{
+	m_xGrassTypesWorking = GrassFeature().GetTypeTable();
+}
+
+void Zenith_TerrainEditor::GrassTypes_Apply()
+{
+	// Validated on the working copy too, not only inside SetTypeTable: the panel
+	// keeps editing this object afterwards, and a slider left holding a value the
+	// engine clamped would silently disagree with what is on screen.
+	m_xGrassTypesWorking.Validate();
+
+	Flux_GrassImpl& xGrass = GrassFeature();
+	xGrass.SetTypeTable(m_xGrassTypesWorking);
+
+	// The GPU type block is re-staged by the next gather, but placement bakes
+	// per-type decisions (density acceptance, slope reject, clump layout) into
+	// the blade records, so the look only follows a re-place. Nothing to rebuild
+	// if no maps were ever fed.
+	if (xGrass.IsBuilt())
+	{
+		RebuildGrass();
+	}
+}
+
+bool Zenith_TerrainEditor::GrassTypes_Save()
+{
+	m_xGrassTypesWorking.Validate();
+
+	// Through the ASSET class, never a hand-rolled stream: the .zdata envelope
+	// (magic + version + type name) is what makes the file loadable, and the boot
+	// path reads it back through exactly this type. The asset is a LOCAL, not a
+	// Create<>() — Save only needs its GetTypeName + WriteToDataStream, and a
+	// registry entry per press would accumulate a procedural:// row for nothing.
+	Zenith_GrassTypeTableAsset xAsset;
+	xAsset.SetTable(m_xGrassTypesWorking);
+
+	// game: resolves through the registry, so --assets-root packaging works
+	// unchanged. The Vegetation/ directory does not exist in a game that has
+	// never authored types — this save is what creates it.
+	const std::string strResolved = Zenith_AssetRegistry::ResolvePath(szZENITH_GRASS_TYPE_TABLE_ASSET_PATH);
+	std::error_code xEC;
+	std::filesystem::create_directories(std::filesystem::path(strResolved).parent_path(), xEC);
+
+	const bool bSaved = Zenith_AssetRegistry::Save(&xAsset, szZENITH_GRASS_TYPE_TABLE_ASSET_PATH);
+	if (!bSaved)
+	{
+		m_strStatus = "Grass types: SAVE FAILED (see the log)";
+		Zenith_Error(LOG_CATEGORY_EDITOR, "[TerrainEditor] GrassTypes_Save failed to write '%s'",
+			szZENITH_GRASS_TYPE_TABLE_ASSET_PATH);
+		return false;
+	}
+
+	// Apply last: a save that reached disk but never took effect in the running
+	// editor is the one failure mode an author cannot see.
+	GrassTypes_Apply();
+	m_strStatus = "Grass types saved to " + std::string(szZENITH_GRASS_TYPE_TABLE_ASSET_PATH);
+	Zenith_Log(LOG_CATEGORY_EDITOR, "[TerrainEditor] Saved %u grass types to '%s'",
+		m_xGrassTypesWorking.GetCount(), szZENITH_GRASS_TYPE_TABLE_ASSET_PATH);
+	return true;
 }
 
 #endif // ZENITH_TOOLS

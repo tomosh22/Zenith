@@ -194,6 +194,11 @@ jobs:
           #
           # History, newest first (the DERIVATION is the audit trail; the OBSERVED
           # number is the authority):
+          #   2975  GPU-grass overhaul Phase 7 (types authoring)  observed
+          #                   2026-08-06 on a Null_ build. +6 ENGINE units
+          #                   (1344 -> 1350): grass-type name->field mapping,
+          #                   working-copy isolation, the AddStep_GrassTypes*
+          #                   family end-to-end, save+apply, enum contiguity.
           #   2969  GPU-grass overhaul Phase 6 (displacement)  observed 2026-08-06
           #                   on a Null_ build. +4 ENGINE units (1340 -> 1344): the
           #                   displacement trail map's re-anchor pure functions
@@ -303,7 +308,7 @@ jobs:
           #   2817  ZM-D-173  = 2809 + 8: four ENGINE sensor-raycast units plus
           #                   two camera fixtures and two Home-placement units.
           $exe = 'Games\Zenithmon\Build\output\win64\null_vs2022_debug_win64_true\zenithmon.exe'
-          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 2969 -TimeoutSec 600
+          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 2975 -TimeoutSec 600
           if ($LASTEXITCODE -ne 0) { Write-Error "boot unit tests failed (see log above)"; exit $LASTEXITCODE }
 
       - name: Run Zenithmon tests

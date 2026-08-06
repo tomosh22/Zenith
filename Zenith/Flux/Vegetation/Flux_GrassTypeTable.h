@@ -111,6 +111,30 @@ struct Flux_GrassTypeParams
 	// Pure projection onto the GPU block. Never reads xOut.
 	void ToGPU(Flux_GrassTypeParamsGPU& xOut) const;
 
+	//--------------------------------------------------------------------------
+	// Address a field BY NAME. THE mapping lives once, as a static table in the
+	// .cpp — editor automation, any future scripting surface and the tests all
+	// go through it rather than each carrying its own if-chain, so a renamed
+	// field moves in exactly one place.
+	//
+	// FALSE means the name is not a field of this struct, and NOTHING is written
+	// or read: the caller decides whether that is a typo worth asserting on. The
+	// three bindless texture indices are deliberately absent — they are
+	// descriptor slots the renderer assigns, not authored look parameters.
+	//--------------------------------------------------------------------------
+	bool SetFloatParamByName(const char* szName, float fValue);
+	bool GetFloatParamByName(const char* szName, float& fValueOut) const;
+	bool SetColourParamByName(const char* szName, const Zenith_Maths::Vector3& xColour);
+	bool GetColourParamByName(const char* szName, Zenith_Maths::Vector3& xColourOut) const;
+
+	// Enumeration over the same two tables, in declaration order — what lets a
+	// test walk EVERY name rather than a hand-picked sample. Out-of-range
+	// returns nullptr.
+	static u_int       GetFloatParamCount();
+	static const char* GetFloatParamName(u_int uIndex);
+	static u_int       GetColourParamCount();
+	static const char* GetColourParamName(u_int uIndex);
+
 	// Explicit, field-by-field — the POD's padding must never reach the file.
 	void WriteToDataStream(Zenith_DataStream& xStream) const;
 	void ReadFromDataStream(Zenith_DataStream& xStream);

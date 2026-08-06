@@ -331,6 +331,148 @@ namespace
 		}
 	}
 
+	// The look-affecting subset of Flux_GrassTypeParams. The record carries ~34
+	// scalars; the rest (tilt, side curve, vertex distribution, fold, gloss
+	// repeat, specular, normal tilt, AO, the clump facing/outward/pull weights)
+	// are reachable only through AddStep_GrassTypesSetParamFloat and the saved
+	// file for now — they are shape-tuning knobs an author reads from a value,
+	// not from a viewport, so a slider each would bury the ones that matter.
+	void RenderGrassTypeEntry(Flux_GrassTypeTable& xTable, u_int uType)
+	{
+		Flux_GrassTypeParams& xType = xTable.Get(uType);
+
+		char szHeader[96];
+		snprintf(szHeader, sizeof(szHeader), "Type %u: %s##GrassType", uType,
+			xTable.GetName(uType).empty() ? "(unnamed)" : xTable.GetName(uType).c_str());
+		if (!ImGui::CollapsingHeader(szHeader))
+		{
+			return;
+		}
+
+		ImGui::Indent();
+
+		// Re-seeded from the table every frame and written back on every edit, so
+		// the buffer and the authored name can never disagree.
+		char szName[64];
+		strncpy_s(szName, sizeof(szName), xTable.GetName(uType).c_str(), _TRUNCATE);
+		if (ImGui::InputText("Name", szName, sizeof(szName)))
+		{
+			xTable.SetName(uType, szName);
+		}
+
+		ImGui::SeparatorText("Shape");
+		float afHeight[2] = { xType.m_fHeightMin, xType.m_fHeightMax };
+		if (ImGui::DragFloat2("Height (m)", afHeight, 0.01f, 0.01f, 8.0f))
+		{
+			xType.m_fHeightMin = afHeight[0];
+			xType.m_fHeightMax = afHeight[1];
+		}
+		float afWidth[2] = { xType.m_fWidthMin, xType.m_fWidthMax };
+		if (ImGui::DragFloat2("Width (m)", afWidth, 0.001f, 0.001f, 0.5f, "%.3f"))
+		{
+			xType.m_fWidthMin = afWidth[0];
+			xType.m_fWidthMax = afWidth[1];
+		}
+		float afBend[2] = { xType.m_fBendMin, xType.m_fBendMax };
+		if (ImGui::DragFloat2("Bend", afBend, 0.01f, 0.0f, 2.0f))
+		{
+			xType.m_fBendMin = afBend[0];
+			xType.m_fBendMax = afBend[1];
+		}
+		ImGui::SliderFloat("Tip Width Frac", &xType.m_fTipWidthFrac, 0.0f, 1.0f);
+
+		ImGui::SeparatorText("Placement");
+		ImGui::SliderFloat("Density", &xType.m_fDensity, 0.0f, 1.0f);
+		ImGui::SliderFloat("Slope Max (sin)", &xType.m_fSlopeMax, 0.0f, 1.0f);
+		ImGui::SliderFloat("Slope Align", &xType.m_fSlopeAlign, 0.0f, 1.0f);
+		ImGui::SliderFloat("Max Draw Distance (m)", &xType.m_fMaxDrawDistance, 0.0f, 400.0f, "%.0f");
+
+		ImGui::SeparatorText("Clump");
+		ImGui::SliderFloat("Clump Scale (m)", &xType.m_fClumpScale, 0.05f, 64.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
+		ImGui::SliderFloat("Clump Height Boost", &xType.m_fClumpHeightBoost, 0.0f, 4.0f);
+
+		ImGui::SeparatorText("Appearance");
+		float afBase[3] = { xType.m_xBaseColour.x, xType.m_xBaseColour.y, xType.m_xBaseColour.z };
+		if (ImGui::ColorEdit3("Base Colour", afBase))
+		{
+			xType.m_xBaseColour = Zenith_Maths::Vector3(afBase[0], afBase[1], afBase[2]);
+		}
+		float afTip[3] = { xType.m_xTipColour.x, xType.m_xTipColour.y, xType.m_xTipColour.z };
+		if (ImGui::ColorEdit3("Tip Colour", afTip))
+		{
+			xType.m_xTipColour = Zenith_Maths::Vector3(afTip[0], afTip[1], afTip[2]);
+		}
+		ImGui::SliderFloat("Roughness", &xType.m_fRoughnessBase, 0.02f, 1.0f);
+		ImGui::SliderFloat("Colour Jitter", &xType.m_fColourJitter, 0.0f, 1.0f);
+		ImGui::SliderFloat("Translucency Tip", &xType.m_fTranslucencyTip, 0.0f, 1.0f);
+
+		ImGui::SeparatorText("Dynamics");
+		ImGui::SliderFloat("Wind Response", &xType.m_fWindResponse, 0.0f, 4.0f);
+		ImGui::SliderFloat("Stiffness", &xType.m_fStiffness, 0.0f, 4.0f);
+
+		ImGui::Unindent();
+	}
+
+	void RenderGrassTypesSection(Zenith_TerrainEditor& xEditor)
+	{
+		if (!ImGui::CollapsingHeader("Grass Types"))
+		{
+			return;
+		}
+
+		// Everything here edits the terrain editor's WORKING copy. The engine's
+		// live table moves only when Apply or Save is pressed, so a half-typed
+		// value can never reach the placement CS.
+		Flux_GrassTypeTable& xTable = xEditor.GrassTypes();
+
+		int iCount = static_cast<int>(xTable.GetCount());
+		if (ImGui::SliderInt("Live Types", &iCount, 1, static_cast<int>(uFLUX_GRASS_MAX_TYPES)))
+		{
+			xTable.SetCount(static_cast<u_int>(iCount));
+		}
+		ImGui::TextDisabled("Type 0 is what an unpainted (all-zero) type map selects");
+
+		for (u_int uType = 0; uType < xTable.GetCount(); uType++)
+		{
+			ImGui::PushID(static_cast<int>(uType));
+			RenderGrassTypeEntry(xTable, uType);
+			ImGui::PopID();
+		}
+
+		ImGui::Separator();
+		if (ImGui::Button("Apply", ImVec2(100, 0)))
+		{
+			xEditor.GrassTypes_Apply();
+		}
+		if (ImGui::IsItemHovered())
+		{
+			ImGui::SetTooltip("Pushes these types to the running renderer and re-places the grass.\nNot written to disk.");
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("Save", ImVec2(100, 0)))
+		{
+			xEditor.GrassTypes_Save();
+		}
+		if (ImGui::IsItemHovered())
+		{
+			ImGui::SetTooltip("Writes game:Vegetation/GrassTypes.zdata, then applies.\nThe game loads it at boot from then on.");
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("Reload", ImVec2(100, 0)))
+		{
+			xEditor.GrassTypes_Reload();
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("Reset Defaults", ImVec2(120, 0)))
+		{
+			xEditor.GrassTypes_Reset();
+		}
+		if (ImGui::IsItemHovered())
+		{
+			ImGui::SetTooltip("Restores the four built-in types (Meadow / Tall / Dry / Flowers)\nin this panel only — press Apply or Save to commit them.");
+		}
+	}
+
 	void RenderPersistenceSection(Zenith_TerrainEditor& xEditor)
 	{
 		ImGui::Separator();
@@ -425,6 +567,7 @@ void Zenith_EditorPanelTerrainEditor::Render(Zenith_TerrainEditor& xEditor, bool
 	RenderProceduralSection(xEditor);
 	RenderErosionSection(xEditor);
 	RenderAutoSplatSection(xEditor);
+	RenderGrassTypesSection(xEditor);
 	RenderPersistenceSection(xEditor);
 
 	ImGui::End();

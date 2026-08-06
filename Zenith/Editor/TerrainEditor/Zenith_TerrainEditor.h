@@ -7,6 +7,10 @@
 #include "Collections/Zenith_Vector.h"
 #include "Maths/Zenith_Maths.h"
 #include "Flux/Terrain/Flux_TerrainExportRect.h"
+// The AUTHORING record only — pure CPU, no device and no Flux runtime include,
+// so holding a working copy here costs this header nothing it did not already
+// carry (see Flux_TerrainExportRect above).
+#include "Flux/Vegetation/Flux_GrassTypeTable.h"
 #include "ZenithECS/Zenith_SceneData.h"
 #include <string>
 
@@ -311,6 +315,32 @@ public:
 	void ClearStamp();
 
 	//--------------------------------------------------------------------------
+	// Grass types (Zenith_TerrainEditor_Bake.cpp)
+	//
+	// A WORKING COPY of the per-type parameter table, seeded from the live
+	// engine table on session open. The ImGui panel and editor automation both
+	// edit THIS and then call one of the four verbs below — nothing writes the
+	// engine's table directly, so an in-progress edit can never reach the
+	// placement CS half-applied, and Reset/Reload are meaningful.
+	//
+	// Every verb is pure CPU + disk, so the whole family is headless-safe; only
+	// the grass rebuild Apply triggers is windowed, and that already early-outs
+	// on a Null build.
+	//--------------------------------------------------------------------------
+	Flux_GrassTypeTable&       GrassTypes()       { return m_xGrassTypesWorking; }
+	const Flux_GrassTypeTable& GrassTypes() const { return m_xGrassTypesWorking; }
+
+	void GrassTypes_Reset();    // working copy = the four built-in types
+	void GrassTypes_Reload();   // working copy = whatever the engine is running
+	// Validate, push to the engine, and re-place the grass so the look updates
+	// live. Apply is the ONLY writer of the engine's table on this path.
+	void GrassTypes_Apply();
+	// Validate, write game:Vegetation/GrassTypes.zdata through the asset class
+	// (creating parent directories), then Apply. FALSE = nothing was written and
+	// the engine table is untouched.
+	bool GrassTypes_Save();
+
+	//--------------------------------------------------------------------------
 	// Persistence (Zenith_TerrainEditor_Bake.cpp)
 	//--------------------------------------------------------------------------
 
@@ -523,6 +553,10 @@ private:
 	Zenith_EntityID m_uTreeTrunkEntity = INVALID_ENTITY_ID;
 	Zenith_EntityID m_uTreeLeavesEntity = INVALID_ENTITY_ID;
 	u_int m_uTreeRngState = 0x51A7E5u;   // interactive scatter randomness
+
+	// Authoring copy of the grass type table (see the Grass types block above).
+	// Default-constructed == the built-in set, so it is valid before any session.
+	Flux_GrassTypeTable m_xGrassTypesWorking;
 
 	Zenith_Image m_xHeightfield;           // 4096x4096 float [0,1]
 	Zenith_Vector<u_int8> m_xSplatmap;     // 2048x2048x4 RGBA8

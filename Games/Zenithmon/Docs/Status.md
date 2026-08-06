@@ -3,10 +3,11 @@
 **Last updated:** 2026-08-06
 
 **★ LIVE BASELINE (OBSERVED 2026-08-06 on clean `Null_` builds):
-ZM boot `2969 ran / 2967 passed / 0 failed / 2 skipped`; engine boot (Null Combat)
-`1344 ran / 1343 passed / 0 failed / 1 skipped`; registry **55**.** This is the
-current pin in `zm-tests.yml` (`-Baseline 2969`) and `run_unit_gate.ps1`
-(default 1344). The GPU-grass overhaul moved engine units in six steps: Phase 6
+ZM boot `2975 ran / 2973 passed / 0 failed / 2 skipped`; engine boot (Null Combat)
+`1350 ran / 1349 passed / 0 failed / 1 skipped`; registry **55**.** This is the
+current pin in `zm-tests.yml` (`-Baseline 2975`) and `run_unit_gate.ps1`
+(default 1350). The GPU-grass overhaul moved engine units in seven steps: Phase 7
++6 (types-authoring mapping/isolation/automation pins), Phase 6
 +4 (displacement re-anchor/decay pins), Phase 5
 +3 (shadow-casting truth table / slot-mask / registration-order pins), Phase 1
 +20 (`FluxGrassTypes` pure suite), Phase 2 +2 (`FluxBufferReadback` zero-fill
