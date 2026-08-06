@@ -1320,6 +1320,158 @@ ZENITH_TEST(FluxGrassTypes, TypeGatherPicksAWholeTexelFromTheFootprint)
 }
 
 // ============================================================================
+// Displacement anchor + decay. The first three tests pin the ONE property the
+// whole trail field rests on: the map's origin moves in WHOLE TEXELS.
+//
+// It is not an optimisation. The displacement CS re-anchors by reading the
+// previous map at (texel + shift); a fractional shift would make that a
+// resample, so every frame would run the field through a filter and a trail
+// would blur itself away while the camera stood still. Integrality is therefore
+// a correctness property, and it is pinned from three directions: the anchor does
+// not move for a sub-texel camera move, it moves by exactly one across a
+// boundary, and the shift the constant buffer carries is always integral.
+//
+// The fourth pins the other half of the field's behaviour over time — that the
+// decay is derived from dt, so a trail has the same LIFETIME whatever the frame
+// rate, and that degenerate inputs freeze the field rather than erasing it.
+// ============================================================================
+
+ZENITH_TEST(FluxGrassTypes, DisplacementAnchorIgnoresSubTexelCameraMotion)
+{
+	constexpr float fTexel = Flux_GrassConfig::fDISPLACEMENT_TEXEL_SIZE;
+	ZENITH_ASSERT_EQ_FLOAT(fTexel, 0.25f, 1.0e-6f, "the map is 64 m over 256 texels");
+
+	// A texel-aligned camera, then nudges that all stay inside the SAME texel. The
+	// last one is a hair under a full texel: the anchor must not have moved yet.
+	const float fBaseX = 100.0f;
+	const float fBaseZ = -37.5f;
+	const Flux_GrassDisplacementAnchor xBase = Flux_GrassSnapDisplacementAnchor(fBaseX, fBaseZ);
+
+	const float afNudge[] = { 0.0f, 0.01f, fTexel * 0.5f, fTexel * 0.99f };
+	for (float fNudge : afNudge)
+	{
+		const Flux_GrassDisplacementAnchor xMoved = Flux_GrassSnapDisplacementAnchor(fBaseX + fNudge, fBaseZ + fNudge);
+		ZENITH_ASSERT_TRUE(xMoved == xBase,
+			"a camera move inside one texel must leave the anchor exactly where it was — a moving anchor "
+			"resamples the whole field");
+		ZENITH_ASSERT_TRUE(Flux_GrassDisplacementTexelShift(xBase, xMoved) == Zenith_Maths::Vector2(0.0f, 0.0f),
+			"an unmoved anchor must produce a zero scroll, not a rounding-error scroll");
+	}
+
+	// The world origin the anchor projects to is an exact multiple of the texel size,
+	// which is what the CS's world -> texel mapping assumes.
+	const Zenith_Maths::Vector2 xOrigin = Flux_GrassDisplacementOriginWS(xBase);
+	ZENITH_ASSERT_EQ_FLOAT(xOrigin.x, static_cast<float>(xBase.m_iTexelX) * fTexel, 1.0e-6f,
+		"the map origin must be a whole number of texels from the world origin");
+	ZENITH_ASSERT_EQ_FLOAT(xOrigin.y, static_cast<float>(xBase.m_iTexelZ) * fTexel, 1.0e-6f,
+		"the map origin must be a whole number of texels from the world origin");
+
+	// ...and it centres the map on the camera to within one texel, which is the other
+	// half of the contract: the snap must not drift the footprint off the viewer.
+	const float fHalf = Flux_GrassConfig::fDISPLACEMENT_WORLD_SIZE * 0.5f;
+	ZENITH_ASSERT_LE(fabsf((xOrigin.x + fHalf) - fBaseX), fTexel, "the map must stay centred on the camera");
+	ZENITH_ASSERT_LE(fabsf((xOrigin.y + fHalf) - fBaseZ), fTexel, "the map must stay centred on the camera");
+}
+
+ZENITH_TEST(FluxGrassTypes, DisplacementAnchorStepsOneTexelPerBoundary)
+{
+	constexpr float fTexel = Flux_GrassConfig::fDISPLACEMENT_TEXEL_SIZE;
+
+	// Start exactly on a texel boundary so the crossing point is unambiguous: the
+	// snap is a floor of (camera - half) / texel, so an anchor-aligned camera sits at
+	// (anchor texel) * texel + half.
+	const Flux_GrassDisplacementAnchor xStart = Flux_GrassSnapDisplacementAnchor(0.0f, 0.0f);
+	const Zenith_Maths::Vector2 xStartOrigin = Flux_GrassDisplacementOriginWS(xStart);
+	const float fHalf = Flux_GrassConfig::fDISPLACEMENT_WORLD_SIZE * 0.5f;
+	const float fAlignedX = xStartOrigin.x + fHalf;
+	const float fAlignedZ = xStartOrigin.y + fHalf;
+
+	// One whole texel of camera travel is exactly one texel of anchor travel — never
+	// two, which is what floor buys over round-to-nearest.
+	for (int iStep = 1; iStep <= 8; iStep++)
+	{
+		const float fMove = fTexel * static_cast<float>(iStep);
+		const Flux_GrassDisplacementAnchor xMoved = Flux_GrassSnapDisplacementAnchor(fAlignedX + fMove, fAlignedZ - fMove);
+		ZENITH_ASSERT_EQ(xMoved.m_iTexelX - xStart.m_iTexelX, iStep, "N texels of camera travel must move the anchor N texels");
+		ZENITH_ASSERT_EQ(xMoved.m_iTexelZ - xStart.m_iTexelZ, -iStep, "the snap must be symmetric under a negative move");
+	}
+
+	// Just short of the first boundary: still the starting anchor. Just past it:
+	// exactly one texel, so there is no step the anchor can skip.
+	const Flux_GrassDisplacementAnchor xJustShort =
+		Flux_GrassSnapDisplacementAnchor(fAlignedX + fTexel * 0.999f, fAlignedZ);
+	ZENITH_ASSERT_EQ(xJustShort.m_iTexelX, xStart.m_iTexelX, "the anchor must not step before the boundary");
+
+	const Flux_GrassDisplacementAnchor xJustPast =
+		Flux_GrassSnapDisplacementAnchor(fAlignedX + fTexel * 1.001f, fAlignedZ);
+	ZENITH_ASSERT_EQ(xJustPast.m_iTexelX - xStart.m_iTexelX, 1, "crossing one boundary must step exactly one texel");
+}
+
+ZENITH_TEST(FluxGrassTypes, DisplacementTexelShiftIsAlwaysIntegral)
+{
+	constexpr float fTexel = Flux_GrassConfig::fDISPLACEMENT_TEXEL_SIZE;
+
+	// Walk a camera along an irrational-ish path so consecutive positions land at
+	// arbitrary sub-texel offsets, and check the scroll the constant buffer carries
+	// is integral at EVERY step. A fractional scroll is the failure mode the whole
+	// snap exists to prevent, and it would never announce itself — the field would
+	// just quietly soften.
+	Flux_GrassDisplacementAnchor xPrev = Flux_GrassSnapDisplacementAnchor(2048.0f, 2048.0f);
+	for (int iStep = 1; iStep <= 64; iStep++)
+	{
+		const float fT = static_cast<float>(iStep);
+		const float fX = 2048.0f + fT * 0.137f + sinf(fT) * 1.7f;
+		const float fZ = 2048.0f - fT * 0.311f + cosf(fT * 0.5f) * 2.3f;
+
+		const Flux_GrassDisplacementAnchor xNext = Flux_GrassSnapDisplacementAnchor(fX, fZ);
+		const Zenith_Maths::Vector2 xShift = Flux_GrassDisplacementTexelShift(xPrev, xNext);
+
+		ZENITH_ASSERT_EQ_FLOAT(xShift.x, floorf(xShift.x), 0.0f, "the scroll the CB carries must be a whole texel count");
+		ZENITH_ASSERT_EQ_FLOAT(xShift.y, floorf(xShift.y), 0.0f, "the scroll the CB carries must be a whole texel count");
+		ZENITH_ASSERT_EQ(static_cast<int>(xShift.x), xNext.m_iTexelX - xPrev.m_iTexelX,
+			"the float scroll must be the integer anchor difference widened, never a metre division");
+		ZENITH_ASSERT_EQ(static_cast<int>(xShift.y), xNext.m_iTexelZ - xPrev.m_iTexelZ,
+			"the float scroll must be the integer anchor difference widened, never a metre division");
+
+		// ...and the two metre origins agree with that scroll to the last bit, which
+		// is what lets the CS use either representation without them disagreeing.
+		const Zenith_Maths::Vector2 xPrevOrigin = Flux_GrassDisplacementOriginWS(xPrev);
+		const Zenith_Maths::Vector2 xNextOrigin = Flux_GrassDisplacementOriginWS(xNext);
+		ZENITH_ASSERT_EQ_FLOAT(xNextOrigin.x - xPrevOrigin.x, xShift.x * fTexel, 1.0e-3f,
+			"the metre origins and the texel scroll must describe the same slide");
+		ZENITH_ASSERT_EQ_FLOAT(xNextOrigin.y - xPrevOrigin.y, xShift.y * fTexel, 1.0e-3f,
+			"the metre origins and the texel scroll must describe the same slide");
+
+		xPrev = xNext;
+	}
+}
+
+ZENITH_TEST(FluxGrassTypes, DisplacementDecayIsFrameRateIndependent)
+{
+	// The retention factor is derived from dt so a trail has the same LIFETIME on a
+	// fast and a slow machine. Two 1/120 s steps must therefore retain as much as one
+	// 1/60 s step, or the field would fade at whatever rate the frame happened to run.
+	const float fOneStep = Flux_GrassDisplacementDecay(1.0f / 60.0f, 0.5f);
+	const float fHalfStep = Flux_GrassDisplacementDecay(1.0f / 120.0f, 0.5f);
+	ZENITH_ASSERT_EQ_FLOAT(fHalfStep * fHalfStep, fOneStep, 1.0e-6f,
+		"two half-length steps must retain exactly as much as one whole step");
+
+	ZENITH_ASSERT_LT(fOneStep, 1.0f, "a frame of decay must actually remove something");
+	ZENITH_ASSERT_GT(fOneStep, 0.9f, "a half-second e-fold must not erase a 60 Hz frame's trail outright");
+
+	// One e-folding time retains 1/e, which is the definition the tuning constant is
+	// authored against.
+	ZENITH_ASSERT_EQ_FLOAT(Flux_GrassDisplacementDecay(0.5f, 0.5f), 0.36787944f, 1.0e-5f,
+		"one e-folding time must retain exactly 1/e");
+
+	// Degenerate inputs retain EVERYTHING rather than wiping the field: a paused frame
+	// (dt 0) must freeze the trail, not delete it.
+	ZENITH_ASSERT_EQ_FLOAT(Flux_GrassDisplacementDecay(0.0f, 0.5f), 1.0f, 0.0f, "a zero-length frame must decay nothing");
+	ZENITH_ASSERT_EQ_FLOAT(Flux_GrassDisplacementDecay(1.0f / 60.0f, 0.0f), 1.0f, 0.0f,
+		"a zero e-fold must degrade to 'no decay', never to a divide by zero");
+}
+
+// ============================================================================
 // Flux_GrassImpl — the live feature.
 //
 // BuildFromMaps REJECTS any dimension but the fixed texture extents: the map
@@ -1622,6 +1774,19 @@ ZENITH_TEST(FluxGrassImpl, MoverCapAndClear)
 	xGrass.ClearSceneData();
 	ZENITH_ASSERT_EQ(xGrass.GetMoverCount(), 0u, "ClearSceneData must drop every mover");
 	ZENITH_ASSERT_EQ(xGrass.GetMoverOverflowCount(), 0u, "ClearSceneData must zero the overflow counter too");
+
+	// The debug orbiter is the ONE mover the engine submits for itself, and it goes in
+	// through the same public SubmitMover a game body uses — so it answers to the cap
+	// above rather than getting a private slot. The setter is the ImGui-free route a
+	// capture sweep drives it by, and it has to survive ClearSceneData: it is a render
+	// debug state, not scene content.
+	const bool bOrbiterBefore = xGrass.IsDebugOrbitDisplacerEnabled();
+	xGrass.SetDebugOrbitDisplacer(true);
+	ZENITH_ASSERT_TRUE(xGrass.IsDebugOrbitDisplacerEnabled(), "the orbiter override must read back what it was set to");
+	xGrass.ClearSceneData();
+	ZENITH_ASSERT_TRUE(xGrass.IsDebugOrbitDisplacerEnabled(), "a scene clear must not silently cancel a debug override");
+	xGrass.SetDebugOrbitDisplacer(bOrbiterBefore);
+	ZENITH_ASSERT_EQ(xGrass.IsDebugOrbitDisplacerEnabled(), bOrbiterBefore, "the test must hand back the value it found");
 }
 
 ZENITH_TEST(FluxGrassImpl, ReadbackZeroHeadless)

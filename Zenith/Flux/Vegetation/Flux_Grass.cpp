@@ -36,10 +36,12 @@ namespace
 	constexpr u_int uGRASS_HEIGHT_TEXTURE_SIZE   = 4096u;
 	constexpr u_int uGRASS_COVERAGE_TEXTURE_SIZE = 1024u;
 	constexpr u_int uGRASS_TYPE_TEXTURE_SIZE     = 1024u;
-	// Neutral 1x1 until the displacement phase lands its 256^2 ping-pong. The
-	// placement CS samples it unconditionally (a branch there would diverge a whole
-	// wave for nothing) and multiplies by a zero push scale, so this is inert.
+	// Neutral 1x1 zero field, bound in place of the real 256^2 trail map whenever
+	// displacement is off. The placement CS samples its displacement input
+	// unconditionally (a branch there would diverge a whole wave for a field that is
+	// usually inert), so "no push" has to be expressible as DATA.
 	constexpr u_int uGRASS_DISPLACEMENT_TEXTURE_SIZE = 1u;
+	constexpr TextureFormat eGRASS_DISPLACEMENT_FORMAT = TEXTURE_FORMAT_R16G16_SFLOAT;
 
 	// Coarse min/max height band per cell, used only to give each tile an AABB worth
 	// culling. A flat band over hilly ground culls tiles that are plainly visible.
@@ -76,8 +78,8 @@ namespace
 
 void Flux_GrassImpl::BuildPipelines()
 {
-	// --- compute: reset -> placement -> fixup, plus the not-yet-dispatched
-	// displacement kernel (see the member comment for why it is built anyway) ---
+	// --- compute: reset -> placement -> fixup, and the displacement field the
+	// placement pass samples (it runs LAST in the frame; see SetupRenderGraph) ---
 	m_xResetShader.Initialise(Flux_GrassShaders::xGrass_Reset);
 	Flux_RootSigBuilder::FromReflection(m_xResetRootSig, m_xResetShader.GetReflection());
 	Flux_ComputePipelineBuilder::BuildFromShader(m_xResetPipeline, m_xResetShader, m_xResetRootSig);
@@ -209,10 +211,15 @@ void Flux_GrassImpl::CreateGPUResources()
 		static_cast<size_t>(uFLUX_GRASS_MAX_TYPES) * sizeof(Flux_GrassTypeParamsGPU), m_xTypeParamsBuffer);
 	xMem.InitialiseDynamicReadWriteBuffer(nullptr,
 		static_cast<size_t>(Flux_GrassConfig::uMAX_TILES) * sizeof(Flux_GrassTileGPU), m_xTileBuffer);
+	// Full cap, not the live prefix: the buffer is allocated once and only the live
+	// movers are uploaded into it each frame.
+	xMem.InitialiseDynamicReadWriteBuffer(nullptr,
+		static_cast<size_t>(uFLUX_GRASS_MAX_MOVERS) * sizeof(Flux_GrassMoverGPU), m_xMoverBuffer);
 
 	xMem.InitialiseDynamicConstantBuffer(nullptr, sizeof(Flux_GrassPlacementConstantsGPU), m_xPlacementConstantsBuffer);
 	xMem.InitialiseDynamicConstantBuffer(nullptr, sizeof(Flux_GrassDrawConstantsGPU), m_xDrawConstantsBuffer);
 	xMem.InitialiseDynamicConstantBuffer(nullptr, sizeof(Flux_GrassWindBlockGPU), m_xPrevWindConstantsBuffer);
+	xMem.InitialiseDynamicConstantBuffer(nullptr, sizeof(Flux_GrassDisplacementConstantsGPU), m_xDisplacementConstantsBuffer);
 
 	// Zero the indirect block once at allocation. The per-frame reset CS rewrites
 	// every live word, but a garbage VkDrawIndexedIndirectCommand read on the very
@@ -231,9 +238,39 @@ void Flux_GrassImpl::DestroyGPUResources()
 	xMem.DestroyIndexBuffer(m_xBladeIndexBuffer);
 	xMem.DestroyDynamicReadWriteBuffer(m_xTypeParamsBuffer);
 	xMem.DestroyDynamicReadWriteBuffer(m_xTileBuffer);
+	xMem.DestroyDynamicReadWriteBuffer(m_xMoverBuffer);
 	xMem.DestroyDynamicConstantBuffer(m_xPlacementConstantsBuffer);
 	xMem.DestroyDynamicConstantBuffer(m_xDrawConstantsBuffer);
 	xMem.DestroyDynamicConstantBuffer(m_xPrevWindConstantsBuffer);
+	xMem.DestroyDynamicConstantBuffer(m_xDisplacementConstantsBuffer);
+}
+
+void Flux_GrassImpl::CreateDisplacementMaps()
+{
+	// Built in EVERY config, headless included — unlike the 34 MB map set there is no
+	// staging cost to skip, and the render-graph declaration references these objects
+	// by address, so a config where they did not exist would need a different graph.
+	//
+	// UNORDERED_ACCESS for the displacement pass (which loads AND stores through
+	// storage-image views, so the ping-pong needs no sampler on the write side) plus
+	// SHADER_READ for the placement CS's bilinear sample of the finished field.
+	for (u_int u = 0; u < 2u; u++)
+	{
+		Flux_RenderAttachmentBuilder xBuilder;
+		xBuilder.m_uWidth  = Flux_GrassConfig::uDISPLACEMENT_RESOLUTION;
+		xBuilder.m_uHeight = Flux_GrassConfig::uDISPLACEMENT_RESOLUTION;
+		xBuilder.m_eFormat = eGRASS_DISPLACEMENT_FORMAT;
+		xBuilder.m_uMemoryFlags = (1u << MEMORY_FLAGS__UNORDERED_ACCESS) | (1u << MEMORY_FLAGS__SHADER_READ);
+		xBuilder.BuildColour(m_axDisplacementMaps[u], u == 0u ? "Grass Displacement A" : "Grass Displacement B");
+	}
+}
+
+void Flux_GrassImpl::DestroyDisplacementMaps()
+{
+	for (u_int u = 0; u < 2u; u++)
+	{
+		Flux_RenderAttachmentBuilder::Destroy(m_axDisplacementMaps[u]);
+	}
 }
 
 void Flux_GrassImpl::CreateMapTextures()
@@ -317,6 +354,7 @@ void Flux_GrassImpl::Initialise()
 	BuildPipelines();
 	CreateGPUResources();
 	CreateMapTextures();
+	CreateDisplacementMaps();
 	m_bGPUResourcesReady = true;
 
 	// The type table is global authored content, not scene state: seeded once here
@@ -341,6 +379,7 @@ void Flux_GrassImpl::Shutdown()
 	{
 		DestroyGPUResources();
 		DestroyMapTextures();
+		DestroyDisplacementMaps();
 		m_bGPUResourcesReady = false;
 	}
 
@@ -762,6 +801,9 @@ float Flux_GrassImpl::GetBufferUsageMB() const
 	ulBytes += sizeof(u_int);
 	ulBytes += sizeof(Flux_GrassConfig::auBLADE_INDEX_TABLE);
 	ulBytes += static_cast<size_t>(uFLUX_GRASS_MAX_TYPES) * sizeof(Flux_GrassTypeParamsGPU);
+	// Both halves of the displacement ping-pong, RG16F.
+	ulBytes += 2u * static_cast<size_t>(Flux_GrassConfig::uDISPLACEMENT_RESOLUTION)
+		* Flux_GrassConfig::uDISPLACEMENT_RESOLUTION * 4u;
 	ulBytes += static_cast<size_t>(uGRASS_HEIGHT_TEXTURE_SIZE) * uGRASS_HEIGHT_TEXTURE_SIZE * 2u;
 	ulBytes += static_cast<size_t>(uGRASS_COVERAGE_TEXTURE_SIZE) * uGRASS_COVERAGE_TEXTURE_SIZE;
 	ulBytes += static_cast<size_t>(uGRASS_TYPE_TEXTURE_SIZE) * uGRASS_TYPE_TEXTURE_SIZE;
@@ -829,7 +871,9 @@ void Flux_GrassImpl::RegisterDebugVariables()
 	// active-slot mask, so it removes the placement work as well as the two draws.
 	xVars.AddBoolean({ "Flux", "Grass", "DisableShadowCasting" }, m_bDisableShadowCasting);
 	xVars.AddBoolean({ "Flux", "Grass", "ForceLoBlades" }, m_bForceLoBlades);
-	// Storage only this phase — consumed when the displacement pass lands.
+	// Live: while on, every gather submits one synthetic mover circling the camera's
+	// ground point, so the trail field can be inspected without a game body to walk.
+	// Binds the SAME member SetDebugOrbitDisplacer writes.
 	xVars.AddBoolean({ "Flux", "Grass", "DebugOrbitDisplacer" }, m_bDebugOrbitDisplacer);
 }
 #endif

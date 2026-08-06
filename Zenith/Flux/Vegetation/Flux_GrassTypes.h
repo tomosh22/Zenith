@@ -1023,6 +1023,107 @@ inline void Flux_GrassSelectTiles(const Flux_GrassTileSelectParams& xParams, Flu
 }
 
 //=============================================================================
+// Displacement field geometry — the camera-anchored trail map.
+//
+// A fixed 256^2 RG16F map covering 64 m, so one texel is 0.25 m: exactly one HI
+// lattice step, which is the finest push a blade can resolve.
+//
+// Everything here is stated in WHOLE TEXELS rather than in metres, and that is
+// the load-bearing part. The map's anchor follows the camera, so every frame the
+// field has to be re-anchored: texel t of the new map is filled by reading the
+// PREVIOUS map at t + (newAnchor - oldAnchor). An anchor free to land mid-texel
+// would make that offset fractional, so the re-anchor would resample the whole
+// field through a filter EVERY frame — a trail would blur itself away while the
+// camera stood still, and a standing mover's splat would creep. Snapped to whole
+// texels the re-anchor is a lossless integer copy and a stationary field is
+// bit-stable.
+//=============================================================================
+
+namespace Flux_GrassConfig
+{
+	constexpr u_int uDISPLACEMENT_RESOLUTION = 256u;
+	constexpr float fDISPLACEMENT_WORLD_SIZE = 64.0f;
+	constexpr float fDISPLACEMENT_TEXEL_SIZE =
+		fDISPLACEMENT_WORLD_SIZE / static_cast<float>(uDISPLACEMENT_RESOLUTION);
+
+	// The field stores a push VECTOR whose magnitude is the [0,1] push amount, not
+	// a distance. The clamp is not a nicety: the splat is additive over the decayed
+	// value, so a stationary mover re-splatting every frame integrates the geometric
+	// series amount/(1 - decay) and would saturate the map to an arbitrary magnitude.
+	constexpr float fDISPLACEMENT_MAX_PUSH = 1.0f;
+}
+
+static_assert(Flux_GrassConfig::fDISPLACEMENT_TEXEL_SIZE == Flux_GrassConfig::fHI_LATTICE_STEP,
+	"one displacement texel must be exactly one HI lattice step — a coarser field cannot push "
+	"neighbouring blades differently, and a finer one stores detail no blade can sample");
+
+// The map's origin, in WHOLE TEXELS from the world origin. This — not a metre
+// position — is the stored anchor, so integrality is a property of the type
+// rather than something the arithmetic has to preserve.
+struct Flux_GrassDisplacementAnchor
+{
+	int m_iTexelX = 0;
+	int m_iTexelZ = 0;
+
+	bool operator==(const Flux_GrassDisplacementAnchor& xOther) const
+	{
+		return m_iTexelX == xOther.m_iTexelX && m_iTexelZ == xOther.m_iTexelZ;
+	}
+	bool operator!=(const Flux_GrassDisplacementAnchor& xOther) const { return !(*this == xOther); }
+};
+
+// Centre the map on the camera, then snap DOWN to a whole texel. floor, never
+// round-to-nearest: floor is monotonic in the camera position with a step of
+// exactly one texel, so a camera crossing a boundary moves the anchor by exactly
+// one texel and never by two.
+inline Flux_GrassDisplacementAnchor Flux_GrassSnapDisplacementAnchor(float fCameraX, float fCameraZ)
+{
+	const float fHalf = Flux_GrassConfig::fDISPLACEMENT_WORLD_SIZE * 0.5f;
+	const float fInvTexel = 1.0f / Flux_GrassConfig::fDISPLACEMENT_TEXEL_SIZE;
+
+	Flux_GrassDisplacementAnchor xAnchor;
+	xAnchor.m_iTexelX = static_cast<int>(floorf((fCameraX - fHalf) * fInvTexel));
+	xAnchor.m_iTexelZ = static_cast<int>(floorf((fCameraZ - fHalf) * fInvTexel));
+	return xAnchor;
+}
+
+// World XZ of the map's (0,0) texel corner — always an exact multiple of the
+// texel size, which is what the placement CS's world -> UV mapping relies on.
+inline Zenith_Maths::Vector2 Flux_GrassDisplacementOriginWS(const Flux_GrassDisplacementAnchor& xAnchor)
+{
+	return Zenith_Maths::Vector2(
+		static_cast<float>(xAnchor.m_iTexelX) * Flux_GrassConfig::fDISPLACEMENT_TEXEL_SIZE,
+		static_cast<float>(xAnchor.m_iTexelZ) * Flux_GrassConfig::fDISPLACEMENT_TEXEL_SIZE);
+}
+
+// Texels the field slides when the anchor moves prev -> next: the CS reads the
+// previous map at (texel + shift). Returned as floats because that is the slot
+// the constant buffer carries, but the VALUE is always integral — an int
+// difference widened, never a metre division.
+inline Zenith_Maths::Vector2 Flux_GrassDisplacementTexelShift(const Flux_GrassDisplacementAnchor& xPrev,
+	const Flux_GrassDisplacementAnchor& xNext)
+{
+	return Zenith_Maths::Vector2(
+		static_cast<float>(xNext.m_iTexelX - xPrev.m_iTexelX),
+		static_cast<float>(xNext.m_iTexelZ - xPrev.m_iTexelZ));
+}
+
+// Per-frame retention factor for an exponential decay with the given e-folding
+// time. Derived from dt rather than authored per frame, or the trail would
+// outlive its half-life on a fast machine and vanish on a slow one.
+inline float Flux_GrassDisplacementDecay(float fDeltaSeconds, float fEFoldSeconds)
+{
+	// The divisor routes through a ternary with a nonzero fallback so the
+	// division is provably safe to the compiler (C4723 ignores early-outs).
+	const float fSafeEFold = fEFoldSeconds > 0.0f ? fEFoldSeconds : 1.0f;
+	if (!(fDeltaSeconds > 0.0f) || !(fEFoldSeconds > 0.0f))
+	{
+		return 1.0f;
+	}
+	return expf(-fDeltaSeconds / fSafeEFold);
+}
+
+//=============================================================================
 // Wind. CPU mirror of Zenith/Flux/Shaders/Common/Wind.slang — field for field
 // and statement for statement, so the two can be diffed. Float agreement is NOT
 // claimed (see Common/Noise.slang); structural agreement is.

@@ -123,7 +123,7 @@ Note: Materials and textures are now in `AssetHandling/` (see AssetHandling/CLAU
 - `SSR/` - Screen-space reflections (see SSR/CLAUDE.md)
 - `SSGI/` - Screen-space global illumination (see SSGI/CLAUDE.md)
 - `Decals/` - Deferred decals (see Decals/CLAUDE.md)
-- `Vegetation/` - GPU-driven grass (see Vegetation/CLAUDE.md). Three compute passes regenerate every blade from scratch each frame, then two indirect draws write them into the **G-buffer** — blades are opaque geometry lit by DeferredShading, not a forward overlay — and two more draw the LO blade into CSM cascades 0-1. Nothing per-blade is persisted or uploaded.
+- `Vegetation/` - GPU-driven grass (see Vegetation/CLAUDE.md). Three compute passes regenerate every blade from scratch each frame, then two indirect draws write them into the **G-buffer** — blades are opaque geometry lit by DeferredShading, not a forward overlay — and two more draw the LO blade into CSM cascades 0-1. Nothing per-blade is persisted or uploaded; the one thing that *is* persistent GPU state is the camera-anchored **displacement trail map** (a 256² RG16F ping-pong, decayed + re-anchored + mover-splatted by a fifth compute pass that runs last and is sampled a frame later).
 - `Translucency/` - Forward translucent pass
 - `SDFs/` - Signed distance field rendering
 - `Quads/` - Textured/UI quad rendering

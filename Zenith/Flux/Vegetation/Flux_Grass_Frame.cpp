@@ -37,9 +37,25 @@ namespace
 	constexpr float fGRASS_LOD_BLEND_BAND  = 0.25f;   // fraction of the HI radius the HI blade converges over
 	constexpr float fGRASS_GLOSS_CUT_DISTANCE = 60.0f;   // past this the gloss streak is sub-pixel sparkle
 
-	// Displacement field footprint. Inert this phase (push scale 0), but the origin
-	// still tracks the camera so the later phase's anchor scroll is already correct.
-	constexpr float fGRASS_DISPLACEMENT_WORLD_SIZE = 64.0f;
+	// Displacement DYNAMICS. The field's geometry (resolution, footprint, texel size,
+	// push clamp) lives in Flux_GrassConfig because the snap is a pure function the
+	// unit tests drive; only the tuning is here.
+	//
+	// e-folding time of the trail. Long enough that a walking mover leaves a visible
+	// tail behind it, short enough that a scar closes within a second or two.
+	constexpr float fGRASS_DISPLACEMENT_EFOLD_SECONDS = 0.5f;
+
+	// The debug orbiter: one synthetic mover circling the camera's ground point, so
+	// the field can be inspected with no game body to walk.
+	constexpr float fGRASS_ORBIT_RADIUS = 3.0f;          // metres from the camera's ground point
+	constexpr float fGRASS_ORBIT_PERIOD_SECONDS = 4.0f;
+	constexpr float fGRASS_ORBIT_MOVER_RADIUS = 1.25f;
+	constexpr float fGRASS_TAU = 6.28318530718f;
+
+	// The graph's OnRecord / OnPrepare signatures are plain function pointers and
+	// admit no capture, so every trampoline below has to recover the feature from the
+	// singleton. One accessor rather than one lookup spelled out per trampoline.
+	Flux_GrassImpl& GrassFeature() { return g_xEngine.Grass(); }
 
 	// bWindEnabled false zeroes BOTH amplitude terms, not just the gust strength: the
 	// detail bob is an independent per-vertex term the shader does not scale by
@@ -69,34 +85,61 @@ namespace
 }
 
 // Graph trampolines. Captureless by necessity (Flux_RenderGraph_OnRecordFunc is a
-// plain function pointer), so each recovers the feature once and forwards.
+// plain function pointer), so each recovers the feature and forwards.
 static void ExecuteGrassReset(Flux_CommandBuffer* pxCmdList, void*)
 {
-	g_xEngine.Grass().RecordReset(*pxCmdList);
+	GrassFeature().RecordReset(*pxCmdList);
 }
 
 static void ExecuteGrassPlacement(Flux_CommandBuffer* pxCmdList, void*)
 {
-	g_xEngine.Grass().RecordPlacement(*pxCmdList);
+	GrassFeature().RecordPlacement(*pxCmdList);
 }
 
 static void ExecuteGrassIndirectFixup(Flux_CommandBuffer* pxCmdList, void*)
 {
-	g_xEngine.Grass().RecordIndirectFixup(*pxCmdList);
+	GrassFeature().RecordIndirectFixup(*pxCmdList);
 }
 
 static void ExecuteGrassGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 {
-	g_xEngine.Grass().RecordGBuffer(*pxCmdList);
+	GrassFeature().RecordGBuffer(*pxCmdList);
+}
+
+static void ExecuteGrassDisplacement(Flux_CommandBuffer* pxCmdList, void*)
+{
+	GrassFeature().RecordDisplacement(*pxCmdList);
 }
 
 //=============================================================================
-// Render graph — four passes, UnifiedMesh-style edges.
+// Render graph — five passes, UnifiedMesh-style edges.
 //
 // The dynamic (frame-indexed) buffers are NEVER declared: GetBuffer() returns a
 // different physical buffer per frame in flight, so a pointer captured here would
 // bind the wrong frame's buffer on every later frame. They are ordered by the
 // DependsOn edges and by vkQueueSubmit's implicit host-write barrier.
+//
+// THE INTRA-FRAME DISPLACEMENT CONVENTION, stated once:
+//
+//   "Grass Displacement" runs LAST, AFTER placement, and the placement CS samples
+//   the field the PREVIOUS frame produced.
+//
+// The obvious arrangement is the other way round — decay/splat early, sample the
+// fresh field the same frame — and it does not survive the graph's cross-frame
+// rules. A persistent image only keeps its cyclic barrier seed when its LAST
+// access in the frame is a WRITE (Flux_RenderGraph_Compilation.cpp, the
+// prime/un-seed pass after SeedCyclicImageState); a read-last image is un-seeded
+// back to a per-frame UNDEFINED first touch, which is licensed to DISCARD the
+// contents at the frame boundary. The trail map's whole point is that it survives
+// that boundary, so the frame has to END on the write. Placement-then-displacement
+// gets that for free; the cost is one frame of latency on a field whose e-folding
+// time is half a second.
+//
+// Because the producer is therefore declared AFTER its consumer, the placement
+// read is declared with ReadsPrevFrame — the same marker the TAA history uses, and
+// for the same real reason, not to quiet a mis-ordered same-frame producer. The
+// ordering itself comes from the explicit DependsOn on the displacement pass; the
+// marker only exempts that one usage from ValidateProducerBeforeConsumer.
 //=============================================================================
 
 void Flux_GrassImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
@@ -112,7 +155,7 @@ void Flux_GrassImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// internally. The graph skips the Prepare of a DISABLED pass, so gating the pass
 	// on "is there grass this frame" would also gate the CPU work that decides it.
 	Flux_PassHandle xPlacementPass = xGraph.AddPass("Grass Placement", ExecuteGrassPlacement)
-		.Prepare([](void* pUserData) { g_xEngine.Grass().GatherGrassFrame(pUserData); })
+		.Prepare([](void* pUserData) { GrassFeature().GatherGrassFrame(pUserData); })
 		.DependsOn(xResetPass);
 
 	Flux_PassHandle xFixupPass = xGraph.AddPass("Grass Indirect Fixup", ExecuteGrassIndirectFixup)
@@ -158,6 +201,27 @@ void Flux_GrassImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	xGraph.ReadBuffer(xGBufferPass, xPool,    RESOURCE_ACCESS_READ_BUFFER_SRV);
 	xGraph.ReadBuffer(xGBufferPass, xVisible, RESOURCE_ACCESS_READ_BUFFER_SRV);
 	xGraph.ReadBuffer(xGBufferPass, xArgs,    RESOURCE_ACCESS_READ_INDIRECT_ARG);
+
+	// The trail field. UNCONDITIONAL — the pass exists whether or not displacement
+	// (or grass at all) is enabled and early-outs internally, because a pass set that
+	// came and went with an option would rebuild the graph rather than skip work in it.
+	Flux_PassHandle xDisplacementPass = xGraph.AddPass("Grass Displacement", ExecuteGrassDisplacement)
+		.DependsOn(xPlacementPass);
+
+	// BOTH halves of the ping-pong get the SAME declaration on both passes, which is
+	// what makes the per-frame role swap invisible to the graph: the compiled
+	// barriers are identical under either parity, so the record is free to decide
+	// which image is the source and which is the destination. Declaring one read and
+	// one written would need a different graph on odd and even frames, and the graph
+	// is compiled per BUILD, not per frame.
+	for (u_int u = 0; u < 2u; u++)
+	{
+		// Read-modify-write: the pass loads the source through a storage-image view
+		// and stores the destination through another. One access covers both roles.
+		xGraph.Write(xDisplacementPass, m_axDisplacementMaps[u], RESOURCE_ACCESS_READWRITE_UAV);
+		// ...and the placement CS samples last frame's result. See the convention note.
+		xGraph.ReadPrevFrame(xPlacementPass, m_axDisplacementMaps[u], RESOURCE_ACCESS_READ_SRV);
+	}
 }
 
 //=============================================================================
@@ -333,13 +397,18 @@ void Flux_GrassImpl::StagePlacementConstants(Flux_GrassPlacementConstantsGPU& xO
 
 	// The push scale is the ONLY route the displacement field has into a blade, so
 	// disabling displacement zeroes it here rather than branching in the CS (a branch
-	// there diverges a whole wave for a field that is usually inert). It is zero this
-	// phase either way — the option gates the value the displacement phase raises.
+	// there diverges a whole wave for a field that is usually inert).
+	//
+	// The origin is the PREVIOUS anchor, not this frame's: the map the placement CS
+	// samples is the one the last frame's displacement pass wrote, and it is aligned
+	// to the anchor that pass was given. Using this frame's would slide every blade's
+	// lookup by the frame's scroll — a trail that lagged behind its own mover by
+	// exactly the camera's motion.
 	const float fPushScale = xOpts.m_bGrassDisplacementEnabled ? m_fDisplacementPushScale : 0.0f;
+	const Zenith_Maths::Vector2 xDisplacementOrigin = Flux_GrassDisplacementOriginWS(m_xDisplacementAnchorPrev);
 	xOut.m_xDisplacementParams = Zenith_Maths::Vector4(
-		xCameraPos.x - fGRASS_DISPLACEMENT_WORLD_SIZE * 0.5f,
-		xCameraPos.z - fGRASS_DISPLACEMENT_WORLD_SIZE * 0.5f,
-		fGRASS_DISPLACEMENT_WORLD_SIZE, fPushScale);
+		xDisplacementOrigin.x, xDisplacementOrigin.y,
+		Flux_GrassConfig::fDISPLACEMENT_WORLD_SIZE, fPushScale);
 
 	const float fMaxDistance = Flux_GrassClampMaxDistance(m_fMaxDistance);
 	xOut.m_xLoRadius_MaxDist_Density_Pad = Zenith_Maths::Vector4(fMaxDistance, fMaxDistance, m_fDensityScale, 0.0f);
@@ -362,7 +431,85 @@ void Flux_GrassImpl::StageDrawConstants(Flux_GrassDrawConstantsGPU& xOut, const 
 		std::bit_cast<float>(m_uDebugMode), 0.0f);
 }
 
-void Flux_GrassImpl::UploadFrameBuffers(const Zenith_Maths::Vector3& xCameraPos)
+void Flux_GrassImpl::AdvanceDisplacementAnchor(const Zenith_Maths::Vector3& xCameraPos)
+{
+	// Flip FIRST. After it, m_uDisplacementWriteIndex names the map this frame FILLS
+	// and the other names the map both the displacement pass and the placement CS
+	// READ — so no pass ever samples the image it is writing, whatever the parity.
+	m_uDisplacementWriteIndex ^= 1u;
+
+	// Last frame's destination anchor is this frame's source anchor by definition:
+	// they describe the same image, one frame apart.
+	m_xDisplacementAnchorPrev = m_xDisplacementAnchorNext;
+	m_xDisplacementAnchorNext = Flux_GrassSnapDisplacementAnchor(xCameraPos.x, xCameraPos.z);
+}
+
+void Flux_GrassImpl::SubmitDebugOrbitMover(const Zenith_Maths::Vector3& xCameraPos)
+{
+	if (!m_bDebugOrbitDisplacer)
+	{
+		return;
+	}
+
+	// Driven by the frame's STAGED wind time — the same clock the blades sway on, so
+	// the orbiter cannot drift against the field it is pushing and a fixed-dt capture
+	// replays the identical trail. A wall-clock read here would make the capture
+	// machine-dependent.
+	const float fPhase = (m_xWind.m_fTime / fGRASS_ORBIT_PERIOD_SECONDS) * fGRASS_TAU;
+
+	Mover xMover;
+	xMover.m_xPos = Zenith_Maths::Vector3(
+		xCameraPos.x + cosf(fPhase) * fGRASS_ORBIT_RADIUS,
+		xCameraPos.y,
+		xCameraPos.z + sinf(fPhase) * fGRASS_ORBIT_RADIUS);
+	xMover.m_fRadius = fGRASS_ORBIT_MOVER_RADIUS;
+	xMover.m_fStrength = 1.0f;
+	// Through the PUBLIC submit, so the orbiter answers to the same cap and overflow
+	// counter a game body does rather than getting a private slot.
+	SubmitMover(xMover);
+}
+
+void Flux_GrassImpl::StageMoverRecords(Flux_GrassMoverGPU* paxOut) const
+{
+	for (u_int u = 0; u < m_axMovers.GetSize(); u++)
+	{
+		const Mover& xMover = m_axMovers.Get(u);
+		// WORLD XZ, not map-relative: the CS resolves each texel to a world position
+		// anyway, and a map-relative record would have to be restaged the moment the
+		// anchor scrolled — which is every frame the camera moves.
+		paxOut[u].m_xPosXZ_Radius_Strength = Zenith_Maths::Vector4(
+			xMover.m_xPos.x, xMover.m_xPos.z, xMover.m_fRadius, xMover.m_fStrength);
+	}
+}
+
+void Flux_GrassImpl::StageDisplacementConstants(Flux_GrassDisplacementConstantsGPU& xOut, float fDeltaSeconds) const
+{
+	const Zenith_Maths::Vector2 xPrevOrigin = Flux_GrassDisplacementOriginWS(m_xDisplacementAnchorPrev);
+	const Zenith_Maths::Vector2 xNextOrigin = Flux_GrassDisplacementOriginWS(m_xDisplacementAnchorNext);
+
+	// An unproduced source is rejected by SCROLLING PAST IT rather than by a validity
+	// flag in the shader: a whole map of scroll puts every source texel out of range,
+	// so the field starts from exact zero. Multiplying an unproduced source by a zero
+	// decay would not do — undefined RG16F bytes can decode as NaN, and NaN * 0 is
+	// still NaN, which would then live in the field forever.
+	const Zenith_Maths::Vector2 xShift = m_bDisplacementSourceValidThisFrame
+		? Flux_GrassDisplacementTexelShift(m_xDisplacementAnchorPrev, m_xDisplacementAnchorNext)
+		: Zenith_Maths::Vector2(static_cast<float>(Flux_GrassConfig::uDISPLACEMENT_RESOLUTION),
+			static_cast<float>(Flux_GrassConfig::uDISPLACEMENT_RESOLUTION));
+
+	xOut.m_xPrevOriginXZ_Size_Pad = Zenith_Maths::Vector4(
+		xPrevOrigin.x, xPrevOrigin.y, Flux_GrassConfig::fDISPLACEMENT_WORLD_SIZE, 0.0f);
+	xOut.m_xNextOriginXZ_Size_Pad = Zenith_Maths::Vector4(
+		xNextOrigin.x, xNextOrigin.y, Flux_GrassConfig::fDISPLACEMENT_WORLD_SIZE, 0.0f);
+	xOut.m_xDecay_Texel_ShiftXZ = Zenith_Maths::Vector4(
+		Flux_GrassDisplacementDecay(fDeltaSeconds, fGRASS_DISPLACEMENT_EFOLD_SECONDS),
+		Flux_GrassConfig::fDISPLACEMENT_TEXEL_SIZE, xShift.x, xShift.y);
+	xOut.m_xResolution_MoverCount = Zenith_Maths::UVector4(
+		Flux_GrassConfig::uDISPLACEMENT_RESOLUTION, Flux_GrassConfig::uDISPLACEMENT_RESOLUTION,
+		m_axMovers.GetSize(), 0u);
+}
+
+void Flux_GrassImpl::UploadFrameBuffers(const Zenith_Maths::Vector3& xCameraPos, float fDeltaSeconds)
 {
 	Flux_MemoryManager& xMem = g_xEngine.FluxMemory();
 
@@ -397,6 +544,20 @@ void Flux_GrassImpl::UploadFrameBuffers(const Zenith_Maths::Vector3& xCameraPos)
 	Flux_GrassWindBlockGPU xPrevWind;
 	FillWindBlock(xPrevWind, m_xPrevWind, Zenith_GraphicsOptions::Get().m_bGrassWindEnabled);
 	xMem.UploadBufferData(m_xPrevWindConstantsBuffer.GetBuffer().m_xVRAMHandle, &xPrevWind, sizeof(xPrevWind));
+
+	// Movers: only the live prefix. The tail is never read — the CS bounds-guards on
+	// the count in the constants and the count is staged from the same list.
+	if (m_axMovers.GetSize() > 0u)
+	{
+		Flux_GrassMoverGPU axMovers[uFLUX_GRASS_MAX_MOVERS];
+		StageMoverRecords(axMovers);
+		xMem.UploadBufferData(m_xMoverBuffer.GetBuffer().m_xVRAMHandle, axMovers,
+			static_cast<size_t>(m_axMovers.GetSize()) * sizeof(Flux_GrassMoverGPU));
+	}
+
+	Flux_GrassDisplacementConstantsGPU xDisplacement;
+	StageDisplacementConstants(xDisplacement, fDeltaSeconds);
+	xMem.UploadBufferData(m_xDisplacementConstantsBuffer.GetBuffer().m_xVRAMHandle, &xDisplacement, sizeof(xDisplacement));
 }
 
 void Flux_GrassImpl::GatherGrassFrame(void*)
@@ -405,21 +566,19 @@ void Flux_GrassImpl::GatherGrassFrame(void*)
 
 	m_uSubmittedDrawCount = 0u;
 
-	// Movers are consumed every frame whether or not there is grass to push. An
-	// unbuilt world that kept them would let a submitter accumulate silently and
-	// then splat a frame's worth of stale pushes the moment a map arrived.
-	m_axMovers.Clear();
-
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
 	// Frozen here so the worker-side record and the setup-time attachment count read
 	// the same answer even if the latch flips mid-frame.
 	m_bVelocityLatched = xGraphics.IsVelocityMRTActive();
-	m_bEnabledLatched = Zenith_GraphicsOptions::Get().m_bGrassEnabled;
+	const Zenith_GraphicsOptions& xOpts = Zenith_GraphicsOptions::Get();
+	m_bEnabledLatched = xOpts.m_bGrassEnabled;
+	m_bDisplacementLatched = xOpts.m_bGrassDisplacementEnabled;
 
 	// Wind advances whether or not there is grass this frame: the field is a global
 	// atmosphere clock, and letting it stall would make the first frame after a
 	// build (or after a re-enable) resume from a stale phase.
-	AdvanceWind(static_cast<float>(g_xEngine.Frame().GetTimePassed()));
+	const FrameContext& xFrame = g_xEngine.Frame();
+	AdvanceWind(static_cast<float>(xFrame.GetTimePassed()));
 
 	if (!m_bGPUResourcesReady || !m_bBuilt || !m_bEnabledLatched)
 	{
@@ -430,14 +589,37 @@ void Flux_GrassImpl::GatherGrassFrame(void*)
 		// No frame was staged, so no cascade frustum is live — the count must say so
 		// or the mask would advertise partitions this frame never filled.
 		m_uCascadeFrustaCount = 0u;
+		// Movers are consumed every frame whether or not there is grass to push. An
+		// unbuilt world that kept them would let a submitter accumulate silently and
+		// then splat a frame's worth of stale pushes the moment a map arrived.
+		m_axMovers.Clear();
+		// No dispatch runs on this path, so whatever the maps hold is stale or
+		// undefined — the frame grass comes back has to start the field from zero.
+		m_bDisplacementFieldValid = false;
+		m_bDisplacementSourceValidThisFrame = false;
 		return;
 	}
 
 	const Zenith_Maths::Vector3 xCameraPos = xGraphics.GetCameraPosition();
 
+	// Before the upload, or the orbiter's push would land one frame late.
+	SubmitDebugOrbitMover(xCameraPos);
+
 	StageFrustumViewProjs(xGraphics.RenderViews());
 	SelectTilesForFrame(xCameraPos);
-	UploadFrameBuffers(xCameraPos);
+	// Before the constants: BOTH the placement and displacement blocks are written
+	// from the anchor pair this call establishes.
+	AdvanceDisplacementAnchor(xCameraPos);
+	// This frame's source is real iff a dispatch produced it last frame; and this
+	// frame's dispatch is what makes the NEXT frame's source real. Two reads of one
+	// fact a frame apart, so the record cannot see the answer meant for next frame.
+	m_bDisplacementSourceValidThisFrame = m_bDisplacementFieldValid;
+	m_bDisplacementFieldValid = m_bDisplacementLatched;
+	UploadFrameBuffers(xCameraPos, xFrame.GetDt());
+
+	// Cleared only AFTER the upload has consumed them, so a mover submitted during
+	// this frame's update reaches the GPU exactly once and never twice.
+	m_axMovers.Clear();
 
 	// HI + LO. Recorded unconditionally when there is anything to place; a frame that
 	// placed nothing still records them with instanceCount 0 (see RecordGBuffer).
@@ -489,7 +671,19 @@ void Flux_GrassImpl::RecordPlacement(Flux_CommandBuffer& xCmdBuf)
 	// POINT, never linear. The texel value IS a type index: a lerp between type 0 and
 	// type 4 selects type 2, a type the author never placed there.
 	xBinder.BindSRV(m_xPlacementShader, "g_xTypeMap", &m_xTypeTexture.m_xSRV, &xGraphics.m_xPointSampler);
-	xBinder.BindSRV(m_xPlacementShader, "g_xDisplacementMap", &m_xDisplacementTexture.m_xSRV, &xGraphics.m_xClampSampler);
+	// The REAL trail map — the SOURCE half of the ping-pong, which is the one last
+	// frame's displacement pass filled and the one this frame's placement constants
+	// carry the anchor of. Otherwise the neutral 1x1: with displacement off the push
+	// scale is already zero, but binding a live field the CS is told to ignore leaves
+	// two things that have to agree; and before the first dispatch the source holds
+	// undefined bytes that must not reach a blade at all.
+	const bool bDisplacementLive = m_bDisplacementLatched && m_bDisplacementSourceValidThisFrame;
+	const Flux_ShaderResourceView* pxDisplacementSRV = bDisplacementLive
+		? &m_axDisplacementMaps[1u - m_uDisplacementWriteIndex].SRV()
+		: &m_xDisplacementTexture.m_xSRV;
+	// CLAMP, never repeat: a blade standing outside the 64 m footprint must read the
+	// border value, not the field wrapped in from the opposite edge.
+	xBinder.BindSRV(m_xPlacementShader, "g_xDisplacementMap", pxDisplacementSRV, &xGraphics.m_xClampSampler);
 	xBinder.BindUAV_Buffer(m_xPlacementShader, "BladePool", &m_xBladePoolBuffer.GetUAV());
 	xBinder.BindUAV_Buffer(m_xPlacementShader, "BladeCounter", &m_xBladeCounterBuffer.GetUAV());
 	xBinder.BindUAV_Buffer(m_xPlacementShader, "VisibleIndices", &m_xVisibleIndexBuffer.GetUAV());
@@ -499,6 +693,39 @@ void Flux_GrassImpl::RecordPlacement(Flux_CommandBuffer& xCmdBuf)
 	// the CS's tid / kGRASS_TILE_CELL_COUNT decode.
 	const u_int uThreads = m_xTileList.m_uCount * uFLUX_GRASS_TILE_CELL_COUNT;
 	xCmdBuf.Dispatch((uThreads + uFLUX_GRASS_PLACEMENT_GROUP_SIZE - 1u) / uFLUX_GRASS_PLACEMENT_GROUP_SIZE, 1u, 1u);
+}
+
+void Flux_GrassImpl::RecordDisplacement(Flux_CommandBuffer& xCmdBuf)
+{
+	// Two different silences, and the difference is deliberate:
+	//
+	//   grass DISABLED  -> nothing at all, exactly like every other callback here.
+	//   displacement disabled (grass on) -> the pass still exists and still emits
+	//     nothing, which FREEZES the field rather than zeroing it. That costs nothing
+	//     because the push scale is zero on that path, so no blade samples the frozen
+	//     field; and m_bGrassDisplacementEnabled is set once at boot, so "re-enabled
+	//     onto a stale trail" is not a live path. Spending a full-map dispatch every
+	//     frame to decay a field nobody reads would be the worse trade.
+	if (!m_bGPUResourcesReady || !m_bEnabledLatched || !m_bDisplacementLatched)
+	{
+		return;
+	}
+
+	xCmdBuf.BindComputePipeline(&m_xDisplacementPipeline);
+	Flux_ShaderBinder xBinder(xCmdBuf);
+	xBinder.BindCBV(m_xDisplacementShader, "GrassDisplacementConstants", &m_xDisplacementConstantsBuffer.GetCBV());
+	xBinder.BindSRV_Buffer(m_xDisplacementShader, "Movers", m_xMoverBuffer.GetSRV());
+	// Both halves as storage images. The source is LOADED at an integer texel offset
+	// rather than sampled, which is what lets the graph declare a single access for
+	// both roles — and is exact, because the anchor snap makes the offset integral.
+	xBinder.BindUAV_Texture(m_xDisplacementShader, "g_xPrevDisplacementTex",
+		&m_axDisplacementMaps[1u - m_uDisplacementWriteIndex].UAV(0u));
+	xBinder.BindUAV_Texture(m_xDisplacementShader, "g_xNextDisplacementTex",
+		&m_axDisplacementMaps[m_uDisplacementWriteIndex].UAV(0u));
+
+	const u_int uGroups = (Flux_GrassConfig::uDISPLACEMENT_RESOLUTION + uFLUX_GRASS_DISPLACEMENT_GROUP_SIZE - 1u)
+		/ uFLUX_GRASS_DISPLACEMENT_GROUP_SIZE;
+	xCmdBuf.Dispatch(uGroups, uGroups, 1u);
 }
 
 void Flux_GrassImpl::RecordIndirectFixup(Flux_CommandBuffer& xCmdBuf)

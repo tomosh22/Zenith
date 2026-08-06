@@ -20,7 +20,7 @@
 // ============================================================================
 // GrassShowcase -- windowed proof that the GPU-driven grass pipeline actually
 // reaches the screen over the campus meadow ring, plus a capture sweep of every
-// debug view.
+// debug view, the shadow-caster A/B, and the displacement trail.
 //
 // The three observable stages are asserted separately so a break localises:
 //   * GetVisibleTileCount()      -- the CPU scheduler picked tiles this frame,
@@ -70,7 +70,17 @@ namespace
 	// shadows ON then OFF (the cascade A/B the DisableShadowCasting override
 	// exists for). Distinct captures prove the caster wiring changes the image.
 	constexpr int iSHADOW_AB_COUNT = 2;
-	constexpr int iSWEEP_COUNT     = iDEBUG_MODE_COUNT + iSHADOW_AB_COUNT;
+	// ...then the displacement trail. It needs TIME, not a different view: the
+	// orbiting mover has to walk far enough that the decaying field behind it
+	// reads as a trail rather than a dot, so this capture occupies three
+	// ordinary slots and dumps only in the last one. Three slots rather than one
+	// long one keeps the sweep arithmetic a plain divide.
+	constexpr int iTRAIL_SLOT_COUNT = 3;
+	constexpr int iSWEEP_COUNT      = iDEBUG_MODE_COUNT + iSHADOW_AB_COUNT + iTRAIL_SLOT_COUNT;
+	constexpr int iTRAIL_FIRST_SLOT = iDEBUG_MODE_COUNT + iSHADOW_AB_COUNT;
+	// One dump per debug view, one per shadow A/B slot, and ONE for the trail —
+	// so this is no longer the same number as iSWEEP_COUNT.
+	constexpr int iEXPECTED_DUMPS   = iDEBUG_MODE_COUNT + iSHADOW_AB_COUNT + 1;
 
 	int   g_iReadyFrame     = -1;
 	bool  g_bFilesMissing   = false;
@@ -101,6 +111,17 @@ namespace
 		const double fPitch = atan2((double)dy, (double)fHoriz);
 		const double fYaw = atan2((double)(-dx), (double)dz);
 		SetCam(cx, cy, cz, fPitch, fYaw, fFOV);
+	}
+
+	// Straight down over the south meadow lobe. The orbiting mover circles the
+	// CAMERA's ground point, and the ground under a forward-looking camera is
+	// never in its own frustum — so the trail capture is the one slot that has
+	// to look at its own feet. 18 m up over the lobe centre puts a 3 m orbit
+	// comfortably inside the frame and inside fully-painted coverage.
+	void ParkOverTrail()
+	{
+		AimAt(fCAMPUS_CX, fGROUND_Y + 18.0f, fCAMPUS_CZ - 74.0f,
+			fCAMPUS_CX, fGROUND_Y, fCAMPUS_CZ - 74.0f + 4.0f, 70.0f);
 	}
 
 	void ParkOverMeadowRing()
@@ -185,24 +206,45 @@ namespace
 			{
 				xGrass.SetDebugMode(static_cast<u_int>(iMode));
 			}
-			else
+			else if (iMode < iTRAIL_FIRST_SLOT)
 			{
 				// Shadow A/B rides the lit view; the second slot disables casting.
 				xGrass.SetDebugMode(0u);
 				xGrass.SetDisableShadowCasting(iMode == iDEBUG_MODE_COUNT + 1);
 			}
+			else if (iMode == iTRAIL_FIRST_SLOT)
+			{
+				// The trail run opens by restoring the lit view and re-parking
+				// overhead. The camera move is what re-anchors the displacement
+				// field, so the orbiter has to start AFTER it — a mover submitted
+				// at the old camera would splat into a map the move then scrolls
+				// entirely out of range, and the field would blank.
+				xGrass.SetDebugMode(0u);
+				xGrass.SetDisableShadowCasting(false);
+				ParkOverTrail();
+				xGrass.SetDebugOrbitDisplacer(true);
+			}
 		}
-		else if (iPhase == iFRAMES_PER_MODE / 2)
+
+		// The trail dumps once, in the middle of its LAST slot, so the orbiter has
+		// had two full slots to lay a tail down first.
+		const bool bTrailDump = iMode == iSWEEP_COUNT - 1 && iPhase == iFRAMES_PER_MODE / 2;
+		const bool bModeDump = iMode < iTRAIL_FIRST_SLOT && iPhase == iFRAMES_PER_MODE / 2;
+		if (bModeDump || bTrailDump)
 		{
 			char szPath[256];
 			if (iMode < iDEBUG_MODE_COUNT)
 			{
 				snprintf(szPath, sizeof(szPath), "C:/tmp/grass_showcase_%s.tga", aszDEBUG_MODE_NAMES[iMode]);
 			}
-			else
+			else if (iMode < iTRAIL_FIRST_SLOT)
 			{
 				snprintf(szPath, sizeof(szPath), "C:/tmp/grass_showcase_shadows_%s.tga",
 					iMode == iDEBUG_MODE_COUNT ? "on" : "off");
+			}
+			else
+			{
+				snprintf(szPath, sizeof(szPath), "C:/tmp/grass_showcase_displacement_trail.tga");
 			}
 			Zenith_Log(LOG_CATEGORY_TERRAIN, "[GrassShowcase] %s", szPath);
 			Flux_Screenshot::RequestDump(szPath);
@@ -230,7 +272,7 @@ namespace
 		Zenith_Log(LOG_CATEGORY_TERRAIN,
 			"[GrassShowcase] captured: visibleTiles=%u (want > 0) submittedDraws=%u (want > 0) "
 			"visibleBlades=%u (want > 0) dumps=%d (want %d)",
-			g_uVisibleTiles, g_uSubmittedDraws, g_uVisibleBlades, g_iDumpsRequested, iDEBUG_MODE_COUNT);
+			g_uVisibleTiles, g_uSubmittedDraws, g_uVisibleBlades, g_iDumpsRequested, iEXPECTED_DUMPS);
 
 		if (g_uVisibleTiles == 0u)
 		{
@@ -250,23 +292,27 @@ namespace
 				"[GrassShowcase] draws were submitted but the placement CS left zero surviving blades");
 			bPass = false;
 		}
-		if (g_iDumpsRequested != iSWEEP_COUNT)
+		if (g_iDumpsRequested != iEXPECTED_DUMPS)
 		{
 			Zenith_Error(LOG_CATEGORY_TERRAIN,
-				"[GrassShowcase] requested %d captures, expected one per debug view + the shadow A/B pair (%d)",
-				g_iDumpsRequested, iSWEEP_COUNT);
+				"[GrassShowcase] requested %d captures, expected one per debug view + the shadow A/B pair "
+				"+ the displacement trail (%d)",
+				g_iDumpsRequested, iEXPECTED_DUMPS);
 			bPass = false;
 		}
 		return bPass;
 	}
 
-	// The debug view is global render state no entity or scene owns, so it comes
-	// back here rather than in Step (which a timeout or a failure can leave early).
+	// The debug view, the caster override and the orbiting displacer are all global
+	// render state no entity or scene owns, so they come back here rather than in
+	// Step (which a timeout or a failure can leave early). A leaked orbiter would
+	// keep pushing grass in every later test in the batch.
 	void Teardown_GrassShowcase()
 	{
 		Flux_GrassImpl& xGrass = g_xEngine.Grass();
 		xGrass.SetDebugMode(0u);
 		xGrass.SetDisableShadowCasting(false);
+		xGrass.SetDebugOrbitDisplacer(false);
 	}
 
 	const Zenith_AutomatedTest g_xGrassShowcase = {
@@ -274,7 +320,7 @@ namespace
 		&Setup_GrassShowcase,
 		&Step_GrassShowcase,
 		&Verify_GrassShowcase,
-		/* maxFrames */ 420,
+		/* maxFrames */ 460,
 		true /* m_bRequiresGraphics */,
 		false /* m_bManualOnly */,
 		&Teardown_GrassShowcase,

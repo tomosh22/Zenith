@@ -15,6 +15,12 @@ Regeneration is affordable because a blade is a pure function of its lattice nod
 *required* because a blade that changed identity between frames would flicker
 under TAA.
 
+The **one** exception is the [displacement field](#displacement-the-trail-map) —
+a camera-anchored trail map that decays across frames. It is deliberately not
+blade state: it is a property of the *ground*, sampled by whichever blade happens
+to stand on it this frame, so it never gives a blade an identity that could
+change between frames.
+
 ## Architecture
 
 ```
@@ -41,7 +47,12 @@ under TAA.
 +---------------------+  "Grass GBuffer"        2 x DrawIndexedIndirect (HI slot 0,
 | G-buffer draws      |                              LO slot 1) -> 4 core MRTs +
 +---------------------+                              scene depth (5 MRTs under the
-                                                     velocity latch)
+                                |                    velocity latch)
+                                v
++---------------------+  "Grass Displacement"   (CS) decays + re-anchors + splats
+| Displacement        |                              the trail map. Runs LAST, and
++---------------------+                              placement samples what it wrote
+                                                     LAST frame (see below)
 
     ... and, from inside "Shadow Cascade 0" / "Shadow Cascade 1" (which are
     ordered after IndirectFixup by their declared reads), 1 x
@@ -65,7 +76,7 @@ base/tip translucency along the blade.
 
 ### Pass placement
 
-The four passes are ordered by `DependsOn` edges plus the declared buffer traffic
+The five passes are ordered by `DependsOn` edges plus the declared buffer traffic
 (pool / visible list / cursor as UAV, indirect args as `READ_INDIRECT_ARG` at the
 draw). `"Grass GBuffer"` declares `Writes` on all four core MRTs + `WRITE_DSV` on
 scene depth, so the topological sort places the whole chain inside the G-buffer
@@ -82,7 +93,10 @@ a pointer captured at setup would bind the wrong frame's buffer forever after.
 
 `"Grass Placement"` is **always enabled** and early-outs internally: the graph
 skips the `Prepare` of a disabled pass, so gating the pass on "is there grass this
-frame" would also gate the CPU work that decides it.
+frame" would also gate the CPU work that decides it. `"Grass Displacement"` is
+likewise unconditional — every pass here exists whether or not grass or
+displacement is on, because a pass set that came and went with an option would
+*rebuild* the graph rather than skip work in it.
 
 The **shadow cascades 0-1 are consumers of the same three persistent buffers**:
 `Flux_ShadowsImpl::SetupRenderGraph` declares a `ReadBuffer` on the pool + the
@@ -114,7 +128,7 @@ All in `Shaders/Vegetation/`.
 | `Flux_Grass_Reset.slang` | cs | Zeroes the indirect block + pool cursor, seeds per-partition `firstInstance` |
 | `Flux_Grass_Placement.slang` | cs | Per-lattice-node placement, clump Voronoi, per-view frustum cull, partition append |
 | `Flux_Grass_IndirectFixup.slang` | cs | Clamps instance counts against the partition caps |
-| `Flux_Grass_Displacement.slang` | cs | Mover push field — **built, not dispatched** (see Seams) |
+| `Flux_Grass_Displacement.slang` | cs | Decay + integer-texel re-anchor + mover splat of the trail map (see Displacement) |
 | `Flux_Grass_ToGBuffer.slang` | vs+fs | The 4-MRT blade draw |
 | `Flux_Grass_ToGBufferVelocity.slang` | vs+fs | 5-MRT variant. Blades sway every frame, so its vertex stage rebuilds the pose against the PREVIOUS frame's wind rather than reprojecting a static position |
 | `Flux_Grass_ToShadowmap.slang` | vs+fs | Depth-only caster, recorded inside CSM cascades 0-1 (see Shadow casting) |
@@ -138,6 +152,9 @@ re-derive either.
 | Tile size / cells | HI 16 m, LO 32 m, both 64 x 64 cells | `Flux_GrassConfig` |
 | HI radius | 64 m | `fHI_RADIUS` |
 | Tile cap | 256 per frame, nearest kept | `uMAX_TILES` |
+| Displacement map | 256² RG16F ×2, 64 m, 0.25 m/texel | `uDISPLACEMENT_RESOLUTION` / `fDISPLACEMENT_WORLD_SIZE` |
+| Displacement clamp | push magnitude ≤ 1 | `fDISPLACEMENT_MAX_PUSH` |
+| Movers | 64 per frame, one `float4` each | `uFLUX_GRASS_MAX_MOVERS` / `Flux_GrassMoverGPU` |
 | Max distance | default 250 m, clamped to [50, 400] | `fDEFAULT/MIN/MAX_MAX_DISTANCE` |
 | Grass types | 16 | `uFLUX_GRASS_MAX_TYPES` |
 | Blade mesh | 15 logical vertices, 48 indices (HI 0-32, LO 33-47) | `auBLADE_INDEX_TABLE` |
@@ -148,9 +165,10 @@ re-derive either.
 > range, and the cascade draws the camera's blades.
 
 Persistent VRAM is **constant after `Initialise`** — ~70 MB of buffers (the pool
-alone is 64 MB) plus 34 MB of map textures (height 4096² R16, coverage and type
-1024² R8). Nothing grows with scene content or with any toggle;
-`GetBufferUsageMB()` reports the whole footprint.
+alone is 64 MB), 34 MB of map textures (height 4096² R16, coverage and type
+1024² R8) and 0.5 MB of displacement ping-pong (two 256² RG16F). Nothing grows
+with scene content or with any toggle; `GetBufferUsageMB()` reports the whole
+footprint.
 
 ## LOD
 
@@ -186,9 +204,11 @@ g_xEngine.Grass().BuildFromMaps(xMaps, xParams);
 re-uploads through the next gather; `GetTypeTable()` reads it back.
 
 **Tuning** — `SetDensityScale` / `SetMaxDistance` / `SetWindDirection(yawRad)` /
-`SetWindStrength` / `SetDebugMode`, each with a getter. The debug variables bind
-these members **by reference**, so nothing is re-stamped per frame and a value
-written from game code survives.
+`SetWindStrength` / `SetDebugMode` / `SetDisableShadowCasting` /
+`SetDebugOrbitDisplacer`, each with a getter. The debug variables bind these
+members **by reference**, so nothing is re-stamped per frame and a value written
+from game code survives. The last three exist because their debug variables are
+ImGui-only and a capture sweep (or an A/B) has to drive them from code.
 
 **CPU queries** — `SampleGrassCoverage` (bilinear), `SampleGrassType`
 (nearest-texel, never interpolated), `SampleGrassHeight` (bilinear, metres). They
@@ -252,7 +272,7 @@ reach the file.
 | `ShowTileGrid` | bool | | **Storage only** — the outlines belong on the gameplay-safe primitives channel, which is not wired yet |
 | `DisableShadowCasting` | bool | | Third input to `IsShadowCastingEnabled()`. Live A/B: drops the cascade partitions out of the active-slot mask, so it removes the placement work as well as the two cascade draws |
 | `ForceLoBlades` | bool | | **Storage only** |
-| `DebugOrbitDisplacer` | bool | | **Storage only** — consumed when the displacement pass lands |
+| `DebugOrbitDisplacer` | bool | | Submits one synthetic mover per gather, circling the camera's ground point (3 m radius, 4 s period, strength 1). Runtime twin: `SetDebugOrbitDisplacer` |
 
 Enable / Wind / Displacement / Shadows are `Zenith_GraphicsOptions` flags
 (`m_bGrassEnabled`, `m_bGrassWindEnabled`, `m_bGrassDisplacementEnabled`,
@@ -307,7 +327,10 @@ selected, stats updated, type table loaded and validated — because the CPU map
 *are* the query surface. Only two things are skipped explicitly:
 `CreateMapTextures` / `UploadMapTextures` (34 MB of zero staging against a no-op
 backend) and, by construction, `ReadbackVisibleBladeCount`, which returns 0. The
-four passes are still declared and their callbacks still run against the no-op
+displacement ping-pong is **not** skipped — a render-target allocation carries no
+staging cost, and the render-graph declaration references those objects by
+address, so a config where they did not exist would need a different graph. All
+five passes are still declared and their callbacks still run against the no-op
 recorder, so a headless run exercises the same code a windowed one does.
 
 ## Shadow casting (live, cascades 0-1)
@@ -373,13 +396,100 @@ early-outs on zero buckets **before** its own `UseBindlessTextures(2)`, so on a
 grass-only scene the grass caster is the first user in that command buffer and there
 is nothing to inherit.
 
-## Seams that are not live yet
+## Displacement: the trail map
 
-- **Displacement.** `SubmitMover` accepts up to 64 immediate-mode movers per frame
-  and the displacement pipeline is built (so the VRAM footprint the TAA toggle
-  stress test pins stays constant), but it is never dispatched and the push scale
-  is 0. The scale is the one slot `m_bGrassDisplacementEnabled` is applied to, so
-  the option is honoured by the VALUE and never by a branch in the CS.
+A **camera-anchored 256² RG16F field** holding a world-XZ push vector per texel.
+Movers press blades away from themselves; the field decays behind them, so a
+walker leaves a trail that closes rather than a permanent scar. It is the **only
+persistent GPU state** in the grass system.
+
+**Geometry** (`Flux_GrassConfig`, pinned by `static_assert`): 64 m across 256
+texels = **0.25 m per texel, exactly one HI lattice step** — the finest push a
+blade can resolve, and no finer. The stored vector's *magnitude* is the [0,1]
+push amount, clamped to `fDISPLACEMENT_MAX_PUSH` (1.0).
+
+**Re-anchor.** The map's origin follows the camera and is **snapped to whole
+texels** (`Flux_GrassSnapDisplacementAnchor` — the anchor is *stored* as an
+integer texel pair, so integrality is a property of the type). That is a
+correctness requirement, not an optimisation: the CS re-anchors by reading the
+previous map at `texel + shift`, so a fractional shift would resample the whole
+field through a filter every frame and a trail would blur itself away while the
+camera stood still. The shift the constant buffer carries is the **integer anchor
+difference widened to float**, never a metre division. Pinned by four
+`FluxGrassTypes` units (sub-texel motion ⇒ identical anchor; one boundary ⇒
+exactly one texel; the shift is integral over a 64-step irrational walk; the
+decay is frame-rate independent).
+
+**Decay** is `exp(-dt / 0.5 s)` — derived from the frame's dt so a trail has the
+same *lifetime* on a fast and a slow machine.
+
+**Splat.** Each mover adds a radial push away from its centre with a squared
+linear falloff, **additive over the decayed value** and then clamped. Both halves
+matter: additive-over-decayed is what makes a moving mover leave a fading tail,
+and the clamp is what stops a *stationary* one — which re-splats the same texels
+every frame — integrating `amount / (1 - decay)` without bound.
+
+**Ping-pong.** Two committed images whose prev/next roles swap each frame, both
+bound as **storage images**: the source is point-LOADED at an integer offset, not
+sampled. That is what lets the render graph give **both** images the *same*
+declaration (`READWRITE_UAV` on the displacement pass, `ReadsPrevFrame` +
+`READ_SRV` on the placement pass) — one static declaration correct under either
+parity, because the graph never has to know which is which. Declaring one read
+and one written would need a different graph on odd and even frames, and the
+graph is compiled per **build**, not per frame. Both images carry an explicit
+`[vk::image_format("rg16f")]` so the load needs no
+`shaderStorageImageReadWithoutFormat` device feature.
+
+> **The intra-frame convention: displacement runs LAST, and placement samples
+> what it wrote LAST frame.** The obvious arrangement — decay/splat early, sample
+> the fresh field the same frame — does not survive the graph's cross-frame rules.
+> A persistent image only keeps its cyclic barrier seed when its **last** access in
+> the frame is a WRITE (`SeedCyclicImageState` + the prime/un-seed pass in
+> `Flux_RenderGraph_Compilation.cpp`); a read-last image is un-seeded back to a
+> per-frame `UNDEFINED` first touch, which is licensed to **discard** the contents
+> at the frame boundary. A field whose whole point is surviving that boundary has
+> to end the frame on the write. The cost is one frame of latency on a field with
+> a half-second e-fold. Because the producer is therefore declared *after* its
+> consumer, the placement read uses `ReadsPrevFrame` — the same marker the TAA
+> history uses and for the same real reason; the ordering itself comes from an
+> explicit `DependsOn`.
+
+**First frame / re-enable.** A freshly created image holds UNDEFINED bytes, and in
+an RG16F those can decode as NaN — which no decay ever removes. Until a dispatch
+has actually produced the source, the placement CS binds the **neutral 1×1** and
+the displacement CS is told to scroll a **whole map**, so every source texel
+resolves out of range and the field starts from exact zero. (Multiplying by a zero
+decay would not do: `NaN * 0` is still NaN.) Two flags carry this, split the same
+way TAA splits history validity — one for "will next frame's source be real", one
+latched for "is *this* frame's source real".
+
+**Feeding it**
+```cpp
+// Immediate mode: resubmit every frame the mover should exist. Consumed AND
+// cleared by each gather; over the 64 cap the submission is DROPPED and counted.
+g_xEngine.Grass().SubmitMover({ .m_xPos = xFootWS, .m_fRadius = 0.6f, .m_fStrength = 1.0f });
+```
+The GPU record is one `float4` per mover — `xy` = **world** XZ, `z` = radius (m),
+`w` = [0,1] strength. World, not map-relative, because a map-relative record would
+have to be restaged the moment the anchor scrolled, which is every frame the
+camera moves.
+
+**Blade response** (placement CS): the sampled push is scaled by
+`m_fDisplacementPushScale` and its magnitude saturated to [0,1]; the blade then
+rotates its facing toward the push direction, gains `1.2 rad × push` of tilt and
+loses `35% × push` of height. **The scale is not metres** — the response is a pose
+change, not a translation. `1.0` (the default) means "a full-strength mover
+flattens what it stands on"; halve it for a springier field.
+
+**Disabled semantics.** `m_bGrassDisplacementEnabled` is applied to the **push
+scale**, which is the single route the field has into a blade — so the option is
+honoured by the VALUE, never by a branch in the CS (a branch there would diverge a
+whole wave for a field that is usually inert). With grass off the displacement
+pass emits nothing at all, like every other callback. With only *displacement*
+off, the pass still exists and still emits nothing, which **freezes** the field
+rather than zeroing it: nothing samples it on that path, and the option is set once
+at boot, so "re-enabled onto a stale trail" is not a live path (and the validity
+flags would blank it anyway).
 
 ## Accepted look changes
 

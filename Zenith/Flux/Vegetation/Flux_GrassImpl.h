@@ -6,6 +6,7 @@
 // NOTHING about a blade is persisted. Every frame the pipeline runs
 //
 //   Reset (CS)  ->  Placement (CS)  ->  IndirectFixup (CS)  ->  indirect draws
+//                                                          ->  Displacement (CS)
 //
 // and regenerates every blade from scratch. That is affordable because a blade
 // is a pure function of its lattice node (Flux_GrassTypes.h keys all per-blade
@@ -17,6 +18,12 @@
 // The CPU keeps three maps (coverage / type / height) in the exact quantized
 // form the GPU textures hold, so the CPU query surface below and the placement
 // CS read the same bytes rather than two copies that can drift.
+//
+// The ONE exception to "nothing persists" is the DISPLACEMENT field — a 256^2
+// ping-pong of trail maps that decays across frames. It is deliberately not blade
+// state: it is a property of the GROUND, sampled by whichever blade happens to
+// stand on it this frame, so it never gives a blade an identity that could change
+// between frames.
 //
 // LIFETIME. GPU resources are created ONCE in Initialise at fixed capacity and
 // destroyed only in Shutdown — never per-toggle, never per-scene. The render
@@ -78,6 +85,9 @@ constexpr u_int uFLUX_GRASS_PLACEMENT_GROUP_SIZE = 64u;
 
 constexpr u_int uFLUX_GRASS_MAX_MOVERS = 64u;
 
+// One thread per displacement texel, 8x8 groups (Flux_Grass_Displacement.slang).
+constexpr u_int uFLUX_GRASS_DISPLACEMENT_GROUP_SIZE = 8u;
+
 // Flux_GrassWindBlock (Flux_GrassCommon.slang). Three float4s rather than the
 // all-scalar Flux_WindConstants, whose std140 constant-buffer size differs from
 // its C++ sizeof — three vectors are unambiguous under every layout rule.
@@ -130,6 +140,31 @@ struct Flux_GrassTileGPU
 	u_int m_uIsLoLOD       = 0u;
 };
 static_assert(sizeof(Flux_GrassTileGPU) == 16, "the tile record is four 32-bit slots");
+
+// GrassDisplacementConstantsLayout (Flux_Grass_Displacement.slang).
+//
+// The scroll rides as a TEXEL count rather than being re-derived in the CS from
+// the two metre origins: the host snapped the anchor to whole texels precisely so
+// the offset would be an integer, and a float division there could land it a
+// half-ULP off and turn a lossless slide into a one-texel smear.
+struct Flux_GrassDisplacementConstantsGPU
+{
+	Zenith_Maths::Vector4  m_xPrevOriginXZ_Size_Pad{ 0.0f };   //  0 : xy = prev anchor origin (m), z = map size (m)
+	Zenith_Maths::Vector4  m_xNextOriginXZ_Size_Pad{ 0.0f };   // 16 : xy = this frame's origin (m), z = map size (m)
+	Zenith_Maths::Vector4  m_xDecay_Texel_ShiftXZ{ 0.0f };     // 32 : retention, texel size (m), prev->next texel shift
+	Zenith_Maths::UVector4 m_xResolution_MoverCount{ 0u };     // 48 : xy = resolution, z = mover count
+};
+static_assert(sizeof(Flux_GrassDisplacementConstantsGPU) == 64,
+	"GrassDisplacementConstants is a pinned 64 bytes (Flux_Grass_Displacement.slang)");
+
+// One mover as the displacement CS reads it. A single float4 IS the whole record —
+// the shader declares StructuredBuffer<float4> for the same reason, so there is no
+// second layout to keep in step.
+struct Flux_GrassMoverGPU
+{
+	Zenith_Maths::Vector4 m_xPosXZ_Radius_Strength{ 0.0f };   // xy = world XZ (m), z = radius (m), w = [0,1] strength
+};
+static_assert(sizeof(Flux_GrassMoverGPU) == 16, "a mover is one float4 — world XZ, radius, strength");
 
 class Flux_GrassImpl
 {
@@ -213,8 +248,13 @@ public:
 	// IsShadowCastingEnabled(), and it gates GENERATION as well as the draw.
 	void  SetDisableShadowCasting(bool bDisable) { m_bDisableShadowCasting = bDisable; }
 	bool  IsShadowCastingDisabled() const { return m_bDisableShadowCasting; }
+	// Same latch idiom as SetDisableShadowCasting, for the same reason: the debug
+	// variable is ImGui-only, so a capture sweep drives the orbiter from here. While
+	// on, every gather submits ONE synthetic mover circling the camera's ground point.
+	void  SetDebugOrbitDisplacer(bool bEnable) { m_bDebugOrbitDisplacer = bEnable; }
+	bool  IsDebugOrbitDisplacerEnabled() const { return m_bDebugOrbitDisplacer; }
 
-	// ===== Displacement seam (consumed by a later phase) =====
+	// ===== Displacement =====
 	struct Mover
 	{
 		Zenith_Maths::Vector3 m_xPos{ 0.0f, 0.0f, 0.0f };
@@ -297,14 +337,15 @@ public:
 	void GatherGrassFrame(void* pUserData);
 
 	// ===== Graph trampoline surface =====
-	// The four record callbacks are captureless file-statics in the frame TU (the
-	// graph's OnRecord signature admits nothing else) and recover the feature through
+	// The record callbacks are captureless file-statics in the frame TU (the graph's
+	// OnRecord signature admits nothing else) and recover the feature through
 	// g_xEngine. Every member stays private, so each pass's body is a method here and
 	// the trampoline is a one-line forward.
 	void RecordReset(Flux_CommandBuffer& xCmdBuf);
 	void RecordPlacement(Flux_CommandBuffer& xCmdBuf);
 	void RecordIndirectFixup(Flux_CommandBuffer& xCmdBuf);
 	void RecordGBuffer(Flux_CommandBuffer& xCmdBuf);
+	void RecordDisplacement(Flux_CommandBuffer& xCmdBuf);
 
 	bool IsGPUReady() const { return m_bGPUResourcesReady; }
 	bool IsShadowCastingEnabled() const;
@@ -320,6 +361,11 @@ private:
 	void  DestroyGPUResources();
 	void  CreateMapTextures();
 	void  DestroyMapTextures();
+	// The two committed trail maps. Built unconditionally (including headless — a
+	// render-target allocation carries no staging cost, unlike the 34 MB map set) so
+	// the render-graph declaration is identical in every config.
+	void  CreateDisplacementMaps();
+	void  DestroyDisplacementMaps();
 
 	// Boot-time attempt at the game's authored .zdata type table. Absent or
 	// rejected leaves the seeded defaults in place — no game ships one today, so
@@ -341,7 +387,17 @@ private:
 	void  StagePlacementConstants(Flux_GrassPlacementConstantsGPU& xOut,
 		const Zenith_Maths::Vector3& xCameraPos) const;
 	void  StageDrawConstants(Flux_GrassDrawConstantsGPU& xOut, const Zenith_Maths::Vector3& xCameraPos) const;
-	void  UploadFrameBuffers(const Zenith_Maths::Vector3& xCameraPos);
+	// dt is a PARAMETER, not a clock read, for the same reason AdvanceWind's time is:
+	// the decay has to key off the frame's staged delta so a fixed-dt capture replays
+	// the identical trail.
+	void  StageDisplacementConstants(Flux_GrassDisplacementConstantsGPU& xOut, float fDeltaSeconds) const;
+	void  StageMoverRecords(Flux_GrassMoverGPU* paxOut) const;
+	// Flips the ping-pong and re-snaps the anchor. THE single writer of both, and it
+	// must run before anything stages a constant block: the placement pass samples the
+	// map the PREVIOUS frame wrote, so it needs the pre-flip anchor.
+	void  AdvanceDisplacementAnchor(const Zenith_Maths::Vector3& xCameraPos);
+	void  SubmitDebugOrbitMover(const Zenith_Maths::Vector3& xCameraPos);
+	void  UploadFrameBuffers(const Zenith_Maths::Vector3& xCameraPos, float fDeltaSeconds);
 	void  AdvanceWind(float fTimeSeconds);
 	float ComputeBladeHeadroom() const;
 	u_int ComputeActiveSlotMask() const;
@@ -365,9 +421,6 @@ private:
 	Flux_Shader   m_xFixupShader;
 	Flux_Pipeline m_xFixupPipeline;
 	Flux_RootSig  m_xFixupRootSig;
-	// Built but NOT dispatched: the displacement field is a later phase. Building it
-	// here keeps the pipeline set (and therefore the VRAM footprint the TAA toggle
-	// stress test pins) constant across that phase landing.
 	Flux_Shader   m_xDisplacementShader;
 	Flux_Pipeline m_xDisplacementPipeline;
 	Flux_RootSig  m_xDisplacementRootSig;
@@ -388,18 +441,32 @@ private:
 	// no vertex buffer at all: SV_VertexID delivers the fetched index value.
 	Flux_IndexBuffer     m_xBladeIndexBuffer;
 
+	// ===== Displacement field — the ONLY persistent GPU state grass carries =====
+	// Two committed 256^2 RG16F images whose prev/next roles swap every frame. The
+	// graph declares BOTH read-modify-write on the displacement pass and BOTH as a
+	// previous-frame read on the placement pass, so the declaration is parity-blind
+	// and the flip is invisible to it — the alternative, declaring one read and one
+	// written, would need a different declaration on odd and even frames, and the
+	// graph is compiled once per build, not once per frame.
+	Flux_RenderAttachment m_axDisplacementMaps[2];
+
 	// ===== Frame-indexed dynamic inputs (graph-INVISIBLE by contract) =====
 	Flux_DynamicReadWriteBuffer m_xTypeParamsBuffer;         // Flux_GrassTypeParamsGPU[16]
 	Flux_DynamicReadWriteBuffer m_xTileBuffer;               // 16-byte tile records
+	Flux_DynamicReadWriteBuffer m_xMoverBuffer;              // Flux_GrassMoverGPU[64]
 	Flux_DynamicConstantBuffer  m_xPlacementConstantsBuffer;
 	Flux_DynamicConstantBuffer  m_xDrawConstantsBuffer;
 	Flux_DynamicConstantBuffer  m_xPrevWindConstantsBuffer;
+	Flux_DynamicConstantBuffer  m_xDisplacementConstantsBuffer;
 
 	// ===== Map textures (fixed extents, updated in place at Build*) =====
 	Flux_Texture m_xHeightTexture;         // R16_UNORM
 	Flux_Texture m_xCoverageTexture;       // R8_UNORM
 	Flux_Texture m_xTypeTexture;           // R8_UNORM, POINT-sampled
-	Flux_Texture m_xDisplacementTexture;   // neutral until the displacement phase
+	// Neutral 1x1 zero field. Bound by the placement CS in place of the real trail
+	// map whenever displacement is off, so "no push" is a property of the DATA and
+	// not of a branch the CS would have to take.
+	Flux_Texture m_xDisplacementTexture;
 
 	// ===== CPU maps — the SAME quantized bytes the textures hold =====
 	Zenith_Vector<u_int16> m_auHeightTexels;
@@ -428,11 +495,29 @@ private:
 	Zenith_Maths::Matrix4 m_axFrustumViewProjs[uFLUX_GRASS_FRUSTUM_COUNT] = {};
 	Flux_GrassTileList m_xTileList;
 	bool  m_bVelocityLatched = false;   // frozen copy of IsVelocityMRTActive for the record
-	// Frozen copy of the m_bGrassEnabled graphics option. The four record callbacks
+	// Frozen copy of the m_bGrassEnabled graphics option. Every record callback
 	// and the cascade caster read THIS and never the option itself: the gather is
 	// what decides there is nothing to place, so a toggle landing between the two
 	// would leave a draw reading indirect args whose reset it had already skipped.
 	bool  m_bEnabledLatched = false;
+	// Frozen copy of m_bGrassDisplacementEnabled, read by the displacement record and
+	// by the placement bind. Latched for the same reason m_bEnabledLatched is: the
+	// gather is what decides which map the placement CS samples, so a toggle landing
+	// between gather and record would bind a map the constants do not describe.
+	bool  m_bDisplacementLatched = false;
+	// Has a displacement dispatch ever produced the map the NEXT frame will read?
+	// A freshly created image holds UNDEFINED bytes, and in an RG16F those can decode
+	// as NaN — which no amount of decay ever removes, and which would then ride into
+	// every blade's push. Until a real dispatch has filled it the source is treated as
+	// absent: the placement CS binds the neutral texture and the displacement CS is
+	// told to scroll a whole map, so every source texel resolves out of range.
+	//
+	// Two flags because they answer different questions on the same frame — the same
+	// split TAA's history validity uses. This one is "will next frame's source be
+	// real", written at the end of the gather; the latch below is "is THIS frame's
+	// source real", which is what the records need.
+	bool  m_bDisplacementFieldValid = false;
+	bool  m_bDisplacementSourceValidThisFrame = false;
 	u_int m_uScheduledInstanceCount = 0u;
 	u_int m_uVisibleTileCount = 0u;
 	u_int m_uTileCount = 0u;
@@ -446,15 +531,27 @@ private:
 	// ===== Types =====
 	Flux_GrassTypeTable m_xTypeTable;
 
-	// ===== Displacement movers =====
+	// ===== Displacement movers + ping-pong state =====
 	Zenith_Vector<Mover> m_axMovers;
 	u_int m_uMoverOverflowCount = 0u;
-	// Metres of tip push a full-strength mover applies. It reaches the placement CS
-	// through ONE slot — the push scale of the displacement constants — which is
-	// exactly where m_bGrassDisplacementEnabled is applied, so the option is honoured
-	// by the VALUE and never by a branch in the CS. Zero until the displacement phase
-	// supplies a real field for it to scale.
-	float m_fDisplacementPushScale = 0.0f;
+	// Which of m_axDisplacementMaps the displacement pass FILLS this frame; the other
+	// is the source both it and the placement CS read. Flipped once per gather.
+	u_int m_uDisplacementWriteIndex = 0u;
+	// The anchors the source and destination maps are aligned to. Two, not one: the
+	// re-anchor is defined by the pair, and the placement CS's world -> UV mapping has
+	// to use the SOURCE anchor or every blade would sample the field one scroll off.
+	Flux_GrassDisplacementAnchor m_xDisplacementAnchorPrev;
+	Flux_GrassDisplacementAnchor m_xDisplacementAnchorNext;
+	// Gain applied to the sampled field before the placement CS saturates it, and the
+	// ONE slot m_bGrassDisplacementEnabled is applied to — so the option is honoured by
+	// the VALUE and never by a branch in the CS.
+	//
+	// NOT metres. The field stores a [0,1]-magnitude push vector and the blade's
+	// response is a POSE change, not a translation: at an effective push of 1 the blade
+	// turns fully to face away from the mover, gains 1.2 rad of tilt and loses 35% of
+	// its height. 1.0 therefore means "a full-strength mover flattens what it stands
+	// on"; halve it for a springier field, raise it to flatten from further out.
+	float m_fDisplacementPushScale = 1.0f;
 
 	// ===== Tuning (debug-var bound by reference) =====
 	float m_fDensityScale = 1.0f;

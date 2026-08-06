@@ -216,14 +216,16 @@ namespace Flux_Generated_Vegetation
 		{
 			unsigned char m_ag_xPrevOriginXZ_Size_Pad[16]; // slang=vector offset=0 arrayCount=4 (no C++ mapping)
 			unsigned char m_ag_xNextOriginXZ_Size_Pad[16]; // slang=vector offset=16 arrayCount=4 (no C++ mapping)
-			unsigned char m_ag_xDecay_Texel_Pad[16]; // slang=vector offset=32 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_xDecay_Texel_ShiftXZ[16]; // slang=vector offset=32 arrayCount=4 (no C++ mapping)
 			unsigned char m_ag_xResolution_MoverCount[16]; // slang=vector offset=48 arrayCount=4 (no C++ mapping)
 		};
 		static_assert(sizeof(GrassDisplacementConstants_CB) == 64, "GrassDisplacementConstants_CB size drifted from Slang reflection");
-		// kind: CombinedTextureSampler
-		inline constexpr Flux_BindingHandle hg_xPrevDisplacementTex{ 3u, 1u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hMovers{ 3u, 1u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
 		// kind: RWTexture
-		inline constexpr Flux_BindingHandle hg_xNextDisplacementTex{ 3u, 2u, FLUX_RESOURCE_KIND_RW_TEXTURE, 1u };
+		inline constexpr Flux_BindingHandle hg_xPrevDisplacementTex{ 3u, 2u, FLUX_RESOURCE_KIND_RW_TEXTURE, 1u };
+		// kind: RWTexture
+		inline constexpr Flux_BindingHandle hg_xNextDisplacementTex{ 3u, 3u, FLUX_RESOURCE_KIND_RW_TEXTURE, 1u };
 	}
 
 	// ----- Grass_ToGBuffer (Vegetation/Flux_Grass_ToGBuffer) -----
