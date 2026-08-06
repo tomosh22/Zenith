@@ -1001,10 +1001,15 @@ ZENITH_TEST(FluxGrassTypes, BladeBezierMirrorsTheShaderCurve)
 		ZENITH_ASSERT_GT(xTangent.y, 0.0f, "the spine must climb everywhere at t=%f — it must not fold back", fT);
 	}
 
-	// Purity: the pose is rebuilt from the record every frame, so a curve that
-	// evaluated differently twice would flicker under TAA.
+	// Purity: same inputs twice must agree to ULP scale — hidden state would
+	// diverge by whole metres, never nanometres. NOT bit-exact: under the
+	// build's float flags the compiler may contract mul+add chains into FMAs
+	// DIFFERENTLY at two inlined call sites, so two calls to the same pure
+	// function can legally differ in the last bits (the Debug-vs-Release
+	// codegen class ZM-D-183 documents). The GPU never faces this — one
+	// shader, one codegen — so per-frame pose rebuilds stay TAA-stable.
 	const Flux_GrassBladeCurve xAgain = GrassMirrorTest_Curve(fGrassMirrorHeight);
-	ZENITH_ASSERT_NEAR_VEC3(xAgain.m_xP2, xCurve.m_xP2, 0.0f, "the curve build must be a pure function");
+	ZENITH_ASSERT_NEAR_VEC3(xAgain.m_xP2, xCurve.m_xP2, 1.0e-5f, "the curve build must be a pure function");
 
 	// ... and a taller blade must actually reach higher.
 	const Flux_GrassBladeCurve xTall = GrassMirrorTest_Curve(fGrassMirrorHeight * 2.0f);
@@ -1179,8 +1184,12 @@ ZENITH_TEST(FluxGrassTypes, ClumpPickFindsTheNearestOfNineSites)
 				}
 			}
 		}
-		ZENITH_ASSERT_EQ_FLOAT(xClump.m_xCentre.x, xBest.x, 0.0f, "clump centre X at world (%f, %f)", fWorldX, fWorldZ);
-		ZENITH_ASSERT_EQ_FLOAT(xClump.m_xCentre.y, xBest.y, 0.0f, "clump centre Z at world (%f, %f)", fWorldX, fWorldZ);
+		// ULP tolerance, not bit equality: this loop and the impl's internal one
+		// are compiled separately, and the build's float flags may contract the
+		// distance/site math into FMAs differently per site — same-source float
+		// chains can legally differ in the last bits across call sites.
+		ZENITH_ASSERT_EQ_FLOAT(xClump.m_xCentre.x, xBest.x, 1.0e-5f, "clump centre X at world (%f, %f)", fWorldX, fWorldZ);
+		ZENITH_ASSERT_EQ_FLOAT(xClump.m_xCentre.y, xBest.y, 1.0e-5f, "clump centre Z at world (%f, %f)", fWorldX, fWorldZ);
 
 		ZENITH_ASSERT_GE(xClump.m_fDist01, 0.0f, "the normalized clump distance must not go negative");
 		ZENITH_ASSERT_LE(xClump.m_fDist01, 1.0f, "the normalized clump distance must saturate at the cell size");
@@ -1190,12 +1199,16 @@ ZENITH_TEST(FluxGrassTypes, ClumpPickFindsTheNearestOfNineSites)
 		ZENITH_ASSERT_LT(xClump.m_fHash01, 1.0f, "the clump hash is a [0,1) roll");
 
 		// Rebuild stability. A clump that moved between frames would drag every
-		// blade in it, which reads as the whole field crawling.
+		// blade in it, which reads as the whole field crawling. Float outputs get
+		// ULP tolerance (two call sites may inline/contract differently under the
+		// build's float flags — the ZM-D-183 codegen class); the HASH stays
+		// bit-exact because it is pure integer work + an exactly-representable
+		// scale, immune to contraction, so a same-winner re-pick cannot move it.
 		const Flux_GrassClump xAgain = Flux_GrassClumpPick(fWorldX, fWorldZ, fScale, uSeed);
-		ZENITH_ASSERT_EQ_FLOAT(xAgain.m_xCentre.x, xClump.m_xCentre.x, 0.0f, "the clump pick must be a pure function");
-		ZENITH_ASSERT_EQ_FLOAT(xAgain.m_xCentre.y, xClump.m_xCentre.y, 0.0f, "the clump pick must be a pure function");
+		ZENITH_ASSERT_EQ_FLOAT(xAgain.m_xCentre.x, xClump.m_xCentre.x, 1.0e-5f, "the clump pick must be a pure function");
+		ZENITH_ASSERT_EQ_FLOAT(xAgain.m_xCentre.y, xClump.m_xCentre.y, 1.0e-5f, "the clump pick must be a pure function");
 		ZENITH_ASSERT_EQ_FLOAT(xAgain.m_fHash01, xClump.m_fHash01, 0.0f, "the clump hash must be a pure function");
-		ZENITH_ASSERT_EQ_FLOAT(xAgain.m_fDist01, xClump.m_fDist01, 0.0f, "the clump distance must be a pure function");
+		ZENITH_ASSERT_EQ_FLOAT(xAgain.m_fDist01, xClump.m_fDist01, 1.0e-6f, "the clump distance must be a pure function");
 	}
 
 	// The seed must actually be an input, or "seeded" is a lie. Checked over a
