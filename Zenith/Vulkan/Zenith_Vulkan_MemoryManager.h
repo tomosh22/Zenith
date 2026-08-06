@@ -143,6 +143,14 @@ public:
 	void UploadBufferData(Flux_VRAMHandle xBufferHandle, const void* pData, size_t uSize);
 	void UploadBufferDataAtOffset(Flux_VRAMHandle xBufferHandle, const void* pData, size_t uSize, size_t uDestOffset);
 
+	// GPU -> CPU readback of the first uSize bytes of a buffer. EXPLICIT-CALL-ONLY
+	// slow path (tests / tools cadence): it drains pending staged writes, idles the
+	// device, and round-trips through a throwaway host-visible staging buffer, so it
+	// must never be called from a frame path. With no allocator (GPU-less boot) the
+	// destination is zero-filled, matching the Null/D3D12 stubs' documented contract
+	// that a headless readback yields zeroes by construction.
+	void DownloadBufferData(Flux_VRAMHandle xBufferHandle, void* pDst, size_t uSize);
+
 	// Buffer destruction functions - queue VRAM for deferred deletion
 	void DestroyVertexBuffer(Flux_VertexBuffer& xBuffer);
 	void DestroyDynamicVertexBuffer(Flux_DynamicVertexBuffer& xBuffer);

@@ -407,6 +407,106 @@ void Zenith_Vulkan_MemoryManager::UploadBufferData(Flux_VRAMHandle xBufferHandle
 	m_xMutex.Unlock();
 }
 
+void Zenith_Vulkan_MemoryManager::DownloadBufferData(Flux_VRAMHandle xBufferHandle, void* pDst, size_t uSize)
+{
+	Zenith_Profiling::ScopeZone xProfileScope(ZENITH_PROFILE_ZONE("Vulkan Memory Manager Download"));
+
+	Zenith_Assert(pDst != nullptr, "DownloadBufferData called with a null destination");
+	Zenith_Assert(uSize != 0, "DownloadBufferData called with a zero size");
+	if (pDst == nullptr || uSize == 0)
+	{
+		return;
+	}
+
+	// Headless guard: see CreateBufferVRAM for rationale. With no allocator there is
+	// no VRAM to read, so honour the same "readback yields zeroes" contract the
+	// Null/D3D12 stubs document rather than leaving the caller's buffer untouched.
+	if (m_xAllocator == VK_NULL_HANDLE)
+	{
+		memset(pDst, 0, uSize);
+		return;
+	}
+
+	// Staged writes to the source buffer may still be sitting unsubmitted in the
+	// memory command buffer; without this drain the copy below would read whatever
+	// the buffer held before them.
+	Flush();
+
+	Zenith_Vulkan_VRAM* pxVRAM = m_pxVulkan->GetVRAM(xBufferHandle);
+	Zenith_Assert(pxVRAM != nullptr, "GetVRAM returned null in DownloadBufferData");
+	if (!pxVRAM)
+	{
+		memset(pDst, 0, uSize);
+		return;  // Safety guard for release builds
+	}
+	Zenith_Assert(uSize <= static_cast<size_t>(pxVRAM->GetBufferSize()),
+		"DownloadBufferData: %zu bytes requested from a %u-byte buffer", uSize, pxVRAM->GetBufferSize());
+
+	const vk::Device& xDevice = m_pxVulkan->GetDevice();
+
+	// A full device idle is legitimate here only because this path is explicit-call-
+	// only: nothing on the frame path reaches it, so the stall is paid at test/tools
+	// cadence and buys a source buffer that no submission can still be writing.
+	VkCheck(xDevice.waitIdle());
+
+	// --- host-visible staging buffer ---
+	vk::Buffer xStagingBuffer = VkUnwrap(xDevice.createBuffer(vk::BufferCreateInfo()
+		.setSize(uSize)
+		.setUsage(vk::BufferUsageFlagBits::eTransferDst)
+		.setSharingMode(vk::SharingMode::eExclusive)));
+
+	const vk::MemoryRequirements xReq = xDevice.getBufferMemoryRequirements(xStagingBuffer);
+	const vk::PhysicalDeviceMemoryProperties xMemProps = m_pxVulkan->GetPhysicalDevice().getMemoryProperties();
+	const vk::MemoryPropertyFlags eWant = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent;
+	uint32_t uMemType = UINT32_MAX;
+	for (uint32_t u = 0; u < xMemProps.memoryTypeCount; ++u)
+	{
+		if ((xReq.memoryTypeBits & (1u << u)) && (xMemProps.memoryTypes[u].propertyFlags & eWant) == eWant)
+		{
+			uMemType = u;
+			break;
+		}
+	}
+	Zenith_Assert(uMemType != UINT32_MAX, "DownloadBufferData: no host-visible coherent memory type");
+	if (uMemType == UINT32_MAX)
+	{
+		xDevice.destroyBuffer(xStagingBuffer);
+		memset(pDst, 0, uSize);
+		return;
+	}
+
+	vk::DeviceMemory xStagingMemory = VkUnwrap(xDevice.allocateMemory(vk::MemoryAllocateInfo()
+		.setAllocationSize(xReq.size)
+		.setMemoryTypeIndex(uMemType)));
+	VkCheck(xDevice.bindBufferMemory(xStagingBuffer, xStagingMemory, 0));
+
+	// --- one-time copy command buffer ---
+	const vk::CommandPool& xPool = m_pxVulkan->GetCommandPool(COMMANDTYPE_GRAPHICS);
+	vk::CommandBuffer xCmd = VkUnwrap(xDevice.allocateCommandBuffers(vk::CommandBufferAllocateInfo()
+		.setCommandPool(xPool)
+		.setLevel(vk::CommandBufferLevel::ePrimary)
+		.setCommandBufferCount(1)))[0];
+
+	VkCheck(xCmd.begin(vk::CommandBufferBeginInfo().setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit)));
+	xCmd.copyBuffer(pxVRAM->GetBuffer(), xStagingBuffer,
+		vk::BufferCopy(0, 0, static_cast<vk::DeviceSize>(uSize)));
+	VkCheck(xCmd.end());
+
+	vk::SubmitInfo xSubmit = vk::SubmitInfo().setCommandBufferCount(1).setPCommandBuffers(&xCmd);
+	VkCheck(m_pxVulkan->GetQueue(COMMANDTYPE_GRAPHICS).submit(xSubmit, nullptr));
+	VkCheck(m_pxVulkan->GetQueue(COMMANDTYPE_GRAPHICS).waitIdle());
+
+	// --- map + copy out ---
+	const void* pMapped = VkUnwrap(xDevice.mapMemory(xStagingMemory, 0, uSize));
+	memcpy(pDst, pMapped, uSize);
+	xDevice.unmapMemory(xStagingMemory);
+
+	// --- cleanup ---
+	xDevice.freeCommandBuffers(xPool, xCmd);
+	xDevice.destroyBuffer(xStagingBuffer);
+	xDevice.freeMemory(xStagingMemory);
+}
+
 void Zenith_Vulkan_MemoryManager::DestroySimpleBuffer(Flux_VRAMHandle& xHandle)
 {
 	if (!xHandle.IsValid())

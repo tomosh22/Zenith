@@ -100,6 +100,12 @@ Null together**. A concept added to only one backend fails `Flux_BackendConforma
   handles' validity EXPLICITLY rather than just surviving the call -- verified by
   mutation (leaving `InitialiseIndirectBuffer`'s handle invalid turns exactly that
   unit red, and nothing else).
+- **Buffer readback returns ZEROES by construction.** `DownloadBufferData` zero-fills
+  the caller's destination (it does not leave it untouched — that would hand back
+  uninitialised stack that reads like GPU data). Nothing was ever written to a GPU, so
+  there is no other honest answer. **Consequence: any test asserting on real buffer
+  contents is windowed-only** and must not be added to a headless gate; what IS pinned
+  headless is the zero-fill itself (`Flux_BufferReadback.Tests.inl`).
 - **`RecordFrame` still runs the pass callbacks.** The one device method that is
   NOT a no-op: `Zenith_Null::RecordFrame` (out-of-line) iterates the queued render
   passes and calls `Flux_RenderGraph::RecordPassInto` into a no-op command buffer.

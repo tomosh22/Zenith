@@ -3,6 +3,7 @@
 #include "Zenith.h"            // u_int / u_int64 / Zenith_Assert (defined before Flux.h in the PCH)
 #include "Flux/Flux_Types.h"   // handles, enums, view structs, Flux_BindingSlot/SubresourceRange
 #include "Flux/Flux_Fwd.h"     // the Flux_* aliases + forward decls of the other Null classes
+#include <cstring>             // memset (DownloadBufferData's zero-fill contract)
 
 // ============================================================================
 // NO-OP "null" memory-manager backend.
@@ -103,6 +104,13 @@ public:
 	// ===== Upload paths (FluxBackendMemoryAlloc) =====
 	void UploadBufferData(Flux_VRAMHandle xBufferHandle, const void* pData, size_t uSize) { (void)xBufferHandle; (void)pData; (void)uSize; }
 	void UploadBufferDataAtOffset(Flux_VRAMHandle xBufferHandle, const void* pData, size_t uSize, size_t uDestOffset) { (void)xBufferHandle; (void)pData; (void)uSize; (void)uDestOffset; }
+
+	// ===== Readback (FluxBackendMemoryAlloc) =====
+	// Nothing was ever written to a GPU, so a headless readback yields zeroes BY
+	// CONSTRUCTION — the destination is filled rather than left untouched so a
+	// caller reading uninitialised stack never mistakes garbage for GPU truth.
+	// Any test asserting on real buffer contents is therefore windowed-only.
+	void DownloadBufferData(Flux_VRAMHandle xBufferHandle, void* pDst, size_t uSize) { (void)xBufferHandle; if (pDst != nullptr) { memset(pDst, 0, uSize); } }
 
 	// ===== Buffer destruction (FluxBackendMemoryDelete) =====
 	void DestroyVertexBuffer(Flux_VertexBuffer& xBuffer) { (void)xBuffer; }

@@ -24,6 +24,7 @@ concept FluxBackendMemoryAlloc = requires(
 	T t,
 	bool b,
 	const void* pData,
+	void* pDst,
 	size_t sz,
 	size_t uDestOffset,
 	u_int uInt32Size,
@@ -87,6 +88,13 @@ concept FluxBackendMemoryAlloc = requires(
 	// a reviewer reading this file will now see the intent immediately.
 	{ t.UploadBufferData(xVRAMHandle, pData, sz)                                      } -> std::same_as<void>;
 	{ t.UploadBufferDataAtOffset(xVRAMHandle, pData, sz, uDestOffset)                 } -> std::same_as<void>;
+
+	// Readback path. `pDst` is the MUTABLE slot (distinct from the `pData` source
+	// slot above) so a backend that took a const destination could not satisfy this.
+	// Explicit-call-only and synchronous — a conforming backend may idle the device
+	// here, so nothing on the frame path may call it. Backends with no GPU zero-fill
+	// the destination, which makes any assertion on real contents windowed-only.
+	{ t.DownloadBufferData(xVRAMHandle, pDst, sz)                                     } -> std::same_as<void>;
 
 	// Full-image in-place texture re-upload (live texture editing, e.g. the
 	// terrain editor's splatmap painting). xInfo must match the creation-time

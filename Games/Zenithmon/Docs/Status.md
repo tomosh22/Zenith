@@ -3,10 +3,12 @@
 **Last updated:** 2026-08-06
 
 **★ LIVE BASELINE (OBSERVED 2026-08-06 on clean `Null_` builds):
-ZM boot `2945 ran / 2943 passed / 0 failed / 2 skipped`; engine boot (Null Combat)
-`1320 ran / 1319 passed / 0 failed / 1 skipped`; registry **55**.** This is the
-current pin in `zm-tests.yml` (`-Baseline 2945`) and `run_unit_gate.ps1`
-(default 1320). **+20 engine units in one commit** (previous pins 2925 / 1300),
+ZM boot `2947 ran / 2945 passed / 0 failed / 2 skipped`; engine boot (Null Combat)
+`1322 ran / 1321 passed / 0 failed / 1 skipped`; registry **55**.** This is the
+current pin in `zm-tests.yml` (`-Baseline 2947`) and `run_unit_gate.ps1`
+(default 1322). Grass-overhaul Phase 2 added +2 engine units (`FluxBufferReadback`,
+the `DownloadBufferData` headless zero-fill contract) on top of Phase 1's +20
+below. **+20 engine units in one commit** (previous pins 2925 / 1300),
 all in `Zenith/Flux/Vegetation/Flux_Grass.Tests.inl`: the `FluxGrassTypes` suite
 covering the GPU-grass overhaul's Phase-1 pure functions (`Flux_GrassTypes.h`
 tile selection / wind / map sampling / GPU-record packing) plus pinned

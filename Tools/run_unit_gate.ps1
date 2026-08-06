@@ -61,7 +61,11 @@ param(
     # functions (Flux_GrassTypes.h) + pinned integer-hash vectors that the
     # Shaders/Common/Noise.slang GPU mirror is held to; GPU-grass overhaul Phase 1
     # (observed 2026-08-06 on a Null_ Combat build).
-    [int]$Baseline = 1320,
+    # 1320 -> 1322: +2 FluxBufferReadback units (Flux/Flux_BufferReadback.Tests.inl,
+    # hosted by Flux_MaterialTable.cpp) pinning DownloadBufferData's headless
+    # zero-fill + exact-size contract; GPU-grass overhaul Phase 2
+    # (observed 2026-08-06 on a Null_ Combat build).
+    [int]$Baseline = 1322,
     [int]$TimeoutSec = 180,
     [string]$LogPath = ""
 )

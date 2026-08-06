@@ -1702,9 +1702,9 @@ change touches `Zenith/` as well as the game.
 **Boot baseline at THIS change: ZM 2863; engine (Null Combat) stays 1242.** The added
 contracts are pure generator/placement checks, so they do not move the 55-test
 automated registry or the cross-game engine suite.
-★ **SUPERSEDED -- the CURRENT baseline is ZM 2945, engine 1320**, registry unmoved
+★ **SUPERSEDED -- the CURRENT baseline is ZM 2947, engine 1322**, registry unmoved
 at **55**. OBSERVED 2026-08-06 on clean `Null_` builds:
-`2945 ran, 2943 passed, 0 failed, 2 skipped`. Derivation: ZM-D-183 added the two
+`2947 ran, 2945 passed, 0 failed, 2 skipped`. Derivation: ZM-D-183 added the two
 committed-scene-bytes guards (2906 -> 2908); ZM-D-184 added the rival spawn-clearance
 unit (2908 -> 2909); the 2026-08-05 CommandLine ParseArgs units added 5 ENGINE units
 (engine 1284 -> 1289) and were NOT reflected here, leaving the ZM pin stale at 2909
@@ -1712,8 +1712,10 @@ against a real 2914; the terrain G-buffer pipeline-variant units added 6 more EN
 units (engine 1289 -> 1295), taking ZM to 2920; the `FluxTerrainSourceGrid` units --
 the terrain exporter's border-chunk fix -- added 5 more ENGINE units
 (engine 1295 -> 1300), taking ZM to 2925; the GPU-grass overhaul's Phase-1
-`FluxGrassTypes` suite added 20 more ENGINE units (engine 1300 -> **1320**),
-taking ZM to **2945**. `zm-tests.yml` `-Baseline` and
+`FluxGrassTypes` suite added 20 more ENGINE units (engine 1300 -> 1320),
+taking ZM to 2945; its Phase-2 `FluxBufferReadback` units (the
+`DownloadBufferData` headless zero-fill contract) added 2 more ENGINE units
+(engine 1320 -> **1322**), taking ZM to **2947**. `zm-tests.yml` `-Baseline` and
 `run_unit_gate.ps1`'s default both moved to match. The paragraph below is the
 ZM-D-182-era snapshot, kept for the audit trail:
 
