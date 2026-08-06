@@ -76,7 +76,10 @@ param(
     # FluxGrassTypeTable (defaults/clamps incl. bit-classified NaN+Inf replacement/
     # serialize round-trip/fail-safe reject)
     # (observed 2026-08-06 on a Null_ Combat build).
-    [int]$Baseline = 1337,
+    # 1337 -> 1340: +3 FluxGrassImpl shadow-casting units (enable-flag truth table,
+    # active-slot-mask exclusion, grass-before-shadows registration order);
+    # GPU-grass overhaul Phase 5 (observed 2026-08-06 on a Null_ Combat build).
+    [int]$Baseline = 1340,
     [int]$TimeoutSec = 180,
     [string]$LogPath = ""
 )

@@ -58,14 +58,19 @@ namespace
 	// One dump per view, and the swapchain consumes ONE request per frame.
 	constexpr int iFRAMES_PER_MODE = 10;
 
-	// 0 None / 1 LODColors / 2 ClumpColors / 3 TypeColors / 4 WindVectors /
-	// 5 TileBounds / 6 CoverageHeat / 7 DisplacementHeat -- the range the
-	// Flux/Grass/DebugMode variable is registered over.
+	// The modes Flux_GrassDebugColour actually implements (Flux_GrassCommon.slang):
+	// 0 None / 1 TypeIndex / 2 Clump / 3 HeightT / 4 LODMesh / 5 LatticeClass /
+	// 6 Normals; 7 is in the variable's range but falls through to normals.
 	const char* const aszDEBUG_MODE_NAMES[] = {
-		"0_none", "1_lodcolours", "2_clumpcolours", "3_typecolours",
-		"4_windvectors", "5_tilebounds", "6_coverageheat", "7_displacementheat",
+		"0_none", "1_typeindex", "2_clump", "3_heightt",
+		"4_lodmesh", "5_latticeclass", "6_normals", "7_normals_alias",
 	};
 	constexpr int iDEBUG_MODE_COUNT = static_cast<int>(sizeof(aszDEBUG_MODE_NAMES) / sizeof(aszDEBUG_MODE_NAMES[0]));
+	// Two extra sweep slots after the debug views: the lit scene with grass
+	// shadows ON then OFF (the cascade A/B the DisableShadowCasting override
+	// exists for). Distinct captures prove the caster wiring changes the image.
+	constexpr int iSHADOW_AB_COUNT = 2;
+	constexpr int iSWEEP_COUNT     = iDEBUG_MODE_COUNT + iSHADOW_AB_COUNT;
 
 	int   g_iReadyFrame     = -1;
 	bool  g_bFilesMissing   = false;
@@ -167,7 +172,7 @@ namespace
 		const int iSweep = iSinceReady - iSETTLE_FRAMES;
 		const int iMode  = iSweep / iFRAMES_PER_MODE;
 		const int iPhase = iSweep % iFRAMES_PER_MODE;
-		if (iMode >= iDEBUG_MODE_COUNT)
+		if (iMode >= iSWEEP_COUNT)
 		{
 			return false;
 		}
@@ -176,12 +181,29 @@ namespace
 			// Set a few frames BEFORE the dump: the mode rides the draw constants
 			// the NEXT gather stages, so a same-frame request would capture the
 			// previous view.
-			xGrass.SetDebugMode(static_cast<u_int>(iMode));
+			if (iMode < iDEBUG_MODE_COUNT)
+			{
+				xGrass.SetDebugMode(static_cast<u_int>(iMode));
+			}
+			else
+			{
+				// Shadow A/B rides the lit view; the second slot disables casting.
+				xGrass.SetDebugMode(0u);
+				xGrass.SetDisableShadowCasting(iMode == iDEBUG_MODE_COUNT + 1);
+			}
 		}
 		else if (iPhase == iFRAMES_PER_MODE / 2)
 		{
 			char szPath[256];
-			snprintf(szPath, sizeof(szPath), "C:/tmp/grass_showcase_%s.tga", aszDEBUG_MODE_NAMES[iMode]);
+			if (iMode < iDEBUG_MODE_COUNT)
+			{
+				snprintf(szPath, sizeof(szPath), "C:/tmp/grass_showcase_%s.tga", aszDEBUG_MODE_NAMES[iMode]);
+			}
+			else
+			{
+				snprintf(szPath, sizeof(szPath), "C:/tmp/grass_showcase_shadows_%s.tga",
+					iMode == iDEBUG_MODE_COUNT ? "on" : "off");
+			}
 			Zenith_Log(LOG_CATEGORY_TERRAIN, "[GrassShowcase] %s", szPath);
 			Flux_Screenshot::RequestDump(szPath);
 			++g_iDumpsRequested;
@@ -228,11 +250,11 @@ namespace
 				"[GrassShowcase] draws were submitted but the placement CS left zero surviving blades");
 			bPass = false;
 		}
-		if (g_iDumpsRequested != iDEBUG_MODE_COUNT)
+		if (g_iDumpsRequested != iSWEEP_COUNT)
 		{
 			Zenith_Error(LOG_CATEGORY_TERRAIN,
-				"[GrassShowcase] requested %d captures, expected one per debug view (%d)",
-				g_iDumpsRequested, iDEBUG_MODE_COUNT);
+				"[GrassShowcase] requested %d captures, expected one per debug view + the shadow A/B pair (%d)",
+				g_iDumpsRequested, iSWEEP_COUNT);
 			bPass = false;
 		}
 		return bPass;
@@ -242,7 +264,9 @@ namespace
 	// back here rather than in Step (which a timeout or a failure can leave early).
 	void Teardown_GrassShowcase()
 	{
-		g_xEngine.Grass().SetDebugMode(0u);
+		Flux_GrassImpl& xGrass = g_xEngine.Grass();
+		xGrass.SetDebugMode(0u);
+		xGrass.SetDisableShadowCasting(false);
 	}
 
 	const Zenith_AutomatedTest g_xGrassShowcase = {

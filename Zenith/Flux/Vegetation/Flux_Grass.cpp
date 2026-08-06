@@ -825,6 +825,8 @@ void Flux_GrassImpl::RegisterDebugVariables()
 	// Storage only this phase: the tile outlines belong on the gameplay-safe debug
 	// primitives channel, which the panel phase wires up.
 	xVars.AddBoolean({ "Flux", "Grass", "ShowTileGrid" }, m_bShowTileGrid);
+	// Live A/B on the cascade casters: it drops the shadow partitions out of the
+	// active-slot mask, so it removes the placement work as well as the two draws.
 	xVars.AddBoolean({ "Flux", "Grass", "DisableShadowCasting" }, m_bDisableShadowCasting);
 	xVars.AddBoolean({ "Flux", "Grass", "ForceLoBlades" }, m_bForceLoBlades);
 	// Storage only this phase — consumed when the displacement pass lands.
@@ -838,11 +840,12 @@ void Flux_GrassImpl::RegisterDebugVariables()
 
 u_int Flux_GrassImpl::ComputeActiveSlotMask() const
 {
-	// The camera partitions are always live. The cascade partitions stay OFF until
-	// the shadow phase feeds REAL cascade frusta: this phase duplicates the camera
-	// frustum into slots 1-2, and culling a cascade partition against the camera's
-	// frustum would populate it with the wrong blades — visibly worse than an empty
-	// cascade, and harder to spot.
+	// The camera partitions are always live. A cascade partition needs BOTH inputs:
+	// casting enabled, and a real cascade frustum staged for it this frame. The frusta
+	// count is the second half because a slot whose planes are still the camera's
+	// duplicate would populate the partition with the wrong blades — visibly worse
+	// than an empty cascade, and harder to spot. Disabling casting therefore stops
+	// GENERATION, not just the draw.
 	u_int uMask = (1u << uFLUX_GRASS_SLOT_CAMERA_HI) | (1u << uFLUX_GRASS_SLOT_CAMERA_LO);
 	if (IsShadowCastingEnabled())
 	{

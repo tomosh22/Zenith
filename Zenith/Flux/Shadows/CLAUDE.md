@@ -2,14 +2,24 @@
 
 Sun (directional) shadows via a 4-cascade CSM. Depth-only D32_SFLOAT maps at
 `ZENITH_FLUX_CSM_RESOLUTION` (2048²) each, rendered by `SetupRenderGraph`'s four
-"Shadow Cascade N" passes (recorded in parallel; cascade 0 owns the once-per-frame
-CPU matrix update via its `Prepare` callback). The deferred lighting pass
+"Shadow Cascade N" passes (recorded in parallel). The deferred lighting pass
 (`Shaders/DeferredShading/Flux_DeferredShading.slang`) samples them.
 
-## Method (AAA baseline, no-TAA-safe)
+**The once-per-frame CPU matrix update is NOT a cascade `Prepare`.** No cascade
+pass registers one: `UpdateShadowMatrices` is called from `Zenith_Core.cpp` on the
+main thread, *before* the render-task window opens, alongside the scene-graph
+snapshot rebuild it is camera-derived like. That hoist is load-bearing — the
+unified mesh cull's `Prepare` runs earlier in topological order (the cascades read
+its cull output), so a cascade-owned `Prepare` would hand it last frame's frusta.
 
-The fit and sampling are deliberately deterministic frame-to-frame because the
-engine has **no TAA** — anything that jitters per-frame would crawl/sparkle.
+## Method (AAA baseline, jitter-free by construction)
+
+The fit and sampling are deliberately deterministic frame-to-frame. **This is not
+because the engine lacks TAA** — TAA is the default AA and the main view *is*
+jittered. It is because the cascades are not: a cascade view stages
+`m_xViewProjMatNoJitter == m_xViewProjMat`, so nothing in the shadow path is
+allowed to move sub-pixel per frame, and anything that did would crawl/sparkle
+straight through the temporal resolve rather than be smoothed by it.
 
 **Cascade fit (`Flux_ShadowsImpl::UpdateShadowMatrices`):**
 - **PSSM split scheme** — log/uniform blend (`dbg_fSplitLambda`, ~0.85) over
@@ -35,7 +45,7 @@ engine has **no TAA** — anything that jitters per-frame would crawl/sparkle.
 - Cascade selected by **view-space depth** vs the CPU-computed split distances
   (stable), with a **cross-fade band** into the next cascade to hide the seam.
 - **Depth bias is fixed-function only** — never in the sampling shader. The
-  caster pipelines (Static/Animated/Instanced/Terrain `*_ToShadowmap`) enable
+  caster pipelines (UnifiedMesh/Terrain/Grass `*_ToShadowmap`) enable
   `m_bDepthBias` + `m_bDynamicDepthBias`, and `ExecuteShadowCascade` sets the
   slope/constant factors per cascade via `SetDepthBias()`
   (→ `vkCmdSetDepthBias`). Slope-scaled bias carries the load (it works on D32
@@ -72,6 +82,35 @@ engine has **no TAA** — anything that jitters per-frame would crawl/sparkle.
   set). Per-cascade GPU frustum culling of the unified scene populates each
   cascade view's slice of the shared cull-output buffers, so each shadow view
   draws only the objects inside its own frustum.
+- **Grass casts into cascades 0-1 only.** `Flux_GrassImpl::RenderToShadowMap` runs
+  from inside `ExecuteShadowCascade` and issues one `DrawIndexedIndirect` of that
+  cascade's LO blade partition (indirect slot `2 + cascade`); there is no partition
+  for cascades 2-3 and the impl early-outs above index 1. Blades are **generated
+  once and culled per view**: the placement CS tests every candidate against up to
+  three plane sets (camera, cascade 0, cascade 1) and appends survivors into that
+  view's partition, so the shadow blades are the same blades, not a second placement
+  pass. All shadow blades use the **LO mesh** (15 indices at `firstIndex 33`), and
+  the caster binds the **same `GrassDrawConstants`** the lit pass does — same wind
+  block, same main-camera position — so a swaying blade casts the shadow it is
+  actually standing in. Two switches gate it, both feeding
+  `Flux_GrassImpl::IsShadowCastingEnabled()` alongside the engine-wide
+  `m_bShadowsEnabled`: the `m_bGrassShadowsEnabled` graphics option and the
+  `Flux/Grass/DisableShadowCasting` debug variable. Turning either off drops the
+  cascade partitions out of the active-slot mask, so it removes the **placement
+  work** as well as the two draws.
+- **Every caster recorded into a cascade must call `UseBindlessTextures(2)` itself** —
+  including depth-only ones that sample nothing. Set 2 is in every spine pipeline's
+  layout because `Common/Bindings.slang` declares the block and Slang keeps declared
+  `ParameterBlock`s; `BindPersistentSpineSets` auto-binds only GLOBAL/VIEW. Do NOT
+  assume an earlier caster bound it: `Flux_UnifiedMeshImpl::RenderToShadowMap`
+  early-outs on zero buckets *before* its own `UseBindlessTextures(2)`, so on a scene
+  with no unified opaque casters the next caster in the cascade is the first user and
+  inherits nothing.
+- **`Grass` MUST be registered before `Shadows` too**, for the same reason
+  `UnifiedMesh` is: each of cascades 0-1 declares a `ReadBuffer` on the grass blade
+  pool / visible-index / indirect-args buffers, whose only writers are the grass
+  Reset/Placement/IndirectFixup passes. Pinned by
+  `FluxGrassImpl::GrassIsDeclaredBeforeShadows`.
 - **`UnifiedMesh` MUST be registered before `Shadows`** in `RegisterDefaultFeatures`.
   The `ReadBuffer` declarations in `SetupRenderGraph` are what order the cascades
   after the cull — but a reader only links to an EARLIER-declared writer, so with

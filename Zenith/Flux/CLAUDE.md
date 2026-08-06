@@ -78,7 +78,9 @@ For the full graph lifecycle (Setup -> Compile -> Execute), barrier synthesis, t
 > `RegisterDefaultFeatures` (a reader links only to an EARLIER-declared writer). It wasn't, the edges
 > were silently absent, and the sort interleaved the cascades with their own producers — one drew from
 > indirect args the reset had just zeroed. `Flux_RenderGraph::ValidateProducerBeforeConsumer` now
-> guards it and must stay at zero violations.
+> guards it and must stay at zero violations. **`Grass` is registered before `Shadows` for exactly
+> the same reason** — cascades 0-1 draw its LO blade partition indirect, so they read the buffers
+> its reset/placement/fixup compute passes fill.
 
 > **Primitives sits in the G-buffer block, not with the overlays** — this diagram used to list it beside DeferredShading/Skybox/Fog/Particles. `Flux_PrimitivesImpl::SetupRenderGraph` declares its one pass ("Primitives GBuffer") as a `Writes` of all four core MRTs + the depth attachment, and "Apply Lighting" `Read`s exactly those, so the topological sort can only put Primitives **before** lighting. Primitive draws are therefore lit (or, on the gameplay channel, tagged unlit and passed through) by the deferred pass like any other opaque geometry — they are not composited on top of it.
 
@@ -121,7 +123,7 @@ Note: Materials and textures are now in `AssetHandling/` (see AssetHandling/CLAU
 - `SSR/` - Screen-space reflections (see SSR/CLAUDE.md)
 - `SSGI/` - Screen-space global illumination (see SSGI/CLAUDE.md)
 - `Decals/` - Deferred decals (see Decals/CLAUDE.md)
-- `Vegetation/` - GPU-driven grass (see Vegetation/CLAUDE.md). Three compute passes regenerate every blade from scratch each frame, then two indirect draws write them into the **G-buffer** — blades are opaque geometry lit by DeferredShading, not a forward overlay. Nothing per-blade is persisted or uploaded.
+- `Vegetation/` - GPU-driven grass (see Vegetation/CLAUDE.md). Three compute passes regenerate every blade from scratch each frame, then two indirect draws write them into the **G-buffer** — blades are opaque geometry lit by DeferredShading, not a forward overlay — and two more draw the LO blade into CSM cascades 0-1. Nothing per-blade is persisted or uploaded.
 - `Translucency/` - Forward translucent pass
 - `SDFs/` - Signed distance field rendering
 - `Quads/` - Textured/UI quad rendering

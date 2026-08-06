@@ -13,6 +13,7 @@
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Terrain/Flux_TerrainImpl.h"
 #include "Flux/UnifiedMesh/Flux_UnifiedMeshImpl.h"   // Stage 2: unified GPU-driven shadow casters
+#include "Flux/Vegetation/Flux_GrassImpl.h"          // grass casters (cascades 0-1 only)
 
 // Graph-owned transient — backing Flux_RenderAttachment is allocated and
 // destroyed by the render graph, sized from the descriptor in SetupRenderGraph.
@@ -176,7 +177,16 @@ static void ExecuteShadowCascade(Flux_CommandBuffer* pxCommandList, void* pUserD
 	// depth-only pipeline + draws cascade view (u+1) of the shared cull-output buffers (per-cascade
 	// frustum-culled). The cascade pass declares the cull-output ReadBuffer (see SetupRenderGraph)
 	// so the reset->cull->cascade barrier is synthesised.
-	g_xEngine.UnifiedMesh().RenderToShadowMap(*pxCommandList, u);
+	auto& xEngine = g_xEngine;
+	xEngine.UnifiedMesh().RenderToShadowMap(*pxCommandList, u);
+
+	// Grass casters. One indirect draw of cascade u's LO blade partition, which the
+	// placement CS filled by testing every blade against THIS cascade's frustum — the
+	// blades are generated once and culled per view, never re-placed for the light.
+	// Ungated on purpose: only cascades 0-1 have a partition and the impl early-outs
+	// above that, so a gate here would duplicate a bound that belongs with the
+	// partition layout it protects.
+	xEngine.Grass().RenderToShadowMap(*pxCommandList, u);
 
 	// #TODO: Enable terrain shadow casting
 	// g_xEngine.Terrain().RenderToShadowMap(*pxCommandList, u);
@@ -206,8 +216,19 @@ void Flux_ShadowsImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// Declared UNCONDITIONALLY (not gated on the runtime toggle): the cull pass always writes
 	// them, the read is harmless when the unified path is off (the cascade draw early-outs), and
 	// keeping the declaration static means toggling the path needs no graph rebuild for shadows.
-	Flux_UnifiedMeshImpl& xUnified = g_xEngine.UnifiedMesh();
+	auto& xEngine = g_xEngine;
+	Flux_UnifiedMeshImpl& xUnified = xEngine.UnifiedMesh();
 	const bool bUnifiedResources = xUnified.m_bResourcesReady;
+
+	// Grass takes the identical shape. The cascade caster draws indirect out of the
+	// grass reset -> placement -> fixup chain, so each cascade that draws grass must
+	// READ those buffers or the graph has no reason to order it after them — and
+	// "Grass" is registered BEFORE "Shadows" precisely so these reads find an earlier
+	// writer (see RegisterDefaultFeatures). Gated on the producing feature having
+	// created its buffers, exactly as bUnifiedResources is; every Initialise runs
+	// before every SetupRenderGraph, and a Null_ build creates them too.
+	Flux_GrassImpl& xGrass = xEngine.Grass();
+	const bool bGrassResources = xGrass.IsGPUReady();
 
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
@@ -235,6 +256,17 @@ void Flux_ShadowsImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 			// run earlier in the frame so they need their own declared read). Unconditional +
 			// harmless with no skinned casters (the skinning dispatch is skipped at 0 jobs).
 			xGraph.ReadBuffer(xPass, xUnified.m_xSkinnedArenaBuffer.GetBuffer(), RESOURCE_ACCESS_READ_VERTEX_BUFFER);
+		}
+
+		// Declared for the cascades that actually draw grass and no further: only
+		// cascades 0-1 own a blade partition, and a read declared on 2-3 would order
+		// them behind the placement chain and emit buffer barriers for content those
+		// passes never touch.
+		if (bGrassResources && u < uFLUX_GRASS_MAX_CASCADES)
+		{
+			xGraph.ReadBuffer(xPass, xGrass.GetVisibleIndexBuffer(), RESOURCE_ACCESS_READ_BUFFER_SRV);
+			xGraph.ReadBuffer(xPass, xGrass.GetBladePoolBuffer(),    RESOURCE_ACCESS_READ_BUFFER_SRV);
+			xGraph.ReadBuffer(xPass, xGrass.GetIndirectArgsBuffer(), RESOURCE_ACCESS_READ_INDIRECT_ARG);
 		}
 	}
 }

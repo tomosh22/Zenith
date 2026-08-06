@@ -36,6 +36,10 @@
 
 #include <string>
 
+// The gather reads the camera + cascade view-projections straight out of the
+// registry; by reference only, so the declaration is enough.
+class Flux_RenderViewRegistry;
+
 //=============================================================================
 // GPU contract — PINNED against Zenith/Flux/Shaders/Vegetation/*.slang.
 //
@@ -63,6 +67,9 @@ constexpr u_int uFLUX_GRASS_MAX_CASCADES   = 2u;   // slots 2-3; a third cascade
 // six INWARD planes each, view-major.
 constexpr u_int uFLUX_GRASS_FRUSTUM_COUNT = 3u;
 constexpr u_int uFLUX_GRASS_FRUSTUM_PLANES = uFLUX_GRASS_FRUSTUM_COUNT * 6u;
+static_assert(uFLUX_GRASS_FRUSTUM_COUNT == 1u + uFLUX_GRASS_MAX_CASCADES,
+	"frustum slot 0 is the camera and slots 1.. are the cascades one-for-one — a third cascade "
+	"would need both a frustum slot and a partition, and the two must grow together");
 
 // One thread per lattice cell; the placement CS decodes TILE-MAJOR, so the
 // dispatch is (tileCount * cells-per-tile) threads in 64-wide groups.
@@ -201,6 +208,11 @@ public:
 	// SetEnabled has). The value reaches the draw CB through the next gather.
 	void  SetDebugMode(u_int uMode) { m_uDebugMode = uMode; }
 	u_int GetDebugMode() const { return m_uDebugMode; }
+	// The DisableShadowCasting debug variable is ImGui-only, so an A/B — or a test —
+	// drives it here for the same reason SetDebugMode exists. Third input to
+	// IsShadowCastingEnabled(), and it gates GENERATION as well as the draw.
+	void  SetDisableShadowCasting(bool bDisable) { m_bDisableShadowCasting = bDisable; }
+	bool  IsShadowCastingDisabled() const { return m_bDisableShadowCasting; }
 
 	// ===== Displacement seam (consumed by a later phase) =====
 	struct Mover
@@ -251,6 +263,11 @@ public:
 	u_int GetSubmittedDrawCount() const { return m_uSubmittedDrawCount; }
 	float GetBufferUsageMB() const;
 
+	// Bit i set <=> the placement CS was told to fill partition i this frame. Slots
+	// 0-1 (camera HI/LO) are unconditional; slots 2-3 (cascades 0-1) require shadow
+	// casting to be enabled AND the last gather to have staged real cascade frusta.
+	u_int GetActiveSlotMask() const { return ComputeActiveSlotMask(); }
+
 	// EXPLICIT SLOW PATH — drains staged writes and idles the device. Downloads the
 	// 320-byte indirect block and sums the 16 instance counts. Headless this is 0 by
 	// construction (DownloadBufferData zero-fills without an allocator), so it is
@@ -258,11 +275,22 @@ public:
 	u_int ReadbackVisibleBladeCount();
 
 	// ===== Shadows =====
-	// Per-cascade caster draw, called from inside cascade uCascade's pass record by
-	// a later phase. Draws the LO partition from indirect slot (2 + uCascade), so
-	// only cascades 0-1 have a partition at all. No-op when unbuilt, when shadow
-	// casting is off, or when the cascade partitions were not populated this frame.
+	// Per-cascade caster draw, recorded from inside cascade uCascade's pass by
+	// Flux_ShadowsImpl::ExecuteShadowCascade. Draws the LO partition from indirect
+	// slot (2 + uCascade), so only cascades 0-1 have a partition at all. No-op when
+	// unbuilt, when shadow casting is off, or when the cascade partitions were not
+	// populated this frame.
 	void RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, u_int uCascade);
+
+	// The three persistent buffers a cascade pass must declare a READ on so the graph
+	// orders reset -> placement -> fixup ahead of it and synthesises the
+	// WRITE_UAV -> READ barriers. Non-const because Flux_RenderGraph::ReadBuffer takes
+	// a mutable Flux_Buffer& (traffic is keyed by object address). This is the only
+	// window into the private GPU state and it exists because the declaration has to
+	// be made by the pass's OWNER, which is Flux_ShadowsImpl.
+	Flux_Buffer& GetBladePoolBuffer()    { return m_xBladePoolBuffer.GetBuffer(); }
+	Flux_Buffer& GetVisibleIndexBuffer() { return m_xVisibleIndexBuffer.GetBuffer(); }
+	Flux_Buffer& GetIndirectArgsBuffer() { return m_xIndirectArgsBuffer.GetBuffer(); }
 
 	// ===== Per-frame gather (main thread; hung on the Placement pass's .Prepare) =====
 	// Single writer of the per-frame state; the record callbacks are pure readers.
@@ -304,12 +332,16 @@ private:
 	// The three Stage* helpers are PURE builders of a CPU-side block; a single
 	// UploadFrameBuffers then pushes them all, so the device reach lives in exactly
 	// one place per frame.
-	void  SelectTilesForFrame(const Zenith_Maths::Vector3& xCameraPos, const Zenith_Maths::Matrix4& xViewProjNoJitter);
+	// Freezes this frame's per-view matrices (and m_uCascadeFrustaCount) so tile
+	// selection and the GPU plane block cull against the IDENTICAL views — two
+	// separate fetches could straddle a stage and disagree.
+	void  StageFrustumViewProjs(const Flux_RenderViewRegistry& xViews);
+	void  SelectTilesForFrame(const Zenith_Maths::Vector3& xCameraPos);
 	void  StageTileRecords(Flux_GrassTileGPU* paxOut) const;
 	void  StagePlacementConstants(Flux_GrassPlacementConstantsGPU& xOut,
-		const Zenith_Maths::Vector3& xCameraPos, const Zenith_Maths::Matrix4& xViewProjNoJitter) const;
+		const Zenith_Maths::Vector3& xCameraPos) const;
 	void  StageDrawConstants(Flux_GrassDrawConstantsGPU& xOut, const Zenith_Maths::Vector3& xCameraPos) const;
-	void  UploadFrameBuffers(const Zenith_Maths::Vector3& xCameraPos, const Zenith_Maths::Matrix4& xViewProjNoJitter);
+	void  UploadFrameBuffers(const Zenith_Maths::Vector3& xCameraPos);
 	void  AdvanceWind(float fTimeSeconds);
 	float ComputeBladeHeadroom() const;
 	u_int ComputeActiveSlotMask() const;
@@ -389,6 +421,11 @@ private:
 	float m_fHeightGridCellSize = 0.0f;
 
 	// ===== Per-frame frozen state =====
+	// Per-view NoJitter view-projections, FRUSTUM-SLOT major: [0] camera, [1] cascade
+	// 0, [2] cascade 1. Slots past m_uCascadeFrustaCount hold a COPY of the camera's
+	// (see StageFrustumViewProjs) so an inactive slot degrades to "cull like the
+	// camera" rather than culling against uninitialised planes.
+	Zenith_Maths::Matrix4 m_axFrustumViewProjs[uFLUX_GRASS_FRUSTUM_COUNT] = {};
 	Flux_GrassTileList m_xTileList;
 	bool  m_bVelocityLatched = false;   // frozen copy of IsVelocityMRTActive for the record
 	// Frozen copy of the m_bGrassEnabled graphics option. The four record callbacks
@@ -434,9 +471,10 @@ private:
 	// ===== Flags =====
 	bool  m_bBuilt = false;
 	bool  m_bGPUResourcesReady = false;
-	// Cascade frusta fed into the placement constants this frame. Zero until the
-	// shadow phase supplies real cascade planes, which is what keeps the cascade
-	// partitions out of the active-slot mask (culling them against a duplicated
-	// CAMERA frustum would fill them with the wrong blades, not merely too few).
+	// REAL cascade frusta staged into the placement constants this frame — never a
+	// duplicated camera frustum, which is why the mask keys off this count rather
+	// than off the option alone: culling a cascade partition against the camera's
+	// frustum would fill it with the WRONG blades, not merely too few. Zero whenever
+	// shadow casting is off, the cascade views are inactive, or no frame was staged.
 	u_int m_uCascadeFrustaCount = 0u;
 };

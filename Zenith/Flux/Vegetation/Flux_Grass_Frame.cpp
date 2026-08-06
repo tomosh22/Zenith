@@ -192,7 +192,48 @@ float Flux_GrassImpl::ComputeBladeHeadroom() const
 	return fTallest;
 }
 
-void Flux_GrassImpl::SelectTilesForFrame(const Zenith_Maths::Vector3& xCameraPos, const Zenith_Maths::Matrix4& xViewProjNoJitter)
+void Flux_GrassImpl::StageFrustumViewProjs(const Flux_RenderViewRegistry& xViews)
+{
+	// Slot 0 is the camera. NoJitter, NEVER the jittered view-proj: TAA's sub-pixel
+	// jitter would shimmer both the tile set and the per-blade cull frame to frame.
+	m_axFrustumViewProjs[0] = xViews.View(kuFluxViewSlotMain).m_xConstants.m_xViewProjMatNoJitter;
+
+	// Slots 1-2 are cascades 0-1, read from the SAME registry payload the unified
+	// cull extracts its per-view planes from, so a blade and the mesh beside it are
+	// culled against the identical cascade frustum. A cascade never jitters —
+	// UpdateShadowMatrices stages NoJitter equal to its ortho view-proj — so the
+	// accessor is shared for uniformity, not because there is a jitter to strip.
+	//
+	// The count is what activates the cascade partitions, so it must reflect REAL
+	// planes only: it stays at zero whenever casting is off, which is what stops the
+	// placement CS generating into partitions no cascade will draw.
+	m_uCascadeFrustaCount = 0u;
+	if (IsShadowCastingEnabled())
+	{
+		for (u_int u = 0; u < uFLUX_GRASS_MAX_CASCADES; u++)
+		{
+			const u_int uSlot = kuFluxViewSlotShadowFirst + u;
+			if (!xViews.IsViewActive(uSlot))
+			{
+				// Cascades activate as a block from slot 0 up, so the first inactive
+				// one ends the run — taking a later one would mis-key the partitions.
+				break;
+			}
+			m_axFrustumViewProjs[1u + u] = xViews.View(uSlot).m_xConstants.m_xViewProjMatNoJitter;
+			m_uCascadeFrustaCount = u + 1u;
+		}
+	}
+
+	// Every unfilled slot carries a COPY of the camera's. Nothing reads them (they are
+	// outside the active-slot mask), but a duplicate degrades to "cull like the camera"
+	// if a slot were ever enabled early, whereas uninitialised planes cull randomly.
+	for (u_int u = m_uCascadeFrustaCount; u < uFLUX_GRASS_MAX_CASCADES; u++)
+	{
+		m_axFrustumViewProjs[1u + u] = m_axFrustumViewProjs[0];
+	}
+}
+
+void Flux_GrassImpl::SelectTilesForFrame(const Zenith_Maths::Vector3& xCameraPos)
 {
 	if (m_bFreezeCulling && m_xTileList.m_uCount > 0u)
 	{
@@ -202,10 +243,13 @@ void Flux_GrassImpl::SelectTilesForFrame(const Zenith_Maths::Vector3& xCameraPos
 		return;
 	}
 
-	// NoJitter, NEVER the jittered view-proj: TAA's sub-pixel jitter would shimmer
-	// the visible tile set frame to frame.
-	Zenith_Frustum xFrustum;
-	xFrustum.ExtractFromViewProjection(xViewProjNoJitter);
+	// Camera + every live cascade, from the matrices this frame froze.
+	Zenith_Frustum axFrusta[uFLUX_GRASS_FRUSTUM_COUNT];
+	const u_int uFrustaCount = 1u + glm::min(m_uCascadeFrustaCount, uFLUX_GRASS_MAX_CASCADES);
+	for (u_int u = 0; u < uFrustaCount; u++)
+	{
+		axFrusta[u].ExtractFromViewProjection(m_axFrustumViewProjs[u]);
+	}
 
 	Flux_GrassTileSelectParams xParams;
 	xParams.m_xCameraPos = xCameraPos;
@@ -223,11 +267,12 @@ void Flux_GrassImpl::SelectTilesForFrame(const Zenith_Maths::Vector3& xCameraPos
 	xParams.m_xHeights.m_fCellSize = m_fHeightGridCellSize;
 	xParams.m_xHeights.m_fFallbackMinY = m_fHeightBias;
 	xParams.m_xHeights.m_fFallbackMaxY = m_fHeightBias + m_fHeightScale;
-	// One frustum this phase. The cascade frusta join the list when the shadow phase
-	// feeds them — a tile behind the camera still has to fill the cascades it casts
-	// into, so they are a UNION and not an intersection.
-	xParams.m_xFrusta.m_pxFrusta = &xFrustum;
-	xParams.m_xFrusta.m_uCount = 1u;
+	// A UNION, never an intersection: a tile behind the camera still has to fill the
+	// cascades it casts into, so a tile survives if ANY of these wants it. With
+	// casting off the count is 1 and the selection is exactly what it was before
+	// grass cast at all.
+	xParams.m_xFrusta.m_pxFrusta = axFrusta;
+	xParams.m_xFrusta.m_uCount = uFrustaCount;
 
 	Flux_GrassSelectTiles(xParams, m_xTileList);
 
@@ -256,21 +301,17 @@ void Flux_GrassImpl::StageTileRecords(Flux_GrassTileGPU* paxOut) const
 }
 
 void Flux_GrassImpl::StagePlacementConstants(Flux_GrassPlacementConstantsGPU& xOut,
-	const Zenith_Maths::Vector3& xCameraPos, const Zenith_Maths::Matrix4& xViewProjNoJitter) const
+	const Zenith_Maths::Vector3& xCameraPos) const
 {
 	const Zenith_GraphicsOptions& xOpts = Zenith_GraphicsOptions::Get();
 
-	Flux_InstanceCullingUtil::ExtractFrustumPlanes(xViewProjNoJitter, &xOut.m_axFrustumPlanes[0]);
-	// The cascade slots carry a COPY of the camera frustum until the shadow phase
-	// supplies real cascade planes. They are inactive in the slot mask, so nothing
-	// reads them — but a duplicated frustum degrades to "cull like the camera" if a
-	// slot were ever enabled early, whereas uninitialised planes would cull randomly.
-	for (u_int uView = 1; uView < uFLUX_GRASS_FRUSTUM_COUNT; uView++)
+	// Camera in slot 0, cascades 0-1 in slots 1-2 — the very matrices the tile
+	// scheduler culled against this frame, so a tile kept for a cascade and the blades
+	// inside it cannot disagree about which views want them. Slots without a live
+	// cascade already hold a camera copy and are masked off.
+	for (u_int uView = 0; uView < uFLUX_GRASS_FRUSTUM_COUNT; uView++)
 	{
-		for (u_int uPlane = 0; uPlane < 6u; uPlane++)
-		{
-			xOut.m_axFrustumPlanes[uView * 6u + uPlane] = xOut.m_axFrustumPlanes[uPlane];
-		}
+		Flux_InstanceCullingUtil::ExtractFrustumPlanes(m_axFrustumViewProjs[uView], &xOut.m_axFrustumPlanes[uView * 6u]);
 	}
 
 	FillWindBlock(xOut.m_xWind, m_xWind, xOpts.m_bGrassWindEnabled);
@@ -321,7 +362,7 @@ void Flux_GrassImpl::StageDrawConstants(Flux_GrassDrawConstantsGPU& xOut, const 
 		std::bit_cast<float>(m_uDebugMode), 0.0f);
 }
 
-void Flux_GrassImpl::UploadFrameBuffers(const Zenith_Maths::Vector3& xCameraPos, const Zenith_Maths::Matrix4& xViewProjNoJitter)
+void Flux_GrassImpl::UploadFrameBuffers(const Zenith_Maths::Vector3& xCameraPos)
 {
 	Flux_MemoryManager& xMem = g_xEngine.FluxMemory();
 
@@ -343,7 +384,7 @@ void Flux_GrassImpl::UploadFrameBuffers(const Zenith_Maths::Vector3& xCameraPos,
 	xMem.UploadBufferData(m_xTypeParamsBuffer.GetBuffer().m_xVRAMHandle, axTypeParams, sizeof(axTypeParams));
 
 	Flux_GrassPlacementConstantsGPU xPlacement;
-	StagePlacementConstants(xPlacement, xCameraPos, xViewProjNoJitter);
+	StagePlacementConstants(xPlacement, xCameraPos);
 	xMem.UploadBufferData(m_xPlacementConstantsBuffer.GetBuffer().m_xVRAMHandle, &xPlacement, sizeof(xPlacement));
 
 	Flux_GrassDrawConstantsGPU xDraw;
@@ -386,15 +427,17 @@ void Flux_GrassImpl::GatherGrassFrame(void*)
 		m_uScheduledInstanceCount = 0u;
 		m_uVisibleTileCount = 0u;
 		m_uTileCount = 0u;
+		// No frame was staged, so no cascade frustum is live — the count must say so
+		// or the mask would advertise partitions this frame never filled.
+		m_uCascadeFrustaCount = 0u;
 		return;
 	}
 
 	const Zenith_Maths::Vector3 xCameraPos = xGraphics.GetCameraPosition();
-	const Zenith_Maths::Matrix4& xViewProjNoJitter =
-		xGraphics.RenderViews().View(kuFluxViewSlotMain).m_xConstants.m_xViewProjMatNoJitter;
 
-	SelectTilesForFrame(xCameraPos, xViewProjNoJitter);
-	UploadFrameBuffers(xCameraPos, xViewProjNoJitter);
+	StageFrustumViewProjs(xGraphics.RenderViews());
+	SelectTilesForFrame(xCameraPos);
+	UploadFrameBuffers(xCameraPos);
 
 	// HI + LO. Recorded unconditionally when there is anything to place; a frame that
 	// placed nothing still records them with instanceCount 0 (see RecordGBuffer).
@@ -494,6 +537,13 @@ void Flux_GrassImpl::RecordGBuffer(Flux_CommandBuffer& xCmdBuf)
 	xCmdBuf.SetIndexBuffer(m_xBladeIndexBuffer);
 
 	Flux_ShaderBinder xBinder(xCmdBuf);
+	// The blade shading core samples the vein / gloss / ramp tables out of the bindless
+	// array, so this one is load-bearing rather than a layout formality. It was absent
+	// and the pass still drew, because a Vulkan set binding survives a pipeline switch
+	// when the layouts are prefix-compatible and Terrain / UnifiedMesh had already bound
+	// set 2 earlier in the same worker command buffer. Relying on that makes correctness
+	// depend on which OTHER features are enabled; bind it here.
+	xCmdBuf.UseBindlessTextures(2);
 	xBinder.BindCBV(xShader, "GrassDrawConstants", &m_xDrawConstantsBuffer.GetCBV());
 	if (bVelocity)
 	{
@@ -543,6 +593,15 @@ void Flux_GrassImpl::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, u_int uCasca
 	xCmdBuf.SetIndexBuffer(m_xBladeIndexBuffer);
 
 	Flux_ShaderBinder xBinder(xCmdBuf);
+	// Set 2 is in EVERY spine pipeline's layout whether or not the shader samples it:
+	// Common/Bindings.slang declares the BINDLESS block and Slang does not dead-strip a
+	// declared ParameterBlock (that is what keeps the PASS block at space 3). The
+	// depth-only caster never reads a texture — fsMain is empty — but Vulkan still
+	// requires the set its layout names to be BOUND, and BindPersistentSpineSets covers
+	// only GLOBAL/VIEW. Nothing else in a cascade is guaranteed to have bound it first:
+	// UnifiedMesh::RenderToShadowMap early-outs with zero buckets BEFORE its own
+	// UseBindlessTextures, so on a grass-only scene this draw is the first user.
+	xCmdBuf.UseBindlessTextures(2);
 	// The SAME draw constants as the lit pass. The projection differs and comes from
 	// the cascade pass's own VIEW set; everything else must match or a swaying blade
 	// casts a shadow it is not standing in.

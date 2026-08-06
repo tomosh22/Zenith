@@ -3,6 +3,8 @@
 #include "Flux/Vegetation/Flux_GrassTypes.h"
 #include "Flux/Vegetation/Flux_GrassTypeTable.h"
 #include "Core/Zenith_Engine.h"
+#include "Core/Zenith_GraphicsOptions.h"
+#include "Flux/Flux_FeatureRegistry.h"
 #include "DataStream/Zenith_DataStream.h"
 
 // ============================================================================
@@ -1645,6 +1647,114 @@ ZENITH_TEST(FluxGrassImpl, ReadbackZeroHeadless)
 
 	xGrass.SetDensityScale(fDensityScaleBefore);
 	xGrass.ClearSceneData();
+}
+
+ZENITH_TEST(FluxGrassImpl, ShadowCastingAnswersToAllThreeInputs)
+{
+	Flux_GrassImpl& xGrass = g_xEngine.Grass();
+	Zenith_GraphicsOptions& xOpts = Zenith_GraphicsOptions::Get();
+
+	// Process-wide state: every leg below restores exactly what it found, because
+	// m_bGrassShadowsEnabled is set once at boot from Project_SetGraphicsOptions and
+	// a later test (or the next frame) is entitled to that value.
+	const bool bShadowsBefore      = xOpts.m_bShadowsEnabled;
+	const bool bGrassShadowsBefore = xOpts.m_bGrassShadowsEnabled;
+	const bool bDisableBefore      = xGrass.IsShadowCastingDisabled();
+
+	// The three inputs are ANDed, so each one ALONE must be able to switch casting
+	// off. Grass casters are the one caster class cheap enough to keep and expensive
+	// enough to want dropped on their own, which is why they answer to a per-feature
+	// option and a debug escape hatch on top of the engine-wide shadow switch.
+	xOpts.m_bShadowsEnabled = true;
+	xOpts.m_bGrassShadowsEnabled = true;
+	xGrass.SetDisableShadowCasting(false);
+	ZENITH_ASSERT_TRUE(xGrass.IsShadowCastingEnabled(), "all three inputs permitting must enable grass shadow casting");
+
+	xOpts.m_bShadowsEnabled = false;
+	ZENITH_ASSERT_FALSE(xGrass.IsShadowCastingEnabled(), "the engine-wide shadow switch alone must disable grass casting");
+	xOpts.m_bShadowsEnabled = true;
+
+	xOpts.m_bGrassShadowsEnabled = false;
+	ZENITH_ASSERT_FALSE(xGrass.IsShadowCastingEnabled(), "the per-feature grass-shadow option alone must disable grass casting");
+	xOpts.m_bGrassShadowsEnabled = true;
+
+	xGrass.SetDisableShadowCasting(true);
+	ZENITH_ASSERT_TRUE(xGrass.IsShadowCastingDisabled(), "the debug override must read back what was written");
+	ZENITH_ASSERT_FALSE(xGrass.IsShadowCastingEnabled(), "the DisableShadowCasting override alone must disable grass casting");
+
+	// Clearing it must RESTORE casting, not merely stop forcing it off — the override
+	// is an A/B switch, so both directions are the contract.
+	xGrass.SetDisableShadowCasting(false);
+	ZENITH_ASSERT_TRUE(xGrass.IsShadowCastingEnabled(), "clearing the debug override must restore grass casting");
+
+	xOpts.m_bShadowsEnabled = bShadowsBefore;
+	xOpts.m_bGrassShadowsEnabled = bGrassShadowsBefore;
+	xGrass.SetDisableShadowCasting(bDisableBefore);
+}
+
+ZENITH_TEST(FluxGrassImpl, ActiveSlotMaskExcludesCascadesWithoutShadowCasting)
+{
+	Flux_GrassImpl& xGrass = g_xEngine.Grass();
+	Zenith_GraphicsOptions& xOpts = Zenith_GraphicsOptions::Get();
+	const bool bShadowsBefore      = xOpts.m_bShadowsEnabled;
+	const bool bGrassShadowsBefore = xOpts.m_bGrassShadowsEnabled;
+	const bool bDisableBefore      = xGrass.IsShadowCastingDisabled();
+
+	const u_int uCameraSlots  = (1u << uFLUX_GRASS_SLOT_CAMERA_HI) | (1u << uFLUX_GRASS_SLOT_CAMERA_LO);
+	const u_int uCascadeSlots = (1u << uFLUX_GRASS_SLOT_CASCADE_0) | (1u << uFLUX_GRASS_SLOT_CASCADE_1);
+
+	// The mask is what the placement CS reads, so casting off must stop GENERATION
+	// into the cascade partitions and not merely the two draws — a partition still
+	// being filled would cost every shadow blade's append for a cascade nothing reads.
+	xGrass.SetDisableShadowCasting(true);
+	ZENITH_ASSERT_EQ(xGrass.GetActiveSlotMask() & uCascadeSlots, 0u,
+		"the debug override must drop BOTH cascade partitions out of the active-slot mask");
+	ZENITH_ASSERT_EQ(xGrass.GetActiveSlotMask() & uCameraSlots, uCameraSlots,
+		"the camera partitions are unconditional — casting off must not touch them");
+
+	xOpts.m_bShadowsEnabled = false;
+	xOpts.m_bGrassShadowsEnabled = false;
+	xGrass.SetDisableShadowCasting(false);
+	ZENITH_ASSERT_EQ(xGrass.GetActiveSlotMask() & uCascadeSlots, 0u,
+		"the graphics options must gate the cascade partitions exactly as the debug override does");
+	ZENITH_ASSERT_EQ(xGrass.GetActiveSlotMask() & uCameraSlots, uCameraSlots,
+		"the camera partitions are unconditional under the options too");
+
+	// Permitting casting is NOT enough on its own: a slot also needs a REAL cascade
+	// frustum staged by a gather, because culling a partition against a duplicated
+	// CAMERA frustum would fill it with the wrong blades. No frame is staged here, so
+	// the enabled case is bounded rather than asserted set.
+	xOpts.m_bShadowsEnabled = true;
+	xOpts.m_bGrassShadowsEnabled = true;
+	const u_int uMask = xGrass.GetActiveSlotMask();
+	ZENITH_ASSERT_EQ(uMask & uCameraSlots, uCameraSlots, "the camera partitions must be live in every configuration");
+	ZENITH_ASSERT_EQ(uMask & ~(uCameraSlots | uCascadeSlots), 0u,
+		"only the four LIVE partitions may ever appear — the other 12 indirect slots are reserved and must stay zero");
+
+	xOpts.m_bShadowsEnabled = bShadowsBefore;
+	xOpts.m_bGrassShadowsEnabled = bGrassShadowsBefore;
+	xGrass.SetDisableShadowCasting(bDisableBefore);
+}
+
+ZENITH_TEST(FluxGrassImpl, GrassIsDeclaredBeforeShadows)
+{
+	// The live feature table this build ships. The setup walk IS the render-graph
+	// declaration order, so comparing the two indices asks exactly the question the
+	// cascades' grass reads depend on.
+	const Flux_FeatureRegistry& xReg = Flux_FeatureRegistry::Get();
+	const u_int uGrass   = xReg.FindSetupStepIndex("Grass");
+	const u_int uShadows = xReg.FindSetupStepIndex("Shadows");
+
+	// Guarded against vacuity: a rename would otherwise make the comparison pass on
+	// two UINT32_MAXes.
+	ZENITH_ASSERT_TRUE(uGrass != UINT32_MAX, "setup step 'Grass' must exist, or this ordering assertion is vacuous");
+	ZENITH_ASSERT_TRUE(uShadows != UINT32_MAX, "setup step 'Shadows' must exist, or this ordering assertion is vacuous");
+
+	ZENITH_ASSERT_TRUE(uGrass < uShadows,
+		"'Grass' must be declared BEFORE 'Shadows': each of cascades 0-1 READS the grass blade pool / visible-index / "
+		"indirect-args buffers, and a reader only links to an EARLIER-declared writer. The other way round no edge forms "
+		"at all and the cascades are free to draw from indirect args the reset has not filled yet (grass %u, shadows %u)",
+		uGrass, uShadows);
 }
 
 // ============================================================================

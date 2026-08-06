@@ -347,14 +347,19 @@ void Flux_FeatureRegistry::RegisterDefaultFeaturesInto(Flux_FeatureRegistry& xRe
 	// every cascade read find an earlier writer, so the reset->cull->cascade edges and their
 	// WRITE_UAV->READ barriers actually form. ValidateProducerBeforeConsumer guards this.
 	RegisterFeature<&Zenith_Engine::UnifiedMesh>(xReg, "UnifiedMesh", Flux_UnifiedMeshShaders::apxALL);
+	// Grass is the SECOND cascade producer and sits here for exactly the reason
+	// UnifiedMesh does. Cascades 0-1 each declare a READ of the grass blade pool /
+	// visible-index / indirect-args buffers, whose ONLY writers are this feature's
+	// Reset / Placement / IndirectFixup passes; declared after Shadows those reads
+	// would find no earlier writer, form no edge, and leave the cascades free to draw
+	// from indirect args the reset had not filled yet — the same silent failure the
+	// Shadows-before-UnifiedMesh ordering produced. Grass is ALSO an opaque G-BUFFER
+	// writer (its blade draws write the four MRTs + depth), but that only requires it
+	// to precede DeferredShading, so the cascade constraint is the tighter one and it
+	// picks the slot. Pinned by FluxGrassImpl::GrassIsDeclaredBeforeShadows.
+	RegisterFeature<&Zenith_Engine::Grass>(xReg, "Grass", Flux_GrassShaders::apxALL);
 	RegisterFeature<&Zenith_Engine::Shadows>(xReg, "Shadows");
 	RegisterFeature<&Zenith_Engine::Terrain>(xReg, "Terrain", Flux_TerrainShaders::apxALL);
-	// Grass is an opaque G-BUFFER writer — its indirect blade draws write the four
-	// MRTs + depth — so it must declare BEFORE DeferredShading, which reads them.
-	// Its reset/placement/fixup compute passes produce those draws' indirect args
-	// and visible-index partitions, and a reader only links to an EARLIER-declared
-	// writer, so the whole feature belongs here with the other G-buffer writers.
-	RegisterFeature<&Zenith_Engine::Grass>(xReg, "Grass", Flux_GrassShaders::apxALL);
 	RegisterFeature<&Zenith_Engine::Primitives>(xReg, "Primitives", Flux_PrimitivesShaders::apxALL);
 	// Stage 4: InstancedMeshes is now a shader-less registration front-end (the unified path
 	// draws instanced foliage). Registered with the no-shader overload so it owns no programs.

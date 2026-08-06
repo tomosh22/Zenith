@@ -3,10 +3,11 @@
 **Last updated:** 2026-08-06
 
 **★ LIVE BASELINE (OBSERVED 2026-08-06 on clean `Null_` builds):
-ZM boot `2962 ran / 2960 passed / 0 failed / 2 skipped`; engine boot (Null Combat)
-`1337 ran / 1336 passed / 0 failed / 1 skipped`; registry **55**.** This is the
-current pin in `zm-tests.yml` (`-Baseline 2962`) and `run_unit_gate.ps1`
-(default 1337). The GPU-grass overhaul moved engine units in four steps: Phase 1
+ZM boot `2965 ran / 2963 passed / 0 failed / 2 skipped`; engine boot (Null Combat)
+`1340 ran / 1339 passed / 0 failed / 1 skipped`; registry **55**.** This is the
+current pin in `zm-tests.yml` (`-Baseline 2965`) and `run_unit_gate.ps1`
+(default 1340). The GPU-grass overhaul moved engine units in five steps: Phase 5
++3 (shadow-casting truth table / slot-mask / registration-order pins), Phase 1
 +20 (`FluxGrassTypes` pure suite), Phase 2 +2 (`FluxBufferReadback` zero-fill
 contract), Phase 3 +4 (TerrainEditor GrassType map), Phase 4 (THE SWAP) +11 net
 (3 legacy member-poking grass tests deleted, 14 added across shader mirrors /

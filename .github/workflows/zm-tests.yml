@@ -194,6 +194,11 @@ jobs:
           #
           # History, newest first (the DERIVATION is the audit trail; the OBSERVED
           # number is the authority):
+          #   2965  GPU-grass overhaul Phase 5 (shadow casting)  observed 2026-08-06
+          #                   on a Null_ build. +3 ENGINE units (1337 -> 1340): grass
+          #                   shadow enable-flag truth table, active-slot-mask
+          #                   exclusion, and the grass-before-shadows registration
+          #                   pin (reader-links-earlier-writer).
           #   2962  GPU-grass overhaul Phase 4 (THE SWAP)  observed 2026-08-06 on a
           #                   Null_ build. +11 net ENGINE units (1326 -> 1337): the
           #                   CPU-scatter grass died with its 3 member-poking tests;
@@ -293,7 +298,7 @@ jobs:
           #   2817  ZM-D-173  = 2809 + 8: four ENGINE sensor-raycast units plus
           #                   two camera fixtures and two Home-placement units.
           $exe = 'Games\Zenithmon\Build\output\win64\null_vs2022_debug_win64_true\zenithmon.exe'
-          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 2962 -TimeoutSec 600
+          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 2965 -TimeoutSec 600
           if ($LASTEXITCODE -ne 0) { Write-Error "boot unit tests failed (see log above)"; exit $LASTEXITCODE }
 
       - name: Run Zenithmon tests

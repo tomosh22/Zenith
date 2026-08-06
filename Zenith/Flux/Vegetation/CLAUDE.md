@@ -4,10 +4,11 @@
 
 GPU-driven procedural grass. **Nothing about a blade is persisted.** Every frame
 the feature regenerates every blade from scratch on the GPU: three compute passes
-place and cull them into a fixed-capacity pool, and two indirect draws sweep a
-cubic Bezier blade into the **G-buffer**. There is no CPU instance array, no chunk
-grid and no upload of blade data — the CPU's whole job is to choose which TILES to
-dispatch and to stage the constants.
+place and cull them into a fixed-capacity pool, then two indirect draws sweep a
+cubic Bezier blade into the **G-buffer** and two more sweep the LO blade into CSM
+cascades 0-1. There is no CPU instance array, no chunk grid and no upload of blade
+data — the CPU's whole job is to choose which TILES to dispatch and to stage the
+constants.
 
 Regeneration is affordable because a blade is a pure function of its lattice node
 (all per-blade randomness keys off `Zenith_TerrainNoise::HashCoords`), and it is
@@ -41,6 +42,10 @@ under TAA.
 | G-buffer draws      |                              LO slot 1) -> 4 core MRTs +
 +---------------------+                              scene depth (5 MRTs under the
                                                      velocity latch)
+
+    ... and, from inside "Shadow Cascade 0" / "Shadow Cascade 1" (which are
+    ordered after IndirectFixup by their declared reads), 1 x
+    DrawIndexedIndirect each of the LO partition in slot 2 / slot 3.
 ```
 
 The blade draw is **indexed with no vertex buffer**: `SV_VertexID` delivers the
@@ -79,6 +84,14 @@ a pointer captured at setup would bind the wrong frame's buffer forever after.
 skips the `Prepare` of a disabled pass, so gating the pass on "is there grass this
 frame" would also gate the CPU work that decides it.
 
+The **shadow cascades 0-1 are consumers of the same three persistent buffers**:
+`Flux_ShadowsImpl::SetupRenderGraph` declares a `ReadBuffer` on the pool + the
+visible-index list (`READ_BUFFER_SRV`) and on the indirect args
+(`READ_INDIRECT_ARG`) for those two passes only, which is what orders them after
+IndirectFixup and synthesises the `WRITE_UAV -> READ` barriers. Grass exposes those
+three wrappers through `GetBladePoolBuffer` / `GetVisibleIndexBuffer` /
+`GetIndirectArgsBuffer` for exactly that declaration and nothing else.
+
 ## Files
 
 | File | Purpose |
@@ -104,7 +117,7 @@ All in `Shaders/Vegetation/`.
 | `Flux_Grass_Displacement.slang` | cs | Mover push field — **built, not dispatched** (see Seams) |
 | `Flux_Grass_ToGBuffer.slang` | vs+fs | The 4-MRT blade draw |
 | `Flux_Grass_ToGBufferVelocity.slang` | vs+fs | 5-MRT variant. Blades sway every frame, so its vertex stage rebuilds the pose against the PREVIOUS frame's wind rather than reprojecting a static position |
-| `Flux_Grass_ToShadowmap.slang` | vs+fs | Depth-only caster — **built, not scheduled** (see Seams) |
+| `Flux_Grass_ToShadowmap.slang` | vs+fs | Depth-only caster, recorded inside CSM cascades 0-1 (see Shadow casting) |
 
 ## The pinned contracts
 
@@ -237,7 +250,7 @@ reach the file.
 | `WindYawDeg` | float | -180-180 | **The** wind heading; the direction vector is derived from it each frame, so the slider and `SetWindDirection` can never disagree |
 | `FreezeCulling` | bool | | Holds the tile schedule so you can fly out and inspect it |
 | `ShowTileGrid` | bool | | **Storage only** — the outlines belong on the gameplay-safe primitives channel, which is not wired yet |
-| `DisableShadowCasting` | bool | | Third input to `IsShadowCastingEnabled()`; effective once the caster is scheduled |
+| `DisableShadowCasting` | bool | | Third input to `IsShadowCastingEnabled()`. Live A/B: drops the cascade partitions out of the active-slot mask, so it removes the placement work as well as the two cascade draws |
 | `ForceLoBlades` | bool | | **Storage only** |
 | `DebugOrbitDisplacer` | bool | | **Storage only** — consumed when the displacement pass lands |
 
@@ -297,14 +310,71 @@ backend) and, by construction, `ReadbackVisibleBladeCount`, which returns 0. The
 four passes are still declared and their callbacks still run against the no-op
 recorder, so a headless run exercises the same code a windowed one does.
 
+## Shadow casting (live, cascades 0-1)
+
+Grass casts into the first two CSM cascades. `Flux_ShadowsImpl::ExecuteShadowCascade`
+calls `RenderToShadowMap(cmdBuf, cascade)`, which draws that cascade's LO partition
+from indirect slot `2 + cascade`; cascades 2-3 own no partition and the impl
+early-outs above index 1.
+
+Blades are **generated once and culled per view**. The gather freezes the camera's
+and both cascades' `m_xViewProjMatNoJitter` (from the render-view registry — the
+same payload the unified cull extracts *its* planes from), extracts six inward
+planes per view into the placement constants, and the placement CS appends each
+survivor into every partition that wants it. There is no second placement pass and
+no per-light pose: the caster binds the **same `GrassDrawConstants`** the lit draws
+do, so wind, LOD convergence and class fade all key off the MAIN camera and a
+swaying blade casts the shadow it is standing in.
+
+Two consequences worth stating out loud:
+
+- **Tile scheduling is a UNION over camera ∪ cascades**, not an intersection — a
+  tile behind the camera still has to fill the cascades it casts into.
+  `GetScheduledInstanceCount()` therefore rises when casting is on. It stays
+  deterministic (the cascade matrices are camera-derived), which is what keeps the
+  Zenithmon exact-restore suites green.
+- **Disabling casting stops GENERATION, not just the draw.**
+  `m_uCascadeFrustaCount` goes to zero, the cascade slots leave the active-slot
+  mask, and the placement CS never appends a shadow blade. Both the
+  `m_bGrassShadowsEnabled` option and the `Flux/Grass/DisableShadowCasting` debug
+  variable land there, via `IsShadowCastingEnabled()`.
+
+A slot is never activated without a REAL cascade frustum behind it: culling a
+cascade partition against a duplicated *camera* frustum would fill it with the
+wrong blades — worse than an empty cascade, and harder to spot.
+
+**`Grass` is registered BEFORE `Shadows`** in `RegisterDefaultFeatures` for the
+same reason `UnifiedMesh` is: cascades 0-1 declare `ReadBuffer`s on the blade pool,
+the visible-index buffer and the indirect args, and a reader only links to an
+EARLIER-declared writer. Pinned by `FluxGrassImpl::GrassIsDeclaredBeforeShadows`.
+
+### Every grass draw must call `UseBindlessTextures(2)` — the depth-only one too
+
+Set 2 (BINDLESS) is in the layout of **every** spine pipeline, used or not.
+`Common/Bindings.slang` declares the block, Slang does not dead-strip a declared
+`ParameterBlock` (that is exactly what keeps the PASS block at space 3), so
+`Flux_Grass_ToShadowmap`'s reflection lists `g_axTextures` even though its `fsMain`
+is literally `void fsMain() {}` — its `.refl` is byte-identical to
+`Flux_Grass_ToGBuffer`'s. `BindPersistentSpineSets` auto-binds only GLOBAL (0) and
+VIEW (1); **BINDLESS stays on the explicit `UseBindlessTextures` path**, so Vulkan
+raises *"uses set 2 but that set is not bound"* on the first draw of a pipeline
+nobody bound it for.
+
+Do not try to fix this in the shader. There is no way to drop set 2 from a spine
+module's layout short of not including the spine, which would move the PASS block to
+space 0.
+
+The trap is that a missing bind is usually *invisible*: a Vulkan set binding survives
+a pipeline switch when the layouts are prefix-compatible, so a grass draw inherits
+whatever Terrain (`Flux_Terrain.cpp`) or UnifiedMesh bound earlier in the same worker
+command buffer. `RecordGBuffer` shipped without the call for exactly that reason. The
+cascade path is where it finally bit: `Flux_UnifiedMeshImpl::RenderToShadowMap`
+early-outs on zero buckets **before** its own `UseBindlessTextures(2)`, so on a
+grass-only scene the grass caster is the first user in that command buffer and there
+is nothing to inherit.
+
 ## Seams that are not live yet
 
-- **Shadow casting.** `RenderToShadowMap(cmdBuf, cascade)` and the depth-only
-  pipeline exist and draw the LO partition from indirect slot `2 + cascade`, but
-  no cascade pass calls it and `m_uCascadeFrustaCount` is 0, which keeps slots 2-3
-  out of the active-slot mask. Culling a cascade partition against a duplicated
-  *camera* frustum would fill it with the wrong blades — worse than an empty
-  cascade, and harder to spot.
 - **Displacement.** `SubmitMover` accepts up to 64 immediate-mode movers per frame
   and the displacement pipeline is built (so the VRAM footprint the TAA toggle
   stress test pins stays constant), but it is never dispatched and the push scale
