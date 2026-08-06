@@ -2,6 +2,7 @@
 #include "Zenith_Tools_TerrainExport.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "Core/Zenith_TerrainChunkLayout.h"
+#include "Flux/Terrain/Flux_TerrainSourceGrid.h"
 #include "DataStream/Zenith_DataStream.h"
 #include "FileAccess/Zenith_FileAccess.h"
 
@@ -280,6 +281,26 @@ Zenith_Image Zenith_Tools_LoadHeightmapAuto(const std::string& strPath)
 // bug that produced a 409.6-unit terrain mismatched with the config/LOD/docs.
 #define TERRAIN_SCALE 1.0f
 
+// ★ THE SOURCE GRID CARRIES ONE MORE SAMPLE PER EDGE THAN THE HEIGHTMAP HAS
+// COLUMNS, AND THAT CLOSING SAMPLE IS LOAD-BEARING.
+//
+// ExportChunkBatch below splits this mesh into uNumSplits x uNumSplits chunks of
+// uCells quads each, and every chunk closes itself by stitching the FIRST
+// column/row of its +X / +Z neighbour. The grid therefore needs
+// uNumSplits * uCells + 1 samples per edge -- exactly one more than
+// (heightmap width * density). Without it the final chunk column (x == 63) and
+// row (z == 63) have no neighbour to stitch from, and used to bake incomplete:
+// their stitch vertices stayed UNINITIALISED and their stitch index triples
+// stayed (0,0,0), which Zenith_TerrainComponent's chunk-topology validator
+// rejects outright -- 127 of 4096 chunks silently dropped from LOW LOD *and*
+// physics, i.e. no always-resident geometry and no collision along the outer
+// +X/+Z strip of every full-grid terrain.
+//
+// The closing sample is taken with its heightmap coordinate CLAMPED to the last
+// texel -- the same clamp the bilinear tap already applies -- so it costs no new
+// sampling policy and lands the terrain's outer boundary exactly on
+// TERRAIN_SIZE * uNumSplits world units (4096). Before this the terrain stopped
+// one sample short of its own configured extent.
 void GenerateFullTerrain(const Zenith_Image& xHeightmapImage, Flux_MeshGeometry& xMesh, u_int uDensityDivisor)
 {
 	Zenith_Assert((uDensityDivisor & (uDensityDivisor - 1)) == 0, "Density divisor must be a power of 2");
@@ -289,8 +310,11 @@ void GenerateFullTerrain(const Zenith_Image& xHeightmapImage, Flux_MeshGeometry&
 	u_int uWidth = xHeightmapImage.GetWidth();
 	u_int uHeight = xHeightmapImage.GetHeight();
 
-	xMesh.m_uNumVerts = static_cast<u_int>(uWidth * uHeight * fDensity * fDensity);
-	xMesh.m_uNumIndices = static_cast<u_int>(((uWidth * fDensity) - 1) * ((uHeight * fDensity) - 1) * 6);
+	const u_int uSamplesX = Flux_TerrainSourceGrid::SampleCountForCells(static_cast<u_int>(uWidth * fDensity));
+	const u_int uSamplesZ = Flux_TerrainSourceGrid::SampleCountForCells(static_cast<u_int>(uHeight * fDensity));
+
+	xMesh.m_uNumVerts = uSamplesX * uSamplesZ;
+	xMesh.m_uNumIndices = (uSamplesX - 1) * (uSamplesZ - 1) * 6;
 	xMesh.m_pxPositions = static_cast<glm::highp_vec3*>(Zenith_MemoryManagement::Allocate(xMesh.m_uNumVerts * sizeof(glm::highp_vec3)));
 	xMesh.m_pxUVs = static_cast<glm::vec2*>(Zenith_MemoryManagement::Allocate(xMesh.m_uNumVerts * sizeof(glm::vec2)));
 	xMesh.m_pxNormals = static_cast<glm::vec3*>(Zenith_MemoryManagement::Allocate(xMesh.m_uNumVerts * sizeof(glm::vec3)));
@@ -306,16 +330,20 @@ void GenerateFullTerrain(const Zenith_Image& xHeightmapImage, Flux_MeshGeometry&
 	}
 	xMesh.m_puIndices = static_cast<Flux_MeshGeometry::IndexType*>(Zenith_MemoryManagement::Allocate(xMesh.m_uNumIndices * sizeof(Flux_MeshGeometry::IndexType)));
 
-	for (u_int z = 0; z < static_cast<u_int>(uHeight * fDensity); ++z)
+	for (u_int z = 0; z < uSamplesZ; ++z)
 	{
-		for (u_int x = 0; x < static_cast<u_int>(uWidth * fDensity); ++x)
+		for (u_int x = 0; x < uSamplesX; ++x)
 		{
 			glm::vec2 xUV = { static_cast<double>(x) / fDensity , static_cast<double>(z) / fDensity };
-			u_int offset = static_cast<u_int>((z * uWidth * fDensity) + x);
+			u_int offset = (z * uSamplesX) + x;
 
-			u_int x0 = static_cast<u_int>(std::floor(xUV.x));
+			// BOTH taps clamp. The closing sample sits one texel past the
+			// heightmap, so an unclamped floor() would read out of bounds; with
+			// x0 == x1 the lerp below collapses onto the edge texel, which is
+			// the CLAMP_TO_EDGE result we want.
+			u_int x0 = std::min(static_cast<u_int>(std::floor(xUV.x)), uWidth - 1);
 			u_int x1 = std::min(static_cast<u_int>(std::ceil(xUV.x)), uWidth - 1);
-			u_int y0 = static_cast<u_int>(std::floor(xUV.y));
+			u_int y0 = std::min(static_cast<u_int>(std::floor(xUV.y)), uHeight - 1);
 			u_int y1 = std::min(static_cast<u_int>(std::ceil(xUV.y)), uHeight - 1);
 
 			double dHeight;
@@ -341,14 +369,14 @@ void GenerateFullTerrain(const Zenith_Image& xHeightmapImage, Flux_MeshGeometry&
 	}
 
 	size_t i = 0;
-	for (int z = 0; z < static_cast<int>((uHeight * fDensity) - 1); ++z)
+	for (u_int z = 0; z < uSamplesZ - 1; ++z)
 	{
-		for (int x = 0; x < static_cast<int>((uWidth * fDensity) - 1); ++x)
+		for (u_int x = 0; x < uSamplesX - 1; ++x)
 		{
-			int a = static_cast<int>((z * (uWidth * fDensity)) + x);
-			int b = static_cast<int>((z * (uWidth * fDensity)) + x + 1);
-			int c = static_cast<int>(((z + 1) * (uWidth * fDensity)) + x + 1);
-			int d = static_cast<int>(((z + 1) * (uWidth * fDensity)) + x);
+			u_int a = (z * uSamplesX) + x;
+			u_int b = (z * uSamplesX) + x + 1;
+			u_int c = ((z + 1) * uSamplesX) + x + 1;
+			u_int d = ((z + 1) * uSamplesX) + x;
 			xMesh.m_puIndices[i++] = a;
 			xMesh.m_puIndices[i++] = c;
 			xMesh.m_puIndices[i++] = b;
@@ -372,7 +400,6 @@ struct ChunkExportData
 	Flux_TerrainExportRect xRect;
 	bool bUseRect;
 	float fDensity;
-	u_int uImageWidth;
 	std::string strOutputDir;
 	std::string strName;
 };
@@ -417,11 +444,16 @@ static void ExportChunkBatch(void* pData, u_int uInvocationIndex, u_int uNumInvo
 {
 	const ChunkExportData* pxData = static_cast<const ChunkExportData*>(pData);
 	const Flux_MeshGeometry& xFullMesh = *pxData->pxFullMesh;
-	const u_int uNumSplitsX = pxData->uNumSplitsX;
-	const u_int uNumSplitsZ = pxData->uNumSplitsZ;
 	const u_int uTotalChunks = pxData->uTotalChunks;
 	const float fDensity = pxData->fDensity;
-	const u_int uImageWidth = pxData->uImageWidth;
+
+	// Quads per chunk edge, and the row stride of the source grid
+	// GenerateFullTerrain produced -- one MORE than the heightmap's column count
+	// at this density (see the note there). That closing column/row is what lets
+	// EVERY chunk, the last one included, stitch its +X / +Z edge; there is no
+	// border special case below and there must never be one again.
+	const u_int uCells = static_cast<u_int>(TERRAIN_SIZE * fDensity);
+	const u_int uSourceRowLength = Flux_TerrainSourceGrid::SampleCountPerEdge(pxData->uNumSplitsX, uCells);
 
 	u_int uChunksPerInvocation = (uTotalChunks + uNumInvocations - 1) / uNumInvocations;
 	u_int uStartChunk = uInvocationIndex * uChunksPerInvocation;
@@ -434,18 +466,26 @@ static void ExportChunkBatch(void* pData, u_int uInvocationIndex, u_int uNumInvo
 	ResolveChunkExportCoordinates(*pxData, uChunkIndex, x, z);
 
 	Flux_MeshGeometry xSubMesh;
-	xSubMesh.m_uNumVerts = static_cast<u_int>((TERRAIN_SIZE * fDensity + 1) * (TERRAIN_SIZE * fDensity + 1));
-	xSubMesh.m_uNumIndices = static_cast<u_int>((((TERRAIN_SIZE * fDensity + 1)) - 1) * (((TERRAIN_SIZE * fDensity + 1)) - 1) * 6);
+	xSubMesh.m_uNumVerts = Flux_TerrainSourceGrid::ChunkVertexCount(uCells);
+	xSubMesh.m_uNumIndices = Flux_TerrainSourceGrid::ChunkIndexCount(uCells);
 	ValidateHighChunkCounts(fDensity, xSubMesh);
 	xSubMesh.m_pxPositions = static_cast<glm::highp_vec3*>(Zenith_MemoryManagement::Allocate(xSubMesh.m_uNumVerts * sizeof(glm::highp_vec3)));
 	xSubMesh.m_pxUVs = static_cast<glm::vec2*>(Zenith_MemoryManagement::Allocate(xSubMesh.m_uNumVerts * sizeof(glm::vec2)));
 	xSubMesh.m_pxNormals = static_cast<glm::vec3*>(Zenith_MemoryManagement::Allocate(xSubMesh.m_uNumVerts * sizeof(glm::vec3)));
 	xSubMesh.m_pxTangents = static_cast<glm::vec3*>(Zenith_MemoryManagement::Allocate(xSubMesh.m_uNumVerts * sizeof(glm::vec3)));
 	xSubMesh.m_pxBitangents = static_cast<glm::vec3*>(Zenith_MemoryManagement::Allocate(xSubMesh.m_uNumVerts * sizeof(glm::vec3)));
+	// Zero EVERY attribute, not just normals/tangents. The stitch passes below now
+	// fill all (uCells + 1)^2 slots, but these buffers come from raw Allocate() and
+	// a partially-written one used to serialize 0xCDCDCDCD straight into the asset
+	// -- which then poisoned the chunk AABB via GenerateAABBFromVertices. An asset
+	// file must never be able to carry uninitialised memory.
 	for (size_t i = 0; i < xSubMesh.m_uNumVerts; i++)
 	{
+		xSubMesh.m_pxPositions[i] = { 0,0,0 };
+		xSubMesh.m_pxUVs[i] = { 0,0 };
 		xSubMesh.m_pxNormals[i] = { 0,0,0 };
 		xSubMesh.m_pxTangents[i] = { 0,0,0 };
+		xSubMesh.m_pxBitangents[i] = { 0,0,0 };
 	}
 	xSubMesh.m_puIndices = static_cast<u_int*>(Zenith_MemoryManagement::Allocate(xSubMesh.m_uNumIndices * sizeof(u_int)));
 	memset(xSubMesh.m_puIndices, 0, xSubMesh.m_uNumIndices * sizeof(u_int));
@@ -455,21 +495,18 @@ static void ExportChunkBatch(void* pData, u_int uInvocationIndex, u_int uNumInvo
 	std::set<u_int> xFoundOldIndices;
 	std::set<u_int> xFoundNewIndices;
 #endif
-	u_int* puRightEdgeIndices = static_cast<u_int*>(Zenith_MemoryManagement::Allocate(static_cast<u_int>(TERRAIN_SIZE * fDensity) * sizeof(u_int)));
-	u_int* puTopEdgeIndices = static_cast<u_int*>(Zenith_MemoryManagement::Allocate(static_cast<u_int>(TERRAIN_SIZE * fDensity) * sizeof(u_int)));
+	u_int* puRightEdgeIndices = static_cast<u_int*>(Zenith_MemoryManagement::Allocate(uCells * sizeof(u_int)));
+	u_int* puTopEdgeIndices = static_cast<u_int*>(Zenith_MemoryManagement::Allocate(uCells * sizeof(u_int)));
 	u_int uTopRightFromBoth = 0;
 
-	for (u_int subZ = 0; subZ < static_cast<u_int>(TERRAIN_SIZE * fDensity); subZ++)
+	for (u_int subZ = 0; subZ < uCells; subZ++)
 	{
-		for (u_int subX = 0; subX < static_cast<u_int>(TERRAIN_SIZE * fDensity); subX++)
+		for (u_int subX = 0; subX < uCells; subX++)
 		{
-			u_int uNewOffset = static_cast<u_int>((subZ * TERRAIN_SIZE * fDensity) + subX);
+			u_int uNewOffset = (subZ * uCells) + subX;
 
-			u_int uStartOfRow = static_cast<u_int>((subZ * TERRAIN_SIZE * fDensity * uNumSplitsZ) + (z * uImageWidth * fDensity * TERRAIN_SIZE * fDensity));
-			Zenith_Assert(uStartOfRow < xFullMesh.m_uNumVerts, "Start of row has gone past end of mesh");
-			u_int uIndexIntoRow = static_cast<u_int>(subX + x * TERRAIN_SIZE * fDensity);
-			Zenith_Assert(uIndexIntoRow < fDensity * uImageWidth, "Gone past end of row");
-			u_int uOldOffset = uStartOfRow + uIndexIntoRow;
+			Zenith_Assert((x * uCells) + subX < uSourceRowLength, "Chunk sample column ran past the end of the source row");
+			u_int uOldOffset = Flux_TerrainSourceGrid::SampleIndex(x, z, subX, subZ, uCells, uSourceRowLength);
 
 			Zenith_Assert(uOldOffset < xFullMesh.m_uNumVerts, "Incorrect index somewhere");
 
@@ -482,15 +519,17 @@ static void ExportChunkBatch(void* pData, u_int uInvocationIndex, u_int uNumInvo
 			xSubMesh.m_pxTangents[uNewOffset] = xFullMesh.m_pxTangents[uOldOffset];
 			xSubMesh.m_pxBitangents[uNewOffset] = xFullMesh.m_pxBitangents[uOldOffset];
 
-			if (subX == static_cast<u_int>(TERRAIN_SIZE * fDensity - 1))
+			if (subX == uCells - 1)
 				puRightEdgeIndices[subZ] = uNewOffset;
-			if (subZ == static_cast<u_int>(TERRAIN_SIZE * fDensity - 1))
+			if (subZ == uCells - 1)
 				puTopEdgeIndices[subX] = uNewOffset;
-			if (subX == static_cast<u_int>(TERRAIN_SIZE * fDensity - 1) && subZ == static_cast<u_int>(TERRAIN_SIZE * fDensity - 1))
+			if (subX == uCells - 1 && subZ == uCells - 1)
 				uTopRightFromBoth = uNewOffset;
 
-#ifdef ZENITH_ASSERT
+			// Load-bearing OUTSIDE the assert block: the stitch passes below
+			// allocate their vertex slots by pre-incrementing this.
 			uHeighestNewOffset = std::max(uHeighestNewOffset, uNewOffset);
+#ifdef ZENITH_ASSERT
 			xFoundOldIndices.insert(uOldOffset);
 			xFoundNewIndices.insert(uNewOffset);
 #endif
@@ -498,14 +537,14 @@ static void ExportChunkBatch(void* pData, u_int uInvocationIndex, u_int uNumInvo
 	}
 
 	size_t indexIndex = 0;
-	for (u_int indexZ = 0; indexZ < static_cast<u_int>(TERRAIN_SIZE * fDensity - 1); indexZ++)
+	for (u_int indexZ = 0; indexZ < uCells - 1; indexZ++)
 	{
-		for (u_int indexX = 0; indexX < static_cast<u_int>(TERRAIN_SIZE * fDensity - 1); indexX++)
+		for (u_int indexX = 0; indexX < uCells - 1; indexX++)
 		{
-			u_int a = static_cast<u_int>((indexZ * TERRAIN_SIZE * fDensity) + indexX);
-			u_int b = static_cast<u_int>((indexZ * TERRAIN_SIZE * fDensity) + indexX + 1);
-			u_int c = static_cast<u_int>(((indexZ + 1) * TERRAIN_SIZE * fDensity) + indexX + 1);
-			u_int d = static_cast<u_int>(((indexZ + 1) * TERRAIN_SIZE * fDensity) + indexX);
+			u_int a = (indexZ * uCells) + indexX;
+			u_int b = (indexZ * uCells) + indexX + 1;
+			u_int c = ((indexZ + 1) * uCells) + indexX + 1;
+			u_int d = ((indexZ + 1) * uCells) + indexX;
 			xSubMesh.m_puIndices[indexIndex++] = a;
 			xSubMesh.m_puIndices[indexIndex++] = c;
 			xSubMesh.m_puIndices[indexIndex++] = b;
@@ -516,21 +555,20 @@ static void ExportChunkBatch(void* pData, u_int uInvocationIndex, u_int uNumInvo
 		}
 	}
 
+	// +X stitch: the chunk's closing vertex column, taken from the first column of
+	// the neighbouring chunk. UNCONDITIONAL -- the source grid carries a closing
+	// column for the last chunk too.
 	u_int uTopRightFromX = 0;
-	if (x < uNumSplitsX - 1)
 	{
-		u_int subX = static_cast<u_int>(TERRAIN_SIZE * fDensity);
-		for (u_int subZ = 0; subZ < static_cast<u_int>(TERRAIN_SIZE * fDensity); subZ++)
+		u_int subX = uCells;
+		for (u_int subZ = 0; subZ < uCells; subZ++)
 		{
 			u_int uNewOffset = ++uHeighestNewOffset;
 
 			Zenith_Assert(uNewOffset < xSubMesh.m_uNumVerts, "Offset too big for submesh");
 
-			u_int uStartOfRow = static_cast<u_int>((subZ * TERRAIN_SIZE * fDensity * uNumSplitsZ) + (z * uImageWidth * fDensity * TERRAIN_SIZE * fDensity));
-			Zenith_Assert(uStartOfRow < xFullMesh.m_uNumVerts, "Start of row has gone past end of mesh");
-			u_int uIndexIntoRow = static_cast<u_int>(subX + x * TERRAIN_SIZE * fDensity);
-			Zenith_Assert(uIndexIntoRow < fDensity * uImageWidth, "Gone past end of row");
-			u_int uOldOffset = uStartOfRow + uIndexIntoRow;
+			Zenith_Assert((x * uCells) + subX < uSourceRowLength, "Chunk sample column ran past the end of the source row");
+			u_int uOldOffset = Flux_TerrainSourceGrid::SampleIndex(x, z, subX, subZ, uCells, uSourceRowLength);
 
 			Zenith_Assert(uOldOffset < xFullMesh.m_uNumVerts, "Incorrect index somewhere");
 
@@ -543,7 +581,7 @@ static void ExportChunkBatch(void* pData, u_int uInvocationIndex, u_int uNumInvo
 			xSubMesh.m_pxTangents[uNewOffset] = xFullMesh.m_pxTangents[uOldOffset];
 			xSubMesh.m_pxBitangents[uNewOffset] = xFullMesh.m_pxBitangents[uOldOffset];
 
-			if (subZ == static_cast<u_int>(TERRAIN_SIZE * fDensity - 1))
+			if (subZ == uCells - 1)
 				uTopRightFromX = uNewOffset;
 
 			uHeighestNewOffset = std::max(uHeighestNewOffset, uNewOffset);
@@ -553,9 +591,9 @@ static void ExportChunkBatch(void* pData, u_int uInvocationIndex, u_int uNumInvo
 #endif
 		}
 
-		uHeighestNewOffset -= static_cast<u_int>(TERRAIN_SIZE * fDensity - 1);
+		uHeighestNewOffset -= (uCells - 1);
 
-		for (u_int indexZ = 0; indexZ < static_cast<u_int>(TERRAIN_SIZE * fDensity - 1); indexZ++)
+		for (u_int indexZ = 0; indexZ < uCells - 1; indexZ++)
 		{
 			u_int a = puRightEdgeIndices[indexZ + 1];
 			u_int c = uHeighestNewOffset++;
@@ -572,22 +610,18 @@ static void ExportChunkBatch(void* pData, u_int uInvocationIndex, u_int uNumInvo
 		}
 	}
 
+	// +Z stitch: same, for the closing vertex row. Also unconditional.
 	u_int uTopRightFromZ = 0;
-
-	if (z < uNumSplitsZ - 1)
 	{
-		u_int subZ = static_cast<u_int>(TERRAIN_SIZE * fDensity);
-		for (u_int subX = 0; subX < static_cast<u_int>(TERRAIN_SIZE * fDensity); subX++)
+		u_int subZ = uCells;
+		for (u_int subX = 0; subX < uCells; subX++)
 		{
 			u_int uNewOffset = ++uHeighestNewOffset;
 
 			Zenith_Assert(uNewOffset < xSubMesh.m_uNumVerts, "Offset too big for submesh");
 
-			u_int uStartOfRow = static_cast<u_int>((subZ * TERRAIN_SIZE * fDensity * uNumSplitsZ) + (z * uImageWidth * fDensity * TERRAIN_SIZE * fDensity));
-			Zenith_Assert(uStartOfRow < xFullMesh.m_uNumVerts, "Start of row has gone past end of mesh");
-			u_int uIndexIntoRow = static_cast<u_int>(subX + x * TERRAIN_SIZE * fDensity);
-			Zenith_Assert(uIndexIntoRow < fDensity* uImageWidth, "Gone past end of row");
-			u_int uOldOffset = uStartOfRow + uIndexIntoRow;
+			Zenith_Assert((x * uCells) + subX < uSourceRowLength, "Chunk sample column ran past the end of the source row");
+			u_int uOldOffset = Flux_TerrainSourceGrid::SampleIndex(x, z, subX, subZ, uCells, uSourceRowLength);
 
 			Zenith_Assert(uOldOffset < xFullMesh.m_uNumVerts, "Incorrect index somewhere");
 
@@ -600,7 +634,7 @@ static void ExportChunkBatch(void* pData, u_int uInvocationIndex, u_int uNumInvo
 			xSubMesh.m_pxTangents[uNewOffset] = xFullMesh.m_pxTangents[uOldOffset];
 			xSubMesh.m_pxBitangents[uNewOffset] = xFullMesh.m_pxBitangents[uOldOffset];
 
-			if (subX == static_cast<u_int>(TERRAIN_SIZE * fDensity - 1))
+			if (subX == uCells - 1)
 				uTopRightFromZ = uNewOffset;
 
 			uHeighestNewOffset = std::max(uHeighestNewOffset, uNewOffset);
@@ -610,9 +644,9 @@ static void ExportChunkBatch(void* pData, u_int uInvocationIndex, u_int uNumInvo
 #endif
 		}
 
-		uHeighestNewOffset -= static_cast<u_int>(TERRAIN_SIZE * fDensity - 1);
+		uHeighestNewOffset -= (uCells - 1);
 
-		for (u_int indexX = 0; indexX < static_cast<u_int>(TERRAIN_SIZE * fDensity - 1); indexX++)
+		for (u_int indexX = 0; indexX < uCells - 1; indexX++)
 		{
 			u_int c = puTopEdgeIndices[indexX + 1];
 			u_int a = uHeighestNewOffset++;
@@ -629,19 +663,17 @@ static void ExportChunkBatch(void* pData, u_int uInvocationIndex, u_int uNumInvo
 		}
 	}
 
-	if (x < uNumSplitsX - 1 && z < uNumSplitsZ - 1)
+	// The single corner vertex shared by both stitches, and the quad that closes
+	// the chunk. Also unconditional.
 	{
-		u_int subZ = static_cast<u_int>(TERRAIN_SIZE * fDensity);
-		u_int subX = static_cast<u_int>(TERRAIN_SIZE * fDensity);
+		u_int subZ = uCells;
+		u_int subX = uCells;
 		u_int uNewOffset = ++uHeighestNewOffset;
 
 		Zenith_Assert(uNewOffset < xSubMesh.m_uNumVerts, "Offset too big for submesh");
 
-		u_int uStartOfRow = static_cast<u_int>((subZ * TERRAIN_SIZE * fDensity * uNumSplitsZ) + (z * uImageWidth * fDensity * TERRAIN_SIZE * fDensity));
-		Zenith_Assert(uStartOfRow < xFullMesh.m_uNumVerts, "Start of row has gone past end of mesh");
-		u_int uIndexIntoRow = static_cast<u_int>(subX + x * TERRAIN_SIZE * fDensity);
-		Zenith_Assert(uIndexIntoRow < fDensity* uImageWidth, "Gone past end of row");
-		u_int uOldOffset = uStartOfRow + uIndexIntoRow;
+		Zenith_Assert((x * uCells) + subX < uSourceRowLength, "Chunk sample column ran past the end of the source row");
+		u_int uOldOffset = Flux_TerrainSourceGrid::SampleIndex(x, z, subX, subZ, uCells, uSourceRowLength);
 
 		Zenith_Assert(uOldOffset < xFullMesh.m_uNumVerts, "Incorrect index somewhere");
 
@@ -673,6 +705,19 @@ static void ExportChunkBatch(void* pData, u_int uInvocationIndex, u_int uNumInvo
 		xSubMesh.m_puIndices[indexIndex++] = d;
 		Zenith_Assert(indexIndex <= xSubMesh.m_uNumIndices, "Index index too big");
 	}
+
+	// COMPLETENESS INVARIANT. Every chunk must have filled every index slot and
+	// every vertex slot -- a partially-written chunk is exactly the defect the
+	// border special cases used to produce (trailing (0,0,0) index triples +
+	// uninitialised vertices), which the runtime chunk-topology validator then
+	// rejects, silently dropping the chunk from LOW LOD and physics alike. Assert
+	// it HERE, at bake time, where the coordinates are still in hand.
+	Zenith_Assert(indexIndex == xSubMesh.m_uNumIndices,
+		"Terrain chunk (%u,%u) wrote %llu of %u indices -- incomplete chunk",
+		x, z, static_cast<unsigned long long>(indexIndex), xSubMesh.m_uNumIndices);
+	Zenith_Assert(uHeighestNewOffset == xSubMesh.m_uNumVerts - 1,
+		"Terrain chunk (%u,%u) wrote %u of %u vertices -- incomplete chunk",
+		x, z, uHeighestNewOffset + 1, xSubMesh.m_uNumVerts);
 
 	GenerateTerrainLayoutAndVertexData(xSubMesh);
 	xSubMesh.Export((pxData->strOutputDir + pxData->strName + std::string("_") + std::to_string(x) + std::string("_") + std::to_string(z) + std::string(ZENITH_MESH_EXT)).c_str());
@@ -728,7 +773,6 @@ static bool ExportMeshInternal(u_int uDensityDivisor, const std::string& strName
 		xChunkData.xRect = *pxRect;
 	}
 	xChunkData.fDensity = fDensity;
-	xChunkData.uImageWidth = uImageWidth;
 	xChunkData.strOutputDir = strOutputDir;
 	xChunkData.strName = strName;
 

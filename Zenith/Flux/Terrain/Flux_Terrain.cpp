@@ -3,6 +3,7 @@
 
 #include "Flux/Terrain/Flux_TerrainImpl.h"
 #include "Flux/Terrain/Flux_TerrainImpl.h"
+#include "Flux/Terrain/Flux_TerrainPipelineSelect.h"
 #include "Core/Zenith_Engine.h"
 #include "Flux/Terrain/Flux_TerrainStreamingManagerImpl.h"
 
@@ -82,6 +83,23 @@ static_assert(sizeof(TerrainConstants) == sizeof(Flux_Generated_Terrain::Terrain
 static_assert(offsetof(TerrainConstants, m_fUVScale) == 0,
 	"TerrainConstants.m_fUVScale must remain at offset 0 to match the reflected layout");
 
+// Pin Flux_TerrainPipelineSelect.h's dependency-free attachment counts to the real MRT
+// constants (that header is deliberately <cstdint>-only so it stays unit-testable). The
+// middle two are the load-bearing pair: they say the WIREFRAME axis cannot move the
+// framebuffer shape, which is what makes a wireframe twin of the velocity pipeline legal.
+static_assert(Flux_TerrainGBufferAttachmentCountForVariant(
+	Flux_TerrainGBufferVariant::SOLID) == uFLUX_MRT_CORE_COUNT,
+	"terrain solid G-buffer variant must be the 4-MRT core set");
+static_assert(Flux_TerrainGBufferAttachmentCountForVariant(
+	Flux_TerrainGBufferVariant::WIREFRAME) == uFLUX_MRT_CORE_COUNT,
+	"wireframe must not change the attachment count");
+static_assert(Flux_TerrainGBufferAttachmentCountForVariant(
+	Flux_TerrainGBufferVariant::VELOCITY_WIREFRAME) == MRT_INDEX_COUNT,
+	"the velocity wireframe twin must keep the 5-MRT framebuffer contract");
+static_assert(Flux_TerrainGBufferAttachmentCountForVariant(
+	Flux_TerrainGBufferVariant::VELOCITY_SOLID) == MRT_INDEX_COUNT,
+	"terrain velocity variant must be the 5-MRT set");
+
 bool dbg_bWireframe = false;
 DEBUGVAR float dbg_fVisibilityThresholdMultiplier = 0.5f;
 DEBUGVAR bool dbg_bIgnoreVisibilityCheck = false;
@@ -159,6 +177,19 @@ void Flux_TerrainImpl::BuildPipelines()
 		}
 
 		Flux_PipelineBuilder::FromSpecification(m_xTerrainGBufferVelocityPipeline, xVelocitySpec);
+
+		// Wireframe twin of the velocity variant. ORDER IS LOAD-BEARING: m_bWireframe is
+		// flipped AFTER the solid build (same shape as the base pair above), otherwise the
+		// SOLID velocity pipeline would rasterize as eLine and every default TAA-on frame
+		// would draw wireframe terrain.
+		//
+		// Only the rasterizer polygon mode differs — the 5 attachment formats and
+		// m_uNumColourAttachments are inherited verbatim from xVelocitySpec, so this twin
+		// still satisfies the 5-attachment framebuffer contract the "Terrain GBuffer" pass
+		// declares in SetupRenderGraph, and the velocity shader still writes SV_Target4. No
+		// shader variant is needed.
+		xVelocitySpec.m_bWireframe = true;
+		Flux_PipelineBuilder::FromSpecification(m_xTerrainWireframeVelocityPipeline, xVelocitySpec);
 	}
 
 
@@ -496,14 +527,34 @@ static void ExecuteGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 	// promoted member helper.
 	Flux_TerrainImpl& xTerrain = g_xEngine.Terrain();
 
-	// TAA velocity (Stage 4.3c): when the velocity latch is on, the terrain G-buffer pass is a
-	// 5-attachment framebuffer, so draw the velocity pipeline (writes SV_Target4). Wireframe is a
-	// 4-attachment debug pipeline that can't coexist with the 5-attachment pass — velocity wins
-	// (losing wireframe while TAA is on is an acceptable debug-tool tradeoff).
+	// TAA velocity (Stage 4.3c) x wireframe debug: a full 2x2. The velocity latch decides the
+	// ATTACHMENT COUNT (4 vs 5 — SetupRenderGraph reads the same latch when declaring the pass,
+	// and SetupTransients freezes it for the whole graph build); the wireframe flag decides only
+	// the RASTERIZER polygon mode. They are orthogonal, so every combination has a prebuilt
+	// pipeline and neither axis suppresses the other.
+	//
+	// This was previously "velocity wins over wireframe", which made the terrain Wireframe
+	// checkbox inert in every default run, because TAA ships ON.
 	const bool bVelocity = g_xEngine.FluxGraphics().IsVelocityMRTActive();
-	pxCmdList->SetPipeline(bVelocity
-		? &xTerrain.m_xTerrainGBufferVelocityPipeline
-		: (dbg_bWireframe ? &xTerrain.m_xTerrainWireframePipeline : &xTerrain.m_xTerrainGBufferPipeline));
+	const Flux_TerrainGBufferVariant eVariant = Flux_TerrainSelectGBufferVariant(bVelocity, dbg_bWireframe);
+
+	Flux_Pipeline* pxPipeline = nullptr;
+	switch (eVariant)
+	{
+	case Flux_TerrainGBufferVariant::SOLID:
+		pxPipeline = &xTerrain.m_xTerrainGBufferPipeline;           break;
+	case Flux_TerrainGBufferVariant::WIREFRAME:
+		pxPipeline = &xTerrain.m_xTerrainWireframePipeline;         break;
+	case Flux_TerrainGBufferVariant::VELOCITY_SOLID:
+		pxPipeline = &xTerrain.m_xTerrainGBufferVelocityPipeline;   break;
+	case Flux_TerrainGBufferVariant::VELOCITY_WIREFRAME:
+		pxPipeline = &xTerrain.m_xTerrainWireframeVelocityPipeline; break;
+	default:
+		Zenith_Assert(false, "ExecuteGBuffer: unhandled terrain G-buffer pipeline variant %u",
+			static_cast<u_int>(eVariant));
+		pxPipeline = &xTerrain.m_xTerrainGBufferPipeline;           break;
+	}
+	pxCmdList->SetPipeline(pxPipeline);
 
 	// Create binder for named resource binding
 	Flux_ShaderBinder xBinder(*pxCmdList);
@@ -595,3 +646,9 @@ bool& Flux_TerrainImpl::GetWireframeMode()
 {
 	return dbg_bWireframe;
 }
+
+// Unit tests for the G-buffer pipeline variant selection (the module-owns-its-tests
+// pattern — same idiom as Flux_Grass.cpp / Flux_Decals.cpp). Hosted here because this
+// TU is always linked; the ZENITH_TEST macros self-noop when ZENITH_TESTING is
+// undefined, so the include stays unconditional.
+#include "Flux/Terrain/Flux_Terrain.Tests.inl"

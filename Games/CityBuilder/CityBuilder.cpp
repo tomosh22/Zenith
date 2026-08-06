@@ -280,7 +280,12 @@ static void CB_EnsureTerrainAssets()
 	// validates a loaded chunk against Zenith_TerrainChunkLayout — so every v4
 	// bake's Physics_*.zmesh is now rejected and the city would load with NO
 	// terrain collision.
-	const std::string strHillMarker = strTerrainDir + "terrain_hills_v5.marker";   // bump to force a re-bake when HillNorm or the baked chunk layout changes
+	// v6 is also not a shape change: the exporter now emits a COMPLETE chunk at
+	// the positive grid border (x==63 / z==63). Those 127 chunks previously baked
+	// with unwritten stitch vertices + (0,0,0) index triples, so the runtime
+	// rejected them and the city lost both its always-resident LOW geometry and
+	// its collision along the outer +X/+Z strip.
+	const std::string strHillMarker = strTerrainDir + "terrain_hills_v6.marker";   // bump to force a re-bake when HillNorm or the baked chunk layout changes
 	if (!std::filesystem::exists(strHillMarker))
 	{
 		const std::string strHeightmap = strTerrainDir + "CityHeightmap" ZENITH_TEXTURE_EXT;

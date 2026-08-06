@@ -27,9 +27,12 @@ and rewriting it once does not immunise it. Update it in the SAME commit that cl
   `ZM_BakeManifest`, visually approved (ZM-D-088); S5's full overworld<->battle slice, visually
   approved (ZM-D-112); and S6's dialogue/menu/NPC/shop surface all remain complete.
 - **★ THE LIVE BASELINE IS IN `Status.md`'s TOP BLOCK. READ IT, NOT THIS PARAGRAPH.** As of
-  2026-08-04 (ZM-D-184, OBSERVED on a clean `Null_` build): registry **55**, ZM boot
-  **2909 ran / 2907 passed / 0 failed / 2 skipped**, engine boot **1284**. (ZM-D-183
-  stood at 2908 / 2906; the ZM-D-182-era figures were 2864 / 2862 / 1242.) Everything below
+  2026-08-06 (OBSERVED on clean `Null_` builds): registry **55**, ZM boot
+  **2925 ran / 2923 passed / 0 failed / 2 skipped**, engine boot **1300**. (+11 engine
+  units in one commit: 6 for the terrain G-buffer pipeline-variant 2x2 and 5 for the
+  `FluxTerrainSourceGrid` exporter border-chunk suite; the same commit corrected a ZM pin
+  that was already stale by 5, so `zm-tests` had been red.) (ZM-D-184 stood at 2909 / 2907
+  / 1284; ZM-D-183 at 2908 / 2906; the ZM-D-182-era figures were 2864 / 2862 / 1242.) Everything below
   this line is the HISTORY of how those numbers got there, kept because the derivations are
   the audit trail -- every figure in it is true of ITS commit and stale as a current claim.
 - **Baseline as re-observed 2026-08-01 at ZM-D-179 (every figure off an

@@ -1069,8 +1069,15 @@ static void InitializeRenderTestResources()
 // density divisor of 8 (81 verts) to 4 (289 verts). Zenith_TerrainComponent
 // validates a loaded chunk against Zenith_TerrainChunkLayout, so every v6 bake's
 // Physics_*.zmesh is now rejected and the campus would load with NO collision.
+// v8: ALSO not a terrain-shape change — the exporter now emits a COMPLETE chunk
+// at the positive grid border. Chunks with x==63 or z==63 (127 of 4096) used to
+// bake with unwritten stitch vertices and (0,0,0) index triples, because
+// ExportChunkBatch only stitched a chunk's +X/+Z edge when a NEIGHBOUR chunk
+// existed. The runtime chunk-topology validator rejected all 127, so the outer
+// +X/+Z strip had no always-resident LOW geometry and no collision — which is
+// what the smoke's "127 LOW zero-count chunks" was reporting.
 // Bump this for any baked-BYTE change, not only when the heightfield moves.
-static const char* sk_szTerrainProcMarkerRel = "Terrain/terrain_proc_v7.marker";
+static const char* sk_szTerrainProcMarkerRel = "Terrain/terrain_proc_v8.marker";
 
 static bool RenderTest_TerrainAssetsNeedRegeneration()
 {

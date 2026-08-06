@@ -266,7 +266,13 @@ struct ZM_TerrainBakeBatchPlan
 //             Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_VERTEX_COUNT, so the bump
 //             is load-bearing -- without it Route1 and Thornacre stay warm and
 //             silently lose their collision.
-constexpr u_int uZM_TERRAIN_MANIFEST_VERSION = 2u;
+//   v2 -> v3: the terrain exporter's source grid gained its closing sample row +
+//             column, so every chunk (not just those with a neighbour) now bakes
+//             a complete +X/+Z stitch. ZM's recipes export INTERIOR rects, so
+//             their chunk bytes are unchanged in practice -- but the stamp moves
+//             with the engine-wide bake change rather than relying on that, per
+//             the bump-every-game rule in Flux/Terrain/CLAUDE.md.
+constexpr u_int uZM_TERRAIN_MANIFEST_VERSION = 3u;
 constexpr u_int uZM_TERRAIN_RECIPE_COUNT = 3u;
 constexpr u_int uZM_DAWNMERE_REQUIRED_OUTPUT_COUNT = 771u;
 constexpr u_int uZM_THORNACRE_REQUIRED_OUTPUT_COUNT = 771u;

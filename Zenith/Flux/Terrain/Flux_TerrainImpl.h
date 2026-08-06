@@ -62,7 +62,13 @@ public:
 	Flux_Pipeline m_xTerrainGBufferVelocityPipeline;
 	Flux_Shader   m_xTerrainShadowShader;
 	Flux_Pipeline m_xTerrainShadowPipeline;
-	Flux_Pipeline m_xTerrainWireframePipeline;
+	// Wireframe twins of the two G-buffer pipelines above. Wireframe is rasterizer state
+	// (polygon mode), orthogonal to the attachment set, so the record-time choice is a full
+	// 2x2 over (velocity latch, wireframe debug var) — see Flux_TerrainSelectGBufferVariant.
+	// The VELOCITY twin has to exist because TAA ships ON: without it the wireframe branch is
+	// unreachable and the debug toggle does nothing in every default run.
+	Flux_Pipeline m_xTerrainWireframePipeline;          // 4 attachments, base G-buffer shader
+	Flux_Pipeline m_xTerrainWireframeVelocityPipeline;  // 5 attachments, velocity shader
 
 	// Water pass pipeline + shader + assets.
 	Flux_Shader   m_xWaterShader;

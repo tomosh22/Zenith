@@ -1,6 +1,27 @@
 # Zenithmon Status
 
-**Last updated:** 2026-08-05
+**Last updated:** 2026-08-06
+
+**★ LIVE BASELINE (OBSERVED 2026-08-06 on clean `Null_` builds):
+ZM boot `2925 ran / 2923 passed / 0 failed / 2 skipped`; engine boot (Null Combat)
+`1300 ran / 1299 passed / 0 failed / 1 skipped`; registry **55**.** This is the
+current pin in `zm-tests.yml` (`-Baseline 2925`) and `run_unit_gate.ps1`
+(default 1300). **+11 engine units in one commit**, all in
+`Zenith/Flux/Terrain/Flux_Terrain.Tests.inl`:
+- **+6** the terrain G-buffer pipeline-variant 2x2 — added because the terrain
+  **Wireframe** checkbox was dead in every default run (the TAA velocity latch beat
+  the wireframe flag in a nested ternary, and TAA ships ON).
+- **+5** the `FluxTerrainSourceGrid` suite (`Flux_TerrainSourceGrid.h`) — added
+  because the terrain EXPORTER baked incomplete chunks at the positive grid border,
+  silently dropping 127 of 4096 chunks from LOW LOD and physics alike.
+
+> **★ THE ZM PIN WAS ALREADY STALE BY 5 WHEN THIS LANDED, AND THAT IS THE THIRD
+> TIME.** ZM sat at `-Baseline 2909` while HEAD really ran 2914: the 2026-08-05
+> CommandLine ParseArgs units moved `run_unit_gate.ps1` 1284 -> 1289 and did not
+> move `zm-tests.yml`, so `zm-tests` was RED on master before this work started —
+> exactly the failure the block further down this file warns about. **ENGINE units
+> land in EVERY game's boot count.** Adding one under `Zenith/` obliges you to move
+> all four pinned sites in the same commit, from OBSERVED lines.
 
 **★ ZM-D-183 (2026-08-04, UNCOMMITTED) -- THE RIVAL'S FACING IS NOW A FROZEN BIT
 PATTERN, AND THE `Dawnmere.zscen` TRIPWIRE IS LIVE AGAIN.** `Dawnmere.zscen` was
@@ -15,8 +36,9 @@ authoring boot CI never performs; the headless one uses `|dot| >= 0.999` against
 and authoring it through a new **`AddStep_SetTransformRotationQuat`** (verbatim, no
 math -- the yaw step ran `angleAxis` engine-side, so freezing the yaw alone would
 have changed nothing). **Boot units 2906 -> 2908** (ZM-D-184 then took it to
-**2909**, which is where `zm-tests.yml` `-Baseline` now sits); engine count unmoved
-at **1284**. Verified: a windowed **Release** tools
+**2909**); engine count unmoved at **1284**. (Both figures are true of ZM-D-184's
+commit and are NOT the current pin — see the LIVE BASELINE block at the top of this
+file.) Verified: a windowed **Release** tools
 boot now authors `3F7926D9 / 3E6B4456` -- the committed bytes -- and leaves the file
 byte-identical.
 

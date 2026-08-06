@@ -194,6 +194,27 @@ jobs:
           #
           # History, newest first (the DERIVATION is the audit trail; the OBSERVED
           # number is the authority):
+          #   2925  terrain exporter border chunks  observed 2026-08-06 on a Null_
+          #                   build. +5: Flux/Terrain/Flux_Terrain.Tests.inl gained the
+          #                   FluxTerrainSourceGrid suite (Flux_TerrainSourceGrid.h) when
+          #                   the exporter was found to bake INCOMPLETE chunks at the
+          #                   positive grid border -- its source grid was one sample per
+          #                   edge short, so the last chunk column/row had no neighbour to
+          #                   stitch from and 127 of 4096 chunks were silently dropped from
+          #                   LOW LOD and physics alike. All five are ENGINE units, so the
+          #                   engine default moves in lockstep: 1295 -> 1300.
+          #   2920  terrain wireframe under TAA  observed 2026-08-06 on a Null_
+          #                   build. +11 over the PIN of 2909, which was ALREADY STALE
+          #                   by 5: the CommandLine ParseArgs characterization tests
+          #                   (2026-08-05) moved run_unit_gate.ps1's engine default
+          #                   1284 -> 1289 and did not move this pin, so HEAD was really
+          #                   2914 and this gate was RED before this work started.
+          #                   +6 new: Flux/Terrain/Flux_Terrain.Tests.inl -- the terrain
+          #                   G-buffer pipeline variant 2x2, added when the terrain
+          #                   "Wireframe" checkbox was found dead in every default run
+          #                   (the TAA velocity latch beat the wireframe flag, and TAA
+          #                   ships ON). All six are ENGINE units, so the engine default
+          #                   moves in lockstep: 1289 -> 1295.
           #   2909  ZM-D-184 rival spawn clearance  observed 2026-08-04 on a Null_
           #                   build. +1: ZM_Interaction/
           #                   Vesper_SpawnsClearOfTheGroundNotOnIt. The engine half of
@@ -249,7 +270,7 @@ jobs:
           #   2817  ZM-D-173  = 2809 + 8: four ENGINE sensor-raycast units plus
           #                   two camera fixtures and two Home-placement units.
           $exe = 'Games\Zenithmon\Build\output\win64\null_vs2022_debug_win64_true\zenithmon.exe'
-          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 2909 -TimeoutSec 600
+          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 2925 -TimeoutSec 600
           if ($LASTEXITCODE -ne 0) { Write-Error "boot unit tests failed (see log above)"; exit $LASTEXITCODE }
 
       - name: Run Zenithmon tests

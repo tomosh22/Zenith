@@ -1702,11 +1702,17 @@ change touches `Zenith/` as well as the game.
 **Boot baseline at THIS change: ZM 2863; engine (Null Combat) stays 1242.** The added
 contracts are pure generator/placement checks, so they do not move the 55-test
 automated registry or the cross-game engine suite.
-★ **SUPERSEDED -- the CURRENT baseline is ZM 2909** (ZM-D-183 added the two
-committed-scene-bytes guards, 2906 -> 2908; ZM-D-184 added the rival spawn-clearance
-unit, 2908 -> **2909**; `zm-tests.yml` `-Baseline` moved to match). Engine is
-**1284**, registry unmoved at **55**. OBSERVED 2026-08-04 on a clean `Null_` build:
-`2909 ran, 2907 passed, 0 failed, 2 skipped`. The paragraph below is the
+★ **SUPERSEDED -- the CURRENT baseline is ZM 2925, engine 1300**, registry unmoved
+at **55**. OBSERVED 2026-08-06 on clean `Null_` builds:
+`2925 ran, 2923 passed, 0 failed, 2 skipped`. Derivation: ZM-D-183 added the two
+committed-scene-bytes guards (2906 -> 2908); ZM-D-184 added the rival spawn-clearance
+unit (2908 -> 2909); the 2026-08-05 CommandLine ParseArgs units added 5 ENGINE units
+(engine 1284 -> 1289) and were NOT reflected here, leaving the ZM pin stale at 2909
+against a real 2914; the terrain G-buffer pipeline-variant units added 6 more ENGINE
+units (engine 1289 -> 1295), taking ZM to 2920; the `FluxTerrainSourceGrid` units --
+the terrain exporter's border-chunk fix -- added 5 more ENGINE units
+(engine 1295 -> **1300**), taking ZM to **2925**. `zm-tests.yml` `-Baseline` and
+`run_unit_gate.ps1`'s default both moved to match. The paragraph below is the
 ZM-D-182-era snapshot, kept for the audit trail:
 
 ★ **The (ZM-D-182-era) baseline was ZM 2864** (ZM-D-182 added

@@ -14,10 +14,15 @@ GPU-driven terrain rendering with LOD streaming and frustum culling. Supports 4,
 - `Flux_Terrain.cpp` / `Flux_TerrainImpl.h` - Rendering coordination, compute culling dispatch (`Flux_TerrainImpl` class)
 - `Flux_TerrainStreamingManager.cpp` / `Flux_TerrainStreamingManagerImpl.h` - LOD streaming and buffer management (public API reached via `Zenith_TerrainComponent`; the impl header holds the implementation)
 - `Flux_TerrainGPUStructs.h` - GPU-side struct definitions (chunk data, per-LOD offsets/counts)
+- `Flux_TerrainPipelineSelect.h` - Pure `(velocity latch, wireframe) -> G-buffer pipeline variant` selector plus the attachment-count contract. `<cstdint>`-only (no Flux headers) so it is unit-testable in every configuration — same shape as `Flux_TerrainExportRect.h`. See *Debug wireframe* below.
+- `Flux_TerrainExportRect.h` - Inclusive chunk rectangle for authoring exports; transactional `TryCreate` (invalid bounds leave the caller's rect untouched). Consumed by the terrain editor bake, `Zenith_EditorAutomation`, `Tools/Zenith_Tools_TerrainExport.*` and `ZM_TerrainAuthoring.cpp`.
+- `Flux_TerrainSourceGrid.h` - The exporter's source-sample grid as pure arithmetic (`SampleCountForCells` / `SampleCountPerEdge` / `SampleIndex` / `ChunkVertexCount` / `ChunkIndexCount`). `<cstdint>`-only, same shape as the two headers above. See *Every chunk closes on its neighbour* below.
+- `Flux_Terrain.Tests.inl` - Unit tests for the pipeline-variant selection, included at the bottom of `Flux_Terrain.cpp` (the module-owns-its-tests idiom)
 - `Flux_Terrain_Shaders.h` - Shader program declarations (`Flux_ShaderDecl` + `apxALL`)
 - Shaders in `Zenith/Flux/Shaders/Terrain/` (all `.slang`):
   - `Flux_TerrainCulling.slang` - GPU compute shader for frustum culling
   - `Flux_TerrainResetCounters.slang` - GPU compute shader that zeroes the visible-count atomics
+  - `Flux_Terrain_ToGBufferVelocity.slang` - the 5-attachment TAA variant of the below: identical shading plus `SV_Target4` (pure camera-reprojection motion vector, since terrain verts are static world-space). A hand-maintained copy, not a shared include.
   - `Flux_Terrain_ToGBuffer.slang` - G-buffer (splatmap 4-material blend). The
     splat blend is expressed as `TerrainSplatSurface`, conformed to the shared
     `ISurfaceModel` seam (`Common/MaterialSurface.slang`) via `extension` — it
@@ -88,11 +93,87 @@ Single vertex and index buffer per terrain component containing all chunks:
 - Atomically increment visible count
 
 **5. GPU Rendering** (`ExecuteGBuffer()`)
-- Bind terrain pipeline (shaders, render targets)
+- Select the G-buffer pipeline variant (see *Debug wireframe* below)
 - Bind unified vertex/index buffers
 - Bind material textures
 - Execute `DrawIndexedIndirectCount()` using compute shader output
 - GPU reads visible count, executes that many draw calls from indirect buffer
+
+### Debug wireframe — and why there are FOUR G-buffer pipelines
+
+The toggle is the `Render/Terrain/Wireframe` debug variable (`Flux_Terrain.cpp`), surfaced
+by the terrain component's *Debug Visualization* panel checkbox and by RenderTest's
+`--rendertest-wireframe`. `ExecuteGBuffer` resolves it through the pure
+`Flux_TerrainSelectGBufferVariant(bVelocity, bWireframe)` in
+`Flux_TerrainPipelineSelect.h`, a **2x2** over two INDEPENDENT axes:
+
+| | solid | wireframe |
+|---|---|---|
+| **latch off** (4 MRTs) | `m_xTerrainGBufferPipeline` | `m_xTerrainWireframePipeline` |
+| **latch on** (5 MRTs) | `m_xTerrainGBufferVelocityPipeline` | `m_xTerrainWireframeVelocityPipeline` |
+
+The TAA velocity latch (`IsVelocityMRTActive()`) decides the **attachment count** —
+`SetupRenderGraph` reads the same latch when declaring the pass's `.Writes`, and
+`SetupTransients` freezes it for the whole graph build. Wireframe decides only the
+**rasterizer polygon mode** (`vk::PolygonMode::eLine`). Polygon mode is static pipeline
+state in Flux — there is no dynamic-state path for it — which is why each combination
+needs its own prebuilt object rather than a runtime flag.
+
+> **★ DO NOT RE-COLLAPSE THIS INTO A NESTED TERNARY.** It used to be
+> `bVelocity ? velocity : (bWireframe ? wireframe : solid)`, on the belief that a wireframe
+> pipeline had to be 4-attachment and so "couldn't coexist" with the 5-attachment pass. It
+> can: wireframe is orthogonal to the attachment set. Because **TAA ships ON**
+> (`Flux_Graphics.cpp`, `bRequested = true`), the velocity arm was always taken and the
+> wireframe flag was never evaluated — the checkbox did nothing in every default run, in
+> every game. `Flux_Terrain.Tests.inl` pins the 2x2, its surjectivity, and the invariant
+> that makes the velocity twin legal: **the wireframe axis must never move the attachment
+> count**, only the velocity latch may.
+
+Two behaviours that get reported as bugs but are not:
+
+- **With TAA on, wireframe lines shimmer / ghost.** They are 1px high-contrast features
+  going through temporal resolve. Motion vectors are still correct (the velocity shader is
+  shared), so it will not smear — but launch with `--taa=0` for crisp lines.
+- **Lighting looks wrong while wireframe is on.** The wireframe pipelines keep depth
+  test/write enabled, so terrain contributes line-only depth and only line pixels fill the
+  MRTs; SSAO/SSR/SSGI/deferred lighting degrade accordingly. Pre-existing on the 4-MRT
+  path, just visible far more often now that the toggle works.
+
+### Every chunk closes on its neighbour — and the grid must have a closing sample
+
+A baked chunk is `uCells x uCells` quads but `(uCells+1)^2` VERTICES: the exporter
+writes the `uCells x uCells` interior, then **stitches** a closing `+X` vertex column,
+a closing `+Z` vertex row, and one corner vertex, taken from the FIRST column/row of
+the neighbouring chunk. That shared edge is what makes adjacent chunks seamless.
+
+A quad grid therefore needs `chunks * cells + 1` source samples per edge — one more
+than the heightmap has columns at that density. `GenerateFullTerrain` emits that
+closing row/column (heightmap coordinate CLAMPED to the last texel, the same clamp its
+bilinear tap already applies), which also lands the terrain's outer boundary exactly on
+`CHUNK_SIZE_WORLD * CHUNK_GRID_SIZE` (4096) rather than one sample short of it.
+
+> **★ DO NOT REINTRODUCE A BORDER SPECIAL CASE IN `ExportChunkBatch`.** The source grid
+> used to be exactly `chunks * cells` samples, so the last chunk column (`x == 63`) and
+> row (`z == 63`) had no neighbour to stitch from and their stitch was skipped behind
+> `if (x < uNumSplitsX - 1)` / `if (z < uNumSplitsZ - 1)`. Those **127 of 4096** chunks
+> baked with **unwritten stitch vertices** (raw `Allocate()` memory — `0xCDCDCDCD`
+> serialized straight into the asset, which then poisoned the chunk AABB through
+> `GenerateAABBFromVertices`) and **`(0,0,0)` index triples**.
+> `Zenith_TerrainComponent`'s chunk-topology validator rejects exactly that, so all 127
+> were dropped from the always-resident LOW LOD **and** from the combined physics mesh:
+> **no geometry and no collision on the outer +X/+Z strip of every full-grid terrain**,
+> in RenderTest and CityBuilder alike. (Zenithmon was spared only because its recipes
+> export INTERIOR rects.) It presented as RenderTest's smoke
+> `RENDERTEST_SMOKE_FAIL: terrain[0] has 127 LOW zero-count chunks`, and a cold re-bake
+> did NOT fix it — the exporter reproduced it byte-for-byte every time.
+>
+> The fix is the closing sample above, not a relaxed validator: relaxing the validator
+> re-admits the uninitialised positions into the culling AABBs. `ExportChunkBatch` now
+> asserts its **completeness invariant** (`indexIndex == m_uNumIndices` and every vertex
+> slot written) at bake time, and `Flux_Terrain.Tests.inl`'s `FluxTerrainSourceGrid`
+> suite pins the arithmetic headlessly — including that a chunk's closing edge IS its
+> neighbour's first edge, and that the `(63,63)` corner's closing sample is the last
+> sample in the grid.
 
 ## Streaming System
 
