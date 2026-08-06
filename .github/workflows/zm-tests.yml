@@ -194,6 +194,14 @@ jobs:
           #
           # History, newest first (the DERIVATION is the audit trail; the OBSERVED
           # number is the authority):
+          #   2945  GPU-grass overhaul Phase 1  observed 2026-08-06 on a Null_
+          #                   build. +20: Flux/Vegetation/Flux_Grass.Tests.inl gained the
+          #                   FluxGrassTypes suite -- pure tile-selection / wind /
+          #                   map-sampling / GPU-record-packing functions
+          #                   (Flux_GrassTypes.h) plus pinned integer-hash vectors the
+          #                   Shaders/Common/Noise.slang GPU mirror is held to. All
+          #                   twenty are ENGINE units, so the engine default moves in
+          #                   lockstep: 1300 -> 1320.
           #   2925  terrain exporter border chunks  observed 2026-08-06 on a Null_
           #                   build. +5: Flux/Terrain/Flux_Terrain.Tests.inl gained the
           #                   FluxTerrainSourceGrid suite (Flux_TerrainSourceGrid.h) when
@@ -270,7 +278,7 @@ jobs:
           #   2817  ZM-D-173  = 2809 + 8: four ENGINE sensor-raycast units plus
           #                   two camera fixtures and two Home-placement units.
           $exe = 'Games\Zenithmon\Build\output\win64\null_vs2022_debug_win64_true\zenithmon.exe'
-          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 2925 -TimeoutSec 600
+          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 2945 -TimeoutSec 600
           if ($LASTEXITCODE -ne 0) { Write-Error "boot unit tests failed (see log above)"; exit $LASTEXITCODE }
 
       - name: Run Zenithmon tests

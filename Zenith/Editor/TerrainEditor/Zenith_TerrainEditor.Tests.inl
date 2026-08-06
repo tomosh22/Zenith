@@ -5,7 +5,7 @@
 //=============================================================================
 
 #include "Core/Zenith_TestFramework.h"
-#include "Editor/TerrainEditor/Zenith_TerrainEditor_Noise.h"
+#include "Maths/Zenith_Noise.h"
 
 #ifdef ZENITH_TESTING
 

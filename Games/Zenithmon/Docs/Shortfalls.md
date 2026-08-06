@@ -28,11 +28,12 @@ and rewriting it once does not immunise it. Update it in the SAME commit that cl
   approved (ZM-D-112); and S6's dialogue/menu/NPC/shop surface all remain complete.
 - **★ THE LIVE BASELINE IS IN `Status.md`'s TOP BLOCK. READ IT, NOT THIS PARAGRAPH.** As of
   2026-08-06 (OBSERVED on clean `Null_` builds): registry **55**, ZM boot
-  **2925 ran / 2923 passed / 0 failed / 2 skipped**, engine boot **1300**. (+11 engine
-  units in one commit: 6 for the terrain G-buffer pipeline-variant 2x2 and 5 for the
-  `FluxTerrainSourceGrid` exporter border-chunk suite; the same commit corrected a ZM pin
-  that was already stale by 5, so `zm-tests` had been red.) (ZM-D-184 stood at 2909 / 2907
-  / 1284; ZM-D-183 at 2908 / 2906; the ZM-D-182-era figures were 2864 / 2862 / 1242.) Everything below
+  **2945 ran / 2943 passed / 0 failed / 2 skipped**, engine boot **1320**. (+20 engine
+  units in one commit: the GPU-grass overhaul Phase-1 `FluxGrassTypes` suite in
+  `Zenith/Flux/Vegetation/Flux_Grass.Tests.inl`.) (The pre-grass 2026-08-06 figures were
+  2925 / 2923 / 1300 — +11 engine units for the terrain pipeline-variant 2x2 +
+  `FluxTerrainSourceGrid` suites, correcting a ZM pin already stale by 5; ZM-D-184 stood
+  at 2909 / 2907 / 1284; ZM-D-183 at 2908 / 2906; ZM-D-182-era 2864 / 2862 / 1242.) Everything below
   this line is the HISTORY of how those numbers got there, kept because the derivations are
   the audit trail -- every figure in it is true of ITS commit and stale as a current claim.
 - **Baseline as re-observed 2026-08-01 at ZM-D-179 (every figure off an

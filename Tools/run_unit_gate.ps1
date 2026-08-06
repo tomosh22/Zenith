@@ -56,7 +56,12 @@ param(
     # Flux/Terrain/Flux_TerrainSourceGrid.h, added when the terrain exporter was found
     # to bake INCOMPLETE chunks at the positive grid border (127 of 4096 silently
     # dropped from LOW LOD and physics) (observed 2026-08-06 on a Null_ Combat build).
-    [int]$Baseline = 1300,
+    # 1300 -> 1320: +20 for the FluxGrassTypes suite in Flux/Vegetation/
+    # Flux_Grass.Tests.inl -- pure tile-selection/wind/map-sampling/GPU-packing
+    # functions (Flux_GrassTypes.h) + pinned integer-hash vectors that the
+    # Shaders/Common/Noise.slang GPU mirror is held to; GPU-grass overhaul Phase 1
+    # (observed 2026-08-06 on a Null_ Combat build).
+    [int]$Baseline = 1320,
     [int]$TimeoutSec = 180,
     [string]$LogPath = ""
 )

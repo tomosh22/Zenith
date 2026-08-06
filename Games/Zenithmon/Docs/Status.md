@@ -3,17 +3,16 @@
 **Last updated:** 2026-08-06
 
 **★ LIVE BASELINE (OBSERVED 2026-08-06 on clean `Null_` builds):
-ZM boot `2925 ran / 2923 passed / 0 failed / 2 skipped`; engine boot (Null Combat)
-`1300 ran / 1299 passed / 0 failed / 1 skipped`; registry **55**.** This is the
-current pin in `zm-tests.yml` (`-Baseline 2925`) and `run_unit_gate.ps1`
-(default 1300). **+11 engine units in one commit**, all in
-`Zenith/Flux/Terrain/Flux_Terrain.Tests.inl`:
-- **+6** the terrain G-buffer pipeline-variant 2x2 — added because the terrain
-  **Wireframe** checkbox was dead in every default run (the TAA velocity latch beat
-  the wireframe flag in a nested ternary, and TAA ships ON).
-- **+5** the `FluxTerrainSourceGrid` suite (`Flux_TerrainSourceGrid.h`) — added
-  because the terrain EXPORTER baked incomplete chunks at the positive grid border,
-  silently dropping 127 of 4096 chunks from LOW LOD and physics alike.
+ZM boot `2945 ran / 2943 passed / 0 failed / 2 skipped`; engine boot (Null Combat)
+`1320 ran / 1319 passed / 0 failed / 1 skipped`; registry **55**.** This is the
+current pin in `zm-tests.yml` (`-Baseline 2945`) and `run_unit_gate.ps1`
+(default 1320). **+20 engine units in one commit** (previous pins 2925 / 1300),
+all in `Zenith/Flux/Vegetation/Flux_Grass.Tests.inl`: the `FluxGrassTypes` suite
+covering the GPU-grass overhaul's Phase-1 pure functions (`Flux_GrassTypes.h`
+tile selection / wind / map sampling / GPU-record packing) plus pinned
+integer-hash vectors the new `Shaders/Common/Noise.slang` GPU mirror is held to.
+(The prior +11 — terrain pipeline-variant 2x2 + `FluxTerrainSourceGrid` — is
+retained in `zm-tests.yml`'s history block and `TestPlan.md`'s derivation.)
 
 > **★ THE ZM PIN WAS ALREADY STALE BY 5 WHEN THIS LANDED, AND THAT IS THE THIRD
 > TIME.** ZM sat at `-Baseline 2909` while HEAD really ran 2914: the 2026-08-05

@@ -4,8 +4,8 @@
 #ifdef ZENITH_TOOLS
 
 #include "Editor/TerrainEditor/Zenith_TerrainEditor.h"
-#include "Editor/TerrainEditor/Zenith_TerrainEditor_Noise.h"
 #include "Editor/Zenith_UndoSystem.h"
+#include "Maths/Zenith_Noise.h"
 
 //=============================================================================
 // Erosion simulation: hydraulic (particle/droplet model) + thermal (talus-

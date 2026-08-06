@@ -1,10 +1,10 @@
 #pragma once
 
-#ifdef ZENITH_TOOLS
-
 //=============================================================================
-// Deterministic integer-hash gradient/value noise shared by the terrain
-// editor's Noise brush, procedural generation, and auto-splat jitter.
+// Deterministic integer-hash gradient/value noise. Runtime-shared maths: the
+// terrain editor's Noise brush, procedural generation and auto-splat jitter
+// consume it, and so does any runtime caller that must reproduce the same
+// field for the same seed.
 //
 // Determinism is load-bearing: RenderTest regenerates its terrain from a
 // fixed seed and CI hash-compares the output across runs — so NO std::mt19937
@@ -121,5 +121,3 @@ namespace Zenith_TerrainNoise
 		float NextFloat01() { return HashToFloat01(Next()); }
 	};
 }
-
-#endif // ZENITH_TOOLS

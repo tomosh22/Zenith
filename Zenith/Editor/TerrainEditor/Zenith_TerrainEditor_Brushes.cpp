@@ -3,7 +3,7 @@
 #ifdef ZENITH_TOOLS
 
 #include "Editor/TerrainEditor/Zenith_TerrainEditor.h"
-#include "Editor/TerrainEditor/Zenith_TerrainEditor_Noise.h"
+#include "Maths/Zenith_Noise.h"
 
 //=============================================================================
 // Brush kernels. All sculpt kernels operate on the normalized heightfield

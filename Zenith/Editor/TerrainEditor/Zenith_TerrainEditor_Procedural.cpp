@@ -5,8 +5,8 @@
 
 #include "Editor/TerrainEditor/Zenith_TerrainEditor.h"
 #include "Editor/TerrainEditor/Zenith_TerrainEditorUndo.h"
-#include "Editor/TerrainEditor/Zenith_TerrainEditor_Noise.h"
 #include "Editor/Zenith_UndoSystem.h"
+#include "Maths/Zenith_Noise.h"
 
 //=============================================================================
 // Procedural heightfield generation + auto-splat classification.

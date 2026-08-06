@@ -267,7 +267,7 @@ every JSON says passed — crash-mid-suite guard), and a slowest-tests report.
 - Current suite baselines: **CityBuilder 45**, **DevilsPlayground 158**.
 
 **Engine unit tests** run at every boot unless `--skip-unit-tests`. Baseline:
-**1300 ran, 0 failed** (observed 2026-08-06 on a `Null_` Combat build) — the
+**1320 ran, 0 failed** (observed 2026-08-06 on a `Null_` Combat build) — the
 authority is the `-Baseline` default in `Tools/run_unit_gate.ps1`, not this
 number; read it there if the two ever disagree. Asserted by that script (CI, which
 `Tools/test_scaffold.ps1` also invokes for the scaffold gate), tolerating
@@ -339,7 +339,7 @@ Concurrency groups cancel superseded PR runs (master pushes always complete).
 |----------|-------|
 | `cb-tests` | CityBuilder Vulkan `_True` compile proof + **Null `_True` build (the exe every step runs)** + D3D12 `_False` link proof + 45-test headless suite via `zenith test` |
 | `dp-tests` | Same shape for DevilsPlayground (158 tests) |
-| `engine-gate` | Sentinels (`Vulkan_Debug_Win64_False`) built AND executed + Combat unit gate (`Tools/run_unit_gate.ps1`; it passes no `-Baseline`, so the script's default is the pin — 1300 as of 2026-08-06 — known flake tolerated). Rollout: dispatch → burn-in → required |
+| `engine-gate` | Sentinels (`Vulkan_Debug_Win64_False`) built AND executed + Combat unit gate (`Tools/run_unit_gate.ps1`; it passes no `-Baseline`, so the script's default is the pin — 1320 as of 2026-08-06 — known flake tolerated). Rollout: dispatch → burn-in → required |
 | `release-build` | NIGHTLY (not PR-blocking): engine + DP in `Vulkan_vs2022_Release_Win64_True`, build-only — the only Release compile in CI |
 | `shader-validation` | FluxCompiler (Release `_True`) catalog/parity/spine-lint + git-status drift gate on shader outputs |
 | `scaffold-smoke` | Path-filtered end-to-end `zenith new` → build → boot (units baseline) → teardown leaves git status identical |
