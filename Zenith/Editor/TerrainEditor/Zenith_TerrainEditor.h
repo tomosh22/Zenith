@@ -21,6 +21,7 @@ struct Flux_TerrainStreamingState;
 //   - heightfield  : 4096x4096 float, normalized [0,1] (== Height.ztxtr R32)
 //   - splatmap     : 2048x2048 RGBA8 (4 material-layer weights)
 //   - grass density: 1024x1024 float [0,1]
+//   - grass type   : 1024x1024 u8 (type index; 0 = default, 255 = no grass)
 //
 // CPU/GPU sync contract (NON-NEGOTIABLE): live height edits NEVER write a
 // resident chunk of the terrain's unified vertex buffer in place. The editor
@@ -38,7 +39,8 @@ struct Flux_TerrainStreamingState;
 
 // Tool selection. SplatPaint paints the active splat layer; GrassDensity
 // paints the grass-density map; TreePaint scatters instanced trees (Shift
-// erases); everything else sculpts the heightfield.
+// erases); GrassType stamps the per-texel grass-type index; everything else
+// sculpts the heightfield.
 enum class Zenith_TerrainBrushTool
 {
 	Raise,
@@ -53,6 +55,7 @@ enum class Zenith_TerrainBrushTool
 	SplatPaint,
 	GrassDensity,
 	TreePaint,
+	GrassType,
 	Count
 };
 
@@ -65,12 +68,16 @@ enum class Zenith_TerrainBrushFalloff
 	Count
 };
 
-// Which CPU map a region edit touched — used by the undo command.
+// Which CPU map a region edit touched — used by the undo command. Texel size
+// is per-map (see GetMapTexelBytes), so appending a map with a different
+// stride is safe; existing values must keep their ordinal.
 enum class Zenith_TerrainEditMap
 {
 	Height,        // floats
 	Splat,         // RGBA8
 	GrassDensity,  // floats
+	GrassType,     // u8 type index
+	Count
 };
 
 struct Zenith_TerrainBrushSettings
@@ -86,6 +93,7 @@ struct Zenith_TerrainBrushSettings
 	float m_fRampHardness  = 1.0f;    // Ramp tool: blend sharpness
 	u_int m_uSplatLayer    = 0;       // 0..3 (active material layer)
 	float m_fGrassDensity  = 1.0f;    // GrassDensity tool paint target [0,1]
+	u_int8 m_uGrassTypeIndex = 0;     // GrassType tool paint value (0 = default, 255 = no grass)
 
 	// TreePaint tool.
 	u_int m_uTreesPerDab   = 3;       // placement attempts per dab (scaled by strength)
@@ -161,6 +169,7 @@ public:
 	static constexpr u_int uHEIGHTFIELD_SIZE   = 4096;
 	static constexpr u_int uSPLATMAP_SIZE      = 2048;
 	static constexpr u_int uGRASS_DENSITY_SIZE = 1024;
+	static constexpr u_int uGRASS_TYPE_SIZE    = 1024;
 	static constexpr u_int uCHUNK_GRID         = 64;
 	static constexpr u_int uCHUNK_COUNT        = uCHUNK_GRID * uCHUNK_GRID;
 	static constexpr float fTERRAIN_WORLD_SIZE = 4096.0f;
@@ -245,6 +254,16 @@ public:
 	void EndStroke();
 	bool IsStrokeActive() const { return m_bStrokeActive; }
 
+	// True when a stroke has sculpted the heightfield since this was last
+	// called; reading it clears the flag. Height dabs dirty no grass state, so
+	// this is the only signal that grass placed on the old surface is stale.
+	bool ConsumeHeightsEditedSinceGrassPush()
+	{
+		const bool bEdited = m_bHeightsEditedSinceGrassPush;
+		m_bHeightsEditedSinceGrassPush = false;
+		return bEdited;
+	}
+
 	// Configure the TreePaint brush (the ImGui panel and editor automation share
 	// this). Pure field writes into m_xBrush, plus a re-seed of the scatter RNG
 	// so a re-authored scene paints byte-identically (uSeed == 0 keeps a fixed
@@ -258,8 +277,8 @@ public:
 	u_int GetTreeRngState_ForTest() const { return m_uTreeRngState; }
 #endif
 
-	// Reset the three CPU maps to their defaults (flat-0 heightfield, full
-	// layer-0 splat, zero grass density) WITHOUT touching disk. From-scratch
+	// Reset every CPU map to its default (flat-0 heightfield, full layer-0
+	// splat, zero grass density, type-0 grass) WITHOUT touching disk. From-scratch
 	// authoring scripts run this first so re-running a recipe stays
 	// byte-identical even when a previous bake's textures exist on disk
 	// (Open/OpenStandalone seed the session from them). Clears the undo stack.
@@ -296,7 +315,8 @@ public:
 	//--------------------------------------------------------------------------
 
 	// Write Height.ztxtr (R32) / Splatmap_RGBA.ztxtr (RGBA8) /
-	// GrassDensity.ztxtr (R32) into GetTextureAssetDirectory().
+	// GrassDensity.ztxtr (R32) / GrassType.ztxtr (R8) into
+	// GetTextureAssetDirectory().
 	bool SaveTextures();
 
 	// Regenerate the brush-indicator decal texture into
@@ -338,14 +358,16 @@ public:
 	const Zenith_Image& GetHeightfield() const { return m_xHeightfield; }
 	const Zenith_Vector<u_int8>& GetSplatmap() const { return m_xSplatmap; }
 	const Zenith_Image& GetGrassDensity() const { return m_xGrassDensity; }
+	const Zenith_Vector<u_int8>& GetGrassType() const { return m_xGrassType; }
 
 	//--------------------------------------------------------------------------
 	// Undo support (used by Zenith_UndoCommand_TerrainEdit)
 	//--------------------------------------------------------------------------
 
 	// Copy / write a sub-rect of one of the CPU maps as raw bytes (floats for
-	// Height/GrassDensity, RGBA8 for Splat). WriteMapRegion re-marks dirty
-	// chunks / GPU-dirty flags so undo/redo restores visuals too.
+	// Height/GrassDensity, RGBA8 for Splat, one byte for GrassType).
+	// WriteMapRegion re-marks dirty chunks / GPU-dirty flags so undo/redo
+	// restores visuals too.
 	void CopyMapRegion(Zenith_TerrainEditMap eMap, u_int uX0, u_int uY0,
 		u_int uW, u_int uH, Zenith_Vector<u_int8>& xOut) const;
 	void WriteMapRegion(Zenith_TerrainEditMap eMap, u_int uX0, u_int uY0,
@@ -440,6 +462,10 @@ private:
 	void ApplySplatDab(float fPxX, float fPxZ, float fRadius, float fStrength, u_int uLayer);
 	void ApplyGrassDab(float fPxX, float fPxZ, float fRadius, float fStrength, float fTargetDensity);
 
+	// Hard-edged stamp of uTypeIndex (255 == erase). Takes no strength: type
+	// indices are categorical, so there is nothing to blend toward.
+	void ApplyGrassTypeDab(float fPxX, float fPxZ, float fRadius, u_int8 uTypeIndex);
+
 	// TreePaint: scatters (or erases, bErase) instanced trees on the terrain.
 	// Trees live as two scene entities ("TerrainTrees_Trunk"/"_Leaves", one
 	// Zenith_InstancedMeshComponent each — instance groups are single-material,
@@ -496,12 +522,14 @@ private:
 	Zenith_Image m_xHeightfield;           // 4096x4096 float [0,1]
 	Zenith_Vector<u_int8> m_xSplatmap;     // 2048x2048x4 RGBA8
 	Zenith_Image m_xGrassDensity;          // 1024x1024 float [0,1]
+	Zenith_Vector<u_int8> m_xGrassType;    // 1024x1024x1 u8 type index
 
 	u_int64 m_aulPendingEvictBits[uCHUNK_COUNT / 64] = {};
 	u_int64 m_aulSessionDirtyBits[uCHUNK_COUNT / 64] = {};
 
 	bool m_bSplatGPUDirty = false;
 	bool m_bGrassDirty = false;
+	bool m_bGrassTypeDirty = false;
 
 	// Brush cursor (viewport ray hit on the live heightfield).
 	bool m_bCursorValid = false;
@@ -519,6 +547,10 @@ private:
 	Zenith_Maths::Vector2 m_xStrokeStartPos = { 0.0f, 0.0f };
 	float m_fStrokeStartHeightNorm = 0.0f;
 
+	// Latched at stroke end when the stroke touched Height (see
+	// ConsumeHeightsEditedSinceGrassPush).
+	bool m_bHeightsEditedSinceGrassPush = false;
+
 	// Per-stroke undo accumulation: union texel rect per touched map, plus
 	// pre-stroke byte captures of every 64x64 tile a dab touched (captured at
 	// most once per stroke, BEFORE the kernel writes it). EndStroke composes
@@ -532,7 +564,7 @@ private:
 		Zenith_Vector<u_int>   m_xTileIndices;             // capture order
 		Zenith_Vector<u_int8>  m_xTileData;                // pre-stroke tile bytes
 	};
-	StrokeUndoRegion m_axStrokeUndo[3];   // indexed by Zenith_TerrainEditMap
+	StrokeUndoRegion m_axStrokeUndo[static_cast<u_int>(Zenith_TerrainEditMap::Count)];   // indexed by Zenith_TerrainEditMap
 	u_int64 m_ulUndoBytesLive = 0;
 
 	// Stamp buffer (square). Stamping is additive relative to the captured

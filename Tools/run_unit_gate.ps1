@@ -65,7 +65,11 @@ param(
     # hosted by Flux_MaterialTable.cpp) pinning DownloadBufferData's headless
     # zero-fill + exact-size contract; GPU-grass overhaul Phase 2
     # (observed 2026-08-06 on a Null_ Combat build).
-    [int]$Baseline = 1322,
+    # 1322 -> 1326: +4 TerrainEditor GrassType units (hard-edged dab, 1-byte-texel
+    # stroke undo round-trip, GrassType.ztxtr round-trip + absent-file fallback,
+    # sculpt-notify latch); GPU-grass overhaul Phase 3
+    # (observed 2026-08-06 on a Null_ Combat build).
+    [int]$Baseline = 1326,
     [int]$TimeoutSec = 180,
     [string]$LogPath = ""
 )

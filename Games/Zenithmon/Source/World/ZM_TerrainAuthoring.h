@@ -327,8 +327,10 @@ bool ZM_IsTerrainBakeWarm(const ZM_TerrainAuthoringRecipe& xRecipe,
 	const std::filesystem::path& xGameAssetsRoot);
 
 #ifdef ZENITH_TOOLS
-// Prepare removes stale marker/temp files and all three old textures before
-// any forced or incomplete regeneration. A failure queues no work. Finalize
+// Prepare removes stale marker/temp files and all four old textures before any
+// forced or incomplete regeneration -- GrassType is cleaned with the other
+// three even though it is not a required output, so a partial bake cannot leave
+// a previous set's types behind. A failure queues no work. Finalize
 // verifies the recipe-specific output family, writes its required count into a
 // 12-byte temp marker, then atomically renames it as the final bake write.
 bool ZM_PrepareTerrainBake(const ZM_TerrainAuthoringRecipe& xRecipe,

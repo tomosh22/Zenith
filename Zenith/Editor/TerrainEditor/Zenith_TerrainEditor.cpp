@@ -326,6 +326,12 @@ void Zenith_TerrainEditor::EnsureImagesAllocated()
 		// 4096m terrain and slam into its 2M instance cap on the first corner.
 		m_xGrassDensity = Zenith_Image(uGRASS_DENSITY_SIZE, uGRASS_DENSITY_SIZE);
 	}
+	if (m_xGrassType.GetSize() == 0)
+	{
+		// Default 0 == the default grass type, so an unpainted map reproduces
+		// the pre-type look wherever density painted grass in.
+		m_xGrassType.Resize(uGRASS_TYPE_SIZE * uGRASS_TYPE_SIZE, static_cast<u_int8>(0));
+	}
 }
 
 void Zenith_TerrainEditor::FillImagesWithDefaults()
@@ -347,6 +353,9 @@ void Zenith_TerrainEditor::FillImagesWithDefaults()
 
 	memset(m_xGrassDensity.Row(0), 0,
 		static_cast<size_t>(uGRASS_DENSITY_SIZE) * uGRASS_DENSITY_SIZE * sizeof(float));
+
+	memset(m_xGrassType.GetDataPointer(), 0,
+		static_cast<size_t>(uGRASS_TYPE_SIZE) * uGRASS_TYPE_SIZE);
 }
 
 // Read a .ztxtr (DataStream layout: i32 w, i32 h, i32 depth, TextureFormat,
@@ -435,6 +444,21 @@ void Zenith_TerrainEditor::LoadImagesFromAssets()
 		{
 			memcpy(m_xGrassDensity.Row(0), xGrassPixels.GetDataPointer(), uExpectBytes);
 			Zenith_Log(LOG_CATEGORY_EDITOR, "[TerrainEditor] Grass density seeded from GrassDensity%s", ZENITH_TEXTURE_EXT);
+		}
+	}
+
+	// Grass type <- GrassType.ztxtr (R8, 1024^2). Optional content: a set baked
+	// before the map existed simply has no file, and the all-zero default reads
+	// as the default type everywhere — not an error.
+	Zenith_Vector<u_int8> xGrassTypePixels;
+	if (LoadZtxtrRaw(strTexDir + "GrassType" + ZENITH_TEXTURE_EXT,
+		static_cast<int32_t>(uGRASS_TYPE_SIZE), static_cast<int32_t>(uGRASS_TYPE_SIZE),
+		TEXTURE_FORMAT_R8_UNORM, xGrassTypePixels))
+	{
+		if (xGrassTypePixels.GetSize() == m_xGrassType.GetSize())
+		{
+			memcpy(m_xGrassType.GetDataPointer(), xGrassTypePixels.GetDataPointer(), xGrassTypePixels.GetSize());
+			Zenith_Log(LOG_CATEGORY_EDITOR, "[TerrainEditor] Grass type seeded from GrassType%s", ZENITH_TEXTURE_EXT);
 		}
 	}
 }
@@ -623,6 +647,7 @@ void Zenith_TerrainEditor::HandleViewportInput(const Zenith_TerrainEditorFrameCo
 		case Zenith_TerrainBrushTool::Terrace:      fToolValue = m_xBrush.m_fTerraceStep; break;
 		case Zenith_TerrainBrushTool::SplatPaint:   fToolValue = static_cast<float>(m_xBrush.m_uSplatLayer); break;
 		case Zenith_TerrainBrushTool::GrassDensity: fToolValue = m_xBrush.m_fGrassDensity; break;
+		case Zenith_TerrainBrushTool::GrassType:    fToolValue = static_cast<float>(m_xBrush.m_uGrassTypeIndex); break;
 		case Zenith_TerrainBrushTool::TreePaint:    fToolValue = bShift ? 1.0f : 0.0f; break;
 		default: break;
 		}
@@ -1110,10 +1135,7 @@ void Zenith_TerrainEditor::ChunkVertexHook(void* pUser, uint32_t uChunkX, uint32
 
 namespace
 {
-	// All three maps store 4 bytes per texel (float or RGBA8) — one helper
-	// covers region copies for the lot.
-	constexpr u_int uTEXEL_BYTES = 4;
-	constexpr u_int uUNDO_TILE = 64;   // 64x64 texels = 16 KB per captured tile
+	constexpr u_int uUNDO_TILE = 64;   // 64x64 texels = up to 16 KB per captured tile
 }
 
 static u_int GetMapWidth(Zenith_TerrainEditMap eMap)
@@ -1123,6 +1145,21 @@ static u_int GetMapWidth(Zenith_TerrainEditMap eMap)
 	case Zenith_TerrainEditMap::Height:       return Zenith_TerrainEditor::uHEIGHTFIELD_SIZE;
 	case Zenith_TerrainEditMap::Splat:        return Zenith_TerrainEditor::uSPLATMAP_SIZE;
 	case Zenith_TerrainEditMap::GrassDensity: return Zenith_TerrainEditor::uGRASS_DENSITY_SIZE;
+	case Zenith_TerrainEditMap::GrassType:    return Zenith_TerrainEditor::uGRASS_TYPE_SIZE;
+	default:                                  return 0;
+	}
+}
+
+// Region copies, tile captures and every byte/budget figure derived from them
+// are strided by this — it is NOT uniform across the maps.
+static u_int GetMapTexelBytes(Zenith_TerrainEditMap eMap)
+{
+	switch (eMap)
+	{
+	case Zenith_TerrainEditMap::Height:       return 4;   // float
+	case Zenith_TerrainEditMap::Splat:        return 4;   // RGBA8
+	case Zenith_TerrainEditMap::GrassDensity: return 4;   // float
+	case Zenith_TerrainEditMap::GrassType:    return 1;   // u8 type index
 	default:                                  return 0;
 	}
 }
@@ -1133,6 +1170,7 @@ void Zenith_TerrainEditor::CopyMapRegion(Zenith_TerrainEditMap eMap, u_int uX0, 
 	u_int uW, u_int uH, Zenith_Vector<u_int8>& xOut) const
 {
 	const u_int uMapW = GetMapWidth(eMap);
+	const u_int uTexelBytes = GetMapTexelBytes(eMap);
 	const u_int8* pBase = GetMapBasePtr(const_cast<Zenith_TerrainEditor&>(*this), eMap);
 	if (pBase == nullptr || uMapW == 0)
 	{
@@ -1140,11 +1178,11 @@ void Zenith_TerrainEditor::CopyMapRegion(Zenith_TerrainEditMap eMap, u_int uX0, 
 	}
 
 	xOut.Clear();
-	const u_int uRowBytes = uW * uTEXEL_BYTES;
+	const u_int uRowBytes = uW * uTexelBytes;
 	xOut.Reserve(uRowBytes * uH);
 	for (u_int uRow = 0; uRow < uH; uRow++)
 	{
-		const u_int8* pSrc = pBase + (static_cast<size_t>(uY0 + uRow) * uMapW + uX0) * uTEXEL_BYTES;
+		const u_int8* pSrc = pBase + (static_cast<size_t>(uY0 + uRow) * uMapW + uX0) * uTexelBytes;
 		for (u_int u = 0; u < uRowBytes; u++)
 		{
 			xOut.PushBack(pSrc[u]);
@@ -1156,16 +1194,17 @@ void Zenith_TerrainEditor::WriteMapRegion(Zenith_TerrainEditMap eMap, u_int uX0,
 	u_int uW, u_int uH, const u_int8* pData)
 {
 	const u_int uMapW = GetMapWidth(eMap);
+	const u_int uTexelBytes = GetMapTexelBytes(eMap);
 	u_int8* pBase = GetMapBasePtr(*this, eMap);
 	if (pBase == nullptr || uMapW == 0 || pData == nullptr)
 	{
 		return;
 	}
 
-	const u_int uRowBytes = uW * uTEXEL_BYTES;
+	const u_int uRowBytes = uW * uTexelBytes;
 	for (u_int uRow = 0; uRow < uH; uRow++)
 	{
-		u_int8* pDst = pBase + (static_cast<size_t>(uY0 + uRow) * uMapW + uX0) * uTEXEL_BYTES;
+		u_int8* pDst = pBase + (static_cast<size_t>(uY0 + uRow) * uMapW + uX0) * uTexelBytes;
 		memcpy(pDst, pData + static_cast<size_t>(uRow) * uRowBytes, uRowBytes);
 	}
 
@@ -1184,6 +1223,13 @@ void Zenith_TerrainEditor::WriteMapRegion(Zenith_TerrainEditMap eMap, u_int uX0,
 		m_bGrassDirty = true;
 		m_bSessionDirty = true;
 		break;
+	case Zenith_TerrainEditMap::GrassType:
+		m_bGrassTypeDirty = true;
+		m_bSessionDirty = true;
+		break;
+	case Zenith_TerrainEditMap::Count:
+		Zenith_Assert(false, "WriteMapRegion called with the map-count sentinel");
+		break;
 	}
 }
 
@@ -1197,6 +1243,8 @@ static u_int8* GetMapBasePtr(Zenith_TerrainEditor& xEditor, Zenith_TerrainEditMa
 		return const_cast<Zenith_Vector<u_int8>&>(xEditor.GetSplatmap()).GetDataPointer();
 	case Zenith_TerrainEditMap::GrassDensity:
 		return reinterpret_cast<u_int8*>(const_cast<Zenith_Image&>(xEditor.GetGrassDensity()).Row(0));
+	case Zenith_TerrainEditMap::GrassType:
+		return const_cast<Zenith_Vector<u_int8>&>(xEditor.GetGrassType()).GetDataPointer();
 	default:
 		return nullptr;
 	}
@@ -1211,7 +1259,7 @@ void Zenith_TerrainEditor::BeginStroke()
 	m_bStrokeActive = true;
 	m_bStrokeHasLastPos = false;
 	m_bStrokeStartCaptured = false;   // the stroke's first dab re-anchors the Ramp corridor
-	for (u_int u = 0; u < 3; u++)
+	for (u_int u = 0; u < static_cast<u_int>(Zenith_TerrainEditMap::Count); u++)
 	{
 		m_axStrokeUndo[u].m_bTouched = false;
 		m_axStrokeUndo[u].m_xCapturedTileBits.Clear();
@@ -1223,6 +1271,7 @@ void Zenith_TerrainEditor::BeginStroke()
 void Zenith_TerrainEditor::AccumulateUndoRect(Zenith_TerrainEditMap eMap, u_int uX0, u_int uY0, u_int uX1, u_int uY1)
 {
 	const u_int uMapW = GetMapWidth(eMap);
+	const u_int uTexelBytes = GetMapTexelBytes(eMap);
 	if (uMapW == 0)
 	{
 		return;
@@ -1274,8 +1323,8 @@ void Zenith_TerrainEditor::AccumulateUndoRect(Zenith_TerrainEditMap eMap, u_int 
 			const u_int uTilePy = uTY * uUNDO_TILE;
 			for (u_int uRow = 0; uRow < uUNDO_TILE; uRow++)
 			{
-				const u_int8* pSrc = pBase + (static_cast<size_t>(uTilePy + uRow) * uMapW + uTilePx) * uTEXEL_BYTES;
-				for (u_int u = 0; u < uUNDO_TILE * uTEXEL_BYTES; u++)
+				const u_int8* pSrc = pBase + (static_cast<size_t>(uTilePy + uRow) * uMapW + uTilePx) * uTexelBytes;
+				for (u_int u = 0; u < uUNDO_TILE * uTexelBytes; u++)
 				{
 					xRegion.m_xTileData.PushBack(pSrc[u]);
 				}
@@ -1300,7 +1349,7 @@ void Zenith_TerrainEditor::AccumulateUndoRect(Zenith_TerrainEditMap eMap, u_int 
 
 void Zenith_TerrainEditor::PushStrokeUndoCommand()
 {
-	for (u_int uMap = 0; uMap < 3; uMap++)
+	for (u_int uMap = 0; uMap < static_cast<u_int>(Zenith_TerrainEditMap::Count); uMap++)
 	{
 		StrokeUndoRegion& xRegion = m_axStrokeUndo[uMap];
 		if (!xRegion.m_bTouched)
@@ -1309,6 +1358,7 @@ void Zenith_TerrainEditor::PushStrokeUndoCommand()
 		}
 		const Zenith_TerrainEditMap eMap = static_cast<Zenith_TerrainEditMap>(uMap);
 		const u_int uMapW = GetMapWidth(eMap);
+		const u_int uTexelBytes = GetMapTexelBytes(eMap);
 		const u_int uW = xRegion.m_uX1 - xRegion.m_uX0 + 1;
 		const u_int uH = xRegion.m_uY1 - xRegion.m_uY0 + 1;
 
@@ -1326,7 +1376,7 @@ void Zenith_TerrainEditor::PushStrokeUndoCommand()
 			xBefore.PushBack(xAfter.Get(u));
 		}
 		const u_int uTilesPerSide = uMapW / uUNDO_TILE;
-		const u_int uTileBytes = uUNDO_TILE * uUNDO_TILE * uTEXEL_BYTES;
+		const u_int uTileBytes = uUNDO_TILE * uUNDO_TILE * uTexelBytes;
 		for (u_int uTile = 0; uTile < xRegion.m_xTileIndices.GetSize(); uTile++)
 		{
 			const u_int uTileIdx = xRegion.m_xTileIndices.Get(uTile);
@@ -1340,9 +1390,9 @@ void Zenith_TerrainEditor::PushStrokeUndoCommand()
 			const u_int uIY1 = std::min(uTilePy + uUNDO_TILE - 1, xRegion.m_uY1);
 			for (u_int uY = uIY0; uY <= uIY1; uY++)
 			{
-				const u_int8* pSrc = pTile + (static_cast<size_t>(uY - uTilePy) * uUNDO_TILE + (uIX0 - uTilePx)) * uTEXEL_BYTES;
-				u_int8* pDst = xBefore.GetDataPointer() + (static_cast<size_t>(uY - xRegion.m_uY0) * uW + (uIX0 - xRegion.m_uX0)) * uTEXEL_BYTES;
-				memcpy(pDst, pSrc, static_cast<size_t>(uIX1 - uIX0 + 1) * uTEXEL_BYTES);
+				const u_int8* pSrc = pTile + (static_cast<size_t>(uY - uTilePy) * uUNDO_TILE + (uIX0 - uTilePx)) * uTexelBytes;
+				u_int8* pDst = xBefore.GetDataPointer() + (static_cast<size_t>(uY - xRegion.m_uY0) * uW + (uIX0 - xRegion.m_uX0)) * uTexelBytes;
+				memcpy(pDst, pSrc, static_cast<size_t>(uIX1 - uIX0 + 1) * uTexelBytes);
 			}
 		}
 
@@ -1377,6 +1427,13 @@ void Zenith_TerrainEditor::EndStroke()
 	m_bStrokeActive = false;
 	m_bStrokeHasLastPos = false;
 	m_bStrokeStartCaptured = false;
+
+	// Latch BEFORE the push — it clears every region's touched flag.
+	if (m_axStrokeUndo[static_cast<u_int>(Zenith_TerrainEditMap::Height)].m_bTouched)
+	{
+		m_bHeightsEditedSinceGrassPush = true;
+	}
+
 	PushStrokeUndoCommand();
 
 	// Grass placement rebuild is a few hundred ms — stroke-end cadence, never

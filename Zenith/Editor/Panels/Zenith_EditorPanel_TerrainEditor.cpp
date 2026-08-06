@@ -17,7 +17,8 @@ namespace
 {
 	const char* aszToolNames[] = {
 		"Raise", "Lower", "Smooth", "Flatten", "Set Height", "Noise",
-		"Terrace", "Ramp", "Stamp", "Paint Layer", "Grass Density", "Trees"
+		"Terrace", "Ramp", "Stamp", "Paint Layer", "Grass Density", "Trees",
+		"Grass Type"
 	};
 	static_assert(IM_ARRAYSIZE(aszToolNames) == static_cast<int>(Zenith_TerrainBrushTool::Count),
 		"Tool name table out of sync with Zenith_TerrainBrushTool");
@@ -162,6 +163,22 @@ namespace
 		case Zenith_TerrainBrushTool::GrassDensity:
 			ImGui::SliderFloat("Density", &xBrush.m_fGrassDensity, 0.0f, 1.0f);
 			break;
+		case Zenith_TerrainBrushTool::GrassType:
+		{
+			// 255 is the no-grass sentinel and lives outside the paintable
+			// index range, so it is exposed as a checkbox rather than a value.
+			bool bErase = (xBrush.m_uGrassTypeIndex == 255);
+			int iTypeIndex = bErase ? 0 : static_cast<int>(xBrush.m_uGrassTypeIndex);
+			if (ImGui::SliderInt("Type Index", &iTypeIndex, 0, 15))
+			{
+				xBrush.m_uGrassTypeIndex = static_cast<u_int8>(iTypeIndex);
+			}
+			if (ImGui::Checkbox("Erase (no grass)", &bErase))
+			{
+				xBrush.m_uGrassTypeIndex = bErase ? static_cast<u_int8>(255) : static_cast<u_int8>(iTypeIndex);
+			}
+			break;
+		}
 		case Zenith_TerrainBrushTool::TreePaint:
 		{
 			int iTrees = static_cast<int>(xBrush.m_uTreesPerDab);

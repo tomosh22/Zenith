@@ -1401,6 +1401,7 @@ bool ZM_PrepareTerrainBake(const ZM_TerrainAuthoringRecipe& xRecipe,
 				PreparedChildPath(strPreparedDirectory, "Height" ZENITH_TEXTURE_EXT),
 				PreparedChildPath(strPreparedDirectory, "Splatmap_RGBA" ZENITH_TEXTURE_EXT),
 				PreparedChildPath(strPreparedDirectory, "GrassDensity" ZENITH_TEXTURE_EXT),
+				PreparedChildPath(strPreparedDirectory, "GrassType" ZENITH_TEXTURE_EXT),
 			};
 			for (const std::filesystem::path& xPath : axStalePaths)
 			{

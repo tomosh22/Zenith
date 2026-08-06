@@ -69,6 +69,11 @@ void Zenith_TerrainEditor::ApplyBrushDab(Zenith_TerrainBrushTool eTool, float fW
 	case Zenith_TerrainBrushTool::GrassDensity:
 		ApplyGrassDab(fWorldX, fWorldZ, fRadius, fStrength, fToolValue);
 		break;
+	case Zenith_TerrainBrushTool::GrassType:
+		// fToolValue = the type index to stamp; 255 (erase) must survive the cast.
+		ApplyGrassTypeDab(fWorldX, fWorldZ, fRadius,
+			static_cast<u_int8>(std::max(0.0f, std::min(255.0f, fToolValue))));
+		break;
 	case Zenith_TerrainBrushTool::TreePaint:
 		// fToolValue > 0.5 selects erase (Shift while painting).
 		ApplyTreeDab(fWorldX, fWorldZ, fRadius, fStrength, fToolValue > 0.5f);
@@ -384,6 +389,65 @@ void Zenith_TerrainEditor::ApplyGrassDab(float fPxX, float fPxZ, float fRadius, 
 	}
 
 	m_bGrassDirty = true;
+	m_bSessionDirty = true;
+}
+
+void Zenith_TerrainEditor::ApplyGrassTypeDab(float fPxX, float fPxZ, float fRadius, u_int8 uTypeIndex)
+{
+	if (m_xGrassType.GetSize() == 0)
+	{
+		return;
+	}
+
+	// World -> grass-type texel space (1024 texels over 4096 m).
+	const float fScale = static_cast<float>(uGRASS_TYPE_SIZE) / fTERRAIN_WORLD_SIZE;
+	const float fCX = fPxX * fScale;
+	const float fCZ = fPxZ * fScale;
+	const float fR = std::max(1.0f, fRadius * fScale);
+
+	const int iMax = static_cast<int>(uGRASS_TYPE_SIZE) - 1;
+	const int iX0 = std::max(0, static_cast<int>(floorf(fCX - fR)));
+	const int iX1 = std::min(iMax, static_cast<int>(ceilf(fCX + fR)));
+	const int iZ0 = std::max(0, static_cast<int>(floorf(fCZ - fR)));
+	const int iZ1 = std::min(iMax, static_cast<int>(ceilf(fCZ + fR)));
+	if (iX0 > iX1 || iZ0 > iZ1)
+	{
+		return;
+	}
+
+	if (m_bStrokeActive)
+	{
+		AccumulateUndoRect(Zenith_TerrainEditMap::GrassType,
+			static_cast<u_int>(iX0), static_cast<u_int>(iZ0),
+			static_cast<u_int>(iX1), static_cast<u_int>(iZ1));
+	}
+
+	// A type index is CATEGORICAL: a value between two indices names a third
+	// type rather than a blend of them. The falloff therefore only stencils
+	// which texels the dab claims (>= 0.5), and neither it nor the brush
+	// strength scales the written value.
+	u_int8* puTypes = m_xGrassType.GetDataPointer();
+	const float fInvR = 1.0f / fR;
+	for (int iZ = iZ0; iZ <= iZ1; iZ++)
+	{
+		const float fDZ = static_cast<float>(iZ) - fCZ;
+		for (int iX = iX0; iX <= iX1; iX++)
+		{
+			const float fDX = static_cast<float>(iX) - fCX;
+			const float fDistance = sqrtf(fDX * fDX + fDZ * fDZ) * fInvR;
+			if (fDistance > 1.0f)
+			{
+				continue;
+			}
+			if (EvaluateFalloff(m_xBrush.m_eFalloff, fDistance) < 0.5f)
+			{
+				continue;
+			}
+			puTypes[static_cast<size_t>(iZ) * uGRASS_TYPE_SIZE + iX] = uTypeIndex;
+		}
+	}
+
+	m_bGrassTypeDirty = true;
 	m_bSessionDirty = true;
 }
 

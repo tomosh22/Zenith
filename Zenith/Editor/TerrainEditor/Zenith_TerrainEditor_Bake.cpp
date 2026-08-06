@@ -160,9 +160,14 @@ bool Zenith_TerrainEditor::SaveTexturesToPreparedDirectory(
 		TEXTURE_FORMAT_R32_SFLOAT, m_xGrassDensity.Row(0),
 		static_cast<size_t>(uGRASS_DENSITY_SIZE) * uGRASS_DENSITY_SIZE * sizeof(float));
 
+	WriteZtxtr(strTextureDirectory + "GrassType" + ZENITH_TEXTURE_EXT,
+		static_cast<int32_t>(uGRASS_TYPE_SIZE), static_cast<int32_t>(uGRASS_TYPE_SIZE),
+		TEXTURE_FORMAT_R8_UNORM, m_xGrassType.GetDataPointer(),
+		static_cast<size_t>(uGRASS_TYPE_SIZE) * uGRASS_TYPE_SIZE);
+
 	m_strStatus = "Terrain textures saved to " + strTextureDirectory;
 	Zenith_Log(LOG_CATEGORY_EDITOR,
-		"[TerrainEditor] Saved Height/Splatmap_RGBA/GrassDensity to %s",
+		"[TerrainEditor] Saved Height/Splatmap_RGBA/GrassDensity/GrassType to %s",
 		strTextureDirectory.c_str());
 	return true;
 }

@@ -194,6 +194,11 @@ jobs:
           #
           # History, newest first (the DERIVATION is the audit trail; the OBSERVED
           # number is the authority):
+          #   2951  GPU-grass overhaul Phase 3  observed 2026-08-06 on a Null_
+          #                   build. +4: TerrainEditor GrassType-map units (hard-edged
+          #                   categorical dab, 1-byte-texel stroke-undo round-trip,
+          #                   GrassType.ztxtr save/load + absent-file fallback, sculpt-
+          #                   notify latch). All ENGINE units: 1322 -> 1326.
           #   2947  GPU-grass overhaul Phase 2  observed 2026-08-06 on a Null_
           #                   build. +2: FluxBufferReadback units pinning the new
           #                   Flux_MemoryManager::DownloadBufferData headless zero-fill
@@ -282,7 +287,7 @@ jobs:
           #   2817  ZM-D-173  = 2809 + 8: four ENGINE sensor-raycast units plus
           #                   two camera fixtures and two Home-placement units.
           $exe = 'Games\Zenithmon\Build\output\win64\null_vs2022_debug_win64_true\zenithmon.exe'
-          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 2947 -TimeoutSec 600
+          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 2951 -TimeoutSec 600
           if ($LASTEXITCODE -ne 0) { Write-Error "boot unit tests failed (see log above)"; exit $LASTEXITCODE }
 
       - name: Run Zenithmon tests

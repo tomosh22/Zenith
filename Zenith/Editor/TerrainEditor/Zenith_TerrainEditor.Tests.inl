@@ -415,4 +415,314 @@ ZENITH_TEST(TerrainEditor, SetTreeBrushAutomationStepRoutes)
 	xEditor.Close();  // ExecuteTerrainEditorAction auto-opened a standalone session
 }
 
+namespace
+{
+	// The grass-type map is 1024 texels over the 4096 m terrain, so a world
+	// coordinate maps to texel world*0.25. The whole-map scans below walk 1M
+	// texels each, so they read through the raw pointer to stay cheap in Debug.
+	u_int GrassTypeAt(const Zenith_TerrainEditor& xEditor, u_int uX, u_int uZ)
+	{
+		return static_cast<u_int>(xEditor.GetGrassType().Get(
+			uZ * Zenith_TerrainEditor::uGRASS_TYPE_SIZE + uX));
+	}
+
+	void CopyGrassType(const Zenith_TerrainEditor& xEditor, Zenith_Vector<u_int8>& xOut)
+	{
+		const Zenith_Vector<u_int8>& xSrc = xEditor.GetGrassType();
+		xOut.Resize(xSrc.GetSize(), static_cast<u_int8>(0));
+		memcpy(xOut.GetDataPointer(), xSrc.GetDataPointer(), xSrc.GetSize());
+	}
+
+	u_int CountGrassTypeDifferences(const Zenith_TerrainEditor& xEditor,
+		const Zenith_Vector<u_int8>& xReference)
+	{
+		const Zenith_Vector<u_int8>& xLive = xEditor.GetGrassType();
+		if (xLive.GetSize() != xReference.GetSize())
+		{
+			return xLive.GetSize() + xReference.GetSize();
+		}
+		const u_int8* puLive = xLive.GetDataPointer();
+		const u_int8* puReference = xReference.GetDataPointer();
+		u_int uDifferences = 0;
+		for (u_int u = 0; u < xLive.GetSize(); u++)
+		{
+			if (puLive[u] != puReference[u])
+			{
+				uDifferences++;
+			}
+		}
+		return uDifferences;
+	}
+
+	// Texels holding a value the caller never painted. A type index is
+	// categorical, so ANY such texel is a blend the map must never contain.
+	u_int CountGrassTypeTexelsOutside(const Zenith_TerrainEditor& xEditor,
+		const u_int8* puAllowed, u_int uAllowedCount)
+	{
+		const Zenith_Vector<u_int8>& xTypes = xEditor.GetGrassType();
+		const u_int8* puTypes = xTypes.GetDataPointer();
+		u_int uUnexpected = 0;
+		for (u_int u = 0; u < xTypes.GetSize(); u++)
+		{
+			bool bAllowed = false;
+			for (u_int uA = 0; uA < uAllowedCount; uA++)
+			{
+				if (puTypes[u] == puAllowed[uA])
+				{
+					bAllowed = true;
+					break;
+				}
+			}
+			if (!bAllowed)
+			{
+				uUnexpected++;
+			}
+		}
+		return uUnexpected;
+	}
+
+	u_int CountGrassTypeTexelsEqualTo(const Zenith_TerrainEditor& xEditor, u_int8 uValue)
+	{
+		const Zenith_Vector<u_int8>& xTypes = xEditor.GetGrassType();
+		const u_int8* puTypes = xTypes.GetDataPointer();
+		u_int uCount = 0;
+		for (u_int u = 0; u < xTypes.GetSize(); u++)
+		{
+			if (puTypes[u] == uValue)
+			{
+				uCount++;
+			}
+		}
+		return uCount;
+	}
+
+	// A scratch directory wiped on scope ENTRY and EXIT, so a mid-test failure
+	// cannot leak a 1 MB .ztxtr into the next run.
+	struct TerrainEditorScratchDir
+	{
+		std::filesystem::path m_xPath;
+
+		explicit TerrainEditorScratchDir(const char* szLeafName)
+		{
+			std::error_code xEC;
+			std::filesystem::path xRoot = std::filesystem::temp_directory_path(xEC);
+			if (xEC)
+			{
+				xRoot = ".";
+			}
+			m_xPath = xRoot / "zenith_terraineditor_tests" / szLeafName;
+			std::filesystem::remove_all(m_xPath, xEC);
+			std::filesystem::create_directories(m_xPath, xEC);
+		}
+
+		~TerrainEditorScratchDir()
+		{
+			std::error_code xEC;
+			std::filesystem::remove_all(m_xPath, xEC);
+		}
+
+		std::string File(const char* szLeafName) const
+		{
+			return (m_xPath / szLeafName).string();
+		}
+	};
+
+	// Byte-for-byte the layout WriteZtxtr emits for GrassType.ztxtr (i32 w,
+	// i32 h, i32 depth, TextureFormat, u64 size, pixels). The terrain maps
+	// predate the stream envelope, so the loader reads them through its legacy
+	// branch — a header here would take a different path than the bake's file.
+	void WriteGrassTypeZtxtr(const std::string& strPath, const Zenith_Vector<u_int8>& xTypes)
+	{
+		const size_t ulDataSize = static_cast<size_t>(Zenith_TerrainEditor::uGRASS_TYPE_SIZE) *
+			Zenith_TerrainEditor::uGRASS_TYPE_SIZE;
+		Zenith_DataStream xStream;
+		xStream << static_cast<int32_t>(Zenith_TerrainEditor::uGRASS_TYPE_SIZE);
+		xStream << static_cast<int32_t>(Zenith_TerrainEditor::uGRASS_TYPE_SIZE);
+		xStream << static_cast<int32_t>(1);
+		xStream << TEXTURE_FORMAT_R8_UNORM;
+		xStream << ulDataSize;
+		xStream.WriteData(xTypes.GetDataPointer(), ulDataSize);
+		xStream.WriteToFile(strPath.c_str());
+	}
+}
+
+ZENITH_TEST(TerrainEditor, GrassTypeDabHardEdge)
+{
+	Zenith_TerrainEditor xEditor;
+	xEditor.OpenStandalone();
+	// OpenStandalone seeds from any baked terrain textures in the game's
+	// assets dir (game-dependent). This test asserts against pristine
+	// defaults, so reset explicitly.
+	xEditor.ResetImagesToDefaults();
+	// The claimed disc is where the falloff reaches 0.5, which is falloff-
+	// dependent: Smooth reaches it at HALF the brush radius. Pin the curve so
+	// the inside/outside sample coordinates below stay exact.
+	xEditor.m_xBrush.m_eFalloff = Zenith_TerrainBrushFalloff::Smooth;
+
+	// World (800,800) r=200 -> texel centre (200,200), texel radius 50,
+	// claimed radius 25.
+	xEditor.ApplyBrushDab(Zenith_TerrainBrushTool::GrassType, 800.0f, 800.0f, 200.0f, 1.0f, 7.0f);
+
+	ZENITH_ASSERT_EQ(GrassTypeAt(xEditor, 200, 200), 7u, "Dab centre must hold the painted type index exactly");
+	ZENITH_ASSERT_EQ(GrassTypeAt(xEditor, 210, 200), 7u, "Texels well inside the claimed disc must hold the painted index");
+	ZENITH_ASSERT_EQ(GrassTypeAt(xEditor, 200, 215), 7u, "Texels well inside the claimed disc must hold the painted index");
+	// Inside the brush radius but outside the claimed disc: a blending kernel
+	// would leave a partial value here, a hard-edged stamp leaves it untouched.
+	ZENITH_ASSERT_EQ(GrassTypeAt(xEditor, 235, 200), 0u, "Texels past the falloff threshold must stay untouched");
+	ZENITH_ASSERT_EQ(GrassTypeAt(xEditor, 100, 100), 0u, "Texels outside the brush must stay untouched");
+
+	ZENITH_ASSERT_GT(CountGrassTypeTexelsEqualTo(xEditor, static_cast<u_int8>(7)), 0u, "The dab must claim at least one texel");
+	const u_int8 auAfterFirstDab[] = { 0, 7 };
+	ZENITH_ASSERT_EQ(CountGrassTypeTexelsOutside(xEditor, auAfterFirstDab, 2), 0u,
+		"A categorical paint must never produce an intermediate index anywhere in the map");
+
+	// 255 is the erase sentinel and the extreme of the float->u8 tool-value
+	// path — it must survive the cast rather than saturate to another index.
+	// World (820,800) -> texel centre (205,200), same claimed radius 25.
+	xEditor.ApplyBrushDab(Zenith_TerrainBrushTool::GrassType, 820.0f, 800.0f, 200.0f, 1.0f, 255.0f);
+
+	ZENITH_ASSERT_EQ(GrassTypeAt(xEditor, 205, 200), 255u, "The erase sentinel must overwrite the overlap exactly");
+	ZENITH_ASSERT_EQ(GrassTypeAt(xEditor, 195, 200), 255u, "The erase sentinel must overwrite the overlap exactly");
+	ZENITH_ASSERT_EQ(GrassTypeAt(xEditor, 178, 200), 7u, "Texels only the first dab claimed must keep its index");
+	ZENITH_ASSERT_EQ(GrassTypeAt(xEditor, 228, 200), 255u, "Texels only the second dab claims must take the sentinel");
+
+	const u_int8 auAfterSecondDab[] = { 0, 7, 255 };
+	ZENITH_ASSERT_EQ(CountGrassTypeTexelsOutside(xEditor, auAfterSecondDab, 3), 0u,
+		"Overlapping categorical dabs must never blend into a third index");
+}
+
+ZENITH_TEST(TerrainEditor, GrassTypeStrokeUndoRoundtrip)
+{
+	g_xEngine.UndoSystem().Clear();
+	{
+		Zenith_TerrainEditor xEditor;
+		xEditor.OpenStandalone();
+		xEditor.ResetImagesToDefaults();
+
+		// The stroke-undo machinery strides by GetMapTexelBytes; the grass-type
+		// map is the only 1-byte map, so this is what pins the per-map stride.
+		Zenith_Vector<u_int8> xBefore;
+		CopyGrassType(xEditor, xBefore);
+
+		xEditor.BeginStroke();
+		xEditor.ApplyBrushDab(Zenith_TerrainBrushTool::GrassType, 1200.0f, 1200.0f, 120.0f, 1.0f, 5.0f);
+		xEditor.ApplyBrushDab(Zenith_TerrainBrushTool::GrassType, 1240.0f, 1200.0f, 120.0f, 1.0f, 5.0f);
+		xEditor.ApplyBrushDab(Zenith_TerrainBrushTool::GrassType, 1280.0f, 1200.0f, 120.0f, 1.0f, 5.0f);
+		xEditor.EndStroke();
+
+		Zenith_Vector<u_int8> xAfter;
+		CopyGrassType(xEditor, xAfter);
+		ZENITH_ASSERT_GT(CountGrassTypeDifferences(xEditor, xBefore), 0u, "The stroke must change the grass-type map");
+		ZENITH_ASSERT_TRUE(g_xEngine.UndoSystem().CanUndo(), "A grass-type stroke must push an undo command");
+
+		g_xEngine.UndoSystem().Undo();
+		ZENITH_ASSERT_EQ(CountGrassTypeDifferences(xEditor, xBefore), 0u, "Undo must restore the pre-stroke map byte-for-byte");
+
+		g_xEngine.UndoSystem().Redo();
+		ZENITH_ASSERT_EQ(CountGrassTypeDifferences(xEditor, xAfter), 0u, "Redo must re-apply the stroke byte-for-byte");
+
+		// The commands reference the local editor — clear before scope exit.
+		g_xEngine.UndoSystem().Clear();
+	}
+}
+
+ZENITH_TEST(TerrainEditor, GrassTypeZtxtrSaveLoadRoundTrip)
+{
+	// Absent-file fallback, through the real load path: a named set that was
+	// never baked resolves to a directory with no GrassType.ztxtr, and
+	// OpenStandalone's LoadImagesFromAssets must leave the documented all-zero
+	// default rather than failing or leaking a previous set's pixels.
+	{
+		Zenith_TerrainEditor xUnbaked;
+		ZENITH_ASSERT_TRUE(xUnbaked.SetAssetSet("ZenithUnitTestUnbakedSet"), "A well-formed set name must stage");
+		xUnbaked.OpenStandalone();
+		ZENITH_ASSERT_EQ(xUnbaked.GetGrassType().GetSize(),
+			Zenith_TerrainEditor::uGRASS_TYPE_SIZE * Zenith_TerrainEditor::uGRASS_TYPE_SIZE,
+			"The grass-type map is one byte per texel");
+		ZENITH_ASSERT_EQ(CountGrassTypeTexelsEqualTo(xUnbaked, static_cast<u_int8>(0)),
+			xUnbaked.GetGrassType().GetSize(),
+			"A set with no GrassType texture must load as the all-zero default type");
+	}
+
+	Zenith_TerrainEditor xEditor;
+	xEditor.OpenStandalone();
+	xEditor.ResetImagesToDefaults();
+	xEditor.m_xBrush.m_eFalloff = Zenith_TerrainBrushFalloff::Smooth;
+
+	// Distinct indices at known texels (world*0.25), including the erase
+	// sentinel, so a round trip that swapped or truncated bytes cannot pass.
+	xEditor.ApplyBrushDab(Zenith_TerrainBrushTool::GrassType, 512.0f, 512.0f, 160.0f, 1.0f, 3.0f);
+	xEditor.ApplyBrushDab(Zenith_TerrainBrushTool::GrassType, 1536.0f, 512.0f, 160.0f, 1.0f, 9.0f);
+	xEditor.ApplyBrushDab(Zenith_TerrainBrushTool::GrassType, 512.0f, 1536.0f, 160.0f, 1.0f, 255.0f);
+
+	Zenith_Vector<u_int8> xPainted;
+	CopyGrassType(xEditor, xPainted);
+
+	const TerrainEditorScratchDir xScratch("grass_type_roundtrip");
+	const std::string strPath = xScratch.File("GrassType" ZENITH_TEXTURE_EXT);
+	WriteGrassTypeZtxtr(strPath, xEditor.GetGrassType());
+
+	// Zero the live map so a match below cannot come from the bytes that are
+	// already there.
+	Zenith_Vector<u_int8>& xLiveTypes = const_cast<Zenith_Vector<u_int8>&>(xEditor.GetGrassType());
+	memset(xLiveTypes.GetDataPointer(), 0, xLiveTypes.GetSize());
+	ZENITH_ASSERT_EQ(CountGrassTypeTexelsEqualTo(xEditor, static_cast<u_int8>(0)), xLiveTypes.GetSize(),
+		"The map must be zeroed before the load half of the round trip");
+
+	// Read back through the single engine-wide .ztxtr parser — the one the
+	// editor's own loader calls.
+	Flux_SurfaceInfo xInfo;
+	Zenith_Vector<uint8_t> xBytes;
+	ZENITH_ASSERT_TRUE(Zenith_TextureAsset::LoadCPUData(strPath, xInfo, xBytes).IsOk(),
+		"The written GrassType texture must parse");
+	ZENITH_ASSERT_EQ(xInfo.m_uWidth, Zenith_TerrainEditor::uGRASS_TYPE_SIZE, "Round-tripped width must match the map");
+	ZENITH_ASSERT_EQ(xInfo.m_uHeight, Zenith_TerrainEditor::uGRASS_TYPE_SIZE, "Round-tripped height must match the map");
+	ZENITH_ASSERT_TRUE(xInfo.m_eFormat == TEXTURE_FORMAT_R8_UNORM, "Grass type must round-trip as a single-channel 8-bit texture");
+	ZENITH_ASSERT_EQ(xBytes.GetSize(), xLiveTypes.GetSize(), "The payload must be exactly one byte per texel");
+
+	// The size-guarded memcpy LoadImagesFromAssets performs for this map.
+	if (xBytes.GetSize() == xLiveTypes.GetSize())
+	{
+		memcpy(xLiveTypes.GetDataPointer(), xBytes.GetDataPointer(), xBytes.GetSize());
+	}
+
+	ZENITH_ASSERT_EQ(CountGrassTypeDifferences(xEditor, xPainted), 0u,
+		"The loaded map must match the painted map byte-for-byte");
+	ZENITH_ASSERT_EQ(GrassTypeAt(xEditor, 128, 128), 3u, "Painted index 3 must survive the round trip");
+	ZENITH_ASSERT_EQ(GrassTypeAt(xEditor, 384, 128), 9u, "Painted index 9 must survive the round trip");
+	ZENITH_ASSERT_EQ(GrassTypeAt(xEditor, 128, 384), 255u, "The erase sentinel must survive the round trip");
+	ZENITH_ASSERT_EQ(GrassTypeAt(xEditor, 900, 900), 0u, "Unpainted texels must round-trip as the default type");
+}
+
+ZENITH_TEST(TerrainEditor, SculptNotifyLatchesOnHeightStroke)
+{
+	g_xEngine.UndoSystem().Clear();
+	{
+		Zenith_TerrainEditor xEditor;
+		xEditor.OpenStandalone();
+
+		ZENITH_ASSERT_FALSE(xEditor.ConsumeHeightsEditedSinceGrassPush(),
+			"A fresh session has sculpted nothing, so grass placed on the surface is still valid");
+
+		// Grass paints dirty grass state directly; only a HEIGHT edit silently
+		// invalidates grass already placed on the old surface.
+		xEditor.BeginStroke();
+		xEditor.ApplyBrushDab(Zenith_TerrainBrushTool::GrassType, 2000.0f, 2000.0f, 80.0f, 1.0f, 4.0f);
+		xEditor.EndStroke();
+		ZENITH_ASSERT_FALSE(xEditor.ConsumeHeightsEditedSinceGrassPush(),
+			"A grass-type-only stroke must not claim the surface moved");
+
+		xEditor.BeginStroke();
+		xEditor.ApplyBrushDab(Zenith_TerrainBrushTool::Raise, 2000.0f, 2000.0f, 80.0f, 1.0f, 0.0f);
+		xEditor.EndStroke();
+		ZENITH_ASSERT_TRUE(xEditor.ConsumeHeightsEditedSinceGrassPush(),
+			"A height stroke must latch the sculpt notification");
+		ZENITH_ASSERT_FALSE(xEditor.ConsumeHeightsEditedSinceGrassPush(),
+			"Consuming the notification must clear it");
+
+		// The strokes' commands reference the local editor — clear before scope exit.
+		g_xEngine.UndoSystem().Clear();
+	}
+}
+
 #endif // ZENITH_TESTING

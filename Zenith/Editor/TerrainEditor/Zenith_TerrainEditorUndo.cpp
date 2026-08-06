@@ -41,6 +41,7 @@ const char* Zenith_UndoCommand_TerrainEdit::GetDescription() const
 	case Zenith_TerrainEditMap::Height:       return "Terrain Sculpt";
 	case Zenith_TerrainEditMap::Splat:        return "Terrain Paint";
 	case Zenith_TerrainEditMap::GrassDensity: return "Grass Density Paint";
+	case Zenith_TerrainEditMap::GrassType:    return "Grass Type Paint";
 	default:                                  return "Terrain Edit";
 	}
 }
