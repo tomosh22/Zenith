@@ -148,7 +148,14 @@ of wall clock before the harness Setup fires); `--skip-tool-exports` needs one
 prior full tools run to have baked the testbed assets; if the exe dies with
 0xC0000135 recopy assimp DLLs from `Tools/Middleware/assimp/debug/bin` and
 slang DLLs from `Middleware/slang/bin`; `--exit-after-frames` REPLACES every
-test's maxFrames (don't pass it "for safety"). `TerrainEditorSmoke`'s
+test's maxFrames (don't pass it "for safety"); **a test whose Setup calls
+`SetEditorMode(EditorMode::Stopped)` MUST restore `Playing` in its Teardown** —
+the harness enters Playing exactly once at boot and `ResetSessionForNextTest`
+deliberately never normalises the mode, so Stopped leaks into every following
+test, where `Zenith_MainLoop` skips game logic entirely and the rebuilt world's
+entities are awoken but never get `OnStart` (this is what made `HumanShowcase`
+fail after `GrassShowcase` while passing alone; `MaterialBattleTest` had the same
+latent leak). `TerrainEditorSmoke`'s
 long-standing "did not re-stream HIGH after eviction" failure was FIXED
 (2026-07-08): its sculpt site was a stale `(400,400)` left behind when the
 campus was recentred from the `(256,256)` corner to the terrain centre

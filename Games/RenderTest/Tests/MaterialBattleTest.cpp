@@ -150,13 +150,26 @@ static bool Verify_MaterialBattleTest()
 	return true;
 }
 
+// Setup's Play -> Stopped is GLOBAL editor state, not this test's own: the harness
+// enters Playing exactly once at boot and never restores it between tests (see the
+// long note on Teardown_GrassShowcase, which hit this for real). Left stopped, every
+// following test runs with game logic disabled -- entities awoken, OnStart never
+// dispatched. This test is NOT manual-only, so it is in the --all-automated-tests
+// batch and the leak would reach every test ordered after it.
+static void Teardown_MaterialBattleTest()
+{
+	g_xEngine.Editor().SetEditorMode(EditorMode::Playing);
+}
+
 static const Zenith_AutomatedTest g_xMaterialBattleTest = {
 	"MaterialBattleTest",
 	&Setup_MaterialBattleTest,
 	&Step_MaterialBattleTest,
 	&Verify_MaterialBattleTest,
 	/*maxFrames*/ 300,
-	/*requiresGraphics*/ true
+	/*requiresGraphics*/ true,
+	/*manualOnly*/ false,
+	&Teardown_MaterialBattleTest
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xMaterialBattleTest);
 

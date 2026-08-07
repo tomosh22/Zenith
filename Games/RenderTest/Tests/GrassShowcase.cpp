@@ -307,12 +307,26 @@ namespace
 	// render state no entity or scene owns, so they come back here rather than in
 	// Step (which a timeout or a failure can leave early). A leaked orbiter would
 	// keep pushing grass in every later test in the batch.
+	//
+	// ...and so is the EDITOR MODE Setup flipped to Stopped, which is the one piece
+	// of leaked state that breaks the NEXT test rather than this one. The harness
+	// enters Playing exactly ONCE (HarnessPhase::EnterPlayingMode, at boot) and
+	// Zenith_Editor::ResetSessionForNextTest deliberately leaves the mode alone --
+	// mode and play-backup are one state machine and normalising either half in
+	// isolation desynchronises it -- so a test that stops the editor stops it for
+	// every test after it. Stopped means Zenith_MainLoop clears
+	// bShouldUpdateGameLogic, so the world BetweenTests rebuilds is awoken but its
+	// pending-OnStart queue never drains: measured cost was HumanShowcase's player
+	// animator (whose layers are built in RenderTest_PlayerComponent::OnStart),
+	// leaving it FAILING only when batched after this test and PASSING alone.
+	// Re-entering Playing here restores exactly the state boot established.
 	void Teardown_GrassShowcase()
 	{
 		Flux_GrassImpl& xGrass = g_xEngine.Grass();
 		xGrass.SetDebugMode(0u);
 		xGrass.SetDisableShadowCasting(false);
 		xGrass.SetDebugOrbitDisplacer(false);
+		g_xEngine.Editor().SetEditorMode(EditorMode::Playing);
 	}
 
 	const Zenith_AutomatedTest g_xGrassShowcase = {
