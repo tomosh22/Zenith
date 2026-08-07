@@ -7,20 +7,23 @@
  * AI visualization in the editor. All variables appear under the "AI"
  * category in the Debug Variables panel.
  *
- * Usage:
- *   Call Zenith_AIDebugVariables::Initialise() during AI system startup
- *   Check s_bDrawXxx variables before rendering debug visualization
+ * EVERY toggle here has a live consumer, and the consumers are driven once per
+ * game-logic frame by Zenith_AI::DebugDraw() (Zenith_AI.h). Do NOT add a flag
+ * without the draw code that reads it: this whole namespace previously had no
+ * caller for Initialise() at all, so none of the toggles even appeared in the
+ * panel, and half of them had no reader if they had.
+ *
+ * NOT here, deliberately:
+ *  - NavMesh visualisation. Zenith_NavMeshComponent's editor panel owns that
+ *    (six per-component flags -> Zenith_NavMesh::DebugDraw(flags)), which is the
+ *    right granularity: two navmeshes can be inspected differently at once.
+ *  - Behaviour-tree visualisation. The BT runtime was deleted; decisions live in
+ *    Behaviour Graphs (Zenith/Scripting/) and are inspected in the graph editor.
  */
 namespace Zenith_AIDebugVariables
 {
 	// Master toggle - disables all AI debug visualization
 	extern bool s_bEnableAllAIDebug;
-
-	// NavMesh Visualization
-	extern bool s_bDrawNavMeshPolygons;
-	extern bool s_bDrawNavMeshEdges;
-	extern bool s_bDrawNavMeshBoundary;
-	extern bool s_bDrawNavMeshNeighbors;
 
 	// Pathfinding Visualization
 	extern bool s_bDrawAgentPaths;
@@ -31,10 +34,6 @@ namespace Zenith_AIDebugVariables
 	extern bool s_bDrawHearingRadius;
 	extern bool s_bDrawDetectionLines;
 	extern bool s_bDrawMemoryPositions;
-
-	// Behavior Tree Visualization
-	extern bool s_bDrawCurrentNode;
-	extern bool s_bDrawBlackboardValues;
 
 	// Squad Visualization
 	extern bool s_bDrawFormationPositions;
@@ -48,9 +47,10 @@ namespace Zenith_AIDebugVariables
 	extern bool s_bDrawTacticalScores;
 
 	/**
-	 * Initialize debug variables
-	 * Registers all AI debug variables with Zenith_DebugVariables
-	 * Call during AI system initialization
+	 * Register all AI debug variables with Zenith_DebugVariables.
+	 * Called by Zenith_Engine::InitialiseEditor() (the debug-variable
+	 * composition root); defined engine-side in
+	 * EntityComponent/Zenith_AIDebugVarsRegistration.cpp.
 	 */
 	void Initialise();
 }

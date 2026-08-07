@@ -40,14 +40,6 @@ bool ExportHeightmapFromMatRect(const Zenith_Image& xHeightmap,
 	const std::string& strOutputDir, const Flux_TerrainExportRect& xRect);
 
 /**
- * Export terrain meshes using default hardcoded paths.
- * For backward compatibility with the debug menu button.
- * Uses: GAME_ASSETS_DIR/Textures/Heightmaps/Test/gaeaHeight.ztxtr
- *       GAME_ASSETS_DIR/Terrain/
- */
-void ExportHeightmap();
-
-/**
  * Load a heightmap from .ztxtr or a common image format (PNG etc.) into a
  * single-channel float image normalized to [0,1]. Returns an empty image on
  * failure. Exposed for the terrain editor, which seeds its live heightfield

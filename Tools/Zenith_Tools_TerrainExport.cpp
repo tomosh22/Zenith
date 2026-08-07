@@ -6,11 +6,6 @@
 #include "DataStream/Zenith_DataStream.h"
 #include "FileAccess/Zenith_FileAccess.h"
 
-// Helper function to construct game assets path from project name
-static std::string GetGameAssetsDirectory()
-{
-	return std::string(ZENITH_ROOT) + "Games/" + Project_GetName() + "/Assets/";
-}
 #include "AssetHandling/Zenith_Image.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
 // stb_image declarations only — the single STB_IMAGE_IMPLEMENTATION lives in
@@ -849,14 +844,4 @@ bool ExportHeightmapFromMatRect(const Zenith_Image& xHeightmap,
 	Zenith_Log(LOG_CATEGORY_TOOLS, "ExportHeightmapFromMatRect: Export %s",
 		bExported ? "complete" : "failed");
 	return bExported;
-}
-
-void ExportHeightmap()
-{
-	// Use default paths for backward compatibility
-	std::string strAssetsDir = GetGameAssetsDirectory();
-	std::string strHeightmapPath = strAssetsDir + "Textures/Heightmaps/Test/gaeaHeight" ZENITH_TEXTURE_EXT;
-	std::string strOutputDir = strAssetsDir + "Terrain/";
-
-	ExportHeightmapFromPaths(strHeightmapPath, strOutputDir);
 }

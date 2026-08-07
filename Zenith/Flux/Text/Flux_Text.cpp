@@ -25,7 +25,9 @@
 
 static constexpr uint32_t s_uMaxCharsPerFrame = 65536;
 
-DEBUGVAR float dbg_fTextSize = 100.f;
+// No Text/Size debug variable: every text draw carries its own size (the
+// Flux_TextQueue entry's scale, supplied by the UI element or the Submit* caller),
+// so a global override had nothing to override and no reader.
 
 void Flux_TextImpl::BuildPipelines()
 {
@@ -78,10 +80,6 @@ void Flux_TextImpl::Initialise()
 		this->m_bFontUnavailable = true;
 		Zenith_Warning(LOG_CATEGORY_TEXT, "Flux_Text: failed to load engine:Fonts/LiberationMono.zfont — text rendering will be no-op");
 	}
-
-#ifdef ZENITH_DEBUG_VARIABLES
-	g_xEngine.DebugVariables().AddFloat({ "Text", "Size" }, dbg_fTextSize, 0, 1000);
-#endif
 
 	Zenith_Log(LOG_CATEGORY_TEXT, "Flux_Text initialised");
 }

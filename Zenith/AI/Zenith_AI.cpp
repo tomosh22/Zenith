@@ -1,5 +1,6 @@
 #include "Zenith.h"
 #include "AI/Zenith_AI.h"
+#include "AI/Zenith_AIDebugVariables.h"
 #include "AI/Perception/Zenith_PerceptionSystem.h"
 #include "AI/Squad/Zenith_Squad.h"
 #include "AI/Squad/Zenith_TacticalPoint.h"
@@ -29,4 +30,22 @@ namespace Zenith_AI
 		Zenith_SquadManager::Update(fDt);
 		Zenith_TacticalPointSystem::Update();
 	}
+
+#ifdef ZENITH_TOOLS
+	void DebugDraw()
+	{
+		// Master switch first: one branch per frame when AI visualisation is off.
+		if (!Zenith_AIDebugVariables::s_bEnableAllAIDebug)
+		{
+			return;
+		}
+
+		// Each of these re-checks its own section flags (and tolerates an
+		// un-Initialise()d manager), so the order here is presentation only:
+		// per-agent senses, then squad structure, then the tactical-point field.
+		Zenith_PerceptionSystem::DebugDrawAllAgents();
+		Zenith_SquadManager::DebugDrawAllSquads();
+		Zenith_TacticalPointSystem::DebugDraw();
+	}
+#endif
 }

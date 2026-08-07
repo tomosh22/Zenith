@@ -465,6 +465,8 @@ public:
 	static void TestFindBestPointNoPointsActive();
 	static void TestFindBestPointOutOfRange();
 	static void TestSquadDebugRoleColor();
+	static void TestAIDebugDrawMasterToggleShortCircuits();
+	static void TestAIDebugDrawSafeWithNoAIContent();
 
 	// Squad refactoring tests (FindSharedTargetIndex, formation slot assignment)
 	static void TestSharedTargetUpdate();

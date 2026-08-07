@@ -9,46 +9,44 @@
 // Engine-side definition of Zenith_AIDebugVariables::Initialise(). The toggle
 // BOOLS live in the AI leaf (AI/Zenith_AIDebugVariables.cpp); only the REGISTRATION
 // (which reaches g_xEngine.DebugVariables()) lives here so the AI leaf names no
-// engine singleton. Callers (e.g. games) still call Zenith_AIDebugVariables::Initialise()
-// unchanged — it's resolved from this TU at link.
+// engine singleton.
+//
+// The ONE caller is Zenith_Engine::InitialiseEditor(), alongside
+// Zenith_GraphicsOptions::RegisterDebugVariables(). It previously had NO caller at
+// all, which is why the whole AI/* subtree was missing from the panel; a game must
+// not call it a second time (Add* would register duplicate paths).
 namespace Zenith_AIDebugVariables
 {
 	void Initialise()
 	{
 #ifdef ZENITH_DEBUG_VARIABLES
-		// Master Toggle
-		g_xEngine.DebugVariables().AddBoolean({ "AI", "Enable All AI Debug" }, s_bEnableAllAIDebug);
+		// One hoisted reference for the whole table: the per-file engine-singleton
+		// ratchet counts every g_xEngine token.
+		Zenith_DebugVariables& xDebugVars = g_xEngine.DebugVariables();
 
-		// NavMesh
-		g_xEngine.DebugVariables().AddBoolean({ "AI", "NavMesh", "Polygon Surfaces" }, s_bDrawNavMeshPolygons);
-		g_xEngine.DebugVariables().AddBoolean({ "AI", "NavMesh", "Wireframe Edges" }, s_bDrawNavMeshEdges);
-		g_xEngine.DebugVariables().AddBoolean({ "AI", "NavMesh", "Boundary Edges" }, s_bDrawNavMeshBoundary);
-		g_xEngine.DebugVariables().AddBoolean({ "AI", "NavMesh", "Neighbor Links" }, s_bDrawNavMeshNeighbors);
+		// Master Toggle
+		xDebugVars.AddBoolean({ "AI", "Enable All AI Debug" }, s_bEnableAllAIDebug);
 
 		// Pathfinding
-		g_xEngine.DebugVariables().AddBoolean({ "AI", "Pathfinding", "Agent Paths" }, s_bDrawAgentPaths);
-		g_xEngine.DebugVariables().AddBoolean({ "AI", "Pathfinding", "Path Waypoints" }, s_bDrawPathWaypoints);
+		xDebugVars.AddBoolean({ "AI", "Pathfinding", "Agent Paths" }, s_bDrawAgentPaths);
+		xDebugVars.AddBoolean({ "AI", "Pathfinding", "Path Waypoints" }, s_bDrawPathWaypoints);
 
 		// Perception
-		g_xEngine.DebugVariables().AddBoolean({ "AI", "Perception", "Sight Cones" }, s_bDrawSightCones);
-		g_xEngine.DebugVariables().AddBoolean({ "AI", "Perception", "Hearing Radius" }, s_bDrawHearingRadius);
-		g_xEngine.DebugVariables().AddBoolean({ "AI", "Perception", "Detection Lines" }, s_bDrawDetectionLines);
-		g_xEngine.DebugVariables().AddBoolean({ "AI", "Perception", "Memory Positions" }, s_bDrawMemoryPositions);
-
-		// Behavior Tree
-		g_xEngine.DebugVariables().AddBoolean({ "AI", "Behavior Tree", "Current Node" }, s_bDrawCurrentNode);
-		g_xEngine.DebugVariables().AddBoolean({ "AI", "Behavior Tree", "Blackboard Values" }, s_bDrawBlackboardValues);
+		xDebugVars.AddBoolean({ "AI", "Perception", "Sight Cones" }, s_bDrawSightCones);
+		xDebugVars.AddBoolean({ "AI", "Perception", "Hearing Radius" }, s_bDrawHearingRadius);
+		xDebugVars.AddBoolean({ "AI", "Perception", "Detection Lines" }, s_bDrawDetectionLines);
+		xDebugVars.AddBoolean({ "AI", "Perception", "Memory Positions" }, s_bDrawMemoryPositions);
 
 		// Squad
-		g_xEngine.DebugVariables().AddBoolean({ "AI", "Squad", "Formation Positions" }, s_bDrawFormationPositions);
-		g_xEngine.DebugVariables().AddBoolean({ "AI", "Squad", "Squad Links" }, s_bDrawSquadLinks);
-		g_xEngine.DebugVariables().AddBoolean({ "AI", "Squad", "Role Labels" }, s_bDrawRoleLabels);
-		g_xEngine.DebugVariables().AddBoolean({ "AI", "Squad", "Shared Targets" }, s_bDrawSharedTargets);
+		xDebugVars.AddBoolean({ "AI", "Squad", "Formation Positions" }, s_bDrawFormationPositions);
+		xDebugVars.AddBoolean({ "AI", "Squad", "Squad Links" }, s_bDrawSquadLinks);
+		xDebugVars.AddBoolean({ "AI", "Squad", "Role Labels" }, s_bDrawRoleLabels);
+		xDebugVars.AddBoolean({ "AI", "Squad", "Shared Targets" }, s_bDrawSharedTargets);
 
 		// Tactical
-		g_xEngine.DebugVariables().AddBoolean({ "AI", "Tactical", "Cover Points" }, s_bDrawCoverPoints);
-		g_xEngine.DebugVariables().AddBoolean({ "AI", "Tactical", "Flank Positions" }, s_bDrawFlankPositions);
-		g_xEngine.DebugVariables().AddBoolean({ "AI", "Tactical", "Point Scores" }, s_bDrawTacticalScores);
+		xDebugVars.AddBoolean({ "AI", "Tactical", "Cover Points" }, s_bDrawCoverPoints);
+		xDebugVars.AddBoolean({ "AI", "Tactical", "Flank Positions" }, s_bDrawFlankPositions);
+		xDebugVars.AddBoolean({ "AI", "Tactical", "Point Scores" }, s_bDrawTacticalScores);
 
 		Zenith_Log(LOG_CATEGORY_AI, "AI debug variables registered");
 #endif

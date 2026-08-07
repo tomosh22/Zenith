@@ -25,4 +25,18 @@ namespace Zenith_AI
 	// the AI managers via Update() each game-logic frame.
 	void SetEngineTickEnabled(bool bEnabled);
 	bool IsEngineTickEnabled();
+
+#ifdef ZENITH_TOOLS
+	// Emit every WORLD-level AI debug visualisation (perception cones/hearing/
+	// detection, squad links + formations, tactical points), gated by the AI/*
+	// debug variables (AI/Zenith_AIDebugVariables.h). Per-AGENT path drawing is
+	// NOT here: it hangs off Zenith_AIAgentComponent, which owns the nav agent.
+	//
+	// Called UNCONDITIONALLY from the main loop's game-logic frame -- deliberately
+	// NOT behind IsEngineTickEnabled(). Most games tick the managers themselves,
+	// and a debug toggle that only worked for the minority that opted into the
+	// engine tick would be the same defect this call site exists to fix. It reads
+	// only already-computed state, so drawing without owning the tick is safe.
+	void DebugDraw();
+#endif
 }

@@ -215,11 +215,20 @@ void Flux_GraphicsImpl::Initialise()
 	// SetupRenderGraph pass, which is already a resize callback.
 
 #ifdef ZENITH_DEBUG_VARIABLES
+	// LATENT: both of these DO reach the GPU (UploadFrameConstants writes them into
+	// the VIEW constant block, and Common/Bindings.slang exposes them as
+	// GetQuadUtilisationAnalysis() / GetTargetPixelsPerTri()) — but no .slang
+	// feature shader calls either accessor, so the toggles currently change
+	// nothing visible. Kept, unlike the other dead knobs swept in this pass,
+	// because removing them would edit the VIEW block layout and churn every
+	// compiled .spv; the missing half is the shader-side density heatmap.
 	xEngine.DebugVariables().AddBoolean({ "Render", "Quad Utilisation Analysis" }, dbg_bQuadUtilisationAnalysis);
 	xEngine.DebugVariables().AddUInt32({ "Render", "Target Pixels Per Tri" }, dbg_uTargetPixelsPerTri, 1, 32);
 
 	xEngine.DebugVariables().AddBoolean({ "Render", "Shadows", "Override ViewProj Mat" }, dbg_bOverrideViewProjMat);
-	xEngine.DebugVariables().AddUInt32({ "Render", "Shadows", "Override ViewProj Mat Index" }, dbg_uOverrideViewProjMatIndex, 0, ZENITH_FLUX_NUM_CSMS);
+	// INCLUSIVE max — the slider must stop at the last valid cascade index, not at
+	// the cascade COUNT (which would index one past m_axSunViewProjMats[]).
+	xEngine.DebugVariables().AddUInt32({ "Render", "Shadows", "Override ViewProj Mat Index" }, dbg_uOverrideViewProjMatIndex, 0, ZENITH_FLUX_NUM_CSMS - 1);
 
 	xEngine.DebugVariables().AddBoolean({ "Render", "TAA", "Enable" }, dbg_bTAAEnable);
 	xEngine.DebugVariables().AddBoolean({ "Render", "TAA", "Upscaling" }, dbg_bTAAUpscaling);

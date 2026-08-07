@@ -196,11 +196,32 @@ The typical per-frame sequence (whichever drives the managers):
 
 ## Debug Visualization
 
-Enable via Zenith_DebugVariables panel:
-- **AI/NavMesh/Wireframe Edges**: NavMesh polygon edges
-- **AI/Pathfinding/Agent Paths**: Current paths
-- **AI/Perception/Sight Cones**: FOV visualization
-- **AI/Perception/Detection Lines**: Lines to perceived targets
+The `AI/*` subtree of the debug-variable panel, backed by
+`Zenith_AIDebugVariables` (`AI/Zenith_AIDebugVariables.h`). `AI/Enable All AI
+Debug` is the master switch; below it sit `Pathfinding` (2), `Perception` (4),
+`Squad` (4) and `Tactical` (3).
+
+**Who drives it.** `Zenith_AIDebugVariables::Initialise()` is called ONCE, by
+`Zenith_Engine::InitialiseEditor()` — a game must not call it again (that would
+register duplicate paths). The draws come from two places:
+
+| Scope | Driver | Covers |
+|---|---|---|
+| World | `Zenith_AI::DebugDraw()`, from `UpdateGameLogic` each game-logic frame | perception senses, squad links/formations/roles/targets, tactical points |
+| Per agent | `Zenith_AIAgentComponent::OnUpdate` | nav agent path + waypoints (the component owns the nav agent) |
+
+`Zenith_AI::DebugDraw()` is deliberately **outside** the
+`IsEngineTickEnabled()` branch that calls `Zenith_AI::Update`: most games tick the
+managers from their own components, and a toggle that only worked for the minority
+that opted into the engine tick would be no better than the previous state — in
+which `Initialise()` had no caller at all and none of these variables existed in
+the panel. Drawing reads only already-computed state, so it is safe without owning
+the tick.
+
+**Not in this subtree:** navmesh visualisation (per component, on
+`Zenith_NavMeshComponent`'s panel — see [Navigation/CLAUDE.md](Navigation/CLAUDE.md))
+and behaviour-tree visualisation (the BT runtime is gone; inspect Behaviour Graphs
+in the graph editor).
 
 ## Performance Considerations
 

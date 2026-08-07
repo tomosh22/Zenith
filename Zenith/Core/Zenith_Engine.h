@@ -212,6 +212,7 @@ private:
 	void ShutdownAssetsAndRenderer();
 	void ShutdownRuntimeServices();
 	void DeleteSceneAndInputState();
+	void DeleteDebugVariableState();
 	void DeleteRendererState();
 	void DeleteEditorState();
 

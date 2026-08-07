@@ -27,8 +27,10 @@ and rewriting it once does not immunise it. Update it in the SAME commit that cl
   `ZM_BakeManifest`, visually approved (ZM-D-088); S5's full overworld<->battle slice, visually
   approved (ZM-D-112); and S6's dialogue/menu/NPC/shop surface all remain complete.
 - **★ THE LIVE BASELINE IS IN `Status.md`'s TOP BLOCK. READ IT, NOT THIS PARAGRAPH.** As of
-  2026-08-06 (OBSERVED on clean `Null_` builds): registry **55**, ZM boot
-  **2975 ran / 2973 passed / 0 failed / 2 skipped**, engine boot **1350**. (+20 engine
+  2026-08-07 (OBSERVED on clean `Null_` builds): registry **55**, ZM boot
+  **2977 ran / 2975 passed / 0 failed / 2 skipped**, engine boot **1352**. (+2 engine
+  units on 2026-08-07 for the debug-variable audit remediation's AI debug-draw
+  routing pins; before that, +20 engine
   units for the GPU-grass overhaul Phase-1 `FluxGrassTypes` suite in
   `Zenith/Flux/Vegetation/Flux_Grass.Tests.inl`, +2 for its Phase-2
   `FluxBufferReadback` zero-fill-contract units, +4 for its Phase-3 TerrainEditor

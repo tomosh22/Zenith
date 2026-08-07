@@ -197,6 +197,14 @@ static void UpdateGameLogic(bool bShouldUpdateGameLogic)
 		{
 			ZENITH_PROFILING_FUNCTION_WRAPPER(Zenith_AI::Update, ZENITH_PROFILE_ZONE("AI Update"), g_xEngine.Frame().GetDt());
 		}
+
+#ifdef ZENITH_TOOLS
+		// AI debug visualisation, driven by the AI/* debug variables. NOT inside
+		// the IsEngineTickEnabled() branch above: most games tick the AI managers
+		// from their own components, and the panel toggles have to work for them
+		// too. Self-gating and read-only — see Zenith_AI::DebugDraw.
+		Zenith_AI::DebugDraw();
+#endif
 	}
 #ifdef ZENITH_INPUT_SIMULATOR
 	Zenith_InputSimulator::EndOfFrameTickComplete();

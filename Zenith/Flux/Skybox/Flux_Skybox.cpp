@@ -23,12 +23,19 @@
 // instances now live on Flux_SkyboxImpl (m_xAtmosphereConstants /
 // m_xSolidColourConstants); see Flux_SkyboxImpl.h.
 
-// Debug variables
+// Debug variables.
+//
+// There are deliberately NO SunIntensity / RayleighScale / MieScale / MieG debug
+// variables here. The atmosphere MEDIUM (Rayleigh/Mie scales, Mie-G, both scale
+// heights) is scene-authored and reaches this subsystem only through
+// ApplyEnvironment(), which writes the Impl members the render passes actually
+// read; m_fSunIntensity is the engine's fixed radiometric anchor and is documented
+// policy (AtmosphereConfig::fSUN_INTENSITY). Four dbg_* globals used to shadow
+// those four values, and the sync that copied them was removed in f41a25cf when
+// the environment authority took over — leaving sliders bound to storage nothing
+// read. Re-adding them would fight the environment authority for the same fields;
+// author the medium on the scene's Zenith_AtmosphereComponent instead.
 u_int dbg_uSkyboxDebugMode = SKYBOX_DEBUG_NONE;
-float dbg_fSunIntensity = AtmosphereConfig::fSUN_INTENSITY;
-float dbg_fRayleighScale = 1.0f;
-float dbg_fMieScale = 1.0f;
-float dbg_fMieG = AtmosphereConfig::fMIE_G;
 u_int dbg_uSkySamples = AtmosphereConfig::uDEFAULT_SKY_SAMPLES;
 u_int dbg_uLightSamples = AtmosphereConfig::uDEFAULT_LIGHT_SAMPLES;
 
@@ -651,10 +658,6 @@ Flux_ShaderResourceView& Flux_SkyboxImpl::GetTransmittanceLUTSRV()
 void Flux_SkyboxImpl::RegisterDebugVariables()
 {
 	g_xEngine.DebugVariables().AddUInt32({ "Flux", "Skybox", "DebugMode" }, dbg_uSkyboxDebugMode, 0, SKYBOX_DEBUG_COUNT - 1);
-	g_xEngine.DebugVariables().AddFloat({ "Flux", "Skybox", "SunIntensity" }, dbg_fSunIntensity, 1.0f, 100.0f);
-	g_xEngine.DebugVariables().AddFloat({ "Flux", "Skybox", "RayleighScale" }, dbg_fRayleighScale, 0.0f, 5.0f);
-	g_xEngine.DebugVariables().AddFloat({ "Flux", "Skybox", "MieScale" }, dbg_fMieScale, 0.0f, 5.0f);
-	g_xEngine.DebugVariables().AddFloat({ "Flux", "Skybox", "MieG" }, dbg_fMieG, 0.0f, 0.99f);
 	g_xEngine.DebugVariables().AddUInt32({ "Flux", "Skybox", "SkySamples" }, dbg_uSkySamples, 4, 64);
 	g_xEngine.DebugVariables().AddUInt32({ "Flux", "Skybox", "LightSamples" }, dbg_uLightSamples, 2, 32);
 

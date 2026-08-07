@@ -247,14 +247,23 @@ Zenith_SquadManager::DestroySquad(pxSquad);
 
 ## Debug Visualization
 
-Enable via `Zenith_AIDebugVariables`:
+Toggles under `AI/Squad` and `AI/Tactical` in the debug-variable panel (backed by
+`Zenith_AIDebugVariables`), under the `AI/Enable All AI Debug` master switch:
 
-- `s_bDrawFormationPositions`: Target positions as spheres
-- `s_bDrawSquadLinks`: Lines between members
-- `s_bDrawRoleLabels`: Role names above agents
-- `s_bDrawSharedTargets`: Known target markers
-- `s_bDrawCoverPoints`: Cover positions
-- `s_bDrawFlankPositions`: Flank positions
+- `AI/Squad/Formation Positions` (`s_bDrawFormationPositions`): target positions as spheres
+- `AI/Squad/Squad Links` (`s_bDrawSquadLinks`): lines between members
+- `AI/Squad/Role Labels` (`s_bDrawRoleLabels`): role glyphs above agents
+- `AI/Squad/Shared Targets` (`s_bDrawSharedTargets`): known target markers
+- `AI/Tactical/Cover Points` (`s_bDrawCoverPoints`): cover positions
+- `AI/Tactical/Flank Positions` (`s_bDrawFlankPositions`): flank positions
+- `AI/Tactical/Point Scores` (`s_bDrawTacticalScores`): per-point score bars
+
+`Zenith_SquadManager::DebugDrawAllSquads()` and
+`Zenith_TacticalPointSystem::DebugDraw()` are called once per game-logic frame by
+`Zenith_AI::DebugDraw()`. `DebugDrawAllSquads` **early-returns** rather than
+asserting when the manager was never `Initialise()`d — it is now called
+unconditionally by the engine, and a game that never forms a squad is a valid
+state for a visualiser (the query accessors still assert).
 
 ## Integration with Behavior Trees
 

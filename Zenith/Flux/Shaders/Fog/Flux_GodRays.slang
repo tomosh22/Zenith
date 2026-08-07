@@ -30,10 +30,13 @@ struct PassParams
 };
 ParameterBlock<PassParams> g_xPassSet;
 
-// Debug-mode constants (must match Skybox_DebugMode in Flux_GodRaysFog.h).
-static const uint VOLFOG_DEBUG_GODRAYS_LIGHT_MASK     = 21;
-static const uint VOLFOG_DEBUG_GODRAYS_OCCLUSION      = 22;
-static const uint VOLFOG_DEBUG_GODRAYS_RADIAL_WEIGHTS = 23;
+// Debug-mode constants. MUST match the VolumetricFogDebugMode enumerators in
+// Flux/Fog/Flux_VolumeFogImpl.h — that enum is what Render/Volumetric Fog/Debug
+// Mode feeds straight into g_uDebugMode. These read 21/22/23 for a long time
+// while the enum said 13/14/15, so every god-rays debug view was unreachable.
+static const uint VOLFOG_DEBUG_GODRAYS_LIGHT_MASK     = 13;
+static const uint VOLFOG_DEBUG_GODRAYS_OCCLUSION      = 14;
+static const uint VOLFOG_DEBUG_GODRAYS_RADIAL_WEIGHTS = 15;
 
 [shader("vertex")]
 FullscreenVsOut vsMain(uint vertexId : SV_VertexID) { return FullscreenVS(vertexId); }

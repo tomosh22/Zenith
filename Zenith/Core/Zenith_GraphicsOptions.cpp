@@ -28,7 +28,6 @@ void Zenith_GraphicsOptions::RegisterDebugVariables()
 	xDebugVars.AddBoolean({ "Graphics", "HDR", "Bloom" }, xOpts.m_bHDRBloomEnabled);
 	xDebugVars.AddBoolean({ "Graphics", "HiZ", "Enabled" }, xOpts.m_bHiZEnabled);
 	xDebugVars.AddBoolean({ "Graphics", "IBL", "Enabled" }, xOpts.m_bIBLEnabled);
-	xDebugVars.AddBoolean({ "Graphics", "InstancedMeshes", "Enabled" }, xOpts.m_bInstancedMeshesEnabled);
 	xDebugVars.AddBoolean({ "Graphics", "Primitives", "Enabled" }, xOpts.m_bPrimitivesEnabled);
 	xDebugVars.AddBoolean({ "Graphics", "Quads", "Enabled" }, xOpts.m_bQuadsEnabled);
 	xDebugVars.AddBoolean({ "Graphics", "SDFs", "Enabled" }, xOpts.m_bSDFsEnabled);
@@ -57,7 +56,6 @@ void Zenith_GraphicsOptions::RegisterDebugVariables()
 	xDebugVars.AddBoolean({ "Graphics", "Grass", "Wind" }, xOpts.m_bGrassWindEnabled);
 	xDebugVars.AddBoolean({ "Graphics", "Grass", "Displacement" }, xOpts.m_bGrassDisplacementEnabled);
 	xDebugVars.AddBoolean({ "Graphics", "Grass", "Shadows" }, xOpts.m_bGrassShadowsEnabled);
-	xDebugVars.AddBoolean({ "Graphics", "InstancedMeshes", "GPUCulling" }, xOpts.m_bInstancedMeshGPUCullingEnabled);
 
 	xDebugVars.AddUInt32({ "Graphics", "Fog", "Technique" }, xOpts.m_uVolFogTechnique, 0, 3);
 #endif

@@ -113,7 +113,15 @@ void Flux_GodRaysFogImpl::Render(Flux_CommandBuffer* pxCommandList)
 	m_xConstants.m_xParams = Zenith_Maths::Vector4(dbg_fGodRaysDecay, dbg_fGodRaysExposure, dbg_fGodRaysDensity, dbg_fGodRaysWeight);
 	m_xConstants.m_uNumSamples = dbg_uGodRaysSamples;
 
-	// Check current debug mode
+	// Check current debug mode. The raw enumerator value goes to the GPU, and
+	// Shaders/Fog/Flux_GodRays.slang compares it against its own copies of these
+	// three constants (Slang cannot see the C++ enum). Pin them so a reordered
+	// enumerator fails the build instead of silently disabling every god-rays
+	// debug view — which is exactly what happened when the shader drifted to
+	// 21/22/23.
+	static_assert(VOLFOG_DEBUG_GODRAYS_LIGHT_MASK == 13, "Flux_GodRays.slang hardcodes 13 for VOLFOG_DEBUG_GODRAYS_LIGHT_MASK");
+	static_assert(VOLFOG_DEBUG_GODRAYS_OCCLUSION == 14, "Flux_GodRays.slang hardcodes 14 for VOLFOG_DEBUG_GODRAYS_OCCLUSION");
+	static_assert(VOLFOG_DEBUG_GODRAYS_RADIAL_WEIGHTS == 15, "Flux_GodRays.slang hardcodes 15 for VOLFOG_DEBUG_GODRAYS_RADIAL_WEIGHTS");
 	extern u_int dbg_uVolFogDebugMode;
 	m_xConstants.m_uDebugMode = dbg_uVolFogDebugMode;
 

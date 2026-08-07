@@ -101,10 +101,12 @@ static_assert(Flux_TerrainGBufferAttachmentCountForVariant(
 	"terrain velocity variant must be the 5-MRT set");
 
 bool dbg_bWireframe = false;
-DEBUGVAR float dbg_fVisibilityThresholdMultiplier = 0.5f;
-DEBUGVAR bool dbg_bIgnoreVisibilityCheck = false;
-DEBUGVAR bool dbg_bLogTerrainMetrics = false;  // Log terrain performance metrics
 u_int dbg_uDebugMode = 0;  // Debug visualization mode (0=Off, 1=LOD, 2=Normals, 3=UVs, etc.)
+// Visibility culling is entirely GPU-side (Flux_TerrainCulling.slang reads the
+// frustum planes from the CB; there is no CPU visibility test left to bias or
+// bypass), so the old Visiblity Multiplier / Ignore Visibility Check knobs and
+// the Log Metrics switch have no consumer and are not registered. Reinstating any
+// of them means adding the CB field / log site FIRST.
 
 static void ExecuteResetCounters(Flux_CommandBuffer* pxCmdList, void* pUserData);
 static void ExecuteCulling(Flux_CommandBuffer* pxCmdList, void* pUserData);
@@ -280,10 +282,7 @@ void Flux_TerrainImpl::Initialise()
 #ifdef ZENITH_DEBUG_VARIABLES
 	g_xEngine.DebugVariables().AddFloat({ "Render", "Terrain", "UV Scale" }, s_xTerrainConstants.m_fUVScale, 0., 10.);
 	g_xEngine.DebugVariables().AddBoolean({ "Render", "Terrain", "Wireframe" }, dbg_bWireframe);
-	g_xEngine.DebugVariables().AddFloat({ "Render", "Terrain", "Visiblity Multiplier" }, dbg_fVisibilityThresholdMultiplier, 0.1f, 1.f);
-	g_xEngine.DebugVariables().AddBoolean({ "Render", "Terrain", "Ignore Visibility Check" }, dbg_bIgnoreVisibilityCheck);
 	g_xEngine.DebugVariables().AddUInt32({ "Render", "Terrain", "Debug Mode" }, dbg_uDebugMode, 0, 12);
-	g_xEngine.DebugVariables().AddBoolean({ "Render", "Terrain", "Log Metrics" }, dbg_bLogTerrainMetrics);
 #endif
 
 	// ========== Initialize Terrain Streaming Manager ==========

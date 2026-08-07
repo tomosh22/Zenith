@@ -10,12 +10,6 @@ namespace Zenith_AIDebugVariables
 	// Master toggle
 	bool s_bEnableAllAIDebug = true;
 
-	// NavMesh Visualization
-	bool s_bDrawNavMeshPolygons = false;
-	bool s_bDrawNavMeshEdges = false;
-	bool s_bDrawNavMeshBoundary = false;
-	bool s_bDrawNavMeshNeighbors = false;
-
 	// Pathfinding Visualization
 	bool s_bDrawAgentPaths = true;
 	bool s_bDrawPathWaypoints = false;
@@ -25,10 +19,6 @@ namespace Zenith_AIDebugVariables
 	bool s_bDrawHearingRadius = false;
 	bool s_bDrawDetectionLines = true;
 	bool s_bDrawMemoryPositions = false;
-
-	// Behavior Tree Visualization
-	bool s_bDrawCurrentNode = true;
-	bool s_bDrawBlackboardValues = false;
 
 	// Squad Visualization
 	bool s_bDrawFormationPositions = true;

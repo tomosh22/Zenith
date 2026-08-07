@@ -1,4 +1,5 @@
 #include "UnitTests/Zenith_UnitTests.h"
+#include "AI/Zenith_AI.h"
 #include "AI/Zenith_AIDebugVariables.h"
 #include "AI/Squad/Zenith_Squad.h"
 #include "AI/Squad/Zenith_TacticalPoint.h"
@@ -109,5 +110,68 @@ void Zenith_UnitTests::TestSquadDebugRoleColor(){
 	// Medic should be green-ish (G component highest)
 	ZENITH_ASSERT_TRUE(xMedic.y > xMedic.x && xMedic.y > xMedic.z, "MEDIC should be predominantly green");
 
+}
+
+// ============================================================================
+// Zenith_AI::DebugDraw routing
+// ============================================================================
+// These pin the two properties that make it safe for the main loop to call
+// Zenith_AI::DebugDraw() UNCONDITIONALLY every game-logic frame (Zenith_Core.cpp,
+// deliberately outside the IsEngineTickEnabled() branch). Both were false before
+// the AI debug subtree was wired up, which is part of why it never was.
+//
+// The tests exist in EVERY configuration so the registered-test count does not
+// depend on ZENITH_TOOLS; only the call under test is tools-gated (DebugDraw is
+// tools-only, since it emits debug primitives).
+
+ZENITH_TEST(AI, AIDebugDrawMasterToggleShortCircuits) { Zenith_UnitTests::TestAIDebugDrawMasterToggleShortCircuits(); }
+
+void Zenith_UnitTests::TestAIDebugDrawMasterToggleShortCircuits(){
+	// AI/Enable All AI Debug is the master switch: with it off, DebugDraw must
+	// return without touching any manager, so the per-frame cost of an untouched
+	// AI panel is one branch.
+	const bool bPrevMaster = Zenith_AIDebugVariables::s_bEnableAllAIDebug;
+	Zenith_AIDebugVariables::s_bEnableAllAIDebug = false;
+
+#ifdef ZENITH_TOOLS
+	Zenith_AI::DebugDraw();
+#endif
+
+	// The observable contract is "returns, changes nothing" -- the toggle is not
+	// self-modifying and nothing below it is consulted.
+	ZENITH_ASSERT_TRUE(Zenith_AIDebugVariables::s_bEnableAllAIDebug == false,
+		"DebugDraw must not mutate the master toggle");
+
+	Zenith_AIDebugVariables::s_bEnableAllAIDebug = bPrevMaster;
+}
+
+ZENITH_TEST(AI, AIDebugDrawSafeWithNoAIContent) { Zenith_UnitTests::TestAIDebugDrawSafeWithNoAIContent(); }
+
+void Zenith_UnitTests::TestAIDebugDrawSafeWithNoAIContent(){
+	// A game that never forms a squad never calls Zenith_SquadManager::Initialise().
+	// DebugDrawAllSquads used to ASSERT on that, which would have fired on the very
+	// first frame of every such game once the engine started calling it. It now
+	// early-returns; this test is the guard against the assert coming back.
+	Zenith_SquadManager::Shutdown();          // leaves s_bInitialised == false
+	Zenith_TacticalPointSystem::Shutdown();
+
+	const bool bPrevMaster = Zenith_AIDebugVariables::s_bEnableAllAIDebug;
+	Zenith_AIDebugVariables::s_bEnableAllAIDebug = true;
+
+#ifdef ZENITH_TOOLS
+	// Reaching the line after this call IS the assertion: an un-Initialise()d
+	// manager must not break, and the perception walk must tolerate zero agents.
+	Zenith_AI::DebugDraw();
+#endif
+
+	Zenith_AIDebugVariables::s_bEnableAllAIDebug = bPrevMaster;
+
+	// Confirm the visualiser walked an empty world rather than populating one,
+	// then leave the manager shut down again (the Initialise/.../Shutdown shape
+	// every other test in this AI suite uses).
+	Zenith_SquadManager::Initialise();
+	ZENITH_ASSERT_EQ(Zenith_SquadManager::GetSquadCount(), 0u,
+		"DebugDraw must not create squads");
+	Zenith_SquadManager::Shutdown();
 }
 

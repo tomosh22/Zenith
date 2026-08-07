@@ -32,8 +32,12 @@ Multi-technique volumetric fog rendering system with runtime technique switching
 Technique is a `Zenith_GraphicsOptions` flag (`Zenith_GraphicsOptions::Get().m_uVolFogTechnique`), registered as `Graphics/Fog/Technique` — NOT under the `Render/Volumetric Fog/` debug-variable tree. The Debug Mode below is a genuine debug variable registered by `Flux_Fog.cpp`.
 ```
 Graphics/Fog/Technique              [uint: 0-3]
-Render/Volumetric Fog/Debug Mode    [uint: 0-23]
+Render/Volumetric Fog/Debug Mode    [uint: 0-15]
 ```
+
+The Debug Mode bound is `VOLFOG_DEBUG_MAX - 1`, taken from the
+`VolumetricFogDebugMode` enum in `Flux_VolumeFogImpl.h` rather than written as a
+literal — it used to read `0-23`, so its top eight positions selected nothing.
 
 ### Shared Parameters
 Registered by `Flux_VolumeFog.cpp` (shared froxel/raymarch infrastructure):
@@ -46,10 +50,18 @@ Render/Volumetric Fog/Shared/Absorption      [float]
 
 Note: the **Simple** technique has its OWN parameters, registered separately by `Flux_Fog.cpp` under `Render/Fog/` (NOT under `Shared/`):
 ```
-Render/Fog/Colour                            [vec4]
+Render/Fog/Colour                            [vec3]
 Render/Fog/Density                           [float]
 Render/Fog/Phase G                           [float]
 ```
+
+Colour is a **vec3**, and `Flux_FogConstants` stores colour and falloff as separate
+members (`m_xColour` + `m_fFalloff`) even though the shader reads them as one
+`float4`. They used to share a `Vector4`: Colour was registered as a vec4 over the
+whole thing (range 0..1) *and* Density as a float over its `.w` (range 0..0.02), so
+the two sliders aliased one float with a 50x range mismatch and each corrupted the
+other. `static_assert`s in `Flux_Fog.cpp` pin the split as byte-identical to
+`FogConstantsLayout`.
 
 ### Technique-Specific
 ```
@@ -114,6 +126,16 @@ Set `Render/Volumetric Fog/Debug Mode` to visualize internals:
 | 13 | Light source mask |
 | 14 | Occlusion test |
 | 15 | Radial sample weights |
+
+> **These three numbers appear TWICE and Slang cannot see the C++ enum.**
+> `VolumetricFogDebugMode` (`Flux_VolumeFogImpl.h`) is the authority — its raw
+> enumerator value is what `dbg_uVolFogDebugMode` uploads — and
+> `Shaders/Fog/Flux_GodRays.slang` keeps its own `static const uint` copies to
+> compare against. Those copies read **21/22/23** for a long time while the enum
+> said 13/14/15, so every god-rays debug view was silently unreachable (and the
+> `0-23` slider bound above made it look deliberate). `Flux_GodRaysFog.cpp` now
+> `static_assert`s the three enumerators against the literals the shader hardcodes,
+> so a reordered enumerator fails the build. Update both files together.
 
 ## Shaders
 

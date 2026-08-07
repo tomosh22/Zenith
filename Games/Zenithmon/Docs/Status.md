@@ -1,12 +1,19 @@
 # Zenithmon Status
 
-**Last updated:** 2026-08-06
+**Last updated:** 2026-08-07
 
-**★ LIVE BASELINE (OBSERVED 2026-08-06 on clean `Null_` builds):
-ZM boot `2975 ran / 2973 passed / 0 failed / 2 skipped`; engine boot (Null Combat)
-`1350 ran / 1349 passed / 0 failed / 1 skipped`; registry **55**.** This is the
-current pin in `zm-tests.yml` (`-Baseline 2975`) and `run_unit_gate.ps1`
-(default 1350). The GPU-grass overhaul moved engine units in seven steps: Phase 7
+**★ LIVE BASELINE (OBSERVED 2026-08-07 on clean `Null_` builds):
+ZM boot `2977 ran / 2975 passed / 0 failed / 2 skipped`; engine boot (Null Combat)
+`1352 ran / 1351 passed / 0 failed / 1 skipped`; registry **55**.** This is the
+current pin in `zm-tests.yml` (`-Baseline 2977`) and `run_unit_gate.ps1`
+(default 1352). The move from 2975/1350 is **+2 ENGINE units** from the
+engine-wide debug-variable audit remediation (2026-08-07): the `AI/*` debug
+variables had never had a call site for `Zenith_AIDebugVariables::Initialise()`,
+so none of the 20 toggles reached the panel; wiring them up added two routing
+pins (master-toggle short-circuit, and safety against an un-`Initialise()`d
+`Zenith_SquadManager`, whose visualiser used to assert and is now called every
+frame by the engine). ZM's own registrations did not move. Before that, the
+GPU-grass overhaul moved engine units in seven steps: Phase 7
 +6 (types-authoring mapping/isolation/automation pins), Phase 6
 +4 (displacement re-anchor/decay pins), Phase 5
 +3 (shadow-casting truth table / slot-mask / registration-order pins), Phase 1

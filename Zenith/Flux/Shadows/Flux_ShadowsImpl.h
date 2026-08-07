@@ -96,7 +96,17 @@ public:
 
 	void SetupRenderGraph(Flux_RenderGraph& xGraph);
 
-	Zenith_Maths::Matrix4 GetSunViewProjMatrix(const uint32_t uIndex) { return m_axSunViewProjMats[uIndex]; }
+	// uIndex is a CASCADE index in [0, ZENITH_FLUX_NUM_CSMS). The debug-variable
+	// override path (Render/Shadows/Override ViewProj Mat Index) feeds this
+	// straight from a slider, so an off-by-one in the registered bound used to
+	// read one matrix past the array — the assert makes that a break, not a
+	// silent garbage view matrix.
+	Zenith_Maths::Matrix4 GetSunViewProjMatrix(const uint32_t uIndex)
+	{
+		Zenith_Assert(uIndex < ZENITH_FLUX_NUM_CSMS,
+			"Cascade index %u out of range (valid: 0..%u)", uIndex, ZENITH_FLUX_NUM_CSMS - 1);
+		return m_axSunViewProjMats[uIndex];
+	}
 	// The CSM depth-array transient handle — for consumers (DeferredShading /
 	// Translucency) to declare a graph Read() spanning all cascade layers so the
 	// WRITE_DSV → SHADER_READ barrier covers every layer. Valid after SetupRenderGraph.

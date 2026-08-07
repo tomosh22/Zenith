@@ -966,7 +966,14 @@ const Zenith_Vector<Zenith_Squad*>& Zenith_SquadManager::GetAllSquads()
 #ifdef ZENITH_TOOLS
 void Zenith_SquadManager::DebugDrawAllSquads()
 {
-	Zenith_Assert(s_bInitialised, "SquadManager::DebugDrawAllSquads called before Initialise()");
+	// Deliberately NOT an assert: this is called every game-logic frame by
+	// Zenith_AI::DebugDraw(), and a game that never forms a squad simply never
+	// calls Initialise(). "No squad manager" is a valid state for a visualiser,
+	// unlike for the query accessors below.
+	if (!s_bInitialised)
+	{
+		return;
+	}
 
 	for (uint32_t u = 0; u < s_axSquads.GetSize(); ++u)
 	{

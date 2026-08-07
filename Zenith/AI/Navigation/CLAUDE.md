@@ -262,12 +262,27 @@ String-pulling removes unnecessary waypoints:
 
 ## Debug Visualization
 
-Enable via `Zenith_AIDebugVariables`:
+Two separate surfaces, with different granularity — do not look for the mesh
+toggles in the global panel:
 
-- `s_bDrawNavMeshEdges`: Polygon wireframe
-- `s_bDrawNavMeshPolygons`: Filled surfaces
-- `s_bDrawAgentPaths`: Current paths as lines
-- `s_bDrawPathWaypoints`: Waypoint markers
+**The navmesh itself** is visualised PER COMPONENT, from
+`Zenith_NavMeshComponent`'s editor panel: six flags (edges, boundary edges, fill,
+adjacency links, centers+normals, blocked highlight) feed a
+`Zenith_NavMeshDebugDrawFlags` straight into `Zenith_NavMesh::DebugDraw(flags)`.
+Per-component is the point — two loaded navmeshes can be inspected differently at
+once. There are deliberately **no** `AI/NavMesh/*` global debug variables; four
+such flags existed for a while, were never read by anything, and were deleted.
+
+**Agent paths** are global toggles in the debug-variable panel, under
+`AI/Pathfinding` (backed by `Zenith_AIDebugVariables`):
+
+- `AI/Pathfinding/Agent Paths` (`s_bDrawAgentPaths`): current path as lines
+- `AI/Pathfinding/Path Waypoints` (`s_bDrawPathWaypoints`): waypoint markers
+
+Both gate `Zenith_NavMeshAgent::DebugDraw`, which is driven once per frame from
+`Zenith_AIAgentComponent::OnUpdate` (the component owns the nav agent, so there is
+no registry of live agents to walk centrally). An agent wired outside an
+`AIAgentComponent`, or one whose component is disabled, is not drawn.
 
 ## Common Issues
 

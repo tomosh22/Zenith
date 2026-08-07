@@ -212,6 +212,12 @@ public:
 	static void SetTargetHostile(Zenith_EntityID xTargetID, bool bHostile);
 
 #ifdef ZENITH_TOOLS
+	// Draw every registered agent's perception state, resolving each agent's pose
+	// through the AI world hooks. Sections are gated individually by the
+	// AI/Perception/* debug variables; called once per game-logic frame by
+	// Zenith_AI::DebugDraw(). Prefer this over DebugDrawAgent -- the single-agent
+	// form exists for callers that already hold a pose.
+	static void DebugDrawAllAgents();
 	static void DebugDrawAgent(Zenith_EntityID xAgentID,
 		const Zenith_Maths::Vector3& xAgentPos,
 		const Zenith_Maths::Vector3& xForward);

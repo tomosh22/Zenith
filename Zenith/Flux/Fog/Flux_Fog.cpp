@@ -23,6 +23,8 @@
 #include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 
+#include <cstddef>   // offsetof — pins the fog constant-block layout below
+
 // Render graph pass indices for dynamic enable/disable.
 //
 // A game disables engine fog generically via the render graph's force-disable
@@ -34,14 +36,28 @@
 
 u_int dbg_uVolFogDebugMode = 0;  // Debug visualization mode (non-static for external linkage)
 
+// Simple-fog draw constants. Colour and falloff are SEPARATE members even though
+// the shader reads them as one float4 (FogConstantsLayout::g_xFogColour_Falloff):
+// they used to share a Vector4, and the debug panel registered BOTH a vec4
+// "Colour" (range 0..1) and a float "Density" (range 0..0.02) over it — two
+// sliders aliasing one float with a 50x range mismatch, so dragging Colour's W
+// slammed density to a value Density could never express, and vice versa.
+// A vec3 + float keeps the 16-byte GPU layout byte-identical while giving each
+// slider its own storage.
 static struct Flux_FogConstants
 {
-	Zenith_Maths::Vector4 m_xColour_Falloff = { 0.5,0.6,0.7,0.000075 };
+	Zenith_Maths::Vector3 m_xColour = { 0.5f, 0.6f, 0.7f };
+	float m_fFalloff = 0.000075f;
 	// Henyey-Greenstein phase function asymmetry parameter
 	// g = 0.0: isotropic, g = 0.8: typical atmospheric haze, g = 0.95: Mie scattering
 	float m_fPhaseG = 0.8f;
 	float m_fPad[3] = { 0.f, 0.f, 0.f };
 } dbg_xConstants;
+// The split must not move a byte: the shader still reads {colour.rgb, falloff} as
+// one float4 followed by the phase term.
+static_assert(sizeof(Flux_FogConstants) == 32, "Flux_FogConstants must stay 32B to match FogConstantsLayout in Shaders/Fog/Flux_Fog.slang");
+static_assert(offsetof(Flux_FogConstants, m_fFalloff) == 12, "falloff must occupy the w lane of g_xFogColour_Falloff");
+static_assert(offsetof(Flux_FogConstants, m_fPhaseG) == 16, "phase G must follow the colour/falloff float4");
 
 static void ExecuteSimpleFog(Flux_CommandBuffer* pxCommandList, void* pUserData);
 static void ExecuteFroxelInject(Flux_CommandBuffer* pxCommandList, void* pUserData);
@@ -101,9 +117,12 @@ void Flux_FogImpl::Initialise()
 	BuildPipelines();
 
 #ifdef ZENITH_DEBUG_VARIABLES
-	xEngine.DebugVariables().AddUInt32({ "Render", "Volumetric Fog", "Debug Mode" }, dbg_uVolFogDebugMode, 0, 23);
-	xEngine.DebugVariables().AddVector4({ "Render", "Fog", "Colour" }, dbg_xConstants.m_xColour_Falloff, 0., 1.);
-	xEngine.DebugVariables().AddFloat({ "Render", "Fog", "Density" }, dbg_xConstants.m_xColour_Falloff.w, 0., 0.02);
+	// Bound from the enum, not a literal: the slider used to stop at 23 while
+	// VolumetricFogDebugMode only defines 0..VOLFOG_DEBUG_MAX-1, so its top eight
+	// positions selected nothing.
+	xEngine.DebugVariables().AddUInt32({ "Render", "Volumetric Fog", "Debug Mode" }, dbg_uVolFogDebugMode, 0, VOLFOG_DEBUG_MAX - 1);
+	xEngine.DebugVariables().AddVector3({ "Render", "Fog", "Colour" }, dbg_xConstants.m_xColour, 0., 1.);
+	xEngine.DebugVariables().AddFloat({ "Render", "Fog", "Density" }, dbg_xConstants.m_fFalloff, 0., 0.02);
 	xEngine.DebugVariables().AddFloat({ "Render", "Fog", "Phase G" }, dbg_xConstants.m_fPhaseG, -0.99f, 0.99f);
 #endif
 

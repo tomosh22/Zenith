@@ -87,7 +87,13 @@ param(
     # unknown-name rejection, working-copy isolation, automation family
     # end-to-end, save-writes-asset-and-applies, enum-block contiguity);
     # GPU-grass overhaul Phase 7 (observed 2026-08-06 on a Null_ Combat build).
-    [int]$Baseline = 1350,
+    # 1350 -> 1352: +2 AI debug-draw routing units (master-toggle short-circuit,
+    # safe with no AI content) added when the AI/* debug-variable subtree was
+    # wired up -- Zenith_AIDebugVariables::Initialise() had no call site, so none
+    # of its 20 toggles ever reached the panel, and DebugDrawAllSquads asserted
+    # on an un-Initialise()d manager it is now called against every frame
+    # (observed 2026-08-07 on a Null_ Combat build).
+    [int]$Baseline = 1352,
     [int]$TimeoutSec = 180,
     [string]$LogPath = ""
 )

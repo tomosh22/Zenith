@@ -194,6 +194,12 @@ jobs:
           #
           # History, newest first (the DERIVATION is the audit trail; the OBSERVED
           # number is the authority):
+          #   2977  Debug-variable audit remediation  observed 2026-08-07 on a
+          #                   Null_ build. +2 ENGINE units (1350 -> 1352): the AI
+          #                   debug-draw routing pins (master-toggle short-circuit,
+          #                   safe against an un-Initialise()d SquadManager) added
+          #                   when the AI/* debug-variable subtree was given its
+          #                   first call site. ZM's own registrations unmoved.
           #   2975  GPU-grass overhaul Phase 7 (types authoring)  observed
           #                   2026-08-06 on a Null_ build. +6 ENGINE units
           #                   (1344 -> 1350): grass-type name->field mapping,
@@ -308,7 +314,7 @@ jobs:
           #   2817  ZM-D-173  = 2809 + 8: four ENGINE sensor-raycast units plus
           #                   two camera fixtures and two Home-placement units.
           $exe = 'Games\Zenithmon\Build\output\win64\null_vs2022_debug_win64_true\zenithmon.exe'
-          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 2975 -TimeoutSec 600
+          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 2977 -TimeoutSec 600
           if ($LASTEXITCODE -ne 0) { Write-Error "boot unit tests failed (see log above)"; exit $LASTEXITCODE }
 
       - name: Run Zenithmon tests

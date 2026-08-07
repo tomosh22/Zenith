@@ -35,8 +35,11 @@ static constexpr float GIZMO_INTERACTION_THRESHOLD = 0.2f;  // Distance threshol
 static constexpr float GIZMO_INTERACTION_LENGTH_MULTIPLIER = 1.0f; // FIXED: Was 10.0 - caused false positive hits far from arrow
 static constexpr float GIZMO_AUTO_SCALE_DISTANCE = 5.0f;     // Distance at which gizmo is 1.0 scale
 
-// Debug variables
-DEBUGVAR float dbg_fGizmoAlpha = 1.0f;
+// No Editor/Gizmos/Alpha debug variable: handle colour is per-GizmoGeometry
+// (m_xColour, tinted by the hover/active highlight at record time) and the gizmo
+// pipeline does not blend, so a global alpha had no reader. Making it real means
+// enabling blending on the pipeline and folding the value into the draw
+// constants first.
 
 // Static member initialization
 
@@ -89,10 +92,6 @@ void Flux_GizmosImpl::Initialise()
 	GenerateTranslationGizmoGeometry();
 	GenerateRotationGizmoGeometry();
 	GenerateScaleGizmoGeometry();
-
-#ifdef ZENITH_DEBUG_VARIABLES
-	g_xEngine.DebugVariables().AddFloat({"Editor", "Gizmos", "Alpha"}, dbg_fGizmoAlpha, 0.0f, 1.0f);
-#endif
 
 	Zenith_Log(LOG_CATEGORY_GIZMOS, "Flux_Gizmos initialised");
 }

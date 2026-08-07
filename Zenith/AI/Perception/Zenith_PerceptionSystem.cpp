@@ -1,6 +1,7 @@
 #include "Zenith.h"
 #include "Profiling/Zenith_Profiling.h"
 #include "AI/Perception/Zenith_PerceptionSystem.h"
+#include "AI/Zenith_AIDebugVariables.h"
 #include "AI/Zenith_AIWorldHooks.h"
 #include "ZenithECS/Zenith_Scene.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
@@ -969,6 +970,50 @@ void Zenith_PerceptionSystem::GetAgentIterationOrderForTest(Zenith_Vector<Zenith
 #endif // ZENITH_TESTING
 
 #ifdef ZENITH_TOOLS
+void Zenith_PerceptionSystem::DebugDrawAllAgents()
+{
+	// Nothing to walk unless at least one section is on -- the cheap check first,
+	// so a tools build with the AI panel untouched pays one branch per frame.
+	if (!Zenith_AIDebugVariables::s_bDrawSightCones &&
+		!Zenith_AIDebugVariables::s_bDrawHearingRadius &&
+		!Zenith_AIDebugVariables::s_bDrawDetectionLines &&
+		!Zenith_AIDebugVariables::s_bDrawMemoryPositions)
+	{
+		return;
+	}
+
+	// Same walk order Update() uses (live buckets, registration order within each),
+	// so what is drawn matches what was just simulated.
+	for (uint32_t uScene = 0; uScene < s_axScenes.GetSize(); ++uScene)
+	{
+		const ScenePerception& xBucket = s_axScenes.Get(uScene);
+		if (!IsBucketLive(xBucket)) continue;
+
+		for (uint32_t u = 0; u < xBucket.m_axAgents.GetSize(); ++u)
+		{
+			const Zenith_EntityID xAgentID = xBucket.m_axAgents.Get(u).m_xAgentID;
+
+			// Pose comes through the world hooks (this leaf must not name
+			// Zenith_TransformComponent). No transform -> skip, rather than draw the
+			// agent's cone at the world origin.
+			Zenith_Maths::Vector3 xAgentPos;
+			if (!Zenith_AI_GetEntityPosition(xAgentID, xAgentPos)) continue;
+
+			// forward = quat * +Z, matching UpdateSightPerception exactly. NEVER
+			// glm::eulerAngles(quat).y -- see the note there.
+			Zenith_Maths::Quaternion xQuat;
+			Zenith_AI_GetEntityRotation(xAgentID, xQuat);
+			Zenith_Maths::Vector3 xForward = xQuat * Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f);
+			xForward.y = 0.0f;
+			const float fFwdLenSq = xForward.x * xForward.x + xForward.z * xForward.z;
+			xForward = (fFwdLenSq > 1e-6f) ? Zenith_Maths::Normalize(xForward)
+				: Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f);
+
+			DebugDrawAgent(xAgentID, xAgentPos, xForward);
+		}
+	}
+}
+
 void Zenith_PerceptionSystem::DebugDrawAgent(Zenith_EntityID xAgentID,
 	const Zenith_Maths::Vector3& xAgentPos,
 	const Zenith_Maths::Vector3& xForward)
@@ -985,50 +1030,87 @@ void Zenith_PerceptionSystem::DebugDrawAgent(Zenith_EntityID xAgentID,
 	Zenith_Maths::Vector3 xEyePos = xAgentPos;
 	xEyePos.y += xConfig.m_fEyeHeight;
 
-	// Draw FOV cone edges
-	const Zenith_Maths::Vector3 xFOVColor(1.0f, 1.0f, 0.0f);
-	const Zenith_Maths::Vector3 xPeripheralColor(1.0f, 0.5f, 0.0f);
-
-	float fFOVRad = xConfig.m_fFOVAngle * 0.5f * (3.14159265f / 180.0f);
-	float fPeriphRad = xConfig.m_fPeripheralAngle * 0.5f * (3.14159265f / 180.0f);
-
-	// Draw FOV lines
-	auto DrawConeEdge = [&](float fAngle, const Zenith_Maths::Vector3& xColor)
+	// --- AI/Perception/Sight Cones: primary + peripheral FOV edges and forward ---
+	if (Zenith_AIDebugVariables::s_bDrawSightCones)
 	{
-		float fCos = std::cos(fAngle);
-		float fSin = std::sin(fAngle);
+		const Zenith_Maths::Vector3 xFOVColor(1.0f, 1.0f, 0.0f);
+		const Zenith_Maths::Vector3 xPeripheralColor(1.0f, 0.5f, 0.0f);
 
-		// Rotate forward by angle around Y axis
-		Zenith_Maths::Vector3 xDir;
-		xDir.x = xForward.x * fCos - xForward.z * fSin;
-		xDir.y = 0.0f;
-		xDir.z = xForward.x * fSin + xForward.z * fCos;
-		xDir = Zenith_Maths::Normalize(xDir);
+		float fFOVRad = xConfig.m_fFOVAngle * 0.5f * (3.14159265f / 180.0f);
+		float fPeriphRad = xConfig.m_fPeripheralAngle * 0.5f * (3.14159265f / 180.0f);
 
-		Zenith_AI_DebugDrawLine(xEyePos, xEyePos + xDir * xConfig.m_fMaxRange, xColor, 0.02f);
-	};
+		// Draw FOV lines
+		auto DrawConeEdge = [&](float fAngle, const Zenith_Maths::Vector3& xColor)
+		{
+			float fCos = std::cos(fAngle);
+			float fSin = std::sin(fAngle);
 
-	DrawConeEdge(fFOVRad, xFOVColor);
-	DrawConeEdge(-fFOVRad, xFOVColor);
-	DrawConeEdge(fPeriphRad, xPeripheralColor);
-	DrawConeEdge(-fPeriphRad, xPeripheralColor);
+			// Rotate forward by angle around Y axis
+			Zenith_Maths::Vector3 xDir;
+			xDir.x = xForward.x * fCos - xForward.z * fSin;
+			xDir.y = 0.0f;
+			xDir.z = xForward.x * fSin + xForward.z * fCos;
+			xDir = Zenith_Maths::Normalize(xDir);
 
-	// Draw forward direction
-	Zenith_AI_DebugDrawLine(xEyePos, xEyePos + xForward * 2.0f, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f), 0.03f);
+			Zenith_AI_DebugDrawLine(xEyePos, xEyePos + xDir * xConfig.m_fMaxRange, xColor, 0.02f);
+		};
 
-	// Draw perceived targets
-	for (uint32_t u = 0; u < xData.m_axPerceivedTargets.GetSize(); ++u)
+		DrawConeEdge(fFOVRad, xFOVColor);
+		DrawConeEdge(-fFOVRad, xFOVColor);
+		DrawConeEdge(fPeriphRad, xPeripheralColor);
+		DrawConeEdge(-fPeriphRad, xPeripheralColor);
+
+		// Draw forward direction
+		Zenith_AI_DebugDrawLine(xEyePos, xEyePos + xForward * 2.0f, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f), 0.03f);
+	}
+
+	// --- AI/Perception/Hearing Radius: the audible horizon, on the ground plane ---
+	// Hearing is omnidirectional and range-limited, so a horizontal ring at the
+	// agent's feet is the honest depiction (the cone above is the sight sense).
+	if (Zenith_AIDebugVariables::s_bDrawHearingRadius)
 	{
-		const Zenith_PerceivedTarget& xTarget = xData.m_axPerceivedTargets.Get(u);
+		static constexpr uint32_t uHEARING_RING_SEGMENTS = 32;
+		const float fRadius = xData.m_xHearingConfig.m_fMaxRange;
+		const Zenith_Maths::Vector3 xHearingColor(0.2f, 0.6f, 1.0f);
 
-		// Color based on awareness (green = low, red = high)
-		Zenith_Maths::Vector3 xColor(xTarget.m_fAwareness, 1.0f - xTarget.m_fAwareness, 0.0f);
+		Zenith_Maths::Vector3 xPrev(xAgentPos.x + fRadius, xAgentPos.y, xAgentPos.z);
+		for (uint32_t uSeg = 1; uSeg <= uHEARING_RING_SEGMENTS; ++uSeg)
+		{
+			const float fAngle = (float(uSeg) / float(uHEARING_RING_SEGMENTS)) * 6.28318531f;
+			const Zenith_Maths::Vector3 xNext(xAgentPos.x + std::cos(fAngle) * fRadius,
+				xAgentPos.y,
+				xAgentPos.z + std::sin(fAngle) * fRadius);
+			Zenith_AI_DebugDrawLine(xPrev, xNext, xHearingColor, 0.015f);
+			xPrev = xNext;
+		}
+	}
 
-		// Line to last known position
-		Zenith_AI_DebugDrawLine(xEyePos, xTarget.m_xLastKnownPosition, xColor, 0.015f);
+	// --- AI/Perception/{Detection Lines, Memory Positions} ---
+	// Both walk the perceived-target list, so one loop serves both: a detection
+	// LINE is drawn to anything perceived, while a memory MARKER is only drawn for
+	// a target that is no longer visible (that is what "last known position" means
+	// -- for a visible target the marker would just sit on the target).
+	if (Zenith_AIDebugVariables::s_bDrawDetectionLines || Zenith_AIDebugVariables::s_bDrawMemoryPositions)
+	{
+		for (uint32_t u = 0; u < xData.m_axPerceivedTargets.GetSize(); ++u)
+		{
+			const Zenith_PerceivedTarget& xTarget = xData.m_axPerceivedTargets.Get(u);
 
-		// Sphere at last known position
-		Zenith_AI_DebugDrawSphere(xTarget.m_xLastKnownPosition, 0.15f, xColor);
+			// Color based on awareness (green = low, red = high)
+			Zenith_Maths::Vector3 xColor(xTarget.m_fAwareness, 1.0f - xTarget.m_fAwareness, 0.0f);
+
+			if (Zenith_AIDebugVariables::s_bDrawDetectionLines)
+			{
+				// Line to last known position
+				Zenith_AI_DebugDrawLine(xEyePos, xTarget.m_xLastKnownPosition, xColor, 0.015f);
+			}
+
+			if (Zenith_AIDebugVariables::s_bDrawMemoryPositions && !xTarget.m_bCurrentlyVisible)
+			{
+				// Sphere at last known position
+				Zenith_AI_DebugDrawSphere(xTarget.m_xLastKnownPosition, 0.15f, xColor);
+			}
+		}
 	}
 }
 #endif

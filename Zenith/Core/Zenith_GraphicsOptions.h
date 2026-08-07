@@ -19,7 +19,11 @@ struct Zenith_GraphicsOptions
 	bool m_bHDRBloomEnabled = true;
 	bool m_bHiZEnabled = true;
 	bool m_bIBLEnabled = true;
-	bool m_bInstancedMeshesEnabled = true;
+	// NOTE: there is no m_bInstancedMeshesEnabled / m_bInstancedMeshGPUCullingEnabled.
+	// UnifiedMesh Stage 4 retired the InstancedMeshes draw/cull passes — the
+	// registered instance groups are drawn by the unified GPU-driven pipeline, and
+	// culling is always on-device — so both flags lost every reader and were
+	// removed rather than left as sliders that move nothing.
 	bool m_bPrimitivesEnabled = true;
 	bool m_bQuadsEnabled = true;
 	bool m_bSDFsEnabled = true;
@@ -54,7 +58,6 @@ struct Zenith_GraphicsOptions
 	// the seam for live experimentation.
 	bool m_bGrassDisplacementEnabled = true;
 	bool m_bGrassShadowsEnabled = true;
-	bool m_bInstancedMeshGPUCullingEnabled = true;
 
 	uint32_t m_uVolFogTechnique = 0;
 

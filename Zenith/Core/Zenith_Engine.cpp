@@ -22,6 +22,7 @@
 // registrar onto (the Scripting module's twin of the component-meta inversion).
 #include "Scripting/Zenith_GraphNodeRegistry.h"
 #include "AI/Perception/Zenith_PerceptionSystem.h"	// m_pfnSceneDestroyed / m_pfnEntityOwnerSceneChanged thunks
+#include "AI/Zenith_AIDebugVariables.h"				// AI/* debug-variable registration (InitialiseEditor)
 #include "EntityComponent/Components/Zenith_GraphComponent.h"	// m_pfnSceneLoaded -> BroadcastCustomEvent thunk
 #include "EntityComponent/Zenith_TerrainPhysicsValidate.h"	// m_pfnSceneLoaded -> terrain-collision report
 #include "EntityComponent/Zenith_FallenBodyWatch.h"			// m_pfnSceneLoaded -> re-arm the per-body fall watch
@@ -95,7 +96,6 @@
 #ifdef ZENITH_TOOLS
 extern void ExportAllMeshes();
 extern void ExportAllTextures();
-extern void ExportHeightmap();
 extern void ExportDefaultFontAtlas();
 extern void GenerateTestAssets();
 #endif
@@ -536,7 +536,6 @@ void Zenith_Engine::InitialiseAssets()
 			ZENITH_PROFILE_SCOPE("Boot Tool Export/Textures");
 			ExportAllTextures();
 		}
-		//ExportHeightmap();
 		Zenith_Log(LOG_CATEGORY_CORE, "Tool export: font atlas...");
 		{
 			ZENITH_PROFILE_SCOPE("Boot Tool Export/Font Atlas");
@@ -802,13 +801,21 @@ void Zenith_Engine::InitialiseEditor()
 
 #if defined ZENITH_TOOLS && defined ZENITH_DEBUG_VARIABLES
 	Zenith_GraphicsOptions::RegisterDebugVariables();
+	// The AI/* subtree. Registered here, once, from the engine — not from game
+	// code: the toggles gate engine-driven draw calls (Zenith_AI::DebugDraw and
+	// Zenith_AIAgentComponent::OnUpdate), so every game gets them.
+	Zenith_AIDebugVariables::Initialise();
 	// Frame deps passed by member (not read back via g_xEngine inside the
 	// editor) so the relocated RenderImGuiFrame stays off the engine-
 	// singleton ratchet for Zenith_Editor.cpp.
 	m_pxEditor->Initialise(*m_pxVulkan, *m_pxFluxGraphics, *m_pxFrame, *m_pxDebugVariables, *m_pxProfiling, *m_pxTerrainEditor);
 	g_xEngine.DebugVariables().AddButton({ "Export", "Meshes", "Export All Meshes" }, ExportAllMeshes);
 	g_xEngine.DebugVariables().AddButton({ "Export", "Textures", "Export All Textures" }, ExportAllTextures);
-	g_xEngine.DebugVariables().AddButton({ "Export", "Terrain", "Export Heightmap" }, ExportHeightmap);
+	// NOTE: there is deliberately no Export/Terrain button. Terrain export is
+	// heightmap- and rect-specific (ExportHeightmapFromMat / ...FromMatRect,
+	// driven by the terrain editor's bake and by each game's authoring recipe);
+	// the old zero-argument ExportHeightmap() hardcoded a heightmap path no game
+	// ships and debug-broke on the empty-image assert, so it was deleted.
 	g_xEngine.DebugVariables().AddButton({ "Export", "Font", "Export Font Atlas" }, ExportDefaultFontAtlas);
 #endif
 }
@@ -1069,6 +1076,25 @@ void Zenith_Engine::DeleteSceneAndInputState()
 	m_pxTouch = nullptr;
 }
 
+// The debug-variable tree, deleted BEFORE the subsystems it points into.
+//
+// Every Add*() binds a RAW REFERENCE to the caller's storage, and a large share
+// of those targets are members of the render *Impl objects DeleteRendererState()
+// is about to free (Flux_TerrainImpl's UV-scale constant, Flux_SkyboxImpl's
+// transmittance-LUT SRV, the fog constant block, ...). This used to be deleted
+// last, inside DeleteEditorState(), so between the two the tree held a table of
+// dangling references — harmless only because nothing walked it in that window.
+// Killing the tree first removes the window rather than relying on it staying
+// empty. It must still run AFTER DeleteSceneAndInputState(), since scene
+// teardown can touch tools UI.
+void Zenith_Engine::DeleteDebugVariableState()
+{
+#ifdef ZENITH_TOOLS
+	delete m_pxDebugVariables;
+	m_pxDebugVariables = nullptr;
+#endif
+}
+
 // Flux subsystem holders, then renderer/graphics, then the backend last.
 void Zenith_Engine::DeleteRendererState()
 {
@@ -1159,8 +1185,8 @@ void Zenith_Engine::DeleteEditorState()
 	m_pxEditorMaterialUI = nullptr;
 	delete m_pxTerrainEditor;
 	m_pxTerrainEditor = nullptr;
-	delete m_pxDebugVariables;
-	m_pxDebugVariables = nullptr;
+	// m_pxDebugVariables is NOT deleted here — DeleteDebugVariableState() already
+	// freed it, before the render Impls whose members its entries reference.
 #endif
 }
 
@@ -1172,6 +1198,7 @@ void Zenith_Engine::Shutdown()
 	ShutdownAssetsAndRenderer();
 	ShutdownRuntimeServices();
 	DeleteSceneAndInputState();
+	DeleteDebugVariableState();
 	DeleteRendererState();
 	DeleteEditorState();
 

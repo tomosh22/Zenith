@@ -25,7 +25,14 @@
 // Phase 7b: state on Flux_DeferredShadingImpl held by Zenith_Engine.
 
 DEBUGVAR bool dbg_bVisualiseCSMs = false;
-DEBUGVAR u_int dbg_uDeferredShadingDebugMode = 0;  // 0=normal, 1=cyan, 2=depth, 3=diffuse
+// Deferred debug views. Mirrors the g_uDebugMode branches in
+// Shaders/DeferredShading/Flux_DeferredShading.slang — keep the two in step, and
+// keep uDS_DEBUG_MODE_MAX equal to the highest mode the shader implements or the
+// slider silently stops short of the newest view (which is what it used to do).
+// 0=normal 1=cyan 2=depth 3=albedo 4=metallic 5=roughness 6=AO 7=normal 8=NdotL
+// 9=shadowFactor 10=shadingModel 11=IBLambient
+static constexpr u_int uDS_DEBUG_MODE_MAX = 11;
+DEBUGVAR u_int dbg_uDeferredShadingDebugMode = 0;
 DEBUGVAR float dbg_fAmbientFallbackIntensity = 0.03f;  // Ambient when IBL disabled (0.01-0.1 typical)
 
 void Flux_DeferredShadingImpl::BuildPipelines()
@@ -73,7 +80,7 @@ void Flux_DeferredShadingImpl::Initialise()
 
 	#ifdef ZENITH_DEBUG_VARIABLES
 	g_xEngine.DebugVariables().AddBoolean({ "Render", "Shadows", "Visualise CSMs" }, dbg_bVisualiseCSMs);
-	g_xEngine.DebugVariables().AddUInt32({ "Render", "DeferredShading", "DebugMode" }, dbg_uDeferredShadingDebugMode, 0, 3);
+	g_xEngine.DebugVariables().AddUInt32({ "Render", "DeferredShading", "DebugMode" }, dbg_uDeferredShadingDebugMode, 0, uDS_DEBUG_MODE_MAX);
 	g_xEngine.DebugVariables().AddFloat({ "Render", "DeferredShading", "AmbientFallback" }, dbg_fAmbientFallbackIntensity, 0.0f, 0.2f);
 	#endif
 

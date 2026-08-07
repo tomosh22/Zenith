@@ -218,12 +218,22 @@ Zenith_PerceptionSystem::Zenith_LastHeardSound xSound =
 
 ## Debug Visualization
 
-Enable via `Zenith_AIDebugVariables`:
+Toggles live under `AI/Perception` in the debug-variable panel (backed by
+`Zenith_AIDebugVariables`, registered by `Zenith_Engine::InitialiseEditor`), under
+the `AI/Enable All AI Debug` master switch:
 
-- `s_bDrawSightCones`: FOV cone outline
-- `s_bDrawHearingRadius`: Circle showing hearing range
-- `s_bDrawDetectionLines`: Lines to perceived targets (color = awareness)
-- `s_bDrawMemoryPositions`: Last known positions for lost targets
+- `Sight Cones` (`s_bDrawSightCones`): primary + peripheral FOV edges and the forward vector
+- `Hearing Radius` (`s_bDrawHearingRadius`): ground-plane ring at `m_fMaxRange` (hearing is omnidirectional)
+- `Detection Lines` (`s_bDrawDetectionLines`): eye → last known position, per perceived target (color = awareness)
+- `Memory Positions` (`s_bDrawMemoryPositions`): marker at the last known position of targets that are **not currently visible** — for a visible target the marker would just sit on the target
+
+`Zenith_PerceptionSystem::DebugDrawAllAgents()` walks every live scene bucket in
+`Update()` order and resolves each agent's pose through the AI world hooks; it is
+called once per game-logic frame by `Zenith_AI::DebugDraw()` — **not** gated on
+`Zenith_AI::SetEngineTickEnabled`, so the toggles work whether the engine or the
+game drives the manager tick. The forward vector is derived the same way
+`UpdateSightPerception` derives it (`quat * +Z`), so the drawn cone is the cone
+that was tested.
 
 ## Usage in Behavior Trees
 

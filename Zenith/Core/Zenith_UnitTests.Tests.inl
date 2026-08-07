@@ -18622,24 +18622,22 @@ void Zenith_UnitTests::TestFeatureRegistryUnifiedMeshPrecedesShadows(){
 // visible-index list) from CONCURRENT worker threads. WS7 (C1) relocated that to a
 // SINGLE main-thread .Prepare gather; the CPU visibility math is factored into
 // Flux_InstanceGroup::ComputeVisibleIndices (device-independent). This test pins
-// the determinism guarantee: with GPU culling forced OFF (the path that used to
-// double-call UpdateGPUBuffers), a fixed seeded layout produces a byte-identical
+// the determinism guarantee: a fixed seeded layout produces a byte-identical
 // visible-state hash on every repeated re-seed + recompute (zero divergence == the
 // cross-worker race is gone). It also cross-checks that the visible count derived
 // from the single-writer recompute equals the freshly computed visible-index size.
 //
+// (This used to force Graphics/InstancedMeshes/GPUCulling off first. That option
+// lost its last reader with UnifiedMesh Stage 4 and has been removed;
+// ComputeVisibleIndices is pure CPU logic either way, so the toggle was never what
+// selected the path under test.)
+//
 // Headless-safe: SeedInstancesForTest fills only the CPU SoA arrays (no GPU buffer
 // allocation, which would assert without a Vulkan allocator).
 #include "Flux/InstancedMeshes/Flux_InstanceGroup.h"
-#include "Core/Zenith_GraphicsOptions.h"
 
 ZENITH_TEST(Core, InstancedMeshesPrepareDeterminism) { Zenith_UnitTests::TestInstancedMeshesPrepareDeterminism(); }
 void Zenith_UnitTests::TestInstancedMeshesPrepareDeterminism(){
-
-	// Force the CPU-fallback path (the one that used to double-call UpdateGPUBuffers
-	// across two concurrent record callbacks). Restore on exit so no test bleeds state.
-	const bool bPrevGPUCulling = Zenith_GraphicsOptions::Get().m_bInstancedMeshGPUCullingEnabled;
-	Zenith_GraphicsOptions::Get().m_bInstancedMeshGPUCullingEnabled = false;
 
 	static constexpr uint32_t uNUM_INSTANCES = 4096;
 	static constexpr uint32_t uSEED          = 0xC0FFEEu;
@@ -18734,8 +18732,6 @@ void Zenith_UnitTests::TestInstancedMeshesPrepareDeterminism(){
 		ZENITH_ASSERT_TRUE(bInRange,
 			"InstancedMeshesPrepareDeterminism: enabled-index entry out of [0, %u) range", uNUM_INSTANCES);
 	}
-
-	Zenith_GraphicsOptions::Get().m_bInstancedMeshGPUCullingEnabled = bPrevGPUCulling;
 }
 
 // ============================================================================

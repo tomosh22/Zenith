@@ -3,6 +3,7 @@
 #include "EntityComponent/Components/Zenith_AIAgentComponent.h"
 #include "AI/Navigation/Zenith_NavMeshAgent.h"
 #include "AI/Perception/Zenith_PerceptionSystem.h"
+#include "AI/Zenith_AIWorldHooks.h"
 #include "ZenithECS/Zenith_ComponentMeta.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
@@ -92,6 +93,19 @@ void Zenith_AIAgentComponent::OnUpdate(float fDt)
 	if (m_pxNavMeshAgent != nullptr && m_xParentEntity.IsValid())
 	{
 		m_pxNavMeshAgent->Update(fDt, m_xParentEntity.GetEntityID());
+
+#ifdef ZENITH_TOOLS
+		// AI/Pathfinding/{Agent Paths, Path Waypoints}. Drawn from HERE rather than
+		// from Zenith_AI::DebugDraw (which covers the world-level visualisations)
+		// because the nav agent is owned by this component — there is no registry
+		// of live Zenith_NavMeshAgents to walk. DebugDraw re-checks the master
+		// toggle and both section flags itself.
+		Zenith_Maths::Vector3 xAgentPos;
+		if (Zenith_AI_GetEntityPosition(m_xParentEntity.GetEntityID(), xAgentPos))
+		{
+			m_pxNavMeshAgent->DebugDraw(xAgentPos);
+		}
+#endif
 	}
 }
 
