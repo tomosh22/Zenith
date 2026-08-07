@@ -271,6 +271,10 @@ static bool Verify_MaterialShowcase()
 	return true;
 }
 
+// Setup's Play -> Stopped is GLOBAL editor state that outlives this test. It is
+// restored centrally in DevilsPlayground.cpp's between-tests hook, NOT in a
+// Teardown here -- see Tests/CLAUDE.md, "Editor mode leaks between tests", for
+// why the Teardown placement is unsafe.
 static const Zenith_AutomatedTest g_xMaterialShowcaseTest = {
 	"Test_MaterialShowcase",
 	&Setup_MaterialShowcase,

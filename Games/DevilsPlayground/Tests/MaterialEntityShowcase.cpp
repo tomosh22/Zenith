@@ -148,6 +148,12 @@ static bool Verify_MaterialEntityShowcase()
 	return true;
 }
 
+// Setup's Play -> Stopped is GLOBAL editor state that outlives this test. It is
+// restored centrally in DevilsPlayground.cpp's between-tests hook, NOT in a
+// Teardown here: this test leaves ProcLevel standing, and a Teardown-time
+// SetEditorMode(Playing) re-dispatches OnAwake over it and trips
+// DPPlayerController_Component's "singleton double-instantiated" assert. See
+// Tests/CLAUDE.md, "Editor mode leaks between tests".
 static const Zenith_AutomatedTest g_xMaterialEntityShowcaseTest = {
 	"MaterialEntityShowcase",
 	&Setup_MaterialEntityShowcase,

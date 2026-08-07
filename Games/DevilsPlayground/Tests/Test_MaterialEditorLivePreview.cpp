@@ -200,6 +200,11 @@ static bool Verify_MaterialEditorLivePreview()
 	return true;
 }
 
+// Setup's Play -> Stopped is GLOBAL editor state that outlives this test: it is
+// immediately followed by LifeTimer_Test in batch order, which FAILED (life never
+// drained, because Stopped disables game logic) until this was fixed. The restore
+// lives in DevilsPlayground.cpp's between-tests hook, NOT in a Teardown here --
+// see Tests/CLAUDE.md, "Editor mode leaks between tests".
 static const Zenith_AutomatedTest g_xMaterialEditorLivePreviewTest = {
 	"Test_MaterialEditorLivePreview",
 	&Setup_MaterialEditorLivePreview,

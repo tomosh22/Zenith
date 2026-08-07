@@ -271,6 +271,33 @@ namespace DevilsPlayground
 			DP_Knots::ResetForNewRun();
 			DP_MetaSave::InvalidateCacheForTest();
 			Zenith_SaveData::ClearForTest();
+#ifdef ZENITH_TOOLS
+			// EDITOR MODE. The harness enters Playing exactly ONCE, at
+			// HarnessPhase::EnterPlayingMode during boot, and
+			// Zenith_Editor::ResetSessionForNextTest deliberately never normalises
+			// the mode (mode + play-backup are one state machine; see its
+			// "DELIBERATELY NOT TOUCHED" comment). So a test that stops the editor
+			// -- the material and graph-editor tests all do, in Setup -- stops it
+			// for every test after it. Stopped clears bShouldUpdateGameLogic, so
+			// the world the reset above rebuilt gets OnAwake but its pending-OnStart
+			// queue never drains, and later tests fail for reasons that have nothing
+			// to do with them. Measured: LifeTimer_Test PASSED alone and FAILED
+			// batched after Test_MaterialEditorLivePreview.
+			//
+			// ** THIS MUST NOT BE A PER-TEST TEARDOWN. ** Teardown runs BEFORE the
+			// world reset, on whatever scene the test left standing. If that is
+			// ProcLevel, EnterPlayMode's unconditional OnAwake re-dispatch trips
+			// DPPlayerController_Component's "singleton double-instantiated" assert
+			// and kills the process -- exactly what the engine comment above
+			// predicts, and what a Teardown-based version of this fix hit for real
+			// on MaterialEntityShowcase. By this point the harness has reloaded
+			// scene 0 (FrontEnd), which owns no such singleton, so the re-dispatch
+			// is the same harmless one the boot sequence already performs.
+			//
+			// SetEditorMode early-returns when the mode already matches, so this
+			// costs nothing on the ~155 tests that never touched it.
+			g_xEngine.Editor().SetEditorMode(EditorMode::Playing);
+#endif
 		});
 #endif
 	}
