@@ -410,6 +410,38 @@ void Zenith_Vulkan_CommandBuffer::ValidateDescriptorBindingsDebug(u_int uNumDesc
 				pxPass->DebugName(), xVSChk.m_szMissingMember ? xVSChk.m_szMissingMember : "?");
 		}
 	}
+
+	// BINDLESS (set 2) bind check. The block above deliberately exempts the three
+	// spine sets from the staged-binding validator, and the persistent path binds
+	// only GLOBAL/VIEW — so BINDLESS has, until now, had NO net under it at all.
+	// It is also the one spine set a pass can silently INHERIT: set bindings survive
+	// a pipeline switch between prefix-compatible layouts, so a draw path that never
+	// called UseBindlessTextures(2) works right up until the feature that used to
+	// bind it earlier in the same worker command buffer is disabled or early-outs.
+	// Demand the bind per draw path (Flux_PersistentSetLayouts::ShouldDemandBindlessBind),
+	// and only where the program actually READS the table — the spine declares the
+	// block in every program, so declaration alone proves nothing. That verdict comes
+	// from the root sig's m_bUsesBindlessTable, which the pipeline builders copy from
+	// the shader's SPIR-V scan; reflection cannot supply it (Slang reports the
+	// unbounded table as unused even where it is sampled — Flux/Slang/Flux_SpirvUsage.h).
+	{
+		const u_int uBP = (m_eCurrentBindPoint == vk::PipelineBindPoint::eCompute) ? 1u : 0u;
+		const bool bBound = (m_axCurrentPersistentSet[uBP][FLUX_FREQUENCY_CLASS_BINDLESS] != vk::DescriptorSet());
+		const Zenith_Vulkan_RootSig& xRootSig = m_pxCurrentPipeline->m_xRootSig;
+		for (u_int uSet = 0; uSet < uNumDescSets; uSet++)
+		{
+			if (!Flux_PersistentSetLayouts::ShouldDemandBindlessBind(
+					xRootSig.m_aePersistentClass[uSet], xRootSig.m_bUsesBindlessTable, bBound)) continue;
+
+			const Flux_RenderGraph_Pass* pxPass = Flux_RenderGraph::GetCurrentRecordingPass();
+			Zenith_Assert(false,
+				"Pass '%s': this draw path's shader reads the BINDLESS table but no "
+				"UseBindlessTextures(%u) was recorded since its pipeline was set — it can only "
+				"work by inheriting an earlier feature's bind, which is not a property of this "
+				"draw path. Add the call right after SetPipeline (see Flux/Shadows/CLAUDE.md).",
+				pxPass ? pxPass->DebugName() : "<no graph pass>", uSet);
+		}
+	}
 }
 #endif
 
@@ -798,8 +830,17 @@ void Zenith_Vulkan_CommandBuffer::UseBindlessTextures(const uint32_t uSet)
 	// Phase 5.1 (G4 fix): bind at the CURRENT bind point, not hardcoded graphics — a
 	// compute pass that uses the bindless table would otherwise bind it to the graphics
 	// point and the dispatch would read an unbound set.
-	m_xCurrentCmdBuffer.bindDescriptorSets(m_eCurrentBindPoint, m_pxCurrentPipeline->m_xRootSig.m_xLayout, uSet, 1, &m_pxVulkan->GetBindlessTexturesDescriptorSet(), 0, nullptr);
+	const vk::DescriptorSet& xBindlessSet = m_pxVulkan->GetBindlessTexturesDescriptorSet();
+	m_xCurrentCmdBuffer.bindDescriptorSets(m_eCurrentBindPoint, m_pxCurrentPipeline->m_xRootSig.m_xLayout, uSet, 1, &xBindlessSet, 0, nullptr);
 	m_uDescriptorDirty &= ~(1 << uSet);
+	// Track it alongside GLOBAL/VIEW so the pre-draw validator can tell "this draw
+	// path bound the table" from "it inherited whatever an earlier feature left
+	// bound". Cleared by BeginRecording AND by Set/BindComputePipeline (same memset
+	// the persistent sets use), so the tracked state means "bound since the current
+	// pipeline was set" — which is what makes the bind a property of the DRAW PATH
+	// rather than of which other features happened to run first.
+	const u_int uBP = (m_eCurrentBindPoint == vk::PipelineBindPoint::eCompute) ? 1u : 0u;
+	m_axCurrentPersistentSet[uBP][FLUX_FREQUENCY_CLASS_BINDLESS] = xBindlessSet;
 }
 
 // Map an image layout to the access mask that operations using it produce or

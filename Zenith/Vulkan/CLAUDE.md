@@ -167,6 +167,40 @@ which resolve to the Vulkan classes here or the D3D12 null-backend equivalents:
   descriptor-set layouts, and reflection data for name-based binding lookup
   (`GetBinding(szName)`). Build one with `Zenith_Vulkan_RootSigBuilder::FromSpecification`
   (manual) or `FromReflection` (auto-generated from shader reflection).
+  **`m_xReflection` is populated only on the `FromReflection` path.** The graphics
+  pipeline builder goes through `FromSpecification(rootSig, spec.m_xPipelineLayout)`,
+  so a graphics pipeline's root sig carries an EMPTY reflection — anything at draw
+  time that wants reflection must not read it from there (it silently iterates
+  nothing, which is how a validator can look green while doing no work).
+
+### Every draw path binds the BINDLESS table itself (set 2)
+
+`BindPersistentSpineSets` auto-binds GLOBAL (0) and VIEW (1) only; BINDLESS (2) is
+bound explicitly by `UseBindlessTextures(2)`, right after the `SetPipeline` it
+belongs to. Because a Vulkan set binding survives a pipeline switch between
+prefix-compatible layouts — and every spine pipeline is — a pass that forgets the
+call still draws correctly whenever some earlier feature in the same worker command
+buffer bound it, and breaks only when that feature is disabled, reordered, or
+early-outs on an empty frame.
+
+A `ZENITH_DEBUG` pre-draw check in `ValidateDescriptorBindingsDebug` closes that:
+`m_axCurrentPersistentSet[bindPoint][BINDLESS]` records the explicit bind and is
+cleared by `BeginRecording` **and** by `SetPipeline` / `BindComputePipeline`, so
+inheritance can never satisfy it, and
+`Flux_PersistentSetLayouts::ShouldDemandBindlessBind` asserts by pass name for any
+pipeline that reads the table without one.
+
+> **"Reads the table" cannot come from reflection.** Slang's
+> `IMetadata::isParameterLocationUsed` — the source of `m_bStaticallyUsed`, and
+> reliable for the GLOBAL/VIEW members it was added for — answers **false** for the
+> unbounded `g_axTextures` array even in a program that samples it. Measured
+> directly: with the grass G-buffer draw's bind removed, Vulkan reported "VkPipeline
+> ... uses set 2 but that set is not bound" for the very program whose reflection bit
+> read 0. So `Zenith_Vulkan_Shader::DetectBindlessTableUsage` scans the loaded SPIR-V
+> instead (`Flux/Slang/Flux_SpirvUsage.h`, pure + unit-tested) and the pipeline
+> builders copy the verdict onto `Zenith_Vulkan_RootSig::m_bUsesBindlessTable`.
+> Both shader-load paths are covered — the runtime Slang compile and the `.spv`
+> artifact load both hold the module bytes.
 
 ### Graphics Pipeline
 

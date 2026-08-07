@@ -105,7 +105,16 @@ straight through the temporal resolve rather than be smoothed by it.
   assume an earlier caster bound it: `Flux_UnifiedMeshImpl::RenderToShadowMap`
   early-outs on zero buckets *before* its own `UseBindlessTextures(2)`, so on a scene
   with no unified opaque casters the next caster in the cascade is the first user and
-  inherits nothing.
+  inherits nothing. **The bind stays inside each caster rather than being hoisted to
+  the top of `ExecuteShadowCascade`** — `UseBindlessTextures` binds against the
+  CURRENT pipeline's layout, so there is no legal place to call it before the first
+  `SetPipeline`, and hoisting would only re-create the dependency on which caster ran
+  first. Enforced since 2026-08-07 by a debug pre-draw check
+  (`Flux_PersistentSetLayouts::ShouldDemandBindlessBind`, asserted in
+  `Zenith_Vulkan_CommandBuffer`): a pipeline that reads the table and whose own draw
+  path did not bind it fails by name, whether or not an earlier caster would have
+  covered it. **Terrain casting is the next path this applies to** — `RenderToShadowMap`
+  is stubbed today, and the stub carries the reminder.
 - **`Grass` MUST be registered before `Shadows` too**, for the same reason
   `UnifiedMesh` is: each of cascades 0-1 declares a `ReadBuffer` on the grass blade
   pool / visible-index / indirect-args buffers, whose only writers are the grass

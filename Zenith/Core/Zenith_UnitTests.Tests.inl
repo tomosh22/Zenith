@@ -19574,6 +19574,64 @@ ZENITH_TEST(Flux, PersistentSetLayouts)
 	ZENITH_ASSERT_TRUE(!ShouldRebindPersistentSet(FLUX_FREQUENCY_CLASS_VIEW,   /*matches*/true),  "VIEW unchanged does not rebind");
 	ZENITH_ASSERT_TRUE(!ShouldRebindPersistentSet(FLUX_FREQUENCY_CLASS_BINDLESS, /*matches*/false), "BINDLESS is not bound via the persistent path");
 	ZENITH_ASSERT_TRUE(!ShouldRebindPersistentSet(FLUX_FREQUENCY_CLASS_GENERIC,  /*matches*/false), "GENERIC owned sets are not persistent-bound");
+
+	// ShouldDemandBindlessBind: the pre-draw net under set 2 — the ONE spine set no
+	// automatic path binds. It fires only on the BINDLESS class, only when the bound
+	// shader statically USES the table (the spine declares the block in every program,
+	// so a declaration alone must never demand a bind), and only when nothing has bound
+	// it since the pipeline was set. That last term is what makes the bind a property of
+	// the draw path instead of an inheritance from whichever feature drew earlier in the
+	// same worker command buffer.
+	ZENITH_ASSERT_TRUE(ShouldDemandBindlessBind(FLUX_FREQUENCY_CLASS_BINDLESS, /*used*/true, /*bound*/false), "BINDLESS + statically used + unbound demands the bind");
+	ZENITH_ASSERT_TRUE(!ShouldDemandBindlessBind(FLUX_FREQUENCY_CLASS_BINDLESS, /*used*/true, /*bound*/true), "an explicit bind since SetPipeline satisfies the demand");
+	ZENITH_ASSERT_TRUE(!ShouldDemandBindlessBind(FLUX_FREQUENCY_CLASS_BINDLESS, /*used*/false, /*bound*/false), "a DECLARED-but-unused spine table demands nothing");
+	ZENITH_ASSERT_TRUE(!ShouldDemandBindlessBind(FLUX_FREQUENCY_CLASS_GLOBAL,   /*used*/true, /*bound*/false), "GLOBAL is bound by the persistent path, never demanded here");
+	ZENITH_ASSERT_TRUE(!ShouldDemandBindlessBind(FLUX_FREQUENCY_CLASS_VIEW,     /*used*/true, /*bound*/false), "VIEW is bound by the persistent path, never demanded here");
+	ZENITH_ASSERT_TRUE(!ShouldDemandBindlessBind(FLUX_FREQUENCY_CLASS_GENERIC,  /*used*/true, /*bound*/false), "GENERIC PASS/DRAW sets are covered by the staged-binding validator");
+
+	// Flux_SpirvUsesDescriptorSet — where the "statically used" half of the gate
+	// above actually comes from for set 2. Slang's IMetadata reports the unbounded
+	// g_axTextures table as UNUSED even in a program whose fragment stage samples
+	// it (measured: Vulkan raised "uses set 2 but that set is not bound" for the
+	// very program whose reflection bit read 0), so the backend re-derives the bit
+	// from the module bytes at shader load. These synthetic modules pin the two
+	// halves of that decision: a decoration alone is a DECLARATION, and only a
+	// reference from inside a function body is a USE.
+	{
+		using namespace Flux_SpirvUsage;
+		auto fnOp = [](uint32_t uOpcode, uint32_t uLength) { return (uLength << 16) | uOpcode; };
+		// Header, then: id 10 decorated into set 2, id 11 into set 1, and a
+		// function body whose OpAccessChain bases off id 10.
+		const uint32_t auModule[] = {
+			kuMAGIC, 0x00010300u, 0u, 32u, 0u,                                  // header (magic/version/generator/bound/schema)
+			fnOp(kuOP_DECORATE, 4u),     10u, kuDECORATION_DESCRIPTOR_SET, 2u,   // g_axTextures -> set 2
+			fnOp(kuOP_DECORATE, 4u),     11u, kuDECORATION_DESCRIPTOR_SET, 1u,   // some VIEW member -> set 1
+			fnOp(kuOP_FUNCTION, 5u),     1u, 20u, 0u, 2u,
+			fnOp(kuOP_ACCESS_CHAIN, 5u), 3u, 21u, 10u, 22u,                      // base = id 10  => set 2 IS used
+			fnOp(kuOP_LOAD, 4u),         4u, 23u, 21u,
+			fnOp(kuOP_FUNCTION_END, 1u),
+		};
+		const uint32_t uWords = static_cast<uint32_t>(sizeof(auModule) / sizeof(auModule[0]));
+		ZENITH_ASSERT_TRUE(Flux_SpirvUsesDescriptorSet(auModule, uWords, 2u), "a set-2 variable used inside a function body reads as USED");
+		ZENITH_ASSERT_TRUE(!Flux_SpirvUsesDescriptorSet(auModule, uWords, 1u), "a set-1 variable that is only DECORATED reads as unused");
+		ZENITH_ASSERT_TRUE(!Flux_SpirvUsesDescriptorSet(auModule, uWords, 3u), "a set nothing is decorated into reads as unused");
+
+		// The same module with the access chain based off an unrelated id: the
+		// decoration survives, the use does not.
+		uint32_t auUnused[sizeof(auModule) / sizeof(auModule[0])];
+		for (uint32_t u = 0; u < uWords; u++) auUnused[u] = auModule[u];
+		auUnused[21] = 12u;   // the OpAccessChain's base operand: id 10 -> id 12
+		ZENITH_ASSERT_TRUE(!Flux_SpirvUsesDescriptorSet(auUnused, uWords, 2u), "a DECLARED-but-never-referenced set-2 table reads as unused");
+
+		// Malformed / non-SPIR-V input is a diagnostic dead-end, never a crash or
+		// a spin: a zero-length instruction must terminate the walk.
+		ZENITH_ASSERT_TRUE(!Flux_SpirvUsesDescriptorSet(nullptr, 64u, 2u), "null module reads as unused");
+		ZENITH_ASSERT_TRUE(!Flux_SpirvUsesDescriptorSet(auModule, 3u, 2u), "a truncated module reads as unused");
+		const uint32_t auNotSpirv[] = { 0xDEADBEEFu, 0u, 0u, 0u, 0u, 0u, 0u };
+		ZENITH_ASSERT_TRUE(!Flux_SpirvUsesDescriptorSet(auNotSpirv, 7u, 2u), "a blob without the SPIR-V magic reads as unused");
+		const uint32_t auZeroLen[] = { kuMAGIC, 0x00010300u, 0u, 32u, 0u, 0u, 0u };
+		ZENITH_ASSERT_TRUE(!Flux_SpirvUsesDescriptorSet(auZeroLen, 7u, 2u), "a zero-length instruction terminates the walk");
+	}
 }
 
 // Pure frequency-taxonomy validator (Flux_FrequencyTaxonomy::ValidateReflection).

@@ -4,6 +4,8 @@
 #include "Zenith_Vulkan_Pipeline.h"
 #include "Zenith_Vulkan.h"
 #include "Flux/Slang/Flux_ShaderCatalog.h"
+#include "Flux/Slang/Flux_SpirvUsage.h"        // Flux_SpirvUsesDescriptorSet (BINDLESS static-use repair)
+#include "Flux/Flux_PersistentSetLayouts.h"    // kuSetBindless
 #include "Core/Zenith_CommandLine.h"   // --shader-debug-o0 (runtime-compile debug info, Stage 1)
 
 #ifdef ZENITH_WINDOWS
@@ -41,13 +43,52 @@ Zenith_Status Zenith_Vulkan_Shader::InitialiseEx(const Flux_ShaderDecl& xDecl)
 	// shader instance without leaking GPU handles.
 	Reset();
 
+	Zenith_Status xStatus = Zenith_ErrorCode::SUCCESS;
 #ifdef ZENITH_WINDOWS
 	if (Flux_SlangCompiler::IsInitialised())
 	{
-		return InitialiseFromProgramSource(xDecl);
+		xStatus = InitialiseFromProgramSource(xDecl);
 	}
+	else
 #endif
-	return InitialiseFromProgramArtifacts(xDecl);
+	{
+		xStatus = InitialiseFromProgramArtifacts(xDecl);
+	}
+
+	// Reflection cannot answer "does this program use the BINDLESS table" — Slang
+	// reports the unbounded g_axTextures array as unused even where it is sampled
+	// (see Flux_SpirvUsage.h) — so derive it from the module bytes both paths just
+	// produced. The pipeline builders copy the answer onto the root signature,
+	// which is what the pre-draw bind validator reads.
+	if (xStatus.IsOk())
+	{
+		DetectBindlessTableUsage();
+	}
+	return xStatus;
+}
+
+// Does any stage of this program reference a variable bound to the BINDLESS set?
+// Runs on both load paths because both hold the SPIR-V: the runtime Slang compile
+// copies the emitted words into m_pc*ShaderCode, and the artifact path reads the
+// .spv straight off disk. (The Null backend loads only the .refl, so it has no
+// module to ask — its recorder does no descriptor validation either.)
+void Zenith_Vulkan_Shader::DetectBindlessTableUsage()
+{
+	const char* const apcCode[]  = { m_pcVertShaderCode, m_pcFragShaderCode, m_pcCompShaderCode, m_pcTescShaderCode, m_pcTeseShaderCode };
+	const uint64_t    aulSizes[] = { m_pcVertShaderCodeSize, m_pcFragShaderCodeSize, m_pcCompShaderCodeSize, m_pcTescShaderCodeSize, m_pcTeseShaderCodeSize };
+	static_assert(sizeof(apcCode) / sizeof(apcCode[0]) == sizeof(aulSizes) / sizeof(aulSizes[0]),
+		"DetectBindlessTableUsage: stage code/size arrays must stay in lockstep");
+
+	m_bUsesBindlessTable = false;
+	for (u_int u = 0; u < sizeof(apcCode) / sizeof(apcCode[0]) && !m_bUsesBindlessTable; u++)
+	{
+		if (apcCode[u] == nullptr || aulSizes[u] < sizeof(uint32_t)) continue;
+		// The same reinterpret CreateShaderModule performs — SPIR-V is a word
+		// stream and both allocators hand back over-aligned storage.
+		m_bUsesBindlessTable = Flux_SpirvUsesDescriptorSet(reinterpret_cast<const uint32_t*>(apcCode[u]),
+			static_cast<uint32_t>(aulSizes[u] / sizeof(uint32_t)),
+			Flux_PersistentSetLayouts::kuSetBindless);
+	}
 }
 
 Zenith_Status Zenith_Vulkan_Shader::InitialiseFromProgramArtifacts(const Flux_ShaderDecl& xDecl)
@@ -254,6 +295,9 @@ void Zenith_Vulkan_Shader::Reset()
 	m_uStageCount = 0;
 
 	m_xReflection = Flux_ShaderReflection();
+	// Re-derived by DetectBindlessTableUsage on the next successful Initialise; a
+	// FAILED reload must not leave the previous program's verdict standing.
+	m_bUsesBindlessTable = false;
 }
 
 void Zenith_Vulkan_Shader::FillShaderStageCreateInfo(vk::GraphicsPipelineCreateInfo& xPipelineCreateInfo) const

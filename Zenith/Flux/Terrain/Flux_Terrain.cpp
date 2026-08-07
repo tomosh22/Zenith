@@ -628,6 +628,15 @@ static void ExecuteGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 	}
 }
 
+// STUBBED — terrain does not cast (the call in Flux_Shadows::ExecuteShadowCascade is
+// commented out). When it is enabled, this body must call UseBindlessTextures(2) for
+// ITSELF, right after its SetPipeline and ABOVE any "nothing to draw" early-out —
+// never lean on the caster ahead of it. Flux_UnifiedMeshImpl::RenderToShadowMap
+// early-outs on zero buckets before its own bind, so on a scene with no unified
+// opaque casters the terrain draw would be the first user of set 2 in that cascade's
+// command buffer and would inherit nothing. The pre-draw validator in
+// Zenith_Vulkan_CommandBuffer (ShouldDemandBindlessBind) asserts on exactly that, so
+// the omission fails loudly instead of drawing correctly until a scene changes.
 void Flux_TerrainImpl::RenderToShadowMap(Flux_CommandBuffer&, u_int)
 {
 	STUBBED

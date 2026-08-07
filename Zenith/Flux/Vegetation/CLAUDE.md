@@ -398,6 +398,20 @@ early-outs on zero buckets **before** its own `UseBindlessTextures(2)`, so on a
 grass-only scene the grass caster is the first user in that command buffer and there
 is nothing to inherit.
 
+> **The rule is now ENFORCED, engine-wide, and no longer grass-specific.** A debug
+> pre-draw check in `Zenith_Vulkan_CommandBuffer::ValidateDescriptorBindingsDebug`
+> fails any draw or dispatch whose pipeline reads the table but whose *own* draw
+> path did not bind it — inheriting an earlier feature's bind no longer counts,
+> because the tracked state is cleared by every `SetPipeline` (the same reset the
+> persistent GLOBAL/VIEW sets use). It names the offending render-graph pass, and
+> it fires ahead of Vulkan's own "uses set 2 but that set is not bound", which only
+> catches the case where *nothing* in the whole command buffer bound it. Verified
+> by mutation: deleting `RecordGBuffer`'s call reddens it with
+> `Pass 'Grass GBuffer': ...`. The decision is
+> `Flux_PersistentSetLayouts::ShouldDemandBindlessBind`; "does this program read
+> the table" comes from a SPIR-V scan at shader load, NOT from reflection — see
+> `Flux/Slang/Flux_SpirvUsage.h` for why Slang's own answer cannot be used.
+
 ## Displacement: the trail map
 
 A **camera-anchored 256² RG16F field** holding a world-XZ push vector per texel.

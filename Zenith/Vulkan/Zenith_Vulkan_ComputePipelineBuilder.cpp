@@ -85,4 +85,9 @@ void Zenith_Vulkan_ComputePipelineBuilder::BuildFromShader(Zenith_Vulkan_Pipelin
 	// construction site calls a single helper instead of manually chaining
 	// WithShader/WithLayout/Build and then remembering to copy the root sig.
 	xPipelineOut.m_xRootSig = xRootSig;
+	// ...and carry the shader's bindless-table verdict onto the copy: the external
+	// root sig came from FromReflection, which cannot answer it (see the graphics
+	// builder). A compute pass that samples g_axTextures owes the same per-dispatch
+	// UseBindlessTextures(2) a draw does.
+	xPipelineOut.m_xRootSig.m_bUsesBindlessTable = xShader.UsesBindlessTable();
 }

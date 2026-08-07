@@ -68,6 +68,12 @@ public:
 	// Check if reflection data is available
 	bool HasReflection() const { return m_xReflection.GetBindings().GetSize() > 0; }
 
+	// Does any stage reference the BINDLESS (set 2) table? Derived from the SPIR-V
+	// at load — reflection cannot answer it (Flux/Slang/Flux_SpirvUsage.h). The
+	// pipeline builders copy this onto the root signature, where the pre-draw
+	// "did this draw path bind set 2 itself" validator reads it.
+	bool UsesBindlessTable() const { return m_bUsesBindlessTable; }
+
 	//credit Rich Davison
 	void FillShaderStageCreateInfo(vk::GraphicsPipelineCreateInfo& xPipelineCreateInfo) const;
 	vk::PipelineShaderStageCreateInfo* m_xInfos = nullptr;
@@ -102,6 +108,13 @@ private:
 
 	// Helper to merge reflection from multiple stages
 	void MergeReflection(const Flux_ShaderReflection& xStageReflection);
+
+	// Scan the loaded SPIR-V for a reference to the BINDLESS set and cache the
+	// answer. Slang's reflection says "unused" for the unbounded g_axTextures
+	// table even where it is sampled — see Flux/Slang/Flux_SpirvUsage.h.
+	void DetectBindlessTableUsage();
+
+	bool m_bUsesBindlessTable = false;
 };
 
 class Zenith_Vulkan_RootSig
@@ -151,6 +164,13 @@ public:
 	// Per-set bitmask of present bindings (bit b set ⇒ binding b is declared).
 	// Drives the pre-draw staged-binding validator.
 	u_int m_auActiveBindingMask[FLUX_MAX_BINDING_GROUPS] = {};
+	// Does the program behind this pipeline reference the BINDLESS table? Copied
+	// from Zenith_Vulkan_Shader::UsesBindlessTable by the pipeline builders (the
+	// root-sig builders see only a layout / a reflection, neither of which can
+	// answer it). Drives the pre-draw "this draw path must bind set 2 itself"
+	// validator — a pipeline that reads the table but inherits an earlier
+	// feature's bind is the silent failure it exists to catch.
+	bool m_bUsesBindlessTable = false;
 	// Phase 5.1: per-set persistence class. GLOBAL/VIEW/BINDLESS sets borrow shared
 	// backend-owned layouts (m_abOwnsDescSetLayout=false) and are bound from the
 	// persistent path (UpdateDescriptorSets for GLOBAL/VIEW, UseBindlessTextures for

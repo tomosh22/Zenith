@@ -220,4 +220,34 @@ namespace Flux_PersistentSetLayouts
 		}
 		return !bTrackedMatchesDesired;
 	}
+
+	// The BINDLESS (2) counterpart to the gate above — a VALIDATOR, not a bind
+	// decision. BINDLESS is the one spine set the persistent path never binds for
+	// you: every draw path binds it for itself with UseBindlessTextures(2), right
+	// after the SetPipeline it belongs to.
+	//
+	// The failure this exists to catch is invisible by construction. A Vulkan
+	// descriptor-set binding SURVIVES a pipeline switch while the layouts stay
+	// prefix-compatible (all spine pipelines are), so a pass that forgot the call
+	// still draws correctly whenever some EARLIER feature in the same worker command
+	// buffer happened to bind set 2 — and stops working the moment that feature is
+	// disabled, reordered, or early-outs on an empty frame. Grass shipped without the
+	// call twice for exactly that reason, and the cascade path is where it bit:
+	// Flux_UnifiedMeshImpl::RenderToShadowMap early-outs on zero buckets BEFORE its
+	// own bind, so on a scene with no unified opaque casters the next caster in the
+	// cascade inherits nothing.
+	//
+	// Demand a bind iff the set is the BINDLESS one AND the bound program actually
+	// READS the table AND nothing has bound it since the current pipeline was set.
+	// The middle term matters because the spine block is DECLARED in every program,
+	// so its presence in the layout proves nothing — and it cannot come from
+	// reflection: Slang reports the unbounded table as unused even where it is
+	// sampled, so the backend derives it by scanning the SPIR-V at shader load
+	// (Flux/Slang/Flux_SpirvUsage.h). The last term is what makes the bind a
+	// property of the DRAW PATH rather than of whichever feature drew first.
+	// Pure -> unit-testable without a device.
+	inline bool ShouldDemandBindlessBind(FluxFrequencyClass eClass, bool bReadsTable, bool bBoundSincePipelineSet)
+	{
+		return eClass == FLUX_FREQUENCY_CLASS_BINDLESS && bReadsTable && !bBoundSincePipelineSet;
+	}
 }

@@ -1039,6 +1039,14 @@ static void ExecuteUnifiedGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 // per-material cull split for shadows, matching Flux_StaticMeshes). Translucent/additive
 // submeshes were already excluded from the GPU scene, so every bucket is a valid caster.
 //=============================================================================
+// The early-outs below sit ABOVE this pass's UseBindlessTextures(2), and stay there:
+// the bind targets the CURRENT pipeline's layout, so there is no legal place for it
+// before SetPipeline, and binding a shadow pipeline just to leave set 2 bound for the
+// NEXT caster would re-create the very dependency that is wrong. Every caster
+// recorded into a cascade binds the table for itself instead (grass does; terrain's
+// stub carries the reminder), and the pre-draw validator in Zenith_Vulkan_CommandBuffer
+// fails by pass name if one forgets. So a scene with zero unified opaque casters
+// leaves this a no-op and costs the casters after it nothing.
 void Flux_UnifiedMeshImpl::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, u_int uCascade)
 {
 	if (m_axBucketDraws.GetSize() == 0u)

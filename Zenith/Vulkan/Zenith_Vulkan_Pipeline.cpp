@@ -259,6 +259,7 @@ void Zenith_Vulkan_Pipeline::Reset()
 	}
 	m_xRootSig.m_uNumBindingGroups = UINT32_MAX;
 	m_xRootSig.m_xReflection = Flux_ShaderReflection();
+	m_xRootSig.m_bUsesBindlessTable = false;
 }
 
 Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithDepthState(vk::CompareOp op, bool depthEnabled, bool writeEnabled, bool stencilEnabled)
@@ -786,6 +787,12 @@ void Zenith_Vulkan_PipelineBuilder::FromSpecification(Zenith_Vulkan_Pipeline& xP
 	// Pipeline layout / root signature
 	Zenith_Vulkan_RootSigBuilder::FromSpecification(xPipelineOut.m_xRootSig, xSpec.m_xPipelineLayout);
 	xPipelineInfo.setLayout(xPipelineOut.m_xRootSig.m_xLayout);
+	// The root-sig builder sees only a LAYOUT, which cannot say whether the program
+	// reads the bindless table (every spine layout carries set 2 whether sampled or
+	// not). The shader can — carry its answer across so the pre-draw validator can
+	// demand a per-draw-path UseBindlessTextures(2) from exactly the pipelines that
+	// need one.
+	xPipelineOut.m_xRootSig.m_bUsesBindlessTable = xSpec.m_pxShader && xSpec.m_pxShader->UsesBindlessTable();
 
 	xPipelineOut.m_xPipeline = VkUnwrap(g_xEngine.FluxBackend().GetDevice().createGraphicsPipeline(VK_NULL_HANDLE, xPipelineInfo));
 

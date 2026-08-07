@@ -28,6 +28,7 @@
 #include "Flux/SSR/Flux_SSRImpl.h"
 #include "Flux/SSGI/Flux_SSGIImpl.h"
 #include "Flux/Shadows/Flux_ShadowsImpl.h"   // Stage 2: hoisted UpdateShadowMatrices (pre-gather)
+#include "Flux/Slang/Flux_SpirvUsage.h"       // hosted unit: the BINDLESS static-use scan
 #include "Core/Zenith_GraphicsOptions.h"      // m_bShadowsEnabled gate for the hoisted update
 #ifdef ZENITH_TOOLS
 #include "AssetHandling/Zenith_PropertyTuning.h"
