@@ -62,6 +62,12 @@ namespace
 		char m_acNewVarName[64] = {};
 		int m_iNewVarType = 0;
 
+#ifdef ZENITH_TESTING
+		// Pending ScrollPaletteEntryIntoView request, consumed by the next
+		// RenderPalette pass that reaches the named row.
+		std::string m_strScrollToPaletteEntry;
+#endif
+
 		// Live rects recorded each Render for interaction + test accessors.
 		Zenith_HashMap<std::string, PanelRect> m_xPaletteRects;
 		Zenith_HashMap<u_int, PanelRect> m_xNodeRects;
@@ -75,6 +81,13 @@ namespace
 	//--------------------------------------------------------------------------
 	// Helpers
 	//--------------------------------------------------------------------------
+
+	float Clampf(float fValue, float fMin, float fMax)
+	{
+		if (fValue < fMin) return fMin;
+		if (fValue > fMax) return fMax;
+		return fValue;
+	}
 
 	Zenith_GraphDefinition* GetOpenDefinition()
 	{
@@ -291,7 +304,27 @@ namespace
 					continue;
 				}
 				const bool bClicked = ImGui::Selectable(xInfo.m_strTypeName.c_str());
-				g_xGraphEditor.m_xPaletteRects[xInfo.m_strTypeName] = MakeRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
+#ifdef ZENITH_TESTING
+				// Honour a pending scroll-into-view request for this row.
+				if (g_xGraphEditor.m_strScrollToPaletteEntry == xInfo.m_strTypeName)
+				{
+					ImGui::SetScrollHereY(0.5f);
+					g_xGraphEditor.m_strScrollToPaletteEntry.clear();
+				}
+#endif
+				// Recorded ONLY while unclipped. The palette lists EVERY registered
+				// node type, so the left column is far taller than the window (and
+				// than the display) and most rows are scrolled out of view at any
+				// moment -- and a clipped ImGui item is not interactable. Recording
+				// those too would hand a caller screen coordinates that a click can
+				// never land on, which is precisely the silent failure this guard
+				// exists to prevent: Test_GraphEditorLiveAuthoring was clicking
+				// y=1768 on a 720-tall display and reporting only "the nodes were
+				// not created".
+				if (ImGui::IsItemVisible())
+				{
+					g_xGraphEditor.m_xPaletteRects[xInfo.m_strTypeName] = MakeRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
+				}
 				if (bClicked)
 				{
 					AddNodeAtFreeSpot(xInfo.m_strTypeName.c_str());
@@ -804,12 +837,25 @@ void Zenith_GraphEditorPanel::Render()
 
 	if (g_xGraphEditor.m_bPositionWindowNextRender)
 	{
-		// Deterministic placement for automated tests + a sane default. Tall
-		// enough that the whole left column (properties + variables + palette)
-		// renders unclipped - clipped rows are not interactable, which would
-		// silently break simulated-input authoring.
-		ImGui::SetNextWindowPos(ImVec2(60.0f, 40.0f));
-		ImGui::SetNextWindowSize(ImVec2(1100.0f, 980.0f));
+		// Deterministic placement for automated tests + a sane default, CLAMPED
+		// to the viewport so the window is never partly off-screen.
+		//
+		// This used to be a flat 1100x980 at (60,40), chosen to be "tall enough
+		// that the whole left column renders unclipped". That stopped being true
+		// once the node registry grew (the Behaviour Graph adoption): the left
+		// column is now several thousand pixels tall, so no window size can
+		// contain it, and at 1280x720 the old size also hung 300px below the
+		// screen. Sizing to fit and SCROLLING the palette is the durable answer --
+		// see ScrollPaletteEntryIntoView.
+		const ImGuiViewport* pxViewport = ImGui::GetMainViewport();
+		const ImVec2 xWork = pxViewport ? pxViewport->WorkSize : ImVec2(1280.0f, 720.0f);
+		const ImVec2 xOffset(60.0f, 40.0f);
+		const float fWidth  = Clampf(xWork.x - xOffset.x - 20.0f, 320.0f, 1100.0f);
+		const float fHeight = Clampf(xWork.y - xOffset.y - 20.0f, 240.0f, 980.0f);
+		ImGui::SetNextWindowPos(ImVec2(
+			(pxViewport ? pxViewport->WorkPos.x : 0.0f) + xOffset.x,
+			(pxViewport ? pxViewport->WorkPos.y : 0.0f) + xOffset.y));
+		ImGui::SetNextWindowSize(ImVec2(fWidth, fHeight));
 		g_xGraphEditor.m_bPositionWindowNextRender = false;
 	}
 
@@ -824,12 +870,23 @@ void Zenith_GraphEditorPanel::Render()
 
 	// Properties + variables FIRST (small, always visible); the long palette
 	// last so its overflow is what scrolls.
+	//
+	// The palette gets its OWN scrolling child, and that is load-bearing rather
+	// than cosmetic. Sharing one scroll region with the properties made the
+	// "always visible" above a lie: the palette lists every registered node type
+	// and is thousands of pixels tall, so scrolling far enough to reach an entry
+	// pushed the property rows clean off the TOP of the screen (observed:
+	// property row at screen y = -2488). Separate regions mean reaching any
+	// palette entry never moves the properties.
 	ImGui::BeginChild("GraphLeftColumn", ImVec2(280.0f, 0), true);
 	RenderSelectedNodeProperties();
 	ImGui::Spacing();
 	RenderVariables();
 	ImGui::Spacing();
+	ImGui::Separator();
+	ImGui::BeginChild("GraphPaletteScroll", ImVec2(0.0f, 0.0f), true);
 	RenderPalette();
+	ImGui::EndChild();
 	ImGui::EndChild();
 
 	ImGui::SameLine();
@@ -883,6 +940,9 @@ void Zenith_GraphEditorPanel::Close()
 	g_xGraphEditor.m_uSelectedNodeID = 0;
 	g_xGraphEditor.m_bLinking = false;
 	g_xGraphEditor.m_bDirty = false;
+#ifdef ZENITH_TESTING
+	g_xGraphEditor.m_strScrollToPaletteEntry.clear();
+#endif
 }
 
 bool Zenith_GraphEditorPanel::IsOpen()
@@ -1131,15 +1191,47 @@ void Zenith_GraphEditorPanel::OpenAssetFresh(const char* szAssetPath)
 
 namespace
 {
+	// A rect whose centre lies outside the display is one no simulated click can
+	// ever land on, so reporting it is worse than reporting nothing: the caller
+	// clicks into space and the failure surfaces far away as "the thing I asked
+	// for did not happen". Both of this panel's scroll regions can park content
+	// off-screen in either direction (a palette row below the bottom, a property
+	// row above the top), so every accessor is gated on this.
+	bool IsOnScreen(const Zenith_Maths::Vector2& xPoint)
+	{
+		const ImGuiIO& xIO = ImGui::GetIO();
+		return xPoint.x >= 0.0f && xPoint.y >= 0.0f
+		    && xPoint.x <= xIO.DisplaySize.x && xPoint.y <= xIO.DisplaySize.y;
+	}
+
 	bool RectCentre(const PanelRect* pxRect, Zenith_Maths::Vector2& xOut)
 	{
 		if (!pxRect)
 		{
 			return false;
 		}
-		xOut = pxRect->Centre();
+		const Zenith_Maths::Vector2 xCentre = pxRect->Centre();
+		if (!IsOnScreen(xCentre))
+		{
+			return false;
+		}
+		xOut = xCentre;
 		return true;
 	}
+}
+
+bool Zenith_GraphEditorPanel::ScrollPaletteEntryIntoView(const char* szTypeName)
+{
+	if (!szTypeName || szTypeName[0] == '\0')
+	{
+		return false;
+	}
+	if (Zenith_GraphNodeRegistry::Get().Find(szTypeName) == nullptr)
+	{
+		return false;
+	}
+	g_xGraphEditor.m_strScrollToPaletteEntry = szTypeName;
+	return true;
 }
 
 bool Zenith_GraphEditorPanel::GetPaletteEntryScreenPos(const char* szTypeName, Zenith_Maths::Vector2& xOut)
@@ -1171,6 +1263,12 @@ bool Zenith_GraphEditorPanel::GetPropertyRowScreenRect(const char* szPropertyNam
 {
 	const PanelRect* pxRect = g_xGraphEditor.m_xPropertyRowRects.TryGet(std::string(szPropertyName ? szPropertyName : ""));
 	if (!pxRect)
+	{
+		return false;
+	}
+	// Same off-screen gate as RectCentre - a scrolled-away property row is not
+	// clickable, and handing its coordinates out produces a click into space.
+	if (!IsOnScreen(pxRect->Centre()))
 	{
 		return false;
 	}

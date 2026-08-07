@@ -46,6 +46,89 @@ Between batched tests the harness:
    step 1.
 3. Clears the input simulator's held-keys + key-press queue.
 
+### Editor mode leaks between tests
+
+Editor mode is global state that survives the reset above, and five tests set
+`SetEditorMode(EditorMode::Stopped)` in `Setup`: `Test_MaterialShowcase`,
+`Test_MaterialEditorLivePreview`, `Test_GraphEditorScreenshotTour`,
+`Test_GraphEditorLiveAuthoring`, `MaterialEntityShowcase`.
+(`Test_EditorSceneCycle` also drives the mode, but the Play/Stop cycle *is* its
+subject — it restores Playing itself at Step 540 and its `Verify` asserts the
+end state. Leave it alone.)
+
+The harness enters Playing exactly ONCE, at `HarnessPhase::EnterPlayingMode`
+during boot (`Zenith/Core/Zenith_AutomatedTest.cpp`), and
+`Zenith_Editor::ResetSessionForNextTest` **deliberately** never normalises the
+mode — mode and play-backup are two halves of one state machine. So Stopped,
+once set, stays set for the rest of the batch. Stopped clears
+`bShouldUpdateGameLogic` (`Zenith/Core/Zenith_Core.cpp`), so the world the
+between-tests reset rebuilds gets OnAwake but its pending-OnStart queue never
+drains — components whose `OnStart` does the real work never initialise, and the
+*later* test fails for reasons that have nothing to do with it.
+
+Measured 2026-08-07 on `Vulkan_vs2022_Debug_Win64_True`:
+
+```
+devilsplayground.exe --automated-test LifeTimer_Test                                 -> PASSED
+devilsplayground.exe --automated-tests Test_MaterialEditorLivePreview,LifeTimer_Test -> LifeTimer FAILED
+```
+
+**The restore lives in `DevilsPlayground.cpp`'s between-tests hook, and must
+NOT be a per-test `m_pfnTeardown`.** Teardown runs *before* the world reset, on
+whatever scene the test left standing. If that scene is ProcLevel,
+`EnterPlayMode`'s unconditional OnAwake re-dispatch re-awakens
+`DPPlayerController_Component` and trips its `singleton double-instantiated`
+assert, killing the process — precisely what the `DELIBERATELY NOT TOUCHED`
+comment in `Zenith/Editor/Zenith_Editor_SceneOps.cpp` predicts. A
+Teardown-based version of this fix hit that assert for real on
+`MaterialEntityShowcase`. The hook fires *after* the harness has reloaded
+scene 0 (FrontEnd), which owns no such singleton, so the re-dispatch there is
+the same harmless one the boot sequence already performs. `SetEditorMode`
+early-returns when the mode already matches, so the hook costs nothing on the
+~155 tests that never touched it.
+
+> Note the asymmetry with RenderTest, which fixed the same defect with per-test
+> Teardowns (`Teardown_GrassShowcase`): RenderTest's showcases leave the boot
+> scene standing and it owns no double-awake-sensitive singleton, so Teardown is
+> safe there. DP's is not. The rule is about *which scene is standing when the
+> mode flips*, not about which hook you use.
+
+**The headless CI gate never saw this.** All five leakers are
+`m_bRequiresGraphics = true`, and on a `Null_` build the harness skips such
+tests *before* `Setup` runs, so the leak never happens there. It bites windowed
+runs only — which is exactly the config a human uses to look at the editor
+tests. Use `--batch-order reverse` / `--batch-order rotate:N` to shake out
+order dependence like this.
+
+### Graphics-gated tests are invisible to CI — check them windowed
+
+`m_bRequiresGraphics` tests are SKIPPED *before Setup* on the `Null_` build the
+gate runs, so **a graphics-gated test can rot indefinitely while `dp-tests` stays
+green**. Two were found red-but-unreported on 2026-08-07, both failing solo:
+
+- `Materials_Test` — asserted `GetRegisteredMaterialCount() >= 30` and that a
+  `LevelPrototyping_..._PrototypeGrid_Red` material resolved. Both encoded the
+  `Tools/dp_export/` UE bridge and its 37 `.json` material dumps, **deleted on
+  2026-05-19** with GameLevel. `DPMaterials::AuthorAllMaterials` walks
+  `Assets/Materials/*.json`, of which there are now zero, so Initialize registers
+  exactly one material (the default). Retargeted onto the shipping `DP_*` PBR set
+  by name.
+- `Test_GraphEditorLiveAuthoring` — the palette had outgrown the window; see
+  `Zenith/Editor/CLAUDE.md`, "EVERY position accessor returns FALSE for an
+  off-screen rect".
+
+When touching anything either of them covers, run them windowed:
+
+```powershell
+cd Games\DevilsPlayground\Build\output\win64\vulkan_vs2022_debug_win64_true
+.\devilsplayground.exe --automated-test Materials_Test --skip-unit-tests
+.\devilsplayground.exe --automated-test Test_GraphEditorLiveAuthoring --skip-unit-tests
+```
+
+`Test_GraphEditorLiveAuthoring` is also the **only** coverage anywhere in the
+repo of the simulated-input → ImGui bridge (`Zenith_ImGuiInputBridge`); nothing
+else clicks an ImGui widget. If it is red, treat the bridge as unverified.
+
 ## Test naming convention
 
 | Prefix | Meaning |

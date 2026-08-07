@@ -137,12 +137,29 @@ namespace
 		Zenith_InputSimulator::SimulateMousePosition(static_cast<double>(xPos.x), static_cast<double>(xPos.y));
 	}
 
+	// The palette lists every registered node type, so its column is thousands of
+	// pixels tall and the wanted row is almost always scrolled out of view. A
+	// clipped ImGui row is not interactable, so it must be scrolled in FIRST and
+	// the scroll must be allowed to land (it applies on the next Render) before
+	// the position is read. Two separate Step frames, hence two helpers.
+	bool RequestPaletteScroll(const char* szTypeName)
+	{
+		if (!Zenith_GraphEditorPanel::ScrollPaletteEntryIntoView(szTypeName))
+		{
+			FailHard("palette entry not registered");
+			return false;
+		}
+		return true;
+	}
+
 	bool MouseToPaletteEntry(const char* szTypeName)
 	{
 		Zenith_Maths::Vector2 xPos;
 		if (!Zenith_GraphEditorPanel::GetPaletteEntryScreenPos(szTypeName, xPos))
 		{
-			FailHard("palette entry not found");
+			// Only reachable if the scroll never landed - the accessor reports
+			// visible rows only, so it can no longer return an off-screen point.
+			FailHard("palette entry not visible after scroll");
 			return false;
 		}
 		MouseTo(xPos);
@@ -197,6 +214,25 @@ namespace
 			iFrame, xIO.MousePos.x, xIO.MousePos.y, xIO.MouseDown[0] ? 1 : 0, xIO.WantCaptureMouse ? 1 : 0);
 	}
 
+	// Why a click failed to land. "The nodes were not created" on its own cannot
+	// distinguish a click that never reached ImGui from one that reached it at
+	// the wrong place from a panel that would have refused the node anyway, and
+	// this test is the ONLY coverage of the simulated-input -> ImGui bridge in the
+	// whole repo -- so when it breaks, it has to say which of the three it is.
+	void LogClickDiagnostics(const char* szWhen)
+	{
+		const ImGuiIO& xIO = ImGui::GetIO();
+		Zenith_Maths::Vector2 xPalette(0.0f, 0.0f);
+		const bool bHavePalette = Zenith_GraphEditorPanel::GetPaletteEntryScreenPos("OnUpdate", xPalette);
+		Zenith_Log(LOG_CATEGORY_CORE,
+			"[GraphEditorLiveAuthoring] DIAG %s: io.MousePos=(%.1f, %.1f) down0=%d wantCapture=%d "
+			"displaySize=(%.0f, %.0f) paletteOnUpdate=%s(%.1f, %.1f) nodeCount=%u",
+			szWhen, xIO.MousePos.x, xIO.MousePos.y, xIO.MouseDown[0] ? 1 : 0,
+			xIO.WantCaptureMouse ? 1 : 0, xIO.DisplaySize.x, xIO.DisplaySize.y,
+			bHavePalette ? "yes" : "NO", xPalette.x, xPalette.y,
+			Zenith_GraphEditorPanel::GetNodeCount());
+	}
+
 	bool Step_GraphEditorLiveAuthoring(int iFrame)
 	{
 		if (g_xLiveAuthoring.m_bFailedHard)
@@ -225,10 +261,13 @@ namespace
 		}
 
 		// --- author: place the two nodes from the palette ------------------
-		case 30: MouseToPaletteEntry("OnUpdate"); break;
+		case 27: RequestPaletteScroll("OnUpdate"); break;
+		case 30: MouseToPaletteEntry("OnUpdate"); LogClickDiagnostics("f30 moved-to-palette"); break;
 		case 33: Zenith_InputSimulator::SimulateMouseButtonDown(ZENITH_MOUSE_BUTTON_1); break;
 		case 36: Zenith_InputSimulator::SimulateMouseButtonUp(ZENITH_MOUSE_BUTTON_1); break;
+		case 38: LogClickDiagnostics("f38 after-first-click"); break;
 
+		case 39: RequestPaletteScroll("RotateEntity"); break;
 		case 42: MouseToPaletteEntry("RotateEntity"); break;
 		case 45: Zenith_InputSimulator::SimulateMouseButtonDown(ZENITH_MOUSE_BUTTON_1); break;
 		case 48: Zenith_InputSimulator::SimulateMouseButtonUp(ZENITH_MOUSE_BUTTON_1); break;
@@ -240,6 +279,20 @@ namespace
 			g_xLiveAuthoring.m_uRotateNodeID = Zenith_GraphEditorPanel::FindNodeIDByType("RotateEntity");
 			if (g_xLiveAuthoring.m_uSourceNodeID == 0 || g_xLiveAuthoring.m_uRotateNodeID == 0)
 			{
+				LogClickDiagnostics("f54 node-check");
+				// Splits the failure in half: Action_AddNode is documented to run
+				// EXACTLY the palette-click handler's body, minus ImGui. If it
+				// succeeds here, the panel and the open definition are healthy and
+				// the fault is purely that the simulated click never reached the
+				// Selectable; if it fails too, the clicks were innocent.
+				const bool bDirectAddWorks = Zenith_GraphEditorPanel::Action_AddNode("OnUpdate");
+				Zenith_Log(LOG_CATEGORY_CORE,
+					"[GraphEditorLiveAuthoring] DIAG Action_AddNode(\"OnUpdate\") without ImGui -> %s "
+					"(nodeCount now %u). %s",
+					bDirectAddWorks ? "OK" : "FAILED", Zenith_GraphEditorPanel::GetNodeCount(),
+					bDirectAddWorks
+						? "=> panel+definition healthy; the simulated click did not reach the palette Selectable."
+						: "=> the panel/definition itself is refusing nodes; clicks are not the cause.");
 				FailHard("palette clicks did not create the nodes");
 				break;
 			}
@@ -484,6 +537,12 @@ namespace
 			&& g_xLiveAuthoring.m_bReloadObserved && bRate1Ok && bRate2Ok;
 	}
 
+	// This test drives the mode BOTH ways (Stopped in Setup, Playing at Step 122,
+	// Stopped again at Step 310) and so ends Stopped -- GLOBAL editor state that
+	// outlives it, and which an early-out (failed assert, timeout,
+	// --exit-after-frames short of 310) leaks even on the paths Step 310 covers.
+	// Restored centrally in DevilsPlayground.cpp's between-tests hook, NOT in a
+	// Teardown here -- see Tests/CLAUDE.md, "Editor mode leaks between tests".
 	const Zenith_AutomatedTest g_xGraphEditorLiveAuthoringTest = {
 		"Test_GraphEditorLiveAuthoring",
 		&Setup_GraphEditorLiveAuthoring,

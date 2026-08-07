@@ -317,6 +317,24 @@ input can click real coordinates: `GetPaletteEntryScreenPos`,
 `GetPropertyRowScreenPos/Rect`, plus state probes (`GetNodeCount`,
 `GetEdgeCount`, `GetSelectedNodeID`, `FindNodeIDByType`, `IsDirty`).
 
+**★ EVERY position accessor returns FALSE for an OFF-SCREEN rect, and the
+palette must be scrolled before it is clicked.** The palette lists every
+registered node type, so the left column's content is thousands of pixels tall
+— far more than the window or the display — and most rows are scrolled out of
+view at any moment. A clipped ImGui item is **not interactable**, so
+`ScrollPaletteEntryIntoView(typeName)` must be called first and given a frame to
+land (it is applied by the next `Render`) before reading the position or issuing
+the click. Palette rows are additionally recorded only while `IsItemVisible()`.
+
+This is a hard-won contract. The accessors used to hand out the *virtual*
+(scrolled-away) rect, so `Test_GraphEditorLiveAuthoring` was clicking screen
+y=1768 on a 720-tall display and reporting only "the nodes were not created" —
+the click, the bridge and the panel were all healthy and none of them was at
+fault. The palette also has its **own** scroll child for the same reason:
+sharing one with the properties meant scrolling to a palette entry pushed the
+property rows off the *top* (observed y=-2488). Failing closed turns both into
+an immediate, local error instead of a click into empty space.
+
 **Simulated-input bridge** (`Zenith_ImGuiInputBridge`, gated
 `ZENITH_TOOLS && ZENITH_INPUT_SIMULATOR`): pumps `Zenith_InputSimulator` state
 into ImGui IO events, injected in `Zenith_Vulkan::ImGuiBeginFrame` BETWEEN the

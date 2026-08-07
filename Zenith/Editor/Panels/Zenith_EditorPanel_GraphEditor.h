@@ -75,8 +75,22 @@ public:
 	static void OpenAssetFresh(const char* szAssetPath);
 
 #ifdef ZENITH_TESTING
+	// Scrolls the left column so the named palette row is inside the visible
+	// region, and returns false if no such node type is registered.
+	//
+	// REQUIRED before clicking a palette entry. The palette lists every
+	// registered node type, so the left column's content is far taller than the
+	// window (and than the display) -- most entries are scrolled out of view at
+	// any moment, and a clipped ImGui item is NOT interactable. The scroll is
+	// applied by the NEXT Render, so wait at least one frame before reading
+	// GetPaletteEntryScreenPos or issuing the click.
+	static bool ScrollPaletteEntryIntoView(const char* szTypeName);
 	// Live screen-position accessors (centre of the rect recorded during the
 	// most recent Render). Tests must query AFTER a rendered frame.
+	//
+	// Palette rows are recorded ONLY while actually visible (unclipped), so this
+	// returns false rather than an off-screen coordinate a click could never
+	// land on -- see ScrollPaletteEntryIntoView.
 	static bool GetPaletteEntryScreenPos(const char* szTypeName, Zenith_Maths::Vector2& xOut);
 	static bool GetNodeScreenPos(u_int uNodeID, Zenith_Maths::Vector2& xOut);
 	static bool GetPinScreenPos(u_int uNodeID, u_int uPin, bool bInputPin, Zenith_Maths::Vector2& xOut);
