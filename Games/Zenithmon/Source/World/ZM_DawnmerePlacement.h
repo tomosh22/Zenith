@@ -196,13 +196,34 @@ Zenith_Maths::Quat ZM_DawnmereVesperFacing();
 // that test and reading its `MEASURED FEET Y` line, never by arithmetic off the
 // town-centre anchor.
 //
-// ★ RE-MEASURED 2026-07-31 (ZM-D-173), and this is the case the block's own
-// contract was written for: moving the Home terrain PAD regenerated the whole
-// Dawnmere heightmap, because the recipe's hydraulic erosion pass is region-wide
-// rather than pad-local. Every row moved -- by 0.4 mm to 9.7 mm, i.e. far inside
-// the oracle's 0.15 m tolerance, so nothing here was BROKEN. They are repasted
-// anyway, because the property this block maintains is that the constants EQUAL
-// the measurement, not that they are close enough to pass.
+// ★ RE-MEASURED 2026-08-07 (ZM-D-186) -- AND THE HEIGHTMAP NEVER MOVED. ZM-D-182
+// took terrain COLLISION from 8 m to 4 m quads. The heightmap is untouched by that;
+// what changes is the triangle a downward ray lands on, so every anchor NOT sitting
+// on a shared grid vertex is now interpolated across a different, finer quad.
+// ZM-D-182 re-measured the Home block below (which is why every Home row reads
+// tableError 0.00000) and did NOT re-measure this one, so these seven rows stayed on
+// their 8 m-era values for five days.
+//
+// ★ THE PATTERN IS ARITHMETIC, NOT NOISE, AND IT PREDICTS ITSELF. 4 divides both 512
+// and 480, so the TOWN CENTRE is a shared vertex of both meshes and reads bit-identical
+// -- which is the only reason this re-measure does not re-bake the committed navmesh.
+// Rows at mid-quad XZ moved most (warden (478, 498), both axes on a half-quad: 98.8 mm,
+// two thirds of the oracle's tolerance); rows that landed on a 4 m vertex but a former
+// 8 m mid-quad moved by the interpolation error being removed (wanderer (540, 476):
+// 22.3 mm). Nothing here was BROKEN -- every row was inside the 0.15 m tolerance -- but
+// the property this block maintains is that the constants EQUAL the measurement, not
+// that they are close enough to pass.
+//
+// ★ WHAT THIS COSTS A FUTURE CHANGE. A collision-density change re-measures BOTH
+// blocks in this file, never one. They are separate tables with separate oracles and
+// nothing ties them together, which is exactly how ZM-D-182 moved one and left the
+// other; the containment is that both oracles run in the local batch.
+//
+// ★ HISTORICAL, 2026-07-31 (ZM-D-173): moving the Home terrain PAD regenerated the
+// whole Dawnmere heightmap, because the recipe's hydraulic erosion pass is region-wide
+// rather than pad-local. Every row moved by 0.4 mm to 9.7 mm. That is the OTHER way
+// these constants go stale -- a real heightmap change -- and it moves the town centre
+// and the navmesh with it, unlike the collision-density case above.
 //
 // ★ WHAT THE ORIGINAL W5 MEASUREMENT FOUND, and it is worse than "an inference
 // plus one measured value": the ONE shared town-centre height then in use left
@@ -210,16 +231,16 @@ Zenith_Maths::Quat ZM_DawnmereVesperFacing();
 // figures in that sentence are HISTORICAL -- they are about the collapsed table
 // W5 replaced, not about the rows below. What is still LIVE is the property they
 // established, and it is re-measured on every run: the terrain spread under the
-// six-NPC roster is 1.78084 m (min 24.62025 warden, max 26.40109 wanderer, as of
-// ZM-D-173). Dawnmere's town square is not remotely flat, and one shared height
+// six-NPC roster is 1.85737 m (min 24.52141 warden, max 26.37878 wanderer, as of
+// ZM-D-186). Dawnmere's town square is not remotely flat, and one shared height
 // cannot describe it.
-inline constexpr float fZM_DAWNMERE_FEET_Y_VILLAGER     = 25.67558f;   // Npc_Villager       (512, 490)
-inline constexpr float fZM_DAWNMERE_FEET_Y_CLERK        = 25.52088f;   // Npc_TradePostClerk (526, 498)
-inline constexpr float fZM_DAWNMERE_FEET_Y_CARETAKER    = 24.89180f;   // Npc_Caretaker      (498, 498)
-inline constexpr float fZM_DAWNMERE_FEET_Y_WARDEN       = 24.62025f;   // Npc_Warden         (478, 498)   <-- the lowest ground under the roster
-inline constexpr float fZM_DAWNMERE_FEET_Y_WANDERER     = 26.40109f;   // Npc_Wanderer       (540, 476)   <-- the highest; also wander waypoint 0
-inline constexpr float fZM_DAWNMERE_FEET_Y_RIVAL_VESPER = 25.86764f;   // Npc_RivalVesper    (490, 524)
-inline constexpr float fZM_DAWNMERE_FEET_Y_WANDER_WP1   = 26.20094f;   // WanderWaypoint1    (540, 484)
+inline constexpr float fZM_DAWNMERE_FEET_Y_VILLAGER     = 25.68112f;   // Npc_Villager       (512, 490)
+inline constexpr float fZM_DAWNMERE_FEET_Y_CLERK        = 25.53937f;   // Npc_TradePostClerk (526, 498)
+inline constexpr float fZM_DAWNMERE_FEET_Y_CARETAKER    = 24.89114f;   // Npc_Caretaker      (498, 498)
+inline constexpr float fZM_DAWNMERE_FEET_Y_WARDEN       = 24.52141f;   // Npc_Warden         (478, 498)   <-- the lowest ground under the roster
+inline constexpr float fZM_DAWNMERE_FEET_Y_WANDERER     = 26.37878f;   // Npc_Wanderer       (540, 476)   <-- the highest; also wander waypoint 0
+inline constexpr float fZM_DAWNMERE_FEET_Y_RIVAL_VESPER = 25.85455f;   // Npc_RivalVesper    (490, 524)
+inline constexpr float fZM_DAWNMERE_FEET_Y_WANDER_WP1   = 26.19232f;   // WanderWaypoint1    (540, 484)
 // ==== END W5 MEASURED HEIGHTS ====
 //
 // Waypoint 0 deliberately has NO constant of its own: it stands at the SAME XZ as
@@ -308,7 +329,9 @@ float ZM_DawnmereNpcCentreY(u_int uNpc, float fCapsuleHalfExtent);
 float ZM_DawnmereTrainerSpawnY(float fCapsuleHalfExtent);
 
 // The wanderer's authored SPAWN height, which is its centre plus ONE EXTRA capsule
-// half-extent of air. It is the only DYNAMIC body in Dawnmere, and the local
+// half-extent of air. It was the FIRST dynamic body in Dawnmere -- rival Vesper
+// became the second at S7 item 1 SC3 and needed the identical treatment for the
+// identical reason (ZM-D-184, ZM_DawnmereTrainerSpawnY above) -- and the local
 // terrain there is ~0.4 m above the town centre; spawning it at its resting centre
 // puts the capsule inside the mesh, so it is authored clear of the surface and
 // gravity settles it from the FRONT side. Named rather than open-coded at the call

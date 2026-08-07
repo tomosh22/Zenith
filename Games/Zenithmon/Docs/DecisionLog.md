@@ -15,6 +15,148 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-08-07 -- ZM-D-186 -- ZM: a COLLISION-DENSITY change re-measures the feet tables, and ZM-D-182 moved one of the two and left the other
+
+**What shipped:** the seven W5 per-NPC feet heights in
+`Source/World/ZM_DawnmerePlacement.h` are re-measured off the live 4 m-quad
+heightfield, and `Dawnmere.zscen` is re-authored onto them.
+
+| row | was | now | delta |
+|---|---|---|---|
+| `VILLAGER` (512, 490) | 25.67558 | **25.68112** | +5.5 mm |
+| `CLERK` (526, 498) | 25.52088 | **25.53937** | +18.5 mm |
+| `CARETAKER` (498, 498) | 24.89180 | **24.89114** | -0.7 mm |
+| `WARDEN` (478, 498) | 24.62025 | **24.52141** | **-98.8 mm** |
+| `WANDERER` (540, 476) | 26.40109 | **26.37878** | -22.3 mm |
+| `RIVAL_VESPER` (490, 524) | 25.86764 | **25.85455** | -13.1 mm |
+| `WANDER_WP1` (540, 484) | 26.20094 | **26.19232** | -8.6 mm |
+
+`Dawnmere.zscen` -> SHA256 `3CAB927F70923CF6E2111B2E3A98B011939671EBE527E31EC0EB388EE2E4E790`.
+**`Dawnmere.znavmesh` did NOT move**, and that is derived rather than lucky -- see below.
+
+**Why:** ZM-D-182 took terrain collision from 8 m to 4 m quads. This file holds **TWO**
+measured tables against that surface -- the W5 NPC block and the ZM-D-173 Home block --
+and ZM-D-182 re-measured **only the Home block**. `git log -S` dates it exactly: the
+Home constants last moved at `aa6f01e7` (2026-08-02, the ZM-D-182 commit), the NPC
+constants at `a6c66b68` (2026-07-31, ZM-D-173). So the NPC rows sat on 8 m-era values
+for five days.
+
+**★ THE HEIGHTMAP NEVER MOVED, AND THAT IS THE WHOLE POINT.** This is not a re-bake. A
+finer collision mesh changes which triangle a downward probe lands on, so any anchor
+NOT on a shared grid vertex is interpolated differently. The evidence is that all ten
+Home rows read `tableError = 0.00000` while the NPC rows read up to 98.8 mm -- one
+terrain, two tables, one of them re-measured.
+
+**★ WHY THE NAVMESH SURVIVED, DERIVED NOT OBSERVED.** 4 divides both 512 and 480, so
+the town-centre anchor is a shared VERTEX of the 8 m and the 4 m mesh and interpolates
+to the same height in both. It is the one height that feeds `ZM_NavEval`'s grid and
+therefore the committed `Dawnmere.znavmesh`, so a re-bake was never needed. The rest of
+the table confirms the same arithmetic: the warden (both axes on a half-quad) moved
+most; the wanderer and waypoint 1, which sit on 4 m vertices but former 8 m mid-quads,
+moved by exactly the interpolation error being removed.
+
+**★ NOTHING WAS BROKEN, AND IT IS STILL WORTH FIXING.** Every row was inside the
+oracle's 0.15 m tolerance -- but the warden at 98.8 mm was two thirds of the way to red,
+and the block's contract is that the constants EQUAL the measurement, not that they are
+close enough to pass. A table that is merely passing gives no headroom to the next real
+terrain change.
+
+**Tests that lock it:** `ZM_DawnmereNpcGroundTruth_Test` -- all seven rows now read
+`tableError = 0.00000` AND `centreError = 0.00000`; live roster spread 1.78084 ->
+**1.85737 m**. `ZM_DawnmereHomeGroundTruth_Test` unchanged and still exact.
+`ZM_Tests_CommittedSceneBytes` pins only the rival's ROTATION bits, which a height
+change cannot touch.
+
+**Verified:** two windowed Debug tools boots wrote the identical SHA256 above -- the
+ZM-D-148 idempotence proof, and confirmation that a boot leaves no scene dirty. Full ZM
+suite 55/55; boot units `2977 / 2975 / 0 / 2` unmoved.
+
+**Reversibility:** trivial in source (seven constants) but it moves a TRACKED asset, so
+a revert must re-author `Dawnmere.zscen` in the same commit.
+
+**★ THE RULE THIS SETS.** **A collision-density change re-measures BOTH tables in this
+file, never one.** They are separate blocks with separate oracles and nothing in the
+code ties them together, which is precisely how ZM-D-182 moved one and forgot the
+other. The containment is that both oracles run in the local batch -- so read both, not
+just the one your change touched.
+
+---
+
+## 2026-08-07 -- ZM-D-185 -- ZM: the ground-truth oracle learns about authored clearance, and reads it out of the placement accessors rather than restating it
+
+**What shipped:** `ZM_DawnmereNpcGroundTruth_Test`'s committed-bytes clause (clause
+(b) in `Tests/ZM_AutoTests_NpcTalk.cpp`) now expects
+`terrain + halfExtent + THAT NPC'S AUTHORED CLEARANCE`, and covers **all six** roster
+rows instead of five.
+
+1. New file-local `GTAuthoredClearance(uNpc, halfExtent)`. For the two DYNAMIC rows it
+   returns `ZM_DawnmereWandererSpawnY / ZM_DawnmereTrainerSpawnY` **minus that NPC's
+   resting centre** -- i.e. it subtracts the placement accessors from each other -- and
+   0.0 for the four static rows. Nothing about the clearance is spelled in the test.
+2. The wanderer's separate band clause is **deleted**, not kept beside the new one.
+3. The per-anchor INFO line carries `clearance=` and folds it into `expectedCentre`.
+
+**Why:** ZM-D-184 re-authored `Npc_RivalVesper` +0.9 m and **did not touch this
+oracle**, which had been asserting exact ground contact for every row but the
+wanderer. `ZM_DawnmereNpcGroundTruth_Test` went red at `centreError=0.91309` the
+moment that commit landed and stayed red -- an assertion demanding the exact defect
+ZM-D-184 fixed.
+
+**★ WHY THE ACCESSOR SUBTRACTION AND NOT A `0.9f`.** Two properties, both load-bearing:
+
+* A restated constant is a second place for the clearance to live, and ZM-D-184 has
+  already proved that a second place does not get updated. Subtracting the accessors
+  means re-deriving either one moves this test with it, with no number to edit here.
+* Both terms read the SAME W5 feet height, so the subtraction **cancels the compiled
+  table** and leaves the pure air gap. That is what keeps clause (b) a claim about the
+  BYTES vs THE TERRAIN rather than about the bytes vs the table -- the separation
+  clauses (a) and (b) were split to preserve, and the reason this could not simply
+  compare the transform against `ZM_DawnmereTrainerSpawnY()` directly.
+
+**★ WHY THE DYNAMIC ROWS CAN NOW BE HELD TO AN EXACT VALUE.** The old exclusion
+comment claimed "no runtime observation can pin its committed spawn height", because
+gravity closes the gap on load. That is wrong, and the mechanism says why: the
+transform is captured on the FIRST frame the entity resolves, and the collider rebuild
+that gives it a body does not land until frame 2 -- ZM-D-184's own capture measured
+exactly that (`COLLIDER REBUILT ... framesSinceLoad=2`). What clause (b) compares is
+the DESERIALIZED value, before a body exists to move it. **Observed drift on both
+dynamic rows is 0.00000 m**, and the deleted band was ~1.2 m wide, far too loose to
+have caught a missing re-author.
+
+**★ WHAT WAS NOT DONE, DELIBERATELY.** `Dawnmere.zscen` was NOT re-authored and the W5
+table was NOT re-measured. ZM-D-184 ruled the clearance correct and kept it on purpose
+("belt AND braces"), so the content is right and the assertion was stale -- the reverse
+would have moved a tracked asset to satisfy a wrong test. No boot unit was added
+either: `ZM_Interaction/Vesper_SpawnsClearOfTheGroundNotOnIt` already pins the
+clearance equality on the compiled accessors, which is the fact `GTAuthoredClearance`
+reads.
+
+**Tests that lock it:** `ZM_DawnmereNpcGroundTruth_Test` itself -- it FAILED before
+this change and passes after, with every row's `centreError` now exactly equal to its
+own `tableError` (the clearance cancels), which is how the four static rows have always
+behaved. The clause is non-vacuous for the same reason it always was: skip a re-author
+and the committed bytes carry the OLD constants, so (a) and (b) diverge.
+
+**Verified:** ZM boot units `2977 ran / 2975 passed / 0 failed / 2 skipped` --
+**unmoved**, so none of the four pinned baseline sites changes.
+
+**★ WATCH ITEM, NOT A FAILURE.** `Npc_Warden` measures `tableError = -0.09884` against
+a 0.150 tolerance -- by far the largest row and two-thirds of the way to red. The W5
+block's contract is that the constants EQUAL the measurement, not that they pass; the
+re-measure is a windowed tools boot plus a `Dawnmere.zscen` re-author, so it wants its
+own change rather than a ride on a test fix.
+
+**Reversibility:** trivial -- one file-local helper and one clause.
+
+**★ THE RULE THIS SETS.** ZM-D-184 said "an authored dynamic body gets clearance, and
+if a new one is added, give it the `*SpawnY` treatment." Add the other half: **an
+oracle that asserts an authored position must read its expectation from the accessor
+the scene was authored with.** A new dynamic NPC that is not added to
+`GTAuthoredClearance` reds by the whole clearance and names itself, which is the
+failure we want.
+
+---
+
 ## 2026-08-04 -- ZM-D-184 -- ENGINE + ZM: an unbounded physics substep loop turns a load hitch into a fall-through, and an authored body must not spawn resting exactly on the ground
 
 **What shipped:**

@@ -1526,7 +1526,16 @@ user-approved; this paragraph preserves the earlier planning boundary only.
   ORACLE: a real downward raycast at each anchor's XZ against the baked terrain body, with
   **two deliberately separate clauses** -- constant-vs-terrain and committed-bytes-vs-terrain
   -- so moving the constants without re-authoring reds the second and re-baking the
-  heightmap without re-measuring reds the first, and neither can mask the other. It **logs
+  heightmap without re-measuring reds the first, and neither can mask the other.
+  **★ ZM-D-185 (2026-08-07): the second clause carries an AUTHORED CLEARANCE term** and
+  covers all six rows rather than five. Dawnmere's two DYNAMIC humans (the wanderer and
+  rival Vesper) are authored one capsule half-extent above their resting centre on purpose
+  (ZM-D-184), so the expectation is `terrain + halfExtent + clearance`. The clearance is
+  obtained by subtracting each `*SpawnY` accessor from that NPC's resting centre rather
+  than restated as a literal -- which both keeps it in step with the authoring and, because
+  the two terms share one W5 feet height, **cancels the compiled table** so the clause stays
+  a bytes-vs-TERRAIN claim. The wanderer's former ~1.2 m-wide band clause is deleted: it is
+  strictly contained in the new window and could not have caught a missing re-author. It **logs
   every measured height at INFO on every run, pass or fail**, because that log IS the
   re-measurement workflow; a log-on-failure-only version would become useless the moment it
   went green. Its two-sided clause is `max(measured) - min(measured) >= 0.05` taken off the

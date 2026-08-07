@@ -23,9 +23,20 @@ contract), Phase 3 +4 (TerrainEditor GrassType map), Phase 4 (THE SWAP) +11 net
 impl surface / type-table serialization). ZM's own registrations never moved.
 ★ ZM's grass/battle suites were migrated to the new engine API in the swap
 (`GetScheduledInstanceCount` exact-restore contracts held on first windowed run);
-`ZM_DawnmereNpcGroundTruth_Test` is PRE-EXISTING red from ZM-D-184's spawn
-clearance (all its inputs last touched `e2b074bf`) — tracked separately, not a
-grass regression. **+20 engine units in one commit** (previous pins 2925 / 1300),
+`ZM_DawnmereNpcGroundTruth_Test` was PRE-EXISTING red from ZM-D-184's spawn
+clearance (all its inputs last touched `e2b074bf`) — never a grass regression,
+and **FIXED 2026-08-07 by ZM-D-185**: the oracle demanded exact ground contact
+from `Npc_RivalVesper`, i.e. the very defect ZM-D-184 fixed, so its
+committed-bytes clause now expects `terrain + halfExtent + clearance` and reads
+the clearance back out of the placement accessors. **Fixing it exposed a second,
+independent staleness — ZM-D-186:** with the assertion finally honest, the W5
+per-NPC feet table was found still holding ZM-D-182's pre-4 m-quad values
+(`Npc_Warden` 98.8 mm off, two thirds of the 0.150 tolerance) because ZM-D-182
+re-measured the Home table in the same file and not that one. All seven rows
+re-measured and `Dawnmere.zscen` re-authored → SHA256 `3CAB927F…` (identical
+across two windowed Debug boots); **`Dawnmere.znavmesh` did NOT move**, since 4
+divides both 512 and 480 and the town centre is a shared vertex of both meshes.
+**+20 engine units in one commit** (previous pins 2925 / 1300),
 all in `Zenith/Flux/Vegetation/Flux_Grass.Tests.inl`: the `FluxGrassTypes` suite
 covering the GPU-grass overhaul's Phase-1 pure functions (`Flux_GrassTypes.h`
 tile selection / wind / map sampling / GPU-record packing) plus pinned

@@ -1107,9 +1107,20 @@ ZENITH_AUTOMATED_TEST_REGISTER(g_xZMNpcTalkTest);
 // against the baked terrain body. Two independent things then get checked, and
 // keeping them separate is what makes the failure legible:
 //   * the COMPILED CONSTANT vs the TERRAIN  (|measured - table| <= tolerance);
-//   * the COMMITTED BYTES vs the TERRAIN    (|entity.y - (measured + halfExtent)|).
+//   * the COMMITTED BYTES vs the TERRAIN
+//     (|entity.y - (measured + halfExtent + the authored clearance)|).
 // Move the constants without re-authoring and the second reds; regenerate the
 // heightmap without re-measuring and the first reds. Neither can hide the other.
+//
+// ★ THE CLEARANCE TERM IS NOT A FUDGE FACTOR (ZM-D-184). Dawnmere's two DYNAMIC
+// humans -- the wanderer and rival Vesper -- are deliberately authored one capsule
+// half-extent ABOVE their resting centre, so gravity settles them onto the surface
+// from the FRONT side rather than leaving them depending on the solver catching them
+// on the very first tick. An assertion that demanded exact contact from them would
+// be asserting the defect ZM-D-184 fixed, and it did: Vesper reded at 0.913 m for a
+// full day after that commit re-authored him +0.9 m. GTAuthoredClearance reads the
+// gap back out of the placement accessors the scene was authored with, so it can
+// never be restated wrongly here.
 //
 // ★ IT LOGS EVERY MEASURED HEIGHT AT INFO ON EVERY RUN, PASS OR FAIL. That log is
 // the WORKFLOW: run this test, read the `name=... measured=...` pairs, paste them
@@ -1224,6 +1235,38 @@ namespace
 		return Zenith_PhysicsQuery::RaycastIgnoring(
 			xOrigin, Zenith_Maths::Vector3(0.0f, -1.0f, 0.0f),
 			fGT_RAY_MAX_DISTANCE, xIgnoreEntity);
+	}
+
+	// The authored AIR GAP above uNpc's resting centre: zero for a body authored in
+	// contact with the ground, one capsule half-extent for a DYNAMIC one.
+	//
+	// ★ DERIVED FROM THE PLACEMENT CODE, NEVER RESTATED HERE (ZM-D-184). Each dynamic
+	// row subtracts that NPC's resting centre from the very accessor Zenithmon.cpp
+	// authors it with, so the clearance this test expects cannot drift from the
+	// clearance the scene was written with -- re-derive either accessor and this moves
+	// with it, with no number to update in this file.
+	//
+	// ★ AND THE SUBTRACTION CANCELS THE COMPILED TABLE. Both terms read the same W5
+	// feet height, so what comes back is the pure air gap and nothing else. That is
+	// what keeps clause (b) below a claim about the BYTES vs THE TERRAIN rather than a
+	// claim about the bytes vs the table -- the separation the two clauses exist for.
+	//
+	// A row not named here is treated as authored in contact. Give a future NPC a
+	// dynamic body without adding it and clause (b) reds by the whole clearance and
+	// names the entity, which is the failure we want rather than a silent pass.
+	float GTAuthoredClearance(u_int uNpc, float fHalfExtent)
+	{
+		switch (uNpc)
+		{
+		case (u_int)ZM_DAWNMERE_NPC_WANDERER:
+			return ZM_DawnmereWandererSpawnY(fHalfExtent)
+				- ZM_DawnmereNpcCentreY(ZM_DAWNMERE_NPC_WANDERER, fHalfExtent);
+		case (u_int)ZM_DAWNMERE_NPC_RIVAL_VESPER:
+			return ZM_DawnmereTrainerSpawnY(fHalfExtent)
+				- ZM_DawnmereNpcCentreY(ZM_DAWNMERE_NPC_RIVAL_VESPER, fHalfExtent);
+		default:
+			return 0.0f;
+		}
 	}
 
 	// (1) Resolve every authored NPC out of the COMMITTED bytes, capturing each one
@@ -1476,23 +1519,31 @@ namespace
 
 		// Per-anchor detail, also on every run: what the table says, what the ground
 		// says, and what the committed transform says, in one line each.
+		//
+		// expectedCentre CARRIES THE CLEARANCE, so this line reports exactly what
+		// clause (b) asserts. It did not before ZM-D-184, and the two dynamic rows
+		// consequently logged a ~0.9 m centreError that looked like a failure on a run
+		// where only one of them actually failed -- a diagnostic that costs a reader a
+		// debugging session is worse than no diagnostic.
 		for (u_int u = 0u; u < uGT_NPC_COUNT; ++u)
 		{
 			const ZM_DawnmereNpcAnchor& xAnchor = ZM_GetDawnmereNpcAnchor(u);
+			const float fLoggedClearance =
+				GTAuthoredClearance(u, g_afGTHalfExtent[u]);
+			const float fLoggedExpected =
+				g_afGTMeasuredFeetY[u] + g_afGTHalfExtent[u] + fLoggedClearance;
 			Zenith_Log(LOG_CATEGORY_UNITTEST,
 				"[ZM_DawnmereNpcGroundTruth] name=%s xz=(%.1f, %.1f) measured=%.5f "
 				"table=%.5f tableError=%.5f | authoredY=%.5f expectedCentre=%.5f "
-				"centreError=%.5f halfExtent=%.4f | resolved=%d rayHit=%d "
-				"resolveFrame=%d",
+				"centreError=%.5f halfExtent=%.4f clearance=%.4f | resolved=%d "
+				"rayHit=%d resolveFrame=%d",
 				xAnchor.m_szEntityName, xAnchor.m_fX, xAnchor.m_fZ,
 				g_afGTMeasuredFeetY[u], xAnchor.m_fFeetY,
 				g_afGTMeasuredFeetY[u] - xAnchor.m_fFeetY,
-				g_axGTAuthoredPosition[u].y,
-				g_afGTMeasuredFeetY[u] + g_afGTHalfExtent[u],
-				g_axGTAuthoredPosition[u].y
-					- (g_afGTMeasuredFeetY[u] + g_afGTHalfExtent[u]),
-				g_afGTHalfExtent[u], (int)g_abGTResolved[u], (int)g_abGTRayHit[u],
-				g_aiGTResolveFrame[u]);
+				g_axGTAuthoredPosition[u].y, fLoggedExpected,
+				g_axGTAuthoredPosition[u].y - fLoggedExpected,
+				g_afGTHalfExtent[u], fLoggedClearance, (int)g_abGTResolved[u],
+				(int)g_abGTRayHit[u], g_aiGTResolveFrame[u]);
 		}
 
 		bool bPassed = g_bGTPrereqsPresent && g_bGTAllResolved && g_bGTAllMeasured;
@@ -1557,18 +1608,27 @@ namespace
 			}
 
 			// ---- (b) THE COMMITTED BYTES vs THE TERRAIN ----
-			// The five STATIC bodies only. The WANDERER is excluded and gets its own
-			// clause below: it is the one DYNAMIC capsule, authored a deliberate
-			// extra half-extent clear of the ground, and gravity starts closing that
-			// gap the moment the scene loads -- so no runtime observation can pin its
-			// committed spawn height. What pins that is the compiled accessor
-			// (ZM_DawnmereWandererSpawnY) plus its boot unit.
-			if (u == (u_int)ZM_DAWNMERE_NPC_WANDERER)
-			{
-				continue;
-			}
+			// ALL SIX ROWS, static and dynamic alike, against ONE rule: the committed
+			// transform is the measured surface, plus a capsule half-extent, plus that
+			// NPC's authored clearance (zero for the four in contact with the ground).
+			//
+			// ★ WHY THE TWO DYNAMIC ROWS CAN BE HELD TO AN EXACT VALUE AT ALL, given
+			// that gravity starts closing their gap the moment the scene loads. The
+			// transform is captured on the FIRST frame the entity resolves, and the
+			// collider rebuild that gives it a body does not happen until frame 2 (the
+			// ZM-D-184 capture measured exactly that: `COLLIDER REBUILT ...
+			// framesSinceLoad=2`). So what this compares is the DESERIALIZED authored
+			// value, before a physics body exists to move it -- which is why the
+			// re-capture guard in GTStepResolve is load-bearing rather than cosmetic,
+			// and observed drift on both dynamic rows is 0.00000 m.
+			//
+			// The wanderer used to be excluded here and hold a separate ~1.2 m-wide
+			// band instead. That band could not have caught a missing re-author, and
+			// it is strictly contained in this window, so it is gone rather than kept
+			// beside a stronger statement of the same fact.
+			const float fClearance = GTAuthoredClearance(u, g_afGTHalfExtent[u]);
 			const float fExpectedCentre =
-				g_afGTMeasuredFeetY[u] + g_afGTHalfExtent[u];
+				g_afGTMeasuredFeetY[u] + g_afGTHalfExtent[u] + fClearance;
 			const float fCentreError =
 				std::fabs(g_axGTAuthoredPosition[u].y - fExpectedCentre);
 			if (fCentreError > fGT_HEIGHT_TOLERANCE)
@@ -1576,41 +1636,20 @@ namespace
 				bPassed = false;
 				Zenith_Error(LOG_CATEGORY_UNITTEST,
 					"[ZM_DawnmereNpcGroundTruth] '%s': the COMMITTED transform Y %.5f is "
-					"%.5f m off terrain + halfExtent %.5f (tolerance %.3f) -- Dawnmere "
-					"has not been re-authored since the W5 heights moved",
+					"%.5f m off terrain + halfExtent + clearance %.5f (halfExtent %.4f, "
+					"clearance %.4f, tolerance %.3f) -- either Dawnmere has not been "
+					"re-authored since the W5 heights moved, or this body's authored "
+					"clearance changed and GTAuthoredClearance was not told. A committed "
+					"Y BELOW the expected value on a dynamic row is the ZM-D-184 hazard "
+					"itself: a capsule authored into the terrain mesh, which gravity "
+					"cannot settle from the front side.",
 					xAnchor.m_szEntityName, g_axGTAuthoredPosition[u].y, fCentreError,
-					fExpectedCentre, fGT_HEIGHT_TOLERANCE);
+					fExpectedCentre, g_afGTHalfExtent[u], fClearance,
+					fGT_HEIGHT_TOLERANCE);
 			}
 		}
 
-		// ---- (c) THE WANDERER'S OWN CLAUSE ----
-		// Its authored spawn must sit between "resting on the surface" and "one full
-		// extra half-extent above it". The LOWER bound is the one with teeth: it reds
-		// if the capsule is authored INSIDE the terrain mesh, which is precisely the
-		// hazard the extra air exists to avoid and precisely what a collapsed or
-		// stale feet height would reintroduce here (the ground under the patrol sits
-		// noticeably above the town centre).
-		{
-			const u_int uWanderer = (u_int)ZM_DAWNMERE_NPC_WANDERER;
-			const float fHalf = g_afGTHalfExtent[uWanderer];
-			const float fResting = g_afGTMeasuredFeetY[uWanderer] + fHalf;
-			const float fAuthoredCeiling = fResting + fHalf;
-			const float fAuthoredY = g_axGTAuthoredPosition[uWanderer].y;
-			if (fAuthoredY < fResting - fGT_HEIGHT_TOLERANCE
-				|| fAuthoredY > fAuthoredCeiling + fGT_HEIGHT_TOLERANCE)
-			{
-				bPassed = false;
-				Zenith_Error(LOG_CATEGORY_UNITTEST,
-					"[ZM_DawnmereNpcGroundTruth] the wanderer's committed Y %.5f is "
-					"outside [%.5f, %.5f] -- it is authored either INSIDE the terrain "
-					"mesh (gravity cannot settle it from the front) or more than one "
-					"extra half-extent above it",
-					fAuthoredY, fResting - fGT_HEIGHT_TOLERANCE,
-					fAuthoredCeiling + fGT_HEIGHT_TOLERANCE);
-			}
-		}
-
-		// ---- (d) THE PATROL ENDPOINTS vs THE TERRAIN ----
+		// ---- (c) THE PATROL ENDPOINTS vs THE TERRAIN ----
 		const u_int uWaypointCount = GTWaypointSampleCount();
 		for (u_int u = 0u; u < uWaypointCount; ++u)
 		{
@@ -1629,7 +1668,7 @@ namespace
 			}
 		}
 
-		// ---- (e) THE TWO-SIDED CLAUSE THAT MAKES W5 NON-VACUOUS ----
+		// ---- (d) THE TWO-SIDED CLAUSE THAT MAKES W5 NON-VACUOUS ----
 		// Measured off the LIVE heightfield, never off the table: this is the terrain
 		// itself saying that six independent heights were warranted.
 		const float fMeasuredSpread = fMaxMeasured - fMinMeasured;

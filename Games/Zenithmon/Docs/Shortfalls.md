@@ -503,6 +503,17 @@ real trainer battle, and his identity survives save/reload by a zero-byte route.
      time -- that is the accepted cost of freezing measured values, and the containment is
      that the probe test reds at the next local batch. It is the mirror of the risk that
      live sampling would have introduced, and the cheaper of the two.
+     **★ AND IT HAPPENED -- CAUGHT AND CLOSED 2026-08-07 (ZM-D-186).** `Npc_Warden` had
+     drifted to `tableError = -0.09884` against the 0.150 tolerance, two thirds of the
+     way to red. The cause was NOT a re-bake: ZM-D-182's 8 m -> 4 m COLLISION-density
+     change re-interpolates every probe that is not on a shared grid vertex, and it
+     re-measured the Home block in this same file while leaving the W5 NPC block on its
+     8 m-era values for five days. All seven rows re-measured and `Dawnmere.zscen`
+     re-authored; the navmesh did not move, because 4 divides both 512 and 480 and the
+     town centre is therefore a vertex of both meshes.
+     **★ SO THE LIMIT IS WIDER THAN WRITTEN:** collision DENSITY re-measures these
+     constants just as a heightmap re-bake does, and this file holds TWO such tables
+     with no code tying them together.
    - **Only Dawnmere is measured.** Thornacre and Route1 have no authored NPCs yet; when
      they do, they need their own anchors, not this table.
 
