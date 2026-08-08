@@ -159,6 +159,204 @@ void Flux_ShaderReflection::SetBindingStaticUse(u_int uIndex, bool bUsed)
 	m_axBindings.Get(uIndex).m_bStaticallyUsed = bUsed;
 }
 
+void Flux_ShaderReflection::AddVertexAttribute(const Flux_ReflectedVertexAttribute& xAttribute)
+{
+	m_axVertexAttributes.PushBack(xAttribute);
+}
+
+void Flux_ShaderReflection::ComputeVertexPacking()
+{
+	for (u_int b = 0; b < uFLUX_MAX_VERTEX_BINDINGS; b++)
+	{
+		m_auVertexStrides[b] = 0u;
+	}
+
+	// Declaration order IS packing order: the offsets below describe the buffer an
+	// exporter will write, and a re-ordering would silently invalidate baked data.
+	for (u_int u = 0; u < m_axVertexAttributes.GetSize(); u++)
+	{
+		Flux_ReflectedVertexAttribute& xAttribute = m_axVertexAttributes.Get(u);
+		// Neither case is reachable from ExtractVertexInputs (it fails the compile on
+		// an untypeable field and only ever emits binding 0/1). A hand-built table can
+		// still hold them, so they are skipped rather than asserted — a unit test must
+		// not be able to halt the whole boot-time suite with a malformed input.
+		if (xAttribute.m_eType == SHADER_DATA_TYPE_NONE) continue;
+		if (xAttribute.m_uBinding >= uFLUX_MAX_VERTEX_BINDINGS) continue;
+
+		xAttribute.m_uOffset = m_auVertexStrides[xAttribute.m_uBinding];
+		m_auVertexStrides[xAttribute.m_uBinding] += Flux_ShaderDataTypeSize(xAttribute.m_eType);
+	}
+}
+
+u_int Flux_ShaderReflection::GetVertexStride(u_int uBinding) const
+{
+	if (uBinding >= uFLUX_MAX_VERTEX_BINDINGS) return 0u;
+	return m_auVertexStrides[uBinding];
+}
+
+void Flux_ShaderReflection::MergeVertexInputs(const Flux_ShaderReflection& xSource)
+{
+	// Adopt-once — see the header for why "first table wins" is both idempotent and
+	// exactly the "only the vertex stage contributes" rule.
+	if (m_axVertexAttributes.GetSize() > 0) return;
+	for (u_int u = 0; u < xSource.m_axVertexAttributes.GetSize(); u++)
+	{
+		m_axVertexAttributes.PushBack(xSource.m_axVertexAttributes.Get(u));
+	}
+	for (u_int b = 0; b < uFLUX_MAX_VERTEX_BINDINGS; b++)
+	{
+		m_auVertexStrides[b] = xSource.m_auVertexStrides[b];
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Vertex-format vocabulary (compressed-vertex work — T2.a). Pure, Slang-free and
+// deliberately in the UNGATED region: the rules are part of the sidecar's meaning,
+// so a Null/Android build that only reads sidecars still compiles (and unit-tests)
+// them. The extractor in the gated region below is the only production caller.
+// ---------------------------------------------------------------------------
+
+bool Flux_ParseVertexFormatString(const char* szFormat, ShaderDataType& eTypeOut)
+{
+	if (!szFormat) return false;
+
+	struct Entry { const char* m_szName; ShaderDataType m_eType; };
+	// The authoring vocabulary, spelled exactly as a [VtxFmt("...")] argument. Anything
+	// not here is a typo, not a new format — adding one means adding it here AND to the
+	// size/lane tables in Flux_Types.h.
+	static const Entry ls_axFormats[] =
+	{
+		{ "half2",            SHADER_DATA_TYPE_HALF2            },
+		{ "half4",            SHADER_DATA_TYPE_HALF4            },
+		{ "snorm16x2",        SHADER_DATA_TYPE_SNORM16X2        },
+		{ "snorm16x4",        SHADER_DATA_TYPE_SNORM16X4        },
+		{ "unorm16x2",        SHADER_DATA_TYPE_UNORM16X2        },
+		{ "unorm16x4",        SHADER_DATA_TYPE_UNORM16X4        },
+		{ "unorm8x4",         SHADER_DATA_TYPE_UNORM8X4         },
+		{ "uint8x4",          SHADER_DATA_TYPE_UINT8X4          },
+		{ "uint16x4",         SHADER_DATA_TYPE_UINT16X4         },
+		{ "snorm10_10_10_2",  SHADER_DATA_TYPE_SNORM10_10_10_2  },
+	};
+
+	for (const Entry& xEntry : ls_axFormats)
+	{
+		if (std::string(szFormat) == xEntry.m_szName)
+		{
+			eTypeOut = xEntry.m_eType;
+			return true;
+		}
+	}
+	return false;
+}
+
+bool Flux_InferVertexAttributeType(FluxVertexFieldScalar eFieldScalar, u_int uFieldLanes, ShaderDataType& eTypeOut)
+{
+	if (uFieldLanes < 1u || uFieldLanes > 4u) return false;
+
+	switch (eFieldScalar)
+	{
+	case FLUX_VERTEX_FIELD_SCALAR_FLOAT32:
+	{
+		static const ShaderDataType ls_aeFloat[4] =
+			{ SHADER_DATA_TYPE_FLOAT, SHADER_DATA_TYPE_FLOAT2, SHADER_DATA_TYPE_FLOAT3, SHADER_DATA_TYPE_FLOAT4 };
+		eTypeOut = ls_aeFloat[uFieldLanes - 1u];
+		return true;
+	}
+	case FLUX_VERTEX_FIELD_SCALAR_FLOAT16:
+		// Only the two even widths have a packed tag; half1/half3 have no vertex format
+		// and must be spelled with an explicit [VtxFmt] on a wider storage type.
+		if (uFieldLanes == 2u) { eTypeOut = SHADER_DATA_TYPE_HALF2; return true; }
+		if (uFieldLanes == 4u) { eTypeOut = SHADER_DATA_TYPE_HALF4; return true; }
+		return false;
+	case FLUX_VERTEX_FIELD_SCALAR_INT32:
+	{
+		static const ShaderDataType ls_aeInt[4] =
+			{ SHADER_DATA_TYPE_INT, SHADER_DATA_TYPE_INT2, SHADER_DATA_TYPE_INT3, SHADER_DATA_TYPE_INT4 };
+		eTypeOut = ls_aeInt[uFieldLanes - 1u];
+		return true;
+	}
+	case FLUX_VERTEX_FIELD_SCALAR_UINT32:
+	{
+		static const ShaderDataType ls_aeUint[4] =
+			{ SHADER_DATA_TYPE_UINT, SHADER_DATA_TYPE_UINT2, SHADER_DATA_TYPE_UINT3, SHADER_DATA_TYPE_UINT4 };
+		eTypeOut = ls_aeUint[uFieldLanes - 1u];
+		return true;
+	}
+	case FLUX_VERTEX_FIELD_SCALAR_UNKNOWN:
+	default:
+		return false;
+	}
+}
+
+FluxVertexStorageFamily Flux_VertexStorageFamily(ShaderDataType eType)
+{
+	switch (eType)
+	{
+	case SHADER_DATA_TYPE_FLOAT:
+	case SHADER_DATA_TYPE_FLOAT2:
+	case SHADER_DATA_TYPE_FLOAT3:
+	case SHADER_DATA_TYPE_FLOAT4:
+	case SHADER_DATA_TYPE_HALF2:
+	case SHADER_DATA_TYPE_HALF4:
+	case SHADER_DATA_TYPE_SNORM16X2:
+	case SHADER_DATA_TYPE_SNORM16X4:
+	case SHADER_DATA_TYPE_UNORM16X2:
+	case SHADER_DATA_TYPE_UNORM16X4:
+	case SHADER_DATA_TYPE_UNORM8X4:
+	case SHADER_DATA_TYPE_SNORM10_10_10_2:
+		return FLUX_VERTEX_STORAGE_FAMILY_FLOAT;
+	case SHADER_DATA_TYPE_INT:
+	case SHADER_DATA_TYPE_INT2:
+	case SHADER_DATA_TYPE_INT3:
+	case SHADER_DATA_TYPE_INT4:
+		return FLUX_VERTEX_STORAGE_FAMILY_INT;
+	case SHADER_DATA_TYPE_UINT:
+	case SHADER_DATA_TYPE_UINT2:
+	case SHADER_DATA_TYPE_UINT3:
+	case SHADER_DATA_TYPE_UINT4:
+	case SHADER_DATA_TYPE_UINT8X4:
+	case SHADER_DATA_TYPE_UINT16X4:
+		return FLUX_VERTEX_STORAGE_FAMILY_UINT;
+	default:
+		return FLUX_VERTEX_STORAGE_FAMILY_UNKNOWN;
+	}
+}
+
+u_int Flux_VertexStorageLaneCount(ShaderDataType eType)
+{
+	if (Flux_VertexStorageFamily(eType) == FLUX_VERTEX_STORAGE_FAMILY_UNKNOWN) return 0u;
+	// Flux_BufferElement owns the engine's one lane table; reuse it rather than
+	// growing a second copy that could drift from the size table beside it.
+	return Flux_BufferElement(eType).GetComponentCount();
+}
+
+bool Flux_ValidateVertexFormatOverride(ShaderDataType eStorage, FluxVertexFieldScalar eFieldScalar, u_int uFieldLanes)
+{
+	const FluxVertexStorageFamily eStorageFamily = Flux_VertexStorageFamily(eStorage);
+	if (eStorageFamily == FLUX_VERTEX_STORAGE_FAMILY_UNKNOWN) return false;
+	if (uFieldLanes < 1u) return false;
+	if (Flux_VertexStorageLaneCount(eStorage) < uFieldLanes) return false;
+
+	switch (eFieldScalar)
+	{
+	case FLUX_VERTEX_FIELD_SCALAR_FLOAT32:
+	case FLUX_VERTEX_FIELD_SCALAR_FLOAT16:
+		return eStorageFamily == FLUX_VERTEX_STORAGE_FAMILY_FLOAT;
+	case FLUX_VERTEX_FIELD_SCALAR_INT32:
+		// INT-family storage only. Vulkan requires a SINT VkFormat to feed a
+		// signed-int SPIR-V input; a UINT format here would be a validation
+		// error at pipeline build. No int-family format string exists in the
+		// vocabulary yet, so an int field simply cannot be annotated — that is
+		// the intended hard stop, not a gap to paper over with the UINT family.
+		return eStorageFamily == FLUX_VERTEX_STORAGE_FAMILY_INT;
+	case FLUX_VERTEX_FIELD_SCALAR_UINT32:
+		return eStorageFamily == FLUX_VERTEX_STORAGE_FAMILY_UINT;
+	case FLUX_VERTEX_FIELD_SCALAR_UNKNOWN:
+	default:
+		return false;
+	}
+}
+
 void Flux_ShaderReflection::BuildLookupMap()
 {
 	m_xBindingMap.Clear();
@@ -180,8 +378,13 @@ void Flux_ShaderReflection::BuildLookupMap()
 //     name, constant id, size, u32 default, type name). Empty for every program
 //     until Stage 3b adds the first [SpecializationConstant] decls, so the v5
 //     bump changes only the sidecar bytes (a trailing count of 0), never the .spv.
+// v6: + vertex-input table (compressed-vertex work — T2.a — per attribute: name,
+//     semantic + index, location, storage ShaderDataType, binding, byte offset) and
+//     the two per-binding byte strides. Populated for every program with a VERTEX
+//     entry point; empty (count 0 + two zero strides) for compute-only programs. The
+//     .spv is untouched — this reads the same linked program the bindings came from.
 static constexpr u_int32 kFluxReflectionMagic   = 0x46525846; // 'FXRF'
-static constexpr u_int32 kFluxReflectionVersion = 5;
+static constexpr u_int32 kFluxReflectionVersion = 6;
 
 void Flux_ShaderReflection::WriteToDataStream(Zenith_DataStream& xStream) const
 {
@@ -225,6 +428,28 @@ void Flux_ShaderReflection::WriteToDataStream(Zenith_DataStream& xStream) const
 		xStream << xSpec.m_uSize;
 		xStream << xSpec.m_uDefaultValue;
 		xStream << xSpec.m_strTypeName;
+	}
+
+	// v6: vertex-input table + per-binding strides. Offsets/strides are written as
+	// stored, NOT recomputed on read — the sidecar is the authority on the byte layout
+	// the exporters wrote, so a later change to the packing rule cannot retroactively
+	// reinterpret an already-baked buffer without a version bump.
+	const u_int uVertexCount = m_axVertexAttributes.GetSize();
+	xStream << uVertexCount;
+	for (u_int u = 0; u < uVertexCount; u++)
+	{
+		const Flux_ReflectedVertexAttribute& xAttribute = m_axVertexAttributes.Get(u);
+		xStream << xAttribute.m_strName;
+		xStream << xAttribute.m_strSemantic;
+		xStream << xAttribute.m_uSemanticIndex;
+		xStream << xAttribute.m_uLocation;
+		xStream << static_cast<u_int>(xAttribute.m_eType);
+		xStream << xAttribute.m_uBinding;
+		xStream << xAttribute.m_uOffset;
+	}
+	for (u_int b = 0; b < uFLUX_MAX_VERTEX_BINDINGS; b++)
+	{
+		xStream << m_auVertexStrides[b];
 	}
 }
 
@@ -282,6 +507,35 @@ void Flux_ShaderReflection::ReadFromDataStream(Zenith_DataStream& xStream)
 		xStream >> xSpec.m_uDefaultValue;
 		xStream >> xSpec.m_strTypeName;
 		m_axSpecConstants.PushBack(xSpec);
+	}
+
+	// v6: vertex-input table + per-binding strides.
+	u_int uVertexCount;
+	xStream >> uVertexCount;
+	for (u_int u = 0; u < uVertexCount; u++)
+	{
+		Flux_ReflectedVertexAttribute xAttribute;
+		xStream >> xAttribute.m_strName;
+		xStream >> xAttribute.m_strSemantic;
+		xStream >> xAttribute.m_uSemanticIndex;
+		xStream >> xAttribute.m_uLocation;
+		u_int uType;
+		xStream >> uType;
+		xAttribute.m_eType = static_cast<ShaderDataType>(uType);
+		xStream >> xAttribute.m_uBinding;
+		xStream >> xAttribute.m_uOffset;
+		// The extractor can only ever produce bindings 0/1, so an out-of-range
+		// binding means a corrupt or hostile sidecar — the Vulkan builder would
+		// emit an attribute for a binding with no binding description, which the
+		// generated-table match cannot see (both sides would carry the same junk).
+		Zenith_Assert(xAttribute.m_uBinding < uFLUX_MAX_VERTEX_BINDINGS,
+			"Sidecar vertex attribute '%s' claims binding %u (max %u) — corrupt .spv.refl",
+			xAttribute.m_strName.c_str(), xAttribute.m_uBinding, uFLUX_MAX_VERTEX_BINDINGS - 1u);
+		m_axVertexAttributes.PushBack(xAttribute);
+	}
+	for (u_int b = 0; b < uFLUX_MAX_VERTEX_BINDINGS; b++)
+	{
+		xStream >> m_auVertexStrides[b];
 	}
 
 	BuildLookupMap();
@@ -733,6 +987,201 @@ static void ExtractSpecConstants(slang::ProgramLayout* pxLayout,
 	}
 }
 
+// Map Slang's scalar kind onto the Slang-free vocabulary the pure inference rules
+// speak. Anything outside the four vertex-legal scalars (float64, int8/16/64, bool, ...)
+// lands on UNKNOWN, which the inference rejects — it has no vertex-input format.
+static FluxVertexFieldScalar SlangScalarToVertexFieldScalar(slang::TypeReflection::ScalarType eScalar)
+{
+	switch (eScalar)
+	{
+	case slang::TypeReflection::ScalarType::Float32: return FLUX_VERTEX_FIELD_SCALAR_FLOAT32;
+	case slang::TypeReflection::ScalarType::Float16: return FLUX_VERTEX_FIELD_SCALAR_FLOAT16;
+	case slang::TypeReflection::ScalarType::Int32:   return FLUX_VERTEX_FIELD_SCALAR_INT32;
+	case slang::TypeReflection::ScalarType::UInt32:  return FLUX_VERTEX_FIELD_SCALAR_UINT32;
+	default:                                         return FLUX_VERTEX_FIELD_SCALAR_UNKNOWN;
+	}
+}
+
+// The two vertex-layout authoring attributes, spelled as Slang REPORTS them: the
+// declared struct name minus its mandatory "Attribute" suffix (T0 probe V1/V4), i.e.
+// `struct VtxFmtAttribute` is read back as "VtxFmt".
+static const char* const kszVertexFormatAttribute = "VtxFmt";
+static const char* const kszPerInstanceAttribute  = "PerInstance";
+
+// Capture one vertex-input leaf into the reflection's table, or fail the compile with a
+// message naming the offending field. Returns true (having added nothing) for a field
+// that is not a vertex input at all.
+static bool ExtractOneVertexInput(slang::VariableLayoutReflection* pxField,
+								   const char* szProgramContext,
+								   Flux_ShaderReflection& xReflectionOut,
+								   std::string& strErrorOut)
+{
+	if (!pxField) return true;
+
+	// SV_* exclusion (T0 probe V3): a system value is still REFLECTED as a field but
+	// takes NO parameter category and consumes no location. Carrying the VaryingInput
+	// category is therefore the load-bearing test — the "SV_" name prefix is only
+	// corroboration, and keying on it would miss a system value spelled differently.
+	bool bHasVaryingInput = false;
+	const u_int uCategoryCount = static_cast<u_int>(pxField->getCategoryCount());
+	for (u_int c = 0; c < uCategoryCount; c++)
+	{
+		if (pxField->getCategoryByIndex(c) == slang::ParameterCategory::VaryingInput)
+		{
+			bHasVaryingInput = true;
+			break;
+		}
+	}
+	if (!bHasVaryingInput) return true;
+
+	Flux_ReflectedVertexAttribute xAttribute;
+	xAttribute.m_strName = pxField->getName() ? pxField->getName() : "";
+	if (const char* szSemantic = pxField->getSemanticName())
+	{
+		xAttribute.m_strSemantic = szSemantic;
+	}
+	xAttribute.m_uSemanticIndex = static_cast<u_int>(pxField->getSemanticIndex());
+	xAttribute.m_uLocation      = static_cast<u_int>(pxField->getOffset(SLANG_PARAMETER_CATEGORY_VERTEX_INPUT));
+
+	// Declared type facts — the inference inputs (T0 probe V5). A vector answers its
+	// lane count and defers the scalar kind to its element type; a scalar answers
+	// directly. Anything else (matrix, nested struct, array) has no vertex-input
+	// representation and is a hard error rather than a silent drop.
+	FluxVertexFieldScalar eFieldScalar = FLUX_VERTEX_FIELD_SCALAR_UNKNOWN;
+	u_int uFieldLanes = 0;
+	slang::TypeLayoutReflection* pxTypeLayout = pxField->getTypeLayout();
+	slang::TypeReflection* pxType = pxTypeLayout ? pxTypeLayout->getType() : nullptr;
+	if (pxType)
+	{
+		const slang::TypeReflection::Kind eKind = pxType->getKind();
+		slang::TypeReflection* pxScalarSource = pxType;
+		if (eKind == slang::TypeReflection::Kind::Vector)
+		{
+			uFieldLanes = static_cast<u_int>(pxType->getElementCount());
+			if (slang::TypeReflection* pxElement = pxType->getElementType()) pxScalarSource = pxElement;
+		}
+		else if (eKind == slang::TypeReflection::Kind::Scalar)
+		{
+			uFieldLanes = 1;
+		}
+		else
+		{
+			strErrorOut = "Vertex input '" + xAttribute.m_strName + "' in " + szProgramContext +
+						  " is not a scalar or vector — matrices, nested structs and arrays have no vertex-input format.";
+			return false;
+		}
+		eFieldScalar = SlangScalarToVertexFieldScalar(pxScalarSource->getScalarType());
+	}
+
+	// [VtxFmt("<fmt>")] overrides the STORAGE format; [PerInstance] moves the attribute
+	// to the instance-rate binding. Both survive compose+link (T0 probes V1/V4), and the
+	// string argument is length-delimited rather than null-terminated.
+	std::string strFormatOverride;
+	bool bHasFormatOverride = false;
+	bool bPerInstance       = false;
+	if (slang::VariableReflection* pxVariable = pxField->getVariable())
+	{
+		const u_int uAttributeCount = static_cast<u_int>(pxVariable->getUserAttributeCount());
+		for (u_int a = 0; a < uAttributeCount; a++)
+		{
+			slang::Attribute* pxAttr = pxVariable->getUserAttributeByIndex(a);
+			const char* szAttrName = pxAttr ? pxAttr->getName() : nullptr;
+			if (!szAttrName) continue;
+
+			if (std::string(szAttrName) == kszVertexFormatAttribute && pxAttr->getArgumentCount() > 0)
+			{
+				size_t ulLength = 0;
+				if (const char* szArgument = pxAttr->getArgumentValueString(0, &ulLength))
+				{
+					strFormatOverride.assign(szArgument, ulLength);
+					bHasFormatOverride = true;
+				}
+			}
+			else if (std::string(szAttrName) == kszPerInstanceAttribute)
+			{
+				bPerInstance = true;
+			}
+		}
+	}
+
+	if (bHasFormatOverride)
+	{
+		if (!Flux_ParseVertexFormatString(strFormatOverride.c_str(), xAttribute.m_eType))
+		{
+			strErrorOut = "Vertex input '" + xAttribute.m_strName + "' in " + szProgramContext +
+						  " carries an unknown [VtxFmt(\"" + strFormatOverride + "\")] storage format.";
+			return false;
+		}
+		if (!Flux_ValidateVertexFormatOverride(xAttribute.m_eType, eFieldScalar, uFieldLanes))
+		{
+			strErrorOut = "Vertex input '" + xAttribute.m_strName + "' in " + szProgramContext +
+						  ": [VtxFmt(\"" + strFormatOverride + "\")] cannot feed the declared field — the storage must "
+						  "carry at least as many lanes as the field and be the same fetch family (float/snorm/unorm/half "
+						  "vs int vs uint).";
+			return false;
+		}
+	}
+	else if (!Flux_InferVertexAttributeType(eFieldScalar, uFieldLanes, xAttribute.m_eType))
+	{
+		strErrorOut = "Vertex input '" + xAttribute.m_strName + "' in " + szProgramContext +
+					  " has no inferable vertex format (unsupported scalar kind or lane count); annotate it with [VtxFmt].";
+		return false;
+	}
+
+	xAttribute.m_uBinding = bPerInstance ? 1u : 0u;
+	xReflectionOut.AddVertexAttribute(xAttribute);
+	return true;
+}
+
+// Walk the linked program's VERTEX entry point into the reflection's vertex-input table
+// (compressed-vertex work — T2.a), then tight-pack the byte offsets/strides. The usual
+// authoring shape is a single VsIn struct parameter, so a struct parameter is flattened
+// to its fields — that is where per-field semantics and user attributes live — and
+// anything else is treated as a leaf (a bare `uint : SV_VertexID` parameter, which the
+// system-value test then drops). A compute-only program leaves the table empty.
+static bool ExtractVertexInputs(slang::ProgramLayout* pxLayout,
+								 const char* szProgramContext,
+								 Flux_ShaderReflection& xReflectionOut,
+								 std::string& strErrorOut)
+{
+	if (!pxLayout) return true;
+
+	const u_int uEntryPointCount = static_cast<u_int>(pxLayout->getEntryPointCount());
+	for (u_int ep = 0; ep < uEntryPointCount; ep++)
+	{
+		slang::EntryPointLayout* pxEntryPoint = pxLayout->getEntryPointByIndex(ep);
+		if (!pxEntryPoint || pxEntryPoint->getStage() != SLANG_STAGE_VERTEX) continue;
+
+		const u_int uParamCount = static_cast<u_int>(pxEntryPoint->getParameterCount());
+		for (u_int p = 0; p < uParamCount; p++)
+		{
+			slang::VariableLayoutReflection* pxParam = pxEntryPoint->getParameterByIndex(p);
+			if (!pxParam) continue;
+
+			slang::TypeLayoutReflection* pxTypeLayout = pxParam->getTypeLayout();
+			if (pxTypeLayout && pxTypeLayout->getKind() == slang::TypeReflection::Kind::Struct)
+			{
+				const u_int uFieldCount = static_cast<u_int>(pxTypeLayout->getFieldCount());
+				for (u_int f = 0; f < uFieldCount; f++)
+				{
+					if (!ExtractOneVertexInput(pxTypeLayout->getFieldByIndex(f), szProgramContext, xReflectionOut, strErrorOut))
+					{
+						return false;
+					}
+				}
+			}
+			else if (!ExtractOneVertexInput(pxParam, szProgramContext, xReflectionOut, strErrorOut))
+			{
+				return false;
+			}
+		}
+		break;   // a program declares at most one vertex entry point
+	}
+
+	xReflectionOut.ComputeVertexPacking();
+	return true;
+}
+
 // One found entry point in a Slang module: the live IEntryPoint, the stage
 // it targets, and the source name used to resolve it.
 struct Flux_SlangEntryPointBinding
@@ -1061,26 +1510,216 @@ bool Flux_SlangCompiler::CompileProgram(const Flux_SlangProgramDesc& xDesc, Flux
 	// every program until Stage 3b adds the first [SpecializationConstant] decls.
 	ExtractSpecConstants(pxReflection, xResultOut.m_xReflection);
 
+	// T2.a: capture the VERTEX entry point's input table (serialized in the v6 sidecar).
+	// A malformed vertex input FAILS THE COMPILE — the table describes the byte layout an
+	// exporter will write, so guessing past an untypeable field would bake a wrong stride.
+	{
+		std::string strContext = "program module '" + std::string(xDesc.m_szModuleName) + "'";
+		if (xDesc.m_szVertexEntry && xDesc.m_szVertexEntry[0])
+		{
+			strContext += " entry '" + std::string(xDesc.m_szVertexEntry) + "'";
+		}
+		if (!ExtractVertexInputs(pxReflection, strContext.c_str(), xResultOut.m_xReflection, xResultOut.m_strError))
+		{
+			return false;
+		}
+	}
+
 	xResultOut.m_bSuccess = true;
 	return true;
 }
 
 // ---------------------------------------------------------------------------
-// Stage-0 capability probe (see Flux_SlangProbes.Tests.inl). Deliberately mirrors
-// CompileProgram's session/compose/link/emit path but takes an in-memory source
+// Stage-0 capability probes (see Flux_SlangProbes.Tests.inl). Deliberately mirror
+// CompileProgram's session/compose/link/emit path but take an in-memory source
 // string (loadModuleFromSourceString) so a test can compile a crafted snippet and
 // inspect accept/reject + reflection + SPIR-V without touching the shader tree.
 // ---------------------------------------------------------------------------
-bool Flux_SlangCompiler::CompileProbeFromSource(const char* szSource, const char* szComputeEntry, Flux_SlangProbeResult& xOut,
-												bool bEmitDebugInfo)
+
+// Index of szEntry within a linked program's layout, 0 when it cannot be matched.
+static u_int FindProbeEntryPointIndex(slang::ProgramLayout* pxReflection, const char* szEntry)
+{
+	if (!pxReflection || !szEntry) return 0;
+	const u_int uCount = static_cast<u_int>(pxReflection->getEntryPointCount());
+	for (u_int e = 0; e < uCount; e++)
+	{
+		slang::EntryPointReflection* pxEntry = pxReflection->getEntryPointByIndex(e);
+		const char* szName = pxEntry ? pxEntry->getName() : nullptr;
+		if (szName && std::string(szName) == szEntry) return e;
+	}
+	return 0;
+}
+
+static const char* ProbeScalarTypeName(slang::TypeReflection::ScalarType eType)
+{
+	switch (eType)
+	{
+	case slang::TypeReflection::ScalarType::Void:    return "void";
+	case slang::TypeReflection::ScalarType::Bool:    return "bool";
+	case slang::TypeReflection::ScalarType::Int8:    return "int8";
+	case slang::TypeReflection::ScalarType::UInt8:   return "uint8";
+	case slang::TypeReflection::ScalarType::Int16:   return "int16";
+	case slang::TypeReflection::ScalarType::UInt16:  return "uint16";
+	case slang::TypeReflection::ScalarType::Int32:   return "int32";
+	case slang::TypeReflection::ScalarType::UInt32:  return "uint32";
+	case slang::TypeReflection::ScalarType::Int64:   return "int64";
+	case slang::TypeReflection::ScalarType::UInt64:  return "uint64";
+	case slang::TypeReflection::ScalarType::Float16: return "float16";
+	case slang::TypeReflection::ScalarType::Float32: return "float32";
+	case slang::TypeReflection::ScalarType::Float64: return "float64";
+	default:                                         return "none";
+	}
+}
+
+static const char* ProbeTypeKindName(slang::TypeReflection::Kind eKind)
+{
+	switch (eKind)
+	{
+	case slang::TypeReflection::Kind::Scalar: return "scalar";
+	case slang::TypeReflection::Kind::Vector: return "vector";
+	case slang::TypeReflection::Kind::Matrix: return "matrix";
+	case slang::TypeReflection::Kind::Struct: return "struct";
+	case slang::TypeReflection::Kind::Array:  return "array";
+	default:                                  return "other";
+	}
+}
+
+// Read a field's user attributes off the LINKED reflection. Slang reports each under the
+// declared name minus its "Attribute" suffix ([VtxFmt("half4")] declares VtxFmtAttribute), and
+// each name is fed straight back through findAttributeByName so the by-name lookup a generator
+// would actually use is proven against the same linked program, not just the enumeration.
+static void CaptureProbeFieldAttributes(slang::VariableReflection* pxVar,
+										 Flux_SlangProbeResult::VertexInputField& xFieldOut)
+{
+	if (!pxVar) return;
+	const u_int uCount = static_cast<u_int>(pxVar->getUserAttributeCount());
+	for (u_int a = 0; a < uCount; a++)
+	{
+		slang::Attribute* pxAttr = pxVar->getUserAttributeByIndex(a);
+		if (!pxAttr) continue;
+
+		Flux_SlangProbeResult::VertexAttribute xAttrib;
+		xAttrib.m_strName = pxAttr->getName() ? pxAttr->getName() : "";
+		if (pxAttr->getArgumentCount() > 0)
+		{
+			size_t ulLen = 0;
+			if (const char* szArg = pxAttr->getArgumentValueString(0, &ulLen))
+			{
+				xAttrib.m_strArg0.assign(szArg, ulLen);
+				xAttrib.m_bHasArg0 = true;
+			}
+		}
+		if (!xAttrib.m_strName.empty())
+		{
+			xAttrib.m_bFoundByName =
+				pxVar->findAttributeByName(s_pxGlobalSession.get(), xAttrib.m_strName.c_str()) != nullptr;
+		}
+		xFieldOut.m_axAttributes.PushBack(xAttrib);
+	}
+}
+
+// Capture one vertex-input leaf — a VsIn field, or a bare entry-point parameter. Varying
+// offsets are read in the VERTEX_INPUT category (an alias of VARYING_INPUT) and are relative
+// to the containing struct, which for a single-parameter vertex entry starts at location 0.
+static void CaptureProbeVertexField(slang::VariableLayoutReflection* pxField, Flux_SlangProbeResult& xOut)
+{
+	if (!pxField) return;
+
+	Flux_SlangProbeResult::VertexInputField xField;
+	xField.m_strName = pxField->getName() ? pxField->getName() : "";
+	if (const char* szSemantic = pxField->getSemanticName())
+	{
+		xField.m_strSemanticName = szSemantic;
+		xField.m_bSemanticIsSV   = xField.m_strSemanticName.rfind("SV_", 0) == 0;
+	}
+	xField.m_uSemanticIndex = static_cast<u_int>(pxField->getSemanticIndex());
+
+	xField.m_uCategoryCount = static_cast<u_int>(pxField->getCategoryCount());
+	for (u_int c = 0; c < xField.m_uCategoryCount; c++)
+	{
+		if (pxField->getCategoryByIndex(c) == slang::ParameterCategory::VaryingInput)
+		{
+			xField.m_bHasVaryingInput = true;
+			xField.m_uVaryingLocation = static_cast<u_int>(pxField->getOffset(SLANG_PARAMETER_CATEGORY_VERTEX_INPUT));
+			break;
+		}
+	}
+
+	slang::TypeLayoutReflection* pxTypeLayout = pxField->getTypeLayout();
+	slang::TypeReflection* pxType = pxTypeLayout ? pxTypeLayout->getType() : nullptr;
+	if (pxType)
+	{
+		xField.m_strTypeKind  = ProbeTypeKindName(pxType->getKind());
+		xField.m_uRowCount    = static_cast<u_int>(pxType->getRowCount());
+		xField.m_uColumnCount = static_cast<u_int>(pxType->getColumnCount());
+
+		// A vector answers its lane count and defers the scalar kind to its element type;
+		// a scalar answers directly. Both are what format inference keys on.
+		slang::TypeReflection* pxScalarSource = pxType;
+		if (pxType->getKind() == slang::TypeReflection::Kind::Vector)
+		{
+			xField.m_uElementCount = static_cast<u_int>(pxType->getElementCount());
+			if (slang::TypeReflection* pxElement = pxType->getElementType()) pxScalarSource = pxElement;
+		}
+		else
+		{
+			xField.m_uElementCount = 1;
+		}
+		xField.m_strScalarType = ProbeScalarTypeName(pxScalarSource->getScalarType());
+	}
+
+	CaptureProbeFieldAttributes(pxField->getVariable(), xField);
+	xOut.m_axVertexInputs.PushBack(xField);
+}
+
+// Walk a linked vertex entry point's parameters into xOut.m_axVertexInputs. The usual authoring
+// shape is a single VsIn struct parameter, so a struct is flattened to its fields — that is where
+// the per-field semantics and user attributes live — and anything else is captured as a leaf.
+static void CaptureProbeVertexInputs(slang::ProgramLayout* pxReflection, u_int uEntryIndex, Flux_SlangProbeResult& xOut)
+{
+	if (!pxReflection) return;
+	slang::EntryPointReflection* pxEntry = pxReflection->getEntryPointByIndex(uEntryIndex);
+	if (!pxEntry) return;
+
+	const u_int uParamCount = static_cast<u_int>(pxEntry->getParameterCount());
+	for (u_int p = 0; p < uParamCount; p++)
+	{
+		slang::VariableLayoutReflection* pxParam = pxEntry->getParameterByIndex(p);
+		if (!pxParam) continue;
+
+		slang::TypeLayoutReflection* pxTypeLayout = pxParam->getTypeLayout();
+		if (pxTypeLayout && pxTypeLayout->getKind() == slang::TypeReflection::Kind::Struct)
+		{
+			const u_int uFieldCount = static_cast<u_int>(pxTypeLayout->getFieldCount());
+			for (u_int f = 0; f < uFieldCount; f++) CaptureProbeVertexField(pxTypeLayout->getFieldByIndex(f), xOut);
+		}
+		else
+		{
+			CaptureProbeVertexField(pxParam, xOut);
+		}
+	}
+}
+
+// Shared front-end + compose/link/emit behind both probe entry points. On success with an
+// entry point requested, pxLinkedOut holds the linked component — which OWNS every reflection
+// pointer the callers then walk, so it must outlive them — pxReflectionOut its layout, and
+// uEntryIndexOut the requested entry's index within that layout. With no entry point requested
+// the front-end accept is the whole answer and both pointers stay null.
+static bool RunProbeCompile(const char* szSource, const char* szEntry, bool bEmitDebugInfo,
+							 Flux_SlangProbeResult& xOut,
+							 Slang::ComPtr<slang::IComponentType>& pxLinkedOut,
+							 slang::ProgramLayout*& pxReflectionOut,
+							 u_int& uEntryIndexOut)
 {
 	xOut = Flux_SlangProbeResult{};
+	pxReflectionOut = nullptr;
+	uEntryIndexOut  = 0;
 
 	if (!s_pxGlobalSession)
 	{
 		// Unit tests run before Flux initialises Slang — bring the global session up lazily.
 		// Initialise() is idempotent, so a later engine init is a no-op on the same session.
-		Initialise();
+		Flux_SlangCompiler::Initialise();
 	}
 	if (!s_pxGlobalSession)
 	{
@@ -1120,17 +1759,17 @@ bool Flux_SlangCompiler::CompileProbeFromSource(const char* szSource, const char
 	}
 
 	// No entry point requested → the front-end accept is the whole answer.
-	if (!szComputeEntry || !szComputeEntry[0])
+	if (!szEntry || !szEntry[0])
 	{
 		xOut.m_bCompiled = true;
 		return true;
 	}
 
-	// Back-end: compose + link the compute entry, then emit its SPIR-V + reflection.
+	// Back-end: compose + link the requested entry, then emit its SPIR-V + reflection.
 	Slang::ComPtr<slang::IEntryPoint> pxEntry;
-	if (SLANG_FAILED(pxModule->findEntryPointByName(szComputeEntry, pxEntry.writeRef())) || !pxEntry)
+	if (SLANG_FAILED(pxModule->findEntryPointByName(szEntry, pxEntry.writeRef())) || !pxEntry)
 	{
-		xOut.m_strDiagnostics += "\nentry point '" + std::string(szComputeEntry) + "' not found";
+		xOut.m_strDiagnostics += "\nentry point '" + std::string(szEntry) + "' not found";
 		xOut.m_bCompiled = false;
 		return false;
 	}
@@ -1146,9 +1785,8 @@ bool Flux_SlangCompiler::CompileProbeFromSource(const char* szSource, const char
 		return false;
 	}
 
-	Slang::ComPtr<slang::IComponentType> pxLinked;
 	Slang::ComPtr<slang::IBlob> pxLinkDiag;
-	if (SLANG_FAILED(pxComposed->link(pxLinked.writeRef(), pxLinkDiag.writeRef())) || !pxLinked)
+	if (SLANG_FAILED(pxComposed->link(pxLinkedOut.writeRef(), pxLinkDiag.writeRef())) || !pxLinkedOut)
 	{
 		if (pxLinkDiag && pxLinkDiag->getBufferSize() > 0)
 			xOut.m_strDiagnostics.append(static_cast<const char*>(pxLinkDiag->getBufferPointer()), pxLinkDiag->getBufferSize());
@@ -1156,9 +1794,14 @@ bool Flux_SlangCompiler::CompileProbeFromSource(const char* szSource, const char
 		return false;
 	}
 
+	// The composite is exactly {module, requested entry}, so the layout carries the one entry —
+	// resolve its index by name anyway so codegen and the reflection walk can never disagree.
+	slang::ProgramLayout* pxReflection = pxLinkedOut->getLayout(0);
+	uEntryIndexOut = FindProbeEntryPointIndex(pxReflection, szEntry);
+
 	Slang::ComPtr<slang::IBlob> pxCode;
 	Slang::ComPtr<slang::IBlob> pxCodeDiag;
-	if (SLANG_FAILED(pxLinked->getEntryPointCode(0, 0, pxCode.writeRef(), pxCodeDiag.writeRef())) || !pxCode)
+	if (SLANG_FAILED(pxLinkedOut->getEntryPointCode(uEntryIndexOut, 0, pxCode.writeRef(), pxCodeDiag.writeRef())) || !pxCode)
 	{
 		if (pxCodeDiag && pxCodeDiag->getBufferSize() > 0)
 			xOut.m_strDiagnostics.append(static_cast<const char*>(pxCodeDiag->getBufferPointer()), pxCodeDiag->getBufferSize());
@@ -1176,10 +1819,25 @@ bool Flux_SlangCompiler::CompileProbeFromSource(const char* szSource, const char
 	// byte-identical under visibility changes; note it DROPS spec constants from the binding table,
 	// which E4 relies on). Stage 3a: ExtractSpecConstants then captures them into the reflection's
 	// dedicated spec table (parity with CompileProgram) so unit tests can exercise the real path.
-	slang::ProgramLayout* pxReflection = pxLinked->getLayout(0);
 	ExtractV2Reflection(pxReflection, xOut.m_xReflection);
 	ExtractSpecConstants(pxReflection, xOut.m_xReflection);
 	xOut.m_bHasReflection = true;
+	pxReflectionOut       = pxReflection;
+
+	xOut.m_bCompiled = true;
+	return true;
+}
+
+bool Flux_SlangCompiler::CompileProbeFromSource(const char* szSource, const char* szComputeEntry, Flux_SlangProbeResult& xOut,
+												bool bEmitDebugInfo)
+{
+	Slang::ComPtr<slang::IComponentType> pxLinked;   // owns every reflection pointer walked below
+	slang::ProgramLayout* pxReflection = nullptr;
+	u_int uEntryIndex = 0;
+	if (!RunProbeCompile(szSource, szComputeEntry, bEmitDebugInfo, xOut, pxLinked, pxReflection, uEntryIndex))
+	{
+		return false;
+	}
 
 	// Raw spec-constant capture (E4): walk the program-layout parameters for the
 	// SpecializationConstant category — the extraction path D5 will formalise.
@@ -1222,7 +1880,31 @@ bool Flux_SlangCompiler::CompileProbeFromSource(const char* szSource, const char
 		}
 	}
 
-	xOut.m_bCompiled = true;
+	return true;
+}
+
+bool Flux_SlangCompiler::CompileVertexProbeFromSource(const char* szSource, const char* szVertexEntry, Flux_SlangProbeResult& xOut,
+													   bool bEmitDebugInfo)
+{
+	Slang::ComPtr<slang::IComponentType> pxLinked;   // owns every reflection pointer walked below
+	slang::ProgramLayout* pxReflection = nullptr;
+	u_int uEntryIndex = 0;
+	if (!RunProbeCompile(szSource, szVertexEntry, bEmitDebugInfo, xOut, pxLinked, pxReflection, uEntryIndex))
+	{
+		return false;
+	}
+
+	CaptureProbeVertexInputs(pxReflection, uEntryIndex, xOut);
+
+	// T2.a: additionally run the PRODUCTION extractor over the same linked program, so a
+	// probe test can assert on the real inference/validation/packing path (xOut.m_xReflection's
+	// vertex table) rather than only on the raw capture above. A rejected field is surfaced
+	// as a diagnostic — the probe never asserts, and m_bCompiled still describes the COMPILE.
+	std::string strVertexError;
+	if (!ExtractVertexInputs(pxReflection, "vertex probe", xOut.m_xReflection, strVertexError))
+	{
+		xOut.m_strDiagnostics += "\n" + strVertexError;
+	}
 	return true;
 }
 #endif // ZENITH_WINDOWS

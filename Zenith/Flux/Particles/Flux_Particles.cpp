@@ -46,21 +46,15 @@ void Flux_ParticlesImpl::BuildPipelines()
 {
 	m_xShader.Initialise(Flux_ParticlesShaders::xParticles);
 
-	Flux_VertexInputDescription xVertexDesc;
-	xVertexDesc.m_eTopology = MESH_TOPOLOGY_TRIANGLES;
-	xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT3);
-	xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT2);
-	xVertexDesc.m_xPerVertexLayout.CalculateOffsetsAndStrides();
-	// Instance data: position+size (float4), color (float4)
-	xVertexDesc.m_xPerInstanceLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT4);
-	xVertexDesc.m_xPerInstanceLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT4);
-	xVertexDesc.m_xPerInstanceLayout.CalculateOffsetsAndStrides();
-
 	Flux_PipelineSpecification xPipelineSpec;
 	xPipelineSpec.m_aeColourAttachmentFormats[0] = HDR_SCENE_FORMAT;
 	xPipelineSpec.m_uNumColourAttachments = 1;
 	xPipelineSpec.m_pxShader = &m_xShader;
-	xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
+	// Binding 0 = the shared unit quad (20 B), binding 1 = Flux_ParticleInstance (32 B).
+	// The split comes from the [PerInstance] tags in Flux_Particles.slang; the offsets
+	// and strides are pinned against the struct in Flux_ParticleData.h.
+	xPipelineSpec.m_eTopology = MESH_TOPOLOGY_TRIANGLES;
+	xPipelineSpec.m_pxVertexLayout = &Flux_Generated_Particles::Particles::kVertexLayout;
 
 	m_xShader.GetReflection().PopulateLayout(xPipelineSpec.m_xPipelineLayout);
 

@@ -6,9 +6,39 @@
 #include "Flux/Flux_Buffers.h"
 #include "Maths/Zenith_Maths.h"
 #include "Collections/Zenith_Vector.h"
+#include "Flux/Shaders/Generated/Gizmos.h"   // the baked vertex layout the pins below compare against
+
+#include <cstddef>   // offsetof
 
 class Flux_RenderGraph;
 class Zenith_Entity;
+
+// One gizmo vertex, 24 bytes. This used to be an untyped run of six floats pushed
+// into a Zenith_Vector<float> by InterleaveVertexData — which meant the ONLY thing
+// tying the writer to the fetched layout was the reader's memory of the ordering.
+// A struct gives the pins below something to be about: they compare it against the
+// layout the Gizmos VS actually declares, so re-ordering either side fails the build.
+struct Flux_GizmoVertex
+{
+	Zenith_Maths::Vector3 m_xPosition;
+	Zenith_Maths::Vector3 m_xColour;
+};
+static_assert(sizeof(Flux_GizmoVertex) == Flux_Generated_Gizmos::Gizmos::kVertexLayout.m_auStrides[0],
+	"Flux_GizmoVertex must match the stride the Gizmos VS fetches");
+static_assert(offsetof(Flux_GizmoVertex, m_xPosition) == Flux_Generated_Gizmos::Gizmos::kaxVertexAttribs[0].m_uOffset,
+	"Flux_GizmoVertex.m_xPosition must sit at the generated POSITION offset");
+static_assert(offsetof(Flux_GizmoVertex, m_xColour) == Flux_Generated_Gizmos::Gizmos::kaxVertexAttribs[1].m_uOffset,
+	"Flux_GizmoVertex.m_xColour must sit at the generated COLOR offset");
+
+// Full-table pin: both lanes are float3 at 0/12, so a shader-side POSITION/COLOR
+// swap preserves the offsets above — only semantics can see it.
+inline constexpr Flux_VertexLayoutElement kaxFLUX_GIZMO_EXPECTED_LAYOUT[] =
+{
+	{ FLUX_VERTEX_SEMANTIC_POSITION, 0u, SHADER_DATA_TYPE_FLOAT3, 0u,  0u },
+	{ FLUX_VERTEX_SEMANTIC_COLOR,    0u, SHADER_DATA_TYPE_FLOAT3, 0u, 12u },
+};
+static_assert(Flux_Generated_Gizmos::Gizmos::kVertexLayout == Flux_VertexLayoutDesc{ kaxFLUX_GIZMO_EXPECTED_LAYOUT, 2u, { 24u, 0u } },
+	"The Gizmos program's vertex layout drifted from the pinned contract — re-derive the expected table consciously if the VsIn really changed");
 
 enum class GizmoComponent
 {
@@ -102,8 +132,8 @@ public:
 	// accessor, so this header names no EntityComponent type.
 	Zenith_Entity* GetGizmoTargetWithTransform();
 
-	void InterleaveVertexData(Zenith_Vector<float>& xOut, const Zenith_Vector<Zenith_Maths::Vector3>& xPositions, const Zenith_Vector<Zenith_Maths::Vector3>& xColors);
-	void UploadGizmoGeometry(Zenith_Vector<GizmoGeometry>& xGeometryList, const Zenith_Vector<float>& xVertexData, const Zenith_Vector<uint32_t>& xIndices, const Zenith_Maths::Vector3& xColor, GizmoComponent eComponent);
+	void InterleaveVertexData(Zenith_Vector<Flux_GizmoVertex>& xOut, const Zenith_Vector<Zenith_Maths::Vector3>& xPositions, const Zenith_Vector<Zenith_Maths::Vector3>& xColors);
+	void UploadGizmoGeometry(Zenith_Vector<GizmoGeometry>& xGeometryList, const Zenith_Vector<Flux_GizmoVertex>& xVertexData, const Zenith_Vector<uint32_t>& xIndices, const Zenith_Maths::Vector3& xColor, GizmoComponent eComponent);
 
 	bool GetLineLineClosestPointParameter(const Zenith_Maths::Vector3& xAxisOrigin, const Zenith_Maths::Vector3& xAxis, const Zenith_Maths::Vector3& xRayOrigin, const Zenith_Maths::Vector3& xRayDir, float& fOutT);
 	void ComputeTangentFrame(const Zenith_Maths::Vector3& xAxis, Zenith_Maths::Vector3& xOutTangent, Zenith_Maths::Vector3& xOutBitangent);

@@ -23,6 +23,19 @@
 #include "Flux/Flux_MaterialTable.h"   // Phase 4c: terrain registers its 4 layer materials into the GPU table
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Flux/Shaders/Generated/Terrain.h"
+#include "Flux/Shaders/Generated/Water.h"   // the Water program's baked vertex layout (Terrain owns it)
+
+// Phase-2 pin: Water's grid fetches pos+uv at the hand-era 20 B stride (the
+// Phase-5 terrain flip re-pins it consciously). Full table, semantics included.
+// Terrain's own 28 B layout is pinned element-by-element against
+// Zenith_TerrainChunkLayout::axELEMENTS in Flux_TerrainStreamingManager.cpp.
+static constexpr Flux_VertexLayoutElement kaxWATER_EXPECTED_LAYOUT[] =
+{
+	{ FLUX_VERTEX_SEMANTIC_POSITION, 0u, SHADER_DATA_TYPE_FLOAT3, 0u,  0u },
+	{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 0u, SHADER_DATA_TYPE_FLOAT2, 0u, 12u },
+};
+static_assert(Flux_Generated_Water::Water::kVertexLayout == Flux_VertexLayoutDesc{ kaxWATER_EXPECTED_LAYOUT, 2u, { 20u, 0u } },
+	"Water vertex layout must stay the hand-era 20 B contract until the Phase-5 terrain flip re-pins it");
 
 // Phase 7h: subsystem state moved to Flux_TerrainImpl held by Zenith_Engine.
 
@@ -117,13 +130,13 @@ void Flux_TerrainImpl::BuildPipelines()
 	m_xTerrainGBufferShader.Initialise(Flux_TerrainShaders::xTerrain_ToGBuffer);
 	m_xTerrainShadowShader.Initialise(Flux_TerrainShaders::xTerrain_ToShadowmap);
 
-	Flux_VertexInputDescription xVertexDesc;
-	xVertexDesc.m_eTopology = MESH_TOPOLOGY_TRIANGLES;
-	xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT3);           // Position (12 bytes)
-	xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT2);             // UV (8 bytes — FLOAT2 not HALF2: HALF mantissa is too small for heightmap-pixel-scale UVs above 2048, which collapses adjacent vertex UVs and shows up as a vertex-spacing-period strip pattern in the diffuse)
-	xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_SNORM10_10_10_2);   // Normal (4 bytes)
-	xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_SNORM10_10_10_2);   // Tangent + BitangentSign (4 bytes)
-	xVertexDesc.m_xPerVertexLayout.CalculateOffsetsAndStrides();
+	// The three Terrain programs share one 28-byte VsIn: position (12) / UV (8) /
+	// packed normal (4) / packed tangent+bitangent-sign (4). It is frozen against the
+	// on-disk baked-chunk contract by the static_assert beside Zenith_TerrainChunkLayout
+	// in Flux_TerrainStreamingManager.cpp. The UV is FLOAT2 and not HALF2 on purpose:
+	// a half mantissa is too small for heightmap-pixel-scale UVs above 2048, which
+	// collapses adjacent vertex UVs into a vertex-spacing-period strip pattern in the
+	// diffuse.
 
 	{
 
@@ -135,7 +148,8 @@ void Flux_TerrainImpl::BuildPipelines()
 		xPipelineSpec.m_uNumColourAttachments = uFLUX_MRT_CORE_COUNT;   // base terrain G-buffer pipeline (4 MRTs); the velocity variant (5 MRTs) is built separately
 		xPipelineSpec.m_eDepthStencilFormat = DEPTH_FORMAT;
 		xPipelineSpec.m_pxShader = &m_xTerrainGBufferShader;
-		xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
+		xPipelineSpec.m_eTopology = MESH_TOPOLOGY_TRIANGLES;
+		xPipelineSpec.m_pxVertexLayout = &Flux_Generated_Terrain::Terrain_ToGBuffer::kVertexLayout;
 
 		m_xTerrainGBufferShader.GetReflection().PopulateLayout(xPipelineSpec.m_xPipelineLayout);
 
@@ -167,7 +181,8 @@ void Flux_TerrainImpl::BuildPipelines()
 		xVelocitySpec.m_uNumColourAttachments = MRT_INDEX_COUNT;   // 5
 		xVelocitySpec.m_eDepthStencilFormat = DEPTH_FORMAT;
 		xVelocitySpec.m_pxShader = &m_xTerrainGBufferVelocityShader;
-		xVelocitySpec.m_xVertexInputDesc = xVertexDesc;
+		xVelocitySpec.m_eTopology = MESH_TOPOLOGY_TRIANGLES;
+		xVelocitySpec.m_pxVertexLayout = &Flux_Generated_Terrain::Terrain_ToGBufferVelocity::kVertexLayout;
 
 		m_xTerrainGBufferVelocityShader.GetReflection().PopulateLayout(xVelocitySpec.m_xPipelineLayout);
 
@@ -200,7 +215,8 @@ void Flux_TerrainImpl::BuildPipelines()
 		xShadowPipelineSpec.m_eDepthStencilFormat = CSM_FORMAT;
 		xShadowPipelineSpec.m_uNumColourAttachments = 0;
 		xShadowPipelineSpec.m_pxShader = &m_xTerrainShadowShader;
-		xShadowPipelineSpec.m_xVertexInputDesc = xVertexDesc;
+		xShadowPipelineSpec.m_eTopology = MESH_TOPOLOGY_TRIANGLES;
+		xShadowPipelineSpec.m_pxVertexLayout = &Flux_Generated_Terrain::Terrain_ToShadowmap::kVertexLayout;
 
 		m_xTerrainShadowShader.GetReflection().PopulateLayout(xShadowPipelineSpec.m_xPipelineLayout);
 
@@ -222,18 +238,14 @@ void Flux_TerrainImpl::BuildPipelines()
 	{
 		m_xWaterShader.Initialise(Flux_TerrainShaders::xWater);
 
-		Flux_VertexInputDescription xWaterVertexDesc;
-		xWaterVertexDesc.m_eTopology = MESH_TOPOLOGY_TRIANGLES;
-		xWaterVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT3);
-		xWaterVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT2);
-		xWaterVertexDesc.m_xPerVertexLayout.CalculateOffsetsAndStrides();
-
 		Flux_PipelineSpecification xPipelineSpec;
 		xPipelineSpec.m_aeColourAttachmentFormats[0] = FINAL_RT_FORMAT;
 		xPipelineSpec.m_uNumColourAttachments = 1;
 		xPipelineSpec.m_eDepthStencilFormat = DEPTH_FORMAT;
 		xPipelineSpec.m_pxShader = &m_xWaterShader;
-		xPipelineSpec.m_xVertexInputDesc = xWaterVertexDesc;
+		// Water is its own, much simpler stream: position + UV only (20 bytes).
+		xPipelineSpec.m_eTopology = MESH_TOPOLOGY_TRIANGLES;
+		xPipelineSpec.m_pxVertexLayout = &Flux_Generated_Water::Water::kVertexLayout;
 
 		m_xWaterShader.GetReflection().PopulateLayout(xPipelineSpec.m_xPipelineLayout);
 

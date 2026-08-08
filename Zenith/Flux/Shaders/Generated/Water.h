@@ -8,6 +8,7 @@
 #pragma once
 
 #include "Flux/Slang/Flux_SlangCompiler.h"
+#include "Flux/Flux_VertexLayoutDesc.h"
 #include "glm/glm.hpp"
 #include <cstddef>
 
@@ -83,6 +84,13 @@ namespace Flux_Generated_Water
 		inline constexpr Flux_BindingHandle hg_axTextures{ 2u, 0u, FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY, 0u };
 		// kind: CombinedTextureSampler
 		inline constexpr Flux_BindingHandle hg_xNormalTex{ 3u, 0u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// vertex inputs: { semantic, semantic index, STORAGE format, binding, byte offset }
+		inline constexpr Flux_VertexLayoutElement kaxVertexAttribs[] =
+		{
+			{ FLUX_VERTEX_SEMANTIC_POSITION, 0u, SHADER_DATA_TYPE_FLOAT3, 0u, 0u },   // a_xPosition
+			{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 0u, SHADER_DATA_TYPE_FLOAT2, 0u, 12u },   // a_xUV
+		};
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ kaxVertexAttribs, 2u, { 20u, 0u } };
 	}
 
 }

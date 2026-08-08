@@ -8,6 +8,7 @@
 #pragma once
 
 #include "Flux/Slang/Flux_SlangCompiler.h"
+#include "Flux/Flux_VertexLayoutDesc.h"
 #include "glm/glm.hpp"
 #include <cstddef>
 
@@ -85,6 +86,8 @@ namespace Flux_Generated_Vegetation
 		inline constexpr Flux_BindingHandle hIndirectArgs{ 3u, 0u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
 		// kind: RWStructuredBuffer
 		inline constexpr Flux_BindingHandle hBladeCounter{ 3u, 1u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
+		// vertex inputs: none
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ nullptr, 0u, { 0u, 0u } };
 	}
 
 	// ----- Grass_Placement (Vegetation/Flux_Grass_Placement) -----
@@ -150,6 +153,8 @@ namespace Flux_Generated_Vegetation
 		inline constexpr Flux_BindingHandle hVisibleIndices{ 3u, 9u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
 		// kind: RWStructuredBuffer
 		inline constexpr Flux_BindingHandle hIndirectArgs{ 3u, 10u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
+		// vertex inputs: none
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ nullptr, 0u, { 0u, 0u } };
 	}
 
 	// ----- Grass_IndirectFixup (Vegetation/Flux_Grass_IndirectFixup) -----
@@ -181,6 +186,8 @@ namespace Flux_Generated_Vegetation
 		inline constexpr Flux_BindingHandle hg_axTextures{ 2u, 0u, FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY, 0u };
 		// kind: RWStructuredBuffer
 		inline constexpr Flux_BindingHandle hIndirectArgs{ 3u, 0u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
+		// vertex inputs: none
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ nullptr, 0u, { 0u, 0u } };
 	}
 
 	// ----- Grass_Displacement (Vegetation/Flux_Grass_Displacement) -----
@@ -226,6 +233,8 @@ namespace Flux_Generated_Vegetation
 		inline constexpr Flux_BindingHandle hg_xPrevDisplacementTex{ 3u, 2u, FLUX_RESOURCE_KIND_RW_TEXTURE, 1u };
 		// kind: RWTexture
 		inline constexpr Flux_BindingHandle hg_xNextDisplacementTex{ 3u, 3u, FLUX_RESOURCE_KIND_RW_TEXTURE, 1u };
+		// vertex inputs: none
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ nullptr, 0u, { 0u, 0u } };
 	}
 
 	// ----- Grass_ToGBuffer (Vegetation/Flux_Grass_ToGBuffer) -----
@@ -271,6 +280,8 @@ namespace Flux_Generated_Vegetation
 		inline constexpr Flux_BindingHandle hVisibleIndices{ 3u, 2u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
 		// kind: StructuredBuffer
 		inline constexpr Flux_BindingHandle hTypeParams{ 3u, 3u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// vertex inputs: none
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ nullptr, 0u, { 0u, 0u } };
 	}
 
 	// ----- Grass_ToGBufferVelocity (Vegetation/Flux_Grass_ToGBufferVelocity) -----
@@ -325,6 +336,8 @@ namespace Flux_Generated_Vegetation
 		inline constexpr Flux_BindingHandle hVisibleIndices{ 3u, 3u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
 		// kind: StructuredBuffer
 		inline constexpr Flux_BindingHandle hTypeParams{ 3u, 4u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// vertex inputs: none
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ nullptr, 0u, { 0u, 0u } };
 	}
 
 	// ----- Grass_ToShadowmap (Vegetation/Flux_Grass_ToShadowmap) -----
@@ -370,6 +383,8 @@ namespace Flux_Generated_Vegetation
 		inline constexpr Flux_BindingHandle hVisibleIndices{ 3u, 2u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
 		// kind: StructuredBuffer
 		inline constexpr Flux_BindingHandle hTypeParams{ 3u, 3u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// vertex inputs: none
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ nullptr, 0u, { 0u, 0u } };
 	}
 
 }

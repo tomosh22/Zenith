@@ -17,18 +17,23 @@
 // outputs, the velocity encode, and the GBufferVelocityOut return type.
 // =====================================================================
 
-#include "Common/Bindings.slang"   // spine: GLOBAL/VIEW/BINDLESS at sets 0/1/2
+#include "Common/Bindings.slang"       // spine: GLOBAL/VIEW/BINDLESS at sets 0/1/2
+#include "Common/VertexFormats.slang"  // [VtxFmt] / [PerInstance] authoring attributes
 import Common.Material;
 import Common.MaterialTable;
 import Common.GBuffer;
 import Common.Velocity;            // GBufferVelocityOut + Flux_EncodeVelocityUV + MakeGBufferVelocity
 
+// Mirrors Flux_Terrain_ToGBuffer's VsIn exactly, [VtxFmt] tags included — this file is
+// a hand-maintained copy of that shader, and a layout that drifted between the two
+// would give the same terrain buffer two different strides depending on whether the
+// TAA velocity latch is on.
 struct VsIn
 {
 	float3 a_xPosition       : POSITION;
 	float2 a_xUV             : TEXCOORD0;
-	float4 a_xNormalPacked   : NORMAL;
-	float4 a_xTangentPacked  : TANGENT;
+	[VtxFmt("snorm10_10_10_2")] float4 a_xNormalPacked   : NORMAL;
+	[VtxFmt("snorm10_10_10_2")] float4 a_xTangentPacked  : TANGENT;
 };
 
 struct VsOut

@@ -8,6 +8,7 @@
 #pragma once
 
 #include "Flux/Slang/Flux_SlangCompiler.h"
+#include "Flux/Flux_VertexLayoutDesc.h"
 #include "glm/glm.hpp"
 #include <cstddef>
 
@@ -83,6 +84,8 @@ namespace Flux_Generated_Decals
 		inline constexpr Flux_BindingHandle hg_axTextures{ 2u, 0u, FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY, 0u };
 		// kind: CombinedTextureSampler
 		inline constexpr Flux_BindingHandle hg_xNormalsTex{ 3u, 0u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// vertex inputs: none
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ nullptr, 0u, { 0u, 0u } };
 	}
 
 	// ----- Decals_Apply (Decals/Flux_Decals_Apply) -----
@@ -118,6 +121,8 @@ namespace Flux_Generated_Decals
 		inline constexpr Flux_BindingHandle hg_xNormalsCopyTex{ 3u, 1u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 		// kind: StructuredBuffer
 		inline constexpr Flux_BindingHandle hDecalBuffer{ 3u, 2u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// vertex inputs: none
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ nullptr, 0u, { 0u, 0u } };
 	}
 
 }

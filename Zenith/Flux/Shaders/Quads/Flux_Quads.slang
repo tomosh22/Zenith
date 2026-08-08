@@ -16,18 +16,24 @@
 // =====================================================================
 
 #include "Common/Bindings.slang"
+#include "Common/VertexFormats.slang"  // [VtxFmt] / [PerInstance] authoring attributes
 
+// Binding 0 is the shared unit quad (Flux_GraphicsImpl::m_xQuadMesh, 20 B);
+// binding 1 is the per-quad instance stream (Flux_QuadsImpl::Quad, 72 B). The
+// [PerInstance] tags below are what SPLIT the two — the generated vertex layout
+// this struct produces is the one the pipeline is built from, so an untagged
+// field would be fetched at vertex rate out of the unit quad.
 struct VsIn
 {
 	float3 a_xPosition           : POSITION;
 	float2 a_xUV                 : TEXCOORD0;
-	uint4  a_xInstancePositionSize : TEXCOORD1;
-	float4 a_xInstanceColour     : TEXCOORD2;
-	uint   a_uTexture            : TEXCOORD3;
-	float2 a_xUVMult_UVAdd       : TEXCOORD4;
-	float  a_fCornerRadius       : TEXCOORD5;
-	float2 a_xSizePixels         : TEXCOORD6;
-	float4 a_xColour2            : TEXCOORD7;
+	[PerInstance] uint4  a_xInstancePositionSize : TEXCOORD1;
+	[PerInstance] float4 a_xInstanceColour     : TEXCOORD2;
+	[PerInstance] uint   a_uTexture            : TEXCOORD3;
+	[PerInstance] float2 a_xUVMult_UVAdd       : TEXCOORD4;
+	[PerInstance] float  a_fCornerRadius       : TEXCOORD5;
+	[PerInstance] float2 a_xSizePixels         : TEXCOORD6;
+	[PerInstance] float4 a_xColour2            : TEXCOORD7;
 };
 
 struct VsOut

@@ -8,6 +8,7 @@
 #pragma once
 
 #include "Flux/Slang/Flux_SlangCompiler.h"
+#include "Flux/Flux_VertexLayoutDesc.h"
 #include "glm/glm.hpp"
 #include <cstddef>
 
@@ -94,6 +95,8 @@ namespace Flux_Generated_HDR
 		static_assert(offsetof(BloomConstants_CB, m_fg_fIntensity) == 4, "BloomConstants.g_fIntensity offset drifted from Slang reflection");
 		// kind: CombinedTextureSampler
 		inline constexpr Flux_BindingHandle hg_xHDRTex{ 3u, 1u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// vertex inputs: none
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ nullptr, 0u, { 0u, 0u } };
 	}
 
 	// ----- BloomDownsample (HDR/Flux_BloomDownsample) -----
@@ -136,6 +139,8 @@ namespace Flux_Generated_HDR
 		static_assert(offsetof(BloomConstants_CB, m_fg_fIntensity) == 4, "BloomConstants.g_fIntensity offset drifted from Slang reflection");
 		// kind: CombinedTextureSampler
 		inline constexpr Flux_BindingHandle hg_xSourceTex{ 3u, 1u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// vertex inputs: none
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ nullptr, 0u, { 0u, 0u } };
 	}
 
 	// ----- BloomUpsample (HDR/Flux_BloomUpsample) -----
@@ -178,6 +183,8 @@ namespace Flux_Generated_HDR
 		static_assert(offsetof(BloomConstants_CB, m_fg_fIntensity) == 4, "BloomConstants.g_fIntensity offset drifted from Slang reflection");
 		// kind: CombinedTextureSampler
 		inline constexpr Flux_BindingHandle hg_xSourceTex{ 3u, 1u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// vertex inputs: none
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ nullptr, 0u, { 0u, 0u } };
 	}
 
 	// ----- HDR_Luminance (HDR/Flux_Luminance) -----
@@ -222,6 +229,8 @@ namespace Flux_Generated_HDR
 		inline constexpr Flux_BindingHandle hg_xHDRTex{ 3u, 1u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 		// kind: RWStructuredBuffer
 		inline constexpr Flux_BindingHandle hg_auHistogram{ 3u, 2u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
+		// vertex inputs: none
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ nullptr, 0u, { 0u, 0u } };
 	}
 
 	// ----- HDR_Adaptation (HDR/Flux_Adaptation) -----
@@ -285,6 +294,8 @@ namespace Flux_Generated_HDR
 		inline constexpr Flux_BindingHandle hg_auHistogram{ 3u, 1u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
 		// kind: RWStructuredBuffer
 		inline constexpr Flux_BindingHandle hg_afExposureData{ 3u, 2u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
+		// vertex inputs: none
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ nullptr, 0u, { 0u, 0u } };
 	}
 
 	// ----- HDR_ToneMapping (HDR/Flux_ToneMapping) -----
@@ -344,6 +355,8 @@ namespace Flux_Generated_HDR
 		inline constexpr Flux_BindingHandle hg_auHistogram{ 3u, 3u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
 		// kind: StructuredBuffer
 		inline constexpr Flux_BindingHandle hg_afExposureData{ 3u, 4u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// vertex inputs: none
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ nullptr, 0u, { 0u, 0u } };
 	}
 
 }

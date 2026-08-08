@@ -28,8 +28,15 @@ and rewriting it once does not immunise it. Update it in the SAME commit that cl
   approved (ZM-D-112); and S6's dialogue/menu/NPC/shop surface all remain complete.
 - **★ THE LIVE BASELINE IS IN `Status.md`'s TOP BLOCK. READ IT, NOT THIS PARAGRAPH.** As of
   2026-08-07 (OBSERVED on clean `Null_` builds): registry **55**, ZM boot
-  **2977 ran / 2975 passed / 0 failed / 2 skipped**, engine boot **1352**. (+2 engine
-  units on 2026-08-07 for the debug-variable audit remediation's AI debug-draw
+  **3025 ran / 3023 passed / 0 failed / 2 skipped**, engine boot **1400**. (+12 engine
+  units on 2026-08-08 for the compressed-vertex Phase-2 T2.d review hardening --
+  the vertex-layout-validation tripwire-comparator suite; +11 engine
+  units on 2026-08-07 for the compressed-vertex Phase-2 T2.b baked vertex-layout
+  emission -- `Flux_VertexLayoutDesc` equality/vocabulary + the codegen tables;
+  +10 earlier the same day for the Phase-2 T2.a reflection vertex-input
+  suite -- sidecar v6, packing/round-trip/merge + the pure `[VtxFmt]` vocabulary;
+  +15 earlier the same day for the compressed-vertex Phase-1 `Flux_VertexCodec` suite;
+  +2 earlier the same day for the debug-variable audit remediation's AI debug-draw
   routing pins; before that, +20 engine
   units for the GPU-grass overhaul Phase-1 `FluxGrassTypes` suite in
   `Zenith/Flux/Vegetation/Flux_Grass.Tests.inl`, +2 for its Phase-2

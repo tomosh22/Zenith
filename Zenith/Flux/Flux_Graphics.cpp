@@ -40,8 +40,12 @@ Zenith_Maths::Matrix4 Flux_GraphicsImpl::GetInvViewProjMatrix() { return m_xFram
 
 void Flux_GraphicsImpl::BindFullscreenQuad(Flux_CommandBuffer& xCmd, Flux_Pipeline& xPipeline)
 {
+	// INDEX buffer only. Every fullscreen program's VS reads ZERO vertex attributes —
+	// it derives its clip position and UV from SV_VertexID — so the quad's vertex
+	// buffer was bound to a pipeline with no vertex bindings at all, and the draw is
+	// a DrawIndexed(6) purely to get six invocations with the right ids. The vertex
+	// bind is gone; the index bind is what actually drives the draw.
 	xCmd.SetPipeline(&xPipeline);
-	xCmd.SetVertexBuffer(m_xQuadMesh.GetVertexBuffer());
 	xCmd.SetIndexBuffer(m_xQuadMesh.GetIndexBuffer());
 }
 Zenith_Maths::Matrix4 Flux_GraphicsImpl::GetViewMatrix()        { return m_xFrameConstants.m_xViewMat; }

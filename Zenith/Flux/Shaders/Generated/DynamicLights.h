@@ -8,6 +8,7 @@
 #pragma once
 
 #include "Flux/Slang/Flux_SlangCompiler.h"
+#include "Flux/Flux_VertexLayoutDesc.h"
 #include "glm/glm.hpp"
 #include <cstddef>
 
@@ -99,6 +100,8 @@ namespace Flux_Generated_DynamicLights
 		static_assert(offsetof(PushConstants_CB, m_um_uPad0) == 4, "PushConstants.m_uPad0 offset drifted from Slang reflection");
 		static_assert(offsetof(PushConstants_CB, m_um_uPad1) == 8, "PushConstants.m_uPad1 offset drifted from Slang reflection");
 		static_assert(offsetof(PushConstants_CB, m_um_uPad2) == 12, "PushConstants.m_uPad2 offset drifted from Slang reflection");
+		// vertex inputs: none
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ nullptr, 0u, { 0u, 0u } };
 	}
 
 }

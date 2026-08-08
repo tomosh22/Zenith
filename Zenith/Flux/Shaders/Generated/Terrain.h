@@ -8,6 +8,7 @@
 #pragma once
 
 #include "Flux/Slang/Flux_SlangCompiler.h"
+#include "Flux/Flux_VertexLayoutDesc.h"
 #include "glm/glm.hpp"
 #include <cstddef>
 
@@ -107,6 +108,15 @@ namespace Flux_Generated_Terrain
 		inline constexpr Flux_BindingHandle hLODLevelBuffer{ 3u, 2u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
 		// kind: CombinedTextureSampler
 		inline constexpr Flux_BindingHandle hg_xSplatmap{ 3u, 3u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// vertex inputs: { semantic, semantic index, STORAGE format, binding, byte offset }
+		inline constexpr Flux_VertexLayoutElement kaxVertexAttribs[] =
+		{
+			{ FLUX_VERTEX_SEMANTIC_POSITION, 0u, SHADER_DATA_TYPE_FLOAT3, 0u, 0u },   // a_xPosition
+			{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 0u, SHADER_DATA_TYPE_FLOAT2, 0u, 12u },   // a_xUV
+			{ FLUX_VERTEX_SEMANTIC_NORMAL, 0u, SHADER_DATA_TYPE_SNORM10_10_10_2, 0u, 20u },   // a_xNormalPacked
+			{ FLUX_VERTEX_SEMANTIC_TANGENT, 0u, SHADER_DATA_TYPE_SNORM10_10_10_2, 0u, 24u },   // a_xTangentPacked
+		};
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ kaxVertexAttribs, 4u, { 28u, 0u } };
 	}
 
 	// ----- Terrain_ToGBufferVelocity (Terrain/Flux_Terrain_ToGBufferVelocity) -----
@@ -162,6 +172,15 @@ namespace Flux_Generated_Terrain
 		inline constexpr Flux_BindingHandle hLODLevelBuffer{ 3u, 2u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
 		// kind: CombinedTextureSampler
 		inline constexpr Flux_BindingHandle hg_xSplatmap{ 3u, 3u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// vertex inputs: { semantic, semantic index, STORAGE format, binding, byte offset }
+		inline constexpr Flux_VertexLayoutElement kaxVertexAttribs[] =
+		{
+			{ FLUX_VERTEX_SEMANTIC_POSITION, 0u, SHADER_DATA_TYPE_FLOAT3, 0u, 0u },   // a_xPosition
+			{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 0u, SHADER_DATA_TYPE_FLOAT2, 0u, 12u },   // a_xUV
+			{ FLUX_VERTEX_SEMANTIC_NORMAL, 0u, SHADER_DATA_TYPE_SNORM10_10_10_2, 0u, 20u },   // a_xNormalPacked
+			{ FLUX_VERTEX_SEMANTIC_TANGENT, 0u, SHADER_DATA_TYPE_SNORM10_10_10_2, 0u, 24u },   // a_xTangentPacked
+		};
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ kaxVertexAttribs, 4u, { 28u, 0u } };
 	}
 
 	// ----- Terrain_ToShadowmap (Terrain/Flux_Terrain_ToShadowmap) -----
@@ -191,6 +210,15 @@ namespace Flux_Generated_Terrain
 		inline constexpr Flux_BindingHandle hg_xPrefilteredMap{ 1u, 8u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 		// kind: UnboundedTextureArray
 		inline constexpr Flux_BindingHandle hg_axTextures{ 2u, 0u, FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY, 0u };
+		// vertex inputs: { semantic, semantic index, STORAGE format, binding, byte offset }
+		inline constexpr Flux_VertexLayoutElement kaxVertexAttribs[] =
+		{
+			{ FLUX_VERTEX_SEMANTIC_POSITION, 0u, SHADER_DATA_TYPE_FLOAT3, 0u, 0u },   // a_xPosition
+			{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 0u, SHADER_DATA_TYPE_FLOAT2, 0u, 12u },   // a_xUV
+			{ FLUX_VERTEX_SEMANTIC_NORMAL, 0u, SHADER_DATA_TYPE_SNORM10_10_10_2, 0u, 20u },   // a_xNormalPacked
+			{ FLUX_VERTEX_SEMANTIC_TANGENT, 0u, SHADER_DATA_TYPE_SNORM10_10_10_2, 0u, 24u },   // a_xTangentPacked
+		};
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ kaxVertexAttribs, 4u, { 28u, 0u } };
 	}
 
 	// ----- TerrainCulling (Terrain/Flux_TerrainCulling) -----
@@ -236,6 +264,8 @@ namespace Flux_Generated_Terrain
 		inline constexpr Flux_BindingHandle hvisibleCount{ 3u, 3u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
 		// kind: RWStructuredBuffer
 		inline constexpr Flux_BindingHandle hLODLevelBuffer{ 3u, 4u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
+		// vertex inputs: none
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ nullptr, 0u, { 0u, 0u } };
 	}
 
 	// ----- TerrainResetCounters (Terrain/Flux_TerrainResetCounters) -----
@@ -267,6 +297,8 @@ namespace Flux_Generated_Terrain
 		inline constexpr Flux_BindingHandle hg_axTextures{ 2u, 0u, FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY, 0u };
 		// kind: RWStructuredBuffer
 		inline constexpr Flux_BindingHandle hvisibleCount{ 3u, 0u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
+		// vertex inputs: none
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ nullptr, 0u, { 0u, 0u } };
 	}
 
 }

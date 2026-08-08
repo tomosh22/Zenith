@@ -697,6 +697,10 @@ public:
 	static void TestCodegenScalarHungarianPrefixes();
 	static void TestCodegenInsertsTrailingPadding();
 	static void TestCodegenInsertsInteriorPadding();
+	// Baked vertex-layout emission (compressed-vertex work — T2.b)
+	static void TestCodegenEmitsVertexLayoutTable();
+	static void TestCodegenEmitsNullVertexLayout();
+	static void TestCodegenRejectsUnknownVertexSemantic();
 
 	// Flux render-graph tests (declaration-phase only — compiling the graph
 	// requires Vulkan). The tests exercise pass registration, handle validity,

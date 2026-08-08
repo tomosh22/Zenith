@@ -16,14 +16,19 @@
 // binding that a future implementer would copy-paste into a bind-fail.
 // =====================================================================
 
-#include "Common/Bindings.slang"   // spine: GLOBAL/VIEW/BINDLESS at sets 0/1/2
+#include "Common/Bindings.slang"       // spine: GLOBAL/VIEW/BINDLESS at sets 0/1/2
+#include "Common/VertexFormats.slang"  // [VtxFmt] / [PerInstance] authoring attributes
 
+// The depth-only pass reads only the position, but the VsIn still declares the whole
+// terrain vertex — including the two packed fields' [VtxFmt] tags — because the layout
+// describes the BUFFER, not what this stage happens to consume. Dropping them here
+// would give the caster a different stride than the G-buffer pass.
 struct VsIn
 {
 	float3 a_xPosition       : POSITION;
 	float2 a_xUV             : TEXCOORD0;
-	float4 a_xNormalPacked   : NORMAL;
-	float4 a_xTangentPacked  : TANGENT;
+	[VtxFmt("snorm10_10_10_2")] float4 a_xNormalPacked   : NORMAL;
+	[VtxFmt("snorm10_10_10_2")] float4 a_xTangentPacked  : TANGENT;
 };
 
 [shader("vertex")]

@@ -18,6 +18,14 @@
 #include "Flux/Flux_MaterialBinding.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Flux/Shaders/Generated/Translucency.h" // typed binding handles
+#include "Flux/Shaders/Generated/UnifiedMesh.h"  // the cross-pin below compares against its table
+
+// Phase-2 pin: Translucent_Forward still declares its own hand-copied 72 B
+// static-mesh VsIn (T3.c unifies it into Common/UnifiedMeshDraw.slang). The
+// element-wise cross-pin against UnifiedMesh's table — semantics and types
+// included — is exactly the property T3.c's unification will make structural.
+static_assert(Flux_Generated_Translucency::Translucent_Forward::kVertexLayout == Flux_Generated_UnifiedMesh::UnifiedMesh_ToGBuffer::kVertexLayout,
+	"Translucent_Forward's hand-copied VsIn has drifted from UnifiedMesh's — the shared 72 B mesh buffer would fetch with two different layouts");
 #include "Core/Zenith_GraphicsOptions.h"
 
 #include <algorithm>
@@ -46,23 +54,15 @@ void Flux_TranslucencyImpl::BuildPipelines()
 {
 	m_xShader.Initialise(Flux_TranslucencyShaders::xTranslucent_Forward);
 
-	// Same vertex layout as static meshes.
-	Flux_VertexInputDescription xVertexDesc;
-	xVertexDesc.m_eTopology = MESH_TOPOLOGY_TRIANGLES;
-	xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT3);
-	xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT2);
-	xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT3);
-	xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT3);
-	xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT3);
-	xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT4);
-	xVertexDesc.m_xPerVertexLayout.CalculateOffsetsAndStrides();
-
 	Flux_PipelineSpecification xSpec;
 	xSpec.m_aeColourAttachmentFormats[0] = HDR_SCENE_FORMAT;
 	xSpec.m_uNumColourAttachments = 1;
 	xSpec.m_eDepthStencilFormat = DEPTH_FORMAT;
 	xSpec.m_pxShader = &m_xShader;
-	xSpec.m_xVertexInputDesc = xVertexDesc;
+	// Same 72-byte vertex stream as the unified opaque meshes - both programs declare
+	// the same VsIn, so the two generated layouts agree by construction.
+	xSpec.m_eTopology = MESH_TOPOLOGY_TRIANGLES;
+	xSpec.m_pxVertexLayout = &Flux_Generated_Translucency::Translucent_Forward::kVertexLayout;
 	// Depth-test against the opaque scene; never write depth. The pass declares
 	// the scene depth READ_DEPTH, so the graph binds it as a READ-ONLY depth
 	// attachment — a depth write here would target a read-only attachment.

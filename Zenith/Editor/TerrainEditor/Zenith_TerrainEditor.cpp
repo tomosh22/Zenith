@@ -17,6 +17,7 @@
 #include "FileAccess/Zenith_FileAccess.h"
 #include "Flux/Decals/Flux_DecalsImpl.h"
 #include "Flux/Flux_BackendTypes.h"
+#include "Flux/Flux_VertexCodec.h"
 #include "Flux/Primitives/Flux_PrimitivesImpl.h"
 #include "Flux/Terrain/Flux_TerrainStreamingManagerImpl.h"
 #include "Input/Zenith_Input.h"
@@ -33,32 +34,6 @@ static_assert(Zenith_TerrainEditor::uCHUNK_GRID == Flux_TerrainConfig::CHUNK_GRI
 static_assert(Zenith_TerrainEditor::uCHUNK_COUNT == Flux_TerrainConfig::TOTAL_CHUNKS, "Terrain editor chunk count out of sync with Flux_TerrainConfig");
 static_assert(Zenith_TerrainEditor::fTERRAIN_WORLD_SIZE == Flux_TerrainConfig::TERRAIN_SIZE, "Terrain editor world size out of sync with Flux_TerrainConfig");
 static_assert(Zenith_TerrainEditor::fTERRAIN_MAX_HEIGHT == Flux_TerrainConfig::MAX_TERRAIN_HEIGHT, "Terrain editor max height out of sync with Flux_TerrainConfig");
-
-//-----------------------------------------------------------------------------
-// SNORM10_10_10_2 packer — replica of the file-static packer in
-// Tools/Zenith_Tools_TerrainExport.cpp (the hook must produce bit-identical
-// packing to the baked vertex data).
-//-----------------------------------------------------------------------------
-static uint32_t PackSNORM10_10_10_2(float fX, float fY, float fZ, float fW)
-{
-	auto Clamp = [](float f) { return std::max(-1.0f, std::min(1.0f, f)); };
-	fX = Clamp(fX);
-	fY = Clamp(fY);
-	fZ = Clamp(fZ);
-	fW = Clamp(fW);
-
-	int32_t iR = static_cast<int32_t>(std::round(fX * 511.0f));
-	int32_t iG = static_cast<int32_t>(std::round(fY * 511.0f));
-	int32_t iB = static_cast<int32_t>(std::round(fZ * 511.0f));
-	int32_t iA = static_cast<int32_t>(std::round(fW * 1.0f));
-
-	uint32_t uResult = 0;
-	uResult |= (static_cast<uint32_t>(iR) & 0x3FF);
-	uResult |= (static_cast<uint32_t>(iG) & 0x3FF) << 10;
-	uResult |= (static_cast<uint32_t>(iB) & 0x3FF) << 20;
-	uResult |= (static_cast<uint32_t>(iA) & 0x3) << 30;
-	return uResult;
-}
 
 //-----------------------------------------------------------------------------
 // Session lifecycle
@@ -1128,10 +1103,12 @@ void Zenith_TerrainEditor::ChunkVertexHook(void* pUser, uint32_t uChunkX, uint32
 		const Zenith_Maths::Vector3 xBitangent = glm::normalize(Zenith_Maths::Vector3(0.0f, fDYDZ, 1.0f));
 		const float fSign = glm::dot(glm::cross(xNormal, xTangent), xBitangent) > 0.0f ? 1.0f : -1.0f;
 
+		// Same codec the exporter bakes with — a live sculpt edit has to produce
+		// bit-identical words to the chunk it is replacing.
 		uint32_t* pNormal = reinterpret_cast<uint32_t*>(pVertex + 20);
-		*pNormal = PackSNORM10_10_10_2(xNormal.x, xNormal.y, xNormal.z, 0.0f);
+		*pNormal = Flux_PackSnorm10_10_10_2(xNormal.x, xNormal.y, xNormal.z, 0.0f);
 		uint32_t* pTangent = reinterpret_cast<uint32_t*>(pVertex + 24);
-		*pTangent = PackSNORM10_10_10_2(xTangent.x, xTangent.y, xTangent.z, fSign);
+		*pTangent = Flux_PackSnorm10_10_10_2(xTangent.x, xTangent.y, xTangent.z, fSign);
 	}
 }
 

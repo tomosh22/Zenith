@@ -8,6 +8,7 @@
 #pragma once
 
 #include "Flux/Slang/Flux_SlangCompiler.h"
+#include "Flux/Flux_VertexLayoutDesc.h"
 #include "glm/glm.hpp"
 #include <cstddef>
 
@@ -88,6 +89,8 @@ namespace Flux_Generated_Skybox
 			unsigned char m_ag_xOverrideColour[16]; // slang=vector offset=0 arrayCount=4 (no C++ mapping)
 		};
 		static_assert(sizeof(SkyboxOverrideConstants_CB) == 16, "SkyboxOverrideConstants_CB size drifted from Slang reflection");
+		// vertex inputs: none
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ nullptr, 0u, { 0u, 0u } };
 	}
 
 	// ----- SkyboxCubemap (Skybox/Flux_Skybox) -----
@@ -119,6 +122,8 @@ namespace Flux_Generated_Skybox
 		inline constexpr Flux_BindingHandle hg_axTextures{ 2u, 0u, FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY, 0u };
 		// kind: CombinedTextureSampler
 		inline constexpr Flux_BindingHandle hg_xCubemap{ 3u, 0u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// vertex inputs: none
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ nullptr, 0u, { 0u, 0u } };
 	}
 
 	// ----- SkyboxAtmosphere (Skybox/Flux_Atmosphere) -----
@@ -181,6 +186,8 @@ namespace Flux_Generated_Skybox
 		static_assert(offsetof(AtmosphereConstants_CB, m_fg_fPad) == 72, "AtmosphereConstants.g_fPad offset drifted from Slang reflection");
 		// kind: CombinedTextureSampler
 		inline constexpr Flux_BindingHandle hg_xSkyViewLUT{ 3u, 1u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// vertex inputs: none
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ nullptr, 0u, { 0u, 0u } };
 	}
 
 	// ----- SkyboxTransmittanceLUT (Skybox/Flux_TransmittanceLUT) -----
@@ -241,6 +248,8 @@ namespace Flux_Generated_Skybox
 		static_assert(offsetof(AtmosphereConstants_CB, m_ug_uLightSamples) == 64, "AtmosphereConstants.g_uLightSamples offset drifted from Slang reflection");
 		static_assert(offsetof(AtmosphereConstants_CB, m_ug_uMultiScatteringEnabled) == 68, "AtmosphereConstants.g_uMultiScatteringEnabled offset drifted from Slang reflection");
 		static_assert(offsetof(AtmosphereConstants_CB, m_fg_fPad) == 72, "AtmosphereConstants.g_fPad offset drifted from Slang reflection");
+		// vertex inputs: none
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ nullptr, 0u, { 0u, 0u } };
 	}
 
 	// ----- SkyboxMultiScatterLUT (Skybox/Flux_MultiScatterLUT) -----
@@ -286,6 +295,8 @@ namespace Flux_Generated_Skybox
 		static_assert(offsetof(MultiScatterConstants_CB, m_fg_fAtmosphereRadius) == 36, "MultiScatterConstants.g_fAtmosphereRadius offset drifted from Slang reflection");
 		static_assert(offsetof(MultiScatterConstants_CB, m_fg_fGroundAlbedo) == 40, "MultiScatterConstants.g_fGroundAlbedo offset drifted from Slang reflection");
 		static_assert(offsetof(MultiScatterConstants_CB, m_fg_fPad) == 44, "MultiScatterConstants.g_fPad offset drifted from Slang reflection");
+		// vertex inputs: none
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ nullptr, 0u, { 0u, 0u } };
 	}
 
 	// ----- SkyboxSkyViewLUT (Skybox/Flux_SkyViewLUT) -----
@@ -350,6 +361,8 @@ namespace Flux_Generated_Skybox
 		inline constexpr Flux_BindingHandle hg_xTransmittanceLUT{ 3u, 1u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 		// kind: CombinedTextureSampler
 		inline constexpr Flux_BindingHandle hg_xMultiScatterLUT{ 3u, 2u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// vertex inputs: none
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ nullptr, 0u, { 0u, 0u } };
 	}
 
 }

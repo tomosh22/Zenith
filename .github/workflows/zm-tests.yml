@@ -194,6 +194,39 @@ jobs:
           #
           # History, newest first (the DERIVATION is the audit trail; the OBSERVED
           # number is the authority):
+          #   3025  Compressed-vertex Phase 2 T2.d (review hardening)
+          #                   observed 2026-08-08 on a Null_ build. +12 ENGINE units
+          #                   (1388 -> 1400): the vertex-layout-validation suite
+          #                   driving the boot tripwire's comparator through the
+          #                   OK path, both no-input spellings, and the COUNT /
+          #                   STRIDE / ELEMENT / SEMANTIC mismatch branches real
+          #                   boots never take. ZM's own registrations unmoved.
+          #   3013  Compressed-vertex Phase 2 T2.b (codegen vertex-layout emission)
+          #                   observed 2026-08-07 on a Null_ build. +11 ENGINE
+          #                   units (1377 -> 1388): the Flux_VertexLayoutDesc
+          #                   equality suite (element-wise over distinct arrays,
+          #                   drift in offset/type/semantic index/stride/count, the
+          #                   canonical empty layout, the semantic vocabulary) plus
+          #                   three Codegen emission units -- baked table content,
+          #                   the null layout, and the hard failure on a semantic
+          #                   the vocabulary does not name. ZM's own registrations
+          #                   unmoved.
+          #   3002  Compressed-vertex Phase 2 T2.a (reflection sidecar v6)
+          #                   observed 2026-08-07 on a Null_ build. +10 ENGINE
+          #                   units (1367 -> 1377): the Flux_ShaderReflection
+          #                   vertex-input suite -- tight-pack offsets/strides,
+          #                   independent per-binding packing, the empty table, the
+          #                   v6 DataStream round-trip, the adopt-once merge, and
+          #                   the pure [VtxFmt] vocabulary / inference / override
+          #                   validation. ZM's own registrations unmoved.
+          #   2992  Compressed-vertex Phase 1 (format vocabulary + codec)
+          #                   observed 2026-08-07 on a Null_ build. +15 ENGINE
+          #                   units (1352 -> 1367): the Flux_VertexCodec suite --
+          #                   half/snorm16/unorm16/unorm8/uint8 round-trips and
+          #                   lane order, SNORM10 bit-identity against the
+          #                   transcribed legacy terrain packer, the position
+          #                   quantisation box, and the bone weight/index lanes.
+          #                   ZM's own registrations unmoved.
           #   2977  Debug-variable audit remediation  observed 2026-08-07 on a
           #                   Null_ build. +2 ENGINE units (1350 -> 1352): the AI
           #                   debug-draw routing pins (master-toggle short-circuit,
@@ -314,7 +347,7 @@ jobs:
           #   2817  ZM-D-173  = 2809 + 8: four ENGINE sensor-raycast units plus
           #                   two camera fixtures and two Home-placement units.
           $exe = 'Games\Zenithmon\Build\output\win64\null_vs2022_debug_win64_true\zenithmon.exe'
-          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 2977 -TimeoutSec 600
+          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 3025 -TimeoutSec 600
           if ($LASTEXITCODE -ne 0) { Write-Error "boot unit tests failed (see log above)"; exit $LASTEXITCODE }
 
       - name: Run Zenithmon tests

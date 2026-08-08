@@ -43,14 +43,14 @@ void Flux_PresentImpl::BuildPipelines()
 
 	m_xPresentShader.Initialise(Flux_PresentShaders::xTexturedQuad);
 
-	Flux_VertexInputDescription xVertexDesc;
-	xVertexDesc.m_eTopology = MESH_TOPOLOGY_NONE;
-
 	Flux_PipelineSpecification xSpec;
 	xSpec.m_aeColourAttachmentFormats[0] = eBackbufferFormat;
 	xSpec.m_uNumColourAttachments = 1;
 	xSpec.m_pxShader = &m_xPresentShader;
-	xSpec.m_xVertexInputDesc = xVertexDesc;
+	// No vertex input: this is a vertex-pulling / fullscreen program whose VS reads
+	// no attributes. m_pxVertexLayout stays null, which is the canonical spelling the
+	// validation tripwire matches against an empty reflection table.
+	xSpec.m_eTopology = MESH_TOPOLOGY_NONE;
 
 	// Reflection-driven layout: after the ParameterBlock conversion the present
 	// shader's g_xTexture lives in its own PassParams at set 3 (the spine
@@ -95,7 +95,6 @@ void Flux_PresentImpl::RecordBlit(Flux_CommandBuffer& xCmd)
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
 
 	xCmd.SetPipeline(&m_xPresentPipeline);
-	xCmd.SetVertexBuffer(xGraphics.m_xQuadMesh.GetVertexBuffer());
 	xCmd.SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
 
 	Flux_ShaderBinder xBinder(xCmd);

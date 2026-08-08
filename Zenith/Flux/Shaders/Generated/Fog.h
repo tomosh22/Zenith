@@ -8,6 +8,7 @@
 #pragma once
 
 #include "Flux/Slang/Flux_SlangCompiler.h"
+#include "Flux/Flux_VertexLayoutDesc.h"
 #include "glm/glm.hpp"
 #include <cstddef>
 
@@ -98,6 +99,8 @@ namespace Flux_Generated_Fog
 		static_assert(offsetof(FogConstants_CB, m_f_pad2) == 28, "FogConstants._pad2 offset drifted from Slang reflection");
 		// kind: CombinedTextureSampler
 		inline constexpr Flux_BindingHandle hg_xDepthTex{ 3u, 1u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// vertex inputs: none
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ nullptr, 0u, { 0u, 0u } };
 	}
 
 	// ----- Fog_GodRays (Fog/Flux_GodRays) -----
@@ -145,6 +148,8 @@ namespace Flux_Generated_Fog
 		static_assert(offsetof(GodRaysConstants_CB, m_fg_fPad1) == 44, "GodRaysConstants.g_fPad1 offset drifted from Slang reflection");
 		// kind: CombinedTextureSampler
 		inline constexpr Flux_BindingHandle hg_xDepthTex{ 3u, 1u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// vertex inputs: none
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ nullptr, 0u, { 0u, 0u } };
 	}
 
 	// ----- Fog_FroxelApply (Fog/Flux_FroxelFog_Apply) -----
@@ -195,6 +200,8 @@ namespace Flux_Generated_Fog
 		inline constexpr Flux_BindingHandle hu_xLightingGrid{ 3u, 2u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 		// kind: CombinedTextureSampler
 		inline constexpr Flux_BindingHandle hu_xScatteringGrid{ 3u, 3u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// vertex inputs: none
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ nullptr, 0u, { 0u, 0u } };
 	}
 
 	// ----- Fog_FroxelInject (Fog/Flux_FroxelFog_Inject) -----
@@ -246,6 +253,8 @@ namespace Flux_Generated_Fog
 		inline constexpr Flux_BindingHandle hu_xNoiseTexture3D{ 3u, 1u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 		// kind: RWTexture
 		inline constexpr Flux_BindingHandle hu_xDensityGrid{ 3u, 2u, FLUX_RESOURCE_KIND_RW_TEXTURE, 1u };
+		// vertex inputs: none
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ nullptr, 0u, { 0u, 0u } };
 	}
 
 	// ----- Fog_FroxelLight (Fog/Flux_FroxelFog_Light) -----
@@ -307,6 +316,8 @@ namespace Flux_Generated_Fog
 		inline constexpr Flux_BindingHandle hu_xLightingGrid{ 3u, 2u, FLUX_RESOURCE_KIND_RW_TEXTURE, 1u };
 		// kind: RWTexture
 		inline constexpr Flux_BindingHandle hu_xScatteringGrid{ 3u, 3u, FLUX_RESOURCE_KIND_RW_TEXTURE, 1u };
+		// vertex inputs: none
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ nullptr, 0u, { 0u, 0u } };
 	}
 
 	// ----- Fog_Raymarch (Fog/Flux_RaymarchFog) -----
@@ -368,6 +379,8 @@ namespace Flux_Generated_Fog
 		inline constexpr Flux_BindingHandle hu_xNoiseTexture3D{ 3u, 2u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 		// kind: CombinedTextureSampler
 		inline constexpr Flux_BindingHandle hu_xBlueNoiseTexture{ 3u, 3u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// vertex inputs: none
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ nullptr, 0u, { 0u, 0u } };
 	}
 
 	// ----- DevilsPlayground_DPFog (Fog/DP_Fog) -----
@@ -418,6 +431,8 @@ namespace Flux_Generated_Fog
 		inline constexpr Flux_BindingHandle hg_xDepthTex{ 3u, 1u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 		// kind: CombinedTextureSampler
 		inline constexpr Flux_BindingHandle hg_xMemoryTex{ 3u, 2u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// vertex inputs: none
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ nullptr, 0u, { 0u, 0u } };
 	}
 
 }

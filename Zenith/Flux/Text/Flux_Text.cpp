@@ -33,26 +33,15 @@ void Flux_TextImpl::BuildPipelines()
 {
 	this->m_xShader.Initialise(Flux_TextShaders::xText);
 
-	Flux_VertexInputDescription xVertexDesc;
-	xVertexDesc.m_eTopology = MESH_TOPOLOGY_TRIANGLES;
-	// Per-vertex: unit quad (position + uv) — unchanged from legacy pipeline.
-	xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT3);
-	xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT2);
-	xVertexDesc.m_xPerVertexLayout.CalculateOffsetsAndStrides();
-	// Per-instance: matches Flux_TextVertex layout (56 bytes, static_asserted).
-	xVertexDesc.m_xPerInstanceLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT2);  // quadOffsetPx
-	xVertexDesc.m_xPerInstanceLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT2);  // quadSizePx
-	xVertexDesc.m_xPerInstanceLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT2);  // atlasUVOrigin
-	xVertexDesc.m_xPerInstanceLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT2);  // atlasUVSize
-	xVertexDesc.m_xPerInstanceLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT2);  // textRoot (float, was uint)
-	xVertexDesc.m_xPerInstanceLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT4);  // colour
-	xVertexDesc.m_xPerInstanceLayout.CalculateOffsetsAndStrides();
-
 	Flux_PipelineSpecification xPipelineSpec;
 	xPipelineSpec.m_aeColourAttachmentFormats[0] = FINAL_RT_FORMAT;
 	xPipelineSpec.m_uNumColourAttachments = 1;
 	xPipelineSpec.m_pxShader = &this->m_xShader;
-	xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
+	// Binding 0 = the shared unit quad (20 B), binding 1 = Flux_TextVertex (56 B).
+	// The split comes from the [PerInstance] tags in Flux_Text.slang; the offsets and
+	// strides are pinned against Flux_TextVertex beside the struct in Flux_TextImpl.h.
+	xPipelineSpec.m_eTopology = MESH_TOPOLOGY_TRIANGLES;
+	xPipelineSpec.m_pxVertexLayout = &Flux_Generated_Text::Text::kVertexLayout;
 
 	this->m_xShader.GetReflection().PopulateLayout(xPipelineSpec.m_xPipelineLayout);
 

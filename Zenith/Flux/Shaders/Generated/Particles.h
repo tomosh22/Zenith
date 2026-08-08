@@ -8,6 +8,7 @@
 #pragma once
 
 #include "Flux/Slang/Flux_SlangCompiler.h"
+#include "Flux/Flux_VertexLayoutDesc.h"
 #include "glm/glm.hpp"
 #include <cstddef>
 
@@ -92,6 +93,15 @@ namespace Flux_Generated_Particles
 		};
 		static_assert(sizeof(ParticleConstants_CB) == 32, "ParticleConstants_CB size drifted from Slang reflection");
 		static_assert(offsetof(ParticleConstants_CB, m_ug_uTexIdx) == 0, "ParticleConstants.g_uTexIdx offset drifted from Slang reflection");
+		// vertex inputs: { semantic, semantic index, STORAGE format, binding, byte offset }
+		inline constexpr Flux_VertexLayoutElement kaxVertexAttribs[] =
+		{
+			{ FLUX_VERTEX_SEMANTIC_POSITION, 0u, SHADER_DATA_TYPE_FLOAT3, 0u, 0u },   // a_xPosition
+			{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 0u, SHADER_DATA_TYPE_FLOAT2, 0u, 12u },   // a_xUV
+			{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 1u, SHADER_DATA_TYPE_FLOAT4, 1u, 0u },   // a_xInstancePositionRadius
+			{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 2u, SHADER_DATA_TYPE_FLOAT4, 1u, 16u },   // a_xInstanceColour
+		};
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ kaxVertexAttribs, 4u, { 20u, 32u } };
 	}
 
 	// ----- ParticleUpdate (Particles/Flux_ParticleUpdate) -----
@@ -144,6 +154,8 @@ namespace Flux_Generated_Particles
 		inline constexpr Flux_BindingHandle hInstanceBuffer{ 3u, 3u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
 		// kind: RWStructuredBuffer
 		inline constexpr Flux_BindingHandle haliveCount{ 3u, 4u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
+		// vertex inputs: none
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ nullptr, 0u, { 0u, 0u } };
 	}
 
 }

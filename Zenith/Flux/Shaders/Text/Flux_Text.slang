@@ -11,17 +11,23 @@
 // =====================================================================
 
 #include "Common/Bindings.slang"
+#include "Common/VertexFormats.slang"  // [VtxFmt] / [PerInstance] authoring attributes
 
+// Binding 0 is the shared unit quad (Flux_GraphicsImpl::m_xQuadMesh, 20 B);
+// binding 1 is the per-glyph instance stream (Flux_TextVertex, 56 B). The
+// [PerInstance] tags below are what SPLIT the two — the generated vertex layout
+// this struct produces is the one the pipeline is built from, so an untagged
+// field would be fetched at vertex rate out of the unit quad.
 struct VsIn
 {
 	float3 a_xPosition       : POSITION;     // unit quad [-1,1]
 	float2 a_xUV             : TEXCOORD0;    // unit quad UV [0,1]
-	float2 a_xQuadOffsetPx   : TEXCOORD1;    // glyph top-left, relative to text root
-	float2 a_xQuadSizePx     : TEXCOORD2;    // glyph quad size in pixels
-	float2 a_xAtlasUVOrigin  : TEXCOORD3;    // glyph's UV rect origin in atlas
-	float2 a_xAtlasUVSize    : TEXCOORD4;    // glyph's UV rect size in atlas
-	float2 a_xTextRootPx     : TEXCOORD5;    // float2 — subpixel positions OK
-	float4 a_xColour         : TEXCOORD6;
+	[PerInstance] float2 a_xQuadOffsetPx   : TEXCOORD1;    // glyph top-left, relative to text root
+	[PerInstance] float2 a_xQuadSizePx     : TEXCOORD2;    // glyph quad size in pixels
+	[PerInstance] float2 a_xAtlasUVOrigin  : TEXCOORD3;    // glyph's UV rect origin in atlas
+	[PerInstance] float2 a_xAtlasUVSize    : TEXCOORD4;    // glyph's UV rect size in atlas
+	[PerInstance] float2 a_xTextRootPx     : TEXCOORD5;    // float2 — subpixel positions OK
+	[PerInstance] float4 a_xColour         : TEXCOORD6;
 };
 
 struct VsOut

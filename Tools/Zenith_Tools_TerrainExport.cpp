@@ -1,5 +1,6 @@
 #include "Zenith.h"
 #include "Zenith_Tools_TerrainExport.h"
+#include "Flux/Flux_VertexCodec.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "Core/Zenith_TerrainChunkLayout.h"
 #include "Flux/Terrain/Flux_TerrainSourceGrid.h"
@@ -26,35 +27,6 @@
 // scale below (4096 * 0.1 = 409.6m); with the corrected 1.0 scale a value of
 // 4096 would put vertices 8x above the culling AABB.
 #define MAX_TERRAIN_HEIGHT 512
-
-//-----------------------------------------------------------------------------
-// Packing helpers for terrain vertex format optimization
-//-----------------------------------------------------------------------------
-
-// Pack 3 floats (xyz) + 1 float (w) into A2B10G10R10 SNORM format (4 bytes)
-// R,G,B = 10-bit signed normalized [-1,1], A = 2-bit signed normalized [-1,1]
-static uint32_t PackSNORM10_10_10_2(float fX, float fY, float fZ, float fW)
-{
-	auto Clamp = [](float f) { return std::max(-1.0f, std::min(1.0f, f)); };
-	fX = Clamp(fX);
-	fY = Clamp(fY);
-	fZ = Clamp(fZ);
-	fW = Clamp(fW);
-
-	// 10-bit snorm: [-1.0, 1.0] -> [-511, 511]
-	int32_t iR = static_cast<int32_t>(std::round(fX * 511.0f));
-	int32_t iG = static_cast<int32_t>(std::round(fY * 511.0f));
-	int32_t iB = static_cast<int32_t>(std::round(fZ * 511.0f));
-	// 2-bit snorm: [-1.0, 1.0] -> [-1, 1]
-	int32_t iA = static_cast<int32_t>(std::round(fW * 1.0f));
-
-	uint32_t uResult = 0;
-	uResult |= (static_cast<uint32_t>(iR) & 0x3FF);
-	uResult |= (static_cast<uint32_t>(iG) & 0x3FF) << 10;
-	uResult |= (static_cast<uint32_t>(iB) & 0x3FF) << 20;
-	uResult |= (static_cast<uint32_t>(iA) & 0x3) << 30;
-	return uResult;
-}
 
 // Generate packed terrain vertex data (28 bytes/vertex)
 // Layout: Position(FLOAT3,12) + UV(FLOAT2,8) + Normal(SNORM10,4) + Tangent+Sign(SNORM10,4)
@@ -105,7 +77,7 @@ static void GenerateTerrainLayoutAndVertexData(Flux_MeshGeometry& xMesh)
 
 		// Normal: SNORM10:10:10:2 (4 bytes), w=0
 		uint32_t* pNormal = reinterpret_cast<uint32_t*>(pVertex + uOffset);
-		*pNormal = PackSNORM10_10_10_2(
+		*pNormal = Flux_PackSnorm10_10_10_2(
 			xMesh.m_pxNormals[i].x,
 			xMesh.m_pxNormals[i].y,
 			xMesh.m_pxNormals[i].z,
@@ -120,7 +92,7 @@ static void GenerateTerrainLayoutAndVertexData(Flux_MeshGeometry& xMesh)
 		) > 0.0f ? 1.0f : -1.0f;
 
 		uint32_t* pTangent = reinterpret_cast<uint32_t*>(pVertex + uOffset);
-		*pTangent = PackSNORM10_10_10_2(
+		*pTangent = Flux_PackSnorm10_10_10_2(
 			xMesh.m_pxTangents[i].x,
 			xMesh.m_pxTangents[i].y,
 			xMesh.m_pxTangents[i].z,

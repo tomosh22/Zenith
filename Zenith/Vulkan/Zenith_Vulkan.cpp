@@ -225,6 +225,7 @@ void Zenith_Vulkan::Initialise()
 	LogFormatSupport();
 	CreateQueueFamilies();
 	CreateDevice();
+	AssertVertexFetchFormatSupport();
 #ifdef ZENITH_FLUX_PROFILING
 	m_xDispatchLoader = vk::DispatchLoaderDynamic(m_xInstance, vkGetInstanceProcAddr, m_xDevice, vkGetDeviceProcAddr);
 #endif
@@ -947,6 +948,41 @@ void Zenith_Vulkan::LogFormatSupport()
 		}
 	}
 	Zenith_Log(LOG_CATEGORY_VULKAN, "=== End format support check ===");
+}
+
+void Zenith_Vulkan::AssertVertexFetchFormatSupport()
+{
+	// Every ShaderDataType that ShaderDataTypeToVulkanFormat maps is reachable as a
+	// vertex-input attribute format, so the device has to advertise
+	// VERTEX_BUFFER_BIT for it in bufferFeatures. Checked once at boot over the
+	// WHOLE vocabulary rather than per-pipeline: an unsupported packed format
+	// otherwise surfaces as an opaque driver failure in whichever pipeline first
+	// adopts it, arbitrarily far from the vertex layout that chose the format.
+	// The four non-fetch tags (MAT3 / MAT4 / BOOL / NONE) have no format at all --
+	// ShaderDataTypeToVulkanFormat asserts on them -- so they are skipped here.
+	u_int uUnsupported = 0;
+	for (u_int uType = 0; uType <= static_cast<u_int>(SHADER_DATA_TYPE_UINT16X4); uType++)
+	{
+		const ShaderDataType eType = static_cast<ShaderDataType>(uType);
+		if (eType == SHADER_DATA_TYPE_MAT3 || eType == SHADER_DATA_TYPE_MAT4
+			|| eType == SHADER_DATA_TYPE_BOOL || eType == SHADER_DATA_TYPE_NONE)
+		{
+			continue;
+		}
+
+		const vk::Format eFormat = ShaderDataTypeToVulkanFormat(eType);
+		const vk::FormatProperties xProps = m_xPhysicalDevice.getFormatProperties(eFormat);
+		if ((xProps.bufferFeatures & vk::FormatFeatureFlagBits::eVertexBuffer) != vk::FormatFeatureFlags{})
+		{
+			continue;
+		}
+
+		uUnsupported++;
+		Zenith_Assert(false,
+			"ShaderDataType %u (VkFormat %u) cannot be fetched as a vertex attribute on this device (bufferFeatures 0x%x)",
+			uType, static_cast<uint32_t>(eFormat), static_cast<uint32_t>(xProps.bufferFeatures));
+	}
+	Zenith_Log(LOG_CATEGORY_VULKAN, "Vertex-fetch format support: %u unsupported of the mapped ShaderDataType vocabulary", uUnsupported);
 }
 
 void Zenith_Vulkan::CreateQueueFamilies()
@@ -2107,6 +2143,14 @@ vk::Format Zenith_Vulkan::ShaderDataTypeToVulkanFormat(ShaderDataType t)
 	case SHADER_DATA_TYPE_UINT4:	return vk::Format::eR32G32B32A32Uint;
 	case SHADER_DATA_TYPE_HALF2:				return vk::Format::eR16G16Sfloat;
 	case SHADER_DATA_TYPE_SNORM10_10_10_2:		return vk::Format::eA2B10G10R10SnormPack32;
+	case SHADER_DATA_TYPE_HALF4:				return vk::Format::eR16G16B16A16Sfloat;
+	case SHADER_DATA_TYPE_SNORM16X2:			return vk::Format::eR16G16Snorm;
+	case SHADER_DATA_TYPE_SNORM16X4:			return vk::Format::eR16G16B16A16Snorm;
+	case SHADER_DATA_TYPE_UNORM16X2:			return vk::Format::eR16G16Unorm;
+	case SHADER_DATA_TYPE_UNORM16X4:			return vk::Format::eR16G16B16A16Unorm;
+	case SHADER_DATA_TYPE_UNORM8X4:				return vk::Format::eR8G8B8A8Unorm;
+	case SHADER_DATA_TYPE_UINT8X4:				return vk::Format::eR8G8B8A8Uint;
+	case SHADER_DATA_TYPE_UINT16X4:				return vk::Format::eR16G16B16A16Uint;
 	default:
 		Zenith_Assert(false, "Unknown shader data type");
 		return vk::Format::eUndefined;

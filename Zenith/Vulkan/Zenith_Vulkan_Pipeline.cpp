@@ -14,6 +14,7 @@ License: MIT (see LICENSE file at the top of the source tree)
 #include "Flux/Flux.h"
 #include "Flux/Flux_PersistentSetLayouts.h"   // Phase 5: persistent-set layout precondition
 #include "Flux/Flux_RenderTargets.h"
+#include "Flux/Flux_VertexLayoutValidation.h" // stale-generated-header tripwire
 
 // The backend pipeline/shader classes hold no hot-reload state — Slang shader
 // hot-reload (ZENITH_TOOLS) is owned by Flux_ShaderHotReload, which watches the
@@ -141,33 +142,50 @@ protected:
 	vk::DescriptorSetLayoutCreateInfo m_xCreateInfo;
 };
 
-static void AddVertexAttributes(const Flux_BufferLayout& xLayout, uint32_t uBinding, vk::VertexInputRate eRate, 
-	std::vector<vk::VertexInputBindingDescription>& xBindDescs, std::vector<vk::VertexInputAttributeDescription>& xAttrDescs, uint32_t& uBindPoint)
+// THE vertex-input state, built from the shader's LIVE reflection — there is no
+// CPU-side vertex description to build it from any more. Each attribute carries
+// its own binding (0 = per-vertex, 1 = per-instance, decided by [PerInstance] in
+// the .slang), its Slang-assigned varying LOCATION, and the byte offset
+// Flux_ShaderReflection::ComputeVertexPacking derived by tight-packing storage
+// sizes in declaration order.
+//
+// A binding description is emitted only for a binding that actually carries
+// attributes, so a program with no per-instance stream produces exactly one
+// binding, as it did when the two Flux_BufferLayouts were walked separately.
+static vk::PipelineVertexInputStateCreateInfo BuildVertexInputStateFromReflection(
+	const Flux_ShaderReflection& xReflection,
+	std::vector<vk::VertexInputBindingDescription>& xBindDescs,
+	std::vector<vk::VertexInputAttributeDescription>& xAttrDescs)
 {
-	if (xLayout.GetElements().GetSize() == 0)
-		return;
+	const Zenith_Vector<Flux_ReflectedVertexAttribute>& xAttributes = xReflection.GetVertexAttributes();
 
-	for (Zenith_Vector<Flux_BufferElement>::Iterator xIt(xLayout.GetElements()); !xIt.Done(); xIt.Next())
+	for (u_int u = 0; u < xAttributes.GetSize(); u++)
 	{
-		const Flux_BufferElement& xElement = xIt.GetData();
+		const Flux_ReflectedVertexAttribute& xAttribute = xAttributes.Get(u);
 		xAttrDescs.push_back(vk::VertexInputAttributeDescription()
-			.setBinding(uBinding)
-			.setLocation(uBindPoint++)
-			.setOffset(xElement.m_uOffset)
-			.setFormat(g_xEngine.FluxBackend().ShaderDataTypeToVulkanFormat(xElement.m_eType)));
+			.setBinding(xAttribute.m_uBinding)
+			.setLocation(xAttribute.m_uLocation)
+			.setOffset(xAttribute.m_uOffset)
+			.setFormat(g_xEngine.FluxBackend().ShaderDataTypeToVulkanFormat(xAttribute.m_eType)));
 	}
 
-	xBindDescs.push_back(vk::VertexInputBindingDescription()
-		.setBinding(uBinding)
-		.setStride(xLayout.GetStride())
-		.setInputRate(eRate));
-}
+	for (u_int uBinding = 0; uBinding < uFLUX_MAX_VERTEX_BINDINGS; uBinding++)
+	{
+		bool bBindingUsed = false;
+		for (u_int u = 0; u < xAttributes.GetSize() && !bBindingUsed; u++)
+		{
+			bBindingUsed = (xAttributes.Get(u).m_uBinding == uBinding);
+		}
+		if (!bBindingUsed)
+		{
+			continue;
+		}
 
-static vk::PipelineVertexInputStateCreateInfo VertexDescToVulkanDesc(const Flux_VertexInputDescription& xDesc, std::vector<vk::VertexInputBindingDescription>& xBindDescs, std::vector<vk::VertexInputAttributeDescription>& xAttrDescs)
-{
-	uint32_t uBindPoint = 0;
-	AddVertexAttributes(xDesc.m_xPerVertexLayout, 0, vk::VertexInputRate::eVertex, xBindDescs, xAttrDescs, uBindPoint);
-	AddVertexAttributes(xDesc.m_xPerInstanceLayout, 1, vk::VertexInputRate::eInstance, xBindDescs, xAttrDescs, uBindPoint);
+		xBindDescs.push_back(vk::VertexInputBindingDescription()
+			.setBinding(uBinding)
+			.setStride(xReflection.GetVertexStride(uBinding))
+			.setInputRate(uBinding == 0u ? vk::VertexInputRate::eVertex : vk::VertexInputRate::eInstance));
+	}
 
 	return std::move(vk::PipelineVertexInputStateCreateInfo()
 		.setVertexBindingDescriptionCount(static_cast<uint32_t>(xBindDescs.size()))
@@ -585,7 +603,7 @@ vk::Framebuffer Zenith_Vulkan_Pipeline::TargetSetupToFramebuffer(const Flux_Rend
 static vk::PipelineInputAssemblyStateCreateInfo BuildInputAssemblyState(const Flux_PipelineSpecification& xSpec)
 {
 	vk::PipelineInputAssemblyStateCreateInfo xTopology;
-	switch (xSpec.m_xVertexInputDesc.m_eTopology)
+	switch (xSpec.m_eTopology)
 	{
 	case(MESH_TOPOLOGY_TRIANGLES):
 		xTopology.setTopology(vk::PrimitiveTopology::eTriangleList);
@@ -746,10 +764,14 @@ void Zenith_Vulkan_PipelineBuilder::FromSpecification(Zenith_Vulkan_Pipeline& xP
 		xPipelineInfo.setPStages(xSpec.m_pxShader->m_xInfos);
 	}
 
-	// Vertex input + topology
+	// Vertex input + topology. The state is built from the shader's LIVE reflection;
+	// the spec's generated layout pointer is only the cross-check that fires when the
+	// committed Generated/ header has drifted from the shader (see the validation header).
+	Flux_ValidateVertexLayoutForSpec(xSpec);
+
 	std::vector<vk::VertexInputBindingDescription> xBindDescs;
 	std::vector<vk::VertexInputAttributeDescription> xAttrDescs;
-	vk::PipelineVertexInputStateCreateInfo xVertexDesc = VertexDescToVulkanDesc(xSpec.m_xVertexInputDesc, xBindDescs, xAttrDescs);
+	vk::PipelineVertexInputStateCreateInfo xVertexDesc = BuildVertexInputStateFromReflection(xSpec.m_pxShader->GetReflection(), xBindDescs, xAttrDescs);
 	vk::PipelineInputAssemblyStateCreateInfo xTopology = BuildInputAssemblyState(xSpec);
 	xPipelineInfo.setPVertexInputState(&xVertexDesc);
 	xPipelineInfo.setPInputAssemblyState(&xTopology);

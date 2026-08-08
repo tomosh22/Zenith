@@ -59,14 +59,9 @@ void Flux_GizmosImpl::BuildPipelines()
 	xSpec.m_aeColourAttachmentFormats[0] = FINAL_RT_FORMAT;
 	xSpec.m_uNumColourAttachments = 1;
 
-	// Vertex input description
-	Flux_VertexInputDescription xVertexDesc;
-	xVertexDesc.m_eTopology = MESH_TOPOLOGY_TRIANGLES;
-	xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT3); // Position
-	xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT3); // Color
-	xVertexDesc.m_xPerVertexLayout.CalculateOffsetsAndStrides();
-
-	xSpec.m_xVertexInputDesc = xVertexDesc;
+	// Position + colour (24 B), written by InterleaveVertexData through Flux_GizmoVertex.
+	xSpec.m_eTopology = MESH_TOPOLOGY_TRIANGLES;
+	xSpec.m_pxVertexLayout = &Flux_Generated_Gizmos::Gizmos::kVertexLayout;
 
 	// Depth state - test but don't write (gizmos always visible on top)
 	xSpec.m_bDepthTestEnabled = false;
@@ -150,20 +145,18 @@ Zenith_Entity* Flux_GizmosImpl::GetGizmoTargetWithTransform()
 	return m_pxTargetEntity;
 }
 
-void Flux_GizmosImpl::InterleaveVertexData(Zenith_Vector<float>& xOut, const Zenith_Vector<Zenith_Maths::Vector3>& xPositions, const Zenith_Vector<Zenith_Maths::Vector3>& xColors)
+void Flux_GizmosImpl::InterleaveVertexData(Zenith_Vector<Flux_GizmoVertex>& xOut, const Zenith_Vector<Zenith_Maths::Vector3>& xPositions, const Zenith_Vector<Zenith_Maths::Vector3>& xColors)
 {
 	for (uint32_t i = 0; i < xPositions.GetSize(); ++i)
 	{
-		xOut.PushBack(xPositions.Get(i).x);
-		xOut.PushBack(xPositions.Get(i).y);
-		xOut.PushBack(xPositions.Get(i).z);
-		xOut.PushBack(xColors.Get(i).x);
-		xOut.PushBack(xColors.Get(i).y);
-		xOut.PushBack(xColors.Get(i).z);
+		Flux_GizmoVertex xVertex;
+		xVertex.m_xPosition = xPositions.Get(i);
+		xVertex.m_xColour   = xColors.Get(i);
+		xOut.PushBack(xVertex);
 	}
 }
 
-void Flux_GizmosImpl::UploadGizmoGeometry(Zenith_Vector<Flux_GizmosImpl::GizmoGeometry>& xGeometryList, const Zenith_Vector<float>& xVertexData, const Zenith_Vector<uint32_t>& xIndices, const Zenith_Maths::Vector3& xColor, GizmoComponent eComponent)
+void Flux_GizmosImpl::UploadGizmoGeometry(Zenith_Vector<Flux_GizmosImpl::GizmoGeometry>& xGeometryList, const Zenith_Vector<Flux_GizmoVertex>& xVertexData, const Zenith_Vector<uint32_t>& xIndices, const Zenith_Maths::Vector3& xColor, GizmoComponent eComponent)
 {
 	GizmoGeometry xGeom;
 	xGeom.m_eComponent = eComponent;
@@ -172,7 +165,7 @@ void Flux_GizmosImpl::UploadGizmoGeometry(Zenith_Vector<Flux_GizmosImpl::GizmoGe
 
 	g_xEngine.FluxMemory().InitialiseVertexBuffer(
 		xVertexData.GetDataPointer(),
-		xVertexData.GetSize() * sizeof(float),
+		xVertexData.GetSize() * sizeof(Flux_GizmoVertex),
 		xGeom.m_xVertexBuffer
 	);
 
@@ -533,7 +526,7 @@ void Flux_GizmosImpl::GenerateArrowGeometry(Zenith_Vector<Flux_GizmosImpl::Gizmo
 	}
 
 	// Interleave and upload
-	Zenith_Vector<float> xVertexData;
+	Zenith_Vector<Flux_GizmoVertex> xVertexData;
 	InterleaveVertexData(xVertexData, positions, colors);
 	UploadGizmoGeometry(geometryList, xVertexData, indices, color, component);
 }
@@ -590,7 +583,7 @@ void Flux_GizmosImpl::GenerateCircleGeometry(Zenith_Vector<Flux_GizmosImpl::Gizm
 	}
 
 	// Interleave and upload
-	Zenith_Vector<float> xVertexData;
+	Zenith_Vector<Flux_GizmoVertex> xVertexData;
 	InterleaveVertexData(xVertexData, positions, colors);
 	UploadGizmoGeometry(geometryList, xVertexData, indices, color, component);
 }
@@ -635,7 +628,7 @@ void Flux_GizmosImpl::GenerateCubeGeometry(Zenith_Vector<Flux_GizmosImpl::GizmoG
 		indices.PushBack(cubeIndices[i]);
 
 	// Interleave and upload
-	Zenith_Vector<float> xVertexData;
+	Zenith_Vector<Flux_GizmoVertex> xVertexData;
 	InterleaveVertexData(xVertexData, positions, colors);
 	UploadGizmoGeometry(geometryList, xVertexData, indices, color, component);
 }

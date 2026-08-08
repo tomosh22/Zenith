@@ -93,7 +93,32 @@ param(
     # of its 20 toggles ever reached the panel, and DebugDrawAllSquads asserted
     # on an un-Initialise()d manager it is now called against every frame
     # (observed 2026-08-07 on a Null_ Combat build).
-    [int]$Baseline = 1352,
+    # 1352 -> 1367: +15 vertex-codec units (half2/half4/snorm16x4/unorm16x2/
+    # unorm8x4 round-trips, unorm8 rounding + clamp, uint8x4 lane order, SNORM10
+    # bit-identity against the transcribed legacy packer + pinned words +
+    # round-trip, PosQuant box round-trip + degenerate axis, bone-weight
+    # renormalisation + zero input, bone-index sentinel/ceiling); compressed-
+    # vertex Phase 1 (observed 2026-08-07 on a Null_ Combat build).
+    # 1367 -> 1377: +10 reflection vertex-input units (tight-pack offsets/strides in
+    # declaration order, independent per-binding packing, empty table, DataStream
+    # round-trip of the v6 table + the empty-table shape, adopt-once merge, [VtxFmt]
+    # string vocabulary, type inference from the declared field, override validation,
+    # storage family/lane table); compressed-vertex Phase 2 T2.a -- reflection sidecar
+    # v6 (observed 2026-08-07 on a Null_ Combat build).
+    # 1377 -> 1388: +11 baked-vertex-layout units -- 8 Flux_VertexLayoutDesc
+    # (element-wise equality over distinct arrays incl. in a constant expression,
+    # offset/type/semantic-index/stride/count drift, the canonical empty layout,
+    # semantic-vocabulary round-trip) + 3 Codegen emission (table content with
+    # STORAGE formats, the null layout, hard failure on an unnamed semantic);
+    # compressed-vertex Phase 2 T2.b -- codegen emission + [VtxFmt] annotations
+    # (observed 2026-08-07 on a Null_ Combat build).
+    # 1388 -> 1400: +12 vertex-layout-validation units (Flux_VertexLayoutValidation
+    # .Tests.inl) driving the boot tripwire's pure comparator through every branch
+    # real boots never take: the OK path, both null/empty no-input spellings,
+    # COUNT / per-binding STRIDE / ELEMENT (offset, type, semantic, semantic
+    # index, binding) / unknown-SEMANTIC mismatches; compressed-vertex Phase 2
+    # T2.d review hardening (observed 2026-08-08 on a Null_ Combat build).
+    [int]$Baseline = 1400,
     [int]$TimeoutSec = 180,
     [string]$LogPath = ""
 )

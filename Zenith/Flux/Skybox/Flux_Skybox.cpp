@@ -326,7 +326,6 @@ static void ExecuteSkybox(Flux_CommandBuffer* pxCommandList, void*)
 		Flux_SkyboxImpl& xSkybox = g_xEngine.Skybox();
 
 		pxCommandList->SetPipeline(&xSkybox.m_xSolidColourPipeline);
-		pxCommandList->SetVertexBuffer(g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
 		pxCommandList->SetIndexBuffer(g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
 		Flux_ShaderBinder xBinder(*pxCommandList);
 		xBinder.BindCBV(Flux_Generated_Skybox::SkyboxSolidColour::hSkyboxOverrideConstants, &xSkybox.m_xSolidColourConstantsBuffer.GetCBV());
@@ -341,7 +340,6 @@ static void ExecuteSkybox(Flux_CommandBuffer* pxCommandList, void*)
 	{
 		// Atmosphere sky (constants uploaded in PreExecuteSkybox)
 		pxCommandList->SetPipeline(&xSkybox.m_xAtmospherePipeline);
-		pxCommandList->SetVertexBuffer(xGraphics.m_xQuadMesh.GetVertexBuffer());
 		pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
 
 		{
@@ -370,7 +368,6 @@ static void ExecuteSkybox(Flux_CommandBuffer* pxCommandList, void*)
 		}
 
 		pxCommandList->SetPipeline(&xSkybox.m_xCubemapPipeline);
-		pxCommandList->SetVertexBuffer(xGraphics.m_xQuadMesh.GetVertexBuffer());
 		pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
 		Flux_ShaderBinder xBinder(*pxCommandList);
 		namespace SkyCube = Flux_Generated_Skybox::SkyboxCubemap;
@@ -388,7 +385,6 @@ static void ExecuteTransmittanceLUT(Flux_CommandBuffer* pxCommandList, void*)
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
 
 	pxCommandList->SetPipeline(&xSkybox.m_xTransmittanceLUTPipeline);
-	pxCommandList->SetVertexBuffer(xGraphics.m_xQuadMesh.GetVertexBuffer());
 	pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
 
 	{
@@ -419,7 +415,6 @@ static void ExecuteMultiScatterLUT(Flux_CommandBuffer* pxCommandList, void*)
 			xSkybox.m_fGroundAlbedo);
 
 	pxCommandList->SetPipeline(&xSkybox.m_xMultiScatterLUTPipeline);
-	pxCommandList->SetVertexBuffer(xGraphics.m_xQuadMesh.GetVertexBuffer());
 	pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
 
 	{
@@ -441,7 +436,6 @@ static void ExecuteSkyViewLUT(Flux_CommandBuffer* pxCommandList, void*)
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
 
 	pxCommandList->SetPipeline(&xSkybox.m_xSkyViewLUTPipeline);
-	pxCommandList->SetVertexBuffer(xGraphics.m_xQuadMesh.GetVertexBuffer());
 	pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
 
 	{

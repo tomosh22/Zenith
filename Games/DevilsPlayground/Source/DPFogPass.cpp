@@ -135,14 +135,14 @@ namespace
 
 		s_pxShader->Initialise(Flux_UnownedEngineShaders::xDevilsPlayground_DPFog);
 
-		Flux_VertexInputDescription xVertexDesc;
-		xVertexDesc.m_eTopology = MESH_TOPOLOGY_NONE;
-
 		Flux_PipelineSpecification xPipelineSpec;
 		xPipelineSpec.m_aeColourAttachmentFormats[0] = HDR_SCENE_FORMAT;
 		xPipelineSpec.m_uNumColourAttachments = 1;
 		xPipelineSpec.m_pxShader = s_pxShader;
-		xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
+		// No vertex input: this is a vertex-pulling / fullscreen program whose VS reads
+		// no attributes. m_pxVertexLayout stays null, which is the canonical spelling the
+		// validation tripwire matches against an empty reflection table.
+		xPipelineSpec.m_eTopology = MESH_TOPOLOGY_NONE;
 		xPipelineSpec.m_bDepthTestEnabled = false;
 		xPipelineSpec.m_bDepthWriteEnabled = false;
 
@@ -386,7 +386,6 @@ namespace
 
 		pxCommandList->SetPipeline(s_pxPipeline);
 
-		pxCommandList->SetVertexBuffer(g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
 		pxCommandList->SetIndexBuffer(g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
 
 		Flux_ShaderBinder xBinder(*pxCommandList);

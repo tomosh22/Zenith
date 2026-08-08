@@ -442,7 +442,6 @@ void Flux_IBLImpl::ExecuteBRDFLUTPass(Flux_CommandBuffer* pxCmd, void*)
 	// (see Flux_RenderGraph::Execute Phase 1/2 enable check).
 	auto& xFG = g_xEngine.FluxGraphics();
 	pxCmd->SetPipeline(&xIBL.m_xBRDFLUTPipeline);
-	pxCmd->SetVertexBuffer(xFG.m_xQuadMesh.GetVertexBuffer());
 	pxCmd->SetIndexBuffer(xFG.m_xQuadMesh.GetIndexBuffer());
 
 	// BRDF integration only reads its UV input; the Slang version exposes no
@@ -467,7 +466,6 @@ void Flux_IBLImpl::ExecuteMultiScatterLUTPass(Flux_CommandBuffer* pxCmd, void*)
 
 	auto& xFG = g_xEngine.FluxGraphics();
 	pxCmd->SetPipeline(&xIBL.m_xMultiScatterLUTPipeline);
-	pxCmd->SetVertexBuffer(xFG.m_xQuadMesh.GetVertexBuffer());
 	pxCmd->SetIndexBuffer(xFG.m_xQuadMesh.GetIndexBuffer());
 
 	{
@@ -496,7 +494,6 @@ void Flux_IBLImpl::ExecuteIrradianceFacePass(Flux_CommandBuffer* pxCmd, void* pU
 
 	auto& xFG = g_xEngine.FluxGraphics();
 	pxCmd->SetPipeline(&xIBL.m_xIrradianceConvolvePipeline);
-	pxCmd->SetVertexBuffer(xFG.m_xQuadMesh.GetVertexBuffer());
 	pxCmd->SetIndexBuffer(xFG.m_xQuadMesh.GetIndexBuffer());
 
 	{
@@ -525,7 +522,6 @@ void Flux_IBLImpl::ExecutePrefilterMipFacePass(Flux_CommandBuffer* pxCmd, void* 
 
 	auto& xFG = g_xEngine.FluxGraphics();
 	pxCmd->SetPipeline(&xIBL.m_xPrefilterPipeline);
-	pxCmd->SetVertexBuffer(xFG.m_xQuadMesh.GetVertexBuffer());
 	pxCmd->SetIndexBuffer(xFG.m_xQuadMesh.GetIndexBuffer());
 
 	{

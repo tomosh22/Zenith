@@ -36,15 +36,15 @@ void Flux_SDFsImpl::BuildPipelines()
 {
 	this->m_xShader.Initialise(Flux_SDFsShaders::xSDFs);
 
-	Flux_VertexInputDescription xVertexDesc;
-	xVertexDesc.m_eTopology = MESH_TOPOLOGY_NONE;
-
 	Flux_PipelineSpecification xPipelineSpec;
 	xPipelineSpec.m_aeColourAttachmentFormats[0] = HDR_SCENE_FORMAT;
 	xPipelineSpec.m_uNumColourAttachments = 1;
 	xPipelineSpec.m_eDepthStencilFormat = DEPTH_FORMAT;
 	xPipelineSpec.m_pxShader = &this->m_xShader;
-	xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
+	// No vertex input: this is a vertex-pulling / fullscreen program whose VS reads
+	// no attributes. m_pxVertexLayout stays null, which is the canonical spelling the
+	// validation tripwire matches against an empty reflection table.
+	xPipelineSpec.m_eTopology = MESH_TOPOLOGY_NONE;
 
 	this->m_xShader.GetReflection().PopulateLayout(xPipelineSpec.m_xPipelineLayout);
 
@@ -125,7 +125,6 @@ static void ExecuteSDFs(Flux_CommandBuffer* pxCommandList, void* pUserData)
 	pxCommandList->SetPipeline(&xSDFs.m_xPipeline);
 
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
-	pxCommandList->SetVertexBuffer(xGraphics.m_xQuadMesh.GetVertexBuffer());
 	pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
 
 	Flux_ShaderBinder xBinder(*pxCommandList);

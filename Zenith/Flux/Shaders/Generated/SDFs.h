@@ -8,6 +8,7 @@
 #pragma once
 
 #include "Flux/Slang/Flux_SlangCompiler.h"
+#include "Flux/Flux_VertexLayoutDesc.h"
 #include "glm/glm.hpp"
 #include <cstddef>
 
@@ -90,6 +91,8 @@ namespace Flux_Generated_SDFs
 			unsigned char m_ag_axSpheres[32000]; // slang=Array offset=32 arrayCount=1000 (no C++ mapping)
 		};
 		static_assert(sizeof(SphereData_CB) == 32032, "SphereData_CB size drifted from Slang reflection");
+		// vertex inputs: none
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ nullptr, 0u, { 0u, 0u } };
 	}
 
 }

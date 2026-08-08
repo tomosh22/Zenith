@@ -30,25 +30,15 @@ void Flux_QuadsImpl::BuildPipelines()
 {
 	m_xShader.Initialise(Flux_QuadsShaders::xQuads);
 
-	Flux_VertexInputDescription xVertexDesc;
-	xVertexDesc.m_eTopology = MESH_TOPOLOGY_TRIANGLES;
-	xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT3);//position
-	xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT2);//uv
-	xVertexDesc.m_xPerVertexLayout.CalculateOffsetsAndStrides();
-	xVertexDesc.m_xPerInstanceLayout.GetElements().PushBack(SHADER_DATA_TYPE_UINT4);//position size
-	xVertexDesc.m_xPerInstanceLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT4);//colour
-	xVertexDesc.m_xPerInstanceLayout.GetElements().PushBack(SHADER_DATA_TYPE_UINT);//texture index
-	xVertexDesc.m_xPerInstanceLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT2);//UVMult UVAdd
-	xVertexDesc.m_xPerInstanceLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT);//corner radius
-	xVertexDesc.m_xPerInstanceLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT2);//size pixels
-	xVertexDesc.m_xPerInstanceLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT4);//colour2 (gradient)
-	xVertexDesc.m_xPerInstanceLayout.CalculateOffsetsAndStrides();
-
 	Flux_PipelineSpecification xPipelineSpec;
 	xPipelineSpec.m_aeColourAttachmentFormats[0] = FINAL_RT_FORMAT;
 	xPipelineSpec.m_uNumColourAttachments = 1;
 	xPipelineSpec.m_pxShader = &m_xShader;
-	xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
+	// Binding 0 = the shared unit quad (20 B), binding 1 = Flux_QuadsImpl::Quad (72 B).
+	// The split comes from the [PerInstance] tags in Flux_Quads.slang; the offsets and
+	// strides are pinned against Quad beside the struct in Flux_QuadsImpl.h.
+	xPipelineSpec.m_eTopology = MESH_TOPOLOGY_TRIANGLES;
+	xPipelineSpec.m_pxVertexLayout = &Flux_Generated_Quads::Quads::kVertexLayout;
 
 	m_xShader.GetReflection().PopulateLayout(xPipelineSpec.m_xPipelineLayout);
 

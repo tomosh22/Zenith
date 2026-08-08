@@ -24,6 +24,71 @@ DEBUGVAR bool dbg_bLogTerrainStreaming = false;
 
 namespace
 {
+	// ===== The on-disk chunk format IS the terrain shader's vertex input =====
+	//
+	// Zenith_TerrainChunkLayout (Core) describes the BYTES a baked Render_X_Y.zmesh
+	// holds; Flux_Generated_Terrain::Terrain_ToGBuffer::kVertexLayout describes what
+	// the terrain VS fetches. Nothing in either file mentions the other, and the two
+	// are edited by different people for different reasons — an exporter change on one
+	// side, a .slang VsIn change on the other — so the equality below is the only thing
+	// that fails a build when they part company. Silently, they would not: a mismatched
+	// stride reads the next vertex's bytes as position and the terrain shears.
+	//
+	// THIS TU IS THE ONE THAT CAN ASK. Core must never include Generated/ (layer DAG),
+	// so the comparison cannot live beside Zenith_TerrainChunkLayout; this file already
+	// includes both headers for its own reasons, which makes it the natural — and only —
+	// home. Compared element-wise rather than by stride alone, because two layouts can
+	// agree on 28 bytes and disagree about which four bytes are the normal.
+	static_assert(Zenith_TerrainChunkLayout::uELEMENT_COUNT == Flux_Generated_Terrain::Terrain_ToGBuffer::kVertexLayout.m_uElementCount,
+		"Baked terrain chunks and the terrain VS must declare the same number of vertex elements");
+	static_assert(Zenith_TerrainChunkLayout::uVERTEX_STRIDE == Flux_Generated_Terrain::Terrain_ToGBuffer::kVertexLayout.m_auStrides[0],
+		"Baked terrain chunk stride must equal the stride the terrain VS fetches");
+	static_assert(Flux_Generated_Terrain::Terrain_ToGBuffer::kVertexLayout.m_auStrides[1] == 0u,
+		"The terrain VS must declare no per-instance stream — chunks are drawn indirect, not instanced");
+
+	// Element-by-element: same storage format, same byte offset, in the same order,
+	// AND the expected meaning per slot. The offsets are the running sum of the
+	// on-disk element sizes, which is exactly how both sides tight-pack. The
+	// semantic check exists because the two snorm10 lanes are equal-width: a
+	// shader-side NORMAL/TANGENT swap preserves every type and offset and only
+	// the semantic can see it (axELEMENTS itself carries no semantic — the
+	// expected meanings are the file format's, spelled here).
+	constexpr bool TerrainChunkLayoutMatchesShader()
+	{
+		constexpr FluxVertexSemantic aeExpectedSemantics[Zenith_TerrainChunkLayout::uELEMENT_COUNT] =
+		{
+			FLUX_VERTEX_SEMANTIC_POSITION,
+			FLUX_VERTEX_SEMANTIC_TEXCOORD,
+			FLUX_VERTEX_SEMANTIC_NORMAL,
+			FLUX_VERTEX_SEMANTIC_TANGENT,
+		};
+
+		uint32_t uOffset = 0;
+		for (uint32_t u = 0; u < Zenith_TerrainChunkLayout::uELEMENT_COUNT; u++)
+		{
+			const Flux_VertexLayoutElement& xShaderElement =
+				Flux_Generated_Terrain::Terrain_ToGBuffer::kVertexLayout.m_paxElements[u];
+			if (xShaderElement.m_eSemantic != aeExpectedSemantics[u]) return false;
+			if (xShaderElement.m_eType != Zenith_TerrainChunkLayout::axELEMENTS[u].m_eType) return false;
+			if (xShaderElement.m_uOffset != uOffset) return false;
+			if (xShaderElement.m_uBinding != 0u) return false;
+			uOffset += Zenith_TerrainChunkLayout::axELEMENTS[u].m_uSize;
+		}
+		return true;
+	}
+	static_assert(TerrainChunkLayoutMatchesShader(),
+		"Zenith_TerrainChunkLayout::axELEMENTS has drifted from the terrain VS's vertex input — "
+		"a baked chunk no longer describes the bytes the shader fetches");
+
+	// The velocity and shadow VsIns are HAND-MAINTAINED COPIES of ToGBuffer's
+	// (not a shared struct), and each is boot-validated only against its OWN
+	// reflection — self-consistent even when the copies drift apart. These pins
+	// are the only guard that all three fetch the SAME baked-chunk bytes.
+	static_assert(Flux_Generated_Terrain::Terrain_ToGBufferVelocity::kVertexLayout == Flux_Generated_Terrain::Terrain_ToGBuffer::kVertexLayout,
+		"Terrain_ToGBufferVelocity's hand-copied VsIn has drifted from Terrain_ToGBuffer's — the shared terrain buffer would fetch with two different layouts");
+	static_assert(Flux_Generated_Terrain::Terrain_ToShadowmap::kVertexLayout == Flux_Generated_Terrain::Terrain_ToGBuffer::kVertexLayout,
+		"Terrain_ToShadowmap's hand-copied VsIn has drifted from Terrain_ToGBuffer's — the shadow caster would fetch the terrain buffer with a different layout");
+
 	static_assert(Zenith_TerrainChunkLayout::uHIGH_CHUNK_VERTEX_COUNT <= STREAMING_VERTEX_BUFFER_SIZE / Zenith_TerrainChunkLayout::uVERTEX_STRIDE,
 		"A canonical HIGH terrain chunk must fit in the streaming vertex buffer");
 	static_assert(Zenith_TerrainChunkLayout::uHIGH_CHUNK_INDEX_COUNT <= STREAMING_INDEX_BUFFER_SIZE / sizeof(uint32_t),

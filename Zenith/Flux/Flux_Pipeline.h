@@ -2,8 +2,9 @@
 
 // Graphics pipeline specification + the fullscreen-pipeline build helper.
 // Split out of Flux.h.
-#include "Flux/Flux_BackendTypes.h"             // Flux_Shader, Flux_BlendState, Flux_PipelineLayout, Flux_VertexInputDescription, Flux_Pipeline
-#include "Flux/Flux_Enums.h"                    // TextureFormat, DepthCompareFunc, LoadAction, CullMode
+#include "Flux/Flux_BackendTypes.h"             // Flux_Shader, Flux_BlendState, Flux_PipelineLayout, Flux_Pipeline
+#include "Flux/Flux_Enums.h"                    // TextureFormat, DepthCompareFunc, LoadAction, CullMode, MeshTopology
+#include "Flux/Flux_VertexLayoutDesc.h"         // Flux_VertexLayoutDesc (the generated per-program vertex layout)
 #include "Flux/Flux_SpecConstants.h"            // Flux_SpecConstantTable (Stage 3a per-pipeline spec-constant values)
 #include "Flux/Slang/Flux_ShaderDecl.h"  // const Flux_ShaderDecl& param of Flux_PipelineHelper
 
@@ -24,7 +25,22 @@ struct Flux_PipelineSpecification
 
 	Flux_PipelineLayout m_xPipelineLayout;
 
-	Flux_VertexInputDescription m_xVertexInputDesc;
+	MeshTopology m_eTopology = MESH_TOPOLOGY_TRIANGLES;
+
+	// The vertex layout this pipeline EXPECTS, as a pointer to the `inline constexpr
+	// kVertexLayout` its program's Generated/<Subsystem>.h baked from Slang reflection.
+	//
+	// It is NOT what the backend builds the vertex-input state from — that comes from
+	// the shader's LIVE reflection, so the fetched layout is always whatever the shader
+	// currently declares. This pointer is the CROSS-CHECK: every backend's
+	// FromSpecification asserts the two agree (Flux_VertexLayoutValidation.h), which is
+	// how a stale generated header is caught at pipeline build instead of by garbled
+	// geometry. There is deliberately no hand-written CPU vertex description anywhere —
+	// a layout and the shader that fetches it cannot drift apart if only one of them exists.
+	//
+	// nullptr is the canonical spelling for a pipeline with NO vertex input (fullscreen /
+	// vertex-pulling programs); it matches an empty reflection table.
+	const Flux_VertexLayoutDesc* m_pxVertexLayout = nullptr;
 
 	TextureFormat m_aeColourAttachmentFormats[FLUX_MAX_TARGETS] = {};
 	uint32_t m_uNumColourAttachments = 0;

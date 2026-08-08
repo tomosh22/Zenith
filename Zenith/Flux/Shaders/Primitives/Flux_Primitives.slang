@@ -15,11 +15,16 @@
 #include "Common/Bindings.slang"
 import Common.GBuffer;
 
+// NO COLOR lane: every primitive's colour arrives on the DRAW constant buffer
+// below, so a per-vertex colour was fetched, ignored, and reported by the
+// validation layer as "vertex attribute at location 2 not consumed". It was
+// deleted here together with its bytes in PrimitiveVertex (Flux_Primitives.cpp)
+// — the layout is now derived from this struct, so the two can only be removed
+// together.
 struct VsIn
 {
 	float3 a_xPosition    : POSITION;
 	float3 a_xNormal      : NORMAL;
-	float3 a_xVertexColor : COLOR; // unused — overridden by CB colour
 };
 
 struct VsOut

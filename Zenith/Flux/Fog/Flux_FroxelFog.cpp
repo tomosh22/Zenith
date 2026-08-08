@@ -106,15 +106,15 @@ void Flux_FroxelFogImpl::BuildPipelines()
 	// Initialize apply fragment shader
 	m_xApplyShader.Initialise(Flux_FogShaders::xFog_FroxelApply);
 
-	Flux_VertexInputDescription xVertexDesc;
-	xVertexDesc.m_eTopology = MESH_TOPOLOGY_NONE;
-
 	Flux_PipelineSpecification xApplySpec;
 	xApplySpec.m_aeColourAttachmentFormats[0] = HDR_SCENE_FORMAT;
 	xApplySpec.m_uNumColourAttachments = 1;
 	xApplySpec.m_eDepthStencilFormat = DEPTH_FORMAT;
 	xApplySpec.m_pxShader = &m_xApplyShader;
-	xApplySpec.m_xVertexInputDesc = xVertexDesc;
+	// No vertex input: this is a vertex-pulling / fullscreen program whose VS reads
+	// no attributes. m_pxVertexLayout stays null, which is the canonical spelling the
+	// validation tripwire matches against an empty reflection table.
+	xApplySpec.m_eTopology = MESH_TOPOLOGY_NONE;
 
 	m_xApplyShader.GetReflection().PopulateLayout(xApplySpec.m_xPipelineLayout);
 
@@ -306,7 +306,6 @@ void Flux_FroxelFogImpl::RenderApply(Flux_CommandBuffer* pxCommandList)
 
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
 	pxCommandList->SetPipeline(&m_xApplyPipeline);
-	pxCommandList->SetVertexBuffer(xGraphics.m_xQuadMesh.GetVertexBuffer());
 	pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
 
 	namespace FA = Flux_Generated_Fog::Fog_FroxelApply;

@@ -43,6 +43,8 @@ Zenith_Status Zenith_Vulkan_Shader::InitialiseEx(const Flux_ShaderDecl& xDecl)
 	// shader instance without leaking GPU handles.
 	Reset();
 
+	m_szProgramName = xDecl.m_szName;
+
 	Zenith_Status xStatus = Zenith_ErrorCode::SUCCESS;
 #ifdef ZENITH_WINDOWS
 	if (Flux_SlangCompiler::IsInitialised())
@@ -365,6 +367,12 @@ void Zenith_Vulkan_Shader::MergeReflection(const Flux_ShaderReflection& xStageRe
 			m_xReflection.AddSpecConstant(xNewSpec);
 		}
 	}
+
+	// T2.a: adopt the vertex-input table (v6). Adopt-once, so the VS sidecar — merged
+	// first on both load paths above — is what the pipeline sees, and the FS merge (which
+	// carries an identical whole-program copy) cannot overwrite it. Compute programs never
+	// reach here; they read their sidecar straight into m_xReflection.
+	m_xReflection.MergeVertexInputs(xStageReflection);
 
 	// Rebuild the lookup map after merging
 	m_xReflection.BuildLookupMap();

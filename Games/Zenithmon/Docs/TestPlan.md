@@ -1711,9 +1711,9 @@ change touches `Zenith/` as well as the game.
 **Boot baseline at THIS change: ZM 2863; engine (Null Combat) stays 1242.** The added
 contracts are pure generator/placement checks, so they do not move the 55-test
 automated registry or the cross-game engine suite.
-★ **SUPERSEDED -- the CURRENT baseline is ZM 2977, engine 1352**, registry unmoved
-at **55**. OBSERVED 2026-08-07 on clean `Null_` builds:
-`2977 ran, 2975 passed, 0 failed, 2 skipped`. Derivation: ZM-D-183 added the two
+★ **SUPERSEDED -- the CURRENT baseline is ZM 3025, engine 1400**, registry unmoved
+at **55**. OBSERVED 2026-08-08 on clean `Null_` builds:
+`3025 ran, 3023 passed, 0 failed, 2 skipped`. Derivation: ZM-D-183 added the two
 committed-scene-bytes guards (2906 -> 2908); ZM-D-184 added the rival spawn-clearance
 unit (2908 -> 2909); the 2026-08-05 CommandLine ParseArgs units added 5 ENGINE units
 (engine 1284 -> 1289) and were NOT reflected here, leaving the ZM pin stale at 2909
@@ -1735,10 +1735,28 @@ Phase-6 displacement re-anchor units added 4 more ENGINE units (engine
 1340 -> 1344), taking ZM to 2969; its Phase-7 types-authoring units added 6
 more ENGINE units (engine 1344 -> 1350), taking ZM to 2975; and the 2026-08-07
 debug-variable audit remediation added 2 more ENGINE units (engine
-1350 -> **1352**) -- the AI debug-draw routing pins that came with giving
+1350 -> 1352) -- the AI debug-draw routing pins that came with giving
 `Zenith_AIDebugVariables::Initialise()` its first call site -- taking ZM to
-**2977**. `zm-tests.yml` `-Baseline` and `run_unit_gate.ps1`'s default both
-moved to match. The paragraph below is the
+2977; and the compressed-vertex work's Phase 1 added 15 more ENGINE units
+(engine 1352 -> 1367) -- the `Flux_VertexCodec` suite, whose SNORM10 case
+pins the terrain packer bit-for-bit against the copy it replaced -- taking ZM to
+2992; and that work's Phase 2 T2.a added 10 more ENGINE units (engine
+1367 -> **1377**) -- the `Flux_ShaderReflection` vertex-input suite that comes
+with the v6 `.spv.refl` sidecar (tight-pack offsets/strides, per-binding
+independence, the empty table, the v6 round-trip, the adopt-once stage merge,
+and the pure `[VtxFmt]` vocabulary / inference / override validation) -- taking
+ZM to 3002; and that work's Phase 2 T2.b added 11 more ENGINE units (engine
+1377 -> **1388**) -- the `Flux_VertexLayoutDesc` equality/vocabulary suite plus
+three Codegen emission units, arriving with the baked `kaxVertexAttribs[]` /
+`kVertexLayout` constants every generated shader header now carries and the
+`[VtxFmt("snorm10_10_10_2")]` annotations that make the terrain table read its
+locked 28-byte stride -- taking ZM to 3013; and that work's Phase 2 T2.d review
+hardening added 12 more ENGINE units (engine 1388 -> **1400**) -- the
+vertex-layout-validation suite that drives the boot tripwire's pure comparator
+through every branch real boots never take (the OK path, both no-input
+spellings, and the COUNT / per-binding STRIDE / ELEMENT / unknown-SEMANTIC
+mismatch categories) -- taking ZM to **3025**. `zm-tests.yml`
+`-Baseline` and `run_unit_gate.ps1`'s default both moved to match. The paragraph below is the
 ZM-D-182-era snapshot, kept for the audit trail:
 
 ★ **The (ZM-D-182-era) baseline was ZM 2864** (ZM-D-182 added

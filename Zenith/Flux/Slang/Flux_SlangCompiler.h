@@ -104,6 +104,82 @@ struct Flux_ReflectedSpecConstant
 	std::string m_strTypeName;        // e.g. "bool", "int"
 };
 
+// Vertex-input bindings an entry point's attributes are split across (compressed-
+// vertex work, T2.a): binding 0 is the per-vertex stream, binding 1 the per-instance
+// stream a [PerInstance]-tagged field lands in. Exactly two because the vertex-layout
+// model has exactly those two fetch rates — a third would need a new authoring tag AND
+// a matching backend binding slot, so the constant is deliberately not open-ended.
+inline constexpr u_int uFLUX_MAX_VERTEX_BINDINGS = 2;
+
+// One reflected vertex-input attribute of a program's VERTEX entry point.
+//
+// m_eType is the STORAGE format in the vertex buffer, which is NOT necessarily the
+// declared field type: fetch hardware widens/converts, so a [VtxFmt("snorm10_10_10_2")]
+// field declared `float4` stores four bytes and arrives as a float4. m_uOffset /
+// the owning reflection's stride are BYTE quantities computed by tight-packing that
+// storage size in declaration order — they are NOT Slang's varying (location-based)
+// offsets, which count locations, not bytes.
+//
+// m_strSemantic carries the base semantic with its trailing digit split off and the
+// name upper-cased ("TEXCOORD1" -> {"TEXCOORD", 1}) — that is how Slang reports it.
+struct Flux_ReflectedVertexAttribute
+{
+	std::string    m_strName;                            // the VsIn field name, e.g. "a_xTangent"
+	std::string    m_strSemantic;                        // upper-cased base semantic, e.g. "TEXCOORD"
+	u_int          m_uSemanticIndex = 0;                 // trailing digit split off the semantic
+	u_int          m_uLocation      = 0;                 // varying (vertex-input) location
+	ShaderDataType m_eType          = SHADER_DATA_TYPE_NONE;  // STORAGE format in the buffer
+	u_int          m_uBinding       = 0;                 // 0 = per-vertex, 1 = per-instance
+	u_int          m_uOffset        = 0;                 // BYTE offset within its binding's packed vertex
+};
+
+// Scalar kind of a vertex-input field AS DECLARED in the shader. A Slang-free
+// vocabulary on purpose: it lets the format-inference/validation rules below be pure
+// functions compiled (and unit-tested) in every config, including the Slang-less
+// Null/Android builds that only ever READ a sidecar.
+enum FluxVertexFieldScalar
+{
+	FLUX_VERTEX_FIELD_SCALAR_UNKNOWN,
+	FLUX_VERTEX_FIELD_SCALAR_FLOAT32,
+	FLUX_VERTEX_FIELD_SCALAR_FLOAT16,
+	FLUX_VERTEX_FIELD_SCALAR_INT32,
+	FLUX_VERTEX_FIELD_SCALAR_UINT32,
+};
+
+// Fetch family of a STORAGE format. snorm/unorm/half all arrive in the shader as
+// floats, so they share the FLOAT family with plain float32; the raw integer formats
+// are their own families and are legal only on int/uint fields.
+enum FluxVertexStorageFamily
+{
+	FLUX_VERTEX_STORAGE_FAMILY_UNKNOWN,
+	FLUX_VERTEX_STORAGE_FAMILY_FLOAT,
+	FLUX_VERTEX_STORAGE_FAMILY_INT,
+	FLUX_VERTEX_STORAGE_FAMILY_UINT,
+};
+
+// Map a [VtxFmt("<fmt>")] authoring string onto its storage tag. Returns false for an
+// unrecognised string — the caller FAILS THE COMPILE rather than silently falling back
+// to the declared type, because a typo'd format would otherwise bake a wrong stride.
+bool Flux_ParseVertexFormatString(const char* szFormat, ShaderDataType& eTypeOut);
+
+// Storage tag for an UN-annotated field, inferred from its declared scalar kind + lane
+// count (float32xN -> FLOAT..FLOAT4, float16x2/x4 -> HALF2/HALF4, int32xN / uint32xN ->
+// INT.. / UINT..). Returns false for anything with no vertex-input representation
+// (matrix, bool, float16x1/x3, an unknown scalar) — also a hard compile error.
+bool Flux_InferVertexAttributeType(FluxVertexFieldScalar eFieldScalar, u_int uFieldLanes, ShaderDataType& eTypeOut);
+
+// Family + lane count of a storage tag. UNKNOWN / 0 for a tag that is not a legal
+// vertex-input format (matrices, bool, NONE).
+FluxVertexStorageFamily Flux_VertexStorageFamily(ShaderDataType eType);
+u_int Flux_VertexStorageLaneCount(ShaderDataType eType);
+
+// Is a [VtxFmt] override legal on this field? Two rules, both hard: the storage must
+// carry at least as many lanes as the field consumes (half4 feeding a float3 is fine —
+// the fetch drops the extra lane — while half2 feeding a float3 would invent one), and
+// the fetch FAMILY must match (a uint8x4 buffer cannot feed a float field, and no
+// float-family format can feed a uint field).
+bool Flux_ValidateVertexFormatOverride(ShaderDataType eStorage, FluxVertexFieldScalar eFieldScalar, u_int uFieldLanes);
+
 class Flux_ShaderReflection
 {
 public:
@@ -144,6 +220,26 @@ public:
 	const Flux_ReflectedSpecConstant* GetSpecConstant(const char* szName) const;
 	const Zenith_Vector<Flux_ReflectedSpecConstant>& GetSpecConstants() const { return m_axSpecConstants; }
 
+	// Vertex-input table (sidecar v6). Populated by ExtractVertexInputs from the VERTEX
+	// entry point of the linked program, in DECLARATION order — which is also location
+	// order, since Slang numbers the non-system-value fields densely from 0.
+	//
+	// AddVertexAttribute appends verbatim; ComputeVertexPacking then assigns every
+	// attribute's byte offset and fills m_auVertexStrides, so packing is one function
+	// with no per-caller arithmetic (and is unit-testable without a Slang session).
+	void AddVertexAttribute(const Flux_ReflectedVertexAttribute& xAttribute);
+	void ComputeVertexPacking();
+	const Zenith_Vector<Flux_ReflectedVertexAttribute>& GetVertexAttributes() const { return m_axVertexAttributes; }
+	u_int GetVertexStride(u_int uBinding) const;
+
+	// Merge path (backend shader load). The table is a WHOLE-PROGRAM property — Slang
+	// emits one reflection for the linked program and FluxCompiler writes that same
+	// reflection to every stage's sidecar — so both the VS and FS sidecars of a graphics
+	// program carry an identical copy. Adopting only when empty therefore makes the merge
+	// idempotent AND guarantees the fragment stage can never overwrite what the vertex
+	// stage contributed (the VS sidecar is merged first on every backend).
+	void MergeVertexInputs(const Flux_ShaderReflection& xSource);
+
 private:
 	Zenith_Vector<Flux_ReflectedBinding> m_axBindings;
 	// Map stores indices into m_axBindings so GetBinding returns a stable
@@ -151,6 +247,10 @@ private:
 	Zenith_HashMap<std::string, u_int> m_xBindingMap;
 	// Spec constants (v5). Kept as a small flat vector — no map (handful per program).
 	Zenith_Vector<Flux_ReflectedSpecConstant> m_axSpecConstants;
+	// Vertex inputs (v6) + the tight-packed byte stride of each binding. Strides are
+	// derived state: ComputeVertexPacking is the only writer.
+	Zenith_Vector<Flux_ReflectedVertexAttribute> m_axVertexAttributes;
+	u_int m_auVertexStrides[uFLUX_MAX_VERTEX_BINDINGS] = { 0u, 0u };
 };
 
 // Description for a Slang program compile. One module file (mega-file per
@@ -210,6 +310,37 @@ struct Flux_SlangProbeResult
 	// D5 extraction API and assert current behaviour.
 	struct SpecConstant { std::string m_strName; u_int m_uId = 0; int64_t m_iDefault = 0; bool m_bHasDefault = false; };
 	Zenith_Vector<SpecConstant> m_axSpecConstants;
+
+	// One user attribute observed on a vertex-input field AFTER compose+link.
+	struct VertexAttribute
+	{
+		std::string m_strName;              // as Slang reports it: the declared name minus its "Attribute" suffix
+		std::string m_strArg0;              // first argument, when the attribute declares a string parameter
+		bool        m_bHasArg0     = false;
+		bool        m_bFoundByName = false; // findAttributeByName(globalSession, m_strName) round-trips to the same attribute
+	};
+
+	// One field of the vertex entry point's input struct, read from the LINKED program's
+	// entry-point reflection (CompileVertexProbeFromSource). Carries everything a vertex-layout
+	// generator would need: varying location, semantic, user attributes, and the type facts
+	// format inference keys on. Empty for compute probes.
+	struct VertexInputField
+	{
+		std::string m_strName;
+		std::string m_strSemanticName;                // Slang upper-cases these ("SV_VertexID" -> "SV_VERTEXID")
+		u_int       m_uSemanticIndex   = 0;
+		bool        m_bHasVaryingInput = false;       // field carries the VaryingInput (== VertexInput) category
+		u_int       m_uVaryingLocation = 0;           // getOffset(VERTEX_INPUT); meaningless unless m_bHasVaryingInput
+		u_int       m_uCategoryCount   = 0;
+		bool        m_bSemanticIsSV    = false;       // semantic name begins with "SV_"
+		std::string m_strTypeKind;                    // "vector" / "scalar" / "matrix" / ...
+		std::string m_strScalarType;                  // "float32" / "float16" / "uint32" / ... (element type for vectors)
+		u_int       m_uElementCount    = 0;           // vector lanes; 1 for a scalar
+		u_int       m_uRowCount        = 0;
+		u_int       m_uColumnCount     = 0;
+		Zenith_Vector<VertexAttribute> m_axAttributes;
+	};
+	Zenith_Vector<VertexInputField> m_axVertexInputs;
 };
 #endif // ZENITH_WINDOWS && ZENITH_VULKAN
 
@@ -231,6 +362,15 @@ public:
 	// bEmitDebugInfo forces DebugInformation=MAXIMAL for the compile (Stage-1 debug-info probe E6).
 	static bool CompileProbeFromSource(const char* szSource, const char* szComputeEntry, Flux_SlangProbeResult& xOut,
 									   bool bEmitDebugInfo = false);
+
+	// Vertex-entry sibling of CompileProbeFromSource: same session/compose/link/emit path, but
+	// composes a VERTEX entry point and additionally walks its entry-point reflection into
+	// xOut.m_axVertexInputs — per-field varying location, semantic, user attributes and type
+	// facts. The vertex-layout spike (Flux_SlangProbes.Tests.inl, V1-V5) reads that table to
+	// settle whether field user-attributes survive linking. szVertexEntry must name a
+	// [shader("vertex")] entry; passing null yields a front-end-only accept, as for compute.
+	static bool CompileVertexProbeFromSource(const char* szSource, const char* szVertexEntry, Flux_SlangProbeResult& xOut,
+											 bool bEmitDebugInfo = false);
 #endif // ZENITH_WINDOWS && ZENITH_VULKAN
 
 	// Modern Slang compile path. Loads xDesc.m_szModuleName as a Slang module

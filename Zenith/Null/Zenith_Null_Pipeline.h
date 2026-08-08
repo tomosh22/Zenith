@@ -31,6 +31,7 @@
 #include "Flux/Slang/Flux_ShaderCatalog.h"           // Flux_ShaderCatalog artifact stems
 #include "Flux/Slang/Flux_ShaderDecl.h"              // const Flux_ShaderDecl& Initialise handle
 #include "DataStream/Zenith_DataStream.h"             // Zenith_DataStream (reflection load)
+#include "Flux/Flux_VertexLayoutValidation.h"         // Flux_ValidateVertexLayoutForSpec (spec stays incomplete here)
 
 //==========================================================================
 // Zenith_Null_Shader  (satisfies FluxBackendShader)
@@ -48,6 +49,13 @@ public:
 	// No SPIR-V / Slang / GPU module work is performed.
 	void Initialise(const Flux_ShaderDecl& xDecl)
 	{
+		// Idempotent like the Vulkan shader: a re-Initialise (hot-reload's
+		// BuildPipelines) starts from a clean reflection, so the adopt-once
+		// vertex-table merge re-adopts structurally rather than by accident of
+		// artifact immutability.
+		Reset();
+		m_szProgramName = xDecl.m_szName;
+
 		std::string strRoot(SHADER_SOURCE_ROOT);
 
 		// Graphics-program path: merge vertex + fragment reflection.
@@ -95,6 +103,10 @@ public:
 
 	// Concept-pinned: -> std::same_as<const Flux_ShaderReflection&>.
 	const Flux_ShaderReflection& GetReflection() const { return m_xReflection; }
+
+	// Catalog name of the initialising decl (static string) — the vertex-layout
+	// tripwire names the offending program with it. Mirrors the Vulkan shader.
+	const char* GetProgramName() const { return m_szProgramName ? m_szProgramName : "<uninitialised>"; }
 
 	bool HasReflection() const { return m_xReflection.GetBindings().GetSize() > 0; }
 
@@ -151,11 +163,19 @@ private:
 			}
 		}
 
+		// T2.a: adopt the vertex-input table (v6), mirroring Zenith_Vulkan_Shader::
+		// MergeReflection. Adopt-once, so the VS sidecar (merged first above) is what
+		// lands and the FS merge — an identical whole-program copy — cannot overwrite it.
+		m_xReflection.MergeVertexInputs(xStageReflection);
+
 		m_xReflection.BuildLookupMap();
 	}
 
 	// Combined reflection data from all shader stages.
 	Flux_ShaderReflection m_xReflection;
+
+	// Decl name captured at Initialise (static-lifetime catalog string).
+	const char* m_szProgramName = nullptr;
 };
 
 //==========================================================================
@@ -265,7 +285,16 @@ public:
 	Zenith_Null_PipelineBuilder& WithTesselation() { return *this; }
 
 	// Concept entry point: compile a complete graphics pipeline from the spec.
-	static void FromSpecification(Zenith_Null_Pipeline& /*xPipelineOut*/, const Flux_PipelineSpecification& /*xSpec*/) { }
+	//
+	// VALIDATE-ONLY. There is no GPU pipeline to build, but the vertex-layout
+	// cross-check still runs — and it is worth MORE here than on Vulkan-Windows:
+	// this backend loads the COMMITTED .spv.refl sidecars, so the comparison is
+	// "committed sidecar vs committed Generated/ header", which is exactly the
+	// drift a headless CI leg can catch without a GPU.
+	static void FromSpecification(Zenith_Null_Pipeline& /*xPipelineOut*/, const Flux_PipelineSpecification& xSpec)
+	{
+		Flux_ValidateVertexLayoutForSpec(xSpec);
+	}
 };
 
 //==========================================================================

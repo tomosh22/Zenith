@@ -43,7 +43,14 @@ namespace Flux_CodeGenerator
 	// Pure-string variant used by unit tests to verify generator output without
 	// touching the file system. WriteSubsystemHeader is a thin wrapper that
 	// builds the string then forwards to WriteIfChanged.
+	//
+	// pstrErrorOut, when supplied, receives the FIRST fatal emission error — today
+	// only a vertex-input semantic the layout vocabulary does not name. That case
+	// cannot be papered over with a fallback tag (a wrong semantic bakes a wrong
+	// layout into a committed header), so the string being non-empty means the
+	// caller must NOT write the returned content and must fail the run.
 	std::string BuildSubsystemHeaderContent(const char* szSubsystem,
 											 const ProgramReflection* axPrograms,
-											 u_int uProgramCount);
+											 u_int uProgramCount,
+											 std::string* pstrErrorOut = nullptr);
 }

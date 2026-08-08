@@ -34,5 +34,17 @@ enum ShaderDataType
 	// Packed vertex attribute types
 	SHADER_DATA_TYPE_HALF2,				// float16x2 (4 bytes) - maps to VK_FORMAT_R16G16_SFLOAT
 	SHADER_DATA_TYPE_SNORM10_10_10_2,	// A2B10G10R10 signed normalized (4 bytes) - maps to VK_FORMAT_A2B10G10R10_SNORM_PACK32
-	SHADER_DATA_TYPE_NONE
+	SHADER_DATA_TYPE_NONE,
+	// Compressed-vertex vocabulary. Appended AFTER _NONE on purpose: every value
+	// above already has its ordinal written into shipped .zmesh element tables, so
+	// the only place a new tag can go without rewriting baked assets is the end.
+	// _NONE therefore is NOT the last enumerator and must never be used as a count.
+	SHADER_DATA_TYPE_HALF4,				// float16x4   (8 bytes) - VK_FORMAT_R16G16B16A16_SFLOAT
+	SHADER_DATA_TYPE_SNORM16X2,			// snorm16x2   (4 bytes) - VK_FORMAT_R16G16_SNORM
+	SHADER_DATA_TYPE_SNORM16X4,			// snorm16x4   (8 bytes) - VK_FORMAT_R16G16B16A16_SNORM
+	SHADER_DATA_TYPE_UNORM16X2,			// unorm16x2   (4 bytes) - VK_FORMAT_R16G16_UNORM
+	SHADER_DATA_TYPE_UNORM16X4,			// unorm16x4   (8 bytes) - VK_FORMAT_R16G16B16A16_UNORM
+	SHADER_DATA_TYPE_UNORM8X4,			// unorm8x4    (4 bytes) - VK_FORMAT_R8G8B8A8_UNORM
+	SHADER_DATA_TYPE_UINT8X4,			// uint8x4     (4 bytes) - VK_FORMAT_R8G8B8A8_UINT
+	SHADER_DATA_TYPE_UINT16X4			// uint16x4    (8 bytes) - VK_FORMAT_R16G16B16A16_UINT
 };

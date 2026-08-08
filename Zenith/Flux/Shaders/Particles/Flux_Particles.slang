@@ -9,6 +9,7 @@
 // =====================================================================
 
 #include "Common/Bindings.slang"
+#include "Common/VertexFormats.slang"  // [VtxFmt] / [PerInstance] authoring attributes
 
 struct ParticleConstantsLayout
 {
@@ -28,12 +29,17 @@ struct PassParams
 };
 ParameterBlock<PassParams> g_xPassSet;
 
+// Binding 0 is the shared unit quad (Flux_GraphicsImpl::m_xQuadMesh, 20 B);
+// binding 1 is the per-particle instance stream (Flux_ParticleInstance, 32 B).
+// The [PerInstance] tags below are what SPLIT the two — the generated vertex
+// layout this struct produces is the one the pipeline is built from, so an
+// untagged field would be fetched at vertex rate out of the unit quad.
 struct VsIn
 {
 	float3 a_xPosition                : POSITION;
 	float2 a_xUV                      : TEXCOORD0;
-	float4 a_xInstancePositionRadius  : TEXCOORD1; // xyz position, w radius
-	float4 a_xInstanceColour          : TEXCOORD2;
+	[PerInstance] float4 a_xInstancePositionRadius  : TEXCOORD1; // xyz position, w radius
+	[PerInstance] float4 a_xInstanceColour          : TEXCOORD2;
 };
 
 struct VsOut

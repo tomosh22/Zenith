@@ -32,12 +32,34 @@ using CylinderInstance = Flux_PrimitivesCylinderInstance;
 using TriangleInstance = Flux_PrimitivesTriangleInstance;
 
 // .cpp-local vertex + push-constant types (only used inside this TU).
+// 24 bytes: position + normal, and nothing else. There WAS a third m_xColor lane,
+// written white by every generator and read by nobody - Flux_Primitives.slang takes
+// the colour from the DRAW constant buffer, and the validation layer reported the
+// attribute as "not consumed by vertex shader" on both primitive pipelines. It was
+// deleted here and from the shader's VsIn in one change, because the pipeline's
+// vertex layout is now derived from that VsIn: the writer and the layout can no
+// longer be removed separately.
 struct PrimitiveVertex
 {
 	Zenith_Maths::Vector3 m_xPosition;
 	Zenith_Maths::Vector3 m_xNormal;
-	Zenith_Maths::Vector3 m_xColor;
 };
+static_assert(sizeof(PrimitiveVertex) == Flux_Generated_Primitives::Primitives::kVertexLayout.m_auStrides[0],
+	"PrimitiveVertex must match the stride the Primitives VS fetches");
+static_assert(offsetof(PrimitiveVertex, m_xPosition) == Flux_Generated_Primitives::Primitives::kaxVertexAttribs[0].m_uOffset,
+	"PrimitiveVertex.m_xPosition must sit at the generated POSITION offset");
+static_assert(offsetof(PrimitiveVertex, m_xNormal) == Flux_Generated_Primitives::Primitives::kaxVertexAttribs[1].m_uOffset,
+	"PrimitiveVertex.m_xNormal must sit at the generated NORMAL offset");
+
+// Full-table pin: both lanes are float3 at 0/12, so a shader-side POSITION/NORMAL
+// swap preserves the offsets above — only semantics can see it.
+static constexpr Flux_VertexLayoutElement kaxPRIMITIVE_EXPECTED_LAYOUT[] =
+{
+	{ FLUX_VERTEX_SEMANTIC_POSITION, 0u, SHADER_DATA_TYPE_FLOAT3, 0u,  0u },
+	{ FLUX_VERTEX_SEMANTIC_NORMAL,   0u, SHADER_DATA_TYPE_FLOAT3, 0u, 12u },
+};
+static_assert(Flux_Generated_Primitives::Primitives::kVertexLayout == Flux_VertexLayoutDesc{ kaxPRIMITIVE_EXPECTED_LAYOUT, 2u, { 24u, 0u } },
+	"The Primitives program's vertex layout drifted from the pinned contract — re-derive the expected table consciously if the VsIn really changed");
 
 struct PrimitivePushConstant
 {
@@ -81,7 +103,6 @@ static void GenerateUnitSphere(Zenith_Vector<PrimitiveVertex>& xVertices, Zenith
 			xVertex.m_xPosition.y = cosTheta;
 			xVertex.m_xPosition.z = sinTheta * sinPhi;
 			xVertex.m_xNormal = xVertex.m_xPosition;  // For unit sphere, normal = position
-			xVertex.m_xColor = Zenith_Maths::Vector3(1, 1, 1);  // Will be overridden by push constant
 
 			xVertices.PushBack(xVertex);
 		}
@@ -148,7 +169,6 @@ static void GenerateUnitCube(Zenith_Vector<PrimitiveVertex>& xVertices, Zenith_V
 			PrimitiveVertex xVertex;
 			xVertex.m_xPosition = positions[face * 4 + vert];
 			xVertex.m_xNormal = normals[face];
-			xVertex.m_xColor = Zenith_Maths::Vector3(1, 1, 1);
 			xVertices.PushBack(xVertex);
 		}
 	}
@@ -201,7 +221,6 @@ static void GenerateUnitCapsule(Zenith_Vector<PrimitiveVertex>& xVertices, Zenit
 			xVertex.m_xPosition.y = fCylinderHalfHeight + fRadius * cosTheta;
 			xVertex.m_xPosition.z = fRadius * sinTheta * sinPhi;
 			xVertex.m_xNormal = Zenith_Maths::Normalize(Zenith_Maths::Vector3(sinTheta * cosPhi, cosTheta, sinTheta * sinPhi));
-			xVertex.m_xColor = Zenith_Maths::Vector3(1, 1, 1);
 			xVertices.PushBack(xVertex);
 		}
 	}
@@ -226,7 +245,6 @@ static void GenerateUnitCapsule(Zenith_Vector<PrimitiveVertex>& xVertices, Zenit
 			xVertex.m_xPosition.y = -fCylinderHalfHeight + fRadius * cosTheta;
 			xVertex.m_xPosition.z = fRadius * sinTheta * sinPhi;
 			xVertex.m_xNormal = Zenith_Maths::Normalize(Zenith_Maths::Vector3(sinTheta * cosPhi, cosTheta, sinTheta * sinPhi));
-			xVertex.m_xColor = Zenith_Maths::Vector3(1, 1, 1);
 			xVertices.PushBack(xVertex);
 		}
 	}
@@ -294,14 +312,12 @@ static void GenerateUnitCylinder(Zenith_Vector<PrimitiveVertex>& xVertices, Zeni
 		PrimitiveVertex xBottomVert;
 		xBottomVert.m_xPosition = Zenith_Maths::Vector3(fRadius * cosAngle, -fHalfHeight, fRadius * sinAngle);
 		xBottomVert.m_xNormal = normal;
-		xBottomVert.m_xColor = Zenith_Maths::Vector3(1, 1, 1);
 		xVertices.PushBack(xBottomVert);
 
 		// Top vertex
 		PrimitiveVertex xTopVert;
 		xTopVert.m_xPosition = Zenith_Maths::Vector3(fRadius * cosAngle, fHalfHeight, fRadius * sinAngle);
 		xTopVert.m_xNormal = normal;
-		xTopVert.m_xColor = Zenith_Maths::Vector3(1, 1, 1);
 		xVertices.PushBack(xTopVert);
 	}
 
@@ -344,19 +360,15 @@ static void GenerateUnitLine(Zenith_Vector<PrimitiveVertex>& xVertices, Zenith_V
 	PrimitiveVertex v0, v1, v2, v3;
 	v0.m_xPosition = Zenith_Maths::Vector3(-fHalfThickness, -1.0f, 0.0f);
 	v0.m_xNormal = Zenith_Maths::Vector3(0, 0, 1);
-	v0.m_xColor = Zenith_Maths::Vector3(1, 1, 1);
 
 	v1.m_xPosition = Zenith_Maths::Vector3(fHalfThickness, -1.0f, 0.0f);
 	v1.m_xNormal = Zenith_Maths::Vector3(0, 0, 1);
-	v1.m_xColor = Zenith_Maths::Vector3(1, 1, 1);
 
 	v2.m_xPosition = Zenith_Maths::Vector3(fHalfThickness, 1.0f, 0.0f);
 	v2.m_xNormal = Zenith_Maths::Vector3(0, 0, 1);
-	v2.m_xColor = Zenith_Maths::Vector3(1, 1, 1);
 
 	v3.m_xPosition = Zenith_Maths::Vector3(-fHalfThickness, 1.0f, 0.0f);
 	v3.m_xNormal = Zenith_Maths::Vector3(0, 0, 1);
-	v3.m_xColor = Zenith_Maths::Vector3(1, 1, 1);
 
 	xVertices.PushBack(v0);
 	xVertices.PushBack(v1);
@@ -380,14 +392,6 @@ void Flux_PrimitivesImpl::BuildPipelines()
 	// Load shaders
 	m_xPrimitivesShader.Initialise(Flux_PrimitivesShaders::xPrimitives);
 
-	// Define vertex layout (Position, Normal, Color)
-	Flux_VertexInputDescription xVertexDesc;
-	xVertexDesc.m_eTopology = MESH_TOPOLOGY_TRIANGLES;
-	xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT3);  // Position
-	xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT3);  // Normal
-	xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT3);  // Color (unused, from push constant)
-	xVertexDesc.m_xPerVertexLayout.CalculateOffsetsAndStrides();
-
 	// Build GBuffer pipeline (solid shading)
 	Flux_PipelineSpecification xPipelineSpec;
 	xPipelineSpec.m_aeColourAttachmentFormats[MRT_INDEX_DIFFUSE] = MRT_FORMAT_DIFFUSE;
@@ -397,7 +401,12 @@ void Flux_PrimitivesImpl::BuildPipelines()
 	xPipelineSpec.m_uNumColourAttachments = uFLUX_MRT_CORE_COUNT;   // debug primitives never write velocity
 	xPipelineSpec.m_eDepthStencilFormat = DEPTH_FORMAT;
 	xPipelineSpec.m_pxShader = &m_xPrimitivesShader;
-	xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
+	// Position + normal only (24 B). The third, colour lane the layout used to carry
+	// was fetched and never read (every primitive's colour comes from the DRAW
+	// constant buffer), so it was deleted from the .slang VsIn and from
+	// PrimitiveVertex in the same change.
+	xPipelineSpec.m_eTopology = MESH_TOPOLOGY_TRIANGLES;
+	xPipelineSpec.m_pxVertexLayout = &Flux_Generated_Primitives::Primitives::kVertexLayout;
 
 	m_xPrimitivesShader.GetReflection().PopulateLayout(xPipelineSpec.m_xPipelineLayout);
 
@@ -819,8 +828,10 @@ void Flux_PrimitivesImpl::RenderCylinderPrimitives(Flux_CommandBuffer* pxCmdList
 
 // Triangles are special: no shared unit mesh, so each triangle becomes 3 vertices
 // uploaded to a dynamic vertex buffer (capped at s_uMaxTriangles per frame). All
-// triangles draw with identity transform — their world-space vertices and per-vertex
-// colour carry the position/colour state.
+// triangles draw with identity transform — their world-space vertices carry the
+// position state; colour rides the DRAW constant like every other primitive (the
+// per-vertex colour lane was deleted with the vertex-layout flip — the VS never
+// read it).
 void Flux_PrimitivesImpl::RenderTrianglePrimitives(Flux_CommandBuffer* pxCmdList, Flux_ShaderBinder& xBinder,
 	const Zenith_Vector<TriangleInstance>& xInstances)
 {
@@ -850,10 +861,15 @@ void Flux_PrimitivesImpl::RenderTrianglePrimitives(Flux_CommandBuffer* pxCmdList
 		xNormal = (fLen > 0.0001f) ? (xNormal / fLen) : Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f);
 
 		u_int uBaseVertex = xVertices.GetSize();
+		// NOTE: xInstance.m_xColor is deliberately NOT written into the vertices. It
+		// never reached a pixel even when the lane existed - the shader reads the DRAW
+		// constant buffer, and the triangle path's EmitPrimitiveDraw below passes
+		// white - so dropping the lane is pixel-identical. Per-triangle colour would
+		// need the colour to move onto the draw constant, which is a behaviour change.
 		PrimitiveVertex xV0, xV1, xV2;
-		xV0.m_xPosition = xInstance.m_xV0; xV0.m_xNormal = xNormal; xV0.m_xColor = xInstance.m_xColor;
-		xV1.m_xPosition = xInstance.m_xV1; xV1.m_xNormal = xNormal; xV1.m_xColor = xInstance.m_xColor;
-		xV2.m_xPosition = xInstance.m_xV2; xV2.m_xNormal = xNormal; xV2.m_xColor = xInstance.m_xColor;
+		xV0.m_xPosition = xInstance.m_xV0; xV0.m_xNormal = xNormal;
+		xV1.m_xPosition = xInstance.m_xV1; xV1.m_xNormal = xNormal;
+		xV2.m_xPosition = xInstance.m_xV2; xV2.m_xNormal = xNormal;
 		xVertices.PushBack(xV0);
 		xVertices.PushBack(xV1);
 		xVertices.PushBack(xV2);

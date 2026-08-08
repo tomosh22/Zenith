@@ -17,18 +17,22 @@
 // sets 0/1/2 (GLOBAL/VIEW/BINDLESS); the camera matrix comes from g_xViewSet.
 // =====================================================================
 
-#include "Common/Bindings.slang"   // spine: GLOBAL/VIEW/BINDLESS at sets 0/1/2
+#include "Common/Bindings.slang"       // spine: GLOBAL/VIEW/BINDLESS at sets 0/1/2
+#include "Common/VertexFormats.slang"  // [VtxFmt] / [PerInstance] authoring attributes
 import Common.Material;
 import Common.MaterialTable;        // Phase 4c: MaterialGPU record (bindless terrain layer textures)
 import Common.GBuffer;
 import Common.MaterialSurface;      // MaterialSurface + ISurfaceModel seam + MakeGBuffer(MaterialSurface)
 
+// The two packed fields are declared float4 because that is what the fetch delivers;
+// [VtxFmt] is what tells the layout generator they occupy FOUR bytes each in the
+// buffer, which is what Zenith_TerrainChunkLayout's 28-byte stride depends on.
 struct VsIn
 {
 	float3 a_xPosition       : POSITION;
 	float2 a_xUV             : TEXCOORD0;
-	float4 a_xNormalPacked   : NORMAL;   // SNORM10:10:10:2 → xyz normal, w unused
-	float4 a_xTangentPacked  : TANGENT;  // SNORM10:10:10:2 → xyz tangent, w bitangent sign
+	[VtxFmt("snorm10_10_10_2")] float4 a_xNormalPacked   : NORMAL;   // xyz normal, w unused
+	[VtxFmt("snorm10_10_10_2")] float4 a_xTangentPacked  : TANGENT;  // xyz tangent, w bitangent sign
 };
 
 struct VsOut

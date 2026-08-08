@@ -65,6 +65,11 @@ public:
 	// Get combined reflection data for all shader stages
 	const Flux_ShaderReflection& GetReflection() const { return m_xReflection; }
 
+	// Catalog name of the program this shader was initialised from (points at the
+	// decl's static string). Diagnostic identity for e.g. the vertex-layout
+	// tripwire, which must NAME the offending program to be actionable.
+	const char* GetProgramName() const { return m_szProgramName ? m_szProgramName : "<uninitialised>"; }
+
 	// Check if reflection data is available
 	bool HasReflection() const { return m_xReflection.GetBindings().GetSize() > 0; }
 
@@ -105,6 +110,9 @@ public:
 private:
 	// Combined reflection data from all shader stages
 	Flux_ShaderReflection m_xReflection;
+
+	// Decl name captured at Initialise (static-lifetime catalog string).
+	const char* m_szProgramName = nullptr;
 
 	// Helper to merge reflection from multiple stages
 	void MergeReflection(const Flux_ShaderReflection& xStageReflection);

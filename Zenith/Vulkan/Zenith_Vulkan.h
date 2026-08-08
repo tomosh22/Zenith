@@ -188,6 +188,10 @@ public:
 	void CreateSurface();
 	void CreatePhysicalDevice();
 	void LogFormatSupport();
+	// Boot gate over the vertex-fetch vocabulary: asserts every ShaderDataType
+	// ShaderDataTypeToVulkanFormat maps carries VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT
+	// on this physical device. Must run after CreatePhysicalDevice().
+	void AssertVertexFetchFormatSupport();
 	void CreateQueueFamilies();
 	void CreateDevice();
 	void CreateCommandPools();

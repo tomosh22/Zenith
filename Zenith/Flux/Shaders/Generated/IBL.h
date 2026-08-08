@@ -8,6 +8,7 @@
 #pragma once
 
 #include "Flux/Slang/Flux_SlangCompiler.h"
+#include "Flux/Flux_VertexLayoutDesc.h"
 #include "glm/glm.hpp"
 #include <cstddef>
 
@@ -97,11 +98,15 @@ namespace Flux_Generated_IBL
 		static_assert(offsetof(MultiScatterConstants_CB, m_fg_fAtmosphereRadius) == 36, "MultiScatterConstants.g_fAtmosphereRadius offset drifted from Slang reflection");
 		static_assert(offsetof(MultiScatterConstants_CB, m_fg_fGroundAlbedo) == 40, "MultiScatterConstants.g_fGroundAlbedo offset drifted from Slang reflection");
 		static_assert(offsetof(MultiScatterConstants_CB, m_fg_fPad) == 44, "MultiScatterConstants.g_fPad offset drifted from Slang reflection");
+		// vertex inputs: none
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ nullptr, 0u, { 0u, 0u } };
 	}
 
 	// ----- IBL_BRDFIntegration (IBL/Flux_BRDFIntegration) -----
 	namespace IBL_BRDFIntegration
 	{
+		// vertex inputs: none
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ nullptr, 0u, { 0u, 0u } };
 	}
 
 	// ----- IBL_IrradianceConvolution (IBL/Flux_IrradianceConvolution) -----
@@ -166,6 +171,8 @@ namespace Flux_Generated_IBL
 		inline constexpr Flux_BindingHandle hg_xSkyboxCubemap{ 3u, 1u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 		// kind: CombinedTextureSampler
 		inline constexpr Flux_BindingHandle hg_xMultiScatterLUT{ 3u, 2u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// vertex inputs: none
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ nullptr, 0u, { 0u, 0u } };
 	}
 
 	// ----- IBL_PrefilterEnvMap (IBL/Flux_PrefilterEnvMap) -----
@@ -230,6 +237,8 @@ namespace Flux_Generated_IBL
 		inline constexpr Flux_BindingHandle hg_xSkyboxCubemap{ 3u, 1u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 		// kind: CombinedTextureSampler
 		inline constexpr Flux_BindingHandle hg_xMultiScatterLUT{ 3u, 2u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// vertex inputs: none
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ nullptr, 0u, { 0u, 0u } };
 	}
 
 }

@@ -8,6 +8,7 @@
 #pragma once
 
 #include "Flux/Slang/Flux_SlangCompiler.h"
+#include "Flux/Flux_VertexLayoutDesc.h"
 #include "glm/glm.hpp"
 #include <cstddef>
 
@@ -104,6 +105,17 @@ namespace Flux_Generated_UnifiedMesh
 		inline constexpr Flux_BindingHandle hVisibleIndexBuffer{ 4u, 1u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
 		// kind: CombinedTextureSampler
 		inline constexpr Flux_BindingHandle hg_xAnimationTex{ 4u, 2u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// vertex inputs: { semantic, semantic index, STORAGE format, binding, byte offset }
+		inline constexpr Flux_VertexLayoutElement kaxVertexAttribs[] =
+		{
+			{ FLUX_VERTEX_SEMANTIC_POSITION, 0u, SHADER_DATA_TYPE_FLOAT3, 0u, 0u },   // a_xPosition
+			{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 0u, SHADER_DATA_TYPE_FLOAT2, 0u, 12u },   // a_xUV
+			{ FLUX_VERTEX_SEMANTIC_NORMAL, 0u, SHADER_DATA_TYPE_FLOAT3, 0u, 20u },   // a_xNormal
+			{ FLUX_VERTEX_SEMANTIC_TANGENT, 0u, SHADER_DATA_TYPE_FLOAT3, 0u, 32u },   // a_xTangent
+			{ FLUX_VERTEX_SEMANTIC_BINORMAL, 0u, SHADER_DATA_TYPE_FLOAT3, 0u, 44u },   // a_xBitangent
+			{ FLUX_VERTEX_SEMANTIC_COLOR, 0u, SHADER_DATA_TYPE_FLOAT4, 0u, 56u },   // a_xColor
+		};
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ kaxVertexAttribs, 6u, { 72u, 0u } };
 	}
 
 	// ----- UnifiedMesh_ToGBufferVelocity (UnifiedMesh/Flux_UnifiedMesh_ToGBufferVelocity) -----
@@ -160,6 +172,17 @@ namespace Flux_Generated_UnifiedMesh
 		inline constexpr Flux_BindingHandle hVisibleIndexBuffer{ 4u, 1u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
 		// kind: CombinedTextureSampler
 		inline constexpr Flux_BindingHandle hg_xAnimationTex{ 4u, 2u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// vertex inputs: { semantic, semantic index, STORAGE format, binding, byte offset }
+		inline constexpr Flux_VertexLayoutElement kaxVertexAttribs[] =
+		{
+			{ FLUX_VERTEX_SEMANTIC_POSITION, 0u, SHADER_DATA_TYPE_FLOAT3, 0u, 0u },   // a_xPosition
+			{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 0u, SHADER_DATA_TYPE_FLOAT2, 0u, 12u },   // a_xUV
+			{ FLUX_VERTEX_SEMANTIC_NORMAL, 0u, SHADER_DATA_TYPE_FLOAT3, 0u, 20u },   // a_xNormal
+			{ FLUX_VERTEX_SEMANTIC_TANGENT, 0u, SHADER_DATA_TYPE_FLOAT3, 0u, 32u },   // a_xTangent
+			{ FLUX_VERTEX_SEMANTIC_BINORMAL, 0u, SHADER_DATA_TYPE_FLOAT3, 0u, 44u },   // a_xBitangent
+			{ FLUX_VERTEX_SEMANTIC_COLOR, 0u, SHADER_DATA_TYPE_FLOAT4, 0u, 56u },   // a_xColor
+		};
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ kaxVertexAttribs, 6u, { 72u, 0u } };
 	}
 
 	// ----- UnifiedMesh_ToShadowmap (UnifiedMesh/Flux_UnifiedMesh_ToShadowmap) -----
@@ -212,6 +235,17 @@ namespace Flux_Generated_UnifiedMesh
 		inline constexpr Flux_BindingHandle hVisibleIndexBuffer{ 4u, 1u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
 		// kind: CombinedTextureSampler
 		inline constexpr Flux_BindingHandle hg_xAnimationTex{ 4u, 2u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// vertex inputs: { semantic, semantic index, STORAGE format, binding, byte offset }
+		inline constexpr Flux_VertexLayoutElement kaxVertexAttribs[] =
+		{
+			{ FLUX_VERTEX_SEMANTIC_POSITION, 0u, SHADER_DATA_TYPE_FLOAT3, 0u, 0u },   // a_xPosition
+			{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 0u, SHADER_DATA_TYPE_FLOAT2, 0u, 12u },   // a_xUV
+			{ FLUX_VERTEX_SEMANTIC_NORMAL, 0u, SHADER_DATA_TYPE_FLOAT3, 0u, 20u },   // a_xNormal
+			{ FLUX_VERTEX_SEMANTIC_TANGENT, 0u, SHADER_DATA_TYPE_FLOAT3, 0u, 32u },   // a_xTangent
+			{ FLUX_VERTEX_SEMANTIC_BINORMAL, 0u, SHADER_DATA_TYPE_FLOAT3, 0u, 44u },   // a_xBitangent
+			{ FLUX_VERTEX_SEMANTIC_COLOR, 0u, SHADER_DATA_TYPE_FLOAT4, 0u, 56u },   // a_xColor
+		};
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ kaxVertexAttribs, 6u, { 72u, 0u } };
 	}
 
 	// ----- UnifiedMesh_Culling (UnifiedMesh/Flux_UnifiedMesh_Culling) -----
@@ -275,6 +309,8 @@ namespace Flux_Generated_UnifiedMesh
 		inline constexpr Flux_BindingHandle hvisibleIndex{ 3u, 4u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
 		// kind: RWStructuredBuffer
 		inline constexpr Flux_BindingHandle hindirect{ 3u, 5u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
+		// vertex inputs: none
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ nullptr, 0u, { 0u, 0u } };
 	}
 
 	// ----- UnifiedMesh_Reset (UnifiedMesh/Flux_UnifiedMesh_Reset) -----
@@ -322,6 +358,8 @@ namespace Flux_Generated_UnifiedMesh
 		inline constexpr Flux_BindingHandle hbucketIndexCount{ 3u, 1u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
 		// kind: RWStructuredBuffer
 		inline constexpr Flux_BindingHandle hindirect{ 3u, 2u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
+		// vertex inputs: none
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ nullptr, 0u, { 0u, 0u } };
 	}
 
 	// ----- UnifiedMesh_Skinning (UnifiedMesh/Flux_UnifiedMesh_Skinning) -----
@@ -373,6 +411,8 @@ namespace Flux_Generated_UnifiedMesh
 		inline constexpr Flux_BindingHandle hskinJobs{ 3u, 3u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
 		// kind: RWStructuredBuffer
 		inline constexpr Flux_BindingHandle hskinnedArena{ 3u, 4u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
+		// vertex inputs: none
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ nullptr, 0u, { 0u, 0u } };
 	}
 
 	// ----- UnifiedMesh_SkinningPrev (UnifiedMesh/Flux_UnifiedMesh_SkinningPrev) -----
@@ -424,6 +464,8 @@ namespace Flux_Generated_UnifiedMesh
 		inline constexpr Flux_BindingHandle hskinJobs{ 3u, 3u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
 		// kind: RWStructuredBuffer
 		inline constexpr Flux_BindingHandle hprevSkinnedArena{ 3u, 4u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
+		// vertex inputs: none
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ nullptr, 0u, { 0u, 0u } };
 	}
 
 }

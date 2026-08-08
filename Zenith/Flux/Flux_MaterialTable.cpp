@@ -210,6 +210,26 @@ void Flux_ReleaseMaterialIndex(u_int uIndex)
 // Pure + backend-neutral (no device / no Slang) — hosted unconditionally.
 #include "Flux/Flux_SpecConstants.Tests.inl"
 
+// Vertex attribute codec (compressed-vertex Phase 1). Header-only + pure, so its
+// registrations would be dead-stripped from any TU that only includes it; hosted
+// here UNGATED because the codec is what the offline exporters and the headless
+// validators share — it has to be covered in every config, Null_ included.
+#include "Flux/Flux_VertexCodec.Tests.inl"
+
+// Baked vertex-layout descriptor (compressed-vertex Phase 2). Same dead-strip
+// idiom: the POD leaf is header-only and, until the T2.c tripwire consumes it, is
+// referenced only by the AUTO-GENERATED headers — so its registrations need an
+// always-linked host. Ungated for the same reason as the codec: the descriptors are
+// what a Null_ build compares its committed artifacts against.
+#include "Flux/Flux_VertexLayoutDesc.Tests.inl"
+
+// The stale-codegen tripwire's comparator (compressed-vertex Phase 2 T2.d). Real
+// boots only ever exercise its "already matches" branch — generated tables and
+// live reflection come from the same source — so the four mismatch categories
+// and the null/empty spellings are driven ONLY by these units. Ungated: the
+// comparator is what a Null_ build trusts to catch committed-artifact drift.
+#include "Flux/Flux_VertexLayoutValidation.Tests.inl"
+
 // Backend buffer-readback contract (Flux_MemoryManager::DownloadBufferData).
 // Hosted here rather than beside a backend: Zenith/Vulkan and Zenith/Null files
 // each compile in only their own configs, so a test living in either would

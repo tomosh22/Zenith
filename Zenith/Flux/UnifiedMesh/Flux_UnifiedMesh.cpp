@@ -15,11 +15,34 @@
 #include "Flux/Shadows/Flux_ShadowsImpl.h"               // ZENITH_FLUX_NUM_CSMS, CSM_FORMAT, cascade matrices
 #include "Flux/InstancedMeshes/Flux_AnimationTexture.h"  // per-bucket VAT texture resolve (Stage 3)
 #include "Flux/Slang/Flux_ShaderBinder.h"
+#include "Flux/Shaders/Generated/UnifiedMesh.h"          // per-program baked vertex layouts
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_TextureAsset.h"           // white dummy VAT texture SRV
 #include "Core/Zenith_GraphicsOptions.h"                 // m_bShadowsEnabled (active-view count)
 #include "Profiling/Zenith_Profiling.h"
 #include <cstring>                                        // std::strcmp — --taa-no-prevpose A/B capture toggle
+
+// Phase-2 pin: the generated tables must equal the retired hand-written 72-byte
+// static-mesh layout until the Phase-4 compression flip consciously re-pins them.
+// The FULL table is spelled out (not just count/stride): the normal/tangent/
+// bitangent trio are equal-width float3s whose shader-side reorder would preserve
+// every offset. The three graphics programs share one VsIn, so their tables must
+// agree with each other too.
+static constexpr Flux_VertexLayoutElement kaxUNIFIED_MESH_EXPECTED_LAYOUT[] =
+{
+	{ FLUX_VERTEX_SEMANTIC_POSITION, 0u, SHADER_DATA_TYPE_FLOAT3, 0u,  0u },
+	{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 0u, SHADER_DATA_TYPE_FLOAT2, 0u, 12u },
+	{ FLUX_VERTEX_SEMANTIC_NORMAL,   0u, SHADER_DATA_TYPE_FLOAT3, 0u, 20u },
+	{ FLUX_VERTEX_SEMANTIC_TANGENT,  0u, SHADER_DATA_TYPE_FLOAT3, 0u, 32u },
+	{ FLUX_VERTEX_SEMANTIC_BINORMAL, 0u, SHADER_DATA_TYPE_FLOAT3, 0u, 44u },
+	{ FLUX_VERTEX_SEMANTIC_COLOR,    0u, SHADER_DATA_TYPE_FLOAT4, 0u, 56u },
+};
+static_assert(Flux_Generated_UnifiedMesh::UnifiedMesh_ToGBuffer::kVertexLayout == Flux_VertexLayoutDesc{ kaxUNIFIED_MESH_EXPECTED_LAYOUT, 6u, { 72u, 0u } },
+	"UnifiedMesh vertex layout must stay the hand-era 72 B contract until the Phase-4 flip re-pins it");
+static_assert(Flux_Generated_UnifiedMesh::UnifiedMesh_ToGBufferVelocity::kVertexLayout == Flux_Generated_UnifiedMesh::UnifiedMesh_ToGBuffer::kVertexLayout,
+	"UnifiedMesh velocity program must fetch the same vertex layout as the base G-buffer program");
+static_assert(Flux_Generated_UnifiedMesh::UnifiedMesh_ToShadowmap::kVertexLayout == Flux_Generated_UnifiedMesh::UnifiedMesh_ToGBuffer::kVertexLayout,
+	"UnifiedMesh shadow program must fetch the same vertex layout as the base G-buffer program");
 
 // =====================================================================
 // Flux_UnifiedMesh — unified GPU-driven opaque static-mesh feature (Stage 1).
@@ -169,17 +192,10 @@ void Flux_UnifiedMeshImpl::BuildPipelines()
 {
 	m_xGBufferShader.Initialise(Flux_UnifiedMeshShaders::xUnifiedMesh_ToGBuffer);
 
-	// Static-mesh vertex layout (position, UV, normal, tangent, bitangent, color).
-	Flux_VertexInputDescription xVertexDesc;
-	xVertexDesc.m_eTopology = MESH_TOPOLOGY_TRIANGLES;
-	xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT3);  // Position
-	xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT2);  // UV
-	xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT3);  // Normal
-	xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT3);  // Tangent
-	xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT3);  // Bitangent
-	xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT4);  // Color
-	xVertexDesc.m_xPerVertexLayout.CalculateOffsetsAndStrides();
-
+	// Static-mesh vertex layout (position, UV, normal, tangent, bitangent, color) —
+	// the 72-byte stream every unified draw reads. The three programs below declare
+	// the SAME VsIn, so their generated layouts are identical; each spec still names
+	// its own so the cross-check compares each program against its own reflection.
 	{
 		Flux_PipelineSpecification xSpec;
 		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_DIFFUSE]       = MRT_FORMAT_DIFFUSE;
@@ -189,7 +205,8 @@ void Flux_UnifiedMeshImpl::BuildPipelines()
 		xSpec.m_uNumColourAttachments = uFLUX_MRT_CORE_COUNT;   // base G-buffer pipeline (4 MRTs); the velocity variant (5 MRTs) is built separately
 		xSpec.m_eDepthStencilFormat = DEPTH_FORMAT;
 		xSpec.m_pxShader = &m_xGBufferShader;
-		xSpec.m_xVertexInputDesc = xVertexDesc;
+		xSpec.m_eTopology = MESH_TOPOLOGY_TRIANGLES;
+		xSpec.m_pxVertexLayout = &Flux_Generated_UnifiedMesh::UnifiedMesh_ToGBuffer::kVertexLayout;
 		xSpec.m_eCullMode = CULL_MODE_BACK;
 		m_xGBufferShader.GetReflection().PopulateLayout(xSpec.m_xPipelineLayout);
 		for (Flux_BlendState& xBlend : xSpec.m_axBlendStates)
@@ -220,7 +237,8 @@ void Flux_UnifiedMeshImpl::BuildPipelines()
 		xSpec.m_uNumColourAttachments = MRT_INDEX_COUNT;   // 5 (core + velocity)
 		xSpec.m_eDepthStencilFormat = DEPTH_FORMAT;
 		xSpec.m_pxShader = &m_xGBufferVelocityShader;
-		xSpec.m_xVertexInputDesc = xVertexDesc;
+		xSpec.m_eTopology = MESH_TOPOLOGY_TRIANGLES;
+		xSpec.m_pxVertexLayout = &Flux_Generated_UnifiedMesh::UnifiedMesh_ToGBufferVelocity::kVertexLayout;
 		xSpec.m_eCullMode = CULL_MODE_BACK;
 		m_xGBufferVelocityShader.GetReflection().PopulateLayout(xSpec.m_xPipelineLayout);
 		for (Flux_BlendState& xBlend : xSpec.m_axBlendStates)
@@ -247,7 +265,8 @@ void Flux_UnifiedMeshImpl::BuildPipelines()
 		xShadowSpec.m_eDepthStencilFormat = CSM_FORMAT;
 		xShadowSpec.m_uNumColourAttachments = 0u;
 		xShadowSpec.m_pxShader = &m_xShadowShader;
-		xShadowSpec.m_xVertexInputDesc = xVertexDesc;
+		xShadowSpec.m_eTopology = MESH_TOPOLOGY_TRIANGLES;
+		xShadowSpec.m_pxVertexLayout = &Flux_Generated_UnifiedMesh::UnifiedMesh_ToShadowmap::kVertexLayout;
 		xShadowSpec.m_bDepthBias = true;
 		xShadowSpec.m_bDynamicDepthBias = true;
 		xShadowSpec.m_fDepthBiasConstant = 1.75f;

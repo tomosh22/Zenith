@@ -8,6 +8,7 @@
 #pragma once
 
 #include "Flux/Slang/Flux_SlangCompiler.h"
+#include "Flux/Flux_VertexLayoutDesc.h"
 #include "glm/glm.hpp"
 #include <cstddef>
 
@@ -143,6 +144,8 @@ namespace Flux_Generated_DeferredShading
 		inline constexpr Flux_SpecConstantHandle hscFLUX_SC_VIEW_SHADOWS_PERMITTED{ "FLUX_SC_VIEW_SHADOWS_PERMITTED", 0u, 4u, 1u };
 		// spec constant: bool
 		inline constexpr Flux_SpecConstantHandle hscFLUX_SC_VIEW_CLUSTER_LIGHTS_PERMITTED{ "FLUX_SC_VIEW_CLUSTER_LIGHTS_PERMITTED", 1u, 4u, 1u };
+		// vertex inputs: none
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ nullptr, 0u, { 0u, 0u } };
 	}
 
 }

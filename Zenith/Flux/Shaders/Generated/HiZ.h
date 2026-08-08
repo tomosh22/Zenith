@@ -8,6 +8,7 @@
 #pragma once
 
 #include "Flux/Slang/Flux_SlangCompiler.h"
+#include "Flux/Flux_VertexLayoutDesc.h"
 #include "glm/glm.hpp"
 #include <cstddef>
 
@@ -99,6 +100,8 @@ namespace Flux_Generated_HiZ
 		static_assert(offsetof(pushConstants_CB, m_uu_uOutputHeight) == 4, "pushConstants.u_uOutputHeight offset drifted from Slang reflection");
 		static_assert(offsetof(pushConstants_CB, m_uu_uInputMip) == 8, "pushConstants.u_uInputMip offset drifted from Slang reflection");
 		static_assert(offsetof(pushConstants_CB, m_uu_uPad) == 12, "pushConstants.u_uPad offset drifted from Slang reflection");
+		// vertex inputs: none
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ nullptr, 0u, { 0u, 0u } };
 	}
 
 }

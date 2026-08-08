@@ -70,14 +70,14 @@ void Flux_FogImpl::BuildPipelines()
 {
 	m_xShader.Initialise(Flux_FogShaders::xFog_Simple);
 
-	Flux_VertexInputDescription xVertexDesc;
-	xVertexDesc.m_eTopology = MESH_TOPOLOGY_NONE;
-
 	Flux_PipelineSpecification xPipelineSpec;
 	xPipelineSpec.m_aeColourAttachmentFormats[0] = HDR_SCENE_FORMAT;
 	xPipelineSpec.m_uNumColourAttachments = 1;
 	xPipelineSpec.m_pxShader = &m_xShader;
-	xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
+	// No vertex input: this is a vertex-pulling / fullscreen program whose VS reads
+	// no attributes. m_pxVertexLayout stays null, which is the canonical spelling the
+	// validation tripwire matches against an empty reflection table.
+	xPipelineSpec.m_eTopology = MESH_TOPOLOGY_NONE;
 
 	m_xShader.GetReflection().PopulateLayout(xPipelineSpec.m_xPipelineLayout);
 
@@ -206,7 +206,6 @@ static void ExecuteSimpleFog(Flux_CommandBuffer* pxCommandList, void* pUserData)
 
 	pxCommandList->SetPipeline(&xFog.m_xPipeline);
 
-	pxCommandList->SetVertexBuffer(xGfx.m_xQuadMesh.GetVertexBuffer());
 	pxCommandList->SetIndexBuffer(xGfx.m_xQuadMesh.GetIndexBuffer());
 
 	Flux_ShaderBinder xBinder(*pxCommandList);

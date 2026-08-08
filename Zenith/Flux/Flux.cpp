@@ -289,7 +289,11 @@ Flux_PipelineSpecification Flux_PipelineHelper::CreateFullscreenSpecMRT(
 	xSpec.m_uNumColourAttachments = uNumColourAttachments;
 	xSpec.m_eDepthStencilFormat = eDepthStencilFormat;
 	xSpec.m_pxShader = &xShader;
-	xSpec.m_xVertexInputDesc.m_eTopology = MESH_TOPOLOGY_NONE;
+	// Fullscreen programs read no vertex attributes, so m_pxVertexLayout stays null —
+	// the canonical "no vertex input" spelling. This helper is program-agnostic (it
+	// takes only a Flux_ShaderDecl), so it could not name a generated layout even if
+	// one of its callers wanted attributes; a caller that does must build its own spec.
+	xSpec.m_eTopology = MESH_TOPOLOGY_NONE;
 	xSpec.m_bDepthTestEnabled = false;
 	xSpec.m_bDepthWriteEnabled = false;
 

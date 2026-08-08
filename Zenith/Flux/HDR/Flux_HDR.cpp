@@ -463,7 +463,6 @@ static void ExecuteBloomThreshold(Flux_CommandBuffer* pxCommandList, void* pUser
 	xBloomConsts.m_xTexelSize = Zenith_Maths::Vector2(1.0f / xBloom0.m_xSurfaceInfo.m_uWidth, 1.0f / xBloom0.m_xSurfaceInfo.m_uHeight);
 
 	pxCommandList->SetPipeline(&xHDR.m_xBloomThresholdPipeline);
-	pxCommandList->SetVertexBuffer(xFluxGraphics.m_xQuadMesh.GetVertexBuffer());
 	pxCommandList->SetIndexBuffer(xFluxGraphics.m_xQuadMesh.GetIndexBuffer());
 
 	namespace BT = Flux_Generated_HDR::BloomThreshold;
@@ -497,7 +496,6 @@ static void ExecuteBloomDownsample(Flux_CommandBuffer* pxCommandList, void* pUse
 	xBloomConsts.m_xTexelSize = Zenith_Maths::Vector2(1.0f / xSource.m_xSurfaceInfo.m_uWidth, 1.0f / xSource.m_xSurfaceInfo.m_uHeight);
 
 	pxCommandList->SetPipeline(&xHDR.m_xBloomDownsamplePipeline);
-	pxCommandList->SetVertexBuffer(xFluxGraphics.m_xQuadMesh.GetVertexBuffer());
 	pxCommandList->SetIndexBuffer(xFluxGraphics.m_xQuadMesh.GetIndexBuffer());
 
 	namespace BD = Flux_Generated_HDR::BloomDownsample;
@@ -530,7 +528,6 @@ static void ExecuteBloomUpsample(Flux_CommandBuffer* pxCommandList, void* pUserD
 	xBloomConsts.m_xTexelSize = Zenith_Maths::Vector2(1.0f / xTarget.m_xSurfaceInfo.m_uWidth, 1.0f / xTarget.m_xSurfaceInfo.m_uHeight);
 
 	pxCommandList->SetPipeline(&xHDR.m_xBloomUpsamplePipeline);
-	pxCommandList->SetVertexBuffer(xFluxGraphics.m_xQuadMesh.GetVertexBuffer());
 	pxCommandList->SetIndexBuffer(xFluxGraphics.m_xQuadMesh.GetIndexBuffer());
 
 	namespace BU = Flux_Generated_HDR::BloomUpsample;
@@ -561,7 +558,6 @@ static void ExecuteToneMapping(Flux_CommandBuffer* pxCommandList, void* pUserDat
 	xConsts.m_uPad1 = 0;
 
 	pxCommandList->SetPipeline(&xHDR.m_xToneMappingPipeline);
-	pxCommandList->SetVertexBuffer(xFluxGraphics.m_xQuadMesh.GetVertexBuffer());
 	pxCommandList->SetIndexBuffer(xFluxGraphics.m_xQuadMesh.GetIndexBuffer());
 
 	{
@@ -609,7 +605,6 @@ static void ExecutePreviewTonemap(Flux_CommandBuffer* pxCommandList, void*)
 	xConsts.m_uPad1 = 0;
 
 	pxCommandList->SetPipeline(&xHDR.m_xToneMappingPipeline);
-	pxCommandList->SetVertexBuffer(xGraphics.m_xQuadMesh.GetVertexBuffer());
 	pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
 
 	{

@@ -8,6 +8,7 @@
 #pragma once
 
 #include "Flux/Slang/Flux_SlangCompiler.h"
+#include "Flux/Flux_VertexLayoutDesc.h"
 #include "glm/glm.hpp"
 #include <cstddef>
 
@@ -96,6 +97,13 @@ namespace Flux_Generated_Gizmos
 		static_assert(offsetof(GizmoPushConstants_CB, m_fg_fPad0) == 68, "GizmoPushConstants.g_fPad0 offset drifted from Slang reflection");
 		static_assert(offsetof(GizmoPushConstants_CB, m_fg_fPad1) == 72, "GizmoPushConstants.g_fPad1 offset drifted from Slang reflection");
 		static_assert(offsetof(GizmoPushConstants_CB, m_fg_fPad2) == 76, "GizmoPushConstants.g_fPad2 offset drifted from Slang reflection");
+		// vertex inputs: { semantic, semantic index, STORAGE format, binding, byte offset }
+		inline constexpr Flux_VertexLayoutElement kaxVertexAttribs[] =
+		{
+			{ FLUX_VERTEX_SEMANTIC_POSITION, 0u, SHADER_DATA_TYPE_FLOAT3, 0u, 0u },   // a_xPosition
+			{ FLUX_VERTEX_SEMANTIC_COLOR, 0u, SHADER_DATA_TYPE_FLOAT3, 0u, 12u },   // a_xColor
+		};
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ kaxVertexAttribs, 2u, { 24u, 0u } };
 	}
 
 }

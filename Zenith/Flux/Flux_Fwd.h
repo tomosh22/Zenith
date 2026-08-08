@@ -34,7 +34,6 @@ struct Flux_BlendState;
 struct Flux_PipelineLayout;
 struct Flux_BindingGroupLayout;
 struct Flux_BindingGroupEntry;
-struct Flux_VertexInputDescription;
 class Flux_BufferLayout;
 struct Flux_BufferElement;
 

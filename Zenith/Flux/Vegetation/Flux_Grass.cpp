@@ -99,9 +99,8 @@ void Flux_GrassImpl::BuildPipelines()
 	// --- graphics: the blade draws ---
 	// NO VERTEX INPUT on any of them. The draw is INDEXED against the 48-entry blade
 	// index table, so SV_VertexID delivers the fetched index value; a vertex layout
-	// here would declare bindings nothing ever sets.
-	Flux_VertexInputDescription xNoVertexInput;
-	xNoVertexInput.m_eTopology = MESH_TOPOLOGY_NONE;
+	// here would declare bindings nothing ever sets, so all three specs below leave
+	// m_pxVertexLayout null — the canonical "no vertex input" spelling.
 
 	{
 		m_xGBufferShader.Initialise(Flux_GrassShaders::xGrass_ToGBuffer);
@@ -114,7 +113,7 @@ void Flux_GrassImpl::BuildPipelines()
 		xSpec.m_uNumColourAttachments = uFLUX_MRT_CORE_COUNT;
 		xSpec.m_eDepthStencilFormat = DEPTH_FORMAT;
 		xSpec.m_pxShader = &m_xGBufferShader;
-		xSpec.m_xVertexInputDesc = xNoVertexInput;
+		xSpec.m_eTopology = MESH_TOPOLOGY_NONE;
 		// Blades are OPAQUE G-buffer geometry with the SUBSURFACE shading tag, not a
 		// forward blended overlay: they test AND write depth.
 		xSpec.m_bDepthTestEnabled = true;
@@ -152,7 +151,7 @@ void Flux_GrassImpl::BuildPipelines()
 		xSpec.m_uNumColourAttachments = MRT_INDEX_COUNT;
 		xSpec.m_eDepthStencilFormat = DEPTH_FORMAT;
 		xSpec.m_pxShader = &m_xGBufferVelocityShader;
-		xSpec.m_xVertexInputDesc = xNoVertexInput;
+		xSpec.m_eTopology = MESH_TOPOLOGY_NONE;
 		xSpec.m_bDepthTestEnabled = true;
 		xSpec.m_bDepthWriteEnabled = true;
 		xSpec.m_eCullMode = CULL_MODE_NONE;
@@ -173,7 +172,7 @@ void Flux_GrassImpl::BuildPipelines()
 		xSpec.m_uNumColourAttachments = 0u;
 		xSpec.m_eDepthStencilFormat = CSM_FORMAT;
 		xSpec.m_pxShader = &m_xShadowShader;
-		xSpec.m_xVertexInputDesc = xNoVertexInput;
+		xSpec.m_eTopology = MESH_TOPOLOGY_NONE;
 		xSpec.m_eCullMode = CULL_MODE_NONE;
 		// Dynamic bias: the cascade pass sets its own per-cascade value, matching
 		// every other caster.

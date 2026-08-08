@@ -3,10 +3,43 @@
 **Last updated:** 2026-08-07
 
 **★ LIVE BASELINE (OBSERVED 2026-08-07 on clean `Null_` builds):
-ZM boot `2977 ran / 2975 passed / 0 failed / 2 skipped`; engine boot (Null Combat)
-`1352 ran / 1351 passed / 0 failed / 1 skipped`; registry **55**.** This is the
-current pin in `zm-tests.yml` (`-Baseline 2977`) and `run_unit_gate.ps1`
-(default 1352). The move from 2975/1350 is **+2 ENGINE units** from the
+ZM boot `3025 ran / 3023 passed / 0 failed / 2 skipped`; engine boot (Null Combat)
+`1400 ran / 1399 passed / 0 failed / 1 skipped`; registry **55**.** This is the
+current pin in `zm-tests.yml` (`-Baseline 3025`) and `run_unit_gate.ps1`
+(default 1400). The move from 3013/1388 is **+12 ENGINE units** from the
+compressed-vertex work's Phase 2 T2.d review hardening (2026-08-08): the
+vertex-layout-validation suite drives the boot tripwire's pure comparator
+through every branch real boots never take (the OK path, both no-input
+spellings, and the COUNT / STRIDE / ELEMENT / SEMANTIC mismatch categories).
+ZM's own registrations did not move. Before that, the move from 3002/1377 was
+**+11 ENGINE units** from the
+compressed-vertex work's Phase 2 T2.b (2026-08-07): every generated
+`Shaders/Generated/<Subsystem>.h` now carries a baked `kaxVertexAttribs[]` +
+`kVertexLayout` per program (the empty spelling included), typed in the new
+`Flux/Flux_VertexLayoutDesc.h` leaf, and the three terrain shaders spell their
+packed normal/tangent as `[VtxFmt("snorm10_10_10_2")]` so their emitted table
+reads exactly `Core/Zenith_TerrainChunkLayout.h`'s 28-byte stride. Its units pin
+element-wise layout equality (drift in offset / type / semantic index / stride /
+count), the canonical empty layout, the semantic vocabulary, and the codegen
+emission itself — including the HARD failure on a semantic the vocabulary does
+not name. ZM's own registrations did not move. Before that, the move from
+2992/1367 was **+10 ENGINE units** from the
+compressed-vertex work's Phase 2 T2.a (2026-08-07): the `.spv.refl` sidecar went
+to **v6** with a per-program vertex-input table (name / semantic + index /
+location / storage `ShaderDataType` / binding / byte offset) plus the two
+per-binding strides, extracted from the linked program's VERTEX entry point. Its
+suite pins the tight-pack offset/stride rule, the independent per-binding
+packing, the empty table, the v6 DataStream round-trip, the adopt-once stage
+merge, and the pure `[VtxFmt]` vocabulary / type inference / override validation.
+ZM's own registrations did not move. Before that, the move from 2977/1352 was
+**+15 ENGINE units** from the
+compressed-vertex work's Phase 1 (2026-08-07): `Zenith/Flux/Flux_VertexCodec.h`
+became the single home of every packed vertex attribute, and its suite pins the
+half / snorm16 / unorm16 / unorm8 / uint8 round-trips and lane order, the
+SNORM10_10_10_2 bit-identity against the terrain packer it adopted (the packer
+had been duplicated between the exporter and the terrain editor), the position
+quantisation box, and the bone weight/index lanes. ZM's own registrations did
+not move. Before that, the move from 2975/1350 was **+2 ENGINE units** from the
 engine-wide debug-variable audit remediation (2026-08-07): the `AI/*` debug
 variables had never had a call site for `Zenith_AIDebugVariables::Initialise()`,
 so none of the 20 toggles reached the panel; wiring them up added two routing

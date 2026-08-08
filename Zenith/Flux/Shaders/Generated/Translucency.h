@@ -8,6 +8,7 @@
 #pragma once
 
 #include "Flux/Slang/Flux_SlangCompiler.h"
+#include "Flux/Flux_VertexLayoutDesc.h"
 #include "glm/glm.hpp"
 #include <cstddef>
 
@@ -117,6 +118,17 @@ namespace Flux_Generated_Translucency
 		inline constexpr Flux_SpecConstantHandle hscFLUX_SC_VIEW_SHADOWS_PERMITTED{ "FLUX_SC_VIEW_SHADOWS_PERMITTED", 0u, 4u, 1u };
 		// spec constant: bool
 		inline constexpr Flux_SpecConstantHandle hscFLUX_SC_VIEW_CLUSTER_LIGHTS_PERMITTED{ "FLUX_SC_VIEW_CLUSTER_LIGHTS_PERMITTED", 1u, 4u, 1u };
+		// vertex inputs: { semantic, semantic index, STORAGE format, binding, byte offset }
+		inline constexpr Flux_VertexLayoutElement kaxVertexAttribs[] =
+		{
+			{ FLUX_VERTEX_SEMANTIC_POSITION, 0u, SHADER_DATA_TYPE_FLOAT3, 0u, 0u },   // a_xPosition
+			{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 0u, SHADER_DATA_TYPE_FLOAT2, 0u, 12u },   // a_xUV
+			{ FLUX_VERTEX_SEMANTIC_NORMAL, 0u, SHADER_DATA_TYPE_FLOAT3, 0u, 20u },   // a_xNormal
+			{ FLUX_VERTEX_SEMANTIC_TANGENT, 0u, SHADER_DATA_TYPE_FLOAT3, 0u, 32u },   // a_xTangent
+			{ FLUX_VERTEX_SEMANTIC_BINORMAL, 0u, SHADER_DATA_TYPE_FLOAT3, 0u, 44u },   // a_xBitangent
+			{ FLUX_VERTEX_SEMANTIC_COLOR, 0u, SHADER_DATA_TYPE_FLOAT4, 0u, 56u },   // a_xColor
+		};
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ kaxVertexAttribs, 6u, { 72u, 0u } };
 	}
 
 }

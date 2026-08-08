@@ -239,7 +239,7 @@ void Flux_DecalsImpl::BuildPipelines()
 		}
 
 		// No vertex bindings — VS emits cube corners from SV_VertexID.
-		xSpec.m_xVertexInputDesc.m_eTopology = MESH_TOPOLOGY_NONE;
+		xSpec.m_eTopology = MESH_TOPOLOGY_NONE;
 
 		m_xApplyShader.GetReflection().PopulateLayout(xSpec.m_xPipelineLayout);
 
@@ -432,7 +432,6 @@ static void ExecuteNormalsCopy(Flux_CommandBuffer* pxCommandList, void*)
 
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
 	pxCommandList->SetPipeline(&xDecals.m_xNormalsCopyPipeline);
-	pxCommandList->SetVertexBuffer(xGraphics.m_xQuadMesh.GetVertexBuffer());
 	pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
 
 	Flux_ShaderBinder xBinder(*pxCommandList);

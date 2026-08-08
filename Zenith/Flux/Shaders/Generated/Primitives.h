@@ -8,6 +8,7 @@
 #pragma once
 
 #include "Flux/Slang/Flux_SlangCompiler.h"
+#include "Flux/Flux_VertexLayoutDesc.h"
 #include "glm/glm.hpp"
 #include <cstddef>
 
@@ -91,6 +92,13 @@ namespace Flux_Generated_Primitives
 		};
 		static_assert(sizeof(PrimitivePushConstant_CB) == 80, "PrimitivePushConstant_CB size drifted from Slang reflection");
 		static_assert(offsetof(PrimitivePushConstant_CB, m_fm_fEmissiveIntensity) == 76, "PrimitivePushConstant.m_fEmissiveIntensity offset drifted from Slang reflection");
+		// vertex inputs: { semantic, semantic index, STORAGE format, binding, byte offset }
+		inline constexpr Flux_VertexLayoutElement kaxVertexAttribs[] =
+		{
+			{ FLUX_VERTEX_SEMANTIC_POSITION, 0u, SHADER_DATA_TYPE_FLOAT3, 0u, 0u },   // a_xPosition
+			{ FLUX_VERTEX_SEMANTIC_NORMAL, 0u, SHADER_DATA_TYPE_FLOAT3, 0u, 12u },   // a_xNormal
+		};
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ kaxVertexAttribs, 2u, { 24u, 0u } };
 	}
 
 }

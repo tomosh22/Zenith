@@ -8,6 +8,7 @@
 #pragma once
 
 #include "Flux/Slang/Flux_SlangCompiler.h"
+#include "Flux/Flux_VertexLayoutDesc.h"
 #include "glm/glm.hpp"
 #include <cstddef>
 
@@ -93,6 +94,19 @@ namespace Flux_Generated_Text
 		static_assert(sizeof(TextConstants_CB) == 32, "TextConstants_CB size drifted from Slang reflection");
 		static_assert(offsetof(TextConstants_CB, m_fg_fAtlasPxRange) == 24, "TextConstants.g_fAtlasPxRange offset drifted from Slang reflection");
 		static_assert(offsetof(TextConstants_CB, m_ug_uAtlasIdx) == 28, "TextConstants.g_uAtlasIdx offset drifted from Slang reflection");
+		// vertex inputs: { semantic, semantic index, STORAGE format, binding, byte offset }
+		inline constexpr Flux_VertexLayoutElement kaxVertexAttribs[] =
+		{
+			{ FLUX_VERTEX_SEMANTIC_POSITION, 0u, SHADER_DATA_TYPE_FLOAT3, 0u, 0u },   // a_xPosition
+			{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 0u, SHADER_DATA_TYPE_FLOAT2, 0u, 12u },   // a_xUV
+			{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 1u, SHADER_DATA_TYPE_FLOAT2, 1u, 0u },   // a_xQuadOffsetPx
+			{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 2u, SHADER_DATA_TYPE_FLOAT2, 1u, 8u },   // a_xQuadSizePx
+			{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 3u, SHADER_DATA_TYPE_FLOAT2, 1u, 16u },   // a_xAtlasUVOrigin
+			{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 4u, SHADER_DATA_TYPE_FLOAT2, 1u, 24u },   // a_xAtlasUVSize
+			{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 5u, SHADER_DATA_TYPE_FLOAT2, 1u, 32u },   // a_xTextRootPx
+			{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 6u, SHADER_DATA_TYPE_FLOAT4, 1u, 40u },   // a_xColour
+		};
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ kaxVertexAttribs, 8u, { 20u, 56u } };
 	}
 
 }

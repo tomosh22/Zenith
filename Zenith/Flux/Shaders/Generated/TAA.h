@@ -8,6 +8,7 @@
 #pragma once
 
 #include "Flux/Slang/Flux_SlangCompiler.h"
+#include "Flux/Flux_VertexLayoutDesc.h"
 #include "glm/glm.hpp"
 #include <cstddef>
 
@@ -121,6 +122,8 @@ namespace Flux_Generated_TAA
 		static_assert(offsetof(g_xTAAConstants_CB, m_ug_uRenderWidth) == 36, "g_xTAAConstants.g_uRenderWidth offset drifted from Slang reflection");
 		static_assert(offsetof(g_xTAAConstants_CB, m_ug_uRenderHeight) == 40, "g_xTAAConstants.g_uRenderHeight offset drifted from Slang reflection");
 		static_assert(offsetof(g_xTAAConstants_CB, m_fg_fUpscaleSigma) == 44, "g_xTAAConstants.g_fUpscaleSigma offset drifted from Slang reflection");
+		// vertex inputs: none
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ nullptr, 0u, { 0u, 0u } };
 	}
 
 	// ----- TAA_CopyToHistory (TAA/Flux_TAA_CopyToHistory) -----
@@ -168,6 +171,8 @@ namespace Flux_Generated_TAA
 		static_assert(offsetof(g_xCopyConstants_CB, m_ug_uHeight) == 4, "g_xCopyConstants.g_uHeight offset drifted from Slang reflection");
 		static_assert(offsetof(g_xCopyConstants_CB, m_ug_uPad0) == 8, "g_xCopyConstants.g_uPad0 offset drifted from Slang reflection");
 		static_assert(offsetof(g_xCopyConstants_CB, m_ug_uPad1) == 12, "g_xCopyConstants.g_uPad1 offset drifted from Slang reflection");
+		// vertex inputs: none
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ nullptr, 0u, { 0u, 0u } };
 	}
 
 	// ----- TAA_Sharpen (TAA/Flux_TAA_Sharpen) -----
@@ -215,6 +220,8 @@ namespace Flux_Generated_TAA
 		static_assert(offsetof(g_xSharpenConstants_CB, m_ug_uHeight) == 4, "g_xSharpenConstants.g_uHeight offset drifted from Slang reflection");
 		static_assert(offsetof(g_xSharpenConstants_CB, m_fg_fSharpenAmount) == 8, "g_xSharpenConstants.g_fSharpenAmount offset drifted from Slang reflection");
 		static_assert(offsetof(g_xSharpenConstants_CB, m_fg_fPad0) == 12, "g_xSharpenConstants.g_fPad0 offset drifted from Slang reflection");
+		// vertex inputs: none
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ nullptr, 0u, { 0u, 0u } };
 	}
 
 }

@@ -107,6 +107,14 @@ static uint32_t Flux_ShaderDataTypeSize(ShaderDataType t)
 	case SHADER_DATA_TYPE_BOOL:		return sizeof(bool);
 	case SHADER_DATA_TYPE_HALF2:				return 4;
 	case SHADER_DATA_TYPE_SNORM10_10_10_2:		return 4;
+	case SHADER_DATA_TYPE_HALF4:				return 8;
+	case SHADER_DATA_TYPE_SNORM16X2:			return 4;
+	case SHADER_DATA_TYPE_SNORM16X4:			return 8;
+	case SHADER_DATA_TYPE_UNORM16X2:			return 4;
+	case SHADER_DATA_TYPE_UNORM16X4:			return 8;
+	case SHADER_DATA_TYPE_UNORM8X4:				return 4;
+	case SHADER_DATA_TYPE_UINT8X4:				return 4;
+	case SHADER_DATA_TYPE_UINT16X4:				return 8;
 	case SHADER_DATA_TYPE_NONE: break;
 	}
 	Zenith_Assert(false, "Trying to calculate size of ShaderDataType::None");
@@ -151,6 +159,14 @@ struct Flux_BufferElement
 		case SHADER_DATA_TYPE_BOOL:		return 1;
 		case SHADER_DATA_TYPE_HALF2:				return 2;
 		case SHADER_DATA_TYPE_SNORM10_10_10_2:		return 4;
+		case SHADER_DATA_TYPE_HALF4:				return 4;
+		case SHADER_DATA_TYPE_SNORM16X2:			return 2;
+		case SHADER_DATA_TYPE_SNORM16X4:			return 4;
+		case SHADER_DATA_TYPE_UNORM16X2:			return 2;
+		case SHADER_DATA_TYPE_UNORM16X4:			return 4;
+		case SHADER_DATA_TYPE_UNORM8X4:				return 4;
+		case SHADER_DATA_TYPE_UINT8X4:				return 4;
+		case SHADER_DATA_TYPE_UINT16X4:				return 4;
 		case SHADER_DATA_TYPE_NONE: break;
 		}
 		Zenith_Assert(false, "Unknown ShaderDataType");
@@ -201,12 +217,12 @@ private:
 	Zenith_Vector<Flux_BufferElement> m_xElements;
 };
 
-struct Flux_VertexInputDescription
-{
-	MeshTopology m_eTopology = MESH_TOPOLOGY_TRIANGLES;
-	Flux_BufferLayout m_xPerVertexLayout;
-	Flux_BufferLayout m_xPerInstanceLayout;
-};
+// (Flux_VertexInputDescription used to sit here: a hand-written per-vertex +
+// per-instance Flux_BufferLayout pair, copied onto every pipeline spec. It was
+// deleted once vertex input became a property of the SHADER — the backend builds
+// the fetch state from live reflection and the spec only names the generated
+// layout it expects. Flux_BufferLayout itself STAYS: it is the .zmesh element
+// vehicle, which is a file format, not a pipeline input.)
 
 bool IsCompressedFormat(TextureFormat eFormat);
 uint32_t CompressedFormatBytesPerBlock(TextureFormat eFormat);

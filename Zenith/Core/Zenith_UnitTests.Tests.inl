@@ -19939,6 +19939,13 @@ void Zenith_UnitTests::TestUITextVerticalAlignment(){
 // "GetBinding(...) failed" spam at startup or static_assert sizeof/offsetof
 // failures in generated headers — both annoying to diagnose. These tests
 // run on every platform (no Slang compiler dependency).
+//
+// The pin is a WRITE-then-READ of an observed serialization rather than a
+// literal byte array: the writer and reader are one contract, and pinning the
+// bytes would only restate the field order the two functions already agree on.
+// Every format bump therefore extends this test with the new section's fields —
+// currently through v6 (vertex-input table + per-binding strides), whose
+// trailing position is what a stale v5 reader would run off the end of.
 //=============================================================================
 
 ZENITH_TEST(Slang, ReflectionV2RoundTrip) { Zenith_UnitTests::TestReflectionV2RoundTrip(); }
@@ -20003,6 +20010,38 @@ void Zenith_UnitTests::TestReflectionV2RoundTrip(){
 	xWrite.SetBindingStaticUse(1, false);   // the texture (2nd AddBinding)
 	xWrite.SetBindingStaticUse(99, true);   // out-of-range → must be a harmless no-op (no crash)
 
+	// T2.a: the v6 vertex-input table rides at the TAIL of the stream, so it is the
+	// section a stale reader would run off the end of. Two bindings and a packed
+	// format make the offsets/strides load-bearing rather than all-zero.
+	{
+		Flux_ReflectedVertexAttribute xPos;
+		xPos.m_strName     = "a_xPosition";
+		xPos.m_strSemantic = "POSITION";
+		xPos.m_uLocation   = 0;
+		xPos.m_eType       = SHADER_DATA_TYPE_FLOAT3;
+		xPos.m_uBinding    = 0;
+		xWrite.AddVertexAttribute(xPos);
+
+		Flux_ReflectedVertexAttribute xUV;
+		xUV.m_strName        = "a_xUV";
+		xUV.m_strSemantic    = "TEXCOORD";
+		xUV.m_uSemanticIndex = 1;
+		xUV.m_uLocation      = 1;
+		xUV.m_eType          = SHADER_DATA_TYPE_HALF2;
+		xUV.m_uBinding       = 0;
+		xWrite.AddVertexAttribute(xUV);
+
+		Flux_ReflectedVertexAttribute xInst;
+		xInst.m_strName     = "a_xInstColour";
+		xInst.m_strSemantic = "INSTANCECOLOUR";
+		xInst.m_uLocation   = 2;
+		xInst.m_eType       = SHADER_DATA_TYPE_UNORM8X4;
+		xInst.m_uBinding    = 1;
+		xWrite.AddVertexAttribute(xInst);
+
+		xWrite.ComputeVertexPacking();
+	}
+
 	Zenith_DataStream xStream(2048);
 	xWrite.WriteToDataStream(xStream);
 
@@ -20047,6 +20086,21 @@ void Zenith_UnitTests::TestReflectionV2RoundTrip(){
 	ZENITH_ASSERT_TRUE(xCBOut.m_bStaticallyUsed, "CB static-use bit should round-trip (default true)");
 	ZENITH_ASSERT_TRUE(!xTexOut.m_bStaticallyUsed, "Texture static-use bit (set false via SetBindingStaticUse) should round-trip to false");
 	ZENITH_ASSERT_TRUE(xUavOut.m_bStaticallyUsed, "UAV static-use bit should round-trip (default true)");
+
+	// T2.a: the v6 vertex-input table, including the offsets/strides ComputeVertexPacking
+	// derived — read back as stored, never recomputed on load.
+	const Zenith_Vector<Flux_ReflectedVertexAttribute>& axVertexOut = xRead.GetVertexAttributes();
+	ZENITH_ASSERT_EQ(axVertexOut.GetSize(), 3, "Round-trip should produce three vertex attributes");
+	ZENITH_ASSERT_EQ(axVertexOut.Get(0).m_strName, "a_xPosition", "Vertex attribute name should round-trip");
+	ZENITH_ASSERT_EQ(axVertexOut.Get(0).m_strSemantic, "POSITION", "Vertex attribute semantic should round-trip");
+	ZENITH_ASSERT_EQ(axVertexOut.Get(1).m_uSemanticIndex, 1, "Vertex attribute semantic index should round-trip");
+	ZENITH_ASSERT_EQ(axVertexOut.Get(1).m_uLocation, 1, "Vertex attribute location should round-trip");
+	ZENITH_ASSERT_EQ((int)axVertexOut.Get(1).m_eType, (int)SHADER_DATA_TYPE_HALF2, "Vertex attribute storage type should round-trip");
+	ZENITH_ASSERT_EQ(axVertexOut.Get(1).m_uOffset, 12, "Tight-packed offset (after a float3) should round-trip");
+	ZENITH_ASSERT_EQ(axVertexOut.Get(2).m_uBinding, 1, "Per-instance binding should round-trip");
+	ZENITH_ASSERT_EQ(axVertexOut.Get(2).m_uOffset, 0, "Binding 1 packs from 0 independently of binding 0");
+	ZENITH_ASSERT_EQ(xRead.GetVertexStride(0), 16, "Per-vertex stride (float3 + half2) should round-trip");
+	ZENITH_ASSERT_EQ(xRead.GetVertexStride(1), 4, "Per-instance stride (unorm8x4) should round-trip");
 
 }
 
@@ -20500,6 +20554,138 @@ void Zenith_UnitTests::TestCodegenSanitisesIdentifiers(){
 	ZENITH_ASSERT_TRUE(str.find("hframe_lights{") != std::string::npos, "Sanitised identifier should replace '.' with '_' in the emitted handle name");
 	ZENITH_ASSERT_TRUE(str.find("frame.lights") == std::string::npos, "Generated header should never contain the raw dotted binding name");
 
+}
+
+//=============================================================================
+// Codegen vertex-layout emission (compressed-vertex work — T2.b)
+//
+// The generated headers are committed artifacts that pipeline code and the
+// T2.c drift tripwire read, so what the generator writes into them is a
+// contract in its own right: enumerator identifiers rather than ordinals,
+// STORAGE formats rather than declared types, one canonical empty spelling,
+// and a HARD FAILURE — never a fallback tag — on a semantic the vocabulary
+// does not name.
+//=============================================================================
+
+namespace
+{
+	// Build the terrain vertex as reflection would report it: declaration order,
+	// semantics already split into base + index, the two packed fields carrying
+	// their [VtxFmt] storage tag rather than their declared float4.
+	void CodegenTestFillTerrainVertexInputs(Flux_ShaderReflection& xReflOut)
+	{
+		struct Row { const char* m_szName; const char* m_szSemantic; ShaderDataType m_eType; };
+		static const Row ls_axRows[] =
+		{
+			{ "a_xPosition",      "POSITION", SHADER_DATA_TYPE_FLOAT3          },
+			{ "a_xUV",            "TEXCOORD", SHADER_DATA_TYPE_FLOAT2          },
+			{ "a_xNormalPacked",  "NORMAL",   SHADER_DATA_TYPE_SNORM10_10_10_2 },
+			{ "a_xTangentPacked", "TANGENT",  SHADER_DATA_TYPE_SNORM10_10_10_2 },
+		};
+
+		for (const Row& xRow : ls_axRows)
+		{
+			Flux_ReflectedVertexAttribute xAttribute;
+			xAttribute.m_strName     = xRow.m_szName;
+			xAttribute.m_strSemantic = xRow.m_szSemantic;
+			xAttribute.m_eType       = xRow.m_eType;
+			xReflOut.AddVertexAttribute(xAttribute);
+		}
+		xReflOut.ComputeVertexPacking();
+	}
+}
+
+ZENITH_TEST(Codegen, CodegenEmitsVertexLayoutTable) { Zenith_UnitTests::TestCodegenEmitsVertexLayoutTable(); }
+
+void Zenith_UnitTests::TestCodegenEmitsVertexLayoutTable(){
+
+	Flux_ShaderReflection xRefl;
+	CodegenTestFillTerrainVertexInputs(xRefl);
+	xRefl.BuildLookupMap();
+
+	Flux_CodeGenerator::ProgramReflection xPR;
+	xPR.m_pxDecl = &Flux_ShaderCatalog::GetProgramByIndex(0);
+	xPR.m_pxReflection = &xRefl;
+
+	std::string strError;
+	const std::string str = Flux_CodeGenerator::BuildSubsystemHeaderContent("CodegenTestVertexLayout", &xPR, 1, &strError);
+
+	ZENITH_ASSERT_TRUE(strError.empty(), "A layout over named semantics must emit without error");
+
+	// The leaf the emitted constants are typed in has to be reachable from the header.
+	ZENITH_ASSERT_TRUE(str.find("#include \"Flux/Flux_VertexLayoutDesc.h\"") != std::string::npos,
+		"Generated preamble should include the vertex-layout descriptor leaf");
+
+	ZENITH_ASSERT_TRUE(str.find("inline constexpr Flux_VertexLayoutElement kaxVertexAttribs[] =") != std::string::npos,
+		"A program with vertex inputs should emit its element table");
+
+	// Enumerator identifiers, never ordinals — humans read and diff these headers.
+	ZENITH_ASSERT_TRUE(str.find("{ FLUX_VERTEX_SEMANTIC_POSITION, 0u, SHADER_DATA_TYPE_FLOAT3, 0u, 0u },") != std::string::npos,
+		"Position should emit as FLOAT3 at byte 0 of binding 0");
+	ZENITH_ASSERT_TRUE(str.find("{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 0u, SHADER_DATA_TYPE_FLOAT2, 0u, 12u },") != std::string::npos,
+		"UV should emit as FLOAT2 at byte 12");
+	// The load-bearing pair: a [VtxFmt]-tagged field emits its four-byte STORAGE
+	// format, not the float4 it is declared as — that is what makes the stride 28.
+	ZENITH_ASSERT_TRUE(str.find("{ FLUX_VERTEX_SEMANTIC_NORMAL, 0u, SHADER_DATA_TYPE_SNORM10_10_10_2, 0u, 20u },") != std::string::npos,
+		"Packed normal should emit as SNORM10_10_10_2 at byte 20");
+	ZENITH_ASSERT_TRUE(str.find("{ FLUX_VERTEX_SEMANTIC_TANGENT, 0u, SHADER_DATA_TYPE_SNORM10_10_10_2, 0u, 24u },") != std::string::npos,
+		"Packed tangent should emit as SNORM10_10_10_2 at byte 24");
+
+	ZENITH_ASSERT_TRUE(str.find("inline constexpr Flux_VertexLayoutDesc kVertexLayout{ kaxVertexAttribs, 4u, { 28u, 0u } };") != std::string::npos,
+		"The descriptor should name the table, its element count, and the 28-byte terrain stride");
+}
+
+ZENITH_TEST(Codegen, CodegenEmitsNullVertexLayout) { Zenith_UnitTests::TestCodegenEmitsNullVertexLayout(); }
+
+void Zenith_UnitTests::TestCodegenEmitsNullVertexLayout(){
+
+	// A compute (or vertex-pulling) program still gets a kVertexLayout, so no
+	// consumer has to ask whether the constant exists before asking what it says.
+	Flux_ShaderReflection xRefl;
+	xRefl.BuildLookupMap();
+
+	Flux_CodeGenerator::ProgramReflection xPR;
+	xPR.m_pxDecl = &Flux_ShaderCatalog::GetProgramByIndex(0);
+	xPR.m_pxReflection = &xRefl;
+
+	std::string strError;
+	const std::string str = Flux_CodeGenerator::BuildSubsystemHeaderContent("CodegenTestNullLayout", &xPR, 1, &strError);
+
+	ZENITH_ASSERT_TRUE(strError.empty(), "A program with no vertex inputs is not an error");
+	ZENITH_ASSERT_TRUE(str.find("inline constexpr Flux_VertexLayoutDesc kVertexLayout{ nullptr, 0u, { 0u, 0u } };") != std::string::npos,
+		"A program with no vertex inputs should emit the ONE canonical empty layout");
+	ZENITH_ASSERT_TRUE(str.find("kaxVertexAttribs") == std::string::npos,
+		"An empty layout should emit no element table at all");
+}
+
+ZENITH_TEST(Codegen, CodegenRejectsUnknownVertexSemantic) { Zenith_UnitTests::TestCodegenRejectsUnknownVertexSemantic(); }
+
+void Zenith_UnitTests::TestCodegenRejectsUnknownVertexSemantic(){
+
+	// A semantic outside FluxVertexSemantic is a HARD error: emitting UNKNOWN (or
+	// guessing) would bake a layout that compiles and is wrong. The error names the
+	// field, the program and the semantic so the fix is obvious from the log line.
+	Flux_ShaderReflection xRefl;
+	Flux_ReflectedVertexAttribute xAttribute;
+	xAttribute.m_strName     = "a_xBoneWeights";
+	xAttribute.m_strSemantic = "BLENDWEIGHT";
+	xAttribute.m_eType       = SHADER_DATA_TYPE_UNORM8X4;
+	xRefl.AddVertexAttribute(xAttribute);
+	xRefl.ComputeVertexPacking();
+	xRefl.BuildLookupMap();
+
+	Flux_CodeGenerator::ProgramReflection xPR;
+	xPR.m_pxDecl = &Flux_ShaderCatalog::GetProgramByIndex(0);
+	xPR.m_pxReflection = &xRefl;
+
+	std::string strError;
+	const std::string str = Flux_CodeGenerator::BuildSubsystemHeaderContent("CodegenTestBadSemantic", &xPR, 1, &strError);
+
+	ZENITH_ASSERT_TRUE(!strError.empty(), "An unnamed vertex semantic must fail the generation");
+	ZENITH_ASSERT_TRUE(strError.find("BLENDWEIGHT") != std::string::npos, "The error should name the offending semantic");
+	ZENITH_ASSERT_TRUE(strError.find("a_xBoneWeights") != std::string::npos, "The error should name the offending field");
+	ZENITH_ASSERT_TRUE(str.find("kVertexLayout") == std::string::npos,
+		"Nothing should be emitted for a layout the generator could not name");
 }
 
 //==============================================================================

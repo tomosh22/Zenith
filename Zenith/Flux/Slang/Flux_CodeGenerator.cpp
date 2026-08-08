@@ -2,6 +2,7 @@
 
 #include "Flux/Slang/Flux_CodeGenerator.h"
 #include "Flux/Slang/Flux_SlangCompiler.h"
+#include "Flux/Flux_VertexLayoutDesc.h"
 
 #include <cstdio>
 #include <fstream>
@@ -9,6 +10,12 @@
 #include <string>
 
 #include "Collections/Zenith_Vector.h"
+
+// The reflection model and the baked-layout POD each own a copy of "how many vertex
+// bindings there are", because the POD is a dependency-light leaf that must not pull
+// in the Slang compiler header. This TU is the one place that sees both.
+static_assert(uFLUX_VERTEX_LAYOUT_MAX_BINDINGS == uFLUX_MAX_VERTEX_BINDINGS,
+	"Flux_VertexLayoutDesc's binding count must track the reflection's uFLUX_MAX_VERTEX_BINDINGS");
 
 namespace
 {
@@ -295,6 +302,116 @@ namespace
 		return strBindIdent == "g_xGlobal" || strBindIdent == "g_xView";
 	}
 
+	// The SHADER_DATA_TYPE_* identifier for a vertex STORAGE format. Returns nullptr
+	// for a tag that has no vertex-input representation (matrix, bool, NONE) — the
+	// extractor can never produce one, so the caller treats it as a hard error rather
+	// than emitting a token that would not compile.
+	const char* VertexStorageTypeEnumToken(ShaderDataType eType)
+	{
+		switch (eType)
+		{
+		case SHADER_DATA_TYPE_FLOAT:             return "SHADER_DATA_TYPE_FLOAT";
+		case SHADER_DATA_TYPE_FLOAT2:            return "SHADER_DATA_TYPE_FLOAT2";
+		case SHADER_DATA_TYPE_FLOAT3:            return "SHADER_DATA_TYPE_FLOAT3";
+		case SHADER_DATA_TYPE_FLOAT4:            return "SHADER_DATA_TYPE_FLOAT4";
+		case SHADER_DATA_TYPE_INT:               return "SHADER_DATA_TYPE_INT";
+		case SHADER_DATA_TYPE_INT2:              return "SHADER_DATA_TYPE_INT2";
+		case SHADER_DATA_TYPE_INT3:              return "SHADER_DATA_TYPE_INT3";
+		case SHADER_DATA_TYPE_INT4:              return "SHADER_DATA_TYPE_INT4";
+		case SHADER_DATA_TYPE_UINT:              return "SHADER_DATA_TYPE_UINT";
+		case SHADER_DATA_TYPE_UINT2:             return "SHADER_DATA_TYPE_UINT2";
+		case SHADER_DATA_TYPE_UINT3:             return "SHADER_DATA_TYPE_UINT3";
+		case SHADER_DATA_TYPE_UINT4:             return "SHADER_DATA_TYPE_UINT4";
+		case SHADER_DATA_TYPE_HALF2:             return "SHADER_DATA_TYPE_HALF2";
+		case SHADER_DATA_TYPE_HALF4:             return "SHADER_DATA_TYPE_HALF4";
+		case SHADER_DATA_TYPE_SNORM16X2:         return "SHADER_DATA_TYPE_SNORM16X2";
+		case SHADER_DATA_TYPE_SNORM16X4:         return "SHADER_DATA_TYPE_SNORM16X4";
+		case SHADER_DATA_TYPE_UNORM16X2:         return "SHADER_DATA_TYPE_UNORM16X2";
+		case SHADER_DATA_TYPE_UNORM16X4:         return "SHADER_DATA_TYPE_UNORM16X4";
+		case SHADER_DATA_TYPE_UNORM8X4:          return "SHADER_DATA_TYPE_UNORM8X4";
+		case SHADER_DATA_TYPE_UINT8X4:           return "SHADER_DATA_TYPE_UINT8X4";
+		case SHADER_DATA_TYPE_UINT16X4:          return "SHADER_DATA_TYPE_UINT16X4";
+		case SHADER_DATA_TYPE_SNORM10_10_10_2:   return "SHADER_DATA_TYPE_SNORM10_10_10_2";
+		default:                                 return nullptr;
+		}
+	}
+
+	// Emit a program's baked vertex layout: the element table (only when the program
+	// HAS vertex inputs) followed by the descriptor that names it. The ONE canonical
+	// empty spelling — { nullptr, 0u, { 0u, 0u } } — is what a compute or vertex-pulling
+	// program gets, so "takes no vertex buffer" is a single equality test downstream.
+	//
+	// Returns false on a semantic or storage tag the vocabulary does not name, leaving
+	// the reason in strErrorOut. Nothing is emitted in that case: a generated header
+	// carrying a guessed layout is worse than no header at all, because it would compile.
+	bool EmitVertexLayout(const Flux_ShaderReflection& xReflection,
+						   const std::string& strProgramName,
+						   std::string& strContentOut,
+						   std::string& strErrorOut)
+	{
+		const Zenith_Vector<Flux_ReflectedVertexAttribute>& axAttributes = xReflection.GetVertexAttributes();
+
+		std::string strStrides;
+		for (u_int b = 0; b < uFLUX_VERTEX_LAYOUT_MAX_BINDINGS; b++)
+		{
+			char szStride[32];
+			snprintf(szStride, sizeof(szStride), "%s%uu", (b == 0) ? "" : ", ", xReflection.GetVertexStride(b));
+			strStrides += szStride;
+		}
+
+		if (axAttributes.GetSize() == 0)
+		{
+			strContentOut += "\t\t// vertex inputs: none\n";
+			strContentOut += "\t\tinline constexpr Flux_VertexLayoutDesc kVertexLayout{ nullptr, 0u, { " + strStrides + " } };\n";
+			return true;
+		}
+
+		std::string strElements;
+		for (u_int u = 0; u < axAttributes.GetSize(); u++)
+		{
+			const Flux_ReflectedVertexAttribute& xAttribute = axAttributes.Get(u);
+
+			FluxVertexSemantic eSemantic = FLUX_VERTEX_SEMANTIC_UNKNOWN;
+			if (!Flux_ParseVertexSemantic(xAttribute.m_strSemantic.c_str(), eSemantic))
+			{
+				strErrorOut = "Vertex input '" + xAttribute.m_strName + "' in program '" + strProgramName +
+							  "' carries semantic '" + xAttribute.m_strSemantic +
+							  "', which Flux_VertexLayoutDesc.h's FluxVertexSemantic does not name — add it there.";
+				return false;
+			}
+
+			const char* szTypeToken = VertexStorageTypeEnumToken(xAttribute.m_eType);
+			if (!szTypeToken)
+			{
+				strErrorOut = "Vertex input '" + xAttribute.m_strName + "' in program '" + strProgramName +
+							  "' resolved to a storage format with no vertex-input representation.";
+				return false;
+			}
+
+			char szElement[512];
+			snprintf(szElement, sizeof(szElement),
+					 "\t\t\t{ %s, %uu, %s, %uu, %uu },   // %s\n",
+					 Flux_VertexSemanticEnumToken(eSemantic),
+					 xAttribute.m_uSemanticIndex,
+					 szTypeToken,
+					 xAttribute.m_uBinding,
+					 xAttribute.m_uOffset,
+					 xAttribute.m_strName.c_str());
+			strElements += szElement;
+		}
+
+		char szCount[32];
+		snprintf(szCount, sizeof(szCount), "%uu", axAttributes.GetSize());
+
+		strContentOut += "\t\t// vertex inputs: { semantic, semantic index, STORAGE format, binding, byte offset }\n";
+		strContentOut += "\t\tinline constexpr Flux_VertexLayoutElement kaxVertexAttribs[] =\n\t\t{\n";
+		strContentOut += strElements;
+		strContentOut += "\t\t};\n";
+		strContentOut += "\t\tinline constexpr Flux_VertexLayoutDesc kVertexLayout{ kaxVertexAttribs, " +
+						 std::string(szCount) + ", { " + strStrides + " } };\n";
+		return true;
+	}
+
 	// Emit one `struct <Name>_CB { ... };` + its sizeof/offsetof drift asserts at the
 	// standard 2-tab (namespace-member) depth. Factored so both the per-program loop and
 	// the per-file Shared sub-namespace produce identical struct text.
@@ -314,14 +431,17 @@ namespace
 
 std::string Flux_CodeGenerator::BuildSubsystemHeaderContent(const char* szSubsystem,
 															 const ProgramReflection* axPrograms,
-															 u_int uProgramCount)
+															 u_int uProgramCount,
+															 std::string* pstrErrorOut)
 {
 	std::string strSubsystem = szSubsystem ? szSubsystem : "Misc";
+	std::string strError;
 
 	std::string strContent;
 	strContent += kBanner;
 	strContent += "#pragma once\n\n";
 	strContent += "#include \"Flux/Slang/Flux_SlangCompiler.h\"\n";
+	strContent += "#include \"Flux/Flux_VertexLayoutDesc.h\"\n";
 	strContent += "#include \"glm/glm.hpp\"\n";
 	strContent += "#include <cstddef>\n\n";
 	strContent += "namespace Flux_Generated_" + SanitizeIdentifier(strSubsystem) + "\n{\n";
@@ -444,10 +564,22 @@ std::string Flux_CodeGenerator::BuildSubsystemHeaderContent(const char* szSubsys
 			strContent += szSpecLine;
 		}
 
+		// Baked vertex layout (compressed-vertex work — T2.b). Emitted for EVERY
+		// program, the empty spelling included, so a consumer never has to ask
+		// whether the constant exists before asking what it says. First failure
+		// wins and suppresses further layout emission — the content is discarded
+		// by the caller anyway, and one clear message beats a cascade.
+		if (strError.empty())
+		{
+			EmitVertexLayout(*xPR.m_pxReflection, xEntry.m_szName, strContent, strError);
+		}
+
 		strContent += "\t}\n\n";
 	}
 
 	strContent += "}\n";
+
+	if (pstrErrorOut) *pstrErrorOut = strError;
 
 	return strContent;
 }
@@ -457,8 +589,16 @@ bool Flux_CodeGenerator::WriteSubsystemHeader(const char* szOutputDir,
 											   const ProgramReflection* axPrograms,
 											   u_int uProgramCount)
 {
-	std::string strContent = BuildSubsystemHeaderContent(szSubsystem, axPrograms, uProgramCount);
+	std::string strError;
+	std::string strContent = BuildSubsystemHeaderContent(szSubsystem, axPrograms, uProgramCount, &strError);
 	std::string strSubsystem = szSubsystem ? szSubsystem : "Misc";
+	if (!strError.empty())
+	{
+		// Hard stop, and deliberately WITHOUT touching the file: the on-disk header
+		// stays whatever last validated, so a failed run leaves a buildable tree.
+		printf("CODEGEN: %s.h — %s\n", strSubsystem.c_str(), strError.c_str());
+		return false;
+	}
 	std::string strPath = std::string(szOutputDir) + strSubsystem + ".h";
 	return WriteIfChanged(strPath, strContent);
 }

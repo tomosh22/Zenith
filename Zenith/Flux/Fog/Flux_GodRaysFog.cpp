@@ -32,15 +32,15 @@ void Flux_GodRaysFogImpl::BuildPipelines()
 {
 	m_xShader.Initialise(Flux_FogShaders::xFog_GodRays);
 
-	Flux_VertexInputDescription xVertexDesc;
-	xVertexDesc.m_eTopology = MESH_TOPOLOGY_NONE;
-
 	Flux_PipelineSpecification xPipelineSpec;
 	xPipelineSpec.m_aeColourAttachmentFormats[0] = HDR_SCENE_FORMAT;
 	xPipelineSpec.m_uNumColourAttachments = 1;
 	xPipelineSpec.m_eDepthStencilFormat = DEPTH_FORMAT;
 	xPipelineSpec.m_pxShader = &m_xShader;
-	xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
+	// No vertex input: this is a vertex-pulling / fullscreen program whose VS reads
+	// no attributes. m_pxVertexLayout stays null, which is the canonical spelling the
+	// validation tripwire matches against an empty reflection table.
+	xPipelineSpec.m_eTopology = MESH_TOPOLOGY_NONE;
 
 	m_xShader.GetReflection().PopulateLayout(xPipelineSpec.m_xPipelineLayout);
 
@@ -127,7 +127,6 @@ void Flux_GodRaysFogImpl::Render(Flux_CommandBuffer* pxCommandList)
 
 	pxCommandList->SetPipeline(&m_xPipeline);
 
-	pxCommandList->SetVertexBuffer(xGraphics.m_xQuadMesh.GetVertexBuffer());
 	pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
 
 	namespace GR = Flux_Generated_Fog::Fog_GodRays;
