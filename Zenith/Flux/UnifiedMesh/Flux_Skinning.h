@@ -65,6 +65,27 @@ static_assert(offsetof(Flux_SkinInputVertex, m_xColor)       == 56,  "skinned ve
 static_assert(offsetof(Flux_SkinInputVertex, m_auBoneIDs)    == 72,  "skinned vertex boneIndices at offset 72");
 static_assert(offsetof(Flux_SkinInputVertex, m_xBoneWeights) == 88,  "skinned vertex boneWeights at offset 88");
 
+// Fill paxDst with uNumVerts of a mesh asset's bind-pose vertices in the layout
+// above — THE builder of the compute-skinning input stream (the skinned mesh
+// instance's vertex buffer and the pose registry's bind-pose word pool are the
+// same bytes, built here once).
+//
+// WHY THIS IS NOT Flux_PackVertices: the two bone lanes are not vertex-FETCH
+// attributes. m_auBoneIDs is a uint4 palette index outside the closed semantic
+// vocabulary (POSITION/TEXCOORD/NORMAL/TANGENT/BINORMAL/COLOR) the reflected
+// layout tables are written in, and the packer refuses the integer families by
+// design. This stream is consumed by Flux_UnifiedMesh_Skinning.slang as a
+// StructuredBuffer, so its authority is the struct above and its offset
+// static_asserts rather than any shader's VsIn — and writing it THROUGH the
+// struct is what keeps the writer and that contract in lockstep.
+//
+// Absent (or shorter-than-uNumVerts) attribute arrays take the same canonical
+// defaults the static packer applies; bone ids/weights default to zero. paxDst
+// must hold uNumVerts elements. Pure: no GPU, no engine singleton. Defined in
+// Flux_MeshInstance.cpp, beside the mesh instance that uploads this stream.
+class Zenith_MeshAsset;
+void Flux_BuildSkinInputVertices(Flux_SkinInputVertex* paxDst, const Zenith_MeshAsset& xAsset, u_int uNumVerts);
+
 // Static OUTPUT (72B): pos(12)+uv(8)+normal(12)+tangent(12)+bitangent(12)+color(16).
 struct Flux_SkinOutputVertex
 {

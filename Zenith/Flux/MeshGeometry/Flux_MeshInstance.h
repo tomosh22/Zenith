@@ -131,13 +131,29 @@ private:
 	mutable bool m_bLocalBoundsValid = false;
 };
 
-// Shared mesh-vertex interleaver — the single source of the engine's standard vertex
-// layout. Fills pDst with uNumVerts interleaved vertices:
-//   pos(3f) uv(2f) normal(3f) tangent(3f) bitangent(3f) color(4f)                 = 72 B
-//   + when bSkinned: boneIndices(4u) @offset 72, boneWeights(4f) @offset 88       = 104 B
-// Missing asset attributes fall back to canonical defaults (normal +Y, tangent +X,
-// bitangent +Z, white colour, zero bone indices/weights). pDst must hold at least
-// uNumVerts * (bSkinned ? 104 : 72) bytes. Pure (no GPU/engine access) so it is
-// headlessly unit-tested; previously this loop was hand-rolled in three places
-// (CreateFromAsset / CreateSkinnedFromAsset / Flux_RealBuildSkinnedPose).
-void Flux_InterleaveMeshVertices(uint8_t* pDst, const Zenith_MeshAsset& xAsset, uint32_t uNumVerts, bool bSkinned);
+// Pack uNumVerts of a mesh asset's CPU attributes into the engine's standard
+// 72-byte STATIC vertex, shaped by
+// Flux_Generated_UnifiedMesh::UnifiedMesh_ToGBuffer::kVertexLayout — the table
+// reflected straight out of the shader that fetches it. Nothing here names an
+// offset or a stride: the generated table does, so a layout edit moves this
+// writer and its reader together.
+//
+// The attribute -> semantic mapping is the asset's whole float vocabulary
+// (positions POSITION, UVs TEXCOORD0, normals NORMAL, tangents TANGENT,
+// bitangents BINORMAL, colours COLOR). An array shorter than uNumVerts is not
+// offered to the packer at all, which routes that attribute onto the canonical
+// default (uv 0, normal +Y, tangent +X, bitangent +Z, white colour) — the same
+// rule, and the same values, the hand-written loops applied.
+//
+// pxPositionOverride, when non-null, replaces the asset's positions with a
+// caller-owned tight float3 stream of at least uNumVerts entries: the bind-pose
+// baked path pre-skins the positions and hands the RESULT over, so the packer
+// stays a pure interleaver with no skeleton in its contract.
+//
+// pDst must hold at least uNumVerts * 72 bytes. Pure — no GPU, no engine
+// singleton — so the whole path is headlessly unit-tested.
+void Flux_PackStaticMeshVertices(
+	void* pDst,
+	const Zenith_MeshAsset& xAsset,
+	uint32_t uNumVerts,
+	const Zenith_Maths::Vector3* pxPositionOverride = nullptr);

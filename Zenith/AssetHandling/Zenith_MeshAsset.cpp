@@ -5,6 +5,8 @@
 #include "AssetHandling/Zenith_SkeletonAsset.h"
 #include "AssetHandling/Zenith_AssetTypeIds.h"
 #include "DataStream/Zenith_StreamEnvelope.h"
+#include "Flux/MeshGeometry/Flux_MeshInstance.h"   // Flux_PackStaticMeshVertices (the 72B static stream)
+#include "Flux/UnifiedMesh/Flux_Skinning.h"        // Flux_BuildSkinInputVertices (the 104B skin-input stream)
 
 //------------------------------------------------------------------------------
 // Helper Functions for Serialization
@@ -596,91 +598,18 @@ void Zenith_MeshAsset::EnsureGPUBuffers(bool bSkinned)
 	const size_t uVertexDataSize = static_cast<size_t>(m_uNumVerts) * m_xBufferLayout.GetStride();
 	uint8_t* pVertexData = new uint8_t[uVertexDataSize];
 
-	// Check which attributes are available
-	const bool bHasPositions = m_xPositions.GetSize() >= m_uNumVerts;
-	const bool bHasUVs = m_xUVs.GetSize() >= m_uNumVerts;
-	const bool bHasNormals = m_xNormals.GetSize() >= m_uNumVerts;
-	const bool bHasTangents = m_xTangents.GetSize() >= m_uNumVerts;
-	const bool bHasBitangents = m_xBitangents.GetSize() >= m_uNumVerts;
-	const bool bHasColors = m_xColors.GetSize() >= m_uNumVerts;
-	const bool bHasBoneIndices = m_xBoneIndices.GetSize() >= m_uNumVerts;
-	const bool bHasBoneWeights = m_xBoneWeights.GetSize() >= m_uNumVerts;
-
-	// Default values
-	const Zenith_Maths::Vector3 xDefaultPosition(0.0f, 0.0f, 0.0f);
-	const Zenith_Maths::Vector2 xDefaultUV(0.0f, 0.0f);
-	const Zenith_Maths::Vector3 xDefaultNormal(0.0f, 1.0f, 0.0f);
-	const Zenith_Maths::Vector3 xDefaultTangent(1.0f, 0.0f, 0.0f);
-	const Zenith_Maths::Vector3 xDefaultBitangent(0.0f, 0.0f, 1.0f);
-	const Zenith_Maths::Vector4 xDefaultColor(1.0f, 1.0f, 1.0f, 1.0f);
-	const glm::uvec4 xDefaultBoneIndices(0, 0, 0, 0);
-	const glm::vec4 xDefaultBoneWeights(0.0f, 0.0f, 0.0f, 0.0f);
-
-	// Interleave vertex data
-	uint8_t* pCurrentVertex = pVertexData;
-	const uint32_t uStride = m_xBufferLayout.GetStride();
-
-	for (uint32_t i = 0; i < m_uNumVerts; i++)
+	// The interleave itself is NOT this asset's business — it was a hand-written
+	// duplicate of Flux_MeshInstance's loop, byte-for-byte, and drifted with it by
+	// convention alone. Both streams now come from their single owners: the static
+	// vertex from the shader-reflected layout table via the vertex packer, the
+	// skin-input vertex from the Flux_Skinning.h contract's own builder.
+	if (bSkinned)
 	{
-		float* pFloatData = reinterpret_cast<float*>(pCurrentVertex);
-		size_t uFloatIndex = 0;
-
-		// Position (3 floats = 12 bytes)
-		const Zenith_Maths::Vector3& xPos = bHasPositions ? m_xPositions.Get(i) : xDefaultPosition;
-		pFloatData[uFloatIndex++] = xPos.x;
-		pFloatData[uFloatIndex++] = xPos.y;
-		pFloatData[uFloatIndex++] = xPos.z;
-
-		// UV (2 floats = 8 bytes)
-		const Zenith_Maths::Vector2& xUV = bHasUVs ? m_xUVs.Get(i) : xDefaultUV;
-		pFloatData[uFloatIndex++] = xUV.x;
-		pFloatData[uFloatIndex++] = xUV.y;
-
-		// Normal (3 floats = 12 bytes)
-		const Zenith_Maths::Vector3& xNormal = bHasNormals ? m_xNormals.Get(i) : xDefaultNormal;
-		pFloatData[uFloatIndex++] = xNormal.x;
-		pFloatData[uFloatIndex++] = xNormal.y;
-		pFloatData[uFloatIndex++] = xNormal.z;
-
-		// Tangent (3 floats = 12 bytes)
-		const Zenith_Maths::Vector3& xTangent = bHasTangents ? m_xTangents.Get(i) : xDefaultTangent;
-		pFloatData[uFloatIndex++] = xTangent.x;
-		pFloatData[uFloatIndex++] = xTangent.y;
-		pFloatData[uFloatIndex++] = xTangent.z;
-
-		// Bitangent (3 floats = 12 bytes)
-		const Zenith_Maths::Vector3& xBitangent = bHasBitangents ? m_xBitangents.Get(i) : xDefaultBitangent;
-		pFloatData[uFloatIndex++] = xBitangent.x;
-		pFloatData[uFloatIndex++] = xBitangent.y;
-		pFloatData[uFloatIndex++] = xBitangent.z;
-
-		// Color (4 floats = 16 bytes)
-		const Zenith_Maths::Vector4& xColor = bHasColors ? m_xColors.Get(i) : xDefaultColor;
-		pFloatData[uFloatIndex++] = xColor.x;
-		pFloatData[uFloatIndex++] = xColor.y;
-		pFloatData[uFloatIndex++] = xColor.z;
-		pFloatData[uFloatIndex++] = xColor.w;
-
-		if (bSkinned)
-		{
-			// BoneIndices (4 uints = 16 bytes) at offset 72
-			const glm::uvec4& xBoneIdx = bHasBoneIndices ? m_xBoneIndices.Get(i) : xDefaultBoneIndices;
-			uint32_t* pUintData = reinterpret_cast<uint32_t*>(pCurrentVertex + 72);
-			pUintData[0] = xBoneIdx.x;
-			pUintData[1] = xBoneIdx.y;
-			pUintData[2] = xBoneIdx.z;
-			pUintData[3] = xBoneIdx.w;
-
-			// BoneWeights (4 floats = 16 bytes) at offset 88
-			const glm::vec4& xBoneWgt = bHasBoneWeights ? m_xBoneWeights.Get(i) : xDefaultBoneWeights;
-			float* pWeightData = reinterpret_cast<float*>(pCurrentVertex + 88);
-			pWeightData[0] = xBoneWgt.x;
-			pWeightData[1] = xBoneWgt.y;
-			pWeightData[2] = xBoneWgt.z;
-			pWeightData[3] = xBoneWgt.w;
-		}
-
-		pCurrentVertex += uStride;
+		Flux_BuildSkinInputVertices(reinterpret_cast<Flux_SkinInputVertex*>(pVertexData), *this, m_uNumVerts);
+	}
+	else
+	{
+		Flux_PackStaticMeshVertices(pVertexData, *this, m_uNumVerts);
 	}
 
 	// Create GPU vertex buffer

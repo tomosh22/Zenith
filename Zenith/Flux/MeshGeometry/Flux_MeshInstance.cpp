@@ -2,6 +2,9 @@
 #include "Core/Zenith_Engine.h"
 #include "Flux_MeshInstance.h"
 #include "Flux_MeshGeometry.h"
+#include "Flux/MeshGeometry/Flux_VertexPacker.h"          // Flux_PackVertices + the canonical defaults
+#include "Flux/Shaders/Generated/UnifiedMesh.h"           // THE reflected 72-byte static-mesh layout
+#include "Flux/UnifiedMesh/Flux_Skinning.h"               // Flux_SkinInputVertex (the 104-byte skin-input contract)
 #include "AssetHandling/Zenith_MeshAsset.h"
 #include "AssetHandling/Zenith_SkeletonAsset.h"
 
@@ -164,12 +167,72 @@ Flux_MeshInstance* Flux_MeshInstance::CreateFromGeometry(Flux_MeshGeometry* pxGe
 	return pxInstance;
 }
 
-// Single source of the standard interleaved vertex layout — see the header comment.
-// Byte-identical to the formerly-duplicated loops; keep this in lockstep with the
-// SHADER_DATA_TYPE_* layouts the callers assert (72 B static / 104 B skinned).
-void Flux_InterleaveMeshVertices(uint8_t* pDst, const Zenith_MeshAsset& xAsset, uint32_t uNumVerts, bool bSkinned)
+namespace
 {
-	const uint32_t uStride = bSkinned ? 104u : 72u;
+	// A mesh asset's CPU attribute arrays are ALREADY tight SoA float streams — a
+	// Zenith_Vector<Vector3> is a float3 stream — so a packer source view is a
+	// pointer plus a lane count, with no repacking anywhere. These asserts are what
+	// make that reinterpret honest: a padded gentype would break the stride the
+	// packer walks, silently.
+	static_assert(sizeof(Zenith_Maths::Vector2) == 2 * sizeof(float), "attribute streams must be tight: Vector2");
+	static_assert(sizeof(Zenith_Maths::Vector3) == 3 * sizeof(float), "attribute streams must be tight: Vector3");
+	static_assert(sizeof(Zenith_Maths::Vector4) == 4 * sizeof(float), "attribute streams must be tight: Vector4");
+
+	// The array's floats, or nullptr when it cannot cover uNumVerts vertices.
+	// "Too short must simply not be passed" is the packer's contract for routing an
+	// attribute onto its canonical default, and `GetSize() >= uNumVerts` is exactly
+	// the presence test every loop replaced here already applied.
+	template<typename T>
+	const float* SourceFloatsOrNull(const Zenith_Vector<T>& xArray, uint32_t uNumVerts)
+	{
+		static_assert(sizeof(T) % sizeof(float) == 0, "an attribute stream must be whole floats");
+		return (xArray.GetSize() >= uNumVerts) ? reinterpret_cast<const float*>(xArray.GetDataPointer()) : nullptr;
+	}
+
+	// xyz of a semantic's canonical default — the one vocabulary, shared by the
+	// packer-driven static path and the hand-written skin-input builder below, so
+	// "a mesh with no normals" cannot come to mean two different things.
+	Zenith_Maths::Vector3 CanonicalDefault3(FluxVertexSemantic eSemantic)
+	{
+		return Zenith_Maths::Vector3(Flux_CanonicalVertexDefault(eSemantic));
+	}
+}
+
+void Flux_PackStaticMeshVertices(
+	void* pDst,
+	const Zenith_MeshAsset& xAsset,
+	uint32_t uNumVerts,
+	const Zenith_Maths::Vector3* pxPositionOverride)
+{
+	// The bind-pose baked path pre-skins the positions and passes the RESULT; every
+	// other caller reads the asset's own (which may be absent).
+	const float* const pfPositions = (pxPositionOverride != nullptr)
+		? reinterpret_cast<const float*>(pxPositionOverride)
+		: SourceFloatsOrNull(xAsset.m_xPositions, uNumVerts);
+
+	const Flux_VertexSourceView axSources[] =
+	{
+		{ FLUX_VERTEX_SEMANTIC_POSITION, 0u, pfPositions,                                            3u },
+		{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 0u, SourceFloatsOrNull(xAsset.m_xUVs,        uNumVerts),    2u },
+		{ FLUX_VERTEX_SEMANTIC_NORMAL,   0u, SourceFloatsOrNull(xAsset.m_xNormals,    uNumVerts),    3u },
+		{ FLUX_VERTEX_SEMANTIC_TANGENT,  0u, SourceFloatsOrNull(xAsset.m_xTangents,   uNumVerts),    3u },
+		{ FLUX_VERTEX_SEMANTIC_BINORMAL, 0u, SourceFloatsOrNull(xAsset.m_xBitangents, uNumVerts),    3u },
+		{ FLUX_VERTEX_SEMANTIC_COLOR,    0u, SourceFloatsOrNull(xAsset.m_xColors,     uNumVerts),    4u },
+	};
+
+	Flux_PackVertices(
+		pDst,
+		Flux_Generated_UnifiedMesh::UnifiedMesh_ToGBuffer::kVertexLayout,
+		axSources, static_cast<u_int>(sizeof(axSources) / sizeof(axSources[0])), uNumVerts);
+}
+
+void Flux_BuildSkinInputVertices(Flux_SkinInputVertex* paxDst, const Zenith_MeshAsset& xAsset, u_int uNumVerts)
+{
+	Zenith_Assert(paxDst != nullptr || uNumVerts == 0u, "Flux_BuildSkinInputVertices: null destination for %u vertices", uNumVerts);
+	if (paxDst == nullptr)
+	{
+		return;
+	}
 
 	const bool bHasPositions   = xAsset.m_xPositions.GetSize()   >= uNumVerts;
 	const bool bHasUVs         = xAsset.m_xUVs.GetSize()         >= uNumVerts;
@@ -177,72 +240,29 @@ void Flux_InterleaveMeshVertices(uint8_t* pDst, const Zenith_MeshAsset& xAsset, 
 	const bool bHasTangents    = xAsset.m_xTangents.GetSize()    >= uNumVerts;
 	const bool bHasBitangents  = xAsset.m_xBitangents.GetSize()  >= uNumVerts;
 	const bool bHasColors      = xAsset.m_xColors.GetSize()      >= uNumVerts;
-	const bool bHasBoneIndices = bSkinned && xAsset.m_xBoneIndices.GetSize() >= uNumVerts;
-	const bool bHasBoneWeights = bSkinned && xAsset.m_xBoneWeights.GetSize() >= uNumVerts;
+	const bool bHasBoneIndices = xAsset.m_xBoneIndices.GetSize() >= uNumVerts;
+	const bool bHasBoneWeights = xAsset.m_xBoneWeights.GetSize() >= uNumVerts;
 
-	const Zenith_Maths::Vector3 xDefaultPosition(0.0f, 0.0f, 0.0f);
-	const Zenith_Maths::Vector2 xDefaultUV(0.0f, 0.0f);
-	const Zenith_Maths::Vector3 xDefaultNormal(0.0f, 1.0f, 0.0f);
-	const Zenith_Maths::Vector3 xDefaultTangent(1.0f, 0.0f, 0.0f);
-	const Zenith_Maths::Vector3 xDefaultBitangent(0.0f, 0.0f, 1.0f);
-	const Zenith_Maths::Vector4 xDefaultColor(1.0f, 1.0f, 1.0f, 1.0f);
-	const glm::uvec4 xDefaultBoneIndices(0u, 0u, 0u, 0u);
-	const glm::vec4  xDefaultBoneWeights(0.0f, 0.0f, 0.0f, 0.0f);
-
-	for (uint32_t i = 0; i < uNumVerts; i++)
+	for (u_int uVertex = 0; uVertex < uNumVerts; uVertex++)
 	{
-		uint8_t* pVtx = pDst + static_cast<size_t>(i) * uStride;
-		float* pFloatData = reinterpret_cast<float*>(pVtx);
-		size_t uFloatIndex = 0;
+		Flux_SkinInputVertex& xVertex = paxDst[uVertex];
 
-		const Zenith_Maths::Vector3& xPos = bHasPositions ? xAsset.m_xPositions.Get(i) : xDefaultPosition;
-		pFloatData[uFloatIndex++] = xPos.x;
-		pFloatData[uFloatIndex++] = xPos.y;
-		pFloatData[uFloatIndex++] = xPos.z;
+		xVertex.m_xPosition  = bHasPositions  ? xAsset.m_xPositions.Get(uVertex)  : CanonicalDefault3(FLUX_VERTEX_SEMANTIC_POSITION);
+		xVertex.m_xUV        = bHasUVs        ? xAsset.m_xUVs.Get(uVertex)        : Zenith_Maths::Vector2(Flux_CanonicalVertexDefault(FLUX_VERTEX_SEMANTIC_TEXCOORD));
+		xVertex.m_xNormal    = bHasNormals    ? xAsset.m_xNormals.Get(uVertex)    : CanonicalDefault3(FLUX_VERTEX_SEMANTIC_NORMAL);
+		xVertex.m_xTangent   = bHasTangents   ? xAsset.m_xTangents.Get(uVertex)   : CanonicalDefault3(FLUX_VERTEX_SEMANTIC_TANGENT);
+		xVertex.m_xBitangent = bHasBitangents ? xAsset.m_xBitangents.Get(uVertex) : CanonicalDefault3(FLUX_VERTEX_SEMANTIC_BINORMAL);
+		xVertex.m_xColor     = bHasColors     ? xAsset.m_xColors.Get(uVertex)     : Flux_CanonicalVertexDefault(FLUX_VERTEX_SEMANTIC_COLOR);
 
-		const Zenith_Maths::Vector2& xUV = bHasUVs ? xAsset.m_xUVs.Get(i) : xDefaultUV;
-		pFloatData[uFloatIndex++] = xUV.x;
-		pFloatData[uFloatIndex++] = xUV.y;
+		// Bone lanes have no vertex SEMANTIC: an unweighted vertex is bone 0 with
+		// weight 0, which the skinning kernel reads as "no influence".
+		const glm::uvec4 xBoneIndices = bHasBoneIndices ? xAsset.m_xBoneIndices.Get(uVertex) : glm::uvec4(0u, 0u, 0u, 0u);
+		xVertex.m_auBoneIDs[0] = xBoneIndices.x;
+		xVertex.m_auBoneIDs[1] = xBoneIndices.y;
+		xVertex.m_auBoneIDs[2] = xBoneIndices.z;
+		xVertex.m_auBoneIDs[3] = xBoneIndices.w;
 
-		const Zenith_Maths::Vector3& xNormal = bHasNormals ? xAsset.m_xNormals.Get(i) : xDefaultNormal;
-		pFloatData[uFloatIndex++] = xNormal.x;
-		pFloatData[uFloatIndex++] = xNormal.y;
-		pFloatData[uFloatIndex++] = xNormal.z;
-
-		const Zenith_Maths::Vector3& xTangent = bHasTangents ? xAsset.m_xTangents.Get(i) : xDefaultTangent;
-		pFloatData[uFloatIndex++] = xTangent.x;
-		pFloatData[uFloatIndex++] = xTangent.y;
-		pFloatData[uFloatIndex++] = xTangent.z;
-
-		const Zenith_Maths::Vector3& xBitangent = bHasBitangents ? xAsset.m_xBitangents.Get(i) : xDefaultBitangent;
-		pFloatData[uFloatIndex++] = xBitangent.x;
-		pFloatData[uFloatIndex++] = xBitangent.y;
-		pFloatData[uFloatIndex++] = xBitangent.z;
-
-		const Zenith_Maths::Vector4& xColor = bHasColors ? xAsset.m_xColors.Get(i) : xDefaultColor;
-		pFloatData[uFloatIndex++] = xColor.x;
-		pFloatData[uFloatIndex++] = xColor.y;
-		pFloatData[uFloatIndex++] = xColor.z;
-		pFloatData[uFloatIndex++] = xColor.w;
-
-		if (bSkinned)
-		{
-			// BoneIndices (4 uints = 16 bytes) at offset 72
-			const glm::uvec4& xBoneIndices = bHasBoneIndices ? xAsset.m_xBoneIndices.Get(i) : xDefaultBoneIndices;
-			uint32_t* pUintData = reinterpret_cast<uint32_t*>(pVtx + 72);
-			pUintData[0] = xBoneIndices.x;
-			pUintData[1] = xBoneIndices.y;
-			pUintData[2] = xBoneIndices.z;
-			pUintData[3] = xBoneIndices.w;
-
-			// BoneWeights (4 floats = 16 bytes) at offset 88
-			const glm::vec4& xBoneWeights = bHasBoneWeights ? xAsset.m_xBoneWeights.Get(i) : xDefaultBoneWeights;
-			float* pWeightData = reinterpret_cast<float*>(pVtx + 88);
-			pWeightData[0] = xBoneWeights.x;
-			pWeightData[1] = xBoneWeights.y;
-			pWeightData[2] = xBoneWeights.z;
-			pWeightData[3] = xBoneWeights.w;
-		}
+		xVertex.m_xBoneWeights = bHasBoneWeights ? xAsset.m_xBoneWeights.Get(uVertex) : glm::vec4(0.0f, 0.0f, 0.0f, 0.0f);
 	}
 }
 
@@ -295,8 +315,8 @@ Flux_MeshInstance* Flux_MeshInstance::CreateFromAsset(Zenith_MeshAsset* pxAsset)
 	const size_t uVertexDataSize = static_cast<size_t>(uNumVerts) * xLayout.GetStride();
 	uint8_t* pVertexData = new uint8_t[uVertexDataSize];
 
-	// Interleave the standard 72-byte static vertex (shared layout helper).
-	Flux_InterleaveMeshVertices(pVertexData, *pxAsset, uNumVerts, /*bSkinned*/ false);
+	// Pack the standard 72-byte static vertex, shaped by the shader-reflected layout.
+	Flux_PackStaticMeshVertices(pVertexData, *pxAsset, uNumVerts);
 
 	// Create GPU vertex buffer
 	Flux_MemoryManager& xVulkanMemory = g_xEngine.FluxMemory();
@@ -464,8 +484,9 @@ Flux_MeshInstance* Flux_MeshInstance::CreateSkinnedFromAsset(Zenith_MeshAsset* p
 	const size_t uVertexDataSize = static_cast<size_t>(uNumVerts) * xLayout.GetStride();
 	uint8_t* pVertexData = new uint8_t[uVertexDataSize];
 
-	// Interleave the standard 104-byte skinned vertex (shared layout helper).
-	Flux_InterleaveMeshVertices(pVertexData, *pxAsset, uNumVerts, /*bSkinned*/ true);
+	// Build the 104-byte skin-INPUT vertex (bone ids are uint lanes, so this stream
+	// is the Flux_Skinning.h contract's own builder, not the vertex packer).
+	Flux_BuildSkinInputVertices(reinterpret_cast<Flux_SkinInputVertex*>(pVertexData), *pxAsset, uNumVerts);
 
 	// Create GPU vertex buffer
 	Flux_MemoryManager& xVulkanMemory = g_xEngine.FluxMemory();
@@ -543,80 +564,36 @@ Flux_MeshInstance* Flux_MeshInstance::CreateFromAsset(Zenith_MeshAsset* pxAsset,
 	const size_t uVertexDataSize = static_cast<size_t>(uNumVerts) * xLayout.GetStride();
 	uint8_t* pVertexData = new uint8_t[uVertexDataSize];
 
-	// Check which attributes are available
+	// What is SPECIAL about this path is the bind pose, and nothing else — so it
+	// pre-skins the POSITIONS into its own stream and hands that to the shared
+	// packer as the position source. Every other attribute (and the byte layout
+	// itself) comes from exactly where the plain static path gets it.
 	const bool bHasPositions = pxAsset->m_xPositions.GetSize() >= uNumVerts;
-	const bool bHasUVs = pxAsset->m_xUVs.GetSize() >= uNumVerts;
-	const bool bHasNormals = pxAsset->m_xNormals.GetSize() >= uNumVerts;
-	const bool bHasTangents = pxAsset->m_xTangents.GetSize() >= uNumVerts;
-	const bool bHasBitangents = pxAsset->m_xBitangents.GetSize() >= uNumVerts;
-	const bool bHasColors = pxAsset->m_xColors.GetSize() >= uNumVerts;
-
-	// Default values
-	const Zenith_Maths::Vector3 xDefaultPosition(0.0f, 0.0f, 0.0f);
-	const Zenith_Maths::Vector2 xDefaultUV(0.0f, 0.0f);
-	const Zenith_Maths::Vector3 xDefaultNormal(0.0f, 1.0f, 0.0f);
-	const Zenith_Maths::Vector3 xDefaultTangent(1.0f, 0.0f, 0.0f);
-	const Zenith_Maths::Vector3 xDefaultBitangent(0.0f, 0.0f, 1.0f);
-	const Zenith_Maths::Vector4 xDefaultColor(1.0f, 1.0f, 1.0f, 1.0f);
-
-	// Check if mesh has skinning data
 	const bool bHasSkinning = pxAsset->m_xBoneIndices.GetSize() >= uNumVerts &&
 		pxAsset->m_xBoneWeights.GetSize() >= uNumVerts;
 
-	// Interleave vertex data with bind pose skinning
-	size_t uFloatIndex = 0;
-	float* pFloatData = reinterpret_cast<float*>(pVertexData);
-
+	Zenith_Vector<Zenith_Maths::Vector3> xBindPosePositions;
+	xBindPosePositions.Reserve(uNumVerts);
 	for (uint32_t i = 0; i < uNumVerts; i++)
 	{
-		// Get original position from mesh asset
-		const Zenith_Maths::Vector3& xOriginalPos = bHasPositions ? pxAsset->m_xPositions.Get(i) : xDefaultPosition;
+		// An absent position array reads as the canonical origin — the same value the
+		// packer's own default would have written.
+		Zenith_Maths::Vector3 xPos = bHasPositions
+			? pxAsset->m_xPositions.Get(i)
+			: CanonicalDefault3(FLUX_VERTEX_SEMANTIC_POSITION);
 
-		// Apply bind pose skinning to position the vertex at its correct world location
-		// This transforms vertices from mesh-local space to their bind pose world positions
-		Zenith_Maths::Vector3 xSkinnedPos = xOriginalPos;
+		// Apply bind pose skinning to position the vertex at its correct world location:
+		// this transforms vertices from mesh-local space to their bind pose world positions.
 		if (bHasSkinning)
 		{
-			const glm::uvec4& xBoneIndices = pxAsset->m_xBoneIndices.Get(i);
-			const glm::vec4& xBoneWeights = pxAsset->m_xBoneWeights.Get(i);
-			xSkinnedPos = ApplyBindPoseSkinning(xOriginalPos, xBoneIndices, xBoneWeights, pxSkeleton);
+			xPos = ApplyBindPoseSkinning(xPos, pxAsset->m_xBoneIndices.Get(i), pxAsset->m_xBoneWeights.Get(i), pxSkeleton);
 		}
-
-		// Position (3 floats = 12 bytes)
-		pFloatData[uFloatIndex++] = xSkinnedPos.x;
-		pFloatData[uFloatIndex++] = xSkinnedPos.y;
-		pFloatData[uFloatIndex++] = xSkinnedPos.z;
-
-		// UV (2 floats = 8 bytes)
-		const Zenith_Maths::Vector2& xUV = bHasUVs ? pxAsset->m_xUVs.Get(i) : xDefaultUV;
-		pFloatData[uFloatIndex++] = xUV.x;
-		pFloatData[uFloatIndex++] = xUV.y;
-
-		// Normal (3 floats = 12 bytes) - should also be transformed but for now leave as-is
-		const Zenith_Maths::Vector3& xNormal = bHasNormals ? pxAsset->m_xNormals.Get(i) : xDefaultNormal;
-		pFloatData[uFloatIndex++] = xNormal.x;
-		pFloatData[uFloatIndex++] = xNormal.y;
-		pFloatData[uFloatIndex++] = xNormal.z;
-
-		// Tangent (3 floats = 12 bytes)
-		const Zenith_Maths::Vector3& xTangent = bHasTangents ? pxAsset->m_xTangents.Get(i) : xDefaultTangent;
-		pFloatData[uFloatIndex++] = xTangent.x;
-		pFloatData[uFloatIndex++] = xTangent.y;
-		pFloatData[uFloatIndex++] = xTangent.z;
-
-		// Bitangent (3 floats = 12 bytes)
-		const Zenith_Maths::Vector3& xBitangent = bHasBitangents ? pxAsset->m_xBitangents.Get(i) : xDefaultBitangent;
-		pFloatData[uFloatIndex++] = xBitangent.x;
-		pFloatData[uFloatIndex++] = xBitangent.y;
-		pFloatData[uFloatIndex++] = xBitangent.z;
-
-		// Color (4 floats = 16 bytes)
-		const Zenith_Maths::Vector4& xColor = bHasColors ? pxAsset->m_xColors.Get(i) : xDefaultColor;
-		pFloatData[uFloatIndex++] = xColor.x;
-		pFloatData[uFloatIndex++] = xColor.y;
-		pFloatData[uFloatIndex++] = xColor.z;
-		pFloatData[uFloatIndex++] = xColor.w;
+		xBindPosePositions.PushBack(xPos);
 	}
+
+	// Normals/tangents/bitangents are NOT bind-pose transformed (pre-existing
+	// behaviour, unchanged here): they pass through as authored.
+	Flux_PackStaticMeshVertices(pVertexData, *pxAsset, uNumVerts, xBindPosePositions.GetDataPointer());
 
 	// Create GPU vertex buffer
 	Flux_MemoryManager& xVulkanMemory = g_xEngine.FluxMemory();
@@ -646,6 +623,8 @@ Flux_MeshInstance* Flux_MeshInstance::CreateFromAsset(Zenith_MeshAsset* pxAsset,
 // link (same pattern + rationale as the bottom of Flux_GPUScene.cpp).
 #include "Flux/Flux_MeshGeometryRegistry.Tests.inl"
 
-// Shared vertex-interleaver tests — hosted here (same TU as Flux_InterleaveMeshVertices)
-// so the always-linked .obj carries them; pins the 72/104-byte layout + attr defaults.
+// Mesh-family vertex-stream tests — hosted here (the same TU as both writers) so
+// the always-linked .obj carries them. They memcmp Flux_PackStaticMeshVertices and
+// Flux_BuildSkinInputVertices against a frozen transcription of the interleave loop
+// they replaced, which is what pins the 72/104-byte bytes and the attribute defaults.
 #include "Flux/MeshGeometry/Flux_VertexInterleave.Tests.inl"

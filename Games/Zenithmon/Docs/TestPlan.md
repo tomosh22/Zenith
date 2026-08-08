@@ -1711,9 +1711,9 @@ change touches `Zenith/` as well as the game.
 **Boot baseline at THIS change: ZM 2863; engine (Null Combat) stays 1242.** The added
 contracts are pure generator/placement checks, so they do not move the 55-test
 automated registry or the cross-game engine suite.
-★ **SUPERSEDED -- the CURRENT baseline is ZM 3025, engine 1400**, registry unmoved
+★ **SUPERSEDED -- the CURRENT baseline is ZM 3044, engine 1419**, registry unmoved
 at **55**. OBSERVED 2026-08-08 on clean `Null_` builds:
-`3025 ran, 3023 passed, 0 failed, 2 skipped`. Derivation: ZM-D-183 added the two
+`3044 ran, 3042 passed, 0 failed, 2 skipped`. Derivation: ZM-D-183 added the two
 committed-scene-bytes guards (2906 -> 2908); ZM-D-184 added the rival spawn-clearance
 unit (2908 -> 2909); the 2026-08-05 CommandLine ParseArgs units added 5 ENGINE units
 (engine 1284 -> 1289) and were NOT reflected here, leaving the ZM pin stale at 2909
@@ -1755,7 +1755,27 @@ hardening added 12 more ENGINE units (engine 1388 -> **1400**) -- the
 vertex-layout-validation suite that drives the boot tripwire's pure comparator
 through every branch real boots never take (the OK path, both no-input
 spellings, and the COUNT / per-binding STRIDE / ELEMENT / unknown-SEMANTIC
-mismatch categories) -- taking ZM to **3025**. `zm-tests.yml`
+mismatch categories) -- taking ZM to 3025; and that work's Phase 3 T3.a added 15
+more ENGINE units (engine 1400 -> **1415**) -- the `Flux_PackVertices` suite that
+arrives with the reflection-driven packer replacing the engine's hand-written
+vertex-interleave loops (the whole-layout byte contract over two mixed-format
+tables, the canonical attribute defaults, `(semantic, index)` source keying, the
+4-lane TANGENT's derived handedness in both signs plus an authored w winning, the
+SNORM10 pre-normalisation and its zero-length fallback, the lane pad/truncate
+rules, the POSITION quant box, stride-advance across three vertices, the no-op
+shapes, and binding-1 skipping) -- taking ZM to **3040**; and that work's Phase 3
+T3.b added 4 NET more ENGINE units (engine 1415 -> **1419**) -- the mesh-family
+replacement swapped four hand-written interleave loops for two single writers
+(`Flux_PackStaticMeshVertices` through the reflected 72-byte table, and
+`Flux_BuildSkinInputVertices` for the 104-byte skin-input stream whose uint bone
+lanes the packer refuses by design) and rewrote that suite from 3 hand-layout
+tests to 7: three byte-for-byte memcmp goldens against a FROZEN transcription of
+the loop each writer replaced -- the two mesh-asset streams over 7 adversarial
+meshes (missing attributes, arrays one entry short of the vertex count, degenerate
+frames, a short bone-weight array, negative zero), plus the procedural geometry
+builder's DYNAMIC layout with and without its uint bone tail -- and the ported
+layout/defaults expectations and the bind-pose position override -- taking ZM to
+**3044**. `zm-tests.yml`
 `-Baseline` and `run_unit_gate.ps1`'s default both moved to match. The paragraph below is the
 ZM-D-182-era snapshot, kept for the audit trail:
 

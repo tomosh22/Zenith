@@ -20,12 +20,14 @@
 #include "Flux/Shaders/Generated/Translucency.h" // typed binding handles
 #include "Flux/Shaders/Generated/UnifiedMesh.h"  // the cross-pin below compares against its table
 
-// Phase-2 pin: Translucent_Forward still declares its own hand-copied 72 B
-// static-mesh VsIn (T3.c unifies it into Common/UnifiedMeshDraw.slang). The
-// element-wise cross-pin against UnifiedMesh's table — semantics and types
-// included — is exactly the property T3.c's unification will make structural.
+// Translucent_Forward and the three unified-mesh shells now share ONE VsIn
+// declaration (Shaders/Common/StaticMeshVertex.slang), so this cross-pin no longer
+// guards a hand-copied struct — it guards the round trip. The two programs' tables
+// are baked by two SEPARATE reflection runs, and this is the one place that can
+// state they must come out identical: it is the same 72 B mesh buffer, and a table
+// that differed by so much as a semantic index would fetch it two ways.
 static_assert(Flux_Generated_Translucency::Translucent_Forward::kVertexLayout == Flux_Generated_UnifiedMesh::UnifiedMesh_ToGBuffer::kVertexLayout,
-	"Translucent_Forward's hand-copied VsIn has drifted from UnifiedMesh's — the shared 72 B mesh buffer would fetch with two different layouts");
+	"The shared static-mesh VsIn reflected into two different tables — the one 72 B mesh buffer would fetch with two different layouts");
 #include "Core/Zenith_GraphicsOptions.h"
 
 #include <algorithm>
@@ -59,8 +61,10 @@ void Flux_TranslucencyImpl::BuildPipelines()
 	xSpec.m_uNumColourAttachments = 1;
 	xSpec.m_eDepthStencilFormat = DEPTH_FORMAT;
 	xSpec.m_pxShader = &m_xShader;
-	// Same 72-byte vertex stream as the unified opaque meshes - both programs declare
-	// the same VsIn, so the two generated layouts agree by construction.
+	// Same 72-byte vertex stream as the unified opaque meshes — both programs include
+	// the SAME VsIn declaration (Shaders/Common/StaticMeshVertex.slang), so the two
+	// generated layouts agree by construction; the cross-pin at the top of this file
+	// is what proves the two reflection runs actually baked it that way.
 	xSpec.m_eTopology = MESH_TOPOLOGY_TRIANGLES;
 	xSpec.m_pxVertexLayout = &Flux_Generated_Translucency::Translucent_Forward::kVertexLayout;
 	// Depth-test against the opaque scene; never write depth. The pass declares

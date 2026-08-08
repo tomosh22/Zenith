@@ -194,6 +194,27 @@ jobs:
           #
           # History, newest first (the DERIVATION is the audit trail; the OBSERVED
           # number is the authority):
+          #   3044  Compressed-vertex Phase 3 T3.b (mesh-family replacement)
+          #                   observed 2026-08-08 on a Null_ build. +4 NET ENGINE
+          #                   units (1415 -> 1419): the mesh-family suite was
+          #                   rewritten from 3 hand-layout tests to 7 — three
+          #                   byte-for-byte memcmp goldens (the static pack and the
+          #                   skin-input build, each against a FROZEN transcription
+          #                   of the interleave loop it replaced, over 7 adversarial
+          #                   meshes), the ported layout/defaults expectations, and
+          #                   the bind-pose position override. ZM's own
+          #                   registrations unmoved.
+          #   3040  Compressed-vertex Phase 3 T3.a (the reflection-driven packer)
+          #                   observed 2026-08-08 on a Null_ build. +15 ENGINE units
+          #                   (1400 -> 1415): the Flux_PackVertices suite — the
+          #                   whole-layout byte contract over two mixed-format
+          #                   tables, the canonical attribute defaults, (semantic,
+          #                   index) source keying, the 4-lane TANGENT handedness
+          #                   both signs plus an authored w winning, SNORM10
+          #                   pre-normalisation and its zero-length fallback, the
+          #                   lane pad/truncate rules, the POSITION quant box,
+          #                   stride-advance across 3 vertices, the no-op shapes and
+          #                   binding-1 skipping. ZM's own registrations unmoved.
           #   3025  Compressed-vertex Phase 2 T2.d (review hardening)
           #                   observed 2026-08-08 on a Null_ build. +12 ENGINE units
           #                   (1388 -> 1400): the vertex-layout-validation suite
@@ -347,7 +368,7 @@ jobs:
           #   2817  ZM-D-173  = 2809 + 8: four ENGINE sensor-raycast units plus
           #                   two camera fixtures and two Home-placement units.
           $exe = 'Games\Zenithmon\Build\output\win64\null_vs2022_debug_win64_true\zenithmon.exe'
-          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 3025 -TimeoutSec 600
+          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 3044 -TimeoutSec 600
           if ($LASTEXITCODE -ne 0) { Write-Error "boot unit tests failed (see log above)"; exit $LASTEXITCODE }
 
       - name: Run Zenithmon tests

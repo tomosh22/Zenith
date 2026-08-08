@@ -18,7 +18,6 @@ public:
 		FLUX_VERTEX_ATTRIBUTE__TANGENT,
 		FLUX_VERTEX_ATTRIBUTE__BITANGENT,
 		FLUX_VERTEX_ATTRIBUTE__COLOR,
-		FLUX_VERTEX_ATTRIBUTE__MATERIAL_LERP,
 		FLUX_VERTEX_ATTRIBUTE__BONE_IDS,
 		FLUX_VERTEX_ATTRIBUTE__BONE_WEIGHTS,
 		FLUX_VERTEX_ATTRIBUTE__COUNT
@@ -56,7 +55,6 @@ public:
 		if(m_pxTangents) Zenith_MemoryManagement::Deallocate(m_pxTangents);
 		if(m_pxBitangents) Zenith_MemoryManagement::Deallocate(m_pxBitangents);
 		if(m_pxColors) Zenith_MemoryManagement::Deallocate(m_pxColors);
-		if(m_pfMaterialLerps) Zenith_MemoryManagement::Deallocate(m_pfMaterialLerps);
 		if(m_puBoneIDs) Zenith_MemoryManagement::Deallocate(m_puBoneIDs);
 		if(m_pfBoneWeights) Zenith_MemoryManagement::Deallocate(m_pfBoneWeights);
 
@@ -157,7 +155,6 @@ public:
 	Zenith_Maths::Vector3* m_pxTangents = nullptr;
 	Zenith_Maths::Vector3* m_pxBitangents = nullptr;
 	Zenith_Maths::Vector4* m_pxColors = nullptr;
-	float* m_pfMaterialLerps = nullptr;
 	uint32_t* m_puBoneIDs = nullptr;
 	float* m_pfBoneWeights = nullptr;
 

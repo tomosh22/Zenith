@@ -12,6 +12,10 @@
 //
 //   * VsIn / UnifiedDrawConstantsLayout / DrawParams / UnpackRGBA8 — the shared
 //     vertex input, per-bucket draw constants, DRAW block (set 4) and tint unpack.
+//     VsIn itself now comes from Common/StaticMeshVertex.slang, because a FOURTH
+//     program (Flux_Translucent_Forward) fetches the same 72 B stream and cannot
+//     include this file — it declares its own PASS/DRAW blocks and its own
+//     `DrawParams`, which would collide with the one below.
 //   * TransformUnifiedVertexPosition / TransformUnifiedVertex — the shared VAT sway
 //     + model transform (+ world-space TBN basis for the lit paths). ONE position
 //     path, three callers → the foliage-self-shadow contract is now STRUCTURAL, not
@@ -39,21 +43,11 @@
 #include "Common/Bindings.slang"       // spine sets 0/1/2 (declared FIRST) + accessors + Inverse3x3/BuildTBN via Common.Material
 #include "Common/SceneObjects.slang"   // GPUSceneObject / GPUSceneDrawItem (guarded)
 #include "Common/VAT.slang"            // Flux_ApplyVAT (guarded)
+#include "Common/StaticMeshVertex.slang" // VsIn — THE 72 B interleaved static-mesh vertex input (guarded)
 import Common.MaterialTable;           // MaterialGPU
 import Common.Material;                // Inverse3x3 / BuildTBN
 import Common.MaterialSurface;         // EvaluateMaterialSurface / MaterialSurface / MakeGBuffer(MaterialSurface)
 import Common.GBuffer;                 // GBufferOut
-
-// Shared vertex input for every unified-mesh draw (interleaved static vertex format).
-struct VsIn
-{
-    float3 a_xPosition  : POSITION;
-    float2 a_xUV        : TEXCOORD0;
-    float3 a_xNormal    : NORMAL;
-    float3 a_xTangent   : TANGENT;
-    float3 a_xBitangent : BINORMAL;
-    float4 a_xColor     : COLOR;
-};
 
 // Per-bucket DRAW constants (set 4), shared by all three shells. 32-byte layout,
 // byte-identical to the C++ mirror in Flux_UnifiedMesh.cpp (static_assert-locked).

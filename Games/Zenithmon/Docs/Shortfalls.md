@@ -27,8 +27,19 @@ and rewriting it once does not immunise it. Update it in the SAME commit that cl
   `ZM_BakeManifest`, visually approved (ZM-D-088); S5's full overworld<->battle slice, visually
   approved (ZM-D-112); and S6's dialogue/menu/NPC/shop surface all remain complete.
 - **★ THE LIVE BASELINE IS IN `Status.md`'s TOP BLOCK. READ IT, NOT THIS PARAGRAPH.** As of
-  2026-08-07 (OBSERVED on clean `Null_` builds): registry **55**, ZM boot
-  **3025 ran / 3023 passed / 0 failed / 2 skipped**, engine boot **1400**. (+12 engine
+  2026-08-08 (OBSERVED on clean `Null_` builds): registry **55**, ZM boot
+  **3044 ran / 3042 passed / 0 failed / 2 skipped**, engine boot **1419**. (+4 NET engine
+  units on 2026-08-08 for the compressed-vertex Phase-3 T3.b mesh-family
+  replacement -- the rewritten mesh-family suite (3 hand-layout tests -> 7,
+  including three byte-for-byte memcmp goldens against a frozen transcription of
+  the interleave loops -- two over 7 adversarial meshes, one over the procedural
+  geometry builder -- plus the bind-pose position override);
+  +15 engine
+  units on 2026-08-08 for the compressed-vertex Phase-3 T3.a packer --
+  the `Flux_PackVertices` suite (whole-layout byte contract, canonical defaults,
+  semantic-index keying, derived tangent handedness, SNORM10 normalisation +
+  zero-length fallback, lane pad/truncate, the POSITION quant box, no-op shapes);
+  +12 engine
   units on 2026-08-08 for the compressed-vertex Phase-2 T2.d review hardening --
   the vertex-layout-validation tripwire-comparator suite; +11 engine
   units on 2026-08-07 for the compressed-vertex Phase-2 T2.b baked vertex-layout

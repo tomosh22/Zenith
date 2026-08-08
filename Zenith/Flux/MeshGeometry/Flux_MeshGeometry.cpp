@@ -1,6 +1,72 @@
 #include "Zenith.h"
 #include "Core/Zenith_Engine.h"
 #include "Flux_MeshGeometry.h"
+#include "Flux/MeshGeometry/Flux_VertexPacker.h"   // Flux_PackVertices — the one interleaver
+// The three programs that FETCH the unit quad this file generates. Included for the
+// baked layouts the contract below compares — nothing here calls into them.
+#include "Flux/Shaders/Generated/Quads.h"
+#include "Flux/Shaders/Generated/Text.h"
+#include "Flux/Shaders/Generated/Particles.h"
+
+// ============================================================================
+// THE shared unit-quad contract.
+//
+// GenerateFullscreenQuad below produces the ONE 20-byte vertex buffer that Quads,
+// Text and Particles all bind at binding 0 (Flux_GraphicsImpl::m_xQuadMesh — see the
+// `SetVertexBuffer(xGraphics.m_xQuadMesh.GetVertexBuffer(), 0)` in each of the three
+// record callbacks). Each of those programs describes that one buffer with its OWN
+// generated layout, and each pins only its own table, beside its own per-instance
+// struct (Flux_QuadsImpl.h / Flux_TextImpl.h / Flux_ParticleData.h). Three
+// separately-correct consumer pins can still describe three DIFFERENT buffers, and
+// no consumer is positioned to notice — the shared thing is the PRODUCER, so the
+// contract is pinned at the producer.
+//
+// Because all three are compared against the SAME table, the comparison is
+// transitive: it states both "each program fetches pos3@0 + uv2@12, stride 20" and
+// "the three agree with one another". Taking the route the plan offered as the
+// alternative — giving each consumer its own quad VB — would have made the three
+// layouts independent instead of merely unpinned, at the cost of three buffers.
+// ============================================================================
+static constexpr u_int uFLUX_UNIT_QUAD_ELEMENT_COUNT = 2u;
+static constexpr u_int uFLUX_UNIT_QUAD_STRIDE        = 20u;
+static constexpr Flux_VertexLayoutElement kaxFLUX_UNIT_QUAD_BINDING0[uFLUX_UNIT_QUAD_ELEMENT_COUNT] =
+{
+	{ FLUX_VERTEX_SEMANTIC_POSITION, 0u, SHADER_DATA_TYPE_FLOAT3, 0u,  0u },
+	{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 0u, SHADER_DATA_TYPE_FLOAT2, 0u, 12u },
+};
+
+// True iff xLayout's binding-0 PREFIX is the shared unit quad. The prefix only: each
+// consumer carries its own per-instance elements on binding 1 after these two, and
+// those are that consumer's business (and already pinned there, full-table).
+static constexpr bool Flux_FetchesSharedUnitQuad(const Flux_VertexLayoutDesc& xLayout)
+{
+	if (xLayout.m_uElementCount < uFLUX_UNIT_QUAD_ELEMENT_COUNT) return false;
+	if (xLayout.m_auStrides[0] != uFLUX_UNIT_QUAD_STRIDE) return false;
+	for (u_int u = 0; u < uFLUX_UNIT_QUAD_ELEMENT_COUNT; u++)
+	{
+		if (!(xLayout.m_paxElements[u] == kaxFLUX_UNIT_QUAD_BINDING0[u])) return false;
+	}
+	return true;
+}
+
+static_assert(Flux_FetchesSharedUnitQuad(Flux_Generated_Quads::Quads::kVertexLayout),
+	"The Quads program stopped fetching the shared unit quad GenerateFullscreenQuad writes — give it its own vertex buffer, or put the VsIn prefix back");
+static_assert(Flux_FetchesSharedUnitQuad(Flux_Generated_Text::Text::kVertexLayout),
+	"The Text program stopped fetching the shared unit quad GenerateFullscreenQuad writes — give it its own vertex buffer, or put the VsIn prefix back");
+static_assert(Flux_FetchesSharedUnitQuad(Flux_Generated_Particles::Particles::kVertexLayout),
+	"The Particles program stopped fetching the shared unit quad GenerateFullscreenQuad writes — give it its own vertex buffer, or put the VsIn prefix back");
+
+// ...and the PRODUCER half: that the generator really writes those offsets.
+// GenerateFullscreenQuad fills exactly m_pxPositions + m_pxUVs, and
+// GenerateLayoutAndVertexData declares its rows POSITION-then-TEXCOORD and
+// tight-packs them, so the two source streams' element types ARE the offsets and the
+// stride. Spelled in sizeof rather than read back out of Flux_BufferLayout because
+// Flux_ShaderDataTypeSize is not constexpr — the layout's own answer only exists at
+// run time, and the T3.b interleave goldens are what compare it byte-for-byte.
+static_assert(sizeof(Zenith_Maths::Vector3) == kaxFLUX_UNIT_QUAD_BINDING0[1].m_uOffset,
+	"The unit quad's UV no longer starts where a tight float3 position ends");
+static_assert(sizeof(Zenith_Maths::Vector3) + sizeof(Zenith_Maths::Vector2) == uFLUX_UNIT_QUAD_STRIDE,
+	"The unit quad's position+UV no longer tight-pack to the stride the three programs fetch");
 
 void Flux_MeshGeometry::GenerateFullscreenQuad(Flux_MeshGeometry& xGeometryOut)
 {
@@ -442,7 +508,6 @@ void Flux_MeshGeometry::LoadFromFile(const char* szPath, Flux_MeshGeometry& xGeo
 	READ_ATTR(FLUX_VERTEX_ATTRIBUTE__TANGENT, xGeometryOut.m_pxTangents, xGeometryOut.m_uNumVerts * sizeof(m_pxTangents[0]));
 	READ_ATTR(FLUX_VERTEX_ATTRIBUTE__BITANGENT, xGeometryOut.m_pxBitangents, xGeometryOut.m_uNumVerts * sizeof(m_pxBitangents[0]));
 	READ_ATTR(FLUX_VERTEX_ATTRIBUTE__COLOR, xGeometryOut.m_pxColors, xGeometryOut.m_uNumVerts * sizeof(m_pxColors[0]));
-	//READ_ATTR(FLUX_VERTEX_ATTRIBUTE__MATERIAL_LERP, , );
 	READ_ATTR(FLUX_VERTEX_ATTRIBUTE__BONE_IDS, xGeometryOut.m_puBoneIDs, xGeometryOut.m_uNumVerts * MAX_BONES_PER_VERTEX * sizeof(m_puBoneIDs[0]));
 	READ_ATTR(FLUX_VERTEX_ATTRIBUTE__BONE_WEIGHTS, xGeometryOut.m_pfBoneWeights, xGeometryOut.m_uNumVerts * MAX_BONES_PER_VERTEX * sizeof(m_pfBoneWeights[0]));
 
@@ -544,10 +609,6 @@ void Flux_MeshGeometry::Combine(Flux_MeshGeometry& xDst, const Flux_MeshGeometry
 	if (xDst.m_pxColors && !EnsureAndCopyAttributeStream(xDst.m_pxColors, xDst.m_uNumVerts, xSrc.m_pxColors, xSrc.m_uNumVerts, "Color"))
 		return;
 
-	if (xDst.m_pfMaterialLerps && !EnsureAndCopyAttributeStream(xDst.m_pfMaterialLerps, xDst.m_uNumVerts, xSrc.m_pfMaterialLerps, xSrc.m_uNumVerts, "MaterialLerps"))
-		return;
-
-
 	xDst.m_uNumVerts += xSrc.m_uNumVerts;
 	xDst.m_uNumIndices += xSrc.m_uNumIndices;
 	xDst.m_uNumBones += xSrc.m_uNumBones;
@@ -598,113 +659,93 @@ void Flux_MeshGeometry::Export(const char* szFilename)
 
 void Flux_MeshGeometry::GenerateLayoutAndVertexData()
 {
-	uint32_t uNumFloats = 0;
-	if (m_pxPositions != nullptr)
+	// One row per FLOAT attribute this geometry can carry, in the order the
+	// SERIALIZED element table declares them — that order is the .zmesh file format
+	// (Export writes m_xBufferLayout.GetElements() verbatim), so it must not be
+	// rearranged. Presence is "the stream exists", and an element is declared only
+	// for a stream that does.
+	struct AttributeRow
 	{
-		m_xBufferLayout.GetElements().PushBack({ SHADER_DATA_TYPE_FLOAT3 });
-		uNumFloats += 3;
-	}
-	if (m_pxUVs != nullptr)
+		const void*        m_pvStream;
+		ShaderDataType     m_eType;
+		FluxVertexSemantic m_eSemantic;
+		u_int              m_uLanes;
+	};
+	const AttributeRow axRows[] =
 	{
-		m_xBufferLayout.GetElements().PushBack({ SHADER_DATA_TYPE_FLOAT2 });
-		uNumFloats += 2;
-	}
-	if (m_pxNormals != nullptr)
+		{ m_pxPositions,  SHADER_DATA_TYPE_FLOAT3, FLUX_VERTEX_SEMANTIC_POSITION, 3u },
+		{ m_pxUVs,        SHADER_DATA_TYPE_FLOAT2, FLUX_VERTEX_SEMANTIC_TEXCOORD, 2u },
+		{ m_pxNormals,    SHADER_DATA_TYPE_FLOAT3, FLUX_VERTEX_SEMANTIC_NORMAL,   3u },
+		{ m_pxTangents,   SHADER_DATA_TYPE_FLOAT3, FLUX_VERTEX_SEMANTIC_TANGENT,  3u },
+		{ m_pxBitangents, SHADER_DATA_TYPE_FLOAT3, FLUX_VERTEX_SEMANTIC_BINORMAL, 3u },
+		{ m_pxColors,     SHADER_DATA_TYPE_FLOAT4, FLUX_VERTEX_SEMANTIC_COLOR,    4u },
+	};
+	constexpr u_int uMAX_FLOAT_ELEMENTS = static_cast<u_int>(sizeof(axRows) / sizeof(axRows[0]));
+
+	// Where THIS call's elements begin. It is 0 for the only supported shape — a
+	// geometry whose layout has not been declared yet — but reading the offsets back
+	// relative to it, rather than from absolute 0, is what keeps the bytes consistent
+	// with the stride GetVertexDataSize()/UploadToGPU() will use if a caller ever
+	// generates into a geometry that was not Reset.
+	const u_int uElementBase = m_xBufferLayout.GetElements().GetSize();
+
+	Flux_VertexLayoutElement axElements[uMAX_FLOAT_ELEMENTS] = {};
+	Flux_VertexSourceView    axSources[uMAX_FLOAT_ELEMENTS]  = {};
+	u_int uNumFloatElements = 0;
+	for (const AttributeRow& xRow : axRows)
 	{
-		m_xBufferLayout.GetElements().PushBack({ SHADER_DATA_TYPE_FLOAT3 });
-		uNumFloats += 3;
-	}
-	if (m_pxTangents != nullptr)
-	{
-		m_xBufferLayout.GetElements().PushBack({ SHADER_DATA_TYPE_FLOAT3 });
-		uNumFloats += 3;
-	}
-	if (m_pxBitangents != nullptr)
-	{
-		m_xBufferLayout.GetElements().PushBack({ SHADER_DATA_TYPE_FLOAT3 });
-		uNumFloats += 3;
-	}
-	if (m_pxColors != nullptr)
-	{
-		m_xBufferLayout.GetElements().PushBack({ SHADER_DATA_TYPE_FLOAT4 });
-		uNumFloats += 4;
-	}
-	if (m_pfMaterialLerps != nullptr)
-	{
-		m_xBufferLayout.GetElements().PushBack({ SHADER_DATA_TYPE_FLOAT });
-		uNumFloats += 1;
+		if (xRow.m_pvStream == nullptr)
+		{
+			continue;
+		}
+		m_xBufferLayout.GetElements().PushBack({ xRow.m_eType });
+		// The offset is filled in from the layout below — it is the layout's answer,
+		// not something recomputed here.
+		axElements[uNumFloatElements] = { xRow.m_eSemantic, 0u, xRow.m_eType, 0u, 0u };
+		axSources[uNumFloatElements]  = { xRow.m_eSemantic, 0u, static_cast<const float*>(xRow.m_pvStream), xRow.m_uLanes };
+		uNumFloatElements++;
 	}
 
-	if (m_puBoneIDs != nullptr)
+	const bool bHasBones = (m_puBoneIDs != nullptr);
+	if (bHasBones)
 	{
 		Zenith_Assert(m_pfBoneWeights != nullptr, "How have we wound up with bone IDs but no weights");
 		static_assert(MAX_BONES_PER_VERTEX == 4, "data type needs changing");
 		m_xBufferLayout.GetElements().PushBack({ SHADER_DATA_TYPE_UINT4 });
 		m_xBufferLayout.GetElements().PushBack({ SHADER_DATA_TYPE_FLOAT4 });
-		uNumFloats += MAX_BONES_PER_VERTEX * 2;
 	}
 
-	m_pVertexData = static_cast<u_int8*>(Zenith_MemoryManagement::Allocate(m_uNumVerts * uNumFloats * 4));
-
-	size_t index = 0;
-	for (uint32_t i = 0; i < m_uNumVerts; i++)
-	{
-		if (m_pxPositions != nullptr)
-		{
-			((float*)m_pVertexData)[index++] = m_pxPositions[i].x;
-			((float*)m_pVertexData)[index++] = m_pxPositions[i].y;
-			((float*)m_pVertexData)[index++] = m_pxPositions[i].z;
-		}
-
-		if (m_pxUVs != nullptr)
-		{
-			((float*)m_pVertexData)[index++] = m_pxUVs[i].x;
-			((float*)m_pVertexData)[index++] = m_pxUVs[i].y;
-		}
-		if (m_pxNormals != nullptr)
-		{
-			((float*)m_pVertexData)[index++] = m_pxNormals[i].x;
-			((float*)m_pVertexData)[index++] = m_pxNormals[i].y;
-			((float*)m_pVertexData)[index++] = m_pxNormals[i].z;
-		}
-		if (m_pxTangents != nullptr)
-		{
-			((float*)m_pVertexData)[index++] = m_pxTangents[i].x;
-			((float*)m_pVertexData)[index++] = m_pxTangents[i].y;
-			((float*)m_pVertexData)[index++] = m_pxTangents[i].z;
-		}
-		if (m_pxBitangents != nullptr)
-		{
-			((float*)m_pVertexData)[index++] = m_pxBitangents[i].x;
-			((float*)m_pVertexData)[index++] = m_pxBitangents[i].y;
-			((float*)m_pVertexData)[index++] = m_pxBitangents[i].z;
-		}
-		if (m_pxColors != nullptr)
-		{
-			((float*)m_pVertexData)[index++] = m_pxColors[i].x;
-			((float*)m_pVertexData)[index++] = m_pxColors[i].y;
-			((float*)m_pVertexData)[index++] = m_pxColors[i].z;
-			((float*)m_pVertexData)[index++] = m_pxColors[i].w;
-		}
-		if (m_pfMaterialLerps != nullptr)
-		{
-			((float*)m_pVertexData)[index++] = m_pfMaterialLerps[i];
-		}
-		if (m_puBoneIDs != nullptr)
-		{
-			//we've already asserted that weights isn't null
-			((uint32_t*)m_pVertexData)[index++] = m_puBoneIDs[i * MAX_BONES_PER_VERTEX + 0];
-			((uint32_t*)m_pVertexData)[index++] = m_puBoneIDs[i * MAX_BONES_PER_VERTEX + 1];
-			((uint32_t*)m_pVertexData)[index++] = m_puBoneIDs[i * MAX_BONES_PER_VERTEX + 2];
-			((uint32_t*)m_pVertexData)[index++] = m_puBoneIDs[i * MAX_BONES_PER_VERTEX + 3];
-			((float*)m_pVertexData)[index++] = m_pfBoneWeights[i * MAX_BONES_PER_VERTEX + 0];
-			((float*)m_pVertexData)[index++] = m_pfBoneWeights[i * MAX_BONES_PER_VERTEX + 1];
-			((float*)m_pVertexData)[index++] = m_pfBoneWeights[i * MAX_BONES_PER_VERTEX + 2];
-			((float*)m_pVertexData)[index++] = m_pfBoneWeights[i * MAX_BONES_PER_VERTEX + 3];
-		}
-	}
-
+	// Offsets + stride are computed ONCE, here, from the element table that was just
+	// declared — and every writer below reads them back out of it, so the bytes and
+	// the table the .zmesh carries cannot disagree.
 	m_xBufferLayout.CalculateOffsetsAndStrides();
+	const u_int uStride = m_xBufferLayout.GetStride();
+	for (u_int u = 0; u < uNumFloatElements; u++)
+	{
+		axElements[u].m_uOffset = m_xBufferLayout.GetElements().Get(uElementBase + u).m_uOffset;
+	}
+
+	m_pVertexData = static_cast<u_int8*>(Zenith_MemoryManagement::Allocate(static_cast<size_t>(m_uNumVerts) * uStride));
+
+	const Flux_VertexLayoutDesc xVertexLayout{ axElements, uNumFloatElements, { uStride, 0u } };
+	Flux_PackVertices(m_pVertexData, xVertexLayout, axSources, uNumFloatElements, m_uNumVerts);
+
+	if (bHasBones)
+	{
+		// The bone tail is deliberately NOT packer work: a uint4 palette index has no
+		// vertex semantic, and the packer refuses the integer families by design (see
+		// Flux_VertexPacker.h). It is copied straight in at the offsets the same
+		// layout named, one 4-lane block each.
+		const u_int uBoneIDOffset     = m_xBufferLayout.GetElements().Get(uElementBase + uNumFloatElements).m_uOffset;
+		const u_int uBoneWeightOffset = m_xBufferLayout.GetElements().Get(uElementBase + uNumFloatElements + 1u).m_uOffset;
+		for (uint32_t i = 0; i < m_uNumVerts; i++)
+		{
+			u_int8* const pVertex = m_pVertexData + static_cast<size_t>(i) * uStride;
+			const size_t uBoneBase = static_cast<size_t>(i) * MAX_BONES_PER_VERTEX;
+			memcpy(pVertex + uBoneIDOffset, m_puBoneIDs + uBoneBase, MAX_BONES_PER_VERTEX * sizeof(m_puBoneIDs[0]));
+			memcpy(pVertex + uBoneWeightOffset, m_pfBoneWeights + uBoneBase, MAX_BONES_PER_VERTEX * sizeof(m_pfBoneWeights[0]));
+		}
+	}
 }
 
 void Flux_MeshGeometry::GenerateNormals()

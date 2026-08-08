@@ -118,7 +118,24 @@ param(
     # COUNT / per-binding STRIDE / ELEMENT (offset, type, semantic, semantic
     # index, binding) / unknown-SEMANTIC mismatches; compressed-vertex Phase 2
     # T2.d review hardening (observed 2026-08-08 on a Null_ Combat build).
-    [int]$Baseline = 1400,
+    # 1400 -> 1415: +15 vertex-packer units (Flux_VertexPacker.Tests.inl) — the
+    # whole-layout byte contract over two mixed-format tables, the canonical
+    # attribute defaults, (semantic, index) source keying, the 4-lane TANGENT's
+    # derived handedness both signs + an authored w winning, SNORM10
+    # pre-normalisation + its zero-length fallback, the lane pad/truncate rules,
+    # the POSITION quant box, stride-advance across 3 vertices, the no-op shapes,
+    # and binding-1 skipping; compressed-vertex Phase 3 T3.a — the packer
+    # (observed 2026-08-08 on a Null_ Combat build).
+    # 1415 -> 1419: +4 NET in the rewritten mesh-family suite
+    # (Flux_VertexInterleave.Tests.inl): 3 old hand-layout tests became 7 —
+    # two byte-for-byte memcmp goldens (the static pack and the skin-input build,
+    # each against a FROZEN transcription of the interleave loop they replaced,
+    # over 7 adversarial meshes: missing attributes, arrays one entry short of the
+    # vertex count, degenerate frames, a short bone-weight array, negative zero),
+    # the ported layout/defaults expectations, and the bind-pose position override;
+    # compressed-vertex Phase 3 T3.b — mesh-family replacement (observed
+    # 2026-08-08 on a Null_ Combat build).
+    [int]$Baseline = 1419,
     [int]$TimeoutSec = 180,
     [string]$LogPath = ""
 )

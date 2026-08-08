@@ -230,6 +230,12 @@ void Flux_ReleaseMaterialIndex(u_int uIndex)
 // comparator is what a Null_ build trusts to catch committed-artifact drift.
 #include "Flux/Flux_VertexLayoutValidation.Tests.inl"
 
+// (Flux_VertexPacker.Tests.inl was hosted here for one task, while
+// Flux_PackVertices had no production caller and its own TU was therefore
+// dead-stripped whole. Phase 3 T3.b gave it three — the mesh instance, the mesh
+// asset and the procedural geometry builder — so the tests moved back beside the
+// code they cover, at the bottom of Flux_VertexPacker.cpp.)
+
 // Backend buffer-readback contract (Flux_MemoryManager::DownloadBufferData).
 // Hosted here rather than beside a backend: Zenith/Vulkan and Zenith/Null files
 // each compile in only their own configs, so a test living in either would

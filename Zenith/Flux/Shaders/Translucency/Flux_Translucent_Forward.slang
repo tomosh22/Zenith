@@ -23,6 +23,16 @@
 #include "Common/Bindings.slang"
 #include "Common/ViewModes.slang"      // Stage 3b: FLUX_SC_VIEW_*_PERMITTED spec-constant view-mode mask
 #include "Common/ShadowSampling.slang" // Stage 6: IShadowFilter seam (this pass conforms its own 4-tap tier below)
+// VsIn — THE 72 B interleaved static-mesh vertex input, shared with the three
+// unified-mesh shells. This pass draws the SAME vertex buffers they do (a
+// Flux_MeshInstance stream packed through UnifiedMesh_ToGBuffer's layout), so a
+// second local copy of the struct was a layout the reflection could bake
+// differently; Common/UnifiedMeshDraw.slang cannot be included here (it declares
+// its own `DrawParams`, which collides with this pass's below), so the struct
+// itself lives one level down in Common/StaticMeshVertex.slang and both take it
+// from there. The C++ cross-pin in Flux_Translucency.cpp still compares the two
+// baked tables — it now pins a property that is structural.
+#include "Common/StaticMeshVertex.slang"
 import Common.DrawConstants;
 import Common.MaterialTable;
 import Common.Material;
@@ -30,16 +40,6 @@ import Common.MaterialSurface;
 import Common.GBuffer;
 import Common.PBR;
 import Common.Lighting;
-
-struct VsIn
-{
-	float3 a_xPosition  : POSITION;
-	float2 a_xUV        : TEXCOORD0;
-	float3 a_xNormal    : NORMAL;
-	float3 a_xTangent   : TANGENT;
-	float3 a_xBitangent : BINORMAL;
-	float4 a_xColor     : COLOR;
-};
 
 struct VsOut
 {

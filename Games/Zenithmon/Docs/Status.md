@@ -1,12 +1,29 @@
 # Zenithmon Status
 
-**Last updated:** 2026-08-07
+**Last updated:** 2026-08-08
 
-**★ LIVE BASELINE (OBSERVED 2026-08-07 on clean `Null_` builds):
-ZM boot `3025 ran / 3023 passed / 0 failed / 2 skipped`; engine boot (Null Combat)
-`1400 ran / 1399 passed / 0 failed / 1 skipped`; registry **55**.** This is the
-current pin in `zm-tests.yml` (`-Baseline 3025`) and `run_unit_gate.ps1`
-(default 1400). The move from 3013/1388 is **+12 ENGINE units** from the
+**★ LIVE BASELINE (OBSERVED 2026-08-08 on clean `Null_` builds):
+ZM boot `3044 ran / 3042 passed / 0 failed / 2 skipped`; engine boot (Null Combat)
+`1419 ran / 1418 passed / 0 failed / 1 skipped`; registry **55**.** This is the
+current pin in `zm-tests.yml` (`-Baseline 3044`) and `run_unit_gate.ps1`
+(default 1419). The move from 3040/1415 is **+4 NET ENGINE units** from the
+compressed-vertex work's Phase 3 T3.b (2026-08-08): the four hand-written
+mesh-vertex interleave loops were replaced by two single writers — the packer for
+the 72-byte static stream (shaped by the shader-reflected table) and a named
+builder for the 104-byte skin-input stream — and the mesh-family suite was
+rewritten from 3 hand-layout tests to 7, whose core is three byte-for-byte memcmp
+goldens against a FROZEN transcription of the loop each writer replaced (the two
+mesh-asset streams over 7 adversarial meshes, plus the procedural geometry
+builder's dynamic layout with and without its bone tail). ZM's own registrations did not move. Before that, the move
+from 3025/1400 was **+15 ENGINE units** from the
+compressed-vertex work's Phase 3 T3.a (2026-08-08): `Flux_PackVertices`, the
+reflection-driven replacement for the engine's hand-written vertex-interleave
+loops, arrives with the suite that pins its whole-layout byte contract, the
+canonical attribute defaults, `(semantic, index)` source keying, the 4-lane
+TANGENT's derived handedness, the SNORM10 pre-normalisation and its zero-length
+fallback, the lane pad/truncate rules, the POSITION quant box, and the no-op
+shapes. ZM's own registrations did not move. Before that, the move from
+3013/1388 was **+12 ENGINE units** from the
 compressed-vertex work's Phase 2 T2.d review hardening (2026-08-08): the
 vertex-layout-validation suite drives the boot tripwire's pure comparator
 through every branch real boots never take (the OK path, both no-input

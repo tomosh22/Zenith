@@ -4,8 +4,8 @@
 // out of Flux.cpp (god-file decomposition) — same code, its own translation unit next
 // to the skinning types it serves. Wired into the registry from Flux::LateInitialise
 // via Flux_MakeRealSkinnedPoseProvider() (declared in Flux_Skinning.h).
-#include "Flux/UnifiedMesh/Flux_Skinning.h"          // Flux_SkinnedPose{Key,Entry,Registry}, uFLUX_SKIN_INPUT_WORDS
-#include "Flux/MeshGeometry/Flux_MeshInstance.h"      // CreateSkinnedFromAsset + Flux_InterleaveMeshVertices
+#include "Flux/UnifiedMesh/Flux_Skinning.h"          // Flux_SkinnedPose{Key,Entry,Registry}, uFLUX_SKIN_INPUT_WORDS, Flux_BuildSkinInputVertices
+#include "Flux/MeshGeometry/Flux_MeshInstance.h"      // CreateSkinnedFromAsset
 #include "AssetHandling/Zenith_MeshAsset.h"           // GetNumVerts / HasSkinning / bind-pose vertex arrays
 
 // ----------------------------------------------------------------------------
@@ -46,17 +46,18 @@ namespace
 		pxEntry->m_uNumVerts     = uNumVerts;
 		pxEntry->m_pvSourceAsset = pxAsset;
 
-		// Interleave the 104B skinned vertex (uFLUX_SKIN_INPUT_WORDS=26 words/vert) via the
-		// shared layout helper — the single source of the vertex layout + attribute defaults
-		// (formerly hand-replicated here). The pool reads m_auBindPoseWords.GetSize(), so size
-		// the word vector to its final count first, then let the helper overwrite it in place
-		// (a word is the float's bit pattern, identical to the old FloatToWord path).
+		// Build the 104B skin-input vertex (uFLUX_SKIN_INPUT_WORDS=26 words/vert) via the
+		// shared builder that owns that layout — the same bytes CreateSkinnedFromAsset just
+		// uploaded. The pool reads m_auBindPoseWords.GetSize(), so size the word vector to
+		// its final count first, then let the builder overwrite it in place (a word is the
+		// float's bit pattern, identical to the old FloatToWord path).
 		const u_int uNumWords = uNumVerts * uFLUX_SKIN_INPUT_WORDS;
 		pxEntry->m_auBindPoseWords.Clear();
 		pxEntry->m_auBindPoseWords.Reserve(uNumWords);
 		for (u_int w = 0; w < uNumWords; ++w) pxEntry->m_auBindPoseWords.PushBack(0u);
-		Flux_InterleaveMeshVertices(reinterpret_cast<uint8_t*>(pxEntry->m_auBindPoseWords.GetDataPointer()),
-			*pxAsset, uNumVerts, /*bSkinned*/ true);
+		Flux_BuildSkinInputVertices(
+			reinterpret_cast<Flux_SkinInputVertex*>(pxEntry->m_auBindPoseWords.GetDataPointer()),
+			*pxAsset, uNumVerts);
 
 		pxOut = pxEntry;
 		return true;
