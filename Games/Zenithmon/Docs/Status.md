@@ -3,14 +3,35 @@
 **Last updated:** 2026-08-08
 
 **★ LIVE BASELINE (OBSERVED 2026-08-08 on clean `Null_` builds):
-ZM boot `3044 ran / 3042 passed / 0 failed / 2 skipped`; engine boot (Null Combat)
-`1419 ran / 1418 passed / 0 failed / 1 skipped`; registry **55**.** This is the
-current pin in `zm-tests.yml` (`-Baseline 3044`) and `run_unit_gate.ps1`
-(default 1419). The move from 3040/1415 is **+4 NET ENGINE units** from the
+ZM boot `3056 ran / 3054 passed / 0 failed / 2 skipped`; engine boot (Null Combat)
+`1431 ran / 1430 passed / 0 failed / 1 skipped`; registry **55**.** This is the
+current pin in `zm-tests.yml` (`-Baseline 3056`) and `run_unit_gate.ps1`
+(default 1431). The move from 3049/1424 is **+7 ENGINE units** from the
+compressed-vertex Phase 4 T4.a adversarial-review fix pass (2026-08-08): the
+half codec gained hand-derived word pins and a frozen transcription of the
+GPU-side Slang half codec (the licensed rounding-tie divergence is now pinned as
+numbers), the fast-math-safe positive-finite predicate got its branch proofs,
+over-unity bone-weight sums pre-scale proportionally instead of zeroing the
+dominant influence, HALF4 positions beyond ±65504 assert at pack time, the
+skin-output encoder is byte-compared against the static packer (defaults
+included), and a negative-determinant (mirrored) bone blend now flips the
+packed bitangent sign exactly as the uncompressed path did implicitly. Before
+that, the move from 3044/1419 was **+5 NET ENGINE units** from the
+compressed-vertex work's Phase 4 T4.a (2026-08-08): the mesh compression flip —
+the static-mesh vertex went 72 -> 24 bytes (half4 position, half2 UV, snorm10
+normal, snorm10 tangent whose w carries the bitangent SIGN, unorm8x4 colour; the
+BINORMAL attribute is deleted and every consumer rebuilds it) and the
+compute-skinning input 104 -> 32. The two mesh-family memcmp goldens now compare
+against an INDEPENDENT transcription through `Flux_VertexCodec` instead of the
+frozen float32 interleave loops (the flip changes those bytes by design), joined
+by the skin-input/static prefix identity, the mirrored-frame bitangent sign, the
+procedural mesh-pipeline pack, the packed skin-vertex codec round trip and the
+one-byte bone sentinel. ZM's own registrations did not move. Before that, the move
+from 3040/1415 was **+4 NET ENGINE units** from the
 compressed-vertex work's Phase 3 T3.b (2026-08-08): the four hand-written
 mesh-vertex interleave loops were replaced by two single writers — the packer for
-the 72-byte static stream (shaped by the shader-reflected table) and a named
-builder for the 104-byte skin-input stream — and the mesh-family suite was
+the static stream (shaped by the shader-reflected table) and a named
+builder for the skin-input stream — and the mesh-family suite was
 rewritten from 3 hand-layout tests to 7, whose core is three byte-for-byte memcmp
 goldens against a FROZEN transcription of the loop each writer replaced (the two
 mesh-asset streams over 7 adversarial meshes, plus the procedural geometry

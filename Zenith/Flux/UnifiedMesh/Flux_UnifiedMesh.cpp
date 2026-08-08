@@ -22,23 +22,21 @@
 #include "Profiling/Zenith_Profiling.h"
 #include <cstring>                                        // std::strcmp — --taa-no-prevpose A/B capture toggle
 
-// Phase-2 pin: the generated tables must equal the retired hand-written 72-byte
-// static-mesh layout until the Phase-4 compression flip consciously re-pins them.
-// The FULL table is spelled out (not just count/stride): the normal/tangent/
-// bitangent trio are equal-width float3s whose shader-side reorder would preserve
-// every offset. The three graphics programs share one VsIn, so their tables must
-// agree with each other too.
+// The COMPRESSED static-mesh contract (Phase 4), spelled out in full rather than as a
+// count and a stride: normal and tangent are equal-width SNORM10 words whose shader-side
+// reorder would preserve every offset, and a position that silently reverted to float32
+// would still tight-pack to a plausible-looking table. Anything that moves this has to
+// move the packer, the compute-skinning arena and the .spv in the same change.
 static constexpr Flux_VertexLayoutElement kaxUNIFIED_MESH_EXPECTED_LAYOUT[] =
 {
-	{ FLUX_VERTEX_SEMANTIC_POSITION, 0u, SHADER_DATA_TYPE_FLOAT3, 0u,  0u },
-	{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 0u, SHADER_DATA_TYPE_FLOAT2, 0u, 12u },
-	{ FLUX_VERTEX_SEMANTIC_NORMAL,   0u, SHADER_DATA_TYPE_FLOAT3, 0u, 20u },
-	{ FLUX_VERTEX_SEMANTIC_TANGENT,  0u, SHADER_DATA_TYPE_FLOAT3, 0u, 32u },
-	{ FLUX_VERTEX_SEMANTIC_BINORMAL, 0u, SHADER_DATA_TYPE_FLOAT3, 0u, 44u },
-	{ FLUX_VERTEX_SEMANTIC_COLOR,    0u, SHADER_DATA_TYPE_FLOAT4, 0u, 56u },
+	{ FLUX_VERTEX_SEMANTIC_POSITION, 0u, SHADER_DATA_TYPE_HALF4,           0u,  0u },
+	{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 0u, SHADER_DATA_TYPE_HALF2,           0u,  8u },
+	{ FLUX_VERTEX_SEMANTIC_NORMAL,   0u, SHADER_DATA_TYPE_SNORM10_10_10_2, 0u, 12u },
+	{ FLUX_VERTEX_SEMANTIC_TANGENT,  0u, SHADER_DATA_TYPE_SNORM10_10_10_2, 0u, 16u },
+	{ FLUX_VERTEX_SEMANTIC_COLOR,    0u, SHADER_DATA_TYPE_UNORM8X4,        0u, 20u },
 };
-static_assert(Flux_Generated_UnifiedMesh::UnifiedMesh_ToGBuffer::kVertexLayout == Flux_VertexLayoutDesc{ kaxUNIFIED_MESH_EXPECTED_LAYOUT, 6u, { 72u, 0u } },
-	"UnifiedMesh vertex layout must stay the hand-era 72 B contract until the Phase-4 flip re-pins it");
+static_assert(Flux_Generated_UnifiedMesh::UnifiedMesh_ToGBuffer::kVertexLayout == Flux_VertexLayoutDesc{ kaxUNIFIED_MESH_EXPECTED_LAYOUT, 5u, { 24u, 0u } },
+	"UnifiedMesh vertex layout must stay the 24 B compressed contract — the BINORMAL element is gone and the bitangent rides in TANGENT.w");
 static_assert(Flux_Generated_UnifiedMesh::UnifiedMesh_ToGBufferVelocity::kVertexLayout == Flux_Generated_UnifiedMesh::UnifiedMesh_ToGBuffer::kVertexLayout,
 	"UnifiedMesh velocity program must fetch the same vertex layout as the base G-buffer program");
 static_assert(Flux_Generated_UnifiedMesh::UnifiedMesh_ToShadowmap::kVertexLayout == Flux_Generated_UnifiedMesh::UnifiedMesh_ToGBuffer::kVertexLayout,
@@ -66,9 +64,20 @@ namespace
 	constexpr u_int kuINITIAL_SKIN_VERTS   = 65536u;  // arena output verts + bind-pose pool input verts
 	constexpr u_int kuINITIAL_SKIN_JOBS    = 256u;
 	constexpr u_int kuINITIAL_PALETTE_MATS = 4096u;
-	constexpr u_int kuSKIN_INPUT_WORDS     = 26u;     // 104B bind-pose vertex (raw words) — matches uFLUX_SKIN_INPUT_WORDS
-	constexpr u_int kuSKIN_OUTPUT_WORDS    = 18u;     //  72B static vertex (raw words) — matches uFLUX_SKIN_OUTPUT_WORDS
-	constexpr u_int kuSKIN_PREV_WORDS      = 3u;      //  12B prev position-only vertex (raw words) — matches uFLUX_SKIN_PREV_WORDS
+	constexpr u_int kuSKIN_INPUT_WORDS     = 8u;      // 32B bind-pose vertex (raw words) — matches uFLUX_SKIN_INPUT_WORDS
+	constexpr u_int kuSKIN_OUTPUT_WORDS    = 6u;      // 24B static vertex (raw words) — matches uFLUX_SKIN_OUTPUT_WORDS
+	constexpr u_int kuSKIN_PREV_WORDS      = 3u;      // 12B prev position-only vertex (raw words) — matches uFLUX_SKIN_PREV_WORDS
+
+	// THE cross-language pin the arena depends on: the skinned arena is bound as a
+	// VERTEX BUFFER into the very pipelines that fetch a CPU-packed static mesh, at a
+	// byte offset of (arena vertex base * this stride). If the compute shader's output
+	// vertex and the reflected VsIn ever disagreed, every skinned draw would fetch a
+	// shifted stream — and no other check in the engine is positioned to see it.
+	static_assert(kuSKIN_OUTPUT_WORDS * sizeof(u_int) == Flux_Generated_UnifiedMesh::UnifiedMesh_ToGBuffer::kVertexLayout.m_auStrides[0],
+		"the compute-skinning arena stride must equal the reflected static-mesh vertex stride");
+	static_assert(kuSKIN_INPUT_WORDS  == uFLUX_SKIN_INPUT_WORDS,  "skin input word count drifted from Flux_Skinning.h");
+	static_assert(kuSKIN_OUTPUT_WORDS == uFLUX_SKIN_OUTPUT_WORDS, "skin output word count drifted from Flux_Skinning.h");
+	static_assert(kuSKIN_PREV_WORDS   == uFLUX_SKIN_PREV_WORDS,   "skin prev word count drifted from Flux_Skinning.h");
 
 	constexpr u_int kuINDIRECT_WORDS = 5u;   // VkDrawIndexedIndirectCommand = 5 uints
 	constexpr u_int kuINDIRECT_STRIDE = kuINDIRECT_WORDS * sizeof(u_int); // 20 bytes
@@ -192,8 +201,8 @@ void Flux_UnifiedMeshImpl::BuildPipelines()
 {
 	m_xGBufferShader.Initialise(Flux_UnifiedMeshShaders::xUnifiedMesh_ToGBuffer);
 
-	// Static-mesh vertex layout (position, UV, normal, tangent, bitangent, color) —
-	// the 72-byte stream every unified draw reads. The three programs below declare
+	// Static-mesh vertex layout (position, UV, normal, tangent+sign, colour) —
+	// the 24-byte packed stream every unified draw reads. The three programs below declare
 	// the SAME VsIn, so their generated layouts are identical; each spec still names
 	// its own so the cross-check compares each program against its own reflection.
 	{
@@ -1010,7 +1019,7 @@ static void ExecuteUnifiedGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 			}
 
 			// SKINNED bucket: draw from the shared skinned arena at this instance's slice (byte
-			// offset = arena vertex base * 72); the index buffer is the bind-pose mesh's. Static:
+			// offset = arena vertex base * the arena stride); the index buffer is the bind-pose mesh's. Static:
 			// the registry mesh's own VB/IB.
 			if (xDraw.m_bSkinned)
 			{

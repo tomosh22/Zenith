@@ -5,8 +5,9 @@
 #include <glm/gtc/packing.hpp>   // packHalf2x16 / packHalf4x16 / packSnorm4x16 / packUnorm2x16 / packUnorm4x8
 #pragma warning(pop)
 #include <algorithm>             // std::max, std::min (the adopted SNORM10 clamp)
-#include <cmath>                 // std::round
+#include <cmath>                 // std::round, std::sqrt
 #include <cstdint>
+#include <cstring>               // std::memcpy — the bit-classified positivity test
 
 // ============================================================================
 // Flux_VertexCodec — the ONE place a vertex attribute is quantised.
@@ -163,6 +164,41 @@ inline int32_t Flux_SignExtendBits(u_int uValue, u_int uBits)
 	return static_cast<int32_t>((uMasked ^ uSignBit) - uSignBit);
 }
 
+// Positive-and-finite, decided on the BITS rather than with `f > 0.0f &&
+// std::isfinite(f)`. Every consumer compiles under /fp:fast, where the compiler is
+// licensed to assume no NaN ever occurs and may therefore fold away the very
+// predicate that exists to catch one. Reading the exponent and magnitude out of the
+// storage is not a floating-point operation, so no fast-math assumption applies.
+inline bool Flux_IsPositiveFiniteBits(float fValue)
+{
+	uint32_t uBits = 0u;
+	std::memcpy(&uBits, &fValue, sizeof(uBits));
+	const uint32_t uSign = uBits >> 31;
+	const uint32_t uExponent = (uBits >> 23) & 0xFFu;
+	const uint32_t uMagnitude = uBits & 0x7FFFFFFFu;
+	return (uSign == 0u) && (uExponent != 0xFFu) && (uMagnitude != 0u);
+}
+
+// THE rule every SNORM10 direction is prepared with, wherever it is packed.
+// Flux_PackSnorm10_10_10_2 CLAMPS per axis but does not normalise, so quantising a
+// length-1.2 vector changes its DIRECTION and not merely its precision; and a
+// zero-length (or non-finite) vector has no normalisation at all — 0/0 is a NaN that
+// packs to an arbitrary word decoding as a perfectly plausible direction. Callers
+// pass the semantic's canonical default as the fallback, so a degenerate frame comes
+// out exactly as a wholly ABSENT attribute would have. Mirrored in Slang by
+// NormaliseOrDefault in Flux_UnifiedMesh_Skinning.slang, which prepares the arena the
+// CPU-packed streams share their pipelines with.
+inline Zenith_Maths::Vector3 Flux_NormaliseForSnorm10(
+	const Zenith_Maths::Vector3& xValue, const Zenith_Maths::Vector3& xDefault)
+{
+	const float fLengthSq = Zenith_Maths::LengthSq(xValue);
+	if (!Flux_IsPositiveFiniteBits(fLengthSq))
+	{
+		return xDefault;
+	}
+	return xValue * (1.0f / std::sqrt(fLengthSq));
+}
+
 inline Zenith_Maths::Vector4 Flux_UnpackSnorm10_10_10_2(u_int uPacked)
 {
 	const float fR = static_cast<float>(Flux_SignExtendBits(uPacked, 10u)) / 511.0f;
@@ -263,19 +299,33 @@ inline Zenith_Maths::UVector4 Flux_UnpackBoneIndicesUint8x4(u_int uPacked)
 // one-unit change). The correction applies to ANY non-zero input sum — the four
 // bytes always total exactly 255 — so a caller passing un-normalised weights
 // gets them silently renormalised, not preserved; callers own pre-normalising
-// when proportions matter. An all-zero input stays all-zero: there is no
-// influence to renormalise onto, and forcing 255 onto lane 0 would invent one.
-// Decoding is the plain Flux_UnpackUnorm8x4 — the bytes are ordinary unorm8.
+// when proportions matter. A set summing ABOVE 1 is scaled down proportionally
+// BEFORE quantising: the one-lane repair can only absorb the ±2 units of
+// rounding loss, and asking it to absorb a whole surplus lane goes negative,
+// clamps to zero, and DELETES the dominant influence ((1,1,1,1) came out
+// (0,255,255,255)). Sums at-or-below 1 take the exact pre-scale-free path, so
+// every normalised producer's bytes are unchanged. An all-zero input stays
+// all-zero: there is no influence to renormalise onto, and forcing 255 onto
+// lane 0 would invent one. Decoding is the plain Flux_UnpackUnorm8x4 — the
+// bytes are ordinary unorm8.
 
 inline u_int Flux_PackBoneWeightsUnorm8x4(const Zenith_Maths::Vector4& xWeights)
 {
+	float afClamped[4];
+	float fInputSum = 0.0f;
+	for (int i = 0; i < 4; i++)
+	{
+		afClamped[i] = Zenith_Maths::Clamp(xWeights[i], 0.0f, 1.0f);
+		fInputSum += afClamped[i];
+	}
+	const float fPreScale = (fInputSum > 1.0f) ? (1.0f / fInputSum) : 1.0f;
+
 	int32_t aiBytes[4];
 	int32_t iSum = 0;
 	int32_t iLargest = 0;
 	for (int i = 0; i < 4; i++)
 	{
-		const float fWeight = Zenith_Maths::Clamp(xWeights[i], 0.0f, 1.0f);
-		aiBytes[i] = static_cast<int32_t>(std::round(fWeight * 255.0f));
+		aiBytes[i] = static_cast<int32_t>(std::round(afClamped[i] * fPreScale * 255.0f));
 		iSum += aiBytes[i];
 		if (xWeights[i] > xWeights[iLargest])
 		{

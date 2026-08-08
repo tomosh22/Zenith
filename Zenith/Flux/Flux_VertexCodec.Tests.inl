@@ -2,6 +2,7 @@
 #include "Flux/Flux_VertexCodec.h"
 
 #include <cmath>   // sinf/cosf — sweep generation for the SNORM10 bit-identity pin
+#include <bit>     // std::bit_cast — constructed float bits for the half pins + the finite-bits branches
 
 // ============================================================================
 // Vertex-codec unit tests. Pure CPU, no device, no renderer — hosted UNGATED in
@@ -44,9 +45,12 @@ namespace
 		return uResult;
 	}
 
-	// Half round-trip error is bounded by one half ULP == 2^-10 of the magnitude
-	// (GLM truncates the mantissa rather than rounding to nearest, so the bound is
-	// a whole ULP, not half of one). 2^-9 leaves a 2x margin.
+	// Half round-trip error: the vendored GLM half codec is the full ILM
+	// conversion — round to NEAREST, ties away from zero — so the error is bounded
+	// by half a half-ULP (2^-11 of the magnitude). 2^-9 keeps a 4x margin, and
+	// would still hold even for a whole-ULP truncating codec. The rounding rule
+	// itself (and the licensed tie divergence vs the Slang mirror) is pinned
+	// bit-exactly by HalfPackMatchesSlangTranscription below, not by this bound.
 	float HalfTolerance(float fValue)
 	{
 		return std::fabs(fValue) * (1.0f / 512.0f) + 1.0e-7f;
@@ -354,4 +358,208 @@ ZENITH_TEST(VertexCodec, BoneIndicesSentinelAndCeiling)
 	ZENITH_ASSERT_EQ(xCeil.y, uFLUX_MAX_PACKED_BONE_INDEX, "255 clamps below the sentinel");
 	ZENITH_ASSERT_EQ(xCeil.z, uFLUX_MAX_PACKED_BONE_INDEX, "an out-of-range index clamps, not wraps");
 	ZENITH_ASSERT_EQ(xCeil.w, uFLUX_MAX_PACKED_BONE_INDEX, "0xFFFFFFFE is not the sentinel");
+}
+
+ZENITH_TEST(VertexCodec, BoneWeightsOverUnitySumsPreScaleProportionally)
+{
+	// The one-lane remainder repair can only absorb the +-2 units quantisation
+	// loses; asked to absorb a whole surplus it went negative, clamped to zero,
+	// and DELETED the dominant influence ((1,1,1,1) came out (0,255,255,255)).
+	// Over-unity sets now scale down proportionally before quantising.
+	// 1/4 and 255/4 are exact in float, so these bytes can be pinned.
+	const Zenith_Maths::UVector4 xQuarters = Flux_UnpackUint8x4(
+		Flux_PackBoneWeightsUnorm8x4(Zenith_Maths::Vector4(1.0f, 1.0f, 1.0f, 1.0f)));
+	ZENITH_ASSERT_EQ(xQuarters.x, 63u, "the first maximum absorbs the rounding remainder");
+	ZENITH_ASSERT_EQ(xQuarters.y, 64u, "an equal over-unity set quantises evenly");
+	ZENITH_ASSERT_EQ(xQuarters.z, 64u, "an equal over-unity set quantises evenly");
+	ZENITH_ASSERT_EQ(xQuarters.w, 64u, "an equal over-unity set quantises evenly");
+
+	// The exact failure shape the review named: sum 1.7, dominant lane first.
+	// Properties, not pinned bytes (the scaled lanes sit near rounding edges):
+	// the bytes still total 255, and the dominant influence is still dominant —
+	// the broken repair returned it as literally zero.
+	const Zenith_Maths::UVector4 xSkew = Flux_UnpackUint8x4(
+		Flux_PackBoneWeightsUnorm8x4(Zenith_Maths::Vector4(0.5f, 0.4f, 0.4f, 0.4f)));
+	const u_int uSum = xSkew.x + xSkew.y + xSkew.z + xSkew.w;
+	ZENITH_ASSERT_EQ(uSum, 255u, "over-unity weights still renormalise to exactly 255");
+	ZENITH_ASSERT_TRUE(xSkew.x > 0u, "the dominant influence must survive the pre-scale");
+	ZENITH_ASSERT_TRUE(xSkew.x >= xSkew.y && xSkew.x >= xSkew.z && xSkew.x >= xSkew.w,
+		"the dominant influence stays dominant after the pre-scale");
+
+	// At-or-below-unity sums take the pre-scale-free path byte-for-byte: the
+	// documented renormalise-UP behaviour is unchanged (0.3+0.3 -> 77+77, largest
+	// lane absorbs the remaining 101).
+	const Zenith_Maths::UVector4 xUp = Flux_UnpackUint8x4(
+		Flux_PackBoneWeightsUnorm8x4(Zenith_Maths::Vector4(0.3f, 0.3f, 0.0f, 0.0f)));
+	ZENITH_ASSERT_EQ(xUp.x, 178u, "sub-unity sums keep the pre-existing renormalise-up bytes");
+	ZENITH_ASSERT_EQ(xUp.y, 77u, "a non-absorbing lane keeps its naive quantisation");
+}
+
+// ---- half: hand-derived word pins + the frozen Slang mirror ------------------
+
+ZENITH_TEST(VertexCodec, HalfPinnedWords)
+{
+	// IEEE binary16 words derived BY HAND — the only pin a symmetric codec change
+	// (lane order, rounding mode) cannot move together with the packer. Half is
+	// the fetch format for 12 of a mesh vertex's 24 bytes; the fetch unit
+	// (VK_FORMAT_R16G16B16A16_SFLOAT) is the authority these words come from.
+	// x rides the LOW 16 bits of each word (little-endian).
+	ZENITH_ASSERT_EQ(Flux_PackHalf2(Zenith_Maths::Vector2(1.0f, -2.0f)), 0xC0003C00u, "1.0 = 0x3C00 low, -2.0 = 0xC000 high");
+	ZENITH_ASSERT_EQ(Flux_PackHalf2(Zenith_Maths::Vector2(0.5f, 65504.0f)), 0x7BFF3800u, "0.5 = 0x3800, 65504 = 0x7BFF is the largest finite half");
+	ZENITH_ASSERT_EQ(Flux_PackHalf2(Zenith_Maths::Vector2(-0.0f, 0.25f)) , 0x34008000u, "-0.0 keeps its sign bit; 0.25 = 0x3400");
+
+	// The smallest subnormal half, constructed bit-exactly (2^-24).
+	const float fMinSubnormal = std::bit_cast<float>(0x33800000u);
+	ZENITH_ASSERT_EQ(Flux_PackHalf2(Zenith_Maths::Vector2(fMinSubnormal, 0.0f)) & 0xFFFFu, 0x0001u,
+		"2^-24 packs to the smallest subnormal half word");
+	ZENITH_ASSERT_EQ(std::bit_cast<uint32_t>(Flux_UnpackHalf2(0x00010000u).y), 0x33800000u,
+		"the smallest subnormal half decodes bit-exactly to 2^-24");
+
+	// The half4 pair: lanes 0-1 in the low word, 2-3 in the high word.
+	ZENITH_ASSERT_EQ(Flux_PackHalf4(Zenith_Maths::Vector4(1.0f, 0.5f, -2.0f, 65504.0f)),
+		static_cast<u_int64>(0x7BFFC00038003C00ull),
+		"half4 = ((w<<16|z)<<32) | (y<<16|x), little-endian like the fetch format");
+}
+
+namespace
+{
+	// VERBATIM frozen transcriptions of Common/VertexFormats.slang's
+	// Flux_FloatToHalfBits / Flux_HalfBitsToFloat (the GPU-side half codec the
+	// skinning pre-pass decodes CPU-packed pools with). Diffable side by side with
+	// the .slang — if either side changes, change both, and this suite says so.
+	uint32_t SlangMirror_FloatToHalfBits(float fValue)
+	{
+		const uint32_t uBits = std::bit_cast<uint32_t>(fValue);
+		const uint32_t uSign = (uBits >> 16u) & 0x8000u;
+		const uint32_t uAbs  = uBits & 0x7FFFFFFFu;
+
+		if (uAbs >= 0x7F800000u)
+		{
+			return uSign | 0x7C00u | ((uAbs > 0x7F800000u) ? 0x200u : 0u);
+		}
+
+		const int32_t  iExponent = static_cast<int32_t>(uAbs >> 23u) - 127;
+		const uint32_t uMantissa = uAbs & 0x7FFFFFu;
+
+		if (iExponent > 15)
+		{
+			return uSign | 0x7C00u;
+		}
+		if (iExponent >= -14)
+		{
+			uint32_t uHalf = uSign | (static_cast<uint32_t>(iExponent + 15) << 10u) | (uMantissa >> 13u);
+			const uint32_t uRemainder = uMantissa & 0x1FFFu;
+			if ((uRemainder > 0x1000u) || ((uRemainder == 0x1000u) && ((uMantissa >> 13u) & 1u) != 0u))
+			{
+				uHalf += 1u;
+			}
+			return uHalf;
+		}
+		if (iExponent >= -25)
+		{
+			const uint32_t uFull      = uMantissa | 0x800000u;
+			const uint32_t uShift     = static_cast<uint32_t>(-(iExponent + 1));
+			const uint32_t uHalfWay   = 1u << (uShift - 1u);
+			const uint32_t uRemainder = uFull & ((1u << uShift) - 1u);
+			uint32_t uSubnormal = uFull >> uShift;
+			if ((uRemainder > uHalfWay) || ((uRemainder == uHalfWay) && ((uSubnormal & 1u) != 0u)))
+			{
+				uSubnormal += 1u;
+			}
+			return uSign | uSubnormal;
+		}
+		return uSign;
+	}
+
+	uint32_t SlangMirror_HalfBitsToFloatBits(uint32_t uHalf)
+	{
+		const uint32_t uSign     = (uHalf & 0x8000u) << 16u;
+		const uint32_t uExponent = (uHalf >> 10u) & 0x1Fu;
+		const uint32_t uMantissa = uHalf & 0x3FFu;
+
+		if (uExponent == 0u)
+		{
+			return uSign | std::bit_cast<uint32_t>(
+				static_cast<float>(uMantissa) * std::bit_cast<float>(0x33800000u));
+		}
+		if (uExponent == 31u)
+		{
+			return uSign | 0x7F800000u | (uMantissa << 13u);
+		}
+		return uSign | ((uExponent + 112u) << 23u) | (uMantissa << 13u);
+	}
+}
+
+ZENITH_TEST(VertexCodec, HalfPackMatchesSlangTranscription)
+{
+	// The GPU decodes what the CPU packs, so the two codecs' agreement is a
+	// CORRECTNESS contract with no runtime tripwire (a compute shader cannot
+	// static_assert against GLM). This pins it at the transcription level, over
+	// every branch both implementations have: normals, rounding (non-tie),
+	// subnormals (14..24-bit shifts), underflow, overflow, zero signs.
+	const float afAgree[] = {
+		0.0f, 1.0f, -1.0f, 0.5f, -0.25f, 65504.0f, -65504.0f,
+		2048.0f, 2050.0f, 1.0009765f,                      // non-tie rounding
+		std::bit_cast<float>(0x33800000u),                  // 2^-24 min subnormal
+		std::bit_cast<float>(0x34000000u),                  // 2^-23
+		6.0e-8f, 3.1e-8f,                                   // subnormal rounding
+		1.0e-10f, -1.0e-10f,                                // underflow -> signed zero
+		1.0e6f, -1.0e6f,                                    // overflow -> inf
+		std::bit_cast<float>(0x7F800000u),                  // +inf
+		std::bit_cast<float>(0xFF800000u),                  // -inf
+	};
+	for (u_int u = 0; u < sizeof(afAgree) / sizeof(afAgree[0]); ++u)
+	{
+		const uint32_t uMirror = SlangMirror_FloatToHalfBits(afAgree[u]);
+		const uint32_t uCodec  = Flux_PackHalf2(Zenith_Maths::Vector2(afAgree[u], 0.0f)) & 0xFFFFu;
+		ZENITH_ASSERT_EQ(uMirror, uCodec, "CPU and Slang half encodes agree at case %u", u);
+	}
+
+	// NaN: both encode a NaN-class half, but the PAYLOAD is licensed to differ
+	// (GLM keeps the top mantissa bits, the Slang codec pins 0x200).
+	const uint32_t uMirrorNaN = SlangMirror_FloatToHalfBits(std::bit_cast<float>(0x7FC00000u));
+	const uint32_t uCodecNaN  = Flux_PackHalf2(Zenith_Maths::Vector2(std::bit_cast<float>(0x7FC00000u), 0.0f)) & 0xFFFFu;
+	ZENITH_ASSERT_TRUE(((uMirrorNaN >> 10u) & 0x1Fu) == 0x1Fu && (uMirrorNaN & 0x3FFu) != 0u, "Slang encodes NaN as NaN");
+	ZENITH_ASSERT_TRUE(((uCodecNaN  >> 10u) & 0x1Fu) == 0x1Fu && (uCodecNaN  & 0x3FFu) != 0u, "GLM encodes NaN as NaN");
+
+	// THE licensed divergence, pinned as numbers instead of prose: an exact tie
+	// rounds AWAY FROM ZERO in GLM and TO EVEN in the Slang codec. 2049 sits
+	// exactly between representable halves 2048 and 2050.
+	ZENITH_ASSERT_EQ(SlangMirror_FloatToHalfBits(2049.0f), 0x6800u, "the Slang codec rounds the 2049 tie to even (2048)");
+	ZENITH_ASSERT_EQ(Flux_PackHalf2(Zenith_Maths::Vector2(2049.0f, 0.0f)) & 0xFFFFu, 0x6801u, "GLM rounds the 2049 tie away from zero (2050)");
+	ZENITH_ASSERT_EQ(SlangMirror_FloatToHalfBits(-2049.0f), 0xE800u, "ties to even on the negative side too");
+	ZENITH_ASSERT_EQ(Flux_PackHalf2(Zenith_Maths::Vector2(-2049.0f, 0.0f)) & 0xFFFFu, 0xE801u, "away from zero on the negative side too");
+
+	// DECODE crosses the producer boundary (the GPU reads CPU-packed pools), so
+	// it must be exact on both sides — every finite word class, bit-for-bit.
+	const uint32_t auWords[] = {
+		0x0000u, 0x8000u,           // +-0
+		0x0001u, 0x03FFu,           // subnormal min/max
+		0x0400u,                    // smallest normal
+		0x3C00u, 0xBC00u,           // +-1
+		0x3800u, 0x7BFFu, 0xFBFFu,  // 0.5, +-65504
+		0x7C00u, 0xFC00u,           // +-inf
+	};
+	for (u_int u = 0; u < sizeof(auWords) / sizeof(auWords[0]); ++u)
+	{
+		const uint32_t uMirrorBits = SlangMirror_HalfBitsToFloatBits(auWords[u]);
+		const uint32_t uCodecBits  = std::bit_cast<uint32_t>(Flux_UnpackHalf2(auWords[u]).x);
+		ZENITH_ASSERT_EQ(uMirrorBits, uCodecBits, "CPU and Slang half decodes agree bit-exactly at word %u", u);
+	}
+}
+
+ZENITH_TEST(VertexCodec, IsPositiveFiniteBitsClassifiesEveryBranch)
+{
+	// The predicate exists BECAUSE /fp:fast may fold a float NaN test away; it is
+	// pure bit inspection, so each branch can be pinned with constructed bits.
+	ZENITH_ASSERT_TRUE(Flux_IsPositiveFiniteBits(1.0f), "an ordinary positive value is positive-finite");
+	ZENITH_ASSERT_TRUE(Flux_IsPositiveFiniteBits(std::bit_cast<float>(0x7F7FFFFFu)), "FLT_MAX is positive-finite");
+	ZENITH_ASSERT_TRUE(Flux_IsPositiveFiniteBits(std::bit_cast<float>(0x00000001u)), "a positive denormal counts as positive-finite");
+	ZENITH_ASSERT_TRUE(!Flux_IsPositiveFiniteBits(0.0f), "+0 is not positive (a zero-length vector has no direction)");
+	ZENITH_ASSERT_TRUE(!Flux_IsPositiveFiniteBits(std::bit_cast<float>(0x80000000u)), "-0 is not positive");
+	ZENITH_ASSERT_TRUE(!Flux_IsPositiveFiniteBits(-1.0f), "a negative value is not positive");
+	ZENITH_ASSERT_TRUE(!Flux_IsPositiveFiniteBits(std::bit_cast<float>(0x7F800000u)), "+inf is not finite");
+	ZENITH_ASSERT_TRUE(!Flux_IsPositiveFiniteBits(std::bit_cast<float>(0xFF800000u)), "-inf is not positive or finite");
+	ZENITH_ASSERT_TRUE(!Flux_IsPositiveFiniteBits(std::bit_cast<float>(0x7FC00000u)), "NaN is not finite");
+	ZENITH_ASSERT_TRUE(!Flux_IsPositiveFiniteBits(std::bit_cast<float>(0xFFC00000u)), "negative NaN is neither");
 }

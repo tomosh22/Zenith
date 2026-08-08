@@ -1,27 +1,10 @@
 #include "Zenith.h"
 #include "Flux/MeshGeometry/Flux_VertexPacker.h"
 
-#include <cmath>     // std::sqrt — the SNORM10 pre-normalisation
 #include <cstring>   // std::memcpy — every element write
 
 namespace
 {
-	// Positive-and-finite, decided on the BITS rather than with `f > 0.0f &&
-	// std::isfinite(f)`. This TU compiles under /fp:fast, where the compiler is
-	// licensed to assume no NaN ever occurs and may therefore fold away the very
-	// predicate that exists to catch one. Reading the exponent and magnitude out
-	// of the storage is not a floating-point operation, so no fast-math
-	// assumption applies to it.
-	bool IsPositiveFiniteBits(float fValue)
-	{
-		uint32_t uBits = 0u;
-		std::memcpy(&uBits, &fValue, sizeof(uBits));
-		const uint32_t uSign = uBits >> 31;
-		const uint32_t uExponent = (uBits >> 23) & 0xFFu;
-		const uint32_t uMagnitude = uBits & 0x7FFFFFFFu;
-		return (uSign == 0u) && (uExponent != 0xFFu) && (uMagnitude != 0u);
-	}
-
 	// The source feeding (semantic, semanticIndex), or nullptr for "absent".
 	// A view with no data or no lanes reads as absent too, so a caller may hold a
 	// fixed-size array of views and leave the slots it has nothing for blank.
@@ -104,6 +87,17 @@ namespace
 
 		case SHADER_DATA_TYPE_HALF4:
 		{
+			// Half saturates at +-65504 and then packs INFINITY, which the model
+			// transform turns into a NaN clip position — the mesh vanishes with no
+			// diagnostic. Object-space extents are an authoring contract; a mesh
+			// too large for half range needs the per-shader [VtxFmt] escape hatch
+			// (or the SNORM16X4 + Flux_PosQuant box), not a silent inf. (A NaN
+			// source lane fails this comparison too, which is equally deliberate.)
+			Zenith_Assert(eSemantic != FLUX_VERTEX_SEMANTIC_POSITION
+				|| (std::fabs(pfLanes[0]) <= 65504.0f
+					&& std::fabs(pfLanes[1]) <= 65504.0f
+					&& std::fabs(pfLanes[2]) <= 65504.0f),
+				"HALF4 position lane beyond +-65504 packs to infinity — this mesh's object-space extents exceed half range");
 			const u_int64 ulWord = Flux_PackHalf4(
 				Zenith_Maths::Vector4(pfLanes[0], pfLanes[1], pfLanes[2], pfLanes[3]));
 			std::memcpy(pDst, &ulWord, sizeof(ulWord));
@@ -151,25 +145,13 @@ namespace
 
 		case SHADER_DATA_TYPE_SNORM10_10_10_2:
 		{
-			// The codec CLAMPS to [-1,1] but does not normalise, and every SNORM10
-			// element in the corpus is a unit direction. Clamping a length-1.2
-			// normal per-axis changes its DIRECTION, not just its precision, so the
-			// vector is normalised first.
-			Zenith_Maths::Vector3 xDirection(pfLanes[0], pfLanes[1], pfLanes[2]);
-			const float fLengthSq = Zenith_Maths::LengthSq(xDirection);
-			if (IsPositiveFiniteBits(fLengthSq))
-			{
-				xDirection = xDirection * (1.0f / std::sqrt(fLengthSq));
-			}
-			else
-			{
-				// A zero-length (or non-finite) direction has no normalisation —
-				// 0/0 is a NaN, and a NaN packs to an arbitrary word that would
-				// decode as a plausible direction. Fall back to the semantic's
-				// canonical default, which is exactly what a wholly ABSENT source
-				// would have produced.
-				xDirection = Zenith_Maths::Vector3(Flux_CanonicalVertexDefault(eSemantic));
-			}
+			// Every SNORM10 element in the corpus is a unit direction, and the codec
+			// owns what "prepared for SNORM10" means (unit length, canonical default
+			// where there is nothing to normalise) — the Slang skinning kernel
+			// applies the same rule to the arena these bytes share a pipeline with.
+			const Zenith_Maths::Vector3 xDirection = Flux_NormaliseForSnorm10(
+				Zenith_Maths::Vector3(pfLanes[0], pfLanes[1], pfLanes[2]),
+				Zenith_Maths::Vector3(Flux_CanonicalVertexDefault(eSemantic)));
 			const u_int uWord = Flux_PackSnorm10_10_10_2(
 				xDirection.x, xDirection.y, xDirection.z, pfLanes[3]);
 			std::memcpy(pDst, &uWord, sizeof(uWord));
@@ -262,7 +244,18 @@ void Flux_PackVertices(
 		// handedness from the bitangent: w = sign(dot(cross(N,T),B)). An explicit
 		// 4-lane tangent source WINS — an authored w is a decision, not something
 		// to re-derive — and with no BINORMAL source there is nothing to derive
-		// from, so w stays on the canonical pad (0).
+		// from, so w stays on the canonical pad, which for TANGENT is +1.
+		//
+		// The pad MUST be a valid handedness (±1), never 0: since the compression
+		// flip that lane is what every consumer rebuilds the bitangent from
+		// (B = cross(N,T) * w, then normalize()d in both consuming VS paths), so a
+		// 0 would be normalize(float3(0)) = NaN poisoning the G-buffer normal MRT
+		// — and bitangent-less meshes are REAL, not hypothetical: the tree
+		// exporter's AddVertex(pos,normal,uv,tangent) overload never authors
+		// bitangents, and an Assimp import with no UVs leaves both tangent streams
+		// empty. +1 hands those meshes the orthonormal right-handed frame, which
+		// is strictly better than the arbitrary constant (0,0,1) bitangent the
+		// deleted BINORMAL element used to carry.
 		const bool bDeriveTangentW = (xElement.m_eSemantic == FLUX_VERTEX_SEMANTIC_TANGENT)
 			&& (uLanes == 4u) && (uCopyLanes < 4u) && (pxBinormalSource != nullptr);
 

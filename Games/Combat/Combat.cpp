@@ -251,8 +251,11 @@ static void InitializeCombatResources()
 		Resources().m_pxCapsuleGeometry = pxCapsuleAsset->GetGeometry();
 	}
 #ifdef ZENITH_TOOLS
+	// ExportDerivedFloatLayout, not Export: this geometry lives on the packed
+	// mesh-pipeline form (it is drawn), but the .zmesh on disk must carry the
+	// stable derived float table — the file format has no version field.
 	std::string strCapsulePath = strMeshDir + "/Capsule" ZENITH_MESH_EXT;
-	Resources().m_pxCapsuleGeometry->Export(strCapsulePath.c_str());
+	Resources().m_pxCapsuleGeometry->ExportDerivedFloatLayout(strCapsulePath.c_str());
 	Resources().m_pxCapsuleGeometry->m_strSourcePath = strCapsulePath;
 #endif
 
@@ -261,7 +264,7 @@ static void InitializeCombatResources()
 	Resources().m_pxCubeGeometry = Resources().m_xCubeAsset.GetDirect()->GetGeometry();
 #ifdef ZENITH_TOOLS
 	std::string strCubePath = strMeshDir + "/Cube" ZENITH_MESH_EXT;
-	Resources().m_pxCubeGeometry->Export(strCubePath.c_str());
+	Resources().m_pxCubeGeometry->ExportDerivedFloatLayout(strCubePath.c_str());
 	Resources().m_pxCubeGeometry->m_strSourcePath = strCubePath;
 #endif
 
@@ -277,7 +280,7 @@ static void InitializeCombatResources()
 	}
 #ifdef ZENITH_TOOLS
 	std::string strConePath = strMeshDir + "/Cone" ZENITH_MESH_EXT;
-	Resources().m_pxConeGeometry->Export(strConePath.c_str());
+	Resources().m_pxConeGeometry->ExportDerivedFloatLayout(strConePath.c_str());
 	Resources().m_pxConeGeometry->m_strSourcePath = strConePath;
 #endif
 

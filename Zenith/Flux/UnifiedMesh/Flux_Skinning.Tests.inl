@@ -13,20 +13,41 @@
 
 namespace
 {
+	// The tolerances below are the STORAGE FORMATS', not slack. A skinned result now
+	// carries two quantisations: the position is a half4 (~2^-11 relative, so ~0.05 at
+	// the ~100-unit magnitudes these tests use), and the bone weights are unorm8
+	// RENORMALISED to sum exactly 255 — which moves a blended point by up to ~1/255 of
+	// the distance between the bones it blends. Directions are snorm10 (1/511 a step)
+	// and colours unorm8 (1/255).
+	constexpr float fSKIN_POS_TOLERANCE   = 0.05f;
+	constexpr float fSKIN_DIR_TOLERANCE   = 1.0f / 511.0f;
+	constexpr float fSKIN_UNORM_TOLERANCE = 1.0f / 255.0f;
+
+	// Build a packed skin-input vertex from attributes. Every position these tests use
+	// is a small whole or half-integer value, exact in half, so a failure is a skinning
+	// or offset bug rather than quantisation. Weights are authored SUMMING TO ONE
+	// because the codec renormalises them — a pair of 1.0s is not "two full-strength
+	// influences", it is one at 0 and one at 1.
 	Flux_SkinInputVertex Skin_MakeVertex(const Zenith_Maths::Vector3& xPos,
 		const Zenith_Maths::Vector3& xNormal, u_int uB0, u_int uB1, u_int uB2, u_int uB3,
 		float fW0, float fW1, float fW2, float fW3)
 	{
-		Flux_SkinInputVertex xV;
-		xV.m_xPosition   = xPos;
-		xV.m_xUV         = Zenith_Maths::Vector2(0.25f, 0.75f);
-		xV.m_xNormal     = xNormal;
-		xV.m_xTangent    = Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f);
-		xV.m_xBitangent  = Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f);
-		xV.m_xColor      = Zenith_Maths::Vector4(0.1f, 0.2f, 0.3f, 1.0f);
-		xV.m_auBoneIDs[0] = uB0; xV.m_auBoneIDs[1] = uB1; xV.m_auBoneIDs[2] = uB2; xV.m_auBoneIDs[3] = uB3;
-		xV.m_xBoneWeights = Zenith_Maths::Vector4(fW0, fW1, fW2, fW3);
-		return xV;
+		Flux_SkinVertexAttributes xAttribs;
+		xAttribs.m_xPosition   = xPos;
+		xAttribs.m_xUV         = Zenith_Maths::Vector2(0.25f, 0.75f);
+		xAttribs.m_xNormal     = xNormal;
+		xAttribs.m_xTangent    = Zenith_Maths::Vector4(1.0f, 0.0f, 0.0f, 1.0f);
+		xAttribs.m_xColor      = Zenith_Maths::Vector4(0.1f, 0.2f, 0.3f, 1.0f);
+		xAttribs.m_xBoneIDs    = Zenith_Maths::UVector4(uB0, uB1, uB2, uB3);
+		xAttribs.m_xBoneWeights = Zenith_Maths::Vector4(fW0, fW1, fW2, fW3);
+		return Flux_EncodeSkinInputVertex(xAttribs);
+	}
+
+	// Decode a skinned output vertex — the packed words are the contract, so every
+	// assertion below reads them back through the codec the VS's fetch unit mirrors.
+	Flux_SkinVertexAttributes Skin_Decode(const Flux_SkinOutputVertex& xOut)
+	{
+		return Flux_DecodeSkinOutputVertex(xOut);
 	}
 
 	Zenith_Maths::Matrix4 Skin_Translate(float fX, float fY, float fZ)
@@ -58,15 +79,16 @@ ZENITH_TEST(Skinning, IdentityPosePreservesBindPose)
 		0u, uFLUX_SKIN_BONE_SENTINEL, uFLUX_SKIN_BONE_SENTINEL, uFLUX_SKIN_BONE_SENTINEL,
 		1.0f, 0.0f, 0.0f, 0.0f);
 
-	Flux_SkinOutputVertex xOut = Flux_SkinVertexCPU(xIn, axPalette, 0u, 1u);
+	Flux_SkinVertexAttributes xOut = Skin_Decode(Flux_SkinVertexCPU(xIn, axPalette, 0u, 1u));
 
-	ZENITH_ASSERT_EQ_FLOAT(xOut.m_xPosition.x, 1.0f, 0.0001f, "identity pose leaves position X");
-	ZENITH_ASSERT_EQ_FLOAT(xOut.m_xPosition.y, 2.0f, 0.0001f, "identity pose leaves position Y");
-	ZENITH_ASSERT_EQ_FLOAT(xOut.m_xPosition.z, 3.0f, 0.0001f, "identity pose leaves position Z");
-	ZENITH_ASSERT_EQ_FLOAT(xOut.m_xNormal.y, 1.0f, 0.0001f, "identity pose leaves the normal");
-	// UV / colour are passthrough.
-	ZENITH_ASSERT_EQ_FLOAT(xOut.m_xUV.x, 0.25f, 0.0001f, "UV passthrough X");
-	ZENITH_ASSERT_EQ_FLOAT(xOut.m_xColor.z, 0.3f, 0.0001f, "colour passthrough B");
+	ZENITH_ASSERT_EQ_FLOAT(xOut.m_xPosition.x, 1.0f, fSKIN_POS_TOLERANCE, "identity pose leaves position X");
+	ZENITH_ASSERT_EQ_FLOAT(xOut.m_xPosition.y, 2.0f, fSKIN_POS_TOLERANCE, "identity pose leaves position Y");
+	ZENITH_ASSERT_EQ_FLOAT(xOut.m_xPosition.z, 3.0f, fSKIN_POS_TOLERANCE, "identity pose leaves position Z");
+	ZENITH_ASSERT_EQ_FLOAT(xOut.m_xNormal.y, 1.0f, fSKIN_DIR_TOLERANCE, "identity pose leaves the normal");
+	// UV / colour / the bitangent sign are passthrough.
+	ZENITH_ASSERT_EQ_FLOAT(xOut.m_xUV.x, 0.25f, 1e-6f, "UV passthrough X (exact in half)");
+	ZENITH_ASSERT_EQ_FLOAT(xOut.m_xColor.z, 0.3f, fSKIN_UNORM_TOLERANCE, "colour passthrough B");
+	ZENITH_ASSERT_EQ_FLOAT(xOut.m_xTangent.w, 1.0f, 1e-6f, "the bitangent sign rides through skinning untouched");
 }
 
 // ---- single-bone transform: translation moves pos, not normal --------------
@@ -79,11 +101,11 @@ ZENITH_TEST(Skinning, SingleBoneTranslationMovesPositionNotNormal)
 		0u, uFLUX_SKIN_BONE_SENTINEL, uFLUX_SKIN_BONE_SENTINEL, uFLUX_SKIN_BONE_SENTINEL,
 		1.0f, 0.0f, 0.0f, 0.0f);
 
-	Flux_SkinOutputVertex xOut = Flux_SkinVertexCPU(xIn, axPalette, 0u, 1u);
+	Flux_SkinVertexAttributes xOut = Skin_Decode(Flux_SkinVertexCPU(xIn, axPalette, 0u, 1u));
 
-	ZENITH_ASSERT_EQ_FLOAT(xOut.m_xPosition.x, 11.0f, 0.0001f, "translation adds to position X");
-	ZENITH_ASSERT_EQ_FLOAT(xOut.m_xPosition.y, 2.0f, 0.0001f, "translation leaves position Y");
-	ZENITH_ASSERT_EQ_FLOAT(xOut.m_xNormal.y, 1.0f, 0.0001f, "translation (mat3) leaves the normal");
+	ZENITH_ASSERT_EQ_FLOAT(xOut.m_xPosition.x, 11.0f, fSKIN_POS_TOLERANCE, "translation adds to position X");
+	ZENITH_ASSERT_EQ_FLOAT(xOut.m_xPosition.y, 2.0f, fSKIN_POS_TOLERANCE, "translation leaves position Y");
+	ZENITH_ASSERT_EQ_FLOAT(xOut.m_xNormal.y, 1.0f, fSKIN_DIR_TOLERANCE, "translation (mat3) leaves the normal");
 }
 
 // ---- single-bone rotation: rotates normal + tangent ------------------------
@@ -97,11 +119,36 @@ ZENITH_TEST(Skinning, SingleBoneRotationRotatesNormalAndTangent)
 		0u, uFLUX_SKIN_BONE_SENTINEL, uFLUX_SKIN_BONE_SENTINEL, uFLUX_SKIN_BONE_SENTINEL,
 		1.0f, 0.0f, 0.0f, 0.0f);
 
-	Flux_SkinOutputVertex xOut = Flux_SkinVertexCPU(xIn, axPalette, 0u, 1u);
+	Flux_SkinVertexAttributes xOut = Skin_Decode(Flux_SkinVertexCPU(xIn, axPalette, 0u, 1u));
 
-	ZENITH_ASSERT_EQ_FLOAT(xOut.m_xNormal.x, 0.0f, 0.0001f, "rotated normal X -> 0");
-	ZENITH_ASSERT_EQ_FLOAT(xOut.m_xNormal.y, 1.0f, 0.0001f, "rotated normal +X -> +Y");
-	ZENITH_ASSERT_EQ_FLOAT(xOut.m_xTangent.y, 1.0f, 0.0001f, "rotated tangent +X -> +Y");
+	ZENITH_ASSERT_EQ_FLOAT(xOut.m_xNormal.x, 0.0f, fSKIN_DIR_TOLERANCE, "rotated normal X -> 0");
+	ZENITH_ASSERT_EQ_FLOAT(xOut.m_xNormal.y, 1.0f, fSKIN_DIR_TOLERANCE, "rotated normal +X -> +Y");
+	ZENITH_ASSERT_EQ_FLOAT(xOut.m_xTangent.y, 1.0f, fSKIN_DIR_TOLERANCE, "rotated tangent +X -> +Y");
+}
+
+// ---- mirrored (negative-determinant) blend flips the handedness --------------
+
+ZENITH_TEST(Skinning, MirroredBoneFlipsBitangentSign)
+{
+	// scale(-1,1,1): det < 0. The uncompressed path skinned the bitangent VECTOR
+	// and the VS re-derived the sign from it, so a mirrored bone flipped the
+	// frame's handedness implicitly; the packed path passes the SIGN through and
+	// must flip it with det(blend) to keep that parity (a passthrough that never
+	// flips lights mirrored bones inside-out).
+	Zenith_Maths::Matrix4 xMirror(1.0f);
+	xMirror[0] = Zenith_Maths::Vector4(-1.0f, 0.0f, 0.0f, 0.0f);
+	Zenith_Maths::Matrix4 axPalette[1] = { xMirror };
+
+	Flux_SkinInputVertex xIn = Skin_MakeVertex(
+		Zenith_Maths::Vector3(1.0f, 2.0f, 3.0f), Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f),
+		0u, uFLUX_SKIN_BONE_SENTINEL, uFLUX_SKIN_BONE_SENTINEL, uFLUX_SKIN_BONE_SENTINEL,
+		1.0f, 0.0f, 0.0f, 0.0f);
+
+	Flux_SkinVertexAttributes xOut = Skin_Decode(Flux_SkinVertexCPU(xIn, axPalette, 0u, 1u));
+
+	ZENITH_ASSERT_EQ_FLOAT(xOut.m_xPosition.x, -1.0f, fSKIN_POS_TOLERANCE, "the mirror reflects position X");
+	ZENITH_ASSERT_EQ_FLOAT(xOut.m_xTangent.x, -1.0f, fSKIN_DIR_TOLERANCE, "the mirror reflects the tangent vector");
+	ZENITH_ASSERT_EQ_FLOAT(xOut.m_xTangent.w, -1.0f, 1e-6f, "a negative-determinant blend flips the bitangent sign");
 }
 
 // ---- two-bone 50/50 blend --------------------------------------------------
@@ -115,28 +162,33 @@ ZENITH_TEST(Skinning, TwoBoneBlendIsWeightedMidpoint)
 		0u, 1u, uFLUX_SKIN_BONE_SENTINEL, uFLUX_SKIN_BONE_SENTINEL,
 		0.5f, 0.5f, 0.0f, 0.0f);
 
-	Flux_SkinOutputVertex xOut = Flux_SkinVertexCPU(xIn, axPalette, 0u, 2u);
+	Flux_SkinVertexAttributes xOut = Skin_Decode(Flux_SkinVertexCPU(xIn, axPalette, 0u, 2u));
 
-	ZENITH_ASSERT_EQ_FLOAT(xOut.m_xPosition.x, 5.0f, 0.0001f, "50/50 blend -> midpoint X");
-	ZENITH_ASSERT_EQ_FLOAT(xOut.m_xPosition.y, 0.0f, 0.0001f, "blend leaves Y");
+	// 0.5 does not survive unorm8 as an exact half: the pack renormalises the four
+	// lanes to total 255, which lands the midpoint one 1/255 step off centre.
+	ZENITH_ASSERT_EQ_FLOAT(xOut.m_xPosition.x, 5.0f, fSKIN_POS_TOLERANCE, "50/50 blend -> midpoint X");
+	ZENITH_ASSERT_EQ_FLOAT(xOut.m_xPosition.y, 0.0f, fSKIN_POS_TOLERANCE, "blend leaves Y");
 }
 
 // ---- sentinel terminates the influence list early --------------------------
 
 ZENITH_TEST(Skinning, SentinelTerminatesInfluenceLoop)
 {
-	// Bone 0 (identity, weight 1), then a sentinel — the bone-1 translate at index 2 with a
-	// non-zero weight must NOT be applied (the loop breaks at the sentinel).
+	// Bone 0 (identity, HALF the weight), then a sentinel — the bone-1 translate at
+	// indices 2 and 3, carrying the other half, must NOT be applied. Half rather than
+	// all of it because the codec renormalises the four lanes to sum to one, so a
+	// post-sentinel influence can only have real weight if it is given real weight.
 	Zenith_Maths::Matrix4 axPalette[2] = { Zenith_Maths::Matrix4(1.0f), Skin_Translate(100.0f, 0.0f, 0.0f) };
 	Flux_SkinInputVertex xIn = Skin_MakeVertex(
 		Zenith_Maths::Vector3(1.0f, 1.0f, 1.0f), Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f),
 		0u, uFLUX_SKIN_BONE_SENTINEL, 1u, 1u,
-		1.0f, 0.0f, 0.5f, 0.5f);
+		0.5f, 0.0f, 0.25f, 0.25f);
 
-	Flux_SkinOutputVertex xOut = Flux_SkinVertexCPU(xIn, axPalette, 0u, 2u);
+	Flux_SkinVertexAttributes xOut = Skin_Decode(Flux_SkinVertexCPU(xIn, axPalette, 0u, 2u));
 
-	ZENITH_ASSERT_EQ_FLOAT(xOut.m_xPosition.x, 1.0f, 0.0001f,
-		"post-sentinel influences are ignored (X stays at the bone-0 result, no +100)");
+	// Applying them would have put X past 50; only bone 0's half survives.
+	ZENITH_ASSERT_EQ_FLOAT(xOut.m_xPosition.x, 0.5f, fSKIN_POS_TOLERANCE,
+		"post-sentinel influences are ignored (X stays at the bone-0 half, no +100)");
 }
 
 // ---- palette base selects the instance's block -----------------------------
@@ -151,9 +203,9 @@ ZENITH_TEST(Skinning, PaletteBaseSelectsSkeletonBlock)
 		0u, uFLUX_SKIN_BONE_SENTINEL, uFLUX_SKIN_BONE_SENTINEL, uFLUX_SKIN_BONE_SENTINEL,
 		1.0f, 0.0f, 0.0f, 0.0f);
 
-	Flux_SkinOutputVertex xOut = Flux_SkinVertexCPU(xIn, axPalette, /*base*/ 1u, /*count*/ 2u);
+	Flux_SkinVertexAttributes xOut = Skin_Decode(Flux_SkinVertexCPU(xIn, axPalette, /*base*/ 1u, /*count*/ 2u));
 
-	ZENITH_ASSERT_EQ_FLOAT(xOut.m_xPosition.x, 100.0f, 0.0001f, "palette base selects the second skeleton block");
+	ZENITH_ASSERT_EQ_FLOAT(xOut.m_xPosition.x, 100.0f, fSKIN_POS_TOLERANCE, "palette base selects the second skeleton block");
 }
 
 // ---- defensive out-of-range bounds guard -----------------------------------
@@ -166,11 +218,11 @@ ZENITH_TEST(Skinning, OutOfRangeInfluenceIsSkippedNotAppliedOrCrashing)
 	Flux_SkinInputVertex xIn = Skin_MakeVertex(
 		Zenith_Maths::Vector3(2.0f, 0.0f, 0.0f), Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f),
 		0u, 5u, uFLUX_SKIN_BONE_SENTINEL, uFLUX_SKIN_BONE_SENTINEL,
-		1.0f, 1.0f, 0.0f, 0.0f);
+		1.0f, 0.0f, 0.0f, 0.0f);
 
-	Flux_SkinOutputVertex xOut = Flux_SkinVertexCPU(xIn, axPalette, 0u, /*count*/ 1u);
+	Flux_SkinVertexAttributes xOut = Skin_Decode(Flux_SkinVertexCPU(xIn, axPalette, 0u, /*count*/ 1u));
 
-	ZENITH_ASSERT_EQ_FLOAT(xOut.m_xPosition.x, 2.0f, 0.0001f, "OOB influence skipped; valid influence applied");
+	ZENITH_ASSERT_EQ_FLOAT(xOut.m_xPosition.x, 2.0f, fSKIN_POS_TOLERANCE, "OOB influence skipped; valid influence applied");
 }
 
 // ---- raw-word skinning == typed skinning (pins the shader's byte offsets) ---
@@ -189,7 +241,7 @@ ZENITH_TEST(Skinning, RawWordSkinMatchesTypedSkin)
 		0u, 1u, uFLUX_SKIN_BONE_SENTINEL, uFLUX_SKIN_BONE_SENTINEL,
 		0.25f, 0.75f, 0.0f, 0.0f);
 
-	// Build the raw input word buffer from the struct's exact bytes (104B == 26 words).
+	// Build the raw input word buffer from the struct's exact bytes.
 	static_assert(sizeof(Flux_SkinInputVertex) == uFLUX_SKIN_INPUT_WORDS * 4u, "input word count must match the struct size");
 	static_assert(sizeof(Flux_SkinOutputVertex) == uFLUX_SKIN_OUTPUT_WORDS * 4u, "output word count must match the struct size");
 	u_int auIn[uFLUX_SKIN_INPUT_WORDS];
@@ -203,21 +255,21 @@ ZENITH_TEST(Skinning, RawWordSkinMatchesTypedSkin)
 	memcpy(&xRawOut, auOut, sizeof(xRawOut));
 	const Flux_SkinOutputVertex xTypedOut = Flux_SkinVertexCPU(xIn, axPalette, 0u, 2u);
 
-	ZENITH_ASSERT_EQ_FLOAT(xRawOut.m_xPosition.x, xTypedOut.m_xPosition.x, 0.0001f, "raw pos X == typed");
-	ZENITH_ASSERT_EQ_FLOAT(xRawOut.m_xPosition.y, xTypedOut.m_xPosition.y, 0.0001f, "raw pos Y == typed");
-	ZENITH_ASSERT_EQ_FLOAT(xRawOut.m_xPosition.z, xTypedOut.m_xPosition.z, 0.0001f, "raw pos Z == typed");
-	ZENITH_ASSERT_EQ_FLOAT(xRawOut.m_xNormal.z,   xTypedOut.m_xNormal.z,   0.0001f, "raw normal Z == typed");
-	ZENITH_ASSERT_EQ_FLOAT(xRawOut.m_xUV.x,       xTypedOut.m_xUV.x,       0.0001f, "raw uv X == typed (offset 3)");
-	ZENITH_ASSERT_EQ_FLOAT(xRawOut.m_xColor.w,    xTypedOut.m_xColor.w,    0.0001f, "raw color W == typed (offset 17)");
-
-	// Whole-struct byte equality: the strongest pin on every offset.
+	// Packed WORDS, so this is bit-exact by construction rather than by tolerance.
 	ZENITH_ASSERT_EQ(memcmp(&xRawOut, &xTypedOut, sizeof(xRawOut)), 0, "raw word output is byte-identical to the typed output");
+
+	// ...and it decodes to a real skinned vertex rather than to a zeroed one, so a
+	// path that wrote nothing at all could not pass the comparison above.
+	const Flux_SkinVertexAttributes xRaw = Skin_Decode(xRawOut);
+	ZENITH_ASSERT_EQ_FLOAT(xRaw.m_xPosition.x, 8.5f, fSKIN_POS_TOLERANCE, "raw pos X is the 25/75 blend of 1 and 11");
+	ZENITH_ASSERT_EQ_FLOAT(xRaw.m_xNormal.z,   1.0f, fSKIN_DIR_TOLERANCE, "raw normal survives a translation-only blend");
+	ZENITH_ASSERT_EQ_FLOAT(xRaw.m_xUV.x,       0.25f, 1e-6f,              "raw uv passes through");
 }
 
 ZENITH_TEST(Skinning, RawWordSkinHonoursVertexIndexStrides)
 {
 	// Two input vertices, write to two output slots: prove the per-vertex word strides
-	// (26 in / 18 out) address the right slices (vertex 1 must not clobber vertex 0).
+	// (8 in / 6 out) address the right slices (vertex 1 must not clobber vertex 0).
 	Zenith_Maths::Matrix4 axPalette[1] = { Skin_Translate(5.0f, 0.0f, 0.0f) };
 
 	Flux_SkinInputVertex xIn0 = Skin_MakeVertex(
@@ -238,8 +290,47 @@ ZENITH_TEST(Skinning, RawWordSkinHonoursVertexIndexStrides)
 	Flux_SkinOutputVertex xOut0, xOut1;
 	memcpy(&xOut0, auOut + 0u * uFLUX_SKIN_OUTPUT_WORDS, sizeof(xOut0));
 	memcpy(&xOut1, auOut + 1u * uFLUX_SKIN_OUTPUT_WORDS, sizeof(xOut1));
-	ZENITH_ASSERT_EQ_FLOAT(xOut0.m_xPosition.x, 5.0f,   0.0001f, "vertex 0 -> 0+5");
-	ZENITH_ASSERT_EQ_FLOAT(xOut1.m_xPosition.x, 105.0f, 0.0001f, "vertex 1 -> 100+5 (stride addressed its own slot)");
+	ZENITH_ASSERT_EQ_FLOAT(Skin_Decode(xOut0).m_xPosition.x, 5.0f,   fSKIN_POS_TOLERANCE, "vertex 0 -> 0+5");
+	ZENITH_ASSERT_EQ_FLOAT(Skin_Decode(xOut1).m_xPosition.x, 105.0f, fSKIN_POS_TOLERANCE, "vertex 1 -> 100+5 (stride addressed its own slot)");
+}
+
+// ---- the packed-word codec both structs are read and written through -------
+
+ZENITH_TEST(Skinning, SkinVertexCodecRoundTripsWithinItsQuantisation)
+{
+	// The packed structs have no readable members: Flux_Encode*/Flux_Decode* ARE the
+	// contract, and the compute kernel's decode-skin-encode is exactly this pair. A
+	// round trip must land inside each format's own step — anything wider means a lane
+	// is being written or read at the wrong offset, which no stride check would catch.
+	Flux_SkinVertexAttributes xIn;
+	xIn.m_xPosition    = Zenith_Maths::Vector3(1.5f, -2.25f, 3.0f);
+	xIn.m_xUV          = Zenith_Maths::Vector2(0.25f, 0.75f);
+	xIn.m_xNormal      = Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f);
+	xIn.m_xTangent     = Zenith_Maths::Vector4(1.0f, 0.0f, 0.0f, -1.0f);
+	xIn.m_xColor       = Zenith_Maths::Vector4(0.25f, 0.5f, 0.75f, 1.0f);
+	xIn.m_xBoneIDs     = Zenith_Maths::UVector4(3u, 17u, uFLUX_BONE_INDEX_NONE, 0u);
+	xIn.m_xBoneWeights = Zenith_Maths::Vector4(0.5f, 0.25f, 0.0f, 0.25f);
+
+	const Flux_SkinVertexAttributes xOut = Flux_DecodeSkinInputVertex(Flux_EncodeSkinInputVertex(xIn));
+
+	ZENITH_ASSERT_EQ_FLOAT(xOut.m_xPosition.y, -2.25f, 1e-6f, "position round-trips exactly (a value half represents)");
+	ZENITH_ASSERT_EQ_FLOAT(xOut.m_xUV.y, 0.75f, 1e-6f, "uv round-trips exactly");
+	ZENITH_ASSERT_EQ_FLOAT(xOut.m_xNormal.z, 1.0f, fSKIN_DIR_TOLERANCE, "normal round-trips within a snorm10 step");
+	ZENITH_ASSERT_EQ_FLOAT(xOut.m_xTangent.w, -1.0f, 1e-6f, "the bitangent SIGN round-trips exactly (2-bit snorm)");
+	ZENITH_ASSERT_EQ_FLOAT(xOut.m_xColor.z, 0.75f, fSKIN_UNORM_TOLERANCE, "colour round-trips within a unorm8 step");
+	ZENITH_ASSERT_EQ(xOut.m_xBoneIDs.y, 17u, "a bone index round-trips exactly (uint8 lane)");
+	ZENITH_ASSERT_EQ(xOut.m_xBoneIDs.z, uFLUX_SKIN_BONE_SENTINEL, "an absent influence decodes as the reserved sentinel byte");
+	ZENITH_ASSERT_EQ_FLOAT(xOut.m_xBoneWeights.x, 0.5f, fSKIN_UNORM_TOLERANCE, "a bone weight round-trips within a unorm8 step");
+}
+
+ZENITH_TEST(Skinning, BoneSentinelIsTheReservedByteNotAWord)
+{
+	// The influence slot is one BYTE now, so the terminator cannot be 0xFFFFFFFF. It
+	// has to be a value no real bone index can take — which is only safe because the
+	// skeleton ceiling is far below it.
+	ZENITH_ASSERT_EQ(uFLUX_SKIN_BONE_SENTINEL, 255u, "the influence-list terminator is the reserved uint8 index");
+	ZENITH_ASSERT_TRUE(uFLUX_SKIN_BONE_SENTINEL > uFLUX_MAX_PACKED_BONE_INDEX,
+		"the sentinel must sit above every representable bone index, or a real bone would terminate the list");
 }
 
 // ---- previous-pose positions-only raw skinning (TAA velocity) --------------
@@ -250,6 +341,8 @@ ZENITH_TEST(Skinning, PrevPositionRawMatchesFullSkinPosition)
 	// dispatch that shares the current jobs but uses the PREVIOUS palette. Require the
 	// prev-position raw write to equal Flux_SkinVertexCPU's POSITION for the same input +
 	// palette — so the compact 3-word path never drifts from the pinned skinning math.
+	// The prev arena is float32 while the main one is half4, so the comparison is to
+	// within a half step: the prev path deliberately does NOT quantise its position.
 	Zenith_Maths::Matrix4 axPalette[2] = { Zenith_Maths::Matrix4(1.0f), Skin_Translate(10.0f, -3.0f, 2.0f) };
 
 	Flux_SkinInputVertex xIn = Skin_MakeVertex(
@@ -268,10 +361,10 @@ ZENITH_TEST(Skinning, PrevPositionRawMatchesFullSkinPosition)
 	memcpy(&fPy, &auPrev[1], sizeof(fPy));
 	memcpy(&fPz, &auPrev[2], sizeof(fPz));
 
-	const Flux_SkinOutputVertex xTyped = Flux_SkinVertexCPU(xIn, axPalette, 0u, 2u);
-	ZENITH_ASSERT_EQ_FLOAT(fPx, xTyped.m_xPosition.x, 0.0001f, "prev raw pos X == full skinner position");
-	ZENITH_ASSERT_EQ_FLOAT(fPy, xTyped.m_xPosition.y, 0.0001f, "prev raw pos Y == full skinner position");
-	ZENITH_ASSERT_EQ_FLOAT(fPz, xTyped.m_xPosition.z, 0.0001f, "prev raw pos Z == full skinner position");
+	const Flux_SkinVertexAttributes xTyped = Skin_Decode(Flux_SkinVertexCPU(xIn, axPalette, 0u, 2u));
+	ZENITH_ASSERT_EQ_FLOAT(fPx, xTyped.m_xPosition.x, fSKIN_POS_TOLERANCE, "prev raw pos X == full skinner position");
+	ZENITH_ASSERT_EQ_FLOAT(fPy, xTyped.m_xPosition.y, fSKIN_POS_TOLERANCE, "prev raw pos Y == full skinner position");
+	ZENITH_ASSERT_EQ_FLOAT(fPz, xTyped.m_xPosition.z, fSKIN_POS_TOLERANCE, "prev raw pos Z == full skinner position");
 }
 
 ZENITH_TEST(Skinning, PrevPositionRawHonoursThreeWordStride)
@@ -299,8 +392,8 @@ ZENITH_TEST(Skinning, PrevPositionRawHonoursThreeWordStride)
 	float fX0, fX1;
 	memcpy(&fX0, &auPrev[0u * uFLUX_SKIN_PREV_WORDS], sizeof(fX0));
 	memcpy(&fX1, &auPrev[1u * uFLUX_SKIN_PREV_WORDS], sizeof(fX1));
-	ZENITH_ASSERT_EQ_FLOAT(fX0, 5.0f,   0.0001f, "prev vertex 0 -> 0+5");
-	ZENITH_ASSERT_EQ_FLOAT(fX1, 105.0f, 0.0001f, "prev vertex 1 -> 100+5 (3-word stride addressed its own slot)");
+	ZENITH_ASSERT_EQ_FLOAT(fX0, 5.0f,   fSKIN_POS_TOLERANCE, "prev vertex 0 -> 0+5");
+	ZENITH_ASSERT_EQ_FLOAT(fX1, 105.0f, fSKIN_POS_TOLERANCE, "prev vertex 1 -> 100+5 (3-word stride addressed its own slot)");
 }
 
 // ---- cull-bounds inflation -------------------------------------------------
@@ -364,9 +457,9 @@ ZENITH_TEST(Skinning, BonePaletteBuilderCallerFillsBlockAndSkinReadsIt)
 		0u, uFLUX_SKIN_BONE_SENTINEL, uFLUX_SKIN_BONE_SENTINEL, uFLUX_SKIN_BONE_SENTINEL,
 		1.0f, 0.0f, 0.0f, 0.0f);
 
-	Flux_SkinOutputVertex xOut = Flux_SkinVertexCPU(xIn,
-		xBuilder.Matrices().GetDataPointer(), uBaseB, xBuilder.GetMatrixCount());
-	ZENITH_ASSERT_EQ_FLOAT(xOut.m_xPosition.x, 7.0f, 0.0001f, "skin reads the skeleton's block via its base");
+	Flux_SkinVertexAttributes xOut = Skin_Decode(Flux_SkinVertexCPU(xIn,
+		xBuilder.Matrices().GetDataPointer(), uBaseB, xBuilder.GetMatrixCount()));
+	ZENITH_ASSERT_EQ_FLOAT(xOut.m_xPosition.x, 7.0f, fSKIN_POS_TOLERANCE, "skin reads the skeleton's block via its base");
 }
 
 ZENITH_TEST(Skinning, BonePaletteBuilderBeginResetsStorage)

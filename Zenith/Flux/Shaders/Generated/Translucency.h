@@ -121,14 +121,13 @@ namespace Flux_Generated_Translucency
 		// vertex inputs: { semantic, semantic index, STORAGE format, binding, byte offset }
 		inline constexpr Flux_VertexLayoutElement kaxVertexAttribs[] =
 		{
-			{ FLUX_VERTEX_SEMANTIC_POSITION, 0u, SHADER_DATA_TYPE_FLOAT3, 0u, 0u },   // a_xPosition
-			{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 0u, SHADER_DATA_TYPE_FLOAT2, 0u, 12u },   // a_xUV
-			{ FLUX_VERTEX_SEMANTIC_NORMAL, 0u, SHADER_DATA_TYPE_FLOAT3, 0u, 20u },   // a_xNormal
-			{ FLUX_VERTEX_SEMANTIC_TANGENT, 0u, SHADER_DATA_TYPE_FLOAT3, 0u, 32u },   // a_xTangent
-			{ FLUX_VERTEX_SEMANTIC_BINORMAL, 0u, SHADER_DATA_TYPE_FLOAT3, 0u, 44u },   // a_xBitangent
-			{ FLUX_VERTEX_SEMANTIC_COLOR, 0u, SHADER_DATA_TYPE_FLOAT4, 0u, 56u },   // a_xColor
+			{ FLUX_VERTEX_SEMANTIC_POSITION, 0u, SHADER_DATA_TYPE_HALF4, 0u, 0u },   // a_xPosition
+			{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 0u, SHADER_DATA_TYPE_HALF2, 0u, 8u },   // a_xUV
+			{ FLUX_VERTEX_SEMANTIC_NORMAL, 0u, SHADER_DATA_TYPE_SNORM10_10_10_2, 0u, 12u },   // a_xNormal
+			{ FLUX_VERTEX_SEMANTIC_TANGENT, 0u, SHADER_DATA_TYPE_SNORM10_10_10_2, 0u, 16u },   // a_xTangent
+			{ FLUX_VERTEX_SEMANTIC_COLOR, 0u, SHADER_DATA_TYPE_UNORM8X4, 0u, 20u },   // a_xColor
 		};
-		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ kaxVertexAttribs, 6u, { 72u, 0u } };
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ kaxVertexAttribs, 5u, { 24u, 0u } };
 	}
 
 }

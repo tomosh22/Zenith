@@ -113,7 +113,24 @@ public:
 	const Flux_BufferLayout& GetBufferLayout() const { return m_xBufferLayout; }
 
 #ifdef ZENITH_TOOLS
+	// Serializes the geometry's CURRENT layout + interleaved bytes verbatim — the
+	// right call when those ARE the file format (the terrain exporter's chunk
+	// meshes carry the terrain table). Asserts if the live layout is the reflected
+	// mesh-pipeline table: the .zmesh format has no version field, so its one
+	// stability guarantee is the element table, and a reflected table changes
+	// whenever a shader annotation does — that form must never reach disk. A
+	// geometry living on the packed form exports with ExportDerivedFloatLayout.
 	void Export(const char* szFilename);
+	// Serializes the DERIVED float32 form (the stable .zmesh shape) regardless of
+	// which form the live geometry carries, without touching the live layout,
+	// bytes, or GPU buffers — for callers that draw the packed mesh-pipeline form
+	// but persist the asset (Combat's tools-boot capsule/cube/cone stamps).
+	void ExportDerivedFloatLayout(const char* szFilename);
+private:
+	// Shared serializer: the layout + interleaved bytes are parameters, everything
+	// else (counts, bone map, SoA attribute streams) comes from the members.
+	void ExportWithLayout(const Flux_BufferLayout& xLayout, const u_int8* pVertexData, const char* szFilename);
+public:
 #endif
 
 	friend class Zenith_ColliderComponent;
@@ -123,7 +140,30 @@ public:
 	// loader API unchanged while avoiding a second pathname open through its
 	// assertion-based DataStream path.
 	friend class Zenith_TerrainComponent;
+
+	// Interleave m_pVertexData, and declare the layout that describes it.
+	//
+	// DERIVED: one tight float32 element per attribute STREAM this geometry carries,
+	// in the fixed order the serialized .zmesh element table declares them. That table
+	// IS the file format (Export writes it verbatim), and it is also the 20-byte
+	// position+UV shape the Quads / Text / Particles programs fetch from the shared
+	// unit quad — so this is the form for geometry that is serialized, consumed
+	// CPU-side, or drawn by a program with its own VsIn.
 	void GenerateLayoutAndVertexData();
+	// The body of GenerateLayoutAndVertexData, writing into caller storage instead
+	// of the members — so ExportDerivedFloatLayout can build the stable float form
+	// without disturbing a live packed geometry. Appends to xLayoutOut exactly as
+	// GenerateLayoutAndVertexData appends to m_xBufferLayout; pVertexDataOut is
+	// (re)pointed at a fresh allocation the caller owns.
+	void BuildDerivedFloatLayoutAndVertexData(Flux_BufferLayout& xLayoutOut, u_int8*& pVertexDataOut) const;
+
+	// MESH-PIPELINE: the reflected static-mesh table (Flux_DeclareMeshVertexLayout),
+	// the same packed 24-byte vertex an imported mesh asset is packed into. Any
+	// geometry DRAWN as a mesh must use this one — the unified opaque pipeline binds
+	// this buffer and fetches it at that stride whatever the bytes happen to be, so a
+	// float32 stream would decode as garbage rather than fail. Bone streams are not
+	// part of that table and are ignored; procedural geometry has no skinning path.
+	void GenerateMeshPipelineVertexData();
 	// Upload this geometry's current vertex/index data to GPU buffers. Single
 	// upload path shared by every generator + LoadFromFile (keeps the g_xEngine
 	// reach in one place).

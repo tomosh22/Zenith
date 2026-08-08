@@ -24,10 +24,10 @@
 // declaration (Shaders/Common/StaticMeshVertex.slang), so this cross-pin no longer
 // guards a hand-copied struct — it guards the round trip. The two programs' tables
 // are baked by two SEPARATE reflection runs, and this is the one place that can
-// state they must come out identical: it is the same 72 B mesh buffer, and a table
+// state they must come out identical: it is the same 24 B mesh buffer, and a table
 // that differed by so much as a semantic index would fetch it two ways.
 static_assert(Flux_Generated_Translucency::Translucent_Forward::kVertexLayout == Flux_Generated_UnifiedMesh::UnifiedMesh_ToGBuffer::kVertexLayout,
-	"The shared static-mesh VsIn reflected into two different tables — the one 72 B mesh buffer would fetch with two different layouts");
+	"The shared static-mesh VsIn reflected into two different tables — the one 24 B mesh buffer would fetch with two different layouts");
 #include "Core/Zenith_GraphicsOptions.h"
 
 #include <algorithm>
@@ -61,7 +61,7 @@ void Flux_TranslucencyImpl::BuildPipelines()
 	xSpec.m_uNumColourAttachments = 1;
 	xSpec.m_eDepthStencilFormat = DEPTH_FORMAT;
 	xSpec.m_pxShader = &m_xShader;
-	// Same 72-byte vertex stream as the unified opaque meshes — both programs include
+	// Same packed 24-byte vertex stream as the unified opaque meshes — both programs include
 	// the SAME VsIn declaration (Shaders/Common/StaticMeshVertex.slang), so the two
 	// generated layouts agree by construction; the cross-pin at the top of this file
 	// is what proves the two reflection runs actually baked it that way.

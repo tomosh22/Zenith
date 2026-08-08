@@ -85,7 +85,7 @@ void GenerateSphere(Flux_MeshGeometry& xGeometryOut, uint32_t uLatitudeSegments,
 		}
 	}
 
-	xGeometryOut.GenerateLayoutAndVertexData();
+	xGeometryOut.GenerateMeshPipelineVertexData();
 	auto& xVM = g_xEngine.FluxMemory();
 	xVM.InitialiseVertexBuffer(xGeometryOut.GetVertexData(), xGeometryOut.GetVertexDataSize(), xGeometryOut.m_xVertexBuffer);
 	xVM.InitialiseIndexBuffer(xGeometryOut.GetIndexData(), xGeometryOut.GetIndexDataSize(), xGeometryOut.m_xIndexBuffer);
@@ -178,7 +178,7 @@ void GenerateCapsule(Flux_MeshGeometry& xGeometryOut, float fRadius, float fHeig
 		}
 	}
 
-	xGeometryOut.GenerateLayoutAndVertexData();
+	xGeometryOut.GenerateMeshPipelineVertexData();
 	auto& xVM = g_xEngine.FluxMemory();
 	xVM.InitialiseVertexBuffer(xGeometryOut.GetVertexData(), xGeometryOut.GetVertexDataSize(), xGeometryOut.m_xVertexBuffer);
 	xVM.InitialiseIndexBuffer(xGeometryOut.GetIndexData(), xGeometryOut.GetIndexDataSize(), xGeometryOut.m_xIndexBuffer);
@@ -303,7 +303,7 @@ void GenerateCylinder(Flux_MeshGeometry& xGeometryOut, float fRadius, float fHei
 		xGeometryOut.m_puIndices[uIdxIdx++] = uBottomCenter;
 	}
 
-	xGeometryOut.GenerateLayoutAndVertexData();
+	xGeometryOut.GenerateMeshPipelineVertexData();
 	auto& xVM = g_xEngine.FluxMemory();
 	xVM.InitialiseVertexBuffer(xGeometryOut.GetVertexData(), xGeometryOut.GetVertexDataSize(), xGeometryOut.m_xVertexBuffer);
 	xVM.InitialiseIndexBuffer(xGeometryOut.GetIndexData(), xGeometryOut.GetIndexDataSize(), xGeometryOut.m_xIndexBuffer);
@@ -385,7 +385,7 @@ void GenerateCone(Flux_MeshGeometry& xGeometryOut, float fRadius, float fHeight,
 		xGeometryOut.m_puIndices[uIdxIdx++] = uBaseCenter;
 	}
 
-	xGeometryOut.GenerateLayoutAndVertexData();
+	xGeometryOut.GenerateMeshPipelineVertexData();
 	auto& xVM = g_xEngine.FluxMemory();
 	xVM.InitialiseVertexBuffer(xGeometryOut.GetVertexData(), xGeometryOut.GetVertexDataSize(), xGeometryOut.m_xVertexBuffer);
 	xVM.InitialiseIndexBuffer(xGeometryOut.GetIndexData(), xGeometryOut.GetIndexDataSize(), xGeometryOut.m_xIndexBuffer);

@@ -1711,9 +1711,9 @@ change touches `Zenith/` as well as the game.
 **Boot baseline at THIS change: ZM 2863; engine (Null Combat) stays 1242.** The added
 contracts are pure generator/placement checks, so they do not move the 55-test
 automated registry or the cross-game engine suite.
-★ **SUPERSEDED -- the CURRENT baseline is ZM 3044, engine 1419**, registry unmoved
+★ **SUPERSEDED -- the CURRENT baseline is ZM 3056, engine 1431**, registry unmoved
 at **55**. OBSERVED 2026-08-08 on clean `Null_` builds:
-`3044 ran, 3042 passed, 0 failed, 2 skipped`. Derivation: ZM-D-183 added the two
+`3056 ran, 3054 passed, 0 failed, 2 skipped`. Derivation: ZM-D-183 added the two
 committed-scene-bytes guards (2906 -> 2908); ZM-D-184 added the rival spawn-clearance
 unit (2908 -> 2909); the 2026-08-05 CommandLine ParseArgs units added 5 ENGINE units
 (engine 1284 -> 1289) and were NOT reflected here, leaving the ZM pin stale at 2909
@@ -1766,8 +1766,8 @@ rules, the POSITION quant box, stride-advance across three vertices, the no-op
 shapes, and binding-1 skipping) -- taking ZM to **3040**; and that work's Phase 3
 T3.b added 4 NET more ENGINE units (engine 1415 -> **1419**) -- the mesh-family
 replacement swapped four hand-written interleave loops for two single writers
-(`Flux_PackStaticMeshVertices` through the reflected 72-byte table, and
-`Flux_BuildSkinInputVertices` for the 104-byte skin-input stream whose uint bone
+(`Flux_PackStaticMeshVertices` through the reflected static table, and
+`Flux_BuildSkinInputVertices` for the skin-input stream whose uint bone
 lanes the packer refuses by design) and rewrote that suite from 3 hand-layout
 tests to 7: three byte-for-byte memcmp goldens against a FROZEN transcription of
 the loop each writer replaced -- the two mesh-asset streams over 7 adversarial
@@ -1775,7 +1775,29 @@ meshes (missing attributes, arrays one entry short of the vertex count, degenera
 frames, a short bone-weight array, negative zero), plus the procedural geometry
 builder's DYNAMIC layout with and without its uint bone tail -- and the ported
 layout/defaults expectations and the bind-pose position override -- taking ZM to
-**3044**. `zm-tests.yml`
+**3044**; and that work's Phase 4 T4.a added 5 NET more ENGINE units
+(engine 1419 -> **1424**) -- the MESH COMPRESSION FLIP. The static-mesh vertex
+went 72 -> 24 bytes (half4 position, half2 UV, snorm10 normal, snorm10 tangent
+whose w carries the bitangent SIGN, unorm8x4 colour) and the compute-skinning
+input 104 -> 32; the BINORMAL attribute is deleted outright and every consumer
+rebuilds the vector as `cross(N, T.xyz) * T.w`. The two mesh-family memcmp
+goldens are therefore re-derived: they now compare against an INDEPENDENT
+transcription through `Flux_VertexCodec` (the frozen float32 loops describe bytes
+the flip changes by design), joined by the skin-input/static prefix identity, the
+mirrored-frame bitangent sign, the procedural mesh-pipeline pack, the packed
+skin-vertex codec round trip and the one-byte bone sentinel -- taking ZM to
+**3049**; and that flip's adversarial-review fix pass added 7 more ENGINE units
+(engine 1424 -> **1431**) -- hand-derived half word pins (the one storage format
+whose tests were previously all symmetric round trips), a frozen C++
+transcription of the GPU-side Slang half codec swept against the CPU codec with
+the licensed rounding-tie divergence pinned as numbers, the fast-math-safe
+positive-finite predicate's branch proofs, the over-unity bone-weight
+proportional pre-scale (the one-lane repair used to DELETE the dominant
+influence at sums past ~1.5), the HALF4 half-range position guard
+(capture-scoped), the skin-output-encoder-vs-static-packer byte identity
+(fallback defaults included -- the tangent w pad had drifted exactly there), and
+the mirrored (negative-determinant) blend flipping the packed bitangent sign for
+parity with the uncompressed path -- taking ZM to **3056**. `zm-tests.yml`
 `-Baseline` and `run_unit_gate.ps1`'s default both moved to match. The paragraph below is the
 ZM-D-182-era snapshot, kept for the audit trail:
 

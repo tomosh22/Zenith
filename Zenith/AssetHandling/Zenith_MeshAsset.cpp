@@ -5,8 +5,8 @@
 #include "AssetHandling/Zenith_SkeletonAsset.h"
 #include "AssetHandling/Zenith_AssetTypeIds.h"
 #include "DataStream/Zenith_StreamEnvelope.h"
-#include "Flux/MeshGeometry/Flux_MeshInstance.h"   // Flux_PackStaticMeshVertices (the 72B static stream)
-#include "Flux/UnifiedMesh/Flux_Skinning.h"        // Flux_BuildSkinInputVertices (the 104B skin-input stream)
+#include "Flux/MeshGeometry/Flux_MeshInstance.h"   // Flux_DeclareMeshVertexLayout + Flux_PackStaticMeshVertices
+#include "Flux/UnifiedMesh/Flux_Skinning.h"        // Flux_BuildSkinInputVertices (the skin-input stream)
 
 //------------------------------------------------------------------------------
 // Helper Functions for Serialization
@@ -572,27 +572,9 @@ void Zenith_MeshAsset::EnsureGPUBuffers(bool bSkinned)
 
 	m_bIsSkinned = bSkinned;
 
-	// Build buffer layout
-	m_xBufferLayout.Reset();
-	m_xBufferLayout.GetElements().PushBack({ SHADER_DATA_TYPE_FLOAT3 }); // Position
-	m_xBufferLayout.GetElements().PushBack({ SHADER_DATA_TYPE_FLOAT2 }); // UV
-	m_xBufferLayout.GetElements().PushBack({ SHADER_DATA_TYPE_FLOAT3 }); // Normal
-	m_xBufferLayout.GetElements().PushBack({ SHADER_DATA_TYPE_FLOAT3 }); // Tangent
-	m_xBufferLayout.GetElements().PushBack({ SHADER_DATA_TYPE_FLOAT3 }); // Bitangent
-	m_xBufferLayout.GetElements().PushBack({ SHADER_DATA_TYPE_FLOAT4 }); // Color
-
-	if (bSkinned)
-	{
-		m_xBufferLayout.GetElements().PushBack({ SHADER_DATA_TYPE_UINT4 });  // BoneIndices
-		m_xBufferLayout.GetElements().PushBack({ SHADER_DATA_TYPE_FLOAT4 }); // BoneWeights
-	}
-
-	m_xBufferLayout.CalculateOffsetsAndStrides();
-
-	// Expected stride: 72 bytes for static, 104 bytes for skinned
-	const uint32_t uExpectedStride = bSkinned ? 104 : 72;
-	Zenith_Assert(m_xBufferLayout.GetStride() == uExpectedStride,
-		"Mesh vertex stride mismatch! Expected %u, got %u", uExpectedStride, m_xBufferLayout.GetStride());
+	// The layout is the mesh family's, declared once from the reflected table (see
+	// Flux_DeclareMeshVertexLayout) — this asset only needs it to SIZE the upload.
+	Flux_DeclareMeshVertexLayout(m_xBufferLayout, bSkinned);
 
 	// Generate interleaved vertex data
 	const size_t uVertexDataSize = static_cast<size_t>(m_uNumVerts) * m_xBufferLayout.GetStride();

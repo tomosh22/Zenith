@@ -78,6 +78,11 @@ namespace Zenith_Maths
 		return glm::cross(a, b);
 	}
 
+	static inline float Determinant(const Matrix3& m)
+	{
+		return glm::determinant(m);
+	}
+
 	// Matrix transformation operations
 	static inline Matrix4 Translate(const Matrix4& m, const Vector3& v)
 	{

@@ -1,4 +1,5 @@
 #include "UnitTests/Zenith_UnitTests.h"
+#include "UnitTests/Zenith_AssertCapture.h"   // the half-range position guard's totality proof
 #include "Flux/MeshGeometry/Flux_VertexPacker.h"
 
 #include <cmath>     // std::sqrt — the expected SNORM10 normalisation, spelled as the packer spells it
@@ -71,10 +72,11 @@ namespace
 		return true;
 	}
 
-	// The engine's standard 72-byte static-mesh layout, which is also exactly
-	// what Flux_Generated_UnifiedMesh::UnifiedMesh_ToGBuffer::kVertexLayout bakes.
-	// Spelled out here rather than referenced so the defaults test cannot be
-	// silently re-pointed at a different program's table.
+	// A 72-byte all-float mesh-shaped layout. It was the engine's static-mesh
+	// layout when this suite was written and is now purely a FIXTURE — the real one
+	// is packed (Phase 4). It stays float32 on purpose: these tests pin the packer's
+	// semantic keying and its canonical defaults, and a float element is the one
+	// encoding whose output can be read back without going through a codec.
 	const Flux_VertexLayoutElement g_axPackerStandardElements[] =
 	{
 		{ FLUX_VERTEX_SEMANTIC_POSITION, 0u, SHADER_DATA_TYPE_FLOAT3, 0u,  0u },
@@ -186,8 +188,9 @@ ZENITH_TEST(VertexPacker, AllSupportedFormatsMatchCodecWords)
 
 ZENITH_TEST(VertexPacker, MissingAttributesUseCanonicalDefaults)
 {
-	// Positions only, against the standard 72-byte layout — the exact case a mesh
-	// asset with no authored UVs / normals / tangents / colours produces today.
+	// Positions only, against the all-float fixture layout — the case a mesh asset
+	// with no authored UVs / normals / tangents / colours produces, read back as
+	// plain floats rather than through a codec.
 	const float afPositions[3] = { 1.0f, 2.0f, 3.0f };
 	const Flux_VertexSourceView axSources[] =
 	{
@@ -241,10 +244,10 @@ ZENITH_TEST(VertexPacker, SemanticIndexSelectsTheMatchingSource)
 
 // ---- the 4-component tangent's derived handedness ---------------------------
 //
-// Today's tables carry TANGENT and BINORMAL as two separate 3-lane elements;
-// the 4-lane form (tangent.xyz + handedness in w, half the bytes) is Phase 4's
-// shape. It is implemented and pinned NOW so Phase 4 is a table change with no
-// packer logic to touch.
+// The mesh family's table carries ONE 4-lane TANGENT (xyz + handedness in w) and no
+// BINORMAL element at all — the bitangent is rebuilt from that sign. These pin the
+// derivation itself, on a bare one-element float4 layout, so the rule is covered
+// independently of whichever storage format a table happens to name.
 
 ZENITH_TEST(VertexPacker, TangentWIsPositiveForRightHandedFrame)
 {
@@ -379,8 +382,10 @@ ZENITH_TEST(VertexPacker, Snorm10ZeroLengthFallsBackToCanonicalDefault)
 
 	ZENITH_ASSERT_EQ(Packer_ReadU32(auBuffer, 8u, 0u, 0u),
 		Flux_PackSnorm10_10_10_2(0.0f, 1.0f, 0.0f, 0.0f), "zero-length normal -> +Y");
+	// The tangent's w lane is the canonical +1 pad (a HANDEDNESS — no source
+	// carried lane 3 and there is no BINORMAL to derive one from).
 	ZENITH_ASSERT_EQ(Packer_ReadU32(auBuffer, 8u, 0u, 4u),
-		Flux_PackSnorm10_10_10_2(1.0f, 0.0f, 0.0f, 0.0f), "zero-length tangent -> +X");
+		Flux_PackSnorm10_10_10_2(1.0f, 0.0f, 0.0f, 1.0f), "zero-length tangent -> +X with the +1 handedness pad");
 }
 
 // ---- the lane pad / truncate rules ------------------------------------------
@@ -396,7 +401,8 @@ ZENITH_TEST(VertexPacker, ShortSourceLanesPadFromCanonicalDefault)
 	const Flux_VertexLayoutDesc xLayout{ axElements, 3u, { 48u, 0u } };
 
 	// Three 3-lane sources feeding three 4-lane elements: w = 1 for POSITION and
-	// COLOR (a homogeneous point, an opaque alpha), 0 for everything else.
+	// COLOR (a homogeneous point, an opaque alpha) and for TANGENT (a handedness —
+	// pinned by the tangent tests below), 0 for everything else.
 	const float afPositions[3] = { 1.0f, 2.0f, 3.0f };
 	const float afNormals[3]   = { 0.0f, 0.0f, 1.0f };
 	const float afColours[3]   = { 0.125f, 0.25f, 0.5f };
@@ -578,4 +584,43 @@ ZENITH_TEST(VertexPacker, SecondBindingElementsAreSkipped)
 
 	ZENITH_ASSERT_TRUE(Packer_FloatsEqual3(auBuffer, 12u, 0u, 0u, 1.0f, 2.0f, 3.0f),
 		"the binding-1 element did not overwrite the per-vertex stream");
+}
+
+// ---- half-range positions: the saturation cliff is loud ----------------------
+
+ZENITH_TEST(VertexPacker, Half4PositionBeyondHalfRangeAsserts)
+{
+	const Flux_VertexLayoutElement axElements[] =
+	{
+		{ FLUX_VERTEX_SEMANTIC_POSITION, 0u, SHADER_DATA_TYPE_HALF4, 0u, 0u },
+	};
+	const Flux_VertexLayoutDesc xLayout{ axElements, 1u, { 8u, 0u } };
+
+	// Exactly the largest finite half is FINE — the boundary itself is inside the
+	// contract, and must not fire.
+	const float afAtLimit[3] = { 65504.0f, -65504.0f, 0.0f };
+	const Flux_VertexSourceView axAtLimit[] =
+	{
+		{ FLUX_VERTEX_SEMANTIC_POSITION, 0u, afAtLimit, 3u },
+	};
+	uint8_t auBuffer[8] = {};
+	{
+		Zenith_AssertCaptureScope xCapture;
+		Flux_PackVertices(auBuffer, xLayout, axAtLimit, 1u, 1u);
+		ZENITH_ASSERT_EQ(xCapture.GetHitCount(), 0u, "+-65504 is the last representable position and packs silently");
+	}
+
+	// One unit past the largest finite half packs INFINITY — a mesh that vanishes
+	// via a NaN clip position with no diagnostic. The pack must say so, loudly,
+	// once per offending vertex.
+	const float afBeyond[3] = { 70000.0f, 0.0f, 0.0f };
+	const Flux_VertexSourceView axBeyond[] =
+	{
+		{ FLUX_VERTEX_SEMANTIC_POSITION, 0u, afBeyond, 3u },
+	};
+	{
+		Zenith_AssertCaptureScope xCapture;
+		Flux_PackVertices(auBuffer, xLayout, axBeyond, 1u, 1u);
+		ZENITH_ASSERT_EQ(xCapture.GetHitCount(), 1u, "a position beyond half range must assert at pack time");
+	}
 }

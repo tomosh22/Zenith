@@ -218,7 +218,7 @@ void Flux_ModelInstance::Destroy()
 	}
 	m_xMeshInstances.Clear();
 
-	// Delete skinned mesh instances (104-byte format)
+	// Delete skinned mesh instances (the skin-INPUT vertex format)
 	for (uint32_t u = 0; u < m_xSkinnedMeshInstances.GetSize(); u++)
 	{
 		Flux_MeshInstance* pxSkinnedMeshInstance = m_xSkinnedMeshInstances.Get(u);

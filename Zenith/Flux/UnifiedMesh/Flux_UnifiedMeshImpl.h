@@ -133,7 +133,7 @@ public:
 	Flux_RootSig  m_xResetRootSig;
 
 	// Stage 5: compute-skinning pre-pass (skeletal animated meshes -> object-space arena).
-	// Skins each animated submesh-instance to the 72-byte static layout in the persistent
+	// Skins each animated submesh-instance to the packed static layout in the persistent
 	// arena; the cull/draw/shadow kernels then consume it as ordinary static geometry. The
 	// pass self-guards on m_uSkinJobCount == 0 (no animated work this frame -> no dispatch).
 	Flux_Shader   m_xSkinningShader;
@@ -148,11 +148,11 @@ public:
 	Flux_Pipeline m_xSkinningPrevPipeline;
 	Flux_RootSig  m_xSkinningPrevRootSig;
 
-	// Persistent, grow-only (graph-tracked) skinned-vertex arena: 72B static verts the
+	// Persistent, grow-only (graph-tracked) skinned-vertex arena: packed static verts the
 	// skinned buckets draw via SetVertexBuffer(this) + per-bucket indirect vertexOffset.
 	// Created with BOTH UAV (compute write) and VERTEX (draw) usage.
 	Flux_ReadWriteBuffer        m_xSkinnedArenaBuffer;
-	u_int m_uSkinnedArenaVertCapacity = 0u;   // output verts (72B / 18 words each)
+	u_int m_uSkinnedArenaVertCapacity = 0u;   // output verts (uFLUX_SKIN_OUTPUT_WORDS each)
 
 	// Stage 4.3b: persistent, grow-only (graph-tracked) PREVIOUS skinned-position arena — 3 words
 	// (12B, positions only) per output vertex, index-locked to the main arena's out-vert bases. UAV
@@ -164,7 +164,7 @@ public:
 	// Frame-indexed dynamic skinning inputs (NOT graph-tracked). The bind-pose pool holds STATIC
 	// content (rest-pose verts) so it is host-uploaded only on GROWTH (m_uBindPosePool* below); the
 	// palette + skin-jobs are genuinely per-frame and upload every frame.
-	Flux_DynamicReadWriteBuffer m_xBindPosePoolBuffer;   // 104B bind-pose verts, raw words (SRV)
+	Flux_DynamicReadWriteBuffer m_xBindPosePoolBuffer;   // packed bind-pose verts, raw words (SRV)
 	Flux_DynamicReadWriteBuffer m_xBonePaletteBuffer;    // all live skeletons' skinning matrices
 	// Stage 4.3b: previous-frame bone palette, laid out at the SAME bases as m_xBonePaletteBuffer.
 	// Grown + uploaded only while the velocity latch is on; read by the prev-pose skinning dispatch.

@@ -28,7 +28,19 @@ and rewriting it once does not immunise it. Update it in the SAME commit that cl
   approved (ZM-D-112); and S6's dialogue/menu/NPC/shop surface all remain complete.
 - **★ THE LIVE BASELINE IS IN `Status.md`'s TOP BLOCK. READ IT, NOT THIS PARAGRAPH.** As of
   2026-08-08 (OBSERVED on clean `Null_` builds): registry **55**, ZM boot
-  **3044 ran / 3042 passed / 0 failed / 2 skipped**, engine boot **1419**. (+4 NET engine
+  **3056 ran / 3054 passed / 0 failed / 2 skipped**, engine boot **1431**. (+7 engine units
+  on 2026-08-08 for the T4.a adversarial-review fix pass -- half word pins + the frozen
+  Slang-codec transcription parity, positive-finite branch proofs, over-unity weight
+  pre-scale, the half-range position guard, the skin-output-encoder/static-packer byte
+  identity, and the mirrored-blend bitangent-sign flip; before that +5 NET engine
+  units for the compressed-vertex Phase-4 T4.a mesh compression flip --
+  the static-mesh vertex went 72 -> 24 bytes and the compute-skinning input
+  104 -> 32, so the two mesh-family memcmp goldens were re-derived through
+  `Flux_VertexCodec` instead of the frozen float32 loops, joined by the
+  skin-input/static prefix identity, the mirrored-frame bitangent sign, the
+  procedural mesh-pipeline pack, the packed skin-vertex codec round trip and the
+  one-byte bone sentinel;
+  +4 NET engine
   units on 2026-08-08 for the compressed-vertex Phase-3 T3.b mesh-family
   replacement -- the rewritten mesh-family suite (3 hand-layout tests -> 7,
   including three byte-for-byte memcmp goldens against a frozen transcription of

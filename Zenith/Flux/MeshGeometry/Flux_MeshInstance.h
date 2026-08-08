@@ -14,13 +14,10 @@ class Flux_MeshGeometry;
  * Zenith_MeshAsset. Multiple instances can share the same asset data but each
  * instance owns its own GPU resources.
  *
- * The vertex format matches the static mesh vertex stride (72 bytes):
- * - Position (12 bytes) - Vector3
- * - UV (8 bytes) - Vector2
- * - Normal (12 bytes) - Vector3
- * - Tangent (12 bytes) - Vector3
- * - Bitangent (12 bytes) - Vector3
- * - Color (16 bytes) - Vector4
+ * The vertex format is the reflected static-mesh layout (24 bytes: half4 position,
+ * half2 UV, snorm10 normal, snorm10 tangent whose w carries the bitangent SIGN, and
+ * unorm8x4 colour) — declared once by Flux_DeclareMeshVertexLayout below rather than
+ * spelled out here, because the shader's VsIn is what decides it.
  */
 class Flux_MeshInstance
 {
@@ -56,7 +53,7 @@ public:
 
 	/**
 	 * Factory method to create skinned mesh instance for GPU animation
-	 * Creates a 104-byte vertex format that includes bone indices and weights
+	 * Creates the skin-INPUT vertex format, which appends bone indices and weights
 	 * for real-time GPU skinning in the shader
 	 * @param pxAsset The source mesh asset with skinning data (must not be null)
 	 * @return Newly created instance, or nullptr on failure
@@ -131,26 +128,52 @@ private:
 	mutable bool m_bLocalBoundsValid = false;
 };
 
+// Declare the MESH-FAMILY interleaved vertex layout into xLayoutOut (Reset first):
+// the reflected static-mesh table every mesh drawn by the unified opaque pipeline
+// (and the forward translucent pass) is fetched with, plus — when bSkinned — the two
+// compute-skinning bone lanes the packed skin-input vertex appends.
+//
+// It exists because four places used to declare that layout by hand, element by
+// element, each with its own `stride == 72` assert: they agreed with the shader by
+// convention alone, and a storage-format change had to be applied to all four in the
+// same edit or a buffer would be uploaded at the wrong size. The one caller-visible
+// job the layout still has is SIZE (GetVertexDataSize / the upload), so it is derived
+// from the same table the writers pack through rather than re-stated.
+void Flux_DeclareMeshVertexLayout(Flux_BufferLayout& xLayoutOut, bool bSkinned);
+
+// True when xLayout is — element-type-for-element-type, and stride — the reflected
+// static-mesh pipeline table (the form Flux_DeclareMeshVertexLayout(.., false)
+// installs). Two tripwires share it: CreateFromGeometry asserts a drawn geometry IS
+// this table (the unified pipelines fetch whatever bytes are bound at the reflected
+// stride, so a float32 or stale-layout stream decodes as garbage rather than fail),
+// and Flux_MeshGeometry::Export asserts a serialized geometry is NOT (the .zmesh
+// file format has no version field; its one stability guarantee is its element
+// table, and the reflected table moves whenever a shader annotation does).
+bool Flux_LayoutIsReflectedMeshPipelineTable(const Flux_BufferLayout& xLayout);
+
 // Pack uNumVerts of a mesh asset's CPU attributes into the engine's standard
-// 72-byte STATIC vertex, shaped by
+// STATIC vertex, shaped by
 // Flux_Generated_UnifiedMesh::UnifiedMesh_ToGBuffer::kVertexLayout — the table
 // reflected straight out of the shader that fetches it. Nothing here names an
-// offset or a stride: the generated table does, so a layout edit moves this
-// writer and its reader together.
+// offset, a stride or a storage format: the generated table does, so a layout edit
+// moves this writer and its reader together.
 //
 // The attribute -> semantic mapping is the asset's whole float vocabulary
 // (positions POSITION, UVs TEXCOORD0, normals NORMAL, tangents TANGENT,
 // bitangents BINORMAL, colours COLOR). An array shorter than uNumVerts is not
 // offered to the packer at all, which routes that attribute onto the canonical
 // default (uv 0, normal +Y, tangent +X, bitangent +Z, white colour) — the same
-// rule, and the same values, the hand-written loops applied.
+// rule, and the same values, the hand-written loops applied. The BITANGENT no
+// longer has an element of its own: it feeds the 4-lane TANGENT's handedness sign,
+// which is what every consumer rebuilds the vector from.
 //
 // pxPositionOverride, when non-null, replaces the asset's positions with a
 // caller-owned tight float3 stream of at least uNumVerts entries: the bind-pose
 // baked path pre-skins the positions and hands the RESULT over, so the packer
 // stays a pure interleaver with no skeleton in its contract.
 //
-// pDst must hold at least uNumVerts * 72 bytes. Pure — no GPU, no engine
+// pDst must hold at least uNumVerts vertices of the layout
+// Flux_DeclareMeshVertexLayout(.., false) declares. Pure — no GPU, no engine
 // singleton — so the whole path is headlessly unit-tested.
 void Flux_PackStaticMeshVertices(
 	void* pDst,

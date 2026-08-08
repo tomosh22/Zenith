@@ -135,7 +135,24 @@ param(
     # the ported layout/defaults expectations, and the bind-pose position override;
     # compressed-vertex Phase 3 T3.b — mesh-family replacement (observed
     # 2026-08-08 on a Null_ Combat build).
-    [int]$Baseline = 1419,
+    # 1419 -> 1424: +5 NET across the two suites re-pinned by the compression
+    # flip. Flux_VertexInterleave.Tests.inl +3: its two memcmp goldens now compare
+    # against an INDEPENDENT transcription through Flux_VertexCodec instead of the
+    # frozen float32 interleave loops (Phase 4 changes those bytes by design), plus
+    # the skin-input/static prefix identity, the mirrored-frame bitangent SIGN, and
+    # the procedural mesh-pipeline pack. Flux_Skinning.Tests.inl +2: the packed
+    # skin-vertex codec round trip and the one-byte bone sentinel; compressed-vertex
+    # Phase 4 T4.a — the mesh compression flip (observed 2026-08-08 on a Null_
+    # Combat build).
+    # 1424 -> 1431: +7 from the T4.a adversarial-review fix pass. Flux_VertexCodec
+    # .Tests.inl +4 (hand-derived half word pins; the frozen Slang-transcription
+    # half parity incl. the pinned tie divergence; the bit-classified
+    # positive-finite branches; over-unity bone-weight pre-scale).
+    # Flux_VertexPacker +1 (half-range position guard, capture-scoped).
+    # Flux_VertexInterleave +1 (skin-output encoder vs static packer byte
+    # identity). Flux_Skinning +1 (negative-determinant blend flips the bitangent
+    # sign). Observed 2026-08-08 on a Null_ Combat build.
+    [int]$Baseline = 1431,
     [int]$TimeoutSec = 180,
     [string]$LogPath = ""
 )

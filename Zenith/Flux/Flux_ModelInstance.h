@@ -113,7 +113,7 @@ public:
 	uint32_t GetNumMeshes() const { return static_cast<uint32_t>(m_xMeshInstances.GetSize()); }
 
 	/**
-	 * Get mesh instance at the specified index (static 72-byte format)
+	 * Get mesh instance at the specified index (the static packed vertex format)
 	 * These are used for static mesh rendering
 	 * @param uIndex Mesh index (0 to GetNumMeshes()-1)
 	 * @return Mesh instance, or nullptr if index out of range
@@ -129,7 +129,7 @@ public:
 	void InvalidateLocalBounds() { m_bLocalBoundsValid = false; }
 
 	/**
-	 * Get skinned mesh instance at the specified index (104-byte format with bone data)
+	 * Get skinned mesh instance at the specified index (the skin-INPUT format, with bone lanes)
 	 * These are used for animated mesh rendering with GPU skinning
 	 * @param uIndex Mesh index (0 to GetNumMeshes()-1)
 	 * @return Skinned mesh instance, or nullptr if index out of range or model has no skeleton
@@ -197,7 +197,7 @@ private:
 	ModelHandle m_xSourceAsset;
 
 	// Runtime mesh instances (GPU-ready, owned by this instance)
-	// Static 72-byte format for static rendering or bind-pose rendering
+	// The static packed vertex format, for static or bind-pose rendering
 	// Phase 3: lazily-computed, cached local-space union bounds (mutable so GetLocalBounds()
 	// stays const). Invalidated by InvalidateLocalBounds() when the mesh set changes.
 	mutable Zenith_AABB m_xLocalBounds;
@@ -205,7 +205,7 @@ private:
 
 	Zenith_Vector<Flux_MeshInstance*> m_xMeshInstances;
 
-	// Skinned mesh instances (104-byte format with bone indices/weights)
+	// Skinned mesh instances (the skin-INPUT format, with bone indices/weights)
 	// Used for animated rendering with GPU skinning - only populated if model has skeleton
 	Zenith_Vector<Flux_MeshInstance*> m_xSkinnedMeshInstances;
 

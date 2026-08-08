@@ -549,7 +549,7 @@ static void GenerateShapeMesh(const TilePuzzleShapeDefinition& xDef, Flux_MeshGe
 	}
 
 	xBuilder.CopyToGeometry(xGeometryOut);
-	xGeometryOut.GenerateLayoutAndVertexData();
+	xGeometryOut.GenerateMeshPipelineVertexData();
 	g_xEngine.FluxMemory().InitialiseVertexBuffer(
 		xGeometryOut.GetVertexData(), xGeometryOut.GetVertexDataSize(), xGeometryOut.m_xVertexBuffer);
 	g_xEngine.FluxMemory().InitialiseIndexBuffer(
@@ -682,7 +682,7 @@ static void GenerateCatMesh(Flux_MeshGeometry& xGeometryOut)
 
 	// Finalize
 	xBuilder.CopyToGeometry(xGeometryOut);
-	xGeometryOut.GenerateLayoutAndVertexData();
+	xGeometryOut.GenerateMeshPipelineVertexData();
 	g_xEngine.FluxMemory().InitialiseVertexBuffer(
 		xGeometryOut.GetVertexData(), xGeometryOut.GetVertexDataSize(), xGeometryOut.m_xVertexBuffer);
 	g_xEngine.FluxMemory().InitialiseIndexBuffer(
@@ -696,7 +696,7 @@ static void GenerateCatMesh(Flux_MeshGeometry& xGeometryOut)
 static void FinalizeMesh(MeshBuilder& xBuilder, Flux_MeshGeometry& xGeometry)
 {
 	xBuilder.CopyToGeometry(xGeometry);
-	xGeometry.GenerateLayoutAndVertexData();
+	xGeometry.GenerateMeshPipelineVertexData();
 	g_xEngine.FluxMemory().InitialiseVertexBuffer(
 		xGeometry.GetVertexData(), xGeometry.GetVertexDataSize(), xGeometry.m_xVertexBuffer);
 	g_xEngine.FluxMemory().InitialiseIndexBuffer(
@@ -1060,7 +1060,7 @@ static bool ReadShapeMeshFromStream(Zenith_DataStream& xStream, Flux_MeshGeometr
 	xStream.ReadData(xGeometry.m_puIndices, uNumIndices * sizeof(Flux_MeshGeometry::IndexType));
 
 	// Generate interleaved vertex data and upload to GPU
-	xGeometry.GenerateLayoutAndVertexData();
+	xGeometry.GenerateMeshPipelineVertexData();
 	g_xEngine.FluxMemory().InitialiseVertexBuffer(
 		xGeometry.GetVertexData(), xGeometry.GetVertexDataSize(), xGeometry.m_xVertexBuffer);
 	g_xEngine.FluxMemory().InitialiseIndexBuffer(

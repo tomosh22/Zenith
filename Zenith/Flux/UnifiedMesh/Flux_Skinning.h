@@ -4,6 +4,7 @@
 #include "Collections/Zenith_Vector.h"
 #include "Collections/Zenith_HashMap.h"   // Flux_SkinnedInstanceIdRegistry (stable skinned bucket key)
 #include "Flux/Flux_RefcountDiffRegistry.h"   // shared refcount-diff sync machinery
+#include "Flux/Flux_VertexCodec.h"        // the packed-attribute codec both vertex streams are written in
 #include <cstddef>   // offsetof, size_t
 #include <utility>   // std::move (Flux_BonePaletteHistory ping-pong)
 
@@ -13,12 +14,12 @@
 // The unified path draws STATIC geometry: the cull/draw/shadow kernels read a
 // per-object model matrix from the GPU-scene SSBO and apply it. Skeletal meshes
 // are brought in by a COMPUTE PRE-PASS that skins each animated submesh-instance
-// to OBJECT/LOCAL space and writes the result (in the static 72-byte vertex layout)
+// to OBJECT/LOCAL space and writes the result (in the static 24-byte vertex layout)
 // into a shared skinned-vertex arena. The unified static VS then consumes the arena
 // UNCHANGED — it already does `worldPos = model * localPos` and re-normalises the
-// incoming normal/tangent, so the pre-pass outputs the RAW bone-weighted vectors
-// (standard linear-blend skinning: accumulate weighted bone-transformed position +
-// TBN, deferring normalisation to the VS).
+// incoming normal/tangent, so the pre-pass outputs standard linear-blend skinning:
+// accumulate the weighted bone-transformed position + normal + tangent, and carry
+// the bitangent SIGN through untouched (the VS rebuilds the vector from it).
 //
 // This header is the PURE CPU mirror of Flux_UnifiedMesh_Skinning.slang (added in
 // Stage 5d): Flux_SkinVertexCPU is a line-by-line transliteration of the shader's
@@ -27,14 +28,20 @@
 // Flux_Skinning.Tests.inl, hosted in an already-linked TU per the dead-strip idiom).
 //
 // LAYOUT RULE: Flux_SkinInputVertex / Flux_SkinOutputVertex are byte-identical to the
-// skinned (104B) / static (72B) interleaved vertex layouts built by
+// skinned (32B) / static (24B) interleaved vertex layouts built by
 // Flux_MeshInstance::CreateSkinnedFromAsset / CreateFromAsset, and to the Slang
-// structured-buffer mirrors the compute shader reads/writes. All members are 4-byte
-// aligned (glm default gentypes) so there is no scalar-packing surprise.
+// structured-buffer mirrors the compute shader reads/writes. Both are PACKED WORDS —
+// the attributes are quantised (half4 / half2 / snorm10_10_10_2 / unorm8x4), so the
+// members are the storage words and Flux_Decode*/Flux_Encode* are the only way in and
+// out. The output layout is not merely similar to the static-mesh VsIn, it IS that
+// table: the arena is bound as the vertex buffer of the very pipelines that fetch a
+// CPU-packed mesh (Flux_UnifiedMesh.cpp static_asserts the two against each other).
 // ============================================================================
 
-// 0xFFFFFFFF terminates a vertex's bone-influence list (most verts use 1-2 of 4).
-inline constexpr u_int uFLUX_SKIN_BONE_SENTINEL = 0xFFFFFFFFu;
+// Terminates a vertex's bone-influence list (most verts use 1-2 of 4). The influence
+// slot is ONE BYTE, so the sentinel is the codec's reserved index — safe only because
+// the skeleton ceiling (Zenith_SkeletonAsset::MAX_BONES == 100) is far below it.
+inline constexpr u_int uFLUX_SKIN_BONE_SENTINEL = uFLUX_BONE_INDEX_NONE_BYTE;
 
 // Conservative radius multiplier applied to a skinned submesh's BIND-POSE bounding
 // sphere before frustum culling. Animation can push verts outside the bind-pose
@@ -43,41 +50,142 @@ inline constexpr u_int uFLUX_SKIN_BONE_SENTINEL = 0xFFFFFFFFu;
 inline constexpr float fFLUX_SKIN_BOUNDS_INFLATION = 2.0f;
 
 // ---- vertex layouts (byte mirrors of the GPU interleaved formats) -----------
-// Skinned INPUT (104B): pos(12)+uv(8)+normal(12)+tangent(12)+bitangent(12)+color(16)
-//                       +boneIndices uint4(16)+boneWeights float4(16).
+// Skinned INPUT (32B): the 24-byte static vertex + two one-word bone lanes.
 struct Flux_SkinInputVertex
 {
-	Zenith_Maths::Vector3 m_xPosition;     // offset  0
-	Zenith_Maths::Vector2 m_xUV;           // offset 12
-	Zenith_Maths::Vector3 m_xNormal;       // offset 20
-	Zenith_Maths::Vector3 m_xTangent;      // offset 32
-	Zenith_Maths::Vector3 m_xBitangent;    // offset 44
-	Zenith_Maths::Vector4 m_xColor;        // offset 56
-	u_int                 m_auBoneIDs[4];  // offset 72
-	Zenith_Maths::Vector4 m_xBoneWeights;  // offset 88
+	u_int64 m_ulPosition;   // offset  0 — half4 (lane 3 unused, written 1.0)
+	u_int   m_uUV;          // offset  8 — half2
+	u_int   m_uNormal;      // offset 12 — snorm10_10_10_2 (lane 3 unused, written 0)
+	u_int   m_uTangent;     // offset 16 — snorm10_10_10_2, lane 3 = BITANGENT SIGN
+	u_int   m_uColor;       // offset 20 — unorm8x4
+	u_int   m_uBoneIDs;     // offset 24 — uint8x4 (uFLUX_SKIN_BONE_SENTINEL = no influence)
+	u_int   m_uBoneWeights; // offset 28 — unorm8x4
 };
-static_assert(sizeof(Flux_SkinInputVertex) == 104, "Flux_SkinInputVertex must be 104 bytes (skinned vertex stride)");
-static_assert(offsetof(Flux_SkinInputVertex, m_xUV)          == 12,  "skinned vertex UV at offset 12");
-static_assert(offsetof(Flux_SkinInputVertex, m_xNormal)      == 20,  "skinned vertex normal at offset 20");
-static_assert(offsetof(Flux_SkinInputVertex, m_xTangent)     == 32,  "skinned vertex tangent at offset 32");
-static_assert(offsetof(Flux_SkinInputVertex, m_xBitangent)   == 44,  "skinned vertex bitangent at offset 44");
-static_assert(offsetof(Flux_SkinInputVertex, m_xColor)       == 56,  "skinned vertex color at offset 56");
-static_assert(offsetof(Flux_SkinInputVertex, m_auBoneIDs)    == 72,  "skinned vertex boneIndices at offset 72");
-static_assert(offsetof(Flux_SkinInputVertex, m_xBoneWeights) == 88,  "skinned vertex boneWeights at offset 88");
+static_assert(sizeof(Flux_SkinInputVertex) == 32, "Flux_SkinInputVertex must be 32 bytes (skinned vertex stride)");
+static_assert(offsetof(Flux_SkinInputVertex, m_uUV)          ==  8, "skinned vertex UV at offset 8");
+static_assert(offsetof(Flux_SkinInputVertex, m_uNormal)      == 12, "skinned vertex normal at offset 12");
+static_assert(offsetof(Flux_SkinInputVertex, m_uTangent)     == 16, "skinned vertex tangent at offset 16");
+static_assert(offsetof(Flux_SkinInputVertex, m_uColor)       == 20, "skinned vertex color at offset 20");
+static_assert(offsetof(Flux_SkinInputVertex, m_uBoneIDs)     == 24, "skinned vertex boneIndices at offset 24");
+static_assert(offsetof(Flux_SkinInputVertex, m_uBoneWeights) == 28, "skinned vertex boneWeights at offset 28");
+
+// Static OUTPUT (24B): the reflected static-mesh VsIn, exactly.
+struct Flux_SkinOutputVertex
+{
+	u_int64 m_ulPosition;   // offset  0 — half4
+	u_int   m_uUV;          // offset  8 — half2
+	u_int   m_uNormal;      // offset 12 — snorm10_10_10_2
+	u_int   m_uTangent;     // offset 16 — snorm10_10_10_2, lane 3 = BITANGENT SIGN
+	u_int   m_uColor;       // offset 20 — unorm8x4
+};
+static_assert(sizeof(Flux_SkinOutputVertex) == 24, "Flux_SkinOutputVertex must be 24 bytes (static vertex stride)");
+static_assert(offsetof(Flux_SkinOutputVertex, m_uUV)      ==  8, "static vertex UV at offset 8");
+static_assert(offsetof(Flux_SkinOutputVertex, m_uNormal)  == 12, "static vertex normal at offset 12");
+static_assert(offsetof(Flux_SkinOutputVertex, m_uTangent) == 16, "static vertex tangent at offset 16");
+static_assert(offsetof(Flux_SkinOutputVertex, m_uColor)   == 20, "static vertex color at offset 20");
+
+// The DECODED attributes of a skin vertex — the form the kernel skins in, and the
+// only way to read or author either packed struct above. The bone lanes are absent
+// from an OUTPUT vertex (skinning consumes them), so the decode of one leaves them
+// zeroed; everything else is shared, which is what makes "the output is the input
+// minus its bone lanes" a shape and not a comment.
+struct Flux_SkinVertexAttributes
+{
+	Zenith_Maths::Vector3  m_xPosition   = Zenith_Maths::Vector3(0.0f);
+	Zenith_Maths::Vector2  m_xUV         = Zenith_Maths::Vector2(0.0f);
+	Zenith_Maths::Vector3  m_xNormal     = Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f);
+	Zenith_Maths::Vector4  m_xTangent    = Zenith_Maths::Vector4(1.0f, 0.0f, 0.0f, 1.0f);   // w = bitangent sign
+	Zenith_Maths::Vector4  m_xColor      = Zenith_Maths::Vector4(1.0f);
+	Zenith_Maths::UVector4 m_xBoneIDs    = Zenith_Maths::UVector4(0u);   // uFLUX_SKIN_BONE_SENTINEL = no influence
+	Zenith_Maths::Vector4  m_xBoneWeights = Zenith_Maths::Vector4(0.0f);
+};
+
+// ---- the packed-word codec for both structs --------------------------------
+// Lane 3 of the position (1.0) and of the normal (0) are NOT free choices: they are
+// what Flux_PackVertices leaves in the lanes its three-lane sources do not reach, and
+// the skinned arena has to be byte-comparable with a CPU-packed static mesh.
+
+inline Flux_SkinOutputVertex Flux_EncodeSkinOutputVertex(const Flux_SkinVertexAttributes& xAttribs)
+{
+	Flux_SkinOutputVertex xOut;
+	xOut.m_ulPosition = Flux_PackHalf4(Zenith_Maths::Vector4(xAttribs.m_xPosition, 1.0f));
+	xOut.m_uUV        = Flux_PackHalf2(xAttribs.m_xUV);
+	const Zenith_Maths::Vector3 xNormal = Flux_NormaliseForSnorm10(xAttribs.m_xNormal, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
+	const Zenith_Maths::Vector3 xTangent = Flux_NormaliseForSnorm10(Zenith_Maths::Vector3(xAttribs.m_xTangent), Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f));
+	xOut.m_uNormal    = Flux_PackSnorm10_10_10_2(xNormal.x, xNormal.y, xNormal.z, 0.0f);
+	xOut.m_uTangent   = Flux_PackSnorm10_10_10_2(xTangent.x, xTangent.y, xTangent.z, xAttribs.m_xTangent.w);
+	xOut.m_uColor     = Flux_PackUnorm8x4(xAttribs.m_xColor);
+	return xOut;
+}
+
+inline Flux_SkinVertexAttributes Flux_DecodeSkinOutputVertex(const Flux_SkinOutputVertex& xVertex)
+{
+	Flux_SkinVertexAttributes xAttribs;
+	xAttribs.m_xPosition = Zenith_Maths::Vector3(Flux_UnpackHalf4(xVertex.m_ulPosition));
+	xAttribs.m_xUV       = Flux_UnpackHalf2(xVertex.m_uUV);
+	xAttribs.m_xNormal   = Zenith_Maths::Vector3(Flux_UnpackSnorm10_10_10_2(xVertex.m_uNormal));
+	xAttribs.m_xTangent  = Flux_UnpackSnorm10_10_10_2(xVertex.m_uTangent);
+	xAttribs.m_xColor    = Flux_UnpackUnorm8x4(xVertex.m_uColor);
+	xAttribs.m_xBoneIDs      = Zenith_Maths::UVector4(0u);
+	xAttribs.m_xBoneWeights  = Zenith_Maths::Vector4(0.0f);
+	return xAttribs;
+}
+
+inline Flux_SkinInputVertex Flux_EncodeSkinInputVertex(const Flux_SkinVertexAttributes& xAttribs)
+{
+	const Flux_SkinOutputVertex xStatic = Flux_EncodeSkinOutputVertex(xAttribs);
+	Flux_SkinInputVertex xIn;
+	xIn.m_ulPosition = xStatic.m_ulPosition;
+	xIn.m_uUV        = xStatic.m_uUV;
+	xIn.m_uNormal    = xStatic.m_uNormal;
+	xIn.m_uTangent   = xStatic.m_uTangent;
+	xIn.m_uColor     = xStatic.m_uColor;
+	// The bone ids arrive as PALETTE indices, so they go through the codec's bone
+	// packer (which maps uFLUX_BONE_INDEX_NONE onto the reserved byte) rather than the
+	// raw uint8x4 one. "No influence" has two spellings — the 32-bit palette sentinel a
+	// mesh asset carries, and the reserved BYTE the decode hands back — and they are
+	// folded together here so that encode(decode(x)) is the identity. Without it the
+	// byte form would fall through to the out-of-range clamp and come back as bone 254.
+	Zenith_Maths::UVector4 xBoneIDs = xAttribs.m_xBoneIDs;
+	for (int i = 0; i < 4; i++)
+	{
+		if (xBoneIDs[i] == uFLUX_SKIN_BONE_SENTINEL) { xBoneIDs[i] = uFLUX_BONE_INDEX_NONE; }
+	}
+	xIn.m_uBoneIDs     = Flux_PackBoneIndicesUint8x4(xBoneIDs);
+	xIn.m_uBoneWeights = Flux_PackBoneWeightsUnorm8x4(xAttribs.m_xBoneWeights);
+	return xIn;
+}
+
+inline Flux_SkinVertexAttributes Flux_DecodeSkinInputVertex(const Flux_SkinInputVertex& xVertex)
+{
+	Flux_SkinOutputVertex xStatic;
+	xStatic.m_ulPosition = xVertex.m_ulPosition;
+	xStatic.m_uUV        = xVertex.m_uUV;
+	xStatic.m_uNormal    = xVertex.m_uNormal;
+	xStatic.m_uTangent   = xVertex.m_uTangent;
+	xStatic.m_uColor     = xVertex.m_uColor;
+
+	Flux_SkinVertexAttributes xAttribs = Flux_DecodeSkinOutputVertex(xStatic);
+	// RAW bytes, not Flux_UnpackBoneIndicesUint8x4: the sentinel stays the reserved
+	// BYTE here, because that is the comparison the compute kernel makes and this
+	// header is its mirror.
+	xAttribs.m_xBoneIDs     = Flux_UnpackUint8x4(xVertex.m_uBoneIDs);
+	xAttribs.m_xBoneWeights = Flux_UnpackUnorm8x4(xVertex.m_uBoneWeights);
+	return xAttribs;
+}
 
 // Fill paxDst with uNumVerts of a mesh asset's bind-pose vertices in the layout
 // above — THE builder of the compute-skinning input stream (the skinned mesh
 // instance's vertex buffer and the pose registry's bind-pose word pool are the
 // same bytes, built here once).
 //
-// WHY THIS IS NOT Flux_PackVertices: the two bone lanes are not vertex-FETCH
-// attributes. m_auBoneIDs is a uint4 palette index outside the closed semantic
-// vocabulary (POSITION/TEXCOORD/NORMAL/TANGENT/BINORMAL/COLOR) the reflected
-// layout tables are written in, and the packer refuses the integer families by
-// design. This stream is consumed by Flux_UnifiedMesh_Skinning.slang as a
-// StructuredBuffer, so its authority is the struct above and its offset
-// static_asserts rather than any shader's VsIn — and writing it THROUGH the
-// struct is what keeps the writer and that contract in lockstep.
+// The five SHARED elements go through Flux_PackVertices shaped by the reflected
+// static-mesh table, so the skin-input stream and a static mesh cannot quantise the
+// same attribute differently. Only the two BONE lanes are written directly: they are
+// not vertex-FETCH attributes at all — a palette index has no semantic in the closed
+// vocabulary (POSITION/TEXCOORD/NORMAL/TANGENT/BINORMAL/COLOR) the layout tables are
+// written in, and this stream is read by Flux_UnifiedMesh_Skinning.slang as a
+// StructuredBuffer rather than fetched.
 //
 // Absent (or shorter-than-uNumVerts) attribute arrays take the same canonical
 // defaults the static packer applies; bone ids/weights default to zero. paxDst
@@ -85,23 +193,6 @@ static_assert(offsetof(Flux_SkinInputVertex, m_xBoneWeights) == 88,  "skinned ve
 // Flux_MeshInstance.cpp, beside the mesh instance that uploads this stream.
 class Zenith_MeshAsset;
 void Flux_BuildSkinInputVertices(Flux_SkinInputVertex* paxDst, const Zenith_MeshAsset& xAsset, u_int uNumVerts);
-
-// Static OUTPUT (72B): pos(12)+uv(8)+normal(12)+tangent(12)+bitangent(12)+color(16).
-struct Flux_SkinOutputVertex
-{
-	Zenith_Maths::Vector3 m_xPosition;     // offset  0
-	Zenith_Maths::Vector2 m_xUV;           // offset 12
-	Zenith_Maths::Vector3 m_xNormal;       // offset 20
-	Zenith_Maths::Vector3 m_xTangent;      // offset 32
-	Zenith_Maths::Vector3 m_xBitangent;    // offset 44
-	Zenith_Maths::Vector4 m_xColor;        // offset 56
-};
-static_assert(sizeof(Flux_SkinOutputVertex) == 72, "Flux_SkinOutputVertex must be 72 bytes (static vertex stride)");
-static_assert(offsetof(Flux_SkinOutputVertex, m_xUV)        == 12, "static vertex UV at offset 12");
-static_assert(offsetof(Flux_SkinOutputVertex, m_xNormal)    == 20, "static vertex normal at offset 20");
-static_assert(offsetof(Flux_SkinOutputVertex, m_xTangent)   == 32, "static vertex tangent at offset 32");
-static_assert(offsetof(Flux_SkinOutputVertex, m_xBitangent) == 44, "static vertex bitangent at offset 44");
-static_assert(offsetof(Flux_SkinOutputVertex, m_xColor)     == 56, "static vertex color at offset 56");
 
 // ---- skin-job descriptor (gather builds these; the compute pass consumes them) ----
 // Byte-mirror of SkinJob in Common/SceneObjects.slang (16B, all-uint — no vec3 trap).
@@ -119,30 +210,36 @@ static_assert(offsetof(Flux_GPUSkinJob, m_uVertCount)       == 8,  "SkinJob vert
 static_assert(offsetof(Flux_GPUSkinJob, m_uBonePaletteBase) == 12, "SkinJob bonePaletteBase at offset 12");
 
 // ---- the skinning kernel (pure CPU mirror of Flux_UnifiedMesh_Skinning.slang) --
-// Skins one vertex to OBJECT/LOCAL space: accumulate (boneMatrix * vtx) * weight over
-// up to 4 influences. boneMatrix = pxBonePalette[uBonePaletteBase + boneId], where the
-// palette holds every live skeleton's skinning matrices (modelSpace * inverseBindPose)
-// concatenated and uBonePaletteBase is this instance's block base. Mirrors the legacy
-// accumulation EXACTLY (no normalisation — the unified VS re-normalises the result):
-//   - 0xFFFFFFFF sentinel terminates the influence list early.
+// Skins one vertex to OBJECT/LOCAL space: decode, accumulate (boneMatrix * vtx) * weight
+// over up to 4 influences, re-encode. boneMatrix = pxBonePalette[uBonePaletteBase + boneId],
+// where the palette holds every live skeleton's skinning matrices (modelSpace *
+// inverseBindPose) concatenated and uBonePaletteBase is this instance's block base.
+//   - the reserved sentinel byte terminates the influence list early.
 //   - a defensive bounds-guard skips an influence whose palette index is out of range
 //     (corrupt data only; mirrors the cull shader's numObjects guard). UV / colour are
-//     passthrough (skinning does not touch them).
-inline Flux_SkinOutputVertex Flux_SkinVertexCPU(const Flux_SkinInputVertex& xIn,
+//     passthrough; the bitangent SIGN is passthrough EXCEPT under a negative-determinant
+//     blend (mirrored bone scale), which flips the frame's handedness — the uncompressed
+//     path carried that implicitly by skinning the bitangent VECTOR and re-deriving the
+//     sign in the VS, so the sign must flip with det(blend) to keep parity.
+// The encode re-normalises the accumulated normal/tangent, which the uncompressed arena
+// did not: a 10-bit snorm clamps per axis, so a length-1.2 sum would come out pointing
+// somewhere else. The VS re-normalises regardless, so the shading is unchanged — the
+// normalisation just has to happen before the quantisation rather than after it.
+//
+// THE ACCUMULATION is its own step, on decoded attributes, because the positions-only
+// previous-pose pass needs exactly it and nothing after it — routing that pass through
+// the packed output instead would put a half round-trip in the middle of a motion vector.
+inline Flux_SkinVertexAttributes Flux_SkinAttributesCPU(const Flux_SkinVertexAttributes& xDecoded,
 	const Zenith_Maths::Matrix4* pxBonePalette, u_int uBonePaletteBase, u_int uPaletteCount)
 {
-	Flux_SkinOutputVertex xOut;
-	xOut.m_xUV    = xIn.m_xUV;
-	xOut.m_xColor = xIn.m_xColor;
-
 	Zenith_Maths::Vector4 xFinalPosition(0.0f, 0.0f, 0.0f, 0.0f);
 	Zenith_Maths::Vector3 xFinalNormal(0.0f, 0.0f, 0.0f);
 	Zenith_Maths::Vector3 xFinalTangent(0.0f, 0.0f, 0.0f);
-	Zenith_Maths::Vector3 xFinalBitangent(0.0f, 0.0f, 0.0f);
+	Zenith_Maths::Matrix3 xBlend3(0.0f);
 
 	for (u_int u = 0; u < 4u; ++u)
 	{
-		const u_int uBoneId = xIn.m_auBoneIDs[u];
+		const u_int uBoneId = xDecoded.m_xBoneIDs[u];
 		if (uBoneId == uFLUX_SKIN_BONE_SENTINEL)
 		{
 			break;   // no more influences for this vertex
@@ -155,26 +252,40 @@ inline Flux_SkinOutputVertex Flux_SkinVertexCPU(const Flux_SkinInputVertex& xIn,
 
 		const Zenith_Maths::Matrix4& xBone = pxBonePalette[uPaletteIndex];
 		const Zenith_Maths::Matrix3 xBone3(xBone);
-		const float fWeight = xIn.m_xBoneWeights[u];
+		const float fWeight = xDecoded.m_xBoneWeights[u];
 
-		xFinalPosition  += (xBone * Zenith_Maths::Vector4(xIn.m_xPosition, 1.0f)) * fWeight;
-		xFinalNormal    += (xBone3 * xIn.m_xNormal)    * fWeight;
-		xFinalTangent   += (xBone3 * xIn.m_xTangent)   * fWeight;
-		xFinalBitangent += (xBone3 * xIn.m_xBitangent) * fWeight;
+		xFinalPosition += (xBone * Zenith_Maths::Vector4(xDecoded.m_xPosition, 1.0f)) * fWeight;
+		xFinalNormal   += (xBone3 * xDecoded.m_xNormal)                       * fWeight;
+		xFinalTangent  += (xBone3 * Zenith_Maths::Vector3(xDecoded.m_xTangent)) * fWeight;
+		xBlend3        += xBone3                                              * fWeight;
 	}
 
-	xOut.m_xPosition  = Zenith_Maths::Vector3(xFinalPosition.x, xFinalPosition.y, xFinalPosition.z);
-	xOut.m_xNormal    = xFinalNormal;
-	xOut.m_xTangent   = xFinalTangent;
-	xOut.m_xBitangent = xFinalBitangent;
+	// det(blend) < 0 = a mirrored blend: the skinned frame is left-handed where the
+	// bind frame was right-handed (or vice versa), so the sign the VS rebuilds the
+	// bitangent with must flip. A zero det (no influences, or a blend collapsed to
+	// singular) has no orientation to flip — the authored sign rides through.
+	const float fBlendDet = Zenith_Maths::Determinant(xBlend3);
+	const float fTangentW = (fBlendDet < 0.0f) ? -xDecoded.m_xTangent.w : xDecoded.m_xTangent.w;
+
+	Flux_SkinVertexAttributes xOut = xDecoded;
+	xOut.m_xPosition = Zenith_Maths::Vector3(xFinalPosition.x, xFinalPosition.y, xFinalPosition.z);
+	xOut.m_xNormal   = xFinalNormal;
+	xOut.m_xTangent  = Zenith_Maths::Vector4(xFinalTangent, fTangentW);
 	return xOut;
 }
 
+inline Flux_SkinOutputVertex Flux_SkinVertexCPU(const Flux_SkinInputVertex& xIn,
+	const Zenith_Maths::Matrix4* pxBonePalette, u_int uBonePaletteBase, u_int uPaletteCount)
+{
+	return Flux_EncodeSkinOutputVertex(
+		Flux_SkinAttributesCPU(Flux_DecodeSkinInputVertex(xIn), pxBonePalette, uBonePaletteBase, uPaletteCount));
+}
+
 // ---- raw-word skinning (the compute shader's exact memory access) -----------
-// Per-vertex word strides: the bind-pose input is the tightly-packed 104-byte skinned
-// vertex (26 u32 words); the output is the tightly-packed 72-byte static vertex (18 words).
-inline constexpr u_int uFLUX_SKIN_INPUT_WORDS  = 26u;  // 104 / 4
-inline constexpr u_int uFLUX_SKIN_OUTPUT_WORDS = 18u;  //  72 / 4
+// Per-vertex word strides: the bind-pose input is the tightly-packed 32-byte skinned
+// vertex (8 u32 words); the output is the tightly-packed 24-byte static vertex (6 words).
+inline constexpr u_int uFLUX_SKIN_INPUT_WORDS  = 8u;   // 32 / 4
+inline constexpr u_int uFLUX_SKIN_OUTPUT_WORDS = 6u;   // 24 / 4
 
 namespace Flux_SkinDetail
 {
@@ -184,40 +295,24 @@ namespace Flux_SkinDetail
 
 // Skins one vertex straight out of / into FLAT WORD ARRAYS, byte-identical to how the
 // compute shader (Flux_UnifiedMesh_Skinning.slang) must access the buffers. The shader
-// reads the packed VB / writes the packed arena as raw word buffers ON PURPOSE: a Slang
-// StructuredBuffer<float3> 16-byte-aligns each vec3 (std430), which would NOT match the
-// 12-byte-packed vertex layout — so both sides index flat words with these offsets.
-// This indirection is what the headless test pins (offsets vs the C++ struct layout); the
-// skinning MATH is already pinned by Flux_SkinVertexCPU, which this delegates to.
-//   input word offsets  (104B): pos@0 uv@3 normal@5 tangent@8 bitangent@11 color@14 boneIDs@18 weights@22
-//   output word offsets ( 72B): pos@0 uv@3 normal@5 tangent@8 bitangent@11 color@14
+// reads the packed VB / writes the packed arena as raw word buffers ON PURPOSE: it has
+// no fetch unit to decode the packed formats, and a Slang StructuredBuffer<float3> would
+// std430 16-byte-align each vec3 — so both sides index flat words at these offsets.
+// This indirection is what the headless test pins (the per-vertex STRIDE arithmetic
+// above all: a wrong stride writes a neighbour's slice); the skinning MATH and the
+// quantisation are already pinned by Flux_SkinVertexCPU, which this delegates to.
+//   input words  (32B): pos@0-1 uv@2 normal@3 tangent@4 colour@5 boneIDs@6 weights@7
+//   output words (24B): pos@0-1 uv@2 normal@3 tangent@4 colour@5
 inline void Flux_SkinVertexRaw(
 	const u_int* pInputWords, u_int uInVertexIndex,
 	const Zenith_Maths::Matrix4* pxBonePalette, u_int uBonePaletteBase, u_int uPaletteCount,
 	u_int* pOutputWords, u_int uOutVertexIndex)
 {
-	using namespace Flux_SkinDetail;
-	const u_int* p = pInputWords + (size_t)uInVertexIndex * uFLUX_SKIN_INPUT_WORDS;
-
 	Flux_SkinInputVertex xIn;
-	xIn.m_xPosition  = Zenith_Maths::Vector3(WordToFloat(p[0]),  WordToFloat(p[1]),  WordToFloat(p[2]));
-	xIn.m_xUV        = Zenith_Maths::Vector2(WordToFloat(p[3]),  WordToFloat(p[4]));
-	xIn.m_xNormal    = Zenith_Maths::Vector3(WordToFloat(p[5]),  WordToFloat(p[6]),  WordToFloat(p[7]));
-	xIn.m_xTangent   = Zenith_Maths::Vector3(WordToFloat(p[8]),  WordToFloat(p[9]),  WordToFloat(p[10]));
-	xIn.m_xBitangent = Zenith_Maths::Vector3(WordToFloat(p[11]), WordToFloat(p[12]), WordToFloat(p[13]));
-	xIn.m_xColor     = Zenith_Maths::Vector4(WordToFloat(p[14]), WordToFloat(p[15]), WordToFloat(p[16]), WordToFloat(p[17]));
-	xIn.m_auBoneIDs[0] = p[18]; xIn.m_auBoneIDs[1] = p[19]; xIn.m_auBoneIDs[2] = p[20]; xIn.m_auBoneIDs[3] = p[21];
-	xIn.m_xBoneWeights = Zenith_Maths::Vector4(WordToFloat(p[22]), WordToFloat(p[23]), WordToFloat(p[24]), WordToFloat(p[25]));
+	memcpy(&xIn, pInputWords + (size_t)uInVertexIndex * uFLUX_SKIN_INPUT_WORDS, sizeof(xIn));
 
 	const Flux_SkinOutputVertex xOut = Flux_SkinVertexCPU(xIn, pxBonePalette, uBonePaletteBase, uPaletteCount);
-
-	u_int* o = pOutputWords + (size_t)uOutVertexIndex * uFLUX_SKIN_OUTPUT_WORDS;
-	o[0]  = FloatToWord(xOut.m_xPosition.x);  o[1]  = FloatToWord(xOut.m_xPosition.y);  o[2]  = FloatToWord(xOut.m_xPosition.z);
-	o[3]  = FloatToWord(xOut.m_xUV.x);        o[4]  = FloatToWord(xOut.m_xUV.y);
-	o[5]  = FloatToWord(xOut.m_xNormal.x);    o[6]  = FloatToWord(xOut.m_xNormal.y);    o[7]  = FloatToWord(xOut.m_xNormal.z);
-	o[8]  = FloatToWord(xOut.m_xTangent.x);   o[9]  = FloatToWord(xOut.m_xTangent.y);   o[10] = FloatToWord(xOut.m_xTangent.z);
-	o[11] = FloatToWord(xOut.m_xBitangent.x); o[12] = FloatToWord(xOut.m_xBitangent.y); o[13] = FloatToWord(xOut.m_xBitangent.z);
-	o[14] = FloatToWord(xOut.m_xColor.x);     o[15] = FloatToWord(xOut.m_xColor.y);     o[16] = FloatToWord(xOut.m_xColor.z); o[17] = FloatToWord(xOut.m_xColor.w);
+	memcpy(pOutputWords + (size_t)uOutVertexIndex * uFLUX_SKIN_OUTPUT_WORDS, &xOut, sizeof(xOut));
 }
 
 // ---- previous-pose positions-only raw skinning (TAA velocity motion vectors) --
@@ -226,8 +321,10 @@ inline void Flux_SkinVertexRaw(
 // per-instance palette base) but with the PREVIOUS-frame bone palette, and writes ONLY the
 // skinned OBJECT-space POSITION into a compact prev arena (3 words / vertex). The velocity
 // VS reads it as the vertex's prior-frame local position to encode uvPrev. Positions-only
-// because a motion vector needs only the reprojected position, so the prev arena is 1/6 the
-// size of the full 18-word arena.
+// because a motion vector needs only the reprojected position — and UNCOMPRESSED float32,
+// unlike the main arena: nothing FETCHES this buffer as a vertex attribute (the velocity VS
+// reads it as an SSBO and reprojects it), so half precision would land straight in the
+// motion vector rather than in a shaded position.
 //
 // Pure CPU mirror of that shader: it delegates the bone-weighted accumulation to
 // Flux_SkinVertexCPU (the SAME pinned math the full skinner uses) and writes just the
@@ -244,20 +341,13 @@ inline void Flux_SkinPrevPositionRaw(
 	u_int* pPrevArenaWords, u_int uOutVertexIndex)
 {
 	using namespace Flux_SkinDetail;
-	const u_int* p = pInputWords + (size_t)uInVertexIndex * uFLUX_SKIN_INPUT_WORDS;
 
 	Flux_SkinInputVertex xIn;
-	xIn.m_xPosition  = Zenith_Maths::Vector3(WordToFloat(p[0]),  WordToFloat(p[1]),  WordToFloat(p[2]));
-	xIn.m_xUV        = Zenith_Maths::Vector2(WordToFloat(p[3]),  WordToFloat(p[4]));
-	xIn.m_xNormal    = Zenith_Maths::Vector3(WordToFloat(p[5]),  WordToFloat(p[6]),  WordToFloat(p[7]));
-	xIn.m_xTangent   = Zenith_Maths::Vector3(WordToFloat(p[8]),  WordToFloat(p[9]),  WordToFloat(p[10]));
-	xIn.m_xBitangent = Zenith_Maths::Vector3(WordToFloat(p[11]), WordToFloat(p[12]), WordToFloat(p[13]));
-	xIn.m_xColor     = Zenith_Maths::Vector4(WordToFloat(p[14]), WordToFloat(p[15]), WordToFloat(p[16]), WordToFloat(p[17]));
-	xIn.m_auBoneIDs[0] = p[18]; xIn.m_auBoneIDs[1] = p[19]; xIn.m_auBoneIDs[2] = p[20]; xIn.m_auBoneIDs[3] = p[21];
-	xIn.m_xBoneWeights = Zenith_Maths::Vector4(WordToFloat(p[22]), WordToFloat(p[23]), WordToFloat(p[24]), WordToFloat(p[25]));
+	memcpy(&xIn, pInputWords + (size_t)uInVertexIndex * uFLUX_SKIN_INPUT_WORDS, sizeof(xIn));
 
 	// Same accumulation as the full skinner — only the position is written to the prev arena.
-	const Flux_SkinOutputVertex xOut = Flux_SkinVertexCPU(xIn, pxPrevBonePalette, uBonePaletteBase, uPaletteCount);
+	const Flux_SkinVertexAttributes xOut = Flux_SkinAttributesCPU(
+		Flux_DecodeSkinInputVertex(xIn), pxPrevBonePalette, uBonePaletteBase, uPaletteCount);
 
 	u_int* o = pPrevArenaWords + (size_t)uOutVertexIndex * uFLUX_SKIN_PREV_WORDS;
 	o[0] = FloatToWord(xOut.m_xPosition.x);
@@ -519,7 +609,7 @@ public:
 // ============================================================================
 // Stable skinned-POSE store — folded onto the refcount-diff base.
 //
-// One cached bind-pose entry per DISTINCT skinned mesh asset: the 104B interleaved
+// One cached bind-pose entry per DISTINCT skinned mesh asset: the 32B interleaved
 // bind-pose vertices (compute-skinning input, uFLUX_SKIN_INPUT_WORDS/vert) + the shared
 // mesh instance (IB/counts). Lifetime is the refcount-diff sync — Reference(asset) on each
 // drawn skinned submesh; an entry not referenced a whole sync is evicted (its GPU IB/VB
@@ -537,7 +627,7 @@ class Flux_MeshInstance;   // entry holds a shared mesh instance by pointer (IB/
 
 struct Flux_SkinnedPoseEntry
 {
-	Zenith_Vector<u_int> m_auBindPoseWords;        // 104B-per-vertex interleaved (uFLUX_SKIN_INPUT_WORDS/vert)
+	Zenith_Vector<u_int> m_auBindPoseWords;        // 32B-per-vertex interleaved (uFLUX_SKIN_INPUT_WORDS/vert)
 	Flux_MeshInstance*   m_pxMesh        = nullptr; // CreateSkinnedFromAsset -> IB + index count + bounds
 	const void*          m_pvSourceAsset = nullptr; // Zenith_MeshAsset* (the skinned submesh source)
 	u_int                m_uNumVerts     = 0u;

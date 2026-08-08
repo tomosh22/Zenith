@@ -1,7 +1,7 @@
 // =====================================================================
 // Common/StaticMeshVertex — THE interleaved static-mesh vertex input.
 //
-// ONE declaration of the 72-byte static-mesh VsIn, fetched by FOUR programs:
+// ONE declaration of the 24-byte static-mesh VsIn, fetched by FOUR programs:
 // Flux_UnifiedMesh_ToGBuffer / _ToGBufferVelocity / _ToShadowmap (which reach it
 // through Common/UnifiedMeshDraw.slang) and Flux_Translucent_Forward (which
 // includes this file directly). All four draw the SAME vertex buffers — the
@@ -16,6 +16,18 @@
 // [VtxFmt(...)] tag added to a field here moves all four programs' baked layouts
 // — and so the one packer that writes the buffer — in lockstep, instead of
 // needing the same tag applied identically in two places.
+//
+// THE STORAGE FORMATS (the fields stay float — fetch hardware widens and converts):
+//   position  half4              8 B @ 0   (w unused; the fetch drops the extra lane)
+//   uv        half2              4 B @ 8
+//   normal    snorm10_10_10_2    4 B @ 12  (unit direction; w unused)
+//   tangent   snorm10_10_10_2    4 B @ 16  (unit direction; w = BITANGENT SIGN)
+//   colour    unorm8x4           4 B @ 20
+// = 24 B, down from the 72 B float32 form. THE BITANGENT IS GONE: it is the third
+// leg of an orthonormal frame, so every consumer rebuilds it as
+// cross(normal, tangent.xyz) * tangent.w — one sign bit instead of twelve bytes.
+// The sign is authored CPU-side by the packer, which derives it from the mesh's
+// own bitangent stream (Flux_VertexPacker.cpp's 4-lane TANGENT rule).
 //
 // TEXTUAL #include (NOT `import`): `VsIn` has to land in the INCLUDING shader's own
 // scope, because that is the name each entry point spells in its `vsMain(VsIn)`
@@ -35,14 +47,24 @@
 #ifndef FLUX_COMMON_STATICMESHVERTEX_SLANG
 #define FLUX_COMMON_STATICMESHVERTEX_SLANG
 
+#include "Common/VertexFormats.slang"   // [VtxFmt] authoring attribute (guarded)
+
 struct VsIn
 {
-	float3 a_xPosition  : POSITION;
-	float2 a_xUV        : TEXCOORD0;
-	float3 a_xNormal    : NORMAL;
-	float3 a_xTangent   : TANGENT;
-	float3 a_xBitangent : BINORMAL;
-	float4 a_xColor     : COLOR;
+	[VtxFmt("half4")]           float3 a_xPosition : POSITION;
+	[VtxFmt("half2")]           float2 a_xUV       : TEXCOORD0;
+	[VtxFmt("snorm10_10_10_2")] float3 a_xNormal   : NORMAL;
+	[VtxFmt("snorm10_10_10_2")] float4 a_xTangent  : TANGENT;    // w = bitangent sign
+	[VtxFmt("unorm8x4")]        float4 a_xColor    : COLOR;
 };
+
+// The bitangent the deleted BINORMAL attribute used to carry, rebuilt from the
+// frame it is the third leg of. ONE definition, because all four programs have to
+// reconstruct it identically — a shell that rebuilt it with the sign dropped would
+// light every mirrored UV island inside-out, and nothing downstream could tell.
+float3 Flux_ReconstructBitangent(VsIn input)
+{
+	return cross(input.a_xNormal, input.a_xTangent.xyz) * input.a_xTangent.w;
+}
 
 #endif // FLUX_COMMON_STATICMESHVERTEX_SLANG

@@ -60,9 +60,15 @@ struct Flux_VertexSourceView
 // write (uv 0, normal +Y, tangent +X, bitangent +Z, colour white), so swapping a
 // caller onto the packer cannot change what a mesh with a missing attribute
 // renders as. The w values are the "short source" pad rule: 1 for POSITION and
-// COLOR (a homogeneous point and an opaque alpha), 0 for everything else —
-// which is also what a 4-lane TANGENT falls back to when no BINORMAL source is
-// present to derive a real handedness sign from.
+// COLOR (a homogeneous point and an opaque alpha), and — since the compression
+// flip — 1 for TANGENT too: that lane is a HANDEDNESS every consumer feeds
+// straight into B = cross(N, T.xyz) * w and then normalize()s, so a 0 there is
+// not a neutral pad, it is normalize(float3(0)) = NaN in the G-buffer. +1 is
+// "assume right-handed when nothing says otherwise", which is also what the
+// derive-from-bitangent rule resolves a degenerate frame to. Real producers can
+// and do skip bitangents (the tree exporter's AddVertex overload, an Assimp
+// import with no UVs), so this default IS reachable, not just theoretical.
+// Everything else pads 0.
 inline Zenith_Maths::Vector4 Flux_CanonicalVertexDefault(FluxVertexSemantic eSemantic)
 {
 	switch (eSemantic)
@@ -70,7 +76,7 @@ inline Zenith_Maths::Vector4 Flux_CanonicalVertexDefault(FluxVertexSemantic eSem
 	case FLUX_VERTEX_SEMANTIC_POSITION: return Zenith_Maths::Vector4(0.0f, 0.0f, 0.0f, 1.0f);
 	case FLUX_VERTEX_SEMANTIC_TEXCOORD: return Zenith_Maths::Vector4(0.0f, 0.0f, 0.0f, 0.0f);
 	case FLUX_VERTEX_SEMANTIC_NORMAL:   return Zenith_Maths::Vector4(0.0f, 1.0f, 0.0f, 0.0f);
-	case FLUX_VERTEX_SEMANTIC_TANGENT:  return Zenith_Maths::Vector4(1.0f, 0.0f, 0.0f, 0.0f);
+	case FLUX_VERTEX_SEMANTIC_TANGENT:  return Zenith_Maths::Vector4(1.0f, 0.0f, 0.0f, 1.0f);
 	case FLUX_VERTEX_SEMANTIC_BINORMAL: return Zenith_Maths::Vector4(0.0f, 0.0f, 1.0f, 0.0f);
 	case FLUX_VERTEX_SEMANTIC_COLOR:    return Zenith_Maths::Vector4(1.0f, 1.0f, 1.0f, 1.0f);
 	case FLUX_VERTEX_SEMANTIC_UNKNOWN:  break;

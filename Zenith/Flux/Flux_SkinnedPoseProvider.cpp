@@ -10,7 +10,7 @@
 
 // ----------------------------------------------------------------------------
 // Real skinned-pose provider (Stage 5) — the only GPU-touching part of the pose store.
-// build   = Flux_MeshInstance::CreateSkinnedFromAsset + replicate its 104B interleave
+// build   = Flux_MeshInstance::CreateSkinnedFromAsset + replicate its packed interleave
 //           (Flux_SkinInputVertex) into raw words (uFLUX_SKIN_INPUT_WORDS/vert), the
 //           compute-skinning input. Returns false (no live entry) for an empty / non-skinned
 //           asset. destroy = deferred-delete the shared IB/VB + free the heap entry.
@@ -46,11 +46,10 @@ namespace
 		pxEntry->m_uNumVerts     = uNumVerts;
 		pxEntry->m_pvSourceAsset = pxAsset;
 
-		// Build the 104B skin-input vertex (uFLUX_SKIN_INPUT_WORDS=26 words/vert) via the
+		// Build the packed skin-input vertex (uFLUX_SKIN_INPUT_WORDS words/vert) via the
 		// shared builder that owns that layout — the same bytes CreateSkinnedFromAsset just
 		// uploaded. The pool reads m_auBindPoseWords.GetSize(), so size the word vector to
-		// its final count first, then let the builder overwrite it in place (a word is the
-		// float's bit pattern, identical to the old FloatToWord path).
+		// its final count first, then let the builder overwrite it in place.
 		const u_int uNumWords = uNumVerts * uFLUX_SKIN_INPUT_WORDS;
 		pxEntry->m_auBindPoseWords.Clear();
 		pxEntry->m_auBindPoseWords.Reserve(uNumWords);

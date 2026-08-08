@@ -286,7 +286,8 @@ public:
 	/**
 	 * Ensure GPU buffers are created and uploaded
 	 * Call this before rendering. Does nothing if already uploaded.
-	 * @param bSkinned If true, creates skinned vertex format (104 bytes per vert)
+	 * @param bSkinned If true, creates the skin-INPUT vertex format (the static
+	 *                 packed vertex plus the two compute-skinning bone lanes)
 	 */
 	void EnsureGPUBuffers(bool bSkinned = false);
 

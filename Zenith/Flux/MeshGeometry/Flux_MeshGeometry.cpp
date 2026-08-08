@@ -2,6 +2,8 @@
 #include "Core/Zenith_Engine.h"
 #include "Flux_MeshGeometry.h"
 #include "Flux/MeshGeometry/Flux_VertexPacker.h"   // Flux_PackVertices — the one interleaver
+#include "Flux/MeshGeometry/Flux_MeshInstance.h"   // Flux_DeclareMeshVertexLayout — the mesh-family layout
+#include "Flux/Shaders/Generated/UnifiedMesh.h"    // THE reflected static-mesh table drawn geometry is packed into
 // The three programs that FETCH the unit quad this file generates. Included for the
 // baked layouts the contract below compares — nothing here calls into them.
 #include "Flux/Shaders/Generated/Quads.h"
@@ -252,7 +254,7 @@ void Flux_MeshGeometry::GenerateBox(Flux_MeshGeometry& xGeometryOut,
 		{ -1.f, 0.f, 0.f }, { 0.f, 0.f, 1.f }, { 0.f, 1.f, 0.f }
 	);
 
-	xGeometryOut.GenerateLayoutAndVertexData();
+	xGeometryOut.GenerateMeshPipelineVertexData();
 	xGeometryOut.UploadToGPU();
 }
 
@@ -350,7 +352,7 @@ void Flux_MeshGeometry::GenerateCapsule(Flux_MeshGeometry& xGeometryOut, float f
 		}
 	}
 
-	xGeometryOut.GenerateLayoutAndVertexData();
+	xGeometryOut.GenerateMeshPipelineVertexData();
 	xGeometryOut.UploadToGPU();
 }
 
@@ -427,7 +429,7 @@ void Flux_MeshGeometry::GenerateCone(Flux_MeshGeometry& xGeometryOut, float fRad
 		xGeometryOut.m_puIndices[uIdxIdx++] = uBaseCenterIdx;
 	}
 
-	xGeometryOut.GenerateLayoutAndVertexData();
+	xGeometryOut.GenerateMeshPipelineVertexData();
 	xGeometryOut.UploadToGPU();
 }
 
@@ -636,14 +638,33 @@ void ExportAttribute(T* ptData, Zenith_DataStream& xStream, u_int uSize)
 }
 void Flux_MeshGeometry::Export(const char* szFilename)
 {
+	// The reflected mesh-pipeline table must never become a .zmesh file's element
+	// table: the file format has no version field, its one stability guarantee is
+	// that table, and the reflected one moves whenever a shader annotation does.
+	Zenith_Assert(!Flux_LayoutIsReflectedMeshPipelineTable(m_xBufferLayout),
+		"Export: this geometry carries the reflected mesh-pipeline layout, which must never be serialized (the .zmesh element table is the file's only stability guarantee). Use ExportDerivedFloatLayout.");
+	ExportWithLayout(m_xBufferLayout, m_pVertexData, szFilename);
+}
+
+void Flux_MeshGeometry::ExportDerivedFloatLayout(const char* szFilename)
+{
+	Flux_BufferLayout xFloatLayout;
+	u_int8* pFloatData = nullptr;
+	BuildDerivedFloatLayoutAndVertexData(xFloatLayout, pFloatData);
+	ExportWithLayout(xFloatLayout, pFloatData, szFilename);
+	Zenith_MemoryManagement::Deallocate(pFloatData);
+}
+
+void Flux_MeshGeometry::ExportWithLayout(const Flux_BufferLayout& xLayout, const u_int8* pVertexData, const char* szFilename)
+{
 	Zenith_DataStream xStream;
-	xStream << m_xBufferLayout.GetElements();
+	xStream << xLayout.GetElements();
 	xStream << m_uNumVerts;
 	xStream << m_uNumIndices;
 	xStream << m_uNumBones;
 	m_xBoneNameToIdAndOffset.WriteToDataStream(xStream);
 	xStream << m_xMaterialColor;
-	ExportAttribute(m_pVertexData, xStream, m_uNumVerts * m_xBufferLayout.GetStride());
+	ExportAttribute(pVertexData, xStream, m_uNumVerts * xLayout.GetStride());
 	ExportAttribute(m_puIndices, xStream, m_uNumIndices * sizeof(Flux_MeshGeometry::IndexType));
 	ExportAttribute(m_pxPositions, xStream, m_uNumVerts * sizeof(m_pxPositions[0]));
 	ExportAttribute(m_pxNormals, xStream, m_uNumVerts * sizeof(m_pxNormals[0]));
@@ -659,9 +680,14 @@ void Flux_MeshGeometry::Export(const char* szFilename)
 
 void Flux_MeshGeometry::GenerateLayoutAndVertexData()
 {
+	BuildDerivedFloatLayoutAndVertexData(m_xBufferLayout, m_pVertexData);
+}
+
+void Flux_MeshGeometry::BuildDerivedFloatLayoutAndVertexData(Flux_BufferLayout& xLayoutOut, u_int8*& pVertexDataOut) const
+{
 	// One row per FLOAT attribute this geometry can carry, in the order the
 	// SERIALIZED element table declares them — that order is the .zmesh file format
-	// (Export writes m_xBufferLayout.GetElements() verbatim), so it must not be
+	// (Export writes the element table verbatim), so it must not be
 	// rearranged. Presence is "the stream exists", and an element is declared only
 	// for a stream that does.
 	struct AttributeRow
@@ -687,7 +713,7 @@ void Flux_MeshGeometry::GenerateLayoutAndVertexData()
 	// relative to it, rather than from absolute 0, is what keeps the bytes consistent
 	// with the stride GetVertexDataSize()/UploadToGPU() will use if a caller ever
 	// generates into a geometry that was not Reset.
-	const u_int uElementBase = m_xBufferLayout.GetElements().GetSize();
+	const u_int uElementBase = xLayoutOut.GetElements().GetSize();
 
 	Flux_VertexLayoutElement axElements[uMAX_FLOAT_ELEMENTS] = {};
 	Flux_VertexSourceView    axSources[uMAX_FLOAT_ELEMENTS]  = {};
@@ -698,7 +724,7 @@ void Flux_MeshGeometry::GenerateLayoutAndVertexData()
 		{
 			continue;
 		}
-		m_xBufferLayout.GetElements().PushBack({ xRow.m_eType });
+		xLayoutOut.GetElements().PushBack({ xRow.m_eType });
 		// The offset is filled in from the layout below — it is the layout's answer,
 		// not something recomputed here.
 		axElements[uNumFloatElements] = { xRow.m_eSemantic, 0u, xRow.m_eType, 0u, 0u };
@@ -711,24 +737,24 @@ void Flux_MeshGeometry::GenerateLayoutAndVertexData()
 	{
 		Zenith_Assert(m_pfBoneWeights != nullptr, "How have we wound up with bone IDs but no weights");
 		static_assert(MAX_BONES_PER_VERTEX == 4, "data type needs changing");
-		m_xBufferLayout.GetElements().PushBack({ SHADER_DATA_TYPE_UINT4 });
-		m_xBufferLayout.GetElements().PushBack({ SHADER_DATA_TYPE_FLOAT4 });
+		xLayoutOut.GetElements().PushBack({ SHADER_DATA_TYPE_UINT4 });
+		xLayoutOut.GetElements().PushBack({ SHADER_DATA_TYPE_FLOAT4 });
 	}
 
 	// Offsets + stride are computed ONCE, here, from the element table that was just
 	// declared — and every writer below reads them back out of it, so the bytes and
 	// the table the .zmesh carries cannot disagree.
-	m_xBufferLayout.CalculateOffsetsAndStrides();
-	const u_int uStride = m_xBufferLayout.GetStride();
+	xLayoutOut.CalculateOffsetsAndStrides();
+	const u_int uStride = xLayoutOut.GetStride();
 	for (u_int u = 0; u < uNumFloatElements; u++)
 	{
-		axElements[u].m_uOffset = m_xBufferLayout.GetElements().Get(uElementBase + u).m_uOffset;
+		axElements[u].m_uOffset = xLayoutOut.GetElements().Get(uElementBase + u).m_uOffset;
 	}
 
-	m_pVertexData = static_cast<u_int8*>(Zenith_MemoryManagement::Allocate(static_cast<size_t>(m_uNumVerts) * uStride));
+	pVertexDataOut = static_cast<u_int8*>(Zenith_MemoryManagement::Allocate(static_cast<size_t>(m_uNumVerts) * uStride));
 
 	const Flux_VertexLayoutDesc xVertexLayout{ axElements, uNumFloatElements, { uStride, 0u } };
-	Flux_PackVertices(m_pVertexData, xVertexLayout, axSources, uNumFloatElements, m_uNumVerts);
+	Flux_PackVertices(pVertexDataOut, xVertexLayout, axSources, uNumFloatElements, m_uNumVerts);
 
 	if (bHasBones)
 	{
@@ -736,16 +762,50 @@ void Flux_MeshGeometry::GenerateLayoutAndVertexData()
 		// vertex semantic, and the packer refuses the integer families by design (see
 		// Flux_VertexPacker.h). It is copied straight in at the offsets the same
 		// layout named, one 4-lane block each.
-		const u_int uBoneIDOffset     = m_xBufferLayout.GetElements().Get(uElementBase + uNumFloatElements).m_uOffset;
-		const u_int uBoneWeightOffset = m_xBufferLayout.GetElements().Get(uElementBase + uNumFloatElements + 1u).m_uOffset;
+		const u_int uBoneIDOffset     = xLayoutOut.GetElements().Get(uElementBase + uNumFloatElements).m_uOffset;
+		const u_int uBoneWeightOffset = xLayoutOut.GetElements().Get(uElementBase + uNumFloatElements + 1u).m_uOffset;
 		for (uint32_t i = 0; i < m_uNumVerts; i++)
 		{
-			u_int8* const pVertex = m_pVertexData + static_cast<size_t>(i) * uStride;
+			u_int8* const pVertex = pVertexDataOut + static_cast<size_t>(i) * uStride;
 			const size_t uBoneBase = static_cast<size_t>(i) * MAX_BONES_PER_VERTEX;
 			memcpy(pVertex + uBoneIDOffset, m_puBoneIDs + uBoneBase, MAX_BONES_PER_VERTEX * sizeof(m_puBoneIDs[0]));
 			memcpy(pVertex + uBoneWeightOffset, m_pfBoneWeights + uBoneBase, MAX_BONES_PER_VERTEX * sizeof(m_pfBoneWeights[0]));
 		}
 	}
+}
+
+void Flux_MeshGeometry::GenerateMeshPipelineVertexData()
+{
+	// Same six semantic sources as an imported mesh asset's — a stream this geometry
+	// does not carry is simply not offered, which routes that attribute onto the
+	// packer's canonical default. The BITANGENT is a source, not an element: it feeds
+	// the 4-lane TANGENT's handedness sign.
+	const Flux_VertexSourceView axSources[] =
+	{
+		{ FLUX_VERTEX_SEMANTIC_POSITION, 0u, reinterpret_cast<const float*>(m_pxPositions),  3u },
+		{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 0u, reinterpret_cast<const float*>(m_pxUVs),        2u },
+		{ FLUX_VERTEX_SEMANTIC_NORMAL,   0u, reinterpret_cast<const float*>(m_pxNormals),    3u },
+		{ FLUX_VERTEX_SEMANTIC_TANGENT,  0u, reinterpret_cast<const float*>(m_pxTangents),   3u },
+		{ FLUX_VERTEX_SEMANTIC_BINORMAL, 0u, reinterpret_cast<const float*>(m_pxBitangents), 3u },
+		{ FLUX_VERTEX_SEMANTIC_COLOR,    0u, reinterpret_cast<const float*>(m_pxColors),     4u },
+	};
+
+	Zenith_Assert(m_puBoneIDs == nullptr,
+		"GenerateMeshPipelineVertexData: this geometry carries skinning data, which the unified mesh pipeline fetches from the compute-skinning arena, not from a vertex buffer");
+
+	Flux_DeclareMeshVertexLayout(m_xBufferLayout, /*bSkinned*/ false);
+	const u_int uStride = m_xBufferLayout.GetStride();
+
+	// Re-generating over an already-interleaved geometry is legitimate (a caller may
+	// have taken the derived float form first), and the layout was just replaced, so
+	// the old buffer can only be freed here.
+	if (m_pVertexData)
+	{
+		Zenith_MemoryManagement::Deallocate(m_pVertexData);
+	}
+	m_pVertexData = static_cast<u_int8*>(Zenith_MemoryManagement::Allocate(static_cast<size_t>(m_uNumVerts) * uStride));
+	Flux_PackVertices(m_pVertexData, Flux_Generated_UnifiedMesh::UnifiedMesh_ToGBuffer::kVertexLayout,
+		axSources, static_cast<u_int>(sizeof(axSources) / sizeof(axSources[0])), m_uNumVerts);
 }
 
 void Flux_MeshGeometry::GenerateNormals()

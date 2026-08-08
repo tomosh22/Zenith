@@ -13,7 +13,7 @@
 //   * VsIn / UnifiedDrawConstantsLayout / DrawParams / UnpackRGBA8 — the shared
 //     vertex input, per-bucket draw constants, DRAW block (set 4) and tint unpack.
 //     VsIn itself now comes from Common/StaticMeshVertex.slang, because a FOURTH
-//     program (Flux_Translucent_Forward) fetches the same 72 B stream and cannot
+//     program (Flux_Translucent_Forward) fetches the same 24 B stream and cannot
 //     include this file — it declares its own PASS/DRAW blocks and its own
 //     `DrawParams`, which would collide with the one below.
 //   * TransformUnifiedVertexPosition / TransformUnifiedVertex — the shared VAT sway
@@ -43,7 +43,7 @@
 #include "Common/Bindings.slang"       // spine sets 0/1/2 (declared FIRST) + accessors + Inverse3x3/BuildTBN via Common.Material
 #include "Common/SceneObjects.slang"   // GPUSceneObject / GPUSceneDrawItem (guarded)
 #include "Common/VAT.slang"            // Flux_ApplyVAT (guarded)
-#include "Common/StaticMeshVertex.slang" // VsIn — THE 72 B interleaved static-mesh vertex input (guarded)
+#include "Common/StaticMeshVertex.slang" // VsIn — THE 24 B interleaved static-mesh vertex input (guarded)
 import Common.MaterialTable;           // MaterialGPU
 import Common.Material;                // Inverse3x3 / BuildTBN
 import Common.MaterialSurface;         // EvaluateMaterialSurface / MaterialSurface / MakeGBuffer(MaterialSurface)
@@ -120,8 +120,12 @@ UnifiedVertexBasis TransformUnifiedVertex(VsIn input, uint vertexId, GPUSceneObj
     b.xWorldPos = TransformUnifiedVertexPosition(input, vertexId, obj, dc, xAnimationTex, b.xLocalPos);
     float3x3 xNormalMatrix = transpose(Inverse3x3((float3x3)obj.m_xModelMatrix));
     b.xWorldNormal    = normalize(mul(xNormalMatrix, input.a_xNormal));
-    b.xWorldTangent   = normalize(mul(xNormalMatrix, input.a_xTangent));
-    float3 xBitangent = normalize(mul(xNormalMatrix, input.a_xBitangent));
+    b.xWorldTangent   = normalize(mul(xNormalMatrix, input.a_xTangent.xyz));
+    // The bitangent is reconstructed in OBJECT space and then transformed, rather
+    // than taking the sign straight off a_xTangent.w: a normal matrix with a
+    // negative determinant (a mirrored scale) flips the frame's handedness, and
+    // deriving the sign after the transform is what carries that through.
+    float3 xBitangent = normalize(mul(xNormalMatrix, Flux_ReconstructBitangent(input)));
     b.fBitangentSign  = sign(dot(xBitangent, cross(b.xWorldNormal, b.xWorldTangent)));
     return b;
 }

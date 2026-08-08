@@ -23,7 +23,7 @@
 #include "Common/Bindings.slang"
 #include "Common/ViewModes.slang"      // Stage 3b: FLUX_SC_VIEW_*_PERMITTED spec-constant view-mode mask
 #include "Common/ShadowSampling.slang" // Stage 6: IShadowFilter seam (this pass conforms its own 4-tap tier below)
-// VsIn — THE 72 B interleaved static-mesh vertex input, shared with the three
+// VsIn — THE 24 B interleaved static-mesh vertex input, shared with the three
 // unified-mesh shells. This pass draws the SAME vertex buffers they do (a
 // Flux_MeshInstance stream packed through UnifiedMesh_ToGBuffer's layout), so a
 // second local copy of the struct was a layout the reflection could bake
@@ -96,8 +96,11 @@ VsOut vsMain(VsIn input)
 	o.uv             = input.a_xUV;
 	o.vertexColor    = input.a_xColor;
 	o.worldNormal    = normalize(mul(xNormalMatrix, input.a_xNormal));
-	o.worldTangent   = normalize(mul(xNormalMatrix, input.a_xTangent));
-	float3 xBitangent = normalize(mul(xNormalMatrix, input.a_xBitangent));
+	o.worldTangent   = normalize(mul(xNormalMatrix, input.a_xTangent.xyz));
+	// Object-space reconstruct then transform, exactly as the unified shells do —
+	// a mirrored (negative-determinant) normal matrix flips the handedness, and
+	// deriving the sign after the transform is what carries that through.
+	float3 xBitangent = normalize(mul(xNormalMatrix, Flux_ReconstructBitangent(input)));
 	o.bitangentSign  = sign(dot(xBitangent, cross(o.worldNormal, o.worldTangent)));
 	o.worldPos       = xWorldPos;
 	o.position       = mul(GetViewProjMat(), float4(xWorldPos, 1.0));

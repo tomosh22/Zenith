@@ -194,6 +194,27 @@ jobs:
           #
           # History, newest first (the DERIVATION is the audit trail; the OBSERVED
           # number is the authority):
+          #   3056  Compressed-vertex Phase 4 T4.a adversarial-review fix pass,
+          #                   observed 2026-08-08 on a Null_ build. +7 ENGINE units:
+          #                   codec +4 (hand-derived half word pins, frozen Slang
+          #                   half-transcription parity incl. the pinned tie
+          #                   divergence, bit-classified positive-finite branches,
+          #                   over-unity bone-weight pre-scale), packer +1 (the
+          #                   half-range position guard), interleave +1 (skin-output
+          #                   encoder vs static packer byte identity), skinning +1
+          #                   (negative-determinant blends flip the bitangent sign).
+          #                   ZM's own registrations unmoved.
+          #   3049  Compressed-vertex Phase 4 T4.a (the mesh compression flip)
+          #                   observed 2026-08-08 on a Null_ build. +5 NET ENGINE
+          #                   units (1419 -> 1424): the two mesh-family memcmp
+          #                   goldens now compare against an INDEPENDENT codec
+          #                   transcription rather than the frozen float32
+          #                   interleave loops (the flip changes those bytes by
+          #                   design), plus the skin-input/static prefix identity,
+          #                   the mirrored-frame bitangent SIGN, the procedural
+          #                   mesh-pipeline pack, the packed skin-vertex codec round
+          #                   trip and the one-byte bone sentinel. ZM's own
+          #                   registrations unmoved.
           #   3044  Compressed-vertex Phase 3 T3.b (mesh-family replacement)
           #                   observed 2026-08-08 on a Null_ build. +4 NET ENGINE
           #                   units (1415 -> 1419): the mesh-family suite was
@@ -368,7 +389,7 @@ jobs:
           #   2817  ZM-D-173  = 2809 + 8: four ENGINE sensor-raycast units plus
           #                   two camera fixtures and two Home-placement units.
           $exe = 'Games\Zenithmon\Build\output\win64\null_vs2022_debug_win64_true\zenithmon.exe'
-          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 3044 -TimeoutSec 600
+          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 3056 -TimeoutSec 600
           if ($LASTEXITCODE -ne 0) { Write-Error "boot unit tests failed (see log above)"; exit $LASTEXITCODE }
 
       - name: Run Zenithmon tests
