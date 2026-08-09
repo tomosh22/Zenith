@@ -194,6 +194,22 @@ jobs:
           #
           # History, newest first (the DERIVATION is the audit trail; the OBSERVED
           # number is the authority):
+          #   3062  Compressed-vertex Phase 5 T5.a adversarial-review fix pass,
+          #                   observed 2026-08-08 on a Null_ build. +4 ENGINE units,
+          #                   all in Flux_Terrain.Tests.inl: the TerrainConstants CB
+          #                   fill vs the authored box (values, not just layout),
+          #                   quant-bridge writes landing at the SHADER's reflected
+          #                   offsets, decode->re-encode word idempotence (the
+          #                   sculpt/carve seam-safety property), and the UV
+          #                   write/read round trip incl. the integer snap.
+          #   3058  Compressed-vertex Phase 5 T5.a, the terrain compression flip
+          #                   (28 -> 20 B/vertex), observed 2026-08-08 on a Null_
+          #                   build. +2 ENGINE units, both in Flux_VertexCodec
+          #                   .Tests.inl: the frozen Slang transcription of
+          #                   Flux_DequantPosition (plus the fixed-function
+          #                   VK_FORMAT_R16G16B16A16_SNORM fetch) swept against the
+          #                   CPU codec, and the out-of-box clamp. That function
+          #                   gained its first caller with this flip.
           #   3056  Compressed-vertex Phase 4 T4.a adversarial-review fix pass,
           #                   observed 2026-08-08 on a Null_ build. +7 ENGINE units:
           #                   codec +4 (hand-derived half word pins, frozen Slang
@@ -389,7 +405,7 @@ jobs:
           #   2817  ZM-D-173  = 2809 + 8: four ENGINE sensor-raycast units plus
           #                   two camera fixtures and two Home-placement units.
           $exe = 'Games\Zenithmon\Build\output\win64\null_vs2022_debug_win64_true\zenithmon.exe'
-          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 3056 -TimeoutSec 600
+          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 3062 -TimeoutSec 600
           if ($LASTEXITCODE -ne 0) { Write-Error "boot unit tests failed (see log above)"; exit $LASTEXITCODE }
 
       - name: Run Zenithmon tests

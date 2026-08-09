@@ -1081,8 +1081,12 @@ static void InitializeRenderTestResources()
 // (version, file presence) and cannot see a recipe change, so without this bump
 // every existing bake would keep its type-less texture set and every blade
 // would stay type 0.
+// v10: the terrain vertex was compressed from 28 to 20 bytes (quantised SNORM16x4
+// position + UNORM16x2 UV). Every chunk's bytes moved and a v9 chunk's serialized
+// element table no longer matches Zenith_TerrainChunkLayout, so it is rejected --
+// no LOW geometry, no collision.
 // Bump this for any baked-BYTE change, not only when the heightfield moves.
-static const char* sk_szTerrainProcMarkerRel = "Terrain/terrain_proc_v9.marker";
+static const char* sk_szTerrainProcMarkerRel = "Terrain/terrain_proc_v10.marker";
 
 static bool RenderTest_TerrainAssetsNeedRegeneration()
 {

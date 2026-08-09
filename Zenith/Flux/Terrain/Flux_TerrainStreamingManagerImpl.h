@@ -3,6 +3,14 @@
 #include "Flux/Flux_Buffers.h"
 #include "Flux/Terrain/Flux_TerrainConfig.h"
 #include "Flux/Terrain/Flux_TerrainGPUStructs.h"
+// The chunk-vertex hook below hands out raw packed vertex bytes and asks callers to
+// re-shape them. Since the compression flip that is not something a caller can do
+// with a float cast, so the codec that reads and writes those bytes travels with the
+// contract that demands it rather than being a separate thing each hook author has to
+// find. It is also what lets Zenith_TerrainComponent.cpp's chunk validator decode a
+// packed position without opening a NEW EntityComponent -> Flux include edge (the
+// layering ratchet, Tools/layering_allowlist.txt, correctly refuses one).
+#include "Flux/Terrain/Flux_TerrainVertexQuant.h"
 #include "Maths/Zenith_Maths.h"
 #include "Maths/Zenith_FrustumCulling.h"
 #include "Collections/Zenith_Vector.h"

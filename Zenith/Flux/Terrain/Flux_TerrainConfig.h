@@ -108,14 +108,21 @@ static constexpr uint32_t STREAMING_UPDATE_INTERVAL = 2;
 
 // ========== Vertex Format ==========
 // Terrain vertex stride (Position + UV + Normal + Tangent+Sign)
-// = FLOAT3(12) + FLOAT2(8) + SNORM10:10:10:2(4) + SNORM10:10:10:2(4) = 28 bytes
+// = SNORM16x4(8) + UNORM16x2(4) + SNORM10:10:10:2(4) + SNORM10:10:10:2(4) = 20 bytes
 //
-// UV is FLOAT2, not HALF2: terrain UVs are stored as heightmap pixel
-// coordinates (up to ~4095), and HALF's 10-bit mantissa loses sub-integer
-// precision above 1024 / 2-unit precision above 2048. With HALF the upper
-// half of any large terrain shows a stretched/compressed strip artefact at
-// vertex spacing in the diffuse channel.
-static constexpr uint32_t VERTEX_STRIDE_BYTES = 28;
+// The position is quantised against the AUTHORED terrain box (not a per-chunk
+// AABB, which would crack every chunk seam); the box and the byte offsets live
+// with the on-disk contract in Core/Zenith_TerrainChunkLayout.h, which the
+// static_asserts in Flux_TerrainStreamingManager.cpp pin against the reflected
+// shader layout.
+//
+// UV is UNORM16, not HALF2: terrain UVs are heightmap pixel coordinates (up to
+// 4096), and HALF's 10-bit mantissa loses sub-integer precision above 1024 /
+// 2-unit precision above 2048. With HALF the upper half of any large terrain
+// shows a stretched/compressed strip artefact at vertex spacing in the diffuse
+// channel. Unorm16 normalised by the terrain extent is uniform at 1/16 pixel
+// across the whole range.
+static constexpr uint32_t VERTEX_STRIDE_BYTES = 20;
 
 // ========== Helper Functions ==========
 

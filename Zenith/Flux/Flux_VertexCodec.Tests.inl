@@ -1,5 +1,6 @@
 #include "UnitTests/Zenith_UnitTests.h"
 #include "Flux/Flux_VertexCodec.h"
+#include "Core/Zenith_TerrainChunkLayout.h"   // the authored box Flux_DequantPosition's only caller uses
 
 #include <cmath>   // sinf/cosf — sweep generation for the SNORM10 bit-identity pin
 #include <bit>     // std::bit_cast — constructed float bits for the half pins + the finite-bits branches
@@ -264,6 +265,169 @@ ZENITH_TEST(VertexCodec, PosQuantRoundTripWithinBoxStep)
 			const float fTolerance = xQuant.m_xScale[i] / 32767.0f;
 			ZENITH_ASSERT_EQ_FLOAT(xOut[i], xIn[i], fTolerance, "posquant axis %d at step %u", i, u);
 		}
+	}
+}
+
+namespace
+{
+	// VERBATIM frozen transcription of Common/VertexFormats.slang's
+	// Flux_DequantPosition — the GPU half of the snorm16 position contract.
+	// Diffable side by side with the .slang; if either side changes, change both,
+	// and this suite says so.
+	Zenith_Maths::Vector3 SlangMirror_DequantPosition(
+		const Zenith_Maths::Vector4& xFetched,
+		const Zenith_Maths::Vector3& xScale,
+		const Zenith_Maths::Vector3& xBias)
+	{
+		return xBias + (Zenith_Maths::Vector3(xFetched.x, xFetched.y, xFetched.z) * 0.5f + 0.5f) * xScale;
+	}
+
+	// The FIXED-FUNCTION step that runs before the shader sees the attribute, and the
+	// reason this pin needs to exist at all: the .slang never spells it, so nothing in
+	// either language says what `xFetched` is. VK_FORMAT_R16G16B16A16_SNORM converts
+	// each stored int16 by max(s / 32767, -1) (Vulkan 1.3, "Conversion from Normalized
+	// Fixed-Point to Floating-Point"), lane 0 in the LOW bits — the little-endian order
+	// glm::packSnorm4x16 writes.
+	Zenith_Maths::Vector4 FetchSnorm16x4(u_int64 ulPacked)
+	{
+		float afLanes[4];
+		for (int i = 0; i < 4; i++)
+		{
+			const int16_t iStored = static_cast<int16_t>((ulPacked >> (16 * i)) & 0xFFFFull);
+			afLanes[i] = std::max(static_cast<float>(iStored) / 32767.0f, -1.0f);
+		}
+		return Zenith_Maths::Vector4(afLanes[0], afLanes[1], afLanes[2], afLanes[3]);
+	}
+}
+
+ZENITH_TEST(VertexCodec, DequantPositionMatchesSlangTranscription)
+{
+	// A quantised position is the one attribute whose DECODE crosses the
+	// CPU/GPU boundary in both directions: the exporter and the editor/carve hooks
+	// pack against a box, physics and the chunk validator decode with the CPU codec,
+	// and the vertex shader decodes with Flux_DequantPosition. There is no runtime
+	// tripwire for their agreement (a vertex shader cannot static_assert against GLM),
+	// so it is pinned here at the transcription level.
+	struct QuantBox
+	{
+		Zenith_Maths::Vector3 m_xMin;
+		Zenith_Maths::Vector3 m_xMax;
+		const char* m_szName;
+	};
+	const QuantBox axBOXES[] = {
+		// The authored terrain box — Flux_DequantPosition's first production caller.
+		{
+			Zenith_Maths::Vector3(Zenith_TerrainChunkLayout::afPOSITION_BOX_MIN[0],
+				Zenith_TerrainChunkLayout::afPOSITION_BOX_MIN[1],
+				Zenith_TerrainChunkLayout::afPOSITION_BOX_MIN[2]),
+			Zenith_Maths::Vector3(Zenith_TerrainChunkLayout::afPOSITION_BOX_MAX[0],
+				Zenith_TerrainChunkLayout::afPOSITION_BOX_MAX[1],
+				Zenith_TerrainChunkLayout::afPOSITION_BOX_MAX[2]),
+			"authored terrain box"
+		},
+		// A box straddling the origin with a negative bias and a sub-metre axis.
+		{ Zenith_Maths::Vector3(-128.0f, -4.5f, 0.25f), Zenith_Maths::Vector3(128.0f, 60.0f, 0.5f), "asymmetric box" },
+		// Every axis degenerate: Flux_MakePosQuant substitutes scale 1, and the two
+		// decoders have to agree about that too.
+		{ Zenith_Maths::Vector3(7.5f, 3.0f, -2.0f), Zenith_Maths::Vector3(7.5f, 3.0f, -2.0f), "degenerate box" },
+	};
+
+	for (u_int uBox = 0; uBox < sizeof(axBOXES) / sizeof(axBOXES[0]); ++uBox)
+	{
+		const QuantBox& xBox = axBOXES[uBox];
+		const Flux_PosQuant xQuant = Flux_MakePosQuant(xBox.m_xMin, xBox.m_xMax);
+
+		// Quantum indices, not fractions: 0 and 65534 are the box corners, 32767 is
+		// the exact centre, and 1 / 65533 are one quantum in from each end — the
+		// boundaries where a rounding disagreement would first show.
+		static constexpr u_int auINDICES[] = { 0u, 1u, 2u, 16384u, 32767u, 32768u, 49151u, 65533u, 65534u };
+		for (u_int uCase = 0; uCase < sizeof(auINDICES) / sizeof(auINDICES[0]); ++uCase)
+		{
+			const float fT = static_cast<float>(auINDICES[uCase]) / 65534.0f;
+			const Zenith_Maths::Vector3 xIn = xQuant.m_xBias + xQuant.m_xScale * fT;
+			const u_int64 ulPacked = Flux_PackSnorm16x4(xIn, 1.0f, xQuant);
+
+			const Zenith_Maths::Vector3 xCpu = Flux_UnpackSnorm16x4Position(ulPacked, xQuant);
+			const Zenith_Maths::Vector3 xGpu = SlangMirror_DequantPosition(
+				FetchSnorm16x4(ulPacked), xQuant.m_xScale, xQuant.m_xBias);
+
+			for (int i = 0; i < 3; i++)
+			{
+				// NOT bit-equality: both sides are float expressions compiled under
+				// /fp:fast, where the same algebra may contract differently. The bound
+				// is a few ULP of the decoded magnitude plus a few ULP of the scale —
+				// NO flat absolute floor, because a floor sized for the terrain box
+				// (1e-5) is LOOSER than a whole quantisation step on a sub-metre axis
+				// (the asymmetric box's 0.25 extent steps at 3.8e-6), which would make
+				// that sweep axis vacuous. This form stays at or under ~5% of a step
+				// on every axis exercised here.
+				const float fTolerance =
+					(std::fabs(xCpu[i]) + std::fabs(xQuant.m_xScale[i])) * 4.0e-7f + 1.0e-7f;
+				ZENITH_ASSERT_EQ_FLOAT(xGpu[i], xCpu[i], fTolerance,
+					"GPU and CPU dequant disagree on axis %d, %s, quantum %u", i, xBox.m_szName, auINDICES[uCase]);
+			}
+		}
+
+		// The stored WORDS at the box corners are integers and are pinned exactly:
+		// a lane order or rounding change on the pack side moves these even when the
+		// two decoders still agree with each other.
+		const u_int64 ulMinWord = Flux_PackSnorm16x4(xBox.m_xMin, 1.0f, xQuant);
+		const u_int64 ulMaxWord = Flux_PackSnorm16x4(xQuant.m_xBias + xQuant.m_xScale, 1.0f, xQuant);
+		for (int i = 0; i < 3; i++)
+		{
+			const int16_t iMinLane = static_cast<int16_t>((ulMinWord >> (16 * i)) & 0xFFFFull);
+			const int16_t iMaxLane = static_cast<int16_t>((ulMaxWord >> (16 * i)) & 0xFFFFull);
+			ZENITH_ASSERT_EQ(static_cast<int32_t>(iMinLane), -32767,
+				"the box minimum must store the most negative snorm16 (axis %d, %s)", i, xBox.m_szName);
+			ZENITH_ASSERT_EQ(static_cast<int32_t>(iMaxLane), 32767,
+				"the box maximum must store the most positive snorm16 (axis %d, %s)", i, xBox.m_szName);
+		}
+
+		// -32767 and +32767 fetch to exactly -1 and +1, so the two corner decodes are
+		// bias and bias+scale with no rounding at all — pinned against the AUTHORED
+		// values rather than against each other.
+		const Zenith_Maths::Vector3 xGpuMin = SlangMirror_DequantPosition(
+			FetchSnorm16x4(ulMinWord), xQuant.m_xScale, xQuant.m_xBias);
+		const Zenith_Maths::Vector3 xGpuMax = SlangMirror_DequantPosition(
+			FetchSnorm16x4(ulMaxWord), xQuant.m_xScale, xQuant.m_xBias);
+		for (int i = 0; i < 3; i++)
+		{
+			const float fTolerance = std::fabs(xQuant.m_xScale[i]) * 4.0e-7f + 1.0e-5f;
+			ZENITH_ASSERT_EQ_FLOAT(xGpuMin[i], xBox.m_xMin[i], fTolerance,
+				"the GPU decode of the box minimum is the box minimum (axis %d, %s)", i, xBox.m_szName);
+			ZENITH_ASSERT_EQ_FLOAT(xGpuMax[i], xQuant.m_xBias[i] + xQuant.m_xScale[i], fTolerance,
+				"the GPU decode of the box maximum is the box maximum (axis %d, %s)", i, xBox.m_szName);
+		}
+	}
+}
+
+ZENITH_TEST(VertexCodec, DequantPositionClampsOutsideTheAuthoredBox)
+{
+	// A live edit (editor sculpt, CityBuilder's carve/terraform) can push a vertex
+	// past the authored box. The pack CLAMPS rather than wrapping, so the GPU sees the
+	// box lid — a flattened vertex, never one teleported to the opposite corner.
+	const Flux_PosQuant xQuant = Flux_MakePosQuant(
+		Zenith_Maths::Vector3(Zenith_TerrainChunkLayout::afPOSITION_BOX_MIN[0],
+			Zenith_TerrainChunkLayout::afPOSITION_BOX_MIN[1],
+			Zenith_TerrainChunkLayout::afPOSITION_BOX_MIN[2]),
+		Zenith_Maths::Vector3(Zenith_TerrainChunkLayout::afPOSITION_BOX_MAX[0],
+			Zenith_TerrainChunkLayout::afPOSITION_BOX_MAX[1],
+			Zenith_TerrainChunkLayout::afPOSITION_BOX_MAX[2]));
+
+	const Zenith_Maths::Vector3 xBelow(-1000.0f, -50.0f, -1.0f);
+	const Zenith_Maths::Vector3 xAbove(9000.0f, 4096.0f, 4096.5f);
+	const Zenith_Maths::Vector3 xGpuBelow = SlangMirror_DequantPosition(
+		FetchSnorm16x4(Flux_PackSnorm16x4(xBelow, 1.0f, xQuant)), xQuant.m_xScale, xQuant.m_xBias);
+	const Zenith_Maths::Vector3 xGpuAbove = SlangMirror_DequantPosition(
+		FetchSnorm16x4(Flux_PackSnorm16x4(xAbove, 1.0f, xQuant)), xQuant.m_xScale, xQuant.m_xBias);
+
+	for (int i = 0; i < 3; i++)
+	{
+		const float fTolerance = std::fabs(xQuant.m_xScale[i]) * 4.0e-7f + 1.0e-5f;
+		ZENITH_ASSERT_EQ_FLOAT(xGpuBelow[i], xQuant.m_xBias[i], fTolerance,
+			"a position below the box clamps to the box minimum (axis %d)", i);
+		ZENITH_ASSERT_EQ_FLOAT(xGpuAbove[i], xQuant.m_xBias[i] + xQuant.m_xScale[i], fTolerance,
+			"a position above the box clamps to the box maximum (axis %d)", i);
 	}
 }
 

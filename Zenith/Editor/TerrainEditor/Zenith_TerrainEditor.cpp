@@ -20,6 +20,7 @@
 #include "Flux/Flux_VertexCodec.h"
 #include "Flux/Primitives/Flux_PrimitivesImpl.h"
 #include "Flux/Terrain/Flux_TerrainStreamingManagerImpl.h"
+#include "Flux/Terrain/Flux_TerrainVertexQuant.h"
 #include "Input/Zenith_Input.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 
@@ -1060,7 +1061,8 @@ void Zenith_TerrainEditor::ChunkVertexHook(void* pUser, uint32_t uChunkX, uint32
 	void* pVerts, uint32_t uNumVerts, uint32_t uStride)
 {
 	Zenith_TerrainEditor* pxThis = static_cast<Zenith_TerrainEditor*>(pUser);
-	if (pxThis == nullptr || pVerts == nullptr || uNumVerts == 0u || uStride < 28u)
+	if (pxThis == nullptr || pVerts == nullptr || uNumVerts == 0u ||
+		uStride < Zenith_TerrainChunkLayout::uVERTEX_STRIDE)
 	{
 		return;
 	}
@@ -1075,19 +1077,36 @@ void Zenith_TerrainEditor::ChunkVertexHook(void* pUser, uint32_t uChunkX, uint32
 	}
 
 	u_int8* pBytes = static_cast<u_int8*>(pVerts);
+	const Flux_PosQuant xQuant = Flux_MakeTerrainPosQuant();
 	for (uint32_t i = 0; i < uNumVerts; i++)
 	{
 		u_int8* pVertex = pBytes + static_cast<size_t>(i) * uStride;
-		float* pPos = reinterpret_cast<float*>(pVertex);
-		const float* pUV = reinterpret_cast<const float*>(pVertex + 12);
 
 		// Vertex UVs are GLOBAL heightmap pixel coordinates — shared border
 		// verts carry identical UVs in both chunks, so absolute-Y rewrite is
-		// crack-free by construction.
-		const float fU = pUV[0];
-		const float fV = pUV[1];
+		// crack-free by construction. That still holds under quantisation: the
+		// UV lane is packed against the same global extent in both chunks, so
+		// both decode the same pixel and sample the same height.
+		//
+		// SNAP the decoded UV to the integer it was authored as. Terrain UVs are
+		// integers by construction at every density (the exporter writes x / density,
+		// exact for divisors 1 and 4), but the unorm16 lane hands them back up to
+		// 1/32 px off — enough for SampleHeightNorm's bilinear to blend the adjacent
+		// texel in and put this chunk's border verts ~centimetres off the EXACT baked
+		// word its un-brushed neighbour still carries (a visible dirty<->clean seam on
+		// steep slopes). Rounding recovers the authored pixel exactly: the dequant
+		// error is 0.031 px against a 0.5 px rounding threshold.
+		const Zenith_Maths::Vector2 xUV = Flux_ReadTerrainVertexUV(pVertex);
+		const float fU = std::round(xUV.x);
+		const float fV = std::round(xUV.y);
 
-		pPos[1] = pxThis->SampleHeightNorm(fU, fV) * fTERRAIN_MAX_HEIGHT;
+		// Decode / rewrite Y / re-encode. Re-encoding a value that came out of the
+		// decode is the identity — it is already a quantum representative and the
+		// box is a constant — so the XZ words the baked chunk carried survive the
+		// round trip and a sculpted chunk still meets its neighbours exactly.
+		Zenith_Maths::Vector3 xPosition = Flux_ReadTerrainVertexPosition(pVertex, xQuant);
+		xPosition.y = pxThis->SampleHeightNorm(fU, fV) * fTERRAIN_MAX_HEIGHT;
+		Flux_WriteTerrainVertexPosition(pVertex, xPosition, xQuant);
 
 		// Recompute the packed normal/tangent from central differences (1px ==
 		// 1m spacing) — lighting is the primary depth cue while sculpting.
@@ -1103,12 +1122,12 @@ void Zenith_TerrainEditor::ChunkVertexHook(void* pUser, uint32_t uChunkX, uint32
 		const Zenith_Maths::Vector3 xBitangent = glm::normalize(Zenith_Maths::Vector3(0.0f, fDYDZ, 1.0f));
 		const float fSign = glm::dot(glm::cross(xNormal, xTangent), xBitangent) > 0.0f ? 1.0f : -1.0f;
 
-		// Same codec the exporter bakes with — a live sculpt edit has to produce
-		// bit-identical words to the chunk it is replacing.
-		uint32_t* pNormal = reinterpret_cast<uint32_t*>(pVertex + 20);
-		*pNormal = Flux_PackSnorm10_10_10_2(xNormal.x, xNormal.y, xNormal.z, 0.0f);
-		uint32_t* pTangent = reinterpret_cast<uint32_t*>(pVertex + 24);
-		*pTangent = Flux_PackSnorm10_10_10_2(xTangent.x, xTangent.y, xTangent.z, fSign);
+		// Same codec and the same offsets the exporter bakes with — a live sculpt
+		// edit has to produce bit-identical words to the chunk it is replacing.
+		Flux_WriteTerrainVertexNormalWord(pVertex,
+			Flux_PackSnorm10_10_10_2(xNormal.x, xNormal.y, xNormal.z, 0.0f));
+		Flux_WriteTerrainVertexTangentWord(pVertex,
+			Flux_PackSnorm10_10_10_2(xTangent.x, xTangent.y, xTangent.z, fSign));
 	}
 }
 

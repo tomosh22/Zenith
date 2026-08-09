@@ -5,6 +5,7 @@
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
 #include "Flux/Terrain/Flux_TerrainStreamingManagerImpl.h"
 #include "Flux/Terrain/Flux_TerrainConfig.h"
+#include "Flux/Terrain/Flux_TerrainVertexQuant.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "Maths/Zenith_FrustumCulling.h"
 #include "Flux/Flux_BackendTypes.h"
@@ -17,9 +18,10 @@ namespace
 	int ClampI(int v, int lo, int hi) { return (v < lo) ? lo : ((v > hi) ? hi : v); }
 
 	// Re-flatten ONE resident chunk LOD: load its baked baseline mesh, snap each
-	// vertex's Y to the carved surface (Y is the first-12-byte FLOAT3 position, so
-	// the UV/normal/tangent bytes are preserved), regenerate the AABB, and re-upload
-	// in place. Off-road vertices keep their baseline height → safe degradation.
+	// vertex's Y to the carved surface (the position lane is decoded, its Y rewritten
+	// and re-encoded against the same authored box, so the UV/normal/tangent bytes and
+	// the XZ words are preserved), regenerate the AABB, and re-upload in place.
+	// Off-road vertices keep their baseline height → safe degradation.
 	void CarveChunkLOD(Flux_TerrainStreamingState& xState, uint32_t uCX, uint32_t uCZ, uint32_t uIdx,
 	                   uint32_t uLOD, bool bLowPrefix, const Zenith_Vector<CB_RoadTerrain::RoadSample>& xSamples)
 	{
@@ -34,13 +36,16 @@ namespace
 		const uint32_t uStride = xState.m_uVertexStride;
 		if (uNum == 0 || xMesh.m_pVertexData == nullptr || uStride == 0) { return; }
 
+		const Flux_PosQuant xQuant = Flux_MakeTerrainPosQuant();
 		Zenith_AABB xAABB;
 		xAABB.Reset();
 		for (uint32_t i = 0; i < uNum; ++i)
 		{
-			float* pPos = reinterpret_cast<float*>(xMesh.m_pVertexData + static_cast<size_t>(i) * uStride);
-			pPos[1] = CB_RoadTerrain::SurfaceHeight(xSamples, pPos[0], pPos[2]);
-			xAABB.ExpandToInclude(Zenith_Maths::Vector3(pPos[0], pPos[1], pPos[2]));
+			u_int8* pVertex = xMesh.m_pVertexData + static_cast<size_t>(i) * uStride;
+			Zenith_Maths::Vector3 xPos = Flux_ReadTerrainVertexPosition(pVertex, xQuant);
+			xPos.y = CB_RoadTerrain::SurfaceHeight(xSamples, xPos.x, xPos.z);
+			Flux_WriteTerrainVertexPosition(pVertex, xPos, xQuant);
+			xAABB.ExpandToInclude(xPos);
 		}
 
 		const Flux_TerrainLODAllocation& xAlloc = xRes.m_axAllocations[uLOD];
@@ -72,18 +77,21 @@ namespace
 		const uint32_t uStride = xState.m_uVertexStride;
 		if (uNum == 0 || xMesh.m_pVertexData == nullptr || uStride == 0) { return; }
 
+		const Flux_PosQuant xQuant = Flux_MakeTerrainPosQuant();
 		Zenith_AABB xAABB;
 		xAABB.Reset();
 		for (uint32_t i = 0; i < uNum; ++i)
 		{
-			float* pPos = reinterpret_cast<float*>(xMesh.m_pVertexData + static_cast<size_t>(i) * uStride);
+			u_int8* pVertex = xMesh.m_pVertexData + static_cast<size_t>(i) * uStride;
+			Zenith_Maths::Vector3 xPos = Flux_ReadTerrainVertexPosition(pVertex, xQuant);
 			// Apply ONLY the player's edit (field minus the pristine hill the field began as)
 			// on top of the FINE baked vertex height. Off-edit the delta is 0, so the baked
 			// 1m hill is preserved exactly → watertight seams with non-refreshed neighbours,
-			// no coarse-field faceting. (Replacing pPos[1] with the 16m field caused the holes.)
-			const float fDelta = xField.GetHeightAt(pPos[0], pPos[2]) - CB_TerrainGen::HillFieldSample(pPos[0], pPos[2]);
-			pPos[1] = pPos[1] + fDelta;
-			xAABB.ExpandToInclude(Zenith_Maths::Vector3(pPos[0], pPos[1], pPos[2]));
+			// no coarse-field faceting. (Replacing the height with the 16m field caused the holes.)
+			const float fDelta = xField.GetHeightAt(xPos.x, xPos.z) - CB_TerrainGen::HillFieldSample(xPos.x, xPos.z);
+			xPos.y = xPos.y + fDelta;
+			Flux_WriteTerrainVertexPosition(pVertex, xPos, xQuant);
+			xAABB.ExpandToInclude(xPos);
 		}
 
 		const Flux_TerrainLODAllocation& xAlloc = xRes.m_axAllocations[uLOD];
@@ -163,13 +171,17 @@ void CB_RoadTerrain::ChunkVertexCarveHook(void* pUser, uint32_t /*uChunkX*/, uin
 	const CB_TerrainHeightfield* pxField = static_cast<const CB_TerrainHeightfield*>(pUser);
 	if (pxField == nullptr || pVertexData == nullptr || uNumVerts == 0u || uVertexStride == 0u) { return; }
 
-	uint8_t* pBytes = static_cast<uint8_t*>(pVertexData);
+	u_int8* pBytes = static_cast<u_int8*>(pVertexData);
+	const Flux_PosQuant xQuant = Flux_MakeTerrainPosQuant();
 	for (uint32_t i = 0; i < uNumVerts; ++i)
 	{
-		// Y is the first 12 bytes (FLOAT3 position); UV/normal/tangent bytes are preserved.
-		float* pPos = reinterpret_cast<float*>(pBytes + static_cast<size_t>(i) * uVertexStride);
-		const float fDelta = pxField->GetHeightAt(pPos[0], pPos[2]) - CB_TerrainGen::HillFieldSample(pPos[0], pPos[2]);
-		pPos[1] = pPos[1] + fDelta;
+		// Decode the quantised position, move Y only, re-encode against the same
+		// authored box; UV/normal/tangent bytes and the XZ words are preserved.
+		u_int8* pVertex = pBytes + static_cast<size_t>(i) * uVertexStride;
+		Zenith_Maths::Vector3 xPos = Flux_ReadTerrainVertexPosition(pVertex, xQuant);
+		const float fDelta = pxField->GetHeightAt(xPos.x, xPos.z) - CB_TerrainGen::HillFieldSample(xPos.x, xPos.z);
+		xPos.y = xPos.y + fDelta;
+		Flux_WriteTerrainVertexPosition(pVertex, xPos, xQuant);
 	}
 }
 

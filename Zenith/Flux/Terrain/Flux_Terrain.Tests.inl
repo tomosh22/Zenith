@@ -10,13 +10,19 @@
 // turned out to be false: that toggling wireframe could change the pass's attachment
 // count. It cannot -- only the velocity latch can.
 //
-// HEADLESS-SAFE -- every assertion is over constexpr integers plus one bool debug
-// var. No device, no pipeline object, no command buffer is touched.
+// Also: the packed-vertex quantisation bridge (Flux_TerrainVertexQuant.h) and the
+// TerrainConstants CB fill -- the two halves of the 20-byte flip that nothing else
+// pins at runtime (the static_asserts pin layout, these pin VALUES and bytes).
+//
+// HEADLESS-SAFE -- assertions are over constexpr integers, pure codec math on
+// stack buffers, and one already-filled file-static. No device, no pipeline
+// object, no command buffer is touched.
 //------------------------------------------------------------------------------
 
 #include "Core/Zenith_TestFramework.h"
 #include "Core/Zenith_TerrainChunkLayout.h"
 #include "Flux/Terrain/Flux_TerrainSourceGrid.h"
+#include "Flux/Terrain/Flux_TerrainVertexQuant.h"
 
 #ifdef ZENITH_TESTING
 
@@ -321,6 +327,137 @@ ZENITH_TEST(FluxTerrainSourceGrid, ChunkSlotCountsMatchTheOnDiskContract)
 	ZENITH_ASSERT_EQ(Flux_TerrainSourceGrid::ChunkVertexCount(uTEST_CELLS_LOW),
 		(uTEST_CELLS_LOW * uTEST_CELLS_LOW) + uTEST_CELLS_LOW + uTEST_CELLS_LOW + 1u,
 		"a chunk is its interior plus a +X column, a +Z row and one corner vertex");
+}
+
+// ---- the packed-vertex quantisation bridge ----------------------------------
+
+ZENITH_TEST(FluxTerrain, TerrainConstantsFillMatchesAuthoredBox)
+{
+	// The CB fill in Initialise is the ONE bridge from the authored box to the three
+	// shaders' Flux_DequantPosition, and nothing else validates it — the
+	// static_asserts beside the struct pin layout, not values. A dropped fill leaves
+	// scale at its 1.0f default (terrain collapses to a metre cube at the origin);
+	// a dropped .w makes every terrain UV 4096x too small. Unit tests run after
+	// engine init, so the file-static has been filled by the time this executes.
+	const Flux_PosQuant xExpected = Flux_MakeTerrainPosQuant();
+	for (int i = 0; i < 3; i++)
+	{
+		ZENITH_ASSERT_EQ_FLOAT(s_xTerrainConstants.m_afPosQuantScale[i], xExpected.m_xScale[i], 1.0e-4f,
+			"CB dequant scale axis %d must be the authored box extent", i);
+		ZENITH_ASSERT_EQ_FLOAT(s_xTerrainConstants.m_afPosQuantBias[i], xExpected.m_xBias[i], 1.0e-4f,
+			"CB dequant bias axis %d must be the authored box min", i);
+	}
+	ZENITH_ASSERT_EQ_FLOAT(s_xTerrainConstants.m_afPosQuantScale[3],
+		Zenith_TerrainChunkLayout::fUV_BOX_MAX, 1.0e-4f,
+		"CB scale.w must carry the UV dequant extent the shaders multiply the unorm16 UV back up by");
+}
+
+ZENITH_TEST(FluxTerrain, TerrainVertexQuantWritesLandAtShaderOffsets)
+{
+	// The bridge writes through the NAMED offset constants and the shader fetches at
+	// its REFLECTED offsets; the static_asserts in Flux_TerrainStreamingManager.cpp
+	// pin those equal at compile time, and this pins the bytes at runtime: decode at
+	// the GENERATED offsets and the authored values must come back. Against a 0xCD
+	// sentinel fill, a transposed offset decodes wild values, not near-misses.
+	const Flux_PosQuant xQuant = Flux_MakeTerrainPosQuant();
+	const Zenith_Maths::Vector3 xPos(123.0f, 45.0f, 678.0f);
+	const Zenith_Maths::Vector2 xUV(321.0f, 87.0f);
+	const u_int uNormalWord = 0xA1B2C3D4u;
+	const u_int uTangentWord = 0x1F2E3D4Cu;
+
+	u_int8 aucVertex[Zenith_TerrainChunkLayout::uVERTEX_STRIDE];
+	std::memset(aucVertex, 0xCD, sizeof(aucVertex));
+	Flux_WriteTerrainVertexPosition(aucVertex, xPos, xQuant);
+	Flux_WriteTerrainVertexUV(aucVertex, xUV);
+	Flux_WriteTerrainVertexNormalWord(aucVertex, uNormalWord);
+	Flux_WriteTerrainVertexTangentWord(aucVertex, uTangentWord);
+
+	const Flux_VertexLayoutElement* paxShader =
+		Flux_Generated_Terrain::Terrain_ToGBuffer::kVertexLayout.m_paxElements;
+
+	u_int64 ulPosWord = 0u;
+	std::memcpy(&ulPosWord, aucVertex + paxShader[0].m_uOffset, sizeof(ulPosWord));
+	const Zenith_Maths::Vector3 xDecodedPos = Flux_UnpackSnorm16x4Position(ulPosWord, xQuant);
+	for (int i = 0; i < 3; i++)
+	{
+		ZENITH_ASSERT_EQ_FLOAT(xDecodedPos[i], xPos[i],
+			Zenith_TerrainChunkLayout::PositionQuantStep(static_cast<uint32_t>(i)),
+			"the bytes at the shader's POSITION offset must decode to the authored position (axis %d)", i);
+	}
+
+	u_int uUVWord = 0u;
+	std::memcpy(&uUVWord, aucVertex + paxShader[1].m_uOffset, sizeof(uUVWord));
+	const Zenith_Maths::Vector2 xDecodedUV =
+		Flux_UnpackUnorm16x2(uUVWord) * Zenith_TerrainChunkLayout::fUV_BOX_MAX;
+	for (int i = 0; i < 2; i++)
+	{
+		ZENITH_ASSERT_EQ_FLOAT(xDecodedUV[i], xUV[i], Zenith_TerrainChunkLayout::fUV_QUANT_STEP,
+			"the bytes at the shader's TEXCOORD offset must decode to the authored UV (axis %d)", i);
+	}
+
+	u_int uReadNormal = 0u, uReadTangent = 0u;
+	std::memcpy(&uReadNormal, aucVertex + paxShader[2].m_uOffset, sizeof(uReadNormal));
+	std::memcpy(&uReadTangent, aucVertex + paxShader[3].m_uOffset, sizeof(uReadTangent));
+	ZENITH_ASSERT_EQ(uReadNormal, uNormalWord,
+		"the normal word must sit exactly at the shader's NORMAL offset");
+	ZENITH_ASSERT_EQ(uReadTangent, uTangentWord,
+		"the tangent word must sit exactly at the shader's TANGENT offset");
+}
+
+ZENITH_TEST(FluxTerrain, TerrainVertexQuantReencodeIsIdentity)
+{
+	// The sculpt hook and the CityBuilder carve decode a packed vertex and re-encode
+	// it with only Y rewritten — seam-safe ONLY if unpack->pack reproduces the word
+	// bit-exactly (a quantum representative must be its own fixed point), because
+	// the un-brushed neighbour chunk keeps its original baked words along the shared
+	// border. Words are integers, so exact equality is /fp:fast-safe.
+	const Flux_PosQuant xQuant = Flux_MakeTerrainPosQuant();
+	u_int8 aucVertex[Zenith_TerrainChunkLayout::uVERTEX_STRIDE] = {};
+	for (u_int u = 0; u < 97u; u++)
+	{
+		// Off-lattice authored positions across the whole box — the first pack
+		// rounds arbitrarily; the identity under test is the SECOND pack.
+		const float fT = static_cast<float>(u) / 96.0f;
+		const Zenith_Maths::Vector3 xAuthored(
+			4096.0f * fT, 512.0f * (1.0f - fT), 4096.0f * fT * fT);
+		Flux_WriteTerrainVertexPosition(aucVertex, xAuthored, xQuant);
+		u_int64 ulFirst = 0u;
+		std::memcpy(&ulFirst, aucVertex + Zenith_TerrainChunkLayout::uPOSITION_OFFSET, sizeof(ulFirst));
+
+		const Zenith_Maths::Vector3 xDecoded = Flux_ReadTerrainVertexPosition(aucVertex, xQuant);
+		Flux_WriteTerrainVertexPosition(aucVertex, xDecoded, xQuant);
+		u_int64 ulSecond = 0u;
+		std::memcpy(&ulSecond, aucVertex + Zenith_TerrainChunkLayout::uPOSITION_OFFSET, sizeof(ulSecond));
+
+		ZENITH_ASSERT_EQ(ulFirst, ulSecond,
+			"decode->re-encode must be the identity on the packed word (case %u) — "
+			"a sculpted chunk's untouched XZ words have to survive the round trip", u);
+	}
+}
+
+ZENITH_TEST(FluxTerrain, TerrainVertexQuantUVRoundTrip)
+{
+	// The UV pair is the one asymmetric couple in the bridge (write divides by the
+	// extent, read multiplies it back) and nothing else exercises the read side.
+	// Integer pixel coordinates — all the exporter ever authors — must come back
+	// within one unorm16 quantum AND snap back to the exact integer, which is the
+	// property the sculpt hook's std::round of the decoded UV stands on.
+	u_int8 aucVertex[Zenith_TerrainChunkLayout::uVERTEX_STRIDE] = {};
+	for (u_int u = 0; u <= 16u; u++)
+	{
+		const float fPixel = Zenith_TerrainChunkLayout::fUV_BOX_MAX * static_cast<float>(u) / 16.0f;
+		const Zenith_Maths::Vector2 xAuthored(fPixel, Zenith_TerrainChunkLayout::fUV_BOX_MAX - fPixel);
+		Flux_WriteTerrainVertexUV(aucVertex, xAuthored);
+		const Zenith_Maths::Vector2 xDecoded = Flux_ReadTerrainVertexUV(aucVertex);
+		for (int i = 0; i < 2; i++)
+		{
+			ZENITH_ASSERT_TRUE(
+				std::fabs(xDecoded[i] - xAuthored[i]) <= Zenith_TerrainChunkLayout::fUV_QUANT_STEP,
+				"decoded UV axis %d must sit within one unorm16 quantum of the authored pixel (case %u)", i, u);
+			ZENITH_ASSERT_EQ_FLOAT(std::round(xDecoded[i]), xAuthored[i], 1.0e-4f,
+				"an integer authored UV must snap back exactly (case %u axis %d)", u, i);
+		}
+	}
 }
 
 #endif // ZENITH_TESTING

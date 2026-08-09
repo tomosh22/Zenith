@@ -22,20 +22,24 @@
 #include "Flux/Flux_MaterialBinding.h"
 #include "Flux/Flux_MaterialTable.h"   // Phase 4c: terrain registers its 4 layer materials into the GPU table
 #include "Flux/Slang/Flux_ShaderBinder.h"
+#include "Flux/Terrain/Flux_TerrainVertexQuant.h"   // the authored dequant box the terrain CB carries
 #include "Flux/Shaders/Generated/Terrain.h"
 #include "Flux/Shaders/Generated/Water.h"   // the Water program's baked vertex layout (Terrain owns it)
 
-// Phase-2 pin: Water's grid fetches pos+uv at the hand-era 20 B stride (the
-// Phase-5 terrain flip re-pins it consciously). Full table, semantics included.
-// Terrain's own 28 B layout is pinned element-by-element against
-// Zenith_TerrainChunkLayout::axELEMENTS in Flux_TerrainStreamingManager.cpp.
+// Water stays UNCOMPRESSED, and the Phase-5 terrain flip is where that was decided
+// rather than deferred again: Water's stream is not terrain-grid-scale — it is not
+// produced at all. Nothing in the tree writes a water vertex buffer or binds
+// m_xWaterPipeline to a draw, so there is no producer to agree with a quant box and
+// no box to derive. Compressing it would invent a contract with no writer. Full
+// table, semantics included; terrain's own 20 B layout is pinned element-by-element
+// against Zenith_TerrainChunkLayout::axELEMENTS in Flux_TerrainStreamingManager.cpp.
 static constexpr Flux_VertexLayoutElement kaxWATER_EXPECTED_LAYOUT[] =
 {
 	{ FLUX_VERTEX_SEMANTIC_POSITION, 0u, SHADER_DATA_TYPE_FLOAT3, 0u,  0u },
 	{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 0u, SHADER_DATA_TYPE_FLOAT2, 0u, 12u },
 };
 static_assert(Flux_Generated_Water::Water::kVertexLayout == Flux_VertexLayoutDesc{ kaxWATER_EXPECTED_LAYOUT, 2u, { 20u, 0u } },
-	"Water vertex layout must stay the hand-era 20 B contract until the Phase-5 terrain flip re-pins it");
+	"Water vertex layout must stay its uncompressed 20 B contract — it has no producer to flip with");
 
 // Phase 7h: subsystem state moved to Flux_TerrainImpl held by Zenith_Engine.
 
@@ -81,20 +85,61 @@ const Flux_ShaderResourceView& Flux_TerrainImpl::GetFallbackSplatmapSRV()
 // owned by Flux_TerrainImpl.
 
 // Sized to match the reflected std140 / Vulkan-uniform-block layout from
-// Flux_Generated_Terrain::Terrain_ToGBuffer::TerrainConstants_CB. The actual
-// CB on the GPU is 16-byte aligned even though the only field is a single
-// float; allocating a 4-byte CPU struct and uploading sizeof(it) under-fills
-// the GPU descriptor and reads garbage on the GPU side. The static_asserts
-// below pin this in lockstep with the codegen header.
+// Flux_Generated_Terrain::Terrain_ToGBuffer::TerrainConstants_CB. std140 puts each
+// float4 on a 16-byte boundary, so the leading scalar carries 12 bytes of pad;
+// allocating a tighter CPU struct and uploading sizeof(it) under-fills the GPU
+// descriptor and reads garbage on the GPU side. The static_asserts below pin this
+// in lockstep with the codegen header.
+//
+// The quant lanes are FILLED IN Initialise from Flux_MakeTerrainPosQuant, not spelled
+// here: the box is a constant of the baked-chunk file format, and the exporter, the
+// live-edit hooks and this upload must all read it from the one helper or a chunk
+// decodes somewhere the shader is not looking.
 struct TerrainConstants
 {
 	float m_fUVScale = 0.07f;
 	float m_afPad[3] = { 0.0f, 0.0f, 0.0f };
+	float m_afPosQuantScale[4] = { 1.0f, 1.0f, 1.0f, 1.0f };   // xyz = box extent, w = UV dequant scale
+	float m_afPosQuantBias[4] = { 0.0f, 0.0f, 0.0f, 0.0f };    // xyz = box min
 } s_xTerrainConstants;
 static_assert(sizeof(TerrainConstants) == sizeof(Flux_Generated_Terrain::Terrain_ToGBuffer::TerrainConstants_CB),
 	"TerrainConstants CPU size != reflected CB size — regenerate codegen or update padding");
 static_assert(offsetof(TerrainConstants, m_fUVScale) == 0,
 	"TerrainConstants.m_fUVScale must remain at offset 0 to match the reflected layout");
+static_assert(offsetof(TerrainConstants, m_afPosQuantScale) == 16 && offsetof(TerrainConstants, m_afPosQuantBias) == 32,
+	"TerrainConstants dequant lanes must sit on the std140 float4 boundaries the shader reads them from");
+
+// The velocity and shadow TerrainConstants blocks are HAND-MAINTAINED COPIES in
+// their own .slang files (same hazard as the VsIn copies, pinned in
+// Flux_TerrainStreamingManager.cpp): each generated mirror is emitted from its OWN
+// program's reflection, so its sizeof/offsetof asserts stay green even when the
+// three copies drift apart — and the upload above writes the ToGBuffer field order
+// for every pipeline variant. TAA ships ON, so the VELOCITY copy is the one every
+// default frame actually dequantises with; a member swap there would move terrain
+// only when TAA is on, with nothing to fail the build. Offsets move on any reorder,
+// which is what these catch (a same-offset retype is caught by the size pins).
+static_assert(
+	sizeof(Flux_Generated_Terrain::Terrain_ToGBufferVelocity::TerrainConstants_CB) ==
+		sizeof(Flux_Generated_Terrain::Terrain_ToGBuffer::TerrainConstants_CB) &&
+	offsetof(Flux_Generated_Terrain::Terrain_ToGBufferVelocity::TerrainConstants_CB, m_fg_fUVScale) ==
+		offsetof(Flux_Generated_Terrain::Terrain_ToGBuffer::TerrainConstants_CB, m_fg_fUVScale) &&
+	offsetof(Flux_Generated_Terrain::Terrain_ToGBufferVelocity::TerrainConstants_CB, m_ag_xPosQuantScale) ==
+		offsetof(Flux_Generated_Terrain::Terrain_ToGBuffer::TerrainConstants_CB, m_ag_xPosQuantScale) &&
+	offsetof(Flux_Generated_Terrain::Terrain_ToGBufferVelocity::TerrainConstants_CB, m_ag_xPosQuantBias) ==
+		offsetof(Flux_Generated_Terrain::Terrain_ToGBuffer::TerrainConstants_CB, m_ag_xPosQuantBias),
+	"Terrain_ToGBufferVelocity's hand-copied TerrainConstants has drifted from Terrain_ToGBuffer's — "
+	"the one CPU upload would feed the DEFAULT (TAA-on) pipeline a differently-laid-out box");
+static_assert(
+	sizeof(Flux_Generated_Terrain::Terrain_ToShadowmap::TerrainConstants_CB) ==
+		sizeof(Flux_Generated_Terrain::Terrain_ToGBuffer::TerrainConstants_CB) &&
+	offsetof(Flux_Generated_Terrain::Terrain_ToShadowmap::TerrainConstants_CB, m_fg_fUVScale) ==
+		offsetof(Flux_Generated_Terrain::Terrain_ToGBuffer::TerrainConstants_CB, m_fg_fUVScale) &&
+	offsetof(Flux_Generated_Terrain::Terrain_ToShadowmap::TerrainConstants_CB, m_ag_xPosQuantScale) ==
+		offsetof(Flux_Generated_Terrain::Terrain_ToGBuffer::TerrainConstants_CB, m_ag_xPosQuantScale) &&
+	offsetof(Flux_Generated_Terrain::Terrain_ToShadowmap::TerrainConstants_CB, m_ag_xPosQuantBias) ==
+		offsetof(Flux_Generated_Terrain::Terrain_ToGBuffer::TerrainConstants_CB, m_ag_xPosQuantBias),
+	"Terrain_ToShadowmap's hand-copied TerrainConstants has drifted from Terrain_ToGBuffer's — "
+	"the shadow caster would dequantise the terrain against a differently-laid-out box when enabled");
 
 // Pin Flux_TerrainPipelineSelect.h's dependency-free attachment counts to the real MRT
 // constants (that header is deliberately <cstdint>-only so it stays unit-testable). The
@@ -130,13 +175,14 @@ void Flux_TerrainImpl::BuildPipelines()
 	m_xTerrainGBufferShader.Initialise(Flux_TerrainShaders::xTerrain_ToGBuffer);
 	m_xTerrainShadowShader.Initialise(Flux_TerrainShaders::xTerrain_ToShadowmap);
 
-	// The three Terrain programs share one 28-byte VsIn: position (12) / UV (8) /
-	// packed normal (4) / packed tangent+bitangent-sign (4). It is frozen against the
-	// on-disk baked-chunk contract by the static_assert beside Zenith_TerrainChunkLayout
-	// in Flux_TerrainStreamingManager.cpp. The UV is FLOAT2 and not HALF2 on purpose:
-	// a half mantissa is too small for heightmap-pixel-scale UVs above 2048, which
-	// collapses adjacent vertex UVs into a vertex-spacing-period strip pattern in the
-	// diffuse.
+	// The three Terrain programs share one 20-byte VsIn: quantised position (8) /
+	// normalised UV (4) / packed normal (4) / packed tangent+bitangent-sign (4). It is
+	// frozen against the on-disk baked-chunk contract by the static_assert beside
+	// Zenith_TerrainChunkLayout in Flux_TerrainStreamingManager.cpp. The UV is UNORM16
+	// and not HALF2 on purpose: a half mantissa is too small for heightmap-pixel-scale
+	// UVs above 2048, which collapses adjacent vertex UVs into a vertex-spacing-period
+	// strip pattern in the diffuse — unorm16 is uniform across the whole range, at a
+	// 1/16-pixel step.
 
 	{
 
@@ -290,6 +336,19 @@ void Flux_TerrainImpl::Initialise()
 
 	g_xEngine.FluxMemory().InitialiseDynamicConstantBuffer(nullptr, sizeof(struct TerrainConstants
 		), m_xTerrainConstantsBuffer);
+
+	// The dequant box, from the one helper the exporter and the live-edit hooks pack
+	// against. Constant for the process — it describes the authored terrain extent,
+	// not any particular component — so it is written once here rather than per frame.
+	{
+		const Flux_PosQuant xQuant = Flux_MakeTerrainPosQuant();
+		for (int i = 0; i < 3; i++)
+		{
+			s_xTerrainConstants.m_afPosQuantScale[i] = xQuant.m_xScale[i];
+			s_xTerrainConstants.m_afPosQuantBias[i] = xQuant.m_xBias[i];
+		}
+		s_xTerrainConstants.m_afPosQuantScale[3] = Zenith_TerrainChunkLayout::fUV_BOX_MAX;
+	}
 
 #ifdef ZENITH_DEBUG_VARIABLES
 	g_xEngine.DebugVariables().AddFloat({ "Render", "Terrain", "UV Scale" }, s_xTerrainConstants.m_fUVScale, 0., 10.);
@@ -649,6 +708,12 @@ static void ExecuteGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 // command buffer and would inherit nothing. The pre-draw validator in
 // Zenith_Vulkan_CommandBuffer (ShouldDemandBindlessBind) asserts on exactly that, so
 // the omission fails loudly instead of drawing correctly until a scene changes.
+//
+// It must ALSO bind m_xTerrainConstantsBuffer at set 3 binding 0
+// (Terrain_ToShadowmap::hTerrainConstants): the caster's VS dequantises the packed
+// snorm16 position against the box in that CB, so without the bind it reads an
+// undefined descriptor and shadows a garbage terrain. The ZENITH_DEBUG pre-draw
+// validator catches the omission (sets 3+ are per-draw), Release does not.
 void Flux_TerrainImpl::RenderToShadowMap(Flux_CommandBuffer&, u_int)
 {
 	STUBBED

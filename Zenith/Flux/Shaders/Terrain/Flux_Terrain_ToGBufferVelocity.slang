@@ -30,8 +30,8 @@ import Common.Velocity;            // GBufferVelocityOut + Flux_EncodeVelocityUV
 // TAA velocity latch is on.
 struct VsIn
 {
-	float3 a_xPosition       : POSITION;
-	float2 a_xUV             : TEXCOORD0;
+	[VtxFmt("snorm16x4")]       float4 a_xPosition       : POSITION;
+	[VtxFmt("unorm16x2")]       float2 a_xUV             : TEXCOORD0;
 	[VtxFmt("snorm10_10_10_2")] float4 a_xNormalPacked   : NORMAL;
 	[VtxFmt("snorm10_10_10_2")] float4 a_xTangentPacked  : TANGENT;
 };
@@ -52,7 +52,15 @@ struct VsOut
 	float4 clipPrevNoJitter   : TEXCOORD8;
 };
 
-struct TerrainConstantsLayout { float g_fUVScale; };
+// Hand-copied from Flux_Terrain_ToGBuffer, dequant box included — the two programs
+// fetch the SAME baked buffer, so a box that drifted between them would place the
+// same terrain in two different worlds depending on the TAA velocity latch.
+struct TerrainConstantsLayout
+{
+	float  g_fUVScale;
+	float4 g_xPosQuantScale;   // xyz = authored box extent; w = the UV dequant scale
+	float4 g_xPosQuantBias;    // xyz = authored box min
+};
 
 struct TerrainMaterialConstantsLayout
 {
@@ -80,10 +88,14 @@ VsOut vsMain(VsIn input,
              uint startInstance : SV_StartInstanceLocation)
 {
 	VsOut o;
-	float3 xWorldPos = input.a_xPosition; // terrain is static, no model matrix
+	// Terrain is static, so the dequantised position IS the world position.
+	float3 xWorldPos = Flux_DequantPosition(input.a_xPosition,
+		g_xPassSet.TerrainConstants.g_xPosQuantScale.xyz,
+		g_xPassSet.TerrainConstants.g_xPosQuantBias.xyz);
 
 	o.worldPos      = xWorldPos;
-	o.uv            = input.a_xUV * g_xPassSet.TerrainConstants.g_fUVScale;
+	o.uv            = input.a_xUV * (g_xPassSet.TerrainConstants.g_xPosQuantScale.w
+	                              * g_xPassSet.TerrainConstants.g_fUVScale);
 	o.worldNormal   = normalize(input.a_xNormalPacked.xyz);
 	o.worldTangent  = normalize(input.a_xTangentPacked.xyz);
 	o.bitangentSign = input.a_xTangentPacked.w >= 0.0 ? 1.0 : -1.0;

@@ -36,6 +36,13 @@
 // new Zenith_TerrainComponent.cpp => Flux/MeshGeometry edge the layering gate
 // would (correctly) flag. The .cpp's existing allow-listed Flux dependencies
 // already carry the type.
+//
+// The same applies to Flux_TerrainVertexQuant's packed-position accessors, which
+// the chunk validator below needs to decode a quantised vertex: they arrive with
+// Flux/Terrain/Flux_TerrainStreamingManagerImpl.h (which includes them because its
+// chunk-vertex hook contract hands out those very bytes). A direct include here
+// would be a new EntityComponent => Flux edge, and the ratchet's rule is that a new
+// one is redesigned, never allow-listed.
 
 // LOD distance thresholds from unified config (distance squared)
 // Used for debug visualization - actual thresholds are in Flux_TerrainConfig.h
@@ -132,6 +139,7 @@ namespace
 		auVertexGridZOut.Resize(xSnapshot.m_uVertexCount, 0u);
 		Zenith_Vector<int32_t> aiGridOwners(xSnapshot.m_uVertexCount);
 		aiGridOwners.Resize(xSnapshot.m_uVertexCount, -1);
+		const Flux_PosQuant xPositionQuant = Flux_MakeTerrainPosQuant();
 
 		for (uint32_t u = 0u; u < xSnapshot.m_uVertexCount; ++u)
 		{
@@ -155,18 +163,20 @@ namespace
 			auVertexGridXOut.Get(u) = static_cast<uint32_t>(iGridX);
 			auVertexGridZOut.Get(u) = static_cast<uint32_t>(iGridZ);
 
-			float afVertexPositionAndUV[5];
-			std::memcpy(afVertexPositionAndUV,
+			// Cross-stream agreement: the packed vertex buffer the GPU fetches must
+			// describe the same vertex as the position stream physics and the AABBs
+			// are built from. The packed lane is QUANTISED, so the comparison is
+			// against one quantisation step per axis, not the grid epsilon — the two
+			// streams cannot be equal, only consistent. (There is no finiteness check
+			// on the decoded value any more: a snorm16 lane decodes through a constant
+			// scale and bias, so it is finite by construction. Non-finite authored
+			// positions are still rejected, one stage earlier, on the stream itself.)
+			const Zenith_Maths::Vector3 xPacked = Flux_ReadTerrainVertexPosition(
 				xSnapshot.m_auVertexData.GetDataPointer() + static_cast<size_t>(u) * Zenith_TerrainChunkLayout::uVERTEX_STRIDE,
-				sizeof(afVertexPositionAndUV));
-			for (float fValue : afVertexPositionAndUV)
-			{
-				if (!std::isfinite(fValue))
-					return false;
-			}
-			if (std::fabs(afVertexPositionAndUV[0] - xPosition.x) > fGRID_EPSILON ||
-				std::fabs(afVertexPositionAndUV[1] - xPosition.y) > fGRID_EPSILON ||
-				std::fabs(afVertexPositionAndUV[2] - xPosition.z) > fGRID_EPSILON)
+				xPositionQuant);
+			if (std::fabs(xPacked.x - xPosition.x) > Zenith_TerrainChunkLayout::PositionQuantStep(0u) ||
+				std::fabs(xPacked.y - xPosition.y) > Zenith_TerrainChunkLayout::PositionQuantStep(1u) ||
+				std::fabs(xPacked.z - xPosition.z) > Zenith_TerrainChunkLayout::PositionQuantStep(2u))
 			{
 				return false;
 			}

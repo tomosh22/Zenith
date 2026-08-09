@@ -4,6 +4,7 @@
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "Core/Zenith_TerrainChunkLayout.h"
 #include "Flux/Terrain/Flux_TerrainSourceGrid.h"
+#include "Flux/Terrain/Flux_TerrainVertexQuant.h"
 #include "DataStream/Zenith_DataStream.h"
 #include "FileAccess/Zenith_FileAccess.h"
 
@@ -28,17 +29,29 @@
 // 4096 would put vertices 8x above the culling AABB.
 #define MAX_TERRAIN_HEIGHT 512
 
-// Generate packed terrain vertex data (28 bytes/vertex)
-// Layout: Position(FLOAT3,12) + UV(FLOAT2,8) + Normal(SNORM10,4) + Tangent+Sign(SNORM10,4)
+// The baked heights are a normalised heightmap sample scaled by the constant above,
+// so that constant IS the Y extent of the quantisation box every position is packed
+// against. If they part company the exporter silently CLAMPS every vertex above the
+// box lid, which reads as a flat-topped terrain rather than as a build error.
+static_assert(static_cast<float>(MAX_TERRAIN_HEIGHT) ==
+	Zenith_TerrainChunkLayout::afPOSITION_BOX_MAX[1] - Zenith_TerrainChunkLayout::afPOSITION_BOX_MIN[1],
+	"The exported terrain height scale must equal the position quantisation box's Y extent");
+
+// Generate packed terrain vertex data (20 bytes/vertex)
+// Layout: Position(SNORM16x4,8) + UV(UNORM16x2,4) + Normal(SNORM10,4) + Tangent+Sign(SNORM10,4)
 //
-// UV is FLOAT2 (not HALF2) because terrain UVs are stored as full heightmap
-// pixel coordinates (e.g. [0, 4095]). HALF only has 10 bits of mantissa, so
-// values above 1024 lose sub-integer precision and above 2048 the step is 2 —
-// causing pairs of adjacent vertices on the upper half of the terrain to
-// collapse onto the same UV. That manifests as a stretched/compressed strip
-// pattern at vertex spacing in any high-contrast diffuse texture sampled at
-// those UVs. FLOAT32 has full precision across the whole range; +4 bytes per
-// vertex is acceptable.
+// The position is quantised against the AUTHORED terrain box, never a per-chunk
+// AABB: a chunk's closing edge IS its neighbour's first edge, and only a shared
+// box makes those duplicated world positions produce identical words in both
+// chunks. A per-chunk fit would open a crack along every border.
+//
+// UV is UNORM16 (not HALF2) because terrain UVs are full heightmap pixel
+// coordinates (e.g. [0, 4096]). HALF only has 10 bits of mantissa, so values
+// above 1024 lose sub-integer precision and above 2048 the step is 2 — causing
+// pairs of adjacent vertices on the upper half of the terrain to collapse onto
+// the same UV, which shows as a stretched/compressed strip pattern at vertex
+// spacing in any high-contrast diffuse. Unorm16 normalised by the same extent is
+// uniform across the whole range, at a sixteenth of a pixel.
 static void GenerateTerrainLayoutAndVertexData(Flux_MeshGeometry& xMesh)
 {
 	for (uint32_t uElement = 0; uElement < Zenith_TerrainChunkLayout::uELEMENT_COUNT; uElement++)
@@ -56,34 +69,25 @@ static void GenerateTerrainLayoutAndVertexData(Flux_MeshGeometry& xMesh)
 
 	xMesh.m_pVertexData = static_cast<u_int8*>(Zenith_MemoryManagement::Allocate(xMesh.m_uNumVerts * uStride));
 
+	const Flux_PosQuant xQuant = Flux_MakeTerrainPosQuant();
+
 	for (uint32_t i = 0; i < xMesh.m_uNumVerts; i++)
 	{
 		u_int8* pVertex = xMesh.m_pVertexData + i * uStride;
-		uint32_t uOffset = 0;
 
-		// Position: float3 (12 bytes)
-		float* pPos = reinterpret_cast<float*>(pVertex + uOffset);
-		pPos[0] = xMesh.m_pxPositions[i].x;
-		pPos[1] = xMesh.m_pxPositions[i].y;
-		pPos[2] = xMesh.m_pxPositions[i].z;
-		uOffset += Zenith_TerrainChunkLayout::axELEMENTS[0].m_uSize;
+		// Position: SNORM16x4 (8 bytes) against the authored box.
+		Flux_WriteTerrainVertexPosition(pVertex, xMesh.m_pxPositions[i], xQuant);
 
-		// UV: float2 (8 bytes) — full 32-bit precision so heightmap-pixel-scale
-		// UVs don't collapse on the upper half of the terrain.
-		float* pUV = reinterpret_cast<float*>(pVertex + uOffset);
-		pUV[0] = xMesh.m_pxUVs[i].x;
-		pUV[1] = xMesh.m_pxUVs[i].y;
-		uOffset += Zenith_TerrainChunkLayout::axELEMENTS[1].m_uSize;
+		// UV: UNORM16x2 (4 bytes), heightmap pixel coordinates in and out.
+		Flux_WriteTerrainVertexUV(pVertex, xMesh.m_pxUVs[i]);
 
 		// Normal: SNORM10:10:10:2 (4 bytes), w=0
-		uint32_t* pNormal = reinterpret_cast<uint32_t*>(pVertex + uOffset);
-		*pNormal = Flux_PackSnorm10_10_10_2(
+		Flux_WriteTerrainVertexNormalWord(pVertex, Flux_PackSnorm10_10_10_2(
 			xMesh.m_pxNormals[i].x,
 			xMesh.m_pxNormals[i].y,
 			xMesh.m_pxNormals[i].z,
 			0.0f
-		);
-		uOffset += Zenith_TerrainChunkLayout::axELEMENTS[2].m_uSize;
+		));
 
 		// Tangent + BitangentSign: SNORM10:10:10:2 (4 bytes)
 		float fBitangentSign = glm::dot(
@@ -91,13 +95,12 @@ static void GenerateTerrainLayoutAndVertexData(Flux_MeshGeometry& xMesh)
 			glm::vec3(xMesh.m_pxBitangents[i])
 		) > 0.0f ? 1.0f : -1.0f;
 
-		uint32_t* pTangent = reinterpret_cast<uint32_t*>(pVertex + uOffset);
-		*pTangent = Flux_PackSnorm10_10_10_2(
+		Flux_WriteTerrainVertexTangentWord(pVertex, Flux_PackSnorm10_10_10_2(
 			xMesh.m_pxTangents[i].x,
 			xMesh.m_pxTangents[i].y,
 			xMesh.m_pxTangents[i].z,
 			fBitangentSign
-		);
+		));
 	}
 }
 
@@ -327,6 +330,17 @@ void GenerateFullTerrain(const Zenith_Image& xHeightmapImage, Flux_MeshGeometry&
 				double dBottom = fBottomRight * dWeightX + fBottomLeft * (1.f - dWeightX);
 
 				dHeight = dBottom * dWeightY + dTop * (1.f - dWeightY);
+
+				// CLAMP the sample into the box's normalised range BEFORE it feeds
+				// either stream. R32_SFLOAT / HDR heightmaps load unnormalised, and
+				// this is the one site where an out-of-range sample could reach the
+				// two position streams DIFFERENTLY: the packed snorm16 lane clamps at
+				// the box lid on its own, but m_pxPositions would keep the raw value —
+				// and at load the validator's cross-stream check rejects the whole
+				// chunk (no LOW geometry, no physics body). Clamping here keeps both
+				// streams identical, so an over-range heightmap degrades to the
+				// documented flat-topped terrain instead of silent chunk rejection.
+				dHeight = std::clamp(dHeight, 0.0, 1.0);
 			}
 
 			xMesh.m_pxPositions[offset] = glm::highp_vec3((double)x / fDensity, dHeight * MAX_TERRAIN_HEIGHT, (double)z / fDensity) * static_cast<float>(TERRAIN_SCALE);
@@ -709,6 +723,13 @@ static bool ExportMeshInternal(u_int uDensityDivisor, const std::string& strName
 
 	Zenith_Assert(static_cast<u_int>(uImageWidth * fDensity) % TERRAIN_SIZE == 0, "Invalid terrain width");
 	Zenith_Assert(static_cast<u_int>(uImageHeight * fDensity) % TERRAIN_SIZE == 0, "Invalid terrain height");
+	// GenerateFullTerrain's closing sample lands the outer boundary exactly on
+	// (heightmap pixels * TERRAIN_SCALE), which is what the authored XZ quantisation
+	// box describes. A heightmap of any other size bakes positions the packer CLAMPS
+	// to the box lid — silently, and only along the far edge.
+	Zenith_Assert(static_cast<float>(uImageWidth) * TERRAIN_SCALE == Zenith_TerrainChunkLayout::afPOSITION_BOX_MAX[0] &&
+		static_cast<float>(uImageHeight) * TERRAIN_SCALE == Zenith_TerrainChunkLayout::afPOSITION_BOX_MAX[2],
+		"Terrain heightmap %ux%u does not span the authored position quantisation box", uImageWidth, uImageHeight);
 
 	u_int uNumSplitsX = uImageWidth / TERRAIN_SIZE;
 	u_int uNumSplitsZ = uImageHeight / TERRAIN_SIZE;

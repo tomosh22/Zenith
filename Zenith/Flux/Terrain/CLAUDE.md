@@ -16,6 +16,7 @@ GPU-driven terrain rendering with LOD streaming and frustum culling. Supports 4,
 - `Flux_TerrainGPUStructs.h` - GPU-side struct definitions (chunk data, per-LOD offsets/counts)
 - `Flux_TerrainPipelineSelect.h` - Pure `(velocity latch, wireframe) -> G-buffer pipeline variant` selector plus the attachment-count contract. `<cstdint>`-only (no Flux headers) so it is unit-testable in every configuration — same shape as `Flux_TerrainExportRect.h`. See *Debug wireframe* below.
 - `Flux_TerrainExportRect.h` - Inclusive chunk rectangle for authoring exports; transactional `TryCreate` (invalid bounds leave the caller's rect untouched). Consumed by the terrain editor bake, `Zenith_EditorAutomation`, `Tools/Zenith_Tools_TerrainExport.*` and `ZM_TerrainAuthoring.cpp`.
+- `Flux_TerrainVertexQuant.h` - The ONE place a baked terrain position/UV is quantised, and the only thing that knows where they sit in the packed vertex. Joins the on-disk contract (`Core/Zenith_TerrainChunkLayout.h`: which bytes, which box) to the bit layouts (`Flux/Flux_VertexCodec.h`). Used by the exporter, the editor sculpt hook, CityBuilder's carve + stream-in hook and the runtime chunk validator — five producers that would otherwise each carry their own copy of the box.
 - `Flux_TerrainSourceGrid.h` - The exporter's source-sample grid as pure arithmetic (`SampleCountForCells` / `SampleCountPerEdge` / `SampleIndex` / `ChunkVertexCount` / `ChunkIndexCount`). `<cstdint>`-only, same shape as the two headers above. See *Every chunk closes on its neighbour* below.
 - `Flux_Terrain.Tests.inl` - Unit tests for the pipeline-variant selection, included at the bottom of `Flux_Terrain.cpp` (the module-owns-its-tests idiom)
 - `Flux_Terrain_Shaders.h` - Shader program declarations (`Flux_ShaderDecl` + `apxALL`)
@@ -318,8 +319,11 @@ All constants in `Flux_TerrainConfig.h`:
 - `MAX_UPLOADS_PER_FRAME = 8`
 - `MAX_EVICTIONS_PER_FRAME = 16`
 
-**Vertex Format (28 bytes, packed):**
-- `VERTEX_STRIDE_BYTES = 28` (FLOAT3 Position + FLOAT2 UV + SNORM10:10:10:2 Normal + SNORM10:10:10:2 Tangent+BitangentSign). UV is FLOAT2 (not HALF2) holding GLOBAL heightmap pixel coordinates [0, 4096) — HALF loses sub-integer precision above 1024. There is no per-vertex material lerp; material blending comes from the RGBA8 splatmap.
+**Vertex Format (20 bytes, packed):**
+- `VERTEX_STRIDE_BYTES = 20` (SNORM16x4 Position + UNORM16x2 UV + SNORM10:10:10:2 Normal + SNORM10:10:10:2 Tangent+BitangentSign). UV holds GLOBAL heightmap pixel coordinates [0, 4096] normalised by that same extent — UNORM16 and not HALF2, because a half mantissa loses sub-integer precision above 1024. There is no per-vertex material lerp; material blending comes from the RGBA8 splatmap.
+- **The position is quantised against an AUTHORED box, not a per-chunk AABB.** The box (XZ `[0, 4096]`, Y `[0, MAX_TERRAIN_HEIGHT]`), the byte offsets and the quantisation steps all live with the on-disk contract in `Core/Zenith_TerrainChunkLayout.h`; `Flux/Terrain/Flux_TerrainVertexQuant.h` joins them to `Flux_VertexCodec` and is the ONE place a terrain position or UV is packed (exporter, editor sculpt hook, CityBuilder carve + stream-in hook, chunk validator). A per-chunk box would be tighter but would crack every seam: a chunk's closing edge IS its neighbour's first edge, and only a shared box makes those duplicated world positions quantise to identical words in both chunks.
+- Steps: **6.25 cm** in XZ, **7.8 mm** in Y, **1/16 pixel** in UV. Anything comparing a decoded position against its authored value (the chunk-topology validator's cross-stream check) must use those, not an equality epsilon. The `m_pxPositions` attribute stream stays uncompressed `float3`, so physics, the chunk AABBs and the validator's grid-slot test are unaffected by the quantisation.
+- The shader half is `Flux_DequantPosition` (`Shaders/Common/VertexFormats.slang`), fed scale/bias from terrain's own constant buffer (`TerrainConstants`, filled once in `Flux_TerrainImpl::Initialise` from `Flux_MakeTerrainPosQuant`). Its agreement with the CPU codec has no runtime tripwire, so it is pinned by a frozen transcription in `Flux_VertexCodec.Tests.inl` (`VertexCodec, DequantPositionMatchesSlangTranscription`).
 
 ## Important Constraints
 

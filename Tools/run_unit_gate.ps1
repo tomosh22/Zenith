@@ -152,7 +152,20 @@ param(
     # Flux_VertexInterleave +1 (skin-output encoder vs static packer byte
     # identity). Flux_Skinning +1 (negative-determinant blend flips the bitangent
     # sign). Observed 2026-08-08 on a Null_ Combat build.
-    [int]$Baseline = 1431,
+    # 1431 -> 1433: +2 Flux_VertexCodec.Tests.inl units pinning the GPU<->CPU
+    # agreement of Flux_DequantPosition (Shaders/Common/VertexFormats.slang) — a
+    # frozen transcription of the Slang function plus the fixed-function
+    # VK_FORMAT_R16G16B16A16_SNORM fetch conversion, swept against the CPU codec
+    # over box corners / quantum boundaries / three boxes, and the out-of-box
+    # clamp. It gained its first caller with the terrain compression flip;
+    # compressed-vertex Phase 5 T5.a (observed 2026-08-08 on a Null_ Combat build).
+    # 1433 -> 1437: +4 Flux_Terrain.Tests.inl units from the T5.a adversarial-
+    # review fix pass — the TerrainConstants CB fill vs the authored box (values,
+    # not just layout), bridge writes landing at the SHADER's reflected offsets
+    # (0xCD-sentinel decode), decode->re-encode word idempotence (the sculpt/carve
+    # seam-safety property), and the UV write/read round trip incl. the integer
+    # snap the sculpt hook stands on (observed 2026-08-08 on a Null_ Combat build).
+    [int]$Baseline = 1437,
     [int]$TimeoutSec = 180,
     [string]$LogPath = ""
 )

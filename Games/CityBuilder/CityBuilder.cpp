@@ -285,7 +285,12 @@ static void CB_EnsureTerrainAssets()
 	// with unwritten stitch vertices + (0,0,0) index triples, so the runtime
 	// rejected them and the city lost both its always-resident LOW geometry and
 	// its collision along the outer +X/+Z strip.
-	const std::string strHillMarker = strTerrainDir + "terrain_hills_v6.marker";   // bump to force a re-bake when HillNorm or the baked chunk layout changes
+	// v7 is a pure BYTE change: the terrain vertex was compressed from 28 to 20 bytes
+	// (quantised SNORM16x4 position + UNORM16x2 UV). A v6 chunk's serialized element
+	// table no longer matches Zenith_TerrainChunkLayout, so every one of them is
+	// rejected -- the city would load with neither always-resident LOW geometry nor
+	// collision.
+	const std::string strHillMarker = strTerrainDir + "terrain_hills_v7.marker";   // bump to force a re-bake when HillNorm or the baked chunk layout changes
 	if (!std::filesystem::exists(strHillMarker))
 	{
 		const std::string strHeightmap = strTerrainDir + "CityHeightmap" ZENITH_TEXTURE_EXT;

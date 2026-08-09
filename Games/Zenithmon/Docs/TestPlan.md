@@ -1711,9 +1711,9 @@ change touches `Zenith/` as well as the game.
 **Boot baseline at THIS change: ZM 2863; engine (Null Combat) stays 1242.** The added
 contracts are pure generator/placement checks, so they do not move the 55-test
 automated registry or the cross-game engine suite.
-★ **SUPERSEDED -- the CURRENT baseline is ZM 3056, engine 1431**, registry unmoved
+★ **SUPERSEDED -- the CURRENT baseline is ZM 3062, engine 1437**, registry unmoved
 at **55**. OBSERVED 2026-08-08 on clean `Null_` builds:
-`3056 ran, 3054 passed, 0 failed, 2 skipped`. Derivation: ZM-D-183 added the two
+`3062 ran, 3060 passed, 0 failed, 2 skipped`. Derivation: ZM-D-183 added the two
 committed-scene-bytes guards (2906 -> 2908); ZM-D-184 added the rival spawn-clearance
 unit (2908 -> 2909); the 2026-08-05 CommandLine ParseArgs units added 5 ENGINE units
 (engine 1284 -> 1289) and were NOT reflected here, leaving the ZM pin stale at 2909
@@ -1797,7 +1797,23 @@ influence at sums past ~1.5), the HALF4 half-range position guard
 (capture-scoped), the skin-output-encoder-vs-static-packer byte identity
 (fallback defaults included -- the tangent w pad had drifted exactly there), and
 the mirrored (negative-determinant) blend flipping the packed bitangent sign for
-parity with the uncompressed path -- taking ZM to **3056**. `zm-tests.yml`
+parity with the uncompressed path -- taking ZM to **3056**; and the compressed-vertex
+Phase 5 T5.a terrain compression flip added 2 more ENGINE units
+(engine 1431 -> **1433**) -- the terrain vertex went 28 -> 20 bytes (SNORM16x4
+position quantised against the AUTHORED terrain box + UNORM16x2 UV), which gave
+`Flux_DequantPosition` (`Shaders/Common/VertexFormats.slang`) its first caller, so
+its GPU<->CPU agreement is now pinned by a frozen C++ transcription of the Slang
+function plus the fixed-function `VK_FORMAT_R16G16B16A16_SNORM` fetch conversion,
+swept against the CPU codec over box corners / quantum boundaries / three boxes,
+and by the out-of-box clamp -- taking ZM to **3058** (all three games' terrain bake
+stamps moved in the same change: ZM manifest v3 -> v4, CityBuilder v6 -> v7,
+RenderTest v9 -> v10); and the T5.a adversarial-review fix pass added 4 more ENGINE
+units (engine 1433 -> **1437**), all in `Flux_Terrain.Tests.inl` -- the
+TerrainConstants CB fill vs the authored box (VALUES, where the static_asserts pin
+only layout), the quant-bridge writes landing at the SHADER's reflected offsets
+(0xCD-sentinel decode), decode->re-encode word idempotence (the property the sculpt
+hook's and CityBuilder carve's seam safety stands on), and the UV write/read round
+trip including the integer snap -- taking ZM to **3062**. `zm-tests.yml`
 `-Baseline` and `run_unit_gate.ps1`'s default both moved to match. The paragraph below is the
 ZM-D-182-era snapshot, kept for the audit trail:
 

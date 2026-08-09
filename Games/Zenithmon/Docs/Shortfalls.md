@@ -28,7 +28,15 @@ and rewriting it once does not immunise it. Update it in the SAME commit that cl
   approved (ZM-D-112); and S6's dialogue/menu/NPC/shop surface all remain complete.
 - **★ THE LIVE BASELINE IS IN `Status.md`'s TOP BLOCK. READ IT, NOT THIS PARAGRAPH.** As of
   2026-08-08 (OBSERVED on clean `Null_` builds): registry **55**, ZM boot
-  **3056 ran / 3054 passed / 0 failed / 2 skipped**, engine boot **1431**. (+7 engine units
+  **3062 ran / 3060 passed / 0 failed / 2 skipped**, engine boot **1437**. (+4 engine units
+  on 2026-08-08 for the T5.a adversarial-review fix pass -- the TerrainConstants CB
+  fill pinned by VALUE, quant-bridge writes pinned at the shader's reflected offsets,
+  decode->re-encode word idempotence, and the UV round trip incl. the integer snap;
+  before that +2 engine units
+  on 2026-08-08 for the compressed-vertex Phase 5 T5.a terrain compression flip --
+  the terrain vertex went 28 -> 20 bytes, giving `Flux_DequantPosition` its first
+  caller, so its GPU<->CPU agreement is pinned by a frozen Slang transcription plus
+  the fixed-function snorm16 fetch, and by the out-of-box clamp; before that +7 engine units
   on 2026-08-08 for the T4.a adversarial-review fix pass -- half word pins + the frozen
   Slang-codec transcription parity, positive-finite branch proofs, over-unity weight
   pre-scale, the half-range position guard, the skin-output-encoder/static-packer byte

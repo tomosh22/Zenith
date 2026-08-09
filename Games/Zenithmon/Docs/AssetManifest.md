@@ -409,8 +409,10 @@ projects to 25,832.
 
 Component initialization still hard-requires the anchor and skips other
 missing render/physics chunks with warnings. Dynamic HIGH streaming uses a
-bounded parser for the shared canonical 28-byte terrain vertex layout and
-fixed HIGH counts. A missing, truncated, malformed, wrong-layout, or
+bounded parser for the shared canonical 20-byte packed terrain vertex layout
+(SNORM16x4 position + UNORM16x2 UV + two SNORM10 lanes, quantised against the
+authored box in `Core/Zenith_TerrainChunkLayout.h`; 28-byte float layouts are
+rejected as stale v3 bakes) and fixed HIGH counts. A missing, truncated, malformed, wrong-layout, or
 out-of-range-index HIGH file causes no allocation or eviction: the chunk keeps
 LOW residency and is marked `SOURCE_UNAVAILABLE`. Classification warns once,
 is not retried on later frames, and is reset by terrain teardown/regeneration.

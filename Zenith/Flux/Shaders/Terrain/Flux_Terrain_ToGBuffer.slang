@@ -24,13 +24,18 @@ import Common.MaterialTable;        // Phase 4c: MaterialGPU record (bindless te
 import Common.GBuffer;
 import Common.MaterialSurface;      // MaterialSurface + ISurfaceModel seam + MakeGBuffer(MaterialSurface)
 
-// The two packed fields are declared float4 because that is what the fetch delivers;
-// [VtxFmt] is what tells the layout generator they occupy FOUR bytes each in the
-// buffer, which is what Zenith_TerrainChunkLayout's 28-byte stride depends on.
+// EVERY field is packed, and every one is declared as the type the fetch DELIVERS
+// (fetch hardware widens and converts); [VtxFmt] is what tells the layout generator
+// how many bytes it occupies in the buffer, which is what Zenith_TerrainChunkLayout's
+// 20-byte stride depends on.
+//
+// The position arrives as a float4 in [-1,1] and needs Flux_DequantPosition against
+// the authored box below to become world space; the UV arrives in [0,1] and is scaled
+// back up to heightmap pixels the same way.
 struct VsIn
 {
-	float3 a_xPosition       : POSITION;
-	float2 a_xUV             : TEXCOORD0;
+	[VtxFmt("snorm16x4")]       float4 a_xPosition       : POSITION;  // xyz quantised world pos, w unused
+	[VtxFmt("unorm16x2")]       float2 a_xUV             : TEXCOORD0; // heightmap pixel coords / g_xPosQuantScale.w
 	[VtxFmt("snorm10_10_10_2")] float4 a_xNormalPacked   : NORMAL;   // xyz normal, w unused
 	[VtxFmt("snorm10_10_10_2")] float4 a_xTangentPacked  : TANGENT;  // xyz tangent, w bitangent sign
 };
@@ -52,8 +57,22 @@ struct VsOut
 	nointerpolation uint chunkIndex : TEXCOORD6;
 };
 
-// Per-frame UV scale.
-struct TerrainConstantsLayout { float g_fUVScale; };
+// Per-frame UV scale + the dequantisation box the packed VsIn above needs.
+//
+// The box is the AUTHORED terrain extent (Core/Zenith_TerrainChunkLayout.h), never a
+// per-chunk fit: neighbouring chunks share their stitch vertices by value, and only a
+// SHARED box makes one world position quantise to one word in both, which is what
+// keeps the seam closed. It rides ordinary CB data — only the vertex LAYOUT is
+// reflection-generated.
+//
+// std140 puts the two float4s on 16-byte boundaries (offsets 16 and 32), so the CB is
+// 48 bytes; the CPU mirror in Flux_Terrain.cpp static_asserts against exactly that.
+struct TerrainConstantsLayout
+{
+	float  g_fUVScale;         // artist/debug tiling multiplier
+	float4 g_xPosQuantScale;   // xyz = authored box extent; w = the UV dequant scale
+	float4 g_xPosQuantBias;    // xyz = authored box min
+};
 
 // Per-draw 288-byte CB. g_xTerrainParams2.y holds the debug-mode index
 // (uint reinterpreted as float per Vulkan std140 layout — caller writes
@@ -91,10 +110,17 @@ VsOut vsMain(VsIn input,
              uint startInstance : SV_StartInstanceLocation)
 {
 	VsOut o;
-	float3 xWorldPos = input.a_xPosition; // terrain is static, no model matrix
+	// Terrain is static, so the dequantised position IS the world position — no model
+	// matrix, and no per-chunk offset either (the box is the whole terrain).
+	float3 xWorldPos = Flux_DequantPosition(input.a_xPosition,
+		g_xPassSet.TerrainConstants.g_xPosQuantScale.xyz,
+		g_xPassSet.TerrainConstants.g_xPosQuantBias.xyz);
 
 	o.worldPos      = xWorldPos;
-	o.uv            = input.a_xUV * g_xPassSet.TerrainConstants.g_fUVScale;
+	// One multiply, not two: the unorm UV is scaled back to heightmap pixels and
+	// through the artist tiling multiplier in the same step.
+	o.uv            = input.a_xUV * (g_xPassSet.TerrainConstants.g_xPosQuantScale.w
+	                              * g_xPassSet.TerrainConstants.g_fUVScale);
 	o.worldNormal   = normalize(input.a_xNormalPacked.xyz);
 	o.worldTangent  = normalize(input.a_xTangentPacked.xyz);
 	// Bitangent sign was pre-computed at export and packed into tangent.w.

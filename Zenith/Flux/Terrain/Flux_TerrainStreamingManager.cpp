@@ -38,7 +38,7 @@ namespace
 	// so the comparison cannot live beside Zenith_TerrainChunkLayout; this file already
 	// includes both headers for its own reasons, which makes it the natural — and only —
 	// home. Compared element-wise rather than by stride alone, because two layouts can
-	// agree on 28 bytes and disagree about which four bytes are the normal.
+	// agree on 20 bytes and disagree about which four bytes are the normal.
 	static_assert(Zenith_TerrainChunkLayout::uELEMENT_COUNT == Flux_Generated_Terrain::Terrain_ToGBuffer::kVertexLayout.m_uElementCount,
 		"Baked terrain chunks and the terrain VS must declare the same number of vertex elements");
 	static_assert(Zenith_TerrainChunkLayout::uVERTEX_STRIDE == Flux_Generated_Terrain::Terrain_ToGBuffer::kVertexLayout.m_auStrides[0],
@@ -80,6 +80,25 @@ namespace
 		"Zenith_TerrainChunkLayout::axELEMENTS has drifted from the terrain VS's vertex input — "
 		"a baked chunk no longer describes the bytes the shader fetches");
 
+	// The NAMED offset constants are what every producer writes through
+	// (Flux_TerrainVertexQuant.h). The comparator above recomputes the running sum
+	// instead of reading them, so on their own they are self-referential: a wrong
+	// constant moves the writer and the CPU reader together, every unit test stays
+	// green, and only the GPU fetch disagrees. Pinning each one to the SHADER's
+	// reflected offset is what breaks that self-reference.
+	static_assert(Zenith_TerrainChunkLayout::uPOSITION_OFFSET ==
+		Flux_Generated_Terrain::Terrain_ToGBuffer::kVertexLayout.m_paxElements[0].m_uOffset,
+		"uPOSITION_OFFSET must equal the byte offset the terrain VS fetches the position from");
+	static_assert(Zenith_TerrainChunkLayout::uUV_OFFSET ==
+		Flux_Generated_Terrain::Terrain_ToGBuffer::kVertexLayout.m_paxElements[1].m_uOffset,
+		"uUV_OFFSET must equal the byte offset the terrain VS fetches the UV from");
+	static_assert(Zenith_TerrainChunkLayout::uNORMAL_OFFSET ==
+		Flux_Generated_Terrain::Terrain_ToGBuffer::kVertexLayout.m_paxElements[2].m_uOffset,
+		"uNORMAL_OFFSET must equal the byte offset the terrain VS fetches the normal from");
+	static_assert(Zenith_TerrainChunkLayout::uTANGENT_OFFSET ==
+		Flux_Generated_Terrain::Terrain_ToGBuffer::kVertexLayout.m_paxElements[3].m_uOffset,
+		"uTANGENT_OFFSET must equal the byte offset the terrain VS fetches the tangent from");
+
 	// The velocity and shadow VsIns are HAND-MAINTAINED COPIES of ToGBuffer's
 	// (not a shared struct), and each is boot-validated only against its OWN
 	// reflection — self-consistent even when the copies drift apart. These pins
@@ -88,6 +107,21 @@ namespace
 		"Terrain_ToGBufferVelocity's hand-copied VsIn has drifted from Terrain_ToGBuffer's — the shared terrain buffer would fetch with two different layouts");
 	static_assert(Flux_Generated_Terrain::Terrain_ToShadowmap::kVertexLayout == Flux_Generated_Terrain::Terrain_ToGBuffer::kVertexLayout,
 		"Terrain_ToShadowmap's hand-copied VsIn has drifted from Terrain_ToGBuffer's — the shadow caster would fetch the terrain buffer with a different layout");
+
+	// The dequant box is the AUTHORED terrain extent, and this is the one TU that can
+	// see both halves of that claim. A box narrower than the grid clamps the far edge
+	// of every terrain into a wall; a box wider than it spends precision on space no
+	// vertex occupies. Neither shows up as a build error anywhere else.
+	static_assert(Zenith_TerrainChunkLayout::afPOSITION_BOX_MAX[0] - Zenith_TerrainChunkLayout::afPOSITION_BOX_MIN[0] == TERRAIN_SIZE &&
+		Zenith_TerrainChunkLayout::afPOSITION_BOX_MAX[2] - Zenith_TerrainChunkLayout::afPOSITION_BOX_MIN[2] == TERRAIN_SIZE,
+		"The terrain position quantisation box's XZ extent must be the configured terrain size");
+	static_assert(Zenith_TerrainChunkLayout::afPOSITION_BOX_MAX[1] - Zenith_TerrainChunkLayout::afPOSITION_BOX_MIN[1] == MAX_TERRAIN_HEIGHT,
+		"The terrain position quantisation box's Y extent must be the configured terrain height");
+	static_assert(Zenith_TerrainChunkLayout::fUV_BOX_MAX == TERRAIN_SIZE,
+		"Terrain UVs are heightmap pixel coordinates over the same extent as the world grid");
+
+	static_assert(Zenith_TerrainChunkLayout::uVERTEX_STRIDE == VERTEX_STRIDE_BYTES,
+		"Flux_TerrainConfig's documented stride must track the on-disk chunk layout");
 
 	static_assert(Zenith_TerrainChunkLayout::uHIGH_CHUNK_VERTEX_COUNT <= STREAMING_VERTEX_BUFFER_SIZE / Zenith_TerrainChunkLayout::uVERTEX_STRIDE,
 		"A canonical HIGH terrain chunk must fit in the streaming vertex buffer");

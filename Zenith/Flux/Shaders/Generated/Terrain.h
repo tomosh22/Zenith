@@ -88,8 +88,10 @@ namespace Flux_Generated_Terrain
 		{
 			float m_fg_fUVScale; // slang=float offset=0
 			unsigned char m_aPad_4[12];
+			unsigned char m_ag_xPosQuantScale[16]; // slang=vector offset=16 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_xPosQuantBias[16]; // slang=vector offset=32 arrayCount=4 (no C++ mapping)
 		};
-		static_assert(sizeof(TerrainConstants_CB) == 16, "TerrainConstants_CB size drifted from Slang reflection");
+		static_assert(sizeof(TerrainConstants_CB) == 48, "TerrainConstants_CB size drifted from Slang reflection");
 		static_assert(offsetof(TerrainConstants_CB, m_fg_fUVScale) == 0, "TerrainConstants.g_fUVScale offset drifted from Slang reflection");
 		// kind: ConstantBuffer
 		inline constexpr Flux_BindingHandle hTerrainMaterialConstants{ 3u, 1u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
@@ -111,12 +113,12 @@ namespace Flux_Generated_Terrain
 		// vertex inputs: { semantic, semantic index, STORAGE format, binding, byte offset }
 		inline constexpr Flux_VertexLayoutElement kaxVertexAttribs[] =
 		{
-			{ FLUX_VERTEX_SEMANTIC_POSITION, 0u, SHADER_DATA_TYPE_FLOAT3, 0u, 0u },   // a_xPosition
-			{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 0u, SHADER_DATA_TYPE_FLOAT2, 0u, 12u },   // a_xUV
-			{ FLUX_VERTEX_SEMANTIC_NORMAL, 0u, SHADER_DATA_TYPE_SNORM10_10_10_2, 0u, 20u },   // a_xNormalPacked
-			{ FLUX_VERTEX_SEMANTIC_TANGENT, 0u, SHADER_DATA_TYPE_SNORM10_10_10_2, 0u, 24u },   // a_xTangentPacked
+			{ FLUX_VERTEX_SEMANTIC_POSITION, 0u, SHADER_DATA_TYPE_SNORM16X4, 0u, 0u },   // a_xPosition
+			{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 0u, SHADER_DATA_TYPE_UNORM16X2, 0u, 8u },   // a_xUV
+			{ FLUX_VERTEX_SEMANTIC_NORMAL, 0u, SHADER_DATA_TYPE_SNORM10_10_10_2, 0u, 12u },   // a_xNormalPacked
+			{ FLUX_VERTEX_SEMANTIC_TANGENT, 0u, SHADER_DATA_TYPE_SNORM10_10_10_2, 0u, 16u },   // a_xTangentPacked
 		};
-		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ kaxVertexAttribs, 4u, { 28u, 0u } };
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ kaxVertexAttribs, 4u, { 20u, 0u } };
 	}
 
 	// ----- Terrain_ToGBufferVelocity (Terrain/Flux_Terrain_ToGBufferVelocity) -----
@@ -152,8 +154,10 @@ namespace Flux_Generated_Terrain
 		{
 			float m_fg_fUVScale; // slang=float offset=0
 			unsigned char m_aPad_4[12];
+			unsigned char m_ag_xPosQuantScale[16]; // slang=vector offset=16 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_xPosQuantBias[16]; // slang=vector offset=32 arrayCount=4 (no C++ mapping)
 		};
-		static_assert(sizeof(TerrainConstants_CB) == 16, "TerrainConstants_CB size drifted from Slang reflection");
+		static_assert(sizeof(TerrainConstants_CB) == 48, "TerrainConstants_CB size drifted from Slang reflection");
 		static_assert(offsetof(TerrainConstants_CB, m_fg_fUVScale) == 0, "TerrainConstants.g_fUVScale offset drifted from Slang reflection");
 		// kind: ConstantBuffer
 		inline constexpr Flux_BindingHandle hTerrainMaterialConstants{ 3u, 1u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
@@ -175,12 +179,12 @@ namespace Flux_Generated_Terrain
 		// vertex inputs: { semantic, semantic index, STORAGE format, binding, byte offset }
 		inline constexpr Flux_VertexLayoutElement kaxVertexAttribs[] =
 		{
-			{ FLUX_VERTEX_SEMANTIC_POSITION, 0u, SHADER_DATA_TYPE_FLOAT3, 0u, 0u },   // a_xPosition
-			{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 0u, SHADER_DATA_TYPE_FLOAT2, 0u, 12u },   // a_xUV
-			{ FLUX_VERTEX_SEMANTIC_NORMAL, 0u, SHADER_DATA_TYPE_SNORM10_10_10_2, 0u, 20u },   // a_xNormalPacked
-			{ FLUX_VERTEX_SEMANTIC_TANGENT, 0u, SHADER_DATA_TYPE_SNORM10_10_10_2, 0u, 24u },   // a_xTangentPacked
+			{ FLUX_VERTEX_SEMANTIC_POSITION, 0u, SHADER_DATA_TYPE_SNORM16X4, 0u, 0u },   // a_xPosition
+			{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 0u, SHADER_DATA_TYPE_UNORM16X2, 0u, 8u },   // a_xUV
+			{ FLUX_VERTEX_SEMANTIC_NORMAL, 0u, SHADER_DATA_TYPE_SNORM10_10_10_2, 0u, 12u },   // a_xNormalPacked
+			{ FLUX_VERTEX_SEMANTIC_TANGENT, 0u, SHADER_DATA_TYPE_SNORM10_10_10_2, 0u, 16u },   // a_xTangentPacked
 		};
-		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ kaxVertexAttribs, 4u, { 28u, 0u } };
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ kaxVertexAttribs, 4u, { 20u, 0u } };
 	}
 
 	// ----- Terrain_ToShadowmap (Terrain/Flux_Terrain_ToShadowmap) -----
@@ -210,15 +214,26 @@ namespace Flux_Generated_Terrain
 		inline constexpr Flux_BindingHandle hg_xPrefilteredMap{ 1u, 8u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 		// kind: UnboundedTextureArray
 		inline constexpr Flux_BindingHandle hg_axTextures{ 2u, 0u, FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY, 0u };
+		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hTerrainConstants{ 3u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		struct TerrainConstants_CB
+		{
+			float m_fg_fUVScale; // slang=float offset=0
+			unsigned char m_aPad_4[12];
+			unsigned char m_ag_xPosQuantScale[16]; // slang=vector offset=16 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_xPosQuantBias[16]; // slang=vector offset=32 arrayCount=4 (no C++ mapping)
+		};
+		static_assert(sizeof(TerrainConstants_CB) == 48, "TerrainConstants_CB size drifted from Slang reflection");
+		static_assert(offsetof(TerrainConstants_CB, m_fg_fUVScale) == 0, "TerrainConstants.g_fUVScale offset drifted from Slang reflection");
 		// vertex inputs: { semantic, semantic index, STORAGE format, binding, byte offset }
 		inline constexpr Flux_VertexLayoutElement kaxVertexAttribs[] =
 		{
-			{ FLUX_VERTEX_SEMANTIC_POSITION, 0u, SHADER_DATA_TYPE_FLOAT3, 0u, 0u },   // a_xPosition
-			{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 0u, SHADER_DATA_TYPE_FLOAT2, 0u, 12u },   // a_xUV
-			{ FLUX_VERTEX_SEMANTIC_NORMAL, 0u, SHADER_DATA_TYPE_SNORM10_10_10_2, 0u, 20u },   // a_xNormalPacked
-			{ FLUX_VERTEX_SEMANTIC_TANGENT, 0u, SHADER_DATA_TYPE_SNORM10_10_10_2, 0u, 24u },   // a_xTangentPacked
+			{ FLUX_VERTEX_SEMANTIC_POSITION, 0u, SHADER_DATA_TYPE_SNORM16X4, 0u, 0u },   // a_xPosition
+			{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 0u, SHADER_DATA_TYPE_UNORM16X2, 0u, 8u },   // a_xUV
+			{ FLUX_VERTEX_SEMANTIC_NORMAL, 0u, SHADER_DATA_TYPE_SNORM10_10_10_2, 0u, 12u },   // a_xNormalPacked
+			{ FLUX_VERTEX_SEMANTIC_TANGENT, 0u, SHADER_DATA_TYPE_SNORM10_10_10_2, 0u, 16u },   // a_xTangentPacked
 		};
-		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ kaxVertexAttribs, 4u, { 28u, 0u } };
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ kaxVertexAttribs, 4u, { 20u, 0u } };
 	}
 
 	// ----- TerrainCulling (Terrain/Flux_TerrainCulling) -----

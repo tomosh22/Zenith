@@ -85,6 +85,7 @@
 
 // Terrain streaming (for chunk distance tests)
 #include "Flux/Terrain/Flux_TerrainStreamingManagerImpl.h"
+#include "Flux/Terrain/Flux_TerrainVertexQuant.h"
 #include "Core/Zenith_TerrainChunkLayout.h"
 
 // Slang reflection schema + codegen. Both headers are platform-neutral
@@ -16047,12 +16048,12 @@ void Zenith_UnitTests::TestTerrainStreamingMissingHighLODSourceDoesNotEvictOrAll
 	// A present but incompatible source must take the same non-asserting,
 	// side-effect-free result path. This fixture is otherwise a complete HIGH
 	// terrain .zmesh in the exact Flux_MeshGeometry::Export field order. Its sole
-	// defect is swapping FLOAT3/FLOAT2 while preserving the canonical 28-byte
-	// total stride, so rejection is specifically layout validation rather than
-	// an EOF, count, payload, or index failure.
+	// defect is swapping the position/UV storage formats while preserving the
+	// canonical 20-byte total stride, so rejection is specifically layout
+	// validation rather than an EOF, count, payload, or index failure.
 	Flux_BufferLayout xIncompatibleLayout;
-	xIncompatibleLayout.GetElements().PushBack(Flux_BufferElement(SHADER_DATA_TYPE_FLOAT2));
-	xIncompatibleLayout.GetElements().PushBack(Flux_BufferElement(SHADER_DATA_TYPE_FLOAT3));
+	xIncompatibleLayout.GetElements().PushBack(Flux_BufferElement(SHADER_DATA_TYPE_HALF4));
+	xIncompatibleLayout.GetElements().PushBack(Flux_BufferElement(SHADER_DATA_TYPE_HALF2));
 	for (uint32_t u = 2u; u < Zenith_TerrainChunkLayout::uELEMENT_COUNT; u++)
 	{
 		xIncompatibleLayout.GetElements().PushBack(
@@ -16151,19 +16152,35 @@ void Zenith_UnitTests::TestTerrainStreamingMissingHighLODSourceDoesNotEvictOrAll
 		const uint32_t uInteriorVertexCount = uQuadsPerEdge * uQuadsPerEdge;
 		const uint32_t uRightEdgeStart = uInteriorVertexCount;
 		const uint32_t uTopEdgeStart = uRightEdgeStart + uQuadsPerEdge;
+		// The packed stream is written through the SAME codec bridge the exporter
+		// bakes with, so the fixture exercises the quantisation the validator has to
+		// tolerate rather than a hand-rolled approximation of it.
+		const Flux_PosQuant xFixtureQuant = Flux_MakeTerrainPosQuant();
 		auto WriteVertex = [&](uint32_t uVertex, uint32_t uX, uint32_t uZ)
 		{
+			float fY = 0.25f * static_cast<float>((uX + uZ) % 3u);
+			// One vertex carries the WORST legitimate cross-stream residual: an
+			// authored Y exactly halfway between two quanta, whose packed lane must
+			// round half a step away. The default Y pattern quantises almost exactly
+			// (residuals 100x+ inside the tolerance), so without this vertex the
+			// validator's quant-step tolerance is never actually exercised — anyone
+			// "tightening" it below half a step would keep every unit green while
+			// real baked chunks started being rejected (no LOW geometry, no physics
+			// body). This vertex brackets the tolerance from below: tighten it under
+			// half a step and this VALID fixture goes red.
+			if (uX == 2u && uZ == 3u)
+			{
+				fY = 64.5f * Zenith_TerrainChunkLayout::PositionQuantStep(1u);
+			}
 			const Zenith_Maths::Vector3 xPosition(
-				static_cast<float>(uX), 0.25f * static_cast<float>((uX + uZ) % 3u),
+				static_cast<float>(uX), fY,
 				static_cast<float>(uZ));
 			axPositions[uVertex] = xPosition;
-			const float afPackedPositionAndUV[5] = {
-				xPosition.x, xPosition.y, xPosition.z,
-				static_cast<float>(uX), static_cast<float>(uZ)
-			};
-			std::memcpy(auVertices.data() +
-				static_cast<size_t>(uVertex) * Zenith_TerrainChunkLayout::uVERTEX_STRIDE,
-				afPackedPositionAndUV, sizeof(afPackedPositionAndUV));
+			u_int8* const pVertex = auVertices.data() +
+				static_cast<size_t>(uVertex) * Zenith_TerrainChunkLayout::uVERTEX_STRIDE;
+			Flux_WriteTerrainVertexPosition(pVertex, xPosition, xFixtureQuant);
+			Flux_WriteTerrainVertexUV(pVertex, Zenith_Maths::Vector2(
+				static_cast<float>(uX), static_cast<float>(uZ)));
 		};
 		// Match ExportChunkBatch exactly: N x N interior vertices first, then
 		// the positive-X edge, positive-Z edge, and final shared corner.
@@ -16240,8 +16257,11 @@ void Zenith_UnitTests::TestTerrainStreamingMissingHighLODSourceDoesNotEvictOrAll
 		}
 		else if (uFixtureMutation == 3u)
 		{
+			// Position STREAM only. A snorm16 lane decodes through a constant scale
+			// and bias, so the packed buffer cannot carry a non-finite value at all —
+			// which is exactly why the finiteness gate lives on the authored stream,
+			// one validation stage earlier than the cross-stream comparison.
 			axPositions[0].x = (std::numeric_limits<float>::quiet_NaN)();
-			std::memcpy(auVertices.data(), &axPositions[0].x, sizeof(float));
 		}
 		else if (uFixtureMutation == 4u)
 		{
@@ -16251,21 +16271,22 @@ void Zenith_UnitTests::TestTerrainStreamingMissingHighLODSourceDoesNotEvictOrAll
 		{
 			// Collapse vertex 1 onto vertex 0's grid slot. Two vertices claiming
 			// one slot must be rejected as a duplicate owner, before any of the
-			// triangle-topology checks get a chance to fire.
+			// triangle-topology checks get a chance to fire. Both streams move
+			// together so the cross-stream check cannot fire first.
 			axPositions[1] = axPositions[0];
-			const float afPacked[5] = {
-				axPositions[1].x, axPositions[1].y, axPositions[1].z, 0.0f, 0.0f };
-			std::memcpy(auVertices.data() +
-				static_cast<size_t>(Zenith_TerrainChunkLayout::uVERTEX_STRIDE),
-				afPacked, sizeof(afPacked));
+			u_int8* const pVertex1 = auVertices.data() +
+				static_cast<size_t>(Zenith_TerrainChunkLayout::uVERTEX_STRIDE);
+			Flux_WriteTerrainVertexPosition(pVertex1, axPositions[1], xFixtureQuant);
+			Flux_WriteTerrainVertexUV(pVertex1, Zenith_Maths::Vector2(0.0f, 0.0f));
 		}
 		else if (uFixtureMutation == 6u)
 		{
-			// Packed vertex-buffer X disagrees with the position stream by far
-			// more than the grid epsilon. Both streams stay finite and on-grid,
-			// so only the cross-stream agreement check can catch this.
-			const float fDivergentX = axPositions[0].x + 0.5f;
-			std::memcpy(auVertices.data(), &fDivergentX, sizeof(float));
+			// Packed vertex-buffer X disagrees with the position stream by half a
+			// metre — eight quantisation steps, so it cannot be mistaken for the
+			// rounding the cross-stream check is required to tolerate. Both streams
+			// stay finite and on-grid, so only that check can catch it.
+			Flux_WriteTerrainVertexPosition(auVertices.data(),
+				axPositions[0] + Zenith_Maths::Vector3(0.5f, 0.0f, 0.0f), xFixtureQuant);
 		}
 		else if (uFixtureMutation == 7u)
 		{
@@ -20569,10 +20590,14 @@ void Zenith_UnitTests::TestCodegenSanitisesIdentifiers(){
 
 namespace
 {
-	// Build the terrain vertex as reflection would report it: declaration order,
+	// Build a SYNTHETIC vertex as reflection would report it: declaration order,
 	// semantics already split into base + index, the two packed fields carrying
-	// their [VtxFmt] storage tag rather than their declared float4.
-	void CodegenTestFillTerrainVertexInputs(Flux_ShaderReflection& xReflOut)
+	// their [VtxFmt] storage tag rather than their declared float4. This is a
+	// frozen 28-byte FLOAT3/FLOAT2/SNORM10x2 fixture that happens to be the
+	// PRE-COMPRESSION terrain layout — it pins CODEGEN EMISSION only. The live
+	// 20-byte terrain contract is pinned in Flux_TerrainStreamingManager.cpp
+	// (static_asserts vs Generated/Terrain.h) and Flux_Terrain.Tests.inl.
+	void CodegenTestFillSyntheticVertexInputs(Flux_ShaderReflection& xReflOut)
 	{
 		struct Row { const char* m_szName; const char* m_szSemantic; ShaderDataType m_eType; };
 		static const Row ls_axRows[] =
@@ -20600,7 +20625,7 @@ ZENITH_TEST(Codegen, CodegenEmitsVertexLayoutTable) { Zenith_UnitTests::TestCode
 void Zenith_UnitTests::TestCodegenEmitsVertexLayoutTable(){
 
 	Flux_ShaderReflection xRefl;
-	CodegenTestFillTerrainVertexInputs(xRefl);
+	CodegenTestFillSyntheticVertexInputs(xRefl);
 	xRefl.BuildLookupMap();
 
 	Flux_CodeGenerator::ProgramReflection xPR;
@@ -20632,7 +20657,7 @@ void Zenith_UnitTests::TestCodegenEmitsVertexLayoutTable(){
 		"Packed tangent should emit as SNORM10_10_10_2 at byte 24");
 
 	ZENITH_ASSERT_TRUE(str.find("inline constexpr Flux_VertexLayoutDesc kVertexLayout{ kaxVertexAttribs, 4u, { 28u, 0u } };") != std::string::npos,
-		"The descriptor should name the table, its element count, and the 28-byte terrain stride");
+		"The descriptor should name the table, its element count, and the synthetic fixture's 28-byte stride");
 }
 
 ZENITH_TEST(Codegen, CodegenEmitsNullVertexLayout) { Zenith_UnitTests::TestCodegenEmitsNullVertexLayout(); }

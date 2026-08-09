@@ -272,7 +272,12 @@ struct ZM_TerrainBakeBatchPlan
 //             their chunk bytes are unchanged in practice -- but the stamp moves
 //             with the engine-wide bake change rather than relying on that, per
 //             the bump-every-game rule in Flux/Terrain/CLAUDE.md.
-constexpr u_int uZM_TERRAIN_MANIFEST_VERSION = 3u;
+//   v3 -> v4: the terrain vertex was compressed from 28 to 20 bytes (quantised
+//             SNORM16x4 position + UNORM16x2 UV). Every chunk's BYTES changed and
+//             its serialized element table no longer matches
+//             Zenith_TerrainChunkLayout, so a v3 bake is rejected outright --
+//             no LOW geometry and no physics body.
+constexpr u_int uZM_TERRAIN_MANIFEST_VERSION = 4u;
 constexpr u_int uZM_TERRAIN_RECIPE_COUNT = 3u;
 constexpr u_int uZM_DAWNMERE_REQUIRED_OUTPUT_COUNT = 771u;
 constexpr u_int uZM_THORNACRE_REQUIRED_OUTPUT_COUNT = 771u;

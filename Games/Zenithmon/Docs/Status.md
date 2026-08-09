@@ -3,10 +3,25 @@
 **Last updated:** 2026-08-08
 
 **★ LIVE BASELINE (OBSERVED 2026-08-08 on clean `Null_` builds):
-ZM boot `3056 ran / 3054 passed / 0 failed / 2 skipped`; engine boot (Null Combat)
-`1431 ran / 1430 passed / 0 failed / 1 skipped`; registry **55**.** This is the
-current pin in `zm-tests.yml` (`-Baseline 3056`) and `run_unit_gate.ps1`
-(default 1431). The move from 3049/1424 is **+7 ENGINE units** from the
+ZM boot `3062 ran / 3060 passed / 0 failed / 2 skipped`; engine boot (Null Combat)
+`1437 ran / 1436 passed / 0 failed / 1 skipped`; registry **55**.** This is the
+current pin in `zm-tests.yml` (`-Baseline 3062`) and `run_unit_gate.ps1`
+(default 1437). The move from 3058/1433 is **+4 ENGINE units** from the T5.a
+adversarial-review fix pass (2026-08-08), all in `Flux_Terrain.Tests.inl`: the
+TerrainConstants CB fill vs the authored box (values, not just layout), the
+quant-bridge writes landing at the SHADER's reflected offsets, decode->re-encode
+word idempotence (the sculpt/carve seam-safety property), and the UV write/read
+round trip including the integer snap the sculpt hook stands on. Before that,
+the move from 3056/1431 was **+2 ENGINE units** from the
+compressed-vertex Phase 5 T5.a terrain compression flip (2026-08-08): the terrain
+vertex went 28 -> 20 bytes (SNORM16x4 position quantised against the authored
+terrain box + UNORM16x2 UV), which gave `Flux_DequantPosition`
+(`Shaders/Common/VertexFormats.slang`) its first caller — so its GPU<->CPU
+agreement is now pinned by a frozen transcription of the Slang function plus the
+fixed-function `VK_FORMAT_R16G16B16A16_SNORM` fetch conversion, swept against the
+CPU codec over box corners / quantum boundaries / three boxes, and by the
+out-of-box clamp. All three games' terrain bake stamps moved in the same change.
+Before that, the move from 3049/1424 was **+7 ENGINE units** from the
 compressed-vertex Phase 4 T4.a adversarial-review fix pass (2026-08-08): the
 half codec gained hand-derived word pins and a frozen transcription of the
 GPU-side Slang half codec (the licensed rounding-tie divergence is now pinned as
