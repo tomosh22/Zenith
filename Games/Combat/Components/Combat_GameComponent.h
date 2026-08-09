@@ -50,6 +50,7 @@
 #include "Combat_PlayerComponent.h"     // attached to player entity in CreateArena
 #include "Combat_EnemyComponent.h"      // attached to each enemy in SpawnEnemies
 #include "EntityComponent/Components/Zenith_LightComponent.h"
+#include "Core/Zenith_CommandLine.h"    // IsAutomatedTestRun -> deterministic spawn seed
 
 #include <random>
 
@@ -128,11 +129,32 @@ struct Combat_LevelEntities
 class Combat_GameComponent
 {
 public:
+	// Enemy-spawn RNG seed. Real play gets a fresh random_device seed so every
+	// session lays the arena out differently; an automated-test run gets a fixed
+	// seed so it does not.
+	//
+	// SpawnEnemies draws the angle + radius of all three enemies from m_xRng, so a
+	// random seed meant the characterization tests faced a different arena every
+	// run. Combat_AttackFlow_Test / Combat_HeavyAttack_Test steer the player to a
+	// specific enemy mid-combat, and on the unlucky layouts the player got
+	// surrounded and killed — GAME_OVER freezes the steer and the test times out.
+	// That flaked ~2 runs in 20 and reddened the batch exit code, i.e. CI, for a
+	// reason unrelated to the code under test.
+	//
+	// Zenith_CommandLine::IsAutomatedTestRun() is parsed at process start (before
+	// this constructor), which is why it can be read here. This mirrors the
+	// engine's existing "tests are deterministic by default" stance — the same
+	// reason Zenith_AutomatedTest::m_fFixedDt defaults to 1/60 rather than using
+	// wall-clock dt.
+	static constexpr uint32_t uAUTOMATED_TEST_SPAWN_SEED = 0x5EEDC0DEu;
+
 	Combat_GameComponent() = delete;
 	Combat_GameComponent(Zenith_Entity& xEntity)
 		: m_uTotalEnemies(3)
 		, m_iFocusIndex(0)
-		, m_xRng(std::random_device{}())
+		, m_xRng(Zenith_CommandLine::IsAutomatedTestRun()
+			? uAUTOMATED_TEST_SPAWN_SEED
+			: std::random_device{}())
 		, m_xParentEntity(xEntity)
 	{
 	}
