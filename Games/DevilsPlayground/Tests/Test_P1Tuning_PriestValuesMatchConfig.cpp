@@ -16,10 +16,14 @@
 //
 // Regression guard against the priest-tuning drift fixed in MVP-0.1.3.
 // Priest_Component previously hardcoded sight=20, hearing=25, FOV=120,
-// move=5, peripheral=FOV*1.25 — drift from GDD §4.5 / Tuning.json which
-// specify sight=25, hearing=30, FOV=110, pursue=7, peripheral=130. After
+// move=5, peripheral=FOV*1.25 — drift from GDD §4.5 / Tuning.json. After
 // the migration the priest reads from DP_Tuning in OnAwake; this test
 // asserts every field matches.
+//
+// The ratified numbers are NOT the original GDD §4.5 set any more: the
+// 2026-05-21 and 2026-05-26 balance passes retuned sight, FOV, hearing and
+// pursue speed (see the `_comment_*` keys in Config/Tuning.json for the full
+// per-value history). Arm 2 below carries the current ratified set.
 //
 // Coverage:
 //   1. Exact equality vs DP_Tuning::Get<float>() return values for every
@@ -140,19 +144,29 @@ static bool Verify_P1Tuning_PriestValuesMatchConfig()
 	CheckMatch("sight_awareness_decay_rate vs tuning",g_fActAwareDec,  DP_Tuning::Get<float>("priest.sight_awareness_decay_rate"));
 	CheckMatch("pursue_speed_mps vs tuning",          g_fActMoveSpd,   DP_Tuning::Get<float>("priest.pursue_speed_mps"));
 
-	// 2) Defence-in-depth: ratified Tuning.json constants (catches the
-	//    "tuner edits both the JSON and the priest fallback to the same
-	//    wrong value" case). These are GDD §4.5 ratified numbers.
+	// 2) Defence-in-depth: the RATIFIED constants, spelled out independently of
+	//    Tuning.json (catches the "tuner edits both the JSON and the priest
+	//    fallback to the same wrong value" case, which arm 1 cannot see).
+	//
+	//    RETARGETED 2026-08-09 onto the values the 2026-05-21 / 2026-05-26 balance
+	//    passes ratified. Four of these still carried the pre-balance GDD §4.5
+	//    numbers (hearing 35 -> 25, sight 25 -> 17, FOV 110 -> 90, pursue 7.0 ->
+	//    4.5) and had been failing ever since; each supersession is recorded in the
+	//    matching `_comment_*` key in Config/Tuning.json, which is the provenance
+	//    for the values below. Nobody noticed for ~2.5 months because this test is
+	//    m_bRequiresGraphics, so the headless gate SKIPS it and counts it as passed.
+	//    Arm 1 above was green throughout — the priest has always matched the
+	//    config; only this hardcoded mirror was stale.
 	CheckMatch("suspicion_radius == 15.0",  g_fActSuspicion, 15.0f);
-	CheckMatch("hearing_range == 35.0",     g_fActHearRange, 35.0f);
+	CheckMatch("hearing_range == 25.0",     g_fActHearRange, 25.0f);
 	CheckMatch("hearing_loudness == 0.05",  g_fActHearLoud,  0.05f);
-	CheckMatch("sight_range == 25.0",       g_fActSightRng,  25.0f);
-	CheckMatch("sight_fov == 110.0",        g_fActSightFov,  110.0f);
+	CheckMatch("sight_range == 17.0",       g_fActSightRng,  17.0f);
+	CheckMatch("sight_fov == 90.0",         g_fActSightFov,  90.0f);
 	CheckMatch("sight_peripheral == 130.0", g_fActSightPeri, 130.0f);
 	CheckMatch("sight_eye_height == 1.6",   g_fActSightEye,  1.6f);
 	CheckMatch("awareness_gain == 2.0",     g_fActAwareGain, 2.0f);
 	CheckMatch("awareness_decay == 0.5",    g_fActAwareDec,  0.5f);
-	CheckMatch("pursue_speed == 7.0",       g_fActMoveSpd,   7.0f);
+	CheckMatch("pursue_speed == 4.5",       g_fActMoveSpd,   4.5f);
 
 	if (g_iFailures > 0)
 	{

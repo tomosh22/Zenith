@@ -11,6 +11,8 @@
 #include "Source/PublicInterfaces.h"
 #include "Components/DPVillager_Component.h"
 
+#include <cmath>
+
 #include <cstdio>
 
 // ============================================================================
@@ -18,11 +20,20 @@
 //
 // Three simultaneous invariants on the GameLevel scene:
 //
-//   1. Lights are *dimmed* compared to the engine default (800 lumens).
-//      AuthorLightBatch scales the UE-imported intensity (~1000) down by
-//      0.10 with a 60-lumen floor. Verify every authored light reads
-//      <= 200 lumens (i.e. way below the engine default — proves the
-//      author-time setter ran and stuck).
+//   1. Every authored light carries the scene's authored intensity, proving
+//      the author-time setter ran and stuck.
+//
+//      RETARGETED 2026-08-09. This clause used to assert <= 200 lumens,
+//      "dimmed compared to the engine default (800)", because AuthorLightBatch
+//      scaled a UE-imported ~1000 down by 0.10 with a 60-lumen floor. That
+//      whole pipeline -- Tools/dp_export/, the UE bridge and the hand-authored
+//      GameLevel scene -- was DELETED on 2026-05-19; procgen is the only
+//      gameplay surface now and DevilsPlayground.cpp authors its lights at
+//      2000 lumens outright (AddStep_SetLightIntensity(2000.0f)). The clause
+//      had been asserting a property of deleted content ever since, and nobody
+//      saw it because the test is m_bRequiresGraphics: the headless gate SKIPS
+//      it and counts it as passed. Same rot, same cause, as Materials_Test and
+//      Test_GraphEditorLiveAuthoring (see Tests/CLAUDE.md).
 //
 //   2. *All* villagers (possessed or not) register fog holes — not just
 //      the currently-possessed one. Player needs to see every villager
@@ -30,11 +41,18 @@
 //
 //   3. DPFogPass_Component::OnUpdate has rebuilt the fog-hole table this
 //      frame, registering a hole per light + a hole per villager.
-//      Verify hole count == LightCount + VillagerCount.
+//      Verify hole count == LightCount + VillagerCount. (Clauses 2 and 3 are
+//      the test's real subject and have been green throughout: the procgen
+//      level reads 4 lights + 17 villagers = 21 holes.)
 // ============================================================================
 
 namespace
 {
+	// Mirrors AddStep_SetLightIntensity(2000.0f) in DevilsPlayground.cpp's
+	// procgen light authoring -- deliberately spelled out here so that editing
+	// one without the other trips this test.
+	constexpr float fDP_AUTHORED_LIGHT_LUMENS = 2000.0f;
+
 	enum Phase : int { kStart, kWait, kPossess, kSettle, kVerify, kDone };
 
 	int   g_iPhase             = kStart;
@@ -117,9 +135,9 @@ static bool Step_DimLightsCutFog(int /*iFrame*/)
 					const float fI = xLight.GetIntensity();
 					if (fI > g_fMaxLightIntensity) g_fMaxLightIntensity = fI;
 					if (fI < g_fMinLightIntensity) g_fMinLightIntensity = fI;
-					// "Dim" threshold: the engine default is 800; we're
-					// looking for everything well under that.
-					if (fI > 200.0f) g_bAllLightsDim = false;
+					// The authored value, not a "dim" band: DevilsPlayground.cpp
+					// authors every procgen light at fDP_AUTHORED_LIGHT_LUMENS.
+					if (std::fabs(fI - fDP_AUTHORED_LIGHT_LUMENS) > 1.0f) g_bAllLightsDim = false;
 				});
 		}
 		// Count villagers via DP_Query (component-pool query).
@@ -149,11 +167,11 @@ static bool Step_DimLightsCutFog(int /*iFrame*/)
 
 static bool Verify_DimLightsCutFog()
 {
-	// At least one light must exist (GameLevel authors 26).
+	// At least one light must exist (the procgen level authors 4).
 	if (g_iLightCount < 1)        return false;
-	// Every light dimmed below 200 lumens.
+	// Every light carries the authored intensity.
 	if (!g_bAllLightsDim)         return false;
-	// At least one villager (GameLevel authors 17).
+	// At least one villager (the procgen level authors 17).
 	if (g_iVillagerCount < 1)     return false;
 	// Hole count = lights + villagers. No possession is set in this
 	// test, so the only way villagers contribute is the always-on path.

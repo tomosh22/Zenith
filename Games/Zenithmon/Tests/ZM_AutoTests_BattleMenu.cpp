@@ -416,6 +416,7 @@ namespace
 
 	// ---- IN_BATTLE captures ----
 	Zenith_Maths::Vector3 g_xBMParkedPos  = Zenith_Maths::Vector3(0.0f);  // THE drift baseline
+	u_int          g_uBMGrassAtPark = 0u;   // THE grass baseline
 
 	// ---- Resume captures (exact restore) ----
 	int                   g_iBMBuildIndexAfter       = -1;
@@ -580,8 +581,23 @@ namespace
 	// Body vs the slab under it. Written as a sample-placement guard -- "the patch
 	// has not slid onto the platform" -- and it earned its keep: it is the arm that
 	// caught the PLAYER side of the model-less mutation.
-	// PASS  0.918 (player) / 1.052 (enemy).   FAIL  0.007 (player, model-less).
-	constexpr float fBM_PIX_MIN_BODY_VS_PLATFORM = 0.50f;
+	//
+	// RE-DERIVED 2026-08-09 against ZM-D-171 physically-grounded lighting, which is
+	// what the pre-ZM-D-171 numbers below were measured before. BOTH bands compressed
+	// because the arena slab is no longer the "pale stone" this arm was written
+	// against: it now reads a mid-tone blue-grey (0.389, 0.461, 0.567) under
+	// sky+ground ambient, much closer in luminance to a green Fernfawn
+	// (0.338, 0.683, 0.503) than the old bright slab was. The creature is still
+	// plainly on the patch -- its green channel is 0.68 against the slab's 0.46, and
+	// the two body-vs-side arms actually read HIGHER than before (0.365/0.533 player,
+	// 0.514/0.321 enemy vs 0.191/0.234 and 0.219/0.241) -- so this is a look change,
+	// not a render gap. Derived ZM-D-171's way: re-run for PASS, then re-run the
+	// mutation for FAIL (the model-less fall-through was reproduced by pointing the
+	// body patch at the platform NDC, which is the same geometric state it produces).
+	// PASS  0.236 (player) / 0.229 (enemy).   FAIL  0.041 / 0.038 (patch on the slab).
+	//   pre-ZM-D-171, for the record: PASS 0.918 / 1.052, FAIL 0.007.
+	// 0.12 sits ~3x above the fail band and ~half the pass band.
+	constexpr float fBM_PIX_MIN_BODY_VS_PLATFORM = 0.12f;
 
 	// ---- HUD thresholds ----
 	// ★ Same discipline as the creature block: each band was measured with the HUD
@@ -1208,6 +1224,13 @@ namespace
 				(double)xBody.x, (double)xBody.y, (double)xBody.z,
 				(double)g_axBMPixBody[uSide].m_fX, (double)g_axBMPixBody[uSide].m_fY,
 				(double)fVsLeft, (double)fVsRight, (double)fVsPlatform);
+			// The slab RGB is logged alongside the body: when this arm trips, the first
+			// question is always "did the patch move, or did the slab change colour?"
+			Zenith_Log(LOG_CATEGORY_UNITTEST,
+				"[ZM_BattleMenuRun] %s platform RGB (%.3f, %.3f, %.3f) at NDC (%+.3f, %+.3f)",
+				BMPixSideName(uSide),
+				(double)xPlatform.x, (double)xPlatform.y, (double)xPlatform.z,
+				(double)g_axBMPixPlatform[uSide].m_fX, (double)g_axBMPixPlatform[uSide].m_fY);
 
 			if (fVsLeft < fBM_PIX_MIN_BODY_VS_SIDE || fVsRight < fBM_PIX_MIN_BODY_VS_SIDE)
 			{
@@ -1529,6 +1552,7 @@ namespace
 		g_uBMEntryGrassBlades      = 0u;
 
 		g_xBMParkedPos             = Zenith_Maths::Vector3(0.0f);
+		g_uBMGrassAtPark           = 0u;
 
 		g_iBMBuildIndexAfter       = -1;
 		g_bBMBattleSceneUnloaded   = false;
@@ -1836,6 +1860,13 @@ namespace
 			}
 			if (pxTransition->GetTransitionState() != ZM_BATTLE_TRANSITION_IDLE)
 			{
+				// THE grass baseline, latched with the encounter -- i.e. at the parked
+				// position, for the same reason the drift baseline is the parked position:
+				// the player must WALK to trigger an encounter. Grass is GPU-regenerated
+				// around the camera every frame, so its blade count is a function of where
+				// the camera is, and comparing the resumed count against the ENTRY count
+				// asserted that walking does not change the grass -- false by construction.
+				g_uBMGrassAtPark = g_xEngine.Grass().GetScheduledInstanceCount();
 				// The encounter latched and the machine started; release the key now.
 				Zenith_InputSimulator::SetKeyHeld(g_eBMWalkKey, false);
 				g_eBMPhase = BMPhase::AwaitInBattle;
@@ -2071,7 +2102,7 @@ namespace
 				"[%s] captured: failed=%s (%s) directorSeen=%s completedAfter=%u (want 1) "
 				"abortedAfter=%u (want 0) buildAfter=%d (want 2) battleUnloaded=%s "
 				"playerResolved=%s movementEnabled=%s drift=%f (want <0.05) entryGrass=%u "
-				"grassAfter=%u (want ==entry) winnerCaptured=%s winner=%d (Win wants PLAYER=%d, "
+				"parkedGrass=%u grassAfter=%u (want ==parkedGrass) winnerCaptured=%s winner=%d (Win wants PLAYER=%d, "
 				"Run wants COUNT=%d) fleeSeen=%s minHudFill=%f (Win wants 0) hudRectCount=%u",
 				szTag,
 				g_bBMFailed ? "true" : "false", g_szBMFailure,
@@ -2083,7 +2114,7 @@ namespace
 				g_bBMPlayerResolved ? "true" : "false",
 				g_bBMPlayerMovementEnabled ? "true" : "false",
 				(double)fDrift,
-				g_uBMEntryGrassBlades, g_uBMGrassAfter,
+				g_uBMEntryGrassBlades, g_uBMGrassAtPark, g_uBMGrassAfter,
 				g_bBMWinnerCaptured ? "true" : "false",
 				(int)g_eBMWinner, (int)ZM_SIDE_PLAYER, (int)ZM_SIDE_COUNT,
 				g_bBMFleeSeen ? "true" : "false",
@@ -2166,11 +2197,11 @@ namespace
 						"invariant is vacuous", szTag);
 					bPassed = false;
 				}
-				if (g_uBMGrassAfter != g_uBMEntryGrassBlades)
+				if (g_uBMGrassAfter != g_uBMGrassAtPark)
 				{
 					Zenith_Error(LOG_CATEGORY_UNITTEST,
 						"[%s] resumed grass blade count was %u, expected %u (resume must restore the same "
-						"deterministic blade count)", szTag, g_uBMGrassAfter, g_uBMEntryGrassBlades);
+						"deterministic blade count)", szTag, g_uBMGrassAfter, g_uBMGrassAtPark);
 					bPassed = false;
 				}
 			}

@@ -376,7 +376,7 @@ namespace
 	// ---- Entry captures (before the encounter) ----
 	Zenith_Maths::Vector3 g_xBDEntryPlayerPos       = Zenith_Maths::Vector3(0.0f);  // DIAGNOSTIC ONLY
 	Zenith_Scene          g_xBDEntryOverworldScene;
-	u_int                 g_uBDEntryGrassBlades      = 0u;
+	u_int                 g_uBDEntryGrassBlades      = 0u;  // "grass existed at entry" only
 
 	// ---- Walk captures (the latched encounter payload) ----
 	ZM_SPECIES_ID g_eBDSeenSpecies     = ZM_SPECIES_NONE;
@@ -386,6 +386,7 @@ namespace
 	// ---- IN_BATTLE captures ----
 	bool                  g_bBDSeenFadeOpaque             = false;
 	Zenith_Maths::Vector3 g_xBDParkedPos                  = Zenith_Maths::Vector3(0.0f);  // THE drift baseline
+	u_int                 g_uBDGrassAtPark                = 0u;                           // THE grass baseline
 	bool                  g_bBDBattleSceneValid           = false;
 	int                   g_iBDActiveBuildIndexInBattle   = -1;
 	bool                  g_bBDOverworldPausedInBattle    = false;
@@ -524,6 +525,7 @@ namespace
 
 		g_bBDSeenFadeOpaque             = false;
 		g_xBDParkedPos                  = Zenith_Maths::Vector3(0.0f);
+		g_uBDGrassAtPark                = 0u;
 		g_bBDBattleSceneValid           = false;
 		g_iBDActiveBuildIndexInBattle   = -1;
 		g_bBDOverworldPausedInBattle    = false;
@@ -720,6 +722,16 @@ namespace
 			}
 			if (pxTransition->GetTransitionState() != ZM_BATTLE_TRANSITION_IDLE)
 			{
+				// THE grass baseline, latched on the same frame the encounter latches --
+				// i.e. at the parked position, for the same reason the drift baseline is
+				// the parked position and not the entry position: the player must WALK to
+				// trigger an encounter at all. Grass is GPU-regenerated from scratch each
+				// frame around the camera, so its blade count is a function of where the
+				// camera is; comparing the resumed count against the ENTRY count asserted
+				// that walking does not change the grass, which is false by construction.
+				// Measured: entry 450560 -> parked 434176 -> resumed 434176, i.e. resume
+				// restores the parked count EXACTLY and only the entry baseline was wrong.
+				g_uBDGrassAtPark = g_xEngine.Grass().GetScheduledInstanceCount();
 				// The encounter latched and the machine started; release the key now.
 				Zenith_InputSimulator::SetKeyHeld(g_eBDWalkKey, false);
 				g_eBDSeenSpecies     = pxTransition->GetBattleSpecies();
@@ -945,7 +957,7 @@ namespace
 				g_uBDArenaCountAfter,
 				g_bBDPlayerResolved ? "true" : "false",
 				g_bBDPlayerMovementEnabled ? "true" : "false",
-				g_uBDGrassAfter, g_uBDEntryGrassBlades,
+				g_uBDGrassAfter, g_uBDGrassAtPark,
 				(double)fDrift,
 				(double)g_xBDEntryPlayerPos.x, (double)g_xBDEntryPlayerPos.y, (double)g_xBDEntryPlayerPos.z,
 				(double)g_xBDParkedPos.x, (double)g_xBDParkedPos.y, (double)g_xBDParkedPos.z,
@@ -1156,12 +1168,12 @@ namespace
 					"paused)", (double)fDrift);
 				bPassed = false;
 			}
-			if (g_uBDGrassAfter != g_uBDEntryGrassBlades)
+			if (g_uBDGrassAfter != g_uBDGrassAtPark)
 			{
 				Zenith_Error(LOG_CATEGORY_UNITTEST,
 					"[ZM_BattleHUD] resumed grass blade count was %u, expected %u (resume "
 					"must restore the same deterministic blade count)",
-					g_uBDGrassAfter, g_uBDEntryGrassBlades);
+					g_uBDGrassAfter, g_uBDGrassAtPark);
 				bPassed = false;
 			}
 

@@ -706,6 +706,7 @@ namespace
 	// ---- IN_BATTLE captures ----
 	bool                  g_bRTSeenFadeOpaque             = false;
 	Zenith_Maths::Vector3 g_xRTParkedPos                  = Zenith_Maths::Vector3(0.0f);  // THE drift baseline
+	u_int                 g_uRTGrassAtPark                = 0u;                           // THE grass baseline
 	bool                  g_bRTBattleSceneValid           = false;
 	int                   g_iRTActiveBuildIndexInBattle   = -1;
 	bool                  g_bRTOverworldPausedInBattle    = false;
@@ -759,6 +760,7 @@ namespace
 
 		g_bRTSeenFadeOpaque             = false;
 		g_xRTParkedPos                  = Zenith_Maths::Vector3(0.0f);
+		g_uRTGrassAtPark                = 0u;
 		g_bRTBattleSceneValid           = false;
 		g_iRTActiveBuildIndexInBattle   = -1;
 		g_bRTOverworldPausedInBattle    = false;
@@ -931,6 +933,13 @@ namespace
 			}
 			if (pxTransition->GetTransitionState() != ZM_BATTLE_TRANSITION_IDLE)
 			{
+				// THE grass baseline, latched with the encounter -- i.e. at the parked
+				// position, for the same reason the drift baseline is the parked position:
+				// the player must WALK to trigger an encounter. Grass is GPU-regenerated
+				// around the camera every frame, so its blade count is a function of where
+				// the camera is, and comparing the resumed count against the ENTRY count
+				// asserted that walking does not change the grass -- false by construction.
+				g_uRTGrassAtPark = g_xEngine.Grass().GetScheduledInstanceCount();
 				// The encounter latched and the machine started; release the key now.
 				Zenith_InputSimulator::SetKeyHeld(g_eRTWalkKey, false);
 				g_eRTSeenSpecies     = pxTransition->GetBattleSpecies();
@@ -1131,7 +1140,7 @@ namespace
 				g_uRTArenaCountAfter,
 				g_bRTPlayerResolved ? "true" : "false",
 				g_bRTPlayerMovementEnabled ? "true" : "false",
-				g_uRTGrassAfter, g_uRTEntryGrassBlades,
+				g_uRTGrassAfter, g_uRTGrassAtPark,
 				(double)fDrift,
 				(double)g_xRTEntryPlayerPos.x, (double)g_xRTEntryPlayerPos.y, (double)g_xRTEntryPlayerPos.z,
 				(double)g_xRTParkedPos.x, (double)g_xRTParkedPos.y, (double)g_xRTParkedPos.z,
@@ -1322,12 +1331,12 @@ namespace
 					(double)fDrift);
 				bPassed = false;
 			}
-			if (g_uRTGrassAfter != g_uRTEntryGrassBlades)
+			if (g_uRTGrassAfter != g_uRTGrassAtPark)
 			{
 				Zenith_Error(LOG_CATEGORY_UNITTEST,
 					"[ZM_BattleRoundTrip] resumed grass blade count was %u, expected %u (resume must "
 					"restore the same deterministic blade count)",
-					g_uRTGrassAfter, g_uRTEntryGrassBlades);
+					g_uRTGrassAfter, g_uRTGrassAtPark);
 				bPassed = false;
 			}
 		}

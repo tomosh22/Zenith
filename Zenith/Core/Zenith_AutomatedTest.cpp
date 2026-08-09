@@ -1142,10 +1142,20 @@ bool Zenith_AutomatedTestRunner::Tick()
 		++s_xRunner.m_iTotalTests;
 		if (bPassed)
 		{
-			// Skipped tests count as passed for tally purposes (non-failure);
-			// the JSON's skipped:true field is what tooling reads to
-			// disambiguate skipped from actually-passed.
+			// Skipped tests count as NON-FAILURES for exit-code purposes (a headless
+			// runner must not fail because it cannot run a graphics test), but they
+			// are ALSO tallied separately and printed in the suite summary. Folding
+			// them silently into "passed" is what let a graphics-gated test rot for
+			// months behind a green gate: 12 such tests across DevilsPlayground and
+			// Zenithmon were found failing windowed on 2026-08-09, every one of them
+			// reported as passed by the headless gate that never ran it. The JSON's
+			// skipped:true field always distinguished them; the human-readable line
+			// now does too.
 			++s_xRunner.m_iPassedTests;
+			if (bSkipped)
+			{
+				++s_xRunner.m_iSkippedTests;
+			}
 		}
 		else
 		{
@@ -1180,10 +1190,14 @@ bool Zenith_AutomatedTestRunner::Tick()
 		// Finalise exit code and request window close.
 		if (IsMultiTestRun())
 		{
-			std::printf("[AutomatedTest] Suite summary: %d passed, %d failed (of %d)\n",
+			// "ran" is what the gate actually verified; "skipped" is the blind spot.
+			std::printf("[AutomatedTest] Suite summary: %d passed, %d failed (of %d)"
+				" -- %d actually ran, %d SKIPPED (unverified here)\n",
 				s_xRunner.m_iPassedTests,
 				s_xRunner.m_iFailedTests,
-				s_xRunner.m_iTotalTests);
+				s_xRunner.m_iTotalTests,
+				s_xRunner.m_iTotalTests - s_xRunner.m_iSkippedTests,
+				s_xRunner.m_iSkippedTests);
 			std::fflush(stdout);
 			// Slowest-N report: helps identify outlier tests dragging the
 			// suite runtime down. Top 10 by wall-clock; emitted only after

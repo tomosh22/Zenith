@@ -151,23 +151,31 @@ static bool Verify_P2Villager_ArchetypeStatsApplied()
 
 	g_iFailures = 0;
 
-	// 1) Default Farmhand: 30s life, 8m/s jog. Matches pre-MVP-0.2.3.
-	CheckEq("default.life",  g_fDefaultLife,  30.0f);
+	// The four life timers were RETARGETED 2026-08-09 onto the values the
+	// 2026-05-22 balance pass ratified (Farmhand/Devout 30 -> 45, Child 15 -> 22.5,
+	// Beggar 25 -> 37.5 -- each recorded in the matching `_comment_life_timer` key
+	// in Config/Archetypes.json). The test had carried the pre-balance numbers and
+	// been failing ever since; it is m_bRequiresGraphics, so the headless gate SKIPS
+	// it and counts it as passed, which is why ~2.5 months passed unnoticed. The
+	// speeds were not part of that pass and are unchanged.
+
+	// 1) Default Farmhand: 45s life, 8m/s jog.
+	CheckEq("default.life",  g_fDefaultLife,  45.0f);
 	CheckEq("default.speed", g_fDefaultSpeed, 8.0f);
 
-	// 2) Child: 15s life (frail), 8m/s jog.
-	CheckEq("child.life",  g_fChildLife,  15.0f);
+	// 2) Child: 22.5s life (frail -- deliberately half of Farmhand's 45).
+	CheckEq("child.life",  g_fChildLife,  22.5f);
 	CheckEq("child.speed", g_fChildSpeed, 8.0f);
 
-	// 3) Beggar: 25s life, 8m/s jog.
-	CheckEq("beggar.life",  g_fBeggarLife,  25.0f);
+	// 3) Beggar: 37.5s life (~83% of Farmhand's 45), 8m/s jog.
+	CheckEq("beggar.life",  g_fBeggarLife,  37.5f);
 	CheckEq("beggar.speed", g_fBeggarSpeed, 8.0f);
 
-	// 4) Devout: 30s life (baseline), 8m/s jog. The distinct
+	// 4) Devout: 45s life (baseline, same as Farmhand), 8m/s jog. The distinct
 	//    possession_channel_s + demon_scent_floor that gate Devout-specific
 	//    behaviour are NOT yet consumed by DPVillager -- those land in a
 	//    follow-up (possession-channel migration is a separate MVP item).
-	CheckEq("devout.life",  g_fDevoutLife,  30.0f);
+	CheckEq("devout.life",  g_fDevoutLife,  45.0f);
 	CheckEq("devout.speed", g_fDevoutSpeed, 8.0f);
 
 	return g_iFailures == 0;

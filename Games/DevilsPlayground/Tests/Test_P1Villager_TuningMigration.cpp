@@ -7,6 +7,7 @@
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "Source/PublicInterfaces.h"
 #include "Source/DP_Tuning.h"
+#include "Source/DP_Archetypes.h"
 #include "Components/DPVillager_Component.h"
 
 #include <cmath>
@@ -26,9 +27,21 @@
 //      DP_Tuning returns for the same keys. Equality (not band) -- the
 //      migration's contract is exact propagation of the JSON value.
 //
-// Defence-in-depth: also compare against the ratified Tuning.json constants
-// (30.0 s life timer, 8.0 m/s jog speed) so a future tuner who edits BOTH
-// the JSON and the behaviour to the same wrong value still trips the test.
+// Defence-in-depth: also compare against the ratified constants so a future
+// tuner who edits BOTH the config and the behaviour to the same wrong value
+// still trips the test.
+//
+// RETARGETED 2026-08-09 onto the ARCHETYPE life timer. When this test was
+// written a villager's max life came straight from
+// possession.life_timer_default_s; Phase 2 added per-archetype timers and
+// DPVillager_Component::OnAwake now calls ApplyArchetype, which OVERRIDES that
+// default (Farmhand 45 s vs the 60 s default -- both live in config, and the
+// 2026-05-22 balance pass moved them independently). Asserting against the
+// global default therefore stopped describing the code, and the test had been
+// failing ever since: it is m_bRequiresGraphics, so the headless gate SKIPS it
+// and counts it as passed. The migration's real contract -- values come from
+// config, never from a hardcoded class-body initializer -- is preserved by
+// comparing against the archetype the villager actually resolved.
 // ============================================================================
 
 namespace
@@ -83,7 +96,15 @@ static bool Step_P1Villager_TuningMigration(int iFrame)
 			g_bFoundVillager          = true;
 			g_fActualMaxLife          = pxFound->GetMaxLife();
 			g_fActualMoveSpeed        = pxFound->GetMoveSpeed();
-			g_fExpectedFromTuningLife = DP_Tuning::Get<float>("possession.life_timer_default_s");
+			// The archetype the villager actually resolved in OnAwake owns its life
+			// timer; the tuning default is only the pre-archetype base.
+			{
+				const DP_Archetypes::Archetype* pxArch =
+					DP_Archetypes::Get(pxFound->GetArchetypeId().c_str());
+				g_fExpectedFromTuningLife = (pxArch != nullptr)
+					? pxArch->life_timer_s
+					: DP_Tuning::Get<float>("possession.life_timer_default_s");
+			}
 			g_fExpectedFromTuningSpd  = DP_Tuning::Get<float>("movement.jog_speed_mps");
 			g_iPhase                  = kS_Verify;
 			return true;
@@ -125,8 +146,8 @@ static bool Verify_P1Villager_TuningMigration()
 	if (std::fabs(g_fActualMaxLife - g_fExpectedFromTuningLife) >= fTol)
 	{
 		Zenith_Log(LOG_CATEGORY_UNITTEST,
-			"Test_P1Villager_TuningMigration: GetMaxLife()=%f != DP_Tuning"
-			"::Get<float>(possession.life_timer_default_s)=%f",
+			"Test_P1Villager_TuningMigration: GetMaxLife()=%f != the resolved "
+			"archetype's life_timer_s=%f",
 			g_fActualMaxLife, g_fExpectedFromTuningLife);
 		return false;
 	}
@@ -141,14 +162,16 @@ static bool Verify_P1Villager_TuningMigration()
 		return false;
 	}
 
-	// 3. Defence-in-depth: ratified Tuning.json constants (catches the
-	//    "tuner edits both the JSON and the behaviour to the same wrong
-	//    value" case).
-	if (std::fabs(g_fActualMaxLife - 30.0f) >= fTol)
+	// 3. Defence-in-depth: the ratified constants, spelled out independently of
+	//    the config (catches the "tuner edits both the config and the behaviour
+	//    to the same wrong value" case). 45.0 is Farmhand's life timer, ratified
+	//    by the 2026-05-22 balance pass -- Farmhand is the default archetype an
+	//    authored villager resolves to.
+	if (std::fabs(g_fActualMaxLife - 45.0f) >= fTol)
 	{
 		Zenith_Log(LOG_CATEGORY_UNITTEST,
 			"Test_P1Villager_TuningMigration: GetMaxLife()=%f != ratified "
-			"30.0f (possession.life_timer_default_s in Tuning.json)",
+			"45.0f (Farmhand life_timer_s in Archetypes.json)",
 			g_fActualMaxLife);
 		return false;
 	}

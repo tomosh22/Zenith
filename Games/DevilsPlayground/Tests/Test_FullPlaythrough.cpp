@@ -145,8 +145,8 @@ namespace
 	float g_fMoveDistanceObserved  = 0.0f;
 	Zenith_Maths::Vector3 g_xCamPosBeforePossess(0.0f);
 	Zenith_Maths::Vector3 g_xCamPosAfterMove(0.0f);
-	bool  g_bCameraStaysOnCentre   = false;
-	bool  g_bCameraIgnoresVillager = false;
+	bool  g_bCameraBirdsEyeBefore  = false;
+	bool  g_bCameraFollowedVillager = false;
 	bool  g_bHUDLifeBarVisible     = false;
 	bool  g_bHUDObjectivesVisible  = false;
 	bool  g_bHUDHeldItemVisible    = false;
@@ -280,8 +280,8 @@ static void Setup_FullPlaythrough()
 	g_xMoveStartPos = Zenith_Maths::Vector3(0.0f);
 	g_xCamPosBeforePossess = Zenith_Maths::Vector3(0.0f);
 	g_xCamPosAfterMove     = Zenith_Maths::Vector3(0.0f);
-	g_bCameraStaysOnCentre   = false;
-	g_bCameraIgnoresVillager = false;
+	g_bCameraBirdsEyeBefore  = false;
+	g_bCameraFollowedVillager = false;
 	g_iVillagerCountObserved   = 0;
 	g_iDoorCountObserved       = 0;
 	g_iChestCountObserved      = 0;
@@ -510,28 +510,25 @@ static bool Step_FullPlaythrough(int /*iFrame*/)
 		if (pxCam) pxCam->GetPosition(g_xCamPosAfterMove);
 		TryGetEntityPos(g_xVillager, xVPos);
 
-		// 1) Camera stays high above the map centre, not over the villager.
-		//    Map centre is (50, 0, 50). DPOrbitCamera_Component orbits
-		//    that point with radius 80 m at ~69° pitch, putting the camera
-		//    ~75 m up and ~29 m off-centre (along whichever axis the orbit
-		//    yaw lands on — currently +π/2 puts the camera west of centre
-		//    looking east). Check horizontal distance from centre is in
-		//    the orbit-radius ballpark, not which specific axis.
-		const bool bHighElevation = g_xCamPosAfterMove.y > 50.0f;
-		const float fDx = g_xCamPosAfterMove.x - 50.0f;
-		const float fDz = g_xCamPosAfterMove.z - 50.0f;
-		const float fHorizDist = std::sqrt(fDx * fDx + fDz * fDz);
-		const bool bAboveMapCentreX = fHorizDist < 40.0f;  // orbit_radius * cos(pitch) ~= 28.8 m
-		g_bCameraStaysOnCentre = bHighElevation && bAboveMapCentreX;
+		// RETARGETED 2026-08-09 onto the THIRD-PERSON camera contract. These two
+		// clauses used to assert the pre-third-person invariant -- "the camera stays
+		// high over the map centre" and "the camera barely moves as the villager
+		// does, because a close-following third-person camera would have shifted by
+		// tens of metres". The 2026-07-01 camera-mode feature deliberately RETIRED
+		// that never-follow contract; Test_GameplaySystems.cpp already renamed its
+		// sibling OrbitCameraStaysFixed_Test -> OrbitCameraFollowsPossession_Test to
+		// match, but this test kept the retired half and had been failing ever since
+		// (m_bRequiresGraphics, so the headless gate SKIPS it and scores it passed).
+		// The camera now reads camPre y~120 -> camPost y~4.5, i.e. exactly the blend
+		// the feature added. Mirrors Verify_OrbitCamera's surviving+new halves.
 
-		// 2) Camera position barely moves between pre-possession and post-
-		//    move snapshot. A close-following third-person camera would
-		//    have shifted by tens of metres as the villager moved.
-		const float fCdx = g_xCamPosAfterMove.x - g_xCamPosBeforePossess.x;
-		const float fCdy = g_xCamPosAfterMove.y - g_xCamPosBeforePossess.y;
-		const float fCdz = g_xCamPosAfterMove.z - g_xCamPosBeforePossess.z;
-		const float fCamDelta = std::sqrt(fCdx*fCdx + fCdy*fCdy + fCdz*fCdz);
-		g_bCameraIgnoresVillager      = fCamDelta < 1.0f;
+		// 1) Before possession the camera is the bird's-eye rig.
+		g_bCameraBirdsEyeBefore = g_xCamPosBeforePossess.y > 50.0f;
+
+		// 2) Possession blends it DOWN to a third-person pose near the villager.
+		const float fDistToVillager = glm::length(g_xCamPosAfterMove - xVPos);
+		g_bCameraFollowedVillager =
+			(fDistToVillager <= 8.0f) && (g_xCamPosAfterMove.y < g_xCamPosBeforePossess.y);
 
 		g_iPhase = kFP_PickupSetup;
 		return true;
@@ -909,7 +906,7 @@ static bool Step_FullPlaythrough(int /*iFrame*/)
 		std::printf("[FullPlaythrough] summary: "
 			"life_before=%.2f life_after=%.2f move=%.2fm "
 			"camPre=(%.1f,%.1f,%.1f) camPost=(%.1f,%.1f,%.1f) "
-			"camCentre=%d camStill=%d "
+			"camBirdsEyePre=%d camFollowed=%d "
 			"hud_life=%d hud_obj=%d hud_held=%d held_tag=%d "
 			"door=%d chest=%d forgeCrafts=%u heldAfterForge=%d "
 			"priestHasInvestigate=%d mask=0x%X victory=%d hudVictory=%d "
@@ -917,7 +914,7 @@ static bool Step_FullPlaythrough(int /*iFrame*/)
 			g_fLifeBeforePossess, g_fLifeAfterPossess, g_fMoveDistanceObserved,
 			g_xCamPosBeforePossess.x, g_xCamPosBeforePossess.y, g_xCamPosBeforePossess.z,
 			g_xCamPosAfterMove.x,     g_xCamPosAfterMove.y,     g_xCamPosAfterMove.z,
-			(int)g_bCameraStaysOnCentre, (int)g_bCameraIgnoresVillager,
+			(int)g_bCameraBirdsEyeBefore, (int)g_bCameraFollowedVillager,
 			(int)g_bHUDLifeBarVisible, (int)g_bHUDObjectivesVisible,
 			(int)g_bHUDHeldItemVisible, (int)g_eHeldAfterPickup,
 			(int)g_bDoorOpenedObserved, (int)g_bChestOpenedObserved,
@@ -977,8 +974,8 @@ static bool Verify_FullPlaythrough()
 
 	// Bird's-eye camera invariants: pinned over the map centre AND did
 	// NOT chase the villager during the 30-frame WASD movement test.
-	if (!g_bCameraStaysOnCentre)             return false;
-	if (!g_bCameraIgnoresVillager)           return false;
+	if (!g_bCameraBirdsEyeBefore)            return false;
+	if (!g_bCameraFollowedVillager)          return false;
 
 	// Item pickup landed something in the held slot.
 	if (g_eHeldAfterPickup == DP_ItemTag::None) return false;
