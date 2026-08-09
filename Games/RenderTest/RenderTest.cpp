@@ -1363,13 +1363,15 @@ void Project_Shutdown()
 	// outright access violation, depending on whether the freed slot
 	// has been reused. Reset-via-assignment runs each handle's dtor
 	// while the registry is still alive.
-	for (MaterialHandle& xMat : RenderTest::Resources().m_axTerrainMaterials)
-	{
-		xMat = MaterialHandle{};
-	}
-	RenderTest::Resources().m_xCubeModelAsset        = ModelHandle{};
-	RenderTest::Resources().m_xStickFigureModelAsset = ModelHandle{};
-	RenderTest::Resources().m_xCubeMaterial          = MaterialHandle{};
+	//
+	// Reset the struct WHOLESALE rather than listing its handles: g_xResources is
+	// a module-scope static, so any handle a hand-maintained list misses survives
+	// to atexit and Release()s into already-freed registry memory. That is exactly
+	// how TilePuzzle's three late-added m_xPinball*Material handles produced an
+	// intermittent 0xC0000005 (fixed 2026-08-09). A reset cannot go stale when a
+	// field is added. The owned particle configs are freed above, so the only
+	// pointers this nulls are ones already released.
+	RenderTest::Resources() = RenderTest::RenderTestResources{};
 
 	// Shared testbed material created during the tools asset export (empty in
 	// non-tools — clearing is a safe no-op there).

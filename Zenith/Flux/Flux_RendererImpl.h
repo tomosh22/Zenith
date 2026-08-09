@@ -52,11 +52,16 @@ public:
 	void EarlyInitialise();
 	void LateInitialise();
 
-	// Release all asset-system references held by Flux statics (texture/material
-	// handles in Flux_Graphics, Flux_Text, Flux_Particles, Flux_Terrain,
-	// Flux_VolumeFog, plus Zenith_MaterialAsset's own defaults). Called between
-	// Project_Shutdown and Zenith_AssetRegistry::Shutdown so handles release
-	// while the registry still owns its assets.
+	// Release all asset-system references Flux holds: the texture/material handles
+	// in Flux_Graphics, Flux_Text, Flux_Particles, Flux_Terrain, Flux_VolumeFog,
+	// Zenith_MaterialAsset's own defaults, and the skinned-pose store (whose cached
+	// Flux_MeshInstances own MeshHandles). Called between Project_Shutdown and
+	// Zenith_AssetRegistry::Shutdown so every handle releases while the registry
+	// still owns its assets AND the Vulkan device is still up.
+	//
+	// Anything Flux holds an asset handle in must drop it HERE, not in Shutdown() —
+	// Shutdown() runs after the registry has been drained and deleted, so a Release()
+	// from there is a use-after-free.
 	void ReleaseAssetReferences();
 
 	void Shutdown();

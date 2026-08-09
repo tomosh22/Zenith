@@ -174,16 +174,16 @@ namespace DevilsPlayground
 
 		void ShutdownDPPrefabs()
 		{
-			Resources().m_xWallPrefab.Clear();
-			Resources().m_xVillagerPrefab.Clear();
-			Resources().m_xPriestPrefab.Clear();
-			Resources().m_xItemPrefab.Clear();
-			Resources().m_xDoorPrefab.Clear();
-			Resources().m_xChestPrefab.Clear();
-			Resources().m_xPentagramPrefab.Clear();
-			Resources().m_xForgePrefab.Clear();
-			Resources().m_xNoiseMachinePrefab.Clear();
-			Resources().m_xHeldVisualPrefab.Clear();
+			// Whole-struct reset, not a hand-maintained list of Clear() calls:
+			// DPResources is a module-scope static, so any PrefabHandle such a list
+			// misses survives to atexit and Release()s into registry memory that
+			// Zenith_AssetRegistry::UnloadAllInternal already force-freed -- a
+			// use-after-free whose crash depends on whether the heap block was
+			// recycled. That is exactly how TilePuzzle's three late-added
+			// m_xPinball*Material handles produced an intermittent 0xC0000005
+			// (fixed 2026-08-09). A reset cannot go stale when a field is added.
+			// DPResources is handles only, so there is nothing to free first.
+			Resources() = DPResources{};
 			s_bPrefabsInit = false;
 		}
 	}

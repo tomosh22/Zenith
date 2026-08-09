@@ -649,6 +649,29 @@ void Flux_RendererImpl::ReleaseAssetReferences()
 	// Material defaults live in AssetHandling but are part of the same pre-registry
 	// release window — this is the natural place to drop them.
 	Zenith_MaterialAsset::ReleaseDefaults();
+
+	// Free the two mesh caches HERE, not in Shutdown(). Each cached entry owns a
+	// Flux_MeshInstance, and Flux_MeshInstance::m_xSourceAsset is a MeshHandle — so
+	// destroying an entry Release()s a mesh asset. Two constraints have to hold at
+	// once, and only this window satisfies both:
+	//   * the Vulkan device must still be up   (entries own GPU IB/VB) -- true here,
+	//     Flux has not shut down yet;
+	//   * Zenith_AssetRegistry must still own its assets -- true here, but NOT in
+	//     Shutdown(), which runs after the registry has been drained and deleted.
+	// Running the pose store in Shutdown() meant its MeshHandle Release()d into memory
+	// that UnloadAllInternal's phase C had already force-freed: an intermittent
+	// 0xC0000005 (or "Release called on asset with 0 ref count") between
+	// "AssetRegistry shutdown" and "Shutdown complete", ~2 runs in 20 for RenderTest,
+	// which has a skinned StickFigure. Nothing re-populates either cache between here
+	// and Shutdown() -- no frame is rendered -- so moving it is behaviour-preserving.
+	//
+	// The mesh-geometry cache had no teardown at ALL, which is why every asset-backed
+	// mesh was still pinned at shutdown ("still held with 1 refs" — 16 of them in
+	// RenderTest): a pure leak of the asset ref, the Flux_MeshInstance and its GPU
+	// buffers. It never crashed precisely because nothing ever destroyed the holder.
+	Flux_RendererImpl& xRenderer = g_xEngine.FluxRenderer();
+	xRenderer.m_xUnifiedSkinnedPoseRegistry.Shutdown();
+	xRenderer.m_xUnifiedMeshGeometryRegistry.Shutdown();
 }
 
 void Flux_RendererImpl::Shutdown()
@@ -662,10 +685,9 @@ void Flux_RendererImpl::Shutdown()
 	delete xRenderer.m_pxSceneSnapshot;
 	xRenderer.m_pxSceneSnapshot = nullptr;
 
-	// Stage 5: free the skinned-pose store (each entry owns a Flux_MeshInstance — destroy its
-	// GPU buffers while the Vulkan device is still up, then delete the entry; the owned bind-pose
-	// pool is released with them).
-	xRenderer.m_xUnifiedSkinnedPoseRegistry.Shutdown();
+	// Stage 5 (the skinned-pose store) now runs in ReleaseAssetReferences() instead —
+	// its entries hold MeshHandles, which must Release() while Zenith_AssetRegistry
+	// is still alive. See the comment there.
 
 	// Shut down any still-registered game render features (reverse registration
 	// order) AFTER the graph is gone, so a feature's Shutdown can't touch a live

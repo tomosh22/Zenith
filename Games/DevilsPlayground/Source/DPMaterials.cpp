@@ -10,6 +10,7 @@
 #include "Maths/Zenith_Maths.h"
 
 #include "Collections/Zenith_HashMap.h"
+#include "Collections/Zenith_Vector.h"
 
 #include <cctype>
 #include <cstdio>
@@ -91,6 +92,35 @@ namespace
 	Zenith_HashMap<std::string, Zenith_MaterialAsset*>* s_pxStemMap = nullptr;
 	Zenith_HashMap<Zenith_MaterialAsset*, Zenith_MaterialAsset*>* s_pxPossessedMap = nullptr;
 	Zenith_MaterialAsset* s_pxDefaultMaterial = nullptr;
+
+	// Every material this module pins with AddRef, in one list, so Shutdown can drop
+	// every pin while Zenith_AssetRegistry is still alive.
+	//
+	// The pins used to be released by walking the two maps, which only covered the
+	// two map-backed sites: the label-tinted and named materials were AddRef'd and
+	// stored in NO map, so their refs were never dropped and all 26 showed up as
+	// "still held with 1 refs" at registry teardown. Routing every pin through
+	// PinMaterial makes the release list impossible to under-maintain — a new pin
+	// site cannot be added without being recorded.
+	//
+	// Raw pointers, not handles: this vector is a function-local static, so it
+	// outlives the registry, and a Zenith_AssetHandle here would Release() into
+	// freed memory at atexit (see Zenith/Core/Zenith_ProjectHooks.h's LIFECYCLE
+	// RULE). Shutdown empties it long before then.
+	Zenith_Vector<Zenith_MaterialAsset*>& PinnedMaterials()
+	{
+		static Zenith_Vector<Zenith_MaterialAsset*> s_xPinned;
+		return s_xPinned;
+	}
+
+	// Pin so UnloadUnused can't free the material mid-run, and record the pin so
+	// Shutdown drops exactly one ref for it.
+	void PinMaterial(Zenith_MaterialAsset* pxMat)
+	{
+		if (!pxMat) { return; }
+		pxMat->AddRef();
+		PinnedMaterials().PushBack(pxMat);
+	}
 
 	// ---------------------------------------------------------------------------
 	// Apply parameters from a parsed JSON value to the material
@@ -269,7 +299,7 @@ namespace
 		// Pin the asset so Zenith_AssetRegistry::UnloadUnused (called during
 		// scene swaps) can't free it. The DPMaterials registry owns one
 		// reference per material for the entire process lifetime.
-		pxMat->AddRef();
+		PinMaterial(pxMat);
 
 		return pxMat;
 	}
@@ -326,7 +356,7 @@ namespace DPMaterials
 			s_pxDefaultMaterial->SetBaseColor(Zenith_Maths::Vector4{ 0.6f, 0.6f, 0.6f, 1.0f });
 			s_pxDefaultMaterial->SetRoughness(0.7f);
 			s_pxDefaultMaterial->SetMetallic(0.0f);
-			s_pxDefaultMaterial->AddRef();
+			PinMaterial(s_pxDefaultMaterial);
 			++s_uRegisteredMaterialCount;
 		}
 
@@ -344,35 +374,21 @@ namespace DPMaterials
 	{
 		if (!s_bInitialized) return;
 
-		// Release the pin we took during Initialize so UnloadUnused can free
-		// the materials at engine teardown. Do this before zeroing the maps.
-		if (s_pxStemMap)
+		// Drop every pin we took, so UnloadUnused/UnloadAll can free the materials at
+		// engine teardown. One release per recorded PinMaterial call — the maps are
+		// pure lookup structures now and own no references, so they are simply freed.
+		Zenith_Vector<Zenith_MaterialAsset*>& xPinned = PinnedMaterials();
+		for (u_int u = 0; u < xPinned.GetSize(); ++u)
 		{
-			Zenith_HashMap<std::string, Zenith_MaterialAsset*>::Iterator it(*s_pxStemMap);
-			while (!it.Done())
-			{
-				if (it.GetValue()) it.GetValue()->Release();
-				it.Next();
-			}
-			delete s_pxStemMap;
-			s_pxStemMap = nullptr;
+			xPinned.Get(u)->Release();
 		}
-		if (s_pxPossessedMap)
-		{
-			Zenith_HashMap<Zenith_MaterialAsset*, Zenith_MaterialAsset*>::Iterator it(*s_pxPossessedMap);
-			while (!it.Done())
-			{
-				if (it.GetValue()) it.GetValue()->Release();
-				it.Next();
-			}
-			delete s_pxPossessedMap;
-			s_pxPossessedMap = nullptr;
-		}
-		if (s_pxDefaultMaterial)
-		{
-			s_pxDefaultMaterial->Release();
-			s_pxDefaultMaterial = nullptr;
-		}
+		xPinned.Clear();
+
+		delete s_pxStemMap;
+		s_pxStemMap = nullptr;
+		delete s_pxPossessedMap;
+		s_pxPossessedMap = nullptr;
+		s_pxDefaultMaterial = nullptr;
 		s_uRegisteredMaterialCount = 0;
 		s_bInitialized = false;
 	}
@@ -443,7 +459,7 @@ namespace DPMaterials
 		pxTint->SetEmissiveIntensity(2.5f);
 
 		// Pin: see comment in AuthorMaterialFromJson about UnloadUnused.
-		pxTint->AddRef();
+		PinMaterial(pxTint);
 
 		s_pxPossessedMap->Insert(pxBase, pxTint);
 		++s_uRegisteredMaterialCount;
@@ -508,7 +524,7 @@ namespace DPMaterials
 		pxTint->SetEmissiveIntensity(1.0f);
 
 		// Pin so UnloadUnused can't free us mid-run.
-		pxTint->AddRef();
+		PinMaterial(pxTint);
 
 		++s_uRegisteredMaterialCount;
 		return pxTint;
@@ -545,7 +561,7 @@ namespace DPMaterials
 		pxMat->SetEmissiveIntensity(fEmissiveIntensity);
 
 		// Pin so UnloadUnused can't free us mid-run.
-		pxMat->AddRef();
+		PinMaterial(pxMat);
 
 		++s_uRegisteredMaterialCount;
 		return pxMat;

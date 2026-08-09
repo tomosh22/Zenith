@@ -1521,48 +1521,27 @@ void Project_RegisterGameComponents()
 void Project_Shutdown()
 {
 	using namespace TilePuzzle;
-	// Drop asset handle refs before Zenith_AssetRegistry::Shutdown teardown.
-	Resources().m_xCubeAsset.Clear();
-	Resources().m_xSphereAsset.Clear();
-	Resources().m_xFloorMaterial.Clear();
-	Resources().m_xBlockerMaterial.Clear();
-	for (uint32_t i = 0; i < TILEPUZZLE_COLOR_COUNT; ++i)
-	{
-		Resources().m_axShapeMaterials[i].Clear();
-		Resources().m_axCatMaterials[i].Clear();
-		Resources().m_axCatCafeDisplayMaterials[i].Clear();
-		Resources().m_axCatCafeFaceTextures[i].Clear();
-		Resources().m_axCatFaceTextures[i].Clear();
-	}
-	Resources().m_xCellPrefab.Clear();
-	Resources().m_xShapeCubePrefab.Clear();
-	Resources().m_xCatPrefab.Clear();
-	Resources().m_xIconStarFilled.Clear();
-	Resources().m_xIconStarEmpty.Clear();
-	Resources().m_xIconCoin.Clear();
-	Resources().m_xIconHeart.Clear();
-	Resources().m_xIconUndo.Clear();
-	Resources().m_xIconSkip.Clear();
-	Resources().m_xIconLock.Clear();
-	Resources().m_xIconMenu.Clear();
-	Resources().m_xIconBack.Clear();
-	Resources().m_xIconSoundOn.Clear();
-	Resources().m_xIconSoundOff.Clear();
-	Resources().m_xIconReset.Clear();
-	Resources().m_xIconGear.Clear();
-	Resources().m_xIconCatSilhouette.Clear();
-	Resources().m_xIconHint.Clear();
-	Resources().m_xIconHintToken.Clear();
-	Resources().m_xFloorTileTexture.Clear();
-	Resources().m_xBlockerTexture.Clear();
-	Resources().m_xPinballBumperDiffuseTex.Clear();
-	Resources().m_xPinballBumperRMTex.Clear();
-	Resources().m_xPinballWallDiffuseTex.Clear();
-	Resources().m_xPinballWallRMTex.Clear();
-	Resources().m_xPinballFloorDiffuseTex.Clear();
-	Resources().m_xPinballFloorRMTex.Clear();
-	Resources().m_xPinballPlungerRMTex.Clear();
-	Resources().m_xPinballTargetDiffuseTex.Clear();
+
+	// Drop every asset-handle ref before Zenith_AssetRegistry::Shutdown tears the
+	// registry down (the Project_Shutdown LIFECYCLE RULE in Zenith_ProjectHooks.h).
+	//
+	// Assigning a fresh value runs each handle's destructor -- and therefore its
+	// Release() -- while the registry is still alive. It is deliberately a
+	// whole-struct reset rather than a hand-maintained list of Clear() calls:
+	// g_xResources is a module-scope static, so ANY handle missed by such a list
+	// survives to static-destruction time and Release()s into registry memory that
+	// Zenith_AssetRegistry::UnloadAllInternal already force-freed -- a
+	// use-after-free write whose crash depends on whether the heap block has been
+	// recycled yet. That is exactly how the three m_xPinball*Material handles
+	// (added later than the list) produced an intermittent 0xC0000005 at exit
+	// after a fully passing test run. Resetting the whole struct cannot go stale
+	// when a field is added.
+	//
+	// The raw (non-handle) pointers -- generated Flux_MeshGeometry meshes and the
+	// particle configs -- are only nulled here, not freed; they were already
+	// leaked at exit before this change, and freeing them is a separate concern
+	// from the handle-lifetime rule above.
+	Resources() = TilePuzzleResources{};
 }
 
 void Project_LoadInitialScene(); // Forward declaration for automation steps

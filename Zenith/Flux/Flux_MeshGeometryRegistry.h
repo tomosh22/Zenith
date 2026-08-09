@@ -79,6 +79,19 @@ public:
 	}
 	bool  IsValidId(u_int uMeshGeometryId) const { return IsSlotAlive(uMeshGeometryId); }
 	u_int GetRefcount(const Flux_MeshGeometryKey& xKey) const { return GetCommittedRefcount(xKey); }
+
+	// Free EVERY cached entry — mirrors Flux_SkinnedPoseRegistry::Shutdown. Each entry's
+	// payload is a Flux_MeshInstance that owns GPU VB/IB *and* a MeshHandle pinning the
+	// source Zenith_MeshAsset, so this must run in the one window where the Vulkan device
+	// is still up AND Zenith_AssetRegistry still owns its assets:
+	// Flux_RendererImpl::ReleaseAssetReferences. Without it the cache was never torn down
+	// at all — every asset-backed mesh stayed pinned at shutdown ("still held with 1 refs"),
+	// leaking the asset, the instance and its GPU buffers.
+	void Shutdown()
+	{
+		BeginSync();   // mark every entry unreferenced
+		EndSync();     // -> provider-destroys them all + recycles the slots
+	}
 };
 
 // Production provider: build = Flux_MeshInstance::CreateFromAsset / CreateFromGeometry,

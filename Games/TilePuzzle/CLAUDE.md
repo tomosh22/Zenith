@@ -194,10 +194,19 @@ and the retry reset back to 3 balls + READY. Headless-runnable:
 tilepuzzle.exe --automated-test Pinball_RespawnFlow_Test --headless --exit-after-frames 25000 --fixed-dt 0.01666 --skip-unit-tests
 ```
 
-Gate on the Suite-summary line, not the process exit code — tilepuzzle has a
-known layout-dependent pre-existing shutdown AV after "Shutdown complete"
-(heap corruption freed at atexit by the module-scope `g_xResources`; tracked
-as a task chip with the full diagnostic trail).
+Gate on BOTH the Suite-summary line and the process exit code.
+
+> Historical note: tilepuzzle used to exit `0xC0000005` after a fully passing
+> run, roughly 1 run in 2, which is why this section once said to ignore the
+> exit code. Cause: `Project_Shutdown` cleared its asset handles with a
+> hand-maintained list of `Clear()` calls, and the three `m_xPinball*Material`
+> handles were added to `TilePuzzleResources` without being added to that list.
+> They therefore still held refs when `Zenith_AssetRegistry` force-freed their
+> assets during teardown, and the static `g_xResources` destructor then
+> `Release()`d into freed heap memory at `atexit` — a use-after-free whose crash
+> depended on whether the block had been recycled. `Project_Shutdown` now resets
+> the whole struct in one assignment, so the release list cannot go stale when a
+> field is added. See the LIFECYCLE RULE in `Zenith/Core/Zenith_ProjectHooks.h`.
 
 Caveat: `Pinball_GameComponent.h` is not self-contained — include
 `TilePuzzle_GameComponent.h` first (it declares `TilePuzzle::Resources()`).

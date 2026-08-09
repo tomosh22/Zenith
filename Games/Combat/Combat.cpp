@@ -150,43 +150,31 @@ static void CleanupCombatResources()
 	if (!s_bResourcesInitialized)
 		return;
 
-	// Delete particle configs
+	// Delete the particle configs FIRST -- they are owned raw pointers, so the
+	// struct reset below would only null them and leak the objects.
 	delete Resources().m_pxHitSparkConfig;
 	Resources().m_pxHitSparkConfig = nullptr;
-	Resources().m_uHitSparkEmitterID = INVALID_ENTITY_ID;
 
 	delete Resources().m_pxFlameConfig;
 	Resources().m_pxFlameConfig = nullptr;
 
-	// Drop prefab handle refs (registry now owns these and deletes them on its own teardown)
-	Resources().m_xPlayerPrefab.Clear();
-	Resources().m_xEnemyPrefab.Clear();
-	for (u_int u = 0; u < uENEMY_VARIANT_COUNT; ++u)
-	{
-		Resources().m_axEnemyVariants[u].Clear();
-	}
-	Resources().m_xArenaPrefab.Clear();
-	Resources().m_xArenaWallPrefab.Clear();
-
-	// Drop model + mesh-geometry handle refs
-	Resources().m_xStickFigureModelAsset.Clear();
-	Resources().m_xCapsuleAsset.Clear();
-	Resources().m_xCubeAsset.Clear();
-	Resources().m_xConeAsset.Clear();
-	Resources().m_xStickFigureGeometryAsset.Clear();
-
-	// Clear material handles
-	Resources().m_xPlayerMaterial.Clear();
-	Resources().m_xEnemyMaterial.Clear();
-	Resources().m_xArenaMaterial.Clear();
-	Resources().m_xWallMaterial.Clear();
-	Resources().m_xCandleMaterial.Clear();
-
-	// Clear convenience geometry pointers (handles already cleared above own the lifetime)
-	Resources().m_pxStickFigureGeometry = nullptr;
-	Resources().m_pxCapsuleGeometry = nullptr;
-	Resources().m_pxCubeGeometry = nullptr;
-	Resources().m_pxConeGeometry = nullptr;
+	// Drop every asset-handle ref (prefabs, model, mesh geometry, materials) while
+	// Zenith_AssetRegistry is still alive -- the Project_Shutdown LIFECYCLE RULE in
+	// Zenith_ProjectHooks.h. Assigning a fresh value runs each handle's destructor,
+	// and therefore its Release(), here rather than at static-destruction time.
+	//
+	// Deliberately a whole-struct reset rather than a hand-maintained list of
+	// Clear() calls: g_xResources is a module-scope static, so any handle such a
+	// list misses survives to atexit and Release()s into registry memory that
+	// UnloadAllInternal already force-freed -- a use-after-free whose crash depends
+	// on whether the heap block was recycled. That is exactly how TilePuzzle's three
+	// late-added m_xPinball*Material handles produced an intermittent 0xC0000005
+	// (fixed 2026-08-09). A reset cannot go stale when a field is added.
+	//
+	// This also nulls the borrowed convenience geometry pointers (the mesh-geometry
+	// handles own those) and restores m_uHitSparkEmitterID to its INVALID_ENTITY_ID
+	// default, both of which the old explicit list did by hand.
+	Resources() = CombatResources{};
 
 	// Note: Textures and materials are managed by Zenith_AssetRegistry
 

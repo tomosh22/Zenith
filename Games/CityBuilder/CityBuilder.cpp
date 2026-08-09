@@ -379,6 +379,10 @@ void Project_Shutdown()
 	{
 		xMat = MaterialHandle{};
 	}
+
+	// Drop the building render singletons' AddRef pin + GPU/heap allocations while the
+	// asset registry and the Vulkan device are both still alive.
+	CB_CityManagerComponent::ReleaseBuildingMeshAssets();
 }
 
 void Project_LoadInitialScene(); // forward declaration for the automation step below

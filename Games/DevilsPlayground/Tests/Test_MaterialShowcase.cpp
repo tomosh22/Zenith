@@ -256,11 +256,20 @@ static bool Step_MaterialShowcase(int iFrame)
 
 static bool Verify_MaterialShowcase()
 {
-	if (g_xShow.m_bFailed) { Zenith_Error(LOG_CATEGORY_CORE, "[MaterialShowcase] hard fail: %s", g_xShow.m_szWhy); return false; }
-	if (!g_xShow.m_bReady) { Zenith_Error(LOG_CATEGORY_CORE, "[MaterialShowcase] resources never readied"); return false; }
-	if (!g_xShow.m_bUnlitApplied)    { Zenith_Error(LOG_CATEGORY_CORE, "[MaterialShowcase] unlit shading model did not resolve"); return false; }
-	if (!g_xShow.m_bMaskedApplied)   { Zenith_Error(LOG_CATEGORY_CORE, "[MaterialShowcase] masked blend mode did not resolve"); return false; }
-	if (!g_xShow.m_bInstanceResolved){ Zenith_Error(LOG_CATEGORY_CORE, "[MaterialShowcase] instance base-colour override did not resolve over parent"); return false; }
+	// Evaluate first, tear down UNCONDITIONALLY, then report. The teardown must not
+	// sit behind the early returns: g_xNormalTex / g_xCheckerAlphaTex are file-scope
+	// statics, so on any failing path they would survive to atexit and Release()
+	// into registry memory that Zenith_AssetRegistry::UnloadAllInternal already
+	// force-freed -- turning a legible test failure into an intermittent
+	// 0xC0000005 during static destruction (the TilePuzzle failure mode, fixed
+	// 2026-08-09; see the LIFECYCLE RULE in Zenith/Core/Zenith_ProjectHooks.h).
+	const bool bHardFail = g_xShow.m_bFailed;
+	const char* szFailure = nullptr;
+	if (bHardFail)                        { szFailure = g_xShow.m_szWhy; }
+	else if (!g_xShow.m_bReady)           { szFailure = "resources never readied"; }
+	else if (!g_xShow.m_bUnlitApplied)    { szFailure = "unlit shading model did not resolve"; }
+	else if (!g_xShow.m_bMaskedApplied)   { szFailure = "masked blend mode did not resolve"; }
+	else if (!g_xShow.m_bInstanceResolved){ szFailure = "instance base-colour override did not resolve over parent"; }
 
 	// Teardown.
 	g_xEngine.Editor().ClearMaterialSelection();
@@ -268,6 +277,13 @@ static bool Verify_MaterialShowcase()
 	g_xEngine.MaterialPreview().SetActive(false);
 	g_pxMat = nullptr; g_pxParent = nullptr;
 	g_xNormalTex.Clear(); g_xCheckerAlphaTex.Clear();
+
+	if (szFailure)
+	{
+		if (bHardFail) { Zenith_Error(LOG_CATEGORY_CORE, "[MaterialShowcase] hard fail: %s", szFailure); }
+		else           { Zenith_Error(LOG_CATEGORY_CORE, "[MaterialShowcase] %s", szFailure); }
+		return false;
+	}
 	return true;
 }
 

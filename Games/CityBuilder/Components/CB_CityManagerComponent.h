@@ -413,6 +413,34 @@ public:
 		s_pxBuildingMat->SetMetallic(0.0f);
 	}
 
+	// Drop the process-lifetime render singletons built above. MUST be called from
+	// Project_Shutdown: s_pxBuildingMat carries an AddRef pin, and Project_Shutdown is
+	// the last point at which Zenith_AssetRegistry still owns its assets (the LIFECYCLE
+	// RULE in Zenith/Core/Zenith_ProjectHooks.h). Releasing it any later would decrement
+	// a refcount inside memory the registry has already freed. Leaving it unreleased —
+	// as it was — pinned the material through registry teardown, which is what reported
+	// it as "still held with 1 refs".
+	//
+	// The cube mesh/geometry are plain CityBuilder-owned heap + GPU allocations (the
+	// instance group only borrows the pointer), and the Vulkan device is still up here,
+	// so this is also the right place to free them.
+	static void ReleaseBuildingMeshAssets()
+	{
+		if (s_pxBuildingMat != nullptr)
+		{
+			s_pxBuildingMat->Release();
+			s_pxBuildingMat = nullptr;
+		}
+		if (s_pxBuildingCubeMesh != nullptr)
+		{
+			s_pxBuildingCubeMesh->Destroy();
+			delete s_pxBuildingCubeMesh;
+			s_pxBuildingCubeMesh = nullptr;
+		}
+		delete s_pxBuildingCubeGeom;
+		s_pxBuildingCubeGeom = nullptr;
+	}
+
 	void EnsureTerrainPtr()
 	{
 		if (m_pxTerrain != nullptr) { return; }
