@@ -99,9 +99,9 @@ namespace Flux_Generated_Particles
 			{ FLUX_VERTEX_SEMANTIC_POSITION, 0u, SHADER_DATA_TYPE_FLOAT3, 0u, 0u },   // a_xPosition
 			{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 0u, SHADER_DATA_TYPE_FLOAT2, 0u, 12u },   // a_xUV
 			{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 1u, SHADER_DATA_TYPE_FLOAT4, 1u, 0u },   // a_xInstancePositionRadius
-			{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 2u, SHADER_DATA_TYPE_FLOAT4, 1u, 16u },   // a_xInstanceColour
+			{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 2u, SHADER_DATA_TYPE_UNORM8X4, 1u, 16u },   // a_xInstanceColour
 		};
-		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ kaxVertexAttribs, 4u, { 20u, 32u } };
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ kaxVertexAttribs, 4u, { 20u, 20u } };
 	}
 
 	// ----- ParticleUpdate (Particles/Flux_ParticleUpdate) -----

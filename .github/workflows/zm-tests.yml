@@ -194,6 +194,29 @@ jobs:
           #
           # History, newest first (the DERIVATION is the audit trail; the OBSERVED
           # number is the authority):
+          #   3082  Compressed-vertex Phase 6 T6.a review fix pass, observed
+          #                   2026-08-09 on a Null_ build. +1 ENGINE unit: the
+          #                   source-text pin tying Flux_ParticleUpdate.slang's
+          #                   uINSTANCE_WORDS to the C++ mirror (nothing
+          #                   reflectable carries a plain static const uint, so
+          #                   the two spellings could drift silently).
+          #   3081  Compressed-vertex Phase 6 T6.a, the instance-stream flips
+          #                   (Text 56->36 B, Quads 72->52 B, Particles 32->20 B,
+          #                   Gizmos 24->16 B), observed 2026-08-09 on a Null_
+          #                   build. +19 ENGINE units, no ZM units: 3 in
+          #                   Flux_VertexCodec.Tests.inl for the new uint16x4 lane
+          #                   (order, in-range identity, and that it SATURATES
+          #                   rather than wraps so a truncated-negative screen rect
+          #                   stays off screen), then 4/5/4/3 in the new
+          #                   Flux_TextVertex / Flux_QuadInstance /
+          #                   Flux_ParticleInstance / Flux_GizmoVertex .Tests.inl,
+          #                   each reading the packed words back out of the raw
+          #                   object bytes at the GENERATED offsets plus the
+          #                   not-compressed rationales (4K pixel lanes,
+          #                   far-from-origin world positions, the Quads gradient's
+          #                   negative sentinel). The Gizmos three are
+          #                   ZENITH_TOOLS-only, like the feature; this gate builds
+          #                   Null_..._True, so they are present here.
           #   3062  Compressed-vertex Phase 5 T5.a adversarial-review fix pass,
           #                   observed 2026-08-08 on a Null_ build. +4 ENGINE units,
           #                   all in Flux_Terrain.Tests.inl: the TerrainConstants CB
@@ -405,7 +428,7 @@ jobs:
           #   2817  ZM-D-173  = 2809 + 8: four ENGINE sensor-raycast units plus
           #                   two camera fixtures and two Home-placement units.
           $exe = 'Games\Zenithmon\Build\output\win64\null_vs2022_debug_win64_true\zenithmon.exe'
-          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 3062 -TimeoutSec 600
+          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 3082 -TimeoutSec 600
           if ($LASTEXITCODE -ne 0) { Write-Error "boot unit tests failed (see log above)"; exit $LASTEXITCODE }
 
       - name: Run Zenithmon tests

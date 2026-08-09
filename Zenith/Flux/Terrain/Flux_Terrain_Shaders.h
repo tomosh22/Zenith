@@ -15,7 +15,6 @@ namespace Flux_TerrainShaders
 	inline constexpr Flux_ShaderDecl xTerrain_ToShadowmap{ "Terrain_ToShadowmap", "Terrain/Flux_Terrain_ToShadowmap", "vsMain", "fsMain", nullptr, "spirv_1_3", "Terrain" };
 	inline constexpr Flux_ShaderDecl xTerrainCulling{ "TerrainCulling", "Terrain/Flux_TerrainCulling", nullptr, nullptr, "csMain", "spirv_1_3", "Terrain" };
 	inline constexpr Flux_ShaderDecl xTerrainResetCounters{ "TerrainResetCounters", "Terrain/Flux_TerrainResetCounters", nullptr, nullptr, "csMain", "spirv_1_3", "Terrain" };
-	inline constexpr Flux_ShaderDecl xWater{ "Water", "Water/Flux_Water", "vsMain", "fsMain", nullptr, "spirv_1_3", "Water" };
 
 	inline constexpr const Flux_ShaderDecl* apxALL[] =
 	{
@@ -24,6 +23,5 @@ namespace Flux_TerrainShaders
 		&xTerrain_ToShadowmap,
 		&xTerrainCulling,
 		&xTerrainResetCounters,
-		&xWater,
 	};
 }

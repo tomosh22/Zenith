@@ -121,6 +121,18 @@ Null together**. A concept added to only one backend fails `Flux_BackendConforma
   the checked-in `<program>.spv.refl` via the Slang-free
   `Flux_ShaderReflection::ReadFromDataStream` so the name-based binder resolves —
   no SPIR-V, no Slang, no GPU module.
+- **`PipelineBuilder::FromSpecification` is VALIDATE-ONLY, and that is the point.**
+  There is no GPU pipeline to build, so the whole body is one call to
+  `Flux_ValidateVertexLayoutForSpec` (`Flux/Flux_VertexLayoutValidation.h`) — the
+  stale-codegen tripwire, which compares the program's committed
+  `Shaders/Generated/<Subsystem>.h` vertex layout against the shader's live
+  reflection and asserts *"RERUN FLUXCOMPILER"* naming the program. **It is worth
+  MORE here than on Vulkan-Windows.** A Vulkan tools build compiles the `.slang`
+  at runtime, so its reflection is whatever is on disk this run; this backend loads
+  the **committed `.spv.refl` sidecar**, so the comparison is *committed sidecar vs
+  committed generated header* — exactly the out-of-step-commit drift a headless CI
+  leg can catch with no GPU at all. That makes stale codegen a red `Null_` gate
+  rather than something only a developer with a GPU ever sees.
 - **Dead-strip hazard.** A backend-neutral TU whose only caller lives in
   `Zenith/Vulkan/` gets its whole `.obj` stripped in a Null link, silently taking
   any `ZENITH_TEST` registrars with it (this cost 13 units on

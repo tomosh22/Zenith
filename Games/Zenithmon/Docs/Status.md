@@ -1,12 +1,31 @@
 # Zenithmon Status
 
-**Last updated:** 2026-08-08
+**Last updated:** 2026-08-09
 
-**★ LIVE BASELINE (OBSERVED 2026-08-08 on clean `Null_` builds):
-ZM boot `3062 ran / 3060 passed / 0 failed / 2 skipped`; engine boot (Null Combat)
-`1437 ran / 1436 passed / 0 failed / 1 skipped`; registry **55**.** This is the
-current pin in `zm-tests.yml` (`-Baseline 3062`) and `run_unit_gate.ps1`
-(default 1437). The move from 3058/1433 is **+4 ENGINE units** from the T5.a
+**★ LIVE BASELINE (OBSERVED 2026-08-09 on clean `Null_` builds):
+ZM boot `3082 ran / 3080 passed / 0 failed / 2 skipped`; engine boot (Null Combat)
+`1457 ran / 1456 passed / 0 failed / 1 skipped`; registry **55**.** This is the
+current pin in `zm-tests.yml` (`-Baseline 3082`) and `run_unit_gate.ps1`
+(default 1457). The move from 3081/1456 is **+1 ENGINE unit** from the T6.a review
+fix pass: the source-text pin tying `Flux_ParticleUpdate.slang`'s uINSTANCE_WORDS
+to its C++ mirror (a plain `static const uint` reflects into nothing a
+static_assert can reach, so the two spellings could drift silently). Before that,
+the move from 3062/1437 was **+19 ENGINE units** (no ZM units) from
+compressed-vertex Phase 6 T6.a, the per-feature instance-stream flips: Text
+56 -> 36 B, Quads 72 -> 52 B, Particles 32 -> 20 B and Gizmos 24 -> 16 B per
+vertex. Three units cover the new `uint16x4` codec lane in
+`Flux_VertexCodec.Tests.inl` — lane order, in-range identity, and the load-bearing
+one, that it SATURATES rather than wraps (every UI producer casts a screen float
+to u32 first, so an off-screen-left rect arrives as ~4.29e9 and a modulo wrap could
+fold it back into view). The other sixteen are four new per-feature files
+(`Flux_TextVertex` 4, `Flux_QuadInstance` 5, `Flux_ParticleInstance` 4,
+`Flux_GizmoVertex` 3) that read the packed words back out of the raw object bytes
+at the GENERATED offsets — the thing an offset `static_assert` cannot see is
+whether the writer put the right BITS in the lane — plus the not-compressed
+rationales (4K pixel lanes, far-from-origin world positions, and the Quads
+gradient's negative sentinel). The Gizmos three are `ZENITH_TOOLS`-only, as the
+whole feature is; every pinned baseline is a `*_True` configuration.
+Before that, the move from 3058/1433 was **+4 ENGINE units** from the T5.a
 adversarial-review fix pass (2026-08-08), all in `Flux_Terrain.Tests.inl`: the
 TerrainConstants CB fill vs the authored box (values, not just layout), the
 quant-bridge writes landing at the SHADER's reflected offsets, decode->re-encode

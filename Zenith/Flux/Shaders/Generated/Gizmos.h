@@ -101,9 +101,9 @@ namespace Flux_Generated_Gizmos
 		inline constexpr Flux_VertexLayoutElement kaxVertexAttribs[] =
 		{
 			{ FLUX_VERTEX_SEMANTIC_POSITION, 0u, SHADER_DATA_TYPE_FLOAT3, 0u, 0u },   // a_xPosition
-			{ FLUX_VERTEX_SEMANTIC_COLOR, 0u, SHADER_DATA_TYPE_FLOAT3, 0u, 12u },   // a_xColor
+			{ FLUX_VERTEX_SEMANTIC_COLOR, 0u, SHADER_DATA_TYPE_UNORM8X4, 0u, 12u },   // a_xColor
 		};
-		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ kaxVertexAttribs, 2u, { 24u, 0u } };
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ kaxVertexAttribs, 2u, { 16u, 0u } };
 	}
 
 }

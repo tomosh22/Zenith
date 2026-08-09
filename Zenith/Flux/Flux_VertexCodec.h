@@ -121,6 +121,37 @@ inline Zenith_Maths::UVector4 Flux_UnpackUint8x4(u_int uPacked)
 		(uPacked >> 24) & 0xFFu);
 }
 
+// ---- uint16x4 --------------------------------------------------------------
+// Four raw 16-bit integer lanes, the storage a [VtxFmt("uint16x4")] attribute
+// fetches. Written into a caller-owned uint16_t[4] rather than returned as a
+// u_int64 on purpose: a u_int64 member would raise its owning vertex struct's
+// alignment to 8 and pad the tail, and a tight-packed vertex stride has no room
+// for padding.
+//
+// SATURATING, not wrapping — and that is the whole point of the function. Every
+// caller's lanes are pixel coordinates already held in a u32, so any over-range
+// value — a huge width, or the garbage a negative screen float becomes when a
+// producer casts it to u32 (that cast is UB: x64 truncation yields ~4.29e9,
+// AArch64's FCVTZU saturates to 0 — pre-existing producer behaviour on each
+// target, unchanged by this packing) — must never fold back into [0,65535] at
+// (value mod 65536), where it could land ON screen. The clamp pins over-range
+// input at 65535, off the far edge of any display this engine runs on, so the
+// packed lane is never MORE visible than the u32 lane it replaced, on any target.
+
+inline void Flux_PackUint16x4(const Zenith_Maths::UVector4& xValue, uint16_t auOut[4])
+{
+	for (int i = 0; i < 4; i++)
+	{
+		const u_int uLane = xValue[i];
+		auOut[i] = static_cast<uint16_t>((uLane > 0xFFFFu) ? 0xFFFFu : uLane);
+	}
+}
+
+inline Zenith_Maths::UVector4 Flux_UnpackUint16x4(const uint16_t auPacked[4])
+{
+	return Zenith_Maths::UVector4(auPacked[0], auPacked[1], auPacked[2], auPacked[3]);
+}
+
 // ---- SNORM10_10_10_2 -------------------------------------------------------
 // ADOPTED VERBATIM from the terrain exporter's former file-static packer (and
 // its editor replica). Baked terrain chunks on disk carry these exact words, so

@@ -2,12 +2,10 @@
 #include "Flux/Terrain/Flux_Terrain_Shaders.h"
 
 #include "Flux/Terrain/Flux_TerrainImpl.h"
-#include "Flux/Terrain/Flux_TerrainImpl.h"
 #include "Flux/Terrain/Flux_TerrainPipelineSelect.h"
 #include "Core/Zenith_Engine.h"
 #include "Flux/Terrain/Flux_TerrainStreamingManagerImpl.h"
 
-#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_BackendTypes.h"
 #include "Profiling/Zenith_Profiling.h"
@@ -24,22 +22,6 @@
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Flux/Terrain/Flux_TerrainVertexQuant.h"   // the authored dequant box the terrain CB carries
 #include "Flux/Shaders/Generated/Terrain.h"
-#include "Flux/Shaders/Generated/Water.h"   // the Water program's baked vertex layout (Terrain owns it)
-
-// Water stays UNCOMPRESSED, and the Phase-5 terrain flip is where that was decided
-// rather than deferred again: Water's stream is not terrain-grid-scale — it is not
-// produced at all. Nothing in the tree writes a water vertex buffer or binds
-// m_xWaterPipeline to a draw, so there is no producer to agree with a quant box and
-// no box to derive. Compressing it would invent a contract with no writer. Full
-// table, semantics included; terrain's own 20 B layout is pinned element-by-element
-// against Zenith_TerrainChunkLayout::axELEMENTS in Flux_TerrainStreamingManager.cpp.
-static constexpr Flux_VertexLayoutElement kaxWATER_EXPECTED_LAYOUT[] =
-{
-	{ FLUX_VERTEX_SEMANTIC_POSITION, 0u, SHADER_DATA_TYPE_FLOAT3, 0u,  0u },
-	{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 0u, SHADER_DATA_TYPE_FLOAT2, 0u, 12u },
-};
-static_assert(Flux_Generated_Water::Water::kVertexLayout == Flux_VertexLayoutDesc{ kaxWATER_EXPECTED_LAYOUT, 2u, { 20u, 0u } },
-	"Water vertex layout must stay its uncompressed 20 B contract — it has no producer to flip with");
 
 // Phase 7h: subsystem state moved to Flux_TerrainImpl held by Zenith_Engine.
 
@@ -281,25 +263,6 @@ void Flux_TerrainImpl::BuildPipelines()
 		Flux_PipelineBuilder::FromSpecification(m_xTerrainShadowPipeline, xShadowPipelineSpec);
 	}
 
-	{
-		m_xWaterShader.Initialise(Flux_TerrainShaders::xWater);
-
-		Flux_PipelineSpecification xPipelineSpec;
-		xPipelineSpec.m_aeColourAttachmentFormats[0] = FINAL_RT_FORMAT;
-		xPipelineSpec.m_uNumColourAttachments = 1;
-		xPipelineSpec.m_eDepthStencilFormat = DEPTH_FORMAT;
-		xPipelineSpec.m_pxShader = &m_xWaterShader;
-		// Water is its own, much simpler stream: position + UV only (20 bytes).
-		xPipelineSpec.m_eTopology = MESH_TOPOLOGY_TRIANGLES;
-		xPipelineSpec.m_pxVertexLayout = &Flux_Generated_Water::Water::kVertexLayout;
-
-		m_xWaterShader.GetReflection().PopulateLayout(xPipelineSpec.m_xPipelineLayout);
-
-		xPipelineSpec.m_bDepthWriteEnabled = false;
-
-		Flux_PipelineBuilder::FromSpecification(m_xWaterPipeline, xPipelineSpec);
-	}
-
 	// ========== GPU-Driven Terrain Culling Compute Pipeline ==========
 	m_xCullingShader.Initialise(Flux_TerrainShaders::xTerrainCulling);
 
@@ -330,9 +293,6 @@ void Flux_TerrainImpl::BuildPipelines()
 void Flux_TerrainImpl::Initialise()
 {
 	BuildPipelines();
-
-	// Take a ref-counted copy of the global water normal texture handle (set during init in Zenith_Main).
-	m_xWaterNormalTexture = g_xEngine.FluxGraphics().m_xWaterNormalTexture;
 
 	g_xEngine.FluxMemory().InitialiseDynamicConstantBuffer(nullptr, sizeof(struct TerrainConstants
 		), m_xTerrainConstantsBuffer);
@@ -373,7 +333,6 @@ void Flux_TerrainImpl::Reset()
 
 void Flux_TerrainImpl::ReleaseAssetReferences()
 {
-	m_xWaterNormalTexture.Clear();
 	m_xFallbackSplatmap.Clear();
 }
 

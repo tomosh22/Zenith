@@ -771,18 +771,9 @@ void Zenith_Engine::InitialiseGPUAssets()
 		g_xEngine.FluxGraphics().m_xCubemapTexture.Set(pxWhiteFallback);
 	}
 
-	// Water normal (pinned).
-	Zenith_TextureAsset* pxWaterNormal = Zenith_AssetRegistry::GetView<Zenith_TextureAsset>(ENGINE_ASSETS_DIR"Textures/Water/normal" ZENITH_TEXTURE_EXT);
-	if (pxWaterNormal != nullptr && pxWaterNormal->IsValid())
-	{
-		g_xEngine.FluxGraphics().m_xWaterNormalTexture.Set(pxWaterNormal);
-	}
-	else if (pxWhiteFallback != nullptr)
-	{
-		Zenith_Error(LOG_CATEGORY_ASSET,
-			"Engine water-normal texture missing or unloadable -- pinning the white fallback so the water bind stays valid");
-		g_xEngine.FluxGraphics().m_xWaterNormalTexture.Set(pxWhiteFallback);
-	}
+	// (The pinned water-normal texture that used to load here went with the Water
+	// pipeline in compressed-vertex Phase 6 -- the only thing that ever took a
+	// reference to it was Flux_TerrainImpl, which never bound it to a draw.)
 
 	{
 		// Blocking GPU wait — kept out of the pinned-texture loads above so the report

@@ -235,7 +235,6 @@ public:
 
 	// Scene textures.
 	TextureHandle               m_xCubemapTexture;
-	TextureHandle               m_xWaterNormalTexture;
 
 	// MRT formats.
 	TextureFormat               m_aeMRTFormats[MRT_INDEX_COUNT] = {};

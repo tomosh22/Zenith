@@ -70,12 +70,6 @@ public:
 	Flux_Pipeline m_xTerrainWireframePipeline;          // 4 attachments, base G-buffer shader
 	Flux_Pipeline m_xTerrainWireframeVelocityPipeline;  // 5 attachments, velocity shader
 
-	// Water pass pipeline + shader + assets.
-	Flux_Shader   m_xWaterShader;
-	Flux_Pipeline m_xWaterPipeline;
-	TextureHandle m_xWaterNormalTexture;
-	uint32_t      m_uWaterDisplacementTexHandle = UINT32_MAX;
-
 	// Fallback splatmap (used when terrain instance lacks one).
 	TextureHandle m_xFallbackSplatmap;
 

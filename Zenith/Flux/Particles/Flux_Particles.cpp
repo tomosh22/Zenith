@@ -50,7 +50,7 @@ void Flux_ParticlesImpl::BuildPipelines()
 	xPipelineSpec.m_aeColourAttachmentFormats[0] = HDR_SCENE_FORMAT;
 	xPipelineSpec.m_uNumColourAttachments = 1;
 	xPipelineSpec.m_pxShader = &m_xShader;
-	// Binding 0 = the shared unit quad (20 B), binding 1 = Flux_ParticleInstance (32 B).
+	// Binding 0 = the shared unit quad (20 B), binding 1 = Flux_ParticleInstance (20 B).
 	// The split comes from the [PerInstance] tags in Flux_Particles.slang; the offsets
 	// and strides are pinned against the struct in Flux_ParticleData.h.
 	xPipelineSpec.m_eTopology = MESH_TOPOLOGY_TRIANGLES;
@@ -316,3 +316,8 @@ void Flux_ParticlesImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 			.Writes(xGraphics.GetHDRSceneTarget(kuFluxViewSlotPreview), RESOURCE_ACCESS_WRITE_RTV);
 	}
 }
+
+// Packed per-particle instance lane (compressed-vertex Phase 6). Hosted beside the
+// code it covers; this TU is always linked (Particles is a registered render
+// feature), so the ZENITH_TEST static registrations cannot be dead-stripped.
+#include "Flux/Particles/Flux_ParticleInstance.Tests.inl"

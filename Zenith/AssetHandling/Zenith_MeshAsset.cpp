@@ -2,11 +2,9 @@
 #include "Profiling/Zenith_Profiling.h"
 #include "Core/Zenith_Engine.h"
 #include "AssetHandling/Zenith_MeshAsset.h"
-#include "AssetHandling/Zenith_SkeletonAsset.h"
 #include "AssetHandling/Zenith_AssetTypeIds.h"
 #include "DataStream/Zenith_StreamEnvelope.h"
 #include "Flux/MeshGeometry/Flux_MeshInstance.h"   // Flux_DeclareMeshVertexLayout + Flux_PackStaticMeshVertices
-#include "Flux/UnifiedMesh/Flux_Skinning.h"        // Flux_BuildSkinInputVertices (the skin-input stream)
 
 //------------------------------------------------------------------------------
 // Helper Functions for Serialization
@@ -551,17 +549,18 @@ void Zenith_MeshAsset::Reset()
 // GPU Buffer Management
 //------------------------------------------------------------------------------
 
-void Zenith_MeshAsset::EnsureGPUBuffers(bool bSkinned)
+// A mesh ASSET only ever uploads the STATIC stream. The skin-INPUT stream (the packed
+// static vertex plus the two compute-skinning bone lanes) is not an asset-owned buffer
+// at all -- Flux_MeshInstance and Flux_SkinnedPoseProvider build it into the skinning
+// arena, from Flux_BuildSkinInputVertices, at the use site where skinned-ness is known.
+// This used to take a `bool bSkinned` that selected between the two, but nothing had
+// passed `true` since the unified GPU-skinning flip, so the skinned arm was unreachable
+// (and with it the m_bIsSkinned member that only ever recorded `false`).
+void Zenith_MeshAsset::EnsureGPUBuffers()
 {
-	if (m_bGPUBuffersReady && m_bIsSkinned == bSkinned)
-	{
-		return; // Already uploaded with correct format
-	}
-
-	// Release any existing GPU buffers if format changed
 	if (m_bGPUBuffersReady)
 	{
-		ReleaseGPU();
+		return; // Already uploaded
 	}
 
 	if (m_uNumVerts == 0 || m_uNumIndices == 0)
@@ -570,11 +569,9 @@ void Zenith_MeshAsset::EnsureGPUBuffers(bool bSkinned)
 		return;
 	}
 
-	m_bIsSkinned = bSkinned;
-
 	// The layout is the mesh family's, declared once from the reflected table (see
 	// Flux_DeclareMeshVertexLayout) — this asset only needs it to SIZE the upload.
-	Flux_DeclareMeshVertexLayout(m_xBufferLayout, bSkinned);
+	Flux_DeclareMeshVertexLayout(m_xBufferLayout, /*bSkinned*/ false);
 
 	// Generate interleaved vertex data
 	const size_t uVertexDataSize = static_cast<size_t>(m_uNumVerts) * m_xBufferLayout.GetStride();
@@ -582,17 +579,9 @@ void Zenith_MeshAsset::EnsureGPUBuffers(bool bSkinned)
 
 	// The interleave itself is NOT this asset's business — it was a hand-written
 	// duplicate of Flux_MeshInstance's loop, byte-for-byte, and drifted with it by
-	// convention alone. Both streams now come from their single owners: the static
-	// vertex from the shader-reflected layout table via the vertex packer, the
-	// skin-input vertex from the Flux_Skinning.h contract's own builder.
-	if (bSkinned)
-	{
-		Flux_BuildSkinInputVertices(reinterpret_cast<Flux_SkinInputVertex*>(pVertexData), *this, m_uNumVerts);
-	}
-	else
-	{
-		Flux_PackStaticMeshVertices(pVertexData, *this, m_uNumVerts);
-	}
+	// convention alone. The static vertex comes from its single owner: the
+	// shader-reflected layout table, via the vertex packer.
+	Flux_PackStaticMeshVertices(pVertexData, *this, m_uNumVerts);
 
 	// Create GPU vertex buffer
 	g_xEngine.FluxMemory().InitialiseVertexBuffer(pVertexData, uVertexDataSize, m_xVertexBuffer);
@@ -604,20 +593,6 @@ void Zenith_MeshAsset::EnsureGPUBuffers(bool bSkinned)
 	delete[] pVertexData;
 
 	m_bGPUBuffersReady = true;
-}
-
-void Zenith_MeshAsset::EnsureGPUBuffers(Zenith_SkeletonAsset* pxSkeleton)
-{
-	// If no skeleton or no skinning data, use the simple version
-	if (!pxSkeleton || !HasSkinning())
-	{
-		EnsureGPUBuffers(false);
-		return;
-	}
-
-	// For now, just use the simple static version
-	// Full bind pose skinning can be added later if needed
-	EnsureGPUBuffers(false);
 }
 
 void Zenith_MeshAsset::ReleaseGPU()
@@ -638,7 +613,6 @@ void Zenith_MeshAsset::ReleaseGPU()
 
 		m_xBufferLayout.Reset();
 		m_bGPUBuffersReady = false;
-		m_bIsSkinned = false;
 	}
 }
 

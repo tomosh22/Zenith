@@ -19,16 +19,32 @@
 #include "Common/VertexFormats.slang"  // [VtxFmt] / [PerInstance] authoring attributes
 
 // Binding 0 is the shared unit quad (Flux_GraphicsImpl::m_xQuadMesh, 20 B);
-// binding 1 is the per-quad instance stream (Flux_QuadsImpl::Quad, 72 B). The
+// binding 1 is the per-quad instance stream (Flux_QuadsImpl::Quad, 52 B). The
 // [PerInstance] tags below are what SPLIT the two — the generated vertex layout
 // this struct produces is the one the pipeline is built from, so an untagged
 // field would be fetched at vertex rate out of the unit quad.
+//
+// WHAT IS AND IS NOT COMPRESSED HERE:
+//   a_xInstancePositionSize is INTEGER pixel space on the CPU side already (the
+//     producer casts screen floats to u32), so uint16x4 is exact for every
+//     coordinate a real display can carry; the packer saturates rather than
+//     wraps so an off-screen rect stays off-screen.
+//   a_xInstanceColour is an authored UI colour — unorm8 IS its authoring
+//     precision.
+//   a_xColour2 STAYS float4. It is not merely a colour: (-1,-1,-1,-1) is the
+//     "no vertical gradient" sentinel the fragment shader tests below with
+//     `colour2.x >= 0`, and no unorm encoding can represent a negative. Packing
+//     it would turn every plain quad into a black-bottomed gradient.
+//   a_xUVMult_UVAdd STAYS float2 — it is a multiply/add pair, not a [0,1] rect:
+//     a caller tiling a texture passes a multiplier above 1.
+//   a_xSizePixels / a_fCornerRadius STAY float — pixel-space quantities, and
+//     the corner SDF wants the sub-pixel size the integer rect above threw away.
 struct VsIn
 {
 	float3 a_xPosition           : POSITION;
 	float2 a_xUV                 : TEXCOORD0;
-	[PerInstance] uint4  a_xInstancePositionSize : TEXCOORD1;
-	[PerInstance] float4 a_xInstanceColour     : TEXCOORD2;
+	[PerInstance] [VtxFmt("uint16x4")] uint4  a_xInstancePositionSize : TEXCOORD1;
+	[PerInstance] [VtxFmt("unorm8x4")] float4 a_xInstanceColour       : TEXCOORD2;
 	[PerInstance] uint   a_uTexture            : TEXCOORD3;
 	[PerInstance] float2 a_xUVMult_UVAdd       : TEXCOORD4;
 	[PerInstance] float  a_fCornerRadius       : TEXCOORD5;

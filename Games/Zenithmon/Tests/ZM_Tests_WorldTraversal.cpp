@@ -81,8 +81,11 @@ namespace
 			&& xQuads.m_aiQuadSortOrders[0] == 10000)
 		{
 			g_bCapturedRenderedFadeQuad = true;
+			// The quad's colour lane is unorm8x4 storage; GetColour decodes it.
+			// A full-opacity fade is byte 255, which decodes to exactly 1.0f, so
+			// the tolerance-0 assertion downstream stays exact.
 			g_fCapturedRenderedFadeQuadAlpha =
-				xQuads.m_axQuadsToRender[0].m_xColour.w;
+				xQuads.m_axQuadsToRender[0].GetColour().w;
 		}
 
 		if (uQuadRenderIndex > 0u)
@@ -1004,14 +1007,17 @@ ZENITH_TEST(ZM_WorldTraversal, FadeAdvanceClampsInvalidDtAndRuntimeReset)
 		ZENITH_ASSERT_EQ(xQuadQueue.m_aiQuadSortOrders[1], 25);
 		ZENITH_ASSERT_EQ(xQuadQueue.m_aiQuadSortOrders[2], 25);
 		ZENITH_ASSERT_EQ(xQuadQueue.m_aiQuadSortOrders[3], 10000);
+		// The rect lane is uint16x4 storage; GetPositionSize decodes it back to the
+		// authored u32 quad (every value here is far inside the 65535 ceiling, so
+		// the round-trip is exact and these remain identity comparisons).
 		ZENITH_ASSERT_EQ(
-			xQuadQueue.m_axQuadsToRender[0].m_xPosition_Size.x, 24u);
+			xQuadQueue.m_axQuadsToRender[0].GetPositionSize().x, 24u);
 		ZENITH_ASSERT_EQ(
-			xQuadQueue.m_axQuadsToRender[1].m_xPosition_Size.x, 25u);
+			xQuadQueue.m_axQuadsToRender[1].GetPositionSize().x, 25u);
 		ZENITH_ASSERT_EQ(
-			xQuadQueue.m_axQuadsToRender[2].m_xPosition_Size.x, 26u);
+			xQuadQueue.m_axQuadsToRender[2].GetPositionSize().x, 26u);
 		ZENITH_ASSERT_EQ(
-			xQuadQueue.m_axQuadsToRender[3].m_xPosition_Size.x, 10000u);
+			xQuadQueue.m_axQuadsToRender[3].GetPositionSize().x, 10000u);
 	}
 
 	// The queue is fixed-capacity. Fill it through the public enqueue path and
@@ -1022,10 +1028,12 @@ ZENITH_TEST(ZM_WorldTraversal, FadeAdvanceClampsInvalidDtAndRuntimeReset)
 		Flux_QuadsImpl::Quad xCapacityQuad = xHudQuadA;
 		for (uint32_t u = 0u; u < FLUX_MAX_QUADS_PER_FRAME; ++u)
 		{
-			xCapacityQuad.m_xPosition_Size.x = u;
+			xCapacityQuad.SetPositionSize({ u, 0u, 1u, 1u });
 			xCapacityQueue.UploadQuad(xCapacityQuad);
 		}
-		xCapacityQuad.m_xPosition_Size.x = 999999u;
+		// 999999 exceeds the uint16x4 lane ceiling and saturates to 65535 — still
+		// distinct from every queued index, which is all this marker has to be.
+		xCapacityQuad.SetPositionSize({ 999999u, 0u, 1u, 1u });
 		xCapacityQueue.UploadQuad(xCapacityQuad, -100);
 		Zenith_GraphicsOptions::Get().m_bQuadsEnabled = bQuadsEnabled;
 		ZENITH_ASSERT_EQ(
@@ -1034,7 +1042,7 @@ ZENITH_TEST(ZM_WorldTraversal, FadeAdvanceClampsInvalidDtAndRuntimeReset)
 		ZENITH_ASSERT_TRUE(xCapacityQueue.m_bCapacityWarningIssued);
 		ZENITH_ASSERT_EQ(
 			xCapacityQueue.m_axQuadsToRender[
-				FLUX_MAX_QUADS_PER_FRAME - 1u].m_xPosition_Size.x,
+				FLUX_MAX_QUADS_PER_FRAME - 1u].GetPositionSize().x,
 			static_cast<uint32_t>(FLUX_MAX_QUADS_PER_FRAME - 1u));
 	}
 

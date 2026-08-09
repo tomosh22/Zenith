@@ -4,6 +4,7 @@
 
 #include "Flux/Flux.h"
 #include "Flux/Flux_Buffers.h"
+#include "Flux/Flux_VertexCodec.h"   // the ONE place the packed colour lane is quantised
 #include "Maths/Zenith_Maths.h"
 #include "Collections/Zenith_Vector.h"
 #include "Flux/Shaders/Generated/Gizmos.h"   // the baked vertex layout the pins below compare against
@@ -13,31 +14,41 @@
 class Flux_RenderGraph;
 class Zenith_Entity;
 
-// One gizmo vertex, 24 bytes. This used to be an untyped run of six floats pushed
+// One gizmo vertex, 16 bytes. This used to be an untyped run of six floats pushed
 // into a Zenith_Vector<float> by InterleaveVertexData — which meant the ONLY thing
 // tying the writer to the fetched layout was the reader's memory of the ordering.
 // A struct gives the pins below something to be about: they compare it against the
 // layout the Gizmos VS actually declares, so re-ordering either side fails the build.
+//
+// The colour is unorm8x4 storage behind a float3 shader field: handle tints are the
+// per-axis authored colours (1,0,0)/(0,1,0)/(0,0,1) and their highlight variants, all
+// in [0,1], so unorm8 is exact at the authoring precision. The fetch supplies the
+// fourth byte and the declared float3 discards it — the alpha the packer writes is
+// therefore inert, and is set to 1 only so the stored word reads sensibly in a capture.
 struct Flux_GizmoVertex
 {
 	Zenith_Maths::Vector3 m_xPosition;
-	Zenith_Maths::Vector3 m_xColour;
+	u_int                 m_uColour;   // unorm8x4
+
+	void SetColour(const Zenith_Maths::Vector3& xColour) { m_uColour = Flux_PackUnorm8x4(Zenith_Maths::Vector4(xColour, 1.0f)); }
+	Zenith_Maths::Vector3 GetColour() const { return Zenith_Maths::Vector3(Flux_UnpackUnorm8x4(m_uColour)); }
 };
 static_assert(sizeof(Flux_GizmoVertex) == Flux_Generated_Gizmos::Gizmos::kVertexLayout.m_auStrides[0],
 	"Flux_GizmoVertex must match the stride the Gizmos VS fetches");
 static_assert(offsetof(Flux_GizmoVertex, m_xPosition) == Flux_Generated_Gizmos::Gizmos::kaxVertexAttribs[0].m_uOffset,
 	"Flux_GizmoVertex.m_xPosition must sit at the generated POSITION offset");
-static_assert(offsetof(Flux_GizmoVertex, m_xColour) == Flux_Generated_Gizmos::Gizmos::kaxVertexAttribs[1].m_uOffset,
-	"Flux_GizmoVertex.m_xColour must sit at the generated COLOR offset");
+static_assert(offsetof(Flux_GizmoVertex, m_uColour) == Flux_Generated_Gizmos::Gizmos::kaxVertexAttribs[1].m_uOffset,
+	"Flux_GizmoVertex.m_uColour must sit at the generated COLOR offset");
 
-// Full-table pin: both lanes are float3 at 0/12, so a shader-side POSITION/COLOR
-// swap preserves the offsets above — only semantics can see it.
+// Full-table pin: a shader-side POSITION/COLOR swap would preserve neither offset now
+// that the widths differ, but the type column is what catches a dropped [VtxFmt] tag —
+// which would silently re-widen the stream to 24 B with no other symptom.
 inline constexpr Flux_VertexLayoutElement kaxFLUX_GIZMO_EXPECTED_LAYOUT[] =
 {
-	{ FLUX_VERTEX_SEMANTIC_POSITION, 0u, SHADER_DATA_TYPE_FLOAT3, 0u,  0u },
-	{ FLUX_VERTEX_SEMANTIC_COLOR,    0u, SHADER_DATA_TYPE_FLOAT3, 0u, 12u },
+	{ FLUX_VERTEX_SEMANTIC_POSITION, 0u, SHADER_DATA_TYPE_FLOAT3,   0u,  0u },
+	{ FLUX_VERTEX_SEMANTIC_COLOR,    0u, SHADER_DATA_TYPE_UNORM8X4, 0u, 12u },
 };
-static_assert(Flux_Generated_Gizmos::Gizmos::kVertexLayout == Flux_VertexLayoutDesc{ kaxFLUX_GIZMO_EXPECTED_LAYOUT, 2u, { 24u, 0u } },
+static_assert(Flux_Generated_Gizmos::Gizmos::kVertexLayout == Flux_VertexLayoutDesc{ kaxFLUX_GIZMO_EXPECTED_LAYOUT, 2u, { 16u, 0u } },
 	"The Gizmos program's vertex layout drifted from the pinned contract — re-derive the expected table consciously if the VsIn really changed");
 
 enum class GizmoComponent

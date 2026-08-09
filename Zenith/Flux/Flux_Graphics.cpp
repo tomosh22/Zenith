@@ -909,7 +909,6 @@ void Flux_GraphicsImpl::ReleaseAssetReferences()
 	m_xGridTexture.Clear();
 	m_xBlankMaterial.Clear();
 	m_xCubemapTexture.Clear();
-	m_xWaterNormalTexture.Clear();
 }
 
 void Flux_GraphicsImpl::Shutdown()

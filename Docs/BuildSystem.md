@@ -264,10 +264,15 @@ every JSON says passed — crash-mid-suite guard), and a slowest-tests report.
 - Frame ceiling defaults to 8500 — a runaway backstop covering the slowest
   known suite; each test's own `m_iMaxFrames` governs its budget.
 - Results default to `Build/artifacts/test_results/<game>/` (gitignored).
-- Current suite baselines: **CityBuilder 45**, **DevilsPlayground 158**.
+- Current suite baselines: **CityBuilder 46**, **DevilsPlayground 159**
+  (both observed 2026-08-09 via `zenith test all --headless`; the previous 45/158
+  had been stale — these are per-game AUTOMATED suites, which no gate pins the way
+  `run_unit_gate.ps1` pins the engine unit count, so they drift silently).
 
 **Engine unit tests** run at every boot unless `--skip-unit-tests`. Baseline:
-**1437 ran, 0 failed** (observed 2026-08-08 on a `Null_` Combat build) — the
+**1457 ran, 0 failed** (observed 2026-08-09 on a `Null_` Combat build; 1437 + 19 + 1
+from compressed-vertex Phase 6 T6.a's instance-stream flips — 3 uint16x4 codec
+units plus 4/5/4/3 packed-lane units for Text/Quads/Particles/Gizmos) — the
 authority is the `-Baseline` default in `Tools/run_unit_gate.ps1`, not this
 number; read it there if the two ever disagree. Asserted by that script (CI, which
 `Tools/test_scaffold.ps1` also invokes for the scaffold gate), tolerating
@@ -339,7 +344,7 @@ Concurrency groups cancel superseded PR runs (master pushes always complete).
 |----------|-------|
 | `cb-tests` | CityBuilder Vulkan `_True` compile proof + **Null `_True` build (the exe every step runs)** + D3D12 `_False` link proof + 45-test headless suite via `zenith test` |
 | `dp-tests` | Same shape for DevilsPlayground (158 tests) |
-| `engine-gate` | Sentinels (`Vulkan_Debug_Win64_False`) built AND executed + Combat unit gate (`Tools/run_unit_gate.ps1`; it passes no `-Baseline`, so the script's default is the pin — 1437 as of 2026-08-08 — known flake tolerated). Rollout: dispatch → burn-in → required |
+| `engine-gate` | Sentinels (`Vulkan_Debug_Win64_False`) built AND executed + Combat unit gate (`Tools/run_unit_gate.ps1`; it passes no `-Baseline`, so the script's default is the pin — 1457 as of 2026-08-09 — known flake tolerated). Rollout: dispatch → burn-in → required |
 | `release-build` | NIGHTLY (not PR-blocking): engine + DP in `Vulkan_vs2022_Release_Win64_True`, build-only — the only Release compile in CI |
 | `shader-validation` | FluxCompiler (Release `_True`) catalog/parity/spine-lint + git-status drift gate on shader outputs |
 | `scaffold-smoke` | Path-filtered end-to-end `zenith new` → build → boot (units baseline) → teardown leaves git status identical |

@@ -30,7 +30,17 @@ GPU-driven terrain rendering with LOD streaming and frustum culling. Supports 4,
     produces a `MaterialSurface` and the G-buffer packing stays outside. See
     `Shaders/SHADER_STYLE.md` → *Interface / Extension Seams*.
   - `Flux_Terrain_ToShadowmap.slang` - shadow-cascade depth
-- The Terrain feature also OWNS the Water shader: `xWater` is declared in `Flux_TerrainShaders::apxALL` (`Flux_Terrain_Shaders.h`) and instantiated in `Flux_Terrain.cpp` (`m_xWaterShader`/`m_xWaterPipeline`). Its source lives at `Zenith/Flux/Shaders/Water/Flux_Water.slang` and its `m_szSubsystem` is `"Water"` (controls only generated-header grouping → `Generated/Water.h`); pipeline/compile/hot-reload all run through the Terrain subsystem.
+
+> **The Water shader/pipeline the Terrain feature used to own was DELETED (2026-08-09,
+> compressed-vertex Phase 6).** `xWater`, `Flux_Water.slang`, `Generated/Water.h`, the
+> `m_xWaterShader`/`m_xWaterPipeline` pair and the engine's pinned water-normal texture
+> are all gone. It was never drawn: `m_xWaterPipeline` was built at boot and then
+> referenced by nothing — no render-graph pass, no `SetPipeline`, and no code anywhere
+> in the tree wrote a water vertex buffer, so the pipeline had no producer and no
+> consumer. Its `.slang` had not had a content change since the original Slang port;
+> every commit touching it since was a mechanical sweep. Deleting it migrated nothing
+> (there were zero callers) and took the shader catalog 70 → 69 programs. **Do not
+> reintroduce it as a placeholder** — a water feature starts with a mesh producer.
 
 ## Core Architecture
 

@@ -276,8 +276,8 @@ void Flux_ShaderHotReload::RegisterSubsystem(ProgramRebuildCallback pfnRebuild,
 // (set from the feature's apxALL at RegisterFeature). We walk the registered
 // features and wire every owned program's rebuild to that feature's
 // BuildPipelines — no m_szSubsystem==feature convention and no override table.
-// A program no feature lists in apxALL (Water is listed by Terrain; ComputeTest
-// and game programs are unowned) is simply not auto-wired.
+// A program no feature lists in apxALL (the out-of-tree game programs in
+// apxUnownedEnginePrograms) is simply not auto-wired.
 // ---------------------------------------------------------------------------
 void Flux_ShaderHotReload::AutoRegisterFeatures()
 {

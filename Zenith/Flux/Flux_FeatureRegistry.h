@@ -180,7 +180,8 @@ public:
 
 	// Resolve a registered feature by name, or nullptr if none matches (does NOT
 	// assert on miss — the hot-reload auto-wire expects misses for shader programs
-	// that no engine feature owns, e.g. Water / ComputeTest).
+	// that no engine feature owns, e.g. the out-of-tree game programs in
+	// apxUnownedEnginePrograms).
 	const Flux_FeatureDesc* FindFeatureByName(const char* szName) const;
 
 	// Run the single ordered setup walk: invoke each step's setup fn in walk

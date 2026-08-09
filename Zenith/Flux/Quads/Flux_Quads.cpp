@@ -34,7 +34,7 @@ void Flux_QuadsImpl::BuildPipelines()
 	xPipelineSpec.m_aeColourAttachmentFormats[0] = FINAL_RT_FORMAT;
 	xPipelineSpec.m_uNumColourAttachments = 1;
 	xPipelineSpec.m_pxShader = &m_xShader;
-	// Binding 0 = the shared unit quad (20 B), binding 1 = Flux_QuadsImpl::Quad (72 B).
+	// Binding 0 = the shared unit quad (20 B), binding 1 = Flux_QuadsImpl::Quad (52 B).
 	// The split comes from the [PerInstance] tags in Flux_Quads.slang; the offsets and
 	// strides are pinned against Quad beside the struct in Flux_QuadsImpl.h.
 	xPipelineSpec.m_eTopology = MESH_TOPOLOGY_TRIANGLES;
@@ -199,3 +199,8 @@ void Flux_QuadsImpl::UploadQuad(const Quad& xQuad, int iSortOrder)
 	m_aiQuadSortOrders[m_uQuadRenderIndex] = iSortOrder;
 	++m_uQuadRenderIndex;
 }
+
+// Packed per-quad instance lanes (compressed-vertex Phase 6). Hosted beside the
+// code they cover; this TU is always linked (Quads is a registered render feature),
+// so the ZENITH_TEST static registrations cannot be dead-stripped.
+#include "Flux/Quads/Flux_QuadInstance.Tests.inl"

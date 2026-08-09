@@ -30,16 +30,22 @@ struct PassParams
 ParameterBlock<PassParams> g_xPassSet;
 
 // Binding 0 is the shared unit quad (Flux_GraphicsImpl::m_xQuadMesh, 20 B);
-// binding 1 is the per-particle instance stream (Flux_ParticleInstance, 32 B).
+// binding 1 is the per-particle instance stream (Flux_ParticleInstance, 20 B).
 // The [PerInstance] tags below are what SPLIT the two — the generated vertex
 // layout this struct produces is the one the pipeline is built from, so an
 // untagged field would be fetched at vertex rate out of the unit quad.
+//
+// The position/radius lane STAYS float4: it is a WORLD position, so it can sit
+// arbitrarily far from the origin and half floats lose integer exactness past
+// 2048 — a particle a kilometre out would visibly snap to a grid. The colour is
+// an authored emitter colour lerped between two authored endpoints, all in
+// [0,1], so unorm8 is exact to the authoring precision.
 struct VsIn
 {
 	float3 a_xPosition                : POSITION;
 	float2 a_xUV                      : TEXCOORD0;
 	[PerInstance] float4 a_xInstancePositionRadius  : TEXCOORD1; // xyz position, w radius
-	[PerInstance] float4 a_xInstanceColour          : TEXCOORD2;
+	[PerInstance] [VtxFmt("unorm8x4")] float4 a_xInstanceColour : TEXCOORD2;
 };
 
 struct VsOut

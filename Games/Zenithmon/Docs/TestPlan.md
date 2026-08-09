@@ -1711,9 +1711,9 @@ change touches `Zenith/` as well as the game.
 **Boot baseline at THIS change: ZM 2863; engine (Null Combat) stays 1242.** The added
 contracts are pure generator/placement checks, so they do not move the 55-test
 automated registry or the cross-game engine suite.
-★ **SUPERSEDED -- the CURRENT baseline is ZM 3062, engine 1437**, registry unmoved
-at **55**. OBSERVED 2026-08-08 on clean `Null_` builds:
-`3062 ran, 3060 passed, 0 failed, 2 skipped`. Derivation: ZM-D-183 added the two
+★ **SUPERSEDED -- the CURRENT baseline is ZM 3082, engine 1457**, registry unmoved
+at **55**. OBSERVED 2026-08-09 on clean `Null_` builds:
+`3082 ran, 3080 passed, 0 failed, 2 skipped`. Derivation: ZM-D-183 added the two
 committed-scene-bytes guards (2906 -> 2908); ZM-D-184 added the rival spawn-clearance
 unit (2908 -> 2909); the 2026-08-05 CommandLine ParseArgs units added 5 ENGINE units
 (engine 1284 -> 1289) and were NOT reflected here, leaving the ZM pin stale at 2909
@@ -1813,7 +1813,27 @@ TerrainConstants CB fill vs the authored box (VALUES, where the static_asserts p
 only layout), the quant-bridge writes landing at the SHADER's reflected offsets
 (0xCD-sentinel decode), decode->re-encode word idempotence (the property the sculpt
 hook's and CityBuilder carve's seam safety stands on), and the UV write/read round
-trip including the integer snap -- taking ZM to **3062**. `zm-tests.yml`
+trip including the integer snap -- taking ZM to **3062**; and compressed-vertex
+Phase 6 T6.a, the per-feature instance-stream flips (Text 56 -> 36 B, Quads
+72 -> 52 B, Particles 32 -> 20 B, Gizmos 24 -> 16 B), added 19 more ENGINE units
+(engine 1437 -> **1456**) -- 3 in `Flux_VertexCodec.Tests.inl` for the new
+`uint16x4` lane (order, in-range identity, and the load-bearing saturate-not-wrap
+contract: every UI producer casts a screen float to u32 first, so an off-screen-left
+rect arrives as ~4.29e9 and a modulo wrap could fold it back into view), and
+4/5/4/3 in the new `Flux_TextVertex` / `Flux_QuadInstance` /
+`Flux_ParticleInstance` / `Flux_GizmoVertex` `.Tests.inl`, each reading the packed
+words back out of the raw object bytes at the GENERATED offsets (an offset
+`static_assert` cannot see whether the writer put the right BITS in the lane) plus
+the not-compressed rationales -- 4K pixel lanes, far-from-origin world positions,
+and the Quads gradient's negative sentinel. The Gizmos three are `ZENITH_TOOLS`-only
+like the feature, and every pinned baseline is a `*_True` config -- taking ZM to
+**3081**; and the T6.a review fix pass added 1 more ENGINE unit (engine 1456 ->
+**1457**) -- the SOURCE-TEXT pin `ParticleInstance.SlangWriterWordCountMatchesTheMirror`,
+the only cross-language tie between `Flux_ParticleUpdate.slang`'s uINSTANCE_WORDS and
+its C++ mirror (a plain `static const uint` reflects into nothing a static_assert can
+reach, so the two spellings could drift with every build and unit green; the pin reads
+the shader source and parses the literal, skipping itself with a log when the source
+tree is absent) -- taking ZM to **3082**. `zm-tests.yml`
 `-Baseline` and `run_unit_gate.ps1`'s default both moved to match. The paragraph below is the
 ZM-D-182-era snapshot, kept for the audit trail:
 

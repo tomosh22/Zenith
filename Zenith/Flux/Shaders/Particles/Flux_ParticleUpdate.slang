@@ -19,6 +19,7 @@
 // spine so it reserves sets 0/1/2 and this shader's resources (PassParams) land
 // at set 3, identical to every other converted shader.
 #include "Common/Bindings.slang"
+#include "Common/VertexFormats.slang"  // Flux_PackUnorm8x4 — the colour lane's codec
 
 struct Particle
 {
@@ -30,11 +31,22 @@ struct Particle
 	float4 padding;
 };
 
-struct RenderInstance
-{
-	float4 positionSize; // xyz pos, w size
-	float4 color;
-};
+// The render instance this pass emits is the SAME 20-byte per-instance vertex
+// Flux_ParticleInstance describes on the CPU and Flux_Particles.slang's VsIn
+// fetches — float3 position, float size, then a unorm8x4 colour word.
+//
+// It is written as RAW u32 WORDS rather than through a `struct { float4; uint; }`
+// because a Slang structured-buffer element is std430-laid-out: the float4 forces
+// 16-byte element alignment, so such a struct would occupy 32 bytes and stride the
+// buffer at 32 while the vertex fetch strides it at 20. Five explicit words are the
+// only way to write the packed layout (the same reason Common/VertexFormats.slang's
+// manual codecs exist for the skinning arena). uINSTANCE_WORDS is mirrored by
+// uFLUX_PARTICLE_INSTANCE_WORDS in Flux/Particles/Flux_ParticleData.h; the C++
+// static_assert pins THAT mirror against the generated stride, and the source-text
+// pin ParticleInstance.SlangWriterWordCountMatchesTheMirror holds THIS literal to
+// the mirror (a plain static const uint reflects into nothing a build can check).
+// Keep the declaration on one line — the pin parses it.
+static const uint uINSTANCE_WORDS = 5u;
 
 struct PushConstantsLayout
 {
@@ -55,7 +67,7 @@ struct PassParams
 	ConstantBuffer<PushConstantsLayout> PushConstants;
 	RWStructuredBuffer<Particle>       InputParticles;
 	RWStructuredBuffer<Particle>       OutputParticles;
-	RWStructuredBuffer<RenderInstance> InstanceBuffer;
+	RWStructuredBuffer<uint>           InstanceBuffer;
 	RWStructuredBuffer<uint>           aliveCount;
 };
 ParameterBlock<PassParams> g_xPassSet;
@@ -137,6 +149,12 @@ void csMain(uint3 dispatchId : SV_DispatchThreadID)
 	// but a livelock in alive accounting could otherwise overrun.
 	if (instanceIdx >= g_xPassSet.PushConstants.particleCount) return;
 
-	g_xPassSet.InstanceBuffer[instanceIdx].positionSize = float4(p.positionAge.xyz, size);
-	g_xPassSet.InstanceBuffer[instanceIdx].color        = color;
+	// Lane order matches the vertex layout exactly: world position xyz, radius,
+	// then the packed colour. asuint is a bit reinterpretation, not a conversion.
+	const uint uBase = instanceIdx * uINSTANCE_WORDS;
+	g_xPassSet.InstanceBuffer[uBase + 0u] = asuint(p.positionAge.x);
+	g_xPassSet.InstanceBuffer[uBase + 1u] = asuint(p.positionAge.y);
+	g_xPassSet.InstanceBuffer[uBase + 2u] = asuint(p.positionAge.z);
+	g_xPassSet.InstanceBuffer[uBase + 3u] = asuint(size);
+	g_xPassSet.InstanceBuffer[uBase + 4u] = Flux_PackUnorm8x4(color);
 }

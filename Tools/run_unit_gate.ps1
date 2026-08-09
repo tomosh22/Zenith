@@ -165,7 +165,28 @@ param(
     # (0xCD-sentinel decode), decode->re-encode word idempotence (the sculpt/carve
     # seam-safety property), and the UV write/read round trip incl. the integer
     # snap the sculpt hook stands on (observed 2026-08-08 on a Null_ Combat build).
-    [int]$Baseline = 1437,
+    # 1437 -> 1456: +19 from compressed-vertex Phase 6 T6.a — the instance-stream
+    # flips (Text 56->36 B, Quads 72->52 B, Particles 32->20 B, Gizmos 24->16 B).
+    # Flux_VertexCodec.Tests.inl +3 (the new uint16x4 lane order, its in-range
+    # identity, and — the load-bearing one — that it SATURATES rather than wraps,
+    # which is what keeps a truncated-negative screen rect off screen).
+    # Flux_TextVertex.Tests.inl +4, Flux_QuadInstance.Tests.inl +5,
+    # Flux_ParticleInstance.Tests.inl +4, Flux_GizmoVertex.Tests.inl +3: each reads
+    # the packed words back out of the raw object bytes AT THE GENERATED OFFSETS
+    # (what the offset static_asserts cannot see is whether the writer put the right
+    # BITS there), plus the not-compressed rationales — 4K pixel lanes, far-from-
+    # origin world positions, and the Quads gradient's negative sentinel.
+    # The Gizmos three are ZENITH_TOOLS-only (so is the feature); every pinned
+    # baseline is a *_True config. Observed 2026-08-09 on a Null_ Combat build.
+    # 1456 -> 1457: +1 from the T6.a review fix pass — the SOURCE-TEXT pin
+    # ParticleInstance.SlangWriterWordCountMatchesTheMirror, the only
+    # cross-language tie between uINSTANCE_WORDS in Flux_ParticleUpdate.slang and
+    # uFLUX_PARTICLE_INSTANCE_WORDS (a plain `static const uint` reflects into
+    # nothing a static_assert can reach; the review proved the two literals could
+    # drift with every build and test green). Skips itself with a log if the
+    # shader source tree is absent (packaged builds). Observed 2026-08-09 on a
+    # Null_ Combat build.
+    [int]$Baseline = 1457,
     [int]$TimeoutSec = 180,
     [string]$LogPath = ""
 )

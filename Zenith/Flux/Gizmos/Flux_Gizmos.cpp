@@ -59,7 +59,7 @@ void Flux_GizmosImpl::BuildPipelines()
 	xSpec.m_aeColourAttachmentFormats[0] = FINAL_RT_FORMAT;
 	xSpec.m_uNumColourAttachments = 1;
 
-	// Position + colour (24 B), written by InterleaveVertexData through Flux_GizmoVertex.
+	// Position + colour (16 B), written by InterleaveVertexData through Flux_GizmoVertex.
 	xSpec.m_eTopology = MESH_TOPOLOGY_TRIANGLES;
 	xSpec.m_pxVertexLayout = &Flux_Generated_Gizmos::Gizmos::kVertexLayout;
 
@@ -151,7 +151,9 @@ void Flux_GizmosImpl::InterleaveVertexData(Zenith_Vector<Flux_GizmoVertex>& xOut
 	{
 		Flux_GizmoVertex xVertex;
 		xVertex.m_xPosition = xPositions.Get(i);
-		xVertex.m_xColour   = xColors.Get(i);
+		// unorm8x4 storage — the setter is the only writer, so the packing lives in
+		// Flux_VertexCodec and the bytes land at the generated COLOR offset.
+		xVertex.SetColour(xColors.Get(i));
 		xOut.PushBack(xVertex);
 	}
 }
@@ -888,6 +890,12 @@ void Flux_GizmosImpl::ApplyScale(const Zenith_Maths::Vector3& rayOrigin, const Z
 
 	g_xGizmoTransformAccess.m_pfnSetScale(pxEntity, xNewScale);
 }
+
+// Packed gizmo-vertex colour lane (compressed-vertex Phase 6). Inside the tools
+// block, because Flux_GizmoVertex itself is — the same arrangement
+// Flux_MaterialPreviewController.cpp uses, and every pinned unit baseline is
+// measured on a *_True configuration.
+#include "Flux/Gizmos/Flux_GizmoVertex.Tests.inl"
 
 #endif // ZENITH_TOOLS
 

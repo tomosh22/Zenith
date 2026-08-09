@@ -37,7 +37,7 @@ void Flux_TextImpl::BuildPipelines()
 	xPipelineSpec.m_aeColourAttachmentFormats[0] = FINAL_RT_FORMAT;
 	xPipelineSpec.m_uNumColourAttachments = 1;
 	xPipelineSpec.m_pxShader = &this->m_xShader;
-	// Binding 0 = the shared unit quad (20 B), binding 1 = Flux_TextVertex (56 B).
+	// Binding 0 = the shared unit quad (20 B), binding 1 = Flux_TextVertex (36 B).
 	// The split comes from the [PerInstance] tags in Flux_Text.slang; the offsets and
 	// strides are pinned against Flux_TextVertex beside the struct in Flux_TextImpl.h.
 	xPipelineSpec.m_eTopology = MESH_TOPOLOGY_TRIANGLES;
@@ -188,13 +188,16 @@ static void ProcessTextEntry(const Flux::Flux_TextEntry& xEntry,
 		xVertex.m_xQuadOffsetPx  = { fCursorXPx   + pxG->m_fPlaneL * xEntry.m_fSize,
 									 fBaselineYPx + pxG->m_fPlaneT * xEntry.m_fSize };
 		xVertex.m_xQuadSizePx    = { fW, fH };
-		xVertex.m_xAtlasUVOrigin = { pxG->m_fAtlasU0, pxG->m_fAtlasV0 };
-		xVertex.m_xAtlasUVSize   = { pxG->m_fAtlasU1 - pxG->m_fAtlasU0,
-									 pxG->m_fAtlasV1 - pxG->m_fAtlasV0 };
+		// The two atlas lanes are unorm16x2 and the colour unorm8x4 — the setters
+		// are the only writers, so the packing lives in Flux_VertexCodec and the
+		// byte layout follows the generated offsets pinned in Flux_TextImpl.h.
+		xVertex.SetAtlasUVOrigin({ pxG->m_fAtlasU0, pxG->m_fAtlasV0 });
+		xVertex.SetAtlasUVSize({ pxG->m_fAtlasU1 - pxG->m_fAtlasU0,
+								 pxG->m_fAtlasV1 - pxG->m_fAtlasV0 });
 		// xEntry.m_xPosition is already Vector2 (float). The legacy path floored
 		// it via uint cast (bug #6) — keeping it float fixes subpixel jitter.
 		xVertex.m_xTextRoot      = xEntry.m_xPosition;
-		xVertex.m_xColour        = xEntry.m_xColor;
+		xVertex.SetColour(xEntry.m_xColor);
 		xVertices.PushBack(xVertex);
 		++uCharCount;
 
@@ -369,3 +372,8 @@ void Flux_TextImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	xGraph.AddPass("Text", ExecuteRenderGraphPass)
 		.Writes(g_xEngine.FluxGraphics().GetFinalRenderTarget(), RESOURCE_ACCESS_WRITE_RTV);
 }
+
+// Packed per-glyph instance lanes (compressed-vertex Phase 6). Hosted beside the
+// code they cover; this TU is always linked (Text is a registered render feature),
+// so the ZENITH_TEST static registrations cannot be dead-stripped.
+#include "Flux/Text/Flux_TextVertex.Tests.inl"

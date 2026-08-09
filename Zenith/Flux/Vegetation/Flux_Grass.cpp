@@ -6,6 +6,7 @@
 #include "Core/Zenith_GraphicsOptions.h"
 #include "Flux/Flux_BackendTypes.h"
 #include "Flux/Flux_GraphicsImpl.h"
+#include "Flux/Shaders/Generated/Vegetation.h"  // the grass programs' baked vertex layouts (pinned empty below)
 #include "Flux/Shadows/Flux_ShadowsImpl.h"      // CSM_FORMAT (shadow caster pipeline)
 #include "Flux/Terrain/Flux_TerrainConfig.h"    // TERRAIN_SIZE (the .ztxtr map footprint)
 #include "AssetHandling/Zenith_TextureAsset.h"  // LoadCPUData (the ONE .ztxtr parser)
@@ -101,6 +102,17 @@ void Flux_GrassImpl::BuildPipelines()
 	// index table, so SV_VertexID delivers the fetched index value; a vertex layout
 	// here would declare bindings nothing ever sets, so all three specs below leave
 	// m_pxVertexLayout null — the canonical "no vertex input" spelling.
+	//
+	// Pinned against the generated tables rather than left as a comment: the three
+	// draw programs are the only ones here that COULD grow a VsIn, and if one did,
+	// the CPU side would keep passing null and the pipeline would fetch from a
+	// binding nothing binds. An empty generated layout is what makes the null legal.
+	static_assert(Flux_Generated_Vegetation::Grass_ToGBuffer::kVertexLayout == Flux_VertexLayoutDesc{},
+		"Grass_ToGBuffer must declare NO vertex input — the blade draw binds no vertex buffer");
+	static_assert(Flux_Generated_Vegetation::Grass_ToGBufferVelocity::kVertexLayout == Flux_VertexLayoutDesc{},
+		"Grass_ToGBufferVelocity must declare NO vertex input — the blade draw binds no vertex buffer");
+	static_assert(Flux_Generated_Vegetation::Grass_ToShadowmap::kVertexLayout == Flux_VertexLayoutDesc{},
+		"Grass_ToShadowmap must declare NO vertex input — the caster draw binds no vertex buffer");
 
 	{
 		m_xGBufferShader.Initialise(Flux_GrassShaders::xGrass_ToGBuffer);

@@ -286,16 +286,9 @@ public:
 	/**
 	 * Ensure GPU buffers are created and uploaded
 	 * Call this before rendering. Does nothing if already uploaded.
-	 * @param bSkinned If true, creates the skin-INPUT vertex format (the static
-	 *                 packed vertex plus the two compute-skinning bone lanes)
+	 * Always the STATIC stream — a mesh asset never owns a skin-input buffer.
 	 */
-	void EnsureGPUBuffers(bool bSkinned = false);
-
-	/**
-	 * Ensure GPU buffers with skeleton for bind pose transformation
-	 * @param pxSkeleton Skeleton for bind pose (can be null)
-	 */
-	void EnsureGPUBuffers(Zenith_SkeletonAsset* pxSkeleton);
+	void EnsureGPUBuffers();
 
 	/**
 	 * Release GPU resources (call before destroying or to free VRAM)
@@ -308,10 +301,10 @@ public:
 	bool HasGPUBuffers() const { return m_bGPUBuffersReady; }
 
 	// Uniform GPU-lifetime vocabulary (Zenith_Asset). Mesh is LAZY — Ensure builds the
-	// (unskinned) GPU buffers on demand; Release frees them (also auto-run via the
-	// destructor's Reset()). The skinned path still uses EnsureGPUBuffers(skeleton)
-	// directly, since skinned-ness is only known at the use site.
-	void EnsureGPUResources() override { EnsureGPUBuffers(false); }
+	// GPU buffers on demand; Release frees them (also auto-run via the destructor's
+	// Reset()). There is no skinned variant: the skin-INPUT stream belongs to the
+	// skinning arena, not to the asset (see EnsureGPUBuffers in the .cpp).
+	void EnsureGPUResources() override { EnsureGPUBuffers(); }
 	bool IsGPUReady() const override { return m_bGPUBuffersReady; }
 	void ReleaseGPUResources() override { ReleaseGPU(); }
 

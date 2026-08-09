@@ -198,9 +198,12 @@ by type** by design:
   so `EnsureGPUResources()` is a no-op (nothing to lazily upload; source bytes aren't
   retained). `IsGPUReady()` reflects the eager upload; `ReleaseGPUResources()` routes to
   the deferred-free `ReleaseGPU()`.
-- **Mesh — lazy**: `EnsureGPUResources()` builds the (unskinned) buffers on demand;
-  the skinned path still calls `EnsureGPUBuffers(skeleton)` directly (skinned-ness is
-  only known at the use site). The destructor already auto-releases via `Reset()`.
+- **Mesh — lazy**: `EnsureGPUResources()` builds the buffers on demand. There is no
+  skinned variant — `EnsureGPUBuffers()` takes no arguments and always uploads the
+  STATIC stream. The skin-INPUT stream (packed static vertex + the two
+  compute-skinning bone lanes) is not asset-owned at all: `Flux_MeshInstance` /
+  `Flux_SkinnedPoseProvider` build it into the skinning arena at the use site, where
+  skinned-ness is known. The destructor already auto-releases via `Reset()`.
 
 **Material GPU-table index reclamation**: a material's `Flux_MaterialTable` slot is
 freed when the material asset is destroyed. `~Zenith_MaterialAsset` calls the guarded

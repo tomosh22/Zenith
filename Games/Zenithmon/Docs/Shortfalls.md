@@ -27,8 +27,16 @@ and rewriting it once does not immunise it. Update it in the SAME commit that cl
   `ZM_BakeManifest`, visually approved (ZM-D-088); S5's full overworld<->battle slice, visually
   approved (ZM-D-112); and S6's dialogue/menu/NPC/shop surface all remain complete.
 - **★ THE LIVE BASELINE IS IN `Status.md`'s TOP BLOCK. READ IT, NOT THIS PARAGRAPH.** As of
-  2026-08-08 (OBSERVED on clean `Null_` builds): registry **55**, ZM boot
-  **3062 ran / 3060 passed / 0 failed / 2 skipped**, engine boot **1437**. (+4 engine units
+  2026-08-09 (OBSERVED on clean `Null_` builds): registry **55**, ZM boot
+  **3082 ran / 3080 passed / 0 failed / 2 skipped**, engine boot **1457**. (+1 engine unit
+  on 2026-08-09 for the T6.a review fix pass -- the cross-language source-text pin on the
+  particle compute writer's word stride; before that +19 engine units
+  on 2026-08-09 for compressed-vertex Phase 6 T6.a, the instance-stream flips -- Text
+  56 -> 36 B, Quads 72 -> 52 B, Particles 32 -> 20 B, Gizmos 24 -> 16 B: three uint16x4
+  codec units incl. the saturate-not-wrap contract that keeps a truncated-negative
+  screen rect off screen, plus 4/5/4/3 per-feature units reading the packed words back
+  out of the raw bytes at the GENERATED offsets;
+  before that +4 engine units
   on 2026-08-08 for the T5.a adversarial-review fix pass -- the TerrainConstants CB
   fill pinned by VALUE, quant-bridge writes pinned at the shader's reflected offsets,
   decode->re-encode word idempotence, and the UV round trip incl. the integer snap;

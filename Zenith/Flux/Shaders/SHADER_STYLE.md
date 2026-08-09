@@ -224,6 +224,76 @@ prefer `SampleLevel(uv, mip)` over `Sample(uv)` — implicit derivatives in a
 compute thread require `ComputeDerivativeGroupQuadsKHR` and Slang will fail to
 lower without it.
 
+## Vertex Input Formats (`[VtxFmt]` / `[PerInstance]`)
+
+**A `VsIn` struct IS the vertex layout.** Nothing hand-writes a CPU-side attribute
+table: Slang reflection reports what the `VsIn` declares, FluxCompiler bakes that
+into `Generated/<Subsystem>.h` as `kaxVertexAttribs[]` / `kVertexLayout`, the CPU
+side packs against those constants, and pipeline construction builds its vertex
+input from the LIVE reflection. See `Flux/CLAUDE.md` → *Vertex Layouts*.
+
+Both attributes are declared in **`Common/VertexFormats.slang`** — `#include` it
+(textually, never `import`: an attribute must resolve by name in the scope of the
+shader that spells it, and an imported module namespace-wraps it out of that scope).
+
+```slang
+#include "Common/VertexFormats.slang"  // [VtxFmt] / [PerInstance] authoring attributes
+
+struct VsIn
+{
+	float3 a_xPosition : POSITION;                                   // untagged -> inferred float3, 12 B
+	[VtxFmt("half2")] float2 a_xUV : TEXCOORD0;                      // 4 B stored, float2 declared
+	[VtxFmt("snorm10_10_10_2")] float4 a_xNormal : NORMAL;           // 4 B stored, float4 declared
+	[PerInstance] float2 a_xOffsetPx : TEXCOORD1;                    // binding 1, 8 B
+	[PerInstance] [VtxFmt("unorm8x4")] float4 a_xColour : TEXCOORD2; // binding 1, 4 B
+};
+```
+
+- **Un-annotated fields are inferred from the declared type** (`float2` → 8-byte
+  `FLOAT2`, and so on). Tag a field **only** when its storage format differs from
+  what it is declared as — which it must be whenever fetch hardware widens or
+  converts. A four-byte SNORM10:10:10:2 attribute is still declared `float4`;
+  without the tag the generator infers a sixteen-byte `float4` and bakes a wrong
+  stride.
+- **Legal format strings are exactly the ones `Flux_ParseVertexFormatString`
+  accepts** (`Flux/Slang/Flux_SlangCompiler.cpp`) — currently `half2`, `half4`,
+  `snorm16x2`, `snorm16x4`, `unorm16x2`, `unorm16x4`, `unorm8x4`, `uint8x4`,
+  `uint16x4`, `snorm10_10_10_2`. A typo is a **hard compile error**, never a silent
+  fall-back to the declared type.
+- **`[PerInstance]`** moves the field onto binding 1 (the per-instance stream);
+  everything untagged stays on binding 0. There are exactly two bindings
+  (`uFLUX_MAX_VERTEX_BINDINGS`).
+- **The semantic vocabulary is CLOSED** — `POSITION`, `TEXCOORD`, `NORMAL`,
+  `TANGENT`, `BINORMAL`, `COLOR` (`FluxVertexSemantic` in
+  `Flux/Flux_VertexLayoutDesc.h`). A semantic outside that list is a **hard codegen
+  error**, not an invented tag; adding one means an enumerator + a table row in that
+  header, in the same change as the shader that declares it.
+- **Declaration order in the struct is the byte order in the buffer.** An offset is
+  the running sum of the storage sizes *of the fields ahead of it on the same
+  binding* — tight-packed, no padding inserted, and the two bindings count
+  independently. So reordering fields, or moving one across the `[PerInstance]`
+  split, is a layout change even when no format changed.
+
+> **★ CHANGING A `[VtxFmt]` REQUIRES A FluxCompiler RUN + AN ENGINE RESTART. IT IS
+> NOT COVERED BY SHADER HOT-RELOAD.** Hot-reload rebuilds pipelines from the new
+> reflection, but the **packed CPU-side buffers are not re-packed** (meshes, terrain
+> chunks and instance streams were interleaved when they were built or baked), and
+> the committed `Generated/` header does not move either. Rerun FluxCompiler
+> (`Vulkan_vs2022_Release_Win64_True`), commit the regenerated tree, restart. If you
+> skip it, the boot tripwire
+> (`Flux_AssertVertexLayoutMatchesReflection`, called from every backend's
+> `FromSpecification`) fires and **names the program** whose generated table went
+> stale.
+
+Manual codecs — `Flux_DequantPosition` and the half/snorm/unorm packers — also live
+in `Common/VertexFormats.slang`, for the buffers no fetch unit touches (the compute
+skinner reads and writes raw `u32` SSBO words). They must stay bit-for-bit the CPU
+`Flux/Flux_VertexCodec.h`. **Never use `f32tof16` / `f16tof32`**: Slang lowers them
+onto a 16-bit integer type, the module then declares the SPIR-V `Int16` capability,
+and `vkCreateShaderModule` REJECTS it unless `shaderInt16` is enabled — a device
+feature this engine does not require. Use the 32-bit-integer-only conversions in
+that module instead.
+
 ## Vertex-Stage Buffer Reads
 
 Storage-buffer reads from a vertex shader require Vulkan

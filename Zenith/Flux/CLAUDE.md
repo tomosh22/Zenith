@@ -94,6 +94,11 @@ For the full graph lifecycle (Setup -> Compile -> Execute), barrier synthesis, t
 - `Flux_GraphicsImpl.h` - Global graphics state, frame constants (`Flux_GraphicsImpl` class with `FrameConstants`); `Flux_Graphics.cpp` holds thin static forwards onto it (no `Flux_Graphics.h`)
 - `Flux_RenderTargets.h/cpp` - Render target management
 - `Flux_Types.h` - Type definitions, `IsCompressedFormat()` helper
+- `Flux_VertexLayoutDesc.h` - The constexpr description of a program's vertex input (`Flux_VertexLayoutElement` / `Flux_VertexLayoutDesc`) + the CLOSED semantic vocabulary. A dependency-light POD leaf: the auto-generated `Shaders/Generated/<Subsystem>.h` headers include it, and so does a Core-visible TU that static_asserts one of them against `Zenith_TerrainChunkLayout`.
+- `Flux_VertexCodec.h` - **THE** place a vertex attribute is quantised (half / snorm / unorm / SNORM10:10:10:2). Pure, header-only, allocation-free — the same code runs in the offline exporters, the editor's live-edit hooks and the headless unit suite.
+- `Flux_VertexLayoutValidation.h/.cpp` - The stale-codegen tripwire every backend's `FromSpecification` calls. See *Vertex Layouts* below.
+
+
 
 Note: Materials and textures are now in `AssetHandling/` (see AssetHandling/CLAUDE.md):
 - `Zenith_MaterialAsset.h/cpp` - Material properties + texture references
@@ -162,6 +167,80 @@ At `Execute()`, the graph queues each enabled pass in topological order (`QueueR
 ### Pipeline Specification
 `Flux_PipelineSpecification` struct defines complete graphics pipeline state: shader, blend modes, depth test, vertex input, render targets, load/store actions.
 
+### Vertex Layouts (reflection-driven)
+
+**A vertex layout is authored in the shader and nowhere else.** A `VsIn` field's declared
+type gives its storage format by inference; `[VtxFmt("snorm10_10_10_2")]` overrides that
+wherever storage differs from the declared type (fetch hardware widens and converts, so a
+four-byte SNORM10:10:10:2 attribute is still declared `float4`), and `[PerInstance]` moves a
+field off the per-vertex stream (binding 0) onto the per-instance stream (binding 1). Both
+attributes are declared in `Shaders/Common/VertexFormats.slang`; the authoring rules live in
+[Shaders/SHADER_STYLE.md](Shaders/SHADER_STYLE.md).
+
+The chain from there:
+
+1. **Reflection.** Slang reports each `VsIn` field's semantic, storage format, binding and
+   byte offset (`Flux_ShaderReflection::GetVertexAttributes` / `GetVertexStride`).
+2. **Codegen.** FluxCompiler bakes that table into the program's `Shaders/Generated/<Subsystem>.h`
+   as `inline constexpr kaxVertexAttribs[]` + `kVertexLayout` (a `Flux_VertexLayoutDesc`).
+   These are committed, human-diffable constants; CPU packers and `static_assert`s read them.
+3. **Pipeline build.** `Flux_PipelineBuilder::FromSpecification` builds the vertex input from
+   the **LIVE reflection**, never from the generated table. The spec only *names* the layout
+   it expects (`m_pxVertexLayout`).
+4. **Tripwire.** Every backend's `FromSpecification` — Vulkan, Null and D3D12 alike — calls
+   `Flux_ValidateVertexLayoutForSpec` (`Flux_VertexLayoutValidation.h`), which compares the
+   generated table against the live reflection **exactly** (semantic, semantic index, storage
+   format, binding, byte offset, and BOTH binding strides) and asserts naming the offending
+   program plus *"RERUN FLUXCOMPILER"*. There is no tolerance to allow: a layout that is
+   "nearly" right reads adjacent bytes as geometry, which renders garbage rather than failing.
+   The tripwire never repairs anything — the GPU always fetches the live reflection, so a stale
+   generated table is caught, reported, and otherwise inert.
+
+**One codec, and one packer for the mesh family.** `Flux_VertexCodec.h` is universal: EVERY
+packed lane the CPU writes, on every path, is quantised there and nowhere else. On top of it,
+the interleaved MESH-family streams (static mesh, skin input, the unified-mesh geometry
+buffers) go through the single generic interleaver `Flux_PackVertices`
+(`MeshGeometry/Flux_VertexPacker.h`) — semantic-keyed SoA source views in, one layout-shaped
+buffer out, with the *generated layout* as the authority for every offset and stride. That
+replaced hand-written interleave loops which each hard-coded a byte layout agreeing with a
+shader's `VsIn` by convention alone, so a mesh layout edit now moves the writer and the reader
+together.
+
+The two non-mesh producers write field-by-field instead of interleaving, and stay correct the
+same way — through the codec, against a generated table:
+
+- **Terrain** packs through `Terrain/Flux_TerrainVertexQuant.h` (the one place a baked terrain
+  position/UV is quantised, shared by the exporter, the editor sculpt hook, CityBuilder's carve
+  + stream-in hook and the chunk validator), pinned element-by-element against
+  `Zenith_TerrainChunkLayout::axELEMENTS`.
+- **Per-instance streams** pack in typed setters on the instance struct itself
+  (`Flux_TextImpl.h`, `Flux_QuadsImpl.h`, `Flux_ParticleData.h`, `Flux_GizmosImpl.h`), each
+  calling the codec, each pinned against its `Generated/<Subsystem>.h` table.
+
+**Where each contract lives.** The per-stream formats are deliberately NOT duplicated here —
+the numbers drift, the authorities do not:
+
+| Stream | Authority |
+|---|---|
+| Static mesh + skin input | `MeshGeometry/Flux_MeshInstance.h` (`Flux_DeclareMeshVertexLayout`) + `UnifiedMesh/Flux_Skinning.h` |
+| Terrain | `Core/Zenith_TerrainChunkLayout.h` (it is the ON-DISK contract), joined to the codec by `Terrain/Flux_TerrainVertexQuant.h` |
+| Per-instance streams (Text / Quads / Particles / Gizmos) | each feature's `Flux_<Feature>Impl.h` instance struct, pinned against its `Shaders/Generated/<Subsystem>.h` table |
+| Semantic vocabulary | `Flux_VertexLayoutDesc.h` — CLOSED; codegen hard-errors on a semantic outside it rather than inventing a tag |
+
+> **★ CHANGING A `[VtxFmt]` IS NOT A SHADER HOT-RELOAD.** Hot-reload rebuilds pipelines from
+> the new reflection, but the CPU-side packed buffers are **not** re-packed and the committed
+> `Generated/` header does not move. Rerun FluxCompiler and restart the engine. If you don't,
+> the tripwire fires on the next pipeline build and names the program.
+
+The GPU half of the codec (`Flux_DequantPosition`, plus the manual half/snorm/unorm packers the
+compute skinner needs because it reads and writes raw SSBO words with no fetch unit) lives in
+`Shaders/Common/VertexFormats.slang` and must stay bit-for-bit the CPU codec — the skinning
+arena is fetched by the SAME pipelines that fetch a CPU-packed static mesh. **Slang's
+`f32tof16` / `f16tof32` are FORBIDDEN there**: they lower onto a 16-bit integer type, which
+makes the module declare the SPIR-V `Int16` capability, and `vkCreateShaderModule` rejects that
+without `VkPhysicalDeviceFeatures::shaderInt16` — a feature this engine does not require on any
+backend or Android device. The 32-bit-integer-only half codec in that module is the replacement.
+
 ### Material System
 Materials (`Zenith_MaterialAsset`) store textures and rendering properties. Located in `AssetHandling/`. Use `SetDiffuseTexture(TextureHandle(...))` when creating materials — the handle covers both path-based (serializable) and procedural-pointer textures. See `AssetHandling/CLAUDE.md` for details on material and texture asset management.
 
@@ -175,7 +254,7 @@ This works because init/shutdown are dependency-safe in ANY order beyond "FluxGr
 
 **Each feature OWNS its shaders.** A feature declares its shader programs as `inline constexpr Flux_ShaderDecl` decls next to its code, in `Flux/<Feature>/Flux_<Feature>_Shaders.h`, plus one `apxALL[]` array listing them. That array is passed to `RegisterFeature`. There is **no central program enum and no registry row** — the pipeline-construction handle is `const Flux_ShaderDecl&` (resolved straight from the feature's `_Shaders.h`). `Flux_ShaderCatalog` (`Flux/Slang/Flux_ShaderCatalog.h/.cpp`) is the flat index = ∪ every feature's `apxALL` + a tiny `apxUnownedEnginePrograms[]` (engine programs no feature rebuilds). FluxCompiler walks the catalog to compile every program; codegen reads each decl's fields directly.
 
-Shader hot-reload (ZENITH_TOOLS) is **derived from the feature table** — subsystems do *not* register themselves. `Flux_ShaderHotReload::AutoRegisterFeatures()` (called from `Flux::LateInitialise`) walks the registered features and wires every decl in each feature's `m_paxShaders` (its `apxALL`) to that feature's `BuildPipelines` callback, keyed by **decl identity** (`const Flux_ShaderDecl*`). Ownership is structural — no `m_szSubsystem`==feature convention, no override table. A decl's `m_szSubsystem` controls ONLY the generated-header grouping (so e.g. Terrain owns the `Water` program whose `m_szSubsystem` is still `"Water"` → `Generated/Water.h`).
+Shader hot-reload (ZENITH_TOOLS) is **derived from the feature table** — subsystems do *not* register themselves. `Flux_ShaderHotReload::AutoRegisterFeatures()` (called from `Flux::LateInitialise`) walks the registered features and wires every decl in each feature's `m_paxShaders` (its `apxALL`) to that feature's `BuildPipelines` callback, keyed by **decl identity** (`const Flux_ShaderDecl*`). Ownership is structural — no `m_szSubsystem`==feature convention, no override table. A decl's `m_szSubsystem` controls ONLY the generated-header grouping (so e.g. the out-of-tree `DevilsPlayground_DPFog` decl carries `m_szSubsystem` `"Fog"` and lands in `Generated/Fog.h` beside the engine's own fog programs, while no engine feature owns it — it sits in `apxUnownedEnginePrograms`).
 
 > **Adding a renderer feature:** give the subsystem `Initialise`/`SetupRenderGraph`/`Shutdown`/`BuildPipelines` as needed; declare its programs in `Flux/Foo/Flux_Foo_Shaders.h` (named decls + `apxALL`); add ONE `RegisterFeature<&Zenith_Engine::Foo>(reg, "Foo", Flux_FooShaders::apxALL)` line at the right spot in `RegisterDefaultFeatures()` (render-graph order); and add ONE `#include "Flux/Foo/Flux_Foo_Shaders.h"` to `Flux_ShaderCatalog.cpp`'s block. **`Flux_ShaderCatalog::ValidateFeatureParity` (run at engine boot in all configs and by FluxCompiler) fails the build if you forget either line** — the catalog decl set must exactly equal (∪ registered-feature `apxALL`) ∪ unowned. Init, setup, shutdown, hot-reload, compile + codegen then all follow.
 

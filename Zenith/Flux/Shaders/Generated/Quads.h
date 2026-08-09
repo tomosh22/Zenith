@@ -87,15 +87,15 @@ namespace Flux_Generated_Quads
 		{
 			{ FLUX_VERTEX_SEMANTIC_POSITION, 0u, SHADER_DATA_TYPE_FLOAT3, 0u, 0u },   // a_xPosition
 			{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 0u, SHADER_DATA_TYPE_FLOAT2, 0u, 12u },   // a_xUV
-			{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 1u, SHADER_DATA_TYPE_UINT4, 1u, 0u },   // a_xInstancePositionSize
-			{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 2u, SHADER_DATA_TYPE_FLOAT4, 1u, 16u },   // a_xInstanceColour
-			{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 3u, SHADER_DATA_TYPE_UINT, 1u, 32u },   // a_uTexture
-			{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 4u, SHADER_DATA_TYPE_FLOAT2, 1u, 36u },   // a_xUVMult_UVAdd
-			{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 5u, SHADER_DATA_TYPE_FLOAT, 1u, 44u },   // a_fCornerRadius
-			{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 6u, SHADER_DATA_TYPE_FLOAT2, 1u, 48u },   // a_xSizePixels
-			{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 7u, SHADER_DATA_TYPE_FLOAT4, 1u, 56u },   // a_xColour2
+			{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 1u, SHADER_DATA_TYPE_UINT16X4, 1u, 0u },   // a_xInstancePositionSize
+			{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 2u, SHADER_DATA_TYPE_UNORM8X4, 1u, 8u },   // a_xInstanceColour
+			{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 3u, SHADER_DATA_TYPE_UINT, 1u, 12u },   // a_uTexture
+			{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 4u, SHADER_DATA_TYPE_FLOAT2, 1u, 16u },   // a_xUVMult_UVAdd
+			{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 5u, SHADER_DATA_TYPE_FLOAT, 1u, 24u },   // a_fCornerRadius
+			{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 6u, SHADER_DATA_TYPE_FLOAT2, 1u, 28u },   // a_xSizePixels
+			{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 7u, SHADER_DATA_TYPE_FLOAT4, 1u, 36u },   // a_xColour2
 		};
-		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ kaxVertexAttribs, 9u, { 20u, 72u } };
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ kaxVertexAttribs, 9u, { 20u, 52u } };
 	}
 
 }

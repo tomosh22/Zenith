@@ -170,6 +170,49 @@ ZENITH_TEST(VertexCodec, Uint8x4LaneOrderIsLittleEndian)
 		"uint8x4 masks a lane wider than a byte");
 }
 
+ZENITH_TEST(VertexCodec, Uint16x4RoundTripsInRangeExactly)
+{
+	// Every in-range value is EXACT — this format carries integers, not a
+	// quantisation, so the round-trip is identity for anything under 65536.
+	const Zenith_Maths::UVector4 xIn(0u, 1u, 3840u, 0xFFFFu);
+	uint16_t auPacked[4];
+	Flux_PackUint16x4(xIn, auPacked);
+
+	const Zenith_Maths::UVector4 xOut = Flux_UnpackUint16x4(auPacked);
+	ZENITH_ASSERT_EQ(xOut.x, xIn.x, "uint16x4 lane 0");
+	ZENITH_ASSERT_EQ(xOut.y, xIn.y, "uint16x4 lane 1");
+	ZENITH_ASSERT_EQ(xOut.z, xIn.z, "uint16x4 lane 2");
+	ZENITH_ASSERT_EQ(xOut.w, xIn.w, "uint16x4 lane 3");
+}
+
+ZENITH_TEST(VertexCodec, Uint16x4SaturatesRatherThanWraps)
+{
+	// THE contract that makes this format safe for screen rects. A wrap would map
+	// 65536 -> 0 and 0xFFFFFFF6 (what -10.0f truncates to as a u32) -> 65526, i.e.
+	// it could fold an off-screen quad back into view. Saturation pins both to the
+	// far edge, which is where the uncompressed u32 lane already put them.
+	uint16_t auPacked[4];
+	Flux_PackUint16x4(Zenith_Maths::UVector4(65536u, 0xFFFFFFF6u, 999999u, 65535u), auPacked);
+
+	const Zenith_Maths::UVector4 xOut = Flux_UnpackUint16x4(auPacked);
+	ZENITH_ASSERT_EQ(xOut.x, 0xFFFFu, "65536 must saturate, not wrap to 0");
+	ZENITH_ASSERT_EQ(xOut.y, 0xFFFFu, "a truncated negative must saturate, not wrap into view");
+	ZENITH_ASSERT_EQ(xOut.z, 0xFFFFu, "any above-ceiling lane saturates");
+	ZENITH_ASSERT_EQ(xOut.w, 0xFFFFu, "the ceiling itself round-trips unchanged");
+}
+
+ZENITH_TEST(VertexCodec, Uint16x4LaneOrderIsAscending)
+{
+	// Lane i occupies element i, so the four little-endian u16s land in the byte
+	// order the R16G16B16A16_UINT fetch reads them in.
+	uint16_t auPacked[4] = { 0u, 0u, 0u, 0u };
+	Flux_PackUint16x4(Zenith_Maths::UVector4(0x1234u, 0x5678u, 0x9ABCu, 0xDEF0u), auPacked);
+	ZENITH_ASSERT_EQ(static_cast<u_int>(auPacked[0]), 0x1234u, "uint16x4 element 0 is lane 0");
+	ZENITH_ASSERT_EQ(static_cast<u_int>(auPacked[1]), 0x5678u, "uint16x4 element 1 is lane 1");
+	ZENITH_ASSERT_EQ(static_cast<u_int>(auPacked[2]), 0x9ABCu, "uint16x4 element 2 is lane 2");
+	ZENITH_ASSERT_EQ(static_cast<u_int>(auPacked[3]), 0xDEF0u, "uint16x4 element 3 is lane 3");
+}
+
 // ---- SNORM10_10_10_2: the baked-asset bit contract --------------------------
 
 ZENITH_TEST(VertexCodec, Snorm10BitIdenticalToLegacyPacker)

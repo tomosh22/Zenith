@@ -101,12 +101,12 @@ namespace Flux_Generated_Text
 			{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 0u, SHADER_DATA_TYPE_FLOAT2, 0u, 12u },   // a_xUV
 			{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 1u, SHADER_DATA_TYPE_FLOAT2, 1u, 0u },   // a_xQuadOffsetPx
 			{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 2u, SHADER_DATA_TYPE_FLOAT2, 1u, 8u },   // a_xQuadSizePx
-			{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 3u, SHADER_DATA_TYPE_FLOAT2, 1u, 16u },   // a_xAtlasUVOrigin
-			{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 4u, SHADER_DATA_TYPE_FLOAT2, 1u, 24u },   // a_xAtlasUVSize
-			{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 5u, SHADER_DATA_TYPE_FLOAT2, 1u, 32u },   // a_xTextRootPx
-			{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 6u, SHADER_DATA_TYPE_FLOAT4, 1u, 40u },   // a_xColour
+			{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 3u, SHADER_DATA_TYPE_UNORM16X2, 1u, 16u },   // a_xAtlasUVOrigin
+			{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 4u, SHADER_DATA_TYPE_UNORM16X2, 1u, 20u },   // a_xAtlasUVSize
+			{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 5u, SHADER_DATA_TYPE_FLOAT2, 1u, 24u },   // a_xTextRootPx
+			{ FLUX_VERTEX_SEMANTIC_TEXCOORD, 6u, SHADER_DATA_TYPE_UNORM8X4, 1u, 32u },   // a_xColour
 		};
-		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ kaxVertexAttribs, 8u, { 20u, 56u } };
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ kaxVertexAttribs, 8u, { 20u, 36u } };
 	}
 
 }

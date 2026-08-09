@@ -942,9 +942,11 @@ private:
 		uint32_t uX = static_cast<uint32_t>(xScreenPos.x - uBarWidth / 2);
 		uint32_t uY = static_cast<uint32_t>(xScreenPos.y);
 
+		// The rect and colour lanes are packed storage (uint16x4 / unorm8x4) — the
+		// setters own the quantisation so no call site spells a byte layout.
 		Flux_QuadsImpl::Quad xBgQuad;
-		xBgQuad.m_xPosition_Size = Zenith_Maths::UVector4(uX, uY, uBarWidth, uBarHeight);
-		xBgQuad.m_xColour = Zenith_Maths::Vector4(0.15f, 0.15f, 0.15f, 0.9f);
+		xBgQuad.SetPositionSize(Zenith_Maths::UVector4(uX, uY, uBarWidth, uBarHeight));
+		xBgQuad.SetColour(Zenith_Maths::Vector4(0.15f, 0.15f, 0.15f, 0.9f));
 		xBgQuad.m_uTexture = 0;
 		xBgQuad.m_xUVMult_UVAdd = Zenith_Maths::Vector2(0.0f, 0.0f);
 		g_xEngine.Quads().UploadQuad(xBgQuad);
@@ -963,8 +965,8 @@ private:
 					xFgColor = Zenith_Maths::Vector4(0.9f, 0.2f, 0.2f, 1.0f);
 
 				Flux_QuadsImpl::Quad xFgQuad;
-				xFgQuad.m_xPosition_Size = Zenith_Maths::UVector4(uX + 1, uY + 1, uFgWidth - 2, uBarHeight - 2);
-				xFgQuad.m_xColour = xFgColor;
+				xFgQuad.SetPositionSize(Zenith_Maths::UVector4(uX + 1, uY + 1, uFgWidth - 2, uBarHeight - 2));
+				xFgQuad.SetColour(xFgColor);
 				xFgQuad.m_uTexture = 0;
 				xFgQuad.m_xUVMult_UVAdd = Zenith_Maths::Vector2(0.0f, 0.0f);
 				g_xEngine.Quads().UploadQuad(xFgQuad);
