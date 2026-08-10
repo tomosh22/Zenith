@@ -194,6 +194,17 @@ jobs:
           #
           # History, newest first (the DERIVATION is the audit trail; the OBSERVED
           # number is the authority):
+          #   3084  Scene-publish guard + authoring-FP determinism (89fa3647),
+          #                   observed 2026-08-10 on a Null_ build
+          #                   (3084 ran / 3082 passed / 0 failed / 2 skipped).
+          #                   +2 ENGINE units, both in Zenith_Editor.Tests.inl:
+          #                   SceneSaveDeltaClassifiesPublish (the four
+          #                   CompareWithFile verdicts + transient entities never
+          #                   moving the serialized counts) and
+          #                   HeadlessSaveNeverRewritesSceneAsset (the publish
+          #                   policy end to end -- byte-identical afterwards under
+          #                   Null, CHANGED under a real backend, so it asserts
+          #                   something in either config).
           #   3082  Compressed-vertex Phase 6 T6.a review fix pass, observed
           #                   2026-08-09 on a Null_ build. +1 ENGINE unit: the
           #                   source-text pin tying Flux_ParticleUpdate.slang's
@@ -428,7 +439,7 @@ jobs:
           #   2817  ZM-D-173  = 2809 + 8: four ENGINE sensor-raycast units plus
           #                   two camera fixtures and two Home-placement units.
           $exe = 'Games\Zenithmon\Build\output\win64\null_vs2022_debug_win64_true\zenithmon.exe'
-          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 3082 -TimeoutSec 600
+          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 3084 -TimeoutSec 600
           if ($LASTEXITCODE -ne 0) { Write-Error "boot unit tests failed (see log above)"; exit $LASTEXITCODE }
 
       - name: Run Zenithmon tests

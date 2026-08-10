@@ -186,7 +186,15 @@ param(
     # drift with every build and test green). Skips itself with a log if the
     # shader source tree is absent (packaged builds). Observed 2026-08-09 on a
     # Null_ Combat build.
-    [int]$Baseline = 1457,
+    # 1457 -> 1459: +2 from the scene-publish/authoring-determinism fix (89fa3647).
+    # Editor.SceneSaveDeltaClassifiesPublish pins Zenith_SceneData::CompareWithFile's
+    # four verdicts (NO_FILE / IDENTICAL / DIFFERENT / DIFFERENT-and-lossy) plus
+    # "a transient entity never moves the serialized counts";
+    # Editor.HeadlessSaveNeverRewritesSceneAsset pins the policy end to end and is
+    # meaningful in BOTH backends — it asserts the file is byte-identical afterwards
+    # under Null and CHANGED under a real one. Observed 2026-08-10 on a Null_ Combat
+    # build (1459 ran / 1458 passed / 0 failed / 1 skipped).
+    [int]$Baseline = 1459,
     [int]$TimeoutSec = 180,
     [string]$LogPath = ""
 )

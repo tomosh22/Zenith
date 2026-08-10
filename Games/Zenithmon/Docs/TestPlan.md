@@ -1711,9 +1711,9 @@ change touches `Zenith/` as well as the game.
 **Boot baseline at THIS change: ZM 2863; engine (Null Combat) stays 1242.** The added
 contracts are pure generator/placement checks, so they do not move the 55-test
 automated registry or the cross-game engine suite.
-★ **SUPERSEDED -- the CURRENT baseline is ZM 3082, engine 1457**, registry unmoved
-at **55**. OBSERVED 2026-08-09 on clean `Null_` builds:
-`3082 ran, 3080 passed, 0 failed, 2 skipped`. Derivation: ZM-D-183 added the two
+★ **SUPERSEDED -- the CURRENT baseline is ZM 3084, engine 1459**, registry unmoved
+at **55**. OBSERVED 2026-08-10 on clean `Null_` builds:
+`3084 ran, 3082 passed, 0 failed, 2 skipped`. Derivation: ZM-D-183 added the two
 committed-scene-bytes guards (2906 -> 2908); ZM-D-184 added the rival spawn-clearance
 unit (2908 -> 2909); the 2026-08-05 CommandLine ParseArgs units added 5 ENGINE units
 (engine 1284 -> 1289) and were NOT reflected here, leaving the ZM pin stale at 2909
@@ -1833,7 +1833,15 @@ the only cross-language tie between `Flux_ParticleUpdate.slang`'s uINSTANCE_WORD
 its C++ mirror (a plain `static const uint` reflects into nothing a static_assert can
 reach, so the two spellings could drift with every build and unit green; the pin reads
 the shader source and parses the literal, skipping itself with a log when the source
-tree is absent) -- taking ZM to **3082**. `zm-tests.yml`
+tree is absent) -- taking ZM to **3082**; and the scene-publish guard +
+authoring-FP determinism fix (`89fa3647`) added 2 more ENGINE units (engine 1457 ->
+**1459**) in `Zenith_Editor.Tests.inl` --
+`SceneSaveDeltaClassifiesPublish`, which pins the four verdicts of
+`Zenith_SceneData::CompareWithFile` (NO_FILE / IDENTICAL / DIFFERENT / DIFFERENT-and-
+lossy) plus the rule that a transient entity never moves the serialized counts, and
+`HeadlessSaveNeverRewritesSceneAsset`, which pins the policy end to end and asserts
+something in EITHER backend (the file is byte-identical afterwards under `Null_`,
+CHANGED under a real one) -- taking ZM to **3084**. `zm-tests.yml`
 `-Baseline` and `run_unit_gate.ps1`'s default both moved to match. The paragraph below is the
 ZM-D-182-era snapshot, kept for the audit trail:
 

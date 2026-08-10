@@ -27,8 +27,10 @@ and rewriting it once does not immunise it. Update it in the SAME commit that cl
   `ZM_BakeManifest`, visually approved (ZM-D-088); S5's full overworld<->battle slice, visually
   approved (ZM-D-112); and S6's dialogue/menu/NPC/shop surface all remain complete.
 - **★ THE LIVE BASELINE IS IN `Status.md`'s TOP BLOCK. READ IT, NOT THIS PARAGRAPH.** As of
-  2026-08-09 (OBSERVED on clean `Null_` builds): registry **55**, ZM boot
-  **3082 ran / 3080 passed / 0 failed / 2 skipped**, engine boot **1457**. (+1 engine unit
+  2026-08-10 (OBSERVED on clean `Null_` builds): registry **55**, ZM boot
+  **3084 ran / 3082 passed / 0 failed / 2 skipped**, engine boot **1459**. (+2 engine units
+  on 2026-08-10 for the scene-publish guard + authoring-FP determinism fix -- the two
+  `Zenith_Editor.Tests.inl` publish-guard tests; +1 engine unit
   on 2026-08-09 for the T6.a review fix pass -- the cross-language source-text pin on the
   particle compute writer's word stride; before that +19 engine units
   on 2026-08-09 for compressed-vertex Phase 6 T6.a, the instance-stream flips -- Text

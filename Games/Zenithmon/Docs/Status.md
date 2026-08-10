@@ -1,12 +1,17 @@
 # Zenithmon Status
 
-**Last updated:** 2026-08-09
+**Last updated:** 2026-08-10
 
-**★ LIVE BASELINE (OBSERVED 2026-08-09 on clean `Null_` builds):
-ZM boot `3082 ran / 3080 passed / 0 failed / 2 skipped`; engine boot (Null Combat)
-`1457 ran / 1456 passed / 0 failed / 1 skipped`; registry **55**.** This is the
-current pin in `zm-tests.yml` (`-Baseline 3082`) and `run_unit_gate.ps1`
-(default 1457). The move from 3081/1456 is **+1 ENGINE unit** from the T6.a review
+**★ LIVE BASELINE (OBSERVED 2026-08-10 on clean `Null_` builds):
+ZM boot `3084 ran / 3082 passed / 0 failed / 2 skipped`; engine boot (Null Combat)
+`1459 ran / 1458 passed / 0 failed / 1 skipped`; registry **55**.** This is the
+current pin in `zm-tests.yml` (`-Baseline 3084`) and `run_unit_gate.ps1`
+(default 1459). The move from 3082/1457 is **+2 ENGINE units** (no ZM units) from
+the scene-publish / authoring-determinism fix `89fa3647`:
+`Editor.SceneSaveDeltaClassifiesPublish` pins the four verdicts of
+`Zenith_SceneData::CompareWithFile`, and `Editor.HeadlessSaveNeverRewritesSceneAsset`
+pins the policy end to end — a headless boot may create a scene asset but never
+change one. Before that, the move from 3081/1456 was **+1 ENGINE unit** from the T6.a review
 fix pass: the source-text pin tying `Flux_ParticleUpdate.slang`'s uINSTANCE_WORDS
 to its C++ mirror (a plain `static const uint` reflects into nothing a
 static_assert can reach, so the two spellings could drift silently). Before that,
