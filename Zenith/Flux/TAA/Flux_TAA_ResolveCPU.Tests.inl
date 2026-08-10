@@ -97,21 +97,127 @@ ZENITH_TEST(TAAResolve, MomentsPinnedOutlier)
 
 // ---- disocclusion -----------------------------------------------------------
 
+namespace
+{
+	// A camera looking down +Z (the engine's view convention) at world z = fCamZ.
+	// glm is column-major, so [3] is the translation column.
+	Zenith_Maths::Matrix4 TAA_TestViewProj(float fCamZ)
+	{
+		const Zenith_Maths::Matrix4 xProj =
+			Zenith_Maths::PerspectiveProjection(1.0f, 16.0f / 9.0f, 0.1f, 1000.0f);
+		Zenith_Maths::Matrix4 xView(1.0f);
+		xView[3][2] = -fCamZ;
+		return xProj * xView;
+	}
+}
+
+// The precondition the whole reprojection rests on: Zenith_Maths::PerspectiveProjection
+// is perspectiveLH_ZO, so clip.w IS view-space z. Pinned rather than trusted -- if the
+// projection convention ever changes, this reddens instead of the disocclusion test
+// silently comparing nonsense.
+ZENITH_TEST(TAAResolve, ClipWIsViewZ)
+{
+	const Zenith_Maths::Matrix4 xProj =
+		Zenith_Maths::PerspectiveProjection(1.0f, 16.0f / 9.0f, 0.1f, 1000.0f);
+	ZENITH_ASSERT_EQ_FLOAT(xProj[2][3], 1.0f, 1e-6f, "M[2][3] == 1 (clip.w picks up view z)");
+
+	// End-to-end: a point 10 in front of a camera parked at world z = 2.
+	const float fViewZ = Flux_TAAExpectedPrevViewZ(
+		TAA_TestViewProj(2.0f), Zenith_Maths::Vector3(0.7f, -0.3f, 12.0f));
+	ZENITH_ASSERT_EQ_FLOAT(fViewZ, 10.0f, 1e-4f, "clip.w == distance in front of the camera");
+}
+
+ZENITH_TEST(TAAResolve, ExpectedPrevViewZIsIndependentOfScreenPosition)
+{
+	// Only DEPTH may come out of this -- x/y offsets must not leak into it, or the
+	// tolerance would have to absorb screen position as well as depth.
+	const Zenith_Maths::Matrix4 xVP = TAA_TestViewProj(0.0f);
+	ZENITH_ASSERT_EQ_FLOAT(Flux_TAAExpectedPrevViewZ(xVP, Zenith_Maths::Vector3(0.0f, 0.0f, 7.0f)),
+		7.0f, 1e-4f, "centre");
+	ZENITH_ASSERT_EQ_FLOAT(Flux_TAAExpectedPrevViewZ(xVP, Zenith_Maths::Vector3(3.5f, -2.25f, 7.0f)),
+		7.0f, 1e-4f, "far off-axis, same depth");
+}
+
+// A flat surface facing the camera collapses the range to a point, which is where the
+// relative threshold alone governs -- the same arithmetic the pre-range test had.
 ZENITH_TEST(TAAResolve, DisocclusionAgreeKeeps)
 {
-	ZENITH_ASSERT_FALSE(Flux_TAADisocclusionReject(10.0f, 10.1f, 0.05f), "close depths kept");
+	ZENITH_ASSERT_FALSE(Flux_TAADisocclusionReject(10.1f, 10.0f, 10.0f, 10.0f, 10.0f, 0.05f),
+		"close depths kept");
 }
 
 ZENITH_TEST(TAAResolve, DisocclusionDisagreeRejects)
 {
-	ZENITH_ASSERT_TRUE(Flux_TAADisocclusionReject(10.0f, 15.0f, 0.05f), "far-apart depths rejected");
+	ZENITH_ASSERT_TRUE(Flux_TAADisocclusionReject(15.0f, 10.0f, 10.0f, 10.0f, 10.0f, 0.05f),
+		"far-apart depths rejected");
 }
 
 ZENITH_TEST(TAAResolve, DisocclusionThresholdBoundary)
 {
-	// diff/denom = 0.5/10.5 = 0.0476 < 0.05 -> keep; 1.0/11.0 = 0.0909 > 0.05 -> reject.
-	ZENITH_ASSERT_FALSE(Flux_TAADisocclusionReject(10.0f, 10.5f, 0.05f), "just inside threshold kept");
-	ZENITH_ASSERT_TRUE (Flux_TAADisocclusionReject(10.0f, 11.0f, 0.05f), "just outside threshold rejected");
+	// Flat neighbourhood at 10: reject when hist > 10 + 0.05*hist, i.e. hist > 10.526.
+	ZENITH_ASSERT_FALSE(Flux_TAADisocclusionReject(10.5f, 10.0f, 10.0f, 10.0f, 10.0f, 0.05f),
+		"just inside threshold kept");
+	ZENITH_ASSERT_TRUE (Flux_TAADisocclusionReject(11.0f, 10.0f, 10.0f, 10.0f, 10.0f, 0.05f),
+		"just outside threshold rejected");
+}
+
+// ★ THE REGRESSION THIS WHOLE CHANGE EXISTS FOR. A static surface, a camera walking
+// toward it: the reprojected comparison keeps the history, the current-depth
+// comparison (what shipped) throws it away. Both halves are asserted, so the bug
+// cannot be reintroduced without this test going red.
+ZENITH_TEST(TAAResolve, DisocclusionKeepsStaticSurfaceUnderCameraDolly)
+{
+	const Zenith_Maths::Vector3   xWorld(0.0f, 0.0f, 2.0f);   // a surface that never moves
+	const Zenith_Maths::Matrix4   xPrevViewProj = TAA_TestViewProj(0.0f);   // camera was at z = 0
+	const float fHistoryPrevDepth = 2.0f;    // what the previous frame stored in the history alpha
+	const float fCurViewZ         = 1.85f;   // the camera advanced 0.15 this frame
+
+	const float fExpectedPrev = Flux_TAAExpectedPrevViewZ(xPrevViewProj, xWorld);
+	ZENITH_ASSERT_EQ_FLOAT(fExpectedPrev, 2.0f, 1e-4f, "reprojection recovers the PREVIOUS depth");
+
+	// Flat neighbourhood at the current depth, shifted back by the camera's own motion.
+	ZENITH_ASSERT_FALSE(Flux_TAADisocclusionReject(
+		fHistoryPrevDepth, fExpectedPrev, fCurViewZ, fCurViewZ, fCurViewZ, 0.05f),
+		"a static surface under a camera dolly keeps its history");
+	// Passing the CURRENT depth as the expected-previous depth is exactly what shipped:
+	// the shift collapses to zero and the same pixel is rejected.
+	ZENITH_ASSERT_TRUE(Flux_TAADisocclusionReject(
+		fHistoryPrevDepth, fCurViewZ, fCurViewZ, fCurViewZ, fCurViewZ, 0.05f),
+		"comparing against the CURRENT depth is what rejected it (the shipped bug)");
+}
+
+// ★ THE SECOND HALF OF THE SAME BUG. Even with the reprojection correct, a POINT
+// comparison still rejects: the depth buffer is rasterised through the jitter, so a
+// pixel on a sloped surface samples a different depth every frame. Measured, this was
+// worth as much as the reprojection itself (2.97x -> 1.19x on the stability gate).
+ZENITH_TEST(TAAResolve, DisocclusionKeepsJitteredDepthWithinNeighbourhoodRange)
+{
+	// Sloped surface: the 3x3 spans 9..11 and the previous jitter phase sampled 10.8.
+	ZENITH_ASSERT_FALSE(Flux_TAADisocclusionReject(10.8f, 10.0f, 9.0f, 11.0f, 10.0f, 0.05f),
+		"a jittered depth inside the neighbourhood range keeps its history");
+	// The same sample against a POINT range (what a non-range test does) rejects.
+	ZENITH_ASSERT_TRUE(Flux_TAADisocclusionReject(10.8f, 10.0f, 10.0f, 10.0f, 10.0f, 0.05f),
+		"a point comparison rejects the very same pixel");
+}
+
+ZENITH_TEST(TAAResolve, DisocclusionKeepsSilhouettePixel)
+{
+	// An anti-aliased silhouette pixel legitimately alternates between the foreground
+	// (3.0) and the background (40.0) as the jitter moves it. Its history IS a blend of
+	// both surfaces -- rejecting it would destroy the edge TAA is there to smooth.
+	ZENITH_ASSERT_FALSE(Flux_TAADisocclusionReject(40.0f, 3.0f, 3.0f, 40.0f, 3.0f, 0.05f),
+		"a silhouette pixel keeps its history");
+	// ... but a surface revealed from far behind the whole neighbourhood still rejects.
+	ZENITH_ASSERT_TRUE(Flux_TAADisocclusionReject(200.0f, 3.5f, 3.0f, 4.0f, 3.5f, 0.05f),
+		"a genuine disocclusion still rejects");
+}
+
+ZENITH_TEST(TAAResolve, DisocclusionRejectsBehindPreviousCamera)
+{
+	ZENITH_ASSERT_TRUE(Flux_TAADisocclusionReject(5.0f, -1.0f, 5.0f, 5.0f, 5.0f, 0.05f),
+		"behind the prev camera");
+	ZENITH_ASSERT_TRUE(Flux_TAADisocclusionReject(5.0f,  0.0f, 5.0f, 5.0f, 5.0f, 0.05f),
+		"exactly on the prev eye plane");
 }
 
 // ---- blend alpha ramp + Karis ----------------------------------------------

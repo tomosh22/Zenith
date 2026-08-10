@@ -130,6 +130,66 @@ void Flux_TranslucencyImpl::Shutdown()
 	m_xShader.Reset();
 }
 
+// TODO(taa-translucent-velocity): this pass writes NO TAA motion vectors, and that is
+// a decision with evidence behind it, not an unfinished corner. Read this before
+// "completing" the velocity plumbing — the obvious change makes the picture worse.
+//
+// THE ASK. TAA's velocity MRT is written by every opaque G-buffer producer
+// (UnifiedMesh / Terrain / Grass / Primitives) plus a velocity-only pass for the sky.
+// Translucency and Particles are the two remaining passes that write the lit scene and
+// contribute nothing to it, so "give them motion vectors too" looks like the last gap.
+//
+// THE PREREQUISITE IS SATISFIED — it is NOT what blocks this. A motion vector must
+// never be alpha-blended (averaging two of them names a motion neither surface has),
+// so a velocity attachment must write opaquely beside an alpha-blended colour
+// attachment. Flux supports that today: Flux_PipelineSpecification's
+// m_axBlendStates[FLUX_MAX_TARGETS] is indexed PER ATTACHMENT by
+// Zenith_Vulkan_Pipeline.cpp::BuildColorBlendState — blend enable, both factor pairs
+// AND m_uColorWriteMask — and Flux/Decals/Flux_Decals.cpp already ships a
+// per-attachment write mask (0x7, RGB but not A). Null and D3D12 consume no blend
+// state at all. So no "extend the pipeline spec" increment is needed.
+//
+// WHAT BLOCKS IT IS THE SEMANTICS. Four findings, in the order that decided it:
+//
+//  1. THE PREMISE IS WRONG FOR THIS PASS. It does not leave velocity at the (0,0)
+//     clear the way the sky used to. It composites into the HDR scene AFTER lighting
+//     and never writes depth, so the velocity at a translucent pixel already holds the
+//     OPAQUE surface behind it — a real, coherent motion vector. TAA is already
+//     reprojecting these pixels by something correct. It just is not THEIRS.
+//
+//  2. ONE SLOT, TWO MOTIONS. A composited pixel is `a*layer + (1-a)*background`. The
+//     background's vector is right for the (1-a) fraction; the layer's is right for the
+//     `a` fraction; R16G16 holds one. Writing the layer's vector does not fix the pixel,
+//     it swaps which half is wrong.
+//
+//  3. IT BREAKS VELOCITY<->DEPTH COHERENCE, WHICH THE RESOLVE DEPENDS ON.
+//     Flux_TAA_Resolve.slang's disocclusion test fetches the history's stored linear
+//     depth at `uv - velocity` and compares it against a range derived from the DEPTH
+//     buffer at the current pixel. Because this pass writes no depth, displacing that
+//     fetch by a non-depth-writing layer's motion makes the two describe DIFFERENT
+//     SURFACES — so history gets REJECTED rather than reprojected. The change would buy
+//     "history rejection at translucent pixels" by an expensive route.
+//
+//  4. THE ALPHA THRESHOLD WOULD FIRE ON NOTHING WE SHIP. The principled rule is "write
+//     velocity only where the layer OWNS the pixel", i.e. above some alpha. Every
+//     translucent material in the tree sits at alpha 0.4-0.6 (RenderTest_MaterialShowcase.cpp:
+//     Showcase_TransCyan 0.4, Showcase_TransOrange 0.55, Showcase_Additive 0.6) —
+//     precisely the band such a threshold must EXCLUDE.
+//
+// WHEN TO REVISIT. Any one of: near-opaque translucent content actually ships (alpha
+// >~ 0.85, where the layer genuinely owns the pixel and (2)/(4) stop applying); or
+// translucency gains a depth-writing pre-pass, which fixes (3); or the resolve gains a
+// second velocity layer, which fixes (2).
+//
+// HOW, IF REVISITED. Use a SEPARATE velocity-only pass, not a velocity attachment on
+// this pass. This pass has a PREVIEW instance with no velocity target, so promoting it
+// would fork all 8 colour pipelines (2 view-shading modes x blend x cull) into main and
+// preview sets and need velocity-masked twins on top. A velocity-only pass main-view
+// only needs ONE pipeline: 1 colour attachment (the velocity target), READ_DEPTH +
+// LESSEQUAL + depth-write off, a fragment that samples the material's diffuse alpha and
+// discards below the threshold. Re-drawing the sorted packet is the whole cost, and it
+// leaves the colour path byte-identical. Full write-up: Flux/TAA/CLAUDE.md, section
+// "Translucency and Particles deliberately write NO velocity".
 void Flux_TranslucencyImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
 	// Forward pass over the lit HDR scene — registered between SSAO and Fog

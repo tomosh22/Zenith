@@ -181,11 +181,26 @@ static void ExecuteTAAResolve(Flux_CommandBuffer* pxCmd, void* /*pUserData*/)
 	// scale-1 / non-upscaling path) is always in-bounds, so this leaves that path unchanged. History
 	// is clamp-sampled too: its in-bounds guard (below) is centre-only AND inclusive, so a reprojected
 	// UV within half a texel of an edge passes the guard yet the bilinear footprint would still wrap
-	// the opposite edge in (into both the resolved rgb and the alpha depth that feeds disocclusion).
-	xBinder.BindSRV          (xTAA.m_xResolveShader, "g_xHDRTex",       &xGraphics.GetHDRSceneTarget(kuFluxViewSlotMain).SRV(), &xGraphics.m_xClampSampler);
-	xBinder.BindSRV          (xTAA.m_xResolveShader, "g_xVelocityTex",  &xGraphics.GetVelocityAttachment(kuFluxViewSlotMain).SRV(), &xGraphics.m_xClampSampler);
-	xBinder.BindSRV          (xTAA.m_xResolveShader, "g_xDepthTex",      xGraphics.GetDepthStencilSRV(kuFluxViewSlotMain), &xGraphics.m_xClampSampler);
-	xBinder.BindSRV          (xTAA.m_xResolveShader, "g_xHistoryTex",   &xTAA.m_xHistory.SRV(), &xGraphics.m_xClampSampler);
+	// the opposite edge in.
+	//
+	// ★ POINT vs LINEAR is load-bearing here, not a detail. Only COLOUR may be filtered:
+	//   - HDR      LINEAR — the upscale gather and the neighbourhood taps want filtering.
+	//   - history  LINEAR — its rgb is colour, reprojected to a sub-texel position.
+	//   - depth / velocity / history-DEPTH  POINT — interpolating a depth or a motion
+	//     vector across a silhouette produces a value belonging to NEITHER surface.
+	//     A blended depth breaks the disocclusion test at exactly the edges TAA is for,
+	//     and a blended motion vector defeats the closest-depth dilation that picked the
+	//     foreground's velocity in the first place. Both samplers clamp, so the edge
+	//     behaviour above is unchanged; at render == output the taps land on texel
+	//     centres, where point and linear agree exactly, so the non-upscaled path is
+	//     bit-identical to what linear was already returning.
+	// The history is bound TWICE, deliberately: same image, two samplers, because a
+	// combined image sampler bakes the filter in. It costs one descriptor and no memory.
+	xBinder.BindSRV          (xTAA.m_xResolveShader, "g_xHDRTex",          &xGraphics.GetHDRSceneTarget(kuFluxViewSlotMain).SRV(), &xGraphics.m_xClampSampler);
+	xBinder.BindSRV          (xTAA.m_xResolveShader, "g_xVelocityTex",     &xGraphics.GetVelocityAttachment(kuFluxViewSlotMain).SRV(), &xGraphics.m_xPointSampler);
+	xBinder.BindSRV          (xTAA.m_xResolveShader, "g_xDepthTex",         xGraphics.GetDepthStencilSRV(kuFluxViewSlotMain), &xGraphics.m_xPointSampler);
+	xBinder.BindSRV          (xTAA.m_xResolveShader, "g_xHistoryTex",      &xTAA.m_xHistory.SRV(), &xGraphics.m_xClampSampler);
+	xBinder.BindSRV          (xTAA.m_xResolveShader, "g_xHistoryDepthTex", &xTAA.m_xHistory.SRV(), &xGraphics.m_xPointSampler);
 	xBinder.BindUAV_Texture  (xTAA.m_xResolveShader, "g_xOutputTex",    &xTAA.m_pxGraph->GetTransientAttachment(xTAA.m_xResolvedOutputHandle).UAV(0));
 	xBinder.BindDrawConstants(xTAA.m_xResolveShader, "g_xTAAConstants", &xConsts, sizeof(xConsts));
 
@@ -248,17 +263,36 @@ static void ExecuteTAASharpen(Flux_CommandBuffer* pxCmd, void* /*pUserData*/)
 void Flux_TAAImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
 	m_pxGraph = &xGraph;
+	const bool bWasActiveLastBuild = m_bResolveActiveThisBuild;
 	m_bResolveActiveThisBuild = false;
 
 	// MAIN view only, and only while the velocity latch is on (TAA active). When off,
 	// no pass is declared and GetSceneColourForPostFX falls through to raw HDR
-	// (byte-identical pre-TAA path). A rebuild means the graph transients changed, so
-	// the history is stale relative to the new frame layout — invalidate it.
+	// (byte-identical pre-TAA path).
 	if (!m_bInitialised || !g_xEngine.FluxGraphics().IsVelocityMRTActive())
 	{
 		return;
 	}
-	m_bHistoryValid = false;
+
+	// ★ A GRAPH REBUILD DOES NOT INVALIDATE THE HISTORY, and it used to. The history is a
+	// PERSISTENT, feature-owned image: a rebuild neither destroys nor resizes it
+	// (BuildHistoryTarget runs only on Initialise / resize), and SynthesizeBarriers
+	// re-derives its cross-frame cyclic seed from the rebuilt graph — which still writes it
+	// last, via CopyToHistory. So the content and the barrier state both survive.
+	//
+	// Invalidating unconditionally here cost one fully-aliased, sub-pixel-jittered frame on
+	// EVERY rebuild, and rebuilds are requested by terrain streaming and instance-group
+	// growth — i.e. constantly while the camera moves, which is precisely when that pop is
+	// most visible.
+	//
+	// It IS invalidated when the resolve was absent from the previous build (first build,
+	// or TAA toggled off and back on): the history then holds pre-toggle content that no
+	// longer corresponds to anything on screen. Resize is handled by OnResolutionChanged,
+	// which rebuilds the target and invalidates alongside it.
+	if (!bWasActiveLastBuild)
+	{
+		m_bHistoryValid = false;
+	}
 
 	const u_int uW = g_xEngine.FluxSwapchain().GetWidth();
 	const u_int uH = g_xEngine.FluxSwapchain().GetHeight();

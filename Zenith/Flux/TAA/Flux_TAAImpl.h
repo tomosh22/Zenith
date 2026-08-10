@@ -94,7 +94,13 @@ public:
 	float m_fBlendMaxAlpha              = 0.5f;   // fast-pixel current-frame weight (least ghosting)
 	float m_fVelocityRejectionThreshold = 32.0f; // pixels of motion that ramps the blend to max
 	float m_fHistoryClampStrength       = 1.0f;  // gamma in the mean +/- gamma*sigma variance clip
-	float m_fDisocclusionDepthThreshold = 0.05f; // relative depth mismatch that rejects history
+	// How far OUTSIDE the neighbourhood's previous depth range a history sample may sit
+	// before it is rejected, relative to its depth. 0.05 is the shipped value and it is
+	// meant to be tight: the range itself absorbs jitter and surface slope, so this only
+	// has to cover residual reprojection error. (It used to need ~0.9 -- i.e. the test
+	// switched off -- to stop the image flickering, which was the symptom that led to the
+	// point-vs-range fix. Do NOT raise it to hide flicker; that is what it hid last time.)
+	float m_fDisocclusionDepthThreshold = 0.05f;
 	float m_fSharpenAmount              = 0.25f; // RCAS sharpen strength (0 => identity)
 
 private:

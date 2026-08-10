@@ -125,6 +125,101 @@ ZENITH_TEST(TAAVelocity, EncodeIsCurrentMinusPrev)
 	ZENITH_ASSERT_EQ_FLOAT(xHist.y, xPrev.y, 1e-6f, "uv - velocity == uvPrev (y)");
 }
 
+// ---- sky velocity: the w = 0 point-at-infinity reprojection ----------------
+//
+// These pin the ONE design claim Flux_SkyboxVelocity.slang rests on: pushing the
+// view ray through the view-proj with w = 0 makes the sky's motion vector a pure
+// function of camera ROTATION. If that were wrong, the sky would either smear on
+// a panning camera (velocity too small) or swim on a walking one (too large).
+
+namespace
+{
+	// A view matrix for a camera at xEye yawed by fYaw about +Y (0 = looking down
+	// +Z, the engine's forward). Built as inverse(T * R) rather than with a lookAt
+	// helper so the translation column is unambiguous — the whole point of these
+	// tests is what happens to that column.
+	Zenith_Maths::Matrix4 TAATestViewMatrix(const Zenith_Maths::Vector3& xEye, float fYaw)
+	{
+		const Zenith_Maths::Matrix4 xCameraToWorld =
+			Zenith_Maths::Rotate(Zenith_Maths::Translate(Zenith_Maths::Matrix4(1.0f), xEye),
+				fYaw, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
+		return glm::inverse(xCameraToWorld);
+	}
+}
+
+ZENITH_TEST(TAASkyVelocity, StationaryCameraIsExactlyZero)
+{
+	const Zenith_Maths::Matrix4 xProj = Zenith_Maths::PerspectiveProjection(60.0f, 16.0f / 9.0f, 0.1f, 1000.0f);
+	const Zenith_Maths::Matrix4 xVP = xProj * TAATestViewMatrix(Zenith_Maths::Vector3(3.0f, 2.0f, -7.0f), 0.4f);
+
+	// Same matrix both frames: every direction must encode no motion at all.
+	const Zenith_Maths::Vector3 axDirs[3] = {
+		Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f),
+		glm::normalize(Zenith_Maths::Vector3(0.3f, 0.2f, 1.0f)),
+		glm::normalize(Zenith_Maths::Vector3(-0.5f, 0.1f, 1.0f)) };
+	for (u_int u = 0; u < 3u; ++u)
+	{
+		const Zenith_Maths::Vector2 xVel = Flux_SkyVelocityUV(xVP, xVP, axDirs[u]);
+		ZENITH_ASSERT_EQ_FLOAT(xVel.x, 0.0f, 1e-6f, "still camera sky velocity.x (dir %u)", u);
+		ZENITH_ASSERT_EQ_FLOAT(xVel.y, 0.0f, 1e-6f, "still camera sky velocity.y (dir %u)", u);
+	}
+}
+
+ZENITH_TEST(TAASkyVelocity, CameraTranslationDoesNotMoveTheSky)
+{
+	// ★ THE LOAD-BEARING PROPERTY. A point at infinity does not parallax, so a
+	// camera that walks (or falls, or is teleported a kilometre) without turning
+	// must leave the sky's motion vector at zero. This is what w = 0 buys, and it
+	// is why a translation-only capture can never reveal a missing sky velocity.
+	const Zenith_Maths::Matrix4 xProj = Zenith_Maths::PerspectiveProjection(60.0f, 16.0f / 9.0f, 0.1f, 1000.0f);
+	const float fYaw = 0.85f;
+	const Zenith_Maths::Matrix4 xVPCur =
+		xProj * TAATestViewMatrix(Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f), fYaw);
+	const Zenith_Maths::Matrix4 xVPPrev =
+		xProj * TAATestViewMatrix(Zenith_Maths::Vector3(-120.0f, 43.0f, 900.0f), fYaw);   // same rotation
+
+	const Zenith_Maths::Vector3 xDir = glm::normalize(Zenith_Maths::Vector3(0.25f, 0.15f, 1.0f));
+	const Zenith_Maths::Vector2 xVel = Flux_SkyVelocityUV(xVPCur, xVPPrev, xDir);
+	ZENITH_ASSERT_EQ_FLOAT(xVel.x, 0.0f, 1e-5f, "camera translation must not move the sky (x)");
+	ZENITH_ASSERT_EQ_FLOAT(xVel.y, 0.0f, 1e-5f, "camera translation must not move the sky (y)");
+}
+
+ZENITH_TEST(TAASkyVelocity, CameraYawMovesTheSkyLinearlyAndHorizontally)
+{
+	const Zenith_Maths::Matrix4 xProj = Zenith_Maths::PerspectiveProjection(60.0f, 16.0f / 9.0f, 0.1f, 1000.0f);
+	const Zenith_Maths::Vector3 xEye(4.0f, 1.0f, 2.0f);
+	const Zenith_Maths::Matrix4 xVPCur = xProj * TAATestViewMatrix(xEye, 0.0f);
+
+	// Small yaw: the sky shifts horizontally, and doubling the yaw doubles the shift.
+	const Zenith_Maths::Vector3 xDir(0.0f, 0.0f, 1.0f);   // straight ahead this frame
+	const Zenith_Maths::Vector2 xVel1 =
+		Flux_SkyVelocityUV(xVPCur, xProj * TAATestViewMatrix(xEye, -0.01f), xDir);
+	const Zenith_Maths::Vector2 xVel2 =
+		Flux_SkyVelocityUV(xVPCur, xProj * TAATestViewMatrix(xEye, -0.02f), xDir);
+
+	ZENITH_ASSERT_GT(fabsf(xVel1.x), 1e-4f, "a yawing camera must give the sky a non-zero motion vector");
+	ZENITH_ASSERT_LT(fabsf(xVel1.y), 1e-5f, "a pure yaw must not move the sky vertically");
+	ZENITH_ASSERT_EQ_FLOAT(xVel2.x / xVel1.x, 2.0f, 0.02f,
+		"double the yaw, double the sky motion (small-angle linearity)");
+}
+
+ZENITH_TEST(TAASkyVelocity, DirectionBehindThePreviousCameraRejectsHistory)
+{
+	// Turned right around between frames: this direction was BEHIND the previous
+	// camera, where the perspective divide folds it onto a plausible-looking UV.
+	// The sentinel must be big enough that `uv - velocity` leaves [0,1] for EVERY
+	// uv, so the resolve keeps the current frame instead of inventing a history.
+	const Zenith_Maths::Matrix4 xProj = Zenith_Maths::PerspectiveProjection(60.0f, 16.0f / 9.0f, 0.1f, 1000.0f);
+	const Zenith_Maths::Vector3 xEye(0.0f, 0.0f, 0.0f);
+	const Zenith_Maths::Vector2 xVel = Flux_SkyVelocityUV(
+		xProj * TAATestViewMatrix(xEye, 0.0f),
+		xProj * TAATestViewMatrix(xEye, 3.14159265f),
+		Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f));
+
+	ZENITH_ASSERT_GE(fabsf(xVel.x), 1.0f, "a direction behind the previous camera must reject history (x)");
+	ZENITH_ASSERT_GE(fabsf(xVel.y), 1.0f, "a direction behind the previous camera must reject history (y)");
+}
+
 ZENITH_TEST(TAAVelocity, Fp16RoundTripExactZero)
 {
 	const Zenith_Maths::Vector2 xRT = Flux_VelocityFp16RoundTrip(Zenith_Maths::Vector2(0.0f, 0.0f));

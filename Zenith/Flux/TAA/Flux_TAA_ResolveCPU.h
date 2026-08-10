@@ -78,12 +78,70 @@ inline void Flux_TAANeighbourhoodMoments(
 // --- disocclusion rejection --------------------------------------------------
 // History carries the linear view depth it was written at (in its alpha). Reject it
 // when that disagrees with the depth the previous frame is EXPECTED to have had at the
-// reprojected position (reconstructed from current depth + prev view-proj). Relative
-// threshold so it scales with distance. Returns true = REJECT (a disocclusion / edge).
-inline bool Flux_TAADisocclusionReject(float fHistoryPrevDepth, float fExpectedPrevDepth, float fRelThreshold)
+// reprojected position.
+//
+// ★ THE EXPECTED DEPTH IS A REPROJECTION, NOT THE CURRENT DEPTH. Feeding this the
+// current frame's view Z instead asserts that a surface's distance from the camera
+// never changes between frames -- false for any camera dolly and any moving object,
+// and worst close up, where the relative form is tightest. That is exactly what the
+// resolve shipped doing, and it forced the Disocclusion Threshold up to ~0.9 (i.e.
+// "reject only when one depth is 10x the other" = the test switched off) before the
+// image stopped flickering. Pinned by the DisocclusionRejects/KeepsUnderCameraDolly
+// tests, which drive a real camera translation through the matrix path below.
+
+// Where this pixel's surface was in the PREVIOUS frame's view space.
+// Zenith_Maths::PerspectiveProjection is perspectiveLH_ZO (GLM_FORCE_DEPTH_ZERO_TO_ONE
+// + GLM_FORCE_LEFT_HANDED), so M[2][3] == 1 and clip.w IS view-space z -- the previous
+// depth is just the w of the world position pushed through the previous frame's
+// UNJITTERED view-proj. Returns <= 0 when the surface was behind the previous camera
+// (or outside its frustum plane), which Flux_TAADisocclusionReject treats as a reject.
+// The clip.w == view.z identity is pinned by ClipWIsViewZ rather than assumed.
+inline float Flux_TAAExpectedPrevViewZ(
+	const Zenith_Maths::Matrix4& xPrevViewProjNoJitter, const Zenith_Maths::Vector3& xWorldPos)
 {
-	const float fDenom = glm::max(glm::max(fHistoryPrevDepth, fExpectedPrevDepth), 1e-4f);
-	return (fabsf(fHistoryPrevDepth - fExpectedPrevDepth) / fDenom) > fRelThreshold;
+	const Zenith_Maths::Vector4 xClipPrev =
+		xPrevViewProjNoJitter * Zenith_Maths::Vector4(xWorldPos, 1.0f);
+	return xClipPrev.w;
+}
+
+// ★ AND IT IS A RANGE TEST, NOT A POINT TEST. Comparing the history's depth against a
+// single expected depth cannot work, because the depth buffer is rasterised THROUGH THE
+// JITTER: consecutive frames sample different sub-pixel positions, so a pixel's depth
+// legitimately moves frame to frame -- a little on a sloped surface, a lot at a
+// silhouette, where it alternates between the near and far surface. That is
+// indistinguishable from a disocclusion at a single pixel, and rejecting it throws away
+// history at exactly the edges TAA exists to anti-alias (an anti-aliased edge pixel IS a
+// blend of both surfaces, so its history SHOULD span them).
+//
+// So the comparison is against the depth RANGE the pixel's 3x3 neighbourhood occupied.
+// That measures the local depth spread instead of estimating it, and it subsumes what a
+// slope tolerance was trying to approximate: a grazing surface has a naturally wide
+// range, a silhouette wider still, and a flat surface facing the camera a narrow one.
+// A genuine disocclusion -- a surface revealed from behind another -- lands outside the
+// range and still rejects.
+//
+// Measured on the RenderTest campus with a still camera (mean inter-frame delta, versus
+// the same scene with TAA off): point test 2.97x LESS stable than no TAA at all; range
+// test 1.19x, against a floor of 1.15x with rejection disabled entirely. So this keeps
+// ~96% of the available stability while still doing real rejection work.
+//
+// fNeighbourMinZ/fNeighbourMaxZ are the current frame's 3x3 depth range and fCentreZ its
+// centre depth; the range is shifted by the centre pixel's own camera-motion delta
+// (expected-prev minus current) so it describes where that neighbourhood was LAST frame.
+// Returns true = REJECT.
+inline bool Flux_TAADisocclusionReject(
+	float fHistoryPrevDepth, float fExpectedPrevDepth,
+	float fNeighbourMinZ, float fNeighbourMaxZ, float fCentreZ, float fRelThreshold)
+{
+	if (fExpectedPrevDepth <= 0.0f)
+	{
+		return true;   // the surface was behind the previous camera: there is no history to keep
+	}
+	const float fShift = fExpectedPrevDepth - fCentreZ;   // the camera-motion component alone
+	const float fLo    = fNeighbourMinZ + fShift;
+	const float fHi    = fNeighbourMaxZ + fShift;
+	const float fTol   = fRelThreshold * glm::max(glm::max(fHi, fHistoryPrevDepth), 1e-4f);
+	return (fHistoryPrevDepth < fLo - fTol) || (fHistoryPrevDepth > fHi + fTol);
 }
 
 // --- velocity-ramped blend factor --------------------------------------------

@@ -14,6 +14,8 @@
 #include "Core/Zenith_GraphicsOptions.h"
 #include "Profiling/Zenith_Profiling.h"
 
+#include <cstring>   // std::strcmp — the --taa-no-skyvelocity A/B capture toggle
+
 #ifdef ZENITH_TOOLS
 #include "DebugVariables/Zenith_DebugVariables.h"
 #endif
@@ -48,7 +50,7 @@ void Flux_SkyboxImpl::BuildPipelines()
 		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_NORMALSAMBIENT] = MRT_FORMAT_NORMALSAMBIENT;
 		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_MATERIAL] = MRT_FORMAT_MATERIAL;
 		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_EMISSIVE] = MRT_FORMAT_EMISSIVE;
-		xSpec.m_uNumColourAttachments = uFLUX_MRT_CORE_COUNT;   // sky never writes velocity (resolve reprojects sky from the camera)
+		xSpec.m_uNumColourAttachments = uFLUX_MRT_CORE_COUNT;   // 4-target: sky velocity is written by the separate Skybox Velocity pass, not here
 		// Skybox now renders after the opaque geometry passes, so it depth-TESTS
 		// against scene depth instead of disabling the test: the fullscreen quad
 		// rasterises at NDC z=1.0 (far), and LESSEQUAL passes only where the stored
@@ -78,7 +80,7 @@ void Flux_SkyboxImpl::BuildPipelines()
 		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_NORMALSAMBIENT] = MRT_FORMAT_NORMALSAMBIENT;
 		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_MATERIAL] = MRT_FORMAT_MATERIAL;
 		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_EMISSIVE] = MRT_FORMAT_EMISSIVE;
-		xSpec.m_uNumColourAttachments = uFLUX_MRT_CORE_COUNT;   // sky never writes velocity (resolve reprojects sky from the camera)
+		xSpec.m_uNumColourAttachments = uFLUX_MRT_CORE_COUNT;   // 4-target: sky velocity is written by the separate Skybox Velocity pass, not here
 		// Skybox now renders after the opaque geometry passes, so it depth-TESTS
 		// against scene depth instead of disabling the test: the fullscreen quad
 		// rasterises at NDC z=1.0 (far), and LESSEQUAL passes only where the stored
@@ -108,7 +110,7 @@ void Flux_SkyboxImpl::BuildPipelines()
 		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_NORMALSAMBIENT] = MRT_FORMAT_NORMALSAMBIENT;
 		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_MATERIAL] = MRT_FORMAT_MATERIAL;
 		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_EMISSIVE] = MRT_FORMAT_EMISSIVE;
-		xSpec.m_uNumColourAttachments = uFLUX_MRT_CORE_COUNT;   // sky never writes velocity (resolve reprojects sky from the camera)
+		xSpec.m_uNumColourAttachments = uFLUX_MRT_CORE_COUNT;   // 4-target: sky velocity is written by the separate Skybox Velocity pass, not here
 		// Skybox now renders after the opaque geometry passes, so it depth-TESTS
 		// against scene depth instead of disabling the test: the fullscreen quad
 		// rasterises at NDC z=1.0 (far), and LESSEQUAL passes only where the stored
@@ -123,6 +125,38 @@ void Flux_SkyboxImpl::BuildPipelines()
 		this->m_xAtmosphereShader.Initialise(Flux_SkyboxShaders::xSkyboxAtmosphere);
 		this->m_xAtmosphereShader.GetReflection().PopulateLayout(xSpec.m_xPipelineLayout);
 		Flux_PipelineBuilder::FromSpecification(this->m_xAtmospherePipeline, xSpec);
+	}
+
+	// ========== Sky velocity pipeline (the ONE optional velocity target) ==========
+	// The three shading pipelines above deliberately stay 4-target; this is the
+	// only sky program that writes MRT_INDEX_VELOCITY, and it writes NOTHING else.
+	// Its pass has a single colour attachment (the velocity target), so the format
+	// sits at index 0 here even though the same value is SV_Target4 inside the
+	// 5-attachment G-buffer pass — the attachment index belongs to the pass.
+	//
+	// Depth state is copied from the sky pipelines ON PURPOSE: test LESSEQUAL,
+	// write OFF, fullscreen triangle at NDC z = 1.0. That is what restricts the
+	// write to sky pixels, by exactly the rule that decided which pixels the sky
+	// painted in the first place — so the two can never disagree about where the
+	// sky is. (A depth-texture read + discard would be a second, driftable copy of
+	// the same test.)
+	{
+		Flux_PipelineSpecification xSpec;
+		xSpec.m_aeColourAttachmentFormats[0] = MRT_FORMAT_VELOCITY;
+		xSpec.m_uNumColourAttachments = 1;
+		xSpec.m_eDepthStencilFormat = DEPTH_FORMAT;
+		xSpec.m_bDepthTestEnabled = true;
+		xSpec.m_eDepthCompareFunc = DEPTH_COMPARE_FUNC_LESSEQUAL;
+		xSpec.m_bDepthWriteEnabled = false;
+		xSpec.m_pxShader = &this->m_xVelocityShader;
+		this->m_xVelocityShader.Initialise(Flux_SkyboxShaders::xSkyboxVelocity);
+		this->m_xVelocityShader.GetReflection().PopulateLayout(xSpec.m_xPipelineLayout);
+		// A motion vector must never be blended — averaging two of them names a
+		// motion neither surface has.
+		xSpec.m_axBlendStates[0].m_eSrcBlendFactor = BLEND_FACTOR_ONE;
+		xSpec.m_axBlendStates[0].m_eDstBlendFactor = BLEND_FACTOR_ZERO;
+		xSpec.m_axBlendStates[0].m_bBlendEnabled = false;
+		Flux_PipelineBuilder::FromSpecification(this->m_xVelocityPipeline, xSpec);
 	}
 
 	// ========== Transmittance LUT generation pipeline (single RG/RGBA16F RT) ==========
@@ -376,6 +410,46 @@ static void ExecuteSkybox(Flux_CommandBuffer* pxCommandList, void*)
 	}
 }
 
+// TAA A/B capture toggle: --taa-no-skyvelocity suppresses the "Skybox Velocity"
+// pass, restoring the pre-fix behaviour where the sky left the velocity target at
+// the (0,0) clear and TAA believed the sky was pinned to the screen.
+//
+// It exists because the fix is NOT self-evidently observable: the atmosphere sky is
+// a smooth gradient, and the resolve's variance clip bounds any history error to
+// +/- sigma of the current 3x3 neighbourhood — which on a smooth gradient is well
+// under one 8-bit LSB. The smear only becomes measurable on a sky with real
+// spatial detail (a CUBEMAP, or the sun disk in frame), and this toggle is what
+// lets a capture put the two side by side in ONE build. Verification-only, default
+// off. Scanned once. (Same shape as --taa-no-prevpose in Flux_UnifiedMesh.cpp.)
+static bool Flux_TAA_SkyVelocityDisabled()
+{
+	static int s_iDisabled = -1;   // -1 = unscanned
+	if (s_iDisabled == -1)
+	{
+		s_iDisabled = 0;
+#ifdef ZENITH_WINDOWS
+		for (int i = 1; i < __argc; i++)
+		{
+			if (std::strcmp(__argv[i], "--taa-no-skyvelocity") == 0) { s_iDisabled = 1; break; }
+		}
+#endif
+	}
+	return s_iDisabled != 0;
+}
+
+static void ExecuteSkyboxVelocity(Flux_CommandBuffer* pxCommandList, void*)
+{
+	// Non-capturing graph callback — recover the singleton via g_xEngine.Skybox().
+	// Unconditional: the pass this records into is declared ONLY while the TAA
+	// velocity latch is on, so reaching here at all means the velocity target
+	// exists. Nothing to bind but the pipeline — the shader reads the view ray and
+	// the two unjittered view-proj matrices out of the persistent VIEW set.
+	Flux_SkyboxImpl& xSkybox = g_xEngine.Skybox();
+	pxCommandList->SetPipeline(&xSkybox.m_xVelocityPipeline);
+	pxCommandList->SetIndexBuffer(g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
+	pxCommandList->DrawIndexed(6);
+}
+
 static void ExecuteTransmittanceLUT(Flux_CommandBuffer* pxCommandList, void*)
 {
 	// Non-capturing graph callback — recover the singleton via g_xEngine.Skybox().
@@ -508,6 +582,28 @@ void Flux_SkyboxImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 		.Reads (this->m_xSkyViewLUT,                                  RESOURCE_ACCESS_READ_SRV)
 		.Prepare(PreExecuteSkybox)
 		.ClearTargets();
+
+	// Sky TAA motion vectors — main view, and only while the velocity latch is on.
+	//
+	// A SEPARATE PASS rather than a 5th attachment on the sky draw above, because
+	// the sky has THREE shading programs (SolidColour / Cubemap / Atmosphere) and
+	// one velocity: promoting the draw would have needed a velocity variant of each,
+	// two of which would re-run work (the atmosphere raymarch) that the motion vector
+	// does not depend on. It is declared HERE, after the sky draw and therefore after
+	// every geometry velocity writer (UnifiedMesh / Grass / Terrain / Primitives are
+	// all registered earlier — Flux_FeatureRegistry.cpp), so this write chains LAST
+	// and the depth buffer it tests against is complete.
+	//
+	// No ClearTargets: the velocity target already holds every geometry writer's
+	// motion vectors by the time this runs, and clearing would erase them.
+	// READ_DEPTH (not WRITE_DSV) is what gives the pass its read-only depth
+	// attachment, which is what makes the LESSEQUAL-at-z=1.0 sky test work.
+	if (xGraphics.IsVelocityMRTActive() && !Flux_TAA_SkyVelocityDisabled())
+	{
+		xGraph.AddPass("Skybox Velocity", ExecuteSkyboxVelocity)
+			.Writes(xGraphics.GetVelocityAttachment(), RESOURCE_ACCESS_WRITE_RTV)
+			.Reads (xGraphics.GetDepthAttachment(),    RESOURCE_ACCESS_READ_DEPTH);
+	}
 
 	// Preview view (S5a/S5c): the same sky draw over the preview view's G-buffer —
 	// the record callback reconstructs rays from the bound per-view g_xView, so

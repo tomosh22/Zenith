@@ -1711,9 +1711,18 @@ change touches `Zenith/` as well as the game.
 **Boot baseline at THIS change: ZM 2863; engine (Null Combat) stays 1242.** The added
 contracts are pure generator/placement checks, so they do not move the 55-test
 automated registry or the cross-game engine suite.
-★ **SUPERSEDED -- the CURRENT baseline is ZM 3117, engine 1492**, registry unmoved
+★ **SUPERSEDED -- the CURRENT baseline is ZM 3127, engine 1502**, registry unmoved
 at **55**. OBSERVED 2026-08-10 on clean `Null_` builds:
-`3117 ran, 3115 passed, 0 failed, 2 skipped`. Most recent move: +11 ENGINE units
+`3127 ran, 3125 passed, 0 failed, 2 skipped`. Most recent move: +4 ENGINE units
+(3123 -> 3127, engine 1498 -> 1502) from the TAA sky motion vectors -- the
+`TAASkyVelocity` cases in `Flux/TAA/Flux_TAAJitter.Tests.inl`, pinning the w = 0
+point-at-infinity reprojection the sky's velocity-only pass rests on (camera
+TRANSLATION must not move the sky; a pure yaw must, linearly). Previous move: +6 ENGINE units
+(3117 -> 3123, engine 1492 -> 1498) from the TAA disocclusion fix -- the suite in
+`Flux/TAA/Flux_TAA_ResolveCPU.Tests.inl` added when TAA's disocclusion test was
+found to compare the history's stored depth against the CURRENT frame's depth
+instead of the reprojection its own contract specified, and against a POINT rather
+than the neighbourhood depth RANGE. Before that: +11 ENGINE units
 (3106 -> 3117, engine 1481 -> 1492) from the Flux screen-space-quality review
 follow-ups -- six SSAO committed-selection / blur-constant units and five shadow
 quality-flag units. A `SlangProbes` probe added alongside them moves NEITHER

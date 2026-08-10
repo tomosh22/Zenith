@@ -28,7 +28,13 @@ and rewriting it once does not immunise it. Update it in the SAME commit that cl
   approved (ZM-D-112); and S6's dialogue/menu/NPC/shop surface all remain complete.
 - **★ THE LIVE BASELINE IS IN `Status.md`'s TOP BLOCK. READ IT, NOT THIS PARAGRAPH.** As of
   2026-08-10 (OBSERVED on clean `Null_` builds): registry **55**, ZM boot
-  **3117 ran / 3115 passed / 0 failed / 2 skipped**, engine boot **1492**. (+11 engine units
+  **3127 ran / 3125 passed / 0 failed / 2 skipped**, engine boot **1502**. (+4 engine units
+  on 2026-08-10 for the TAA sky motion vectors -- the four `TAASkyVelocity` cases in
+  `Flux/TAA/Flux_TAAJitter.Tests.inl`, pinning the w = 0 point-at-infinity reprojection;
+  before that, +6 engine units
+  on 2026-08-10 for the TAA disocclusion fix -- the six-unit suite in
+  `Flux/TAA/Flux_TAA_ResolveCPU.Tests.inl` added when TAA's disocclusion test was found to
+  reject history almost everywhere; +11 engine units
   on 2026-08-10 for the Flux screen-space-quality review follow-ups -- six SSAO
   committed-selection/blur-constant units and five shadow quality-flag units; note a
   `SlangProbes` probe added in the same change moves NEITHER count, since that suite
@@ -350,6 +356,15 @@ real trainer battle, and his identity survives save/reload by a zero-byte route.
      behaviour, untouched, and noted in `Zenith/Flux/Primitives/CLAUDE.md`. Promoting the marker to
      a real UI/mesh surface remains unnecessary: the gameplay primitive channel IS the production
      surface now.
+     **★ THE SHAPE CLAUSE WAS HOSTAGE TO A SINGLE STRAY PIXEL, FIXED 2026-08-10.** It took the
+     bounding box of every hue-matching pixel in the whole 1280x720 capture, so one stray anywhere
+     in the frame broke it. Observed red with the marker drawing PERFECTLY -- 114 px in a 6x29
+     upright box -- and ONE pixel 313 px away stretching the measured box to 319x77. The hue window
+     deliberately sits close to the terrain's colours (its own note: dropping the red floor to 120
+     admits ~12k terrain pixels), so whether a stray exists is a coin flip on an LSB of exposure
+     noise. The scan now takes the hue pixels' centroid and measures the span only on those within
+     64 px of it, logging how many were discarded as strays; the min-pixel clause still fires if
+     strays ever dominate. **Nothing about the marker changed** -- this was a measurement defect.
 
    The honest one-line description is now **"a trainer who sees you shows you he has, walks up
    to you, speaks, and battles you"** -- **the camera still does not move.** (Updated 2026-08-01:

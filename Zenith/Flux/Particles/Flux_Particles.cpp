@@ -339,6 +339,43 @@ static void ExecuteParticleCompute(Flux_CommandBuffer* pxCmdList, void*)
 	g_xEngine.ParticleGPU().DispatchCompute(pxCmdList);
 }
 
+// TODO(taa-translucent-velocity): particles write NO TAA motion vectors, deliberately.
+//
+// The four findings that apply to every alpha-blended layer are written out once, at
+// Flux/Translucency/Flux_Translucency.cpp::SetupRenderGraph — in short: this pass does
+// NOT leave velocity at the (0,0) clear (the opaque surface behind already wrote a
+// coherent vector, because particles draw after the G-buffer and never write depth);
+// one R16G16 slot cannot carry the two motions in `a*sprite + (1-a)*background`; and
+// displacing the history fetch by a non-depth-writing layer's motion breaks the
+// velocity<->depth coherence the resolve's disocclusion test rests on, so history is
+// REJECTED rather than reprojected. The per-attachment blend state such a change would
+// need already exists (see that comment) — the plumbing is not the blocker.
+//
+// TWO THINGS ARE PARTICLE-SPECIFIC AND STRONGER THAN THE SHARED ARGUMENT:
+//
+//  1. A SPRITE CLOUD HAS NO WELL-DEFINED PER-PIXEL MOTION VECTOR AT ALL. N overlapping
+//     semi-transparent billboards plus a background contribute N+1 distinct motions to
+//     one colour. This is not a precision problem an alpha threshold can rescue: the
+//     engine's sprite (Textures/Particles/particleSwirl) is a soft radial falloff whose
+//     above-threshold alpha is a small central core, with the many low-alpha layers
+//     around it — the ones actually responsible for the ghosting — permanently below
+//     any threshold. Whatever the buffer ends up holding is the last core that happened
+//     to pass the depth test, which is an arbitrary choice among the overlaps.
+//
+//  2. THE DATA IS CHEAP ON THE GPU PATH AND EXPENSIVE TO DELIVER. Flux_ParticleUpdate.slang
+//     already integrates from the particle record's velocity (m_xVelocity_Lifetime), so
+//     `prevPos = pos - vel*dt` is one line there. Getting it to the DRAW is what costs:
+//     Flux_ParticleInstance is a pinned 20 B (position/size + packed colour) and carrying
+//     a prev position takes it to 32 B, which moves uFLUX_PARTICLE_INSTANCE_WORDS, the
+//     generated Particles vertex layout, uINSTANCE_WORDS in the compute writer, and the
+//     six static_asserts in Flux_ParticleData.h that tie those together. The CPU path has
+//     no previous position anywhere — Flux_ParticleInstance is all the renderer receives.
+//
+// SO IF PARTICLE GHOSTING NEEDS FIXING, FIX IT DIRECTLY: mark the pixels particles drew
+// and reject history there. That is what writing their velocity would achieve anyway
+// (finding 3), at a fraction of the cost and without claiming a motion vector the
+// content does not have. Full write-up: Flux/TAA/CLAUDE.md, section "Translucency and
+// Particles deliberately write NO velocity".
 void Flux_ParticlesImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
 	// GPU particle compute pass. Its CPU half (spawn upload + indirect seeding) is

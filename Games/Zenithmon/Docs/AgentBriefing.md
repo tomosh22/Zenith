@@ -685,7 +685,8 @@ them.
   an uncompressed 32-bit BGRA **`.tga`**. It captures the render target, not the
   window, so it is immune to window position, occlusion and ImGui dock focus;
   it is a **no-op on the Null backend**, so gate the assertion on
-  `Zenith_IsNullRenderer()`. `Tests/ZM_TestTGAHelpers.h` reads the result back.
+  `Zenith_IsNullRenderer()`. `Core/Zenith_TestTGA.h` reads the result back (the
+  shared engine helper; it used to be a game-local `Tests/ZM_TestTGAHelpers.h`).
   The wall-clock alternatives (SetWindowPos + CopyFromScreen, referenced from
   MasterPlan.md's Verification section; `Tools\capture_viewport.ps1`) cannot
   sample a short beat -- capture_viewport was asked for 40 ms and delivered

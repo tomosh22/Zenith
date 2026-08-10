@@ -1,9 +1,14 @@
 #pragma once
 // ============================================================================
-// ZM_TestTGAHelpers -- the deliberately narrow reader for engine-written
+// Zenith_TestTGA -- the deliberately narrow reader for engine-written
 // framebuffer captures. Flux_Screenshot writes uncompressed 32-bit BGRA TGAs
 // with a top-left origin; this test helper accepts exactly that contract so a
 // graphics automated test can assert on the pixels that reached the swapchain.
+//
+// Shared by every game's pixel-reading automated tests (Zenithmon's interior
+// tint / battle menu / shell lighting probes, RenderTest's TAA temporal
+// stability gate). It reads nothing but the format Flux_Screenshot emits --
+// anything wider belongs in the asset pipeline's image code, not here.
 // ============================================================================
 
 #include <cstddef>
@@ -12,12 +17,12 @@
 
 #include "Core/Zenith_PlatformStdio.h"
 
-struct ZM_TestTGAImage
+struct Zenith_TestTGAImage
 {
-	ZM_TestTGAImage() = default;
-	ZM_TestTGAImage(const ZM_TestTGAImage&) = delete;
-	ZM_TestTGAImage& operator=(const ZM_TestTGAImage&) = delete;
-	~ZM_TestTGAImage() { delete[] m_puPixels; }
+	Zenith_TestTGAImage() = default;
+	Zenith_TestTGAImage(const Zenith_TestTGAImage&) = delete;
+	Zenith_TestTGAImage& operator=(const Zenith_TestTGAImage&) = delete;
+	~Zenith_TestTGAImage() { delete[] m_puPixels; }
 
 	uint32_t m_uWidth = 0u;
 	uint32_t m_uHeight = 0u;
@@ -35,7 +40,7 @@ struct ZM_TestTGAImage
 	}
 };
 
-inline bool ZM_TestLoadTGA(const char* szPath, ZM_TestTGAImage& xOut)
+inline bool Zenith_TestLoadTGA(const char* szPath, Zenith_TestTGAImage& xOut)
 {
 	std::FILE* pFile = Zenith_PlatformStdio::OpenFile(szPath, "rb");
 	if (pFile == nullptr)

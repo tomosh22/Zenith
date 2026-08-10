@@ -3,10 +3,27 @@
 **Last updated:** 2026-08-10
 
 **★ LIVE BASELINE (OBSERVED 2026-08-10 on clean `Null_` builds):
-ZM boot `3117 ran / 3115 passed / 0 failed / 2 skipped`; engine boot (Null Combat)
-`1492 ran / 1491 passed / 0 failed / 1 skipped`; registry **55**.** This is the
-current pin in `zm-tests.yml` (`-Baseline 3117`) and `run_unit_gate.ps1`
-(default 1492). The move from 3106/1481 is **+11 ENGINE units** (no ZM units) from
+ZM boot `3127 ran / 3125 passed / 0 failed / 2 skipped`; engine boot (Null Combat)
+`1502 ran / 1501 passed / 0 failed / 1 skipped`; registry **55**.** This is the
+current pin in `zm-tests.yml` (`-Baseline 3127`) and `run_unit_gate.ps1`
+(default 1502). The move from 3123/1498 is **+4 ENGINE units** (no ZM units) from
+the TAA sky motion vectors — the `TAASkyVelocity` cases in
+`Flux/TAA/Flux_TAAJitter.Tests.inl`, pinning the w = 0 point-at-infinity
+reprojection the sky's new velocity-only pass rests on (above all: camera
+TRANSLATION must not move the sky, because w = 0 drops the view matrix's
+translation column — which is why sky smearing is invisible to any still or
+translation-only capture). See `run_unit_gate.ps1` for the per-test derivation.
+
+The PREVIOUS move, 3117/1492 -> 3123/1498, was **+6 ENGINE units** (no ZM units) from
+the TAA disocclusion fix — TAA's disocclusion test compared the history's stored
+depth against the CURRENT frame's depth rather than the reprojection its own
+contract specified, and against a POINT rather than the neighbourhood depth RANGE,
+so a camera dolly and the sub-pixel jitter both read as disocclusions; the image
+only stopped flickering with the threshold at ~0.9 (the test switched off). The
+suite is `Flux/TAA/Flux_TAA_ResolveCPU.Tests.inl`; see `run_unit_gate.ps1` for the
+per-test derivation.
+
+The PREVIOUS move, 3106/1481 -> 3117/1492, was **+11 ENGINE units** (no ZM units) from
 the Flux screen-space-quality review follow-ups: 6 in
 `Flux/SSAO/Flux_SSAO.Tests.inl` (the three-field `Flux_SSAOSelection` comparison
 and the committed-handle selector's commit / rebuild-request /

@@ -44,7 +44,7 @@
 #include "Core/Zenith_EditorQuery.h"
 #endif
 
-#include "ZM_TestTGAHelpers.h"                                 // the engine-written BGRA swapchain dump reader
+#include "Core/Zenith_TestTGA.h"                                 // the engine-written BGRA swapchain dump reader
 
 #include <array>
 #include <cmath>
@@ -718,7 +718,7 @@ namespace
 		return std::sqrt(xDelta.x * xDelta.x + xDelta.y * xDelta.y + xDelta.z * xDelta.z);
 	}
 
-	bool BMPixMeasurePixelRect(const ZM_TestTGAImage& xImage,
+	bool BMPixMeasurePixelRect(const Zenith_TestTGAImage& xImage,
 		float fLeft, float fTop, float fRight, float fBottom, BMPixRegionStats& xOut)
 	{
 		xOut = BMPixRegionStats{};
@@ -786,7 +786,7 @@ namespace
 		return true;
 	}
 
-	bool BMPixMeasureCanvasRect(const ZM_TestTGAImage& xImage,
+	bool BMPixMeasureCanvasRect(const Zenith_TestTGAImage& xImage,
 		float fLeft, float fTop, float fRight, float fBottom, BMPixRegionStats& xOut)
 	{
 		return BMPixMeasurePixelRect(xImage,
@@ -794,7 +794,7 @@ namespace
 			BMPixCanvasToPixelX(fRight), BMPixCanvasToPixelY(fBottom), xOut);
 	}
 
-	bool BMPixMeasurePatch(const ZM_TestTGAImage& xImage,
+	bool BMPixMeasurePatch(const Zenith_TestTGAImage& xImage,
 		const BMPixNdcPoint& xPoint, u_int uRadius, Zenith_Maths::Vector3& xOut)
 	{
 		if (!xPoint.m_bValid)
@@ -1048,7 +1048,7 @@ namespace
 
 	// ---- Verify-time evaluation against the bytes the swapchain actually wrote ----
 
-	void BMPixVerifyEnemyHpBar(const ZM_TestTGAImage& xImage, bool& bPassed)
+	void BMPixVerifyEnemyHpBar(const Zenith_TestTGAImage& xImage, bool& bPassed)
 	{
 		const float fBarRight = g_xBMPixEnemyHpBar.m_fLeft
 			+ (g_xBMPixEnemyHpBar.m_fRight - g_xBMPixEnemyHpBar.m_fLeft)
@@ -1085,7 +1085,7 @@ namespace
 			(double)(xBar.m_xMean.y - xBar.m_xMean.z));
 	}
 
-	void BMPixVerifyActionButtons(const ZM_TestTGAImage& xImage, bool& bPassed)
+	void BMPixVerifyActionButtons(const Zenith_TestTGAImage& xImage, bool& bPassed)
 	{
 		// The reference is the panel's OWN interior, in the band between its top edge
 		// and the first button -- so the comparison is "button against the surface it
@@ -1141,7 +1141,7 @@ namespace
 		}
 	}
 
-	void BMPixVerifyBattleLog(const ZM_TestTGAImage& xImage, bool& bPassed)
+	void BMPixVerifyBattleLog(const Zenith_TestTGAImage& xImage, bool& bPassed)
 	{
 		// Clip the 900-px-wide log box clear of the menu panel so no button pixel can
 		// ever be counted as a glyph.
@@ -1190,7 +1190,7 @@ namespace
 			xLog.m_uGlyphPixels, xLog.m_uSamples, xControl.m_uGlyphPixels);
 	}
 
-	void BMPixVerifyCreatures(const ZM_TestTGAImage& xImage, bool& bPassed)
+	void BMPixVerifyCreatures(const Zenith_TestTGAImage& xImage, bool& bPassed)
 	{
 		Zenith_Maths::Vector3 axBody[ZM_SIDE_COUNT] = {};
 		bool abBodySampled[ZM_SIDE_COUNT] = {};
@@ -1300,8 +1300,8 @@ namespace
 			return;
 		}
 
-		ZM_TestTGAImage xImage;
-		if (!ZM_TestLoadTGA(g_strBMRunVisualShotPath.c_str(), xImage))
+		Zenith_TestTGAImage xImage;
+		if (!Zenith_TestLoadTGA(g_strBMRunVisualShotPath.c_str(), xImage))
 		{
 			Zenith_Error(LOG_CATEGORY_UNITTEST,
 				"[ZM_BattleMenuRun] the ACTION_ROOT swapchain capture is missing or not a 32-bit "

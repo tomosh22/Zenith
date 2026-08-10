@@ -90,10 +90,12 @@ namespace Flux_Generated_TAA
 		inline constexpr Flux_BindingHandle hg_xDepthTex{ 3u, 2u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 		// kind: CombinedTextureSampler
 		inline constexpr Flux_BindingHandle hg_xHistoryTex{ 3u, 3u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xHistoryDepthTex{ 3u, 4u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 		// kind: RWTexture
-		inline constexpr Flux_BindingHandle hg_xOutputTex{ 3u, 4u, FLUX_RESOURCE_KIND_RW_TEXTURE, 1u };
+		inline constexpr Flux_BindingHandle hg_xOutputTex{ 3u, 5u, FLUX_RESOURCE_KIND_RW_TEXTURE, 1u };
 		// kind: ConstantBuffer
-		inline constexpr Flux_BindingHandle hg_xTAAConstants{ 3u, 5u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		inline constexpr Flux_BindingHandle hg_xTAAConstants{ 3u, 6u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
 		struct g_xTAAConstants_CB
 		{
 			unsigned int m_ug_uOutputWidth; // slang=uint offset=0

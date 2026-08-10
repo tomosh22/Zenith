@@ -12,8 +12,12 @@
 //      velocity dilation (foreground velocity wins across edges).
 //   2. reproject history at uv - dilatedVelocity (bilinear).
 //   3. YCoCg variance clip: clip history toward the neighbourhood mean.
-//   4. disocclusion reject: history's stored linear depth vs the current linear
-//      depth (relative threshold) -> fall back to the current frame.
+//   4. disocclusion reject: the history's stored linear depth vs the depth RANGE this
+//      pixel's neighbourhood is EXPECTED to have occupied last frame -- the current
+//      3x3 depth range, shifted by the camera motion recovered from pushing the
+//      pixel's world position through the previous frame's unjittered view-proj.
+//      A range, not a point, because the depth buffer is rasterised through the
+//      jitter (see Flux_TAA_ResolveCPU.h for why a point test cannot work).
 //   5. velocity-ramped, Karis-luminance-weighted current/history blend.
 // Output: rgb = resolved colour; a = current linear view depth (+Z forward),
 // which TAA_CopyToHistory carries into the persistent history for next frame's
@@ -44,10 +48,11 @@ struct TAAResolveConstantsLayout
 
 struct PassParams
 {
-	Sampler2D                                 g_xHDRTex;       // current jittered lit HDR scene
-	Sampler2D                                 g_xVelocityTex;  // RG16F motion vectors (uvCur - uvPrev)
-	Sampler2D                                 g_xDepthTex;     // scene depth (D32)
-	Sampler2D                                 g_xHistoryTex;   // persistent history: rgb=prev resolved, a=prev linear depth
+	Sampler2D                                 g_xHDRTex;       // current jittered lit HDR scene (LINEAR: the upscale gather filters)
+	Sampler2D                                 g_xVelocityTex;  // RG16F motion vectors (uvCur - uvPrev)  -- POINT
+	Sampler2D                                 g_xDepthTex;     // scene depth (D32)                      -- POINT
+	Sampler2D                                 g_xHistoryTex;   // persistent history, LINEAR: rgb = prev resolved colour
+	Sampler2D                                 g_xHistoryDepthTex; // the SAME history image, POINT-sampled, for .a = prev linear depth
 	RWTexture2D<float4>                       g_xOutputTex;    // resolved output (rgb) + current linear depth (a)
 	ConstantBuffer<TAAResolveConstantsLayout> g_xTAAConstants;
 };
@@ -74,10 +79,19 @@ float3 TAA_VarianceClip(float3 xMean, float3 xSigma, float fGamma, float3 xHisto
 	float  fMax    = max(xUnit.x, max(xUnit.y, xUnit.z));
 	return (fMax > 1.0) ? (xMean + xV / fMax) : xHistory;
 }
-bool TAA_DisocclusionReject(float fHistoryPrevDepth, float fExpectedPrevDepth, float fRelThreshold)
+bool TAA_DisocclusionReject(
+	float fHistoryPrevDepth, float fExpectedPrevDepth,
+	float fNeighbourMinZ, float fNeighbourMaxZ, float fCentreZ, float fRelThreshold)
 {
-	float fDenom = max(max(fHistoryPrevDepth, fExpectedPrevDepth), 1e-4);
-	return (abs(fHistoryPrevDepth - fExpectedPrevDepth) / fDenom) > fRelThreshold;
+	if (fExpectedPrevDepth <= 0.0)
+	{
+		return true;   // the surface was behind the previous camera: no history to keep
+	}
+	float fShift = fExpectedPrevDepth - fCentreZ;   // the camera-motion component alone
+	float fLo    = fNeighbourMinZ + fShift;
+	float fHi    = fNeighbourMaxZ + fShift;
+	float fTol   = fRelThreshold * max(max(fHi, fHistoryPrevDepth), 1e-4);
+	return (fHistoryPrevDepth < fLo - fTol) || (fHistoryPrevDepth > fHi + fTol);
 }
 float TAA_BlendAlpha(float fVelPixels, float fVelThreshold, float fMinAlpha, float fMaxAlpha)
 {
@@ -155,10 +169,23 @@ void csMain(uint3 dispatchId : SV_DispatchThreadID)
 		xCurrent = xAccum / max(fWSum, 1e-6);
 	}
 
-	// Current linear view depth — stored in the output alpha for next frame's
-	// disocclusion test, and used as the expected-previous-depth here.
+	// Current linear view depth — stored in the output alpha so next frame's
+	// disocclusion test can read what THIS frame's depth was.
 	float fCurRawDepth = g_xPassSet.g_xDepthTex.SampleLevel(xUV, 0).x;
 	float fCurViewZ    = DepthToViewZ(xUV, fCurRawDepth);
+
+	// ...and where this surface was LAST frame, in the previous frame's view space.
+	// That — not the current depth — is what the history's stored depth has to agree
+	// with. clip.w IS view-space z for this projection (perspectiveLH_ZO, M[2][3]==1;
+	// pinned by the ClipWIsViewZ unit test).
+	//
+	// Reconstructing through the JITTERED inverse projection and comparing against the
+	// UNJITTERED previous view-proj is correct, not an oversight: jitter is injected
+	// into rows 0/1 of the projection's z column only, never row 3, so clip.w — and
+	// therefore view Z — is jitter-invariant.
+	float3 xViewPos           = GetViewPosFromDepth(xUV, fCurRawDepth);
+	float3 xWorldPos          = mul(GetInvViewMat(), float4(xViewPos, 1.0)).xyz;
+	float  fExpectedPrevViewZ = mul(GetPrevViewProjMatNoJitter(), float4(xWorldPos, 1.0)).w;
 
 	// First frame after a graph rebuild / invalidation: no valid history — emit the
 	// current frame verbatim (matches Flux_TAAResolveBlend's bHistoryValid == false).
@@ -175,6 +202,10 @@ void csMain(uint3 dispatchId : SV_DispatchThreadID)
 	float3 xSumSq = float3(0.0);
 	float  fBestViewZ = 3.402823e38;   // FLT_MAX
 	float2 xDilatedVel = g_xPassSet.g_xVelocityTex.SampleLevel(xUV, 0).xy;
+	// The neighbourhood's depth RANGE, for the disocclusion tolerance below. The loop
+	// already fetches every one of these depths, so it costs no extra sampling
+	// (fBestViewZ is the min, which the velocity dilation wants anyway).
+	float fWorstViewZ = -3.402823e38;
 	[unroll]
 	for (int iY = -1; iY <= 1; ++iY)
 	{
@@ -193,6 +224,8 @@ void csMain(uint3 dispatchId : SV_DispatchThreadID)
 				fBestViewZ  = fNViewZ;
 				xDilatedVel = g_xPassSet.g_xVelocityTex.SampleLevel(xNUV, 0).xy;
 			}
+
+			fWorstViewZ = max(fWorstViewZ, fNViewZ);
 		}
 	}
 	const float  fInv   = 1.0 / 9.0;
@@ -205,13 +238,20 @@ void csMain(uint3 dispatchId : SV_DispatchThreadID)
 	float3 xOutColour = xCurrent;
 	if (all(xHistUV >= float2(0.0)) && all(xHistUV <= float2(1.0)))
 	{
-		float4 xHistSample = g_xPassSet.g_xHistoryTex.SampleLevel(xHistUV, 0);
-		float3 xHistRGB    = xHistSample.rgb;
-		float  fHistViewZ  = xHistSample.a;   // prev linear view depth (from history alpha)
+		float3 xHistRGB = g_xPassSet.g_xHistoryTex.SampleLevel(xHistUV, 0).rgb;
 
-		// Disocclusion: reject history whose stored depth disagrees with the current
-		// depth (relative threshold) — a newly-revealed / edge pixel.
-		if (!TAA_DisocclusionReject(fHistViewZ, fCurViewZ, g_xPassSet.g_xTAAConstants.g_fDisocclusionDepthThreshold))
+		// ★ The DEPTH comes from a POINT tap, not the bilinear one used for colour.
+		// Bilinear filtering is right for colour and meaningless for depth: across a
+		// silhouette the filtered alpha blends foreground and background view Z and
+		// matches neither surface, so every pixel whose footprint straddles an edge
+		// false-rejects — which is precisely where TAA does its work.
+		float fHistViewZ = g_xPassSet.g_xHistoryDepthTex.SampleLevel(xHistUV, 0).a;
+
+		// Disocclusion: reject history whose stored depth falls outside the depth
+		// RANGE this pixel's neighbourhood occupied last frame.
+		if (!TAA_DisocclusionReject(fHistViewZ, fExpectedPrevViewZ,
+			fBestViewZ, fWorstViewZ, fCurViewZ,
+			g_xPassSet.g_xTAAConstants.g_fDisocclusionDepthThreshold))
 		{
 			// YCoCg variance clip toward the neighbourhood mean.
 			float3 xClippedRGB = TAA_YCoCgToRGB(

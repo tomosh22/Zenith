@@ -99,6 +99,45 @@ inline Zenith_Maths::Vector2 Flux_EncodeVelocityUV(
 	return xUVCurrent - xUVPrevious;
 }
 
+// --- sky motion vector (a point at INFINITY) --------------------------------
+// Pure mirror of Shaders/Skybox/Flux_SkyboxVelocity.slang.
+//
+// The sky has no world position to reproject, only a DIRECTION, so it is pushed
+// through the two unjittered view-projections with w = 0. That is not a
+// convenience — it is the physics: w = 0 annihilates the view matrix's
+// translation column, so camera TRANSLATION contributes exactly nothing (a point
+// at infinity does not parallax) and only ROTATION moves the sky on screen.
+// Sky velocity is therefore identically zero on a dollying camera and non-zero
+// the instant the camera pans, which is why the whole sky-smear failure mode is
+// invisible to a still-camera test.
+//
+// xRayDirWorld is the world-space direction the CURRENT (jittered) projection
+// maps to the pixel being shaded — the shader takes it from RayDir(uv). Both clip
+// positions then come from that ONE direction through the two UNJITTERED
+// matrices, exactly as a G-buffer velocity writer pushes one world position
+// through them, so the result is jitter-free at the source.
+inline constexpr float fFLUX_SKY_VELOCITY_NO_HISTORY = 2.0f;
+
+inline Zenith_Maths::Vector2 Flux_SkyVelocityUV(
+	const Zenith_Maths::Matrix4& xViewProjNoJitter,
+	const Zenith_Maths::Matrix4& xPrevViewProjNoJitter,
+	const Zenith_Maths::Vector3& xRayDirWorld)
+{
+	const Zenith_Maths::Vector4 xDir(xRayDirWorld.x, xRayDirWorld.y, xRayDirWorld.z, 0.0f);
+	const Zenith_Maths::Vector4 xClipCur  = xViewProjNoJitter     * xDir;
+	const Zenith_Maths::Vector4 xClipPrev = xPrevViewProjNoJitter * xDir;
+
+	// Behind either camera: the perspective divide would fold the direction back
+	// onto a plausible-looking UV. Emit a velocity no real motion reaches instead,
+	// so the resolve finds `uv - velocity` outside [0,1] and keeps the current
+	// frame — the honest answer for a pixel that had no history.
+	if (xClipPrev.w <= 1e-6f || xClipCur.w <= 1e-6f)
+	{
+		return Zenith_Maths::Vector2(fFLUX_SKY_VELOCITY_NO_HISTORY, fFLUX_SKY_VELOCITY_NO_HISTORY);
+	}
+	return Flux_ClipToUV(xClipCur) - Flux_ClipToUV(xClipPrev);
+}
+
 // The RG16F storage round-trip a velocity value survives (half-float pack/unpack).
 // fp16 has ~10 mantissa bits: near-zero (typical per-frame) velocities are extremely
 // precise; magnitude-~1 (near-full-screen) velocities degrade to ~2px at 4K — fine,

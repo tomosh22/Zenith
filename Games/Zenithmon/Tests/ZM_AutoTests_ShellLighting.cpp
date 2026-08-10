@@ -54,7 +54,7 @@
 #include <filesystem>
 #include <string>
 
-#include "ZM_TestTGAHelpers.h"
+#include "Core/Zenith_TestTGA.h"
 
 namespace
 {
@@ -325,7 +325,7 @@ namespace
 		return true;
 	}
 
-	bool SLReadMeanRGB(const ZM_TestTGAImage& xImage,
+	bool SLReadMeanRGB(const Zenith_TestTGAImage& xImage,
 		float fCenterX, float fCenterY, Zenith_Maths::Vector3& xOut)
 	{
 		if (!xImage.IsValid() || !std::isfinite(fCenterX) || !std::isfinite(fCenterY))
@@ -519,9 +519,9 @@ static bool Verify_ZMShellLighting()
 		bPassed = false;
 	}
 
-	ZM_TestTGAImage xImage;
+	Zenith_TestTGAImage xImage;
 	if (!g_bSLShotRequested
-		|| !ZM_TestLoadTGA(g_strSLShotPath.c_str(), xImage))
+		|| !Zenith_TestLoadTGA(g_strSLShotPath.c_str(), xImage))
 	{
 		Zenith_Error(LOG_CATEGORY_UNITTEST,
 			"[ZM_ShellLighting] actual framebuffer TGA missing/invalid: %s",

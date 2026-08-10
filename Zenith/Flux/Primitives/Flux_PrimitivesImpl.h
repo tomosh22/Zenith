@@ -56,6 +56,22 @@ struct Flux_PrimitivesTriangleInstance
 	Zenith_Maths::Vector3 m_xColor;
 };
 
+// Which (solid, wireframe) pipeline PAIR a primitives record must bind.
+//
+// There are two independent axes here — the TAA velocity latch (4 vs 5 colour
+// attachments, per PASS) and the wireframe flag (polygon mode, per CUBE
+// INSTANCE) — and they are resolved in two different places on purpose. The
+// latch picks the pair once, at the top of the record; the per-instance flag
+// picks within the pair, exactly as it always did. Neither selection can swallow
+// the other, which is the trap Flux/Terrain/Flux_TerrainPipelineSelect.h
+// documents: a nested `bVelocity ? velocity : (bWireframe ? ... )` there left the
+// wireframe branch unreachable in every default run, because TAA ships ON.
+struct Flux_PrimitivesPipelineSet
+{
+	Flux_Pipeline* m_pxSolid     = nullptr;
+	Flux_Pipeline* m_pxWireframe = nullptr;
+};
+
 // Phase 9: state + behaviour for Primitives subsystem.
 //
 // Cross-subsystem deps (Flux_GraphicsImpl and the memory manager) are reached via
@@ -115,6 +131,11 @@ public:
 		const Zenith_Maths::Vector3& xColor);
 	void AddAxes(const Zenith_Maths::Vector3& xOrigin, float fSize);
 
+	// The pipeline pair for a record, chosen by the TAA velocity latch. Total over
+	// the latch by construction — both arms are populated, so neither can leave a
+	// null behind (asserted at the one call site).
+	Flux_PrimitivesPipelineSet GetPipelineSet(bool bVelocity);
+
 	// Render helpers — promoted from .cpp file-static free functions so their
 	// reaches resolve through `this`. PUBLIC because the non-capturing
 	// ExecuteGBuffer graph trampoline (a free function) calls them on the
@@ -125,23 +146,35 @@ public:
 		u_int uIndexCount,
 		float fEmissiveIntensity = 0.0f);
 	void RenderSpherePrimitives(Flux_CommandBuffer* pxCmdList, Flux_ShaderBinder& xBinder,
+		const Flux_PrimitivesPipelineSet& xPipelines,
 		const Zenith_Vector<Flux_PrimitivesSphereInstance>& xInstances,
 		float fEmissiveIntensity = 0.0f);
 	void RenderCubePrimitives(Flux_CommandBuffer* pxCmdList, Flux_ShaderBinder& xBinder,
+		const Flux_PrimitivesPipelineSet& xPipelines,
 		const Zenith_Vector<Flux_PrimitivesCubeInstance>& xInstances);
 	void RenderLinePrimitives(Flux_CommandBuffer* pxCmdList, Flux_ShaderBinder& xBinder,
+		const Flux_PrimitivesPipelineSet& xPipelines,
 		const Zenith_Vector<Flux_PrimitivesLineInstance>& xInstances);
 	void RenderCapsulePrimitives(Flux_CommandBuffer* pxCmdList, Flux_ShaderBinder& xBinder,
+		const Flux_PrimitivesPipelineSet& xPipelines,
 		const Zenith_Vector<Flux_PrimitivesCapsuleInstance>& xInstances);
 	void RenderCylinderPrimitives(Flux_CommandBuffer* pxCmdList, Flux_ShaderBinder& xBinder,
+		const Flux_PrimitivesPipelineSet& xPipelines,
 		const Zenith_Vector<Flux_PrimitivesCylinderInstance>& xInstances,
 		float fEmissiveIntensity = 0.0f);
 	void RenderTrianglePrimitives(Flux_CommandBuffer* pxCmdList, Flux_ShaderBinder& xBinder,
+		const Flux_PrimitivesPipelineSet& xPipelines,
 		const Zenith_Vector<Flux_PrimitivesTriangleInstance>& xInstances);
 
 	Flux_Shader   m_xPrimitivesShader;
 	Flux_Pipeline m_xPrimitivesPipeline;
 	Flux_Pipeline m_xPrimitivesWireframePipeline;
+	// 5-attachment TAA twins of the pair above. Built unconditionally (a built,
+	// unbound pipeline is inert) and bound only while the velocity latch is on,
+	// which is also the only time the pass declares a 5th attachment for them.
+	Flux_Shader   m_xPrimitivesVelocityShader;
+	Flux_Pipeline m_xPrimitivesVelocityPipeline;
+	Flux_Pipeline m_xPrimitivesWireframeVelocityPipeline;
 	Flux_Pipeline m_xLinesPipeline;
 
 	Flux_VertexBuffer m_xSphereVertexBuffer;

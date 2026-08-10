@@ -194,6 +194,27 @@ jobs:
           #
           # History, newest first (the DERIVATION is the audit trail; the OBSERVED
           # number is the authority):
+          #   3127  TAA sky motion vectors, observed 2026-08-10 on a Null_ build
+          #                   (3127 ran / 3125 passed / 0 failed / 2 skipped).
+          #                   +4 ENGINE units, no ZM units: the TAASkyVelocity cases in
+          #                   Flux/TAA/Flux_TAAJitter.Tests.inl, pinning the w = 0
+          #                   point-at-infinity reprojection the sky's new velocity-only
+          #                   pass rests on -- above all that camera TRANSLATION must not
+          #                   move the sky (w = 0 drops the view matrix's translation
+          #                   column), which is why the whole sky-smear class is invisible
+          #                   to a translation-only or still capture. See run_unit_gate.ps1
+          #                   for the per-test derivation.
+          #   3123  TAA disocclusion fix, observed 2026-08-10 on a Null_ build
+          #                   (3123 ran / 3121 passed / 0 failed / 2 skipped).
+          #                   +6 ENGINE units, no ZM units: the disocclusion suite in
+          #                   Flux/TAA/Flux_TAA_ResolveCPU.Tests.inl. TAA's disocclusion
+          #                   test compared the history's stored depth against the CURRENT
+          #                   frame's depth instead of the reprojection its own contract
+          #                   specified, and compared against a POINT instead of the
+          #                   neighbourhood depth RANGE -- so a camera dolly and the
+          #                   sub-pixel jitter both read as disocclusions and history was
+          #                   thrown away almost everywhere. See run_unit_gate.ps1 for the
+          #                   per-test derivation.
           #   3117  Flux screen-space-quality review follow-ups, observed
           #                   2026-08-10 on a Null_ build
           #                   (3117 ran / 3115 passed / 0 failed / 2 skipped).
@@ -468,7 +489,7 @@ jobs:
           #   2817  ZM-D-173  = 2809 + 8: four ENGINE sensor-raycast units plus
           #                   two camera fixtures and two Home-placement units.
           $exe = 'Games\Zenithmon\Build\output\win64\null_vs2022_debug_win64_true\zenithmon.exe'
-          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 3117 -TimeoutSec 600
+          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 3127 -TimeoutSec 600
           if ($LASTEXITCODE -ne 0) { Write-Error "boot unit tests failed (see log above)"; exit $LASTEXITCODE }
 
       - name: Run Zenithmon tests

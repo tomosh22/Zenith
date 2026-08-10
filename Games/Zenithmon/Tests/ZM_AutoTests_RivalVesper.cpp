@@ -148,7 +148,7 @@
 #include "Core/Zenith_EditorQuery.h"
 #endif
 
-#include "ZM_TestTGAHelpers.h"
+#include "Core/Zenith_TestTGA.h"
 
 #include <array>
 #include <cmath>
@@ -3550,6 +3550,21 @@ namespace
 			}
 
 			// ===== THE PIXEL ASSERTION (Shortfalls 1.8-3c) ======================
+			// The marker's measured hue window, stated ONCE — both scan passes below
+			// must classify a pixel identically or the centroid and the span would be
+			// computed over different sets. See the derivation note that follows.
+			const auto ZM_RVIsMarkerHue = [](const uint8_t* puBGRA) -> bool
+			{
+				const float fBlue  = static_cast<float>(puBGRA[0]);
+				const float fGreen = static_cast<float>(puBGRA[1]);
+				const float fRed   = static_cast<float>(puBGRA[2]);
+				if (fRed < 125.0f || fRed > 195.0f) { return false; }
+				const float fGreenRatio = fGreen / fRed;
+				const float fBlueRatio  = fBlue / fRed;
+				return fGreenRatio >= 0.82f && fGreenRatio <= 0.96f
+					&& fBlueRatio  >= 0.32f && fBlueRatio  <= 0.54f;
+			};
+
 			// Everything above is about Flux's CPU queues. This reads the ACTUAL
 			// swapchain bytes for a real SPOTTED frame captured with
 			// Graphics/Primitives/Enabled held FALSE all run, so it is the only
@@ -3572,9 +3587,9 @@ namespace
 			// is why the floor sits at 125).
 			if constexpr (!Zenith_IsNullRenderer())
 			{
-				ZM_TestTGAImage xMarkerShot;
+				Zenith_TestTGAImage xMarkerShot;
 				if (!g_bRVMarkerShotRequested || g_strRVMarkerShotPath.empty()
-					|| !ZM_TestLoadTGA(g_strRVMarkerShotPath.c_str(), xMarkerShot))
+					|| !Zenith_TestLoadTGA(g_strRVMarkerShotPath.c_str(), xMarkerShot))
 				{
 					Zenith_Error(LOG_CATEGORY_UNITTEST,
 						"[ZM_RivalVesper] no SPOTTED-frame swapchain capture to read "
@@ -3585,37 +3600,71 @@ namespace
 				}
 				else
 				{
+					// ★ THE SPAN MUST BE MEASURED ON THE MARKER, NOT ON THE FRAME.
+					// This used to take the bounding box of EVERY hue-matching pixel in the
+					// whole 1280x720 capture, which made the shape clause hostage to a single
+					// stray: observed 2026-08-10 with the marker drawing perfectly (114 px in
+					// a 6x29 upright box) and ONE pixel 313 px away stretching the box to
+					// 319x77, failing "height >= 2x width". The hue window deliberately sits
+					// close to the terrain's colours -- the note above says dropping the red
+					// floor to 120 admits ~12k terrain pixels -- so whether a stray exists is
+					// a coin flip on an LSB of exposure noise, not a signal about the marker.
+					//
+					// So: pass 1 finds the hue pixels and their centroid, pass 2 keeps only
+					// those within fMARKER_CLUSTER_RADIUS of it, and the span is measured on
+					// those. The marker is a compact blob about 7x29, so the radius is huge
+					// headroom for it and far too tight for a frame-away stray. The centroid
+					// is safe against the handful of outliers this can have (114 vs 1 moves
+					// it under 3 px); if strays ever DOMINATED, the kept count collapses and
+					// the min-pixel clause below fires with its own message instead of this
+					// one lying about the shape.
+					constexpr float fMARKER_CLUSTER_RADIUS = 64.0f;
+
+					u_int  uHuePixels = 0u;
+					double fHueSumX   = 0.0;
+					double fHueSumY   = 0.0;
+					for (uint32_t uY = 0u; uY < xMarkerShot.m_uHeight; ++uY)
+					{
+						for (uint32_t uX = 0u; uX < xMarkerShot.m_uWidth; ++uX)
+						{
+							if (!ZM_RVIsMarkerHue(xMarkerShot.GetPixelBGRA(uX, uY))) { continue; }
+							++uHuePixels;
+							fHueSumX += static_cast<double>(uX);
+							fHueSumY += static_cast<double>(uY);
+						}
+					}
+
 					u_int uMarkerPixels = 0u;
 					u_int uMinX = xMarkerShot.m_uWidth;
 					u_int uMaxX = 0u;
 					u_int uMinY = xMarkerShot.m_uHeight;
 					u_int uMaxY = 0u;
-					for (uint32_t uY = 0u; uY < xMarkerShot.m_uHeight; ++uY)
+					if (uHuePixels > 0u)
 					{
-						for (uint32_t uX = 0u; uX < xMarkerShot.m_uWidth; ++uX)
+						const float fCentreX = static_cast<float>(fHueSumX / static_cast<double>(uHuePixels));
+						const float fCentreY = static_cast<float>(fHueSumY / static_cast<double>(uHuePixels));
+						for (uint32_t uY = 0u; uY < xMarkerShot.m_uHeight; ++uY)
 						{
-							const uint8_t* puBGRA = xMarkerShot.GetPixelBGRA(uX, uY);
-							const float fBlue = static_cast<float>(puBGRA[0]);
-							const float fGreen = static_cast<float>(puBGRA[1]);
-							const float fRed = static_cast<float>(puBGRA[2]);
-							if (fRed < 125.0f || fRed > 195.0f)
+							for (uint32_t uX = 0u; uX < xMarkerShot.m_uWidth; ++uX)
 							{
-								continue;
+								if (!ZM_RVIsMarkerHue(xMarkerShot.GetPixelBGRA(uX, uY))) { continue; }
+								const float fDX = static_cast<float>(uX) - fCentreX;
+								const float fDY = static_cast<float>(uY) - fCentreY;
+								if ((fDX * fDX + fDY * fDY) > (fMARKER_CLUSTER_RADIUS * fMARKER_CLUSTER_RADIUS)) { continue; }
+								++uMarkerPixels;
+								uMinX = uX < uMinX ? uX : uMinX;
+								uMaxX = uX > uMaxX ? uX : uMaxX;
+								uMinY = uY < uMinY ? uY : uMinY;
+								uMaxY = uY > uMaxY ? uY : uMaxY;
 							}
-							const float fGreenRatio = fGreen / fRed;
-							const float fBlueRatio = fBlue / fRed;
-							if (fGreenRatio < 0.82f || fGreenRatio > 0.96f
-								|| fBlueRatio < 0.32f || fBlueRatio > 0.54f)
-							{
-								continue;
-							}
-							++uMarkerPixels;
-							uMinX = uX < uMinX ? uX : uMinX;
-							uMaxX = uX > uMaxX ? uX : uMaxX;
-							uMinY = uY < uMinY ? uY : uMinY;
-							uMaxY = uY > uMaxY ? uY : uMaxY;
 						}
 					}
+
+					Zenith_Log(LOG_CATEGORY_UNITTEST,
+						"[ZM_RivalVesper] SPOTTED marker scan: %u hue px in the frame, %u within "
+						"%.0f px of their centroid (%u discarded as strays)",
+						uHuePixels, uMarkerPixels, static_cast<double>(fMARKER_CLUSTER_RADIUS),
+						uHuePixels - uMarkerPixels);
 
 					// 119 observed at 1280x720; 20 leaves room for a smaller window
 					// without accepting a stray pixel or two as a marker.

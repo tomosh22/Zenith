@@ -224,7 +224,31 @@ param(
     # compiled in. Do not add to this number for a Slang probe.
     # Observed 2026-08-10 on a Null_ Combat build
     # (1492 ran / 1491 passed / 0 failed / 1 skipped).
-    [int]$Baseline = 1492,
+    # 1492 -> 1498: +6 TAA disocclusion units (Flux/TAA/Flux_TAA_ResolveCPU.Tests.inl),
+    # added when TAA's disocclusion test was found to reject history almost everywhere --
+    # it compared the history's stored depth against the CURRENT frame's depth (never the
+    # reprojection its own contract specified) and compared against a POINT rather than the
+    # neighbourhood depth RANGE, so camera dolly and sub-pixel jitter both read as
+    # disocclusions. The image only stopped flickering with the threshold at ~0.9, i.e. the
+    # test switched off. ClipWIsViewZ (the clip.w == view.z precondition the reprojection
+    # rests on) + ExpectedPrevViewZIsIndependentOfScreenPosition + the two halves of the
+    # shipped bug pinned as regressions (KeepsStaticSurfaceUnderCameraDolly,
+    # KeepsJitteredDepthWithinNeighbourhoodRange) + KeepsSilhouettePixel +
+    # RejectsBehindPreviousCamera. Observed 2026-08-10 on a Null_ Combat build
+    # (1498 ran / 1497 passed / 0 failed / 1 skipped).
+    # 1498 -> 1502: +4 TAA SKY-velocity units (the TAASkyVelocity cases in
+    # Flux/TAA/Flux_TAAJitter.Tests.inl), added with the sky's motion-vector pass.
+    # They pin the CPU mirror Flux_SkyVelocityUV, i.e. the w = 0 point-at-infinity
+    # reprojection the sky velocity shader rests on: a still camera encodes exactly
+    # zero; camera TRANSLATION must not move the sky at all (w = 0 annihilates the
+    # view matrix's translation column -- this is the load-bearing one, and it is why
+    # a translation-only capture can never reveal a missing sky velocity); a pure yaw
+    # moves it horizontally and linearly in the small-angle limit; and a direction
+    # behind the previous camera emits the >= 1.0 sentinel that pushes the history
+    # lookup out of [0,1] instead of folding onto a plausible UV.
+    # Observed 2026-08-10 on a Null_ Combat build
+    # (1502 ran / 1501 passed / 0 failed / 1 skipped).
+    [int]$Baseline = 1502,
     [int]$TimeoutSec = 180,
     [string]$LogPath = ""
 )

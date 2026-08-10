@@ -90,7 +90,7 @@
 #include "Zenithmon/Source/World/ZM_PlayerHomePlacement.h"
 #include "Zenithmon/Source/World/ZM_ProfLabPlacement.h"
 
-#include "ZM_TestTGAHelpers.h"
+#include "Core/Zenith_TestTGA.h"
 
 namespace
 {
@@ -372,7 +372,7 @@ namespace
 		return true;
 	}
 
-	bool PTReadMeanRGB(const ZM_TestTGAImage& xImage,
+	bool PTReadMeanRGB(const Zenith_TestTGAImage& xImage,
 		float fCenterX, float fCenterY, Zenith_Maths::Vector3& xOut)
 	{
 		if (!xImage.IsValid() || !std::isfinite(fCenterX) || !std::isfinite(fCenterY))
@@ -702,9 +702,9 @@ static bool Verify_ZMInteriorTintPixels()
 	for (u_int u = 0u; u < PT_ROOM_COUNT; ++u)
 	{
 		PTRoomProbe& xProbe = g_axPTRooms[u];
-		ZM_TestTGAImage xImage;
+		Zenith_TestTGAImage xImage;
 		if (!xProbe.m_bShotRequested
-			|| !ZM_TestLoadTGA(xProbe.m_strShotPath.c_str(), xImage))
+			|| !Zenith_TestLoadTGA(xProbe.m_strShotPath.c_str(), xImage))
 		{
 			Zenith_Error(LOG_CATEGORY_UNITTEST,
 				"[ZM_InteriorTintPixels] %s framebuffer TGA missing/invalid: %s",

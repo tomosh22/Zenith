@@ -43,14 +43,46 @@ reflection header `Flux/Shaders/Generated/Primitives.h`.
 AddPass("Primitives GBuffer", ExecuteGBuffer)
     .Writes(MRT_INDEX_DIFFUSE / NORMALSAMBIENT / MATERIAL / EMISSIVE, WRITE_RTV)
     .Writes(GetDepthAttachment(), WRITE_DSV)
+    // + .Writes(GetVelocityAttachment(), WRITE_RTV) while the TAA velocity latch is on
 ```
 
 Because "Apply Lighting" `Read`s those same four core MRTs, the topological sort
 can only place Primitives **before** deferred lighting. Primitives is a G-buffer
 producer, not an overlay — its draws are depth-tested and depth-writing against
 the rest of the opaque scene, and they go through the deferred pass like any
-other geometry. (`uNumColourAttachments = uFLUX_MRT_CORE_COUNT`: primitives never
-write velocity, so they get no motion vectors and TAA cannot reproject them.)
+other geometry.
+
+### TAA motion vectors: four pipelines, two independent axes
+
+While `FluxGraphics().IsVelocityMRTActive()` is on (TAA's velocity latch), the pass
+gains a 5th colour attachment and the record binds the 5-attachment
+`Primitives_ToGBufferVelocity` pipelines instead — identical shading plus
+`MRT_INDEX_VELOCITY`. There are FOUR pipeline objects because two independent
+booleans decide pipeline state:
+
+| | solid | wireframe |
+|---|---|---|
+| **latch off** (4 MRTs) | `m_xPrimitivesPipeline` | `m_xPrimitivesWireframePipeline` |
+| **latch on** (5 MRTs) | `m_xPrimitivesVelocityPipeline` | `m_xPrimitivesWireframeVelocityPipeline` |
+
+**The two axes are resolved in two different places, deliberately.** The latch picks
+a `Flux_PrimitivesPipelineSet` once at the top of `ExecuteGBuffer`; the per-cube
+`m_bWireframe` flag picks within that pair, exactly as it always did. Neither
+selection can swallow the other — which is the trap
+`Flux/Terrain/Flux_TerrainPipelineSelect.h` documents at length: a nested
+`bVelocity ? velocity : (bWireframe ? ...)` there left the wireframe branch
+unreachable in every default run, because TAA ships ON.
+
+> **★ MOVING PRIMITIVES GET CAMERA-ONLY MOTION, AND THAT IS THE DESIGN.**
+> `prevWorld == curWorld`, the same reprojection terrain uses. A primitive is
+> submitted **by value** every frame (a centre + extents, or a start/end pair) with
+> no identity the renderer can key on, so there is no `Flux_PrevTransformCache`
+> entry to reproject through — nothing here knows that this frame's sphere is last
+> frame's sphere moved. Camera-only is strictly better than the (0,0) primitives
+> used to leave behind, and exactly right for the static world annotations that are
+> the overwhelming majority of primitive draws. Fixing it means giving the submit
+> API a caller-supplied identity, i.e. changing every `Add*` / `SubmitGameplay*`
+> call site — do that deliberately, not as a side effect of a TAA change.
 
 ## The drain, and the two halves of the early-return bug
 

@@ -398,7 +398,7 @@ void Flux_PrimitivesImpl::BuildPipelines()
 	xPipelineSpec.m_aeColourAttachmentFormats[MRT_INDEX_NORMALSAMBIENT] = MRT_FORMAT_NORMALSAMBIENT;
 	xPipelineSpec.m_aeColourAttachmentFormats[MRT_INDEX_MATERIAL] = MRT_FORMAT_MATERIAL;
 	xPipelineSpec.m_aeColourAttachmentFormats[MRT_INDEX_EMISSIVE] = MRT_FORMAT_EMISSIVE;
-	xPipelineSpec.m_uNumColourAttachments = uFLUX_MRT_CORE_COUNT;   // debug primitives never write velocity
+	xPipelineSpec.m_uNumColourAttachments = uFLUX_MRT_CORE_COUNT;   // 4-target: the TAA velocity twins below are the 5-target pair
 	xPipelineSpec.m_eDepthStencilFormat = DEPTH_FORMAT;
 	xPipelineSpec.m_pxShader = &m_xPrimitivesShader;
 	// Position + normal only (24 B). The third, colour lane the layout used to carry
@@ -428,6 +428,55 @@ void Flux_PrimitivesImpl::BuildPipelines()
 	// Wireframe variant
 	xPipelineSpec.m_bWireframe = true;
 	Flux_PipelineBuilder::FromSpecification(m_xPrimitivesWireframePipeline, xPipelineSpec);
+
+	// ---- 5-attachment TAA velocity twins -------------------------------------
+	// Same shading, same vertex layout, same depth state — one extra colour
+	// attachment carrying the motion vector. Built from a fresh spec rather than
+	// by mutating the one above, so a future edit to the base cannot silently
+	// half-apply to the twin.
+	{
+		Flux_PipelineSpecification xVelocitySpec;
+		xVelocitySpec.m_aeColourAttachmentFormats[MRT_INDEX_DIFFUSE]        = MRT_FORMAT_DIFFUSE;
+		xVelocitySpec.m_aeColourAttachmentFormats[MRT_INDEX_NORMALSAMBIENT] = MRT_FORMAT_NORMALSAMBIENT;
+		xVelocitySpec.m_aeColourAttachmentFormats[MRT_INDEX_MATERIAL]       = MRT_FORMAT_MATERIAL;
+		xVelocitySpec.m_aeColourAttachmentFormats[MRT_INDEX_EMISSIVE]       = MRT_FORMAT_EMISSIVE;
+		xVelocitySpec.m_aeColourAttachmentFormats[MRT_INDEX_VELOCITY]       = MRT_FORMAT_VELOCITY;
+		xVelocitySpec.m_uNumColourAttachments = MRT_INDEX_COUNT;   // 5
+		xVelocitySpec.m_eDepthStencilFormat = DEPTH_FORMAT;
+		xVelocitySpec.m_bDepthTestEnabled = true;
+		xVelocitySpec.m_bDepthWriteEnabled = true;
+		xVelocitySpec.m_eDepthCompareFunc = DEPTH_COMPARE_FUNC_LESSEQUAL;
+		xVelocitySpec.m_eTopology = MESH_TOPOLOGY_TRIANGLES;
+		xVelocitySpec.m_pxVertexLayout =
+			&Flux_Generated_Primitives::Primitives_ToGBufferVelocity::kVertexLayout;
+
+		m_xPrimitivesVelocityShader.Initialise(Flux_PrimitivesShaders::xPrimitives_ToGBufferVelocity);
+		xVelocitySpec.m_pxShader = &m_xPrimitivesVelocityShader;
+		m_xPrimitivesVelocityShader.GetReflection().PopulateLayout(xVelocitySpec.m_xPipelineLayout);
+
+		// Opaque, and the velocity target especially so: blending motion vectors
+		// would average two motions into one nothing has.
+		for (Flux_BlendState& xBlendState : xVelocitySpec.m_axBlendStates)
+		{
+			xBlendState.m_eSrcBlendFactor = BLEND_FACTOR_ONE;
+			xBlendState.m_eDstBlendFactor = BLEND_FACTOR_ZERO;
+			xBlendState.m_bBlendEnabled = false;
+		}
+
+		Flux_PipelineBuilder::FromSpecification(m_xPrimitivesVelocityPipeline, xVelocitySpec);
+		// Wireframe is rasterizer state only — it must NOT move the attachment
+		// count, or the pass framebuffer and the bound pipeline disagree.
+		xVelocitySpec.m_bWireframe = true;
+		Flux_PipelineBuilder::FromSpecification(m_xPrimitivesWireframeVelocityPipeline, xVelocitySpec);
+	}
+}
+
+Flux_PrimitivesPipelineSet Flux_PrimitivesImpl::GetPipelineSet(bool bVelocity)
+{
+	Flux_PrimitivesPipelineSet xSet;
+	xSet.m_pxSolid     = bVelocity ? &m_xPrimitivesVelocityPipeline          : &m_xPrimitivesPipeline;
+	xSet.m_pxWireframe = bVelocity ? &m_xPrimitivesWireframeVelocityPipeline : &m_xPrimitivesWireframePipeline;
+	return xSet;
 }
 
 static void ExecuteGBuffer(Flux_CommandBuffer* pxCmdList, void* pUserData);
@@ -519,12 +568,22 @@ void Flux_PrimitivesImpl::Shutdown()
 void Flux_PrimitivesImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
-	xGraph.AddPass("Primitives GBuffer", ExecuteGBuffer)
+	const Flux_PassHandle xGBufferPass = xGraph.AddPass("Primitives GBuffer", ExecuteGBuffer)
 		.Writes(xGraphics.GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_WRITE_RTV)
 		.Writes(xGraphics.GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_WRITE_RTV)
 		.Writes(xGraphics.GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_WRITE_RTV)
 		.Writes(xGraphics.GetMRTAttachment(MRT_INDEX_EMISSIVE),       RESOURCE_ACCESS_WRITE_RTV)
 		.Writes(xGraphics.GetDepthAttachment(),                       RESOURCE_ACCESS_WRITE_DSV);
+
+	// The optional 5th attachment. Declared under the SAME latch the record-time
+	// pipeline selection reads (and that SetupTransients froze for this whole
+	// build), so the pass framebuffer and the bound pipeline can never disagree
+	// about how many colour attachments there are. No new pass — primitives are
+	// one draw per shape, and a second pass would re-issue every one of them.
+	if (xGraphics.IsVelocityMRTActive())
+	{
+		xGraph.Write(xGBufferPass, xGraphics.GetVelocityAttachment(), RESOURCE_ACCESS_WRITE_RTV);
+	}
 }
 
 void Flux_PrimitivesImpl::AddSphere(const Zenith_Maths::Vector3& xCenter, float fRadius, const Zenith_Maths::Vector3& xColor)
@@ -717,11 +776,12 @@ void Flux_PrimitivesImpl::EmitPrimitiveDraw(Flux_CommandBuffer* pxCmdList, Flux_
 }
 
 void Flux_PrimitivesImpl::RenderSpherePrimitives(Flux_CommandBuffer* pxCmdList, Flux_ShaderBinder& xBinder,
+	const Flux_PrimitivesPipelineSet& xPipelines,
 	const Zenith_Vector<SphereInstance>& xInstances, float fEmissiveIntensity)
 {
 	if (xInstances.GetSize() == 0) return;
 
-	pxCmdList->SetPipeline(&m_xPrimitivesPipeline);
+	pxCmdList->SetPipeline(xPipelines.m_pxSolid);
 	pxCmdList->SetVertexBuffer(m_xSphereVertexBuffer);
 	pxCmdList->SetIndexBuffer(m_xSphereIndexBuffer);
 
@@ -736,6 +796,7 @@ void Flux_PrimitivesImpl::RenderSpherePrimitives(Flux_CommandBuffer* pxCmdList, 
 }
 
 void Flux_PrimitivesImpl::RenderCubePrimitives(Flux_CommandBuffer* pxCmdList, Flux_ShaderBinder& xBinder,
+	const Flux_PrimitivesPipelineSet& xPipelines,
 	const Zenith_Vector<CubeInstance>& xInstances)
 {
 	if (xInstances.GetSize() == 0) return;
@@ -745,9 +806,11 @@ void Flux_PrimitivesImpl::RenderCubePrimitives(Flux_CommandBuffer* pxCmdList, Fl
 		const CubeInstance& xInstance = xInstances.Get(i);
 		// Wireframe state varies per cube, so set the pipeline inside the loop rather than
 		// pre-sorting by wireframe — wireframe cubes are rare enough that a per-instance
-		// pipeline switch is cheaper than two separate batches.
+		// pipeline switch is cheaper than two separate batches. The TAA velocity latch
+		// already chose WHICH pair xPipelines holds, so this line is unchanged by it —
+		// the two axes never meet in one ternary.
 		pxCmdList->SetPipeline(
-			xInstance.m_bWireframe ? &m_xPrimitivesWireframePipeline : &m_xPrimitivesPipeline);
+			xInstance.m_bWireframe ? xPipelines.m_pxWireframe : xPipelines.m_pxSolid);
 		pxCmdList->SetVertexBuffer(m_xCubeVertexBuffer);
 		pxCmdList->SetIndexBuffer(m_xCubeIndexBuffer);
 
@@ -758,11 +821,12 @@ void Flux_PrimitivesImpl::RenderCubePrimitives(Flux_CommandBuffer* pxCmdList, Fl
 }
 
 void Flux_PrimitivesImpl::RenderLinePrimitives(Flux_CommandBuffer* pxCmdList, Flux_ShaderBinder& xBinder,
+	const Flux_PrimitivesPipelineSet& xPipelines,
 	const Zenith_Vector<LineInstance>& xInstances)
 {
 	if (xInstances.GetSize() == 0) return;
 
-	pxCmdList->SetPipeline(&m_xPrimitivesPipeline);
+	pxCmdList->SetPipeline(xPipelines.m_pxSolid);
 	pxCmdList->SetVertexBuffer(m_xLineVertexBuffer);
 	pxCmdList->SetIndexBuffer(m_xLineIndexBuffer);
 
@@ -780,11 +844,12 @@ void Flux_PrimitivesImpl::RenderLinePrimitives(Flux_CommandBuffer* pxCmdList, Fl
 }
 
 void Flux_PrimitivesImpl::RenderCapsulePrimitives(Flux_CommandBuffer* pxCmdList, Flux_ShaderBinder& xBinder,
+	const Flux_PrimitivesPipelineSet& xPipelines,
 	const Zenith_Vector<CapsuleInstance>& xInstances)
 {
 	if (xInstances.GetSize() == 0) return;
 
-	pxCmdList->SetPipeline(&m_xPrimitivesPipeline);
+	pxCmdList->SetPipeline(xPipelines.m_pxSolid);
 	pxCmdList->SetVertexBuffer(m_xCapsuleVertexBuffer);
 	pxCmdList->SetIndexBuffer(m_xCapsuleIndexBuffer);
 
@@ -803,11 +868,12 @@ void Flux_PrimitivesImpl::RenderCapsulePrimitives(Flux_CommandBuffer* pxCmdList,
 }
 
 void Flux_PrimitivesImpl::RenderCylinderPrimitives(Flux_CommandBuffer* pxCmdList, Flux_ShaderBinder& xBinder,
+	const Flux_PrimitivesPipelineSet& xPipelines,
 	const Zenith_Vector<CylinderInstance>& xInstances, float fEmissiveIntensity)
 {
 	if (xInstances.GetSize() == 0) return;
 
-	pxCmdList->SetPipeline(&m_xPrimitivesPipeline);
+	pxCmdList->SetPipeline(xPipelines.m_pxSolid);
 	pxCmdList->SetVertexBuffer(m_xCylinderVertexBuffer);
 	pxCmdList->SetIndexBuffer(m_xCylinderIndexBuffer);
 
@@ -833,6 +899,7 @@ void Flux_PrimitivesImpl::RenderCylinderPrimitives(Flux_CommandBuffer* pxCmdList
 // per-vertex colour lane was deleted with the vertex-layout flip — the VS never
 // read it).
 void Flux_PrimitivesImpl::RenderTrianglePrimitives(Flux_CommandBuffer* pxCmdList, Flux_ShaderBinder& xBinder,
+	const Flux_PrimitivesPipelineSet& xPipelines,
 	const Zenith_Vector<TriangleInstance>& xInstances)
 {
 	if (xInstances.GetSize() == 0 || !m_bTriangleBuffersInitialised) return;
@@ -883,7 +950,7 @@ void Flux_PrimitivesImpl::RenderTrianglePrimitives(Flux_CommandBuffer* pxCmdList
 	g_xEngine.FluxMemory().UploadBufferData(m_xTriangleIndexBuffer.GetBuffer().m_xVRAMHandle,
 		xIndices.GetDataPointer(), xIndices.GetSize() * sizeof(u_int));
 
-	pxCmdList->SetPipeline(&m_xPrimitivesPipeline);
+	pxCmdList->SetPipeline(xPipelines.m_pxSolid);
 	pxCmdList->SetVertexBuffer(m_xTriangleDynamicVertexBuffer);
 	pxCmdList->SetIndexBuffer(m_xTriangleIndexBuffer);
 
@@ -950,19 +1017,29 @@ static void ExecuteGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 
 	Flux_ShaderBinder xBinder(*pxCmdList);
 
-	xPrimitives.RenderSpherePrimitives(pxCmdList, xBinder, xLocalSphereInstances);
-	xPrimitives.RenderCubePrimitives(pxCmdList, xBinder, xLocalCubeInstances);
-	xPrimitives.RenderLinePrimitives(pxCmdList, xBinder, xLocalLineInstances);
-	xPrimitives.RenderCapsulePrimitives(pxCmdList, xBinder, xLocalCapsuleInstances);
-	xPrimitives.RenderCylinderPrimitives(pxCmdList, xBinder, xLocalCylinderInstances);
-	xPrimitives.RenderTrianglePrimitives(pxCmdList, xBinder, xLocalTriangleInstances);
+	// The TAA velocity latch decides the PAIR once, here — the same latch this
+	// pass's .Writes was declared under, and the same one SetupTransients froze
+	// for the whole graph build, so the framebuffer and every pipeline bound below
+	// agree on the attachment count. The per-cube wireframe flag then picks within
+	// the pair, untouched by any of this.
+	const Flux_PrimitivesPipelineSet xPipelines =
+		xPrimitives.GetPipelineSet(g_xEngine.FluxGraphics().IsVelocityMRTActive());
+	Zenith_Assert(xPipelines.m_pxSolid != nullptr && xPipelines.m_pxWireframe != nullptr,
+		"Flux_Primitives: both arms of the pipeline pair must be populated");
+
+	xPrimitives.RenderSpherePrimitives(pxCmdList, xBinder, xPipelines, xLocalSphereInstances);
+	xPrimitives.RenderCubePrimitives(pxCmdList, xBinder, xPipelines, xLocalCubeInstances);
+	xPrimitives.RenderLinePrimitives(pxCmdList, xBinder, xPipelines, xLocalLineInstances);
+	xPrimitives.RenderCapsulePrimitives(pxCmdList, xBinder, xPipelines, xLocalCapsuleInstances);
+	xPrimitives.RenderCylinderPrimitives(pxCmdList, xBinder, xPipelines, xLocalCylinderInstances);
+	xPrimitives.RenderTrianglePrimitives(pxCmdList, xBinder, xPipelines, xLocalTriangleInstances);
 
 	// Gameplay cues are depth-tested by the same G-buffer pipeline, but their
 	// non-zero intensity makes the shader write an unlit/emissive surface. These
 	// draws deliberately sit outside the tools-only debug-primitives option.
-	xPrimitives.RenderSpherePrimitives(pxCmdList, xBinder,
+	xPrimitives.RenderSpherePrimitives(pxCmdList, xBinder, xPipelines,
 		xLocalGameplaySphereInstances, s_fGameplayPrimitiveEmissiveIntensity);
-	xPrimitives.RenderCylinderPrimitives(pxCmdList, xBinder,
+	xPrimitives.RenderCylinderPrimitives(pxCmdList, xBinder, xPipelines,
 		xLocalGameplayCylinderInstances, s_fGameplayPrimitiveEmissiveIntensity);
 }
 

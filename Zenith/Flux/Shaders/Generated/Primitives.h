@@ -101,4 +101,50 @@ namespace Flux_Generated_Primitives
 		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ kaxVertexAttribs, 2u, { 24u, 0u } };
 	}
 
+	// ----- Primitives_ToGBufferVelocity (Primitives/Flux_Primitives_ToGBufferVelocity) -----
+	namespace Primitives_ToGBufferVelocity
+	{
+		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hg_xGlobal{ 0u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_axMaterials{ 0u, 1u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hg_xView{ 1u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xCSM{ 1u, 1u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xShadowMatrices{ 1u, 2u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xLightBuffer{ 1u, 3u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xClusterLightCounts{ 1u, 4u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xClusterLightIndices{ 1u, 5u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xBRDFLUT{ 1u, 6u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xIrradianceMap{ 1u, 7u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xPrefilteredMap{ 1u, 8u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: UnboundedTextureArray
+		inline constexpr Flux_BindingHandle hg_axTextures{ 2u, 0u, FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY, 0u };
+		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hPrimitivePushConstant{ 3u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		struct PrimitivePushConstant_CB
+		{
+			unsigned char m_am_xModelMatrix[64]; // slang=matrix offset=0 arrayCount=0 (no C++ mapping)
+			unsigned char m_am_xColor[12]; // slang=vector offset=64 arrayCount=3 (no C++ mapping)
+			float m_fm_fEmissiveIntensity; // slang=float offset=76
+		};
+		static_assert(sizeof(PrimitivePushConstant_CB) == 80, "PrimitivePushConstant_CB size drifted from Slang reflection");
+		static_assert(offsetof(PrimitivePushConstant_CB, m_fm_fEmissiveIntensity) == 76, "PrimitivePushConstant.m_fEmissiveIntensity offset drifted from Slang reflection");
+		// vertex inputs: { semantic, semantic index, STORAGE format, binding, byte offset }
+		inline constexpr Flux_VertexLayoutElement kaxVertexAttribs[] =
+		{
+			{ FLUX_VERTEX_SEMANTIC_POSITION, 0u, SHADER_DATA_TYPE_FLOAT3, 0u, 0u },   // a_xPosition
+			{ FLUX_VERTEX_SEMANTIC_NORMAL, 0u, SHADER_DATA_TYPE_FLOAT3, 0u, 12u },   // a_xNormal
+		};
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ kaxVertexAttribs, 2u, { 24u, 0u } };
+	}
+
 }

@@ -201,6 +201,11 @@ public:
 	Flux_Pipeline              m_xTransmittanceLUTPipeline;
 	Flux_Pipeline              m_xMultiScatterLUTPipeline;
 	Flux_Pipeline              m_xSkyViewLUTPipeline;
+	// TAA sky motion vectors. ONE pipeline for all three sky shading modes (the
+	// velocity of a point at infinity depends only on the view ray), built
+	// unconditionally and bound only by the "Skybox Velocity" pass, which exists
+	// only while the velocity latch is on.
+	Flux_Pipeline              m_xVelocityPipeline;
 
 	Flux_Shader                m_xCubemapShader;
 	Flux_Shader                m_xAtmosphereShader;
@@ -208,6 +213,7 @@ public:
 	Flux_Shader                m_xTransmittanceLUTShader;
 	Flux_Shader                m_xMultiScatterLUTShader;
 	Flux_Shader                m_xSkyViewLUTShader;
+	Flux_Shader                m_xVelocityShader;
 
 	// Transmittance-LUT generation pass. Enabled only when the LUT needs a
 	// refresh (m_bLUTNeedsUpdate); the graph floats this handle's enable bit via

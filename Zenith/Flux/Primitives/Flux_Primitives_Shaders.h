@@ -9,9 +9,13 @@
 namespace Flux_PrimitivesShaders
 {
 	inline constexpr Flux_ShaderDecl xPrimitives{ "Primitives", "Primitives/Flux_Primitives", "vsMain", "fsMain", nullptr, "spirv_1_3", "Primitives" };
+	// 5-attachment TAA variant: identical shading + MRT_INDEX_VELOCITY. Selected at
+	// record time when the velocity latch is on (Flux_Primitives.cpp::ExecuteGBuffer).
+	inline constexpr Flux_ShaderDecl xPrimitives_ToGBufferVelocity{ "Primitives_ToGBufferVelocity", "Primitives/Flux_Primitives_ToGBufferVelocity", "vsMain", "fsMain", nullptr, "spirv_1_3", "Primitives" };
 
 	inline constexpr const Flux_ShaderDecl* apxALL[] =
 	{
 		&xPrimitives,
+		&xPrimitives_ToGBufferVelocity,
 	};
 }

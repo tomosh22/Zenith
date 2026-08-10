@@ -14,6 +14,10 @@ namespace Flux_SkyboxShaders
 	inline constexpr Flux_ShaderDecl xSkyboxTransmittanceLUT{ "SkyboxTransmittanceLUT", "Skybox/Flux_TransmittanceLUT", "vsMain", "fsMain", nullptr, "spirv_1_3", "Skybox" };
 	inline constexpr Flux_ShaderDecl xSkyboxMultiScatterLUT{ "SkyboxMultiScatterLUT", "Skybox/Flux_MultiScatterLUT", "vsMain", "fsMain", nullptr, "spirv_1_3", "Skybox" };
 	inline constexpr Flux_ShaderDecl xSkyboxSkyViewLUT{ "SkyboxSkyViewLUT", "Skybox/Flux_SkyViewLUT", "vsMain", "fsMain", nullptr, "spirv_1_3", "Skybox" };
+	// TAA motion vectors for the sky. ONE program for all three sky shading modes —
+	// sky velocity is a pure function of the view ray, so it does not care which of
+	// them painted the pixel. See Flux_SkyboxVelocity.slang.
+	inline constexpr Flux_ShaderDecl xSkyboxVelocity{ "SkyboxVelocity", "Skybox/Flux_SkyboxVelocity", "vsMain", "fsMain", nullptr, "spirv_1_3", "Skybox" };
 
 	inline constexpr const Flux_ShaderDecl* apxALL[] =
 	{
@@ -23,5 +27,6 @@ namespace Flux_SkyboxShaders
 		&xSkyboxTransmittanceLUT,
 		&xSkyboxMultiScatterLUT,
 		&xSkyboxSkyViewLUT,
+		&xSkyboxVelocity,
 	};
 }

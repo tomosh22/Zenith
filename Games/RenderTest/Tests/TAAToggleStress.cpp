@@ -28,9 +28,11 @@
 //
 // HARD invariants (Verify fails if any is violated on any cycle):
 //   - the 3 TAA passes ("TAA Resolve/CopyToHistory/Sharpen") are present IFF TAA is on,
-//   - every TAA pass renders the MAIN view (m_uViewSlot == 0) — never a preview/cascade,
+//   - the "Skybox Velocity" pass is present IFF TAA is on — exactly one of it,
+//   - every TAA pass AND the sky velocity pass render the MAIN view (m_uViewSlot == 0),
+//     never a preview/cascade,
 //   - IsResolveActive() matches the requested state,
-//   - the total pass count is constant per state and on == off + 3 (the 3 TAA passes),
+//   - the total pass count is constant per state and on == off + iTAA_LATCHED_PASS_DELTA,
 //     so a flip returns the graph to its exact prior shape.
 // VRAM A/B (Vulkan): the actual allocated bytes are sampled per state; the leak check
 // fails if the OFF-state VRAM grows > 5% first->last cycle (a real per-toggle leak of the
@@ -39,6 +41,20 @@
 
 namespace
 {
+	// How many passes the velocity latch adds to the graph, total.
+	//
+	//   3  the TAA passes themselves (Resolve / CopyToHistory / Sharpen)
+	// + 1  "Skybox Velocity" — the sky's motion-vector write. It is NOT a TAA pass
+	//      (CountTAAPasses below deliberately does not match it) but it IS gated on
+	//      the same latch, because velocity only exists while TAA is on.
+	//
+	// Every OTHER velocity writer is a pipeline VARIANT of a pass that exists either
+	// way — UnifiedMesh / Terrain / Grass / Primitives each swap in a 5-attachment
+	// pipeline rather than adding a pass. So if this delta ever exceeds 4, a velocity
+	// or TAA pass has leaked onto a preview/cascade view, or someone added a pass
+	// where a variant belonged.
+	constexpr int iTAA_LATCHED_PASS_DELTA = 4;
+
 	// --- accumulated results (Setup resets, Step samples, Verify judges) ---
 	bool    s_bExpectedOn      = true;
 	int     s_iFlipCount       = 0;
@@ -75,6 +91,36 @@ namespace
 		return iCount;
 	}
 
+	// The sky's motion-vector pass: present iff the velocity latch is on, main view only.
+	//
+	// ★ THIS IS THE GATE ON SKY VELOCITY, and it is here rather than in a pixel test
+	// deliberately. The resolve clips history into the current 3x3 colour range, so a
+	// wrong motion vector can only show where the surface it applies to has spatial
+	// detail — and both of this engine's skies are smooth gradients (measured local
+	// 3x3 sigma ~0.6 of an 8-bit level). Suppressing sky velocity entirely
+	// (--taa-no-skyvelocity) moves TAATemporalStability's rotating-camera lag by
+	// 0.03% on the atmosphere sky and 2.7% on the cubemap: real, correct, and far too
+	// small to hang a stable pixel threshold on. Pass presence is not: it is exactly
+	// true or exactly false. The MATHS the pass runs is pinned separately, headlessly,
+	// by the TAASkyVelocity cases in Flux/TAA/Flux_TAAJitter.Tests.inl.
+	int CountSkyVelocityPasses(bool& bAnyOnNonMainView)
+	{
+		bAnyOnNonMainView = false;
+		const Zenith_Vector<Flux_RenderGraph_Pass*>& xPasses =
+			g_xEngine.FluxRenderer().GetRenderGraph().GetPasses();
+		int iCount = 0;
+		for (u_int u = 0; u < xPasses.GetSize(); ++u)
+		{
+			const Flux_RenderGraph_Pass* pxPass = xPasses.Get(u);
+			if (pxPass && pxPass->m_szName && std::strcmp(pxPass->m_szName, "Skybox Velocity") == 0)
+			{
+				++iCount;
+				if (pxPass->m_uViewSlot != kuFluxViewSlotMain) { bAnyOnNonMainView = true; }
+			}
+		}
+		return iCount;
+	}
+
 	u_int64 SampleVRAMBytes()
 	{
 #ifdef ZENITH_VULKAN
@@ -87,7 +133,9 @@ namespace
 	void SampleState(bool bExpectOn, int iFrame)
 	{
 		bool bAnyOnNonMain = false;
+		bool bSkyVelOnNonMain = false;
 		const int  iTAAPasses    = CountTAAPasses(bAnyOnNonMain);
+		const int  iSkyVelPasses = CountSkyVelocityPasses(bSkyVelOnNonMain);
 		const bool bResolveOn    = g_xEngine.TAA().IsResolveActive();
 		const int  iTotalPasses  = static_cast<int>(g_xEngine.FluxRenderer().GetRenderGraph().GetPasses().GetSize());
 		const u_int64 ulVRAM     = SampleVRAMBytes();
@@ -95,11 +143,15 @@ namespace
 		// Invariant 1: TAA passes present iff on (3 when on, 0 when off).
 		const bool bPassPresenceOK = bExpectOn ? (iTAAPasses == 3) : (iTAAPasses == 0);
 		// Invariant 2: never on a non-main view.
-		const bool bViewOK = !bAnyOnNonMain;
+		const bool bViewOK = !bAnyOnNonMain && !bSkyVelOnNonMain;
 		// Invariant 3: IsResolveActive matches requested.
 		const bool bResolveMatchOK = (bResolveOn == bExpectOn);
+		// Invariant 5: the sky writes motion vectors iff TAA is on — exactly one pass,
+		// never two, never zero-while-on. Without it the sky is pinned to the screen
+		// and TAA smears it under camera rotation.
+		const bool bSkyVelocityOK = bExpectOn ? (iSkyVelPasses == 1) : (iSkyVelPasses == 0);
 
-		if (!bPassPresenceOK || !bViewOK || !bResolveMatchOK) { s_bAllInvariantsOK = false; }
+		if (!bPassPresenceOK || !bViewOK || !bResolveMatchOK || !bSkyVelocityOK) { s_bAllInvariantsOK = false; }
 
 		// Invariant 4: per-state total pass count is stable across cycles.
 		if (bExpectOn)
@@ -119,10 +171,11 @@ namespace
 		++s_iSampleCount;
 
 		Zenith_Log(LOG_CATEGORY_RENDERER,
-			"[TAAToggleStress] frame=%d expect=%s taaPasses=%d resolveActive=%d totalPasses=%d vram=%lluKB "
-			"presenceOK=%d viewOK=%d resolveMatchOK=%d",
-			iFrame, bExpectOn ? "ON" : "OFF", iTAAPasses, bResolveOn ? 1 : 0, iTotalPasses,
-			(unsigned long long)(ulVRAM / 1024u), bPassPresenceOK ? 1 : 0, bViewOK ? 1 : 0, bResolveMatchOK ? 1 : 0);
+			"[TAAToggleStress] frame=%d expect=%s taaPasses=%d skyVelPasses=%d resolveActive=%d totalPasses=%d vram=%lluKB "
+			"presenceOK=%d viewOK=%d resolveMatchOK=%d skyVelocityOK=%d",
+			iFrame, bExpectOn ? "ON" : "OFF", iTAAPasses, iSkyVelPasses, bResolveOn ? 1 : 0, iTotalPasses,
+			(unsigned long long)(ulVRAM / 1024u), bPassPresenceOK ? 1 : 0, bViewOK ? 1 : 0, bResolveMatchOK ? 1 : 0,
+			bSkyVelocityOK ? 1 : 0);
 	}
 
 	void Setup_TAAToggleStress()
@@ -170,7 +223,7 @@ namespace
 		g_xEngine.TAA().ClearEnabledOverride();
 
 		const bool bCountDelta = (s_iOnPassCount >= 0 && s_iOffPassCount >= 0)
-			&& (s_iOnPassCount == s_iOffPassCount + 3);
+			&& (s_iOnPassCount == s_iOffPassCount + iTAA_LATCHED_PASS_DELTA);
 
 		// VRAM leak: OFF-state allocated bytes must not grow across the toggle cycles (a real
 		// per-toggle leak of the velocity/history transients would accumulate). 5% tolerates
@@ -186,10 +239,10 @@ namespace
 
 		Zenith_Log(LOG_CATEGORY_RENDERER,
 			"[TAAToggleStress] SUMMARY flips=%d samples=%d(on=%d off=%d) invariantsOK=%d offCountStable=%d onCountStable=%d "
-			"offPasses=%d onPasses=%d countDelta+3=%d | vram off %lluKB->%lluKB (growth=%.2f%%) on=%lluKB directional(on-off)=%lldKB noLeak=%d",
+			"offPasses=%d onPasses=%d countDelta+%d=%d | vram off %lluKB->%lluKB (growth=%.2f%%) on=%lluKB directional(on-off)=%lldKB noLeak=%d",
 			s_iFlipCount, s_iSampleCount, s_iOnSamples, s_iOffSamples,
 			s_bAllInvariantsOK ? 1 : 0, s_bOffCountStable ? 1 : 0, s_bOnCountStable ? 1 : 0,
-			s_iOffPassCount, s_iOnPassCount, bCountDelta ? 1 : 0,
+			s_iOffPassCount, s_iOnPassCount, iTAA_LATCHED_PASS_DELTA, bCountDelta ? 1 : 0,
 			(unsigned long long)(s_ulOffVRAMFirst / 1024u), (unsigned long long)(s_ulOffVRAMLast / 1024u),
 			fOffGrowthPct, (unsigned long long)(s_ulOnVRAMLast / 1024u), llDirectionalKB, bNoLeak ? 1 : 0);
 
