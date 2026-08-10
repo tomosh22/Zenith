@@ -1637,15 +1637,32 @@ static void RenderTest_OpenTerrainEditorForCursor()
 		g_xEngine.TerrainEditor().m_xBrush.m_uTreesPerDab);
 }
 
-// Final smoke automation step: flips the editor into Play mode (and applies
-// the terrain debug CLI flags) AFTER the deferred initial-scene load has
-// completed, so the smoke runner's first OnUpdate probes the real scene.
+// Final smoke automation step: spawns the smoke runner into the freshly loaded
+// scene and flips the editor into Play mode (applying the terrain debug CLI flags
+// on the way), AFTER the deferred initial-scene load has completed, so the runner's
+// first OnUpdate probes the real scene.
+//
+// The runner is spawned HERE, post-load, and marked TRANSIENT -- it must never reach
+// Assets/Scenes/RenderTest.zscen. It used to be authored before AddStep_SaveScene as
+// a saved entity, which meant every `--rendertest-smoke` run wrote a 'RenderTestSmoke-
+// Runner' entity into that tracked asset that no other run has: a per-run harness
+// entity is not scene content. Spawning post-load costs nothing (Play mode is entered
+// on the very next line, so the runner gets its OnStart exactly as an authored entity
+// would) and leaves the asset alone.
 static void RenderTest_EnterSmokePlayMode()
 {
 	if (RenderTest_HasCommandLineFlag("--rendertest-lod-debug"))
 		g_xEngine.Terrain().GetDebugMode() = 1;
 	if (RenderTest_HasCommandLineFlag("--rendertest-wireframe"))
 		g_xEngine.Terrain().GetWireframeMode() = true;
+
+	if (RenderTest_IsSmokeMode())
+	{
+		Zenith_Scene xScene = g_xEngine.Scenes().GetActiveScene();
+		Zenith_Entity xRunner = g_xEngine.Scenes().CreateEntity(xScene, "RenderTestSmokeRunner");
+		xRunner.SetTransient(true);
+		xRunner.AddComponent<RenderTest_SmokeRunnerComponent>();
+	}
 
 	g_xEngine.Editor().SetEditorMode(EditorMode::Playing);
 }
@@ -1734,6 +1751,13 @@ static void BuildGraph_RenderTestPlayerActions(Zenith_GraphBuilder& xBuilder)
 	const u_int uCycleCam = xB.Node("RTPlayerCycleTennisCam");
 	xKeyT.Then(uCycleCam);
 }
+
+// Deterministic-FP: this function computes the coordinates it feeds to the authoring
+// steps — the hill/tree ring strokes are sinf/cosf of a per-index angle, and those dab
+// centres decide where every tree lands. Under the project's /fp:fast they resolve
+// differently at /Od and /O2, so a Debug tools boot and a Release one would author
+// different bytes into the tracked scene. See ZENITH_AUTHORING_DETERMINISM_BEGIN.
+ZENITH_AUTHORING_DETERMINISM_BEGIN
 
 void Project_RegisterEditorAutomationSteps()
 {
@@ -2192,7 +2216,12 @@ void Project_RegisterEditorAutomationSteps()
 		// Y + slope rejection. Re-painted into the FRESH scene every tools boot
 		// (CreateScene makes a new scene each boot => no accumulation); the fixed
 		// seed + deterministic heightfield keep the save byte-stable. Windowed-
-		// only (EnsureTreeEntities no-ops headless — harmless; authoring is windowed).
+		// ONLY: EnsureTreeEntities refuses to run on the Null backend (instance
+		// groups allocate GPU buffers), so a headless boot authors this scene
+		// WITHOUT its two instanced tree entities. That is why a headless boot may
+		// not publish the scene — Zenith_Editor::SaveActiveScene's guard refuses the
+		// save rather than writing the ~323 KB-lighter subset over the tracked asset,
+		// and the headless run then loads the committed scene, trees included.
 		{
 			const int iTreeTool = static_cast<int>(Zenith_TerrainBrushTool::TreePaint);
 			// Dense brush: many attempts/dab, tight spacing, allow steeper flanks
@@ -2224,13 +2253,9 @@ void Project_RegisterEditorAutomationSteps()
 	// SaveScene so it ends up in RenderTest.zscen (was a procedural post-load spawn).
 	RenderTest_AuthorMaterialShowcase(g_xEngine.EditorAutomation());
 
-	// Smoke runner — attached BEFORE save so it ends up in the saved scene.
-	if (RenderTest_IsSmokeMode())
-	{
-		g_xEngine.EditorAutomation().AddStep_CreateEntity("RenderTestSmokeRunner");
-		g_xEngine.EditorAutomation().AddStep_SetEntityTransient(false);
-		g_xEngine.EditorAutomation().AddStep_AddComponent("RenderTestSmokeRunner");
-	}
+	// (The smoke runner is NOT authored here — it is spawned transient, post-load, by
+	// RenderTest_EnterSmokePlayMode, so a smoke run never adds an entity to the tracked
+	// scene asset.)
 
 	g_xEngine.EditorAutomation().AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/RenderTest" ZENITH_SCENE_EXT);
 	g_xEngine.EditorAutomation().AddStep_UnloadScene();
@@ -2273,6 +2298,8 @@ void Project_RegisterEditorAutomationSteps()
 		g_xEngine.EditorAutomation().AddStep_Custom(&RenderTest_OpenTerrainEditorForCursor);
 	}
 }
+
+ZENITH_AUTHORING_DETERMINISM_END
 #endif
 
 // Painted grass: rebuild placement from the terrain editor's saved texture set

@@ -589,17 +589,20 @@ void Zenith_InstancedMeshComponent::ReadFromDataStream(Zenith_DataStream& xStrea
 // Helper Functions
 //=============================================================================
 
+// Deterministic-FP: instance transforms are SERIALIZED verbatim (16 floats each) by
+// WriteToDataStream, so a tools boot that authors instances into a tracked scene must
+// build the same matrix at every optimization level.
+ZENITH_AUTHORING_DETERMINISM_BEGIN
+
 Zenith_Maths::Matrix4 Zenith_InstancedMeshComponent::BuildMatrix(
 	const Zenith_Maths::Vector3& xPosition,
 	const Zenith_Maths::Quat& xRotation,
 	const Zenith_Maths::Vector3& xScale) const
 {
-	Zenith_Maths::Matrix4 xMatrix = glm::identity<Zenith_Maths::Matrix4>();
-	xMatrix = glm::translate(xMatrix, xPosition);
-	xMatrix = xMatrix * glm::mat4_cast(xRotation);
-	xMatrix = glm::scale(xMatrix, xScale);
-	return xMatrix;
+	return Zenith_Maths::AuthoringTRS(xPosition, xRotation, xScale);
 }
+
+ZENITH_AUTHORING_DETERMINISM_END
 
 void Zenith_InstancedMeshComponent::EnsureInstanceGroupCreated()
 {

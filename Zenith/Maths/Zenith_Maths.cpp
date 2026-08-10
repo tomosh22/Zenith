@@ -33,4 +33,91 @@ namespace Zenith_Maths
 
 		return xRet;
 	}
+
+	//--------------------------------------------------------------------------
+	// Authoring math (see the header). Every glm formula below is transcribed
+	// verbatim from Middleware/glm-master so these return the SAME values glm
+	// does — the point is not different math, it is math that is compiled once,
+	// here, under a pinned floating-point model instead of being re-derived in
+	// every /fp:fast translation unit that happens to instantiate the template.
+	//--------------------------------------------------------------------------
+	ZENITH_AUTHORING_DETERMINISM_BEGIN
+
+	// glm/ext/quaternion_trigonometric.inl: qua(cos(a * 0.5), v * sin(a * 0.5)).
+	// v is a cardinal unit axis, so two of the three products are 0 * s == 0.
+	// (glm::quat's constructor takes w first.)
+	Quat AuthoringRotationX(float fRadians)
+	{
+		const float fHalf = fRadians * 0.5f;
+		return Quat(cosf(fHalf), sinf(fHalf), 0.0f, 0.0f);
+	}
+
+	Quat AuthoringRotationY(float fRadians)
+	{
+		const float fHalf = fRadians * 0.5f;
+		return Quat(cosf(fHalf), 0.0f, sinf(fHalf), 0.0f);
+	}
+
+	Quat AuthoringRotationZ(float fRadians)
+	{
+		const float fHalf = fRadians * 0.5f;
+		return Quat(cosf(fHalf), 0.0f, 0.0f, sinf(fHalf));
+	}
+
+	// glm/detail/type_quat.inl, operator*= (which operator* forwards to).
+	Quat AuthoringQuatMul(const Quat& xQ, const Quat& xP)
+	{
+		return Quat(
+			xQ.w * xP.w - xQ.x * xP.x - xQ.y * xP.y - xQ.z * xP.z,
+			xQ.w * xP.x + xQ.x * xP.w + xQ.y * xP.z - xQ.z * xP.y,
+			xQ.w * xP.y + xQ.y * xP.w + xQ.z * xP.x - xQ.x * xP.z,
+			xQ.w * xP.z + xQ.z * xP.w + xQ.x * xP.y - xQ.y * xP.x);
+	}
+
+	// glm/gtc/quaternion.inl mat3_cast, widened to 4x4, with the translation in
+	// column 3 and each rotation column scaled. Composing T * R * S longhand is
+	// EXACT: T's contribution to columns 0-2 is 1*c + 0 + 0 + t*0, and R's fourth
+	// column is (0,0,0,1), so the full 4x4 product reduces to precisely this.
+	Matrix4 AuthoringTRS(const Vector3& xPosition, const Quat& xRotation, const Vector3& xScale)
+	{
+		const float qxx = xRotation.x * xRotation.x;
+		const float qyy = xRotation.y * xRotation.y;
+		const float qzz = xRotation.z * xRotation.z;
+		const float qxz = xRotation.x * xRotation.z;
+		const float qxy = xRotation.x * xRotation.y;
+		const float qyz = xRotation.y * xRotation.z;
+		const float qwx = xRotation.w * xRotation.x;
+		const float qwy = xRotation.w * xRotation.y;
+		const float qwz = xRotation.w * xRotation.z;
+
+		Matrix4 xRet(1.0f);
+		xRet[0][0] = (1.0f - 2.0f * (qyy + qzz)) * xScale.x;
+		xRet[0][1] = (2.0f * (qxy + qwz)) * xScale.x;
+		xRet[0][2] = (2.0f * (qxz - qwy)) * xScale.x;
+		xRet[0][3] = 0.0f;
+
+		xRet[1][0] = (2.0f * (qxy - qwz)) * xScale.y;
+		xRet[1][1] = (1.0f - 2.0f * (qxx + qzz)) * xScale.y;
+		xRet[1][2] = (2.0f * (qyz + qwx)) * xScale.y;
+		xRet[1][3] = 0.0f;
+
+		xRet[2][0] = (2.0f * (qxz + qwy)) * xScale.z;
+		xRet[2][1] = (2.0f * (qyz - qwx)) * xScale.z;
+		xRet[2][2] = (1.0f - 2.0f * (qxx + qyy)) * xScale.z;
+		xRet[2][3] = 0.0f;
+
+		xRet[3][0] = xPosition.x;
+		xRet[3][1] = xPosition.y;
+		xRet[3][2] = xPosition.z;
+		xRet[3][3] = 1.0f;
+		return xRet;
+	}
+
+	// glm/trigonometric.inl: degrees * 0.01745329251994329576923690768489.
+	float AuthoringRadians(float fDegrees)
+	{
+		return fDegrees * static_cast<float>(0.01745329251994329576923690768489);
+	}
+
+	ZENITH_AUTHORING_DETERMINISM_END
 }

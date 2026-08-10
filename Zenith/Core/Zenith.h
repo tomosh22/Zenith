@@ -78,6 +78,41 @@ constexpr bool Zenith_IsNullRenderer()
 #endif
 }
 
+// ----------------------------------------------------------------------------
+// Authoring-math determinism.
+//
+// The whole project compiles /fp:fast, which lets the optimizer reassociate,
+// contract into FMA, and swap scalar libm for its vectorized variants — and what
+// it actually does differs by OPTIMIZATION LEVEL. So the same source computes
+// different floats in a Debug tools build and a Release one. Measured on this
+// toolchain: `1.0f + 0.8f*r`, `s * (0.95f + 0.1f*r)` and `cosf(a)*95.0f` ALL
+// diverge between /Od and /O2 under /fp:fast, and none of them diverge under
+// /fp:precise.
+//
+// That is invisible for gameplay but fatal for anything whose floats land in a
+// COMMITTED asset: a Debug tools boot and a Release one write different bytes,
+// so the file ping-pongs in git forever while every tolerance-based guard stays
+// green. RenderTest's scene did exactly this — 19266 bytes across its 2520 tree
+// instances plus six authored rotations (see Games/RenderTest/CLAUDE.md); the
+// same class of defect is Zenithmon's ZM-D-183.
+//
+// Wrap authoring math — anything computing a value that gets SERIALIZED into a
+// tracked asset — in this pair. It pins /fp:precise for those functions only, so
+// runtime code keeps /fp:fast. Place it around whole function definitions, never
+// inside a function body (an MSVC requirement for float_control).
+//
+// The frozen-constant route (ZM's AddStep_SetTransformRotationQuat + bit_cast)
+// remains the right answer for a HANDFUL of authored values. This is for the
+// case where there are thousands and they are computed, not typed.
+// ----------------------------------------------------------------------------
+#if defined(_MSC_VER)
+#define ZENITH_AUTHORING_DETERMINISM_BEGIN __pragma(float_control(precise, on, push))
+#define ZENITH_AUTHORING_DETERMINISM_END   __pragma(float_control(pop))
+#else
+#define ZENITH_AUTHORING_DETERMINISM_BEGIN
+#define ZENITH_AUTHORING_DETERMINISM_END
+#endif
+
 // Log categories for categorized logging output
 enum Zenith_LogCategory : u_int8
 {

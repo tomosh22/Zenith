@@ -122,6 +122,15 @@ bool Zenith_TerrainEditor::EnsureTreeEntities()
 	       ResolveTreeComponent(m_uTreeLeavesEntity) != nullptr;
 }
 
+// Deterministic-FP: every value this function computes — scatter position, yaw quat,
+// per-instance scale — is SERIALIZED into the scene file by
+// Zenith_InstancedMeshComponent. Under the project's /fp:fast the trig and the
+// mul/add chains here resolve differently at /Od and /O2, which made RenderTest's
+// 2520 tree instances (19234 bytes) differ between a Debug and a Release tools boot.
+// The rejection tests are inside the pin too: a 1-ULP shift there could accept a tree
+// one build rejects, which would desync the RNG stream and change the whole scatter.
+ZENITH_AUTHORING_DETERMINISM_BEGIN
+
 void Zenith_TerrainEditor::ApplyTreeDab(float fWorldX, float fWorldZ, float fRadius,
 	float fStrength, bool bErase)
 {
@@ -237,8 +246,7 @@ void Zenith_TerrainEditor::ApplyTreeDab(float fWorldX, float fWorldZ, float fRad
 		const float fY = SampleHeightWorld(fPX, fPZ) - 0.08f;
 		const float fScale = m_xBrush.m_fTreeScaleMin +
 			(m_xBrush.m_fTreeScaleMax - m_xBrush.m_fTreeScaleMin) * NextFloat01();
-		const Zenith_Maths::Quat xYaw = glm::angleAxis(NextFloat01() * 6.2831853f,
-			Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
+		const Zenith_Maths::Quat xYaw = Zenith_Maths::AuthoringRotationY(NextFloat01() * 6.2831853f);
 		const Zenith_Maths::Vector3 xPos(fPX, fY, fPZ);
 		const Zenith_Maths::Vector3 xScale(fScale, fScale * (0.95f + 0.1f * NextFloat01()), fScale);
 
@@ -257,6 +265,8 @@ void Zenith_TerrainEditor::ApplyTreeDab(float fWorldX, float fWorldZ, float fRad
 		uPlaced++;
 	}
 }
+
+ZENITH_AUTHORING_DETERMINISM_END
 
 void Zenith_TerrainEditor::TickTreeSway(float fDt)
 {

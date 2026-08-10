@@ -50,6 +50,39 @@ namespace Zenith_Maths
 	Matrix4 OrthographicProjection(const float fLeft, const float fRight, const float fBottom, const float fTop, const float fNear, const float fFar);
 	Matrix4 EulerRotationToMatrix4(float fDegrees, const Vector3& xAxis);
 
+	//--------------------------------------------------------------------------
+	// Authoring math — bit-identical across build configurations
+	//
+	// Use these INSTEAD of the glm equivalents for any value that gets serialized
+	// into a tracked asset. Each produces exactly what its glm counterpart does,
+	// but is a single non-inline definition compiled under
+	// ZENITH_AUTHORING_DETERMINISM_BEGIN (see Core/Zenith.h) — so the project's
+	// /fp:fast cannot resolve it one way in a Debug tools build and another in a
+	// Release one.
+	//
+	// Wrapping a caller in the pin is NOT enough on its own: glm's operators live
+	// in headers, take their floating-point model from their own definition point,
+	// and are shared as inline COMDATs with every /fp:fast translation unit. That
+	// was measured — pinning the callers alone still left RenderTest's 2520 tree
+	// instances config-dependent in exactly the matrix elements glm::angleAxis and
+	// glm::mat4_cast produce.
+	//--------------------------------------------------------------------------
+
+	// glm::angleAxis(fRadians, unit axis) for the three cardinal axes, which is
+	// qua(cos(a/2), axis * sin(a/2)) — the off-axis components are exactly zero.
+	Quat AuthoringRotationX(float fRadians);
+	Quat AuthoringRotationY(float fRadians);
+	Quat AuthoringRotationZ(float fRadians);
+
+	// glm's quaternion product (Hamilton, q then p applied right-to-left).
+	Quat AuthoringQuatMul(const Quat& xQ, const Quat& xP);
+
+	// glm::translate(I, pos) * glm::mat4_cast(rot) then glm::scale(..., scale).
+	Matrix4 AuthoringTRS(const Vector3& xPosition, const Quat& xRotation, const Vector3& xScale);
+
+	// glm::radians for float.
+	float AuthoringRadians(float fDegrees);
+
 	// ========== GLM Wrapper Functions for Flux_Primitives ==========
 
 	// Vector operations

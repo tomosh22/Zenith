@@ -518,26 +518,34 @@ void Zenith_EditorAutomation::AddStep_AttachToBone(const char* szTargetEntityNam
 }
 
 // -- Authoring math (shared by the executors; pure, unit-testable) --
+//
+// Deterministic-FP: these two build the rotations that get SERIALIZED into scene
+// files, so they must produce the same bytes in a Debug and a Release tools build.
+ZENITH_AUTHORING_DETERMINISM_BEGIN
 
 Zenith_Maths::Quat Zenith_EditorAutomation::BuildEulerRotation(float fEulerXDeg, float fEulerYDeg, float fEulerZDeg)
 {
 	// Ry * Rx * Rz (quaternion product = the same composition glm::rotate applies in
 	// RT_BuildJetpackMount: yaw about Y, then pitch about X, then roll about Z).
-	const Zenith_Maths::Quat xYaw   = glm::angleAxis(glm::radians(fEulerYDeg), Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
-	const Zenith_Maths::Quat xPitch = glm::angleAxis(glm::radians(fEulerXDeg), Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f));
-	const Zenith_Maths::Quat xRoll  = glm::angleAxis(glm::radians(fEulerZDeg), Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f));
-	return xYaw * xPitch * xRoll;
+	// Zenith_Maths::Authoring* rather than glm: same values, but compiled once under
+	// a pinned FP model, so this rotation lands in a committed scene as the same
+	// bytes from a Debug and a Release tools boot.
+	const Zenith_Maths::Quat xYaw   = Zenith_Maths::AuthoringRotationY(Zenith_Maths::AuthoringRadians(fEulerYDeg));
+	const Zenith_Maths::Quat xPitch = Zenith_Maths::AuthoringRotationX(Zenith_Maths::AuthoringRadians(fEulerXDeg));
+	const Zenith_Maths::Quat xRoll  = Zenith_Maths::AuthoringRotationZ(Zenith_Maths::AuthoringRadians(fEulerZDeg));
+	return Zenith_Maths::AuthoringQuatMul(Zenith_Maths::AuthoringQuatMul(xYaw, xPitch), xRoll);
 }
 
 Zenith_Maths::Matrix4 Zenith_EditorAutomation::BuildEulerOffsetMatrix(float fPosX, float fPosY, float fPosZ,
 	float fEulerXDeg, float fEulerYDeg, float fEulerZDeg)
 {
 	// M = T(pos) * Ry * Rx * Rz — identical to RT_BuildJetpackMount.
-	Zenith_Maths::Matrix4 xM = glm::translate(Zenith_Maths::Matrix4(1.0f),
-		Zenith_Maths::Vector3(fPosX, fPosY, fPosZ));
-	xM *= glm::mat4_cast(BuildEulerRotation(fEulerXDeg, fEulerYDeg, fEulerZDeg));
-	return xM;
+	return Zenith_Maths::AuthoringTRS(Zenith_Maths::Vector3(fPosX, fPosY, fPosZ),
+		BuildEulerRotation(fEulerXDeg, fEulerYDeg, fEulerZDeg),
+		Zenith_Maths::Vector3(1.0f, 1.0f, 1.0f));
 }
+
+ZENITH_AUTHORING_DETERMINISM_END
 
 // -- Light --
 
@@ -2159,7 +2167,7 @@ static void ExecuteTransformAction(const Zenith_EditorAction& xAction)
 	{
 		Zenith_Entity& xEntity = GetSelectedEntityChecked("SET_TRANSFORM_ROTATION_YAW");
 		const float fYaw = xAction.m_afArgs[0];
-		const Zenith_Maths::Quat xRot = glm::angleAxis(fYaw, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
+		const Zenith_Maths::Quat xRot = Zenith_Maths::AuthoringRotationY(fYaw);
 		xEntity.GetComponent<Zenith_TransformComponent>().SetRotation(xRot);
 		break;
 	}

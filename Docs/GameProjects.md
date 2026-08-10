@@ -161,6 +161,13 @@ in (a `.zscen` would rot with engine churn). `Project_RegisterEditorAutomationSt
 (tools-only) authors + `AddStep_SaveScene`s it, so the **first build+run must be a
 `*_True` config** to bake the scene; thereafter `_False`/Android load it.
 
+A `Null_*_True` (headless) first run bakes it fine — the publish guard in
+`Zenith_Editor::SaveActiveScene` only ever refuses to CHANGE a scene asset, never to
+create one. But note the flip side: once the file exists, a headless boot will not
+re-author it (it logs `REFUSED headless save` and loads what is on disk), because a
+Null boot authors an incomplete world — see `Zenith/Editor/CLAUDE.md`. Re-authoring
+after an authoring change is a **windowed** tools boot.
+
 ## Troubleshooting
 
 - **"…generated.cs is STALE… run Build/regen.ps1"** — you edited a `.zproj` (or the

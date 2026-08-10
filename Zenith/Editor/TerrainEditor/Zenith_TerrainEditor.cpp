@@ -796,6 +796,11 @@ void Zenith_TerrainEditor::DrawBrushCursor() const
 // Height sampling + heightfield raycast
 //-----------------------------------------------------------------------------
 
+// Deterministic-FP: the bilinear blend below sets the Y of every scattered tree, and
+// those land in a tracked scene file. Its mul/add chain contracts differently at /Od
+// and /O2 under the project's /fp:fast, so it is pinned precise.
+ZENITH_AUTHORING_DETERMINISM_BEGIN
+
 float Zenith_TerrainEditor::SampleHeightNorm(float fPixelX, float fPixelZ) const
 {
 	if (m_xHeightfield.IsEmpty())
@@ -823,6 +828,8 @@ float Zenith_TerrainEditor::SampleHeightWorld(float fWorldX, float fWorldZ) cons
 	// World X/Z == heightmap pixel coordinates (TERRAIN_SCALE == 1).
 	return SampleHeightNorm(fWorldX, fWorldZ) * fTERRAIN_MAX_HEIGHT;
 }
+
+ZENITH_AUTHORING_DETERMINISM_END
 
 bool Zenith_TerrainEditor::RaycastHeightfield(const Zenith_Maths::Vector3& xOrigin,
 	const Zenith_Maths::Vector3& xDir, Zenith_Maths::Vector3& xHitOut) const

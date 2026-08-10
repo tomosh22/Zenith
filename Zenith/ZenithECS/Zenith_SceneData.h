@@ -40,6 +40,35 @@ class Zenith_SceneData;
 // Forward declaration for query system
 template<typename... Ts> class Zenith_Query;
 
+#ifdef ZENITH_TOOLS
+// What a save would do to the file it is about to overwrite — the answer
+// Zenith_SceneData::CompareWithFile hands back. Sizes are BYTES, counts are the
+// serialized entity counts out of the two file headers (0 for a side that has no
+// readable header).
+struct Zenith_ScenePublishDelta
+{
+	enum Result
+	{
+		NO_FILE,      // nothing on disk yet — a save can only create
+		IDENTICAL,    // the save would rewrite the same bytes — a no-op
+		DIFFERENT,    // the save would change the file
+	};
+
+	Result   m_eResult              = NO_FILE;
+	u_int    m_uPendingEntityCount  = 0;
+	u_int    m_uOnDiskEntityCount   = 0;
+	uint64_t m_ulPendingBytes       = 0;
+	uint64_t m_ulOnDiskBytes        = 0;
+
+	// A save that drops entities is the lossy case worth shouting about; a save that
+	// adds or reshuffles them is merely a change.
+	bool WouldDropEntities() const
+	{
+		return m_eResult == DIFFERENT && m_uOnDiskEntityCount > m_uPendingEntityCount;
+	}
+};
+#endif
+
 /**
  * Zenith_SceneData - Internal scene storage class
  *
@@ -289,7 +318,21 @@ private:
 	void SaveToFile(const std::string& strFilename, bool bIncludeTransient = false);
 	bool LoadFromFile(const std::string& strFilename);
 
+	// SaveToFile's write half, minus the disk write. Producing the bytes without
+	// committing them is what lets CompareWithFile answer "would this save change
+	// the file?" — the two paths therefore CANNOT drift apart.
+	void SerializeToDataStream(Zenith_DataStream& xStream, bool bIncludeTransient = false);
+
 #ifdef ZENITH_TOOLS
+	// What saving this scene over strFilename would actually do to the file on disk.
+	// Serializes exactly the bytes SaveToFile would write (in memory, no disk write)
+	// and diffs them against what is already there, so a caller can decide whether to
+	// publish BEFORE overwriting an asset. Entity counts come from the two file
+	// headers, so they count what each side would/does SERIALIZE (transient entities
+	// excluded), not what a scene holds in memory.
+	// Used by Zenith_Editor::SaveActiveScene's headless publish guard.
+	Zenith_ScenePublishDelta CompareWithFile(const std::string& strFilename, bool bIncludeTransient = false);
+
 	// Editor-only hooks used by the play-mode backup/restore path
 	// (Zenith_Editor::EnterStopMode). The editor restores the original scene
 	// path / build-index after running the scene in play mode, and re-marks

@@ -5,6 +5,7 @@
 #include "Input/Zenith_InputSimulator.h"
 #include "Editor/Zenith_SelectionSystem.h"
 #include "Editor/Zenith_Editor.h"
+#include "Editor/Zenith_EditorSceneAccess.h"
 #include "Editor/Zenith_UndoSystem.h"
 #include "ZenithECS/Zenith_Scene.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
@@ -1653,6 +1654,148 @@ ZENITH_TEST(Editor, UniqueFilenameWithExisting)
 
 	std::filesystem::remove_all(strTestDir);
 
+}
+
+//------------------------------------------------------------------------------
+// Headless scene-publish guard
+//
+// A Null-backend boot authors an INCOMPLETE world -- every authoring step that
+// needs a live GPU resource no-ops -- so serializing what it holds over a scene
+// asset a windowed boot authored silently DELETES content (this is what stripped
+// RenderTest's two instanced tree entities, ~323 KB, on every headless boot).
+// Two tests, one per half of the fix: the Zenith_SceneData::CompareWithFile seam
+// that answers "would this save change the file, and would it lose entities?",
+// and the Zenith_Editor::SaveActiveScene policy built on that answer.
+//------------------------------------------------------------------------------
+namespace
+{
+	// Whole-file bytes, or empty when the file isn't there.
+	static std::vector<char> ReadWholeFileForSaveGuardTest(const char* szPath)
+	{
+		std::ifstream xFile(szPath, std::ios::binary);
+		if (!xFile.is_open())
+		{
+			return {};
+		}
+		return std::vector<char>((std::istreambuf_iterator<char>(xFile)), std::istreambuf_iterator<char>());
+	}
+}
+
+ZENITH_TEST(Editor, SceneSaveDeltaClassifiesPublish)
+{
+	const std::string strPath =
+		(std::filesystem::temp_directory_path() / "zenith_save_delta_test.zscen").string();
+	std::filesystem::remove(strPath);
+
+	Zenith_SceneData* pxData = g_xEngine.Scenes().GetActiveSceneData();
+	ZENITH_ASSERT_NOT_NULL(pxData, "Delta test needs an active scene");
+
+	// Nothing on disk: a save could only CREATE, never lose anything.
+	Zenith_ScenePublishDelta xDelta = Zenith_EditorSceneAccess::CompareWithFile(pxData, strPath);
+	ZENITH_ASSERT_EQ(static_cast<int>(xDelta.m_eResult), static_cast<int>(Zenith_ScenePublishDelta::NO_FILE),
+		"An absent file must classify as NO_FILE");
+	ZENITH_ASSERT_FALSE(xDelta.WouldDropEntities(), "NO_FILE cannot drop entities");
+
+	// Entities are created TRANSIENT by default (Zenith_EntitySlot::m_bTransient), and
+	// a transient entity is never serialized -- so anything this test expects to see in
+	// the file has to opt in, exactly as AddStep_SetEntityTransient(false) does.
+	Zenith_Entity xKeep = g_xEngine.Scenes().CreateEntity(pxData, "SaveDelta_Keep");
+	Zenith_Entity xDrop = g_xEngine.Scenes().CreateEntity(pxData, "SaveDelta_Drop");
+	xKeep.SetTransient(false);
+	xDrop.SetTransient(false);
+	Zenith_EditorSceneAccess::SaveToFile(pxData, strPath);
+
+	// Unchanged scene: re-saving would rewrite the exact same bytes.
+	xDelta = Zenith_EditorSceneAccess::CompareWithFile(pxData, strPath);
+	ZENITH_ASSERT_EQ(static_cast<int>(xDelta.m_eResult), static_cast<int>(Zenith_ScenePublishDelta::IDENTICAL),
+		"Re-comparing a just-saved scene must classify as IDENTICAL");
+	ZENITH_ASSERT_EQ(xDelta.m_uPendingEntityCount, xDelta.m_uOnDiskEntityCount,
+		"IDENTICAL bytes must carry identical entity counts");
+	ZENITH_ASSERT_EQ(xDelta.m_ulPendingBytes, xDelta.m_ulOnDiskBytes, "IDENTICAL bytes must be the same length");
+	ZENITH_ASSERT_FALSE(xDelta.WouldDropEntities(), "IDENTICAL cannot drop entities");
+
+	const u_int uPublishedEntities = xDelta.m_uOnDiskEntityCount;
+	ZENITH_ASSERT_GE(uPublishedEntities, 2u, "Both test entities should have been serialized");
+
+	// Lose one entity: the lossy case, reported with both counts so a caller can say
+	// exactly how much a save would delete.
+	xDrop.DestroyImmediate();
+	xDelta = Zenith_EditorSceneAccess::CompareWithFile(pxData, strPath);
+	ZENITH_ASSERT_EQ(static_cast<int>(xDelta.m_eResult), static_cast<int>(Zenith_ScenePublishDelta::DIFFERENT),
+		"Dropping an entity must classify as DIFFERENT");
+	ZENITH_ASSERT_TRUE(xDelta.WouldDropEntities(), "Fewer entities than the file holds is a DROP");
+	ZENITH_ASSERT_EQ(xDelta.m_uOnDiskEntityCount, uPublishedEntities, "On-disk count comes from the file, unchanged");
+	ZENITH_ASSERT_EQ(xDelta.m_uPendingEntityCount, uPublishedEntities - 1u, "Pending count must reflect the loss");
+
+	// Gaining entities is a change, but NOT a loss -- the two must not be conflated.
+	Zenith_Entity xAddA = g_xEngine.Scenes().CreateEntity(pxData, "SaveDelta_AddA");
+	Zenith_Entity xAddB = g_xEngine.Scenes().CreateEntity(pxData, "SaveDelta_AddB");
+	xAddA.SetTransient(false);
+	xAddB.SetTransient(false);
+	xDelta = Zenith_EditorSceneAccess::CompareWithFile(pxData, strPath);
+	ZENITH_ASSERT_EQ(static_cast<int>(xDelta.m_eResult), static_cast<int>(Zenith_ScenePublishDelta::DIFFERENT),
+		"Adding entities must classify as DIFFERENT");
+	ZENITH_ASSERT_FALSE(xDelta.WouldDropEntities(), "More entities than the file holds is not a DROP");
+
+	// Transient entities are excluded from a save, so they must not move the counts --
+	// which is what lets a per-run harness entity exist without dirtying the asset.
+	Zenith_Entity xTransient = g_xEngine.Scenes().CreateEntity(pxData, "SaveDelta_Transient");
+	ZENITH_ASSERT_TRUE(xTransient.IsTransient(), "Entities are created transient by default");
+	const Zenith_ScenePublishDelta xWithTransient = Zenith_EditorSceneAccess::CompareWithFile(pxData, strPath);
+	ZENITH_ASSERT_EQ(xWithTransient.m_uPendingEntityCount, xDelta.m_uPendingEntityCount,
+		"A transient entity is not serialized, so it cannot change the pending count");
+
+	xKeep.DestroyImmediate();
+	xAddA.DestroyImmediate();
+	xAddB.DestroyImmediate();
+	xTransient.DestroyImmediate();
+	std::filesystem::remove(strPath);
+}
+
+ZENITH_TEST(Editor, HeadlessSaveNeverRewritesSceneAsset)
+{
+	const std::string strPath =
+		(std::filesystem::temp_directory_path() / "zenith_headless_publish_test.zscen").string();
+	std::filesystem::remove(strPath);
+
+	Zenith_SceneData* pxData = g_xEngine.Scenes().GetActiveSceneData();
+	ZENITH_ASSERT_NOT_NULL(pxData, "Publish-guard test needs an active scene");
+
+	// First publish: no file yet, so EVERY backend writes -- that is the only way a
+	// scene asset first appears, and refusing it would strand a brand-new game.
+	Zenith_Entity xKeep = g_xEngine.Scenes().CreateEntity(pxData, "HeadlessPublish_Keep");
+	Zenith_Entity xDrop = g_xEngine.Scenes().CreateEntity(pxData, "HeadlessPublish_Drop");
+	xKeep.SetTransient(false);   // transient is the default, and transient is never serialized
+	xDrop.SetTransient(false);
+	g_xEngine.Editor().SaveActiveScene(strPath.c_str());
+
+	const std::vector<char> xPublished = ReadWholeFileForSaveGuardTest(strPath.c_str());
+	ZENITH_ASSERT_FALSE(xPublished.empty(), "A save with no file on disk must create it, on any backend");
+
+	const Zenith_ScenePublishDelta xPublishedDelta = Zenith_EditorSceneAccess::CompareWithFile(pxData, strPath);
+	ZENITH_ASSERT_GE(xPublishedDelta.m_uOnDiskEntityCount, 2u,
+		"Both test entities must actually be IN the published asset, or the guard below proves nothing");
+
+	// Now make the in-memory scene LOSSY the way a Null boot's is (an entity the
+	// published asset holds is simply not there) and publish again.
+	xDrop.DestroyImmediate();
+	g_xEngine.Editor().SaveActiveScene(strPath.c_str());
+	const std::vector<char> xAfter = ReadWholeFileForSaveGuardTest(strPath.c_str());
+
+	if constexpr (Zenith_IsNullRenderer())
+	{
+		ZENITH_ASSERT_TRUE(xAfter == xPublished,
+			"A headless boot must leave an existing scene asset byte-for-byte alone rather than "
+			"publishing the subset it authored");
+	}
+	else
+	{
+		ZENITH_ASSERT_TRUE(xAfter != xPublished,
+			"A windowed boot authors the complete scene, so it must still publish normally");
+	}
+
+	xKeep.DestroyImmediate();
+	std::filesystem::remove(strPath);
 }
 
 #endif // ZENITH_TOOLS

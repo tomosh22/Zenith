@@ -5,7 +5,62 @@ The renderer/engine feature testbed: a 4096 m procedural terrain campus (seed
 testbed, a jetpack, a StickFigure third-person player, and the **autonomous
 tennis court** (two AI NPCs playing a rule-correct physics match under a
 passive referee). Single scene, build index 0 (`Assets/Scenes/RenderTest.zscen`),
-fully re-authored + saved by editor automation every tools boot.
+fully re-authored + saved by editor automation every **windowed** tools boot.
+
+**A headless (`Null_`) boot authors the same scene MINUS its instanced trees** —
+`Zenith_TerrainEditor::EnsureTreeEntities` refuses to run without a GPU, so the
+`TerrainTrees_Trunk` / `_Leaves` entities (82 authored entities windowed, 80
+headless; ~323 KB of the 361721-byte file) never exist. It therefore does not
+publish: `Zenith_Editor::SaveActiveScene`'s publish guard refuses the lossy save
+(logging both entity counts) and the run loads the committed scene instead, trees
+included. Until that guard existed, EVERY headless run silently rewrote the tracked
+asset down to ~38 KB. Consequences worth knowing:
+
+* **Re-authoring the scene needs a WINDOWED tools boot.** A headless boot will not
+  pick up an authoring change — it will log `REFUSED headless save` and load the
+  committed bytes. That is the intended failure mode, not a bug.
+* **Per-run harness entities are spawned transient, post-load**, never authored
+  before `AddStep_SaveScene` (`RenderTest_EnterSmokePlayMode` creates
+  `RenderTestSmokeRunner` this way). Authoring one would write it into the tracked
+  asset on every `--rendertest-smoke` run.
+* `RT_SceneAssetIntegrity` (`Tests/SceneAssetIntegrity.cpp`) guards all of the
+  above by inspecting the file on disk after boot: both tree entities present, the
+  campus + tennis testbed present, no `RenderTestSmokeRunner`.
+
+### Authoring is byte-reproducible across configurations — keep it that way
+
+A Debug tools boot and a Release tools boot author **byte-identical** scene files
+(verified: same MD5 from `Vulkan_vs2022_Debug_Win64_True` and
+`Vulkan_vs2022_Release_Win64_True`). That is not free — it was bought, and it is
+easy to lose again.
+
+It used to be false. The project compiles `/fp:fast`, which lets the optimizer
+reassociate, contract into FMA and substitute vectorized libm — and it does so
+differently at `/Od` and `/O2`. So the two configs wrote **19266 different bytes**:
+the 2520 tree instances (scatter position, height sample, per-instance scale and
+yaw quaternion) plus the four guns' `rotZ 90°` and the two rackets' bone-attach
+`rotX 180°`. The file ping-ponged in `git status` depending on which config you
+last ran, which is exactly the trap `Games/Zenithmon/Docs/DecisionLog.md` ZM-D-183
+describes.
+
+The fix has two halves, both in `Zenith/Core/Zenith.h`'s
+`ZENITH_AUTHORING_DETERMINISM_BEGIN` and `Zenith/Maths/Zenith_Maths.h`'s
+`Authoring*` helpers:
+
+1. **Pin the FP model** around functions that compute serialized values —
+   `Project_RegisterEditorAutomationSteps` here (its hill/tree ring strokes are
+   `sinf`/`cosf` of a per-index angle), plus `ApplyTreeDab`, `SampleHeightNorm`,
+   `BuildEulerRotation`/`BuildEulerOffsetMatrix` and `BuildMatrix` engine-side.
+2. **Do not call glm from authoring math.** The pin does NOT reach glm's operators:
+   they are header inlines that take their FP model from their own definition point
+   and are shared as COMDATs with every `/fp:fast` TU. Pinning the callers alone
+   left the tree yaw and the racket matrices still config-dependent. `angleAxis`,
+   the quaternion product, `mat4_cast`/`translate`/`scale` and `radians` therefore
+   go through `Zenith_Maths::Authoring*` — same formulas, transcribed from glm,
+   compiled once under the pin.
+
+**If you add authoring code that computes a float landing in this scene, use those
+helpers, and re-verify by authoring from both configs and comparing the bytes.**
 
 ## Behaviour Graphs (W3 conversion)
 
@@ -120,7 +175,10 @@ VERBATIM with blackboard reads redirected at the graph blackboard.
   simulator helpers), both of which reload scene 0 in their Boot step so the sim
   runs entirely under fixed dt — and the hermetic `Test_TennisBrainContract.cpp`
   (`RT_TennisBrainTickCadence` / `RT_TennisBrainGateOrder` /
-  `RT_TennisBrainRngDraws`, the R2 gate above), which load no scene at all.
+  `RT_TennisBrainRngDraws`, the R2 gate above), which load no scene at all —
+  plus `RT_SceneAssetIntegrity` (`Tests/SceneAssetIntegrity.cpp`), which asserts on
+  the scene FILE the boot left behind rather than on the loaded scene, so it reddens
+  in whichever config damaged the asset.
 
 ### Recipes
 

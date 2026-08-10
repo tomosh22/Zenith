@@ -36,6 +36,12 @@ public:
 		return pxData->LoadFromFile(strFilename);
 	}
 
+	static Zenith_ScenePublishDelta CompareWithFile(Zenith_SceneData* pxData, const std::string& strFilename,
+		bool bIncludeTransient = false)
+	{
+		return pxData->CompareWithFile(strFilename, bIncludeTransient);
+	}
+
 	static u_int GetEntityCount(const Zenith_SceneData* pxData)
 	{
 		return pxData->GetEntityCount();

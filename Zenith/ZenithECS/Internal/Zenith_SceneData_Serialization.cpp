@@ -19,7 +19,17 @@
 void Zenith_SceneData::SaveToFile(const std::string& strFilename, bool bIncludeTransient)
 {
 	Zenith_DataStream xStream;
+	SerializeToDataStream(xStream, bIncludeTransient);
+	xStream.WriteToFile(strFilename.c_str());
 
+	ClearDirty();
+}
+
+// The write half of SaveToFile, split out so a caller can produce exactly the bytes
+// a save WOULD write without touching disk -- what the headless publish guard in
+// Zenith_Editor::SaveActiveScene compares against the asset already on disk.
+void Zenith_SceneData::SerializeToDataStream(Zenith_DataStream& xStream, bool bIncludeTransient)
+{
 	xStream << uSCENE_MAGIC;
 	xStream << uSCENE_VERSION_CURRENT;
 
@@ -69,11 +79,71 @@ void Zenith_SceneData::SaveToFile(const std::string& strFilename, bool bIncludeT
 		}
 	}
 	xStream << uMainCameraIndex;
-
-	xStream.WriteToFile(strFilename.c_str());
-
-	ClearDirty();
 }
+
+#ifdef ZENITH_TOOLS
+namespace
+{
+	// Entity count out of a .zscen header ([magic][version][numEntities]). False when
+	// the bytes aren't a scene file this build understands, in which case the caller
+	// simply reports no count rather than guessing at one.
+	bool PeekSceneEntityCount(const void* pData, uint64_t ulSize, u_int& uOutCount)
+	{
+		if (pData == nullptr || ulSize < 3 * sizeof(u_int))
+		{
+			return false;
+		}
+		const u_int* puHeader = static_cast<const u_int*>(pData);
+		if (puHeader[0] != Zenith_SceneData::uSCENE_MAGIC ||
+			puHeader[1] < Zenith_SceneData::uSCENE_VERSION_MIN_SUPPORTED)
+		{
+			return false;
+		}
+		uOutCount = puHeader[2];
+		return true;
+	}
+}
+
+Zenith_ScenePublishDelta Zenith_SceneData::CompareWithFile(const std::string& strFilename, bool bIncludeTransient)
+{
+	Zenith_ScenePublishDelta xDelta;
+
+	Zenith_DataStream xPending;
+	SerializeToDataStream(xPending, bIncludeTransient);
+	xDelta.m_ulPendingBytes = xPending.GetCursor();
+	PeekSceneEntityCount(xPending.GetData(), xDelta.m_ulPendingBytes, xDelta.m_uPendingEntityCount);
+
+	// Zenith_FileAccess, not std::filesystem: it is the same platform file layer the
+	// DataStream read/write go through (and the one that resolves paths against the
+	// writable directory on platforms that have one), so "is it there" and "read it"
+	// can never disagree about which file they mean.
+	if (!Zenith_FileAccess::FileExists(strFilename.c_str()))
+	{
+		xDelta.m_eResult = Zenith_ScenePublishDelta::NO_FILE;
+		return xDelta;
+	}
+
+	// Raw ReadFile rather than Zenith_DataStream::ReadFromFile: only bytes are needed
+	// here, and ReadFromFile overwrites the stream's constructor-allocated buffer
+	// without freeing it (the whole point of this function is to run on every headless
+	// boot, so it must not leak one buffer per scene).
+	uint64_t ulOnDiskBytes = 0;
+	char* pcOnDisk = Zenith_FileAccess::ReadFile(strFilename.c_str(), ulOnDiskBytes);
+
+	xDelta.m_ulOnDiskBytes = (pcOnDisk != nullptr) ? ulOnDiskBytes : 0;
+	PeekSceneEntityCount(pcOnDisk, xDelta.m_ulOnDiskBytes, xDelta.m_uOnDiskEntityCount);
+
+	const bool bSameBytes = pcOnDisk != nullptr
+		&& xDelta.m_ulOnDiskBytes == xDelta.m_ulPendingBytes
+		&& memcmp(xPending.GetData(), pcOnDisk, xDelta.m_ulPendingBytes) == 0;
+
+	Zenith_FileAccess::FreeFileData(pcOnDisk);
+
+	xDelta.m_eResult = bSameBytes ? Zenith_ScenePublishDelta::IDENTICAL
+	                              : Zenith_ScenePublishDelta::DIFFERENT;
+	return xDelta;
+}
+#endif
 
 bool Zenith_SceneData::LoadFromFile(const std::string& strFilename)
 {

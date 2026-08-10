@@ -343,6 +343,47 @@ simulated input deterministic. This is what lets automated tests drive the
 editor with real clicks/keys — flagship proofs: `Test_GraphEditorLiveAuthoring`
 and `Test_GraphEditorScreenshotTour` (DP suite, windowed).
 
+### A headless boot may CREATE a scene asset, never CHANGE one
+
+`Zenith_Editor::SaveActiveScene` — the one verb `AddStep_SaveScene` routes to, and
+the only way an authored scene reaches disk — carries a **publish guard on the Null
+backend**. A Null boot authors an INCOMPLETE world: every authoring step that needs
+a live GPU resource no-ops (`Zenith_TerrainEditor::EnsureTreeEntities` is the
+canonical one — it refuses to create the instanced-tree entities because instance
+groups allocate GPU buffers). Serializing that subset over a tracked `.zscen`
+silently DELETES content. That is not hypothetical: every headless RenderTest run
+rewrote its committed 361721-byte scene down to ~38 KB, dropping the two
+`TerrainTrees_*` instanced entities (~323 KB), and the only symptom was a dirty
+`git status` nobody was reading.
+
+So on `Zenith_IsNullRenderer()` the save is decided by
+`Zenith_SceneData::CompareWithFile` (a `Zenith_ScenePublishDelta`), which serializes
+exactly the bytes `SaveToFile` would write and diffs them against the file:
+
+| Delta | What the guard does |
+|---|---|
+| `NO_FILE` | **writes** — nothing to lose, and it is how a new game's scene first appears |
+| `IDENTICAL` | skips the write (it was a no-op) and logs it |
+| `DIFFERENT`, fewer entities than the file | **refuses**, `Zenith_Error` naming both counts and both sizes |
+| `DIFFERENT`, same or more entities | **refuses**, `Zenith_Warning` |
+
+Windowed boots never reach the guard — they author everything, so they publish
+unconditionally. A headless boot that refuses simply goes on to LOAD the committed
+scene, which is strictly more complete than the one it authored.
+
+`CompareWithFile` shares `SerializeToDataStream` with `SaveToFile`, so "what a save
+would write" and "what a save writes" cannot drift apart. Both halves are pinned by
+`Editor, SceneSaveDeltaClassifiesPublish` (the four delta classifications, plus
+"transient entities never move the counts") and `Editor,
+HeadlessSaveNeverRewritesSceneAsset` (the policy end-to-end — asserting the file is
+byte-identical afterwards under Null, and changed under a real backend, so the test
+is meaningful in both configs).
+
+**Corollary for games:** a per-run harness entity (a smoke runner, a capture rig)
+must be spawned **transient, post-load**, never authored before `AddStep_SaveScene`
+— otherwise every run of that mode writes an entity into the tracked asset that no
+other run has. RenderTest's `RenderTestSmokeRunner` is the worked example.
+
 ### Graph Authoring via Editor Automation
 
 `Zenith_EditorAutomation` exposes one step per atomic editor verb, used by
@@ -356,25 +397,38 @@ and appends the slot). Each graph step is wrapped in `GraphActionChecked`,
 which asserts on failure so an authoring typo (wrong node type/occurrence/pin)
 surfaces at boot, not as a silently-empty graph.
 
-**★ AUTHORED ROTATIONS THAT LAND IN A COMMITTED SCENE MUST USE
-`AddStep_SetTransformRotationQuat`.** There are three rotation steps and only one of
-them is byte-stable:
+**★ AUTHORED ROTATIONS THAT LAND IN A COMMITTED SCENE.** All three rotation steps are
+now byte-stable across build configurations, but they are not equally strong:
 
 | Step | Authoring-time math | Safe for a COMMITTED `.zscen`? |
 |---|---|---|
-| `AddStep_SetTransformYaw(rad)` | `glm::angleAxis` (sin/cos of the half angle) | **NO** |
-| `AddStep_SetTransformRotationEuler(x,y,z)` | `BuildEulerRotation` | **NO** |
-| `AddStep_SetTransformRotationQuat(x,y,z,w)` | none -- verbatim to `SetRotation` | **YES** |
+| `AddStep_SetTransformYaw(rad)` | `Zenith_Maths::AuthoringRotationY` | yes — pinned FP model |
+| `AddStep_SetTransformRotationEuler(x,y,z)` | `BuildEulerRotation` (all-`Authoring*`) | yes — pinned FP model |
+| `AddStep_SetTransformRotationQuat(x,y,z,w)` | none -- verbatim to `SetRotation` | **YES, unconditionally** |
 
-The first two call libm at authoring time, and MSVC Debug and Release codegen do not
-agree on those to the last bit. An entity authored through them therefore serializes
-**different bytes from a Debug and a Release tools build**, so a tracked scene file
-ping-pongs between two values in `git status` forever — and because the drift is
-1-2 ULP, every tolerance-based guard stays green while it happens. That is not
-hypothetical: it is the defect `Games/Zenithmon/Docs/DecisionLog.md` ZM-D-183 fixed
-for `Npc_RivalVesper`, and it hid behind a *bit-exact* pre-save guard that compared
-the serialized bytes against a re-computation of the same expression **in the same
-binary** (both sides moved together).
+The first two used to call glm/libm directly, and MSVC Debug and Release codegen do
+not agree on those to the last bit under the project's `/fp:fast`. An entity authored
+through them serialized **different bytes from a Debug and a Release tools build**, so
+a tracked scene file ping-ponged between two values in `git status` forever — and
+because the drift is 1-2 ULP, every tolerance-based guard stayed green while it
+happened. That is not hypothetical: it is the defect
+`Games/Zenithmon/Docs/DecisionLog.md` ZM-D-183 fixed for `Npc_RivalVesper` (which hid
+behind a *bit-exact* pre-save guard comparing the serialized bytes against a
+re-computation of the same expression **in the same binary** — both sides moved
+together), and it is what made RenderTest's scene differ by 19266 bytes between
+configs.
+
+Their math now runs through the `Zenith_Maths::Authoring*` helpers, which are single
+non-inline definitions compiled under `ZENITH_AUTHORING_DETERMINISM_BEGIN` (see
+`Core/Zenith.h`). Verified by authoring RenderTest's scene from
+`Vulkan_vs2022_Debug_Win64_True` and `Vulkan_vs2022_Release_Win64_True` and comparing
+MD5s. **Pinning a CALLER is not sufficient on its own** — glm's operators are header
+inlines that take their FP model from their own definition point and are shared as
+COMDATs with every `/fp:fast` TU, so authoring math must not call glm at all.
+
+The quat step stays the strongest option and the right one for a handful of values:
+it performs no arithmetic whatsoever, so it is immune even to a toolchain upgrade
+moving libm underneath the other two.
 
 The quat step's arguments are in **serialized order (x, y, z, w)** — deliberately not
 `glm::quat`'s `(w, x, y, z)` constructor order — so a caller freezing bytes read out
