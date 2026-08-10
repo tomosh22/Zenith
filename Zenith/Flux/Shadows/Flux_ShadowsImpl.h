@@ -39,8 +39,22 @@ struct Flux_ShadowCascadeSamplingData
 	Zenith_Maths::Vector4 m_xCascadeDepthRange = Zenith_Maths::Vector4(1.f);
 };
 
+// Runtime sampling flags packed numerically into g_xParams2.y. Small integer
+// values round-trip exactly through float; keep bit values mirrored by
+// SHADOW_FLAG_* in Common/ShadowSampling.slang.
+inline constexpr u_int FLUX_SHADOW_FLAG_PCSS_CASCADE0_ONLY     = 1u << 0u;
+inline constexpr u_int FLUX_SHADOW_FLAG_CHEAP_FAR_CASCADES     = 1u << 1u;
+inline constexpr u_int FLUX_SHADOW_FLAG_ROUGHNESS_GATED_PCSS   = 1u << 2u;
+inline constexpr u_int FLUX_SHADOW_FLAG_CASCADE_FALLBACK_BLEND = 1u << 3u;
+inline constexpr u_int FLUX_SHADOW_FLAG_CONTACT_SHADOWS        = 1u << 4u;
+inline constexpr u_int FLUX_SHADOW_DEFAULT_SAMPLING_FLAGS =
+	FLUX_SHADOW_FLAG_PCSS_CASCADE0_ONLY |
+	FLUX_SHADOW_FLAG_CHEAP_FAR_CASCADES |
+	FLUX_SHADOW_FLAG_CASCADE_FALLBACK_BLEND |
+	FLUX_SHADOW_FLAG_CONTACT_SHADOWS;
+
 // Global (not per-cascade) shadow-sampling tunables. Backed by debug variables
-// so they can be dialled at runtime; mirrored verbatim into the deferred shader.
+// so they can be dialled at runtime; packed into the deferred shader's float4s.
 struct Flux_ShadowSamplingConfig
 {
 	float m_fResolution        = float(ZENITH_FLUX_CSM_RESOLUTION);
@@ -52,6 +66,8 @@ struct Flux_ShadowSamplingConfig
 	float m_fCascadeBlendFraction = 0.12f; // fraction of a cascade's far split used to cross-fade
 	u_int m_uPCFTapCount        = 16u;     // Vogel-disk taps for the filter kernel
 	u_int m_bPCSSEnabled        = 1u;      // contact-hardening blocker search
+	u_int m_uQualityFlags       = FLUX_SHADOW_DEFAULT_SAMPLING_FLAGS;
+	float m_fPCSSRoughnessThreshold = 0.6f;
 };
 
 // GPU mirror of the shadow-sampling parameters — uploaded to a dynamic constant
@@ -69,7 +85,7 @@ struct Flux_ShadowSamplingGPU
 	Zenith_Maths::Vector4 m_xCascadeDepthRange     = Zenith_Maths::Vector4(1.f);
 	Zenith_Maths::Vector4 m_xParams0               = Zenith_Maths::Vector4(float(ZENITH_FLUX_CSM_RESOLUTION), 1.f / float(ZENITH_FLUX_CSM_RESOLUTION), 2.5f, 0.f); // res, rcpRes, normalOffsetTexels, (spare)
 	Zenith_Maths::Vector4 m_xParams1               = Zenith_Maths::Vector4(2.f, 0.013f, 0.12f, 16.f); // pcfRadiusTexels, sunAngularRadius, cascadeBlendFraction, tapCount
-	Zenith_Maths::Vector4 m_xParams2               = Zenith_Maths::Vector4(1.f, 0.f, 0.f, 0.f);        // pcssEnabled, spare...
+	Zenith_Maths::Vector4 m_xParams2               = Zenith_Maths::Vector4(1.f, float(FLUX_SHADOW_DEFAULT_SAMPLING_FLAGS), 0.6f, 0.f); // pcssEnabled, qualityFlags, roughnessThreshold, spare
 };
 // Must stay 6× float4 (96B) to match ShadowSamplingLayout in
 // Shaders/DeferredShading/Flux_DeferredShading.slang byte-for-byte (std140, no

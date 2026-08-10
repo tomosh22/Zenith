@@ -270,15 +270,24 @@ every JSON says passed — crash-mid-suite guard), and a slowest-tests report.
   `run_unit_gate.ps1` pins the engine unit count, so they drift silently).
 
 **Engine unit tests** run at every boot unless `--skip-unit-tests`. Baseline:
-**1481 ran, 0 failed** (observed 2026-08-10 on a `Null_` Combat build; 1437 + 19 + 1
+**1492 ran, 0 failed** (observed 2026-08-10 on a `Null_` Combat build; 1437 + 19 + 1
 from compressed-vertex Phase 6 T6.a's instance-stream flips — 3 uint16x4 codec
 units plus 4/5/4/3 packed-lane units for Text/Quads/Particles/Gizmos — then + 2 for
 the scene-publish guard's `Editor.SceneSaveDeltaClassifiesPublish` /
 `Editor.HeadlessSaveNeverRewritesSceneAsset`, then + 22 for
 `Flux/Particles/Flux_ParticleGPU.Tests.inl` when the GPU-driven particle path was
-wired) — the
+wired, then + 11 for `Flux/SSAO/Flux_SSAO.Tests.inl` (6, the committed-handle
+selection contract + blur-constant fill) and `Flux/Shadows/Flux_Shadows.Tests.inl`
+(5, the sampling quality-flag pack and its float round trip)) — the
 authority is the `-Baseline` default in `Tools/run_unit_gate.ps1`, not this
-number; read it there if the two ever disagree. Asserted by that script (CI, which
+number; read it there if the two ever disagree.
+
+> **A Slang probe does NOT move this number.** `Flux_MaterialTable.cpp` gates the
+> whole `Flux_SlangProbes.Tests.inl` suite on `ZENITH_WINDOWS && ZENITH_VULKAN`,
+> and both unit gates (`engine-gate` and `zm-tests`) run `Null_` builds — so no
+> SlangProbes case is compiled into either. Probes are real coverage, but they
+> are only exercised by a `Vulkan_` build; adding one and bumping the baseline
+> turns the gate red. Asserted by that script (CI, which
 `Tools/test_scaffold.ps1` also invokes for the scaffold gate), tolerating
 exactly one known layout-sensitive skip
 (`GraphComponent::RegistryWideNodeRoundTrip`). **When you add engine unit
@@ -348,7 +357,7 @@ Concurrency groups cancel superseded PR runs (master pushes always complete).
 |----------|-------|
 | `cb-tests` | CityBuilder Vulkan `_True` compile proof + **Null `_True` build (the exe every step runs)** + D3D12 `_False` link proof + 45-test headless suite via `zenith test` |
 | `dp-tests` | Same shape for DevilsPlayground (158 tests) |
-| `engine-gate` | Sentinels (`Vulkan_Debug_Win64_False`) built AND executed + Combat unit gate (`Tools/run_unit_gate.ps1`; it passes no `-Baseline`, so the script's default is the pin — 1481 as of 2026-08-10 — known flake tolerated). Rollout: dispatch → burn-in → required |
+| `engine-gate` | Sentinels (`Vulkan_Debug_Win64_False`) built AND executed + Combat unit gate (`Tools/run_unit_gate.ps1`; it passes no `-Baseline`, so the script's default is the pin — 1492 as of 2026-08-10 — known flake tolerated). Rollout: dispatch → burn-in → required |
 | `release-build` | NIGHTLY (not PR-blocking): engine + DP in `Vulkan_vs2022_Release_Win64_True`, build-only — the only Release compile in CI |
 | `shader-validation` | FluxCompiler (Release `_True`) catalog/parity/spine-lint + git-status drift gate on shader outputs |
 | `scaffold-smoke` | Path-filtered end-to-end `zenith new` → build → boot (units baseline) → teardown leaves git status identical |

@@ -20,6 +20,7 @@
 //   E3   unreferenced ParameterBlocks still hold declaration-order spaces (spine 0/1/2)
 //   E4   [SpecializationConstant] IDs + confirms reflection drops them   (D4/D5)
 //   E5   generic body vs hand-written body -> SPIR-V parity              (D2/Stage 4)
+//   E5b  clustered-light BRDF context -> one explicit-LOD LUT sample in SPIR-V
 //
 // Vertex-layout capability spike (T0). Same idea, on the VERTEX entry point, deciding
 // whether a vertex-layout generator can read Slang field user-attributes out of the
@@ -93,6 +94,24 @@ namespace
 			if (std::memcmp(pBytes + i, szNeedle, uNeedle) == 0) return true;
 		}
 		return false;
+	}
+
+	// Count instructions by opcode in a SPIR-V word stream. The first five words
+	// are the module header; each following instruction encodes word-count/opcode
+	// in its first word. Used by E5b to lock the BRDF LUT's explicit-LOD codegen.
+	u_int ProbeSpirvOpcodeCount(const Zenith_Vector<uint32_t>& axSpirv, const uint32_t uOpcode)
+	{
+		u_int uCount = 0;
+		for (u_int i = 5; i < axSpirv.GetSize();)
+		{
+			const uint32_t uInstruction = axSpirv.Get(i);
+			const u_int uWordCount = static_cast<u_int>(uInstruction >> 16u);
+			const u_int uCurrentOpcode = static_cast<u_int>(uInstruction & 0xFFFFu);
+			if (uWordCount == 0u || i + uWordCount > axSpirv.GetSize()) break;
+			if (uCurrentOpcode == uOpcode) uCount++;
+			i += uWordCount;
+		}
+		return uCount;
 	}
 
 	// Order-independent reflection equality on the fields that matter for the spine
@@ -455,6 +474,75 @@ ZENITH_TEST(SlangProbes, E5_GenericVsConcreteSpirvParity)
 		"[SlangProbe E5] generic=%u words concrete=%u words -> %s (offline spirv-dis is the Stage-4 arbiter)",
 		xGen.m_axSpirv.GetSize(), xCon.m_axSpirv.GetSize(),
 		bIdentical ? "BIT-IDENTICAL" : "DIFFER (names/debug; re-check after strip-debug)");
+}
+
+// --- E5b: the production clustered-light API must keep the per-pixel BRDF LUT
+//          lookup outside the runtime light loop and compile it as SampleLevel(0).
+//          Compiling this exact Common.Lighting API is the signature/reflection
+//          parity tripwire; the SPIR-V assertions prevent an implicit-derivative
+//          sample or duplicated static sample from silently returning. ----------
+ZENITH_TEST(SlangProbes, E5b_LightBRDFContextExplicitLod)
+{
+	const char* szSrc =
+		"import Common.Lighting;\n"
+		"struct ProbeInputs\n"
+		"{\n"
+		"  float4 m_xAlbedoMetallic;\n"
+		"  float4 m_xNormalRoughness;\n"
+		"  float4 m_xViewSpecular;\n"
+		"  uint m_uLightCount;\n"
+		"};\n"
+		"struct ProbeParams\n"
+		"{\n"
+		"  ConstantBuffer<ProbeInputs> g_xInputs;\n"
+		"  Sampler2D g_xBRDFLUT;\n"
+		"  StructuredBuffer<LightInstance> g_xLights;\n"
+		"  RWStructuredBuffer<float4> g_xSink;\n"
+		"};\n"
+		"ParameterBlock<ProbeParams> g_xProbeSet;\n"
+		"[shader(\"compute\")] [numthreads(1,1,1)]\n"
+		"void csMain(uint3 tid : SV_DispatchThreadID)\n"
+		"{\n"
+		"  float3 xAlbedo = g_xProbeSet.g_xInputs.m_xAlbedoMetallic.xyz;\n"
+		"  float fMetallic = g_xProbeSet.g_xInputs.m_xAlbedoMetallic.w;\n"
+		"  float3 xNormal = normalize(g_xProbeSet.g_xInputs.m_xNormalRoughness.xyz);\n"
+		"  float fRoughness = g_xProbeSet.g_xInputs.m_xNormalRoughness.w;\n"
+		"  float3 xViewDir = normalize(g_xProbeSet.g_xInputs.m_xViewSpecular.xyz);\n"
+		"  float fSpecular = g_xProbeSet.g_xInputs.m_xViewSpecular.w;\n"
+		"  uint uLightCount = min(g_xProbeSet.g_xInputs.m_uLightCount, 4u);\n"
+		"  float3 xSum = float3(0.0);\n"
+		"  if (uLightCount > 0u)\n"
+		"  {\n"
+		"    LightBRDFContext xContext = PrepareLightBRDFContext(\n"
+		"      xAlbedo, xNormal, xViewDir, fMetallic, fRoughness, fSpecular, g_xProbeSet.g_xBRDFLUT);\n"
+		"    [loop] for (uint i = 0u; i < uLightCount; ++i)\n"
+		"      xSum += EvaluateLight(g_xProbeSet.g_xLights[i], float3(0.0), xNormal, xViewDir,\n"
+		"                            xAlbedo, fMetallic, xContext);\n"
+		"  }\n"
+		"  g_xProbeSet.g_xSink[0] = float4(xSum, 1.0);\n"
+		"}\n";
+
+	Flux_SlangProbeResult xRes;
+	Flux_SlangCompiler::CompileProbeFromSource(szSrc, "csMain", xRes);
+	ZENITH_ASSERT_TRUE(xRes.m_bCompiled,
+		"E5b: production LightBRDFContext API must compile. Diag: %s", xRes.m_strDiagnostics.c_str());
+	ZENITH_ASSERT_TRUE(xRes.m_bHasReflection && xRes.m_axSpirv.GetSize() > 0u,
+		"E5b: context probe must emit reflection and compute SPIR-V");
+	ZENITH_ASSERT_TRUE(ProbeHasBinding(xRes.m_xReflection, "g_xInputs") &&
+		ProbeHasBinding(xRes.m_xReflection, "g_xBRDFLUT") &&
+		ProbeHasBinding(xRes.m_xReflection, "g_xLights") &&
+		ProbeHasBinding(xRes.m_xReflection, "g_xSink"),
+		"E5b: context refactor must preserve the input/LUT/light/sink descriptor contract");
+	ZENITH_ASSERT_EQ(xRes.m_xReflection.GetBindings().GetSize(), 4u,
+		"E5b: context refactor must not introduce any additional descriptor binding");
+
+	// SPIR-V 1.x opcodes: OpImageSampleImplicitLod=87,
+	// OpImageSampleExplicitLod=88. There is one authored LUT sample and it must
+	// stay explicit even though the light loop is runtime-sized.
+	const u_int uImplicitSamples = ProbeSpirvOpcodeCount(xRes.m_axSpirv, 87u);
+	const u_int uExplicitSamples = ProbeSpirvOpcodeCount(xRes.m_axSpirv, 88u);
+	ZENITH_ASSERT_EQ(uImplicitSamples, 0u, "E5b: clustered BRDF LUT must not use implicit derivatives");
+	ZENITH_ASSERT_EQ(uExplicitSamples, 1u, "E5b: clustered BRDF context must emit exactly one explicit-LOD LUT sample");
 }
 
 // --- E6: Slang debug info (Stage 1). The SAME source compiled with m_bEmitDebugInfo

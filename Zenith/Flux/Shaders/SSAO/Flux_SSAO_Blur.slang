@@ -12,9 +12,9 @@
 // =====================================================================
 
 import Common.Fullscreen;
+import Common.Bilateral;
 #include "Common/Bindings.slang"
 
-static const float BLUR_MIN_WEIGHT       = 0.0001;
 static const float BLUR_SKY_THRESHOLD    = 0.9999;
 static const float BLUR_MIN_DEPTH_SIGMA  = 0.0001;
 
@@ -24,6 +24,8 @@ struct SSAOBlurConstantsLayout
 	float u_fDepthSigma;
 	float u_fNormalSigma;
 	uint  u_uKernelRadius;
+	float2 u_xRcpTexelSize;
+	float2 u_xPadding;
 };
 struct PassParams
 {
@@ -37,27 +39,19 @@ ParameterBlock<PassParams> g_xPassSet;
 [shader("vertex")]
 FullscreenVsOut vsMain(uint vertexId : SV_VertexID) { return FullscreenVS(vertexId); }
 
-float GaussianWeight(float fDist, float fSigma)
-{
-	float fNorm = fDist / fSigma;
-	return exp(-0.5 * fNorm * fNorm);
-}
-
 [shader("fragment")]
 float4 fsMain(FullscreenVsOut input) : SV_Target
 {
-	float fCenterOcclusion = g_xPassSet.g_xOcclusionTex.Sample(input.uv).r;
-	float fCenterDepth     = g_xPassSet.g_xDepthTex.Sample(input.uv).r;
+	float fCenterOcclusion = g_xPassSet.g_xOcclusionTex.SampleLevel(input.uv, 0).r;
+	float fCenterDepth     = g_xPassSet.g_xDepthTex.SampleLevel(input.uv, 0).r;
 
 	if (fCenterDepth >= BLUR_SKY_THRESHOLD) return float4(1.0, 1.0, 1.0, 1.0);
 
-	float3 xCenterNormal = normalize(g_xPassSet.g_xNormalTex.Sample(input.uv).rgb);
+	float3 xCenterNormal = normalize(g_xPassSet.g_xNormalTex.SampleLevel(input.uv, 0).rgb);
 
 	float fDepthSigmaAbs = max(fCenterDepth * g_xPassSet.SSAOBlurConstants.u_fDepthSigma, BLUR_MIN_DEPTH_SIGMA);
 
-	uint uW, uH;
-	g_xPassSet.g_xOcclusionTex.GetDimensions(uW, uH);
-	float2 xTexelSize = 1.0 / float2((float)uW, (float)uH);
+	float2 xTexelSize = g_xPassSet.SSAOBlurConstants.u_xRcpTexelSize;
 
 	float fAccum     = 0.0;
 	float fWeightSum = 0.0;
@@ -70,21 +64,23 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 			float2 xOffset   = float2((float)iX, (float)iY);
 			float2 xSampleUV = clamp(input.uv + xOffset * xTexelSize, float2(0.001), float2(0.999));
 
-			float fSampleOcclusion = g_xPassSet.g_xOcclusionTex.Sample(xSampleUV).r;
-			float fSampleDepth     = g_xPassSet.g_xDepthTex.Sample(xSampleUV).r;
-			float3 xSampleNormal   = normalize(g_xPassSet.g_xNormalTex.Sample(xSampleUV).rgb);
+			float fSampleDepth = g_xPassSet.g_xDepthTex.SampleLevel(xSampleUV, 0).r;
+			// Sky G-buffer normals are zero. Reject the tap before normalizing so
+			// 0/0 cannot poison the bilateral accumulator with NaNs.
+			if (fSampleDepth >= BLUR_SKY_THRESHOLD) continue;
+
+			float fSampleOcclusion = g_xPassSet.g_xOcclusionTex.SampleLevel(xSampleUV, 0).r;
+			float3 xSampleNormal   = normalize(g_xPassSet.g_xNormalTex.SampleLevel(xSampleUV, 0).rgb);
 
 			float fSpatialDist   = length(xOffset);
-			float fSpatialWeight = GaussianWeight(fSpatialDist, g_xPassSet.SSAOBlurConstants.u_fSpatialSigma);
-
-			float fDepthDiff   = abs(fSampleDepth - fCenterDepth);
-			float fDepthWeight = GaussianWeight(fDepthDiff, fDepthSigmaAbs);
+			float fSpatialWeight = BilateralGaussianWeight(fSpatialDist, g_xPassSet.SSAOBlurConstants.u_fSpatialSigma);
+			float fDepthWeight = BilateralDepthWeight(fCenterDepth, fSampleDepth, fDepthSigmaAbs);
 
 			// Normal weight: 1 - cos(angle) makes parallel surfaces stay
 			// fully weighted while sharp normal changes (geometry edges)
 			// fall off via the gaussian.
-			float fNormalDiff   = 1.0 - max(dot(xCenterNormal, xSampleNormal), 0.0);
-			float fNormalWeight = GaussianWeight(fNormalDiff, g_xPassSet.SSAOBlurConstants.u_fNormalSigma);
+			float fNormalWeight = BilateralNormalWeight(
+				xCenterNormal, xSampleNormal, g_xPassSet.SSAOBlurConstants.u_fNormalSigma);
 
 			float fWeight = fSpatialWeight * fDepthWeight * fNormalWeight;
 			fAccum     += fSampleOcclusion * fWeight;
@@ -92,6 +88,8 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 		}
 	}
 
-	float fResult = (fWeightSum > BLUR_MIN_WEIGHT) ? fAccum / fWeightSum : fCenterOcclusion;
+	// The centre tap has zero bilateral deltas and therefore weight 1. Keep the
+	// fallback nevertheless as a finite-result invariant for malformed tuning.
+	float fResult = (fWeightSum > BILATERAL_MIN_WEIGHT) ? fAccum / fWeightSum : fCenterOcclusion;
 	return float4(fResult, fResult, fResult, fResult);
 }

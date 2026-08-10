@@ -57,7 +57,7 @@ struct ShadowSamplingLayout
 	float4 g_xCascadeDepthRange;     // per-cascade light-space ortho depth range (world units)
 	float4 g_xParams0;               // x=resolution y=rcpResolution z=normalOffsetTexels w=(spare; depth bias is fixed-function)
 	float4 g_xParams1;               // x=pcfRadiusTexels y=sunAngularRadius z=cascadeBlendFraction w=tapCount
-	float4 g_xParams2;               // x=pcssEnabled (0/1) ; yzw spare
+	float4 g_xParams2;               // x=pcssEnabled y=qualityFlags z=roughnessThreshold w=spare
 };
 
 // This pass's grab-bag of resources, grouped into one PassParams block at
@@ -222,14 +222,13 @@ void CookTorrance_Directional(inout float4 xFinalColor,
 								float3 xNormal,
 								float fMetal,
 								float fRough,
-								float3 xWorldPos,
+								float3 xViewDir,
 								float fSpecularParam,
 								float fClearCoat,
 								float fClearCoatRoughness,
 								uint  uShadingModel)
 {
 	float3 xLightDir = normalize(xLight.m_xDirection.xyz);
-	float3 xViewDir  = normalize(GetCamPos_Pad().xyz - xWorldPos);
 	float3 xHalfDir  = normalize(xLightDir + xViewDir);
 
 	float fRawNdotL = dot(xNormal, xLightDir);
@@ -291,7 +290,7 @@ void CookTorrance_Directional(inout float4 xFinalColor,
 // scale occlusion (foot-meets-ground, prop-on-surface, normal-mapped detail)
 // that CSM texels (~cm near, ~dm far) cannot resolve -- the "floating object"
 // tell. Reuses the already-bound scene depth; min()'d into the CSM factor.
-float ScreenSpaceContactShadow(float3 xWorldPos, float3 xLightDir)
+float ScreenSpaceContactShadow(float3 xViewPos, float3 xViewLightDir)
 {
 	// Deliberately SHORT range: a tight feet-meets-ground contact darken, not a
 	// full character shadow (CSM does the big shadow). The march is also applied
@@ -306,20 +305,19 @@ float ScreenSpaceContactShadow(float3 xWorldPos, float3 xLightDir)
 	const float fBias    = 0.025;  // skip very-close self-occlusion (acne + limb seams)
 
 	float fStepLen = fMaxDist / float(iSteps);
-	float3 xStepW  = xLightDir * fStepLen;
-	float3 xPosW   = xWorldPos + xLightDir * 0.02; // fixed lift off the surface
+	float3 xStepV  = xViewLightDir * fStepLen;
+	float3 xPosV   = xViewPos + xViewLightDir * 0.02; // fixed lift off the surface
 	[unroll]
 	for (int i = 0; i < iSteps; ++i)
 	{
-		xPosW += xStepW;
-		float3 xViewPos = mul(GetViewMat(), float4(xPosW, 1.0)).xyz;
-		if (xViewPos.z <= 0.0) break;               // behind camera (+Z forward)
-		float3 xScreen = ViewToScreen(xViewPos);    // .xy = UV
+		xPosV += xStepV;
+		if (xPosV.z <= 0.0) break;                  // behind camera (+Z forward)
+		float3 xScreen = ViewToScreen(xPosV);       // .xy = UV
 		float2 xUV = xScreen.xy;
 		if (xUV.x < 0.0 || xUV.x > 1.0 || xUV.y < 0.0 || xUV.y > 1.0) break;
 
 		float fSceneViewZ = DepthToViewZ(xUV, g_xPassSet.g_xDepthTex.Sample(xUV).r);
-		float fDelta = xViewPos.z - fSceneViewZ;    // >0: ray sample is behind scene geometry
+		float fDelta = xPosV.z - fSceneViewZ;       // >0: ray sample is behind scene geometry
 		if (fDelta > fBias && fDelta < fThick)
 			// Soft + distance-faded: nearer contact darker, capped at 55% so it
 			// reads as gentle grounding AO, never a hard black silhouette.
@@ -392,7 +390,11 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 	if (g_xPassSet.DeferredShadingConstants.g_bSSAOEnabled != 0u)
 		fAmbient *= g_xPassSet.g_xSSAOTex.Sample(input.uv).r;
 
-	float3 xWorldPos = GetWorldPosFromDepthTex(g_xPassSet.g_xDepthTex, input.uv);
+	// Reconstruct the pixel geometry once from the already-sampled depth. The
+	// cached view-space Z drives both CSM selection and clustered-light lookup.
+	float3 xViewPos  = GetViewPosFromDepth(input.uv, fDepth);
+	float  fViewZ    = xViewPos.z;
+	float3 xWorldPos = mul(GetInvViewMat(), float4(xViewPos, 1.0)).xyz;
 
 	float fRoughness = xMaterial.x;
 	float fMetallic  = xMaterial.y;
@@ -448,10 +450,9 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 	float3     xLightDir   = normalize(xLight.m_xDirection.xyz);
 	float      fNdotL      = max(dot(xNormal, xLightDir), 0.0);
 	float      fShadowFactor = 1.0;
+	uint       uShadowQualityFlags = uint(g_xPassSet.ShadowSampling.g_xParams2.y);
 
-	// View-space linear depth (+Z forward) drives cascade selection.
-	float fViewZ = DepthToViewZ(input.uv, fDepth);
-
+	// Cascade selection uses the cached view-space linear depth (+Z forward).
 	int iCascade = iNumCSMs - 1;
 	[unroll]
 	for (int c = 0; c < iNumCSMs; ++c)
@@ -488,6 +489,9 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 		xFilter.fSunAngle             = g_xPassSet.ShadowSampling.g_xParams1.y;
 		xFilter.fTapCountRaw          = g_xPassSet.ShadowSampling.g_xParams1.w;
 		xFilter.fPCSSEnabled          = g_xPassSet.ShadowSampling.g_xParams2.x;
+		xFilter.uQualityFlags         = uShadowQualityFlags;
+		xFilter.fReceiverRoughness    = fRoughness;
+		xFilter.fRoughnessThreshold   = g_xPassSet.ShadowSampling.g_xParams2.z;
 		xFilter.xCascadeWorldPerTexel = g_xPassSet.ShadowSampling.g_xCascadeWorldPerTexel;
 		xFilter.xCascadeDepthRange    = g_xPassSet.ShadowSampling.g_xCascadeDepthRange;
 		xFilter.fRotation             = ShadowKernelRotation(input.uv * float2(GetScreenDims()));
@@ -496,14 +500,16 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 		bool  bInside = xFilter.EvaluateCascade(iCascade, xWorldPos, xNormal, fNdotL, fShadow);
 		// Sphere-fit cascades cover the whole slice, but normal-offset can push a
 		// grazing receiver just past the edge — fall back to the coarser cascade.
-		if (!bInside && iCascade + 1 < iNumCSMs)
+		bool bCascadeFallbackBlend =
+			(uShadowQualityFlags & SHADOW_FLAG_CASCADE_FALLBACK_BLEND) != 0u;
+		if (bCascadeFallbackBlend && !bInside && iCascade + 1 < iNumCSMs)
 			bInside = xFilter.EvaluateCascade(iCascade + 1, xWorldPos, xNormal, fNdotL, fShadow);
 
 		fShadowFactor = bInside ? fShadow : 1.0;
 
 		// Cross-fade into the next cascade over a band near this cascade's far
 		// split so the resolution step is invisible.
-		if (bInside && iCascade + 1 < iNumCSMs)
+		if (bCascadeFallbackBlend && bInside && iCascade + 1 < iNumCSMs)
 		{
 			float fSplit = g_xPassSet.ShadowSampling.g_xCascadeSplitViewDepth[iCascade];
 			float fBand  = fSplit * g_xPassSet.ShadowSampling.g_xParams1.z;
@@ -520,8 +526,12 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 
 	// Screen-space contact shadows refine the CSM result for small-scale
 	// occlusion. Only meaningful on lit surfaces; take the darker of the two.
-	if (bViewShadows && fNdotL > 0.0)
-		fShadowFactor = min(fShadowFactor, ScreenSpaceContactShadow(xWorldPos, xLightDir));
+	bool bContactShadows = (uShadowQualityFlags & SHADOW_FLAG_CONTACT_SHADOWS) != 0u;
+	if (bContactShadows && bViewShadows && fNdotL > 0.0)
+	{
+		float3 xViewLightDir = mul(GetViewMat(), float4(xLightDir, 0.0)).xyz;
+		fShadowFactor = min(fShadowFactor, ScreenSpaceContactShadow(xViewPos, xViewLightDir));
+	}
 
 	// Debug: 9 = sun shadow factor (white=lit, black=shadowed); 11 = IBL ambient only.
 	if (g_xPassSet.DeferredShadingConstants.g_uDebugMode == 9u)  return float4(fShadowFactor.xxx, 1.0);
@@ -533,7 +543,7 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 	if (fNdotL > 0.0)
 	{
 		if (xLight.m_xColour.a > LIGHT_INTENSITY_THRESHOLD)
-			CookTorrance_Directional(xColour, xDiffuse, xLight, xNormal, fMetallic, fRoughness, xWorldPos,
+			CookTorrance_Directional(xColour, xDiffuse, xLight, xNormal, fMetallic, fRoughness, xViewDir,
 									  fSpecular, fClearCoat, fClearCoatRoughness, uShadingModel);
 		xColour.rgb = xIBLAmbient + (xColour.rgb - xIBLAmbient) * fShadowFactor;
 	}
@@ -549,21 +559,24 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 	// pipeline bakes it FALSE, stripping this whole cluster-light block.
 	if (FLUX_SC_VIEW_CLUSTER_LIGHTS_PERMITTED && ((GetViewFlags() & FLUX_VIEW_FLAG_CLUSTER_LIGHTS_ENABLED) != 0u))
 	{
-		float fViewZ = DepthToViewZ(input.uv, fDepth);
 		uint3 xClusterCoord = ClusterCoordFromUVDepth(input.uv, fViewZ);
 		uint  uClusterIdx   = ClusterIndex(xClusterCoord);
 		uint  uLightCount   = GetClusterLightCount(uClusterIdx);
 
-		float3 xDynLights = float3(0.0, 0.0, 0.0);
-		for (uint i = 0u; i < uLightCount; ++i)
+		if (uLightCount > 0u)
 		{
-			uint uLightIdx = GetClusterLightIndex(uClusterIdx * MAX_LIGHTS_PER_CLUSTER + i);
-			LightInstance xL = GetLight(uLightIdx);
-			xDynLights += EvaluateLight(xL, xWorldPos, xNormal, xViewDir,
-			                            xDiffuse.rgb, fMetallic, fRoughness, fSpecular,
-			                            GetBRDFLUT());
+			LightBRDFContext xBRDFContext = PrepareLightBRDFContext(
+				xDiffuse.rgb, xNormal, xViewDir, fMetallic, fRoughness, fSpecular, GetBRDFLUT());
+			float3 xDynLights = float3(0.0, 0.0, 0.0);
+			for (uint i = 0u; i < uLightCount; ++i)
+			{
+				uint uLightIdx = GetClusterLightIndex(uClusterIdx * MAX_LIGHTS_PER_CLUSTER + i);
+				LightInstance xL = GetLight(uLightIdx);
+				xDynLights += EvaluateLight(xL, xWorldPos, xNormal, xViewDir,
+				                            xDiffuse.rgb, fMetallic, xBRDFContext);
+			}
+			xColour.rgb += xDynLights;
 		}
-		xColour.rgb += xDynLights;
 	}
 
 	// Emissive bypasses lighting and shadows entirely — full HDR colour

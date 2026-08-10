@@ -90,8 +90,116 @@ namespace Flux_Generated_SSAO
 			float m_fu_fDepthSigma; // slang=float offset=4
 			float m_fu_fNormalSigma; // slang=float offset=8
 			unsigned int m_uu_uKernelRadius; // slang=uint offset=12
+			unsigned char m_au_xRcpTexelSize[8]; // slang=vector offset=16 arrayCount=2 (no C++ mapping)
+			unsigned char m_au_xPadding[8]; // slang=vector offset=24 arrayCount=2 (no C++ mapping)
 		};
-		static_assert(sizeof(SSAOBlurConstants_CB) == 16, "SSAOBlurConstants_CB size drifted from Slang reflection");
+		static_assert(sizeof(SSAOBlurConstants_CB) == 32, "SSAOBlurConstants_CB size drifted from Slang reflection");
+		static_assert(offsetof(SSAOBlurConstants_CB, m_fu_fSpatialSigma) == 0, "SSAOBlurConstants.u_fSpatialSigma offset drifted from Slang reflection");
+		static_assert(offsetof(SSAOBlurConstants_CB, m_fu_fDepthSigma) == 4, "SSAOBlurConstants.u_fDepthSigma offset drifted from Slang reflection");
+		static_assert(offsetof(SSAOBlurConstants_CB, m_fu_fNormalSigma) == 8, "SSAOBlurConstants.u_fNormalSigma offset drifted from Slang reflection");
+		static_assert(offsetof(SSAOBlurConstants_CB, m_uu_uKernelRadius) == 12, "SSAOBlurConstants.u_uKernelRadius offset drifted from Slang reflection");
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xOcclusionTex{ 3u, 1u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xDepthTex{ 3u, 2u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xNormalTex{ 3u, 3u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// vertex inputs: none
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ nullptr, 0u, { 0u, 0u } };
+	}
+
+	// ----- SSAO_BlurH (SSAO/Flux_SSAO_BlurH) -----
+	namespace SSAO_BlurH
+	{
+		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hg_xGlobal{ 0u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_axMaterials{ 0u, 1u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hg_xView{ 1u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xCSM{ 1u, 1u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xShadowMatrices{ 1u, 2u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xLightBuffer{ 1u, 3u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xClusterLightCounts{ 1u, 4u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xClusterLightIndices{ 1u, 5u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xBRDFLUT{ 1u, 6u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xIrradianceMap{ 1u, 7u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xPrefilteredMap{ 1u, 8u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: UnboundedTextureArray
+		inline constexpr Flux_BindingHandle hg_axTextures{ 2u, 0u, FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY, 0u };
+		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hSSAOBlurConstants{ 3u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		struct SSAOBlurConstants_CB
+		{
+			float m_fu_fSpatialSigma; // slang=float offset=0
+			float m_fu_fDepthSigma; // slang=float offset=4
+			float m_fu_fNormalSigma; // slang=float offset=8
+			unsigned int m_uu_uKernelRadius; // slang=uint offset=12
+			unsigned char m_au_xRcpTexelSize[8]; // slang=vector offset=16 arrayCount=2 (no C++ mapping)
+			unsigned char m_au_xPadding[8]; // slang=vector offset=24 arrayCount=2 (no C++ mapping)
+		};
+		static_assert(sizeof(SSAOBlurConstants_CB) == 32, "SSAOBlurConstants_CB size drifted from Slang reflection");
+		static_assert(offsetof(SSAOBlurConstants_CB, m_fu_fSpatialSigma) == 0, "SSAOBlurConstants.u_fSpatialSigma offset drifted from Slang reflection");
+		static_assert(offsetof(SSAOBlurConstants_CB, m_fu_fDepthSigma) == 4, "SSAOBlurConstants.u_fDepthSigma offset drifted from Slang reflection");
+		static_assert(offsetof(SSAOBlurConstants_CB, m_fu_fNormalSigma) == 8, "SSAOBlurConstants.u_fNormalSigma offset drifted from Slang reflection");
+		static_assert(offsetof(SSAOBlurConstants_CB, m_uu_uKernelRadius) == 12, "SSAOBlurConstants.u_uKernelRadius offset drifted from Slang reflection");
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xOcclusionTex{ 3u, 1u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xDepthTex{ 3u, 2u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xNormalTex{ 3u, 3u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// vertex inputs: none
+		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ nullptr, 0u, { 0u, 0u } };
+	}
+
+	// ----- SSAO_BlurV (SSAO/Flux_SSAO_BlurV) -----
+	namespace SSAO_BlurV
+	{
+		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hg_xGlobal{ 0u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_axMaterials{ 0u, 1u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hg_xView{ 1u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xCSM{ 1u, 1u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xShadowMatrices{ 1u, 2u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xLightBuffer{ 1u, 3u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xClusterLightCounts{ 1u, 4u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xClusterLightIndices{ 1u, 5u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xBRDFLUT{ 1u, 6u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xIrradianceMap{ 1u, 7u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xPrefilteredMap{ 1u, 8u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: UnboundedTextureArray
+		inline constexpr Flux_BindingHandle hg_axTextures{ 2u, 0u, FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY, 0u };
+		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hSSAOBlurConstants{ 3u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		struct SSAOBlurConstants_CB
+		{
+			float m_fu_fSpatialSigma; // slang=float offset=0
+			float m_fu_fDepthSigma; // slang=float offset=4
+			float m_fu_fNormalSigma; // slang=float offset=8
+			unsigned int m_uu_uKernelRadius; // slang=uint offset=12
+			unsigned char m_au_xRcpTexelSize[8]; // slang=vector offset=16 arrayCount=2 (no C++ mapping)
+			unsigned char m_au_xPadding[8]; // slang=vector offset=24 arrayCount=2 (no C++ mapping)
+		};
+		static_assert(sizeof(SSAOBlurConstants_CB) == 32, "SSAOBlurConstants_CB size drifted from Slang reflection");
 		static_assert(offsetof(SSAOBlurConstants_CB, m_fu_fSpatialSigma) == 0, "SSAOBlurConstants.u_fSpatialSigma offset drifted from Slang reflection");
 		static_assert(offsetof(SSAOBlurConstants_CB, m_fu_fDepthSigma) == 4, "SSAOBlurConstants.u_fDepthSigma offset drifted from Slang reflection");
 		static_assert(offsetof(SSAOBlurConstants_CB, m_fu_fNormalSigma) == 8, "SSAOBlurConstants.u_fNormalSigma offset drifted from Slang reflection");
@@ -140,17 +248,19 @@ namespace Flux_Generated_SSAO
 			float m_fRADIUS; // slang=float offset=0
 			float m_fBIAS; // slang=float offset=4
 			float m_fINTENSITY; // slang=float offset=8
-			float m_fKERNEL_SIZE; // slang=float offset=12
+			unsigned int m_uUSE_IGN_ROTATION; // slang=uint offset=12
 		};
 		static_assert(sizeof(SSAOConstants_CB) == 16, "SSAOConstants_CB size drifted from Slang reflection");
 		static_assert(offsetof(SSAOConstants_CB, m_fRADIUS) == 0, "SSAOConstants.RADIUS offset drifted from Slang reflection");
 		static_assert(offsetof(SSAOConstants_CB, m_fBIAS) == 4, "SSAOConstants.BIAS offset drifted from Slang reflection");
 		static_assert(offsetof(SSAOConstants_CB, m_fINTENSITY) == 8, "SSAOConstants.INTENSITY offset drifted from Slang reflection");
-		static_assert(offsetof(SSAOConstants_CB, m_fKERNEL_SIZE) == 12, "SSAOConstants.KERNEL_SIZE offset drifted from Slang reflection");
+		static_assert(offsetof(SSAOConstants_CB, m_uUSE_IGN_ROTATION) == 12, "SSAOConstants.USE_IGN_ROTATION offset drifted from Slang reflection");
 		// kind: CombinedTextureSampler
 		inline constexpr Flux_BindingHandle hg_xDepthTex{ 3u, 1u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 		// kind: CombinedTextureSampler
 		inline constexpr Flux_BindingHandle hg_xNormalTex{ 3u, 2u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// spec constant: uint
+		inline constexpr Flux_SpecConstantHandle hscFLUX_SC_SSAO_KERNEL_SIZE{ "FLUX_SC_SSAO_KERNEL_SIZE", 0u, 4u, 32u };
 		// vertex inputs: none
 		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ nullptr, 0u, { 0u, 0u } };
 	}

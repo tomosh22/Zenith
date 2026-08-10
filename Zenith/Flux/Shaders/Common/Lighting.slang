@@ -1,13 +1,15 @@
 // =====================================================================
 // Common.Lighting — shared Slang module.
 //
-// Subsystem: DynamicLights / DeferredShading. Single source of truth
+// Subsystem: DynamicLights / DeferredShading / Translucency. Single source of truth
 // for the dynamic-light data layout, the clustered-deferred grid math,
 // and the per-light Cook-Torrance evaluator. Used by:
 //   - DynamicLights/Flux_LightClustering.slang  (compute, builds the
 //     per-cluster light index lists)
 //   - DeferredShading/Flux_DeferredShading.slang (fragment, iterates
 //     each pixel's cluster and accumulates light contribution)
+//   - Translucency/Flux_Translucent_Forward.slang (fragment, same cluster
+//     walk for forward-lit transparent surfaces)
 //
 // LightInstance is a unified 64-byte POD. Point/spot/directional all
 // share the layout — fields irrelevant to a given type are unused but
@@ -164,6 +166,40 @@ public bool SphereIntersectsAABB(float3 xCenter, float fRadius, float3 xMin, flo
 // compensation via the BRDF LUT keeps brightness consistent across
 // all lighting paths.
 
+// Material/view terms shared by every light in a pixel's cluster. Preparing
+// these once keeps the BRDF LUT sample and multiscatter compensation out of
+// the per-light loop; the remaining fields feed each light's directional BRDF.
+public struct LightBRDFContext
+{
+    public float  m_fNdotV;
+    public float  m_fClampedRoughness;
+    public float3 m_xF0;
+    public float3 m_xMultiscatterScale;
+};
+
+public LightBRDFContext PrepareLightBRDFContext(float3 xAlbedo,
+                                                float3 xNormal,
+                                                float3 xViewDir,
+                                                float  fMetallic,
+                                                float  fRoughness,
+                                                float  fSpecular,
+                                                Sampler2D xBRDFLUT)
+{
+    LightBRDFContext xContext;
+    xContext.m_fNdotV             = max(dot(xNormal, xViewDir), PBR_EPSILON);
+    xContext.m_fClampedRoughness  = clamp(fRoughness, PBR_MIN_ROUGHNESS, 1.0);
+    xContext.m_xF0                = ComputeF0(xAlbedo, fMetallic, fSpecular);
+
+    float fRoughnessForLUT = clamp(xContext.m_fClampedRoughness,
+                                   PBR_BRDF_LUT_MIN_ROUGHNESS,
+                                   PBR_BRDF_LUT_MAX_ROUGHNESS);
+    float2 xBRDF = xBRDFLUT.SampleLevel(float2(xContext.m_fNdotV, fRoughnessForLUT), 0.0).rg;
+    float3 xMulti = MultiscatterBRDF(xContext.m_xF0, xContext.m_fNdotV, fRoughnessForLUT, xBRDF);
+    float3 xSingle = xContext.m_xF0 * xBRDF.x + xBRDF.y;
+    xContext.m_xMultiscatterScale = xMulti / max(xSingle, float3(PBR_EPSILON, PBR_EPSILON, PBR_EPSILON));
+    return xContext;
+}
+
 // Karis 2013 windowed inverse-square. Flux→irradiance via 1/(4πd²),
 // multiplied by saturate(1 - (d/r)⁴)² so contribution reaches zero
 // exactly at the range limit.
@@ -195,20 +231,18 @@ public float3 EvaluateCookTorrance(float3 xAlbedo,
                                     float3 xLightDir,
                                     float3 xLightColor,
                                     float  fMetallic,
-                                    float  fRoughness,
-                                    float  fSpecular,
                                     float  fAttenuation,
-                                    Sampler2D xBRDFLUT)
+                                    LightBRDFContext xBRDFContext)
 {
     float3 xHalfDir = normalize(xLightDir + xViewDir);
     float NdotL = max(dot(xNormal, xLightDir), 0.0);
-    float NdotV = max(dot(xNormal, xViewDir),  PBR_EPSILON);
+    float NdotV = xBRDFContext.m_fNdotV;
     float NdotH = max(dot(xNormal, xHalfDir),  0.0);
     float HdotV = max(dot(xHalfDir, xViewDir), 0.0);
     if (NdotL <= PBR_EPSILON) return float3(0.0, 0.0, 0.0);
 
-    float fClampedRoughness = clamp(fRoughness, PBR_MIN_ROUGHNESS, 1.0);
-    float3 F0 = ComputeF0(xAlbedo, fMetallic, fSpecular);
+    float fClampedRoughness = xBRDFContext.m_fClampedRoughness;
+    float3 F0 = xBRDFContext.m_xF0;
 
     float  D = DistributionGGX(NdotH, fClampedRoughness);
     float  G = GeometrySmith_Direct(NdotV, NdotL, fClampedRoughness);
@@ -218,13 +252,9 @@ public float3 EvaluateCookTorrance(float3 xAlbedo,
     float  denom       = 4.0 * NdotV * NdotL;
     float3 specular    = numerator / max(denom, PBR_EPSILON);
 
-    // Multi-scatter compensation — keeps brightness in line with IBL
-    // on rough surfaces.
-    float fRoughnessForLUT = clamp(fClampedRoughness, PBR_BRDF_LUT_MIN_ROUGHNESS, PBR_BRDF_LUT_MAX_ROUGHNESS);
-    float2 xBRDF = xBRDFLUT.Sample(float2(NdotV, fRoughnessForLUT)).rg;
-    float3 xMulti = MultiscatterBRDF(F0, NdotV, fRoughnessForLUT, xBRDF);
-    float3 xSingle = F0 * xBRDF.x + xBRDF.y;
-    specular *= xMulti / max(xSingle, float3(PBR_EPSILON, PBR_EPSILON, PBR_EPSILON));
+    // Prepared once per pixel so every clustered light receives the same
+    // multiscatter compensation as the former in-loop calculation.
+    specular *= xBRDFContext.m_xMultiscatterScale;
 
     float3 kS = F;
     float3 kD = (1.0 - kS) * (1.0 - fMetallic);
@@ -245,9 +275,7 @@ public float3 EvaluateLight(LightInstance xLight,
                             float3 xViewDir,
                             float3 xAlbedo,
                             float  fMetallic,
-                            float  fRoughness,
-                            float  fSpecular,
-                            Sampler2D xBRDFLUT)
+                            LightBRDFContext xBRDFContext)
 {
     uint   uType        = uint(xLight.m_xTypeOuter.y);
     float3 xLightPos    = xLight.m_xPositionRange.xyz;
@@ -286,6 +314,6 @@ public float3 EvaluateLight(LightInstance xLight,
     if (fAttenuation < LIGHT_CONTRIBUTION_THRESHOLD) return float3(0.0, 0.0, 0.0);
 
     return EvaluateCookTorrance(xAlbedo, xNormal, xViewDir, xLightDir,
-                                xLightColor, fMetallic, fRoughness, fSpecular,
-                                fAttenuation, xBRDFLUT);
+                                xLightColor, fMetallic, fAttenuation,
+                                xBRDFContext);
 }

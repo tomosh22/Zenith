@@ -1711,9 +1711,14 @@ change touches `Zenith/` as well as the game.
 **Boot baseline at THIS change: ZM 2863; engine (Null Combat) stays 1242.** The added
 contracts are pure generator/placement checks, so they do not move the 55-test
 automated registry or the cross-game engine suite.
-★ **SUPERSEDED -- the CURRENT baseline is ZM 3106, engine 1481**, registry unmoved
+★ **SUPERSEDED -- the CURRENT baseline is ZM 3117, engine 1492**, registry unmoved
 at **55**. OBSERVED 2026-08-10 on clean `Null_` builds:
-`3106 ran, 3104 passed, 0 failed, 2 skipped`. Derivation: ZM-D-183 added the two
+`3117 ran, 3115 passed, 0 failed, 2 skipped`. Most recent move: +11 ENGINE units
+(3106 -> 3117, engine 1481 -> 1492) from the Flux screen-space-quality review
+follow-ups -- six SSAO committed-selection / blur-constant units and five shadow
+quality-flag units. A `SlangProbes` probe added alongside them moves NEITHER
+number: that suite is `ZENITH_WINDOWS && ZENITH_VULKAN`-gated in
+`Flux_MaterialTable.cpp` and both gates run `Null_` builds. Earlier derivation: ZM-D-183 added the two
 committed-scene-bytes guards (2906 -> 2908); ZM-D-184 added the rival spawn-clearance
 unit (2908 -> 2909); the 2026-08-05 CommandLine ParseArgs units added 5 ENGINE units
 (engine 1284 -> 1289) and were NOT reflected here, leaving the ZM pin stale at 2909

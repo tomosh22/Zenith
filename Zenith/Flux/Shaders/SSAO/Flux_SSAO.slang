@@ -19,7 +19,7 @@ struct SSAOConstantsLayout
 	float RADIUS;
 	float BIAS;
 	float INTENSITY;
-	float KERNEL_SIZE;
+	uint  USE_IGN_ROTATION;
 };
 struct PassParams
 {
@@ -29,15 +29,71 @@ struct PassParams
 };
 ParameterBlock<PassParams> g_xPassSet;
 
+// Two pipeline variants specialise this value to 32 (current/default) or 16
+// (Phase-3 opt-in). Keeping it out of the per-draw CB lets the driver fold the
+// step count and unroll the fixed loop after Vulkan specialization.
+[SpecializationConstant] const uint FLUX_SC_SSAO_KERNEL_SIZE = 32u;
+
 [shader("vertex")]
 FullscreenVsOut vsMain(uint vertexId : SV_VertexID) { return FullscreenVS(vertexId); }
 
 static const int   NUM_DIRECTIONS = 8;
 static const float TWO_PI         = 6.28318530718;
+static const float INV_SQRT_TWO   = 0.70710678118;
 
-float Hash(float2 xP)
+// Eight evenly spaced unit directions. The per-pixel random rotation below is
+// applied as one 2-D matrix multiply per direction, so each pixel evaluates one
+// sin/cos pair instead of one pair for every direction.
+static const float2 DIRECTION_VECTORS[NUM_DIRECTIONS] = {
+	float2( 1.0,          0.0),
+	float2( INV_SQRT_TWO, INV_SQRT_TWO),
+	float2( 0.0,          1.0),
+	float2(-INV_SQRT_TWO, INV_SQRT_TWO),
+	float2(-1.0,          0.0),
+	float2(-INV_SQRT_TWO,-INV_SQRT_TWO),
+	float2( 0.0,         -1.0),
+	float2( INV_SQRT_TWO,-INV_SQRT_TWO),
+};
+
+float LegacyRotationHash(float2 xP)
 {
 	return frac(sin(dot(xP, float2(12.9898, 78.233))) * 43758.5453);
+}
+
+// Jimenez interleaved-gradient noise: deterministic in pixel space and much
+// less structured than the sine hash, with blue-noise-like local distribution.
+float InterleavedGradientNoise(float2 xPixel)
+{
+	return frac(52.9829189 * frac(dot(xPixel, float2(0.06711056, 0.00583715))));
+}
+
+float RotationHash(float2 xPixel)
+{
+	return (g_xPassSet.SSAOConstants.USE_IGN_ROTATION != 0u)
+		? InterleavedGradientNoise(xPixel)
+		: LegacyRotationHash(xPixel);
+}
+
+// Closed-form inverse projection for the standard engine projection shape.
+// Solving depth = clip.z / clip.w first avoids a full inverse-matrix multiply
+// for every SSAO tap. P[3][2]/P[3][3] retain perspective vs orthographic
+// behaviour, while P[0][2]/P[1][2] retain TAA jitter (and off-centre frusta).
+// The engine projection matrices have no XY skew or XY contribution to clip.w.
+float3 ViewPosFromDepthClosedForm(
+	float2 xUV,
+	float fDepth,
+	float2 xRcpProjScale,
+	float2 xProjZToXY,
+	float2 xProjTranslationXY,
+	float4 xDepthCoefficients)
+{
+	// xDepthCoefficients = (P22, P23, P32, P33).
+	float fViewZ = (xDepthCoefficients.y - fDepth * xDepthCoefficients.w) /
+		(fDepth * xDepthCoefficients.z - xDepthCoefficients.x);
+	float fClipW = xDepthCoefficients.z * fViewZ + xDepthCoefficients.w;
+	float2 xNDC = xUV * 2.0 - 1.0;
+	float2 xViewXY = (xNDC * fClipW - xProjZToXY * fViewZ - xProjTranslationXY) * xRcpProjScale;
+	return float3(xViewXY, fViewZ);
 }
 
 [shader("fragment")]
@@ -47,31 +103,49 @@ float4 fsMain(FullscreenVsOut input, float4 fragCoord : SV_Position) : SV_Target
 
 	if (fDepth >= 1.0) return float4(1.0, 1.0, 1.0, 1.0); // sky → unoccluded
 
-	float3 xFragPos     = GetViewPosFromDepth(input.uv, fDepth);
+	// Hoist the uniform projection coefficients once per pixel. The reconstruction
+	// helper supports both perspective and orthographic matrices and keeps the
+	// jitter terms injected into P02/P12 by TAA.
+	float4x4 xProj = GetProjMat();
+	float2 xProjScale = float2(xProj[0][0], xProj[1][1]);
+	float2 xRcpProjScale = 1.0 / xProjScale;
+	float2 xProjZToXY = float2(xProj[0][2], xProj[1][2]);
+	float2 xProjTranslationXY = float2(xProj[0][3], xProj[1][3]);
+	float4 xDepthCoefficients = float4(xProj[2][2], xProj[2][3], xProj[3][2], xProj[3][3]);
+
+	float3 xFragPos     = ViewPosFromDepthClosedForm(input.uv, fDepth,
+		xRcpProjScale, xProjZToXY, xProjTranslationXY, xDepthCoefficients);
 	float3 xWorldNormal = normalize(g_xPassSet.g_xNormalTex.Sample(input.uv).rgb);
 	float3 xNormal      = normalize(mul((float3x3)GetViewMat(), xWorldNormal));
 
-	// World-space SSAO radius projected into UV space scales by 1/depth and
-	// by the projection's per-axis scale — so the screen footprint of the
-	// sphere stays correct under perspective.
-	float fInvZ        = 0.5 / abs(xFragPos.z);
+	// Project the world-space radius through clip.w. For perspective clip.w is
+	// +/-viewZ (the historical 1/depth behaviour); for orthographic it is the
+	// constant P33, so the screen footprint correctly remains depth-independent.
+	float fClipW = xDepthCoefficients.z * xFragPos.z + xDepthCoefficients.w;
+	float fInvClipW = 0.5 / max(abs(fClipW), 0.000001);
 	float2 xScreenScale = float2(
-		g_xPassSet.SSAOConstants.RADIUS * abs(GetProjMat()[0][0]) * fInvZ,
-		g_xPassSet.SSAOConstants.RADIUS * abs(GetProjMat()[1][1]) * fInvZ);
+		g_xPassSet.SSAOConstants.RADIUS * abs(xProjScale.x) * fInvClipW,
+		g_xPassSet.SSAOConstants.RADIUS * abs(xProjScale.y) * fInvClipW);
 
 	// Per-pixel random rotation breaks the banding pattern an unrotated
 	// 8-direction sample would otherwise produce.
-	float fRotation = Hash(fragCoord.xy) * TWO_PI;
+	float fRotation = RotationHash(fragCoord.xy) * TWO_PI;
+	float fSinRotation = sin(fRotation);
+	float fCosRotation = cos(fRotation);
 
-	int iSteps = max(1, (int)g_xPassSet.SSAOConstants.KERNEL_SIZE / NUM_DIRECTIONS);
+	int iSteps = max(1, (int)FLUX_SC_SSAO_KERNEL_SIZE / NUM_DIRECTIONS);
 
 	float fOcclusion    = 0.0;
 	int   iValidSamples = 0;
 
+	[unroll]
 	for (int iDir = 0; iDir < NUM_DIRECTIONS; iDir++)
 	{
-		float  fAngle  = ((float)iDir / (float)NUM_DIRECTIONS) * TWO_PI + fRotation;
-		float2 xStepUV = float2(cos(fAngle), sin(fAngle)) * xScreenScale / (float)iSteps;
+		float2 xBaseDirection = DIRECTION_VECTORS[iDir];
+		float2 xDirection = float2(
+			xBaseDirection.x * fCosRotation - xBaseDirection.y * fSinRotation,
+			xBaseDirection.x * fSinRotation + xBaseDirection.y * fCosRotation);
+		float2 xStepUV = xDirection * xScreenScale / (float)iSteps;
 
 		for (int iStep = 1; iStep <= iSteps; iStep++)
 		{
@@ -82,7 +156,8 @@ float4 fsMain(FullscreenVsOut input, float4 fragCoord : SV_Position) : SV_Target
 			float fSampleDepth = g_xPassSet.g_xDepthTex.Sample(xSampleUV).x;
 			if (fSampleDepth >= 1.0) continue; // skip sky
 
-			float3 xSamplePos = GetViewPosFromDepth(xSampleUV, fSampleDepth);
+			float3 xSamplePos = ViewPosFromDepthClosedForm(xSampleUV, fSampleDepth,
+				xRcpProjScale, xProjZToXY, xProjTranslationXY, xDepthCoefficients);
 			float3 xDiff      = xSamplePos - xFragPos;
 			float  fDist      = length(xDiff);
 			if (fDist < 0.0001) continue;

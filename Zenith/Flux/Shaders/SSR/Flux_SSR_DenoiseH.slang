@@ -17,7 +17,7 @@
 // H output is the unnormalized accumulator pair (so V can do the final
 // ratio without the squared-confidence bias of ratio-of-ratios):
 //   RT0 RGBA: rgb = Σ(w·radiance), a = Σ(w)
-//   RT1 RGBA: r   = Σ(w·confidence_n), gba unused
+//   RT1 RGBA: r = Σ(w·confidence_n), g = variance-derived radius scale
 //
 // Roughness gating runs at the TOP of the shader (must repeat in V too —
 // roughness < 0.15 → mirror passthrough, roughness > 0.7 → IBL passthrough).
@@ -29,6 +29,7 @@
 #include "Common/Bindings.slang"
 import Common.Fullscreen;
 import Common.PBR;
+import Common.Bilateral;
 import SSR.Flux_SSR_DenoiseCommon;
 
 static const float SSR_DENOISE_SMOOTH_THRESHOLD    = 0.15;
@@ -52,19 +53,13 @@ ParameterBlock<PassParams> g_xPassSet;
 [shader("vertex")]
 FullscreenVsOut vsMain(uint vertexId : SV_VertexID) { return FullscreenVS(vertexId); }
 
-float GaussianWeight(float fDist, float fSigma)
-{
-	float fNorm = fDist / fSigma;
-	return exp(-0.5 * fNorm * fNorm);
-}
-
 struct DenoiseHOut
 {
 	float4 xColourAccum : SV_Target0; // rgb = Σ(w·color), a = Σ(w)
-	float4 xConfAccum   : SV_Target1; // r = Σ(w·confidence_n), gba unused
+	float2 xConfAccum   : SV_Target1; // r = Σ(w·confidence_n), g = variance radius scale (RG16F)
 };
 
-DenoiseHOut MakeDenoiseHOut(float4 xColourAccum, float4 xConfAccum)
+DenoiseHOut MakeDenoiseHOut(float4 xColourAccum, float2 xConfAccum)
 {
 	DenoiseHOut o;
 	o.xColourAccum = xColourAccum;
@@ -77,7 +72,7 @@ DenoiseHOut MakeDenoiseHOut(float4 xColourAccum, float4 xConfAccum)
 // own weight is 1.
 DenoiseHOut PassthroughOut(float4 xCentre)
 {
-	return MakeDenoiseHOut(float4(xCentre.rgb, 1.0), float4(xCentre.a, 0.0, 0.0, 0.0));
+	return MakeDenoiseHOut(float4(xCentre.rgb, 1.0), float2(xCentre.a, 1.0));
 }
 
 [shader("fragment")]
@@ -129,16 +124,15 @@ DenoiseHOut fsMain(FullscreenVsOut input)
 		if (xSampleAux.b   <  0.0001) continue;  // neighbour had no hit (Phase 0 RT1.b carries travel distance)
 
 		// --- Bilateral edge gates (centre vs neighbour content) ---
-		float fSpatialWeight = GaussianWeight(abs((float)i), g_xPassSet.PushConstants.u_fSpatialSigma);
+		float fSpatialWeight = BilateralGaussianWeight(abs((float)i), g_xPassSet.PushConstants.u_fSpatialSigma);
 
-		float fDepthDiff   = abs(fSampleDepth - fCenterDepth);
-		float fDepthWeight = GaussianWeight(fDepthDiff, fDepthSigmaAbs);
+		float fDepthWeight = BilateralDepthWeight(fCenterDepth, fSampleDepth, fDepthSigmaAbs);
 
-		float fNormalDiff   = 1.0 - max(dot(xCenterWNormal, xSampleWNormal), 0.0);
-		float fNormalWeight = GaussianWeight(fNormalDiff, g_xPassSet.PushConstants.u_fNormalSigma);
+		float fNormalWeight = BilateralNormalWeight(
+			xCenterWNormal, xSampleWNormal, g_xPassSet.PushConstants.u_fNormalSigma);
 
 		float fRoughnessDiff   = abs(fSampleRoughness - fCenterRoughness);
-		float fRoughnessWeight = GaussianWeight(fRoughnessDiff, fRoughnessSigma);
+		float fRoughnessWeight = BilateralGaussianWeight(fRoughnessDiff, fRoughnessSigma);
 
 		// --- BRDF reuse weight (centre's lobe vs neighbour's hit direction) ---
 		// Use neighbour's hit UV (Phase 0 metadata) to derive a hit world point,
@@ -168,5 +162,5 @@ DenoiseHOut fsMain(FullscreenVsOut input)
 
 	// Output unnormalized accumulators — V applies the final ratio.
 	return MakeDenoiseHOut(float4(xColourNum, fWeightDen),
-						   float4(fConfNum,  0.0, 0.0, 0.0));
+						   float2(fConfNum, fVarScale));
 }

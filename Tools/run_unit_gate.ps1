@@ -209,7 +209,22 @@ param(
     # frame units (VRAM shapes, spawn drain + frame arm, the empty-case DISARM,
     # bounds-checked emitter count). Observed 2026-08-10 on a Null_ Combat build
     # (1481 ran / 1480 passed / 0 failed / 1 skipped).
-    [int]$Baseline = 1481,
+    # 1481 -> 1492: +11 Flux screen-space-quality units, ALL of which run here.
+    # 6 in Flux/SSAO/Flux_SSAO.Tests.inl (Flux_SSAOSelection compares all three
+    # fields; the committed-handle selector commits filtered-vs-raw, requests a
+    # rebuild on any field change, and HOLDS its handle until the next Commit;
+    # the reciprocal-texel blur-constant fill; the 32-byte CB layout) and 5 in
+    # Flux/Shadows/Flux_Shadows.Tests.inl (quality-flag bits are distinct powers
+    # of two, the OR-fold, the shipping defaults, the exact uint->float->uint
+    # round trip through g_xParams2.y, and the 96-byte GPU mirror).
+    #
+    # NOT +1 for the new SlangProbes E5b BRDF-LUT probe: Flux_MaterialTable.cpp
+    # gates the whole SlangProbes suite on ZENITH_WINDOWS && ZENITH_VULKAN, and
+    # this gate (like zm-tests) runs a Null_ build, so no SlangProbes case is
+    # compiled in. Do not add to this number for a Slang probe.
+    # Observed 2026-08-10 on a Null_ Combat build
+    # (1492 ran / 1491 passed / 0 failed / 1 skipped).
+    [int]$Baseline = 1492,
     [int]$TimeoutSec = 180,
     [string]$LogPath = ""
 )

@@ -8,7 +8,7 @@
 //
 // Outputs (dual MRT):
 //   RT0 RGBA: rgb = reflection colour,        a = confidence
-//   RT1 RGBA: rg  = hit UV, b = travel dist,  a = ray count
+//   RT1 RGBA: rg  = hit UV, b = normalised march T, a = ray count
 //
 // RT1 carries hit metadata for downstream passes (denoise BRDF reuse,
 // variance estimation) — see Flux_SSR.cpp for the transient layout.
@@ -151,10 +151,9 @@ struct SSRConstantsLayout
 	// Phase 6 — minimum step budget (mirror-smooth surfaces use up to
 	// u_uStepCount; high-roughness surfaces drop to u_uStepCountMin).
 	uint  u_uStepCountMin;
-	// Padding to land the float4 array on a 16-byte boundary. Slang's CBV
-	// layout rules promote float4 arrays to 16-byte alignment regardless;
-	// these explicit pads keep the C++ side honest.
-	uint  u_uPad0;
+	// Committed graph selection: non-zero when RT1 aux metadata exists. This
+	// occupies the former first pad slot, preserving the float4-array alignment.
+	uint  u_bAuxOutputEnabled;
 	uint  u_uPad1;
 	uint  u_uPad2;
 	// Cached HiZ per-mip dimensions: xy = (w, h), zw = (1/w, 1/h).
@@ -201,6 +200,27 @@ float2 GetBlueNoise(int2 xPixelCoord, uint uFrameIndex)
 	return xNoise;
 }
 
+// Depth-only view-Z reconstruction from the projection's z/w rows. For the
+// engine's column-vector convention:
+//   depth = (P22*z + P23) / (P32*z + P33)
+// Solving for z avoids a full inverse-projection multiply. It covers both
+// perspective (P32=1, P33=0) and orthographic (P32=0, P33=1) projections;
+// TAA jitter changes only the projection's x/y rows, so these coefficients are
+// invariant under the main-view jitter path.
+float4 SSR_GetDepthToViewZCoefficients()
+{
+	float4x4 xProj = GetProjMat();
+	return float4(xProj[2][3], xProj[3][3], xProj[3][2], xProj[2][2]);
+}
+
+float SSR_DepthToViewZ(float fDepth, float4 xCoeffs)
+{
+	float fNumerator   = xCoeffs.x - fDepth * xCoeffs.y;
+	float fDenominator = fDepth * xCoeffs.z - xCoeffs.w;
+	float fSafeDenom   = (fDenominator < 0.0 ? -1.0 : 1.0) * max(abs(fDenominator), 1e-8);
+	return fNumerator / fSafeDenom;
+}
+
 // HiZ ray march. Returns hit UV (xy), hit depth (z), confidence (w);
 // confidence = 0 means no hit.
 float4 RayMarch(float3 xViewOrigin,
@@ -209,6 +229,7 @@ float4 RayMarch(float3 xViewOrigin,
 				float  fRoughness,
 				float  fNdotV,
 				uint   uStepBudget,
+				float4 xDepthToViewZCoeffs,
 				out float fMarchDistance,
 				out float2 xScreenDir)
 {
@@ -319,7 +340,7 @@ float4 RayMarch(float3 xViewOrigin,
 			continue;
 		}
 
-		float fMinViewZ = DepthToViewZ(xSampleUV, fMinDepth);
+		float fMinViewZ = SSR_DepthToViewZ(fMinDepth, xDepthToViewZCoeffs);
 		// fMaxViewZ is computed but only fed into the conservative thickness
 		// test — we still drive the binary search off the min-depth surface.
 
@@ -354,7 +375,7 @@ float4 RayMarch(float3 xViewOrigin,
 						float fMidT          = (fSearchStart + fSearchEnd) * 0.5;
 						float2 xMidUV        = xScreenStart.xy + xScreenDir * fMidT * fMaxScreenDist;
 						float fMidSceneDepth = g_xPassSet.g_xHiZTex.SampleLevel(xMidUV, fSearchMip).r;
-						float fMidSceneZ     = DepthToViewZ(xMidUV, fMidSceneDepth);
+						float fMidSceneZ     = SSR_DepthToViewZ(fMidSceneDepth, xDepthToViewZCoeffs);
 
 						float fMidInvZ = lerp(fInvZStart, fInvZEnd, fMidT);
 						float fMidRayZ = 1.0 / fMidInvZ;
@@ -367,7 +388,7 @@ float4 RayMarch(float3 xViewOrigin,
 					float fFinalT          = (fSearchStart + fSearchEnd) * 0.5;
 					float2 xFinalUV        = xScreenStart.xy + xScreenDir * fFinalT * fMaxScreenDist;
 					float fFinalSceneDepth = g_xPassSet.g_xHiZTex.SampleLevel(xFinalUV, fSearchMip).r;
-					float fFinalSceneZ     = DepthToViewZ(xFinalUV, fFinalSceneDepth);
+					float fFinalSceneZ     = SSR_DepthToViewZ(fFinalSceneDepth, xDepthToViewZCoeffs);
 
 					float3 xHitWorldNormal = g_xPassSet.g_xNormalsTex.Sample(xFinalUV).rgb;
 					float3 xHitViewNormal  = normalize(mul((float3x3)GetViewMat(), xHitWorldNormal));
@@ -469,6 +490,7 @@ RayMarchOut fsMain(FullscreenVsOut input, float4 fragCoord : SV_Position)
 	float3 xViewDir          = normalize(xViewPos);
 	float3 xMirrorReflectDir = reflect(xViewDir, xViewNormal);
 	float  fNdotV            = max(dot(xViewNormal, -xViewDir), 0.0);
+	float4 xDepthToViewZCoeffs = SSR_GetDepthToViewZCoefficients();
 
 	// Phase 2: take multiple GGX importance samples on rough surfaces (where
 	// one sample is too noisy a Monte-Carlo estimate of the lobe). Mirror-
@@ -538,7 +560,7 @@ RayMarchOut fsMain(FullscreenVsOut input, float4 fragCoord : SV_Position)
 
 		float  fKMarchDist  = 0.0;
 		float2 xKScreenDir  = float2(0.0, 0.0);
-		float4 xKHitResult  = RayMarch(xViewPos, xKReflectDir, xViewNormal, fRoughness, fNdotV, uStepBudget, fKMarchDist, xKScreenDir);
+		float4 xKHitResult  = RayMarch(xViewPos, xKReflectDir, xViewNormal, fRoughness, fNdotV, uStepBudget, xDepthToViewZCoeffs, fKMarchDist, xKScreenDir);
 
 		if (k == 0u)
 		{
@@ -595,7 +617,7 @@ RayMarchOut fsMain(FullscreenVsOut input, float4 fragCoord : SV_Position)
 			float fSceneDepth = g_xPassSet.g_xHiZTex.Sample(xSampleUV).r;
 			if (fSceneDepth < 0.9999)
 			{
-				float fSceneViewZ = DepthToViewZ(xSampleUV, fSceneDepth);
+				float fSceneViewZ = SSR_DepthToViewZ(fSceneDepth, xDepthToViewZCoeffs);
 				float fDD = fStartViewZ - fSceneViewZ;
 				fMaxDepthDiff = max(fMaxDepthDiff, fDD);
 				if (fSceneViewZ < fStartViewZ) bFoundCloser = true;
@@ -651,11 +673,12 @@ RayMarchOut fsMain(FullscreenVsOut input, float4 fragCoord : SV_Position)
 
 		float fFinalConfidence = fAvgConf;
 
-		// Contact hardening — distance-weighted confidence falloff using
-		// the world-space travel from origin to averaged hit.
-		float3 xOriginWorldPos = GetWorldPosFromDepthTex(g_xPassSet.g_xDepthTex, input.uv);
-		float3 xHitWorldPos    = GetWorldPosFromDepthTex(g_xPassSet.g_xDepthTex, xAvgHitUV);
-		float  fWorldTravelDist = length(xHitWorldPos - xOriginWorldPos);
+		// Contact hardening — a rigid view transform preserves metric distance.
+		// The origin view position is already available; reconstruct only the
+		// averaged hit in view space (one depth sample + one InvProj multiply).
+		float  fAvgHitDepth     = g_xPassSet.g_xDepthTex.Sample(xAvgHitUV).r;
+		float3 xHitViewPos      = GetViewPosFromDepth(xAvgHitUV, fAvgHitDepth);
+		float  fWorldTravelDist = length(xHitViewPos - xViewPos);
 
 		float fContactHardening = smoothstep(0.0, g_xPassSet.SSRConstants.u_fContactHardeningDist, fWorldTravelDist);
 		float fRoughnessContactScale = lerp(1.0, SSR_CONTACT_ROUGHNESS_SCALE_MAX, fRoughness);
@@ -682,7 +705,7 @@ RayMarchOut fsMain(FullscreenVsOut input, float4 fragCoord : SV_Position)
 
 		// RT1 metadata for Phase 3b/4 consumers:
 		//   rg = average hit UV
-		//   b  = average travel distance
+		//   b  = average normalised march parameter (fFinalT)
 		//   a  = effective ray count (post early-exit)
 		float4 xAux = float4(xAvgHitUV, fAvgDist, (float)uEffectiveRays);
 		return MakeRayMarchOut(float4(xAvgColour, fFinalConfidence), xAux);

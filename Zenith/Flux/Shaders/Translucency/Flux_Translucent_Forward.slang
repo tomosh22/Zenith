@@ -108,79 +108,13 @@ VsOut vsMain(VsIn input)
 }
 
 // ----- Shadow sampling (deferred recipe, texel size from CB) -----
-// Stage 6: the 4-tap PCF tier is a subsystem-LOCAL IShadowFilter — declared and
-// conformed to the Common seam (Common/ShadowSampling.slang) via `extension` right
-// here, with ZERO edits to Common. This is the living proof that a subsystem plugs
-// in its own filter through the seam. The cascade walk (loop + edge-band blend) in
-// ComputeSunShadowFactor is this pass's own and stays put; it drives the 4-tap
-// sample directly (the generic EvaluateCascade conformance is provided for any
-// consumer wanting the IShadowFilter shape).
+// The bias-agnostic ShadowFilterSimple4Tap Gather kernel is shared from
+// Common/ShadowSampling.slang. This pass still owns projection, depth bias and
+// its edge-band cascade walk, so lifting the kernel does not alter receiver bias.
 
 static const float SHADOW_MIN_BIAS        = 0.0005;
 static const float SHADOW_MAX_BIAS        = 0.005;
-static const float PCF_OFFSET_INNER       = 0.5;
-static const float PCF_OFFSET_OUTER       = 1.5;
-static const float PCF_SAMPLE_COUNT       = 16.0;
 static const float CASCADE_BLEND_DISTANCE = 0.15;
-
-// The translucent pass's cheaper shadow tier: a fixed 4-tap (2×2 Gather) box PCF.
-// Holds only the CSM texel size (from TranslucencyConstants). SampleCascadeShadow is
-// a VERBATIM move of the former free function — texelSize is the one former parameter
-// that became a field; the sampling math is unchanged.
-struct ShadowFilterSimple4Tap
-{
-	float2 texelSize;   // 1 / CSM resolution (engine rule: dims via CBV)
-
-	float SampleCascadeShadow(int iCascade, float2 xSamplePos, float fBiasedDepth)
-	{
-		float fShadow = 0.0;
-
-		float2 axOffsets[4] = {
-			float2(-PCF_OFFSET_OUTER, -PCF_OFFSET_OUTER) * texelSize,
-			float2( PCF_OFFSET_INNER, -PCF_OFFSET_OUTER) * texelSize,
-			float2(-PCF_OFFSET_OUTER,  PCF_OFFSET_INNER) * texelSize,
-			float2( PCF_OFFSET_INNER,  PCF_OFFSET_INNER) * texelSize,
-		};
-
-		for (int i = 0; i < 4; i++)
-		{
-			float2 xSampleUV = xSamplePos + axOffsets[i];
-			float4 shadowDepths = GetCSM().Gather(float3(xSampleUV, float(iCascade)));
-
-			float4 comparison = step(float4(fBiasedDepth, fBiasedDepth, fBiasedDepth, fBiasedDepth), shadowDepths);
-			fShadow += dot(comparison, float4(1.0, 1.0, 1.0, 1.0));
-		}
-
-		return fShadow / PCF_SAMPLE_COUNT;
-	}
-};
-
-// Conform the local tier to the Common shadow-filter seam WITHOUT touching Common
-// (the mirror of DeferredShading's ShadowFilterPCSS). EvaluateCascade is the full
-// per-cascade unit — project + bounds + N·L bias + 4-tap — so this type satisfies the
-// same IShadowFilter contract as the deferred tier. (This pass's own walk below calls
-// SampleCascadeShadow directly because it also needs the projected sample position for
-// its edge-band blend; the conformance exists to demonstrate the seam.)
-extension ShadowFilterSimple4Tap : IShadowFilter
-{
-	bool EvaluateCascade(int iCascade, float3 xWorldPos, float3 xNormal, float fNdotL, out float fShadow)
-	{
-		fShadow = 1.0;
-
-		float4 xShadowSpace  = mul(GetShadowMatrix(iCascade), float4(xWorldPos, 1.0));
-		float2 xSamplePos    = xShadowSpace.xy / xShadowSpace.w * 0.5 + 0.5;
-		float  fCurrentDepth = xShadowSpace.z / xShadowSpace.w;
-
-		if (xSamplePos.x < 0.0 || xSamplePos.x > 1.0 ||
-			xSamplePos.y < 0.0 || xSamplePos.y > 1.0) return false;
-		if (fCurrentDepth < 0.0 || fCurrentDepth > 1.0) return false;
-
-		float fBias        = max(SHADOW_MIN_BIAS, SHADOW_MAX_BIAS * (1.0 - fNdotL));
-		float fBiasedDepth  = fCurrentDepth - fBias;
-		fShadow = this.SampleCascadeShadow(iCascade, xSamplePos, fBiasedDepth);
-		return true;
-	}
-}
 
 float ComputeSunShadowFactor(float3 xWorldPos, float fNdotL)
 {
@@ -200,9 +134,8 @@ float ComputeSunShadowFactor(float3 xWorldPos, float fNdotL)
 	float2 texelSize = g_xPassSet.TranslucencyConstants.g_xCSMTexelSize;
 	float fShadowFactor = 1.0;
 
-	// Stage 6: the 4-tap sample now comes from this pass's own ShadowFilterSimple4Tap
-	// (the CSM texel size is its only state). The projection / bounds / bias / edge-band
-	// blend walk is unchanged.
+	// The shared Gather kernel owns only its texel size. Projection, bounds,
+	// depth bias and edge-band blend remain unchanged in this caller.
 	ShadowFilterSimple4Tap xFilter;
 	xFilter.texelSize = texelSize;
 
@@ -407,16 +340,21 @@ float4 fsMain(VsOut input, bool bFrontFace : SV_IsFrontFace) : SV_Target
 		uint  uClusterIdx   = ClusterIndex(xClusterCoord);
 		uint  uLightCount   = GetClusterLightCount(uClusterIdx);
 
-		float3 xDynLights = float3(0.0, 0.0, 0.0);
-		for (uint i = 0u; i < uLightCount; ++i)
+		if (uLightCount > 0u)
 		{
-			uint uLightIdx = GetClusterLightIndex(uClusterIdx * MAX_LIGHTS_PER_CLUSTER + i);
-			LightInstance xL = GetLight(uLightIdx);
-			xDynLights += EvaluateLight(xL, input.worldPos, xSurface.worldNormal, xViewDir,
-			                            xSurface.albedo.rgb, xSurface.metallic, xSurface.roughness,
-			                            xSurface.specular, GetBRDFLUT());
+			LightBRDFContext xBRDFContext = PrepareLightBRDFContext(
+				xSurface.albedo.rgb, xSurface.worldNormal, xViewDir,
+				xSurface.metallic, xSurface.roughness, xSurface.specular, GetBRDFLUT());
+			float3 xDynLights = float3(0.0, 0.0, 0.0);
+			for (uint i = 0u; i < uLightCount; ++i)
+			{
+				uint uLightIdx = GetClusterLightIndex(uClusterIdx * MAX_LIGHTS_PER_CLUSTER + i);
+				LightInstance xL = GetLight(uLightIdx);
+				xDynLights += EvaluateLight(xL, input.worldPos, xSurface.worldNormal, xViewDir,
+				                            xSurface.albedo.rgb, xSurface.metallic, xBRDFContext);
+			}
+			xColour += xDynLights;
 		}
-		xColour += xDynLights;
 	}
 
 	// Emissive bypasses lighting.

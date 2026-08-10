@@ -557,11 +557,12 @@ void Flux_RendererImpl::ApplySubsystemGraphSelections(Flux_RenderGraph& xGraph)
 	// all 49 of its passes for the upcoming full Compile() so the validator
 	// sees a writer for every IBL texture that DeferredShading reads.
 	xEngine.Fog().ApplyTechniqueSelectionToGraph(xGraph);
-	// SSR / SSGI runtime output toggles: when blur or denoise flip, these
-	// enable/disable their post-pass and MarkDirty so the deferred-lighting
-	// pass re-reads the correct handle (see g_xEngine.SSR().GetReflectionHandle).
+	// SSAO / SSR / SSGI runtime output toggles: when filtering, algorithm, or
+	// resolution selections change, these request a full rebuild so the
+	// deferred-lighting pass re-declares the correct committed handle.
 	// Must run BEFORE IBL's UpdateGraphPassEnables for the same MarkDirty
 	// propagation reason described above.
+	xEngine.SSAO().ApplySelectionToGraph(xGraph);
 	xEngine.SSR().ApplyBlurSelectionToGraph(xGraph);
 	xEngine.SSGI().ApplyDenoiseSelectionToGraph(xGraph);
 	// Skybox transmittance/sky-view LUT enables. Must run BEFORE IBL's (and after

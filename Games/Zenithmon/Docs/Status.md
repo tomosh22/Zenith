@@ -3,10 +3,22 @@
 **Last updated:** 2026-08-10
 
 **★ LIVE BASELINE (OBSERVED 2026-08-10 on clean `Null_` builds):
-ZM boot `3106 ran / 3104 passed / 0 failed / 2 skipped`; engine boot (Null Combat)
-`1481 ran / 1480 passed / 0 failed / 1 skipped`; registry **55**.** This is the
-current pin in `zm-tests.yml` (`-Baseline 3106`) and `run_unit_gate.ps1`
-(default 1481). The move from 3084/1459 is **+22 ENGINE units** (no ZM units) from
+ZM boot `3117 ran / 3115 passed / 0 failed / 2 skipped`; engine boot (Null Combat)
+`1492 ran / 1491 passed / 0 failed / 1 skipped`; registry **55**.** This is the
+current pin in `zm-tests.yml` (`-Baseline 3117`) and `run_unit_gate.ps1`
+(default 1492). The move from 3106/1481 is **+11 ENGINE units** (no ZM units) from
+the Flux screen-space-quality review follow-ups: 6 in
+`Flux/SSAO/Flux_SSAO.Tests.inl` (the three-field `Flux_SSAOSelection` comparison
+and the committed-handle selector's commit / rebuild-request /
+hold-until-re-commit contract, plus the reciprocal-texel blur constants and their
+32-byte CB layout) and 5 in `Flux/Shadows/Flux_Shadows.Tests.inl` (distinct
+single-bit quality flags, the OR-fold, the shipping defaults, the exact
+`uint`→`float`→`uint` round trip through `g_xParams2.y`, and the 96-byte GPU
+mirror). ★ The same change also added a `SlangProbes` E5b probe that moves
+NEITHER number: `Flux_MaterialTable.cpp` gates that whole suite on
+`ZENITH_WINDOWS && ZENITH_VULKAN` and both gates run `Null_` builds, so a Slang
+probe is never compiled into either count. Before that, the move from 3084/1459
+was **+22 ENGINE units** (no ZM units) from
 wiring the GPU-driven particle path: `Flux_ParticleGPUImpl`'s instance buffer had no
 reader, its `Initialise` had no caller and no emitter ever registered, so the
 `Flux_ParticleUpdate` compute pass was inert. The new

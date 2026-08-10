@@ -11,10 +11,10 @@
 //   4. Writes matching indices into ClusterLightIndices and the count
 //      into ClusterLightCounts.
 //
-// MAX_LIGHTS_PER_CLUSTER (64, defined in Common.Lighting) caps the
-// per-cluster list length. Overflow is silently clamped — acceptable
-// for v1, since the global cap is 256 and 64+ lights overlapping one
-// cluster is implausible at typical scene density.
+// MAX_LIGHTS_PER_CLUSTER (64, defined in Common.Lighting) remains the
+// physical per-cluster stride/allocation. A runtime active cap can limit the
+// number of published indices to 16 for an opt-in quality/performance A/B;
+// its shipping default remains the full physical 64.
 //
 // Light positions are transformed into view space inside the loop so
 // the cluster bounds don't need to be transformed back to world space.
@@ -27,7 +27,7 @@ import Common.Lighting;
 struct PushConstantsLayout
 {
 	uint m_uLightCount;
-	uint m_uPad0;
+	uint m_uActiveMaxLightsPerCluster;
 	uint m_uPad1;
 	uint m_uPad2;
 };
@@ -67,10 +67,15 @@ void csMain(uint3 dispatchId : SV_DispatchThreadID)
 
 	uint uLocalCount = 0u;
 	uint uLightCount = g_xPassSet.PushConstants.m_uLightCount;
+	// Clamp defensively while retaining the physical 64-entry list stride.
+	uint uActiveMaxLightsPerCluster = clamp(
+		g_xPassSet.PushConstants.m_uActiveMaxLightsPerCluster,
+		1u,
+		MAX_LIGHTS_PER_CLUSTER);
 
 	for (uint i = 0u; i < uLightCount; ++i)
 	{
-		if (uLocalCount >= MAX_LIGHTS_PER_CLUSTER) break;
+		if (uLocalCount >= uActiveMaxLightsPerCluster) break;
 
 		LightInstance xLight = GetLight(i);
 		uint uType = uint(xLight.m_xTypeOuter.y);

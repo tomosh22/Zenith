@@ -59,9 +59,42 @@ DEBUGVAR uint32_t dbg_uPCFTapCount     = 16u;
 // sharpen at contact and soften with distance. Sun half-angle drives the width.
 DEBUGVAR bool  dbg_bPCSSEnabled        = true;
 DEBUGVAR float dbg_fSunAngularRadius   = 0.013f;
+// Phase-2 defaults take the cheaper paths; each switch independently restores
+// the former all-cascade PCSS/Vogel behaviour for runtime A/B.
+DEBUGVAR bool  dbg_bPCSSCascade0Only   = true;
+DEBUGVAR bool  dbg_bCheapFarCascades   = true;
+// Phase-3 visual-budget switches retain current behaviour until signed off.
+// The roughness gate sends receivers ABOVE the threshold to the cheap Gather
+// tier: a rough surface's shading response is low-frequency and hides filter
+// detail, while a glossy one shows every penumbra step and keeps PCSS.
+DEBUGVAR bool  dbg_bRoughnessGatedPCSS = false;
+DEBUGVAR float dbg_fPCSSRoughnessThreshold = 0.6f;
+DEBUGVAR bool  dbg_bCascadeFallbackBlend = true;
+DEBUGVAR bool  dbg_bContactShadows     = true;
 // Fraction of a cascade's far split over which it cross-fades into the next
 // cascade, hiding the seam.
 DEBUGVAR float dbg_fCascadeBlendFraction = 0.12f;
+
+// Pure OR-fold of the five sampling switches into the numeric word the shader
+// reads out of ShadowSampling.g_xParams2.y. Split out of UpdateShadowMatrices so
+// the packing (and its exact float round trip) is unit-testable without an
+// engine — Flux_Shadows.Tests.inl pins it against the SHADOW_FLAG_* mirror in
+// Common/ShadowSampling.slang.
+static u_int BuildShadowQualityFlags(
+	bool bPCSSCascade0Only,
+	bool bCheapFarCascades,
+	bool bRoughnessGatedPCSS,
+	bool bCascadeFallbackBlend,
+	bool bContactShadows)
+{
+	u_int uFlags = 0u;
+	if (bPCSSCascade0Only)     uFlags |= FLUX_SHADOW_FLAG_PCSS_CASCADE0_ONLY;
+	if (bCheapFarCascades)     uFlags |= FLUX_SHADOW_FLAG_CHEAP_FAR_CASCADES;
+	if (bRoughnessGatedPCSS)   uFlags |= FLUX_SHADOW_FLAG_ROUGHNESS_GATED_PCSS;
+	if (bCascadeFallbackBlend) uFlags |= FLUX_SHADOW_FLAG_CASCADE_FALLBACK_BLEND;
+	if (bContactShadows)       uFlags |= FLUX_SHADOW_FLAG_CONTACT_SHADOWS;
+	return uFlags;
+}
 
 Flux_RenderAttachment& Flux_ShadowsImpl::GetCSMArray()
 {
@@ -124,6 +157,12 @@ void Flux_ShadowsImpl::Initialise()
 	xEngine.DebugVariables().AddUInt32 ({"Render", "Shadows", "PCF Tap Count"},       dbg_uPCFTapCount,        1u, 32u);
 	xEngine.DebugVariables().AddBoolean({"Render", "Shadows", "PCSS Enabled"},        dbg_bPCSSEnabled);
 	xEngine.DebugVariables().AddFloat  ({"Render", "Shadows", "Sun Angular Radius"},  dbg_fSunAngularRadius,   0.f, 0.1f);
+	xEngine.DebugVariables().AddBoolean({"Render", "Shadows", "PCSS Cascade 0 Only"}, dbg_bPCSSCascade0Only);
+	xEngine.DebugVariables().AddBoolean({"Render", "Shadows", "Cheap Far Cascades"}, dbg_bCheapFarCascades);
+	xEngine.DebugVariables().AddBoolean({"Render", "Shadows", "Roughness-Gated PCSS"}, dbg_bRoughnessGatedPCSS);
+	xEngine.DebugVariables().AddFloat  ({"Render", "Shadows", "Cheap Tier Roughness Min"}, dbg_fPCSSRoughnessThreshold, 0.f, 1.f);
+	xEngine.DebugVariables().AddBoolean({"Render", "Shadows", "Cascade Fallback + Blend"}, dbg_bCascadeFallbackBlend);
+	xEngine.DebugVariables().AddBoolean({"Render", "Shadows", "Contact Shadows"},     dbg_bContactShadows);
 	xEngine.DebugVariables().AddFloat  ({"Render", "Shadows", "Cascade Blend Frac"},  dbg_fCascadeBlendFraction, 0.f, 0.5f);
 #endif
 }
@@ -422,6 +461,10 @@ void Flux_ShadowsImpl::UpdateShadowMatrices()
 	m_xSamplingConfig.m_fCascadeBlendFraction = dbg_fCascadeBlendFraction;
 	m_xSamplingConfig.m_uPCFTapCount          = glm::clamp(dbg_uPCFTapCount, 1u, 32u);
 	m_xSamplingConfig.m_bPCSSEnabled          = dbg_bPCSSEnabled ? 1u : 0u;
+	m_xSamplingConfig.m_fPCSSRoughnessThreshold = glm::clamp(dbg_fPCSSRoughnessThreshold, 0.f, 1.f);
+	m_xSamplingConfig.m_uQualityFlags = BuildShadowQualityFlags(
+		dbg_bPCSSCascade0Only, dbg_bCheapFarCascades, dbg_bRoughnessGatedPCSS,
+		dbg_bCascadeFallbackBlend, dbg_bContactShadows);
 
 	// Pack + upload the GPU mirror for the deferred lighting pass.
 	Flux_ShadowSamplingGPU xGPU;
@@ -430,8 +473,14 @@ void Flux_ShadowsImpl::UpdateShadowMatrices()
 	xGPU.m_xCascadeDepthRange     = m_xCascadeSamplingData.m_xCascadeDepthRange;
 	xGPU.m_xParams0 = Zenith_Maths::Vector4(m_xSamplingConfig.m_fResolution, m_xSamplingConfig.m_fRcpResolution, m_xSamplingConfig.m_fNormalOffsetTexels, 0.f);
 	xGPU.m_xParams1 = Zenith_Maths::Vector4(m_xSamplingConfig.m_fPCFRadiusTexels, m_xSamplingConfig.m_fSunAngularRadius, m_xSamplingConfig.m_fCascadeBlendFraction, float(m_xSamplingConfig.m_uPCFTapCount));
-	xGPU.m_xParams2 = Zenith_Maths::Vector4(float(m_xSamplingConfig.m_bPCSSEnabled), 0.f, 0.f, 0.f);
+	xGPU.m_xParams2 = Zenith_Maths::Vector4(float(m_xSamplingConfig.m_bPCSSEnabled),
+		float(m_xSamplingConfig.m_uQualityFlags), m_xSamplingConfig.m_fPCSSRoughnessThreshold, 0.f);
 	xEngine.FluxMemory().UploadBufferData(m_xShadowSamplingBuffer.GetBuffer().m_xVRAMHandle, &xGPU, sizeof(xGPU));
 
 	xEngine.Profiling().EndProfileZone(ZENITH_PROFILE_ZONE("Flux Shadows Update Matrices"));
 }
+
+// Hosted here because this TU is always linked, so the static-init test
+// registrations survive MSVC dead-stripping — and the file-static
+// BuildShadowQualityFlags above is in scope.
+#include "Flux/Shadows/Flux_Shadows.Tests.inl"

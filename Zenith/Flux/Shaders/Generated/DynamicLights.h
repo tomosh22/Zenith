@@ -91,13 +91,13 @@ namespace Flux_Generated_DynamicLights
 		struct PushConstants_CB
 		{
 			unsigned int m_um_uLightCount; // slang=uint offset=0
-			unsigned int m_um_uPad0; // slang=uint offset=4
+			unsigned int m_um_uActiveMaxLightsPerCluster; // slang=uint offset=4
 			unsigned int m_um_uPad1; // slang=uint offset=8
 			unsigned int m_um_uPad2; // slang=uint offset=12
 		};
 		static_assert(sizeof(PushConstants_CB) == 16, "PushConstants_CB size drifted from Slang reflection");
 		static_assert(offsetof(PushConstants_CB, m_um_uLightCount) == 0, "PushConstants.m_uLightCount offset drifted from Slang reflection");
-		static_assert(offsetof(PushConstants_CB, m_um_uPad0) == 4, "PushConstants.m_uPad0 offset drifted from Slang reflection");
+		static_assert(offsetof(PushConstants_CB, m_um_uActiveMaxLightsPerCluster) == 4, "PushConstants.m_uActiveMaxLightsPerCluster offset drifted from Slang reflection");
 		static_assert(offsetof(PushConstants_CB, m_um_uPad1) == 8, "PushConstants.m_uPad1 offset drifted from Slang reflection");
 		static_assert(offsetof(PushConstants_CB, m_um_uPad2) == 12, "PushConstants.m_uPad2 offset drifted from Slang reflection");
 		// vertex inputs: none

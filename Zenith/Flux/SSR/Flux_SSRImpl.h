@@ -64,6 +64,11 @@ public:
 	void UpdateSSRConstants(u_int uViewSlot);
 
 	Flux_TransientHandle GetReflectionHandle(u_int uViewSlot = kuFluxViewSlotMain) const { return m_axReflectionSelectors[uViewSlot].GetCommittedHandle(); }
+	// Derive the graph's blur/aux decision from the committed reflection handle,
+	// never from the live graphics option. During the one-frame rebuild handoff
+	// the live toggle may already differ from the attachments and pipelines the
+	// current graph owns.
+	bool IsRoughnessBlurCommitted(u_int uViewSlot = kuFluxViewSlotMain) const { return GetReflectionHandle(uViewSlot) == m_axDenoiseVHandles[uViewSlot]; }
 	Flux_ShaderResourceView& GetReflectionSRV(u_int uViewSlot = kuFluxViewSlotMain);
 	bool IsEnabled() const;
 
@@ -75,9 +80,10 @@ public:
 	Flux_RenderAttachment& GetDenoiseHConfAttachment(u_int uViewSlot = kuFluxViewSlotMain);
 	Flux_RenderAttachment& GetDenoiseVAttachment(u_int uViewSlot = kuFluxViewSlotMain);
 
-	// SSR-specific dual-MRT handles (RT0 colour/confidence + RT1 aux/metadata),
-	// one set per render-view slot. These do NOT exist on SSGI — kept here to
-	// respect the divergence.
+	// SSR-specific MRT handles (RT0 colour/confidence + optional RT1
+	// aux/metadata), one set per render-view slot. The aux pair is valid only
+	// when roughness blur is committed on. These do NOT exist on SSGI — kept
+	// here to respect the divergence.
 	Flux_TransientHandle m_axRayMarchHandles[FLUX_MAX_RENDER_VIEWS];
 	Flux_TransientHandle m_axRayMarchAuxHandles[FLUX_MAX_RENDER_VIEWS];
 	Flux_TransientHandle m_axUpsampledHandles[FLUX_MAX_RENDER_VIEWS];
@@ -85,6 +91,12 @@ public:
 	Flux_TransientHandle m_axDenoiseHHandles[FLUX_MAX_RENDER_VIEWS];
 	Flux_TransientHandle m_axDenoiseHConfHandles[FLUX_MAX_RENDER_VIEWS];
 	Flux_TransientHandle m_axDenoiseVHandles[FLUX_MAX_RENDER_VIEWS];
+
+	// RayMarch/Upsample use a single-colour-attachment pipeline when the
+	// committed graph omits their aux MRTs. The inherited pipeline members are
+	// the dual-MRT variants retained for the roughness-denoise path.
+	Flux_Pipeline m_xRayMarchNoAuxPipeline;
+	Flux_Pipeline m_xUpsampleNoAuxPipeline;
 
 	// One SSR-constants CBV per render-view slot (each view uploads its own
 	// dims + HiZ mip-size table). Inactive slots still carry a valid buffer —
@@ -108,5 +120,5 @@ private:
 	// (S5b): called for the main view at swapchain dims, then for the preview
 	// view at kuFLUX_PREVIEW_VIEW_SIZE² only while it is active — so the main
 	// path stays byte-equivalent.
-	void SetupViewPasses(Flux_RenderGraph& xGraph, u_int uViewSlot, u_int uWidth, u_int uHeight);
+	void SetupViewPasses(Flux_RenderGraph& xGraph, u_int uViewSlot, u_int uWidth, u_int uHeight, bool bRoughnessBlur);
 };

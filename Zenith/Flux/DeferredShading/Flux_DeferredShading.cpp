@@ -174,15 +174,11 @@ static void ExecuteApplyLighting(Flux_CommandBuffer* pxCommandList, void*)
 	}
 
 	// SSAO modulates the ambient term inside the shader (g_bSSAOEnabled gates the
-	// sample). The transient slot is always live post-compile, so bind the map
-	// that the live toggles produced: blurred when the blur pass ran, else raw.
-	// When SSAO is off the bind is just a descriptor-validity placeholder.
-	{
-		const Zenith_GraphicsOptions& xOpts = Zenith_GraphicsOptions::Get();
-		const bool bUseBlurred = !xOpts.m_bSSAOEnabled || xOpts.m_bSSAOBlurEnabled;
-		xBinder.BindSRV(DS::hg_xSSAOTex,
-			bUseBlurred ? &xSSAO.GetBlurred(uViewSlot).SRV() : &xSSAO.GetRawOcclusion(uViewSlot).SRV());
-	}
+	// sample). Bind the graph-committed output, never the live blur/debug toggles:
+	// the latter can diverge for one frame while their requested rebuild lands.
+	// Linear-clamp filtering performs the direct half/quarter-res expansion and
+	// prevents the opposite screen edge wrapping into the sample footprint.
+	xBinder.BindSRV(DS::hg_xSSAOTex, &xSSAO.GetOutputSRV(uViewSlot), &xFluxGraphics.m_xClampSampler);
 
 	// (Clustered dynamic lights — LightBuffer + cluster counts/indices — are in the
 	// persistent VIEW set now (Phase 5.4); read via g_xViewSet, no per-pass bind. The
@@ -263,14 +259,12 @@ void Flux_DeferredShadingImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 
 	xGraph.Read(xPass, xFluxGraphics.GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV);
 
-	// SSAO feeds the ambient term in-shader. Reading both transients orders the
-	// SSAO Generate/Blur passes before this one (SSAO registers ahead of
-	// DeferredShading in the setup walk so its handles are already created), and
-	// covers both the blur-on (blurred) and blur-off (raw) bind paths. The passes
-	// clear-only when SSAO is disabled — harmless, the shader gate skips the tap.
+	// SSAO feeds the ambient term in-shader. Its selector commits one output
+	// handle (raw, legacy-filtered, or separable-filtered) for this graph build;
+	// declaring only that handle keeps the graph Read identical to the SRV bound
+	// by ExecuteApplyLighting during the one-frame runtime-toggle transition.
 	Flux_SSAOImpl& xSSAO = g_xEngine.SSAO();
-	xGraph.ReadTransient(xPass, xSSAO.m_axRawOcclusionHandles[kuFluxViewSlotMain], RESOURCE_ACCESS_READ_SRV);
-	xGraph.ReadTransient(xPass, xSSAO.m_axBlurredHandles[kuFluxViewSlotMain], RESOURCE_ACCESS_READ_SRV);
+	xGraph.ReadTransient(xPass, xSSAO.GetOutputHandle(kuFluxViewSlotMain), RESOURCE_ACCESS_READ_SRV);
 
 	// Shadow maps — one 4-cascade depth array (Phase 4b). Read ALL layers so the
 	// graph transitions every cascade WRITE_DSV → SHADER_READ before this pass
@@ -324,8 +318,7 @@ void Flux_DeferredShadingImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 		for (u_int u = 0; u < uFLUX_MRT_CORE_COUNT; u++)   // lighting reads the 4 core G-buffer MRTs, never velocity
 			xGraph.Read(xPreviewPass, xFluxGraphics.GetMRTAttachment(static_cast<MRTIndex>(u), kuFluxViewSlotPreview), RESOURCE_ACCESS_READ_SRV);
 		xGraph.Read(xPreviewPass, xFluxGraphics.GetDepthAttachment(kuFluxViewSlotPreview), RESOURCE_ACCESS_READ_SRV);
-		xGraph.ReadTransient(xPreviewPass, xSSAO.m_axRawOcclusionHandles[kuFluxViewSlotPreview], RESOURCE_ACCESS_READ_SRV);
-		xGraph.ReadTransient(xPreviewPass, xSSAO.m_axBlurredHandles[kuFluxViewSlotPreview], RESOURCE_ACCESS_READ_SRV);
+		xGraph.ReadTransient(xPreviewPass, xSSAO.GetOutputHandle(kuFluxViewSlotPreview), RESOURCE_ACCESS_READ_SRV);
 		xGraph.ReadTransient(xPreviewPass, g_xEngine.Shadows().GetCSMArrayHandle(), RESOURCE_ACCESS_READ_SRV, 0, 1, 0, FLUX_RG_ALL_LAYERS);
 		if (xLightClustering.IsInitialised())
 		{

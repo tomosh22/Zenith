@@ -9,6 +9,7 @@
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Core/Zenith_GraphicsOptions.h"
+#include "DebugVariables/Zenith_DebugVariables.h"
 #include "Flux/Flux_BackendTypes.h"
 #include "Flux/Shaders/Generated/DynamicLights.h" // typed binding handles
 
@@ -33,15 +34,23 @@
 // Per-cluster outputs. GPU-resident — written by compute, read by
 // fragment, never touched by CPU.
 
-// Push constants — light count for the iteration loop. The shader's
-// inner loop bound depends on a runtime value, so it goes through a CB.
+// Phase-3 cluster-list A/B. The physical allocation and list stride stay at
+// 64; this only asks the compute producer to publish at most 16 indices.
+// Default OFF until shipping-scene cluster distributions are captured.
+DEBUGVAR bool dbg_bLimitClusterLightsTo16 = false;
+static constexpr u_int uLIGHT_CLUSTER_OPT_IN_ACTIVE_CAP = 16u;
+
+// Push constants — light count and active output cap for the iteration loop.
+// Reusing a former padding word preserves the 16-byte parameter-block layout.
 struct LightClusteringPushConstants
 {
 	u_int m_uLightCount;
-	u_int m_uPad0;
+	u_int m_uActiveMaxLightsPerCluster;
 	u_int m_uPad1;
 	u_int m_uPad2;
 };
+static_assert(sizeof(LightClusteringPushConstants) == 16,
+	"LightClustering push constants must mirror PushConstantsLayout in Slang");
 
 void Flux_LightClusteringImpl::BuildPipelines()
 {
@@ -70,6 +79,12 @@ void Flux_LightClusteringImpl::Initialise()
 	xVulkanMemory.InitialiseReadWriteBuffer(xZeroedIndices.GetDataPointer(), ulIndexBufferSize, m_xClusterLightIndices);
 
 	BuildPipelines();
+
+#ifdef ZENITH_DEBUG_VARIABLES
+	g_xEngine.DebugVariables().AddBoolean(
+		{ "Render", "Dynamic Lights", "Limit Cluster Lists to 16" },
+		dbg_bLimitClusterLightsTo16);
+#endif
 
 	m_bInitialised = true;
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_LightClustering initialised (%ux%ux%u clusters, %u max lights/cluster)",
@@ -134,7 +149,9 @@ static void ExecuteLightClustering(Flux_CommandBuffer* pxCommandList, void* /*pU
 
 	LightClusteringPushConstants xConstants;
 	xConstants.m_uLightCount = uLightCount;
-	xConstants.m_uPad0 = 0;
+	xConstants.m_uActiveMaxLightsPerCluster = dbg_bLimitClusterLightsTo16
+		? uLIGHT_CLUSTER_OPT_IN_ACTIVE_CAP
+		: Flux_LightClusteringImpl::uMAX_LIGHTS_PER_CLUSTER;
 	xConstants.m_uPad1 = 0;
 	xConstants.m_uPad2 = 0;
 	xBinder.BindDrawConstants(LC::hPushConstants,
@@ -175,5 +192,4 @@ Flux_ShaderResourceView_Buffer& Flux_LightClusteringImpl::GetClusterLightIndices
 {
 	return m_xClusterLightIndices.GetSRV();
 }
-
 

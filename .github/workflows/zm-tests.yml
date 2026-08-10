@@ -194,6 +194,23 @@ jobs:
           #
           # History, newest first (the DERIVATION is the audit trail; the OBSERVED
           # number is the authority):
+          #   3117  Flux screen-space-quality review follow-ups, observed
+          #                   2026-08-10 on a Null_ build
+          #                   (3117 ran / 3115 passed / 0 failed / 2 skipped).
+          #                   +11 ENGINE units, no ZM units: 6 in
+          #                   Flux/SSAO/Flux_SSAO.Tests.inl (the three-field
+          #                   Flux_SSAOSelection comparison, the committed-handle
+          #                   selector's commit / rebuild-request / hold-until-
+          #                   re-commit contract, the reciprocal-texel blur
+          #                   constants and their 32-byte CB layout) and 5 in
+          #                   Flux/Shadows/Flux_Shadows.Tests.inl (distinct
+          #                   single-bit quality flags, the OR-fold, the shipping
+          #                   defaults, the exact uint->float->uint round trip
+          #                   through g_xParams2.y, the 96-byte GPU mirror).
+          #                   NOTE the same change added a SlangProbes E5b probe
+          #                   that does NOT appear in this count: SlangProbes is
+          #                   gated on ZENITH_WINDOWS && ZENITH_VULKAN in
+          #                   Flux_MaterialTable.cpp and this is a Null_ build.
           #   3106  GPU-driven particle path WIRED (its instance buffer had no
           #                   reader, its Initialise had no caller, and no emitter
           #                   ever registered, so the compute pass was inert),
@@ -451,7 +468,7 @@ jobs:
           #   2817  ZM-D-173  = 2809 + 8: four ENGINE sensor-raycast units plus
           #                   two camera fixtures and two Home-placement units.
           $exe = 'Games\Zenithmon\Build\output\win64\null_vs2022_debug_win64_true\zenithmon.exe'
-          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 3106 -TimeoutSec 600
+          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 3117 -TimeoutSec 600
           if ($LASTEXITCODE -ne 0) { Write-Error "boot unit tests failed (see log above)"; exit $LASTEXITCODE }
 
       - name: Run Zenithmon tests

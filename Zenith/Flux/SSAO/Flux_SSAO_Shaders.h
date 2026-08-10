@@ -9,11 +9,15 @@
 namespace Flux_SSAOShaders
 {
 	inline constexpr Flux_ShaderDecl xSSAO_Blur{ "SSAO_Blur", "SSAO/Flux_SSAO_Blur", "vsMain", "fsMain", nullptr, "spirv_1_3", "SSAO" };
+	inline constexpr Flux_ShaderDecl xSSAO_BlurH{ "SSAO_BlurH", "SSAO/Flux_SSAO_BlurH", "vsMain", "fsMain", nullptr, "spirv_1_3", "SSAO" };
+	inline constexpr Flux_ShaderDecl xSSAO_BlurV{ "SSAO_BlurV", "SSAO/Flux_SSAO_BlurV", "vsMain", "fsMain", nullptr, "spirv_1_3", "SSAO" };
 	inline constexpr Flux_ShaderDecl xSSAO_Main{ "SSAO_Main", "SSAO/Flux_SSAO", "vsMain", "fsMain", nullptr, "spirv_1_3", "SSAO" };
 
 	inline constexpr const Flux_ShaderDecl* apxALL[] =
 	{
 		&xSSAO_Blur,
+		&xSSAO_BlurH,
+		&xSSAO_BlurV,
 		&xSSAO_Main,
 	};
 }

@@ -21,6 +21,7 @@
 #include "Common/Bindings.slang"
 import Common.Fullscreen;
 import Common.PBR;
+import Common.Bilateral;
 import SSR.Flux_SSR_DenoiseCommon;
 
 static const float SSR_DENOISE_SMOOTH_THRESHOLD    = 0.15;
@@ -28,7 +29,6 @@ static const float SSR_DENOISE_ROUGH_THRESHOLD     = 0.7;
 static const float SSR_DENOISE_MIN_CONFIDENCE      = 0.001;
 static const float SSR_DENOISE_MIN_DEPTH_SIGMA     = 0.0001;
 static const float SSR_DENOISE_MIN_ROUGHNESS_SIGMA = 0.001;
-static const float SSR_DENOISE_MIN_WEIGHT          = 1e-6;
 static const float SSR_DENOISE_BRDF_FLOOR          = 1e-4;
 
 struct PassParams
@@ -39,19 +39,13 @@ struct PassParams
 	Sampler2D g_xNormalsTex;
 	Sampler2D g_xMaterialTex;
 	Sampler2D g_xSSRUpsampledAuxTex; // Phase 0 metadata for BRDF reuse
-	Sampler2D g_xSSRDenoiseHConfTex; // H pass RT1: r=Σ(w·conf)
+	Sampler2D g_xSSRDenoiseHConfTex; // H pass RT1: r=Σ(w·conf), g=variance radius scale
 	Sampler2D g_xSSRUpsampledTex;    // upsampled colour, for passthrough fallback
 };
 ParameterBlock<PassParams> g_xPassSet;
 
 [shader("vertex")]
 FullscreenVsOut vsMain(uint vertexId : SV_VertexID) { return FullscreenVS(vertexId); }
-
-float GaussianWeight(float fDist, float fSigma)
-{
-	float fNorm = fDist / fSigma;
-	return exp(-0.5 * fNorm * fNorm);
-}
 
 [shader("fragment")]
 float4 fsMain(FullscreenVsOut input) : SV_Target
@@ -80,9 +74,10 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 	float  fTotalWeightDen = 0.0;
 	float  fTotalConfNum   = 0.0;
 
-	// Phase 4 — variance-adaptive kernel. Uses the upsampled (pre-denoise)
-	// colour + distance — same input H sees, so the two passes' radii agree.
-	float fVarScale = SSR_ComputeVarianceScale(g_xPassSet.g_xSSRUpsampledTex, g_xPassSet.g_xSSRUpsampledAuxTex, input.uv, xRcpScreen);
+	// Phase 4 — H already paid for the 3x3 variance estimate. Propagate its
+	// radius scale through RT1.g so V replaces 18 texture reads with one.
+	float fVarScale = clamp(g_xPassSet.g_xSSRDenoiseHConfTex.Sample(input.uv).g,
+							SSR_DENOISE_VAR_RADIUS_MIN, SSR_DENOISE_VAR_RADIUS_MAX);
 	int   iRadius   = (int)max(1.0, round((float)g_xPassSet.PushConstants.u_uKernelRadius * fVarScale));
 
 	// Vertical pass — sample only along Y.
@@ -91,12 +86,12 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 		float2 xOffset   = float2(0.0, (float)j) * xRcpScreen;
 		float2 xSampleUV = clamp(input.uv + xOffset, float2(0.001), float2(0.999));
 
-		float4 xH_RT0 = g_xPassSet.g_xSSRDenoiseHColTex.Sample(xSampleUV);   // (Σ_H w·C, Σ_H w)
-		float4 xH_RT1 = g_xPassSet.g_xSSRDenoiseHConfTex.Sample(xSampleUV);  // (Σ_H w·conf, _, _, _)
+		float4 xH_RT0 = g_xPassSet.g_xSSRDenoiseHColTex.Sample(xSampleUV);     // (Σ_H w·C, Σ_H w)
+		float2 xH_RT1 = g_xPassSet.g_xSSRDenoiseHConfTex.Sample(xSampleUV).rg; // (Σ_H w·conf, variance scale)
 
 		// If H produced no weight at this pixel (its accumulator was empty),
 		// skip — there's nothing meaningful to combine.
-		if (xH_RT0.a < SSR_DENOISE_MIN_WEIGHT) continue;
+		if (xH_RT0.a < BILATERAL_MIN_WEIGHT) continue;
 
 		float4 xSampleAux       = g_xPassSet.g_xSSRUpsampledAuxTex.Sample(xSampleUV);
 		float  fSampleDepth     = g_xPassSet.g_xDepthTex.Sample(xSampleUV).r;
@@ -107,16 +102,15 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 		if (xSampleAux.b   <  0.0001) continue;
 
 		// Same V-direction bilateral gates as H.
-		float fSpatialWeight = GaussianWeight(abs((float)j), g_xPassSet.PushConstants.u_fSpatialSigma);
+		float fSpatialWeight = BilateralGaussianWeight(abs((float)j), g_xPassSet.PushConstants.u_fSpatialSigma);
 
-		float fDepthDiff   = abs(fSampleDepth - fCenterDepth);
-		float fDepthWeight = GaussianWeight(fDepthDiff, fDepthSigmaAbs);
+		float fDepthWeight = BilateralDepthWeight(fCenterDepth, fSampleDepth, fDepthSigmaAbs);
 
-		float fNormalDiff   = 1.0 - max(dot(xCenterWNormal, xSampleWNormal), 0.0);
-		float fNormalWeight = GaussianWeight(fNormalDiff, g_xPassSet.PushConstants.u_fNormalSigma);
+		float fNormalWeight = BilateralNormalWeight(
+			xCenterWNormal, xSampleWNormal, g_xPassSet.PushConstants.u_fNormalSigma);
 
 		float fRoughnessDiff   = abs(fSampleRoughness - fCenterRoughness);
-		float fRoughnessWeight = GaussianWeight(fRoughnessDiff, fRoughnessSigma);
+		float fRoughnessWeight = BilateralGaussianWeight(fRoughnessDiff, fRoughnessSigma);
 
 		// BRDF reuse — same logic as H, computed against THIS V-neighbour's hit.
 		float2 xN_hitUV    = xSampleAux.rg;
@@ -142,7 +136,7 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 		fTotalConfNum   += fW_V * xH_RT1.r;
 	}
 
-	if (fTotalWeightDen > SSR_DENOISE_MIN_WEIGHT)
+	if (fTotalWeightDen > BILATERAL_MIN_WEIGHT)
 	{
 		float fInv = 1.0 / fTotalWeightDen;
 		return float4(xTotalColourNum * fInv, fTotalConfNum * fInv);

@@ -19,11 +19,11 @@
 
 import Common.Fullscreen;
 import Common.GBuffer;   // DecodeNormal (shared with DenoiseH — no bindings, does not shift spine spaces)
+import Common.Bilateral; // shared Gaussian/depth/normal/albedo weights; owns no bindings
 // Spine #include even though this shader uses no FrameConstants — it reserves
 // sets 0/1/2 so PassParams lands at set 3.
 #include "Common/Bindings.slang"
 
-static const float DENOISE_MIN_WEIGHT      = 0.0001;
 static const float DENOISE_SKY_THRESHOLD   = 0.9999;
 static const float DENOISE_MIN_DEPTH_SIGMA = 0.0001;
 
@@ -52,12 +52,6 @@ ParameterBlock<PassParams> g_xPassSet;
 
 [shader("vertex")]
 FullscreenVsOut vsMain(uint vertexId : SV_VertexID) { return FullscreenVS(vertexId); }
-
-float GaussianWeight(float fDist, float fSigma)
-{
-	float fNorm = fDist / fSigma;
-	return exp(-0.5 * fNorm * fNorm);
-}
 
 // DecodeNormal moved to Common.GBuffer (shared with DenoiseH).
 
@@ -97,18 +91,10 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 
 		if (fSampleDepth >= DENOISE_SKY_THRESHOLD) continue;
 
-		float fSpatialDist   = abs((float)i);
-		float fSpatialWeight = GaussianWeight(fSpatialDist, g_xPassSet.PushConstants.u_fSpatialSigma);
-
-		float fDepthDiff   = abs(fSampleDepth - fCenterDepth);
-		float fDepthWeight = GaussianWeight(fDepthDiff, fDepthSigmaAbs);
-
-		float fNormalDot   = max(dot(xCenterNormal, xSampleNormal), 0.0);
-		float fNormalDiff  = 1.0 - fNormalDot;
-		float fNormalWeight = GaussianWeight(fNormalDiff, g_xPassSet.PushConstants.u_fNormalSigma);
-
-		float fAlbedoDiff   = length(xSampleAlbedo - xCenterAlbedo);
-		float fAlbedoWeight = GaussianWeight(fAlbedoDiff, g_xPassSet.PushConstants.u_fAlbedoSigma);
+		float fSpatialWeight = BilateralGaussianWeight(abs((float)i), g_xPassSet.PushConstants.u_fSpatialSigma);
+		float fDepthWeight   = BilateralDepthWeight(fCenterDepth, fSampleDepth, fDepthSigmaAbs);
+		float fNormalWeight  = BilateralNormalWeight(xCenterNormal, xSampleNormal, g_xPassSet.PushConstants.u_fNormalSigma);
+		float fAlbedoWeight  = BilateralAlbedoWeight(xCenterAlbedo, xSampleAlbedo, g_xPassSet.PushConstants.u_fAlbedoSigma);
 
 		// Multiplicative combination — any single mismatch suppresses the
 		// sample's contribution.
@@ -119,7 +105,9 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 		fAccumWeight     += fWeight;
 	}
 
-	if (fAccumWeight > DENOISE_MIN_WEIGHT)
+	// The i=0 centre tap has weight 1 on every active path, so switching the
+	// shared fallback guard from 1e-4 to 1e-6 is behaviour-invariant here.
+	if (fAccumWeight > BILATERAL_MIN_WEIGHT)
 	{
 		xAccumColour     /= fAccumWeight;
 		fAccumConfidence /= fAccumWeight;

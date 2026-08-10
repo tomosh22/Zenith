@@ -11,14 +11,10 @@
 // those walks differ deliberately. The filter is the shared, swappable part.
 //
 // IShadowFilter is that seam. `ShadowFilterPCSS` here is the deferred composite's
-// 16-tap Vogel PCF + PCSS blocker-search tier, moved VERBATIM out of
-// Flux_DeferredShading.slang: the only change is that the six ShadowSampling-CB
-// tunables it used to read straight from g_xPassSet became struct fields the
-// caller fills from ITS OWN pass block, so Common stays decoupled from any one
-// shader's CB layout. Not one line of filter math changed. A subsystem with a
-// cheaper tier declares its own conforming type via `extension` next to its
-// shader without editing this file (see Flux_Translucent_Forward.slang's
-// ShadowFilterSimple4Tap) — that is the whole point of the seam.
+// Vogel PCF + PCSS blocker-search tier. `ShadowFilterSimple4Tap` is the shared,
+// bias-agnostic Gather kernel used by both deferred and forward translucency.
+// Receiver projection/bias deliberately stays with each caller: deferred keeps
+// its normal-offset receiver, while translucency keeps its depth-bias walk.
 //
 // TEXTUAL #include (NOT `import`): the filter calls the spine accessors GetCSM()
 // / GetShadowMatrix() (free functions from Common/Bindings.slang), so the
@@ -39,6 +35,14 @@
 static const float SHADOW_GOLDEN_ANGLE = 2.39996323;   // rad — Vogel disk spiral
 static const float SHADOW_MAX_PENUMBRA_TEXELS = 16.0;  // clamp on PCSS softening
 static const uint  SHADOW_BLOCKER_TAPS = 16u;
+
+// Runtime quality flags packed numerically into ShadowSampling.g_xParams2.y.
+// Keep these bit values mirrored by Flux_ShadowSamplingFlags in C++.
+public static const uint SHADOW_FLAG_PCSS_CASCADE0_ONLY       = 1u << 0u;
+public static const uint SHADOW_FLAG_CHEAP_FAR_CASCADES       = 1u << 1u;
+public static const uint SHADOW_FLAG_ROUGHNESS_GATED_PCSS     = 1u << 2u;
+public static const uint SHADOW_FLAG_CASCADE_FALLBACK_BLEND   = 1u << 3u;
+public static const uint SHADOW_FLAG_CONTACT_SHADOWS          = 1u << 4u;
 
 // Per-pixel kernel rotation via interleaved gradient noise (Jimenez). Stable for
 // a given pixel/frame, so it decorrelates the disk without introducing temporal
@@ -69,6 +73,37 @@ float4x4 ShadowMatrixForCascade(int iCascade)
 	return GetShadowMatrix(iCascade);
 }
 
+// Shared cheap tier, lifted from forward translucency. It owns only the fixed
+// Gather pattern; projected UV/depth and the receiver-bias policy are inputs so
+// callers retain their existing normal-offset or depth-bias semantics exactly.
+static const float SHADOW_SIMPLE_OFFSET_INNER = 0.5;
+static const float SHADOW_SIMPLE_OFFSET_OUTER = 1.5;
+static const float SHADOW_SIMPLE_SAMPLE_COUNT = 16.0;
+
+public struct ShadowFilterSimple4Tap
+{
+	float2 texelSize;
+
+	float SampleCascadeShadow(int iCascade, float2 xSamplePos, float fCompareDepth)
+	{
+		float fShadow = 0.0;
+		float2 axOffsets[4] = {
+			float2(-SHADOW_SIMPLE_OFFSET_OUTER, -SHADOW_SIMPLE_OFFSET_OUTER) * texelSize,
+			float2( SHADOW_SIMPLE_OFFSET_INNER, -SHADOW_SIMPLE_OFFSET_OUTER) * texelSize,
+			float2(-SHADOW_SIMPLE_OFFSET_OUTER,  SHADOW_SIMPLE_OFFSET_INNER) * texelSize,
+			float2( SHADOW_SIMPLE_OFFSET_INNER,  SHADOW_SIMPLE_OFFSET_INNER) * texelSize,
+		};
+
+		for (int i = 0; i < 4; ++i)
+		{
+			float4 xDepths = GatherCascadeDepth(iCascade, xSamplePos + axOffsets[i]);
+			float4 xLit = step(float4(fCompareDepth, fCompareDepth, fCompareDepth, fCompareDepth), xDepths);
+			fShadow += dot(xLit, float4(1.0, 1.0, 1.0, 1.0));
+		}
+		return fShadow / SHADOW_SIMPLE_SAMPLE_COUNT;
+	}
+};
+
 // The filter seam: given a cascade index and a world-space receiver, return
 // whether the receiver projected inside this cascade's map, and (in fShadow)
 // 1 = lit … 0 = shadowed. The cascade WALK — selecting the cascade and
@@ -78,11 +113,10 @@ public interface IShadowFilter
 	bool EvaluateCascade(int iCascade, float3 xWorldPos, float3 xNormal, float fNdotL, out float fShadow);
 }
 
-// The deferred composite's tier: 16-tap Vogel PCF with an optional PCSS blocker
-// search. VERBATIM move of Flux_DeferredShading.slang's former inline filter; the
-// only edit is that the ShadowSampling-CB tunables are now struct fields the
-// caller fills from its own pass block (and the per-pixel Vogel rotation, which
-// the caller computes once, rides along as fRotation).
+// The deferred composite's tier: configurable Vogel PCF with optional PCSS
+// blocker search and runtime selection of the shared cheap Gather tier. The
+// caller fills the sampling fields from its pass block and supplies the current
+// receiver roughness plus the per-pixel Vogel rotation.
 public struct ShadowFilterPCSS : IShadowFilter
 {
 	// Cascade sampling tunables — the caller fills these from its own PASS
@@ -93,6 +127,9 @@ public struct ShadowFilterPCSS : IShadowFilter
 	float  fSunAngle;              // g_xParams1.y — sun angular radius
 	float  fTapCountRaw;           // g_xParams1.w — requested PCF tap count
 	float  fPCSSEnabled;           // g_xParams2.x — PCSS blocker search (>0.5 = on)
+	uint   uQualityFlags;          // numeric flag word from g_xParams2.y
+	float  fReceiverRoughness;     // current G-buffer material roughness
+	float  fRoughnessThreshold;    // g_xParams2.z — cheap tier ABOVE this value
 	float4 xCascadeWorldPerTexel;  // g_xCascadeWorldPerTexel — per-cascade world units/texel
 	float4 xCascadeDepthRange;     // g_xCascadeDepthRange — per-cascade ortho depth range
 	float  fRotation;              // per-pixel Vogel-disk rotation (ShadowKernelRotation)
@@ -178,8 +215,33 @@ public struct ShadowFilterPCSS : IShadowFilter
 		// the shadow-caster pipelines). The receiver compares its true depth.
 		float fCompareDepth = fDepth;
 
+		// Deterministic tier ordering:
+		//  1. HIGH-roughness receivers use the shared cheap Gather path when the
+		//     Phase-3 gate is enabled. A rough surface's own shading response is
+		//     low-frequency, so it hides filter detail; glossy receivers show every
+		//     penumbra step and therefore keep the expensive tier.
+		//  2. Cascades 2-3 use that same path when the Phase-2 far-tier is enabled.
+		//  3. Remaining cascades use Vogel PCF; PCSS blocker search is optionally
+		//     restricted to cascade 0, so cascade 1 becomes full PCF without search.
+		bool bRoughnessCheap =
+			((this.uQualityFlags & SHADOW_FLAG_ROUGHNESS_GATED_PCSS) != 0u) &&
+			(this.fReceiverRoughness > this.fRoughnessThreshold);
+		bool bFarCascadeCheap =
+			((this.uQualityFlags & SHADOW_FLAG_CHEAP_FAR_CASCADES) != 0u) &&
+			(iCascade >= 2);
+		if (bRoughnessCheap || bFarCascadeCheap)
+		{
+			ShadowFilterSimple4Tap xSimpleFilter;
+			xSimpleFilter.texelSize = float2(this.fRcpRes, this.fRcpRes);
+			fShadow = xSimpleFilter.SampleCascadeShadow(iCascade, xUV, fCompareDepth);
+			return true;
+		}
+
 		float fRadiusTexels = fPCFRadius;
-		if (bPCSS)
+		bool bCascadePermitsBlockerSearch =
+			((this.uQualityFlags & SHADOW_FLAG_PCSS_CASCADE0_ONLY) == 0u) ||
+			(iCascade == 0);
+		if (bPCSS && bCascadePermitsBlockerSearch)
 		{
 			// Largest plausible penumbra (blocker at the far end of the depth range),
 			// in texels — also used as the blocker-search radius.

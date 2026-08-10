@@ -103,7 +103,7 @@ namespace Flux_Generated_SSR
 			float m_fu_fRcpHalfResHeight; // slang=float offset=56
 			unsigned int m_uu_uRayCount; // slang=uint offset=60
 			unsigned int m_uu_uStepCountMin; // slang=uint offset=64
-			unsigned int m_uu_uPad0; // slang=uint offset=68
+			unsigned int m_uu_bAuxOutputEnabled; // slang=uint offset=68
 			unsigned int m_uu_uPad1; // slang=uint offset=72
 			unsigned int m_uu_uPad2; // slang=uint offset=76
 			unsigned char m_au_axHiZMipSizes[192]; // slang=Array offset=80 arrayCount=12 (no C++ mapping)
@@ -126,7 +126,7 @@ namespace Flux_Generated_SSR
 		static_assert(offsetof(SSRConstants_CB, m_fu_fRcpHalfResHeight) == 56, "SSRConstants.u_fRcpHalfResHeight offset drifted from Slang reflection");
 		static_assert(offsetof(SSRConstants_CB, m_uu_uRayCount) == 60, "SSRConstants.u_uRayCount offset drifted from Slang reflection");
 		static_assert(offsetof(SSRConstants_CB, m_uu_uStepCountMin) == 64, "SSRConstants.u_uStepCountMin offset drifted from Slang reflection");
-		static_assert(offsetof(SSRConstants_CB, m_uu_uPad0) == 68, "SSRConstants.u_uPad0 offset drifted from Slang reflection");
+		static_assert(offsetof(SSRConstants_CB, m_uu_bAuxOutputEnabled) == 68, "SSRConstants.u_bAuxOutputEnabled offset drifted from Slang reflection");
 		static_assert(offsetof(SSRConstants_CB, m_uu_uPad1) == 72, "SSRConstants.u_uPad1 offset drifted from Slang reflection");
 		static_assert(offsetof(SSRConstants_CB, m_uu_uPad2) == 76, "SSRConstants.u_uPad2 offset drifted from Slang reflection");
 		// kind: CombinedTextureSampler
@@ -323,7 +323,7 @@ namespace Flux_Generated_SSR
 			float m_fu_fRcpHalfResHeight; // slang=float offset=56
 			unsigned int m_uu_uRayCount; // slang=uint offset=60
 			unsigned int m_uu_uStepCountMin; // slang=uint offset=64
-			unsigned int m_uu_uPad0; // slang=uint offset=68
+			unsigned int m_uu_bAuxOutputEnabled; // slang=uint offset=68
 			unsigned int m_uu_uPad1; // slang=uint offset=72
 			unsigned int m_uu_uPad2; // slang=uint offset=76
 			unsigned char m_au_axHiZMipSizes[192]; // slang=Array offset=80 arrayCount=12 (no C++ mapping)
@@ -346,7 +346,7 @@ namespace Flux_Generated_SSR
 		static_assert(offsetof(SSRConstants_CB, m_fu_fRcpHalfResHeight) == 56, "SSRConstants.u_fRcpHalfResHeight offset drifted from Slang reflection");
 		static_assert(offsetof(SSRConstants_CB, m_uu_uRayCount) == 60, "SSRConstants.u_uRayCount offset drifted from Slang reflection");
 		static_assert(offsetof(SSRConstants_CB, m_uu_uStepCountMin) == 64, "SSRConstants.u_uStepCountMin offset drifted from Slang reflection");
-		static_assert(offsetof(SSRConstants_CB, m_uu_uPad0) == 68, "SSRConstants.u_uPad0 offset drifted from Slang reflection");
+		static_assert(offsetof(SSRConstants_CB, m_uu_bAuxOutputEnabled) == 68, "SSRConstants.u_bAuxOutputEnabled offset drifted from Slang reflection");
 		static_assert(offsetof(SSRConstants_CB, m_uu_uPad1) == 72, "SSRConstants.u_uPad1 offset drifted from Slang reflection");
 		static_assert(offsetof(SSRConstants_CB, m_uu_uPad2) == 76, "SSRConstants.u_uPad2 offset drifted from Slang reflection");
 		// kind: CombinedTextureSampler

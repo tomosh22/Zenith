@@ -28,7 +28,11 @@ and rewriting it once does not immunise it. Update it in the SAME commit that cl
   approved (ZM-D-112); and S6's dialogue/menu/NPC/shop surface all remain complete.
 - **★ THE LIVE BASELINE IS IN `Status.md`'s TOP BLOCK. READ IT, NOT THIS PARAGRAPH.** As of
   2026-08-10 (OBSERVED on clean `Null_` builds): registry **55**, ZM boot
-  **3106 ran / 3104 passed / 0 failed / 2 skipped**, engine boot **1481**. (+22 engine units
+  **3117 ran / 3115 passed / 0 failed / 2 skipped**, engine boot **1492**. (+11 engine units
+  on 2026-08-10 for the Flux screen-space-quality review follow-ups -- six SSAO
+  committed-selection/blur-constant units and five shadow quality-flag units; note a
+  `SlangProbes` probe added in the same change moves NEITHER count, since that suite
+  is `ZENITH_VULKAN`-gated and both gates run `Null_`; +22 engine units
   on 2026-08-10 for wiring the GPU-driven particle path -- the new
   `Flux/Particles/Flux_ParticleGPU.Tests.inl`: spawn ring, blend-partition/indirect
   addressing, the `uINDIRECT_WORDS` source-text pin, pool registration lifetime, and

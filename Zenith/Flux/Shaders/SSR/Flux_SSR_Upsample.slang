@@ -14,7 +14,7 @@
 //
 // Outputs (dual MRT, mirrors raymarch shape):
 //   RT0 RGBA: rgb = reflection colour, a = hit confidence
-//   RT1 RGBA: rg = hit UV, b = travel distance, a = ray count
+//   RT1 RGBA: rg = hit UV, b = normalised march T, a = ray count
 //
 // Same selection mask drives both RTs so colour + metadata stay
 // spatially aligned.
@@ -71,7 +71,7 @@ struct SSRConstantsLayout
 	float u_fRcpHalfResHeight;
 	uint  u_uRayCount;
 	uint  u_uStepCountMin;
-	uint  u_uPad0;
+	uint  u_bAuxOutputEnabled;
 	uint  u_uPad1;
 	uint  u_uPad2;
 	float4 u_axHiZMipSizes[12];
@@ -108,6 +108,7 @@ UpsampleOut MakeUpsampleOut(float4 xColour, float4 xAux)
 UpsampleOut fsMain(FullscreenVsOut input)
 {
 	const float4 xZero4 = float4(0.0, 0.0, 0.0, 0.0);
+	const bool bWriteAux = (g_xPassSet.SSRConstants.u_bAuxOutputEnabled != 0u);
 
 	float fFullDepth = g_xPassSet.g_xDepthTex.Sample(input.uv).r;
 	if (fFullDepth >= UPSAMPLE_SKY_THRESHOLD) return MakeUpsampleOut(xZero4, xZero4);
@@ -124,11 +125,11 @@ UpsampleOut fsMain(FullscreenVsOut input)
 
 	float fDepthSigma = max(fFullDepth * UPSAMPLE_DEPTH_SIGMA_FRACTION, UPSAMPLE_MIN_DEPTH_SIGMA);
 
-	// Pass 1 — gather 16, score by composite similarity. Store score + the
-	// half-res-relative offset index so we can re-fetch the winners later
-	// without keeping all 16 colour/aux samples live in registers.
+	// Pass 1 — gather 16 and score by composite similarity. The product of
+	// three Gaussians is one Gaussian whose exponent is the sum of the three
+	// normalised squared distances. Keeping only the scores avoids holding all
+	// 16 colour/aux samples live in registers.
 	float aafScores[UPSAMPLE_GATHER_TOTAL];
-	int   aaiOffIdx[UPSAMPLE_GATHER_TOTAL];
 
 	int idx = 0;
 	for (int yo = -1; yo <= 2; yo++)
@@ -144,20 +145,16 @@ UpsampleOut fsMain(FullscreenVsOut input)
 				float3 xSampleNormal    = g_xPassSet.g_xNormalsTex.Sample(xSampleUV).rgb;
 				float  fSampleRoughness = g_xPassSet.g_xMaterialTex.Sample(xSampleUV).r;
 
-				float fDepthDiff   = abs(fFullDepth - fSampleDepth);
-				float fDepthScore  = exp(-fDepthDiff * fDepthDiff / (2.0 * fDepthSigma * fDepthSigma));
-
-				float fNormalDiff  = 1.0 - max(dot(xCenterNormal, xSampleNormal), 0.0);
-				float fNormalScore = exp(-fNormalDiff * fNormalDiff / (2.0 * UPSAMPLE_NORMAL_SIGMA * UPSAMPLE_NORMAL_SIGMA));
-
-				float fRoughDiff   = abs(fSampleRoughness - fCenterRoughness);
-				float fRoughScore  = exp(-fRoughDiff * fRoughDiff / (2.0 * UPSAMPLE_ROUGHNESS_SIGMA * UPSAMPLE_ROUGHNESS_SIGMA));
-
-				fScore = pow(fDepthScore * fNormalScore * fRoughScore, UPSAMPLE_SCORE_POWER);
+				float fDepthNorm  = abs(fFullDepth - fSampleDepth) / fDepthSigma;
+				float fNormalNorm = (1.0 - max(dot(xCenterNormal, xSampleNormal), 0.0)) / UPSAMPLE_NORMAL_SIGMA;
+				float fRoughNorm  = abs(fSampleRoughness - fCenterRoughness) / UPSAMPLE_ROUGHNESS_SIGMA;
+				float fExponent   = -0.5 * (fDepthNorm * fDepthNorm +
+										 fNormalNorm * fNormalNorm +
+										 fRoughNorm * fRoughNorm) * UPSAMPLE_SCORE_POWER;
+				fScore = exp(fExponent);
 			}
 
 			aafScores[idx] = fScore;
-			aaiOffIdx[idx] = idx;
 			idx++;
 		}
 	}
@@ -169,7 +166,12 @@ UpsampleOut fsMain(FullscreenVsOut input)
 	// `fBest = -1.0` baseline and Pass 3 re-fetches them as if they were
 	// real surfaces.
 	int aiBestIdx[UPSAMPLE_TOP_K];
-	[unroll] for (int s = 0; s < UPSAMPLE_TOP_K; s++) aiBestIdx[s] = -1;
+	float afBestScore[UPSAMPLE_TOP_K];
+	[unroll] for (int s = 0; s < UPSAMPLE_TOP_K; s++)
+	{
+		aiBestIdx[s]  = -1;
+		afBestScore[s] = 0.0;
+	}
 
 	[unroll] for (int sel = 0; sel < UPSAMPLE_TOP_K; sel++)
 	{
@@ -184,6 +186,7 @@ UpsampleOut fsMain(FullscreenVsOut input)
 			}
 		}
 		aiBestIdx[sel] = iBest;
+		afBestScore[sel] = fBest;
 		// Mark this slot consumed. -1 stays excluded from future iterations
 		// since -1 < 0.0 (the running fBest baseline).
 		if (iBest >= 0) aafScores[iBest] = -1.0;
@@ -207,7 +210,6 @@ UpsampleOut fsMain(FullscreenVsOut input)
 
 		float2 xSampleUV    = saturate((xHalfResFloor + float2((float)iSx, (float)iSy) + 0.5) * xHalfTexelSize);
 		float4 xColourSample = g_xPassSet.g_xSSRTex.Sample(xSampleUV);
-		float4 xAuxSample    = g_xPassSet.g_xSSRAuxTex.Sample(xSampleUV);
 
 		// Distance to the bilinear sample point; nearer = higher weight.
 		float fDx = (float)iSx + 0.5 - xFrac.x;
@@ -215,32 +217,24 @@ UpsampleOut fsMain(FullscreenVsOut input)
 		float fDistSq = fDx * fDx + fDy * fDy;
 		float fInvDist = 1.0 / max(sqrt(fDistSq), UPSAMPLE_INV_DIST_FLOOR);
 
-		// Re-fetch the original score for this slot. Pass 2 set aafScores[iSel]
-		// to -1 when consumed, so recompute from the depth/normal/roughness
-		// we already gathered — actually simpler: derive a fresh score here.
-		float fSampleDepth     = g_xPassSet.g_xDepthTex.Sample(xSampleUV).r;
-		float3 xSampleNormal   = g_xPassSet.g_xNormalsTex.Sample(xSampleUV).rgb;
-		float  fSampleRoughness = g_xPassSet.g_xMaterialTex.Sample(xSampleUV).r;
-
-		float fDepthDiff   = abs(fFullDepth - fSampleDepth);
-		float fDepthScore  = exp(-fDepthDiff * fDepthDiff / (2.0 * fDepthSigma * fDepthSigma));
-		float fNormalDiff  = 1.0 - max(dot(xCenterNormal, xSampleNormal), 0.0);
-		float fNormalScore = exp(-fNormalDiff * fNormalDiff / (2.0 * UPSAMPLE_NORMAL_SIGMA * UPSAMPLE_NORMAL_SIGMA));
-		float fRoughDiff   = abs(fSampleRoughness - fCenterRoughness);
-		float fRoughScore  = exp(-fRoughDiff * fRoughDiff / (2.0 * UPSAMPLE_ROUGHNESS_SIGMA * UPSAMPLE_ROUGHNESS_SIGMA));
-		float fScore       = pow(fDepthScore * fNormalScore * fRoughScore, UPSAMPLE_SCORE_POWER);
-
-		float fWeight = fScore * fInvDist;
+		// Selection cached the original Pass-1 score before consuming its slot,
+		// so the winner needs no second depth/normal/material fetch or exponent.
+		float fWeight = afBestScore[s] * fInvDist;
 
 		xColourResult += xColourSample * fWeight;
-		xAuxResult    += xAuxSample    * fWeight;
+		if (bWriteAux)
+			xAuxResult += g_xPassSet.g_xSSRAuxTex.Sample(xSampleUV) * fWeight;
 		fTotalWeight  += fWeight;
 	}
 
 	if (fTotalWeight > UPSAMPLE_MIN_TOTAL_WEIGHT)
 	{
-		return MakeUpsampleOut(xColourResult / fTotalWeight, xAuxResult / fTotalWeight);
+		return MakeUpsampleOut(xColourResult / fTotalWeight,
+			bWriteAux ? xAuxResult / fTotalWeight : xZero4);
 	}
 	// Fallback: passthrough centre half-res sample.
-	return MakeUpsampleOut(g_xPassSet.g_xSSRTex.Sample(input.uv), g_xPassSet.g_xSSRAuxTex.Sample(input.uv));
+	float4 xFallbackAux = xZero4;
+	if (bWriteAux)
+		xFallbackAux = g_xPassSet.g_xSSRAuxTex.Sample(input.uv);
+	return MakeUpsampleOut(g_xPassSet.g_xSSRTex.Sample(input.uv), xFallbackAux);
 }
