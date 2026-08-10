@@ -22,15 +22,35 @@ class Zenith_DataStream;
  * - CPU-based particle simulation (position, velocity, color, size over time)
  * - Position/direction override for spawning at specific locations
  *
- * For GPU compute simulation, the component still manages spawn timing
- * but delegates physics updates to the GPU via Flux_ParticleGPU.
+ * For GPU compute simulation (config m_bUseGPUCompute), the component still owns
+ * spawn TIMING but nothing else: it holds a registration in Flux_ParticleGPU's
+ * shared pool, forwards each burst as a QueueSpawn, and keeps no CPU particle
+ * array at all — the compute pass integrates the particles and emits their draw
+ * instances without a readback. m_axParticles / m_uAliveCount stay empty on that
+ * path, which is why the render gather skips GPU emitters.
  */
 class Zenith_ParticleEmitterComponent
 {
 public:
 	Zenith_ParticleEmitterComponent() = default;
 	Zenith_ParticleEmitterComponent(Zenith_Entity& xParentEntity);
-	~Zenith_ParticleEmitterComponent() = default;
+
+	// A GPU emitter holds a pool registration, so this component owns a resource
+	// and needs the full ownership treatment (the same shape Zenith_AnimatorComponent
+	// uses for its store entry): move transfers the registration and neutralises the
+	// source, copy is gone, and the dtor releases whatever is still held. Releasing
+	// is idempotent — it clears m_uGPUEmitterID — so OnDestroy and the dtor can both
+	// run and exactly one Unregister reaches the pool.
+	~Zenith_ParticleEmitterComponent();
+
+	Zenith_ParticleEmitterComponent(Zenith_ParticleEmitterComponent&& xOther) noexcept;
+	Zenith_ParticleEmitterComponent& operator=(Zenith_ParticleEmitterComponent&& xOther) noexcept;
+
+	Zenith_ParticleEmitterComponent(const Zenith_ParticleEmitterComponent&) = delete;
+	Zenith_ParticleEmitterComponent& operator=(const Zenith_ParticleEmitterComponent&) = delete;
+
+	// ECS lifecycle (concept-detected by the component meta registry).
+	void OnDestroy();
 
 	//--- Configuration ---//
 
@@ -72,11 +92,20 @@ public:
 
 	//--- Particle Access (for rendering) ---//
 
+	// CPU path only — a GPU emitter's particles live in VRAM and are never mirrored
+	// back, so both of these read empty for one (use UsesGPUCompute to tell).
 	const Zenith_Vector<Zenith_ParticleData>& GetParticles() const { return m_axParticles; }
 	uint32_t GetAliveCount() const { return m_uAliveCount; }
 
-	// Check if this emitter uses GPU compute
+	// True once this emitter holds a live registration in the GPU pool. A config
+	// that ASKS for GPU compute but could not be registered (pool exhausted) reports
+	// false and runs on the CPU — the fallback is silent to every caller but the log.
 	bool UsesGPUCompute() const;
+
+	// This emitter's slot in Flux_ParticleGPU's shared pool, or UINT32_MAX when it
+	// holds none. Only meaningful while UsesGPUCompute(); it is the key the pool's
+	// own accessors take.
+	uint32_t GetGPUEmitterID() const { return m_uGPUEmitterID; }
 
 	//--- Entity Access ---//
 
@@ -100,6 +129,14 @@ private:
 
 	// Spawn a single particle at the given position/direction
 	void SpawnParticle(const Zenith_Maths::Vector3& xPos, const Zenith_Maths::Vector3& xDir);
+
+	// Hand this emitter's pool registration back. Idempotent (clears the ID), so the
+	// dtor and OnDestroy can both call it.
+	void ReleaseGPUEmitter();
+
+	// Allocate the CPU particle array for m_pxConfig's capacity (the CPU path, and
+	// the fallback when a GPU registration is refused).
+	void InitialiseCPUParticles();
 
 	// Get the current emission position (override or transform)
 	Zenith_Maths::Vector3 GetEmitPosition() const;

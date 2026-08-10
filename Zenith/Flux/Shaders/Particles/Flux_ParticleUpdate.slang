@@ -2,17 +2,27 @@
 // Flux_ParticleUpdate — Slang module.
 //
 // Subsystem: Particles. Compute particle simulation step. One thread
-// per particle: integrate velocity (gravity + drag + per-particle
-// turbulence), advance age, write the updated particle to the next-
-// frame buffer, and emit a render instance for surviving particles to
-// a compacted instance buffer.
+// per particle SLOT OF ONE EMITTER: integrate velocity (gravity + drag
+// + per-particle turbulence), advance age, write the updated particle
+// to the next-frame buffer, and emit a render instance for surviving
+// particles into that emitter's blend partition of the shared instance
+// buffer — bumping the partition's DrawIndexedIndirect instanceCount as
+// it goes, so the draw never needs a CPU-visible alive count.
 //
-// Buffer layout:
-//   set=0 binding=0  InputParticles      (read)
-//   set=0 binding=1  PushConstants       (CB)
-//   set=0 binding=2  OutputParticles     (write)
-//   set=0 binding=3  InstanceBuffer      (write)
-//   set=0 binding=4  aliveCount          (atomic uint)
+// ONE DISPATCH PER EMITTER. The pool is a flat array carved into
+// per-emitter reservations, and every parameter that varies per emitter
+// (gravity, drag, turbulence, blend partition) rides the push constants
+// rather than a per-particle field — which is why a particle record has
+// no emitter back-reference and no parameter copy. baseOffset/particleCount
+// select the emitter's slice; the launcher is Flux_ParticleGPUImpl::
+// DispatchCompute.
+//
+// Buffer layout (PASS set, space 3):
+//   binding=0  PushConstants       (CB)
+//   binding=1  InputParticles      (read)
+//   binding=2  OutputParticles     (write)
+//   binding=3  InstanceBuffer      (write)
+//   binding=4  IndirectArgs        (atomic VkDrawIndexedIndirectCommand[2])
 // =====================================================================
 
 // Pure compute on its own buffers — uses no FrameConstants. Still #include the
@@ -33,7 +43,9 @@ struct Particle
 
 // The render instance this pass emits is the SAME 20-byte per-instance vertex
 // Flux_ParticleInstance describes on the CPU and Flux_Particles.slang's VsIn
-// fetches — float3 position, float size, then a unorm8x4 colour word.
+// fetches — float3 position, float size, then a unorm8x4 colour word. The draw
+// binds THIS buffer as vertex binding 1 (an indirect DrawIndexed per partition),
+// so these bytes are fetched by the vertex unit, not read back.
 //
 // It is written as RAW u32 WORDS rather than through a `struct { float4; uint; }`
 // because a Slang structured-buffer element is std430-laid-out: the float4 forces
@@ -48,13 +60,25 @@ struct Particle
 // Keep the declaration on one line — the pin parses it.
 static const uint uINSTANCE_WORDS = 5u;
 
+// VkDrawIndexedIndirectCommand: [indexCount, instanceCount, firstIndex,
+// vertexOffset, firstInstance]. The CPU seeds one command per blend partition
+// each frame (Flux_PackResetIndirectCommand) and this pass atomically increments
+// word 1. Mirrored by uFLUX_PARTICLE_INDIRECT_WORDS in Flux_ParticleGPUImpl.h and
+// held to it by the source-text pin ParticleGPU.SlangIndirectWordCountMatchesTheMirror.
+// Keep the declaration on one line — the pin parses it.
+static const uint uINDIRECT_WORDS = 5u;
+
 struct PushConstantsLayout
 {
 	float  deltaTime;
-	uint   particleCount;
+	uint   baseOffset;        // this emitter's first slot in the shared pool
+	uint   particleCount;     // slots this emitter owns (the dispatch's thread bound)
 	float  turbulence;
-	float  pad1;
-	float4 gravity; // xyz gravity, w drag
+	float4 gravity;           // xyz gravity, w drag
+	uint   instanceBase;      // first instance slot of this emitter's blend partition
+	uint   instanceCapacity;  // instances that partition can hold
+	uint   argsWordBase;      // word offset of that partition's draw command
+	uint   pad0;
 };
 
 // PASS frequency. Declared AFTER the spine #include, so it lands at set 3
@@ -68,7 +92,7 @@ struct PassParams
 	RWStructuredBuffer<Particle>       InputParticles;
 	RWStructuredBuffer<Particle>       OutputParticles;
 	RWStructuredBuffer<uint>           InstanceBuffer;
-	RWStructuredBuffer<uint>           aliveCount;
+	RWStructuredBuffer<uint>           IndirectArgs;
 };
 ParameterBlock<PassParams> g_xPassSet;
 
@@ -90,8 +114,11 @@ float randomFloat(uint seed)
 [numthreads(64, 1, 1)]
 void csMain(uint3 dispatchId : SV_DispatchThreadID)
 {
-	uint idx = dispatchId.x;
-	if (idx >= g_xPassSet.PushConstants.particleCount) return;
+	uint local = dispatchId.x;
+	if (local >= g_xPassSet.PushConstants.particleCount) return;
+
+	// The dispatch owns [baseOffset, baseOffset + particleCount) of the shared pool.
+	uint idx = g_xPassSet.PushConstants.baseOffset + local;
 
 	Particle p = g_xPassSet.InputParticles[idx];
 
@@ -99,7 +126,8 @@ void csMain(uint3 dispatchId : SV_DispatchThreadID)
 	float lifetime = p.velocityLifetime.w;
 
 	// Dead-on-entry: write through unchanged so the buffer stays
-	// consistent (subsequent dispatches won't see stale slots).
+	// consistent (subsequent dispatches won't see stale slots). A never-spawned
+	// slot is all-zero (age 0, lifetime 0), so it takes this branch too.
 	if (age >= lifetime)
 	{
 		g_xPassSet.OutputParticles[idx] = p;
@@ -142,16 +170,22 @@ void csMain(uint3 dispatchId : SV_DispatchThreadID)
 	float4 color        = lerp(p.colorStart, p.colorEnd, normalizedAge);
 	float  size         = lerp(p.sizeRotation.x, p.sizeRotation.y, normalizedAge);
 
-	uint instanceIdx;
-	InterlockedAdd(g_xPassSet.aliveCount[0], 1u, instanceIdx);
+	// Claim a slot in this emitter's blend partition by bumping the partition's
+	// indirect instanceCount. The returned pre-increment value IS the slot, so
+	// the compaction and the draw count come out of one atomic.
+	uint instanceSlot;
+	InterlockedAdd(g_xPassSet.IndirectArgs[g_xPassSet.PushConstants.argsWordBase + 1u], 1u, instanceSlot);
 
-	// Defensive bounds check — instance buffer is sized to particleCount,
-	// but a livelock in alive accounting could otherwise overrun.
-	if (instanceIdx >= g_xPassSet.PushConstants.particleCount) return;
+	// Defensive bounds check. It cannot fire with today's capacities (each
+	// partition is sized for the WHOLE pool, and a particle emits at most one
+	// instance), which is exactly why there is no indirect-fixup pass clamping
+	// the count afterwards — but a capacity edit that broke that must corrupt
+	// nothing, so the write is still guarded.
+	if (instanceSlot >= g_xPassSet.PushConstants.instanceCapacity) return;
 
 	// Lane order matches the vertex layout exactly: world position xyz, radius,
 	// then the packed colour. asuint is a bit reinterpretation, not a conversion.
-	const uint uBase = instanceIdx * uINSTANCE_WORDS;
+	const uint uBase = (g_xPassSet.PushConstants.instanceBase + instanceSlot) * uINSTANCE_WORDS;
 	g_xPassSet.InstanceBuffer[uBase + 0u] = asuint(p.positionAge.x);
 	g_xPassSet.InstanceBuffer[uBase + 1u] = asuint(p.positionAge.y);
 	g_xPassSet.InstanceBuffer[uBase + 2u] = asuint(p.positionAge.z);

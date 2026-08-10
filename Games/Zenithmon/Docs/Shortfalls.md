@@ -28,7 +28,11 @@ and rewriting it once does not immunise it. Update it in the SAME commit that cl
   approved (ZM-D-112); and S6's dialogue/menu/NPC/shop surface all remain complete.
 - **★ THE LIVE BASELINE IS IN `Status.md`'s TOP BLOCK. READ IT, NOT THIS PARAGRAPH.** As of
   2026-08-10 (OBSERVED on clean `Null_` builds): registry **55**, ZM boot
-  **3084 ran / 3082 passed / 0 failed / 2 skipped**, engine boot **1459**. (+2 engine units
+  **3106 ran / 3104 passed / 0 failed / 2 skipped**, engine boot **1481**. (+22 engine units
+  on 2026-08-10 for wiring the GPU-driven particle path -- the new
+  `Flux/Particles/Flux_ParticleGPU.Tests.inl`: spawn ring, blend-partition/indirect
+  addressing, the `uINDIRECT_WORDS` source-text pin, pool registration lifetime, and
+  the frame's arm/DISARM latch; +2 engine units
   on 2026-08-10 for the scene-publish guard + authoring-FP determinism fix -- the two
   `Zenith_Editor.Tests.inl` publish-guard tests; +1 engine unit
   on 2026-08-09 for the T6.a review fix pass -- the cross-language source-text pin on the

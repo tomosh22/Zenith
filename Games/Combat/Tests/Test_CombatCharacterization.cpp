@@ -37,7 +37,10 @@
 #include "Components/Combat_EnemyComponent.h"
 #include "Components/Combat_DamageSystem.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
+#include "EntityComponent/Components/Zenith_ParticleEmitterComponent.h"
 #include "UI/Zenith_UIButton.h"
+#include "Flux/Particles/Flux_ParticleGPUImpl.h"
+#include "ZenithECS/Zenith_Query.h"
 
 #include <cmath>
 
@@ -1857,5 +1860,197 @@ static const Zenith_AutomatedTest g_xMenuPlayTest = {
 	/*maxFrames*/ 1400,
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xMenuPlayTest);
+
+// ============================================================================
+// Combat_GPUParticles_Test -- the arena candles are the engine's in-tree consumer
+// of the GPU-driven particle path, and this is the ONLY check that can see the
+// thing that path was missing: that the compute pass produces instances the draw
+// actually consumes.
+//
+// Nothing CPU-side can stand in for it. Every other signal -- registrations,
+// ring occupancy, the frame latch -- was equally true back when the compute
+// shader wrote an instance buffer nobody read, `Flux_ParticleGPUImpl::Initialise`
+// had no caller, and no emitter ever registered. The instanceCount in the
+// partition's VkDrawIndexedIndirectCommand is written by the GPU and read back
+// here, so it is non-zero only if the dispatch really ran over live particles.
+//
+// requiresGraphics: DownloadBufferData zero-fills on the Null backend, so this is
+// windowed-only truth (same contract as Flux_GrassImpl::ReadbackVisibleBladeCount).
+// ============================================================================
+
+namespace
+{
+	enum class GPUPPhase { Boot, WaitMenu, ClickPlay, AwaitPlaying, Settle, Done };
+
+	GPUPPhase g_eGPUP = GPUPPhase::Boot;
+	int       g_iGPUPFrame = 0;
+	bool      g_bGPUPReachedArena = false;
+	bool      g_bGPUPDone = false;
+	u_int     g_uGPUPEmitters = 0;
+	u_int     g_uGPUPRingOccupancy = 0;
+	u_int     g_uGPUPAdditiveInstances = 0;
+	u_int     g_uGPUPAlphaInstances = 0;
+
+	// Candles emit for a while before the readback: a freshly loaded arena has
+	// spawned nothing yet, and the point is to observe SURVIVING particles being
+	// compacted, not the empty first frame.
+	constexpr int kiGPUP_SETTLE_FRAMES = 90;
+}
+
+static void Setup_GPUParticles()
+{
+	Zenith_InputSimulator::SetFixedDt(1.0f / 60.0f);
+	g_eGPUP = GPUPPhase::Boot;
+	g_iGPUPFrame = 0;
+	g_bGPUPReachedArena = false;
+	g_bGPUPDone = false;
+	g_uGPUPEmitters = 0;
+	g_uGPUPRingOccupancy = 0;
+	g_uGPUPAdditiveInstances = 0;
+	g_uGPUPAlphaInstances = 0;
+}
+
+static bool Step_GPUParticles(int iFrame)
+{
+	switch (g_eGPUP)
+	{
+	case GPUPPhase::Boot:
+		g_xEngine.Scenes().LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
+		g_eGPUP = GPUPPhase::WaitMenu;
+		return true;
+
+	case GPUPPhase::WaitMenu:
+		if (Combat_GameComponent::GetGameState() == Combat_GameState::MAIN_MENU &&
+			FindMenuPlayButton() != nullptr)
+		{
+			g_eGPUP = GPUPPhase::ClickPlay;
+			return true;
+		}
+		return iFrame < 600;
+
+	case GPUPPhase::ClickPlay:
+	{
+		Zenith_UI::Zenith_UIButton* pxPlay = FindMenuPlayButton();
+		if (pxPlay == nullptr) return false;
+		pxPlay->Activate();
+		g_iGPUPFrame = 0;
+		g_eGPUP = GPUPPhase::AwaitPlaying;
+		return true;
+	}
+
+	case GPUPPhase::AwaitPlaying:
+		if (WaitForPlaying())
+		{
+			g_bGPUPReachedArena = true;
+			g_iGPUPFrame = 0;
+			g_eGPUP = GPUPPhase::Settle;
+			return true;
+		}
+		if (++g_iGPUPFrame > 600) { g_bGPUPDone = true; g_eGPUP = GPUPPhase::Done; return false; }
+		return iFrame < 1200;
+
+	case GPUPPhase::Settle:
+		if (++g_iGPUPFrame < kiGPUP_SETTLE_FRAMES)
+		{
+			return true;
+		}
+		// Sample the CPU-side facts on the LAST stepped frame; the GPU readback
+		// happens in Verify (it idles the device, so it must not sit in a frame path).
+		g_xEngine.Scenes().QueryAllScenes<Zenith_ParticleEmitterComponent>()
+			.ForEach([](Zenith_EntityID, Zenith_ParticleEmitterComponent& xEmitter)
+		{
+			if (!xEmitter.UsesGPUCompute()) return;
+			g_uGPUPEmitters++;
+			g_uGPUPRingOccupancy += g_xEngine.ParticleGPU().GetEmitterParticleCount(xEmitter.GetGPUEmitterID());
+		});
+		g_bGPUPDone = true;
+		g_eGPUP = GPUPPhase::Done;
+		return false;
+
+	case GPUPPhase::Done:
+		return false;
+	}
+	return false;
+}
+
+static bool Verify_GPUParticles()
+{
+	Zenith_InputSimulator::ClearFixedDt();
+	if (!g_bGPUPDone || !g_bGPUPReachedArena)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "[GPUParticles] never reached the arena (phase %d)", static_cast<int>(g_eGPUP));
+		return false;
+	}
+
+	Flux_ParticleGPUImpl& xGPU = g_xEngine.ParticleGPU();
+	g_uGPUPAlphaInstances    = xGPU.ReadbackPartitionInstanceCount(uFLUX_PARTICLE_PARTITION_ALPHA);
+	g_uGPUPAdditiveInstances = xGPU.ReadbackPartitionInstanceCount(uFLUX_PARTICLE_PARTITION_ADDITIVE);
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST,
+		"[GPUParticles] %u GPU emitters, %u ring slots spawned, instanceCount alpha=%u additive=%u",
+		g_uGPUPEmitters, g_uGPUPRingOccupancy, g_uGPUPAlphaInstances, g_uGPUPAdditiveInstances);
+
+	if (g_uGPUPEmitters == 0)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[GPUParticles] no emitter registered on the GPU path -- Combat_Flame's m_bUseGPUCompute, "
+			"or the pool reservation, regressed");
+		return false;
+	}
+	if (g_uGPUPRingOccupancy == 0)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[GPUParticles] the emitters registered but never spawned -- Emit() is not reaching QueueSpawn, "
+			"or PreExecuteCompute is not draining it");
+		return false;
+	}
+	if (g_uGPUPAdditiveInstances == 0)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[GPUParticles] the candles are additive and spawned %u particles, but the additive partition's "
+			"indirect instanceCount read 0 -- the compute pass is not compacting survivors into the buffer "
+			"the draw fetches (this is exactly the state the path shipped in before it was wired)",
+			g_uGPUPRingOccupancy);
+		return false;
+	}
+	if (g_uGPUPAdditiveInstances > Flux_ParticleGPUImpl::s_uPartitionCapacity)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[GPUParticles] the additive partition counted %u instances but holds %u -- the draw would fetch "
+			"past the end of its slice",
+			g_uGPUPAdditiveInstances, Flux_ParticleGPUImpl::s_uPartitionCapacity);
+		return false;
+	}
+	if (g_uGPUPAdditiveInstances > g_uGPUPRingOccupancy)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[GPUParticles] %u instances from %u spawned slots -- a particle may emit at most ONE instance, "
+			"so the atomic is being double-counted",
+			g_uGPUPAdditiveInstances, g_uGPUPRingOccupancy);
+		return false;
+	}
+	if (g_uGPUPAlphaInstances != 0)
+	{
+		// Combat registers no alpha-blended GPU emitter. A non-zero count here means
+		// the blend partitions are crossed -- the additive candles would be drawn by
+		// the alpha pipeline as well as their own.
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[GPUParticles] the alpha partition counted %u instances with no alpha GPU emitter registered "
+			"-- the two blend partitions are crossed",
+			g_uGPUPAlphaInstances);
+		return false;
+	}
+	return true;
+}
+
+static const Zenith_AutomatedTest g_xGPUParticlesTest = {
+	"Combat_GPUParticles_Test",
+	&Setup_GPUParticles,
+	&Step_GPUParticles,
+	&Verify_GPUParticles,
+	/*maxFrames*/ 1400,
+	/*requiresGraphics*/ true,
+};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xGPUParticlesTest);
 
 #endif // ZENITH_INPUT_SIMULATOR

@@ -136,16 +136,24 @@ namespace Flux_Generated_Particles
 		struct PushConstants_CB
 		{
 			float m_fdeltaTime; // slang=float offset=0
-			unsigned int m_uparticleCount; // slang=uint offset=4
-			float m_fturbulence; // slang=float offset=8
-			float m_fpad1; // slang=float offset=12
+			unsigned int m_ubaseOffset; // slang=uint offset=4
+			unsigned int m_uparticleCount; // slang=uint offset=8
+			float m_fturbulence; // slang=float offset=12
 			unsigned char m_agravity[16]; // slang=vector offset=16 arrayCount=4 (no C++ mapping)
+			unsigned int m_uinstanceBase; // slang=uint offset=32
+			unsigned int m_uinstanceCapacity; // slang=uint offset=36
+			unsigned int m_uargsWordBase; // slang=uint offset=40
+			unsigned int m_upad0; // slang=uint offset=44
 		};
-		static_assert(sizeof(PushConstants_CB) == 32, "PushConstants_CB size drifted from Slang reflection");
+		static_assert(sizeof(PushConstants_CB) == 48, "PushConstants_CB size drifted from Slang reflection");
 		static_assert(offsetof(PushConstants_CB, m_fdeltaTime) == 0, "PushConstants.deltaTime offset drifted from Slang reflection");
-		static_assert(offsetof(PushConstants_CB, m_uparticleCount) == 4, "PushConstants.particleCount offset drifted from Slang reflection");
-		static_assert(offsetof(PushConstants_CB, m_fturbulence) == 8, "PushConstants.turbulence offset drifted from Slang reflection");
-		static_assert(offsetof(PushConstants_CB, m_fpad1) == 12, "PushConstants.pad1 offset drifted from Slang reflection");
+		static_assert(offsetof(PushConstants_CB, m_ubaseOffset) == 4, "PushConstants.baseOffset offset drifted from Slang reflection");
+		static_assert(offsetof(PushConstants_CB, m_uparticleCount) == 8, "PushConstants.particleCount offset drifted from Slang reflection");
+		static_assert(offsetof(PushConstants_CB, m_fturbulence) == 12, "PushConstants.turbulence offset drifted from Slang reflection");
+		static_assert(offsetof(PushConstants_CB, m_uinstanceBase) == 32, "PushConstants.instanceBase offset drifted from Slang reflection");
+		static_assert(offsetof(PushConstants_CB, m_uinstanceCapacity) == 36, "PushConstants.instanceCapacity offset drifted from Slang reflection");
+		static_assert(offsetof(PushConstants_CB, m_uargsWordBase) == 40, "PushConstants.argsWordBase offset drifted from Slang reflection");
+		static_assert(offsetof(PushConstants_CB, m_upad0) == 44, "PushConstants.pad0 offset drifted from Slang reflection");
 		// kind: RWStructuredBuffer
 		inline constexpr Flux_BindingHandle hInputParticles{ 3u, 1u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
 		// kind: RWStructuredBuffer
@@ -153,7 +161,7 @@ namespace Flux_Generated_Particles
 		// kind: RWStructuredBuffer
 		inline constexpr Flux_BindingHandle hInstanceBuffer{ 3u, 3u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
 		// kind: RWStructuredBuffer
-		inline constexpr Flux_BindingHandle haliveCount{ 3u, 4u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
+		inline constexpr Flux_BindingHandle hIndirectArgs{ 3u, 4u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
 		// vertex inputs: none
 		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ nullptr, 0u, { 0u, 0u } };
 	}

@@ -82,6 +82,11 @@ void Flux_ParticlesImpl::Initialise()
 {
 	BuildPipelines();
 
+	// The GPU compute path's VRAM. Its pipeline was already built by the
+	// BuildPipelines above (one feature owns both programs, so one rebuild covers
+	// both on hot-reload) — Initialise here allocates resources only.
+	g_xEngine.ParticleGPU().Initialise();
+
 	// Allocate instance buffers for both blend modes
 	auto& xVulkanMemory = g_xEngine.FluxMemory();
 	xVulkanMemory.InitialiseDynamicVertexBuffer(nullptr, s_uMaxParticles * sizeof(Flux_ParticleInstance), m_xInstanceBufferAlpha, false);
@@ -105,6 +110,7 @@ void Flux_ParticlesImpl::Reset()
 {
 	m_uAlphaInstanceCount = 0;
 	m_uAdditiveInstanceCount = 0;
+	g_xEngine.ParticleGPU().Reset();
 	Zenith_Log(LOG_CATEGORY_PARTICLES, "Flux_ParticlesImpl::Reset()");
 }
 
@@ -132,8 +138,18 @@ void Flux_ParticlesImpl::UpdateEmittersAndBuildInstanceBuffer(float fDt)
 	// xEmitter.Update(fDt) for every emitter and returns one neutral entry per CPU
 	// emitter). This body just builds the GPU instance buffers from that data, so it
 	// names no EntityComponent type and reaches no g_xEngine.Scenes().
+	//
+	// The tick covers GPU emitters too — it is what turns their spawn rate into the
+	// QueueSpawn calls PreExecuteCompute drains a few lines later in Render — so it
+	// runs whenever EITHER path is enabled, and only the instance BUILD below is
+	// gated on the CPU option.
 	Zenith_Vector<Zenith_ParticleEmitterRenderData> xEmitters;
 	if (g_pfnZenithParticleGather) g_pfnZenithParticleGather(fDt, xEmitters);
+
+	if (!Zenith_GraphicsOptions::Get().m_bCPUParticlesEnabled)
+	{
+		return;
+	}
 
 	for (u_int e = 0; e < xEmitters.GetSize(); ++e)
 	{
@@ -181,7 +197,8 @@ void Flux_ParticlesImpl::UploadInstanceData()
 
 void Flux_ParticlesImpl::Render(void*)
 {
-	if (!Zenith_GraphicsOptions::Get().m_bCPUParticlesEnabled)
+	const Zenith_GraphicsOptions& xOptions = Zenith_GraphicsOptions::Get();
+	if (!xOptions.m_bCPUParticlesEnabled && !xOptions.m_bGPUParticlesEnabled)
 	{
 		return;
 	}
@@ -192,6 +209,13 @@ void Flux_ParticlesImpl::Render(void*)
 
 	// Upload CPU instance data to GPU
 	UploadInstanceData();
+
+	// ...then the GPU path's CPU half, in that order and in this one Prepare: the
+	// tick above is what produced this frame's QueueSpawn calls, so draining them
+	// here spawns on the SAME frame. (Hanging this off the compute pass's own
+	// Prepare would work too — every Prepare runs before any record — but splitting
+	// it across two callbacks is how it silently acquired a frame of latency before.)
+	g_xEngine.ParticleGPU().PreExecuteCompute();
 }
 
 static void ExecuteParticles(Flux_CommandBuffer* pxCommandList, void* pUserData)
@@ -204,11 +228,6 @@ static void ExecuteParticles(Flux_CommandBuffer* pxCommandList, void* pUserData)
 	{
 		return;
 	}
-	if (!Zenith_GraphicsOptions::Get().m_bCPUParticlesEnabled)
-	{
-		return;
-	}
-
 	// Emitter sim + instance upload runs once per frame in Render (registered as
 	// this pass's Prepare, main thread). This record callback only emits draw
 	// commands from the already-populated instance counts/buffers — no ECS
@@ -220,22 +239,36 @@ static void ExecuteParticles(Flux_CommandBuffer* pxCommandList, void* pUserData)
 	// use (mirrors ExecuteSSAOGenerate / ExecuteQuads).
 	Flux_ParticlesImpl& xParticles = g_xEngine.Particles();
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
+	Flux_ParticleGPUImpl& xParticleGPU = g_xEngine.ParticleGPU();
 
-	// Render CPU particles (alpha-blended first, then additive)
-	if (xParticles.m_uAlphaInstanceCount > 0 || xParticles.m_uAdditiveInstanceCount > 0)
+	// The two paths are independent — a scene can run either, both or neither — so
+	// each is gated on its OWN option. The GPU half reads the frame latch rather
+	// than the option so it can never draw from indirect args PreExecuteCompute
+	// declined to seed.
+	const bool bDrawCPU = Zenith_GraphicsOptions::Get().m_bCPUParticlesEnabled
+		&& (xParticles.m_uAlphaInstanceCount > 0 || xParticles.m_uAdditiveInstanceCount > 0);
+	const bool bDrawGPU = xParticleGPU.IsActiveThisFrame();
+
+	if (!bDrawCPU && !bDrawGPU)
 	{
-		// Billboard texture goes through the bindless table (set 2 g_axTextures).
-		// Mark it bindless once (idempotent guard); radial sprite → CLAMP.
-		Zenith_TextureAsset* pxParticleTex = xParticles.m_xParticleTexture.GetDirect();
-		if (pxParticleTex->m_xSRV.m_uBindlessIndex == uFLUX_INVALID_BINDLESS_INDEX)
-		{
-			pxParticleTex->MarkAsBindless(/*bRepeatAddressing*/ false);
-		}
-		Flux_ParticleDrawConstants xConstants{};
-		xConstants.m_uTexIdx = pxParticleTex->m_xSRV.m_uBindlessIndex;
+		return;
+	}
 
-		namespace PT = Flux_Generated_Particles::Particles;
+	// Billboard texture goes through the bindless table (set 2 g_axTextures).
+	// Mark it bindless once (idempotent guard); radial sprite → CLAMP. Shared by
+	// both paths — they draw the same sprite with the same pipelines.
+	Zenith_TextureAsset* pxParticleTex = xParticles.m_xParticleTexture.GetDirect();
+	if (pxParticleTex->m_xSRV.m_uBindlessIndex == uFLUX_INVALID_BINDLESS_INDEX)
+	{
+		pxParticleTex->MarkAsBindless(/*bRepeatAddressing*/ false);
+	}
+	Flux_ParticleDrawConstants xConstants{};
+	xConstants.m_uTexIdx = pxParticleTex->m_xSRV.m_uBindlessIndex;
 
+	namespace PT = Flux_Generated_Particles::Particles;
+
+	if (bDrawCPU)
+	{
 		// Alpha-blended particles
 		if (xParticles.m_uAlphaInstanceCount > 0)
 		{
@@ -249,7 +282,7 @@ static void ExecuteParticles(Flux_CommandBuffer* pxCommandList, void* pUserData)
 			xBinder.BindDrawConstants(PT::hParticleConstants, &xConstants, static_cast<u_int>(sizeof(xConstants)));
 			pxCommandList->UseBindlessTextures(2);
 
-			pxCommandList->DrawIndexed(6, xParticles.m_uAlphaInstanceCount);
+			pxCommandList->DrawIndexed(uFLUX_PARTICLE_QUAD_INDEX_COUNT, xParticles.m_uAlphaInstanceCount);
 		}
 
 		// Additive particles
@@ -265,7 +298,36 @@ static void ExecuteParticles(Flux_CommandBuffer* pxCommandList, void* pUserData)
 			xBinder.BindDrawConstants(PT::hParticleConstants, &xConstants, static_cast<u_int>(sizeof(xConstants)));
 			pxCommandList->UseBindlessTextures(2);
 
-			pxCommandList->DrawIndexed(6, xParticles.m_uAdditiveInstanceCount);
+			pxCommandList->DrawIndexed(uFLUX_PARTICLE_QUAD_INDEX_COUNT, xParticles.m_uAdditiveInstanceCount);
+		}
+	}
+
+	// GPU-simulated particles. Nothing here knows how many there are: the compute
+	// pass compacted the survivors into one blend partition each and counted them
+	// into that partition's VkDrawIndexedIndirectCommand, so both draws are recorded
+	// unconditionally and an empty partition draws instanceCount 0. The partition
+	// BASE is applied by binding the instance stream at the partition's byte offset
+	// (not via the command's firstInstance, which would need drawIndirectFirstInstance).
+	if (bDrawGPU)
+	{
+		for (u_int uPartition = 0; uPartition < uFLUX_PARTICLE_PARTITION_COUNT; ++uPartition)
+		{
+			pxCommandList->SetPipeline(uPartition == uFLUX_PARTICLE_PARTITION_ADDITIVE
+				? &xParticles.m_xPipelineAdditive
+				: &xParticles.m_xPipelineAlpha);
+
+			pxCommandList->SetVertexBuffer(xGraphics.m_xQuadMesh.GetVertexBuffer(), 0);
+			pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
+			pxCommandList->SetVertexBuffer(xParticleGPU.GetInstanceBuffer(), 1,
+				Flux_ParticleGPUImpl::GetPartitionByteOffset(uPartition));
+
+			Flux_ShaderBinder xBinder(*pxCommandList);
+			xBinder.BindDrawConstants(PT::hParticleConstants, &xConstants, static_cast<u_int>(sizeof(xConstants)));
+			pxCommandList->UseBindlessTextures(2);
+
+			pxCommandList->DrawIndexedIndirect(&xParticleGPU.GetIndirectArgsBuffer(), 1u,
+				Flux_ParticleGPUImpl::GetPartitionArgsByteOffset(uPartition),
+				uFLUX_PARTICLE_INDIRECT_STRIDE);
 		}
 	}
 }
@@ -277,20 +339,14 @@ static void ExecuteParticleCompute(Flux_CommandBuffer* pxCmdList, void*)
 	g_xEngine.ParticleGPU().DispatchCompute(pxCmdList);
 }
 
-static void PreExecuteParticleCompute(void*)
-{
-	// Non-capturing Prepare callback: same g_xEngine reach as above.
-	g_xEngine.ParticleGPU().PreExecuteCompute();
-}
-
 void Flux_ParticlesImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
-	// GPU particle compute pass (updates instance buffer before draw). The
-	// instance buffer is managed internally by Flux_ParticleGPU and isn't
-	// graph-tracked, so the draw→compute edge is expressed as an explicit
-	// DependsOn rather than a resource declaration.
-	Flux_PassHandle xComputePass = xGraph.AddPass("Particles Compute", ExecuteParticleCompute)
-		.Prepare(PreExecuteParticleCompute);
+	// GPU particle compute pass. Its CPU half (spawn upload + indirect seeding) is
+	// the TAIL of the draw pass's Prepare rather than a Prepare of its own — every
+	// Prepare in the graph runs before any record, and keeping the emitter tick and
+	// the spawn drain in one callback is what guarantees a spawn reaches the GPU on
+	// the frame it was requested.
+	Flux_PassHandle xComputePass = xGraph.AddPass("Particles Compute", ExecuteParticleCompute);
 
 	// Render (main-thread Prepare) does the emitter sim + instance-buffer upload
 	// before any record callback runs; ExecuteParticles (worker) then only emits
@@ -298,10 +354,29 @@ void Flux_ParticlesImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// thread. Render was previously defined but never registered — this is a new,
 	// required edge (without it the CPU particle sim/upload would never run).
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
-	xGraph.AddPass("Particles", ExecuteParticles)
+	Flux_PassHandle xDrawPass = xGraph.AddPass("Particles", ExecuteParticles)
 		.Prepare([](void* p){ g_xEngine.Particles().Render(p); })
 		.Writes(xGraphics.GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV)
 		.DependsOn(xComputePass);
+
+	// The GPU path's buffer traffic, declared so the graph synthesises the
+	// compute-write -> vertex-fetch / indirect-read barriers. Before this the pass
+	// pair carried only a DependsOn, which orders the passes but emits no memory
+	// barrier — correct only while nothing actually read what the compute wrote.
+	//
+	// BOTH halves of the particle ping-pong get the SAME declaration, which is what
+	// makes the per-frame role swap invisible to the graph: the compiled barriers
+	// are identical under either parity, so DispatchCompute is free to decide which
+	// is input and which is output at record time. (Same trick as the grass
+	// displacement ping-pong.)
+	Flux_ParticleGPUImpl& xParticleGPU = g_xEngine.ParticleGPU();
+	xGraph.WriteBuffer(xComputePass, xParticleGPU.m_xParticleBufferA.GetBuffer(),      RESOURCE_ACCESS_READWRITE_UAV);
+	xGraph.WriteBuffer(xComputePass, xParticleGPU.m_xParticleBufferB.GetBuffer(),      RESOURCE_ACCESS_READWRITE_UAV);
+	xGraph.WriteBuffer(xComputePass, xParticleGPU.GetInstanceBuffer().GetBuffer(),     RESOURCE_ACCESS_WRITE_UAV);
+	xGraph.WriteBuffer(xComputePass, xParticleGPU.GetIndirectArgsBuffer().GetBuffer(), RESOURCE_ACCESS_READWRITE_UAV);
+
+	xGraph.ReadBuffer(xDrawPass, xParticleGPU.GetInstanceBuffer().GetBuffer(),     RESOURCE_ACCESS_READ_VERTEX_BUFFER);
+	xGraph.ReadBuffer(xDrawPass, xParticleGPU.GetIndirectArgsBuffer().GetBuffer(), RESOURCE_ACCESS_READ_INDIRECT_ARG);
 
 	// Preview view (S5c): parity instance writing the preview HDR target. Scene
 	// particles never render in the preview (no FLUX_VIEW_FLAG_SCENE_CONTENT) —

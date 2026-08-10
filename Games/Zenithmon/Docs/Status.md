@@ -3,11 +3,18 @@
 **Last updated:** 2026-08-10
 
 **★ LIVE BASELINE (OBSERVED 2026-08-10 on clean `Null_` builds):
-ZM boot `3084 ran / 3082 passed / 0 failed / 2 skipped`; engine boot (Null Combat)
-`1459 ran / 1458 passed / 0 failed / 1 skipped`; registry **55**.** This is the
-current pin in `zm-tests.yml` (`-Baseline 3084`) and `run_unit_gate.ps1`
-(default 1459). The move from 3082/1457 is **+2 ENGINE units** (no ZM units) from
-the scene-publish / authoring-determinism fix `89fa3647`:
+ZM boot `3106 ran / 3104 passed / 0 failed / 2 skipped`; engine boot (Null Combat)
+`1481 ran / 1480 passed / 0 failed / 1 skipped`; registry **55**.** This is the
+current pin in `zm-tests.yml` (`-Baseline 3106`) and `run_unit_gate.ps1`
+(default 1481). The move from 3084/1459 is **+22 ENGINE units** (no ZM units) from
+wiring the GPU-driven particle path: `Flux_ParticleGPUImpl`'s instance buffer had no
+reader, its `Initialise` had no caller and no emitter ever registered, so the
+`Flux_ParticleUpdate` compute pass was inert. The new
+`Flux/Particles/Flux_ParticleGPU.Tests.inl` covers the spawn ring (7), blend-partition
+and indirect-command addressing (4), the `uINDIRECT_WORDS` source-text pin (1), pool
+registration lifetime against the live impl (6), and the frame's CPU half including
+the arm/DISARM latch (4). Before that, the move from 3082/1457 was **+2 ENGINE units**
+(no ZM units) from the scene-publish / authoring-determinism fix `89fa3647`:
 `Editor.SceneSaveDeltaClassifiesPublish` pins the four verdicts of
 `Zenith_SceneData::CompareWithFile`, and `Editor.HeadlessSaveNeverRewritesSceneAsset`
 pins the policy end to end — a headless boot may create a scene asset but never

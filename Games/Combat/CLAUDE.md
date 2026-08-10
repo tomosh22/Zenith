@@ -41,7 +41,7 @@ Games/Combat/
     Combat_UIManager.h           # Health bars + combo display
     Combat_GraphNodes.h          # Behaviour Graph node library (all 5 graphs)
   Tests/
-    Test_CombatCharacterization.cpp  # 14 automated tests (attack/heavy, player combo/dodge/hit-stun, enemy engage/hit-stun, victory/game-over/combo-timer, pause/restart/menu/play)
+    Test_CombatCharacterization.cpp  # 15 automated tests: 14 graph-conversion characterizations (attack/heavy, player combo/dodge/hit-stun, enemy engage/hit-stun, victory/game-over/combo-timer, pause/restart/menu/play) + Combat_GPUParticles_Test (requiresGraphics — see "GPU particles" below)
   Assets/
     Scenes/MainMenu.zscen, Arena.zscen  # Boot-authored scenes
     Graphs/                      # Boot-authored Behaviour Graphs:
@@ -184,7 +184,27 @@ both fire (the old `if/else-if/return` switch was mutually exclusive). Combo
 count/timer stay `Combat_GameComponent` statics (cross-entity shared: written by
 the attack graph, ticked by the round graph, read by the HUD).
 
-**Equivalence proof:** `Tests/Test_CombatCharacterization.cpp` — 14 tests
+## GPU particles: the arena candles
+
+The candle flames (`Combat_Flame`, one emitter per `ArenaWall`, 24 of them at 64
+particles each) are the engine's **in-tree consumer of the GPU-driven particle
+path** — `m_bUseGPUCompute = true`. `Flux_ParticleUpdate.slang` integrates them and
+compacts the survivors into the additive partition of a shared instance buffer,
+counting them into a `VkDrawIndexedIndirectCommand` the draw sources; no alive
+count ever reaches the CPU. Continuous, always on screen, and purely decorative,
+so nothing gameplay-visible rides on it. The **burst** emitters (`Combat_HitSpark`)
+stay on the CPU path, which is what it is better at.
+
+`Combat_GPUParticles_Test` guards it and is `requiresGraphics` — it reads the
+indirect `instanceCount` back off the GPU, and `DownloadBufferData` zero-fills on
+the Null backend, so it is windowed-only truth (same contract as
+`Flux_GrassImpl::ReadbackVisibleBladeCount`) and shows up as SKIPPED in
+`zenith test Combat --headless`. Observed windowed: 24 emitters, 1080 ring slots
+spawned, additive `instanceCount` 479, alpha 0. It is the only check that can see
+the defect the path shipped with — registrations, ring occupancy and the frame
+latch were all equally true while the compute shader wrote a buffer nobody read.
+
+**Equivalence proof:** `Tests/Test_CombatCharacterization.cpp` — 14 characterization tests
 written against the C++ versions FIRST, all identical pre/post conversion. Run
 WINDOWED (headless asserts on the skeletal model's GPU buffers):
 

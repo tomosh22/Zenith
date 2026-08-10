@@ -194,7 +194,22 @@ param(
     # meaningful in BOTH backends — it asserts the file is byte-identical afterwards
     # under Null and CHANGED under a real one. Observed 2026-08-10 on a Null_ Combat
     # build (1459 ran / 1458 passed / 0 failed / 1 skipped).
-    [int]$Baseline = 1459,
+    # 1459 -> 1481: +22 for Flux/Particles/Flux_ParticleGPU.Tests.inl, added when the
+    # GPU-driven particle path was WIRED (its instance buffer had no reader, its
+    # Initialise had no caller, and no emitter ever registered, so the whole pass was
+    # inert). 7 spawn-ring units (unwrapped / wrap split / exact-boundary /
+    # over-capacity clamp / zero-capacity / full-lap walk / occupancy saturation),
+    # 4 addressing units (disjoint blend partitions, partition-vs-pool capacity, one
+    # indirect command each, the zero-instanceCount unit-quad seed), the SOURCE-TEXT
+    # pin ParticleGPU.SlangIndirectWordCountMatchesTheMirror (twin of the
+    # uINSTANCE_WORDS one -- uINDIRECT_WORDS likewise reflects into nothing), 6 pool-
+    # lifetime units driving the LIVE impl (disjoint carve, reservation kept for
+    # reuse, reused slot restarts empty, over-capacity refusal, QueueSpawn reaching
+    # only live registrations, Reset clearing rings but keeping reservations), and 4
+    # frame units (VRAM shapes, spawn drain + frame arm, the empty-case DISARM,
+    # bounds-checked emitter count). Observed 2026-08-10 on a Null_ Combat build
+    # (1481 ran / 1480 passed / 0 failed / 1 skipped).
+    [int]$Baseline = 1481,
     [int]$TimeoutSec = 180,
     [string]$LogPath = ""
 )

@@ -1711,9 +1711,9 @@ change touches `Zenith/` as well as the game.
 **Boot baseline at THIS change: ZM 2863; engine (Null Combat) stays 1242.** The added
 contracts are pure generator/placement checks, so they do not move the 55-test
 automated registry or the cross-game engine suite.
-★ **SUPERSEDED -- the CURRENT baseline is ZM 3084, engine 1459**, registry unmoved
+★ **SUPERSEDED -- the CURRENT baseline is ZM 3106, engine 1481**, registry unmoved
 at **55**. OBSERVED 2026-08-10 on clean `Null_` builds:
-`3084 ran, 3082 passed, 0 failed, 2 skipped`. Derivation: ZM-D-183 added the two
+`3106 ran, 3104 passed, 0 failed, 2 skipped`. Derivation: ZM-D-183 added the two
 committed-scene-bytes guards (2906 -> 2908); ZM-D-184 added the rival spawn-clearance
 unit (2908 -> 2909); the 2026-08-05 CommandLine ParseArgs units added 5 ENGINE units
 (engine 1284 -> 1289) and were NOT reflected here, leaving the ZM pin stale at 2909
@@ -1841,7 +1841,21 @@ authoring-FP determinism fix (`89fa3647`) added 2 more ENGINE units (engine 1457
 lossy) plus the rule that a transient entity never moves the serialized counts, and
 `HeadlessSaveNeverRewritesSceneAsset`, which pins the policy end to end and asserts
 something in EITHER backend (the file is byte-identical afterwards under `Null_`,
-CHANGED under a real one) -- taking ZM to **3084**. `zm-tests.yml`
+CHANGED under a real one) -- taking ZM to **3084**; and wiring the GPU-driven particle
+path added 22 more ENGINE units (engine 1459 -> **1481**) in the new
+`Flux/Particles/Flux_ParticleGPU.Tests.inl`. That pass was inert before: its instance
+buffer had no reader, its `Initialise` had no caller, and no emitter ever registered,
+so the `Flux_ParticleUpdate` compute shader wrote bytes nothing drew. The 22 cover the
+spawn RING (7 -- unwrapped, the wrap split, the exact boundary, the over-capacity
+clamp, zero capacity, a full-lap walk, occupancy saturation), blend-partition and
+indirect-command ADDRESSING (4), the SOURCE-TEXT pin
+`ParticleGPU.SlangIndirectWordCountMatchesTheMirror` (1 -- the twin of the
+uINSTANCE_WORDS pin; uINDIRECT_WORDS likewise reflects into nothing), pool
+registration LIFETIME driven against the live impl (6 -- disjoint carve, the kept
+reservation, a reused slot restarting empty, over-capacity refusal, QueueSpawn
+reaching only live registrations, `Reset` clearing rings but keeping reservations),
+and the frame's CPU HALF (4 -- VRAM shapes, the spawn drain + frame arm, the empty-case
+DISARM, the bounds-checked emitter count) -- taking ZM to **3106**. `zm-tests.yml`
 `-Baseline` and `run_unit_gate.ps1`'s default both moved to match. The paragraph below is the
 ZM-D-182-era snapshot, kept for the audit trail:
 

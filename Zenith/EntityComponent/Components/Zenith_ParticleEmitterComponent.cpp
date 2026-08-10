@@ -13,6 +13,8 @@
 #include "ZenithECS/Zenith_Scene.h"
 #include "ZenithECS/Zenith_Query.h"
 
+#include <utility>   // std::move — the move ctor/assignment below
+
 // Forward declaration of helper function
 static Zenith_Maths::Vector3 GetRandomDirectionInCone(const Zenith_Maths::Vector3& xDir, float fSpreadAngleDegrees);
 
@@ -21,37 +23,117 @@ Zenith_ParticleEmitterComponent::Zenith_ParticleEmitterComponent(Zenith_Entity& 
 {
 }
 
-void Zenith_ParticleEmitterComponent::SetConfig(Flux_ParticleEmitterConfig* pxConfig)
+Zenith_ParticleEmitterComponent::~Zenith_ParticleEmitterComponent()
 {
-	// Unregister from GPU system if previously registered
+	ReleaseGPUEmitter();
+}
+
+Zenith_ParticleEmitterComponent::Zenith_ParticleEmitterComponent(Zenith_ParticleEmitterComponent&& xOther) noexcept
+	: m_xParentEntity(xOther.m_xParentEntity)
+	, m_pxConfig(xOther.m_pxConfig)
+	, m_axParticles(std::move(xOther.m_axParticles))
+	, m_uAliveCount(xOther.m_uAliveCount)
+	, m_uGPUEmitterID(xOther.m_uGPUEmitterID)
+	, m_bEmitting(xOther.m_bEmitting)
+	, m_fSpawnAccumulator(xOther.m_fSpawnAccumulator)
+	, m_bUsePositionOverride(xOther.m_bUsePositionOverride)
+	, m_xOverridePosition(xOther.m_xOverridePosition)
+	, m_xOverrideDirection(xOther.m_xOverrideDirection)
+	, m_xRng(xOther.m_xRng)
+	, m_xDistribution(xOther.m_xDistribution)
+{
+	// The registration moves with the component (the pool is keyed by ID, not by
+	// address), so the SOURCE must stop owning it or the pool slot is freed the
+	// moment the moved-from husk is destructed.
+	xOther.m_uGPUEmitterID = UINT32_MAX;
+}
+
+Zenith_ParticleEmitterComponent& Zenith_ParticleEmitterComponent::operator=(Zenith_ParticleEmitterComponent&& xOther) noexcept
+{
+	if (this != &xOther)
+	{
+		// Whatever this destination already held is overwritten, so release it first
+		// or the registration leaks.
+		ReleaseGPUEmitter();
+
+		m_xParentEntity        = xOther.m_xParentEntity;
+		m_pxConfig             = xOther.m_pxConfig;
+		m_axParticles          = std::move(xOther.m_axParticles);
+		m_uAliveCount          = xOther.m_uAliveCount;
+		m_uGPUEmitterID        = xOther.m_uGPUEmitterID;
+		m_bEmitting            = xOther.m_bEmitting;
+		m_fSpawnAccumulator    = xOther.m_fSpawnAccumulator;
+		m_bUsePositionOverride = xOther.m_bUsePositionOverride;
+		m_xOverridePosition    = xOther.m_xOverridePosition;
+		m_xOverrideDirection   = xOther.m_xOverrideDirection;
+		m_xRng                 = xOther.m_xRng;
+		m_xDistribution        = xOther.m_xDistribution;
+
+		xOther.m_uGPUEmitterID = UINT32_MAX;
+	}
+	return *this;
+}
+
+void Zenith_ParticleEmitterComponent::OnDestroy()
+{
+	ReleaseGPUEmitter();
+}
+
+void Zenith_ParticleEmitterComponent::ReleaseGPUEmitter()
+{
 	if (m_uGPUEmitterID != UINT32_MAX)
 	{
 		g_xEngine.ParticleGPU().UnregisterEmitter(m_uGPUEmitterID);
 		m_uGPUEmitterID = UINT32_MAX;
 	}
+}
+
+void Zenith_ParticleEmitterComponent::InitialiseCPUParticles()
+{
+	m_axParticles.Clear();
+	m_axParticles.Reserve(m_pxConfig->m_uMaxParticles);
+	for (uint32_t i = 0; i < m_pxConfig->m_uMaxParticles; ++i)
+	{
+		m_axParticles.PushBack(Zenith_ParticleData());
+	}
+	m_uAliveCount = 0;
+}
+
+void Zenith_ParticleEmitterComponent::SetConfig(Flux_ParticleEmitterConfig* pxConfig)
+{
+	// Unregister from GPU system if previously registered
+	ReleaseGPUEmitter();
 
 	m_pxConfig = pxConfig;
 
-	if (pxConfig != nullptr)
+	// A config change can flip the compute mode either way, so both stores are
+	// dropped and only the one the new config wants is rebuilt.
+	m_axParticles.Clear();
+	m_uAliveCount = 0;
+
+	if (pxConfig == nullptr)
 	{
-		// NOTE: GPU compute particle rendering is not yet implemented.
-		// The compute shader infrastructure is in place, but we can't use
-		// Flux_ReadWriteBuffer as vertex instance data with current abstraction.
-		// All emitters use CPU mode for now.
-		if (pxConfig->m_bUseGPUCompute)
+		return;
+	}
+
+	if (pxConfig->m_bUseGPUCompute)
+	{
+		m_uGPUEmitterID = g_xEngine.ParticleGPU().RegisterEmitter(pxConfig, pxConfig->m_uMaxParticles);
+		if (m_uGPUEmitterID != UINT32_MAX)
 		{
-			Zenith_Log(LOG_CATEGORY_PARTICLES, "GPU compute particles not fully implemented, using CPU fallback");
+			// GPU emitters keep NO CPU particle array — the pool slice is their storage.
+			return;
 		}
 
-		// Always use CPU mode (GPU rendering not yet supported)
-		m_axParticles.Clear();
-		m_axParticles.Reserve(pxConfig->m_uMaxParticles);
-		for (uint32_t i = 0; i < pxConfig->m_uMaxParticles; ++i)
-		{
-			m_axParticles.PushBack(Zenith_ParticleData());
-		}
-		m_uAliveCount = 0;
+		// The pool is finite and shared. Refusing to emit at all would make a
+		// capacity accident invisible on screen, so fall back to CPU simulation and
+		// say so once, here, where the config is known.
+		Zenith_Log(LOG_CATEGORY_PARTICLES,
+			"GPU particle pool could not fit emitter '%s' (%u particles) — falling back to CPU simulation",
+			pxConfig->GetRegisteredName().c_str(), pxConfig->m_uMaxParticles);
 	}
+
+	InitialiseCPUParticles();
 }
 
 bool Zenith_ParticleEmitterComponent::SetConfigByName(const std::string& strConfigName)
@@ -75,7 +157,15 @@ void Zenith_ParticleEmitterComponent::Emit(uint32_t uCount)
 	Zenith_Maths::Vector3 xPos = GetEmitPosition();
 	Zenith_Maths::Vector3 xDir = GetEmitDirection();
 
-	// Always use CPU spawn (GPU rendering not yet supported)
+	if (UsesGPUCompute())
+	{
+		// The pool builds the particle records itself (it owns the RNG that has to
+		// agree with the compute step's slot addressing); this only says how many,
+		// from where, in which direction.
+		g_xEngine.ParticleGPU().QueueSpawn(m_uGPUEmitterID, uCount, xPos, xDir);
+		return;
+	}
+
 	for (uint32_t i = 0; i < uCount && m_uAliveCount < m_pxConfig->m_uMaxParticles; ++i)
 	{
 		SpawnParticle(xPos, xDir);
@@ -101,11 +191,10 @@ void Zenith_ParticleEmitterComponent::ClearPositionOverride()
 
 bool Zenith_ParticleEmitterComponent::UsesGPUCompute() const
 {
-	// GPU compute particle rendering is not yet implemented.
-	// Always return false so all emitters use the CPU rendering path.
-	// When GPU rendering is implemented, restore:
-	// return m_pxConfig != nullptr && m_pxConfig->m_bUseGPUCompute;
-	return false;
+	// The REGISTRATION is the authority, not the config bit: an emitter whose
+	// config asked for GPU compute but whose registration was refused runs on the
+	// CPU, and every caller (the render gather included) must see that.
+	return m_uGPUEmitterID != UINT32_MAX;
 }
 
 void Zenith_ParticleEmitterComponent::Update(float fDt)
@@ -115,8 +204,12 @@ void Zenith_ParticleEmitterComponent::Update(float fDt)
 		return;
 	}
 
-	// Always use CPU simulation (GPU compute rendering not yet implemented)
-	SimulateCPU(fDt);
+	// A GPU emitter's integration IS the compute pass — there is nothing to step
+	// here, and m_axParticles is empty for one anyway.
+	if (!UsesGPUCompute())
+	{
+		SimulateCPU(fDt);
+	}
 
 	// Handle continuous spawning (works for both CPU and GPU modes)
 	if (m_bEmitting && m_pxConfig->m_fSpawnRate > 0.0f)
@@ -401,12 +494,25 @@ void Zenith_ParticleEmitterComponent::RenderPropertiesPanel()
 	{
 		ImGui::Checkbox("Emitting", &m_bEmitting);
 
-		ImGui::Text("Alive Particles: %u", m_uAliveCount);
+		if (UsesGPUCompute())
+		{
+			// Only the GPU knows how many are ALIVE (the count lives in an indirect
+			// draw command and is never read back), so report what the CPU does know:
+			// how much of this emitter's ring it has spawned into.
+			ImGui::Text("Pool Slots Used: %u (GPU-simulated; alive count is not read back)",
+				g_xEngine.ParticleGPU().GetEmitterParticleCount(m_uGPUEmitterID));
+		}
+		else
+		{
+			ImGui::Text("Alive Particles: %u", m_uAliveCount);
+		}
 
 		if (m_pxConfig != nullptr)
 		{
 			ImGui::Text("Max Particles: %u", m_pxConfig->m_uMaxParticles);
-			ImGui::Text("Compute Mode: %s", m_pxConfig->m_bUseGPUCompute ? "GPU" : "CPU");
+			ImGui::Text("Compute Mode: %s", UsesGPUCompute()
+				? "GPU"
+				: (m_pxConfig->m_bUseGPUCompute ? "CPU (GPU pool full)" : "CPU"));
 
 			if (ImGui::Button("Emit Burst"))
 			{

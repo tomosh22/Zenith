@@ -194,6 +194,18 @@ jobs:
           #
           # History, newest first (the DERIVATION is the audit trail; the OBSERVED
           # number is the authority):
+          #   3106  GPU-driven particle path WIRED (its instance buffer had no
+          #                   reader, its Initialise had no caller, and no emitter
+          #                   ever registered, so the compute pass was inert),
+          #                   observed 2026-08-10 on a Null_ build
+          #                   (3106 ran / 3104 passed / 0 failed / 2 skipped).
+          #                   +22 ENGINE units, all in the new
+          #                   Flux/Particles/Flux_ParticleGPU.Tests.inl: the spawn
+          #                   ring (7), blend-partition + indirect-command
+          #                   addressing (4), the uINDIRECT_WORDS source-text pin
+          #                   (1), pool registration lifetime against the live impl
+          #                   (6), and the frame's CPU half incl. the arm/DISARM
+          #                   latch (4). No ZM units.
           #   3084  Scene-publish guard + authoring-FP determinism (89fa3647),
           #                   observed 2026-08-10 on a Null_ build
           #                   (3084 ran / 3082 passed / 0 failed / 2 skipped).
@@ -439,7 +451,7 @@ jobs:
           #   2817  ZM-D-173  = 2809 + 8: four ENGINE sensor-raycast units plus
           #                   two camera fixtures and two Home-placement units.
           $exe = 'Games\Zenithmon\Build\output\win64\null_vs2022_debug_win64_true\zenithmon.exe'
-          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 3084 -TimeoutSec 600
+          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 3106 -TimeoutSec 600
           if ($LASTEXITCODE -ne 0) { Write-Error "boot unit tests failed (see log above)"; exit $LASTEXITCODE }
 
       - name: Run Zenithmon tests

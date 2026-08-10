@@ -334,7 +334,14 @@ static void InitializeCombatResources()
 	Resources().m_pxFlameConfig->m_fSizeEnd = 0.04f;
 	Resources().m_pxFlameConfig->m_bAdditiveBlending = true;              // Glow effect
 	Resources().m_pxFlameConfig->m_fTurbulence = 1.5f;                    // Flickering motion
-	Resources().m_pxFlameConfig->m_bUseGPUCompute = false;
+	// GPU compute: the candles are the engine's in-tree consumer of the GPU particle
+	// path (Flux_ParticleGPU) — continuous, always on screen in the arena, and purely
+	// decorative, so nothing gameplay-visible depends on the switch. Every parameter
+	// above is honoured identically: gravity/drag/turbulence ride the per-emitter
+	// dispatch's push constants and additive blending selects the compute pass's
+	// additive instance partition. The BURST emitters below stay on the CPU path,
+	// which is what it is better at (precise one-shot control, no pool reservation).
+	Resources().m_pxFlameConfig->m_bUseGPUCompute = true;
 	Flux_ParticleEmitterConfig::Register("Combat_Flame", Resources().m_pxFlameConfig);
 
 	// Create prefabs for runtime instantiation
