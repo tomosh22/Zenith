@@ -32,6 +32,7 @@
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "ZenithECS/Zenith_SceneData.h"
 #include "ZenithECS/Zenith_EventSystem.h"
+#include "Combat/Combat_Bindings.h"
 #include "Components/Combat_GameComponent.h"
 #include "Components/Combat_PlayerComponent.h"
 #include "Components/Combat_EnemyComponent.h"
@@ -86,12 +87,55 @@ namespace
 		return xBest;
 	}
 
+	// ★ C1a -- MOVEMENT IS STEERED WITH EDGES NOW, NOT LEVELS. Combat's MOVE is
+	// an ACTION (Combat_Bindings), and the action layer's key rows are fed by
+	// the ORDERED TRANSITION LOG rather than polled. Zenith_InputSimulator::
+	// SetKeyHeld writes only the simulator's LEVEL table, so a key "held" with
+	// it reaches IsKeyDown and NOTHING ELSE: the player never moves, no
+	// assertion fires at the call site, and the test dies much later on a steer
+	// timeout with an unrelated message. SimulateKeyDown / SimulateKeyUp set the
+	// same level AND queue the transition.
+	//
+	// Edges are emitted only on a CHANGE of intent -- re-pressing every frame
+	// would queue four injections a frame into a 128-slot buffer for no gain.
+	const Zenith_KeyCode g_aiMoveKeys[4] = { ZENITH_KEY_W, ZENITH_KEY_S, ZENITH_KEY_D, ZENITH_KEY_A };
+	bool g_abMoveKeyDown[4] = {};
+
+	void DriveMovementKeys(bool bForward, bool bBack, bool bRight, bool bLeft)
+	{
+		const bool abWanted[4] = { bForward, bBack, bRight, bLeft };
+		for (int iKey = 0; iKey < 4; iKey++)
+		{
+			if (abWanted[iKey] == g_abMoveKeyDown[iKey])
+			{
+				continue;
+			}
+			if (abWanted[iKey])
+			{
+				Zenith_InputSimulator::SimulateKeyDown(g_aiMoveKeys[iKey]);
+			}
+			else
+			{
+				Zenith_InputSimulator::SimulateKeyUp(g_aiMoveKeys[iKey]);
+			}
+			g_abMoveKeyDown[iKey] = abWanted[iKey];
+		}
+	}
+
 	void ReleaseMovementKeys()
 	{
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_W, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_S, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_A, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_D, false);
+		DriveMovementKeys(false, false, false, false);
+	}
+
+	// The harness wipes held input between tests WITHOUT emitting releases, so a
+	// Setup has to forget what it believes is down -- otherwise the first steer
+	// frame skips a press it thinks it already sent and the player stands still.
+	void ForgetMovementKeys()
+	{
+		for (bool& bDown : g_abMoveKeyDown)
+		{
+			bDown = false;
+		}
 	}
 
 	bool WaitForPlaying()
@@ -144,6 +188,7 @@ namespace
 static void Setup_AttackFlow()
 {
 	Zenith_InputSimulator::SetFixedDt(1.0f / 60.0f);
+	ForgetMovementKeys();
 	g_eAttackPhase = AttackPhase::Boot;
 	g_iPhaseFrame = 0;
 	g_iClickRetries = 0;
@@ -205,10 +250,7 @@ static bool Step_AttackFlow(int iFrame)
 
 		// Walk toward the enemy: raw world-axis WASD (Combat's movement input
 		// is not camera-relative), facing follows the move direction.
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_W, fDz > 0.15f);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_S, fDz < -0.15f);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_D, fDx > 0.15f);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_A, fDx < -0.15f);
+		DriveMovementKeys(fDz > 0.15f, fDz < -0.15f, fDx > 0.15f, fDx < -0.15f);
 		return iFrame < 1500;
 	}
 
@@ -601,6 +643,7 @@ namespace
 static void Setup_HeavyAttack()
 {
 	Zenith_InputSimulator::SetFixedDt(1.0f / 60.0f);
+	ForgetMovementKeys();
 	g_eHeavyPhase = HeavyPhase::Boot;
 	g_iHeavyFrame = 0;
 	g_iHeavyRetries = 0;
@@ -659,10 +702,7 @@ static bool Step_HeavyAttack(int iFrame)
 			return true;
 		}
 
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_W, fDz > 0.15f);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_S, fDz < -0.15f);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_D, fDx > 0.15f);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_A, fDx < -0.15f);
+		DriveMovementKeys(fDz > 0.15f, fDz < -0.15f, fDx > 0.15f, fDx < -0.15f);
 		return iFrame < 1500;
 	}
 
@@ -2052,5 +2092,307 @@ static const Zenith_AutomatedTest g_xGPUParticlesTest = {
 	/*requiresGraphics*/ true,
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xGPUParticlesTest);
+
+// ============================================================================
+// Combat_SimPad_Test
+// ----------------------------------------------------------------------------
+// The GAMEPAD column of the C2 binding table, end to end on the real input
+// path: no key, no mouse, no C++ shortcut. A simulated pad drives MOVE (left
+// stick), LIGHT_ATTACK (X) and DODGE (B) through Combat_Bindings and the
+// action layer, and the game reacts exactly as it does to a human's pad.
+//
+// It also proves the AUTO PROFILE SWITCH, which is the reason the pad column
+// works at all: the game boots into P_DESKTOP, and the first stick deflection
+// past the deadzone is what makes P_GAMEPAD active (after which the keyboard
+// and mouse rows are dead and only the pad answers).
+//
+// ★ AND IT PINS THE PAD-B COLLISION, DELIBERATELY. The C2 table binds pad B to
+// BOTH DODGE and RETURN_TO_MENU. RETURN_TO_MENU is consumed by
+// Combat_GameFlow.bgraph at component order 60 -- BEFORE the player component
+// fires "PlayerTick" at order 101 -- so pressing B in the arena unloads the
+// arena on the same frame the dodge would have begun. The DODGE press edge is
+// real and is asserted on the action layer (which is scene-independent), and
+// the return-to-menu that ate it is asserted too. If the table is ever revised
+// to give the two actions separate pad buttons, this test reds and the change
+// gets read rather than silently absorbed.
+//
+// requiresGraphics is FALSE: nothing here reads a pixel, so CI sees it.
+// ============================================================================
+
+namespace
+{
+	enum class PadPhase
+	{
+		Boot, WaitPlaying, Move, AttackWait, AttackDown, AttackUp, AttackObserve,
+		DodgeSettle, DodgeDown, DodgeObserve, AwaitMenu, Done
+	};
+
+	PadPhase              g_ePad = PadPhase::Boot;
+	int                   g_iPadFrame = 0;
+	int                   g_iPadAttackRetries = 0;
+	Zenith_Maths::Vector3 g_xPadStartPos(0.0f);
+	float                 g_fPadDisplacement = 0.0f;
+	bool                  g_bPadProfileSwitched = false;
+	bool                  g_bPadSawForwardInput = false;
+	bool                  g_bPadSawLightAttack = false;
+	bool                  g_bPadPressedDodgeButton = false;
+	bool                  g_bPadSawDodgeEdge = false;
+	bool                  g_bPadSawReturnToMenu = false;
+	bool                  g_bPadDone = false;
+
+	bool PadPlayerCanAct()
+	{
+		Combat_PlayerComponent* pxPlayer = GetPlayerComponent();
+		if (pxPlayer == nullptr)
+		{
+			return false;
+		}
+		const Combat_PlayerState eState = pxPlayer->GetController().GetState();
+		return eState == Combat_PlayerState::IDLE || eState == Combat_PlayerState::WALKING;
+	}
+}
+
+static void Setup_SimPad()
+{
+	Zenith_InputSimulator::SetFixedDt(1.0f / 60.0f);
+	ForgetMovementKeys();
+	g_ePad = PadPhase::Boot;
+	g_iPadFrame = 0;
+	g_iPadAttackRetries = 0;
+	g_xPadStartPos = Zenith_Maths::Vector3(0.0f);
+	g_fPadDisplacement = 0.0f;
+	g_bPadProfileSwitched = false;
+	g_bPadSawForwardInput = false;
+	g_bPadSawLightAttack = false;
+	g_bPadPressedDodgeButton = false;
+	g_bPadSawDodgeEdge = false;
+	g_bPadSawReturnToMenu = false;
+	g_bPadDone = false;
+	// The harness wiped every simulated device before Setup ran, so the pad has
+	// to announce itself again: activity detection skips a disconnected pad.
+	Zenith_InputSimulator::SimulateGamepadConnected(true, 0);
+}
+
+static bool Step_SimPad(int iFrame)
+{
+	switch (g_ePad)
+	{
+	case PadPhase::Boot:
+		g_xEngine.Scenes().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_ePad = PadPhase::WaitPlaying;
+		return true;
+
+	case PadPhase::WaitPlaying:
+		if (WaitForPlaying())
+		{
+			GetEntityPos(Combat_GameComponent::GetPlayerEntityID(), g_xPadStartPos);
+			// Left stick fully FORWARD. GLFW reports a forward push as -1 and
+			// the MOVE row inverts y, so this is +y = forward = +z in world.
+			// The level persists until it is re-published, so once is enough.
+			Zenith_InputSimulator::SimulateGamepadStick(ZENITH_GAMEPAD_AXIS_LEFT_X, 0.0f, -1.0f);
+			g_iPadFrame = 0;
+			g_ePad = PadPhase::Move;
+			return true;
+		}
+		return iFrame < 600;
+
+	case PadPhase::Move:
+	{
+		if (g_xEngine.Actions().GetActiveProfile() == Combat_Bindings::uPROFILE_GAMEPAD)
+		{
+			g_bPadProfileSwitched = true;
+		}
+		Combat_PlayerComponent* pxPlayer = GetPlayerComponent();
+		if (pxPlayer != nullptr && pxPlayer->GetController().GetMoveDirection().z > 0.5f)
+		{
+			g_bPadSawForwardInput = true;
+		}
+		Zenith_Maths::Vector3 xNow;
+		if (GetEntityPos(Combat_GameComponent::GetPlayerEntityID(), xNow))
+		{
+			const float fDx = xNow.x - g_xPadStartPos.x;
+			const float fDz = xNow.z - g_xPadStartPos.z;
+			const float fMoved = std::sqrt(fDx * fDx + fDz * fDz);
+			if (fMoved > g_fPadDisplacement)
+			{
+				g_fPadDisplacement = fMoved;
+			}
+		}
+		if (++g_iPadFrame >= 90)
+		{
+			// Stick back to centre so the player stops before the attack phase.
+			Zenith_InputSimulator::SimulateGamepadStick(ZENITH_GAMEPAD_AXIS_LEFT_X, 0.0f, 0.0f);
+			g_iPadFrame = 0;
+			g_ePad = PadPhase::AttackWait;
+		}
+		return iFrame < 800;
+	}
+
+	case PadPhase::AttackWait:
+		// An enemy can put the player in hit-stun; wait for a state that accepts
+		// an attack rather than pressing into a window that cannot take it.
+		if (PadPlayerCanAct())
+		{
+			g_ePad = PadPhase::AttackDown;
+			return true;
+		}
+		if (++g_iPadFrame > 180) { g_bPadDone = true; g_ePad = PadPhase::Done; return false; }
+		return iFrame < 1000;
+
+	case PadPhase::AttackDown:
+		Zenith_InputSimulator::SimulateGamepadButtonDown(ZENITH_GAMEPAD_BUTTON_X);
+		g_ePad = PadPhase::AttackUp;
+		return true;
+
+	case PadPhase::AttackUp:
+		Zenith_InputSimulator::SimulateGamepadButtonUp(ZENITH_GAMEPAD_BUTTON_X);
+		g_iPadFrame = 0;
+		g_ePad = PadPhase::AttackObserve;
+		return true;
+
+	case PadPhase::AttackObserve:
+	{
+		Combat_PlayerComponent* pxPlayer = GetPlayerComponent();
+		if (pxPlayer != nullptr &&
+			pxPlayer->GetController().GetState() == Combat_PlayerState::LIGHT_ATTACK_1)
+		{
+			g_bPadSawLightAttack = true;
+			g_iPadFrame = 0;
+			g_ePad = PadPhase::DodgeSettle;
+			return true;
+		}
+		if (++g_iPadFrame > 60)
+		{
+			// The swing can be eaten by a hit landing on the same frame; retry
+			// from a clean state a couple of times before calling it broken.
+			if (++g_iPadAttackRetries > 2) { g_bPadDone = true; g_ePad = PadPhase::Done; return false; }
+			g_iPadFrame = 0;
+			g_ePad = PadPhase::AttackWait;
+		}
+		return iFrame < 1200;
+	}
+
+	case PadPhase::DodgeSettle:
+		// Let the swing land, then press B regardless of the player's state.
+		// ★ Waiting for a dodge-capable state here would be waiting for
+		// something that cannot help: the controller is not the consumer that
+		// gets to see this press (RETURN_TO_MENU takes the arena down first, at
+		// graph order 60), and three enemies swinging can keep the player out of
+		// IDLE / WALKING for seconds. What is being proved is the pad ROW, and
+		// that is player-state-independent.
+		if (++g_iPadFrame < 15)
+		{
+			return true;
+		}
+		g_ePad = PadPhase::DodgeDown;
+		return true;
+
+	case PadPhase::DodgeDown:
+		Zenith_InputSimulator::SimulateGamepadButtonDown(ZENITH_GAMEPAD_BUTTON_B);
+		g_bPadPressedDodgeButton = true;
+		g_iPadFrame = 0;
+		g_ePad = PadPhase::DodgeObserve;
+		return true;
+
+	case PadPhase::DodgeObserve:
+		// ★ C1b -- this reads the edge injected on the PREVIOUS frame. A Step
+		// runs at PumpAutomatedTest, before this frame's step 7/8, so what it
+		// sees on the action layer is exactly the state closed at 10e last
+		// frame. Reading it in the injecting Step would always be false.
+		if (g_xEngine.Actions().WasPressedThisFrame(Combat_Bindings::COMBAT_ACTION_DODGE))
+		{
+			g_bPadSawDodgeEdge = true;
+		}
+		Zenith_InputSimulator::SimulateGamepadButtonUp(ZENITH_GAMEPAD_BUTTON_B);
+		g_iPadFrame = 0;
+		g_ePad = PadPhase::AwaitMenu;
+		return true;
+
+	case PadPhase::AwaitMenu:
+		// The other half of the same button: RETURN_TO_MENU ran at graph order
+		// 60 and took the arena down before the dodge could start.
+		if (Combat_GameComponent::GetGameState() == Combat_GameState::MAIN_MENU)
+		{
+			g_bPadSawReturnToMenu = true;
+			g_bPadDone = true;
+			g_ePad = PadPhase::Done;
+			return false;
+		}
+		if (++g_iPadFrame > 120) { g_bPadDone = true; g_ePad = PadPhase::Done; return false; }
+		return iFrame < 1400;
+
+	case PadPhase::Done:
+		return false;
+	}
+	return false;
+}
+
+static bool Verify_SimPad()
+{
+	Zenith_InputSimulator::ClearFixedDt();
+	if (!g_bPadDone)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "[SimPad] never completed (phase %d)", static_cast<int>(g_ePad));
+		return false;
+	}
+	if (!g_bPadProfileSwitched)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[SimPad] the stick never switched the active profile to P_GAMEPAD (now %u) -- pad rows resolve "
+			"only while P_GAMEPAD is active, so nothing below would mean anything",
+			static_cast<u_int32>(g_xEngine.Actions().GetActiveProfile()));
+		return false;
+	}
+	if (!g_bPadSawForwardInput)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[SimPad] the left stick never reached the controller as +z movement -- the MOVE row's stick "
+			"binding or its y inversion regressed");
+		return false;
+	}
+	if (g_fPadDisplacement < 0.5f)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[SimPad] the player moved %.2f m on a full forward stick over 90 frames", g_fPadDisplacement);
+		return false;
+	}
+	if (!g_bPadSawLightAttack)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "[SimPad] pad X did not start a light attack");
+		return false;
+	}
+	if (!g_bPadSawDodgeEdge)
+	{
+		// The two failure modes are different bugs: never pressing means an
+		// earlier phase timed out, pressing without an edge means the binding
+		// or the frame contract moved.
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[SimPad] no DODGE press edge (B pressed: %s, phase reached %d) -- if B WAS pressed, the pad row "
+			"or the 10e close regressed; if not, an earlier phase timed out",
+			g_bPadPressedDodgeButton ? "yes" : "no", static_cast<int>(g_ePad));
+		return false;
+	}
+	if (!g_bPadSawReturnToMenu)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[SimPad] pad B raised DODGE but did NOT return to the menu -- if the C2 table was revised to "
+			"stop sharing B between DODGE and RETURN_TO_MENU, delete this check and assert the dodge STATE "
+			"instead (the controller can finally see it)");
+		return false;
+	}
+	Zenith_Log(LOG_CATEGORY_UNITTEST,
+		"[SimPad] pad drove MOVE (%.2f m), LIGHT_ATTACK and the DODGE edge; B also returned to the menu "
+		"(the shared-button collision)", g_fPadDisplacement);
+	return true;
+}
+
+static const Zenith_AutomatedTest g_xSimPadTest = {
+	"Combat_SimPad_Test",
+	&Setup_SimPad,
+	&Step_SimPad,
+	&Verify_SimPad,
+	/*maxFrames*/ 1500,
+};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xSimPadTest);
 
 #endif // ZENITH_INPUT_SIMULATOR

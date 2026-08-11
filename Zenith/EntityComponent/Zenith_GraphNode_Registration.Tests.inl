@@ -244,6 +244,81 @@ ZENITH_TEST(EngineGraphBuilder, SourceFactoriesMatchRaw)
 	}
 }
 
+// The B10 action-source / action-read factories. Same equivalence contract as
+// every other factory: authoring through the DSL must serialize byte-identically
+// to the hand-written Node() + ParamString it replaces.
+ZENITH_TEST(EngineGraphBuilder, ActionFactoriesMatchRaw)
+{
+	const char* aszSourceTypes[] = { "OnActionPressed", "OnActionReleased", "OnActionHeld" };
+	for (u_int uCase = 0; uCase < 3u; ++uCase)
+	{
+		Zenith_GraphDefinition xFac;
+		{
+			Zenith_GraphBuilder xBd(xFac);
+			Zenith_EngineGraphBuilder xB(xBd);
+			switch (uCase)
+			{
+			case 0: xB.OnActionPressed("Dodge"); break;
+			case 1: xB.OnActionReleased("Dodge"); break;
+			default: xB.OnActionHeld("Dodge"); break;
+			}
+			ZENITH_ASSERT_TRUE(xBd.Build());
+		}
+		Zenith_GraphDefinition xRaw;
+		{
+			Zenith_GraphBuilder xBd(xRaw);
+			const u_int u = xBd.Node(aszSourceTypes[uCase]);
+			xBd.ParamString(u, "m_strAction", "Dodge");
+			ZENITH_ASSERT_TRUE(xBd.Build());
+		}
+		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xFac, xRaw), "%s factory diverged", aszSourceTypes[uCase]);
+	}
+
+	{	// ReadActionAxis1D WITH an explicit result var
+		Zenith_GraphDefinition xFac; { Zenith_GraphBuilder xBd(xFac); Zenith_EngineGraphBuilder xB(xBd); xB.ReadActionAxis1D("Lean", "lean"); ZENITH_ASSERT_TRUE(xBd.Build()); }
+		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder xBd(xRaw); const u_int u = xBd.Node("ReadActionAxis1D"); xBd.ParamString(u, "m_strAction", "Lean"); xBd.ParamString(u, "m_strResultVar", "lean"); ZENITH_ASSERT_TRUE(xBd.Build()); }
+		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xFac, xRaw));
+	}
+	{	// ReadActionAxis2D WITH an explicit result var
+		Zenith_GraphDefinition xFac; { Zenith_GraphBuilder xBd(xFac); Zenith_EngineGraphBuilder xB(xBd); xB.ReadActionAxis2D("Move", "move"); ZENITH_ASSERT_TRUE(xBd.Build()); }
+		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder xBd(xRaw); const u_int u = xBd.Node("ReadActionAxis2D"); xBd.ParamString(u, "m_strAction", "Move"); xBd.ParamString(u, "m_strResultVar", "move"); ZENITH_ASSERT_TRUE(xBd.Build()); }
+		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xFac, xRaw));
+	}
+}
+
+// The exact-default rule for the axis factories: an omitted result var must
+// leave the node's own default ("axis" / "axis2D") untouched, NOT overwrite it
+// with "" -- a graph whose read var silently became the empty string writes
+// into a variable nothing can read.
+ZENITH_TEST(EngineGraphBuilder, ReadActionAxisOmittedResultVarKeepsNodeDefault)
+{
+	Zenith_GraphDefinition xFac;
+	{
+		Zenith_GraphBuilder xBd(xFac);
+		Zenith_EngineGraphBuilder xB(xBd);
+		xB.ReadActionAxis2D("Move");	// no result-var arg
+		ZENITH_ASSERT_TRUE(xBd.Build());
+	}
+	Zenith_GraphDefinition xRawDefault;
+	{
+		Zenith_GraphBuilder xBd(xRawDefault);
+		const u_int u = xBd.Node("ReadActionAxis2D");
+		xBd.ParamString(u, "m_strAction", "Move");
+		ZENITH_ASSERT_TRUE(xBd.Build());
+	}
+	ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xFac, xRawDefault));
+
+	Zenith_GraphDefinition xRawEmpty;
+	{
+		Zenith_GraphBuilder xBd(xRawEmpty);
+		const u_int u = xBd.Node("ReadActionAxis2D");
+		xBd.ParamString(u, "m_strAction", "Move");
+		xBd.ParamString(u, "m_strResultVar", "");
+		ZENITH_ASSERT_TRUE(xBd.Build());
+	}
+	ZENITH_ASSERT_FALSE(GraphDefsSerializeIdentically(xFac, xRawEmpty));
+}
+
 ZENITH_TEST(EngineGraphBuilder, FlowFactoriesMatchRaw)
 {
 	{	// Branch

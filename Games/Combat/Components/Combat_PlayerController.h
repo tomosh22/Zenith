@@ -4,19 +4,23 @@
  * Combat_PlayerController.h - Player movement and combat input
  *
  * Demonstrates:
- * - Zenith_Input for keyboard/mouse polling
+ * - The engine ACTION layer (Combat_Bindings) for device-independent input
  * - Physics-based character movement
  * - Attack input with state blocking
  * - Dodge/roll mechanics
  *
  * Player can move, attack (light/heavy), and dodge.
  * Attacks block movement input until recovery.
+ *
+ * NO RAW DEVICE CODE APPEARS BELOW. Every read asks Combat_Bindings, which
+ * asks g_xEngine.Actions(); the binding table in Combat_Bindings.h is the one
+ * place a key, a mouse button or a pad button is spelled.
  */
 
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "Physics/Zenith_Physics.h"
-#include "Input/Zenith_Input.h"
+#include "Combat/Combat_Bindings.h"
 #include "Maths/Zenith_Maths.h"
 
 // ============================================================================
@@ -327,16 +331,15 @@ private:
 
 	Zenith_Maths::Vector3 GetMovementInput()
 	{
-		Zenith_Maths::Vector3 xInput(0.0f);
-
-		if (g_xEngine.Input().IsKeyDown(ZENITH_KEY_W) || g_xEngine.Input().IsKeyDown(ZENITH_KEY_UP))
-			xInput.z += 1.0f;
-		if (g_xEngine.Input().IsKeyDown(ZENITH_KEY_S) || g_xEngine.Input().IsKeyDown(ZENITH_KEY_DOWN))
-			xInput.z -= 1.0f;
-		if (g_xEngine.Input().IsKeyDown(ZENITH_KEY_A) || g_xEngine.Input().IsKeyDown(ZENITH_KEY_LEFT))
-			xInput.x -= 1.0f;
-		if (g_xEngine.Input().IsKeyDown(ZENITH_KEY_D) || g_xEngine.Input().IsKeyDown(ZENITH_KEY_RIGHT))
-			xInput.x += 1.0f;
+		// MOVE is an AXIS2D action: +y FORWARD, +x RIGHT, unnormalised, with
+		// opposite keys cancelling -- the same composite the four IsKeyDown
+		// tests used to build by hand, now shared with the pad's stick and
+		// d-pad. Normalising a non-zero vector keeps the pre-migration
+		// keyboard behaviour exactly (a diagonal is still unit length) and
+		// turns an analog stick into a direction, which is what the movement
+		// code below wants: speed comes from m_fMoveSpeed, not the stick.
+		const Zenith_Maths::Vector2 xMove = Combat_Bindings::ReadMove();
+		Zenith_Maths::Vector3 xInput(xMove.x, 0.0f, xMove.y);
 
 		if (glm::length(xInput) > 0.01f)
 			return glm::normalize(xInput);
@@ -346,8 +349,8 @@ private:
 
 	bool CheckAttackInput()
 	{
-		// Heavy attack (right click)
-		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_MOUSE_BUTTON_RIGHT))
+		// Heavy attack (RMB / pad Y)
+		if (Combat_Bindings::ReadHeavyAttackPressed())
 		{
 			if (CanMove())
 			{
@@ -356,8 +359,8 @@ private:
 			}
 		}
 
-		// Light attack (left click)
-		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_MOUSE_BUTTON_LEFT))
+		// Light attack (LMB / pad X)
+		if (Combat_Bindings::ReadLightAttackPressed())
 		{
 			if (CanMove())
 			{
@@ -376,7 +379,7 @@ private:
 
 	bool CheckDodgeInput()
 	{
-		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_SPACE))
+		if (Combat_Bindings::ReadDodgePressed())
 		{
 			if (CanDodge())
 			{

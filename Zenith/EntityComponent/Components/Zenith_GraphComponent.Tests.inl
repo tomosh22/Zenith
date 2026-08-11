@@ -16,6 +16,7 @@
 #include "UnitTests/Zenith_TempScene.h"
 #include "UnitTests/Zenith_UnitTests.h"
 #include "Input/Zenith_KeyCodes.h"
+#include "Input/Zenith_InputActions.h"
 #ifdef ZENITH_INPUT_SIMULATOR
 #include "Input/Zenith_InputSimulator.h"
 #endif
@@ -132,6 +133,23 @@ namespace
 		const Zenith_GraphNodeTypeInfo* m_pxInfo;
 		Zenith_GraphNode* m_pxTemp;
 	};
+
+	// A node's property table lives on its TYPE (the ZENITH_PROPERTIES_BEGIN
+	// macro puts it there), not on the Zenith_GraphNode base, so reading a
+	// param off a LIVE instance goes through the registry.
+	const Zenith_ReflectedProperty* FindNodeProperty(const Zenith_GraphNode* pxNode, const char* szProperty)
+	{
+		if (pxNode == nullptr)
+		{
+			return nullptr;
+		}
+		const Zenith_GraphNodeTypeInfo* pxInfo = Zenith_GraphNodeRegistry::Get().Find(pxNode->GetTypeName());
+		if (pxInfo == nullptr || pxInfo->m_pfnGetPropertyTable == nullptr)
+		{
+			return nullptr;
+		}
+		return pxInfo->m_pfnGetPropertyTable()->FindProperty(szProperty);
+	}
 }
 
 ZENITH_TEST(GraphComponent, AssetRoundTripAndUpdateDispatch)
@@ -675,6 +693,273 @@ ZENITH_TEST(GraphComponent, InputNodeFamilyExecution)
 
 	Zenith_InputSimulator::ResetAllInputState();
 	Zenith_InputSimulator::Disable();
+}
+
+namespace
+{
+	// ---- driving the ENGINE's action layer from a boot unit -----------------
+	//
+	// The action nodes read g_xEngine.Actions(), and there is no other layer for
+	// them to read: the whole point of B10 is that a graph names what the player
+	// MEANT, which only the engine's binding table can answer. That instance is
+	// opened at frame-contract step 8 and closed at 10b / 10e inside
+	// Zenith_Core::Zenith_MainLoop, which a boot unit never runs -- so without
+	// these two helpers every action would read "not held" and every assertion
+	// below would pass for the wrong reason.
+	//
+	// ★ THE ORDER IS THE CONTRACT (the ZM_BindingsTestRig lesson): BeginFrame
+	// DISCARDS the simulator's pending injections, because the real loop queues
+	// them from a test Step AFTER BeginFrame. Begin opens the next frame, keys go
+	// in between, Close drains and finalises.
+	void BeginEngineActionFrame() { g_xEngine.Input().BeginFrame(); }
+
+	void CloseEngineActionFrame()
+	{
+		g_xEngine.Input().ApplySimulatorInjection();	// step 7
+		g_xEngine.Actions().UpdateProfile();			// step 8
+		g_xEngine.Actions().FinalizeReservedUI();		// step 10b
+		g_xEngine.Actions().FinalizeGameplay();			// step 10e
+	}
+
+	// Two AXIS actions this unit installs on the LIVE layer, at the TOP of the
+	// id range.
+	//
+	// ★ WHY REGISTER AT ALL, WHEN B13 SAYS UNITS USE LOCAL INSTANCES? Because a
+	// GRAPH NODE cannot be handed a local one. The button trio below needs no
+	// registration -- ids 0-15 are the engine's own reserved UI actions, present
+	// in every game and bound to real keys -- but the reserved set is all
+	// BUTTONs, so an AXIS node has no donor. Two slots at 126/127 are as far as
+	// this table goes from a game's contiguous block at 16, the names cannot
+	// collide, and nothing in the engine or any game enumerates the action
+	// table, so the only observable effect is that two exotic function keys now
+	// drive two actions no consumer reads.
+	constexpr Zenith_InputActionID uACTION_TEST_AXIS1D = Zenith_InputActions::uMAX_ACTIONS - 2;
+	constexpr Zenith_InputActionID uACTION_TEST_AXIS2D = Zenith_InputActions::uMAX_ACTIONS - 1;
+	constexpr const char* szACTION_TEST_AXIS1D = "__GraphTestAxis1D";
+	constexpr const char* szACTION_TEST_AXIS2D = "__GraphTestAxis2D";
+
+	void RegisterGraphTestAxisActions()
+	{
+		Zenith_InputActions& xActions = g_xEngine.Actions();
+		if (xActions.IsActionRegistered(uACTION_TEST_AXIS1D))
+		{
+			return;
+		}
+		// F13-F18: real key codes no game in this repo binds, so the rows can
+		// neither disturb a game's action nor be disturbed by one.
+		xActions.RegisterAction(uACTION_TEST_AXIS1D, szACTION_TEST_AXIS1D, INPUT_ACTION_AXIS1D);
+		xActions.RegisterBinding(uACTION_TEST_AXIS1D,
+			Zenith_InputBinding::KeyAxis1D(ZENITH_KEY_F13, ZENITH_KEY_F14));
+		xActions.RegisterAction(uACTION_TEST_AXIS2D, szACTION_TEST_AXIS2D, INPUT_ACTION_AXIS2D);
+		xActions.RegisterBinding(uACTION_TEST_AXIS2D,
+			Zenith_InputBinding::KeyAxis2D(ZENITH_KEY_F15, ZENITH_KEY_F16, ZENITH_KEY_F17, ZENITH_KEY_F18));
+	}
+}
+
+ZENITH_TEST(GraphComponent, ActionNodeFamilyExecution)
+{
+	// B10 action nodes end to end: the three edge sources against the engine's
+	// reserved UI_CONFIRM action (Enter / Space / pad A), the two axis readers
+	// against this file's own axis actions, the inert path for a name nothing
+	// registers, and the per-instance resolve CACHE re-resolving when the
+	// property changes.
+	const std::string strAssetPath = "game:Graphs/UnitTest_ActionNodes.bgraph";
+	u_int uLateSourceNodeID = 0;
+	{
+		std::error_code xEC;
+		std::filesystem::create_directories(Zenith_AssetRegistry::ResolvePath("game:Graphs"), xEC);
+		Zenith_BehaviourGraphAsset xAsset;
+		Zenith_GraphDefinition& xDef = xAsset.GetDefinition();
+
+		// One counter chain per edge source, all naming the SAME action.
+		struct ActionSource { const char* szType; const char* szCounter; };
+		const ActionSource axSources[] = {
+			{ "OnActionPressed",  "pressCount" },
+			{ "OnActionReleased", "releaseCount" },
+			{ "OnActionHeld",     "heldCount" },
+		};
+		for (const ActionSource& xSource : axSources)
+		{
+			const u_int uSource = xDef.AddNode(xSource.szType);
+			{
+				NodeParamWriter xParams(xDef, uSource, xSource.szType);
+				xParams.SetString("m_strAction", "UI_CONFIRM");
+			}
+			const u_int uCounter = xDef.AddNode("AddBlackboardFloat");
+			{
+				NodeParamWriter xParams(xDef, uCounter, "AddBlackboardFloat");
+				xParams.SetString("m_strVariable", xSource.szCounter);
+			}
+			xDef.AddEdge(uSource, 0, uCounter, 0);
+		}
+
+		// Axis readers off a plain OnUpdate anchor.
+		const u_int uUpdate = xDef.AddNode("OnUpdate");
+		const u_int uAxis1D = xDef.AddNode("ReadActionAxis1D");
+		{
+			NodeParamWriter xParams(xDef, uAxis1D, "ReadActionAxis1D");
+			xParams.SetString("m_strAction", szACTION_TEST_AXIS1D);
+			xParams.SetString("m_strResultVar", "lean");
+		}
+		const u_int uAxis2D = xDef.AddNode("ReadActionAxis2D");
+		{
+			NodeParamWriter xParams(xDef, uAxis2D, "ReadActionAxis2D");
+			xParams.SetString("m_strAction", szACTION_TEST_AXIS2D);
+			xParams.SetString("m_strResultVar", "move");
+		}
+		xDef.AddEdge(uUpdate, 0, uAxis1D, 0);
+		xDef.AddEdge(uAxis1D, 0, uAxis2D, 0);
+
+		// An axis reader naming an action nothing registers: it must FAIL, write
+		// NOTHING, and abort its chain (a zero here is indistinguishable from a
+		// centred stick, so writing one would be worse than writing nothing).
+		const u_int uMissUpdate = xDef.AddNode("OnUpdate");
+		const u_int uMissAxis = xDef.AddNode("ReadActionAxis1D");
+		{
+			NodeParamWriter xParams(xDef, uMissAxis, "ReadActionAxis1D");
+			xParams.SetString("m_strAction", "__NoSuchActionAxis");
+			xParams.SetString("m_strResultVar", "missingAxis");
+		}
+		const u_int uAfterMiss = xDef.AddNode("SetBlackboardFloat");
+		{
+			NodeParamWriter xParams(xDef, uAfterMiss, "SetBlackboardFloat");
+			xParams.SetString("m_strVariable", "afterMissing");
+			Zenith_PropertyValue xValue;
+			xValue.SetFloat(1.0f);
+			xParams.Set("m_fValue", xValue);
+		}
+		xDef.AddEdge(uMissUpdate, 0, uMissAxis, 0);
+		xDef.AddEdge(uMissAxis, 0, uAfterMiss, 0);
+
+		// The cache-invalidation subject: starts naming nothing, gets renamed to
+		// UI_CONFIRM on a live instance halfway through.
+		uLateSourceNodeID = xDef.AddNode("OnActionPressed");
+		{
+			NodeParamWriter xParams(xDef, uLateSourceNodeID, "OnActionPressed");
+			xParams.SetString("m_strAction", "__NoSuchActionSource");
+		}
+		const u_int uLateCounter = xDef.AddNode("AddBlackboardFloat");
+		{
+			NodeParamWriter xParams(xDef, uLateCounter, "AddBlackboardFloat");
+			xParams.SetString("m_strVariable", "lateCount");
+		}
+		xDef.AddEdge(uLateSourceNodeID, 0, uLateCounter, 0);
+		Zenith_AssetRegistry::Save(&xAsset, strAssetPath);
+	}
+
+	RegisterGraphTestAxisActions();
+
+	Zenith_TempScene xTempScene("TestGraphActionNodesScene");
+	Zenith_SceneData* pxSceneData = xTempScene.Data();
+	Zenith_Entity xEntity = g_xEngine.Scenes().CreateEntity(pxSceneData, "ActionNodes");
+	Zenith_GraphComponent& xComponent = xEntity.AddComponent<Zenith_GraphComponent>();
+	Zenith_BehaviourGraph* pxGraph = xComponent.AddGraphByAssetPath(strAssetPath.c_str());
+	ZENITH_ASSERT_NOT_NULL(pxGraph);
+	if (!pxGraph) return;
+	ZENITH_ASSERT_EQ(pxGraph->GetUnresolvedCount(), 0u);
+	const Zenith_GraphBlackboard& xBlackboard = pxGraph->GetBlackboard();
+
+	Zenith_InputSimulator::Enable();
+	Zenith_InputSimulator::ResetAllInputState();
+
+	// The keyboard rows only resolve while the ACTIVE profile owns the KEYBOARD
+	// scheme. Windows (every gate this runs in) boots into exactly that profile;
+	// an Android boot of a game with a TOUCH profile does not, and there the
+	// value assertions would be asserting the profile system rather than these
+	// nodes. Registration, resolution and the inert path are still proven.
+	const bool bKeyboardLive =
+		(g_xEngine.Actions().GetActiveSchemeMask() & uINPUT_SCHEME_MASK_KEYBOARD) != 0;
+
+	// Frame 1: UI_CONFIRM pressed (Enter), axis1D positive, axis2D forward+right.
+	BeginEngineActionFrame();
+	Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_ENTER);
+	Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_F14);
+	Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_F15);
+	Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_F18);
+	CloseEngineActionFrame();
+	Zenith_ComponentMetaRegistry::Get().DispatchOnUpdate(xEntity, 0.016f);
+
+	if (bKeyboardLive)
+	{
+		ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetFloat("pressCount"), 1.0f, 0.0001f);
+		ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetFloat("heldCount"), 1.0f, 0.0001f);
+		ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetFloat("releaseCount", 0.0f), 0.0f, 0.0001f);
+		ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetFloat("lean"), 1.0f, 0.0001f);
+		// UNNORMALISED, +y forward: the composite contract, not a unit vector.
+		ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetVector2("move").x, 1.0f, 0.0001f);
+		ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetVector2("move").y, 1.0f, 0.0001f);
+	}
+	// Inert path: no write, and the chain behind it never ran.
+	ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetFloat("missingAxis", -7.0f), -7.0f, 0.0001f);
+	ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetFloat("afterMissing", -7.0f), -7.0f, 0.0001f);
+	ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetFloat("lateCount", 0.0f), 0.0f, 0.0001f);
+
+	// Frame 2: nothing new. HELD repeats, PRESSED does not.
+	BeginEngineActionFrame();
+	CloseEngineActionFrame();
+	Zenith_ComponentMetaRegistry::Get().DispatchOnUpdate(xEntity, 0.016f);
+	if (bKeyboardLive)
+	{
+		ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetFloat("pressCount"), 1.0f, 0.0001f);
+		ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetFloat("heldCount"), 2.0f, 0.0001f);
+		ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetFloat("releaseCount", 0.0f), 0.0f, 0.0001f);
+	}
+
+	// Frame 3: everything released. RELEASED fires once, HELD stops, axes rest.
+	BeginEngineActionFrame();
+	Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_ENTER);
+	Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_F14);
+	Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_F15);
+	Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_F18);
+	CloseEngineActionFrame();
+	Zenith_ComponentMetaRegistry::Get().DispatchOnUpdate(xEntity, 0.016f);
+	if (bKeyboardLive)
+	{
+		ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetFloat("releaseCount"), 1.0f, 0.0001f);
+		ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetFloat("heldCount"), 2.0f, 0.0001f);
+		ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetFloat("lean"), 0.0f, 0.0001f);
+		ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetVector2("move").x, 0.0f, 0.0001f);
+	}
+
+	// The resolve CACHE re-resolves on a property change, and a name that failed
+	// once does not stay failed: rename the live node instance (what an editor
+	// edit or a hot reload does) and it must start firing.
+	Zenith_GraphNode* pxLateSource = pxGraph->FindNode(uLateSourceNodeID);
+	ZENITH_ASSERT_NOT_NULL(pxLateSource);
+	if (pxLateSource != nullptr)
+	{
+		const Zenith_ReflectedProperty* pxProperty = FindNodeProperty(pxLateSource, "m_strAction");
+		ZENITH_ASSERT_NOT_NULL(pxProperty);
+		if (pxProperty != nullptr)
+		{
+			Zenith_PropertyValue xValue;
+			xValue.SetString("UI_CONFIRM");
+			Zenith_PropertySystem::SetPropertyValue(pxLateSource, *pxProperty, xValue);
+		}
+
+		BeginEngineActionFrame();
+		Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_ENTER);
+		CloseEngineActionFrame();
+		Zenith_ComponentMetaRegistry::Get().DispatchOnUpdate(xEntity, 0.016f);
+		if (bKeyboardLive)
+		{
+			ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetFloat("lateCount"), 1.0f, 0.0001f);
+			ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetFloat("pressCount"), 2.0f, 0.0001f);
+		}
+
+		BeginEngineActionFrame();
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_ENTER);
+		CloseEngineActionFrame();
+	}
+
+	// A unit that reached the engine's device / action / pointer layers owes the
+	// rest of the boot batch the same reset the automated-test harness performs
+	// between tests. REGISTRATIONS survive it by design.
+	Zenith_InputSimulator::ResetAllInputState();
+	Zenith_InputSimulator::Disable();
+	g_xEngine.Input().ResetTransientForTest();
+	g_xEngine.Actions().ResetTransientForTest();
+	g_xEngine.Pointers().ResetTransientForTest();
 }
 #endif // ZENITH_INPUT_SIMULATOR
 
@@ -3042,6 +3327,96 @@ ZENITH_TEST(GraphComponent, RegistryWideNodeRoundTrip)
 	Zenith_BehaviourGraph xGraph;
 	xGraph.InitialiseFromDefinition(xReloaded);
 	ZENITH_ASSERT_EQ(xGraph.GetUnresolvedCount(), 0u);
+}
+
+ZENITH_TEST(GraphComponent, ActionNodeSerializationRoundTrip)
+{
+	// Serialization equivalence for the five B10 action node types, node by
+	// node: registered -> configured with NON-default params -> definition
+	// serialize -> reload -> instantiate -> every param came back verbatim.
+	//
+	// ★ THIS EXISTS BECAUSE RegistryWideNodeRoundTrip IS QUARANTINED (above).
+	// That unit is the one that would otherwise cover a new node type for free,
+	// and it is SKIPPED -- so a node family added while it sleeps has no
+	// round-trip coverage at all unless it brings its own. Keep this in step
+	// with the family: a sixth action node type belongs in the table below.
+	struct ActionNodeCase
+	{
+		const char* m_szTypeName;
+		const char* m_szAction;
+		const char* m_szResultVar;	// null = the type has no result var
+	};
+	const ActionNodeCase axCases[] = {
+		{ "OnActionPressed",  "RoundTripPressed",  nullptr },
+		{ "OnActionReleased", "RoundTripReleased", nullptr },
+		{ "OnActionHeld",     "RoundTripHeld",     nullptr },
+		{ "ReadActionAxis1D", "RoundTripAxis1D",   "leanOut" },
+		{ "ReadActionAxis2D", "RoundTripAxis2D",   "moveOut" },
+	};
+
+	Zenith_GraphNodeRegistry& xRegistry = Zenith_GraphNodeRegistry::Get();
+	Zenith_GraphDefinition xDef;
+	u_int auNodeIDs[sizeof(axCases) / sizeof(axCases[0])] = {};
+
+	for (u_int u = 0; u < sizeof(axCases) / sizeof(axCases[0]); ++u)
+	{
+		const ActionNodeCase& xCase = axCases[u];
+		// Registered under the name the factories and .bgraph assets use.
+		ZENITH_ASSERT_NOT_NULL(xRegistry.Find(xCase.m_szTypeName), "%s is not registered", xCase.m_szTypeName);
+		auNodeIDs[u] = xDef.AddNode(xCase.m_szTypeName);
+		NodeParamWriter xParams(xDef, auNodeIDs[u], xCase.m_szTypeName);
+		xParams.SetString("m_strAction", xCase.m_szAction);
+		if (xCase.m_szResultVar != nullptr)
+		{
+			xParams.SetString("m_strResultVar", xCase.m_szResultVar);
+		}
+	}
+
+	Zenith_DataStream xStream;
+	xDef.WriteToDataStream(xStream);
+	xStream.SetCursor(0);
+	Zenith_GraphDefinition xReloaded;
+	ZENITH_ASSERT_TRUE(xReloaded.ReadFromDataStream(xStream));
+	ZENITH_ASSERT_EQ(xReloaded.GetNodeCount(), static_cast<u_int>(sizeof(axCases) / sizeof(axCases[0])));
+
+	Zenith_BehaviourGraph xGraph;
+	xGraph.InitialiseFromDefinition(xReloaded);
+	ZENITH_ASSERT_EQ(xGraph.GetUnresolvedCount(), 0u);
+
+	for (u_int u = 0; u < sizeof(axCases) / sizeof(axCases[0]); ++u)
+	{
+		const ActionNodeCase& xCase = axCases[u];
+		Zenith_GraphNode* pxNode = xGraph.FindNode(auNodeIDs[u]);
+		ZENITH_ASSERT_NOT_NULL(pxNode, "%s did not survive the round trip", xCase.m_szTypeName);
+		if (pxNode == nullptr)
+		{
+			continue;
+		}
+		ZENITH_ASSERT_STREQ(pxNode->GetTypeName(), xCase.m_szTypeName);
+
+		const Zenith_ReflectedProperty* pxAction = FindNodeProperty(pxNode, "m_strAction");
+		ZENITH_ASSERT_NOT_NULL(pxAction, "%s has no m_strAction property", xCase.m_szTypeName);
+		if (pxAction != nullptr)
+		{
+			Zenith_PropertyValue xValue;
+			pxAction->m_pfnGet(pxNode, xValue);
+			ZENITH_ASSERT_STREQ(xValue.GetString().c_str(), xCase.m_szAction);
+		}
+
+		const Zenith_ReflectedProperty* pxResult = FindNodeProperty(pxNode, "m_strResultVar");
+		if (xCase.m_szResultVar == nullptr)
+		{
+			ZENITH_ASSERT_NULL(pxResult, "%s unexpectedly grew a result var", xCase.m_szTypeName);
+			continue;
+		}
+		ZENITH_ASSERT_NOT_NULL(pxResult, "%s has no m_strResultVar property", xCase.m_szTypeName);
+		if (pxResult != nullptr)
+		{
+			Zenith_PropertyValue xValue;
+			pxResult->m_pfnGet(pxNode, xValue);
+			ZENITH_ASSERT_STREQ(xValue.GetString().c_str(), xCase.m_szResultVar);
+		}
+	}
 }
 
 #endif // ZENITH_TESTING

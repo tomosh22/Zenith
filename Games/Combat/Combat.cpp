@@ -1,6 +1,7 @@
 #include "Zenith.h"
 #include "Core/Zenith_Engine.h"
 #include "Core/Zenith_GraphicsOptions.h"
+#include "Combat/Combat_Bindings.h"
 #include "Combat/Components/Combat_GameComponent.h"
 #include "Combat/Components/Combat_PlayerComponent.h"
 #include "Combat/Components/Combat_EnemyComponent.h"
@@ -484,6 +485,18 @@ void Project_RegisterGameComponents()
 	// used by AddStep_AddComponent and the editor menu; this registry is
 	// append-anytime, not sealed).
 	InitializeCombatResources();
+
+	// The C2 action table. CONFIG-INDEPENDENT and unconditional: every input
+	// reader in this game asks the action layer, and the boot-authored graphs
+	// name its actions, so a build without it would have no input at all. It
+	// runs BEFORE the boot unit batch (Zenith_Engine::InitialiseProject calls
+	// this hook first), so a unit may assert against the LIVE registration.
+	//
+	// ★ THE FIRST RegisterProfile CALL CLEARS THE ENGINE DEFAULTS, so Register
+	// installs BOTH profiles or neither: a game left holding exactly one would
+	// have every scheme outside it go dead.
+	Combat_Bindings::Register(g_xEngine.Actions());
+
 	Combat_RegisterGraphNodes();
 
 #ifdef ZENITH_TOOLS
@@ -675,8 +688,10 @@ static void BuildCombatGameFlow_MenuInput(Zenith_EngineGraphBuilder& xB)
 
 static void BuildCombatGameFlow_PauseResume(Zenith_EngineGraphBuilder& xB)
 {
-	// P: pause (from PLAYING) / resume (from PAUSED).
-	const u_int uOnP = xB.OnKeyPressed(ZENITH_KEY_P);
+	// PAUSE (P / pad Start): pause from PLAYING, resume from PAUSED. The SOURCE
+	// is an action, so the pad column arrives without a second chain; the
+	// state gate below is unchanged.
+	const u_int uOnP = xB.OnActionPressed(Combat_Bindings::szACTION_PAUSE);
 	const u_int uGetP = xB.Node("CombatGetGameState");
 	const u_int uSwP = xB.SwitchOnInt("gameState", 5);
 	xB.Chain(uOnP, uGetP).Chain(uGetP, uSwP);
@@ -696,8 +711,9 @@ static void BuildCombatGameFlow_PauseResume(Zenith_EngineGraphBuilder& xB)
 
 static void BuildCombatGameFlow_Restart(Zenith_EngineGraphBuilder& xB)
 {
-	// R: restart (from PLAYING / VICTORY / GAME_OVER). Per-pin node instances.
-	const u_int uOnR = xB.OnKeyPressed(ZENITH_KEY_R);
+	// RESTART (R / pad Back): from PLAYING / VICTORY / GAME_OVER. Per-pin node
+	// instances.
+	const u_int uOnR = xB.OnActionPressed(Combat_Bindings::szACTION_RESTART);
 	const u_int uGetR = xB.Node("CombatGetGameState");
 	const u_int uSwR = xB.SwitchOnInt("gameState", 5);
 	xB.Chain(uOnR, uGetR).Chain(uGetR, uSwR);
@@ -711,8 +727,11 @@ static void BuildCombatGameFlow_Restart(Zenith_EngineGraphBuilder& xB)
 
 static void BuildCombatGameFlow_ReturnToMenu(Zenith_EngineGraphBuilder& xB)
 {
-	// Escape: return to menu (from PLAYING / PAUSED / VICTORY / GAME_OVER).
-	const u_int uOnEsc = xB.OnKeyPressed(ZENITH_KEY_ESCAPE);
+	// RETURN_TO_MENU (Escape / pad B): from PLAYING / PAUSED / VICTORY /
+	// GAME_OVER. ★ Pad B is also DODGE (see Combat_Bindings.h): this chain runs
+	// at graph order 60, before the player component fires "PlayerTick" at 101,
+	// so on a pad the arena unloads before the dodge is ever reached.
+	const u_int uOnEsc = xB.OnActionPressed(Combat_Bindings::szACTION_RETURN_TO_MENU);
 	const u_int uGetE = xB.Node("CombatGetGameState");
 	const u_int uSwE = xB.SwitchOnInt("gameState", 5);
 	xB.Chain(uOnEsc, uGetE).Chain(uGetE, uSwE);
@@ -730,10 +749,13 @@ static void BuildCombatGameFlow_ReturnToMenu(Zenith_EngineGraphBuilder& xB)
 // menu/pause/reset input DECISIONS at order 60 (before CombatGame's systems at
 // order 100). s_eGameState stays the static source of truth; the P/R/Escape
 // chains read it via CombatGetGameState and dispatch by state with SwitchOnInt.
-// ACCEPTED divergence (humanly unreachable): P/R/Escape
-// are independent OnKeyPressed sources, so pressing two distinct keys on the
-// exact SAME frame lets both fire (the second re-reads the state the first set),
+// ACCEPTED divergence (humanly unreachable): PAUSE/RESTART/RETURN_TO_MENU are
+// independent OnActionPressed sources, so two distinct actions edged on the
+// exact SAME frame both fire (the second re-reads the state the first set),
 // where the old if/else-if/return switch was mutually exclusive per frame.
+// ★ On a pad that stops being unreachable for ONE pair: B is bound to both
+// DODGE and RETURN_TO_MENU (the C2 table), which is a binding collision rather
+// than a graph one -- see Combat_Bindings.h.
 static void BuildGraph_CombatGameFlow(Zenith_GraphBuilder& xBuilder)
 {
 	Zenith_PropertyValue xVal;

@@ -75,6 +75,26 @@ public:
 		return Anchor(uNode);
 	}
 
+	// --- action layer (B10) ---------------------------------------------------
+	// szAction is an ACTION NAME as the game registered it (its Bindings header
+	// owns those strings), NOT a device code. This is the form a boot-authored
+	// graph should reach for: the same chain then answers to a key, a pad
+	// button or an on-screen control with no edit.
+	Zenith_GraphChain OnActionPressed(const char* szAction)  { return ActionSource("OnActionPressed", szAction); }
+	Zenith_GraphChain OnActionReleased(const char* szAction) { return ActionSource("OnActionReleased", szAction); }
+	Zenith_GraphChain OnActionHeld(const char* szAction)     { return ActionSource("OnActionHeld", szAction); }
+
+	// szResultVar omitted -> keep the node default ("axis" / "axis2D").
+	Zenith_GraphChain ReadActionAxis1D(const char* szAction, const char* szResultVar = nullptr)
+	{
+		return ActionRead("ReadActionAxis1D", szAction, szResultVar);
+	}
+
+	Zenith_GraphChain ReadActionAxis2D(const char* szAction, const char* szResultVar = nullptr)
+	{
+		return ActionRead("ReadActionAxis2D", szAction, szResultVar);
+	}
+
 	// --- flow ----------------------------------------------------------------
 	Zenith_GraphChain Branch(const char* szConditionVar)
 	{
@@ -167,6 +187,21 @@ public:
 
 private:
 	Zenith_GraphChain Anchor(u_int uNodeID) { return Zenith_GraphChain(m_xBuilder, uNodeID); }
+
+	Zenith_GraphChain ActionSource(const char* szTypeName, const char* szAction)
+	{
+		const u_int uNode = m_xBuilder.Node(szTypeName);
+		m_xBuilder.ParamString(uNode, "m_strAction", szAction);
+		return Anchor(uNode);
+	}
+
+	Zenith_GraphChain ActionRead(const char* szTypeName, const char* szAction, const char* szResultVar)
+	{
+		const u_int uNode = m_xBuilder.Node(szTypeName);
+		m_xBuilder.ParamString(uNode, "m_strAction", szAction);
+		if (szResultVar) { m_xBuilder.ParamString(uNode, "m_strResultVar", szResultVar); }
+		return Anchor(uNode);
+	}
 
 	Zenith_GraphBuilder& m_xBuilder;
 };

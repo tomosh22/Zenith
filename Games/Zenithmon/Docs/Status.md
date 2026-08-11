@@ -3,10 +3,13 @@
 **Last updated:** 2026-08-11
 
 **★ LIVE BASELINE (OBSERVED 2026-08-11 on clean `Null_` builds):
-ZM boot `3224 ran / 3222 passed / 0 failed / 2 skipped`; engine boot (Null Combat)
-`1586 ran / 1585 passed / 0 failed / 1 skipped`; registry **55**.** This is the
-current pin in `zm-tests.yml` (`-Baseline 3224`) and `run_unit_gate.ps1`
-(default 1586). The move from 3211 is **+13 ZM units** (engine UNMOVED at
+ZM boot `3228 ran / 3226 passed / 0 failed / 2 skipped`; engine boot (Null Combat)
+`1590 ran / 1589 passed / 0 failed / 1 skipped`; registry **55**.** This is the
+current pin in `zm-tests.yml` (`-Baseline 3228`) and `run_unit_gate.ps1`
+(default 1590). The move from 3224/1586 is **+4 ENGINE units** (no ZM units)
+from the input program's WP4a — the B10 graph action nodes
+(OnActionPressed/Released/Held, ReadActionAxis1D/2D) + builder factories that
+Combat's migration rides on; ZM's graphs can adopt them at leisure. The move from 3211 is **+13 ZM units** (engine UNMOVED at
 1586) from the input program's WP3b — Zenithmon's migration onto the engine
 action layer: `ZM_Bindings.h` (three profiles P_KEYBOARD/P_TOUCH/P_GAMEPAD,
 the full C2 binding table incl. the PAD column and SYSTEM_BACK on CANCEL),

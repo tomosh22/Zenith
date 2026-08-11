@@ -3,6 +3,7 @@
 #include "Scripting/Zenith_GraphBlackboard.h"
 #include "Core/Zenith_Engine.h"
 #include "Input/Zenith_Input.h"
+#include "Input/Zenith_InputActions.h"
 #include "Input/Zenith_KeyCodes.h"
 #include "Input/Zenith_Pointers.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
@@ -19,6 +20,14 @@
 //
 // Everything routes through g_xEngine.Input(), which is Zenith_InputSimulator-
 // aware - automated tests drive these nodes through real input paths.
+//
+// TWO LAYERS LIVE HERE, DELIBERATELY. The Key/Mouse/Pointer nodes are the
+// DEVICE layer (a graph naming a physical code); the Action nodes at the bottom
+// are the ACTION layer (a graph naming what the player MEANT, with the game's
+// binding table deciding which device answered). Neither replaces the other: a
+// debug-camera graph legitimately wants "the F key", and a gameplay graph
+// legitimately wants "Dodge" so a pad, a keyboard and a thumb on glass all work
+// without a branch.
 //------------------------------------------------------------------------------
 
 namespace
@@ -387,6 +396,184 @@ namespace
 		}
 		const char* GetTypeName() const override { return "ReadMousePickRay"; }
 	};
+
+	//==========================================================================
+	// ACTION-LAYER nodes (B10)
+	//
+	// These name an ACTION, never a device code, and read the closed state of
+	// g_xEngine.Actions(). A graph anchored on ON_UPDATE runs at frame-contract
+	// step 11, after both close stages (10b / 10e), so an action source node
+	// sees THIS frame's edges - exactly what a C++ consumer sees.
+	//==========================================================================
+
+	// Name -> id resolution, cached per NODE INSTANCE.
+	//
+	// FindActionByName is a linear walk of 128 slots and these nodes execute
+	// every frame on every graph carrying one, so resolving per Execute would
+	// pay that walk forever. The cache re-resolves only when the property
+	// STRING changes (an editor edit, a hot reload, or a param blob loaded over
+	// the node), which is the only way the answer can move: the game's
+	// registrations are installed once at boot.
+	//
+	// An unresolvable name makes the node INERT after exactly ONE logged error
+	// - a graph authored against an action this game never registered must not
+	// spam a line per frame, and must never take the process down. An EMPTY
+	// name is silent: that is an unconfigured node, not a mistake.
+	class Zenith_GraphActionRef
+	{
+	public:
+		Zenith_InputActionID Resolve(const std::string& strActionName)
+		{
+			if (m_bResolved && m_strResolvedName == strActionName)
+			{
+				return m_uActionID;
+			}
+
+			m_strResolvedName = strActionName;
+			m_bResolved       = true;
+			m_uActionID       = strActionName.empty()
+				? uINPUT_ACTION_INVALID
+				: g_xEngine.Actions().FindActionByName(strActionName.c_str());
+
+			if (m_uActionID == uINPUT_ACTION_INVALID && !strActionName.empty())
+			{
+				Zenith_Error(LOG_CATEGORY_CORE,
+					"Behaviour graph action node names '%s', which no registered action matches; node is inert",
+					strActionName.c_str());
+			}
+			return m_uActionID;
+		}
+
+	private:
+		std::string          m_strResolvedName;
+		Zenith_InputActionID m_uActionID  = uINPUT_ACTION_INVALID;
+		bool                 m_bResolved  = false;
+	};
+
+	// Fires the frame the action's aggregate rises.
+	class Zenith_GraphNode_OnActionPressed : public Zenith_GraphNode
+	{
+	public:
+		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_OnActionPressed)
+	public:
+		ZENITH_PROPERTY(std::string, m_strAction, "")
+
+		GraphNodeStatus Execute(Zenith_GraphContext&) override
+		{
+			const Zenith_InputActionID uAction = m_xActionRef.Resolve(m_strAction);
+			return (uAction != uINPUT_ACTION_INVALID && g_xEngine.Actions().WasPressedThisFrame(uAction))
+				? GRAPH_NODE_STATUS_SUCCESS : GRAPH_NODE_STATUS_FAILURE;
+		}
+		const char* GetTypeName() const override { return "OnActionPressed"; }
+
+	private:
+		Zenith_GraphActionRef m_xActionRef;
+	};
+
+	// Fires the frame the action's aggregate falls. A same-frame tap fires this
+	// AND OnActionPressed - the action layer replays the frame's ordered
+	// transitions rather than sampling a level, so a press and its release
+	// inside one frame are both real edges.
+	class Zenith_GraphNode_OnActionReleased : public Zenith_GraphNode
+	{
+	public:
+		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_OnActionReleased)
+	public:
+		ZENITH_PROPERTY(std::string, m_strAction, "")
+
+		GraphNodeStatus Execute(Zenith_GraphContext&) override
+		{
+			const Zenith_InputActionID uAction = m_xActionRef.Resolve(m_strAction);
+			return (uAction != uINPUT_ACTION_INVALID && g_xEngine.Actions().WasReleasedThisFrame(uAction))
+				? GRAPH_NODE_STATUS_SUCCESS : GRAPH_NODE_STATUS_FAILURE;
+		}
+		const char* GetTypeName() const override { return "OnActionReleased"; }
+
+	private:
+		Zenith_GraphActionRef m_xActionRef;
+	};
+
+	// Fires every frame the action is held.
+	class Zenith_GraphNode_OnActionHeld : public Zenith_GraphNode
+	{
+	public:
+		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_OnActionHeld)
+	public:
+		ZENITH_PROPERTY(std::string, m_strAction, "")
+
+		GraphNodeStatus Execute(Zenith_GraphContext&) override
+		{
+			const Zenith_InputActionID uAction = m_xActionRef.Resolve(m_strAction);
+			return (uAction != uINPUT_ACTION_INVALID && g_xEngine.Actions().IsHeld(uAction))
+				? GRAPH_NODE_STATUS_SUCCESS : GRAPH_NODE_STATUS_FAILURE;
+		}
+		const char* GetTypeName() const override { return "OnActionHeld"; }
+
+	private:
+		Zenith_GraphActionRef m_xActionRef;
+	};
+
+	// AXIS1D action -> float var. Unlike the device-layer query nodes this one
+	// FAILS (and writes nothing) when the action does not resolve: a chain
+	// downstream of it would otherwise run on a zero that is indistinguishable
+	// from a centred stick.
+	class Zenith_GraphNode_ReadActionAxis1D : public Zenith_GraphNode
+	{
+	public:
+		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_ReadActionAxis1D)
+	public:
+		ZENITH_PROPERTY(std::string, m_strAction, "")
+		ZENITH_PROPERTY(std::string, m_strResultVar, "axis")
+
+		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
+		{
+			const Zenith_InputActionID uAction = m_xActionRef.Resolve(m_strAction);
+			if (uAction == uINPUT_ACTION_INVALID)
+			{
+				return GRAPH_NODE_STATUS_FAILURE;
+			}
+			Zenith_PropertyValue xValue;
+			xValue.SetFloat(g_xEngine.Actions().GetAxis1D(uAction));
+			xContext.m_pxBlackboard->SetValue(m_strResultVar, xValue);
+			return GRAPH_NODE_STATUS_SUCCESS;
+		}
+		const char* GetTypeName() const override { return "ReadActionAxis1D"; }
+
+	private:
+		Zenith_GraphActionRef m_xActionRef;
+	};
+
+	// AXIS2D action -> vec2 var. +y is FORWARD and diagonals are UNNORMALISED
+	// (Zenith_InputActions::ResolveMoveComposite is the contract); a graph that
+	// wants a unit direction normalizes it itself, exactly as a C++ consumer
+	// does.
+	class Zenith_GraphNode_ReadActionAxis2D : public Zenith_GraphNode
+	{
+	public:
+		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_ReadActionAxis2D)
+	public:
+		ZENITH_PROPERTY(std::string, m_strAction, "")
+		ZENITH_PROPERTY(std::string, m_strResultVar, "axis2D")
+
+		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
+		{
+			const Zenith_InputActionID uAction = m_xActionRef.Resolve(m_strAction);
+			if (uAction == uINPUT_ACTION_INVALID)
+			{
+				return GRAPH_NODE_STATUS_FAILURE;
+			}
+			Zenith_Maths::Vector2 xAxis(0.0f, 0.0f);
+			g_xEngine.Actions().GetAxis2D(uAction, xAxis);
+			Zenith_PropertyValue xValue;
+			xValue.SetVector2(xAxis);
+			xContext.m_pxBlackboard->SetValue(m_strResultVar, xValue);
+			return GRAPH_NODE_STATUS_SUCCESS;
+		}
+		const char* GetTypeName() const override { return "ReadActionAxis2D"; }
+
+	private:
+		Zenith_GraphActionRef m_xActionRef;
+	};
 }
 
 void Zenith_RegisterEngineGraphNodes_Input()
@@ -410,4 +597,13 @@ void Zenith_RegisterEngineGraphNodes_Input()
 	xRegistry.RegisterNodeType<Zenith_GraphNode_ReadMouseWheel>("ReadMouseWheel", GRAPH_EVENT_NONE, 1, false, "Input");
 	xRegistry.RegisterNodeType<Zenith_GraphNode_ReadPointer>("ReadPointer", GRAPH_EVENT_NONE, 1, false, "Input");
 	xRegistry.RegisterNodeType<Zenith_GraphNode_ReadMousePickRay>("ReadMousePickRay", GRAPH_EVENT_NONE, 1, false, "Input");
+
+	// Action layer (B10). Same category as the device nodes: a designer picking
+	// input for a graph should see both halves in one place, with the action
+	// nodes reading as the obvious default.
+	xRegistry.RegisterNodeType<Zenith_GraphNode_OnActionPressed>("OnActionPressed", GRAPH_EVENT_ON_UPDATE, 1, false, "Input");
+	xRegistry.RegisterNodeType<Zenith_GraphNode_OnActionReleased>("OnActionReleased", GRAPH_EVENT_ON_UPDATE, 1, false, "Input");
+	xRegistry.RegisterNodeType<Zenith_GraphNode_OnActionHeld>("OnActionHeld", GRAPH_EVENT_ON_UPDATE, 1, false, "Input");
+	xRegistry.RegisterNodeType<Zenith_GraphNode_ReadActionAxis1D>("ReadActionAxis1D", GRAPH_EVENT_NONE, 1, false, "Input");
+	xRegistry.RegisterNodeType<Zenith_GraphNode_ReadActionAxis2D>("ReadActionAxis2D", GRAPH_EVENT_NONE, 1, false, "Input");
 }

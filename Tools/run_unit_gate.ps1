@@ -314,7 +314,17 @@ param(
     # Zenith_InputActions.Tests.inl (VIRTUAL rows are TOUCH-scheme-masked).
     # Observed 2026-08-11 on a Null_ Combat build
     # (1586 ran / 1585 passed / 0 failed / 1 skipped).
-    [int]$Baseline = 1586,
+    # 1586 -> 1590: +4 input-program WP4a units — the B10 graph ACTION nodes
+    # (OnActionPressed/Released/Held, ReadActionAxis1D/2D beside the device
+    # nodes in Zenith_GraphNode_Registration_Input.cpp).
+    # GraphComponent::ActionNodeFamilyExecution (simulated action edges reach
+    # the nodes; inert-on-unresolvable pinned by mutation),
+    # GraphComponent::ActionNodeSerializationRoundTrip (registry-wide
+    # round-trip covers all five), EngineGraphBuilder::ActionFactoriesMatchRaw
+    # and ::ReadActionAxisOmittedResultVarKeepsNodeDefault (factory
+    # conveniences byte-match hand-built nodes). Observed 2026-08-11 on a
+    # Null_ Combat build (1590 ran / 1589 passed / 0 failed / 1 skipped).
+    [int]$Baseline = 1590,
     [int]$TimeoutSec = 180,
     [string]$LogPath = ""
 )

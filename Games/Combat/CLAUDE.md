@@ -26,6 +26,9 @@ An arena-based combat game demonstrating Animation State Machines, Inverse Kinem
 Games/Combat/
   CLAUDE.md                      # This documentation
   Combat.cpp                     # Project entry points, resource initialization
+  Combat_Bindings.h              # THE ACTION TABLE (input program C2) -- the only
+                                 #   production file allowed to spell a raw key,
+                                 #   mouse button or pad button
   Components/
     Combat_Config.h              # DataAsset for combat tuning
     Combat_GameComponent.h       # Main game coordinator component
@@ -41,7 +44,7 @@ Games/Combat/
     Combat_UIManager.h           # Health bars + combo display
     Combat_GraphNodes.h          # Behaviour Graph node library (all 5 graphs)
   Tests/
-    Test_CombatCharacterization.cpp  # 15 automated tests: 14 graph-conversion characterizations (attack/heavy, player combo/dodge/hit-stun, enemy engage/hit-stun, victory/game-over/combo-timer, pause/restart/menu/play) + Combat_GPUParticles_Test (requiresGraphics — see "GPU particles" below)
+    Test_CombatCharacterization.cpp  # 16 automated tests: 14 graph-conversion characterizations (attack/heavy, player combo/dodge/hit-stun, enemy engage/hit-stun, victory/game-over/combo-timer, pause/restart/menu/play) + Combat_GPUParticles_Test (requiresGraphics — see "GPU particles" below) + Combat_SimPad_Test (the GAMEPAD column end to end; see "Controls" below)
   Assets/
     Scenes/MainMenu.zscen, Arena.zscen  # Boot-authored scenes
     Graphs/                      # Boot-authored Behaviour Graphs:
@@ -71,13 +74,20 @@ Demonstrates:
 - Integration of animation, IK, and damage systems
 
 ### Combat_PlayerController.h - Player Input
-**Engine APIs:** `Zenith_Input`, `Zenith_Physics`
+**Engine APIs:** `Zenith_InputActions` (via `Combat_Bindings`), `Zenith_Physics`
 
 Demonstrates:
-- WASD movement with physics-based character controller
-- Attack input (light attack on left click, heavy attack on right click)
-- Dodge/roll on space bar
+- Device-independent movement: `Combat_Bindings::ReadMove()` returns the MOVE
+  AXIS2D (+y forward), so WASD, the arrows, the pad's left stick and its d-pad
+  all arrive through one read
+- Attack input as ACTIONS (LIGHT_ATTACK = LMB / pad X, HEAVY_ATTACK = RMB / pad Y)
+- Dodge/roll on the DODGE action (Space / pad B)
 - State-based input blocking during attacks/dodge
+
+There is NO raw device code in this file, or anywhere else in Combat's
+production code: `Combat_Bindings.h` is the single place a key or button is
+spelled. (Combat's `Tests/` deliberately still spell raw codes -- a test that
+restated the binding instead of characterising it would prove nothing.)
 
 ### Combat_AnimationController.h - Animation State Machine
 **Engine APIs:** `Zenith_AnimatorComponent`, `Flux_AnimationStateMachine`, `Flux_AnimationParameters`, `Flux_AnimationState`
@@ -163,7 +173,7 @@ PAYLOAD (custom-event context dt is 0).
 | `Combat_PlayerState.bgraph` | runtime, `CreateArena` (2nd graph on the player) | `"PlayerTick"` (where `m_xController.Update` ran, dt payload) | Old `Combat_PlayerController::Update` switch DELETED → `CombatPlayerPreTick`→`StateMachine(playerState, 9 states)`→per-state handler (`Movement`/`Attack`/`Dodge`/`HitStun`; DEAD unwired)→`CombatPlayerPostTick` |
 | `Combat_EnemyBrain.bgraph` | runtime, `SpawnEnemies` (`AddGraphByAssetPath`, per enemy) | `"EnemyBrainTick"` (`Combat_EnemyComponent::OnUpdate`, dt payload) | Old `Combat_EnemyAI::Update` switch DELETED → `CombatEnemyPreTick`→`StateMachine(enemyState, 5 states)`→per-state handler (`Idle`/`Chase`/`Attack`/`HitStun`; DEAD unwired)→`CombatEnemyPostTick` |
 | `Combat_RoundFlow.bgraph` | authored, Arena GameManager | `"RoundTick"` (PLAYING branch of `Combat_GameComponent::OnUpdate`, dt payload) | `CombatTickComboTimer` (kept — combo state is a cross-entity static) then old `CombatCheckRoundState` mega-node DECOMPOSED: `CombatCountAliveEnemies`→`CompareBlackboardInt`→`CombatSetGameState(VICTORY)`; `CombatCheckPlayerDead`→`CombatSetGameState(GAME_OVER)` (VICTORY-before-GAME_OVER, independent) |
-| `Combat_GameFlow.bgraph` | authored, BOTH GameManagers | order-60 input sources (`OnKeyPressed`/`OnUIButtonClicked`/`OnUpdate`) | Old `OnUpdate` menu/pause/reset switch made systems-only; the input DECISIONS moved here: P/R/Escape → `CombatGetGameState`→`SwitchOnInt(gameState)`→ pause/`CombatResetGame`/`CombatReturnToMenu`; menu Play → `OnUIButtonClicked`→`LoadSceneByIndex(1)`; focus → `OnUpdate`→`CombatFocusPlayButton` |
+| `Combat_GameFlow.bgraph` | authored, BOTH GameManagers | order-60 input sources (`OnActionPressed`/`OnUIButtonClicked`/`OnUpdate`) | Old `OnUpdate` menu/pause/reset switch made systems-only; the input DECISIONS moved here: PAUSE/RESTART/RETURN_TO_MENU (P/R/Escape, or pad Start/Back/B) → `CombatGetGameState`→`SwitchOnInt(gameState)`→ pause/`CombatResetGame`/`CombatReturnToMenu`; menu Play → `OnUIButtonClicked`→`LoadSceneByIndex(1)`; focus → `OnUpdate`→`CombatFocusPlayButton` |
 
 The old C++ decision bodies are all DELETED: `UpdateAttack`, `CheckGameState`,
 `UpdateComboTimer`, `Combat_EnemyAI::Update` (+ the dead `Combat_EnemyManager`),
@@ -178,11 +188,21 @@ Enter/Exit events, no RUNNING leaves). Shims: `Combat_PlayerComponent`/
 
 **Accepted divergences** (unobservable / precedented): `Combat_GameFlow`'s
 `@60`-graph / `@100`-component split shifts the systems block by one frame on a
-reset / resume frame (runs on fresh/resumed state); and P/R/Escape are
-independent `OnKeyPressed` sources, so two distinct keys on the exact same frame
-both fire (the old `if/else-if/return` switch was mutually exclusive). Combo
-count/timer stay `Combat_GameComponent` statics (cross-entity shared: written by
-the attack graph, ticked by the round graph, read by the HUD).
+reset / resume frame (runs on fresh/resumed state); and PAUSE/RESTART/
+RETURN_TO_MENU are independent `OnActionPressed` sources, so two distinct
+actions edged on the exact same frame both fire (the old `if/else-if/return`
+switch was mutually exclusive). Combo count/timer stay `Combat_GameComponent`
+statics (cross-entity shared: written by the attack graph, ticked by the round
+graph, read by the HUD).
+
+> ★ **On a pad, that last divergence stops being unreachable.** The C2 table
+> binds pad **B** to BOTH `DODGE` and `RETURN_TO_MENU`, and the GameFlow graph
+> runs at component order 60 — before the player component fires `"PlayerTick"`
+> at 101 — so a pad player pressing B in the arena returns to the menu and the
+> dodge never starts. `Combat_SimPad_Test` pins both halves so the collision is
+> visible rather than folklore; the fix is a distinct pad button for one of
+> them (this game has no per-context action maps, and the graph's state gate
+> cannot separate two actions that are live in the SAME state).
 
 ## GPU particles: the arena candles
 
@@ -252,18 +272,29 @@ Uses `LoadScene("Arena", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING)` + `SetActiveScene
 
 ## Controls
 
-| Key | Action |
-|-----|--------|
-| W/A/S/D | Move player |
-| Left Mouse | Light attack (combo chain) |
-| Right Mouse | Heavy attack |
-| Space | Dodge roll |
-| Click / Touch | Select menu button |
-| W/S or Up/Down | Navigate menu |
-| Enter | Activate focused button |
-| Escape | Return to menu / Pause |
-| P | Pause/Resume |
-| R | Restart round |
+Every row below is an ACTION registered in `Combat_Bindings.h`, not a hard-wired
+key: two profiles, `P_DESKTOP {KEYBOARD|MOUSE}` and `P_GAMEPAD {GAMEPAD}`, and
+the active one switches automatically on the first input from the other device.
+Android boots into `P_DESKTOP` and taps arrive on the MOUSE rows through the B3
+pointer→mouse projection (claim-filtered, so a tap a UI widget took never also
+swings).
+
+| Action | Keyboard | Mouse | Gamepad |
+|--------|----------|-------|---------|
+| MOVE | W/A/S/D + arrows | — | Left stick + d-pad |
+| LIGHT_ATTACK | — | Left button | X |
+| HEAVY_ATTACK | — | Right button | Y |
+| DODGE | Space | — | B ★ |
+| PAUSE | P | — | Start |
+| RESTART | R | — | Back |
+| RETURN_TO_MENU | Escape | — | B ★ |
+
+★ Pad B is shared by DODGE and RETURN_TO_MENU — see the note under *Accepted
+divergences* above.
+
+Menu navigation (W/S or Up/Down to move focus, Enter to activate, click/tap to
+press a button) is the ENGINE-reserved UI action set (ids 0-15), which every
+game gets without registering anything.
 
 ## Animation State Machine
 
