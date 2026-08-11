@@ -3,16 +3,76 @@
 **Last updated:** 2026-08-11
 
 **★ LIVE BASELINE (OBSERVED 2026-08-11 on clean `Null_` builds):
-ZM boot `3211 ran / 3209 passed / 0 failed / 2 skipped`; engine boot (Null Combat)
+ZM boot `3224 ran / 3222 passed / 0 failed / 2 skipped`; engine boot (Null Combat)
 `1586 ran / 1585 passed / 0 failed / 1 skipped`; registry **55**.** This is the
-current pin in `zm-tests.yml` (`-Baseline 3211`) and `run_unit_gate.ps1`
-(default 1586). The move from 3198/1573 is **+13 ENGINE units** (no ZM units)
-from the engine input program's WP3a: the on-screen `Zenith_UIVirtualStick` /
-`Zenith_UIVirtualButton` widgets (UIElementType APPENDED; deadzone/floating-
-recentre/disarm-on-retarget/claim-suppression semantics; two-widget
-serialization round trip) + the VIRTUAL-rows-are-TOUCH-masked action rule.
-ZM code is UNTOUCHED (its migration is the input program's WP3b, next). See
-`run_unit_gate.ps1` for the per-test derivation.
+current pin in `zm-tests.yml` (`-Baseline 3224`) and `run_unit_gate.ps1`
+(default 1586). The move from 3211 is **+13 ZM units** (engine UNMOVED at
+1586) from the input program's WP3b — Zenithmon's migration onto the engine
+action layer: `ZM_Bindings.h` (three profiles P_KEYBOARD/P_TOUCH/P_GAMEPAD,
+the full C2 binding table incl. the PAD column and SYSTEM_BACK on CANCEL),
+`ZM_TouchLayoutController` (ECS order 114; OVERWORLD/DIALOGUE/MENU/BATTLE/
+TITLE contexts retargeting the four authored touch widgets), and the deletion
+of `ZM_InputActions.h`. The windowed automated suite grew 55 → **61** (six
+`ZM_Touch*` tests); its sole failure remains `ZM_InteriorTintPixels_Test`.
+`FrontEnd.zscen` was deliberately re-baked (+812 B: the hidden `ZM_TouchRoot`
+entity with four virtual widgets + the controller) and is byte-stable across
+authoring boots (SHA pinned during the WP3b gate).
+
+**★ WP3b -- THE ZENITHMON INPUT PILOT (this change; the LIVE BASELINE block above
+is re-pinned by the commit that lands it).** `Source/ZM_InputActions.h` is
+**DELETED**. Every production reader now goes through the engine action layer via
+the new `Source/ZM_Bindings.h`, which is the ONE place in this game's production
+code where a raw device code may be spelled: three profiles (`P_KEYBOARD` /
+`P_TOUCH` / `P_GAMEPAD`, one scheme each -- the first `RegisterProfile` call
+clears the engine defaults wholesale), eight actions (MOVE / RUN / INTERACT /
+CONFIRM / CANCEL / MENU / MENU_UP / MENU_DOWN) and the full C2 binding table
+INCLUDING the gamepad column this game never had before. `ZM_TouchLayoutController`
+(**ECS order 114** -- next free is now **115**) is the B11 HUD context machine on a
+new persistent `ZM_TouchRoot`.
+
+**OBSERVED on this change (the numbers the pin should take):** ZM boot
+`3224 ran / 3222 passed / 0 failed / 2 skipped` (**+13 ZM units**, no engine
+units); engine boot (Null Combat) `1586 ran / 1585 passed / 0 failed / 1 skipped`
+(**UNMOVED** -- the only engine file touched is `Zenith/Android/`, which no win64
+config compiles); registry **55 -> 61**; ZM headless suite **61 passed / 0
+failed**, windowed **60 passed / 1 failed** (the failure is the pre-existing
+`ZM_InteriorTintPixels_Test`).
+
+**`FrontEnd.zscen` MOVED, deliberately and for the first time since ZM-D-181:**
+27,125 -> 27,937 bytes, SHA256
+`B2455E00EB8BD6E25FB0829A9922506093FA2E6A54E9825C4E295337E109124C`, from the
+appended `ZM_TouchRoot` entity (four B9 widgets + the controller). The other four
+scenes and the navmesh are byte-identical. Idempotence proven by **two windowed
+`Vulkan_..._True` authoring boots plus the whole windowed suite** (which authors
+again on every boot) -- all four passes wrote the same hash. Every authored widget
+value is an **integer-valued constant** (position / size / radius / slop, in
+LOGICAL pixels); the display scale is applied at USE time by the widgets, which is
+exactly why authoring never needs to know it. That is the ZM-D-183 rule applied to
+a new asset family, not a coincidence.
+
+> **★ THREE THINGS THIS MIGRATION BROKE THAT NO STRUCTURAL TEST WOULD HAVE
+> CAUGHT, all now fixed and all worth knowing before the next game migrates.**
+>
+> 1. **`Zenith_InputSimulator::SetKeyHeld` CANNOT DRIVE AN ACTION.** It writes the
+>    simulator's LEVEL array only, and the action layer's key rows are fed by
+>    ORDERED TRANSITIONS. Every ZM test that held a key with it (150 call sites
+>    across 15 files) went silently dead the moment `ZM_PlayerController` started
+>    reading `Move`. They are now `SimulateKeyDown` / `SimulateKeyUp`, which set
+>    the same level AND queue the transition. **TestPlan convention C1 was updated
+>    in the same change** -- do not reach for `SetKeyHeld` again.
+> 2. **A Step cannot read an edge it injected in the same Step.** `Step()` runs at
+>    `PumpAutomatedTest`, BEFORE step 7 (injection) and before the close at 10e, so
+>    a test that injects and then synchronously calls a consumer reads the PREVIOUS
+>    frame. `ZM_NpcDispatch_Test` did exactly that and was the one red test in the
+>    first headless run. Either split the phase across two frames, or run the
+>    contract explicitly (`ZM_BindingsTest::CloseEngineActionFrame`).
+> 3. **A boot unit has no frame contract at all.** `ZENITH_TEST` runs before the
+>    first frame, so `g_xEngine.Actions()` answers with nothing. The units drive a
+>    LOCAL `Zenith_InputActions` (`Tests/ZM_BindingsTestRig.h`), and the handful
+>    that must drive a REAL component drive the engine's layers explicitly. A
+>    virtual publish in such a rig must land BETWEEN `UpdateProfile` and the close
+>    stages -- opening the action frame CLEARS the virtual transition queue, so a
+>    publish made too early keeps its LEVEL and silently loses its edges.
 
 The PREVIOUS move, 3165/1540 -> 3198/1573, was **+33 ENGINE units** (no ZM units)
 from the input program's WP2: `Zenith_InputActions` — the action layer

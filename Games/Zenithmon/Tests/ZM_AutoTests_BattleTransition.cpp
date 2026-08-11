@@ -329,7 +329,7 @@ namespace
 		g_szBLFailure = szReason;
 		g_bBLFailed = true;
 		g_eBLPhase = LatchPhase::Done;
-		Zenith_InputSimulator::SetKeyHeld(g_eBLWalkKey, false);
+		Zenith_InputSimulator::SimulateKeyUp(g_eBLWalkKey);
 	}
 
 	void Setup_ZMBattleEncounterLatch()
@@ -471,7 +471,7 @@ namespace
 			{
 				return true;
 			}
-			Zenith_InputSimulator::SetKeyHeld(g_eBLWalkKey, true);
+			Zenith_InputSimulator::SimulateKeyDown(g_eBLWalkKey);
 			g_eBLPhase = LatchPhase::Walk;
 			g_iBLPhaseFrames = 0;
 			return true;
@@ -497,7 +497,7 @@ namespace
 				g_uBLLevel         = pxTransition->GetBattleLevel();
 				g_eBLScene         = pxTransition->GetSourceScene();
 				g_eBLState         = pxTransition->GetTransitionState();
-				Zenith_InputSimulator::SetKeyHeld(g_eBLWalkKey, false);
+				Zenith_InputSimulator::SimulateKeyUp(g_eBLWalkKey);
 				g_eBLPhase = LatchPhase::Done;
 				return false;
 			}
@@ -590,7 +590,7 @@ namespace
 		// Always tear down, in order (all guarded). Release the key, drop the fixed
 		// timestep, clear the transition's ownerless statics, restore FrontEnd, then
 		// wipe input.
-		Zenith_InputSimulator::SetKeyHeld(g_eBLWalkKey, false);
+		Zenith_InputSimulator::SimulateKeyUp(g_eBLWalkKey);
 		Zenith_InputSimulator::ClearFixedDt();
 		ZM_BattleTransition::ResetRuntimeStateForTests();
 		if (g_bBLActive)
@@ -734,7 +734,7 @@ namespace
 		g_szRTFailure = szReason;
 		g_bRTFailed = true;
 		g_eRTPhase = RTPhase::Done;
-		Zenith_InputSimulator::SetKeyHeld(g_eRTWalkKey, false);
+		Zenith_InputSimulator::SimulateKeyUp(g_eRTWalkKey);
 	}
 
 	void Setup_ZMBattleRoundTrip()
@@ -917,7 +917,7 @@ namespace
 			{
 				return true;
 			}
-			Zenith_InputSimulator::SetKeyHeld(g_eRTWalkKey, true);
+			Zenith_InputSimulator::SimulateKeyDown(g_eRTWalkKey);
 			g_eRTPhase = RTPhase::Walk;
 			g_iRTPhaseFrames = 0;
 			return true;
@@ -941,7 +941,7 @@ namespace
 				// asserted that walking does not change the grass -- false by construction.
 				g_uRTGrassAtPark = g_xEngine.Grass().GetScheduledInstanceCount();
 				// The encounter latched and the machine started; release the key now.
-				Zenith_InputSimulator::SetKeyHeld(g_eRTWalkKey, false);
+				Zenith_InputSimulator::SimulateKeyUp(g_eRTWalkKey);
 				g_eRTSeenSpecies     = pxTransition->GetBattleSpecies();
 				g_uRTSeenLevel       = pxTransition->GetBattleLevel();
 				g_eRTSeenSourceScene = pxTransition->GetSourceScene();
@@ -1345,7 +1345,7 @@ namespace
 		// release the key, drop the fixed timestep, clear the transition's ownerless
 		// statics, force-unload any lingering Battle scene, restore FrontEnd, then
 		// wipe input.
-		Zenith_InputSimulator::SetKeyHeld(g_eRTWalkKey, false);
+		Zenith_InputSimulator::SimulateKeyUp(g_eRTWalkKey);
 		Zenith_InputSimulator::ClearFixedDt();
 		ZM_BattleTransition::ResetRuntimeStateForTests();
 		Zenith_Scene xBattle = g_xEngine.Scenes().FindLoadedSceneByPath(

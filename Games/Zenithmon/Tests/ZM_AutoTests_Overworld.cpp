@@ -150,16 +150,16 @@ namespace
 
 	void ClearOverworldInput()
 	{
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_W, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_A, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_S, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_D, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_UP, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_DOWN, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_LEFT, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_RIGHT, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_LEFT_SHIFT, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_RIGHT_SHIFT, false);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_W);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_A);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_S);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_D);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_UP);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_DOWN);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_LEFT);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_RIGHT);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_LEFT_SHIFT);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_RIGHT_SHIFT);
 	}
 
 	void CleanupFixtureScene(Zenith_Scene& xFixtureScene, Zenith_Scene xPreviousScene)
@@ -286,7 +286,7 @@ namespace
 				&& xCamera.m_pxFollow->GetCurrentArmDistance() > 0.0f)
 			{
 				g_xHarnessStart = xPlayer.m_xPosition;
-				Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_W, true);
+				Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_W);
 				g_eHarnessPhase = HarnessPhase::Walk;
 				g_iHarnessPhaseFrames = 0;
 			}
@@ -317,7 +317,7 @@ namespace
 				FailHarness("W did not move the yaw-zero player in world +Z");
 				return false;
 			}
-			Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_LEFT_SHIFT, true);
+			Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_LEFT_SHIFT);
 			g_eHarnessPhase = HarnessPhase::Run;
 			g_iHarnessPhaseFrames = 0;
 			return true;
@@ -501,7 +501,7 @@ namespace
 			g_xFirstPlayerID = xPlayer.m_xEntityID;
 			g_xFirstCameraID = xCamera.m_xEntityID;
 			g_xDawnmereMoveStart = xPlayer.m_xPosition;
-			Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_W, true);
+			Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_W);
 			g_eDawnmerePhase = DawnmerePhase::Walk;
 			g_iDawnmerePhaseFrames = 0;
 			return true;
@@ -552,7 +552,7 @@ namespace
 				return false;
 			}
 			g_xDawnmereMoveStart = xPlayer.m_xPosition;
-			Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_W, true);
+			Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_W);
 			g_eDawnmerePhase = DawnmerePhase::ReloadWalk;
 			g_iDawnmerePhaseFrames = 0;
 			return true;

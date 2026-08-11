@@ -12,7 +12,7 @@
 #include "Zenithmon/Components/ZM_Interactable.h"
 #include "Zenithmon/Components/ZM_PlayerController.h"   // IsMovementEnabled (the freeze flag)
 #include "Zenithmon/Components/ZM_UI_MenuStack.h"       // IsMenuOpen / IsActiveSceneOverworld -- ditto
-#include "Zenithmon/Source/ZM_InputActions.h"           // ReadInteractPressed
+#include "Zenithmon/Source/ZM_Bindings.h"               // INTERACT through the action layer
 
 // ============================================================================
 // ZM_InteractionRuntime (S6 item 3 SC4). See the header for the contract.
@@ -32,7 +32,7 @@ bool               ZM_InteractionRuntime::s_bHasLatchedResult = false;
 void ZM_InteractionRuntime::Tick(const Zenith_Maths::Vector3& xPlayerPosition,
 	const Zenith_Maths::Quat& xPlayerRotation)
 {
-	const bool bInteractPressed = ZM_InputActions::ReadInteractPressed();
+	const bool bInteractPressed = ZM_Bindings::ReadInteractPressed();
 
 	Zenith_EntityID xTarget = INVALID_ENTITY_ID;
 	const ZM_INTERACT_REJECT eResult = Decide(

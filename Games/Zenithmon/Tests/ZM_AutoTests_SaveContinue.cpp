@@ -585,11 +585,11 @@ namespace
 
 	void SCReleaseMovement()
 	{
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_W, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_A, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_S, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_D, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_LEFT_SHIFT, false);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_W);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_A);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_S);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_D);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_LEFT_SHIFT);
 	}
 }
 
@@ -1169,7 +1169,7 @@ namespace
 
 	bool SCPhaseWalkFromTownCenter()
 	{
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_W, true);
+		Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_W);
 		Zenith_Maths::Vector3 xPose(0.0f);
 		float fYaw = 0.0f;
 		if (SCReadPlayerPose(xPose, fYaw)

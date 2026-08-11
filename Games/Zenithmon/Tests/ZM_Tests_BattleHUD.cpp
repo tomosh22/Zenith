@@ -18,6 +18,7 @@
 #include "Core/Zenith_TestFramework.h"
 #include "Input/Zenith_InputSimulator.h"   // the LIVE UpdateMenu drive injects real key edges
 #include "Input/Zenith_KeyCodes.h"         // ZENITH_KEY_DOWN / ZENITH_KEY_ENTER (raw, deliberately)
+#include "Zenithmon/Tests/ZM_BindingsTestRig.h"   // the engine frame-contract helpers (WP3b)
 #include "ZenithECS/Zenith_Entity.h"       // a default (INVALID) entity is what keeps the live drive headless
 #include "Zenithmon/Source/UI/ZM_UI_BattleHUD.h"
 #include "Zenithmon/Source/Battle/ZM_BattleAI.h"              // ZM_AI_TIER_GREEDY (the fixture battle's enemy tier)
@@ -869,12 +870,17 @@ namespace
 		{
 			Zenith_InputSimulator::Enable();
 			Zenith_InputSimulator::ResetAllInputState();
+			// WP3b: UpdateMenu reads the ACTION layer, which the main loop opens and
+			// closes and a unit test does not run. Start from a clean engine device /
+			// action / pointer state and hand it back the same way.
+			ZM_BindingsTest::ResetEngineInputForTest();
 		}
 
 		~HudInputScope()
 		{
 			Zenith_InputSimulator::ResetAllInputState();
 			Zenith_InputSimulator::Disable();
+			ZM_BindingsTest::ResetEngineInputForTest();
 		}
 	};
 
@@ -905,13 +911,25 @@ namespace
 	// One frame of the live menu drive: assert a single key edge, run UpdateMenu, then
 	// close the frame out (clear the pressed edges + release the key) exactly as the main
 	// loop would. Returns UpdateMenu's submitted flag.
+	//
+	// ★ WP3b -- IT IS NOW TWO ENGINE FRAMES, AND IT HAS TO BE. UpdateMenu reads the
+	// ACTION layer, whose key rows are fed by ORDERED TRANSITIONS, not by the
+	// simulator's level table. So the press gets a frame of its own (Begin, queue,
+	// Close, read) and the release gets the next one -- otherwise the release would
+	// be discarded by the following Begin and the next press of the same key would
+	// not be a RISE at all, which reads as "the second nav edge did nothing".
 	bool DriveMenuFrame(ZM_UI_BattleHUD& xHud, Zenith_Entity& xEntity,
 		const ZM_BattleDirectorCore& xCore, ZM_BattleAction& xActionOut, Zenith_KeyCode eKey)
 	{
+		ZM_BindingsTest::BeginEngineInputFrame();
 		Zenith_InputSimulator::SimulateKeyDown(eKey);
+		ZM_BindingsTest::CloseEngineActionFrame();
 		const bool bSubmitted = xHud.UpdateMenu(xEntity, xCore, xActionOut);
 		Zenith_InputSimulator::EndTestFrame();
+
+		ZM_BindingsTest::BeginEngineInputFrame();
 		Zenith_InputSimulator::SimulateKeyUp(eKey);
+		ZM_BindingsTest::CloseEngineActionFrame();
 		return bSubmitted;
 	}
 #endif
@@ -924,7 +942,7 @@ ZENITH_TEST(ZM_BattleHUD, HudMenu_LiveGateNeverSubmitsACatchWhenDisallowed)
 	HudInstantBattleScope xInstant;
 
 	// Raw key codes throughout, deliberately: this drive characterises the bindings the
-	// live menu actually consumes rather than restating ZM_InputActions' constants.
+	// live menu actually consumes rather than restating ZM_Bindings' constants.
 	//
 	// A default Zenith_Entity is INVALID (no scene data), so UpdateMenu's
 	// TryGetComponent<Zenith_UIComponent> path is skipped entirely -- that is what keeps

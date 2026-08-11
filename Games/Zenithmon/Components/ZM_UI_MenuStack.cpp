@@ -17,7 +17,7 @@
 #include "Zenithmon/Source/Data/ZM_WorldSpec.h"         // ZM_FindSceneByBuildIndex / ZM_GetWorldSpec / ZM_SCENE_KIND
 #include "Zenithmon/Source/Interaction/ZM_TrainerSightFsm.h"   // ZM_TrainerCinematicLatch::IsActive (the FOURTH freeze owner)
 #include "Zenithmon/Source/Save/ZM_SaveSlots.h"         // WriteState / ProbeSlot / ResolveLiveSaveBlocker (S7 SC4)
-#include "Zenithmon/Source/ZM_InputActions.h"           // ReadMenuPressed / ReadConfirmPressed / ReadCancelPressed
+#include "Zenithmon/Source/ZM_Bindings.h"               // MENU / CONFIRM / CANCEL through the action layer
 
 #include <cstdio>
 #include <cstring>
@@ -212,7 +212,7 @@ void ZM_UI_MenuStack::OnUpdate(float fDeltaSeconds)
 
 		// Overworld pause-open gate: menu key, in an overworld scene, no warp / battle.
 		if (ShouldOpenMenu(
-			ZM_InputActions::ReadMenuPressed(),
+			ZM_Bindings::ReadMenuPressed(),
 			/* bAlreadyOpen */ false,
 			IsActiveSceneOverworld(),
 			bWarpInProgress,
@@ -233,8 +233,8 @@ void ZM_UI_MenuStack::OnUpdate(float fDeltaSeconds)
 	// switch below that Enter does -- no per-button SetOnClick, no second code
 	// path only pointers can travel. Without it every menu in this game is
 	// keyboard/gamepad-only, i.e. completely inoperable on Android.
-	const bool bConfirm = ZM_InputActions::ReadConfirmPressed() || ReadPointerConfirm();
-	const bool bCancel  = ZM_InputActions::ReadCancelPressed();
+	const bool bConfirm = ZM_Bindings::ReadConfirmPressed() || ReadPointerConfirm();
+	const bool bCancel  = ZM_Bindings::ReadCancelPressed();
 
 	// ONE per-screen input-routing switch: every screen owns its own confirm / cancel
 	// semantics here, so adding SC7 (Shop) is a new arm rather than a reshape of the

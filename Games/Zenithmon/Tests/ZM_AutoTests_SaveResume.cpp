@@ -348,12 +348,12 @@ namespace
 
 	void ClearWalkInput(PointWalk& xWalk)
 	{
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_W, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_A, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_S, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_D, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_LEFT_SHIFT, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_RIGHT_SHIFT, false);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_W);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_A);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_S);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_D);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_LEFT_SHIFT);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_RIGHT_SHIFT);
 		xWalk.m_abHeldKeys[0] = false;
 		xWalk.m_abHeldKeys[1] = false;
 		xWalk.m_abHeldKeys[2] = false;
@@ -392,25 +392,25 @@ namespace
 		const float fDeltaZ = fForwardAmount;
 		if (fDeltaX < -fDEAD_ZONE)
 		{
-			Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_A, true);
+			Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_A);
 			xWalk.m_abHeldKeys[1] = true;
 		}
 		else if (fDeltaX > fDEAD_ZONE)
 		{
-			Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_D, true);
+			Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_D);
 			xWalk.m_abHeldKeys[3] = true;
 		}
 		if (fDeltaZ < -fDEAD_ZONE)
 		{
-			Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_S, true);
+			Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_S);
 			xWalk.m_abHeldKeys[2] = true;
 		}
 		else if (fDeltaZ > fDEAD_ZONE)
 		{
-			Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_W, true);
+			Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_W);
 			xWalk.m_abHeldKeys[0] = true;
 		}
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_LEFT_SHIFT, true);
+		Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_LEFT_SHIFT);
 	}
 
 	// This frame's evidence that the motion is PHYSICS-DRIVEN rather than a
@@ -441,12 +441,12 @@ namespace
 	// what actually cleans disk.
 	void TearDownSaveResumeTest(bool bLoadedAScene)
 	{
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_W, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_A, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_S, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_D, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_LEFT_SHIFT, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_RIGHT_SHIFT, false);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_W);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_A);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_S);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_D);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_LEFT_SHIFT);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_RIGHT_SHIFT);
 		Zenith_InputSimulator::ResetAllInputState();
 		Zenith_InputSimulator::ClearFixedDt();
 		ZM_GameStateManager::ResetRuntimeStateForTests();
@@ -861,7 +861,7 @@ namespace
 			// Plain held W (NO run modifier): the basis probe characterises the
 			// movement basis and must match the shipped walk evidence exactly.
 			g_xRPBasisStart = xPlayer.m_xPosition;
-			Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_W, true);
+			Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_W);
 			g_xRPWalk.m_abHeldKeys[0] = true;
 			g_eRPPhase = RPPhase::BasisProbe;
 			g_iRPPhaseFrames = 0;

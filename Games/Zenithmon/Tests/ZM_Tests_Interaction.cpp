@@ -36,7 +36,7 @@
 #include "Zenithmon/Source/Interaction/ZM_NpcWalkerLogic.h"     // ZM_BuildPatrolVelocity -- the shared velocity idiom
 #include "Zenithmon/Source/Interaction/ZM_TrainerSightFsm.h"    // ZM_StepTrainerApproach + the machine
 #include "Zenithmon/Source/Interaction/ZM_TrainerSightLogic.h"  // fZM_SIGHT_MAX_DISTANCE -- the cone the walk must cross
-#include "Zenithmon/Source/ZM_InputActions.h"   // the key-set constants the collision units walk
+#include "Zenithmon/Tests/ZM_BindingsTestRig.h" // the LIVE binding table the collision units walk
 
 // ---- ZM_ShouldInteract: one unit per blocker --------------------------------
 
@@ -244,67 +244,84 @@ ZENITH_TEST(ZM_Interaction, RejectName_IsTotalAndDistinct)
 
 // ---- Key-binding collision units --------------------------------------------
 //
-// Each walks the SAME named key-set constant the live reader walks, so rebinding a
-// key onto the interact key fails here instead of double-firing at runtime. The
-// non-empty assertion in front of every loop is deliberate: a loop bounded by a
-// count that could be zero would pass vacuously.
+// Each walks the LIVE BINDING TABLE -- the very rows the action layer resolves --
+// so rebinding a key onto the interact key fails here instead of double-firing at
+// runtime. WP3b moved these off per-game key-set constants and
+// onto the registered rows, which is STRICTLY stronger: a constant re-spelled
+// beside the table could drift from it, a row read out of the table cannot.
+//
+// The non-empty assertion in front of every loop is deliberate: a loop bounded by
+// a count that could be zero would pass vacuously.
+
+namespace
+{
+	constexpr u_int uMAX_COLLECTED_KEYS = 16u;
+
+	// The interact key(s) and the key set of some other action, compared. Both
+	// come out of the same registered table.
+	void AssertInteractDoesNotAlias(Zenith_InputActionID uOtherAction, const char* szOtherName)
+	{
+		ZM_BindingsTest::Rig xRig;
+
+		int32_t aiInteract[uMAX_COLLECTED_KEYS] = {};
+		const u_int uInteractCount = ZM_BindingsTest::CollectKeys(
+			xRig.m_xActions, ZM_Bindings::ZM_ACTION_INTERACT, aiInteract, uMAX_COLLECTED_KEYS);
+		ZENITH_ASSERT_GT(uInteractCount, 0u,
+			"INTERACT must carry at least one key or the walk below is vacuous");
+
+		int32_t aiOther[uMAX_COLLECTED_KEYS] = {};
+		const u_int uOtherCount = ZM_BindingsTest::CollectKeys(
+			xRig.m_xActions, uOtherAction, aiOther, uMAX_COLLECTED_KEYS);
+		ZENITH_ASSERT_GT(uOtherCount, 0u,
+			"the %s key set must be non-empty or the walk below is vacuous", szOtherName);
+
+		for (u_int uInteract = 0u; uInteract < uInteractCount; ++uInteract)
+		{
+			for (u_int uOther = 0u; uOther < uOtherCount; ++uOther)
+			{
+				ZENITH_ASSERT_NE(aiInteract[uInteract], aiOther[uOther],
+					"the interact key must not alias %s key %u", szOtherName, uOther);
+			}
+		}
+	}
+}
 
 ZENITH_TEST(ZM_Interaction, Keys_InteractDiffersFromConfirmKeys)
 {
-	ZENITH_ASSERT_GT(ZM_InputActions::uZM_CONFIRM_KEY_COUNT, 0u,
-		"the confirm key set must be non-empty or the walk below is vacuous");
-	for (u_int u = 0u; u < ZM_InputActions::uZM_CONFIRM_KEY_COUNT; ++u)
-	{
-		ZENITH_ASSERT_NE(ZM_InputActions::ZM_KEY_INTERACT, ZM_InputActions::ZM_CONFIRM_KEYS[u],
-			"the interact key must not alias confirm key %u", u);
-	}
+	AssertInteractDoesNotAlias(ZM_Bindings::ZM_ACTION_CONFIRM, "confirm");
 }
 
 ZENITH_TEST(ZM_Interaction, Keys_InteractDiffersFromCancelKeys)
 {
-	ZENITH_ASSERT_GT(ZM_InputActions::uZM_CANCEL_KEY_COUNT, 0u,
-		"the cancel key set must be non-empty or the walk below is vacuous");
-	for (u_int u = 0u; u < ZM_InputActions::uZM_CANCEL_KEY_COUNT; ++u)
-	{
-		ZENITH_ASSERT_NE(ZM_InputActions::ZM_KEY_INTERACT, ZM_InputActions::ZM_CANCEL_KEYS[u],
-			"the interact key must not alias cancel key %u", u);
-	}
+	AssertInteractDoesNotAlias(ZM_Bindings::ZM_ACTION_CANCEL, "cancel");
 }
 
 ZENITH_TEST(ZM_Interaction, Keys_InteractDiffersFromMenuKeys)
 {
-	ZENITH_ASSERT_GT(ZM_InputActions::uZM_MENU_KEY_COUNT, 0u,
-		"the menu key set must be non-empty or the walk below is vacuous");
-	for (u_int u = 0u; u < ZM_InputActions::uZM_MENU_KEY_COUNT; ++u)
-	{
-		ZENITH_ASSERT_NE(ZM_InputActions::ZM_KEY_INTERACT, ZM_InputActions::ZM_MENU_KEYS[u],
-			"the interact key must not alias menu key %u", u);
-	}
+	AssertInteractDoesNotAlias(ZM_Bindings::ZM_ACTION_MENU, "menu");
 }
 
 ZENITH_TEST(ZM_Interaction, Keys_InteractDiffersFromRunKeys)
 {
-	// ReadRunHeld walks this set every overworld frame, so it is as live a binding
-	// as confirm/cancel/menu even though it is a modifier.
-	ZENITH_ASSERT_GT(ZM_InputActions::uZM_RUN_KEY_COUNT, 0u,
-		"the run key set must be non-empty or the walk below is vacuous");
-	for (u_int u = 0u; u < ZM_InputActions::uZM_RUN_KEY_COUNT; ++u)
-	{
-		ZENITH_ASSERT_NE(ZM_InputActions::ZM_KEY_INTERACT, ZM_InputActions::ZM_RUN_KEYS[u],
-			"the interact key must not alias run key %u", u);
-	}
+	// RUN is read every overworld frame, so it is as live a binding as
+	// confirm/cancel/menu even though it is a modifier.
+	AssertInteractDoesNotAlias(ZM_Bindings::ZM_ACTION_RUN, "run");
 }
 
 ZENITH_TEST(ZM_Interaction, Keys_InteractDiffersFromEveryMovementKey)
 {
 	// Eight bindings (WASD + the four arrows): interacting must never also step.
-	ZENITH_ASSERT_GT(ZM_InputActions::uZM_MOVE_KEY_COUNT, 0u,
-		"the movement key set must be non-empty or the walk below is vacuous");
-	for (u_int u = 0u; u < ZM_InputActions::uZM_MOVE_KEY_COUNT; ++u)
-	{
-		ZENITH_ASSERT_NE(ZM_InputActions::ZM_KEY_INTERACT, ZM_InputActions::ZM_MOVE_KEYS[u],
-			"the interact key must not alias movement key %u", u);
-	}
+	// CollectKeys flattens ALL FOUR direction sets of the KEY_AXIS2D row, so a
+	// direction that GAINS a key is covered without anyone re-listing it -- the
+	// exact drift the deleted flat ZM_MOVE_KEYS array needed a static_assert for.
+	AssertInteractDoesNotAlias(ZM_Bindings::ZM_ACTION_MOVE, "movement");
+
+	ZM_BindingsTest::Rig xRig;
+	int32_t aiMove[uMAX_COLLECTED_KEYS] = {};
+	const u_int uMoveCount = ZM_BindingsTest::CollectKeys(
+		xRig.m_xActions, ZM_Bindings::ZM_ACTION_MOVE, aiMove, uMAX_COLLECTED_KEYS);
+	ZENITH_ASSERT_EQ(uMoveCount, 8u,
+		"MOVE must bind WASD AND the four arrows -- eight keys across four direction sets");
 }
 
 // =============================================================================

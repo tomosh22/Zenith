@@ -306,7 +306,7 @@ namespace
 		g_szEncFailure = szReason;
 		g_bEncFailed = true;
 		g_eEncPhase = EncPhase::Done;
-		Zenith_InputSimulator::SetKeyHeld(g_eEncWalkKey, false);
+		Zenith_InputSimulator::SimulateKeyUp(g_eEncWalkKey);
 	}
 
 	void Setup_ZMTallGrassEncounter()
@@ -447,7 +447,7 @@ namespace
 			{
 				return true;
 			}
-			Zenith_InputSimulator::SetKeyHeld(g_eEncWalkKey, true);
+			Zenith_InputSimulator::SimulateKeyDown(g_eEncWalkKey);
 			g_eEncPhase = EncPhase::Walk;
 			g_iEncPhaseFrames = 0;
 			return true;
@@ -458,7 +458,7 @@ namespace
 			// across off-grass tiles, so the FIRST on-grass transition fires it.
 			if (g_bEncFired)
 			{
-				Zenith_InputSimulator::SetKeyHeld(g_eEncWalkKey, false);
+				Zenith_InputSimulator::SimulateKeyUp(g_eEncWalkKey);
 				g_eEncPhase = EncPhase::Done;
 				return false;
 			}
@@ -532,7 +532,7 @@ namespace
 		// is still loaded -- so its snapshot restores onto a live dispatcher whose
 		// Dawnmere subscriptions are still valid; only then swap back to FrontEnd so
 		// its OnStart subscriptions land in the properly-restored dispatcher.
-		Zenith_InputSimulator::SetKeyHeld(g_eEncWalkKey, false);
+		Zenith_InputSimulator::SimulateKeyUp(g_eEncWalkKey);
 		Zenith_InputSimulator::ClearFixedDt();
 		if (g_pxEncIsolation != nullptr)
 		{

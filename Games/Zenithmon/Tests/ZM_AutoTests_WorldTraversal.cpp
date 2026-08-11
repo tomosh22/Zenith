@@ -161,16 +161,16 @@ namespace
 
 	void ClearTraversalInput()
 	{
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_W, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_A, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_S, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_D, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_UP, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_DOWN, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_LEFT, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_RIGHT, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_LEFT_SHIFT, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_RIGHT_SHIFT, false);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_W);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_A);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_S);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_D);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_UP);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_DOWN);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_LEFT);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_RIGHT);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_LEFT_SHIFT);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_RIGHT_SHIFT);
 	}
 
 	bool FadeVisualMatchesManager(const ManagerView& xManager)
@@ -324,21 +324,21 @@ namespace
 		const float fDeltaZ = fForwardAmount;
 		if (fDeltaX < -fDEAD_ZONE)
 		{
-			Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_A, true);
+			Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_A);
 		}
 		else if (fDeltaX > fDEAD_ZONE)
 		{
-			Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_D, true);
+			Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_D);
 		}
 		if (fDeltaZ < -fDEAD_ZONE)
 		{
-			Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_S, true);
+			Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_S);
 		}
 		else if (fDeltaZ > fDEAD_ZONE)
 		{
-			Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_W, true);
+			Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_W);
 		}
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_LEFT_SHIFT, true);
+		Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_LEFT_SHIFT);
 	}
 
 	bool FindConfiguredActiveTrigger(

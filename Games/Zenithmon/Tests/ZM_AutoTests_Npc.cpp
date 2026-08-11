@@ -86,6 +86,7 @@
 #include "Zenithmon/Source/Interaction/ZM_InteractionRuntime.h"
 #include "Zenithmon/Source/UI/ZM_UI_DialogueBox.h"   // GetDialogue(): IsChoiceArmed / GetQueuedLineCount / GetCurrentLine
 #include "Zenithmon/Source/UI/ZM_UI_Shop.h"          // GetShopScreen(): GetInventoryCount / GetInventoryItem
+#include "Zenithmon/Tests/ZM_BindingsTestRig.h"      // CloseEngineActionFrame -- see the two drive sites below
 
 #include <cstring>   // strcmp -- the two warden line sets must genuinely differ
 
@@ -293,8 +294,17 @@ namespace
 		}
 
 		// The RAW key code, deliberately: a windowed/automated test characterises the
-		// binding rather than restating ZM_InputActions' constant back to itself.
+		// binding rather than restating ZM_Bindings' constant back to itself.
 		Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_E);
+		// ★ WP3b: THE EDGE HAS TO BE CLOSED BEFORE A CONSUMER CAN SEE IT.
+		// A Step runs at PumpAutomatedTest -- BEFORE step 7 (injection) and before
+		// the action layer closes at 10e -- so calling a consumer synchronously
+		// here would read the PREVIOUS frame's state and always report NO_INPUT_EDGE.
+		// (The pre-migration reader polled the simulator directly, which is why this
+		// used to work.) Running steps 7/8/10b/10e now, in order, is exactly what
+		// the loop is about to do a few lines later; the log lives one frame, so
+		// nothing is applied twice.
+		ZM_BindingsTest::CloseEngineActionFrame();
 		// Through the REAL call site, never a local runtime -- see
 		// ResolveFixtureController. This is what makes the tick's PLACEMENT
 		// (above OnUpdate's collider / HasActiveSimulation early-out) load-bearing
@@ -596,8 +606,11 @@ namespace
 			}
 
 			// The RAW key code, deliberately: a windowed/automated test characterises the
-			// binding rather than restating ZM_InputActions' constant back to itself.
+			// binding rather than restating ZM_Bindings' constant back to itself.
 			Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_E);
+			// ★ WP3b: close the action frame first -- see the sibling drive site
+			// above for why a Step cannot read an edge it injected in the same call.
+			ZM_BindingsTest::CloseEngineActionFrame();
 			// Through the REAL call site, never a local runtime -- see
 			// ResolveFixtureController. This is what makes the tick's PLACEMENT
 			// (above OnUpdate's collider / HasActiveSimulation early-out) load-bearing

@@ -667,11 +667,11 @@ namespace
 
 	void ClearTSInput()
 	{
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_W, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_A, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_S, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_D, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_LEFT_SHIFT, false);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_W);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_A);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_S);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_D);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_LEFT_SHIFT);
 		g_abTSHeldKeys[0] = false;
 		g_abTSHeldKeys[1] = false;
 		g_abTSHeldKeys[2] = false;
@@ -730,25 +730,25 @@ namespace
 
 		if (fRightAmount < -fDEAD_ZONE)
 		{
-			Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_A, true);
+			Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_A);
 			g_abTSHeldKeys[1] = true;
 		}
 		else if (fRightAmount > fDEAD_ZONE)
 		{
-			Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_D, true);
+			Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_D);
 			g_abTSHeldKeys[3] = true;
 		}
 		if (fForwardAmount < -fDEAD_ZONE)
 		{
-			Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_S, true);
+			Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_S);
 			g_abTSHeldKeys[2] = true;
 		}
 		else if (fForwardAmount > fDEAD_ZONE)
 		{
-			Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_W, true);
+			Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_W);
 			g_abTSHeldKeys[0] = true;
 		}
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_LEFT_SHIFT, true);
+		Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_LEFT_SHIFT);
 	}
 
 	// The runtime-placed trainer's live component. Re-resolved every frame.
@@ -1103,7 +1103,7 @@ namespace
 		}
 
 		g_xTSBasisStart = xPlayer.m_xPosition;
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_W, true);
+		Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_W);
 		g_abTSHeldKeys[0] = true;
 		g_eTSPhase = TSPhase::BasisProbe;
 		g_iTSPhaseFrames = 0;

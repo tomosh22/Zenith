@@ -194,6 +194,14 @@ jobs:
           #
           # History, newest first (the DERIVATION is the audit trail; the OBSERVED
           # number is the authority):
+          #   3224  input program WP3b (the Zenithmon pilot migration), observed
+          #                   2026-08-11 on a Null_ build
+          #                   (3224 ran / 3222 passed / 0 failed / 2 skipped).
+          #                   +13 ZM units, engine UNMOVED at 1586: ZM_Bindings
+          #                   registration/table/parity/pad-smoke suites +
+          #                   ZM_TouchLayoutController context invariants.
+          #                   ZM_InputActions.h deleted; consumers read
+          #                   g_xEngine.Actions() via ZM_Bindings.h ids.
           #   3211  input program WP3a (virtual stick/button widgets), observed
           #                   2026-08-11 on a Null_ build
           #                   (3211 ran / 3209 passed / 0 failed / 2 skipped).
@@ -515,7 +523,7 @@ jobs:
           #   2817  ZM-D-173  = 2809 + 8: four ENGINE sensor-raycast units plus
           #                   two camera fixtures and two Home-placement units.
           $exe = 'Games\Zenithmon\Build\output\win64\null_vs2022_debug_win64_true\zenithmon.exe'
-          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 3211 -TimeoutSec 600
+          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 3224 -TimeoutSec 600
           if ($LASTEXITCODE -ne 0) { Write-Error "boot unit tests failed (see log above)"; exit $LASTEXITCODE }
 
       - name: Run Zenithmon tests

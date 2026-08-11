@@ -480,19 +480,19 @@ namespace
 	// Note for anyone tempted to restate the older reasoning: a SetKeyHeld(..., false)
 	// CANNOT eat a menu press. SetKeyHeld writes the LEVEL array (s_abKeyState) only,
 	// while every menu consumer reads the EDGE -- Zenith_UICanvas navigation and
-	// ZM_InputActions::ReadConfirmPressed / ReadCancelPressed all go through
+	// ZM_Bindings::ReadConfirmPressed / ReadCancelPressed all go through
 	// WasKeyPressedThisFrame, served from the separate s_abKeyPressedThisFrame array. The
 	// "it would eat the press outright" claim is wrong and must not be repeated.
 	// Full input clearing happens ONLY in Setup and Verify, via
 	// Zenith_InputSimulator::ResetAllInputState().
 	void ClearWalkInput(WalkContext& xWalk)
 	{
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_W, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_A, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_S, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_D, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_LEFT_SHIFT, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_RIGHT_SHIFT, false);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_W);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_A);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_S);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_D);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_LEFT_SHIFT);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_RIGHT_SHIFT);
 		xWalk.m_abHeldKeys[0] = false;
 		xWalk.m_abHeldKeys[1] = false;
 		xWalk.m_abHeldKeys[2] = false;
@@ -582,25 +582,25 @@ namespace
 		const float fDeltaZ = fForwardAmount;
 		if (fDeltaX < -fDEAD_ZONE)
 		{
-			Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_A, true);
+			Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_A);
 			xWalk.m_abHeldKeys[1] = true;
 		}
 		else if (fDeltaX > fDEAD_ZONE)
 		{
-			Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_D, true);
+			Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_D);
 			xWalk.m_abHeldKeys[3] = true;
 		}
 		if (fDeltaZ < -fDEAD_ZONE)
 		{
-			Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_S, true);
+			Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_S);
 			xWalk.m_abHeldKeys[2] = true;
 		}
 		else if (fDeltaZ > fDEAD_ZONE)
 		{
-			Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_W, true);
+			Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_W);
 			xWalk.m_abHeldKeys[0] = true;
 		}
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_LEFT_SHIFT, true);
+		Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_LEFT_SHIFT);
 	}
 
 	// Fold this frame's evidence that the motion is PHYSICS-DRIVEN rather than a
@@ -789,7 +789,7 @@ namespace
 			xWalk.m_xBasisStart = xPlayer.m_xPosition;
 			// Plain held W (NO run modifier): this probe characterises the BASIS, and it
 			// must match the shipped ZM_DawnmerePlayerCamera_Test evidence exactly.
-			Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_W, true);
+			Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_W);
 			xWalk.m_abHeldKeys[0] = true;
 			xWalk.m_eStage = WalkStage::BasisProbeZ;
 			xWalk.m_iStageFrames = 0;
@@ -831,11 +831,11 @@ namespace
 			// placed at pure +Z precisely to avoid needing one. This leg characterises
 			// THE X AXIS: it proves held D moves the player +X. The caretaker walk uses
 			// -X (key A), which is the SAME code path with the opposite input sign
-			// (ZM_InputActions::ResolveMove writes xMove.x = -1 for A and +1 for D, and
+			// (Zenith_InputActions::ResolveMoveComposite writes xMove.x = -1 for A and +1 for D, and
 			// BuildCameraRelativeDirection multiplies ONE right vector by it) -- this leg
 			// does NOT execute that sign, and the claim is stated no stronger than that.
 			xWalk.m_xBasisStart = xPlayer.m_xPosition;
-			Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_D, true);
+			Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_D);
 			xWalk.m_abHeldKeys[3] = true;
 			xWalk.m_eStage = WalkStage::BasisProbeX;
 			xWalk.m_iStageFrames = 0;
@@ -924,7 +924,7 @@ namespace
 			}
 
 			// The RAW key code, deliberately: a windowed test characterises the binding
-			// rather than restating ZM_InputActions' constant back to itself.
+			// rather than restating ZM_Bindings' constant back to itself.
 			xWalk.m_uRaiseCountBefore = xRuntime.GetRaiseCount();
 			Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_E);
 			xWalk.m_eStage = WalkStage::NegativeAssert;
@@ -1633,7 +1633,7 @@ namespace
 
 		// ------------------------------------------------------------------
 		// 10. BUY THE SELECTED ENTRY. ONE Enter edge, with idle frames on either side
-		//     so the edge-detected ZM_InputActions::ReadConfirmPressed fires exactly
+		//     so the edge-detected ZM_Bindings::ReadConfirmPressed fires exactly
 		//     once. NOTHING about which item is bought is hardcoded: the flat entry
 		//     index, the item and the price are all read OFF THE SCREEN at the press
 		//     frame, because the walk above is what decided where the selection ended
@@ -4618,7 +4618,7 @@ namespace
 			// Hold W for the clean-exit beat. Plain W, NO run modifier: the question is
 			// whether the player responds to input at all after a full pass over the S6
 			// surface, not how fast.
-			Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_W, true);
+			Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_W);
 			g_xGateWalk.m_abHeldKeys[0] = true;
 			g_eGatePhase = GatePhase::CleanExitHold;
 			g_iGatePhaseFrames = 0;

@@ -4,7 +4,7 @@
 
 #include "Zenithmon/Components/ZM_GameStateManager.h"
 #include "Zenithmon/Source/World/ZM_HumanBody.h"   // THE body contract (no longer scale-derived)
-#include "Zenithmon/Source/ZM_InputActions.h"
+#include "Zenithmon/Source/ZM_Bindings.h"          // MOVE / RUN through the action layer
 
 #include "Core/Zenith_Engine.h"
 #include "EntityComponent/Components/Zenith_AnimatorComponent.h"
@@ -140,7 +140,7 @@ void ZM_PlayerController::OnUpdate(float fDeltaTime)
 		pxCamera->GetFacingDir(xCameraForward);
 	}
 
-	const Zenith_Maths::Vector2 xInput = ZM_InputActions::ReadMove();
+	const Zenith_Maths::Vector2 xInput = ZM_Bindings::ReadMove();
 	m_xMoveDirection = BuildCameraRelativeDirection(xInput, xCameraForward);
 	if (m_bGrounded && glm::dot(m_xMoveDirection, m_xMoveDirection) > fEPSILON)
 	{
@@ -170,7 +170,7 @@ void ZM_PlayerController::OnUpdate(float fDeltaTime)
 	}
 
 	const bool bHasMove = glm::dot(m_xMoveDirection, m_xMoveDirection) > fEPSILON;
-	m_fRequestedSpeed = SelectRequestedSpeed(bHasMove, ZM_InputActions::ReadRunHeld());
+	m_fRequestedSpeed = SelectRequestedSpeed(bHasMove, ZM_Bindings::ReadRunHeld());
 
 	const Zenith_Maths::Vector3 xCurrentVelocity = xPhysics.GetLinearVelocity(xBodyID);
 	Zenith_Maths::Vector3 xRequestedVelocity = BuildHorizontalVelocity(

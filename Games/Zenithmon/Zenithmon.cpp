@@ -27,8 +27,10 @@
 #include "Zenithmon/Components/ZM_SpawnPoint.h"
 #include "Zenithmon/Components/ZM_TallGrassSystem.h"
 #include "Zenithmon/Components/ZM_TerrainGrassComponent.h"
+#include "Zenithmon/Components/ZM_TouchLayoutController.h"        // the B9 on-screen HUD context machine (WP3b)
 #include "Zenithmon/Components/ZM_UI_MenuStack.h"
 #include "Zenithmon/Components/ZM_WarpTrigger.h"
+#include "Zenithmon/Source/ZM_Bindings.h"                         // the C2 action table (profiles + actions + bindings)
 #include "Zenithmon/Source/Battle/ZM_BattleDirectorCore.h"
 #include "Zenithmon/Source/Data/ZM_NpcData.h"                     // ZM_GetNpcData -- the greybox's appearance row (W4)
 #include "Zenithmon/Source/Gen/ZM_HumanAppearance.h"              // ZM_GetHumanPaletteColour (W4)
@@ -69,6 +71,8 @@
 #include "EntityComponent/Components/Zenith_GraphComponent.h"   // the SC8 no-graph authoring pin
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "EntityComponent/Zenith_ComponentEditorRegistry.h"
+#include "UI/Zenith_UIVirtualButton.h"                         // the B9 on-screen controls (WP3b authoring)
+#include "UI/Zenith_UIVirtualStick.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Zenithmon/Source/World/ZM_DawnmerePlacement.h"        // the shared authored coordinates (S7 item 3 SC8)
 #include "Zenithmon/Source/World/ZM_ProfLabPlacement.h"         // the shared ProfLab interior coordinates (S8 SC1)
@@ -609,6 +613,7 @@ ZENITH_REGISTER_COMPONENT(ZM_BattleTransition, "ZM_BattleTransition", 110u)
 ZENITH_REGISTER_COMPONENT(ZM_BattleDirector, "ZM_BattleDirector", 111u)
 ZENITH_REGISTER_COMPONENT(ZM_UI_MenuStack, "ZM_UI_MenuStack", 112u)
 ZENITH_REGISTER_COMPONENT(ZM_Interactable, "ZM_Interactable", 113u)
+ZENITH_REGISTER_COMPONENT(ZM_TouchLayoutController, "ZM_TouchLayoutController", 114u)
 
 #ifdef ZENITH_TOOLS
 namespace
@@ -1117,6 +1122,91 @@ namespace
 			pxButton->SetVisible(false);
 			// Availability is runtime disk state. The presenter wires only live targets.
 			pxButton->SetNavigation(nullptr, nullptr, nullptr, nullptr);
+		}
+	}
+
+	// WP3b (B11): the four on-screen controls on the persistent ZM_TouchRoot entity's
+	// UI component. Stick bottom-LEFT, A/B bottom-RIGHT, MENU top-right, ALL AUTHORED
+	// HIDDEN (ZM_TouchLayoutController shows the ones the current context wants on its
+	// first OnUpdate). Sort band 9500: ABOVE the menu's 9000/9001 so a control is never
+	// buried under the dialogue box it exists to advance, BELOW the fades' 10000/10001.
+	//
+	// ★ EVERY NUMBER HERE IS AN INTEGER-VALUED CONSTANT, AND THAT IS A HARD RULE, NOT A
+	// STYLE. These values land in the COMMITTED FrontEnd.zscen. ZM-D-183 cost a cycle
+	// because an authored value was computed at runtime (atan2 -> angleAxis) and MSVC
+	// Debug and Release codegen disagreed by 1-2 ULP, so the file ping-ponged in git
+	// forever while every tolerance guard stayed green. An integer is exact in every FP
+	// model and every configuration; a computed float is not. Do not introduce a
+	// screen-size-derived, scale-derived or otherwise arithmetic authored value here --
+	// the DISPLAY SCALE is applied at USE time by the widgets themselves (they take
+	// LOGICAL pixels), which is precisely why authoring never needs to know it.
+	void ZM_ConfigureTouchControls()
+	{
+		Zenith_Entity* pxSelectedEntity = g_xEngine.Editor().GetSelectedEntity();
+		Zenith_UIComponent* pxUI = pxSelectedEntity != nullptr
+			? pxSelectedEntity->TryGetComponent<Zenith_UIComponent>()
+			: nullptr;
+		Zenith_Assert(pxUI != nullptr,
+			"TouchRoot authoring requires the selected root UI component");
+		if (pxUI == nullptr)
+		{
+			return;
+		}
+
+		// The thumbstick: a 160-square well inside the bottom-left corner, 48 px clear
+		// of both edges. Anchor AND pivot are BottomLeft, so +x reaches right and -y
+		// reaches UP (canvas +y is down).
+		Zenith_UI::Zenith_UIVirtualStick* pxStick =
+			pxUI->FindElement<Zenith_UI::Zenith_UIVirtualStick>(
+				ZM_TouchLayoutController::szSTICK_NAME);
+		if (pxStick != nullptr)
+		{
+			pxStick->SetSortOrder(ZM_TouchLayoutController::iTOUCH_CONTROL_SORT_ORDER);
+			pxStick->SetAnchorAndPivot(Zenith_UI::AnchorPreset::BottomLeft);
+			// BottomLeft pivot puts the element's BOTTOM edge at (H + y), so -48
+			// leaves a 48 px margin and the 160 tall body reaches up to H - 208.
+			pxStick->SetPosition(48.0f, -48.0f);
+			pxStick->SetSize(160.0f, 160.0f);
+			pxStick->SetVisible(false);
+		}
+
+		// The two action buttons, bottom-RIGHT, A outermost (the thumb's resting
+		// position) and B inboard of it with a 16 px gap. Anchor AND pivot BottomRight,
+		// so -x reaches left and -y reaches up.
+		struct TouchButton
+		{
+			const char* m_szName;
+			float m_fX;
+			float m_fY;
+			float m_fSize;
+			Zenith_UI::AnchorPreset m_ePreset;
+		};
+		const TouchButton axButtons[3] =
+		{
+			// A: right edge at W - 48, bottom edge at H - 48, 112 square.
+			{ ZM_TouchLayoutController::szBUTTON_A_NAME,    -48.0f,   -48.0f, 112.0f,
+				Zenith_UI::AnchorPreset::BottomRight },
+			// B: right edge at W - 176 (a 16 px gap left of A), bottom at H - 80, 96 square.
+			{ ZM_TouchLayoutController::szBUTTON_B_NAME,   -176.0f,   -80.0f,  96.0f,
+				Zenith_UI::AnchorPreset::BottomRight },
+			// MENU is top-right per B11, so its pivot flips to the TOP edge and +y
+			// reaches DOWN from it.
+			{ ZM_TouchLayoutController::szBUTTON_MENU_NAME, -32.0f,    32.0f,  96.0f,
+				Zenith_UI::AnchorPreset::TopRight },
+		};
+		for (const TouchButton& xButton : axButtons)
+		{
+			Zenith_UI::Zenith_UIVirtualButton* pxButton =
+				pxUI->FindElement<Zenith_UI::Zenith_UIVirtualButton>(xButton.m_szName);
+			if (pxButton == nullptr)
+			{
+				continue;
+			}
+			pxButton->SetSortOrder(ZM_TouchLayoutController::iTOUCH_CONTROL_SORT_ORDER);
+			pxButton->SetAnchorAndPivot(xButton.m_ePreset);
+			pxButton->SetPosition(xButton.m_fX, xButton.m_fY);
+			pxButton->SetSize(xButton.m_fSize, xButton.m_fSize);
+			pxButton->SetVisible(false);
 		}
 	}
 
@@ -2133,12 +2223,24 @@ void Project_RegisterGameComponents()
 	Zenith_ComponentEditorRegistry::Get().RegisterComponent<ZM_BattleDirector>("ZM_BattleDirector");
 	Zenith_ComponentEditorRegistry::Get().RegisterComponent<ZM_UI_MenuStack>("ZM_UI_MenuStack");
 	Zenith_ComponentEditorRegistry::Get().RegisterComponent<ZM_Interactable>("ZM_Interactable");
+	Zenith_ComponentEditorRegistry::Get().RegisterComponent<ZM_TouchLayoutController>("ZM_TouchLayoutController");
 
 	// Runtime toggle for the battle presenter's instant-battle mode (collapses all
 	// presentation timing). Bound by reference to the ZM_BattleDirectorCore backing
 	// store (ZM-D-101); flip it in the Debug Variables panel under Zenithmon/Battle.
 	g_xEngine.DebugVariables().AddBoolean({ "Zenithmon", "Battle", "zm_instant_battles" }, ZM_InstantBattlesRef());
 #endif
+
+	// The C2 action table. CONFIG-INDEPENDENT and unconditional: every reader in
+	// this game asks the action layer, so a build without it would have no input
+	// at all. It runs BEFORE the boot unit batch (Zenith_Engine::InitialiseProject
+	// calls this hook first), which is what lets ZM_Tests_Bindings assert against
+	// the LIVE registration as well as against its own local instance.
+	//
+	// ★ THE FIRST RegisterProfile CALL CLEARS THE ENGINE DEFAULTS, so this must
+	// install all three profiles or none: a game that registered one profile would
+	// be left with exactly one, and every scheme outside it would go dead.
+	ZM_Bindings::Register(g_xEngine.Actions());
 
 	// Behaviour Graph node registration is CONFIG-INDEPENDENT: only .bgraph
 	// AUTHORING is tools-only. A _False build still has to resolve node types
@@ -2179,6 +2281,12 @@ void Project_RegisterGameComponents()
 		// (convention C3): without this, one test's bark count leaks into every
 		// later batched test.
 		ZM_GraphNodeTestCounters::ResetRuntimeStateForTests();
+		// The on-screen HUD is DontDestroyOnLoad, so its four widgets and the
+		// controller's applied-context latch outlive the scene-0 force reload the
+		// harness performs. Without this a test that ended in DIALOGUE would hand the
+		// next one an A button still targeting Confirm. (The input PROFILE is restored
+		// separately by the engine harness -- Zenith_InputActions::ResetTransientForTest.)
+		ZM_TouchLayoutController::ResetRuntimeStateForTests();
 		ZM_GameStateManager::ResetRuntimeStateForTests();
 		// The persistent manager's GameState survives DontDestroyOnLoad across tests;
 		// re-seed the starter so a caught/levelled party cannot leak into the next test.
@@ -2397,6 +2505,52 @@ void Project_RegisterEditorAutomationSteps()
 	xAuto.AddStep_SetUIFontSize("Title", 54.f);
 	xAuto.AddStep_SetUIColor("Title", 1.f, 1.f, 1.f, 1.f);
 	xAuto.AddStep_AddComponent("ZM_Game");
+
+	// ---- WP3b: the on-screen controls, on their OWN persistent root ----------
+	//
+	// APPENDED after every existing entity ON PURPOSE. Scene bytes are keyed by
+	// DENSE AUTHORING-ORDER file indices (ZM-D-148), so appending a block is a
+	// contained change while inserting one rewrites everything after it.
+	//
+	// Its own root rather than ZM_MenuRoot's, matching the three roots above: the
+	// HUD must survive every scene load (the additive battle included) and must
+	// not share a canvas with the screens ZM_UI_MenuStack shows and hides by name.
+	//
+	// The AUTHORED action targets are the OVERWORLD layout -- the resting state --
+	// while every control is authored HIDDEN; ZM_TouchLayoutController retargets
+	// and reveals them from its first OnUpdate. The widgets take LOGICAL pixels and
+	// apply the display scale at USE time, so nothing here is density-dependent.
+	xAuto.AddStep_CreateEntity("ZM_TouchRoot");
+	xAuto.AddStep_SetEntityTransient(false);
+	xAuto.AddStep_AddUI();
+	xAuto.AddStep_CreateUIVirtualStick(ZM_TouchLayoutController::szSTICK_NAME);
+	xAuto.AddStep_SetUIVirtualStickAction(
+		ZM_TouchLayoutController::szSTICK_NAME, ZM_Bindings::szACTION_MOVE);
+	// FIXED, not FLOATING: the base stays at the authored rect's centre, so the
+	// visible ring is where the control actually is and the very first frame of a
+	// gesture already carries a direction.
+	xAuto.AddStep_SetUIVirtualStickMode(ZM_TouchLayoutController::szSTICK_NAME, 0);
+	xAuto.AddStep_SetUIVirtualStickRadius(ZM_TouchLayoutController::szSTICK_NAME, 80.f);
+	xAuto.AddStep_SetUIVirtualStickActivationSlop(ZM_TouchLayoutController::szSTICK_NAME, 32.f);
+
+	xAuto.AddStep_CreateUIVirtualButton(ZM_TouchLayoutController::szBUTTON_A_NAME);
+	xAuto.AddStep_SetUIVirtualButtonAction(
+		ZM_TouchLayoutController::szBUTTON_A_NAME, ZM_Bindings::szACTION_INTERACT);
+	xAuto.AddStep_SetUIVirtualButtonHitSlop(ZM_TouchLayoutController::szBUTTON_A_NAME, 8.f);
+
+	xAuto.AddStep_CreateUIVirtualButton(ZM_TouchLayoutController::szBUTTON_B_NAME);
+	xAuto.AddStep_SetUIVirtualButtonAction(
+		ZM_TouchLayoutController::szBUTTON_B_NAME, ZM_Bindings::szACTION_RUN);
+	xAuto.AddStep_SetUIVirtualButtonHitSlop(ZM_TouchLayoutController::szBUTTON_B_NAME, 8.f);
+
+	xAuto.AddStep_CreateUIVirtualButton(ZM_TouchLayoutController::szBUTTON_MENU_NAME);
+	xAuto.AddStep_SetUIVirtualButtonAction(
+		ZM_TouchLayoutController::szBUTTON_MENU_NAME, ZM_Bindings::szACTION_MENU);
+	xAuto.AddStep_SetUIVirtualButtonHitSlop(ZM_TouchLayoutController::szBUTTON_MENU_NAME, 8.f);
+
+	xAuto.AddStep_Custom(&ZM_ConfigureTouchControls);
+	xAuto.AddStep_AddComponent("ZM_TouchLayoutController");
+
 	xAuto.AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/FrontEnd" ZENITH_SCENE_EXT);
 	xAuto.AddStep_UnloadScene();
 

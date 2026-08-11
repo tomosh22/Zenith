@@ -77,7 +77,7 @@ inline constexpr float fZM_INTERACT_MAX_VERTICAL = 2.0f;
 //   5. bBattleTransitionActive   -> BATTLE_TRANSITION
 //   6. !bPlayerMovementEnabled   -> PLAYER_FROZEN
 //   7. otherwise                 -> ZM_INTERACT_OK
-// The edge test leads because ZM_InputActions::ReadInteractPressed is a NON-consuming
+// The edge test leads because ZM_Bindings::ReadInteractPressed is a NON-consuming
 // read: several consumers may see the same edge in one frame, so mutual exclusion has
 // to be expressed here explicitly (the bMenuOpen lock) and never assumed from consumption.
 ZM_INTERACT_REJECT ZM_ShouldInteract(bool bPressed, bool bMenuOpen, bool bOverworld,

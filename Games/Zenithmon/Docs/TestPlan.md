@@ -82,9 +82,28 @@ Each rule with its one-line why. Violations are review blockers.
 
 - **C1 -- Step uses ONLY `Zenith_InputSimulator` state-setters**
   (`SimulateMousePosition` / `SimulateMouseButtonDown` / `SimulateMouseButtonUp`
-  / `SimulateKeyPress` / `SetKeyHeld` / `SimulateMouseWheel`).
+  / `SimulateKeyPress` / `SimulateKeyDown` / `SimulateKeyUp` /
+  `SimulateTouchDown` / `SimulateTouchMove` / `SimulateTouchUp` /
+  `SimulateTouchCancel` / `SimulateGamepad*` / `SimulateMouseWheel`).
   *Why:* Step runs inside the main loop; anything that re-enters the loop
   (`StepFrame`, `SimulateMouseClick`) deadlocks in `vkWaitForFences`.
+  **★ C1a -- `SetKeyHeld` IS NO LONGER A USABLE HOLD, AND ITS ABSENCE IS SILENT.**
+  It writes the simulator's LEVEL array (`s_abKeyState`) and nothing else, while
+  every gameplay reader now goes through the ACTION layer, whose key rows are fed
+  by ORDERED TRANSITIONS. A key "held" with it therefore reaches `IsKeyDown` and
+  NOTHING ELSE: the player does not move, no assertion fires at the call site, and
+  the test fails much later with an unrelated message. Use
+  `SimulateKeyDown` / `SimulateKeyUp` -- they set the same level AND queue the
+  transition. (The input program's WP3b converted all 150 ZM call sites; this note
+  exists so the next one is not re-derived from a red suite.)
+  **★ C1b -- A Step CANNOT READ AN EDGE IT INJECTED IN THE SAME STEP.** `Step()`
+  runs at `PumpAutomatedTest`, which is BEFORE frame-contract step 7 (the
+  injection) and before the action layer closes at 10e. What a Step injects is
+  consumed by game logic LATER IN THAT SAME FRAME, and the earliest a Step can
+  OBSERVE it is the NEXT frame. Inject on one frame, assert on the next. A test
+  that must call a consumer synchronously (driving a component by hand, to pin a
+  call site) has to run the contract itself --
+  `ZM_BindingsTest::CloseEngineActionFrame()` in `Tests/ZM_BindingsTestRig.h`.
 - **C2 -- Input-driven tests set an explicit fixed dt (1/60 by default).** A
   different fixed presentation rate must be named and justified by the test;
   `ZM_PlayerHomeRoundTrip_Test` uses 1/30 while normal physics substeps remain
@@ -2267,6 +2286,54 @@ serialized**, so the change moves no scene bytes.
   presentation timing). **`m_bManualOnly`** -- run explicitly at the S12 gate,
   never in the batch or CI.
 - Perf pass: suite runtime vs budget, slowest-10 audit, save-migration audit.
+
+### 5.9 Input program WP3b -- bindings, profiles and the on-screen controls (SHIPPED)
+
+The engine input program's Zenithmon pilot. `Source/ZM_InputActions.h` is deleted;
+every production reader goes through `Source/ZM_Bindings.h` and the engine action
+layer, and `ZM_TouchLayoutController` (ECS order 114) retargets the four B9
+on-screen controls to whatever the current UI state needs.
+
+- **T0 `ZM_Bindings` (10) + `ZM_TouchLayout` (3)**, in `Tests/ZM_Tests_Bindings.cpp`,
+  all driving a LOCAL `Zenith_InputActions` through the real frame contract via
+  `Tests/ZM_BindingsTestRig.h` (see C1b for why a boot unit cannot use the
+  engine's):
+
+  | Test | Contract covered |
+  |---|---|
+  | `ZM_Bindings::ProfilesReplaceTheEngineDefaultsWithOneSchemeEach` | The first game `RegisterProfile` clears the engine defaults; P_KEYBOARD / P_TOUCH / P_GAMEPAD own exactly one scheme each and are pairwise disjoint; MOUSE owns none |
+  | `ZM_Bindings::EveryActionIsRegisteredWithItsContractIdNameAndKind` | All eight ids, names and value kinds; name -> id resolution (what a widget's `SetAction` and a graph node use); every id above the engine-reserved line |
+  | `ZM_Bindings::BindingTableMatchesTheC2ContractIncludingThePadColumn` | Every row of C2 including the PAD column: key sets, pad buttons, the left-stick row's `-1` y inversion, the d-pad composite, INTERACT and CONFIRM on DIFFERENT pad faces, and CANCEL as the sole owner of the mask-exempt SYSTEM_BACK row |
+  | `ZM_Bindings::VirtualSourceIdsArePairwiseDistinct` | Six on-screen-reachable actions, six DISTINCT virtual sources -- the property that keeps the retargeting A button from holding INTERACT and CONFIRM at once |
+  | `ZM_Bindings::MoveCompositeKeepsTheLegacyForwardCancelAndDiagonalRules` | +y FORWARD, arrows alias WASD, opposite keys cancel, diagonals UNNORMALISED (the pre-migration feel of walking) |
+  | `ZM_Bindings::ConfirmCancelAndMenuFireExactlyOneEdgePerPress` | One edge per press for all three; a held key does not repeat; the ALTERNATE bound key rising beside the first fires nothing; both released == one release |
+  | `ZM_Bindings::RunIsAHeldReadAndMenuVerticalIsAPerPressStep` | RUN is a level that survives swapping shifts; the battle cursor is per-press and an up+down in one frame cancels to zero |
+  | `ZM_Bindings::TouchProfileMasksOutKeyboardRowsAndEnablesVirtualOnes` | Under P_TOUCH a keyboard row is dead and the stick's virtual axis reaches MOVE; a same-frame virtual tap fires BOTH edges and does NOT light the action that shares the physical button in another context |
+  | `ZM_Bindings::SystemBackFiresCancelUnderEveryProfile` | Mask-exempt under all three profiles; PULSES (no held phase); does not move the active profile |
+  | `ZM_Bindings::SimulatedGamepadDrivesMoveAndConfirmEndToEnd` | The sim-pad smoke: pad activity WINS the auto switch into P_GAMEPAD, the stick drives MOVE with the y inversion applied, A confirms without firing INTERACT, and the d-pad agrees with the keyboard composite's convention |
+  | `ZM_TouchLayout::ContextResolutionRanksBattleThenDialogueThenTitle` | BATTLE outranks everything (it owns the screen through both fades); a raised DIALOGUE outranks the menu it stacked on; TITLE is identified by the top screen; a closed stack is the overworld whatever stale id came with it |
+  | `ZM_TouchLayout::EachContextGivesOneSemanticsPerButton` | The B11 table verbatim, the shared DIALOGUE/MENU/BATTLE semantics, TITLE's deliberate absence of a cancel, the out-of-range fold to OVERWORLD, and distinct context names |
+  | `ZM_TouchLayout::EveryLayoutTargetIsARegisteredActionWithAVirtualRow` | The seam neither side can prove alone: every context's four targets resolve to a registered action that carries exactly one VIRTUAL row of the right value kind. A layout naming an action without one produces a control that claims the finger and publishes nothing, silently |
+
+- **P1 `Tests/ZM_AutoTests_TouchControls.cpp` (6, all `m_bRequiresGraphics = false`
+  so CI actually sees them).** Each drives the REAL widgets on the persistent HUD
+  with real pointer events and asserts on what the GAME did:
+  `ZM_TouchStick_Test` (a diagonal tilt moves the player on both world axes, and
+  lifting stops him), `ZM_TouchInteract_Test` (overworld A presses INTERACT, does
+  NOT press CONFIRM, and the edge reaches `ZM_InteractionRuntime`'s latch),
+  `ZM_TouchDialogueConfirm_Test` (the SAME button retargets to Confirm, the stick
+  leaves the screen, and the CONFIRM reaches the box), `ZM_TouchMultiTouch_Test`
+  (stick and button in ONE frame, and lifting one finger does not disturb the
+  other), `ZM_TouchCancelNeutralisesHeld_Test` (a cancelled pointer releases both
+  actions and stops the player -- the "phone was unlocked and the character kept
+  walking" case), `ZM_TouchSystemBack_Test` (Back fires CANCEL as a pulse while the
+  profile STAYS P_TOUCH, with the override deliberately CLEARED first so the
+  assertion is not vacuous).
+- **The five `ZM_OverworldInput` and five `ZM_Interaction::Keys_*` units MOVED, and
+  did not change count.** The input five now close a real frame instead of polling
+  the simulator; the collision five walk the LIVE binding table instead of the
+  deleted key-set constants -- strictly stronger, since a constant spelled beside
+  the table can drift from it and a row read out of it cannot.
 
 ### End state
 

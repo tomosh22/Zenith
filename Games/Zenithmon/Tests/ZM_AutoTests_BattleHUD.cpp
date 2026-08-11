@@ -499,7 +499,7 @@ namespace
 		g_szBDFailure = szReason;
 		g_bBDFailed = true;
 		g_eBDPhase = BDPhase::Done;
-		Zenith_InputSimulator::SetKeyHeld(g_eBDWalkKey, false);
+		Zenith_InputSimulator::SimulateKeyUp(g_eBDWalkKey);
 	}
 
 	void Setup_ZMBattleHUD()
@@ -706,7 +706,7 @@ namespace
 			{
 				return true;
 			}
-			Zenith_InputSimulator::SetKeyHeld(g_eBDWalkKey, true);
+			Zenith_InputSimulator::SimulateKeyDown(g_eBDWalkKey);
 			g_eBDPhase = BDPhase::Walk;
 			g_iBDPhaseFrames = 0;
 			return true;
@@ -733,7 +733,7 @@ namespace
 				// restores the parked count EXACTLY and only the entry baseline was wrong.
 				g_uBDGrassAtPark = g_xEngine.Grass().GetScheduledInstanceCount();
 				// The encounter latched and the machine started; release the key now.
-				Zenith_InputSimulator::SetKeyHeld(g_eBDWalkKey, false);
+				Zenith_InputSimulator::SimulateKeyUp(g_eBDWalkKey);
 				g_eBDSeenSpecies     = pxTransition->GetBattleSpecies();
 				g_uBDSeenLevel       = pxTransition->GetBattleLevel();
 				g_eBDSeenSourceScene = pxTransition->GetSourceScene();
@@ -1299,7 +1299,7 @@ namespace
 		// release the key, drop the fixed timestep, clear the instant-battles flag,
 		// clear the transition's ownerless statics, force-unload any lingering Battle
 		// scene, restore FrontEnd, then wipe input.
-		Zenith_InputSimulator::SetKeyHeld(g_eBDWalkKey, false);
+		Zenith_InputSimulator::SimulateKeyUp(g_eBDWalkKey);
 		Zenith_InputSimulator::ClearFixedDt();
 		ZM_SetInstantBattlesForTests(false);
 		ZM_BattleTransition::ResetRuntimeStateForTests();

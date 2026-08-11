@@ -179,16 +179,16 @@ namespace
 
 	void ClearTalkInput()
 	{
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_W, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_A, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_S, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_D, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_UP, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_DOWN, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_LEFT, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_RIGHT, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_LEFT_SHIFT, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_RIGHT_SHIFT, false);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_W);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_A);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_S);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_D);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_UP);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_DOWN);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_LEFT);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_RIGHT);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_LEFT_SHIFT);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_RIGHT_SHIFT);
 		g_abTalkHeldKeys[0] = false;
 		g_abTalkHeldKeys[1] = false;
 		g_abTalkHeldKeys[2] = false;
@@ -279,25 +279,25 @@ namespace
 		const float fDeltaZ = fForwardAmount;
 		if (fDeltaX < -fDEAD_ZONE)
 		{
-			Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_A, true);
+			Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_A);
 			g_abTalkHeldKeys[1] = true;
 		}
 		else if (fDeltaX > fDEAD_ZONE)
 		{
-			Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_D, true);
+			Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_D);
 			g_abTalkHeldKeys[3] = true;
 		}
 		if (fDeltaZ < -fDEAD_ZONE)
 		{
-			Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_S, true);
+			Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_S);
 			g_abTalkHeldKeys[2] = true;
 		}
 		else if (fDeltaZ > fDEAD_ZONE)
 		{
-			Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_W, true);
+			Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_W);
 			g_abTalkHeldKeys[0] = true;
 		}
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_LEFT_SHIFT, true);
+		Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_LEFT_SHIFT);
 	}
 
 	float PlanarDistance(
@@ -572,7 +572,7 @@ namespace
 			g_bTalkBootPassed = true;
 			// Plain held W (no run modifier): this probe characterises the BASIS, and
 			// it must match the shipped ZM_DawnmerePlayerCamera_Test evidence exactly.
-			Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_W, true);
+			Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_W);
 			g_eTalkPhase = TalkPhase::BasisProbe;
 			g_iTalkPhaseFrames = 0;
 			return true;
@@ -660,7 +660,7 @@ namespace
 			}
 
 			// The RAW key code, deliberately: a windowed test characterises the binding
-			// rather than restating ZM_InputActions' constant back to itself.
+			// rather than restating ZM_Bindings' constant back to itself.
 			g_uTalkRaiseCountBefore = xRuntime.GetRaiseCount();
 			Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_E);
 			g_eTalkPhase = TalkPhase::NegativeAssert;

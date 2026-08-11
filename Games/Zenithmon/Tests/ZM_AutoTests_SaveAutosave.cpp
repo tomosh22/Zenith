@@ -1373,8 +1373,8 @@ namespace
 		// still active; only then clear instrumentation and restore shipping
 		// names. The menu reset runs whether or not the menu is open -- a
 		// failure path can leave it up.
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_M, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_ESCAPE, false);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_M);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_ESCAPE);
 		Zenith_InputSimulator::ResetAllInputState();
 		Zenith_InputSimulator::ClearFixedDt();
 		ZM_UI_MenuStack::ResetRuntimeStateForTests();

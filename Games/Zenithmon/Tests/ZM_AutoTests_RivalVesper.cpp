@@ -749,11 +749,11 @@ namespace
 
 	void ClearRVInput()
 	{
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_W, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_A, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_S, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_D, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_LEFT_SHIFT, false);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_W);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_A);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_S);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_D);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_LEFT_SHIFT);
 		g_abRVHeldKeys[0] = false;
 		g_abRVHeldKeys[1] = false;
 		g_abRVHeldKeys[2] = false;
@@ -823,25 +823,25 @@ namespace
 
 		if (fRightAmount < -fDEAD_ZONE)
 		{
-			Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_A, true);
+			Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_A);
 			g_abRVHeldKeys[1] = true;
 		}
 		else if (fRightAmount > fDEAD_ZONE)
 		{
-			Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_D, true);
+			Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_D);
 			g_abRVHeldKeys[3] = true;
 		}
 		if (fForwardAmount < -fDEAD_ZONE)
 		{
-			Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_S, true);
+			Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_S);
 			g_abRVHeldKeys[2] = true;
 		}
 		else if (fForwardAmount > fDEAD_ZONE)
 		{
-			Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_W, true);
+			Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_W);
 			g_abRVHeldKeys[0] = true;
 		}
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_LEFT_SHIFT, true);
+		Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_LEFT_SHIFT);
 	}
 
 	// Resolves the ONE ZM_Interactable in the active scene whose npc row is the
@@ -1609,7 +1609,7 @@ namespace
 		ZM_SetInstantBattlesForTests(true);
 
 		g_xRVBasisStart = xPlayer.m_xPosition;
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_W, true);
+		Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_W);
 		g_abRVHeldKeys[0] = true;
 		g_eRVPhase = RVPhase::BasisProbe;
 		g_iRVPhaseFrames = 0;
@@ -3913,11 +3913,11 @@ namespace
 
 	void RVWClearInput()
 	{
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_W, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_A, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_S, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_D, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_LEFT_SHIFT, false);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_W);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_A);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_S);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_D);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_LEFT_SHIFT);
 	}
 
 	void FailRVW(const char* szReason)
@@ -3997,11 +3997,11 @@ namespace
 			xTarget.x - xPosition.x, 0.0f, xTarget.z - xPosition.z);
 		const float fForward = xToTarget.x * xForward.x + xToTarget.z * xForward.z;
 		const float fRight = xToTarget.x * xRight.x + xToTarget.z * xRight.z;
-		if (fRight < -0.08f) { Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_A, true); }
-		else if (fRight > 0.08f) { Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_D, true); }
-		if (fForward < -0.08f) { Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_S, true); }
-		else if (fForward > 0.08f) { Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_W, true); }
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_LEFT_SHIFT, true);
+		if (fRight < -0.08f) { Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_A); }
+		else if (fRight > 0.08f) { Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_D); }
+		if (fForward < -0.08f) { Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_S); }
+		else if (fForward > 0.08f) { Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_W); }
+		Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_LEFT_SHIFT);
 	}
 
 	void RVWResetCaptures()

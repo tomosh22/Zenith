@@ -1506,7 +1506,7 @@ namespace
 		g_szBMFailure = szReason;
 		g_bBMFailed = true;
 		g_eBMPhase = BMPhase::Done;
-		Zenith_InputSimulator::SetKeyHeld(g_eBMWalkKey, false);
+		Zenith_InputSimulator::SimulateKeyUp(g_eBMWalkKey);
 	}
 
 	void SetupCommon()
@@ -1844,7 +1844,7 @@ namespace
 			{
 				return true;
 			}
-			Zenith_InputSimulator::SetKeyHeld(g_eBMWalkKey, true);
+			Zenith_InputSimulator::SimulateKeyDown(g_eBMWalkKey);
 			g_eBMPhase = BMPhase::Walk;
 			g_iBMPhaseFrames = 0;
 			return true;
@@ -1868,7 +1868,7 @@ namespace
 				// asserted that walking does not change the grass -- false by construction.
 				g_uBMGrassAtPark = g_xEngine.Grass().GetScheduledInstanceCount();
 				// The encounter latched and the machine started; release the key now.
-				Zenith_InputSimulator::SetKeyHeld(g_eBMWalkKey, false);
+				Zenith_InputSimulator::SimulateKeyUp(g_eBMWalkKey);
 				g_eBMPhase = BMPhase::AwaitInBattle;
 				g_iBMPhaseFrames = 0;
 				return true;
@@ -2536,7 +2536,7 @@ namespace
 		// restore is an unconditional skip-safe no-op otherwise), clear the transition's
 		// ownerless statics, force-unload any lingering Battle scene, restore FrontEnd,
 		// then wipe input.
-		Zenith_InputSimulator::SetKeyHeld(g_eBMWalkKey, false);
+		Zenith_InputSimulator::SimulateKeyUp(g_eBMWalkKey);
 		Zenith_InputSimulator::ClearFixedDt();
 		ZM_SetInstantBattlesForTests(false);
 		ZM_SetCatchBallForTests(ZM_ITEM_CATCHORB);

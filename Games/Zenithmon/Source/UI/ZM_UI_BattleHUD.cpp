@@ -18,7 +18,7 @@
 #include "Zenithmon/Source/Data/ZM_ItemData.h"                // ZM_ITEM_CATCHORB (SC4 CATCH action item)
 #include "Zenithmon/Source/Data/ZM_MoveData.h"                // ZM_GetMoveName / ZM_MOVE_ID
 #include "Zenithmon/Source/Data/ZM_SpeciesData.h"             // ZM_GetSpeciesName / ZM_SPECIES_ID
-#include "Zenithmon/Source/ZM_InputActions.h"                 // ReadMenuVertical / ReadConfirmPressed / ReadCancelPressed (SC5 input)
+#include "Zenithmon/Source/ZM_Bindings.h"                     // MENU_UP/DOWN + CONFIRM + CANCEL through the action layer (SC5 input)
 
 #include <cmath>
 #include <string>
@@ -587,9 +587,9 @@ bool ZM_UI_BattleHUD::UpdateMenu(Zenith_Entity& xDirectorEntity, const ZM_Battle
 
 	// Edge input: nav FIRST, then confirm, then cancel (Down+Enter in one frame moves
 	// then confirms).
-	const int  iNav     = ZM_InputActions::ReadMenuVertical();
-	const bool bConfirm = ZM_InputActions::ReadConfirmPressed();
-	const bool bCancel  = ZM_InputActions::ReadCancelPressed();
+	const int  iNav     = ZM_Bindings::ReadMenuVertical();
+	const bool bConfirm = ZM_Bindings::ReadConfirmPressed();
+	const bool bCancel  = ZM_Bindings::ReadCancelPressed();
 
 	// This also RE-CLAMPS a cursor that is now past the end (MenuMoveCursor clamps with
 	// no wrap even for a zero delta), so a cursor left on index 2 by a longer list can

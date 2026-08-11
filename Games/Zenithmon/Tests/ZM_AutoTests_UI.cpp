@@ -1001,7 +1001,7 @@ namespace
 		case DlgPhase::CompleteReveal:
 		{
 			// One Enter edge, with idle frames on either side so the edge-detected
-			// ZM_InputActions::ReadConfirmPressed fires exactly once.
+			// ZM_Bindings::ReadConfirmPressed fires exactly once.
 			if (g_iDlgPhaseFrames == iDLG_PRESS_FRAME)
 			{
 				Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_ENTER);
@@ -1801,7 +1801,7 @@ namespace
 		case PtyPhase::EnterParty:
 		{
 			// ONE Enter edge, with idle frames on either side so the edge-detected
-			// ZM_InputActions::ReadConfirmPressed fires exactly once. The ROOT opens with
+			// ZM_Bindings::ReadConfirmPressed fires exactly once. The ROOT opens with
 			// the Party entry focused (cursor 0), so this confirms Party.
 			if (g_iPtyPhaseFrames == iPTY_PRESS_FRAME)
 			{
@@ -2605,7 +2605,7 @@ namespace
 		case DexPhase::EnterDex:
 		{
 			// ONE Enter edge, with idle frames on either side so the edge-detected
-			// ZM_InputActions::ReadConfirmPressed fires exactly once.
+			// ZM_Bindings::ReadConfirmPressed fires exactly once.
 			if (g_iDexPhaseFrames == iDEX_PRESS_FRAME)
 			{
 				ZM_UI_MenuStack* pxMenu = ResolveSingletonMenuStack();
@@ -3493,7 +3493,7 @@ namespace
 		case BagPhase::EnterBag:
 		{
 			// ONE Enter edge, with idle frames on either side so the edge-detected
-			// ZM_InputActions::ReadConfirmPressed fires exactly once.
+			// ZM_Bindings::ReadConfirmPressed fires exactly once.
 			if (g_iBagPhaseFrames == iBAG_PRESS_FRAME)
 			{
 				ZM_UI_MenuStack* pxMenu = ResolveSingletonMenuStack();
@@ -4541,7 +4541,7 @@ namespace
 		case ShopPhase::BuySelected:
 		{
 			// ONE Enter edge, with idle frames on either side so the edge-detected
-			// ZM_InputActions::ReadConfirmPressed fires exactly once. The purchase is anchored
+			// ZM_Bindings::ReadConfirmPressed fires exactly once. The purchase is anchored
 			// on the entry the CURSOR is on at the press frame -- the walk above decided that,
 			// and the selection SURVIVING the walk is exactly what is under test.
 			if (g_iShopPhaseFrames == iSHOP_PRESS_FRAME)
@@ -5521,7 +5521,7 @@ namespace
 		case CarePhase::ConfirmYes:
 		{
 			// ONE Enter edge with idle frames on either side, so the edge-detected
-			// ZM_InputActions::ReadConfirmPressed fires exactly once. The focus is on YES,
+			// ZM_Bindings::ReadConfirmPressed fires exactly once. The focus is on YES,
 			// proved by the walk above rather than assumed.
 			if (g_iCarePhaseFrames == iCC_PRESS_FRAME)
 			{
@@ -6632,7 +6632,7 @@ namespace
 		case GatePhase::VisitConfirm:
 		{
 			// ONE Enter edge with idle frames on either side, so the edge-detected
-			// ZM_InputActions::ReadConfirmPressed fires exactly once on the entry the walk
+			// ZM_Bindings::ReadConfirmPressed fires exactly once on the entry the walk
 			// above landed on.
 			if (g_iGatePhaseFrames == iGATE_PRESS_FRAME)
 			{

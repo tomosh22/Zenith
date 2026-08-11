@@ -18,7 +18,7 @@
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "Zenithmon/Components/ZM_FollowCamera.h"
 #include "Zenithmon/Components/ZM_PlayerController.h"
-#include "Zenithmon/Source/ZM_InputActions.h"
+#include "Zenithmon/Tests/ZM_BindingsTestRig.h"
 
 #include <cmath>
 #include <limits>
@@ -36,12 +36,21 @@ namespace
 	}
 
 #ifdef ZENITH_INPUT_SIMULATOR
+	// ★ THIS SCOPE NOW OWNS THE ENGINE'S FRAME CONTRACT TOO (WP3b).
+	// ZM_PlayerController reads the ACTION layer, which the main loop opens at
+	// step 8 and closes at 10e. A unit that calls OnUpdate directly runs outside
+	// that loop, so it has to run those steps itself -- and it has to hand the
+	// engine's device / action / pointer layers back clean, exactly as the
+	// automated-test harness does between tests, or a held key survives into the
+	// next unit in the batch.
 	struct InputScope
 	{
 		InputScope()
 		{
 			Zenith_InputSimulator::Enable();
 			Zenith_InputSimulator::ResetAllInputState();
+			ZM_BindingsTest::ResetEngineInputForTest();
+			ZM_BindingsTest::BeginEngineInputFrame();
 		}
 
 		~InputScope()
@@ -49,8 +58,20 @@ namespace
 			Zenith_InputSimulator::ResetAllInputState();
 			Zenith_InputSimulator::ClearFixedDt();
 			Zenith_InputSimulator::Disable();
+			ZM_BindingsTest::ResetEngineInputForTest();
 		}
 	};
+
+	// One controller frame: close the action frame the caller queued its keys
+	// into, run the component, then OPEN the next one so the following
+	// SimulateKeyDown lands in a clean frame (Zenith_Input::BeginFrame DISCARDS
+	// pending injections, so it can never be called after the keys are queued).
+	void DriveControllerFrame(ZM_PlayerController& xController, float fDeltaTime)
+	{
+		ZM_BindingsTest::CloseEngineActionFrame();
+		xController.OnUpdate(fDeltaTime);
+		ZM_BindingsTest::BeginEngineInputFrame();
+	}
 #endif
 
 	struct SceneScope
@@ -163,107 +184,142 @@ namespace
 
 // -----------------------------------------------------------------------------
 // Input actions (5)
+//
+// ★ THESE ARE STILL DEVICE-LAYER PROOFS, AND THEY STILL SPELL RAW KEY CODES.
+// What moved with WP3b is the READ side: the legacy per-game reader
+// polled Zenith_Input directly, so a unit could poke a held key and read the
+// answer in the same statement. The action layer is a FRAME CONTRACT instead --
+// opened at step 8, closed at 10e, read at 11 -- so each case now drives a LOCAL
+// Zenith_InputActions through a real frame (ZM_BindingsTestRig.h) and asserts on
+// the CLOSED state. The keys, the aliases and the edge-vs-held semantics they
+// pin are unchanged, which is the whole point.
 // -----------------------------------------------------------------------------
 
 ZENITH_TEST(ZM_OverworldInput, MoveMapsKeyboardAndArrowAxes)
 {
-#ifdef ZENITH_INPUT_SIMULATOR
-	InputScope xInput;
+	ZM_BindingsTest::Rig xRig;
+	xRig.m_xActions.SetProfileOverride(ZM_Bindings::uPROFILE_KEYBOARD);
 
-	Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_W, true);
-	Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_RIGHT, true);
-	Zenith_Maths::Vector2 xMove = ZM_InputActions::ReadMove();
+	xRig.BeginFrame();
+	xRig.KeyDown(ZENITH_KEY_W);
+	xRig.KeyDown(ZENITH_KEY_RIGHT);
+	xRig.CloseFrame();
+	Zenith_Maths::Vector2 xMove = xRig.Move();
 	ZENITH_ASSERT_EQ_FLOAT(xMove.x, 1.0f, fTEST_EPSILON);
 	ZENITH_ASSERT_EQ_FLOAT(xMove.y, 1.0f, fTEST_EPSILON);
 
-	Zenith_InputSimulator::ResetAllInputState();
-	Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_S, true);
-	Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_LEFT, true);
-	xMove = ZM_InputActions::ReadMove();
+	xRig.BeginFrame();
+	xRig.KeyUp(ZENITH_KEY_W);
+	xRig.KeyUp(ZENITH_KEY_RIGHT);
+	xRig.KeyDown(ZENITH_KEY_S);
+	xRig.KeyDown(ZENITH_KEY_LEFT);
+	xRig.CloseFrame();
+	xMove = xRig.Move();
 	ZENITH_ASSERT_EQ_FLOAT(xMove.x, -1.0f, fTEST_EPSILON);
 	ZENITH_ASSERT_EQ_FLOAT(xMove.y, -1.0f, fTEST_EPSILON);
 
-	Zenith_InputSimulator::ResetAllInputState();
-	Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_UP, true);
-	Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_DOWN, true);
-	Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_A, true);
-	Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_D, true);
-	xMove = ZM_InputActions::ReadMove();
+	xRig.BeginFrame();
+	xRig.KeyUp(ZENITH_KEY_S);
+	xRig.KeyUp(ZENITH_KEY_LEFT);
+	xRig.KeyDown(ZENITH_KEY_UP);
+	xRig.KeyDown(ZENITH_KEY_DOWN);
+	xRig.KeyDown(ZENITH_KEY_A);
+	xRig.KeyDown(ZENITH_KEY_D);
+	xRig.CloseFrame();
+	xMove = xRig.Move();
 	ZENITH_ASSERT_EQ_FLOAT(xMove.x, 0.0f, fTEST_EPSILON);
 	ZENITH_ASSERT_EQ_FLOAT(xMove.y, 0.0f, fTEST_EPSILON);
 
 	const Zenith_Maths::Vector2 xResolved =
-		ZM_InputActions::ResolveMove(false, true, true, false);
+		Zenith_InputActions::ResolveMoveComposite(false, true, true, false);
 	ZENITH_ASSERT_EQ_FLOAT(xResolved.x, -1.0f, fTEST_EPSILON);
 	ZENITH_ASSERT_EQ_FLOAT(xResolved.y, -1.0f, fTEST_EPSILON);
-#else
-	ZENITH_SKIP("input simulator is unavailable in this configuration");
-#endif
 }
 
 ZENITH_TEST(ZM_OverworldInput, ConfirmUsesEnterOrSpacePressedEdge)
 {
-#ifdef ZENITH_INPUT_SIMULATOR
-	InputScope xInput;
-	Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_ENTER);
-	ZENITH_ASSERT_TRUE(ZM_InputActions::ReadConfirmPressed());
-	Zenith_InputSimulator::EndTestFrame();
-	ZENITH_ASSERT_FALSE(ZM_InputActions::ReadConfirmPressed(),
+	ZM_BindingsTest::Rig xRig;
+	xRig.m_xActions.SetProfileOverride(ZM_Bindings::uPROFILE_KEYBOARD);
+
+	xRig.BeginFrame();
+	xRig.KeyDown(ZENITH_KEY_ENTER);
+	xRig.CloseFrame();
+	ZENITH_ASSERT_TRUE(xRig.m_xActions.WasPressedThisFrame(ZM_Bindings::ZM_ACTION_CONFIRM));
+	xRig.EmptyFrame();
+	ZENITH_ASSERT_FALSE(xRig.m_xActions.WasPressedThisFrame(ZM_Bindings::ZM_ACTION_CONFIRM),
 		"held Enter must not repeat a pressed-edge action");
-	Zenith_InputSimulator::ResetAllInputState();
-	Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_SPACE);
-	ZENITH_ASSERT_TRUE(ZM_InputActions::ReadConfirmPressed());
-#else
-	ZENITH_SKIP("input simulator is unavailable in this configuration");
-#endif
+
+	xRig.BeginFrame();
+	xRig.KeyUp(ZENITH_KEY_ENTER);
+	xRig.CloseFrame();
+	xRig.BeginFrame();
+	xRig.KeyDown(ZENITH_KEY_SPACE);
+	xRig.CloseFrame();
+	ZENITH_ASSERT_TRUE(xRig.m_xActions.WasPressedThisFrame(ZM_Bindings::ZM_ACTION_CONFIRM));
 }
 
 ZENITH_TEST(ZM_OverworldInput, CancelUsesEscapeOrBackspacePressedEdge)
 {
-#ifdef ZENITH_INPUT_SIMULATOR
-	InputScope xInput;
-	Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_ESCAPE);
-	ZENITH_ASSERT_TRUE(ZM_InputActions::ReadCancelPressed());
-	Zenith_InputSimulator::EndTestFrame();
-	ZENITH_ASSERT_FALSE(ZM_InputActions::ReadCancelPressed());
-	Zenith_InputSimulator::ResetAllInputState();
-	Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_BACKSPACE);
-	ZENITH_ASSERT_TRUE(ZM_InputActions::ReadCancelPressed());
-#else
-	ZENITH_SKIP("input simulator is unavailable in this configuration");
-#endif
+	ZM_BindingsTest::Rig xRig;
+	xRig.m_xActions.SetProfileOverride(ZM_Bindings::uPROFILE_KEYBOARD);
+
+	xRig.BeginFrame();
+	xRig.KeyDown(ZENITH_KEY_ESCAPE);
+	xRig.CloseFrame();
+	ZENITH_ASSERT_TRUE(xRig.m_xActions.WasPressedThisFrame(ZM_Bindings::ZM_ACTION_CANCEL));
+	xRig.EmptyFrame();
+	ZENITH_ASSERT_FALSE(xRig.m_xActions.WasPressedThisFrame(ZM_Bindings::ZM_ACTION_CANCEL));
+
+	xRig.BeginFrame();
+	xRig.KeyUp(ZENITH_KEY_ESCAPE);
+	xRig.CloseFrame();
+	xRig.BeginFrame();
+	xRig.KeyDown(ZENITH_KEY_BACKSPACE);
+	xRig.CloseFrame();
+	ZENITH_ASSERT_TRUE(xRig.m_xActions.WasPressedThisFrame(ZM_Bindings::ZM_ACTION_CANCEL));
 }
 
 ZENITH_TEST(ZM_OverworldInput, MenuUsesMOrTabPressedEdge)
 {
-#ifdef ZENITH_INPUT_SIMULATOR
-	InputScope xInput;
-	Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_M);
-	ZENITH_ASSERT_TRUE(ZM_InputActions::ReadMenuPressed());
-	Zenith_InputSimulator::EndTestFrame();
-	ZENITH_ASSERT_FALSE(ZM_InputActions::ReadMenuPressed());
-	Zenith_InputSimulator::ResetAllInputState();
-	Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_TAB);
-	ZENITH_ASSERT_TRUE(ZM_InputActions::ReadMenuPressed());
-#else
-	ZENITH_SKIP("input simulator is unavailable in this configuration");
-#endif
+	ZM_BindingsTest::Rig xRig;
+	xRig.m_xActions.SetProfileOverride(ZM_Bindings::uPROFILE_KEYBOARD);
+
+	xRig.BeginFrame();
+	xRig.KeyDown(ZENITH_KEY_M);
+	xRig.CloseFrame();
+	ZENITH_ASSERT_TRUE(xRig.m_xActions.WasPressedThisFrame(ZM_Bindings::ZM_ACTION_MENU));
+	xRig.EmptyFrame();
+	ZENITH_ASSERT_FALSE(xRig.m_xActions.WasPressedThisFrame(ZM_Bindings::ZM_ACTION_MENU));
+
+	xRig.BeginFrame();
+	xRig.KeyUp(ZENITH_KEY_M);
+	xRig.CloseFrame();
+	xRig.BeginFrame();
+	xRig.KeyDown(ZENITH_KEY_TAB);
+	xRig.CloseFrame();
+	ZENITH_ASSERT_TRUE(xRig.m_xActions.WasPressedThisFrame(ZM_Bindings::ZM_ACTION_MENU));
 }
 
 ZENITH_TEST(ZM_OverworldInput, RunUsesEitherShiftHeldState)
 {
-#ifdef ZENITH_INPUT_SIMULATOR
-	InputScope xInput;
-	Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_LEFT_SHIFT, true);
-	ZENITH_ASSERT_TRUE(ZM_InputActions::ReadRunHeld());
-	Zenith_InputSimulator::ResetAllInputState();
-	Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_RIGHT_SHIFT, true);
-	ZENITH_ASSERT_TRUE(ZM_InputActions::ReadRunHeld());
-	Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_RIGHT_SHIFT, false);
-	ZENITH_ASSERT_FALSE(ZM_InputActions::ReadRunHeld());
-#else
-	ZENITH_SKIP("input simulator is unavailable in this configuration");
-#endif
+	ZM_BindingsTest::Rig xRig;
+	xRig.m_xActions.SetProfileOverride(ZM_Bindings::uPROFILE_KEYBOARD);
+
+	xRig.BeginFrame();
+	xRig.KeyDown(ZENITH_KEY_LEFT_SHIFT);
+	xRig.CloseFrame();
+	ZENITH_ASSERT_TRUE(xRig.m_xActions.IsHeld(ZM_Bindings::ZM_ACTION_RUN));
+
+	xRig.BeginFrame();
+	xRig.KeyUp(ZENITH_KEY_LEFT_SHIFT);
+	xRig.KeyDown(ZENITH_KEY_RIGHT_SHIFT);
+	xRig.CloseFrame();
+	ZENITH_ASSERT_TRUE(xRig.m_xActions.IsHeld(ZM_Bindings::ZM_ACTION_RUN));
+
+	xRig.BeginFrame();
+	xRig.KeyUp(ZENITH_KEY_RIGHT_SHIFT);
+	xRig.CloseFrame();
+	ZENITH_ASSERT_FALSE(xRig.m_xActions.IsHeld(ZM_Bindings::ZM_ACTION_RUN));
 }
 
 // -----------------------------------------------------------------------------
@@ -494,7 +550,7 @@ ZENITH_TEST(ZM_OverworldPhysics, ControllerWalkRunReleaseDrivesRealBody)
 	for (u_int uFrame = 0u; uFrame < 90u; ++uFrame)
 	{
 		StepPhysics(1u);
-		xController.OnUpdate(fTEST_DT);
+		DriveControllerFrame(xController, fTEST_DT);
 	}
 	ZENITH_ASSERT_TRUE(xController.IsGrounded());
 	const Zenith_PhysicsBodyID xBody =
@@ -503,11 +559,11 @@ ZENITH_TEST(ZM_OverworldPhysics, ControllerWalkRunReleaseDrivesRealBody)
 	// Seed every externally visible controller output on a valid frame first.
 	// Invalid frame deltas must then be literal no-ops: controller state,
 	// Animator Speed, the full body velocity, and facing all remain unchanged.
-	Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_D, true);
+	Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_D);
 	g_xEngine.Physics().SetLinearVelocity(xBody, { 0.0f, -1.25f, 0.0f });
 	Zenith_Maths::Quat xRotationBeforeSeed;
 	xPlayer.GetComponent<Zenith_TransformComponent>().GetRotation(xRotationBeforeSeed);
-	xController.OnUpdate(fTEST_DT);
+	DriveControllerFrame(xController, fTEST_DT);
 	const float fSeedRequestedSpeed = xController.GetRequestedSpeed();
 	const bool bSeedGrounded = xController.IsGrounded();
 	const Zenith_Maths::Vector3 xSeedMoveDirection = xController.GetMoveDirection();
@@ -537,7 +593,7 @@ ZENITH_TEST(ZM_OverworldPhysics, ControllerWalkRunReleaseDrivesRealBody)
 	};
 	for (float fRejectedDeltaTime : afRejectedDeltaTimes)
 	{
-		xController.OnUpdate(fRejectedDeltaTime);
+		DriveControllerFrame(xController, fRejectedDeltaTime);
 		const Zenith_Maths::Vector3 xRejectedVelocity =
 			g_xEngine.Physics().GetLinearVelocity(xBody);
 		Zenith_Maths::Quat xRejectedRotation;
@@ -555,11 +611,11 @@ ZENITH_TEST(ZM_OverworldPhysics, ControllerWalkRunReleaseDrivesRealBody)
 		ZENITH_ASSERT_EQ_FLOAT(xRejectedRotation.y, xSeedRotation.y, fTEST_EPSILON);
 		ZENITH_ASSERT_EQ_FLOAT(xRejectedRotation.z, xSeedRotation.z, fTEST_EPSILON);
 	}
-	Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_D, false);
+	Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_D);
 	g_xEngine.Physics().SetLinearVelocity(xBody, Zenith_Maths::Vector3(0.0f));
 
-	Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_W, true);
-	xController.OnUpdate(fTEST_DT);
+	Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_W);
+	DriveControllerFrame(xController, fTEST_DT);
 	Zenith_Maths::Vector3 xVelocity = g_xEngine.Physics().GetLinearVelocity(xBody);
 	ZENITH_ASSERT_EQ_FLOAT(xController.GetRequestedSpeed(),
 		ZM_PlayerController::fWALK_SPEED, fTEST_EPSILON);
@@ -571,13 +627,13 @@ ZENITH_TEST(ZM_OverworldPhysics, ControllerWalkRunReleaseDrivesRealBody)
 	for (u_int uFrame = 0u; uFrame < 30u; ++uFrame)
 	{
 		StepPhysics(1u);
-		xController.OnUpdate(fTEST_DT);
+		DriveControllerFrame(xController, fTEST_DT);
 	}
 	const Zenith_Maths::Vector3 xWalkEnd = GetPosition(xPlayer);
 	ZENITH_ASSERT_GT(xWalkEnd.z, xWalkStart.z + 1.0f);
 
-	Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_LEFT_SHIFT, true);
-	xController.OnUpdate(fTEST_DT);
+	Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_LEFT_SHIFT);
+	DriveControllerFrame(xController, fTEST_DT);
 	xVelocity = g_xEngine.Physics().GetLinearVelocity(xBody);
 	ZENITH_ASSERT_EQ_FLOAT(xController.GetRequestedSpeed(),
 		ZM_PlayerController::fRUN_SPEED, fTEST_EPSILON);
@@ -588,16 +644,16 @@ ZENITH_TEST(ZM_OverworldPhysics, ControllerWalkRunReleaseDrivesRealBody)
 	for (u_int uFrame = 0u; uFrame < 30u; ++uFrame)
 	{
 		StepPhysics(1u);
-		xController.OnUpdate(fTEST_DT);
+		DriveControllerFrame(xController, fTEST_DT);
 	}
 	const Zenith_Maths::Vector3 xRunEnd = GetPosition(xPlayer);
 	ZENITH_ASSERT_GT(xRunEnd.z - xWalkEnd.z,
 		(xWalkEnd.z - xWalkStart.z) * 1.4f,
 		"equal-duration run displacement must exceed walk displacement");
 
-	Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_W, false);
-	Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_LEFT_SHIFT, false);
-	xController.OnUpdate(fTEST_DT);
+	Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_W);
+	Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_LEFT_SHIFT);
+	DriveControllerFrame(xController, fTEST_DT);
 	xVelocity = g_xEngine.Physics().GetLinearVelocity(xBody);
 	ZENITH_ASSERT_EQ_FLOAT(xController.GetRequestedSpeed(), 0.0f, fTEST_EPSILON);
 	ZENITH_ASSERT_EQ_FLOAT(xAnimator.GetFloat("Speed"), 0.0f, fTEST_EPSILON);
@@ -686,18 +742,20 @@ ZENITH_TEST(ZM_OverworldPhysics, JoltRampNormalsDriveSlopeClassification)
 	const auto DriveRamp = [&](Zenith_KeyCode eKey,
 		float fExpectedZSign, float fExpectedYSign)
 	{
-		Zenith_InputSimulator::ResetAllInputState();
+		// BOTH sides: the simulator's level table AND the action layer's
+		// transition-fed shadow, or the second phase's key fights the first's.
+		ZM_BindingsTest::ResetSimulatedAndEngineInput();
 		g_xEngine.Physics().TeleportBody(xBody, { -3.0f, 1.5f, 0.0f });
 		for (u_int uFrame = 0u; uFrame < 90u; ++uFrame)
 		{
 			StepPhysics(1u);
-			xController.OnUpdate(fTEST_DT);
+			DriveControllerFrame(xController, fTEST_DT);
 		}
 		ZENITH_ASSERT_TRUE(xController.IsGrounded());
 		const Zenith_Maths::Vector3 xStart = GetPosition(xPlayer);
 
-		Zenith_InputSimulator::SetKeyHeld(eKey, true);
-		xController.OnUpdate(fTEST_DT);
+		Zenith_InputSimulator::SimulateKeyDown(eKey);
+		DriveControllerFrame(xController, fTEST_DT);
 		for (u_int uFrame = 0u; uFrame < 8u; ++uFrame)
 		{
 			ZENITH_ASSERT_TRUE(xController.IsGrounded(),
@@ -709,7 +767,7 @@ ZENITH_TEST(ZM_OverworldPhysics, JoltRampNormalsDriveSlopeClassification)
 				ZM_PlayerController::fWALK_SPEED, 0.03f);
 			ZENITH_ASSERT_TRUE(IsFinite(xVelocity));
 			StepPhysics(1u);
-			xController.OnUpdate(fTEST_DT);
+			DriveControllerFrame(xController, fTEST_DT);
 		}
 		const Zenith_Maths::Vector3 xEnd = GetPosition(xPlayer);
 		ZENITH_ASSERT_TRUE(xController.IsGrounded(),
@@ -814,8 +872,8 @@ ZENITH_TEST(ZM_OverworldPhysics, JoltStepQueriesAcceptLowAndRejectTallObstacle)
 	Zenith_UnitTests::SetMainCameraForTest(xFixture.m_pxSceneData,
 		xCamera.GetEntityID());
 	xController.OnStart();
-	Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_W, true);
-	xController.OnUpdate(fTEST_DT);
+	Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_W);
+	DriveControllerFrame(xController, fTEST_DT);
 	const Zenith_PhysicsBodyID xBody =
 		xPlayer.GetComponent<Zenith_ColliderComponent>().GetBodyID();
 	const float fInitialAssist =
@@ -826,7 +884,7 @@ ZENITH_TEST(ZM_OverworldPhysics, JoltStepQueriesAcceptLowAndRejectTallObstacle)
 	ZENITH_ASSERT_LE(fInitialAssist, ZM_PlayerController::fSTEP_ASSIST_SPEED);
 
 	StepPhysics(1u);
-	xController.OnUpdate(fTEST_DT);
+	DriveControllerFrame(xController, fTEST_DT);
 	const float fAfterOnePhysicsFrame =
 		g_xEngine.Physics().GetLinearVelocity(xBody).y;
 	ZENITH_ASSERT_TRUE(xController.IsGrounded(),
@@ -836,7 +894,7 @@ ZENITH_TEST(ZM_OverworldPhysics, JoltStepQueriesAcceptLowAndRejectTallObstacle)
 	ZENITH_ASSERT_LT(fAfterOnePhysicsFrame, fInitialAssist - 0.001f,
 		"step assist was reapplied instead of naturally decaying");
 
-	xController.OnUpdate(fTEST_DT);
+	DriveControllerFrame(xController, fTEST_DT);
 	ZENITH_ASSERT_EQ_FLOAT(
 		g_xEngine.Physics().GetLinearVelocity(xBody).y,
 		fAfterOnePhysicsFrame, fTEST_EPSILON,
