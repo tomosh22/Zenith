@@ -125,9 +125,10 @@ void Zenith_UIButton::HandleFirstVisibleFrame()
 	{
 		m_xCurrentStyle = m_xNormalStyle;
 		m_bWasInvisible = false;
-		// Sync mouse state to prevent false press/release detection on the first visible frame
+		// No held-state sync needed any more: the press is taken from the DEVICE
+		// edge, so a button that becomes visible under an already-held mouse
+		// sees no press at all rather than a false one.
 		m_bMousePressedInside = false;
-		m_bMouseDownLastFrame = g_xEngine.Input().IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_LEFT);
 	}
 }
 
@@ -142,7 +143,6 @@ void Zenith_UIButton::HandleEditorStoppedState()
 	{
 		m_bFocused = false;
 		m_bMousePressedInside = false;
-		m_bMouseDownLastFrame = false;
 	}
 }
 #endif
@@ -155,13 +155,18 @@ void Zenith_UIButton::HandleInputEvents(bool bInteractable, bool bHovered, bool 
 		return;
 	}
 
-	if (bMouseDown && !m_bMouseDownLastFrame && bHovered)
+	// Device edges, not a per-widget down-transition latch. The latch could only
+	// see a transition that straddled two of this widget's own Updates, so a
+	// press and release inside one frame -- every quick tap on a touch device --
+	// produced no click at all.
+	Zenith_Input& xInput = g_xEngine.Input();
+	if (xInput.WasKeyPressedThisFrame(ZENITH_MOUSE_BUTTON_LEFT) && bHovered)
 	{
 		m_bMousePressedInside = true;
 	}
 	if (!bMouseDown)
 	{
-		if (m_bMouseDownLastFrame && m_bMousePressedInside && bHovered)
+		if (xInput.WasKeyReleasedThisFrame(ZENITH_MOUSE_BUTTON_LEFT) && m_bMousePressedInside && bHovered)
 		{
 			// Raise the canvas-level pointer-activate edge as well as the optional
 			// direct callback. Games that dispatch by the FOCUSED ELEMENT'S NAME
@@ -180,11 +185,10 @@ void Zenith_UIButton::HandleInputEvents(bool bInteractable, bool bHovered, bool 
 		}
 		m_bMousePressedInside = false;
 	}
-	m_bMouseDownLastFrame = bMouseDown;
 
 	bool bActivated = m_bFocused
-		&& (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_ENTER)
-			|| g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_SPACE));
+		&& (xInput.WasKeyPressedThisFrame(ZENITH_KEY_ENTER)
+			|| xInput.WasKeyPressedThisFrame(ZENITH_KEY_SPACE));
 	if (bActivated)
 	{
 		if (m_pfnOnClick)

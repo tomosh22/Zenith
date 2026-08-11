@@ -56,9 +56,14 @@ void Zenith_UIScrollView::ClampScrollPosition()
 
 void Zenith_UIScrollView::HandleDragInput(float fMouseX, float fMouseY, bool bInside, float fDt)
 {
-	bool bMouseDown = g_xEngine.Input().IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_LEFT);
+	// The drag starts on the DEVICE press edge rather than a per-widget
+	// last-frame latch: the latch missed a press that arrived on a frame this
+	// view did not update, and mis-fired on the frame it became interactable
+	// under an already-held button.
+	Zenith_Input& xInput = g_xEngine.Input();
+	bool bMouseDown = xInput.IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_LEFT);
 
-	if (bMouseDown && !m_bMouseDownLastFrame && bInside)
+	if (xInput.WasKeyPressedThisFrame(ZENITH_MOUSE_BUTTON_LEFT) && bInside)
 	{
 		m_bDragging = true;
 		m_xDragStart = {fMouseX, fMouseY};
@@ -98,8 +103,6 @@ void Zenith_UIScrollView::HandleDragInput(float fMouseX, float fMouseY, bool bIn
 	{
 		m_bDragging = false;
 	}
-
-	m_bMouseDownLastFrame = bMouseDown;
 }
 
 void Zenith_UIScrollView::UpdateInertia(float fDt)

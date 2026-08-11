@@ -248,7 +248,22 @@ param(
     # lookup out of [0,1] instead of folding onto a plausible UV.
     # Observed 2026-08-10 on a Null_ Combat build
     # (1502 ran / 1501 passed / 0 failed / 1 skipped).
-    [int]$Baseline = 1502,
+    # 1502 -> 1526: +24 input-program WP0 units in Zenith/Input/Zenith_Input.Tests.inl
+    # -- the device-foundation rework (event FIFO owned by Zenith_Input, drain moved
+    # AFTER the swapchain-acquire gate, release edges, gamepad completion, lifecycle
+    # arm/disarm barriers, simulator injection as ordered transitions). The 17
+    # contract-pinned cases: pending-queue drain-sets-edges / discarded-while-sim /
+    # wheel-rides-queue / coalesced-move-max-excursion / overflow resync (Windows)
+    # + cancel (Android) / transition-log order / same-frame tap both edges /
+    # skipped-frame FIFO+pad retention / lifecycle barrier cancels staged down /
+    # disarmed-input-discarded-until-rearm / SYSTEM_BACK carried / simulated release
+    # edge / simulated pad canonical domains / pad disconnect synthesizes releases /
+    # disconnected trigger rests at ZERO (the 0.5 bug). Plus 7: gesture-boundary
+    # coalescing stop, primary-touch->mouse projection (B3), CancelAllInput,
+    # ResetTransientForTest, pad poll-diff transitions, radial stick deadzone,
+    # simulator-injection ordering. Observed 2026-08-11 on a Null_ Combat build
+    # (1526 ran / 1525 passed / 0 failed / 1 skipped).
+    [int]$Baseline = 1526,
     [int]$TimeoutSec = 180,
     [string]$LogPath = ""
 )

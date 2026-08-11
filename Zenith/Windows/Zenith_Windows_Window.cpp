@@ -99,12 +99,27 @@ static void ErrorCallback(int32_t, const char*)
 	__debugbreak();
 }
 
+// Single engine-singleton funnel for this TU. The window layer is a pure
+// forwarder into the input device layer, so one accessor keeps g_xEngine's reach
+// into the platform layer at exactly one line no matter how many callbacks it
+// grows.
+static Zenith_Input& PlatformInput()
+{
+	return g_xEngine.Input();
+}
+
+// Platform callbacks ONLY enqueue (frame contract step 1); the drain that turns
+// these into held state + edges runs later, after the swapchain acquire.
+// GLFW_REPEAT is deliberately unhandled: auto-repeat is not a transition.
 static void KeyCallback(GLFWwindow*, int32_t iKey, int32_t, int32_t iAction, int32_t)
 {
 	switch (iAction)
 	{
 	case GLFW_PRESS:
-		g_xEngine.Input().KeyPressedCallback(iKey);
+		PlatformInput().KeyPressedCallback(iKey);
+		break;
+	case GLFW_RELEASE:
+		PlatformInput().KeyReleasedCallback(iKey);
 		break;
 	}
 }
@@ -114,8 +129,28 @@ static void MouseCallback(GLFWwindow*, int32_t iKey, int32_t iAction, int32_t)
 	switch (iAction)
 	{
 	case GLFW_PRESS:
-		g_xEngine.Input().MouseButtonPressedCallback(static_cast<uint32_t>(iKey));
+		PlatformInput().MouseButtonPressedCallback(iKey);
 		break;
+	case GLFW_RELEASE:
+		PlatformInput().MouseButtonReleasedCallback(iKey);
+		break;
+	}
+}
+
+// Focus loss is a LIFECYCLE_RESET barrier: it cancels every held key/button/pad
+// and DISARMS input, so a key held while the user alt-tabs away cannot keep
+// driving the game (and cannot come back "still held" on return). Focus gain
+// re-arms. GLFW also synthesizes releases on focus loss; the barrier makes the
+// outcome the same either way.
+static void WindowFocusCallback(GLFWwindow*, int32_t iFocused)
+{
+	if (iFocused == GLFW_TRUE)
+	{
+		PlatformInput().LifecycleArmCallback();
+	}
+	else
+	{
+		PlatformInput().LifecycleResetCallback();
 	}
 }
 
@@ -125,7 +160,7 @@ static void MouseCallback(GLFWwindow*, int32_t iKey, int32_t iAction, int32_t)
 // future API extension can read it without re-wiring GLFW.
 static void ScrollCallback(GLFWwindow*, double fXOffset, double fYOffset)
 {
-	g_xEngine.Input().MouseWheelCallback(fXOffset, fYOffset);
+	PlatformInput().MouseWheelCallback(fXOffset, fYOffset);
 }
 
 Zenith_Window::Zenith_Window(const char* szTitle, uint32_t uWidth, uint32_t uHeight)
@@ -169,6 +204,7 @@ Zenith_Window::Zenith_Window(const char* szTitle, uint32_t uWidth, uint32_t uHei
 	glfwSetKeyCallback(m_pxNativeWindow, KeyCallback);
 	glfwSetMouseButtonCallback(m_pxNativeWindow, MouseCallback);
 	glfwSetScrollCallback(m_pxNativeWindow, ScrollCallback);
+	glfwSetWindowFocusCallback(m_pxNativeWindow, WindowFocusCallback);
 
 	Zenith_Log(LOG_CATEGORY_WINDOW, "Window created");
 }
@@ -211,7 +247,7 @@ void Zenith_Window::SetCursorCaptured(bool bCaptured)
 
 	// The mode switch re-centres / teleports the OS cursor; tell Input to drop the
 	// resulting one-frame delta spike and resync its baseline next BeginFrame.
-	g_xEngine.Input().NotifyMouseDiscontinuity();
+	PlatformInput().NotifyMouseDiscontinuity();
 }
 
 void Zenith_Window::ToggleCaptureCursor()

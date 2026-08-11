@@ -97,9 +97,10 @@ private:
 	bool m_bIsOn = false;
 	bool m_bFocused = false;
 
-	// Mouse tracking for click-on-release
+	// Click-on-release gate: was the press that is currently down taken INSIDE
+	// this toggle? The down/up transitions themselves come from the device
+	// edges, not from a per-widget last-frame latch.
 	bool m_bMousePressedInside = false;
-	bool m_bMouseDownLastFrame = false;
 
 	// Text
 	std::string m_strText;

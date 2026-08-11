@@ -87,7 +87,6 @@ void Zenith_UIToggle::ResetInteractionStateForEditor()
 	{
 		m_bFocused = false;
 		m_bMousePressedInside = false;
-		m_bMouseDownLastFrame = false;
 	}
 #endif
 }
@@ -113,13 +112,18 @@ void Zenith_UIToggle::FireValueChangedCallback()
 
 void Zenith_UIToggle::HandleMouseInteraction(bool bHovered, bool bMouseDown)
 {
-	if (bMouseDown && !m_bMouseDownLastFrame && bHovered)
+	// Device edges, not a per-widget down-transition latch. The latch could only
+	// see a transition that straddled two of this widget's own Updates, so a
+	// press and release inside one frame -- every quick tap on a touch device --
+	// toggled nothing at all.
+	Zenith_Input& xInput = g_xEngine.Input();
+	if (xInput.WasKeyPressedThisFrame(ZENITH_MOUSE_BUTTON_LEFT) && bHovered)
 	{
 		m_bMousePressedInside = true;
 	}
 	if (!bMouseDown)
 	{
-		if (m_bMouseDownLastFrame && m_bMousePressedInside && bHovered)
+		if (xInput.WasKeyReleasedThisFrame(ZENITH_MOUSE_BUTTON_LEFT) && m_bMousePressedInside && bHovered)
 		{
 			// Toggle state
 			m_bIsOn = !m_bIsOn;
@@ -127,14 +131,14 @@ void Zenith_UIToggle::HandleMouseInteraction(bool bHovered, bool bMouseDown)
 		}
 		m_bMousePressedInside = false;
 	}
-	m_bMouseDownLastFrame = bMouseDown;
 }
 
 void Zenith_UIToggle::HandleKeyboardActivation()
 {
+	Zenith_Input& xInput = g_xEngine.Input();
 	bool bActivated = m_bFocused
-		&& (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_ENTER)
-			|| g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_SPACE));
+		&& (xInput.WasKeyPressedThisFrame(ZENITH_KEY_ENTER)
+			|| xInput.WasKeyPressedThisFrame(ZENITH_KEY_SPACE));
 	if (bActivated)
 	{
 		m_bIsOn = !m_bIsOn;

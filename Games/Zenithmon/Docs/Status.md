@@ -1,12 +1,20 @@
 # Zenithmon Status
 
-**Last updated:** 2026-08-10
+**Last updated:** 2026-08-11
 
-**★ LIVE BASELINE (OBSERVED 2026-08-10 on clean `Null_` builds):
-ZM boot `3127 ran / 3125 passed / 0 failed / 2 skipped`; engine boot (Null Combat)
-`1502 ran / 1501 passed / 0 failed / 1 skipped`; registry **55**.** This is the
-current pin in `zm-tests.yml` (`-Baseline 3127`) and `run_unit_gate.ps1`
-(default 1502). The move from 3123/1498 is **+4 ENGINE units** (no ZM units) from
+**★ LIVE BASELINE (OBSERVED 2026-08-11 on clean `Null_` builds):
+ZM boot `3151 ran / 3149 passed / 0 failed / 2 skipped`; engine boot (Null Combat)
+`1526 ran / 1525 passed / 0 failed / 1 skipped`; registry **55**.** This is the
+current pin in `zm-tests.yml` (`-Baseline 3151`) and `run_unit_gate.ps1`
+(default 1526). The move from 3127/1502 is **+24 ENGINE units** (no ZM units)
+from the engine input program's WP0 (device foundations) — the Zenith_Input
+event-FIFO / drain-after-acquire / release-edge / gamepad-completion /
+lifecycle-barrier / simulator-injection rework, all in
+`Zenith/Input/Zenith_Input.Tests.inl`. ZM code is UNTOUCHED by WP0 (its own
+migration is the input program's WP3b). See `run_unit_gate.ps1` for the
+per-test derivation.
+
+The PREVIOUS move, 3123/1498 -> 3127/1502, was **+4 ENGINE units** (no ZM units) from
 the TAA sky motion vectors — the `TAASkyVelocity` cases in
 `Flux/TAA/Flux_TAAJitter.Tests.inl`, pinning the w = 0 point-at-infinity
 reprojection the sky's new velocity-only pass rests on (above all: camera

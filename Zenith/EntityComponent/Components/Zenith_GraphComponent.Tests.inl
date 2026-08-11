@@ -651,9 +651,17 @@ ZENITH_TEST(GraphComponent, InputNodeFamilyExecution)
 	ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetVector2("mousePos").x, 100.0f, 0.0001f);
 	ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetVector2("mousePos").y, 200.0f, 0.0001f);
 
-	// "Frame 2": everything released (reset also clears the stale
-	// pressed-this-frame latch, which only a frame step would consume).
-	Zenith_InputSimulator::ResetAllInputState();
+	// "Frame 2": everything released. BeginTestFrame retires the previous frame's
+	// edges (what a real frame step would do), and the releases are SIMULATED AS
+	// RELEASES rather than wiped with ResetAllInputState -- OnKeyReleased /
+	// OnMouseButton(mode 2) read the device release EDGE now, so a state wipe with
+	// no release event is exactly the "the release never happened" case.
+	Zenith_InputSimulator::BeginTestFrame();
+	Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_W, false);
+	Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_A, false);
+	Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_LEFT_SHIFT, false);
+	Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_SPACE);
+	Zenith_InputSimulator::SimulateMouseButtonUp(ZENITH_MOUSE_BUTTON_LEFT);
 	Zenith_ComponentMetaRegistry::Get().DispatchOnUpdate(xEntity, 0.016f);
 
 	ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetFloat("heldCount"), 1.0f, 0.0001f);		// W no longer held

@@ -75,11 +75,11 @@ private:
 	bool m_bInertia = true;
 	float m_fDecelerationRate = 0.135f;
 
-	// Drag tracking
+	// Drag tracking. The drag STARTS on the device press edge, so there is no
+	// per-widget last-frame latch to keep in sync.
 	bool m_bDragging = false;
 	Zenith_Maths::Vector2 m_xDragStart = {0.f, 0.f};
 	Zenith_Maths::Vector2 m_xScrollStart = {0.f, 0.f};
-	bool m_bMouseDownLastFrame = false;
 };
 
 } // namespace Zenith_UI

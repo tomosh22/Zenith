@@ -42,15 +42,30 @@ public:
 	void SetVSync(bool bEnabled) { m_bVSync = bEnabled; }
 	bool GetVSyncEnabled() const { return m_bVSync; }
 
+	// B3 (permanent): the FIRST touch feeds the mouse view. The position is owned
+	// by Zenith_Input (maintained at drain from the staged touch stream), not by
+	// this class -- the platform funnels below only ENQUEUE.
 	void GetMousePosition(Zenith_Maths::Vector2_64& xOut);
-	bool IsKeyDown(Zenith_KeyCode iKey);
+
+	// Logical-to-physical pixel ratio, for touch-target sizing. Derived from the
+	// activity's density bucket (160 dpi == 1.0); 1.0 when unknown.
+	float GetDisplayScale() const;
 
 	// Android-specific
 	void SetNativeWindow(ANativeWindow* pxWindow);
 	bool IsWindowReady() const { return m_pxNativeWindow != nullptr; }
 
-	// Touch to mouse translation
-	void OnTouchEvent(int32_t iAction, float fX, float fY);
+	// ---- Platform funnels: translate + ENQUEUE, never mutate state ----------
+	// iAction is the raw AMOTION_EVENT_ACTION_* / AKEY_EVENT_ACTION_* value; the
+	// mapping to the engine's event types lives in the .cpp so this header stays
+	// free of engine input headers (it is reached through the PCH).
+	void OnTouchEvent(int32_t iAction, int32_t iPointerId, float fX, float fY);
+	// AKEYCODE_BACK becomes a dedicated SYSTEM_BACK event; everything else is
+	// ignored for now (there is no Android keycode -> Zenith keycode table yet).
+	void OnKeyEvent(int32_t iAction, int32_t iKeyCode);
+	// Activity lifecycle: false raises a LIFECYCLE_RESET barrier (cancel + disarm),
+	// true re-arms.
+	void OnLifecycleEvent(bool bArmed);
 
 private:
 	static Zenith_Window* s_pxInstance;
@@ -59,11 +74,6 @@ private:
 	ANativeWindow* m_pxNativeWindow = nullptr;
 	bool m_bVSync = true;
 	void(*m_pfnEventCallback)() = nullptr;
-
-	// Touch state for mouse emulation
-	float m_fTouchX = 0.0f;
-	float m_fTouchY = 0.0f;
-	bool m_bTouchDown = false;
 
 	int32_t m_iWidth = 0;
 	int32_t m_iHeight = 0;

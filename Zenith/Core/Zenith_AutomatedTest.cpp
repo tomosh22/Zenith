@@ -9,6 +9,7 @@
 #ifdef ZENITH_INPUT_SIMULATOR
 
 #include "Core/Zenith_AutomatedTest.h"
+#include "Input/Zenith_Input.h"
 #include "Input/Zenith_InputSimulator.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "ZenithECS/Zenith_EventSystem.h"
@@ -408,6 +409,11 @@ namespace
 	void NormalizeInputAndFixedDtForNextTest()
 	{
 		Zenith_InputSimulator::ResetAllInputState();
+		// The DEVICE layer's own transients leak the same way the simulator's
+		// used to: a held key, a half-drained FIFO, a disarmed lifecycle state or
+		// a stuck pad button would all outlive the test that produced them.
+		// Registrations (none yet) are deliberately untouched.
+		g_xEngine.Input().ResetTransientForTest();
 		if (s_xRunner.m_fFixedDt > 0.0f)
 		{
 			Zenith_InputSimulator::SetFixedDt(s_xRunner.m_fFixedDt);

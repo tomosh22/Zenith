@@ -33,6 +33,21 @@ static void InitialiseEngine()
 	LOGI("Zenith Engine initialised successfully");
 }
 
+// Activity lifecycle -> input lifecycle. A RESET raises the barrier that cancels
+// every held key/button/pointer and DISARMS input until the matching ARM: an app
+// that is paused, backgrounded or has lost its window must not come back with a
+// finger still "down" from before. Guarded on initialisation because the glue
+// delivers commands before Zenith_Init has allocated the engine subsystems, and
+// g_xEngine accessors are undefined until then.
+static void NotifyInputLifecycle(bool bArmed)
+{
+	if (!s_bEngineInitialised || Zenith_Window::GetInstance() == nullptr)
+	{
+		return;
+	}
+	Zenith_Window::GetInstance()->OnLifecycleEvent(bArmed);
+}
+
 static void OnAppCmd(android_app* pxApp, int32_t iCmd)
 {
 	switch (iCmd)
@@ -65,6 +80,7 @@ static void OnAppCmd(android_app* pxApp, int32_t iCmd)
 	case APP_CMD_TERM_WINDOW:
 		LOGI("APP_CMD_TERM_WINDOW");
 		s_bWindowReady = false;
+		NotifyInputLifecycle(false);
 		if (Zenith_Window::GetInstance())
 		{
 			Zenith_Window::GetInstance()->SetNativeWindow(nullptr);
@@ -79,21 +95,25 @@ static void OnAppCmd(android_app* pxApp, int32_t iCmd)
 	case APP_CMD_GAINED_FOCUS:
 		LOGI("APP_CMD_GAINED_FOCUS");
 		s_bAppActive = true;
+		NotifyInputLifecycle(true);
 		break;
 
 	case APP_CMD_LOST_FOCUS:
 		LOGI("APP_CMD_LOST_FOCUS");
 		s_bAppActive = false;
+		NotifyInputLifecycle(false);
 		break;
 
 	case APP_CMD_PAUSE:
 		LOGI("APP_CMD_PAUSE");
 		s_bAppActive = false;
+		NotifyInputLifecycle(false);
 		break;
 
 	case APP_CMD_RESUME:
 		LOGI("APP_CMD_RESUME");
 		s_bAppActive = true;
+		NotifyInputLifecycle(true);
 		break;
 
 	case APP_CMD_DESTROY:
@@ -113,26 +133,73 @@ static void OnAppCmd(android_app* pxApp, int32_t iCmd)
 
 static int32_t OnInputEvent(android_app* pxApp, AInputEvent* pxEvent)
 {
-	if (AInputEvent_getType(pxEvent) == AINPUT_EVENT_TYPE_MOTION)
+	(void)pxApp;
+
+	// The glue can deliver input before Zenith_Init has built the engine; every
+	// path below reaches g_xEngine through the window funnels.
+	if (!s_bEngineInitialised || Zenith_Window::GetInstance() == nullptr)
 	{
-		int32_t iAction = AMotionEvent_getAction(pxEvent) & AMOTION_EVENT_ACTION_MASK;
-		float fX = AMotionEvent_getX(pxEvent, 0);
-		float fY = AMotionEvent_getY(pxEvent, 0);
-
-		if (iAction == 0 || iAction == 1)
-		{
-			LOGI("Touch %s at (%.1f, %.1f)", iAction == 0 ? "DOWN" : "UP", fX, fY);
-		}
-
-		if (Zenith_Window::GetInstance())
-		{
-			Zenith_Window::GetInstance()->OnTouchEvent(iAction, fX, fY);
-		}
-
-		return 1; // Event handled
+		return 0;
 	}
 
-	return 0; // Event not handled
+	const int32_t iType = AInputEvent_getType(pxEvent);
+
+	if (iType == AINPUT_EVENT_TYPE_KEY)
+	{
+		Zenith_Window::GetInstance()->OnKeyEvent(AKeyEvent_getAction(pxEvent), AKeyEvent_getKeyCode(pxEvent));
+		// Deliberately NOT consumed. BACK is enqueued as SYSTEM_BACK for a future
+		// binding, but nothing consumes it yet -- swallowing it here would leave
+		// the activity with no way to finish.
+		return 0;
+	}
+
+	if (iType != AINPUT_EVENT_TYPE_MOTION)
+	{
+		return 0;
+	}
+
+	// Real touch only: a mouse / trackball / joystick motion event would
+	// otherwise masquerade as a finger.
+	const int32_t iSource = AInputEvent_getSource(pxEvent);
+	if ((iSource & AINPUT_SOURCE_TOUCHSCREEN) != AINPUT_SOURCE_TOUCHSCREEN)
+	{
+		return 0;
+	}
+
+	const int32_t iRawAction = AMotionEvent_getAction(pxEvent);
+	const int32_t iAction = iRawAction & AMOTION_EVENT_ACTION_MASK;
+
+	// WP0 stays pointer-0-only (the pointer table, and with it real multi-touch,
+	// arrives next). A secondary finger's DOWN/UP carries its index in the action
+	// word; consume it rather than mis-attributing its coordinates to pointer 0.
+	if (iAction == AMOTION_EVENT_ACTION_POINTER_DOWN || iAction == AMOTION_EVENT_ACTION_POINTER_UP)
+	{
+		const int32_t iPointerIndex = (iRawAction & AMOTION_EVENT_ACTION_POINTER_INDEX_MASK)
+			>> AMOTION_EVENT_ACTION_POINTER_INDEX_SHIFT;
+		if (iPointerIndex != 0)
+		{
+			return 1;
+		}
+	}
+
+	const int32_t iToolType = AMotionEvent_getToolType(pxEvent, 0);
+	if (iToolType != AMOTION_EVENT_TOOL_TYPE_FINGER && iToolType != AMOTION_EVENT_TOOL_TYPE_STYLUS)
+	{
+		return 0;
+	}
+
+	const int32_t iPointerId = AMotionEvent_getPointerId(pxEvent, 0);
+	const float fX = AMotionEvent_getX(pxEvent, 0);
+	const float fY = AMotionEvent_getY(pxEvent, 0);
+
+	if (iAction == AMOTION_EVENT_ACTION_DOWN || iAction == AMOTION_EVENT_ACTION_UP)
+	{
+		LOGI("Touch %s id=%d at (%.1f, %.1f)",
+			iAction == AMOTION_EVENT_ACTION_DOWN ? "DOWN" : "UP", iPointerId, fX, fY);
+	}
+
+	Zenith_Window::GetInstance()->OnTouchEvent(iAction, iPointerId, fX, fY);
+	return 1; // Event handled
 }
 
 void android_main(android_app* pxApp)

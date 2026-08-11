@@ -43,8 +43,10 @@ namespace
 		const char* GetTypeName() const override { return "OnKeyPressed"; }
 	};
 
-	// Fires the frame the key transitions down -> up (per-instance latch; the
-	// engine has no released-this-frame query).
+	// Fires the frame the key transitions down -> up. Reads the DEVICE release
+	// edge: the per-instance latch this used to carry could only see transitions
+	// that straddled two of its own Executes, so a tap inside one frame, or a
+	// release that arrived while the graph was not running, was silently lost.
 	class Zenith_GraphNode_OnKeyReleased : public Zenith_GraphNode
 	{
 	public:
@@ -54,15 +56,10 @@ namespace
 
 		GraphNodeStatus Execute(Zenith_GraphContext&) override
 		{
-			const bool bDown = g_xEngine.Input().IsKeyDown(m_iKeyCode);
-			const bool bReleased = m_bWasDown && !bDown;
-			m_bWasDown = bDown;
-			return bReleased ? GRAPH_NODE_STATUS_SUCCESS : GRAPH_NODE_STATUS_FAILURE;
+			return g_xEngine.Input().WasKeyReleasedThisFrame(m_iKeyCode)
+				? GRAPH_NODE_STATUS_SUCCESS : GRAPH_NODE_STATUS_FAILURE;
 		}
 		const char* GetTypeName() const override { return "OnKeyReleased"; }
-
-	private:
-		bool m_bWasDown = false;
 	};
 
 	// Fires every frame the key is held.
@@ -82,9 +79,10 @@ namespace
 	};
 
 	// Mouse-button gate. Mode: 0 = pressed edge, 1 = held, 2 = released edge.
-	// Edges latch per-instance off IsMouseButtonHeld (mouse buttons live in
-	// the same key array, indices 0-7) so behaviour is identical for real +
-	// simulated input.
+	// Both edges come from the DEVICE (mouse buttons live in the same key array,
+	// indices 0-7), not from a per-instance latch: the latch could only see a
+	// transition that straddled two of this node's own Executes, so a tap that
+	// began and ended inside one frame produced nothing at all.
 	class Zenith_GraphNode_OnMouseButton : public Zenith_GraphNode
 	{
 	public:
@@ -95,22 +93,18 @@ namespace
 
 		GraphNodeStatus Execute(Zenith_GraphContext&) override
 		{
-			const bool bDown = g_xEngine.Input().IsMouseButtonHeld(m_iButton);
+			Zenith_Input& xInput = g_xEngine.Input();
 			bool bFire = false;
 			switch (m_iMode)
 			{
-			case 0: bFire = bDown && !m_bWasDown; break;
-			case 1: bFire = bDown; break;
-			case 2: bFire = !bDown && m_bWasDown; break;
+			case 0: bFire = xInput.WasKeyPressedThisFrame(m_iButton); break;
+			case 1: bFire = xInput.IsMouseButtonHeld(m_iButton); break;
+			case 2: bFire = xInput.WasKeyReleasedThisFrame(m_iButton); break;
 			default: break;
 			}
-			m_bWasDown = bDown;
 			return bFire ? GRAPH_NODE_STATUS_SUCCESS : GRAPH_NODE_STATUS_FAILURE;
 		}
 		const char* GetTypeName() const override { return "OnMouseButton"; }
-
-	private:
-		bool m_bWasDown = false;
 	};
 
 	// Fires when the mouse moved this frame; stashes the delta (vec2) into a

@@ -48,7 +48,14 @@ public:
 	bool GetVSyncEnabled() const { return m_bVSync; };
 
 	void GetMousePosition(Zenith_Maths::Vector2_64& xOut);
+	// The live-device probe the input layer's overflow RESYNC reconciles its
+	// event-fed held table against. Not the normal read path — game code asks
+	// g_xEngine.Input(), whose table survives lifecycle barriers and cancels.
 	bool IsKeyDown(Zenith_KeyCode iKey);
+
+	// Logical-to-physical pixel ratio, for touch-target sizing. Desktop is
+	// always 1.0; Android derives it from the screen density bucket.
+	float GetDisplayScale() const { return 1.0f; }
 
 	// GLFW memory tracking (tracked separately from normal allocations)
 	static u_int64 GetGLFWMemoryAllocated();

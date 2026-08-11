@@ -93,9 +93,16 @@ static void ExecuteRenderGraph()
 // phase list. PROFILE index names are preserved verbatim for timeline
 // comparability with pre-extraction runs.
 
-// Backend per-frame begin (wait-fence + reset-pools, a no-op on the Null backend) then
-// input/window/touch begin-frame. Manual profile scope because BeginFrame is a
+// Backend per-frame begin (wait-fence + reset-pools, a no-op on the Null backend),
+// timers, then the platform PUMP. Manual profile scope because BeginFrame is a
 // member function, not a free callable.
+//
+// Frame contract step 1. Window::BeginFrame is glfwPollEvents on Windows (Android
+// is pumped by the ALooper loop before Zenith_MainLoop is entered); its callbacks
+// ONLY enqueue into the input FIFO and change no state. The gamepad poll-diff
+// joins it here, so a pad tap that lands on a frame the swapchain later skips is
+// still enqueued and survives to the next drain. The DRAIN itself deliberately
+// does NOT happen here — see below.
 static void BeginFrame_Platform()
 {
 	{
@@ -103,8 +110,18 @@ static void BeginFrame_Platform()
 		g_xEngine.FluxRenderer().BeginFrame();
 	}
 	Zenith_Core::UpdateTimers();
-	g_xEngine.Input().BeginFrame();
 	Zenith_Window::GetInstance()->BeginFrame();
+	g_xEngine.Input().PollGamepads();
+}
+
+// Frame contract step 3: the input DRAIN, plus the touch-gesture update that
+// reads what it produced. Sits AFTER the acquire gate on purpose — a frame the
+// swapchain skips runs no game logic, so draining there would consume presses,
+// releases and wheel ticks that nothing would ever see. Skipping instead leaves
+// the FIFO and the retained pad snapshot intact for the next real frame.
+static void DrainInputAndTouch()
+{
+	g_xEngine.Input().BeginFrame();
 	ZENITH_PROFILING_FUNCTION_WRAPPER(g_xEngine.Touch().Update, ZENITH_PROFILE_ZONE("Touch Update"));
 }
 
@@ -358,14 +375,25 @@ void Zenith_Core::Zenith_MainLoop()
 	if (!AcquireSwapchainOrSkip())
 	{
 		// Resize-skip: end-of-frame cleanup ran inside the helper; the frame index
-		// is deliberately NOT advanced (see AcquireSwapchainOrSkip).
+		// is deliberately NOT advanced (see AcquireSwapchainOrSkip). Input is NOT
+		// drained either — the FIFO persists to the next real frame.
 		return;
 	}
+
+	DrainInputAndTouch();
 
 	bool bSubmitRenderWork      = true;
 	bool bShouldUpdateGameLogic = true;
 	UpdateEditorAndTuning(bSubmitRenderWork, bShouldUpdateGameLogic);
 	PumpAutomatedTest(bShouldUpdateGameLogic);
+
+	// Frame contract step 7: everything this frame's automated-test Steps
+	// injected becomes ordered transitions on Zenith_Input before any game logic
+	// runs, so simulated and real input reach the action layer through exactly
+	// one path. Input PULLS from the simulator (rather than the simulator
+	// pushing) so the test harness never reaches the engine singleton. No-op
+	// while the simulator is disabled.
+	g_xEngine.Input().ApplySimulatorInjection();
 
 	UpdateGameLogic(bShouldUpdateGameLogic);
 	SubmitRenderWork(bSubmitRenderWork);
