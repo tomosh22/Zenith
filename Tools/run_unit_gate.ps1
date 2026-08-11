@@ -298,7 +298,23 @@ param(
     # (canvas ActivateFocused is the sole UI_CONFIRM owner).
     # Observed 2026-08-11 on a Null_ Combat build
     # (1573 ran / 1572 passed / 0 failed / 1 skipped).
-    [int]$Baseline = 1573,
+    # 1573 -> 1586: +13 input-program WP3a units — the on-screen virtual
+    # controls. 12 in the new Zenith/UI/Zenith_UIVirtualControls.Tests.inl
+    # (hosted by Zenith_UIVirtualStick.cpp): stick deadzone fraction + clamp,
+    # FLOATING recentre at the down position, density-scaled min touch target,
+    # same-frame virtual tap fires both edges, a skipped render frame cannot
+    # latch a virtual control (input logic lives in step 10d, not the visual
+    # pass), retarget-while-held disarms until a fresh DOWN (old action gets a
+    # release, the claim is kept), hidden/mask-change zeroes the publish,
+    # first touch in a keyboard profile is claimed the same frame, standard
+    # button DOWN and stick DOWN each suppress TOUCH_PRIMARY, a claimed
+    # B3-projection click suppresses a gameplay MOUSE_BUTTON action, and the
+    # two-widget transient-scene serialization round trip (UIElementType
+    # APPENDED: VirtualStick, VirtualButton). +1 in
+    # Zenith_InputActions.Tests.inl (VIRTUAL rows are TOUCH-scheme-masked).
+    # Observed 2026-08-11 on a Null_ Combat build
+    # (1586 ran / 1585 passed / 0 failed / 1 skipped).
+    [int]$Baseline = 1586,
     [int]$TimeoutSec = 180,
     [string]$LogPath = ""
 )

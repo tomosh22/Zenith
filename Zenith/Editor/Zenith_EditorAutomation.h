@@ -82,7 +82,7 @@ enum class Zenith_EditorActionType
 	SET_SUN_TIME_OF_DAY,
 
 	// UI element creation and field edits. The whole UI range, from
-	// CREATE_UI_TEXT through SET_UI_SCROLL_VIEW_CONTENT_SIZE below, must stay
+	// CREATE_UI_TEXT through SET_UI_VIRTUAL_BUTTON_HIT_SLOP below, must stay
 	// CONTIGUOUS (ExecuteAction routes the range to ExecuteUIAction).
 	CREATE_UI_TEXT,
 	CREATE_UI_BUTTON,
@@ -161,7 +161,21 @@ enum class Zenith_EditorActionType
 
 	// UI ScrollView
 	CREATE_UI_SCROLL_VIEW,
-	SET_UI_SCROLL_VIEW_CONTENT_SIZE,	// END of the contiguous UI range (see CREATE_UI_TEXT)
+	SET_UI_SCROLL_VIEW_CONTENT_SIZE,
+
+	// UI on-screen controls (B9). A NEW UI ACTION GOES HERE, at the END of the
+	// block: the router compares against the block's FIRST and LAST member, so
+	// appending is free while inserting anywhere else silently routes the new
+	// action into a neighbouring executor's default: assert.
+	CREATE_UI_VIRTUAL_STICK,
+	SET_UI_VIRTUAL_STICK_ACTION,
+	SET_UI_VIRTUAL_STICK_MODE,
+	SET_UI_VIRTUAL_STICK_RADIUS,
+	SET_UI_VIRTUAL_STICK_DEADZONE,
+	SET_UI_VIRTUAL_STICK_ACTIVATION_SLOP,
+	CREATE_UI_VIRTUAL_BUTTON,
+	SET_UI_VIRTUAL_BUTTON_ACTION,
+	SET_UI_VIRTUAL_BUTTON_HIT_SLOP,	// END of the contiguous UI range (see CREATE_UI_TEXT)
 
 	// Behaviour Graph (via Zenith_Editor::AttachGraphToSelected)
 	ATTACH_GRAPH,
@@ -523,6 +537,27 @@ void AddStep_SetUINavigation(const char* szElement, const char* szUp, const char
 	//--------------------------------------------------------------------------
 void AddStep_CreateUIScrollView(const char* szName);
 void AddStep_SetUIScrollViewContentSize(const char* szElement, float fW, float fH);
+
+	//--------------------------------------------------------------------------
+	// UI On-Screen Control Step Helpers (B9)
+	//--------------------------------------------------------------------------
+	// The action NAME is what a control targets; the named action's own VIRTUAL
+	// binding row decides which source id it publishes to, so a rebind stays a
+	// binding-table edit. Radius / deadzone / slop are LOGICAL pixels and
+	// fractions — the display scale is applied at use time, never at authoring
+	// time, or the authored scene would bake one panel's density into itself.
+void AddStep_CreateUIVirtualStick(const char* szName);
+void AddStep_SetUIVirtualStickAction(const char* szElement, const char* szActionName);
+	// iMode: 0 = FIXED (base pinned to the rect centre), 1 = FLOATING (base
+	// recentres at the down position).
+void AddStep_SetUIVirtualStickMode(const char* szElement, int iMode);
+void AddStep_SetUIVirtualStickRadius(const char* szElement, float fLogicalPx);
+void AddStep_SetUIVirtualStickDeadzone(const char* szElement, float fFraction);
+void AddStep_SetUIVirtualStickActivationSlop(const char* szElement, float fLogicalPx);
+
+void AddStep_CreateUIVirtualButton(const char* szName);
+void AddStep_SetUIVirtualButtonAction(const char* szElement, const char* szActionName);
+void AddStep_SetUIVirtualButtonHitSlop(const char* szElement, float fLogicalPx);
 
 	//--------------------------------------------------------------------------
 	// UI Button Step Helpers

@@ -8,6 +8,7 @@
 #include <string>
 
 class Zenith_DataStream;
+class Zenith_InputActions;
 
 /**
  * Zenith_UIElement - Base class for all UI elements
@@ -26,7 +27,12 @@ class Zenith_DataStream;
 
 namespace Zenith_UI {
 
-// UI Element types for serialization
+// UI Element types for serialization.
+//
+// APPEND ONLY. The value IS the tag written into every .zscen / .zprfb that
+// carries a canvas, so inserting one renumbers every element already on disk and
+// deserializes a Button as a Toggle. New types go at the END, immediately before
+// COUNT, forever.
 enum class UIElementType : uint32_t
 {
     Base = 0,
@@ -39,6 +45,8 @@ enum class UIElementType : uint32_t
     Overlay,
     ScrollView,
     GridLayoutGroup,
+    VirtualStick,      // B9 on-screen thumbstick (WP3a)
+    VirtualButton,     // B9 on-screen action button (WP3a)
     COUNT
 };
 
@@ -255,6 +263,25 @@ public:
     // the very coupling this phase exists to break. Default: nothing to capture.
     virtual void UpdatePointerInput(Zenith_Pointers& xPointers, float fDt) { (void)xPointers; (void)fDt; }
 
+    // Frame contract step 10d: the VIRTUAL-producer pass, run by the canvas
+    // AFTER the 10c capture walk above and BEFORE the action layer's gameplay
+    // close (10e). The on-screen controls (B9) claim and publish here.
+    //
+    // It is a separate pass, not an extra argument on 10c, because a virtual
+    // producer needs the ACTION layer as well as the pointer table: it publishes
+    // into the binding table, and whether it exists at all this frame depends on
+    // the ACTIVE PROFILE MASK. Running after 10c is what makes a standard control
+    // win a contested pointer; running before 10e is what gets the transitions it
+    // appends replayed in the frame they happened in.
+    //
+    // Both layers are passed IN. No widget reaches for the engine singleton — the
+    // UI layer's g_xEngine budget is ratcheted, and a unit drives this against
+    // LOCAL instances of both. Default: nothing to publish.
+    virtual void UpdateVirtualInput(Zenith_InputActions& xActions, Zenith_Pointers& xPointers, float fDt)
+    {
+        (void)xActions; (void)xPointers; (void)fDt;
+    }
+
     // True between the canvas marking this element for destruction during an
     // input pass and the pass flushing it. The walk skips such elements: the
     // delete is deferred to the end of the pass so a snapshot cannot dangle,
@@ -282,6 +309,28 @@ public:
     // AABB test in this element's own canvas space, taking a RAW surface
     // position (it applies TransformSurfacePosition itself).
     bool ContainsSurfacePosition(const Zenith_Maths::Vector2& xSurfacePos) const;
+
+    // The same test against an ARBITRARY canvas-space rect. The on-screen
+    // controls (B9) hit-test an INFLATED touch target rather than their authored
+    // bounds, and that target must go through the identical surface->canvas remap
+    // or a control played inside the editor viewport is untouchable.
+    bool ContainsSurfacePositionInRect(const Zenith_Maths::Vector2& xSurfacePos,
+        const Zenith_Maths::Vector4& xRect) const;
+
+    // The B9 minimum touch target, in LOGICAL pixels. Anything smaller is a
+    // control the player's thumb misses.
+    static constexpr float fMIN_TOUCH_TARGET_LOGICAL_PX = 57.0f;
+
+    // The B9 touch-geometry rule in ONE place: an authored rect inflated by a
+    // DENSITY-SCALED slop, then grown about its own CENTRE until it is at least
+    // the minimum touch target on both axes.
+    //
+    // BOTH terms scale. A 57-logical-pixel target is 171 device pixels on a 3x
+    // panel and 57 on a 1x one, and the pointer table hands out RAW SURFACE
+    // pixels — so a rule expressed in unscaled pixels is a rule that means a
+    // different physical size on every device it ships to.
+    static Zenith_Maths::Vector4 ResolveTouchTargetRect(const Zenith_Maths::Vector4& xBounds,
+        float fSlopLogicalPx, float fDisplayScale);
 
 protected:
     void MarkTransformDirty();

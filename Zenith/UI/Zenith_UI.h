@@ -7,6 +7,7 @@
  *   - Zenith_UICanvas: root container that owns all elements
  *   - Zenith_UIElement: base class for all elements
  *   - Zenith_UIText / Zenith_UIRect / Zenith_UIImage / Zenith_UIButton: widgets
+ *   - Zenith_UIVirtualStick / Zenith_UIVirtualButton: the B9 on-screen controls
  *
  * Coordinate system: origin (0,0) at top-left, +X right, +Y down, units = pixels.
  * Anchor/pivot are normalized 0-1. See UI/CLAUDE.md for a worked example.
@@ -22,3 +23,5 @@
 #include "UI/Zenith_UIToggle.h"
 #include "UI/Zenith_UIOverlay.h"
 #include "UI/Zenith_UIScrollView.h"
+#include "UI/Zenith_UIVirtualStick.h"
+#include "UI/Zenith_UIVirtualButton.h"

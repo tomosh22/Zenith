@@ -76,6 +76,22 @@ public:
     // be invalidated by a click callback.
     void UpdatePointerInput(Zenith_Pointers& xPointers, float fDt);
 
+    // Frame contract step 10d: the VIRTUAL-producer walk (B9's on-screen
+    // controls), driven by Zenith_UISystem between the 10c capture walk above
+    // and the action layer's gameplay close (10e). Controls claim and publish
+    // here, so a standard widget wins a contested pointer and the transitions a
+    // control appends are replayed in the frame they happened in.
+    //
+    // Unlike 10c, this walk does NOT skip hidden subtrees. A control hidden — or
+    // masked out of the active profile — MID-GESTURE still owes its action a
+    // release transition and its axis a zero, and an element the walk never
+    // visits cannot publish either: the action would stay held forever with the
+    // last axis frozen into it. Everything that is not an on-screen control has
+    // a no-op UpdateVirtualInput, so the extra visits cost one virtual call
+    // each, and every control gates its OWN arming on visibility, so being
+    // visited can never make a hidden one claim.
+    void UpdateVirtualControls(Zenith_InputActions& xActions, Zenith_Pointers& xPointers, float fDt);
+
     // Frame contract step 10b's consumer: focus movement + activation, driven
     // ENTIRELY by the five engine-reserved UI actions (UI_NAV_UP/DOWN/LEFT/
     // RIGHT + UI_CONFIRM). Each merges its arrow key and its d-pad direction
@@ -174,6 +190,9 @@ private:
 
     // Pre-order snapshot of the VISIBLE subtree, matching the update walk.
     void CollectPointerInputElements(Zenith_UIElement* pxElement, Zenith_UIElement** apxOut,
+        uint32_t& uCount, uint32_t uMax) const;
+    // The same pre-order, VISIBILITY-BLIND — see UpdateVirtualControls.
+    void CollectVirtualControlElements(Zenith_UIElement* pxElement, Zenith_UIElement** apxOut,
         uint32_t& uCount, uint32_t uMax) const;
     // Flush what the pass deferred: queued creations first, then the deletions.
     void FlushDeferredMutations();

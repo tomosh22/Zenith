@@ -42,6 +42,9 @@ public:
 	//            — BEFORE any widget has taken a claim, which is what makes UI
 	//            navigation claim-independent.
 	//   10c:     the standard-control capture walk (claims are taken here).
+	//   10d:     the VIRTUAL producers — B9's on-screen controls claim and
+	//            publish, after 10c so a standard widget wins a contested
+	//            pointer and before 10e so their transitions replay this frame.
 	//   10e:     close every remaining action, with pointer-sourced bindings
 	//            suppressed on any pointer a widget just claimed.
 	//

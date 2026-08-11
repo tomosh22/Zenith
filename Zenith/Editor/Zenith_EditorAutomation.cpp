@@ -616,6 +616,19 @@ void Zenith_EditorAutomation::AddStep_SetUINavigation(const char* szElement, con
 void Zenith_EditorAutomation::AddStep_CreateUIScrollView         (const char* szName)                                            { Push(Zenith_EditorAutomation::m_axActions, ActionType::CREATE_UI_SCROLL_VIEW,             szName); }
 void Zenith_EditorAutomation::AddStep_SetUIScrollViewContentSize (const char* szElement, float fW, float fH)                    { Push(Zenith_EditorAutomation::m_axActions, ActionType::SET_UI_SCROLL_VIEW_CONTENT_SIZE,   szElement, fW, fH); }
 
+// -- UI on-screen controls (B9) --
+
+void Zenith_EditorAutomation::AddStep_CreateUIVirtualStick           (const char* szName)                                     { Push(Zenith_EditorAutomation::m_axActions, ActionType::CREATE_UI_VIRTUAL_STICK,              szName); }
+void Zenith_EditorAutomation::AddStep_SetUIVirtualStickAction        (const char* szElement, const char* szActionName)        { Push(Zenith_EditorAutomation::m_axActions, ActionType::SET_UI_VIRTUAL_STICK_ACTION,          szElement, szActionName); }
+void Zenith_EditorAutomation::AddStep_SetUIVirtualStickMode          (const char* szElement, int iMode)                       { Push(Zenith_EditorAutomation::m_axActions, ActionType::SET_UI_VIRTUAL_STICK_MODE,            szElement, iMode); }
+void Zenith_EditorAutomation::AddStep_SetUIVirtualStickRadius        (const char* szElement, float fLogicalPx)                { Push(Zenith_EditorAutomation::m_axActions, ActionType::SET_UI_VIRTUAL_STICK_RADIUS,          szElement, fLogicalPx); }
+void Zenith_EditorAutomation::AddStep_SetUIVirtualStickDeadzone      (const char* szElement, float fFraction)                 { Push(Zenith_EditorAutomation::m_axActions, ActionType::SET_UI_VIRTUAL_STICK_DEADZONE,        szElement, fFraction); }
+void Zenith_EditorAutomation::AddStep_SetUIVirtualStickActivationSlop(const char* szElement, float fLogicalPx)                { Push(Zenith_EditorAutomation::m_axActions, ActionType::SET_UI_VIRTUAL_STICK_ACTIVATION_SLOP, szElement, fLogicalPx); }
+
+void Zenith_EditorAutomation::AddStep_CreateUIVirtualButton          (const char* szName)                                     { Push(Zenith_EditorAutomation::m_axActions, ActionType::CREATE_UI_VIRTUAL_BUTTON,             szName); }
+void Zenith_EditorAutomation::AddStep_SetUIVirtualButtonAction       (const char* szElement, const char* szActionName)        { Push(Zenith_EditorAutomation::m_axActions, ActionType::SET_UI_VIRTUAL_BUTTON_ACTION,         szElement, szActionName); }
+void Zenith_EditorAutomation::AddStep_SetUIVirtualButtonHitSlop      (const char* szElement, float fLogicalPx)                { Push(Zenith_EditorAutomation::m_axActions, ActionType::SET_UI_VIRTUAL_BUTTON_HIT_SLOP,       szElement, fLogicalPx); }
+
 // -- UI Button --
 
 void Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor (const char* szElement, float fR, float fG, float fB, float fA)    { Push(Zenith_EditorAutomation::m_axActions, ActionType::SET_UI_BUTTON_NORMAL_COLOR,  szElement, fR, fG, fB, fA); }
@@ -1420,7 +1433,61 @@ static void ExecuteGrassTypeAction(const Zenith_EditorAction& xAction, Zenith_Te
 		break;
 	}
 }
-// All UI authoring actions (CREATE_UI_TEXT .. SET_UI_SCROLL_VIEW_CONTENT_SIZE,
+// The selected entity's canvas, or null with an assert naming the step.
+//
+// ONE engine-singleton reach for every case that uses it, because this file's
+// singleton count is a RATCHET: a block of nine new cases each spelling out the
+// selected-entity lookup for itself raises the count by nine and fails the
+// gate, and the answer to that is always to hoist, never to bump the budget.
+static Zenith_UIComponent* GetSelectedUICanvasComponent(const char* szStepName)
+{
+	Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
+	Zenith_Assert(pxEntity, "No entity selected for %s", szStepName);
+	if (pxEntity == nullptr)
+	{
+		return nullptr;
+	}
+	Zenith_Assert(pxEntity->HasComponent<Zenith_UIComponent>(),
+		"Selected entity has no UIComponent for %s", szStepName);
+	if (!pxEntity->HasComponent<Zenith_UIComponent>())
+	{
+		return nullptr;
+	}
+	return &pxEntity->GetComponent<Zenith_UIComponent>();
+}
+
+// The two on-screen-control lookups, once each rather than once per setter:
+// m_szArg1 is always the element name for these steps, so the whole body of a
+// field-edit case is a resolve, a null check and the setter.
+static Zenith_UI::Zenith_UIVirtualStick* FindSelectedVirtualStick(const Zenith_EditorAction& xAction,
+	const char* szStepName)
+{
+	Zenith_UIComponent* pxUI = GetSelectedUICanvasComponent(szStepName);
+	if (pxUI == nullptr)
+	{
+		return nullptr;
+	}
+	Zenith_UI::Zenith_UIVirtualStick* pxStick =
+		pxUI->FindElement<Zenith_UI::Zenith_UIVirtualStick>(xAction.m_szArg1.c_str());
+	Zenith_Assert(pxStick, "UI virtual stick not found: %s (%s)", xAction.m_szArg1.c_str(), szStepName);
+	return pxStick;
+}
+
+static Zenith_UI::Zenith_UIVirtualButton* FindSelectedVirtualButton(const Zenith_EditorAction& xAction,
+	const char* szStepName)
+{
+	Zenith_UIComponent* pxUI = GetSelectedUICanvasComponent(szStepName);
+	if (pxUI == nullptr)
+	{
+		return nullptr;
+	}
+	Zenith_UI::Zenith_UIVirtualButton* pxButton =
+		pxUI->FindElement<Zenith_UI::Zenith_UIVirtualButton>(xAction.m_szArg1.c_str());
+	Zenith_Assert(pxButton, "UI virtual button not found: %s (%s)", xAction.m_szArg1.c_str(), szStepName);
+	return pxButton;
+}
+
+// All UI authoring actions (CREATE_UI_TEXT .. SET_UI_VIRTUAL_BUTTON_HIT_SLOP,
 // kept CONTIGUOUS in the enum) live in their own executor, mirroring the
 // terrain-editor split above - ExecuteAction routes the whole range here.
 static void ExecuteUIAction(const Zenith_EditorAction& xAction)
@@ -1751,21 +1818,95 @@ static void ExecuteUIAction(const Zenith_EditorAction& xAction)
 	//--------------------------------------------------------------------------
 	case Zenith_EditorActionType::CREATE_UI_SCROLL_VIEW:
 	{
-		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
-		Zenith_Assert(pxEntity, "No entity selected for CREATE_UI_SCROLL_VIEW");
-		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
-		xUI.CreateScrollView(xAction.m_szArg1.c_str());
+		Zenith_UIComponent* pxUI = GetSelectedUICanvasComponent("CREATE_UI_SCROLL_VIEW");
+		if (pxUI == nullptr) break;
+		pxUI->CreateScrollView(xAction.m_szArg1.c_str());
 		break;
 	}
 
 	case Zenith_EditorActionType::SET_UI_SCROLL_VIEW_CONTENT_SIZE:
 	{
-		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
-		Zenith_Assert(pxEntity, "No entity selected for SET_UI_SCROLL_VIEW_CONTENT_SIZE");
-		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
-		Zenith_UI::Zenith_UIScrollView* pxScrollView = xUI.FindElement<Zenith_UI::Zenith_UIScrollView>(xAction.m_szArg1.c_str());
+		Zenith_UIComponent* pxUI = GetSelectedUICanvasComponent("SET_UI_SCROLL_VIEW_CONTENT_SIZE");
+		if (pxUI == nullptr) break;
+		Zenith_UI::Zenith_UIScrollView* pxScrollView = pxUI->FindElement<Zenith_UI::Zenith_UIScrollView>(xAction.m_szArg1.c_str());
 		Zenith_Assert(pxScrollView, "UI scroll view not found: %s", xAction.m_szArg1.c_str());
+		if (pxScrollView == nullptr) break;
 		pxScrollView->SetContentSize(xAction.m_afArgs[0], xAction.m_afArgs[1]);
+		break;
+	}
+
+	//--------------------------------------------------------------------------
+	// UI on-screen controls (B9)
+	//--------------------------------------------------------------------------
+	case Zenith_EditorActionType::CREATE_UI_VIRTUAL_STICK:
+	{
+		Zenith_UIComponent* pxUI = GetSelectedUICanvasComponent("CREATE_UI_VIRTUAL_STICK");
+		if (pxUI == nullptr) break;
+		pxUI->CreateVirtualStick(xAction.m_szArg1.c_str());
+		break;
+	}
+
+	case Zenith_EditorActionType::SET_UI_VIRTUAL_STICK_ACTION:
+	{
+		Zenith_UI::Zenith_UIVirtualStick* pxStick = FindSelectedVirtualStick(xAction, "SET_UI_VIRTUAL_STICK_ACTION");
+		if (pxStick == nullptr) break;
+		pxStick->SetAction(xAction.m_szArg2.c_str());
+		break;
+	}
+
+	case Zenith_EditorActionType::SET_UI_VIRTUAL_STICK_MODE:
+	{
+		Zenith_UI::Zenith_UIVirtualStick* pxStick = FindSelectedVirtualStick(xAction, "SET_UI_VIRTUAL_STICK_MODE");
+		if (pxStick == nullptr) break;
+		pxStick->SetMode(static_cast<Zenith_UI::Zenith_UIVirtualStick::StickMode>(xAction.m_aiArgs[0]));
+		break;
+	}
+
+	case Zenith_EditorActionType::SET_UI_VIRTUAL_STICK_RADIUS:
+	{
+		Zenith_UI::Zenith_UIVirtualStick* pxStick = FindSelectedVirtualStick(xAction, "SET_UI_VIRTUAL_STICK_RADIUS");
+		if (pxStick == nullptr) break;
+		pxStick->SetRadius(xAction.m_afArgs[0]);
+		break;
+	}
+
+	case Zenith_EditorActionType::SET_UI_VIRTUAL_STICK_DEADZONE:
+	{
+		Zenith_UI::Zenith_UIVirtualStick* pxStick = FindSelectedVirtualStick(xAction, "SET_UI_VIRTUAL_STICK_DEADZONE");
+		if (pxStick == nullptr) break;
+		pxStick->SetDeadzoneFraction(xAction.m_afArgs[0]);
+		break;
+	}
+
+	case Zenith_EditorActionType::SET_UI_VIRTUAL_STICK_ACTIVATION_SLOP:
+	{
+		Zenith_UI::Zenith_UIVirtualStick* pxStick = FindSelectedVirtualStick(xAction, "SET_UI_VIRTUAL_STICK_ACTIVATION_SLOP");
+		if (pxStick == nullptr) break;
+		pxStick->SetActivationSlop(xAction.m_afArgs[0]);
+		break;
+	}
+
+	case Zenith_EditorActionType::CREATE_UI_VIRTUAL_BUTTON:
+	{
+		Zenith_UIComponent* pxUI = GetSelectedUICanvasComponent("CREATE_UI_VIRTUAL_BUTTON");
+		if (pxUI == nullptr) break;
+		pxUI->CreateVirtualButton(xAction.m_szArg1.c_str());
+		break;
+	}
+
+	case Zenith_EditorActionType::SET_UI_VIRTUAL_BUTTON_ACTION:
+	{
+		Zenith_UI::Zenith_UIVirtualButton* pxButton = FindSelectedVirtualButton(xAction, "SET_UI_VIRTUAL_BUTTON_ACTION");
+		if (pxButton == nullptr) break;
+		pxButton->SetAction(xAction.m_szArg2.c_str());
+		break;
+	}
+
+	case Zenith_EditorActionType::SET_UI_VIRTUAL_BUTTON_HIT_SLOP:
+	{
+		Zenith_UI::Zenith_UIVirtualButton* pxButton = FindSelectedVirtualButton(xAction, "SET_UI_VIRTUAL_BUTTON_HIT_SLOP");
+		if (pxButton == nullptr) break;
+		pxButton->SetHitSlop(xAction.m_afArgs[0]);
 		break;
 	}
 
@@ -2588,7 +2729,7 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 
 	// UI authoring actions likewise have their own executor (see below).
 	if (xAction.m_eType >= Zenith_EditorActionType::CREATE_UI_TEXT &&
-		xAction.m_eType <= Zenith_EditorActionType::SET_UI_SCROLL_VIEW_CONTENT_SIZE)
+		xAction.m_eType <= Zenith_EditorActionType::SET_UI_VIRTUAL_BUTTON_HIT_SLOP)
 	{
 		ExecuteUIAction(xAction);
 		return;

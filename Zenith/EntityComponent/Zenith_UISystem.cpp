@@ -49,9 +49,25 @@ void Zenith_UISystem::UpdateInput(Zenith_InputActions& xActions, Zenith_Pointers
 		}
 	}
 
+	// 10d: the VIRTUAL producers. The B9 on-screen controls claim and publish
+	// here — AFTER the standard-control walk above, so a real widget wins a
+	// contested pointer, and BEFORE the close below, so the virtual transitions
+	// they append are replayed in the frame they happened in.
+	//
+	// This is input logic, so it lives in the input phase and nowhere else: the
+	// visual pass is skipped on any frame that submits no render work, and a
+	// thumb on a virtual stick has to be answered on those frames too.
+	for (Zenith_Vector<Zenith_UIComponent*>::Iterator xIt(xUIComponents); !xIt.Done(); xIt.Next())
+	{
+		Zenith_UIComponent* pxComponent = xIt.GetData();
+		if (pxComponent->IsVisible())
+		{
+			pxComponent->GetCanvas().UpdateVirtualControls(xActions, xPointers, fDt);
+		}
+	}
+
 	// 10e: everything else closes AFTER the capture walk, so a pointer-sourced
-	// binding sees the final claim state. (The WP3a virtual-control publish step
-	// belongs between the walk above and this call.)
+	// binding sees the final claim state.
 	xActions.FinalizeGameplay();
 }
 

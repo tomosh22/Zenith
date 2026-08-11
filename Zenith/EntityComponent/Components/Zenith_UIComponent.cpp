@@ -93,6 +93,20 @@ Zenith_UI::Zenith_UIScrollView* Zenith_UIComponent::CreateScrollView(const std::
     return pxScrollView;
 }
 
+Zenith_UI::Zenith_UIVirtualStick* Zenith_UIComponent::CreateVirtualStick(const std::string& strName)
+{
+    Zenith_UI::Zenith_UIVirtualStick* pxStick = new Zenith_UI::Zenith_UIVirtualStick(strName);
+    m_xCanvas.AddElement(pxStick);
+    return pxStick;
+}
+
+Zenith_UI::Zenith_UIVirtualButton* Zenith_UIComponent::CreateVirtualButton(const std::string& strName)
+{
+    Zenith_UI::Zenith_UIVirtualButton* pxButton = new Zenith_UI::Zenith_UIVirtualButton(strName);
+    m_xCanvas.AddElement(pxButton);
+    return pxButton;
+}
+
 Zenith_UI::Zenith_UIElement* Zenith_UIComponent::CreateElement(const std::string& strName)
 {
     Zenith_UI::Zenith_UIElement* pxElement = new Zenith_UI::Zenith_UIElement(strName);
@@ -248,6 +262,26 @@ void Zenith_UIComponent::RenderPropertiesPanel()
             m_pxSelectedElement = pxToggle;
         }
 
+        // The B9 on-screen controls. They keep their constructed size, which is
+        // already at or above the minimum touch target — sizing them down here
+        // would author a control the player's thumb misses.
+        ImGui::SameLine();
+
+        if (ImGui::Button("+ V.Stick"))
+        {
+            static int s_iVirtualStickCount = 0;
+            std::string strName = "VirtualStick_" + std::to_string(s_iVirtualStickCount++);
+            m_pxSelectedElement = CreateVirtualStick(strName);
+        }
+        ImGui::SameLine();
+
+        if (ImGui::Button("+ V.Button"))
+        {
+            static int s_iVirtualButtonCount = 0;
+            std::string strName = "VirtualButton_" + std::to_string(s_iVirtualButtonCount++);
+            m_pxSelectedElement = CreateVirtualButton(strName);
+        }
+
         ImGui::Separator();
 
         // Element hierarchy
@@ -335,6 +369,16 @@ void Zenith_UIComponent::RenderElementTree(Zenith_UI::Zenith_UIElement* pxElemen
     case Zenith_UI::UIElementType::Button:
         szTypeChar = "B";
         xTypeColor = ImVec4(1.0f, 0.8f, 0.3f, 1.0f);
+        break;
+    // The two on-screen controls share a colour: they are one family, and a
+    // hierarchy full of them wants to read as one band.
+    case Zenith_UI::UIElementType::VirtualStick:
+        szTypeChar = "VS";
+        xTypeColor = ImVec4(0.4f, 0.9f, 0.9f, 1.0f);
+        break;
+    case Zenith_UI::UIElementType::VirtualButton:
+        szTypeChar = "VB";
+        xTypeColor = ImVec4(0.4f, 0.9f, 0.9f, 1.0f);
         break;
     default:
         break;

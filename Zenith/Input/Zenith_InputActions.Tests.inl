@@ -950,6 +950,50 @@ ZENITH_TEST(InputActions, VirtualBindingReplaysAtGameplayClose)
 	ZENITH_ASSERT_TRUE(xRig.m_xActions.WasPressedThisFrame(uTEST_ACTION_A), "and the re-press in between");
 }
 
+ZENITH_TEST(InputActions, VirtualSourceIsTouchSchemeMasked)
+{
+	Zenith_ActionTestRig xRig;
+	xRig.RegisterSplitProfiles();
+	// A THIRD profile owning TOUCH, so the mask can genuinely gain and lose it.
+	xRig.m_xActions.RegisterProfile(uTEST_PROFILE_ALL, "TestTouchOnly", uINPUT_SCHEME_MASK_TOUCH);
+	xRig.m_xActions.RegisterAction(uTEST_ACTION_A, "VirtualFire", INPUT_ACTION_BUTTON);
+	xRig.m_xActions.RegisterBinding(uTEST_ACTION_A, Zenith_InputBinding::Virtual(3));
+
+	// A VIRTUAL row belongs to the TOUCH column (B8): the on-screen controls that
+	// publish it are a touch-scheme concept, so a profile without TOUCH is a
+	// profile whose on-screen controls are not on screen.
+	xRig.m_xActions.SetProfileOverride(uTEST_PROFILE_KEYBOARD);
+
+	xRig.BeginFrame();
+	xRig.m_xActions.UpdateProfile();
+	xRig.m_xActions.FinalizeReservedUI();
+	xRig.m_xActions.PublishVirtualButton(3, true);
+	xRig.m_xActions.FinalizeGameplay();
+	ZENITH_ASSERT_FALSE(xRig.m_xActions.IsHeld(uTEST_ACTION_A),
+		"a virtual publish does not resolve under a mask without TOUCH");
+
+	// Gaining TOUCH while the source is ALREADY published is a mask change like
+	// any other: held tracks reality, and no press edge is invented for it.
+	xRig.BeginFrame();
+	xRig.m_xActions.UpdateProfile();
+	xRig.m_xActions.SetProfileOverride(uTEST_PROFILE_ALL);
+	xRig.m_xActions.FinalizeReservedUI();
+	xRig.m_xActions.FinalizeGameplay();
+	ZENITH_ASSERT_TRUE(xRig.m_xActions.IsHeld(uTEST_ACTION_A), "gaining TOUCH resolves the still-held source");
+	ZENITH_ASSERT_FALSE(xRig.m_xActions.WasPressedThisFrame(uTEST_ACTION_A), "with no invented press edge");
+
+	// ...which is exactly why an on-screen control must publish a FALSE when it
+	// is masked out, rather than merely going quiet: a source left standing at
+	// true would resurrect the action the moment the mask came back.
+	xRig.BeginFrame();
+	xRig.m_xActions.UpdateProfile();
+	xRig.m_xActions.FinalizeReservedUI();
+	xRig.m_xActions.PublishVirtualButton(3, false);
+	xRig.m_xActions.FinalizeGameplay();
+	ZENITH_ASSERT_FALSE(xRig.m_xActions.IsHeld(uTEST_ACTION_A), "the published release lands");
+	ZENITH_ASSERT_TRUE(xRig.m_xActions.WasReleasedThisFrame(uTEST_ACTION_A), "with a release edge");
+}
+
 ZENITH_TEST(InputActions, GamepadBindingViaSimulator)
 {
 	Zenith_ActionTestSimScope xSimScope;

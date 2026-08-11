@@ -12,6 +12,8 @@
 #include "UI/Zenith_UIOverlay.h"
 #include "UI/Zenith_UIScrollView.h"
 #include "UI/Zenith_UIGridLayoutGroup.h"
+#include "UI/Zenith_UIVirtualStick.h"
+#include "UI/Zenith_UIVirtualButton.h"
 #include "Input/Zenith_Input.h"
 #ifdef ZENITH_INPUT_SIMULATOR
 #include "Input/Zenith_InputSimulator.h"
@@ -98,6 +100,8 @@ const char* Zenith_UIElement::GetTypeName(UIElementType eType)
     case UIElementType::Overlay: return "Overlay";
     case UIElementType::ScrollView: return "ScrollView";
     case UIElementType::GridLayoutGroup: return "GridLayoutGroup";
+    case UIElementType::VirtualStick: return "VirtualStick";
+    case UIElementType::VirtualButton: return "VirtualButton";
     default: return "Unknown";
     }
 }
@@ -116,6 +120,8 @@ Zenith_UIElement* Zenith_UIElement::CreateFromType(UIElementType eType, const st
     case UIElementType::Overlay: return new Zenith_UIOverlay(strName);
     case UIElementType::ScrollView: return new Zenith_UIScrollView(strName);
     case UIElementType::GridLayoutGroup: return new Zenith_UIGridLayoutGroup(strName);
+    case UIElementType::VirtualStick: return new Zenith_UIVirtualStick(strName);
+    case UIElementType::VirtualButton: return new Zenith_UIVirtualButton(strName);
     default: return nullptr;
     }
 }
@@ -656,12 +662,53 @@ void Zenith_UIElement::TransformSurfacePosition(float& fX, float& fY) const
 
 bool Zenith_UIElement::ContainsSurfacePosition(const Zenith_Maths::Vector2& xSurfacePos) const
 {
+    return ContainsSurfacePositionInRect(xSurfacePos, GetScreenBounds());
+}
+
+bool Zenith_UIElement::ContainsSurfacePositionInRect(const Zenith_Maths::Vector2& xSurfacePos,
+    const Zenith_Maths::Vector4& xRect) const
+{
     float fX = xSurfacePos.x;
     float fY = xSurfacePos.y;
     TransformSurfacePosition(fX, fY);
 
-    const Zenith_Maths::Vector4 xBounds = GetScreenBounds();
-    return fX >= xBounds.x && fX <= xBounds.z && fY >= xBounds.y && fY <= xBounds.w;
+    return fX >= xRect.x && fX <= xRect.z && fY >= xRect.y && fY <= xRect.w;
+}
+
+Zenith_Maths::Vector4 Zenith_UIElement::ResolveTouchTargetRect(const Zenith_Maths::Vector4& xBounds,
+    float fSlopLogicalPx, float fDisplayScale)
+{
+    // A zero or negative scale is a table that has not seen a frame yet; 1.0 is
+    // the identity, never 0 (which would collapse every target to a point).
+    const float fScale = fDisplayScale > 0.0f ? fDisplayScale : 1.0f;
+    const float fSlop = (fSlopLogicalPx > 0.0f ? fSlopLogicalPx : 0.0f) * fScale;
+
+    Zenith_Maths::Vector4 xRect = {
+        xBounds.x - fSlop, xBounds.y - fSlop,
+        xBounds.z + fSlop, xBounds.w + fSlop
+    };
+
+    // Grown about the CENTRE, so a control authored flush against a screen edge
+    // keeps its authored position — only its reach changes.
+    const float fMinimum = fMIN_TOUCH_TARGET_LOGICAL_PX * fScale;
+
+    const float fWidth = xRect.z - xRect.x;
+    if (fWidth < fMinimum)
+    {
+        const float fGrow = (fMinimum - fWidth) * 0.5f;
+        xRect.x -= fGrow;
+        xRect.z += fGrow;
+    }
+
+    const float fHeight = xRect.w - xRect.y;
+    if (fHeight < fMinimum)
+    {
+        const float fGrow = (fMinimum - fHeight) * 0.5f;
+        xRect.y -= fGrow;
+        xRect.w += fGrow;
+    }
+
+    return xRect;
 }
 
 } // namespace Zenith_UI

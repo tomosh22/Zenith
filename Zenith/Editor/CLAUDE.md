@@ -467,7 +467,7 @@ what keeps the dispatcher inside the complexity gate:
 | Range | Sub-executor |
 |---|---|
 | `TERRAIN_EDITOR_SET_ASSET_SET` .. `TERRAIN_EDITOR_EXPORT_CHUNKS_RECT` | `ExecuteTerrainEditorAction` (via `TryRouteTerrainEditorAction`) |
-| `CREATE_UI_TEXT` .. `SET_UI_SCROLL_VIEW_CONTENT_SIZE` | `ExecuteUIAction` |
+| `CREATE_UI_TEXT` .. `SET_UI_VIRTUAL_BUTTON_HIT_SLOP` | `ExecuteUIAction` |
 | `MATERIAL_CREATE` .. `MATERIAL_SAVE` | `ExecuteMaterialAction` |
 | `GRASS_TYPES_CREATE` .. `GRASS_TYPES_SAVE` | `ExecuteGrassTypeAction` |
 | `SET_CAMERA_POSITION` .. `SET_MAIN_CAMERA` | `ExecuteCameraAction` |

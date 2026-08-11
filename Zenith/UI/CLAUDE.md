@@ -23,6 +23,9 @@ Screen-space UI framework with a canvas-based element hierarchy. Renders via `Fl
 - `Zenith_UIScrollView.h/cpp` - Scrollable content container with clip-rect support (`UIElementType::ScrollView`)
 - `Zenith_UILayoutGroup.h/cpp` - Layout container with horizontal/vertical arrangement, padding, spacing, child alignment, fit-to-content (`UIElementType::LayoutGroup`)
 - `Zenith_UIGridLayoutGroup.h/cpp` - Grid layout container: fixed column count + fixed cell size, row-major placement of visible children, spacing, padding, fit-to-content auto-size (`UIElementType::GridLayoutGroup`). The grid analogue of `Zenith_UILayoutGroup` (bag/box/dex/party grids).
+- `Zenith_UIVirtualStick.h/cpp` - B9 on-screen thumbstick: FIXED/FLOATING base, radius + deadzone fraction, activation rect, publishes an AXIS2D through a VIRTUAL binding source (`UIElementType::VirtualStick`)
+- `Zenith_UIVirtualButton.h/cpp` - B9 on-screen action button: hit slop, publishes HELD through a VIRTUAL binding source (`UIElementType::VirtualButton`)
+- `Zenith_UIVirtualControls.Tests.inl` - unit tests for both on-screen controls (hosted at the bottom of `Zenith_UIVirtualStick.cpp`)
 - `Zenith_UIStyle.h` - `UIStyle` struct: fill, gradient, border, corner radius, and shadow properties used throughout the UI system
 - `Zenith_UIStyleRenderer.h/cpp` - `RenderStyledRect()` static method rendering styled rects (shadow, border, fill, gradient); used by rect, button, overlay, scrollview, and toggle elements
 - `Zenith_UITween.h` - `TweenEasing`/`TweenProperty` enums and `Zenith_UITween` struct for element animation
@@ -67,6 +70,38 @@ All elements have:
 | `Zenith_UIScrollView` | Viewport that clips children, scrollable via `ScrollDirection` (`VERTICAL`/`HORIZONTAL`/`BOTH`) using the canvas clip-rect stack |
 | `Zenith_UILayoutGroup` | `LayoutDirection` (`Horizontal`/`Vertical`) child arrangement with padding, spacing, `ChildAlignment` (9 values, `UpperLeft`..`LowerRight`), fit-to-content |
 | `Zenith_UIGridLayoutGroup` | Fixed-column, fixed-cell-size grid: row-major placement of visible children, horizontal/vertical spacing, padding, fit-to-content auto-size |
+| `Zenith_UIVirtualStick` | On-screen thumbstick: `StickMode` (`FIXED`/`FLOATING`), radius + deadzone fraction, activation slop, publishes AXIS2D (+y FORWARD) |
+| `Zenith_UIVirtualButton` | On-screen action button: hit slop, publishes HELD; no callback and no focus (that is `Zenith_UIButton`'s job) |
+
+### On-screen controls (B9) — the virtual producers
+
+`Zenith_UIVirtualStick` / `Zenith_UIVirtualButton` are GAMEPLAY controls, not menu
+widgets. They publish into the **action layer** rather than firing callbacks, so a
+game reads `"Move"` / `"Jump"` and never learns which device answered.
+
+- **Input lives in frame step 10d only.** `UpdateVirtualInput(Zenith_InputActions&,
+  Zenith_Pointers&, float)` runs from `Zenith_UICanvas::UpdateVirtualControls`,
+  after the 10c capture walk (so a standard widget wins a contested pointer) and
+  before `FinalizeGameplay` (so the virtual transitions replay in the same frame).
+  `Render()` only draws what 10d decided — a skipped render frame cannot change
+  input state.
+- **The 10d walk is visibility-BLIND** (10c is not). A control hidden or masked out
+  MID-GESTURE still owes its action a release transition and its axis a zero, and an
+  element the walk stopped visiting could not publish either.
+- **A control targets an ACTION NAME**; the named action's own `INPUT_BINDING_VIRTUAL`
+  row supplies the source id it publishes to, so a rebind is a binding-table edit.
+- **`SetAction()` mid-gesture is the retarget case:** the OLD action gets a release,
+  the pointer claim is **KEPT** (the gesture stays consumed), and the control is
+  DISARMED for the new action until a fresh DOWN. Hiding and losing TOUCH from the
+  active profile mask do the same.
+- **Visible iff the ACTIVE profile mask carries TOUCH.** The visual pass has no action
+  layer, so 10d latches the answer for `Render()`.
+- **All geometry is density-scaled** through `Zenith_Pointers::GetDisplayScale()`, via
+  `Zenith_UIElement::ResolveTouchTargetRect` (slop + the 57-logical-px minimum touch
+  target, grown about the rect's centre). Authored values are LOGICAL pixels.
+- Authoring: `Zenith_UIComponent::CreateVirtualStick/CreateVirtualButton`, the UI
+  component panel's `+ V.Stick` / `+ V.Button` buttons, and the
+  `AddStep_CreateUIVirtual*` / `AddStep_SetUIVirtual*` editor-automation verbs.
 
 ### Styling & Animation
 - **`UIStyle`** (`Zenith_UIStyle.h`) bundles fill color, optional bottom gradient color, border (color + thickness), corner radius, and shadow (color/offset/spread). `UIStyle::Lerp` blends two styles for tween targets.

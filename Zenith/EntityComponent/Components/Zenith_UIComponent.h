@@ -61,6 +61,11 @@ public:
     Zenith_UI::Zenith_UIToggle* CreateToggle(const std::string& strName, const std::string& strText = "");
     Zenith_UI::Zenith_UIOverlay* CreateOverlay(const std::string& strName);
     Zenith_UI::Zenith_UIScrollView* CreateScrollView(const std::string& strName);
+    // The B9 on-screen controls. They publish into the action layer at frame
+    // step 10d and are inert until their SetAction names a registered action
+    // that carries a VIRTUAL binding row.
+    Zenith_UI::Zenith_UIVirtualStick* CreateVirtualStick(const std::string& strName);
+    Zenith_UI::Zenith_UIVirtualButton* CreateVirtualButton(const std::string& strName);
     Zenith_UI::Zenith_UIElement* CreateElement(const std::string& strName);
 
     // Add an existing element (canvas takes ownership)

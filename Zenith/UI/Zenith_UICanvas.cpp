@@ -315,6 +315,24 @@ void Zenith_UICanvas::CollectPointerInputElements(Zenith_UIElement* pxElement, Z
     }
 }
 
+void Zenith_UICanvas::CollectVirtualControlElements(Zenith_UIElement* pxElement, Zenith_UIElement** apxOut,
+    uint32_t& uCount, uint32_t uMax) const
+{
+    // Pre-order like the 10c collector, but deliberately blind to visibility:
+    // a control hidden mid-gesture still has a release to publish, and only a
+    // visit can publish it. See Zenith_UICanvas::UpdateVirtualControls.
+    if (!pxElement || uCount >= uMax)
+        return;
+
+    apxOut[uCount++] = pxElement;
+
+    const Zenith_Vector<Zenith_UIElement*>& xChildren = pxElement->GetChildren();
+    for (uint32_t u = 0; u < xChildren.GetSize() && uCount < uMax; u++)
+    {
+        CollectVirtualControlElements(xChildren.Get(u), apxOut, uCount, uMax);
+    }
+}
+
 void Zenith_UICanvas::FlushDeferredMutations()
 {
     for (Zenith_Vector<Zenith_UIElement*>::Iterator xIt(m_xPendingAdds); !xIt.Done(); xIt.Next())
@@ -361,6 +379,36 @@ void Zenith_UICanvas::UpdatePointerInput(Zenith_Pointers& xPointers, float fDt)
             continue;
 
         apxWalk[u]->UpdatePointerInput(xPointers, fDt);
+    }
+    m_bInputPassActive = false;
+
+    FlushDeferredMutations();
+}
+
+void Zenith_UICanvas::UpdateVirtualControls(Zenith_InputActions& xActions, Zenith_Pointers& xPointers, float fDt)
+{
+    // Layout first, exactly as 10c does: a control whose rect moved this frame
+    // must be hit-tested against where it IS, not where it was.
+    UpdateSize();
+
+    static constexpr uint32_t uMAX_INPUT_WALK = 256;
+    Zenith_UIElement* apxWalk[uMAX_INPUT_WALK];
+    uint32_t uCount = 0;
+
+    for (Zenith_Vector<Zenith_UIElement*>::Iterator xIt(m_xRootElements); !xIt.Done(); xIt.Next())
+    {
+        CollectVirtualControlElements(xIt.GetData(), apxWalk, uCount, uMAX_INPUT_WALK);
+    }
+
+    // Same mutation deferral the capture walk uses: a publish can reach game
+    // logic that builds or destroys UI, and the snapshot must survive it.
+    m_bInputPassActive = true;
+    for (uint32_t u = 0; u < uCount; u++)
+    {
+        if (apxWalk[u]->IsPendingDestroy())
+            continue;
+
+        apxWalk[u]->UpdateVirtualInput(xActions, xPointers, fDt);
     }
     m_bInputPassActive = false;
 
