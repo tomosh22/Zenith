@@ -277,7 +277,28 @@ param(
     # by Zenith_Pointers + ReadPointer); no units were lost with them.
     # Observed 2026-08-11 on a Null_ Combat build
     # (1540 ran / 1539 passed / 0 failed / 1 skipped).
-    [int]$Baseline = 1540,
+    # 1540 -> 1573: +33 input-program WP2 units — the action layer
+    # (Zenith/Input/Zenith_InputActions.{h,cpp}). 31 in the new
+    # Zenith_InputActions.Tests.inl on LOCAL instances: the 28 contract-pinned
+    # cases (registration/find-by-name, key-set aggregation, multi-binding
+    # release-while-other-held, second-binding press/pulse semantics, same-frame
+    # tap both edges, Axis2D composite (+y forward, unnormalized diagonals,
+    # opposite-cancel), Axis1D key pair, mask gating, SYSTEM_BACK mask
+    # exemption, auto profile switch on activity, held-stick no-repeat,
+    # sys-nav exclusion, forced override + ClearOverride rebase pair,
+    # mask-change release synthesis + held-without-edge, last-used device finer
+    # than profile, axis-as-button hysteresis, trigger pair signed axis, dpad
+    # Axis2D, TOUCH_PRIMARY claim respect, pad binding via simulator, UI-nav
+    # actions drive focus, UI_CONFIRM single owner, transient reset preserves
+    # registrations, engine-default profiles cleared by first game
+    # registration) + 3 (wheel/delta axes, claimed-pointer suppression of a
+    # MOUSE_BUTTON row, virtual-row replay at the gameplay close). Plus 2 in
+    # Zenith_UIButton.Tests.inl driving a real canvas's focus nav off the
+    # reserved actions. UIButton/UIToggle Enter/Space self-activation DELETED
+    # (canvas ActivateFocused is the sole UI_CONFIRM owner).
+    # Observed 2026-08-11 on a Null_ Combat build
+    # (1573 ran / 1572 passed / 0 failed / 1 skipped).
+    [int]$Baseline = 1573,
     [int]$TimeoutSec = 180,
     [string]$LogPath = ""
 )

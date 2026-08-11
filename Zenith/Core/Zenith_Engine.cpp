@@ -33,6 +33,7 @@
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Zenith_UISystem.h"
 #include "Input/Zenith_Input.h"
+#include "Input/Zenith_InputActions.h"
 #include "Input/Zenith_Pointers.h"
 #include "Flux/Flux_RendererImpl.h"
 #include "Flux/SceneGraph/Flux_RenderSceneSnapshot.h"   // complete type to allocate the by-ptr snapshot in AllocateRenderer
@@ -177,6 +178,7 @@ ZENITH_ENGINE_ACCESSOR_HOTPATH(Zenith_SceneSystem,    Scenes,        m_pxScenes)
 ZENITH_ENGINE_ACCESSOR_HOTPATH(Zenith_UISystem,       UI,            m_pxUISystem)
 ZENITH_ENGINE_ACCESSOR_HOTPATH(Zenith_Input,          Input,         m_pxInput)
 ZENITH_ENGINE_ACCESSOR_HOTPATH(Zenith_Pointers,       Pointers,      m_pxPointers)
+ZENITH_ENGINE_ACCESSOR_HOTPATH(Zenith_InputActions,   Actions,       m_pxInputActions)
 ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_RendererImpl,     FluxRenderer,  m_pxFluxRenderer)
 ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_GraphicsImpl,     FluxGraphics,  m_pxFluxGraphics)
 ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_PlatformAPI,      FluxBackend,   m_pxVulkan)
@@ -274,6 +276,18 @@ void Zenith_Engine::AllocateCoreState()
 	// staged touch stream the drain produces, so it can never be later than it.
 	Zenith_Assert(m_pxPointers == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
 	m_pxPointers = new Zenith_Pointers();
+
+	// The action layer (B4/B5/B8). Both of its sources are injected here, so its
+	// own TU never names this singleton. The engine installs the five RESERVED
+	// UI actions (ids 0-15, the canvas's sole focus-navigation input) and the
+	// platform's default profile, so a game that registers neither still
+	// resolves every binding it declares; the FIRST game RegisterProfile call
+	// clears the defaults.
+	Zenith_Assert(m_pxInputActions == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
+	m_pxInputActions = new Zenith_InputActions();
+	m_pxInputActions->Initialise(*m_pxInput, *m_pxPointers);
+	m_pxInputActions->RegisterEngineReservedActions();
+	m_pxInputActions->RegisterEngineDefaultProfiles();
 }
 
 // Flux renderer/graphics holders + render backend (device, memory, swapchain).
@@ -1067,6 +1081,11 @@ void Zenith_Engine::DeleteSceneAndInputState()
 	// might still hold a claim has already released it in its destructor.
 	delete m_pxPointers;
 	m_pxPointers = nullptr;
+
+	// ...and the action layer, which holds references to BOTH of the above and
+	// so cannot outlive either.
+	delete m_pxInputActions;
+	m_pxInputActions = nullptr;
 }
 
 // The debug-variable tree, deleted BEFORE the subsystems it points into.

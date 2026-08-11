@@ -10,6 +10,7 @@
 
 #include "Core/Zenith_AutomatedTest.h"
 #include "Input/Zenith_Input.h"
+#include "Input/Zenith_InputActions.h"
 #include "Input/Zenith_Pointers.h"
 #include "Input/Zenith_InputSimulator.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
@@ -415,6 +416,12 @@ namespace
 		// a stuck pad button would all outlive the test that produced them.
 		// Registrations (none yet) are deliberately untouched.
 		g_xEngine.Input().ResetTransientForTest();
+		// ...and the ACTION layer above it: per-action aggregates and edges, the
+		// source shadow, published virtual sources, a forced profile override and
+		// the last-used device. Its REGISTRATIONS (the game's actions, bindings
+		// and profiles, plus the engine-reserved UI set) are installed once at
+		// boot and must survive every test boundary.
+		g_xEngine.Actions().ResetTransientForTest();
 		// ...and the pointer table it feeds. A finger left down, a claim a
 		// destroyed widget never released, or a disarmed lifecycle state would
 		// otherwise outlive the test that produced them. Slots and generations

@@ -143,7 +143,6 @@ private:
 	// Update() is the VISUAL half: hover, state resolution and the style lerp.
 	// The capture / click half lives in UpdatePointerInput.
 	void HandleFirstVisibleFrame();
-	void HandleKeyboardActivation();
 	void ResolveState(bool bHovered);
 	void UpdateVisualTransition(float fDt);
 

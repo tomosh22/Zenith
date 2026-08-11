@@ -37,6 +37,7 @@
 #include "EntityComponent/Zenith_GraphReload.h"
 #endif
 #include "Input/Zenith_Input.h"
+#include "Input/Zenith_InputActions.h"
 #include "Input/Zenith_Pointers.h"
 #include "Physics/Zenith_Physics.h"
 #include "Physics/Zenith_PhysicsMeshGenerator.h"
@@ -407,12 +408,26 @@ void Zenith_Core::Zenith_MainLoop()
 	// singleton — this is the composition root, and it already owns the ordering.
 	g_xEngine.Pointers().ApplyInjection(g_xEngine.Input());
 
+	// Frame contract step 8: the action layer's frame opener. Activity detection
+	// over this frame's transitions decides the active profile (auto switch or a
+	// forced override), and ANY mask change rebases every action from its
+	// current source states before a single transition is replayed. It runs here
+	// — after the last thing that can add a transition, before anything that
+	// reads an action.
+	//
+	// Step 9 (per-context binding sync) is WP3b and belongs in this gap: after
+	// the profile is settled, before the UI input phase closes any action.
+	g_xEngine.Actions().UpdateProfile();
+
 	// Frame contract step 10: the UI input phase. Runs BEFORE game logic (so a
 	// widget consumes a press the same frame gameplay would otherwise see it) and
 	// independently of the render/UI VISUAL pass below, which a scene transition
-	// can skip — a skipped render frame must never change input state.
+	// can skip — a skipped render frame must never change input state. It owns
+	// steps 10b (close the reserved UI actions) and 10e (close everything else)
+	// around its own capture walk, which is why the action layer is handed in.
 	ZENITH_PROFILING_FUNCTION_WRAPPER(g_xEngine.UI().UpdateInput,
-		ZENITH_PROFILE_ZONE("UI Input"), g_xEngine.Pointers(), g_xEngine.Frame().GetDt());
+		ZENITH_PROFILE_ZONE("UI Input"), g_xEngine.Actions(), g_xEngine.Pointers(),
+		g_xEngine.Frame().GetDt());
 
 	UpdateGameLogic(bShouldUpdateGameLogic);
 	SubmitRenderWork(bSubmitRenderWork);

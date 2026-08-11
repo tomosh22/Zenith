@@ -3,15 +3,23 @@
 **Last updated:** 2026-08-11
 
 **★ LIVE BASELINE (OBSERVED 2026-08-11 on clean `Null_` builds):
-ZM boot `3165 ran / 3163 passed / 0 failed / 2 skipped`; engine boot (Null Combat)
-`1540 ran / 1539 passed / 0 failed / 1 skipped`; registry **55**.** This is the
-current pin in `zm-tests.yml` (`-Baseline 3165`) and `run_unit_gate.ps1`
-(default 1540). The move from 3151/1526 is **+14 ENGINE units** (no ZM units)
-from the engine input program's WP1: the `Zenith_Pointers` multi-touch table
+ZM boot `3198 ran / 3196 passed / 0 failed / 2 skipped`; engine boot (Null Combat)
+`1573 ran / 1572 passed / 0 failed / 1 skipped`; registry **55**.** This is the
+current pin in `zm-tests.yml` (`-Baseline 3198`) and `run_unit_gate.ps1`
+(default 1573). The move from 3165/1540 is **+33 ENGINE units** (no ZM units)
+from the engine input program's WP2: `Zenith_InputActions` — the action layer
+(bindings, profiles/scheme masks, activity-driven auto profile switching,
+mask-change synthesis, three-stage close with claim suppression) plus canvas
+focus nav migrated onto the engine-reserved UI actions (UIButton/UIToggle
+Enter/Space self-activation deleted; the canvas is the sole UI_CONFIRM owner).
+ZM code is UNTOUCHED (its migration is the input program's WP3b). See
+`run_unit_gate.ps1` for the per-test derivation.
+
+The PREVIOUS move, 3151/1526 -> 3165/1540, was **+14 ENGINE units** (no ZM units)
+from the input program's WP1: the `Zenith_Pointers` multi-touch table
 (replacing the deleted `Zenith_TouchInput`; graph node `ReadTouchState` →
-`ReadPointer`) and the standard-control pointer-capture suite. ZM code is
-UNTOUCHED (its migration is the input program's WP3b). See `run_unit_gate.ps1`
-for the per-test derivation.
+`ReadPointer`) and the standard-control pointer-capture suite. See
+`run_unit_gate.ps1` for the per-test derivation.
 
 The PREVIOUS move, 3127/1502 -> 3151/1526, was **+24 ENGINE units** (no ZM units)
 from the input program's WP0 (device foundations) — the Zenith_Input

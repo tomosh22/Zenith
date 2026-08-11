@@ -1,11 +1,12 @@
 #include "Zenith.h"
-#include "Core/Zenith_Engine.h"
 #include "UI/Zenith_UIButton.h"
 #include "UI/Zenith_UICanvas.h"
 #include "UI/Zenith_UIStyleRenderer.h"
 #include "Flux/Text/Flux_TextImpl.h"
 #include "AssetHandling/Zenith_FontAsset.h"
-#include "Input/Zenith_Input.h"
+// No Core/Zenith_Engine.h and no Input/Zenith_Input.h: with the keyboard
+// self-activation gone this widget reads NO device state at all. Everything it
+// needs now arrives as a parameter (the pointer table) or through the canvas.
 #ifdef ZENITH_INPUT_SIMULATOR
 #include "Input/Zenith_InputSimulator.h"
 #endif
@@ -109,9 +110,12 @@ void Zenith_UIButton::Update(float fDt)
 		&& fMouseY >= xBounds.y
 		&& fMouseY <= xBounds.w;
 
-	// Keyboard/gamepad self-activation is deliberately untouched by the pointer
-	// migration: it belongs to the focus path, which WP2 replaces wholesale.
-	HandleKeyboardActivation();
+	// NO keyboard/gamepad self-activation here any more. A focused button used to
+	// read Enter/Space itself, in this VISUAL pass, which meant a confirm could
+	// travel two different code paths (this one and the canvas's pad-A
+	// ActivateFocused) and neither ran on a frame that submitted no render work.
+	// The canvas is now the single owner: UI_CONFIRM -> ActivateFocused, in the
+	// input phase.
 
 	ResolveState(bHovered);
 	UpdateVisualTransition(fDt);
@@ -243,18 +247,6 @@ void Zenith_UIButton::HandleFirstVisibleFrame()
 	{
 		m_xCurrentStyle = m_xNormalStyle;
 		m_bWasInvisible = false;
-	}
-}
-
-void Zenith_UIButton::HandleKeyboardActivation()
-{
-	Zenith_Input& xInput = g_xEngine.Input();
-	bool bActivated = m_bFocused
-		&& (xInput.WasKeyPressedThisFrame(ZENITH_KEY_ENTER)
-			|| xInput.WasKeyPressedThisFrame(ZENITH_KEY_SPACE));
-	if (bActivated && m_pfnOnClick)
-	{
-		m_pfnOnClick(m_pxUserData);
 	}
 }
 

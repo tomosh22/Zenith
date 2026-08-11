@@ -86,7 +86,6 @@ private:
 	// UpdatePointerInput (frame contract step 10c).
 
 	bool IsInputSuppressedByEditor() const;
-	void HandleKeyboardActivation();
 	void FireValueChangedCallback();
 	void UpdateVisualFromState(float fDt);
 	void AbandonCapture();

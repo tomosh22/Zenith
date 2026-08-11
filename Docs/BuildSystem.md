@@ -270,7 +270,7 @@ every JSON says passed — crash-mid-suite guard), and a slowest-tests report.
   `run_unit_gate.ps1` pins the engine unit count, so they drift silently).
 
 **Engine unit tests** run at every boot unless `--skip-unit-tests`. Baseline:
-**1540 ran, 0 failed** (observed 2026-08-11 on a `Null_` Combat build; 1437 + 19 + 1
+**1573 ran, 0 failed** (observed 2026-08-11 on a `Null_` Combat build; 1437 + 19 + 1
 from compressed-vertex Phase 6 T6.a's instance-stream flips — 3 uint16x4 codec
 units plus 4/5/4/3 packed-lane units for Text/Quads/Particles/Gizmos — then + 2 for
 the scene-publish guard's `Editor.SceneSaveDeltaClassifiesPublish` /
@@ -287,7 +287,10 @@ landed the device foundations — event FIFO, drain-after-acquire, release edges
 gamepad completion, lifecycle barriers, simulator injection — then + 14 for the
 input program's WP1: `Zenith_Pointers.Tests.inl` (the multi-touch pointer table
 that replaced `Zenith_TouchInput`) and `Zenith_UIButton.Tests.inl` (standard-
-control pointer capture)) — the
+control pointer capture), then + 33 for the input program's WP2:
+`Zenith_InputActions.Tests.inl` — the action layer's bindings, profiles,
+activity detection, mask-change synthesis, and claim suppression — plus canvas
+focus nav on the engine-reserved UI actions) — the
 authority is the `-Baseline` default in `Tools/run_unit_gate.ps1`, not this
 number; read it there if the two ever disagree.
 
@@ -366,7 +369,7 @@ Concurrency groups cancel superseded PR runs (master pushes always complete).
 |----------|-------|
 | `cb-tests` | CityBuilder Vulkan `_True` compile proof + **Null `_True` build (the exe every step runs)** + D3D12 `_False` link proof + 45-test headless suite via `zenith test` |
 | `dp-tests` | Same shape for DevilsPlayground (158 tests) |
-| `engine-gate` | Sentinels (`Vulkan_Debug_Win64_False`) built AND executed + Combat unit gate (`Tools/run_unit_gate.ps1`; it passes no `-Baseline`, so the script's default is the pin — 1540 as of 2026-08-11 — known flake tolerated). Rollout: dispatch → burn-in → required |
+| `engine-gate` | Sentinels (`Vulkan_Debug_Win64_False`) built AND executed + Combat unit gate (`Tools/run_unit_gate.ps1`; it passes no `-Baseline`, so the script's default is the pin — 1573 as of 2026-08-11 — known flake tolerated). Rollout: dispatch → burn-in → required |
 | `release-build` | NIGHTLY (not PR-blocking): engine + DP in `Vulkan_vs2022_Release_Win64_True`, build-only — the only Release compile in CI |
 | `shader-validation` | FluxCompiler (Release `_True`) catalog/parity/spine-lint + git-status drift gate on shader outputs |
 | `scaffold-smoke` | Path-filtered end-to-end `zenith new` → build → boot (units baseline) → teardown leaves git status identical |

@@ -9,6 +9,7 @@
 #include "Flux/Quads/Flux_QuadsImpl.h"
 #include "Flux/Text/Flux_TextQueue.h"
 #include "Input/Zenith_Input.h"
+#include "Input/Zenith_InputActions.h"
 #include "Input/Zenith_InputSimulator.h"
 #include <algorithm>
 
@@ -259,35 +260,29 @@ Zenith_UIElement* Zenith_UICanvas::FindElementRecursive(Zenith_UIElement* pxElem
     return nullptr;
 }
 
-void Zenith_UICanvas::UpdateFocusNavigation()
+void Zenith_UICanvas::UpdateFocusNavigation(const Zenith_InputActions& xActions)
 {
     if (!m_pxFocusedElement)
         return;
 
-    Zenith_Input& xInput = g_xEngine.Input();
-
-    if (xInput.WasKeyPressedThisFrame(ZENITH_KEY_UP))
+    // The five ENGINE-RESERVED actions and nothing else. Each already merges its
+    // arrow key with its d-pad direction (and whatever else the reserved table
+    // carries), so the two parallel chains this used to run — one for keys, one
+    // for the pad, which could both fire in the same frame and navigate twice —
+    // collapse into one decision.
+    if (xActions.WasPressedThisFrame(INPUT_ACTION_UI_NAV_UP))
         NavigateUp();
-    else if (xInput.WasKeyPressedThisFrame(ZENITH_KEY_DOWN))
+    else if (xActions.WasPressedThisFrame(INPUT_ACTION_UI_NAV_DOWN))
         NavigateDown();
-    else if (xInput.WasKeyPressedThisFrame(ZENITH_KEY_LEFT))
+    else if (xActions.WasPressedThisFrame(INPUT_ACTION_UI_NAV_LEFT))
         NavigateLeft();
-    else if (xInput.WasKeyPressedThisFrame(ZENITH_KEY_RIGHT))
+    else if (xActions.WasPressedThisFrame(INPUT_ACTION_UI_NAV_RIGHT))
         NavigateRight();
 
-    if (!xInput.IsGamepadConnected())
-        return;
-
-    if (xInput.WasGamepadButtonPressedThisFrame(ZENITH_GAMEPAD_BUTTON_DPAD_UP))
-        NavigateUp();
-    else if (xInput.WasGamepadButtonPressedThisFrame(ZENITH_GAMEPAD_BUTTON_DPAD_DOWN))
-        NavigateDown();
-    else if (xInput.WasGamepadButtonPressedThisFrame(ZENITH_GAMEPAD_BUTTON_DPAD_LEFT))
-        NavigateLeft();
-    else if (xInput.WasGamepadButtonPressedThisFrame(ZENITH_GAMEPAD_BUTTON_DPAD_RIGHT))
-        NavigateRight();
-
-    if (xInput.WasGamepadButtonPressedThisFrame(ZENITH_GAMEPAD_BUTTON_A))
+    // The canvas is the SOLE owner of keyboard/gamepad activation: the button's
+    // own Enter/Space path is gone, so there is exactly one path from a confirm
+    // to a widget, and it goes through the focused element.
+    if (xActions.WasPressedThisFrame(INPUT_ACTION_UI_CONFIRM))
         ActivateFocused();
 }
 
@@ -376,7 +371,11 @@ void Zenith_UICanvas::Update(float fDt)
 {
     UpdateSize();
 
-    UpdateFocusNavigation();
+    // Focus navigation used to run HERE, in the visual pass. It now runs in the
+    // UI INPUT phase (Zenith_UISystem::UpdateInput -> UpdateFocusNavigation),
+    // because this pass is skipped on any frame that submits no render work —
+    // and an arrow key that only works on rendered frames is an arrow key that
+    // intermittently does nothing.
 
     // SceneUpdateDeferralGuard around the outer Zenith_UIComponent iteration
     // ensures LoadScene calls fired from button callbacks defer until the

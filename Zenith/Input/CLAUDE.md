@@ -9,9 +9,11 @@ Frame-based input handling wrapping GLFW on Windows. Instance class `Zenith_Inpu
 - `Zenith_Input.h` - Instance input class (held on `g_xEngine`, accessed via `g_xEngine.Input()`) with all query functions
 - `Zenith_KeyCodes.h` - GLFW-compatible key code constants
 - `Zenith_Pointers.h` - The pointer table (8 slots, generation handles, claims, taps), held on `g_xEngine`, accessed via `g_xEngine.Pointers()`
+- `Zenith_InputActions.h` - The ACTION layer (named actions, binding table, profiles), held on `g_xEngine`, accessed via `g_xEngine.Actions()`
 - `Zenith_InputSimulator.h` - Static test harness for injecting synthetic input and stepping frames
 - `Zenith_Input.Tests.inl` - Unit test cases for the input subsystem
 - `Zenith_Pointers.Tests.inl` - Unit test cases for the pointer table (LOCAL instances; never the engine's)
+- `Zenith_InputActions.Tests.inl` - Unit test cases for the action layer (LOCAL instances; never the engine's)
 
 ## Public API
 
@@ -70,6 +72,52 @@ detection is gone — it had no consumers).
   `GetDisplayScale()` px. A claimed pointer is a consumed one and never taps.
 - A `LIFECYCLE_RESET` barrier cancels every live pointer (raising CANCEL edges) and
   disarms the table until the device layer re-arms.
+
+## Actions (`Zenith_InputActions`)
+
+The action layer. Instance class on `g_xEngine.Actions()`; a plain class, so unit
+tests construct LOCAL instances and inject a local device layer + pointer table
+(`Initialise(Zenith_Input&, Zenith_Pointers&)`) rather than poking the engine's.
+It never reaches `g_xEngine` — `Zenith_Engine` / `Zenith_Core` / `Zenith_UISystem`
+drive it, exactly as they drive `Zenith_Pointers`.
+
+- **Actions** are `(id, name, kind)` where kind is BUTTON / AXIS1D / AXIS2D. Ids
+  **0-15 are engine-reserved** (`UI_NAV_UP/DOWN/LEFT/RIGHT`, `UI_CONFIRM`);
+  game ids start at `uINPUT_ACTION_FIRST_GAME_ID` (16). `FindActionByName` is how
+  a graph node names one.
+- **Bindings** are rows of the binding table, built with constexpr factories:
+  `KeySet` / `KeyAxis1D` / `KeyAxis2D` / `MouseButton` / `MouseWheel` /
+  `MouseDelta` / `TouchPrimary` / `SystemBack` / `GamepadButton` /
+  `GamepadStick` / `GamepadAxis` / `GamepadAxisAsButton` (hysteresis) /
+  `GamepadTriggerPair` (RT-LT) / `GamepadDpadAxis2D` / `Virtual`.
+  `RegisterBinding` asserts the row can produce the action's kind, and REJECTS a
+  pointer-sourced or virtual row on a reserved action (those close before any
+  claim exists, so a claim rule could not apply to them).
+- **Schemes and profiles.** `Zenith_EInputScheme { KEYBOARD, MOUSE, TOUCH,
+  GAMEPAD }` are the binding-table COLUMNS; a profile is a named mask over them
+  (`RegisterProfile`). Resolution consults ONLY the active profile's mask —
+  `SystemBack` rows are mask-EXEMPT. Each scheme may appear in at most one
+  registered profile (asserted). The engine registers a default profile at boot
+  (Windows `EngineDesktop {KB|MOUSE|PAD}`, Android `EngineTouch {TOUCH}`) which
+  the FIRST game `RegisterProfile` call clears wholesale.
+- **AUTO switching** follows ACTIVITY: press edges, wheel, a 3 px mouse-movement
+  crossing (Windows), a pointer DOWN, and a pad stick/trigger deadzone crossing —
+  never held state, always with a re-arm rule, and `bSystemNav` never counts.
+  Same-frame priority is TOUCH > GAMEPAD > MOUSE > KEYBOARD.
+  `SetProfileOverride` forces and suspends AUTO; `ClearOverride` returns to it.
+  The **last-used device** is tracked separately and is FINER than the profile.
+- **Finalization** replays the frame's ORDERED transitions through each action's
+  aggregate: rise ⇒ pressed, fall ⇒ released, so a same-frame tap fires BOTH and
+  a second binding pulsing while another stays held fires NEITHER. Axis values
+  are last-state, not replayed. Any mask change first REBASES every action from
+  its current source states: a held action losing its rows synthesizes a
+  RELEASE, and a newly enabled already-held source becomes held with NO press
+  edge. Queries are NON-CONSUMING.
+- **Frame contract** (call sites in `Zenith_Core` / `Zenith_UISystem`):
+  step 8 `UpdateProfile()`, step 10b `FinalizeReservedUI()` (reserved ids only,
+  before the widget capture walk), step 10e `FinalizeGameplay()` (everything
+  else, after it — where a pointer-sourced row is SUPPRESSED on any pointer a
+  widget claimed, press and matching release together).
 
 ## Input Simulation (`Zenith_InputSimulator`)
 

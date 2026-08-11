@@ -15,6 +15,7 @@
 // Accessed via g_xEngine.UI(); allocated and wired by Zenith_Engine.
 // ============================================================================
 
+class Zenith_InputActions;
 class Zenith_Pointers;
 class Zenith_SceneSystem;
 
@@ -35,10 +36,19 @@ public:
 	// must not act on a press a widget is about to consume, which can only be
 	// decided before game logic runs.
 	//
-	// Takes the pointer table by reference rather than reaching for
-	// g_xEngine.Pointers(), keeping this TU (and every widget it drives) off the
-	// engine singleton.
-	void UpdateInput(Zenith_Pointers& xPointers, float fDt);
+	// The three sub-steps, in the order the frame contract fixes:
+	//   10a/10b: refresh each canvas's layout, then close the engine-RESERVED UI
+	//            actions and let the canvases consume them for focus navigation
+	//            — BEFORE any widget has taken a claim, which is what makes UI
+	//            navigation claim-independent.
+	//   10c:     the standard-control capture walk (claims are taken here).
+	//   10e:     close every remaining action, with pointer-sourced bindings
+	//            suppressed on any pointer a widget just claimed.
+	//
+	// Takes the action layer and the pointer table by reference rather than
+	// reaching for g_xEngine, keeping this TU (and every widget it drives) off
+	// the engine singleton.
+	void UpdateInput(Zenith_InputActions& xActions, Zenith_Pointers& xPointers, float fDt);
 
 	// The whole per-frame UI step. The Update pass and the Render pass live
 	// in ONE entry point because the boundary between them is load-bearing

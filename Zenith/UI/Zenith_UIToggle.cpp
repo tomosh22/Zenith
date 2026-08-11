@@ -1,11 +1,12 @@
 #include "Zenith.h"
-#include "Core/Zenith_Engine.h"
 #include "UI/Zenith_UIToggle.h"
 #include "UI/Zenith_UICanvas.h"
 #include "UI/Zenith_UIStyleRenderer.h"
 #include "Flux/Text/Flux_TextImpl.h"
 #include "AssetHandling/Zenith_FontAsset.h"
-#include "Input/Zenith_Input.h"
+// No Core/Zenith_Engine.h and no Input/Zenith_Input.h: with the keyboard
+// self-activation gone this widget reads NO device state at all (same as
+// Zenith_UIButton).
 #ifdef ZENITH_INPUT_SIMULATOR
 #include "Input/Zenith_InputSimulator.h"
 #endif
@@ -180,19 +181,6 @@ void Zenith_UIToggle::UpdatePointerInput(Zenith_Pointers& xPointers, float fDt)
 	}
 }
 
-void Zenith_UIToggle::HandleKeyboardActivation()
-{
-	Zenith_Input& xInput = g_xEngine.Input();
-	bool bActivated = m_bFocused
-		&& (xInput.WasKeyPressedThisFrame(ZENITH_KEY_ENTER)
-			|| xInput.WasKeyPressedThisFrame(ZENITH_KEY_SPACE));
-	if (bActivated)
-	{
-		m_bIsOn = !m_bIsOn;
-		FireValueChangedCallback();
-	}
-}
-
 void Zenith_UIToggle::UpdateVisualFromState(float fDt)
 {
 	// Lerp toward target style based on on/off state
@@ -217,11 +205,10 @@ void Zenith_UIToggle::Update(float fDt)
 	if (!m_bVisible)
 		return;
 
-	if (IsGroupInteractable())
-	{
-		// Keyboard/gamepad self-activation is untouched by the pointer migration.
-		HandleKeyboardActivation();
-	}
+	// NO keyboard/gamepad self-activation here any more, for the same reason the
+	// button lost its copy: the canvas owns UI_CONFIRM and flips the FOCUSED
+	// toggle from ActivateFocused(). Keeping this would have flipped a focused
+	// toggle TWICE on one Enter — once here, once from the canvas.
 
 	UpdateVisualFromState(fDt);
 

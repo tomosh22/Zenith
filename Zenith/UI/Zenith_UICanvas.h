@@ -4,6 +4,7 @@
 #include <string>
 
 class Zenith_DataStream;
+class Zenith_InputActions;
 
 /**
  * Zenith_UICanvas - Root container for UI elements
@@ -74,6 +75,17 @@ public:
     // queued and element deletion deferred, so the snapshot it iterates cannot
     // be invalidated by a click callback.
     void UpdatePointerInput(Zenith_Pointers& xPointers, float fDt);
+
+    // Frame contract step 10b's consumer: focus movement + activation, driven
+    // ENTIRELY by the five engine-reserved UI actions (UI_NAV_UP/DOWN/LEFT/
+    // RIGHT + UI_CONFIRM). Each merges its arrow key and its d-pad direction
+    // into one answer, so a canvas no longer reads raw keys or pad buttons at
+    // all, and the same code path serves whatever a game rebinds them to.
+    //
+    // Driven by Zenith_UISystem BEFORE the capture walk, and taking the action
+    // layer by reference (never g_xEngine), so a unit can drive it against a
+    // LOCAL Zenith_InputActions.
+    void UpdateFocusNavigation(const Zenith_InputActions& xActions);
 
     bool IsInputPassActive() const { return m_bInputPassActive; }
 
@@ -159,7 +171,6 @@ public:
 private:
     Zenith_UIElement* FindElementRecursive(Zenith_UIElement* pxElement, const std::string& strName) const;
     void UpdateSize();
-    void UpdateFocusNavigation();
 
     // Pre-order snapshot of the VISIBLE subtree, matching the update walk.
     void CollectPointerInputElements(Zenith_UIElement* pxElement, Zenith_UIElement** apxOut,

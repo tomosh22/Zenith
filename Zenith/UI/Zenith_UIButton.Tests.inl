@@ -1,5 +1,6 @@
 #include "Core/Zenith_TestFramework.h"
 #include "UI/Zenith_UICanvas.h"
+#include "Input/Zenith_InputActions.h"
 #include "Input/Zenith_Pointers.h"
 #ifdef ZENITH_INPUT_SIMULATOR
 #include "Input/Zenith_InputSimulator.h"
@@ -60,6 +61,46 @@ namespace
 		xEvent.m_fAnchorY = fY;
 		return xEvent;
 	}
+
+	// WP2: one frame of the device + action layers, window-free. The action
+	// instance is LOCAL, so the engine's own registrations are never touched.
+	struct Zenith_UIFocusNavRig
+	{
+		Zenith_Input        m_xInput;
+		Zenith_Pointers     m_xPointers;
+		Zenith_InputActions m_xActions;
+
+		Zenith_UIFocusNavRig()
+		{
+			m_xActions.Initialise(m_xInput, m_xPointers);
+			// Exactly what Zenith_Engine installs at boot: the five reserved UI
+			// actions and the platform's default profile.
+			m_xActions.RegisterEngineReservedActions();
+			m_xActions.RegisterEngineDefaultProfiles();
+		}
+
+		void BeginFrame()
+		{
+			m_xInput.DrainPendingPlatformEvents();
+			m_xPointers.BeginFrame(1.0f);
+		}
+
+		void RaiseEvent(Zenith_InputEventType eType, int32_t iCode)
+		{
+			Zenith_InputEvent xEvent;
+			xEvent.m_eType = eType;
+			xEvent.m_iCode = iCode;
+			m_xInput.AppendInjectedEvent(xEvent);
+		}
+
+		// Steps 8 + 10b: everything the canvas's focus navigation needs to be
+		// closed before it runs.
+		void CloseReservedStage()
+		{
+			m_xActions.UpdateProfile();
+			m_xActions.FinalizeReservedUI();
+		}
+	};
 
 	Zenith_UI::Zenith_UIButton* Zenith_AddTestButton(Zenith_UI::Zenith_UICanvas& xCanvas,
 		Zenith_UIButtonTestCounter& xCounter)
@@ -232,4 +273,127 @@ ZENITH_TEST(UIPointerCapture, InputPassDefersElementMutation)
 	ZENITH_ASSERT_EQ(xCanvas.GetElementCount(), static_cast<size_t>(1), "removal + creation both applied after the pass");
 	ZENITH_ASSERT_NOT_NULL(xCanvas.FindElement("SpawnedDuringPass"), "the deferred creation landed");
 	ZENITH_ASSERT_NULL(xCanvas.FindElement("SelfDestructButton"), "the deferred destruction landed");
+}
+
+// ============================================================================
+// WP2: focus navigation is driven by the engine-RESERVED UI actions, and the
+// canvas is the SOLE owner of keyboard/gamepad activation.
+//
+// These are the UI half of the UINavActionsDriveFocus / UIConfirmSingleOwner
+// pair — the action half lives in Input/Zenith_InputActions.Tests.inl. They sit
+// here because Input/ is BELOW UI/ in the layer DAG and may not include a
+// canvas; UI/ calling down into the action layer is the legal direction.
+// ============================================================================
+
+ZENITH_TEST(UIFocusNav, ReservedActionsDriveFocus)
+{
+	Zenith_UIButtonTestSimScope xSimScope;
+
+	Zenith_UI::Zenith_UICanvas xCanvas;
+	Zenith_UIButtonTestCounter xTopCounter;
+	Zenith_UIButtonTestCounter xBottomCounter;
+
+	Zenith_UI::Zenith_UIButton* pxTop = new Zenith_UI::Zenith_UIButton("Top", "TopButton");
+	pxTop->SetPosition(100.0f, 100.0f);
+	pxTop->SetSize(200.0f, 50.0f);
+	pxTop->SetOnClick(&Zenith_UIButtonTestOnClick, &xTopCounter);
+	xCanvas.AddElement(pxTop);
+
+	Zenith_UI::Zenith_UIButton* pxBottom = new Zenith_UI::Zenith_UIButton("Bottom", "BottomButton");
+	pxBottom->SetPosition(100.0f, 200.0f);
+	pxBottom->SetSize(200.0f, 50.0f);
+	pxBottom->SetOnClick(&Zenith_UIButtonTestOnClick, &xBottomCounter);
+	xCanvas.AddElement(pxBottom);
+
+	pxTop->SetNavigation(nullptr, pxBottom, nullptr, nullptr);
+	pxBottom->SetNavigation(pxTop, nullptr, nullptr, nullptr);
+	xCanvas.SetFocusedElement(pxTop);
+
+	Zenith_UIFocusNavRig xRig;
+
+	// An ARROW key moves the focus...
+	xRig.BeginFrame();
+	xRig.RaiseEvent(INPUT_EVENT_KEY_PRESS, ZENITH_KEY_DOWN);
+	xRig.CloseReservedStage();
+	xCanvas.UpdateFocusNavigation(xRig.m_xActions);
+	ZENITH_ASSERT_EQ(xCanvas.GetFocusedElement(), static_cast<Zenith_UI::Zenith_UIElement*>(pxBottom),
+		"the down arrow moved the focus");
+
+	// ...and so does the D-PAD, through the SAME action.
+	xRig.BeginFrame();
+	xRig.RaiseEvent(INPUT_EVENT_KEY_RELEASE, ZENITH_KEY_DOWN);
+	xRig.RaiseEvent(INPUT_EVENT_PAD_PRESS, ZENITH_GAMEPAD_BUTTON_DPAD_UP);
+	xRig.CloseReservedStage();
+	xCanvas.UpdateFocusNavigation(xRig.m_xActions);
+	ZENITH_ASSERT_EQ(xCanvas.GetFocusedElement(), static_cast<Zenith_UI::Zenith_UIElement*>(pxTop),
+		"the d-pad drives the same navigation the arrows do");
+
+	// A frame with no navigation edge leaves the focus alone (the actions are
+	// EDGES, not held state — a key left down must not walk the menu).
+	xRig.BeginFrame();
+	xRig.CloseReservedStage();
+	xCanvas.UpdateFocusNavigation(xRig.m_xActions);
+	ZENITH_ASSERT_EQ(xCanvas.GetFocusedElement(), static_cast<Zenith_UI::Zenith_UIElement*>(pxTop),
+		"a held button does not repeat");
+	ZENITH_ASSERT_EQ(xTopCounter.m_uClicks, 0u, "navigating never activates");
+	ZENITH_ASSERT_EQ(xBottomCounter.m_uClicks, 0u, "navigating never activates");
+}
+
+ZENITH_TEST(UIFocusNav, UIConfirmSingleOwner)
+{
+	Zenith_UIButtonTestSimScope xSimScope;
+
+	Zenith_UI::Zenith_UICanvas xCanvas;
+	Zenith_UIButtonTestCounter xFocusedCounter;
+	Zenith_UIButtonTestCounter xOtherCounter;
+
+	Zenith_UI::Zenith_UIButton* pxFocused = new Zenith_UI::Zenith_UIButton("A", "FocusedButton");
+	pxFocused->SetPosition(100.0f, 100.0f);
+	pxFocused->SetSize(200.0f, 50.0f);
+	pxFocused->SetOnClick(&Zenith_UIButtonTestOnClick, &xFocusedCounter);
+	xCanvas.AddElement(pxFocused);
+
+	Zenith_UI::Zenith_UIButton* pxOther = new Zenith_UI::Zenith_UIButton("B", "OtherButton");
+	pxOther->SetPosition(100.0f, 200.0f);
+	pxOther->SetSize(200.0f, 50.0f);
+	pxOther->SetOnClick(&Zenith_UIButtonTestOnClick, &xOtherCounter);
+	xCanvas.AddElement(pxOther);
+
+	xCanvas.SetFocusedElement(pxFocused);
+
+	Zenith_UIFocusNavRig xRig;
+	Zenith_Pointers xWalkPointers;
+
+	// ENTER: exactly ONE activation, of the FOCUSED element, from the CANVAS.
+	// The button's own Enter/Space path is gone, so a second activation here
+	// would mean it had come back.
+	xRig.BeginFrame();
+	xRig.RaiseEvent(INPUT_EVENT_KEY_PRESS, ZENITH_KEY_ENTER);
+	xRig.CloseReservedStage();
+	xCanvas.UpdateFocusNavigation(xRig.m_xActions);
+	// The visual pass and the capture walk both run afterwards, exactly as the
+	// frame contract has them; neither may add an activation of its own.
+	xCanvas.UpdatePointerInput(xWalkPointers, 0.016f);
+	xCanvas.Update(0.016f);
+
+	ZENITH_ASSERT_EQ(xFocusedCounter.m_uClicks, 1u, "the focused button activated exactly once");
+	ZENITH_ASSERT_EQ(xOtherCounter.m_uClicks, 0u, "and nothing else did");
+
+	// SPACE and pad A reach the same single owner.
+	xRig.BeginFrame();
+	xRig.RaiseEvent(INPUT_EVENT_KEY_RELEASE, ZENITH_KEY_ENTER);
+	xRig.RaiseEvent(INPUT_EVENT_KEY_PRESS, ZENITH_KEY_SPACE);
+	xRig.CloseReservedStage();
+	xCanvas.UpdateFocusNavigation(xRig.m_xActions);
+	xCanvas.Update(0.016f);
+	ZENITH_ASSERT_EQ(xFocusedCounter.m_uClicks, 2u, "Space confirms through the canvas");
+
+	xRig.BeginFrame();
+	xRig.RaiseEvent(INPUT_EVENT_KEY_RELEASE, ZENITH_KEY_SPACE);
+	xRig.RaiseEvent(INPUT_EVENT_PAD_PRESS, ZENITH_GAMEPAD_BUTTON_A);
+	xRig.CloseReservedStage();
+	xCanvas.UpdateFocusNavigation(xRig.m_xActions);
+	xCanvas.Update(0.016f);
+	ZENITH_ASSERT_EQ(xFocusedCounter.m_uClicks, 3u, "pad A confirms through the canvas");
+	ZENITH_ASSERT_EQ(xOtherCounter.m_uClicks, 0u, "still nothing else");
 }

@@ -56,6 +56,7 @@ class Zenith_Editor;
 class Zenith_EditorMaterialUI;
 class Zenith_Gizmo;
 class Zenith_Input;
+class Zenith_InputActions;
 class Zenith_SelectionSystem;
 class Zenith_Pointers;
 class Zenith_TerrainEditor;
@@ -123,6 +124,9 @@ public:
 	Zenith_Input& Input();
 	// The pointer table (B7). Replaced the old single-touch gesture subsystem.
 	Zenith_Pointers& Pointers();
+	// The action layer (B4/B5/B8): named actions over the device layer, gated by
+	// the active profile's scheme mask.
+	Zenith_InputActions& Actions();
 	Flux_RendererImpl& FluxRenderer();
 	Flux_GraphicsImpl& FluxGraphics();
 	// Pointer-or-null variant. Lets late-teardown callers (e.g. a material destructor
@@ -237,6 +241,7 @@ private:
 	Zenith_UISystem*                m_pxUISystem        = nullptr;
 	Zenith_Input*                   m_pxInput           = nullptr;
 	Zenith_Pointers*                m_pxPointers        = nullptr;
+	Zenith_InputActions*            m_pxInputActions    = nullptr;
 	Flux_RendererImpl*                  m_pxFluxRenderer    = nullptr;
 	Flux_GraphicsImpl*                  m_pxFluxGraphics    = nullptr;
 	Flux_PlatformAPI*               m_pxVulkan          = nullptr;
