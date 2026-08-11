@@ -6,6 +6,11 @@ discipline is: behaviours read and write game state **only** through
 the namespaces declared here — they don't reach into each other's
 headers, and they don't carry their own state buckets.
 
+> **Input is NOT in this folder.** `DPInputActions.h` (the `DP_Input` naming
+> layer that polled `Zenith_Input` for hard-wired keys) is DELETED. Its
+> replacement is the C2 action table `Games/DevilsPlayground/DP_Bindings.h` at
+> the game root — see the game-root CLAUDE.md's *Controls* section.
+
 ## File map
 
 ```
@@ -21,8 +26,6 @@ DPCommonTypes.h               # Shared type aliases (Vec2/Vec3/Vec4/Quat) + the 
                               #   PublicInterfaces.h; used by every DP_* namespace.
 DevilsPlayground_Tags.h       # DP_ItemTag enum + helpers (Iron / Key / Objective1-5 / SkeletonKey /
                               #   Spike). Used by DPItemBase + the side-tables in DP_Items.
-DPInputActions.h              # WASD / Q-E / F / Space / Esc / Shift / Ctrl / G / click readers.
-                              #   Routed through Zenith_Input so the simulator can drive them.
 DPFogPass.{h,cpp}             # Engine fog override + post-fog hook registration. DP disables the
                               #   engine's 6 fog passes and registers a custom one that reads
                               #   DP_Fog's hole list each frame.

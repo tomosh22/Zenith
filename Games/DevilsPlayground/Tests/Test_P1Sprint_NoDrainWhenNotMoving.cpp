@@ -21,8 +21,8 @@
 //
 // Negative-case sibling to Test_P1Sprint_DrainsLifeFaster: holding
 // Shift while NOT moving must NOT incur the sprint life cost. The
-// guard lives in DPVillager_Component::OnUpdate, where
-// m_bIsSprintingNow is computed as `ReadSprintHeld() && moving`. If
+// guard lives in DP_Villager.bgraph's chain T2, where "sprinting" is
+// computed as `DP_Bindings::IsSprintHeld() && moving`. If
 // the guard's "moving" check got dropped (e.g., during a refactor),
 // standing-still players would burn life for nothing, breaking
 // MVPScope's promise that Shift is a no-op without movement input.
@@ -119,14 +119,16 @@ static bool Step_P1SprintNoDrain(int iFrame)
 		g_fBaseline = pxV->GetRemainingLife();
 		// Shift held but NO movement key. The guard in OnUpdate
 		// (m_bIsSprintingNow = Shift && moving) should leave it false.
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_LEFT_SHIFT, true);
+		// ★ C1a -- EDGES, not SetKeyHeld: SPRINT is a C2 action whose key row is
+		// transition-fed, so a level-only "hold" never reaches the action layer.
+		Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_LEFT_SHIFT);
 		// Make absolutely sure no movement keys are held from a prior
 		// batched test (the InputSimulator's between-tests reset
 		// should cover this, but belt-and-braces).
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_W, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_A, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_S, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_D, false);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_W);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_A);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_S);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_D);
 		g_iTickCount = 0;
 		g_iPhase = kSN_Tick;
 		return true;
@@ -144,7 +146,7 @@ static bool Step_P1SprintNoDrain(int iFrame)
 		{
 			DPVillager_Component* pxV = GetVillagerBehaviour(g_xVillager);
 			if (pxV != nullptr) g_fAfter = pxV->GetRemainingLife();
-			Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_LEFT_SHIFT, false);
+			Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_LEFT_SHIFT);
 			g_iPhase = kSN_Verify;
 		}
 		return true;

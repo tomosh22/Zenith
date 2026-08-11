@@ -29,10 +29,11 @@
 //    Shift+Ctrl resolves to sprint -- the louder, faster mode
 //    shouldn't be silenced by a held Ctrl."
 //
-// The relevant code in DPVillager_Component::OnUpdate:
-//   m_bIsSprintingNow = DP_Input::ReadSprintHeld() && bMoving;
-//   m_bIsWalkQuietNow = !m_bIsSprintingNow
-//       && DP_Input::ReadWalkQuietHeld() && bMoving;
+// The shim stages the two facts and DP_Villager.bgraph (chain T2) makes the
+// decision, but the shape is unchanged:
+//   sprintHeld = DP_Bindings::IsSprintHeld();  quietHeld = IsWalkQuietHeld();
+//   sprinting  = sprintHeld && moving;
+//   walkQuiet  = !sprinting && quietHeld && moving;
 //
 // A regression where the `!m_bIsSprintingNow` guard got dropped, or
 // the two reads got reordered (walk-quiet wins), would silently leak.
@@ -143,16 +144,19 @@ static bool Step_P1SprintWinsTie(int iFrame)
 
 	case kTW_ArmSprintWindow:
 		// Hold Shift + Ctrl + W simultaneously. Sprint MUST win the tie.
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_W, true);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_LEFT_SHIFT, true);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_LEFT_CONTROL, true);
+		// ★ C1a -- EDGES, not SetKeyHeld: MOVE / SPRINT / WALK_QUIET are C2
+		// actions whose key rows are transition-fed, so a level-only "hold"
+		// reaches IsKeyDown and nothing else.
+		Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_W);
+		Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_LEFT_SHIFT);
+		Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_LEFT_CONTROL);
 		// Belt-and-braces: defensively clear other movement keys so a
 		// leaked-state from a prior batched test doesn't flip the
 		// movement direction (shouldn't matter for the sprint flag,
 		// but cheap insurance).
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_A, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_S, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_D, false);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_A);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_S);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_D);
 		g_iTickCount = 0;
 		g_iPhase = kTW_TickSprintWindow;
 		return true;
@@ -184,7 +188,7 @@ static bool Step_P1SprintWinsTie(int iFrame)
 		// This window's job is to prove that walk-quiet CAN engage in
 		// the absence of Shift -- so "walk-quiet=false in Shift+Ctrl"
 		// can't be explained by "walk-quiet never engages anyway".
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_LEFT_SHIFT, false);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_LEFT_SHIFT);
 		// W + Ctrl still held from previous window.
 		g_iTickCount = 0;
 		g_iPhase = kTW_TickCtrlOnlyWindow;
@@ -211,9 +215,9 @@ static bool Step_P1SprintWinsTie(int iFrame)
 
 	case kTW_ReleaseInputs:
 		// Don't leak input state into the next batched test.
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_W, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_LEFT_SHIFT, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_LEFT_CONTROL, false);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_W);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_LEFT_SHIFT);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_LEFT_CONTROL);
 		g_iPhase = kTW_Verify;
 		return true;
 
@@ -263,7 +267,7 @@ static bool Verify_P1SprintWinsTie()
 	if (!g_bWalkQuietObservedCtrlOnlyWindow)
 	{
 		Zenith_Log(LOG_CATEGORY_AI,
-			"P1SprintWinsTie: Ctrl-only sanity window had IsWalkQuietNow=false -- walk-quiet doesn't engage even without sprint, so the Shift+Ctrl assertion has no teeth. ReadWalkQuietHeld bug?");
+			"P1SprintWinsTie: Ctrl-only sanity window had IsWalkQuietNow=false -- walk-quiet doesn't engage even without sprint, so the Shift+Ctrl assertion has no teeth. WALK_QUIET binding bug?");
 		return false;
 	}
 	return true;

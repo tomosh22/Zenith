@@ -30,9 +30,9 @@
 //          fires (range exit clears m_bWasInRangeLastFrame).
 //   5. After 5 cycles, verify DP_Win::HasWon() and DP_OnVictory fired.
 //
-// Note: because DPInteractable_Base::OnEnterRange polls
-// DP_Input::ReadInteractPressed (F-press), and our headless harness has no
-// keyboard input, the on-overlap path is taken instead. The pentagram is
+// Note: because DPInteractable_Base::OnEnterRange polls the INTERACT action
+// (DP_Bindings::WasInteractPressed -- F, or pad X), and this test publishes no
+// input at all, the on-overlap path is taken instead. The pentagram is
 // configured with bInteractOnOverlap=false by default, so we'd never trigger.
 // This test instead dispatches DP_OnInteract directly — the pentagram
 // subscribes to that event when in range, and its lambda invokes

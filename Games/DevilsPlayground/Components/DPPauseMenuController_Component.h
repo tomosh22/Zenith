@@ -44,10 +44,9 @@
 #include "ZenithECS/Zenith_Scene.h"
 #include "ZenithECS/Zenith_EventSystem.h"
 #include "DataStream/Zenith_DataStream.h"
-#include "Input/Zenith_Input.h"
-#include "Input/Zenith_KeyCodes.h"
 #include "UI/Zenith_UIText.h"
 
+#include "DP_Bindings.h"
 #include "Source/PublicInterfaces.h"
 
 #include <cstring>
@@ -203,22 +202,29 @@ public:
 
 	void OnUpdate(const float /*fDt*/)
 	{
-		// W3: the Esc/R/Q decisions (MVP-2.5.5 shortcuts, MVP-4.3.2 run-over
-		// gate, MVP-1.1 toggle) live on DP_PauseMenu.bgraph. Stage this
-		// frame's key edges, then fire "PauseKeys"; the graph's chains call
-		// the verbs below synchronously. Both instances after a restart
-		// (persistent singleton + fresh scene copy) stage-and-fire, exactly
-		// like both OnUpdates ran before.
+		// W3: the ESCAPE/RESTART/QUIT_TO_MENU decisions (MVP-2.5.5 shortcuts,
+		// MVP-4.3.2 run-over gate, MVP-1.1 toggle) live on DP_PauseMenu.bgraph.
+		// Stage this frame's ACTION edges, then fire "PauseKeys"; the graph's
+		// chains call the verbs below synchronously. Both instances after a
+		// restart (persistent singleton + fresh scene copy) stage-and-fire,
+		// exactly like both OnUpdates ran before.
+		//
+		// The blackboard KEY names are graph contract and stay as they are; only
+		// the source moved from raw key polls to the C2 action table, which is
+		// what gives the three rows their pad column (Start / Y / X). RESTART and
+		// QUIT_TO_MENU share pad Y and X with DROP and INTERACT by design -- the
+		// (shown || runOver) gate below is what separates them, and it is this
+		// graph's own state gate, not a binding-table one. See DP_Bindings.h.
 		Zenith_GraphComponent* pxGraphs = m_xParentEntity.TryGetComponent<Zenith_GraphComponent>();
 		Zenith_BehaviourGraph* pxGraph = FindPauseGraph();
 		if (pxGraphs == nullptr || pxGraph == nullptr) return;
 
 		Zenith_PropertyValue xValue;
-		xValue.SetBool(g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE));
+		xValue.SetBool(DP_Bindings::WasEscapePressed());
 		pxGraph->GetBlackboard().SetValue("escPressed", xValue);
-		xValue.SetBool(g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_R));
+		xValue.SetBool(DP_Bindings::WasRestartPressed());
 		pxGraph->GetBlackboard().SetValue("rPressed", xValue);
-		xValue.SetBool(g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_Q));
+		xValue.SetBool(DP_Bindings::WasQuitToMenuPressed());
 		pxGraph->GetBlackboard().SetValue("qPressed", xValue);
 		pxGraphs->FireCustomEvent("PauseKeys");
 	}

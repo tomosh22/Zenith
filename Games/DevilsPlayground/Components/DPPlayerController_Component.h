@@ -28,7 +28,7 @@
 #include "Scripting/Zenith_GraphBlackboard.h"
 
 #include "Source/PublicInterfaces.h"
-#include "Source/DPInputActions.h"
+#include "DP_Bindings.h"
 #include "Source/DPParticles.h"
 #include "Source/DP_Tuning.h"
 
@@ -368,9 +368,9 @@ public:
 				if (Zenith_BehaviourGraph* pxGraph = pxGraphs->GetGraphAt(u))
 				{
 					Zenith_PropertyValue xValue;
-					xValue.SetBool(DP_Input::ReadPossessClickPressed());
+					xValue.SetBool(DP_Bindings::WasPossessPressed());
 					pxGraph->GetBlackboard().SetValue("clickPressed", xValue);
-					xValue.SetBool(DP_Input::ReadDropPressed());
+					xValue.SetBool(DP_Bindings::WasDropPressed());
 					pxGraph->GetBlackboard().SetValue("dropPressed", xValue);
 					pxGraphs->FireCustomEvent("PlayerTick");
 				}

@@ -88,14 +88,19 @@ namespace
 		}
 	}
 
+	// ★ C1a -- EDGES, not SetKeyHeld. MOVE / SPRINT / WALK_QUIET are C2 actions
+	// (DP_Bindings.h) whose key rows are fed by the ORDERED transition log; a
+	// level-only SetKeyHeld reaches IsKeyDown and nothing else, so the action
+	// layer would read "not moving" for the whole window. Releasing a key that
+	// was never down is harmless: the shadow is already false, so no edge fires.
 	void ReleaseAllMovementKeys()
 	{
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_W, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_A, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_S, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_D, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_LEFT_SHIFT, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_LEFT_CONTROL, false);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_W);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_A);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_S);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_D);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_LEFT_SHIFT);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_LEFT_CONTROL);
 	}
 }
 
@@ -156,7 +161,7 @@ static bool Step_P1WalkQuiet(int iFrame)
 		// "normal" sample isn't polluted by setup transients.
 		Zenith_AudioBus::ClearEmittedSoundsForTest();
 		ReleaseAllMovementKeys();
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_W, true);
+		Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_W);
 		g_iTickCount = 0;
 		g_iPhase = kWQ_NormalTick;
 		return true;
@@ -178,8 +183,8 @@ static bool Step_P1WalkQuiet(int iFrame)
 		// Reset recorder + arm walk-quiet (Ctrl) on top of forward.
 		Zenith_AudioBus::ClearEmittedSoundsForTest();
 		ReleaseAllMovementKeys();
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_W, true);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_LEFT_CONTROL, true);
+		Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_W);
+		Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_LEFT_CONTROL);
 		g_iTickCount = 0;
 		g_iPhase = kWQ_QuietTick;
 		return true;

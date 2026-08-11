@@ -32,7 +32,7 @@
 #include "UI/Zenith_UIText.h"
 #include "UI/Zenith_UIRect.h"
 #include "Input/Zenith_Input.h"
-#include "Source/DPInputActions.h"
+#include "DP_Bindings.h"
 #include "Maths/Zenith_Maths.h"
 
 #include "Source/PublicInterfaces.h"
@@ -577,7 +577,7 @@ public:
 		// Toggle full-screen help overlay on [H]. The HelpBg rect and
 		// HelpOverlay/HelpTitle text elements are authored hidden by
 		// default; here we follow m_bHelpVisible.
-		if (DP_Input::ReadHelpTogglePressed())
+		if (DP_Bindings::WasHelpTogglePressed())
 		{
 			m_bHelpVisible = !m_bHelpVisible;
 		}

@@ -24,7 +24,7 @@
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Zenith_CameraResolve.h"
-#include "Input/Zenith_Input.h"
+#include "DP_Bindings.h"
 #include "ZenithECS/Zenith_Entity.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "ZenithECS/Zenith_SceneData.h"
@@ -759,8 +759,12 @@ public:
 		pxWindow->GetSize(iW, iH);
 		if (iW <= 0 || iH <= 0) return GRAPH_NODE_STATUS_FAILURE;
 
+		// The cursor POSITION, which no binding row can carry -- POSSESS says a
+		// click happened, not where. Read through DP_Bindings so this file
+		// spells no device surface of its own; the claim rule was already
+		// applied to the POSSESS edge that got us here (see DP_Bindings.h).
 		Zenith_Maths::Vector2_64 xMousePos;
-		g_xEngine.Input().GetMousePosition(xMousePos);
+		DP_Bindings::ReadCursorPosition(xMousePos);
 
 		Zenith_Maths::Matrix4 xView, xProj;
 		pxCam->BuildViewMatrix(xView);

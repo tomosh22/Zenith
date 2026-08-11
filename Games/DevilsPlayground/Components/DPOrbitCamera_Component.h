@@ -7,13 +7,15 @@
  * BirdsEye (default): the whole playable area (~(0..100, 0..100) in world
  * space, centre ~(50, 0, 50)) is visible so the player can see every
  * villager, priest, door, and item simultaneously. The orbit target is
- * pinned at the map centre and never moves. Q/E rotate; wheel zooms.
+ * pinned at the map centre and never moves. CAMERA_ROTATE rotates
+ * (Q/E or the pad's right stick); ZOOM_DELTA (wheel) and ZOOM_RATE
+ * (pad RT-LT) zoom — see DP_Bindings.h for why zoom is two actions.
  *
  * ThirdPerson: camera sits behind + above the possessed villager, looking
  * at it (pose derivation mirrors RenderTest_FollowCameraComponent). The
  * mode auto-engages while a villager is possessed and auto-releases when
- * possession is lost; C manually overrides either way until the next
- * possession change. Transitions BLEND over ~0.4 s by lerping the camera
+ * possession is lost; CAMERA_TOGGLE manually overrides either way until
+ * the next possession change. Transitions BLEND over ~0.4 s by lerping the camera
  * position and look-at point together and re-solving yaw/pitch from the
  * blended pair — no yaw-angle lerp, so there is no ±π wraparound case.
  *
@@ -40,7 +42,7 @@
 #include "Maths/Zenith_Maths.h"
 
 #include "Source/PublicInterfaces.h"
-#include "Source/DPInputActions.h"
+#include "DP_Bindings.h"
 #include "Source/DPTelemetry.h"
 
 enum class DPCameraMode : uint8_t
@@ -93,16 +95,34 @@ public:
 
 	void OnUpdate(const float fDt)
 	{
-		// Q/E yaw, mouse wheel zoom — the only player controls over the
-		// bird's-eye camera. The orbit target NEVER moves toward the
-		// possessed villager: this is by design — the player needs the
-		// whole village in view to pick which villager to possess next
+		// CAMERA_ROTATE yaw, ZOOM_DELTA / ZOOM_RATE zoom — the only player
+		// controls over the bird's-eye camera. The orbit target NEVER moves
+		// toward the possessed villager: this is by design — the player needs
+		// the whole village in view to pick which villager to possess next
 		// and to keep tabs on the priest's pursuit.
-		m_fOrbitYaw += DP_Input::ReadCameraRotate() * m_fRotateSpeed * fDt;
-		const float fWheel = g_xEngine.Input().GetMouseWheelDelta();
-		if (fWheel != 0.0f)
+		m_fOrbitYaw += DP_Bindings::ReadCameraRotate() * m_fRotateSpeed * fDt;
+
+		// ZOOM_DELTA is the wheel: a DISPLACEMENT already integrated over the
+		// frame, so it is NOT multiplied by dt (doing so would make the zoom
+		// frame-rate dependent). Unchanged from the raw GetMouseWheelDelta
+		// path it replaces, value for value.
+		const float fZoomDelta = DP_Bindings::ReadZoomDelta();
+		if (fZoomDelta != 0.0f)
 		{
-			m_fOrbitDistance = glm::clamp(m_fOrbitDistance - fWheel * m_fZoomSpeed,
+			m_fOrbitDistance = glm::clamp(m_fOrbitDistance - fZoomDelta * m_fZoomSpeed,
+				m_fMinDistance, m_fMaxDistance);
+		}
+
+		// ZOOM_RATE is the pad's RT-LT pair: a DEFLECTION, i.e. a rate, which
+		// only becomes a distance after multiplying by dt. Separate action and
+		// separate speed for exactly that reason — see the DP_Bindings header.
+		// A resting trigger reads exactly zero (the device layer's deadzone),
+		// so a mouse player never enters this branch and there is no mode to
+		// arbitrate between the two.
+		const float fZoomRate = DP_Bindings::ReadZoomRate();
+		if (fZoomRate != 0.0f)
+		{
+			m_fOrbitDistance = glm::clamp(m_fOrbitDistance - fZoomRate * m_fZoomRateSpeed * fDt,
 				m_fMinDistance, m_fMaxDistance);
 		}
 
@@ -211,9 +231,9 @@ public:
 
 private:
 	// Advance the mode state machine + blend scalar. Auto rule: possessed
-	// -> ThirdPerson, unpossessed -> BirdsEye. C toggles a manual override
-	// that survives until the next possession CHANGE (edge), then auto
-	// resumes. ThirdPerson additionally requires a resolvable villager
+	// -> ThirdPerson, unpossessed -> BirdsEye. CAMERA_TOGGLE toggles a manual
+	// override that survives until the next possession CHANGE (edge), then
+	// auto resumes. ThirdPerson additionally requires a resolvable villager
 	// (the possessed one, else the last one we saw possessed) — without
 	// one the target is forced back to BirdsEye.
 	void UpdateModeAndBlend(const float fDt)
@@ -228,7 +248,7 @@ private:
 			m_bWasPossessed = bPossessed;
 		}
 
-		if (DP_Input::ReadCameraTogglePressed())
+		if (DP_Bindings::WasCameraTogglePressed())
 		{
 			const bool bAutoWantsTP = bPossessed;
 			const bool bCurrentTP = m_bManualOverrideActive ? m_bManualWantsThirdPerson : bAutoWantsTP;
@@ -327,7 +347,11 @@ private:
 	float m_fOrbitYaw        = 1.5707963f;   // π/2 default — see OnAwake comment
 	float m_fOrbitPitch      = 1.20f;   // ~69° down — strong bird's-eye tilt
 	float m_fRotateSpeed     = 1.5f;    // rad/s — slower since the view is wider
-	float m_fZoomSpeed       = 5.0f;    // metres per wheel tick
+	float m_fZoomSpeed       = 5.0f;    // metres per wheel tick (ZOOM_DELTA)
+	// Metres per SECOND at a fully pulled trigger (ZOOM_RATE). 30 m/s crosses
+	// the whole 30..150 m band in four seconds, which is about as long as a
+	// pad player will hold a trigger before it feels stuck.
+	float m_fZoomRateSpeed   = 30.0f;
 
 	// Third-person mode state (2026-07-01). All trivially-movable members —
 	// this component deliberately has no this-capturing subscriptions, so

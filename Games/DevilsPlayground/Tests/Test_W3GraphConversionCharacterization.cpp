@@ -651,7 +651,9 @@ static bool Step_W3FootstepCadence(int iFrame)
 		// One settle frame after possession, then snapshot the recorder and
 		// start moving. No sprint/quiet modifiers - plain jog.
 		g_iCBaselineCount = W3_CountFootsteps();
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_W, true);
+		// ★ C1a -- EDGES, not SetKeyHeld: MOVE is a C2 action whose key row is
+		// transition-fed, so a level-only "hold" never reaches the action layer.
+		Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_W);
 		g_iCWalkFrames = 0;
 		g_iPhaseC = kC_FirstStepWindow;
 		return true;
@@ -672,7 +674,7 @@ static bool Step_W3FootstepCadence(int iFrame)
 		if (g_iCWalkFrames >= kC_WALK_FRAMES)
 		{
 			g_iCFinalCount = W3_CountFootsteps() - g_iCBaselineCount;
-			Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_W, false);
+			Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_W);
 			g_iPhaseC = kC_Done;
 			return false;
 		}

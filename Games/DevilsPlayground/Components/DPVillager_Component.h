@@ -36,7 +36,7 @@
 
 #include "Source/PublicInterfaces.h"
 #include "Source/DPResources.h"
-#include "Source/DPInputActions.h"
+#include "DP_Bindings.h"
 #include "Source/DPTutorial.h"
 #include "Source/DPMaterials.h"
 #include "Source/DP_Tuning.h"
@@ -198,13 +198,13 @@ public:
 			&& (xPossessed.m_uGeneration == m_xParentEntity.GetEntityID().m_uGeneration);
 		const bool bWasPossessed =
 			(ReadBBInt("state", 0) == (int32_t)DPVillagerState::Possessed);
-		const Zenith_Maths::Vector2 xMove = DP_Input::ReadMoveVillager();
+		const Zenith_Maths::Vector2 xMove = DP_Bindings::ReadMove();
 		const bool bMoving = (glm::length(xMove) > 0.01f);
 
 		WriteBBBool("possessedNow", bIsPossessedThisFrame);
 		WriteBBBool("moving", bMoving);
-		WriteBBBool("sprintHeld", DP_Input::ReadSprintHeld());
-		WriteBBBool("quietHeld", DP_Input::ReadWalkQuietHeld());
+		WriteBBBool("sprintHeld", DP_Bindings::IsSprintHeld());
+		WriteBBBool("quietHeld", DP_Bindings::IsWalkQuietHeld());
 
 		Zenith_PropertyValue xDtPayload;
 		xDtPayload.SetFloat(fDt);
@@ -462,7 +462,7 @@ private:
 			xRight = glm::normalize(glm::cross(Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f), xForward));
 		}
 
-		const Zenith_Maths::Vector2 xInput = DP_Input::ReadMoveVillager();
+		const Zenith_Maths::Vector2 xInput = DP_Bindings::ReadMove();
 		const float fInputLen = glm::length(xInput);
 		Zenith_Maths::Vector3 xVel(0.0f, 0.0f, 0.0f);
 		if (fInputLen > 0.01f)

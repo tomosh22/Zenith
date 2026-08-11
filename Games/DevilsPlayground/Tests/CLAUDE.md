@@ -1,7 +1,32 @@
 # DevilsPlayground/Tests
 
-140+ registered automated tests across 119+ .cpp files (run
+160 registered automated tests across 120+ .cpp files (run
 `devilsplayground.exe --list-automated-tests` for the current count).
+
+> ## ★ INPUT IN A DP TEST IS AN EDGE, NOT A LEVEL (C1a)
+>
+> Since the input migration, every control is a C2 ACTION registered in
+> `DP_Bindings.h`, and the key rows behind MOVE / SPRINT / WALK_QUIET /
+> CAMERA_ROTATE / INTERACT / DROP / ESCAPE / RESTART / QUIT_TO_MENU / POSSESS are
+> fed by the **ordered transition log**, not sampled as a level at close time.
+>
+> `Zenith_InputSimulator::SetKeyHeld` writes ONLY the simulator's held table. It
+> reaches `Zenith_Input::IsKeyDown` and **nothing else** — the action layer never
+> sees the key go down, so `IsHeld` / `GetAxis2D` answer "not held" for the whole
+> window and the test fails pointing anywhere but at its input. Publish
+> `SimulateKeyDown` / `SimulateKeyUp` instead (`SimulateKeyPress` is already an
+> edge pair and was always fine).
+>
+> For per-frame LEVEL intent — a bot steering W/A/S/D every frame — convert to
+> edges with a change-detecting helper rather than re-emitting every frame;
+> `HoldKey` in `Test_PersonalityPlaythrough.cpp` is the reference implementation,
+> and its cache is reset in Setup because the between-tests reset wipes the device
+> and action layers underneath it.
+>
+> A **Step** that reads back an action edge sees the state closed at the PREVIOUS
+> frame's 10e (a Step runs at `PumpAutomatedTest`, before this frame's step 7/8),
+> so assert in the Step AFTER the one that injected — C1b. Game logic at step 11
+> still sees the edge in the same frame it was injected.
 The full list is `devilsplayground.exe --list-automated-tests`. The DP
 suite is the primary quality gate; the bar for any new change is "the
 full headless batch stays green."
@@ -133,7 +158,7 @@ else clicks an ImGui widget. If it is red, treat the bridge as unverified.
 
 | Prefix | Meaning |
 |---|---|
-| `Test_Hello`, `Test_MouseWheel` | Harness smoke -- no gameplay dependency |
+| `Test_Hello`, `Test_MouseWheel`, `Test_SimPad` | Harness smoke -- no gameplay dependency |
 | `Test_P1<Subsystem>_<scenario>` | Phase-1 gameplay (possession, life timer, sprint, pause, navmesh, etc) |
 | `Test_P2<Subsystem>_<scenario>` | Phase-2 gameplay (archetypes, reagents, fog memory, HUD) |
 | `Test_P4Playthrough_*` | Phase-4 full-loop integration tests |
@@ -431,6 +456,22 @@ names or world positions, because procgen reshuffles those per seed.
 `Test_Hello`, `Test_MouseWheel`, `Test_PublicInterfaces` (5 namespace
 APIs + source-bug guards: `DP_HeldItem_Test`, `DP_FindItemByTag_Test`,
 `DP_Win_Test`, `DP_Fog_Test`, `DP_Unlock_Test`).
+
+### The gamepad column
+
+`DP_SimPad_Test` (`Tests/Test_SimPad.cpp`, `requiresGraphics=false`) is the ONLY
+thing in this suite that publishes a pad event — everything else drives the
+keyboard and the mouse, so every pad row in `DP_Bindings.h` would otherwise
+regress in total silence. It proves the auto profile switch to `P_GAMEPAD`
+(without which no pad row resolves at all), then drives MOVE (left stick, with
+the y inversion the row carries), INTERACT (pad X inside a door's radius →
+`DP_OnInteract`, i.e. through the real consumer) and ABILITY (pad RB, asserted as
+an action EDGE because this game has no ABILITY consumer yet).
+
+POSSESS is deliberately absent: the C2 table gives it no pad row (it needs a
+cursor position a face button cannot supply), so the test stages possession
+through `DP_Player::SetPossessedVillager` — the same system path the
+death-respawn uses — and everything after that point is pad-driven.
 
 ### Phase 1 -- foundation gameplay
 

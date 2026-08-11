@@ -1,6 +1,7 @@
 #include "Zenith.h"
 #include "Core/Zenith_Engine.h"
 
+#include "DP_Bindings.h"
 #include "Source/PublicInterfaces.h"
 #include "Source/DevilsPlayground_Tags.h"
 #include "Source/DPFogPass.h"
@@ -388,6 +389,17 @@ void Project_RegisterGameComponents()
 	xEditorRegistry.RegisterComponent<DPGraphInteractable_Component>("DPGraphInteractable");
 	xEditorRegistry.RegisterComponent<DPMenuRelay_Component>("DPMenuRelay");
 #endif
+
+	// The C2 action table (DP_Bindings.h). CONFIG-INDEPENDENT and
+	// unconditional: every input reader in this game asks the action layer, so
+	// a build without this call would have no input at all. It runs BEFORE the
+	// boot unit batch (Zenith_Engine::InitialiseProject calls this hook first),
+	// so a unit may assert against the LIVE registration.
+	//
+	// ★ THE FIRST RegisterProfile CALL CLEARS THE ENGINE DEFAULTS, so Register
+	// installs BOTH profiles or neither: a game left holding exactly one would
+	// have every scheme outside it go dead.
+	DP_Bindings::Register(g_xEngine.Actions());
 
 	// Behaviour Graph node library (used by the boot-authored interactable +
 	// menu graphs).

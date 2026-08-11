@@ -468,8 +468,10 @@ static bool Step_FullPlaythrough(int /*iFrame*/)
 	case kFP_MoveStart:
 	{
 		TryGetEntityPos(g_xVillager, g_xMoveStartPos);
-		// Hold W to move forward (DP_Input::ReadMoveVillager maps W to +y).
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_W, true);
+		// Hold W to move forward (the MOVE action maps W to +y; DP_Bindings.h).
+		// ★ C1a -- EDGES, not SetKeyHeld: MOVE's key row is transition-fed, so a
+		// level-only "hold" reaches IsKeyDown and never the action layer.
+		Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_W);
 		g_iPhase = kFP_MoveWait;
 		g_iWait = 0;
 		return true;
@@ -479,7 +481,7 @@ static bool Step_FullPlaythrough(int /*iFrame*/)
 	{
 		++g_iWait;
 		if (g_iWait < 30) return true;
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_W, false);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_W);
 		g_iPhase = kFP_MoveEnd;
 		return true;
 	}

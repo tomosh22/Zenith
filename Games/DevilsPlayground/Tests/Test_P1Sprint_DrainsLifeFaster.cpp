@@ -132,8 +132,14 @@ static bool Step_P1Sprint(int iFrame)
 		if (pxV == nullptr) { g_iPhase = kSP_Done; return false; }
 		pxV->SetRemainingLifeForTest(30.0f);
 		g_fSprintBaseline = pxV->GetRemainingLife();
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_W, true);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_LEFT_SHIFT, true);
+		// ★ C1a -- EDGES, not SetKeyHeld. MOVE and SPRINT are C2 actions now
+		// (DP_Bindings.h), and their key rows are fed by the ORDERED transition
+		// log, not sampled as a level. SetKeyHeld writes only the simulator's
+		// held table, which reaches IsKeyDown and nothing else: the action layer
+		// would read "not held" for the whole window and the drain would look
+		// like a plain walk. SimulateKeyDown/Up queue real transitions.
+		Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_W);
+		Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_LEFT_SHIFT);
 		g_iTickCount = 0;
 		g_iPhase = kSP_SprintTick;
 		return true;
@@ -163,7 +169,7 @@ static bool Step_P1Sprint(int iFrame)
 		DPVillager_Component* pxV = GetVillagerBehaviour(g_xVillager);
 		if (pxV == nullptr) { g_iPhase = kSP_Done; return false; }
 		g_fSprintAfter = pxV->GetRemainingLife();
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_LEFT_SHIFT, false);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_LEFT_SHIFT);
 		// Leave W held -- walk window keeps the movement.
 		g_iPhase = kSP_WalkBaseline;
 		return true;
@@ -202,7 +208,7 @@ static bool Step_P1Sprint(int iFrame)
 		g_fWalkAfter = pxV->GetRemainingLife();
 		// Release W so we don't leak input state into a subsequent
 		// batched test.
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_W, false);
+		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_W);
 		g_iPhase = kSP_Verify;
 		return true;
 	}

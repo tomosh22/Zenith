@@ -33,7 +33,7 @@
 #include "Maths/Zenith_Maths.h"
 
 #include "Source/PublicInterfaces.h"
-#include "Source/DPInputActions.h"
+#include "DP_Bindings.h"
 #include "Source/DP_Tuning.h"
 
 class DPInteractable_Base
@@ -151,7 +151,7 @@ public:
 		// target. Without this, players hold proximity but the F-press only
 		// counts on the single rising-edge frame — gameplay-breaking.
 		if (bWillBeInRange && !m_bInteractOnOverlap
-		    && DP_Input::ReadInteractPressed())
+		    && DP_Bindings::WasInteractPressed())
 		{
 			Zenith_EventDispatcher::Get().Dispatch(
 				DP_OnInteract{ xWouldBeInRange, m_xParentEntity.GetEntityID() });

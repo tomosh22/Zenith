@@ -1241,18 +1241,59 @@ namespace
 		return true;
 	}
 
+	// ------------------------------------------------------------------
+	// ★ C1a -- THE BOT PUBLISHES EDGES, NOT LEVELS.
+	//
+	// MOVE / SPRINT / WALK_QUIET / CAMERA_ROTATE are C2 actions since the
+	// input migration (DP_Bindings.h), and every key row behind them is fed
+	// by the ORDERED TRANSITION LOG rather than sampled as a level at close
+	// time. Zenith_InputSimulator::SetKeyHeld writes ONLY the simulator's
+	// held table -- it reaches Zenith_Input::IsKeyDown and nothing else -- so
+	// a bot that "held" W that way would drive an action layer that never saw
+	// the key go down, and every personality would stand still.
+	//
+	// HoldKey turns the bot's per-frame LEVEL intent ("W should be down this
+	// frame") back into the transitions a real keyboard produces, emitting a
+	// Down or an Up only when the intent actually CHANGES. Emitting an edge
+	// every frame would work too, but it would fill the injection queue with
+	// no-op transitions and make the log useless to read.
+	//
+	// The cache is per-process, so Setup_HumanPlaythrough resets it: the
+	// between-tests reset clears the DEVICE and the action layer, and a stale
+	// "still down" here would swallow the next test's first press.
+	// ------------------------------------------------------------------
+	constexpr u_int32 kHoldKeyCacheSize = 512;
+	bool g_abHoldKeyState[kHoldKeyCacheSize] = {};
+
+	void HoldKey(Zenith_KeyCode eKey, bool bDown)
+	{
+		if (eKey < 0 || eKey >= static_cast<Zenith_KeyCode>(kHoldKeyCacheSize)) return;
+		if (g_abHoldKeyState[eKey] == bDown) return;
+		g_abHoldKeyState[eKey] = bDown;
+		if (bDown) Zenith_InputSimulator::SimulateKeyDown(eKey);
+		else       Zenith_InputSimulator::SimulateKeyUp(eKey);
+	}
+
+	// Called from Setup: forget what we think is held without emitting the
+	// releases, because the harness has already wiped the device and action
+	// layers underneath us.
+	void ResetHoldKeyCache()
+	{
+		for (u_int32 u = 0; u < kHoldKeyCacheSize; u++) g_abHoldKeyState[u] = false;
+	}
+
 	void ClearWASD()
 	{
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_W, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_A, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_S, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_D, false);
+		HoldKey(ZENITH_KEY_W, false);
+		HoldKey(ZENITH_KEY_A, false);
+		HoldKey(ZENITH_KEY_S, false);
+		HoldKey(ZENITH_KEY_D, false);
 		// Clear personality modifier keys too -- if a Stealth or Speedrun
 		// personality leaves Ctrl/Shift held when we transition to a non-
 		// walking phase, the orbit camera (Q/E) and click-to-possess would
 		// inherit the modifier state. Always reset to a clean slate.
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_LEFT_SHIFT,   false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_LEFT_CONTROL, false);
+		HoldKey(ZENITH_KEY_LEFT_SHIFT,   false);
+		HoldKey(ZENITH_KEY_LEFT_CONTROL, false);
 	}
 
 	// ====================================================================
@@ -1808,10 +1849,10 @@ namespace
 		const float fRightDot   = glm::dot(xDir, xRight);
 
 		constexpr float kAxisThresh = 0.25f;
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_W, fForwardDot >  kAxisThresh);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_S, fForwardDot < -kAxisThresh);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_D, fRightDot   >  kAxisThresh);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_A, fRightDot   < -kAxisThresh);
+		HoldKey(ZENITH_KEY_W, fForwardDot >  kAxisThresh);
+		HoldKey(ZENITH_KEY_S, fForwardDot < -kAxisThresh);
+		HoldKey(ZENITH_KEY_D, fRightDot   >  kAxisThresh);
+		HoldKey(ZENITH_KEY_A, fRightDot   < -kAxisThresh);
 
 		// Personality modifier keys. Set unconditionally so that walks driven
 		// by the same DriveWASDToward call get the same modifier policy across
@@ -1837,8 +1878,8 @@ namespace
 		const bool bSprintNow = g_xActiveCfg.bHoldSprint
 		                     || (g_xActiveCfg.bAdaptiveSprint
 		                         && fHorizToTarget > kSprintMinDistanceM);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_LEFT_SHIFT,   bSprintNow);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_LEFT_CONTROL, g_xActiveCfg.bHoldQuiet);
+		HoldKey(ZENITH_KEY_LEFT_SHIFT,   bSprintNow);
+		HoldKey(ZENITH_KEY_LEFT_CONTROL, g_xActiveCfg.bHoldQuiet);
 		return false;
 	}
 
@@ -2326,8 +2367,11 @@ static void Setup_HumanPlaythrough()
 	ResetPath();
 
 	// Make sure no leftover keys are held (the harness already calls
-	// ResetAllInputState before Setup, but be explicit).
+	// ResetAllInputState before Setup, but be explicit) -- and forget what
+	// HoldKey thinks is down, or the first press of this run would be
+	// swallowed as "no change" against the last run's cache.
 	Zenith_InputSimulator::ClearHeldKeys();
+	ResetHoldKeyCache();
 }
 
 // ----------------------------------------------------------------------------
@@ -2531,7 +2575,9 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 			std::fflush(stdout);
 		}
 
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_Q, true);
+		// CAMERA_ROTATE's negative half. ★ C1a again: an EDGE, because the
+		// KEY_AXIS1D row behind it is transition-fed like every other key row.
+		HoldKey(ZENITH_KEY_Q, true);
 		g_iPhase = kHP_CamRotateQ;
 		g_iWait = 0;
 		return true;
@@ -2541,11 +2587,11 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 	{
 		++g_iWait;
 		if (g_iWait < 30) return true;
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_Q, false);
+		HoldKey(ZENITH_KEY_Q, false);
 		Zenith_CameraComponent* pxCam = Zenith_GetMainCameraAcrossScenes();
 		if (pxCam) g_fYawAfterQ = static_cast<float>(pxCam->GetYaw());
 
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_E, true);
+		HoldKey(ZENITH_KEY_E, true);
 		g_iPhase = kHP_CamRotateE;
 		g_iWait = 0;
 		return true;
@@ -2555,7 +2601,7 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 	{
 		++g_iWait;
 		if (g_iWait < 30) return true;
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_E, false);
+		HoldKey(ZENITH_KEY_E, false);
 		Zenith_CameraComponent* pxCam = Zenith_GetMainCameraAcrossScenes();
 		if (pxCam) g_fYawAfterE = static_cast<float>(pxCam->GetYaw());
 

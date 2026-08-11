@@ -35,14 +35,17 @@ night/fog result.
 ## File map
 
 ```
-DevilsPlayground.cpp                 # Project_* lifecycle hooks; authors FrontEnd + ProcLevel scenes
+DevilsPlayground.cpp                 # Project_* lifecycle hooks; registers the C2 action table;
+                                     #   authors FrontEnd + ProcLevel scenes
+DP_Bindings.h                        # THE ACTION TABLE (input program C2) -- the only production
+                                     #   file allowed to spell a raw key, mouse button or pad code,
+                                     #   plus the cursor-position reader the possess pick uses
 Source/
   PublicInterfaces.h                 # Aggregator header only; each namespace owns DP_Player.h / DP_Items.h /
                                      #   DP_Interactables.h / DP_AI.h / DP_Fog.h / DP_Win.h / DP_Night.h / DP_Query.h.
                                      #   State lives in the individual DP_*.cpp anon namespaces (no PublicInterfaces.cpp).
                                      #   Also includes DPCommonTypes.h (shared Vec2/Vec3/Vec4/Quat aliases + DP_On* event structs)
   DevilsPlayground_Tags.h            # DP_ItemTag enum + helpers
-  DPInputActions.h                   # WASD/Q-E/F/Space/Esc/click readers
   DPFogPass.h / .cpp                 # Registers DP_Fog as a generic game render feature + force-disables engine fog
   DPProcLevel/                       # Procgen generator (deterministic integer-coord internals)
     DPProcLevel_Generator.{h,cpp}    # BSP → rooms → doors → walls → game elements → AI placement
@@ -121,6 +124,73 @@ Per-directory deep dives:
 |------:|-----------|---------|
 | 0     | FrontEnd  | Main menu (boots here) |
 | 1     | ProcLevel | Gameplay — DPProcLevelBootstrap spawns rooms / walls / villagers / priest / items / pentagram at runtime from `DPProcLevel::Generate(seed, cfg, ...)` |
+
+## Controls (the action table)
+
+Every control is an ACTION registered in **`DP_Bindings.h`** — the one production
+file in this game allowed to spell a raw key, mouse button or pad code (input
+program C2). Two profiles, `P_DESKTOP {KEYBOARD|MOUSE}` and
+`P_GAMEPAD {GAMEPAD}`, and the active one switches automatically on the first
+input from the other device. The retired `Source/DPInputActions.h` (`DP_Input`)
+is DELETED: it named the verbs but still polled `Zenith_Input` for a hard-wired
+key, so no pad and no rebind could ever answer.
+
+| Action | Keyboard | Mouse | Gamepad |
+|---|---|---|---|
+| MOVE | W/A/S/D + arrows | — | Left stick |
+| SPRINT | Shift (either) | — | L3 |
+| WALK_QUIET | Ctrl (either) | — | LB |
+| INTERACT | F | — | X ★ |
+| DROP | G | — | Y ★ |
+| ABILITY ‡ | Space | — | RB |
+| CAMERA_ROTATE | Q (−) / E (+) ★ | — | Right stick X |
+| CAMERA_TOGGLE | C | — | R3 |
+| HELP | H | — | Back |
+| ESCAPE | Escape | — | Start |
+| RESTART | R | — | Y ★ |
+| QUIT_TO_MENU | Q ★ | — | X ★ |
+| POSSESS † | — | Left button | — |
+| ZOOM_DELTA ◆ | — | Mouse wheel | — |
+| ZOOM_RATE ◆ | — | — | RT − LT |
+
+★ **Pad Y and X, and keyboard Q, are each bound twice, by design.** RESTART and
+QUIT_TO_MENU are consumed ONLY by `DP_PauseMenu.bgraph`, whose first gate is
+`(shown || runOver)` — the overlay must already be up, or the run already over.
+While that gate is closed the presses are inert and only DROP / INTERACT /
+CAMERA_ROTATE act; while it is open the gameplay scene is paused, so the villager
+shim and the interactables are not ticking to see them. That state gate is the
+GAME's, and the migration deliberately did not replace it with per-context action
+masks. (The keyboard Q collision predates the migration — the retired raw polls
+had it too.)
+
+† **POSSESS has no pad row, and that is the specified narrowing.** It is the
+press half of a cursor gesture: `DPNode_PickVillagerUnderCursor` scores every
+villager by screen distance to the cursor. A face button would produce a press
+that lands wherever the mouse was last left. The cursor POSITION is not an action
+either — it is read through `DP_Bindings::ReadCursorPosition`, the one reason
+that header still names `Zenith_Input`.
+
+‡ ABILITY is registered per the C2 contract but has **no production consumer**
+today (the retired `DP_Input` reader had none either). `DP_SimPad_Test` pins its
+action edge so it cannot rot before a consumer arrives.
+
+◆ **Zoom is two actions because a wheel and a trigger are different quantities.**
+ZOOM_DELTA is the wheel's already-integrated DISPLACEMENT (multiplying it by dt
+would make the zoom frame-rate dependent); ZOOM_RATE is the trigger pair's
+deflection, which only becomes a distance after multiplying by dt.
+`DPOrbitCamera_Component` applies both every frame at separate speeds
+(`m_fZoomSpeed` m/notch, `m_fZoomRateSpeed` m/s), and a still wheel or a resting
+trigger contributes exactly zero, so there is no mode to switch between.
+
+DP's graphs do **not** read input through `OnActionPressed` nodes: each is driven
+by a custom event its C++ shim fires at the exact frame position the retired
+inline call sat, with this frame's input staged onto the blackboard first
+(`clickPressed` / `dropPressed`, `escPressed` / `rPressed` / `qPressed`). So the
+BLACKBOARD KEY names are graph contract; the action names are not.
+
+Menu navigation (arrows or the d-pad to move focus, Enter or pad A to activate,
+click to press a button) is the ENGINE-reserved UI action set (ids 0-15), which
+every game gets without registering anything.
 
 ## Behaviour Graphs
 

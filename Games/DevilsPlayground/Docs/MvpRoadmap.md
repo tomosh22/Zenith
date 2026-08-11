@@ -183,10 +183,10 @@ The primary engine-navmesh-generator path won via PRs #32-#40. The fallback hand
 ### 1.7 Sprint + walk-quiet
 
 - [x] **MVP-1.7.1** — Test_P1Sprint_DrainsLifeFaster (with Sprint impl in the same PR per the corrected test-first pattern).
-- [x] **MVP-1.7.2** — Add Shift handling in `DP_Input::ReadMoveVillager` for sprint. Apply speed multiplier and life-cost.
+- [x] **MVP-1.7.2** — Add Shift handling to the movement reader for sprint. Apply speed multiplier and life-cost. (Now the SPRINT action in `DP_Bindings.h`; the `DP_Input` layer this originally landed in is deleted.)
 - [x] **MVP-1.7.3** — Test_P1Sprint_NoDrainWhenNotMoving.
 - [x] **MVP-1.7.4** — Test_P1WalkQuiet_FootstepLoudnessHalved (with walk-quiet impl in the same PR). Added 2026-05-12 round-3/4 reconciliation — walk-quiet is MVPScope §1.1 but was missing from earlier roadmap.
-- [x] **MVP-1.7.5** — Add Ctrl handling in `DP_Input::ReadMoveVillager` for walk-quiet. Footstep emissions through `Zenith_AudioBus::EmitSound` apply the `walk_footstep_loudness_multiplier` from Tuning.json.
+- [x] **MVP-1.7.5** — Add Ctrl handling to the movement reader for walk-quiet. Footstep emissions through `Zenith_AudioBus::EmitSound` apply the `walk_footstep_loudness_multiplier` from Tuning.json. (Now the WALK_QUIET action in `DP_Bindings.h`.)
 - [x] **MVP-1.7.6** — Test_P1WalkQuiet_AelfricEffectiveHearingHalved.
 
 ### 1.8 Possession range

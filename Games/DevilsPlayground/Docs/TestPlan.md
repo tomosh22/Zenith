@@ -367,7 +367,7 @@ These tests prove the foundational gaps from [Shortfalls.md §1](Shortfalls.md) 
 **Proves:** GDD §4.2 + Tuning.json `movement.walk_footstep_loudness_multiplier: 0.5` — when the player holds Ctrl/L1, the moving villager's footstep emissions register at half loudness.
 
 - **Setup:** villager. Subscribe to `Zenith_AudioBus::GetEmittedSoundsForTest` (MVP-0.4.1).
-- **Step:** possess. Walk normally for 60 frames (1s); capture average emitted-loudness for `footstep_*` events. Then `SetKeyHeld(ZENITH_KEY_LCTRL, true)`. Walk-quiet for 60 frames; capture average.
+- **Step:** possess. Walk normally for 60 frames (1s); capture average emitted-loudness for `footstep_*` events. Then `SimulateKeyDown(ZENITH_KEY_LEFT_CONTROL)`. Walk-quiet for 60 frames; capture average.
 - **Verify:** walk-quiet average ≈ 0.5 × normal-walk average, ±0.05.
 
 #### Test_P1WalkQuiet_AelfricEffectiveHearingHalved
@@ -386,7 +386,7 @@ These tests prove the foundational gaps from [Shortfalls.md §1](Shortfalls.md) 
 
 - **Setup:** villager A. Set life to 20 s.
 - **Step:**
-  - phase 0: possess, hold Shift (`SetKeyHeld(ZENITH_KEY_LSHIFT, true)`), no WASD.
+  - phase 0: possess, hold Shift (`SimulateKeyDown(ZENITH_KEY_LEFT_SHIFT)`), no WASD.
   - phase 1: wait 60 frames (1.0 s game-time).
   - phase 2: assert life ≈ 20 - 4 = 16 s (1 s wall-time × (1.0 base + 3.0 sprint extra)) with ±0.2 s tolerance.
 - **Verify:** drain matches expected.
@@ -932,7 +932,7 @@ The biggest tests in the suite. Each scripts a full Night start-to-end and asser
 
 **Reconciled 2026-05-12 round-4 peer review.** The earlier wording in this section said tests should reuse the existing `ComputePathAStar` from the prototype. That function is a grid pathfinder over a separate occupancy buffer — it does NOT consult the navmesh. Once MVP-1.2 lands real navmesh with door portals, the grid pathfinder would route bots through walls (test bots could "win" by cheating). MVP-1.2.9 retires `ComputePathAStar` from the test suite and replaces it with `Zenith_NavMeshTestPathfinder::ComputePath` which wraps the real `Zenith_NavMesh::FindPath`. **Tier 4 tests use the navmesh-aware API only.**
 
-**Why a real-navmesh-aware pathfinder is required:** Raw timed key-holds (`SetKeyHeld(W, true) for 5 s`) flake the moment a collider is nudged. A grid-A* pathfinder routes through walls. The harness must own:
+**Why a real-navmesh-aware pathfinder is required:** Raw timed key-holds (`hold W for 5 s`) flake the moment a collider is nudged. A grid-A* pathfinder routes through walls. The harness must own:
 - Path planning that uses the same navmesh the priest uses.
 - Per-frame replanning when blocked (e.g. a door closed in the priest's wake — and the door's `SyncNavMeshBlock` disables the matching portal).
 - WASD-input synthesis from path waypoints (transforms `Vec3 path[i+1] - pos` into camera-relative WASD presses).
@@ -948,7 +948,7 @@ Tier 4 tests are **blocked on MVP-1.2 (real navmesh) completing**. They cannot b
 - **Step:** state machine over **legs**, not over fixed frame counts. For each of the 5 reagents (selected nearest-first):
   1. **Pick body:** find the closest possessable villager to the reagent's position via on-navmesh distance; `DP_Player::SetPossessedVillager(id)`.
   2. **Path to reagent:** `Zenith_NavMeshTestPathfinder::ComputePath(villager_pos, reagent_pos, outWaypoints)`; assert returns true and waypoints non-empty.
-  3. **Drive:** per frame, `DriveWASDToward(next waypoint at 0.5m tolerance)` via `SetKeyHeld`. Replan if stuck.
+  3. **Drive:** per frame, `DriveWASDToward(next waypoint at 0.5m tolerance)` via the edge-publishing `HoldKey` helper (★ C1a — `SetKeyHeld` never reaches the action layer; see Tests/CLAUDE.md). Replan if stuck.
   4. **Pickup:** wait until `DP_Player::GetHeldItemTag(villager) == reagent.tag`.
   5. **Path to pentagram:** repeat.
   6. **Inscribe:** at <2m from pentagram, `SimulateKeyPress(ZENITH_KEY_F)`; wait for inscription event.
@@ -1010,23 +1010,32 @@ This is the **acceptance test** for the entire campaign. It pre-flights every Ni
 
 ### 5.2 Console Input Parity
 
-Console builds use gamepad input mapped to the same actions. The simulator extends to `SimulateGamepadButtonPress` and `SimulateGamepadStick` (Phase 1 engine work).
+Console builds use gamepad input mapped to the same actions. The simulator extends to `SimulateGamepadButtonDown/Up` and `SimulateGamepadStick`.
 
-#### Test_P4Gamepad_PossessOnSouthButton
+> **SHIPPED as `DP_SimPad_Test`** (`Tests/Test_SimPad.cpp`, `requiresGraphics=false`).
+> It is the only test in the suite that publishes a pad event: it proves the auto
+> profile switch to `P_GAMEPAD` (nothing below resolves without it), then drives
+> MOVE on the left stick, INTERACT on pad X through its real consumer
+> (`DP_OnInteract` from a door), and ABILITY on pad RB as an action edge. It
+> subsumes `Test_P4Gamepad_LeftStickMovesPossessed` below.
 
-**Proves:** A / X gamepad button triggers the same possession action as left-click on the cursor target.
+#### ~~Test_P4Gamepad_PossessOnSouthButton~~ — WITHDRAWN
 
-- **Setup:** position cursor over villager (`SimulateMousePosition(x, y)`). Switch input source to gamepad.
-- **Step:** `SimulateGamepadButtonPress(SOUTH)`. Wait 2 frames.
-- **Verify:** villager is possessed (same outcome as left-click).
+The ratified C2 binding table gives **POSSESS no pad row on purpose**: it is the
+press half of a cursor gesture (`DPNode_PickVillagerUnderCursor` scores villagers
+by screen distance to the cursor), and a face button would produce a press that
+lands wherever the mouse was last left. Click-to-possess is deliberately not
+pad-operable until this game grows a pad cursor; there is nothing here to test.
+See `DP_Bindings.h` and the game-root CLAUDE.md *Controls* section.
 
-#### Test_P4Gamepad_LeftStickMovesPossessed
+#### Test_P4Gamepad_LeftStickMovesPossessed — covered by `DP_SimPad_Test`
 
 **Proves:** left stick directional input drives the same movement as WASD.
 
 - **Setup:** possess villager. Capture position P0.
-- **Step:** `SimulateGamepadStick(LEFT, 1.0, 0.0)` (full right) for 60 frames.
-- **Verify:** `position.x > P0.x + 5.0 m` (movement happened).
+- **Step:** `SimulateGamepadStick(ZENITH_GAMEPAD_AXIS_LEFT_X, ...)` for 60+ frames.
+- **Verify:** horizontal displacement from P0 exceeds the bar (`DP_SimPad_Test`
+  observes ~9.8 m over 90 frames).
 
 #### Test_P4Gamepad_StartPauses
 

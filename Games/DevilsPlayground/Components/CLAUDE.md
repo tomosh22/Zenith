@@ -15,8 +15,10 @@ other's headers.
 ### Player-side components
 
 ```
-DPPlayerController_Component.h    # Click-to-possess raycast. Reads mouse position via
-                                  #   Zenith_Input::GetMousePosition (so the simulator can
+DPPlayerController_Component.h    # Click-to-possess raycast. Stages the POSSESS / DROP action
+                                  #   edges (DP_Bindings) onto DP_PlayerControl.bgraph; the pick
+                                  #   node reads the cursor position via
+                                  #   DP_Bindings::ReadCursorPosition (so the simulator can
                                   #   drive clicks deterministically) + builds a world ray +
                                   #   picks the closest villager hit. Calls
                                   #   DP_Player::TryVoluntaryPossessSwitch (cooldown + range
@@ -27,16 +29,17 @@ DPPlayerController_Component.h    # Click-to-possess raycast. Reads mouse positi
                                   #   DP_Night namespace functions reach via Instance().
 DPVillager_Component.h            # Possessable villager. Holds the per-archetype life timer
                                   #   (Farmhand 45 s / Devout 45 / Beggar 37.5 / Child 22.5
-                                  #   as of 2026-05-22) + WASD movement (camera-relative;
-                                  #   matches DPInputActions). States: Idle / Possessed /
-                                  #   Fainted / Dead. Sprint (Shift) drains life at +1.75 s/s
-                                  #   over base. Walk-quiet (Ctrl) uses 0.875x jog speed +
-                                  #   0.25x footstep loudness.
+                                  #   as of 2026-05-22) + MOVE-action movement (camera-relative;
+                                  #   WASD/arrows or the pad's left stick). States: Idle /
+                                  #   Possessed / Fainted / Dead. SPRINT (Shift / L3) drains life
+                                  #   at +1.75 s/s over base. WALK_QUIET (Ctrl / LB) uses 0.875x
+                                  #   jog speed + 0.25x footstep loudness.
 DPOrbitCamera_Component.h         # Orbit camera over the map centre (pinned at ~50, 0, 50; does
-                                  #   NOT follow the possessed villager). Q/E yaw + mouse-wheel
-                                  #   zoom (EXT-4). Not a Zenith_CameraComponent (which is
-                                  #   FPS-only); own implementation of the orbit math. Gym
-                                  #   scenes can override the target via SetOrbitTarget().
+                                  #   NOT follow the possessed villager). CAMERA_ROTATE yaw (Q/E
+                                  #   or right-stick X) + ZOOM_DELTA (wheel, EXT-4) and ZOOM_RATE
+                                  #   (pad RT-LT, dt-scaled) zoom. Not a Zenith_CameraComponent
+                                  #   (which is FPS-only); own implementation of the orbit math.
+                                  #   Gym scenes can override the target via SetOrbitTarget().
 DPHUDController_Component.h       # The HUD. Life bar (colour gradient) + held-item readout +
                                   #   objective counter + per-state banner. Subscribes to
                                   #   DP_OnVictory + DP_OnRunLost (per-cause copy: "CAUGHT BY
@@ -47,11 +50,13 @@ DPMenuRelay_Component.h           # Menu-button shim. Wires the FrontEnd UI butt
                                   #   "MenuPlay"/"MenuQuit" custom events consumed by
                                   #   DP_MainMenu.bgraph (Play -> LoadSceneByIndex node;
                                   #   Quit -> DPRequestQuit node). Lives in scene 0.
-DPPauseMenuController_Component.h # Esc-toggle pause overlay. Migrates to persistent scene
+DPPauseMenuController_Component.h # ESCAPE-toggle pause overlay. Migrates to persistent scene
                                   #   (singleton pattern) on first OnStart so it can pump
                                   #   input while the gameplay scene is paused -- otherwise
-                                  #   the player couldn't unpause. R-key restart / Q-key
-                                  #   quit-to-FrontEnd routed here. NOTE: the cross-scene
+                                  #   the player couldn't unpause. RESTART / QUIT_TO_MENU
+                                  #   (R / Q, or pad Y / X inside the overlay) routed here;
+                                  #   the graph's (shown || runOver) gate is what keeps the
+                                  #   shared pad faces off DROP / INTERACT. NOTE: the cross-scene
                                   #   move RELOCATES the component (move-construct); its
                                   #   hand-written moves keep the singleton + event
                                   #   subscriptions valid, and DontDestroyOnLoad is the

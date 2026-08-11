@@ -155,7 +155,7 @@ The prototype's win condition is: 5 objectives → pentagram → victory event. 
 
 ### 2.9 Camera is intentionally locked
 
-The orbit camera is fixed-pitch at ~1.2 rad (~69°). The GDD requires adjustable pitch (0°–80° accessibility), an optional follow mode, and console-input-mapped rotation. The prototype supports Q/E rotate, mouse-wheel zoom, no follow, no tilt.
+The orbit camera is fixed-pitch at ~1.2 rad (~69°). The GDD requires adjustable pitch (0°–80° accessibility) and an optional follow mode. Console-input-mapped rotation SHIPPED with the C2 input migration — CAMERA_ROTATE takes the pad's right-stick X beside Q/E, and ZOOM_RATE takes RT−LT beside the wheel's ZOOM_DELTA (see `DP_Bindings.h`). The GDD's exact console mapping differs: it specifies "right-stick clicks rotate, right-stick up/down zooms", where the ratified C2 table uses right-stick X for rotate and the trigger pair for zoom. Still outstanding: no follow, no tilt.
 
 **Bridge cost:** ~2 engineering weeks.
 
