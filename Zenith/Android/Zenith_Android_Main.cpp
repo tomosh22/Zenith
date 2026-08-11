@@ -169,37 +169,88 @@ static int32_t OnInputEvent(android_app* pxApp, AInputEvent* pxEvent)
 	const int32_t iRawAction = AMotionEvent_getAction(pxEvent);
 	const int32_t iAction = iRawAction & AMOTION_EVENT_ACTION_MASK;
 
-	// WP0 stays pointer-0-only (the pointer table, and with it real multi-touch,
-	// arrives next). A secondary finger's DOWN/UP carries its index in the action
-	// word; consume it rather than mis-attributing its coordinates to pointer 0.
-	if (iAction == AMOTION_EVENT_ACTION_POINTER_DOWN || iAction == AMOTION_EVENT_ACTION_POINTER_UP)
+	// FULL multi-touch (WP1). Android reports one MotionEvent covering every
+	// pointer currently on the glass; which one an event is ABOUT lives in the
+	// action word's index field, and the coordinates of all the others live in
+	// the same event under their own indices. Getting this wrong is what kept
+	// the platform single-touch: reading index 0 for a POINTER_DOWN attributes
+	// the second finger's coordinates to the first.
+	switch (iAction)
 	{
-		const int32_t iPointerIndex = (iRawAction & AMOTION_EVENT_ACTION_POINTER_INDEX_MASK)
-			>> AMOTION_EVENT_ACTION_POINTER_INDEX_SHIFT;
-		if (iPointerIndex != 0)
+	case AMOTION_EVENT_ACTION_DOWN:
+	case AMOTION_EVENT_ACTION_UP:
+	case AMOTION_EVENT_ACTION_POINTER_DOWN:
+	case AMOTION_EVENT_ACTION_POINTER_UP:
+	{
+		// DOWN/UP name exactly ONE pointer. For the primary pair the index is
+		// always 0; for the secondary pair it is carried in the action word.
+		const int32_t iPointerIndex = (iAction == AMOTION_EVENT_ACTION_POINTER_DOWN
+			|| iAction == AMOTION_EVENT_ACTION_POINTER_UP)
+			? ((iRawAction & AMOTION_EVENT_ACTION_POINTER_INDEX_MASK) >> AMOTION_EVENT_ACTION_POINTER_INDEX_SHIFT)
+			: 0;
+
+		const int32_t iToolType = AMotionEvent_getToolType(pxEvent, static_cast<size_t>(iPointerIndex));
+		if (iToolType != AMOTION_EVENT_TOOL_TYPE_FINGER && iToolType != AMOTION_EVENT_TOOL_TYPE_STYLUS)
 		{
-			return 1;
+			return 0;
 		}
+
+		const int32_t iPointerId = AMotionEvent_getPointerId(pxEvent, static_cast<size_t>(iPointerIndex));
+		const float fX = AMotionEvent_getX(pxEvent, static_cast<size_t>(iPointerIndex));
+		const float fY = AMotionEvent_getY(pxEvent, static_cast<size_t>(iPointerIndex));
+
+		LOGI("Touch %s id=%d at (%.1f, %.1f)",
+			(iAction == AMOTION_EVENT_ACTION_DOWN || iAction == AMOTION_EVENT_ACTION_POINTER_DOWN) ? "DOWN" : "UP",
+			iPointerId, fX, fY);
+
+		Zenith_Window::GetInstance()->OnTouchEvent(iAction, iPointerId, fX, fY);
+		return 1;
 	}
 
-	const int32_t iToolType = AMotionEvent_getToolType(pxEvent, 0);
-	if (iToolType != AMOTION_EVENT_TOOL_TYPE_FINGER && iToolType != AMOTION_EVENT_TOOL_TYPE_STYLUS)
+	case AMOTION_EVENT_ACTION_MOVE:
 	{
+		// A MOVE is about EVERY pointer at once — there is no per-pointer move
+		// event on this platform. Emit one per tracked pointer; the FIFO coalesces
+		// the redundant ones per pointer id, so a fast finger costs one entry.
+		const size_t uPointerCount = AMotionEvent_getPointerCount(pxEvent);
+		bool bHandled = false;
+		for (size_t u = 0; u < uPointerCount; u++)
+		{
+			const int32_t iToolType = AMotionEvent_getToolType(pxEvent, u);
+			if (iToolType != AMOTION_EVENT_TOOL_TYPE_FINGER && iToolType != AMOTION_EVENT_TOOL_TYPE_STYLUS)
+			{
+				continue;
+			}
+			Zenith_Window::GetInstance()->OnTouchEvent(iAction,
+				AMotionEvent_getPointerId(pxEvent, u),
+				AMotionEvent_getX(pxEvent, u),
+				AMotionEvent_getY(pxEvent, u));
+			bHandled = true;
+		}
+		return bHandled ? 1 : 0;
+	}
+
+	case AMOTION_EVENT_ACTION_CANCEL:
+	{
+		// The gesture was taken over by the system (a system gesture, a parent
+		// view). EVERY pointer dies, and none of them produce an UP — a cancel
+		// that only reached the primary finger is exactly how a phantom
+		// secondary pointer gets stuck down forever.
+		const size_t uPointerCount = AMotionEvent_getPointerCount(pxEvent);
+		for (size_t u = 0; u < uPointerCount; u++)
+		{
+			Zenith_Window::GetInstance()->OnTouchEvent(iAction,
+				AMotionEvent_getPointerId(pxEvent, u),
+				AMotionEvent_getX(pxEvent, u),
+				AMotionEvent_getY(pxEvent, u));
+		}
+		LOGI("Touch CANCEL for %d pointer(s)", static_cast<int>(uPointerCount));
+		return 1;
+	}
+
+	default:
 		return 0;
 	}
-
-	const int32_t iPointerId = AMotionEvent_getPointerId(pxEvent, 0);
-	const float fX = AMotionEvent_getX(pxEvent, 0);
-	const float fY = AMotionEvent_getY(pxEvent, 0);
-
-	if (iAction == AMOTION_EVENT_ACTION_DOWN || iAction == AMOTION_EVENT_ACTION_UP)
-	{
-		LOGI("Touch %s id=%d at (%.1f, %.1f)",
-			iAction == AMOTION_EVENT_ACTION_DOWN ? "DOWN" : "UP", iPointerId, fX, fY);
-	}
-
-	Zenith_Window::GetInstance()->OnTouchEvent(iAction, iPointerId, fX, fY);
-	return 1; // Event handled
 }
 
 void android_main(android_app* pxApp)

@@ -15,6 +15,7 @@
 // Accessed via g_xEngine.UI(); allocated and wired by Zenith_Engine.
 // ============================================================================
 
+class Zenith_Pointers;
 class Zenith_SceneSystem;
 
 class Zenith_UISystem
@@ -24,6 +25,20 @@ public:
 	// Zenith_Engine passes the scene system in so this TU never names the
 	// engine singleton.
 	void Initialise(Zenith_SceneSystem& xScenes);
+
+	// Frame contract step 10: the UI INPUT phase, run before game logic and
+	// entirely separately from Update() below.
+	//
+	// It is its own phase for two reasons. The visual pass is skipped whenever
+	// the frame submits no render work (scene transitions), and input that only
+	// happens on rendered frames is input that silently disappears; and gameplay
+	// must not act on a press a widget is about to consume, which can only be
+	// decided before game logic runs.
+	//
+	// Takes the pointer table by reference rather than reaching for
+	// g_xEngine.Pointers(), keeping this TU (and every widget it drives) off the
+	// engine singleton.
+	void UpdateInput(Zenith_Pointers& xPointers, float fDt);
 
 	// The whole per-frame UI step. The Update pass and the Render pass live
 	// in ONE entry point because the boundary between them is load-bearing

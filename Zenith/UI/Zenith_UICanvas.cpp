@@ -116,6 +116,15 @@ void Zenith_UICanvas::AddElement(Zenith_UIElement* pxElement)
         pxElement->m_pxCanvas = this;
         pxElement->m_bTransformDirty = true;
 
+        if (m_bInputPassActive)
+        {
+            // Created from inside a click callback: the element is live and
+            // configurable, but it does not join the canvas lists (or take
+            // input) until the pass that created it has finished walking.
+            m_xPendingAdds.PushBack(pxElement);
+            return;
+        }
+
         m_xAllElements.PushBack(pxElement);
         m_xRootElements.PushBack(pxElement);
     }
@@ -126,11 +135,26 @@ void Zenith_UICanvas::RemoveElement(Zenith_UIElement* pxElement)
     if (!pxElement)
         return;
 
+    if (m_pxFocusedElement == pxElement)
+    {
+        m_pxFocusedElement = nullptr;
+    }
+
     // Remove from root elements
     m_xRootElements.EraseValue(pxElement);
 
     // Remove from all elements and delete
     m_xAllElements.EraseValue(pxElement);
+
+    if (m_bInputPassActive)
+    {
+        // The element is out of the canvas immediately, but the DELETE waits for
+        // the pass to finish: the walk's snapshot still points at it, and it may
+        // be the very element whose callback asked for the removal.
+        pxElement->m_bPendingDestroy = true;
+        m_xPendingDestroys.PushBack(pxElement);
+        return;
+    }
 
     delete pxElement;
 }
@@ -156,6 +180,24 @@ void Zenith_UICanvas::ReparentElement(Zenith_UIElement* pxChild, Zenith_UIElemen
 void Zenith_UICanvas::Clear()
 {
     m_pxFocusedElement = nullptr;
+
+    if (m_bInputPassActive)
+    {
+        // Same deferral as RemoveElement, for the wholesale case: the canvas is
+        // empty from here on, but nothing is freed until the walk unwinds.
+        for (Zenith_Vector<Zenith_UIElement*>::Iterator xIt(m_xAllElements); !xIt.Done(); xIt.Next())
+        {
+            Zenith_UIElement* pxElement = xIt.GetData();
+            if (pxElement)
+            {
+                pxElement->m_bPendingDestroy = true;
+                m_xPendingDestroys.PushBack(pxElement);
+            }
+        }
+        m_xAllElements.Clear();
+        m_xRootElements.Clear();
+        return;
+    }
 
     // Delete all elements
     for (Zenith_Vector<Zenith_UIElement*>::Iterator xIt(m_xAllElements); !xIt.Done(); xIt.Next())
@@ -260,13 +302,79 @@ void Zenith_UICanvas::NotifyPointerActivate(Zenith_UIElement* pxElement)
     m_bPointerActivateThisFrame = true;
 }
 
+void Zenith_UICanvas::CollectPointerInputElements(Zenith_UIElement* pxElement, Zenith_UIElement** apxOut,
+    uint32_t& uCount, uint32_t uMax) const
+{
+    // Pre-order, visible-only: the exact order Zenith_UIElement::Update walks
+    // (itself, then its visible children), so the capture pass and the visual
+    // pass agree on who comes first.
+    if (!pxElement || !pxElement->IsVisible() || uCount >= uMax)
+        return;
+
+    apxOut[uCount++] = pxElement;
+
+    const Zenith_Vector<Zenith_UIElement*>& xChildren = pxElement->GetChildren();
+    for (uint32_t u = 0; u < xChildren.GetSize() && uCount < uMax; u++)
+    {
+        CollectPointerInputElements(xChildren.Get(u), apxOut, uCount, uMax);
+    }
+}
+
+void Zenith_UICanvas::FlushDeferredMutations()
+{
+    for (Zenith_Vector<Zenith_UIElement*>::Iterator xIt(m_xPendingAdds); !xIt.Done(); xIt.Next())
+    {
+        Zenith_UIElement* pxElement = xIt.GetData();
+        m_xAllElements.PushBack(pxElement);
+        m_xRootElements.PushBack(pxElement);
+    }
+    m_xPendingAdds.Clear();
+
+    for (Zenith_Vector<Zenith_UIElement*>::Iterator xIt(m_xPendingDestroys); !xIt.Done(); xIt.Next())
+    {
+        delete xIt.GetData();
+    }
+    m_xPendingDestroys.Clear();
+}
+
+void Zenith_UICanvas::UpdatePointerInput(Zenith_Pointers& xPointers, float fDt)
+{
+    // 10a: layout FIRST. Bounds recompute lazily off the dirty flag UpdateSize
+    // raises, so a resize or rotation this frame is reflected by the time the
+    // first hit test below asks for GetScreenBounds().
+    UpdateSize();
+
+    // Cleared HERE, not in Update(): the walk below is what raises it, and
+    // Update() is a visual pass a frame is free to skip.
+    m_bPointerActivateThisFrame = false;
+
+    static constexpr uint32_t uMAX_INPUT_WALK = 256;
+    Zenith_UIElement* apxWalk[uMAX_INPUT_WALK];
+    uint32_t uCount = 0;
+
+    for (Zenith_Vector<Zenith_UIElement*>::Iterator xIt(m_xRootElements); !xIt.Done(); xIt.Next())
+    {
+        CollectPointerInputElements(xIt.GetData(), apxWalk, uCount, uMAX_INPUT_WALK);
+    }
+
+    m_bInputPassActive = true;
+    for (uint32_t u = 0; u < uCount; u++)
+    {
+        // A callback earlier in the walk may have removed this element; its
+        // deletion is deferred, so the pointer is safe to read but must not act.
+        if (apxWalk[u]->IsPendingDestroy())
+            continue;
+
+        apxWalk[u]->UpdatePointerInput(xPointers, fDt);
+    }
+    m_bInputPassActive = false;
+
+    FlushDeferredMutations();
+}
+
 void Zenith_UICanvas::Update(float fDt)
 {
     UpdateSize();
-
-    // Clear BEFORE the element walk below, which is what re-raises it. Clearing
-    // after would eat the click in the same frame it happened.
-    m_bPointerActivateThisFrame = false;
 
     UpdateFocusNavigation();
 

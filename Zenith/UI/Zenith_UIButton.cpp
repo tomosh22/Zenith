@@ -83,6 +83,10 @@ void Zenith_UIButton::SetIconTexturePath(const std::string& strPath)
 
 void Zenith_UIButton::Update(float fDt)
 {
+	// VISUAL ONLY. Everything that decides a click now lives in
+	// UpdatePointerInput, which runs on every frame — this one does not (a frame
+	// that submits no render work never gets here), and input that only happens
+	// on rendered frames is input that silently disappears.
 	if (!m_bVisible)
 	{
 		m_eState = ButtonState::NORMAL;
@@ -91,10 +95,6 @@ void Zenith_UIButton::Update(float fDt)
 	}
 
 	HandleFirstVisibleFrame();
-
-#ifdef ZENITH_TOOLS
-	HandleEditorStoppedState();
-#endif
 
 	bool bInteractable = IsGroupInteractable();
 
@@ -109,13 +109,131 @@ void Zenith_UIButton::Update(float fDt)
 		&& fMouseY >= xBounds.y
 		&& fMouseY <= xBounds.w;
 
-	bool bMouseDown = g_xEngine.Input().IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_LEFT);
+	// Keyboard/gamepad self-activation is deliberately untouched by the pointer
+	// migration: it belongs to the focus path, which WP2 replaces wholesale.
+	HandleKeyboardActivation();
 
-	HandleInputEvents(bInteractable, bHovered, bMouseDown);
-	ResolveState(bHovered, bMouseDown);
+	ResolveState(bHovered);
 	UpdateVisualTransition(fDt);
 
 	Zenith_UIElement::Update(fDt);
+}
+
+bool Zenith_UIButton::IsInputSuppressedByEditor() const
+{
+#ifdef ZENITH_TOOLS
+	return g_xEditorQuery.m_pfnIsEditorStopped()
+#ifdef ZENITH_INPUT_SIMULATOR
+		&& !Zenith_InputSimulator::IsEnabled()
+#endif
+		;
+#else
+	return false;
+#endif
+}
+
+void Zenith_UIButton::AbandonCapture()
+{
+	ReleaseCapturedPointer();
+	m_bPointerInside = false;
+}
+
+void Zenith_UIButton::FireClick()
+{
+	// Raise the canvas-level pointer-activate edge as well as the optional
+	// direct callback. Games that dispatch by the FOCUSED ELEMENT'S NAME
+	// (rather than SetOnClick, whose `this` userdata dangles when the ECS
+	// pool relocates) have no other way to see a click at all -- without
+	// this, every such menu is keyboard/gamepad-only and simply cannot be
+	// operated by touch.
+	if (m_pxCanvas != nullptr)
+	{
+		m_pxCanvas->NotifyPointerActivate(this);
+	}
+	if (m_pfnOnClick)
+	{
+		m_pfnOnClick(m_pxUserData);
+	}
+}
+
+void Zenith_UIButton::UpdatePointerInput(Zenith_Pointers& xPointers, float fDt)
+{
+	(void)fDt;   // a button's capture is edge-driven; only a drag needs a rate
+
+	const bool bEditorSuppressed = IsInputSuppressedByEditor();
+	if (bEditorSuppressed)
+	{
+		// Authoring, not playing: the canvas belongs to the editor this frame.
+		m_bFocused = false;
+	}
+	if (!m_bVisible || !IsGroupInteractable() || bEditorSuppressed)
+	{
+		AbandonCapture();
+		return;
+	}
+
+	// Already holding a pointer: follow it to its end. The claim is NOT dropped
+	// when the finger leaves the bounds (B1 10c) — a drag-off that comes back
+	// still clicks, and nothing else can steal the pointer in between.
+	const Zenith_Pointer* pxCaptured = ResolveCapturedPointer(xPointers);
+	if (pxCaptured != nullptr)
+	{
+		m_bPointerInside = ContainsSurfacePosition(pxCaptured->m_xPosition);
+
+		if (pxCaptured->m_bCancelledThisFrame)
+		{
+			AbandonCapture();
+		}
+		else if (pxCaptured->m_bUpThisFrame)
+		{
+			const bool bInside = m_bPointerInside;
+			AbandonCapture();
+			if (bInside)
+			{
+				FireClick();
+			}
+		}
+		return;
+	}
+
+	m_bPointerInside = false;
+
+	// Free: claim the first unclaimed pointer that went down inside us. FIRST
+	// claim wins across the whole canvas walk, so which widget that is depends
+	// only on the authored order.
+	for (u_int32 u = 0; u < Zenith_Pointers::uMAX_POINTERS; u++)
+	{
+		const Zenith_Pointer& xPointer = xPointers.GetPointer(u);
+		if (!xPointer.m_bDownThisFrame || xPointer.IsClaimed())
+		{
+			continue;
+		}
+		if (!ContainsSurfacePosition(xPointer.m_xPosition))
+		{
+			continue;
+		}
+		if (!CapturePointer(xPointers, xPointers.GetHandle(u)))
+		{
+			continue;
+		}
+
+		m_bPointerInside = true;
+
+		// Press AND release inside ONE frame: every quick tap on a touch device,
+		// and a simulated click whose down/up land in the same tick. Both edges
+		// are on the pointer we just claimed, so finish the click here rather
+		// than waiting for a frame that will never come.
+		if (xPointer.m_bUpThisFrame || xPointer.m_bCancelledThisFrame)
+		{
+			const bool bClicked = xPointer.m_bUpThisFrame && ContainsSurfacePosition(xPointer.m_xPosition);
+			AbandonCapture();
+			if (bClicked)
+			{
+				FireClick();
+			}
+		}
+		break;
+	}
 }
 
 void Zenith_UIButton::HandleFirstVisibleFrame()
@@ -125,82 +243,26 @@ void Zenith_UIButton::HandleFirstVisibleFrame()
 	{
 		m_xCurrentStyle = m_xNormalStyle;
 		m_bWasInvisible = false;
-		// No held-state sync needed any more: the press is taken from the DEVICE
-		// edge, so a button that becomes visible under an already-held mouse
-		// sees no press at all rather than a false one.
-		m_bMousePressedInside = false;
 	}
 }
 
-#ifdef ZENITH_TOOLS
-void Zenith_UIButton::HandleEditorStoppedState()
+void Zenith_UIButton::HandleKeyboardActivation()
 {
-	if (g_xEditorQuery.m_pfnIsEditorStopped()
-#ifdef ZENITH_INPUT_SIMULATOR
-		&& !Zenith_InputSimulator::IsEnabled()
-#endif
-	)
-	{
-		m_bFocused = false;
-		m_bMousePressedInside = false;
-	}
-}
-#endif
-
-
-void Zenith_UIButton::HandleInputEvents(bool bInteractable, bool bHovered, bool bMouseDown)
-{
-	if (!bInteractable)
-	{
-		return;
-	}
-
-	// Device edges, not a per-widget down-transition latch. The latch could only
-	// see a transition that straddled two of this widget's own Updates, so a
-	// press and release inside one frame -- every quick tap on a touch device --
-	// produced no click at all.
 	Zenith_Input& xInput = g_xEngine.Input();
-	if (xInput.WasKeyPressedThisFrame(ZENITH_MOUSE_BUTTON_LEFT) && bHovered)
-	{
-		m_bMousePressedInside = true;
-	}
-	if (!bMouseDown)
-	{
-		if (xInput.WasKeyReleasedThisFrame(ZENITH_MOUSE_BUTTON_LEFT) && m_bMousePressedInside && bHovered)
-		{
-			// Raise the canvas-level pointer-activate edge as well as the optional
-			// direct callback. Games that dispatch by the FOCUSED ELEMENT'S NAME
-			// (rather than SetOnClick, whose `this` userdata dangles when the ECS
-			// pool relocates) have no other way to see a click at all -- without
-			// this, every such menu is keyboard/gamepad-only and simply cannot be
-			// operated by touch.
-			if (m_pxCanvas != nullptr)
-			{
-				m_pxCanvas->NotifyPointerActivate(this);
-			}
-			if (m_pfnOnClick)
-			{
-				m_pfnOnClick(m_pxUserData);
-			}
-		}
-		m_bMousePressedInside = false;
-	}
-
 	bool bActivated = m_bFocused
 		&& (xInput.WasKeyPressedThisFrame(ZENITH_KEY_ENTER)
 			|| xInput.WasKeyPressedThisFrame(ZENITH_KEY_SPACE));
-	if (bActivated)
+	if (bActivated && m_pfnOnClick)
 	{
-		if (m_pfnOnClick)
-		{
-			m_pfnOnClick(m_pxUserData);
-		}
+		m_pfnOnClick(m_pxUserData);
 	}
 }
 
-void Zenith_UIButton::ResolveState(bool bHovered, bool bMouseDown)
+void Zenith_UIButton::ResolveState(bool bHovered)
 {
-	if (m_bMousePressedInside && bHovered && bMouseDown)
+	// PRESSED is now "this button holds the pointer and it is over us" — the
+	// capture state, not a re-derived mouse-held test.
+	if (HasCapturedPointer() && m_bPointerInside)
 	{
 		m_eState = ButtonState::PRESSED;
 	}
@@ -541,3 +603,12 @@ void Zenith_UIButton::RenderPropertiesPanel()
 #endif
 
 } // namespace Zenith_UI
+
+// Hosted here (not in Zenith/Input) because these units name UI types, and an
+// Input TU that included UI/ would be a layer-up violation. Zenith_UIButton.obj
+// is always linked: Zenith_UIElement::CreateFromType and
+// Zenith_UICanvas::SetFocusedElement both name Zenith_UIButton, so MSVC cannot
+// dead-strip it and the static test registrars always run.
+// ZENITH_TEST macros self-noop when ZENITH_TESTING is undefined, so this include
+// stays unconditional (matching every other .Tests.inl host).
+#include "UI/Zenith_UIButton.Tests.inl"

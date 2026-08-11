@@ -194,6 +194,12 @@ jobs:
           #
           # History, newest first (the DERIVATION is the audit trail; the OBSERVED
           # number is the authority):
+          #   3165  input program WP1 (pointers + UI input phase), observed
+          #                   2026-08-11 on a Null_ build
+          #                   (3165 ran / 3163 passed / 0 failed / 2 skipped).
+          #                   +14 ENGINE units, no ZM units: the Zenith_Pointers
+          #                   table + UI pointer-capture suites. Zenith_TouchInput
+          #                   deleted. See run_unit_gate.ps1 for the derivation.
           #   3151  input program WP0 (device foundations), observed 2026-08-11 on
           #                   a Null_ build
           #                   (3151 ran / 3149 passed / 0 failed / 2 skipped).
@@ -496,7 +502,7 @@ jobs:
           #   2817  ZM-D-173  = 2809 + 8: four ENGINE sensor-raycast units plus
           #                   two camera fixtures and two Home-placement units.
           $exe = 'Games\Zenithmon\Build\output\win64\null_vs2022_debug_win64_true\zenithmon.exe'
-          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 3151 -TimeoutSec 600
+          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 3165 -TimeoutSec 600
           if ($LASTEXITCODE -ne 0) { Write-Error "boot unit tests failed (see log above)"; exit $LASTEXITCODE }
 
       - name: Run Zenithmon tests

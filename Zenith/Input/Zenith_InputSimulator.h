@@ -33,13 +33,9 @@ public:
 	static void SimulateMouseClick(double fScreenX, double fScreenY);
 	static void SimulateMouseDrag(double fStartX, double fStartY, double fEndX, double fEndY, u_int32 uDurationFrames);
 
-	// Touch simulation (uses mouse emulation, matching Zenith_TouchInput's approach)
-	static void SimulateTap(double fScreenX, double fScreenY);
-	static void SimulateSwipe(double fStartX, double fStartY, double fEndX, double fEndY, u_int32 uDurationFrames);
-
-	// Raw pointer-stream injection. Unlike SimulateTap/SimulateSwipe (which are
-	// mouse emulation) these queue real TOUCH_* events that reach the staged
-	// touch stream and the B3 projection at ApplyPendingInjection.
+	// Touch simulation. These queue real TOUCH_* events that reach the staged
+	// touch stream, the B3 projection and the pointer table at the injection
+	// point (frame contract step 7).
 	static void SimulateTouchDown(int32_t iPointerId, float fX, float fY);
 	static void SimulateTouchMove(int32_t iPointerId, float fX, float fY);
 	static void SimulateTouchUp(int32_t iPointerId, float fX, float fY);

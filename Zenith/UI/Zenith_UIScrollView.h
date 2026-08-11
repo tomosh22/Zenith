@@ -55,6 +55,7 @@ public:
 	// ========== Overrides ==========
 
 	virtual void Update(float fDt) override;
+	virtual void UpdatePointerInput(Zenith_Pointers& xPointers, float fDt) override;
 	virtual void Render(Zenith_UICanvas& xCanvas) override;
 	virtual void WriteToDataStream(Zenith_DataStream& xStream) const override;
 	virtual void ReadFromDataStream(Zenith_DataStream& xStream) override;
@@ -63,9 +64,15 @@ public:
 	virtual void RenderPropertiesPanel() override;
 #endif
 
+	// How far a pointer must travel, in raw surface pixels, before this view
+	// decides the gesture is a SCROLL and claims it. Below the threshold the
+	// pointer stays unclaimed, so a tap on a child (or on the gameplay world
+	// behind) is still that pointer's to win.
+	static constexpr float fDRAG_CLAIM_THRESHOLD_PX = 8.0f;
+
 private:
 	void ClampScrollPosition();
-	void HandleDragInput(float fMouseX, float fMouseY, bool bInside, float fDt);
+	void ApplyDragTo(float fX, float fY, float fDt);
 	void UpdateInertia(float fDt);
 
 	Zenith_Maths::Vector2 m_xContentSize = {0.f, 0.f};
@@ -75,9 +82,13 @@ private:
 	bool m_bInertia = true;
 	float m_fDecelerationRate = 0.135f;
 
-	// Drag tracking. The drag STARTS on the device press edge, so there is no
-	// per-widget last-frame latch to keep in sync.
+	// Drag tracking. A pointer that goes down inside becomes a CANDIDATE; the
+	// view only claims it once it has travelled far enough to be a scroll rather
+	// than a tap, so a press that turns out to be a click on a child is never
+	// stolen.
 	bool m_bDragging = false;
+	bool m_bDragCandidate = false;
+	Zenith_PointerHandle m_xCandidatePointer;
 	Zenith_Maths::Vector2 m_xDragStart = {0.f, 0.f};
 	Zenith_Maths::Vector2 m_xScrollStart = {0.f, 0.f};
 };

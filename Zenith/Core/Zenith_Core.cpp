@@ -37,7 +37,7 @@
 #include "EntityComponent/Zenith_GraphReload.h"
 #endif
 #include "Input/Zenith_Input.h"
-#include "Input/Zenith_TouchInput.h"
+#include "Input/Zenith_Pointers.h"
 #include "Physics/Zenith_Physics.h"
 #include "Physics/Zenith_PhysicsMeshGenerator.h"
 
@@ -114,15 +114,20 @@ static void BeginFrame_Platform()
 	g_xEngine.Input().PollGamepads();
 }
 
-// Frame contract step 3: the input DRAIN, plus the touch-gesture update that
-// reads what it produced. Sits AFTER the acquire gate on purpose — a frame the
-// swapchain skips runs no game logic, so draining there would consume presses,
-// releases and wheel ticks that nothing would ever see. Skipping instead leaves
-// the FIFO and the retained pad snapshot intact for the next real frame.
-static void DrainInputAndTouch()
+// Frame contract step 3: the input DRAIN, plus step 4, the pointer table that
+// consumes what it produced. Sits AFTER the acquire gate on purpose — a frame
+// the swapchain skips runs no game logic, so draining there would consume
+// presses, releases and wheel ticks that nothing would ever see. Skipping
+// instead leaves the FIFO and the retained pad snapshot intact for the next
+// real frame.
+static void DrainInputAndPointers()
 {
 	g_xEngine.Input().BeginFrame();
-	ZENITH_PROFILING_FUNCTION_WRAPPER(g_xEngine.Touch().Update, ZENITH_PROFILE_ZONE("Touch Update"));
+	{
+		Zenith_Profiling::ScopeZone xPointerProfile(ZENITH_PROFILE_ZONE("Pointers Update"));
+		g_xEngine.Pointers().ApplyPlatform(g_xEngine.Input(),
+			Zenith_Window::GetInstance()->GetDisplayScale());
+	}
 }
 
 // Acquire the swapchain image. Returns false on a failed acquire (resize): it
@@ -380,7 +385,7 @@ void Zenith_Core::Zenith_MainLoop()
 		return;
 	}
 
-	DrainInputAndTouch();
+	DrainInputAndPointers();
 
 	bool bSubmitRenderWork      = true;
 	bool bShouldUpdateGameLogic = true;
@@ -394,6 +399,20 @@ void Zenith_Core::Zenith_MainLoop()
 	// pushing) so the test harness never reaches the engine singleton. No-op
 	// while the simulator is disabled.
 	g_xEngine.Input().ApplySimulatorInjection();
+	// ...and into the pointer table, which already ran its step-4 pass before the
+	// Steps existed. Injected touches append to the SAME staged stream, so this
+	// consumes only the new tail; the mouse edges a Step raised reach pointer 0
+	// through the same B3 projection real ones do. Driven from here rather than
+	// from inside Zenith_Input because the device layer must not reach the engine
+	// singleton — this is the composition root, and it already owns the ordering.
+	g_xEngine.Pointers().ApplyInjection(g_xEngine.Input());
+
+	// Frame contract step 10: the UI input phase. Runs BEFORE game logic (so a
+	// widget consumes a press the same frame gameplay would otherwise see it) and
+	// independently of the render/UI VISUAL pass below, which a scene transition
+	// can skip — a skipped render frame must never change input state.
+	ZENITH_PROFILING_FUNCTION_WRAPPER(g_xEngine.UI().UpdateInput,
+		ZENITH_PROFILE_ZONE("UI Input"), g_xEngine.Pointers(), g_xEngine.Frame().GetDt());
 
 	UpdateGameLogic(bShouldUpdateGameLogic);
 	SubmitRenderWork(bSubmitRenderWork);

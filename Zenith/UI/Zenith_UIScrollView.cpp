@@ -1,12 +1,7 @@
 #include "Zenith.h"
-#include "Core/Zenith_Engine.h"
 #include "UI/Zenith_UIScrollView.h"
 #include "UI/Zenith_UICanvas.h"
 #include "UI/Zenith_UIStyleRenderer.h"
-#include "Input/Zenith_Input.h"
-#ifdef ZENITH_INPUT_SIMULATOR
-#include "Input/Zenith_InputSimulator.h"
-#endif
 
 #ifdef ZENITH_TOOLS
 #include "imgui.h"
@@ -54,54 +49,122 @@ void Zenith_UIScrollView::ClampScrollPosition()
 }
 
 
-void Zenith_UIScrollView::HandleDragInput(float fMouseX, float fMouseY, bool bInside, float fDt)
+void Zenith_UIScrollView::ApplyDragTo(float fX, float fY, float fDt)
 {
-	// The drag starts on the DEVICE press edge rather than a per-widget
-	// last-frame latch: the latch missed a press that arrived on a frame this
-	// view did not update, and mis-fired on the frame it became interactable
-	// under an already-held button.
-	Zenith_Input& xInput = g_xEngine.Input();
-	bool bMouseDown = xInput.IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_LEFT);
+	float fDX = m_xDragStart.x - fX;
+	float fDY = m_xDragStart.y - fY;
 
-	if (xInput.WasKeyPressedThisFrame(ZENITH_MOUSE_BUTTON_LEFT) && bInside)
+	Zenith_Maths::Vector2 xNewScroll = m_xScrollStart;
+	if (m_eScrollDirection == ScrollDirection::HORIZONTAL || m_eScrollDirection == ScrollDirection::BOTH)
 	{
-		m_bDragging = true;
-		m_xDragStart = {fMouseX, fMouseY};
-		m_xScrollStart = m_xScrollPosition;
-		m_xScrollVelocity = {0.f, 0.f};
+		xNewScroll.x += fDX;
+	}
+	if (m_eScrollDirection == ScrollDirection::VERTICAL || m_eScrollDirection == ScrollDirection::BOTH)
+	{
+		xNewScroll.y += fDY;
 	}
 
-	if (m_bDragging && bMouseDown)
+	Zenith_Maths::Vector2 xOldPos = m_xScrollPosition;
+	m_xScrollPosition = xNewScroll;
+	ClampScrollPosition();
+
+	if (fDt > 0.f)
 	{
-		float fDX = m_xDragStart.x - fMouseX;
-		float fDY = m_xDragStart.y - fMouseY;
-
-		Zenith_Maths::Vector2 xNewScroll = m_xScrollStart;
-		if (m_eScrollDirection == ScrollDirection::HORIZONTAL || m_eScrollDirection == ScrollDirection::BOTH)
-		{
-			xNewScroll.x += fDX;
-		}
-		if (m_eScrollDirection == ScrollDirection::VERTICAL || m_eScrollDirection == ScrollDirection::BOTH)
-		{
-			xNewScroll.y += fDY;
-		}
-
-		Zenith_Maths::Vector2 xOldPos = m_xScrollPosition;
-		m_xScrollPosition = xNewScroll;
-		ClampScrollPosition();
-
-		if (fDt > 0.f)
-		{
-			m_xScrollVelocity = {
-				(m_xScrollPosition.x - xOldPos.x) / fDt,
-				(m_xScrollPosition.y - xOldPos.y) / fDt
-			};
-		}
+		m_xScrollVelocity = {
+			(m_xScrollPosition.x - xOldPos.x) / fDt,
+			(m_xScrollPosition.y - xOldPos.y) / fDt
+		};
 	}
+}
 
-	if (!bMouseDown && m_bDragging)
+void Zenith_UIScrollView::UpdatePointerInput(Zenith_Pointers& xPointers, float fDt)
+{
+	if (!m_bVisible || !IsGroupInteractable())
 	{
+		ReleaseCapturedPointer();
 		m_bDragging = false;
+		m_bDragCandidate = false;
+		m_xCandidatePointer = Zenith_PointerHandle();
+		return;
+	}
+
+	// Already scrolling: the claim is ours until the pointer ends.
+	const Zenith_Pointer* pxCaptured = ResolveCapturedPointer(xPointers);
+	if (pxCaptured != nullptr)
+	{
+		float fX = pxCaptured->m_xPosition.x;
+		float fY = pxCaptured->m_xPosition.y;
+		TransformSurfacePosition(fX, fY);
+
+		if (pxCaptured->m_bUpThisFrame || pxCaptured->m_bCancelledThisFrame)
+		{
+			// Hand the last sampled velocity to the inertia integrator.
+			ReleaseCapturedPointer();
+			m_bDragging = false;
+			return;
+		}
+
+		ApplyDragTo(fX, fY, fDt);
+		return;
+	}
+
+	// Tracking a candidate: a pointer that went down inside but has not yet
+	// travelled far enough to BE a scroll. Claiming on the DOWN would steal
+	// every tap on a child; claiming at the threshold is what "ScrollView claims
+	// at its drag threshold" buys.
+	if (m_bDragCandidate)
+	{
+		const Zenith_Pointer* pxCandidate = xPointers.Resolve(m_xCandidatePointer);
+		if (pxCandidate == nullptr || pxCandidate->m_bUpThisFrame || pxCandidate->m_bCancelledThisFrame)
+		{
+			m_bDragCandidate = false;
+			m_xCandidatePointer = Zenith_PointerHandle();
+			return;
+		}
+
+		if (pxCandidate->m_fMaxExcursion >= fDRAG_CLAIM_THRESHOLD_PX && !pxCandidate->IsClaimed())
+		{
+			if (CapturePointer(xPointers, m_xCandidatePointer))
+			{
+				float fX = pxCandidate->m_xPosition.x;
+				float fY = pxCandidate->m_xPosition.y;
+				TransformSurfacePosition(fX, fY);
+
+				m_bDragging = true;
+				m_bDragCandidate = false;
+				m_xCandidatePointer = Zenith_PointerHandle();
+				// Anchor the drag where the finger IS, not where it started: the
+				// threshold travel is the cost of deciding, not scroll distance.
+				m_xDragStart = {fX, fY};
+				m_xScrollStart = m_xScrollPosition;
+				m_xScrollVelocity = {0.f, 0.f};
+			}
+		}
+		else if (pxCandidate->IsClaimed())
+		{
+			// Something inside us won the pointer first (FIRST claim wins). Stop
+			// tracking it rather than fighting for it.
+			m_bDragCandidate = false;
+			m_xCandidatePointer = Zenith_PointerHandle();
+		}
+		return;
+	}
+
+	// Free: adopt the first unclaimed pointer that went down inside as a candidate.
+	for (u_int32 u = 0; u < Zenith_Pointers::uMAX_POINTERS; u++)
+	{
+		const Zenith_Pointer& xPointer = xPointers.GetPointer(u);
+		if (!xPointer.m_bDownThisFrame || xPointer.IsClaimed())
+		{
+			continue;
+		}
+		if (!ContainsSurfacePosition(xPointer.m_xPosition))
+		{
+			continue;
+		}
+		m_bDragCandidate = true;
+		m_xCandidatePointer = xPointers.GetHandle(u);
+		break;
 	}
 }
 
@@ -129,21 +192,11 @@ void Zenith_UIScrollView::UpdateInertia(float fDt)
 
 void Zenith_UIScrollView::Update(float fDt)
 {
+	// VISUAL ONLY: the drag itself moved to UpdatePointerInput. Inertia stays
+	// here — it is an animation, not input, and it must run at the same rate as
+	// everything else the frame draws.
 	if (!m_bVisible)
 		return;
-
-	if (IsGroupInteractable())
-	{
-		float fMouseX;
-		float fMouseY;
-		GetTransformedMousePosition(fMouseX, fMouseY);
-
-		Zenith_Maths::Vector4 xBounds = GetScreenBounds();
-		bool bInside = fMouseX >= xBounds.x && fMouseX <= xBounds.z
-			&& fMouseY >= xBounds.y && fMouseY <= xBounds.w;
-
-		HandleDragInput(fMouseX, fMouseY, bInside, fDt);
-	}
 
 	UpdateInertia(fDt);
 

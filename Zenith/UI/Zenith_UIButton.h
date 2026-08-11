@@ -122,6 +122,7 @@ public:
 	// ========== Overrides ==========
 
 	virtual void Update(float fDt) override;
+	virtual void UpdatePointerInput(Zenith_Pointers& xPointers, float fDt) override;
 	virtual void Render(Zenith_UICanvas& xCanvas) override;
 	virtual void WriteToDataStream(Zenith_DataStream& xStream) const override;
 	virtual void ReadFromDataStream(Zenith_DataStream& xStream) override;
@@ -139,14 +140,22 @@ private:
 	};
 
 	// ========== Update helpers ==========
-	// Called from Update() — keep behaviour identical to the original monolithic flow.
+	// Update() is the VISUAL half: hover, state resolution and the style lerp.
+	// The capture / click half lives in UpdatePointerInput.
 	void HandleFirstVisibleFrame();
-#ifdef ZENITH_TOOLS
-	void HandleEditorStoppedState();
-#endif
-	void HandleInputEvents(bool bInteractable, bool bHovered, bool bMouseDown);
-	void ResolveState(bool bHovered, bool bMouseDown);
+	void HandleKeyboardActivation();
+	void ResolveState(bool bHovered);
 	void UpdateVisualTransition(float fDt);
+
+	// ========== Pointer-capture helpers (step 10c) ==========
+	// True while the editor is Stopped and no simulator is driving: the canvas
+	// is being AUTHORED, not played, so clicks must not reach the widget.
+	bool IsInputSuppressedByEditor() const;
+	// Drop the capture and the pressed look in one place — every early-out path
+	// below needs exactly this.
+	void AbandonCapture();
+	// The click itself: canvas activate edge + the optional direct callback.
+	void FireClick();
 
 	// ========== Render helpers ==========
 	void ResolveVisualState(float& fAlpha, UIStyle& xRenderStyle) const;
@@ -161,10 +170,10 @@ private:
 	bool m_bFocused = false;
 	bool m_bWasInvisible = true;
 
-	// Click-on-release gate: was the press that is currently down taken INSIDE
-	// this button? The down/up transitions themselves come from the device
-	// edges, not from a per-widget last-frame latch.
-	bool m_bMousePressedInside = false;
+	// Is the CAPTURED pointer currently inside these bounds? Drag-off keeps the
+	// claim (B1 10c) but clears this, so the button un-presses visually and a
+	// release outside does not click.
+	bool m_bPointerInside = false;
 
 	// Text
 	std::string m_strText;

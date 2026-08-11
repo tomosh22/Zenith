@@ -4,7 +4,7 @@
 #include "Core/Zenith_Engine.h"
 #include "Input/Zenith_Input.h"
 #include "Input/Zenith_KeyCodes.h"
-#include "Input/Zenith_TouchInput.h"
+#include "Input/Zenith_Pointers.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Zenith_CameraResolve.h"
 #include "EntityComponent/Zenith_PhysicsQuery.h"
@@ -296,40 +296,61 @@ namespace
 		const char* GetTypeName() const override { return "ReadMouseWheel"; }
 	};
 
-	// Touch state -> blackboard (single-touch engine model, derived from the
-	// mouse on every platform, so it is simulator-drivable). Held bool +
-	// position vec2 (window pixels) + optional tap-this-frame edge.
-	class Zenith_GraphNode_ReadTouchState : public Zenith_GraphNode
+	// One slot of the pointer table -> blackboard. The engine tracks up to
+	// Zenith_Pointers::uMAX_POINTERS simultaneous pointers, so a graph has to
+	// say WHICH one it means.
+	//
+	// Slot 0 is the primary pointer, which B3 keeps in step with the mouse view
+	// on every platform — a graph written against slot 0 works on desktop and on
+	// a touch device without a branch.
+	//
+	// Positions are RAW SURFACE pixels (B7); canvas-space remapping is a UI-layer
+	// concern and deliberately does not happen here.
+	class Zenith_GraphNode_ReadPointer : public Zenith_GraphNode
 	{
 	public:
-		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_ReadTouchState)
+		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_ReadPointer)
 	public:
-		ZENITH_PROPERTY(std::string, m_strHeldVar, "touchHeld")
-		ZENITH_PROPERTY(std::string, m_strPositionVar, "touchPos")
+		ZENITH_PROPERTY(int32_t, m_iPointerIndex, 0)
+		ZENITH_PROPERTY(std::string, m_strDownVar, "pointerDown")
+		ZENITH_PROPERTY(std::string, m_strPositionVar, "pointerPos")
 		ZENITH_PROPERTY(std::string, m_strTapVar, "")
+		ZENITH_PROPERTY(std::string, m_strCountVar, "")
 
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
-			Zenith_TouchInput& xTouch = g_xEngine.Touch();
+			Zenith_Pointers& xPointers = g_xEngine.Pointers();
+			const bool bValidSlot = m_iPointerIndex >= 0
+				&& static_cast<u_int32>(m_iPointerIndex) < Zenith_Pointers::uMAX_POINTERS;
+			// A slot that does not exist reads as an absent pointer rather than
+			// failing the chain: a graph polling slot 1 must not stall the frames
+			// where only one finger is down.
+			const Zenith_Pointer* pxPointer = bValidSlot ? &xPointers.GetPointer(static_cast<u_int32>(m_iPointerIndex)) : nullptr;
+
 			Zenith_PropertyValue xValue;
-			if (!m_strHeldVar.empty())
+			if (!m_strDownVar.empty())
 			{
-				xValue.SetBool(xTouch.IsTouchDown());
-				xContext.m_pxBlackboard->SetValue(m_strHeldVar, xValue);
+				xValue.SetBool(pxPointer != nullptr && pxPointer->IsDown());
+				xContext.m_pxBlackboard->SetValue(m_strDownVar, xValue);
 			}
 			if (!m_strPositionVar.empty())
 			{
-				xValue.SetVector2(xTouch.GetTouchPosition());
+				xValue.SetVector2(pxPointer != nullptr ? pxPointer->m_xPosition : Zenith_Maths::Vector2(0.0f, 0.0f));
 				xContext.m_pxBlackboard->SetValue(m_strPositionVar, xValue);
 			}
 			if (!m_strTapVar.empty())
 			{
-				xValue.SetBool(xTouch.WasTapThisFrame());
+				xValue.SetBool(pxPointer != nullptr && pxPointer->m_bTapThisFrame);
 				xContext.m_pxBlackboard->SetValue(m_strTapVar, xValue);
+			}
+			if (!m_strCountVar.empty())
+			{
+				xValue.SetInt32(static_cast<int32_t>(xPointers.GetActivePointerCount()));
+				xContext.m_pxBlackboard->SetValue(m_strCountVar, xValue);
 			}
 			return GRAPH_NODE_STATUS_SUCCESS;
 		}
-		const char* GetTypeName() const override { return "ReadTouchState"; }
+		const char* GetTypeName() const override { return "ReadPointer"; }
 	};
 
 	// Main-camera ray under the mouse cursor -> origin + direction vec3 vars
@@ -387,6 +408,6 @@ void Zenith_RegisterEngineGraphNodes_Input()
 	xRegistry.RegisterNodeType<Zenith_GraphNode_ReadMouseDelta>("ReadMouseDelta", GRAPH_EVENT_NONE, 1, false, "Input");
 	xRegistry.RegisterNodeType<Zenith_GraphNode_ReadMouseButtonHeld>("ReadMouseButtonHeld", GRAPH_EVENT_NONE, 1, false, "Input");
 	xRegistry.RegisterNodeType<Zenith_GraphNode_ReadMouseWheel>("ReadMouseWheel", GRAPH_EVENT_NONE, 1, false, "Input");
-	xRegistry.RegisterNodeType<Zenith_GraphNode_ReadTouchState>("ReadTouchState", GRAPH_EVENT_NONE, 1, false, "Input");
+	xRegistry.RegisterNodeType<Zenith_GraphNode_ReadPointer>("ReadPointer", GRAPH_EVENT_NONE, 1, false, "Input");
 	xRegistry.RegisterNodeType<Zenith_GraphNode_ReadMousePickRay>("ReadMousePickRay", GRAPH_EVENT_NONE, 1, false, "Input");
 }

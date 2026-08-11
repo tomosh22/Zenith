@@ -33,7 +33,7 @@
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Zenith_UISystem.h"
 #include "Input/Zenith_Input.h"
-#include "Input/Zenith_TouchInput.h"
+#include "Input/Zenith_Pointers.h"
 #include "Flux/Flux_RendererImpl.h"
 #include "Flux/SceneGraph/Flux_RenderSceneSnapshot.h"   // complete type to allocate the by-ptr snapshot in AllocateRenderer
 #include "Flux/Flux_GraphicsImpl.h"
@@ -176,7 +176,7 @@ Zenith_EntityStore& Zenith_Engine::EntityStore() { return m_pxScenes->GetEntityS
 ZENITH_ENGINE_ACCESSOR_HOTPATH(Zenith_SceneSystem,    Scenes,        m_pxScenes)
 ZENITH_ENGINE_ACCESSOR_HOTPATH(Zenith_UISystem,       UI,            m_pxUISystem)
 ZENITH_ENGINE_ACCESSOR_HOTPATH(Zenith_Input,          Input,         m_pxInput)
-ZENITH_ENGINE_ACCESSOR_HOTPATH(Zenith_TouchInput,     Touch,         m_pxTouch)
+ZENITH_ENGINE_ACCESSOR_HOTPATH(Zenith_Pointers,       Pointers,      m_pxPointers)
 ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_RendererImpl,     FluxRenderer,  m_pxFluxRenderer)
 ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_GraphicsImpl,     FluxGraphics,  m_pxFluxGraphics)
 ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_PlatformAPI,      FluxBackend,   m_pxVulkan)
@@ -270,9 +270,10 @@ void Zenith_Engine::AllocateCoreState()
 	Zenith_Assert(m_pxInput == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
 	m_pxInput = new Zenith_Input();
 
-	// touch-gesture state. Allocated alongside m_pxInput.
-	Zenith_Assert(m_pxTouch == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
-	m_pxTouch = new Zenith_TouchInput();
+	// The pointer table (B7). Allocated alongside m_pxInput: it consumes the
+	// staged touch stream the drain produces, so it can never be later than it.
+	Zenith_Assert(m_pxPointers == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
+	m_pxPointers = new Zenith_Pointers();
 }
 
 // Flux renderer/graphics holders + render backend (device, memory, swapchain).
@@ -1062,9 +1063,10 @@ void Zenith_Engine::DeleteSceneAndInputState()
 	delete m_pxInput;
 	m_pxInput = nullptr;
 
-	// Free touch-gesture state.
-	delete m_pxTouch;
-	m_pxTouch = nullptr;
+	// Free the pointer table. AFTER the scenes above, so every UI widget that
+	// might still hold a claim has already released it in its destructor.
+	delete m_pxPointers;
+	m_pxPointers = nullptr;
 }
 
 // The debug-variable tree, deleted BEFORE the subsystems it points into.

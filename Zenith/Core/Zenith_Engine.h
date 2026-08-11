@@ -57,8 +57,8 @@ class Zenith_EditorMaterialUI;
 class Zenith_Gizmo;
 class Zenith_Input;
 class Zenith_SelectionSystem;
+class Zenith_Pointers;
 class Zenith_TerrainEditor;
-class Zenith_TouchInput;
 class Zenith_UndoSystem;
 class Zenith_Multithreading;
 class Zenith_Physics;
@@ -121,7 +121,8 @@ public:
 	Zenith_SceneSystem& Scenes();
 	Zenith_UISystem& UI();
 	Zenith_Input& Input();
-	Zenith_TouchInput& Touch();
+	// The pointer table (B7). Replaced the old single-touch gesture subsystem.
+	Zenith_Pointers& Pointers();
 	Flux_RendererImpl& FluxRenderer();
 	Flux_GraphicsImpl& FluxGraphics();
 	// Pointer-or-null variant. Lets late-teardown callers (e.g. a material destructor
@@ -235,7 +236,7 @@ private:
 	Zenith_SceneSystem*             m_pxScenes          = nullptr;
 	Zenith_UISystem*                m_pxUISystem        = nullptr;
 	Zenith_Input*                   m_pxInput           = nullptr;
-	Zenith_TouchInput*              m_pxTouch           = nullptr;
+	Zenith_Pointers*                m_pxPointers        = nullptr;
 	Flux_RendererImpl*                  m_pxFluxRenderer    = nullptr;
 	Flux_GraphicsImpl*                  m_pxFluxGraphics    = nullptr;
 	Flux_PlatformAPI*               m_pxVulkan          = nullptr;

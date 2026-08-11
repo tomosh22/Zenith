@@ -35,9 +35,53 @@ Zenith_UIElement::Zenith_UIElement(const std::string& strName)
 
 Zenith_UIElement::~Zenith_UIElement()
 {
+    // A widget destroyed mid-gesture must not leave its claim behind: the slot
+    // would stay consumed until the finger lifted, silently swallowing the
+    // gesture for everything else (B7: widget destruction releases).
+    ReleaseCapturedPointer();
+
     // Children are NOT owned by parent - canvas owns all elements
     // Just clear the vector, don't delete
     m_xChildren.Clear();
+}
+
+bool Zenith_UIElement::CapturePointer(Zenith_Pointers& xPointers, const Zenith_PointerHandle& xHandle)
+{
+    if (!xPointers.ClaimPointer(xHandle, GetPointerOwnerToken()))
+    {
+        return false;
+    }
+    m_xCapturedPointer = xHandle;
+    m_pxCapturingPointers = &xPointers;
+    return true;
+}
+
+void Zenith_UIElement::ReleaseCapturedPointer()
+{
+    if (m_pxCapturingPointers != nullptr)
+    {
+        m_pxCapturingPointers->ReleaseClaim(m_xCapturedPointer, GetPointerOwnerToken());
+    }
+    m_xCapturedPointer = Zenith_PointerHandle();
+    m_pxCapturingPointers = nullptr;
+}
+
+const Zenith_Pointer* Zenith_UIElement::ResolveCapturedPointer(Zenith_Pointers& xPointers)
+{
+    if (!m_xCapturedPointer.IsValid())
+    {
+        return nullptr;
+    }
+    const Zenith_Pointer* pxPointer = xPointers.Resolve(m_xCapturedPointer);
+    if (pxPointer == nullptr)
+    {
+        // The slot recycled without this element seeing the terminal edge (a
+        // lifecycle barrier, or a frame the widget did not run). Drop the stale
+        // capture rather than carrying a handle that can never resolve again.
+        m_xCapturedPointer = Zenith_PointerHandle();
+        m_pxCapturingPointers = nullptr;
+    }
+    return pxPointer;
 }
 
 const char* Zenith_UIElement::GetTypeName(UIElementType eType)
@@ -581,7 +625,15 @@ void Zenith_UIElement::GetTransformedMousePosition(float& fMouseX, float& fMouse
     g_xEngine.Input().GetMousePosition(xMousePos);
     fMouseX = static_cast<float>(xMousePos.x);
     fMouseY = static_cast<float>(xMousePos.y);
+    TransformSurfacePosition(fMouseX, fMouseY);
+}
 
+void Zenith_UIElement::TransformSurfacePosition(float& fX, float& fY) const
+{
+    // Pointer positions and the raw cursor position are both SURFACE pixels; the
+    // canvas may be painted into an editor viewport somewhere else inside the
+    // host window, so both have to come through this one remap or the two would
+    // hit-test against different spaces.
 #ifdef ZENITH_TOOLS
 #ifdef ZENITH_INPUT_SIMULATOR
     if (!Zenith_InputSimulator::IsEnabled())
@@ -592,11 +644,24 @@ void Zenith_UIElement::GetTransformedMousePosition(float& fMouseX, float& fMouse
         if (xViewportSize.x > 0.f && xViewportSize.y > 0.f && m_pxCanvas)
         {
             Zenith_Maths::Vector2 xCanvasSize = m_pxCanvas->GetSize();
-            fMouseX = (fMouseX - xViewportPos.x) * (xCanvasSize.x / xViewportSize.x);
-            fMouseY = (fMouseY - xViewportPos.y) * (xCanvasSize.y / xViewportSize.y);
+            fX = (fX - xViewportPos.x) * (xCanvasSize.x / xViewportSize.x);
+            fY = (fY - xViewportPos.y) * (xCanvasSize.y / xViewportSize.y);
         }
     }
+#else
+    (void)fX;
+    (void)fY;
 #endif
+}
+
+bool Zenith_UIElement::ContainsSurfacePosition(const Zenith_Maths::Vector2& xSurfacePos) const
+{
+    float fX = xSurfacePos.x;
+    float fY = xSurfacePos.y;
+    TransformSurfacePosition(fX, fY);
+
+    const Zenith_Maths::Vector4 xBounds = GetScreenBounds();
+    return fX >= xBounds.x && fX <= xBounds.z && fY >= xBounds.y && fY <= xBounds.w;
 }
 
 } // namespace Zenith_UI

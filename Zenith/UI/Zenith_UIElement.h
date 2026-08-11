@@ -2,6 +2,7 @@
 
 #include "Maths/Zenith_Maths.h"
 #include "Collections/Zenith_Vector.h"
+#include "Input/Zenith_Pointers.h"
 #include "UI/Zenith_UIStyle.h"
 #include "UI/Zenith_UITween.h"
 #include <string>
@@ -243,6 +244,23 @@ public:
     virtual void Update(float fDt);
     virtual void Render(Zenith_UICanvas& xCanvas);
 
+    // Frame contract step 10c: the pointer-capture pass, run by the canvas
+    // BEFORE game logic and independently of Update() above.
+    //
+    // Update() is the VISUAL path: it only runs on frames that submit render
+    // work, so nothing there may change input state. Interactive widgets
+    // therefore claim, click and drag HERE, and Update() is left to resolve the
+    // look that follows. fDt is this frame's delta — a drag needs it to derive
+    // a fling velocity, and taking that from the visual pass would reintroduce
+    // the very coupling this phase exists to break. Default: nothing to capture.
+    virtual void UpdatePointerInput(Zenith_Pointers& xPointers, float fDt) { (void)xPointers; (void)fDt; }
+
+    // True between the canvas marking this element for destruction during an
+    // input pass and the pass flushing it. The walk skips such elements: the
+    // delete is deferred to the end of the pass so a snapshot cannot dangle,
+    // but a widget already logically gone must not still take clicks.
+    bool IsPendingDestroy() const { return m_bPendingDestroy; }
+
 #ifdef ZENITH_TOOLS
     virtual void RenderPropertiesPanel();
 #endif
@@ -254,9 +272,39 @@ public:
     // regardless of where the viewport sits inside the editor host window.
     void GetTransformedMousePosition(float& fMouseX, float& fMouseY) const;
 
+    // The transform half of the above, applied to an arbitrary RAW SURFACE
+    // position. Pointer-table coordinates are raw surface pixels by contract
+    // (B7), so every pointer hit test must come through here — otherwise a
+    // widget played inside the editor viewport tests against the host window's
+    // coordinates and nothing is ever clickable.
+    void TransformSurfacePosition(float& fX, float& fY) const;
+
+    // AABB test in this element's own canvas space, taking a RAW surface
+    // position (it applies TransformSurfacePosition itself).
+    bool ContainsSurfacePosition(const Zenith_Maths::Vector2& xSurfacePos) const;
+
 protected:
     void MarkTransformDirty();
     void RecalculateScreenBounds() const;
+
+    // ========== Pointer capture (B7 claims) ==========
+    //
+    // The owner token is the element's OWN ADDRESS. That is unique among live
+    // elements, which is exactly as long as a claim can survive: the destructor
+    // below releases before the address can be reused.
+    Zenith_PointerOwner GetPointerOwnerToken() const
+    {
+        return static_cast<Zenith_PointerOwner>(reinterpret_cast<uintptr_t>(this));
+    }
+
+    // Claim xHandle for this element. False when someone claimed it first.
+    bool CapturePointer(Zenith_Pointers& xPointers, const Zenith_PointerHandle& xHandle);
+    // Release whatever this element captured, if anything. Idempotent.
+    void ReleaseCapturedPointer();
+    // The captured pointer if it is still live, else null (and the capture is
+    // dropped) — so a caller never works from a stale handle.
+    const Zenith_Pointer* ResolveCapturedPointer(Zenith_Pointers& xPointers);
+    bool HasCapturedPointer() const { return m_xCapturedPointer.IsValid(); }
 
     std::string m_strName;
 
@@ -301,6 +349,16 @@ protected:
     // Cached bounds
     mutable bool m_bTransformDirty = true;
     mutable Zenith_Maths::Vector4 m_xCachedScreenBounds = { 0, 0, 100, 100 };
+
+    // Pointer capture. The table pointer is held ONLY while a claim is live, so
+    // the destructor can release without reaching for the engine singleton (the
+    // UI layer's g_xEngine budget is ratcheted) and without outliving the table:
+    // no gesture is in flight during engine teardown.
+    Zenith_PointerHandle m_xCapturedPointer;
+    Zenith_Pointers*     m_pxCapturingPointers = nullptr;
+
+    // Set by the canvas when an input pass defers this element's deletion.
+    bool m_bPendingDestroy = false;
 
     friend class Zenith_UICanvas;
     Zenith_UICanvas* m_pxCanvas = nullptr;

@@ -1677,17 +1677,18 @@ ZENITH_TEST(GraphComponent, RetrofittedNodeParamsExecution)
 		xDef.AddEdge(uLoopWait, 1, uDoneWait, 0);
 		xDef.AddEdge(uDoneWait, 0, uLoopWaitFlag, 0);
 
-		// Chain E (custom "TouchGo"): the deferred input queries - touch
+		// Chain E (custom "TouchGo"): the deferred input queries - pointer
 		// state, mouse delta/wheel (simulator-neutral defaults headless).
 		const u_int uTouchSource = xDef.AddNode("OnCustomEvent");
 		{
 			NodeParamWriter xParams(xDef, uTouchSource, "OnCustomEvent");
 			xParams.SetString("m_strEventName", "TouchGo");
 		}
-		const u_int uTouch = xDef.AddNode("ReadTouchState");
+		const u_int uTouch = xDef.AddNode("ReadPointer");
 		{
-			NodeParamWriter xParams(xDef, uTouch, "ReadTouchState");
-			xParams.SetString("m_strTapVar", "touchTap");
+			NodeParamWriter xParams(xDef, uTouch, "ReadPointer");
+			xParams.SetString("m_strTapVar", "pointerTap");
+			xParams.SetString("m_strCountVar", "pointerCount");
 		}
 		const u_int uDelta = xDef.AddNode("ReadMouseDelta");
 		{
@@ -1765,11 +1766,12 @@ ZENITH_TEST(GraphComponent, RetrofittedNodeParamsExecution)
 	ZENITH_ASSERT_TRUE(xBlackboard.GetBool("lwDone", false));
 	ZENITH_ASSERT_EQ(xBlackboard.GetInt32("lw"), 2);
 
-	// Touch/mouse queries write their outputs (headless defaults).
+	// Pointer/mouse queries write their outputs (headless defaults).
 	xComponent.FireCustomEvent("TouchGo");
-	ZENITH_ASSERT_TRUE(xBlackboard.HasValue("touchHeld"));
-	ZENITH_ASSERT_TRUE(xBlackboard.HasValue("touchPos"));
-	ZENITH_ASSERT_TRUE(xBlackboard.HasValue("touchTap"));
+	ZENITH_ASSERT_TRUE(xBlackboard.HasValue("pointerDown"));
+	ZENITH_ASSERT_TRUE(xBlackboard.HasValue("pointerPos"));
+	ZENITH_ASSERT_TRUE(xBlackboard.HasValue("pointerTap"));
+	ZENITH_ASSERT_TRUE(xBlackboard.HasValue("pointerCount"));
 	ZENITH_ASSERT_TRUE(xBlackboard.HasValue("mDelta"));
 	ZENITH_ASSERT_TRUE(xBlackboard.HasValue("mWheel"));
 

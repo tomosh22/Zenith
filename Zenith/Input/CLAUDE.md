@@ -2,15 +2,16 @@
 
 ## Overview
 
-Frame-based input handling wrapping GLFW on Windows. Instance class `Zenith_Input` (held on `g_xEngine`, accessed via `g_xEngine.Input()`) provides keyboard, mouse, and gamepad state queries (gamepad support is `#ifdef ZENITH_WINDOWS` only). Touch gestures (tap/swipe) are detected through mouse button events.
+Frame-based input handling wrapping GLFW on Windows. Instance class `Zenith_Input` (held on `g_xEngine`, accessed via `g_xEngine.Input()`) provides keyboard, mouse, and gamepad state queries (gamepad support is `#ifdef ZENITH_WINDOWS` only). Multi-touch lives in the separate pointer table `Zenith_Pointers` (`g_xEngine.Pointers()`).
 
 ## Files
 
 - `Zenith_Input.h` - Instance input class (held on `g_xEngine`, accessed via `g_xEngine.Input()`) with all query functions
 - `Zenith_KeyCodes.h` - GLFW-compatible key code constants
-- `Zenith_TouchInput.h` - Touch gesture subsystem (tap/swipe), held on `g_xEngine`, accessed via `g_xEngine.Touch()`
+- `Zenith_Pointers.h` - The pointer table (8 slots, generation handles, claims, taps), held on `g_xEngine`, accessed via `g_xEngine.Pointers()`
 - `Zenith_InputSimulator.h` - Static test harness for injecting synthetic input and stepping frames
 - `Zenith_Input.Tests.inl` - Unit test cases for the input subsystem
+- `Zenith_Pointers.Tests.inl` - Unit test cases for the pointer table (LOCAL instances; never the engine's)
 
 ## Public API
 
@@ -42,14 +43,33 @@ Frame-based input handling wrapping GLFW on Windows. Instance class `Zenith_Inpu
 - `MouseButtonPressedCallback(Zenith_KeyCode)` - Called by platform on mouse button
 - `MouseWheelCallback(double fXOffset, double fYOffset)` - Called by platform on mouse wheel scroll
 
-## Touch Input (`Zenith_TouchInput`)
+## Pointers (`Zenith_Pointers`)
 
-Instance subsystem held on `g_xEngine`, accessed via `g_xEngine.Touch()`. `Update()` runs each frame to detect gestures.
-- `WasTapThisFrame()` / `GetTapPosition()` - Tap edge detection + position
-- `WasSwipeThisFrame()` / `GetSwipeDirection()` - Swipe edge detection + direction (`ZENITH_SWIPE_UP/DOWN/LEFT/RIGHT`)
-- `GetSwipeStartPosition()` / `GetSwipeDistance()` - Swipe start point + travel distance
-- `IsTouchDown()` / `GetTouchPosition()` - Raw touch held state + position
-- `SetSwipeThreshold/SetTapMaxMovement/SetTapMaxDuration(float)` - Gesture tuning
+The pointer table. Instance class held on `g_xEngine`, accessed via `g_xEngine.Pointers()`;
+a plain class, so unit tests construct LOCAL instances rather than poking the engine's.
+Replaced the old single-touch `Zenith_TouchInput` gesture subsystem outright (swipe
+detection is gone — it had no consumers).
+
+- 8 slots. A pointer is a finger, or — on a pointing-device platform — the mouse:
+  **the mouse feeds pointer 0, and on Android the FIRST touch feeds the mouse view.**
+  That projection is permanent; it is what keeps every `IsMouseButtonHeld` consumer
+  working on a touch device. Secondary fingers exist only in this table.
+- Handles are `(slot, generation)`. A slot recycles the frame AFTER its pointer ended,
+  with the generation bumped, so a stale handle is detectable — and a stale-generation
+  claim release is rejected.
+- **Coordinates are RAW SURFACE PIXELS.** Canvas / editor-viewport remapping belongs to
+  the UI layer (`Zenith_UIElement::TransformSurfacePosition`).
+- `ApplyPlatform()` (frame step 4) consumes the drain's staged touch stream + the mouse
+  projection; `ApplyInjection()` (step 7) consumes what the automated-test Steps added
+  after step 4. Window-free cores (`BeginFrame` / `ApplyEvent` / `ApplyMouseState` /
+  `ConsumeStagedTail`) are public so units can drive a frame without a window.
+- Claims: `ClaimPointer` / `ReleaseClaim` / `IsClaimed` / `ReleaseAllClaimsForOwner`.
+  FIRST claim wins. A claim survives the terminal UP/CANCEL frame so its owner can see
+  the edge. Owner tokens are `u_int64`; UI widgets use their own address.
+- `WasTapThisFrame()` = an UNCLAIMED pointer, down ≤ 0.3 s, max excursion ≤ 15 ×
+  `GetDisplayScale()` px. A claimed pointer is a consumed one and never taps.
+- A `LIFECYCLE_RESET` barrier cancels every live pointer (raising CANCEL edges) and
+  disarms the table until the device layer re-arms.
 
 ## Input Simulation (`Zenith_InputSimulator`)
 
@@ -58,7 +78,7 @@ Static test-only harness for injecting synthetic input and driving frames determ
 - `StepFrame()` / `StepFrames(uCount)` / `StepFramesWithFixedDt(uCount, fDt)` / `StepUntil(pfnCondition, uMaxFrames)` - Frame stepping
 - `SimulateKeyDown/Up/Press(eKey)`, `SimulateKeySequence(...)` - Keyboard injection
 - `SimulateMousePosition/ButtonDown/ButtonUp/Click/Drag(...)`, `SimulateMouseWheel(fDelta)` - Mouse injection
-- `SimulateTap(...)` / `SimulateSwipe(...)` - Touch gesture injection
+- `SimulateTouchDown/Move/Up/Cancel(iPointerId, x, y)` - Raw pointer-stream injection (applied at frame step 7)
 - `SetKeyHeld/ClearHeldKeys/ResetAllInputState()`, `SetFixedDt/ClearFixedDt()` - State control
 
 ## Key Constants

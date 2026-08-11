@@ -63,6 +63,20 @@ public:
     void Update(float fDt);
     void Render();
 
+    // Frame contract step 10 (the UI input phase), driven by Zenith_UISystem.
+    //
+    // 10a: refresh the layout FIRST — a rotation or resize this frame must never
+    // be hit-tested against last frame's bounds. 10c: walk the visible elements
+    // in the SAME pre-order the update pass uses (roots in order, parent before
+    // children) so "first claim wins" is a deterministic, authored answer.
+    //
+    // While the walk runs the canvas is in an input pass: element creation is
+    // queued and element deletion deferred, so the snapshot it iterates cannot
+    // be invalidated by a click callback.
+    void UpdatePointerInput(Zenith_Pointers& xPointers, float fDt);
+
+    bool IsInputPassActive() const { return m_bInputPassActive; }
+
     // ========== Canvas Properties ==========
 
     Zenith_Maths::Vector2 GetSize() const { return m_xSize; }
@@ -105,8 +119,11 @@ public:
     // focus to the element and raise the confirm edge, leaving one dispatch path
     // rather than a second, parallel one that only pointers can travel.
     //
-    // Cleared at the top of Update(), so it is true for the remainder of the
-    // frame in which the click completed.
+    // Cleared at the top of UpdatePointerInput(), which is also what raises it,
+    // so it is true for the remainder of the frame in which the click completed.
+    // It used to clear at the top of Update() — now a later, SKIPPABLE visual
+    // pass, which would have eaten the click on any frame that submitted no
+    // render work.
     void NotifyPointerActivate(Zenith_UIElement* pxElement);
     bool WasPointerActivateThisFrame() const { return m_bPointerActivateThisFrame; }
 
@@ -144,11 +161,24 @@ private:
     void UpdateSize();
     void UpdateFocusNavigation();
 
+    // Pre-order snapshot of the VISIBLE subtree, matching the update walk.
+    void CollectPointerInputElements(Zenith_UIElement* pxElement, Zenith_UIElement** apxOut,
+        uint32_t& uCount, uint32_t uMax) const;
+    // Flush what the pass deferred: queued creations first, then the deletions.
+    void FlushDeferredMutations();
+
     // All elements owned by canvas (flat list for ownership/deletion)
     Zenith_Vector<Zenith_UIElement*> m_xAllElements;
 
     // Root elements (top-level, not children of other elements)
     Zenith_Vector<Zenith_UIElement*> m_xRootElements;
+
+    // Input-pass mutation deferral. A click callback is free to build or destroy
+    // UI; doing either straight into the lists above would invalidate the walk's
+    // snapshot mid-pass, so both are queued and applied when the pass closes.
+    bool m_bInputPassActive = false;
+    Zenith_Vector<Zenith_UIElement*> m_xPendingAdds;
+    Zenith_Vector<Zenith_UIElement*> m_xPendingDestroys;
 
     // Canvas dimensions
     Zenith_Maths::Vector2 m_xSize = { 1920.0f, 1080.0f };

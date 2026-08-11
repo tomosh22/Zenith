@@ -263,7 +263,21 @@ param(
     # ResetTransientForTest, pad poll-diff transitions, radial stick deadzone,
     # simulator-injection ordering. Observed 2026-08-11 on a Null_ Combat build
     # (1526 ran / 1525 passed / 0 failed / 1 skipped).
-    [int]$Baseline = 1526,
+    # 1526 -> 1540: +14 input-program WP1 units. 11 in the new
+    # Zenith/Input/Zenith_Pointers.Tests.inl (B7 pointer table on LOCAL instances:
+    # down/move/up phase edges, multi-pointer independence, cancel edge+clear,
+    # claim-blocks-tap, stale-generation claim release rejected, Windows
+    # mouse-is-pointer-0 projection, simulator touch applied at the injection
+    # point, tap max-excursion boundary, ReleaseAllClaimsForOwner scoping,
+    # ResetTransientForTest table clear, 8-slot saturation) + 3 in the new
+    # Zenith/UI/Zenith_UIButton.Tests.inl (standard-control pointer capture:
+    # drag-off keeps the claim until release, widget destruction releases its
+    # owner's claims, element mutation during the input pass is deferred).
+    # Zenith_TouchInput and its graph node ReadTouchState are DELETED (replaced
+    # by Zenith_Pointers + ReadPointer); no units were lost with them.
+    # Observed 2026-08-11 on a Null_ Combat build
+    # (1540 ran / 1539 passed / 0 failed / 1 skipped).
+    [int]$Baseline = 1540,
     [int]$TimeoutSec = 180,
     [string]$LogPath = ""
 )

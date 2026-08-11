@@ -10,6 +10,7 @@
 
 #include "Core/Zenith_AutomatedTest.h"
 #include "Input/Zenith_Input.h"
+#include "Input/Zenith_Pointers.h"
 #include "Input/Zenith_InputSimulator.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "ZenithECS/Zenith_EventSystem.h"
@@ -414,6 +415,12 @@ namespace
 		// a stuck pad button would all outlive the test that produced them.
 		// Registrations (none yet) are deliberately untouched.
 		g_xEngine.Input().ResetTransientForTest();
+		// ...and the pointer table it feeds. A finger left down, a claim a
+		// destroyed widget never released, or a disarmed lifecycle state would
+		// otherwise outlive the test that produced them. Slots and generations
+		// reset wholesale: a pointer is not a registration, so nothing survives
+		// a test that a recycled generation could confuse.
+		g_xEngine.Pointers().ResetTransientForTest();
 		if (s_xRunner.m_fFixedDt > 0.0f)
 		{
 			Zenith_InputSimulator::SetFixedDt(s_xRunner.m_fFixedDt);

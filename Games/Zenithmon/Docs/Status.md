@@ -3,15 +3,21 @@
 **Last updated:** 2026-08-11
 
 **★ LIVE BASELINE (OBSERVED 2026-08-11 on clean `Null_` builds):
-ZM boot `3151 ran / 3149 passed / 0 failed / 2 skipped`; engine boot (Null Combat)
-`1526 ran / 1525 passed / 0 failed / 1 skipped`; registry **55**.** This is the
-current pin in `zm-tests.yml` (`-Baseline 3151`) and `run_unit_gate.ps1`
-(default 1526). The move from 3127/1502 is **+24 ENGINE units** (no ZM units)
-from the engine input program's WP0 (device foundations) — the Zenith_Input
+ZM boot `3165 ran / 3163 passed / 0 failed / 2 skipped`; engine boot (Null Combat)
+`1540 ran / 1539 passed / 0 failed / 1 skipped`; registry **55**.** This is the
+current pin in `zm-tests.yml` (`-Baseline 3165`) and `run_unit_gate.ps1`
+(default 1540). The move from 3151/1526 is **+14 ENGINE units** (no ZM units)
+from the engine input program's WP1: the `Zenith_Pointers` multi-touch table
+(replacing the deleted `Zenith_TouchInput`; graph node `ReadTouchState` →
+`ReadPointer`) and the standard-control pointer-capture suite. ZM code is
+UNTOUCHED (its migration is the input program's WP3b). See `run_unit_gate.ps1`
+for the per-test derivation.
+
+The PREVIOUS move, 3127/1502 -> 3151/1526, was **+24 ENGINE units** (no ZM units)
+from the input program's WP0 (device foundations) — the Zenith_Input
 event-FIFO / drain-after-acquire / release-edge / gamepad-completion /
 lifecycle-barrier / simulator-injection rework, all in
-`Zenith/Input/Zenith_Input.Tests.inl`. ZM code is UNTOUCHED by WP0 (its own
-migration is the input program's WP3b). See `run_unit_gate.ps1` for the
+`Zenith/Input/Zenith_Input.Tests.inl`. See `run_unit_gate.ps1` for the
 per-test derivation.
 
 The PREVIOUS move, 3123/1498 -> 3127/1502, was **+4 ENGINE units** (no ZM units) from

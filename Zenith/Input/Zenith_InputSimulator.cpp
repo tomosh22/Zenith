@@ -214,16 +214,6 @@ void Zenith_InputSimulator::SimulateMouseDrag(double fStartX, double fStartY, do
 
 // ========== Touch Simulation ==========
 
-void Zenith_InputSimulator::SimulateTap(double fScreenX, double fScreenY)
-{
-	SimulateMouseClick(fScreenX, fScreenY);
-}
-
-void Zenith_InputSimulator::SimulateSwipe(double fStartX, double fStartY, double fEndX, double fEndY, u_int32 uDurationFrames)
-{
-	SimulateMouseDrag(fStartX, fStartY, fEndX, fEndY, uDurationFrames);
-}
-
 void Zenith_InputSimulator::SimulateTouchDown(int32_t iPointerId, float fX, float fY)
 {
 	QueueTouchInjection(INPUT_EVENT_TOUCH_DOWN, iPointerId, fX, fY);

@@ -9,6 +9,26 @@ void Zenith_UISystem::Initialise(Zenith_SceneSystem& xScenes)
 	m_pxScenes = &xScenes;
 }
 
+void Zenith_UISystem::UpdateInput(Zenith_Pointers& xPointers, float fDt)
+{
+	// Same deferral guard the visual pass uses: a click callback that queues a
+	// LoadScene must not tear the scene down underneath this walk. The guard
+	// drains it when the scope closes.
+	Zenith_SceneUpdateDeferralGuard xInputGuard;
+
+	Zenith_Vector<Zenith_UIComponent*> xUIComponents;
+	xUIComponents.Clear();
+	m_pxScenes->QueryAllScenes<Zenith_UIComponent>().ForEach([&xUIComponents](Zenith_EntityID, Zenith_UIComponent& xComp) { xUIComponents.PushBack(&xComp); });
+	for (Zenith_Vector<Zenith_UIComponent*>::Iterator xIt(xUIComponents); !xIt.Done(); xIt.Next())
+	{
+		Zenith_UIComponent* pxComponent = xIt.GetData();
+		if (pxComponent->IsVisible())
+		{
+			pxComponent->GetCanvas().UpdatePointerInput(xPointers, fDt);
+		}
+	}
+}
+
 void Zenith_UISystem::Update(float fDt)
 {
 	// Collects from ALL loaded scenes (persistent entity UI + game scene UI).

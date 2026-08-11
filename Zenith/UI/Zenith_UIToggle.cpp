@@ -76,31 +76,27 @@ void Zenith_UIToggle::SetIsOn(bool bOn)
 	}
 }
 
-void Zenith_UIToggle::ResetInteractionStateForEditor()
+bool Zenith_UIToggle::IsInputSuppressedByEditor() const
 {
 #ifdef ZENITH_TOOLS
-	if (g_xEditorQuery.m_pfnIsEditorStopped()
+	// Stopped editor with no simulator driving: the canvas is being AUTHORED,
+	// so clicks belong to the editor, not to the widget.
+	return g_xEditorQuery.m_pfnIsEditorStopped()
 #ifdef ZENITH_INPUT_SIMULATOR
 		&& !Zenith_InputSimulator::IsEnabled()
 #endif
-	)
-	{
-		m_bFocused = false;
-		m_bMousePressedInside = false;
-	}
+		;
+#else
+	return false;
 #endif
 }
 
-
-bool Zenith_UIToggle::ComputeHovered(bool bInteractable, float fMouseX, float fMouseY) const
+void Zenith_UIToggle::AbandonCapture()
 {
-	Zenith_Maths::Vector4 xBounds = GetScreenBounds();
-	return bInteractable
-		&& fMouseX >= xBounds.x
-		&& fMouseX <= xBounds.z
-		&& fMouseY >= xBounds.y
-		&& fMouseY <= xBounds.w;
+	ReleaseCapturedPointer();
+	m_bPointerInside = false;
 }
+
 
 void Zenith_UIToggle::FireValueChangedCallback()
 {
@@ -110,26 +106,77 @@ void Zenith_UIToggle::FireValueChangedCallback()
 	}
 }
 
-void Zenith_UIToggle::HandleMouseInteraction(bool bHovered, bool bMouseDown)
+void Zenith_UIToggle::UpdatePointerInput(Zenith_Pointers& xPointers, float fDt)
 {
-	// Device edges, not a per-widget down-transition latch. The latch could only
-	// see a transition that straddled two of this widget's own Updates, so a
-	// press and release inside one frame -- every quick tap on a touch device --
-	// toggled nothing at all.
-	Zenith_Input& xInput = g_xEngine.Input();
-	if (xInput.WasKeyPressedThisFrame(ZENITH_MOUSE_BUTTON_LEFT) && bHovered)
+	(void)fDt;   // a toggle's capture is edge-driven; only a drag needs a rate
+
+	const bool bEditorSuppressed = IsInputSuppressedByEditor();
+	if (bEditorSuppressed)
 	{
-		m_bMousePressedInside = true;
+		m_bFocused = false;
 	}
-	if (!bMouseDown)
+	if (!m_bVisible || !IsGroupInteractable() || bEditorSuppressed)
 	{
-		if (xInput.WasKeyReleasedThisFrame(ZENITH_MOUSE_BUTTON_LEFT) && m_bMousePressedInside && bHovered)
+		AbandonCapture();
+		return;
+	}
+
+	// Already holding a pointer: click-on-release, drag-off keeps the claim.
+	const Zenith_Pointer* pxCaptured = ResolveCapturedPointer(xPointers);
+	if (pxCaptured != nullptr)
+	{
+		m_bPointerInside = ContainsSurfacePosition(pxCaptured->m_xPosition);
+
+		if (pxCaptured->m_bCancelledThisFrame)
 		{
-			// Toggle state
-			m_bIsOn = !m_bIsOn;
-			FireValueChangedCallback();
+			AbandonCapture();
 		}
-		m_bMousePressedInside = false;
+		else if (pxCaptured->m_bUpThisFrame)
+		{
+			const bool bInside = m_bPointerInside;
+			AbandonCapture();
+			if (bInside)
+			{
+				m_bIsOn = !m_bIsOn;
+				FireValueChangedCallback();
+			}
+		}
+		return;
+	}
+
+	m_bPointerInside = false;
+
+	for (u_int32 u = 0; u < Zenith_Pointers::uMAX_POINTERS; u++)
+	{
+		const Zenith_Pointer& xPointer = xPointers.GetPointer(u);
+		if (!xPointer.m_bDownThisFrame || xPointer.IsClaimed())
+		{
+			continue;
+		}
+		if (!ContainsSurfacePosition(xPointer.m_xPosition))
+		{
+			continue;
+		}
+		if (!CapturePointer(xPointers, xPointers.GetHandle(u)))
+		{
+			continue;
+		}
+
+		m_bPointerInside = true;
+
+		// Press and release inside ONE frame (a quick tap, a simulated click):
+		// both edges ride the pointer we just claimed, so complete it here.
+		if (xPointer.m_bUpThisFrame || xPointer.m_bCancelledThisFrame)
+		{
+			const bool bToggled = xPointer.m_bUpThisFrame && ContainsSurfacePosition(xPointer.m_xPosition);
+			AbandonCapture();
+			if (bToggled)
+			{
+				m_bIsOn = !m_bIsOn;
+				FireValueChangedCallback();
+			}
+		}
+		break;
 	}
 }
 
@@ -165,23 +212,14 @@ void Zenith_UIToggle::UpdateVisualFromState(float fDt)
 
 void Zenith_UIToggle::Update(float fDt)
 {
+	// VISUAL ONLY — the capture / toggle decision moved to UpdatePointerInput,
+	// which runs on every frame rather than only the ones that render.
 	if (!m_bVisible)
 		return;
 
-	ResetInteractionStateForEditor();
-
-	bool bInteractable = IsGroupInteractable();
-
-	float fMouseX;
-	float fMouseY;
-	GetTransformedMousePosition(fMouseX, fMouseY);
-
-	bool bHovered = ComputeHovered(bInteractable, fMouseX, fMouseY);
-	bool bMouseDown = g_xEngine.Input().IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_LEFT);
-
-	if (bInteractable)
+	if (IsGroupInteractable())
 	{
-		HandleMouseInteraction(bHovered, bMouseDown);
+		// Keyboard/gamepad self-activation is untouched by the pointer migration.
 		HandleKeyboardActivation();
 	}
 

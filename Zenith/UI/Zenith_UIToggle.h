@@ -71,6 +71,7 @@ public:
 	// ========== Overrides ==========
 
 	virtual void Update(float fDt) override;
+	virtual void UpdatePointerInput(Zenith_Pointers& xPointers, float fDt) override;
 	virtual void Render(Zenith_UICanvas& xCanvas) override;
 	virtual void WriteToDataStream(Zenith_DataStream& xStream) const override;
 	virtual void ReadFromDataStream(Zenith_DataStream& xStream) override;
@@ -81,13 +82,14 @@ public:
 
 private:
 	// ========== Update Helpers ==========
+	// Update() is the VISUAL half; the capture / toggle half lives in
+	// UpdatePointerInput (frame contract step 10c).
 
-	void ResetInteractionStateForEditor();
-	bool ComputeHovered(bool bInteractable, float fMouseX, float fMouseY) const;
-	void HandleMouseInteraction(bool bHovered, bool bMouseDown);
+	bool IsInputSuppressedByEditor() const;
 	void HandleKeyboardActivation();
 	void FireValueChangedCallback();
 	void UpdateVisualFromState(float fDt);
+	void AbandonCapture();
 
 	// Callback
 	UIToggleCallback m_pfnOnValueChanged = nullptr;
@@ -97,10 +99,9 @@ private:
 	bool m_bIsOn = false;
 	bool m_bFocused = false;
 
-	// Click-on-release gate: was the press that is currently down taken INSIDE
-	// this toggle? The down/up transitions themselves come from the device
-	// edges, not from a per-widget last-frame latch.
-	bool m_bMousePressedInside = false;
+	// Is the CAPTURED pointer currently inside these bounds? Drag-off keeps the
+	// claim but suppresses the toggle, so releasing outside changes nothing.
+	bool m_bPointerInside = false;
 
 	// Text
 	std::string m_strText;
