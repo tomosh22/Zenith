@@ -35,7 +35,11 @@ lives in per-directory docs (engine convention):
 ### Directory layout
 ```
 Games/CityBuilder/
-  CityBuilder.cpp        # Project_* hooks: terrain/material/icon asset bake + City scene creation
+  CityBuilder.cpp        # Project_* hooks: terrain/material/icon asset bake + City scene creation;
+                         #   registers the C2 action table
+  CB_Bindings.h          # THE ACTION TABLE (input program C2) — the only production file allowed to
+                         #   spell a raw key, mouse button or pad code, plus the claim-guarded
+                         #   cursor-position reader the ground picker uses
   CLAUDE.md              # this overview
   Source/                # headless gameplay systems (CB_*.{h,cpp}) — see Source/CLAUDE.md
   Components/            # the 3 game ECS components — see Components/CLAUDE.md
@@ -62,7 +66,73 @@ Gate = build-green + every test `passed:true`. Windowed tests are
 `m_bRequiresGraphics=true` (the picker + render need the live camera + window), so
 they are skipped headless and only run in the windowed pass.
 
-## Controls
+## Controls (the action table)
+
+Every control is an ACTION registered in **`CB_Bindings.h`** — the one production
+file in this game allowed to spell a raw key, mouse button or pad code (input
+program C2). Two profiles, `P_DESKTOP {KEYBOARD|MOUSE}` and `P_GAMEPAD {GAMEPAD}`,
+and the active one switches automatically on the first input from the other
+device. CityBuilder is Windows-only, so there is no TOUCH profile.
+
+| Action | Keyboard | Mouse | Gamepad |
+|---|---|---|---|
+| PRIMARY / SECONDARY † | — | LMB / RMB | — |
+| PAN | W/A/S/D | — | Left stick |
+| ORBIT_MODIFIER + ORBIT_DELTA ◆ | — | RMB + mouse move | — |
+| ORBIT_RATE ◆ | — | — | Right stick |
+| PAN_DRAG_MODIFIER + PAN_DRAG_DELTA | — | MMB + mouse move | — |
+| ROTATE | Q (−) / E (+) | — | — |
+| ZOOM_DELTA / ZOOM_RATE ◆ | — | Wheel | RT − LT |
+| TOOL_1..TOOL_0, TOOL_T/B/L/K | 1-9, 0, T, B, L, K | — | — |
+| TOOL_PREV / TOOL_NEXT ★ | — | — | d-pad Left / Right |
+| PAUSE | P | — | Start |
+| SPEED_DOWN / SPEED_UP ★ | , / . | — | d-pad Down / Up |
+| ROAD_CLASS | R | — | Y |
+| TAX_DOWN / TAX_UP | - / = | — | — |
+| LOAN | G | — | — |
+| QUICKSAVE / QUICKLOAD / NEW_CITY | F5 / F9 / F8 | — | — |
+| IGNITE † | F | — | — |
+| POLICY_1..POLICY_4 | F1-F4 | — | — |
+
+† **The ground tools are deliberately not pad-operable.** PRIMARY, SECONDARY and
+IGNITE are the press halves of a POINTER gesture — every consumer also needs the
+world point under the CURSOR, which a face button cannot supply. The pad's scope
+is the camera, the sim clock and tool cycling. PRIMARY/SECONDARY are also
+**claim-aware** (the action layer suppresses a pointer-sourced transition a UI
+widget claimed at step 10e), so a click the HUD toolbar consumed can no longer
+also lay a road behind it — something the retired raw `IsMouseButtonHeld` polls
+could not distinguish. SECONDARY and ORBIT_MODIFIER are both RMB, exactly as the
+retired code had it: a right-drag both ends an in-progress road and orbits.
+
+◆ **Zoom and orbit are two actions each because a mouse and a stick are
+different quantities.** The wheel/mouse report DISPLACEMENT already integrated
+over the frame (multiplying by dt would make the camera frame-rate dependent);
+a stick/trigger reports a deflection, i.e. a RATE that becomes an angle or a
+distance only after multiplying by dt. `CB_CityCameraComponent` applies both
+halves every frame and a resting device contributes exactly zero, so there is no
+mode to switch.
+
+★ **The d-pad rows collide with the engine-reserved UI-nav set (ids 0-15), by
+design.** Both fire: the reserved rows close at 10b and drive canvas focus,
+SPEED_UP/DOWN and TOOL_PREV/NEXT close at 10e and drive the sim clock and the
+tool palette. It is benign because CityBuilder's HUD is never focus-navigated
+during play. `CB_SimPad_Test` pins BOTH edges on one press so the claim stays
+checked rather than becoming folklore. TOOL_PREV/NEXT walk the game's own
+toolbar order (`ToolDescs`) through `SelectUITool`, so the pad reaches every
+entry the mouse can click — including the eight service sub-types the number row
+can only reach by re-pressing 6.
+
+The cursor POSITION is not an action (no binding row can carry a position). It
+is read through `CB_Bindings::ReadCursorPosition`, the one reason that header
+still names `Zenith_Input` — a claim-guarded DEVICE read, because the road tool
+ghosts a preview under a HOVERING cursor and the pointer table has no record on
+a frame with no button down.
+
+Menu navigation (arrows or the d-pad to move focus, Enter or pad A to activate,
+click to press a button) is the ENGINE-reserved UI action set, which every game
+gets without registering anything.
+
+### The same, by hand
 
 - **Camera:** right-drag orbit, middle-drag / WASD pan, wheel zoom, Q/E rotate.
 - **Road (5):** SimCity/C:S-style — left-click a start point, then a **ghost preview**
@@ -194,6 +264,13 @@ density (level-up) additionally needs **land value** (happiness from service cov
   save/load + a fire drill. Authored as a flat input "script" (`g_xScript`) processed one
   action per frame; PROBE actions snapshot state + Verify asserts a solvent, served city
   (~60 buildings) AND that each mechanic fired. ~43s windowed).
+- **The gamepad column:** `CB_SimPad_Test` is the only thing that publishes a pad event —
+  everything else drives the keyboard and the mouse, so every pad row would otherwise
+  regress in silence. It proves the auto profile switch to `P_GAMEPAD` (without which no
+  pad row resolves at all), then drives PAN (left stick), ORBIT_RATE (right stick),
+  TOOL_NEXT (d-pad Right, asserted as a real tool change through `SelectUITool`) and PAUSE
+  (Start), and pins the documented d-pad/UI-nav overlap by asserting BOTH edges on one
+  press. `requiresGraphics=false`, so CI sees it.
 
 ## Conventions (engine-wide; see root CLAUDE.md)
 

@@ -103,9 +103,8 @@ private:
 	Zenith_Maths::Vector3 m_xPreviewEnd    = Zenith_Maths::Vector3(0.0f);         // cursor / snap marker
 	bool                  m_bPreviewEndValid   = false;
 
-	// Edge-trigger latches for the simulator's frame-held button state.
-	bool m_bPrevLeft  = false;
-	bool m_bPrevRight = false;
+	// (The hand-rolled prev-button latches are gone: PRIMARY / SECONDARY edges
+	// come from the action layer, which publishes them claim-filtered.)
 
 	// Services-category placement state.
 	CB_EBuildingType m_eServiceType     = CB_BUILDING_POLICE;  // cycles police→fire→hospital→school

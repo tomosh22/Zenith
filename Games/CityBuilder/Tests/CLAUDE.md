@@ -3,12 +3,18 @@
 `Zenith_AutomatedTest` coverage for the game. Every test is gated `#ifdef ZENITH_INPUT_SIMULATOR`
 and registered with `ZENITH_AUTOMATED_TEST_REGISTER`. A registration's 6th field is
 `m_bRequiresGraphics` — **false = runs on the Null (headless) build**, **true = windowed only**
-(it marks tests whose ASSERTIONS read GPU-produced output). CityBuilder has none.
-(needs the live camera/window + picker; skipped headless).
+(it marks tests whose ASSERTIONS read GPU-produced output). CityBuilder has none — every test here
+registers `false`, which is why the headless and windowed suites run the identical set.
 
-The headless gate (run in `_True`) is currently **675 engine unit tests + 45 CityBuilder automated
-tests, all green**. Get the live list with `citybuilder.exe --list-automated-tests`; counts here are a
+Get the live list with `citybuilder.exe --list-automated-tests`; counts here are a
 guide, not a contract (several files register many tests each, e.g. `CB_CityServices.cpp`).
+Observed 2026-08-11 on `Null_vs2022_Debug_Win64_True`: **47 CityBuilder automated tests, 0 failed**
+(headless and windowed run the same set — no CB test is `requiresGraphics`), and the engine unit
+gate booted from the same exe reports `1591 ran, 1590 passed, 0 failed, 1 skipped`.
+
+> ★ `zenith test CityBuilder` REWRITES the tracked repo-root file
+> `cb_quicksave_freeform.dat` — `CB_HumanSession` drives the real F5 quick-save. After ANY CB test
+> run, `git status` and `git checkout -- cb_quicksave_freeform.dat` before you commit anything.
 
 ## Running
 
@@ -30,11 +36,31 @@ pwsh ./Tools/run_cb_tests.ps1 -Filter CB_HumanSession
 
 ## Conventions (CRITICAL)
 
+> ## ★ INPUT IN A CB TEST IS AN EDGE, NOT A LEVEL (C1a)
+>
+> Since the input migration, every control is a C2 ACTION registered in
+> `../CB_Bindings.h`, and the key rows behind them are fed by the **ordered
+> transition log**, not sampled as a level at close time.
+>
+> `Zenith_InputSimulator::SetKeyHeld` writes ONLY the simulator's held table. It
+> reaches `Zenith_Input::IsKeyDown` and **nothing else** — the action layer never
+> sees the key go down, so `IsHeld` / `GetAxis1D` / `GetAxis2D` answer "not held"
+> for the whole window and the test fails pointing anywhere but at its input.
+> Publish `SimulateKeyDown` / `SimulateKeyUp` instead (`SimulateKeyPress` is
+> already an edge pair and was always fine). `CB_HumanSession`'s `A_HOLD` /
+> `A_UNHOLD` actions were converted for exactly this reason — the Q/E camera
+> ROTATE row is a `KeyAxis1D`, which is transition-fed.
+>
+> A **Step** that reads back an action edge sees the state closed at the PREVIOUS
+> frame's 10e (a Step runs at `PumpAutomatedTest`, before this frame's step 7/8),
+> so assert in the Step AFTER the one that injected — C1b. Game logic at step 11
+> still sees the edge in the same frame it was injected.
+
 - **No reentrant simulator in a Step.** A `Step` runs *inside* `Zenith_MainLoop`, so use only the
   state-setters — `SimulateMousePosition`, `SimulateMouseButtonDown/Up`, `SimulateMouseWheel`,
-  `SimulateKeyPress`, `SetKeyHeld`. The frame-advancing verbs `SimulateMouseClick` / `StepFrame`
-  re-enter `BeginFrame` → `vkWaitForFences` **deadlock** (windowed only). Call the picker / tools
-  directly instead.
+  `SimulateKeyPress`, `SimulateKeyDown/Up`, `SimulateGamepad*`. The frame-advancing verbs
+  `SimulateMouseClick` / `StepFrame` re-enter `BeginFrame` → `vkWaitForFences` **deadlock**
+  (windowed only). Call the picker / tools directly instead.
 - **Headless logic tests build local instances** in `Setup`/`Verify` and assert on them — they do not
   need the live scene. Windowed tests drive the live `CB_CityManagerComponent` via the static accessors.
 - **Determinism:** run with `--fixed-dt 0.01666`; the sim core has no RNG so a seeded city replays.
@@ -54,8 +80,9 @@ pwsh ./Tools/run_cb_tests.ps1 -Filter CB_HumanSession
 | `CB_RoadCarve.cpp` | road carve recesses the corridor by `BED_DEPTH`, off-road terrain preserved. |
 | `CB_SaveLoadRoundtrip.cpp` | save/load round-trip (graph+zoning+buildings+districts+transit+conduits); re-serialize is byte-stable. |
 | `CB_DayNightSpeed.cpp` | `CB_DayNight` clock + sun-direction math; `CB_SpeedMultiplier` table (0 / 0.5 / 1 / 2 / 4). |
+| `CB_SimPad.cpp` | **the GAMEPAD column** of `../CB_Bindings.h`, end to end. The only test here that publishes a pad event, so every pad row would otherwise regress in silence. Proves the auto profile switch to `P_GAMEPAD` (nothing below resolves without it), then drives PAN (left stick → the live `CB_CameraController`'s target moves), ORBIT_RATE (right stick → its yaw moves), TOOL_NEXT (d-pad Right → a real tool change through `SelectUITool`) and PAUSE (pad Start → the sim clock). Also pins the DOCUMENTED d-pad/UI-nav overlap: the same press must raise BOTH `TOOL_NEXT` and the engine-reserved `UI_NAV_RIGHT`. Restores the tool + clock in `Verify`. |
 
-## Windowed tests (`m_bRequiresGraphics = true`)
+## Live-scene tests (drive the loaded City scene + its camera; all still `m_bRequiresGraphics = false`)
 
 | Test | File | ~Frames | What it does |
 |---|---|---|---|

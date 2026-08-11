@@ -38,7 +38,7 @@
 #ifdef ZENITH_TOOLS
 #include "imgui.h"
 #endif
-#include "Input/Zenith_Input.h"
+#include "CityBuilder/CB_Bindings.h"
 #include "Core/Zenith_CommandLine.h"
 #include "CityBuilder/Source/CB_Events.h"
 #include "ZenithECS/Zenith_EventSystem.h"
@@ -98,8 +98,6 @@ public:
 		, m_bUIBuilt(xOther.m_bUIBuilt)
 		, m_fUIBuiltW(xOther.m_fUIBuiltW)
 		, m_fUIBuiltH(xOther.m_fUIBuiltH)
-		, m_bPrevTransitLeft(xOther.m_bPrevTransitLeft)
-		, m_bPrevTransitRight(xOther.m_bPrevTransitRight)
 		, m_uMilestoneMask(xOther.m_uMilestoneMask)
 	{
 		AdoptFrom(xOther);
@@ -130,8 +128,6 @@ public:
 			m_bUIBuilt          = xOther.m_bUIBuilt;
 			m_fUIBuiltW         = xOther.m_fUIBuiltW;
 			m_fUIBuiltH         = xOther.m_fUIBuiltH;
-			m_bPrevTransitLeft  = xOther.m_bPrevTransitLeft;
-			m_bPrevTransitRight = xOther.m_bPrevTransitRight;
 			m_uMilestoneMask    = xOther.m_uMilestoneMask;
 			AdoptFrom(xOther);
 		}
@@ -245,33 +241,38 @@ public:
 	{
 		++s_uUpdateCount;
 
-		// P toggles pause.
-		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_P))
+		// PAUSE toggles the sim clock.
+		if (CB_Bindings::WasPausePressed())
 		{
 			m_eSpeed = (m_eSpeed == CB_SIM_PAUSED) ? CB_SIM_NORMAL : CB_SIM_PAUSED;
 			Zenith_EventDispatcher::Get().Dispatch(CB_OnPauseToggled{ m_eSpeed == CB_SIM_PAUSED });
 		}
 
-		// --- Keyboard shortcuts for the build / economy actions the HUD exposes only as
-		//     buttons (or not at all), so the whole game is keyboard-operable. Tool selection
-		//     is keys 1-9/0/T/B/L/K (CB_ToolSystem); these complete the set so a player — or
-		//     the automated human test — can drive every mechanic from the keyboard. ---
+		// --- The build / economy / session ACTIONS the HUD exposes only as buttons (or not
+		//     at all), so the whole game is operable without the mouse. Tool selection is the
+		//     14 TOOL_* rows (CB_ToolSystem) plus the pad's TOOL_PREV/TOOL_NEXT cycle below;
+		//     these complete the set so a player — or the automated human test — can drive
+		//     every mechanic from the keyboard. ---
 		{
-			Zenith_Input& xKb = g_xEngine.Input();
-			if (xKb.WasKeyPressedThisFrame(ZENITH_KEY_F8)) { NewCity(); }                                 // start over
-			if (xKb.WasKeyPressedThisFrame(ZENITH_KEY_R))                                                  // cycle road class
+			if (CB_Bindings::WasNewCityPressed()) { NewCity(); }                                          // start over
+			if (CB_Bindings::WasRoadClassPressed())                                                        // cycle road class
 			{
 				m_xRoadCtrl.SetRoadClass(static_cast<CB_ERoadClass>((m_xRoadCtrl.GetRoadClass() + 1) % CB_ROADCLASS_COUNT));
 			}
-			if (xKb.WasKeyPressedThisFrame(ZENITH_KEY_MINUS)) { m_xBuild.SetTaxRate(m_xBuild.GetTaxRate() - 0.1f); }  // tax down
-			if (xKb.WasKeyPressedThisFrame(ZENITH_KEY_EQUAL)) { m_xBuild.SetTaxRate(m_xBuild.GetTaxRate() + 0.1f); }  // tax up
-			if (xKb.WasKeyPressedThisFrame(ZENITH_KEY_G))     { m_xBuild.TakeLoan(20000.0f); }              // take a development loan
-			if (xKb.WasKeyPressedThisFrame(ZENITH_KEY_COMMA)) { CycleSpeed(-1); }                          // slower
-			if (xKb.WasKeyPressedThisFrame(ZENITH_KEY_PERIOD)){ CycleSpeed(+1); }                          // faster
-			if (xKb.WasKeyPressedThisFrame(ZENITH_KEY_F5))    { SaveCity(); }                              // quick-save
-			if (xKb.WasKeyPressedThisFrame(ZENITH_KEY_F9))    { LoadCity(); }                              // quick-load
+			if (CB_Bindings::WasTaxDownPressed())   { m_xBuild.SetTaxRate(m_xBuild.GetTaxRate() - 0.1f); }  // tax down
+			if (CB_Bindings::WasTaxUpPressed())     { m_xBuild.SetTaxRate(m_xBuild.GetTaxRate() + 0.1f); }  // tax up
+			if (CB_Bindings::WasLoanPressed())      { m_xBuild.TakeLoan(20000.0f); }                        // take a development loan
+			if (CB_Bindings::WasSpeedDownPressed()) { CycleSpeed(-1); }                                     // slower
+			if (CB_Bindings::WasSpeedUpPressed())   { CycleSpeed(+1); }                                     // faster
+			if (CB_Bindings::WasQuickSavePressed()) { SaveCity(); }                                         // quick-save
+			if (CB_Bindings::WasQuickLoadPressed()) { LoadCity(); }                                         // quick-load
+			// The pad's way onto the tool palette: step the game's OWN toolbar order through
+			// SelectUITool, so a controller reaches every entry the mouse can click (including
+			// the eight service sub-types the number row can only reach by re-pressing 6).
+			if (CB_Bindings::WasToolPrevPressed()) { CycleUITool(-1); }
+			if (CB_Bindings::WasToolNextPressed()) { CycleUITool(+1); }
 			// Ignite a fire under the cursor (disaster drill: covering fire stations contain it).
-			if (xKb.WasKeyPressedThisFrame(ZENITH_KEY_F))
+			if (CB_Bindings::WasIgnitePressed())
 			{
 				float fFX = 0.0f, fFZ = 0.0f;
 				if (m_xTools.PickGroundPoint(fFX, fFZ)) { m_xBuild.TriggerFireAt(fFX, fFZ); }
@@ -472,9 +473,8 @@ public:
 	// the affected GPU terrain chunks on a throttle (the re-upload loads baked chunk meshes).
 	void UpdateTerraform()
 	{
-		Zenith_Input& xInput = g_xEngine.Input();
-		const bool bRaise = xInput.IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_LEFT);
-		const bool bLower = xInput.IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_RIGHT);
+		const bool bRaise = CB_Bindings::IsPrimaryHeld();
+		const bool bLower = CB_Bindings::IsSecondaryHeld();
 		if (!bRaise && !bLower) { m_uTerraformTick = 0u; return; }
 
 		float fWX = 0.0f, fWZ = 0.0f;
@@ -560,20 +560,22 @@ public:
 	// district when the tool's active, else city-wide). Windowed (paint needs the picker).
 	void UpdateDistrictTool()
 	{
-		Zenith_Input& xInput = g_xEngine.Input();
 		const bool bDistrictTool = (m_xTools.GetTool() == CB_TOOL_DISTRICT);
 
-		if (bDistrictTool && xInput.IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_LEFT))
+		if (bDistrictTool && CB_Bindings::IsPrimaryHeld())
 		{
 			float fWX = 0.0f, fWZ = 0.0f;
 			if (m_xTools.PickGroundPoint(fWX, fWZ)) { m_xDistricts.PaintDistrict(fWX, fWZ); }
 		}
 
-		const CB_EPolicy aePolicy[4] = { CB_POLICY_RECYCLING, CB_POLICY_FREE_TRANSIT, CB_POLICY_POLLUTION_CONTROL, CB_POLICY_PARKS_MANDATE };
-		const int        aiKey[4]    = { ZENITH_KEY_F1, ZENITH_KEY_F2, ZENITH_KEY_F3, ZENITH_KEY_F4 };
-		for (int i = 0; i < 4; ++i)
+		// The retired KEYCODE array became a 4-entry ACTION array; the loop below
+		// is unchanged, only the element type moved from device fact to action.
+		const CB_EPolicy aePolicy[CB_Bindings::uPOLICY_COUNT] = {
+			CB_POLICY_RECYCLING, CB_POLICY_FREE_TRANSIT, CB_POLICY_POLLUTION_CONTROL, CB_POLICY_PARKS_MANDATE
+		};
+		for (u_int32 i = 0; i < CB_Bindings::uPOLICY_COUNT; ++i)
 		{
-			if (!xInput.WasKeyPressedThisFrame(aiKey[i])) { continue; }
+			if (!CB_Bindings::WasPolicyPressed(i)) { continue; }
 			if (bDistrictTool && m_xDistricts.GetCurrent() != CB_Districts::INVALID)
 			{
 				m_xDistricts.ToggleDistrictPolicy(m_xDistricts.GetCurrent(), aePolicy[i]);
@@ -606,11 +608,12 @@ public:
 	{
 		const CB_ETool eTool = m_xTools.GetTool();
 		if (eTool != CB_TOOL_TRANSIT && eTool != CB_TOOL_CONDUIT) { return; }
-		Zenith_Input& xInput = g_xEngine.Input();
-		const bool bL = xInput.IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_LEFT);
-		const bool bR = xInput.IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_RIGHT);
-		if (eTool == CB_TOOL_TRANSIT && bR && !m_bPrevTransitRight) { m_xTransit.StartLine(); }
-		if (bL && !m_bPrevTransitLeft)
+		// The press EDGES come from the action layer (claim-filtered) instead of a
+		// hand-rolled prev-state pair. Note this method early-returns on the other
+		// tools, so a prev-state pair here was only ever correct by accident — the
+		// action layer's edge is computed every frame regardless of who reads it.
+		if (eTool == CB_TOOL_TRANSIT && CB_Bindings::WasSecondaryPressed()) { m_xTransit.StartLine(); }
+		if (CB_Bindings::WasPrimaryPressed())
 		{
 			float fWX = 0.0f, fWZ = 0.0f;
 			if (m_xTools.PickGroundPoint(fWX, fWZ))
@@ -619,8 +622,6 @@ public:
 				else                          { m_xConduits.AddConduit(fWX, fWZ); }
 			}
 		}
-		m_bPrevTransitLeft  = bL;
-		m_bPrevTransitRight = bR;
 	}
 
 	// Draw conduits (energized = cyan, dead = grey) + links between connected nodes.
@@ -682,6 +683,39 @@ public:
 		if (eTool == CB_TOOL_POLICE && eService != CB_BUILDING_NONE) { m_xRoadCtrl.SetServiceType(eService); }
 	}
 	void SetUISpeed(CB_ESimSpeed eSpeed) { m_eSpeed = eSpeed; }
+
+	// TOOL_PREV / TOOL_NEXT (the pad's d-pad): step the TOOLBAR order — the same
+	// ToolDescs list the palette buttons are built from, and through the same
+	// SelectUITool path they click — so the pad reaches every entry the mouse
+	// can, INCLUDING the eight service sub-types that share CB_TOOL_POLICE and
+	// which the number row can only reach by re-pressing 6.
+	//
+	// The current position is found by matching BOTH the tool and (for the
+	// services run) the sub-type, because the tool alone is ambiguous across
+	// those eight entries. A tool the palette does not list (there is none
+	// today) simply starts the walk at entry 0. Wraps in both directions.
+	void CycleUITool(int iDir)
+	{
+		int iCount = 0;
+		const CB_UIToolDesc* pxTools = ToolDescs(iCount);
+		if (iCount <= 0) { return; }
+
+		const CB_ETool         eTool    = m_xTools.GetTool();
+		const CB_EBuildingType eService = m_xRoadCtrl.GetServiceType();
+		int iCurrent = -1;
+		for (int i = 0; i < iCount; ++i)
+		{
+			if (pxTools[i].eTool != eTool) { continue; }
+			if (pxTools[i].eService != CB_BUILDING_NONE && pxTools[i].eService != eService) { continue; }
+			iCurrent = i;
+			break;
+		}
+
+		int iNext = (iCurrent < 0) ? 0 : (iCurrent + iDir);
+		while (iNext < 0)       { iNext += iCount; }
+		while (iNext >= iCount) { iNext -= iCount; }
+		SelectUITool(pxTools[iNext].eTool, pxTools[iNext].eService);
+	}
 
 	// Button callbacks (UIButtonCallback = void(*)(void*)). The tool + service sub-type are packed
 	// into the userdata pointer (tool in byte 0, service in byte 1); the speed is the raw value.
@@ -1245,8 +1279,6 @@ private:
 	bool                     m_bUIBuilt = false;       // the parity game UI is built on the first windowed frame
 	float                    m_fUIBuiltW = 0.0f;       // canvas size the UI was last laid out for (rebuild on resize)
 	float                    m_fUIBuiltH = 0.0f;
-	bool                     m_bPrevTransitLeft  = false;  // transit-tool click edge latches
-	bool                     m_bPrevTransitRight = false;
 
 	uint32_t              m_uMilestoneMask = 0;   // population-threshold dispatch tracking
 

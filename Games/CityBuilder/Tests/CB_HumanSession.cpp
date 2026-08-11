@@ -442,8 +442,14 @@ static bool Step_CB_HumanSession(int /*iFrame*/)
 	case A_RDOWN:  Zenith_InputSimulator::SimulateMouseButtonDown(ZENITH_MOUSE_BUTTON_RIGHT); ++g_uAct; break;
 	case A_RUP:    Zenith_InputSimulator::SimulateMouseButtonUp(ZENITH_MOUSE_BUTTON_RIGHT);   ++g_uAct; break;
 	case A_KEY:    Zenith_InputSimulator::SimulateKeyPress(a.i); ++g_uAct; break;
-	case A_HOLD:   Zenith_InputSimulator::SetKeyHeld(a.i, true);  ++g_uAct; break;
-	case A_UNHOLD: Zenith_InputSimulator::SetKeyHeld(a.i, false); ++g_uAct; break;
+	// ★ C1a: HOLD/UNHOLD publish key TRANSITIONS, not a level write. Every control
+	// is a C2 action now (CB_Bindings.h), and the key rows behind them are fed by
+	// the ORDERED transition log — SetKeyHeld writes only the simulator's held
+	// table, which reaches Zenith_Input::IsKeyDown and nothing else, so the action
+	// layer would never see the key go down and the camera would simply not rotate.
+	// SimulateKeyPress was always an edge pair and needed no change.
+	case A_HOLD:   Zenith_InputSimulator::SimulateKeyDown(a.i); ++g_uAct; break;
+	case A_UNHOLD: Zenith_InputSimulator::SimulateKeyUp(a.i);   ++g_uAct; break;
 	case A_WHEEL:  Zenith_InputSimulator::SimulateMouseWheel(a.f); ++g_uAct; break;
 	case A_WAIT:   if (a.i <= 0) { ++g_uAct; } else { --a.i; } break;
 	case A_PROBE:  RunProbe(a.i); ++g_uAct; break;

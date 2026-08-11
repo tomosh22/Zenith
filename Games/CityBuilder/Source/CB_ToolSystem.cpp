@@ -2,9 +2,9 @@
 #include "Core/Zenith_Engine.h"
 
 #include "CityBuilder/Source/CB_ToolSystem.h"
+#include "CityBuilder/CB_Bindings.h"
 #include "EntityComponent/Zenith_CameraResolve.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
-#include "Input/Zenith_Input.h"
 #include "Maths/Zenith_Maths.h"
 #include "CityBuilder/Source/CB_Events.h"
 #include "ZenithECS/Zenith_EventSystem.h"
@@ -38,8 +38,15 @@ bool CB_ToolSystem::PickGroundPoint(float& fOutX, float& fOutZ) const
 	{
 		return false;
 	}
+	// The cursor POSITION is not an action (no binding row can carry a position),
+	// so it comes through CB_Bindings' claim-guarded device read. A false answer
+	// means a UI widget owns the pointer — the pick refuses rather than building
+	// the ground point under a HUD button the player is dragging on.
 	Zenith_Maths::Vector2_64 xMouse;
-	g_xEngine.Input().GetMousePosition(xMouse);
+	if (!CB_Bindings::ReadCursorPosition(xMouse))
+	{
+		return false;
+	}
 
 	const Zenith_Maths::Vector3 xNear = pxCam->ScreenSpaceToWorldSpace(
 		Zenith_Maths::Vector3(static_cast<float>(xMouse.x), static_cast<float>(xMouse.y), 0.0f));
@@ -97,27 +104,43 @@ bool CB_ToolSystem::PickGroundPoint(float& fOutX, float& fOutZ) const
 	return true;
 }
 
+// The tool each selection ACTION picks, in lockstep with
+// CB_Bindings::auTOOL_SELECT_ACTIONS. The action (i.e. which device row fires)
+// belongs to CB_Bindings; the tool IDENTITY belongs here, which is why the two
+// tables are parallel rather than one table in one place.
+static const CB_ETool g_aeToolForSelectAction[CB_Bindings::uTOOL_SELECT_COUNT] = {
+	CB_TOOL_ZONE_RES,   // Tool1
+	CB_TOOL_ZONE_COM,   // Tool2
+	CB_TOOL_ZONE_IND,   // Tool3
+	CB_TOOL_ZONE_PARK,  // Tool4
+	CB_TOOL_ROAD,       // Tool5
+	CB_TOOL_POLICE,     // Tool6 (re-pressing it cycles the service sub-type — CB_RoadController)
+	CB_TOOL_POWER,      // Tool7
+	CB_TOOL_WATER,      // Tool8
+	CB_TOOL_BULLDOZE,   // Tool9
+	CB_TOOL_NONE,       // Tool0
+	CB_TOOL_TERRAFORM,  // ToolT
+	CB_TOOL_DISTRICT,   // ToolB
+	CB_TOOL_TRANSIT,    // ToolL
+	CB_TOOL_CONDUIT,    // ToolK
+};
+static_assert(sizeof(g_aeToolForSelectAction) / sizeof(g_aeToolForSelectAction[0])
+	== CB_Bindings::uTOOL_SELECT_COUNT,
+	"the tool table and the binding table's selection rows must stay the same length");
+
 void CB_ToolSystem::Update()
 {
-	Zenith_Input& xInput = g_xEngine.Input();
-
 	// Tool selection. The free-form tools themselves are applied by CB_RoadController (road / zone /
 	// service / bulldoze), which reads GetTool() + uses PickGroundPoint for the world cursor.
+	//
+	// The rows are walked in order and the LAST press of the frame wins, exactly as the retired
+	// straight-line WasKeyPressedThisFrame chain did (two keys down on one frame is not a state the
+	// table arbitrates).
 	const CB_ETool eOldTool = m_eTool;
-	if (xInput.WasKeyPressedThisFrame(ZENITH_KEY_1)) { m_eTool = CB_TOOL_ZONE_RES; }
-	if (xInput.WasKeyPressedThisFrame(ZENITH_KEY_2)) { m_eTool = CB_TOOL_ZONE_COM; }
-	if (xInput.WasKeyPressedThisFrame(ZENITH_KEY_3)) { m_eTool = CB_TOOL_ZONE_IND; }
-	if (xInput.WasKeyPressedThisFrame(ZENITH_KEY_4)) { m_eTool = CB_TOOL_ZONE_PARK; }
-	if (xInput.WasKeyPressedThisFrame(ZENITH_KEY_5)) { m_eTool = CB_TOOL_ROAD; }
-	if (xInput.WasKeyPressedThisFrame(ZENITH_KEY_6)) { m_eTool = CB_TOOL_POLICE; }
-	if (xInput.WasKeyPressedThisFrame(ZENITH_KEY_7)) { m_eTool = CB_TOOL_POWER; }
-	if (xInput.WasKeyPressedThisFrame(ZENITH_KEY_8)) { m_eTool = CB_TOOL_WATER; }
-	if (xInput.WasKeyPressedThisFrame(ZENITH_KEY_9)) { m_eTool = CB_TOOL_BULLDOZE; }
-	if (xInput.WasKeyPressedThisFrame(ZENITH_KEY_0)) { m_eTool = CB_TOOL_NONE; }
-	if (xInput.WasKeyPressedThisFrame(ZENITH_KEY_T)) { m_eTool = CB_TOOL_TERRAFORM; }
-	if (xInput.WasKeyPressedThisFrame(ZENITH_KEY_B)) { m_eTool = CB_TOOL_DISTRICT; }
-	if (xInput.WasKeyPressedThisFrame(ZENITH_KEY_L)) { m_eTool = CB_TOOL_TRANSIT; }
-	if (xInput.WasKeyPressedThisFrame(ZENITH_KEY_K)) { m_eTool = CB_TOOL_CONDUIT; }
+	for (u_int32 u = 0; u < CB_Bindings::uTOOL_SELECT_COUNT; ++u)
+	{
+		if (CB_Bindings::WasToolSelectPressed(u)) { m_eTool = g_aeToolForSelectAction[u]; }
+	}
 
 	if (m_eTool != eOldTool)
 	{

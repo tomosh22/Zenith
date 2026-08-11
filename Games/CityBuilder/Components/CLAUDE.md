@@ -54,7 +54,7 @@ the HUD, and publishes static accessors so tests/automation can reach the live c
 - **`OnDestroy`** — unregister the stream hook, null all static pointers.
 
 ### Helper methods
-`NewCity()` (F8), `CycleSpeed(±1)`, `SaveCity()`/`LoadCity()` (`cb_quicksave_freeform.dat`, F5/F9), `BuildTrafficEndpoints()` (home/job lots → road nodes for OD trips), `UpdateTerraform()` (T tool brush + throttled re-stream), `RestreamTerraformRegion`, `UpdateDistrictTool()`/`RenderDistrictOverlay()`, `UpdateTransitTool()`/`RenderTransitOverlay()`/`RenderConduitOverlay()`, `EnsureTerrainPtr()`, `EnsureBuildingMeshAssets()`, `BuildGameUI`/`UpdateGameUI`/`SelectUITool`. Constants `TERRAFORM_RADIUS = 45.0`, `POP_PER_CAR = 30`.
+`NewCity()` (NEW_CITY), `CycleSpeed(±1)`, `SaveCity()`/`LoadCity()` (`cb_quicksave_freeform.dat`, QUICKSAVE/QUICKLOAD), `BuildTrafficEndpoints()` (home/job lots → road nodes for OD trips), `UpdateTerraform()` (T tool brush + throttled re-stream), `RestreamTerraformRegion`, `UpdateDistrictTool()`/`RenderDistrictOverlay()`, `UpdateTransitTool()`/`RenderTransitOverlay()`/`RenderConduitOverlay()`, `EnsureTerrainPtr()`, `EnsureBuildingMeshAssets()`, `BuildGameUI`/`UpdateGameUI`/`SelectUITool`/**`CycleUITool(±1)`** (the pad's TOOL_PREV/TOOL_NEXT walk over the `ToolDescs` order — matches the current entry on tool AND service sub-type, because the eight service buttons share `CB_TOOL_POLICE`). Constants `TERRAFORM_RADIUS = 45.0`, `POP_PER_CAR = 30`.
 
 ### Static accessors (for tests / automation / `CB_TerrainModifier`)
 ```
@@ -80,10 +80,12 @@ NOT `UIButton ICON_ONLY`) + a hover tooltip. Rebuilds on canvas-size change (`m_
 resize/DPI. Tool/speed button callbacks are static, take `void*` userdata (tool packed as byte0=tool,
 byte1=service).
 
-### Hotkeys (all real bindings — also the surface `CB_HumanSession` drives)
-`P` pause · `R` road class · `-`/`=` tax · `G` loan · `,`/`.` speed · `F5`/`F9` save/load · `F8` new city ·
-`F` ignite fire · `1`–`9`/`0`/`T`/`B`/`L`/`K` tool select · `F1`–`F4` district policies (current district if
-the B tool is active, else city-wide).
+### Hotkeys (all C2 ACTIONS from `../CB_Bindings.h` — also the surface `CB_HumanSession` drives)
+`PAUSE` (P / pad Start) · `ROAD_CLASS` (R / pad Y) · `TAX_DOWN`/`TAX_UP` (-/=) · `LOAN` (G) ·
+`SPEED_DOWN`/`SPEED_UP` (,/. / d-pad Down/Up) · `QUICKSAVE`/`QUICKLOAD` (F5/F9) · `NEW_CITY` (F8) ·
+`IGNITE` (F) · the 14 `TOOL_*` selection rows (1-9/0/T/B/L/K, CB_ToolSystem) · `TOOL_PREV`/`TOOL_NEXT`
+(d-pad Left/Right → `CycleUITool`) · `POLICY_1`–`POLICY_4` (F1-F4 — current district if the B tool is
+active, else city-wide; the retired keycode array is now a 4-entry ACTION array).
 
 ### Gotchas
 - Buildings render as **instanced cube meshes** (per-instance albedo tint = zone colour, no emissive — DevilsPlayground style); the `CityBuildings` entity is transient (not serialized). `m_pxBuildingInst` is created windowed only.
@@ -98,8 +100,19 @@ Drives a `CB_CameraController` from input and writes the result into the entity'
 each frame. `OnAwake` resets the controller (fresh per Play session); `OnUpdate` applies input; `GetController()`
 + static `GetActive()` expose it (the showcase tests tilt the active camera for screenshots).
 
-- **Controls:** right-drag orbit (yaw+pitch), `Q`/`E` yaw, middle-drag pan, `W`/`A`/`S`/`D` pan, wheel zoom.
-- Tunables: `m_fZoomSpeed=20`, `m_fKeyRotateSpeed=1.5`, `m_fMouseRotateSpeed=0.005`, `m_fPanSpeed=0.6`, `m_fMouseDragPanSpeed=0.0015`. Pan + zoom scale by orbit distance so the feel is consistent across zoom.
+- **Controls:** every one is a C2 ACTION from `../CB_Bindings.h` — there is no raw device code in
+  this file. `ORBIT_MODIFIER`+`ORBIT_DELTA` (right-drag orbit), `ORBIT_RATE` (pad right stick),
+  `ROTATE` (Q/E yaw), `PAN_DRAG_MODIFIER`+`PAN_DRAG_DELTA` (middle-drag pan), `PAN` (WASD / pad left
+  stick), `ZOOM_DELTA` (wheel) + `ZOOM_RATE` (pad trigger pair).
+- **Displacement and rate are applied separately** — that is why orbit and zoom are two actions each.
+  A mouse/wheel value is already integrated over the frame (× dt would make it frame-rate dependent);
+  a stick/trigger value is a deflection that becomes an angle/distance only after × dt. Both halves
+  run every frame; a resting device contributes exactly zero, so there is no mode to switch.
+- Tunables: `m_fZoomSpeed=20` (per wheel notch), `m_fZoomRateSpeed=240` (units/s at full trigger),
+  `m_fKeyRotateSpeed=1.5` (rad/s), `m_fMouseRotateSpeed=0.005` (rad/px), `m_fPadRotateSpeed=1.8`
+  (rad/s at full stick), `m_fPanSpeed=0.6`, `m_fMouseDragPanSpeed=0.0015`. Pan + zoom scale by orbit
+  distance so the feel is consistent across zoom. **All of them are in the hand-written moves** —
+  adding a tunable means adding it to the move ctor AND the move assignment.
 
 ---
 

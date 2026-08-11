@@ -29,6 +29,7 @@
 #include "CityBuilder/Components/CB_CityCameraComponent.h"
 #include "CityBuilder/Components/CB_DayNightCycleComponent.h"
 #include "CityBuilder/Source/CB_ToolIcons.h"
+#include "CityBuilder/CB_Bindings.h"   // the C2 action table (profiles + actions + bindings)
 #include "ZenithECS/Zenith_ComponentMeta.h"
 
 #ifdef ZENITH_TOOLS
@@ -351,6 +352,14 @@ void Project_SetGraphicsOptions(Zenith_GraphicsOptions& xOpts)
 
 void Project_RegisterGameComponents()
 {
+	// The C2 action table (CB_Bindings.h). CONFIG-INDEPENDENT and unconditional:
+	// every control in this game resolves through it, so a build that skipped it
+	// would boot with the engine's default profile and not one game row bound.
+	// It installs BOTH profiles (the first RegisterProfile call clears the
+	// engine default wholesale), so it must run before anything reads input —
+	// this hook is the earliest per-process point the engine offers.
+	CB_Bindings::Register(g_xEngine.Actions());
+
 	// Component-meta registration happens via the ZENITH_REGISTER_COMPONENT
 	// thunks at the top of this file (the meta registry is sealed before this
 	// hook runs — see the note there). This hook only mirrors the components

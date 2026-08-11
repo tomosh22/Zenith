@@ -49,7 +49,7 @@ Header-only namespace: turns a segment into a **terrain-following ribbon of tria
 ### CB_RoadController.{h,cpp}
 Owns the `CB_RoadGraph` and drives the **road / zone / service / bulldoze tools** + road-ribbon render +
 the draw **ghost preview**.
-- `Update(tools, field, zoning, build)` — per-frame tool dispatch (windowed): road = draw/continue, R/C/I = drag-paint zones, services = place, bulldoze = remove nearest. `Render()` submits ribbons (+ ghost).
+- `Update(tools, field, zoning, build)` — per-frame tool dispatch (windowed): road = draw/continue, R/C/I = drag-paint zones, services = place, bulldoze = remove nearest. `Render()` submits ribbons (+ ghost). Reads the C2 actions `PRIMARY`/`SECONDARY` (held level + **press edges straight off the action layer**, which is why the old hand-rolled `m_bPrevLeft/Right` latches are gone — and why a click a HUD widget claimed no longer also builds) and `TOOL_6` for the services re-press cycle.
 - `HandleClick(wx,wz)` — anchor start, else snap/T-junction + build a tangent-continuous spline (`m_xLastDir`) + `AddSegmentWithJunctions`, continue from the end. `EndRoad()` (right-click/Esc).
 - `BulldozeAt`, `SetRoadClass`/`GetRoadClass`, `GetGraph`, services sub-type cycle (`GetServiceType`/`NextServiceType`: Police→Fire→Hospital→School→Landfill→Sewage→Bus→Post on re-press of key 6), `RebuildMesh(field)`, `IsDrawing`.
 - Test hooks: `SetHoverPointForAutomation(wx,wz)` (bypass picker), `GetPreviewTriVertCount`.
@@ -60,7 +60,7 @@ the draw **ghost preview**.
 Stateless tool state + the **terrain-aware mouse picker**. The manager calls `Update` each frame; it dispatches to the controller / zoning / building systems.
 - `enum CB_ETool { CB_TOOL_NONE=0, CB_TOOL_ZONE_RES=1, CB_TOOL_ZONE_COM=2, CB_TOOL_ZONE_IND=3, CB_TOOL_ZONE_PARK=4, CB_TOOL_ROAD=5, CB_TOOL_POLICE=6, CB_TOOL_POWER=7, CB_TOOL_WATER=8, CB_TOOL_BULLDOZE=9, CB_TOOL_TERRAFORM=10, CB_TOOL_DISTRICT=11, CB_TOOL_TRANSIT=12, CB_TOOL_CONDUIT=13, CB_TOOL_COUNT }`. (1–3 cast 1:1 to `CB_EZoneType`.)
 - `SetTool`/`GetTool`, `SetBrushRadius`, `SetTerrainField(field)`, `ToolName` (tooltip).
-- **`PickGroundPoint(&x,&z)`** — unprojects the mouse ray and **ray-marches the heightfield** (1024 steps + 20-iter bisect vs `GetRenderSurfaceY`); falls back to a y=0 plane only if no field. This is the ONLY ray-vs-terrain intersection; without it the cursor drifts toward the horizon on hills. `Update()` only reads the tool-selection hotkeys; the free-form tools are applied by `CB_RoadController`.
+- **`PickGroundPoint(&x,&z)`** — unprojects the mouse ray and **ray-marches the heightfield** (1024 steps + 20-iter bisect vs `GetRenderSurfaceY`); falls back to a y=0 plane only if no field. This is the ONLY ray-vs-terrain intersection; without it the cursor drifts toward the horizon on hills. The cursor position comes from `CB_Bindings::ReadCursorPosition` (a claim-guarded DEVICE read — a false answer means a UI widget owns the pointer and the pick REFUSES). `Update()` only reads the 14 `TOOL_*` selection ACTIONS, mapping index → `CB_ETool` through `g_aeToolForSelectAction`, the table kept parallel to `CB_Bindings::auTOOL_SELECT_ACTIONS` (the action belongs to the binding table, the tool identity belongs here); the free-form tools are applied by `CB_RoadController`.
 
 ---
 

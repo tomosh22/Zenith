@@ -3,7 +3,7 @@
 
 #include "CityBuilder/Source/CB_RoadController.h"
 #include "CityBuilder/Source/CB_RoadMesh.h"
-#include "Input/Zenith_Input.h"
+#include "CityBuilder/CB_Bindings.h"
 #include "Flux/Primitives/Flux_PrimitivesImpl.h"
 
 namespace
@@ -32,8 +32,6 @@ void CB_RoadController::Reset()
 	m_bHaveLastDir = false;
 	m_eClass       = CB_ROADCLASS_SMALL;
 	m_xRoadTris.Clear();
-	m_bPrevLeft       = false;
-	m_bPrevRight      = false;
 	m_eServiceType    = CB_BUILDING_POLICE;
 	m_bWasServiceTool = false;
 	m_bHaveHover      = false;
@@ -103,15 +101,17 @@ void CB_RoadController::BulldozeAt(float fWorldX, float fWorldZ)
 
 void CB_RoadController::Update(const CB_ToolSystem& xTools, const CB_TerrainHeightfield& xField, CB_Zoning& xZoning, CB_BuildingPlacement& xBuild)
 {
-	Zenith_Input& xInput = g_xEngine.Input();
 	const CB_ETool eTool = xTools.GetTool();
 
-	const bool bLeftHeld  = xInput.IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_LEFT);
-	const bool bRightHeld = xInput.IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_RIGHT);
-	const bool bLeftClick  = bLeftHeld  && !m_bPrevLeft;   // rising edge
-	const bool bRightClick = bRightHeld && !m_bPrevRight;
-	m_bPrevLeft  = bLeftHeld;
-	m_bPrevRight = bRightHeld;
+	// PRIMARY / SECONDARY, both the held level (drag-paint) and the press edge
+	// (place a node). The edges come from the action layer rather than a
+	// hand-rolled prev-state pair: the layer already publishes exactly this
+	// rising edge, and — unlike the retired raw poll — it SUPPRESSES a press
+	// whose pointer a HUD widget claimed, so a click on the toolbar can no
+	// longer also lay a road on the ground behind it.
+	const bool bLeftHeld   = CB_Bindings::IsPrimaryHeld();
+	const bool bLeftClick  = CB_Bindings::WasPrimaryPressed();
+	const bool bRightClick = CB_Bindings::WasSecondaryPressed();
 
 	const uint32_t uActiveBefore = m_xGraph.GetActiveSegmentCount();
 
@@ -151,8 +151,10 @@ void CB_RoadController::Update(const CB_ToolSystem& xTools, const CB_TerrainHeig
 	else if (eTool == CB_TOOL_POLICE || eTool == CB_TOOL_POWER || eTool == CB_TOOL_WATER || eTool == CB_TOOL_ZONE_PARK)
 	{
 		if (IsDrawing()) { EndRoad(); }
-		// Re-pressing the services key cycles its sub-type (police→fire→hospital→school).
-		if (eTool == CB_TOOL_POLICE && m_bWasServiceTool && xInput.WasKeyPressedThisFrame(ZENITH_KEY_6))
+		// Re-pressing the services row cycles its sub-type (police→fire→hospital→school). The row
+		// is the SAME one that selects the tool; "again, while already active" is this game's rule,
+		// which no binding can express, so the m_bWasServiceTool test stays here.
+		if (eTool == CB_TOOL_POLICE && m_bWasServiceTool && CB_Bindings::WasServiceCyclePressed())
 		{
 			m_eServiceType = NextServiceType(m_eServiceType);
 		}

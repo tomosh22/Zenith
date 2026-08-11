@@ -5,9 +5,9 @@
 #include "ZenithECS/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "DataStream/Zenith_DataStream.h"
-#include "Input/Zenith_Input.h"
 #include "Maths/Zenith_Maths.h"
 
+#include "CityBuilder/CB_Bindings.h"
 #include "CityBuilder/Source/CB_CameraController.h"
 
 #ifdef ZENITH_TOOLS
@@ -17,15 +17,25 @@
 // ============================================================================
 // CB_CityCameraComponent — the player's RTS-style camera.
 //
-//   Right-drag  : orbit (yaw + pitch)
-//   Q / E       : rotate yaw
-//   Middle-drag : pan across the ground plane
-//   W A S D     : pan
-//   Mouse wheel : zoom
+//   ORBIT_MODIFIER + ORBIT_DELTA    : right-drag orbits (yaw + pitch)
+//   ORBIT_RATE                      : pad right stick orbits
+//   ROTATE                          : Q / E rotate yaw
+//   PAN_DRAG_MODIFIER + _DELTA      : middle-drag pans across the ground plane
+//   PAN                             : WASD / pad left stick pan
+//   ZOOM_DELTA / ZOOM_RATE          : wheel / pad trigger pair zoom
 //
-// Reads input, mutates a CB_CameraController, and writes the result onto the
-// entity's Zenith_CameraComponent every frame. Pan/zoom speeds scale with the
-// orbit distance so the feel stays consistent across zoom levels.
+// Every one of those is an ACTION from CB_Bindings.h — there is no raw key,
+// mouse button or pad code in this file. It mutates a CB_CameraController and
+// writes the result onto the entity's Zenith_CameraComponent every frame.
+// Pan/zoom speeds scale with the orbit distance so the feel stays consistent
+// across zoom levels.
+//
+// ★ DISPLACEMENT AND RATE ARE APPLIED SEPARATELY, AND THAT IS THE WHOLE REASON
+// ORBIT AND ZOOM ARE TWO ACTIONS EACH. A mouse/wheel value is already integrated
+// over the frame, so multiplying it by dt would make the camera frame-rate
+// dependent; a stick/trigger value is a deflection that only becomes an angle or
+// a distance once multiplied by dt. Both halves are applied every frame and a
+// resting device contributes exactly zero, so there is no mode to switch.
 // ============================================================================
 class CB_CityCameraComponent
 {
@@ -46,8 +56,10 @@ public:
 		: m_xParentEntity(xOther.m_xParentEntity)
 		, m_xController(xOther.m_xController)
 		, m_fZoomSpeed(xOther.m_fZoomSpeed)
+		, m_fZoomRateSpeed(xOther.m_fZoomRateSpeed)
 		, m_fKeyRotateSpeed(xOther.m_fKeyRotateSpeed)
 		, m_fMouseRotateSpeed(xOther.m_fMouseRotateSpeed)
+		, m_fPadRotateSpeed(xOther.m_fPadRotateSpeed)
 		, m_fPanSpeed(xOther.m_fPanSpeed)
 		, m_fMouseDragPanSpeed(xOther.m_fMouseDragPanSpeed)
 	{
@@ -64,8 +76,10 @@ public:
 			m_xParentEntity      = xOther.m_xParentEntity;
 			m_xController        = xOther.m_xController;
 			m_fZoomSpeed         = xOther.m_fZoomSpeed;
+			m_fZoomRateSpeed     = xOther.m_fZoomRateSpeed;
 			m_fKeyRotateSpeed    = xOther.m_fKeyRotateSpeed;
 			m_fMouseRotateSpeed  = xOther.m_fMouseRotateSpeed;
+			m_fPadRotateSpeed    = xOther.m_fPadRotateSpeed;
 			m_fPanSpeed          = xOther.m_fPanSpeed;
 			m_fMouseDragPanSpeed = xOther.m_fMouseDragPanSpeed;
 			if (s_pxActive == &xOther)
@@ -107,47 +121,56 @@ public:
 	void OnUpdate(const float fDt)
 	{
 		s_pxActive = this;   // expose the live controller (tests/automation tilt the view)
-		Zenith_Input& xInput = g_xEngine.Input();
 
-		// ---- Zoom (mouse wheel) ----
-		const float fWheel = xInput.GetMouseWheelDelta();
-		if (fWheel != 0.0f)
+		// ---- Zoom: wheel DISPLACEMENT + pad-trigger RATE ----
+		const float fZoomDelta = CB_Bindings::ReadZoomDelta();
+		if (fZoomDelta != 0.0f)
 		{
-			m_xController.Zoom(fWheel * m_fZoomSpeed);
+			m_xController.Zoom(fZoomDelta * m_fZoomSpeed);
+		}
+		const float fZoomRate = CB_Bindings::ReadZoomRate();
+		if (fZoomRate != 0.0f)
+		{
+			m_xController.Zoom(fZoomRate * m_fZoomRateSpeed * fDt);
 		}
 
-		// ---- Rotate (Q/E + right-drag) ----
-		float fYawDelta = 0.0f;
+		// ---- Rotate: ROTATE keys + right-drag ORBIT_DELTA + pad ORBIT_RATE ----
+		// The two mouse signs are this camera's own convention (drag right turns
+		// right, drag down tilts toward top-down); the binding rows pass the
+		// device value through at scale 1 because the pan-drag rows below want
+		// the OPPOSITE x sign from the same source.
+		float fYawDelta = CB_Bindings::ReadRotate() * m_fKeyRotateSpeed * fDt;
 		float fPitchDelta = 0.0f;
-		if (xInput.IsKeyDown(ZENITH_KEY_Q)) { fYawDelta -= m_fKeyRotateSpeed * fDt; }
-		if (xInput.IsKeyDown(ZENITH_KEY_E)) { fYawDelta += m_fKeyRotateSpeed * fDt; }
-		if (xInput.IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_RIGHT))
+		if (CB_Bindings::IsOrbitModifierHeld())
 		{
-			Zenith_Maths::Vector2_64 xDelta;
-			xInput.GetMouseDelta(xDelta);
-			fYawDelta   += static_cast<float>(xDelta.x) * m_fMouseRotateSpeed;
-			fPitchDelta += static_cast<float>(xDelta.y) * m_fMouseRotateSpeed;
+			const Zenith_Maths::Vector2 xOrbit = CB_Bindings::ReadOrbitDelta();
+			fYawDelta   += xOrbit.x * m_fMouseRotateSpeed;
+			fPitchDelta += xOrbit.y * m_fMouseRotateSpeed;
+		}
+		{
+			const Zenith_Maths::Vector2 xOrbitRate = CB_Bindings::ReadOrbitRate();
+			fYawDelta   += xOrbitRate.x * m_fPadRotateSpeed * fDt;
+			fPitchDelta += xOrbitRate.y * m_fPadRotateSpeed * fDt;
 		}
 		if (fYawDelta != 0.0f || fPitchDelta != 0.0f)
 		{
 			m_xController.Rotate(fYawDelta, fPitchDelta);
 		}
 
-		// ---- Pan (WASD + middle-drag), speed proportional to zoom distance ----
+		// ---- Pan (PAN + middle-drag), speed proportional to zoom distance ----
+		// PAN is +y FORWARD / +x RIGHT with opposite keys cancelling, which is
+		// exactly what the retired four IsKeyDown polls summed to; the pad's left
+		// stick additionally gives an analog magnitude.
 		const float fKeyPan = m_xController.m_fDistance * m_fPanSpeed * fDt;
-		float fRight = 0.0f;
-		float fForward = 0.0f;
-		if (xInput.IsKeyDown(ZENITH_KEY_W)) { fForward += fKeyPan; }
-		if (xInput.IsKeyDown(ZENITH_KEY_S)) { fForward -= fKeyPan; }
-		if (xInput.IsKeyDown(ZENITH_KEY_D)) { fRight   += fKeyPan; }
-		if (xInput.IsKeyDown(ZENITH_KEY_A)) { fRight   -= fKeyPan; }
-		if (xInput.IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_MIDDLE))
+		const Zenith_Maths::Vector2 xPan = CB_Bindings::ReadPan();
+		float fRight   = xPan.x * fKeyPan;
+		float fForward = xPan.y * fKeyPan;
+		if (CB_Bindings::IsPanDragModifierHeld())
 		{
-			Zenith_Maths::Vector2_64 xDelta;
-			xInput.GetMouseDelta(xDelta);
+			const Zenith_Maths::Vector2 xDrag = CB_Bindings::ReadPanDragDelta();
 			const float fDragPan = m_xController.m_fDistance * m_fMouseDragPanSpeed;
-			fRight   -= static_cast<float>(xDelta.x) * fDragPan;
-			fForward += static_cast<float>(xDelta.y) * fDragPan;
+			fRight   -= xDrag.x * fDragPan;
+			fForward += xDrag.y * fDragPan;
 		}
 		if (fRight != 0.0f || fForward != 0.0f)
 		{
@@ -188,9 +211,11 @@ private:
 	Zenith_Entity m_xParentEntity;
 	CB_CameraController m_xController;
 
-	float m_fZoomSpeed         = 20.0f;    // world units per wheel tick
-	float m_fKeyRotateSpeed    = 1.5f;     // rad/s for Q/E
-	float m_fMouseRotateSpeed  = 0.005f;   // rad per pixel of right-drag
-	float m_fPanSpeed          = 0.6f;     // fraction of distance per second at full key
-	float m_fMouseDragPanSpeed = 0.0015f;  // per pixel of middle-drag, scaled by distance
+	float m_fZoomSpeed         = 20.0f;    // world units per wheel notch (ZOOM_DELTA)
+	float m_fZoomRateSpeed     = 240.0f;   // world units per second at full trigger (ZOOM_RATE)
+	float m_fKeyRotateSpeed    = 1.5f;     // rad/s for ROTATE (Q/E)
+	float m_fMouseRotateSpeed  = 0.005f;   // rad per pixel of ORBIT_DELTA (right-drag)
+	float m_fPadRotateSpeed    = 1.8f;     // rad/s at full stick for ORBIT_RATE
+	float m_fPanSpeed          = 0.6f;     // fraction of distance per second at full PAN
+	float m_fMouseDragPanSpeed = 0.0015f;  // per pixel of PAN_DRAG_DELTA, scaled by distance
 };
