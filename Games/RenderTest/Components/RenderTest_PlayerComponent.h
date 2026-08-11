@@ -13,7 +13,9 @@
 #include "DataStream/Zenith_DataStream.h"
 #include "Physics/Zenith_Physics.h"
 #include "EntityComponent/Zenith_PhysicsQuery.h"
-#include "Input/Zenith_Input.h"
+// The ACTION table. Every device fact this component used to spell (WASD, the
+// shifts, Space, RMB) now lives in exactly one place; see RenderTest_Bindings.h.
+#include "RenderTest/RenderTest_Bindings.h"
 #include "Maths/Zenith_Maths.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
@@ -97,11 +99,13 @@ public:
 
 	// Pure thrust-gating predicate (extracted so the "no jetpack => no thrust =>
 	// ground movement unchanged" guarantee is unit-testable without a physics body):
-	// the jetpack fires only when one is worn AND (Space is held OR the showcase
+	// the jetpack fires only when one is worn AND (JUMP is held OR the showcase
 	// forces it). This is the exact condition the OnUpdate thrust block uses.
-	static bool ShouldEngageJetpack(bool bEquipped, bool bSpaceHeld, bool bShowcaseForced)
+	// JUMP is the same action the jump pop edges on -- one button, two queries;
+	// see RenderTest_Bindings.h.
+	static bool ShouldEngageJetpack(bool bEquipped, bool bJumpHeld, bool bShowcaseForced)
 	{
-		return bEquipped && (bSpaceHeld || bShowcaseForced);
+		return bEquipped && (bJumpHeld || bShowcaseForced);
 	}
 
 	// Design constants exposed for the invariant test (the ascent cap must stay
@@ -114,13 +118,15 @@ public:
 	static RenderTest_PlayerComponent* GetActiveInstance() { return s_pxActiveInstance; }
 
 	// ---- Discrete-press action verbs (W3 graph conversion) -----------------
-	// Dispatched by RenderTest_PlayerActions.bgraph (OnKeyPressed/OnMouseButton
-	// chains at component order 60) instead of polled inside OnUpdate. Bodies
-	// + guards moved INTACT from the retired OnUpdate/UpdateGunHandling input
-	// blocks; each keeps OnUpdate's transform/collider early-out so a bare
-	// fixture entity can never reach Shoot()/EquipGun().
+	// Dispatched by RenderTest_PlayerActions.bgraph (OnActionPressed chains at
+	// component order 60) instead of polled inside OnUpdate. Bodies + guards
+	// moved INTACT from the retired OnUpdate/UpdateGunHandling input blocks;
+	// each keeps OnUpdate's transform/collider early-out so a bare fixture
+	// entity can never reach Shoot()/EquipGun(). The graph names ACTIONS, so
+	// each verb below answers to its keyboard/mouse row AND its pad row --
+	// RenderTest_Bindings.h has the table.
 
-	// E: drop the held gun, else pick up the nearest free gun in radius.
+	// INTERACT: drop the held gun, else pick up the nearest free gun in radius.
 	void TryInteractGun()
 	{
 		if (!m_xParentEntity.HasComponent<Zenith_TransformComponent>() ||
@@ -139,7 +145,7 @@ public:
 			EquipGun(xGun);
 	}
 
-	// R: need ammo + have reserve + can act -> start reload. Ammo transfer is
+	// RELOAD: need ammo + have reserve + can act -> start reload. Ammo transfer is
 	// deferred to OnUpdate's gated "just finished" block.
 	void TryStartReload()
 	{
@@ -155,8 +161,8 @@ public:
 		}
 	}
 
-	// LMB press: auto-reload on empty, else fire (cooldown + ammo gated).
-	// Hipfire clicks force ADS for the fire animation via m_fForceAimTimer.
+	// FIRE press: auto-reload on empty, else fire (cooldown + ammo gated).
+	// Hipfire presses force ADS for the fire animation via m_fForceAimTimer.
 	void TryFire()
 	{
 		if (!m_xParentEntity.HasComponent<Zenith_TransformComponent>() ||
@@ -357,8 +363,7 @@ public:
 		const bool bIsReloading = (m_fReloadTimer > 0.0f);
 		const bool bCanAct = !bIsReloading;
 		const bool bSprinting = bCanAct
-			&& (g_xEngine.Input().IsKeyDown(ZENITH_KEY_LEFT_SHIFT)
-			    || g_xEngine.Input().IsKeyDown(ZENITH_KEY_RIGHT_SHIFT))
+			&& RenderTest_Bindings::IsSprintHeld()
 			&& fMoveLen > 0.01f;
 
 		float fSpeed = 0.0f;
@@ -381,11 +386,11 @@ public:
 		}
 
 		// --- Jump input ---
-		// Space + grounded + can-act -> jump trigger + Y velocity. Grounded
-		// check uses a downward raycast from just below the capsule so it
-		// doesn't hit the player's own collider.
+		// JUMP pressed + grounded + can-act -> jump trigger + Y velocity.
+		// Grounded check uses a downward raycast from just below the capsule so
+		// it doesn't hit the player's own collider.
 		if (bCanAct
-			&& g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_SPACE)
+			&& RenderTest_Bindings::WasJumpPressed()
 			&& xCollider.HasValidBody()
 			&& IsGrounded())
 		{
@@ -399,7 +404,7 @@ public:
 		}
 
 		// --- Jetpack thrust ---
-		// Holding Space fires the jetpack (when one is worn), accelerating the
+		// Holding JUMP fires the jetpack (when one is worn), accelerating the
 		// player upward up to a capped ascent speed. Mid-air horizontal control
 		// comes for free: the camera-relative move block above is NOT grounded-
 		// gated, so the arrow keys steer while airborne. Ground movement and the
@@ -409,7 +414,7 @@ public:
 		ResolveJetpack();
 		const bool bJetpackThrust = ShouldEngageJetpack(
 			IsJetpackEquipped(),
-			g_xEngine.Input().IsKeyDown(ZENITH_KEY_SPACE),
+			RenderTest_Bindings::IsJumpHeld(),
 			RenderTest_JetpackTuning::s_bShowcaseActive);
 		if (bJetpackThrust && xCollider.HasValidBody())
 		{
@@ -418,14 +423,14 @@ public:
 			g_xEngine.Physics().SetLinearVelocity(xCollider.GetBodyID(), xVelocity);
 		}
 
-		// --- ADS input (holds stay C++; the R-reload and LMB-fire PRESSES moved
-		// to RenderTest_PlayerActions.bgraph -> TryStartReload()/TryFire()) ---
-		// RMB held -> aim. LMB hipfire-clicks force ADS for the duration of the
-		// fire animation via m_fForceAimTimer (set by TryFire) so the recoil
+		// --- ADS input (holds stay C++; the RELOAD and FIRE PRESSES moved to
+		// RenderTest_PlayerActions.bgraph -> TryStartReload()/TryFire()) ---
+		// AIM held -> aim. A hipfire FIRE press forces ADS for the duration of
+		// the fire animation via m_fForceAimTimer (set by TryFire) so the recoil
 		// pose still plays.
-		const bool bAimingRMB = g_xEngine.Input().IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_RIGHT);
+		const bool bAimingHeld = RenderTest_Bindings::IsAimHeld();
 
-		const bool bAiming = bAimingRMB || (m_fForceAimTimer > 0.0f);
+		const bool bAiming = bAimingHeld || (m_fForceAimTimer > 0.0f);
 		RenderTest_GameplayState::s_bLocalPlayerAiming = bAiming;
 
 		// Aim-layer weight: lerped 0<->1 over ~0.15s for a smooth blend.
@@ -547,14 +552,15 @@ public:
 #endif
 
 private:
+	// The MOVE action, lifted into this component's (x = right, z = forward)
+	// convention. The action layer's AXIS2D contract is +y FORWARD with
+	// diagonals UNNORMALISED and opposite keys cancelling -- which is exactly
+	// what the retired four-key poll produced, so the caller's normalise is
+	// unchanged. On a pad the same read returns the left stick.
 	Zenith_Maths::Vector3 ReadMovementInput() const
 	{
-		Zenith_Maths::Vector3 xInput(0.0f);
-		if (g_xEngine.Input().IsKeyDown(ZENITH_KEY_W) || g_xEngine.Input().IsKeyDown(ZENITH_KEY_UP))    xInput.z += 1.0f;
-		if (g_xEngine.Input().IsKeyDown(ZENITH_KEY_S) || g_xEngine.Input().IsKeyDown(ZENITH_KEY_DOWN))  xInput.z -= 1.0f;
-		if (g_xEngine.Input().IsKeyDown(ZENITH_KEY_A) || g_xEngine.Input().IsKeyDown(ZENITH_KEY_LEFT))  xInput.x -= 1.0f;
-		if (g_xEngine.Input().IsKeyDown(ZENITH_KEY_D) || g_xEngine.Input().IsKeyDown(ZENITH_KEY_RIGHT)) xInput.x += 1.0f;
-		return xInput;
+		const Zenith_Maths::Vector2 xMove = RenderTest_Bindings::ReadMove();
+		return Zenith_Maths::Vector3(xMove.x, 0.0f, xMove.y);
 	}
 
 	void RotateTowards(Zenith_TransformComponent& xTransform, const Zenith_Maths::Vector3& xTargetDir, float fDt) const

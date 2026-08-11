@@ -2,6 +2,8 @@
 #include "UnitTests/Zenith_UnitTests.h"
 #include "Input/Zenith_InputSimulator.h"
 #include "Input/Zenith_Input.h"
+#include "Input/Zenith_InputActions.h"
+#include "Input/Zenith_Pointers.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "ZenithECS/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
@@ -27,9 +29,23 @@
 // Frame model:
 //   - BeginFrame() — mirrors Zenith_Core::Zenith_MainLoop's first step: it
 //     calls g_xEngine.Input().BeginFrame() which auto-releases SimulateKeyPress'd
-//     keys from the prior frame and recomputes mouse delta from the simulator
-//     position. Inputs simulated AFTER this point and BEFORE Step() are read.
-//   - Step()      — runs one OnUpdate(player) + OnLateUpdate(camera) tick.
+//     keys from the prior frame, recomputes mouse delta from the simulator
+//     position, and DISCARDS anything the simulator has queued. Inputs simulated
+//     AFTER this point and BEFORE Step() are read.
+//   - Step()      — closes the frame's ACTION contract, then runs one
+//     OnUpdate(player) + OnLateUpdate(camera) tick.
+//
+// ★ C1b — THE ACTION FRAME IS THE FIXTURE'S JOB HERE. Since the WP4b migration
+// both components read g_xEngine.Actions() (MOVE / SPRINT / JUMP / AIM /
+// LOOK_DELTA / LOOK_RATE) rather than g_xEngine.Input(), and the action layer is
+// a FRAME CONTRACT: the engine's instance is opened at frame step 8 and closed
+// at 10b/10e inside Zenith_Core::Zenith_MainLoop, which a unit test never runs.
+// Without CloseActionFrame() below, every action would read "not held", the
+// player would never move, the camera would never turn, and each test would fail
+// with a message about rotation or pitch rather than about input. This is the
+// same seam ZM_BindingsTest::CloseEngineActionFrame provides for Zenithmon's
+// controller units — and, like that one, it means this fixture touches the
+// ENGINE's live layers and therefore owes them a reset on teardown.
 // ============================================================================
 
 namespace
@@ -45,6 +61,11 @@ namespace
 		RenderTest_TestFixture()
 		{
 			Zenith_InputSimulator::Enable();
+			// Start from a known device state whatever ran before: a key an
+			// earlier fixture left down would otherwise still be held on the
+			// action layer's transition-fed source shadow.
+			Zenith_InputSimulator::DiscardPendingInjections();
+			Zenith_InputSimulator::ResetAllInputState();
 			RenderTest_GameplayState::Reset();
 
 			xScene = g_xEngine.Scenes().LoadScene("RenderTestInputTestScene", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
@@ -89,25 +110,56 @@ namespace
 
 		~RenderTest_TestFixture()
 		{
+			// ★ BOTH SIDES, IN THIS ORDER. ResetAllInputState drops the
+			// simulator's LEVEL table without emitting the releases, so the
+			// action layer's shadow — fed by TRANSITIONS alone — would keep the
+			// last key held forever and drive the NEXT unit's player. (Several
+			// tests below deliberately end with a SimulateKeyUp that no Step
+			// ever consumes, which is exactly that case.) The engine resets that
+			// follow are what the automated-test harness does between tests; a
+			// boot unit that reached the engine layers owes the same.
+			Zenith_InputSimulator::DiscardPendingInjections();
+			Zenith_InputSimulator::ResetAllInputState();
+			Zenith_InputSimulator::Disable();
+			g_xEngine.Input().ResetTransientForTest();
+			g_xEngine.Actions().ResetTransientForTest();
+			g_xEngine.Pointers().ResetTransientForTest();
+
 			// Components are owned by the scene; UnloadSceneForced tears them
 			// down (dispatching OnDisable/OnDestroy through the meta registry).
-			Zenith_InputSimulator::Disable();
 			g_xEngine.Scenes().UnloadSceneForced(xScene);
 		}
 
 		// Mirrors what Zenith_Core::Zenith_MainLoop's prologue does: clears
-		// per-frame press flags, auto-releases SimulateKeyPress'd keys, and
-		// updates mouse delta from the simulator's current position.
+		// per-frame press flags, auto-releases SimulateKeyPress'd keys, updates
+		// mouse delta from the simulator's current position, and DISCARDS the
+		// simulator's queued injections — which is why every Simulate* call in
+		// these tests happens AFTER this and BEFORE the matching Step().
 		void BeginFrame()
 		{
 			g_xEngine.Input().BeginFrame();
 		}
 
-		// Runs one update tick. The player updates first because the camera
-		// reads RenderTest_GameplayState::IsLocalPlayerAiming() which the
-		// player writes during its OnUpdate.
+		// Frame-contract steps 7, 8, 10b and 10e on the ENGINE's own layers:
+		// drain the injections, open the action frame, close both stages. See
+		// the C1b note at the top of this file for why a unit has to do this
+		// itself.
+		void CloseActionFrame()
+		{
+			g_xEngine.Input().ApplySimulatorInjection();
+			g_xEngine.Actions().UpdateProfile();
+			g_xEngine.Actions().FinalizeReservedUI();
+			g_xEngine.Actions().FinalizeGameplay();
+		}
+
+		// Runs one update tick. The action frame closes first (game logic is
+		// frame-contract step 11, after 10e). The player updates before the
+		// camera because the camera reads
+		// RenderTest_GameplayState::IsLocalPlayerAiming() which the player
+		// writes during its OnUpdate.
 		void Step(float fDt = 1.0f / 60.0f)
 		{
+			CloseActionFrame();
 			pxPlayer->OnUpdate(fDt);
 			pxCamera->OnLateUpdate(fDt);
 		}

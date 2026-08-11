@@ -302,12 +302,44 @@ namespace
 		return xPlayer.TryGetComponent<RenderTest_PlayerComponent>();
 	}
 
+	// ★ C1a -- SetKeyHeld IS NO LONGER A USABLE HOLD HERE, AND ITS ABSENCE WOULD
+	// BE SILENT. It writes the simulator's LEVEL array and nothing else, while
+	// the player's movement now goes through the MOVE ACTION, whose key rows are
+	// fed by ORDERED TRANSITIONS. A key "held" that way would reach IsKeyDown and
+	// nothing else: the player would not move, no assertion would fire at the
+	// call site, and Steer would just time out 2400 frames later.
+	//
+	// So the steer publishes real down/up EDGES -- and only on CHANGE, so a key
+	// held across many frames raises exactly one press and one release, which is
+	// what a human hand does and what the action layer's replay expects.
+	const Zenith_KeyCode g_aeActMoveKeys[4] = {
+		ZENITH_KEY_W, ZENITH_KEY_S, ZENITH_KEY_A, ZENITH_KEY_D
+	};
+	bool g_abActMoveKeyHeld[4] = { false, false, false, false };
+
+	void Act_SetMoveKeyHeld(int iKey, bool bHeld)
+	{
+		if (g_abActMoveKeyHeld[iKey] == bHeld)
+		{
+			return;
+		}
+		g_abActMoveKeyHeld[iKey] = bHeld;
+		if (bHeld)
+		{
+			Zenith_InputSimulator::SimulateKeyDown(g_aeActMoveKeys[iKey]);
+		}
+		else
+		{
+			Zenith_InputSimulator::SimulateKeyUp(g_aeActMoveKeys[iKey]);
+		}
+	}
+
 	void Act_ReleaseMovementKeys()
 	{
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_W, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_S, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_A, false);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_D, false);
+		for (int i = 0; i < 4; ++i)
+		{
+			Act_SetMoveKeyHeld(i, false);
+		}
 	}
 
 	// After this many camera-cycle presses the expected GameplayState triple.
@@ -330,6 +362,15 @@ namespace
 static void Setup_PlayerActions()
 {
 	Zenith_InputSimulator::SetFixedDt(1.0f / 60.0f);
+	// The harness normalised BOTH sides at the test boundary (the simulator's
+	// level table AND the action layer's transition-fed source shadow), so the
+	// edge tracker starts from the same all-released state they did. Getting
+	// this wrong is silent: a stale "held" entry suppresses the down edge that
+	// would have started the walk.
+	for (int i = 0; i < 4; ++i)
+	{
+		g_abActMoveKeyHeld[i] = false;
+	}
 	g_eActPhase = ActPhase::Boot;
 	g_iActFrame = 0;
 	g_iCamPresses = 0;
@@ -376,10 +417,10 @@ static bool Step_PlayerActions(int iFrame)
 			g_eActPhase = ActPhase::PressE;
 			return true;
 		}
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_W, fDz > 0.15f);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_S, fDz < -0.15f);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_D, fDx > 0.15f);
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_A, fDx < -0.15f);
+		Act_SetMoveKeyHeld(0, fDz >  0.15f);   // W
+		Act_SetMoveKeyHeld(1, fDz < -0.15f);   // S
+		Act_SetMoveKeyHeld(3, fDx >  0.15f);   // D
+		Act_SetMoveKeyHeld(2, fDx < -0.15f);   // A
 		return iFrame < 2400;
 	}
 

@@ -42,6 +42,10 @@
 #include "UI/Zenith_UI.h"
 #include "Zenith_OS_Include.h"
 
+// The ACTION table (input program C2). This TU installs it into the engine's
+// action layer and names its action STRINGS in the PlayerActions graph builder.
+#include "RenderTest/RenderTest_Bindings.h"
+
 // Header-only game components: included into this TU so the
 // ZENITH_REGISTER_COMPONENT thunks below can name the complete types.
 #include "RenderTest/Components/RenderTest_PlayerComponent.h"
@@ -1329,6 +1333,14 @@ void Project_RegisterGameComponents()
 	xEditorRegistry.RegisterComponent<RenderTest_BootstrapComponent>("RenderTestBootstrap");
 #endif
 
+	// The ACTION table (input program C2). Installed BEFORE the graph node
+	// library because the PlayerActions graph's OnActionPressed nodes resolve
+	// their action NAME against this registry the first time they execute --
+	// and an unresolvable name logs an error and leaves the node inert.
+	// Registering the profiles here also clears the engine's platform default
+	// wholesale, which is the intended B5 handover.
+	RenderTest_Bindings::Register(g_xEngine.Actions());
+
 	// Behaviour-graph node library (tennis brain verbs + player action verbs).
 	// The graph-node registry is append-any-time (not sealed like the
 	// component meta registry), so a plain call here works in every config.
@@ -1726,30 +1738,37 @@ static void RenderTest_ApplyTestbedEntityConfig()
 }
 
 
-// The slim player-actions graph: the discrete key/button PRESS decisions.
-// Continuous holds (WASD / Shift sprint / Space jump+jetpack / RMB ADS) and
-// all systems stay C++ in RenderTest_PlayerComponent / FollowCamera.
+// The slim player-actions graph: the discrete PRESS decisions. Continuous holds
+// (MOVE / SPRINT / JUMP+jetpack / AIM) and all systems stay C++ in
+// RenderTest_PlayerComponent / FollowCamera.
+//
+// Every source is an ACTION rather than a device code (input program B10), so
+// the pad column arrives without a second chain per row: INTERACT is E *or*
+// pad X, FIRE is LMB *or* the right trigger past its hysteresis band. The four
+// action NAMES are the contract between this graph and RenderTest_Bindings.h --
+// a rename on either side leaves the node inert with one logged error, which is
+// what RT_SimPad_Test exists to catch.
 static void BuildGraph_RenderTestPlayerActions(Zenith_GraphBuilder& xBuilder)
 {
 	Zenith_EngineGraphBuilder xB(xBuilder);
 
-	Zenith_GraphChain xKeyE = xB.OnKeyPressed(ZENITH_KEY_E);
+	Zenith_GraphChain xInteract = xB.OnActionPressed(RenderTest_Bindings::szACTION_INTERACT);
 	const u_int uInteract = xB.Node("RTPlayerInteractGun");
-	xKeyE.Then(uInteract);
+	xInteract.Then(uInteract);
 
-	Zenith_GraphChain xKeyR = xB.OnKeyPressed(ZENITH_KEY_R);
+	Zenith_GraphChain xReload = xB.OnActionPressed(RenderTest_Bindings::szACTION_RELOAD);
 	const u_int uReload = xB.Node("RTPlayerTryReload");
-	xKeyR.Then(uReload);
+	xReload.Then(uReload);
 
-	const u_int uFireBtn = xB.Node("OnMouseButton");
-	// Defaults: LEFT button, mode 0 = pressed edge - exactly the retired
-	// WasKeyPressedThisFrame(LMB) poll.
+	// The retired source was OnMouseButton with its defaults (LEFT, mode 0 =
+	// pressed edge); OnActionPressed is the same edge, one device wider.
+	Zenith_GraphChain xFire = xB.OnActionPressed(RenderTest_Bindings::szACTION_FIRE);
 	const u_int uFire = xB.Node("RTPlayerTryFire");
-	xB.Chain(uFireBtn, uFire);
+	xFire.Then(uFire);
 
-	Zenith_GraphChain xKeyT = xB.OnKeyPressed(ZENITH_KEY_T);
+	Zenith_GraphChain xCycle = xB.OnActionPressed(RenderTest_Bindings::szACTION_CYCLE_TENNIS_CAMERA);
 	const u_int uCycleCam = xB.Node("RTPlayerCycleTennisCam");
-	xKeyT.Then(uCycleCam);
+	xCycle.Then(uCycleCam);
 }
 
 // Deterministic-FP: this function computes the coordinates it feeds to the authoring

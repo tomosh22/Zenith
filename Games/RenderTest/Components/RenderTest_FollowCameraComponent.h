@@ -7,7 +7,9 @@
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "ZenithECS/Zenith_SceneData.h"
 #include "DataStream/Zenith_DataStream.h"
-#include "Input/Zenith_Input.h"
+// The ACTION table. The mouse-delta look and the new pad-stick look both arrive
+// through it; no device code is spelled here. See RenderTest_Bindings.h.
+#include "RenderTest/RenderTest_Bindings.h"
 #include "Maths/Zenith_Maths.h"
 // Platform aggregator: pulls in the active platform's Zenith_Window (GLFW on
 // Windows, ANativeWindow stub on Android). Direct inclusion of the Windows
@@ -27,8 +29,9 @@
 
 // Third-person shooter follow camera.
 //
-// - Mouse moves yaw + pitch directly. Pitch clamps to a sensible cone, yaw
-//   wraps to [0, 2pi] to avoid float drift after extended play.
+// - LOOK_DELTA (mouse) and LOOK_RATE (pad right stick) move yaw + pitch
+//   together. Pitch clamps to a sensible cone, yaw wraps to [0, 2pi] to avoid
+//   float drift after extended play.
 // - Cursor is captured on Awake (no separate "press to look" toggle).
 // - Hipfire offset is over-the-shoulder; ADS offset pulls in closer with a
 //   narrower FOV. Both offsets, plus FOV, lerp smoothly so toggling ADS
@@ -83,8 +86,9 @@ public:
 		if (pxCamera == nullptr)
 			return;
 
-		// The T-key tennis-camera cycle moved to RenderTest_PlayerActions.bgraph
-		// (RTPlayerCycleTennisCam node) with the W3 graph conversion.
+		// The tennis-camera cycle moved to RenderTest_PlayerActions.bgraph
+		// (RTPlayerCycleTennisCam node) with the W3 graph conversion; its source
+		// is now the CYCLE_TENNIS_CAMERA action (T, or pad R3).
 
 		// --- Tennis spectator camera (capture aid) ---
 		// Fixed world-space vantage overlooking the floating tennis court so the
@@ -155,23 +159,36 @@ public:
 			return;
 		}
 
-		// --- Mouse-look ---
-		// Skip the first frame's delta to avoid a camera jump caused by the
-		// large delta between (0,0) and the cursor's actual screen position
-		// the first time we sample.
-		Zenith_Maths::Vector2_64 xMouseDelta;
-		g_xEngine.Input().GetMouseDelta(xMouseDelta);
+		// --- Look ---
+		// TWO actions, applied TOGETHER every frame (the split is argued in
+		// RenderTest_Bindings.h): LOOK_DELTA is the mouse's DISPLACEMENT, which
+		// the OS already integrated over the frame, and LOOK_RATE is the pad
+		// right stick's deflection, which only becomes an angle after
+		// multiplying by dt. Neither reading needs the other to be absent -- a
+		// still mouse and a resting stick each contribute exactly zero (the
+		// device layer's radial deadzone sees to the stick) -- so there is no
+		// mode to switch between and nothing to arbitrate.
+		//
+		// Both bindings carry -1 scales, folding in the retired sign convention
+		// (mouse-right and mouse-up DECREASE yaw/pitch, matching the Test game's
+		// PlayerController_Behaviour.cpp:55-58), so these lines ADD.
+		//
+		// Skip the first frame's mouse displacement to avoid a camera jump
+		// caused by the large delta between (0,0) and the cursor's actual screen
+		// position the first time we sample. A stick has no such discontinuity,
+		// so the rate is deliberately NOT suppressed with it.
+		Zenith_Maths::Vector2 xLookDelta = RenderTest_Bindings::ReadLookDelta();
 		if (m_bFirstMouseSample)
 		{
-			xMouseDelta = Zenith_Maths::Vector2_64(0.0, 0.0);
+			xLookDelta = Zenith_Maths::Vector2(0.0f, 0.0f);
 			m_bFirstMouseSample = false;
 		}
+		const Zenith_Maths::Vector2 xLookRate = RenderTest_Bindings::ReadLookRate();
 
-		const float k_fMouseSensitivity = 1.0f / 500.0f;
-		// Match the Test game's sign convention (PlayerController_Behaviour.cpp:55-58):
-		// mouse-right and mouse-up DECREASE yaw/pitch.
-		m_fCameraYaw   -= static_cast<float>(xMouseDelta.x) * k_fMouseSensitivity;
-		m_fCameraPitch -= static_cast<float>(xMouseDelta.y) * k_fMouseSensitivity;
+		const float k_fMouseSensitivity = 1.0f / 500.0f;   // radians per pixel
+		const float k_fPadLookSpeed     = 2.5f;            // radians/second at full deflection
+		m_fCameraYaw   += xLookDelta.x * k_fMouseSensitivity + xLookRate.x * k_fPadLookSpeed * fDt;
+		m_fCameraPitch += xLookDelta.y * k_fMouseSensitivity + xLookRate.y * k_fPadLookSpeed * fDt;
 
 		// Wrap yaw to [0, 2pi] (prevents float-precision drift over time).
 		const float fTwoPi = static_cast<float>(Zenith_Maths::Pi * 2.0);
@@ -250,7 +267,8 @@ public:
 
 	// Cycle: off -> court overlook -> follow near -> follow far -> off.
 	// Public since W3: invoked by the RTPlayerCycleTennisCam graph node (the
-	// T-key decision lives in RenderTest_PlayerActions.bgraph).
+	// CYCLE_TENNIS_CAMERA press decision lives in
+	// RenderTest_PlayerActions.bgraph).
 	void CycleTennisCameraMode()
 	{
 		const char* szMode;

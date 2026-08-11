@@ -74,7 +74,7 @@ are DELETED.
 | Graph | Attached to | Driven by | Logic |
 |---|---|---|---|
 | `RenderTest_TennisBrain.bgraph` | both tennis NPCs | its own ON_UPDATE tick chain | An authored accumulator reproduces the retired AIAgent 0.08 s interval EXACTLY (`RTTennisTickGate` mirrors the enable freeze; `AddBlackboardFloat(dt)` → `CompareBlackboardFloat(>=0.08)` → `Gate` → `SetBlackboardFloat(0)` = accumulate/fire/reset-to-zero), then a 3-pin `Selector`: serve (phase/IsServer/ServeBallParked engine gates → decide → position → arm) > rally (phase/IsMyBall gates → `RTTennisBallReachable` → move → decide → arm) > recover. |
-| `RenderTest_PlayerActions.bgraph` | Player | engine input sources | The discrete PRESS decisions only: E → `RTPlayerInteractGun`, R → `RTPlayerTryReload`, LMB press → `RTPlayerTryFire`, T → `RTPlayerCycleTennisCam`. Holds (WASD / Shift sprint / Space jump+jetpack / RMB ADS) and all systems stay C++. |
+| `RenderTest_PlayerActions.bgraph` | Player | engine ACTION sources | The discrete PRESS decisions only, each an `OnActionPressed` node naming a C2 action (input program B10) rather than a device code: INTERACT → `RTPlayerInteractGun`, RELOAD → `RTPlayerTryReload`, FIRE → `RTPlayerTryFire`, CYCLE_TENNIS_CAMERA → `RTPlayerCycleTennisCam`. That is why the pad column needs no second chain per row. Holds (MOVE / SPRINT / JUMP+jetpack / AIM) and all systems stay C++. |
 
 ### RNG-determinism contract (risk R2, discharged)
 
@@ -161,8 +161,11 @@ VERBATIM with blackboard reads redirected at the graph blackboard.
   brain/referee relocation + standalone node tests via hand-built
   `Zenith_GraphContext` + the integration fixture, which attaches the real
   TennisBrain graph by path), `RenderTest_PlayerComponent.Tests.inl`
-  (camera/movement input-sim tests + the fire/reload VERB tests),
-  `RenderTest_Testbed.Tests.inl`. Included at the bottom of RenderTest.cpp.
+  (camera/movement input-sim tests + the fire/reload VERB tests — ★ its fixture
+  drives the ACTION FRAME CONTRACT itself, because the components it steps read
+  `g_xEngine.Actions()` and a unit never runs the main loop that opens and closes
+  it; without that every action reads "not held" and the failures point anywhere
+  but at input), `RenderTest_Testbed.Tests.inl`. Included at the bottom of RenderTest.cpp.
   Units-at-boot in rendertest.exe: run deliberately only (`--skip-unit-tests`
   everywhere else; the task_726cc81d layout corruption has tripped here on
   some layouts — 2026-07-05 post-conversion layout runs clean).
@@ -172,13 +175,59 @@ VERBATIM with blackboard reads redirected at the graph blackboard.
   (match plays: phases, serve, receiver stand-in, point resolution) and
   `RT_PlayerActions` (walk-to-gun with real held input, E equip, LMB fire,
   R reload, E drop, T camera cycle — state-setters only, never the reentrant
-  simulator helpers), both of which reload scene 0 in their Boot step so the sim
+  simulator helpers; ★ its steer publishes `SimulateKeyDown`/`Up` EDGES rather
+  than `SetKeyHeld`, because MOVE's key rows are fed by ordered transitions and
+  a level-only "hold" would reach `IsKeyDown` and nothing else — see ZM
+  TestPlan C1a), both of which reload scene 0 in their Boot step so the sim
   runs entirely under fixed dt — and the hermetic `Test_TennisBrainContract.cpp`
   (`RT_TennisBrainTickCadence` / `RT_TennisBrainGateOrder` /
   `RT_TennisBrainRngDraws`, the R2 gate above), which load no scene at all —
   plus `RT_SceneAssetIntegrity` (`Tests/SceneAssetIntegrity.cpp`), which asserts on
   the scene FILE the boot left behind rather than on the loaded scene, so it reddens
-  in whichever config damaged the asset.
+  in whichever config damaged the asset — and `RT_SimPad_Test`
+  (`Tests/Test_SimPad.cpp`), the GAMEPAD column of the action table end to end
+  (see *Controls* below).
+
+## Controls (the action table)
+
+Every control is an ACTION registered in **`RenderTest_Bindings.h`** — the one
+production file in this game allowed to spell a raw key, mouse button or pad
+code (input program C2). Two profiles, `P_DESKTOP {KEYBOARD|MOUSE}` and
+`P_GAMEPAD {GAMEPAD}`, and the active one switches automatically on the first
+input from the other device.
+
+| Action | Keyboard | Mouse | Gamepad |
+|---|---|---|---|
+| MOVE | W/A/S/D + arrows | — | Left stick |
+| SPRINT | Shift (either) | — | L3 |
+| JUMP ★ | Space | — | A |
+| AIM | — | Right button | LT (0.55/0.45 hysteresis) |
+| FIRE | — | Left button | RT (0.55/0.45 hysteresis) |
+| INTERACT (gun pick-up/drop) | E | — | X |
+| RELOAD | R | — | LB |
+| CYCLE_TENNIS_CAMERA | T | — | R3 |
+| LOOK_DELTA | — | Mouse movement | — |
+| LOOK_RATE | — | — | Right stick |
+
+★ JUMP is **one** action queried two ways: `WasPressedThisFrame` gives the jump
+pop, `IsHeld` gives jetpack thrust — the retired C++ polled Space both ways on
+the same frame and the design says they are one button.
+
+LOOK is deliberately **two** actions because a mouse and a stick are different
+quantities: LOOK_DELTA is the mouse's already-integrated DISPLACEMENT (pixels;
+multiplying it by dt would make the camera frame-rate dependent) and LOOK_RATE
+is the stick's deflection, which only becomes an angle after multiplying by dt.
+`RenderTest_FollowCameraComponent` applies both every frame; a still mouse and a
+resting stick each contribute exactly zero, so there is no mode to switch
+between. The camera stays free-cursor: MOUSE_DELTA is not claim-filtered.
+
+`RT_SimPad_Test` (`Tests/Test_SimPad.cpp`, `requiresGraphics=false`) is the only
+thing that exercises the GAMEPAD column: it proves the auto profile switch, then
+drives MOVE (left stick, steering to the pistol), INTERACT (pad X equips it),
+FIRE (right trigger past the hysteresis band, clip decrements) and JUMP (pad A,
+asserted both as an action edge and as a physical rise). The two graph-consumed
+rows in it are the only guard on the `OnActionPressed` name strings, which have
+no compile-time link to `RenderTest_Bindings.h`.
 
 ### Recipes
 
