@@ -24,7 +24,7 @@
 #include "ZenithECS/Zenith_Scene.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "ZenithECS/Zenith_SceneData.h"
-#include "Input/Zenith_Input.h"
+#include "TilePuzzle/TilePuzzle_Bindings.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
@@ -652,7 +652,7 @@ public:
 		}
 
 		// Handle escape to return to menu
-		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
+		if (TilePuzzle_Bindings::WasEscapePressed())
 		{
 			if (m_eState == PINBALL_STATE_LEVEL_COMPLETE)
 			{
@@ -1412,15 +1412,18 @@ private:
 		// Keep ball positioned on the plunger while waiting / dragging
 		PositionBallOnPlunger();
 
-		bool bMouseDown = g_xEngine.Input().IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_LEFT);
-		Zenith_Maths::Vector2_64 xMousePos64;
-		g_xEngine.Input().GetMousePosition(xMousePos64);
-		float fScreenX = static_cast<float>(xMousePos64.x);
-		float fScreenY = static_cast<float>(xMousePos64.y);
+		// The BOARD POINTER, not the mouse: B3 makes pointer 0 the mouse on
+		// Windows and the first finger on Android, so pulling the plunger is one
+		// code path on both. A pointer a UI widget CLAIMED reports as not-down,
+		// so a press the HUD took cannot also grab the plunger underneath it.
+		Zenith_Maths::Vector2 xPointer(0.0f, 0.0f);
+		const bool bPointerDown = TilePuzzle_Bindings::IsBoardPointerDown(xPointer);
+		float fScreenX = xPointer.x;
+		float fScreenY = xPointer.y;
 
-		if (bMouseDown && !m_bMouseWasDown)
+		if (bPointerDown && !m_bMouseWasDown)
 		{
-			// Mouse just pressed - check if near plunger
+			// Pointer just pressed - check if near plunger
 			float fWorldX, fWorldY;
 			if (ScreenToWorld(fScreenX, fScreenY, fWorldX, fWorldY))
 			{
@@ -1433,7 +1436,7 @@ private:
 				}
 			}
 		}
-		else if (bMouseDown && m_bPlungerDragging)
+		else if (bPointerDown && m_bPlungerDragging)
 		{
 			// Track drag - pull = how far below rest position
 			float fWorldX, fWorldY;
@@ -1444,7 +1447,7 @@ private:
 				UpdatePlungerVisual();
 			}
 		}
-		else if (!bMouseDown && m_bPlungerDragging)
+		else if (!bPointerDown && m_bPlungerDragging)
 		{
 			// Release - launch ball!
 			if (m_fPlungerPull > 0.01f)
@@ -1462,7 +1465,7 @@ private:
 			UpdatePlungerVisual();
 		}
 
-		m_bMouseWasDown = bMouseDown;
+		m_bMouseWasDown = bPointerDown;
 	}
 
 	void LaunchBall()
@@ -2509,7 +2512,6 @@ private:
 
 		m_bTutorialActive = true;
 		m_fTutorialTimer = 0.0f;
-		m_bTutorialMouseWasDown = false;
 
 		if (m_pxTutorialOverlay)
 		{
@@ -2559,8 +2561,11 @@ private:
 			m_pxTutorialHintText->SetColor(Zenith_Maths::Vector4(0.7f, 0.7f, 0.7f, fHintAlpha));
 		}
 
-		bool bMouseDown = g_xEngine.Input().IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_LEFT);
-		if (bMouseDown && !m_bTutorialMouseWasDown && m_fTutorialTimer >= 0.5f)
+		// Tap to dismiss. PRIMARY carries the press EDGE (LMB on desktop, the
+		// primary finger on Android) and is claim-filtered, so the hand-rolled
+		// was-down latch is gone and a tap a UI button consumed no longer also
+		// dismisses the overlay behind it.
+		if (TilePuzzle_Bindings::WasPrimaryPressed() && m_fTutorialTimer >= 0.5f)
 		{
 			m_bTutorialActive = false;
 			if (m_pxTutorialOverlay)
@@ -2569,7 +2574,6 @@ private:
 			Zenith_SaveData::Save("autosave", TilePuzzleSaveData::uGAME_SAVE_VERSION,
 				TilePuzzle_WriteSaveData, &m_xSaveData);
 		}
-		m_bTutorialMouseWasDown = bMouseDown;
 	}
 
 	// ========================================================================
@@ -2607,7 +2611,6 @@ private:
 	Zenith_UI::Zenith_UIText* m_pxTutorialHintText = nullptr;
 	bool m_bTutorialActive = false;
 	float m_fTutorialTimer = 0.0f;
-	bool m_bTutorialMouseWasDown = false;
 
 	// Entity IDs (dynamic scene)
 	Zenith_EntityID m_xBallEntityID;

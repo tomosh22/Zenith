@@ -231,10 +231,17 @@ void HandleCatCafeInput(float /*fDeltaTime*/)
 	if (m_axCatCafeCats.GetSize() <= 1)
 		return;
 
-	bool bDown = g_xEngine.Input().IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_LEFT);
-	Zenith_Maths::Vector2_64 xPos;
-	g_xEngine.Input().GetMousePosition(xPos);
-	float fX = static_cast<float>(xPos.x);
+	// The swipe needs a POSITION at both ends of the gesture, so it reads the
+	// board pointer rather than an action. ReadBoardPointer (not the down-only
+	// helper) because the END position is taken on the TERMINAL frame, where the
+	// finger is already up but the pointer record is still live -- the slot only
+	// retires the frame after its last edge, which is exactly what makes that
+	// read possible. A CLAIMED pointer reports as no pointer, so a swipe that
+	// started on a UI widget never reaches the cat cafe.
+	bool bDown = false;
+	Zenith_Maths::Vector2 xPointer(0.0f, 0.0f);
+	const bool bHavePointer = TilePuzzle_Bindings::ReadBoardPointer(xPointer, bDown);
+	const float fX = xPointer.x;
 
 	if (bDown && !m_bCatCafeMouseWasDown)
 	{
@@ -243,12 +250,17 @@ void HandleCatCafeInput(float /*fDeltaTime*/)
 	}
 	else if (!bDown && m_bCatCafeMouseWasDown && m_bCatCafeSwipeActive)
 	{
-		static constexpr float fSWIPE_THRESHOLD = 60.f;
-		float fDelta = fX - m_fCatCafeSwipeStartX;
-		if (fDelta > fSWIPE_THRESHOLD)
-			OnCatCafePrevCat();
-		else if (fDelta < -fSWIPE_THRESHOLD)
-			OnCatCafeNextCat();
+		// No record at all (a lifecycle barrier retired it outright) means no end
+		// position to measure, so the gesture just ends without turning a page.
+		if (bHavePointer)
+		{
+			static constexpr float fSWIPE_THRESHOLD = 60.f;
+			float fDelta = fX - m_fCatCafeSwipeStartX;
+			if (fDelta > fSWIPE_THRESHOLD)
+				OnCatCafePrevCat();
+			else if (fDelta < -fSWIPE_THRESHOLD)
+				OnCatCafeNextCat();
+		}
 		m_bCatCafeSwipeActive = false;
 	}
 
@@ -848,15 +860,16 @@ void UpdateCreditsOverlay(float /*fDeltaTime*/)
 	if (!m_bCreditsOverlayActive)
 		return;
 
-	// Overlay handles its own rendering — just check for dismiss
-	bool bMouseDown = g_xEngine.Input().IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_LEFT);
-	if (bMouseDown && !m_bConfirmDialogMouseWasDown)
+	// Overlay handles its own rendering — just check for dismiss. PRIMARY is the
+	// press edge, so the was-down latch this shared with the achievements screen
+	// (one latch across two unrelated screens, which is how a tap on one could
+	// swallow the next tap on the other) is gone.
+	if (TilePuzzle_Bindings::WasPrimaryPressed())
 	{
 		m_bCreditsOverlayActive = false;
 		if (m_pxCreditsOverlay)
 			m_pxCreditsOverlay->Hide();
 	}
-	m_bConfirmDialogMouseWasDown = bMouseDown;
 }
 
 // ============================================================================

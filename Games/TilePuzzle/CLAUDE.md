@@ -9,6 +9,9 @@ Players slide colored polyomino shapes across a grid to match them with cats of 
 ## Files
 
 - `TilePuzzle.cpp` - Main entry point, resource initialization, scene setup
+- `TilePuzzle_Bindings.h` - THE ACTION TABLE (input program C2) — the only
+  production file allowed to spell a raw key, mouse button or pad code, and the
+  home of the board-pointer reader the drag/swipe code uses
 - `Components/TilePuzzle_GameComponent.h` - Main game coordinator (game ECS component)
 - `Components/TilePuzzle_Types.h` - Game state enums, shape definitions, level data structures
 - `Components/TilePuzzle_LevelGenerator.h` - Procedural level generation via reverse scramble
@@ -282,16 +285,51 @@ Puzzle scene (created/destroyed per level):
 - **Scene 1 (TilePuzzle)**: Contains GameManager with gameplay HUD and script behaviour
 - Puzzle scene (`m_xPuzzleScene`) is created/destroyed dynamically within either scene
 
-## Controls
+## Controls (the action table)
 
-| Key | Action |
-|-----|--------|
-| WASD / Arrows | Move cursor / selected shape |
-| Space | Select/deselect shape at cursor |
-| Click + Drag | Drag shapes directly |
-| R | Reset level |
-| N | Next level (when complete) |
-| Escape | Return to menu |
+Every control is an ACTION registered in **`TilePuzzle_Bindings.h`** — the one
+production file in this game allowed to spell a raw key, mouse button or pad code
+(input program C2). Three profiles, `P_DESKTOP {KEYBOARD|MOUSE}`,
+`P_TOUCH {TOUCH}` and `P_GAMEPAD {GAMEPAD}`, and the active one switches
+automatically on the first input from another device. Windows boots into
+P_DESKTOP, Android into P_TOUCH.
+
+| Action | Keyboard | Mouse | Touch | Gamepad |
+|---|---|---|---|---|
+| CURSOR_UP | W / Up | — | — | d-pad Up |
+| CURSOR_DOWN | S / Down | — | — | d-pad Down |
+| CURSOR_LEFT | A / Left | — | — | d-pad Left |
+| CURSOR_RIGHT | D / Right | — | — | d-pad Right |
+| SELECT | Space | — | — | A |
+| RESET_LEVEL | R | — | — | X |
+| NEXT_LEVEL | N | — | — | Y |
+| ESCAPE | Escape | — | — | Start |
+| PRIMARY ★ | — | Left button | primary finger | — |
+
+★ PRIMARY is the press half of a POINTER gesture (dismiss a tutorial, tap the
+achievements back strip). It has no pad row on purpose: every consumer also needs
+a POSITION, which a face button cannot supply.
+
+**Dragging a shape, pulling the pinball plunger and swiping the cat cafe are not
+actions at all** — they need a pointer POSITION, which no binding row carries, so
+they read the pointer table through `TilePuzzle_Bindings::ReadBoardPointer` /
+`IsBoardPointerDown`. B3 makes that one code path for both platforms (the mouse
+feeds pointer 0 on Windows, the first finger does on Android), and those helpers
+apply the CLAIM rule themselves: a pointer a UI widget captured reports as no
+pointer, so a press the HUD consumed can never also grab the shape behind it.
+PRIMARY gets the same rule for free — the action layer claim-filters
+pointer-sourced rows at frame-contract step 10e.
+
+> The four `CURSOR_*` verbs plus `SELECT`, `RESET_LEVEL` and `NEXT_LEVEL` are
+> registered per the C2 contract but have **no production consumer today** — the
+> board is driven entirely by dragging a pointer. They are exercised end to end by
+> `TilePuzzle_SimPad_Test`; wiring a keyboard/pad board cursor to them is a
+> gameplay change, not part of the input migration.
+
+Menu navigation (arrows or the d-pad to move focus, Enter/Space or pad A to
+activate, click/tap to press a button) is the ENGINE-reserved UI action set
+(ids 0-15), which every game gets without registering anything — which is also
+why the pad faces above are shared with it.
 
 ## Test Plan
 

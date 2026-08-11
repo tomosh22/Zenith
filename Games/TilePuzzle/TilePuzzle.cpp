@@ -1,6 +1,7 @@
 #include "Zenith.h"
 #include "Core/Zenith_Engine.h"
 #include "Core/Zenith_GraphicsOptions.h"
+#include "TilePuzzle/TilePuzzle_Bindings.h"
 #include "TilePuzzle/Components/TilePuzzle_Types.h"
 #include "TilePuzzle/Components/TilePuzzle_GameComponent.h"
 #include "TilePuzzle/Components/Pinball_GameComponent.h"
@@ -1495,6 +1496,16 @@ void Project_RegisterGameComponents()
 {
 	Zenith_SaveData::Initialise("TilePuzzle");
 	InitializeTilePuzzleResources();
+
+	// The C2 action table (TilePuzzle_Bindings.h) -- installed BEFORE the
+	// components that read it, and once per process.
+	//
+	// ★ THE FIRST RegisterProfile CALL CLEARS THE ENGINE DEFAULTS, so Register
+	// installs ALL THREE profiles or none: a game left holding one would have
+	// every scheme outside it go dead -- and on this game that would mean the
+	// Android build (P_TOUCH) or the desktop build (P_DESKTOP), depending on
+	// which one survived.
+	TilePuzzle_Bindings::Register(g_xEngine.Actions());
 
 	// Register the game components with the component-meta registry
 	// (orders 100+ are unique per game, after the engine built-ins).

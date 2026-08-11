@@ -21,7 +21,7 @@
 #include "ZenithECS/Zenith_Scene.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "ZenithECS/Zenith_SceneData.h"
-#include "Input/Zenith_Input.h"
+#include "TilePuzzle/TilePuzzle_Bindings.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
@@ -811,7 +811,7 @@ public:
 		case TILEPUZZLE_STATE_LEVEL_SELECT:
 			m_fMenuTimer += fDeltaTime;
 #ifdef ZENITH_TOOLS
-			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
+			if (TilePuzzle_Bindings::WasEscapePressed())
 			{
 				StartTransition(TILEPUZZLE_STATE_MAIN_MENU);
 				return;
@@ -821,7 +821,7 @@ public:
 
 		case TILEPUZZLE_STATE_PLAYING:
 #ifdef ZENITH_TOOLS
-			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
+			if (TilePuzzle_Bindings::WasEscapePressed())
 			{
 				if (m_bConfirmDialogActive)
 				{
@@ -881,7 +881,7 @@ public:
 
 		case TILEPUZZLE_STATE_LEVEL_COMPLETE:
 #ifdef ZENITH_TOOLS
-			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
+			if (TilePuzzle_Bindings::WasEscapePressed())
 			{
 				ReturnToMenu();
 				return;
@@ -895,7 +895,7 @@ public:
 
 		case TILEPUZZLE_STATE_CAT_CAFE:
 #ifdef ZENITH_TOOLS
-			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
+			if (TilePuzzle_Bindings::WasEscapePressed())
 			{
 				StartTransition(TILEPUZZLE_STATE_MAIN_MENU);
 				return;
@@ -906,7 +906,7 @@ public:
 
 		case TILEPUZZLE_STATE_SETTINGS:
 #ifdef ZENITH_TOOLS
-			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
+			if (TilePuzzle_Bindings::WasEscapePressed())
 			{
 				OnSettingsBackClicked(this);
 				return;
@@ -921,7 +921,7 @@ public:
 
 		case TILEPUZZLE_STATE_ACHIEVEMENTS:
 #ifdef ZENITH_TOOLS
-			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
+			if (TilePuzzle_Bindings::WasEscapePressed())
 			{
 				StartTransition(TILEPUZZLE_STATE_MAIN_MENU);
 				return;
@@ -1389,15 +1389,19 @@ private:
 		if (m_eState != TILEPUZZLE_STATE_PLAYING && !m_bDragging)
 			return;
 
-		bool bMouseDown = g_xEngine.Input().IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_LEFT);
-		Zenith_Maths::Vector2_64 xMousePos64;
-		g_xEngine.Input().GetMousePosition(xMousePos64);
-		float fScreenX = static_cast<float>(xMousePos64.x);
-		float fScreenY = static_cast<float>(xMousePos64.y);
+		// The BOARD POINTER, not the mouse: B3 makes pointer 0 the mouse on
+		// Windows and the first finger on Android, so this one read is both
+		// platforms. A pointer a UI widget CLAIMED reports as not-down, which is
+		// what stops a press the HUD took from also grabbing the shape behind it
+		// (the drag ends cleanly through the release branch below).
+		Zenith_Maths::Vector2 xPointer(0.0f, 0.0f);
+		const bool bPointerDown = TilePuzzle_Bindings::IsBoardPointerDown(xPointer);
+		float fScreenX = xPointer.x;
+		float fScreenY = xPointer.y;
 
-		if (bMouseDown && !m_bMouseWasDown)
+		if (bPointerDown && !m_bMouseWasDown)
 		{
-			// Mouse just pressed - try to start drag
+			// Pointer just pressed - try to start drag
 			int32_t iGridX, iGridY;
 			if (ScreenToGrid(fScreenX, fScreenY, iGridX, iGridY))
 			{
@@ -1429,9 +1433,9 @@ private:
 				}
 			}
 		}
-		else if (bMouseDown && m_bDragging)
+		else if (bPointerDown && m_bDragging)
 		{
-			// Mouse held - move shape toward cursor
+			// Pointer held - move shape toward cursor
 			int32_t iCursorGridX, iCursorGridY;
 			if (ScreenToGrid(fScreenX, fScreenY, iCursorGridX, iCursorGridY))
 			{
@@ -1476,9 +1480,9 @@ private:
 				}
 			}
 		}
-		else if (!bMouseDown && m_bDragging)
+		else if (!bPointerDown && m_bDragging)
 		{
-			// Mouse released - snap to grid position and end drag
+			// Pointer released - snap to grid position and end drag
 			m_xDragOvershootOffset = Zenith_Maths::Vector3(0.0f);
 			SnapShapeVisuals(m_iDragShapeIndex);
 			m_bDragging = false;
@@ -1495,7 +1499,7 @@ private:
 			}
 		}
 
-		m_bMouseWasDown = bMouseDown;
+		m_bMouseWasDown = bPointerDown;
 	}
 
 	// ========================================================================
@@ -1933,7 +1937,6 @@ private:
 	uint32_t m_uTutorialIndex = 0;      // Which tutorial (0-5)
 	uint32_t m_uTutorialStep = 0;       // Current step within tutorial
 	float m_fTutorialFadeProgress = 0.0f;
-	bool m_bTutorialMouseWasDown = false;
 	static constexpr float s_fTutorialFadeDuration = 0.3f;
 
 	// Menu timer (ticks in non-playing states for UI animations)
@@ -1942,7 +1945,6 @@ private:
 	// Confirmation dialog state
 	bool m_bConfirmDialogActive = false;
 	TilePuzzleConfirmDialogType m_eConfirmDialogType = CONFIRM_RESET_SAVE;
-	bool m_bConfirmDialogMouseWasDown = false;
 
 	// Target cat highlighting (levels 1-5)
 	bool m_bTargetHighlightActive = false;
@@ -2002,7 +2004,6 @@ private:
 		m_uTutorialIndex = static_cast<uint32_t>(iTutIdx);
 		m_uTutorialStep = 0;
 		m_fTutorialFadeProgress = 0.0f;
-		m_bTutorialMouseWasDown = false;
 
 		if (m_pxTutorialOverlay)
 		{
@@ -2114,9 +2115,12 @@ private:
 			m_pxTutorialHintText->SetColor(Zenith_Maths::Vector4(0.7f, 0.7f, 0.7f, fHintAlpha));
 		}
 
-		// Check for tap to advance/dismiss (detect mouse-down transition)
-		bool bMouseDown = g_xEngine.Input().IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_LEFT);
-		if (bMouseDown && !m_bTutorialMouseWasDown && m_fTutorialFadeProgress >= 0.5f)
+		// Tap to advance/dismiss. PRIMARY carries the press EDGE itself (LMB on
+		// desktop, the primary finger on Android), so the hand-rolled was-down
+		// latch this used to keep is gone -- and, unlike that latch, the edge is
+		// claim-filtered, so a tap a UI button consumed no longer also advances
+		// the tutorial behind it.
+		if (TilePuzzle_Bindings::WasPrimaryPressed() && m_fTutorialFadeProgress >= 0.5f)
 		{
 			m_uTutorialStep++;
 
@@ -2131,7 +2135,6 @@ private:
 				m_fTutorialFadeProgress = 0.0f;
 			}
 		}
-		m_bTutorialMouseWasDown = bMouseDown;
 	}
 
 	void DismissTutorial()
@@ -2585,19 +2588,18 @@ private:
 			TilePuzzleUI::fACHIEV_RETURN_FONT,
 			Zenith_Maths::Vector4(0.7f, 0.7f, 0.7f, 0.5f + 0.5f * sinf(m_fMenuTimer * 3.0f)));
 
-		// Handle back tap
-		bool bMouseDown = g_xEngine.Input().IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_LEFT);
-		if (bMouseDown && !m_bConfirmDialogMouseWasDown)
+		// Handle back tap. This one needs BOTH halves of a gesture: the PRIMARY
+		// press edge (claim-filtered, and its own latch) says a tap happened, and
+		// the board pointer says WHERE -- a position no binding row can carry.
+		// On the press frame the pointer record is already live, so the two are
+		// reading the same gesture.
+		Zenith_Maths::Vector2 xPointer(0.0f, 0.0f);
+		if (TilePuzzle_Bindings::WasPrimaryPressed()
+			&& TilePuzzle_Bindings::IsBoardPointerDown(xPointer)
+			&& xPointer.y > fH - 80.0f)
 		{
-			Zenith_Maths::Vector2_64 xMousePos64;
-			g_xEngine.Input().GetMousePosition(xMousePos64);
-			float fMY = static_cast<float>(xMousePos64.y);
-			if (fMY > fH - 80.0f)
-			{
-				StartTransition(TILEPUZZLE_STATE_MAIN_MENU);
-			}
+			StartTransition(TILEPUZZLE_STATE_MAIN_MENU);
 		}
-		m_bConfirmDialogMouseWasDown = bMouseDown;
 	}
 
 	// ========================================================================
