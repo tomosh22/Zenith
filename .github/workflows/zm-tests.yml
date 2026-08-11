@@ -194,6 +194,12 @@ jobs:
           #
           # History, newest first (the DERIVATION is the audit trail; the OBSERVED
           # number is the authority):
+          #   3238  input program WP6 + reconciliation micro-WP (the program's
+          #                   close), observed 2026-08-11 on a Null_ build
+          #                   (3238 ran / 3236 passed / 0 failed / 2 skipped).
+          #                   +10 ENGINE units, no ZM units: Zenith_UserSettings
+          #                   (9) + the SYSTEM_BACK device-layer flag (1). See
+          #                   run_unit_gate.ps1 for the per-test derivation.
           #   3228  input program WP4a (Combat migration + graph action nodes),
           #                   observed 2026-08-11 on a Null_ build
           #                   (3228 ran / 3226 passed / 0 failed / 2 skipped).
@@ -528,7 +534,7 @@ jobs:
           #   2817  ZM-D-173  = 2809 + 8: four ENGINE sensor-raycast units plus
           #                   two camera fixtures and two Home-placement units.
           $exe = 'Games\Zenithmon\Build\output\win64\null_vs2022_debug_win64_true\zenithmon.exe'
-          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 3228 -TimeoutSec 600
+          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 3238 -TimeoutSec 600
           if ($LASTEXITCODE -ne 0) { Write-Error "boot unit tests failed (see log above)"; exit $LASTEXITCODE }
 
       - name: Run Zenithmon tests

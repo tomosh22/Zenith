@@ -35,6 +35,8 @@
 #include "Input/Zenith_Input.h"
 #include "Input/Zenith_InputActions.h"
 #include "Input/Zenith_Pointers.h"
+#include "Core/Zenith_UserSettings.h"
+#include "SaveData/Zenith_SaveData.h"	// boot step 1: the single, engine-owned Initialise
 #include "Flux/Flux_RendererImpl.h"
 #include "Flux/SceneGraph/Flux_RenderSceneSnapshot.h"   // complete type to allocate the by-ptr snapshot in AllocateRenderer
 #include "Flux/Flux_GraphicsImpl.h"
@@ -179,6 +181,7 @@ ZENITH_ENGINE_ACCESSOR_HOTPATH(Zenith_UISystem,       UI,            m_pxUISyste
 ZENITH_ENGINE_ACCESSOR_HOTPATH(Zenith_Input,          Input,         m_pxInput)
 ZENITH_ENGINE_ACCESSOR_HOTPATH(Zenith_Pointers,       Pointers,      m_pxPointers)
 ZENITH_ENGINE_ACCESSOR_HOTPATH(Zenith_InputActions,   Actions,       m_pxInputActions)
+ZENITH_ENGINE_ACCESSOR_HOTPATH(Zenith_UserSettings,   UserSettings,  m_pxUserSettings)
 ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_RendererImpl,     FluxRenderer,  m_pxFluxRenderer)
 ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_GraphicsImpl,     FluxGraphics,  m_pxFluxGraphics)
 ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_PlatformAPI,      FluxBackend,   m_pxVulkan)
@@ -288,6 +291,14 @@ void Zenith_Engine::AllocateCoreState()
 	m_pxInputActions->Initialise(*m_pxInput, *m_pxPointers);
 	m_pxInputActions->RegisterEngineReservedActions();
 	m_pxInputActions->RegisterEngineDefaultProfiles();
+
+	// The player-preference store (B12). Allocated here, but LOADED much later
+	// (InitialiseProject) — the save root does not exist until SaveData is
+	// initialised with the project name, and the profile its setting names does
+	// not exist until the game has registered one. Empty == AUTO, so an engine
+	// that never reaches the load step behaves exactly as it did before.
+	Zenith_Assert(m_pxUserSettings == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
+	m_pxUserSettings = new Zenith_UserSettings();
 }
 
 // Flux renderer/graphics holders + render backend (device, memory, swapchain).
@@ -834,9 +845,38 @@ void Zenith_Engine::InitialiseEditor()
 // measured by an instance-call marker pair rather than a zone.
 void Zenith_Engine::InitialiseProject()
 {
+	// ---- The engine-owned persistence boot order (B12) -------------------
+	// Steps 1-4 below are ONE contract and are deliberately adjacent.
+	//
+	// 1. SaveData is initialised HERE, by the engine, with Project_GetName().
+	//    It used to be a per-game call inside the hook below (Zenithmon /
+	//    DevilsPlayground / TilePuzzle each had one; Combat, RenderTest and
+	//    CityBuilder had none and simply had no save system). Hoisting it makes
+	//    it a SINGLE init for every game: the cross-process residue wipe inside
+	//    Initialise can no longer fire a second time and take a live
+	//    automated-test batch's slots with it.
+	// 2. The user settings are read while nothing is registered yet — the blob
+	//    is bytes, and validating it needs profiles that do not exist until 3.
+	// 3. The game registers its components, bindings and PROFILES.
+	// 4. ...so the persisted profile NAME can be resolved against them and
+	//    forced. An unknown name leaves the action layer in AUTO.
+	//
+	// Step 4 sits before the unit-test batch below because the batch is not the
+	// boundary the contract is written against; in an automated-test process
+	// the save root is the run's sandbox, so there is no persisted override to
+	// apply and this is inert.
+	{
+		ZENITH_PROFILE_SCOPE("Boot Project/UserSettings Load");
+		Zenith_SaveData::Initialise(Project_GetName());
+		m_pxUserSettings->Load();
+	}
 	{
 		ZENITH_PROFILE_SCOPE("Boot Project/RegisterGameComponents");
 		Project_RegisterGameComponents();
+	}
+	{
+		ZENITH_PROFILE_SCOPE("Boot Project/UserSettings Apply");
+		m_pxUserSettings->ApplyProfileOverride(*m_pxInputActions);
 	}
 
 #ifdef ZENITH_TOOLS
@@ -1086,6 +1126,10 @@ void Zenith_Engine::DeleteSceneAndInputState()
 	// so cannot outlive either.
 	delete m_pxInputActions;
 	m_pxInputActions = nullptr;
+
+	// Plain by-value state; nothing points into it and it points at nothing.
+	delete m_pxUserSettings;
+	m_pxUserSettings = nullptr;
 }
 
 // The debug-variable tree, deleted BEFORE the subsystems it points into.

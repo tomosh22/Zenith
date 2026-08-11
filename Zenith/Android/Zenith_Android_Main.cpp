@@ -2,7 +2,6 @@
 #include "Core/Zenith_Engine.h"
 #include "Core/Zenith_GraphicsOptions.h"
 #include "FileAccess/Zenith_FileAccess.h"
-#include "Input/Zenith_InputActions.h"   // the SYSTEM_BACK binding query (WP3b)
 #include "Profiling/Zenith_Profiling.h"
 
 #include <android_native_app_glue.h>
@@ -133,34 +132,6 @@ static void OnAppCmd(android_app* pxApp, int32_t iCmd)
 	}
 }
 
-// Does the running game bind the platform's Back gesture to anything?
-//
-// Asked through the PUBLIC action-layer surface (registered actions + their
-// binding rows) rather than through a bespoke accessor, so this file adds no
-// engine API and stays inside its g_xEngine budget: the two Profiling calls in
-// android_main were folded onto one hoisted reference to pay for this one.
-static bool HasSystemBackBinding()
-{
-	const Zenith_InputActions& xActions = g_xEngine.Actions();
-	for (u_int32 uAction = 0; uAction < Zenith_InputActions::uMAX_ACTIONS; uAction++)
-	{
-		const Zenith_InputActionID uId = static_cast<Zenith_InputActionID>(uAction);
-		if (!xActions.IsActionRegistered(uId))
-		{
-			continue;
-		}
-		const u_int32 uBindings = xActions.GetBindingCount(uId);
-		for (u_int32 uBinding = 0; uBinding < uBindings; uBinding++)
-		{
-			if (xActions.GetBinding(uId, uBinding).m_eType == INPUT_BINDING_SYSTEM_BACK)
-			{
-				return true;
-			}
-		}
-	}
-	return false;
-}
-
 static int32_t OnInputEvent(android_app* pxApp, AInputEvent* pxEvent)
 {
 	(void)pxApp;
@@ -183,10 +154,16 @@ static int32_t OnInputEvent(android_app* pxApp, AInputEvent* pxEvent)
 		// swallowing it then would have left the activity with no way to finish.
 		// Now a game that binds it (Zenithmon's CANCEL) wants Back to close its
 		// menu, and a game that does NOT bind it must keep the platform's own
-		// behaviour -- so the answer is a QUESTION to the action layer, never a
-		// constant. HasSystemBackBinding() answers false before Zenith_Init, which
-		// is the safe direction: an un-bound Back backgrounds the app as always.
-		return (iKeyCode == AKEYCODE_BACK && HasSystemBackBinding()) ? 1 : 0;
+		// behaviour -- so the answer is a QUESTION, never a constant.
+		//
+		// It is asked of the DEVICE layer through the same window funnel every
+		// other input path here uses: the action layer stamps the flag when a
+		// SYSTEM_BACK row is registered, so this file names no Input type and adds
+		// no up-edge out of the platform layer. Unregistered (i.e. before the game
+		// registers its bindings) reads false, which is the safe direction: an
+		// un-bound Back backgrounds the app exactly as it always did.
+		return (iKeyCode == AKEYCODE_BACK
+			&& Zenith_Window::GetInstance()->HasSystemBackBinding()) ? 1 : 0;
 	}
 
 	if (iType != AINPUT_EVENT_TYPE_MOTION)
@@ -389,9 +366,11 @@ void android_main(android_app* pxApp)
 		// Only run game loop when active and window is ready
 		if (s_bAppActive && s_bWindowReady && s_bEngineInitialised && !s_bDestroyRequested)
 		{
-			// One reference, two calls: this file's g_xEngine budget is shrink-only
-			// (Tools/engine_singleton_allowlist.txt), and HasSystemBackBinding
-			// above needed the slot the second Profiling call used to occupy.
+			// One reference, two calls. This file's g_xEngine budget is shrink-only
+			// (Tools/engine_singleton_allowlist.txt), and this is now the ONLY reach
+			// left in the translation unit -- the Back-consume question moved down to
+			// the device layer and travels the window funnel like every other input
+			// path here, so it costs this file nothing.
 			Zenith_Profiling& xProfiling = g_xEngine.Profiling();
 			xProfiling.BeginFrame();
 			Zenith_Core::Zenith_MainLoop();

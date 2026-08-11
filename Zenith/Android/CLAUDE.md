@@ -29,16 +29,106 @@ Singleton wrapping `ANativeWindow*`. Requires `SetAndroidApp()` before initializ
 | `BeginFrame()` | Process events |
 | `IsWindowReady()` | Check if ANativeWindow is available |
 | `GetSize(w&, h&)` | Window dimensions |
-| `OnTouchEvent(action, x, y)` | Process touch (0=DOWN, 1=UP, 2=MOVE) |
+| `GetDisplayScale()` | Logical→physical pixel ratio from the activity's density bucket (160 dpi ≡ 1.0; ANY/NONE/0 ≡ 1.0) |
+| `GetMousePosition(out&)` | The B3 projected primary-pointer position (owned by `Zenith_Input`, not by the window) |
+| `OnTouchEvent(rawAction, pointerId, x, y)` | Platform funnel: raw `AMOTION_EVENT_ACTION_*` → an engine touch event |
+| `OnKeyEvent(action, keyCode)` | Platform funnel: `AKEYCODE_BACK` down → a SYSTEM_BACK event |
+| `OnLifecycleEvent(bArmed)` | `false` raises a LIFECYCLE_RESET barrier, `true` re-arms |
 
-### Touch-to-Mouse Emulation
+## Input (the real behaviour — read `Zenith/Input/CLAUDE.md` for the layers)
 
-Touch events are translated to `ZENITH_MOUSE_BUTTON_1` presses for compatibility:
-- Touch DOWN = mouse button press
-- Touch MOVE = mouse position update
-- Touch UP = clears internal `m_bTouchDown` flag only (no release callback)
+**Every funnel above only TRANSLATES AND ENQUEUES.** Nothing on this path mutates
+input state; the drain at frame-contract step 3 does that, after the swapchain
+acquire. That is what makes an event delivered while the app is mid-resize
+survive to the next real frame instead of being silently consumed.
+
+### Full multi-touch
+
+`OnInputEvent` handles `AINPUT_EVENT_TYPE_MOTION` with the **whole** pointer
+set, not just index 0:
+
+* Source is filtered to `AINPUT_SOURCE_TOUCHSCREEN`, and the tool type to
+  FINGER or STYLUS, so a mouse / trackball / joystick motion cannot masquerade
+  as a finger.
+* `DOWN` / `UP` name exactly ONE pointer. For the primary pair the index is 0;
+  for `POINTER_DOWN` / `POINTER_UP` it is carried in the action word
+  (`AMOTION_EVENT_ACTION_POINTER_INDEX_MASK/_SHIFT`). **Reading index 0 for a
+  POINTER_DOWN attributes the second finger's coordinates to the first** — that
+  bug is precisely what kept this platform single-touch.
+* `MOVE` carries every live pointer at once, so each is forwarded under its own
+  `AMotionEvent_getPointerId`.
+* `CANCEL` cancels the lot.
+
+Secondary fingers live in `Zenith_Pointers` (8 slots, generation handles,
+claims, taps). Coordinates are RAW SURFACE PIXELS.
+
+### ★ B3: the first touch feeds the mouse view — PERMANENT
+
+The FIRST touch drives the mouse view: position plus
+`ZENITH_MOUSE_BUTTON_LEFT` held / press / release, maintained by `Zenith_Input`
+at drain. A second finger never steals it.
+
+**This is a permanent design decision, not a compatibility shim.** It is what
+keeps every `INPUT_BINDING_MOUSE_BUTTON` row and every unmigrated
+`IsMouseButtonHeld` consumer working on a touch device — including whole games
+(Combat, RenderTest) that register no TOUCH profile at all. It is claim-aware:
+a mouse-button transition fed by a pointer is suppressed at step 10e if a UI
+widget claimed that pointer, so a tap the HUD consumed never also reaches
+gameplay. Do not "clean it up".
 
 Cursor capture functions are no-ops on Android.
+
+### Keys, and the conditional Back consume
+
+`AINPUT_EVENT_TYPE_KEY` is handled — the old "motion only" claim is dead. There
+is still no Android-keycode → Zenith-keycode table, so the only key with meaning
+today is the hardware/gesture **BACK**, and it is deliberately NOT a key: it is
+system NAVIGATION, so it rides its own `INPUT_EVENT_SYSTEM_BACK` event type and
+never lands in the key domain (it is also excluded from the action layer's
+activity detection, so pressing Back cannot switch the active input profile).
+
+**Whether Back is CONSUMED is a QUESTION, never a constant.** `OnInputEvent`
+returns 1 for `AKEYCODE_BACK` only when
+`Zenith_Window::GetInstance()->HasSystemBackBinding()` is true; otherwise it
+returns 0 and the platform's own behaviour stands. An unconditional `return 0`
+was right while nothing consumed Back — swallowing it then would have left the
+activity with no way to finish.
+
+**The question is asked DOWNWARDS, of the device layer.** `Zenith_Input` carries
+a sticky flag that `Zenith_InputActions::RegisterBinding` raises when a game
+registers an `INPUT_BINDING_SYSTEM_BACK` row (Zenithmon's `Cancel`); the window
+class forwards the read exactly as it forwards the funnels. `android_main` is at
+layer 0 and Input is at layer 1, so it can no more include an `Input/` header
+than it can walk the action layer's registered actions — an earlier version did
+walk them and was a tracked `layer-up` architecture violation. Before the game's
+registrations run, the flag reads false, which is the safe direction: an un-bound
+Back backgrounds the app exactly as it always did.
+
+`INPUT_BINDING_SYSTEM_BACK` is **mask-exempt**: no profile can mask it out.
+
+### Lifecycle barriers
+
+`NotifyInputLifecycle(false)` on `APP_CMD_LOST_FOCUS` / `APP_CMD_PAUSE` /
+`APP_CMD_TERM_WINDOW` raises a `LIFECYCLE_RESET`; `true` on
+`APP_CMD_GAINED_FOCUS` / `APP_CMD_RESUME` re-arms. A RESET releases every held
+key and pad button (emitting the release edges), cancels every live pointer
+(raising CANCEL edges), zeroes the pad axes and DISARMS the layer — ordinary
+events are discarded until the ARM. **An app that is paused, backgrounded, or
+has lost its window must not come back with a finger still "down".** Android is
+`INPUT_RECONCILE_CANCEL_EVENT_FED` for the same reason: its devices are
+event-fed with no live oracle to resync against after a FIFO overflow, so the
+only safe answer is to cancel (Windows resyncs instead).
+
+Both calls are guarded on engine initialisation — the glue delivers commands
+before `Zenith_Init` has allocated the subsystems, and `g_xEngine` accessors are
+undefined until then.
+
+### Touch-target sizing
+
+`GetDisplayScale()` feeds `Zenith_Pointers::GetDisplayScale()`, which the tap
+threshold (15 logical px of excursion) and
+`Zenith_UIElement::ResolveTouchTargetRect` (slop + the 57-logical-px minimum
+touch target) scale by. Authored UI values are LOGICAL pixels everywhere.
 
 ## Multithreading
 

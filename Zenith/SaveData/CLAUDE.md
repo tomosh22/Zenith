@@ -13,7 +13,8 @@ Engine-level save data system for persisting game state to disk. Built on `Zenit
 
 | Function | Description |
 |----------|-------------|
-| `Initialise(szGameName)` | Set up save directory for this game |
+| `Initialise(szGameName)` | Set up the save directory. **ENGINE-ONLY — a game must never call it** (see below) |
+| `GetInitialiseCallCount()` | The single-init contract pin; the engine unit `BootInitDoesNotWipeAutomatedTestSandbox` asserts it is exactly 1 |
 | `GetSaveDirectory()` | Get platform-specific writable save path |
 | `Save(szSlot, uVersion, pfnWrite, pUserData)` | Write game data to a named slot |
 | `Load(szSlot, pfnRead, pUserData)` | Read game data from a named slot (thin wrapper: `return LoadEx(...).IsOk();`) |
@@ -34,11 +35,28 @@ Engine-level save data system for persisting game state to disk. Built on `Zenit
 [N bytes] Payload data
 ```
 
+## ★ Initialisation is the ENGINE's, exactly once
+
+`Zenith_Engine::InitialiseProject` calls
+`Zenith_SaveData::Initialise(Project_GetName())` as **step 1 of the B12 boot
+order**, before `Project_RegisterGameComponents()`. Every game therefore has a
+live save root by the time its own registration hook runs — including the games
+that never had a save system before.
+
+**A game must not call `Initialise` itself.** It used to be per-game
+(Zenithmon / DevilsPlayground / TilePuzzle each had one); the input program
+hoisted it because a SECOND `Initialise` re-enters the cross-process residue
+wipe below and would delete every slot a live automated-test batch had written
+so far — silently, mid-run. `GetInitialiseCallCount()` is the structural pin and
+the engine unit `BootInitDoesNotWipeAutomatedTestSandbox` asserts it is 1.
+
+The engine-owned settings store `Zenith_UserSettings` (`Zenith/Core/`) owns the
+`"user_settings"` slot on this system; see `Zenith/Input/CLAUDE.md`.
+
 ## Usage Pattern
 
 ```cpp
-// Initialize once at startup
-Zenith_SaveData::Initialise("MyGame");
+// The save root already exists — the engine initialised it at boot.
 
 // Define save data struct
 struct MySaveData { int iLevel; float fScore; };

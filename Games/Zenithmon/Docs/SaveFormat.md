@@ -40,9 +40,14 @@ Zenith_Status Read(Zenith_DataStream& xInStream, uint64_t ulByteLength,
 
 ## Engine framing (Zenith_SaveData)
 
-Zenithmon persists the inner payload through `Zenith_SaveData`, initialised at boot as
-`Zenith_SaveData::Initialise("Zenithmon")` (wired since S0 in `Zenithmon.cpp`)
-and driven by `ZM_SaveSlots` since S7 item 2 SC2. The engine wraps every payload
+Zenithmon persists the inner payload through `Zenith_SaveData`, and is driven by
+`ZM_SaveSlots` since S7 item 2 SC2. The save root is initialised **by the ENGINE**
+— `Zenith_SaveData::Initialise(Project_GetName())` in
+`Zenith_Engine::InitialiseProject`, once per process, BEFORE
+`Project_RegisterGameComponents()`. (It was a game-owned call in `Zenithmon.cpp`
+from S0 until the input program's B12 boot-order change hoisted it; a game must
+not call it, because a second `Initialise` re-enters the automated-test sandbox
+wipe mid-run.) The engine wraps every payload
 in its own header, and that header is the ENGINE's alone:
 
 - magic `'ZENS'`

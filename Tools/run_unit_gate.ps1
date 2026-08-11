@@ -324,7 +324,22 @@ param(
     # and ::ReadActionAxisOmittedResultVarKeepsNodeDefault (factory
     # conveniences byte-match hand-built nodes). Observed 2026-08-11 on a
     # Null_ Combat build (1590 ran / 1589 passed / 0 failed / 1 skipped).
-    [int]$Baseline = 1590,
+    # 1590 -> 1600: +10 input-program WP6 + its reconciliation micro-WP.
+    # 9 Zenith_UserSettings units (Zenith/Core/Zenith_UserSettings.Tests.inl):
+    # the canned v1 byte fixture both directions, corrupt/short blob ->
+    # defaults, absent file -> defaults, override-name byte-stable round trip,
+    # corrupt on-disk file -> defaults, too-long profile name REFUSED (never
+    # truncated -- a truncated name resolves to a different profile), known
+    # persisted name forced at boot, unknown name stays AUTO, and the
+    # engine-owned single-SaveData-init contract
+    # (BootInitDoesNotWipeAutomatedTestSandbox, pinned via a call counter).
+    # +1 SystemBackBindingFlagsTheDeviceLayer (Zenith_InputActions.Tests.inl):
+    # registering a SYSTEM_BACK row raises the device-layer flag Android's
+    # Back-consume decision reads through the Zenith_Window funnel (the
+    # layer-clean replacement for the retired action-surface walk).
+    # Observed 2026-08-11 on a Null_ Combat build
+    # (1600 ran / 1599 passed / 0 failed / 1 skipped).
+    [int]$Baseline = 1600,
     [int]$TimeoutSec = 180,
     [string]$LogPath = ""
 )

@@ -25,15 +25,18 @@
 //   * That a save is proven by a RE-PROBE and never by a return value:
 //     Zenith_SaveData::Save returns true UNCONDITIONALLY (Zenith_SaveData.cpp:204).
 //   * That a DAMAGED slot is reported and left EXACTLY as it is
-//     (Docs/SaveFormat.md:318-321) -- never repaired, deleted or overwritten.
+//     (Docs/SaveFormat.md, "Sanity caps -- corrupt saves fail LOUDLY, never UB")
+//     -- never repaired, deleted or overwritten.
 //   * That the four write failure modes are DISTINGUISHABLE, not merely detected.
 //
-// Boot-unit legality: Zenith_SaveData::Initialise("Zenithmon") runs inside
-// Project_RegisterGameComponents() (Zenithmon.cpp:1208, the Initialise call at
-// :1238), which Zenith_Engine.cpp:741 calls BEFORE RunAllTests() at :765. Disk-
-// touching boot units are therefore legal and need no init fallback. Initialise
-// also create_directories() the save folder (Zenith_SaveData.cpp:119-122), so the
-// hand-built-file units below can write into it whatever order the runner picks.
+// Boot-unit legality: Zenith_SaveData::Initialise(Project_GetName()) runs in
+// Zenith_Engine::InitialiseProject -- step 1 of the engine-owned B12 boot order,
+// BEFORE Project_RegisterGameComponents() and therefore long before
+// RunAllTests(). (It used to be a game-owned call in this game's registration
+// hook; the input program hoisted it so it happens exactly ONCE per process.)
+// Disk-touching boot units are therefore legal and need no init fallback.
+// Initialise also create_directories() the save folder, so the hand-built-file
+// units below can write into it whatever order the runner picks.
 //
 // ---------------------------------------------------------------------------
 // DISK SAFETY (read before editing any unit below)

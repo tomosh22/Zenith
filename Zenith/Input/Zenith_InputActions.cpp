@@ -207,6 +207,17 @@ void Zenith_InputActions::RegisterBinding(Zenith_InputActionID uId, const Zenith
 	xAction.m_axBindings[xAction.m_uBindingCount] = xBinding;
 	xAction.m_abBindingHeld[xAction.m_uBindingCount] = false;
 	xAction.m_uBindingCount++;
+
+	// Push the "is Back bound?" answer DOWN into the device layer. The platform
+	// entry point that decides whether to CONSUME the system Back gesture sits
+	// BELOW this layer and cannot ask it; Actions -> Input is the legal direction,
+	// and the reference was injected at Initialise. Doing it here rather than
+	// making the platform walk this class's registered actions is what keeps the
+	// answer a one-word read instead of an up-edge out of the platform layer.
+	if (xBinding.m_eType == INPUT_BINDING_SYSTEM_BACK && m_pxInput != nullptr)
+	{
+		m_pxInput->NotifySystemBackBindingRegistered();
+	}
 }
 
 Zenith_InputActionID Zenith_InputActions::FindActionByName(const char* szName) const
@@ -372,6 +383,30 @@ u_int8 Zenith_InputActions::GetProfileSchemeMask(u_int8 uProfileId) const
 u_int8 Zenith_InputActions::GetActiveSchemeMask() const
 {
 	return GetProfileSchemeMask(m_uActiveProfile);
+}
+
+u_int8 Zenith_InputActions::FindProfileByName(const char* szName) const
+{
+	// An empty name is the persisted spelling of AUTO, so it must never match a
+	// profile whose own name happens to be empty.
+	if (szName == nullptr || szName[0] == '\0')
+	{
+		return uPROFILE_AUTO;
+	}
+	for (u_int32 u = 0; u < m_uProfileCount; u++)
+	{
+		if (m_axProfiles[u].m_bRegistered && Zenith_ActionNamesMatch(m_axProfiles[u].m_szName, szName))
+		{
+			return m_axProfiles[u].m_uId;
+		}
+	}
+	return uPROFILE_AUTO;
+}
+
+const char* Zenith_InputActions::GetProfileName(u_int8 uProfileId) const
+{
+	const u_int32 uSlot = FindProfileSlot(uProfileId);
+	return uSlot != uMAX_PROFILES ? m_axProfiles[uSlot].m_szName : "";
 }
 
 void Zenith_InputActions::ResolveBootDefaultProfile()

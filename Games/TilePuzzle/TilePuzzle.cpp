@@ -1494,7 +1494,8 @@ static bool TilePuzzle_HasAutoTestFlag();
 
 void Project_RegisterGameComponents()
 {
-	Zenith_SaveData::Initialise("TilePuzzle");
+	// (Zenith_SaveData::Initialise is the ENGINE's since the B12 boot order — it
+	// runs with Project_GetName() before this hook, exactly once per process.)
 	InitializeTilePuzzleResources();
 
 	// The C2 action table (TilePuzzle_Bindings.h) -- installed BEFORE the

@@ -382,6 +382,16 @@ public:
 	void RegisterProfile(u_int8 uProfileId, const char* szName, u_int8 uSchemeMask);
 	bool IsProfileRegistered(u_int8 uProfileId) const;
 	u_int8 GetProfileSchemeMask(u_int8 uProfileId) const;
+
+	// Name lookups. A profile's NAME is its stable identity: the persisted user
+	// setting (Zenith_UserSettings, B12) stores the name and never the numeric
+	// id, so reordering a game's RegisterProfile calls can never make a saved
+	// setting resolve to a DIFFERENT profile. FindProfileByName answers
+	// uPROFILE_AUTO for an unknown (or empty, or null) name — which is exactly
+	// the "unknown name => AUTO" fallback the settings store depends on.
+	u_int8 FindProfileByName(const char* szName) const;
+	// "" when the id is not a registered profile.
+	const char* GetProfileName(u_int8 uProfileId) const;
 	u_int8 GetActiveProfile() const { return m_uActiveProfile; }
 	u_int8 GetActiveSchemeMask() const;
 	bool AreEngineDefaultProfilesActive() const { return m_bEngineDefaultProfiles; }

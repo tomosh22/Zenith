@@ -3,10 +3,19 @@
 **Last updated:** 2026-08-11
 
 **★ LIVE BASELINE (OBSERVED 2026-08-11 on clean `Null_` builds):
-ZM boot `3228 ran / 3226 passed / 0 failed / 2 skipped`; engine boot (Null Combat)
-`1590 ran / 1589 passed / 0 failed / 1 skipped`; registry **55**.** This is the
-current pin in `zm-tests.yml` (`-Baseline 3228`) and `run_unit_gate.ps1`
-(default 1590). The move from 3224/1586 is **+4 ENGINE units** (no ZM units)
+ZM boot `3238 ran / 3236 passed / 0 failed / 2 skipped`; engine boot (Null Combat)
+`1600 ran / 1599 passed / 0 failed / 1 skipped`; registry **55**.** This is the
+current pin in `zm-tests.yml` (`-Baseline 3238`) and `run_unit_gate.ps1`
+(default 1600). The move from 3228/1590 is **+10 ENGINE units** (no ZM units)
+from the input program's closing WP6: `Zenith_UserSettings` (the persisted
+profile-override store; SaveData init is now ENGINE-owned — Zenithmon.cpp no
+longer calls `Zenith_SaveData::Initialise`) + the SYSTEM_BACK device-layer
+flag that keeps Android's Back-consume decision layer-clean. The input
+program (WP0-WP6) is COMPLETE: ZM's windowed suite is 61 tests (sole known
+failure `ZM_InteriorTintPixels_Test`), its controls table lives in
+`Source/ZM_Bindings.h` (see CLAUDE.md ## Controls).
+
+The PREVIOUS move, 3224/1586 -> 3228/1590, was **+4 ENGINE units** (no ZM units)
 from the input program's WP4a — the B10 graph action nodes
 (OnActionPressed/Released/Held, ReadActionAxis1D/2D) + builder factories that
 Combat's migration rides on; ZM's graphs can adopt them at leisure. The move from 3211 is **+13 ZM units** (engine UNMOVED at

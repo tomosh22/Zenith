@@ -405,11 +405,11 @@ void Project_RegisterGameComponents()
 	// menu graphs).
 	DP_RegisterGraphNodes();
 
-	// Metagame: meta-save persistence (DP_MetaSave writes the "meta" slot
-	// under %APPDATA%/Zenith/DevilsPlayground/) + run-end Knot banking and
-	// hand-off-chain reset subscriptions (captureless, process-lifetime;
-	// idempotent).
-	Zenith_SaveData::Initialise("DevilsPlayground");
+	// Metagame: run-end Knot banking and hand-off-chain reset subscriptions
+	// (captureless, process-lifetime; idempotent). The meta-save persistence
+	// root DP_MetaSave writes into (%APPDATA%/Zenith/DevilsPlayground/) is set
+	// up by the ENGINE now — Zenith_SaveData::Initialise(Project_GetName())
+	// runs before this hook, once per process (B12 boot order).
 	DP_Knots::Initialise();
 
 	DevilsPlayground::InitializeResources();

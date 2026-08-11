@@ -98,6 +98,14 @@ float Zenith_Window::GetDisplayScale() const
 	return static_cast<float>(iDensity) / 160.0f;
 }
 
+bool Zenith_Window::HasSystemBackBinding() const
+{
+	// A pure forward, like every other path in this TU. The action layer stamped
+	// this flag onto the device layer when the game registered a SYSTEM_BACK row,
+	// so the platform never has to walk the action surface to find out.
+	return PlatformInput().HasSystemBackBinding();
+}
+
 void Zenith_Window::OnTouchEvent(int32_t iAction, int32_t iPointerId, float fX, float fY)
 {
 	// Translate + ENQUEUE only. The FIFO drain (after the swapchain acquire)

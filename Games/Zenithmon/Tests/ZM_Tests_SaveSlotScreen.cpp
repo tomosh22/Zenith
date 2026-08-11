@@ -33,8 +33,9 @@
 // name onto its "_Test" alias BEFORE any disk touch and deletes those files on
 // entry AND exit, so they can never read, overwrite or delete the developer's real
 // Save0/1/2/Auto .zsave. Boot-unit disk legality: Zenith_SaveData::Initialise runs
-// inside Project_RegisterGameComponents(), which Zenith_Engine.cpp calls before
-// RunAllTests() -- verified in SC2, no fallback needed. Category ZM_Save.
+// in Zenith_Engine::InitialiseProject (step 1 of the engine-owned B12 boot order),
+// before Project_RegisterGameComponents() and long before RunAllTests() -- verified
+// in SC2, no fallback needed. Category ZM_Save.
 // ============================================================================
 
 #include <cstdint>

@@ -292,9 +292,11 @@ swings).
 ★ Pad B is shared by DODGE and RETURN_TO_MENU — see the note under *Accepted
 divergences* above.
 
-Menu navigation (W/S or Up/Down to move focus, Enter to activate, click/tap to
-press a button) is the ENGINE-reserved UI action set (ids 0-15), which every
-game gets without registering anything.
+Menu navigation (arrows or the d-pad to move focus, Enter/Space or pad A to
+activate, click/tap to press a button) is the ENGINE-reserved UI action set
+(ids 0-15), which every game gets without registering anything. There is
+deliberately no W/S row in that set — a game wanting WASD focus movement would
+rebind the reserved ids itself.
 
 ## Animation State Machine
 
@@ -492,8 +494,8 @@ On shutdown: `[Combat] Resources cleaned up`.
 | Step | Action | Expected Result |
 |------|--------|-----------------|
 | T11.1 | Click menu button | Button activates, game starts |
-| T11.2 | Navigate menu with W/S keys | Focus moves between buttons |
-| T11.3 | Press Enter on focused button | Button activates |
+| T11.2 | Navigate menu with the arrow keys or the pad d-pad | Focus moves between buttons |
+| T11.3 | Press Enter/Space, or pad A, on the focused button | Button activates |
 | T11.4 | Start game from menu | Arena scene created, gameplay begins |
 | T11.5 | Press Escape during gameplay | Returns to main menu, arena scene unloaded |
 | T11.6 | Press P during gameplay | Game pauses, arena scene paused |

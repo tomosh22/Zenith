@@ -91,6 +91,8 @@ namespace Zenith_SaveData
 	// ============================================================================
 	static char s_acSaveDirectory[ZENITH_MAX_PATH_LENGTH] = { 0 };
 	static bool s_bInitialised = false;
+	// Single-init contract pin -- see GetInitialiseCallCount in the header.
+	static uint32_t s_uInitialiseCallCount = 0;
 
 	// ============================================================================
 	// Automated-test save sandbox
@@ -266,6 +268,8 @@ namespace Zenith_SaveData
 	{
 		Zenith_Assert(szGameName != nullptr && szGameName[0] != '\0', "SaveData: Game name cannot be empty");
 
+		s_uInitialiseCallCount++;
+
 		s_bTestSandboxActive = false;
 		s_acTestSandboxDir[0] = '\0';
 
@@ -329,6 +333,11 @@ namespace Zenith_SaveData
 	bool IsUsingTestSandbox()
 	{
 		return s_bTestSandboxActive;
+	}
+
+	uint32_t GetInitialiseCallCount()
+	{
+		return s_uInitialiseCallCount;
 	}
 
 	// The whole deletion contract in one place: re-verify ownership, then delete

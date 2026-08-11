@@ -70,7 +70,8 @@
                 { "name": "EngineComposition", "layer": 5, "globs": [
                     "Zenith/Core/Zenith_Engine.cpp", "Zenith/Core/Zenith_Core.cpp",
                     "Zenith/Core/Zenith_Main.cpp", "Zenith/Core/Zenith_BenchECS.cpp",
-                    "Zenith/Core/Zenith_AutomatedTest.cpp"
+                    "Zenith/Core/Zenith_AutomatedTest.cpp",
+                    "Zenith/Core/Zenith_UserSettings.cpp"
                 ] },
                 { "name": "Profiling", "layer": 0, "globs": ["Zenith/Profiling/**"] },
                 { "name": "DebugVariables", "layer": 0, "globs": ["Zenith/DebugVariables/**"] },

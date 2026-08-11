@@ -13,6 +13,7 @@ Engine core utilities, configuration, and main loop.
 - `Zenith_String.h` - String utilities
 - `Zenith_CommandLine.h/cpp` - Parsed once at process start, read-only after
 - `Zenith_GraphicsOptions.h/cpp` - Set once by `Project_SetGraphicsOptions`, read-only after
+- `Zenith_UserSettings.h/cpp` - The engine-owned PLAYER PREFERENCE store (B12): one SaveData slot (`"user_settings"`) per project, holding the persisted input-profile override. Instance class on `g_xEngine.UserSettings()`; loaded and applied by `InitialiseProject`'s four-step boot order (SaveData init → load → `Project_RegisterGameComponents` → validate + apply BY NAME). Full contract: `Zenith/Input/CLAUDE.md` → *Persisted settings*
 
 ### Subdirectories
 - `Callstack/` - Callstack capture and symbolication (`Zenith_Callstack`) used by memory tracking and editor panels

@@ -51,6 +51,15 @@ public:
 	// activity's density bucket (160 dpi == 1.0); 1.0 when unknown.
 	float GetDisplayScale() const;
 
+	// Does the running game bind the platform's Back gesture to anything? Owned by
+	// the DEVICE layer (Zenith_Input), which the action layer stamps when a
+	// SYSTEM_BACK binding is registered; this is the same pure forward as the
+	// funnels below. android_main asks THIS rather than the action layer directly,
+	// because the platform entry point sits below Input in the layer DAG and this
+	// class is the one seam it is allowed to reach through. Callers guard on engine
+	// initialisation exactly as they do for the funnels.
+	bool HasSystemBackBinding() const;
+
 	// Android-specific
 	void SetNativeWindow(ANativeWindow* pxWindow);
 	bool IsWindowReady() const { return m_pxNativeWindow != nullptr; }

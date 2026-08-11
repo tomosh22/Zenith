@@ -28,10 +28,22 @@ struct Zenith_SaveFileHeader
 
 namespace Zenith_SaveData
 {
-	// Initialize the save system. Must be called once at startup.
-	// Determines platform-specific writable save directory.
-	// szGameName: used to create a per-game subdirectory (e.g. "TilePuzzle")
+	// Initialize the save system. Called ONCE at startup, by the ENGINE
+	// (Zenith_Engine::InitialiseProject, step 1 of the B12 boot order) with
+	// Project_GetName(). Determines the platform-specific writable save
+	// directory. szGameName: the per-game subdirectory (e.g. "TilePuzzle").
+	//
+	// ★ A GAME MUST NEVER CALL THIS. It used to be a per-game call and is not
+	// any more: a SECOND Initialise re-enters the cross-process residue wipe
+	// below, which would delete every slot an automated-test batch had written
+	// so far -- silently, mid-run.
 	void Initialise(const char* szGameName);
+
+	// How many times Initialise() has run in this process. The SINGLE-INIT
+	// contract pin: the engine unit BootInitDoesNotWipeAutomatedTestSandbox
+	// asserts this is exactly 1, so a re-added game-owned call fails a gate
+	// instead of quietly wiping a live sandbox.
+	uint32_t GetInitialiseCallCount();
 
 	// Get the save directory path (ends with /)
 	// Windows: %APPDATA%/Zenith/<GameName>/

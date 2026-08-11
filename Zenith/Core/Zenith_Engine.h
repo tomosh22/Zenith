@@ -59,6 +59,7 @@ class Zenith_Input;
 class Zenith_InputActions;
 class Zenith_SelectionSystem;
 class Zenith_Pointers;
+class Zenith_UserSettings;
 class Zenith_TerrainEditor;
 class Zenith_UndoSystem;
 class Zenith_Multithreading;
@@ -127,6 +128,9 @@ public:
 	// The action layer (B4/B5/B8): named actions over the device layer, gated by
 	// the active profile's scheme mask.
 	Zenith_InputActions& Actions();
+	// The engine-owned player-preference store (B12), read at boot from the
+	// "user_settings" SaveData slot. Today: the persisted input-profile override.
+	Zenith_UserSettings& UserSettings();
 	Flux_RendererImpl& FluxRenderer();
 	Flux_GraphicsImpl& FluxGraphics();
 	// Pointer-or-null variant. Lets late-teardown callers (e.g. a material destructor
@@ -242,6 +246,7 @@ private:
 	Zenith_Input*                   m_pxInput           = nullptr;
 	Zenith_Pointers*                m_pxPointers        = nullptr;
 	Zenith_InputActions*            m_pxInputActions    = nullptr;
+	Zenith_UserSettings*            m_pxUserSettings    = nullptr;
 	Flux_RendererImpl*                  m_pxFluxRenderer    = nullptr;
 	Flux_GraphicsImpl*                  m_pxFluxGraphics    = nullptr;
 	Flux_PlatformAPI*               m_pxVulkan          = nullptr;

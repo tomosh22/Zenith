@@ -2248,10 +2248,11 @@ void Project_RegisterGameComponents()
 	// in-process in every config.
 	ZM_RegisterGraphNodes();
 
-	// Save/load persistence root: %APPDATA%/Zenith/Zenithmon/. The versioned
-	// per-module save schema lands at S7 (Docs/SaveFormat.md); initialising from
-	// S0 keeps the test-hook plumbing live from the first commit.
-	Zenith_SaveData::Initialise("Zenithmon");
+	// (The save-persistence root — %APPDATA%/Zenith/Zenithmon/ — is no longer set
+	// up here. Zenith_SaveData::Initialise is the ENGINE's, called with
+	// Project_GetName() BEFORE this hook runs, so it happens exactly once per
+	// process; see the B12 boot order in Zenith_Engine::InitialiseProject. Every
+	// save call below is unaffected: the root is already live when this returns.)
 
 #ifdef ZENITH_INPUT_SIMULATOR
 	// Between-tests reset for batched automated tests. The harness force-loads

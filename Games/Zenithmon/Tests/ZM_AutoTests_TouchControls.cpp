@@ -733,8 +733,8 @@ namespace
 			{
 				// ONE Step, TWO fingers. Both land in the same step-7 injection, so
 				// the pointer table hands out two live slots and the two widgets
-				// each claim their own -- the property a single-touch table (the
-				// deleted Zenith_TouchInput) could not have.
+				// each claim their own -- the property a single-touch design
+				// could not have.
 				Zenith_Maths::Vector2 xStickPoint(0.0f);
 				Zenith_Maths::Vector2 xButtonPoint(0.0f);
 				if (!StickTouchPoint(0.0f, -0.6f, xStickPoint)

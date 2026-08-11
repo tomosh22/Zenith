@@ -66,7 +66,7 @@
 // consumed ONLY by DP_PauseMenu.bgraph, whose first gate is
 // (shown || runOver) -- the pause overlay must already be up, or the run
 // already over. While that gate is closed the two pad presses are inert and
-// only DROP / INTERACT act; while it is open the gameplay scene is paused, so
+// only DROP / INTERACT / CAMERA_ROTATE act; while it is open the gameplay scene is paused, so
 // the villager shim and the interactables are not ticking to see them. That
 // STATE GATE IS THE GAME'S OWN and stays where it is: this migration does not
 // invent per-context action masks, and adding them would be a gameplay change.

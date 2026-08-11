@@ -278,6 +278,22 @@ public:
 
 	bool IsInputArmed() const { return m_bInputArmed; }
 
+	// Does the running game bind the platform's system-BACK gesture to anything?
+	//
+	// The answer is a REGISTRATION fact, so it lives here at the device layer
+	// rather than being walked out of the action layer's public surface. The
+	// platform entry point that has to decide whether to CONSUME Android's Back
+	// gesture sits BELOW Input in the layer DAG and cannot ask the action layer at
+	// all; it can reach the device layer through the window funnel it already uses
+	// for every other input path. Zenith_InputActions raises the flag from
+	// RegisterBinding — Actions -> Input is the legal DOWN edge, and the reference
+	// was injected at its Initialise.
+	//
+	// Sticky, and deliberately NOT cleared by ResetTransientForTest: a binding is
+	// registered once at boot and is not per-frame state.
+	void NotifySystemBackBindingRegistered() { m_bSystemBackBindingRegistered = true; }
+	bool HasSystemBackBinding() const { return m_bSystemBackBindingRegistered; }
+
 	// Resync the held key table against a live-device probe, synthesizing the
 	// releases the FIFO lost. The probe is a function pointer (no std::function
 	// in this codebase): Windows passes a GLFW thunk, units pass a synthetic one.
@@ -352,4 +368,8 @@ private:
 
 	Zenith_Maths::Vector2_64 m_xProjectedPointerPos = { 0.0, 0.0 };
 	int32_t                  m_iPrimaryPointerId    = -1;
+
+	// Raised by Zenith_InputActions::RegisterBinding the first time a SYSTEM_BACK
+	// row is registered; sticky for the life of the process.
+	bool                     m_bSystemBackBindingRegistered = false;
 };

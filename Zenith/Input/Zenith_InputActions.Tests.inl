@@ -556,6 +556,38 @@ ZENITH_TEST(InputActions, SystemBackResolvesUnderAnyMask)
 		"an ordinary keyboard row is still gated by the mask");
 }
 
+// Registering a SYSTEM_BACK row publishes the fact DOWN to the device layer.
+//
+// This is the whole "should the platform CONSUME Back?" contract, and it has to
+// live at the bottom: Android's entry point sits BELOW Input in the layer DAG,
+// so it can read a flag off Zenith_Input through the window funnel but can never
+// ask Zenith_InputActions. Nothing on the platform side is compiled on win64, so
+// this unit is the only thing that can catch the answer going stale.
+ZENITH_TEST(InputActions, SystemBackBindingFlagsTheDeviceLayer)
+{
+	Zenith_ActionTestRig xRig;
+	ZENITH_ASSERT_FALSE(xRig.m_xInput.HasSystemBackBinding(),
+		"a fresh device layer has no SYSTEM_BACK binding — an un-bound Back must keep the platform's own behaviour");
+
+	xRig.m_xActions.RegisterAction(uTEST_ACTION_B, "Fire", INPUT_ACTION_BUTTON);
+	xRig.m_xActions.RegisterBinding(uTEST_ACTION_B, Zenith_InputBinding::KeySet(ZENITH_KEY_F));
+	ZENITH_ASSERT_FALSE(xRig.m_xInput.HasSystemBackBinding(),
+		"an ordinary binding does not flip it");
+
+	xRig.m_xActions.RegisterAction(uTEST_ACTION_A, "Cancel", INPUT_ACTION_BUTTON);
+	xRig.m_xActions.RegisterBinding(uTEST_ACTION_A, Zenith_InputBinding::SystemBack());
+	ZENITH_ASSERT_TRUE(xRig.m_xInput.HasSystemBackBinding(),
+		"a SYSTEM_BACK row flips the device-layer flag, which is what makes the platform consume Back");
+
+	// Registrations are not per-frame state: the between-tests reset clears the
+	// transient input state and must leave this alone, or a game's Back would go
+	// dead for every test after the first.
+	xRig.m_xInput.ResetTransientForTest();
+	xRig.m_xActions.ResetTransientForTest();
+	ZENITH_ASSERT_TRUE(xRig.m_xInput.HasSystemBackBinding(),
+		"...and survives ResetTransientForTest, which clears state but never registrations");
+}
+
 ZENITH_TEST(InputActions, ProfileAutoSwitchOnActivity)
 {
 	Zenith_ActionTestRig xRig;

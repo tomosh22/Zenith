@@ -18,8 +18,9 @@
 // (pressed / released) latch previous state as per-instance members - the
 // established per-graph-instance state pattern.
 //
-// Everything routes through g_xEngine.Input(), which is Zenith_InputSimulator-
-// aware - automated tests drive these nodes through real input paths.
+// Everything routes through DeviceInput() / ActionLayer() below, which are the
+// engine's own instances and Zenith_InputSimulator-aware - automated tests drive
+// these nodes through real input paths.
 //
 // TWO LAYERS LIVE HERE, DELIBERATELY. The Key/Mouse/Pointer nodes are the
 // DEVICE layer (a graph naming a physical code); the Action nodes at the bottom
@@ -32,6 +33,26 @@
 
 namespace
 {
+	//==========================================================================
+	// The TWO engine-singleton reaches this whole TU is allowed.
+	//
+	// Every node body below goes through these instead of naming g_xEngine
+	// itself. Spelling the singleton once per node put this file at 21 reaches --
+	// over the architecture gate's per-file ceiling -- for no gain: the accessors
+	// inline away, and a node body reads better naming the LAYER it is asking
+	// (DEVICE vs ACTION) than repeating the global.
+	//==========================================================================
+
+	Zenith_Input& DeviceInput()
+	{
+		return g_xEngine.Input();
+	}
+
+	Zenith_InputActions& ActionLayer()
+	{
+		return g_xEngine.Actions();
+	}
+
 	//==========================================================================
 	// Event sources (ON_UPDATE-anchored gates)
 	//==========================================================================
@@ -46,7 +67,7 @@ namespace
 
 		GraphNodeStatus Execute(Zenith_GraphContext&) override
 		{
-			return g_xEngine.Input().WasKeyPressedThisFrame(m_iKeyCode)
+			return DeviceInput().WasKeyPressedThisFrame(m_iKeyCode)
 				? GRAPH_NODE_STATUS_SUCCESS : GRAPH_NODE_STATUS_FAILURE;
 		}
 		const char* GetTypeName() const override { return "OnKeyPressed"; }
@@ -65,7 +86,7 @@ namespace
 
 		GraphNodeStatus Execute(Zenith_GraphContext&) override
 		{
-			return g_xEngine.Input().WasKeyReleasedThisFrame(m_iKeyCode)
+			return DeviceInput().WasKeyReleasedThisFrame(m_iKeyCode)
 				? GRAPH_NODE_STATUS_SUCCESS : GRAPH_NODE_STATUS_FAILURE;
 		}
 		const char* GetTypeName() const override { return "OnKeyReleased"; }
@@ -81,7 +102,7 @@ namespace
 
 		GraphNodeStatus Execute(Zenith_GraphContext&) override
 		{
-			return g_xEngine.Input().IsKeyDown(m_iKeyCode)
+			return DeviceInput().IsKeyDown(m_iKeyCode)
 				? GRAPH_NODE_STATUS_SUCCESS : GRAPH_NODE_STATUS_FAILURE;
 		}
 		const char* GetTypeName() const override { return "OnKeyHeld"; }
@@ -102,7 +123,7 @@ namespace
 
 		GraphNodeStatus Execute(Zenith_GraphContext&) override
 		{
-			Zenith_Input& xInput = g_xEngine.Input();
+			Zenith_Input& xInput = DeviceInput();
 			bool bFire = false;
 			switch (m_iMode)
 			{
@@ -128,7 +149,7 @@ namespace
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_Maths::Vector2_64 xDelta;
-			g_xEngine.Input().GetMouseDelta(xDelta);
+			DeviceInput().GetMouseDelta(xDelta);
 			if (xDelta.x == 0.0 && xDelta.y == 0.0)
 			{
 				return GRAPH_NODE_STATUS_FAILURE;
@@ -161,8 +182,8 @@ namespace
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			const bool bState = (m_iMode == 1)
-				? g_xEngine.Input().WasKeyPressedThisFrame(m_iKeyCode)
-				: g_xEngine.Input().IsKeyDown(m_iKeyCode);
+				? DeviceInput().WasKeyPressedThisFrame(m_iKeyCode)
+				: DeviceInput().IsKeyDown(m_iKeyCode);
 			Zenith_PropertyValue xValue;
 			xValue.SetBool(bState);
 			xContext.m_pxBlackboard->SetValue(m_strResultVar, xValue);
@@ -188,7 +209,7 @@ namespace
 
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
-			Zenith_Input& xInput = g_xEngine.Input();
+			Zenith_Input& xInput = DeviceInput();
 			Zenith_Maths::Vector3 xDirection(0.0f);
 			if (xInput.IsKeyDown(m_iKeyForward)) { xDirection.z += 1.0f; }
 			if (xInput.IsKeyDown(m_iKeyBack))    { xDirection.z -= 1.0f; }
@@ -219,8 +240,8 @@ namespace
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			float fAxis = 0.0f;
-			if (g_xEngine.Input().IsKeyDown(m_iPositiveKey)) { fAxis += 1.0f; }
-			if (g_xEngine.Input().IsKeyDown(m_iNegativeKey)) { fAxis -= 1.0f; }
+			if (DeviceInput().IsKeyDown(m_iPositiveKey)) { fAxis += 1.0f; }
+			if (DeviceInput().IsKeyDown(m_iNegativeKey)) { fAxis -= 1.0f; }
 			Zenith_PropertyValue xValue;
 			xValue.SetFloat(fAxis);
 			xContext.m_pxBlackboard->SetValue(m_strResultVar, xValue);
@@ -239,7 +260,7 @@ namespace
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_Maths::Vector2_64 xPosition;
-			g_xEngine.Input().GetMousePosition(xPosition);
+			DeviceInput().GetMousePosition(xPosition);
 			Zenith_PropertyValue xValue;
 			xValue.SetVector2(Zenith_Maths::Vector2(static_cast<float>(xPosition.x), static_cast<float>(xPosition.y)));
 			xContext.m_pxBlackboard->SetValue(m_strResultVar, xValue);
@@ -259,7 +280,7 @@ namespace
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_Maths::Vector2_64 xDelta;
-			g_xEngine.Input().GetMouseDelta(xDelta);
+			DeviceInput().GetMouseDelta(xDelta);
 			Zenith_PropertyValue xValue;
 			xValue.SetVector2(Zenith_Maths::Vector2(
 				static_cast<float>(xDelta.x) * m_fSensitivity,
@@ -281,7 +302,7 @@ namespace
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_PropertyValue xValue;
-			xValue.SetBool(g_xEngine.Input().IsMouseButtonHeld(m_iButton));
+			xValue.SetBool(DeviceInput().IsMouseButtonHeld(m_iButton));
 			xContext.m_pxBlackboard->SetValue(m_strResultVar, xValue);
 			return GRAPH_NODE_STATUS_SUCCESS;
 		}
@@ -298,7 +319,7 @@ namespace
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_PropertyValue xValue;
-			xValue.SetFloat(g_xEngine.Input().GetMouseWheelDelta());
+			xValue.SetFloat(DeviceInput().GetMouseWheelDelta());
 			xContext.m_pxBlackboard->SetValue(m_strResultVar, xValue);
 			return GRAPH_NODE_STATUS_SUCCESS;
 		}
@@ -400,10 +421,10 @@ namespace
 	//==========================================================================
 	// ACTION-LAYER nodes (B10)
 	//
-	// These name an ACTION, never a device code, and read the closed state of
-	// g_xEngine.Actions(). A graph anchored on ON_UPDATE runs at frame-contract
-	// step 11, after both close stages (10b / 10e), so an action source node
-	// sees THIS frame's edges - exactly what a C++ consumer sees.
+	// These name an ACTION, never a device code, and read the closed state of the
+	// action layer. A graph anchored on ON_UPDATE runs at frame-contract step 11,
+	// after both close stages (10b / 10e), so an action source node sees THIS
+	// frame's edges - exactly what a C++ consumer sees.
 	//==========================================================================
 
 	// Name -> id resolution, cached per NODE INSTANCE.
@@ -433,7 +454,7 @@ namespace
 			m_bResolved       = true;
 			m_uActionID       = strActionName.empty()
 				? uINPUT_ACTION_INVALID
-				: g_xEngine.Actions().FindActionByName(strActionName.c_str());
+				: ActionLayer().FindActionByName(strActionName.c_str());
 
 			if (m_uActionID == uINPUT_ACTION_INVALID && !strActionName.empty())
 			{
@@ -461,7 +482,7 @@ namespace
 		GraphNodeStatus Execute(Zenith_GraphContext&) override
 		{
 			const Zenith_InputActionID uAction = m_xActionRef.Resolve(m_strAction);
-			return (uAction != uINPUT_ACTION_INVALID && g_xEngine.Actions().WasPressedThisFrame(uAction))
+			return (uAction != uINPUT_ACTION_INVALID && ActionLayer().WasPressedThisFrame(uAction))
 				? GRAPH_NODE_STATUS_SUCCESS : GRAPH_NODE_STATUS_FAILURE;
 		}
 		const char* GetTypeName() const override { return "OnActionPressed"; }
@@ -484,7 +505,7 @@ namespace
 		GraphNodeStatus Execute(Zenith_GraphContext&) override
 		{
 			const Zenith_InputActionID uAction = m_xActionRef.Resolve(m_strAction);
-			return (uAction != uINPUT_ACTION_INVALID && g_xEngine.Actions().WasReleasedThisFrame(uAction))
+			return (uAction != uINPUT_ACTION_INVALID && ActionLayer().WasReleasedThisFrame(uAction))
 				? GRAPH_NODE_STATUS_SUCCESS : GRAPH_NODE_STATUS_FAILURE;
 		}
 		const char* GetTypeName() const override { return "OnActionReleased"; }
@@ -504,7 +525,7 @@ namespace
 		GraphNodeStatus Execute(Zenith_GraphContext&) override
 		{
 			const Zenith_InputActionID uAction = m_xActionRef.Resolve(m_strAction);
-			return (uAction != uINPUT_ACTION_INVALID && g_xEngine.Actions().IsHeld(uAction))
+			return (uAction != uINPUT_ACTION_INVALID && ActionLayer().IsHeld(uAction))
 				? GRAPH_NODE_STATUS_SUCCESS : GRAPH_NODE_STATUS_FAILURE;
 		}
 		const char* GetTypeName() const override { return "OnActionHeld"; }
@@ -533,7 +554,7 @@ namespace
 				return GRAPH_NODE_STATUS_FAILURE;
 			}
 			Zenith_PropertyValue xValue;
-			xValue.SetFloat(g_xEngine.Actions().GetAxis1D(uAction));
+			xValue.SetFloat(ActionLayer().GetAxis1D(uAction));
 			xContext.m_pxBlackboard->SetValue(m_strResultVar, xValue);
 			return GRAPH_NODE_STATUS_SUCCESS;
 		}
@@ -563,7 +584,7 @@ namespace
 				return GRAPH_NODE_STATUS_FAILURE;
 			}
 			Zenith_Maths::Vector2 xAxis(0.0f, 0.0f);
-			g_xEngine.Actions().GetAxis2D(uAction, xAxis);
+			ActionLayer().GetAxis2D(uAction, xAxis);
 			Zenith_PropertyValue xValue;
 			xValue.SetVector2(xAxis);
 			xContext.m_pxBlackboard->SetValue(m_strResultVar, xValue);

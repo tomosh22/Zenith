@@ -39,6 +39,10 @@ Games/Zenithmon/
                                  #     "is the human bake loadable right now?" seam;
                                  #     how a test forces the cold-start fallback
                                  #     without touching shared baked files
+  Source/ZM_Bindings.h           # THE ACTION TABLE (input program C2) -- the only
+                                 #   production file allowed to spell a raw key, pad
+                                 #   button or virtual-source id; also the game's
+                                 #   NON-CONSUMING action readers
   Source/UI/, Source/Save/, ...  # + Core, Gen, Graph, Interaction, Nav, Party,
                                  #   Shop, CareCenter -- by-value, non-ECS logic
   Tests/ZM_Tests_*.cpp           # Boot, data, stats, battle, and integrity units
@@ -135,6 +139,65 @@ and both times with every existing guard green. Read both before touching it:
 
 See `Docs/DecisionLog.md` ZM-D-179 and ZM-D-183 / `Docs/Questions.md`
 Q-2026-08-01-002.
+
+## Controls (the action table)
+
+Every control is an ACTION registered in **`Source/ZM_Bindings.h`** — the one
+production file in this game allowed to spell a raw key, pad button or
+virtual-source id (input program C2). **Three profiles, ONE SCHEME EACH**:
+`P_KEYBOARD {KEYBOARD}`, `P_TOUCH {TOUCH}` and `P_GAMEPAD {GAMEPAD}`, and the
+active one switches automatically on the first input from another device.
+Windows boots into `P_KEYBOARD`, Android into `P_TOUCH`.
+
+| Action (registered name) | Keyboard | Touch (on-screen) | Gamepad |
+|---|---|---|---|
+| MOVE `"Move"` | W/A/S/D + arrows | virtual stick | Left stick + d-pad |
+| RUN `"Run"` | Shift (either) ★ | virtual button | B ★ |
+| INTERACT `"Interact"` | E | virtual button | X |
+| CONFIRM `"Confirm"` | Enter / Space | virtual button | A |
+| CANCEL `"Cancel"` | Escape / Backspace | virtual button | B ★ + **SYSTEM_BACK** † |
+| MENU `"Menu"` | M / Tab | virtual button | Start |
+| MENU_UP `"MenuUp"` | W / Up ‡ | — (tap the entry) ‡ | d-pad Up |
+| MENU_DOWN `"MenuDown"` | S / Down ‡ | — (tap the entry) ‡ | d-pad Down |
+
+The registered NAME strings matter: they are what an on-screen control's
+`SetAction` takes and what a Behaviour Graph node would name, so they are
+contract, not decoration.
+
+**MOUSE deliberately belongs to no profile.** This game has no mouse-sourced
+action; menu taps ride the pointer table
+(`Zenith_UICanvas::NotifyPointerActivate`), which is not scheme-gated, so
+clicking a button on desktop works without a MOUSE column existing.
+
+† **CANCEL carries the platform Back gesture, and that row is MASK-EXEMPT.**
+Android's system Back must close a menu whatever profile is active, and it is
+excluded from activity detection so it cannot itself change one. It is also what
+makes `Zenith_Android_Main` CONSUME Back for this game (a game with no
+SYSTEM_BACK row leaves the platform's own behaviour alone) — see
+`Zenith/Android/CLAUDE.md`.
+
+★ **Pad B is bound twice, and Shift/RUN is a held read while CANCEL is an edge
+read.** `ReadRunHeld` asks `IsHeld`; `ReadCancelPressed` asks
+`WasPressedThisFrame`. INTERACT is deliberately NOT aliased onto CONFIRM's face
+(X vs A): the two are live in different contexts on touch, but on a pad both
+exist at once and aliasing them would open a menu every time the player talked
+to somebody.
+
+‡ MENU_UP / MENU_DOWN are the battle menu's vertical cursor. Same keys as
+forward/back movement by design, but as their OWN actions so a rebind of walking
+cannot silently rebind the battle cursor. No TOUCH row — a touch player taps the
+entry directly.
+
+Menu navigation (arrows or the d-pad to move focus, Enter/Space or pad A to
+activate, tap/click to press a button) is the ENGINE-reserved UI action set
+(ids 0-15), which every game gets without registering anything — which is also
+why the pad faces and d-pad above are shared with it.
+
+The four on-screen controls live on the persistent `ZM_TouchRoot` entity's UI
+component (stick bottom-left, A/B bottom-right, MENU top-right, all authored
+HIDDEN); `ZM_TouchLayoutController` shows the ones the current context wants, at
+frame-contract step 9. Each publishes through **one virtual source per ACTION,
+never per widget**.
 
 ## Testing
 

@@ -264,13 +264,16 @@ every JSON says passed — crash-mid-suite guard), and a slowest-tests report.
 - Frame ceiling defaults to 8500 — a runaway backstop covering the slowest
   known suite; each test's own `m_iMaxFrames` governs its budget.
 - Results default to `Build/artifacts/test_results/<game>/` (gitignored).
-- Current suite baselines: **CityBuilder 46**, **DevilsPlayground 159**
-  (both observed 2026-08-09 via `zenith test all --headless`; the previous 45/158
-  had been stale — these are per-game AUTOMATED suites, which no gate pins the way
-  `run_unit_gate.ps1` pins the engine unit count, so they drift silently).
+- Current suite baselines: **Combat 16**, **TilePuzzle 2**, **CityBuilder 47**,
+  **DevilsPlayground 160**, **Zenithmon 61**, **RenderTest 16** (all observed
+  2026-08-11 at the input program's closing gate, headless AND windowed; each
+  game gained a sim-pad smoke test, ZM gained six touch tests. These are
+  per-game AUTOMATED suites, which no gate pins the way `run_unit_gate.ps1`
+  pins the engine unit count, so they drift silently. ZM windowed carries ONE
+  known pre-existing failure: `ZM_InteriorTintPixels_Test`).
 
 **Engine unit tests** run at every boot unless `--skip-unit-tests`. Baseline:
-**1590 ran, 0 failed** (observed 2026-08-11 on a `Null_` Combat build; 1437 + 19 + 1
+**1600 ran, 0 failed** (observed 2026-08-11 on a `Null_` Combat build; 1437 + 19 + 1
 from compressed-vertex Phase 6 T6.a's instance-stream flips — 3 uint16x4 codec
 units plus 4/5/4/3 packed-lane units for Text/Quads/Particles/Gizmos — then + 2 for
 the scene-publish guard's `Editor.SceneSaveDeltaClassifiesPublish` /
@@ -294,7 +297,9 @@ focus nav on the engine-reserved UI actions, then + 13 for the input program's
 WP3a: the on-screen `Zenith_UIVirtualStick`/`Zenith_UIVirtualButton` widgets —
 deadzone/recentre/disarm/suppression semantics and their serialization
 round trip, then + 4 for WP4a's B10 graph action nodes — OnActionPressed/
-Released/Held + ReadActionAxis1D/2D and their builder factories) — the
+Released/Held + ReadActionAxis1D/2D and their builder factories, then + 10 for
+WP6's `Zenith_UserSettings` persistence store and the SYSTEM_BACK device-layer
+flag) — the
 authority is the `-Baseline` default in `Tools/run_unit_gate.ps1`, not this
 number; read it there if the two ever disagree.
 
@@ -373,7 +378,7 @@ Concurrency groups cancel superseded PR runs (master pushes always complete).
 |----------|-------|
 | `cb-tests` | CityBuilder Vulkan `_True` compile proof + **Null `_True` build (the exe every step runs)** + D3D12 `_False` link proof + 45-test headless suite via `zenith test` |
 | `dp-tests` | Same shape for DevilsPlayground (158 tests) |
-| `engine-gate` | Sentinels (`Vulkan_Debug_Win64_False`) built AND executed + Combat unit gate (`Tools/run_unit_gate.ps1`; it passes no `-Baseline`, so the script's default is the pin — 1590 as of 2026-08-11 — known flake tolerated). Rollout: dispatch → burn-in → required |
+| `engine-gate` | Sentinels (`Vulkan_Debug_Win64_False`) built AND executed + Combat unit gate (`Tools/run_unit_gate.ps1`; it passes no `-Baseline`, so the script's default is the pin — 1600 as of 2026-08-11 — known flake tolerated). Rollout: dispatch → burn-in → required |
 | `release-build` | NIGHTLY (not PR-blocking): engine + DP in `Vulkan_vs2022_Release_Win64_True`, build-only — the only Release compile in CI |
 | `shader-validation` | FluxCompiler (Release `_True`) catalog/parity/spine-lint + git-status drift gate on shader outputs |
 | `scaffold-smoke` | Path-filtered end-to-end `zenith new` → build → boot (units baseline) → teardown leaves git status identical |

@@ -73,6 +73,74 @@ All elements have:
 | `Zenith_UIVirtualStick` | On-screen thumbstick: `StickMode` (`FIXED`/`FLOATING`), radius + deadzone fraction, activation slop, publishes AXIS2D (+y FORWARD) |
 | `Zenith_UIVirtualButton` | On-screen action button: hit slop, publishes HELD; no callback and no focus (that is `Zenith_UIButton`'s job) |
 
+### The UI INPUT phase (frame contract step 10)
+
+Input and rendering are **two separate passes over the canvas**, and the split is
+load-bearing: `Update()` / `Render()` are the VISUAL path and a frame is free to
+skip them (a scene transition submits no render work), so **nothing there may
+change input state**. Everything interactive happens in the input phase, which
+`Zenith_UISystem::UpdateInput(Zenith_InputActions&, Zenith_Pointers&, float)`
+drives from `Zenith_Core::Zenith_MainLoop` BEFORE game logic — so a widget
+consumes a press the same frame gameplay would otherwise have seen it. Both
+layers are passed IN by reference; no widget reaches `g_xEngine`.
+
+| Sub-step | Who | What |
+|---|---|---|
+| **10a** | `Canvas::UpdateSize()` | Layout refresh FIRST. Bounds recompute lazily off the dirty flag, so a resize or rotation this frame is reflected before the first hit test — never hit-tested against last frame's bounds. Run at the head of BOTH walks below. |
+| **10b** | `Actions().FinalizeReservedUI()` then `Canvas::UpdateFocusNavigation()` | The engine-reserved UI actions (ids 0-15) close FIRST, then every visible canvas consumes them. Before the capture walk, so a widget claim can never suppress UI navigation. |
+| **10c** | `Canvas::UpdatePointerInput()` | The standard-control capture walk. Claims are taken here. |
+| **10d** | `Canvas::UpdateVirtualControls()` | The B9 virtual producers claim and publish. |
+| **10e** | `Actions().FinalizeGameplay()` | Everything else closes, with claim suppression applied against the final claim state. |
+
+The whole phase is wrapped in a `Zenith_SceneUpdateDeferralGuard`: a click
+callback that queues a `LoadScene` must not tear the scene down underneath the
+walk. It brackets BOTH walks, because a focus-navigation confirm fires exactly
+the same callbacks a click does.
+
+#### Focus navigation (10b) — reserved actions only
+
+`UpdateFocusNavigation(const Zenith_InputActions&)` reads **only** the five
+reserved actions: `UI_NAV_UP/DOWN/LEFT/RIGHT` → `NavigateUp/Down/Left/Right()`,
+`UI_CONFIRM` → `ActivateFocused()`. A canvas no longer reads a raw key or pad
+button anywhere, and the four directions are an `else if` chain because each
+reserved action ALREADY merges its arrow key with its d-pad direction — the two
+parallel chains this replaced could both fire in one frame and navigate twice.
+
+The canvas is the **SOLE** owner of keyboard/gamepad activation; the button's own
+Enter/Space path is gone, so there is exactly one route from a confirm to a
+widget and it goes through the focused element. `NotifyPointerActivate` sets
+focus BEFORE raising the activate edge, so a consumer dispatching by focused-element
+name sees a consistent pair within the frame.
+
+Because the input reads are non-consuming, every visible canvas sees the same
+confirm — mutual exclusion between canvases is the game's business, not the
+engine's.
+
+#### The capture walk (10c) and the claim rules
+
+* **Order is authored pre-order** — roots in order, parent before children,
+  visible-only — the exact order the update pass walks. That is what makes
+  "first claim wins" a deterministic answer rather than a race.
+* **Claims live in `Zenith_Pointers`** (`ClaimPointer` / `ReleaseClaim`, owner
+  token = the widget's own address). FIRST claim wins; a claim survives the
+  terminal UP/CANCEL frame so its owner can see the edge.
+* **A claim is what suppresses gameplay.** At 10e the action layer drops any
+  pointer-sourced transition (`TOUCH_PRIMARY`, and `MOUSE_BUTTON` fed by a
+  pointer — the B3 projection and a real Windows mouse alike) whose pointer is
+  claimed, press and matching release together. Keyboard and gamepad rows are
+  never claim-filtered.
+* **Drag-off keeps the claim** and clears `m_bPointerInside`: the button
+  un-presses visually and a release outside does not click, but the gesture
+  stays consumed so nothing behind it can pick it up mid-drag.
+* **Mutation during the walk is deferred.** The canvas is in an input pass
+  (`IsInputPassActive()`): element creation is queued and deletion deferred, so
+  a click callback that builds or destroys UI cannot invalidate the snapshot the
+  walk is iterating. An element already marked `IsPendingDestroy()` is SKIPPED —
+  logically gone means it must not still take clicks.
+* Tools-only: a button ignores clicks while the editor is Stopped and no
+  simulator is driving (`IsInputSuppressedByEditor`) — the canvas is being
+  AUTHORED, not played.
+
 ### On-screen controls (B9) — the virtual producers
 
 `Zenith_UIVirtualStick` / `Zenith_UIVirtualButton` are GAMEPLAY controls, not menu
