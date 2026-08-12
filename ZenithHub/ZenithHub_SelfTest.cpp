@@ -118,13 +118,25 @@ int ZenithHub_SelfTest::Run(const char* szRepoRoot)
 		Check(axGames.size() >= 5, "ScanGames found >= 5 games");
 
 		bool bCombat = false, bCombatAndroid = false;
+		bool bCombatWinReady = false, bCombatWinStale = true;
+		bool bCombatAgdeReady = false, bCombatAgdeStale = true;
 		bool bCityBuilder = false, bCityBuilderAndroid = true;
 		for (const HubGame& xGame : axGames)
 		{
-			if (xGame.strName == "Combat") { bCombat = true; bCombatAndroid = xGame.bAndroid; }
+			if (xGame.strName == "Combat")
+			{
+				bCombat = true;
+				bCombatAndroid = xGame.bAndroid;
+				bCombatWinReady = xGame.bWin64SlnReady;
+				bCombatWinStale = xGame.bWin64SlnStale;
+				bCombatAgdeReady = xGame.bAgdeSlnReady;
+				bCombatAgdeStale = xGame.bAgdeSlnStale;
+			}
 			if (xGame.strName == "CityBuilder") { bCityBuilder = true; bCityBuilderAndroid = xGame.bAndroid; }
 		}
 		Check(bCombat && bCombatAndroid, "Combat present, android:true");
+		Check(bCombatWinReady && !bCombatWinStale, "Combat win64 solution matches generated manifest");
+		Check(bCombatAgdeReady && !bCombatAgdeStale, "Combat AGDE solution matches generated manifest");
 		Check(bCityBuilder && !bCityBuilderAndroid, "CityBuilder present, android:false");
 	}
 

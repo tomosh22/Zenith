@@ -1,9 +1,11 @@
 #pragma once
 
 #include <cstdint>
-#include <fstream>
+#include <cstring>
 #include <limits>
 #include <type_traits>
+
+#include "FileAccess/Zenith_FileAccess.h"
 
 // ============================================================================
 // Zenith_BakedMeshReader
@@ -20,6 +22,15 @@
 // copies of a bounds-checking file reader is the worst possible thing to let
 // drift: a fix applied to one leaves the other reading past the end.
 //
+// ★ Goes through Zenith_FileAccess, NEVER a raw std::ifstream. On Android a
+// baked .zmesh lives inside the APK, reachable only via AAssetManager — an
+// ifstream against the bare relative path silently fails to open (there is no
+// such path on the real filesystem), which used to make EVERY terrain chunk
+// (and the combined physics mesh) read as "missing or invalid" on-device,
+// while the exact same asset tree loaded fine on Windows. See
+// Zenith/Android/CLAUDE.md's file-access section: any engine-owned file must
+// be reached through Zenith_FileAccess, not std::ifstream/std::filesystem.
+//
 // ReadAttribute encodes the .zmesh optional-attribute convention — one leading
 // one-byte present flag, then the payload if present. The two call sites'
 // variants unified exactly: the streaming side's "absent is only OK if we did
@@ -29,17 +40,27 @@ class Zenith_BakedMeshReader
 {
 public:
 	explicit Zenith_BakedMeshReader(const char* szPath)
-		: m_xFile(szPath, std::ios::binary | std::ios::ate)
 	{
-		if (!m_xFile.good())
+		uint64_t ulFileSize = 0;
+		m_pcData = Zenith_FileAccess::ReadFile(szPath, ulFileSize);
+		if (m_pcData == nullptr || ulFileSize == 0)
+		{
 			return;
-		const std::streamoff iSize = static_cast<std::streamoff>(m_xFile.tellg());
-		if (iSize <= 0)
-			return;
-		m_ulRemaining = static_cast<uint64_t>(iSize);
-		m_xFile.seekg(0, std::ios::beg);
-		m_bValid = m_xFile.good();
+		}
+		m_ulRemaining = ulFileSize;
+		m_bValid = true;
 	}
+
+	~Zenith_BakedMeshReader()
+	{
+		if (m_pcData != nullptr)
+		{
+			Zenith_FileAccess::FreeFileData(m_pcData);
+		}
+	}
+
+	Zenith_BakedMeshReader(const Zenith_BakedMeshReader&) = delete;
+	Zenith_BakedMeshReader& operator=(const Zenith_BakedMeshReader&) = delete;
 
 	template<typename T>
 	bool Read(T& xValue)
@@ -50,34 +71,23 @@ public:
 
 	bool ReadBytes(void* pData, uint64_t ulSize)
 	{
-		if (!m_bValid || pData == nullptr || ulSize > m_ulRemaining ||
-			ulSize > static_cast<uint64_t>((std::numeric_limits<std::streamsize>::max)()))
+		if (!m_bValid || pData == nullptr || ulSize > m_ulRemaining)
 		{
 			return false;
 		}
-		m_xFile.read(static_cast<char*>(pData), static_cast<std::streamsize>(ulSize));
-		if (!m_xFile || static_cast<uint64_t>(m_xFile.gcount()) != ulSize)
-		{
-			m_bValid = false;
-			return false;
-		}
+		std::memcpy(pData, m_pcData + m_ulCursor, static_cast<size_t>(ulSize));
+		m_ulCursor += ulSize;
 		m_ulRemaining -= ulSize;
 		return true;
 	}
 
 	bool Skip(uint64_t ulSize)
 	{
-		if (!m_bValid || ulSize > m_ulRemaining ||
-			ulSize > static_cast<uint64_t>((std::numeric_limits<std::streamoff>::max)()))
+		if (!m_bValid || ulSize > m_ulRemaining)
 		{
 			return false;
 		}
-		m_xFile.seekg(static_cast<std::streamoff>(ulSize), std::ios::cur);
-		if (!m_xFile)
-		{
-			m_bValid = false;
-			return false;
-		}
+		m_ulCursor += ulSize;
 		m_ulRemaining -= ulSize;
 		return true;
 	}
@@ -107,7 +117,8 @@ public:
 	bool IsAtEnd() const { return m_bValid && m_ulRemaining == 0u; }
 
 private:
-	std::ifstream m_xFile;
+	char* m_pcData = nullptr;
+	uint64_t m_ulCursor = 0;
 	uint64_t m_ulRemaining = 0;
 	bool m_bValid = false;
 };

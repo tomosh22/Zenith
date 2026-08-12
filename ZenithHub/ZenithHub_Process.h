@@ -6,9 +6,16 @@
 struct HubJob
 {
 	void*       pProcessHandle = nullptr;   // HANDLE (opaque here to keep windows.h out of the header)
+	void*       pStdOutReadHandle = nullptr; // HANDLE to the read end of the child's stdout/stderr pipe
 	bool        bRunning = false;
 	int         iExitCode = 0;
 	std::string strLabel;
+	// Captured stdout+stderr of the child process (regen's descriptor-validation
+	// errors, Sharpmake failures, AGDE-fixup output, etc. -- previously only the
+	// final exit code was visible). Drained non-blockingly on every PollJob call
+	// so it's populated even while the job is still running, and capped so a
+	// runaway job can't grow this unbounded.
+	std::string strOutput;
 };
 
 namespace ZenithHub_Process

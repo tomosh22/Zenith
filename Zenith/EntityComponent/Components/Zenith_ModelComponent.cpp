@@ -15,7 +15,7 @@
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "ZenithECS/Zenith_Scene.h"
 #include "ZenithECS/Zenith_Query.h"
-#include <filesystem>
+#include "FileAccess/Zenith_FileAccess.h"
 
 // File-local scene-system forwarder (defined near the snapshot fill below). Forward-
 // declared here so the render-mutation bumps in ClearModel/LoadModel/AddMeshEntry — which
@@ -155,8 +155,15 @@ void Zenith_ModelComponent::LoadModel(const std::string& strPath)
 	// silently bail with "File does not exist". Zenith_AssetRegistry::Get below
 	// already handles prefixed paths, but it doesn't surface "missing file" the
 	// same way, so we keep the explicit existence check on the resolved path.
+	//
+	// ★ Zenith_FileAccess::FileExists, NEVER std::filesystem::exists — on Android
+	// the resolved path is a relative path inside the APK, reachable only via
+	// AAssetManager, and std::filesystem::exists against the real (empty) cwd
+	// silently and permanently reported every model missing. This is the same
+	// bug class as Zenith_BakedMeshReader's old std::ifstream and
+	// Zenith_AssetRegistry's old LoadSerializableAsset std::ifstream.
 	const std::string strResolvedPath = Zenith_AssetRegistry::ResolvePath(strLocalPath);
-	if (!std::filesystem::exists(strResolvedPath))
+	if (!Zenith_FileAccess::FileExists(strResolvedPath.c_str()))
 	{
 		Zenith_Error(LOG_CATEGORY_MESH, "LoadModel: File does not exist: %s (resolved: %s)",
 			strLocalPath.c_str(), strResolvedPath.c_str());

@@ -3,6 +3,7 @@
 
 	<application
 		android:hasCode="false"
+		android:extractNativeLibs="false"
 		android:label="@string/app_name">
 
 		<!-- landscape is a GAME DESIGN choice, not a technical constraint.

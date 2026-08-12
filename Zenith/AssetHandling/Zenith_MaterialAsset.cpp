@@ -4,7 +4,7 @@
 #include "AssetHandling/Zenith_AssetTypeIds.h"
 #include "DataStream/Zenith_StreamEnvelope.h"
 #include "Flux/Flux_MaterialTable.h"   // Flux_ReleaseMaterialIndex (GPU slot reclamation)
-#include <filesystem>
+#include "FileAccess/Zenith_FileAccess.h"
 
 // Static default textures (pinned via handle).
 TextureHandle Zenith_MaterialAsset::s_xDefaultWhite;
@@ -35,7 +35,10 @@ Zenith_MaterialAsset::~Zenith_MaterialAsset()
 
 Zenith_Status Zenith_MaterialAsset::LoadFromFile(const std::string& strPath)
 {
-	if (!std::filesystem::exists(strPath))
+	// Zenith_FileAccess::FileExists, never std::filesystem::exists — on Android
+	// this path is relative and reachable only via AAssetManager (see the same
+	// fix in Zenith_ModelComponent::LoadModel).
+	if (!Zenith_FileAccess::FileExists(strPath.c_str()))
 	{
 		Zenith_Error(LOG_CATEGORY_ASSET, "Material file not found: %s", strPath.c_str());
 		return Zenith_ErrorCode::FILE_NOT_FOUND;

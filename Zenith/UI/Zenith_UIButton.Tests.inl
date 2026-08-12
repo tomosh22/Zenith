@@ -77,6 +77,16 @@ namespace
 			// actions and the platform's default profile.
 			m_xActions.RegisterEngineReservedActions();
 			m_xActions.RegisterEngineDefaultProfiles();
+			// This rig drives focus/confirm with KEYBOARD + GAMEPAD, so it needs a
+			// scheme mask that resolves them -- the engine's own default profile is
+			// platform-conditional (Windows: desktop KB|MOUSE|PAD; Android: TOUCH
+			// only, since a real game replaces it before any of this matters). A
+			// game's first RegisterProfile call always wholesale-replaces the engine
+			// default (see RegisterProfile), so this mirrors exactly what any real
+			// game with a keyboard/gamepad profile does, making the rig's behaviour
+			// -- and this test -- platform-independent instead of accidentally
+			// passing only on desktop.
+			m_xActions.RegisterProfile(1, "TestDesktop", uINPUT_SCHEME_MASK_DESKTOP);
 		}
 
 		void BeginFrame()

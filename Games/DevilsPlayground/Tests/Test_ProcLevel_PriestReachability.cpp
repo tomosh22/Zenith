@@ -1,5 +1,6 @@
 #include "Zenith.h"
 #include "Core/Zenith_Engine.h"
+#include "Core/Zenith_PlatformEnvironment.h"
 
 #ifdef ZENITH_INPUT_SIMULATOR
 
@@ -70,7 +71,7 @@ namespace
 		char szSeed[32];
 		std::snprintf(szSeed, sizeof(szSeed), "%llu",
 			static_cast<unsigned long long>(g_aulSeeds[iIdx]));
-		_putenv_s("DP_PROCGEN_SEED", szSeed);
+		Zenith_PlatformEnvironment::SetVariable("DP_PROCGEN_SEED", szSeed);
 		// Seed changes invalidate the build-index navmesh cache; production
 		// covers this via fresh processes (seed matrix) / the between-tests
 		// hook — an in-test seed swap needs the same explicit reset.
@@ -265,7 +266,7 @@ static bool Verify_PriestReachability()
 {
 	// Always clear the seed override — later tests in the same process must
 	// get the default seed (empty string == unset for the bootstrap).
-	_putenv_s("DP_PROCGEN_SEED", "");
+	Zenith_PlatformEnvironment::SetVariable("DP_PROCGEN_SEED", "");
 
 	if (!g_bReachDone || g_bReachFailed)
 	{

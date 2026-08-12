@@ -18,10 +18,32 @@ $files = @()
 $files += Get-ChildItem -Path "$PSScriptRoot\*_agde.vcxproj" -ErrorAction SilentlyContinue
 $files += Get-ChildItem -Path "$PSScriptRoot\..\Games\*\Build\*_agde.vcxproj" -ErrorAction SilentlyContinue
 
+# Fail-fast guard against an invalid Configuration/Platform pairing (e.g. the
+# "arm64_v8a" config selected with the "Android-x86_64" platform, or vice
+# versa). Every valid *_agde.sln only ever offers the matching diagonal pair,
+# so this can only be reached by invoking an *_agde.vcxproj directly with a
+# hand-picked /p:Configuration /p:Platform (or a stale IDE "recent project"
+# entry). Without this guard, MSBuild silently falls back to an EMPTY
+# AdditionalIncludeDirectories for the un-declared pair (there's no matching
+# ItemDefinitionGroup), producing a wall of confusing "'Zenith.h' file not
+# found" / "'imgui.h' file not found" errors instead of one clear diagnostic.
+$validateTargetMarker = 'ZenithValidateAgdeConfigPlatform'
+$validateTarget = @"
+  <Target Name="$validateTargetMarker" BeforeTargets="Build;ClCompile;Link;Lib">
+    <Error Condition="`$(Configuration.Contains('arm64_v8a')) And '`$(Platform)'!='Android-arm64-v8a'" Text="Zenith AGDE: Configuration '`$(Configuration)' requires Platform 'Android-arm64-v8a', but Platform is '`$(Platform)'. Build via the per-game *_agde.sln (never this .vcxproj directly) so Visual Studio/MSBuild only ever offers valid Configuration/Platform pairs." />
+    <Error Condition="`$(Configuration.Contains('x86_64')) And '`$(Platform)'!='Android-x86_64'" Text="Zenith AGDE: Configuration '`$(Configuration)' requires Platform 'Android-x86_64', but Platform is '`$(Platform)'. Build via the per-game *_agde.sln (never this .vcxproj directly) so Visual Studio/MSBuild only ever offers valid Configuration/Platform pairs." />
+  </Target>
+"@
+
 foreach ($f in $files) {
     Write-Host "Processing: $($f.FullName)"
     $content = Get-Content $f.FullName -Raw
     $content = $content -replace '<CppLanguageStandard>cpp20</CppLanguageStandard>', '<CppLanguageStandard>cpp2a</CppLanguageStandard>'
+
+    if ($content -notmatch [regex]::Escape($validateTargetMarker)) {
+        $content = $content -replace '(\s*)</Project>\s*$', "`r`n$validateTarget`r`n</Project>"
+    }
+
     Set-Content $f.FullName $content -Encoding UTF8 -NoNewline
     Write-Host "  Done"
 }

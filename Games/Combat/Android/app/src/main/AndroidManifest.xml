@@ -3,6 +3,7 @@
 
 	<application
 		android:hasCode="false"
+		android:extractNativeLibs="false"
 		android:label="@string/app_name">
 
 		<activity

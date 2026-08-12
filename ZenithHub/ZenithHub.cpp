@@ -190,6 +190,17 @@ static std::wstring Widen(const std::string& str)
 	return strW;
 }
 
+// Renders a per-config regen-readiness cell: green "Ready", yellow "Stale"
+// (sln predates the last regen -- Rescan/Regen again), or red "Missing"; "N/A"
+// (dim) when the game has no target of this kind (e.g. non-Android win64 row).
+static void DrawReadinessCell(bool bApplicable, bool bReady, bool bStale)
+{
+	if (!bApplicable) { ImGui::TextDisabled("N/A"); return; }
+	if (!bReady) { ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "Missing"); return; }
+	if (bStale) { ImGui::TextColored(ImVec4(1, 0.8f, 0.3f, 1), "Stale"); return; }
+	ImGui::TextColored(ImVec4(0.4f, 1, 0.4f, 1), "Ready");
+}
+
 static void StartMutation(const std::wstring& strCliArgs, const std::string& strLabel)
 {
 	if (s_xJob.bRunning) { return; }   // one mutation at a time
@@ -240,6 +251,21 @@ static void DrawHubUI()
 	if (bBusy) { ImGui::Text("[working] %s", s_szStatus); }
 	else if (s_szStatus[0]) { ImGui::TextDisabled("%s", s_szStatus); }
 
+	// Job output (regen's descriptor-validation errors, Sharpmake failures, AGDE
+	// fixup output, etc.). Previously only "regen: exit <code>" was ever shown --
+	// a partial/failed Regen was invisible. Stays visible after completion (until
+	// the next job starts) so a failure can actually be read, not just noticed.
+	if (!s_xJob.strOutput.empty())
+	{
+		const bool bFailed = !bBusy && s_xJob.iExitCode != 0;
+		ImGui::TextColored(bFailed ? ImVec4(1, 0.4f, 0.4f, 1) : ImVec4(0.7f, 0.7f, 0.7f, 1),
+			"%s output:", s_xJob.strLabel.c_str());
+		ImGui::BeginChild("JobOutput", ImVec2(0, 140), true);
+		ImGui::TextUnformatted(s_xJob.strOutput.c_str());
+		if (bBusy) { ImGui::SetScrollHereY(1.0f); }
+		ImGui::EndChild();
+	}
+
 	ImGui::Separator();
 	ImGui::Text("%zu games", s_axGames.size());
 
@@ -247,11 +273,12 @@ static void DrawHubUI()
 	const ImGuiTableFlags uFlags =
 		ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable |
 		ImGuiTableFlags_ScrollY | ImGuiTableFlags_BordersOuter | ImGuiTableFlags_BordersInnerV;
-	if (ImGui::BeginTable("Games", 5, uFlags, ImVec2(0, 0)))
+	if (ImGui::BeginTable("Games", 6, uFlags, ImVec2(0, 0)))
 	{
 		ImGui::TableSetupScrollFreeze(0, 1);
 		ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, 180.0f);
-		ImGui::TableSetupColumn("Android", ImGuiTableColumnFlags_WidthFixed, 70.0f);
+		ImGui::TableSetupColumn("Win64", ImGuiTableColumnFlags_WidthFixed, 80.0f);
+		ImGui::TableSetupColumn("Android", ImGuiTableColumnFlags_WidthFixed, 80.0f);
 		ImGui::TableSetupColumn("Built configs", ImGuiTableColumnFlags_WidthStretch);
 		ImGui::TableSetupColumn("Newest build", ImGuiTableColumnFlags_WidthFixed, 140.0f);
 		ImGui::TableSetupColumn("Actions", ImGuiTableColumnFlags_WidthFixed, 130.0f);
@@ -267,15 +294,18 @@ static void DrawHubUI()
 			ImGui::TextUnformatted(xGame.strName.c_str());
 
 			ImGui::TableSetColumnIndex(1);
-			ImGui::TextUnformatted(xGame.bAndroid ? "Yes" : "No");
+			DrawReadinessCell(true, xGame.bWin64SlnReady, xGame.bWin64SlnStale);
 
 			ImGui::TableSetColumnIndex(2);
-			ImGui::TextUnformatted(xGame.strBuiltConfigs.empty() ? "(none)" : xGame.strBuiltConfigs.c_str());
+			DrawReadinessCell(xGame.bAndroid, xGame.bAgdeSlnReady, xGame.bAgdeSlnStale);
 
 			ImGui::TableSetColumnIndex(3);
-			ImGui::TextUnformatted(xGame.strNewestBuild.empty() ? "-" : xGame.strNewestBuild.c_str());
+			ImGui::TextUnformatted(xGame.strBuiltConfigs.empty() ? "(none)" : xGame.strBuiltConfigs.c_str());
 
 			ImGui::TableSetColumnIndex(4);
+			ImGui::TextUnformatted(xGame.strNewestBuild.empty() ? "-" : xGame.strNewestBuild.c_str());
+
+			ImGui::TableSetColumnIndex(5);
 			ImGui::BeginDisabled(bBusy);
 			if (ImGui::SmallButton("Open"))
 			{

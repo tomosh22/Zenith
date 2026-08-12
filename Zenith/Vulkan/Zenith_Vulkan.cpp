@@ -113,11 +113,23 @@ static const char* s_aszDeviceExtensions[] = {
 #ifndef ZENITH_ANDROID
 				VK_KHR_FRAGMENT_SHADER_BARYCENTRIC_EXTENSION_NAME,
 #endif
-				// Core in Vulkan 1.2 - only needed as extension on 1.1 devices
-#ifndef ZENITH_ANDROID
-				VK_KHR_DRAW_INDIRECT_COUNT_EXTENSION_NAME
-#endif
 };
+
+// Optional extensions must be queried before they are enabled: requesting a
+// name the device does not enumerate makes vkCreateDevice fail with
+// VK_ERROR_EXTENSION_NOT_PRESENT.
+static bool IsDeviceExtensionSupported(const vk::PhysicalDevice& xPhysicalDevice, const char* szExtensionName)
+{
+	std::vector<vk::ExtensionProperties> xAvailable = VkUnwrap(xPhysicalDevice.enumerateDeviceExtensionProperties());
+	for (const vk::ExtensionProperties& xExt : xAvailable)
+	{
+		if (strcmp(xExt.extensionName, szExtensionName) == 0)
+		{
+			return true;
+		}
+	}
+	return false;
+}
 
 // All previously here-defined statics moved to Zenith_Vulkan.
 
@@ -1056,14 +1068,42 @@ void Zenith_Vulkan::CreateDevice()
 	}
 
 
+	std::vector<const char*> xEnabledExtensions(s_aszDeviceExtensions, s_aszDeviceExtensions + COUNT_OF(s_aszDeviceExtensions));
+
+	const vk::PhysicalDeviceProperties& xDeviceProps = m_xPhysicalDevice.getProperties();
+	const bool bDrawIndirectCountExtension =
+		IsDeviceExtensionSupported(m_xPhysicalDevice, VK_KHR_DRAW_INDIRECT_COUNT_EXTENSION_NAME);
+
+	// Prefer the extension whenever it is enumerated. Its KHR command alias is
+	// then valid on both pre-1.2 devices and drivers which retain the promoted
+	// extension alongside Vulkan 1.2+. When it is absent, the core path is legal
+	// only if the physical device advertises the Vulkan 1.2 feature; merely
+	// resolving the core proc address is not a capability test.
+	vk::PhysicalDeviceVulkan12Features xAvailableVulkan12Features;
+	if (!bDrawIndirectCountExtension && xDeviceProps.apiVersion >= VK_API_VERSION_1_2)
+	{
+		vk::PhysicalDeviceFeatures2 xAvailableFeatures;
+		xAvailableFeatures.setPNext(&xAvailableVulkan12Features);
+		m_xPhysicalDevice.getFeatures2(&xAvailableFeatures);
+	}
+	const bool bDrawIndirectCountCore =
+		!bDrawIndirectCountExtension &&
+		xDeviceProps.apiVersion >= VK_API_VERSION_1_2 &&
+		xAvailableVulkan12Features.drawIndirectCount == VK_TRUE;
+
+	if (bDrawIndirectCountExtension)
+	{
+		xEnabledExtensions.push_back(VK_KHR_DRAW_INDIRECT_COUNT_EXTENSION_NAME);
+	}
+
 	vk::DeviceCreateInfo xDeviceCreateInfo = vk::DeviceCreateInfo()
 		.setPQueueCreateInfos(xQueueInfos.data())
 		.setQueueCreateInfoCount(static_cast<uint32_t>(xQueueInfos.size()))
-		.setEnabledExtensionCount(COUNT_OF(s_aszDeviceExtensions))
-		.setPpEnabledExtensionNames(s_aszDeviceExtensions)
+		.setEnabledExtensionCount(static_cast<uint32_t>(xEnabledExtensions.size()))
+		.setPpEnabledExtensionNames(xEnabledExtensions.data())
 		.setEnabledLayerCount(0);
 
-	
+
 
 	vk::PhysicalDeviceFeatures xDeviceFeatures = vk::PhysicalDeviceFeatures()
 		.setSamplerAnisotropy(VK_TRUE)
@@ -1100,15 +1140,30 @@ void Zenith_Vulkan::CreateDevice()
 		.setShaderSampledImageArrayNonUniformIndexing(true)
 		.setPNext(&xShaderDrawFeatures);
 
+	// VkPhysicalDeviceVulkan12Features and the promoted descriptor-indexing
+	// feature struct must not coexist in one device-create chain. On the core
+	// draw-indirect-count path, enable both that feature and the four existing
+	// bindless requirements through the Vulkan 1.2 aggregate instead.
+	vk::PhysicalDeviceVulkan12Features xVulkan12Features = vk::PhysicalDeviceVulkan12Features()
+		.setDrawIndirectCount(bDrawIndirectCountCore ? VK_TRUE : VK_FALSE)
+		.setDescriptorBindingSampledImageUpdateAfterBind(true)
+		.setDescriptorBindingPartiallyBound(true)
+		.setRuntimeDescriptorArray(true)
+		.setShaderSampledImageArrayNonUniformIndexing(true)
+		.setPNext(&xShaderDrawFeatures);
+	void* pFeatureChain = bDrawIndirectCountCore
+		? static_cast<void*>(&xVulkan12Features)
+		: static_cast<void*>(&xIndexingFeatures);
+
 #ifndef ZENITH_ANDROID
 	vk::PhysicalDeviceFeatures2 xTemp;
 	vk::PhysicalDeviceFragmentShaderBarycentricFeaturesKHR xTempBary;
 	xTemp.setPNext(&xTempBary);
 	m_xPhysicalDevice.getFeatures2(&xTemp);
-	xTempBary.setPNext(&xIndexingFeatures);
+	xTempBary.setPNext(pFeatureChain);
 	xDeviceCreateInfo.setPNext(&xTempBary);
 #else
-	xDeviceCreateInfo.setPNext(&xIndexingFeatures);
+	xDeviceCreateInfo.setPNext(pFeatureChain);
 #endif
 
 	m_xDevice = VkUnwrap(m_xPhysicalDevice.createDevice(xDeviceCreateInfo));
@@ -1118,6 +1173,24 @@ void Zenith_Vulkan::CreateDevice()
 		m_axQueues[i] = m_xDevice.getQueue(m_auQueueIndices[i], 0);
 	}
 
+	// Resolve exactly the alias whose capability was enabled above. A null result
+	// remains a defensive final guard for broken ICDs, but it never promotes an
+	// unsupported device to supported status.
+	m_pfnDrawIndexedIndirectCount = nullptr;
+	if (bDrawIndirectCountExtension)
+	{
+		m_pfnDrawIndexedIndirectCount = reinterpret_cast<PFN_vkCmdDrawIndexedIndirectCount>(
+			vkGetDeviceProcAddr(static_cast<VkDevice>(m_xDevice), "vkCmdDrawIndexedIndirectCountKHR"));
+	}
+	else if (bDrawIndirectCountCore)
+	{
+		m_pfnDrawIndexedIndirectCount = reinterpret_cast<PFN_vkCmdDrawIndexedIndirectCount>(
+			vkGetDeviceProcAddr(static_cast<VkDevice>(m_xDevice), "vkCmdDrawIndexedIndirectCount"));
+	}
+	m_bDrawIndirectCountSupported = m_pfnDrawIndexedIndirectCount != nullptr;
+	Zenith_Log(LOG_CATEGORY_VULKAN, "vkCmdDrawIndexedIndirectCount: %s (driver apiVersion %u.%u.%u)",
+		m_bDrawIndirectCountSupported ? "supported" : "NOT SUPPORTED -- terrain streaming will be disabled",
+		VK_API_VERSION_MAJOR(xDeviceProps.apiVersion), VK_API_VERSION_MINOR(xDeviceProps.apiVersion), VK_API_VERSION_PATCH(xDeviceProps.apiVersion));
 
 	Zenith_Log(LOG_CATEGORY_VULKAN, "Vulkan device created");
 }

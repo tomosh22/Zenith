@@ -1074,6 +1074,15 @@ ZENITH_TEST(InputActions, UINavActionsDriveFocus)
 	Zenith_ActionTestRig xRig;
 	xRig.m_xActions.RegisterEngineDefaultProfiles();
 	xRig.m_xActions.RegisterEngineReservedActions();
+	// This test drives focus/confirm with KEYBOARD + GAMEPAD, so it needs a
+	// scheme mask that resolves them -- the engine's own default profile is
+	// platform-conditional (Windows: desktop KB|MOUSE|PAD; Android: TOUCH only,
+	// since a real game replaces it before any of this matters). A game's first
+	// RegisterProfile call always wholesale-replaces the engine default (see
+	// RegisterProfile), so this mirrors exactly what any real game with a
+	// keyboard/gamepad profile does, making the test platform-independent
+	// instead of accidentally passing only on desktop.
+	xRig.m_xActions.RegisterProfile(1, "TestDesktop", uINPUT_SCHEME_MASK_DESKTOP);
 
 	// The canvas reads these five and nothing else; each merges the arrow key
 	// and the d-pad direction into ONE answer.
@@ -1114,6 +1123,15 @@ ZENITH_TEST(InputActions, UIConfirmSingleOwner)
 	Zenith_ActionTestRig xRig;
 	xRig.m_xActions.RegisterEngineDefaultProfiles();
 	xRig.m_xActions.RegisterEngineReservedActions();
+	// This test drives focus/confirm with KEYBOARD + GAMEPAD, so it needs a
+	// scheme mask that resolves them -- the engine's own default profile is
+	// platform-conditional (Windows: desktop KB|MOUSE|PAD; Android: TOUCH only,
+	// since a real game replaces it before any of this matters). A game's first
+	// RegisterProfile call always wholesale-replaces the engine default (see
+	// RegisterProfile), so this mirrors exactly what any real game with a
+	// keyboard/gamepad profile does, making the test platform-independent
+	// instead of accidentally passing only on desktop.
+	xRig.m_xActions.RegisterProfile(1, "TestDesktop", uINPUT_SCHEME_MASK_DESKTOP);
 
 	// ONE action carries every confirm source, so the canvas has exactly one
 	// question to ask and the button has none.

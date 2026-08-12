@@ -31,4 +31,18 @@ namespace Zenith_PlatformEnvironment
 		std::memcpy(szValueOut, szValue, uValueSize);
 		return true;
 	}
+
+	bool SetVariable(const char* szName, const char* szValue)
+	{
+		if (szName == nullptr)
+		{
+			return false;
+		}
+
+		if (szValue == nullptr || szValue[0] == '\0')
+		{
+			return ::unsetenv(szName) == 0;
+		}
+		return ::setenv(szName, szValue, /*overwrite*/ 1) == 0;
+	}
 }

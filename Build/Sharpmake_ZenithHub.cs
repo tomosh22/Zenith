@@ -91,6 +91,7 @@ public class ZenithHubProject : ZenithBaseProject
 		conf.LibraryFiles.Add("d3d11.lib");
 		conf.LibraryFiles.Add("dxgi.lib");
 		conf.LibraryFiles.Add("d3dcompiler.lib");
+		conf.LibraryFiles.Add("bcrypt.lib");
 
 		// Copy the Slang runtime DLL tree next to the exe (the linked engine loads
 		// it at startup; same rationale as FluxCompiler / the games).

@@ -602,6 +602,26 @@ void Zenith_Vulkan_CommandBuffer::DrawIndexedIndirectCount(const Flux_IndirectBu
 {
 	if (m_pxVulkan->ShouldSubmitDrawCalls())
 	{
+		// Not every device actually implements this (some Android Vulkan ICDs,
+		// including the emulator's, support neither Vulkan 1.2 core nor
+		// VK_KHR_draw_indirect_count) -- Zenith_Vulkan::CreateDevice queries this
+		// for real via vkEnumerateDeviceExtensionProperties rather than assuming
+		// it from platform, so this is a clean skip (terrain draws nothing that
+		// frame) rather than a crash. Logged once, not once-per-frame.
+		if (!m_pxVulkan->IsDrawIndirectCountSupported())
+		{
+			static bool ls_bWarned = false;
+			if (!ls_bWarned)
+			{
+				ls_bWarned = true;
+				Zenith_Warning(LOG_CATEGORY_VULKAN,
+					"DrawIndexedIndirectCount: device does not support vkCmdDrawIndexedIndirectCount "
+					"(neither Vulkan 1.2 core nor VK_KHR_draw_indirect_count) -- skipping this and all "
+					"further calls; anything drawn through it (terrain) will not render");
+			}
+			return;
+		}
+
 		UpdateDescriptorSets();
 		Zenith_Vulkan_VRAM* pxIndirectVRAM = m_pxVulkan->GetVRAM(pxIndirectBuffer->GetBuffer().m_xVRAMHandle);
 		Zenith_Vulkan_VRAM* pxCountVRAM = m_pxVulkan->GetVRAM(pxCountBuffer->GetBuffer().m_xVRAMHandle);
@@ -609,15 +629,10 @@ void Zenith_Vulkan_CommandBuffer::DrawIndexedIndirectCount(const Flux_IndirectBu
 		if (!pxIndirectVRAM || !pxCountVRAM) return;  // Safety guard for release builds
 		const vk::Buffer xIndirectBuffer = pxIndirectVRAM->GetBuffer();
 		const vk::Buffer xCountBuffer = pxCountVRAM->GetBuffer();
-#ifdef ZENITH_ANDROID
-		// Vulkan 1.2 functions aren't in Android's libvulkan.so - load dynamically
-		static PFN_vkCmdDrawIndexedIndirectCount pfnDrawIndexedIndirectCount = reinterpret_cast<PFN_vkCmdDrawIndexedIndirectCount>(
-			vkGetDeviceProcAddr(static_cast<VkDevice>(m_pxVulkan->GetDevice()), "vkCmdDrawIndexedIndirectCount"));
+		PFN_vkCmdDrawIndexedIndirectCount pfnDrawIndexedIndirectCount =
+			m_pxVulkan->GetDrawIndexedIndirectCountFn();
 		Zenith_Assert(pfnDrawIndexedIndirectCount != nullptr, "vkCmdDrawIndexedIndirectCount not supported");
 		pfnDrawIndexedIndirectCount(static_cast<VkCommandBuffer>(m_xCurrentCmdBuffer), static_cast<VkBuffer>(xIndirectBuffer), uIndirectOffset, static_cast<VkBuffer>(xCountBuffer), uCountOffset, uMaxDrawCount, uStride);
-#else
-		m_xCurrentCmdBuffer.drawIndexedIndirectCount(xIndirectBuffer, uIndirectOffset, xCountBuffer, uCountOffset, uMaxDrawCount, uStride);
-#endif
 	}
 }
 

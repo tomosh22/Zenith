@@ -777,9 +777,15 @@ Zenith_Result<Zenith_Asset*> LoadSerializableAsset(const std::string& strPath)
 		return Zenith_ErrorCode::INVALID_ARGUMENT;
 	}
 
-	// Open file
-	std::ifstream xFile(strPath, std::ios::binary);
-	if (!xFile.is_open())
+	// Open file. Goes through Zenith_DataStream::ReadFromFile (which itself
+	// goes through Zenith_FileAccess), NEVER a raw std::ifstream — on Android
+	// a .zdata/.bgraph file lives inside the APK, reachable only via
+	// AAssetManager, and an ifstream against the bare relative path silently
+	// fails to open. See Zenith_BakedMeshReader.h for the terrain analogue of
+	// this exact bug.
+	Zenith_DataStream xFile;
+	xFile.ReadFromFile(strPath.c_str());
+	if (!xFile.IsValid())
 	{
 		Zenith_Log(LOG_CATEGORY_ASSET, "AssetRegistry: Failed to open .zdata file: %s", strPath.c_str());
 		return Zenith_ErrorCode::FILE_NOT_FOUND;
@@ -787,7 +793,7 @@ Zenith_Result<Zenith_Asset*> LoadSerializableAsset(const std::string& strPath)
 
 	// Read and validate magic number
 	uint32_t uMagic = 0;
-	xFile.read(reinterpret_cast<char*>(&uMagic), sizeof(uMagic));
+	xFile >> uMagic;
 	if (uMagic != Zenith_AssetRegistry::ZDATA_MAGIC)
 	{
 		Zenith_Log(LOG_CATEGORY_ASSET, "AssetRegistry: Invalid .zdata file (bad magic): %s", strPath.c_str());
@@ -796,7 +802,7 @@ Zenith_Result<Zenith_Asset*> LoadSerializableAsset(const std::string& strPath)
 
 	// Read and validate version
 	uint32_t uVersion = 0;
-	xFile.read(reinterpret_cast<char*>(&uVersion), sizeof(uVersion));
+	xFile >> uVersion;
 	if (uVersion > Zenith_AssetRegistry::ZDATA_VERSION)
 	{
 		Zenith_Log(LOG_CATEGORY_ASSET, "AssetRegistry: .zdata file version %u is newer than supported (%u): %s",
@@ -804,11 +810,15 @@ Zenith_Result<Zenith_Asset*> LoadSerializableAsset(const std::string& strPath)
 		return Zenith_ErrorCode::VERSION_MISMATCH;
 	}
 
-	// Read type name
+	// Read type name (null-terminated string, raw bytes so a truncated file
+	// stops instead of reading past the buffer end)
 	std::string strTypeName;
-	char c;
-	while (xFile.get(c) && c != '\0')
+	while (xFile.GetCursor() < xFile.GetCapacity())
 	{
+		char c = 0;
+		xFile.ReadData(&c, sizeof(c));
+		if (c == '\0')
+			break;
 		strTypeName += c;
 	}
 
@@ -846,20 +856,11 @@ Zenith_Result<Zenith_Asset*> LoadSerializableAsset(const std::string& strPath)
 		return Zenith_ErrorCode::CORRUPT_DATA;
 	}
 
-	// Read remaining file data into buffer
-	std::streampos xCurrentPos = xFile.tellg();
-	xFile.seekg(0, std::ios::end);
-	std::streamsize xDataSize = xFile.tellg() - xCurrentPos;
-	xFile.seekg(xCurrentPos);
-
-	if (xDataSize > 0)
+	// Deserialize the remaining bytes directly from the already-loaded stream
+	// (its cursor sits right after the type name's null terminator).
+	if (xFile.GetCursor() < xFile.GetCapacity())
 	{
-		Zenith_Vector<char> xBuffer(static_cast<u_int>(xDataSize));
-		xFile.read(xBuffer.GetDataPointer(), xDataSize);
-
-		// Create DataStream with external data and deserialize
-		Zenith_DataStream xStream(xBuffer.GetDataPointer(), static_cast<uint64_t>(xDataSize));
-		pxAsset->ReadFromDataStream(xStream);
+		pxAsset->ReadFromDataStream(xFile);
 	}
 
 	Zenith_Log(LOG_CATEGORY_ASSET, "AssetRegistry: Loaded serializable asset '%s' from: %s",

@@ -11,6 +11,19 @@ struct HubGame
 	std::string strBuiltConfigs;   // comma-joined config dir names ("" if none built)
 	std::string strNewestBuild;    // "YYYY-MM-DD HH:MM" of the newest built exe ("" if none)
 	bool        bRunConfigBuilt = false; // true iff kRunConfigDirName's exe exists
+
+	// Regen-readiness: does this game's per-game solution exist, and does the
+	// descriptor's SHA-256 match Build/Sharpmake_GameInstances.generated.cs?
+	// Built-exe presence alone (above) says nothing about whether the .sln/.vcxproj
+	// backing it is current -- these two flags are what make
+	// "Regen left every config intact and ready to use" a checkable Hub-side
+	// postcondition instead of an assumption. bAgde* is only meaningful when
+	// bAndroid is true; a single *_agde.sln covers BOTH the arm64_v8a (physical
+	// device) and x86_64 (emulator) ABIs, so one flag pair covers both.
+	bool        bWin64SlnReady = false;
+	bool        bWin64SlnStale = false;
+	bool        bAgdeSlnReady = false;  // true (N/A) when !bAndroid
+	bool        bAgdeSlnStale = false;
 };
 
 namespace ZenithHub_GameScan

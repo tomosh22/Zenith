@@ -150,10 +150,43 @@ public abstract class GameProject : ZenithBaseProject
 			// (linker would otherwise discard it since game code doesn't reference it directly)
 			conf.AdditionalLinkerOptions.Add("-u ANativeActivity_onCreate");
 
+			// 16 KB page-size alignment (Google Play requirement, AGDE1112 without
+			// it). lld defaults to a 4 KB ELF segment alignment; ask for 16 KB
+			// explicitly so libzenithmon.so itself is compatible with 16 KB-page
+			// devices, not just correctly built. Only matters for the final linked
+			// .so (this project), not the engine's static .a libs.
+			conf.AdditionalLinkerOptions.Add("-Wl,-z,max-page-size=16384");
+
 			// APK packaging - point to Gradle project in Games/<GameName>/Android/
 			conf.CustomProperties.Add("AndroidEnablePackaging", "true");
 			conf.CustomProperties.Add("AndroidGradleBuildDir", zenithRoot + "/Games/" + GameName + "/Android");
 			conf.CustomProperties.Add("AndroidApplicationModule", "app");
+
+			// Static STL, not the NDK's shared one. Each game APK links exactly ONE
+			// native shared library (this one) -- Google's own guidance is static STL
+			// for that case (shared STL only earns its keep when multiple independent
+			// .so's in the same process need to share one copy of the runtime, which
+			// we never do). This also removes the vendored NDK's prebuilt
+			// libc++_shared.so from the APK entirely, which otherwise triggers Google
+			// Play's 16 KB page-size alignment warning (AGDE1112) -- that .so is
+			// prebuilt by the NDK, not something we compile, so we can't re-align it
+			// ourselves; not packaging it at all sidesteps the warning instead.
+			// Overrides the Sharpmake/AGDE default of cpp_shared, same mechanism as
+			// the OutDir override below (last PropertyGroup wins).
+			//
+			// ★ THE TOKEN IS "cpp_static", NOT "c++_static". This MSBuild property
+			// (Google's AGDE toolset) uses its own vocabulary, matching Sharpmake's
+			// own emitted default ("cpp_shared", not the NDK-CMake-style
+			// "c++_shared") -- and silently IGNORES an unrecognized value rather
+			// than erroring, falling back to shared STL. A first attempt at
+			// "c++_static" built clean, packaged clean, and even LOOKED right under
+			// `llvm-readelf -l` (16 KB segment alignment comes from the separate
+			// linker flag above, so that check passed regardless) -- but the .so's
+			// own `NEEDED` list still named libc++_shared.so, which the APK no
+			// longer shipped, so it crashed on launch with UnsatisfiedLinkError.
+			// Verify any future change here with `llvm-readelf -d <so> | grep
+			// NEEDED`, not just a successful build.
+			conf.CustomProperties.Add("UseOfStl", "cpp_static");
 
 			// AGDE packaging requires OutDir to end with the ABI directory
 			// (.../<abi>\), because AGDE hands Gradle the PARENT of OutDir as the
@@ -174,11 +207,28 @@ public abstract class GameProject : ZenithBaseProject
 				+ ZenithAndroidAbi.DirName(target.AndroidBuildTargets) + "\\";
 			conf.CustomProperties.Add("OutDir", agdeOutDir);
 
-			// Map MSBuild configuration name to Gradle build type (debug/release)
-			conf.CustomProperties.Add("AndroidGradleBuildType", configSuffix);
+			// The OutDir override above intentionally diverges from the linker's own
+			// OutputFile (set unconditionally a few PropertyGroups earlier, for the
+			// plain native link step -- same vulkan_<abi>... path, no ABI leaf).
+			// MSBuild's own TargetPath heuristic ($(OutDir)$(TargetName)$(TargetExt))
+			// is computed from the OVERRIDDEN OutDir, so it disagrees with that
+			// OutputFile and raises MSB8012 on every AGDE build -- harmless (the real
+			// linked artifact and the packaged APK are both correct; this is two
+			// different, both-valid views of "where did the .so go", not a build
+			// defect), but noisy. Suppress just this one coded warning (never
+			// warnings generally) rather than unify the two paths and risk breaking
+			// the packaging OutDir shape Gradle actually depends on.
+			conf.CustomProperties.Add("MSBuildWarningsAsMessages", "MSB8012");
+
+			// Keep production `release` free for a real release/upload key. AGDE
+			// still needs a signed APK it can install locally, so native Release
+			// configurations package the dedicated debug-signed `agdeRelease`
+			// Gradle variant while retaining `release` in the native OutDir token.
+			string gradleBuildType = target.Optimization == Optimization.Debug ? "debug" : "agdeRelease";
+			conf.CustomProperties.Add("AndroidGradleBuildType", gradleBuildType);
 
 			// Match the APK filename that Gradle actually produces
-			conf.CustomProperties.Add("AndroidGradlePackageOutputName", "app-" + configSuffix + ".apk");
+			conf.CustomProperties.Add("AndroidGradlePackageOutputName", "app-" + gradleBuildType + ".apk");
 		}
 
 		// Add Zenith engine dependency (includes Tools when ToolsEnabled)

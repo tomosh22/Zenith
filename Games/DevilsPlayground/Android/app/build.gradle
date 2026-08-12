@@ -27,10 +27,28 @@ android {
 		}
 	}
 
+	// Ship native libs uncompressed + page-aligned in the APK (paired with
+	// android:extractNativeLibs="false" in the manifest) instead of the legacy
+	// compressed-and-extracted-to-disk packaging. Required for Google Play's
+	// 16 KB page-size compliance (AGDE1112) -- our .so is already compiled
+	// 16 KB-aligned (see the linker's -Wl,-z,max-page-size=16384 in
+	// Build/Sharpmake_Games.cs), but that alignment is meaningless unless the
+	// library is also stored, not extracted, at that alignment in the APK.
+	packagingOptions {
+		jniLibs {
+			useLegacyPackaging = false
+		}
+	}
+
 	buildTypes {
 		debug {}
 		release {
 			minifyEnabled false
+		}
+		agdeRelease {
+			initWith release
+			signingConfig signingConfigs.debug
+			matchingFallbacks = ['release']
 		}
 	}
 

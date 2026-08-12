@@ -327,6 +327,14 @@ public:
 	// Drives Flux_BindlessAllocator's capacity. Backend-neutral surface (mirrored by
 	// the D3D12 null backend).
 	uint32_t GetBindlessTableSize() const { return m_uBindlessTableSize; }
+	// True iff CreateDevice negotiated either the Vulkan 1.2 drawIndirectCount
+	// feature or VK_KHR_draw_indirect_count and resolved the matching command
+	// alias. Some Android Vulkan ICDs (the emulator's goldfish/gfxstream
+	// translation among them) support neither. Terrain's
+	// DrawIndexedIndirectCount() gates on this instead of hard-asserting deep in a
+	// draw call.
+	bool IsDrawIndirectCountSupported() const { return m_bDrawIndirectCountSupported; }
+	PFN_vkCmdDrawIndexedIndirectCount GetDrawIndexedIndirectCountFn() const { return m_pfnDrawIndexedIndirectCount; }
 	void WriteBindlessDescriptor(uint32_t uIndex, vk::ImageView xImageView, vk::Sampler xSampler);
 
 	// Engine-typed wrapper around WriteBindlessDescriptor. Engine code (asset
@@ -380,6 +388,12 @@ public:
 	// defaults to the legacy 1000 so any pre-query read is safe). Drives the pool size,
 	// the layout descriptorCount, and the WriteBindlessDescriptor bounds check.
 	uint32_t                      m_uBindlessTableSize = FLUX_BINDLESS_TABLE_SIZE_MIN;
+	// Set by CreateDevice() only after the KHR extension or Vulkan 1.2 feature was
+	// negotiated and the matching device command alias resolved successfully.
+	// The pointer is device-owned state rather than a command-buffer-local static,
+	// so device recreation cannot retain a dispatch address from the old device.
+	bool                           m_bDrawIndirectCountSupported = false;
+	PFN_vkCmdDrawIndexedIndirectCount m_pfnDrawIndexedIndirectCount = nullptr;
 
 	// Phase 5.1: persistent descriptor pool + GLOBAL/VIEW set layouts. The per-frame
 	// sets (Zenith_Vulkan_PerFrame::m_xGlobalSet/m_xViewSet) are allocated from this pool

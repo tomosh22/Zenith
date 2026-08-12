@@ -22,4 +22,16 @@ namespace Zenith_PlatformEnvironment
 		}
 		return true;
 	}
+
+	bool SetVariable(const char* szName, const char* szValue)
+	{
+		if (szName == nullptr)
+		{
+			return false;
+		}
+
+		// _putenv_s with an empty value clears the variable, matching the
+		// documented szValue == nullptr / "" clear contract.
+		return ::_putenv_s(szName, szValue != nullptr ? szValue : "") == 0;
+	}
 }

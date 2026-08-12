@@ -11,6 +11,23 @@ namespace
 {
 	bool ZM_DefaultHumansAreWarm()
 	{
+		// ★ GAME_ASSETS_DIR is "" on Android (AGDE resolves game assets through
+		// AAssetManager by relative path, not a real filesystem tree -- see
+		// Zenith/Android/CLAUDE.md). ZM_BakeManifestCheck FAILS OPEN on an empty
+		// root ("any doubt returns false so the family re-bakes"), which is
+		// exactly wrong here: there is no filesystem tree to stamp-check against,
+		// and ZM_BakeAllHumans is an unconditional no-op on Android (tools-only),
+        // so the "try to bake, then re-ask" fallback in ZM_AreHumanAssetsReady
+		// can NEVER become warm -- every human on Android permanently rendered as
+		// the cold-start palette block, regardless of whether Humans/*.zmodel was
+		// actually baked and bundled into the APK. Android never iterates on a
+		// local bake tree: whatever shipped in the APK IS the bake, so trust it
+		// and let the ordinary (already null-safe) asset-load path be the one
+		// place a genuinely missing file surfaces.
+		if (GAME_ASSETS_DIR[0] == '\0')
+		{
+			return true;
+		}
 		return ZM_BakeManifestCheck(ZM_ASSET_FAMILY_HUMANS,
 			std::filesystem::path(GAME_ASSETS_DIR));
 	}

@@ -268,6 +268,41 @@ pwsh ./Build/download_validation_layer.ps1 -Game <Game> -Abi x86_64
 
 It stages into `Games/<Game>/Android/app/src/debug/jniLibs/<abi>/`.
 
+### Native STL, page-size alignment, and AGP version
+
+Every game links a **static** STL (not the NDK's shared `c++_shared`) — set
+via `UseOfStl = "cpp_static"` in `Build/Sharpmake_Games.cs`. **★ The token is
+`cpp_static`, not the NDK-CMake-style `c++_static`** — this MSBuild property
+belongs to Google's own AGDE toolset, which uses its own vocabulary (matching
+Sharpmake's own emitted default, `cpp_shared`) and silently *ignores* an
+unrecognized value instead of erroring, falling back to shared STL. A first
+attempt at `c++_static` built clean, packaged clean, and even looked correct
+under `llvm-readelf -l` (16 KB segment alignment comes from a separate linker
+flag, so that check passed regardless) — but the `.so`'s own `NEEDED` list
+still named `libc++_shared.so`, which the APK no longer shipped, so it
+crashed on launch with `UnsatisfiedLinkError`. **Verify any change here with
+`llvm-readelf -d <so> | grep NEEDED`, not just a successful build or a
+zip/alignment check** — none of those would have caught this.
+
+Each APK contains exactly one native `.so`, so there is nothing else in the
+process that would need to *share* one copy of the runtime, and static
+sidesteps a real problem: the NDK's own prebuilt `libc++_shared.so` predates
+16 KB page-size alignment, so bundling it trips Google Play's `AGDE1112`
+packaging check. Statically linking the STL into the single game `.so`
+removes that prebuilt file from the APK entirely.
+Getting `AGDE1112` to clear fully also needed: the linker flag
+`-Wl,-z,max-page-size=16384` (same file) so the game `.so` itself is
+16 KB-ELF-aligned; `android:extractNativeLibs="false"` in each manifest +
+`packagingOptions.jniLibs.useLegacyPackaging = false` in each `app/build.gradle`
+so the `.so` is stored uncompressed rather than extracted to disk at install
+time; and `android.experimental.enable16kPageSizeSupport=true` in each
+`gradle.properties`, which needs **AGP ≥ 8.5.1** (all five games are pinned to
+`8.7.3`; AGP 8.2.0 silently ignores that property and never actually
+page-aligns the stored entry, even though the other three pieces are in
+place). Verify alignment directly rather than trusting any single tool: `llvm-
+readelf -l <so>` should show `Align 0x4000` on every `LOAD` segment, and
+`unzip -v <apk>` should show the `.so` as `Stored`, not a compression ratio.
+
 ### Deployment Steps
 
 ```
@@ -290,10 +325,30 @@ Two staging models are in play, and which one a game uses is per-game:
 | TilePuzzle, Zenithmon | `zenithJniLibDirs(<buildType>)` — straight at the pinned AGDE OutDir | No; the AGDE path above is self-contained |
 | Combat, DevilsPlayground, RenderTest | `['jniLibs']` — hand-staged `app/jniLibs/<abi>/` | **Yes**, run it before Gradle |
 
+**★ For the hand-staged three, step 5 above needs to run TWICE, with staging
+in between.** The first `msbuild` invocation compiles the native `.so` but
+`app/jniLibs/<abi>/` is still empty, so Gradle packages an APK with zero
+native code (`mergeAgdeReleaseNativeLibs NO-SOURCE`) — with the dedicated
+`agdeRelease` build type carrying `signingConfig signingConfigs.debug`, that
+zero-native-code first pass still packages and signs successfully. Production
+`release` deliberately remains free for a real release/upload key; without the
+separate local variant AGP emits `app-release-unsigned.apk`, which previously
+made AGDE's `AGDE1102` fire while looking for its configured package output.
+Run
+`pwsh Build\deploy_android.ps1 <debug|release> <Game>` to copy the just-built
+`.so` into `app/jniLibs/<abi>/`, then run `msbuild` again. **A second
+`msbuild` invocation alone is not reliable proof the staged `.so` made it into
+the APK** — MSBuild's own AGDE packaging target can decide nothing changed
+(the staged file sits outside what it watches for staleness) and skip
+re-invoking Gradle, silently leaving the empty-native-code APK on disk. Verify
+with `unzip -v <apk> | grep '\.so$'` (see previous section) or by running
+Gradle directly: `cd Games\<Game>\Android; .\gradlew.bat :app:assembleAgdeRelease`.
+
 `deploy_android.ps1` (`-Abi <abi dir name>|all`, ABIs from the shared axis)
-stages both the game `.so` and the NDK's `libc++_shared.so` per ABI. All five
-games take `abiFilters` from `Build/zenith_android_abis.gradle`, so an ABI that
-was never built is simply absent from the APK rather than an error.
+stages the game `.so` per ABI (see previous section for why there's no NDK
+`libc++_shared.so` to stage alongside it). All five games take `abiFilters`
+from `Build/zenith_android_abis.gradle`, so an ABI that was never built is
+simply absent from the APK rather than an error.
 
 ### Reading engine logs on device
 

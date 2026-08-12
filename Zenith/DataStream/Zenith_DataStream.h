@@ -357,7 +357,18 @@ public:
 		Zenith_Assert(szFilename != nullptr && szFilename[0] != '\0',
 			"ReadFromFile: Invalid filename");
 
-		m_pData = Zenith_FileAccess::ReadFile(szFilename, m_ulDataSize);
+		uint64_t ulFileSize = 0;
+		char* pFileData = Zenith_FileAccess::ReadFile(szFilename, ulFileSize);
+
+		// A default-constructed stream already owns its initial write buffer.
+		// Release that allocation (or a prior file buffer) before adopting the
+		// newly-read bytes; assigning m_pData directly leaks it on every load.
+		if (m_bOwnsData && m_pData != nullptr)
+		{
+			Zenith_MemoryManagement::Deallocate(m_pData);
+		}
+		m_pData = pFileData;
+		m_ulDataSize = ulFileSize;
 
 		Zenith_Assert(m_pData != nullptr || m_ulDataSize == 0,
 			"ReadFromFile: Failed to read file '%s'", szFilename);

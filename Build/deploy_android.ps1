@@ -29,13 +29,8 @@ Import-Module (Join-Path $buildDir 'zenith_buildsystem.psm1') -Force
 
 # The ABI axis comes from zenith_config.psd1 (mirroring ZenithAndroidAbi in
 # Sharpmake_Common.cs / Build/zenith_android_abis.gradle) -- adding an ABI must
-# not require editing this script. Only the NDK sysroot triple is local, because
-# it is an NDK layout detail no other consumer of the axis needs.
+# not require editing this script.
 $allAbis = Get-ZenithAndroidAbis
-$ndkTriples = @{
-    'arm64-v8a' = 'aarch64-linux-android'
-    'x86_64'    = 'x86_64-linux-android'
-}
 
 if ($Abi -eq 'all') {
     $abis = $allAbis
@@ -46,20 +41,6 @@ if ($Abi -eq 'all') {
         Write-Host "deploy_android: unknown ABI '$Abi'. Known ABIs: $known, all" -ForegroundColor Red
         exit 4
     }
-}
-
-# libc++_shared.so from the NDK (AGDE uses the c++_shared STL) -- per ABI.
-# $Triple may be empty for an ABI with no entry in $ndkTriples; treat that as
-# "no STL to stage" rather than probing a malformed path.
-function Get-CppShared([string]$Triple) {
-    if ([string]::IsNullOrEmpty($Triple)) { return $null }
-    foreach ($ndkRoot in @($env:ANDROID_NDK_ROOT, $env:ANDROID_NDK)) {
-        if ($ndkRoot) {
-            $candidate = Join-Path $ndkRoot "toolchains\llvm\prebuilt\windows-x86_64\sysroot\usr\lib\$Triple\libc++_shared.so"
-            if (Test-Path $candidate) { return $candidate }
-        }
-    }
-    return $null
 }
 
 # Discover android:true games from descriptors.
@@ -113,16 +94,11 @@ foreach ($d in $androidGames) {
         }
         New-Item -ItemType Directory -Force -Path $jniDir | Out-Null
         Copy-Item $so (Join-Path $jniDir $lib) -Force
-        $cppShared = Get-CppShared $ndkTriples[$a]
-        if ($cppShared) {
-            Copy-Item $cppShared (Join-Path $jniDir 'libc++_shared.so') -Force
-        }
-        else {
-            # AGDE links against the c++_shared STL, so an APK without this .so
-            # dies at load with UnsatisfiedLinkError. Staging the game lib alone
-            # is NOT a complete stage -- say so instead of reporting plain green.
-            Write-Host "  $a : WARNING no libc++_shared.so staged (set ANDROID_NDK_ROOT or ANDROID_NDK)" -ForegroundColor Yellow
-        }
+        # No libc++_shared.so to stage: every game links c++_static (see
+        # UseOfStl in Build/Sharpmake_Games.cs) -- one native .so per APK, so
+        # there's nothing else in the process that would need to share a
+        # runtime copy, and static sidesteps the NDK-vendored shared STL's
+        # lack of 16 KB page-size alignment (Google Play's AGDE1112 check).
         Write-Host "  $a : staged to $jniDir" -ForegroundColor Green
         $staged++
         $gameStaged++
