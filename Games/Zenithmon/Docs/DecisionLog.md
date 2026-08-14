@@ -15,6 +15,73 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-08-14 -- ZM-D-187 -- the `zm-tests` boot-unit pin was RED on master; fix-forward to 3277, and the History changelog backfilled
+
+**What shipped:** three stale numbers corrected, no production code touched.
+
+| site | was | now |
+|---|---|---|
+| `.github/workflows/zm-tests.yml` `-Baseline` | `3276` | **`3277`** |
+| `zm-tests.yml` History changelog, newest entry | `3238` | **`3277`** (+ `3276` backfilled) |
+| `Docs/Status.md` LIVE PIN, ZM boot | `3276` | **`3277`** |
+| `Docs/Status.md` LIVE PIN, registry | `55` | **`61`** |
+
+**Decision:** treat a boot-unit count mismatch as a fix-forward obligation on
+master the moment it is observed, and repair the audit trail in the same commit
+rather than only the number.
+
+**Why:** `3aeaa2d4` ("share the grass/rock ground sets as engine assets") added
+exactly one ZM unit --
+`ZM_TerrainRecipeSet.DawnmereMeadowSamplesTheSharedEngineGrassSet` in
+`Tests/ZM_Tests_TerrainRecipeSet.cpp` -- and did not move the pin, so the
+`zm-tests` required check was failing on master from that commit until this one.
+
+**★ THE FAILURE IS COUNTERINTUITIVE AND THAT IS THE POINT.** The gate asserts
+equality, not a floor -- `Tools/run_unit_gate.ps1` computes
+`$fullSuite = ($ran -eq $Baseline)` and requires `$fullSuite -and $failed -eq 0`.
+So **a suite that GREW fails exactly like one that shrank**, and it fails with
+*zero failing tests*:
+
+```
+[unit_gate] [UnitTest] Unit tests complete: 3277 ran, 3275 passed, 0 failed, 2 skipped
+[unit_gate] baseline NOT met (wanted 3276 ran, 0 failed; ...)   -> exit 1
+```
+
+The equality is deliberate (it catches tests silently vanishing), so this is a
+cost of the design, not a bug in it.
+
+**★ AND A GREEN LOCAL `zenith test` PROVES NOTHING ABOUT IT.** `zenith test`
+passes `--skip-unit-tests`; it never runs a single `ZM_*` boot unit. Confirmed
+here -- `zenith test Zenithmon --headless` reported **61 passed / 0 failed**
+while the boot-unit gate was red. The two are disjoint suites and only
+`run_unit_gate.ps1` can see this one. That is precisely why the loop's verify
+step requires BOTH commands and why they are two separate steps in the workflow.
+
+**★ THIRD RECORDED INSTANCE OF THIS EXACT CLASS.** ZM-D-173 found the pin
+reading 2804 against a real 2809 (also red before that work started); `d0b400c8`
+moved the pin 3238 -> 3276 but never added its History entry, leaving the
+changelog with a 38-unit hole and no derivation. Both are backfilled in
+`zm-tests.yml` by this commit. The mitigation is not "remember to bump it" --
+that has now failed three times. It is that **the pin is only ever set from an
+OBSERVED line** (the `★` note already in `zm-tests.yml` says so) and that the
+unit gate is RUN, not reasoned about, before every push.
+
+**Collateral finding:** `Status.md`'s LIVE PIN also still read `registry 55`
+while prose lower in the same file recorded the input program's WP3b growing the
+automated suite 55 -> 61 (six `ZM_Touch*` tests). The enumerated run measures
+**61**. A summary block that disagrees with its own document is the same defect
+shape as the pin itself.
+
+**Tests that lock it:** none added -- this commit changes no production code.
+The lock is the gate itself: `zm-tests.yml` step 9 now asserts 3277, and the
+observed local run is `3277 ran / 3275 passed / 0 failed / 2 skipped` (PASS).
+`run_unit_gate.ps1`'s `$Baseline` default stays **1638** (the ENGINE number, on a
+Null Combat build) -- `3aeaa2d4` touched no file under `Zenith/`, so no engine
+or RenderTest pin moved.
+
+**Reversibility:** trivial. Reverting is one number in two files, though it would
+re-red the gate.
+
 ## 2026-08-07 -- ZM-D-186 -- ZM: a COLLISION-DENSITY change re-measures the feet tables, and ZM-D-182 moved one of the two and left the other
 
 **What shipped:** the seven W5 per-NPC feet heights in

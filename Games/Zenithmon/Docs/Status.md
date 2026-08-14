@@ -1,15 +1,39 @@
 # Zenithmon Status
 
-**Last updated:** 2026-08-13
+**Last updated:** 2026-08-14
 
-**★ LIVE PIN (UPDATED 2026-08-13):
-ZM boot `3276`; engine boot (Null Combat) `1638`; registry **55**.** The preceding
-clean `Null_` runs observed `3275 / 3273 passed / 0 failed / 2 skipped` and
-`1637 / 1636 passed / 0 failed / 1 skipped`; the final backend-neutral
-`NativeCountDoesNotRequireMultiDrawIndirect` test adds one shared registrar, and
-the +1 was confirmed by a complete Null RenderTest gate. The current pins are
-`zm-tests.yml` (`-Baseline 3276`) and `run_unit_gate.ps1` (default 1638). The move
-from 3238/1600 is **+38 ZM / +38 ENGINE units** from the terrain indirect-count
+**★ LIVE PIN (UPDATED 2026-08-14):
+ZM boot `3277`; engine boot (Null Combat) `1638`; registry **61**.** Observed
+2026-08-14 on a clean `Null_vs2022_Debug_Win64_True` Zenithmon build:
+`3277 ran / 3275 passed / 0 failed / 2 skipped`, and
+`zenith test Zenithmon --headless` = **61 passed / 0 failed** (total 1,307,690 ms,
+avg 27,240 ms; slowest `ZM_MilestoneAutosave_Test` at 107,587 ms / 134 frames).
+**★ `registry` read 55 here and that was ALSO stale** -- this block was never
+updated when the input program's WP3b grew the automated suite 55 -> 61 with the
+six `ZM_Touch*` tests, even though the prose LOWER IN THIS SAME FILE said so
+explicitly. Corrected to the enumerated count. The current pins are
+`zm-tests.yml` (`-Baseline 3277`) and `run_unit_gate.ps1` (default 1638, the
+ENGINE number -- never used for Zenithmon).
+
+**★★ 3276 -> 3277 IS A FIX-FORWARD, NOT A FEATURE BUMP. THE `zm-tests` GATE WAS
+RED ON master BEFORE THIS COMMIT.** `3aeaa2d4` ("share the grass/rock ground sets
+as engine assets") added exactly one ZM unit --
+`ZM_TerrainRecipeSet.DawnmereMeadowSamplesTheSharedEngineGrassSet` in
+`Tests/ZM_Tests_TerrainRecipeSet.cpp` -- and did not move the pin. The gate
+asserts `ran == Baseline` EXACTLY (`Tools/run_unit_gate.ps1`: `$fullSuite =
+($ran -eq $Baseline)`), so a suite that GREW fails the gate exactly like one that
+shrank: observed `[unit_gate] baseline NOT met (wanted 3276 ran, 0 failed; got
+'... 3277 ran, 3275 passed, 0 failed, 2 skipped')`, exit 1, with **zero failing
+tests**. Engine default stays 1638 -- `3aeaa2d4` touched no file under `Zenith/`.
+**★ THIS IS THE THIRD RECORDED INSTANCE OF THE SAME FAILURE MODE** (ZM-D-173 found
+the pin reading 2804 against a real 2809; d0b400c8 moved the pin but skipped its
+History entry, so the changelog jumped 3238 -> 3276 with no derivation -- both
+backfilled in `zm-tests.yml` by this commit). The lesson is not "remember to bump
+the number": it is that **the only way to know this gate is green is to RUN it**,
+because a passing local `zenith test` says nothing about it -- `zenith test`
+passes `--skip-unit-tests` and never executes a single `ZM_*` boot unit.
+
+The earlier move from 3238/1600 was **+38 ZM / +38 ENGINE units** from the terrain indirect-count
 compatibility plan (Phase 1/2/6/7): 27
 Flux_IndirectDraw policy/ABI/batch-planner tests, 5 CommandLine tests for the
 new `--indirect-count-mode` flag, 3 FluxTerrain tests for the shared

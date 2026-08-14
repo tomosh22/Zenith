@@ -194,6 +194,32 @@ jobs:
           #
           # History, newest first (the DERIVATION is the audit trail; the OBSERVED
           # number is the authority):
+          #   3277  shared grass/rock ground sets as engine assets (3aeaa2d4),
+          #                   observed 2026-08-14 on a Null_ build
+          #                   (3277 ran / 3275 passed / 0 failed / 2 skipped).
+          #                   +1 ZM unit, no engine units: the
+          #                   ZM_TerrainRecipeSet.DawnmereMeadowSamplesTheShared-
+          #                   EngineGrassSet case in
+          #                   Tests/ZM_Tests_TerrainRecipeSet.cpp.
+          #                   ★ 3aeaa2d4 ADDED THAT UNIT AND DID NOT MOVE THIS PIN,
+          #                   so this gate was RED on master from that commit until
+          #                   2026-08-14 -- the SAME failure mode ZM-D-173 recorded
+          #                   at 2804/2809 and the ★ note above exists to prevent.
+          #                   run_unit_gate.ps1's engine default stays 1638: the
+          #                   commit touched no file under Zenith/.
+          #   3276  terrain indirect-count compatibility fallback (d0b400c8),
+          #                   observed 2026-08-13 on a Null_ build
+          #                   (3276 ran / 3274 passed / 0 failed / 2 skipped).
+          #                   +38 ZM / +38 ENGINE units (every ZM unit here is an
+          #                   engine unit Zenithmon inherits): 27 Flux_IndirectDraw
+          #                   policy/ABI/batch-planner, 5 Zenith_CommandLine cases
+          #                   for --indirect-count-mode, 3 FluxTerrain shared
+          #                   indirect-command ABI/allocation-boundary, 3
+          #                   RenderGraph reset/cull/cyclic-seed barrier.
+          #                   run_unit_gate.ps1's engine default moved 1600 -> 1638.
+          #                   ★ Backfilled 2026-08-14: d0b400c8 moved the -Baseline
+          #                   line but never added its History entry, so the audit
+          #                   trail jumped 3238 -> 3276 with no derivation.
           #   3238  input program WP6 + reconciliation micro-WP (the program's
           #                   close), observed 2026-08-11 on a Null_ build
           #                   (3238 ran / 3236 passed / 0 failed / 2 skipped).
@@ -534,7 +560,7 @@ jobs:
           #   2817  ZM-D-173  = 2809 + 8: four ENGINE sensor-raycast units plus
           #                   two camera fixtures and two Home-placement units.
           $exe = 'Games\Zenithmon\Build\output\win64\null_vs2022_debug_win64_true\zenithmon.exe'
-          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 3276 -TimeoutSec 600
+          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 3277 -TimeoutSec 600
           if ($LASTEXITCODE -ne 0) { Write-Error "boot unit tests failed (see log above)"; exit $LASTEXITCODE }
 
       - name: Run Zenithmon tests
