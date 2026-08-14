@@ -1020,8 +1020,9 @@ static void EnsureStickFigureModelExists()
 	RenderTest::Resources().m_strStickFigureModelPath = strModelPath;
 }
 
-// Build a terrain material from one of the user-provided PBR texture sets at
-// `Assets/Textures/Terrain/<Name>/`. Each set has diffuse / normal / ao /
+// Build a terrain material from one of the shared PBR ground sets at
+// `Zenith/Assets/Textures/Terrain/<Name>/` (engine assets — Zenithmon samples the
+// Grass set too, hence the move out of this game). Each set has diffuse / normal / ao /
 // roughness / metallic / height / gloss / reflection .ztxtr files; we wire up
 // the four slots the engine's MaterialAsset surfaces. The roughness texture is
 // plugged into the "RoughnessMetallic" slot since the engine expects a single
@@ -1040,15 +1041,13 @@ static void SetupPBRTerrainMaterial(MaterialHandle& xHandle, const std::string& 
 
 	// The terrain vertex UV (`a_xUV`) is heightmap pixel coordinates, scaled
 	// by g_fUVScale (= 0.07) in the vertex shader, so input.uv ≈ [0, 286] across
-	// the 4096-unit terrain. With the default tiling of 1.0 each PBR texture
-	// then tiles ~286 times across the terrain (≈14m per tile) which reads as
-	// a fine grid pattern under typical viewing angles. Scaling the per-
-	// material tiling down brings the on-screen tile size up to something
-	// that reads as ground texture rather than a moiré. 0.05 → texture tiles
-	// ~14× across the terrain (~290m per tile), close enough to the native
-	// ~40m physical scale of the supplied PBR set without going so coarse
-	// that the texture detail is lost.
-	pxMaterial->SetUVTiling(Zenith_Maths::Vector2(0.05f, 0.05f));
+	// the 4096-unit terrain: tiling t gives 1 / (0.07 * t) world units per tile.
+	// 0.9 → ~16 m per tile. The set used to tile at 0.05 (~290 m per tile), which
+	// stretched one photo across a whole hillside and read as a smear rather than
+	// ground. This is the SHARED figure — Zenithmon's meadow slot tiles the same
+	// engine set at the same 0.9, so the ground reads at one physical scale in
+	// both games regardless of how big their worlds are.
+	pxMaterial->SetUVTiling(Zenith_Maths::Vector2(0.9f, 0.9f));
 }
 
 static void InitializeRenderTestResources()
@@ -1056,14 +1055,18 @@ static void InitializeRenderTestResources()
 	if (s_bResourcesInitialized)
 		return;
 
-	// User's two PBR material sets live under Assets/Textures/Terrain/<Name>/.
-	// The terrain expects 4 material slots; the user's splatmap only blends 2,
+	// The two PBR ground sets are ENGINE assets (`Zenith/Assets/Textures/Terrain/
+	// <Name>/`), shared with every game that wants the same ground — Zenithmon's
+	// Dawnmere meadow slot samples the same Grass set. They are referenced through
+	// the "engine:" prefix so what lands in the serialized material is a portable
+	// asset ref rather than this machine's absolute path.
+	// The terrain expects 4 material slots; the splatmap only blends 2,
 	// so slots 2 and 3 are filled with copies — they get weight 0 from the
 	// converted splatmap (B and A channels are zero) and never actually
 	// contribute, but having them populated is cheaper and safer than letting
 	// the terrain shader sample null materials.
-	const std::string strGrassDir = std::string(GAME_ASSETS_DIR) + "Textures/Terrain/Grass/";
-	const std::string strRockDir  = std::string(GAME_ASSETS_DIR) + "Textures/Terrain/Rock/";
+	const std::string strGrassDir = "engine:Textures/Terrain/Grass/";
+	const std::string strRockDir  = "engine:Textures/Terrain/Rock/";
 
 	SetupPBRTerrainMaterial(RenderTest::Resources().m_axTerrainMaterials[0], "RenderTestTerrainGrass",  strGrassDir);
 	SetupPBRTerrainMaterial(RenderTest::Resources().m_axTerrainMaterials[1], "RenderTestTerrainRock",   strRockDir);
@@ -1379,8 +1382,11 @@ static void RenderTest_PackRoughnessMetallic(const std::string& strSourceDir)
 
 static void RenderTest_PackTerrainRoughnessMetallic()
 {
-	RenderTest_PackRoughnessMetallic(std::string(GAME_ASSETS_DIR) + "Textures/Terrain/Grass/");
-	RenderTest_PackRoughnessMetallic(std::string(GAME_ASSETS_DIR) + "Textures/Terrain/Rock/");
+	// The sets are engine-owned now, so the packed RM output is written beside
+	// them under ENGINE_ASSETS_DIR — the same file every game that samples these
+	// sets reads (Zenithmon's meadow slot does).
+	RenderTest_PackRoughnessMetallic(std::string(ENGINE_ASSETS_DIR) + "Textures/Terrain/Grass/");
+	RenderTest_PackRoughnessMetallic(std::string(ENGINE_ASSETS_DIR) + "Textures/Terrain/Rock/");
 }
 
 #endif

@@ -396,6 +396,18 @@ standalone editor session can open.
 > `Zenith/Flux/Terrain/CLAUDE.md`. CI cannot catch a miss: `**/Assets/` is gitignored, so CI
 > always bakes cold and always passes while every existing developer tree silently breaks.
 
+**The splatmap's meadow slot samples ENGINE textures, not per-set ones.**
+Dawnmere's material palette slot 0 (`Meadow`) carries
+`"engine:Textures/Terrain/Grass/"` in its recipe (`ZM_TerrainMaterialSpec::
+m_szTextureSetDir`) and loads `diffuse` / `normal` / `rm_packed` / `ao` from
+`Zenith/Assets/Textures/Terrain/Grass/` — the shared ground set RenderTest's
+terrain also uses. Those refs are serialized into `Dawnmere.zscen`, so **changing
+the slot needs a windowed `_True` re-author of that scene**, and the slot's base
+colour stays WHITE (the terrain shader multiplies base colour into the sampled
+diffuse). The maps live under a gitignored `Assets/` tree like every other
+texture, so a cold clone renders the meadow with the engine's default maps until
+they are present. The other three slots remain flat-colour.
+
 **Rect export only (E2):** bounds are inclusive, non-normalizing, and must
 satisfy `0 <= min <= max < 64` on both axes while containing the hard-required
 anchor chunk `(0,0)`. An accepted rectangle of width `W` and height `H` writes

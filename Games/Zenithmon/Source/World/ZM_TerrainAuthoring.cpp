@@ -123,12 +123,19 @@ namespace
 		{ "PlazaLandmark", { 462.0f, 24.0f, 548.0f } },
 	};
 
+	// Meadow is the only TEXTURED slot: it samples the engine's shared grass
+	// ground set (Zenith/Assets/Textures/Terrain/Grass), the same maps RenderTest's
+	// terrain uses. Its base colour is therefore WHITE -- the shader multiplies
+	// base colour into the sampled diffuse, so the old flat green would tint the
+	// photographic grass. Tiling 0.9 ~= one 16 m tile (1 / (0.07 * 0.9)) -- the
+	// SAME figure RenderTest tiles the shared set at, so the ground reads at one
+	// physical scale in both games. The other three slots stay flat-colour.
 	const ZM_TerrainMaterialSpec s_axDawnmereMaterials[] =
 	{
-		{ "Meadow", { 0.26f, 0.46f, 0.16f, 1.0f }, 0.92f, 0.0f },
-		{ "Stone", { 0.34f, 0.36f, 0.33f, 1.0f }, 0.88f, 0.0f },
-		{ "Dirt", { 0.38f, 0.25f, 0.14f, 1.0f }, 0.96f, 0.0f },
-		{ "Heath", { 0.48f, 0.55f, 0.20f, 1.0f }, 0.90f, 0.0f },
+		{ "Meadow", { 1.0f, 1.0f, 1.0f, 1.0f }, 0.92f, 0.0f, "engine:Textures/Terrain/Grass/", 0.9f },
+		{ "Stone", { 0.34f, 0.36f, 0.33f, 1.0f }, 0.88f, 0.0f, nullptr, 0.0f },
+		{ "Dirt", { 0.38f, 0.25f, 0.14f, 1.0f }, 0.96f, 0.0f, nullptr, 0.0f },
+		{ "Heath", { 0.48f, 0.55f, 0.20f, 1.0f }, 0.90f, 0.0f, nullptr, 0.0f },
 	};
 
 	// Thornacre is the GDD's hedgerow farming town: pasture rolls around a
@@ -210,10 +217,10 @@ namespace
 
 	const ZM_TerrainMaterialSpec s_axThornacreMaterials[] =
 	{
-		{ "Pasture", { 0.31f, 0.50f, 0.17f, 1.0f }, 0.94f, 0.0f },
-		{ "Drystone", { 0.39f, 0.39f, 0.34f, 1.0f }, 0.91f, 0.0f },
-		{ "Dirt", { 0.36f, 0.24f, 0.13f, 1.0f }, 0.97f, 0.0f },
-		{ "Hedgerow", { 0.15f, 0.33f, 0.09f, 1.0f }, 0.93f, 0.0f },
+		{ "Pasture", { 0.31f, 0.50f, 0.17f, 1.0f }, 0.94f, 0.0f, nullptr, 0.0f },
+		{ "Drystone", { 0.39f, 0.39f, 0.34f, 1.0f }, 0.91f, 0.0f, nullptr, 0.0f },
+		{ "Dirt", { 0.36f, 0.24f, 0.13f, 1.0f }, 0.97f, 0.0f, nullptr, 0.0f },
+		{ "Hedgerow", { 0.15f, 0.33f, 0.09f, 1.0f }, 0.93f, 0.0f, nullptr, 0.0f },
 	};
 
 	// Route 1 is a 16x24-chunk coastal-meadow corridor. Its broad encounter
@@ -291,10 +298,10 @@ namespace
 
 	const ZM_TerrainMaterialSpec s_axRoute1Materials[] =
 	{
-		{ "CoastalMeadow", { 0.28f, 0.51f, 0.20f, 1.0f }, 0.93f, 0.0f },
-		{ "Chalk", { 0.56f, 0.57f, 0.49f, 1.0f }, 0.89f, 0.0f },
-		{ "Dirt", { 0.42f, 0.28f, 0.15f, 1.0f }, 0.96f, 0.0f },
-		{ "Wildflower", { 0.52f, 0.56f, 0.24f, 1.0f }, 0.91f, 0.0f },
+		{ "CoastalMeadow", { 0.28f, 0.51f, 0.20f, 1.0f }, 0.93f, 0.0f, nullptr, 0.0f },
+		{ "Chalk", { 0.56f, 0.57f, 0.49f, 1.0f }, 0.89f, 0.0f, nullptr, 0.0f },
+		{ "Dirt", { 0.42f, 0.28f, 0.15f, 1.0f }, 0.96f, 0.0f, nullptr, 0.0f },
+		{ "Wildflower", { 0.52f, 0.56f, 0.24f, 1.0f }, 0.91f, 0.0f, nullptr, 0.0f },
 	};
 
 	template<typename T, size_t N>

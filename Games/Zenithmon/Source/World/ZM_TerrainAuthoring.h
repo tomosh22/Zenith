@@ -114,6 +114,17 @@ struct ZM_TerrainMaterialSpec
 	float m_afBaseColour[4];
 	float m_fRoughness;
 	float m_fMetallic;
+	// Optional PBR texture set: a PREFIXED asset directory holding the engine's
+	// shared ground maps (diffuse / normal / rm_packed / ao), e.g.
+	// "engine:Textures/Terrain/Grass/". nullptr = flat-colour slot, the original
+	// contract. A textured slot's base colour MULTIPLIES the sampled diffuse
+	// (Flux_Terrain_ToGBuffer -> SampleDiffuseWithBaseColor), so a textured slot
+	// authors white and lets the texture carry the hue.
+	const char* m_szTextureSetDir;
+	// UV tiling for a textured slot, in the terrain's heightmap-pixel UV space
+	// (uv ~= worldUnits * 0.07 -- see Flux_Terrain's g_fUVScale). Tiling t gives
+	// 1 / (0.07 * t) world units per tile. Ignored when m_szTextureSetDir is null.
+	float m_fUVTiling;
 };
 
 struct ZM_TerrainPreviewCameraSpec

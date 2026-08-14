@@ -2184,6 +2184,23 @@ namespace
 				xSpec.m_afBaseColour[3] });
 			pxMaterial->SetRoughness(xSpec.m_fRoughness);
 			pxMaterial->SetMetallic(xSpec.m_fMetallic);
+
+			// A slot that names a texture set samples the ENGINE's shared ground
+			// maps (the same set RenderTest's terrain uses) rather than painting a
+			// flat colour. The four maps the terrain shader reads are diffuse /
+			// normal / rm_packed (G = roughness, B = metallic) / ao; emissive stays
+			// unset. The refs keep their "engine:" prefix so what lands in the
+			// serialized scene is portable, not this machine's absolute path.
+			if (xSpec.m_szTextureSetDir)
+			{
+				const std::string strSetDir = xSpec.m_szTextureSetDir;
+				pxMaterial->SetDiffuseTexture          (TextureHandle(strSetDir + "diffuse"   ZENITH_TEXTURE_EXT));
+				pxMaterial->SetNormalTexture           (TextureHandle(strSetDir + "normal"    ZENITH_TEXTURE_EXT));
+				pxMaterial->SetRoughnessMetallicTexture(TextureHandle(strSetDir + "rm_packed" ZENITH_TEXTURE_EXT));
+				pxMaterial->SetOcclusionTexture        (TextureHandle(strSetDir + "ao"        ZENITH_TEXTURE_EXT));
+				pxMaterial->SetUVTiling(Zenith_Maths::Vector2(
+					xSpec.m_fUVTiling, xSpec.m_fUVTiling));
+			}
 		}
 	}
 }

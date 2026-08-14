@@ -164,7 +164,22 @@ namespace
 			const ZM_TerrainMaterialSpec& xMaterialB = xB.m_pxMaterials[i];
 			if (strcmp(xMaterialA.m_szName, xMaterialB.m_szName) != 0 ||
 				xMaterialA.m_fRoughness != xMaterialB.m_fRoughness ||
-				xMaterialA.m_fMetallic != xMaterialB.m_fMetallic)
+				xMaterialA.m_fMetallic != xMaterialB.m_fMetallic ||
+				xMaterialA.m_fUVTiling != xMaterialB.m_fUVTiling)
+			{
+				return false;
+			}
+			// A textured slot's set directory is part of the plan: swapping the
+			// ground maps changes what the terrain looks like just as much as
+			// swapping its base colour does.
+			const bool bTexturedA = xMaterialA.m_szTextureSetDir != nullptr;
+			const bool bTexturedB = xMaterialB.m_szTextureSetDir != nullptr;
+			if (bTexturedA != bTexturedB)
+			{
+				return false;
+			}
+			if (bTexturedA && strcmp(xMaterialA.m_szTextureSetDir,
+				xMaterialB.m_szTextureSetDir) != 0)
 			{
 				return false;
 			}
@@ -417,6 +432,51 @@ ZENITH_TEST(ZM_TerrainRecipeSet, RegistryHasExactlyThreeWorldSpecRecipesInFixedO
 	ZENITH_ASSERT_TRUE(ZM_FindTerrainAuthoringRecipe(ZM_SCENE_NONE) == nullptr);
 }
 
+// Dawnmere's meadow slot is the one TEXTURED terrain material in the game: it
+// samples the ENGINE's shared grass ground set (Zenith/Assets/Textures/Terrain/
+// Grass), the same maps RenderTest's terrain uses. Two things can silently undo
+// that -- someone re-tinting the slot (base colour multiplies the sampled
+// diffuse, so a green tint puts the flat look back), and someone moving the set
+// out from under the "engine:" ref. Both are pinned here.
+ZENITH_TEST(ZM_TerrainRecipeSet, DawnmereMeadowSamplesTheSharedEngineGrassSet)
+{
+	const ZM_TerrainAuthoringRecipe& xDawnmere = ZM_GetDawnmereTerrainRecipe();
+	const ZM_TerrainMaterialSpec& xMeadow = xDawnmere.m_pxMaterials[0];
+
+	ZENITH_ASSERT_STREQ(xMeadow.m_szName, "Meadow");
+	ZENITH_ASSERT_TRUE(xMeadow.m_szTextureSetDir != nullptr,
+		"Dawnmere's Meadow slot lost its texture set and is a flat colour again");
+	ZENITH_ASSERT_STREQ(xMeadow.m_szTextureSetDir, "engine:Textures/Terrain/Grass/");
+	ZENITH_ASSERT_GT(xMeadow.m_fUVTiling, 0.0f);
+	for (u_int uChannel = 0; uChannel < 4u; ++uChannel)
+	{
+		ZENITH_ASSERT_EQ_FLOAT(xMeadow.m_afBaseColour[uChannel], 1.0f, fEPSILON);
+	}
+
+	// The remaining three slots stay flat-colour by design.
+	for (u_int uSlot = 1u; uSlot < xDawnmere.m_uMaterialCount; ++uSlot)
+	{
+		ZENITH_ASSERT_TRUE(xDawnmere.m_pxMaterials[uSlot].m_szTextureSetDir == nullptr);
+	}
+
+	// The maps themselves are gitignored workspace assets, so their absence is a
+	// cold clone rather than a defect -- but a set that IS present must be
+	// complete, or the meadow silently falls back to default textures.
+	const std::filesystem::path xSetDir =
+		std::filesystem::path(ENGINE_ASSETS_DIR) / "Textures" / "Terrain" / "Grass";
+	if (std::filesystem::exists(xSetDir))
+	{
+		const char* aszMaps[] = { "diffuse", "normal", "rm_packed", "ao" };
+		for (const char* szMap : aszMaps)
+		{
+			const std::filesystem::path xMap =
+				xSetDir / (std::string(szMap) + ZENITH_TEXTURE_EXT);
+			ZENITH_ASSERT_TRUE(std::filesystem::exists(xMap),
+				"shared grass set is missing %s", xMap.generic_string().c_str());
+		}
+	}
+}
+
 ZENITH_TEST(ZM_TerrainRecipeSet, RecipesCarryDistinctDocumentedOutdoorPlans)
 {
 	const ZM_TerrainAuthoringRecipe& xDawnmere = ZM_GetDawnmereTerrainRecipe();
@@ -522,6 +582,28 @@ ZENITH_TEST(ZM_TerrainRecipeSet, RecipesCarryDistinctDocumentedOutdoorPlans)
 			ZENITH_ASSERT_GE(xMaterial.m_fRoughness, 0.0f);
 			ZENITH_ASSERT_LE(xMaterial.m_fRoughness, 1.0f);
 			ZENITH_ASSERT_EQ_FLOAT(xMaterial.m_fMetallic, 0.0f, fEPSILON);
+			if (xMaterial.m_szTextureSetDir)
+			{
+				// A textured slot needs a usable tiling and a directory ref the
+				// asset registry can resolve -- prefixed and slash-terminated,
+				// because the loader concatenates the map stems onto it.
+				const std::string strSetDir = xMaterial.m_szTextureSetDir;
+				ZENITH_ASSERT_GT(xMaterial.m_fUVTiling, 0.0f);
+				ZENITH_ASSERT_TRUE(!strSetDir.empty() && strSetDir.back() == '/',
+					"%s material '%s' texture set '%s' must end in '/'",
+					xRecipe.m_pxWorldSpec->m_szTerrainSet,
+					xMaterial.m_szName, strSetDir.c_str());
+				ZENITH_ASSERT_TRUE(
+					strSetDir.rfind("engine:", 0) == 0 ||
+					strSetDir.rfind("game:", 0) == 0,
+					"%s material '%s' texture set '%s' must carry an engine:/game: prefix",
+					xRecipe.m_pxWorldSpec->m_szTerrainSet,
+					xMaterial.m_szName, strSetDir.c_str());
+			}
+			else
+			{
+				ZENITH_ASSERT_EQ_FLOAT(xMaterial.m_fUVTiling, 0.0f, fEPSILON);
+			}
 		}
 		for (u_int uRule = 0; uRule < xRecipe.m_uAutoSplatCount; ++uRule)
 		{

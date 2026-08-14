@@ -313,7 +313,12 @@ ZENITH_TEST(ZM_TerrainAuthoring, DawnmereRecipeIdentityAndBounds)
 
 	ZENITH_ASSERT_EQ(xRecipe.m_uMaterialCount, 4u);
 	ZENITH_ASSERT_STREQ(xRecipe.m_pxMaterials[0].m_szName, "Meadow");
-	ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_pxMaterials[0].m_afBaseColour[0], 0.26f, fEPSILON);
+	// Meadow is textured (the shared engine grass set), so its base colour is
+	// WHITE -- the terrain shader multiplies base colour into the sampled
+	// diffuse, and the old 0.26/0.46/0.16 green would tint it. The set ref
+	// itself is pinned by ZM_TerrainRecipeSet::DawnmereMeadowSamplesTheShared-
+	// EngineGrassSet.
+	ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_pxMaterials[0].m_afBaseColour[0], 1.0f, fEPSILON);
 	ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_pxMaterials[2].m_afBaseColour[2], 0.14f, fEPSILON);
 	ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_pxMaterials[0].m_fRoughness, 0.92f, fEPSILON);
 	ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_pxMaterials[3].m_fRoughness, 0.90f, fEPSILON);
