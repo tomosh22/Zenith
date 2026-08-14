@@ -67,9 +67,11 @@
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "Zenithmon/Components/ZM_FollowCamera.h"
 #include "Zenithmon/Components/ZM_GameStateManager.h"
+#include "Zenithmon/Components/ZM_Interactable.h"
 #include "Zenithmon/Components/ZM_PlayerController.h"
 #include "Zenithmon/Components/ZM_SpawnPoint.h"
 #include "Zenithmon/Components/ZM_TerrainGrassComponent.h"
+#include "Zenithmon/Source/Data/ZM_NpcData.h"
 #include "Zenithmon/Source/Data/ZM_WorldSpec.h"
 #include "Zenithmon/Source/World/ZM_ProfLabPlacement.h"
 #include "Zenithmon/Source/World/ZM_HumanBody.h"
@@ -87,6 +89,16 @@ namespace
 	constexpr float fPOSITION_EPSILON = 0.001f;
 	constexpr float fVELOCITY_EPSILON = 0.0001f;
 	constexpr float fYAW_EPSILON = 0.0001f;
+
+	// The tolerance on a RAYCAST-MEASURED body face (clause I3). Looser than
+	// fPOSITION_EPSILON on purpose and for a stated reason: a probe measures a
+	// SURFACE through the physics broadphase rather than reading an authored
+	// number, so it carries the cast's own resolution as well as the shape's. Still
+	// an order of magnitude tighter than the gap between the compiled body contract
+	// (0.400 m half-width) and the scale-derived box that would replace it if
+	// ZM_GreyboxVisual stopped installing the explicit dimensions (~0.346 m), which
+	// is the substitution this epsilon has to be able to tell apart.
+	constexpr float fBODY_PROBE_EPSILON = 0.01f;
 
 	// Phase budgets. Their sum (180 + 600 + 120 = 900) sits well inside the
 	// registered 1,200-frame cap ON PURPOSE: a phase deadline must fire BEFORE
@@ -615,6 +627,228 @@ namespace
 		return true;
 	}
 
+	// ---- CLAUSE I3's body: the authored professor ---------------------------
+	//
+	// Split out as its own function under the ZM-D-141 stack-frame rule: at /Od a
+	// monolithic Step frame is the SUM of every local in every clause, and the
+	// measurements below add a second transform pair, two raycast results and two
+	// quaternions to a function that already carries several.
+	//
+	// ★ THE BODY'S SIZE IS MEASURED, NOT READ. Zenith_ColliderComponent exposes the
+	// volume TYPE and the rigid-body type but no accessor for the explicit box
+	// half-extents ZM_GreyboxVisual installs from the compiled body contract, so the
+	// only way to observe the shape the game actually gave him is to probe it. Two
+	// axis-aligned casts do that: one along +X into his side at body-centre height,
+	// one straight down onto the crown of his head. Both origins sit in open air --
+	// nothing in this room stands between them and him -- and each is required to
+	// hit HIS entity, so a miss or a hit on the shell is a named failure rather than
+	// a wrong number.
+	bool ProfLabPhaseVerifyProfessor(Zenith_SceneData* pxData)
+	{
+		const char* const szAsterName = szZM_PROFLAB_ASTER_ENTITY_NAME;
+		Zenith_Entity xAster = pxData != nullptr
+			? pxData->FindEntityByName(szAsterName) : Zenith_Entity();
+		if (!xAster.IsValid())
+		{
+			FailProfLabDetailed(
+				"ProfLab's committed scene bytes carry no entity named '%s'. The "
+				"interior authors exactly one inhabitant -- Professor Aster -- so "
+				"either the authoring step is missing from the ProfLab block in "
+				"Zenithmon.cpp, or the scene was never re-authored by a *_True "
+				"tools boot after that step landed and the shipped lab is empty",
+				szAsterName);
+			return false;
+		}
+
+		// ---- his transform: the authored anchor, and the authored scale ------
+		Zenith_Maths::Vector3 xPosition(0.0f);
+		Zenith_Maths::Vector3 xScale(0.0f);
+		Zenith_Maths::Quat xRotation(1.0f, 0.0f, 0.0f, 0.0f);
+		Zenith_TransformComponent& xTransform =
+			xAster.GetComponent<Zenith_TransformComponent>();
+		xTransform.GetPosition(xPosition);
+		xTransform.GetScale(xScale);
+		xTransform.GetRotation(xRotation);
+
+		const Zenith_Maths::Vector3 xExpectedCentre = ZM_GetProfLabAsterCenter();
+		if (glm::length(xPosition - xExpectedCentre) > fPOSITION_EPSILON)
+		{
+			FailProfLabDetailed(
+				"Professor Aster stands at (%.5f, %.5f, %.5f) in the loaded scene "
+				"but Source/World/ZM_ProfLabPlacement.h derives (%.5f, %.5f, %.5f) "
+				"[delta %.6f against epsilon %.6f]. A MIRRORED x is the mutation "
+				"this catches and nothing else in the gate can: the pure units "
+				"read the same header the authoring writes from, so both sides "
+				"move together and stay green while the professor is authored into "
+				"the other half of the room, outside the arrival frame",
+				(double)xPosition.x, (double)xPosition.y, (double)xPosition.z,
+				(double)xExpectedCentre.x, (double)xExpectedCentre.y,
+				(double)xExpectedCentre.z,
+				(double)glm::length(xPosition - xExpectedCentre),
+				(double)fPOSITION_EPSILON);
+			return false;
+		}
+
+		const Zenith_Maths::Vector3 xExpectedScale(fZM_HUMAN_VISUAL_SCALE);
+		if (glm::length(xScale - xExpectedScale) > fPOSITION_EPSILON)
+		{
+			FailProfLabDetailed(
+				"Professor Aster is authored at scale (%.5f, %.5f, %.5f), not the "
+				"one human visual scale (%.5f) every human in this game wears "
+				"[delta %.6f]. That scale exists to land ZM_HumanGen's measured "
+				"bind space on the body contract, so any other value draws him at "
+				"the wrong size beside a correctly sized player",
+				(double)xScale.x, (double)xScale.y, (double)xScale.z,
+				(double)fZM_HUMAN_VISUAL_SCALE,
+				(double)glm::length(xScale - xExpectedScale));
+			return false;
+		}
+
+		// ---- his rotation: IDENTITY, which is the ZM-D-183 property ----------
+		// The authoring emits no rotation step at all, precisely so this stays
+		// bit-exact across build configurations. It is also what makes the AABB
+		// below legal: an AABB forces its Jolt body to identity and the
+		// physics->transform sync writes that identity back into the saved bytes,
+		// which is destructive only when there was an authored rotation to lose.
+		const float fIdentityError =
+			std::fabs(std::fabs(xRotation.w) - 1.0f)
+			+ std::fabs(xRotation.x) + std::fabs(xRotation.y)
+			+ std::fabs(xRotation.z);
+		if (fIdentityError > fYAW_EPSILON)
+		{
+			FailProfLabDetailed(
+				"Professor Aster carries rotation (x %.6f y %.6f z %.6f w %.6f), "
+				"which is not identity [error %.6f]. He is authored with NO "
+				"rotation step by design (ZM-D-183: AddStep_SetTransformYaw and "
+				"...RotationEuler build their quaternion with libm at authoring "
+				"time and MSVC Debug and Release disagree by 1-2 ULP, so a "
+				"COMMITTED scene authored through them ping-pongs in git). If a "
+				"rotation step was added, remove it -- and note his AABB collider "
+				"would have wiped it back out anyway",
+				(double)xRotation.x, (double)xRotation.y, (double)xRotation.z,
+				(double)xRotation.w, (double)fIdentityError);
+			return false;
+		}
+
+		// ---- his body: the SHAPE, the body class, and its measured size ------
+		Zenith_ColliderComponent* pxCollider =
+			xAster.TryGetComponent<Zenith_ColliderComponent>();
+		if (pxCollider == nullptr || !pxCollider->HasValidBody())
+		{
+			FailProfLabDetailed(
+				"Professor Aster carries no collider with a live body "
+				"[collider=%d body=%d]. A talker the player can walk THROUGH ends "
+				"the walk-up inside him rather than in contact",
+				pxCollider != nullptr ? 1 : 0,
+				pxCollider != nullptr && pxCollider->HasValidBody() ? 1 : 0);
+			return false;
+		}
+		if (pxCollider->GetCollisionVolumeType() != COLLISION_VOLUME_TYPE_AABB
+			|| pxCollider->GetRigidBodyType() != RIGIDBODY_TYPE_STATIC)
+		{
+			FailProfLabDetailed(
+				"Professor Aster's body is volumeType=%d rigidBodyType=%d, not the "
+				"authored COLLISION_VOLUME_TYPE_AABB (%d) + RIGIDBODY_TYPE_STATIC "
+				"(%d). A SPHERE would make his footprint round where the walk-up "
+				"standoff is measured against a box, and a DYNAMIC body could be "
+				"shoved off the anchor every clearance figure in "
+				"Source/World/ZM_ProfLabPlacement.h is derived at",
+				(int)pxCollider->GetCollisionVolumeType(),
+				(int)pxCollider->GetRigidBodyType(),
+				(int)COLLISION_VOLUME_TYPE_AABB, (int)RIGIDBODY_TYPE_STATIC);
+			return false;
+		}
+
+		const float fExpectedHalfWidth = fZM_HUMAN_BODY_FOOTPRINT * 0.5f;
+		const float fExpectedHalfHeight = fZM_HUMAN_BODY_HALF_HEIGHT;
+		const float fPROBE_STANDOFF = 3.0f;   // open air on both probe axes in this room
+
+		const Zenith_Physics::RaycastResult xSideHit = g_xEngine.Physics().Raycast(
+			xExpectedCentre - Zenith_Maths::Vector3(fPROBE_STANDOFF, 0.0f, 0.0f),
+			Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f), fPROBE_STANDOFF);
+		const Zenith_Physics::RaycastResult xCrownHit = g_xEngine.Physics().Raycast(
+			xExpectedCentre + Zenith_Maths::Vector3(0.0f, fPROBE_STANDOFF, 0.0f),
+			Zenith_Maths::Vector3(0.0f, -1.0f, 0.0f), fPROBE_STANDOFF);
+		if (!xSideHit.m_bHit || xSideHit.m_xHitEntity != xAster.GetEntityID()
+			|| !xCrownHit.m_bHit || xCrownHit.m_xHitEntity != xAster.GetEntityID())
+		{
+			FailProfLabDetailed(
+				"the probes that measure Professor Aster's body did not both land "
+				"on him [side hit=%d entityMatch=%d dist=%.4f; crown hit=%d "
+				"entityMatch=%d dist=%.4f]. Either his body is not where his "
+				"transform is, or something else in this room is now standing "
+				"between the probe origins and him",
+				xSideHit.m_bHit ? 1 : 0,
+				xSideHit.m_xHitEntity == xAster.GetEntityID() ? 1 : 0,
+				(double)xSideHit.m_fDistance,
+				xCrownHit.m_bHit ? 1 : 0,
+				xCrownHit.m_xHitEntity == xAster.GetEntityID() ? 1 : 0,
+				(double)xCrownHit.m_fDistance);
+			return false;
+		}
+
+		const float fMeasuredHalfWidth = fPROBE_STANDOFF - xSideHit.m_fDistance;
+		const float fMeasuredHalfHeight = fPROBE_STANDOFF - xCrownHit.m_fDistance;
+		if (std::fabs(fMeasuredHalfWidth - fExpectedHalfWidth) > fBODY_PROBE_EPSILON
+			|| std::fabs(fMeasuredHalfHeight - fExpectedHalfHeight)
+				> fBODY_PROBE_EPSILON)
+		{
+			FailProfLabDetailed(
+				"Professor Aster's body measures %.4f m half-width and %.4f m "
+				"half-height, against the compiled ZM_HumanBody contract's %.4f / "
+				"%.4f [epsilon %.4f]. The body is supposed to come from that "
+				"contract explicitly and NEVER from the transform scale -- a "
+				"scale-derived box would measure %.4f here -- so this says "
+				"ZM_GreyboxVisual::InstallHumanBody did not reach him",
+				(double)fMeasuredHalfWidth, (double)fMeasuredHalfHeight,
+				(double)fExpectedHalfWidth, (double)fExpectedHalfHeight,
+				(double)fBODY_PROBE_EPSILON,
+				(double)(fZM_HUMAN_VISUAL_SCALE * 0.5f));
+			return false;
+		}
+
+		// ---- and he is TALKABLE, as the professor -----------------------------
+		ZM_Interactable* pxInteractable = xAster.TryGetComponent<ZM_Interactable>();
+		if (pxInteractable == nullptr)
+		{
+			FailProfLabDetailed(
+				"Professor Aster carries no ZM_Interactable. He is a TALKER row "
+				"(ZM_NPC_PROF_ASTER in Source/Data/ZM_NpcData.cpp) standing in a "
+				"room whose only purpose is to be talked to in -- without the "
+				"component the picker never sees him and the interact press does "
+				"nothing, forever, silently");
+			return false;
+		}
+		if (pxInteractable->GetNpcId() != ZM_NPC_PROF_ASTER
+			|| !pxInteractable->IsInteractable())
+		{
+			FailProfLabDetailed(
+				"Professor Aster's ZM_Interactable resolves to NPC row %u "
+				"(expected ZM_NPC_PROF_ASTER = %u) and reports interactable=%d. "
+				"SetNpcId fails CLOSED by clearing the candidacy flag, so a bad "
+				"row id authors a MUTE NPC rather than a loud failure",
+				(u_int)pxInteractable->GetNpcId(), (u_int)ZM_NPC_PROF_ASTER,
+				pxInteractable->IsInteractable() ? 1 : 0);
+			return false;
+		}
+		if (std::fabs(pxInteractable->GetRadius() - fZM_PROFLAB_ASTER_REACH_BONUS)
+			> fPOSITION_EPSILON)
+		{
+			FailProfLabDetailed(
+				"Professor Aster's authored interact radius is %.5f, not the "
+				"%.5f m the placement header states his reach bonus to be. The "
+				"boot unit ProfLab_AsterStandsOutsideArrivalReachInsideTheShell "
+				"proves he is out of reach on arrival USING that figure, so a "
+				"live radius that disagrees with it makes that proof about a "
+				"different NPC than the one the scene ships",
+				(double)pxInteractable->GetRadius(),
+				(double)fZM_PROFLAB_ASTER_REACH_BONUS);
+			return false;
+		}
+
+		return true;
+	}
+
 	// ---- PHASE 3: the arrival battery, clauses A..I ------------------------
 
 	bool ProfLabPhaseVerifyArrival()
@@ -1079,6 +1313,32 @@ namespace
 					(double)fPOSITION_EPSILON);
 				return false;
 			}
+		}
+
+		// ---- CLAUSE I3: PROFESSOR ASTER, THE ONE THING IN THIS ROOM THE
+		//                 PLAYER CAME HERE FOR -----------------------------
+		//
+		// ★ WHY THE PROOF LIVES HERE AND NOWHERE ELSE. Every pure unit about
+		// Aster in Tests/ZM_Tests_ProfLabPlacement.cpp reads
+		// ZM_ProfLabPlacement.h -- and so does the authoring, so both sides of
+		// each of those claims move together and not one of them can see the
+		// SCENE drift away from the header. The committed-bytes needle
+		// (ZM_CommittedSceneBytes/ProfLabCarriesTheAuthoredProfessorEntityName)
+		// only proves a STRING is in the file. This clause is the only place
+		// the AUTHORED RESULT is compared against the compiled contract, and it
+		// is the mutation detector for all four of these, none of which any
+		// other check in the gate can see:
+		//   * author him at +x instead of -x -- a mirror image, into the other
+		//     side of the room and out of the arrival frame;
+		//   * pass AddStep_SetTransformScale(1.0f) instead of the human visual
+		//     scale -- a professor drawn half again too big;
+		//   * COLLISION_VOLUME_TYPE_SPHERE instead of AABB -- a body that no
+		//     longer matches the contract the walk-up standoff is measured in;
+		//   * omit AddStep_AddComponent("ZM_Interactable") entirely -- a
+		//     professor who stands there and can never be spoken to.
+		if (!ProfLabPhaseVerifyProfessor(pxData))
+		{
+			return false;
 		}
 
 		g_bProfLabPassed = true;

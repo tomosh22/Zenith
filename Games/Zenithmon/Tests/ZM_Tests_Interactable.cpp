@@ -1087,9 +1087,11 @@ ZENITH_TEST(ZM_Interaction, GateRoster_PlacedNpcsAreStationaryAndIncludeEveryBea
 	}
 
 	// REDS ON: dropping an NPC from aePLACED_NPCS while a beat still names it -- which
-	// is exactly what removing its ZM_QueueDawnmereNpc call from Zenithmon.cpp is
-	// supposed to look like here. A beat that presses E at an NPC nobody placed is a
-	// gate beat that can only ever time out.
+	// is exactly what removing its ZM_QueueStationaryTalkerNpc call from Zenithmon.cpp
+	// is supposed to look like here. (That helper was named ZM_QueueDawnmereNpc until
+	// the ProfLab professor became its fifth caller and proved it was never
+	// Dawnmere-specific.) A beat that presses E at an NPC nobody placed is a gate beat
+	// that can only ever time out.
 	for (u_int uBeat = 0u; uBeat < uGATE_BEAT_COUNT; ++uBeat)
 	{
 		bool bPlaced = false;

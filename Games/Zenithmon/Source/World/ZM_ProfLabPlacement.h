@@ -1,6 +1,9 @@
 #pragma once
 
+#include <cmath>   // sqrt -- the arrival standoff, which nothing authored reads
+
 #include "Maths/Zenith_Maths.h"   // Vector3
+#include "Zenithmon/Source/Interaction/ZM_InteractionLogic.h"   // fZM_INTERACT_MAX_DISTANCE (the reach Aster must stay outside of)
 #include "Zenithmon/Source/World/ZM_HumanBody.h"   // THE human body contract
 
 // ============================================================================
@@ -51,6 +54,14 @@ inline constexpr const char* szZM_PROFLAB_SPAWN_ENTITY_NAME = "ProfLabDoorSpawn"
 inline constexpr const char* szZM_PROFLAB_PLAYER_ENTITY_NAME = "Player";
 inline constexpr const char* szZM_PROFLAB_CAMERA_ENTITY_NAME = "ProfLabCamera";
 
+// The interior's ONE inhabitant: Professor Aster (GDD 3.1), whose data layer --
+// ZM_HUMAN_PROF_ASTER's appearance row and ZM_NPC_PROF_ASTER's TALKER row --
+// shipped ahead of this placement. The NAME follows Dawnmere's authored
+// "Npc_<Who>" convention, so a reader who knows Npc_RivalVesper recognises this
+// one on sight, and it is the key BOTH the automated arrival clause and the
+// committed-bytes tripwire look him up by.
+inline constexpr const char* szZM_PROFLAB_ASTER_ENTITY_NAME = "Npc_ProfAster";
+
 // ---- The room, as the seven numbers everything else is derived from ---------
 //
 // ProfLab ("Aster's Lab") is a 20 x 16 m hall -- deliberately NOT PlayerHome's
@@ -77,14 +88,20 @@ inline constexpr float fZM_PROFLAB_APERTURE_HEIGHT     = 3.0f;
 // "minus half the wall thickness" differently, and READ by
 // ZM_GetProfLabCameraBackClearance below, which a boot unit runs.
 //
-// ★ THE OTHER THREE INNER FACES (+/-X and +Z) ARE DELIBERATELY ABSENT. Nothing
-// read them, and an unread constant is not a check -- it is a number that LOOKS
-// like one. Every clearance claim in this room measures against
-// ZM_GetProfLabBlock's Min()/Max() faces instead, which are the same geometry
-// with an actual reader. Add one back only in the same change as the code that
-// reads it.
+// ★ THE OTHER TWO INNER FACES (+/-X) ARE DELIBERATELY ABSENT. Nothing reads
+// them, and an unread constant is not a check -- it is a number that LOOKS like
+// one. Every clearance claim in this room measures against ZM_GetProfLabBlock's
+// Min()/Max() faces instead, which are the same geometry with an actual reader.
+// Add one back only in the same change as the code that reads it.
 inline constexpr float fZM_PROFLAB_INNER_MIN_Z =
 	-fZM_PROFLAB_HALF_DEPTH + fZM_PROFLAB_WALL_THICKNESS * 0.5f;
+
+// ...and the +Z inner face, i.e. the plane of the doorway wall a player walks
+// through on arrival. Added under the rule above and NOT before it: its reader is
+// fZM_PROFLAB_ASTER_Z below, which places the professor midway between where the
+// player lands and this face.
+inline constexpr float fZM_PROFLAB_INNER_MAX_Z =
+	fZM_PROFLAB_HALF_DEPTH - fZM_PROFLAB_WALL_THICKNESS * 0.5f;
 
 // The floor's top face, and therefore every FEET height in this scene.
 inline constexpr float fZM_PROFLAB_FLOOR_TOP_Y = 0.0f;
@@ -139,6 +156,23 @@ inline constexpr float fZM_PROFLAB_CAMERA_HEIGHT      = 3.0f;
 inline constexpr float fZM_PROFLAB_CAMERA_FOV_DEGREES = 65.0f;
 inline constexpr float fZM_PROFLAB_CAMERA_NEAR        = 0.1f;
 inline constexpr float fZM_PROFLAB_CAMERA_FAR         = 100.0f;
+
+// ...and the PIVOT the settled camera looks AT, mirrored from
+// ZM_FollowCamera::GetPivotHeight() for the same reason as the three above, and
+// asserted against the real getter by clause (1d) of the same boot unit. It is a
+// lift on the player's body CENTRE, not on the floor -- the camera aims at chest
+// height, which is what tilts the arrival frustum and therefore decides what is
+// on screen.
+inline constexpr float fZM_PROFLAB_CAMERA_PIVOT_HEIGHT = 0.60f;
+
+// Zenith_CameraComponent's shipped default aspect ratio. MIRRORED rather than
+// read: the field is private, and a pure boot unit cannot construct a camera
+// component (it needs a live entity, and these units create none). Its only
+// consumer is the arrival-frustum unit, which for that reason ALSO runs the same
+// containment test at an aspect of 1.0 -- a square viewport is the NARROWEST
+// horizontal field any aspect >= 1 can give, so passing that arm is a claim no
+// window shape can invalidate, whatever this constant says.
+inline constexpr float fZM_PROFLAB_CAMERA_ASPECT = 16.0f / 9.0f;
 
 // ---- The shell blockout -----------------------------------------------------
 
@@ -355,6 +389,118 @@ inline float ZM_GetProfLabCameraBackClearance()
 	return ZM_GetProfLabCameraPosition().z - fZM_PROFLAB_INNER_MIN_Z;
 }
 
+// The pose the arriving player is actually FILMED FROM, which is NOT the authored
+// camera entity. ZM_FollowCamera::OnStart clears the spring, so the first late
+// update after the scene loads SNAPS the camera to
+// ComputeDesiredPosition(bodyCentre, yaw) -- one capsule half-extent above the
+// authored Y (see the note on ZM_GetProfLabCameraPosition). Everything that asks
+// "what does the player see when they warp in?" has to ask about THIS point, and
+// clause (5) of ProfLab_FollowCameraTrailsIntoTheRoomAtTheAuthoredYaw already
+// pins it against the shipped ComputeDesiredPosition.
+inline Zenith_Maths::Vector3 ZM_GetProfLabSettledCameraPosition()
+{
+	Zenith_Maths::Vector3 xSettled = ZM_GetProfLabCameraPosition();
+	xSettled.y += fZM_PROFLAB_PLAYER_CAPSULE_HALF_EXTENT;
+	return xSettled;
+}
+
+// ...and the point it AIMS at: the arriving body's centre, lifted by the follow
+// camera's pivot height. The settled position and this pivot together are the
+// whole arrival frustum -- position, look direction, and (with the FOV/near/far
+// above) its opening.
+inline Zenith_Maths::Vector3 ZM_GetProfLabArrivalPivot()
+{
+	return Zenith_Maths::Vector3(
+		fZM_PROFLAB_SPAWN_X,
+		fZM_PROFLAB_SPAWN_FEET_Y + fZM_PROFLAB_PLAYER_CAPSULE_HALF_EXTENT
+			+ fZM_PROFLAB_CAMERA_PIVOT_HEIGHT,
+		fZM_PROFLAB_SPAWN_Z);
+}
+
+// ---- Professor Aster --------------------------------------------------------
+//
+// ★ THE CONSTRAINT THAT HAD NO OWNER: BEING ON SCREEN AT ALL. The player warps
+// in, the follow camera SNAPS to the settled pose above on its first late update,
+// and anything outside THAT frustum is, to the player, an empty room. An anchor
+// picked by eye fails this in total silence -- an earlier draft of this placement
+// stood him at roughly (-4.5, +1.0), which is about 71.6 degrees off the camera's
+// plan-view axis against a ~48.5 degree horizontal half-angle at 16:9, i.e. off
+// screen, with every placement unit in this file green. Both coordinates below
+// are therefore DERIVED from the constants above, and the boot unit
+// ZM_WorldTraversal/ProfLab_AsterStandsInsideTheArrivalFrustum projects the
+// result into the frustum built from those SAME constants and asserts it lands
+// inside -- feeding the rejected (-4.5, +1.0) pair through the identical
+// predicate as its anti-vacuity arm, so the check is known to be able to red.
+//
+// ★ HE IS AUTHORED AT IDENTITY ROTATION, AND THE AUTHORING EMITS NO ROTATION STEP
+// AT ALL (ZM-D-183). AddStep_SetTransformYaw / ...RotationEuler build their
+// quaternion with libm AT AUTHORING TIME and MSVC Debug and Release codegen
+// disagree by 1-2 ULP, so ProfLab.zscen -- a COMMITTED file re-authored on every
+// tools boot -- would ping-pong in git forever, invisible to the same-binary
+// pre-save guard. Identity is bit-exact in every configuration, which is why the
+// four shipped Dawnmere townsfolk never surfaced this. Aster faces nowhere in
+// particular, so he takes no yaw, and that is ALSO what makes his
+// COLLISION_VOLUME_TYPE_AABB body legal here: an AABB forces its Jolt body to
+// identity and the physics->transform sync writes that identity back into the
+// saved bytes, which destroys an authored rotation but cannot destroy an absent
+// one (contrast ZM_QueueDawnmereTrainerNpc, where AABB is forbidden forever).
+
+// (1) HIS X -- clear of the walk-in corridor. His CENTRE stands one full body
+//     footprint outside the doorway's clear opening, so his own half-width still
+//     leaves half a body of gap beside the straight line a player walks in and
+//     out along. ONE addition of two named constants, deliberately: a derivation
+//     with no association to choose is one that /fp:fast cannot re-order, and
+//     re-ordered floating point in an AUTHORED value is exactly how ZM-D-183's
+//     sibling finding made committed bytes differ Debug vs Release.
+inline constexpr float fZM_PROFLAB_ASTER_X =
+	-(fZM_PROFLAB_APERTURE_HALF_WIDTH + fZM_HUMAN_BODY_FOOTPRINT);
+
+// (2) HIS Z -- midway between where the player lands and the inner face of the
+//     wall they came through: the greeting spot just inside the entrance, and the
+//     furthest ALONG THE CAMERA'S FORWARD AXIS he can stand without crowding the
+//     door. Depth is the coordinate that does the work here: the half-width the
+//     frustum offers grows linearly with distance from the camera, so a step
+//     deeper BUYS lateral room while a step sideways SPENDS it. Every term is
+//     dyadic, so this result is exact whatever order the compiler associates in.
+inline constexpr float fZM_PROFLAB_ASTER_Z =
+	(fZM_PROFLAB_SPAWN_Z + fZM_PROFLAB_INNER_MAX_Z) * 0.5f;
+
+// His authored entity position: a body CENTRE, the same vocabulary every human in
+// this game is authored in (ZM_HumanBody.h), standing on the floor's top face.
+inline Zenith_Maths::Vector3 ZM_GetProfLabAsterCenter()
+{
+	return Zenith_Maths::Vector3(
+		fZM_PROFLAB_ASTER_X,
+		fZM_PROFLAB_FLOOR_TOP_Y + fZM_HUMAN_BODY_HALF_HEIGHT,
+		fZM_PROFLAB_ASTER_Z);
+}
+
+// The per-NPC reach BONUS every stationary talker is authored with: that NPC's
+// OWN AABB half-width, so the global reach is not silently spent crossing his own
+// body. Spelled from the body contract rather than as a literal 0.4 -- the
+// AUTHORED value is fZM_NPC_AUTHORED_RADIUS in Zenithmon.cpp, and the automated
+// arrival clause compares Aster's LIVE ZM_Interactable radius against this
+// constant, so the two are pinned to one another rather than merely equal today.
+inline constexpr float fZM_PROFLAB_ASTER_REACH_BONUS =
+	fZM_HUMAN_BODY_FOOTPRINT * 0.5f;
+
+// ...and the total reach his arrival standoff has to BEAT. ZM_PickInteractTarget
+// accepts a candidate at XZ distance <= m_fMaxDistance + probe radius, INCLUSIVE
+// at the boundary, so "outside reach" means strictly greater than this.
+inline constexpr float fZM_PROFLAB_ASTER_EFFECTIVE_REACH =
+	fZM_INTERACT_MAX_DISTANCE + fZM_PROFLAB_ASTER_REACH_BONUS;
+
+// How far the arriving player stands from him, in the XZ plane the picker
+// measures in (Y is ignored there). The Dawnmere convention is that you WALK UP
+// to talk: arriving already inside reach would let a stray interact press open
+// his dialogue from the doormat, before the player has taken a step.
+inline float ZM_GetProfLabAsterArrivalStandoff()
+{
+	const float fDeltaX = fZM_PROFLAB_ASTER_X - fZM_PROFLAB_SPAWN_X;
+	const float fDeltaZ = fZM_PROFLAB_ASTER_Z - fZM_PROFLAB_SPAWN_Z;
+	return std::sqrt(fDeltaX * fDeltaX + fDeltaZ * fDeltaZ);
+}
+
 // ============================================================================
 // ★ CLOSING NOTE -- WHY EVERY STATIC COLLIDER IN PROFLAB IS AABB, AND MUST STAY
 // AABB.
@@ -367,7 +513,10 @@ inline float ZM_GetProfLabCameraBackClearance()
 //
 // NOTHING IN PROFLAB FACES ANYWHERE. The entrance is an ABSENCE of geometry
 // between two axis-aligned panels, not a hinged panel; no shell block carries an
-// authored rotation; and the player is a CAPSULE because it also has to move. So
+// authored rotation; the player is a CAPSULE because it also has to move; and
+// Professor Aster is a STATIONARY TALKER with no sight cone and no walk-up, so
+// there is no direction for him to hold either -- which is precisely why he can
+// wear AABB where the Dawnmere rival never may. So
 // AABB is not a shortcut here, it is the correct shape, and "upgrading" these to
 // OBB would rewrite the committed .zscen for zero behavioural gain. If a future
 // prop in this room DOES need to face somewhere, that prop -- and only that prop

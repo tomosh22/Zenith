@@ -26,13 +26,30 @@
 //
 // ★ NOT GRAPHICS-REQUIRED, DELIBERATELY, AND THAT IS THE WHOLE POINT. A skip
 // counts as a PASS in the headless zm-tests gate, so a graphics-required tint
-// test would be silent exactly where it is needed. The seam is the shipped one:
-// ZM_GreyboxVisual is file-local to Zenithmon.cpp and cannot be named from a test
-// TU, so the scan keys on the MATERIAL NAME -- the identical idiom
-// ZM_RivalVesperAuthored_Test uses, which is itself registered
-// m_bRequiresGraphics = false and passes headlessly today. That is the evidence
-// that ZM_GreyboxVisual::OnStart really does build its model and material on the
-// Null backend.
+// test would be silent exactly where it is needed.
+//
+// ★★ THE SCAN IS KEYED ON THE SEVEN BLOCK ENTITY NAMES, NOT ON "every material in
+// the scene called ZM_Greybox", AND THE DIFFERENCE IS A HARD CI GATE.
+// ZM_GreyboxVisual serves TWO populations and gives BOTH the same material name
+// (see the comment on its BuildBlockMesh: the name is the only handle a test TU
+// has on a file-local class). A HUMAN whose bake is not loadable -- the cold-start
+// fallback, which is what a non-tools build on a fresh clone runs -- gets a
+// proportioned block wearing that same "ZM_Greybox" name in its PALETTE colour.
+// A material-name scan therefore collects human bodies as though they were walls:
+// both interiors author a Player, ProfLab now also authors Professor Aster, and on
+// a cold tree the count runs past ZM_*_BLOCK_COUNT while the palette colours fail
+// the exact-grey clause. Neither symptom names its cause, and the failure is
+// ENVIRONMENT-DEPENDENT -- warm and cold trees disagree -- which is the worst
+// possible shape for a required check.
+//
+// Walking ZM_GetPlayerHomeBlockName / ZM_GetProfLabBlockName over
+// [0, BLOCK_COUNT) and resolving each through Zenith_SceneData::FindEntityByName
+// (the idiom ZM_AutoTests_ProfLab.cpp's shell walk already uses) closes it BY
+// CONSTRUCTION: a body that is not one of the named shell blocks cannot enter the
+// population at all, whatever material it wears. The material NAME is still
+// asserted per block -- it is the evidence that ZM_GreyboxVisual::OnStart really
+// does build its model and material on the Null backend -- it is simply no longer
+// the thing that decides WHO is measured.
 //
 // ★ WHAT THIS TEST CANNOT DO. It reads a Zenith_MaterialAsset's base colour, not
 // a pixel. A tint set on a material that is never the material drawn, or one the
@@ -58,6 +75,7 @@
 #include "Maths/Zenith_Maths.h"
 #include "Physics/Zenith_Physics.h"
 #include "ZenithECS/Zenith_Scene.h"
+#include "ZenithECS/Zenith_SceneData.h"        // FindEntityByName -- the shell walk's key
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "Zenithmon/Source/Data/ZM_WorldSpec.h"
 #include "Zenithmon/Source/Gen/ZM_HumanAppearance.h"
@@ -68,14 +86,15 @@ namespace
 {
 	constexpr float fIT_FIXED_DT = 1.0f / 60.0f;
 
-	// Keyed on the MATERIAL NAME, because ZM_GreyboxVisual is file-local to
-	// Zenithmon.cpp and unnameable from a test TU. Every blockout body in the game
-	// wears a material called this; what differs is the base colour it was given.
+	// The material name every blockout body wears. ZM_GreyboxVisual is file-local to
+	// Zenithmon.cpp and unnameable from a test TU, so this is still the only handle
+	// a test has on the material it builds -- but it is now a PER-BLOCK ASSERTION
+	// rather than the scan's selector (see the ★★ note in the file header).
 	const char* const szIT_GREYBOX_MATERIAL = "ZM_Greybox";
 
-	// The sample cap is slack against the seven blocks each interior authors, and
-	// anything DROPPED is counted so a truncated scan reds rather than quietly
-	// reporting a clean subset.
+	// The sample cap is slack against the seven blocks each interior authors, and a
+	// block table that outgrew it is counted so a truncated scan reds rather than
+	// quietly reporting a clean subset.
 	constexpr u_int uIT_MAX_SAMPLED = 32u;
 
 	// The tint is a compiled pure function, so a sampled material colour must
@@ -95,6 +114,23 @@ namespace
 	};
 	const char* g_aszITRoomNames[IT_ROOM_COUNT] = { "PlayerHome", "ProfLab" };
 
+	// The shell inventory each room is scanned BY, spelled once. Both accessors are
+	// exactly the ones the tools authoring loop walks, so a renamed or reordered
+	// block moves the authoring and this scan together instead of stranding one.
+	u_int ITRoomBlockCount(u_int uRoom)
+	{
+		return uRoom == (u_int)IT_ROOM_PLAYERHOME
+			? (u_int)ZM_PLAYERHOME_BLOCK_COUNT
+			: (u_int)ZM_PROFLAB_BLOCK_COUNT;
+	}
+
+	const char* ITRoomBlockName(u_int uRoom, u_int uBlock)
+	{
+		return uRoom == (u_int)IT_ROOM_PLAYERHOME
+			? ZM_GetPlayerHomeBlockName((ZM_PLAYERHOME_BLOCK)uBlock)
+			: ZM_GetProfLabBlockName((ZM_PROFLAB_BLOCK)uBlock);
+	}
+
 	enum class ITPhase
 	{
 		SettlePlayerHome,
@@ -107,11 +143,14 @@ namespace
 	struct ITRoomSample
 	{
 		u_int m_uCollected = 0u;
-		u_int m_uOverflow = 0u;
+		u_int m_uOverflow = 0u;             // block table larger than the sample cap
+		u_int m_uUnresolved = 0u;           // named blocks with no entity / no model / no material
+		u_int m_uWrongMaterial = 0u;        // named blocks whose material is not szIT_GREYBOX_MATERIAL
 		u_int m_uOffExpected = 0u;          // blocks whose colour is not the expected one
 		bool m_bSampled = false;
 		float m_fWorstError = 0.0f;         // worst per-channel deviation seen
 		Zenith_Maths::Vector4 m_xFirstColour = Zenith_Maths::Vector4(0.0f);
+		const char* m_szFirstUnresolved = nullptr;
 	};
 
 	ITPhase g_eITPhase = ITPhase::Done;
@@ -164,8 +203,12 @@ namespace
 		return fWorst;
 	}
 
-	// COLLECT INSIDE THE QUERY, JUDGE OUTSIDE IT -- the shipped idiom. Nothing but
-	// the material read happens under the iterator.
+	// ★ THE POPULATION IS THE NAMED SHELL BLOCKS, AND ONLY THEM. Walking the block
+	// enum and resolving each name is what makes it impossible for a human body --
+	// the Player, or ProfLab's Professor Aster -- to be measured as though it were a
+	// wall, whatever material it happens to be wearing on a cold tree. An
+	// unresolvable name is COUNTED, never skipped: a missing block would otherwise
+	// shrink the population and leave the colour clauses judging a clean subset.
 	//
 	// bExact selects the comparison: ProfLab's half is an EQUALITY claim about
 	// bytes that must not have moved, so it is compared exactly; PlayerHome's is a
@@ -174,38 +217,54 @@ namespace
 	void ITScanActiveScene(
 		ITRoom eRoom, const Zenith_Maths::Vector4& xExpected, bool bExact)
 	{
+		ITRoomSample& xRoom = g_axITRooms[eRoom];
+		xRoom = ITRoomSample{};
+		xRoom.m_bSampled = true;
+
 		Zenith_Maths::Vector4 axColours[uIT_MAX_SAMPLED] = {};
 		u_int uCollected = 0u;
-		u_int uOverflow = 0u;
 
-		g_xEngine.Scenes().QueryActiveScene<Zenith_ModelComponent>().ForEach(
-			[&](Zenith_EntityID, Zenith_ModelComponent& xModel)
+		Zenith_SceneData* pxData = g_xEngine.Scenes().GetActiveSceneData();
+		const u_int uBlockCount = ITRoomBlockCount((u_int)eRoom);
+		for (u_int uBlock = 0u; uBlock < uBlockCount; ++uBlock)
+		{
+			const char* szBlockName = ITRoomBlockName((u_int)eRoom, uBlock);
+			if (uCollected >= uIT_MAX_SAMPLED)
 			{
-				if (xModel.GetNumMeshes() == 0u)
-				{
-					return;
-				}
-				const Zenith_MaterialAsset* pxMaterial = xModel.GetMaterial(0u);
-				if (pxMaterial == nullptr
-					|| pxMaterial->GetName() != szIT_GREYBOX_MATERIAL)
-				{
-					return;   // not a blockout body
-				}
-				if (uCollected >= uIT_MAX_SAMPLED)
-				{
-					++uOverflow;   // Verify reds on this rather than judging a subset
-					return;
-				}
-				axColours[uCollected] = pxMaterial->GetBaseColor();
-				++uCollected;
-			});
+				++xRoom.m_uOverflow;   // Verify reds on this rather than judging a subset
+				continue;
+			}
 
-		ITRoomSample& xRoom = g_axITRooms[eRoom];
+			Zenith_Entity xEntity = pxData != nullptr
+				? pxData->FindEntityByName(szBlockName) : Zenith_Entity();
+			const Zenith_ModelComponent* pxModel = xEntity.IsValid()
+				? xEntity.TryGetComponent<Zenith_ModelComponent>() : nullptr;
+			const Zenith_MaterialAsset* pxMaterial =
+				(pxModel != nullptr && pxModel->GetNumMeshes() != 0u)
+					? pxModel->GetMaterial(0u) : nullptr;
+			if (pxMaterial == nullptr)
+			{
+				++xRoom.m_uUnresolved;
+				if (xRoom.m_szFirstUnresolved == nullptr)
+				{
+					xRoom.m_szFirstUnresolved = szBlockName;
+				}
+				continue;
+			}
+
+			// The material NAME is still asserted -- it is the evidence that
+			// ZM_GreyboxVisual::OnStart built its model and material on the Null
+			// backend -- it is simply no longer what decides who is measured.
+			if (pxMaterial->GetName() != szIT_GREYBOX_MATERIAL)
+			{
+				++xRoom.m_uWrongMaterial;
+			}
+
+			axColours[uCollected] = pxMaterial->GetBaseColor();
+			++uCollected;
+		}
+
 		xRoom.m_uCollected = uCollected;
-		xRoom.m_uOverflow = uOverflow;
-		xRoom.m_uOffExpected = 0u;
-		xRoom.m_fWorstError = 0.0f;
-		xRoom.m_bSampled = true;
 		if (uCollected > 0u)
 		{
 			xRoom.m_xFirstColour = axColours[0];
@@ -364,36 +423,69 @@ static bool Verify_ZMInteriorTint()
 
 	// ---- THE VACUITY GUARD, FIRST AND SEPARATE ------------------------------
 	// It names a MISSING OBSERVATION, while the clauses under it name a wiring
-	// violation. Without it a run whose scan found no blockout bodies at all would
-	// satisfy "offExpected == 0" having measured nothing -- and an empty scan is
-	// precisely what a headless regression in ZM_GreyboxVisual::OnStart would
+	// violation. Without it a run whose scan resolved no blockout bodies at all
+	// would satisfy "offExpected == 0" having measured nothing -- and an empty scan
+	// is precisely what a headless regression in ZM_GreyboxVisual::OnStart would
 	// produce. A zero or truncated scan is a FAILURE here, never a quiet pass.
+	//
+	// ★ THE COUNT IS NOW EXACT BY CONSTRUCTION, and that is deliberate rather than
+	// redundant: the scan walks exactly ZM_*_BLOCK_COUNT names, so a shortfall can
+	// only be an unresolved block and can never again be a human body inflating the
+	// total. The equality is kept BECAUSE it is now a real question about the scene
+	// (were all seven authored, and did each build a material?) instead of a
+	// question about which population the material name happened to select.
 	bool bScansUsable = true;
 	for (u_int u = 0u; u < IT_ROOM_COUNT; ++u)
 	{
 		const ITRoomSample& xRoom = g_axITRooms[u];
 		Zenith_Log(LOG_CATEGORY_UNITTEST,
 			"[ZM_InteriorTint] %s: sampled=%s blocks=%u (expected %u) overflow=%u "
-			"offExpected=%u worstChannelError=%.6f firstColour=(%.4f, %.4f, %.4f, %.4f)",
+			"unresolved=%u wrongMaterial=%u offExpected=%u worstChannelError=%.6f "
+			"firstColour=(%.4f, %.4f, %.4f, %.4f)",
 			g_aszITRoomNames[u], xRoom.m_bSampled ? "true" : "false",
 			xRoom.m_uCollected, auExpectedBlocks[u], xRoom.m_uOverflow,
+			xRoom.m_uUnresolved, xRoom.m_uWrongMaterial,
 			xRoom.m_uOffExpected, (double)xRoom.m_fWorstError,
 			(double)xRoom.m_xFirstColour.x, (double)xRoom.m_xFirstColour.y,
 			(double)xRoom.m_xFirstColour.z, (double)xRoom.m_xFirstColour.w);
 
 		if (!xRoom.m_bSampled || xRoom.m_uOverflow != 0u
+			|| xRoom.m_uUnresolved != 0u
 			|| xRoom.m_uCollected != auExpectedBlocks[u])
 		{
 			Zenith_Error(LOG_CATEGORY_UNITTEST,
 				"[ZM_InteriorTint] the %s scan did not observe its shell (sampled=%s "
-				"blocks=%u expected=%u overflow=%u) -- every colour clause about "
-				"this room would be vacuous, or would be judging a truncated "
-				"subset. If the count is ZERO on the Null backend, the greybox "
-				"visual is not building its model headlessly; that must be booked "
-				"as a coverage boundary with an explicit skip, NEVER left passing "
-				"on an empty scan",
+				"blocks=%u expected=%u overflow=%u unresolved=%u, first unresolved "
+				"'%s') -- every colour clause about this room would be vacuous, or "
+				"would be judging a truncated subset. An UNRESOLVED block is either "
+				"an entity the scene never authored under that name, or one whose "
+				"ZM_GreyboxVisual built no model/material; if EVERY block is "
+				"unresolved on the Null backend, the greybox visual is not building "
+				"its model headlessly, and that must be booked as a coverage "
+				"boundary with an explicit skip, NEVER left passing on an empty scan",
 				g_aszITRoomNames[u], xRoom.m_bSampled ? "true" : "false",
-				xRoom.m_uCollected, auExpectedBlocks[u], xRoom.m_uOverflow);
+				xRoom.m_uCollected, auExpectedBlocks[u], xRoom.m_uOverflow,
+				xRoom.m_uUnresolved,
+				xRoom.m_szFirstUnresolved != nullptr
+					? xRoom.m_szFirstUnresolved : "(none)");
+			bScansUsable = false;
+			bPassed = false;
+		}
+
+		// The material-name claim, kept as its OWN clause now that it no longer
+		// selects the population. A shell block wearing something other than
+		// ZM_GreyboxVisual's material means the blockout branch stopped running for
+		// it -- which the colour clauses below would report as a wrong colour and
+		// misdiagnose.
+		if (xRoom.m_uWrongMaterial != 0u)
+		{
+			Zenith_Error(LOG_CATEGORY_UNITTEST,
+				"[ZM_InteriorTint] %u of %s's %u shell blocks carry a material that "
+				"is not '%s' -- ZM_GreyboxVisual's BLOCKOUT branch did not run for "
+				"them, so whatever colour they are wearing is not the one this test "
+				"is about",
+				xRoom.m_uWrongMaterial, g_aszITRoomNames[u], xRoom.m_uCollected,
+				szIT_GREYBOX_MATERIAL);
 			bScansUsable = false;
 			bPassed = false;
 		}

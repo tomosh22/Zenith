@@ -194,6 +194,16 @@ jobs:
           #
           # History, newest first (the DERIVATION is the audit trail; the OBSERVED
           # number is the authority):
+          #   3299  S8 item 1 SC-C -- Professor Aster authored into ProfLab.zscen at
+          #                   identity rotation, observed 2026-08-14 on a Null_ build
+          #                   (3299 ran / 3297 passed / 0 failed / 2 skipped).
+          #                   +4 ZM units, no engine units: three ZM_WorldTraversal
+          #                   placement units (arrival-frustum containment, the
+          #                   reach/shell standoff, entity-name uniqueness) + one
+          #                   strict ZM_CommittedSceneBytes needle on the authored
+          #                   ProfLab.zscen. Same authoring-boot ordering as SC-B
+          #                   (ZM-D-190): the needle is red until the
+          #                   --skip-unit-tests authoring boot writes the scene.
           #   3295  S8 item 1 SC-B -- the starter-choice SCREEN presenter, observed
           #                   2026-08-14 on a Null_ build (3295 ran / 3293 passed /
           #                   0 failed / 2 skipped). +15 ZM units, no engine units:
@@ -586,7 +596,7 @@ jobs:
           #   2817  ZM-D-173  = 2809 + 8: four ENGINE sensor-raycast units plus
           #                   two camera fixtures and two Home-placement units.
           $exe = 'Games\Zenithmon\Build\output\win64\null_vs2022_debug_win64_true\zenithmon.exe'
-          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 3295 -TimeoutSec 600
+          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 3299 -TimeoutSec 600
           if ($LASTEXITCODE -ne 0) { Write-Error "boot unit tests failed (see log above)"; exit $LASTEXITCODE }
 
       - name: Run Zenithmon tests

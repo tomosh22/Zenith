@@ -3,19 +3,19 @@
 **Last updated:** 2026-08-14
 
 **★ LIVE PIN (UPDATED 2026-08-14):
-ZM boot `3295`; engine boot (Null Combat) `1638`; registry **61**.** Observed
+ZM boot `3299`; engine boot (Null Combat) `1638`; registry **61**.** Observed
 2026-08-14 on a clean `Null_vs2022_Debug_Win64_True` Zenithmon build after S8
-SC-B. The 3280 -> 3295 move is **+15 ZM units from SC-B** (14 pure `ZM_Starter`
-presenter units + 1 `ZM_CommittedSceneBytes` needle on the authored
-`FrontEnd.zscen`); the earlier 3277 -> 3280 move was **+3 ZM units from SC-A**.
-Engine UNMOVED at 1638 -- neither slice touched a file under `Zenith/`.
+SC-C. The walk this session: **3277 -> 3280** (SC-A, +3) **-> 3295** (SC-B, +15:
+14 pure `ZM_Starter` units + 1 `FrontEnd.zscen` needle) **-> 3299** (SC-C, +4:
+three `ZM_WorldTraversal` placement units + 1 `ProfLab.zscen` needle).
+Engine UNMOVED at 1638 -- no slice touched a file under `Zenith/`.
 **★ NEVER PIN FROM A `Vulkan_` EXE:** the same tree reported **3332** on Vulkan
 against **3295** on Null, a standing +37 gap.
 **★ `registry` read 55 here and that was ALSO stale** -- this block was never
 updated when the input program's WP3b grew the automated suite 55 -> 61 with the
 six `ZM_Touch*` tests, even though the prose LOWER IN THIS SAME FILE said so
 explicitly. Corrected to the enumerated count. The current pins are
-`zm-tests.yml` (`-Baseline 3295`) and `run_unit_gate.ps1` (default 1638, the
+`zm-tests.yml` (`-Baseline 3299`) and `run_unit_gate.ps1` (default 1638, the
 ENGINE number -- never used for Zenithmon).
 
 **★★ 3276 -> 3277 IS A FIX-FORWARD, NOT A FEATURE BUMP. THE `zm-tests` GATE WAS
@@ -935,6 +935,19 @@ SUB-COMMITS HAVE LANDED (ZM-D-174/175/176/177); THE BOX IS NOT TICKED AND MUST N
 - **ZM-D-177** -- the tint pixel probe's absolute framebuffer bounds retracted as a false premise;
   its relative separation kept unchanged.
 
+**★ `ZM_InteriorTintPixels_Test` RE-READ AFTER SC-C (owed, because ProfLab is that test's UNTINTED
+CONTROL and SC-C authors into it). STILL RED, AND SC-C IS NOT THE CAUSE -- the evidence attributes
+it:** observed windowed 2026-08-14, PlayerHome red/blue **1.1888**, ProfLab **1.0684**, gap
+**0.1204** against the 0.15 floor (first-run calibration was 1.3045 / 1.0742, gap 0.2303).
+**ProfLab -- the only room SC-C touched -- moved just -0.0058 from calibration; the gap closed
+because PLAYERHOME fell -0.1157.** The test's own message names this discriminator: "a change to the
+scene's lighting moves BOTH absolutes together and leaves this gap intact", and here exactly one
+absolute moved. **DO NOT SHRINK `fPT_MIN_RATIO_MARGIN`** -- the test explicitly forbids it
+("RECORD THAT, do NOT shrink the floor until it passes"). It never reds in CI because
+`m_bRequiresGraphics = true` makes it skipped-as-passed on Null, which is why this re-read has to be
+done by hand and written down. The open question is why PlayerHome's warm tint is reading ~0.116
+cooler than at calibration; that is a PlayerHome/lighting investigation, not a ProfLab one.
+
 **★★ 2026-08-14: ITEM 1 IS NOW PLANNED IN SIX SLICES (SC-A..SC-F), SC-A HAS LANDED, AND THREE USER
 RULINGS UNBLOCKED IT (ZM-D-188).** A 9-agent adversarial review of the plan returned
 **NEEDS_REVISION from all three critics with 5 blockers**; the blockers are recorded below against
@@ -952,6 +965,32 @@ would serve the stale bake forever). +3 boot units, ZM boot pin **3277 -> 3280 O
 `ZM_HUMAN_LEADER_HALVARD`, below the floor. That floor binds the AUTHORED cast, never the 35-row
 roster (only 6 of 35 rows clear it against every other row; several pairs are exactly 0.0000), and
 Halvard is in no scene and no NPC row. **If Halvard is ever authored, HE is the row that moves.**
+
+*LANDED (SC-C, 2026-08-14):* **Professor Aster AUTHORED into `ProfLab.zscen` at IDENTITY rotation**
+(ZM-D-191). His XZ is DERIVED from the placement constants -- `X = -(apertureHalfWidth +
+bodyFootprint) = -3.8`, `Z = (spawnZ + innerMaxZ)/2 = 6.375`, all dyadic so `/fp:fast` cannot
+re-associate them -- because the hand-picked `(-4.5, +1.0)` put him **~71.6 deg off-axis against a
+~48.5 deg half-angle, i.e. off-screen at the arrival pose**, and every proposed unit would have
+stayed green (they asserted constants the authoring code also reads). `ZM_AutoTests_InteriorTint`
+now selects its sample population BY ENTITY NAME, not by material name -- the old scan collected any
+`ZM_Greybox`-material model, which is what a human's HUMAN_FALLBACK body wears. +4 boot units,
+**3295 -> 3299 OBSERVED**; `ProfLab.zscen` byte-stable across two authoring boots.
+
+**★ AND A PROCESS-HYGIENE LESSON PAID FOR IN A 20-MINUTE BATCH.** An SC-C headless run returned
+**29 passed / 33 failed**, which looked like a catastrophic regression. It was not: the first entry
+in the failed list was `<batch:exit=-2147483645>` = **0x80000003 STATUS_BREAKPOINT**, a single
+process-level crash, after which the harness marks every not-yet-run test as failed. The 33 were
+CASUALTIES, not failures -- `ZM_RivalVesperWhiteout_Test`, the first of them, PASSES in isolation.
+Cause: **an orphaned `zenithmon.exe` from an authoring boot was still alive when the batch started**,
+contending over the save sandbox and output dir. A clean repeat with no strays is **61 passed / 0
+failed**. The rule already in OrchestratorPlaybook ("each iteration sweeps stray zenithmon.exe
+processes") is not bookkeeping -- **sweep BEFORE starting a batch, not just at iteration end**, and
+never start one while an authoring boot may still be running. A false regression costs a full
+20-minute batch plus the diagnosis behind it.
+**★ Also disproven along the way:** the terrain bake was NOT damaged by force-killing authoring
+boots. A full 440 s tools boot left the Dawnmere terrain file count at **773 -> 773** with nothing
+rewritten, so 773 IS the baked state and the `Render_*_*.zmesh` "Check failed" lines are
+pre-existing noise, not a symptom. Do not chase them.
 
 *STILL NOT BUILT -- what item 1 needs before its box may be ticked:*
 - **SC-B** the starter-choice SCREEN presenter (`ZM_UI_StarterChoice`, VERTICAL so it needs zero

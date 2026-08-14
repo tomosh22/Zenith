@@ -15,6 +15,92 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-08-14 -- ZM-D-191 -- Aster's anchor is DERIVED from the camera, not chosen; and a material-name sample population was collecting humans
+
+**Decision 1 -- the anchor is arithmetic, not taste.** Professor Aster's XZ in
+`ZM_ProfLabPlacement.h` is computed from the shipped placement constants:
+
+```
+X = -(apertureHalfWidth + bodyFootprint) = -(3.0 + 0.8) = -3.8
+Z = (spawnZ + innerMaxZ) / 2            = (5.0 + 7.75) / 2 = 6.375
+Y = floorTop + bodyHalfHeight           = 0.9
+```
+
+**Why it had to be derived:** the plan hand-picked `(-4.5, +1.0)`, and two
+reviewers independently computed that this puts him **~71.6 degrees off axis
+against a ~48.5 degree 16:9 horizontal half-angle** -- i.e. the player warps in
+and sees an EMPTY ROOM. Worse, the slice would have been GREEN: every proposed
+unit asserted properties of the placement constants, which the authoring code
+also reads, so both sides move together. The one test that mentioned the camera
+asserted `...DoesNotOccludeTheArrivalPose` -- **the opposite property**. Nothing
+owned "is the title character actually on screen".
+
+Measured for the shipped anchor: all 8 body corners inside the frustum with
+>= 3.07 m lateral slack after margin; centre still inside at aspect 1.0 (the
+narrowest any landscape window gives) with 0.579 m slack; arrival standoff
+**4.041 m** against the 2.9 m effective interact reach, so you still walk up to
+talk. **Depth is the lever, not lateral offset** -- frame half-width grows
+linearly with distance from the camera, so a step deeper buys width where a step
+sideways spends it.
+
+**★ Every term is dyadic and the expression is one addition**, so `/fp:fast` has
+nothing to re-associate and the authored bytes are configuration-stable -- the
+same discipline ZM-D-183 imposed on rotation, applied to position. The rejected
+`(-4.5, +1.0)` is kept in the test as the ANTI-VACUITY counterexample: the unit
+must red on it, or it is not measuring anything.
+
+**Decision 2 -- `ZM_AutoTests_InteriorTint` selects its sample population BY
+ENTITY NAME, never by material name.** It used to collect every
+`Zenith_ModelComponent` whose material[0] was named `"ZM_Greybox"` and then
+require the count to equal `ZM_PROFLAB_BLOCK_COUNT` (7). But
+`ZM_GreyboxVisual`'s HUMAN_FALLBACK path builds a block with that SAME material
+name, so any human standing in the room joins the shell population. It now walks
+the block enum through `ZM_GetProfLabBlockName` / `ZM_GetPlayerHomeBlockName` and
+resolves each with `FindEntityByName`, plus an `unresolved` counter so a MISSING
+block reds instead of silently shrinking the population. The material-name check
+survives as a per-block clause -- it is still the evidence that
+`ZM_GreyboxVisual::OnStart` builds a material on Null -- it just no longer
+decides who is measured.
+
+**★ THE REVIEW THAT FOUND THIS GOT ITS TRIGGER WRONG, AND THE CORRECTION MATTERS
+MORE THAN THE FINDING.** The review claimed "on CI, ProfLab collects 8 and this
+hard gate reds", with a warm dev box masking it. **That is inverted.** CI runs
+`Null_vs2022_Debug_Win64_True`, which is a **TOOLS** build, and
+`ZM_AreHumanAssetsReady()` (`ZM_HumanAssetPolicy.cpp:86`) latches one
+`ZM_BakeAllHumans()` attempt and RE-QUERIES warmth -- so CI goes warm, the models
+carry their own material names, and the count stays 7. **CI is the warm case.**
+The genuinely cold state is a `_False` build (where the bake is an inline
+`return false`) or a forced-cold policy.
+
+**And the exposure was PRE-EXISTING, not introduced here.** Both `PlayerHome` and
+`ProfLab` author a `Player`, and `ZM_GreyboxVisual::ResolveHumanId` returns
+`ZM_HUMAN_PLAYER_M` for anything carrying `ZM_PlayerController` -- so in any truly
+cold state the old scan already collected 8 in BOTH rooms. Aster would have made
+ProfLab 9, not 8. The fix was made anyway because it is strictly correct and
+closes the older Player exposure too, but the recorded reason is now the true one.
+**A finding can be worth acting on and still have a wrong mechanism attached; the
+mechanism is what the next person inherits.**
+
+**Tests that lock it:** `ZM_WorldTraversal.ProfLab_AsterStandsInsideTheArrivalFrustum`,
+`ZM_WorldTraversal.ProfLab_AsterStandsOutsideArrivalReachInsideTheShell`,
+`ZM_WorldTraversal.ProfLab_AsterEntityNameIsAUniqueLookupKey`,
+`ZM_CommittedSceneBytes.ProfLabCarriesTheAuthoredProfessorEntityName` (strict --
+an unreadable TRACKED file FAILS rather than skipping), and a live-scene clause
+in `ZM_AutoTests_ProfLab.cpp` (`m_bRequiresGraphics = false`, no `RequestSkip`,
+so a real CI gate) asserting the loaded entity's transform, scale, collider type
+and half extents, and that it resolves to `ZM_NPC_PROF_ASTER`. That last one is
+what catches the mutations the constant-vs-constant units cannot: authoring at
+`+x` instead of `-x`, `SetTransformScale(1.0f)` instead of
+`fZM_HUMAN_VISUAL_SCALE`, a SPHERE collider, or omitting `ZM_Interactable`
+entirely.
+
+**Housekeeping:** `ZM_QueueDawnmereNpc` is renamed `ZM_QueueStationaryTalkerNpc`
+(step list byte-identical, 4 Dawnmere call sites + Aster) -- the professor being
+its fifth caller proved it was never Dawnmere-specific.
+
+**Reversibility:** easy, but re-deriving the anchor by hand would reintroduce the
+off-screen bug the frustum unit now owns.
+
 ## 2026-08-14 -- ZM-D-190 -- MEASURED: a Null boot authors ZERO Zenithmon scenes, and the unit gate can never author at all
 
 **This corrects a claim that was about to be acted on twice more (SC-C, SC-E).**

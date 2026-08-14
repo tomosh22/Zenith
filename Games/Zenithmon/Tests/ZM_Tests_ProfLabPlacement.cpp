@@ -13,7 +13,7 @@
 // (ZM_ProfLabWarp_Test) needs the committed ProfLab.zscen and a live warp, so it
 // cannot be the only place the placement argument lives.
 //
-// ★ WHAT THESE EIGHT UNITS CANNOT DO, STATED UP FRONT. They run BEFORE the
+// ★ WHAT THESE ELEVEN UNITS CANNOT DO, STATED UP FRONT. They run BEFORE the
 // initial scene loads (Zenith_Engine.cpp runs RunAllTests() ahead of
 // Project_LoadInitialScene), so they can see NEITHER the scene registry NOR one
 // byte of Assets/Scenes/ProfLab.zscen. They cannot detect a missing
@@ -37,6 +37,7 @@
 #include "Zenithmon/Components/ZM_FollowCamera.h"        // the camera's PURE statics (nothing is constructed)
 #include "Zenithmon/Components/ZM_SpawnPoint.h"          // IsTagValid / uTAG_CAPACITY -- the tag contract
 #include "Zenithmon/Source/Data/ZM_WorldSpec.h"
+#include "Zenithmon/Source/Interaction/ZM_InteractionLogic.h"   // the SHIPPED candidate picker -- run, not re-derived
 #include "Zenithmon/Source/World/ZM_HumanBody.h"         // THE body contract -- by name, not by literal
 #include "Zenithmon/Source/World/ZM_ProfLabPlacement.h"
 
@@ -190,6 +191,142 @@ namespace
 		return ZM_GetProfLabBlock(ZM_PROFLAB_BLOCK_LINTEL).Min().y
 			- ZM_GetProfLabBlock(ZM_PROFLAB_BLOCK_FLOOR).Max().y;
 	}
+
+	// ========================================================================
+	// U9..U11 support: the ARRIVAL FRUSTUM, and Professor Aster's box.
+	// ========================================================================
+
+	// How far inside the frustum's edge a point has to land before this file will
+	// call it "on screen". Aster's own half-width, deliberately: a figure whose
+	// centre is exactly on the frustum edge is half off the side of the picture,
+	// which is not what "the player sees him when they arrive" means.
+	constexpr float fPROFLAB_ASTER_FRUSTUM_MARGIN = fZM_HUMAN_BODY_FOOTPRINT * 0.5f;
+
+	// ★ THE COUNTEREXAMPLE, AND THE ONLY REASON THESE TWO LITERALS ARE HERE. An
+	// earlier draft of this placement proposed roughly this anchor for Aster; it is
+	// about 71.6 degrees off the settled camera's plan-view axis against a ~48.5
+	// degree horizontal half-angle at 16:9, i.e. the player warps in and sees an
+	// empty room. It is fed through the SAME predicate as the shipped anchor by
+	// U9's anti-vacuity clause, which is what proves that clause can red at all.
+	// These are NOT shipped constants and nothing outside this file may read them.
+	constexpr float fPROFLAB_REJECTED_ASTER_X = -4.5f;
+	constexpr float fPROFLAB_REJECTED_ASTER_Z = 1.0f;
+
+	// Hand-rolled vector arithmetic, matching this file's existing slab test rather
+	// than reaching for glm: these units are the pure half of the argument and
+	// every step of the projection should be readable as arithmetic.
+	float ProfLabDot(
+		const Zenith_Maths::Vector3& xA, const Zenith_Maths::Vector3& xB)
+	{
+		return xA.x * xB.x + xA.y * xB.y + xA.z * xB.z;
+	}
+
+	Zenith_Maths::Vector3 ProfLabCross(
+		const Zenith_Maths::Vector3& xA, const Zenith_Maths::Vector3& xB)
+	{
+		return Zenith_Maths::Vector3(
+			xA.y * xB.z - xA.z * xB.y,
+			xA.z * xB.x - xA.x * xB.z,
+			xA.x * xB.y - xA.y * xB.x);
+	}
+
+	Zenith_Maths::Vector3 ProfLabNormalise(const Zenith_Maths::Vector3& xVector)
+	{
+		const float fLength = std::sqrt(ProfLabDot(xVector, xVector));
+		if (!(fLength > 1.0e-6f))
+		{
+			return Zenith_Maths::Vector3(0.0f);   // TOTAL: never a NaN
+		}
+		return xVector / fLength;
+	}
+
+	// The camera basis the arriving player is filmed through. ★ IT IS BUILT FROM
+	// THE LOOK-AT GEOMETRY, NOT FROM A PLAN-VIEW BEARING. The settled camera is
+	// pitched down onto the player's chest, so "how many degrees off +Z is he?" --
+	// the number an eyeball estimate reaches for -- is not the quantity the
+	// perspective divide compares. Forward is the unit vector from the settled
+	// position to the pivot (the two points ZM_FollowCamera::BuildLookAtPose is
+	// handed), right is horizontal because the camera carries no roll, and up
+	// closes the frame.
+	struct ProfLabArrivalFrustum
+	{
+		Zenith_Maths::Vector3 m_xPosition = Zenith_Maths::Vector3(0.0f);
+		Zenith_Maths::Vector3 m_xForward = Zenith_Maths::Vector3(0.0f);
+		Zenith_Maths::Vector3 m_xRight = Zenith_Maths::Vector3(0.0f);
+		Zenith_Maths::Vector3 m_xUp = Zenith_Maths::Vector3(0.0f);
+		float m_fTanHalfVerticalFOV = 0.0f;
+	};
+
+	ProfLabArrivalFrustum ProfLabBuildArrivalFrustum()
+	{
+		ProfLabArrivalFrustum xFrustum;
+		xFrustum.m_xPosition = ZM_GetProfLabSettledCameraPosition();
+		xFrustum.m_xForward = ProfLabNormalise(
+			ZM_GetProfLabArrivalPivot() - xFrustum.m_xPosition);
+		xFrustum.m_xRight = ProfLabNormalise(ProfLabCross(
+			xFrustum.m_xForward, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f)));
+		xFrustum.m_xUp = ProfLabCross(xFrustum.m_xRight, xFrustum.m_xForward);
+		// Zenith_CameraComponent feeds m_fFOV straight to glm::perspective, whose
+		// first argument is the VERTICAL field of view -- so the half-angle below is
+		// the vertical one and the horizontal is the aspect-widened version of it.
+		xFrustum.m_fTanHalfVerticalFOV = std::tan(
+			glm::radians(fZM_PROFLAB_CAMERA_FOV_DEGREES) * 0.5f);
+		return xFrustum;
+	}
+
+	// One point, measured in that camera's space. Every field is reported rather
+	// than reduced to a bool so a failure says HOW far outside the point landed.
+	struct ProfLabFrustumSample
+	{
+		float m_fDepth = 0.0f;            // along forward; the perspective divide's denominator
+		float m_fLateral = 0.0f;          // |camera-space X|
+		float m_fVertical = 0.0f;         // |camera-space Y|
+		float m_fLateralLimit = 0.0f;     // the half-width at the mirrored 16:9 aspect
+		float m_fSquareLimit = 0.0f;      // ...and at aspect 1.0, the narrowest any landscape window gives
+		float m_fVerticalLimit = 0.0f;
+	};
+
+	ProfLabFrustumSample ProfLabProject(
+		const ProfLabArrivalFrustum& xFrustum, const Zenith_Maths::Vector3& xPoint)
+	{
+		const Zenith_Maths::Vector3 xOffset = xPoint - xFrustum.m_xPosition;
+		ProfLabFrustumSample xSample;
+		xSample.m_fDepth = ProfLabDot(xOffset, xFrustum.m_xForward);
+		xSample.m_fLateral = std::fabs(ProfLabDot(xOffset, xFrustum.m_xRight));
+		xSample.m_fVertical = std::fabs(ProfLabDot(xOffset, xFrustum.m_xUp));
+		const float fHalfHeight = xSample.m_fDepth * xFrustum.m_fTanHalfVerticalFOV;
+		xSample.m_fVerticalLimit = fHalfHeight;
+		xSample.m_fSquareLimit = fHalfHeight;
+		xSample.m_fLateralLimit = fHalfHeight * fZM_PROFLAB_CAMERA_ASPECT;
+		return xSample;
+	}
+
+	// Aster's authored body, as the box the AABB collider is given at runtime --
+	// the COMPILED contract (ZM_HumanBody.h), never the transform scale.
+	ZM_ProfLabBlockout ProfLabAsterBody()
+	{
+		return ZM_ProfLabBlockout{
+			ZM_GetProfLabAsterCenter(),
+			Zenith_Maths::Vector3(
+				fZM_HUMAN_BODY_FOOTPRINT,
+				fZM_HUMAN_BODY_HEIGHT,
+				fZM_HUMAN_BODY_FOOTPRINT) };
+	}
+
+	// The eight corners of that box, so the frustum claim is about the FIGURE and
+	// not about an infinitely small point at his navel.
+	Zenith_Maths::Vector3 ProfLabAsterBodyCorner(u_int uCorner)
+	{
+		const ZM_ProfLabBlockout xBody = ProfLabAsterBody();
+		const Zenith_Maths::Vector3 xMin = xBody.Min();
+		const Zenith_Maths::Vector3 xMax = xBody.Max();
+		return Zenith_Maths::Vector3(
+			(uCorner & 1u) != 0u ? xMax.x : xMin.x,
+			(uCorner & 2u) != 0u ? xMax.y : xMin.y,
+			(uCorner & 4u) != 0u ? xMax.z : xMin.z);
+	}
+
+	constexpr u_int uPROFLAB_BODY_CORNER_COUNT = 8u;
 }
 
 // ============================================================================
@@ -873,5 +1010,330 @@ ZENITH_TEST(ZM_WorldTraversal, ProfLab_ShellEnclosesTheFloorOnEverySide)
 			"%.4f m tall and would see (and step) over it",
 			ZM_GetProfLabBlockName(aeSides[uSide]), (double)fRise,
 			(double)fZM_HUMAN_BODY_HEIGHT);
+	}
+}
+
+// ============================================================================
+// U9 -- PROFESSOR ASTER IS ON SCREEN WHEN THE PLAYER ARRIVES.
+// ============================================================================
+
+// ★ THE PROPERTY WITH NO OTHER OWNER, AND THE ONE AN EARLIER DRAFT GOT WRONG.
+// Every other unit in this file measures the ROOM: the shell encloses, the doorway
+// admits, the camera fits. None of them can say whether the thing the player came
+// here to meet is in the picture at the moment they arrive, and "the professor is
+// in his lab" is satisfied just as well by a professor standing behind the camera.
+// So this unit runs the projection: it builds the arrival frustum out of the same
+// constants the authoring reads, projects every corner of Aster's authored body
+// into it, and requires the whole figure inside by a stated margin.
+//
+// THREE ARMS, AND THE THIRD IS WHAT MAKES THE FIRST TWO WORTH HAVING:
+//   * the mirrored camera constants this frustum is built from ARE the shipped
+//     ones (the settled position and the pivot are compared against
+//     ZM_FollowCamera's own statics, not assumed);
+//   * the eight body corners land inside, at the 16:9 aspect AND -- for the centre
+//     -- at aspect 1.0, which is the narrowest horizontal field any landscape
+//     window can give and therefore a claim no window shape can invalidate;
+//   * the REJECTED anchor, fed through the identical predicate, lands OUTSIDE. A
+//     containment test that cannot reject anything proves nothing about the anchor
+//     it accepts.
+ZENITH_TEST(ZM_WorldTraversal, ProfLab_AsterStandsInsideTheArrivalFrustum)
+{
+	// (1) THE MIRRORS THIS FRUSTUM IS BUILT FROM. The arm, height and FOV are
+	//     already asserted against ZM_FollowCamera by U4 clauses (1a)..(1c); the
+	//     PIVOT height is the fourth, and it is the one that decides how far DOWN
+	//     the camera is aimed and therefore what the frame contains vertically.
+	ZENITH_ASSERT_EQ_FLOAT(fZM_PROFLAB_CAMERA_PIVOT_HEIGHT,
+		ZM_FollowCamera::GetPivotHeight(), fPROFLAB_EXACT_EPSILON,
+		"the placement header mirrors a %.4f m camera pivot height but "
+		"ZM_FollowCamera ships %.4f m -- the arrival frustum below is aimed at the "
+		"header's value, so every containment claim in this unit would be measured "
+		"through a camera the game does not have",
+		(double)fZM_PROFLAB_CAMERA_PIVOT_HEIGHT,
+		(double)ZM_FollowCamera::GetPivotHeight());
+
+	// (2) THE SETTLED POSITION IS THE SHIPPED ONE. ZM_GetProfLabSettledCameraPosition
+	//     claims to be where ComputeDesiredPosition puts the camera on arrival;
+	//     RUN that function rather than trusting the claim.
+	const Zenith_Maths::Vector3 xSpawnCentre = ProfLabSpawnCentre();
+	const Zenith_Maths::Vector3 xSettled = ZM_GetProfLabSettledCameraPosition();
+	const Zenith_Maths::Vector3 xShippedSettled =
+		ZM_FollowCamera::ComputeDesiredPosition(
+			xSpawnCentre, fZM_PROFLAB_CAMERA_YAW);
+	ZENITH_ASSERT_EQ_FLOAT(xSettled.x, xShippedSettled.x, fPROFLAB_EXACT_EPSILON,
+		"the header's settled camera sits at x=%.5f but ComputeDesiredPosition "
+		"answers x=%.5f", (double)xSettled.x, (double)xShippedSettled.x);
+	ZENITH_ASSERT_EQ_FLOAT(xSettled.y, xShippedSettled.y, fPROFLAB_PLANE_EPSILON,
+		"the header's settled camera sits at y=%.5f but ComputeDesiredPosition "
+		"answers y=%.5f -- the capsule half-extent lift is wrong, so the frustum "
+		"below is aimed from the wrong height",
+		(double)xSettled.y, (double)xShippedSettled.y);
+	ZENITH_ASSERT_EQ_FLOAT(xSettled.z, xShippedSettled.z, fPROFLAB_EXACT_EPSILON,
+		"the header's settled camera sits at z=%.5f but ComputeDesiredPosition "
+		"answers z=%.5f", (double)xSettled.z, (double)xShippedSettled.z);
+
+	// (3) ...and the PIVOT is the point ZM_FollowCamera aims at: the target's
+	//     position lifted by the component's own pivot height.
+	const Zenith_Maths::Vector3 xPivot = ZM_GetProfLabArrivalPivot();
+	const Zenith_Maths::Vector3 xShippedPivot = xSpawnCentre
+		+ Zenith_Maths::Vector3(0.0f, ZM_FollowCamera::GetPivotHeight(), 0.0f);
+	ZENITH_ASSERT_EQ_FLOAT(xPivot.x, xShippedPivot.x, fPROFLAB_EXACT_EPSILON,
+		"the header's arrival pivot sits at x=%.5f, not on the arriving body's "
+		"column (%.5f)", (double)xPivot.x, (double)xShippedPivot.x);
+	ZENITH_ASSERT_EQ_FLOAT(xPivot.y, xShippedPivot.y, fPROFLAB_PLANE_EPSILON,
+		"the header's arrival pivot sits at y=%.5f but ZM_FollowCamera aims at "
+		"y=%.5f", (double)xPivot.y, (double)xShippedPivot.y);
+	ZENITH_ASSERT_EQ_FLOAT(xPivot.z, xShippedPivot.z, fPROFLAB_EXACT_EPSILON,
+		"the header's arrival pivot sits at z=%.5f, not on the arriving body's "
+		"column (%.5f)", (double)xPivot.z, (double)xShippedPivot.z);
+
+	const ProfLabArrivalFrustum xFrustum = ProfLabBuildArrivalFrustum();
+	ZENITH_ASSERT_GT(xFrustum.m_fTanHalfVerticalFOV, 0.0f,
+		"the arrival frustum has a non-positive half-angle (tan = %.6f); every "
+		"containment claim below would be vacuous",
+		(double)xFrustum.m_fTanHalfVerticalFOV);
+
+	// (4) EVERY CORNER OF THE FIGURE, not just his centre. A margin-free claim
+	//     about a point would still pass with his shoulder off the side of frame.
+	for (u_int uCorner = 0u; uCorner < uPROFLAB_BODY_CORNER_COUNT; ++uCorner)
+	{
+		const Zenith_Maths::Vector3 xCorner = ProfLabAsterBodyCorner(uCorner);
+		const ProfLabFrustumSample xSample = ProfLabProject(xFrustum, xCorner);
+
+		ZENITH_ASSERT_GT(xSample.m_fDepth, fZM_PROFLAB_CAMERA_NEAR,
+			"body corner %u of Professor Aster sits %.4f m along the arrival "
+			"camera's forward axis, inside its %.4f m near plane -- he is beside "
+			"or BEHIND the camera, which is the failure mode this unit exists for",
+			uCorner, (double)xSample.m_fDepth, (double)fZM_PROFLAB_CAMERA_NEAR);
+		ZENITH_ASSERT_LT(xSample.m_fDepth, fZM_PROFLAB_CAMERA_FAR,
+			"body corner %u sits %.4f m out, past the %.4f m far plane",
+			uCorner, (double)xSample.m_fDepth, (double)fZM_PROFLAB_CAMERA_FAR);
+
+		ZENITH_ASSERT_LT(xSample.m_fLateral,
+			xSample.m_fLateralLimit - fPROFLAB_ASTER_FRUSTUM_MARGIN,
+			"body corner %u of Professor Aster is %.4f m off the arrival camera's "
+			"axis where the frame is only %.4f m wide at that depth (%.4f m), "
+			"leaving less than the %.2f m margin -- the player warps in and he is "
+			"off (or half off) the side of the picture. Pull him DEEPER along the "
+			"camera's forward axis rather than sideways: the frame widens linearly "
+			"with depth, so depth buys width and a lateral step spends it",
+			uCorner, (double)xSample.m_fLateral, (double)xSample.m_fLateralLimit,
+			(double)xSample.m_fDepth, (double)fPROFLAB_ASTER_FRUSTUM_MARGIN);
+		ZENITH_ASSERT_LT(xSample.m_fVertical,
+			xSample.m_fVerticalLimit - fPROFLAB_ASTER_FRUSTUM_MARGIN,
+			"body corner %u of Professor Aster is %.4f m off the arrival camera's "
+			"axis vertically where the frame is only %.4f m tall at that depth "
+			"(%.4f m) -- his head or his feet are out of frame",
+			uCorner, (double)xSample.m_fVertical,
+			(double)xSample.m_fVerticalLimit, (double)xSample.m_fDepth);
+	}
+
+	// (5) ★ THE ASPECT-INDEPENDENT ARM. fZM_PROFLAB_CAMERA_ASPECT is a MIRROR of a
+	//     private default no pure unit can read, so clause (4) is only as good as
+	//     that mirror. A square viewport is the narrowest horizontal field any
+	//     aspect >= 1 can produce, so requiring his centre inside THAT is a claim
+	//     the mirror cannot invalidate.
+	const ProfLabFrustumSample xCentre =
+		ProfLabProject(xFrustum, ZM_GetProfLabAsterCenter());
+	ZENITH_ASSERT_LT(xCentre.m_fLateral,
+		xCentre.m_fSquareLimit - fPROFLAB_ASTER_FRUSTUM_MARGIN,
+		"Professor Aster's centre is %.4f m off the arrival camera's axis, which "
+		"clears the %.4f m half-width a 16:9 window gives but NOT the %.4f m a "
+		"square one does. Clause (4) above is measured through a MIRRORED aspect "
+		"(fZM_PROFLAB_CAMERA_ASPECT); this clause is the one that does not depend "
+		"on it, and it is now the binding constraint",
+		(double)xCentre.m_fLateral, (double)xCentre.m_fLateralLimit,
+		(double)xCentre.m_fSquareLimit);
+
+	// (6) ★ ANTI-VACUITY. The rejected anchor, through the identical predicate.
+	//     Without this, a projection that had lost its lateral term entirely -- or
+	//     a frustum built with an absurdly wide half-angle -- would satisfy every
+	//     clause above and this unit would be decoration.
+	const Zenith_Maths::Vector3 xRejected(
+		fPROFLAB_REJECTED_ASTER_X,
+		ZM_GetProfLabAsterCenter().y,
+		fPROFLAB_REJECTED_ASTER_Z);
+	const ProfLabFrustumSample xRejectedSample =
+		ProfLabProject(xFrustum, xRejected);
+	ZENITH_ASSERT_GT(xRejectedSample.m_fLateral, xRejectedSample.m_fLateralLimit,
+		"the REJECTED anchor (%.2f, %.2f) projects to %.4f m off axis against a "
+		"%.4f m half-width and is therefore reported as ON SCREEN. That anchor is "
+		"known to be off screen, so the containment clauses above cannot currently "
+		"red and prove nothing about where Aster stands",
+		(double)fPROFLAB_REJECTED_ASTER_X, (double)fPROFLAB_REJECTED_ASTER_Z,
+		(double)xRejectedSample.m_fLateral,
+		(double)xRejectedSample.m_fLateralLimit);
+}
+
+// ============================================================================
+// U10 -- HE IS SOMEBODY YOU WALK UP TO, AND HE IS INSIDE THE ROOM.
+// ============================================================================
+
+// The Dawnmere convention is that talking costs a walk: an NPC standing inside
+// reach at the moment the scene hands control back would open his dialogue from
+// the doormat, off a stray interact press the player never aimed. That is the
+// first half. The second is the ordinary shell hygiene every authored body owes --
+// feet on the floor, clear of the walls, not standing on the arrival point, and
+// not parked in the camera's arm.
+ZENITH_TEST(ZM_WorldTraversal, ProfLab_AsterStandsOutsideArrivalReachInsideTheShell)
+{
+	const Zenith_Maths::Vector3 xAster = ZM_GetProfLabAsterCenter();
+	const Zenith_Maths::Vector3 xSpawnCentre = ProfLabSpawnCentre();
+
+	// (1) ★ RUN THE SHIPPED PICKER, DO NOT RE-DERIVE ITS RULE. A hand-written
+	//     "distance > 2.9" here would be a second implementation of
+	//     ZM_PickInteractTarget's acceptance test and could agree with the header
+	//     while disagreeing with the game. The origin is pointed STRAIGHT AT HIM so
+	//     the facing cone can never be the reason -- the answer this asserts is
+	//     about RANGE and nothing else.
+	ZM_InteractProbe xProbe;
+	xProbe.m_xPosition = xAster;
+	xProbe.m_fRadius = fZM_PROFLAB_ASTER_REACH_BONUS;
+	xProbe.m_bEnabled = true;
+
+	ZM_InteractOrigin xArrivalOrigin;
+	xArrivalOrigin.m_xPosition = xSpawnCentre;
+	xArrivalOrigin.m_xForward = xAster - xSpawnCentre;
+
+	const ZM_InteractTuning xTuning{};
+	u_int uBest = 0u;
+	const ZM_INTERACT_REJECT eAtArrival = ZM_PickInteractTarget(
+		&xProbe, 1u, xArrivalOrigin, xTuning, uBest);
+	ZENITH_ASSERT_EQ((u_int)eAtArrival, (u_int)ZM_INTERACT_REJECT_OUT_OF_RANGE,
+		"a player standing on ProfLab's arrival marker and looking straight at "
+		"Professor Aster gets '%s' from the shipped picker, not OUT_OF_RANGE. He "
+		"stands %.4f m away in XZ against a %.4f m effective reach (%.4f m picker "
+		"reach plus his %.4f m authored radius) -- an NPC reachable from the "
+		"doormat opens his dialogue before the player has taken a step",
+		ZM_InteractRejectName(eAtArrival),
+		(double)ZM_GetProfLabAsterArrivalStandoff(),
+		(double)fZM_PROFLAB_ASTER_EFFECTIVE_REACH,
+		(double)fZM_INTERACT_MAX_DISTANCE,
+		(double)fZM_PROFLAB_ASTER_REACH_BONUS);
+
+	// ANTI-VACUITY for (1): the SAME probe and the SAME tuning must accept once
+	// the player has walked up. Without this arm, a probe that was silently
+	// disabled -- or a tuning with a zero reach -- would satisfy the clause above
+	// while proving nothing about the distance.
+	ZM_InteractOrigin xWalkedUpOrigin;
+	xWalkedUpOrigin.m_xPosition = xAster
+		+ ProfLabNormalise(xSpawnCentre - xAster)
+			* (fZM_PROFLAB_ASTER_EFFECTIVE_REACH * 0.5f);
+	xWalkedUpOrigin.m_xForward = xAster - xWalkedUpOrigin.m_xPosition;
+	const ZM_INTERACT_REJECT eWalkedUp = ZM_PickInteractTarget(
+		&xProbe, 1u, xWalkedUpOrigin, xTuning, uBest);
+	ZENITH_ASSERT_EQ((u_int)eWalkedUp, (u_int)ZM_INTERACT_OK,
+		"the same probe and tuning refuse Professor Aster ('%s') even from half "
+		"his effective reach, so the OUT_OF_RANGE above says nothing about how far "
+		"away he is authored", ZM_InteractRejectName(eWalkedUp));
+
+	// (2) HIS FEET ARE ON THE FLOOR. Authored positions in this game are body
+	//     CENTRES; half a body height below one is where his feet are, and that has
+	//     to be the floor's top face or he is sunk into the slab / hovering.
+	const ZM_ProfLabBlockout xFloor = ZM_GetProfLabBlock(ZM_PROFLAB_BLOCK_FLOOR);
+	const ZM_ProfLabBlockout xBody = ProfLabAsterBody();
+	ZENITH_ASSERT_EQ_FLOAT(xBody.Min().y, xFloor.Max().y, fPROFLAB_PLANE_EPSILON,
+		"Professor Aster's feet are at y=%.5f but the floor's top face is %.5f -- "
+		"an authored human position is a body CENTRE (ZM_HumanBody.h), so this is "
+		"half a body height out somewhere",
+		(double)xBody.Min().y, (double)xFloor.Max().y);
+
+	// (3) ...and his whole box is inside the shell's inner faces, not merely
+	//     inside the floor's outline.
+	ZENITH_ASSERT_GT(xBody.Min().x,
+		ZM_GetProfLabBlock(ZM_PROFLAB_BLOCK_LEFT_WALL).Max().x,
+		"Professor Aster's -X face is at x=%.4f, inside the -X wall's inner face "
+		"(%.4f)", (double)xBody.Min().x,
+		(double)ZM_GetProfLabBlock(ZM_PROFLAB_BLOCK_LEFT_WALL).Max().x);
+	ZENITH_ASSERT_LT(xBody.Max().x,
+		ZM_GetProfLabBlock(ZM_PROFLAB_BLOCK_RIGHT_WALL).Min().x,
+		"Professor Aster's +X face is at x=%.4f, inside the +X wall's inner face "
+		"(%.4f)", (double)xBody.Max().x,
+		(double)ZM_GetProfLabBlock(ZM_PROFLAB_BLOCK_RIGHT_WALL).Min().x);
+	ZENITH_ASSERT_GT(xBody.Min().z,
+		ZM_GetProfLabBlock(ZM_PROFLAB_BLOCK_BACK_WALL).Max().z,
+		"Professor Aster's -Z face is at z=%.4f, inside the back wall's inner face "
+		"(%.4f)", (double)xBody.Min().z,
+		(double)ZM_GetProfLabBlock(ZM_PROFLAB_BLOCK_BACK_WALL).Max().z);
+	ZENITH_ASSERT_LT(xBody.Max().z, fZM_PROFLAB_INNER_MAX_Z,
+		"Professor Aster's +Z face is at z=%.4f, inside the doorway wall's inner "
+		"face (%.4f) -- he is standing in the wall he is authored to greet people "
+		"in front of", (double)xBody.Max().z, (double)fZM_PROFLAB_INNER_MAX_Z);
+
+	// (4) He is not standing where the arriving PLAYER's capsule materialises. The
+	//     reach clause implies this today, but it is a different property (bodies
+	//     overlapping, not dialogue firing) and would survive a reach re-tune.
+	const float fDeltaX = xAster.x - xSpawnCentre.x;
+	const float fDeltaZ = xAster.z - xSpawnCentre.z;
+	const float fSeparation = std::sqrt(fDeltaX * fDeltaX + fDeltaZ * fDeltaZ);
+	const float fTouching =
+		fZM_PROFLAB_PLAYER_RADIUS + fZM_HUMAN_BODY_FOOTPRINT * 0.5f;
+	ZENITH_ASSERT_GT(fSeparation, fTouching,
+		"Professor Aster stands %.4f m from the arrival point in XZ, inside the "
+		"%.4f m at which the arriving player's capsule and his static box are "
+		"already in contact -- the warp would drop the player inside him",
+		(double)fSeparation, (double)fTouching);
+
+	// (5) ...and he is not parked in the follow camera's arm. RUNS the same slab
+	//     test and the same shipped clamp U4 clause (4) uses on the shell, so a
+	//     professor who blocked the camera would clamp the arm and pull the view
+	//     into the player's back on arrival.
+	const Zenith_Maths::Vector3 xPivot = ZM_GetProfLabArrivalPivot();
+	const Zenith_Maths::Vector3 xArm = ZM_GetProfLabSettledCameraPosition() - xPivot;
+	const float fDesiredArm = std::sqrt(ProfLabDot(xArm, xArm));
+	ZENITH_ASSERT_GT(fDesiredArm, fPROFLAB_EXACT_EPSILON,
+		"the arrival camera arm is degenerate (%.6f m)", (double)fDesiredArm);
+	const float fEntry = RayAabbEntryDistance(
+		xPivot, xArm / fDesiredArm, fDesiredArm, xBody);
+	const float fClamped = ZM_FollowCamera::ClampArmDistance(
+		fDesiredArm, fEntry >= 0.0f, fEntry);
+	ZENITH_ASSERT_GE(fClamped, fDesiredArm - fPROFLAB_PLANE_EPSILON,
+		"Professor Aster's body stands between the arriving player and the follow "
+		"camera: the %.4f m arm clamps to %.4f m against a hit at %.4f m, so the "
+		"camera would snap into the player's back the moment the scene loads",
+		(double)fDesiredArm, (double)fClamped, (double)fEntry);
+}
+
+// ============================================================================
+// U11 -- the name Aster is looked up by.
+// ============================================================================
+
+// ZM_ProfLabWarp_Test's clause I3 and ZM_CommittedSceneBytes' ProfLab tripwire
+// both resolve him BY NAME, and the InteriorTint scan now walks the block names
+// specifically so that a HUMAN body can never enter the shell population. All
+// three of those depend on his name being a usable key that collides with nothing
+// -- a duplicate would make one lookup silently answer with the other entity.
+ZENITH_TEST(ZM_WorldTraversal, ProfLab_AsterEntityNameIsAUniqueLookupKey)
+{
+	ZENITH_ASSERT_TRUE(ProfLabNameIsALookupKey(szZM_PROFLAB_ASTER_ENTITY_NAME),
+		"Professor Aster's authored entity name is null, empty, or carries a "
+		"non-printable byte -- FindEntityByName would miss it and every clause "
+		"that resolves him would report a missing entity rather than the cause");
+
+	for (u_int u = 0u; u < (u_int)ZM_PROFLAB_BLOCK_COUNT; ++u)
+	{
+		const char* szBlockName = ZM_GetProfLabBlockName((ZM_PROFLAB_BLOCK)u);
+		ZENITH_ASSERT_NE(
+			std::strcmp(szZM_PROFLAB_ASTER_ENTITY_NAME, szBlockName), 0,
+			"Professor Aster is authored under the same entity name as shell block "
+			"%u ('%s'). The interior-tint scan walks the block names and would "
+			"collect a HUMAN body as though it were a wall -- which on a cold tree "
+			"wears the same 'ZM_Greybox' material and would be compared against the "
+			"blockout grey", u, szBlockName);
+	}
+
+	const char* aszOtherEntities[] = {
+		szZM_PROFLAB_SPAWN_ENTITY_NAME,
+		szZM_PROFLAB_PLAYER_ENTITY_NAME,
+		szZM_PROFLAB_CAMERA_ENTITY_NAME,
+	};
+	const u_int uOtherCount =
+		(u_int)(sizeof(aszOtherEntities) / sizeof(aszOtherEntities[0]));
+	for (u_int u = 0u; u < uOtherCount; ++u)
+	{
+		ZENITH_ASSERT_NE(
+			std::strcmp(szZM_PROFLAB_ASTER_ENTITY_NAME, aszOtherEntities[u]), 0,
+			"Professor Aster shares the entity name '%s' with another authored "
+			"ProfLab entity -- FindEntityByName would resolve both to whichever "
+			"the scene stored first", aszOtherEntities[u]);
 	}
 }

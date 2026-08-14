@@ -55,6 +55,7 @@
 #include "Maths/Zenith_Maths.h"
 #include "Zenithmon/Source/UI/ZM_UI_StarterChoice.h"   // the S8 element-name constants (the needles)
 #include "Zenithmon/Source/World/ZM_DawnmerePlacement.h"
+#include "Zenithmon/Source/World/ZM_ProfLabPlacement.h"   // szZM_PROFLAB_ASTER_ENTITY_NAME (the S8 professor needle)
 
 namespace
 {
@@ -69,6 +70,10 @@ namespace
 	// (the S8 starter screen among them).
 	const char* const szZM_COMMITTED_FRONTEND_SCENE =
 		GAME_ASSETS_DIR "Scenes/FrontEnd" ZENITH_SCENE_EXT;
+
+	// ...and ProfLab, the interior that now has somebody in it.
+	const char* const szZM_COMMITTED_PROFLAB_SCENE =
+		GAME_ASSETS_DIR "Scenes/ProfLab" ZENITH_SCENE_EXT;
 
 	// The 16 bytes a Transform blob carries for this rotation, in the order
 	// Zenith_DataStream writes them. Built from the frozen constants rather than
@@ -245,4 +250,65 @@ ZENITH_TEST(ZM_CommittedSceneBytes, FrontEndCarriesEveryStarterScreenElementName
 			"FindElement returns nullptr every frame and the row is dead.",
 			u, ZM_UI_StarterChoice::CellElementName(u));
 	}
+}
+
+// ============================================================================
+// The S8 professor's BOOT-LEVEL TRIPWIRE -- and it is deliberately no more than
+// that.
+//
+// ★ WHAT THIS IS NOT. A name occurring in a file proves a STRING is in the file.
+// It cannot say where Professor Aster stands, how big he is, what shape his body
+// wears, or whether he is talkable -- and none of the pure units in
+// Tests/ZM_Tests_ProfLabPlacement.cpp can see the bytes at all, because they read
+// the same compiled constants the authoring writes from, so both sides of every
+// one of their claims move together. THE PROOF is clause I3 of
+// ZM_AutoTests_ProfLab.cpp, which resolves him in the LOADED scene and compares
+// his live transform, collider and interactable. This unit is the cheap thing
+// that runs at boot and says "he was never authored at all" in one line, seconds
+// before that test would have said it in a hundred frames.
+//
+// ★ IT IS STRICT ABOUT AN UNREADABLE FILE, like the FrontEnd clause above and
+// UNLIKE the Dawnmere one at the top. ProfLab.zscen is TRACKED (ZM-D-148,
+// ZM-D-174) and the whole ZM-D-147 deviation on this asset family is that its
+// absence is a DEFECT, not a configuration to tolerate -- a skip counts as a PASS
+// and would silence this exactly when it broke. FAIL, never return quietly.
+// ============================================================================
+ZENITH_TEST(ZM_CommittedSceneBytes, ProfLabCarriesTheAuthoredProfessorEntityName)
+{
+	uint64_t ulSize = 0;
+	char* pData = Zenith_FileAccess::ReadFile(szZM_COMMITTED_PROFLAB_SCENE, ulSize);
+
+	ZENITH_ASSERT_NOT_NULL(pData,
+		"the committed ProfLab.zscen could not be read ('%s'). It is a TRACKED asset "
+		"(ZM-D-148 / ZM-D-174), so this is a DEFECT and not a skip -- restore the file "
+		"or re-author it with a *_True tools boot.",
+		szZM_COMMITTED_PROFLAB_SCENE);
+	if (pData == nullptr)
+	{
+		return;   // already FAILED above; nothing further is meaningful
+	}
+
+	// DERIVED from the placement header, never typed: a hand-written needle would
+	// move in lockstep with a renamed entity and pin nothing.
+	const u_int uAsterHits =
+		CountNameOccurrences(pData, ulSize, szZM_PROFLAB_ASTER_ENTITY_NAME);
+
+	Zenith_Log(LOG_CATEGORY_GAMEPLAY,
+		"[ZM_CommittedSceneBytes] '%s' %llu bytes; professor entity '%s' occurs %u time(s)",
+		szZM_COMMITTED_PROFLAB_SCENE, (unsigned long long)ulSize,
+		szZM_PROFLAB_ASTER_ENTITY_NAME, uAsterHits);
+
+	Zenith_FileAccess::FreeFileData(pData);
+
+	// EXACTLY ONE: zero means the scene was never re-authored after the professor's
+	// authoring step landed (or his name drifted from the header constant), and more
+	// than one means he was authored twice, which would leave FindEntityByName
+	// resolving whichever entity the scene stored first.
+	ZENITH_ASSERT_EQ(uAsterHits, 1u,
+		"the committed ProfLab.zscen must carry the professor's entity name '%s' exactly "
+		"once. A ZERO is the state a source-only change leaves behind: the authoring step "
+		"is in Zenithmon.cpp but no *_True tools boot has re-authored and re-committed the "
+		"scene, so the shipped lab is still empty. Do NOT weaken this to a >= 0 check -- "
+		"re-author the scene.",
+		szZM_PROFLAB_ASTER_ENTITY_NAME);
 }

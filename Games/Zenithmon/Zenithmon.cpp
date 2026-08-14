@@ -1915,6 +1915,29 @@ namespace
 			"declared in ZM_Interactable.h)");
 	}
 
+	// S8: ProfLab's Professor Aster. The FIRST authored NPC that does not live in
+	// Dawnmere, and authoring-wise the plainest of the lot: a stationary talker with
+	// no story gate, no patrol, no sight cone and no trainer, so the whole of his
+	// behaviour is the compiled ZM_NPC_PROF_ASTER row and none of it is an extra
+	// authoring step. A per-NPC function is unavoidable regardless --
+	// AddStep_Custom takes a captureless void (*)() and cannot be handed the row it
+	// should install.
+	void ZM_ConfigureProfAsterNpc()
+	{
+		const bool bConfigured = ZM_ConfigureSelectedNpc(ZM_NPC_PROF_ASTER);
+		Zenith_Assert(bConfigured, "ProfLab Professor Aster NPC authoring is invalid");
+
+		// The row really is a TALKER and really does name the professor's appearance
+		// -- authoring fails loudly here rather than standing up a mute or
+		// wrong-looking figure whose only symptom is a silent interact press.
+		Zenith_Assert(ZM_GetNpcData(ZM_NPC_PROF_ASTER).m_eRole == ZM_NPC_ROLE_TALKER,
+			"Aster's ZM_NpcData row is no longer a TALKER, so the authored NPC in "
+			"ProfLab would not open dialogue when the player interacts with him");
+		Zenith_Assert(ZM_GetNpcData(ZM_NPC_PROF_ASTER).m_eHuman == ZM_HUMAN_PROF_ASTER,
+			"Aster's ZM_NpcData row no longer names ZM_HUMAN_PROF_ASTER, so "
+			"ZM_GreyboxVisual would dress the authored professor as somebody else");
+	}
+
 	// The scene-byte guard below is about ULPs, so it compares BIT PATTERNS. A
 	// tolerance comparison -- even a zero one -- cannot express "these are the same
 	// bits", and a 1-ULP yaw drift is invisible to every dot-product assertion in the
@@ -2004,9 +2027,10 @@ namespace
 			ZM_FloatBits(xAuthored.z), ZM_FloatBits(xAuthored.w));
 	}
 
-	// The ONE authored TRANSFORM SCALE every Dawnmere human wears -- the player and
-	// all six NPCs. Named here, rather than re-spelled, because it is written from a
-	// DIFFERENT function than the placement block below.
+	// The ONE authored TRANSFORM SCALE every human in this game wears -- Dawnmere's
+	// player and six NPCs, and ProfLab's Professor Aster. Named here, rather than
+	// re-spelled, because it is written from a DIFFERENT function than the placement
+	// blocks below.
 	//
 	// ★ IT IS A DRAWING SCALE, NOT A BODY. It exists to land the generated human
 	// MODEL on the body contract, and it is UNIFORM -- which is precisely why the
@@ -2014,7 +2038,7 @@ namespace
 	// scale-derived capsule into a sphere). Anything that needs to know how big a
 	// person is reads Source/World/ZM_HumanBody.h; the bodies themselves are
 	// installed explicitly from that same contract at runtime.
-	const Zenith_Maths::Vector3 g_xDawnmereHumanScale(fZM_HUMAN_VISUAL_SCALE);
+	const Zenith_Maths::Vector3 g_xZMHumanVisualScale(fZM_HUMAN_VISUAL_SCALE);
 
 	// KNOWN-LIMIT W5. The authored CENTRE of one Dawnmere NPC: the shared anchor's
 	// XZ plus that NPC's OWN measured feet height, lifted by the capsule half-extent.
@@ -2082,12 +2106,26 @@ namespace
 			"Dawnmere Wanderer NPC authoring is invalid");
 	}
 
-	// One authored NPC: a greybox body the player can SEE, a STATIC AABB it can
-	// physically bump into (so walking up to one ends in contact rather than in
-	// walking through it), the ZM_Interactable that makes it talkable, and the
-	// captureless step that installs its row. Step order mirrors HomeDoorTrigger --
-	// transform, collider, components, then the configure custom step.
-	void ZM_QueueDawnmereNpc(
+	// One authored STATIONARY TALKER: a greybox body the player can SEE, a STATIC
+	// AABB it can physically bump into (so walking up to one ends in contact rather
+	// than in walking through it), the ZM_Interactable that makes it talkable, and
+	// the captureless step that installs its row. Step order mirrors HomeDoorTrigger
+	// -- transform, collider, components, then the configure custom step.
+	//
+	// ★ SCENE-AGNOSTIC BY NAME AS WELL AS BY CODE. It was ZM_QueueDawnmereNpc while
+	// the town was the only place with NPCs in it; ProfLab's Professor Aster is
+	// authored by this same function, so the name no longer claims a scene. Nothing
+	// about the nine steps changed in that rename, which is what keeps the four
+	// shipped Dawnmere townsfolk's committed bytes where they are.
+	//
+	// ★ IT EMITS NO ROTATION STEP, AND EVERY CALLER DEPENDS ON THAT. The AABB on
+	// the line below forces its Jolt body to identity and the physics->transform
+	// sync writes that identity back into the SAVED BYTES (ZM-D-156), so a caller
+	// who needs a facing must not use this helper -- see ZM_QueueDawnmereTrainerNpc.
+	// The absence is also what keeps ProfLab.zscen stable across build
+	// configurations: an authored yaw is libm at authoring time (ZM-D-183), and
+	// identity is the one rotation that is bit-exact everywhere.
+	void ZM_QueueStationaryTalkerNpc(
 		Zenith_EditorAutomation& xAuto,
 		const char* szName,
 		const Zenith_Maths::Vector3& xCenter,
@@ -2139,7 +2177,7 @@ namespace
 	// entity faces +Z, so a trainer without an authored yaw stares north and is
 	// functionally blind.
 	//
-	// Adding a yaw parameter to ZM_QueueDawnmereNpc instead was considered and
+	// Adding a yaw parameter to ZM_QueueStationaryTalkerNpc instead was considered and
 	// REJECTED. AddStep_SetTransformYaw(0.0f) does build an exact identity
 	// quaternion, so the four shipped NPCs' bytes probably would not move -- but SC8
 	// is the one sub-commit that rewrites a committed scene file, and their step
@@ -2849,6 +2887,27 @@ void Project_RegisterEditorAutomationSteps()
 	xAuto.AddStep_AddComponent("ZM_GreyboxVisual");
 	xAuto.AddStep_AddComponent("ZM_PlayerController");
 
+	// Professor Aster, the interior's ONE inhabitant. APPENDED here -- after the
+	// Player, before the camera -- and never inserted earlier: ZM-D-148's scene
+	// files carry DENSE, AUTHORING-ORDER file indices, so appending an entity is
+	// free while inserting one rewrites every index after it.
+	//
+	// ★ NO ROTATION STEP, DELIBERATELY, AND NOT EVEN A ZERO ONE. See the ZM-D-183
+	// block on ZM_GetProfLabAsterCenter in Source/World/ZM_ProfLabPlacement.h: yaw
+	// and euler steps build their quaternion with libm AT AUTHORING TIME, MSVC
+	// Debug and Release disagree by 1-2 ULP, and this file is COMMITTED and
+	// re-authored on every tools boot -- so a zero written through those steps
+	// would still be enough to make the bytes ping-pong in git. Identity, written
+	// by writing nothing, is bit-exact in every configuration, and it is also what
+	// makes ZM_QueueStationaryTalkerNpc's AABB legal for him.
+	//
+	// ★ AND THE NINE STEPS ARE NOT RE-SPELLED HERE. He goes through the same
+	// helper the four Dawnmere townsfolk do, at the same human visual scale, so
+	// "an authored stationary talker" has exactly one definition in this game.
+	const Zenith_Maths::Vector3 xProfLabAsterCenter = ZM_GetProfLabAsterCenter();
+	ZM_QueueStationaryTalkerNpc(xAuto, szZM_PROFLAB_ASTER_ENTITY_NAME,
+		xProfLabAsterCenter, g_xZMHumanVisualScale, &ZM_ConfigureProfAsterNpc);
+
 	// Camera forward at yaw 0 is +Z, so the camera sits on the player's -Z side
 	// looking back toward the +Z entrance -- which is why the hall extends into -Z
 	// and the aperture is the +Z face. The X and Z below are the follow camera's own
@@ -3001,7 +3060,7 @@ void Project_RegisterEditorAutomationSteps()
 			fZM_DAWNMERE_TOWN_CENTER_X,
 			fZM_DAWNMERE_TOWN_CENTER_FEET_Y,
 			fZM_DAWNMERE_TOWN_CENTER_Z);
-		const Zenith_Maths::Vector3 xPlayerScale = g_xDawnmereHumanScale;
+		const Zenith_Maths::Vector3 xPlayerScale = g_xZMHumanVisualScale;
 		const float fPlayerCapsuleHalfExtent = fZM_HUMAN_BODY_HALF_HEIGHT;
 		const Zenith_Maths::Vector3 xPlayerCenter =
 			xTownCenterFeet + Zenith_Maths::Vector3(
@@ -3174,11 +3233,11 @@ void Project_RegisterEditorAutomationSteps()
 			ZM_DAWNMERE_NPC_TRADE_POST_CLERK, fPlayerCapsuleHalfExtent);
 		const Zenith_Maths::Vector3 xCaretakerCenter = ZM_DawnmereNpcAuthoredCenter(
 			ZM_DAWNMERE_NPC_CARETAKER, fPlayerCapsuleHalfExtent);
-		ZM_QueueDawnmereNpc(xAuto, "Npc_Villager",
+		ZM_QueueStationaryTalkerNpc(xAuto, "Npc_Villager",
 			xVillagerCenter, xNpcScale, &ZM_ConfigureVillagerNpc);
-		ZM_QueueDawnmereNpc(xAuto, "Npc_TradePostClerk",
+		ZM_QueueStationaryTalkerNpc(xAuto, "Npc_TradePostClerk",
 			xClerkCenter, xNpcScale, &ZM_ConfigureTradePostClerkNpc);
-		ZM_QueueDawnmereNpc(xAuto, "Npc_Caretaker",
+		ZM_QueueStationaryTalkerNpc(xAuto, "Npc_Caretaker",
 			xCaretakerCenter, xNpcScale, &ZM_ConfigureCaretakerNpc);
 		// S7 item 2 SC1: the story-gated warden. He stands on the authored HOME
 		// WALKWAY, not on the north road: (478, 498) is ~1.1 m off the Home path
@@ -3212,7 +3271,7 @@ void Project_RegisterEditorAutomationSteps()
 		// to match the new ground.
 		const Zenith_Maths::Vector3 xRouteWardenCenter = ZM_DawnmereNpcAuthoredCenter(
 			ZM_DAWNMERE_NPC_WARDEN, fPlayerCapsuleHalfExtent);
-		ZM_QueueDawnmereNpc(xAuto, "Npc_Warden",
+		ZM_QueueStationaryTalkerNpc(xAuto, "Npc_Warden",
 			xRouteWardenCenter, xNpcScale, &ZM_ConfigureRouteWardenNpc);
 		// SC8: the fourth row is a deterministic two-point patrol. Both endpoints are
 		// 28 m east of the TownCenter spawn and outside the Home corridor's
