@@ -1006,6 +1006,31 @@ boots. A full 440 s tools boot left the Dawnmere terrain file count at **773 -> 
 rewritten, so 773 IS the baked state and the `Render_*_*.zmesh` "Check failed" lines are
 pre-existing noise, not a symptom. Do not chase them.
 
+**★★ OPEN VISUAL DEFECT FOUND BY LOOKING AT A SCREENSHOT, NOT BY A TEST: ASTER HAS HIS BACK TO THE
+PLAYER.** Captured 2026-08-14 from the ProfLab tint probe after SC-C landed
+(`Build/artifacts/zenithmon/visual_audit/proflab_interior_grey.tga`). Confirmed independently from
+the constants, so it is not an artefact of one camera angle: the player spawns at
+`fZM_PROFLAB_SPAWN_Z = 5.0`, Aster stands at `fZM_PROFLAB_ASTER_Z = 6.375` (deeper into the room),
+the follow camera settles at z = -0.5 looking toward **+Z**, and **identity rotation faces +Z** --
+so the professor faces away from the camera and away from anyone arriving.
+
+**★ THIS IS NOT AN SC-C REGRESSION, AND THAT IS THE POINT.** SC-C's new unit
+`ProfLab_AsterStandsInsideTheArrivalFrustum` asserts he is ON SCREEN, and he is. **Nothing asserts
+he is FACING anyone**, because nobody thought to ask -- so the slice is legitimately green while the
+title character greets the player with his back turned. Every automated check in the program passed;
+a human looking at one picture caught it in seconds. Book that as the lesson, not just the bug.
+
+**★ AND THE OBVIOUS FIX IS THE FORBIDDEN ONE.** "Just yaw him round" means
+`AddStep_SetTransformYaw`, which builds its quaternion with libm at authoring time -- exactly what
+made a committed scene ping-pong in git under ZM-D-183. The correct fix is the one rival Vesper
+already uses: `AddStep_SetTransformRotationQuat` with FROZEN `std::bit_cast` constants facing -Z,
+plus a boot unit asserting the facing (a dot product against the arrival direction, not a spelled
+quaternion, or the guard re-computes the value it is checking -- see
+`reference_self_referential_guards_cannot_see_drift`). It re-authors `ProfLab.zscen`, so it belongs
+in a slice that already owns a ProfLab re-author. **RECOMMENDATION: fold it into SC-E** (which
+re-authors ProfLab for the exit trigger anyway) rather than paying two authoring boots and two
+scene-byte commits. Awaiting the user's sequencing call as of 2026-08-14.
+
 *STILL NOT BUILT -- what item 1 needs before its box may be ticked:*
 - **SC-B** the starter-choice SCREEN presenter (`ZM_UI_StarterChoice`, VERTICAL so it needs zero
   new input actions). Re-authors `FrontEnd.zscen`, but headless-authorable. ★ Critic finding: all
