@@ -122,6 +122,55 @@ you simply pay for it again.
 
 **Status:** [RESOLVED 2026-08-02]
 
+### [OPEN] Q-2026-08-14-001 -- the boot unit gate carries a WALL-CLOCK assertion, so a REQUIRED check can red from machine load alone
+
+**Question:** should `GraphComponent::ThousandEntityUpdateBenchmark`
+(`Zenith/EntityComponent/Components/Zenith_GraphComponent.Tests.inl:1555`) keep
+asserting a wall-clock budget inside the boot `ZENITH_TEST` batch, or should it
+log its measurement and let a separate, load-tolerant perf job own the threshold?
+
+**What it does today:** times 1000 entity `DispatchOnUpdate` calls with
+`std::chrono::high_resolution_clock` and asserts
+`ZENITH_ASSERT_LT(fIdlePerFrameMs, 5.0)`.
+
+**Why it is being raised now.** Observed 2026-08-14 during S8 SC-D: a `-Baseline
+3307` gate run reported **3 failed**, one of them this benchmark at **6.684 ms**
+against its 5.0 ms bound, while the machine was building and booting
+concurrently. A quiet re-run with **nothing else changed** passed. It had also
+passed in all four earlier gate runs the same day (3277 / 3280 / 3295 / 3299,
+every one 0 failed). So the unit is sound; its BOUND is environment-dependent.
+
+**Why it matters beyond one flake.** The gate's entire value is determinism -- it
+is an exact-equality ratchet (`ran == Baseline && failed == 0`) whose job is to
+notice when the registered suite changes. `zm-tests` is a REQUIRED check on
+master. Putting a timing assertion inside it makes a required check
+load-dependent, and because the unit lives under `Zenith/` it does so **for every
+game**, not just Zenithmon. It also teaches the wrong triage reflex: a red gate is
+supposed to mean "the suite moved or something broke", and once it can also mean
+"the box was busy", people start re-running reds instead of reading them.
+
+**Best-guess action taken:** left AS-IS and documented rather than changed. The
+fix is an ENGINE change and SC-D is a game-side slice, so silently widening the
+bound (or deleting the assertion) from here would be scope creep on a shared
+file. Recorded the triage rule instead, in `zm-tests.yml`'s History block, in
+Status.md's pin block, and in ZM-D-192: **a red naming that benchmark is a FLAKE
+to re-run on a quiet machine, not a regression to bisect.**
+
+**Cost if the guess is wrong:** LOW-to-MODERATE. If it is left as-is, the cost is
+occasional CI flakes on a required check plus the triage time each one burns
+(this instance cost a full re-run and a diagnosis). If instead the threshold is
+genuinely guarding a real perf regression that a load-tolerant bound would miss,
+then relaxing it later is the cheap direction and nothing is lost by waiting.
+
+**Suggested resolution, if the user wants one:** demote the assertion to a logged
+measurement inside the boot batch (keeping the number visible in every gate log)
+and re-home the threshold in a dedicated perf job that controls for machine load
+-- the same split the terrain indirect-count work already uses for its
+performance report.
+
+**Status:** OPEN -- engine-side change, needs a ruling before anyone edits a
+shared `Zenith/` test.
+
 ### [OPEN] Q-2026-08-01-003 -- the player is always `ZM_HUMAN_PLAYER_M`; nothing selects a gender and the save has no field for one
 
 **Question.** `ZM_HUMAN_PLAYER_F` has a roster row and a baked model, exactly like

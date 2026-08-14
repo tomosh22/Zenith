@@ -2,6 +2,13 @@
 
 #include "Maths/Zenith_Maths.h"   // Vector3 / Quat / AngleAxis
 #include "Zenithmon/Source/World/ZM_HumanBody.h"   // THE human body contract
+// The ProfLab INTERIOR contract. The S8 SC-D lab block at the bottom of this
+// file DERIVES the exterior's aperture from it rather than re-spelling 6.0 and
+// 3.0 -- a constant spelled twice cannot red a drift. Pure, header-only, and it
+// does NOT include this file back (only names it in a comment), so there is no
+// cycle. Contrast the older Home block, which predates that rule and spells its
+// jamb X as literals; ZM_Interaction/HomeExterior_... is what binds those.
+#include "Zenithmon/Source/World/ZM_ProfLabPlacement.h"
 
 // ============================================================================
 // ZM_DawnmerePlacement (S7 item 3 SC8) -- the authored world coordinates that
@@ -546,3 +553,292 @@ Zenith_Maths::Vector3 ZM_GetDawnmereFromHomeSpawnFeet();
 // XZ-only and the dynamic capsule owns Y, so a height here would be a lie.
 Zenith_Maths::Vector3 ZM_GetDawnmereHomeDoorStagingXZ();
 Zenith_Maths::Vector3 ZM_GetDawnmereHomeDoorTargetXZ();
+
+// ============================================================================
+// S8 SC-D -- THE DAWNMERE LAB SITE: GROUND TRUTH + EXTERIOR ARITHMETIC
+//
+// ★ THIS BLOCK PLACES NOTHING, AND THAT IS THE WHOLE SCOPE OF SC-D. Not one
+// entity in the committed Dawnmere.zscen reads it. It is the NUMBERS S8 SC-E
+// authors the lab exterior from -- the shell, its two door jambs, the lintel,
+// the door sensor and the FromLab arrival marker -- plus the tests that lock
+// those numbers BEFORE any of it is built. SC-E must author from these
+// accessors and re-spell none of them, in the one sub-commit that re-writes
+// Dawnmere.zscen (which cannot be done headless -- ZM-D-190).
+//
+// ★ THE SITE IS ALREADY RESERVED, AND NOTHING HERE MAY MOVE IT.
+// ZM_TerrainAuthoring.cpp's Dawnmere recipe carries a "Lab" PAD at (640, 552)
+// (48 m flatten radius, 38 m dirt radius, 4 dirt passes), a "Lab" PATH from the
+// plaza through (574, 526) to that pad centre, and the "FromLab" LANDMARK at
+// (640, 520). Editing ANY of them regenerates the WHOLE Dawnmere heightmap --
+// the recipe's hydraulic erosion pass is region-wide rather than pad-local, as
+// ZM-D-173 found the expensive way -- which would re-measure every table in this
+// file and re-bake the committed navmesh. So every coordinate below is DERIVED
+// TO FIT INSIDE the reserved site, and the binding is a boot unit rather than a
+// comment: ZM_Interaction/LabPlacement_SitsInsideTheReservedPadAndOnItsLandmark
+// reads the recipe by name and asserts both containments.
+//
+// ★ THE ENTRANCE FACES -Z, FOR THE ZM-D-173 REASON AND NO OTHER. ZM_FollowCamera
+// keeps the yaw the scene authored (fZM_DAWNMERE_AUTHORED_CAMERA_YAW = 0) and
+// trails the player toward -Z, so the building must lie on the +Z side of every
+// point a player stands at while approaching it. Put the entrance on the +Z face
+// and the whole 21 x 17 m shell sits BEHIND the player at the doorway, which is
+// exactly the defect ZM-D-173 moved the Home 40 m to fix.
+// ============================================================================
+
+// The lab's X centreline: the reserved pad's centre X. The shell, both jambs,
+// the lintel, the sensor, the arrival marker and both drive waypoints share it.
+inline constexpr float fZM_DAWNMERE_LAB_X = 640.0f;
+
+// ...and the reserved pad's centre Z. This one is NOT a placement -- nothing is
+// authored here -- it is the site's reference column, sampled by the ground table
+// below and used by the containment unit. Both this and the X above MIRROR the
+// terrain recipe rather than reading it (this header is pure and must not depend
+// on ZM_TerrainAuthoring), which is exactly why
+// LabPlacement_SitsInsideTheReservedPadAndOnItsLandmark asserts the mirror
+// against the recipe's "Lab" pad instead of trusting it.
+inline constexpr float fZM_DAWNMERE_LAB_PAD_CENTER_Z = 552.0f;
+
+// ---- The shell envelope ----------------------------------------------------
+// The ProfLab interior is authoritative: its 20 x 16 m hall plus 0.5 m perimeter
+// walls has a 20.5 x 16.5 m OUTER envelope (fZM_PROFLAB_HALF_WIDTH/HALF_DEPTH
+// and fZM_PROFLAB_WALL_THICKNESS). This exterior is that envelope rounded up to
+// a clean 21 x 17 m blockout -- 0.5 m of deliberately cosmetic spare on each
+// PLAN axis, which is what LabExterior_EnvelopeAndEntranceMatchProfLabContract
+// holds to under one metre.
+//
+// ★ HEIGHT IS NOT AN ENVELOPE-WRAP AXIS, AND 5.5 IS NOT A ROUNDING OF 3.5. That
+// "under one metre of spare" clause is PLAN-ONLY, for the reason this paragraph
+// spends. The facade has to enclose the 3.5 m entrance FRAME (a 3.0 m jamb under
+// a 0.5 m lintel) that stands on the DOOR ground, while the box is seated on the
+// LOWEST of its four corner grounds minus the 0.05 m embed -- and the reserved
+// site is not flat, so those two grounds are not the same number:
+//     roofline  = min(the four corner grounds) + SCALE_Y - 0.05
+//     frame top = max(the two door grounds)    + 3.0 + 0.5
+//   => SCALE_Y  > 3.5 + 0.05 + (door ground - lowest corner ground)
+// i.e. the height this constant needs is FIXED FRAME + EMBED + the site's own
+// relief, and only the first two terms are design values.
+//
+// ★ AND THE FROZEN MEASUREMENTS PUT THAT RELIEF AT 1.4048 m, WHICH IS WHY 4.5
+// WAS NOT ENOUGH. The graded pad still falls ~1.5 m across a 21 x 17 m footprint
+// (corner MinX/MinZ 25.88701 down to MinX/MaxZ 24.37600) while the higher door
+// column reads 25.78080, so:
+//     lowest corner 24.37600 | higher door ground 25.78080 | relief 1.40480
+//     minimum viable SCALE_Y = 3.5 + 0.05 + 1.40480 = 4.95480
+// At 4.5 the roofline sat at 28.8260 with the lintel top at 29.2808 -- the frame
+// stood 0.4548 m PROUD of the roof, and
+// LabExterior_EnvelopeAndEntranceMatchProfLabContract went RED on exactly that
+// clause the moment the ground table was frozen, exactly as its note predicted.
+//
+// ★ 5.5 IS CHOSEN FOR MARGIN, NOT FOR THE FLOOR. It puts the roofline at 29.8260,
+// i.e. 0.5452 m of clearance over the lintel, where the bare minimum would leave
+// none. These grounds are MEASUREMENTS: the largest single-row movement this file
+// has ever recorded from a re-measure is 98.8 mm (ZM-D-186, the collision-density
+// change), and 0.5452 m survives roughly five times that with the corner row and
+// the door row moving in OPPOSITE directions at once. For scale, the shipped Home
+// carries a 4.0 m facade over a 3.0 m frame on 0.626 m of relief -- 0.324 m of
+// margin. This site's relief is 2.2x the Home's, so its facade is taller in
+// proportion rather than by taste.
+// ★ IF THIS CLAUSE EVER REDS AGAIN, RAISE THIS CONSTANT, DO NOT WEAKEN THE CLAUSE
+// -- a red there means the reserved site's relief genuinely pushes the lintel
+// through the roof, which is a modelling defect a player would look straight at.
+inline constexpr float fZM_DAWNMERE_LAB_SHELL_SCALE_X = 21.0f;
+inline constexpr float fZM_DAWNMERE_LAB_SHELL_SCALE_Y = 5.5f;
+inline constexpr float fZM_DAWNMERE_LAB_SHELL_SCALE_Z = 17.0f;
+
+// ★ THE ENTRANCE PLANE IS THE ONE NUMBER IN THIS BLOCK THAT WAS DERIVED FROM A
+// CAMERA CLEARANCE RATHER THAN FROM A BUILDING, AND IT MUST NOT BE ROUNDED
+// "TIDILY" BACK TO 528. The authored Lab dirt path runs (574, 526) -> (640, 552)
+// and therefore crosses the shell's X band (629.5 .. 650.5) at
+// (629.5, 547.8636) -- a point a player walks, with the camera trailing 5.5 m
+// toward -Z straight into the building's BACK face. The contract
+// (fCC_MIN_ARM_FRACTION, the ZM-D-173 block above) needs at least
+//   0.5 * |pivot->camera| + collisionPadding   of ray, i.e. 2.9333 m of
+// HORIZONTAL gap at this heading. An entrance at 528 puts the back face at 545
+// and leaves 2.864 m -- a VIOLATION, and one that would only appear once SC-E
+// authored the shell, in a test that never mentions the lab. At 527 the back
+// face is 544 and the gap is 3.8636 m, i.e. 0.93 m of margin.
+// ZM_Interaction/LabDirtPath_ClearsTheShellByTheShippedCameraClamp runs that
+// arithmetic through ZM_FollowCamera::ClampArmDistance itself, so moving the
+// entrance, the shell depth or the terrain path reds a UNIT rather than shipping
+// a camera that clips into a wall.
+inline constexpr float fZM_DAWNMERE_LAB_ENTRANCE_Z = 527.0f;
+
+// ...and the shell centre follows the entrance, never the other way round. Both
+// terms are dyadic, so this sum is exact in every configuration (the ZM-D-183
+// rule applied to a value that will land in a COMMITTED scene file).
+inline constexpr float fZM_DAWNMERE_LAB_SHELL_Z =
+	fZM_DAWNMERE_LAB_ENTRANCE_Z + fZM_DAWNMERE_LAB_SHELL_SCALE_Z * 0.5f;
+
+// ---- The entrance frame ----------------------------------------------------
+// ★ A FRAME, NOT A DOOR PANEL, and its opening is the ProfLab aperture EXACTLY:
+// 6.0 x 3.0 m, two 0.5 x 3.0 x 0.5 m jambs flanking it and a 7.0 x 0.5 x 0.5 m
+// lintel bridging their outer faces. Nothing swings and nothing closes -- the
+// warp is the sensor 2 m out, so the player is taken through before reaching the
+// gap. The jamb X values are DERIVED from fZM_PROFLAB_APERTURE_HALF_WIDTH so the
+// interior and the exterior cannot part; the Home's equivalents are literals
+// bound by a test, which is the older and weaker of the two patterns.
+inline constexpr float fZM_DAWNMERE_LAB_DOOR_SCALE_X = 0.5f;
+inline constexpr float fZM_DAWNMERE_LAB_DOOR_SCALE_Y = fZM_PROFLAB_APERTURE_HEIGHT;
+inline constexpr float fZM_DAWNMERE_LAB_DOOR_SCALE_Z = 0.5f;
+
+// Each jamb's INNER face lands exactly on the aperture edge, so the clear
+// opening between them is 2 * fZM_PROFLAB_APERTURE_HALF_WIDTH to the bit.
+inline constexpr float fZM_DAWNMERE_LAB_DOOR_LEFT_X = fZM_DAWNMERE_LAB_X
+	- (fZM_PROFLAB_APERTURE_HALF_WIDTH + fZM_DAWNMERE_LAB_DOOR_SCALE_X * 0.5f);
+inline constexpr float fZM_DAWNMERE_LAB_DOOR_RIGHT_X = fZM_DAWNMERE_LAB_X
+	+ (fZM_PROFLAB_APERTURE_HALF_WIDTH + fZM_DAWNMERE_LAB_DOOR_SCALE_X * 0.5f);
+
+// The lintel spans both jambs' OUTER faces: the aperture plus one jamb width
+// either side. Same shape as the Home's 5.0 m lintel over its 4.0 m opening.
+inline constexpr float fZM_DAWNMERE_LAB_LINTEL_SCALE_X =
+	fZM_PROFLAB_APERTURE_HALF_WIDTH * 2.0f + fZM_DAWNMERE_LAB_DOOR_SCALE_X * 2.0f;
+inline constexpr float fZM_DAWNMERE_LAB_LINTEL_SCALE_Y = 0.5f;
+inline constexpr float fZM_DAWNMERE_LAB_LINTEL_SCALE_Z = 0.5f;
+
+// ---- The warp sensor -------------------------------------------------------
+// 2 m in FRONT of the solid entrance face, exactly like the Home's, so an
+// approaching player overlaps it before physical contact and so it is not
+// COPLANAR with that face. Its 2 m depth therefore leaves 1 m of air between its
+// far face and the wall. It covers exactly the visible opening in X and Y.
+inline constexpr float fZM_DAWNMERE_LAB_TRIGGER_Z =
+	fZM_DAWNMERE_LAB_ENTRANCE_Z - 2.0f;
+inline constexpr float fZM_DAWNMERE_LAB_TRIGGER_SCALE_X =
+	fZM_PROFLAB_APERTURE_HALF_WIDTH * 2.0f;
+inline constexpr float fZM_DAWNMERE_LAB_TRIGGER_SCALE_Y = fZM_PROFLAB_APERTURE_HEIGHT;
+inline constexpr float fZM_DAWNMERE_LAB_TRIGGER_SCALE_Z = 2.0f;
+
+// ---- The arrival marker and the two drive waypoints ------------------------
+// ★ THE SPAWN Z IS NOT A CHOICE. It is the reserved "FromLab" landmark's Z, so
+// the marker SC-E authors stands where the terrain recipe already says the
+// return spawn is -- the same relationship the Home keeps with its "FromHome"
+// landmark at (384, 468). A boot unit asserts the equality against the recipe;
+// this constant exists so no consumer has to reach into terrain authoring for it.
+// It leaves a 7 m forecourt between the arrival point and the entrance face.
+inline constexpr float fZM_DAWNMERE_FROM_LAB_SPAWN_Z = 520.0f;
+
+// Staging aligns with the doorway while the capsule is still well clear of the
+// solid entrance face; the target is a short +Z step from staging INTO the
+// sensor, and is therefore the sensor's own centre (the Home does the same).
+inline constexpr float fZM_DAWNMERE_LAB_DOOR_STAGING_Z = 522.0f;
+inline constexpr float fZM_DAWNMERE_LAB_DOOR_TARGET_Z = fZM_DAWNMERE_LAB_TRIGGER_Z;
+
+// ============================================================================
+// THE MEASURED GROUND UNDER THE LAB PLACEMENT
+//
+// Same contract as the ZM-D-173 Home block above, for the same two hard reasons:
+// the committed Dawnmere.zscen bytes must be reproducible from COMPILED
+// constants (never from a GITIGNORED terrain bake), and there is no terrain
+// physics body during authoring to sample anyway -- the editor add path uses the
+// deserialization constructor, which never calls LoadCombinedPhysicsGeometry, so
+// an authoring-time raycast would MISS. So every height is MEASURED ONCE off the
+// live baked heightfield, by ZM_DawnmereLabGroundTruth_Test
+// (Tests/ZM_AutoTests_CameraClearance.cpp), and frozen here.
+//
+// ★★ THE TABLE BELOW SHIPS AS AN EXPLICIT, INVALID PLACEHOLDER. Every row still
+// reads fZM_DAWNMERE_LAB_GROUND_UNMEASURED, which is NOT a height and is nowhere
+// near one. THE SLICE IS NOT COMPLETE UNTIL THOSE TEN ROWS HOLD REAL
+// MEASUREMENTS, and the following boot units are RED until they do, deliberately
+// and by design:
+//     ZM_Interaction/LabGroundSamples_AreTenMeasurementsInsideTheGradedBand
+//     ZM_Interaction/LabGroundSamples_NoRowSilentlyRepeatsAnother
+// TO FREEZE THEM: run ZM_DawnmereLabGroundTruth_Test on a WINDOWED tools boot
+// with a warm Dawnmere terrain bake (a cold tree needs one bake boot first, and
+// a Null boot authors nothing -- ZM-D-190), read the ten `PASTE` lines it logs at
+// INFO on EVERY run, replace each row's fZM_DAWNMERE_LAB_GROUND_UNMEASURED with
+// the printed literal, rebuild, and re-run the oracle until it is green.
+//
+// ★ WHAT RE-MEASURES THEM AFTERWARDS: regenerating the Dawnmere heightmap OR
+// changing its collision density -- a terrain recipe/seed/flatten-radius change
+// in ZM_TerrainAuthoring.cpp, or a physics divisor change in the terrain
+// exporter. ZM-D-182 and ZM-D-186 are both worked examples, and note that they
+// moved the two EXISTING tables in this file independently: there are now THREE
+// tables with three oracles and nothing ties them together, so a density change
+// re-measures ALL THREE or leaves a silent staleness behind.
+// ============================================================================
+
+// The initialiser every row of the lab ground table still carries. Chosen to be
+// unmistakable rather than merely wrong: it is FINITE (so no accessor can hand a
+// NaN to a transform while the table is unfrozen), a million metres below any
+// Dawnmere surface, and it appears verbatim in the failure message of the two
+// boot units above.
+inline constexpr float fZM_DAWNMERE_LAB_GROUND_UNMEASURED = -1000000.0f;
+
+// Every measured lab column, in table order. Row index == id.
+//
+// ★ WHY EACH ROW EXISTS, i.e. what SC-E cannot author without it:
+//   the four SHELL corners  -- the shell's authored Y is derived from the
+//       MINIMUM of them, so no corner of a 21 x 17 m box hangs in the air. Four
+//       samples, not one centre: the pad is graded, not flat.
+//   DOOR_LEFT / DOOR_RIGHT  -- each jamb stands on its OWN ground. The opening
+//       is 6 m wide and the two ends of it are not at the same height.
+//   TRIGGER                 -- the warp sensor's own column; its centre is that
+//       ground plus half its height, so a mis-shared height would bury the
+//       sensor or float it above a walking capsule.
+//   SPAWN                   -- the FromLab arrival marker's FEET. This is the
+//       row a mis-paste hurts most: ZM_GameStateManager::CalculateSpawnCenter
+//       adds the capsule half-extent to it at warp time, so a wrong value warps
+//       the player in embedded in the ground or falling out of the air.
+//   STAGING                 -- the drive waypoint a traversal test aims at.
+//   PAD_CENTER              -- the reserved pad's own centre, which is also the
+//       Lab dirt path's endpoint. It measures nothing SC-E authors; it is the
+//       site's reference height, and having it in the SAME run is what lets the
+//       band clause say "this table came from the graded pad" at all.
+enum ZM_DAWNMERE_LAB_SAMPLE : u_int
+{
+	ZM_DAWNMERE_LAB_SAMPLE_SHELL_MINX_MINZ,
+	ZM_DAWNMERE_LAB_SAMPLE_SHELL_MAXX_MINZ,
+	ZM_DAWNMERE_LAB_SAMPLE_SHELL_MINX_MAXZ,
+	ZM_DAWNMERE_LAB_SAMPLE_SHELL_MAXX_MAXZ,
+	ZM_DAWNMERE_LAB_SAMPLE_DOOR_LEFT,
+	ZM_DAWNMERE_LAB_SAMPLE_DOOR_RIGHT,
+	ZM_DAWNMERE_LAB_SAMPLE_TRIGGER,
+	ZM_DAWNMERE_LAB_SAMPLE_SPAWN,
+	ZM_DAWNMERE_LAB_SAMPLE_STAGING,
+	ZM_DAWNMERE_LAB_SAMPLE_PAD_CENTER,
+
+	ZM_DAWNMERE_LAB_SAMPLE_COUNT
+};
+
+// ★ THE LAB GETS ITS OWN ENUM AND ITS OWN ARRAY, AND APPENDING THESE ROWS TO THE
+// HOME TABLE WOULD HAVE BEEN A SILENT TRUNCATION. The ground-truth probe in
+// Tests/ZM_AutoTests_CameraClearance.cpp holds a FIXED 16-slot probe array whose
+// static_assert only checks the HOME count, and every loop over it is bounded by
+// `u < uCount && u < SLOTS` -- so ten extra rows in ZM_DAWNMERE_HOME_SAMPLE would
+// have been measured for the first six and dropped for the rest, with every test
+// still green. Separate enum, separate array, separate count, separate slot
+// bound, separate static_assert.
+u_int ZM_GetDawnmereLabSampleCount();
+
+// TOTAL: an out-of-range id returns the same "UNKNOWN" town-centre sentinel row
+// ZM_GetDawnmereNpcAnchor hands back, and says so with a non-fatal Zenith_Error.
+const ZM_DawnmereNpcAnchor& ZM_GetDawnmereLabSample(u_int uSample);
+
+// The measured surface at one lab sample. Out of range -> the sentinel's height.
+float ZM_DawnmereLabSampleFeetY(u_int uSample);
+
+// ---- The authored blockouts SC-E will write --------------------------------
+// Each Y below is DERIVED from the measured table by the SAME FIXED formulas the
+// Home block uses, spelled once here so no consumer can re-derive them
+// differently, and checked by
+// ZM_Interaction/LabBlockoutY_FollowsTheFixedDerivationFromTheMeasuredTable:
+//   shell   = min(the four corner grounds) + 2.75 - 0.05  (half-height, minus a
+//             deliberate 0.05 m embed so no visible gap opens under the box)
+//   doors   = their OWN measured ground + 1.5             (half of the 3.0 m jamb)
+//   lintel  = max(the two door grounds)   + 3.25          (clears the 3.0 m opening)
+//   trigger = its measured ground         + 1.5           (half of the 3.0 m sensor)
+ZM_DawnmereBlockout ZM_GetDawnmereLabShell();
+ZM_DawnmereBlockout ZM_GetDawnmereLabDoorLeft();
+ZM_DawnmereBlockout ZM_GetDawnmereLabDoorRight();
+ZM_DawnmereBlockout ZM_GetDawnmereLabDoorLintel();
+ZM_DawnmereBlockout ZM_GetDawnmereLabDoorTrigger();
+
+// The FromLab spawn marker's FEET position -- the measured terrain surface, not
+// a body centre. Callers that need a centre add a capsule half-extent, exactly as
+// ZM_GameStateManager::CalculateSpawnCenter does at warp time.
+Zenith_Maths::Vector3 ZM_GetDawnmereFromLabSpawnFeet();
+
+// The lab route's two drive waypoints. Y is deliberately 0, for the same reason
+// the Home's are: DriveTowardXZ is XZ-only and the dynamic capsule owns Y, so a
+// height here would be a lie.
+Zenith_Maths::Vector3 ZM_GetDawnmereLabDoorStagingXZ();
+Zenith_Maths::Vector3 ZM_GetDawnmereLabDoorTargetXZ();

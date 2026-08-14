@@ -55,6 +55,9 @@
 #include "Zenithmon/Components/ZM_FollowCamera.h"
 #include "Zenithmon/Components/ZM_PlayerController.h"
 #include "Zenithmon/Source/World/ZM_DawnmerePlacement.h"
+// The Dawnmere terrain recipe, for the authored Lab walkway. Compiled tables
+// only -- no bake is read here, so this include adds no asset dependency.
+#include "Zenithmon/Source/World/ZM_TerrainAuthoring.h"
 
 #include <array>
 #include <cmath>
@@ -73,6 +76,14 @@ namespace
 	// they were measuring.
 	constexpr const char* szCC_TERRAIN_ENTITY = "DawnmereTerrain";
 	constexpr const char* szCC_PLAYER_ENTITY = "Player";
+
+	// The lab shell SC-E will author. It does NOT exist in the committed Dawnmere
+	// yet, and every use of this name below is written to tolerate that -- see the
+	// SC-D oracle's resolve step.
+	constexpr const char* szCC_LAB_SHELL_ENTITY = "DawnmereLabShell";
+
+	// The terrain recipe's name for the lab walkway. Spelled once.
+	constexpr const char* szCC_LAB_PATH_NAME = "Lab";
 
 	// The SAME tolerance the W5 NPC oracle uses, so "the compiled height is stale"
 	// means the same thing in both files.
@@ -97,11 +108,34 @@ namespace
 
 	// ---- Shared fixtures ----------------------------------------------------
 
-	bool CCRequiredAssetsPresent()
+	bool CCFilePresentAndNonEmpty(const std::string& strPath)
+	{
+		std::error_code xError;
+		if (!std::filesystem::is_regular_file(strPath, xError) || xError)
+		{
+			return false;
+		}
+		const std::uintmax_t ulSize = std::filesystem::file_size(strPath, xError);
+		return !xError && ulSize != 0u;
+	}
+
+	// ★ THE TWO PREREQUISITE FAMILIES ARE DIFFERENT KINDS OF THING, AND ONLY ONE
+	// OF THEM MAY EVER JUSTIFY A SKIP.
+	//
+	// The terrain bake is GITIGNORED: a fresh clone genuinely has no heightfield
+	// until a *_True boot makes one, so "there is nothing to measure against" is a
+	// legitimate skip. The Dawnmere SCENE is COMMITTED (ZM-D-148, one of the six
+	// tracked assets), so its absence is a DEFECT -- something deleted a tracked
+	// file -- and skipping on it would turn that into a silent pass in CI, which
+	// runs on exactly the tree where it must never happen.
+	//
+	// The two shipped tests below still gate on BOTH via CCRequiredAssetsPresent
+	// (their behaviour is unchanged by this split); the SC-D lab oracle skips on
+	// the bake alone and FAILS on a missing tracked scene.
+	bool CCTerrainBakePresent()
 	{
 		const std::string strRoot = std::string(GAME_ASSETS_DIR);
-		const std::array<std::string, 7> astrRequired = {
-			strRoot + "Scenes/Dawnmere" ZENITH_SCENE_EXT,
+		const std::array<std::string, 6> astrRequired = {
 			strRoot + "Terrain/Dawnmere/Height" ZENITH_TEXTURE_EXT,
 			strRoot + "Terrain/Dawnmere/Splatmap_RGBA" ZENITH_TEXTURE_EXT,
 			strRoot + "Terrain/Dawnmere/GrassDensity" ZENITH_TEXTURE_EXT,
@@ -111,18 +145,23 @@ namespace
 		};
 		for (const std::string& strPath : astrRequired)
 		{
-			std::error_code xError;
-			if (!std::filesystem::is_regular_file(strPath, xError) || xError)
-			{
-				return false;
-			}
-			const std::uintmax_t ulSize = std::filesystem::file_size(strPath, xError);
-			if (xError || ulSize == 0u)
+			if (!CCFilePresentAndNonEmpty(strPath))
 			{
 				return false;
 			}
 		}
 		return true;
+	}
+
+	bool CCCommittedDawnmereScenePresent()
+	{
+		return CCFilePresentAndNonEmpty(
+			std::string(GAME_ASSETS_DIR) + "Scenes/Dawnmere" ZENITH_SCENE_EXT);
+	}
+
+	bool CCRequiredAssetsPresent()
+	{
+		return CCCommittedDawnmereScenePresent() && CCTerrainBakePresent();
 	}
 
 	// A NAME for an entity id that is safe to print even when the id no longer
@@ -521,21 +560,51 @@ namespace
 		CC_GROUP_HOME_DIRT_PATH,
 		CC_GROUP_SPAWN_RING,
 		CC_GROUP_TOWN_RING,
+		// S8 SC-D: the lab site's routes and its warp arrival. Added with the
+		// PLACEMENT rather than with the authoring, on purpose -- the coverage rule
+		// at the top of this file says a newly authored region adds its traversal
+		// paths, warp approaches and interaction approaches HERE, and doing it now
+		// means SC-E's shell lands into a table that already measures the ground it
+		// will stand on. Until SC-E these groups run over open terrain, which is
+		// what makes the before/after comparison meaningful.
+		CC_GROUP_TOWN_TO_LAB_STAGING,
+		CC_GROUP_LAB_STAGING_TO_TRIGGER,
+		CC_GROUP_LAB_DIRT_PATH,
+		CC_GROUP_LAB_SPAWN_RING,
 
 		CC_GROUP_COUNT
 	};
 
-	const char* g_aszCCGroupNames[CC_GROUP_COUNT] = {
+	// The bound is DEDUCED, never spelled: written as [CC_GROUP_COUNT] the
+	// static_assert below would be a tautology and a forgotten name would simply
+	// zero-initialise into a NULL that every failure report then prints.
+	const char* g_aszCCGroupNames[] = {
 		"townCentre->doorStaging",
 		"doorStaging->doorTrigger",
 		"homeDirtPath",
 		"fromHomeSpawnRing",
 		"townCentreRing",
+		"townCentre->labStaging",
+		"labStaging->labTrigger",
+		"labDirtPath",
+		"fromLabSpawnRing",
 	};
+
+	static_assert(
+		sizeof(g_aszCCGroupNames) / sizeof(g_aszCCGroupNames[0]) == CC_GROUP_COUNT,
+		"every CC_GROUP needs a name -- the failure reports index this array");
 
 	// Sized for the authoritative table plus generous headroom; overflow is
 	// REPORTED as a failure rather than silently truncating coverage.
-	constexpr u_int uCC_MAX_SAMPLES = 512u;
+	//
+	// ★ RAISED 512 -> 1024 BY S8 SC-D, WITH THE ARITHMETIC WRITTEN DOWN so the next
+	// region does not have to re-derive it. The Home-era table is 308 samples
+	// (130 + 17 + 143 + 9 + 9); the four lab groups add 295 (136 + 13 + 137 + 9),
+	// for 603. At 512 this change would have OVERFLOWED -- reported as a failure,
+	// never truncated, which is the property that made the budget worth checking
+	// rather than trusting. 1024 leaves 421 spare, i.e. room for a region of the
+	// lab's size again plus change.
+	constexpr u_int uCC_MAX_SAMPLES = 1024u;
 	constexpr float fCC_ROUTE_SPACING = 1.0f;
 	constexpr float fCC_APPROACH_SPACING = 0.25f;
 	constexpr float fCC_RING_RADIUS = 1.5f;
@@ -561,6 +630,10 @@ namespace
 	u_int g_uCCSampleCount = 0u;
 	u_int g_auCCGroupCounts[CC_GROUP_COUNT] = {};
 	bool g_bCCSampleOverflow = false;
+	// The lab dirt path is looked up in the terrain recipe BY NAME. A rename or a
+	// deletion there must not silently drop a whole coverage group, so it is
+	// recorded and reported as a failure exactly like an overflow.
+	bool g_bCCLabPathMissing = false;
 
 	enum class CCPhase { Resolve, Probe, Evaluate, Done };
 
@@ -640,6 +713,7 @@ namespace
 	{
 		g_uCCSampleCount = 0u;
 		g_bCCSampleOverflow = false;
+		g_bCCLabPathMissing = false;
 		for (u_int u = 0u; u < CC_GROUP_COUNT; ++u)
 		{
 			g_auCCGroupCounts[u] = 0u;
@@ -676,6 +750,76 @@ namespace
 			CC_GROUP_SPAWN_RING);
 		CCAddRing(fZM_DAWNMERE_TOWN_CENTER_X, fZM_DAWNMERE_TOWN_CENTER_Z,
 			fCC_RING_RADIUS, uCC_RING_POINTS, CC_GROUP_TOWN_RING);
+
+		// ---- S8 SC-D: the lab site ------------------------------------------
+		const Zenith_Maths::Vector3 xLabStaging = ZM_GetDawnmereLabDoorStagingXZ();
+		const Zenith_Maths::Vector3 xLabTarget = ZM_GetDawnmereLabDoorTargetXZ();
+
+		// (f) The town-centre -> lab-door approach a blind DriveTowardXZ leg would
+		// take, at 1 m. It passes 4.93 m from the wanderer's NORTH patrol endpoint
+		// (540, 484) at its closest -- comfortably outside the 3.33 m (a 2.93 m
+		// horizontal gap plus the body's own 0.4 m half-width) a body needs to
+		// violate the arm contract, which is why a MOVING NPC beside this route
+		// cannot make it nondeterministic. That margin is not a coincidence to be
+		// re-discovered: ZM_Interaction/
+		// LabApproach_ClearsEveryAuthoredNpcAndPatrolEndpoint pins it as a unit.
+		//
+		// ★ NO TEST DRIVES THIS LEG YET, AND A VIOLATION ON IT MEANS SOMETHING
+		// DIFFERENT FROM ONE ON THE OTHERS. Its middle stretch leaves the Plaza
+		// pad's 60 m flatten radius and does not reach the Lab pad's 48 m one, and
+		// it runs ~25 m south of the Lab walkway's 13 m flatten band -- so roughly
+		// 40 m of it crosses NATURAL eroded terrain, where the blocker would be the
+		// GROUND rather than a building. That is a real finding about walking
+		// straight from the square to the lab (the camera would clip on a slope
+		// steeper than ~42 degrees within 3.2 m), not about the lab placement, and
+		// the fix would be to route the walk along the authored dirt path rather
+		// than to move the building. Read the reported blocker name before
+		// concluding anything: 'DawnmereTerrain' says slope, a lab entity says
+		// placement.
+		CCAddSegment(fZM_DAWNMERE_TOWN_CENTER_X, fZM_DAWNMERE_TOWN_CENTER_Z,
+			xLabStaging.x, xLabStaging.z, fCC_ROUTE_SPACING,
+			CC_GROUP_TOWN_TO_LAB_STAGING);
+
+		// (g) The lab doorway approach itself, four times finer, for the reason
+		// (b) is fine: this is the stretch a building can break.
+		CCAddSegment(xLabStaging.x, xLabStaging.z, xLabTarget.x, xLabTarget.z,
+			fCC_APPROACH_SPACING, CC_GROUP_LAB_STAGING_TO_TRIGGER);
+
+		// (h) The authored Lab dirt path, segment by segment, READ FROM THE RECIPE
+		// rather than re-typed. The Home group above spells its path as literals
+		// (it predates the rule); a route spelled twice cannot red a drift, and
+		// this particular route is load-bearing -- it is what forced the lab
+		// entrance plane to 527 rather than 528 (see ZM_DawnmerePlacement.h).
+		const ZM_TerrainAuthoringRecipe& xRecipe = ZM_GetDawnmereTerrainRecipe();
+		const ZM_TerrainPathSpec* pxLabPath = nullptr;
+		for (u_int u = 0u; u < xRecipe.m_uPathCount; ++u)
+		{
+			if (std::strcmp(xRecipe.m_pxPaths[u].m_szName, szCC_LAB_PATH_NAME) == 0)
+			{
+				pxLabPath = &xRecipe.m_pxPaths[u];
+				break;
+			}
+		}
+		g_bCCLabPathMissing = pxLabPath == nullptr || pxLabPath->m_uPointCount < 2u;
+		if (!g_bCCLabPathMissing)
+		{
+			for (u_int u = 0u; u + 1u < pxLabPath->m_uPointCount; ++u)
+			{
+				CCAddSegment(pxLabPath->m_pxPoints[u].m_fX,
+					pxLabPath->m_pxPoints[u].m_fZ,
+					pxLabPath->m_pxPoints[u + 1u].m_fX,
+					pxLabPath->m_pxPoints[u + 1u].m_fZ,
+					fCC_ROUTE_SPACING, CC_GROUP_LAB_DIRT_PATH);
+			}
+		}
+
+		// (i) The FromLab warp arrival, with the same ring the other two get. Spelt
+		// from the two placement constants rather than from
+		// ZM_GetDawnmereFromLabSpawnFeet(): that accessor's Y is still the SC-D
+		// placeholder, and reading only .x/.z off it would invite a reader to think
+		// the height mattered here. It does not -- every column measures its own.
+		CCAddRing(fZM_DAWNMERE_LAB_X, fZM_DAWNMERE_FROM_LAB_SPAWN_Z,
+			fCC_RING_RADIUS, uCC_RING_POINTS, CC_GROUP_LAB_SPAWN_RING);
 	}
 
 	bool CCStepResolve()
@@ -930,21 +1074,18 @@ namespace
 		}
 
 		Zenith_Log(LOG_CATEGORY_UNITTEST,
-			"[ZM_DawnmereCameraClearance] samples=%u (%s=%u, %s=%u, %s=%u, %s=%u, "
-			"%s=%u) authoredYaw=%.6f capsuleHalfExtent=%.4f minArmFraction=%.2f",
-			g_uCCSampleCount,
-			g_aszCCGroupNames[CC_GROUP_TOWN_TO_STAGING],
-			g_auCCGroupCounts[CC_GROUP_TOWN_TO_STAGING],
-			g_aszCCGroupNames[CC_GROUP_STAGING_TO_TRIGGER],
-			g_auCCGroupCounts[CC_GROUP_STAGING_TO_TRIGGER],
-			g_aszCCGroupNames[CC_GROUP_HOME_DIRT_PATH],
-			g_auCCGroupCounts[CC_GROUP_HOME_DIRT_PATH],
-			g_aszCCGroupNames[CC_GROUP_SPAWN_RING],
-			g_auCCGroupCounts[CC_GROUP_SPAWN_RING],
-			g_aszCCGroupNames[CC_GROUP_TOWN_RING],
-			g_auCCGroupCounts[CC_GROUP_TOWN_RING],
-			(double)g_fCCAuthoredYaw, (double)g_fCCCapsuleHalfExtent,
-			(double)fCC_MIN_ARM_FRACTION);
+			"[ZM_DawnmereCameraClearance] samples=%u of %u slots authoredYaw=%.6f "
+			"capsuleHalfExtent=%.4f minArmFraction=%.2f",
+			g_uCCSampleCount, uCC_MAX_SAMPLES, (double)g_fCCAuthoredYaw,
+			(double)g_fCCCapsuleHalfExtent, (double)fCC_MIN_ARM_FRACTION);
+		// One line per group, so adding a region cannot outgrow the format string
+		// (the five-group version of this log was a hand-written arg list).
+		for (u_int u = 0u; u < (u_int)CC_GROUP_COUNT; ++u)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST,
+				"[ZM_DawnmereCameraClearance]   group='%s' samples=%u",
+				g_aszCCGroupNames[u], g_auCCGroupCounts[u]);
+		}
 
 		bool bPassed = true;
 
@@ -956,6 +1097,30 @@ namespace
 				"[ZM_DawnmereCameraClearance] the sample table overflowed its %u-slot "
 				"budget -- coverage was TRUNCATED, so a pass would be meaningless",
 				uCC_MAX_SAMPLES);
+		}
+
+		// ...and so would a coverage group that never got built at all.
+		if (g_bCCLabPathMissing)
+		{
+			bPassed = false;
+			Zenith_Error(LOG_CATEGORY_UNITTEST,
+				"[ZM_DawnmereCameraClearance] the Dawnmere terrain recipe has no "
+				"usable path named '%s', so the lab walkway group is EMPTY -- a "
+				"renamed or deleted recipe path silently removes coverage",
+				szCC_LAB_PATH_NAME);
+		}
+
+		// Every group must actually carry samples. A group whose builder was
+		// removed reports zero here rather than passing by having nothing to check.
+		for (u_int u = 0u; u < (u_int)CC_GROUP_COUNT; ++u)
+		{
+			if (g_auCCGroupCounts[u] == 0u)
+			{
+				bPassed = false;
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_DawnmereCameraClearance] group '%s' contributed NO samples -- "
+					"its coverage is vacuous", g_aszCCGroupNames[u]);
+			}
 		}
 
 		const bool bPhasesComplete = g_bCCPrereqs && g_bCCResolved
@@ -1095,5 +1260,373 @@ static const Zenith_AutomatedTest g_xZMDawnmereCameraClearanceTest = {
 	false /* m_bRequiresGraphics */,
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xZMDawnmereCameraClearanceTest);
+
+// ============================================================================
+// (3) ZM_DawnmereLabGroundTruth_Test (S8 SC-D) -- the LAB measurement oracle.
+//
+// Same job as (1) for the lab site: cast a real downward ray at every column the
+// lab placement names, LOG every value at INFO on every run, and red if a
+// compiled row in Source/World/ZM_DawnmerePlacement.h has drifted from the
+// surface the world actually has.
+//
+// ★★ THIS TEST RUNS TWICE IN ITS LIFETIME, WITH DIFFERENT MEANINGS, AND EVERY
+// STRUCTURAL DECISION BELOW EXISTS TO SERVE BOTH.
+//
+//   RUN 1 -- NOW (SC-D), WITH NO LAB GEOMETRY IN THE WORLD AT ALL. Dawnmere
+//   contains no shell, no jambs, no lintel and no lab sensor; this run measures
+//   PURE TERRAIN and produces the ten numbers the placement table is frozen
+//   from. On this run the table it is checking against is a deliberate
+//   PLACEHOLDER, so the height clause is EXPECTED TO RED until those numbers are
+//   pasted in and the binary rebuilt. That is the measure -> freeze -> rebuild
+//   loop, and this test is its instrument.
+//
+//   RUN 2 -- AFTER SC-E, WITH THE SHELL AUTHORED. The same ten columns are
+//   re-measured with the shell IGNORED, exactly as the Home oracle ignores the
+//   Home shell, and the run confirms the frozen table still matches the ground.
+//
+// ★ SO AN ABSENT LAB SHELL IS "THERE IS NO BODY TO IGNORE", NEVER A FAILURE, and
+// getting that wrong would have been fatal rather than untidy. The Home oracle's
+// resolve step FAILS when 'DawnmereHomeShell' is missing, which is correct THERE
+// -- that shell already exists and is only ever being MOVED. Copying that arm
+// here would hard-fail this test on the one run it exists to perform. So the
+// resolve step below requires only the terrain, records whether the lab shell
+// happens to exist, and hands an INVALID entity id to the probe when it does not
+// (Zenith_PhysicsQuery::RaycastIgnoring falls back to an unfiltered raycast for
+// INVALID_ENTITY_ID -- "ignore nothing" is a supported request, not an error).
+//
+// ★ AND THE DOOR COLUMNS' HALF-METRE OFFSET IS NOT JUSTIFIED BY THIS RUN. The
+// Home block's reasoning -- "a jamb's own column has two solid bodies over it and
+// RaycastIgnoring takes only one" -- is about geometry that does not exist yet.
+// It is why the lab's door rows are offset ANYWAY (so run 2 can measure the same
+// columns run 1 froze); see the geometry note in ZM_DawnmerePlacement.cpp.
+//
+// ★ THE PROBE WINDOW IS SIZED FROM THE TOWN-CENTRE ANCHOR, NOT FROM THE ROW
+// BEING MEASURED, AND THAT IS LOAD-BEARING ON RUN 1. The Home oracle centres each
+// column's ray on that column's own compiled height, which works because those
+// heights are real. Doing that here would start every lab ray a million metres
+// below the world (the placeholder), find nothing, and time out at the phase
+// deadline WITHOUT EVER PRINTING A MEASUREMENT -- i.e. the freeze loop could
+// never close. The camera-clearance test above already sizes its window from
+// fZM_DAWNMERE_TOWN_CENTER_FEET_Y for the same reason (it measures columns with
+// no compiled height at all), so this is the established pattern rather than a
+// special case. The resulting window brackets the whole graded band the boot unit
+// LabGroundSamples_AreTenMeasurementsInsideTheGradedBand enforces.
+//
+// ★ SKIPS ON THE GITIGNORED BAKE ONLY. A missing Dawnmere.zscen is a missing
+// TRACKED asset, which is a defect and is reported as a failure -- see the
+// CCTerrainBakePresent / CCCommittedDawnmereScenePresent split at the top of this
+// file.
+// ============================================================================
+
+namespace
+{
+	enum class LGTPhase { Resolve, Measure, Done };
+
+	LGTPhase g_eLGTPhase = LGTPhase::Done;
+	int  g_iLGTFrames = 0;
+	bool g_bLGTBakePresent = false;
+	bool g_bLGTScenePresent = false;
+	bool g_bLGTSkipped = false;
+	bool g_bLGTResolved = false;
+	bool g_bLGTMeasured = false;
+	bool g_bLGTShellPresent = false;
+	const char* g_szLGTFailure = "test did not reach verification";
+	Zenith_EntityID g_xLGTTerrainID = INVALID_ENTITY_ID;
+	Zenith_EntityID g_xLGTShellID = INVALID_ENTITY_ID;
+
+	// ★ THE LAB GETS ITS OWN SLOT ARRAY AND ITS OWN static_assert. The Home probe
+	// array above is bounded by uHGT_SAMPLE_SLOTS with an assert that only counts
+	// HOME rows, and every loop over it reads `u < uCount && u < SLOTS` -- so lab
+	// rows appended to the Home enum would have been measured up to the slot bound
+	// and silently DROPPED beyond it, with nothing able to see the truncation.
+	constexpr u_int uLGT_SAMPLE_SLOTS = 16u;
+	static_assert(uLGT_SAMPLE_SLOTS >= (u_int)ZM_DAWNMERE_LAB_SAMPLE_COUNT,
+		"the lab ground-truth probe needs one slot per lab ground sample");
+	CCGroundProbe g_axLGTProbes[uLGT_SAMPLE_SLOTS];
+
+	void FailLGT(const char* szReason)
+	{
+		g_szLGTFailure = szReason;
+		g_eLGTPhase = LGTPhase::Done;
+	}
+
+	bool LGTStepResolve()
+	{
+		Zenith_SceneData* pxData = nullptr;
+		if (!CCDawnmereIsActive(pxData))
+		{
+			if (g_iLGTFrames > iCC_RESOLVE_DEADLINE_FRAMES)
+			{
+				FailLGT("Dawnmere never became the active scene");
+				return false;
+			}
+			return true;
+		}
+
+		// The terrain is the ONLY required entity: it is what every probe must
+		// terminate on, and its absence means the committed scene is not the scene
+		// this test was written against.
+		const Zenith_Entity xTerrain = CCFindEntity(pxData, szCC_TERRAIN_ENTITY);
+		if (!xTerrain.IsValid())
+		{
+			if (g_iLGTFrames > iCC_RESOLVE_DEADLINE_FRAMES)
+			{
+				FailLGT("the committed Dawnmere does not contain 'DawnmereTerrain' -- "
+					"a renamed or deleted authored entity, not a missing bake");
+				return false;
+			}
+			return true;
+		}
+
+		// OPTIONAL, and the whole point of this test's structure: pre-SC-E there is
+		// no lab shell, so an invalid id here means "there is no body to ignore".
+		const Zenith_Entity xShell = CCFindEntity(pxData, szCC_LAB_SHELL_ENTITY);
+		g_bLGTShellPresent = xShell.IsValid();
+		g_xLGTShellID = g_bLGTShellPresent ? xShell.GetEntityID() : INVALID_ENTITY_ID;
+
+		g_xLGTTerrainID = xTerrain.GetEntityID();
+		g_bLGTResolved = true;
+		g_eLGTPhase = LGTPhase::Measure;
+		g_iLGTFrames = 0;
+		return true;
+	}
+
+	bool LGTStepMeasure()
+	{
+		const u_int uCount = ZM_GetDawnmereLabSampleCount();
+		u_int uResolved = 0u;
+		for (u_int u = 0u; u < uCount && u < uLGT_SAMPLE_SLOTS; ++u)
+		{
+			if (g_axLGTProbes[u].m_bResolved)
+			{
+				++uResolved;
+				continue;
+			}
+			const ZM_DawnmereNpcAnchor& xSample = ZM_GetDawnmereLabSample(u);
+			// The reference height sizes the WINDOW only, and it is deliberately
+			// NOT xSample.m_fFeetY -- see the block comment above.
+			g_axLGTProbes[u] = CCProbeGroundAt(xSample.m_fX, xSample.m_fZ,
+				fZM_DAWNMERE_TOWN_CENTER_FEET_Y, g_xLGTShellID, g_xLGTTerrainID);
+			if (g_axLGTProbes[u].m_bResolved)
+			{
+				++uResolved;
+			}
+		}
+
+		// Only columns that found NOTHING are still waiting for the terrain body to
+		// stream in; a column that landed on the wrong body is already decided and
+		// is judged in Verify.
+		if (uResolved != uCount)
+		{
+			if (g_iLGTFrames > iCC_PROBE_DEADLINE_FRAMES)
+			{
+				FailLGT("a downward probe found no ground at all under a lab placement "
+					"column -- either the terrain physics body never streamed in, or "
+					"that column lies outside the baked heightfield (per-column detail "
+					"below)");
+				return false;
+			}
+			return true;
+		}
+
+		g_bLGTMeasured = true;
+		g_eLGTPhase = LGTPhase::Done;
+		return false;
+	}
+
+	void Setup_DawnmereLabGroundTruth()
+	{
+		g_eLGTPhase = LGTPhase::Done;
+		g_iLGTFrames = 0;
+		g_bLGTBakePresent = false;
+		g_bLGTScenePresent = false;
+		g_bLGTSkipped = false;
+		g_bLGTResolved = false;
+		g_bLGTMeasured = false;
+		g_bLGTShellPresent = false;
+		g_szLGTFailure = "test did not reach verification";
+		g_xLGTTerrainID = INVALID_ENTITY_ID;
+		g_xLGTShellID = INVALID_ENTITY_ID;
+		for (u_int u = 0u; u < uLGT_SAMPLE_SLOTS; ++u)
+		{
+			g_axLGTProbes[u] = CCGroundProbe();
+		}
+
+		Zenith_InputSimulator::ResetAllInputState();
+
+		// The ONE skip, and it is narrow on purpose: the GITIGNORED heightfield
+		// this test measures against does not exist. RequestSkip bypasses Verify,
+		// so no fixed-dt or scene-load state may be installed before this point.
+		g_bLGTBakePresent = CCTerrainBakePresent();
+		if (!g_bLGTBakePresent)
+		{
+			g_bLGTSkipped = true;
+			Zenith_AutomatedTestRunner::RequestSkip(
+				"[ZM_DawnmereLabGroundTruth] the Dawnmere terrain bake is absent or "
+				"incomplete -- there is no heightfield to measure the lab placement "
+				"against (run a *_True config once to bake it)");
+			return;
+		}
+
+		// NOT a skip. Dawnmere.zscen is one of the six TRACKED assets; its absence
+		// is a deleted committed file, and skipping would turn that into a pass on
+		// the exact tree where it must never happen.
+		g_bLGTScenePresent = CCCommittedDawnmereScenePresent();
+		if (!g_bLGTScenePresent)
+		{
+			FailLGT("the COMMITTED Assets/Scenes/Dawnmere" ZENITH_SCENE_EXT
+				" is missing -- that is a deleted tracked asset, not a missing bake, "
+				"so this run FAILS rather than skipping");
+			return;
+		}
+
+		Zenith_InputSimulator::SetFixedDt(fCC_FIXED_DT);
+		g_eLGTPhase = LGTPhase::Resolve;
+		g_xEngine.Scenes().LoadSceneByIndex(
+			iCC_DAWNMERE_BUILD_INDEX, SCENE_LOAD_SINGLE);
+	}
+
+	bool Step_DawnmereLabGroundTruth(int)
+	{
+		if (g_eLGTPhase == LGTPhase::Done)
+		{
+			return false;
+		}
+		++g_iLGTFrames;
+		switch (g_eLGTPhase)
+		{
+		case LGTPhase::Resolve: return LGTStepResolve();
+		case LGTPhase::Measure: return LGTStepMeasure();
+		case LGTPhase::Done:    return false;
+		}
+		return false;
+	}
+
+	bool Verify_DawnmereLabGroundTruth()
+	{
+		Zenith_InputSimulator::ResetAllInputState();
+		Zenith_InputSimulator::ClearFixedDt();
+
+		if (g_bLGTSkipped)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST,
+				"[ZM_DawnmereLabGroundTruth] SKIPPED -- no baked Dawnmere terrain, so "
+				"nothing was measured. The S8 SC-D lab ground table in "
+				"Source/World/ZM_DawnmerePlacement.cpp is UNVERIFIED on this run, and "
+				"if it still holds its placeholder it CANNOT be frozen from a run that "
+				"skipped.");
+			return true;
+		}
+
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[ZM_DawnmereLabGroundTruth] mode=%s (labShellPresent=%d) -- %s",
+			g_bLGTShellPresent ? "POST-SC-E" : "PRE-SC-E",
+			(int)g_bLGTShellPresent,
+			g_bLGTShellPresent
+				? "the authored lab shell was found and is IGNORED by every probe"
+				: "no lab shell exists yet, so every probe measures pure terrain "
+					"with nothing to ignore");
+
+		// ★ THE PASTE-READY LOG, EMITTED ON EVERY RUN, PASS OR FAIL. This is how the
+		// SC-D table is obtained in the first place and re-obtained after a terrain
+		// change: replace the row's fZM_DAWNMERE_LAB_GROUND_UNMEASURED initialiser
+		// in Source/World/ZM_DawnmerePlacement.cpp with the `paste=` literal, keying
+		// on the row NAME (the table is in this same order).
+		const u_int uCount = ZM_GetDawnmereLabSampleCount();
+		for (u_int u = 0u; u < uCount && u < uLGT_SAMPLE_SLOTS; ++u)
+		{
+			const ZM_DawnmereNpcAnchor& xSample = ZM_GetDawnmereLabSample(u);
+			char acFinal[96];
+			CCDescribeEntity(g_axLGTProbes[u].m_xFinalHitEntity, acFinal);
+			Zenith_Log(LOG_CATEGORY_UNITTEST,
+				"[ZM_DawnmereLabGroundTruth] MEASURED FEET Y -- PASTE row %u of the "
+				"S8 SC-D LAB GROUND table in Source/World/ZM_DawnmerePlacement.cpp: "
+				"name=%s paste=%.5ff xz=(%.3f, %.3f) table=%.5f tableError=%.5f | "
+				"resolved=%d hitTerrain=%d finalHit='%s'",
+				u, xSample.m_szEntityName, (double)g_axLGTProbes[u].m_fFeetY,
+				(double)xSample.m_fX, (double)xSample.m_fZ, (double)xSample.m_fFeetY,
+				(double)(g_axLGTProbes[u].m_fFeetY - xSample.m_fFeetY),
+				(int)g_axLGTProbes[u].m_bResolved,
+				(int)g_axLGTProbes[u].m_bHitTerrain, acFinal);
+		}
+
+		// The five DERIVED authored Y values, so a freeze round can be checked
+		// without re-deriving the formulas by hand. These are what SC-E authors.
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[ZM_DawnmereLabGroundTruth] DERIVED authored Y: shell=%.6f "
+			"doorLeft=%.6f doorRight=%.6f lintel=%.6f trigger=%.6f spawnFeet=%.6f",
+			(double)ZM_GetDawnmereLabShell().m_xCenter.y,
+			(double)ZM_GetDawnmereLabDoorLeft().m_xCenter.y,
+			(double)ZM_GetDawnmereLabDoorRight().m_xCenter.y,
+			(double)ZM_GetDawnmereLabDoorLintel().m_xCenter.y,
+			(double)ZM_GetDawnmereLabDoorTrigger().m_xCenter.y,
+			(double)ZM_GetDawnmereFromLabSpawnFeet().y);
+
+		if (!g_bLGTBakePresent || !g_bLGTScenePresent || !g_bLGTResolved
+			|| !g_bLGTMeasured)
+		{
+			Zenith_Error(LOG_CATEGORY_UNITTEST,
+				"[ZM_DawnmereLabGroundTruth] %s (bake=%d scene=%d resolved=%d "
+				"measured=%d)",
+				g_szLGTFailure, (int)g_bLGTBakePresent, (int)g_bLGTScenePresent,
+				(int)g_bLGTResolved, (int)g_bLGTMeasured);
+			return false;
+		}
+
+		bool bPassed = true;
+		for (u_int u = 0u; u < uCount && u < uLGT_SAMPLE_SLOTS; ++u)
+		{
+			const ZM_DawnmereNpcAnchor& xSample = ZM_GetDawnmereLabSample(u);
+			// ★ THE MEASUREMENT MUST BE GROUND, AND THE ONLY BODY THIS RUN IS
+			// ALLOWED TO LOOK PAST IS THE (POSSIBLY ABSENT) LAB SHELL. Anything else
+			// under a lab column -- a neighbouring authored block, a prop, an NPC --
+			// would silently turn a body TOP into a "terrain height" and freeze it
+			// into the placement table, so it is named and failed here.
+			if (!g_axLGTProbes[u].m_bHitTerrain
+				|| g_axLGTProbes[u].m_xFinalHitEntity != g_xLGTTerrainID)
+			{
+				char acFinal[96];
+				CCDescribeEntity(g_axLGTProbes[u].m_xFinalHitEntity, acFinal);
+				bPassed = false;
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_DawnmereLabGroundTruth] the probe under '%s' terminated on "
+					"'%s' rather than on '%s' -- the measurement would be a body top, "
+					"not a ground height (the lab shell is the ONLY body a lab column "
+					"may legitimately carry, and it is already ignored)",
+					xSample.m_szEntityName, acFinal, szCC_TERRAIN_ENTITY);
+				continue;
+			}
+			const float fError =
+				std::fabs(g_axLGTProbes[u].m_fFeetY - xSample.m_fFeetY);
+			if (fError > fCC_HEIGHT_TOLERANCE)
+			{
+				bPassed = false;
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_DawnmereLabGroundTruth] '%s': the compiled feet height %.5f "
+					"is %.5f m off the terrain surface %.5f (tolerance %.3f). If it "
+					"reads %.1f this table is still the SC-D PLACEHOLDER and has never "
+					"been frozen -- paste the `paste=` literals above into the S8 SC-D "
+					"LAB GROUND block in Source/World/ZM_DawnmerePlacement.cpp and "
+					"rebuild.",
+					xSample.m_szEntityName, (double)xSample.m_fFeetY, (double)fError,
+					(double)g_axLGTProbes[u].m_fFeetY, (double)fCC_HEIGHT_TOLERANCE,
+					(double)fZM_DAWNMERE_LAB_GROUND_UNMEASURED);
+			}
+		}
+		return bPassed;
+	}
+}
+
+static const Zenith_AutomatedTest g_xZMDawnmereLabGroundTruthTest = {
+	"ZM_DawnmereLabGroundTruth_Test",
+	&Setup_DawnmereLabGroundTruth,
+	&Step_DawnmereLabGroundTruth,
+	&Verify_DawnmereLabGroundTruth,
+	// Both waiting phases own a deadline that FAILS with a diagnostic; this cap is
+	// only a backstop above their sum.
+	/* maxFrames */ 2400,
+	false /* m_bRequiresGraphics */,
+};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xZMDawnmereLabGroundTruthTest);
 
 #endif // ZENITH_INPUT_SIMULATOR

@@ -435,3 +435,247 @@ Zenith_Maths::Vector3 ZM_GetDawnmereHomeDoorTargetXZ()
 	return Zenith_Maths::Vector3(
 		fZM_DAWNMERE_HOME_X, 0.0f, fZM_DAWNMERE_HOME_DOOR_TARGET_Z);
 }
+
+// ============================================================================
+// S8 SC-D -- the lab site. See the header for the reserved terrain site, the
+// camera derivation behind the entrance plane, the fixed Y formulas, and the
+// freeze procedure for the PLACEHOLDER table below.
+// ============================================================================
+
+namespace
+{
+	constexpr float fZM_LAB_SHELL_HALF_X =
+		fZM_DAWNMERE_LAB_SHELL_SCALE_X * 0.5f;
+	constexpr float fZM_LAB_SHELL_HALF_Z =
+		fZM_DAWNMERE_LAB_SHELL_SCALE_Z * 0.5f;
+	constexpr float fZM_LAB_SHELL_MIN_X = fZM_DAWNMERE_LAB_X - fZM_LAB_SHELL_HALF_X;
+	constexpr float fZM_LAB_SHELL_MAX_X = fZM_DAWNMERE_LAB_X + fZM_LAB_SHELL_HALF_X;
+	constexpr float fZM_LAB_SHELL_MIN_Z =
+		fZM_DAWNMERE_LAB_SHELL_Z - fZM_LAB_SHELL_HALF_Z;
+	constexpr float fZM_LAB_SHELL_MAX_Z =
+		fZM_DAWNMERE_LAB_SHELL_Z + fZM_LAB_SHELL_HALF_Z;
+
+	// Which way is OUT of the lab: -1 when the entrance is the shell's MIN-Z
+	// face, +1 when it is the MAX-Z face. Derived rather than assumed so the door
+	// ground samples follow the entrance if it is ever moved to the other face
+	// (which the ZM-D-173 camera rule forbids, but a derivation costs nothing and
+	// a silent wrong-side sample would be unreadable).
+	constexpr float fZM_LAB_ENTRANCE_OUTWARD =
+		fZM_DAWNMERE_LAB_ENTRANCE_Z < fZM_DAWNMERE_LAB_SHELL_Z ? -1.0f : 1.0f;
+
+	// ★ THE TWO DOOR COLUMNS ARE SAMPLED HALF A METRE OUT INTO THE FORECOURT, AND
+	// THE REASON IS ENTIRELY ABOUT THE **SECOND** RUN OF THE ORACLE, NOT THIS ONE.
+	//
+	// TODAY (SC-D) the offset buys nothing measurable: Dawnmere contains no lab
+	// geometry at all, so a probe on a jamb's exact column would find clean ground.
+	// The offset is here so that the SAME columns stay measurable AFTER SC-E
+	// authors the shell and the jambs, because at that point a jamb's own column
+	// has TWO solid bodies over it and neither can be stepped past:
+	//   * the jamb's underside is exactly AT the surface being measured, so
+	//     restarting the ray below it restarts ON the ground;
+	//   * the shell is EMBEDDED 0.05 m below its lowest corner, which at this
+	//     column puts its underside BELOW the ground -- restarting below THAT
+	//     starts underneath the terrain and misses entirely.
+	// Zenith_PhysicsQuery::RaycastIgnoring takes ONE entity, so the pair cannot be
+	// filtered out either (that missing multi-body ignore is booked as Shortfalls
+	// E8, alongside the absent terrain height-query API). If these rows were
+	// sampled on the jamb columns now, the post-SC-E re-measure would be
+	// STRUCTURALLY IMPOSSIBLE and the rows would have to MOVE -- which would
+	// invalidate the very freeze this table exists to hold.
+	//
+	// ★ AND THE RESIDUAL IS HONESTLY UNKNOWN, WHICH IS NOT THE SAME AS SMALL. Each
+	// jamb's authored height comes from ground half a metre away, and the ground at
+	// its own column is unmeasurable by construction once the building exists. Do
+	// not quote a figure for it: the Home block records that the samples bracketing
+	// ITS doorway do not agree on even the SIGN of the local gradient, because
+	// eroded terrain is not locally linear. What is bounded is the consequence -- a
+	// centimetre-scale gap or embed under a greybox pier the player never reaches,
+	// since the warp sensor fires 2 m short of it.
+	//
+	// Half a metre clears the jamb's 0.25 m protrusion and the shell face, while
+	// staying deep inside the Lab pad's 48 m flatten radius.
+	constexpr float fZM_LAB_DOOR_SAMPLE_OFFSET = 0.5f;
+	constexpr float fZM_LAB_DOOR_SAMPLE_Z = fZM_DAWNMERE_LAB_ENTRANCE_Z
+		+ fZM_LAB_DOOR_SAMPLE_OFFSET * fZM_LAB_ENTRANCE_OUTWARD;
+
+	// ==== S8 SC-D MEASURED LAB GROUND -- FROZEN 2026-08-14 ====
+	//
+	// ★★ THESE TEN LITERALS ARE MEASUREMENTS, NOT DESIGN VALUES. Each is the
+	// `paste=` literal `ZM_DawnmereLabGroundTruth_Test` printed for that row NAME on
+	// a WINDOWED warm-terrain boot -- a real downward raycast at that column against
+	// the baked Dawnmere terrain body. Every row resolved with
+	// `finalHit='DawnmereTerrain'` in mode `PRE-SC-E (labShellPresent=0)`, i.e. pure
+	// terrain with no lab geometry to ignore, which is the whole reason this slice
+	// runs BEFORE the one that authors the building.
+	//
+	// ★ DO NOT HAND-EDIT A ROW TO MAKE A TEST PASS. If the oracle reds, the terrain
+	// moved under the site and the correct response is to RE-RUN it and re-paste, as
+	// a set. The header documents the full re-measure procedure and what invalidates
+	// the table. Hand-tuning one row is how a spread guard ends up guarding nothing.
+	//
+	// ★ THE POST-SC-E RE-RUN MEASURES THE SAME COLUMNS WITH THE SHELL AND JAMBS
+	// IGNORED. The door rows sit 0.5 m out into the forecourt for exactly that run:
+	// a probe on a jamb's own column has two solid bodies over it. That offset buys
+	// nothing today and is not a mistake.
+	//
+	// ONE VALUE PER LINE, column named in the row, exactly like the ZM-D-173 Home
+	// table above -- so a re-measure is a per-row replacement rather than a rewrite.
+	constexpr ZM_DawnmereNpcAnchor s_axDawnmereLabSamples[] =
+	{
+		// name,                x,                             z,                            measured feet Y
+		{ "LabShell_MinXMinZ",  fZM_LAB_SHELL_MIN_X,           fZM_LAB_SHELL_MIN_Z,          25.88701f },
+		{ "LabShell_MaxXMinZ",  fZM_LAB_SHELL_MAX_X,           fZM_LAB_SHELL_MIN_Z,          25.74946f },
+		{ "LabShell_MinXMaxZ",  fZM_LAB_SHELL_MIN_X,           fZM_LAB_SHELL_MAX_Z,          24.37600f },
+		{ "LabShell_MaxXMaxZ",  fZM_LAB_SHELL_MAX_X,           fZM_LAB_SHELL_MAX_Z,          25.17580f },
+		{ "LabDoorLeft",        fZM_DAWNMERE_LAB_DOOR_LEFT_X,  fZM_LAB_DOOR_SAMPLE_Z,        25.78080f },
+		{ "LabDoorRight",       fZM_DAWNMERE_LAB_DOOR_RIGHT_X, fZM_LAB_DOOR_SAMPLE_Z,        25.72527f },
+		{ "LabDoorTrigger",     fZM_DAWNMERE_LAB_X,            fZM_DAWNMERE_LAB_TRIGGER_Z,   25.81471f },
+		{ "FromLabSpawn",       fZM_DAWNMERE_LAB_X,            fZM_DAWNMERE_FROM_LAB_SPAWN_Z, 26.03916f },
+		{ "LabDoorStaging",     fZM_DAWNMERE_LAB_X,            fZM_DAWNMERE_LAB_DOOR_STAGING_Z, 25.95101f },
+		// The reserved pad's own centre, so the oracle states the site's reference
+		// height on the same run it measures everything derived from it.
+		{ "LabPadCenter",       fZM_DAWNMERE_LAB_X,            fZM_DAWNMERE_LAB_PAD_CENTER_Z, 24.32298f },
+	};
+	// ==== END S8 SC-D MEASURED LAB GROUND ====
+
+	// The bound is DEDUCED, never spelled, for the reason the NPC table gives: an
+	// explicit [ZM_DAWNMERE_LAB_SAMPLE_COUNT] would make this a tautology and let a
+	// forgotten row zero-initialise into a NULL-named anchor at the world origin.
+	static_assert(
+		sizeof(s_axDawnmereLabSamples) / sizeof(s_axDawnmereLabSamples[0])
+			== ZM_DAWNMERE_LAB_SAMPLE_COUNT,
+		"the lab ground-sample table must have exactly one row per ZM_DAWNMERE_LAB_SAMPLE");
+
+	// The FIXED derivation constants, in the same order and with the same meanings
+	// as the Home block's. Spelled once, named, and consumed by both the accessors
+	// below and the boot unit that checks them.
+	constexpr float fZM_LAB_SHELL_HALF_Y =
+		fZM_DAWNMERE_LAB_SHELL_SCALE_Y * 0.5f;
+	constexpr float fZM_LAB_SHELL_EMBED = 0.05f;
+	constexpr float fZM_LAB_DOOR_HALF_Y =
+		fZM_DAWNMERE_LAB_DOOR_SCALE_Y * 0.5f;
+	// The lintel's underside sits on top of a full-height jamb, so its CENTRE is a
+	// jamb height plus its own half-thickness above the ground.
+	constexpr float fZM_LAB_LINTEL_RISE =
+		fZM_DAWNMERE_LAB_DOOR_SCALE_Y + fZM_DAWNMERE_LAB_LINTEL_SCALE_Y * 0.5f;
+	constexpr float fZM_LAB_TRIGGER_HALF_Y =
+		fZM_DAWNMERE_LAB_TRIGGER_SCALE_Y * 0.5f;
+
+	constexpr float ZM_LabSampleFeetY(u_int uSample)
+	{
+		return s_axDawnmereLabSamples[uSample].m_fFeetY;
+	}
+
+	// The LOWEST of the four footprint corners: derive off the maximum and one
+	// corner of a 21 x 17 m box hangs in the air.
+	constexpr float fZM_LAB_SHELL_GROUND = ZM_MinFloat(
+		ZM_MinFloat(ZM_LabSampleFeetY(ZM_DAWNMERE_LAB_SAMPLE_SHELL_MINX_MINZ),
+			ZM_LabSampleFeetY(ZM_DAWNMERE_LAB_SAMPLE_SHELL_MAXX_MINZ)),
+		ZM_MinFloat(ZM_LabSampleFeetY(ZM_DAWNMERE_LAB_SAMPLE_SHELL_MINX_MAXZ),
+			ZM_LabSampleFeetY(ZM_DAWNMERE_LAB_SAMPLE_SHELL_MAXX_MAXZ)));
+
+	constexpr float fZM_LAB_SHELL_CENTER_Y =
+		fZM_LAB_SHELL_GROUND + fZM_LAB_SHELL_HALF_Y - fZM_LAB_SHELL_EMBED;
+	constexpr float fZM_LAB_DOOR_LEFT_CENTER_Y =
+		ZM_LabSampleFeetY(ZM_DAWNMERE_LAB_SAMPLE_DOOR_LEFT) + fZM_LAB_DOOR_HALF_Y;
+	constexpr float fZM_LAB_DOOR_RIGHT_CENTER_Y =
+		ZM_LabSampleFeetY(ZM_DAWNMERE_LAB_SAMPLE_DOOR_RIGHT) + fZM_LAB_DOOR_HALF_Y;
+	// The HIGHER of the two door grounds, so the lintel clears both jambs.
+	constexpr float fZM_LAB_LINTEL_CENTER_Y =
+		ZM_MaxFloat(ZM_LabSampleFeetY(ZM_DAWNMERE_LAB_SAMPLE_DOOR_LEFT),
+			ZM_LabSampleFeetY(ZM_DAWNMERE_LAB_SAMPLE_DOOR_RIGHT))
+		+ fZM_LAB_LINTEL_RISE;
+	constexpr float fZM_LAB_TRIGGER_CENTER_Y =
+		ZM_LabSampleFeetY(ZM_DAWNMERE_LAB_SAMPLE_TRIGGER) + fZM_LAB_TRIGGER_HALF_Y;
+}
+
+u_int ZM_GetDawnmereLabSampleCount()
+{
+	return (u_int)ZM_DAWNMERE_LAB_SAMPLE_COUNT;
+}
+
+const ZM_DawnmereNpcAnchor& ZM_GetDawnmereLabSample(u_int uSample)
+{
+	if (uSample >= (u_int)ZM_DAWNMERE_LAB_SAMPLE_COUNT)
+	{
+		Zenith_Error(LOG_CATEGORY_GAMEPLAY,
+			"[ZM_DawnmerePlacement] ZM_GetDawnmereLabSample: id %u is not a lab "
+			"ground sample -- returning the UNKNOWN town-centre anchor", uSample);
+		return s_xInvalidDawnmereAnchor;
+	}
+	return s_axDawnmereLabSamples[uSample];
+}
+
+float ZM_DawnmereLabSampleFeetY(u_int uSample)
+{
+	return ZM_GetDawnmereLabSample(uSample).m_fFeetY;
+}
+
+ZM_DawnmereBlockout ZM_GetDawnmereLabShell()
+{
+	return {
+		Zenith_Maths::Vector3(fZM_DAWNMERE_LAB_X, fZM_LAB_SHELL_CENTER_Y,
+			fZM_DAWNMERE_LAB_SHELL_Z),
+		Zenith_Maths::Vector3(fZM_DAWNMERE_LAB_SHELL_SCALE_X,
+			fZM_DAWNMERE_LAB_SHELL_SCALE_Y, fZM_DAWNMERE_LAB_SHELL_SCALE_Z)
+	};
+}
+
+ZM_DawnmereBlockout ZM_GetDawnmereLabDoorLeft()
+{
+	return {
+		Zenith_Maths::Vector3(fZM_DAWNMERE_LAB_DOOR_LEFT_X,
+			fZM_LAB_DOOR_LEFT_CENTER_Y, fZM_DAWNMERE_LAB_ENTRANCE_Z),
+		Zenith_Maths::Vector3(fZM_DAWNMERE_LAB_DOOR_SCALE_X,
+			fZM_DAWNMERE_LAB_DOOR_SCALE_Y, fZM_DAWNMERE_LAB_DOOR_SCALE_Z)
+	};
+}
+
+ZM_DawnmereBlockout ZM_GetDawnmereLabDoorRight()
+{
+	return {
+		Zenith_Maths::Vector3(fZM_DAWNMERE_LAB_DOOR_RIGHT_X,
+			fZM_LAB_DOOR_RIGHT_CENTER_Y, fZM_DAWNMERE_LAB_ENTRANCE_Z),
+		Zenith_Maths::Vector3(fZM_DAWNMERE_LAB_DOOR_SCALE_X,
+			fZM_DAWNMERE_LAB_DOOR_SCALE_Y, fZM_DAWNMERE_LAB_DOOR_SCALE_Z)
+	};
+}
+
+ZM_DawnmereBlockout ZM_GetDawnmereLabDoorLintel()
+{
+	return {
+		Zenith_Maths::Vector3(fZM_DAWNMERE_LAB_X, fZM_LAB_LINTEL_CENTER_Y,
+			fZM_DAWNMERE_LAB_ENTRANCE_Z),
+		Zenith_Maths::Vector3(fZM_DAWNMERE_LAB_LINTEL_SCALE_X,
+			fZM_DAWNMERE_LAB_LINTEL_SCALE_Y, fZM_DAWNMERE_LAB_LINTEL_SCALE_Z)
+	};
+}
+
+ZM_DawnmereBlockout ZM_GetDawnmereLabDoorTrigger()
+{
+	return {
+		Zenith_Maths::Vector3(fZM_DAWNMERE_LAB_X, fZM_LAB_TRIGGER_CENTER_Y,
+			fZM_DAWNMERE_LAB_TRIGGER_Z),
+		Zenith_Maths::Vector3(fZM_DAWNMERE_LAB_TRIGGER_SCALE_X,
+			fZM_DAWNMERE_LAB_TRIGGER_SCALE_Y, fZM_DAWNMERE_LAB_TRIGGER_SCALE_Z)
+	};
+}
+
+Zenith_Maths::Vector3 ZM_GetDawnmereFromLabSpawnFeet()
+{
+	return Zenith_Maths::Vector3(fZM_DAWNMERE_LAB_X,
+		ZM_LabSampleFeetY(ZM_DAWNMERE_LAB_SAMPLE_SPAWN),
+		fZM_DAWNMERE_FROM_LAB_SPAWN_Z);
+}
+
+Zenith_Maths::Vector3 ZM_GetDawnmereLabDoorStagingXZ()
+{
+	return Zenith_Maths::Vector3(
+		fZM_DAWNMERE_LAB_X, 0.0f, fZM_DAWNMERE_LAB_DOOR_STAGING_Z);
+}
+
+Zenith_Maths::Vector3 ZM_GetDawnmereLabDoorTargetXZ()
+{
+	return Zenith_Maths::Vector3(
+		fZM_DAWNMERE_LAB_X, 0.0f, fZM_DAWNMERE_LAB_DOOR_TARGET_Z);
+}

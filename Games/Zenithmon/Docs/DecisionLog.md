@@ -15,6 +15,99 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-08-14 -- ZM-D-192 -- S8 SC-D: the lab ground is FROZEN from measurement, the facade grew to fit the site's relief, and the boot gate carries a wall-clock test
+
+**What shipped:** the Dawnmere lab-site exterior constants and a **10-row measured
+ground table**, frozen from a WINDOWED warm-terrain boot of
+`ZM_DawnmereLabGroundTruth_Test`. **SC-D authors nothing** -- no `.zscen` or
+`.znavmesh` byte moves; it only produces the numbers SC-E will author from.
+
+| row | measured feet Y | row | measured feet Y |
+|---|---|---|---|
+| `LabShell_MinXMinZ` | 25.88701 | `LabDoorRight` | 25.72527 |
+| `LabShell_MaxXMinZ` | 25.74946 | `LabDoorTrigger` | 25.81471 |
+| `LabShell_MinXMaxZ` | **24.37600** | `FromLabSpawn` | 26.03916 |
+| `LabShell_MaxXMaxZ` | 25.17580 | `LabDoorStaging` | 25.95101 |
+| `LabDoorLeft` | 25.78080 | `LabPadCenter` | 24.32298 |
+
+**★ THE SPREAD GUARD EARNED ITS PLACE IMMEDIATELY.** The plan proposed ONE
+distinctness clause ("FromLabSpawn differs from the town centre"). The frozen data
+shows **1.51 m of fall across the shell footprint alone** (24.37600 -> 25.88701).
+A table where every row held the SAME value would have passed that single clause,
+and SC-E would then have seated a 21 x 17 m building on one corner's height. The
+shipped `DawnmereNpcFeetHeights_SpreadProvesTheyAreNotOneSharedValue` pattern was
+mirrored instead: a spread clause, a per-row no-silent-repeat clause, and a
+graded-band clause.
+
+**Decision 1 -- `fZM_DAWNMERE_LAB_SHELL_SCALE_Y` 4.5 -> 5.5.** Freezing the ground
+made the site's relief a measured fact, and the 4.5 m facade no longer fitted:
+```
+roofline  = lowestCorner + SCALE_Y - embed = 24.37600 + SCALE_Y - 0.05
+lintelTop = highestDoorGround + frame      = 25.78080 + 3.5 = 29.28080
+need SCALE_Y > frame(3.5) + embed(0.05) + relief(1.40480) = 4.95480
+```
+At 4.5 the roofline sat at 28.8260 and the entrance frame stood **0.4548 m proud
+of the roof**. `LabExterior_EnvelopeAndEntranceMatchProfLabContract` went red on
+**exactly the clause whose own comment predicted it** and prescribed the remedy:
+raise the constant, never relax the clause. 5.5 gives a 29.8260 roofline and
+**0.5452 m** of margin -- about 5x the largest re-measure movement on record
+(98.8 mm, ZM-D-186), against the shipped Home's 0.324 m on 2.2x less relief.
+**The ten measurements were NOT touched** -- the constant lives in the header, so
+the frozen block took zero edits. Hand-editing a measurement to pass a test is
+forbidden by that block's own contract, and this is the case that proves the rule
+is workable: the design value moved, the measurement did not.
+
+**Decision 2 -- an exact ordering comparison against a round-tripped inversion is
+a test bug.** `LabDirtPath_ClearsTheShellByTheShippedCameraClamp` compared the
+contract minimum against **its own inverted value** with `>=` and lost by **1e-6**
+(3.000416 vs 3.000417). The two sides are the same number with `x(arm/desired)`
+and then `x(desired/arm)` applied -- exact in real arithmetic, not in float. Now
+compared with `fLAB_ARM_ROUNDTRIP_EPSILON = 1e-4` (0.1 mm: ~100x the observed
+noise, ~500x below the centimetre-scale disagreement the clause exists to catch).
+The paired "can this unit red at all" clause keeps **zero** slack and the
+asymmetry is documented. **A guard that reds on a micron trains people to ignore
+it**, which is worse than no guard.
+
+**★★ Decision 3 -- RECORDED, NOT FIXED: THE BOOT UNIT GATE CARRIES A WALL-CLOCK
+ASSERTION, SO IT CAN RED FROM MACHINE LOAD ALONE.**
+`GraphComponent::ThousandEntityUpdateBenchmark`
+(`Zenith/EntityComponent/Components/Zenith_GraphComponent.Tests.inl:1555`) times
+1000 entity updates with `std::chrono::high_resolution_clock` and asserts
+`ZENITH_ASSERT_LT(fIdlePerFrameMs, 5.0)`. It reported **6.684 ms** while this
+machine was building and booting concurrently, and **passed on a quiet re-run with
+nothing else changed**. It had also passed in all four earlier gate runs the same
+day (3277 / 3280 / 3295 / 3299, every one 0 failed).
+
+This matters beyond one flake: the gate's whole design is an EXACT-EQUALITY
+ratchet whose value is determinism -- `ran == Baseline && failed == 0` -- and
+`zm-tests` is a REQUIRED check. One timing-dependent unit inside it makes a
+required check load-dependent **for every game**, since the unit is engine-side.
+**Triage rule:** a red naming that benchmark is a FLAKE to re-run on a quiet
+machine, not a regression to bisect. Not fixed here because the fix is an ENGINE
+change (make it a logged measurement rather than an assertion, or give it a
+load-tolerant bound) and this slice is game-side; logged in Questions.md instead.
+
+**Tests that lock it:** the 8 new `ZM_Interaction` units (envelope/entrance
+contract, pad+landmark containment, dirt-path camera clamp, NPC/patrol approach
+clearance, the graded-band clause, the no-silent-repeat clause, the fixed-Y
+derivation, and accessor totality) plus `ZM_DawnmereLabGroundTruth_Test`, which is
+the re-measure oracle and **skips in CI** (it needs the gitignored terrain bake),
+so the boot units carry this slice's CI-visible weight by design.
+
+**Also:** `uCC_MAX_SAMPLES` 512 -> 1024 (603 in use, 421 headroom) -- an overflow
+there is reported as a failure rather than truncated, so the budget had to move
+before the lab's four camera-clearance groups could be added.
+
+**★ A finding for a later slice, booked not fixed:** the shipped
+`CCRequiredAssetsPresent()` lumps the TRACKED `Dawnmere.zscen` in with the
+gitignored terrain bake, so both pre-existing tests in that file **skip** when a
+tracked asset is missing -- and a skip counts as a PASS. The new oracle uses a
+split predicate (skip on the bake, FAIL on the scene); the two shipped tests were
+left behaviourally unchanged rather than widening this slice.
+
+**Reversibility:** high. One constant, one epsilon, one budget, and a table that is
+re-derivable by re-running the oracle.
+
 ## 2026-08-14 -- ZM-D-191 -- Aster's anchor is DERIVED from the camera, not chosen; and a material-name sample population was collecting humans
 
 **Decision 1 -- the anchor is arithmetic, not taste.** Professor Aster's XZ in

@@ -8,6 +8,18 @@
 // headless CI unit gate, which is precisely where the argument is needed -- the
 // automated test that walks up to him needs baked terrain and can RequestSkip, so
 // it cannot be the only place the whiteout-softlock claim lives.
+//
+// ★ S8 SC-D WIDENED WHAT "PURE" READS HERE, WITHOUT WIDENING WHAT IT MEANS. The
+// lab units at the bottom of this file additionally read (a) the COMPILED
+// Dawnmere terrain RECIPE -- a static table in ZM_TerrainAuthoring.cpp, not a
+// bake, so no asset is touched -- because that is the only way to bind the lab
+// placement to the terrain site it was reserved on without re-spelling the pad's
+// numbers, and (b) ZM_FollowCamera's PURE STATICS (nothing is constructed), so a
+// camera-clearance margin is computed with the SHIPPED clamp rather than a
+// re-derived one. Tests/ZM_Tests_ProfLabPlacement.cpp already reads that camera
+// the same way. No entity is created here, which is a hard constraint rather
+// than a style note: the boot unit suite runs before the initial scene load and
+// allocates entity indices that scene authoring would then bake in.
 // ============================================================================
 
 #include <bit>       // bit_cast -- the ZM-D-183 frozen-facing bit clauses
@@ -18,11 +30,14 @@
 #include "Core/Zenith_TestFramework.h"
 #include "Maths/Zenith_Maths.h"
 #include "UnitTests/Zenith_AssertCapture.h"                     // the totality proofs
+#include "Zenithmon/Components/ZM_FollowCamera.h"               // the camera's PURE statics (nothing is constructed)
 #include "Zenithmon/Source/Interaction/ZM_InteractionLogic.h"   // ZM_ForwardFromRotation
 #include "Zenithmon/Source/Interaction/ZM_TrainerSightFsm.h"    // ZM_TrainerSightFsmTuning -- the walk-up standoff
 #include "Zenithmon/Source/Interaction/ZM_TrainerSightLogic.h"
 #include "Zenithmon/Source/World/ZM_DawnmerePlacement.h"
 #include "Zenithmon/Source/World/ZM_PlayerHomePlacement.h"
+#include "Zenithmon/Source/World/ZM_ProfLabPlacement.h"         // the INTERIOR the lab exterior must wrap
+#include "Zenithmon/Source/World/ZM_TerrainAuthoring.h"         // the RESERVED lab site (compiled recipe, no bake)
 
 namespace
 {
@@ -925,4 +940,1045 @@ ZENITH_TEST(ZM_Interaction, HomeExterior_EnvelopeAndEntranceMatchPlayerHomeContr
 		"the exterior portal sensor no longer covers exactly the visible entrance");
 	ZENITH_ASSERT_EQ_FLOAT(xTrigger.m_xScale.y, fZM_PLAYERHOME_APERTURE_HEIGHT, 0.0f,
 		"the exterior portal sensor no longer matches the visible entrance height");
+}
+
+// ============================================================================
+// S8 SC-D -- THE DAWNMERE LAB SITE
+//
+// ★ WHAT THESE EIGHT UNITS ARE FOR. SC-D produces NUMBERS and nothing else: no
+// entity is authored until SC-E. So the ONLY thing standing between a wrong
+// number and a re-authored Dawnmere.zscen is this file plus
+// ZM_DawnmereLabGroundTruth_Test -- and that oracle needs a GITIGNORED terrain
+// bake and therefore RequestSkips in CI, where a skip counts as a pass. These
+// units carry the CI-visible weight for the whole slice.
+//
+// ★ WHAT THEY CAN AND CANNOT SEE, STATED BEFORE ANYONE READS THEM AS MORE. They
+// are claims about COMPILED CONSTANTS: that the exterior wraps the interior, that
+// the site is the reserved one, that the routes clear the building and the cast,
+// that the accessors are total, and that the measured table is neither the
+// placeholder nor one value stamped ten times. NONE of them touches a
+// heightfield, so none can prove a row MATCHES the terrain -- and in particular a
+// row holding a plausible-but-wrong height (its neighbour's, say) passes every
+// clause here. Only the oracle can catch that. Do not read this file's greenness
+// as "the lab ground table is correct".
+//
+// ★ TWO OF THEM ARE RED ON PURPOSE UNTIL THE TABLE IS FROZEN, and their messages
+// say so: LabGroundSamples_AreTenMeasurementsInsideTheGradedBand and
+// LabGroundSamples_NoRowSilentlyRepeatsAnother. They are the CI-visible statement
+// that the measure -> freeze -> rebuild loop has not closed yet.
+// ============================================================================
+
+namespace
+{
+	// "These two floats are the same authored number." Generous by float
+	// standards, tiny against every placement quantity the lab uses.
+	constexpr float fLAB_EXACT_EPSILON = 1.0e-4f;
+
+	// The camera contract's arm fraction, from the ZM-D-173 block in
+	// Source/World/ZM_DawnmerePlacement.h: at every authoritative sample the
+	// CLAMPED arm must keep at least half the authored pivot->camera distance.
+	// The live enforcement is ZM_DawnmereCameraClearance_Test, which runs the
+	// shipped ZM_FollowCamera::ClampArmDistance against the shipped physics world;
+	// the units below run the SAME shipped clamp over compiled geometry, so this
+	// fraction is the one number they mirror rather than compute.
+	constexpr float fLAB_MIN_ARM_FRACTION = 0.5f;
+
+	// ★ THE SLACK THE BOUNDARY CLAUSE IN LabDirtPath_... NEEDS, AND WHY A
+	// ZERO-SLACK ORDERING COMPARISON THERE IS A BUG RATHER THAN A STRICTER TEST.
+	// That clause feeds LabRequiredHorizontalGap()'s inversion straight back
+	// through the shipped clamp, so the two sides are THE SAME NUMBER with a
+	// multiply by (arm / desired) and a multiply by (desired / arm) applied in
+	// between. A value compared against its own round-tripped inversion cannot
+	// survive float rounding: measured, the left side lands ~1e-6 low (3.000416
+	// against 3.000417), and an exact >= reds on that forever while nothing is
+	// wrong. A guard that reds on a micron of rounding noise is a guard people
+	// learn to ignore, which is worse than no guard.
+	//
+	// The disagreement the clause exists to catch -- an inversion that does not
+	// actually invert the shipped clamp -- is CENTIMETRES wide; its paired clause
+	// probes exactly that with a 5 cm step. 1e-4 m is 0.1 mm: ~100x the observed
+	// rounding noise and ~500x smaller than the smallest real disagreement, so it
+	// removes the noise without spending any of the property.
+	constexpr float fLAB_ARM_ROUNDTRIP_EPSILON = 1.0e-4f;
+
+	// An authored NPC's own AABB half-width, spelled from the body contract.
+	constexpr float fLAB_NPC_HALF_WIDTH = fZM_HUMAN_BODY_FOOTPRINT * 0.5f;
+
+	// How finely the lab routes are walked when measuring clearance against the
+	// building. Four times finer than the camera-clearance table's 1 m route
+	// spacing, so this unit cannot step over the crossing the entrance plane was
+	// derived from.
+	constexpr float fLAB_ROUTE_WALK_STEP = 0.25f;
+
+	// ---- The measured table's guards ----------------------------------------
+
+	// The band every lab ground sample must land in, as a half-width around the
+	// Dawnmere recipe's TARGET HEIGHT -- the height its pads flatten toward. It is
+	// deliberately NOT stated around any measured value in the table, because a
+	// table pasted wholesale from the wrong run would then validate itself.
+	// Calibration, from the two shipped Dawnmere tables: every measured Dawnmere
+	// surface on a flattened pad sits 1.5 - 2.6 m ABOVE the 24 m target (the town
+	// centre reads 25.99, the ten Home columns 25.59 - 26.54), because the
+	// hydraulic erosion pass deposits. +/- 4 m clears all of them by >= 1.4 m
+	// while excluding the recipe's landforms (34 - 46 m), an un-flattened field,
+	// and every degenerate default (0, the placeholder, a Y from another scene).
+	constexpr float fLAB_GROUND_BAND_HALF_WIDTH = 4.0f;
+
+	// The minimum spread across the ten lab rows: a floor on "these are ten
+	// independent measurements", not a claim about the terrain.
+	constexpr float fLAB_MIN_GROUND_SPREAD = 0.05f;
+
+	// ...and the maximum. The shipped Home table spreads 0.95 m over a comparable
+	// 17 x 13 m footprint on a 36 m-radius pad; the lab sits on a 48 m-radius pad
+	// with the same four flatten passes. 3 m is beyond any graded pad.
+	// ★ IF A REAL MEASUREMENT EXCEEDS THIS, THE FINDING IS THAT THE RESERVED SITE
+	// IS NOT FLAT AND THE PLACEMENT NEEDS RE-DERIVING -- not that the cap should be
+	// raised.
+	constexpr float fLAB_MAX_GROUND_SPREAD = 3.0f;
+
+	// How many of the ten rows must be distinct values, and how many coincidences
+	// are tolerated. Every row has its own XZ and eroded terrain is not flat, so
+	// ties should not happen -- but two rows landing on the same height to within
+	// the epsilon is legitimate content on a flattened pad, and a knife-edge
+	// all-pairs-distinct clause would red on that rather than on a defect.
+	constexpr u_int uLAB_MIN_DISTINCT_ROWS = 8u;
+	constexpr u_int uLAB_MAX_TIED_PAIRS = 2u;
+
+	// ---- Reserved-site lookups ----------------------------------------------
+	// BY NAME, never by index: a recipe edit that reorders the pads must move
+	// these with it rather than silently re-point them at another site.
+
+	const ZM_TerrainPadSpec* LabFindPad(const char* szName)
+	{
+		const ZM_TerrainAuthoringRecipe& xRecipe = ZM_GetDawnmereTerrainRecipe();
+		for (u_int u = 0u; u < xRecipe.m_uPadCount; ++u)
+		{
+			if (std::strcmp(xRecipe.m_pxPads[u].m_szName, szName) == 0)
+			{
+				return &xRecipe.m_pxPads[u];
+			}
+		}
+		return nullptr;
+	}
+
+	const ZM_TerrainLandmarkSpec* LabFindLandmark(const char* szName)
+	{
+		const ZM_TerrainAuthoringRecipe& xRecipe = ZM_GetDawnmereTerrainRecipe();
+		for (u_int u = 0u; u < xRecipe.m_uLandmarkCount; ++u)
+		{
+			if (std::strcmp(xRecipe.m_pxLandmarks[u].m_szName, szName) == 0)
+			{
+				return &xRecipe.m_pxLandmarks[u];
+			}
+		}
+		return nullptr;
+	}
+
+	const ZM_TerrainPathSpec* LabFindPath(const char* szName)
+	{
+		const ZM_TerrainAuthoringRecipe& xRecipe = ZM_GetDawnmereTerrainRecipe();
+		for (u_int u = 0u; u < xRecipe.m_uPathCount; ++u)
+		{
+			if (std::strcmp(xRecipe.m_pxPaths[u].m_szName, szName) == 0)
+			{
+				return &xRecipe.m_pxPaths[u];
+			}
+		}
+		return nullptr;
+	}
+
+	// ---- Planar geometry -----------------------------------------------------
+
+	float LabPlanarDistance(float fAX, float fAZ, float fBX, float fBZ)
+	{
+		const float fDeltaX = fAX - fBX;
+		const float fDeltaZ = fAZ - fBZ;
+		return std::sqrt(fDeltaX * fDeltaX + fDeltaZ * fDeltaZ);
+	}
+
+	// Distance from a point to a SEGMENT (not to its infinite line): a route ends
+	// where it ends, and the line would report a body behind the player as close.
+	float LabDistanceToSegment(float fPX, float fPZ,
+		float fAX, float fAZ, float fBX, float fBZ)
+	{
+		const float fDX = fBX - fAX;
+		const float fDZ = fBZ - fAZ;
+		const float fLengthSquared = fDX * fDX + fDZ * fDZ;
+		if (!(fLengthSquared > 0.0f))
+		{
+			return LabPlanarDistance(fPX, fPZ, fAX, fAZ);
+		}
+		float fT = ((fPX - fAX) * fDX + (fPZ - fAZ) * fDZ) / fLengthSquared;
+		fT = fT < 0.0f ? 0.0f : (fT > 1.0f ? 1.0f : fT);
+		return LabPlanarDistance(fPX, fPZ, fAX + fDX * fT, fAZ + fDZ * fT);
+	}
+
+	// ---- The shipped camera, read rather than re-derived ---------------------
+
+	// The authored pivot->camera distance: the arm's horizontal reach and the lift
+	// from the pivot to the camera height, both from ZM_FollowCamera's own statics.
+	float LabDesiredArm()
+	{
+		const float fHorizontal = ZM_FollowCamera::GetArmLength();
+		const float fVertical =
+			ZM_FollowCamera::GetCameraHeight() - ZM_FollowCamera::GetPivotHeight();
+		return std::sqrt(fHorizontal * fHorizontal + fVertical * fVertical);
+	}
+
+	// The smallest HORIZONTAL gap between a standing player and a solid face that
+	// still satisfies the contract. The ray rises as it goes back, so a horizontal
+	// gap g is (desired / arm) * g of ray; the clamp subtracts the collision
+	// padding from whatever it hits.
+	//
+	// ★ THE FACE'S HEIGHT DOES NOT ENTER THIS, WHICH IS WHY A SLOPE CANNOT INVALIDATE
+	// IT. A blockout wall stands metres above its own ground (the lab shell 5.45 m,
+	// the Home's 3.95 m) and the ray has risen under 1.7 m by the time it reaches
+	// these distances, so ground relief between the sample and the wall moves where
+	// the ray hits, never how far along it does.
+	float LabRequiredHorizontalGap()
+	{
+		const float fDesired = LabDesiredArm();
+		const float fRequiredHit = fDesired * fLAB_MIN_ARM_FRACTION
+			+ ZM_FollowCamera::GetCollisionPadding();
+		return fRequiredHit * (ZM_FollowCamera::GetArmLength() / fDesired);
+	}
+
+	// One lab route, for the sweeps below.
+	struct LabRouteSegment
+	{
+		const char* m_szName;
+		float m_fAX;
+		float m_fAZ;
+		float m_fBX;
+		float m_fBZ;
+	};
+}
+
+// The lab facade is the visual exterior for the separately loaded ProfLab scene,
+// exactly as the Home facade is for PlayerHome. The two must share one real-world
+// scale: the exterior may round the interior's wall envelope up to a clean
+// blockout metre, but it must never become a placeholder box with an unrelated
+// doorway. Unlike the Home's, this exterior DERIVES its aperture from the
+// interior's constants -- so those clauses are structural rather than a
+// coincidence to be re-checked, and what is actually load-bearing here is the
+// ENVELOPE arithmetic and the frame-inside-the-facade relief allowance.
+ZENITH_TEST(ZM_Interaction, LabExterior_EnvelopeAndEntranceMatchProfLabContract)
+{
+	const ZM_DawnmereBlockout xShell = ZM_GetDawnmereLabShell();
+	const ZM_DawnmereBlockout xLeftJamb = ZM_GetDawnmereLabDoorLeft();
+	const ZM_DawnmereBlockout xRightJamb = ZM_GetDawnmereLabDoorRight();
+	const ZM_DawnmereBlockout xLintel = ZM_GetDawnmereLabDoorLintel();
+	const ZM_DawnmereBlockout xTrigger = ZM_GetDawnmereLabDoorTrigger();
+
+	const float fInteriorOuterWidth =
+		fZM_PROFLAB_HALF_WIDTH * 2.0f + fZM_PROFLAB_WALL_THICKNESS;
+	const float fInteriorOuterDepth =
+		fZM_PROFLAB_HALF_DEPTH * 2.0f + fZM_PROFLAB_WALL_THICKNESS;
+
+	// (a) Rounded up, never rounded down, and by less than one cosmetic metre.
+	ZENITH_ASSERT_GE(xShell.m_xScale.x, fInteriorOuterWidth,
+		"the Dawnmere lab facade is %.2f m wide but ProfLab's outer wall envelope "
+		"is %.2f m -- the exterior no longer contains the interior",
+		xShell.m_xScale.x, fInteriorOuterWidth);
+	ZENITH_ASSERT_LT(xShell.m_xScale.x - fInteriorOuterWidth, 1.0f,
+		"the lab facade has %.2f m of unexplained width beyond ProfLab's %.2f m envelope",
+		xShell.m_xScale.x - fInteriorOuterWidth, fInteriorOuterWidth);
+	ZENITH_ASSERT_GE(xShell.m_xScale.z, fInteriorOuterDepth,
+		"the Dawnmere lab facade is %.2f m deep but ProfLab's outer wall envelope "
+		"is %.2f m", xShell.m_xScale.z, fInteriorOuterDepth);
+	ZENITH_ASSERT_LT(xShell.m_xScale.z - fInteriorOuterDepth, 1.0f,
+		"the lab facade has %.2f m of unexplained depth beyond ProfLab's %.2f m envelope",
+		xShell.m_xScale.z - fInteriorOuterDepth, fInteriorOuterDepth);
+	ZENITH_ASSERT_GE(xShell.m_xScale.y, fZM_PROFLAB_WALL_HEIGHT,
+		"the lab facade is lower than ProfLab's %.2f m walls",
+		fZM_PROFLAB_WALL_HEIGHT);
+
+	// (b) IT IS DEEPER THAN THE HOME AND WIDER THAN THE HOME, and that is content,
+	// not decoration: two exteriors that were the same box would make "the player
+	// walked into the wrong building" a bug no test could name.
+	ZENITH_ASSERT_GT(xShell.m_xScale.x, fZM_DAWNMERE_HOME_SHELL_SCALE_X,
+		"the lab facade is no wider than the Home's -- the two greybox exteriors "
+		"have collapsed onto one shape");
+	ZENITH_ASSERT_GT(xShell.m_xScale.z, fZM_DAWNMERE_HOME_SHELL_SCALE_Z,
+		"the lab facade is no deeper than the Home's");
+
+	// (c) THE ENTRANCE IS THE -Z FACE. ZM_FollowCamera trails toward -Z at the
+	// authored yaw, so an entrance on any other face parks the whole shell behind
+	// the player at the doorway -- the ZM-D-173 defect, restated for a new building.
+	ZENITH_ASSERT_EQ_FLOAT(xShell.Min().z, fZM_DAWNMERE_LAB_ENTRANCE_Z, 0.0f,
+		"the lab entrance no longer lies on the facade's -Z face");
+	ZENITH_ASSERT_LT(fZM_DAWNMERE_FROM_LAB_SPAWN_Z, fZM_DAWNMERE_LAB_ENTRANCE_Z,
+		"the FromLab arrival marker is no longer OUTSIDE the entrance face");
+	ZENITH_ASSERT_LT(fZM_DAWNMERE_LAB_TRIGGER_Z, fZM_DAWNMERE_LAB_ENTRANCE_Z,
+		"the lab warp sensor is no longer in front of the entrance face");
+	// ★ AND THE ARRIVAL POINT IS CLEAR OF THE SENSOR BY A WHOLE BODY RADIUS, which
+	// is the clause that stops a WARP LOOP rather than a clipped camera. A player
+	// stepping out of the lab is PUT DOWN on this marker; if their capsule still
+	// overlapped the trigger volume, the exit would immediately send them back in
+	// and the only way out would be to close the game.
+	ZENITH_ASSERT_LT(
+		fZM_DAWNMERE_FROM_LAB_SPAWN_Z + fZM_DAWNMERE_PLAYER_RADIUS,
+		xTrigger.Min().z,
+		"a player standing on the FromLab arrival marker (z %.3f, radius %.3f) "
+		"overlaps the lab warp sensor, whose near face is at z %.3f -- leaving the "
+		"lab would re-enter it forever",
+		fZM_DAWNMERE_FROM_LAB_SPAWN_Z, fZM_DAWNMERE_PLAYER_RADIUS,
+		xTrigger.Min().z);
+
+	// ...and the sensor is not COPLANAR with the wall it guards: it must be
+	// overlapped before physical contact.
+	ZENITH_ASSERT_LT(xTrigger.Max().z, fZM_DAWNMERE_LAB_ENTRANCE_Z,
+		"the lab warp sensor now touches or crosses the solid entrance face");
+
+	// The staging waypoint is on the outside of the sensor too, so a traversal
+	// test that drives staging -> target crosses INTO the trigger rather than
+	// starting inside it.
+	ZENITH_ASSERT_LT(fZM_DAWNMERE_LAB_DOOR_STAGING_Z, xTrigger.Min().z,
+		"the lab drive staging waypoint is already inside the warp sensor, so the "
+		"approach it stages cannot be observed");
+	ZENITH_ASSERT_GT(fZM_DAWNMERE_LAB_DOOR_TARGET_Z, xTrigger.Min().z,
+		"the lab drive target no longer lands inside the warp sensor");
+	ZENITH_ASSERT_LT(fZM_DAWNMERE_LAB_DOOR_TARGET_Z, xTrigger.Max().z,
+		"the lab drive target no longer lands inside the warp sensor");
+
+	// (d) THE APERTURE IS PROFLAB'S, EXACTLY. Derived rather than re-spelled, so
+	// this is a structural claim -- but it is asserted anyway, because the
+	// derivation is what a future "tidy-up" would replace with literals.
+	const float fExteriorApertureWidth = xRightJamb.Min().x - xLeftJamb.Max().x;
+	ZENITH_ASSERT_EQ_FLOAT(fExteriorApertureWidth,
+		fZM_PROFLAB_APERTURE_HALF_WIDTH * 2.0f, 0.0f,
+		"the lab frame width no longer matches ProfLab's entrance aperture");
+	ZENITH_ASSERT_EQ_FLOAT(xLeftJamb.m_xScale.y, fZM_PROFLAB_APERTURE_HEIGHT, 0.0f,
+		"the lab jamb height no longer matches ProfLab's entrance aperture");
+	ZENITH_ASSERT_EQ_FLOAT(xRightJamb.m_xScale.y, fZM_PROFLAB_APERTURE_HEIGHT, 0.0f,
+		"the lab jamb height no longer matches ProfLab's entrance aperture");
+	ZENITH_ASSERT_EQ_FLOAT(xTrigger.m_xScale.x, fExteriorApertureWidth, 0.0f,
+		"the lab portal sensor no longer covers exactly the visible entrance");
+	ZENITH_ASSERT_EQ_FLOAT(xTrigger.m_xScale.y, fZM_PROFLAB_APERTURE_HEIGHT, 0.0f,
+		"the lab portal sensor no longer matches the visible entrance height");
+
+	// The opening has to fit a body through it with room either side, or the
+	// aperture equality above would be satisfied by a walled-up doorway.
+	ZENITH_ASSERT_GT(fExteriorApertureWidth, fZM_HUMAN_BODY_FOOTPRINT * 2.0f,
+		"the lab doorway is under two body-widths wide");
+	ZENITH_ASSERT_GT(fZM_PROFLAB_APERTURE_HEIGHT, fZM_HUMAN_BODY_HEIGHT,
+		"the lab doorway is shorter than the body that has to walk through it");
+
+	// (e) The lintel spans BOTH jambs' outer faces and sits on top of them.
+	ZENITH_ASSERT_EQ_FLOAT(xLintel.Min().x, xLeftJamb.Min().x, fLAB_EXACT_EPSILON,
+		"the lab lintel no longer reaches the left jamb's outer face");
+	ZENITH_ASSERT_EQ_FLOAT(xLintel.Max().x, xRightJamb.Max().x, fLAB_EXACT_EPSILON,
+		"the lab lintel no longer reaches the right jamb's outer face");
+	ZENITH_ASSERT_EQ_FLOAT(xLintel.m_xCenter.z, fZM_DAWNMERE_LAB_ENTRANCE_Z, 0.0f,
+		"the lab lintel has left the entrance plane");
+
+	// The whole entrance frame stands INSIDE the facade mass. Both jambs sit on
+	// the DOOR ground while the shell is seated on the LOWEST of its four corner
+	// grounds, so this is the clause the site's ground relief spends.
+	// ★ IF THIS REDS AFTER THE GROUND TABLE IS FROZEN, RAISE
+	// fZM_DAWNMERE_LAB_SHELL_SCALE_Y -- do NOT relax the clause. A red here means
+	// the lintel would visibly poke through the roof of the authored building.
+	// ★ AND THAT HAS ALREADY HAPPENED ONCE, WHICH IS THE EVIDENCE THIS CLAUSE
+	// WORKS. Freezing the ten measurements put the site's relief at 1.4048 m, the
+	// 4.5 m facade left the lintel 0.4548 m proud, and the fix was 4.5 -> 5.5, not
+	// a softened comparison. The derivation is in ZM_DawnmerePlacement.h beside the
+	// constant.
+	ZENITH_ASSERT_GT(xShell.Max().y, xLintel.Max().y,
+		"the lab entrance frame stands PROUD of the facade: lintel top %.4f vs "
+		"roofline %.4f. The frame is measured from the door ground and the box from "
+		"its lowest corner, so the site's relief has eaten the facade's height "
+		"allowance -- raise fZM_DAWNMERE_LAB_SHELL_SCALE_Y",
+		xLintel.Max().y, xShell.Max().y);
+	ZENITH_ASSERT_GT(xShell.Max().y, xLeftJamb.Max().y,
+		"the left lab jamb stands proud of the facade roofline");
+	ZENITH_ASSERT_GT(xShell.Max().y, xRightJamb.Max().y,
+		"the right lab jamb stands proud of the facade roofline");
+}
+
+// THE SITE IS RESERVED IN THE TERRAIN RECIPE, AND THIS IS WHERE THE TWO ARE TIED
+// TOGETHER. Every coordinate in the lab block was chosen to fit inside the "Lab"
+// pad and to stand on the "FromLab" landmark; both are read from the compiled
+// recipe here rather than re-spelled, so moving the pad (which regenerates the
+// WHOLE Dawnmere heightmap) reds this unit instead of silently leaving a building
+// on ungraded ground.
+ZENITH_TEST(ZM_Interaction, LabPlacement_SitsInsideTheReservedPadAndOnItsLandmark)
+{
+	const ZM_TerrainPadSpec* pxPad = LabFindPad("Lab");
+	ZENITH_ASSERT_NOT_NULL(pxPad,
+		"the Dawnmere terrain recipe no longer reserves a pad named 'Lab' -- the "
+		"lab placement is standing on whatever the landform pass left behind");
+	const ZM_TerrainLandmarkSpec* pxLandmark = LabFindLandmark("FromLab");
+	ZENITH_ASSERT_NOT_NULL(pxLandmark,
+		"the Dawnmere terrain recipe no longer carries the 'FromLab' landmark");
+	if (pxPad == nullptr || pxLandmark == nullptr)
+	{
+		return;
+	}
+
+	// (a) THE MIRRORS. ZM_DawnmerePlacement.h is pure and cannot include terrain
+	// authoring, so it MIRRORS the pad centre and the landmark. This is what makes
+	// the mirror safe.
+	ZENITH_ASSERT_EQ_FLOAT(pxPad->m_xCentre.m_fX, fZM_DAWNMERE_LAB_X, 0.0f,
+		"fZM_DAWNMERE_LAB_X no longer mirrors the reserved 'Lab' pad centre X");
+	ZENITH_ASSERT_EQ_FLOAT(pxPad->m_xCentre.m_fZ, fZM_DAWNMERE_LAB_PAD_CENTER_Z, 0.0f,
+		"fZM_DAWNMERE_LAB_PAD_CENTER_Z no longer mirrors the reserved 'Lab' pad "
+		"centre Z");
+	ZENITH_ASSERT_EQ_FLOAT(pxLandmark->m_xPosition.m_fX, fZM_DAWNMERE_LAB_X, 0.0f,
+		"the FromLab arrival marker is no longer on the lab's X centreline");
+	ZENITH_ASSERT_EQ_FLOAT(pxLandmark->m_xPosition.m_fZ,
+		fZM_DAWNMERE_FROM_LAB_SPAWN_Z, 0.0f,
+		"the FromLab arrival marker no longer stands on the recipe's 'FromLab' "
+		"landmark -- the terrain says the return spawn is somewhere else");
+
+	// (b) THE WHOLE SITE IS ON PAVED, GRADED GROUND. The sample table enumerates
+	// exactly the columns the placement occupies, so walking it walks the site.
+	ZENITH_ASSERT_GT(pxPad->m_fFlattenRadius, pxPad->m_fDirtRadius,
+		"the reserved Lab pad paints dirt beyond the ground it flattens");
+	const u_int uCount = ZM_GetDawnmereLabSampleCount();
+	ZENITH_ASSERT_EQ(uCount, (u_int)ZM_DAWNMERE_LAB_SAMPLE_COUNT,
+		"the lab sample accessor disagrees with its own enum");
+	float fFurthest = -1.0f;
+	const char* szFurthest = "<none>";
+	for (u_int u = 0u; u < uCount; ++u)
+	{
+		const ZM_DawnmereNpcAnchor& xSample = ZM_GetDawnmereLabSample(u);
+		const float fDistance = LabPlanarDistance(xSample.m_fX, xSample.m_fZ,
+			pxPad->m_xCentre.m_fX, pxPad->m_xCentre.m_fZ);
+		if (fDistance > fFurthest)
+		{
+			fFurthest = fDistance;
+			szFurthest = xSample.m_szEntityName;
+		}
+		ZENITH_ASSERT_LT(fDistance, pxPad->m_fDirtRadius,
+			"lab column '%s' is %.3f m from the reserved pad centre, outside its "
+			"%.1f m dirt radius -- that part of the site is neither paved nor "
+			"reliably graded, so a measured height there is a hillside, not a pad",
+			xSample.m_szEntityName, fDistance, pxPad->m_fDirtRadius);
+	}
+	// ANTI-VACUITY: the loop really walked a site rather than a table of one point.
+	ZENITH_ASSERT_GT(fFurthest, 10.0f,
+		"the furthest lab column ('%s') is only %.3f m from the pad centre -- the "
+		"sample table has collapsed onto a single column", szFurthest, fFurthest);
+}
+
+// ★ THE UNIT THAT EXISTS BECAUSE OF A DEFECT SC-E WOULD OTHERWISE HAVE SHIPPED.
+// The authored Lab dirt path runs past the building's BACK face, and the follow
+// camera trails 5.5 m toward -Z from wherever the player stands -- straight into
+// that face. The first draft of this placement put the entrance at 528, which
+// left 2.864 m of gap against the ~2.933 m the arm contract needs: a violation
+// that would have appeared only once SC-E authored the shell, in
+// ZM_DawnmereCameraClearance_Test, naming a route rather than a building. The
+// entrance is at 527 instead, and this unit is why that number cannot drift back.
+//
+// It runs the SHIPPED ZM_FollowCamera::ClampArmDistance rather than re-deriving
+// the clamp, so a change to the arm, the camera height, the pivot or the
+// collision padding moves this claim automatically.
+ZENITH_TEST(ZM_Interaction, LabDirtPath_ClearsTheShellByTheShippedCameraClamp)
+{
+	const ZM_TerrainPathSpec* pxPath = LabFindPath("Lab");
+	ZENITH_ASSERT_NOT_NULL(pxPath,
+		"the Dawnmere terrain recipe no longer carries a path named 'Lab'");
+	if (pxPath == nullptr || pxPath->m_uPointCount < 2u)
+	{
+		return;
+	}
+
+	const ZM_DawnmereBlockout xShell = ZM_GetDawnmereLabShell();
+	const float fShellMinX = xShell.Min().x;
+	const float fShellMaxX = xShell.Max().x;
+	const float fShellMinZ = xShell.Min().z;
+	const float fShellMaxZ = xShell.Max().z;
+	const float fRequiredGap = LabRequiredHorizontalGap();
+
+	// The inversion above is only trustworthy if the shipped clamp agrees with it.
+	// At exactly the required gap the clamp must still satisfy the contract, and a
+	// hair under it must not -- which also proves this unit can red at all.
+	//
+	// ★ THE FIRST CLAUSE CARRIES A ROUNDING EPSILON AND THE SECOND DOES NOT, AND
+	// THAT ASYMMETRY IS THE POINT. The first compares the contract minimum against
+	// ITS OWN round-tripped inversion (multiplied by arm/desired inside
+	// LabRequiredHorizontalGap, then by desired/arm again here), which is exact in
+	// real arithmetic and ~1e-6 low in floats; see fLAB_ARM_ROUNDTRIP_EPSILON for
+	// the measurement and the sizing. The second stands 5 cm off the boundary, so
+	// no rounding can reach it and any slack there would genuinely weaken it.
+	const float fDesiredArm = LabDesiredArm();
+	const float fArmRatio = fDesiredArm / ZM_FollowCamera::GetArmLength();
+	ZENITH_ASSERT_GE(
+		ZM_FollowCamera::ClampArmDistance(fDesiredArm, true, fRequiredGap * fArmRatio),
+		fDesiredArm * fLAB_MIN_ARM_FRACTION - fLAB_ARM_ROUNDTRIP_EPSILON,
+		"the required-gap inversion disagrees with ZM_FollowCamera::ClampArmDistance "
+		"at the boundary -- every margin below is measured against the wrong number");
+	ZENITH_ASSERT_LT(
+		ZM_FollowCamera::ClampArmDistance(
+			fDesiredArm, true, (fRequiredGap - 0.05f) * fArmRatio),
+		fDesiredArm * fLAB_MIN_ARM_FRACTION,
+		"a gap 5 cm INSIDE the required one still satisfies the shipped clamp, so "
+		"this unit cannot detect a building standing on the walkway");
+
+	float fWorstGap = -1.0f;
+	float fWorstX = 0.0f;
+	float fWorstZ = 0.0f;
+	u_int uPointsInBand = 0u;
+	u_int uPointsInsideFootprint = 0u;
+	float fInsideX = 0.0f;
+	float fInsideZ = 0.0f;
+	for (u_int uSegment = 0u; uSegment + 1u < pxPath->m_uPointCount; ++uSegment)
+	{
+		const ZM_TerrainPoint2& xA = pxPath->m_pxPoints[uSegment];
+		const ZM_TerrainPoint2& xB = pxPath->m_pxPoints[uSegment + 1u];
+		const float fLength =
+			LabPlanarDistance(xA.m_fX, xA.m_fZ, xB.m_fX, xB.m_fZ);
+		u_int uSteps = (u_int)std::ceil(fLength / fLAB_ROUTE_WALK_STEP);
+		if (uSteps == 0u)
+		{
+			uSteps = 1u;
+		}
+		for (u_int uStep = 0u; uStep <= uSteps; ++uStep)
+		{
+			const float fT = (float)uStep / (float)uSteps;
+			const float fX = xA.m_fX + (xB.m_fX - xA.m_fX) * fT;
+			const float fZ = xA.m_fZ + (xB.m_fZ - xA.m_fZ) * fT;
+
+			// A walkway point inside the body-expanded footprint is not a clearance
+			// question at all -- it is a route through a wall.
+			if (fX > fShellMinX - fZM_DAWNMERE_PLAYER_RADIUS
+				&& fX < fShellMaxX + fZM_DAWNMERE_PLAYER_RADIUS
+				&& fZ > fShellMinZ - fZM_DAWNMERE_PLAYER_RADIUS
+				&& fZ < fShellMaxZ + fZM_DAWNMERE_PLAYER_RADIUS)
+			{
+				if (uPointsInsideFootprint == 0u)
+				{
+					fInsideX = fX;
+					fInsideZ = fZ;
+				}
+				++uPointsInsideFootprint;
+				continue;
+			}
+
+			// Only points NORTH of the building and inside its X band can have the
+			// camera ray blocked by it: the ray runs straight along -Z at the
+			// player's own X, and anything south of the shell has it in FRONT.
+			if (fX >= fShellMinX && fX <= fShellMaxX && fZ > fShellMaxZ)
+			{
+				++uPointsInBand;
+				const float fGap = fZ - fShellMaxZ;
+				if (fWorstGap < 0.0f || fGap < fWorstGap)
+				{
+					fWorstGap = fGap;
+					fWorstX = fX;
+					fWorstZ = fZ;
+				}
+			}
+		}
+	}
+
+	ZENITH_ASSERT_EQ(uPointsInsideFootprint, 0u,
+		"the authored Lab walkway passes THROUGH the lab shell (first offending "
+		"point (%.3f, %.3f)) -- the building is standing on the path, so that "
+		"stretch is not walkable at all", fInsideX, fInsideZ);
+
+	// The crossing this unit exists for. If it has gone, the entrance plane's
+	// derivation in ZM_DawnmerePlacement.h is stale rather than merely satisfied.
+	ZENITH_ASSERT_GT(uPointsInBand, 0u,
+		"the authored Lab walkway no longer passes north of the lab shell's X band, "
+		"so this clearance claim is vacuous -- the entrance plane was derived from "
+		"that crossing, and it can now be re-derived");
+
+	if (uPointsInBand == 0u)
+	{
+		return;
+	}
+
+	const float fWorstHitDistance = fWorstGap * fArmRatio;
+	const float fClampedArm =
+		ZM_FollowCamera::ClampArmDistance(fDesiredArm, true, fWorstHitDistance);
+	ZENITH_ASSERT_GE(fClampedArm, fDesiredArm * fLAB_MIN_ARM_FRACTION,
+		"a player walking the authored Lab path at (%.3f, %.3f) stands %.4f m from "
+		"the lab shell's +Z face, which clamps the %.4f m camera arm to %.4f m -- "
+		"under the %.4f m the ZM-D-173 contract requires. Move the ENTRANCE PLANE "
+		"(and with it the shell) south, or the building will clip the camera on a "
+		"route no test mentions",
+		fWorstX, fWorstZ, fWorstGap, fDesiredArm, fClampedArm,
+		fDesiredArm * fLAB_MIN_ARM_FRACTION);
+}
+
+// The lab approach routes run across the town square, and the square is full of
+// authored bodies -- including the ONE dynamic patrol in the game. A route that
+// passes close enough to an NPC for its capsule to enter the camera ray would
+// make the (static-layout) clearance guard depend on where a walking NPC happens
+// to be, which is exactly the nondeterminism ZM_AutoTests_CameraClearance
+// deliberately keeps out of its table. This unit is what says that cannot happen.
+ZENITH_TEST(ZM_Interaction, LabApproach_ClearsEveryAuthoredNpcAndPatrolEndpoint)
+{
+	// A body blocks the ray when it comes within the required horizontal gap PLUS
+	// its own half-width. Conservative by construction: it forbids a body in a DISC
+	// around the route, whereas the ray only sweeps the -Z side of it.
+	const float fRequired = LabRequiredHorizontalGap() + fLAB_NPC_HALF_WIDTH;
+
+	// The same routes ZM_DawnmereCameraClearance_Test samples for the lab: the
+	// blind drive leg, the doorway approach, and every segment of the authored
+	// walkway (read from the recipe, not re-typed).
+	constexpr u_int uROUTE_CAPACITY = 8u;
+	LabRouteSegment axRoutes[uROUTE_CAPACITY] = {};
+	u_int uRouteCount = 0u;
+	axRoutes[uRouteCount++] = { "townCentre->labStaging",
+		fZM_DAWNMERE_TOWN_CENTER_X, fZM_DAWNMERE_TOWN_CENTER_Z,
+		fZM_DAWNMERE_LAB_X, fZM_DAWNMERE_LAB_DOOR_STAGING_Z };
+	axRoutes[uRouteCount++] = { "labStaging->labTrigger",
+		fZM_DAWNMERE_LAB_X, fZM_DAWNMERE_LAB_DOOR_STAGING_Z,
+		fZM_DAWNMERE_LAB_X, fZM_DAWNMERE_LAB_DOOR_TARGET_Z };
+
+	const ZM_TerrainPathSpec* pxPath = LabFindPath("Lab");
+	ZENITH_ASSERT_NOT_NULL(pxPath,
+		"the Dawnmere terrain recipe no longer carries a path named 'Lab', so the "
+		"walkway half of this sweep would be silently empty");
+	bool bPathFitted = true;
+	if (pxPath != nullptr)
+	{
+		for (u_int u = 0u; u + 1u < pxPath->m_uPointCount; ++u)
+		{
+			if (uRouteCount >= uROUTE_CAPACITY)
+			{
+				bPathFitted = false;
+				break;
+			}
+			axRoutes[uRouteCount++] = { "labDirtPath",
+				pxPath->m_pxPoints[u].m_fX, pxPath->m_pxPoints[u].m_fZ,
+				pxPath->m_pxPoints[u + 1u].m_fX, pxPath->m_pxPoints[u + 1u].m_fZ };
+		}
+	}
+	ZENITH_ASSERT_TRUE(bPathFitted,
+		"the authored Lab walkway has more segments than this sweep's %u-route "
+		"budget -- coverage would be TRUNCATED rather than reported", uROUTE_CAPACITY);
+	ZENITH_ASSERT_GT(uRouteCount, 2u,
+		"only the two derived approach legs were swept -- the authored walkway "
+		"contributed nothing, so half this claim is vacuous");
+
+	float fClosest = -1.0f;
+	const char* szClosestRoute = "<none>";
+	const char* szClosestBody = "<none>";
+	u_int uPairsMeasured = 0u;
+
+	for (u_int uRoute = 0u; uRoute < uRouteCount; ++uRoute)
+	{
+		const LabRouteSegment& xRoute = axRoutes[uRoute];
+		for (u_int uBody = 0u;
+			uBody < (u_int)ZM_DAWNMERE_NPC_COUNT
+				+ ZM_GetDawnmereWanderWaypointCount(); ++uBody)
+		{
+			// The roster first, then both patrol endpoints -- the wanderer is not
+			// where its anchor says at any given instant, so the endpoints are the
+			// positions that actually have to clear.
+			const ZM_DawnmereNpcAnchor& xBody =
+				uBody < (u_int)ZM_DAWNMERE_NPC_COUNT
+					? ZM_GetDawnmereNpcAnchor(uBody)
+					: ZM_GetDawnmereWanderWaypoint(
+						uBody - (u_int)ZM_DAWNMERE_NPC_COUNT);
+			const float fDistance = LabDistanceToSegment(xBody.m_fX, xBody.m_fZ,
+				xRoute.m_fAX, xRoute.m_fAZ, xRoute.m_fBX, xRoute.m_fBZ);
+			++uPairsMeasured;
+			if (fClosest < 0.0f || fDistance < fClosest)
+			{
+				fClosest = fDistance;
+				szClosestRoute = xRoute.m_szName;
+				szClosestBody = xBody.m_szEntityName;
+			}
+			ZENITH_ASSERT_GT(fDistance, fRequired,
+				"'%s' stands %.3f m from the lab route '%s', inside the %.3f m a body "
+				"needs to keep clear of the camera ray -- the lab approach would "
+				"either clip the camera or, for the wanderer, do so only sometimes",
+				xBody.m_szEntityName, fDistance, xRoute.m_szName, fRequired);
+		}
+	}
+
+	// ANTI-VACUITY: a run in which the roster loop never executed would satisfy
+	// every per-body clause by never evaluating one.
+	ZENITH_ASSERT_EQ(uPairsMeasured,
+		uRouteCount * ((u_int)ZM_DAWNMERE_NPC_COUNT
+			+ ZM_GetDawnmereWanderWaypointCount()),
+		"the lab-route clearance sweep did not visit every route/body pair");
+	ZENITH_ASSERT_GT(fClosest, 0.0f,
+		"no authored body was measured against the lab routes at all (nearest "
+		"reported as '%s' on '%s')", szClosestBody, szClosestRoute);
+}
+
+// ============================================================================
+// THE MEASURED TABLE. Both units below are RED until the SC-D freeze lands, and
+// their messages say so -- that is the point, not an accident.
+// ============================================================================
+
+// The table must be REAL MEASUREMENTS from the graded pad: not the shipped
+// placeholder, not one value stamped ten times, and not heights from somewhere
+// else in the world.
+ZENITH_TEST(ZM_Interaction, LabGroundSamples_AreTenMeasurementsInsideTheGradedBand)
+{
+	const u_int uCount = ZM_GetDawnmereLabSampleCount();
+	ZENITH_ASSERT_EQ(uCount, 10u,
+		"the lab ground table no longer has the ten columns the placement needs");
+
+	// (a) THE FREEZE TRIPWIRE. This is the clause that says, in CI, that the slice
+	// has not finished.
+	u_int uStillPlaceholder = 0u;
+	for (u_int u = 0u; u < uCount; ++u)
+	{
+		if (std::fabs(ZM_DawnmereLabSampleFeetY(u)
+			- fZM_DAWNMERE_LAB_GROUND_UNMEASURED) <= fLAB_EXACT_EPSILON)
+		{
+			++uStillPlaceholder;
+		}
+	}
+	ZENITH_ASSERT_EQ(uStillPlaceholder, 0u,
+		"%u of the %u lab ground rows still hold fZM_DAWNMERE_LAB_GROUND_UNMEASURED "
+		"(%.1f), which is not a height. The S8 SC-D measure -> freeze -> rebuild loop "
+		"has not closed: run ZM_DawnmereLabGroundTruth_Test on a WINDOWED tools boot "
+		"with a warm Dawnmere terrain bake, paste its `paste=` literals into the S8 "
+		"SC-D LAB GROUND block in Source/World/ZM_DawnmerePlacement.cpp, and rebuild",
+		uStillPlaceholder, uCount, fZM_DAWNMERE_LAB_GROUND_UNMEASURED);
+
+	// (b) THE BAND. Stated against the terrain recipe's flatten TARGET, which is
+	// independent of anything in this table, so a table pasted from the wrong run
+	// or the wrong scene cannot validate itself.
+	const float fTarget = ZM_GetDawnmereTerrainRecipe().m_fTargetHeight;
+	for (u_int u = 0u; u < uCount; ++u)
+	{
+		const ZM_DawnmereNpcAnchor& xSample = ZM_GetDawnmereLabSample(u);
+		ZENITH_ASSERT_LT(std::fabs(xSample.m_fFeetY - fTarget),
+			fLAB_GROUND_BAND_HALF_WIDTH,
+			"lab ground row '%s' reads %.5f, which is %.5f m from the Dawnmere "
+			"recipe's %.2f m flatten target -- outside the +/-%.1f m band a graded "
+			"pad can produce. It is a placeholder, a height from another part of the "
+			"world, or the pad is no longer flattened",
+			xSample.m_szEntityName, xSample.m_fFeetY,
+			std::fabs(xSample.m_fFeetY - fTarget), fTarget,
+			fLAB_GROUND_BAND_HALF_WIDTH);
+	}
+
+	// (c) THE SPREAD, both ends. Too little means the rows collapsed onto one
+	// value; too much means the "graded pad" premise is wrong.
+	float fMin = ZM_DawnmereLabSampleFeetY(0u);
+	float fMax = fMin;
+	for (u_int u = 1u; u < uCount; ++u)
+	{
+		const float fFeet = ZM_DawnmereLabSampleFeetY(u);
+		if (fFeet < fMin) { fMin = fFeet; }
+		if (fFeet > fMax) { fMax = fFeet; }
+	}
+	const float fSpread = fMax - fMin;
+	ZENITH_ASSERT_GE(fSpread, fLAB_MIN_GROUND_SPREAD,
+		"the ten lab ground rows span only %.5f m (min %.5f, max %.5f) -- they are "
+		"ONE shared value, which is either the unfrozen placeholder or a single "
+		"measurement pasted into every row",
+		fSpread, fMin, fMax);
+	ZENITH_ASSERT_LT(fSpread, fLAB_MAX_GROUND_SPREAD,
+		"the ten lab ground rows span %.5f m, more than a four-pass flattened pad "
+		"can produce (the shipped Home table spans 0.95 m over a comparable "
+		"footprint) -- at least one row is a mis-pasted measurement, or the reserved "
+		"site is not the graded ground this placement assumes",
+		fSpread);
+}
+
+// ...and they must be TEN measurements rather than three copied around. This is
+// the clause a plausible copy-paste survives the band and the spread with.
+ZENITH_TEST(ZM_Interaction, LabGroundSamples_NoRowSilentlyRepeatsAnother)
+{
+	const u_int uCount = ZM_GetDawnmereLabSampleCount();
+
+	u_int uDistinct = 0u;
+	for (u_int uA = 0u; uA < uCount; ++uA)
+	{
+		bool bSeenEarlier = false;
+		for (u_int uB = 0u; uB < uA; ++uB)
+		{
+			if (std::fabs(ZM_DawnmereLabSampleFeetY(uA)
+				- ZM_DawnmereLabSampleFeetY(uB)) <= fLAB_EXACT_EPSILON)
+			{
+				bSeenEarlier = true;
+				break;
+			}
+		}
+		if (!bSeenEarlier)
+		{
+			++uDistinct;
+		}
+	}
+
+	u_int uTiedPairs = 0u;
+	const char* szTiedA = "<none>";
+	const char* szTiedB = "<none>";
+	for (u_int uA = 0u; uA < uCount; ++uA)
+	{
+		for (u_int uB = uA + 1u; uB < uCount; ++uB)
+		{
+			if (std::fabs(ZM_DawnmereLabSampleFeetY(uA)
+				- ZM_DawnmereLabSampleFeetY(uB)) <= fLAB_EXACT_EPSILON)
+			{
+				if (uTiedPairs == 0u)
+				{
+					szTiedA = ZM_GetDawnmereLabSample(uA).m_szEntityName;
+					szTiedB = ZM_GetDawnmereLabSample(uB).m_szEntityName;
+				}
+				++uTiedPairs;
+			}
+		}
+	}
+
+	ZENITH_ASSERT_GE(uDistinct, uLAB_MIN_DISTINCT_ROWS,
+		"only %u of the %u lab ground rows carry a value of their own (first tie "
+		"'%s' == '%s') -- ten columns on eroded terrain do not share heights, so "
+		"this is a copy-paste rather than a measurement",
+		uDistinct, uCount, szTiedA, szTiedB);
+	ZENITH_ASSERT_LE(uTiedPairs, uLAB_MAX_TIED_PAIRS,
+		"%u pairs of lab ground rows hold the same height (first '%s' == '%s')",
+		uTiedPairs, szTiedA, szTiedB);
+
+	// ★ AND THE ROW A MIS-PASTE HURTS MOST GETS ITS OWN CLAUSE. The FromLab
+	// arrival marker's feet decide where a warping player is PUT (the warp adds a
+	// capsule half-extent to it), so a neighbour's height there spawns the player
+	// embedded in the ground or dropping out of the air, in a scene nothing else
+	// measures. It shares an XZ with no other row and has no geometric reason to
+	// equal one.
+	//
+	// ★ WHAT THIS CANNOT SEE, SAID PLAINLY: a value that is wrong by centimetres
+	// is still "different from every other row". Only
+	// ZM_DawnmereLabGroundTruth_Test, which casts a real ray at this exact column,
+	// can catch that -- and it SKIPS without a terrain bake. This clause bounds the
+	// damage; it does not eliminate it.
+	const float fSpawnFeet =
+		ZM_DawnmereLabSampleFeetY(ZM_DAWNMERE_LAB_SAMPLE_SPAWN);
+	for (u_int u = 0u; u < uCount; ++u)
+	{
+		if (u == (u_int)ZM_DAWNMERE_LAB_SAMPLE_SPAWN)
+		{
+			continue;
+		}
+		ZENITH_ASSERT_GT(
+			std::fabs(fSpawnFeet - ZM_DawnmereLabSampleFeetY(u)),
+			fLAB_EXACT_EPSILON,
+			"the FromLab arrival row holds exactly the same height as '%s'. Those "
+			"are different columns on a graded but not flat pad, so this is a "
+			"mis-paste -- and it is the one row that decides where a warping player "
+			"is put down", ZM_GetDawnmereLabSample(u).m_szEntityName);
+	}
+}
+
+// The five authored Y values SC-E writes are DERIVED from the measured table by
+// fixed formulas spelled once in ZM_DawnmerePlacement.cpp. This unit checks the
+// derivations themselves, which no other test can see: the oracle checks the
+// TABLE against the terrain, and the automated clearance guard checks the RESULT
+// against the physics world, but neither would notice a max() where a min()
+// belongs until a corner of the building was visibly hanging in the air.
+ZENITH_TEST(ZM_Interaction, LabBlockoutY_FollowsTheFixedDerivationFromTheMeasuredTable)
+{
+	const ZM_DawnmereBlockout xShell = ZM_GetDawnmereLabShell();
+	const ZM_DawnmereBlockout xLeftJamb = ZM_GetDawnmereLabDoorLeft();
+	const ZM_DawnmereBlockout xRightJamb = ZM_GetDawnmereLabDoorRight();
+	const ZM_DawnmereBlockout xLintel = ZM_GetDawnmereLabDoorLintel();
+	const ZM_DawnmereBlockout xTrigger = ZM_GetDawnmereLabDoorTrigger();
+
+	const float fLeftGround =
+		ZM_DawnmereLabSampleFeetY(ZM_DAWNMERE_LAB_SAMPLE_DOOR_LEFT);
+	const float fRightGround =
+		ZM_DawnmereLabSampleFeetY(ZM_DAWNMERE_LAB_SAMPLE_DOOR_RIGHT);
+	const float fHigherDoorGround =
+		fLeftGround > fRightGround ? fLeftGround : fRightGround;
+
+	// (1) EACH JAMB STANDS ON ITS OWN GROUND. Sharing one height across a 6 m
+	// opening is the approximation this table exists to remove.
+	ZENITH_ASSERT_EQ_FLOAT(xLeftJamb.Min().y, fLeftGround, fLAB_EXACT_EPSILON,
+		"the left lab jamb's foot is not on its own measured ground");
+	ZENITH_ASSERT_EQ_FLOAT(xRightJamb.Min().y, fRightGround, fLAB_EXACT_EPSILON,
+		"the right lab jamb's foot is not on its own measured ground");
+
+	// (2) THE LINTEL CLEARS BOTH JAMBS, i.e. it is derived off the HIGHER door
+	// ground. Derived off the lower one and it intersects the taller jamb.
+	ZENITH_ASSERT_EQ_FLOAT(xLintel.Min().y,
+		fHigherDoorGround + fZM_PROFLAB_APERTURE_HEIGHT, fLAB_EXACT_EPSILON,
+		"the lab lintel's underside is not one aperture height above the HIGHER of "
+		"the two measured door grounds -- a lower derivation would bury it in a jamb");
+	ZENITH_ASSERT_GE(xLintel.Min().y, xLeftJamb.Max().y - fLAB_EXACT_EPSILON,
+		"the lab lintel now overlaps the left jamb");
+	ZENITH_ASSERT_GE(xLintel.Min().y, xRightJamb.Max().y - fLAB_EXACT_EPSILON,
+		"the lab lintel now overlaps the right jamb");
+
+	// (3) THE SENSOR IS CENTRED ON ITS OWN COLUMN'S GROUND, so a walking capsule
+	// passes through its middle rather than under or over it.
+	ZENITH_ASSERT_EQ_FLOAT(xTrigger.Min().y,
+		ZM_DawnmereLabSampleFeetY(ZM_DAWNMERE_LAB_SAMPLE_TRIGGER),
+		fLAB_EXACT_EPSILON,
+		"the lab warp sensor's underside is not on its own measured ground");
+	ZENITH_ASSERT_GT(xTrigger.m_xScale.y, fZM_HUMAN_BODY_HEIGHT * 0.5f,
+		"the lab warp sensor is too shallow to be overlapped by a walking body");
+
+	// (4) THE SHELL IS SEATED ON THE LOWEST CORNER AND EMBEDDED SLIGHTLY BELOW IT.
+	// Derived off the maximum and one corner of a 21 x 17 m box hangs in the air;
+	// derived with no embed and a hairline gap opens under it on a slope.
+	float fLowestCorner = ZM_DawnmereLabSampleFeetY(
+		ZM_DAWNMERE_LAB_SAMPLE_SHELL_MINX_MINZ);
+	for (u_int u = (u_int)ZM_DAWNMERE_LAB_SAMPLE_SHELL_MAXX_MINZ;
+		u <= (u_int)ZM_DAWNMERE_LAB_SAMPLE_SHELL_MAXX_MAXZ; ++u)
+	{
+		const float fCorner = ZM_DawnmereLabSampleFeetY(u);
+		if (fCorner < fLowestCorner)
+		{
+			fLowestCorner = fCorner;
+		}
+	}
+	const float fEmbed = fLowestCorner - xShell.Min().y;
+	ZENITH_ASSERT_GT(fEmbed, 0.0f,
+		"the lab shell's underside sits AT or ABOVE its lowest measured corner "
+		"ground (%.5f vs %.5f) -- on a graded but not flat pad that opens a visible "
+		"gap under the building", xShell.Min().y, fLowestCorner);
+	ZENITH_ASSERT_LT(fEmbed, 0.10f,
+		"the lab shell is embedded %.5f m below its lowest corner -- that is a sunken "
+		"building rather than a seated one", fEmbed);
+	for (u_int u = (u_int)ZM_DAWNMERE_LAB_SAMPLE_SHELL_MINX_MINZ;
+		u <= (u_int)ZM_DAWNMERE_LAB_SAMPLE_SHELL_MAXX_MAXZ; ++u)
+	{
+		ZENITH_ASSERT_LE(xShell.Min().y, ZM_DawnmereLabSampleFeetY(u),
+			"lab shell corner %u stands above the box's underside, so that corner is "
+			"floating -- the seat is derived off the wrong extreme", u);
+	}
+
+	// (5) The XZ half of the blockouts, which no measurement can move: every piece
+	// shares the lab's X centreline except the two jambs, and both jambs and the
+	// lintel stand on the entrance plane.
+	ZENITH_ASSERT_EQ_FLOAT(xShell.m_xCenter.x, fZM_DAWNMERE_LAB_X, 0.0f);
+	ZENITH_ASSERT_EQ_FLOAT(xTrigger.m_xCenter.x, fZM_DAWNMERE_LAB_X, 0.0f);
+	ZENITH_ASSERT_EQ_FLOAT(xLintel.m_xCenter.x, fZM_DAWNMERE_LAB_X, 0.0f);
+	ZENITH_ASSERT_EQ_FLOAT(xLeftJamb.m_xCenter.z, fZM_DAWNMERE_LAB_ENTRANCE_Z, 0.0f);
+	ZENITH_ASSERT_EQ_FLOAT(xRightJamb.m_xCenter.z, fZM_DAWNMERE_LAB_ENTRANCE_Z, 0.0f);
+	ZENITH_ASSERT_EQ_FLOAT(
+		xLeftJamb.m_xCenter.x + xRightJamb.m_xCenter.x,
+		fZM_DAWNMERE_LAB_X * 2.0f, fLAB_EXACT_EPSILON,
+		"the two lab jambs are no longer symmetric about the lab's centreline");
+}
+
+// TOTALITY, in this file's house style. The lab accessors are walked with the
+// out-of-range ids on purpose, and nothing they call may Zenith_Assert:
+// Zenith_Assert breaks in EVERY configuration and the whole unit suite runs at
+// boot, so one such assert does not fail a test -- it ends the boot unit run and
+// takes the gate down.
+//
+// NO ZENITH_ASSERT_* MAY APPEAR INSIDE THE CAPTURE SCOPE: while one is active,
+// framework failures are swallowed and merely counted, so an in-scope assertion
+// could never red this test. Everything is collected into locals and asserted
+// after the scope closes, hit count included.
+ZENITH_TEST(ZM_Interaction, LabSampleAccessors_AreTotalOnEveryDegenerateId)
+{
+	const u_int uCount = ZM_GetDawnmereLabSampleCount();
+	const u_int auBadIds[] = { uCount, uCount + 1u, 0xffffffffu };
+	constexpr u_int uBAD_ID_COUNT =
+		(u_int)(sizeof(auBadIds) / sizeof(auBadIds[0]));
+
+	u_int uHits = 0u;
+	u_int uRowsFinite = 0u;
+	u_int uRowsMistakenForSentinel = 0u;
+	u_int uBadIdsGaveSentinel = 0u;
+	u_int uBadIdsFiniteFeet = 0u;
+	u_int uNameCollisionsWithinLab = 0u;
+	u_int uNameCollisionsWithHome = 0u;
+	bool bBlockoutsFinite = false;
+
+	{
+		Zenith_AssertCaptureScope xCapture;
+
+		for (u_int u = 0u; u < uCount; ++u)
+		{
+			const ZM_DawnmereNpcAnchor& xSample = ZM_GetDawnmereLabSample(u);
+			if (W5AnchorFieldsFinite(xSample)
+				&& std::isfinite(ZM_DawnmereLabSampleFeetY(u)))
+			{
+				++uRowsFinite;
+			}
+			if (W5IsSentinelAnchor(xSample))
+			{
+				++uRowsMistakenForSentinel;
+			}
+			for (u_int uB = u + 1u; uB < uCount; ++uB)
+			{
+				if (std::strcmp(xSample.m_szEntityName,
+					ZM_GetDawnmereLabSample(uB).m_szEntityName) == 0)
+				{
+					++uNameCollisionsWithinLab;
+				}
+			}
+			// The two ground tables' rows are named in the SAME logs, by two
+			// oracles that look alike; a shared name would make a re-measure round
+			// paste a Home value into a lab row and never notice.
+			for (u_int uHome = 0u; uHome < ZM_GetDawnmereHomeSampleCount(); ++uHome)
+			{
+				if (std::strcmp(xSample.m_szEntityName,
+					ZM_GetDawnmereHomeSample(uHome).m_szEntityName) == 0)
+				{
+					++uNameCollisionsWithHome;
+				}
+			}
+		}
+
+		for (u_int u = 0u; u < uBAD_ID_COUNT; ++u)
+		{
+			const ZM_DawnmereNpcAnchor& xSample = ZM_GetDawnmereLabSample(auBadIds[u]);
+			if (W5IsSentinelAnchor(xSample) && W5AnchorFieldsFinite(xSample))
+			{
+				++uBadIdsGaveSentinel;
+			}
+			if (std::isfinite(ZM_DawnmereLabSampleFeetY(auBadIds[u])))
+			{
+				++uBadIdsFiniteFeet;
+			}
+		}
+
+		// The derived accessors take no arguments, but they are built from the
+		// table, so a degenerate row must not become a non-finite transform.
+		const ZM_DawnmereBlockout axBlocks[] = {
+			ZM_GetDawnmereLabShell(), ZM_GetDawnmereLabDoorLeft(),
+			ZM_GetDawnmereLabDoorRight(), ZM_GetDawnmereLabDoorLintel(),
+			ZM_GetDawnmereLabDoorTrigger() };
+		bBlockoutsFinite = true;
+		for (const ZM_DawnmereBlockout& xBlock : axBlocks)
+		{
+			bBlockoutsFinite = bBlockoutsFinite
+				&& std::isfinite(xBlock.m_xCenter.x)
+				&& std::isfinite(xBlock.m_xCenter.y)
+				&& std::isfinite(xBlock.m_xCenter.z)
+				&& std::isfinite(xBlock.m_xScale.x)
+				&& std::isfinite(xBlock.m_xScale.y)
+				&& std::isfinite(xBlock.m_xScale.z)
+				&& xBlock.m_xScale.x > 0.0f
+				&& xBlock.m_xScale.y > 0.0f
+				&& xBlock.m_xScale.z > 0.0f;
+		}
+		const Zenith_Maths::Vector3 xSpawn = ZM_GetDawnmereFromLabSpawnFeet();
+		const Zenith_Maths::Vector3 xStaging = ZM_GetDawnmereLabDoorStagingXZ();
+		const Zenith_Maths::Vector3 xTarget = ZM_GetDawnmereLabDoorTargetXZ();
+		bBlockoutsFinite = bBlockoutsFinite
+			&& std::isfinite(xSpawn.x) && std::isfinite(xSpawn.y)
+			&& std::isfinite(xSpawn.z) && std::isfinite(xStaging.z)
+			&& std::isfinite(xTarget.z);
+
+		uHits = (u_int)xCapture.GetHitCount();
+	}
+
+	ZENITH_ASSERT_EQ(uHits, 0u,
+		"a lab placement accessor asserted on an argument -- Zenith_Assert breaks in "
+		"EVERY config and the whole unit suite runs at boot, so this would kill the "
+		"boot unit run rather than fail one test");
+	ZENITH_ASSERT_EQ(uRowsFinite, uCount,
+		"a lab ground row carries a null/empty name or a non-finite coordinate");
+	ZENITH_ASSERT_EQ(uRowsMistakenForSentinel, 0u,
+		"a REAL lab ground row is indistinguishable from the UNKNOWN sentinel -- a "
+		"caller that skipped the id check could not tell content from a bad lookup");
+	ZENITH_ASSERT_EQ(uBadIdsGaveSentinel, uBAD_ID_COUNT,
+		"an out-of-range lab sample id did not return the DEFINED sentinel row");
+	ZENITH_ASSERT_EQ(uBadIdsFiniteFeet, uBAD_ID_COUNT,
+		"an out-of-range lab sample id produced a non-finite height");
+	ZENITH_ASSERT_EQ(uNameCollisionsWithinLab, 0u,
+		"two lab ground rows share a name, so the oracle's per-row log cannot be "
+		"keyed back to a table row");
+	ZENITH_ASSERT_EQ(uNameCollisionsWithHome, 0u,
+		"a lab ground row shares its name with a HOME ground row -- the two oracles "
+		"log in the same format, so a re-measure could paste one into the other");
+	ZENITH_ASSERT_TRUE(bBlockoutsFinite,
+		"a derived lab blockout or waypoint is non-finite or non-positive in scale, "
+		"even before it reaches a transform");
 }

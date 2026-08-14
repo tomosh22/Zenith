@@ -194,6 +194,23 @@ jobs:
           #
           # History, newest first (the DERIVATION is the audit trail; the OBSERVED
           # number is the authority):
+          #   3307  S8 item 1 SC-D -- Dawnmere lab-site ground truth + exterior
+          #                   placement constants (NO authoring), observed
+          #                   2026-08-14 on a Null_ build (3307 ran / 3305 passed /
+          #                   0 failed / 2 skipped). +8 ZM units, no engine units.
+          #                   ★ THIS GATE CAN RED FROM MACHINE LOAD ALONE, AND IT DID
+          #                   ONCE HERE. An earlier 3307 run reported 3 failed; one
+          #                   was GraphComponent::ThousandEntityUpdateBenchmark, an
+          #                   ENGINE wall-clock assertion
+          #                   (ZENITH_ASSERT_LT(msPerFrame, 5.0) over 1000 entities,
+          #                   Zenith_GraphComponent.Tests.inl) that measured 6.684 ms
+          #                   while this box was building and booting concurrently.
+          #                   It passed on a quiet re-run with everything else
+          #                   unchanged. An otherwise exact-equality, deterministic
+          #                   gate carries one timing-dependent test, so a red here
+          #                   naming that benchmark is a FLAKE to re-run quiet, not a
+          #                   regression to bisect -- and it affects every game, since
+          #                   the unit is engine-side.
           #   3299  S8 item 1 SC-C -- Professor Aster authored into ProfLab.zscen at
           #                   identity rotation, observed 2026-08-14 on a Null_ build
           #                   (3299 ran / 3297 passed / 0 failed / 2 skipped).
@@ -596,7 +613,7 @@ jobs:
           #   2817  ZM-D-173  = 2809 + 8: four ENGINE sensor-raycast units plus
           #                   two camera fixtures and two Home-placement units.
           $exe = 'Games\Zenithmon\Build\output\win64\null_vs2022_debug_win64_true\zenithmon.exe'
-          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 3299 -TimeoutSec 600
+          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 3307 -TimeoutSec 600
           if ($LASTEXITCODE -ne 0) { Write-Error "boot unit tests failed (see log above)"; exit $LASTEXITCODE }
 
       - name: Run Zenithmon tests

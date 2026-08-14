@@ -3,19 +3,33 @@
 **Last updated:** 2026-08-14
 
 **★ LIVE PIN (UPDATED 2026-08-14):
-ZM boot `3299`; engine boot (Null Combat) `1638`; registry **61**.** Observed
+ZM boot `3307`; engine boot (Null Combat) `1638`; registry **62**.** Observed
 2026-08-14 on a clean `Null_vs2022_Debug_Win64_True` Zenithmon build after S8
-SC-C. The walk this session: **3277 -> 3280** (SC-A, +3) **-> 3295** (SC-B, +15:
-14 pure `ZM_Starter` units + 1 `FrontEnd.zscen` needle) **-> 3299** (SC-C, +4:
-three `ZM_WorldTraversal` placement units + 1 `ProfLab.zscen` needle).
+SC-D: `3307 ran / 3305 passed / 0 failed / 2 skipped`. The walk this session:
+**3277 -> 3280** (SC-A, +3) **-> 3295** (SC-B, +15: 14 pure `ZM_Starter` units +
+1 `FrontEnd.zscen` needle) **-> 3299** (SC-C, +4: three `ZM_WorldTraversal`
+placement units + 1 `ProfLab.zscen` needle) **-> 3307** (SC-D, +8 lab-site units).
+Registry 61 -> 62 (`ZM_DawnmereLabGroundTruth_Test`).
 Engine UNMOVED at 1638 -- no slice touched a file under `Zenith/`.
+
+**★★ THIS GATE CAN RED FROM MACHINE LOAD ALONE. TRIAGE BEFORE YOU BISECT.** A
+3307 run reported **3 failed**; one was
+`GraphComponent::ThousandEntityUpdateBenchmark`, an **ENGINE wall-clock**
+assertion (`ZENITH_ASSERT_LT(msPerFrame, 5.0)` over 1000 entities,
+`Zenith_GraphComponent.Tests.inl:1555`) that measured **6.684 ms** while this box
+was building and booting concurrently. It **passed on a quiet re-run with nothing
+else changed**, and had passed in all four earlier gate runs that day. The gate is
+otherwise an exact-equality determinism ratchet and `zm-tests` is a REQUIRED
+check, so this one unit makes a required check load-dependent **for every game**.
+A red naming that benchmark is a FLAKE to re-run quiet, not a regression. Booked
+in Questions.md; the fix is engine-side.
 **★ NEVER PIN FROM A `Vulkan_` EXE:** the same tree reported **3332** on Vulkan
 against **3295** on Null, a standing +37 gap.
 **★ `registry` read 55 here and that was ALSO stale** -- this block was never
 updated when the input program's WP3b grew the automated suite 55 -> 61 with the
 six `ZM_Touch*` tests, even though the prose LOWER IN THIS SAME FILE said so
 explicitly. Corrected to the enumerated count. The current pins are
-`zm-tests.yml` (`-Baseline 3299`) and `run_unit_gate.ps1` (default 1638, the
+`zm-tests.yml` (`-Baseline 3307`) and `run_unit_gate.ps1` (default 1638, the
 ENGINE number -- never used for Zenithmon).
 
 **★★ 3276 -> 3277 IS A FIX-FORWARD, NOT A FEATURE BUMP. THE `zm-tests` GATE WAS
