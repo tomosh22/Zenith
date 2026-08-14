@@ -194,6 +194,20 @@ jobs:
           #
           # History, newest first (the DERIVATION is the audit trail; the OBSERVED
           # number is the authority):
+          #   3295  S8 item 1 SC-B -- the starter-choice SCREEN presenter, observed
+          #                   2026-08-14 on a Null_ build (3295 ran / 3293 passed /
+          #                   0 failed / 2 skipped). +15 ZM units, no engine units:
+          #                   14 pure ZM_Starter presenter units + 1
+          #                   ZM_CommittedSceneBytes needle asserting the authored
+          #                   FrontEnd.zscen carries the panel, the header and all
+          #                   three cell element names exactly once each.
+          #                   ★ THAT NEEDLE IS RED UNTIL THE AUTHORING BOOT RUNS,
+          #                   AND A FAILING BOOT UNIT ABORTS THE BOOT BEFORE
+          #                   AUTHORING -- so the authoring boot MUST pass
+          #                   --skip-unit-tests or the test blocks its own fix.
+          #                   See ZM-D-190 for the full ordering rule.
+          #                   ★ Do NOT pin from a Vulkan_ exe: the same tree
+          #                   reported 3332 there vs 3295 on Null_.
           #   3280  S8 item 1 SC-A -- Professor Aster data layer + the mandatory
           #                   palette re-author, observed 2026-08-14 on a Null_
           #                   build (3280 ran / 3278 passed / 0 failed / 2 skipped).
@@ -572,7 +586,7 @@ jobs:
           #   2817  ZM-D-173  = 2809 + 8: four ENGINE sensor-raycast units plus
           #                   two camera fixtures and two Home-placement units.
           $exe = 'Games\Zenithmon\Build\output\win64\null_vs2022_debug_win64_true\zenithmon.exe'
-          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 3280 -TimeoutSec 600
+          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 3295 -TimeoutSec 600
           if ($LASTEXITCODE -ne 0) { Write-Error "boot unit tests failed (see log above)"; exit $LASTEXITCODE }
 
       - name: Run Zenithmon tests

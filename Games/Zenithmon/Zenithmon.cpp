@@ -46,6 +46,7 @@
 #include "Zenithmon/Source/UI/ZM_UI_Party.h"         // sz*_NAME + SlotElementName contract (party authoring)
 #include "Zenithmon/Source/UI/ZM_UI_SaveSlots.h"     // sz*_NAME + RowElementName contract (S7 SC4 save-screen authoring)
 #include "Zenithmon/Source/UI/ZM_UI_Shop.h"          // sz*_NAME + RowElementName + geometry contract (shop authoring)
+#include "Zenithmon/Source/UI/ZM_UI_StarterChoice.h" // sz*_NAME + CellElementName + geometry contract (S8 starter authoring)
 #include "Zenithmon/Source/UI/ZM_UI_TitleMenu.h"     // title panel / Continue / New Game authoring contract (S7 SC5)
 // ★ UNCONDITIONAL, and NOT in the ZENITH_TOOLS block below that carries
 // ZM_ProfLabPlacement.h. ZM_GreyboxVisual compiles in EVERY configuration and
@@ -1070,6 +1071,87 @@ namespace
 		}
 	}
 
+	// The S8 starter-choice screen, authored WHOLE like the bag / shop / save screens: a
+	// centred panel, the prompt header and ONE CELL PER STARTER in a single VERTICAL
+	// column (ZM-D-188 -- vertical is what lets the picker ride the engine's existing
+	// focus navigation with ZERO new input actions). Every cell stays VISIBLE + FOCUSABLE
+	// at runtime (CellIsAlwaysShown): all three are always confirmable, so nothing is ever
+	// disarmed by hiding. There is NO Back element -- cancel is a deliberate no-op on this
+	// screen. All geometry is read off the ZM_UI_StarterChoice f*_ constants so this site
+	// and the presenter cannot drift apart. Same 9000/9001 sort band, ALL authored HIDDEN.
+	void ZM_ConfigureMenuRootStarterScreen(Zenith_UIComponent& xUI)
+	{
+		Zenith_UI::Zenith_UIRect* pxPanel =
+			xUI.FindElement<Zenith_UI::Zenith_UIRect>(ZM_UI_StarterChoice::szPANEL_NAME);
+		if (pxPanel != nullptr)
+		{
+			pxPanel->SetSortOrder(ZM_UI_MenuStack::iMENU_PANEL_SORT_ORDER);
+			pxPanel->SetAnchor(Zenith_UI::AnchorPreset::Center);
+			pxPanel->SetPivot(Zenith_UI::AnchorPreset::Center);
+			pxPanel->SetPosition(0.0f, 0.0f);
+			// Fully COVERS the header band and the whole cell column (ZM-D-112).
+			pxPanel->SetSize(ZM_UI_StarterChoice::fPANEL_WIDTH, ZM_UI_StarterChoice::fPANEL_HEIGHT);
+			pxPanel->SetColor({ 0.05f, 0.06f, 0.10f, 0.85f });
+			pxPanel->SetVisible(false);
+		}
+
+		Zenith_UI::Zenith_UIText* pxHeader =
+			xUI.FindElement<Zenith_UI::Zenith_UIText>(ZM_UI_StarterChoice::szHEADER_NAME);
+		if (pxHeader != nullptr)
+		{
+			pxHeader->SetSortOrder(ZM_UI_MenuStack::iMENU_BUTTON_SORT_ORDER);
+			pxHeader->SetAnchor(Zenith_UI::AnchorPreset::Center);
+			pxHeader->SetPivot(Zenith_UI::AnchorPreset::Center);
+			pxHeader->SetPosition(0.0f, ZM_UI_StarterChoice::fHEADER_CENTRE_Y);
+			// Size == wrap width == SetMaxWidth with a matching alignment (the SC2 lesson).
+			pxHeader->SetSize(ZM_UI_StarterChoice::fHEADER_WIDTH, ZM_UI_StarterChoice::fHEADER_HEIGHT);
+			pxHeader->SetFontSize(24.0f);
+			pxHeader->SetAlignment(Zenith_UI::TextAlignment::Center);
+			pxHeader->SetMaxWidth(ZM_UI_StarterChoice::fHEADER_WIDTH);
+			pxHeader->SetVisible(false);
+		}
+
+		// The cells form ONE vertical column at x == 0. The explicit up/down links mirror
+		// that geometry for this live authoring session; they are not serialized, so runtime
+		// navigation uses the spatial fallback and walks the same order. Unlike the shop /
+		// bag lists there is no liveness problem to worry about: no cell is ever hidden.
+		Zenith_UI::Zenith_UIButton* apxCells[ZM_UI_StarterChoice::uCELL_COUNT] = {};
+		for (u_int uCell = 0u; uCell < ZM_UI_StarterChoice::uCELL_COUNT; ++uCell)
+		{
+			Zenith_UI::Zenith_UIButton* pxCell =
+				xUI.FindElement<Zenith_UI::Zenith_UIButton>(ZM_UI_StarterChoice::CellElementName(uCell));
+			apxCells[uCell] = pxCell;
+			if (pxCell == nullptr)
+			{
+				continue;
+			}
+			pxCell->SetSortOrder(ZM_UI_MenuStack::iMENU_BUTTON_SORT_ORDER);
+			pxCell->SetAnchor(Zenith_UI::AnchorPreset::Center);
+			pxCell->SetPivot(Zenith_UI::AnchorPreset::Center);
+			pxCell->SetPosition(0.0f,
+				ZM_UI_StarterChoice::fCELL_FIRST_CENTRE_Y
+					+ ZM_UI_StarterChoice::fCELL_PITCH_Y * static_cast<float>(uCell));
+			pxCell->SetSize(ZM_UI_StarterChoice::fCELL_WIDTH, ZM_UI_StarterChoice::fCELL_HEIGHT);
+			pxCell->SetFontSize(22.0f);
+			pxCell->SetFocusable(true);
+			// The species name is written at RUNTIME by ZM_UI_StarterChoice::Present, so the
+			// committed scene bytes carry the element NAME and an EMPTY label.
+			pxCell->SetVisible(false);
+		}
+
+		for (u_int uCell = 0u; uCell < ZM_UI_StarterChoice::uCELL_COUNT; ++uCell)
+		{
+			if (apxCells[uCell] == nullptr)
+			{
+				continue;
+			}
+			Zenith_UI::Zenith_UIElement* pxUp = (uCell > 0u) ? apxCells[uCell - 1u] : nullptr;
+			Zenith_UI::Zenith_UIElement* pxDown =
+				(uCell + 1u < ZM_UI_StarterChoice::uCELL_COUNT) ? apxCells[uCell + 1u] : nullptr;
+			apxCells[uCell]->SetNavigation(pxUp, pxDown, nullptr, nullptr);
+		}
+	}
+
 	// S7 SC5 FrontEnd title controls live on the persistent MenuRoot, not the
 	// scene-owned GameManager that carries the large "Zenithmon" title text. The
 	// automation steps create all three as canvas-owned root elements (AddElement);
@@ -1639,6 +1721,8 @@ namespace
 
 		ZM_ConfigureMenuRootShopScreen(*pxUI);
 		ZM_ConfigureMenuRootSaveScreen(*pxUI);
+		ZM_ConfigureMenuRootStarterScreen(*pxUI);
+		// LAST, because it is the only one that REPARENTS elements.
 		ZM_ConfigureMenuRootTitleScreen(*pxUI);
 	}
 
@@ -2507,6 +2591,23 @@ void Project_RegisterEditorAutomationSteps()
 		xAuto.AddStep_CreateUIButton(ZM_UI_SaveSlots::RowElementName(uRow), "");
 	}
 	xAuto.AddStep_CreateUIButton(ZM_UI_SaveSlots::szCANCEL_NAME, "Back");
+	// ...and the S8 starter-choice screen (panel + header + one cell per starter), likewise
+	// authored hidden. APPENDED after the save screen's widgets and BEFORE the configure
+	// step, exactly like the six presenters above -- scene file indices are dense and
+	// authoring-order-derived, so a block goes at the END of the widget list, never mid-list.
+	// CellElementName returns string literals, so calling it at authoring time is safe.
+	//
+	// ★ EVERY LABEL IS AUTHORED EMPTY. The header prompt and the three species names are
+	// written at RUNTIME by ZM_UI_StarterChoice::Present (from ZM_GetSpeciesName), which
+	// keeps the content out of the committed scene bytes -- what those bytes carry is the
+	// element NAMES, which Tests/ZM_Tests_CommittedSceneBytes.cpp needles from the very
+	// same constants used here.
+	xAuto.AddStep_CreateUIRect(ZM_UI_StarterChoice::szPANEL_NAME);
+	xAuto.AddStep_CreateUIText(ZM_UI_StarterChoice::szHEADER_NAME, "");
+	for (u_int uCell = 0u; uCell < ZM_UI_StarterChoice::uCELL_COUNT; ++uCell)
+	{
+		xAuto.AddStep_CreateUIButton(ZM_UI_StarterChoice::CellElementName(uCell), "");
+	}
 	xAuto.AddStep_Custom(&ZM_ConfigureMenuRoot);
 	xAuto.AddStep_AddComponent("ZM_UI_MenuStack");
 

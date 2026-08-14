@@ -15,6 +15,158 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-08-14 -- ZM-D-190 -- MEASURED: a Null boot authors ZERO Zenithmon scenes, and the unit gate can never author at all
+
+**This corrects a claim that was about to be acted on twice more (SC-C, SC-E).**
+The S8 plan asserted, and a survey agent independently repeated, that
+`FrontEnd.zscen` and the other interiors are authored by a **headless
+`Null_vs2022_Debug_Win64_True` boot** and that "no windowed boot is needed". **Both
+halves are false.** Measured 2026-08-14 by counting `Saved scene to '...'` lines
+across every retained boot log in both output trees:
+
+| boot config | Zenithmon scenes saved |
+|---|---|
+| `Null_vs2022_Debug_Win64_True` | **0** (the 2 saves it does log are the ENGINE's own `Zenith/Assets/_AutoRoundTrip.zscen` + `_AutoTest.zscen` unit-test scenes, not this game's) |
+| `Vulkan_vs2022_Debug_Win64_True` | **5** -- `FrontEnd`, `PlayerHome`, `Battle`, `ProfLab`, `Dawnmere` |
+
+**★ AND THERE IS A SECOND, INDEPENDENT REASON THE GATE CAN NEVER AUTHOR.**
+`Tools/run_unit_gate.ps1` boots with `--exit-after-unit-tests`
+(`run_unit_gate.ps1:393`), and `Zenith_Main.cpp:175-183` handles that flag by
+calling `Zenith_FullShutdown()` + `std::exit(0)` **immediately after the boot
+`ZENITH_TEST` batch** -- which runs inside `Zenith_Init`, long before
+`Project_RegisterEditorAutomationSteps`. So the gate boot structurally cannot
+reach any authoring code, in ANY config. Observed directly: a gate boot left
+`FrontEnd.zscen`'s SHA256 bit-identical
+(`B2455E00...124C` before and after) while correctly reporting the new
+committed-bytes unit red.
+
+**Why this was easy to get wrong:** `Zenithmon.cpp:2797-2801` says ProfLab "is
+authored on EVERY tools boot including headless/cold-terrain ones", and the
+`bHeadless` gate at `:2892` is scoped in its own comment to terrain-derived
+content only. Read together those imply a Null tools boot authors the interiors.
+The MEASUREMENT says otherwise. **The comment describes the intended gate
+structure, not the observed behaviour**, and nothing was testing the difference.
+
+**The rule, stated operationally:**
+1. **Re-authoring ANY committed `.zscen` requires a `Vulkan_..._True` boot** --
+   not the Null config, and never the unit gate.
+2. **The authoring boot is a SEPARATE STEP from the gate.** A slice that
+   re-authors a scene runs: build -> authoring boot -> commit the new bytes ->
+   THEN the gate. Conflating them is what produced the false claim.
+3. A Vulkan tools boot authors **all five** scenes, Dawnmere included, so every
+   such boot must be followed by `git status` on the whole `Assets/` tree, not
+   just the file the slice meant to touch.
+
+**★★ THE DEADLOCK IS REAL, NOT HYPOTHETICAL, AND IT IS WORSE THAN "THE FIRST BOOT
+LOOKS RED". A FAILING BOOT UNIT ABORTS THE BOOT BEFORE SCENE AUTHORING RUNS.**
+Measured 2026-08-14 on both configs. The new
+`ZM_CommittedSceneBytes::FrontEndCarriesEveryStarterScreenElementName` needles a
+scene that the SAME boot is supposed to author. Boot units read the ON-DISK file
+and run inside `Zenith_Init`, before `Project_RegisterEditorAutomationSteps`, so:
+
+- the unit fails, because the scene does not carry the names yet;
+- **the failure ends the boot** -- both logs stop dead at the failure output, with
+  no `Shutdown complete` and no scene writes;
+- so the scene is never authored, so the unit fails again, **forever**.
+
+**The test blocks its own fix.** Two full authoring boots (Null, then windowed
+Vulkan `_True`) were burned proving this before the cause was found; the Vulkan
+boot exited at ~105 s having written nothing, while HISTORICAL Vulkan logs from
+earlier the same day show all five scenes saved. The only difference was one
+failing unit.
+
+**THE FIX -- authoring is not a verification step, so do not gate it behind one:**
+run the authoring boot with **`--skip-unit-tests`** (consumed at
+`Zenith/Core/Zenith_Engine.cpp:897`). With the suite skipped there is no failure,
+the boot reaches the automation, and the scene is written. Observed immediately:
+`FrontEnd.zscen` `B2455E00...124C` -> `D44D5405...EDB5` at ~30 s, with the other
+four committed scenes untouched.
+
+**THE CANONICAL ORDER FOR ANY SLICE THAT RE-AUTHORS A COMMITTED SCENE:**
+1. build both configs;
+2. **authoring boot: `Vulkan_..._True` exe with `--skip-unit-tests`** -- then kill
+   it (a tools build idles in the editor forever and will not exit on its own);
+3. `git status` the WHOLE `Assets/` tree (a Vulkan boot authors all five scenes);
+4. a SECOND authoring boot, asserting the file is byte-identical -- a scene that
+   keeps moving is a real defect, not churn (ZM-D-179 / ZM-D-183);
+5. only NOW the unit gate, which must be fully green;
+6. commit source + tests + the new scene bytes together.
+
+**★ AND NOTE WHAT THIS SAYS ABOUT THE TEST: IT IS WORKING EXACTLY AS INTENDED.**
+Its failure text names the missing element, the file, the authoring call to add,
+and the fix ("re-author the scene with a `*_True` tools boot"), and it caught the
+one mutation class the twelve pure-logic units structurally cannot see -- a cell
+missing from the authoring loop, or an authored name that no longer matches
+`CellElementName`, leaving `FindElement` returning nullptr every frame and the row
+dead on screen with every other test green. The deadlock is a property of the
+ORDERING, not a reason to weaken the assertion.
+
+**Tests that lock it:** none directly -- this is an operational fact about the
+build, recorded because two future slices (SC-C authoring ProfLab, SC-E
+authoring Dawnmere) were planned on the false version of it.
+
+**Reversibility:** n/a (a measurement, not a change).
+
+## 2026-08-14 -- ZM-D-189 -- the starter screen REFUSES TO RAISE rather than raising an unleavable one
+
+**Decision:** `ZM_UI_MenuStack::OpenStarterChoiceScreen()` refuses to raise the
+starter screen when `TryGetGameState` fails or the party is FULL, returning
+before the stack or the presenter is touched. `TryOpenStarterChoiceScreen` is the
+seam callers use.
+
+**Why -- this is an emergent hazard, not a defensive-programming reflex.** Two
+rules that are each correct in isolation compose into a soft-lock:
+
+1. ZM-D-188 makes the starter beat meaningful, and the arm therefore IGNORES
+   CANCEL (a picker that pops on Escape leaves a partyless save that
+   `ZM_CanEnterBattle` then refuses every battle for). So **the only exit from
+   this screen is a successful grant.**
+2. `ZM_ApplyStarterChoice` (`Source/Party/ZM_StarterChoice.h:125`) returns FALSE
+   with **no mutation whatsoever** for an unregistered choice or a full party --
+   on the full-party path it returns BEFORE `MarkCaught`.
+
+Compose them: raise the screen with a full party (or no live state) and every
+confirm is a no-op that cannot pop the screen. **The player is stuck in a menu
+with no exit and no error.** Neither rule is wrong; the combination is, and it is
+invisible when you read either one alone.
+
+**Where the guard lives is the load-bearing part:** at the OPEN boundary, not in
+the confirm arm. A confirm-side guard would still have raised the screen and
+would then need its own escape hatch -- which is the cancel path ZM-D-188
+deliberately removed.
+
+**Consequence, stated so it is not rediscovered as a bug:** a headless or
+automated test **cannot raise this screen without a live `ZM_GameState`**. That
+is intended. A test that "cannot open the starter screen" is observing this rule,
+not a broken screen.
+
+**Tests that lock it:**
+`ZM_Starter.StarterScreen_CancelIsIgnoredSoTheScreenIsNeverLeftPartyless`, which
+asserts the ruling AND its reason (`ZM_CanEnterBattle(ZM_MakeNewGameState()) ==
+false`), plus the open-boundary refusal cases.
+
+**Reversibility:** easy, but do not reverse it without also giving the screen an
+exit -- the two are a pair.
+
+**Booked honestly, a correction to the brief that produced this slice:** the
+brief asserted `ZM_GetSpeciesName` is bounds-asserted and would take the whole
+boot-unit gate down if reached with a sentinel. **That is false.**
+`Source/Data/ZM_SpeciesData.cpp:246-253` shows it is TOTAL and returns the
+literal `"NONE"` for `eId >= ZM_SPECIES_COUNT`; `ZM_GetSpeciesData` (:236) is the
+asserted one. The label guard was kept anyway for three accurate reasons -- an
+unguarded path would print "NONE" to the player, the neighbouring accessors ARE
+asserted, and `ZM_GetStarterChoice` would log a `Zenith_Error` EVERY FRAME the
+screen is up -- and the correction made the unit STRONGER: `"NONE"` is now the
+observable proof that the species lookup never happened, so the test asserts the
+buffer is both empty and not `"NONE"`.
+
+**Second correction, same class:** the planned "cell count derived from
+`ZM_GetStarterChoiceCount()`" tripwire is a TAUTOLOGY -- `uCELL_COUNT` *is*
+`ZM_STARTER_CHOICE_COUNT`, so both sides move together and the guard cannot see
+the drift it exists to catch (the self-referential-guard trap this project has
+hit before). A hand-written literal `3u` is the real tripwire, following the
+shipped `SaveScreen_RowCountEqualsSlotCount` precedent.
+
 ## 2026-08-14 -- ZM-D-188 -- USER RULINGS on the three S8-item-1 design questions (starter grant, picker UX, Mom)
 
 **Three USER decisions, taken 2026-08-14 in response to five blockers raised by an

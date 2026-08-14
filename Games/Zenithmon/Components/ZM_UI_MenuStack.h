@@ -9,6 +9,7 @@
 #include "Zenithmon/Source/UI/ZM_UI_Party.h"           // owned BY VALUE (the SC4 party screen)
 #include "Zenithmon/Source/UI/ZM_UI_SaveSlots.h"       // owned BY VALUE (the S7 SC4 save/load screen)
 #include "Zenithmon/Source/UI/ZM_UI_Shop.h"            // owned BY VALUE (the SC7 shop screen)
+#include "Zenithmon/Source/UI/ZM_UI_StarterChoice.h"   // owned BY VALUE (the S8 starter-choice screen)
 #include "Zenithmon/Source/UI/ZM_UI_TitleMenu.h"       // owned BY VALUE (the S7 SC5 FrontEnd title screen)
 
 class Zenith_DataStream;
@@ -39,7 +40,12 @@ class Zenith_UIComponent;
 // mart NPC talks through), and the first screen that WRITES the live game state; SC8
 // adds the yes/no PROMPT -- the same DIALOGUE screen with a choice armed on the box,
 // raised by OpenCareCenterPrompt / the static TryOpenCareCenterPrompt, whose answer
-// runs the pending ZM_DIALOGUE_ACTION (the Care Center heal) against that state.
+// runs the pending ZM_DIALOGUE_ACTION (the Care Center heal) against that state; S8
+// adds the STARTER screen -- a by-value ZM_UI_StarterChoice, the REAL three-way
+// VERTICAL picker (ZM-D-188), raised by OpenStarterChoiceScreen / the static
+// TryOpenStarterChoiceScreen, which resolves the focused cell to a ZM_STARTER_CHOICE
+// and hands it to the SHIPPED ZM_ApplyStarterChoice. Besides DIALOGUE it is the only
+// screen whose CANCEL is a deliberate NO-OP: popping it would leave a partyless save.
 //
 // Screen dispatch is GENERALIZED: OnUpdate routes input through ONE per-screen
 // switch and PresentTopScreen shows/hides through ONE per-screen block, so adding
@@ -63,6 +69,7 @@ enum ZM_MENU_SCREEN : u_int
 	ZM_MENU_SCREEN_SHOP,        // SC7: the mart buy/sell screen (raised by TryOpenShop, not a ROOT entry)
 	ZM_MENU_SCREEN_SAVE,        // S7 SC4: the save/load slot screen (serves BOTH modes)
 	ZM_MENU_SCREEN_TITLE,       // S7 SC5: FrontEnd Continue / New Game (auto-raised, not a pause ROOT entry)
+	ZM_MENU_SCREEN_STARTER,     // S8: the starter-choice picker (raised by TryOpenStarterChoiceScreen, not a ROOT entry)
 
 	ZM_MENU_SCREEN_COUNT
 };
@@ -306,6 +313,27 @@ public:
 	// Manual writes performed this session (test / observation latch; survives close).
 	u_int         GetSaveWriteCount()  const { return m_uSaveWriteCount; }
 
+	// ---- Starter choice (S8) ----
+
+	// Raise the starter-choice screen. Opens the menu + freezes the player when the stack
+	// was empty (the Prof-Lab beat raises it over the overworld), or stacks on top of an
+	// already-open menu. NOT a ROOT entry -- a starter is chosen once, where the story
+	// puts it, never from the pause menu.
+	//
+	// ★ IT REFUSES WHEN A GRANT COULD NOT SUCCEED (no live game state, or a full party).
+	// ZM-D-188 makes CANCEL a no-op on this screen, so the ONE way off it is a successful
+	// ZM_ApplyStarterChoice -- and that call is a strict no-op on a full party. Raising it
+	// in either case would be a screen the player could never leave.
+	bool OpenStarterChoiceScreen();
+	// Singleton-resolving convenience -- the SAME seam shape as TryOpenShop /
+	// TryOpenSaveScreen (what the Prof-Lab NPC and the windowed test call). False when no
+	// live ZM_MenuRoot singleton exists, or when the screen refuses to raise.
+	static bool TryOpenStarterChoiceScreen();
+	const ZM_UI_StarterChoice& GetStarterScreen() const { return m_xStarterScreen; }
+	// Starters granted through this screen this session (test / observation latch; survives
+	// the close, like the save/load latches).
+	u_int GetStarterGrantCount() const { return m_uStarterGrantCount; }
+
 	// ---- Title / Continue (S7 item 2 SC5) ----
 	const ZM_UI_TitleMenu& GetTitleScreen() const { return m_xTitle; }
 	// Pending is session state. Result latches survive an ordinary successful close
@@ -392,6 +420,10 @@ private:
 	bool PresentBagScreen(bool bShown);
 	// ...and for the SC7 shop screen (top screen AND a live game state).
 	bool PresentShopScreen(bool bShown);
+	// ...and for the S8 starter screen. Like the save screen it does NOT gate on a live
+	// game state: the cell labels come from the COMPILED starter table, and the live state
+	// is the GRANT's business (the confirm arm), not the presentation's. Returns bShown.
+	bool PresentStarterScreen(bool bShown);
 	// ...and for the S7 SC4 save screen. Unlike the four above it does NOT gate on a live
 	// game state -- the LOAD half runs on the title screen where none exists yet -- so it is
 	// always presented when it is the top screen. Returns bShown.
@@ -434,6 +466,9 @@ private:
 	ZM_UI_Bag          m_xBagScreen;                              // the BAG screen's model (SC6; PODs only)
 	ZM_UI_Shop         m_xShop;                                   // the SHOP screen's model (SC7; PODs only)
 	ZM_UI_SaveSlots    m_xSaveScreen;                            // the SAVE/LOAD screen's model (S7 SC4; PODs only)
+	// The STARTER screen's model (S8; one int). A by-value POD member, so
+	// uSERIALIZATION_VERSION does NOT move: WriteToDataStream emits only the stamp.
+	ZM_UI_StarterChoice m_xStarterScreen;
 	ZM_UI_TitleMenu    m_xTitle;                                 // the FrontEnd title model (S7 SC5; two bools)
 	// The slot an armed WRITE confirm targets. Session state; consumed with m_eDialogueAction.
 	ZM_SAVE_SLOT       m_ePendingSaveSlot = ZM_SAVE_SLOT_NONE;
@@ -445,6 +480,7 @@ private:
 	ZM_SAVE_SLOT       m_eLastLoadSlot = ZM_SAVE_SLOT_NONE;
 	Zenith_Status      m_xLastLoadStatus = Zenith_ErrorCode::INVALID_ARGUMENT;
 	u_int              m_uLoadReadCount = 0u;                    // definitive RequestContinue attempts
+	u_int              m_uStarterGrantCount = 0u;                // starters granted through the S8 screen (latch)
 	ZM_DIALOGUE_ACTION m_eDialogueAction = ZM_DIALOGUE_ACTION_NONE;   // what a YES does (SC8)
 	ZM_DIALOGUE_CHOICE m_eLastDialogueAnswer = ZM_DIALOGUE_CHOICE_NONE;   // the latched answer (SC8)
 	int                m_iCursor = -1;                            // focused-item mirror (see GetCursor)

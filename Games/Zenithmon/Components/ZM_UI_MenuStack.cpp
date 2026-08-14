@@ -16,6 +16,7 @@
 #include "Zenithmon/Source/Data/ZM_SpeciesData.h"       // ZM_SPECIES_COUNT (the dex size the DEX screen pages over)
 #include "Zenithmon/Source/Data/ZM_WorldSpec.h"         // ZM_FindSceneByBuildIndex / ZM_GetWorldSpec / ZM_SCENE_KIND
 #include "Zenithmon/Source/Interaction/ZM_TrainerSightFsm.h"   // ZM_TrainerCinematicLatch::IsActive (the FOURTH freeze owner)
+#include "Zenithmon/Source/Party/ZM_StarterChoice.h"    // the SHIPPED grant: ZM_ApplyStarterChoice (+ the registered-choice guard)
 #include "Zenithmon/Source/Save/ZM_SaveSlots.h"         // WriteState / ProbeSlot / ResolveLiveSaveBlocker (S7 SC4)
 #include "Zenithmon/Source/ZM_Bindings.h"               // MENU / CONFIRM / CANCEL through the action layer
 
@@ -154,6 +155,7 @@ void ZM_UI_MenuStack::OnStart()
 	m_xBagScreen.Reset();
 	m_xShop.Reset();
 	m_xSaveScreen.Reset();
+	m_xStarterScreen.Reset();
 	m_xTitle.Open(nullptr, 0u);
 	m_ePendingSaveSlot = ZM_SAVE_SLOT_NONE;
 	m_xLoadConfirm.Reset();
@@ -168,6 +170,7 @@ void ZM_UI_MenuStack::OnStart()
 	m_eLastLoadSlot = ZM_SAVE_SLOT_NONE;
 	m_xLastLoadStatus = Zenith_ErrorCode::INVALID_ARGUMENT;
 	m_uLoadReadCount = 0u;
+	m_uStarterGrantCount = 0u;
 	m_iCursor = -1;
 	m_xFrozenPlayerEntityID = INVALID_ENTITY_ID;
 
@@ -428,6 +431,42 @@ void ZM_UI_MenuStack::OnUpdate(float fDeltaSeconds)
 		}
 		break;
 
+	case ZM_MENU_SCREEN_STARTER:
+		// The starter picker dispatches confirm BY THE FOCUSED CELL'S NAME too (never
+		// SetOnClick(this)). Two rulings live in this arm and nowhere else:
+		//
+		// ★ CANCEL IS IGNORED -- there is no `else if (bCancel)` here ON PURPOSE, exactly
+		// like the DIALOGUE arm above (ZM-D-188 / ZM_UI_StarterChoice::CancelIsIgnored).
+		// Popping on Escape would leave a PARTYLESS save, and ZM_CanEnterBattle keys on
+		// emptiness alone, so that file would then be refused every battle forever. The
+		// screen also carries no Back element for the same reason.
+		//
+		// ★ GRANT THEN POP, IN THAT ORDER. ZM_ApplyStarterChoice returns false with ZERO
+		// mutation for an unregistered choice or a full party, so the pop lives INSIDE the
+		// true branch. Popping first (or unconditionally) would close the one screen that
+		// grants a starter without having granted one.
+		if (bConfirm)
+		{
+			const ZM_STARTER_CHOICE eChoice =
+				ZM_UI_StarterChoice::ChoiceFromElementName(ResolveFocusedElementName());
+			// The panel, the header, a foreign name and null all arrive as NONE, which this
+			// guard eats -- ZM_ApplyStarterChoice would refuse them anyway, but it would also
+			// log a Zenith_Error per press for what is just an un-aimed confirm.
+			if (ZM_IsRegisteredStarterChoice(eChoice))
+			{
+				// The live state is resolved per press rather than cached (the bag / shop / heal
+				// idiom); a missing state simply eats the confirm instead of crashing.
+				ZM_GameState* pxState = nullptr;
+				if (ZM_GameStateManager::TryGetGameState(pxState) && pxState != nullptr
+					&& ZM_ApplyStarterChoice(*pxState, eChoice))
+				{
+					++m_uStarterGrantCount;
+					PopTopScreen();
+				}
+			}
+		}
+		break;
+
 	// ROOT dispatches its focused entry by NAME.
 	case ZM_MENU_SCREEN_ROOT:
 	default:
@@ -500,6 +539,8 @@ void ZM_UI_MenuStack::CloseMenu()
 	m_xShop.Hide(m_xParentEntity);
 	m_xSaveScreen.Reset();
 	m_xSaveScreen.Hide(m_xParentEntity);
+	m_xStarterScreen.Reset();
+	m_xStarterScreen.Hide(m_xParentEntity);
 	m_xTitle.Hide(m_xParentEntity);
 	m_xTitle.Open(nullptr, 0u);
 	// ...including any pending prompt action and armed overwrite slot: a force-close must
@@ -1066,6 +1107,55 @@ void ZM_UI_MenuStack::PerformSaveToSlot(ZM_SAVE_SLOT eSlot)
 	PushDialogueLines(aszLines, 1u);
 }
 
+// ---- Starter choice screen (S8) --------------------------------------------
+
+bool ZM_UI_MenuStack::OpenStarterChoiceScreen()
+{
+	// ★ RAISE ONLY WHEN A GRANT COULD SUCCEED, and decide that BEFORE the stack or the
+	// screen is touched. ZM-D-188 makes CANCEL a no-op here, so the only way off this
+	// screen is a successful ZM_ApplyStarterChoice -- which is a strict no-op with no
+	// live game state to grant into, and likewise on a FULL party. Raising it in either
+	// case would be a screen the player could never leave.
+	ZM_GameState* pxState = nullptr;
+	if (!ZM_GameStateManager::TryGetGameState(pxState)
+		|| pxState == nullptr
+		|| pxState->m_xParty.IsFull())
+	{
+		return false;
+	}
+
+	if (m_xStack.Top() != ZM_MENU_SCREEN_STARTER)
+	{
+		const bool bWasClosed = m_xStack.IsEmpty();
+		if (!m_xStack.Push(ZM_MENU_SCREEN_STARTER))
+		{
+			return false;   // depth-limit: leave nothing raised
+		}
+		if (bWasClosed)
+		{
+			FreezePlayer();   // the story beat raises this with no menu underneath
+		}
+	}
+	// AFTER the push, so a refused raise leaves the presenter untouched.
+	m_xStarterScreen.Reset();
+	PresentTopScreen();
+	return true;
+}
+
+bool ZM_UI_MenuStack::TryOpenStarterChoiceScreen()
+{
+	Zenith_EntityID xEntityID = INVALID_ENTITY_ID;
+	if (!TryGetUniqueSingletonEntityID(xEntityID))
+	{
+		return false;
+	}
+	Zenith_Entity xEntity = g_xEngine.Scenes().ResolveEntity(xEntityID);
+	ZM_UI_MenuStack* pxMenu = xEntity.IsValid()
+		? xEntity.TryGetComponent<ZM_UI_MenuStack>()
+		: nullptr;
+	return pxMenu != nullptr && pxMenu->OpenStarterChoiceScreen();
+}
+
 void ZM_UI_MenuStack::PresentTopScreen()
 {
 	Zenith_UIComponent* pxUI = ResolveUI();
@@ -1101,6 +1191,7 @@ void ZM_UI_MenuStack::PresentTopScreen()
 	const bool bBagPresented = PresentBagScreen(eTop == ZM_MENU_SCREEN_BAG);
 	const bool bShopPresented = PresentShopScreen(eTop == ZM_MENU_SCREEN_SHOP);
 	const bool bSavePresented = PresentSaveScreen(eTop == ZM_MENU_SCREEN_SAVE);
+	const bool bStarterPresented = PresentStarterScreen(eTop == ZM_MENU_SCREEN_STARTER);
 
 	// ---- Focus policy. A FOCUS-NAVIGABLE screen owns the canvas focus and mirrors it
 	//      into m_iCursor; every other screen clears both, so arrows can never drive a
@@ -1216,6 +1307,23 @@ void ZM_UI_MenuStack::PresentTopScreen()
 		{
 			// Only reachable if the UI component vanished mid-frame: degrade like the others so
 			// the arrows can never drive a hidden screen.
+			xCanvas.SetFocusedElement(nullptr);
+			m_iCursor = -1;
+		}
+		break;
+
+	case ZM_MENU_SCREEN_STARTER:
+		if (bStarterPresented)
+		{
+			// ZM_UI_StarterChoice::Present already ensured a focused cell (cells are always
+			// shown, so there is always one to focus) and mirrored the engine-navigated
+			// focus; carry its selection up.
+			m_iCursor = m_xStarterScreen.GetSelectedCell();
+		}
+		else
+		{
+			// Only reachable if the UI component vanished mid-frame: degrade like the others
+			// so the arrows can never drive a hidden screen.
 			xCanvas.SetFocusedElement(nullptr);
 			m_iCursor = -1;
 		}
@@ -1406,6 +1514,21 @@ bool ZM_UI_MenuStack::PresentSaveScreen(bool bShown)
 	// where no game state exists yet. The screen owns its own probing (Open), so Present is
 	// a pure show / label / focus pass.
 	m_xSaveScreen.Present(m_xParentEntity);
+	return true;
+}
+
+bool ZM_UI_MenuStack::PresentStarterScreen(bool bShown)
+{
+	if (!bShown)
+	{
+		m_xStarterScreen.Hide(m_xParentEntity);
+		return false;
+	}
+	// Deliberately NO live-game-state gate (like the save screen, unlike party / dex /
+	// bag / shop): every cell label is resolved from the COMPILED starter table, so the
+	// screen renders identically with or without a live state. The state is only the
+	// GRANT's business, and that lives in the confirm arm.
+	m_xStarterScreen.Present(m_xParentEntity);
 	return true;
 }
 
@@ -1711,6 +1834,7 @@ void ZM_UI_MenuStack::ReadFromDataStream(Zenith_DataStream& xStream)
 	m_xBagScreen.Reset();
 	m_xShop.Reset();
 	m_xSaveScreen.Reset();
+	m_xStarterScreen.Reset();
 	m_xTitle.Open(nullptr, 0u);
 	m_ePendingSaveSlot = ZM_SAVE_SLOT_NONE;
 	m_xLoadConfirm.Reset();
@@ -1724,6 +1848,7 @@ void ZM_UI_MenuStack::ReadFromDataStream(Zenith_DataStream& xStream)
 	m_eLastLoadSlot = ZM_SAVE_SLOT_NONE;
 	m_xLastLoadStatus = Zenith_ErrorCode::INVALID_ARGUMENT;
 	m_uLoadReadCount = 0u;
+	m_uStarterGrantCount = 0u;
 	m_iCursor = -1;
 	m_xFrozenPlayerEntityID = INVALID_ENTITY_ID;
 	(void)uVersion;
@@ -1786,6 +1911,10 @@ void ZM_UI_MenuStack::RenderPropertiesPanel()
 		m_xShop.GetInventoryCount(),
 		uShopEntries,
 		m_xShop.HasResult() ? ZM_UI_Shop::FormatResult(m_xShop.GetLastResult()) : "(none yet)");
+
+	ImGui::Text("Starter - cell=%d grants=%u",
+		m_xStarterScreen.GetSelectedCell(),
+		m_uStarterGrantCount);
 
 	ImGui::Text("Save - mode=%u row=%d pending=%u writes=%u lastOk=%s blocker=%s",
 		static_cast<u_int>(m_xSaveScreen.GetMode()),

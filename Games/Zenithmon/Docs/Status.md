@@ -3,19 +3,19 @@
 **Last updated:** 2026-08-14
 
 **★ LIVE PIN (UPDATED 2026-08-14):
-ZM boot `3280`; engine boot (Null Combat) `1638`; registry **61**.** Observed
+ZM boot `3295`; engine boot (Null Combat) `1638`; registry **61**.** Observed
 2026-08-14 on a clean `Null_vs2022_Debug_Win64_True` Zenithmon build after S8
-SC-A: `3280 ran / 3278 passed / 0 failed / 2 skipped`, and
-`zenith test Zenithmon --headless` = **61 passed / 0 failed** (total 1,106,776 ms,
-avg 23,055 ms; slowest `ZM_MilestoneAutosave_Test` at 89,553 ms / 134 frames).
-The 3277 -> 3280 move is **+3 ZM units from SC-A** (the professor-palette gate,
-the Aster NPC-row gate, and the derivation-walked vs-grey gate); engine UNMOVED
-at 1638 because SC-A touched no file under `Zenith/`.
+SC-B. The 3280 -> 3295 move is **+15 ZM units from SC-B** (14 pure `ZM_Starter`
+presenter units + 1 `ZM_CommittedSceneBytes` needle on the authored
+`FrontEnd.zscen`); the earlier 3277 -> 3280 move was **+3 ZM units from SC-A**.
+Engine UNMOVED at 1638 -- neither slice touched a file under `Zenith/`.
+**★ NEVER PIN FROM A `Vulkan_` EXE:** the same tree reported **3332** on Vulkan
+against **3295** on Null, a standing +37 gap.
 **★ `registry` read 55 here and that was ALSO stale** -- this block was never
 updated when the input program's WP3b grew the automated suite 55 -> 61 with the
 six `ZM_Touch*` tests, even though the prose LOWER IN THIS SAME FILE said so
 explicitly. Corrected to the enumerated count. The current pins are
-`zm-tests.yml` (`-Baseline 3280`) and `run_unit_gate.ps1` (default 1638, the
+`zm-tests.yml` (`-Baseline 3295`) and `run_unit_gate.ps1` (default 1638, the
 ENGINE number -- never used for Zenithmon).
 
 **★★ 3276 -> 3277 IS A FIX-FORWARD, NOT A FEATURE BUMP. THE `zm-tests` GATE WAS

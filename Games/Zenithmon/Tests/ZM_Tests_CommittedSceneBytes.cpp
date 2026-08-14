@@ -53,6 +53,7 @@
 #include "Core/Zenith_TestFramework.h"
 #include "FileAccess/Zenith_FileAccess.h"
 #include "Maths/Zenith_Maths.h"
+#include "Zenithmon/Source/UI/ZM_UI_StarterChoice.h"   // the S8 element-name constants (the needles)
 #include "Zenithmon/Source/World/ZM_DawnmerePlacement.h"
 
 namespace
@@ -63,6 +64,11 @@ namespace
 	// absent-file clause.
 	const char* const szZM_COMMITTED_DAWNMERE_SCENE =
 		GAME_ASSETS_DIR "Scenes/Dawnmere" ZENITH_SCENE_EXT;
+
+	// ...and the committed FrontEnd, which carries every persistent-root UI element
+	// (the S8 starter screen among them).
+	const char* const szZM_COMMITTED_FRONTEND_SCENE =
+		GAME_ASSETS_DIR "Scenes/FrontEnd" ZENITH_SCENE_EXT;
 
 	// The 16 bytes a Transform blob carries for this rotation, in the order
 	// Zenith_DataStream writes them. Built from the frozen constants rather than
@@ -92,6 +98,21 @@ namespace
 			}
 		}
 		return uCount;
+	}
+
+	// The ASCII occurrences of an element NAME in a scene blob. Element names are
+	// written as contiguous bytes by the UI serializer, so the same format-agnostic
+	// search the rotation clause uses works verbatim -- no container parsing, no byte
+	// offsets, nothing that rots at the next schema bump.
+	u_int CountNameOccurrences(const char* pData, uint64_t ulSize, const char* szName)
+	{
+		if (szName == nullptr || szName[0] == '\0')
+		{
+			return 0u;
+		}
+		return CountOccurrences(pData, ulSize,
+			reinterpret_cast<const unsigned char*>(szName),
+			(uint64_t)std::strlen(szName));
 	}
 }
 
@@ -142,4 +163,86 @@ ZENITH_TEST(ZM_CommittedSceneBytes, DawnmereCarriesTheFrozenRivalFacingBitExactl
 		"or the frozen constants in Source/World/ZM_DawnmerePlacement.h were changed "
 		"without re-authoring the scene in the same commit. Do NOT 'fix' this by "
 		"committing whatever bytes are on disk -- read the ZM-D-183 block first.");
+}
+
+// ============================================================================
+// The S8 starter screen's AUTHORED-BYTES gate.
+//
+// ★ WHY IT EXISTS. Tests/ZM_Tests_StarterScreen.cpp pins the starter picker's whole
+// decision surface -- the name maps, the choice maps, the labels, the grant
+// composition -- and NOT ONE of those units can see the AUTHORED screen, because all
+// of them are pure. Author only two of the three cells, mis-type one cell's name in
+// its AddStep_CreateUIButton call so FindElement returns nullptr every frame, or
+// author the cells and forget the panel, and every one of them stays green while
+// FrontEnd.zscen ships a screen the player cannot use. This unit is the only thing
+// in the gate that looks at what was actually written.
+//
+// ★ EVERY NEEDLE IS DERIVED FROM ZM_UI_StarterChoice's OWN CONSTANTS, never re-spelled
+// as a literal. A hand-typed needle would move in lockstep with a renamed element and
+// pin nothing; derived, a rename that misses the authoring site is red here.
+//
+// ★ AND IT IS STRICT ABOUT AN UNREADABLE FILE, UNLIKE THE DAWNMERE CLAUSE ABOVE. That
+// one returns early on a missing file because a packaged run may legitimately not have
+// it. FrontEnd.zscen is TRACKED (ZM-D-148) and is the scene this game BOOTS into, so
+// its absence is a DEFECT, not an inapplicable configuration -- this unit FAILS rather
+// than silently passing. (The existing clause's behaviour is deliberately left alone.)
+// ============================================================================
+ZENITH_TEST(ZM_CommittedSceneBytes, FrontEndCarriesEveryStarterScreenElementName)
+{
+	uint64_t ulSize = 0;
+	char* pData = Zenith_FileAccess::ReadFile(szZM_COMMITTED_FRONTEND_SCENE, ulSize);
+
+	ZENITH_ASSERT_NOT_NULL(pData,
+		"the committed FrontEnd.zscen could not be read ('%s'). It is a TRACKED asset and "
+		"the scene this game boots into, so this is a DEFECT, not a skip -- restore the "
+		"file or re-author it with a *_True tools boot.",
+		szZM_COMMITTED_FRONTEND_SCENE);
+	if (pData == nullptr)
+	{
+		return;   // already FAILED above; nothing further is meaningful
+	}
+
+	// The panel and the header first: cells authored onto a screen with no backing panel
+	// would draw over whatever is behind them, and the assertion set below would not
+	// notice on its own.
+	const u_int uPanelHits =
+		CountNameOccurrences(pData, ulSize, ZM_UI_StarterChoice::szPANEL_NAME);
+	const u_int uHeaderHits =
+		CountNameOccurrences(pData, ulSize, ZM_UI_StarterChoice::szHEADER_NAME);
+
+	u_int auCellHits[ZM_UI_StarterChoice::uCELL_COUNT] = {};
+	for (u_int u = 0u; u < ZM_UI_StarterChoice::uCELL_COUNT; ++u)
+	{
+		auCellHits[u] =
+			CountNameOccurrences(pData, ulSize, ZM_UI_StarterChoice::CellElementName(u));
+	}
+
+	Zenith_Log(LOG_CATEGORY_GAMEPLAY,
+		"[ZM_CommittedSceneBytes] '%s' %llu bytes; starter screen panel=%u header=%u cells=%u",
+		szZM_COMMITTED_FRONTEND_SCENE, (unsigned long long)ulSize,
+		uPanelHits, uHeaderHits, ZM_UI_StarterChoice::uCELL_COUNT);
+
+	Zenith_FileAccess::FreeFileData(pData);
+
+	// EXACTLY ONE occurrence each: zero means the element was never authored (or its name
+	// drifted from the constant), and more than one means it was authored twice, which
+	// would leave FindElement resolving whichever the canvas stored first.
+	ZENITH_ASSERT_EQ(uPanelHits, 1u,
+		"the committed FrontEnd.zscen must carry the starter PANEL element '%s' exactly "
+		"once -- add its AddStep_CreateUIRect to the ZM_MenuRoot block in Zenithmon.cpp "
+		"and re-author the scene with a *_True tools boot",
+		ZM_UI_StarterChoice::szPANEL_NAME);
+	ZENITH_ASSERT_EQ(uHeaderHits, 1u,
+		"the committed FrontEnd.zscen must carry the starter HEADER element '%s' exactly once",
+		ZM_UI_StarterChoice::szHEADER_NAME);
+
+	for (u_int u = 0u; u < ZM_UI_StarterChoice::uCELL_COUNT; ++u)
+	{
+		ZENITH_ASSERT_EQ(auCellHits[u], 1u,
+			"the committed FrontEnd.zscen must carry starter CELL %u ('%s') exactly once. A "
+			"ZERO here is the mutation the pure units cannot see: the cell is missing from "
+			"the authoring loop, or its authored name no longer matches CellElementName, so "
+			"FindElement returns nullptr every frame and the row is dead.",
+			u, ZM_UI_StarterChoice::CellElementName(u));
+	}
 }
