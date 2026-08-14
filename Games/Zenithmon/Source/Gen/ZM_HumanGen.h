@@ -43,7 +43,16 @@ class Flux_AnimationClip;
 //   v1 -> v2: the shared bind space is CENTRE-ANCHORED (see the block below the
 //             recipe section). Every v1 bake on disk is feet-at-y=0 and would
 //             render sunk into the floor, so the bump is load-bearing.
-constexpr u_int uZM_HUMANGEN_VERSION = 2u;
+//   v2 -> v3: ZM_HUMAN_PROF_ASTER's hair moved GREY -> WHITE to clear the greybox
+//             palette's 0.15 separation floor (ZM_HumanData.cpp explains why).
+//             ★ THIS BUMP IS LOAD-BEARING FOR A REASON THAT IS EASY TO MISS: the
+//             bake stamp is (magic, version, file COUNT), NOT a content hash. A
+//             hair-colour edit changes Aster's .zmesh / _albedo.ztxtr / .zmodel
+//             BYTES while leaving the file count identical, so on a warm asset
+//             tree the stamp would still match and the v2 grey-haired bake would
+//             be served forever. Any future edit to a generation algorithm or to a
+//             ZM_HumanData variety axis owes the same bump.
+constexpr u_int uZM_HUMANGEN_VERSION = 3u;
 
 // The shared humanoid skeleton is EXACTLY these 16 bones (the frozen StickFigure
 // core names). ZM_AppendSharedHumanBones is the single canonical emit; both the

@@ -14,9 +14,13 @@ static_assert(uZM_NPC_MAX_STOCK <= ZM_UI_Shop::uMAX_INVENTORY,
 	"a row's stock cap must fit the shop screen, which rejects an oversized list outright");
 
 // ============================================================================
-// ZM_NpcData -- the authored Dawnmere NPCs (S6 item 3 SC3; S7 item 2 SC1 adds the
-// gated warden). Rows are in ZM_NPC_ID order; s_axNpcs[i].m_eId == i is asserted
-// by the tests. Per-row line and stock arrays are static and referenced by
+// ZM_NpcData -- the authored NPC roster (S6 item 3 SC3; S7 item 2 SC1 adds the
+// gated warden; the professor is the first row that does NOT stand in Dawnmere --
+// his scene placement in ProfLab is a LATER slice, and landing the row first is
+// what lets that slice be pure authoring with no data edit beside it).
+//
+// Rows are in ZM_NPC_ID order; s_axNpcs[i].m_eId == i is asserted by the tests.
+// Per-row line and stock arrays are static and referenced by
 // pointer + count, the same shape ZM_WorldSpec uses for its per-scene tables.
 // Column legend:
 //   id, "display name", role, human, lines, lineCount, stock, stockCount,
@@ -100,6 +104,24 @@ namespace
 		"Come find me again when you've trained a bit.",
 	};
 
+	// Professor Aster's lab greeting. PRE-STARTER FLAVOUR ONLY, and deliberately so:
+	// he introduces himself and the lab, and he does NOT hand anything over. The
+	// starter beat is its own later slice, and it needs a gated SECOND line set
+	// (the warden's ZM_StoryGate shape) rather than an edit to these -- so this row
+	// ships UNGATED today and is expected to grow a gate, which is why the unit
+	// covering it asserts what the row IS (a talker wearing Aster, no trainer) and
+	// deliberately does NOT assert that it is ungated.
+	//
+	// He names no creature, no item and no flag: every one of those is content a
+	// later slice owns, and a line naming one now would have to be rewritten rather
+	// than added to.
+	const char* const s_aszLinesAster[] =
+	{
+		"Ah -- you found the lab. I'm Professor Aster.",
+		"Thirty years studying these creatures, and they still surprise me.",
+		"Take a look around. The machines are friendlier than they look.",
+	};
+
 	// -- shop stock (SHOPKEEP rows only) --
 	// The data is entirely compile-time, so an author who pastes a ninth line
 	// should find out at BUILD time rather than at boot. The runtime unit stays --
@@ -111,6 +133,7 @@ namespace
 	static_assert(ZM_ARRLEN(s_aszLinesWarden)      <= uZM_NPC_MAX_LINES, "warden outgrew the dialogue queue");
 	static_assert(ZM_ARRLEN(s_aszLinesWardenGated) <= uZM_NPC_MAX_LINES, "warden refusal outgrew the dialogue queue");
 	static_assert(ZM_ARRLEN(s_aszLinesVesper)      <= uZM_NPC_MAX_LINES, "Vesper outgrew the dialogue queue");
+	static_assert(ZM_ARRLEN(s_aszLinesAster)       <= uZM_NPC_MAX_LINES, "Aster outgrew the dialogue queue");
 
 	const ZM_ITEM_ID s_aeStockClerk[] =
 	{
@@ -130,6 +153,11 @@ namespace
 		{ ZM_NPC_WANDERER,         "Wanderer",  ZM_NPC_ROLE_TALKER,    ZM_HUMAN_TOWN_ELDER,     s_aszLinesWanderer,  ZM_ARRLEN(s_aszLinesWanderer),  nullptr,        0,                          true,  { ZM_STORY_FLAG_NONE, true },            nullptr,                0u,                               ZM_TRAINER_NONE         },
 		{ ZM_NPC_ROUTE_WARDEN,     "Warden",    ZM_NPC_ROLE_TALKER,    ZM_HUMAN_TOWN_WARDEN,    s_aszLinesWarden,    ZM_ARRLEN(s_aszLinesWarden),    nullptr,        0,                          false, { ZM_STORY_FLAG_WARDEN_CLEARED, true },  s_aszLinesWardenGated,  ZM_ARRLEN(s_aszLinesWardenGated), ZM_TRAINER_NONE         },
 		{ ZM_NPC_RIVAL_VESPER,     "Vesper",    ZM_NPC_ROLE_TALKER,    ZM_HUMAN_RIVAL_VESPER,   s_aszLinesVesper,    ZM_ARRLEN(s_aszLinesVesper),    nullptr,        0,                          false, { ZM_STORY_FLAG_NONE, true },            nullptr,                0u,                               ZM_TRAINER_RIVAL_VESPER },
+		// ZM_TRAINER_NONE is spelled out, NOT omitted: the trailing column
+		// value-initialises to 0, and 0 is ZM_TRAINER_RIVAL_VESPER (see the header's
+		// trap note), so an omitted initialiser would silently make the professor the
+		// rival with no build error. He is a TALKER: the lab's beat is dialogue.
+		{ ZM_NPC_PROF_ASTER,       "Aster",     ZM_NPC_ROLE_TALKER,    ZM_HUMAN_PROF_ASTER,     s_aszLinesAster,     ZM_ARRLEN(s_aszLinesAster),     nullptr,        0,                          false, { ZM_STORY_FLAG_NONE, true },            nullptr,                0u,                               ZM_TRAINER_NONE         },
 	};
 
 #undef ZM_ARRLEN

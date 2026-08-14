@@ -157,12 +157,16 @@ namespace
 // restated. A unit that spelled "the tint is (0.61, 0.57, 0.43)" would move in
 // lockstep with the header and could not red anything.
 //
-// ★ AND THERE IS DELIBERATELY NO TINT-vs-NPC-PALETTE SEPARATION CLAUSE. It looks
-// like the obvious extra check and it is a trap: ZM_HUMAN_PROF_ASTER sits only
-// 0.0677 from the greybox grey (a booked known limit), so an Aster-vs-tint
-// distance below the margin is possible for reasons that have nothing to do with
-// this change -- and PlayerHome authors no NPCs at all, so the comparison would
-// be measuring two things that never share a frame.
+// ★ AND THERE IS DELIBERATELY NO TINT-vs-NPC-PALETTE SEPARATION CLAUSE, BUT THE
+// REASON IS NARROWER THAN IT USED TO BE. This comment used to rest on two legs:
+// that PlayerHome authors no NPCs, and that ZM_HUMAN_PROF_ASTER sat only 0.0677
+// from the greybox grey (a booked known limit) so a low Aster-vs-tint distance
+// could fire for reasons unrelated to this file. THE SECOND LEG IS DEAD --
+// Aster's hair moved GREY -> WHITE and he now sits 0.21547 from the grey (see
+// ZM_HumanData.cpp). The FIRST leg still stands on its own and is the whole
+// justification now: PlayerHome authors no NPCs at all, so the comparison would
+// measure two things that never share a frame. If PlayerHome ever gains an
+// occupant, this clause becomes worth adding rather than worth avoiding.
 ZENITH_TEST(ZM_WorldTraversal, PlayerHome_TintIsDistinctFromTheBlockoutGrey)
 {
 	const Zenith_Maths::Vector4 xTint = ZM_GetPlayerHomeInteriorTintColour();

@@ -15,6 +15,90 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-08-14 -- ZM-D-188 -- USER RULINGS on the three S8-item-1 design questions (starter grant, picker UX, Mom)
+
+**Three USER decisions, taken 2026-08-14 in response to five blockers raised by an
+adversarial review of the S8-item-1 plan.** Recorded here BEFORE implementation
+per this file's own rule that scope changes land as a user decision first.
+
+### Ruling 1 -- THE LAB IS THE REAL GRANT POINT
+
+**Decision:** remove the unconditional Fernfawn grant from
+`ZM_GameStateManager::RequestNewGame`. The player leaves home with an **EMPTY
+party** and genuinely chooses a starter from Professor Aster.
+
+**Why it was asked:** two production sites grant Fernfawn at New Game
+(`ZM_GameStateManager.cpp` OnStart and RequestNewGame). The shipped predicate is
+`ZM_CanEnterBattle` = `!xState.m_xParty.IsEmpty()`, so on the real path the party
+is NEVER empty, the starter screen never raises, `ZM_STORY_FLAG_STARTER_RECEIVED`
+is never set, and Aster speaks his pre-starter lines forever. **The starter
+screen was unreachable in a real playthrough** -- the intro beat would have
+shipped as a fixture-only feature. The shipped comment at the seed site already
+said verbatim that "the later lab beat replaces exactly this one line", so this
+ruling executes the original intent rather than changing it.
+
+**★ ACCEPTED COST, STATED PLAINLY.** This makes the pre-lab player genuinely
+PARTYLESS, which for the first time activates code that shipped proven-inert:
+`ZM_CanEnterBattle` and the `bPlayerCanBattle` arm of `ZM_MayTrainerEngage`. A
+partyless player walking past rival Vesper's 8 m sight cone in Dawnmere is a path
+that HAS units but has never run in a real playthrough. It also moves the
+starting state that ~41 migrated call sites and the D4 windowed fixture are built
+on. The slice that lands it owns that churn and owes coverage of the partyless
+trainer-engage path.
+
+**Rejected alternatives:** starter REPLACES the seeded Fernfawn (lower churn, but
+the scene reads as a swap rather than a first partner); starter is an ADDITIONAL
+monster (cheapest, but the choice carries least meaning and the party count
+contradicts the GDD).
+
+### Ruling 2 -- BUILD THE REAL THREE-WAY PICKER
+
+**Decision:** build `ZM_UI_StarterChoice`, a genuine pick-one-of-three presenter,
+modelled on the shipped `ZM_UI_SaveSlots` row-picker and **VERTICAL** so it rides
+the engine's existing focus navigation and needs ZERO new input actions (a
+horizontal picker would need new LEFT/RIGHT actions and move `ZM_ACTION_COUNT`
+8 -> 10 against boot units that `static_assert` their walk on it).
+
+**Why:** there is no pick-one-of-three primitive anywhere -- `ZM_DIALOGUE_CHOICE`
+is NONE/YES/NO and `ArmChoice` takes exactly two labels, so the shipped prompt
+structurally cannot serve the beat. `Status.md` calls the presenter "the only
+missing piece", which reads as an expectation of a real screen.
+
+**Rejected alternative:** chaining the shipped yes/no prompt (offer Fernfawn ->
+NO -> offer Kindlet -> NO -> offer Finlet). Zero new systems and zero
+`FrontEnd.zscen` churn, but a real UX compromise on the game's signature moment.
+
+**Cost accepted:** a new presenter class, a new `ZM_MENU_SCREEN` id, arms in both
+generalized MenuStack switches, and an intentional re-author of the committed
+`FrontEnd.zscen`. FrontEnd is UI-only with no terrain, so a HEADLESS
+`Null_vs2022_Debug_Win64_True` boot authors it -- no windowed boot needed.
+
+### Ruling 3 -- THE INTRO SHIPS WITHOUT MOM
+
+**Decision:** author NO Mom/Maren NPC and no PlayerHome occupant. The intro beat
+is wake -> leave home -> cross town -> meet Aster -> choose.
+
+**Why:** `ZM_HUMAN_MOM_MAREN` and `ZM_HUMAN_TOWN_VILLAGER` are BOTH CASUAL+BROWN,
+and the palette blend reads only outfit primary/accent + hair COLOUR -- the one
+axis on which they differ (hair STYLE 3 vs 0) is not read. Both resolve to the
+identical triple **(0.4220, 0.2265, 0.1010)**: separation exactly **0.0000**
+against a 0.15 floor. Nothing can see it today only because Maren has no
+`ZM_NpcData` row. All seven CASUAL cells were swept and NONE clears every shipped
+neighbour, so no one-token hair edit fixes it -- a real fix needs a new
+`ZM_HUMAN_OUTFIT_HOMESPUN` family (enum append + a `ZM_HumanOutfitColours` arm +
+a `ZM_HumanTorsoPaint` arm, because the albedo images must stay pairwise
+distinct, + another HumanGen version bump), and the best candidate found leaves
+only **0.017** of margin.
+
+**Reversibility:** fully additive. If a Mom is wanted she is a separate slice
+ahead of the intro's final polish, with her own sweep for a cell clearing 0.20 --
+not a bolt-on to an existing slice.
+
+**Tests that lock these:** none in this entry; each ruling is locked by the slice
+that implements it. Ruling 1's lock must assert the party contains the CHOSEN
+species and NOT Fernfawn when the player picks Kindlet or Finlet -- otherwise the
+assertion is satisfiable by the old seed and proves nothing.
+
 ## 2026-08-14 -- ZM-D-187 -- the `zm-tests` boot-unit pin was RED on master; fix-forward to 3277, and the History changelog backfilled
 
 **What shipped:** three stale numbers corrected, no production code touched.

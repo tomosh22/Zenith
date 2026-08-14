@@ -66,8 +66,14 @@ void ZM_AppendHumanAppearanceMesh(const ZM_HumanRecipe& xRecipe, ZM_GenMesh& xMe
 // keyed to those seven names -- NOT an edit to the three values below, which
 // still paint ProfLab's seven blocks, Dawnmere's four, and every other prop.
 // ★ THESE THREE VALUES MUST NOT MOVE. Live boot units measure every palette
-// entry's separation from them (ZM_Tests_HumanGen.cpp, ZM_Tests_NpcData.cpp),
-// and ZM_HUMAN_PROF_ASTER already sits only 0.0677 away.
+// entry's separation from them (ZM_Tests_HumanGen.cpp, ZM_Tests_NpcData.cpp).
+// This note used to add "and ZM_HUMAN_PROF_ASTER already sits only 0.0677 away"
+// as the sharpest illustration; that gap is CLOSED (his hair moved GREY -> WHITE
+// and he now sits 0.21547 away -- see ZM_HumanData.cpp for why WHITE and not
+// another slot). The MUST-NOT-MOVE rule is unaffected and does not weaken: these
+// three floats are additionally pixel-asserted by ZM_AutoTests_InteriorTint and
+// ZM_AutoTests_PlayerHomeTintPixels, so moving them to buy a future row headroom
+// would red those instead. Move the HUMAN, never the grey.
 inline constexpr float fZM_GREYBOX_FALLBACK_R = 0.52f;
 inline constexpr float fZM_GREYBOX_FALLBACK_G = 0.55f;
 inline constexpr float fZM_GREYBOX_FALLBACK_B = 0.60f;

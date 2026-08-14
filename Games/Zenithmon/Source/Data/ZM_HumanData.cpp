@@ -22,7 +22,37 @@ namespace
 		{ ZM_HUMAN_PLAYER_F,        "PlayerF",     ZM_HUMAN_BUILD_SLIGHT,  ZM_HUMAN_SKIN_FAIR,  1u, ZM_HUMAN_HAIR_AUBURN, ZM_HUMAN_OUTFIT_TRAVELER, ZM_HUMAN_ATTACHMENT_CAP      },
 
 		// --- Named story cast (GDD 3.1-3.3) ---
-		{ ZM_HUMAN_PROF_ASTER,      "Aster",       ZM_HUMAN_BUILD_AVERAGE, ZM_HUMAN_SKIN_TAN,   2u, ZM_HUMAN_HAIR_GREY,   ZM_HUMAN_OUTFIT_LABCOAT,  ZM_HUMAN_ATTACHMENT_GLASSES  },
+		// ★ ASTER'S HAIR IS WHITE, NOT GREY, AND THAT IS A PALETTE DECISION RATHER
+		// THAN A CHARACTER ONE. The greybox palette is
+		// 0.45*outfit.primary + 0.25*outfit.accent + 0.30*hair and reads NOTHING
+		// else, so OUTFIT and HAIR are the only two axes that can move him. On
+		// LABCOAT + GREY he resolved to (0.4730, 0.5880, 0.5695) -- only 0.0677
+		// from the fZM_GREYBOX_FALLBACK_* blockout grey against a 0.15 floor, i.e.
+		// the professor rendered as an ordinary grey prop and "he is painted" and
+		// "he was never wired" looked identical. LABCOAT + WHITE resolves to
+		// (0.6050, 0.7200, 0.7015), which is 0.21547 from that grey. Those three
+		// values MUST NOT MOVE (they are pixel-asserted by ZM_AutoTests_InteriorTint
+		// and ZM_AutoTests_PlayerHomeTintPixels), so the human had to move instead.
+		//
+		// WHITE is the best of the seven hair slots and not merely an adequate one:
+		// over LABCOAT it is the ONLY slot that clears 0.15 by a real margin
+		// (BLACK 0.2052 and BROWN 0.1702 also clear the grey but land 0.094 / 0.101
+		// from the Caretaker, and BLONDE / AUBURN / GREY / DYED all fail the grey
+		// outright). ZM-D-164's 49-cell outfit x hair sweep found this same cell and
+		// rejected it only because LABCOAT was "the professor's own outfit" -- a
+		// reason that evaporates now that the professor is the one wearing it.
+		//
+		// ★ KNOWN, ACCEPTED, NOT TEST-VISIBLE: at (0.6050, 0.7200, 0.7015) he sits
+		// 0.13635 from ZM_HUMAN_LEADER_HALVARD (ICE LEADER + BLONDE). The 0.15 floor
+		// is an invariant over the AUTHORED cast, never over the whole 35-row roster
+		// -- only 6 of 35 rows clear it against every other row today and several
+		// pairs are exactly 0.0000 apart -- and Halvard is authored into no scene and
+		// named by no ZM_NpcData row, so the two can never share a frame. Against the
+		// six humans the cast actually wears, Aster's nearest is the Caretaker at
+		// 0.4573. If Halvard is ever authored, he is the row that moves.
+		// Build / skin / hair style / attachment do NOT enter the palette, so they
+		// stay free content choices and read purely as the character.
+		{ ZM_HUMAN_PROF_ASTER,      "Aster",       ZM_HUMAN_BUILD_AVERAGE, ZM_HUMAN_SKIN_TAN,   2u, ZM_HUMAN_HAIR_WHITE,  ZM_HUMAN_OUTFIT_LABCOAT,  ZM_HUMAN_ATTACHMENT_GLASSES  },
 		{ ZM_HUMAN_MOM_MAREN,       "Maren",       ZM_HUMAN_BUILD_AVERAGE, ZM_HUMAN_SKIN_FAIR,  3u, ZM_HUMAN_HAIR_BROWN,  ZM_HUMAN_OUTFIT_CASUAL,   ZM_HUMAN_ATTACHMENT_NONE     },
 		{ ZM_HUMAN_RIVAL_VESPER,    "Vesper",      ZM_HUMAN_BUILD_SLIGHT,  ZM_HUMAN_SKIN_PALE,  4u, ZM_HUMAN_HAIR_BLACK,  ZM_HUMAN_OUTFIT_TRAVELER, ZM_HUMAN_ATTACHMENT_SATCHEL  },
 

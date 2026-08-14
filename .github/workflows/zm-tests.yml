@@ -194,6 +194,18 @@ jobs:
           #
           # History, newest first (the DERIVATION is the audit trail; the OBSERVED
           # number is the authority):
+          #   3280  S8 item 1 SC-A -- Professor Aster data layer + the mandatory
+          #                   palette re-author, observed 2026-08-14 on a Null_
+          #                   build (3280 ran / 3278 passed / 0 failed / 2 skipped).
+          #                   +3 ZM units, no engine units:
+          #                     ZM_Gen.HumanGen_ProfessorPaletteIsTheFrozenLabcoatWhiteTriple
+          #                     ZM_Data.Npc_ProfessorRowIsATalkerNamingAsterWithNoTrainer
+          #                     ZM_Data.Npc_EveryAuthoredRowClearsTheBlockoutFallbackGrey
+          #                   NOTE two EXISTING literals also moved and are NOT new
+          #                   units: uEXPECTED_NPCS 6->7 (ZM_Tests_NpcData.cpp) and
+          #                   aeCAST/uCAST_COUNT 6u->7u (ZM_Tests_HumanGen.cpp).
+          #                   run_unit_gate.ps1's engine default stays 1638 -- SC-A
+          #                   touched no file under Zenith/.
           #   3277  shared grass/rock ground sets as engine assets (3aeaa2d4),
           #                   observed 2026-08-14 on a Null_ build
           #                   (3277 ran / 3275 passed / 0 failed / 2 skipped).
@@ -560,7 +572,7 @@ jobs:
           #   2817  ZM-D-173  = 2809 + 8: four ENGINE sensor-raycast units plus
           #                   two camera fixtures and two Home-placement units.
           $exe = 'Games\Zenithmon\Build\output\win64\null_vs2022_debug_win64_true\zenithmon.exe'
-          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 3277 -TimeoutSec 600
+          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 3280 -TimeoutSec 600
           if ($LASTEXITCODE -ne 0) { Write-Error "boot unit tests failed (see log above)"; exit $LASTEXITCODE }
 
       - name: Run Zenithmon tests

@@ -32,7 +32,7 @@ namespace
 {
 	// Spelled in the TEST, not read back off the table, so "the roster changed"
 	// is a failure rather than a silently-agreeing tautology.
-	constexpr u_int uEXPECTED_NPCS = 6;   // S7 item 3 SC8 added the rival
+	constexpr u_int uEXPECTED_NPCS = 7;   // S7 item 3 SC8 added the rival; +1 for Professor Aster
 
 	const ZM_NpcData& Npc(u_int i) { return ZM_GetNpcData((ZM_NPC_ID)i); }
 
@@ -1071,4 +1071,131 @@ ZENITH_TEST(ZM_Data, Npc_AuthoredAppearancesAreMutuallyDistinct)
 		"the %u authored NPC rows now wear only %u distinct appearances (want >= %u) "
 		"-- collapsing the m_eHuman column makes the W4 wiring correct and INVISIBLE",
 		(u_int)ZM_NPC_COUNT, uDistinctAppearances, uMIN_DISTINCT_APPEARANCES);
+}
+
+// ---- Professor Aster --------------------------------------------------------
+
+// The professor's row is DATA AHEAD OF PLACEMENT: nothing authors him into a scene
+// yet, so without a unit the row could be wrong in every way that matters and no
+// boot would notice until the slice that stands him in the lab.
+//
+// ★ READ THE NAME BEFORE ADDING A CLAUSE. It says what the row IS -- a talker,
+// wearing Aster, naming no trainer -- and it deliberately says NOTHING about the
+// row being ungated. The starter beat is a later slice and it makes this row
+// STORY-GATED (a second, gated line set in the warden's ZM_StoryGate shape). A
+// clause asserting m_xLineGate is NONE, or a name promising "...IsAnUngatedTalker",
+// would then have to be deleted by the slice it exists to constrain -- and a test
+// whose NAME asserts the opposite of what the code does is the exact failure mode
+// this codebase has been bitten by before. So: gate state is UNPINNED here on
+// purpose, and ZM_SelectNpcLines' own units already cover both gate polarities.
+ZENITH_TEST(ZM_Data, Npc_ProfessorRowIsATalkerNamingAsterWithNoTrainer)
+{
+	const ZM_NpcData& xAster = ZM_GetNpcData(ZM_NPC_PROF_ASTER);
+
+	// Index == id. Fetching by enumerator is only meaningful if the row it lands on
+	// is actually the professor's; the roster-wide unit above proves this for every
+	// row, and restating it here keeps the clauses below about a known row.
+	ZENITH_ASSERT_EQ((u_int)xAster.m_eId, (u_int)ZM_NPC_PROF_ASTER,
+		"the row at the professor's index does not carry his id");
+
+	// ROLE. TALKER is what routes him through TryPushDialogue; given any other role
+	// he would open a shop or a heal prompt in a lab that has neither.
+	ZENITH_ASSERT_EQ((u_int)xAster.m_eRole, (u_int)ZM_NPC_ROLE_TALKER,
+		"the professor has role %u, not TALKER -- the lab's beat is dialogue",
+		(u_int)xAster.m_eRole);
+
+	// APPEARANCE. The palette re-author (ZM_HUMAN_HAIR_WHITE) is what makes him
+	// visible against the blockout grey, and it only reaches the world if this row
+	// actually names him.
+	ZENITH_ASSERT_EQ((u_int)xAster.m_eHuman, (u_int)ZM_HUMAN_PROF_ASTER,
+		"the professor's row wears human id %u instead of ZM_HUMAN_PROF_ASTER",
+		(u_int)xAster.m_eHuman);
+
+	// TRAINER. ★ THE ZERO IS A TRAP: ZM_TRAINER_RIVAL_VESPER == 0, so a row that
+	// drops its trailing initialiser value-initialises into being the RIVAL with no
+	// compile error. This is the per-row half of that guard; the roster-wide half is
+	// Npc_ExactlyOneRowNamesARegisteredTrainer.
+	ZENITH_ASSERT_EQ((u_int)xAster.m_eTrainer, (u_int)ZM_TRAINER_NONE,
+		"the professor names trainer %u -- a dropped trailing initialiser would make "
+		"him ZM_TRAINER_RIVAL_VESPER (id 0) and he would challenge the player",
+		(u_int)xAster.m_eTrainer);
+
+	// LINES. Both ends: the cap, because QueueLines is ALL-OR-NOTHING and an
+	// over-cap row goes completely MUTE rather than losing its tail; and non-empty,
+	// because a talker with no lines is a silent prop the player can walk up to.
+	ZENITH_ASSERT_GT(xAster.m_uLineCount, 0u,
+		"the professor is a TALKER with no lines -- he would raise a dialogue box "
+		"with nothing in it");
+	ZENITH_ASSERT_LE(xAster.m_uLineCount, uZM_NPC_MAX_LINES,
+		"the professor has %u lines against a cap of %u -- QueueLines rejects an "
+		"oversized list WHOLE, so he would be mute rather than truncated",
+		xAster.m_uLineCount, uZM_NPC_MAX_LINES);
+	ZENITH_ASSERT_NOT_NULL(xAster.m_paszLines,
+		"the professor reports a non-zero line count with a null array");
+
+	// STOCK. Non-SHOPKEEP rows carry none; stock on a role that never opens a shop
+	// is dead content the counter can never reach.
+	ZENITH_ASSERT_EQ(xAster.m_uStockCount, 0u,
+		"the professor is not a SHOPKEEP but carries %u stocked items",
+		xAster.m_uStockCount);
+}
+
+// ★ THE STRUCTURAL FIX, AND THE REASON IT IS HERE RATHER THAN IN THE Gen SUITE.
+// The "every authored appearance clears the fallback grey" promise used to exist in
+// exactly ONE place: the HAND-MAINTAINED aeCAST array in ZM_Tests_HumanGen.cpp.
+// That array has no compiler edge to ZM_NpcData's m_eHuman column, so a row added
+// without also editing it shipped completely uncovered -- which is precisely how
+// ZM_HUMAN_PROF_ASTER sat 0.0677 from the grey through green boot after green boot.
+//
+// This unit DERIVES its walk from the roster instead of mirroring it, so a row added
+// tomorrow is covered the moment it exists and nobody has to remember anything.
+// (The aeCAST list is kept as the Gen-layer's palette-side check, but it is no
+// longer the only thing standing between a new row and an Aster-class defect.)
+//
+// WHY vs-GREY IS A SEPARATE PROMISE FROM PAIRWISE DISTINCTNESS: the pairwise unit
+// above proves no two NPCs look like EACH OTHER. A whole roster could satisfy that
+// while every row sat on top of the blockout grey, and then every NPC would be
+// distinguishable from every other NPC and indistinguishable from an UNRESOLVED
+// one -- "he is painted" and "he was never wired" would render identically.
+ZENITH_TEST(ZM_Data, Npc_EveryAuthoredRowClearsTheBlockoutFallbackGrey)
+{
+	const Zenith_Maths::Vector4 xFallback = ZM_GetHumanPaletteFallbackColour();
+
+	u_int uChecked = 0u;
+	for (u_int i = 0; i < ZM_NPC_COUNT; ++i)
+	{
+		const ZM_NpcData& x = Npc(i);
+
+		// An out-of-roster m_eHuman resolves to the fallback grey BY CONTRACT, so it
+		// would fail the separation clause below with a misleading message about a
+		// palette that is behaving exactly as specified. Name the real fault first.
+		ZENITH_ASSERT_LT((u_int)x.m_eHuman, (u_int)ZM_HUMAN_COUNT,
+			"'%s' names human id %u, which is outside the roster -- his colour IS the "
+			"fallback grey, so the clause below would be about a grey cube",
+			x.m_szDisplayName, (u_int)x.m_eHuman);
+		if ((u_int)x.m_eHuman >= (u_int)ZM_HUMAN_COUNT)
+		{
+			continue;   // the macros CONTINUE past a failure; do not measure garbage
+		}
+
+		++uChecked;
+		const float fVsGrey = ZM_HumanPaletteSeparation(
+			ZM_GetHumanPaletteColour(x.m_eHuman), xFallback);
+		ZENITH_ASSERT_TRUE(fVsGrey >= fZM_HUMAN_PALETTE_MIN_SEPARATION,
+			"'%s' resolves %.5f from the blockout grey (want >= %.5f) -- a resolved "
+			"NPC that still reads as grey is indistinguishable from an UNRESOLVED "
+			"one, which is the ZM_HUMAN_PROF_ASTER defect exactly",
+			x.m_szDisplayName, fVsGrey, fZM_HUMAN_PALETTE_MIN_SEPARATION);
+	}
+
+	// TOTALITY, in the idiom the rest of this suite uses. A walk bounded by a count
+	// that is itself zero passes having measured NOTHING, and an emptied roster is
+	// exactly the state that would produce one. Asserting the exact row count (not
+	// merely non-zero) also catches the continue arm above having swallowed a row.
+	ZENITH_ASSERT_EQ(uChecked, (u_int)ZM_NPC_COUNT,
+		"the walk measured %u of %u authored rows -- the clauses above are vacuous "
+		"to the extent it skipped any",
+		uChecked, (u_int)ZM_NPC_COUNT);
+	ZENITH_ASSERT_GT(uChecked, 0u,
+		"the authored NPC roster is empty, so this unit proved nothing");
 }

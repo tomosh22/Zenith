@@ -535,11 +535,41 @@ real trainer battle, and his identity survives save/reload by a zero-byte route.
      missing", only "these ids collide". Trimming `aeCAST` and `uCAST_COUNT` together is
      green by construction. `Npc_AuthoredAppearancesAreMutuallyDistinct` reads the REAL
      column and is the unit that cannot be fooled this way.
-   - **A LATENT PALETTE TRAP, BOOKED NOT FIXED.** `ZM_HUMAN_PROF_ASTER` (`LABCOAT`+`GREY`)
-     resolves to `(0.4730, 0.5880, 0.5695)` -- only **0.0677** from the blockout fallback
-     grey `(0.52, 0.55, 0.60)`, i.e. 45% of the margin. If Professor Aster is ever given an
-     authored `ZM_NpcData` row, his greybox body will be indistinguishable from an UNWIRED
-     one, and the vs-grey clause reds the moment he joins `aeCAST`. Untouched by ZM-D-164.
+   - **~~A LATENT PALETTE TRAP, BOOKED NOT FIXED.~~ CLOSED 2026-08-14 (S8 SC-A).**
+     `ZM_HUMAN_PROF_ASTER` (`LABCOAT`+`GREY`) resolved to `(0.4730, 0.5880, 0.5695)` --
+     only **0.0677** from the blockout fallback grey `(0.52, 0.55, 0.60)`, i.e. 45% of the
+     margin. **★ THE PREDICTION IN THIS BULLET WAS EXACTLY RIGHT AND CAME DUE.** It said
+     the clause "reds the moment he joins `aeCAST`"; S8 SC-A gives Aster an authored
+     `ZM_NpcData` row AND adds him to `aeCAST`, so the trap fired on schedule and was fixed
+     rather than re-booked. His hair moved `HAIR_GREY` -> `HAIR_WHITE`: `LABCOAT`+`WHITE`
+     resolves to **(0.6050, 0.7200, 0.7015)**, **0.21547** from the grey. That is the cell
+     ZM-D-164's 49-cell sweep already scored highest (line 402 above) and rejected ONLY
+     because `LABCOAT` is the professor's outfit -- a reason that evaporated once the
+     professor became the one wearing it. The grey itself did not move; it is pixel-asserted
+     by `ZM_AutoTests_InteriorTint` / `ZM_AutoTests_PlayerHomeTintPixels`. **Move the human,
+     never the grey.** `uZM_HUMANGEN_VERSION` went `2u` -> `3u`, because the bake stamp is
+     `(magic, version, file COUNT)` and a hair edit changes Aster's bytes but not the count,
+     so a warm tree would serve the stale grey bake forever.
+   - **★ WHY IT WAS INVISIBLE: THE vs-GREY CLAUSE LIVED IN A HAND-MAINTAINED LIST.** It
+     existed only inside `aeCAST` in `ZM_Tests_HumanGen.cpp`, which has no compiler edge to
+     `ZM_NpcData`'s `m_eHuman` column -- so a roster row added without also editing that
+     array shipped uncovered. `ZM_Data::Npc_EveryAuthoredRowClearsTheBlockoutFallbackGrey`
+     now DERIVES the walk from the roster with a `uChecked == ZM_NPC_COUNT` totality clause,
+     so the next row cannot repeat it. A hand-maintained parallel list is the defect here,
+     not the missing entry in it.
+   - **★ A NEW, ACCEPTED, NOT-TEST-VISIBLE PROXIMITY -- BOOKED HONESTLY.** At
+     `(0.6050, 0.7200, 0.7015)` Aster sits **0.13635** from `ZM_HUMAN_LEADER_HALVARD`
+     (`ICE LEADER`+`BLONDE`), below the 0.15 floor. This is NOT a regression of a held
+     invariant: the floor binds the AUTHORED cast, never the 35-row roster -- only **6 of
+     35** rows clear it against every other row today, and several pairs sit at exactly
+     **0.0000** (`PLAYER_M`/`TRAINER_RAMBLER`/`TRAINER_RIDGEWALKER`/`TRAINER_SCOUT`;
+     `TRAINER_RANGER`/`TOWN_FIELDHAND`/`TOWN_DOCKWORKER`;
+     `MOM_MAREN`/`TOWN_VILLAGER`). Halvard is in no scene and no `ZM_NpcData` row, so the
+     two can never share a frame; Aster's nearest AUTHORED neighbour is the Caretaker at
+     **0.4573**. **If Halvard is ever authored, HE is the row that moves** -- no `LABCOAT`
+     hair slot clears both the grey and the authored cast (`BLACK` 0.2052/0.0941, `BROWN`
+     0.1702/0.1008, and `BLONDE`/`AUBURN`/`GREY`/`DYED` fail the grey outright), so `WHITE`
+     is the only slot that clears the gate that actually exists.
    - **THE COVERAGE BOUNDARY IS CLOSED (ZM-D-181).** `ZM_GreyboxVisual` is still a
      file-local class that cannot be NAMED from a `Tests/` TU, but boot units now drive
      it through its registered component META (`GetMetaByName("ZM_GreyboxVisual")` ->

@@ -3,16 +3,19 @@
 **Last updated:** 2026-08-14
 
 **★ LIVE PIN (UPDATED 2026-08-14):
-ZM boot `3277`; engine boot (Null Combat) `1638`; registry **61**.** Observed
-2026-08-14 on a clean `Null_vs2022_Debug_Win64_True` Zenithmon build:
-`3277 ran / 3275 passed / 0 failed / 2 skipped`, and
-`zenith test Zenithmon --headless` = **61 passed / 0 failed** (total 1,307,690 ms,
-avg 27,240 ms; slowest `ZM_MilestoneAutosave_Test` at 107,587 ms / 134 frames).
+ZM boot `3280`; engine boot (Null Combat) `1638`; registry **61**.** Observed
+2026-08-14 on a clean `Null_vs2022_Debug_Win64_True` Zenithmon build after S8
+SC-A: `3280 ran / 3278 passed / 0 failed / 2 skipped`, and
+`zenith test Zenithmon --headless` = **61 passed / 0 failed** (total 1,106,776 ms,
+avg 23,055 ms; slowest `ZM_MilestoneAutosave_Test` at 89,553 ms / 134 frames).
+The 3277 -> 3280 move is **+3 ZM units from SC-A** (the professor-palette gate,
+the Aster NPC-row gate, and the derivation-walked vs-grey gate); engine UNMOVED
+at 1638 because SC-A touched no file under `Zenith/`.
 **★ `registry` read 55 here and that was ALSO stale** -- this block was never
 updated when the input program's WP3b grew the automated suite 55 -> 61 with the
 six `ZM_Touch*` tests, even though the prose LOWER IN THIS SAME FILE said so
 explicitly. Corrected to the enumerated count. The current pins are
-`zm-tests.yml` (`-Baseline 3277`) and `run_unit_gate.ps1` (default 1638, the
+`zm-tests.yml` (`-Baseline 3280`) and `run_unit_gate.ps1` (default 1638, the
 ENGINE number -- never used for Zenithmon).
 
 **★★ 3276 -> 3277 IS A FIX-FORWARD, NOT A FEATURE BUMP. THE `zm-tests` GATE WAS
@@ -932,13 +935,60 @@ SUB-COMMITS HAVE LANDED (ZM-D-174/175/176/177); THE BOX IS NOT TICKED AND MUST N
 - **ZM-D-177** -- the tint pixel probe's absolute framebuffer bounds retracted as a false premise;
   its relative separation kept unchanged.
 
-*STILL NOT BUILT -- what item 1 needs before its box may be ticked:* the Dawnmere lab **EXTERIOR**
-+ door trigger + `FromLab` spawn; **Professor Aster** (NPC row + palette + authored into ProfLab --
-note the review found Mom/Maren's palette collides at EXACTLY 0.0000 with the Villager's, so any
-new human owes a palette re-author); the **starter-choice SCREEN** -- the model and the grant both
-ship, so only the presenter is missing; and the **intro beat** itself. There is no cutscene or
-movie system anywhere in the codebase, and none is in scope: "Intro" here means a playable
-gameplay beat.
+**★★ 2026-08-14: ITEM 1 IS NOW PLANNED IN SIX SLICES (SC-A..SC-F), SC-A HAS LANDED, AND THREE USER
+RULINGS UNBLOCKED IT (ZM-D-188).** A 9-agent adversarial review of the plan returned
+**NEEDS_REVISION from all three critics with 5 blockers**; the blockers are recorded below against
+the slices they hit, so the next session inherits the findings rather than rediscovering them.
+
+*LANDED (SC-A, 2026-08-14):* **Professor Aster's data layer + the mandatory palette re-author.**
+Aster's hair moved `HAIR_GREY` -> `HAIR_WHITE` because `LABCOAT`+`GREY` sat **0.0677** from the
+blockout fallback grey against a **0.15** floor -- a pre-existing defect `ZM_HumanAppearance.h`
+had booked in-source, which `Shortfalls.md` had predicted "reds the moment he joins `aeCAST`",
+which is exactly what giving him an NPC row does. `LABCOAT`+`WHITE` = **(0.6050, 0.7200, 0.7015)**,
+**0.21547** from the grey. `uZM_HUMANGEN_VERSION` `2u` -> `3u` (the bake stamp is
+`(magic, version, file COUNT)`, so a hair edit changes his bytes but not the count and a warm tree
+would serve the stale bake forever). +3 boot units, ZM boot pin **3277 -> 3280 OBSERVED**.
+**★ A NEW ACCEPTED LIMIT, BOOKED NOT HIDDEN:** Aster now sits **0.13635** from
+`ZM_HUMAN_LEADER_HALVARD`, below the floor. That floor binds the AUTHORED cast, never the 35-row
+roster (only 6 of 35 rows clear it against every other row; several pairs are exactly 0.0000), and
+Halvard is in no scene and no NPC row. **If Halvard is ever authored, HE is the row that moves.**
+
+*STILL NOT BUILT -- what item 1 needs before its box may be ticked:*
+- **SC-B** the starter-choice SCREEN presenter (`ZM_UI_StarterChoice`, VERTICAL so it needs zero
+  new input actions). Re-authors `FrontEnd.zscen`, but headless-authorable. ★ Critic finding: all
+  12 proposed units test pure static maps and NONE can see the authored screen; needs a
+  `ZM_CommittedSceneBytes` needle on the panel + three cell names, or a mis-typed element name
+  ships a screen that is invisible with every test green.
+- **SC-C** Aster AUTHORED into `ProfLab.zscen` at **IDENTITY ROTATION** (which makes the ZM-D-183
+  frozen-quaternion hazard unreachable by construction). ★ TWO blocker-class findings: (1) the
+  proposed anchor (x=-4.5, z=+1.0) puts him ~71.6 deg off-axis against a ~48.5 deg half-angle, i.e.
+  **off-screen at the arrival pose**, and no proposed unit asserts he is VISIBLE; (2)
+  `ZM_AutoTests_InteriorTint.cpp` is `m_bRequiresGraphics=false` (a HARD CI gate, not
+  skipped-as-passed) and counts `ZM_Greybox`-material entities expecting exactly 7 -- Aster's
+  HUMAN_FALLBACK body makes 8 on a cold CI tree. That file is in NO slice's edit list.
+- **SC-D** Dawnmere lab-site ground truth (measure -> freeze -> rebuild). ★ Finding: needs a
+  WINDOWED boot on a cold tree (the plan claimed headless), and its oracle must treat an ABSENT lab
+  shell as "no body to ignore" or it hard-FAILs on the very run it exists to perform.
+- **SC-E** lab EXTERIOR + door trigger + `FromLab` spawn + ProfLab exit. **THE ONLY SLICE THAT
+  RE-AUTHORS `Dawnmere.zscen`, AND IT CANNOT BE DONE HEADLESS.** Both halves MUST land together:
+  `IsWarpDestinationValid` reads only the compiled tag list, so `RequestWarp(2,"FromLab")` already
+  returns TRUE on master while no spawn point carries the tag -- shipping the exit alone parks the
+  warp machine in `WAITING_FOR_SPAWN` forever (no timeout, opaque fade, frozen player).
+  `Zenithmon.cpp:2707-2714` already documents this and IS the spec for the slice.
+- **SC-F** the intro beat. There is no cutscene or movie system anywhere in the codebase and none
+  is in scope: "Intro" means a PLAYABLE gameplay beat.
+
+**★ THE THREE USER RULINGS (ZM-D-188) THAT UNBLOCKED THE PLAN -- do not re-litigate these:**
+1. **THE LAB IS THE REAL GRANT POINT.** The unconditional Fernfawn grant comes OUT of
+   `ZM_GameStateManager::RequestNewGame`; the player leaves home with an EMPTY party. Without this
+   the starter screen was **unreachable in a real playthrough** (party never empty -> picker never
+   raises), which is what two critics independently called a blocker. Accepted cost: first real-path
+   activation of `ZM_CanEnterBattle` and the `bPlayerCanBattle` arm of `ZM_MayTrainerEngage` (a
+   partyless player crossing Vesper's 8 m sight cone), plus ~41 fixture call sites.
+2. **BUILD THE REAL 3-WAY PICKER**, not a chain of the shipped 2-label yes/no prompt.
+3. **THE INTRO SHIPS WITHOUT MOM.** `MOM_MAREN` and `TOWN_VILLAGER` are both CASUAL+BROWN and the
+   blend ignores hair STYLE, so they collide at EXACTLY 0.0000; no one-token fix exists (all seven
+   CASUAL cells swept), it needs a new `OUTFIT_HOMESPUN` family. Separate slice if ever wanted.
 
 **★ SC1 CLOSED A LIVE WEDGE THAT WAS ALREADY SHIPPED.** `ZM_WorldSpec` has carried the ProfLab row
 (build index 41, INTERIOR, tag `"Door"`) for some time, and `IsWarpDestinationValid` consults ONLY

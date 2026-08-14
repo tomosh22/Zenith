@@ -47,9 +47,14 @@
 //                                      palette is TOTAL (finite, in-range, pure)
 //                                      and never asserts on the sentinel or on
 //                                      garbage; the fallback IS the shipped grey.
-//  20. HumanGen_PaletteDistinctness -- the five appearances the Dawnmere cast
+//  20. HumanGen_PaletteDistinctness -- the seven appearances the authored cast
 //                                      wears are numerically separated from each
 //                                      other AND from the fallback grey.
+// 20b. HumanGen_ProfessorPaletteIsTheFrozenLabcoatWhiteTriple -- Aster's resolved
+//                                      LABCOAT+WHITE colour and its 0.21547
+//                                      distance from the blockout grey are PINNED,
+//                                      closing the 0.0677 known limit as a gate
+//                                      rather than as a comment.
 //  21. HumanGen_BodyMetricsPinned  -- the two v2 anchor constants re-derive from a
 //                                      freshly built mesh, and the metric is
 //                                      body-only (hair/attachment cannot move it).
@@ -2731,10 +2736,10 @@ ZENITH_TEST(ZM_Gen, HumanGen_PaletteTotality)
 }
 
 // ############################################################################
-// 20. Known-limit W4: the Dawnmere cast is visibly distinct
+// 20. Known-limit W4: the authored cast is visibly distinct
 // ############################################################################
 
-// THE POINT OF W4. The six appearances the authored Dawnmere NPCs wear
+// THE POINT OF W4. The seven appearances the authored NPC rows wear
 // (ZM_NpcData.cpp's m_eHuman column) must be numerically separated from one
 // another and from the fallback grey -- otherwise the wiring is correct and
 // INVISIBLE, which is precisely the state Docs/Status.md records.
@@ -2742,9 +2747,15 @@ ZENITH_TEST(ZM_Gen, HumanGen_PaletteTotality)
 // uCAST_COUNT is a HAND-MAINTAINED mirror of that column and there is no compiler
 // edge between them, so an m_eHuman edit that is not mirrored here leaves this
 // unit GREEN AND BLIND -- it would keep proving five ids distinct while a sixth
-// shipped uncovered. The roster-COUPLED unit
-// (ZM_Data::Npc_AuthoredAppearancesAreMutuallyDistinct) is what actually catches
-// that; this list exists to keep the PALETTE half honest without the dependency.
+// shipped uncovered. TWO roster-COUPLED units cover that blind spot, and between
+// them they mean this hand-list can no longer be the only thing standing between a
+// new row and an Aster-class defect:
+//   * ZM_Data::Npc_AuthoredAppearancesAreMutuallyDistinct -- the PAIRWISE half;
+//   * ZM_Data::Npc_EveryAuthoredRowClearsTheBlockoutFallbackGrey -- the VS-GREY
+//     half, which used to live ONLY here, where a row added without editing this
+//     array shipped uncovered.
+// This list is kept because it keeps the PALETTE half honest without taking the
+// ZM_NpcData (and hence UI-header) dependency into the Gen-layer suite.
 //
 // The ids are spelled HERE rather than read out of ZM_NpcData: this file is the
 // Gen-layer suite and must not take a dependency on the UI headers ZM_NpcData.h
@@ -2753,7 +2764,7 @@ ZENITH_TEST(ZM_Gen, HumanGen_PaletteTotality)
 // there and a PALETTE edit is caught here.
 ZENITH_TEST(ZM_Gen, HumanGen_PaletteDistinctness)
 {
-	constexpr u_int uCAST_COUNT = 6u;
+	constexpr u_int uCAST_COUNT = 7u;
 	const ZM_HUMAN_ID aeCAST[uCAST_COUNT] =
 	{
 		ZM_HUMAN_TOWN_VILLAGER,    // Npc_Villager
@@ -2762,6 +2773,7 @@ ZENITH_TEST(ZM_Gen, HumanGen_PaletteDistinctness)
 		ZM_HUMAN_TOWN_ELDER,       // Npc_Wanderer
 		ZM_HUMAN_TOWN_WARDEN,      // Npc_RouteWarden
 		ZM_HUMAN_RIVAL_VESPER,     // Npc_RivalVesper
+		ZM_HUMAN_PROF_ASTER,       // Npc_ProfAster
 	};
 
 	const Zenith_Maths::Vector4 xFallback = ZM_GetHumanPaletteFallbackColour();
@@ -2801,6 +2813,109 @@ ZENITH_TEST(ZM_Gen, HumanGen_PaletteDistinctness)
 	ZENITH_ASSERT_EQ(uPairsCompared, (uCAST_COUNT * (uCAST_COUNT - 1u)) / 2u,
 		"the pairwise walk did not compare every cast pair -- the clauses above are "
 		"vacuous to the extent it skipped any");
+}
+
+// ############################################################################
+// 20b. The professor's palette is the FROZEN labcoat-white triple
+// ############################################################################
+
+// ZM_HUMAN_PROF_ASTER carried a REAL, SHIPPED palette defect: on LABCOAT + GREY he
+// resolved 0.0677 from the blockout grey against a 0.15 floor, so the professor
+// rendered as an ordinary grey prop and a wired-up Aster was indistinguishable from
+// an unwired one. The header carved that number out as a booked known limit rather
+// than fixing it. Moving his hair to WHITE closes it at 0.21547.
+//
+// ★ THIS IS A GATE, NOT A COMMENT, AND THAT IS THE WHOLE POINT. The number that
+// mattered was written down in prose for months (ZM_HumanAppearance.h's "already
+// sits only 0.0677 away") while nothing measured it, so the defect survived every
+// green boot. Here the triple is a set of literals this file spells INDEPENDENTLY
+// and the palette must reproduce -- an edit to any of the three tables the blend
+// reads (ZM_HumanOutfitColours' LABCOAT arm, ZM_HumanHairColour's WHITE arm, or the
+// 0.45/0.25/0.30 weights) reds this instead of quietly re-greying the professor.
+//
+// ★ WHY THE TRIPLE IS PINNED AND NOT JUST THE SEPARATION. A distance is a scalar
+// over a sphere: the palette could drift to a completely different colour that
+// happens to sit 0.215 from the grey and the separation clause alone would stay
+// green. The triple names WHICH colour, the separation names that it is FAR ENOUGH,
+// and neither substitutes for the other.
+//
+// ★ THE EXPECTED VALUES ARE HAND-COMPUTED, NOT RE-DERIVED. Re-running the blend
+// here would make this a tautology that moves in lockstep with the code it polices
+// (the ZM_Tests_PlayerHomeInterior lesson). LABCOAT primary is (0.78, 0.80, 0.74)
+// and accent (0.08, 0.48, 0.49); WHITE hair is (0.780, 0.800, 0.820); the weights
+// are 0.45 primary / 0.25 accent / 0.30 hair. So, per channel:
+//   R = 0.45*0.78 + 0.25*0.08 + 0.30*0.780 = 0.3510 + 0.0200 + 0.2340 = 0.6050
+//   G = 0.45*0.80 + 0.25*0.48 + 0.30*0.800 = 0.3600 + 0.1200 + 0.2400 = 0.7200
+//   B = 0.45*0.74 + 0.25*0.49 + 0.30*0.820 = 0.3330 + 0.1225 + 0.2460 = 0.7015
+// and the distance to (0.52, 0.55, 0.60) is
+//   sqrt(0.085^2 + 0.170^2 + 0.1015^2) = sqrt(0.04642725) = 0.2154699...
+ZENITH_TEST(ZM_Gen, HumanGen_ProfessorPaletteIsTheFrozenLabcoatWhiteTriple)
+{
+	// Independently spelled. NOT read back off the roster row or recomputed from the
+	// outfit/hair tables -- either would agree with a regression instead of catching it.
+	constexpr float fASTER_R = 0.6050f;
+	constexpr float fASTER_G = 0.7200f;
+	constexpr float fASTER_B = 0.7015f;
+	constexpr float fASTER_VS_GREY = 0.21547f;
+	// Loose enough to absorb float32 rounding on the blend, tight enough that ANY
+	// table edit (the smallest colour literal in play is a 0.01 step) breaks it.
+	constexpr float fTRIPLE_TOL = 1.0e-4f;
+	constexpr float fSEPARATION_TOL = 1.0e-4f;
+
+	// The roster row still has to be the one this arithmetic was done against; a
+	// hair or outfit revert would otherwise fail below with a confusing "the palette
+	// moved" message rather than the true cause.
+	const ZM_HumanData& xAster = ZM_GetHumanData(ZM_HUMAN_PROF_ASTER);
+	ZENITH_ASSERT_EQ((u_int)xAster.m_eOutfit, (u_int)ZM_HUMAN_OUTFIT_LABCOAT,
+		"the professor is no longer wearing LABCOAT, so the triple pinned here was "
+		"computed against an outfit he does not have");
+	ZENITH_ASSERT_EQ((u_int)xAster.m_eHairColour, (u_int)ZM_HUMAN_HAIR_WHITE,
+		"the professor's hair left WHITE -- on GREY he resolves 0.0677 from the "
+		"blockout grey, which is the shipped defect this row exists to hold closed");
+
+	const Zenith_Maths::Vector4 xAsterColour =
+		ZM_GetHumanPaletteColour(ZM_HUMAN_PROF_ASTER);
+
+	// (1) THE TRIPLE.
+	ZENITH_ASSERT_EQ_FLOAT(xAsterColour.x, fASTER_R, fTRIPLE_TOL,
+		"the professor's palette RED moved");
+	ZENITH_ASSERT_EQ_FLOAT(xAsterColour.y, fASTER_G, fTRIPLE_TOL,
+		"the professor's palette GREEN moved");
+	ZENITH_ASSERT_EQ_FLOAT(xAsterColour.z, fASTER_B, fTRIPLE_TOL,
+		"the professor's palette BLUE moved");
+	ZENITH_ASSERT_EQ_FLOAT(xAsterColour.w, 1.0f, 0.0f,
+		"every greybox palette colour is opaque");
+
+	// (2) THE SEPARATION, pinned as a VALUE and not merely bounded. A bound alone
+	//     would let the professor drift arbitrarily far and still pass, which would
+	//     hide a table edit that happened to move him AWAY from the grey.
+	const Zenith_Maths::Vector4 xFallback = ZM_GetHumanPaletteFallbackColour();
+	const float fVsGrey = ZM_HumanPaletteSeparation(xAsterColour, xFallback);
+	ZENITH_ASSERT_EQ_FLOAT(fVsGrey, fASTER_VS_GREY, fSEPARATION_TOL,
+		"the professor now resolves %.5f from the blockout grey, not the pinned "
+		"%.5f -- one of the three tables the blend reads has moved",
+		fVsGrey, fASTER_VS_GREY);
+
+	// (3) THE PROMISE THE NUMBER EXISTS TO KEEP. Stated against the SHIPPED margin
+	//     rather than a second literal, so raising fZM_HUMAN_PALETTE_MIN_SEPARATION
+	//     past 0.21547 reds here -- which is correct: it would mean the professor
+	//     needs re-authoring again, not that the floor may quietly outgrow him.
+	ZENITH_ASSERT_TRUE(fVsGrey >= fZM_HUMAN_PALETTE_MIN_SEPARATION,
+		"the professor resolves %.5f from the blockout grey (want >= %.5f) -- this "
+		"is the ZM_HUMAN_PROF_ASTER known limit reopening",
+		fVsGrey, fZM_HUMAN_PALETTE_MIN_SEPARATION);
+
+	// (4) THE GREY ITSELF DID NOT MOVE. Clause (3) is a comparison against the
+	//     fallback, so re-tinting the fallback toward Aster would satisfy it while
+	//     making the professor MORE grey, not less. The three fZM_GREYBOX_FALLBACK_*
+	//     values are pixel-asserted elsewhere; pinning them here is what stops this
+	//     unit from being satisfiable by moving the wrong end of the measurement.
+	ZENITH_ASSERT_EQ_FLOAT(xFallback.x, fZM_GREYBOX_FALLBACK_R, 0.0f,
+		"the blockout grey's RED moved -- THESE THREE VALUES MUST NOT MOVE");
+	ZENITH_ASSERT_EQ_FLOAT(xFallback.y, fZM_GREYBOX_FALLBACK_G, 0.0f,
+		"the blockout grey's GREEN moved -- THESE THREE VALUES MUST NOT MOVE");
+	ZENITH_ASSERT_EQ_FLOAT(xFallback.z, fZM_GREYBOX_FALLBACK_B, 0.0f,
+		"the blockout grey's BLUE moved -- THESE THREE VALUES MUST NOT MOVE");
 }
 
 // ############################################################################

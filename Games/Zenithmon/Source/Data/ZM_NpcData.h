@@ -51,6 +51,9 @@ enum ZM_NPC_ID : u_int
 	ZM_NPC_WANDERER,           // a second talker; S6 SC8 gave it a waypoint patrol
 	ZM_NPC_ROUTE_WARDEN,       // the S7 story gate: refuses the way on until cleared
 	ZM_NPC_RIVAL_VESPER,       // S7 item 3 SC8: the rival. The ONE row naming a trainer.
+	ZM_NPC_PROF_ASTER,         // Professor Aster, in his lab. Data only -- a later
+	                           //   slice authors him into a scene; this slice moves
+	                           //   ZERO scene bytes.
 
 	ZM_NPC_COUNT,
 	ZM_NPC_NONE = ZM_NPC_COUNT   // "no NPC" sentinel
