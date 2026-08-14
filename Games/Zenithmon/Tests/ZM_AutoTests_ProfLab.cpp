@@ -71,8 +71,10 @@
 #include "Zenithmon/Components/ZM_PlayerController.h"
 #include "Zenithmon/Components/ZM_SpawnPoint.h"
 #include "Zenithmon/Components/ZM_TerrainGrassComponent.h"
+#include "Zenithmon/Components/ZM_WarpTrigger.h"          // clause I4 -- the exit sensor's live configuration
 #include "Zenithmon/Source/Data/ZM_NpcData.h"
 #include "Zenithmon/Source/Data/ZM_WorldSpec.h"
+#include "Zenithmon/Source/Interaction/ZM_InteractionLogic.h"   // the SHIPPED facing helpers -- run, not re-derived
 #include "Zenithmon/Source/World/ZM_ProfLabPlacement.h"
 #include "Zenithmon/Source/World/ZM_HumanBody.h"
 
@@ -704,29 +706,87 @@ namespace
 			return false;
 		}
 
-		// ---- his rotation: IDENTITY, which is the ZM-D-183 property ----------
-		// The authoring emits no rotation step at all, precisely so this stays
-		// bit-exact across build configurations. It is also what makes the AABB
-		// below legal: an AABB forces its Jolt body to identity and the
-		// physics->transform sync writes that identity back into the saved bytes,
-		// which is destructive only when there was an authored rotation to lose.
-		const float fIdentityError =
-			std::fabs(std::fabs(xRotation.w) - 1.0f)
-			+ std::fabs(xRotation.x) + std::fabs(xRotation.y)
-			+ std::fabs(xRotation.z);
-		if (fIdentityError > fYAW_EPSILON)
+		// ---- his rotation: HE FACES THE PLAYER (SC-E) -------------------------
+		//
+		// ★★ THIS IS A DOT PRODUCT AND NOT A BIT COMPARISON, DELIBERATELY. Both
+		// this clause and the authoring would read ZM_ProfLabAsterFacing(), so a
+		// clause that compared the live quaternion against that constant could not
+		// see the constant move -- the self-referential-guard failure this repo has
+		// already paid for twice. The property worth holding here is "the professor
+		// is turned toward the person who just walked in", so that is what is
+		// measured: his LIVE forward, through the SHIPPED ZM_ForwardFromRotation
+		// (the same function the interact picker uses), dotted against the bearing
+		// to the arrival pose.
+		//
+		// ★ AND IT IS A LIVE-SCENE CLAIM THE BOOT UNIT CANNOT MAKE.
+		// ProfLab_AsterFacingIsTurnedTowardTheArrival runs the same arithmetic over
+		// the COMPILED constant; this runs it over the transform that came out of
+		// the committed .zscen. The mutation between them is real and has happened
+		// before on this exact property: author him with COLLISION_VOLUME_TYPE_AABB
+		// and Zenith_ColliderComponent forces his Jolt body to identity, the
+		// physics->transform sync writes that identity back into the SAVED BYTES,
+		// and every pure unit stays green while the shipped professor faces the
+		// wall again (ZM-D-156, paid for once on rival Vesper).
+		//
+		// The floors are the boot unit's, restated here rather than shared because
+		// the two files may not include one another; both are derived in the block
+		// on ProfLab_AsterFacingIsTurnedTowardTheArrival in
+		// Tests/ZM_Tests_ProfLabPlacement.cpp. The pre-SC-E identity value scores
+		// the NEGATIVES of today's dots, so both clauses red on it.
+		constexpr float fASTER_FACES_PLAYER_MIN_DOT = 0.20f;
+		constexpr float fASTER_FACES_CAMERA_MIN_DOT = 0.70f;
+
+		const Zenith_Maths::Vector3 xAsterForward =
+			ZM_ForwardFromRotation(xRotation);
+		const Zenith_Maths::Vector3 xToArrival =
+			ZM_FlattenXZ(ZM_GetProfLabArrivalPivot() - xPosition);
+		const Zenith_Maths::Vector3 xToCamera =
+			ZM_FlattenXZ(ZM_GetProfLabSettledCameraPosition() - xPosition);
+		const float fArrivalDot =
+			xAsterForward.x * xToArrival.x + xAsterForward.z * xToArrival.z;
+		const float fCameraDot =
+			xAsterForward.x * xToCamera.x + xAsterForward.z * xToCamera.z;
+
+		if (fArrivalDot <= fASTER_FACES_PLAYER_MIN_DOT
+			|| fCameraDot <= fASTER_FACES_CAMERA_MIN_DOT)
 		{
 			FailProfLabDetailed(
-				"Professor Aster carries rotation (x %.6f y %.6f z %.6f w %.6f), "
-				"which is not identity [error %.6f]. He is authored with NO "
-				"rotation step by design (ZM-D-183: AddStep_SetTransformYaw and "
-				"...RotationEuler build their quaternion with libm at authoring "
-				"time and MSVC Debug and Release disagree by 1-2 ULP, so a "
-				"COMMITTED scene authored through them ping-pongs in git). If a "
-				"rotation step was added, remove it -- and note his AABB collider "
-				"would have wiped it back out anyway",
+				"Professor Aster's LIVE rotation (x %.6f y %.6f z %.6f w %.6f) "
+				"faces (%.5f, %.5f) in XZ, which dots %.5f with the direction to "
+				"the arrival point (floor %.2f) and %.5f with the direction to the "
+				"pose the follow camera settles at (floor %.2f). A NEGATIVE dot "
+				"means the shipped scene greets the player with the professor's "
+				"back turned -- the exact defect SC-E fixed. FIRST SUSPECT: his "
+				"collider was changed back to COLLISION_VOLUME_TYPE_AABB, which is "
+				"axis-aligned BY DEFINITION and forces its Jolt body to identity; "
+				"the physics->transform sync then writes that identity over the "
+				"authored facing and into the saved bytes, with every pure unit "
+				"still green. SECOND SUSPECT: the scene was never re-authored after "
+				"ZM_ProfLabAsterFacing() landed",
 				(double)xRotation.x, (double)xRotation.y, (double)xRotation.z,
-				(double)xRotation.w, (double)fIdentityError);
+				(double)xRotation.w, (double)xAsterForward.x,
+				(double)xAsterForward.z, (double)fArrivalDot,
+				(double)fASTER_FACES_PLAYER_MIN_DOT, (double)fCameraDot,
+				(double)fASTER_FACES_CAMERA_MIN_DOT);
+			return false;
+		}
+
+		// ...and the quaternion that came off disk is still UNIT. Jolt normalises
+		// the body's rotation, so a non-unit authored value would make the saved
+		// bytes and the compiled constant disagree -- a ZM-D-179-shaped drift with
+		// a different cause, and one the dot products above are blind to because a
+		// scaled quaternion still rotates to the same direction.
+		const float fRotationLengthSquared =
+			xRotation.x * xRotation.x + xRotation.y * xRotation.y
+			+ xRotation.z * xRotation.z + xRotation.w * xRotation.w;
+		if (std::fabs(fRotationLengthSquared - 1.0f) > fYAW_EPSILON)
+		{
+			FailProfLabDetailed(
+				"Professor Aster's committed rotation has squared length %.7f, not "
+				"1 [epsilon %.6f]. The authored value is a frozen unit quaternion; "
+				"a non-unit one on disk means something rewrote it between the "
+				"authoring step and the save",
+				(double)fRotationLengthSquared, (double)fYAW_EPSILON);
 			return false;
 		}
 
@@ -743,19 +803,38 @@ namespace
 				pxCollider != nullptr && pxCollider->HasValidBody() ? 1 : 0);
 			return false;
 		}
-		if (pxCollider->GetCollisionVolumeType() != COLLISION_VOLUME_TYPE_AABB
+		// ★ OBB, AND **AABB IS NOW FORBIDDEN ON HIM FOREVER** (SC-E / ZM-D-156).
+		// He was AABB while he was authored at identity, and that was correct: an
+		// AABB destroys an authored rotation, and there was none to destroy. Now
+		// there is. Zenith_ColliderComponent's body creation reads
+		//     const JPH::Quat xJoltRot = (eVolumeType == COLLISION_VOLUME_TYPE_AABB)
+		//         ? JPH::Quat::sIdentity() : JPH::Quat(...);
+		// so an AABB would force his body to identity and the physics->transform
+		// sync would write that identity straight back over his facing and into the
+		// SAVED BYTES -- with every pure unit green, because they read the compiled
+		// constants and the damage lives in the file. OBB is the same box shape and
+		// differs ONLY in applying the rotation. He is still STATIC, and
+		// deliberately not the rival's dynamic capsule: that shape exists because
+		// the rival WALKS, and a dynamic body could be shoved off the anchor every
+		// clearance figure in Source/World/ZM_ProfLabPlacement.h is derived at.
+		if (pxCollider->GetCollisionVolumeType() != COLLISION_VOLUME_TYPE_OBB
 			|| pxCollider->GetRigidBodyType() != RIGIDBODY_TYPE_STATIC)
 		{
 			FailProfLabDetailed(
 				"Professor Aster's body is volumeType=%d rigidBodyType=%d, not the "
-				"authored COLLISION_VOLUME_TYPE_AABB (%d) + RIGIDBODY_TYPE_STATIC "
-				"(%d). A SPHERE would make his footprint round where the walk-up "
-				"standoff is measured against a box, and a DYNAMIC body could be "
-				"shoved off the anchor every clearance figure in "
+				"authored COLLISION_VOLUME_TYPE_OBB (%d) + RIGIDBODY_TYPE_STATIC "
+				"(%d). If this reads AABB (%d), that is the ZM-D-156 defect and it "
+				"has ALREADY silently wiped his authored facing out of the saved "
+				"bytes -- an AABB is axis-aligned by definition, so its Jolt body is "
+				"forced to identity and the physics->transform sync writes that "
+				"identity back. A SPHERE would make his footprint round where the "
+				"walk-up standoff is measured against a box, and a DYNAMIC body "
+				"could be shoved off the anchor every clearance figure in "
 				"Source/World/ZM_ProfLabPlacement.h is derived at",
 				(int)pxCollider->GetCollisionVolumeType(),
 				(int)pxCollider->GetRigidBodyType(),
-				(int)COLLISION_VOLUME_TYPE_AABB, (int)RIGIDBODY_TYPE_STATIC);
+				(int)COLLISION_VOLUME_TYPE_OBB, (int)RIGIDBODY_TYPE_STATIC,
+				(int)COLLISION_VOLUME_TYPE_AABB);
 			return false;
 		}
 
@@ -843,6 +922,182 @@ namespace
 				"different NPC than the one the scene ships",
 				(double)pxInteractable->GetRadius(),
 				(double)fZM_PROFLAB_ASTER_REACH_BONUS);
+			return false;
+		}
+
+		return true;
+	}
+
+	// ---- CLAUSE I4's body: the exit sensor, in the LOADED scene -------------
+	//
+	// ★★ THIS IS THE ONLY CI-VISIBLE PROOF THAT THE LAB DOOR GOES ANYWHERE, AND
+	// THE SLICE HAD NONE BY DEFAULT. Everything else that could check the seam is
+	// blind to the mutations that matter:
+	//   * every pure unit reads the compiled constants the AUTHORING reads, so both
+	//     sides move together -- delete the AddStep_Custom(&ZM_ConfigureProfLabExit
+	//     Trigger) call outright and not one of them changes colour;
+	//   * the round-trip walk (ZM_LabRoundTrip_Test) DOES drive the real door, but
+	//     it needs the GITIGNORED Dawnmere terrain bake and RequestSkips without it
+	//     on CI -- and a skip counts as a PASS;
+	//   * the committed-bytes needle proves a STRING is in Dawnmere.zscen, which
+	//     says nothing about what THIS scene's sensor is pointed at.
+	// This file is m_bRequiresGraphics=false, calls RequestSkip NOWHERE (see the
+	// ZM-D-147 deviation in the header) and has no terrain dependency, so it runs
+	// on every Null CI boot. That is why the clause lives here.
+	//
+	// ★ EVERY EXPECTED VALUE IS RESOLVED, NEVER SPELLED. The target build index
+	// comes from ZM_GetWorldSpec(ZM_SCENE_DAWNMERE).m_uBuildIndex and the tag from
+	// ZM_GetProfLabExitSpawnTag() -- the same two reads the authoring makes. A
+	// literal 2 or "FromLab" here would be a second inventory, and the specific
+	// mutation "the configure function writes the PlayerHome build index instead"
+	// would then need BOTH sites edited to stay green, which is the property that
+	// makes this clause worth having.
+	//
+	// Split into its own function under the ZM-D-141 stack-frame rule: a monolithic
+	// /Od Step frame is the SUM of every local in every clause.
+	bool ProfLabPhaseVerifyExitSensor(Zenith_SceneData* pxData)
+	{
+		const char* const szSensorName = szZM_PROFLAB_EXIT_TRIGGER_ENTITY_NAME;
+		Zenith_Entity xSensor = pxData != nullptr
+			? pxData->FindEntityByName(szSensorName) : Zenith_Entity();
+		if (!xSensor.IsValid())
+		{
+			FailProfLabDetailed(
+				"ProfLab's committed scene bytes carry no entity named '%s'. This "
+				"room's ONLY way out is missing: a player who warps in here can "
+				"never leave, and no other check in the gate can see it -- the pure "
+				"units read the same header the authoring writes from. Either the "
+				"authoring block in Zenithmon.cpp lost its exit-sensor steps, or the "
+				"scene was never re-authored by a *_True tools boot after they "
+				"landed", szSensorName);
+			return false;
+		}
+
+		// (I4a) THE VOLUME, against the compiled accessor. A sensor that no longer
+		//       spans the aperture is one a player can walk around, out through the
+		//       gap and into open space.
+		Zenith_Maths::Vector3 xPosition(0.0f);
+		Zenith_Maths::Vector3 xScale(0.0f);
+		Zenith_TransformComponent& xTransform =
+			xSensor.GetComponent<Zenith_TransformComponent>();
+		xTransform.GetPosition(xPosition);
+		xTransform.GetScale(xScale);
+
+		const ZM_ProfLabBlockout xExpected = ZM_GetProfLabExitTrigger();
+		if (glm::length(xPosition - xExpected.m_xCenter) > fPOSITION_EPSILON
+			|| glm::length(xScale - xExpected.m_xScale) > fPOSITION_EPSILON)
+		{
+			FailProfLabDetailed(
+				"ProfLab's committed scene bytes disagree with "
+				"Source/World/ZM_ProfLabPlacement.h at the exit sensor '%s' -- the "
+				"scene was not re-authored after the header changed [scene centre "
+				"(%.5f, %.5f, %.5f) vs ZM_GetProfLabExitTrigger() (%.5f, %.5f, "
+				"%.5f); scene scale (%.5f, %.5f, %.5f) vs header (%.5f, %.5f, "
+				"%.5f); centre delta %.6f scale delta %.6f against epsilon %.6f]",
+				szSensorName,
+				(double)xPosition.x, (double)xPosition.y, (double)xPosition.z,
+				(double)xExpected.m_xCenter.x, (double)xExpected.m_xCenter.y,
+				(double)xExpected.m_xCenter.z,
+				(double)xScale.x, (double)xScale.y, (double)xScale.z,
+				(double)xExpected.m_xScale.x, (double)xExpected.m_xScale.y,
+				(double)xExpected.m_xScale.z,
+				(double)glm::length(xPosition - xExpected.m_xCenter),
+				(double)glm::length(xScale - xExpected.m_xScale),
+				(double)fPOSITION_EPSILON);
+			return false;
+		}
+
+		// (I4b) A LIVE BODY of the authored class. A ZM_WarpTrigger with no body
+		//       never receives OnCollisionEnter, so the door is decorative.
+		Zenith_ColliderComponent* pxCollider =
+			xSensor.TryGetComponent<Zenith_ColliderComponent>();
+		if (pxCollider == nullptr || !pxCollider->HasValidBody()
+			|| pxCollider->GetCollisionVolumeType() != COLLISION_VOLUME_TYPE_AABB
+			|| pxCollider->GetRigidBodyType() != RIGIDBODY_TYPE_STATIC)
+		{
+			FailProfLabDetailed(
+				"ProfLab's exit sensor '%s' carries collider=%d liveBody=%d "
+				"volumeType=%d rigidBodyType=%d, not a live "
+				"COLLISION_VOLUME_TYPE_AABB (%d) + RIGIDBODY_TYPE_STATIC (%d). "
+				"ZM_WarpTrigger fires from OnCollisionEnter, so a sensor with no "
+				"body is a door that never opens -- and unlike a missing entity, "
+				"that failure is completely silent",
+				szSensorName, pxCollider != nullptr ? 1 : 0,
+				pxCollider != nullptr && pxCollider->HasValidBody() ? 1 : 0,
+				pxCollider != nullptr
+					? (int)pxCollider->GetCollisionVolumeType() : -1,
+				pxCollider != nullptr ? (int)pxCollider->GetRigidBodyType() : -1,
+				(int)COLLISION_VOLUME_TYPE_AABB, (int)RIGIDBODY_TYPE_STATIC);
+			return false;
+		}
+
+		// (I4c) ★ WHERE IT ACTUALLY GOES. The mutation this exists for is a
+		//       configure function that wrote SOME OTHER build index -- PlayerHome's
+		//       is the obvious slip, since the shipped Home pair three functions
+		//       above still spells 40u and 2u as literals. Every unit stays green,
+		//       the round trip skips on CI, and the shipped game's lab door drops
+		//       the player into somebody's bedroom.
+		ZM_WarpTrigger* pxWarp = xSensor.TryGetComponent<ZM_WarpTrigger>();
+		if (pxWarp == nullptr)
+		{
+			FailProfLabDetailed(
+				"ProfLab's exit sensor '%s' carries no ZM_WarpTrigger -- it is a "
+				"solid box in a doorway, and walking into it does nothing at all",
+				szSensorName);
+			return false;
+		}
+
+		const u_int uExpectedBuildIndex =
+			ZM_GetWorldSpec(ZM_SCENE_DAWNMERE).m_uBuildIndex;
+		if (pxWarp->GetTargetBuildIndex() != uExpectedBuildIndex)
+		{
+			FailProfLabDetailed(
+				"ProfLab's exit sensor '%s' targets build index %u, but the "
+				"compiled world table puts Dawnmere (ZM_SCENE_DAWNMERE) at %u. "
+				"PlayerHome is at %u and the FrontEnd at %u, for comparison. The "
+				"lab door leads somewhere other than the town it stands in, and no "
+				"pure unit can see this -- they read the same constants the "
+				"authoring does",
+				szSensorName, pxWarp->GetTargetBuildIndex(), uExpectedBuildIndex,
+				ZM_GetWorldSpec(ZM_SCENE_PLAYERHOME).m_uBuildIndex,
+				ZM_GetWorldSpec(ZM_SCENE_FRONTEND).m_uBuildIndex);
+			return false;
+		}
+
+		const char* const szExpectedTag = ZM_GetProfLabExitSpawnTag();
+		if (szExpectedTag == nullptr || szExpectedTag[0] == '\0'
+			|| std::strcmp(pxWarp->GetSpawnTag(), szExpectedTag) != 0)
+		{
+			FailProfLabDetailed(
+				"ProfLab's exit sensor '%s' asks Dawnmere for spawn tag '%s', not "
+				"the '%s' its ZM_SCENE_PROFLAB->ZM_SCENE_DAWNMERE connection "
+				"declares. ZM_GameStateManager::IsWarpDestinationValid consults ONLY "
+				"the compiled tag list, so a tag Dawnmere does not offer is REJECTED "
+				"(a silent no-op door) while a tag it offers but no marker carries "
+				"is ACCEPTED and parks the machine in "
+				"ZM_WARP_TRANSITION_WAITING_FOR_SPAWN, which has NO timeout -- an "
+				"opaque fade and a frozen player, forever",
+				szSensorName, pxWarp->GetSpawnTag(),
+				szExpectedTag != nullptr ? szExpectedTag : "<unresolved>");
+			return false;
+		}
+
+		// (I4d) ...and it is NOT already latched on the arrival tick. A sensor that
+		//       contains the arrival point fires immediately and bounces the player
+		//       back and forth between the two scenes forever with no input
+		//       accepted. The boot unit
+		//       ProfLab_ExitSensorFillsTheApertureAndClearsTheArrivingBody proves
+		//       the GEOMETRY leaves clearance; this proves the live body agrees.
+		if (pxWarp->IsLatched())
+		{
+			FailProfLabDetailed(
+				"ProfLab's exit sensor '%s' is ALREADY latched on the arrival tick "
+				"-- the arriving player's capsule overlaps it, so the warp fires "
+				"immediately and the player bounces between Dawnmere and ProfLab "
+				"forever, frozen, behind a fade. The header's arrival clearance "
+				"claims %.4f m; something has moved the sensor or the marker",
+				szSensorName,
+				(double)ZM_GetProfLabExitTriggerArrivalClearance());
 			return false;
 		}
 
@@ -1337,6 +1592,29 @@ namespace
 		//   * omit AddStep_AddComponent("ZM_Interactable") entirely -- a
 		//     professor who stands there and can never be spoken to.
 		if (!ProfLabPhaseVerifyProfessor(pxData))
+		{
+			return false;
+		}
+
+		// ---- CLAUSE I4: THE WAY OUT (S8 SC-E) ----------------------------
+		//
+		// ★ THE SLICE THAT ADDED THE LAB DOOR HAD NO CI-VISIBLE PROOF WITHOUT
+		// THIS. Read the block on ProfLabPhaseVerifyExitSensor for the full
+		// argument; the short version is that the pure units compare compiled
+		// constants against compiled constants, the round-trip walk needs the
+		// gitignored Dawnmere terrain and skips on CI (a skip counts as a
+		// PASS), and this file is the one place in the gate that looks at the
+		// LOADED ProfLab with no terrain and no GPU. It catches, and nothing
+		// else does:
+		//   * the exit-sensor authoring steps deleted entirely;
+		//   * AddStep_Custom(&ZM_ConfigureProfLabExitTrigger) omitted, leaving
+		//     an unconfigured ZM_WarpTrigger on an invalid build index;
+		//   * a configure function that resolved (or spelled) the WRONG build
+		//     index -- PlayerHome's being the obvious slip;
+		//   * a spawn tag that no longer matches the compiled connection;
+		//   * a sensor moved so it contains the arrival point, which turns the
+		//     door into an infinite warp loop.
+		if (!ProfLabPhaseVerifyExitSensor(pxData))
 		{
 			return false;
 		}

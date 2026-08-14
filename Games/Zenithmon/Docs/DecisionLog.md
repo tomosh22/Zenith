@@ -15,6 +15,98 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-08-14 -- ZM-D-193 -- S8 SC-E: the lab seam lands as ONE commit, and turning Aster required a COLLIDER change or it would have been a silent no-op
+
+**What shipped:** the Dawnmere lab exterior (shell + two jambs + lintel), the
+`FromLabSpawn` marker, the `LabDoorTrigger`, the `ProfLabExitTrigger`, and
+Professor Aster turned to face the arriving player. Both committed scenes
+re-authored and proven byte-stable across two authoring boots.
+
+**Decision 1 -- BOTH HALVES OF THE SEAM IN ONE COMMIT.** `IsWarpDestinationValid`
+consults ONLY the compiled tag list in `ZM_WorldSpec`, never the scene, and
+`"FromLab"` has been a compiled tag since ZM-D-174. So
+`RequestWarp(<Dawnmere>, "FromLab")` returned **TRUE on master** while no
+`ZM_SpawnPoint` carried it. Shipping the ProfLab exit without the Dawnmere marker
+parks the warp machine in `WAITING_FOR_SPAWN` -- which has **no timeout** --
+behind a fully opaque fade with the player frozen, forever. The
+"★ NO ZM_WarpTrigger, AND THAT IS DELIBERATE" comment in `Zenithmon.cpp` was this
+slice's spec and is DELETED by it. `ZM_WorldSpec` needed no edit.
+
+**★★ Decision 2 -- TURNING ASTER REQUIRED HIS COLLIDER TO MOVE AABB -> OBB, AND
+WITHOUT THAT THE FIX WOULD HAVE SHIPPED AS A SILENT NO-OP.** This is the finding
+of the slice and it invalidated the instruction that produced it.
+
+The brief said: add `AddStep_SetTransformRotationQuat` with frozen `bit_cast`
+constants, as ZM-D-183 requires. That is necessary and **not sufficient**.
+`Zenith_ColliderComponent.cpp:801` reads
+`xJoltRot = (eVolumeType == COLLISION_VOLUME_TYPE_AABB) ? JPH::Quat::sIdentity() : ...`,
+with the comment at `:757` stating outright that "AABB and OBB share shape
+creation -- they only differ in whether the body's rotation is applied below
+(AABB forces identity)". The physics->transform sync then writes that identity
+**back into the SAVED BYTES**. So the authored quaternion would have been written,
+silently erased, and the committed `ProfLab.zscen` would still hold identity --
+**with every compiled-constant unit green**, because those units read the header,
+not the file. That is ZM-D-156 recurring, already paid for once on rival Vesper,
+and `ZM_ProfLabPlacement.h`'s own closing note had said so.
+
+Aster therefore gets `COLLISION_VOLUME_TYPE_OBB` and a third authoring helper
+(`ZM_QueueFacingStationaryTalkerNpc`), which leaves the four shipped townsfolk's
+step lists untouched **by construction** rather than by care. He does NOT get the
+rival's dynamic capsule -- that shape exists because the rival walks.
+
+**★ THE RULE WORTH CARRYING:** in this engine an authored ROTATION is only as real
+as the COLLIDER allows. Before authoring a rotation into a committed scene, check
+the volume type. A rotation on an AABB body is not a bug you can see in the
+authoring code -- it is erased downstream, and only a test that reads the LIVE
+scene can catch it.
+
+**Decision 3 -- the facing constants are a half turn, and need no oracle.**
+`(0,1,0,0)` = a half turn about +Y, taking forward +Z to **-Z**. Verified through
+glm's rotate identity by hand, and cross-checked geometrically. Unlike Vesper's
+bits -- which are a *measurement* of a Debug-build `atan2`/`angleAxis` result and
+therefore carry a re-derivation unit -- 0 and 1 are exact in IEEE-754, so nothing
+is being frozen against drift. The `bit_cast` shape is kept anyway so that "an
+authored rotation in a committed scene is a frozen bit pattern" has ONE form in
+this game.
+
+**Decision 4 -- "faces the player" was two claims of different strength, and is
+asserted as two.** Because Aster stands one body-footprint clear of the walk-in
+line, -Z dots only **0.340** with the bearing to the player but **0.875** with the
+bearing to the settled camera. Rather than pretend to a single strong number, the
+units carry two clauses with separately derived floors (0.20 / 0.70). **The 0.70
+camera floor is what rejects a +/-90 deg mis-authoring**, which the 0.20 floor
+alone would accept. The pre-fix identity gives exactly the negatives of both.
+
+**Decision 5 -- the 147 m corridor is NOT walked, and that is stronger.** The
+walk test warps in via the `FromLab` tag, which is byte-for-byte the call the exit
+sensor makes -- so the test exercises the wedge directly, and a missing marker
+surfaces as a NAMED `WAITING_FOR_SPAWN` diagnosis rather than a timeout quoting a
+distance. Both remaining legs are 5.0 m and 2.0 m from rest, so rival Vesper
+(490,524), the wanderer (540,476..484) and the clerk (526,498) are never
+approached and the hijack class is removed entirely rather than budgeted around.
+
+**Tests that lock it -- and note WHERE they live, because the default was nothing.**
+As planned this slice had **no CI-visible proof at all**: its boot units compared
+compiled constants that do not change, and its walk test must `RequestSkip` on the
+gitignored terrain bake, where a skip counts as a PASS. Mutations that would have
+survived: omitting `AddStep_Custom(&ZM_ConfigureProfLabExitTrigger)` entirely, or
+having it write PlayerHome's build index. So the proof was moved to two places
+that DO run in CI:
+- `ZM_AutoTests_ProfLab.cpp` (`m_bRequiresGraphics = false`, `RequestSkip`
+  NOWHERE) -- clauses asserting the live exit sensor's volume, its live BODY (a
+  `ZM_WarpTrigger` with no collider never fires `OnCollisionEnter` and is
+  otherwise completely silent), its target index and tag read from
+  `ZM_GetWorldSpec`, that it does NOT overlap the arrival capsule (which would be
+  an infinite warp loop), and Aster's live facing and OBB collider.
+- `ZM_CommittedSceneBytes/DawnmereCarriesTheLabSeamMarkerAndTag` -- a BOOT unit,
+  so it runs on every Null CI boot with no terrain. **It asserts `"FromLab"` hits
+  STRICTLY EXCEED `"FromLabSpawn"` hits**, because the tag is a PREFIX of the
+  entity name and a bare `> 0` would pass on a marker that was authored but never
+  TAGGED -- which is exactly the hang.
+
+**Reversibility:** low-to-moderate. Reverting un-connects the world and would need
+the scenes re-authored again.
+
 ## 2026-08-14 -- ZM-D-192 -- S8 SC-D: the lab ground is FROZEN from measurement, the facade grew to fit the site's relief, and the boot gate carries a wall-clock test
 
 **What shipped:** the Dawnmere lab-site exterior constants and a **10-row measured

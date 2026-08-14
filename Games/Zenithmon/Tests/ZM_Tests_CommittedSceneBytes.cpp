@@ -55,7 +55,7 @@
 #include "Maths/Zenith_Maths.h"
 #include "Zenithmon/Source/UI/ZM_UI_StarterChoice.h"   // the S8 element-name constants (the needles)
 #include "Zenithmon/Source/World/ZM_DawnmerePlacement.h"
-#include "Zenithmon/Source/World/ZM_ProfLabPlacement.h"   // szZM_PROFLAB_ASTER_ENTITY_NAME (the S8 professor needle)
+#include "Zenithmon/Source/World/ZM_ProfLabPlacement.h"   // szZM_PROFLAB_ASTER_ENTITY_NAME + the SC-E lab-seam names/tag (the needles)
 
 namespace
 {
@@ -168,6 +168,138 @@ ZENITH_TEST(ZM_CommittedSceneBytes, DawnmereCarriesTheFrozenRivalFacingBitExactl
 		"or the frozen constants in Source/World/ZM_DawnmerePlacement.h were changed "
 		"without re-authoring the scene in the same commit. Do NOT 'fix' this by "
 		"committing whatever bytes are on disk -- read the ZM-D-183 block first.");
+}
+
+// ============================================================================
+// S8 SC-E -- THE LAB SEAM'S BOOT-LEVEL TRIPWIRE. The cheapest possible check on
+// the one mutation that makes this game unplayable rather than merely wrong.
+//
+// ★★ WHAT IT IS FOR. ProfLab now ships an exit configured against Dawnmere's
+// "FromLab" tag. ZM_GameStateManager::IsWarpDestinationValid consults ONLY the
+// compiled ZM_WorldSpec tag list and NEVER the destination scene, and "FromLab"
+// has been a compiled Dawnmere tag since S1 -- so that exit validates whether or
+// not any entity in Dawnmere.zscen actually carries the tag. If the marker is
+// missing, the warp is ACCEPTED, the fade goes fully opaque, and the machine parks
+// in ZM_WARP_TRANSITION_WAITING_FOR_SPAWN, WHICH HAS NO TIMEOUT. The player is
+// frozen behind a black screen, forever. Not a crash, not an assert, not a red
+// test -- which is exactly why the check has to be somewhere, and why "somewhere"
+// has to run in CI.
+//
+// ★ AND WHY IT IS HERE RATHER THAN IN A PURE UNIT. Every pure unit about this seam
+// reads the compiled constants the AUTHORING also reads, so both sides move
+// together and none of them can tell whether the scene was ever re-authored. The
+// automated round trip (ZM_LabRoundTrip_Test) DOES walk the real door, but it
+// needs the GITIGNORED Dawnmere terrain bake and therefore RequestSkips on CI --
+// and a skip counts as a PASS. This unit is a BOOT unit reading a TRACKED file, so
+// it runs on every Null CI boot with no terrain and no GPU.
+//
+// ★ THE TWO NEEDLES, AND THE PREFIX TRAP BETWEEN THEM. "FromLab" is a strict
+// PREFIX of "FromLabSpawn", so every occurrence of the entity NAME is also an
+// occurrence of the TAG and a bare `tagHits > 0` would be satisfied by the name
+// alone -- i.e. it would pass on a scene that authored the marker entity and never
+// tagged it, which is precisely the WAITING_FOR_SPAWN hang (the resolver matches on
+// the TAG, not on the name). The claim is therefore STRICTLY MORE tag occurrences
+// than name occurrences: at least one occurrence of "FromLab" that is not part of
+// "FromLabSpawn", which is the serialized ZM_SpawnPoint tag.
+//
+// Both needles are DERIVED -- the name from the shared placement header, the tag
+// from the compiled world table via ZM_GetProfLabExitSpawnTag() -- so a rename on
+// either side that missed the authoring reds here instead of moving in lockstep.
+//
+// ★ IT IS STRICT ABOUT AN UNREADABLE FILE, like the FrontEnd and ProfLab clauses
+// and UNLIKE the Dawnmere rotation clause at the top of this file. That one
+// tolerates a packaged/relocated-assets run; this one does not, because the whole
+// ZM-D-147/148 position on this asset family is that a TRACKED scene's absence is a
+// DEFECT -- and a quiet return here would silence the check exactly when it broke.
+// (The existing clause's behaviour is deliberately left alone.)
+// ============================================================================
+ZENITH_TEST(ZM_CommittedSceneBytes, DawnmereCarriesTheLabSeamMarkerAndTag)
+{
+	uint64_t ulSize = 0;
+	char* pData = Zenith_FileAccess::ReadFile(
+		szZM_COMMITTED_DAWNMERE_SCENE, ulSize);
+
+	ZENITH_ASSERT_NOT_NULL(pData,
+		"the committed Dawnmere.zscen could not be read ('%s'). It is a TRACKED asset "
+		"(ZM-D-148), so this is a DEFECT and not a skip -- restore the file or "
+		"re-author it with a WINDOWED *_True tools boot in sceneAuthoring="
+		"AUTHOR_DAWNMERE mode.",
+		szZM_COMMITTED_DAWNMERE_SCENE);
+	if (pData == nullptr)
+	{
+		return;   // already FAILED above; nothing further is meaningful
+	}
+
+	const char* const szSpawnEntityName =
+		szZM_DAWNMERE_FROM_LAB_SPAWN_ENTITY_NAME;
+	const char* const szSpawnTag = ZM_GetProfLabExitSpawnTag();
+
+	const u_int uNameHits =
+		CountNameOccurrences(pData, ulSize, szSpawnEntityName);
+	const u_int uTagHits = CountNameOccurrences(pData, ulSize, szSpawnTag);
+	const u_int uDoorTriggerHits = CountNameOccurrences(
+		pData, ulSize, szZM_DAWNMERE_LAB_DOOR_TRIGGER_ENTITY_NAME);
+	const u_int uShellHits = CountNameOccurrences(
+		pData, ulSize, szZM_DAWNMERE_LAB_SHELL_ENTITY_NAME);
+
+	Zenith_Log(LOG_CATEGORY_GAMEPLAY,
+		"[ZM_CommittedSceneBytes] '%s' %llu bytes; lab seam: marker '%s' x%u, tag "
+		"'%s' x%u (name-inclusive), sensor '%s' x%u, shell '%s' x%u",
+		szZM_COMMITTED_DAWNMERE_SCENE, (unsigned long long)ulSize,
+		szSpawnEntityName, uNameHits, szSpawnTag, uTagHits,
+		szZM_DAWNMERE_LAB_DOOR_TRIGGER_ENTITY_NAME, uDoorTriggerHits,
+		szZM_DAWNMERE_LAB_SHELL_ENTITY_NAME, uShellHits);
+
+	Zenith_FileAccess::FreeFileData(pData);
+
+	// The tag has to be a real string before any count over it means anything: an
+	// empty needle would make CountNameOccurrences return 0 and turn the strict
+	// inequality below into a confusing arithmetic failure rather than a clear one.
+	ZENITH_ASSERT_TRUE(szSpawnTag != nullptr && szSpawnTag[0] != '\0',
+		"the compiled ZM_SCENE_PROFLAB row carries no connection targeting "
+		"ZM_SCENE_DAWNMERE, so ZM_GetProfLabExitSpawnTag() resolved to the empty "
+		"string. The lab has no way out and there is no tag to look for in the "
+		"committed scene -- fix Source/Data/ZM_WorldSpec.cpp first.");
+
+	ZENITH_ASSERT_EQ(uNameHits, 1u,
+		"the committed Dawnmere.zscen must carry the lab arrival marker '%s' exactly "
+		"once. A ZERO is the state a source-only change leaves behind: the authoring "
+		"steps are in Zenithmon.cpp but no WINDOWED *_True tools boot has re-authored "
+		"and re-committed the scene -- and ProfLab's exit is ALREADY shipped, so the "
+		"shipped game warps into WAITING_FOR_SPAWN (no timeout) and hangs behind an "
+		"opaque fade the moment anyone leaves the lab. More than one means the marker "
+		"was authored twice.",
+		szSpawnEntityName);
+
+	ZENITH_ASSERT_EQ(uDoorTriggerHits, 1u,
+		"the committed Dawnmere.zscen must carry the lab doorway sensor '%s' exactly "
+		"once -- without it the lab is authored but has no entrance, so the exit "
+		"leads out of a building the player can never get into.",
+		szZM_DAWNMERE_LAB_DOOR_TRIGGER_ENTITY_NAME);
+
+	ZENITH_ASSERT_EQ(uShellHits, 1u,
+		"the committed Dawnmere.zscen must carry the lab shell '%s' exactly once. "
+		"This name is ALSO the key SC-D's ground-truth oracle "
+		"(ZM_DawnmereLabGroundTruth_Test) looks up to ignore the shell during its "
+		"post-SC-E re-measure, so a miss here means that oracle would silently "
+		"measure the building's roof instead of the terrain.",
+		szZM_DAWNMERE_LAB_SHELL_ENTITY_NAME);
+
+	// ★ THE CLAUSE THE PREFIX TRAP IS ABOUT. Every "FromLabSpawn" contains a
+	// "FromLab", so equality here means the tag exists ONLY as part of the entity
+	// name -- an untagged marker, which resolves to nothing and hangs the warp.
+	ZENITH_ASSERT_GT(uTagHits, uNameHits,
+		"the committed Dawnmere.zscen contains the spawn tag '%s' %u time(s) and the "
+		"entity name '%s' %u time(s) -- and the tag is a PREFIX of the name, so those "
+		"counts being equal means every occurrence of the tag is part of the name and "
+		"the marker was never actually TAGGED. ZM_SpawnPoint resolution matches on the "
+		"TAG, not on the entity name, so an untagged marker leaves "
+		"RequestWarp(<Dawnmere>, \"%s\") parked in WAITING_FOR_SPAWN -- which has NO "
+		"timeout -- behind a fully opaque fade with the player frozen. Check that the "
+		"FromLabSpawn authoring in Zenithmon.cpp still calls "
+		"AddStep_Custom(&ZM_ConfigureFromLabSpawnPoint) and that the scene was "
+		"re-authored afterwards.",
+		szSpawnTag, uTagHits, szSpawnEntityName, uNameHits, szSpawnTag);
 }
 
 // ============================================================================

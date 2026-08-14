@@ -3,13 +3,14 @@
 **Last updated:** 2026-08-14
 
 **★ LIVE PIN (UPDATED 2026-08-14):
-ZM boot `3307`; engine boot (Null Combat) `1638`; registry **62**.** Observed
+ZM boot `3312`; engine boot (Null Combat) `1638`; registry **63**.** Observed
 2026-08-14 on a clean `Null_vs2022_Debug_Win64_True` Zenithmon build after S8
-SC-D: `3307 ran / 3305 passed / 0 failed / 2 skipped`. The walk this session:
+SC-E: `3312 ran / 3310 passed / 0 failed / 2 skipped`. The walk this session:
 **3277 -> 3280** (SC-A, +3) **-> 3295** (SC-B, +15: 14 pure `ZM_Starter` units +
 1 `FrontEnd.zscen` needle) **-> 3299** (SC-C, +4: three `ZM_WorldTraversal`
-placement units + 1 `ProfLab.zscen` needle) **-> 3307** (SC-D, +8 lab-site units).
-Registry 61 -> 62 (`ZM_DawnmereLabGroundTruth_Test`).
+placement units + 1 `ProfLab.zscen` needle) **-> 3307** (SC-D, +8 lab-site units)
+**-> 3312** (SC-E, +5: 1 `Dawnmere.zscen` seam needle + 4 `ZM_WorldTraversal`).
+Registry 61 -> 62 (`ZM_DawnmereLabGroundTruth_Test`) -> 63 (`ZM_LabRoundTrip_Test`).
 Engine UNMOVED at 1638 -- no slice touched a file under `Zenith/`.
 
 **★★ THIS GATE CAN RED FROM MACHINE LOAD ALONE. TRIAGE BEFORE YOU BISECT.** A
@@ -29,7 +30,7 @@ against **3295** on Null, a standing +37 gap.
 updated when the input program's WP3b grew the automated suite 55 -> 61 with the
 six `ZM_Touch*` tests, even though the prose LOWER IN THIS SAME FILE said so
 explicitly. Corrected to the enumerated count. The current pins are
-`zm-tests.yml` (`-Baseline 3307`) and `run_unit_gate.ps1` (default 1638, the
+`zm-tests.yml` (`-Baseline 3312`) and `run_unit_gate.ps1` (default 1638, the
 ENGINE number -- never used for Zenithmon).
 
 **★★ 3276 -> 3277 IS A FIX-FORWARD, NOT A FEATURE BUMP. THE `zm-tests` GATE WAS
@@ -1006,8 +1007,19 @@ boots. A full 440 s tools boot left the Dawnmere terrain file count at **773 -> 
 rewritten, so 773 IS the baked state and the `Render_*_*.zmesh` "Check failed" lines are
 pre-existing noise, not a symptom. Do not chase them.
 
-**★★ OPEN VISUAL DEFECT FOUND BY LOOKING AT A SCREENSHOT, NOT BY A TEST: ASTER HAS HIS BACK TO THE
-PLAYER.** Captured 2026-08-14 from the ProfLab tint probe after SC-C landed
+**★★ CLOSED BY SC-E (2026-08-14): ASTER NOW FACES THE ARRIVING PLAYER**, via a frozen half-turn
+about +Y (`bit_cast` constants through `AddStep_SetTransformRotationQuat`) **AND a collider change
+AABB -> OBB, without which the fix would have been a SILENT NO-OP** --
+`Zenith_ColliderComponent.cpp:801` forces `sIdentity()` for an AABB body and the physics->transform
+sync writes that identity back into the SAVED bytes, so the quaternion would have been authored and
+erased with every compiled-constant unit still green (ZM-D-156 recurring). Facing is asserted as TWO
+dot clauses with separate floors (0.20 toward the player, 0.70 toward the camera) because Aster
+stands one body-width clear of the walk-in line; the 0.70 clause is what rejects a +/-90 deg
+mis-authoring. See ZM-D-193. **The original finding is kept below because the LESSON outlives the
+bug.**
+
+**★★ HOW IT WAS FOUND -- BY LOOKING AT A SCREENSHOT, NOT BY A TEST.** Captured 2026-08-14 from the
+ProfLab tint probe after SC-C landed
 (`Build/artifacts/zenithmon/visual_audit/proflab_interior_grey.tga`). Confirmed independently from
 the constants, so it is not an artefact of one camera angle: the player spawns at
 `fZM_PROFLAB_SPAWN_Z = 5.0`, Aster stands at `fZM_PROFLAB_ASTER_Z = 6.375` (deeper into the room),

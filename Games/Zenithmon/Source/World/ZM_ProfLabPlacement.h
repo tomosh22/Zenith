@@ -1,8 +1,10 @@
 #pragma once
 
+#include <bit>     // bit_cast -- Aster's FROZEN facing (ZM-D-183)
 #include <cmath>   // sqrt -- the arrival standoff, which nothing authored reads
 
-#include "Maths/Zenith_Maths.h"   // Vector3
+#include "Maths/Zenith_Maths.h"   // Vector3 + Quat
+#include "Zenithmon/Source/Data/ZM_WorldSpec.h"   // the compiled world table -- READ by the exit resolver, NEVER mirrored
 #include "Zenithmon/Source/Interaction/ZM_InteractionLogic.h"   // fZM_INTERACT_MAX_DISTANCE (the reach Aster must stay outside of)
 #include "Zenithmon/Source/World/ZM_HumanBody.h"   // THE human body contract
 
@@ -34,6 +36,19 @@
 // ZM_GetWorldSpec(ZM_SCENE_PROFLAB).m_uBuildIndex. Duplicating it here would
 // create a second inventory nothing reconciles, which is exactly the class of
 // defect SC1 exists to close.
+//
+// ★ AND THAT RULE IS WHY THE EXIT ACCESSORS BELOW ARE RESOLVERS, NOT CONSTANTS.
+// SC-E gives this room a way OUT, and an exit needs a target build index and a
+// spawn tag -- the two things the paragraph above forbids spelling here. So this
+// header spells NEITHER: ZM_GetProfLabExitTargetBuildIndex /
+// ZM_GetProfLabExitSpawnTag WALK the compiled ZM_SCENE_PROFLAB row's connection
+// list for the edge that targets Dawnmere and hand back what the TABLE says.
+// Reading the table is the opposite of mirroring it -- there is still exactly one
+// inventory, and a table edit that re-pointed or re-tagged that edge moves the
+// authoring, the boot units and the live-scene clause together. The include of
+// ZM_WorldSpec.h that this needs costs the header nothing: the world table is a
+// compiled const array with no ECS, no scene and no I/O behind it, so the purity
+// contract above is intact.
 // ============================================================================
 
 // ---- The scene, and the entities that are not shell blocks ------------------
@@ -61,6 +76,124 @@ inline constexpr const char* szZM_PROFLAB_CAMERA_ENTITY_NAME = "ProfLabCamera";
 // one on sight, and it is the key BOTH the automated arrival clause and the
 // committed-bytes tripwire look him up by.
 inline constexpr const char* szZM_PROFLAB_ASTER_ENTITY_NAME = "Npc_ProfAster";
+
+// The exit sensor: the ONE entity in this room that takes the player out of it.
+// Named alongside the others rather than in the authoring block because three
+// separate readers look it up -- the tools authoring, the live-scene clause I4 of
+// ZM_ProfLabWarp_Test, and the round-trip walk -- and a name spelled three times
+// is a name that can drift twice.
+inline constexpr const char* szZM_PROFLAB_EXIT_TRIGGER_ENTITY_NAME =
+	"ProfLabExitTrigger";
+
+// ============================================================================
+// ★ THE DAWNMERE SIDE OF THE SAME DOOR, AND WHY ITS NAMES LIVE IN THE PROFLAB
+// HEADER.
+//
+// The lab door is ONE contract with TWO scenes on it: Dawnmere carries the shell,
+// the entrance frame, the warp sensor and the FromLab arrival marker; ProfLab
+// carries the exit sensor that sends the player back to that marker. Both halves
+// have to be authored in the same change (see the block on ZM_GetProfLabExitTrigger
+// below for what happens if they are not), and both halves are looked up BY NAME
+// by the same tests.
+//
+// So the six names below are spelled ONCE, here, and the placement of that
+// spelling follows the include direction rather than taste:
+// Source/World/ZM_DawnmerePlacement.h ALREADY includes this file (it derives the
+// lab exterior's jamb X values and facade height from this room's aperture), so
+// this is the deeper of the two headers and the only one both sides can read. The
+// reverse -- putting them in the Dawnmere header -- would need ProfLab to include
+// Dawnmere and would close that dependency into a cycle.
+//
+// ★ THE SHELL'S NAME IS LOAD-BEARING BEYOND AUTHORING. SC-D's ground-truth oracle
+// (ZM_DawnmereLabGroundTruth_Test, Tests/ZM_AutoTests_CameraClearance.cpp) looks
+// "DawnmereLabShell" up by name so its POST-SC-E re-measure can ignore the shell
+// body standing over the columns it probes. Rename this and that oracle silently
+// re-measures with the shell UNIGNORED -- ten rows of ground truth quietly taken
+// off the roof of a building instead of off the terrain, with every test green.
+//
+// The four block names follow the shipped "Dawnmere<Building><Piece>" convention
+// the Home blocks already use, so a reader who knows DawnmereHomeShell recognises
+// these on sight.
+// ============================================================================
+inline constexpr const char* szZM_DAWNMERE_LAB_SHELL_ENTITY_NAME =
+	"DawnmereLabShell";
+inline constexpr const char* szZM_DAWNMERE_LAB_DOOR_LEFT_ENTITY_NAME =
+	"DawnmereLabDoorLeft";
+inline constexpr const char* szZM_DAWNMERE_LAB_DOOR_RIGHT_ENTITY_NAME =
+	"DawnmereLabDoorRight";
+inline constexpr const char* szZM_DAWNMERE_LAB_DOOR_LINTEL_ENTITY_NAME =
+	"DawnmereLabDoorLintel";
+
+// The arrival marker the ProfLab exit sends the player to, and the sensor that
+// sends them the other way. Named to match the shipped Home pair (FromHomeSpawn /
+// HomeDoorTrigger) rather than to a new convention.
+inline constexpr const char* szZM_DAWNMERE_FROM_LAB_SPAWN_ENTITY_NAME =
+	"FromLabSpawn";
+inline constexpr const char* szZM_DAWNMERE_LAB_DOOR_TRIGGER_ENTITY_NAME =
+	"LabDoorTrigger";
+
+// ---- The exit edge, RESOLVED from the compiled world table -------------------
+//
+// ★ WHY THESE ARE FUNCTIONS AND NOT `= 2` AND `= "FromLab"`. See the second star
+// in the file header: the build index and the spawn tag are the world table's
+// property, and a second spelling of either here would be an inventory nothing
+// reconciles. These walk the ZM_SCENE_PROFLAB row for the edge that targets
+// Dawnmere and return what it says, so a table edit moves every reader at once.
+//
+// ★ AND THE WALK IS BY TARGET, NOT BY INDEX 0. `m_pxConnections[0]` would be a
+// magic index that silently returns the wrong edge the day ProfLab gains a second
+// connection -- which is the kind of change a later stage makes without reading
+// this file.
+
+// The answer when the compiled table carries NO ProfLab -> Dawnmere edge at all.
+// Deliberately a build index no scene can hold rather than a plausible one, so a
+// caller that skips the resolution check authors an obviously dead warp instead of
+// a subtly wrong one. The boot unit
+// ZM_WorldTraversal/ProfLab_ExitSensorTargetsDawnmereByTheCompiledConnection
+// asserts this value is never actually produced.
+inline constexpr u_int uZM_PROFLAB_EXIT_TARGET_UNRESOLVED = 0xFFFFFFFFu;
+
+// TOTAL, in this file's house style: a table with no such edge yields nullptr
+// rather than UB, and the two accessors below turn that into their own stated
+// sentinels. Nothing here asserts -- Zenith_Assert breaks in every configuration
+// and the whole boot-unit suite runs before the scene loads.
+inline const ZM_SceneConnection* ZM_GetProfLabExitConnection()
+{
+	const ZM_WorldSpec& xRow = ZM_GetWorldSpec(ZM_SCENE_PROFLAB);
+	if (xRow.m_pxConnections == nullptr)
+	{
+		return nullptr;
+	}
+	for (u_int uEdge = 0u; uEdge < xRow.m_uConnectionCount; ++uEdge)
+	{
+		if (xRow.m_pxConnections[uEdge].m_eTarget == ZM_SCENE_DAWNMERE)
+		{
+			return &xRow.m_pxConnections[uEdge];
+		}
+	}
+	return nullptr;
+}
+
+inline u_int ZM_GetProfLabExitTargetBuildIndex()
+{
+	const ZM_SceneConnection* pxEdge = ZM_GetProfLabExitConnection();
+	return pxEdge != nullptr
+		? ZM_GetWorldSpec(pxEdge->m_eTarget).m_uBuildIndex
+		: uZM_PROFLAB_EXIT_TARGET_UNRESOLVED;
+}
+
+// The tag the exit asks Dawnmere for -- and therefore ALSO the tag the Dawnmere
+// arrival marker must carry. ONE spelling for both sides of the seam is the whole
+// point: ZM_GameStateManager::IsWarpDestinationValid consults only this table and
+// never the scene, so a marker tagged with anything else passes validation and
+// then parks the warp machine in ZM_WARP_TRANSITION_WAITING_FOR_SPAWN forever.
+inline const char* ZM_GetProfLabExitSpawnTag()
+{
+	const ZM_SceneConnection* pxEdge = ZM_GetProfLabExitConnection();
+	return pxEdge != nullptr && pxEdge->m_szSpawnTag != nullptr
+		? pxEdge->m_szSpawnTag
+		: "";
+}
 
 // ---- The room, as the seven numbers everything else is derived from ---------
 //
@@ -417,6 +550,87 @@ inline Zenith_Maths::Vector3 ZM_GetProfLabArrivalPivot()
 		fZM_PROFLAB_SPAWN_Z);
 }
 
+// ---- The exit sensor --------------------------------------------------------
+//
+// ★★ THIS SENSOR AND THE DAWNMERE "FromLab" MARKER ARE ONE CHANGE, AND SHIPPING
+// EITHER ALONE IS WORSE THAN SHIPPING NEITHER. ZM_GameStateManager::
+// IsWarpDestinationValid consults ONLY the compiled ZM_WorldSpec tag list and
+// never the destination scene, and "FromLab" has been a compiled Dawnmere tag
+// since S1 -- so RequestWarp(<Dawnmere>, "FromLab") returns TRUE with no marker in
+// the scene at all. The machine then advances to
+// ZM_WARP_TRANSITION_WAITING_FOR_SPAWN, WHICH HAS NO TIMEOUT, behind a fully
+// opaque fade with the player frozen. Not a crash, not a red test: a black screen
+// forever. That is why this sensor lands in the same commit as the Dawnmere
+// blockout, the FromLabSpawn marker and the LabDoorTrigger, and why the live-scene
+// clause I4 of ZM_ProfLabWarp_Test exists to red if one of them is ever removed.
+//
+// ---- The five numbers, each DERIVED and each with a reader -------------------
+//
+// (1) X SPAN = the aperture, exactly. The sensor has to be un-walk-aroundable: the
+//     doorway is a 6 m gap between two panels, so a narrower sensor leaves a strip
+//     of gap a player can slip through and walk out of the world through, and a
+//     wider one would poke through the panels either side.
+// (2) Y SPAN = the aperture height, seated on the floor's top face, so its centre
+//     is half that height. A short sensor could be jumped and a tall one would
+//     stick through the lintel.
+// (3) FAR FACE = fZM_PROFLAB_INNER_MAX_Z, the inner plane of the doorway wall. So
+//     nothing can reach the aperture without having crossed the sensor first --
+//     the sensor is the LAST thing between the player and the gap, which is the
+//     property that makes "the player cannot leave except through the warp" true
+//     rather than likely.
+// (4) DEPTH = 1.5 m. A collision sensor is sampled at the physics tick, so it must
+//     be several frames deep at run speed (7 m/s at the round trip's 30 Hz dt is
+//     0.233 m/frame -- six frames inside this box) rather than a plane a fast
+//     capsule can tunnel through.
+// (5) ...and the two together put the NEAR face at 6.25, which is the one number
+//     here that is a CLEARANCE rather than a size. See below.
+//
+// ★★ THE NEAR FACE MUST CLEAR THE ARRIVING BODY, OR THE DOOR IS AN INFINITE LOOP.
+// The player warps IN to fZM_PROFLAB_SPAWN_Z on the "Door" tag. If the arriving
+// capsule -- feet marker plus fZM_PROFLAB_PLAYER_RADIUS of body -- overlapped this
+// sensor, ZM_WarpTrigger would fire on the very first contact tick and send the
+// player straight back to Dawnmere, whose LabDoorTrigger would send them back
+// here, forever, with no input accepted between the two. The gap is
+//     6.25 - (5.0 + 0.4) = 0.85 m
+// and it is asserted, not asserted-in-a-comment: clause (5) of the boot unit
+// ZM_WorldTraversal/ProfLab_ExitSensorFillsTheApertureAndClearsTheArrivingBody.
+inline constexpr float fZM_PROFLAB_EXIT_TRIGGER_SCALE_X =
+	fZM_PROFLAB_APERTURE_HALF_WIDTH * 2.0f;
+inline constexpr float fZM_PROFLAB_EXIT_TRIGGER_SCALE_Y =
+	fZM_PROFLAB_APERTURE_HEIGHT;
+inline constexpr float fZM_PROFLAB_EXIT_TRIGGER_SCALE_Z = 1.5f;
+
+// The far face lands ON the doorway wall's inner plane, so the centre is half a
+// depth back from it. Both terms are dyadic, so this sum is exact in every
+// configuration -- the ZM-D-183 rule applied to a value that lands in a COMMITTED
+// scene file.
+inline constexpr float fZM_PROFLAB_EXIT_TRIGGER_Z =
+	fZM_PROFLAB_INNER_MAX_Z - fZM_PROFLAB_EXIT_TRIGGER_SCALE_Z * 0.5f;
+
+// The clearance the block above spends its last paragraph on, named so the boot
+// unit and the round-trip walk can both state it rather than re-derive it.
+inline float ZM_GetProfLabExitTriggerArrivalClearance()
+{
+	const float fNearFace =
+		fZM_PROFLAB_EXIT_TRIGGER_Z - fZM_PROFLAB_EXIT_TRIGGER_SCALE_Z * 0.5f;
+	return fNearFace - (fZM_PROFLAB_SPAWN_Z + fZM_PROFLAB_PLAYER_RADIUS);
+}
+
+// The sensor as a blockout, in the same vocabulary as the shell pieces: a CENTRE
+// and a SCALE, which is exactly what the authoring's transform steps take.
+inline ZM_ProfLabBlockout ZM_GetProfLabExitTrigger()
+{
+	return {
+		Zenith_Maths::Vector3(
+			fZM_PROFLAB_SPAWN_X,
+			fZM_PROFLAB_FLOOR_TOP_Y + fZM_PROFLAB_EXIT_TRIGGER_SCALE_Y * 0.5f,
+			fZM_PROFLAB_EXIT_TRIGGER_Z),
+		Zenith_Maths::Vector3(
+			fZM_PROFLAB_EXIT_TRIGGER_SCALE_X,
+			fZM_PROFLAB_EXIT_TRIGGER_SCALE_Y,
+			fZM_PROFLAB_EXIT_TRIGGER_SCALE_Z) };
+}
+
 // ---- Professor Aster --------------------------------------------------------
 //
 // ★ THE CONSTRAINT THAT HAD NO OWNER: BEING ON SCREEN AT ALL. The player warps
@@ -432,18 +646,89 @@ inline Zenith_Maths::Vector3 ZM_GetProfLabArrivalPivot()
 // inside -- feeding the rejected (-4.5, +1.0) pair through the identical
 // predicate as its anti-vacuity arm, so the check is known to be able to red.
 //
-// ★ HE IS AUTHORED AT IDENTITY ROTATION, AND THE AUTHORING EMITS NO ROTATION STEP
-// AT ALL (ZM-D-183). AddStep_SetTransformYaw / ...RotationEuler build their
-// quaternion with libm AT AUTHORING TIME and MSVC Debug and Release codegen
-// disagree by 1-2 ULP, so ProfLab.zscen -- a COMMITTED file re-authored on every
-// tools boot -- would ping-pong in git forever, invisible to the same-binary
-// pre-save guard. Identity is bit-exact in every configuration, which is why the
-// four shipped Dawnmere townsfolk never surfaced this. Aster faces nowhere in
-// particular, so he takes no yaw, and that is ALSO what makes his
-// COLLISION_VOLUME_TYPE_AABB body legal here: an AABB forces its Jolt body to
-// identity and the physics->transform sync writes that identity back into the
-// saved bytes, which destroys an authored rotation but cannot destroy an absent
-// one (contrast ZM_QueueDawnmereTrainerNpc, where AABB is forbidden forever).
+// ★ HE USED TO FACE +Z, WHICH IS TO SAY HE GREETED THE PLAYER WITH HIS BACK
+// TURNED, AND NOT ONE TEST COULD SEE IT. He was authored at identity rotation,
+// identity forward is +Z (ZM_ForwardFromRotation rotates the +Z basis), the player
+// arrives at fZM_PROFLAB_SPAWN_Z = 5.0 and the camera settles further back still
+// at z = -0.5 -- while he stands DEEPER into the room at fZM_PROFLAB_ASTER_Z =
+// 6.375. So his forward pointed at the doorway wall behind him and the whole arrival
+// framed the back of the professor's head. ProfLab_AsterStandsInsideTheArrivalFrustum
+// asserts he is ON SCREEN and passed the entire time; nothing asserted he was facing
+// anything, because until this change nothing in this room faced anywhere at all.
+// The defect was found by LOOKING AT A SCREENSHOT, which is the honest provenance
+// and worth recording: an on-screen check is not a looking-right check.
+//
+// ★★ AND THE OBVIOUS FIX IS FORBIDDEN HERE (ZM-D-183). AddStep_SetTransformYaw and
+// ...RotationEuler build their quaternion with libm AT AUTHORING TIME, MSVC Debug
+// and Release codegen disagree on those sin/cos by 1-2 ULP, and ProfLab.zscen is
+// COMMITTED and re-authored on every tools boot -- so a yaw step would make the
+// file ping-pong in git forever, INVISIBLY to the same-binary pre-save guard (which
+// compares the serialized bytes against a value that moved with them). That is the
+// defect that has already cost this project two separate incidents. He is therefore
+// authored EXACTLY the way rival Vesper is: four FROZEN std::bit_cast constants fed
+// verbatim to AddStep_SetTransformRotationQuat, which performs no math at all.
+//
+// ★ AND HIS COLLIDER HAD TO CHANGE WITH HIM -- COLLISION_VOLUME_TYPE_AABB IS NOW
+// ILLEGAL ON HIM, for the reason the closing note at the bottom of this file has
+// always stated and the reason ZM-D-156 was paid for on rival Vesper. An AABB is
+// axis-aligned BY DEFINITION: Zenith_ColliderComponent forces its Jolt body to
+// JPH::Quat::sIdentity(), and the physics->transform sync then writes that identity
+// straight back over the authored rotation and into the SAVED BYTES, with every
+// pure unit still green because the units read the constants and the damage lives
+// in the file. He is a body that must hold a facing and must never move, which is
+// exactly the case the closing note reserves COLLISION_VOLUME_TYPE_OBB for -- the
+// same box shape, differing only in that it applies the rotation. He does NOT take
+// rival Vesper's dynamic capsule: that shape exists because the rival WALKS, and a
+// dynamic body could be shoved off the anchor every clearance figure in this file
+// is derived at.
+inline constexpr u_int uZM_PROFLAB_ASTER_FACING_X_BITS = 0x00000000u;
+inline constexpr u_int uZM_PROFLAB_ASTER_FACING_Y_BITS = 0x3F800000u;
+inline constexpr u_int uZM_PROFLAB_ASTER_FACING_Z_BITS = 0x00000000u;
+inline constexpr u_int uZM_PROFLAB_ASTER_FACING_W_BITS = 0x00000000u;
+
+// ★ WHERE THESE FOUR NUMBERS COME FROM, AND WHY THIS ONE FREEZE NEEDS NO ORACLE
+// RUN. Vesper's frozen bits are a MEASUREMENT -- the Debug build's atan2/angleAxis
+// output for a bearing at his anchors -- so his header carries a re-derivation unit
+// and a re-freeze procedure. These are not: a half turn about +Y is
+//     (x, y, z, w) = (0, sin(pi/2), 0, cos(pi/2)) = (0, 1, 0, 0)
+// whose components are 0 and 1 EXACTLY, in every float format there is. There is no
+// libm result to freeze, nothing to re-measure and no configuration that can
+// disagree; the bit patterns are simply the IEEE-754 spellings of 0.0f and 1.0f
+// (0x00000000 and 0x3F800000). They are written as std::bit_cast anyway, to the
+// same shape as ZM_DawnmereVesperFacing, so that "an authored rotation in a
+// committed scene is a frozen bit pattern" has ONE form in this game and a reader
+// never has to decide which kind they are looking at.
+//
+// Rotating the +Z basis by a half turn about +Y gives -Z, i.e. the professor turns
+// to face back down the hall -- toward the arrival marker, past it to where the
+// follow camera settles, and therefore toward the player's eye. That claim is
+// checked rather than asserted here: the pure unit
+// ZM_WorldTraversal/ProfLab_AsterFacingIsTurnedTowardTheArrival runs the SHIPPED
+// ZM_ForwardFromRotation over this quaternion and dots the result against the
+// direction to ZM_GetProfLabArrivalPivot() and ZM_GetProfLabSettledCameraPosition(),
+// and clause I3 of ZM_ProfLabWarp_Test repeats it against the LIVE transform in the
+// loaded scene. Both are DOT PRODUCTS on purpose: a guard that re-spells the same
+// quaternion the authoring spells cannot see the authoring move, and the property
+// worth holding is "he faces the player", not "these 16 bytes equal those 16 bytes".
+inline Zenith_Maths::Quat ZM_ProfLabAsterFacing()
+{
+	static_assert(std::bit_cast<u_int>(
+		std::bit_cast<float>(uZM_PROFLAB_ASTER_FACING_Y_BITS)) ==
+		uZM_PROFLAB_ASTER_FACING_Y_BITS,
+		"the frozen y component does not round-trip through float");
+	static_assert(std::bit_cast<float>(uZM_PROFLAB_ASTER_FACING_Y_BITS) == 1.0f,
+		"the frozen y component is not exactly 1.0f, so this is no longer a half "
+		"turn about +Y and the -Z facing claim above is void");
+	static_assert(std::bit_cast<float>(uZM_PROFLAB_ASTER_FACING_W_BITS) == 0.0f,
+		"the frozen w component is not exactly 0.0f, so this is no longer a half turn");
+
+	// glm::quat's constructor is (w, x, y, z).
+	return Zenith_Maths::Quat(
+		std::bit_cast<float>(uZM_PROFLAB_ASTER_FACING_W_BITS),
+		std::bit_cast<float>(uZM_PROFLAB_ASTER_FACING_X_BITS),
+		std::bit_cast<float>(uZM_PROFLAB_ASTER_FACING_Y_BITS),
+		std::bit_cast<float>(uZM_PROFLAB_ASTER_FACING_Z_BITS));
+}
 
 // (1) HIS X -- clear of the walk-in corridor. His CENTRE stands one full body
 //     footprint outside the doorway's clear opening, so his own half-width still
@@ -502,8 +787,7 @@ inline float ZM_GetProfLabAsterArrivalStandoff()
 }
 
 // ============================================================================
-// ★ CLOSING NOTE -- WHY EVERY STATIC COLLIDER IN PROFLAB IS AABB, AND MUST STAY
-// AABB.
+// ★ CLOSING NOTE -- WHY EVERY STATIC COLLIDER IN PROFLAB IS AABB EXCEPT ONE.
 //
 // An AABB collider forces its body to identity rotation, and the
 // physics->transform sync writes that identity straight back into the SAVED
@@ -511,14 +795,25 @@ inline float ZM_GetProfLabAsterArrivalStandoff()
 // direction needs COLLISION_VOLUME_TYPE_OBB (the same box shape, differing only
 // in that it applies the rotation).
 //
-// NOTHING IN PROFLAB FACES ANYWHERE. The entrance is an ABSENCE of geometry
+// ALMOST NOTHING IN PROFLAB FACES ANYWHERE. The entrance is an ABSENCE of geometry
 // between two axis-aligned panels, not a hinged panel; no shell block carries an
-// authored rotation; the player is a CAPSULE because it also has to move; and
-// Professor Aster is a STATIONARY TALKER with no sight cone and no walk-up, so
-// there is no direction for him to hold either -- which is precisely why he can
-// wear AABB where the Dawnmere rival never may. So
-// AABB is not a shortcut here, it is the correct shape, and "upgrading" these to
-// OBB would rewrite the committed .zscen for zero behavioural gain. If a future
-// prop in this room DOES need to face somewhere, that prop -- and only that prop
-// -- gets OBB.
+// authored rotation; the exit sensor is an axis-aligned box spanning an
+// axis-aligned aperture; and the player is a CAPSULE because it also has to move.
+// For all of those AABB is not a shortcut, it is the correct shape, and
+// "upgrading" them to OBB would rewrite the committed .zscen for zero behavioural
+// gain.
+//
+// ★ THE ONE EXCEPTION IS PROFESSOR ASTER, and this note used to say he was not
+// one. He was authored at identity and the argument ran "he faces nowhere in
+// particular, so he can wear AABB" -- which was true of the AUTHORING and false of
+// the ROOM: he stands deeper into the hall than the arrival point, so an identity
+// forward of +Z turned his back on every player who ever walked in. He now carries
+// a frozen half-turn (ZM_ProfLabAsterFacing) and therefore takes OBB, exactly the
+// case the paragraph above reserves it for: a body that must hold a rotation and
+// must never move. He is NOT given the rival's dynamic capsule -- that shape is
+// for an NPC who WALKS, and a dynamic body could be shoved off the anchor every
+// clearance figure in this file is derived at.
+//
+// If a future prop in this room DOES need to face somewhere, that prop -- and only
+// that prop -- gets OBB too.
 // ============================================================================

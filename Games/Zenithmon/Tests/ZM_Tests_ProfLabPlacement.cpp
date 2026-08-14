@@ -13,7 +13,7 @@
 // (ZM_ProfLabWarp_Test) needs the committed ProfLab.zscen and a live warp, so it
 // cannot be the only place the placement argument lives.
 //
-// ★ WHAT THESE ELEVEN UNITS CANNOT DO, STATED UP FRONT. They run BEFORE the
+// ★ WHAT THESE FIFTEEN UNITS CANNOT DO, STATED UP FRONT. They run BEFORE the
 // initial scene loads (Zenith_Engine.cpp runs RunAllTests() ahead of
 // Project_LoadInitialScene), so they can see NEITHER the scene registry NOR one
 // byte of Assets/Scenes/ProfLab.zscen. They cannot detect a missing
@@ -35,6 +35,7 @@
 #include "Core/Zenith_TestFramework.h"
 #include "Maths/Zenith_Maths.h"
 #include "Zenithmon/Components/ZM_FollowCamera.h"        // the camera's PURE statics (nothing is constructed)
+#include "Zenithmon/Components/ZM_PlayerController.h"    // fRUN_SPEED -- the sensor-depth clause's per-frame travel
 #include "Zenithmon/Components/ZM_SpawnPoint.h"          // IsTagValid / uTAG_CAPACITY -- the tag contract
 #include "Zenithmon/Source/Data/ZM_WorldSpec.h"
 #include "Zenithmon/Source/Interaction/ZM_InteractionLogic.h"   // the SHIPPED candidate picker -- run, not re-derived
@@ -1335,5 +1336,433 @@ ZENITH_TEST(ZM_WorldTraversal, ProfLab_AsterEntityNameIsAUniqueLookupKey)
 			"Professor Aster shares the entity name '%s' with another authored "
 			"ProfLab entity -- FindEntityByName would resolve both to whichever "
 			"the scene stored first", aszOtherEntities[u]);
+	}
+}
+
+// ============================================================================
+// S8 SC-E -- THE FOUR UNITS THE LAB SEAM AND THE PROFESSOR'S FACING ADD.
+//
+// ★ WHAT THEY ARE, AND WHAT THEY ARE HONESTLY NOT. Every one of them reads
+// compiled constants, so they are the CHEAP half of this slice's proof: they can
+// say the compiled world table and the compiled geometry agree with one another,
+// and they cannot say one byte about whether Dawnmere.zscen or ProfLab.zscen was
+// ever re-authored. The expensive halves are named where they live -- clause I4
+// and the facing arm of clause I3 in Tests/ZM_AutoTests_ProfLab.cpp (which runs
+// with no terrain and never skips, so it is a real CI gate), and
+// ZM_CommittedSceneBytes/DawnmereCarriesTheLabSeamMarkerAndTag (a boot unit over
+// the committed Dawnmere bytes). Do not read this file's greenness as "the lab
+// door works".
+// ============================================================================
+
+// ============================================================================
+// U12 -- the exit edge is the TABLE's, not this header's.
+//
+// The mutation this exists for is the one an adversarial reviewer named: a
+// configure function that writes SOME OTHER build index (PlayerHome's, say)
+// instead of resolving Dawnmere's. That authoring reads
+// ZM_GetProfLabExitTargetBuildIndex(), so the way to make that mutation
+// unreachable is to prove the resolver answers what the compiled table says --
+// and, crucially, that the tag it hands back is one Dawnmere actually OFFERS.
+//
+// ★ THAT LAST CLAUSE IS THE RECIPROCAL-INVENTORY ONE, and it is the only check in
+// this file that could ever have caught the shipped-exit-without-a-marker hang at
+// the TABLE level. ZM_GameStateManager::IsWarpDestinationValid asks exactly this
+// question of the table and nothing else -- so if it fails here, the warp would
+// have been REJECTED at runtime (a visible no-op) rather than accepted into
+// WAITING_FOR_SPAWN. Both are defects; this one is at least diagnosable.
+// ============================================================================
+ZENITH_TEST(ZM_WorldTraversal, ProfLab_ExitSensorTargetsDawnmereByTheCompiledConnection)
+{
+	// (1) The edge exists at all. A ProfLab row with no Dawnmere connection is a
+	//     room with no way out, and the resolver's sentinel would be authored into
+	//     the scene as a warp to a build index no scene holds.
+	const ZM_SceneConnection* pxEdge = ZM_GetProfLabExitConnection();
+	ZENITH_ASSERT_NOT_NULL(pxEdge,
+		"the compiled ZM_SCENE_PROFLAB row carries no connection targeting "
+		"ZM_SCENE_DAWNMERE, so ZM_GetProfLabExitConnection() resolved to nullptr. "
+		"The authored ProfLabExitTrigger would take the "
+		"uZM_PROFLAB_EXIT_TARGET_UNRESOLVED sentinel and the lab would have no exit "
+		"-- fix Source/Data/ZM_WorldSpec.cpp, not this test");
+	if (pxEdge == nullptr)
+	{
+		return;   // already FAILED; every clause below would be about a null edge
+	}
+
+	// (2) The resolved build index is the TABLE's Dawnmere index, and never the
+	//     sentinel. Spelled as ZM_GetWorldSpec(ZM_SCENE_DAWNMERE).m_uBuildIndex on
+	//     the expected side too -- a literal 2 here would be a second inventory,
+	//     which is the exact defect the header's opening star forbids.
+	const u_int uResolved = ZM_GetProfLabExitTargetBuildIndex();
+	ZENITH_ASSERT_NE(uResolved, uZM_PROFLAB_EXIT_TARGET_UNRESOLVED,
+		"ZM_GetProfLabExitTargetBuildIndex() returned its unresolved sentinel even "
+		"though the ProfLab->Dawnmere edge exists -- the resolver and the edge walk "
+		"have parted company");
+	ZENITH_ASSERT_EQ(uResolved, ZM_GetWorldSpec(ZM_SCENE_DAWNMERE).m_uBuildIndex,
+		"the ProfLab exit resolves to build index %u but the compiled world table "
+		"puts Dawnmere at %u. The authored exit would fade the player out and load "
+		"whatever scene is registered at %u -- or nothing at all",
+		uResolved, ZM_GetWorldSpec(ZM_SCENE_DAWNMERE).m_uBuildIndex, uResolved);
+
+	// (3) The tag is a usable ZM_SpawnPoint tag: non-empty, inside the component's
+	//     fixed capacity, and accepted by the component's own validator. SetTag
+	//     fails CLOSED, so a tag the component rejects authors an UNTAGGED marker
+	//     that resolves to nothing.
+	const char* szTag = ZM_GetProfLabExitSpawnTag();
+	ZENITH_ASSERT_TRUE(szTag != nullptr && szTag[0] != '\0',
+		"the ProfLab->Dawnmere connection carries an empty spawn tag");
+	ZENITH_ASSERT_TRUE(ZM_SpawnPoint::IsTagValid(szTag),
+		"the ProfLab->Dawnmere connection's spawn tag '%s' is not a tag "
+		"ZM_SpawnPoint::SetTag will accept (capacity %u). SetTag fails CLOSED, so "
+		"the Dawnmere arrival marker would author itself untagged and the exit would "
+		"park the warp machine in WAITING_FOR_SPAWN, which has no timeout",
+		szTag, ZM_SpawnPoint::uTAG_CAPACITY);
+
+	// (4) ★ THE RECIPROCAL CLAUSE. Dawnmere must OFFER the tag the exit ASKS for.
+	//     This is the exact predicate IsWarpDestinationValid evaluates, run here
+	//     against the same table it reads.
+	const ZM_WorldSpec& xDawnmere = ZM_GetWorldSpec(ZM_SCENE_DAWNMERE);
+	bool bOffered = false;
+	for (u_int uTag = 0u; uTag < xDawnmere.m_uSpawnTagCount; ++uTag)
+	{
+		if (xDawnmere.m_pszSpawnTags != nullptr
+			&& xDawnmere.m_pszSpawnTags[uTag] != nullptr
+			&& std::strcmp(xDawnmere.m_pszSpawnTags[uTag], szTag) == 0)
+		{
+			bOffered = true;
+			break;
+		}
+	}
+	ZENITH_ASSERT_TRUE(bOffered,
+		"the ProfLab exit asks Dawnmere for spawn tag '%s', which is NOT in "
+		"Dawnmere's offered tag list (%u tags). ZM_GameStateManager::"
+		"IsWarpDestinationValid evaluates exactly this, so the warp would be "
+		"REJECTED at runtime and the lab door would be a silent no-op",
+		szTag, xDawnmere.m_uSpawnTagCount);
+
+	// (5) ...and the OTHER direction of the same door: Dawnmere's LabDoorTrigger is
+	//     authored against ProfLab's own arrival tag, so ProfLab must offer it.
+	const ZM_WorldSpec& xProfLab = ZM_GetWorldSpec(ZM_SCENE_PROFLAB);
+	bool bArrivalOffered = false;
+	for (u_int uTag = 0u; uTag < xProfLab.m_uSpawnTagCount; ++uTag)
+	{
+		if (xProfLab.m_pszSpawnTags != nullptr
+			&& xProfLab.m_pszSpawnTags[uTag] != nullptr
+			&& std::strcmp(xProfLab.m_pszSpawnTags[uTag], szZM_PROFLAB_SPAWN_TAG) == 0)
+		{
+			bArrivalOffered = true;
+			break;
+		}
+	}
+	ZENITH_ASSERT_TRUE(bArrivalOffered,
+		"Dawnmere's lab doorway sensor is authored against ProfLab's arrival tag "
+		"'%s', which ProfLab does not offer (%u tags) -- the way IN would be "
+		"rejected even if the way out worked",
+		szZM_PROFLAB_SPAWN_TAG, xProfLab.m_uSpawnTagCount);
+}
+
+// ============================================================================
+// U13 -- the exit sensor's geometry, and the ONE clause that keeps the door from
+// being an infinite loop.
+//
+// The other four clauses are ordinary "is this box the right box" checks. Clause
+// (5) is not: it is the difference between a working door and a game that, on
+// arrival, warps the player back out and in and out forever with no input
+// accepted between the two.
+// ============================================================================
+ZENITH_TEST(ZM_WorldTraversal, ProfLab_ExitSensorFillsTheApertureAndClearsTheArrivingBody)
+{
+	const ZM_ProfLabBlockout xSensor = ZM_GetProfLabExitTrigger();
+	ZENITH_ASSERT_TRUE(ProfLabBlockoutIsFinite(xSensor),
+		"the exit sensor's blockout carries a non-finite component -- the authored "
+		"transform would be NaN and the body would never overlap anything");
+
+	// (1) It fills the aperture in X, exactly. Narrower and a player can slip past
+	//     it through the gap and out of the world; wider and it pokes through the
+	//     two front panels.
+	const float fApertureHalfWidth = fZM_PROFLAB_APERTURE_HALF_WIDTH;
+	ZENITH_ASSERT_EQ_FLOAT(xSensor.Min().x, -fApertureHalfWidth,
+		fPROFLAB_PLANE_EPSILON,
+		"the exit sensor's -X face is at %.5f but the doorway opening starts at "
+		"%.5f -- there is a strip of clear aperture beside the sensor, and a player "
+		"who walks through it leaves the room without warping",
+		(double)xSensor.Min().x, (double)-fApertureHalfWidth);
+	ZENITH_ASSERT_EQ_FLOAT(xSensor.Max().x, fApertureHalfWidth,
+		fPROFLAB_PLANE_EPSILON,
+		"the exit sensor's +X face is at %.5f but the doorway opening ends at %.5f",
+		(double)xSensor.Max().x, (double)fApertureHalfWidth);
+
+	// (2) It stands ON the floor and fills the opening's height. A gap under it
+	//     would be jumpable-under only in theory, but a gap ABOVE it is the real
+	//     hazard on a slope-free interior: nothing here should be reachable over
+	//     the top of a 3 m sensor, and a short one is a silent authoring slip.
+	ZENITH_ASSERT_EQ_FLOAT(xSensor.Min().y, fZM_PROFLAB_FLOOR_TOP_Y,
+		fPROFLAB_PLANE_EPSILON,
+		"the exit sensor's underside is at y=%.5f, not on the floor's top face "
+		"(%.5f) -- a player could pass beneath it",
+		(double)xSensor.Min().y, (double)fZM_PROFLAB_FLOOR_TOP_Y);
+	ZENITH_ASSERT_EQ_FLOAT(xSensor.Max().y,
+		fZM_PROFLAB_FLOOR_TOP_Y + fZM_PROFLAB_APERTURE_HEIGHT,
+		fPROFLAB_PLANE_EPSILON,
+		"the exit sensor's top is at y=%.5f but the doorway opening reaches %.5f",
+		(double)xSensor.Max().y,
+		(double)(fZM_PROFLAB_FLOOR_TOP_Y + fZM_PROFLAB_APERTURE_HEIGHT));
+
+	// (3) Its FAR face is the doorway wall's inner plane, so it is the LAST thing
+	//     between the player and the gap -- nothing can reach the aperture without
+	//     having crossed the sensor first.
+	ZENITH_ASSERT_EQ_FLOAT(xSensor.Max().z, fZM_PROFLAB_INNER_MAX_Z,
+		fPROFLAB_PLANE_EPSILON,
+		"the exit sensor's far face is at z=%.5f, not on the doorway wall's inner "
+		"plane (%.5f). A gap between the two is a strip of room a player can stand "
+		"in on the far side of the sensor, still inside the building, having already "
+		"passed the only thing that would have warped them",
+		(double)xSensor.Max().z, (double)fZM_PROFLAB_INNER_MAX_Z);
+
+	// (4) It is deep enough not to be tunnelled through. At the round trip's 30 Hz
+	//     fixed dt a running capsule covers fRUN_SPEED/30 per frame; a sensor
+	//     shallower than a couple of those is a plane a fast body can step over
+	//     between physics ticks.
+	constexpr float fMIN_SENSOR_TICKS = 2.0f;
+	const float fPerFrameAt30Hz = ZM_PlayerController::fRUN_SPEED / 30.0f;
+	ZENITH_ASSERT_GT(fZM_PROFLAB_EXIT_TRIGGER_SCALE_Z,
+		fPerFrameAt30Hz * fMIN_SENSOR_TICKS,
+		"the exit sensor is only %.4f m deep, against %.4f m of travel per 30 Hz "
+		"frame at run speed -- fewer than %.0f physics ticks inside the box, which "
+		"is a sensor a running player can step across between ticks",
+		(double)fZM_PROFLAB_EXIT_TRIGGER_SCALE_Z, (double)fPerFrameAt30Hz,
+		(double)fMIN_SENSOR_TICKS);
+
+	// (5) ★★ THE ANTI-LOOP CLAUSE. The player warps IN to fZM_PROFLAB_SPAWN_Z on
+	//     the "Door" tag. If the arriving capsule -- the feet marker plus a body
+	//     radius -- touched this sensor, ZM_WarpTrigger would fire on the first
+	//     contact tick and send the player straight back to Dawnmere, whose
+	//     LabDoorTrigger would send them back here, forever, with no input accepted
+	//     in between. Note this is about the CAPSULE, not the marker: a check on
+	//     the marker point alone would pass with the body half inside the box.
+	const float fClearance = ZM_GetProfLabExitTriggerArrivalClearance();
+	ZENITH_ASSERT_GT(fClearance, 0.0f,
+		"the arriving player's capsule (feet z=%.4f plus %.4f m of body radius) "
+		"reaches into the exit sensor, whose near face is at z=%.4f -- clearance "
+		"%.4f m. The warp would fire on the arrival tick and bounce the player "
+		"between Dawnmere and ProfLab forever, frozen, behind a fade. Move the "
+		"sensor deeper toward the doorway or the arrival marker further into the "
+		"room; do NOT weaken this clause",
+		(double)fZM_PROFLAB_SPAWN_Z, (double)fZM_PROFLAB_PLAYER_RADIUS,
+		(double)(fZM_PROFLAB_EXIT_TRIGGER_Z
+			- fZM_PROFLAB_EXIT_TRIGGER_SCALE_Z * 0.5f),
+		(double)fClearance);
+
+	// ...and the same claim with a MARGIN, so the door does not merely work but
+	// keeps working after a small placement change. Half a body radius is the
+	// smallest gap in which "the player took a step before the door fired" is
+	// observably true rather than frame-order dependent.
+	const float fMinClearance = fZM_PROFLAB_PLAYER_RADIUS * 0.5f;
+	ZENITH_ASSERT_GT(fClearance, fMinClearance,
+		"the arriving player stands only %.4f m clear of the exit sensor, inside the "
+		"%.4f m margin this room keeps. The door does not fire on arrival TODAY, but "
+		"there is no room left for the marker or the sensor to move",
+		(double)fClearance, (double)fMinClearance);
+}
+
+// ============================================================================
+// U14 -- PROFESSOR ASTER FACES THE PLAYER.
+//
+// ★★ THIS UNIT MUST NOT RE-SPELL THE QUATERNION THE AUTHORING SPELLS. A guard
+// that compares ZM_ProfLabAsterFacing() against a locally written (0, 1, 0, 0)
+// cannot see the authored value move: both sides are the same constant and they
+// would move together, which is the whole finding of the self-referential-guard
+// lesson this repo has already paid for. So the property under test is not "these
+// 16 bytes" -- it is HE FACES THE PLAYER, expressed as dot products against
+// directions derived from the arrival placement.
+//
+// ★ AND IT RUNS THE SHIPPED FORWARD FUNCTION. ZM_ForwardFromRotation is what the
+// interact picker and the trainer cone use to decide what an entity is facing, and
+// it rotates the +Z basis (never glm::eulerAngles, which collapses past 90 degrees
+// off +Z and has already cost this repo a debugging cycle). Reimplementing the
+// rotation here would let this unit and the game disagree about what "facing"
+// means while both stayed green.
+//
+// THE TWO FLOORS, and where they come from:
+//   * toward the ARRIVING BODY, the geometry gives dot ~ 0.340. He stands off to
+//     one side of the walk-in line by design (his X is one body footprint clear of
+//     the doorway opening), so this dot can never be near 1 without moving him into
+//     the corridor. The floor is 0.20: comfortably below the authored value, and
+//     ABOVE ZERO, which is the whole claim -- turned toward the arriving half of
+//     the room rather than away from it.
+//   * toward the SETTLED CAMERA, the geometry gives dot ~ 0.875. That is the eye
+//     the arrival is actually seen through, and it is the stronger constraint --
+//     it is what rejects a +X or -X facing, which the first floor alone would
+//     accept. The floor is 0.70.
+// Neither floor is a tuning value to relax when it reds. A red here means the
+// professor turned away from the door.
+//
+// ANTI-VACUITY: the SHIPPED-BEFORE-SC-E value -- identity, i.e. the +Z facing that
+// put his back to the player -- is fed through the identical predicate and is
+// required to FAIL both floors. Without that arm a predicate that always returned
+// a large dot would look green.
+// ============================================================================
+
+namespace
+{
+	// The XZ dot between "the way this rotation faces" and "the way from here to
+	// there". Both halves go through the shipped helpers: the facing through
+	// ZM_ForwardFromRotation, the bearing through ZM_FlattenXZ, so a degenerate
+	// input yields a zero vector and a zero dot rather than a NaN.
+	float ProfLabFacingDotToward(
+		const Zenith_Maths::Quat& xRotation,
+		const Zenith_Maths::Vector3& xFrom,
+		const Zenith_Maths::Vector3& xTo)
+	{
+		const Zenith_Maths::Vector3 xForward = ZM_ForwardFromRotation(xRotation);
+		const Zenith_Maths::Vector3 xBearing = ZM_FlattenXZ(xTo - xFrom);
+		return xForward.x * xBearing.x + xForward.z * xBearing.z;
+	}
+}
+
+ZENITH_TEST(ZM_WorldTraversal, ProfLab_AsterFacingIsTurnedTowardTheArrival)
+{
+	// The floors, named so a failure message can state them and so neither is a
+	// bare number in an assertion. See the block above for their derivation.
+	constexpr float fFACES_PLAYER_MIN_DOT = 0.20f;
+	constexpr float fFACES_CAMERA_MIN_DOT = 0.70f;
+
+	const Zenith_Maths::Quat xFacing = ZM_ProfLabAsterFacing();
+
+	// (1) It is a UNIT quaternion. A non-unit one still rotates, but Jolt
+	//     normalises the body's and the serialized transform would then disagree
+	//     with the constant -- a ZM-D-179-shaped drift with a different cause.
+	const float fLengthSquared = xFacing.x * xFacing.x + xFacing.y * xFacing.y
+		+ xFacing.z * xFacing.z + xFacing.w * xFacing.w;
+	ZENITH_ASSERT_EQ_FLOAT(fLengthSquared, 1.0f, fPROFLAB_EXACT_EPSILON,
+		"Professor Aster's frozen facing has squared length %.7f, not 1. A "
+		"non-unit authored quaternion is normalised by the physics body and the "
+		"saved bytes then differ from the constant every test compares against",
+		(double)fLengthSquared);
+
+	// (2) It gives a real XZ heading at all. A facing whose XZ projection has
+	//     collapsed (a pure pitch, say) makes every dot below zero and would fail
+	//     the floors for a reason that has nothing to do with where he is looking.
+	const Zenith_Maths::Vector3 xForward = ZM_ForwardFromRotation(xFacing);
+	const float fForwardLengthSquared =
+		xForward.x * xForward.x + xForward.z * xForward.z;
+	ZENITH_ASSERT_GT(fForwardLengthSquared, 0.5f,
+		"Professor Aster's frozen facing has no XZ heading (flattened forward "
+		"(%.5f, %.5f), length squared %.7f) -- it is a pitch or a roll, not a turn, "
+		"and the interact picker's cone would reject him outright",
+		(double)xForward.x, (double)xForward.z, (double)fForwardLengthSquared);
+
+	const Zenith_Maths::Vector3 xAster = ZM_GetProfLabAsterCenter();
+	const Zenith_Maths::Vector3 xArrivalPivot = ZM_GetProfLabArrivalPivot();
+	const Zenith_Maths::Vector3 xSettledCamera =
+		ZM_GetProfLabSettledCameraPosition();
+
+	// (3) He is turned toward the arriving player, not away.
+	const float fPlayerDot =
+		ProfLabFacingDotToward(xFacing, xAster, xArrivalPivot);
+	ZENITH_ASSERT_GT(fPlayerDot, fFACES_PLAYER_MIN_DOT,
+		"Professor Aster's authored facing dots %.5f with the direction from his "
+		"anchor to the arrival point, against a floor of %.2f. A NEGATIVE value "
+		"means he has his back to the player -- which is exactly the state this "
+		"placement shipped in before SC-E, with ProfLab_AsterStandsInsideTheArrival"
+		"Frustum green throughout because being ON SCREEN is not the same claim as "
+		"FACING somebody",
+		(double)fPlayerDot, (double)fFACES_PLAYER_MIN_DOT);
+
+	// (4) ...and toward the eye the arrival is filmed through, which is the
+	//     stronger of the two and the one that rejects a sideways facing.
+	const float fCameraDot =
+		ProfLabFacingDotToward(xFacing, xAster, xSettledCamera);
+	ZENITH_ASSERT_GT(fCameraDot, fFACES_CAMERA_MIN_DOT,
+		"Professor Aster's authored facing dots %.5f with the direction from his "
+		"anchor to the pose the follow camera settles at on arrival, against a floor "
+		"of %.2f. This is the clause that rejects a facing turned 90 degrees to "
+		"either side -- one of those still points vaguely at the player's column and "
+		"would clear clause (3), while showing the player the professor's shoulder",
+		(double)fCameraDot, (double)fFACES_CAMERA_MIN_DOT);
+
+	// (5) ★ ANTI-VACUITY. The pre-SC-E authored value -- identity, forward +Z --
+	//     must FAIL both floors through the identical predicate, or neither of the
+	//     clauses above is known to be able to red.
+	const Zenith_Maths::Quat xIdentity(1.0f, 0.0f, 0.0f, 0.0f);
+	const float fIdentityPlayerDot =
+		ProfLabFacingDotToward(xIdentity, xAster, xArrivalPivot);
+	const float fIdentityCameraDot =
+		ProfLabFacingDotToward(xIdentity, xAster, xSettledCamera);
+	ZENITH_ASSERT_LT(fIdentityPlayerDot, fFACES_PLAYER_MIN_DOT,
+		"the ANTI-VACUITY arm failed: the pre-SC-E identity rotation dots %.5f "
+		"toward the arrival point, which CLEARS the %.2f floor clause (3) uses. "
+		"Clause (3) therefore cannot red on the defect it was written for -- the "
+		"floor, the anchors or the arrival placement have moved",
+		(double)fIdentityPlayerDot, (double)fFACES_PLAYER_MIN_DOT);
+	ZENITH_ASSERT_LT(fIdentityCameraDot, fFACES_CAMERA_MIN_DOT,
+		"the ANTI-VACUITY arm failed: the pre-SC-E identity rotation dots %.5f "
+		"toward the settled camera, clearing the %.2f floor clause (4) uses",
+		(double)fIdentityCameraDot, (double)fFACES_CAMERA_MIN_DOT);
+}
+
+// ============================================================================
+// U15 -- the six lab-seam names are usable, distinct lookup keys.
+//
+// Four separate readers resolve these by name: the tools authoring, clause I4 of
+// ZM_ProfLabWarp_Test, ZM_CommittedSceneBytes' Dawnmere needle, and SC-D's
+// ground-truth oracle (which looks "DawnmereLabShell" up specifically so its
+// post-SC-E re-measure can IGNORE that body -- a collision or a typo there means
+// ten frozen ground heights get re-measured off the building's roof).
+// ============================================================================
+ZENITH_TEST(ZM_WorldTraversal, ProfLab_LabSeamEntityNamesAreUniqueLookupKeys)
+{
+	const char* aszSeamNames[] = {
+		szZM_PROFLAB_EXIT_TRIGGER_ENTITY_NAME,
+		szZM_DAWNMERE_LAB_SHELL_ENTITY_NAME,
+		szZM_DAWNMERE_LAB_DOOR_LEFT_ENTITY_NAME,
+		szZM_DAWNMERE_LAB_DOOR_RIGHT_ENTITY_NAME,
+		szZM_DAWNMERE_LAB_DOOR_LINTEL_ENTITY_NAME,
+		szZM_DAWNMERE_FROM_LAB_SPAWN_ENTITY_NAME,
+		szZM_DAWNMERE_LAB_DOOR_TRIGGER_ENTITY_NAME,
+	};
+	const u_int uSeamCount =
+		(u_int)(sizeof(aszSeamNames) / sizeof(aszSeamNames[0]));
+
+	for (u_int u = 0u; u < uSeamCount; ++u)
+	{
+		ZENITH_ASSERT_TRUE(ProfLabNameIsALookupKey(aszSeamNames[u]),
+			"lab-seam entity name %u is null, empty, or carries a non-printable "
+			"byte -- FindEntityByName would miss it and every clause that resolves "
+			"it would report a missing entity rather than the cause", u);
+		for (u_int uOther = u + 1u; uOther < uSeamCount; ++uOther)
+		{
+			ZENITH_ASSERT_NE(
+				std::strcmp(aszSeamNames[u], aszSeamNames[uOther]), 0,
+				"lab-seam entity names %u and %u are both '%s' -- "
+				"FindEntityByName would resolve both to whichever the scene stored "
+				"first", u, uOther, aszSeamNames[u]);
+		}
+	}
+
+	// The exit sensor also has to be distinct from everything else authored INTO
+	// ProfLab, which the seam list above does not cover.
+	const char* aszProfLabEntities[] = {
+		szZM_PROFLAB_SPAWN_ENTITY_NAME,
+		szZM_PROFLAB_PLAYER_ENTITY_NAME,
+		szZM_PROFLAB_CAMERA_ENTITY_NAME,
+		szZM_PROFLAB_ASTER_ENTITY_NAME,
+	};
+	const u_int uProfLabCount =
+		(u_int)(sizeof(aszProfLabEntities) / sizeof(aszProfLabEntities[0]));
+	for (u_int u = 0u; u < uProfLabCount; ++u)
+	{
+		ZENITH_ASSERT_NE(
+			std::strcmp(szZM_PROFLAB_EXIT_TRIGGER_ENTITY_NAME,
+				aszProfLabEntities[u]), 0,
+			"the exit sensor shares the entity name '%s' with another authored "
+			"ProfLab entity", aszProfLabEntities[u]);
+	}
+	for (u_int u = 0u; u < (u_int)ZM_PROFLAB_BLOCK_COUNT; ++u)
+	{
+		const char* szBlockName = ZM_GetProfLabBlockName((ZM_PROFLAB_BLOCK)u);
+		ZENITH_ASSERT_NE(
+			std::strcmp(szZM_PROFLAB_EXIT_TRIGGER_ENTITY_NAME, szBlockName), 0,
+			"the exit sensor shares the entity name of shell block %u ('%s')",
+			u, szBlockName);
 	}
 }

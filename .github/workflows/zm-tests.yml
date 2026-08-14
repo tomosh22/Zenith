@@ -194,6 +194,15 @@ jobs:
           #
           # History, newest first (the DERIVATION is the audit trail; the OBSERVED
           # number is the authority):
+          #   3312  S8 item 1 SC-E -- the lab seam (Dawnmere exterior + FromLab
+          #                   marker + door trigger + ProfLab exit) and Aster turned
+          #                   to face the arrival. +5 ZM units, no engine units:
+          #                   1 ZM_CommittedSceneBytes needle on Dawnmere.zscen and
+          #                   4 ZM_WorldTraversal units (exit target-by-connection,
+          #                   aperture fill, Aster facing, seam-name uniqueness).
+          #                   Registry 62 -> 63 (ZM_LabRoundTrip_Test).
+          #                   ★ The needle is RED until the authoring boot writes the
+          #                   scene; run it with --skip-unit-tests (ZM-D-190).
           #   3307  S8 item 1 SC-D -- Dawnmere lab-site ground truth + exterior
           #                   placement constants (NO authoring), observed
           #                   2026-08-14 on a Null_ build (3307 ran / 3305 passed /
@@ -613,7 +622,7 @@ jobs:
           #   2817  ZM-D-173  = 2809 + 8: four ENGINE sensor-raycast units plus
           #                   two camera fixtures and two Home-placement units.
           $exe = 'Games\Zenithmon\Build\output\win64\null_vs2022_debug_win64_true\zenithmon.exe'
-          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 3307 -TimeoutSec 600
+          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 3312 -TimeoutSec 600
           if ($LASTEXITCODE -ne 0) { Write-Error "boot unit tests failed (see log above)"; exit $LASTEXITCODE }
 
       - name: Run Zenithmon tests

@@ -75,6 +75,7 @@
 #include "UI/Zenith_UIVirtualButton.h"                         // the B9 on-screen controls (WP3b authoring)
 #include "UI/Zenith_UIVirtualStick.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
+#include "Zenithmon/Source/Data/ZM_WorldSpec.h"                 // build indices + spawn tags READ, never spelled (SC-E)
 #include "Zenithmon/Source/World/ZM_DawnmerePlacement.h"        // the shared authored coordinates (S7 item 3 SC8)
 #include "Zenithmon/Source/World/ZM_ProfLabPlacement.h"         // the shared ProfLab interior coordinates (S8 SC1)
 #include "Zenithmon/Source/World/ZM_TerrainAuthoring.h"
@@ -1816,6 +1817,61 @@ namespace
 			"ProfLab arrival spawn tag is not a valid spawn tag");
 	}
 
+	// ============================================================================
+	// SC-E -- THE THREE CONFIGURE STEPS THAT CLOSE THE LAB SEAM.
+	//
+	// ★★ NOT ONE OF THEM SPELLS A BUILD INDEX OR A TAG, AND THAT IS THE POINT.
+	// The shipped Home pair above still writes `40u` and `2u` as literals -- the
+	// older and weaker pattern, left alone rather than churned. These three read the
+	// COMPILED world table instead, so the mutation "the configure function writes
+	// the PlayerHome build index" is not a thing a reviewer has to notice: there is
+	// no index here to get wrong. ZM_GetProfLabExitTargetBuildIndex /
+	// ZM_GetProfLabExitSpawnTag walk the ZM_SCENE_PROFLAB row for the edge that
+	// targets Dawnmere (Source/World/ZM_ProfLabPlacement.h), and the Dawnmere-side
+	// sensor reads ZM_GetWorldSpec(ZM_SCENE_PROFLAB).m_uBuildIndex directly.
+	//
+	// ★ AND THE TWO SIDES SHARE ONE SPELLING OF THE TAG. ZM_GetProfLabExitSpawnTag()
+	// is what the ProfLab exit ASKS Dawnmere for AND what the Dawnmere marker
+	// OFFERS. A tag that matched the compiled table on one side only would still
+	// pass ZM_GameStateManager::IsWarpDestinationValid -- it consults that table and
+	// never the scene -- and then park the warp machine in
+	// ZM_WARP_TRANSITION_WAITING_FOR_SPAWN, which has NO timeout: an opaque fade and
+	// a frozen player, forever.
+	// ============================================================================
+
+	// Dawnmere's return marker: where a player who leaves the lab comes out.
+	void ZM_ConfigureFromLabSpawnPoint()
+	{
+		Zenith_Assert(ZM_SetSelectedSpawnPointTag(ZM_GetProfLabExitSpawnTag()),
+			"the ProfLab->Dawnmere connection's spawn tag is not a valid spawn tag");
+	}
+
+	// Dawnmere's lab doorway sensor: into ProfLab, at ProfLab's own arrival tag.
+	void ZM_ConfigureLabDoorTrigger()
+	{
+		Zenith_Assert(
+			ZM_ConfigureSelectedWarpTrigger(
+				ZM_GetWorldSpec(ZM_SCENE_PROFLAB).m_uBuildIndex,
+				szZM_PROFLAB_SPAWN_TAG),
+			"Dawnmere Lab doorway warp configuration is invalid");
+	}
+
+	// ...and the other half of that door: ProfLab's exit sensor, back to Dawnmere.
+	// The resolution is checked BEFORE the configure call rather than left to
+	// Configure()'s return, so a compiled table with no ProfLab->Dawnmere edge names
+	// itself instead of surfacing as a generic "warp configuration is invalid".
+	void ZM_ConfigureProfLabExitTrigger()
+	{
+		const u_int uTargetBuildIndex = ZM_GetProfLabExitTargetBuildIndex();
+		Zenith_Assert(uTargetBuildIndex != uZM_PROFLAB_EXIT_TARGET_UNRESOLVED,
+			"the compiled ZM_SCENE_PROFLAB row carries no connection targeting "
+			"ZM_SCENE_DAWNMERE, so the lab has no way out to resolve");
+		Zenith_Assert(
+			ZM_ConfigureSelectedWarpTrigger(
+				uTargetBuildIndex, ZM_GetProfLabExitSpawnTag()),
+			"ProfLab exit warp configuration is invalid");
+	}
+
 	// ---- S6 item 3 SC5: the authored Dawnmere NPCs ---------------------------
 	//
 	// Reach BONUS authored onto every Dawnmere NPC. 0.4 is this NPC's OWN AABB
@@ -2113,18 +2169,20 @@ namespace
 	// -- transform, collider, components, then the configure custom step.
 	//
 	// ★ SCENE-AGNOSTIC BY NAME AS WELL AS BY CODE. It was ZM_QueueDawnmereNpc while
-	// the town was the only place with NPCs in it; ProfLab's Professor Aster is
-	// authored by this same function, so the name no longer claims a scene. Nothing
-	// about the nine steps changed in that rename, which is what keeps the four
-	// shipped Dawnmere townsfolk's committed bytes where they are.
+	// the town was the only place with NPCs in it, and the name no longer claims a
+	// scene. Its callers today are the FOUR shipped Dawnmere townsfolk, and nothing
+	// about the nine steps has ever changed, which is what keeps their committed
+	// bytes where they are.
 	//
 	// ★ IT EMITS NO ROTATION STEP, AND EVERY CALLER DEPENDS ON THAT. The AABB on
 	// the line below forces its Jolt body to identity and the physics->transform
 	// sync writes that identity back into the SAVED BYTES (ZM-D-156), so a caller
-	// who needs a facing must not use this helper -- see ZM_QueueDawnmereTrainerNpc.
-	// The absence is also what keeps ProfLab.zscen stable across build
-	// configurations: an authored yaw is libm at authoring time (ZM-D-183), and
-	// identity is the one rotation that is bit-exact everywhere.
+	// who needs a facing must not use this helper -- use
+	// ZM_QueueFacingStationaryTalkerNpc (OBB + a frozen quaternion) for a talker who
+	// stands still and faces somewhere, or ZM_QueueDawnmereTrainerNpc for one who
+	// also walks. ProfLab's Professor Aster USED to be authored here; SC-E moved him
+	// to the facing helper when it turned him round to greet the arriving player,
+	// and that move is the whole reason the facing helper exists.
 	void ZM_QueueStationaryTalkerNpc(
 		Zenith_EditorAutomation& xAuto,
 		const char* szName,
@@ -2139,6 +2197,67 @@ namespace
 		xAuto.AddStep_AddCollider();
 		xAuto.AddStep_AddColliderShape(
 			COLLISION_VOLUME_TYPE_AABB, RIGIDBODY_TYPE_STATIC);
+		xAuto.AddStep_AddComponent("ZM_GreyboxVisual");
+		xAuto.AddStep_AddComponent("ZM_Interactable");
+		xAuto.AddStep_Custom(pfnConfigure);
+	}
+
+	// ---- SC-E: the stationary talker who DOES face somewhere -----------------
+	//
+	// ★ A THIRD HELPER, AND NOT A PARAMETER ON THE ONE ABOVE. Adding an optional
+	// facing to ZM_QueueStationaryTalkerNpc would mean the four shipped Dawnmere
+	// townsfolk's step lists changed shape in the one file whose output is a
+	// COMMITTED asset -- and their AABB is CORRECT for them, so the change would be
+	// churn on bytes that must not move. Their nine steps stay untouchable BY
+	// CONSTRUCTION rather than by an argument about angleAxis(0).
+	//
+	// The differences from the stationary helper are exactly two, and both are
+	// forced by the facing:
+	//
+	// (1) COLLISION_VOLUME_TYPE_OBB, NOT AABB. Zenith_ColliderComponent's body
+	//     creation reads
+	//         const JPH::Quat xJoltRot = (eVolumeType == COLLISION_VOLUME_TYPE_AABB)
+	//             ? JPH::Quat::sIdentity() : JPH::Quat(...);
+	//     -- an AABB is axis-aligned BY DEFINITION, so it forces the body to
+	//     identity and the physics->transform sync writes that identity straight
+	//     back over the rotation this function just authored, INTO THE SAVED BYTES,
+	//     with every pure unit still green (they read the compiled constants; the
+	//     damage lives in the file). That is ZM-D-156, already paid for once on
+	//     rival Vesper. OBB is the same box shape and differs ONLY in applying the
+	//     rotation, which is precisely the case for a talker who must hold a facing
+	//     and must never move -- so this helper does NOT reach for the rival's
+	//     DYNAMIC CAPSULE either: that shape exists because the rival WALKS, and a
+	//     dynamic body under a professor could be shoved off the anchor every
+	//     clearance figure in ZM_ProfLabPlacement.h is derived at.
+	//
+	// (2) AddStep_SetTransformRotationQuat WITH A FROZEN QUATERNION (ZM-D-183). The
+	//     yaw and euler steps run glm::angleAxis engine-side and MSVC Debug and
+	//     Release disagree on that sin/cos by 1-2 ULP, so a COMMITTED scene authored
+	//     through them ping-pongs in git forever -- invisibly to the same-binary
+	//     pre-save guard, which compares the serialized bytes against a value that
+	//     moved with them. This step performs no math at all.
+	//
+	// The rotation step sits between scale and collider, exactly where
+	// ZM_QueueDawnmereTrainerNpc puts it and for the same reason: the transform is
+	// fully authored before the body exists, so SetRotation lands the frozen bits in
+	// the cache while there is still no body to normalize them.
+	void ZM_QueueFacingStationaryTalkerNpc(
+		Zenith_EditorAutomation& xAuto,
+		const char* szName,
+		const Zenith_Maths::Vector3& xCenter,
+		const Zenith_Maths::Vector3& xScale,
+		const Zenith_Maths::Quat& xFacing,
+		void (*pfnConfigure)())
+	{
+		xAuto.AddStep_CreateEntity(szName);
+		xAuto.AddStep_SetEntityTransient(false);
+		xAuto.AddStep_SetTransformPosition(xCenter.x, xCenter.y, xCenter.z);
+		xAuto.AddStep_SetTransformScale(xScale.x, xScale.y, xScale.z);
+		xAuto.AddStep_SetTransformRotationQuat(
+			xFacing.x, xFacing.y, xFacing.z, xFacing.w);
+		xAuto.AddStep_AddCollider();
+		xAuto.AddStep_AddColliderShape(
+			COLLISION_VOLUME_TYPE_OBB, RIGIDBODY_TYPE_STATIC);
 		xAuto.AddStep_AddComponent("ZM_GreyboxVisual");
 		xAuto.AddStep_AddComponent("ZM_Interactable");
 		xAuto.AddStep_Custom(pfnConfigure);
@@ -2843,14 +2962,25 @@ void Project_RegisterEditorAutomationSteps()
 	// automated arrival test read. Nothing here re-spells a literal, because a
 	// constant spelled at both sites cannot red a drift.
 	//
-	// ★ NO ZM_WarpTrigger, AND THAT IS DELIBERATE. ZM_WorldSpec declares
-	// ProfLab -> Dawnmere via spawn tag "FromLab", but Dawnmere.zscen authors only
-	// the "TownCenter" and "FromHome" markers. An exit configured against
-	// "FromLab" would pass IsWarpDestinationValid -- which reads only the compiled
-	// tag list, never the actual scene -- and then park the warp machine in
-	// WAITING_FOR_SPAWN, which has no timeout: an opaque fade and a frozen player,
-	// forever. The exit, the "FromLab" marker and the Dawnmere-side Lab door all
-	// land together in the sub-commit that owns re-writing Dawnmere.zscen.
+	// ★ THIS ROOM NOW HAS A WAY OUT, AND IT ARRIVED WITH ITS DESTINATION (SC-E).
+	// The block that stood here said the ProfLab exit was DELIBERATELY absent, and
+	// it was right to: ZM_WorldSpec has declared ProfLab -> Dawnmere via spawn tag
+	// "FromLab" since S1, but Dawnmere.zscen authored only the "TownCenter" and
+	// "FromHome" markers -- and IsWarpDestinationValid reads ONLY the compiled tag
+	// list, never the scene, so an exit shipped on its own would have passed
+	// validation and then parked the warp machine in
+	// ZM_WARP_TRANSITION_WAITING_FOR_SPAWN, which has NO timeout: an opaque fade and
+	// a frozen player, forever.
+	//
+	// That is no longer the state of the world. The Dawnmere block at the bottom of
+	// this function now authors the lab blockout, the "FromLab" arrival marker and
+	// the LabDoorTrigger, and this block authors the exit that returns to them. The
+	// two halves are ONE change and must stay one: deleting either side re-opens
+	// exactly the hang described above, which is why the live-scene clause I4 of
+	// ZM_ProfLabWarp_Test (a CI gate -- it needs no terrain and never skips) checks
+	// this sensor's target and tag in the LOADED scene, and why
+	// ZM_CommittedSceneBytes/DawnmereCarriesTheLabSeamMarkerAndTag checks the other
+	// side's bytes at boot.
 	xAuto.AddStep_CreateScene(szZM_PROFLAB_SCENE_NAME);
 	for (u_int uBlock = 0u; uBlock < (u_int)ZM_PROFLAB_BLOCK_COUNT; ++uBlock)
 	{
@@ -2892,21 +3022,31 @@ void Project_RegisterEditorAutomationSteps()
 	// files carry DENSE, AUTHORING-ORDER file indices, so appending an entity is
 	// free while inserting one rewrites every index after it.
 	//
-	// ★ NO ROTATION STEP, DELIBERATELY, AND NOT EVEN A ZERO ONE. See the ZM-D-183
-	// block on ZM_GetProfLabAsterCenter in Source/World/ZM_ProfLabPlacement.h: yaw
-	// and euler steps build their quaternion with libm AT AUTHORING TIME, MSVC
-	// Debug and Release disagree by 1-2 ULP, and this file is COMMITTED and
-	// re-authored on every tools boot -- so a zero written through those steps
-	// would still be enough to make the bytes ping-pong in git. Identity, written
-	// by writing nothing, is bit-exact in every configuration, and it is also what
-	// makes ZM_QueueStationaryTalkerNpc's AABB legal for him.
+	// ★ SC-E TURNED HIM ROUND, AND THAT CHANGED HIS HELPER AND HIS BODY SHAPE.
+	// He shipped at identity rotation, identity forward is +Z, and he stands DEEPER
+	// into the hall than the arrival point -- so the professor greeted every
+	// arriving player with his back turned, on screen and facing the wall behind
+	// him. (ProfLab_AsterStandsInsideTheArrivalFrustum asserted he was VISIBLE and
+	// passed throughout; nothing asserted he was facing anything.) He now takes the
+	// frozen half-turn ZM_ProfLabAsterFacing() through
+	// ZM_QueueFacingStationaryTalkerNpc, which differs from the stationary helper in
+	// exactly two forced ways -- OBB instead of AABB, and a verbatim quaternion step
+	// -- both argued at that function.
 	//
-	// ★ AND THE NINE STEPS ARE NOT RE-SPELLED HERE. He goes through the same
-	// helper the four Dawnmere townsfolk do, at the same human visual scale, so
-	// "an authored stationary talker" has exactly one definition in this game.
+	// ★ THE QUATERNION IS FROZEN, NOT COMPUTED (ZM-D-183). Its four components are
+	// the IEEE-754 spellings of 0 and 1, because a half turn about +Y is exactly
+	// (0, 1, 0, 0) -- there is no libm result here to disagree about Debug vs
+	// Release, which is what keeps this COMMITTED file's bytes stable. Do NOT
+	// "simplify" this to AddStep_SetTransformYaw(pi): that step runs glm::angleAxis
+	// engine-side and reopens the ping-pong.
+	//
+	// ★ AND THE STEPS ARE STILL NOT RE-SPELLED HERE. One helper, one definition of
+	// "an authored stationary talker who faces somewhere", at the same human visual
+	// scale as every other person in this game.
 	const Zenith_Maths::Vector3 xProfLabAsterCenter = ZM_GetProfLabAsterCenter();
-	ZM_QueueStationaryTalkerNpc(xAuto, szZM_PROFLAB_ASTER_ENTITY_NAME,
-		xProfLabAsterCenter, g_xZMHumanVisualScale, &ZM_ConfigureProfAsterNpc);
+	ZM_QueueFacingStationaryTalkerNpc(xAuto, szZM_PROFLAB_ASTER_ENTITY_NAME,
+		xProfLabAsterCenter, g_xZMHumanVisualScale, ZM_ProfLabAsterFacing(),
+		&ZM_ConfigureProfAsterNpc);
 
 	// Camera forward at yaw 0 is +Z, so the camera sits on the player's -Z side
 	// looking back toward the +Z entrance -- which is why the hall extends into -Z
@@ -2937,6 +3077,35 @@ void Project_RegisterEditorAutomationSteps()
 	xAuto.AddStep_SetCameraFar(fZM_PROFLAB_CAMERA_FAR);
 	xAuto.AddStep_AddComponent("ZM_FollowCamera");
 	xAuto.AddStep_SetAsMainCamera();
+
+	// The exit sensor (SC-E). APPENDED at the very END of this block and never
+	// inserted earlier: ZM-D-148's scene files carry DENSE, AUTHORING-ORDER file
+	// indices, so appending is free while inserting rewrites every index after it.
+	//
+	// Same nine-step shape as the shipped PlayerHomeExitTrigger -- transform,
+	// scale, static AABB body, ZM_WarpTrigger, configure -- with two differences,
+	// both deliberate: every number comes from ZM_GetProfLabExitTrigger() rather
+	// than being typed inline (a literal spelled at two sites cannot red a drift),
+	// and the configure step spells NO build index and NO tag (it resolves both
+	// from the compiled world table -- see ZM_ConfigureProfLabExitTrigger).
+	//
+	// AABB is correct here and is NOT the ZM-D-156 hazard: this box carries no
+	// rotation to lose. Its faces are the aperture's faces, which are axis-aligned
+	// by construction.
+	const ZM_ProfLabBlockout xProfLabExitTrigger = ZM_GetProfLabExitTrigger();
+	xAuto.AddStep_CreateEntity(szZM_PROFLAB_EXIT_TRIGGER_ENTITY_NAME);
+	xAuto.AddStep_SetEntityTransient(false);
+	xAuto.AddStep_SetTransformPosition(
+		xProfLabExitTrigger.m_xCenter.x, xProfLabExitTrigger.m_xCenter.y,
+		xProfLabExitTrigger.m_xCenter.z);
+	xAuto.AddStep_SetTransformScale(
+		xProfLabExitTrigger.m_xScale.x, xProfLabExitTrigger.m_xScale.y,
+		xProfLabExitTrigger.m_xScale.z);
+	xAuto.AddStep_AddCollider();
+	xAuto.AddStep_AddColliderShape(
+		COLLISION_VOLUME_TYPE_AABB, RIGIDBODY_TYPE_STATIC);
+	xAuto.AddStep_AddComponent("ZM_WarpTrigger");
+	xAuto.AddStep_Custom(&ZM_ConfigureProfLabExitTrigger);
 
 	xAuto.AddStep_SaveScene(
 		GAME_ASSETS_DIR "Scenes/ProfLab" ZENITH_SCENE_EXT);
@@ -3355,6 +3524,93 @@ void Project_RegisterEditorAutomationSteps()
 		xAuto.AddStep_CreateEntity("DawnmereNavMesh");
 		xAuto.AddStep_AddComponent("NavMesh");
 		xAuto.AddStep_Custom(&ZM_ConfigureDawnmereNavMesh);
+
+		// ---- S8 SC-E: THE LAB SITE, AND THE OTHER END OF PROFLAB'S EXIT ----
+		//
+		// ★★ THIS IS THE HALF THAT MAKES THE PROFLAB EXIT SAFE, AND THE TWO CANNOT
+		// BE SPLIT ACROSS COMMITS. ZM_GameStateManager::IsWarpDestinationValid reads
+		// ONLY the compiled ZM_WorldSpec tag list, never the destination scene, and
+		// "FromLab" has been a compiled Dawnmere tag since S1 -- so
+		// RequestWarp(<Dawnmere>, "FromLab") returns TRUE whether or not any marker
+		// in this scene carries that tag. Ship the ProfLab exit without the marker
+		// below and the warp is ACCEPTED, the fade goes fully opaque, and the
+		// machine parks in ZM_WARP_TRANSITION_WAITING_FOR_SPAWN -- WHICH HAS NO
+		// TIMEOUT -- with the player frozen. A black screen forever, not a crash and
+		// not a red test.
+		//
+		// ★ EVERY COORDINATE COMES FROM THE FROZEN SC-D BLOCK in
+		// Source/World/ZM_DawnmerePlacement.h, whose ten ground heights are MEASURED
+		// raycasts against the baked Dawnmere terrain, and whose derived Y formulas
+		// are spelled once in that file's .cpp. Nothing here re-derives or re-spells
+		// a height: a constant spelled at two sites cannot red a drift, and these
+		// particular constants are measurements that a terrain re-bake invalidates.
+		// Read the SC-D header block before moving any of it -- the reserved terrain
+		// pad, the camera-derived entrance plane and the arrival marker are one
+		// interlocking placement.
+		//
+		// ★ THE ENTITY NAMES COME FROM Source/World/ZM_ProfLabPlacement.h, which is
+		// the deeper of the two placement headers (this file's own already includes
+		// it) and therefore the one both sides of the seam can read. In particular
+		// szZM_DAWNMERE_LAB_SHELL_ENTITY_NAME is looked up BY NAME by SC-D's
+		// ground-truth oracle so its post-SC-E re-measure can ignore this shell --
+		// rename it and that oracle silently measures the roof instead of the ground.
+		//
+		// ★ APPENDED AT THE END OF THE DAWNMERE BLOCK (ZM-D-148 dense
+		// authoring-order file indices): appending is free, inserting rewrites every
+		// index after it. The rival-facing pre-save guard stays immediately before
+		// the save, below.
+		//
+		// ★ AND NOT ONE OF THESE SEVEN CARRIES A ROTATION STEP. All seven are
+		// axis-aligned boxes or point markers with nothing to face, exactly like the
+		// four Home blocks and HomeDoorTrigger -- and identity is the one rotation
+		// that is bit-exact in every build configuration (ZM-D-183).
+		const ZM_DawnmereBlockout xLabShell = ZM_GetDawnmereLabShell();
+		const ZM_DawnmereBlockout xLabDoorLeft = ZM_GetDawnmereLabDoorLeft();
+		const ZM_DawnmereBlockout xLabDoorRight = ZM_GetDawnmereLabDoorRight();
+		const ZM_DawnmereBlockout xLabLintel = ZM_GetDawnmereLabDoorLintel();
+		const ZM_DawnmereBlockout xLabTrigger = ZM_GetDawnmereLabDoorTrigger();
+		const Zenith_Maths::Vector3 xFromLabSpawnFeet =
+			ZM_GetDawnmereFromLabSpawnFeet();
+		ZM_QueueGreyboxBlock(xAuto, szZM_DAWNMERE_LAB_SHELL_ENTITY_NAME,
+			xLabShell.m_xCenter, xLabShell.m_xScale);
+		ZM_QueueGreyboxBlock(xAuto, szZM_DAWNMERE_LAB_DOOR_LEFT_ENTITY_NAME,
+			xLabDoorLeft.m_xCenter, xLabDoorLeft.m_xScale);
+		ZM_QueueGreyboxBlock(xAuto, szZM_DAWNMERE_LAB_DOOR_RIGHT_ENTITY_NAME,
+			xLabDoorRight.m_xCenter, xLabDoorRight.m_xScale);
+		ZM_QueueGreyboxBlock(xAuto, szZM_DAWNMERE_LAB_DOOR_LINTEL_ENTITY_NAME,
+			xLabLintel.m_xCenter, xLabLintel.m_xScale);
+
+		// The arrival marker. Its transform is the marker's FEET -- the MEASURED
+		// terrain surface at (fZM_DAWNMERE_LAB_X, fZM_DAWNMERE_FROM_LAB_SPAWN_Z) --
+		// because ZM_GameStateManager::CalculateSpawnCenter adds the capsule
+		// half-extent at warp time. Authoring a body centre here would warp an
+		// arriving player in half a body above the ground. Step list mirrors the
+		// shipped FromHomeSpawn verbatim.
+		xAuto.AddStep_CreateEntity(szZM_DAWNMERE_FROM_LAB_SPAWN_ENTITY_NAME);
+		xAuto.AddStep_SetEntityTransient(false);
+		xAuto.AddStep_SetTransformPosition(
+			xFromLabSpawnFeet.x, xFromLabSpawnFeet.y, xFromLabSpawnFeet.z);
+		xAuto.AddStep_AddComponent("ZM_SpawnPoint");
+		xAuto.AddStep_Custom(&ZM_ConfigureFromLabSpawnPoint);
+
+		// ...and the doorway sensor, 2 m in front of the solid entrance face so an
+		// approaching player overlaps it before physical contact. Step list mirrors
+		// the shipped HomeDoorTrigger verbatim; only the configure step differs, in
+		// that it reads its destination from the compiled world table instead of
+		// spelling it.
+		xAuto.AddStep_CreateEntity(szZM_DAWNMERE_LAB_DOOR_TRIGGER_ENTITY_NAME);
+		xAuto.AddStep_SetEntityTransient(false);
+		xAuto.AddStep_SetTransformPosition(
+			xLabTrigger.m_xCenter.x, xLabTrigger.m_xCenter.y,
+			xLabTrigger.m_xCenter.z);
+		xAuto.AddStep_SetTransformScale(
+			xLabTrigger.m_xScale.x, xLabTrigger.m_xScale.y,
+			xLabTrigger.m_xScale.z);
+		xAuto.AddStep_AddCollider();
+		xAuto.AddStep_AddColliderShape(
+			COLLISION_VOLUME_TYPE_AABB, RIGIDBODY_TYPE_STATIC);
+		xAuto.AddStep_AddComponent("ZM_WarpTrigger");
+		xAuto.AddStep_Custom(&ZM_ConfigureLabDoorTrigger);
 
 		// ★ IMMEDIATELY BEFORE THE SAVE, NOT ANYWHERE EARLIER. The guard serializes the
 		// rival's transform for real and compares the resulting bytes with
