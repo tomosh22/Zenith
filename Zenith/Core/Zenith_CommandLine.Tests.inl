@@ -211,6 +211,127 @@ void Zenith_UnitTests::TestCommandLineParsePrefixedFlags()
 	}
 }
 
+// ============================================================================
+// --indirect-count-mode=auto|native|padded|single (Phase 1 of the terrain
+// indirect-count compatibility plan) — pure CLI parser/enum coverage.
+//
+// ParseArgs touches NO process state — only the pure Flags value — so these
+// fixtures can drive the parser with arbitrary argv exactly like the existing
+// CommandLine* tests above them. The default is Auto (the shipping mode); an
+// unknown spelling and a bare `--indirect-count-mode` (no '=') both fall
+// through to Auto via ResolveIndirectCountModeArg so a malformed CLI never
+// silently flips the shipping mode. The CLI converter in Vulkan translates
+// the enum into Flux_IndirectDrawOverride at device init; this test pins the
+// parser vocabulary the engine reads from Zenith_CommandLine::GetIndirectCount-
+// Mode, which is what every backend's init ultimately reads.
+// ============================================================================
+ZENITH_TEST(CommandLine, ParseIndirectCountModeDefaultsToAuto) { Zenith_UnitTests::TestCommandLineParseIndirectCountModeDefaultsToAuto(); }
+void Zenith_UnitTests::TestCommandLineParseIndirectCountModeDefaultsToAuto()
+{
+	char szExe[] = "zenith.exe";
+	char* apszArgv[] = { szExe };
+	const Zenith_CommandLine::Flags xFlags = ParseArgvFixture(apszArgv);
+	ZENITH_ASSERT_EQ(static_cast<uint32_t>(xFlags.m_eIndirectCountMode),
+		static_cast<uint32_t>(Zenith_IndirectCountMode::Auto),
+		"no --indirect-count-mode must leave Auto (the shipping default) on the Flags value");
+}
+
+ZENITH_TEST(CommandLine, ParseIndirectCountModeEverySpelling) { Zenith_UnitTests::TestCommandLineParseIndirectCountModeEverySpelling(); }
+void Zenith_UnitTests::TestCommandLineParseIndirectCountModeEverySpelling()
+{
+	struct Spelling { const char* m_szArg; Zenith_IndirectCountMode m_eExpected; };
+	const Spelling axSpellings[] = {
+		{ "--indirect-count-mode=auto",   Zenith_IndirectCountMode::Auto   },
+		{ "--indirect-count-mode=native", Zenith_IndirectCountMode::Native },
+		{ "--indirect-count-mode=padded", Zenith_IndirectCountMode::Padded },
+		{ "--indirect-count-mode=single", Zenith_IndirectCountMode::Single },
+	};
+	for (const Spelling& xS : axSpellings)
+	{
+		char szExe[] = "zenith.exe";
+		// argv contains mutable char* (ParseArgs takes char**), so stage each
+		// spelling in a writable buffer the parser can read past.
+		char szArg[64];
+		std::snprintf(szArg, sizeof(szArg), "%s", xS.m_szArg);
+		char* apszArgv[] = { szExe, szArg };
+		const Zenith_CommandLine::Flags xFlags = ParseArgvFixture(apszArgv);
+		ZENITH_ASSERT_EQ(static_cast<uint32_t>(xFlags.m_eIndirectCountMode),
+			static_cast<uint32_t>(xS.m_eExpected),
+			"'%s' must select %u (got %u) — the four spellings are the entire vocabulary the CLI exposes",
+			xS.m_szArg, static_cast<uint32_t>(xS.m_eExpected), static_cast<uint32_t>(xFlags.m_eIndirectCountMode));
+	}
+}
+
+ZENITH_TEST(CommandLine, ParseIndirectCountModeUnknownFallsBackToAuto) { Zenith_UnitTests::TestCommandLineParseIndirectCountModeUnknownFallsBackToAuto(); }
+void Zenith_UnitTests::TestCommandLineParseIndirectCountModeUnknownFallsBackToAuto()
+{
+	// Unknown spelling -> Auto, not a slanted native/padded/single value.
+	{
+		char szExe[]   = "zenith.exe";
+		char szArg[]   = "--indirect-count-mode=illegal";
+		char* apszArgv[] = { szExe, szArg };
+		const Zenith_CommandLine::Flags xFlags = ParseArgvFixture(apszArgv);
+		ZENITH_ASSERT_EQ(static_cast<uint32_t>(xFlags.m_eIndirectCountMode),
+			static_cast<uint32_t>(Zenith_IndirectCountMode::Auto),
+			"an unknown spelling must fall through to Auto, NOT silently take a partial value");
+	}
+
+	// A trailing '=' with no value -> Auto (matches the bare \0 default).
+	{
+		char szExe[]   = "zenith.exe";
+		char szArg[]   = "--indirect-count-mode=";
+		char* apszArgv[] = { szExe, szArg };
+		const Zenith_CommandLine::Flags xFlags = ParseArgvFixture(apszArgv);
+		ZENITH_ASSERT_EQ(static_cast<uint32_t>(xFlags.m_eIndirectCountMode),
+			static_cast<uint32_t>(Zenith_IndirectCountMode::Auto),
+			"a bare trailing '=' must fall through to Auto — the default filename analogy");
+	}
+}
+
+ZENITH_TEST(CommandLine, ParseIndirectCountModeBareFormFallsThroughToAuto) { Zenith_UnitTests::TestCommandLineParseIndirectCountModeBareFormFallsThroughToAuto(); }
+void Zenith_UnitTests::TestCommandLineParseIndirectCountModeBareFormFallsThroughToAuto()
+{
+	// A bare `--indirect-count-mode` with no '=' pair must NOT swallow the
+	// following argv and must leave Auto. The matching logic in the parser
+	// treats this as a Prefixed spec; the bare form matches the spec via the
+	// prefix check, ResolveIndirectCountModeArg sees a nullptr value, and
+	// the default is Auto. Without this clause a test batch could flip the
+	// engine into a forced mode just by mis-typing the flag.
+	char szExe[]   = "zenith.exe";
+	char szBare[]  = "--indirect-count-mode";
+	char szNoImg[] = "--no-imgui-ini";
+	char* apszArgv[] = { szExe, szBare, szNoImg };
+	const Zenith_CommandLine::Flags xFlags = ParseArgvFixture(apszArgv);
+	ZENITH_ASSERT_EQ(static_cast<uint32_t>(xFlags.m_eIndirectCountMode),
+		static_cast<uint32_t>(Zenith_IndirectCountMode::Auto),
+		"bare --indirect-count-mode must fall through to Auto (no value after '=')");
+	ZENITH_ASSERT_TRUE(xFlags.m_bNoImGuiIni,
+		"the bare form must not consume the following argv as a value");
+}
+
+ZENITH_TEST(CommandLine, ResolveIndirectCountModeArgPure) { Zenith_UnitTests::TestCommandLineResolveIndirectCountModeArgPure(); }
+void Zenith_UnitTests::TestCommandLineResolveIndirectCountModeArgPure()
+{
+	// The pure splitter is exposed so the parsing contract is testable without
+	// re-running Parse. It must name every spelling, return the default on
+	// null/empty, and reject an unknown spelling back to the default.
+	using Zenith_CommandLine::ResolveIndirectCountModeArg;
+	ZENITH_ASSERT_EQ(static_cast<uint32_t>(ResolveIndirectCountModeArg("auto",   Zenith_IndirectCountMode::Native)),
+		static_cast<uint32_t>(Zenith_IndirectCountMode::Auto),   "auto must resolve regardless of default");
+	ZENITH_ASSERT_EQ(static_cast<uint32_t>(ResolveIndirectCountModeArg("native", Zenith_IndirectCountMode::Auto)),
+		static_cast<uint32_t>(Zenith_IndirectCountMode::Native), "native must resolve");
+	ZENITH_ASSERT_EQ(static_cast<uint32_t>(ResolveIndirectCountModeArg("padded", Zenith_IndirectCountMode::Auto)),
+		static_cast<uint32_t>(Zenith_IndirectCountMode::Padded), "padded must resolve");
+	ZENITH_ASSERT_EQ(static_cast<uint32_t>(ResolveIndirectCountModeArg("single", Zenith_IndirectCountMode::Auto)),
+		static_cast<uint32_t>(Zenith_IndirectCountMode::Single), "single must resolve");
+	ZENITH_ASSERT_EQ(static_cast<uint32_t>(ResolveIndirectCountModeArg(nullptr,   Zenith_IndirectCountMode::Native)),
+		static_cast<uint32_t>(Zenith_IndirectCountMode::Native), "nullptr must fall back to the supplied default");
+	ZENITH_ASSERT_EQ(static_cast<uint32_t>(ResolveIndirectCountModeArg("",        Zenith_IndirectCountMode::Padded)),
+		static_cast<uint32_t>(Zenith_IndirectCountMode::Padded), "empty must fall back to the supplied default");
+	ZENITH_ASSERT_EQ(static_cast<uint32_t>(ResolveIndirectCountModeArg("garbage", Zenith_IndirectCountMode::Single)),
+		static_cast<uint32_t>(Zenith_IndirectCountMode::Single), "unknown must fall back to the supplied default, NOT Auto");
+}
+
 ZENITH_TEST(CommandLine, ParseArgvEdgeCases) { Zenith_UnitTests::TestCommandLineParseArgvEdgeCases(); }
 void Zenith_UnitTests::TestCommandLineParseArgvEdgeCases()
 {

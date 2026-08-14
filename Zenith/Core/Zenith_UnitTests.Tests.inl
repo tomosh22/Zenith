@@ -18288,6 +18288,207 @@ void Zenith_UnitTests::TestRenderGraphIndirectArgBarrier(){
 
 }
 
+// Phase 6 of the terrain indirect-count compatibility plan — the reset pass is
+// a separate GPU compute dispatch that clears both the count buffer AND the
+// indirect-command buffer every frame before culling writes the live prefix.
+// The terrain render-graph edges the plan pins are:
+//
+//   1. reset count UAV write -> culling count UAV read-modify-write (WAR+RAW)
+//      The culling shader uses InterlockedAdd(visibleCount[0], 1u, outIndex),
+//      a read-modify-write that must observe the zero written by the reset
+//      pass. Declaring the culling pass's access as READWRITE_UAV (not
+//      WRITE_UAV) ensures the barrier carries shader-read on the destination
+//      side so the reset's value is visible to the atomic's read.
+//   2. reset argument UAV write -> culling argument UAV write (WAW)
+//   3. culling argument UAV write -> G-buffer indirect-arg read  (covered above
+//      by TestRenderGraphIndirectArgBarrier)
+//   4. culling count UAV read-modify-write -> G-buffer conservative indirect-arg read
+//      (the count buffer is declared READ_INDIRECT_ARG even in fallback mode
+//      so the graph keeps a stable shape)
+//   5. Culling LOD read/write UAV -> G-buffer LOD SRV read  (covered by
+//      TestRenderGraphStorageBufferSRVBarrier)
+//   6 + 7. Cross-frame cyclic seed carries the prior-frame G-buffer indirect
+//      read as the source access of the next-frame reset UAV write  (the
+//      property TestRenderGraphCyclicBufferBarrier pins for the
+//      write/FIRST-access/then/read pattern; here the reset pass is the new
+//      first access of every frame N+1, and the prior frame's G-buffer
+//      indirect read must seed its barrier source as READ_INDIRECT_ARG ->
+//      WRITE_UAV).
+//
+// (1) and (2) below are the two barrier edges the reset-pass declaration adds
+// to the graph (the half the existing coverage did NOT pin); the higher
+// consumers and the cross-frame seed are already covered. RESET writes the
+// SAME buffer the CULLING pass reads+writes — the barrier is WRITE_UAV ->
+// READWRITE_UAV on the count buffer (reset pure-write, culling
+// InterlockedAdd read-modify-write) and WRITE_UAV -> WRITE_UAV on the argument
+// buffer (reset pure-write, culling pure-store after InterlockedAdd on the
+// count to grab a slot).
+ZENITH_TEST(Core, RenderGraphResetCountWriteCullCountReadWriteIsWarRaw) { Zenith_UnitTests::TestRenderGraphResetCountWriteCullCountReadWriteIsWarRaw(); }
+void Zenith_UnitTests::TestRenderGraphResetCountWriteCullCountReadWriteIsWarRaw(){
+	Flux_RenderGraph xGraph;
+
+	Flux_ReadWriteBuffer xCountBuffer;
+	xCountBuffer.GetBuffer().m_xVRAMHandle.SetValue(0);
+	xCountBuffer.GetBuffer().m_ulSize = 4;  // single uint32_t visibleCount
+
+	// The reset pass writes the visible-count buffer to zero each frame
+	// (WRITE_UAV). The culling pass then InterlockedAdds it — a
+	// read-modify-write that must be declared READWRITE_UAV so the barrier
+	// carries shader-read on the destination side. Without the READ, the
+	// reset's zero is not guaranteed visible to the atomic's read.
+	Flux_PassHandle xResetPass = xGraph.AddPass("Terrain Reset Count and Indirect Arguments", EmptyRecordCallback);
+	xGraph.WriteBuffer(xResetPass, xCountBuffer.GetBuffer(), RESOURCE_ACCESS_WRITE_UAV);
+
+	Flux_PassHandle xCullingPass = xGraph.AddPass("Terrain Culling Compute", EmptyRecordCallback);
+	xGraph.WriteBuffer(xCullingPass, xCountBuffer.GetBuffer(), RESOURCE_ACCESS_READWRITE_UAV);
+
+	xGraph.m_xExecutionOrder.Clear();
+	xGraph.m_xExecutionOrder.PushBack(xResetPass.m_uIndex);
+	xGraph.m_xExecutionOrder.PushBack(xCullingPass.m_uIndex);
+
+	xGraph.SynthesizeBarriers();
+
+	const Flux_RenderGraph_Pass* pxCull = xGraph.GetPasses().Get(xCullingPass.m_uIndex);
+	u_int uBufferBarriers = 0;
+	const Flux_RenderGraph_Barrier* pxBarrier = nullptr;
+	for (u_int u = 0; u < pxCull->m_xPrologueBarriers.GetSize(); u++)
+	{
+		const Flux_RenderGraph_Barrier& rxBar = pxCull->m_xPrologueBarriers.Get(u);
+		if (rxBar.m_xResource.GetKind() == Flux_GraphResourceKind::Buffer)
+		{
+			uBufferBarriers++;
+			pxBarrier = &rxBar;
+		}
+	}
+	ZENITH_ASSERT_EQ(uBufferBarriers, 1u, "ResetCount->CullCountRMW: culling pass expected 1 buffer barrier, got %u", uBufferBarriers);
+	ZENITH_ASSERT_NOT_NULL(pxBarrier, "ResetCount->CullCountRMW: barrier missing");
+	ZENITH_ASSERT_EQ(pxBarrier->m_eSrcAccess, RESOURCE_ACCESS_WRITE_UAV, "ResetCount->CullCountRMW: src expected WRITE_UAV (the reset pass's zero clear), got %d", (int)pxBarrier->m_eSrcAccess);
+	ZENITH_ASSERT_EQ(pxBarrier->m_eDstAccess, RESOURCE_ACCESS_READWRITE_UAV, "ResetCount->CullCountRMW: dst expected READWRITE_UAV (the culling pass's InterlockedAdd read-modify-write), got %d", (int)pxBarrier->m_eDstAccess);
+	ZENITH_ASSERT_EQ(pxBarrier->m_xResource.AsBuffer(), &xCountBuffer.GetBuffer(), "ResetCount->CullCountRMW: barrier targets wrong buffer");
+}
+
+ZENITH_TEST(Core, RenderGraphResetArgumentWriteCullArgumentWriteIsWaw) { Zenith_UnitTests::TestRenderGraphResetArgumentWriteCullArgumentWriteIsWaw(); }
+void Zenith_UnitTests::TestRenderGraphResetArgumentWriteCullArgumentWriteIsWaw(){
+	Flux_RenderGraph xGraph;
+
+	Flux_ReadWriteBuffer xArgBuffer;
+	xArgBuffer.GetBuffer().m_xVRAMHandle.SetValue(0);
+	xArgBuffer.GetBuffer().m_ulSize = 4096u * 20u;  // TOTAL_CHUNKS * stride
+
+	// The reset pass clears all 4096 indirect-command records to the legal
+	// no-op every frame; culling then atomic-append-compacts live records
+	// into [0, visibleCount). The graph's barrier between the two passes
+	// must be WRITE_UAV -> WRITE_UAV (a UAV-WAW) on the argument buffer,
+	// same as the count-buffer edge above. This is the second half of the
+	// per-frame reset-pass graph shape.
+	Flux_PassHandle xResetPass = xGraph.AddPass("Terrain Reset Count and Indirect Arguments", EmptyRecordCallback);
+	xGraph.WriteBuffer(xResetPass, xArgBuffer.GetBuffer(), RESOURCE_ACCESS_WRITE_UAV);
+
+	Flux_PassHandle xCullingPass = xGraph.AddPass("Terrain Culling Compute", EmptyRecordCallback);
+	xGraph.WriteBuffer(xCullingPass, xArgBuffer.GetBuffer(), RESOURCE_ACCESS_WRITE_UAV);
+
+	xGraph.m_xExecutionOrder.Clear();
+	xGraph.m_xExecutionOrder.PushBack(xResetPass.m_uIndex);
+	xGraph.m_xExecutionOrder.PushBack(xCullingPass.m_uIndex);
+
+	xGraph.SynthesizeBarriers();
+
+	const Flux_RenderGraph_Pass* pxCull = xGraph.GetPasses().Get(xCullingPass.m_uIndex);
+	u_int uBufferBarriers = 0;
+	const Flux_RenderGraph_Barrier* pxBarrier = nullptr;
+	for (u_int u = 0; u < pxCull->m_xPrologueBarriers.GetSize(); u++)
+	{
+		const Flux_RenderGraph_Barrier& rxBar = pxCull->m_xPrologueBarriers.Get(u);
+		if (rxBar.m_xResource.GetKind() == Flux_GraphResourceKind::Buffer)
+		{
+			uBufferBarriers++;
+			pxBarrier = &rxBar;
+		}
+	}
+	ZENITH_ASSERT_EQ(uBufferBarriers, 1u, "ResetArg->CullArg WAW: culling pass expected 1 buffer barrier, got %u", uBufferBarriers);
+	ZENITH_ASSERT_NOT_NULL(pxBarrier, "ResetArg->CullArg WAW: barrier missing");
+	ZENITH_ASSERT_EQ(pxBarrier->m_eSrcAccess, RESOURCE_ACCESS_WRITE_UAV, "ResetArg->CullArg WAW: src expected WRITE_UAV (the reset pass), got %d", (int)pxBarrier->m_eSrcAccess);
+	ZENITH_ASSERT_EQ(pxBarrier->m_eDstAccess, RESOURCE_ACCESS_WRITE_UAV, "ResetArg->CullArg WAW: dst expected WRITE_UAV (the culling pass), got %d", (int)pxBarrier->m_eDstAccess);
+	ZENITH_ASSERT_EQ(pxBarrier->m_xResource.AsBuffer(), &xArgBuffer.GetBuffer(), "ResetArg->CullArg WAW: barrier targets wrong buffer");
+}
+
+ZENITH_TEST(Core, RenderGraphResetArgumentWriteGBufferIndirectReadCyclic) { Zenith_UnitTests::TestRenderGraphResetArgumentWriteGBufferIndirectReadCyclic(); }
+void Zenith_UnitTests::TestRenderGraphResetArgumentWriteGBufferIndirectReadCyclic(){
+	// Cross-frame cyclic seed for the reset pass's argument write. The prior
+	// frame's GBuffer pass read the argument buffer as READ_INDIRECT_ARG; the
+	// NEXT frame's reset pass writes the same buffer as WRITE_UAV. The plan
+	// pins:
+	//
+	//   "prior-frame G-buffer argument read -> next-frame reset argument
+	//    write is represented by the cyclic seed"
+	//
+	// So the reset pass (the FIRST access of frame N+1) must carry a buffer
+	// barrier whose SOURCE is the prior frame's READ_INDIRECT_ARG access,
+	// proving the cyclic seed orders the next frame's reset after the prior
+	// frame's GPU indirect-arg read. This is the SAME mechanism that
+	// TestRenderGraphCyclicBufferBarrier pins for culling-write->GBuffer-
+	// indirect-read, now exercised in the reset-pass-first acess shape.
+	Flux_RenderGraph xGraph;
+
+	Flux_ReadWriteBuffer xArgBuffer;
+	xArgBuffer.GetBuffer().m_xVRAMHandle.SetValue(0);
+	xArgBuffer.GetBuffer().m_ulSize = 4096u * 20u;
+
+	Flux_PassHandle xResetPass = xGraph.AddPass("Terrain Reset Count and Indirect Arguments", EmptyRecordCallback);
+	xGraph.WriteBuffer(xResetPass, xArgBuffer.GetBuffer(), RESOURCE_ACCESS_WRITE_UAV);
+
+	Flux_PassHandle xGBufferPass = xGraph.AddPass("Terrain GBuffer", EmptyRecordCallback);
+	xGraph.ReadBuffer(xGBufferPass, xArgBuffer.GetBuffer(), RESOURCE_ACCESS_READ_INDIRECT_ARG);
+
+	xGraph.m_xExecutionOrder.Clear();
+	xGraph.m_xExecutionOrder.PushBack(xResetPass.m_uIndex);
+	xGraph.m_xExecutionOrder.PushBack(xGBufferPass.m_uIndex);
+
+	xGraph.SynthesizeBarriers();
+
+	// The reset pass — frame N+1's first access — must carry a cross-frame
+	// barrier whose SOURCE is the prior frame's READ_INDIRECT_ARG indirect
+	// read, proving the cyclic seed waits for the previous frame's GPU
+	// command-processor read before the reset pass's UAV write.
+	const Flux_RenderGraph_Pass* pxReset = xGraph.GetPasses().Get(xResetPass.m_uIndex);
+	u_int uResetBufferBarriers = 0;
+	const Flux_RenderGraph_Barrier* pxResetBarrier = nullptr;
+	for (u_int u = 0; u < pxReset->m_xPrologueBarriers.GetSize(); u++)
+	{
+		const Flux_RenderGraph_Barrier& rxBar = pxReset->m_xPrologueBarriers.Get(u);
+		if (rxBar.m_xResource.GetKind() == Flux_GraphResourceKind::Buffer)
+		{
+			uResetBufferBarriers++;
+			pxResetBarrier = &rxBar;
+		}
+	}
+	ZENITH_ASSERT_EQ(uResetBufferBarriers, 1u, "ResetArg->GBufferIndirect cyclic seed: reset pass expected 1 buffer barrier, got %u", uResetBufferBarriers);
+	ZENITH_ASSERT_NOT_NULL(pxResetBarrier, "ResetArg->GBufferIndirect cyclic seed: reset pass cross-frame barrier missing");
+	ZENITH_ASSERT_EQ(pxResetBarrier->m_eSrcAccess, RESOURCE_ACCESS_READ_INDIRECT_ARG, "ResetArg->GBufferIndirect cyclic seed: reset src expected READ_INDIRECT_ARG (prior-frame read), got %d", (int)pxResetBarrier->m_eSrcAccess);
+	ZENITH_ASSERT_EQ(pxResetBarrier->m_eDstAccess, RESOURCE_ACCESS_WRITE_UAV, "ResetArg->GBufferIndirect cyclic seed: reset dst expected WRITE_UAV, got %d", (int)pxResetBarrier->m_eDstAccess);
+
+	// The intra-frame GBuffer read still gets its own WRITE_UAV -> READ_INDIRECT_ARG
+	// barrier (reset pass is the producer this frame, since culling is omitted for
+	// the test's cyclic-seed isolation — the WAW test above covers the culling
+	// pass's intra-frame reset->cull WAW separately).
+	const Flux_RenderGraph_Pass* pxGBuffer = xGraph.GetPasses().Get(xGBufferPass.m_uIndex);
+	u_int uGBufferBufferBarriers = 0;
+	const Flux_RenderGraph_Barrier* pxGBufferBarrier = nullptr;
+	for (u_int u = 0; u < pxGBuffer->m_xPrologueBarriers.GetSize(); u++)
+	{
+		const Flux_RenderGraph_Barrier& rxBar = pxGBuffer->m_xPrologueBarriers.Get(u);
+		if (rxBar.m_xResource.GetKind() == Flux_GraphResourceKind::Buffer)
+		{
+			uGBufferBufferBarriers++;
+			pxGBufferBarrier = &rxBar;
+		}
+	}
+	ZENITH_ASSERT_EQ(uGBufferBufferBarriers, 1u, "ResetArg->GBufferIndirect cyclic seed: GBuffer pass expected its intra-frame barrier, got %u", uGBufferBufferBarriers);
+	ZENITH_ASSERT_NOT_NULL(pxGBufferBarrier, "ResetArg->GBufferIndirect cyclic seed: GBuffer pass intra-frame barrier missing");
+	ZENITH_ASSERT_EQ(pxGBufferBarrier->m_eSrcAccess, RESOURCE_ACCESS_WRITE_UAV, "ResetArg->GBufferIndirect cyclic seed: GBuffer src expected WRITE_UAV (this-frame reset), got %d", (int)pxGBufferBarrier->m_eSrcAccess);
+	ZENITH_ASSERT_EQ(pxGBufferBarrier->m_eDstAccess, RESOURCE_ACCESS_READ_INDIRECT_ARG, "ResetArg->GBufferIndirect cyclic seed: GBuffer dst expected READ_INDIRECT_ARG, got %d", (int)pxGBufferBarrier->m_eDstAccess);
+}
+
 // Pass A writes the buffer (terrain culling compute writes LODLevelBuffer),
 // pass B reads it as a read-only structured buffer (GBuffer vertex shader
 // samples LODLevelBuffer). Verifies RESOURCE_ACCESS_READ_BUFFER_SRV drives

@@ -10,6 +10,7 @@
 #include "AssetHandling/Zenith_ModelAsset.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
+#include "Flux/Backend/Flux_IndirectDraw.h"
 #include "Maths/Zenith_Maths.h"
 #include "Core/Zenith_CommandLine.h"
 #include "Core/Zenith_GraphicsOptions.h"
@@ -36,6 +37,9 @@
 #include "Flux/Terrain/Flux_TerrainImpl.h"
 #include "Flux/Terrain/Flux_TerrainStreamingManagerImpl.h"
 #include "Flux/Terrain/Flux_TerrainConfig.h"
+#ifdef ZENITH_VULKAN
+#include "Vulkan/Zenith_Vulkan.h"
+#endif
 #include "Physics/Zenith_Physics.h"
 #include "Physics/Zenith_Physics.h"
 #include "Prefab/Zenith_Prefab.h"
@@ -470,6 +474,87 @@ static bool RenderTest_LogTerrainSmokeState(uint32_t uFrame)
 	return bPass;
 }
 
+// The smoke matrix's forced padded/single arms must prove that the immutable
+// request reached the backend and that the corresponding API-command tier was
+// actually recorded. Startup option logging alone is insufficient: a stale or
+// ignored override could otherwise leave every "forced" arm running auto/native.
+static bool RenderTest_VerifyTerrainIndirectSmokeTier()
+{
+#if defined(ZENITH_VULKAN) && defined(ZENITH_TESTING)
+	auto& xVulkan = static_cast<Zenith_Vulkan&>(g_xEngine.FluxBackend());
+	const Zenith_IndirectCountMode eRequestedCore = Zenith_CommandLine::GetIndirectCountMode();
+	Flux_IndirectDrawOverride eRequested = Flux_IndirectDrawOverride::AUTO;
+	const char* szRequested = "auto";
+	switch (eRequestedCore)
+	{
+	case Zenith_IndirectCountMode::Native:
+		eRequested = Flux_IndirectDrawOverride::NATIVE;
+		szRequested = "native";
+		break;
+	case Zenith_IndirectCountMode::Padded:
+		eRequested = Flux_IndirectDrawOverride::PADDED;
+		szRequested = "padded";
+		break;
+	case Zenith_IndirectCountMode::Single:
+		eRequested = Flux_IndirectDrawOverride::SINGLE;
+		szRequested = "single";
+		break;
+	case Zenith_IndirectCountMode::Auto:
+		break;
+	}
+
+	if (xVulkan.GetIndirectDrawOverride() != eRequested)
+	{
+		Zenith_Error(LOG_CATEGORY_TERRAIN,
+			"RENDERTEST_SMOKE_FAIL: indirect-count request '%s' did not reach the Vulkan backend",
+			szRequested);
+		return false;
+	}
+
+	const Flux_IndirectExecutionMode eExpected = Flux_SelectIndirectExecutionMode(
+		xVulkan.GetIndirectDrawCapabilities(),
+		Flux_TerrainConfig::TOTAL_CHUNKS,
+		Flux_IndirectCountFallback::ZERO_PADDED_TO_MAX,
+		eRequested);
+	const char* szExpected = "FAILED_CLOSED";
+	switch (eExpected)
+	{
+	case Flux_IndirectExecutionMode::NATIVE_COUNT:  szExpected = "NATIVE_COUNT"; break;
+	case Flux_IndirectExecutionMode::PADDED_MULTI:  szExpected = "PADDED_MULTI"; break;
+	case Flux_IndirectExecutionMode::PADDED_SINGLE: szExpected = "PADDED_SINGLE"; break;
+	case Flux_IndirectExecutionMode::FAILED_CLOSED: break;
+	}
+
+	auto& xTelemetry = xVulkan.GetIndirectDrawTelemetry();
+	const uint32_t uNative = xTelemetry.m_uNativeCount.load(std::memory_order_relaxed);
+	const uint32_t uPaddedMulti = xTelemetry.m_uPaddedMulti.load(std::memory_order_relaxed);
+	const uint32_t uPaddedSingle = xTelemetry.m_uPaddedSingle.load(std::memory_order_relaxed);
+	const uint32_t uFailClosed = xTelemetry.m_uFailClosed.load(std::memory_order_relaxed);
+	const bool bExactTier = uFailClosed == 0u &&
+		((eExpected == Flux_IndirectExecutionMode::NATIVE_COUNT &&
+			uNative > 0u && uPaddedMulti == 0u && uPaddedSingle == 0u) ||
+		 (eExpected == Flux_IndirectExecutionMode::PADDED_MULTI &&
+			uNative == 0u && uPaddedMulti > 0u && uPaddedSingle == 0u) ||
+		 (eExpected == Flux_IndirectExecutionMode::PADDED_SINGLE &&
+			uNative == 0u && uPaddedMulti == 0u && uPaddedSingle > 0u));
+
+	Zenith_Log(LOG_CATEGORY_TERRAIN,
+		"RENDERTEST_SMOKE_INDIRECT_TIER request=%s expected=%s native=%u paddedMulti=%u paddedSingle=%u failClosed=%u",
+		szRequested, szExpected, uNative, uPaddedMulti, uPaddedSingle, uFailClosed);
+	if (!bExactTier)
+	{
+		Zenith_Error(LOG_CATEGORY_TERRAIN,
+			"RENDERTEST_SMOKE_FAIL: expected exactly indirect tier %s for request %s, got native=%u paddedMulti=%u paddedSingle=%u failClosed=%u",
+			szExpected, szRequested, uNative, uPaddedMulti, uPaddedSingle, uFailClosed);
+	}
+	return bExactTier;
+#else
+	// RunRenderTestSmoke.ps1 targets Vulkan. Keep other configurations buildable;
+	// their ordinary smoke diagnostics remain useful but cannot prove this tier.
+	return true;
+#endif
+}
+
 // Helper: find the player entity in the active scene by name.
 static Zenith_Entity RenderTest_FindPlayerEntity()
 {
@@ -707,6 +792,7 @@ public:
 
 		if (m_uFrame >= s_uRenderTestSmokeFrameLimit)
 		{
+			m_bPassed = RenderTest_VerifyTerrainIndirectSmokeTier() && m_bPassed;
 			if (m_bPassed)
 			{
 				Zenith_Log(LOG_CATEGORY_TERRAIN, "RENDERTEST_SMOKE_PASS: completed %u frames", m_uFrame);

@@ -17,6 +17,11 @@
 
 #include "Common/Bindings.slang"
 
+// Shared 20-byte indexed-indirect-command ABI (was declared inline here;
+// moved to a terrain-local include so reset + culling share one definition
+// pinned to the same C++ twin in Flux/Backend/Flux_IndirectDraw.h).
+#include "Terrain/Flux_TerrainIndirectCommon.slang"
+
 static const uint  TERRAIN_LOD_COUNT      = 2;
 static const float LOD_HIGH_MAX_DIST_SQ   = 1000000.0;
 
@@ -35,16 +40,6 @@ struct TerrainChunkData
 	LODData lods[TERRAIN_LOD_COUNT];
 };
 
-// VkDrawIndexedIndirectCommand layout (vertexOffset is signed int).
-struct DrawIndexedIndirectCommand
-{
-	uint indexCount;
-	uint instanceCount;
-	uint firstIndex;
-	int  vertexOffset;
-	uint firstInstance;
-};
-
 struct FrustumPlane { float4 normalAndDistance; };
 
 struct CameraBufferLayout
@@ -57,7 +52,7 @@ struct PassParams
 {
 	StructuredBuffer<TerrainChunkData>            ChunkBuffer;
 	ConstantBuffer<CameraBufferLayout>            CameraBuffer;
-	RWStructuredBuffer<DrawIndexedIndirectCommand> IndirectCommandBuffer;
+	RWStructuredBuffer<Flux_TerrainIndexedIndirectCommand> IndirectCommandBuffer;
 	RWStructuredBuffer<uint>                       visibleCount;
 	RWStructuredBuffer<uint>                       LODLevelBuffer;
 };
@@ -150,7 +145,7 @@ void csMain(uint3 dispatchId : SV_DispatchThreadID)
 	// chunk id, so the vertex shader indexes LODLevelBuffer by chunk rather
 	// than by compacted draw slot. That keeps debug colour stable even when
 	// draw compaction order changes frame-to-frame.
-	DrawIndexedIndirectCommand cmd;
+	Flux_TerrainIndexedIndirectCommand cmd;
 	cmd.indexCount    = selectedLOD.indexCount;
 	cmd.instanceCount = 1u;
 	cmd.firstIndex    = selectedLOD.firstIndex;

@@ -256,7 +256,7 @@ void Zenith_Vulkan_Swapchain::Initialise()
 	}
 
 	uint32_t uGraphicsQueueIdx = m_pxVulkan->GetQueueIndex(COMMANDTYPE_GRAPHICS);
-	uint32_t uPresentQueueIdx = m_pxVulkan->GetQueueIndex(COMMANDTYPE_GRAPHICS);
+	uint32_t uPresentQueueIdx = m_pxVulkan->GetQueueIndex(COMMANDTYPE_PRESENT);
 	uint32_t indicesPtr[] = { uGraphicsQueueIdx,uPresentQueueIdx };
 	if (uGraphicsQueueIdx != uPresentQueueIdx)
 	{

@@ -31,6 +31,22 @@
 // Zenith_HasCommandLineFlag helper).
 // ============================================================================
 
+// ============================================================================
+// Zenith_IndirectCountMode — the Core-owned vocabulary for
+// --indirect-count-mode. Deliberately NOT Flux_IndirectDrawOverride: Core must
+// not include a Flux type, and the backend converts this value into the
+// Flux enum at device-initialisation time. auto is the shipping default;
+// native/padded/single are test assertions that fail closed when their tier
+// cannot legally run. See Docs/design/TerrainIndirectCountFallback.md.
+// ============================================================================
+enum class Zenith_IndirectCountMode : uint8_t
+{
+    Auto,
+    Native,
+    Padded,
+    Single,
+};
+
 namespace Zenith_CommandLine
 {
     // Every flag this parser owns, in one value type. Defaults here ARE the
@@ -51,6 +67,14 @@ namespace Zenith_CommandLine
         bool        m_bSkipBootCapture    = false;
         const char* m_szUnitTestTimings   = nullptr;
         bool        m_bExitAfterUnitTests = false;
+        // --indirect-count-mode=auto|native|padded|single (Phase 1 of the
+        // terrain indirect-count compatibility plan). Stored as a small enum
+        // so the parser owns the vocabulary — Core must not include or return
+        // a Flux type. The backend converts this value into
+        // Flux_IndirectDrawOverride during device initialisation. auto is the
+        // shipping default; native/padded/single are test assertions that
+        // fail closed when their tier cannot legally run.
+        Zenith_IndirectCountMode m_eIndirectCountMode = Zenith_IndirectCountMode::Auto;
     };
 
     // Pure parse: reads argv, touches NO process state, returns the result.
@@ -151,6 +175,25 @@ namespace Zenith_CommandLine
     // initialised, so teardown runs the normal ordered shutdown. Same run-then-exit
     // shape as --bench-ecs.
     bool IsExitAfterUnitTestsRequested();
+
+    // `--indirect-count-mode=auto|native|padded|single`: the boot-time immutable
+    // override for the semantic counted-indirect draw operation. Auto is the
+    // shipping default (and the only legal value Android takes today, because
+    // android_main never calls Parse); native/padded/single are test assertions.
+    // The backend's device initialisation converts this value into a
+    // Flux_IndirectDrawOverride and reads it once at boot — worker recording
+    // never mutates it. See Docs/design/TerrainIndirectCountFallback.md and the
+    // Phase 1 CLI/parser tests in Core/Zenith_CommandLine.Tests.inl.
+    Zenith_IndirectCountMode GetIndirectCountMode();
+
+    // Pure string -> enum resolver, exposed so the parsing contract is testable
+    // WITHOUT re-running Parse (which would clobber the process-wide flag state
+    // for the rest of a test batch). Returns the value to set on Flags. A bare
+    // `--indirect-count-mode` (no '=') and an unknown spelling both fall through
+    // to the default (Auto) rather than silently taking a partial value.
+    // szValue is the text after '=' (or nullptr for the bare form).
+    Zenith_IndirectCountMode ResolveIndirectCountModeArg(const char* szValue,
+        Zenith_IndirectCountMode eDefault = Zenith_IndirectCountMode::Auto);
 
     // Pure split of `--boot-profile-dump[=path]`: returns the text after the first
     // '=', or szDefaultPath for the bare form (and for a trailing '=' with nothing

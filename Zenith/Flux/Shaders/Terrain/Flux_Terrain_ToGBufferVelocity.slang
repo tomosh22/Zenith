@@ -132,6 +132,16 @@ GBufferVelocityOut fsMain(VsOut input)
 	float2 xVelocity = Flux_EncodeVelocityUV(input.clipCurNoJitter, input.clipPrevNoJitter);
 
 	uint uDebugMode = asuint(g_xPassSet.TerrainMaterialConstants.g_xTerrainParams2.y);
+	if (uDebugMode == 13u)
+	{
+		// Keep the compatibility sentinel byte-for-byte equivalent to the base
+		// terrain G-buffer path if a caller enables TAA while using debug mode 13.
+		return MakeGBufferVelocity(
+			MakeGBuffer(float4(1.0, 0.0, 1.0, 1.0), input.worldNormal,
+				1.0, 1.0, 0.0, 0.0, float3(0.0, 0.0, 0.0),
+				0.0, 0.0, GBUFFER_SHADING_UNLIT),
+			xVelocity);
+	}
 
 	if (uDebugMode > 0u)
 	{

@@ -721,6 +721,17 @@ public:
 	// Compute-write -> indirect-arg-read barrier (terrain culling writes
 	// indirect/count buffers, GBuffer pass reads them via DrawIndexedIndirectCount).
 	static void TestRenderGraphIndirectArgBarrier();
+	// Phase 6 of the terrain indirect-count compatibility plan: the new GPU
+	// reset pass clears both the visible-count buffer AND the indirect-command
+	// buffer before culling writes the live prefix. Three new barrier edges:
+	//   reset-count UAV write -> culling-count UAV write (WAW);
+	//   reset-argument UAV write -> culling-argument UAV write (WAW);
+	//   cross-frame cyclic seed on the reset pass's argument write, sourced
+	//   from the prior frame's GBuffer READ_INDIRECT_ARG (the next frame's
+	//   reset must wait for the previous frame's GPU command-processor read).
+	static void TestRenderGraphResetCountWriteCullCountReadWriteIsWarRaw();
+	static void TestRenderGraphResetArgumentWriteCullArgumentWriteIsWaw();
+	static void TestRenderGraphResetArgumentWriteGBufferIndirectReadCyclic();
 	// Compute-write -> read-only structured-buffer barrier (terrain culling
 	// writes the LOD level buffer, GBuffer vertex shader samples it as
 	// StructuredBuffer<uint>).
@@ -820,6 +831,17 @@ public:
 	static void TestCommandLineParseEveryValueFlag();
 	static void TestCommandLineParsePrefixedFlags();
 	static void TestCommandLineParseArgvEdgeCases();
+
+	// --indirect-count-mode=auto|native|padded|single (Phase 1 of the terrain
+	// indirect-count compatibility plan). Four spellings + the bare form +
+	// the pure splitter are pinned in Zenith_CommandLine.Tests.inl; the
+	// backend's device init converts the parsed enum into
+	// Flux_IndirectDrawOverride via Zenith_CommandLine::GetIndirectCountMode.
+	static void TestCommandLineParseIndirectCountModeDefaultsToAuto();
+	static void TestCommandLineParseIndirectCountModeEverySpelling();
+	static void TestCommandLineParseIndirectCountModeUnknownFallsBackToAuto();
+	static void TestCommandLineParseIndirectCountModeBareFormFallsThroughToAuto();
+	static void TestCommandLineResolveIndirectCountModeArgPure();
 
 	// Flux_RootMotion::SamplePosition/Rotation Delta tests (verify the
 	// shared SampleRootMotionDeltas templated helper handles edge cases:

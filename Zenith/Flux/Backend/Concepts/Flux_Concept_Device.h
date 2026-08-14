@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Flux/Flux.h"
+#include "Flux/Backend/Flux_IndirectDraw.h"  // Flux_IndirectDrawCapabilities — the device-capability getter's return type
 
 // Concept: device lifecycle, VRAM registry, top-level GPU state.
 //
@@ -62,6 +63,13 @@ concept FluxBackendDevice = requires(
 	{ t.PreparePersistentSets(h, h, ph, u)                           } -> std::same_as<void>;
 	{ t.WritePersistentViewImage(u, xView, xSampler)                 } -> std::same_as<void>;
 	{ t.WritePersistentViewBuffer(u, xViewBuf)                       } -> std::same_as<void>;
+	// Indirect-count capability/policy getter. Returns the USABLE semantic
+	// booleans + raw maxDrawIndirectCount. Fixed callers apply the multi-draw
+	// clamp separately. Diagnostics, policy decisions, tests and future feature
+	// selection read from this. Returned by value; the backend owns stable
+	// device-lifetime storage either way (the Vulkan/Null/D3D12 getters below
+	// return a const& into a member).
+	{ t.GetIndirectDrawCapabilities()                                } -> std::same_as<Flux_IndirectDrawCapabilities>;
 };
 
 // Tools-only device methods (ImGui integration).

@@ -803,3 +803,17 @@ bool Flux_RendererImpl::PrepareFrame(Flux_WorkDistribution& xOutDistribution)
 // Zenith/Vulkan because that whole directory is compiled out of the Null_* config
 // -- the only one CI runs -- so tests living there could never gate anything.
 #include "Flux/Flux_SwapchainPolicy.Tests.inl"
+
+// Pure policy/ABI tests for the neutral indirect-count fallback header
+// (Flux_IndirectDraw.h). Hosted HERE rather than in Flux_BackendConformance.cpp
+// because that TU has ZERO runtime functions (only compile-time static_asserts),
+// so MSVC's /OPT:REF linker pass dead-strips its .obj on builds where no live
+// caller names a symbol from it — taking the ZENITH_TEST registrars with it
+// (the same dead-strip hazard Null/CLAUDE.md documents for backend-only TUs
+// like Flux_ViewSetBinding.cpp). Flux.cpp's many runtime Flux_RendererImpl
+// methods force its .obj to survive the link in every backend variant
+// (Vulkan / Null / D3D12) and every game (Combat, RenderTest, Zenithmon, ...),
+// so these pure C++ arithmetic / small-struct assertions over constexpr
+// inputs (no device, no command buffer, no recorder) register in every
+// headless CI gate.
+#include "Flux/Backend/Flux_IndirectDraw.Tests.inl"

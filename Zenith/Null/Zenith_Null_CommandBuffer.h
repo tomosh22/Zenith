@@ -63,7 +63,30 @@ public:
 
 	// ---- FluxBackendIndirectDraws ------------------------------------------
 	void DrawIndexedIndirect(const Flux_IndirectBuffer* pxIndirectBuffer, uint32_t uDrawCount, uint32_t uOffset = 0, uint32_t uStride = 20) { }
-	void DrawIndexedIndirectCount(const Flux_IndirectBuffer* pxIndirectBuffer, const Flux_IndirectBuffer* pxCountBuffer, uint32_t uMaxDrawCount, uint32_t uIndirectOffset = 0, uint32_t uCountOffset = 0, uint32_t uStride = 20) { }
+	// Semantic counted-indirect draw. The required eFallback policy is placed
+	// before the offset/stride parameters (and those defaults are removed on
+	// this overload so a required parameter cannot follow defaulted ones). The
+	// null backend simply validates the policy is in range and emits nothing —
+	// a no-op recorder cannot fall through to a real API command, so FAILED_
+	// CLOSED is implemented here as the same no-op.
+	void DrawIndexedIndirectCount(const Flux_IndirectBuffer* pxIndirectBuffer,
+		const Flux_IndirectBuffer* pxCountBuffer,
+		uint32_t uMaxDrawCount,
+		Flux_IndirectCountFallback eFallback,
+		uint32_t uIndirectOffset,
+		uint32_t uCountOffset,
+		uint32_t uStride)
+	{
+		// Touch the policy enum to confirm a caller never passes an out-of-range
+		// value (a debug-only guard against ABI drift); nothing else to do on a
+		// backend that executes no draws.
+		(void)pxIndirectBuffer; (void)pxCountBuffer; (void)uMaxDrawCount;
+		(void)eFallback; (void)uIndirectOffset; (void)uCountOffset; (void)uStride;
+		Zenith_Assert(eFallback == Flux_IndirectCountFallback::REQUIRE_NATIVE ||
+		              eFallback == Flux_IndirectCountFallback::ZERO_PADDED_TO_MAX,
+			"DrawIndexedIndirectCount: invalid Flux_IndirectCountFallback value %u",
+			static_cast<unsigned>(eFallback));
+	}
 
 	// ---- FluxBackendPipelineBinding ----------------------------------------
 	// No-op recording, but the shared validators run so the null backend keeps the

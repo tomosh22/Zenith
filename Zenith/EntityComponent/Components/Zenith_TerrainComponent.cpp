@@ -10,6 +10,12 @@
 #include "Core/Zenith_TerrainChunkLayout.h"
 #include "Core/Zenith_BakedMeshReader.h"
 #include "Maths/Zenith_FrustumCulling.h"
+// Phase 1 of the terrain indirect-count compatibility plan: the terrain
+// indirect-command allocation/seed and the per-backend recorder all name the
+// shared 20-byte / five-word ABI defined in Flux/Backend/Flux_IndirectDraw.h.
+// The header is dependency-light (<cstdint>/<cstddef>) so EntityComponent can
+// include it without re-entering the Flux.h cycle.
+#include "Flux/Backend/Flux_IndirectDraw.h"
 // Wave 3 PART B: terrain render-record gather (so Flux_Terrain drops Zenith_TerrainComponent.h).
 #include "Core/Zenith_Engine.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
@@ -1405,12 +1411,37 @@ void Zenith_TerrainComponent::InitializeCullingResources()
 		m_pxStreamingState->m_xFrustumPlanesBuffer
 	);
 
-	// Indirect draw command buffer (one command per chunk, max)
-	// Structure: VkDrawIndexedIndirectCommand (5 uint32_t values)
-	// Initialize to zeros so all commands start with indexCount=0
-	const size_t indirectBufferSize = sizeof(uint32_t) * 5 * TOTAL_CHUNKS;
-	uint32_t* pZeroBuffer = new uint32_t[5 * TOTAL_CHUNKS];
-	memset(pZeroBuffer, 0, indirectBufferSize);
+	// Indirect draw command buffer (one command per chunk, max).
+	//
+	// The ABI is the shared 20-byte / five-word indexed-indirect-command record
+	// pinned by Flux_IndirectDrawIndexedCommand (see Flux/Backend/Flux_IndirectDraw.h)
+	// — indexCount, instanceCount, firstIndex, vertexOffset (signed int),
+	// firstInstance. The same contract the Slang shader writes, the Slang shared
+	// include reads, the test pinned ABI POD asserts against, and the per-backend
+	// recorders consume. Naming the constants (not repeating the literal `5` and
+	// the `sizeof(uint32_t)` stride) keeps the allocation, the test baselines and
+	// the reset shader's bounds-check all referring to ONE definition.
+	//
+	// Initialize to zeros so all commands start with indexCount=0 — a legal
+	// no-op the GPU reset pass then re-clears every frame before culling writes
+	// the live prefix. The padded-tail contract for the indirect-count fallback
+	// rides this: every record in [0, TOTAL_CHUNKS) is a valid zero/no-op, so a
+	// fixed indexed-indirect draw over the entire range is valid even when the
+	// count buffer's value is smaller (онии many → few → zero visibility
+	// transitions must not replay stale geometry).
+	constexpr uint32_t uINDIRECT_RECORD_COUNT = Flux_TerrainConfig::TOTAL_CHUNKS;
+	static_assert(uINDIRECT_RECORD_COUNT == 4096u,
+		"Terrain indirect-buffer allocation expects 4096 records; update alongside Flux_TerrainConfig::TOTAL_CHUNKS.");
+	const size_t indirectBufferSize =
+		static_cast<size_t>(uINDIRECT_RECORD_COUNT) * uFLUX_INDIRECT_DRAW_INDEXED_BYTE_STRIDE;
+	static_assert(sizeof(Flux_IndirectDrawIndexedCommand) == 20u,
+		"Zenith_TerrainComponent: indirect-command ABI drifted from 20 bytes — Flux_IndirectDraw.h is the contract;");
+	Flux_IndirectDrawIndexedCommand* pZeroCommands =
+		new Flux_IndirectDrawIndexedCommand[uINDIRECT_RECORD_COUNT];
+	for (uint32_t u = 0u; u < uINDIRECT_RECORD_COUNT; ++u)
+	{
+		Flux_ZeroIndirectDrawIndexedCommand(pZeroCommands[u]);
+	}
 
 	xVulkanMemory.InitialiseIndirectBuffer(
 		indirectBufferSize,
@@ -1418,8 +1449,10 @@ void Zenith_TerrainComponent::InitializeCullingResources()
 	);
 
 	// Upload the zero-initialized data
-	xVulkanMemory.UploadBufferData(m_pxStreamingState->m_xIndirectDrawBuffer.GetBuffer().m_xVRAMHandle, pZeroBuffer, indirectBufferSize);
-	delete[] pZeroBuffer;
+	xVulkanMemory.UploadBufferData(
+		m_pxStreamingState->m_xIndirectDrawBuffer.GetBuffer().m_xVRAMHandle,
+		pZeroCommands, indirectBufferSize);
+	delete[] pZeroCommands;
 
 	// Visible chunk counter (single atomic uint32_t)
 	xVulkanMemory.InitialiseIndirectBuffer(

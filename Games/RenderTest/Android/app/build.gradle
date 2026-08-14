@@ -51,7 +51,11 @@ android {
 		main {
 			assets.srcDirs = [
 				'../../Assets',
-				'../../../../Zenith/Assets'
+				'../../../../Zenith/Assets',
+				// Android has no runtime Slang compiler. RenderTest exercises the
+				// terrain fallback, so its checked-in SPIR-V/reflection artifacts
+				// must be packaged exactly as they are for TilePuzzle/Zenithmon.
+				'../../../../Zenith/Flux/Shaders'
 			]
 			jniLibs.srcDirs = ['jniLibs']
 		}

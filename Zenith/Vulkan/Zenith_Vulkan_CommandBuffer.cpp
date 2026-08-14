@@ -37,7 +37,7 @@ void Zenith_Vulkan_CommandBuffer::Initialise(CommandType eType /*= COMMANDTYPE_G
 	xAllocInfo.level = vk::CommandBufferLevel::ePrimary;
 	xAllocInfo.commandBufferCount = MAX_FRAMES_IN_FLIGHT;
 	m_xCmdBuffers = VkUnwrap(xDevice.allocateCommandBuffers(xAllocInfo));
-}
+	}
 
 void Zenith_Vulkan_CommandBuffer::InitialiseWithCustomPool(const vk::CommandPool& xCustomPool, u_int uWorkerIndex, CommandType eType /*= COMMANDTYPE_GRAPHICS*/)
 {
@@ -587,53 +587,366 @@ void Zenith_Vulkan_CommandBuffer::DrawIndexed(uint32_t uNumIndices, uint32_t uNu
 
 void Zenith_Vulkan_CommandBuffer::DrawIndexedIndirect(const Flux_IndirectBuffer* pxIndirectBuffer, uint32_t uDrawCount, uint32_t uOffset /*= 0*/, uint32_t uStride /*= 20*/)
 {
-	if (m_pxVulkan->ShouldSubmitDrawCalls())
+	if (!m_pxVulkan->ShouldSubmitDrawCalls())
 	{
-		UpdateDescriptorSets();
-		Zenith_Vulkan_VRAM* pxVRAM = m_pxVulkan->GetVRAM(pxIndirectBuffer->GetBuffer().m_xVRAMHandle);
-		Zenith_Assert(pxVRAM != nullptr, "GetVRAM returned null for indirect buffer");
-		if (!pxVRAM) return;  // Safety guard for release builds
-		const vk::Buffer xIndirectBuffer = pxVRAM->GetBuffer();
-		m_xCurrentCmdBuffer.drawIndexedIndirect(xIndirectBuffer, uOffset, uDrawCount, uStride);
+		return;
 	}
-}
-
-void Zenith_Vulkan_CommandBuffer::DrawIndexedIndirectCount(const Flux_IndirectBuffer* pxIndirectBuffer, const Flux_IndirectBuffer* pxCountBuffer, uint32_t uMaxDrawCount, uint32_t uIndirectOffset /*= 0*/, uint32_t uCountOffset /*= 0*/, uint32_t uStride /*= 20*/)
-{
-	if (m_pxVulkan->ShouldSubmitDrawCalls())
+	Zenith_Assert(pxIndirectBuffer != nullptr, "DrawIndexedIndirect: indirect buffer is null");
+	if (pxIndirectBuffer == nullptr)
 	{
-		// Not every device actually implements this (some Android Vulkan ICDs,
-		// including the emulator's, support neither Vulkan 1.2 core nor
-		// VK_KHR_draw_indirect_count) -- Zenith_Vulkan::CreateDevice queries this
-		// for real via vkEnumerateDeviceExtensionProperties rather than assuming
-		// it from platform, so this is a clean skip (terrain draws nothing that
-		// frame) rather than a crash. Logged once, not once-per-frame.
-		if (!m_pxVulkan->IsDrawIndirectCountSupported())
+		return;
+	}
+
+	// Spec-safe fixed-emission batching: split a single multi-draw into
+	// batches no larger than the device's effective per-call limit when
+	// the request exceeds it. The per-call limit clamps to 1 when
+	// multi-draw is disabled, regardless of the raw physical-device
+	// maxDrawIndirectCount. A request that already fits (the common case
+	// on multi-draw-enabled hardware) goes through unchanged with one
+	// vkCmdDrawIndexedIndirect call. Splits reset shader draw ID at each
+	// batch boundary; the engine's current fixed-indexed-indirect callers
+	// (grass, particles, unified/instanced meshes) do not consume draw ID
+	// across the original logical call, so the split is observationally
+	// identical to one batch on these paths. The count-batch planner is
+	// a private/common helper shared with counted-emulation fallback.
+	const Flux_IndirectDrawCapabilities xCaps = m_pxVulkan->GetIndirectDrawCapabilities();
+	const uint32_t uPerCallLimit = Flux_ResolveFixedDrawPerCallLimit(xCaps);
+	if (uPerCallLimit == 0u)
+	{
+		Zenith_Assert(false, "DrawIndexedIndirect: device reported a zero fixed-draw per-call limit");
+		return;
+	}
+
+	// Preflight: validate the full request range BEFORE emitting any
+	// API command. Vulkan requires:
+	//   stride >= sizeof(VkDrawIndexedIndirectCommand) = 20, stride % 4 == 0
+	//   uOffset % 4 == 0 (VUID-vkCmdDrawIndexedIndirect-offset-02710)
+	//   The LAST record's end is offset + (drawCount-1)*stride + 20,
+	//   NOT offset + drawCount*stride — a stride > 20 has padding between
+	//   records, but the LAST record only occupies 20 bytes. The formula
+	//   offset + drawCount*stride would reject legal padded-stride
+	//   requests where the final stride's tail padding extends past the
+	//   buffer but the final record's 20 bytes do not.
+	if (uDrawCount > 1u &&
+		(uStride < uFLUX_INDIRECT_DRAW_INDEXED_BYTE_STRIDE || (uStride % 4u) != 0u))
+	{
+		Zenith_Assert(false,
+			"DrawIndexedIndirect: invalid stride %u for drawCount %u (must be >= %u and a multiple of 4)",
+			uStride, uDrawCount, uFLUX_INDIRECT_DRAW_INDEXED_BYTE_STRIDE);
+		return;
+	}
+	if ((uOffset % 4u) != 0u)
+	{
+		Zenith_Assert(false,
+			"DrawIndexedIndirect: offset %u is not a multiple of 4 (VUID-vkCmdDrawIndexedIndirect-offset-02710)",
+			uOffset);
+		return;
+	}
+	if (uDrawCount > 0u)
+	{
+		const uint64_t ulLastRecordEnd =
+			static_cast<uint64_t>(uOffset) +
+			static_cast<uint64_t>(uDrawCount - 1u) * static_cast<uint64_t>(uStride) +
+			static_cast<uint64_t>(uFLUX_INDIRECT_DRAW_INDEXED_BYTE_STRIDE);
+		const uint64_t ulBufferSize = pxIndirectBuffer->GetBuffer().m_ulSize;
+		if (ulLastRecordEnd > ulBufferSize)
 		{
-			static bool ls_bWarned = false;
-			if (!ls_bWarned)
-			{
-				ls_bWarned = true;
-				Zenith_Warning(LOG_CATEGORY_VULKAN,
-					"DrawIndexedIndirectCount: device does not support vkCmdDrawIndexedIndirectCount "
-					"(neither Vulkan 1.2 core nor VK_KHR_draw_indirect_count) -- skipping this and all "
-					"further calls; anything drawn through it (terrain) will not render");
-			}
+			Zenith_Assert(false,
+				"DrawIndexedIndirect: request range [offset=%u, last record ends at %llu] exceeds buffer size %llu (drawCount=%u, stride=%u)",
+				uOffset,
+				static_cast<unsigned long long>(ulLastRecordEnd),
+				static_cast<unsigned long long>(ulBufferSize),
+				uDrawCount, uStride);
 			return;
 		}
+	}
 
-		UpdateDescriptorSets();
-		Zenith_Vulkan_VRAM* pxIndirectVRAM = m_pxVulkan->GetVRAM(pxIndirectBuffer->GetBuffer().m_xVRAMHandle);
+	Flux_IndirectDrawBatchPlan xPlan;
+	if (!xPlan.Reset(uDrawCount, uOffset, uStride, uPerCallLimit))
+	{
+		Zenith_Assert(false, "DrawIndexedIndirect: complete fixed-draw batch plan overflowed");
+		return;
+	}
+
+	UpdateDescriptorSets();
+	Zenith_Vulkan_VRAM* pxVRAM = m_pxVulkan->GetVRAM(pxIndirectBuffer->GetBuffer().m_xVRAMHandle);
+	Zenith_Assert(pxVRAM != nullptr, "GetVRAM returned null for indirect buffer");
+	if (!pxVRAM) return;
+	const vk::Buffer xIndirectBuffer = pxVRAM->GetBuffer();
+
+	Flux_IndirectDrawBatch xBatch;
+#ifdef ZENITH_TESTING
+	uint32_t uEmittedAPICalls = 0;
+#endif
+	while (xPlan.Next(xBatch))
+	{
+		m_xCurrentCmdBuffer.drawIndexedIndirect(xIndirectBuffer,
+			xBatch.m_ulArgumentsOffsetBytes, xBatch.m_uDrawCount, uStride);
+#ifdef ZENITH_TESTING
+		++uEmittedAPICalls;
+#endif
+	}
+#ifdef ZENITH_TESTING
+	if (uEmittedAPICalls > 0u)
+		m_pxVulkan->GetIndirectDrawTelemetry().m_uFixedIndirect.fetch_add(uEmittedAPICalls, std::memory_order_relaxed);
+#endif
+}
+
+void Zenith_Vulkan_CommandBuffer::DrawIndexedIndirectCount(const Flux_IndirectBuffer* pxIndirectBuffer,
+	const Flux_IndirectBuffer* pxCountBuffer,
+	uint32_t uMaxDrawCount,
+	Flux_IndirectCountFallback eFallback,
+	uint32_t uIndirectOffset,
+	uint32_t uCountOffset,
+	uint32_t uStride)
+{
+	if (!m_pxVulkan->ShouldSubmitDrawCalls())
+	{
+		return;
+	}
+	const auto RecordFailClosed = [this]()
+	{
+#ifdef ZENITH_TESTING
+		m_pxVulkan->GetIndirectDrawTelemetry().m_uFailClosed.fetch_add(1, std::memory_order_relaxed);
+#endif
+	};
+	if (pxIndirectBuffer == nullptr)
+	{
+		RecordFailClosed();
+		Zenith_Assert(false, "DrawIndexedIndirectCount: indirect buffer is null");
+		return;
+	}
+
+	// Preflight: validate stride + full byte range BEFORE flushing descriptors
+	// or selecting a mode. Vulkan requires:
+	//   stride >= sizeof(VkDrawIndexedIndirectCommand) = 20, stride % 4 == 0
+	//   uIndirectOffset % 4 == 0 (VUID-vkCmdDrawIndexedIndirectCount-offset-02710)
+	//   The LAST record's end is offset + (maxDrawCount-1)*stride + 20.
+	//   uCountOffset % 4 == 0 (VUID-vkCmdDrawIndexedIndirectCount-countBufferOffset-02716)
+	//   The count buffer's [uCountOffset, uCountOffset + 4) fits.
+	// An invalid request emits ZERO draws.
+	if (uStride < uFLUX_INDIRECT_DRAW_INDEXED_BYTE_STRIDE || (uStride % 4u) != 0u)
+	{
+		RecordFailClosed();
+		Zenith_Assert(false,
+			"DrawIndexedIndirectCount: invalid stride %u (must be >= %u and a multiple of 4)",
+			uStride, uFLUX_INDIRECT_DRAW_INDEXED_BYTE_STRIDE);
+		return;
+	}
+	if ((uIndirectOffset % 4u) != 0u)
+	{
+		RecordFailClosed();
+		Zenith_Assert(false,
+			"DrawIndexedIndirectCount: indirect offset %u is not a multiple of 4 (VUID-vkCmdDrawIndexedIndirectCount-offset-02710)",
+			uIndirectOffset);
+		return;
+	}
+	if (uMaxDrawCount > 0u)
+	{
+		const uint64_t ulLastRecordEnd =
+			static_cast<uint64_t>(uIndirectOffset) +
+			static_cast<uint64_t>(uMaxDrawCount - 1u) * static_cast<uint64_t>(uStride) +
+			static_cast<uint64_t>(uFLUX_INDIRECT_DRAW_INDEXED_BYTE_STRIDE);
+		const uint64_t ulArgBufferSize = pxIndirectBuffer->GetBuffer().m_ulSize;
+		if (ulLastRecordEnd > ulArgBufferSize)
+		{
+			RecordFailClosed();
+			Zenith_Assert(false,
+				"DrawIndexedIndirectCount: argument range [offset=%u, last record ends at %llu] exceeds buffer %llu (maxDrawCount=%u, stride=%u)",
+				uIndirectOffset,
+				static_cast<unsigned long long>(ulLastRecordEnd),
+				static_cast<unsigned long long>(ulArgBufferSize),
+				uMaxDrawCount, uStride);
+			return;
+		}
+	}
+	// Select and validate an effective mode from raw capabilities, request
+	// size, override, and fallback policy BEFORE flushing descriptors or
+	// resolving buffers. This is the per-request entry the design calls for:
+	// the recorder fails closed when no legal path exists, never calls a null
+	// function pointer, and never splits one global counted draw incorrectly
+	// across batches against the same count buffer (each batch would re-read
+	// the full count and overdraw).
+	const Flux_IndirectDrawCapabilities xCaps = m_pxVulkan->GetIndirectDrawCapabilities();
+	const Flux_IndirectDrawOverride    eOvrd = m_pxVulkan->GetIndirectDrawOverride();
+	const Flux_IndirectExecutionMode   eMode =
+		Flux_SelectIndirectExecutionMode(xCaps, uMaxDrawCount, eFallback, eOvrd);
+
+	if (eMode == Flux_IndirectExecutionMode::FAILED_CLOSED)
+	{
+		RecordFailClosed();
+		// A REQUIRE_NATIVE caller whose native preconditions failed, or an
+		// explicit NATIVE override on unsupported hardware. The recorder must
+		// emit no API command. Every rejected semantic request is counted by
+		// the per-device atomic telemetry above (never an unsynchronised static,
+		// because worker recording runs in parallel). The "terrain streaming
+		// is disabled" wording is retired: this is a hard failure of one
+		// operation, not a deactivation of the streaming system.
+		Zenith_Assert(false,
+			"DrawIndexedIndirectCount: FAILED_CLOSED (mode selection found no legal execution path). "
+			"caps: nativeCount=%s multiDraw=%s firstInstance=%s drawParams=%s maxDraw=%u | "
+			"request: maxDrawCount=%u fallback=%u override=%u. "
+			"A REQUIRE_NATIVE caller must guarantee native count availability; a NATIVE override "
+			"serves as a test assertion and fails closed when its preconditions are missing.",
+			xCaps.m_bNativeIndexedIndirectCount ? "y" : "n",
+			xCaps.m_bMultiDrawIndirect          ? "y" : "n",
+			xCaps.m_bIndirectFirstInstance     ? "y" : "n",
+			xCaps.m_bShaderDrawParameters       ? "y" : "n",
+			xCaps.m_uMaxDrawIndirectCount,
+			uMaxDrawCount,
+			static_cast<unsigned>(eFallback),
+			static_cast<unsigned>(eOvrd));
+		return;
+	}
+
+	if (eMode == Flux_IndirectExecutionMode::NATIVE_COUNT && pxCountBuffer == nullptr)
+	{
+		RecordFailClosed();
+		Zenith_Assert(false,
+			"DrawIndexedIndirectCount: NATIVE_COUNT requires a non-null count buffer");
+		return;
+	}
+	if (eMode == Flux_IndirectExecutionMode::NATIVE_COUNT)
+	{
+		if ((uCountOffset % 4u) != 0u)
+		{
+			RecordFailClosed();
+			Zenith_Assert(false,
+				"DrawIndexedIndirectCount: count offset %u is not a multiple of 4 (VUID-vkCmdDrawIndexedIndirectCount-countBufferOffset-02716)",
+				uCountOffset);
+			return;
+		}
+		const uint64_t ulCountRangeEnd = static_cast<uint64_t>(uCountOffset) + sizeof(uint32_t);
+		const uint64_t ulCountBufferSize = pxCountBuffer->GetBuffer().m_ulSize;
+		if (ulCountRangeEnd > ulCountBufferSize)
+		{
+			RecordFailClosed();
+			Zenith_Assert(false,
+				"DrawIndexedIndirectCount: count range [offset=%u, +4=%llu) exceeds buffer %llu",
+				uCountOffset,
+				static_cast<unsigned long long>(ulCountRangeEnd),
+				static_cast<unsigned long long>(ulCountBufferSize));
+			return;
+		}
+	}
+
+	// Padded modes never dereference the count buffer. Preflight their complete
+	// fixed-call plan now so no valid prefix can be recorded before an offset
+	// overflow is discovered.
+	const uint32_t uPaddedPerCallLimit =
+		(eMode == Flux_IndirectExecutionMode::PADDED_MULTI)
+		? Flux_ResolveFixedDrawPerCallLimit(xCaps)
+		: 1u;
+	Flux_IndirectDrawBatchPlan xPaddedPlan;
+	if (eMode != Flux_IndirectExecutionMode::NATIVE_COUNT &&
+		!xPaddedPlan.Reset(uMaxDrawCount, uIndirectOffset, uStride, uPaddedPerCallLimit))
+	{
+		RecordFailClosed();
+		Zenith_Assert(false,
+			"DrawIndexedIndirectCount: complete padded batch plan overflowed or has a zero per-call limit");
+		return;
+	}
+
+	// Flush descriptors + resolve the argument buffer once per semantic
+	// request — NOT once per record. The native path shares this with the
+	// padded paths because both bind the SAME argument buffer; only the
+	// count buffer's resolution is gated to the native path (PADDED_MULTI /
+	// PADDED_SINGLE deliberately do not dereference the count buffer).
+	UpdateDescriptorSets();
+	Zenith_Vulkan_VRAM* pxIndirectVRAM = m_pxVulkan->GetVRAM(pxIndirectBuffer->GetBuffer().m_xVRAMHandle);
+	if (!pxIndirectVRAM)
+	{
+		RecordFailClosed();
+		Zenith_Assert(false, "GetVRAM returned null for indirect buffer");
+		return;
+	}
+	const vk::Buffer xIndirectBuffer = pxIndirectVRAM->GetBuffer();
+
+	if (eMode == Flux_IndirectExecutionMode::NATIVE_COUNT)
+	{
+		// One native vkCmdDrawIndexedIndirectCount[KHR] call. The preconditions
+		// already validated by the selector: usable entry point resolved,
+		// request fits the device limit and the override permits it.
 		Zenith_Vulkan_VRAM* pxCountVRAM = m_pxVulkan->GetVRAM(pxCountBuffer->GetBuffer().m_xVRAMHandle);
-		Zenith_Assert(pxIndirectVRAM != nullptr && pxCountVRAM != nullptr, "GetVRAM returned null for indirect/count buffer");
-		if (!pxIndirectVRAM || !pxCountVRAM) return;  // Safety guard for release builds
-		const vk::Buffer xIndirectBuffer = pxIndirectVRAM->GetBuffer();
+		if (!pxCountVRAM)
+		{
+			RecordFailClosed();
+			Zenith_Assert(false, "GetVRAM returned null for count buffer");
+			return;
+		}
 		const vk::Buffer xCountBuffer = pxCountVRAM->GetBuffer();
 		PFN_vkCmdDrawIndexedIndirectCount pfnDrawIndexedIndirectCount =
 			m_pxVulkan->GetDrawIndexedIndirectCountFn();
-		Zenith_Assert(pfnDrawIndexedIndirectCount != nullptr, "vkCmdDrawIndexedIndirectCount not supported");
-		pfnDrawIndexedIndirectCount(static_cast<VkCommandBuffer>(m_xCurrentCmdBuffer), static_cast<VkBuffer>(xIndirectBuffer), uIndirectOffset, static_cast<VkBuffer>(xCountBuffer), uCountOffset, uMaxDrawCount, uStride);
+		if (pfnDrawIndexedIndirectCount == nullptr)
+		{
+			RecordFailClosed();
+			Zenith_Assert(false,
+				"DrawIndexedIndirectCount: NATIVE_COUNT selected but the entry point is null "
+				"(the selector's m_bNativeIndexedIndirectCount must have been stale)");
+			return;
+		}
+		pfnDrawIndexedIndirectCount(static_cast<VkCommandBuffer>(m_xCurrentCmdBuffer),
+			static_cast<VkBuffer>(xIndirectBuffer), uIndirectOffset,
+			static_cast<VkBuffer>(xCountBuffer), uCountOffset,
+			uMaxDrawCount, uStride);
+#ifdef ZENITH_TESTING
+		m_pxVulkan->GetIndirectDrawTelemetry().m_uNativeCount.fetch_add(1, std::memory_order_relaxed);
+#endif
+		return;
 	}
+
+	// PADDED_MULTI / PADDED_SINGLE: do NOT resolve or dereference the count
+	// buffer. The caller's ZERO_PADDED_TO_MAX policy guarantees the full
+	// [0, uMaxDrawCount) range is a valid zero/no-op every frame, so a fixed
+	// indexed-indirect draw over the full range is valid even when the
+	// count buffer's value is smaller. uMaxDrawCount == 0 produces no API
+	// command (the batch planner's Reset seeds an empty plan). The per-call
+	// limit is the resolved fixed-draw limit for PADDED_MULTI, or 1 for
+	// PADDED_SINGLE. The same private/common fixed emitter covers both: the
+	// PADDED_MULTI tier respects the device's legal multi-draw limit; the
+	// PADDED_SINGLE tier explicitly forces one record per call regardless.
+	if (eMode == Flux_IndirectExecutionMode::PADDED_MULTI)
+	{
+		Flux_IndirectDrawBatch xBatch;
+#ifdef ZENITH_TESTING
+		uint32_t uEmittedAPICalls = 0;
+#endif
+		while (xPaddedPlan.Next(xBatch))
+		{
+			m_xCurrentCmdBuffer.drawIndexedIndirect(xIndirectBuffer,
+				xBatch.m_ulArgumentsOffsetBytes, xBatch.m_uDrawCount, uStride);
+#ifdef ZENITH_TESTING
+			++uEmittedAPICalls;
+#endif
+		}
+#ifdef ZENITH_TESTING
+		if (uEmittedAPICalls > 0u)
+			m_pxVulkan->GetIndirectDrawTelemetry().m_uPaddedMulti.fetch_add(uEmittedAPICalls, std::memory_order_relaxed);
+#endif
+		return;
+	}
+
+	// PADDED_SINGLE.
+	Flux_IndirectDrawBatch xBatch;
+#ifdef ZENITH_TESTING
+	uint32_t uEmittedAPICalls = 0;
+#endif
+	while (xPaddedPlan.Next(xBatch))
+	{
+		m_xCurrentCmdBuffer.drawIndexedIndirect(xIndirectBuffer,
+			xBatch.m_ulArgumentsOffsetBytes, 1u, uStride);
+#ifdef ZENITH_TESTING
+		++uEmittedAPICalls;
+#endif
+	}
+#ifdef ZENITH_TESTING
+	// ZENITH_TESTING is part of every current engine configuration, including
+	// Release/Tools=False. Preserve exact emitted-API-call telemetry while paying
+	// for one relaxed atomic per semantic request instead of one per record (up
+	// to 4,096 atomics per terrain/frame in the single-record fallback).
+	if (uEmittedAPICalls > 0u)
+		m_pxVulkan->GetIndirectDrawTelemetry().m_uPaddedSingle.fetch_add(uEmittedAPICalls, std::memory_order_relaxed);
+#endif
 }
 
 void Zenith_Vulkan_CommandBuffer::BeginRendering(const Flux_RenderingBeginInfo& xInfo)
@@ -1322,3 +1635,25 @@ void Zenith_Vulkan_CommandBuffer::EndGPUTimer(u_int uTimerIdx)
 	m_xCurrentCmdBuffer.writeTimestamp(vk::PipelineStageFlagBits::eBottomOfPipe, pxFrame->GetTimestampQueryPool(), uTimerIdx * 2 + 1);
 }
 #endif
+
+// Phase 6 of the terrain indirect-count compatibility plan — Vulkan-only
+// access-mapping tests for Flux_ResourceAccessToVulkan. Hosted at the bottom
+// of this .cpp because the translator itself lives here as an out-of-line
+// free function (declared in Zenith_Vulkan_CommandBuffer.h, reused by
+// Zenith_Vulkan.cpp for aliasing-barrier emission). The test bodies are pure
+// integer/enum comparisons against the translated (layout, access mask,
+// pipeline stage) triple, headless-safe on a Vulkan build.
+//
+// Note: the entire Zenith/Vulkan/ directory is compiled out of Null_* and
+// D3D12_* configs, so these tests never register in the headless CI gate —
+// they are a Vulkan-ONLY gate (the design plan's explicit "do not infer
+// native stage/access values from the neutral graph test" requirement).
+//
+// DO NOT move this include to Flux_BackendConformance.cpp: that TU is backend-
+// neutral and has zero runtime functions, so /OPT:REF dead-strips it on a
+// Combat link (the Null/CLAUDE.md hazard) and the Vulkan-only tests would
+// never register there anyway because vk:: types do not compile outside the
+// Vulkan config.
+#include "Vulkan/Zenith_Vulkan_AccessMapping.Tests.inl"
+#include "Vulkan/Zenith_Vulkan_DeviceSelection.Tests.inl"
+#include "Vulkan/Zenith_Vulkan_IndirectCount.Tests.inl"

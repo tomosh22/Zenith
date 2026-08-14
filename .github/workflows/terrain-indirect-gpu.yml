@@ -1,0 +1,91 @@
+# Manual runtime gate for the terrain indexed-indirect-count compatibility
+# tiers. GitHub-hosted Windows runners have no Vulkan ICD, so PR CI can only
+# compile RenderTest (engine-gate.yml). Dispatch this workflow onto a Windows
+# self-hosted runner whose label is supplied below and which has a real Vulkan
+# GPU/driver.
+
+name: terrain-indirect-gpu
+
+on:
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: 'Windows self-hosted GPU runner label.'
+        required: true
+        default: 'self-hosted-gpu'
+      run_performance:
+        description: 'Also run the canonical auto/dense performance protocol.'
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  terrain-indirect-gpu:
+    name: terrain-indirect-gpu
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 180
+
+    env:
+      VCPKG_DEFAULT_TRIPLET: x64-windows
+      DOTNET_CLI_TELEMETRY_OPTOUT: 1
+      VCPKG_DISABLE_METRICS: 1
+      SLANG_VERSION: '2026.1'
+      VULKAN_SDK_VERSION: '1.3.290.0'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Provision Zenith toolchain
+        uses: ./.github/actions/zenith-setup
+        with:
+          vulkan-sdk-version: ${{ env.VULKAN_SDK_VERSION }}
+          slang-version: ${{ env.SLANG_VERSION }}
+
+      - name: Regenerate solutions
+        shell: pwsh
+        working-directory: Build
+        run: |
+          ./regen.ps1 -UseDotnet
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Build Vulkan RenderTest graphics gates
+        shell: pwsh
+        run: |
+          msbuild Games\RenderTest\rendertest_win64.sln `
+              /t:RenderTest `
+              /p:Configuration=Vulkan_vs2022_Debug_Win64_True `
+              /p:Platform=x64 `
+              /p:WindowsTargetPlatformVersion=10.0 `
+              -maxCpuCount -nologo -clp:Summary -clp:ErrorsOnly
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Run native/padded/single terrain image and stale-tail gate
+        shell: pwsh
+        run: |
+          ./Games/RenderTest/RunTerrainIndirectCompatibility.ps1 -NoBuild -TimeoutSeconds 1200
+
+      - name: Run terrain smoke matrix with Vulkan validation hard markers
+        shell: pwsh
+        run: |
+          ./Games/RenderTest/RunRenderTestSmokeMatrix.ps1 -NoBuild -TimeoutSeconds 1200
+
+      - name: Run canonical auto/dense performance protocol
+        if: ${{ inputs.run_performance }}
+        shell: pwsh
+        run: |
+          ./Games/RenderTest/RunTerrainIndirectPerformance.ps1 `
+              -Mode auto -CameraCase dense -Warmup 120 -Sample 300 -Repeats 3
+
+      - name: Upload terrain compatibility/performance artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: terrain-indirect-gpu-artifacts
+          path: Build/artifacts/rendertest/terrain_indirect/
+          if-no-files-found: warn

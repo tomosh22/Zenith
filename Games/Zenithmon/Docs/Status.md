@@ -1,12 +1,21 @@
 # Zenithmon Status
 
-**Last updated:** 2026-08-11
+**Last updated:** 2026-08-13
 
-**★ LIVE BASELINE (OBSERVED 2026-08-11 on clean `Null_` builds):
-ZM boot `3238 ran / 3236 passed / 0 failed / 2 skipped`; engine boot (Null Combat)
-`1600 ran / 1599 passed / 0 failed / 1 skipped`; registry **55**.** This is the
-current pin in `zm-tests.yml` (`-Baseline 3238`) and `run_unit_gate.ps1`
-(default 1600). The move from 3228/1590 is **+10 ENGINE units** (no ZM units)
+**★ LIVE PIN (UPDATED 2026-08-13):
+ZM boot `3276`; engine boot (Null Combat) `1638`; registry **55**.** The preceding
+clean `Null_` runs observed `3275 / 3273 passed / 0 failed / 2 skipped` and
+`1637 / 1636 passed / 0 failed / 1 skipped`; the final backend-neutral
+`NativeCountDoesNotRequireMultiDrawIndirect` test adds one shared registrar, and
+the +1 was confirmed by a complete Null RenderTest gate. The current pins are
+`zm-tests.yml` (`-Baseline 3276`) and `run_unit_gate.ps1` (default 1638). The move
+from 3238/1600 is **+38 ZM / +38 ENGINE units** from the terrain indirect-count
+compatibility plan (Phase 1/2/6/7): 27
+Flux_IndirectDraw policy/ABI/batch-planner tests, 5 CommandLine tests for the
+new `--indirect-count-mode` flag, 3 FluxTerrain tests for the shared
+indirect-command ABI / allocation boundary, plus 3 RenderGraph reset/cull/
+cyclic-seed barrier tests.
+The previous move from 3228/1590 is **+10 ENGINE units** (no ZM units)
 from the input program's closing WP6: `Zenith_UserSettings` (the persisted
 profile-override store; SaveData init is now ENGINE-owned — Zenithmon.cpp no
 longer calls `Zenith_SaveData::Initialise`) + the SYSTEM_BACK device-layer

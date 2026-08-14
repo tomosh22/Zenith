@@ -339,7 +339,25 @@ param(
     # layer-clean replacement for the retired action-surface walk).
     # Observed 2026-08-11 on a Null_ Combat build
     # (1600 ran / 1599 passed / 0 failed / 1 skipped).
-    [int]$Baseline = 1600,
+    # 1600 -> 1638: terrain indirect-count compatibility plan (Phase 1+2+6+7).
+    # Added 38 engine-shared unit tests:
+    #   27 Flux_IndirectDraw policy/ABI/batch-planner tests
+    #     (Flux_IndirectDraw.Tests.inl, hosted by Flux.cpp so the ZENITH_TEST
+    #     registrars survive MSVC's /OPT:REF pass — a backend-neutral TU whose
+    #     only thing-in-it is a static_assert (Flux_BackendConformance.cpp)
+    #     dead-strips its .obj in Combat's link, taking the registrars with
+    #     it; the move to Flux.cpp bumped Combat's Null count from +8 to +38,
+    #     every game's link now sees the policy/ABI tests).
+    #   5 CommandLine tests for --indirect-count-mode=auto|native|padded|single.
+    #   3 FluxTerrain tests for the shared indirect-command ABI / allocation
+    #     boundary pinning (TOTAL_CHUNKS * 20 bytes = 81920).
+    #   3 RenderGraph barrier tests for the reset pass's WAW edges and the
+    #     cross-frame cyclic seed on the next-frame reset argument write.
+    # The 1637 intermediate was observed 2026-08-12 on a Null_ Combat build.
+    # The final neutral NativeCountDoesNotRequireMultiDrawIndirect test adds one
+    # shared registrar; the +1 was confirmed by the complete Null RenderTest gate
+    # (1729 ran / 1728 passed / 0 failed / 1 skipped) on 2026-08-13.
+    [int]$Baseline = 1638,
     [int]$TimeoutSec = 180,
     [string]$LogPath = ""
 )

@@ -269,6 +269,15 @@ extension TerrainSplatSurface : ISurfaceModel
 GBufferOut fsMain(VsOut input)
 {
 	uint uDebugMode = asuint(g_xPassSet.TerrainMaterialConstants.g_xTerrainParams2.y);
+	if (uDebugMode == 13u)
+	{
+		// TerrainIndirectCompatibility sentinel. Unlit, flat magenta survives
+		// deferred lighting unchanged, giving the graphics test a terrain-only
+		// swapchain observable instead of counting generic non-black pixels.
+		return MakeGBuffer(float4(1.0, 0.0, 1.0, 1.0), input.worldNormal,
+			1.0, 1.0, 0.0, 0.0, float3(0.0, 0.0, 0.0),
+			0.0, 0.0, GBUFFER_SHADING_UNLIT);
+	}
 
 	// Pre-blend debug paths return the appropriate colour without
 	// running the splatmap blend at all.

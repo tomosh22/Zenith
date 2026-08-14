@@ -1,5 +1,8 @@
 #include "Zenith.h"
 #include "Core/Zenith_Engine.h"
+#include "Core/Zenith_CommandLine.h"   // --indirect-count-mode (converted to Flux_IndirectDrawOverride at device init)
+#include "Vulkan/Zenith_Vulkan_DeviceSelection.h"
+#include "Vulkan/Zenith_Vulkan_IndirectCount.h"
 #if defined(ZENITH_TOOLS) && defined(ZENITH_INPUT_SIMULATOR)
 #include "Core/Zenith_ImGuiBridgeHook.h"
 #endif
@@ -99,29 +102,18 @@ u_int64 Zenith_Vulkan::GetImGuiAllocationCount()
 
 static const char* s_aszDeviceExtensions[] = {
 				VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-				//VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME,
 #ifdef ZENITH_RAYTRACING
-				VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME,
-				VK_KHR_SPIRV_1_4_EXTENSION_NAME,
 				VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
 				VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
 				VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
-				VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
 				VK_KHR_RAY_QUERY_EXTENSION_NAME,
-				VK_NV_RAY_TRACING_EXTENSION_NAME,
-#endif
-#ifndef ZENITH_ANDROID
-				VK_KHR_FRAGMENT_SHADER_BARYCENTRIC_EXTENSION_NAME,
 #endif
 };
 
-// Optional extensions must be queried before they are enabled: requesting a
-// name the device does not enumerate makes vkCreateDevice fail with
-// VK_ERROR_EXTENSION_NOT_PRESENT.
-static bool IsDeviceExtensionSupported(const vk::PhysicalDevice& xPhysicalDevice, const char* szExtensionName)
+static bool s_bHasExtension(const std::vector<vk::ExtensionProperties>& axAvailable,
+	const char* szExtensionName)
 {
-	std::vector<vk::ExtensionProperties> xAvailable = VkUnwrap(xPhysicalDevice.enumerateDeviceExtensionProperties());
-	for (const vk::ExtensionProperties& xExt : xAvailable)
+	for (const vk::ExtensionProperties& xExt : axAvailable)
 	{
 		if (strcmp(xExt.extensionName, szExtensionName) == 0)
 		{
@@ -131,12 +123,61 @@ static bool IsDeviceExtensionSupported(const vk::PhysicalDevice& xPhysicalDevice
 	return false;
 }
 
+// Required names exactly mirror CreateDevice's enabled-extension list. Features
+// promoted into core stay extension-free at/above their promotion version.
+static bool s_bSupportsRequiredDeviceExtensions(const vk::PhysicalDevice& xDevice,
+	uint32_t uApiVersion)
+{
+	const std::vector<vk::ExtensionProperties> axAvailable =
+		VkUnwrap(xDevice.enumerateDeviceExtensionProperties());
+	for (const char* szRequired : s_aszDeviceExtensions)
+	{
+		if (!s_bHasExtension(axAvailable, szRequired))
+		{
+			return false;
+		}
+	}
+	if (uApiVersion < VK_API_VERSION_1_2 &&
+		!s_bHasExtension(axAvailable, VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME))
+	{
+		return false;
+	}
+#ifdef ZENITH_RAYTRACING
+	if (uApiVersion < VK_API_VERSION_1_2)
+	{
+		if (!s_bHasExtension(axAvailable, VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME)) return false;
+		if (!s_bHasExtension(axAvailable, VK_KHR_SPIRV_1_4_EXTENSION_NAME)) return false;
+		if (!s_bHasExtension(axAvailable, VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME)) return false;
+	}
+#endif
+	return true;
+}
+
+// Optional extensions must be queried before they are enabled: requesting a
+// name the device does not enumerate makes vkCreateDevice fail with
+// VK_ERROR_EXTENSION_NOT_PRESENT.
+static bool IsDeviceExtensionSupported(const vk::PhysicalDevice& xPhysicalDevice, const char* szExtensionName)
+{
+	std::vector<vk::ExtensionProperties> xAvailable = VkUnwrap(xPhysicalDevice.enumerateDeviceExtensionProperties());
+	return s_bHasExtension(xAvailable, szExtensionName);
+}
+
 // All previously here-defined statics moved to Zenith_Vulkan.
 
 const vk::Instance&         Zenith_Vulkan::GetInstance()                  { return Zenith_Vulkan::m_xInstance; }
 const vk::PhysicalDevice&   Zenith_Vulkan::GetPhysicalDevice()            { return Zenith_Vulkan::m_xPhysicalDevice; }
 const vk::Device&           Zenith_Vulkan::GetDevice()                    { return Zenith_Vulkan::m_xDevice; }
-const vk::CommandPool&      Zenith_Vulkan::GetCommandPool(CommandType eType) { return Zenith_Vulkan::m_axCommandPools[eType]; }
+// A separate presentation-only family never receives a pool (see
+// CreateCommandPools), so asking for one is a caller bug rather than a
+// silently-null allocation source.
+const vk::CommandPool&      Zenith_Vulkan::GetCommandPool(CommandType eType)
+{
+	Zenith_Assert(Zenith_Vulkan::m_axCommandPools[eType],
+		"GetCommandPool(%u): no command pool exists for this command type. Presentation "
+		"records no commands, so PRESENT has a pool only when it shares the graphics family.",
+		static_cast<unsigned>(eType));
+	return Zenith_Vulkan::m_axCommandPools[eType];
+}
 const vk::Queue&            Zenith_Vulkan::GetQueue(CommandType eType)    { return Zenith_Vulkan::m_axQueues[eType]; }
 const vk::SurfaceKHR&       Zenith_Vulkan::GetSurface()                   { return Zenith_Vulkan::m_xSurface; }
 const uint32_t              Zenith_Vulkan::GetQueueIndex(CommandType eType){ return Zenith_Vulkan::m_auQueueIndices[eType]; }
@@ -227,6 +268,17 @@ void Zenith_Vulkan::Initialise()
 	m_pxTasks = &xEngine.Tasks();
 	m_pxVulkanSwapchain = &xEngine.FluxSwapchain();
 	m_pxVulkanMemory = &xEngine.FluxMemory();
+
+#ifdef ZENITH_TESTING
+	// Device initialisation precedes worker recording, so relaxed stores are
+	// sufficient and ensure a backend recreation cannot leak lifetime totals
+	// into a later compatibility run.
+	m_xTelemetry.m_uNativeCount.store(0u, std::memory_order_relaxed);
+	m_xTelemetry.m_uPaddedMulti.store(0u, std::memory_order_relaxed);
+	m_xTelemetry.m_uPaddedSingle.store(0u, std::memory_order_relaxed);
+	m_xTelemetry.m_uFailClosed.store(0u, std::memory_order_relaxed);
+	m_xTelemetry.m_uFixedIndirect.store(0u, std::memory_order_relaxed);
+#endif
 
 	CreateInstance();
 #ifdef ZENITH_DEBUG
@@ -635,7 +687,7 @@ void Zenith_Vulkan::CreateInstance()
 		.setApplicationVersion(VK_MAKE_VERSION(1, 0, 0))
 		.setPEngineName("Zenith")
 		.setEngineVersion(VK_MAKE_VERSION(1, 0, 0))
-		.setApiVersion(VK_API_VERSION_1_3);
+		.setApiVersion(uZENITH_VULKAN_REQUESTED_API_VERSION);
 
 #ifdef ZENITH_DEBUG
 	// Check which validation layers are actually available on this device
@@ -869,6 +921,140 @@ void Zenith_Vulkan::CreateSurface()
 	Zenith_Log(LOG_CATEGORY_VULKAN, "Vulkan surface created");
 }
 
+// ---- Shared queue-family selection (Phase 4 of the terrain indirect-count
+// compatibility plan). Used by BOTH s_bIsPhysicalDeviceHardSuitable and
+// CreateQueueFamilies so the suitability check and actual creation agree
+// exactly. The render graph records graphics and compute commands into its
+// graphics-family workers, so graphics MUST also support compute. Prefer a
+// combined graphics/compute/present family, reuse graphics for copy (graphics
+// queues support transfer operations), and otherwise select a dedicated family
+// for explicit compute buffers. Returns false if any semantic queue is unavailable.
+static bool s_bResolveQueueFamilies(
+	const vk::PhysicalDevice& xDevice,
+	const vk::SurfaceKHR& xSurface,
+	uint32_t (&auIndicesOut)[COMMANDTYPE_MAX])
+{
+	for (uint32_t& u : auIndicesOut) u = UINT32_MAX;
+
+	const std::vector<vk::QueueFamilyProperties> xQF = xDevice.getQueueFamilyProperties();
+	if (!xSurface || xQF.empty())
+	{
+		return false;
+	}
+	std::vector<Zenith_Vulkan_QueueFamilySupport> axSupport(xQF.size());
+	for (uint32_t i = 0; i < xQF.size(); ++i)
+	{
+		axSupport[i].m_bGraphics = static_cast<bool>(xQF[i].queueFlags & vk::QueueFlagBits::eGraphics);
+		axSupport[i].m_bCompute = static_cast<bool>(xQF[i].queueFlags & vk::QueueFlagBits::eCompute);
+		axSupport[i].m_bPresent = VkUnwrap(xDevice.getSurfaceSupportKHR(i, xSurface)) == VK_TRUE;
+	}
+
+	const Zenith_Vulkan_QueueFamilySelection xSelection =
+		Zenith_Vulkan_SelectQueueFamilies(axSupport.data(), static_cast<uint32_t>(axSupport.size()));
+	auIndicesOut[COMMANDTYPE_GRAPHICS] = xSelection.m_uGraphics;
+	auIndicesOut[COMMANDTYPE_COMPUTE] = xSelection.m_uCompute;
+	auIndicesOut[COMMANDTYPE_COPY] = xSelection.m_uCopy;
+	auIndicesOut[COMMANDTYPE_PRESENT] = xSelection.m_uPresent;
+	return xSelection.IsComplete();
+}
+// Hard physical-device suitability. Verify every extension and feature that
+// CreateDevice enables, plus the documented remaining terrain minimum
+// (drawIndirectFirstInstance + shaderDrawParameters) AND the always-on
+// compressed-vertex pipeline's samplerAnisotropy/depthBiasClamp/fillModeNonSolid/
+// tessellationShader. multiDrawIndirect and the core/KHR draw-indirect-count
+// path stay OPTIONAL — their absence is a performance downgrade (the PADDED_SINGLE
+// tier is the legal fallback), not a hard miss. Also verifies:
+//   - every build-specific device extension is enumerated (including promoted
+//     feature extensions only on API versions where they are still required);
+//   - the selected graphics family also supports compute because render-graph
+//     workers mix both command types; explicit compute may use another family;
+//     graphics also supplies the implicit transfer capability;
+//   - at least one queue family supports presentation to the surface;
+//   - the descriptor-indexing features the engine force-enables in CreateDevice
+//     (descriptorBindingSampledImageUpdateAfterBind, descriptorBindingPartiallyBound,
+//     runtimeDescriptorArray, shaderSampledImageArrayNonUniformIndexing) are
+//     actually advertised — otherwise vkCreateDevice would fail with
+//     VK_ERROR_FEATURE_NOT_PRESENT.
+// Returns true iff every hard requirement is satisfied.
+static bool s_bIsPhysicalDeviceHardSuitable(const vk::PhysicalDevice& xDevice,
+	const vk::SurfaceKHR& xSurface)
+{
+	const uint32_t uApiVersion = xDevice.getProperties().apiVersion;
+	// Reject 1.0 before the core getFeatures2 query below; there is deliberately
+	// no KHR alias or SPIR-V 1.0 shader branch in this backend.
+	if (!Zenith_Vulkan_IsDeviceAPIVersionSupported(uApiVersion)) return false;
+	if (!s_bSupportsRequiredDeviceExtensions(xDevice, uApiVersion)) return false;
+
+	// --- Core features ---
+	vk::PhysicalDeviceFeatures2 xFeatures;
+	vk::PhysicalDeviceShaderDrawParameterFeatures xShaderDrawParameters;
+	vk::PhysicalDeviceDescriptorIndexingFeatures xDescriptorIndexing;
+#ifdef ZENITH_RAYTRACING
+	vk::PhysicalDeviceBufferDeviceAddressFeatures xBufferDeviceAddress;
+	vk::PhysicalDeviceAccelerationStructureFeaturesKHR xAccelerationStructure;
+	vk::PhysicalDeviceRayTracingPipelineFeaturesKHR xRayTracingPipeline;
+	vk::PhysicalDeviceRayQueryFeaturesKHR xRayQuery;
+#endif
+	xFeatures.setPNext(&xShaderDrawParameters);
+	xShaderDrawParameters.setPNext(&xDescriptorIndexing);
+#ifdef ZENITH_RAYTRACING
+	xDescriptorIndexing.setPNext(&xBufferDeviceAddress);
+	xBufferDeviceAddress.setPNext(&xAccelerationStructure);
+	xAccelerationStructure.setPNext(&xRayTracingPipeline);
+	xRayTracingPipeline.setPNext(&xRayQuery);
+#endif
+	xDevice.getFeatures2(&xFeatures);
+
+	const vk::PhysicalDeviceFeatures& xCore = xFeatures.features;
+	if (xCore.samplerAnisotropy           != VK_TRUE) return false;
+	if (xCore.tessellationShader          != VK_TRUE) return false;
+	if (xCore.depthBiasClamp              != VK_TRUE) return false;
+	if (xCore.fillModeNonSolid            != VK_TRUE) return false;
+	if (xCore.drawIndirectFirstInstance   != VK_TRUE) return false; // terrain minimum
+	if (xShaderDrawParameters.shaderDrawParameters != VK_TRUE) return false; // terrain minimum
+	// multiDrawIndirect is OPTIONAL — the PADDED_SINGLE tier is the legal
+	// fallback for devices that lack it. Do NOT reject such adapters here.
+
+	// --- Descriptor-indexing features (engine force-enables them in CreateDevice) ---
+	if (xDescriptorIndexing.descriptorBindingSampledImageUpdateAfterBind != VK_TRUE) return false;
+	if (xDescriptorIndexing.descriptorBindingPartiallyBound               != VK_TRUE) return false;
+	if (xDescriptorIndexing.runtimeDescriptorArray                        != VK_TRUE) return false;
+	if (xDescriptorIndexing.shaderSampledImageArrayNonUniformIndexing      != VK_TRUE) return false;
+#ifdef ZENITH_RAYTRACING
+	if (xBufferDeviceAddress.bufferDeviceAddress != VK_TRUE) return false;
+	if (xAccelerationStructure.accelerationStructure != VK_TRUE) return false;
+	if (xRayTracingPipeline.rayTracingPipeline != VK_TRUE) return false;
+	if (xRayQuery.rayQuery != VK_TRUE) return false;
+#endif
+
+	// --- Queue family: run the SAME shared selection routine that
+	// CreateQueueFamilies will use, so suitability and creation agree
+	// exactly. Returns false if any queue type is unresolvable (the shared
+	// routine applies Vulkan's implicit graphics-transfer capability).
+	{
+		uint32_t auIndices[COMMANDTYPE_MAX] = {};
+		if (!s_bResolveQueueFamilies(xDevice, xSurface, auIndices))
+			return false;
+	}
+
+	return true;
+}
+
+// Prefer discrete GPUs, then integrated, then anything else (matches the
+// "score suitable adapters normally" rule of the plan: a faster class beats a
+// slower class only when both are suitable — an unsuitable discrete is never
+// picked over a suitable integrated).
+static int32_t s_iScorePhysicalDeviceClass(const vk::PhysicalDeviceProperties& xProps)
+{
+	switch (xProps.deviceType)
+	{
+	case vk::PhysicalDeviceType::eDiscreteGpu:   return 3;
+	case vk::PhysicalDeviceType::eIntegratedGpu: return 2;
+	case vk::PhysicalDeviceType::eVirtualGpu:    return 1;
+	default:                                     return 0;
+	}
+}
+
 void Zenith_Vulkan::CreatePhysicalDevice()
 {
 	uint32_t uNumDevices;
@@ -879,15 +1065,61 @@ void Zenith_Vulkan::CreatePhysicalDevice()
 	xDevices.resize(uNumDevices);
 	eResult = m_xInstance.enumeratePhysicalDevices(&uNumDevices, xDevices.data());
 	Zenith_Assert(eResult == vk::Result::eSuccess, "Failed to enumerate physical devices");
+
+	// Score every adapter that satisfies the HARD requirement check, then pick
+	// the highest-scoring one. Previously this loop picked the first adapter
+	// unconditionally, so CreateDevice's `setMultiDrawIndirect(VK_TRUE)` etc.
+	// could enable a feature the device does not advertise — vkCreateDevice then
+	// returns VK_ERROR_FEATURE_NOT_PRESENT, or worse, silently downgrades state
+	// on a broken ICD. A truly-unsuitable adapter set now fails cleanly here,
+	// before vkCreateDevice, naming the failure mode rather than crashing later.
+	const vk::PhysicalDevice* pxPicked = nullptr;
+	int32_t iBestScore = -1;
+	uint32_t uUnsuitableCount = 0;
 	for (const vk::PhysicalDevice& xDevice : xDevices)
 	{
-		//#TO_TODO: check if physical device is suitable
-		if (true)
+		if (!s_bIsPhysicalDeviceHardSuitable(xDevice, m_xSurface))
 		{
-			m_xPhysicalDevice = xDevice;
-			break;
+			++uUnsuitableCount;
+			const vk::PhysicalDeviceProperties xProps = xDevice.getProperties();
+			Zenith_Warning(LOG_CATEGORY_VULKAN,
+				"Skipping unsuitable adapter '%s': missing a hard renderer requirement "
+				"(samplerAnisotropy, tessellationShader, depthBiasClamp, fillModeNonSolid, "
+				"drawIndirectFirstInstance, shaderDrawParameters, descriptor-indexing features, "
+				"Vulkan 1.1+, build-required device extensions/features, a graphics+compute queue, "
+				"or surface presentation support). "
+				"multiDrawIndirect and drawIndirectCount are optional (padded fallback).",
+				xProps.deviceName);
+			continue;
+		}
+
+		const vk::PhysicalDeviceProperties xProps = xDevice.getProperties();
+		const int32_t iScore = s_iScorePhysicalDeviceClass(xProps);
+		if (iScore > iBestScore)
+		{
+			iBestScore = iScore;
+			pxPicked = &xDevice;
 		}
 	}
+
+	if (pxPicked == nullptr)
+	{
+		// Fail cleanly before vkCreateDevice: name the failure mode rather than
+		// crash deep in driver init. The plan explicitly forbids retaining the
+		// old "pick first, force unsupported feature bits" behaviour.
+		Zenith_Assert(false,
+			"No physical device satisfies the engine's hard renderer requirements "
+			"(samplerAnisotropy, tessellationShader, depthBiasClamp, fillModeNonSolid, "
+			"drawIndirectFirstInstance, shaderDrawParameters, descriptor-indexing features, "
+			"Vulkan 1.1+, build-required device extensions/features, a graphics+compute queue, "
+			"or surface presentation support). "
+			"%u adapter(s) were enumerated and skipped. multiDrawIndirect and "
+			"drawIndirectCount are NOT hard requirements — the padded fallback tier "
+			"handles their absence. An adapter that only misses those is still suitable.",
+			uUnsuitableCount);
+		return;
+	}
+	m_xPhysicalDevice = *pxPicked;
 
 	const vk::PhysicalDeviceProperties& xProps = m_xPhysicalDevice.getProperties();
 	m_xGPUCapabilities.m_uMaxTextureWidth = xProps.limits.maxImageDimension2D;
@@ -999,42 +1231,28 @@ void Zenith_Vulkan::AssertVertexFetchFormatSupport()
 
 void Zenith_Vulkan::CreateQueueFamilies()
 {
-	for (uint32_t& uIndex : m_auQueueIndices)
+	// Delegate to the shared selection routine so the suitability check
+	// (CreatePhysicalDevice) and actual assignment agree exactly —
+	// including the family-reuse fallbacks (COMPUTE/COPY/Present) that
+	// the old per-iteration picker couldn't reach. The suitability check
+	// has already verified this will succeed (that's its job), so the
+	// assert at the bottom is a pure safety check.
+	if (!s_bResolveQueueFamilies(m_xPhysicalDevice, m_xSurface, m_auQueueIndices))
 	{
-		uIndex = UINT32_MAX;
+		for (uint32_t u = 0; u < COMMANDTYPE_MAX; u++)
+		{
+			Zenith_Assert(m_auQueueIndices[u] != UINT32_MAX,
+				"CreateQueueFamilies: failed to resolve queue index %u (the shared "
+				"selection routine returned false — the physical-device suitability "
+				"check should have rejected this adapter before CreateDevice).", u);
+		}
+		return;
 	}
 
 	std::vector<vk::QueueFamilyProperties> xQueueFamilyProperties = m_xPhysicalDevice.getQueueFamilyProperties();
 
-	VkBool32 uSupportsPresent = false;
-
-	for (uint32_t i = 0; i < xQueueFamilyProperties.size(); ++i)
-	{
-		uSupportsPresent = static_cast<VkBool32>(VkUnwrap(m_xPhysicalDevice.getSurfaceSupportKHR(i, m_xSurface)));
-
-		if (m_auQueueIndices[COMMANDTYPE_GRAPHICS] == UINT32_MAX && xQueueFamilyProperties[i].queueFlags & vk::QueueFlagBits::eGraphics)
-		{
-			m_auQueueIndices[COMMANDTYPE_GRAPHICS] = i;
-			if (uSupportsPresent && m_auQueueIndices[COMMANDTYPE_PRESENT] == UINT32_MAX) {
-				m_auQueueIndices[COMMANDTYPE_PRESENT] = i;
-			}
-		}
-
-		if (m_auQueueIndices[COMMANDTYPE_GRAPHICS] != i && m_auQueueIndices[COMMANDTYPE_COMPUTE] == UINT32_MAX && xQueueFamilyProperties[i].queueFlags & vk::QueueFlagBits::eCompute)
-		{
-			m_auQueueIndices[COMMANDTYPE_COMPUTE] = i;
-		}
-
-		if (m_auQueueIndices[COMMANDTYPE_COPY] == UINT32_MAX && xQueueFamilyProperties[i].queueFlags & vk::QueueFlagBits::eTransfer && xQueueFamilyProperties[i].queueFlags & vk::QueueFlagBits::eGraphics)
-		{
-			m_auQueueIndices[COMMANDTYPE_COPY] = i;
-		}
-	}
-
-	for (uint32_t uType = 0; uType < COMMANDTYPE_MAX; uType++)
-	{
-		Zenith_Assert(m_auQueueIndices[uType] != UINT32_MAX, "Couldn't find queue index");
-	}
+	// The shared routine already populated m_auQueueIndices; the old per-
+	// family loop is gone. The assert below is a pure safety check.
 
 #ifdef ZENITH_FLUX_PROFILING
 	// GPU profiler: the graphics queue family must support timestamp writes
@@ -1068,30 +1286,44 @@ void Zenith_Vulkan::CreateDevice()
 	}
 
 
-	std::vector<const char*> xEnabledExtensions(s_aszDeviceExtensions, s_aszDeviceExtensions + COUNT_OF(s_aszDeviceExtensions));
-
 	const vk::PhysicalDeviceProperties& xDeviceProps = m_xPhysicalDevice.getProperties();
-	const bool bDrawIndirectCountExtension =
+	std::vector<const char*> xEnabledExtensions(s_aszDeviceExtensions, s_aszDeviceExtensions + COUNT_OF(s_aszDeviceExtensions));
+	if (xDeviceProps.apiVersion < VK_API_VERSION_1_2)
+	{
+		xEnabledExtensions.push_back(VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME);
+	}
+#ifdef ZENITH_RAYTRACING
+	if (xDeviceProps.apiVersion < VK_API_VERSION_1_2)
+	{
+		xEnabledExtensions.push_back(VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME);
+		xEnabledExtensions.push_back(VK_KHR_SPIRV_1_4_EXTENSION_NAME);
+		xEnabledExtensions.push_back(VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME);
+	}
+#endif
+
+	const bool bDrawIndirectCountExtensionAdvertised =
 		IsDeviceExtensionSupported(m_xPhysicalDevice, VK_KHR_DRAW_INDIRECT_COUNT_EXTENSION_NAME);
 
-	// Prefer the extension whenever it is enumerated. Its KHR command alias is
-	// then valid on both pre-1.2 devices and drivers which retain the promoted
-	// extension alongside Vulkan 1.2+. When it is absent, the core path is legal
-	// only if the physical device advertises the Vulkan 1.2 feature; merely
-	// resolving the core proc address is not a capability test.
+	// Prefer the Vulkan 1.2 core route when its feature is available, otherwise
+	// use the KHR extension route. Merely resolving either proc address is not a
+	// capability test; the selected route must also be advertised and enabled.
 	vk::PhysicalDeviceVulkan12Features xAvailableVulkan12Features;
-	if (!bDrawIndirectCountExtension && xDeviceProps.apiVersion >= VK_API_VERSION_1_2)
+	if (xDeviceProps.apiVersion >= VK_API_VERSION_1_2)
 	{
 		vk::PhysicalDeviceFeatures2 xAvailableFeatures;
 		xAvailableFeatures.setPNext(&xAvailableVulkan12Features);
 		m_xPhysicalDevice.getFeatures2(&xAvailableFeatures);
 	}
-	const bool bDrawIndirectCountCore =
-		!bDrawIndirectCountExtension &&
+	const bool bDrawIndirectCountCoreAdvertised =
 		xDeviceProps.apiVersion >= VK_API_VERSION_1_2 &&
 		xAvailableVulkan12Features.drawIndirectCount == VK_TRUE;
+	const Zenith_Vulkan_IndirectCountSelection xCountSelection =
+		Zenith_Vulkan_SelectIndirectCountRoute(
+			xDeviceProps.apiVersion >= VK_API_VERSION_1_2,
+			bDrawIndirectCountCoreAdvertised,
+			bDrawIndirectCountExtensionAdvertised);
 
-	if (bDrawIndirectCountExtension)
+	if (xCountSelection.m_bEnableKHRExtension)
 	{
 		xEnabledExtensions.push_back(VK_KHR_DRAW_INDIRECT_COUNT_EXTENSION_NAME);
 	}
@@ -1103,21 +1335,45 @@ void Zenith_Vulkan::CreateDevice()
 		.setPpEnabledExtensionNames(xEnabledExtensions.data())
 		.setEnabledLayerCount(0);
 
+	// Advertised feature query: the engine force-enables a baseline set in the
+	// chain below; the hard-suitability check in CreatePhysicalDevice guarantees
+	// each of these is advertised, but we read the advertised bits defensively
+	// so a broken ICD that claims a feature in enumerate but rejects it at
+	// vkCreateDevice is logged with a clear failure mode rather than silently
+	// downgrading usable state. The plan forbids silently forcing unsupported
+	// feature bits to VK_TRUE — and these are all advertised, so VK_TRUE is the
+	// honest request, but the cap record is populated from the post-create
+	// resolved entry point (the only authority for "usable").
+	vk::PhysicalDeviceFeatures2 xAdvertisedFeatures;
+	vk::PhysicalDeviceShaderDrawParameterFeatures xAdvertisedShaderDrawParameters;
+	xAdvertisedFeatures.setPNext(&xAdvertisedShaderDrawParameters);
+	m_xPhysicalDevice.getFeatures2(&xAdvertisedFeatures);
+	const bool bAdvertMultiDrawIndirect     = (xAdvertisedFeatures.features.multiDrawIndirect           == VK_TRUE);
+	const bool bAdvertIndirectFirstInstance = (xAdvertisedFeatures.features.drawIndirectFirstInstance   == VK_TRUE);
+	const bool bAdvertShaderDrawParameters  = (xAdvertisedShaderDrawParameters.shaderDrawParameters    == VK_TRUE);
 
-
+	// Enable every advertised bit. multiDrawIndirect is the engine's MULTI-
+	// DRAW path; drawIndirectFirstInstance and shaderDrawParameters are the
+	// documented remaining terrain minimum. None of these gets force-enabled
+	// if unsuitable (CreatePhysicalDevice already rejected such adapters as
+	// hard-misses, so all three are advertised on the picked adapter — but the
+	// defensive clamp keeps the failure localised on a broken ICD).
 	vk::PhysicalDeviceFeatures xDeviceFeatures = vk::PhysicalDeviceFeatures()
 		.setSamplerAnisotropy(VK_TRUE)
 		.setTessellationShader(VK_TRUE)
 		.setDepthBiasClamp(VK_TRUE)
-		.setMultiDrawIndirect(VK_TRUE)
+		.setMultiDrawIndirect(bAdvertMultiDrawIndirect ? VK_TRUE : VK_FALSE)
 		// Required so the terrain compute shader can write a non-zero
 		// firstInstance to its indirect draw commands. firstInstance carries
 		// the stable per-chunk index that the terrain vertex shader reads via
 		// SV_StartInstanceLocation to look up LODLevelBuffer[chunkIndex] —
 		// without this feature, any non-zero firstInstance in an indirect
 		// draw is undefined behaviour (manifests as holes / device-lost on
-		// chunks past the first).
-		.setDrawIndirectFirstInstance(VK_TRUE)
+		// chunks past the first). Hard-suitability already guarantees this is
+		// advertised; a broken-ICD downgrade is logged but the feature request
+		// stays honest rather than forcing VK_TRUE on a device that does not
+		// advertise it.
+		.setDrawIndirectFirstInstance(bAdvertIndirectFirstInstance ? VK_TRUE : VK_FALSE)
 		.setFillModeNonSolid(VK_TRUE);
 
 
@@ -1125,7 +1381,7 @@ void Zenith_Vulkan::CreateDevice()
 		.setFeatures(xDeviceFeatures);
 
 	vk::PhysicalDeviceShaderDrawParameterFeatures xShaderDrawFeatures = vk::PhysicalDeviceShaderDrawParameterFeatures()
-	.setShaderDrawParameters(VK_TRUE)
+	.setShaderDrawParameters(bAdvertShaderDrawParameters ? VK_TRUE : VK_FALSE)
 		.setPNext(&xDeviceFeatures2);
 
 	vk::PhysicalDeviceDescriptorIndexingFeatures xIndexingFeatures = vk::PhysicalDeviceDescriptorIndexingFeatures()
@@ -1145,26 +1401,43 @@ void Zenith_Vulkan::CreateDevice()
 	// draw-indirect-count path, enable both that feature and the four existing
 	// bindless requirements through the Vulkan 1.2 aggregate instead.
 	vk::PhysicalDeviceVulkan12Features xVulkan12Features = vk::PhysicalDeviceVulkan12Features()
-		.setDrawIndirectCount(bDrawIndirectCountCore ? VK_TRUE : VK_FALSE)
+		.setDrawIndirectCount(xCountSelection.m_bEnableCoreFeature ? VK_TRUE : VK_FALSE)
 		.setDescriptorBindingSampledImageUpdateAfterBind(true)
 		.setDescriptorBindingPartiallyBound(true)
 		.setRuntimeDescriptorArray(true)
 		.setShaderSampledImageArrayNonUniformIndexing(true)
 		.setPNext(&xShaderDrawFeatures);
-	void* pFeatureChain = bDrawIndirectCountCore
+#ifdef ZENITH_RAYTRACING
+	if (xCountSelection.m_bEnableCoreFeature)
+	{
+		xVulkan12Features.setBufferDeviceAddress(VK_TRUE);
+	}
+#endif
+	void* pFeatureChain = xCountSelection.m_bEnableCoreFeature
 		? static_cast<void*>(&xVulkan12Features)
 		: static_cast<void*>(&xIndexingFeatures);
 
-#ifndef ZENITH_ANDROID
-	vk::PhysicalDeviceFeatures2 xTemp;
-	vk::PhysicalDeviceFragmentShaderBarycentricFeaturesKHR xTempBary;
-	xTemp.setPNext(&xTempBary);
-	m_xPhysicalDevice.getFeatures2(&xTemp);
-	xTempBary.setPNext(pFeatureChain);
-	xDeviceCreateInfo.setPNext(&xTempBary);
-#else
-	xDeviceCreateInfo.setPNext(pFeatureChain);
+#ifdef ZENITH_RAYTRACING
+	vk::PhysicalDeviceBufferDeviceAddressFeatures xBufferDeviceAddress;
+	vk::PhysicalDeviceAccelerationStructureFeaturesKHR xAccelerationStructure;
+	vk::PhysicalDeviceRayTracingPipelineFeaturesKHR xRayTracingPipeline;
+	vk::PhysicalDeviceRayQueryFeaturesKHR xRayQuery;
+	xAccelerationStructure.setAccelerationStructure(VK_TRUE).setPNext(&xRayTracingPipeline);
+	xRayTracingPipeline.setRayTracingPipeline(VK_TRUE).setPNext(&xRayQuery);
+	xRayQuery.setRayQuery(VK_TRUE).setPNext(pFeatureChain);
+	if (xCountSelection.m_bEnableCoreFeature)
+	{
+		// VkPhysicalDeviceVulkan12Features already carries bufferDeviceAddress;
+		// do not duplicate its promoted feature struct in the same pNext chain.
+		pFeatureChain = &xAccelerationStructure;
+	}
+	else
+	{
+		xBufferDeviceAddress.setBufferDeviceAddress(VK_TRUE).setPNext(&xAccelerationStructure);
+		pFeatureChain = &xBufferDeviceAddress;
+	}
 #endif
+	xDeviceCreateInfo.setPNext(pFeatureChain);
 
 	m_xDevice = VkUnwrap(m_xPhysicalDevice.createDevice(xDeviceCreateInfo));
 
@@ -1177,31 +1450,141 @@ void Zenith_Vulkan::CreateDevice()
 	// remains a defensive final guard for broken ICDs, but it never promotes an
 	// unsupported device to supported status.
 	m_pfnDrawIndexedIndirectCount = nullptr;
-	if (bDrawIndirectCountExtension)
+	bool bCoreCountProcResolved = false;
+	bool bKHRCountProcResolved = false;
+	if (xCountSelection.m_eRoute == Zenith_Vulkan_IndirectCountRoute::KHR_EXTENSION)
 	{
 		m_pfnDrawIndexedIndirectCount = reinterpret_cast<PFN_vkCmdDrawIndexedIndirectCount>(
 			vkGetDeviceProcAddr(static_cast<VkDevice>(m_xDevice), "vkCmdDrawIndexedIndirectCountKHR"));
+		bKHRCountProcResolved = m_pfnDrawIndexedIndirectCount != nullptr;
 	}
-	else if (bDrawIndirectCountCore)
+	else if (xCountSelection.m_eRoute == Zenith_Vulkan_IndirectCountRoute::CORE_1_2)
 	{
 		m_pfnDrawIndexedIndirectCount = reinterpret_cast<PFN_vkCmdDrawIndexedIndirectCount>(
 			vkGetDeviceProcAddr(static_cast<VkDevice>(m_xDevice), "vkCmdDrawIndexedIndirectCount"));
+		bCoreCountProcResolved = m_pfnDrawIndexedIndirectCount != nullptr;
 	}
-	m_bDrawIndirectCountSupported = m_pfnDrawIndexedIndirectCount != nullptr;
-	Zenith_Log(LOG_CATEGORY_VULKAN, "vkCmdDrawIndexedIndirectCount: %s (driver apiVersion %u.%u.%u)",
-		m_bDrawIndirectCountSupported ? "supported" : "NOT SUPPORTED -- terrain streaming will be disabled",
+	m_bDrawIndirectCountSupported = Zenith_Vulkan_IsIndirectCountRouteUsable(
+		xCountSelection.m_eRoute, bCoreCountProcResolved, bKHRCountProcResolved);
+
+	// Advertised vs enabled vs usable state are distinct. The advertised bits
+	// were queried pre-create; the enabled bits are what CreateDevice requested
+	// (defensively clamped to advertised); the usable bits are what resolved
+	// after device creation (advertised && enabled && entry point resolved for
+	// the count path). The cap struct reports the USABLE semantic booleans plus
+	// the raw physical-device maxDrawIndirectCount; fixed callers apply their
+	// multi-draw clamp separately. The recorder reads these plus the boot-time
+	// override to select an effective mode per counted-indirect request.
+	const bool bUsableMultiDrawIndirect     = bAdvertMultiDrawIndirect;     // enable mirrors advertised
+	const bool bUsableIndirectFirstInstance = bAdvertIndirectFirstInstance; // enable mirrors advertised
+	const bool bUsableShaderDrawParameters  = bAdvertShaderDrawParameters;  // enable mirrors advertised
+	const uint32_t uRawMaxDrawIndirectCount = xDeviceProps.limits.maxDrawIndirectCount;
+	m_xIndirectDrawCaps = Flux_IndirectDrawCapabilities{
+		m_bDrawIndirectCountSupported,
+		bUsableMultiDrawIndirect,
+		bUsableIndirectFirstInstance,
+		bUsableShaderDrawParameters,
+		uRawMaxDrawIndirectCount,
+	};
+
+	// Boot-time CLI override: parsed by Zenith_CommandLine (Core, no Flux deps)
+	// and converted here at device init into the Flux enum. Auto is the
+	// shipping default; native/padded/single are test assertions that fail
+	// closed at the recorder when their tier cannot legally run. The override
+	// never falsifies m_xIndirectDrawCaps.
+	// Android never calls Zenith_CommandLine::Parse, so GetIndirectCountMode
+	// returns Auto there — the device's raw capability selects the effective
+	// mode. The override is immutable after this point: worker recording never
+	// mutates it.
+	switch (Zenith_CommandLine::GetIndirectCountMode())
+	{
+	case Zenith_IndirectCountMode::Native: m_eIndirectDrawOverride = Flux_IndirectDrawOverride::NATIVE; break;
+	case Zenith_IndirectCountMode::Padded: m_eIndirectDrawOverride = Flux_IndirectDrawOverride::PADDED; break;
+	case Zenith_IndirectCountMode::Single: m_eIndirectDrawOverride = Flux_IndirectDrawOverride::SINGLE; break;
+	case Zenith_IndirectCountMode::Auto:   m_eIndirectDrawOverride = Flux_IndirectDrawOverride::AUTO;  break;
+	}
+
+	// Truthful capability log. The retired "terrain streaming will be
+	// disabled" wording was inaccurate: only the counted draw is skipped, and
+	// the padded fallback tier (which the recorder will now use) renders
+	// terrain on every sufficient device. Logs show raw / enabled / usable
+	// state where they differ; the override and the effective fallback are
+	// recorded separately so a CI log unambiguously names the mode.
+	Zenith_Log(LOG_CATEGORY_VULKAN, "vkCmdDrawIndexedIndirectCount: advertised(ext=%s core1.2=%s) enabled=%s usable=%s (driver apiVersion %u.%u.%u)",
+		bDrawIndirectCountExtensionAdvertised ? "yes" : "no",
+		bDrawIndirectCountCoreAdvertised      ? "yes" : "no",
+		(xCountSelection.m_eRoute != Zenith_Vulkan_IndirectCountRoute::NONE) ? "yes" : "no",
+		m_bDrawIndirectCountSupported ? "yes" : "NO (terrain draws via padded fallback)",
 		VK_API_VERSION_MAJOR(xDeviceProps.apiVersion), VK_API_VERSION_MINOR(xDeviceProps.apiVersion), VK_API_VERSION_PATCH(xDeviceProps.apiVersion));
+	Zenith_Log(LOG_CATEGORY_VULKAN, "  multiDrawIndirect: raw=%s usable=%s | drawIndirectFirstInstance: raw=%s usable=%s | shaderDrawParameters: raw=%s usable=%s",
+		bAdvertMultiDrawIndirect     ? "yes" : "no", bUsableMultiDrawIndirect     ? "yes" : "no",
+		bAdvertIndirectFirstInstance ? "yes" : "no", bUsableIndirectFirstInstance ? "yes" : "no",
+		bAdvertShaderDrawParameters  ? "yes" : "no", bUsableShaderDrawParameters  ? "yes" : "no");
+	Zenith_Log(LOG_CATEGORY_VULKAN,
+		"  maxDrawIndirectCount: raw/native=%u fixedPerCall=%u (fixed clamps to 1 when multi-draw off)",
+		uRawMaxDrawIndirectCount, Flux_ResolveFixedDrawPerCallLimit(m_xIndirectDrawCaps));
+	{
+		const char* szOverrideName = "auto";
+		switch (m_eIndirectDrawOverride)
+		{
+		case Flux_IndirectDrawOverride::NATIVE: szOverrideName = "native"; break;
+		case Flux_IndirectDrawOverride::PADDED: szOverrideName = "padded"; break;
+		case Flux_IndirectDrawOverride::SINGLE: szOverrideName = "single"; break;
+		case Flux_IndirectDrawOverride::AUTO:   szOverrideName = "auto";   break;
+		}
+		Zenith_Log(LOG_CATEGORY_VULKAN, "  --indirect-count-mode: %s (effective fallback negotiated per-request by the recorder)", szOverrideName);
+	}
 
 	Zenith_Log(LOG_CATEGORY_VULKAN, "Vulkan device created");
 }
 
 void Zenith_Vulkan::CreateCommandPools()
 {
+	// A command pool is only meaningful on a queue family that can OWN command
+	// buffers. Presentation is not a command-buffer capability: vkQueuePresentKHR
+	// takes no command buffer, and a WSI-only family selected purely because
+	// vkGetPhysicalDeviceSurfaceSupportKHR returned true may expose none of
+	// graphics/compute/transfer. Creating a pool against such a family is at best
+	// useless and at worst invalid, so PRESENT is skipped whenever it resolved to
+	// a family of its own. Nothing asks for it: GetCommandPool is only ever
+	// called with GRAPHICS (recorders, staging, screenshot) and COPY (the memory
+	// manager's internal buffer), and COMPUTE is a real command-capable family.
+	// A present slot that shares the graphics family keeps that family's pool so
+	// the array stays fully populated in the common single-family case.
+	//
+	// The decision itself lives in the pure Zenith_Vulkan_PlanCommandPools seam
+	// so it is unit-testable: a development machine whose present and graphics
+	// families coincide can never execute the skip branch at runtime.
+	static_assert(COMMANDTYPE_GRAPHICS == 0 && COMMANDTYPE_COMPUTE == 1 &&
+		COMMANDTYPE_COPY == 2 && COMMANDTYPE_PRESENT == 3 && COMMANDTYPE_MAX == 4,
+		"CreateCommandPools maps the plan's four flags onto CommandType by position");
+	const Zenith_Vulkan_CommandPoolPlan xPoolPlan = Zenith_Vulkan_PlanCommandPools(
+		m_auQueueIndices[COMMANDTYPE_GRAPHICS],
+		m_auQueueIndices[COMMANDTYPE_COMPUTE],
+		m_auQueueIndices[COMMANDTYPE_COPY],
+		m_auQueueIndices[COMMANDTYPE_PRESENT]);
+	const bool abWantsPool[COMMANDTYPE_MAX] = {
+		xPoolPlan.m_bGraphics, xPoolPlan.m_bCompute, xPoolPlan.m_bCopy, xPoolPlan.m_bPresent };
+
 	for (uint32_t i = 0; i < COMMANDTYPE_MAX; i++)
 	{
+		if (!abWantsPool[i])
+		{
+			// In practice only PRESENT reaches this branch, and only when it
+			// resolved to a family of its own — the other three slots always
+			// resolve to command-capable families (the suitability check
+			// rejects an adapter where they cannot).
+			Zenith_Log(LOG_CATEGORY_VULKAN,
+				"  command type %u (queue family %u) owns no command pool%s",
+				i, m_auQueueIndices[i],
+				i == COMMANDTYPE_PRESENT
+					? " — presentation records no commands and this is a separate present family"
+					: "");
+			continue;
+		}
 		m_axCommandPools[i] = VkUnwrap(m_xDevice.createCommandPool(vk::CommandPoolCreateInfo(vk::CommandPoolCreateFlagBits::eResetCommandBuffer, m_auQueueIndices[i])));
 	}
-	
+
 	// Note: Worker thread command pools are now created per-frame in Zenith_Vulkan_PerFrame::Initialise()
 
 	Zenith_Log(LOG_CATEGORY_VULKAN, "Vulkan command pools created");

@@ -4,6 +4,7 @@
 
 #include <cstring>
 #include <cstdlib>
+#include <cstdio>   // std::snprintf (used by the CLI unit tests' mutable argv buffers)
 
 namespace
 {
@@ -20,6 +21,7 @@ namespace
     bool        s_bSkipBootCapture  = false;
     const char* s_szUnitTestTimings = nullptr;
     bool        s_bExitAfterUnitTests = false;
+    Zenith_IndirectCountMode s_eIndirectCountMode = Zenith_IndirectCountMode::Auto;
 
     // --boot-profile-dump with no "=path" writes here. A file-scope literal, not a
     // buffer: the accessor hands back a process-lifetime pointer exactly like the
@@ -75,6 +77,15 @@ namespace
     {
         x.m_szUnitTestTimings = Zenith_CommandLine::ResolveBootProfileDumpArg(szArg, szDEFAULT_UNIT_TEST_TIMINGS);
     }
+    void ApplyIndirectCountMode(Flags& x, const char* szArg)
+    {
+        // The bare form (`--indirect-count-mode` with no '=') and an unknown
+        // spelling both fall through to Auto via ResolveIndirectCountModeArg,
+        // so a malformed CLI never silently flips the shipping mode.
+        const char* pxEq = (szArg != nullptr) ? std::strchr(szArg, '=') : nullptr;
+        const char* szValue = (pxEq != nullptr) ? (pxEq + 1) : nullptr;
+        x.m_eIndirectCountMode = Zenith_CommandLine::ResolveIndirectCountModeArg(szValue);
+    }
 
     // Scanned in order, first match wins — exactly the if/else-if chain this
     // replaces. The two Prefixed entries match on their own length (19 chars
@@ -108,6 +119,7 @@ namespace
         { "--skip-boot-capture",     FlagArity::Bare,     &ApplySkipBootCapture    },
         { "--unit-test-timings",     FlagArity::Prefixed, &ApplyUnitTestTimings    },
         { "--exit-after-unit-tests", FlagArity::Bare,     &ApplyExitAfterUnitTests },
+        { "--indirect-count-mode",   FlagArity::Prefixed, &ApplyIndirectCountMode  },
     };
 
     // True when szArg selects xSpec. Prefixed specs match on their own length,
@@ -174,6 +186,7 @@ namespace Zenith_CommandLine
         s_bSkipBootCapture    = xFlags.m_bSkipBootCapture;
         s_szUnitTestTimings   = xFlags.m_szUnitTestTimings;
         s_bExitAfterUnitTests = xFlags.m_bExitAfterUnitTests;
+        s_eIndirectCountMode  = xFlags.m_eIndirectCountMode;
 
         s_bParsed = true;
     }
@@ -247,6 +260,31 @@ namespace Zenith_CommandLine
     {
         if (!s_bParsed) return false;
         return s_bExitAfterUnitTests;
+    }
+
+    Zenith_IndirectCountMode GetIndirectCountMode()
+    {
+        // Android never calls Parse, so this returns Auto there (the device's
+        // raw capability selects the effective mode). The desktop CLI is boot-
+        // time immutable: a process either parses once at launch or never.
+        if (!s_bParsed) return Zenith_IndirectCountMode::Auto;
+        return s_eIndirectCountMode;
+    }
+
+    Zenith_IndirectCountMode ResolveIndirectCountModeArg(const char* szValue,
+        Zenith_IndirectCountMode eDefault)
+    {
+        if (szValue == nullptr || szValue[0] == '\0')
+            return eDefault;
+        if (std::strcmp(szValue, "auto") == 0)
+            return Zenith_IndirectCountMode::Auto;
+        if (std::strcmp(szValue, "native") == 0)
+            return Zenith_IndirectCountMode::Native;
+        if (std::strcmp(szValue, "padded") == 0)
+            return Zenith_IndirectCountMode::Padded;
+        if (std::strcmp(szValue, "single") == 0)
+            return Zenith_IndirectCountMode::Single;
+        return eDefault;
     }
 
     const char* ResolveBootProfileDumpArg(const char* szArg, const char* szDefaultPath)

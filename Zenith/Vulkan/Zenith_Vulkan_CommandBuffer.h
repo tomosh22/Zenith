@@ -2,6 +2,7 @@
 #include "vulkan/vulkan.hpp"
 #include "Flux/Flux_Enums.h"
 #include "Flux/Flux_Types.h"
+#include "Flux/Backend/Flux_IndirectDraw.h"  // Flux_IndirectCountFallback — required policy on the counted draw
 
 class Flux_VertexBuffer;
 struct Flux_Texture;
@@ -89,7 +90,22 @@ public:
 	void Draw(uint32_t uNumVerts);
 	void DrawIndexed(uint32_t uNumIndices, uint32_t uNumInstances = 1, uint32_t uVertexOffset = 0, uint32_t uIndexOffset = 0, uint32_t uInstanceOffset = 0);
 	void DrawIndexedIndirect(const Flux_IndirectBuffer* pxIndirectBuffer, uint32_t uDrawCount, uint32_t uOffset = 0, uint32_t uStride = 20);
-	void DrawIndexedIndirectCount(const Flux_IndirectBuffer* pxIndirectBuffer, const Flux_IndirectBuffer* pxCountBuffer, uint32_t uMaxDrawCount, uint32_t uIndirectOffset = 0, uint32_t uCountOffset = 0, uint32_t uStride = 20);
+	// Semantic counted-indirect draw. The required eFallback policy is placed
+	// before the offset/stride parameters and the defaults on those are
+	// removed on this overload (a required parameter cannot follow defaulted
+	// ones). The operation means "use the count buffer natively when legal;
+	// otherwise use only the caller-authorized fallback." See
+	// Zenith_Vulkan_CommandBuffer.cpp and Flux_IndirectDraw.h for the selector
+	// contract; the recorder selects an effective mode from raw capabilities,
+	// the request size, the override, and the fallback policy before flushing
+	// descriptors or resolving buffers.
+	void DrawIndexedIndirectCount(const Flux_IndirectBuffer* pxIndirectBuffer,
+		const Flux_IndirectBuffer* pxCountBuffer,
+		uint32_t uMaxDrawCount,
+		Flux_IndirectCountFallback eFallback,
+		uint32_t uIndirectOffset,
+		uint32_t uCountOffset,
+		uint32_t uStride);
 	void BeginRendering(const Flux_RenderingBeginInfo& xInfo);
 	void SetPipeline(Zenith_Vulkan_Pipeline* pxPipeline);
 	

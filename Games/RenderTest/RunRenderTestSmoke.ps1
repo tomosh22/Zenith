@@ -4,20 +4,21 @@ param(
 	[switch]$NoBuild,
 	[switch]$ForceRegenerate,
 	[switch]$LodDebug,
-	[switch]$Wireframe
+	[switch]$Wireframe,
+	[switch]$ForcedIndirectCountPadded,
+	[switch]$ForcedIndirectCountSingle
 )
 
 $ErrorActionPreference = "Stop"
 
 $Root = Resolve-Path (Join-Path $PSScriptRoot "..\..")
-$Project = Join-Path $Root "Games\RenderTest\build\rendertest_win64.vcxproj"
+$Solution = Join-Path $Root "Games\RenderTest\rendertest_win64.sln"
 $Exe = Join-Path $Root "Games\RenderTest\build\output\win64\vulkan_vs2022_debug_win64_true\rendertest.exe"
 $LogDir = Join-Path $Root "Games\RenderTest\build\obj\smoke"
-$StdoutLog = Join-Path $LogDir "rendertest_smoke_stdout.log"
-$StderrLog = Join-Path $LogDir "rendertest_smoke_stderr.log"
+$StdoutLog = ""
+$StderrLog = ""
 
 New-Item -ItemType Directory -Force $LogDir | Out-Null
-Remove-Item -Force -ErrorAction SilentlyContinue $StdoutLog, $StderrLog
 
 function Find-MSBuild {
 	$candidates = @(
@@ -37,7 +38,7 @@ function Find-MSBuild {
 
 if (-not $NoBuild) {
 	$msbuild = Find-MSBuild
-	& $msbuild $Project /p:Configuration=Vulkan_vs2022_Debug_Win64_True /p:Platform=x64 -maxCpuCount
+	& $msbuild $Solution /t:RenderTest /p:Configuration=Vulkan_vs2022_Debug_Win64_True /p:Platform=x64 -maxCpuCount
 	if ($LASTEXITCODE -ne 0) {
 		throw "RenderTest build failed with exit code $LASTEXITCODE"
 	}
@@ -94,6 +95,77 @@ if ($LodDebug) {
 if ($Wireframe) {
 	$args += "--rendertest-wireframe"
 }
+if ($ForcedIndirectCountPadded -and $ForcedIndirectCountSingle) {
+	throw "ForcedIndirectCountPadded and ForcedIndirectCountSingle are mutually exclusive"
+}
+# Phase 8 of the terrain indirect-count compatibility plan: the smoke matrix
+# adds a forced-padded indirect-count-mode case (the padded tier is the
+# shipping fallback for no-count Android hardware; the smoke matrix must
+# not require a nonexistent screenshot — RunRenderTestSmoke.ps1 still drives
+# the resource/scene smoke, the dedicated graphics A/B wrapper
+# RunTerrainIndirectCompatibility.ps1 handles the screenshot gate). The
+# forced padded case fails closed if validation/synchronization fires or the
+# retired "terrain will not render / streaming disabled" warning re-appears.
+if ($ForcedIndirectCountPadded) {
+	$args += "--indirect-count-mode=padded"
+}
+if ($ForcedIndirectCountSingle) {
+	$args += "--indirect-count-mode=single"
+}
+$ExpectedIndirectRequest = if ($ForcedIndirectCountPadded) {
+	"padded"
+} elseif ($ForcedIndirectCountSingle) {
+	"single"
+} else {
+	"auto"
+}
+
+$SmokeFailurePattern = "RENDERTEST_SMOKE_FAIL|VK ERROR|VUID-|Validation Error|Synchronization-Violation|Zenith_Assert|Assertion failed:|device lost|VK_ERROR_DEVICE_LOST|FAILED_CLOSED|terrain will not render|streaming is disabled|indirect-buffer bounds"
+
+function Get-CombinedSmokeLog([string]$StdoutPath, [string]$StderrPath) {
+	$stdout = if (Test-Path -LiteralPath $StdoutPath) { Get-Content -LiteralPath $StdoutPath -Raw } else { "" }
+	$stderr = if (Test-Path -LiteralPath $StderrPath) { Get-Content -LiteralPath $StderrPath -Raw } else { "" }
+	return ([string]$stdout + "`n" + [string]$stderr)
+}
+
+function Assert-NoSmokeFailureMarkers([string]$Text, [string]$Label) {
+	$failure = [regex]::Match($Text, $SmokeFailurePattern, [Text.RegularExpressions.RegexOptions]::IgnoreCase)
+	if ($failure.Success) {
+		throw "$Label reported hard failure marker '$($failure.Value)'. Logs: $StdoutLog $StderrLog"
+	}
+}
+
+function Assert-SmokeIndirectTier([string]$Text, [string]$RequestedMode) {
+	$pattern = "RENDERTEST_SMOKE_INDIRECT_TIER request=(auto|native|padded|single) expected=(NATIVE_COUNT|PADDED_MULTI|PADDED_SINGLE) native=(\d+) paddedMulti=(\d+) paddedSingle=(\d+) failClosed=(\d+)"
+	$tierMatches = [regex]::Matches($Text, $pattern)
+	if ($tierMatches.Count -ne 1) {
+		throw "RenderTest smoke emitted $($tierMatches.Count) complete indirect-tier evidence lines; expected exactly one. Logs: $StdoutLog $StderrLog"
+	}
+	$tier = $tierMatches[0]
+	$request = $tier.Groups[1].Value
+	$expected = $tier.Groups[2].Value
+	$native = [uint64]::Parse($tier.Groups[3].Value)
+	$multi = [uint64]::Parse($tier.Groups[4].Value)
+	$single = [uint64]::Parse($tier.Groups[5].Value)
+	$failed = [uint64]::Parse($tier.Groups[6].Value)
+	if ($request -ne $RequestedMode) {
+		throw "RenderTest smoke requested '$RequestedMode' but the executable reported '$request'. Logs: $StdoutLog $StderrLog"
+	}
+	$exact = switch ($expected) {
+		"NATIVE_COUNT"  { $native -gt 0 -and $multi -eq 0 -and $single -eq 0 }
+		"PADDED_MULTI"  { $native -eq 0 -and $multi -gt 0 -and $single -eq 0 }
+		"PADDED_SINGLE" { $native -eq 0 -and $multi -eq 0 -and $single -gt 0 }
+	}
+	if ($failed -ne 0 -or -not $exact) {
+		throw "RenderTest smoke expected exactly $expected, got native=$native paddedMulti=$multi paddedSingle=$single failClosed=$failed. Logs: $StdoutLog $StderrLog"
+	}
+	if ($RequestedMode -eq "padded" -and $expected -notmatch "^PADDED_(MULTI|SINGLE)$") {
+		throw "RenderTest smoke forced padded but executed $expected. Logs: $StdoutLog $StderrLog"
+	}
+	if ($RequestedMode -eq "single" -and $expected -ne "PADDED_SINGLE") {
+		throw "RenderTest smoke forced single but executed $expected. Logs: $StdoutLog $StderrLog"
+	}
+}
 
 # Retry loop. The smoke test occasionally hits a GPU mid-frame-flush
 # stall (HandleStagingBufferFull's EndAndCpuWait blocks 5-10s on a
@@ -114,6 +186,8 @@ $exitCode = $null
 
 while ($attempt -lt $MaxAttempts) {
 	$attempt++
+	$StdoutLog = Join-Path $LogDir "rendertest_smoke_attempt${attempt}_stdout.log"
+	$StderrLog = Join-Path $LogDir "rendertest_smoke_attempt${attempt}_stderr.log"
 	Remove-Item -Force -ErrorAction SilentlyContinue $StdoutLog, $StderrLog
 
 	Write-Host "[RenderTestSmoke] Attempt $attempt/$MaxAttempts -- Running $Exe $($args -join ' ')"
@@ -126,30 +200,39 @@ while ($attempt -lt $MaxAttempts) {
 
 	if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
 		$process.Kill()
+		$process.WaitForExit()
+		$combined = Get-CombinedSmokeLog $StdoutLog $StderrLog
+		Assert-NoSmokeFailureMarkers $combined "RenderTest smoke attempt $attempt (timed out)"
 		$lastFailureMessage = "RenderTest smoke timed out after $TimeoutSeconds seconds. Logs: $StdoutLog $StderrLog"
+		Write-Host "[RenderTestSmoke] Attempt $attempt timed out without a hard failure marker. Retrying; logs are preserved."
 		continue
 	}
 	$process.WaitForExit()
 	$process.Refresh()
 
-	$stdout = if (Test-Path $StdoutLog) { Get-Content $StdoutLog -Raw } else { "" }
-	$stderr = if (Test-Path $StderrLog) { Get-Content $StderrLog -Raw } else { "" }
-	$combined = $stdout + "`n" + $stderr
+	$combined = Get-CombinedSmokeLog $StdoutLog $StderrLog
 
 	$exitCode = $process.ExitCode
 	# Hard failure: any of these stops the gate immediately -- not a flake.
-	$hasFailureMarker = $combined -match "RENDERTEST_SMOKE_FAIL|VK ERROR|VUID-|Validation Error|Zenith_Assert"
+	# Phase 8 of the terrain indirect-count compatibility plan: the retired
+	# "terrain will not render / streaming disabled" warning and indirect-buffer
+	# bounds errors are now hard markers — the padded fallback tier MUST draw
+	# terrain and never bounds-overflow the persistent argument buffer.
 	$hasPassMarker = $combined -match "RENDERTEST_SMOKE_PASS"
-
-	if ($hasFailureMarker) {
-		throw "RenderTest smoke reported a failure or validation error. Logs: $StdoutLog $StderrLog"
-	}
-
+	Assert-NoSmokeFailureMarkers $combined "RenderTest smoke attempt $attempt"
 	if ($hasPassMarker) {
-		break  # Real success path. Exit code handling below.
+		Assert-SmokeIndirectTier $combined $ExpectedIndirectRequest
 	}
 
-	$lastFailureMessage = if ($null -ne $exitCode -and $exitCode -ne 0) {
+	if ($hasPassMarker -and $null -ne $exitCode -and $exitCode -eq 0) {
+		break
+	}
+
+	$lastFailureMessage = if ($hasPassMarker -and $null -ne $exitCode -and $exitCode -ne 0) {
+		"RenderTest emitted RENDERTEST_SMOKE_PASS but exited with code $exitCode. Logs: $StdoutLog $StderrLog"
+	} elseif ($hasPassMarker -and $null -eq $exitCode) {
+		"RenderTest emitted RENDERTEST_SMOKE_PASS but its process exit code was unavailable. Logs: $StdoutLog $StderrLog"
+	} elseif ($null -ne $exitCode -and $exitCode -ne 0) {
 		"RenderTest exited with code $exitCode without emitting RENDERTEST_SMOKE_PASS. Logs: $StdoutLog $StderrLog"
 	} else {
 		"RenderTest did not emit RENDERTEST_SMOKE_PASS. Logs: $StdoutLog $StderrLog"
@@ -158,18 +241,8 @@ while ($attempt -lt $MaxAttempts) {
 	Write-Host "[RenderTestSmoke] Attempt $attempt failed ($lastFailureMessage). Retrying..."
 }
 
-if (-not $hasPassMarker) {
+if (-not $hasPassMarker -or $null -eq $exitCode -or $exitCode -ne 0) {
 	throw "RenderTest smoke failed after $MaxAttempts attempts. Last failure: $lastFailureMessage"
-}
-
-# PASS was emitted -- test logically succeeded. Non-zero exit codes
-# from shutdown crashes are accepted (logged as a warning) since the
-# test work itself completed successfully.
-if ($null -ne $exitCode -and $exitCode -ne 0) {
-	Write-Warning "[RenderTestSmoke] RenderTest emitted PASS marker but exited with code $exitCode (likely shutdown-path issue; logged for visibility)."
-}
-elseif ($null -eq $exitCode) {
-	Write-Warning "[RenderTestSmoke] Process exit code was unavailable; accepting RENDERTEST_SMOKE_PASS marker from captured output."
 }
 
 Write-Host "[RenderTestSmoke] PASS (attempt $attempt/$MaxAttempts)"

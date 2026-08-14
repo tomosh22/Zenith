@@ -1169,6 +1169,7 @@ void Zenith_Profiling::AddGPUPass(const char* szName, double fMilliseconds, u_in
 void Zenith_Profiling::EndGPUCapture()
 {
 	m_fGPUTotalMs = m_fGPUBuildingTotalMs;
+	++m_uGPUCaptureSerial;
 
 	// Push total GPU ms into the rolling history ring (mirrors EndFrame's CPU
 	// frame-time history). Plotted in the GPU viz tab.
@@ -1177,6 +1178,37 @@ void Zenith_Profiling::EndGPUCapture()
 	m_uGPUHistoryHead = (m_uGPUHistoryHead + 1) % uFRAME_HISTORY;
 	if (m_uGPUHistoryCount < uFRAME_HISTORY) ++m_uGPUHistoryCount;
 	m_fWorstGPUMs = std::max(m_fWorstGPUMs, fMs);
+}
+
+bool Zenith_Profiling::GetDisplayLabeledZoneTotalMs(const char* szZoneName,
+	const char* szLabel, double& fMillisecondsOut) const
+{
+	fMillisecondsOut = 0.0;
+	if (szZoneName == nullptr || szLabel == nullptr || m_pxDisplay == nullptr)
+		return false;
+
+	bool bFound = false;
+	const Snapshot& xSnapshot = *m_pxDisplay;
+	for (Zenith_HashMap<u_int, Zenith_Vector<Event>>::Iterator xIt(xSnapshot.m_xThreadEvents);
+		!xIt.Done(); xIt.Next())
+	{
+		const Zenith_Vector<Event>& xEvents = xIt.GetValue();
+		for (u_int u = 0; u < xEvents.GetSize(); ++u)
+		{
+			const Event& xEvent = xEvents.Get(u);
+			if (xEvent.m_szLabel == nullptr || std::strcmp(xEvent.m_szLabel, szLabel) != 0)
+				continue;
+			const char* szEventZone = GetZoneName(xEvent.m_uZoneID);
+			if (szEventZone == nullptr || std::strcmp(szEventZone, szZoneName) != 0)
+				continue;
+			if (xEvent.m_uEndTicks < xEvent.m_uBeginTicks)
+				continue;
+			fMillisecondsOut += static_cast<double>(xEvent.m_uEndTicks - xEvent.m_uBeginTicks)
+				* Zenith_Profiling_Detail::GetTicksToNs() / 1.0e6;
+			bFound = true;
+		}
+	}
+	return bFound;
 }
 
 namespace
@@ -3164,6 +3196,7 @@ void Zenith_Profiling::WriteTextReport(FILE*) {}
 void Zenith_Profiling::BeginGPUCapture() {}
 void Zenith_Profiling::AddGPUPass(const char*, double, u_int) {}
 void Zenith_Profiling::EndGPUCapture() {}
+bool Zenith_Profiling::GetDisplayLabeledZoneTotalMs(const char*, const char*, double& fMillisecondsOut) const { fMillisecondsOut = 0.0; return false; }
 #if ZENITH_MEMORY_TRACKING_ANY
 void Zenith_Profiling::PushMemorySample(const Zenith_MemoryFrameSample&) {}
 #endif

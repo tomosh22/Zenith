@@ -4,6 +4,32 @@
 
 Vulkan rendering backend providing GPU resource management, command buffer recording, and pipeline construction.
 
+### Device API and queue minimums
+
+- Vulkan 1.1 is the explicit physical-device minimum. Zenith's generated
+  shaders target SPIR-V 1.3, so there is no Vulkan 1.0 extension-only path.
+- The selected graphics queue family must support both graphics and compute.
+  Render-graph workers record draw and dispatch commands into graphics-family
+  command buffers; a separate compute-only family does not make a
+  graphics-only family suitable. Presentation may use a separate family.
+- A separate presentation family gets **no command pool**. Presentation is not
+  a command-buffer capability — `vkQueuePresentKHR` takes no command buffer,
+  and a WSI-only family chosen purely because
+  `vkGetPhysicalDeviceSurfaceSupportKHR` returned true may expose none of
+  graphics/compute/transfer, making a pool on it useless at best and invalid
+  at worst. `CreateCommandPools` therefore skips `COMMANDTYPE_PRESENT`
+  whenever it resolved to a family of its own (it keeps the shared pool in the
+  common case where present and graphics are the same family), and
+  `GetCommandPool` asserts rather than handing back a null pool. Nothing asks
+  for one: the only callers are GRAPHICS (recorders, staging, screenshot) and
+  COPY (the memory manager's internal buffer).
+- VMA receives the selected physical-device API version, clamped to both the
+  Vulkan 1.3 version requested by the instance and the `VMA_VULKAN_VERSION`
+  ceiling compiled into that platform's VMA build. This last clamp matters on
+  Android, where a Vulkan 1.3 device can be paired with VMA compiled for 1.2.
+  `vmaCreateAllocator` failure is checked before staging or command-buffer
+  resources are initialised.
+
 ## Key Components
 
 | File | Purpose |
@@ -104,6 +130,75 @@ If 3D textures only show data in early Z slices:
 2. Check `FlushStagingBuffer()` uses `m_uDepth` in `setImageExtent()` (not hardcoded to 1)
 
 ## Command Buffers
+
+### Indirect-count capability negotiation + fallback (Phase 1-8 of the terrain indirect-count compatibility plan)
+
+`vkCmdDrawIndexedIndirectCount` (Vulkan 1.2 core or `VK_KHR_draw_indirect_count`)
+is OPTIONAL: the Android emulator's goldfish/gfxstream ICD, among others,
+supports neither. The engine keeps **advertised / enabled / usable** state
+distinct in `Zenith_Vulkan::CreateDevice`:
+- **Advertised**: enumerated via `vkEnumerateDeviceExtensionProperties` /
+  `VkPhysicalDeviceVulkan12Features` BEFORE `vkCreateDevice`.
+- **Enabled**: requested in the `vk::DeviceCreateInfo` feature chain (only
+  for advertised features; never force-`VK_TRUE` an unadvertised feature
+  bit, the old "pick first, force unsupported" behaviour the plan retired).
+- **Usable**: advertised AND enabled AND the matching function pointer
+  resolved (`vkGetDeviceProcAddr` returns non-null). A driver that
+  advertises an extension but hands back a null proc address downgrades
+  usable count to false; the recorder then never calls the null pointer.
+
+`m_xIndirectDrawCaps` (`Flux_IndirectDrawCapabilities`) reports the USABLE
+semantic booleans (nativeCount / multiDraw / firstInstance / drawParams) and
+the raw `maxDrawIndirectCount`. The recorder's
+`DrawIndexedIndirectCount` reads it plus the boot-time override
+`m_eIndirectDrawOverride` (parsed by `Zenith_CommandLine` from
+`--indirect-count-mode=auto|native|padded|single`, converted here at device
+init, immutable after that) and selects an effective mode via the pure
+`Flux_SelectIndirectExecutionMode` selector in `Flux_IndirectDraw.h`:
+
+- **NATIVE_COUNT** — one `vkCmdDrawIndexedIndirectCount[KHR]` call. Runnable
+  when usable count, the request fits the reported native limit, and the
+  override permits it. `multiDrawIndirect` gates fixed indirect commands only;
+  it does not gate this counted command.
+- **PADDED_MULTI** — `vkCmdDrawIndexedIndirect` in batches no larger than the
+  legal per-call limit (`maxDrawIndirectCount` when multi-draw is on, else 1).
+  The count buffer is NOT dereferenced in this tier; the caller's
+  `ZERO_PADDED_TO_MAX` policy guarantees the padded `[0, uMaxDrawCount)`
+  range is a valid zero/no-op every frame.
+- **PADDED_SINGLE** — one `vkCmdDrawIndexedIndirect` call per record
+  (`drawCount == 1`, offset advancing by `stride`). The legal tier when
+  multi-draw is unavailable.
+- **FAILED_CLOSED** — no API command, hard assert/log. A `REQUIRE_NATIVE`
+  caller whose native preconditions failed OR an explicit NATIVE override on
+  unsupported hardware MUST fail closed; the recorder never silently slides
+  into padded execution and never calls a null function pointer. Test telemetry
+  increments once for every rejected semantic request, including validation,
+  stale-resource, and missing-procedure failures—not only selector failures.
+
+An over-limit request (e.g. `uMaxDrawCount` > `maxDrawIndirectCount`) MUST
+NOT split native count across the same count buffer (each batch would
+re-read the full count and over-draw). The selector chooses PADDED_MULTI
+when the caller's policy permits it.
+
+`DrawIndexedIndirect` (the ordinary fixed draw, not the counted one) uses
+the same private/common fixed-emission helper via the batch planner, so
+no caller can exceed a backend limit accidentally. Splits reset shader
+draw ID at each batch boundary; the plan's caution about shaders that
+consume draw ID across a logical multi-draw (grass, particles,
+unified/instanced meshes) is documented in `Flux_IndirectDraw.h` and
+exercised by the smoke matrix's forced-mode resource cases.
+
+Device capability log lines (replace the retired
+"terrain streaming will be disabled" wording, which was inaccurate):
+```
+vkCmdDrawIndexedIndirectCount: advertised(ext=yes core1.2=no) enabled=yes usable=yes (driver apiVersion 1.4.313.1)
+  multiDrawIndirect: raw=no usable=no | drawIndirectFirstInstance: raw=yes usable=yes | shaderDrawParameters: raw=yes usable=yes
+  maxDrawIndirectCount: raw/native=1 fixedPerCall=1 (fixed clamps to 1 when multi-draw off)
+  --indirect-count-mode: auto (effective fallback negotiated per-request by the recorder)
+```
+On a device that lacks count (the Android emulator tier) the usable line
+reads `usable=NO (terrain draws via padded fallback)` and terrain still
+renders — the padded tier is the fallback, not a skip.
 
 ### Barrier Management
 

@@ -22,6 +22,11 @@
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Flux/Terrain/Flux_TerrainVertexQuant.h"   // the authored dequant box the terrain CB carries
 #include "Flux/Shaders/Generated/Terrain.h"
+// Phase 1 of the terrain indirect-count compatibility plan: the terrain call
+// site uses the shared 20-byte / five-word indirect-command ABI constants and
+// passes ZERO_PADDED_TO_MAX (the GPU reset pass + per-frame zero-tail invariant
+// makes a fixed indexed-indirect draw over the full range valid).
+#include "Flux/Backend/Flux_IndirectDraw.h"
 
 // Phase 7h: subsystem state moved to Flux_TerrainImpl held by Zenith_Engine.
 
@@ -139,6 +144,27 @@ static_assert(Flux_TerrainGBufferAttachmentCountForVariant(
 static_assert(Flux_TerrainGBufferAttachmentCountForVariant(
 	Flux_TerrainGBufferVariant::VELOCITY_SOLID) == MRT_INDEX_COUNT,
 	"terrain velocity variant must be the 5-MRT set");
+
+// ----------------------------------------------------------------------------
+// Indirect-command ABI mirror pin (the GPU shader text-#includes
+// Flux_TerrainIndirectCommon.slang and the C++ side reads the twin in
+// Flux/Backend/Flux_IndirectDraw.h). Slang constants are not reachable from
+// C++, so the cross-language pin lives HERE as a frozen transcription of the
+// shader-side constants. The shader's uFLUX_TERRAIN_INDIRECT_WORD_COUNT /
+// uFLUX_TERRAIN_INDIRECT_BYTE_STRIDE / uFLUX_TERRAIN_TOTAL_CHUNKS are pinned by
+// value below; a drift between the C++ ABI and the Slang shared include reads
+// every command field after it at the wrong offset and produces plausible
+// garbage rather than a crash, so the assertions are load-bearing.
+// ----------------------------------------------------------------------------
+static_assert(uFLUX_INDIRECT_DRAW_INDEXED_WORD_COUNT == 5u,
+	"Flux_IndirectDrawIndexedCommand word count must be 5 (indexCount/inC/firstIndex/vOff/firstInstance) — "
+	"the Slang shared include pins the same constant");
+static_assert(uFLUX_INDIRECT_DRAW_INDEXED_BYTE_STRIDE == 20u,
+	"Flux_IndirectDrawIndexedCommand byte stride must be 20 — the Slang shared include pins the same constant");
+static_assert(Flux_TerrainConfig::TOTAL_CHUNKS == 4096u,
+	"Terrain expects 4096 chunks — the Slang reset shader's bounds-check reads this; "
+	"any change to TOTAL_CHUNKS requires regenerating the terrain shaders (FluxCompiler) "
+	"and updating the reset dispatch group count in ExecuteResetCounters in lockstep");
 
 bool dbg_bWireframe = false;
 u_int dbg_uDebugMode = 0;  // Debug visualization mode (0=Off, 1=LOD, 2=Normals, 3=UVs, etc.)
@@ -313,7 +339,7 @@ void Flux_TerrainImpl::Initialise()
 #ifdef ZENITH_DEBUG_VARIABLES
 	g_xEngine.DebugVariables().AddFloat({ "Render", "Terrain", "UV Scale" }, s_xTerrainConstants.m_fUVScale, 0., 10.);
 	g_xEngine.DebugVariables().AddBoolean({ "Render", "Terrain", "Wireframe" }, dbg_bWireframe);
-	g_xEngine.DebugVariables().AddUInt32({ "Render", "Terrain", "Debug Mode" }, dbg_uDebugMode, 0, 12);
+	g_xEngine.DebugVariables().AddUInt32({ "Render", "Terrain", "Debug Mode" }, dbg_uDebugMode, 0, 13);
 #endif
 
 	// ========== Initialize Terrain Streaming Manager ==========
@@ -358,17 +384,33 @@ void Flux_TerrainImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	Zenith_Vector<Flux_TerrainRenderRecord> xTerrains;
 	if (g_pfnZenithTerrainGather) g_pfnZenithTerrainGather(xTerrains);
 
-	// Pass 0: Reset visible-count buffers. One dispatch per terrain, each
-	// writes a single uint32 to the corresponding visible-count buffer. The
-	// culling pass DependsOn this pass and re-declares each buffer as a UAV
-	// write — the graph synthesises a UAV→UAV barrier between the two so the
-	// culling dispatch's atomic increments observe the cleared value.
-	Flux_PassHandle xResetPass = xGraph.AddPass("Terrain Reset Counters", ExecuteResetCounters);
+	// Pass 0: Reset visible-count AND indirect-argument buffers. One dispatch per
+	// terrain, ceil(TOTAL_CHUNKS / 64) groups of 64 threads; thread 0 writes
+	// visibleCount[0] = 0 and each in-range thread writes one fully zero-
+	// initialised indirect record. The culling pass DependsOn this pass and
+	// re-declares both buffers as UAV writes — the graph synthesises the
+	// UAV→UAV barrier between the two so the culling dispatch's atomic
+	// increments AND its prefix compaction observe the cleared state. The
+	// full-record clear is the zero-tail invariant that lets the recorder
+	// execute a fixed indexed-indirect draw over [0, TOTAL_CHUNKS) on devices
+	// missing vkCmdDrawIndexedIndirectCount[KHR]: culling writes the live
+	// prefix, the cleared [visibleCount, TOTAL_CHUNKS) tail stays all-zero
+	// no-ops, and a many→few→zero transition cannot replay stale chunks.
+	Flux_PassHandle xResetPass = xGraph.AddPass("Terrain Reset Count and Indirect Arguments", ExecuteResetCounters);
 	for (u_int u = 0; u < xTerrains.GetSize(); u++)
 	{
 		Flux_TerrainStreamingState* pxState = xTerrains.Get(u).m_pxState;
 		if (!pxState->m_bCullingResourcesInitialized) continue;
+		// UAV write for the count buffer — the reset pass clears it to zero.
 		xGraph.WriteBuffer(xResetPass, pxState->m_xVisibleCountBuffer.GetBuffer(), RESOURCE_ACCESS_WRITE_UAV);
+		// UAV write for the argument buffer — the reset pass clears every
+		// record in [0, TOTAL_CHUNKS) to the legal no-op (five words / 20
+		// bytes zero). The cross-frame cyclic seed makes the prior frame's
+		// indirect-ARG read by the GBuffer pass source this write's barrier
+		// (the graph's per-resource last-access tracker carries the access
+		// across the frame boundary — the same mechanism that already
+		// protects the count buffer).
+		xGraph.WriteBuffer(xResetPass, pxState->m_xIndirectDrawBuffer.GetBuffer(), RESOURCE_ACCESS_WRITE_UAV);
 	}
 
 	// Pass 1: Terrain culling compute. PreRenderUpdate runs as a Prepare
@@ -391,11 +433,17 @@ void Flux_TerrainImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 		// Flux_FrameIndexedBufferBase (Flux_Buffers.h).
 
 		// Indirect command + visible-count + LOD-level buffers are produced by
-		// this pass. LODLevelBuffer is now a read-modify-write (the GPU LOD
-		// hysteresis check reads the prior frame's value before writing) so it
-		// is declared READWRITE_UAV.
+		// this pass. visibleCount is READWRITE_UAV — the culling shader uses
+		// InterlockedAdd(visibleCount[0], 1u, outIndex), a read-modify-write
+		// that must observe the zero the reset pass wrote. Declaring it
+		// WRITE_UAV omits the shader-read destination access so the reset
+		// value is not guaranteed visible to the atomic. LODLevelBuffer is
+		// the same pattern (reads priorLOD before writing its hysteresis
+		// decision). The argument buffer is pure append (InterlockedAdd to
+		// grab a slot, then a plain store into that slot) so WRITE_UAV is
+		// correct for it.
 		xGraph.WriteBuffer(xCullingPass, pxState->m_xIndirectDrawBuffer.GetBuffer(), RESOURCE_ACCESS_WRITE_UAV);
-		xGraph.WriteBuffer(xCullingPass, pxState->m_xVisibleCountBuffer.GetBuffer(), RESOURCE_ACCESS_WRITE_UAV);
+		xGraph.WriteBuffer(xCullingPass, pxState->m_xVisibleCountBuffer.GetBuffer(), RESOURCE_ACCESS_READWRITE_UAV);
 		xGraph.WriteBuffer(xCullingPass, pxState->m_xLODLevelBuffer.GetBuffer(),     RESOURCE_ACCESS_READWRITE_UAV);
 	}
 
@@ -506,13 +554,27 @@ static void ExecuteResetCounters(Flux_CommandBuffer* pxCmdList, void*)
 		Flux_TerrainStreamingState* pxState = xTerrain.m_xTerrainRenderRecords.Get(u).m_pxState;
 		if (!pxState->m_bCullingResourcesInitialized) continue;
 
-		// Bind set 0, slot 0: visibleCount UAV. Dispatch a single thread that
-		// writes 0u. The graph emits a UAV→UAV barrier between this pass and
-		// the culling pass, so the culling dispatch's atomic increments see
-		// the cleared value.
+		// Bind set 0, slot 0: visibleCount UAV and slot 1: the indirect-
+		// command UAV. The shader is [numthreads(64,1,1)]: thread 0 writes
+		// visibleCount[0] = 0 and each in-range thread writes one zero-
+		// initialised record. The bounds check reads the argument buffer's
+		// dimensions, so 64 groups cover the shipping 4,096-record grid
+		// (4096 = 64 * 64) and an arbitrary record count would also work.
+		// The graph emits the UAV→UAV barrier between this pass and the
+		// culling pass, so culling's atomic prefix compaction observes the
+		// cleared state AND the cleared [visibleCount, TOTAL_CHUNKS) tail
+		// stays all-zero no-ops for the recorder's fixed fallback path. Do
+		// NOT clear LODLevelBuffer here — it carries prior-frame hysteresis
+		// state that culling reads before writing.
 		Flux_ShaderBinder xBinder(*pxCmdList);
-		xBinder.BindUAV_Buffer(Flux_Generated_Terrain::TerrainResetCounters::hvisibleCount, &pxState->m_xVisibleCountBuffer.GetUAV());
-		pxCmdList->Dispatch(1, 1, 1);
+		xBinder.BindUAV_Buffer(Flux_Generated_Terrain::TerrainResetCounters::hvisibleCount,
+			&pxState->m_xVisibleCountBuffer.GetUAV());
+		xBinder.BindUAV_Buffer(Flux_Generated_Terrain::TerrainResetCounters::hindirectCommands,
+			&pxState->m_xIndirectDrawBuffer.GetUAV());
+		// ceil(TOTAL_CHUNKS / 64) groups = 64 for the 4096-chunk shipping grid;
+		// covers every in-range record. The shader bounds-checks inside.
+		constexpr uint32_t uRESET_GROUP_COUNT_X = (Flux_TerrainConfig::TOTAL_CHUNKS + 63u) / 64u;
+		pxCmdList->Dispatch(uRESET_GROUP_COUNT_X, 1, 1);
 	}
 }
 
@@ -644,15 +706,37 @@ static void ExecuteGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 		// the engine blank material, whose record carries the default-channel
 		// bindless indices).
 
-		// GPU-driven indirect rendering with front-to-back sorted visible chunks
-		// Each component uses its own indirect draw buffer and visible count buffer
+		// GPU-driven indirect rendering via DRAW_INDEXED_INDIRECT_COUNT.
+		//
+		// Each component uses its own indirect draw buffer and visible count
+		// buffer. The required eFallback policy is ZERO_PADDED_TO_MAX: the GPU
+		// reset pass clears all 4,096 records to the legal no-op every frame
+		// and culling compacts live records into [0, visibleCount), so the
+		// remaining [visibleCount, TOTAL_CHUNKS) tail is always an all-zero
+		// padded range — a fixed indexed-indirect draw over the entire range
+		// is therefore valid even when visibility falls to zero. The recorder
+		// selects the native counted call on capable devices (within
+		// maxDrawIndirectCount), and falls back to legal padded fixed batches
+		// otherwise. It NEVER splits one global counted draw across multiple
+		// count-buffer batches (each batch would re-read the full count and
+		// overdraw): an over-limit request selects padded fixed batches
+		// instead. See Flux_IndirectDraw.h for the full selector contract.
+		//
+		// The argument stride is the named 20-byte ABI constant shared with
+		// the Slang shared include, the per-backend recorders and the test
+		// pinned ABI POD — the literal `20` is retired.
+		//
+		// Note: culling uses ATOMIC APPEND compaction; the resulting prefix
+		// is NOT sorted front-to-back. Modern GPU early-Z handles the few
+		// percent of depth overdraw far cheaper than an O(n²) sort would.
 		pxCmdList->DrawIndexedIndirectCount(
-			&pxState->m_xIndirectDrawBuffer,  // Per-component indirect buffer with sorted draw commands
-			&pxState->m_xVisibleCountBuffer,   // Per-component count buffer with actual number of visible chunks
-			Flux_TerrainConfig::TOTAL_CHUNKS,          // Max 4096 draws (theoretical maximum)
-			0,                                      // Indirect buffer offset (bytes)
-			0,                                      // Count buffer offset (bytes)
-			20                                      // Stride between commands (5 * sizeof(uint32_t))
+			&pxState->m_xIndirectDrawBuffer,   // Per-component argument buffer with compacted live prefix + zero tail
+			&pxState->m_xVisibleCountBuffer,  // Per-component count buffer with the live record count
+			Flux_TerrainConfig::TOTAL_CHUNKS,  // Max 4096 padded records — the full legal range
+			Flux_IndirectCountFallback::ZERO_PADDED_TO_MAX,  // The GPU reset pass + tail-zero invariant makes this safe
+			0,                                 // Indirect argument buffer offset (bytes)
+			0,                                 // Count buffer offset (bytes)
+			uFLUX_INDIRECT_DRAW_INDEXED_BYTE_STRIDE  // 20-byte stride shared across ABI / Slang / recorders
 		);
 
 	}

@@ -2,6 +2,7 @@
 #include "Zenith.h"            // u_int / u_int64 / Zenith_Assert (defined before Flux.h in the PCH)
 #include "Flux/Flux_Types.h"   // handles, enums, view structs, Flux_BindingSlot/SubresourceRange
 #include "Flux/Flux_Fwd.h"     // the Flux_* aliases + forward decls of the other D3D12 classes
+#include "Flux/Backend/Flux_IndirectDraw.h"  // Flux_IndirectDrawCapabilities — capability getter return type
 
 // ============================================================================
 // NO-OP "null" D3D12 render backend — device + sampler + VRAM.
@@ -108,6 +109,26 @@ public:
 #ifdef ZENITH_DEBUG_VARIABLES
 	void IncrementDescriptorSetAllocations() { }
 #endif
+
+	// Indirect-draw capability getter — conservative stubs identical to the
+	// Null twin. The reserved D3D12 backend is a compile/link/conformance
+	// oracle, NOT a runtime graphics evidence source: native count is
+	// unavailable, multi-draw is unavailable, maxDrawIndirectCount is 1, and
+	// the documented terrain minimums read false. A future real D3D12
+	// implementation would report the real ExecuteIndirect / command-signature
+	// semantics here. Returned by value (matches the FluxBackendDevice concept
+	// signature); the underlying struct is a literal constant so the by-value
+	// copy has no lifetime hazard.
+	Flux_IndirectDrawCapabilities GetIndirectDrawCapabilities() const
+	{
+		return Flux_IndirectDrawCapabilities{
+			false,  // m_bNativeIndexedIndirectCount
+			false,  // m_bMultiDrawIndirect
+			false,  // m_bIndirectFirstInstance
+			false,  // m_bShaderDrawParameters
+			1u,     // m_uMaxDrawIndirectCount
+		};
+	}
 
 	// Engine-typed bindless write (neutral entry point). No-op.
 	void WriteBindlessTextureSlot(uint32_t /*uIndex*/, const Flux_ShaderResourceView& /*xView*/, const Zenith_D3D12_Sampler& /*xSampler*/) { }

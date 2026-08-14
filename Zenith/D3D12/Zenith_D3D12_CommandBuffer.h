@@ -63,7 +63,26 @@ public:
 
 	// ---- FluxBackendIndirectDraws ------------------------------------------
 	void DrawIndexedIndirect(const Flux_IndirectBuffer* pxIndirectBuffer, uint32_t uDrawCount, uint32_t uOffset = 0, uint32_t uStride = 20) { }
-	void DrawIndexedIndirectCount(const Flux_IndirectBuffer* pxIndirectBuffer, const Flux_IndirectBuffer* pxCountBuffer, uint32_t uMaxDrawCount, uint32_t uIndirectOffset = 0, uint32_t uCountOffset = 0, uint32_t uStride = 20) { }
+	// Semantic counted-indirect draw — required eFallback policy before the
+	// (now-default-less) offset/stride parameters. D3D12 stub mirrors the Null
+	// twin: validate the policy is in range, emit nothing. A real D3D12 path
+	// would branch on the override/capabilities and call ExecuteIndirect with
+	// the matching command signature.
+	void DrawIndexedIndirectCount(const Flux_IndirectBuffer* pxIndirectBuffer,
+		const Flux_IndirectBuffer* pxCountBuffer,
+		uint32_t uMaxDrawCount,
+		Flux_IndirectCountFallback eFallback,
+		uint32_t uIndirectOffset,
+		uint32_t uCountOffset,
+		uint32_t uStride)
+	{
+		(void)pxIndirectBuffer; (void)pxCountBuffer; (void)uMaxDrawCount;
+		(void)eFallback; (void)uIndirectOffset; (void)uCountOffset; (void)uStride;
+		Zenith_Assert(eFallback == Flux_IndirectCountFallback::REQUIRE_NATIVE ||
+		              eFallback == Flux_IndirectCountFallback::ZERO_PADDED_TO_MAX,
+			"DrawIndexedIndirectCount: invalid Flux_IndirectCountFallback value %u",
+			static_cast<unsigned>(eFallback));
+	}
 
 	// ---- FluxBackendPipelineBinding ----------------------------------------
 	// No-op recording, but the shared validators run so the null backend keeps the

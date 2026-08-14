@@ -2,6 +2,7 @@
 
 #include "Flux/Flux.h"
 #include "Flux/Flux_Buffers.h"
+#include "Flux/Backend/Flux_IndirectDraw.h"  // Flux_IndirectCountFallback — required policy on the counted draw
 
 // Concept: per-worker command recording. Instance methods on the backend
 // command-buffer type (aliased as Flux_CommandBuffer). Render-graph pass record
@@ -20,12 +21,11 @@
 //   1. A compile error on a missing method names the specific sub-concept
 //      that failed (e.g. "FluxBackendIndirectDraws requires
 //      DrawIndexedIndirectCount") rather than flagging the whole mega-concept.
-//   2. A future second backend can satisfy the capabilities it implements
-//      (e.g. a mobile backend without indirect-count draws) and opt out of
-//      the umbrella — downstream code then gates on the sub-concept it
-//      actually needs. Currently the engine needs all seven, so every
-//      backend must satisfy the umbrella; this split is for future
-//      flexibility, not gates any current code paths.
+//   2. Every active backend satisfies the complete semantic recorder surface.
+//      Counted indirect is required even when the graphics API has no native
+//      count-buffer command: the backend emulates the caller-authorized padded
+//      policy or fails closed for REQUIRE_NATIVE. Sub-concepts improve compile
+//      diagnostics; they are not opt-out capability gates.
 //   3. Per-sub-concept parameter lists stay small, which keeps each
 //      requires-clause readable.
 
@@ -85,11 +85,21 @@ concept FluxBackendIndirectDraws = requires(
 	uint32_t uIndirectBufferOffset,
 	uint32_t uCountBufferOffset,
 	uint32_t uStride,
+	Flux_IndirectCountFallback eFallback,
 	const Flux_IndirectBuffer* pxArgsB,
 	const Flux_IndirectBuffer* pxCountB)
 {
 	{ xRec.DrawIndexedIndirect(pxArgsB, uDrawCount, uIndirectBufferOffset, uStride)                                    } -> std::same_as<void>;
-	{ xRec.DrawIndexedIndirectCount(pxArgsB, pxCountB, uDrawCount, uIndirectBufferOffset, uCountBufferOffset, uStride) } -> std::same_as<void>;
+	// Semantic counted-indirect draw. The required eFallback policy is placed
+	// BEFORE the offset/stride parameters (and those defaults are removed on
+	// this overload so a required parameter cannot follow defaulted ones —
+	// ill-formed C++). The operation means "use the count buffer natively when
+	// legal; otherwise use only the caller-authorized fallback"; it does NOT
+	// mean every backend must expose a hardware count-buffer command. A
+	// REQUIRE_NATIVE caller whose preconditions fail must FAIL CLOSED; a
+	// ZERO_PADDED_TO_MAX caller guarantees the full [0, uMaxDrawCount) range
+	// is a valid zero/no-op every frame.
+	{ xRec.DrawIndexedIndirectCount(pxArgsB, pxCountB, uDrawCount, eFallback, uIndirectBufferOffset, uCountBufferOffset, uStride) } -> std::same_as<void>;
 };
 
 template <typename T>

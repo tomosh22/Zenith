@@ -273,7 +273,11 @@ every JSON says passed — crash-mid-suite guard), and a slowest-tests report.
   known pre-existing failure: `ZM_InteriorTintPixels_Test`).
 
 **Engine unit tests** run at every boot unless `--skip-unit-tests`. Baseline:
-**1600 ran, 0 failed** (observed 2026-08-11 on a `Null_` Combat build; 1437 + 19 + 1
+**1638 expected, 0 failed** (`1637` was observed 2026-08-12 on a `Null_` Combat
+build, then the final backend-neutral indirect-count/multi-draw distinction test
+added one shared registrar; that +1 was confirmed by the complete 1,729-test Null
+RenderTest gate on 2026-08-13; 1600 → 1638 is +38 tests under the terrain
+indirect-count compatibility plan — see `run_unit_gate.ps1` history); 1437 + 19 + 1
 from compressed-vertex Phase 6 T6.a's instance-stream flips — 3 uint16x4 codec
 units plus 4/5/4/3 packed-lane units for Text/Quads/Particles/Gizmos — then + 2 for
 the scene-publish guard's `Editor.SceneSaveDeltaClassifiesPublish` /
@@ -378,7 +382,7 @@ Concurrency groups cancel superseded PR runs (master pushes always complete).
 |----------|-------|
 | `cb-tests` | CityBuilder Vulkan `_True` compile proof + **Null `_True` build (the exe every step runs)** + D3D12 `_False` link proof + 45-test headless suite via `zenith test` |
 | `dp-tests` | Same shape for DevilsPlayground (158 tests) |
-| `engine-gate` | Sentinels (`Vulkan_Debug_Win64_False`) built AND executed + Combat unit gate (`Tools/run_unit_gate.ps1`; it passes no `-Baseline`, so the script's default is the pin — 1600 as of 2026-08-11 — known flake tolerated). Rollout: dispatch → burn-in → required |
+| `engine-gate` | Sentinels (`Vulkan_Debug_Win64_False`) built AND executed + Combat unit gate (`Tools/run_unit_gate.ps1`; it passes no `-Baseline`, so the script's default is the pin — 1638 as of 2026-08-13 — known flake tolerated). Rollout: dispatch → burn-in → required |
 | `release-build` | NIGHTLY (not PR-blocking): engine + DP in `Vulkan_vs2022_Release_Win64_True`, build-only — the only Release compile in CI |
 | `shader-validation` | FluxCompiler (Release `_True`) catalog/parity/spine-lint + git-status drift gate on shader outputs |
 | `scaffold-smoke` | Path-filtered end-to-end `zenith new` → build → boot (units baseline) → teardown leaves git status identical |

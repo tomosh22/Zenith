@@ -244,3 +244,15 @@ static_assert(FluxBackendImGuiTools            <Zenith_Null>,
 #endif
 
 #endif // ZENITH_NULL_RENDERER
+
+// Pure policy/ABI tests for the neutral indirect-count fallback header
+// (Flux_IndirectDraw.h) live in Flux_IndirectDraw.Tests.inl. They are hosted
+// from Zenith_CommandLine.cpp (NOT this TU) because Flux_BackendConformance.cpp
+// has ZERO runtime functions — only compile-time static_asserts — so MSVC's
+// /OPT:REF linker pass dead-strips the .obj on builds where no caller names
+// any of its symbols, taking the ZENITH_TEST registrars with it (the
+// Null/CLAUDE.md dead-strip hazard). Zenith_CommandLine.cpp is boot-time
+// called by every game (Parse runs at process start), so its .obj always
+// survives the link and the policy/ABI tests register in every backend
+// variant — the property the dead-strip hazard strips from a TU whose only
+// entrant is a static_assert.

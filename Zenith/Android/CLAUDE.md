@@ -362,6 +362,42 @@ adb logcat -s Zenith.Vulkan Zenith.Core        # one or more categories
 adb logcat | Select-String "Zenith\."          # everything the engine logs
 ```
 
+### Terrain indirect-count compatibility on Android (Phase 1-8)
+
+`Zenith_Vulkan::CreateDevice` advertises vs enables vs keeps usable
+`vkCmdDrawIndexedIndirectCount[KHR]` distinct and surfaces the USABLE
+semantic booleans via `Flux_IndirectDrawCapabilities`. **Android never
+calls `Zenith_CommandLine::Parse`**, so `--indirect-count-mode` stays at
+the shipping `auto` default there — the device's raw capability selects
+the effective mode. Don't claim the desktop CLI can force Android modes
+unless Android argument/config plumbing is implemented as a separate step.
+
+Android emulator capabilities depend on the installed system image and host
+graphics stack. Do not assume goldfish/gfxstream is count-unsupported: an
+observed API-33 x86_64 image on 2026-08-13 exposed Vulkan 1.3 core count even
+though it did not advertise the KHR alias. A genuinely no-count emulator or
+physical adapter boots into:
+```
+Zenith.Vulkan vkCmdDrawIndexedIndirectCount: advertised(ext=no core1.2=no) enabled=no usable=NO (terrain draws via padded fallback)
+Zenith.Vulkan --indirect-count-mode: auto (effective fallback negotiated per-request by the recorder)
+```
+and terrain still renders via the padded tier (`PADDED_MULTI` when multi-draw
+is usable; `PADDED_SINGLE` when it is not). Always archive the actual
+capability log with the screenshot; a count-capable emulator proves Android
+boot/render integration but is not evidence for the automatic no-count tier.
+Treat emulator timings as DIAGNOSTIC only — the plan forbids emulator timings
+as a performance gate (per-dispatch overhead dominates there).
+
+A count-CAPABLE physical device shows `usable=yes` and runs `NATIVE_COUNT`
+exactly once per frame. The automated `TerrainIndirectCompatibility` A/B
+test is a desktop Tools/InputSimulator gate and therefore is not compiled
+into the current Android build. Android validation exercises shipping
+`auto` selection directly: capture the capability/effective-mode log,
+validation logcat, and a terrain screenshot while moving through several
+camera poses. A forced three-arm Android A/B run requires separate Android
+argument and automated-test artifact plumbing; do not report that gate as
+run until that plumbing exists.
+
 ### Selecting the JDK (per machine, NOT per repo)
 
 No game's `gradle.properties` pins `org.gradle.java.home` — it is an absolute,
@@ -382,7 +418,12 @@ Each game has `Games/<Game>/Android/app/build.gradle` that bundles:
 - `../../Assets` - Game-specific assets
 - `../../../../Zenith/Assets` - Engine assets (fonts, default textures, etc.)
 
-TilePuzzle and Zenithmon additionally bundle `../../../../Zenith/Flux/Shaders` - pre-compiled shaders (`.spv` + `.spv.refl`) for runtime loading. Android has no runtime shader compilation, so a game that omits this cannot render.
+TilePuzzle, Zenithmon, and RenderTest additionally bundle
+`../../../../Zenith/Flux/Shaders` — pre-compiled shaders (`.spv` +
+`.spv.refl`) for runtime loading. Android has no runtime shader compilation,
+so a game that omits this cannot render. RenderTest includes them specifically
+so the terrain indirect-count `auto` fallback can be validated on an emulator
+or physical device.
 
 ### Known Constraints
 

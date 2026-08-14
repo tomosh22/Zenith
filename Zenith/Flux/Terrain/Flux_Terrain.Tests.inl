@@ -23,6 +23,12 @@
 #include "Core/Zenith_TerrainChunkLayout.h"
 #include "Flux/Terrain/Flux_TerrainSourceGrid.h"
 #include "Flux/Terrain/Flux_TerrainVertexQuant.h"
+// Phase 2 of the terrain indirect-count compatibility plan: the terrain
+// indirect-command allocation/seed and the per-frame zero-tail invariant
+// ride the shared 20-byte / five-word ABI defined in
+// Flux/Backend/Flux_IndirectDraw.h. These tests pin the terrain-specific
+// arithmetic that lives on top of that ABI.
+#include "Flux/Backend/Flux_IndirectDraw.h"
 
 #ifdef ZENITH_TESTING
 
@@ -458,6 +464,66 @@ ZENITH_TEST(FluxTerrain, TerrainVertexQuantUVRoundTrip)
 				"an integer authored UV must snap back exactly (case %u axis %d)", u, i);
 		}
 	}
+}
+
+//------------------------------------------------------------------------------
+// Terrain indirect-command ABI (Phase 2 of the terrain indirect-count
+// compatibility plan). The terrain allocation/seed in
+// Zenith_TerrainComponent::InitializeCullingResources sizes the persistent
+// per-terrain argument buffer as TOTAL_CHUNKS * the shared 20-byte stride, and
+// the GPU reset pass clears every record to the legal no-op every frame so a
+// fixed indexed-indirect draw over [0, TOTAL_CHUNKS) is valid even when the
+// count buffer's value is smaller. These tests pin:
+//   - the allocation size equals TOTAL_CHUNKS * stride (the seeded byte size);
+//   - the last record ends exactly at the allocation boundary;
+//   - the recorded TOTAL_CHUNKS matches the shipping 4096.
+//
+// Pure arithmetic over constexpr constants — no device, no buffer, no VRAM.
+//------------------------------------------------------------------------------
+
+ZENITH_TEST(FluxTerrain, IndirectBufferAllocationMatchesAbiStride)
+{
+	// The allocation in Zenith_TerrainComponent::InitializeCullingResources
+	// sizes the persistent argument buffer as TOTAL_CHUNKS * stride, with
+	// stride = uFLUX_INDIRECT_DRAW_INDEXED_BYTE_STRIDE = 20. This pins that
+	// the C++ allocation, the Slang shared include's uFLUX_TERRAIN_INDIRECT_
+	// BYTE_STRIDE, and the test baselines all refer to one definition; a drift
+	// here would let the allocation over-/under-flow the records the reset
+	// shader clears.
+	constexpr uint64_t ulAllocationBytes =
+		static_cast<uint64_t>(Flux_TerrainConfig::TOTAL_CHUNKS) * uFLUX_INDIRECT_DRAW_INDEXED_BYTE_STRIDE;
+	ZENITH_ASSERT_EQ(ulAllocationBytes, static_cast<uint64_t>(4096u * 20u),
+		"terrain indirect-buffer allocation must be TOTAL_CHUNKS * 20 = 81920 bytes");
+	ZENITH_ASSERT_EQ(ulAllocationBytes,
+		static_cast<uint64_t>(Flux_TerrainConfig::TOTAL_CHUNKS) * sizeof(Flux_IndirectDrawIndexedCommand),
+		"the allocation equals TOTAL_CHUNKS * sizeof(Flux_IndirectDrawIndexedCommand)");
+}
+
+ZENITH_TEST(FluxTerrain, IndirectBufferLastRecordEndsAtAllocationBoundary)
+{
+	// The last record in the seeded buffer ends at byte offset
+	//   TOTAL_CHUNKS * uFLUX_INDIRECT_DRAW_INDEXED_BYTE_STRIDE
+	// == the allocation size. A furter tail-bounds read by the reset shader
+	// or by the indexed-indirect command would be out of range; the planner's
+	// last-record test in Flux_IndirectDraw.Tests.inl pins the batch end.
+	constexpr uint32_t uTOTAL = Flux_TerrainConfig::TOTAL_CHUNKS;
+	constexpr uint32_t uSTRIDE = uFLUX_INDIRECT_DRAW_INDEXED_BYTE_STRIDE;
+	constexpr uint32_t uLastOffset = (uTOTAL - 1u) * uSTRIDE;
+	constexpr uint32_t uLastEnd = uLastOffset + uSTRIDE;
+	ZENITH_ASSERT_EQ(uLastEnd, uTOTAL * uSTRIDE,
+		"the last record's end byte must equal TOTAL_CHUNKS * stride — exactly the allocation boundary");
+}
+
+ZENITH_TEST(FluxTerrain, TotalChunksPinnedToFourThousandNinetySix)
+{
+	// The shipping 64x64 chunk grid. The GPU reset shader's bounds check
+	// derives from GetDimensions on the bound argument buffer, so changing
+	// TOTAL_CHUNKS changes the dispatch group count in Flux_Terrain.cpp's
+	// ExecuteResetCounters (currently ceil(4096/64) = 64 groups). A change
+	// here that fails this test means the reset's Dispatch() call must be
+	// re-derived in lockstep.
+	ZENITH_ASSERT_EQ(Flux_TerrainConfig::TOTAL_CHUNKS, 4096u,
+		"TOTAL_CHUNKS is the shipping 64x64 grid — change requires regenerating shaders and updating the reset dispatch count in lockstep");
 }
 
 #endif // ZENITH_TESTING

@@ -312,6 +312,8 @@ namespace Flux_Generated_Terrain
 		inline constexpr Flux_BindingHandle hg_axTextures{ 2u, 0u, FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY, 0u };
 		// kind: RWStructuredBuffer
 		inline constexpr Flux_BindingHandle hvisibleCount{ 3u, 0u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
+		// kind: RWStructuredBuffer
+		inline constexpr Flux_BindingHandle hindirectCommands{ 3u, 1u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
 		// vertex inputs: none
 		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ nullptr, 0u, { 0u, 0u } };
 	}

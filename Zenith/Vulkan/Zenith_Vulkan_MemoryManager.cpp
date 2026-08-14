@@ -7,6 +7,7 @@
 #include "Zenith_Vulkan_CommandBuffer.h"
 
 #include "Zenith_Vulkan.h"
+#include "Zenith_Vulkan_DeviceSelection.h"
 
 #include "Collections/Zenith_HashMap.h"
 #include "Core/Zenith_CommandLine.h"
@@ -115,15 +116,31 @@ void Zenith_Vulkan_MemoryManager::Initialise()
 	xCreateInfo.device = m_pxVulkan->GetDevice();
 	xCreateInfo.physicalDevice = m_pxVulkan->GetPhysicalDevice();
 	xCreateInfo.instance = m_pxVulkan->GetInstance();
-#ifdef ZENITH_ANDROID
-	xCreateInfo.vulkanApiVersion = VK_API_VERSION_1_1;
-#elif defined(VK_VERSION_1_3)
-	xCreateInfo.vulkanApiVersion = VK_API_VERSION_1_3;
-#else
-#error check vulkan version
-#endif
+	const uint32_t uDeviceAPIVersion =
+		m_pxVulkan->GetPhysicalDevice().getProperties().apiVersion;
+	Zenith_Assert(Zenith_Vulkan_IsDeviceAPIVersionSupported(uDeviceAPIVersion),
+		"VMA initialisation reached an unsupported Vulkan physical-device API version");
+	constexpr uint32_t uVMACompileAPIVersion =
+		Zenith_Vulkan_VMACompileVersionToAPIVersion(VMA_VULKAN_VERSION);
+	xCreateInfo.vulkanApiVersion = Zenith_Vulkan_ResolveAllocatorAPIVersion(
+		uDeviceAPIVersion, uVMACompileAPIVersion);
 
-	vmaCreateAllocator(&xCreateInfo, &m_xAllocator);
+	const VkResult eAllocatorResult = vmaCreateAllocator(&xCreateInfo, &m_xAllocator);
+	if (eAllocatorResult != VK_SUCCESS)
+	{
+		m_xAllocator = VK_NULL_HANDLE;
+		Zenith_Error(LOG_CATEGORY_VULKAN,
+			"vmaCreateAllocator failed (result=%d, device API=%u.%u.%u, VMA API=%u.%u.%u)",
+			static_cast<int>(eAllocatorResult),
+			VK_API_VERSION_MAJOR(uDeviceAPIVersion),
+			VK_API_VERSION_MINOR(uDeviceAPIVersion),
+			VK_API_VERSION_PATCH(uDeviceAPIVersion),
+			VK_API_VERSION_MAJOR(xCreateInfo.vulkanApiVersion),
+			VK_API_VERSION_MINOR(xCreateInfo.vulkanApiVersion),
+			VK_API_VERSION_PATCH(xCreateInfo.vulkanApiVersion));
+		Zenith_Assert(false, "Vulkan memory allocator creation failed");
+		return;
+	}
 
 	// Probe cache starts empty on each engine init. Populated lazily inside
 	// ProbeImageMemoryRequirements; the cache is valid for the device's
@@ -260,9 +277,13 @@ void Zenith_Vulkan_MemoryManager::Shutdown()
 		m_pxVulkan->m_axPerFrame[i].ShutdownScratchBuffer();
 	}
 
-	// Destroy VMA allocator
-	vmaDestroyAllocator(m_xAllocator);
-	m_xAllocator = nullptr;
+	// Destroy VMA allocator. The guard also keeps shutdown valid when allocator
+	// creation failed and Initialise returned before staging resources existed.
+	if (m_xAllocator != VK_NULL_HANDLE)
+	{
+		vmaDestroyAllocator(m_xAllocator);
+		m_xAllocator = VK_NULL_HANDLE;
+	}
 
 	// Probe cache is tied to the VMA allocator's device lifetime; drop it now
 	// so a subsequent Initialise starts from a known empty state.

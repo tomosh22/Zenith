@@ -155,6 +155,105 @@ VERBATIM with blackboard reads redirected at the graph blackboard.
   host (its enable flag doubles as the graph tick gate); it never gets a tree
   and its BT-asset string must stay empty (OnStart self-disable trap).
 
+## Terrain indirect-count compatibility gate (Phase 7 / the A/B test)
+
+The **graphics-required** `TerrainIndirectCompatibility` automated test
+(`Tests/TerrainIndirectCompatibility.cpp`, `m_bRequiresGraphics = true`)
+is the pixel-level proof the plan's acceptance criteria asks for. The
+dedicated `RunTerrainIndirectCompatibility.ps1` wrapper launches THREE
+separate processes (`--indirect-count-mode=auto`, `padded`, and `single`),
+so worker recording never observes a mutable backend mode. Each arm writes
+`terrain_<mode>.tga`, stdout/stderr, and `result_<mode>.json` under
+`Build/artifacts/rendertest/terrain_indirect/`. Null and the reserved D3D12
+stub skip; the wrapper requires a real Vulkan graphics result and hard-fails
+on validation/assert/device-loss markers, missing artifacts, skipped/failed
+JSON, or non-zero exit.
+
+Three independent gates run in every arm:
+
+1. **Terrain-specific non-vacuity** — the test forces TAA off and selects
+   terrain debug mode 13, an unlit flat-magenta sentinel emitted only by the
+   terrain G-buffer shaders. At least a fixed 3% of the inset editor viewport
+   must match that sentinel; generic non-black final-frame pixels, sky, UI,
+   and other meshes do not count. Teardown restores the prior debug mode and
+   clears the TAA override.
+2. **Stale-tail proof** — test-cadence `DownloadBufferData` walks the visible
+   count and **all 4,096 indirect-command records** after a deterministic
+   many -> few -> cull-all -> many sequence. Few must be strictly smaller
+   than returned-many; cull-all must read count 0 with all 4,096 five-word
+   records zero; both few and return tails must also be entirely zero.
+3. **Tier + image equivalence** — the test computes the expected execution
+   tier from the Vulkan backend's actual usable capabilities, `TOTAL_CHUNKS`,
+   `ZERO_PADDED_TO_MAX`, and the immutable request, then requires exactly
+   that telemetry counter and no other tier. The wrapper independently checks
+   the logged tier and compares auto-vs-padded plus auto-vs-single over RGB
+   only, cropped to the logged inset viewport (alpha/UI excluded), against
+   checked-in fixed mean, p99.9, and maximum-delta budgets. A second
+   terrain-sentinel silhouette gate caps symmetric-difference coverage and
+   requires a minimum mask IoU, so a localized missing/ghost region cannot be
+   diluted by unrelated viewport pixels. No first-run baseline or candidate-
+   derived threshold exists.
+
+   The wrapper additionally requires the three arms to run three **distinct**
+   tiers — `auto` exactly `NATIVE_COUNT`, `padded` exactly `PADDED_MULTI`,
+   `single` exactly `PADDED_SINGLE` — and fails loudly on a host that cannot
+   supply all three. The C++ check alone is not sufficient for the A/B half:
+   it requires each arm to run whatever tier the selector chose, and on a
+   device without usable native count the selector legitimately gives `auto`
+   → `PADDED_MULTI`, at which point auto-vs-padded compares the fallback
+   against **itself** and passes vacuously on two byte-identical captures
+   (likewise `padded` → `PADDED_SINGLE` on a device without
+   `multiDrawIndirect`, colliding with the `single` arm). Such a device is
+   not a valid host for this gate.
+
+The wrapper also runs `--list-automated-tests` first to assert the test
+is registered (the `ZENITH_AUTOMATED_TEST_REGISTER` macro fires from the
+test .cpp's anonymous-namespace static-init, so moving the test TU into
+the build's compiled-out region would silently drop it — the discovery
+gate catches that).
+
+The ordinary smoke matrix remains a resource/streaming/LOD gate rather than a
+pixel test, but its forced arms are not flag-only: immediately before PASS the
+runtime logs `RENDERTEST_SMOKE_INDIRECT_TIER` and independently requires the
+Core request to match the immutable Vulkan override plus exactly one expected
+recorder telemetry tier. The PowerShell runner parses the same evidence. Each
+retry uses distinct attempt logs; a timed-out attempt is killed, drained, and
+scanned for hard markers before any retry, so validation evidence is preserved.
+
+The manual-only, graphics-required `TerrainIndirectPerformance` automated test
+(`Tests/TerrainIndirectPerformance.cpp`) and
+`RunTerrainIndirectPerformance.ps1` form the performance collector. The wrapper
+defaults to the optimized Vulkan **Release Tools=False** executable and launches
+one fresh process per repeat with a fixed 1/60 dt and one of three deterministic
+photo-camera poses (`dense`, `horizon`, `culled`). Each repeat warms for at least
+120 frames, then writes at least 300 consecutive per-frame rows containing the
+three exact terrain GPU-pass timings, total GPU time, the matching CPU
+`Flux Record Pass` label totals, GPU-capture serial, and indirect-recorder
+telemetry deltas. The wrapper requires at least three repeats, validates test
+discovery/result JSON/exit status/log markers/sample completeness/tier telemetry,
+and emits raw repeat CSVs plus combined CSV and JSON (per-repeat and aggregate
+median/p95) under
+`Build/artifacts/rendertest/terrain_indirect/performance/`.
+The `culled` pose uses pitch `1.50`, the same cull-all pose whose zero visible
+count is independently proved by `TerrainIndirectCompatibility`; the performance
+loop itself performs no count-buffer readback or GPU-idle stall.
+
+The collector does not silently ratify budgets. Optimized Tools=False reports
+are marked `budgetEligible=true` but still say an explicit baseline-ratification
+change is required; Debug, Tools=True, custom, and `-DeveloperSanity` runs are
+labelled diagnostic and `budgetEligible=false`. `-DeveloperSanity` is the only
+way to lower the 120/300/3 protocol floor and exists solely for a quick launch,
+parser, and artifact-schema check.
+
+```powershell
+# Full optimized protocol (builds Release Vulkan Tools=False by default)
+Games\RenderTest\RunTerrainIndirectPerformance.ps1 -Mode auto -CameraCase dense
+
+# Quick non-budgetable developer check
+Games\RenderTest\RunTerrainIndirectPerformance.ps1 -Mode padded -CameraCase horizon `
+  -Warmup 4 -Sample 4 -Repeats 1 -DeveloperSanity -NoBuild
+```
+
 ## Tests
 
 - **Units**: `Components/RenderTest_Tennis.Tests.inl` (pure decision cores +
@@ -186,7 +285,11 @@ VERBATIM with blackboard reads redirected at the graph blackboard.
   the scene FILE the boot left behind rather than on the loaded scene, so it reddens
   in whichever config damaged the asset — and `RT_SimPad_Test`
   (`Tests/Test_SimPad.cpp`), the GAMEPAD column of the action table end to end
-  (see *Controls* below).
+  (see *Controls* below), and `TerrainIndirectCompatibility` (`Tests/TerrainIndirectCompatibility.cpp`,
+  `m_bRequiresGraphics = true`, Phase 7 of the indirect-count compatibility plan
+  — see the dedicated section above for its three-process wrapper + non-vacuity
+  + stale-tail readback), plus the manual-only `TerrainIndirectPerformance`
+  (`Tests/TerrainIndirectPerformance.cpp`) collector described above.
 
 ## Controls (the action table)
 

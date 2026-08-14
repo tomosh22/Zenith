@@ -272,6 +272,15 @@ public:
 	void EndGPUCapture();
 	const Zenith_Vector<GPUPass>& GetGPUPasses() const { return m_xGPUPasses; }
 	double GetGPUTotalMs() const { return m_fGPUTotalMs; }
+	// Monotonically increases only when a complete deferred GPU timestamp capture
+	// is published. Tests/tools use this to avoid sampling the same stale readback
+	// more than once when the backend has no new result in a frame.
+	u_int64 GetGPUCaptureSerial() const { return m_uGPUCaptureSerial; }
+	// Sum completed events in the last published CPU frame for one runtime-labelled
+	// zone (for example zone "Flux Record Pass", label "Terrain GBuffer").
+	// Returns false when that exact zone/label did not execute in the frame.
+	bool GetDisplayLabeledZoneTotalMs(const char* szZoneName, const char* szLabel,
+		double& fMillisecondsOut) const;
 
 #if ZENITH_MEMORY_TRACKING_ANY
 	// ---- Memory channel ----------------------------------------------------
@@ -352,6 +361,7 @@ public:
 	Zenith_Vector<GPUPass> m_xGPUPasses;
 	double m_fGPUTotalMs = 0.0;
 	double m_fGPUBuildingTotalMs = 0.0;
+	u_int64 m_uGPUCaptureSerial = 0;
 
 	// Rolling history of total GPU ms per read-back frame (mirrors the CPU frame
 	// history); pushed in EndGPUCapture, plotted in the GPU viz tab.

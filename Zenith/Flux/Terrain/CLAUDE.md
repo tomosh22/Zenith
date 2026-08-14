@@ -71,6 +71,71 @@ Single vertex and index buffer per terrain component containing all chunks:
 
 ## Rendering Pipeline
 
+### Per-frame Indirect-Count Compatibility (Phase 1-8 of the Indirect-Count plan)
+
+**Terrain renders on devices missing `vkCmdDrawIndexedIndirectCount`** via
+the backend's zero-padded fallback, NOT via a CPU readback or a silent skip.
+The contract is the explicit `Flux_IndirectCountFallback::ZERO_PADDED_TO_MAX`
+policy the terrain call site passes to `DrawIndexedIndirectCount` (see
+`Flux/Backend/Flux_IndirectDraw.h`). The backend selects an effective mode
+per request — `NATIVE_COUNT` on capable devices within `maxDrawIndirectCount`,
+`PADDED_MULTI` on no-count-but-multi-draw devices (batches no larger than
+the device's legal per-call limit), or `PADDED_SINGLE` when multi-draw is
+also unavailable (one `vkCmdDrawIndexedIndirect` call per record).
+
+The frame sequence (the plan's zero-padded invariant):
+
+1. **Reset pass** (`Flux_TerrainResetCounters.slang`): a separate GPU compute
+   dispatch that (a) writes `visibleCount[0] = 0` and (b) clears **every
+   one of the 4,096 indirect-command records** to the legal no-op (all five
+   words zero). The pass is `[numthreads(64,1,1)]`; `ceil(TOTAL_CHUNKS/64)`
+   = 64 groups cover the shipping grid, and the shader bounds-checks via
+   `GetDimensions` on the bound argument buffer (no embedded `4096`).
+2. **Culling pass** (`Flux_TerrainCulling.slang`): unchanged — atomic-append
+   compaction of live records into `[0, visibleCount)`. The cleared tail
+   `[visibleCount, TOTAL_CHUNKS)` stays all-zero no-ops, so a fixed indexed-
+   indirect draw over the entire range is valid even when visibility falls
+   to zero. The order is intentionally NOT sorted (atomic append order); the
+   shader source comment continues to call this out.
+3. **G-buffer draw** (`ExecuteGBuffer`): one `DrawIndexedIndirectCount` call
+   passes `TOTAL_CHUNKS`, the named 20-byte ABI stride
+   (`uFLUX_INDIRECT_DRAW_INDEXED_BYTE_STRIDE`), named zero offsets, and
+   `Flux_IndirectCountFallback::ZERO_PADDED_TO_MAX`. The backend selects
+   the effective execution mode; the recorder never splits one global
+   counted draw incorrectly across batches against the same count buffer
+   (each batch would re-read the full count and overdraw).
+
+> **★ THE ZERO-TAIL INVARIANT IS NOT A HINT.** The reset pass clears all
+> 4,096 records every frame before culling writes the live prefix; the
+> tail `[visibleCount, TOTAL_CHUNKS)` is therefore always all-zero no-ops.
+> A many → few → zero visibility transition cannot replay stale chunks
+> because the previous frame's compacted prefix was overwritten with
+> zero-records. Rolling back ONLY the reset clear while keeping fixed-max
+> drawing re-introduces stale-tail replay. The invariant is pinned by:
+>   * the GPU reset shader's full-record zero write;
+>   * barrier-graph tests (`RenderGraphResetCountWriteCullCountReadWriteIsWarRaw`,
+>     `RenderGraphResetArgumentWriteCullArgumentWriteIsWaw`, and
+>     `RenderGraphResetArgumentWriteGBufferIndirectReadCyclic`);
+>   * the test-only full-buffer `DownloadBufferData` readback in
+>     `TerrainIndirectCompatibility` (Phase 7), which asserts every tail
+>     record's five words are zero across many → few → cull-all → many
+>     transitions;
+>   * the shared 20-byte ABI POD (`Flux_IndirectDrawIndexedCommand`) and
+>     its `Flux_ZeroIndirectDrawIndexedCommand` helper used by allocation
+>     seeding in `Zenith_TerrainComponent.cpp`.
+
+> **★ INDIRECT-FIRST-INSTANCE + SHADER-DRAW-PARAMETERS ARE A HARD TERRAIN
+> MINIMUM.** Terrain's `firstInstance` carries the stable chunk index that
+> the vertex shader reads via `SV_StartInstanceLocation` to index
+> `LODLevelBuffer[chunkIndex]`. `drawIndirectFirstInstance` and shader draw
+> parameters are advertised / enabled / usable state kept DISTINCT in
+> `Zenith_Vulkan::CreateDevice` — the device's hard-suitability check in
+> `CreatePhysicalDevice` rejects any adapter missing either before
+> `vkCreateDevice`, rather than silently forcing an unsupported feature bit
+> to `VK_TRUE`. Native count and `multiDrawIndirect` are optional: fixed
+> multi-draw batches are used without count, and one-record indirect calls
+> are used when multi-draw is also absent. See `Zenith/Vulkan/CLAUDE.md`.
+
 ### Frame Update Sequence
 
 **1. CPU Streaming Phase** (`UpdateStreamingForTerrain()`)
@@ -102,13 +167,20 @@ Single vertex and index buffer per terrain component containing all chunks:
 - If visible: calculate distance to camera, select LOD
 - Write `DrawIndexedIndirectCommand` to output buffer
 - Atomically increment visible count
+- The culling shader writes the shared Slang include's `Flux_TerrainIndexedIndirectCommand` (see
+  `Terrain/Flux_TerrainIndirectCommon.slang`), pinned to the C++ twin `Flux_IndirectDrawIndexedCommand`
+  in `Flux/Backend/Flux_IndirectDraw.h` by `static_assert`s in `Flux_Terrain.cpp`.
 
 **5. GPU Rendering** (`ExecuteGBuffer()`)
 - Select the G-buffer pipeline variant (see *Debug wireframe* below)
 - Bind unified vertex/index buffers
 - Bind material textures
-- Execute `DrawIndexedIndirectCount()` using compute shader output
-- GPU reads visible count, executes that many draw calls from indirect buffer
+- Execute `DrawIndexedIndirectCount()` with `TOTAL_CHUNKS`,
+  `Flux_IndirectCountFallback::ZERO_PADDED_TO_MAX`, named zero offsets, and
+  the named 20-byte stride `uFLUX_INDIRECT_DRAW_INDEXED_BYTE_STRIDE`.
+- GPU reads visible count on capable devices (NATIVE_COUNT); otherwise
+  the recorder's batch planner emits padded fixed `vkCmdDrawIndexedIndirect`
+  calls over the range the caller's zero-tail invariant keeps valid.
 
 ### Debug wireframe — and why there are FOUR G-buffer pipelines
 
@@ -224,10 +296,18 @@ Best-fit allocation on free block list. Maintains priority queue of available bl
 - Uploaded to GPU as uniform buffer each frame
 
 **Indirect Command Buffer (GPU Output):**
-- Array of `VkDrawIndexedIndirectCommand`
-- One per visible chunk (max 4,096)
-- Contains: index count, vertex offset, first index
-- GPU reads this for actual rendering
+- Array of `Flux_TerrainIndexedIndirectCommand` (Slang) = `Flux_IndirectDrawIndexedCommand` (C++),
+  five 32-bit words / 20 bytes — the ABI pinned by `Flux/Backend/Flux_IndirectDraw.h` and
+  the `Terrain/Flux_TerrainIndirectCommon.slang` shared include.
+- Max 4,096 records (one per chunk), seeded to zero at allocation time by
+  `Zenith_TerrainComponent::InitializeCullingResources` (sized via the named
+  `uFLUX_INDIRECT_DRAW_INDEXED_BYTE_STRIDE` constant, not a literal `20`).
+- Contains: indexCount, instanceCount, firstIndex, vertexOffset (signed int),
+  firstInstance (the stable chunk index the vertex shader reads through
+  `SV_StartInstanceLocation`).
+- The GPU reset pass clears every record every frame (the zero-tail contract).
+- GPU reads this at the G-buffer command-processor stage via either the
+  native counted call or padded fixed batches.
 
 ### Culling Algorithm
 For each chunk:

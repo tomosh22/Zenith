@@ -12,6 +12,7 @@
 #pragma warning(pop)
 #include "Flux/Flux_Types.h"
 #include "Flux/RenderViews/Flux_RenderViews.h" // FLUX_MAX_RENDER_VIEWS (per-view persistent VIEW sets)
+#include "Flux/Backend/Flux_IndirectDraw.h"  // Flux_IndirectDrawCapabilities/Override — cap getter + boot-time override
 #include "Zenith_Vulkan_CommandBuffer.h"
 
 #include <vector>
@@ -333,8 +334,37 @@ public:
 	// translation among them) support neither. Terrain's
 	// DrawIndexedIndirectCount() gates on this instead of hard-asserting deep in a
 	// draw call.
-	bool IsDrawIndirectCountSupported() const { return m_bDrawIndirectCountSupported; }
+bool IsDrawIndirectCountSupported() const { return m_bDrawIndirectCountSupported; }
 	PFN_vkCmdDrawIndexedIndirectCount GetDrawIndexedIndirectCountFn() const { return m_pfnDrawIndexedIndirectCount; }
+
+	// Indirect-draw capability getter — the USABLE semantic booleans a backend
+	// reports, plus raw maxDrawIndirectCount. Fixed callers resolve their own
+	// multi-draw-aware per-call limit; native counted selection stays independent.
+	// The recorder reads this alongside the boot-time override to select an
+	// effective execution mode per counted-indirect request. The override never
+	// falsifies these fields; advertised vs enabled vs usable state is kept
+	// distinct in the CreateDevice negotiation/log layer (see Zenith_Vulkan.cpp).
+	Flux_IndirectDrawCapabilities GetIndirectDrawCapabilities() const { return m_xIndirectDrawCaps; }
+	Flux_IndirectDrawOverride     GetIndirectDrawOverride()     const { return m_eIndirectDrawOverride; }
+
+#ifdef ZENITH_TESTING
+	// Phase 6 telemetry: per-device atomic totals across all workers. The
+	// TerrainIndirectCompatibility A/B test reads these to prove WHICH tier
+	// actually ran (native vs padded-multi vs padded-single vs fail-closed),
+	// not just that the CLI flag was set. Counts represent native/fixed API
+	// commands actually recorded; failed-closed counts rejected semantic
+	// requests. They are reset at device Initialise before workers exist.
+	struct IndirectDrawTelemetry
+	{
+		std::atomic<uint32_t> m_uNativeCount{0};
+		std::atomic<uint32_t> m_uPaddedMulti{0};
+		std::atomic<uint32_t> m_uPaddedSingle{0};
+		std::atomic<uint32_t> m_uFailClosed{0};
+		std::atomic<uint32_t> m_uFixedIndirect{0};
+	};
+	IndirectDrawTelemetry m_xTelemetry;
+	IndirectDrawTelemetry& GetIndirectDrawTelemetry() { return m_xTelemetry; }
+#endif
 	void WriteBindlessDescriptor(uint32_t uIndex, vk::ImageView xImageView, vk::Sampler xSampler);
 
 	// Engine-typed wrapper around WriteBindlessDescriptor. Engine code (asset
@@ -392,8 +422,19 @@ public:
 	// negotiated and the matching device command alias resolved successfully.
 	// The pointer is device-owned state rather than a command-buffer-local static,
 	// so device recreation cannot retain a dispatch address from the old device.
-	bool                           m_bDrawIndirectCountSupported = false;
+bool                           m_bDrawIndirectCountSupported = false;
 	PFN_vkCmdDrawIndexedIndirectCount m_pfnDrawIndexedIndirectCount = nullptr;
+
+	// Phase 1 of the terrain indirect-count compatibility plan: stable, USABLE
+	// semantic record of the indirect-draw capabilities negotiated by
+	// CreateDevice (advertised vs enabled vs usable kept distinct in the
+	// negotiation log; this struct reports the usable booleans and raw
+	// maxDrawIndirectCount), plus
+	// the boot-time override (parsed by Zenith_CommandLine, converted into the
+	// Flux enum here at device init). The recorder reads the OVERRIDE once at
+	// boot and never mutates it from worker recording.
+	Flux_IndirectDrawCapabilities m_xIndirectDrawCaps{};
+	Flux_IndirectDrawOverride    m_eIndirectDrawOverride = Flux_IndirectDrawOverride::AUTO;
 
 	// Phase 5.1: persistent descriptor pool + GLOBAL/VIEW set layouts. The per-frame
 	// sets (Zenith_Vulkan_PerFrame::m_xGlobalSet/m_xViewSet) are allocated from this pool
