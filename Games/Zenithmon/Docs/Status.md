@@ -1190,6 +1190,33 @@ load-bearing content is transcribed below):
 > lane, so expect those to come back NEAR their targets. Do not treat a near-target measurement
 > there as a broken probe.**
 
+#### ★★ STEP 2 IS DONE (`67f146c4`, ZM-D-199). WHAT REMAINS OF R1-2 IS **STEP 3**.
+`Route1.zscen` and `Thornacre.zscen` are committed and two-boot proven; the measured-ground split
+shipped with **eight OBSERVED literals**; registry 65 -> **67**; boot units unmoved at **3346**.
+
+**STEP 3 — THE ONLY PART OF R1-2 STILL OWED. It is the risky one: it re-authors Dawnmere.**
+1. Add the `FromRoute1` arrival marker to the Dawnmere authoring block, at the column already
+   FROZEN by step 1 (`24.36592f`, `(512, 864)`). Its INBOUND tag is `"FromRoute1"` — resolve it
+   from the world table (Route1's connections offer it), never spell it.
+   ★ **INSERT BY SEMANTIC LANDMARK**: strictly between `AddStep_Custom(&ZM_ConfigureLabDoorTrigger)`
+   and the rival pre-save guard. Scene files use DENSE authoring-order indices (ZM-D-148), so an
+   insertion anywhere earlier renumbers everything after it and turns a one-entity change into a
+   whole-file diff.
+   ★ Still **ZERO TRIGGERS** — the marker only. Dawnmere's outbound gate is R1-3's.
+2. Add the committed-bytes needles for all three scenes to `Tests/ZM_Tests_CommittedSceneBytes.cpp`
+   (they could not land in step 2 — two of their target files did not exist yet). Required forms:
+   `"Player"` and `"FromRoute1"` take the **STRICTLY-MORE** clause, never a bare equals-one
+   (`"Player"` is a substring of `"ZM_PlayerController"`; `"FromRoute1"` prefixes any
+   `FromRoute1Spawn`-style name). **Add `CountNameOccurrences("ZM_WarpTrigger") == 0`** on both new
+   scenes — the existing zero-trigger clauses needle only the declared gate NAMES, so a trigger
+   authored under any other name is invisible, and zero-triggers is this item's core safety ruling.
+3. Re-author windowed; `git status` must show **exactly one** modified asset (`Dawnmere.zscen`).
+   Second identical boot; hashes identical. Then the unit gate, then the batch.
+> ★ If `Dawnmere.zscen` is not byte-stable, READ THE DIFF SHAPE BEFORE THEORISING and never just
+> re-commit: rotation-only drift beside a bit-identical position is ZM-D-183 (the authored value
+> moved); position+rotation together on a body-carrying entity is ZM-D-179 (the serializer wrote
+> the live Jolt pose).
+
 #### ★ ORCHESTRATOR BOOT SEQUENCE FOR PHASE 2 (the critics' corrected ordering)
 0. `Build\regen.ps1` (new files), build both configs.
 1. ~~**Seam oracle + Dawnmere 1-row table only** -> measure -> freeze.~~ **DONE, see above.**
