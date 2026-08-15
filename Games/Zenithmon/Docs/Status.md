@@ -907,6 +907,125 @@ is orthogonal to the S8 content items below -- not part of that gate.
 
 ## Current task
 
+# ════════════════════════════════════════════════════════════════════════════
+# ★★★ COLD-START BLOCK -- WRITTEN 2026-08-15 FOR A NEW SESSION. READ THIS FIRST.
+# ════════════════════════════════════════════════════════════════════════════
+
+**STATE:** master is CLEAN and PUSHED at `c2311559`. Nothing is in flight, nothing is
+half-landed. ZM boot pin **3328**, automated registry **64**, engine pin **1638** (unmoved).
+
+**S8 ITEM 1 IS COMPLETE AND TICKED** (six slices `864296df`..`0e0a884c`, ticked `f4d30f89`,
+plus `5d9d73bf`). A new game is PARTYLESS and the starter is genuinely chosen from Professor
+Aster; `ZM_IntroBeat_Test` proves it end to end across 18 phases.
+
+**THE NEXT TASK IS S8 ITEM 2: "Route 1 (encounters / trainers) -> town 2", SLICE R1-1.**
+It is PLANNED but NOT STARTED -- zero code written. The plan was produced by a 7-agent
+workflow whose full output lives in a SESSION-TEMP file that will NOT survive. **Everything
+load-bearing from it is transcribed below; treat this block as the plan of record.**
+
+### The four USER RULINGS are already recorded -- do NOT re-ask them (ZM-D-196, `c2311559`)
+1. **Ground items are SPLIT OUT** of this item into their own Roadmap line. They are new
+   production surface, not content.
+2. **Thornacre is a TRAVERSAL STUB** -- terrain + `FromRoute1` marker + player + camera +
+   return trigger, explicitly NO gym door, backed by a byte needle asserting none exists.
+3. **TWO trainers, both persisted by per-trainer `ZM_STORY_FLAG_ID`.**
+4. **Keep the species, halve Route 1's encounter rate to ~20/256** via a Route-1-specific
+   named constant -- NEVER by editing the shared `uZM_DEFAULT_ROUTE_ENCOUNTER_RATE`.
+
+### ★ THE FINDING THAT RESHAPES THE ITEM: ROUTE 1 IS ALREADY MOSTLY BUILT
+`ZM_WorldSpec` **already ships** Route1 (build index **20**, kind ROUTE) with encounter slots
+{PIPWIT 2-4 w40, NIBBIN 2-4 w40, SPARKIT 3-5 w20} at rate 40/256, Thornacre (build **3**,
+TOWN), **all six** Dawnmere<->Route1<->Thornacre(<->Gym1) connection edges, and every spawn
+tag those edges target. Both terrain recipes are authored AND WARM on this machine
+(`Assets/Terrain/Route1` 1157 files, `Thornacre` 773). **Zero `ZM_WorldSpec` edits, zero new
+build indices, zero new terrain bakes.** What remains is scene authoring, trainer content and
+test coverage.
+
+### ★★ THREE STRUCTURAL FACTS THAT DRIVE THE SEQUENCING
+1. **THE SILENT-HANG TRAP IS ARMED TODAY.** `IsWarpDestinationValid(20,"FromDawnmere")`
+   returns TRUE right now against an empty disk -- it reads ONLY the compiled tag list, never
+   the destination scene. `WAITING_FOR_SPAWN` has NO timeout. A trigger without its marker is
+   a **permanent black screen**: no crash, no red test. **Hence markers land FIRST (R1-2, zero
+   triggers anywhere) and ALL FOUR triggers SECOND (R1-3). DO NOT merge or reorder those two.**
+2. **`ZM_TallGrassSystem` is registered (ECS order 109) but attached to NO authored scene**, so
+   no shipped scene can emit a wild encounter. The battle plumbing exists and has simply never
+   had a producer. Route 1 is where it comes alive.
+3. **Route 1 CANNOT be terrain-free.** `WorldSpec_TerrainByKind` reds any ROUTE/TOWN row with an
+   empty terrain set, and the encounter loop is grass-density driven. Authoring needs a
+   **WINDOWED `Vulkan_*_True` boot with `--skip-unit-tests`** and all three recipes warm.
+
+### The ten slices (four need a WINDOWED authoring boot)
+| id | title | +units | re-authors | deps |
+|---|---|---|---|---|
+| R1-1 | Placement headers + per-recipe terrain materials (PURE) | ~12 | none | -- |
+| R1-2 | Author Route1 + Thornacre -- **MARKERS ONLY, zero triggers** | ~7 | creates Route1+Thornacre, re-authors Dawnmere -- **WINDOWED** | R1-1 |
+| R1-3 | **All four seam triggers in ONE commit** + round-trip proof | ~4 | all three -- **WINDOWED** | R1-2 |
+| R1-4 | Wild encounters live + rate retune (ruling 4) | ~2 | none | R1-3 |
+| R1-5 | Trainer DATA + placement + Npc claim-check rewrite | ~12 | none | R1-4 |
+| R1-6 | Author the two trainers into Route1 | ~3 | Route1 only -- **WINDOWED** | R1-5 |
+| R1-7/8 | **DROPPED from this item by ruling 1** (ground items) | -- | -- | -- |
+| R1-9 | Camera-clearance coverage + re-derived budget | ~3 | none | R1-6 |
+| R1-10 | Warden relocation onto Route 1 (do LAST, isolated) | ~3 | Dawnmere + Route1 -- **WINDOWED** | R1-9 |
+
+### ★★ FIVE BLOCKERS THE CRITICS FOUND. FOLD THE FIX INTO THE SLICE BRIEF -- DO NOT REDISCOVER.
+1. **[R1-3] The proposed hang-guard unit CANNOT EXIST as described.**
+   `Project_LoadInitialScene` is a hand-written sequence of five `RegisterSceneBuildIndex`
+   calls with **no enumerable table**, and it runs **AFTER** the boot-unit suite. A boot unit
+   has nothing to read and can only re-spell the indices -- a second inventory that moves with
+   nobody. The mutation it claims to catch (author the triggers, forget the registration) is a
+   **second, independent permanent black screen**: `PollForTargetScene` is a bare
+   `if (!IsTargetSceneActive()) return;` with no timeout.
+   **FIX:** add to R1-1 a compiled registration table `{ZM_SCENE_ID, file stem}` and make
+   `Project_LoadInitialScene` loop over it; the boot unit then walks the SAME table.
+2. **[R1-3] A gate SWAP is invisible to every CI-visible test.** Both Route1 connections carry
+   the SAME tag `"FromRoute1"`, so swapping SouthGate->Thornacre with NorthGate->Dawnmere
+   changes not one byte any name-based needle searches for. The discriminating value is the
+   target build index, emitted as a raw `u_int` immediately before the 32-byte tag buffer.
+   **FIX:** needle the WHOLE serialized payload
+   `[u_int version][u_int targetBuildIndex][32-byte zero-padded tag]` per gate, ==1 each.
+3. **[R1-4] The slice has NO falsifiable proof.** `ZM_BattleTransition.cpp` already spells every
+   `ls_aeBiome` row explicitly, so a value-equality unit passes bit-identically whether the row
+   is authored or value-initialised -- it cannot see what it claims to.
+   **FIX:** id-tag the biome rows (`{ZM_SCENE_ROUTE1, MEADOW}`) and assert
+   `row.m_eScene == index`; plus drive the roll seam from a SYNTHETIC in-memory density map so
+   one encounter proof does not skip on the gitignored bake.
+4. **[R1-9] The three camera-clearance tests are HARD-SCOPED to Dawnmere** (`iCC_DAWNMERE_BUILD_INDEX = 2`,
+   `LoadSceneByIndex` at three sites), so Route 1 rows would raycast Route 1 columns against
+   the DAWNMERE physics world and mostly fall off it. The constants also live in an anonymous
+   namespace inside `#ifdef ZENITH_INPUT_SIMULATOR`, so no boot unit can name them.
+   **FIX:** extract the enum/spacings/budget into a simulator-independent pure header, then
+   parameterise the tests per region (one new automated test per region).
+5. **[R1-2] Byte needles are PREFIX-TRAPPED.** Component TYPE NAMES are serialized as strings,
+   so `"Player"` is a substring of `"ZM_PlayerController"` and the shipped scenes author an
+   entity literally named `"Player"` on an entity carrying that component -- `==1` is
+   unsatisfiable. Same for `"Terrain"` vs `"ZM_TerrainGrass"`.
+   **FIX:** give the new scenes' entities scene-unique names (`"Route1Player"`, ...) spelled in
+   the placement headers; where a collision is unavoidable use the strictly-more/strictly-fewer
+   form the committed-bytes file already documents.
+
+### Other findings worth not rediscovering
+- **The walk test must NOT traverse the spine.** Route 1's DirtLane is ~1408 m ≈ 6,000 frames
+  one way; a round trip is ~12-14k against a suite max of 10,000. **Warp to each arrival marker
+  and walk only the final ~20 m into each gate volume.**
+- **The DirtLane is GRASS-FREE by construction** (a GRASS_ERASE phase zeroes density along every
+  path; the nearest dab EDGE is ~30-130 m off-lane against a 0.5 density threshold). So
+  lane-placed trainers essentially cannot lose their raise to a wild roll, and any encounter
+  test must deliberately walk well off-lane onto unmeasured terrain.
+- **`Npc_ExactlyOneRowNamesARegisteredTrainer` asserts `== 1u` exactly** and the second trainer
+  reds it. It CANNOT just be bumped: that clause is the tripwire for the
+  `ZM_TRAINER_RIVAL_VESPER == 0` value-initialisation trap. Rewrite it into a per-id claim check.
+- **`ZM_Tests_StoryFlags.cpp` spells `uEXPECTED_WIRE_BIT_COUNT`** and **`Docs/SaveFormat.md`
+  carries the flag registry** -- both must be edited by any slice appending a story flag.
+- **No ground-truth oracle exists for Route1/Thornacre marker heights.** Dawnmere's are MEASURED
+  raycasts for a reason; the Route1/Thornacre values are recipe target heights taken on faith.
+  Add an oracle in R1-2 modelled on `ZM_DawnmereNpcGroundTruth_Test`.
+- **Every live Route 1 test SKIPS on CI** (gitignored bake) and a skip counts as a PASS. The
+  CI-visible spine of this whole item is boot units + committed-`.zscen` byte needles.
+
+# ════════════════════════════════════════════════════════════════════════════
+# END COLD-START BLOCK. Historical context for earlier stages follows.
+# ════════════════════════════════════════════════════════════════════════════
+
 **★★ S7 IS CLOSED (2026-07-29, ZM-D-167). Both boxes at `Roadmap.md:104` and `:172`
 are ticked and the gate at `Roadmap.md:185` is annotated MET.** This section previously
 said "FINISH S7" and stayed that way after the stage closed; it is the section a session
