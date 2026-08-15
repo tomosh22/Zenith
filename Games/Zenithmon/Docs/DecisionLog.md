@@ -15,6 +15,55 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-08-15 -- ZM-D-198 -- R1-2 is SPLIT INTO TWO PHASES so the terrain-material question is answered by MEASUREMENT, not by argument
+
+**Slice R1-2 authors two new scenes and re-authors Dawnmere -- three committed `.zscen` files
+move on purpose. That makes it structurally unable to falsify its own riskiest assumption**, so
+the slice was split and phase 1 landed alone.
+
+**THE QUESTION.** R1-1 gave Route1 and Thornacre textured slot-0 terrain materials, but the code
+turning a recipe's material SPECS into live `Zenith_MaterialAsset`s was hard-coded to Dawnmere
+(`g_axDawnmereTerrainMaterials[4]`, `ZM_InitializeDawnmereTerrainMaterials()`). Generalising it
+adds **8 extra `Zenith_AssetRegistry::Create<Zenith_MaterialAsset>()` calls to every tools boot**.
+`Zenith_TerrainComponent::WriteToDataStream` inlines the full material payload into the scene
+(`Zenith_TerrainComponent.cpp:841-853`), so the question was whether anything creation-ordered
+rides along into `Dawnmere.zscen` -- a file that has drifted twice with every guard green.
+
+**PHASE 1 (this commit): the generalisation ALONE, then an authoring boot, then a diff.** No scene
+authored, no marker added, no header touched, no new unit. The only variable is the material code.
+
+**RESULT: `Dawnmere.zscen` is BYTE-IDENTICAL** -- 5,340 bytes, SHA256 `1DC1B639F8626725...`,
+matching the baseline proven two boots earlier at `1db1070a`. **The answer is measured, not
+argued.**
+
+**★ AND THE ARGUMENT WOULD HAVE REACHED THE RIGHT VERDICT FOR AN INCOMPLETE REASON -- WHICH IS WHY
+MEASURING MATTERED.** There IS a creation-ordered identity in the asset system:
+`Zenith_AssetRegistry.cpp:663` hands every pathless `Create()` a
+`"procedural://<prefix>_" + std::to_string(m_uNextProceduralId++)`, and 8 extra creations shift
+that counter for every procedural asset made later in the boot. It cannot reach a scene for three
+independent reasons: the pathless `Create()` deliberately discards the id at the handle
+(`Zenith_AssetHandle::Set(T*)` clears `m_strPath`); every component serializer writes the
+**handle's** path, never the asset's; and every *named* procedural path in the engine is
+content-derived (`procedural://unit_cube`, `procedural://box_%f_%f_%f`), so a counter shift cannot
+rename or collide with one. `Zenith_MaterialAsset::WriteToDataStream` writes name, params, parent
+path, override mask and the nine texture-slot handle paths -- no `m_strPath`, no registry key, no
+Flux material-table index. **Someone who had only asked "does the material serializer write an
+id?" would have been right while never noticing the counter moves at all.**
+
+**Defence in depth kept regardless:** recipes initialise in **ascending registry index order** and
+Dawnmere is index 0, so its four creations stay first with byte-identical arguments whatever a
+future change does. The storage declaration carries a comment saying so. **Do not reorder that
+loop and do not create a terrain material ahead of it.**
+
+**Tests that lock it:** none directly -- and that is the point. The property is provable only by a
+windowed `Vulkan_*_True` authoring boot plus a byte diff, which is exactly what CI cannot do
+(`Null_` boots author zero Zenithmon scenes, ZM-D-190). The guard that CAN see a regression is
+`Tests/ZM_Tests_CommittedSceneBytes.cpp` against the committed file.
+
+**Reversibility:** high -- one file, and no serialized byte depends on it.
+
+---
+
 ## 2026-08-15 -- ZM-D-197 -- S8 item 2 slice R1-1: the PLAYER ENTITY IS NAMED `"Player"` IN EVERY SCENE, and R1-1's plan was BLOCKED by all three critics before a line was written
 
 **R1-1 is the PURE slice of Route 1 -> Thornacre: it authors no scene, bakes no

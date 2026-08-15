@@ -624,7 +624,49 @@ ZENITH_REGISTER_COMPONENT(ZM_TouchLayoutController, "ZM_TouchLayoutController", 
 #ifdef ZENITH_TOOLS
 namespace
 {
-	MaterialHandle g_axDawnmereTerrainMaterials[4];
+	// Every terrain recipe gets its own four live material assets, indexed
+	// [recipe index][slot]. The recipe index is ZM_GetTerrainAuthoringRecipe()'s
+	// registry index -- 0 = Dawnmere, 1 = Thornacre, 2 = Route1 -- and
+	// Project_InitializeResources walks it in ASCENDING order.
+	//
+	// ★ THAT ORDER, AND DAWNMERE'S CREATION ARGUMENTS, ARE LOAD-BEARING.
+	// Dawnmere.zscen is a COMMITTED file that has drifted twice already (ZM-D-179
+	// and ZM-D-183, both with every existing guard green), and
+	// Zenith_TerrainComponent::WriteToDataStream INLINES each slot's whole material
+	// payload -- name, params, texture refs -- into the scene bytes. So:
+	//   * Dawnmere is recipe 0, so its four Create<Zenith_MaterialAsset>() calls
+	//     stay FIRST and keep the exact arguments they had when the file was last
+	//     authored. Never create a terrain material ahead of them, never reorder
+	//     this loop, and never "tidy" Dawnmere's specs in ZM_TerrainAuthoring.cpp.
+	//   * A material carries no creation-ordered identity into the scene TODAY
+	//     (the registry's counter-derived "procedural://asset_N" id lives on the
+	//     asset's own m_strPath, which WriteToDataStream never writes, and the
+	//     Flux material-table index is not serialized either). If that ever
+	//     changes, this fixed ascending order is what keeps Dawnmere's bytes put.
+	// Route1 and Thornacre rows exist so a later slice can author their scenes;
+	// creating them costs four handles each and touches no committed file.
+	constexpr u_int uZM_TERRAIN_MATERIAL_SLOT_COUNT = 4u;
+	MaterialHandle g_aaxTerrainMaterials[uZM_TERRAIN_RECIPE_COUNT][uZM_TERRAIN_MATERIAL_SLOT_COUNT];
+
+	// Addressed by the RECIPE itself rather than a second 0/1/2 mapping kept in
+	// sync by hand: ZM_GetTerrainAuthoringRecipe()'s registry order is the single
+	// source of truth for a recipe's index, and the registry is a function-local
+	// static array, so its rows have stable addresses for the process lifetime.
+	const MaterialHandle* ZM_GetTerrainMaterialsForRecipe(
+		const ZM_TerrainAuthoringRecipe& xRecipe)
+	{
+		const u_int uRecipeCount = ZM_GetTerrainAuthoringRecipeCount();
+		for (u_int uRecipe = 0; uRecipe < uRecipeCount; ++uRecipe)
+		{
+			if (&ZM_GetTerrainAuthoringRecipe(uRecipe) == &xRecipe)
+			{
+				return g_aaxTerrainMaterials[uRecipe];
+			}
+		}
+		Zenith_Assert(false,
+			"Recipe is not a row of the terrain authoring registry");
+		return g_aaxTerrainMaterials[0];
+	}
 
 	void ZM_ConfigureWarpFade()
 	{
@@ -2411,13 +2453,21 @@ namespace
 		}
 	}
 
-	void ZM_InitializeDawnmereTerrainMaterials()
+	// One recipe's four material slots. Recipe 0 (Dawnmere) MUST be initialised
+	// first and with unchanged arguments -- see the storage declaration above for
+	// why the committed scene depends on it.
+	void ZM_InitializeTerrainMaterialsForRecipe(u_int uRecipeIndex)
 	{
-		const ZM_TerrainAuthoringRecipe& xRecipe = ZM_GetDawnmereTerrainRecipe();
-		for (u_int uSlot = 0; uSlot < 4u; ++uSlot)
+		const ZM_TerrainAuthoringRecipe& xRecipe =
+			ZM_GetTerrainAuthoringRecipe(uRecipeIndex);
+		Zenith_Assert(xRecipe.m_uMaterialCount == uZM_TERRAIN_MATERIAL_SLOT_COUNT,
+			"Terrain recipe %u declares %u materials, expected %u",
+			uRecipeIndex, xRecipe.m_uMaterialCount,
+			uZM_TERRAIN_MATERIAL_SLOT_COUNT);
+		for (u_int uSlot = 0; uSlot < uZM_TERRAIN_MATERIAL_SLOT_COUNT; ++uSlot)
 		{
 			const ZM_TerrainMaterialSpec& xSpec = xRecipe.m_pxMaterials[uSlot];
-			MaterialHandle& xHandle = g_axDawnmereTerrainMaterials[uSlot];
+			MaterialHandle& xHandle = g_aaxTerrainMaterials[uRecipeIndex][uSlot];
 			xHandle = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 
 			Zenith_MaterialAsset* pxMaterial = xHandle.GetDirect();
@@ -2593,9 +2643,12 @@ void Project_RegisterGameComponents()
 void Project_Shutdown()
 {
 #ifdef ZENITH_TOOLS
-	for (MaterialHandle& xMaterial : g_axDawnmereTerrainMaterials)
+	for (u_int uRecipe = 0; uRecipe < uZM_TERRAIN_RECIPE_COUNT; ++uRecipe)
 	{
-		xMaterial = MaterialHandle{};
+		for (MaterialHandle& xMaterial : g_aaxTerrainMaterials[uRecipe])
+		{
+			xMaterial = MaterialHandle{};
+		}
 	}
 #endif
 }
@@ -2605,9 +2658,22 @@ void Project_LoadInitialScene();	// forward decl for the automation step below
 #ifdef ZENITH_TOOLS
 void Project_InitializeResources()
 {
-	// Automation borrows these handles while serializing Dawnmere. The saved
-	// terrain owns its material data; these temporary handles live until shutdown.
-	ZM_InitializeDawnmereTerrainMaterials();
+	// Automation borrows these handles while serializing a terrain scene. The
+	// saved terrain owns its material data; these temporary handles live until
+	// shutdown.
+	//
+	// ASCENDING recipe order, deliberately: Dawnmere is recipe 0, so its four
+	// material creations happen first and in the same sequence, with the same
+	// arguments, as they did before the other recipes joined them. The committed
+	// Dawnmere.zscen depends on that (see g_aaxTerrainMaterials above).
+	const u_int uRecipeCount = ZM_GetTerrainAuthoringRecipeCount();
+	Zenith_Assert(uRecipeCount == uZM_TERRAIN_RECIPE_COUNT,
+		"Terrain recipe registry reports %u recipes, storage holds %u",
+		uRecipeCount, uZM_TERRAIN_RECIPE_COUNT);
+	for (u_int uRecipe = 0; uRecipe < uRecipeCount; ++uRecipe)
+	{
+		ZM_InitializeTerrainMaterialsForRecipe(uRecipe);
+	}
 }
 
 // Boot-authored scene: a camera, a title, and the game component, saved to
@@ -3263,9 +3329,11 @@ void Project_RegisterEditorAutomationSteps()
 		xAuto.AddStep_SetEntityTransient(false);
 		xAuto.AddStep_AddComponent("Terrain");
 		xAuto.AddStep_TerrainSetAssetSet(xRecipe.m_pxWorldSpec->m_szTerrainSet);
+		const MaterialHandle* paxTerrainMaterials =
+			ZM_GetTerrainMaterialsForRecipe(xRecipe);
 		for (int iSlot = 0; iSlot < 4; ++iSlot)
 		{
-			xAuto.AddStep_SetTerrainMaterial(iSlot, g_axDawnmereTerrainMaterials[iSlot].GetDirect());
+			xAuto.AddStep_SetTerrainMaterial(iSlot, paxTerrainMaterials[iSlot].GetDirect());
 		}
 		xAuto.AddStep_SetTerrainSplatmapPath(strSplatmapPath.c_str());
 		xAuto.AddStep_AddCollider();
