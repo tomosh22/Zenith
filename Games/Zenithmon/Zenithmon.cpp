@@ -82,7 +82,9 @@
 #include "Zenithmon/Source/Data/ZM_WorldSpec.h"                 // build indices + spawn tags READ, never spelled (SC-E)
 #include "Zenithmon/Source/World/ZM_DawnmerePlacement.h"        // the shared authored coordinates (S7 item 3 SC8)
 #include "Zenithmon/Source/World/ZM_ProfLabPlacement.h"         // the shared ProfLab interior coordinates (S8 SC1)
+#include "Zenithmon/Source/World/ZM_Route1Placement.h"          // the shared Route 1 anchors (S8 item 2, R1-1/R1-2)
 #include "Zenithmon/Source/World/ZM_TerrainAuthoring.h"
+#include "Zenithmon/Source/World/ZM_ThornacrePlacement.h"       // the shared Thornacre stub anchors (S8 item 2, R1-1/R1-2)
 
 #include <cstring>
 #include <filesystem>
@@ -1918,6 +1920,104 @@ namespace
 			"ProfLab exit warp configuration is invalid");
 	}
 
+	// ============================================================================
+	// R1-2 -- THE THREE ARRIVAL TAGS, AND THE ONE CONFUSION THAT HANGS THE GAME.
+	//
+	// ★★ AN ARRIVAL MARKER CARRIES AN **INBOUND** TAG: the tag asked for by the
+	// scene the player is ARRIVING FROM, not by any edge leaving the scene the
+	// marker sits in. Read the compiled table (Source/Data/ZM_WorldSpec.cpp) and
+	// the trap is obvious in one direction and invisible in the other:
+	//
+	//     Dawnmere  offers { ROUTE1, "FromDawnmere" }
+	//     Thornacre offers { ROUTE1, "FromThornacre" }, { GYM1, "Door" }
+	//     Route1    offers { DAWNMERE, "FromRoute1" }, { THORNACRE, "FromRoute1" }
+	//
+	// So Route 1's SOUTH arrival must carry "FromDawnmere", its NORTH arrival
+	// "FromThornacre", and Thornacre's arrival "FromRoute1".
+	//
+	// ★ THE INVISIBLE HALF: ZM_GetRoute1SouthGateSpawnTag() and
+	// ZM_GetRoute1NorthGateSpawnTag() BOTH answer "FromRoute1" -- they are what
+	// Route 1's own future gates ASK their destinations for (OUTBOUND, R1-3's
+	// business). Reaching for the "south gate" accessor while authoring the south
+	// ARRIVAL marker is the natural mistake, and it does not even change the text
+	// on screen: it produces a Route 1 whose two markers both offer a tag Route 1
+	// does not itself offer. ZM_GameStateManager::IsWarpDestinationValid would
+	// still return TRUE -- it consults ONLY the compiled table, never the
+	// destination scene -- and the warp machine would then park in
+	// ZM_WARP_TRANSITION_WAITING_FOR_SPAWN, WHICH HAS NO TIMEOUT: an opaque fade
+	// over a frozen player, forever. Not a crash, not a red test.
+	//
+	// The resolver below removes the choice. It takes the SOURCE region and this
+	// region, walks the SOURCE row's connection list for the edge whose target is
+	// this region, and hands back what the TABLE says -- so a table edit that
+	// re-tagged a seam moves the authoring with it, and no tag is ever spelled at
+	// a call site. Each of the three steps beneath it names its own source, which
+	// is the one fact a reviewer has to check.
+	//
+	// TOTAL, and it NEVER asserts: ZM_GetWorldSpec asserts FATALLY out of range and
+	// Zenith_Assert breaks in every configuration, so both ids are range-guarded
+	// BEFORE the call. A miss yields "" -- never nullptr -- which ZM_SpawnPoint::
+	// SetTag rejects, so the per-marker assertion below fires and names the seam
+	// instead of authoring a silently untagged marker.
+	// ============================================================================
+	const char* ZM_ResolveInboundSpawnTag(
+		ZM_SCENE_ID eSource, ZM_SCENE_ID eDestination)
+	{
+		if (eSource >= ZM_SCENE_COUNT || eDestination >= ZM_SCENE_COUNT)
+		{
+			return "";
+		}
+
+		const ZM_WorldSpec& xRow = ZM_GetWorldSpec(eSource);
+		if (xRow.m_pxConnections == nullptr)
+		{
+			return "";
+		}
+		for (u_int uEdge = 0u; uEdge < xRow.m_uConnectionCount; ++uEdge)
+		{
+			if (xRow.m_pxConnections[uEdge].m_eTarget == eDestination
+				&& xRow.m_pxConnections[uEdge].m_szSpawnTag != nullptr)
+			{
+				return xRow.m_pxConnections[uEdge].m_szSpawnTag;
+			}
+		}
+		return "";
+	}
+
+	// Route 1's SOUTH arrival: where a player walking north out of Dawnmere lands.
+	// The source is DAWNMERE, so the tag is Dawnmere's ROUTE1 edge ("FromDawnmere").
+	void ZM_ConfigureRoute1SouthArrivalSpawnPoint()
+	{
+		const bool bTagSet = ZM_SetSelectedSpawnPointTag(
+			ZM_ResolveInboundSpawnTag(ZM_SCENE_DAWNMERE, ZM_SCENE_ROUTE1));
+		Zenith_Assert(bTagSet,
+			"the compiled Dawnmere->Route1 edge carries no usable spawn tag, so "
+			"Route 1's south arrival marker has nothing valid to offer");
+	}
+
+	// Route 1's NORTH arrival: where a player walking south out of Thornacre lands.
+	// The source is THORNACRE, so the tag is Thornacre's ROUTE1 edge
+	// ("FromThornacre") -- NOT Route 1's own north gate tag.
+	void ZM_ConfigureRoute1NorthArrivalSpawnPoint()
+	{
+		const bool bTagSet = ZM_SetSelectedSpawnPointTag(
+			ZM_ResolveInboundSpawnTag(ZM_SCENE_THORNACRE, ZM_SCENE_ROUTE1));
+		Zenith_Assert(bTagSet,
+			"the compiled Thornacre->Route1 edge carries no usable spawn tag, so "
+			"Route 1's north arrival marker has nothing valid to offer");
+	}
+
+	// Thornacre's arrival: where a player walking north off Route 1 lands. The
+	// source is ROUTE1, so the tag is Route 1's THORNACRE edge ("FromRoute1").
+	void ZM_ConfigureThornacreSouthArrivalSpawnPoint()
+	{
+		const bool bTagSet = ZM_SetSelectedSpawnPointTag(
+			ZM_ResolveInboundSpawnTag(ZM_SCENE_ROUTE1, ZM_SCENE_THORNACRE));
+		Zenith_Assert(bTagSet,
+			"the compiled Route1->Thornacre edge carries no usable spawn tag, so "
+			"Thornacre's arrival marker has nothing valid to offer");
+	}
+
 	// ---- S6 item 3 SC5: the authored Dawnmere NPCs ---------------------------
 	//
 	// Reach BONUS authored onto every Dawnmere NPC. 0.4 is this NPC's OWN AABB
@@ -2438,6 +2538,56 @@ namespace
 		xAuto.AddStep_AddCollider();
 		xAuto.AddStep_AddColliderShape(
 			COLLISION_VOLUME_TYPE_AABB, RIGIDBODY_TYPE_STATIC);
+	}
+
+	// ---- R1-2: the terrain host entity a NEW outdoor scene is built on -------
+	//
+	// The step list Dawnmere's own terrain host performs, in the SAME order, as
+	// ONE definition -- because R1-2 authors two more of them and a nine-step shape
+	// spelled by hand three times is a shape that drifts on the third. Every value
+	// comes from the recipe the caller names: the asset set, the four material
+	// slots (ZM_GetTerrainMaterialsForRecipe, addressed BY RECIPE rather than by a
+	// second 0/1/2 mapping kept in step by hand) and the splatmap path built from
+	// that same set name.
+	//
+	// ★ THE SHIPPED DAWNMERE BLOCK IS DELIBERATELY **NOT** MIGRATED ONTO THIS
+	// HELPER. Dawnmere.zscen is a COMMITTED file that has drifted twice already
+	// (ZM-D-179, ZM-D-183, both with every existing guard green); rewriting its
+	// authoring in the same change that introduces two brand-new scenes would put a
+	// re-author of it inside this slice's blast radius for zero behavioural gain.
+	// Fold it in later, on its own, or leave it be.
+	//
+	// ★ THE COLLIDER IS TERRAIN + STATIC AND ZM_TerrainGrass GOES LAST -- exactly
+	// the sequence Dawnmere ships, so a scene authored here streams, collides and
+	// grows grass identically to the one the game has been loading since S1.
+	void ZM_QueueTerrainHostEntity(
+		Zenith_EditorAutomation& xAuto,
+		const char* szEntityName,
+		const ZM_TerrainAuthoringRecipe& xRecipe)
+	{
+		// Built here and passed by pointer: AddStep_* takes OWNED COPIES of every
+		// string (Zenith_EditorAction), so this local may die long before the
+		// action queue is drained at boot.
+		const std::string strSplatmapPath = std::string("game:Terrain/") +
+			xRecipe.m_pxWorldSpec->m_szTerrainSet +
+			"/Splatmap_RGBA" ZENITH_TEXTURE_EXT;
+
+		xAuto.AddStep_CreateEntity(szEntityName);
+		xAuto.AddStep_SetEntityTransient(false);
+		xAuto.AddStep_AddComponent("Terrain");
+		xAuto.AddStep_TerrainSetAssetSet(xRecipe.m_pxWorldSpec->m_szTerrainSet);
+		const MaterialHandle* paxTerrainMaterials =
+			ZM_GetTerrainMaterialsForRecipe(xRecipe);
+		for (u_int uSlot = 0u; uSlot < uZM_TERRAIN_MATERIAL_SLOT_COUNT; ++uSlot)
+		{
+			xAuto.AddStep_SetTerrainMaterial(
+				(int)uSlot, paxTerrainMaterials[uSlot].GetDirect());
+		}
+		xAuto.AddStep_SetTerrainSplatmapPath(strSplatmapPath.c_str());
+		xAuto.AddStep_AddCollider();
+		xAuto.AddStep_AddColliderShape(
+			COLLISION_VOLUME_TYPE_TERRAIN, RIGIDBODY_TYPE_STATIC);
+		xAuto.AddStep_AddComponent("ZM_TerrainGrass");
 	}
 
 	const char* ZM_TerrainBakeQueueResultToString(
@@ -3711,6 +3861,271 @@ void Project_RegisterEditorAutomationSteps()
 		xAuto.AddStep_Custom(&ZM_VerifyAuthoredRivalFacingStep);
 
 		xAuto.AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/Dawnmere" ZENITH_SCENE_EXT);
+		xAuto.AddStep_UnloadScene();
+	}
+
+	// ========================================================================
+	// ---- S8 ITEM 2, R1-2: ROUTE 1 AND THORNACRE ----------------------------
+	//
+	// The two scenes that turn "Dawnmere -> Route 1 -> Thornacre" from three rows
+	// of a compiled table into a walk. R1-1 already landed their compiled anchors
+	// (Source/World/ZM_Route1Placement.h, ZM_ThornacrePlacement.h), their
+	// registrations (Source/World/ZM_SceneRegistry.h, walked by
+	// Project_LoadInitialScene) and 17 boot units; what was missing was the
+	// .zscen files themselves. This block authors them.
+	//
+	// ★ THE GATE IS xTerrainBatch.m_bAuthorDawnmereScene, AND THAT NAME IS A
+	// MISNOMER THIS SLICE DELIBERATELY DOES NOT FIX. What the flag MEANS is
+	// "every registered terrain recipe probed WARM and this boot queued no bake"
+	// (ZM_BuildTerrainBakeBatchPlan: m_bAllWarm && m_uQueueRecipeMask == 0u), and
+	// that is exactly the precondition these two terrain-derived scenes need --
+	// their heightmaps, splatmaps and physics chunks must already be on disk, and
+	// a Null/headless boot must author neither. Renaming the flag, or the
+	// AUTHOR_DAWNMERE token the batch-result log line prints, would break three
+	// docs that quote that token as a boot-log check plus every recorded proof
+	// procedure that greps for it. So the flag keeps its name and this comment
+	// carries its meaning.
+	//
+	// ★ A SEPARATE if() RATHER THAN AN EXTENSION OF THE DAWNMERE BLOCK, and NOT
+	// ONE EXISTING STEP IS TOUCHED OR REORDERED. Scene files carry DENSE
+	// AUTHORING-ORDER file indices (ZM-D-148): appending two whole scenes after
+	// Dawnmere's AddStep_UnloadScene cannot move one byte of Dawnmere.zscen,
+	// whereas authoring them from inside that block would splice new steps into a
+	// committed scene's step list.
+	//
+	// ★★ NEITHER SCENE AUTHORS A TRIGGER, AND THAT IS THE WHOLE REASON THESE TWO
+	// LAND FIRST AND ALONE. ZM_GameStateManager::IsWarpDestinationValid consults
+	// ONLY the compiled world table -- never the destination scene -- so a warp
+	// trigger shipped before its destination MARKER exists is ACCEPTED, and the
+	// machine then parks in ZM_WARP_TRANSITION_WAITING_FOR_SCENE /
+	// _WAITING_FOR_SPAWN, NEITHER OF WHICH HAS A TIMEOUT: an opaque fade over a
+	// frozen player, forever, with no crash and no red test. The markers land
+	// here; the gate sensors that aim at them are R1-3's, in one commit, once
+	// every marker exists. So: no ZM_WarpTrigger, no gate, no gym door, and no
+	// trainers (R1-5/R1-6) in either block below.
+	//
+	// ★ AND NOTHING IS AUTHORED INTO DAWNMERE HERE. Dawnmere's own "FromRoute1"
+	// arrival marker is a later step, deliberately, so the committed Dawnmere
+	// bytes stay untouched while these two new scenes are proven.
+	//
+	// ★ THE HEIGHTS BELOW ARE PROVISIONAL, AND KNOWINGLY SO. Both placement
+	// headers' measured-ground tables are SEEDED WITH THEIR RECIPE TARGET HEIGHT
+	// rather than frozen raycasts -- there is no baked Route1/Thornacre scene to
+	// raycast against until this block has run once. R1-2 step 1 measured the cost
+	// of that seed: Dawnmere's route-seam column, the first Dawnmere column inside
+	// a FLATTEN corridor, froze at target + 0.366 (a flatten dab drives ground TO
+	// the target), while unflattened Dawnmere columns read ~+2 m. Every anchor
+	// here sits on a flattened pad or inside the lane's flatten corridor, so each
+	// seed is expected within a fraction of a metre. The freeze slice re-measures
+	// them and re-authors both scenes.
+	// ========================================================================
+	if (xTerrainBatch.m_bAuthorDawnmereScene)
+	{
+		// ---- ROUTE 1 -------------------------------------------------------
+		//
+		// ★ EVERY COORDINATE, SCALE, NAME AND TAG COMES FROM
+		// Source/World/ZM_Route1Placement.h or from the compiled world table.
+		// Nothing here re-spells a literal: a constant spelled at two sites cannot
+		// red a drift, and these particular constants are due to be RE-PASTED as a
+		// set when the ground oracle freezes them -- a second copy would silently
+		// not be.
+		const ZM_TerrainAuthoringRecipe& xRoute1Recipe =
+			ZM_GetRoute1TerrainRecipe();
+		xAuto.AddStep_CreateScene(szZM_ROUTE1_SCENE_NAME);
+		ZM_QueueTerrainHostEntity(
+			xAuto, szZM_ROUTE1_TERRAIN_ENTITY_NAME, xRoute1Recipe);
+
+		// ---- The two ARRIVAL markers ---------------------------------------
+		//
+		// ★★ EACH CARRIES ITS **INBOUND** TAG, RESOLVED FROM THE SOURCE REGION'S
+		// CONNECTION LIST -- south from DAWNMERE ("FromDawnmere"), north from
+		// THORNACRE ("FromThornacre"). Route 1's own gate accessors both answer
+		// "FromRoute1" and are OUTBOUND; the full trap, and why using one here
+		// would hang the game with every test green, is written out at
+		// ZM_ResolveInboundSpawnTag above. Read it before touching either step.
+		//
+		// ★ THE TRANSFORM IS THE MARKER'S FEET, NEVER A BODY CENTRE.
+		// ZM_GameStateManager::CalculateSpawnCenter adds the capsule half-extent at
+		// warp time, so authoring a centre here would drop every arriving player in
+		// from half a body up. Same vocabulary as the shipped FromLabSpawn.
+		//
+		// ★ AND THE TWO MARKERS READ TWO DIFFERENT MEASURED COLUMNS. They are
+		// 1312 m apart on eroded terrain; the placement header refuses to give them
+		// one shared height for exactly that reason, and neither accessor may be
+		// substituted for the other.
+		const Zenith_Maths::Vector3 xRoute1SouthArrivalFeet =
+			ZM_GetRoute1SouthArrivalFeet();
+		xAuto.AddStep_CreateEntity(szZM_ROUTE1_SOUTH_ARRIVAL_ENTITY_NAME);
+		xAuto.AddStep_SetEntityTransient(false);
+		xAuto.AddStep_SetTransformPosition(
+			xRoute1SouthArrivalFeet.x, xRoute1SouthArrivalFeet.y,
+			xRoute1SouthArrivalFeet.z);
+		xAuto.AddStep_AddComponent("ZM_SpawnPoint");
+		xAuto.AddStep_Custom(&ZM_ConfigureRoute1SouthArrivalSpawnPoint);
+
+		const Zenith_Maths::Vector3 xRoute1NorthArrivalFeet =
+			ZM_GetRoute1NorthArrivalFeet();
+		xAuto.AddStep_CreateEntity(szZM_ROUTE1_NORTH_ARRIVAL_ENTITY_NAME);
+		xAuto.AddStep_SetEntityTransient(false);
+		xAuto.AddStep_SetTransformPosition(
+			xRoute1NorthArrivalFeet.x, xRoute1NorthArrivalFeet.y,
+			xRoute1NorthArrivalFeet.z);
+		xAuto.AddStep_AddComponent("ZM_SpawnPoint");
+		xAuto.AddStep_Custom(&ZM_ConfigureRoute1NorthArrivalSpawnPoint);
+
+		// ---- The player ----------------------------------------------------
+		//
+		// ★★ NAMED "Player", IN EVERY SCENE, AND THIS IS NOT NEGOTIABLE.
+		// ZM_FollowCamera::ResolveTarget resolves its subject with
+		// FindEntityByName("Player") (Components/ZM_FollowCamera.cpp:390) -- the
+		// only FindEntityByName call in the whole game layer -- and on a miss
+		// ZM_GameStateManager::PollForCameraAndBeginFadeIn bare-returns while the
+		// camera has no target: another barrier with NO TIMEOUT, i.e. the same
+		// permanent black screen. A tidier scene-unique "Route1Player" would ship
+		// exactly that defect. The constant comes from the placement header, which
+		// argues this at length.
+		//
+		// ★ CAPSULE + DYNAMIC (it is the one body here that moves), authored ONE
+		// half-extent ABOVE its resting centre (ZM-D-184): a dynamic body authored
+		// at exact ground contact bursts physics substeps on its first frame and
+		// falls THROUGH the terrain -- that is how Vesper vanished. The clearance
+		// is baked into ZM_GetRoute1AuthoredPlayerCentre(), so it exists in one
+		// place rather than at every author site.
+		const Zenith_Maths::Vector3 xRoute1PlayerCentre =
+			ZM_GetRoute1AuthoredPlayerCentre();
+		xAuto.AddStep_CreateEntity(szZM_ROUTE1_PLAYER_ENTITY_NAME);
+		xAuto.AddStep_SetEntityTransient(false);
+		xAuto.AddStep_SetTransformPosition(
+			xRoute1PlayerCentre.x, xRoute1PlayerCentre.y, xRoute1PlayerCentre.z);
+		xAuto.AddStep_SetTransformScale(
+			fZM_HUMAN_VISUAL_SCALE, fZM_HUMAN_VISUAL_SCALE, fZM_HUMAN_VISUAL_SCALE);
+		xAuto.AddStep_AddCollider();
+		xAuto.AddStep_AddColliderShape(
+			COLLISION_VOLUME_TYPE_CAPSULE, RIGIDBODY_TYPE_DYNAMIC);
+		xAuto.AddStep_AddComponent("ZM_GreyboxVisual");
+		xAuto.AddStep_AddComponent("ZM_PlayerController");
+
+		// ---- The follow camera ---------------------------------------------
+		//
+		// Yaw 0 is +Z (ZM_ForwardFromRotation rotates the +Z basis) and the spring
+		// places the camera BEHIND its subject, so yaw 0 looks straight up the
+		// route with the camera trailing south over the (future) gate, where there
+		// is nothing to clip into. The far plane is a ROUTE-LENGTH decision, not a
+		// default: the region is 1536 m deep on Z, so the interiors' 100 m plane
+		// would clip the world away a few strides ahead of the player.
+		//
+		// ★ THE AUTHORED POSE IS NOT THE SETTLED POSE, AND IS NOT MEANT TO BE.
+		// ZM_FollowCamera::OnStart clears the spring, so the first OnLateUpdate
+		// after the scene loads SNAPS to ComputeDesiredPosition rather than easing
+		// toward it; the authored value is only ever the pose of a camera that has
+		// not ticked yet. The shipped PlayerHome and ProfLab cameras are authored
+		// the same way, and ProfLab's header spells out why an assertion that the
+		// two match in Y would red.
+		//
+		// ★★ AND IT IS PLAIN CONSTANT ARITHMETIC, NEVER
+		// ZM_GetRoute1SettledCameraPosition(). That accessor calls std::cos /
+		// std::sin, and MSVC Debug and Release codegen disagree on libm results by
+		// 1-2 ULP -- which is precisely how a committed .zscen came to ping-pong in
+		// git forever (ZM-D-183). It is a CHECK a boot unit runs; it is not a value
+		// AddStep_* may ever take. What is authored below is the arm swung straight
+		// back along -Z at yaw 0, at the follow camera's pivot height above the
+		// arriving body's centre.
+		const Zenith_Maths::Vector3 xRoute1ArrivalBodyCentre =
+			ZM_GetRoute1SouthArrivalBodyCentre();
+		xAuto.AddStep_CreateEntity(szZM_ROUTE1_CAMERA_ENTITY_NAME);
+		xAuto.AddStep_AddCamera();
+		xAuto.AddStep_SetCameraPosition(
+			xRoute1ArrivalBodyCentre.x,
+			xRoute1ArrivalBodyCentre.y + fZM_ROUTE1_CAMERA_PIVOT_HEIGHT,
+			xRoute1ArrivalBodyCentre.z - fZM_ROUTE1_CAMERA_ARM);
+		xAuto.AddStep_SetCameraYaw(fZM_ROUTE1_CAMERA_YAW);
+		xAuto.AddStep_SetCameraPitch(fZM_ROUTE1_CAMERA_PITCH);
+		xAuto.AddStep_SetCameraFOV(glm::radians(fZM_ROUTE1_CAMERA_FOV_DEGREES));
+		xAuto.AddStep_SetCameraNear(fZM_ROUTE1_CAMERA_NEAR);
+		xAuto.AddStep_SetCameraFar(fZM_ROUTE1_CAMERA_FAR);
+		xAuto.AddStep_AddComponent("ZM_FollowCamera");
+		xAuto.AddStep_SetAsMainCamera();
+
+		xAuto.AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/Route1" ZENITH_SCENE_EXT);
+		xAuto.AddStep_UnloadScene();
+
+		// ---- THORNACRE -----------------------------------------------------
+		//
+		// ★★ A TRAVERSAL STUB BY RULING (ZM-D-196), AND IT MUST STAY ONE IN THIS
+		// MILESTONE: terrain, ONE arrival marker, a player and a camera. NO GYM
+		// DOOR. The compiled world table already carries the Thornacre -> Gym1
+		// ("Door") edge and that edge is deliberately UNBACKED -- authoring a door
+		// into a room nobody has built is the WAITING_FOR_SCENE hang described at
+		// the top of this block. No trainers, no shops, no gate sensor (R1-3's).
+		//
+		// ★ uZM_THORNACRE_PLACEMENT_ENTITY_COUNT IS 5u AND ITS INDEX 4 IS THE
+		// TRIGGER "ThornacreSouthGate". It is a NAME INVENTORY for the boot units,
+		// NOT an authoring loop bound -- walking [0, 5) here would author the very
+		// trigger this slice exists to withhold. The four entities below are
+		// spelled by name, one at a time, on purpose.
+		const ZM_TerrainAuthoringRecipe& xThornacreRecipe =
+			ZM_GetThornacreTerrainRecipe();
+		xAuto.AddStep_CreateScene(szZM_THORNACRE_SCENE_NAME);
+		ZM_QueueTerrainHostEntity(
+			xAuto, szZM_THORNACRE_TERRAIN_ENTITY_NAME, xThornacreRecipe);
+
+		// The single arrival marker, carrying its INBOUND tag: the source is
+		// ROUTE1, so the tag is Route 1's THORNACRE edge ("FromRoute1"), resolved
+		// by walking that row -- never spelled, and never taken from Thornacre's
+		// own outbound return accessor. Feet, not a body centre; see the Route 1
+		// markers above.
+		const Zenith_Maths::Vector3 xThornacreArrivalFeet =
+			ZM_GetThornacreSouthArrivalFeet();
+		xAuto.AddStep_CreateEntity(szZM_THORNACRE_SOUTH_ARRIVAL_ENTITY_NAME);
+		xAuto.AddStep_SetEntityTransient(false);
+		xAuto.AddStep_SetTransformPosition(
+			xThornacreArrivalFeet.x, xThornacreArrivalFeet.y,
+			xThornacreArrivalFeet.z);
+		xAuto.AddStep_AddComponent("ZM_SpawnPoint");
+		xAuto.AddStep_Custom(&ZM_ConfigureThornacreSouthArrivalSpawnPoint);
+
+		// The player -- "Player" here too, for the reason argued at Route 1's, and
+		// likewise a DYNAMIC capsule authored one half-extent clear of the ground
+		// (ZM-D-184), with the clearance living inside the accessor.
+		const Zenith_Maths::Vector3 xThornacrePlayerCentre =
+			ZM_GetThornacreAuthoredPlayerCentre();
+		xAuto.AddStep_CreateEntity(szZM_THORNACRE_PLAYER_ENTITY_NAME);
+		xAuto.AddStep_SetEntityTransient(false);
+		xAuto.AddStep_SetTransformPosition(
+			xThornacrePlayerCentre.x, xThornacrePlayerCentre.y,
+			xThornacrePlayerCentre.z);
+		xAuto.AddStep_SetTransformScale(
+			fZM_HUMAN_VISUAL_SCALE, fZM_HUMAN_VISUAL_SCALE, fZM_HUMAN_VISUAL_SCALE);
+		xAuto.AddStep_AddCollider();
+		xAuto.AddStep_AddColliderShape(
+			COLLISION_VOLUME_TYPE_CAPSULE, RIGIDBODY_TYPE_DYNAMIC);
+		xAuto.AddStep_AddComponent("ZM_GreyboxVisual");
+		xAuto.AddStep_AddComponent("ZM_PlayerController");
+
+		// The follow camera. The player arrives at the town's SOUTH edge and walks
+		// NORTH into it, so yaw 0 looks into town with the camera trailing south
+		// out over the route gate. Same authored-pose-is-not-settled-pose and same
+		// no-libm-in-committed-bytes rules as Route 1's camera above -- the built
+		// value is arithmetic on compiled constants, never
+		// ZM_GetThornacreSettledCameraPosition().
+		const Zenith_Maths::Vector3 xThornacreArrivalBodyCentre =
+			ZM_GetThornacreSouthArrivalBodyCentre();
+		xAuto.AddStep_CreateEntity(szZM_THORNACRE_CAMERA_ENTITY_NAME);
+		xAuto.AddStep_AddCamera();
+		xAuto.AddStep_SetCameraPosition(
+			xThornacreArrivalBodyCentre.x,
+			xThornacreArrivalBodyCentre.y + fZM_THORNACRE_CAMERA_PIVOT_HEIGHT,
+			xThornacreArrivalBodyCentre.z - fZM_THORNACRE_CAMERA_ARM);
+		xAuto.AddStep_SetCameraYaw(fZM_THORNACRE_CAMERA_YAW);
+		xAuto.AddStep_SetCameraPitch(fZM_THORNACRE_CAMERA_PITCH);
+		xAuto.AddStep_SetCameraFOV(glm::radians(fZM_THORNACRE_CAMERA_FOV_DEGREES));
+		xAuto.AddStep_SetCameraNear(fZM_THORNACRE_CAMERA_NEAR);
+		xAuto.AddStep_SetCameraFar(fZM_THORNACRE_CAMERA_FAR);
+		xAuto.AddStep_AddComponent("ZM_FollowCamera");
+		xAuto.AddStep_SetAsMainCamera();
+
+		xAuto.AddStep_SaveScene(
+			GAME_ASSETS_DIR "Scenes/Thornacre" ZENITH_SCENE_EXT);
 		xAuto.AddStep_UnloadScene();
 	}
 

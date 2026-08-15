@@ -25,11 +25,15 @@
 // ★ WHAT THESE EIGHT UNITS CANNOT DO, STATED UP FRONT. They run BEFORE the
 // initial scene loads, and no Route1.zscen exists yet in any case. They cannot
 // prove the scene was authored, that the terrain baked, or that the ground under
-// an anchor is really at fZM_ROUTE1_PROVISIONAL_GROUND_Y -- that last one needs
-// the raycast oracle R1-2 lands. What they CAN do is compare two independently
-// authored tables (the placement header against the terrain recipe), and run the
-// SHIPPED sight geometry over the SHIPPED lane, which is the only check in this
-// game that can see a trainer placed outside his own cone.
+// an anchor is really the height that anchor's row of axZM_ROUTE1_GROUND_SAMPLES
+// claims -- every row of that table is still SEEDED from the recipe mirror
+// fZM_ROUTE1_RECIPE_TARGET_GROUND_Y, so NO compiled-constant unit in this game can
+// tell a measured table from an unfrozen one. That last claim belongs to the
+// raycast oracle in Tests/ZM_AutoTests_RouteGround.cpp. What they CAN do is
+// compare two independently authored tables (the placement header against the
+// terrain recipe), and run the SHIPPED sight geometry over the SHIPPED lane, which
+// is the only check in this game that can see a trainer placed outside his own
+// cone.
 //
 // ★ NOTHING HERE RE-SPELLS A CONSTANT FROM THE HEADER IT TESTS. A clause of the
 // form ZENITH_ASSERT_EQ(fZM_ROUTE1_GATE_SCALE_Y, 4.0f) compares a literal with
@@ -330,14 +334,28 @@ namespace
 		return fZM_SIGHT_MAX_DISTANCE * std::sqrt(fSineSquared);
 	}
 
-	// A walking player's body CENTRE at a point on the lane. The sight cone's
-	// vertical band is measured centre-to-centre, and both bodies stand on ground
-	// the same flatten corridor levels, so this height and a trainer's are equal.
-	Zenith_Maths::Vector3 Route1LaneWalkerCentre(float fX, float fZ)
+	// A walking player's body CENTRE at a point on the lane, standing on the SAME
+	// MEASURED GROUND as the station that is doing the observing.
+	//
+	// ★★ THE HEIGHT IS THE OBSERVER'S OWN MEASURED COLUMN, NOT THE RECIPE MIRROR,
+	// AND THAT MAKES THE SHARED-PLANE PREMISE TRUE BY CONSTRUCTION RATHER THAN
+	// ASSUMED. The shipped sight predicate measures its cone centre-to-centre, so any
+	// height difference between the two bodies eats into the cone. Taking this height
+	// from fZM_ROUTE1_RECIPE_TARGET_GROUND_Y while ZM_GetRoute1TrainerCentre takes
+	// its own from axZM_ROUTE1_GROUND_SAMPLES would compute the vertical band from
+	// TWO DIFFERENT GROUNDS the moment that table is frozen -- silently, because the
+	// mirror and every seeded row are the same number until then.
+	//
+	// It is a claim about a walk beside ONE station, so it takes that station: the
+	// lane corridor's flatten levels the walked line to the same ground the station
+	// stands on, and reading the station's row is how that sentence is spelled once
+	// instead of assumed twice.
+	Zenith_Maths::Vector3 Route1LaneWalkerCentre(
+		float fX, float fZ, ZM_ROUTE1_TRAINER_ID eObserver)
 	{
 		return Zenith_Maths::Vector3(
 			fX,
-			fZM_ROUTE1_PROVISIONAL_GROUND_Y + fZM_HUMAN_BODY_HALF_HEIGHT,
+			ZM_GetRoute1TrainerFeet(eObserver).y + fZM_HUMAN_BODY_HALF_HEIGHT,
 			fZ);
 	}
 
@@ -361,9 +379,16 @@ namespace
 	// disagree about what "seen" means while both stayed green -- and taking the
 	// rotation rather than a forward vector exercises ZM_ForwardFromRotation too,
 	// which is the step a facing typo lands in.
+	//
+	// ★ THE OBSERVING STATION RIDES ALONGSIDE ITS CENTRE, rather than being derived
+	// from it, because the anti-vacuity arm below DISPLACES that centre laterally
+	// while keeping the station's ground. The walked line's height must follow the
+	// station's measured column either way, so the station is named rather than
+	// reverse-engineered from a position that may have been moved.
 	Route1SightSampleCount Route1CountSightSamplesAlongLane(
 		const Zenith_Maths::Vector3& xObserverCentre,
 		const Zenith_Maths::Quat& xFacing,
+		ZM_ROUTE1_TRAINER_ID eObserver,
 		u_int uSamplesPerMetre)
 	{
 		Route1SightSampleCount xCount;
@@ -398,7 +423,7 @@ namespace
 				const float fT =
 					static_cast<float>(uStep) / static_cast<float>(uSteps);
 				const Zenith_Maths::Vector3 xWalker = Route1LaneWalkerCentre(
-					xA.m_fX + fDeltaX * fT, xA.m_fZ + fDeltaZ * fT);
+					xA.m_fX + fDeltaX * fT, xA.m_fZ + fDeltaZ * fT, eObserver);
 				++xCount.m_uTotal;
 				if (ZM_IsTargetInTrainerSightFromRotation(
 					xObserverCentre, xFacing, xWalker, xTuning))
@@ -447,12 +472,19 @@ namespace
 		return xGate.Min().z - fMarkerZ;
 	}
 
-	// "The box rests ON the ground plane" -- its underside lands on it, not its
-	// centre. A gate authored at world Y 0 is a tunnel 26 m below the player.
-	bool Route1VolumeRestsOnGround(const ZM_Route1Volume& xVolume)
+	// "The box rests ON the ground under IT" -- its underside lands on that ground,
+	// not its centre. A gate authored at world Y 0 is a tunnel 26 m below the player.
+	//
+	// ★★ THE EXPECTED GROUND IS A PARAMETER, AND A SINGLE SHARED EXPECTATION WOULD
+	// NOW BE WRONG. The two sensors stand 1336 m apart on TWO DIFFERENT measured
+	// columns of axZM_ROUTE1_GROUND_SAMPLES. One shared height would rest one gate on
+	// the OTHER's ground the instant that table is frozen -- part-buried at one end
+	// and hovering at the other, with every scale constant in the header still
+	// reading exactly as intended, and a failure message that named a plane neither
+	// gate stands on. Each caller passes its OWN column.
+	bool Route1VolumeRestsOnGround(const ZM_Route1Volume& xVolume, float fGroundFeetY)
 	{
-		return std::fabs(xVolume.Min().y - fZM_ROUTE1_PROVISIONAL_GROUND_Y)
-			<= fROUTE1_EXACT_EPSILON;
+		return std::fabs(xVolume.Min().y - fGroundFeetY) <= fROUTE1_EXACT_EPSILON;
 	}
 
 	// ---- Camera --------------------------------------------------------------
@@ -553,13 +585,18 @@ namespace
 // include ZM_TerrainAuthoring.h -- so this is a reconciliation, not a
 // re-spelling.
 //
-// WHY IT MATTERS: fZM_ROUTE1_PROVISIONAL_GROUND_Y is UNMEASURED. It is the
-// height the recipe's FLATTEN dabs drive their pads and paths to, and it is a
-// true statement about the ground ONLY where a flatten dab actually reached. Move
-// an anchor out of a flattened disc and the number becomes a lie no compiled-
-// constant unit can see: the arriving body either floats above the hillside or
-// spawns inside it. R1-2 lands the raycast oracle that replaces this argument
-// with a measurement.
+// WHY IT MATTERS: fZM_ROUTE1_RECIPE_TARGET_GROUND_Y is NOT A MEASUREMENT and must
+// never be given one. It MIRRORS the recipe's m_fTargetHeight -- the height the
+// FLATTEN dabs drive their pads and paths TO -- and it is a true statement about
+// the ground ONLY where a flatten dab actually reached. Move an anchor out of a
+// flattened disc and the number becomes a lie no compiled-constant unit can see:
+// the arriving body either floats above the hillside or spawns inside it. That is
+// why this unit reconciles the MIRROR against the recipe and nothing here reads
+// the measured table: every row of axZM_ROUTE1_GROUND_SAMPLES is still SEEDED
+// from this same mirror, so pointing these clauses at it would swap a
+// recipe-vs-recipe reconciliation for a recipe-vs-raycast comparison that reds for
+// a reason its message does not name. The raycast oracle in
+// Tests/ZM_AutoTests_RouteGround.cpp is what replaces the seeds with measurements.
 //
 // ★ AND THE ZM-D-184 SPAWN CLEARANCE RIDES HERE, in clause (3). It is the same
 // ground plane the clauses above reconcile, read one step further up: how far
@@ -581,17 +618,23 @@ ZENITH_TEST(ZM_WorldTraversal, Route1_ArrivalMarkersSitOnTheRecipeLandmarksTheTe
 		"the Route 1 recipe declares no pads at all -- there is no flattened ground "
 		"for an arrival marker to stand on");
 
-	// (1) The provisional ground plane IS the recipe's target height. This is the
-	//     entire licence for the constant: it is not a measurement, it is the value
-	//     the bake drives flattened ground to, and if the recipe re-levels the
-	//     route the header's anchors describe a plane that no longer exists.
-	ZENITH_ASSERT_EQ_FLOAT(fZM_ROUTE1_PROVISIONAL_GROUND_Y, xRecipe.m_fTargetHeight,
+	// (1) THE RECIPE MIRROR IS STILL THE RECIPE'S TARGET HEIGHT. This is the entire
+	//     licence for that constant: it is not a measurement, it is the value the
+	//     bake drives flattened ground to, and if the recipe re-levels the route the
+	//     mirror describes a plane that no longer exists.
+	//
+	//     ★ THE SUBJECT HERE IS THE MIRROR, NOT axZM_ROUTE1_GROUND_SAMPLES. The
+	//     measured table is what "the real ground under this anchor" reads, and it is
+	//     reconciled against the world by a raycast, never against the recipe.
+	ZENITH_ASSERT_EQ_FLOAT(fZM_ROUTE1_RECIPE_TARGET_GROUND_Y, xRecipe.m_fTargetHeight,
 		fROUTE1_EXACT_EPSILON,
-		"the placement header's provisional ground plane is %.4f while the Route 1 "
-		"recipe flattens to %.4f. Every anchor in ZM_Route1Placement.h is authored "
-		"against the header's value, so the arriving player, both gates and both "
-		"trainers would all stand at the wrong height",
-		(double)fZM_ROUTE1_PROVISIONAL_GROUND_Y, (double)xRecipe.m_fTargetHeight);
+		"the placement header's recipe-target ground MIRROR is %.4f while the Route 1 "
+		"recipe flattens to %.4f. The mirror is what seeds every row of "
+		"axZM_ROUTE1_GROUND_SAMPLES and what the landmark clause below is reconciled "
+		"against, so the arriving player, both gates and both trainers would all "
+		"stand at the wrong height. Fix the mirror to match the recipe -- never give "
+		"it a measured value",
+		(double)fZM_ROUTE1_RECIPE_TARGET_GROUND_Y, (double)xRecipe.m_fTargetHeight);
 
 	// (2) Each marker sits on the landmark named after its inbound tag, and inside
 	//     the pad that flattens the ground there.
@@ -638,16 +681,21 @@ ZENITH_TEST(ZM_WorldTraversal, Route1_ArrivalMarkersSitOnTheRecipeLandmarksTheTe
 			"%.4f", xClaim.m_szWhich, (double)xClaim.m_xFeet.z, xClaim.m_szLandmark,
 			(double)pxLandmark->m_xPosition.m_fZ);
 
-		// The landmark's OWN Y is a third, independent statement of the same ground
-		// plane -- the recipe author wrote it beside the XZ, and it agreeing with
-		// the target height is what makes clause (1) a claim about this route and
-		// not just about two copies of one number.
+		// The landmark's OWN Y is a third, independent statement of the same
+		// FLATTEN TARGET -- the recipe author wrote it beside the XZ, and it agreeing
+		// with the mirror is what makes clause (1) a claim about this route and not
+		// just about two copies of one number.
+		//
+		// ★ THE MIRROR AGAIN, DELIBERATELY. A recipe landmark declares where the
+		// bake is told to LEVEL to; it is not a measurement of where the bake left
+		// the surface, so the measured table is not its counterpart.
 		ZENITH_ASSERT_EQ_FLOAT(pxLandmark->m_xPosition.m_fY,
-			fZM_ROUTE1_PROVISIONAL_GROUND_Y, fROUTE1_EXACT_EPSILON,
-			"recipe landmark '%s' declares height %.4f, not the route's flattened "
-			"%.4f -- the recipe now disagrees with itself about where the ground is",
+			fZM_ROUTE1_RECIPE_TARGET_GROUND_Y, fROUTE1_EXACT_EPSILON,
+			"recipe landmark '%s' declares height %.4f, not the route's flatten target "
+			"%.4f -- the recipe now disagrees with itself about where it is levelling "
+			"the ground to",
 			xClaim.m_szLandmark, (double)pxLandmark->m_xPosition.m_fY,
-			(double)fZM_ROUTE1_PROVISIONAL_GROUND_Y);
+			(double)fZM_ROUTE1_RECIPE_TARGET_GROUND_Y);
 
 		// ...and the marker is genuinely INSIDE the pad that flattens it, not
 		// merely near a landmark that happens to carry the right numbers.
@@ -667,8 +715,9 @@ ZENITH_TEST(ZM_WorldTraversal, Route1_ArrivalMarkersSitOnTheRecipeLandmarksTheTe
 		ZENITH_ASSERT_LE(fToPad, fLimit,
 			"the %s arrival marker stands %.4f m from pad '%s' (flatten radius "
 			"%.4f), outside the %.4f m the ground is levelled well inside. The "
-			"provisional ground height is only true where a FLATTEN dab reached, so "
-			"an arriving player would float above the hillside or spawn inside it",
+			"flatten target this marker's ground row is seeded from is only true "
+			"where a FLATTEN dab reached, so an arriving player would float above the "
+			"hillside or spawn inside it",
 			xClaim.m_szWhich, (double)fToPad, xClaim.m_szPad,
 			(double)pxPad->m_fFlattenRadius, (double)fLimit);
 	}
@@ -794,11 +843,16 @@ ZENITH_TEST(ZM_WorldTraversal, Route1_GatesStandBetweenTheirMarkerAndTheWorldEdg
 	//     mistake clause (2) exists to catch -- must FAIL through the identical
 	//     helper. Without this, a clearance predicate that always returned a large
 	//     number would look green.
+	//
+	//     ★ IT IS BUILT FROM THE SOUTH GATE'S OWN CENTRE HEIGHT. There is no longer
+	//     a shared gate centre to reach for: each sensor's Y derives from its own
+	//     measured column, and this probe is the SOUTH gate slid onto the SOUTH
+	//     marker, so it takes the south gate's own constant.
 	const ZM_Route1Volume xGateOnTheMarker =
 	{
 		Zenith_Maths::Vector3(
 			fZM_ROUTE1_SOUTH_GATE_X,
-			fZM_ROUTE1_GATE_CENTRE_Y,
+			fZM_ROUTE1_SOUTH_GATE_CENTRE_Y,
 			fZM_ROUTE1_SOUTH_ARRIVAL_Z),
 		xSouthGate.m_xScale
 	};
@@ -849,9 +903,19 @@ ZENITH_TEST(ZM_WorldTraversal, Route1_GatesStandBetweenTheirMarkerAndTheWorldEdg
 // (walked around), or centred at world Y 0 -- a tunnel 26 m below the player,
 // with every scale constant in the header still reading exactly as intended.
 //
-// Each clause measures the header against an INDEPENDENT source: the human body
-// contract for the height, the recipe's own dirt radius for the width, and the
-// recipe's target height for the ground plane.
+// Clauses (1) and (2) measure the header against an INDEPENDENT source: the human
+// body contract for the height, the recipe's own dirt radius for the width.
+//
+// ★ CLAUSE (4) IS NOT ONE OF THOSE, AND SAYING SO IS THE POINT. Since the R1-2
+// split, each gate's centre is DEFINED as its own measured column plus half the
+// box height, so Min().y == that column identically: the clause is arithmetically
+// forced and can only red on the volume arithmetic itself (a HalfExtent()/Min()
+// that lost its term, a re-defined centre constant), never on a drifted ground.
+// It reads THAT GATE'S OWN ROW of axZM_ROUTE1_GROUND_SAMPLES because that is the
+// quantity the identity is over -- the two gates are 1336 m apart on two different
+// columns, so one shared plane would red the north gate for no defect at all the
+// day the table is frozen. Per-gate keeps the clause CORRECT; it does not make it
+// stronger.
 // ============================================================================
 
 ZENITH_TEST(ZM_WorldTraversal, Route1_GateVolumesAdmitNoStepOverAndSitOnTheGround)
@@ -887,29 +951,53 @@ ZENITH_TEST(ZM_WorldTraversal, Route1_GateVolumesAdmitNoStepOverAndSitOnTheGroun
 		"and every containment and clearance clause silently changes meaning",
 		(double)fZM_ROUTE1_GATE_SCALE_Z);
 
-	// (4) BOTH BOXES REST ON THE GROUND PLANE, underside down.
-	ZENITH_ASSERT_TRUE(Route1VolumeRestsOnGround(ZM_GetRoute1SouthGate()),
-		"the south gate's underside lands at Y %.4f, not on the %.4f m ground "
-		"plane. A gate authored at world Y 0 is a tunnel 26 m below the player: a "
-		"sensor that never fires, with every compiled scale constant correct",
-		(double)ZM_GetRoute1SouthGate().Min().y,
-		(double)fZM_ROUTE1_PROVISIONAL_GROUND_Y);
-	ZENITH_ASSERT_TRUE(Route1VolumeRestsOnGround(ZM_GetRoute1NorthGate()),
-		"the north gate's underside lands at Y %.4f, not on the %.4f m ground plane",
-		(double)ZM_GetRoute1NorthGate().Min().y,
-		(double)fZM_ROUTE1_PROVISIONAL_GROUND_Y);
+	// (4) EACH BOX RESTS ON THE MEASURED GROUND OF ITS OWN COLUMN, underside down.
+	//
+	//     ★ HONEST ABOUT WHAT THIS CAN CATCH: the identity is arithmetically forced
+	//     (a gate's centre IS its column plus half the box height), so it guards the
+	//     'centre = ground + half height' rule and the Min()/HalfExtent() arithmetic,
+	//     not the ground. It is kept because that rule is what stops a sensor being
+	//     authored at world Y 0.
+	//
+	//     ★★ ONE EXPECTATION PER GATE -- NOT A STRENGTHENING, A CORRECTION. The two
+	//     sensors stand 1336 m apart and read two different rows of
+	//     axZM_ROUTE1_GROUND_SAMPLES. A single shared expectation would compare the
+	//     north gate against the SOUTH column and red on a defect that does not
+	//     exist the day that table is frozen -- and passes today only because every
+	//     row is still seeded from the recipe mirror.
+	const float fSouthGateGroundY =
+		ZM_Route1GroundFeetY(ZM_ROUTE1_GROUND_SAMPLE_SOUTH_GATE);
+	const float fNorthGateGroundY =
+		ZM_Route1GroundFeetY(ZM_ROUTE1_GROUND_SAMPLE_NORTH_GATE);
+
+	ZENITH_ASSERT_TRUE(
+		Route1VolumeRestsOnGround(ZM_GetRoute1SouthGate(), fSouthGateGroundY),
+		"the south gate's underside lands at Y %.4f, not on the %.4f m MEASURED "
+		"ground of its own column (ZM_ROUTE1_GROUND_SAMPLE_SOUTH_GATE). A gate "
+		"authored at world Y 0 is a tunnel 26 m below the player: a sensor that never "
+		"fires, with every compiled scale constant correct",
+		(double)ZM_GetRoute1SouthGate().Min().y, (double)fSouthGateGroundY);
+	ZENITH_ASSERT_TRUE(
+		Route1VolumeRestsOnGround(ZM_GetRoute1NorthGate(), fNorthGateGroundY),
+		"the north gate's underside lands at Y %.4f, not on the %.4f m MEASURED "
+		"ground of its own column (ZM_ROUTE1_GROUND_SAMPLE_NORTH_GATE, which is NOT "
+		"the south gate's). The 'centre = its own ground + half the box height' rule "
+		"has been broken, and a sensor resting on its neighbour's height is "
+		"part-buried or hovering with every scale constant still correct",
+		(double)ZM_GetRoute1NorthGate().Min().y, (double)fNorthGateGroundY);
 
 	// (5) ★ ANTI-VACUITY. The world-Y-0 volume clause (4) exists to reject must
-	//     FAIL the identical predicate.
+	//     FAIL the identical predicate, against the SAME south-column expectation
+	//     clause (4) used.
 	const ZM_Route1Volume xSunkenGate =
 	{
 		Zenith_Maths::Vector3(fZM_ROUTE1_SOUTH_GATE_X, 0.0f, fZM_ROUTE1_SOUTH_GATE_Z),
 		ZM_GetRoute1SouthGate().m_xScale
 	};
-	ZENITH_ASSERT_FALSE(Route1VolumeRestsOnGround(xSunkenGate),
+	ZENITH_ASSERT_FALSE(Route1VolumeRestsOnGround(xSunkenGate, fSouthGateGroundY),
 		"the ANTI-VACUITY arm failed: a gate centred at world Y 0 is reported as "
-		"RESTING ON the %.4f m ground plane, so clause (4) cannot red on the defect "
-		"it was written for", (double)fZM_ROUTE1_PROVISIONAL_GROUND_Y);
+		"RESTING ON the south column's %.4f m measured ground, so clause (4) cannot "
+		"red on the defect it was written for", (double)fSouthGateGroundY);
 }
 
 // ============================================================================
@@ -1041,9 +1129,10 @@ ZENITH_TEST(ZM_WorldTraversal, Route1_TrainerStationsStandOnFlattenedGrassFreeGr
 		// to either the cone or the path.
 		ZENITH_ASSERT_LE(fOffset, fCorridorLimit,
 			"trainer station '%s' stands %.4f m from the lane, outside the %.4f m "
-			"of the '%s' flatten corridor. Out there the provisional ground height "
-			"is unmeasured AND the GRASS_ERASE phase never reached, so the trainer "
-			"stands in encounter grass", xStation.m_szEntityName, (double)fOffset,
+			"of the '%s' flatten corridor. Out there his ground row's seed describes "
+			"a surface no dab levelled AND the GRASS_ERASE phase never reached, so "
+			"the trainer stands in encounter grass",
+			xStation.m_szEntityName, (double)fOffset,
 			(double)fCorridorLimit, szROUTE1_LANE_PATH_NAME);
 	}
 
@@ -1248,8 +1337,8 @@ ZENITH_TEST(ZM_WorldTraversal, Route1_TrainerStationsCanActuallySeeAPlayerWalkin
 		const Zenith_Maths::Vector3 xCentre = ZM_GetRoute1TrainerCentre(eStation);
 		const Zenith_Maths::Quat xFacing = ZM_Route1TrainerFacing(eStation);
 
-		const Route1SightSampleCount xCount =
-			Route1CountSightSamplesAlongLane(xCentre, xFacing, uSAMPLES_PER_METRE);
+		const Route1SightSampleCount xCount = Route1CountSightSamplesAlongLane(
+			xCentre, xFacing, eStation, uSAMPLES_PER_METRE);
 
 		// (0) ANTI-VACUITY on the walk itself: a helper that sampled nothing would
 		//     report zero in-cone samples and look like a placement defect, or -- if
@@ -1285,8 +1374,11 @@ ZENITH_TEST(ZM_WorldTraversal, Route1_TrainerStationsCanActuallySeeAPlayerWalkin
 			"testing the placement it claims to", xStation.m_szEntityName,
 			(double)fProbeOffset, (double)fPROBE_LATERAL_OFFSET);
 
-		const Route1SightSampleCount xProbeCount =
-			Route1CountSightSamplesAlongLane(xProbe, xFacing, uSAMPLES_PER_METRE);
+		// ★ THE PROBE KEEPS THE STATION'S OWN MEASURED GROUND: it is the SAME
+		//   observer displaced laterally, so the walked line it is measured against
+		//   must not silently move to a different height as well.
+		const Route1SightSampleCount xProbeCount = Route1CountSightSamplesAlongLane(
+			xProbe, xFacing, eStation, uSAMPLES_PER_METRE);
 		ZENITH_ASSERT_EQ(xProbeCount.m_uInCone, 0u,
 			"the ANTI-VACUITY arm failed: a probe station displaced to %.4f m off "
 			"the lane -- past the cone's %.4f m geometric ceiling -- still reports "
@@ -1625,15 +1717,24 @@ ZENITH_TEST(ZM_WorldTraversal, Route1_SettledCameraStandsAboveGroundBehindTheArr
 		(double)fZM_ROUTE1_CAMERA_FAR, (double)fRouteDepth);
 
 	// (3) The settled eye stands clear of the ground.
+	//
+	//     ★ THE GROUND HERE IS THE SOUTH ARRIVAL'S MEASURED COLUMN, because the
+	//     settled pose is DERIVED from the south arrival: the pivot is
+	//     ZM_GetRoute1SouthArrivalBodyCentre lifted by the follow camera's pivot
+	//     height, so the surface the eye must clear is the one that body stands on.
+	//     The recipe mirror would be a different quantity wearing the same number
+	//     until axZM_ROUTE1_GROUND_SAMPLES is frozen.
 	const Zenith_Maths::Vector3 xCamera = ZM_GetRoute1SettledCameraPosition();
+	const float fArrivalGroundY =
+		ZM_Route1GroundFeetY(ZM_ROUTE1_GROUND_SAMPLE_SOUTH_ARRIVAL);
 	const float fClearanceFloor =
-		fZM_ROUTE1_PROVISIONAL_GROUND_Y + fZM_ROUTE1_CAMERA_MIN_GROUND_CLEARANCE;
+		fArrivalGroundY + fZM_ROUTE1_CAMERA_MIN_GROUND_CLEARANCE;
 	ZENITH_ASSERT_GE(xCamera.y, fClearanceFloor,
-		"the settled Route 1 camera sits at Y %.4f, below the %.4f m floor (ground "
-		"%.4f + %.4f clearance). A pitch sign error swings the eye BELOW its pivot "
-		"and buries it in the terrain, with every camera constant still reading "
-		"exactly as intended", (double)xCamera.y, (double)fClearanceFloor,
-		(double)fZM_ROUTE1_PROVISIONAL_GROUND_Y,
+		"the settled Route 1 camera sits at Y %.4f, below the %.4f m floor (the south "
+		"arrival's measured ground %.4f + %.4f clearance). A pitch sign error swings "
+		"the eye BELOW its pivot and buries it in the terrain, with every camera "
+		"constant still reading exactly as intended", (double)xCamera.y,
+		(double)fClearanceFloor, (double)fArrivalGroundY,
 		(double)fZM_ROUTE1_CAMERA_MIN_GROUND_CLEARANCE);
 
 	// (4) It stands BEHIND the arriving body -- far enough back not to be inside

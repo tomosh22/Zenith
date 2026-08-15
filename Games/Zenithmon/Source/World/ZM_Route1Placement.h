@@ -15,8 +15,11 @@
 // no ZENITH_TOOLS guard -- these constants have to be visible to boot units that
 // run in a headless CI build where Project_RegisterEditorAutomationSteps is
 // compiled out entirely. HEADER-ONLY: every accessor is `inline`, so there is no
-// paired .cpp to keep in step (Dawnmere's .cpp exists only because it owns
-// MEASURED tables; nothing here is measured yet -- see the PROVISIONAL star).
+// paired .cpp to keep in step. Dawnmere's .cpp exists only because it owns MEASURED
+// tables; this file owns one too (see THE GROUND, below), but it holds it as an
+// `inline constexpr` array at namespace scope instead -- which is the ONLY
+// structural difference between it and the three tables in
+// Source/World/ZM_DawnmerePlacement.cpp.
 //
 // ★ NEVER RE-SPELL A LITERAL FROM THIS FILE AT A CALL SITE. A constant spelled
 // twice cannot red a drift -- both sides move together and the assertion becomes
@@ -231,30 +234,33 @@ inline const char* ZM_GetRoute1NorthGateSpawnTag()
 	return ZM_GetRoute1GateSpawnTag(ZM_SCENE_THORNACRE);
 }
 
-// ---- The ground plane --------------------------------------------------------
+// ============================================================================
+// ---- THE ANCHOR COLUMNS ------------------------------------------------------
 //
-// ★★ PROVISIONAL / UNMEASURED -- RE-MEASURE IN R1-2 (see the raycast oracle
-// ZM_DawnmereNpcGroundTruth_Test, Tests/ZM_AutoTests_NpcTalk.cpp -- NOT
-// ZM_AutoTests_CameraClearance.cpp, which hosts the Home and Lab oracles).
+// ★★ EVERY ANCHOR'S XZ IS DECLARED HERE, IN ONE BLOCK, ABOVE THE SECTIONS THAT
+// DISCUSS THEM -- AND THAT ORDER IS FORCED, NOT STYLISTIC. The MEASURED GROUND
+// table below carries one row per column, and each row NAMES its column by
+// spelling that column's XZ. A `constexpr` initialiser cannot forward-reference a
+// constant declared further down the file, so the table cannot sit above these;
+// and it cannot be pushed to the end of the file either, because the arrival,
+// gate and trainer heights are DERIVED from it and those derivations live in the
+// sections that follow.
 //
-// This is the Route 1 recipe's m_fTargetHeight, i.e. the height every FLATTEN dab
-// drives its paths and pads TO -- not a surface anybody has measured. Route 1 has
-// no ground-truth oracle at all today; Dawnmere's is a raycast against a loaded
-// scene, and no Route1.zscen exists to raycast.
-//
-// It is legitimate here ONLY because every anchor below is asserted to lie inside a
-// flattened pad or inside the lane's flatten corridor, where the bake really does
-// drive the height to this value. Move an anchor out of a flattened region and this
-// number becomes a lie that no compiled-constant unit can see -- the arriving body
-// either floats or spawns inside the terrain. R1-2 lands the raycast oracle and
-// re-freezes these as MEASURED literals.
-inline constexpr float fZM_ROUTE1_PROVISIONAL_GROUND_Y = 26.0f;
+// ★ THE ALTERNATIVE -- GIVING EACH TABLE ROW ITS OWN INDEPENDENT XZ LITERALS --
+// WAS REJECTED OUTRIGHT. This file's loudest rule is that a number has ONE
+// spelling (second star in the banner): a second copy of an anchor's XZ inside
+// the ground table is exactly the drift-invisible duplication that rule exists to
+// forbid, and a static_assert reconciling the two copies would merely be a THIRD
+// spelling of the same number. So the columns are declared once, here, and
+// everything downstream -- the measured table, the markers, the gates, the
+// trainers -- reads them.
+// ============================================================================
 
-// ---- The two arrival markers -------------------------------------------------
+// ---- The two arrival markers' columns ----------------------------------------
 //
 // Both sit on the Route 1 recipe's landmarks of the same name as the inbound tag,
 // inside the SouthGate / NorthGate pads (flatten radius 30 m each), so the ground
-// under them is genuinely levelled to the height above. The boot unit
+// under them is genuinely levelled. The boot unit
 // Route1_ArrivalMarkersSitOnTheRecipeLandmarksTheTerrainFlattened reconciles these
 // four numbers against the recipe -- two independently authored tables compared,
 // which is why it is a check and not a re-spelling.
@@ -263,17 +269,275 @@ inline constexpr float fZM_ROUTE1_SOUTH_ARRIVAL_Z = 112.0f;
 inline constexpr float fZM_ROUTE1_NORTH_ARRIVAL_X = 512.0f;
 inline constexpr float fZM_ROUTE1_NORTH_ARRIVAL_Z = 1424.0f;
 
+// ---- The two gate columns ----------------------------------------------------
+//
+// Each gate stands BEYOND its own marker -- south gate at lower Z than the south
+// arrival, north gate at higher Z than the north arrival -- so the sensor is the
+// last thing between the player and the edge of the world, and an arriving player
+// is never already inside it. Both centres sit inside their pad's flattened disc.
+//
+// ★ NO GATE ENTITY IS AUTHORED BY THIS SLICE -- the triggers are R1-3's, in one
+// commit, after the destination markers exist. These two columns are measured
+// anyway because their Y derives from the ground under them: leaving them out of
+// the table below would strand them on the very scalar this split is retiring,
+// and a stranded column is how a sensor ends up 26 m under the player.
+inline constexpr float fZM_ROUTE1_SOUTH_GATE_X = 512.0f;
+inline constexpr float fZM_ROUTE1_SOUTH_GATE_Z = 100.0f;
+inline constexpr float fZM_ROUTE1_NORTH_GATE_X = 512.0f;
+inline constexpr float fZM_ROUTE1_NORTH_GATE_Z = 1436.0f;
+
+// ---- The two trainer stations' columns ---------------------------------------
+//
+// ★★ THE HARD CONSTRAINT ON THE TWO ANCHORS BELOW -- DO NOT "TIDY" THEM.
+//
+// Source/Interaction/ZM_TrainerSightLogic.h ships fZM_SIGHT_MAX_DISTANCE = 8.0 and
+// fZM_SIGHT_MIN_FACING_DOT = 0.8660254 (cos 30 degrees, i.e. a 30-degree HALF
+// angle). For a trainer staring down the route at a player walking the lane at
+// lateral offset d, being seen needs the along-forward component to be at least
+// cos(30) of the range -- i.e. the player must be at least d/tan(30) = d*sqrt(3)
+// ahead -- WHILE the range stays inside 8 m. Those two windows only overlap for
+//
+//     d <= 8.0 * sin(30 degrees) = 4.0 m
+//
+// so a trainer parked more than 4 m off the walked line can NEVER be triggered, in
+// any playthrough, forever -- and the terrain, the scene bytes and every other
+// placement check would all be perfectly green. That is the failure mode the boot
+// unit Route1_TrainerStationsCanActuallySeeAPlayerWalkingTheLane exists for: it
+// samples the recipe's own DirtLane polyline through the SHIPPED sight predicate
+// and counts the in-cone samples, with a probe station displaced to 6 m lateral as
+// its anti-vacuity arm (which yields zero at every sampling density tried).
+//
+// ★ AND THE SIGHT CONSTANTS ARE OUT OF SCOPE -- do not widen the cone to fit an
+// anchor. Move the anchor.
+//
+// ★ ONE OF THESE TWO ANCHORS WAS ALREADY DEAD ONCE. A draft forager at (528, 950)
+// stood EAST of the lane while the perpendicular foot of the lane fell ~0.56 m
+// north of him; facing -Z, his cone window and his range window were disjoint and
+// the station produced ZERO in-cone samples at 200, 2000 and 20000 samples per
+// segment. He is now WEST of the lane, like the rambler. Side symmetry is not worth
+// a trainer nobody can meet.
+//
+// Measured against the shipped DirtLane polyline
+// {(512,64),(480,300),(540,560),(500,820),(550,1080),(512,1472)}:
+//   rambler  perpendicular offset 2.1288 m, ~2.2 m of in-cone walked arc
+//   forager  perpendicular offset 2.4551 m, a comfortably wider window
+// Both sit inside the lane's 16 m FLATTEN radius, so the ground under them is
+// levelled toward the recipe target **and** zeroed by the GRASS_ERASE phase -- a
+// trainer can never be standing in encounter grass.
+inline constexpr float fZM_ROUTE1_TRAINER_RAMBLER_X = 524.0f;
+inline constexpr float fZM_ROUTE1_TRAINER_RAMBLER_Z = 650.0f;
+inline constexpr float fZM_ROUTE1_TRAINER_FORAGER_X = 522.5f;
+inline constexpr float fZM_ROUTE1_TRAINER_FORAGER_Z = 950.0f;
+
+// ============================================================================
+// ---- THE GROUND: A RECIPE MIRROR **AND** A MEASURED TABLE --------------------
+//
+// ★★ TWO DIFFERENT CLAIMS, AND THEY MUST NOT BE COLLAPSED BACK INTO ONE SCALAR.
+// Until R1-2 this file carried a single fZM_ROUTE1_PROVISIONAL_GROUND_Y that meant
+// BOTH "the height the recipe flattens to" AND "the surface under this anchor".
+// Those are the same number only while the table below is unfrozen; the day a real
+// raycast lands they stop being the same number, and they stop being the same
+// number PER COLUMN.
+//
+//   (a) fZM_ROUTE1_RECIPE_TARGET_GROUND_Y MIRRORS the Route 1 terrain recipe's
+//       m_fTargetHeight. It is exact, it is not a measurement, and it must stay
+//       exactly equal to the recipe. Its readers are the shipped boot unit
+//       Route1_ArrivalMarkersSitOnTheRecipeLandmarksTheTerrainFlattened -- clause
+//       (1) reconciles it against xRecipe.m_fTargetHeight, and the landmark clause
+//       beside it reconciles each landmark's own declared Y against it.
+//       ★ NEVER GIVE THIS CONSTANT A MEASURED VALUE. That would turn a
+//       recipe-vs-recipe reconciliation into a recipe-vs-raycast comparison, which
+//       reds for a reason its message does not name.
+//
+//   (b) axZM_ROUTE1_GROUND_SAMPLES is the MEASURED surface, one row per column.
+//       EVERYTHING that means "the real ground under this anchor" reads it.
+// ============================================================================
+
+// (a) THE RECIPE MIRROR.
+inline constexpr float fZM_ROUTE1_RECIPE_TARGET_GROUND_Y = 26.0f;
+
+// ---- (b) THE MEASURED GROUND -------------------------------------------------
+//
+// Same row shape and same idiom as the three measured tables in
+// Source/World/ZM_DawnmerePlacement.cpp (the ZM-D-173 Home block, the SC-D lab
+// block and the R1-2 route-seam block): name, X, Z, feet Y, ONE VALUE PER LINE, so
+// a re-measure is a per-row replacement rather than a rewrite.
+struct ZM_Route1GroundSample
+{
+	// The column's name. Every row is named by the ENTITY that stands on it, read
+	// from the one place that spells it -- two of the six entities are not authored
+	// until R1-3, but their names already exist above and re-typing one here would
+	// be a second spelling. It is also the key a ground-truth oracle prints its
+	// `paste=` literal against, so it is contract.
+	const char* m_szEntityName;
+	float       m_fX;
+	float       m_fZ;
+	// The TERRAIN SURFACE at (m_fX, m_fZ) -- never a body centre. Callers that want
+	// a centre add the body half-extent through the accessors further down, so the
+	// capsule arithmetic exists in exactly one place.
+	float       m_fFeetY;
+};
+
+// ★ ITS OWN ENUM, ITS OWN ARRAY AND ITS OWN COUNT, for the reason
+// ZM_DawnmerePlacement.h spells out on its lab enum: appending a row to another
+// table's enum measures it up to THAT table's fixed probe-slot bound and silently
+// DROPS it beyond, with every test still green.
+//
+// The ORDER is contract -- the deduced-bound static_assert below only checks the
+// COUNT, so a reordering that kept the count would silently swap two columns'
+// heights.
+enum ZM_ROUTE1_GROUND_SAMPLE : u_int
+{
+	ZM_ROUTE1_GROUND_SAMPLE_SOUTH_ARRIVAL,
+	ZM_ROUTE1_GROUND_SAMPLE_NORTH_ARRIVAL,
+	ZM_ROUTE1_GROUND_SAMPLE_SOUTH_GATE,
+	ZM_ROUTE1_GROUND_SAMPLE_NORTH_GATE,
+	ZM_ROUTE1_GROUND_SAMPLE_TRAINER_RAMBLER,
+	ZM_ROUTE1_GROUND_SAMPLE_TRAINER_FORAGER,
+
+	ZM_ROUTE1_GROUND_SAMPLE_COUNT
+};
+
+// ==== R1-2 MEASURED ROUTE 1 GROUND -- PROVISIONAL, NOT YET FROZEN ====
+//
+// ★★ EVERY ROW IS SEEDED WITH THE RECIPE TARGET HEIGHT, NOT WITH AN OUT-OF-BAND
+// SENTINEL, AND THAT IS DELIBERATE AND LOAD-BEARING. Dawnmere's unfrozen rows
+// shipped on fZM_DAWNMERE_LAB_GROUND_UNMEASURED -- a finite value a million metres
+// below the world -- because NOTHING WAS AUTHORED from them while they were
+// unfrozen. Route 1 is the opposite case: this milestone authors the scene from
+// these rows BEFORE any oracle exists, and one of the entities it authors is a
+// DYNAMIC player capsule. A -1000000.0f seed would author that capsule a million
+// metres under the world on the provisional boot, and physics would take it from
+// there.
+//
+// ★★ AND THE SEED IS GOOD TO WELL UNDER A METRE, WHICH IS A MEASUREMENT RATHER
+// THAN A HOPE (R1-2 step 1). Dawnmere's route-seam column froze at 24.36592
+// against a 24.0 recipe target -- target + 0.366 -- while every OTHER measured
+// Dawnmere column reads ~2 m above its target. The difference is that the seam
+// column is the first measured Dawnmere column INSIDE A FLATTEN CORRIDOR, and a
+// FLATTEN dab drives ground TO the target; the ~+2 m on the others is the
+// region-wide hydraulic-erosion deposit pass sitting on top of UNFLATTENED ground.
+// Every column in this table is on a flattened pad or inside the lane's flatten
+// corridor, so each seed is expected to be within a fraction of a metre of the
+// truth.
+// ★ DO NOT READ A NEAR-TARGET RESULT AS A BROKEN PROBE when the oracle finally
+// runs. Near-target is the PREDICTION here, not a symptom.
+//
+// ★★ BE HONEST ABOUT WHAT THE SEED COSTS: BECAUSE EVERY ROW EQUALS THE MIRROR, NO
+// COMPILED-CONSTANT UNIT IN THIS GAME CAN TELL THIS TABLE IS UNFROZEN. A boot unit
+// asserting "the rows sit near the recipe target" passes VACUOUSLY today and would
+// keep passing if the freeze never happened. The only thing that can see it is a
+// real downward raycast against a baked Route 1 terrain body -- and there is none
+// yet, because no Route1.zscen exists to raycast against. That oracle is the
+// freeze slice's first deliverable, not this one's; until it lands, the
+// unfrozen-ness of this table is carried by this comment and nothing else.
+//
+// TO FREEZE, once that oracle exists: run it against a warm Route 1 terrain bake,
+// take the `paste=` literal it prints for each row NAME below, put each in place of
+// that row's seed, rebuild, and re-author Route1 from a windowed tools boot. Every
+// derived height in the sections that follow moves with it automatically.
+//
+// ★ DO NOT HAND-EDIT A ROW TO MAKE A TEST PASS. If the oracle reds, the terrain
+// moved under the route and the correct response is to RE-RUN it and re-paste, AS A
+// SET. Hand-tuning one row is how a band guard ends up guarding nothing.
+//
+// ★ WHAT RE-MEASURES THEM AFTERWARDS: any change to the Route 1 terrain recipe (a
+// pad, path, landmark, seed, flatten radius or density divisor) OR to the terrain
+// collision topology. Such a change re-measures EVERY ground table in the game or
+// leaves a silent staleness behind -- ZM-D-182 and ZM-D-186 are both worked
+// examples of exactly that going wrong.
+inline constexpr ZM_Route1GroundSample axZM_ROUTE1_GROUND_SAMPLES[] =
+{
+	// ★★ FROZEN 2026-08-15 AS A SET, from ZM_Route1GroundTruth_Test against a warm
+	// Route 1 bake and the committed Route1.zscen. Every row: resolved=1,
+	// hitTerrain=1, finalHit='Route1Terrain' -- never 'Player', which is the hit
+	// that would silently freeze a body-height plane instead of a surface.
+	// OBSERVED, never derived: do not recompute one of these from another.
+	//
+	// The spread is 26.199 .. 27.830 over 1,324 m of route, and every row sits
+	// +0.199 .. +1.830 ABOVE the 26.0 recipe target -- i.e. NEAR it, which is the
+	// signature of flattened ground. That is the R1-2 step-1 finding holding:
+	// Dawnmere's seam column read target + 0.366 because it lies in a FLATTEN
+	// CORRIDOR, while Dawnmere's UNFLATTENED columns carry ~+2 m of erosion
+	// deposit. No column here disagrees with its neighbours in a way that would
+	// mean an anchor had drifted off the flattened lane.
+	//
+	// entity name,                             x,                            z,                            feet Y (MEASURED)
+	{ szZM_ROUTE1_SOUTH_ARRIVAL_ENTITY_NAME,    fZM_ROUTE1_SOUTH_ARRIVAL_X,   fZM_ROUTE1_SOUTH_ARRIVAL_Z,   26.91279f },
+	{ szZM_ROUTE1_NORTH_ARRIVAL_ENTITY_NAME,    fZM_ROUTE1_NORTH_ARRIVAL_X,   fZM_ROUTE1_NORTH_ARRIVAL_Z,   27.82981f },
+	{ szZM_ROUTE1_SOUTH_GATE_ENTITY_NAME,       fZM_ROUTE1_SOUTH_GATE_X,      fZM_ROUTE1_SOUTH_GATE_Z,      26.43808f },
+	{ szZM_ROUTE1_NORTH_GATE_ENTITY_NAME,       fZM_ROUTE1_NORTH_GATE_X,      fZM_ROUTE1_NORTH_GATE_Z,      26.86820f },
+	{ szZM_ROUTE1_TRAINER_RAMBLER_ENTITY_NAME,  fZM_ROUTE1_TRAINER_RAMBLER_X, fZM_ROUTE1_TRAINER_RAMBLER_Z, 26.64679f },
+	{ szZM_ROUTE1_TRAINER_FORAGER_ENTITY_NAME,  fZM_ROUTE1_TRAINER_FORAGER_X, fZM_ROUTE1_TRAINER_FORAGER_Z, 26.19853f },
+};
+// ==== END R1-2 MEASURED ROUTE 1 GROUND ====
+
+// The bound is DEDUCED, never spelled. With an explicit
+// [ZM_ROUTE1_GROUND_SAMPLE_COUNT] this static_assert would be a tautology and a
+// forgotten row would merely zero-initialise the tail into a NULL-named column at
+// the world origin AT HEIGHT ZERO -- 26 m under the route.
+static_assert(
+	sizeof(axZM_ROUTE1_GROUND_SAMPLES) / sizeof(axZM_ROUTE1_GROUND_SAMPLES[0])
+		== ZM_ROUTE1_GROUND_SAMPLE_COUNT,
+	"the Route 1 ground-sample table must have exactly one row per ZM_ROUTE1_GROUND_SAMPLE");
+
+// The answer for an id no row covers. Every field is DEFINED and INERT, in this
+// file's existing degenerate-answer idiom ("Route1InvalidTrainerStation" at the
+// world's (0, _, 0) corner): a name no column carries, a coordinate outside every
+// pad, path corridor and flatten radius, and a FINITE height -- so a caller that
+// skipped the range check gets an obviously-wrong-but-legal anchor rather than a
+// NaN in a transform or a body a million metres down.
+inline constexpr ZM_Route1GroundSample xZM_ROUTE1_INVALID_GROUND_SAMPLE =
+{
+	"Route1InvalidGroundSample", 0.0f, 0.0f, fZM_ROUTE1_RECIPE_TARGET_GROUND_Y
+};
+
+inline constexpr u_int ZM_GetRoute1GroundSampleCount()
+{
+	return (u_int)ZM_ROUTE1_GROUND_SAMPLE_COUNT;
+}
+
+// TOTAL, and `constexpr` because every derived height below is constexpr. NOTHING
+// HERE ASSERTS -- Zenith_Assert calls Zenith_DebugBreak() in EVERY configuration
+// and the whole unit suite runs at boot, so an assert on an argument a unit
+// deliberately feeds does not fail one test, it ends the run.
+inline constexpr const ZM_Route1GroundSample& ZM_GetRoute1GroundSample(
+	ZM_ROUTE1_GROUND_SAMPLE eSample)
+{
+	return eSample < ZM_ROUTE1_GROUND_SAMPLE_COUNT
+		? axZM_ROUTE1_GROUND_SAMPLES[eSample]
+		: xZM_ROUTE1_INVALID_GROUND_SAMPLE;
+}
+
+// ★ THIS IS THE FUNCTION EVERY "the real ground under this anchor" DERIVATION
+// READS. If you are reaching for fZM_ROUTE1_RECIPE_TARGET_GROUND_Y to place
+// something, you want this instead.
+inline constexpr float ZM_Route1GroundFeetY(ZM_ROUTE1_GROUND_SAMPLE eSample)
+{
+	return ZM_GetRoute1GroundSample(eSample).m_fFeetY;
+}
+
+// ---- The two arrival markers -------------------------------------------------
+//
 // ★ A ZM_SpawnPoint's AUTHORED TRANSFORM IS THE FEET, NOT THE BODY CENTRE.
 // ZM_GameStateManager::CalculateSpawnCenter adds fZM_HUMAN_BODY_HALF_HEIGHT at warp
 // time, so authoring a body centre here would warp every arriving player half a
 // body high and drop them. Same vocabulary as fZM_PROFLAB_SPAWN_FEET_Y.
-inline constexpr float fZM_ROUTE1_ARRIVAL_FEET_Y = fZM_ROUTE1_PROVISIONAL_GROUND_Y;
+//
+// ★ THERE IS NO LONGER A SINGLE SHARED fZM_ROUTE1_ARRIVAL_FEET_Y, AND THERE MUST
+// NOT BE ONE AGAIN. The two markers are 1312 m apart on eroded terrain; the moment
+// the table above is frozen they stand on two different surfaces, and one shared
+// constant would silently hand one marker the other one's ground.
+inline constexpr float fZM_ROUTE1_SOUTH_ARRIVAL_FEET_Y =
+	ZM_Route1GroundFeetY(ZM_ROUTE1_GROUND_SAMPLE_SOUTH_ARRIVAL);
+inline constexpr float fZM_ROUTE1_NORTH_ARRIVAL_FEET_Y =
+	ZM_Route1GroundFeetY(ZM_ROUTE1_GROUND_SAMPLE_NORTH_ARRIVAL);
 
 inline Zenith_Maths::Vector3 ZM_GetRoute1SouthArrivalFeet()
 {
 	return Zenith_Maths::Vector3(
 		fZM_ROUTE1_SOUTH_ARRIVAL_X,
-		fZM_ROUTE1_ARRIVAL_FEET_Y,
+		fZM_ROUTE1_SOUTH_ARRIVAL_FEET_Y,
 		fZM_ROUTE1_SOUTH_ARRIVAL_Z);
 }
 
@@ -281,7 +545,7 @@ inline Zenith_Maths::Vector3 ZM_GetRoute1NorthArrivalFeet()
 {
 	return Zenith_Maths::Vector3(
 		fZM_ROUTE1_NORTH_ARRIVAL_X,
-		fZM_ROUTE1_ARRIVAL_FEET_Y,
+		fZM_ROUTE1_NORTH_ARRIVAL_FEET_Y,
 		fZM_ROUTE1_NORTH_ARRIVAL_Z);
 }
 
@@ -415,23 +679,25 @@ inline constexpr float fZM_ROUTE1_GATE_SCALE_Y = 4.0f;
 inline constexpr float fZM_ROUTE1_GATE_SCALE_Z = 6.0f;
 
 // ★ THE BOX SITS **ON** THE GROUND, WHICH IS WHY ITS CENTRE IS NOT ITS ANCHOR.
-// Route 1's ground plane is 26 m up. A gate authored at world Y 0 is a tunnel 26 m
+// Route 1's ground is ~26 m up. A gate authored at world Y 0 is a tunnel 26 m
 // BELOW the player: a sensor that never fires, with every compiled scale constant
 // looking perfectly correct. Identical in form to Dawnmere's trigger rule (its own
 // ground plus 1.25 for a 2.5-tall box); the boot unit
 // Route1_GateVolumesAdmitNoStepOverAndSitOnTheGround asserts Min().y lands exactly
-// on the ground plane.
-inline constexpr float fZM_ROUTE1_GATE_CENTRE_Y =
-	fZM_ROUTE1_PROVISIONAL_GROUND_Y + fZM_ROUTE1_GATE_SCALE_Y * 0.5f;
-
-// Each gate stands BEYOND its own marker -- south gate at lower Z than the south
-// arrival, north gate at higher Z than the north arrival -- so the sensor is the
-// last thing between the player and the edge of the world, and an arriving player
-// is never already inside it. Both centres sit inside their pad's flattened disc.
-inline constexpr float fZM_ROUTE1_SOUTH_GATE_X = 512.0f;
-inline constexpr float fZM_ROUTE1_SOUTH_GATE_Z = 100.0f;
-inline constexpr float fZM_ROUTE1_NORTH_GATE_X = 512.0f;
-inline constexpr float fZM_ROUTE1_NORTH_GATE_Z = 1436.0f;
+// on the ground under that gate.
+//
+// ★ ONE CENTRE PER GATE, READ FROM THAT GATE'S OWN MEASURED COLUMN. The two
+// sensors are 1336 m apart; a shared centre would rest one of them on the other's
+// ground the instant the measured table is frozen -- part-buried at one end and
+// hovering at the other, with every scale constant still correct. Their XZ lives
+// in THE ANCHOR COLUMNS block above, because the measured table has to name the
+// column and constexpr cannot forward-reference.
+inline constexpr float fZM_ROUTE1_SOUTH_GATE_CENTRE_Y =
+	ZM_Route1GroundFeetY(ZM_ROUTE1_GROUND_SAMPLE_SOUTH_GATE)
+	+ fZM_ROUTE1_GATE_SCALE_Y * 0.5f;
+inline constexpr float fZM_ROUTE1_NORTH_GATE_CENTRE_Y =
+	ZM_Route1GroundFeetY(ZM_ROUTE1_GROUND_SAMPLE_NORTH_GATE)
+	+ fZM_ROUTE1_GATE_SCALE_Y * 0.5f;
 
 // ★★ THE NEAR FACE MUST CLEAR THE ARRIVING BODY, OR THE GATE IS AN INFINITE LOOP.
 // A player warps IN onto the marker; if the arriving capsule overlapped the sensor,
@@ -453,7 +719,7 @@ inline ZM_Route1Volume ZM_GetRoute1SouthGate()
 	return {
 		Zenith_Maths::Vector3(
 			fZM_ROUTE1_SOUTH_GATE_X,
-			fZM_ROUTE1_GATE_CENTRE_Y,
+			fZM_ROUTE1_SOUTH_GATE_CENTRE_Y,
 			fZM_ROUTE1_SOUTH_GATE_Z),
 		Zenith_Maths::Vector3(
 			fZM_ROUTE1_GATE_SCALE_X,
@@ -466,7 +732,7 @@ inline ZM_Route1Volume ZM_GetRoute1NorthGate()
 	return {
 		Zenith_Maths::Vector3(
 			fZM_ROUTE1_NORTH_GATE_X,
-			fZM_ROUTE1_GATE_CENTRE_Y,
+			fZM_ROUTE1_NORTH_GATE_CENTRE_Y,
 			fZM_ROUTE1_NORTH_GATE_Z),
 		Zenith_Maths::Vector3(
 			fZM_ROUTE1_GATE_SCALE_X,
@@ -494,46 +760,12 @@ struct ZM_Route1TrainerStation
 	float m_fZ;
 };
 
-// ★★ THE HARD CONSTRAINT ON THE TWO ANCHORS BELOW -- DO NOT "TIDY" THEM.
-//
-// Source/Interaction/ZM_TrainerSightLogic.h ships fZM_SIGHT_MAX_DISTANCE = 8.0 and
-// fZM_SIGHT_MIN_FACING_DOT = 0.8660254 (cos 30 degrees, i.e. a 30-degree HALF
-// angle). For a trainer staring down the route at a player walking the lane at
-// lateral offset d, being seen needs the along-forward component to be at least
-// cos(30) of the range -- i.e. the player must be at least d/tan(30) = d*sqrt(3)
-// ahead -- WHILE the range stays inside 8 m. Those two windows only overlap for
-//
-//     d <= 8.0 * sin(30 degrees) = 4.0 m
-//
-// so a trainer parked more than 4 m off the walked line can NEVER be triggered, in
-// any playthrough, forever -- and the terrain, the scene bytes and every other
-// placement check would all be perfectly green. That is the failure mode the boot
-// unit Route1_TrainerStationsCanActuallySeeAPlayerWalkingTheLane exists for: it
-// samples the recipe's own DirtLane polyline through the SHIPPED sight predicate
-// and counts the in-cone samples, with a probe station displaced to 6 m lateral as
-// its anti-vacuity arm (which yields zero at every sampling density tried).
-//
-// ★ AND THE SIGHT CONSTANTS ARE OUT OF SCOPE -- do not widen the cone to fit an
-// anchor. Move the anchor.
-//
-// ★ ONE OF THESE TWO ANCHORS WAS ALREADY DEAD ONCE. A draft forager at (528, 950)
-// stood EAST of the lane while the perpendicular foot of the lane fell ~0.56 m
-// north of him; facing -Z, his cone window and his range window were disjoint and
-// the station produced ZERO in-cone samples at 200, 2000 and 20000 samples per
-// segment. He is now WEST of the lane, like the rambler. Side symmetry is not worth
-// a trainer nobody can meet.
-//
-// Measured against the shipped DirtLane polyline
-// {(512,64),(480,300),(540,560),(500,820),(550,1080),(512,1472)}:
-//   rambler  perpendicular offset 2.1288 m, ~2.2 m of in-cone walked arc
-//   forager  perpendicular offset 2.4551 m, a comfortably wider window
-// Both sit inside the lane's 16 m FLATTEN radius, so the ground under them is
-// levelled to fZM_ROUTE1_PROVISIONAL_GROUND_Y **and** zeroed by the GRASS_ERASE
-// phase -- a trainer can never be standing in encounter grass.
-inline constexpr float fZM_ROUTE1_TRAINER_RAMBLER_X = 524.0f;
-inline constexpr float fZM_ROUTE1_TRAINER_RAMBLER_Z = 650.0f;
-inline constexpr float fZM_ROUTE1_TRAINER_FORAGER_X = 522.5f;
-inline constexpr float fZM_ROUTE1_TRAINER_FORAGER_Z = 950.0f;
+// ★ THE TWO ANCHORS' XZ LIVE IN **THE ANCHOR COLUMNS** BLOCK NEAR THE TOP OF THIS
+// FILE, together with the full sight-cone derivation that fixes them there (the
+// 4.0 m geometric limit, and the draft forager who was provably unmeetable). They
+// are declared up there because the MEASURED GROUND table has to name their
+// columns and a constexpr initialiser cannot forward-reference. Read that block
+// before moving either number; the constraint is not obvious from here.
 
 // The clear air a walking player is owed past both bodies once they have passed
 // each other. Named so the floor below is a DERIVATION rather than a number picked
@@ -654,13 +886,37 @@ inline ZM_Route1TrainerStation ZM_GetRoute1TrainerStation(
 	return { "Route1InvalidTrainerStation", 0.0f, 0.0f };
 }
 
-// Where a station's FEET land: on the flattened ground the lane's flatten corridor
-// levels for him. Same vocabulary as the arrival markers.
+// Which MEASURED COLUMN a station stands on.
+//
+// TOTAL: an out-of-range station yields ZM_ROUTE1_GROUND_SAMPLE_COUNT, which
+// ZM_Route1GroundFeetY answers with the inert sentinel row's height. Paired with
+// ZM_GetRoute1TrainerStation's own degenerate (0, 0) answer, a caller that indexes
+// past the end lands at the world corner on a legal height -- outside every pad and
+// corridor, so the offset clauses of
+// Route1_TrainerStationsStandOnFlattenedGrassFreeGroundBesideTheLane still red on
+// it rather than matching a real station.
+inline ZM_ROUTE1_GROUND_SAMPLE ZM_GetRoute1TrainerGroundSample(
+	ZM_ROUTE1_TRAINER_ID eStation)
+{
+	switch (eStation)
+	{
+	case ZM_ROUTE1_TRAINER_RAMBLER: return ZM_ROUTE1_GROUND_SAMPLE_TRAINER_RAMBLER;
+	case ZM_ROUTE1_TRAINER_FORAGER: return ZM_ROUTE1_GROUND_SAMPLE_TRAINER_FORAGER;
+	default: break;
+	}
+	return ZM_ROUTE1_GROUND_SAMPLE_COUNT;
+}
+
+// Where a station's FEET land: on the MEASURED ground of his own column -- the
+// flattened lane corridor levels it, but which height the bake actually left there
+// is the table's answer, not the recipe's. Same vocabulary as the arrival markers.
 inline Zenith_Maths::Vector3 ZM_GetRoute1TrainerFeet(ZM_ROUTE1_TRAINER_ID eStation)
 {
 	const ZM_Route1TrainerStation xStation = ZM_GetRoute1TrainerStation(eStation);
 	return Zenith_Maths::Vector3(
-		xStation.m_fX, fZM_ROUTE1_PROVISIONAL_GROUND_Y, xStation.m_fZ);
+		xStation.m_fX,
+		ZM_Route1GroundFeetY(ZM_GetRoute1TrainerGroundSample(eStation)),
+		xStation.m_fZ);
 }
 
 // His RESTING body centre -- the sight cone's origin, and the point every distance

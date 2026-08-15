@@ -26,8 +26,11 @@
 // no ZENITH_TOOLS guard -- these constants have to be visible to boot units that
 // run in a headless Null_* build where Project_RegisterEditorAutomationSteps is
 // compiled out entirely. HEADER-ONLY: every accessor is `inline`, so there is no
-// paired .cpp to keep in step (Dawnmere's .cpp exists only because it owns
-// measured tables; nothing here is measured yet).
+// paired .cpp to keep in step. Dawnmere's .cpp exists only because it owns
+// measured tables; this file owns one too (see THE GROUND, below), but it holds it
+// as an `inline constexpr` array at namespace scope instead -- the ONLY structural
+// difference between it and the three tables in
+// Source/World/ZM_DawnmerePlacement.cpp.
 //
 // ★ NEVER RE-SPELL A LITERAL FROM THIS FILE AT A CALL SITE. A constant spelled
 // twice cannot red a drift -- both sides move together and the assertion becomes
@@ -234,19 +237,26 @@ inline const char* ZM_GetThornacreReturnSpawnTag()
 		: "";
 }
 
-// ---- The ground the stub stands on ------------------------------------------
+// ============================================================================
+// ---- THE ANCHOR COLUMNS ------------------------------------------------------
 //
-// ★ PROVISIONAL -- re-measure in R1-3 (see ZM_DawnmereNpcGroundTruth_Test).
-// This is the Thornacre recipe's m_fTargetHeight, i.e. the value every FLATTEN
-// dab levels its pads and lanes to -- NOT a measured surface. No ground-truth
-// oracle exists for Thornacre yet (Dawnmere's is a raycast oracle; this town has
-// none). It is legitimate here ONLY because every anchor below is asserted to lie
-// inside the flattened "RouteGate" pad, where the bake really does drive the
-// height to this value. R1-3 adds the raycast oracle and re-freezes these as
-// measured literals.
-inline constexpr float fZM_THORNACRE_PROVISIONAL_GROUND_Y = 28.0f;
+// ★★ BOTH ANCHORS' XZ ARE DECLARED HERE, IN ONE BLOCK, ABOVE THE SECTIONS THAT
+// DISCUSS THEM -- AND THAT ORDER IS FORCED, NOT STYLISTIC. The MEASURED GROUND
+// table below carries one row per column and each row NAMES its column by
+// spelling that column's XZ. A `constexpr` initialiser cannot forward-reference a
+// constant declared further down the file, so the table cannot sit above these;
+// and it cannot be pushed to the end of the file either, because the arrival and
+// gate heights are DERIVED from it in the sections that follow.
+//
+// ★ THE ALTERNATIVE -- GIVING EACH TABLE ROW ITS OWN INDEPENDENT XZ LITERALS --
+// WAS REJECTED OUTRIGHT. This file's loudest rule is that a number has ONE
+// spelling (third star in the banner): a second copy of an anchor's XZ inside the
+// ground table is exactly the drift-invisible duplication that rule exists to
+// forbid, and a static_assert reconciling the two copies would merely be a THIRD
+// spelling of the same number.
+// ============================================================================
 
-// ---- The arrival marker ------------------------------------------------------
+// ---- The arrival marker's column ---------------------------------------------
 //
 // The XZ of the Thornacre recipe's ROUTE-ARRIVAL landmark -- the one named after
 // the inbound Route 1 edge -- which sits inside the flattened "RouteGate" pad.
@@ -256,12 +266,202 @@ inline constexpr float fZM_THORNACRE_PROVISIONAL_GROUND_Y = 28.0f;
 inline constexpr float fZM_THORNACRE_SOUTH_ARRIVAL_X = 512.0f;
 inline constexpr float fZM_THORNACRE_SOUTH_ARRIVAL_Z = 112.0f;
 
+// ---- The return gate's column ------------------------------------------------
+//
+// 12 m SOUTH of the arrival marker, still inside the flattened "RouteGate" pad.
+//
+// ★ NO GATE ENTITY IS AUTHORED BY THIS SLICE -- the return trigger is R1-3's, in
+// one commit, after the destination markers exist. The column is measured anyway
+// because the gate's Y derives from the ground under it: leaving it out of the
+// table below would strand it on the very scalar this split is retiring, and a
+// stranded column is how a sensor ends up 28 m under the player.
+inline constexpr float fZM_THORNACRE_SOUTH_GATE_X = 512.0f;
+inline constexpr float fZM_THORNACRE_SOUTH_GATE_Z = 100.0f;
+
+// ============================================================================
+// ---- THE GROUND: A RECIPE MIRROR **AND** A MEASURED TABLE --------------------
+//
+// ★★ TWO DIFFERENT CLAIMS, AND THEY MUST NOT BE COLLAPSED BACK INTO ONE SCALAR.
+// Until R1-2 this file carried a single fZM_THORNACRE_PROVISIONAL_GROUND_Y that
+// meant BOTH "the height the recipe flattens to" AND "the surface under this
+// anchor". Those are the same number only while the table below is unfrozen; the
+// day a real raycast lands they stop being the same number, and they stop being
+// the same number PER COLUMN.
+//
+//   (a) fZM_THORNACRE_RECIPE_TARGET_GROUND_Y MIRRORS the Thornacre terrain
+//       recipe's m_fTargetHeight. It is exact, it is not a measurement, and it
+//       must stay exactly equal to the recipe. Its reader is the shipped boot unit
+//       Thornacre_ArrivalSitsOnTheRecipeLandmarkTheTerrainFlattened, which
+//       reconciles it against xRecipe.m_fTargetHeight.
+//       ★ NEVER GIVE THIS CONSTANT A MEASURED VALUE. That would turn a
+//       recipe-vs-recipe reconciliation into a recipe-vs-raycast comparison, which
+//       reds for a reason its message does not name.
+//
+//   (b) axZM_THORNACRE_GROUND_SAMPLES is the MEASURED surface, one row per column.
+//       EVERYTHING that means "the real ground under this anchor" reads it.
+// ============================================================================
+
+// (a) THE RECIPE MIRROR.
+inline constexpr float fZM_THORNACRE_RECIPE_TARGET_GROUND_Y = 28.0f;
+
+// ---- (b) THE MEASURED GROUND -------------------------------------------------
+//
+// Same row shape and same idiom as the three measured tables in
+// Source/World/ZM_DawnmerePlacement.cpp (the ZM-D-173 Home block, the SC-D lab
+// block and the R1-2 route-seam block): name, X, Z, feet Y, ONE VALUE PER LINE, so
+// a re-measure is a per-row replacement rather than a rewrite.
+struct ZM_ThornacreGroundSample
+{
+	// The column's name. Each row is named by the ENTITY that stands on it, read
+	// from the one place that spells it -- the gate is not authored until R1-3, but
+	// its name already exists above and re-typing it here would be a second
+	// spelling. It is also the key a ground-truth oracle prints its `paste=`
+	// literal against, so it is contract.
+	const char* m_szEntityName;
+	float       m_fX;
+	float       m_fZ;
+	// The TERRAIN SURFACE at (m_fX, m_fZ) -- never a body centre. Callers that want
+	// a centre add the body half-extent through the accessors further down, so the
+	// capsule arithmetic exists in exactly one place.
+	float       m_fFeetY;
+};
+
+// ★ ITS OWN ENUM, ITS OWN ARRAY AND ITS OWN COUNT, for the reason
+// ZM_DawnmerePlacement.h spells out on its lab enum: appending a row to another
+// table's enum measures it up to THAT table's fixed probe-slot bound and silently
+// DROPS it beyond, with every test still green.
+//
+// The ORDER is contract -- the deduced-bound static_assert below only checks the
+// COUNT, so a reordering that kept the count would silently swap two columns'
+// heights.
+enum ZM_THORNACRE_GROUND_SAMPLE : u_int
+{
+	ZM_THORNACRE_GROUND_SAMPLE_SOUTH_ARRIVAL,
+	ZM_THORNACRE_GROUND_SAMPLE_SOUTH_GATE,
+
+	ZM_THORNACRE_GROUND_SAMPLE_COUNT
+};
+
+// ==== R1-2 MEASURED THORNACRE GROUND -- PROVISIONAL, NOT YET FROZEN ====
+//
+// ★★ BOTH ROWS ARE SEEDED WITH THE RECIPE TARGET HEIGHT, NOT WITH AN OUT-OF-BAND
+// SENTINEL, AND THAT IS DELIBERATE AND LOAD-BEARING. Dawnmere's unfrozen rows
+// shipped on fZM_DAWNMERE_LAB_GROUND_UNMEASURED -- a finite value a million metres
+// below the world -- because NOTHING WAS AUTHORED from them while they were
+// unfrozen. Thornacre is the opposite case: this milestone authors the stub from
+// these rows BEFORE any oracle exists, and one of the entities it authors is a
+// DYNAMIC player capsule. A -1000000.0f seed would author that capsule a million
+// metres under the world on the provisional boot, and physics would take it from
+// there.
+//
+// ★★ AND THE SEED IS GOOD TO WELL UNDER A METRE, WHICH IS A MEASUREMENT RATHER
+// THAN A HOPE (R1-2 step 1). Dawnmere's route-seam column froze at 24.36592
+// against a 24.0 recipe target -- target + 0.366 -- while every OTHER measured
+// Dawnmere column reads ~2 m above its target. The difference is that the seam
+// column is the first measured Dawnmere column INSIDE A FLATTEN CORRIDOR, and a
+// FLATTEN dab drives ground TO the target; the ~+2 m on the others is the
+// region-wide hydraulic-erosion deposit pass sitting on top of UNFLATTENED ground.
+// Both columns here sit inside the flattened "RouteGate" pad, so each seed is
+// expected to be within a fraction of a metre of the truth.
+// ★ DO NOT READ A NEAR-TARGET RESULT AS A BROKEN PROBE when the oracle finally
+// runs. Near-target is the PREDICTION here, not a symptom.
+//
+// ★★ BE HONEST ABOUT WHAT THE SEED COSTS: BECAUSE BOTH ROWS EQUAL THE MIRROR, NO
+// COMPILED-CONSTANT UNIT IN THIS GAME CAN TELL THIS TABLE IS UNFROZEN. A boot unit
+// asserting "the rows sit near the recipe target" passes VACUOUSLY today and would
+// keep passing if the freeze never happened. The only thing that can see it is a
+// real downward raycast against a baked Thornacre terrain body -- and there is
+// none yet, because no Thornacre.zscen exists to raycast against. That oracle is
+// the freeze slice's first deliverable, not this one's; until it lands, the
+// unfrozen-ness of this table is carried by this comment and nothing else.
+//
+// TO FREEZE, once that oracle exists: run it against a warm Thornacre terrain
+// bake, take the `paste=` literal it prints for each row NAME below, put each in
+// place of that row's seed, rebuild, and re-author Thornacre from a windowed tools
+// boot. Every derived height in the sections that follow moves with it
+// automatically.
+//
+// ★ DO NOT HAND-EDIT A ROW TO MAKE A TEST PASS. If the oracle reds, the terrain
+// moved under the town and the correct response is to RE-RUN it and re-paste, AS A
+// SET. Hand-tuning one row is how a band guard ends up guarding nothing.
+//
+// ★ WHAT RE-MEASURES THEM AFTERWARDS: any change to the Thornacre terrain recipe
+// (a pad, path, landmark, seed, flatten radius or density divisor) OR to the
+// terrain collision topology. Such a change re-measures EVERY ground table in the
+// game or leaves a silent staleness behind -- ZM-D-182 and ZM-D-186 are both
+// worked examples of exactly that going wrong.
+inline constexpr ZM_ThornacreGroundSample axZM_THORNACRE_GROUND_SAMPLES[] =
+{
+	// ★★ FROZEN 2026-08-15 AS A SET, from ZM_ThornacreGroundTruth_Test against a
+	// warm Thornacre bake and the committed Thornacre.zscen. Both rows:
+	// resolved=1, hitTerrain=1, finalHit='ThornacreTerrain' -- never 'Player'.
+	// OBSERVED, never derived.
+	//
+	// Both sit +0.376 .. +0.630 above the 28.0 recipe target, i.e. NEAR it, which
+	// is what flattened ground reads (see the sibling note in
+	// ZM_Route1Placement.h). The two columns are only 12 m apart inside one 30 m
+	// flatten pad and differ by 0.254 m, so do NOT add a minimum-spread clause
+	// here -- a spread assertion copied from a table whose columns are hundreds of
+	// metres apart would red on entirely correct content.
+	//
+	// entity name,                              x,                             z,                             feet Y (MEASURED)
+	{ szZM_THORNACRE_SOUTH_ARRIVAL_ENTITY_NAME,  fZM_THORNACRE_SOUTH_ARRIVAL_X, fZM_THORNACRE_SOUTH_ARRIVAL_Z, 28.63044f },
+	{ szZM_THORNACRE_SOUTH_GATE_ENTITY_NAME,     fZM_THORNACRE_SOUTH_GATE_X,    fZM_THORNACRE_SOUTH_GATE_Z,    28.37605f },
+};
+// ==== END R1-2 MEASURED THORNACRE GROUND ====
+
+// The bound is DEDUCED, never spelled. With an explicit
+// [ZM_THORNACRE_GROUND_SAMPLE_COUNT] this static_assert would be a tautology and a
+// forgotten row would merely zero-initialise the tail into a NULL-named column at
+// the world origin AT HEIGHT ZERO -- 28 m under the town.
+static_assert(
+	sizeof(axZM_THORNACRE_GROUND_SAMPLES) / sizeof(axZM_THORNACRE_GROUND_SAMPLES[0])
+		== ZM_THORNACRE_GROUND_SAMPLE_COUNT,
+	"the Thornacre ground-sample table must have exactly one row per ZM_THORNACRE_GROUND_SAMPLE");
+
+// The answer for an id no row covers. Every field is DEFINED and INERT: a name no
+// column carries, a coordinate at the world's (0, _, 0) corner -- outside every pad
+// and flatten radius -- and a FINITE height, so a caller that skipped the range
+// check gets an obviously-wrong-but-legal anchor rather than a NaN in a transform
+// or a body a million metres down.
+inline constexpr ZM_ThornacreGroundSample xZM_THORNACRE_INVALID_GROUND_SAMPLE =
+{
+	"ThornacreInvalidGroundSample", 0.0f, 0.0f, fZM_THORNACRE_RECIPE_TARGET_GROUND_Y
+};
+
+inline constexpr u_int ZM_GetThornacreGroundSampleCount()
+{
+	return (u_int)ZM_THORNACRE_GROUND_SAMPLE_COUNT;
+}
+
+// TOTAL, and `constexpr` because every derived height below is constexpr. NOTHING
+// HERE ASSERTS -- Zenith_Assert calls Zenith_DebugBreak() in EVERY configuration
+// and the whole unit suite runs at boot, so an assert on an argument a unit
+// deliberately feeds does not fail one test, it ends the run.
+inline constexpr const ZM_ThornacreGroundSample& ZM_GetThornacreGroundSample(
+	ZM_THORNACRE_GROUND_SAMPLE eSample)
+{
+	return eSample < ZM_THORNACRE_GROUND_SAMPLE_COUNT
+		? axZM_THORNACRE_GROUND_SAMPLES[eSample]
+		: xZM_THORNACRE_INVALID_GROUND_SAMPLE;
+}
+
+// ★ THIS IS THE FUNCTION EVERY "the real ground under this anchor" DERIVATION
+// READS. If you are reaching for fZM_THORNACRE_RECIPE_TARGET_GROUND_Y to place
+// something, you want this instead.
+inline constexpr float ZM_ThornacreGroundFeetY(ZM_THORNACRE_GROUND_SAMPLE eSample)
+{
+	return ZM_GetThornacreGroundSample(eSample).m_fFeetY;
+}
+
+// ---- The arrival marker ------------------------------------------------------
+//
 // ★ A ZM_SpawnPoint's AUTHORED TRANSFORM IS THE FEET, NOT THE BODY CENTRE.
 // ZM_GameStateManager::CalculateSpawnCenter adds fZM_HUMAN_BODY_HALF_HEIGHT at
 // warp time, so authoring a body centre on a marker would warp every arriving
 // player half a body into the air.
 inline constexpr float fZM_THORNACRE_ARRIVAL_FEET_Y =
-	fZM_THORNACRE_PROVISIONAL_GROUND_Y;
+	ZM_ThornacreGroundFeetY(ZM_THORNACRE_GROUND_SAMPLE_SOUTH_ARRIVAL);
 
 inline Zenith_Maths::Vector3 ZM_GetThornacreSouthArrivalFeet()
 {
@@ -404,12 +604,16 @@ inline constexpr float fZM_THORNACRE_GATE_SCALE_Z = 6.0f;
 // fires, the return warp is dead, and every compiled scale constant above still
 // looks perfectly correct. The rule is identical in form to Dawnmere's triggers
 // (its ground + half its height).
+//
+// ★ AND THE GROUND IT READS IS THE GATE'S **OWN** MEASURED COLUMN, not the
+// arrival's. The two columns are 12 m apart; they agree exactly while the table is
+// unfrozen and they will not agree afterwards, and a sensor resting on its
+// neighbour's ground is part-buried or hovering with every scale constant still
+// correct. The gate's XZ lives in THE ANCHOR COLUMNS block above, because the
+// measured table has to name the column and constexpr cannot forward-reference.
 inline constexpr float fZM_THORNACRE_GATE_CENTRE_Y =
-	fZM_THORNACRE_PROVISIONAL_GROUND_Y + fZM_THORNACRE_GATE_SCALE_Y * 0.5f;
-
-// 12 m SOUTH of the arrival marker, still inside the flattened "RouteGate" pad.
-inline constexpr float fZM_THORNACRE_SOUTH_GATE_X = 512.0f;
-inline constexpr float fZM_THORNACRE_SOUTH_GATE_Z = 100.0f;
+	ZM_ThornacreGroundFeetY(ZM_THORNACRE_GROUND_SAMPLE_SOUTH_GATE)
+	+ fZM_THORNACRE_GATE_SCALE_Y * 0.5f;
 
 // ★ THE Q-2026-08-15-001 LESSON, AS A NUMBER. An arriving player walks off the
 // marker immediately, and a diagonal walk-up spends depth as fast as it spends

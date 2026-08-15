@@ -270,14 +270,18 @@ namespace
 // U12 -- the arrival anchor sits on the recipe landmark, inside the pad the
 // terrain actually flattened.
 //
-// ★ WHY THIS IS THE FIRST UNIT IN THE FILE. fZM_THORNACRE_PROVISIONAL_GROUND_Y
-// is UNMEASURED: it is the recipe's m_fTargetHeight, the value every FLATTEN dab
-// drives its pads TO, and no ground-truth oracle exists for Thornacre (Dawnmere's
-// is a raycast against a loaded scene, and there is no Thornacre.zscen to
-// raycast). That number is only honest while the anchor lies inside a flattened
-// disc -- outside one, the bake leaves procedural terrain at some other height
-// and the arriving player either floats above the ground or spawns inside it,
-// with every compiled constant looking perfectly correct.
+// ★ WHY THIS IS THE FIRST UNIT IN THE FILE. fZM_THORNACRE_RECIPE_TARGET_GROUND_Y
+// is NOT A MEASUREMENT and must never be given one: it MIRRORS the recipe's
+// m_fTargetHeight, the value every FLATTEN dab drives its pads TO. The town's
+// MEASURED surface is the separate table axZM_THORNACRE_GROUND_SAMPLES, whose two
+// rows are still SEEDED from this same mirror because no ground-truth oracle has
+// run against a Thornacre.zscen yet -- which is exactly why no compiled-constant
+// unit in this game can tell that table apart from a frozen one, and why this unit
+// reconciles the MIRROR against the recipe rather than reaching for the table.
+// The mirror is only honest as a GROUND height while the anchor lies inside a
+// flattened disc -- outside one, the bake leaves procedural terrain at some other
+// height and the arriving player either floats above the ground or spawns inside
+// it, with every compiled constant looking perfectly correct.
 //
 // Two INDEPENDENTLY AUTHORED tables are compared here: the placement header's
 // anchors and the terrain recipe's landmarks and pads. Neither reads the other,
@@ -296,21 +300,29 @@ ZENITH_TEST(ZM_WorldTraversal, Thornacre_ArrivalSitsOnTheRecipeLandmarkTheTerrai
 		"reconciliation below is a lookup against an empty table");
 	ZENITH_ASSERT_GT(xRecipe.m_uPadCount, 0u,
 		"the Thornacre recipe carries no pads at all -- nothing is flattened, and "
-		"fZM_THORNACRE_PROVISIONAL_GROUND_Y (%.4f) is then a height no square "
+		"fZM_THORNACRE_RECIPE_TARGET_GROUND_Y (%.4f) is then a height no square "
 		"metre of this town actually has",
-		(double)fZM_THORNACRE_PROVISIONAL_GROUND_Y);
+		(double)fZM_THORNACRE_RECIPE_TARGET_GROUND_Y);
 
-	// (1) THE GROUND PLANE IS THE RECIPE'S TARGET HEIGHT. This is the whole
-	//     licence for the PROVISIONAL constant: re-level the town and the header
-	//     is instantly a lie, so the two have to be reconciled rather than both
-	//     merely present.
-	ZENITH_ASSERT_EQ_FLOAT(fZM_THORNACRE_PROVISIONAL_GROUND_Y,
+	// (1) THE RECIPE MIRROR IS STILL THE RECIPE'S TARGET HEIGHT. This is the whole
+	//     licence for that constant: re-level the town and the mirror is instantly
+	//     a lie, so the two have to be reconciled rather than both merely present.
+	//
+	//     ★ THE SUBJECT IS THE MIRROR, NOT axZM_THORNACRE_GROUND_SAMPLES. This is a
+	//     recipe-vs-recipe reconciliation, exactly as the header's own comment on
+	//     the mirror says; pointing it at the measured table would make it a
+	//     recipe-vs-raycast comparison that reds for a reason this message does not
+	//     name.
+	ZENITH_ASSERT_EQ_FLOAT(fZM_THORNACRE_RECIPE_TARGET_GROUND_Y,
 		xRecipe.m_fTargetHeight, fTH_EXACT_EPSILON,
-		"the placement header states Thornacre's ground plane at y=%.4f but the "
-		"terrain recipe flattens to %.4f -- every marker, gate and camera "
-		"clearance in ZM_ThornacrePlacement.h is measured against the wrong "
-		"surface, and the arriving player floats or spawns inside the terrain",
-		(double)fZM_THORNACRE_PROVISIONAL_GROUND_Y, (double)xRecipe.m_fTargetHeight);
+		"the placement header's recipe-target ground MIRROR is y=%.4f but the "
+		"terrain recipe flattens to %.4f -- the mirror is what seeds both rows of "
+		"axZM_THORNACRE_GROUND_SAMPLES, so every marker, gate and camera clearance "
+		"in ZM_ThornacrePlacement.h is measured against the wrong surface and the "
+		"arriving player floats or spawns inside the terrain. Fix the mirror to "
+		"match the recipe -- never give it a measured value",
+		(double)fZM_THORNACRE_RECIPE_TARGET_GROUND_Y,
+		(double)xRecipe.m_fTargetHeight);
 
 	// (2) THE ANCHOR IS THE LANDMARK. The recipe names its route-arrival landmark
 	//     after the inbound spawn tag; the placement header refuses to spell that
@@ -359,8 +371,11 @@ ZENITH_TEST(ZM_WorldTraversal, Thornacre_ArrivalSitsOnTheRecipeLandmarkTheTerrai
 		"arrival", szTH_ARRIVAL_LANDMARK_NAME,
 		(double)pxLandmark->m_xPosition.m_fY, (double)xRecipe.m_fTargetHeight);
 
-	// (4) ★ THE CLAUSE THAT LICENCES THE PROVISIONAL HEIGHT. Inside the pad's
-	//     flattened disc, with a quarter of the radius to spare.
+	// (4) ★ THE CLAUSE THAT LICENCES THE FLATTEN TARGET AS A GROUND HEIGHT AT ALL.
+	//     Inside the pad's flattened disc, with a quarter of the radius to spare.
+	//     Its subject is the FLATTEN TARGET the dab drives to -- i.e. the mirror --
+	//     because "is this anchor somewhere a dab reached?" is a question about the
+	//     recipe, not about what a raycast later measured there.
 	const float fPadRadiusLimit =
 		fTH_PAD_CONTAINMENT_FRACTION * pxPad->m_fFlattenRadius;
 	const float fAnchorToPad = THDistanceToPadCentre(*pxPad, xFeet.x, xFeet.z);
@@ -372,14 +387,16 @@ ZENITH_TEST(ZM_WorldTraversal, Thornacre_ArrivalSitsOnTheRecipeLandmarkTheTerrai
 		szTH_ARRIVAL_PAD_NAME, (double)pxPad->m_xCentre.m_fX,
 		(double)pxPad->m_xCentre.m_fZ, (double)fPadRadiusLimit,
 		(double)pxPad->m_fFlattenRadius,
-		(double)fZM_THORNACRE_PROVISIONAL_GROUND_Y);
+		(double)fZM_THORNACRE_RECIPE_TARGET_GROUND_Y);
 	ZENITH_ASSERT_LE(fAnchorToPad, fPadRadiusLimit,
 		"the Thornacre arrival marker sits %.3f m from the '%s' pad centre, "
 		"outside the %.3f m the flatten dab can be trusted for. The ground there "
-		"is whatever the procedural pass left, so fZM_THORNACRE_PROVISIONAL_GROUND_Y "
-		"(%.4f) is a guess and the arriving player floats or spawns inside terrain",
+		"is whatever the procedural pass left, so the flatten target "
+		"fZM_THORNACRE_RECIPE_TARGET_GROUND_Y (%.4f) -- which is what seeds this "
+		"anchor's row of axZM_THORNACRE_GROUND_SAMPLES -- is a guess, and the "
+		"arriving player floats or spawns inside terrain",
 		(double)fAnchorToPad, szTH_ARRIVAL_PAD_NAME, (double)fPadRadiusLimit,
-		(double)fZM_THORNACRE_PROVISIONAL_GROUND_Y);
+		(double)fZM_THORNACRE_RECIPE_TARGET_GROUND_Y);
 
 	// ★ ANTI-VACUITY, THROUGH THE IDENTICAL PREDICATE. A real landmark in the
 	//   same recipe, 400-odd metres up the main lane, must FAIL the clause above.
@@ -608,15 +625,26 @@ ZENITH_TEST(ZM_WorldTraversal, Thornacre_ReturnGateTargetsRoute1ByTheCompiledCon
 		"clearance floor -- the predicate cannot tell an overlapping sensor from "
 		"a cleared one, so clause (8) is passing vacuously");
 
-	// (9) THE BOX RESTS ON THE GROUND, AND CANNOT BE STEPPED OVER. A trigger
-	//     authored at world Y 0 is a tunnel 28 m below the player: it never fires,
-	//     the return is dead, and every compiled scale constant still reads right.
-	ZENITH_ASSERT_EQ_FLOAT(xGate.Min().y, fZM_THORNACRE_PROVISIONAL_GROUND_Y,
-		fTH_EXACT_EPSILON,
+	// (9) THE BOX RESTS ON THE GROUND UNDER **IT**, AND CANNOT BE STEPPED OVER. A
+	//     trigger authored at world Y 0 is a tunnel 28 m below the player: it never
+	//     fires, the return is dead, and every compiled scale constant still reads
+	//     right.
+	//
+	//     ★ THE GATE'S OWN MEASURED COLUMN, NOT THE ARRIVAL'S AND NOT THE RECIPE
+	//     MIRROR. The two columns are 12 m apart; they agree exactly while
+	//     axZM_THORNACRE_GROUND_SAMPLES is unfrozen and they will not agree
+	//     afterwards, and a sensor resting on its neighbour's ground is part-buried
+	//     or hovering with every scale constant still correct. This is the same
+	//     ground fZM_THORNACRE_GATE_CENTRE_Y derives from, so the clause checks the
+	//     'centre = ground + half the height' arithmetic rather than a shared plane.
+	const float fGateGroundY =
+		ZM_ThornacreGroundFeetY(ZM_THORNACRE_GROUND_SAMPLE_SOUTH_GATE);
+	ZENITH_ASSERT_EQ_FLOAT(xGate.Min().y, fGateGroundY, fTH_EXACT_EPSILON,
 		"the Thornacre return gate's underside is at y=%.4f rather than on the "
-		"ground plane (%.4f) -- the 'centre = ground + half the height' rule has "
-		"been broken and the sensor either floats or is buried",
-		(double)xGate.Min().y, (double)fZM_THORNACRE_PROVISIONAL_GROUND_Y);
+		"MEASURED ground of its own column (%.4f, "
+		"ZM_THORNACRE_GROUND_SAMPLE_SOUTH_GATE) -- the 'centre = ground + half the "
+		"height' rule has been broken and the sensor either floats or is buried",
+		(double)xGate.Min().y, (double)fGateGroundY);
 	ZENITH_ASSERT_GT(fZM_THORNACRE_GATE_SCALE_Y, fZM_HUMAN_BODY_HEIGHT,
 		"the Thornacre return gate is %.3f m tall against a %.3f m person -- a "
 		"sensor shorter than the body it is meant to catch can be stepped over "
@@ -1043,23 +1071,33 @@ ZENITH_TEST(ZM_WorldTraversal, Thornacre_SettledCameraStandsAboveGroundBehindThe
 	//     THE MUTATION: flip the sign of fZM_THORNACRE_CAMERA_PITCH and the arm
 	//     swings the eye BELOW the pivot, into the terrain. Clause (5b) proves this
 	//     clause can actually see that.
+	//
+	//     ★ THE FLOOR STANDS ON THE ARRIVAL'S MEASURED COLUMN, because the settled
+	//     pose is DERIVED from the arrival: the pivot is
+	//     ZM_GetThornacreSouthArrivalBodyCentre lifted by the follow camera's pivot
+	//     height, so the surface the eye has to clear is the one that body stands
+	//     on -- not the recipe mirror, which is a different quantity wearing the
+	//     same number until axZM_THORNACRE_GROUND_SAMPLES is frozen.
 	const Zenith_Maths::Vector3 xCamera = ZM_GetThornacreSettledCameraPosition();
-	const float fClearanceFloor = fZM_THORNACRE_PROVISIONAL_GROUND_Y
-		+ fZM_THORNACRE_CAMERA_MIN_GROUND_CLEARANCE;
+	const float fArrivalGroundY =
+		ZM_ThornacreGroundFeetY(ZM_THORNACRE_GROUND_SAMPLE_SOUTH_ARRIVAL);
+	const float fClearanceFloor =
+		fArrivalGroundY + fZM_THORNACRE_CAMERA_MIN_GROUND_CLEARANCE;
 	Zenith_Log(LOG_CATEGORY_UNITTEST,
 		"[ZM_ThornacrePlacement] settled camera (%.3f, %.3f, %.3f) against a %.3f m "
-		"floor (ground %.3f + %.3f clearance); arrival body centre z=%.3f, arm %.2f",
+		"floor (arrival's measured ground %.3f + %.3f clearance); arrival body "
+		"centre z=%.3f, arm %.2f",
 		(double)xCamera.x, (double)xCamera.y, (double)xCamera.z,
-		(double)fClearanceFloor, (double)fZM_THORNACRE_PROVISIONAL_GROUND_Y,
+		(double)fClearanceFloor, (double)fArrivalGroundY,
 		(double)fZM_THORNACRE_CAMERA_MIN_GROUND_CLEARANCE,
 		(double)ZM_GetThornacreSouthArrivalBodyCentre().z,
 		(double)fZM_THORNACRE_CAMERA_ARM);
 	ZENITH_ASSERT_GE(xCamera.y, fClearanceFloor,
-		"the settled Thornacre camera sits at Y %.4f, below the %.4f m floor "
-		"(ground %.4f + %.4f clearance). A pitch sign error swings the eye BELOW "
-		"its pivot and buries it in the terrain, with every camera constant in the "
-		"header still reading exactly as intended", (double)xCamera.y,
-		(double)fClearanceFloor, (double)fZM_THORNACRE_PROVISIONAL_GROUND_Y,
+		"the settled Thornacre camera sits at Y %.4f, below the %.4f m floor (the "
+		"arrival's MEASURED ground %.4f + %.4f clearance). A pitch sign error swings "
+		"the eye BELOW its pivot and buries it in the terrain, with every camera "
+		"constant in the header still reading exactly as intended", (double)xCamera.y,
+		(double)fClearanceFloor, (double)fArrivalGroundY,
 		(double)fZM_THORNACRE_CAMERA_MIN_GROUND_CLEARANCE);
 
 	// (4) It stands BEHIND the arriving body -- far enough back not to be inside

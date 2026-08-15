@@ -15,6 +15,75 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-08-15 -- ZM-D-199 -- Route 1 and Thornacre EXIST: two new committed scenes, a measured-ground SPLIT, and eight OBSERVED ground literals
+
+**`Route1.zscen` (1,879 B) and `Thornacre.zscen` (1,733 B) are committed.** Both were produced by
+a windowed `Vulkan_vs2022_Debug_Win64_True` authoring boot and **proven byte-identical across two
+consecutive boots**; the five previously-committed scenes -- Dawnmere included -- are byte-for-byte
+unchanged. Registry **65 -> 67**, boot units UNMOVED at 3346.
+
+**★ ZERO TRIGGERS, DELIBERATELY.** Neither scene carries a `ZM_WarpTrigger`, a gate sensor or a gym
+door. `IsWarpDestinationValid` consults ONLY the compiled world table -- never the destination scene
+-- and `WAITING_FOR_SCENE` / `WAITING_FOR_SPAWN` have **no timeout**, so a trigger authored before
+its destination marker exists is a permanent black screen with no crash and no red test. Markers
+land first; all four seam triggers land together in R1-3.
+
+**★ THE MEASURED-GROUND SPLIT.** Each region carried ONE scalar that meant two different things:
+"the height the recipe flattens TO" and "the surface under THIS anchor". Those coincide only while
+nothing is measured, and they stop coinciding **per column**. Each header now carries a renamed
+recipe MIRROR (`fZM_ROUTE1_RECIPE_TARGET_GROUND_Y` 26.0, `fZM_THORNACRE_RECIPE_TARGET_GROUND_Y`
+28.0), which the shipped reconciliation units still assert equals the recipe, **and** a per-column
+MEASURED table that every "real surface here" derivation reads. Collapsing them back would silently
+give the north gate the south gate's ground.
+
+**THE EIGHT FROZEN LITERALS, all OBSERVED**, every row reporting `hitTerrain=1` and
+`finalHit='<Region>Terrain'` -- never `'Player'`, the hit that would have frozen a body-height plane
+instead of a surface:
+
+| column | measured | vs target |
+|---|---|---|
+| Route1SouthArrival | 26.91279 | +0.913 |
+| Route1NorthArrival | 27.82981 | +1.830 |
+| Route1SouthGate | 26.43808 | +0.438 |
+| Route1NorthGate | 26.86820 | +0.868 |
+| Npc_Route1Rambler | 26.64679 | +0.647 |
+| Npc_Route1Forager | 26.19853 | +0.199 |
+| ThornacreSouthArrival | 28.63044 | +0.630 |
+| ThornacreSouthGate | 28.37605 | +0.376 |
+
+**★★ EVERY ROW LANDED NEAR ITS TARGET, WHICH THE SPEC PREDICTED IT WOULD NOT.** The R1-2 spec warned
+these would measure "metres, not ULPs" off, reasoning from Dawnmere's measured columns (~+2 m above
+its 24.0 target). **ZM-D-198's step-1 measurement had already falsified that generalisation**: the
+Dawnmere seam column read target + 0.366 because it sits in a FLATTEN CORRIDOR, and a FLATTEN dab
+drives ground TO the target -- the ~+2 m gap is a property of UNFLATTENED ground carrying the
+erosion-deposit pass. Every Route1/Thornacre anchor sits on a flattened pad or lane, so all eight
+came back inside 1.9 m. **That finding also changed how the scenes were first authored**: the
+provisional rows were seeded with each recipe's TARGET rather than the planned `-1000000.0f`
+sentinel, which would have authored a DYNAMIC player capsule a million metres under the world during
+the measurement boot.
+
+**★ THE ORCHESTRATOR'S OWN SCOPING ERROR, RECORDED BECAUSE IT COST A REVIEW CYCLE.** The brief that
+renamed the scalars listed only the two headers as editable -- but two shipped test TUs referenced
+the retired identifiers in 22 places, so the tree did not compile. The implementer flagged it
+instead of editing out of scope (correct), and BOTH reviewers returned BLOCKED on it. **A rename's
+file list must be the symbol's CALLERS, not the symbol's home**, and this project's no-legacy
+mandate makes that non-optional: migrate every caller and delete the old surface in the same commit.
+**And the migration was not mechanical**: a blanket rename to the mirror would have compiled, passed
+VACUOUSLY while every row still equalled its seed, and red the day the table froze for a reason its
+message did not name. Each site was routed by MEANING -- recipe reconciliation to the mirror,
+per-anchor claims to their own column -- which is why the units stayed green when real measurements
+replaced the shared seed.
+
+**Tests that lock it:** `ZM_Route1GroundTruth_Test` and `ZM_ThornacreGroundTruth_Test` (new; they
+re-measure and red if any anchor drifts off its surface by >0.15 m), plus the migrated per-column
+clauses in both placement suites. ★ Both oracles SKIP on a cold bake, and a skip counts as a PASS --
+so **Route1 and Thornacre are the first committed Zenithmon scenes that CI cannot load-verify**. The
+windowed boots are the only proof they load; that cost is accepted and stated rather than hidden.
+
+**Reversibility:** low. Two committed scene files now exist and R1-3's triggers will target them.
+
+---
+
 ## 2026-08-15 -- ZM-D-198 -- R1-2 is SPLIT INTO TWO PHASES so the terrain-material question is answered by MEASUREMENT, not by argument
 
 **Slice R1-2 authors two new scenes and re-authors Dawnmere -- three committed `.zscen` files

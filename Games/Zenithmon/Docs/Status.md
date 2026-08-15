@@ -3,7 +3,12 @@
 **Last updated:** 2026-08-14
 
 **★ LIVE PIN (UPDATED 2026-08-15):
-ZM boot `3346`; engine boot (Null Combat) `1638`; registry **65**.** R1-2 phase 2 step 1
+ZM boot `3346`; engine boot (Null Combat) `1638`; registry **67**.** R1-2 phase 2 step 2 shipped
+`Route1.zscen` + `Thornacre.zscen` and the measured-ground split: registry 65 -> **67** (the two
+region ground oracles), boot units **UNMOVED at 3346** (the split renamed constants and migrated
+their callers; it added no unit). Observed `3346 ran / 3344 passed / 0 failed / 2 skipped` and
+`67 passed / 0 failed`. **Seven committed scenes now**, the five older ones byte-for-byte unchanged.
+The PREVIOUS block, still accurate for its own change: R1-2 phase 2 step 1
 (the Dawnmere route-seam ground oracle) added +1 boot unit and +1 automated test; observed
 `3346 ran / 3344 passed / 0 failed / 2 skipped` and `65 passed / 0 failed`, with the whole
 `Assets/` tree untouched. The PREVIOUS pin block, still accurate for its own change, read:
@@ -465,7 +470,9 @@ genuinely RAN, not `DEFERRED` -- after which `git status` over the WHOLE
 
 | Asset | Bytes | SHA256 |
 |---|---|---|
-| `Dawnmere.zscen` | 5,340 | `1DC1B639F86267256D02F862182EAD5468FB00FB4F8C9E1407B791C2F225C591` |
+| `Route1.zscen` | 1,879 | `666AC621AD11C0DEA7F6B716...` **NEW at R1-2 step 2**, proven by two consecutive windowed Debug authoring boots |
+| `Thornacre.zscen` | 1,733 | `A9295117F0F781D2608F33D0...` **NEW at R1-2 step 2**, same two-boot proof |
+| `Dawnmere.zscen` | 5,340 | `1DC1B639F86267256D02F862182EAD5468FB00FB4F8C9E1407B791C2F225C591` (**UNCHANGED through R1-2 step 2** -- its `FromRoute1` marker is a later step) |
 | `Battle.zscen` | 4,965 | `1BEB0615F7FE62D9439471A4123E1D2140C0053AEC2991B659F7A03288C8C60A` (unchanged since 2026-08-05) |
 | `FrontEnd.zscen` | 29,740 | `D44D540512F1C373A5D5E747CE7FA76E7D19B467F5F1563EB298E229EEFBEDB5` |
 | `PlayerHome.zscen` | 1,832 | `DBBFB78311A55BBF942A7A5BF9928F43E9493A10CDA89110515A3B6A7987C780` (unchanged since 2026-08-05) |
