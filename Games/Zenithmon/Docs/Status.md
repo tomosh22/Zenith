@@ -1030,7 +1030,8 @@ test coverage.
 ### The ten slices (four need a WINDOWED authoring boot)
 | id | title | +units | re-authors | deps |
 |---|---|---|---|---|
-| ~~R1-1~~ | ~~Placement headers + per-recipe terrain materials (PURE)~~ **DONE, +16 (not ~12), ZM-D-197** | 16 | none | -- |
+| ~~R1-1~~ | ~~Placement headers + per-recipe terrain materials (PURE)~~ **DONE, +17 (not ~12), ZM-D-197** | 17 | none | -- |
+| R1-2 **ph.1** | ~~Per-recipe terrain materials (split out of R1-2, PURE)~~ **DONE, ZM-D-198** | 0 | none, PROVEN | R1-1 |
 | R1-2 | Author Route1 + Thornacre -- **MARKERS ONLY, zero triggers** | ~7 | creates Route1+Thornacre, re-authors Dawnmere -- **WINDOWED** | R1-1 |
 | R1-3 | **All four seam triggers in ONE commit** + round-trip proof | ~4 | all three -- **WINDOWED** | R1-2 |
 | R1-4 | Wild encounters live + rate retune (ruling 4) | ~2 | none | R1-3 |
@@ -1099,6 +1100,105 @@ test coverage.
   Add an oracle in R1-2 modelled on `ZM_DawnmereNpcGroundTruth_Test`.
 - **Every live Route 1 test SKIPS on CI** (gitignored bake) and a skip counts as a PASS. The
   CI-visible spine of this whole item is boot units + committed-`.zscen` byte needles.
+
+### ★★★ R1-2 IS IN FLIGHT. PHASE 1 IS DONE AND PUSHED; PHASE 2 IS PLANNED AND CRITIQUED, NOT STARTED.
+
+**PHASE 1 COMPLETE (`0345327e`, ZM-D-198)** — per-recipe terrain materials, **proven byte-neutral**
+by a windowed authoring boot (`Dawnmere.zscen` unchanged at `1DC1B639F8626725...`). It was landed
+ALONE precisely so that proof was obtainable; the full slice moves three scenes on purpose and
+could not have falsified its own assumption.
+
+**PHASE 2 = the rest of R1-2:** the measured-ground split, the Route1 + Thornacre authoring
+blocks, Dawnmere's `FromRoute1` marker, the ground-truth oracle, and the boot units.
+**Zero code written.** A 3-lens adversarial critique returned **10 BLOCKERS** against the spec —
+run it before implementing, do not re-derive it. Artefacts (session-temp, will NOT survive; the
+load-bearing content is transcribed below):
+`scratchpad/R1-2_SPEC.md`, `R1-2_RULINGS.md`, `R1-2_PHASE2_CRITIQUE.md`.
+
+#### ★★ THE FOUR BLOCKERS THAT CHANGE THE PLAN
+1. **THE SPEC'S AUTHORING CODE DOES NOT COMPILE — it was written BEFORE phase 1 landed.** It calls
+   `ZM_FindTerrainRecipeIndex(...)` / `uZM_TERRAIN_RECIPE_INDEX_UNRESOLVED` /
+   `g_aaxTerrainMaterials[idx][slot]`. Phase 1 shipped a **different** surface:
+   `const MaterialHandle* ZM_GetTerrainMaterialsForRecipe(const ZM_TerrainAuthoringRecipe&)`
+   (pointer-identity walk, asserts internally, returns the ROW). **Mirror the shipped Dawnmere call
+   site verbatim** (`Zenithmon.cpp:3332-3337`) and do NOT add a second recipe-index mapping.
+   Also `uZM_TERRAIN_MATERIAL_SLOT_COUNT` (=4) supersedes the spec's bare `iSlot < 4`.
+2. **★ MEASURE DAWNMERE BEFORE TOUCHING ITS BYTES.** The spec sequences the `(512, 864)` ground
+   measurement AFTER the `FromRoute1` marker is authored — so it would move a committed, twice-drifted
+   file before knowing the column is authorable at all, and recovery would mean reverting a committed
+   asset. **Land the seam oracle + its 1-row table FIRST, measure against the CURRENT committed
+   `Dawnmere.zscen`, freeze, and only then add the marker.** If the row falls outside its band,
+   report it for R1-3 and STOP — do not widen the band, do not add a Dawnmere pad (that regenerates
+   the whole heightmap and invalidates all three measured tables AND the navmesh).
+3. **The measured-ground tables forward-reference.** The spec puts them at the top of each placement
+   header while their rows read XZ constants declared 180-290 lines lower; `constexpr` cannot
+   forward-reference, so both headers fail to compile. They cannot simply move to the end either —
+   accessors above them call in. Give each table's rows their own independent XZ literals, or
+   restructure the header.
+4. **The spec names the wrong pin sites in TWO places** (§1.F and §6 Phase 7): `Tools/run_unit_gate.ps1`
+   is the **ENGINE** pin (1638) and moving it reds the engine gate; `Docs/BuildSystem.md` carries no
+   ZM baseline. **Only `zm-tests.yml` + this file.** This is the THIRD spec in a row to get this wrong.
+
+#### ★ POSITIVE FINDINGS — do not re-derive these
+- **Dawnmere's `(512, 864)` IS on graded ground**, provable by reading: it sits ~4.6 m from the
+  `Route` path polyline (`(512,928)->(500,760)`) against an **18 m flatten radius**. The `RouteGate`
+  pad (r=30 at `512,896`) does NOT reach it — the path corridor is the whole licence. Expect ~25.6-26.5,
+  like every other measured Dawnmere column. Ruling R6.2's worry is largely closed.
+- **Every `AddStep_*` the plan calls EXISTS and its signature matches.** Verified against
+  `Zenith/Editor/Zenith_EditorAutomation.h`.
+- **The measured-ground split DOES keep both shipped R1-1 units green** — traced clause by clause.
+  The two sites that MUST flip to measured or red by metres are
+  `ZM_Tests_ThornacrePlacement.cpp:614` and `ZM_Tests_Route1Placement.cpp:454`.
+- **The oracle's player-hit guard is sound**: `CCProbeGroundAt` takes an explicit ignore entity and
+  sets `m_bHitTerrain` only when the hit IS the terrain, so a Player hit fails loudly instead of
+  silently freezing a body-height ground plane.
+- **Scope is honest**: registry 64 -> 67 verified by count (67 `ZENITH_AUTOMATED_TEST_REGISTER` lines
+  today, 3 of which are prose).
+- **Every `Zenithmon.cpp` line number in the spec is STALE** (written pre-phase-1). Insert by
+  SEMANTIC landmark, never by line number. The Dawnmere marker steps go strictly between
+  `AddStep_Custom(&ZM_ConfigureLabDoorTrigger)` and the rival pre-save guard — anywhere earlier
+  rewrites every ZM-D-148 dense authoring-order index after it and turns a one-entity change into a
+  whole-file diff.
+
+#### ★ ORCHESTRATOR BOOT SEQUENCE FOR PHASE 2 (the critics' corrected ordering)
+0. `Build\regen.ps1` (new files), build both configs.
+1. **Seam oracle + Dawnmere 1-row table only** -> measure against the CURRENT committed scene -> freeze.
+2. Land the split + both authoring blocks (all measured rows at the sentinel) -> **windowed
+   `Vulkan_*_True` boot with `--skip-unit-tests`** -> expect seven "Saved scene to" lines.
+   **DO NOT COMMIT those bytes.**
+3. Run the oracles -> read the PASTE lines -> every one must report `hitTerrain=1` and
+   `finalHit='<Region>Terrain'`, never `'Player'`.
+4. Paste measured values, rebuild, re-run the oracles green.
+5. Re-author windowed; `git status` must show exactly three asset paths.
+6. Second identical boot; hashes identical. **Only now** run `run_unit_gate.ps1` — it boots with
+   `--exit-after-unit-tests` and cannot carry `--skip-unit-tests`, so running it earlier tells you
+   nothing while the needles point at files that do not exist.
+7. `zenith test Zenithmon --headless`; confirm registry 67.
+> ★ Every boot in steps 2-4 MUST carry `--skip-unit-tests`: a failing boot unit aborts the boot
+> BEFORE scene authoring runs, and this slice ships units that are RED BY DESIGN until the freeze
+> closes. Without the flag the tests block their own fix forever.
+> ★ In steps 2-3 the authored Player is a DYNAMIC capsule at the sentinel (~y -999,999). Watch those
+> boots for physics complaints; if one destabilises, seed the tables with the recipe target for the
+> provisional author ONLY and record the deviation — never silently clamp.
+
+#### Smaller corrections to fold in
+- **Add `CountNameOccurrences("ZM_WarpTrigger") == 0` to both new scenes' needles.** The proposed
+  zero-trigger clauses needle only the two declared gate NAMES, so a trigger authored under any other
+  name is invisible — and zero-triggers is this slice's core safety ruling.
+- U3's stated catch is misattributed: it tests the accessors, not the wiring. The pair that actually
+  catches a mis-wired marker is U8's `"FromDawnmere" == 1` AND `"FromRoute1" == 0` on the committed bytes.
+- Clause (4) of `Route1_GateVolumesAdmitNoStepOverAndSitOnTheGround` is arithmetically forced
+  (`Min().y == ground` identically). Keep it, but say so in the comment — do not present the re-point
+  as a strengthening.
+- `RGSceneIsActive` compares an `int` build index against a `u_int`; cast explicitly or MSVC warns
+  under `/WX`. U11 needs `<string>` added to `ZM_Tests_CommittedSceneBytes.cpp`.
+- **Accepted cost, stated not hidden:** Route1 and Thornacre are the first committed Zenithmon
+  scenes that **cannot be load-verified in CI** (their tests skip on the gitignored bake). The
+  windowed boots are the only proof they load — confirm during them that each scene loads and the
+  follow camera resolves `"Player"`, rather than only counting saves.
+- `ZM_DawnmerePlacement.h:737-748` still calls the Lab ground table an "INVALID PLACEHOLDER ... RED
+  until they do" while the `.cpp` is frozen with ten measured literals; `ZM_ThornacrePlacement.h:239`
+  still says "re-measure in R1-3" when R1-2 does it. Fix both opportunistically.
 
 ### ★ THE ONE FOLLOW-UP R1-1 LEFT OPEN FOR R1-2 (do not rediscover it)
 - **`fZM_ROUTE1_PROVISIONAL_GROUND_Y` and its Thornacre twin are UNMEASURED** -- they are the
