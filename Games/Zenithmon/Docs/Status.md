@@ -925,8 +925,8 @@ is orthogonal to the S8 content items below -- not part of that gate.
 # ★★★ COLD-START BLOCK -- WRITTEN 2026-08-15 FOR A NEW SESSION. READ THIS FIRST.
 # ════════════════════════════════════════════════════════════════════════════
 
-**STATE:** master is CLEAN and PUSHED at `00247005` (R1-1 = `0f68e823`, its review follow-up
-= `00247005`). Nothing is in flight, nothing is half-landed.
+**STATE:** master is CLEAN and PUSHED. R1-1 landed as `0f68e823` (the slice) and `00247005`
+(its review follow-up). Nothing is in flight, nothing is half-landed.
 ZM boot pin **3345**, automated registry **64**, engine pin **1638** (unmoved).
 
 **S8 ITEM 1 IS COMPLETE AND TICKED** (six slices `864296df`..`0e0a884c`, ticked `f4d30f89`,
