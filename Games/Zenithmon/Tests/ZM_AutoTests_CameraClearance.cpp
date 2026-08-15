@@ -1629,4 +1629,373 @@ static const Zenith_AutomatedTest g_xZMDawnmereLabGroundTruthTest = {
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xZMDawnmereLabGroundTruthTest);
 
+// ============================================================================
+// (4) ZM_DawnmereRouteSeamGroundTruth_Test (R1-2 step 1) -- the ROUTE 1 ARRIVAL
+// SEAM measurement oracle.
+//
+// Same job as (1) and (3) for ONE column: cast a real downward ray at the
+// Dawnmere terrain recipe's "FromRoute1" landmark (512, 864), LOG the value at
+// LOG_CATEGORY_UNITTEST on every run, and red if the compiled row in
+// Source/World/ZM_DawnmerePlacement.h has drifted from the surface the world
+// actually has.
+//
+// ★★ WHY THIS EXISTS BEFORE THE THING IT SERVES, AND WHY THAT ORDER IS THE WHOLE
+// POINT. Slice R1-2 will author a "FromRoute1" arrival marker into the COMMITTED
+// Dawnmere.zscen so the Route 1 return leg has somewhere to land. Nobody has ever
+// measured the ground at that column. Authoring first would move a tracked asset
+// -- one that has drifted twice in this project's history (ZM-D-179, ZM-D-183) --
+// before knowing the column was usable, with "revert a committed asset" as the
+// only recovery. The measurement does not depend on the marker, so it goes first,
+// and this run therefore measures PURE TERRAIN against the CURRENT committed
+// scene, with no route-seam geometry in the world at all.
+//
+// On this run the row it checks against is the deliberate UNMEASURED SENTINEL, so
+// the height clause is EXPECTED TO RED until the printed literal is pasted in and
+// the binary rebuilt. That is the measure -> freeze -> rebuild loop, and this test
+// is its instrument -- exactly as the lab oracle above was for SC-D.
+//
+// ★ THE IGNORE ENTITY IS THE PLAYER, AND IT BUYS NOTHING TODAY. In the committed
+// Dawnmere the player capsule stands at the town centre (512, 480), 384 m south of
+// this column, so nothing can be over it right now. It is passed anyway for the
+// SECOND run of this oracle: once R1-2 lands, the return leg WARPS the player to
+// precisely this column, so a later batch can easily leave the capsule standing on
+// the very ground being measured -- the self-confirming-measurement hazard the
+// Home oracle guards against at the town centre and the W5 NPC oracle guards
+// against at each anchor. Ignoring it now means the same column stays measurable
+// afterwards, which is the same forward-looking reason the lab's door rows sit half
+// a metre out into the forecourt.
+//
+// ★ AND AN ABSENT PLAYER IS "THERE IS NO BODY TO IGNORE", NEVER A FAILURE. Only
+// the TERRAIN is required here: it is what every probe must terminate on, and a
+// renamed or deleted 'Player' is already a hard failure of the Home oracle above,
+// so duplicating that failure mode here would only add a way for this measurement
+// to red for a reason that is not about the measurement.
+// Zenith_PhysicsQuery::RaycastIgnoring falls back to an unfiltered raycast for
+// INVALID_ENTITY_ID -- "ignore nothing" is a supported request, not an error.
+//
+// ★ EVERY OTHER NON-TERRAIN HIT IS TERMINAL AND IS NAMED. A ray that stops on a
+// body reports that body's TOP, and a body top frozen into a placement table is a
+// spawn height that puts the arriving player inside geometry. There is no silent
+// pass here: CCProbeGroundAt only sets m_bHitTerrain when the hit entity IS the
+// terrain, and Verify names whatever it did hit via CCDescribeEntity.
+//
+// ★ THE PROBE WINDOW IS REUSED UNCHANGED, AND IS SIZED FROM THE TOWN-CENTRE
+// ANCHOR RATHER THAN FROM THE ROW. CCProbeGroundAt starts 10 m above the
+// reference and runs 20 m, i.e. a 15.99 .. 35.99 window around Dawnmere's measured
+// town-centre feet. The expectation for this column is ~25.6 .. 26.5 (see the R1-2
+// block in Source/World/ZM_DawnmerePlacement.h for the corridor arithmetic behind
+// that), comfortably inside it. Sizing the window from the ROW instead would start
+// the ray a million metres below the world while the sentinel is in place, find
+// nothing, and time out WITHOUT EVER PRINTING A MEASUREMENT -- i.e. the freeze loop
+// could never close. That is the same trap the lab oracle documents.
+//
+// ★ SKIPS ON THE GITIGNORED BAKE ONLY. A missing Dawnmere.zscen is a missing
+// TRACKED asset, which is a defect and is reported as a failure -- see the
+// CCTerrainBakePresent / CCCommittedDawnmereScenePresent split at the top of this
+// file.
+// ============================================================================
+
+namespace
+{
+	enum class RSGTPhase { Resolve, Measure, Done };
+
+	RSGTPhase g_eRSGTPhase = RSGTPhase::Done;
+	int  g_iRSGTFrames = 0;
+	bool g_bRSGTBakePresent = false;
+	bool g_bRSGTScenePresent = false;
+	bool g_bRSGTSkipped = false;
+	bool g_bRSGTResolved = false;
+	bool g_bRSGTMeasured = false;
+	bool g_bRSGTPlayerPresent = false;
+	const char* g_szRSGTFailure = "test did not reach verification";
+	Zenith_EntityID g_xRSGTTerrainID = INVALID_ENTITY_ID;
+	Zenith_EntityID g_xRSGTPlayerID = INVALID_ENTITY_ID;
+
+	// ★ ITS OWN SLOT ARRAY AND ITS OWN static_assert, for the reason the lab probe
+	// spells out: the arrays above are bounded by their own slot counts with
+	// asserts that only count THEIR rows, and every loop reads
+	// `u < uCount && u < SLOTS` -- so a row appended to another table's enum would
+	// be measured up to that bound and silently DROPPED beyond it.
+	constexpr u_int uRSGT_SAMPLE_SLOTS = 4u;
+	static_assert(uRSGT_SAMPLE_SLOTS >= (u_int)ZM_DAWNMERE_ROUTE_SEAM_SAMPLE_COUNT,
+		"the route-seam ground-truth probe needs one slot per route-seam ground sample");
+	CCGroundProbe g_axRSGTProbes[uRSGT_SAMPLE_SLOTS];
+
+	void FailRSGT(const char* szReason)
+	{
+		g_szRSGTFailure = szReason;
+		g_eRSGTPhase = RSGTPhase::Done;
+	}
+
+	bool RSGTStepResolve()
+	{
+		Zenith_SceneData* pxData = nullptr;
+		if (!CCDawnmereIsActive(pxData))
+		{
+			if (g_iRSGTFrames > iCC_RESOLVE_DEADLINE_FRAMES)
+			{
+				FailRSGT("Dawnmere never became the active scene");
+				return false;
+			}
+			return true;
+		}
+
+		// The terrain is the ONLY required entity: it is what the probe must
+		// terminate on, and its absence means the committed scene is not the scene
+		// this test was written against.
+		const Zenith_Entity xTerrain = CCFindEntity(pxData, szCC_TERRAIN_ENTITY);
+		if (!xTerrain.IsValid())
+		{
+			if (g_iRSGTFrames > iCC_RESOLVE_DEADLINE_FRAMES)
+			{
+				FailRSGT("the committed Dawnmere does not contain 'DawnmereTerrain' -- "
+					"a renamed or deleted authored entity, not a missing bake");
+				return false;
+			}
+			return true;
+		}
+
+		// OPTIONAL, and deliberately so -- see the block comment above.
+		const Zenith_Entity xPlayer = CCFindEntity(pxData, szCC_PLAYER_ENTITY);
+		g_bRSGTPlayerPresent = xPlayer.IsValid();
+		g_xRSGTPlayerID =
+			g_bRSGTPlayerPresent ? xPlayer.GetEntityID() : INVALID_ENTITY_ID;
+
+		g_xRSGTTerrainID = xTerrain.GetEntityID();
+		g_bRSGTResolved = true;
+		g_eRSGTPhase = RSGTPhase::Measure;
+		g_iRSGTFrames = 0;
+		return true;
+	}
+
+	bool RSGTStepMeasure()
+	{
+		const u_int uCount = ZM_GetDawnmereRouteSeamSampleCount();
+		u_int uResolved = 0u;
+		for (u_int u = 0u; u < uCount && u < uRSGT_SAMPLE_SLOTS; ++u)
+		{
+			if (g_axRSGTProbes[u].m_bResolved)
+			{
+				++uResolved;
+				continue;
+			}
+			const ZM_DawnmereNpcAnchor& xSample = ZM_GetDawnmereRouteSeamSample(u);
+			// The reference height sizes the WINDOW only, and it is deliberately
+			// NOT xSample.m_fFeetY -- see the block comment above.
+			g_axRSGTProbes[u] = CCProbeGroundAt(xSample.m_fX, xSample.m_fZ,
+				fZM_DAWNMERE_TOWN_CENTER_FEET_Y, g_xRSGTPlayerID, g_xRSGTTerrainID);
+			if (g_axRSGTProbes[u].m_bResolved)
+			{
+				++uResolved;
+			}
+		}
+
+		// Only a column that found NOTHING is still waiting for the terrain body to
+		// stream in; a column that landed on the wrong body is already decided and
+		// is judged in Verify.
+		if (uResolved != uCount)
+		{
+			if (g_iRSGTFrames > iCC_PROBE_DEADLINE_FRAMES)
+			{
+				FailRSGT("the downward probe found no ground at all under the Route 1 "
+					"arrival seam column -- either the terrain physics body never "
+					"streamed in, or that column lies outside the baked heightfield "
+					"(per-column detail below)");
+				return false;
+			}
+			return true;
+		}
+
+		g_bRSGTMeasured = true;
+		g_eRSGTPhase = RSGTPhase::Done;
+		return false;
+	}
+
+	void Setup_DawnmereRouteSeamGroundTruth()
+	{
+		g_eRSGTPhase = RSGTPhase::Done;
+		g_iRSGTFrames = 0;
+		g_bRSGTBakePresent = false;
+		g_bRSGTScenePresent = false;
+		g_bRSGTSkipped = false;
+		g_bRSGTResolved = false;
+		g_bRSGTMeasured = false;
+		g_bRSGTPlayerPresent = false;
+		g_szRSGTFailure = "test did not reach verification";
+		g_xRSGTTerrainID = INVALID_ENTITY_ID;
+		g_xRSGTPlayerID = INVALID_ENTITY_ID;
+		for (u_int u = 0u; u < uRSGT_SAMPLE_SLOTS; ++u)
+		{
+			g_axRSGTProbes[u] = CCGroundProbe();
+		}
+
+		Zenith_InputSimulator::ResetAllInputState();
+
+		// The ONE skip, and it is narrow on purpose: the GITIGNORED heightfield this
+		// test measures against does not exist. RequestSkip bypasses Verify, so no
+		// fixed-dt or scene-load state may be installed before this point.
+		g_bRSGTBakePresent = CCTerrainBakePresent();
+		if (!g_bRSGTBakePresent)
+		{
+			g_bRSGTSkipped = true;
+			Zenith_AutomatedTestRunner::RequestSkip(
+				"[ZM_DawnmereRouteSeamGroundTruth] the Dawnmere terrain bake is absent "
+				"or incomplete -- there is no heightfield to measure the Route 1 "
+				"arrival seam against (run a *_True config once to bake it)");
+			return;
+		}
+
+		// NOT a skip. Dawnmere.zscen is one of the six TRACKED assets; its absence is
+		// a deleted committed file, and skipping would turn that into a pass on the
+		// exact tree where it must never happen.
+		g_bRSGTScenePresent = CCCommittedDawnmereScenePresent();
+		if (!g_bRSGTScenePresent)
+		{
+			FailRSGT("the COMMITTED Assets/Scenes/Dawnmere" ZENITH_SCENE_EXT
+				" is missing -- that is a deleted tracked asset, not a missing bake, "
+				"so this run FAILS rather than skipping");
+			return;
+		}
+
+		Zenith_InputSimulator::SetFixedDt(fCC_FIXED_DT);
+		g_eRSGTPhase = RSGTPhase::Resolve;
+		g_xEngine.Scenes().LoadSceneByIndex(
+			iCC_DAWNMERE_BUILD_INDEX, SCENE_LOAD_SINGLE);
+	}
+
+	bool Step_DawnmereRouteSeamGroundTruth(int)
+	{
+		if (g_eRSGTPhase == RSGTPhase::Done)
+		{
+			return false;
+		}
+		++g_iRSGTFrames;
+		switch (g_eRSGTPhase)
+		{
+		case RSGTPhase::Resolve: return RSGTStepResolve();
+		case RSGTPhase::Measure: return RSGTStepMeasure();
+		case RSGTPhase::Done:    return false;
+		}
+		return false;
+	}
+
+	bool Verify_DawnmereRouteSeamGroundTruth()
+	{
+		Zenith_InputSimulator::ResetAllInputState();
+		Zenith_InputSimulator::ClearFixedDt();
+
+		if (g_bRSGTSkipped)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST,
+				"[ZM_DawnmereRouteSeamGroundTruth] SKIPPED -- no baked Dawnmere terrain, "
+				"so nothing was measured. The R1-2 route-seam ground table in "
+				"Source/World/ZM_DawnmerePlacement.cpp is UNVERIFIED on this run, and if "
+				"it still holds its sentinel it CANNOT be frozen from a run that "
+				"skipped.");
+			return true;
+		}
+
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[ZM_DawnmereRouteSeamGroundTruth] playerPresent=%d -- %s",
+			(int)g_bRSGTPlayerPresent,
+			g_bRSGTPlayerPresent
+				? "the authored player capsule was found and is IGNORED by the probe"
+				: "no player entity was found, so the probe ignores nothing and measures "
+					"whatever is over the column");
+
+		// ★ THE PASTE-READY LOG, EMITTED ON EVERY RUN, PASS OR FAIL. This is how the
+		// R1-2 route-seam row is obtained in the first place and re-obtained after a
+		// terrain change: replace the row's
+		// fZM_DAWNMERE_ROUTE_SEAM_GROUND_UNMEASURED initialiser in
+		// Source/World/ZM_DawnmerePlacement.cpp with the `paste=` literal, keying on
+		// the row NAME (the table is in this same order).
+		const u_int uCount = ZM_GetDawnmereRouteSeamSampleCount();
+		for (u_int u = 0u; u < uCount && u < uRSGT_SAMPLE_SLOTS; ++u)
+		{
+			const ZM_DawnmereNpcAnchor& xSample = ZM_GetDawnmereRouteSeamSample(u);
+			char acFinal[96];
+			CCDescribeEntity(g_axRSGTProbes[u].m_xFinalHitEntity, acFinal);
+			Zenith_Log(LOG_CATEGORY_UNITTEST,
+				"[ZM_DawnmereRouteSeamGroundTruth] MEASURED FEET Y -- PASTE row %u of "
+				"the R1-2 MEASURED ROUTE SEAM GROUND table in "
+				"Source/World/ZM_DawnmerePlacement.cpp: name=%s paste=%.5ff "
+				"xz=(%.3f, %.3f) table=%.5f tableError=%.5f | resolved=%d hitTerrain=%d "
+				"finalHit='%s'",
+				u, xSample.m_szEntityName, (double)g_axRSGTProbes[u].m_fFeetY,
+				(double)xSample.m_fX, (double)xSample.m_fZ, (double)xSample.m_fFeetY,
+				(double)(g_axRSGTProbes[u].m_fFeetY - xSample.m_fFeetY),
+				(int)g_axRSGTProbes[u].m_bResolved,
+				(int)g_axRSGTProbes[u].m_bHitTerrain, acFinal);
+		}
+
+		if (!g_bRSGTBakePresent || !g_bRSGTScenePresent || !g_bRSGTResolved
+			|| !g_bRSGTMeasured)
+		{
+			Zenith_Error(LOG_CATEGORY_UNITTEST,
+				"[ZM_DawnmereRouteSeamGroundTruth] %s (bake=%d scene=%d resolved=%d "
+				"measured=%d)",
+				g_szRSGTFailure, (int)g_bRSGTBakePresent, (int)g_bRSGTScenePresent,
+				(int)g_bRSGTResolved, (int)g_bRSGTMeasured);
+			return false;
+		}
+
+		bool bPassed = true;
+		for (u_int u = 0u; u < uCount && u < uRSGT_SAMPLE_SLOTS; ++u)
+		{
+			const ZM_DawnmereNpcAnchor& xSample = ZM_GetDawnmereRouteSeamSample(u);
+			// ★ THE MEASUREMENT MUST BE GROUND. This column carries no authored
+			// geometry at all, so ANY non-terrain hit -- including the ignored
+			// player's own capsule failing to be ignored -- means the probe measured
+			// a body TOP, and a body top frozen into this table is a spawn height that
+			// drops the arriving player inside geometry. Named and failed here rather
+			// than passed silently.
+			if (!g_axRSGTProbes[u].m_bHitTerrain
+				|| g_axRSGTProbes[u].m_xFinalHitEntity != g_xRSGTTerrainID)
+			{
+				char acFinal[96];
+				CCDescribeEntity(g_axRSGTProbes[u].m_xFinalHitEntity, acFinal);
+				bPassed = false;
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_DawnmereRouteSeamGroundTruth] the probe under '%s' terminated on "
+					"'%s' rather than on '%s' -- the measurement would be a body top, not "
+					"a ground height (the player capsule is the ONLY body this column may "
+					"legitimately carry, and it is already ignored)",
+					xSample.m_szEntityName, acFinal, szCC_TERRAIN_ENTITY);
+				continue;
+			}
+			const float fError =
+				std::fabs(g_axRSGTProbes[u].m_fFeetY - xSample.m_fFeetY);
+			if (fError > fCC_HEIGHT_TOLERANCE)
+			{
+				bPassed = false;
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_DawnmereRouteSeamGroundTruth] '%s': the compiled feet height "
+					"%.5f is %.5f m off the terrain surface %.5f (tolerance %.3f). If it "
+					"reads %.1f this row is still the R1-2 SENTINEL and has never been "
+					"frozen -- paste the `paste=` literal above into the R1-2 MEASURED "
+					"ROUTE SEAM GROUND block in Source/World/ZM_DawnmerePlacement.cpp and "
+					"rebuild. If it reads a real height far outside ~25.6 .. 26.5, that "
+					"is a FINDING about the Route corridor for R1-3, not a tolerance to "
+					"widen.",
+					xSample.m_szEntityName, (double)xSample.m_fFeetY, (double)fError,
+					(double)g_axRSGTProbes[u].m_fFeetY, (double)fCC_HEIGHT_TOLERANCE,
+					(double)fZM_DAWNMERE_ROUTE_SEAM_GROUND_UNMEASURED);
+			}
+		}
+		return bPassed;
+	}
+}
+
+static const Zenith_AutomatedTest g_xZMDawnmereRouteSeamGroundTruthTest = {
+	"ZM_DawnmereRouteSeamGroundTruth_Test",
+	&Setup_DawnmereRouteSeamGroundTruth,
+	&Step_DawnmereRouteSeamGroundTruth,
+	&Verify_DawnmereRouteSeamGroundTruth,
+	// Both waiting phases own a deadline that FAILS with a diagnostic; this cap is
+	// only a backstop above their sum.
+	/* maxFrames */ 2400,
+	false /* m_bRequiresGraphics */,
+};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xZMDawnmereRouteSeamGroundTruthTest);
+
 #endif // ZENITH_INPUT_SIMULATOR

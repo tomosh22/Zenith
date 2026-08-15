@@ -3,7 +3,11 @@
 **Last updated:** 2026-08-14
 
 **★ LIVE PIN (UPDATED 2026-08-15):
-ZM boot `3345`; engine boot (Null Combat) `1638`; registry **64**.** Observed
+ZM boot `3346`; engine boot (Null Combat) `1638`; registry **65**.** R1-2 phase 2 step 1
+(the Dawnmere route-seam ground oracle) added +1 boot unit and +1 automated test; observed
+`3346 ran / 3344 passed / 0 failed / 2 skipped` and `65 passed / 0 failed`, with the whole
+`Assets/` tree untouched. The PREVIOUS pin block, still accurate for its own change, read:
+ZM boot `3345`, registry **64**, observed
 2026-08-15 on a clean `Null_vs2022_Debug_Win64_True` Zenithmon build after S8 item
 2 slice **R1-1** and its review follow-up
 (`3345 ran / 3343 passed / 0 failed / 2 skipped`). The follow-up added **+1**
@@ -1160,9 +1164,28 @@ load-bearing content is transcribed below):
   rewrites every ZM-D-148 dense authoring-order index after it and turns a one-entity change into a
   whole-file diff.
 
+#### ★★ STEP 1 IS DONE AND FROZEN. `Dawnmere.zscen` WAS NOT TOUCHED.
+`ZM_DawnmereRouteSeamGroundTruth_Test` (registry 64 -> **65**) measured the `FromRoute1` column
+`(512, 864)` against the CURRENT committed scene and it is **FROZEN at `24.36592f`**
+(`hitTerrain=1`, `finalHit='DawnmereTerrain'`, `playerPresent=1` and correctly ignored).
+`ZM_Interaction/RouteSeamGround_StandsOnTheFromRoute1LandmarkAndIsMeasured` pins it; boot
+3345 -> **3346**.
+
+> **★★ THE MEASUREMENT CONTRADICTED ITS OWN PREDICTION, AND THE CORRECTION MATTERS FOR THE REST
+> OF THE ITEM.** The column was predicted at ~25.6-26.5, extrapolated from Dawnmere's other
+> measured columns (town centre 25.99; Home/Lab 25.59-26.54), all of which sit ~+2 m ABOVE the
+> recipe's 24.0 target. It measured **24.366** — target + 0.366. **It is the first measured
+> Dawnmere column INSIDE A FLATTEN CORRIDOR** (4.56 m from the `Route` polyline against an 18 m
+> flatten radius), and a FLATTEN dab drives ground TO the target; the other columns carry the
+> hydraulic-erosion deposit pass on top. **So the ~+2 m gap is a property of UNFLATTENED ground.**
+> The spec's §0.2 warned that Route1's and Thornacre's provisional constants would measure
+> "metres, not ULPs" off — **every Route1/Thornacre arrival anchor sits on a flattened pad or
+> lane, so expect those to come back NEAR their targets. Do not treat a near-target measurement
+> there as a broken probe.**
+
 #### ★ ORCHESTRATOR BOOT SEQUENCE FOR PHASE 2 (the critics' corrected ordering)
 0. `Build\regen.ps1` (new files), build both configs.
-1. **Seam oracle + Dawnmere 1-row table only** -> measure against the CURRENT committed scene -> freeze.
+1. ~~**Seam oracle + Dawnmere 1-row table only** -> measure -> freeze.~~ **DONE, see above.**
 2. Land the split + both authoring blocks (all measured rows at the sentinel) -> **windowed
    `Vulkan_*_True` boot with `--skip-unit-tests`** -> expect seven "Saved scene to" lines.
    **DO NOT COMMIT those bytes.**

@@ -679,3 +679,98 @@ Zenith_Maths::Vector3 ZM_GetDawnmereLabDoorTargetXZ()
 	return Zenith_Maths::Vector3(
 		fZM_DAWNMERE_LAB_X, 0.0f, fZM_DAWNMERE_LAB_DOOR_TARGET_Z);
 }
+
+// ============================================================================
+// R1-2 STEP 1 -- the Route 1 arrival seam. See the header for the reserved
+// landmark, the corridor arithmetic that predicts this column is levelled
+// ground, the expected band, and the freeze procedure for the sentinel row
+// below. NOTHING is authored from this table yet: R1-2 step 2 is what adds the
+// "FromRoute1" marker to the committed Dawnmere, and it cannot be derived until
+// this row holds a real measurement.
+// ============================================================================
+
+namespace
+{
+	// ==== R1-2 MEASURED ROUTE SEAM GROUND -- NOT YET FROZEN ====
+	//
+	// ★★ THIS ROW IS AN EXPLICIT, INVALID PLACEHOLDER, exactly as the ten lab rows
+	// above were before 2026-08-14. fZM_DAWNMERE_ROUTE_SEAM_GROUND_UNMEASURED is
+	// NOT a height and is nowhere near one, and
+	// ZM_Interaction/RouteSeamGround_StandsOnTheFromRoute1LandmarkAndIsMeasured is
+	// RED until it is replaced -- deliberately, and its message says so.
+	//
+	// TO FREEZE: run ZM_DawnmereRouteSeamGroundTruth_Test
+	// (Tests/ZM_AutoTests_CameraClearance.cpp) against a warm Dawnmere terrain
+	// bake, take the `paste=` literal it prints for the row NAME below, put it in
+	// place of the sentinel, and rebuild. It is a real downward raycast at this
+	// column against the baked Dawnmere terrain body -- OBSERVED, never derived,
+	// and never arithmetic off another table's row.
+	//
+	// ★ DO NOT HAND-EDIT THIS ROW TO MAKE A TEST PASS. If the oracle reds after a
+	// freeze, the terrain moved under the seam and the correct response is to
+	// RE-RUN it and re-paste. Hand-tuning is how a band guard ends up guarding
+	// nothing.
+	//
+	// ONE VALUE PER LINE, column named in the row, in the same idiom as the two
+	// tables above -- so a re-measure is a per-row replacement rather than a
+	// rewrite.
+	constexpr ZM_DawnmereNpcAnchor s_axDawnmereRouteSeamSamples[] =
+	{
+		// name,               x,                          z,                          measured feet Y
+		// FROZEN 2026-08-15 from ZM_DawnmereRouteSeamGroundTruth_Test against a warm
+		// Dawnmere bake: hitTerrain=1, finalHit='DawnmereTerrain', playerPresent=1
+		// (the capsule was found and correctly IGNORED by the probe).
+		//
+		// ★★ 24.366 IS NOT THE ~25.6-26.5 THIS ROW WAS PREDICTED TO READ, AND THE
+		// PREDICTION WAS WRONG FOR A REASON WORTH KEEPING. It was extrapolated from
+		// Dawnmere's OTHER measured columns (town centre 25.99, the Home and Lab
+		// rows 25.59-26.54), which all sit ~+2 m ABOVE the recipe's 24.0 m target.
+		// This column does not, because it is the first measured Dawnmere column
+		// INSIDE A FLATTEN CORRIDOR: it lies 4.56 m from the "Route" path polyline
+		// against an 18 m flatten radius, and a FLATTEN dab drives ground TO the
+		// target. So it reads target + 0.366, while the unflattened columns carry
+		// the hydraulic-erosion deposit pass on top.
+		//
+		// ★ THAT ALSO CORRECTS AN EXPECTATION FOR THE REST OF R1-2. The spec warned
+		// that Route1's and Thornacre's provisional constants (their recipe targets,
+		// 26.0 and 28.0) would measure "metres, not ULPs" off. This measurement says
+		// that gap is a property of UNFLATTENED ground -- and every Route1/Thornacre
+		// arrival anchor sits on a flattened pad or lane. Expect those to come back
+		// NEAR their targets too. Do not treat a near-target measurement there as a
+		// broken probe.
+		{ "FromRoute1Spawn",   fZM_DAWNMERE_FROM_ROUTE1_X, fZM_DAWNMERE_FROM_ROUTE1_Z, 24.36592f },
+	};
+	// ==== END R1-2 MEASURED ROUTE SEAM GROUND ====
+
+	// The bound is DEDUCED, never spelled, for the reason both tables above give:
+	// an explicit [ZM_DAWNMERE_ROUTE_SEAM_SAMPLE_COUNT] would make this a
+	// tautology and let a forgotten row zero-initialise into a NULL-named anchor
+	// at the world origin.
+	static_assert(
+		sizeof(s_axDawnmereRouteSeamSamples) / sizeof(s_axDawnmereRouteSeamSamples[0])
+			== ZM_DAWNMERE_ROUTE_SEAM_SAMPLE_COUNT,
+		"the route-seam ground-sample table must have exactly one row per ZM_DAWNMERE_ROUTE_SEAM_SAMPLE");
+}
+
+u_int ZM_GetDawnmereRouteSeamSampleCount()
+{
+	return (u_int)ZM_DAWNMERE_ROUTE_SEAM_SAMPLE_COUNT;
+}
+
+const ZM_DawnmereNpcAnchor& ZM_GetDawnmereRouteSeamSample(u_int uSample)
+{
+	if (uSample >= (u_int)ZM_DAWNMERE_ROUTE_SEAM_SAMPLE_COUNT)
+	{
+		Zenith_Error(LOG_CATEGORY_GAMEPLAY,
+			"[ZM_DawnmerePlacement] ZM_GetDawnmereRouteSeamSample: id %u is not a "
+			"route-seam ground sample -- returning the UNKNOWN town-centre anchor",
+			uSample);
+		return s_xInvalidDawnmereAnchor;
+	}
+	return s_axDawnmereRouteSeamSamples[uSample];
+}
+
+float ZM_DawnmereRouteSeamSampleFeetY(u_int uSample)
+{
+	return ZM_GetDawnmereRouteSeamSample(uSample).m_fFeetY;
+}

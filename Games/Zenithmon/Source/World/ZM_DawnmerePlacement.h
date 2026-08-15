@@ -842,3 +842,110 @@ Zenith_Maths::Vector3 ZM_GetDawnmereFromLabSpawnFeet();
 // height here would be a lie.
 Zenith_Maths::Vector3 ZM_GetDawnmereLabDoorStagingXZ();
 Zenith_Maths::Vector3 ZM_GetDawnmereLabDoorTargetXZ();
+
+// ============================================================================
+// R1-2 STEP 1 -- THE ROUTE 1 ARRIVAL SEAM: THE MEASURED GROUND, MEASURED FIRST
+//
+// ★ THIS BLOCK PLACES NOTHING, AND THAT IS THE WHOLE POINT OF LANDING IT ALONE.
+// Slice R1-2 will author a "FromRoute1" arrival marker into Dawnmere so the
+// Route 1 return leg has somewhere to land. Dawnmere.zscen is a COMMITTED asset
+// that has already drifted twice (ZM-D-179, ZM-D-183), so the order of
+// operations is deliberate: MEASURE the column while the committed scene is
+// still untouched, and only then author into it. Authoring first would move a
+// tracked file before anyone knew the column was usable, with "revert a
+// committed asset" as the only recovery. The measurement does not depend on the
+// marker, so it goes first.
+//
+// ★ THE COLUMN IS NOT A CHOICE. It is the Dawnmere terrain recipe's "FromRoute1"
+// LANDMARK, at (512, 864) -- the same relationship the Home keeps with its
+// "FromHome" landmark (384, 468) and the lab with "FromLab" (640, 520). The two
+// constants below MIRROR that landmark rather than reading it (this header is
+// pure and must not depend on ZM_TerrainAuthoring), which is exactly why the
+// mirror is a boot unit rather than a comment:
+// ZM_Interaction/RouteSeamGround_StandsOnTheFromRoute1LandmarkAndIsMeasured.
+// ★ THE NAME "FromRoute1" IS NOT UNIQUE ACROSS RECIPES -- Thornacre carries one
+// too, at (512, 112) -- so that lookup reads the DAWNMERE recipe by name and
+// nothing here may be checked against "the FromRoute1 landmark" in the abstract.
+//
+// ★ WHY THIS COLUMN IS EXPECTED TO BE LEVELLED GROUND, WRITTEN DOWN BEFORE THE
+// MEASUREMENT SO THE MEASUREMENT CAN CONTRADICT IT. The recipe's "Route" path
+// runs (512, 928) -> (500, 760) -> (524, 620) -> (512, 512) with an 18 m FLATTEN
+// radius and a 10 m dirt radius. (512, 864) lies 4.56 m from the first of those
+// segments (closest point (507.451, 864.320)), i.e. deep inside both corridors,
+// so it is graded lane rather than natural hillside. The "RouteGate" PAD at
+// (512, 896) does NOT contribute: its 30 m flatten radius falls 2 m short of the
+// 32 m to this column, and its dirt radius is 0. No Dawnmere landform reaches it
+// either -- the nearest, (224, 650) with a 180 m radius, is 359 m away.
+//
+// So the EXPECTATION is a surface in the ~25.6 .. 26.5 m band every other
+// measured Dawnmere column on graded ground reads: 1.5 to 2.6 m ABOVE the
+// recipe's 24 m flatten target, because the region-wide hydraulic erosion pass
+// deposits on top of the grade (the town centre reads 25.99, the ten Home
+// columns 25.59 - 26.54, the ten lab columns 24.32 - 26.04).
+//
+// ★★ AND IF THE REAL MEASUREMENT LANDS FAR OUTSIDE THAT, IT IS A GENUINE FINDING
+// FOR R1-3, NOT A BAND TO WIDEN. A seam column that is not on the graded lane
+// means the Route corridor does not actually reach the arrival point, which is a
+// terrain-recipe question -- and a terrain-recipe change regenerates the WHOLE
+// Dawnmere heightmap and re-measures every table in this file. Absorbing it by
+// loosening the boot unit below would hide exactly the thing this slice was
+// sequenced to find out.
+//
+// ★★ THE ROW SHIPS AS THE FILE'S UNMEASURED SENTINEL, exactly as the lab table
+// above shipped before its 2026-08-14 freeze. It is NOT a height and is nowhere
+// near one, and the boot unit below is RED BY DESIGN until it is replaced.
+// TO FREEZE IT: run ZM_DawnmereRouteSeamGroundTruth_Test
+// (Tests/ZM_AutoTests_CameraClearance.cpp) on a boot with a warm Dawnmere
+// terrain bake, read the single `paste=` literal it logs at
+// LOG_CATEGORY_UNITTEST on EVERY run, replace the row's
+// fZM_DAWNMERE_ROUTE_SEAM_GROUND_UNMEASURED initialiser in
+// Source/World/ZM_DawnmerePlacement.cpp with it, rebuild, and re-run the oracle
+// until it is green.
+//
+// ★ WHAT RE-MEASURES IT AFTERWARDS: the same two things that re-measure the
+// other two tables in this file -- regenerating the Dawnmere heightmap (a
+// recipe/seed/flatten-radius change in ZM_TerrainAuthoring.cpp) or changing its
+// collision density (a physics divisor change in the terrain exporter). There
+// are now THREE ground tables here with three separate oracles and nothing ties
+// them together, so such a change re-measures ALL THREE or leaves a silent
+// staleness behind. ZM-D-182 and ZM-D-186 are both worked examples of exactly
+// that going wrong.
+// ============================================================================
+
+// The arrival column, MIRRORING the Dawnmere recipe's "FromRoute1" landmark.
+inline constexpr float fZM_DAWNMERE_FROM_ROUTE1_X = 512.0f;
+inline constexpr float fZM_DAWNMERE_FROM_ROUTE1_Z = 864.0f;
+
+// The initialiser the route-seam row still carries. Deliberately the SAME value
+// the lab table shipped on -- aliased rather than re-typed, because a sentinel
+// spelled twice is a sentinel two tables can disagree about. It is FINITE (so no
+// accessor can hand a NaN to a transform while the table is unfrozen), a million
+// metres below any Dawnmere surface, and it appears verbatim in the failure
+// message of the boot unit that is red until the freeze lands.
+inline constexpr float fZM_DAWNMERE_ROUTE_SEAM_GROUND_UNMEASURED =
+	fZM_DAWNMERE_LAB_GROUND_UNMEASURED;
+
+// ★ ITS OWN ENUM, ITS OWN ARRAY, ITS OWN COUNT AND ITS OWN PROBE SLOT BOUND, for
+// the reason spelled out on the lab enum above: appending a row to another
+// table's enum measures it up to that table's fixed slot bound and silently
+// DROPS it beyond, with every test still green.
+enum ZM_DAWNMERE_ROUTE_SEAM_SAMPLE : u_int
+{
+	// The FromRoute1 arrival column itself. This is the row a mis-paste hurts
+	// most for the same reason the lab's SPAWN row is: a return-leg warp adds the
+	// capsule half-extent to it, so a wrong value puts the arriving player
+	// embedded in the ground or falling out of the air.
+	ZM_DAWNMERE_ROUTE_SEAM_SAMPLE_FROM_ROUTE1,
+
+	ZM_DAWNMERE_ROUTE_SEAM_SAMPLE_COUNT
+};
+
+u_int ZM_GetDawnmereRouteSeamSampleCount();
+
+// TOTAL: an out-of-range id returns the same "UNKNOWN" town-centre sentinel row
+// ZM_GetDawnmereNpcAnchor hands back, and says so with a non-fatal Zenith_Error.
+const ZM_DawnmereNpcAnchor& ZM_GetDawnmereRouteSeamSample(u_int uSample);
+
+// The measured surface at one route-seam sample. Out of range -> the sentinel's
+// height.
+float ZM_DawnmereRouteSeamSampleFeetY(u_int uSample);
