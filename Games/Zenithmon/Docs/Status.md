@@ -2,16 +2,24 @@
 
 **Last updated:** 2026-08-14
 
-**★ LIVE PIN (UPDATED 2026-08-14):
-ZM boot `3328`; engine boot (Null Combat) `1638`; registry **64**.** Observed
-2026-08-15 on a clean `Null_vs2022_Debug_Win64_True` Zenithmon build after the
-Q-2026-08-15-001 sensor retreat. The walk this program:
+**★ LIVE PIN (UPDATED 2026-08-15):
+ZM boot `3344`; engine boot (Null Combat) `1638`; registry **64**.** Observed
+2026-08-15 on a clean `Null_vs2022_Debug_Win64_True` Zenithmon build after S8 item
+2 slice **R1-1** (`3344 ran / 3342 passed / 0 failed / 2 skipped`). R1-1 added
+**+16 ZM units and no engine units**: 4 `ZM_SceneRegistry` (the new enumerable
+scene-registration table), 8 `ZM_WorldTraversal` Route 1 placement units, 3
+`ZM_WorldTraversal` Thornacre stub units, 1 `ZM_TerrainRecipeSet` material unit.
+Registry UNMOVED at 64 -- R1-1 adds no automated test. Engine UNMOVED at 1638 --
+no file under `Zenith/` was touched. **R1-1 authored no scene and moved no
+committed `.zscen` byte**, so it needed no windowed authoring boot.
+The earlier walk this program:
 **3277 -> 3280** (SC-A, +3) **-> 3295** (SC-B, +15: 14 pure `ZM_Starter` units +
 1 `FrontEnd.zscen` needle) **-> 3299** (SC-C, +4: three `ZM_WorldTraversal`
 placement units + 1 `ProfLab.zscen` needle) **-> 3307** (SC-D, +8 lab-site units)
 **-> 3312** (SC-E, +5: 1 `Dawnmere.zscen` seam needle + 4 `ZM_WorldTraversal`)
 **-> 3327** (SC-F, +15: 14 `ZM_Intro` + 1 `ZM_Data` gate-polarity unit)
-**-> 3328** (Q-2026-08-15-001, +1 `ZM_WorldTraversal` diagonal-walk-up unit).
+**-> 3328** (Q-2026-08-15-001, +1 `ZM_WorldTraversal` diagonal-walk-up unit)
+**-> 3344** (S8 item 2 slice R1-1, +16 as broken down above).
 Registry 61 -> 62 (`ZM_DawnmereLabGroundTruth_Test`) -> 63 (`ZM_LabRoundTrip_Test`)
 -> 64 (`ZM_IntroBeat_Test`).
 Engine UNMOVED at 1638 -- no slice touched a file under `Zenith/`.
@@ -911,17 +919,51 @@ is orthogonal to the S8 content items below -- not part of that gate.
 # ★★★ COLD-START BLOCK -- WRITTEN 2026-08-15 FOR A NEW SESSION. READ THIS FIRST.
 # ════════════════════════════════════════════════════════════════════════════
 
-**STATE:** master is CLEAN and PUSHED at `c2311559`. Nothing is in flight, nothing is
-half-landed. ZM boot pin **3328**, automated registry **64**, engine pin **1638** (unmoved).
+**STATE:** master is CLEAN and PUSHED. Nothing is in flight, nothing is half-landed.
+ZM boot pin **3344**, automated registry **64**, engine pin **1638** (unmoved).
 
 **S8 ITEM 1 IS COMPLETE AND TICKED** (six slices `864296df`..`0e0a884c`, ticked `f4d30f89`,
 plus `5d9d73bf`). A new game is PARTYLESS and the starter is genuinely chosen from Professor
 Aster; `ZM_IntroBeat_Test` proves it end to end across 18 phases.
 
-**THE NEXT TASK IS S8 ITEM 2: "Route 1 (encounters / trainers) -> town 2", SLICE R1-1.**
-It is PLANNED but NOT STARTED -- zero code written. The plan was produced by a 7-agent
-workflow whose full output lives in a SESSION-TEMP file that will NOT survive. **Everything
-load-bearing from it is transcribed below; treat this block as the plan of record.**
+**S8 ITEM 2 ("Route 1 -> town 2") IS IN PROGRESS. SLICE R1-1 IS COMPLETE (ZM-D-197).
+THE NEXT TASK IS SLICE R1-2.**
+
+### ★ WHAT R1-1 LANDED (the PURE slice -- no scene authored, no committed byte moved)
+Six new files + three modified, +16 boot units (3328 -> **3344** OBSERVED), registry
+unchanged at 64:
+* `Source/World/ZM_Route1Placement.h`, `Source/World/ZM_ThornacrePlacement.h` -- the compiled
+  anchors both scenes will be authored from (entity names, gate resolvers over the world
+  table, arrival markers, camera family, gate volumes, the two trainer stations).
+* `Source/World/ZM_SceneRegistry.h` + a rewritten `Project_LoadInitialScene` that **WALKS**
+  the table instead of five hand-written `RegisterSceneBuildIndex` calls. Route1 (20) and
+  Thornacre (3) are registered NOW, before their scenes exist -- a registration without a
+  scene is inert, a scene without a registration is a permanent black screen. **This kills
+  critic blocker #1 structurally.** Accepted cost: two unloadable rows in the tools editor
+  toolbar until R1-2 authors the scenes.
+* Slot 0 of `s_axRoute1Materials` / `s_axThornacreMaterials` now sample the shared engine
+  grass set at Dawnmere's tiling (base colour WHITE -- it multiplies the sampled diffuse).
+
+### ★★ THE THING R1-1 ALMOST SHIPPED, AND THE RULE THAT COMES OUT OF IT (ZM-D-197)
+The R1-1 plan specified scene-unique player names (`"Route1Player"`), justified by
+*"player resolution is by COMPONENT, never by name"*. **That is FALSE.**
+`ZM_FollowCamera::ResolveTarget` uses `FindEntityByName("Player")`
+(`Components/ZM_FollowCamera.cpp:390`) -- production, scene-agnostic, and the ONLY
+`FindEntityByName` call in the whole game. A renamed player leaves the follow camera with no
+target and `PollForCameraAndBeginFadeIn` bare-returns forever: **a permanent black screen with
+no timeout, no crash and no red test.**
+**RULE: the player entity is named `"Player"` in EVERY Zenithmon scene, Route 1 and Thornacre
+included.** Consequence: `"Player"` is a substring of `"ZM_PlayerController"`, so committed-bytes
+needles on it use the STRICTLY-MORE clause, never `== 1`, and it is excluded from any
+entity-name-vs-type-name battery.
+**★ AND THE PROCESS LESSON: a plan that asserts a NEGATIVE about coupling ("nothing resolves X
+by name") must be made to PROVE it.** That premise rode through an otherwise rigorous
+68,000-character spec because everything around it was checked in detail. Three adversarial
+critics run BEFORE any code was written returned BLOCKED and caught it, plus a trainer anchor
+that was geometrically unable to ever see the player, a test threshold that was arithmetically
+unsatisfiable, and a miscounted unit total. **Run the critique gate before the implementers on
+every remaining slice -- it cost ~700k tokens and saved a windowed re-author plus a shipped
+black screen.**
 
 ### The four USER RULINGS are already recorded -- do NOT re-ask them (ZM-D-196, `c2311559`)
 1. **Ground items are SPLIT OUT** of this item into their own Roadmap line. They are new
@@ -957,7 +999,7 @@ test coverage.
 ### The ten slices (four need a WINDOWED authoring boot)
 | id | title | +units | re-authors | deps |
 |---|---|---|---|---|
-| R1-1 | Placement headers + per-recipe terrain materials (PURE) | ~12 | none | -- |
+| ~~R1-1~~ | ~~Placement headers + per-recipe terrain materials (PURE)~~ **DONE, +16 (not ~12), ZM-D-197** | 16 | none | -- |
 | R1-2 | Author Route1 + Thornacre -- **MARKERS ONLY, zero triggers** | ~7 | creates Route1+Thornacre, re-authors Dawnmere -- **WINDOWED** | R1-1 |
 | R1-3 | **All four seam triggers in ONE commit** + round-trip proof | ~4 | all three -- **WINDOWED** | R1-2 |
 | R1-4 | Wild encounters live + rate retune (ruling 4) | ~2 | none | R1-3 |
@@ -968,6 +1010,11 @@ test coverage.
 | R1-10 | Warden relocation onto Route 1 (do LAST, isolated) | ~3 | Dawnmere + Route1 -- **WINDOWED** | R1-9 |
 
 ### ★★ FIVE BLOCKERS THE CRITICS FOUND. FOLD THE FIX INTO THE SLICE BRIEF -- DO NOT REDISCOVER.
+> **STATUS AFTER R1-1: #1 is RESOLVED** (the compiled registration table + its 4 boot units
+> shipped; Route1 and Thornacre are registered already). **#5 is RESOLVED for the new names**
+> -- they are scene-unique and collision-checked -- **EXCEPT the player, which is deliberately
+> `"Player"` and must use the strictly-more needle form (ZM-D-197).** #2, #3 and #4 are still
+> OPEN and belong to R1-3, R1-4 and R1-9 respectively.
 1. **[R1-3] The proposed hang-guard unit CANNOT EXIST as described.**
    `Project_LoadInitialScene` is a hand-written sequence of five `RegisterSceneBuildIndex`
    calls with **no enumerable table**, and it runs **AFTER** the boot-unit suite. A boot unit
@@ -1021,6 +1068,22 @@ test coverage.
   Add an oracle in R1-2 modelled on `ZM_DawnmereNpcGroundTruth_Test`.
 - **Every live Route 1 test SKIPS on CI** (gitignored bake) and a skip counts as a PASS. The
   CI-visible spine of this whole item is boot units + committed-`.zscen` byte needles.
+
+### ★ THREE FOLLOW-UPS R1-1 BOOKED FOR R1-2 (do not rediscover them)
+- **`fZM_ROUTE1_PROVISIONAL_GROUND_Y` and its Thornacre twin are UNMEASURED** -- they are the
+  recipes' `m_fTargetHeight`, not surfaces anyone probed. They are only legitimate while every
+  anchor sits inside a flattened pad, which the R1-1 units assert. **R1-2 must land the raycast
+  ground oracle (model it on `ZM_DawnmereNpcGroundTruth_Test`) and re-freeze the anchors as
+  MEASURED literals.** Move an anchor off its pad before that lands and the constant becomes a
+  lie no compiled-constant unit can see.
+- **The Thornacre camera constants (`fZM_THORNACRE_CAMERA_*`) currently have NO reader.** Route
+  1's camera unit (U11) polices the pitch-sign and short-far-plane defects; Thornacre's identical
+  constants are unpoliced. Either add the mirror unit in R1-2 or accept them consciously -- two
+  header comments currently claim a guard that does not exist and should be softened either way.
+- **The 15 game + 17 engine component-type-name table is transcribed into BOTH new test files**
+  as byte-identical copies, and nothing cross-checks them. A component registered later updates
+  one copy and silently weakens the other. The durable fix is a shared
+  `Tests/ZM_Tests_ComponentTypeNames.h`; it belongs to whichever slice adds a third battery.
 
 # ════════════════════════════════════════════════════════════════════════════
 # END COLD-START BLOCK. Historical context for earlier stages follows.

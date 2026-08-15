@@ -217,7 +217,13 @@ namespace
 
 	const ZM_TerrainMaterialSpec s_axThornacreMaterials[] =
 	{
-		{ "Pasture", { 0.31f, 0.50f, 0.17f, 1.0f }, 0.94f, 0.0f, nullptr, 0.0f },
+		// Textured like Dawnmere's Meadow: the shared ENGINE grass ground set. The
+		// base colour MULTIPLIES the sampled diffuse (Flux_Terrain_ToGBuffer ->
+		// SampleDiffuseWithBaseColor), so a textured slot authors WHITE and lets the
+		// texture carry the hue -- a green tint here puts the flat look straight back.
+		// Tiling matches Dawnmere's (~one 16 m tile) so the three outdoor regions read
+		// at one ground scale. Slot 1 (Drystone) stays flat-colour for now.
+		{ "Pasture", { 1.0f, 1.0f, 1.0f, 1.0f }, 0.94f, 0.0f, "engine:Textures/Terrain/Grass/", 0.9f },
 		{ "Drystone", { 0.39f, 0.39f, 0.34f, 1.0f }, 0.91f, 0.0f, nullptr, 0.0f },
 		{ "Dirt", { 0.36f, 0.24f, 0.13f, 1.0f }, 0.97f, 0.0f, nullptr, 0.0f },
 		{ "Hedgerow", { 0.15f, 0.33f, 0.09f, 1.0f }, 0.93f, 0.0f, nullptr, 0.0f },
@@ -298,7 +304,11 @@ namespace
 
 	const ZM_TerrainMaterialSpec s_axRoute1Materials[] =
 	{
-		{ "CoastalMeadow", { 0.28f, 0.51f, 0.20f, 1.0f }, 0.93f, 0.0f, nullptr, 0.0f },
+		// Same argument as Thornacre's Pasture above: the one textured slot samples
+		// the shared ENGINE grass set at Dawnmere's tiling, so its base colour is
+		// WHITE (base colour multiplies the sampled diffuse). Slot 1 (Chalk) stays
+		// flat-colour for now.
+		{ "CoastalMeadow", { 1.0f, 1.0f, 1.0f, 1.0f }, 0.93f, 0.0f, "engine:Textures/Terrain/Grass/", 0.9f },
 		{ "Chalk", { 0.56f, 0.57f, 0.49f, 1.0f }, 0.89f, 0.0f, nullptr, 0.0f },
 		{ "Dirt", { 0.42f, 0.28f, 0.15f, 1.0f }, 0.96f, 0.0f, nullptr, 0.0f },
 		{ "Wildflower", { 0.52f, 0.56f, 0.24f, 1.0f }, 0.91f, 0.0f, nullptr, 0.0f },

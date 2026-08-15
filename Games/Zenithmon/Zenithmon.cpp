@@ -56,6 +56,10 @@
 #include "Zenithmon/Source/World/ZM_HumanAssetPolicy.h"           // is the human bake loadable right now?
 #include "Zenithmon/Source/World/ZM_HumanBody.h"               // THE human body contract (size, capsule, visual scale)
 #include "Zenithmon/Source/World/ZM_PlayerHomePlacement.h"      // the PlayerHome shell + its ZM-D-176 warm tint
+// ★ UNCONDITIONAL, DELIBERATELY. Project_LoadInitialScene walks this table and is
+// compiled in NON-TOOLS builds too (the ZENITH_TOOLS #endif sits immediately
+// above it), so the one enumerable scene inventory cannot live in the tools block.
+#include "Zenithmon/Source/World/ZM_SceneRegistry.h"            // the ONE enumerable scene-registration table (S8 item 2, R1-1)
 #include "ZenithECS/Zenith_ComponentMeta.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 
@@ -3648,10 +3652,38 @@ void Project_RegisterEditorAutomationSteps()
 
 void Project_LoadInitialScene()
 {
-	g_xEngine.Scenes().RegisterSceneBuildIndex(0, GAME_ASSETS_DIR "Scenes/FrontEnd" ZENITH_SCENE_EXT);
-	g_xEngine.Scenes().RegisterSceneBuildIndex(1, GAME_ASSETS_DIR "Scenes/Battle" ZENITH_SCENE_EXT);
-	g_xEngine.Scenes().RegisterSceneBuildIndex(2, GAME_ASSETS_DIR "Scenes/Dawnmere" ZENITH_SCENE_EXT);
-	g_xEngine.Scenes().RegisterSceneBuildIndex(40, GAME_ASSETS_DIR "Scenes/PlayerHome" ZENITH_SCENE_EXT);
-	g_xEngine.Scenes().RegisterSceneBuildIndex(41, GAME_ASSETS_DIR "Scenes/ProfLab" ZENITH_SCENE_EXT);
-	g_xEngine.Scenes().LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
+	// ★ ONE ENUMERABLE TABLE, WALKED. This replaced five hand-written
+	// RegisterSceneBuildIndex calls that no boot unit could see. The table lives
+	// in Source/World/ZM_SceneRegistry.h and the ZM_SceneRegistry boot units walk
+	// the SAME rows -- so "the gate trigger shipped, the registration did not"
+	// (an ACCEPTED warp that parks forever in WAITING_FOR_SCENE /
+	// WAITING_FOR_SPAWN, neither of which has a timeout) reds at boot instead of
+	// shipping as a black screen.
+	//
+	// The path is built here rather than in the header so the header stays free
+	// of <string> and of GAME_ASSETS_DIR; the concatenation is byte-identical to
+	// the compile-time form it replaced, and matches the shape
+	// ZM_BattleTransition.cpp already uses for the additive battle scene.
+	for (u_int uIndex = 0u; uIndex < ZM_GetSceneRegistrationCount(); ++uIndex)
+	{
+		const ZM_SceneRegistration& xRow = ZM_GetSceneRegistration(uIndex);
+		const u_int uBuildIndex = ZM_GetSceneRegistrationBuildIndex(xRow);
+
+		// Unreachable for the seven shipped rows, but never pass the sentinel
+		// into an asserting API: static_cast<int>(0xFFFFFFFFu) is -1 and
+		// RegisterSceneBuildIndex asserts the index is non-negative.
+		if (uBuildIndex == uZM_SCENE_REGISTRATION_BUILD_INDEX_UNRESOLVED)
+		{
+			continue;
+		}
+
+		const std::string strScenePath = std::string(GAME_ASSETS_DIR)
+			+ "Scenes/" + xRow.m_szFileStem + ZENITH_SCENE_EXT;
+		g_xEngine.Scenes().RegisterSceneBuildIndex(
+			static_cast<int>(uBuildIndex), strScenePath);
+	}
+
+	g_xEngine.Scenes().LoadSceneByIndex(
+		static_cast<int>(ZM_GetWorldSpec(ZM_SCENE_FRONTEND).m_uBuildIndex),
+		SCENE_LOAD_SINGLE);
 }

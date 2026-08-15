@@ -194,6 +194,14 @@ jobs:
           #
           # History, newest first (the DERIVATION is the audit trail; the OBSERVED
           # number is the authority):
+          #   3344  S8 item 2 slice R1-1 -- the PURE slice of Route 1 -> Thornacre.
+          #                   +16 ZM units, no engine units: 4 ZM_SceneRegistry
+          #                   (the new enumerable scene-registration table), 8
+          #                   ZM_WorldTraversal Route1 placement units, 3
+          #                   ZM_WorldTraversal Thornacre stub units, and 1
+          #                   ZM_TerrainRecipeSet material unit. Registry unchanged
+          #                   at 64. Authors NO scene and moves NO committed .zscen
+          #                   byte -- no authoring boot needed for this one.
           #   3328  Q-2026-08-15-001 -- ProfLab's exit sensor RETREATED so a diagonal
           #                   walk-up to the professor cannot clip it. +1 ZM unit:
           #                   ZM_WorldTraversal.ProfLab_ExitSensorClearsTheDiagonal-
@@ -633,7 +641,7 @@ jobs:
           #   2817  ZM-D-173  = 2809 + 8: four ENGINE sensor-raycast units plus
           #                   two camera fixtures and two Home-placement units.
           $exe = 'Games\Zenithmon\Build\output\win64\null_vs2022_debug_win64_true\zenithmon.exe'
-          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 3328 -TimeoutSec 600
+          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 3344 -TimeoutSec 600
           if ($LASTEXITCODE -ne 0) { Write-Error "boot unit tests failed (see log above)"; exit $LASTEXITCODE }
 
       - name: Run Zenithmon tests

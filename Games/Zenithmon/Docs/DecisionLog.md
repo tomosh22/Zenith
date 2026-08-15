@@ -15,6 +15,101 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-08-15 -- ZM-D-197 -- S8 item 2 slice R1-1: the PLAYER ENTITY IS NAMED `"Player"` IN EVERY SCENE, and R1-1's plan was BLOCKED by all three critics before a line was written
+
+**R1-1 is the PURE slice of Route 1 -> Thornacre: it authors no scene, bakes no
+terrain, and moves no committed `.zscen` byte. It landed as six new files and
+three modified ones, +16 boot units, 3328 -> 3344 OBSERVED. Registry unchanged at
+64.** What shipped: `Source/World/ZM_Route1Placement.h` and
+`Source/World/ZM_ThornacrePlacement.h` (the compiled anchors both scenes will be
+authored from), the two per-recipe terrain-material rows, and
+`Source/World/ZM_SceneRegistry.h` -- the enumerable scene-registration table that
+`Project_LoadInitialScene` now WALKS instead of spelling five hand-written
+`RegisterSceneBuildIndex` calls.
+
+**★★ THE DECISION THIS ENTRY EXISTS FOR: THE PLAYER ENTITY IS NAMED `"Player"` IN
+ROUTE 1 AND THORNACRE, EXACTLY AS IN EVERY SHIPPED SCENE.** The R1-1 plan had
+specified scene-unique names (`"Route1Player"`, `"ThornacrePlayer"`) to escape the
+byte-needle prefix trap, on the stated ground that *"player resolution is by
+COMPONENT, never by name, so renaming is free"*. **That ground is FALSE, and acting
+on it would have shipped the exact defect this slice exists to prevent.**
+
+`ZM_FollowCamera::ResolveTarget` acquires its subject with
+`pxSceneData->FindEntityByName("Player")` (`Components/ZM_FollowCamera.cpp:390`).
+That is production, scene-agnostic code, and it is **the only `FindEntityByName`
+call in all of `Games/Zenithmon/Components/` and `Games/Zenithmon/Source/`** --
+verified by grep, not inferred. On failure it clears `m_xTargetEntityID` and
+returns an invalid entity; `ZM_GameStateManager::PollForCameraAndBeginFadeIn` then
+bare-`return`s while the camera has no target, and that barrier has **no timeout**.
+A renamed player is therefore a **permanent black screen behind an opaque fade**:
+no crash, no assert, no red test. `ZM_ProfLabPlacement.h:69` -- the very header the
+plan told the implementer to copy -- already spells
+`szZM_PROFLAB_PLAYER_ENTITY_NAME = "Player"`.
+
+**Consequence, accepted and recorded so nobody "fixes" it later:** `"Player"` is a
+strict substring of the serialized component type name `"ZM_PlayerController"`, so
+a committed-bytes needle on it must use the **STRICTLY-MORE** clause
+`Tests/ZM_Tests_CommittedSceneBytes.cpp` already ships, never `== 1`, and `"Player"`
+is excluded from any entity-name-vs-type-name battery. Every OTHER new entity name
+keeps its scene-unique form (`Route1Terrain`, `Route1Camera`, `Route1SouthArrival`,
+...). Retargeting the follow camera at `ZM_PlayerController` would also work and is
+the better long-term shape, but it is a runtime change and was explicitly kept out
+of a slice whose contract is purity.
+
+**★ THE GENERAL LESSON, WHICH IS THE REASON THIS IS A DECISION AND NOT A COMMIT
+MESSAGE: A PLAN THAT ASSERTS A NEGATIVE ABOUT COUPLING MUST BE MADE TO PROVE IT.**
+The claim "nothing resolves the player by name" is one grep away from being checked
+and was instead carried as a premise through an otherwise rigorous 68,000-character
+spec. It survived because everything AROUND it was verified in detail, which is
+precisely when an unchecked premise is most dangerous. **All three adversarial
+critics returned BLOCKED**, before any code was written, and this was the first of
+their four blockers.
+
+**The other three blockers, all real, all fixed in the same pass:**
+
+1. **The `ZM_ROUTE1_TRAINER_FORAGER` anchor at (528, 950) was geometrically DEAD.**
+   Its perpendicular foot on the DirtLane lands ~0.56 m NORTH of it while it faces
+   -Z, so the range window and the 30-degree cone window are **disjoint**: zero
+   in-cone samples at 200, 2000 and 20000 samples per segment. The trainer could
+   never have been triggered in play, and the terrain, the scene bytes and every
+   other placement check would have stayed green forever. Re-anchored to
+   **(522.5, 950.0)** -- west of the lane, 2.455 m off, 37 in-cone samples.
+2. **The unit that was supposed to catch (1) was itself arithmetically
+   unsatisfiable.** "Sample at >= 200 points per segment, assert >= 8 in-cone" reads
+   as "about a metre of approach", but segment 3 is 262 m long, so 200 samples is
+   1.31 m spacing and 8 samples is **10.5 m of arc** -- while the shipped 8 m sight
+   range caps the achievable arc at ~2.2 m. It would have red on a perfect anchor.
+   Fixed by pinning the sample **SPACING** (>= 20 points per metre), not the count.
+3. **The slice's own unit arithmetic was wrong (15 claimed, 16 real)**, and the
+   plan named `Tools/run_unit_gate.ps1` as a pin site. It is not: its
+   `[int]$Baseline = 1638` default is the **ENGINE** pin and moving it would red the
+   engine gate. `Docs/BuildSystem.md` carries no ZM baseline at all. **The pin was
+   OBSERVED from a real `Null_..._True` boot, never computed** -- the standing rule,
+   and the reason (3) cost nothing.
+
+**Tests that lock it:** the 16 new units, all green on their first run --
+`ZM_SceneRegistry` x4 (the table walk, so "the gate trigger shipped, the
+registration did not" now reds at boot instead of parking forever in
+`WAITING_FOR_SCENE`), `ZM_WorldTraversal` x8 for Route 1 (including the sight-cone
+oracle that re-derives the 4.0 m lateral ceiling from
+`fZM_SIGHT_MAX_DISTANCE` / `fZM_SIGHT_MIN_FACING_DOT` rather than re-spelling an
+anchor), `ZM_WorldTraversal` x3 for the Thornacre stub (including "authors no gym
+door", per ZM-D-196 ruling 2), and 1 `ZM_TerrainRecipeSet` material unit.
+`ZM_FollowCamera.cpp:390` itself remains unguarded by any unit -- booked below.
+
+**Reversibility:** high for the anchors and the material rows (data). **Low for the
+player name** -- it is now a committed-scene fact for Route 1 and Thornacre from
+R1-2 onward, so changing it later means a windowed re-author of both scenes.
+
+**Follow-ups booked, not done here:** (a) Route 1 and Thornacre have **no
+ground-truth raycast oracle** -- `fZM_ROUTE1_PROVISIONAL_GROUND_Y` and its Thornacre
+twin are recipe TARGET heights, not measured surfaces, and R1-2 must land the
+oracle and re-freeze them as measured literals; (b) the Thornacre camera constants
+have no reader until a camera unit joins them; (c) the 15+17 component-type-name
+table is transcribed into two test files and nothing cross-checks the copies.
+
+---
+
 ## 2026-08-15 -- ZM-D-196 -- USER RULINGS for S8 item 2 (Route 1 -> town 2), recorded BEFORE implementation per Scope.md section 4
 
 **Four user decisions plus the adopted defaults, taken 2026-08-15 after a planning
