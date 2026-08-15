@@ -182,6 +182,41 @@ touch-the-sensor guard kept and checked first.
 
 **Status:** RESOLVED 2026-08-15 (ZM-D-195). Nothing outstanding at the S8 gate.
 
+### [OPEN] Q-2026-08-15-002 -- `ZM_FollowCamera` resolves the player by NAME, which makes `"Player"` a load-bearing string in every scene forever
+
+**Found while implementing S8 item 2 slice R1-1 (ZM-D-197). Not a blocker -- R1-1 shipped
+around it -- but it is a standing constraint the user may want removed before the world
+gets big.**
+
+`ZM_FollowCamera::ResolveTarget` acquires its subject with
+`pxSceneData->FindEntityByName("Player")` (`Components/ZM_FollowCamera.cpp:390`). It is
+production, scene-agnostic, and **the only `FindEntityByName` call in the whole game**. On
+failure it clears `m_xTargetEntityID`; `ZM_GameStateManager::PollForCameraAndBeginFadeIn`
+then bare-`return`s while the camera has no target, and that barrier has **no timeout**. So
+an entity-name typo in any future scene is a **permanent black screen with no crash, no
+assert and no red test** -- and R1-1's plan very nearly shipped exactly that, because it
+assumed player resolution was component-based.
+
+**Why it is worth fixing rather than living with:** every scene S9/S10 adds must spell
+`"Player"` exactly, and that name is simultaneously a substring of the serialized component
+type name `"ZM_PlayerController"`, so committed-bytes needles on it can never use a clean
+`== 1` and must use the strictly-more clause instead. One string is carrying both a runtime
+contract and a permanent test-tooling tax.
+
+**Best guess taken (and shipped):** keep `"Player"` everywhere, Route 1 and Thornacre
+included, and record the consequence. It is the only choice that is correct TODAY.
+
+**The fix I would propose when the user wants it:** retarget the lookup at the
+`ZM_PlayerController` COMPONENT -- `TryGetUniqueActiveScenePlayerEntityID` already exists and
+is what the SPAWN barrier uses (`ZM_GameStateManager.cpp:446`), so the two barriers currently
+disagree about what "the player" means -- and give the camera barrier a timeout that logs
+loudly instead of hanging. **Cost if wrong / deferred:** low today, rising with every scene
+added; it is a one-file runtime change now and a re-author of every committed scene later if
+the name ever has to move.
+
+**Status:** OPEN. Deliberately NOT done inside R1-1, whose contract was purity (no runtime
+change, no scene byte moved).
+
 ### [OPEN] Q-2026-08-14-001 -- the boot unit gate carries a WALL-CLOCK assertion, so a REQUIRED check can red from machine load alone
 
 **Question:** should `GraphComponent::ThousandEntityUpdateBenchmark`

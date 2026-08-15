@@ -925,8 +925,9 @@ is orthogonal to the S8 content items below -- not part of that gate.
 # ★★★ COLD-START BLOCK -- WRITTEN 2026-08-15 FOR A NEW SESSION. READ THIS FIRST.
 # ════════════════════════════════════════════════════════════════════════════
 
-**STATE:** master is CLEAN and PUSHED. Nothing is in flight, nothing is half-landed.
-ZM boot pin **3344**, automated registry **64**, engine pin **1638** (unmoved).
+**STATE:** master is CLEAN and PUSHED at `00247005` (R1-1 = `0f68e823`, its review follow-up
+= `00247005`). Nothing is in flight, nothing is half-landed.
+ZM boot pin **3345**, automated registry **64**, engine pin **1638** (unmoved).
 
 **S8 ITEM 1 IS COMPLETE AND TICKED** (six slices `864296df`..`0e0a884c`, ticked `f4d30f89`,
 plus `5d9d73bf`). A new game is PARTYLESS and the starter is genuinely chosen from Professor
