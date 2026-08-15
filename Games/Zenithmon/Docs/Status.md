@@ -1186,9 +1186,17 @@ load-bearing content is transcribed below):
 #### ★ ORCHESTRATOR BOOT SEQUENCE FOR PHASE 2 (the critics' corrected ordering)
 0. `Build\regen.ps1` (new files), build both configs.
 1. ~~**Seam oracle + Dawnmere 1-row table only** -> measure -> freeze.~~ **DONE, see above.**
-2. Land the split + both authoring blocks (all measured rows at the sentinel) -> **windowed
-   `Vulkan_*_True` boot with `--skip-unit-tests`** -> expect seven "Saved scene to" lines.
-   **DO NOT COMMIT those bytes.**
+2. Land the split + both authoring blocks -> **windowed `Vulkan_*_True` boot with
+   `--skip-unit-tests`** -> expect seven "Saved scene to" lines. **DO NOT COMMIT those bytes.**
+   > **★ CHANGED BY STEP 1's MEASUREMENT: seed the provisional rows with each recipe's TARGET
+   > HEIGHT, not the `-1000000.0f` sentinel.** The critics flagged that a sentinel row authors a
+   > DYNAMIC player capsule a million metres under the world, and offered the recipe target only
+   > as a fallback if a boot destabilised. Step 1 promotes it to the default: the seam column
+   > measured target + 0.366 because it is flattened, and **every** Route1/Thornacre arrival
+   > anchor sits on a flattened pad or lane, so the recipe target is a provisional value good to
+   > well under a metre rather than an arbitrary one. The freeze still replaces it with the
+   > OBSERVED literal — nothing is derived — but the provisional boot stays physically sane.
+   > Record the deviation from the spec in the commit.
 3. Run the oracles -> read the PASTE lines -> every one must report `hitTerrain=1` and
    `finalHit='<Region>Terrain'`, never `'Player'`.
 4. Paste measured values, rebuild, re-run the oracles green.
