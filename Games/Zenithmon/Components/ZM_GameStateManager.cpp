@@ -67,11 +67,13 @@ namespace
 				xController.SetMovementEnabled(false);
 			});
 	}
-}
 
-#ifdef ZENITH_TOOLS
-namespace
-{
+	// ★ NO LONGER TOOLS-ONLY. This used to live under #ifdef ZENITH_TOOLS purely to
+	// feed RenderPropertiesPanel; the barrier-timeout report has to NAME the state it
+	// died in, in every configuration -- a headless CI log and an on-device Android
+	// logcat are exactly where this diagnostic earns its keep, and neither is a tools
+	// build. Zenith_Log/Zenith_Error are unconditionally live (ZENITH_LOG is defined
+	// unconditionally in Zenith.h), so this is never an unreferenced function.
 	const char* TransitionStateToString(ZM_WARP_TRANSITION_STATE eState)
 	{
 		switch (eState)
@@ -85,8 +87,37 @@ namespace
 		default: return "INVALID";
 		}
 	}
+
+	// The middle sentence of a timeout report: the LIKELY CAUSE, tailored per barrier.
+	// THE LOG LINE IS THE WHOLE DELIVERABLE -- a reader who has just watched the game
+	// sit on a black screen must come away with a one-line fix, not with "the game
+	// hung" -- so each barrier names the specific authoring mistake that parks it,
+	// rather than sharing one vague sentence between all three.
+	const char* TransitionTimeoutLikelyCause(ZM_WARP_TRANSITION_STATE eState)
+	{
+		switch (eState)
+		{
+		case ZM_WARP_TRANSITION_WAITING_FOR_SCENE:
+			return "The SINGLE load was issued but that build index never became the "
+				"active LOADED scene: check for a missing or wrong "
+				"Zenith_SceneSystem::RegisterSceneBuildIndex row for it.";
+		case ZM_WARP_TRANSITION_WAITING_FOR_SPAWN:
+			return "The destination scene loaded but nothing in it satisfied the "
+				"placement barrier: either no UNIQUE bodied ZM_PlayerController "
+				"(dynamic capsule with a live body), or no UNIQUE ZM_SpawnPoint "
+				"offering that tag.";
+		case ZM_WARP_TRANSITION_WAITING_FOR_CAMERA:
+			return "The destination scene loaded and the player was placed, but no "
+				"unique READY follow camera ever appeared: the scene needs exactly one "
+				"ZM_FollowCamera that is its MAIN camera and whose target is this "
+				"player generation (the camera acquires the player BY COMPONENT as of "
+				"9b5a401b, so a destination with no ZM_PlayerController or no "
+				"ZM_FollowCamera parks here).";
+		default:
+			return "";
+		}
+	}
 }
-#endif
 
 Zenith_EntityID ZM_GameStateManager::s_xSingletonEntityID = INVALID_ENTITY_ID;
 ZM_GameStateManager::LoadSceneRequestCallback
@@ -200,6 +231,17 @@ void ZM_GameStateManager::OnUpdate(float fDeltaTime)
 		}
 	}
 
+	// ---- S8 item 2: the shared barrier dwell counter, and its timeout ----------
+	// Placed HERE, below every early return above, so "polled" means exactly what it
+	// says: a frame on which the machine actually reached its transition switch. A
+	// frame that bailed on a non-finite delta time, on a non-authoritative manager, or
+	// on a lost fade overlay did not poll a barrier and must not spend its budget --
+	// the lost-overlay path in particular deliberately PARKS the transition, and
+	// charging it for frames it never polled would time out a warp that was never
+	// given a chance to progress.
+	TrackTransitionStateDwell();
+	ApplyTransitionTimeoutIfExpired();
+
 	switch (m_eTransitionState)
 	{
 	case ZM_WARP_TRANSITION_QUEUED:
@@ -268,6 +310,10 @@ void ZM_GameStateManager::RenderPropertiesPanel()
 		IsAuthoritativeSingleton() ? "true" : "false");
 	ImGui::Text("Transition: %s",
 		TransitionStateToString(m_eTransitionState));
+	ImGui::Text("Frames in state: %u (budget %u)",
+		m_uFramesInTransitionState,
+		GetTransitionTimeoutFrames(m_eTransitionState));
+	ImGui::Text("Timed out: %s", m_bTransitionTimedOut ? "true" : "false");
 	ImGui::Text("Target build index: %u", m_uTargetBuildIndex);
 	ImGui::Text("Target spawn tag: %s", m_szTargetSpawnTag[0] != '\0'
 		? m_szTargetSpawnTag : "<none>");
@@ -826,6 +872,19 @@ void ZM_GameStateManager::ResetTransitionState(bool bEnableFrozenPlayer)
 	// the arrival tail records them and then calls this function.
 	m_bResumePending = false;
 	m_bTargetIsPlayerless = false;
+	// S8 item 2. The latch belongs to ONE transition and must not survive it, exactly
+	// like the two flags above: a stale timed-out latch would make the NEXT warp skip
+	// every barrier and fade in on an unplaced player.
+	//
+	// ★ ZEROING THE COUNTER HERE IS BOOKKEEPING, NOT THE MECHANISM. The mechanism is
+	// the state-change comparison in TrackTransitionStateDwell, which is what makes
+	// every OTHER assignment site safe without a reset of its own -- do not read this
+	// line as licence to add per-site resets. Keeping m_ePreviouslyPolledState in step
+	// with the IDLE we just wrote also stops the next update logging a phantom
+	// "left <state>" measurement for a transition that was CANCELLED, not completed.
+	m_bTransitionTimedOut = false;
+	m_uFramesInTransitionState = 0u;
+	m_ePreviouslyPolledState = m_eTransitionState;
 	ApplyFadeVisual();
 }
 
@@ -847,6 +906,116 @@ void ZM_GameStateManager::IssueSingleLoad()
 
 	g_xEngine.Scenes().LoadSceneByIndex(
 		static_cast<int>(m_uTargetBuildIndex), SCENE_LOAD_SINGLE);
+}
+
+u_int ZM_GameStateManager::GetTransitionTimeoutFrames(
+	ZM_WARP_TRANSITION_STATE eState)
+{
+	switch (eState)
+	{
+	case ZM_WARP_TRANSITION_WAITING_FOR_SCENE:
+		return uWARP_TIMEOUT_FRAMES_WAITING_FOR_SCENE;
+	case ZM_WARP_TRANSITION_WAITING_FOR_SPAWN:
+		return uWARP_TIMEOUT_FRAMES_WAITING_FOR_SPAWN;
+	case ZM_WARP_TRANSITION_WAITING_FOR_CAMERA:
+		return uWARP_TIMEOUT_FRAMES_WAITING_FOR_CAMERA;
+	// The three non-polling states, listed rather than swept into `default`, so
+	// adding a seventh transition state is a compiler-visible decision here.
+	case ZM_WARP_TRANSITION_IDLE:
+	case ZM_WARP_TRANSITION_QUEUED:
+	case ZM_WARP_TRANSITION_FADING_IN:
+	default:
+		// 0 == "no timeout". QUEUED and FADING_IN are driven by AdvanceFadeAlpha,
+		// which is monotonic in delta time and therefore cannot stall; IDLE is not a
+		// transition at all.
+		return 0u;
+	}
+}
+
+void ZM_GameStateManager::TrackTransitionStateDwell()
+{
+	if (m_eTransitionState == m_ePreviouslyPolledState)
+	{
+		// IDLE accumulates here too, and deliberately goes unguarded: IDLE's budget is
+		// 0, so the count is never consulted, and an unsigned wrap after ~2 years of
+		// continuous 60 Hz idling changes nothing. Special-casing it would be one more
+		// state name to keep in step with the enum for no behavioural gain.
+		++m_uFramesInTransitionState;
+		return;
+	}
+
+	// The state MOVED since the previous polled update. Before resetting, report what
+	// the barrier we just left actually cost.
+	//
+	// ★ THIS IS THE MEASUREMENT THE PROVISIONAL BUDGETS ARE MEANT TO BE TIGHTENED
+	// FROM. It is at Zenith_Log (INFO) level, not warning: a successful transition is
+	// not a problem, it is DATA. Nothing else in the machine makes a successful
+	// barrier exit observable at all, so without this line the only way to pick a
+	// tighter budget would be a second guess -- which is how a timeout ends up firing
+	// on a slow cold scene load and becoming worse than the hang it replaced.
+	if (GetTransitionTimeoutFrames(m_ePreviouslyPolledState) != 0u)
+	{
+		Zenith_Log(LOG_CATEGORY_GAMEPLAY,
+			"[ZM GameStateManager] [Warp] left %s after %u frame(s) of a %u frame "
+			"budget -> %s (target build index %u, spawn tag \"%s\")",
+			TransitionStateToString(m_ePreviouslyPolledState),
+			m_uFramesInTransitionState,
+			GetTransitionTimeoutFrames(m_ePreviouslyPolledState),
+			TransitionStateToString(m_eTransitionState),
+			m_uTargetBuildIndex,
+			m_szTargetSpawnTag);
+	}
+
+	m_uFramesInTransitionState = 0u;
+	m_ePreviouslyPolledState = m_eTransitionState;
+}
+
+void ZM_GameStateManager::ApplyTransitionTimeoutIfExpired()
+{
+	const u_int uBudgetFrames = GetTransitionTimeoutFrames(m_eTransitionState);
+	if (uBudgetFrames == 0u || m_uFramesInTransitionState < uBudgetFrames)
+	{
+		return;
+	}
+
+	// ★★ Zenith_Error, NOT Zenith_Assert, AND THAT IS DELIBERATE. Zenith_Assert calls
+	// Zenith_DebugBreak() in EVERY configuration (Zenith.h defines ZENITH_ASSERT
+	// unconditionally), and a cold or half-authored tree is a legitimate developer
+	// state -- a missing spawn marker on a scene somebody is midway through authoring
+	// would break every cold box and take the unit gate down with it. Loud, and
+	// non-fatal.
+	Zenith_Error(LOG_CATEGORY_GAMEPLAY,
+		"[ZM GameStateManager] [Warp] TIMED OUT in %s after %u frames (budget %u): "
+		"target build index %u, spawn tag \"%s\", %u load request(s) issued this "
+		"session. %s IsWarpDestinationValid only consults the compiled ZM_WorldSpec "
+		"world table, so this warp was ACCEPTED at issue time and the fault is in the "
+		"DESTINATION, not in the request. Escaping to FADING_IN -- this is DIAGNOSIS, "
+		"NOT RECOVERY: the screen comes back so the broken destination is VISIBLE "
+		"instead of a permanent black screen with the player frozen.",
+		TransitionStateToString(m_eTransitionState),
+		m_uFramesInTransitionState,
+		uBudgetFrames,
+		m_uTargetBuildIndex,
+		m_szTargetSpawnTag,
+		m_uIssuedLoadRequestCount,
+		TransitionTimeoutLikelyCause(m_eTransitionState));
+
+	// ★ THE ESCAPE MIRRORS THE PLAYERLESS-DESTINATION PRECEDENT IN
+	// PollForSpawnAndPlacePlayer RATHER THAN INVENTING A NEW ONE: clear the frozen
+	// player id, jump straight to FADING_IN. There is no abort-back to offer --
+	// IssueSingleLoad is SCENE_LOAD_SINGLE, so by WAITING_FOR_SPAWN the source scene
+	// is already gone -- and a missing spawn marker cannot be conjured at runtime.
+	//
+	// m_bTransitionTimedOut is what makes the jump actually escape. AdvanceFadeIn
+	// re-carries all three of these barriers (an active target scene, a resolvable
+	// frozen player, a ready follow camera) and bounces back into whichever one fails;
+	// since that bounce is a state CHANGE, it would also reset the counter, turning
+	// the escape into a permanent black screen that logs one error per budget forever.
+	// The latch makes AdvanceFadeIn take the same unconditional path the playerless
+	// destination takes, so the screen comes back exactly ONCE per timed-out warp.
+	m_xFrozenPlayerEntityID = INVALID_ENTITY_ID;
+	m_bTransitionTimedOut = true;
+	m_eTransitionState = ZM_WARP_TRANSITION_FADING_IN;
 }
 
 void ZM_GameStateManager::PollForTargetScene()
@@ -986,7 +1155,14 @@ void ZM_GameStateManager::PollForCameraAndBeginFadeIn()
 
 void ZM_GameStateManager::AdvanceFadeIn(float fDeltaTime)
 {
-	if (!IsTargetSceneActive())
+	// ★ THE TIMED-OUT ESCAPE SKIPS THIS BOUNCE, AND IT MUST. A WAITING_FOR_SCENE
+	// expiry means precisely that the target scene never became active -- so this very
+	// check would throw the machine straight back into the barrier that just expired.
+	// Because that bounce is a state CHANGE, TrackTransitionStateDwell would reset the
+	// counter too, and the "escape" would degrade into a permanent black screen that
+	// logs one error every 3600 frames instead of a permanent black screen that logs
+	// nothing. The same reasoning covers the player and camera barriers below.
+	if (!m_bTransitionTimedOut && !IsTargetSceneActive())
 	{
 		m_fFadeAlpha = fFADE_OPAQUE;
 		ApplyFadeVisual();
@@ -1005,7 +1181,10 @@ void ZM_GameStateManager::AdvanceFadeIn(float fDeltaTime)
 	// It also must not fall through to the unconditional
 	// pxPlayerController->SetMovementEnabled(false) below, which would dereference
 	// null.
-	if (m_bTargetIsPlayerless)
+	// ★ AND the S8 TIMED-OUT escape, which needs this branch for the same structural
+	// reason FrontEnd does: the two barriers below are exactly the ones that just
+	// expired, so re-imposing them would wedge the escape identically.
+	if (m_bTargetIsPlayerless || m_bTransitionTimedOut)
 	{
 		m_fFadeAlpha = AdvanceFadeAlpha(
 			m_fFadeAlpha, fFADE_TRANSPARENT, fDeltaTime);
@@ -1018,6 +1197,21 @@ void ZM_GameStateManager::AdvanceFadeIn(float fDeltaTime)
 		{
 			return;
 		}
+
+		// ★ A TIMED-OUT TRANSITION DOES NOT RUN THE ARRIVAL TAIL, AND THAT IS THE
+		// POINT OF SPLITTING HERE. RecordArrivalAndLatchAutosave writes
+		// m_szLastArrivedSpawnTag, can SET AN INTRO STORY FLAG, and arms a milestone
+		// autosave -- it would persist a lie, because the player did NOT arrive: the
+		// destination never produced the marker, player or camera the transition was
+		// waiting on. ResetTransitionState(TRUE) instead ends the transition the way
+		// the cancel path does, releasing the frozen player so the broken destination
+		// is not merely visible but walkable, which is what makes it diagnosable.
+		if (m_bTransitionTimedOut)
+		{
+			ResetTransitionState(true);
+			return;
+		}
+
 		// Same tail as the playerful path, minus the controller work there is no
 		// controller to do. The autosave latched here is refused by policy on arrival
 		// (FrontEnd is not an overworld, so ResolveLiveSaveBlocker reports

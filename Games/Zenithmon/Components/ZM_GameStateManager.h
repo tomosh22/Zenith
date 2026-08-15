@@ -56,6 +56,39 @@ public:
 	static constexpr u_int uFRONTEND_BUILD_INDEX = 0u;
 	static constexpr const char* szFRONTEND_SPAWN_TAG = "Start";
 
+	// ---- S8 item 2: the warp barrier TIMEOUT budgets --------------------------
+	//
+	// THREE of the six transition states poll and bare-`return` on failure --
+	// WAITING_FOR_SCENE, WAITING_FOR_SPAWN and WAITING_FOR_CAMERA -- and the fade is
+	// already driven to FULLY OPAQUE in QUEUED before IssueSingleLoad runs. A stall in
+	// any of them was therefore a PERMANENT BLACK SCREEN with the player frozen: no
+	// crash, no assert, no red test. These budgets are the escape.
+	//
+	// ★ FRAMES, NEVER WALL-CLOCK SECONDS, and that is a scar rather than a taste.
+	// This project already owns one wall-clock gate
+	// (GraphComponent::ThousandEntityUpdateBenchmark) that reds a REQUIRED CI check
+	// from machine load alone (Q-2026-08-14-001). A seconds-based warp budget would
+	// fire on a loaded CI box and never on a dev box; frames are deterministic under
+	// Zenith_InputSimulator::SetFixedDt, which the automated harness already uses.
+	//
+	// ★ DELIBERATELY GENEROUS. A budget too tight turns a slow cold scene load into a
+	// spurious failure -- worse than the hang it replaces -- and because a hang is
+	// INFINITE, even a very generous ceiling captures the entire win. WAITING_FOR_SCENE
+	// gets the most headroom (async scene load plus terrain streaming);
+	// WAITING_FOR_CAMERA should resolve in a frame or two. Every one of them sits above
+	// the automated harness's own largest per-barrier phase allowance (420 frames in
+	// ZM_AutoTests_WorldTraversal / ZM_AutoTests_Overworld), so a harness budget always
+	// fails FIRST and this timeout can never mask a real regression by escaping ahead
+	// of it.
+	//
+	// ★ PROVISIONAL, AND INSTRUMENTED SO THEY CAN BE TIGHTENED FROM DATA RATHER THAN
+	// FROM A SECOND GUESS. Every SUCCESSFUL exit from a polling state logs the frames
+	// it actually consumed at Zenith_Log level (see TrackTransitionStateDwell). Set
+	// these from that measurement; until somebody has it, do not tighten them.
+	static constexpr u_int uWARP_TIMEOUT_FRAMES_WAITING_FOR_SCENE = 3600u;   // 60 s at 60 Hz
+	static constexpr u_int uWARP_TIMEOUT_FRAMES_WAITING_FOR_SPAWN = 1800u;   // 30 s at 60 Hz
+	static constexpr u_int uWARP_TIMEOUT_FRAMES_WAITING_FOR_CAMERA = 600u;   // 10 s at 60 Hz
+
 	ZM_GameStateManager() = delete;
 	explicit ZM_GameStateManager(Zenith_Entity& xParentEntity);
 
@@ -160,6 +193,17 @@ public:
 	static void ResetGameStateForTests();
 
 	ZM_WARP_TRANSITION_STATE GetTransitionState() const { return m_eTransitionState; }
+	// Consecutive POLLED updates spent in GetTransitionState(), counting from ZERO on
+	// the first one -- so 0 means "this is the first update in this state" and the
+	// budget above is reached on the (budget + 1)th. Only updates that actually reach
+	// the per-frame switch count: a frame that bailed on a non-finite delta time or a
+	// missing fade overlay neither polls nor spends budget. Meaningless before the
+	// first update of a state, and reset by the state-change comparison at the top of
+	// OnUpdate rather than at any assignment site.
+	u_int GetFramesInTransitionState() const { return m_uFramesInTransitionState; }
+	// True from the moment a barrier budget expired until the escape transition ends.
+	// It is what makes the FADING_IN escape actually escape (see AdvanceFadeIn).
+	bool HasTransitionTimedOut() const { return m_bTransitionTimedOut; }
 	u_int GetTargetBuildIndex() const { return m_uTargetBuildIndex; }
 	const char* GetTargetSpawnTag() const { return m_szTargetSpawnTag; }
 	Zenith_EntityID GetFrozenPlayerEntityID() const { return m_xFrozenPlayerEntityID; }
@@ -194,6 +238,17 @@ private:
 	// transition and can never retry forever. Every entry re-validates the pose, so
 	// re-applying it is idempotent and still fail-closed.
 	void ApplyPendingResumePlacement(Zenith_EntityID xPlayerEntityID);
+	// Reset-or-advance the ONE shared barrier counter, and -- on a state CHANGE out of
+	// a polling state -- log the frames that barrier actually consumed. Runs once per
+	// polled update, immediately before the transition switch.
+	void TrackTransitionStateDwell();
+	// The frame budget for a polling state, or 0 for every other state. Zero is how
+	// "this state has no timeout" is spelled, so QUEUED / FADING_IN / IDLE (which are
+	// driven by the fade, not by a poll) are covered by the same one code path.
+	static u_int GetTransitionTimeoutFrames(ZM_WARP_TRANSITION_STATE eState);
+	// If the current polling state has burned its budget: LOG LOUDLY, then jump to
+	// ZM_WARP_TRANSITION_FADING_IN. This is DIAGNOSIS, NOT RECOVERY -- see the body.
+	void ApplyTransitionTimeoutIfExpired();
 	// The shared arrival tail for both the playerful and the playerless fade-in.
 	// Records the tag the transition arrived at and latches the milestone autosave
 	// for a LATER frame. Must run BEFORE ResetTransitionState, which memsets the
@@ -234,4 +289,33 @@ private:
 	bool m_bTargetIsPlayerless = false;
 	bool m_bArrivalAutosavePending = false;
 	char m_szLastArrivedSpawnTag[uTAG_CAPACITY] = {};
+
+	// ---- S8 item 2 barrier-timeout session state ------------------------------
+	// SESSION-ONLY, exactly like the block above: WriteToDataStream still writes only
+	// the version word, so none of this reaches a .zscen and uSERIALIZATION_VERSION
+	// stays 1. Adding these members must not -- and does not -- touch the save format.
+	//
+	// ★ ONE COUNTER FOR ALL THREE POLLING STATES, NOT THREE. It is reset by comparing
+	// m_eTransitionState against m_ePreviouslyPolledState at the top of the per-frame
+	// update, DELIBERATELY NOT at each `m_eTransitionState = ...` assignment site.
+	// There are a dozen of those spread over five functions; one would eventually be
+	// missed, and a missed reset is a barrier that can never time out. The comparison
+	// is robust to every site, present and future.
+	//
+	// ★ THE ONE CASE THIS SHAPE CANNOT SEE, RECORDED HONESTLY: a stall that OSCILLATES
+	// between two states every single frame never dwells, so the counter resets each
+	// frame and no budget is ever reached. The reachable candidate is
+	// WAITING_FOR_SPAWN <-> WAITING_FOR_CAMERA, which requires the unique player to
+	// stop matching the frozen id on every alternate frame. Every OTHER failure in all
+	// three barriers PARKS (they bare-`return`), which is what this counter is for. If
+	// an oscillating hang is ever observed, that wants a second, oscillation-aware
+	// counter -- not a change to this one.
+	u_int m_uFramesInTransitionState = 0u;
+	ZM_WARP_TRANSITION_STATE m_ePreviouslyPolledState = ZM_WARP_TRANSITION_IDLE;
+	// Latched by an EXPIRED barrier, honoured by AdvanceFadeIn, cleared by
+	// ResetTransitionState so it can never outlive its transition. Without it the
+	// mandated jump to FADING_IN would not escape anything: AdvanceFadeIn re-carries
+	// the very barriers that just expired and would bounce the machine straight back
+	// into them, one loud error per budget, forever.
+	bool m_bTransitionTimedOut = false;
 };

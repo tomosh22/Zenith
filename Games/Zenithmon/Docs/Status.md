@@ -3,7 +3,7 @@
 **Last updated:** 2026-08-14
 
 **★ LIVE PIN (UPDATED 2026-08-15):
-ZM boot `3349`; engine boot (Null Combat) `1638`; registry **67**.** Q-2026-08-15-002 closed (`9b5a401b`, +3 `ZM_FollowCamera` boot units; the camera acquires the player by COMPONENT now -- no scene byte moved). Before it, R1-2 phase 2 step 2 shipped
+ZM boot `3354`; engine boot (Null Combat) `1638`; registry **67**.** The warp machine now has a FRAME BUDGET (ZM-D-200, +5 units; measured real barrier dwell is **0 frames**, so 3600/1800/600 can only fire on a genuine hang). Before it, Q-2026-08-15-002 closed (`9b5a401b`, +3 `ZM_FollowCamera` boot units; the camera acquires the player by COMPONENT now -- no scene byte moved). Before it, R1-2 phase 2 step 2 shipped
 `Route1.zscen` + `Thornacre.zscen` and the measured-ground split: registry 65 -> **67** (the two
 region ground oracles), boot units **UNMOVED at 3346** (the split renamed constants and migrated
 their callers; it added no unit). Observed `3346 ran / 3344 passed / 0 failed / 2 skipped` and

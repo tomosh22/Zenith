@@ -301,6 +301,26 @@ namespace
 		return xEntity;
 	}
 
+	// ---- S8 item 2 barrier-timeout fixture ------------------------------------
+	// All three warp barriers are only reachable with the destination scene ACTIVE
+	// under the target build index, so every timeout test needs this same handful of
+	// SceneSystem calls. Sharing them keeps the new tests about the TIMEOUT rather
+	// than about scene plumbing. Build index 2 is Dawnmere, whose compiled
+	// ZM_WorldSpec row offers "TownCenter" -- which is what makes RequestWarp accept
+	// the destination while the scene itself stays deliberately unfurnished.
+	Zenith_SceneData* ActivateWarpTargetScene(const char* szSceneName)
+	{
+		Zenith_SceneSystem& xScenes = g_xEngine.Scenes();
+		xScenes.RegisterSceneBuildIndex(2, szSceneName);
+		const Zenith_Scene xTargetScene = xScenes.LoadSceneByIndex(
+			2, SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
+		if (!xTargetScene.IsValid() || !xScenes.SetActiveScene(xTargetScene))
+		{
+			return nullptr;
+		}
+		return xScenes.GetSceneData(xTargetScene);
+	}
+
 	Zenith_Entity CreateConfiguredTrigger(Zenith_SceneData* pxSceneData)
 	{
 		Zenith_Entity xTrigger = CreateBoxBody(
@@ -1705,4 +1725,481 @@ ZENITH_TEST(ZM_WorldTraversal, FadeInUnlocksAndRuntimeStateIsNotSerializedWithMi
 	ZENITH_ASSERT_EQ_FLOAT(xManager.GetFadeAlpha(), 0.5f, 0.00001f);
 	ZENITH_ASSERT_FALSE(xController.IsMovementEnabled(),
 		"duplicate deserialization must not release authoritative input lock");
+}
+
+// ============================================================================
+// S8 item 2 -- THE WARP BARRIER TIMEOUT
+//
+// Three of the six transition states poll and bare-`return` on failure, and the
+// fade is already driven to FULLY OPAQUE in QUEUED before IssueSingleLoad runs.
+// A stall in any of them was a PERMANENT BLACK SCREEN with the player frozen --
+// no crash, no assert, no red test, which is exactly why it shipped-adjacent
+// twice. The five tests below are the ones that can see it.
+//
+// ★ EVERY LOOP HERE ACCUMULATES A BOOL AND ASSERTS ONCE. Asserting inside a
+// 3600-iteration loop would report thousands of passes for one property and bury
+// the actual failure; the accumulate-then-assert shape used elsewhere in this
+// file keeps the runner's output proportional to the claim being made.
+// ============================================================================
+
+ZENITH_TEST(ZM_WorldTraversal, WarpBarrierTimeoutEscapesWaitingForSceneAfterItsFrameBudget)
+{
+	// COMPILE-TIME, not `if`: /W4 /WX makes a runtime conditional over an
+	// expression of compile-time constants C4127, and these are exactly that shape.
+	static_assert(
+		ZM_GameStateManager::uWARP_TIMEOUT_FRAMES_WAITING_FOR_SCENE
+			> ZM_GameStateManager::uWARP_TIMEOUT_FRAMES_WAITING_FOR_SPAWN,
+		"the scene barrier needs the MOST headroom -- async scene load plus terrain "
+		"streaming happen behind it");
+	static_assert(
+		ZM_GameStateManager::uWARP_TIMEOUT_FRAMES_WAITING_FOR_SPAWN
+			> ZM_GameStateManager::uWARP_TIMEOUT_FRAMES_WAITING_FOR_CAMERA,
+		"the camera barrier should resolve in a frame or two and needs the least");
+	static_assert(
+		ZM_GameStateManager::uWARP_TIMEOUT_FRAMES_WAITING_FOR_CAMERA > 420u,
+		"every budget must exceed the automated harness's own largest per-barrier "
+		"phase allowance (420 frames), so a harness budget always fails FIRST and "
+		"this timeout can never mask a real regression by escaping ahead of it");
+
+	ZM_GameStateManager::ResetRuntimeStateForTests();
+	ZENITH_ASSERT_TRUE(ResetEmptyPhysicsWorld());
+	Zenith_SceneData* pxSceneData = GetActiveSceneData();
+	ZENITH_ASSERT_NOT_NULL(pxSceneData);
+	if (pxSceneData == nullptr) { return; }
+
+	Zenith_Entity xPlayer = CreatePlayer(pxSceneData);
+	Zenith_Entity xManagerEntity = CreateAuthoritativeManager(pxSceneData);
+	ZENITH_ASSERT_TRUE(xPlayer.IsValid());
+	ZENITH_ASSERT_TRUE(xManagerEntity.IsValid());
+	if (!xPlayer.IsValid() || !xManagerEntity.IsValid()) { return; }
+
+	// The captured callback stands in for the SINGLE load: the request is recorded
+	// and NOTHING loads, which is precisely the production hang -- a build index
+	// that ZM_WorldSpec offers but that never becomes the active loaded scene.
+	LoadCallbackScope xCallbackScope;
+	ZM_GameStateManager& xManager =
+		xManagerEntity.GetComponent<ZM_GameStateManager>();
+	ZENITH_ASSERT_TRUE(ZM_GameStateManager::RequestWarp(2u, "TownCenter"));
+	xManager.OnUpdate(ZM_GameStateManager::fFADE_DURATION_SECONDS);
+	ZENITH_ASSERT_EQ(xManager.GetTransitionState(),
+		ZM_WARP_TRANSITION_WAITING_FOR_SCENE);
+	ZENITH_ASSERT_EQ(g_uCapturedLoadCount, 1u);
+	ZENITH_ASSERT_EQ_FLOAT(xManager.GetFadeAlpha(), 1.0f, 0.0f,
+		"the barrier is entered on a FULLY OPAQUE screen -- that is what makes a "
+		"stall here invisible rather than merely wrong");
+
+	// Burn the budget exactly. The counter is 0 on the FIRST polled update in a
+	// state, so `budget` updates leave it one short and the machine must still be
+	// parked -- a timeout that fired early would be worse than the hang it replaces.
+	const u_int uBudgetFrames =
+		ZM_GameStateManager::uWARP_TIMEOUT_FRAMES_WAITING_FOR_SCENE;
+	bool bLeftBarrierEarly = false;
+	for (u_int uFrame = 0u; uFrame < uBudgetFrames; ++uFrame)
+	{
+		xManager.OnUpdate(1.0f / 60.0f);
+		bLeftBarrierEarly = bLeftBarrierEarly
+			|| xManager.GetTransitionState() != ZM_WARP_TRANSITION_WAITING_FOR_SCENE
+			|| xManager.HasTransitionTimedOut();
+	}
+	ZENITH_ASSERT_FALSE(bLeftBarrierEarly,
+		"the scene barrier must not expire one frame before its budget");
+	ZENITH_ASSERT_EQ(xManager.GetFramesInTransitionState(), uBudgetFrames - 1u);
+	ZENITH_ASSERT_EQ(g_uCapturedLoadCount, 1u,
+		"waiting out the budget must not re-issue the SINGLE load");
+
+	// The escape frame.
+	xManager.OnUpdate(1.0f / 60.0f);
+	ZENITH_ASSERT_EQ(xManager.GetTransitionState(), ZM_WARP_TRANSITION_FADING_IN,
+		"an expired scene barrier must escape to FADING_IN, not spin forever");
+	ZENITH_ASSERT_TRUE(xManager.HasTransitionTimedOut());
+	ZENITH_ASSERT_EQ(xManager.GetFramesInTransitionState(), uBudgetFrames);
+	ZENITH_ASSERT_EQ(xManager.GetFrozenPlayerEntityID(), INVALID_ENTITY_ID,
+		"the escape mirrors the playerless-destination jump, frozen id included");
+	ZENITH_ASSERT_LT(xManager.GetFadeAlpha(), 1.0f,
+		"the escape must actually start clearing the screen");
+
+	// ★ THE CLAUSE THAT PROVES THE ESCAPE ESCAPES. The target scene is STILL not
+	// active -- that is why the barrier expired -- and AdvanceFadeIn's first act is
+	// normally to bounce a fade-in with no active target scene straight back to
+	// WAITING_FOR_SCENE. Without the timed-out latch this drive re-enters the
+	// barrier, the state change resets the counter, and the "fix" is a black screen
+	// that logs one error per budget forever instead of a black screen that logs
+	// nothing. Drive it to completion and require IDLE with a transparent screen.
+	bool bReenteredExpiredBarrier = false;
+	for (u_int uFrame = 0u; uFrame < 8u; ++uFrame)
+	{
+		xManager.OnUpdate(ZM_GameStateManager::fFADE_DURATION_SECONDS * 0.5f);
+		bReenteredExpiredBarrier = bReenteredExpiredBarrier
+			|| xManager.GetTransitionState() == ZM_WARP_TRANSITION_WAITING_FOR_SCENE;
+	}
+	ZENITH_ASSERT_FALSE(bReenteredExpiredBarrier,
+		"the timed-out escape must not bounce back into the barrier that expired");
+	ZENITH_ASSERT_EQ(xManager.GetTransitionState(), ZM_WARP_TRANSITION_IDLE);
+	ZENITH_ASSERT_FALSE(xManager.HasTransitionTimedOut(),
+		"the latch belongs to ONE transition and must not outlive it");
+	ZENITH_ASSERT_EQ_FLOAT(xManager.GetFadeAlpha(), 0.0f, 0.0f);
+	ZENITH_ASSERT_EQ(xManager.GetTargetBuildIndex(),
+		ZM_GameStateManager::uINVALID_BUILD_INDEX);
+	ZENITH_ASSERT_STREQ(xManager.GetLastArrivedSpawnTag(), "",
+		"a timed-out warp ARRIVED NOWHERE: recording a tag would persist a lie, and "
+		"the arrival tail also sets story flags and arms a milestone autosave");
+}
+
+ZENITH_TEST(ZM_WorldTraversal, WarpBarrierTimeoutEscapesWaitingForSpawnAndReleasesTheFrozenPlayer)
+{
+	ZM_GameStateManager::ResetRuntimeStateForTests();
+	ZENITH_ASSERT_TRUE(ResetEmptyPhysicsWorld());
+	Zenith_SceneSystem& xScenes = g_xEngine.Scenes();
+	Zenith_SceneData* pxSourceData = GetActiveSceneData();
+	ZENITH_ASSERT_NOT_NULL(pxSourceData);
+	if (pxSourceData == nullptr) { return; }
+
+	Zenith_Entity xSourcePlayer = CreatePlayer(pxSourceData);
+	Zenith_Entity xManagerEntity = CreateAuthoritativeManager(pxSourceData);
+	ZENITH_ASSERT_TRUE(xSourcePlayer.IsValid());
+	ZENITH_ASSERT_TRUE(xManagerEntity.IsValid());
+	if (!xSourcePlayer.IsValid() || !xManagerEntity.IsValid()) { return; }
+	const Zenith_EntityID xManagerID = xManagerEntity.GetEntityID();
+
+	LoadCallbackScope xCallbackScope;
+	ZENITH_ASSERT_TRUE(ZM_GameStateManager::RequestWarp(2u, "TownCenter"));
+	xManagerEntity.GetComponent<ZM_GameStateManager>().OnUpdate(
+		ZM_GameStateManager::fFADE_DURATION_SECONDS);
+
+	// The destination loads and offers a Player -- but NO ZM_SpawnPoint carrying the
+	// requested tag. This is the canonical production hang: IsWarpDestinationValid
+	// consults only the compiled world table, so "TownCenter" was ACCEPTED at issue
+	// time and nothing downstream ever complains.
+	Zenith_SceneData* pxTargetData =
+		ActivateWarpTargetScene("ZM_WarpSpawnTimeoutTarget");
+	ZENITH_ASSERT_NOT_NULL(pxTargetData);
+	if (pxTargetData == nullptr) { return; }
+	xSourcePlayer.DestroyImmediate();
+	Zenith_Entity xTargetPlayer = CreatePlayer(pxTargetData);
+	ZENITH_ASSERT_TRUE(xTargetPlayer.IsValid());
+	if (!xTargetPlayer.IsValid()) { return; }
+	ZM_PlayerController& xTargetController =
+		xTargetPlayer.GetComponent<ZM_PlayerController>();
+	xTargetController.OnStart();
+
+	Zenith_Entity xResolvedManager = xScenes.ResolveEntity(xManagerID);
+	ZENITH_ASSERT_TRUE(xResolvedManager.IsValid());
+	if (!xResolvedManager.IsValid()) { return; }
+	ZM_GameStateManager& xManager =
+		xResolvedManager.GetComponent<ZM_GameStateManager>();
+	xManager.OnUpdate(1.0f / 60.0f);
+	ZENITH_ASSERT_EQ(xManager.GetTransitionState(),
+		ZM_WARP_TRANSITION_WAITING_FOR_SPAWN);
+	Zenith_EntityID xSpawnID = INVALID_ENTITY_ID;
+	ZENITH_ASSERT_EQ(ZM_SpawnPoint::FindUniqueInScene(
+		xScenes.GetActiveScene(), "TownCenter", xSpawnID),
+		ZM_SPAWN_POINT_LOOKUP_MISSING,
+		"the fixture must genuinely be missing the marker, not merely slow");
+
+	const u_int uBudgetFrames =
+		ZM_GameStateManager::uWARP_TIMEOUT_FRAMES_WAITING_FOR_SPAWN;
+	bool bLeftBarrierEarly = false;
+	bool bPlayerEverUnfrozen = false;
+	for (u_int uFrame = 0u; uFrame < uBudgetFrames; ++uFrame)
+	{
+		xManager.OnUpdate(1.0f / 60.0f);
+		bLeftBarrierEarly = bLeftBarrierEarly
+			|| xManager.GetTransitionState() != ZM_WARP_TRANSITION_WAITING_FOR_SPAWN
+			|| xManager.HasTransitionTimedOut();
+		bPlayerEverUnfrozen = bPlayerEverUnfrozen
+			|| xTargetController.IsMovementEnabled();
+	}
+	ZENITH_ASSERT_FALSE(bLeftBarrierEarly,
+		"the spawn barrier must not expire one frame before its budget");
+	ZENITH_ASSERT_FALSE(bPlayerEverUnfrozen,
+		"the player stays frozen for the whole wait -- which is the other half of "
+		"what makes this hang, and must remain true right up to the escape");
+	ZENITH_ASSERT_EQ(xManager.GetFramesInTransitionState(), uBudgetFrames - 1u);
+	ZENITH_ASSERT_EQ(xManager.GetFrozenPlayerEntityID(),
+		xTargetPlayer.GetEntityID());
+
+	xManager.OnUpdate(1.0f / 60.0f);
+	ZENITH_ASSERT_EQ(xManager.GetTransitionState(), ZM_WARP_TRANSITION_FADING_IN,
+		"an expired spawn barrier must escape to FADING_IN, not spin forever");
+	ZENITH_ASSERT_TRUE(xManager.HasTransitionTimedOut());
+	ZENITH_ASSERT_EQ(xManager.GetFrozenPlayerEntityID(), INVALID_ENTITY_ID);
+
+	// Finish the escape. The screen coming back is only half the deliverable: a
+	// visible destination the player is frozen inside is still a hang, so the
+	// transition must END rather than leave input locked forever.
+	xManager.OnUpdate(ZM_GameStateManager::fFADE_DURATION_SECONDS);
+	ZENITH_ASSERT_EQ(xManager.GetTransitionState(), ZM_WARP_TRANSITION_IDLE);
+	ZENITH_ASSERT_FALSE(xManager.HasTransitionTimedOut());
+	ZENITH_ASSERT_EQ(xManager.GetFramesInTransitionState(), 0u);
+	ZENITH_ASSERT_EQ_FLOAT(xManager.GetFadeAlpha(), 0.0f, 0.0f);
+	ZENITH_ASSERT_TRUE(xTargetController.IsMovementEnabled(),
+		"the escape must release the frozen player, or the screen comes back on a "
+		"player who still cannot move");
+	ZENITH_ASSERT_STREQ(xManager.GetLastArrivedSpawnTag(), "",
+		"nothing arrived: the marker the transition was waiting for never existed");
+}
+
+ZENITH_TEST(ZM_WorldTraversal, WarpBarrierTimeoutEscapesWaitingForCameraAfterItsFrameBudget)
+{
+	ZM_GameStateManager::ResetRuntimeStateForTests();
+	ZENITH_ASSERT_TRUE(ResetEmptyPhysicsWorld());
+	Zenith_SceneSystem& xScenes = g_xEngine.Scenes();
+	Zenith_SceneData* pxSourceData = GetActiveSceneData();
+	ZENITH_ASSERT_NOT_NULL(pxSourceData);
+	if (pxSourceData == nullptr) { return; }
+
+	Zenith_Entity xSourcePlayer = CreatePlayer(pxSourceData);
+	Zenith_Entity xManagerEntity = CreateAuthoritativeManager(pxSourceData);
+	ZENITH_ASSERT_TRUE(xSourcePlayer.IsValid());
+	ZENITH_ASSERT_TRUE(xManagerEntity.IsValid());
+	if (!xSourcePlayer.IsValid() || !xManagerEntity.IsValid()) { return; }
+	const Zenith_EntityID xManagerID = xManagerEntity.GetEntityID();
+
+	LoadCallbackScope xCallbackScope;
+	ZENITH_ASSERT_TRUE(ZM_GameStateManager::RequestWarp(2u, "TownCenter"));
+	xManagerEntity.GetComponent<ZM_GameStateManager>().OnUpdate(
+		ZM_GameStateManager::fFADE_DURATION_SECONDS);
+
+	// Scene, player AND marker all present -- placement succeeds -- but the
+	// destination authors no ZM_FollowCamera. Since 9b5a401b the camera acquires the
+	// player BY COMPONENT, so a destination missing either component parks here.
+	Zenith_SceneData* pxTargetData =
+		ActivateWarpTargetScene("ZM_WarpCameraTimeoutTarget");
+	ZENITH_ASSERT_NOT_NULL(pxTargetData);
+	if (pxTargetData == nullptr) { return; }
+	xSourcePlayer.DestroyImmediate();
+	Zenith_Entity xTargetPlayer = CreatePlayer(pxTargetData);
+	Zenith_Entity xSpawn = CreateSpawnPoint(
+		pxTargetData, "CameraTimeoutTownCenter", "TownCenter");
+	ZENITH_ASSERT_TRUE(xTargetPlayer.IsValid());
+	ZENITH_ASSERT_TRUE(xSpawn.IsValid());
+	if (!xTargetPlayer.IsValid() || !xSpawn.IsValid()) { return; }
+	xSpawn.GetComponent<Zenith_TransformComponent>().SetPosition(
+		{ 4.0f, 1.0f, 6.0f });
+	ZM_PlayerController& xTargetController =
+		xTargetPlayer.GetComponent<ZM_PlayerController>();
+	xTargetController.OnStart();
+
+	Zenith_Entity xResolvedManager = xScenes.ResolveEntity(xManagerID);
+	ZENITH_ASSERT_TRUE(xResolvedManager.IsValid());
+	if (!xResolvedManager.IsValid()) { return; }
+	ZM_GameStateManager& xManager =
+		xResolvedManager.GetComponent<ZM_GameStateManager>();
+	xManager.OnUpdate(1.0f / 60.0f);
+	ZENITH_ASSERT_EQ(xManager.GetTransitionState(),
+		ZM_WARP_TRANSITION_WAITING_FOR_SPAWN);
+	xManager.OnUpdate(1.0f / 60.0f);
+	ZENITH_ASSERT_EQ(xManager.GetTransitionState(),
+		ZM_WARP_TRANSITION_WAITING_FOR_CAMERA,
+		"placement must succeed so the wait under test is the CAMERA barrier");
+	ZENITH_ASSERT_EQ(xManager.GetFramesInTransitionState(), 0u,
+		"entering a new barrier starts its budget from zero, not from the last one");
+
+	const u_int uBudgetFrames =
+		ZM_GameStateManager::uWARP_TIMEOUT_FRAMES_WAITING_FOR_CAMERA;
+	bool bLeftBarrierEarly = false;
+	for (u_int uFrame = 0u; uFrame < uBudgetFrames; ++uFrame)
+	{
+		xManager.OnUpdate(1.0f / 60.0f);
+		bLeftBarrierEarly = bLeftBarrierEarly
+			|| xManager.GetTransitionState() != ZM_WARP_TRANSITION_WAITING_FOR_CAMERA
+			|| xManager.HasTransitionTimedOut();
+	}
+	ZENITH_ASSERT_FALSE(bLeftBarrierEarly,
+		"the camera barrier must not expire one frame before its budget");
+	ZENITH_ASSERT_EQ(xManager.GetFramesInTransitionState(), uBudgetFrames - 1u);
+	ZENITH_ASSERT_EQ_FLOAT(xManager.GetFadeAlpha(), 1.0f, 0.0f);
+
+	xManager.OnUpdate(1.0f / 60.0f);
+	ZENITH_ASSERT_EQ(xManager.GetTransitionState(), ZM_WARP_TRANSITION_FADING_IN,
+		"an expired camera barrier must escape to FADING_IN, not spin forever");
+	ZENITH_ASSERT_TRUE(xManager.HasTransitionTimedOut());
+
+	xManager.OnUpdate(ZM_GameStateManager::fFADE_DURATION_SECONDS);
+	ZENITH_ASSERT_EQ(xManager.GetTransitionState(), ZM_WARP_TRANSITION_IDLE);
+	ZENITH_ASSERT_EQ_FLOAT(xManager.GetFadeAlpha(), 0.0f, 0.0f);
+	ZENITH_ASSERT_TRUE(xTargetController.IsMovementEnabled());
+	ZENITH_ASSERT_STREQ(xManager.GetLastArrivedSpawnTag(), "");
+}
+
+// ★ THIS IS THE CLAUSE PROTECTING THE ONE-COUNTER DESIGN. The budget is shared by
+// all three barriers and is reset by comparing the current transition state against
+// the previously-polled one at the top of the update -- deliberately NOT at each
+// `m_eTransitionState = ...` assignment site, of which there are a dozen across five
+// functions. Drop the comparison and the counter accumulates across barriers, so the
+// second barrier of a warp inherits the first one's dwell and can expire in ONE
+// frame. Nothing else in this file would notice.
+ZENITH_TEST(ZM_WorldTraversal, WarpBarrierDwellCounterResetsAcrossEveryStateChange)
+{
+	ZM_GameStateManager::ResetRuntimeStateForTests();
+	ZENITH_ASSERT_TRUE(ResetEmptyPhysicsWorld());
+	Zenith_SceneSystem& xScenes = g_xEngine.Scenes();
+	Zenith_SceneData* pxSceneData = GetActiveSceneData();
+	ZENITH_ASSERT_NOT_NULL(pxSceneData);
+	if (pxSceneData == nullptr) { return; }
+
+	Zenith_Entity xPlayer = CreatePlayer(pxSceneData);
+	Zenith_Entity xManagerEntity = CreateAuthoritativeManager(pxSceneData);
+	ZENITH_ASSERT_TRUE(xPlayer.IsValid());
+	ZENITH_ASSERT_TRUE(xManagerEntity.IsValid());
+	if (!xPlayer.IsValid() || !xManagerEntity.IsValid()) { return; }
+	const Zenith_EntityID xManagerID = xManagerEntity.GetEntityID();
+
+	LoadCallbackScope xCallbackScope;
+	ZM_GameStateManager& xManager =
+		xManagerEntity.GetComponent<ZM_GameStateManager>();
+	ZENITH_ASSERT_TRUE(ZM_GameStateManager::RequestWarp(2u, "TownCenter"));
+
+	// Five updates too small to reach opacity: the machine dwells in QUEUED. The
+	// counter is 0 on the first polled update of a state, so five leave it at four.
+	for (u_int uFrame = 0u; uFrame < 5u; ++uFrame)
+	{
+		xManager.OnUpdate(0.001f);
+	}
+	ZENITH_ASSERT_EQ(xManager.GetTransitionState(), ZM_WARP_TRANSITION_QUEUED);
+	ZENITH_ASSERT_EQ(xManager.GetFramesInTransitionState(), 4u);
+
+	// Cross to opacity. The state moves INSIDE this update, so the counter still
+	// carries QUEUED's dwell when the update returns -- it is the NEXT polled update
+	// that must see the change and start the new barrier at zero.
+	xManager.OnUpdate(ZM_GameStateManager::fFADE_DURATION_SECONDS);
+	ZENITH_ASSERT_EQ(xManager.GetTransitionState(),
+		ZM_WARP_TRANSITION_WAITING_FOR_SCENE);
+	ZENITH_ASSERT_EQ(xManager.GetFramesInTransitionState(), 5u);
+
+	xManager.OnUpdate(1.0f / 60.0f);
+	ZENITH_ASSERT_EQ(xManager.GetTransitionState(),
+		ZM_WARP_TRANSITION_WAITING_FOR_SCENE);
+	ZENITH_ASSERT_EQ(xManager.GetFramesInTransitionState(), 0u,
+		"the shared counter must RESET on a state change -- accumulating would let "
+		"one barrier's dwell expire the next one");
+	xManager.OnUpdate(1.0f / 60.0f);
+	ZENITH_ASSERT_EQ(xManager.GetFramesInTransitionState(), 1u,
+		"...and then resume counting from that reset");
+
+	// Now the same property between two POLLING barriers, which is the pairing that
+	// actually matters: activate the target so the scene barrier clears, and require
+	// the spawn barrier to start from zero rather than from the scene barrier's dwell.
+	Zenith_SceneData* pxTargetData =
+		ActivateWarpTargetScene("ZM_WarpDwellResetTarget");
+	ZENITH_ASSERT_NOT_NULL(pxTargetData);
+	if (pxTargetData == nullptr) { return; }
+	Zenith_Entity xResolvedManager = xScenes.ResolveEntity(xManagerID);
+	ZENITH_ASSERT_TRUE(xResolvedManager.IsValid());
+	if (!xResolvedManager.IsValid()) { return; }
+	ZM_GameStateManager& xTargetManager =
+		xResolvedManager.GetComponent<ZM_GameStateManager>();
+
+	xTargetManager.OnUpdate(1.0f / 60.0f);
+	ZENITH_ASSERT_EQ(xTargetManager.GetTransitionState(),
+		ZM_WARP_TRANSITION_WAITING_FOR_SPAWN);
+	ZENITH_ASSERT_EQ(xTargetManager.GetFramesInTransitionState(), 2u,
+		"the scene barrier's own dwell is still the reported one on the frame it "
+		"hands over");
+	xTargetManager.OnUpdate(1.0f / 60.0f);
+	ZENITH_ASSERT_EQ(xTargetManager.GetTransitionState(),
+		ZM_WARP_TRANSITION_WAITING_FOR_SPAWN,
+		"the destination has no player, so the spawn barrier parks -- with a budget "
+		"of its own, counted from zero");
+	ZENITH_ASSERT_EQ(xTargetManager.GetFramesInTransitionState(), 0u);
+	ZENITH_ASSERT_FALSE(xTargetManager.HasTransitionTimedOut());
+}
+
+// ★ THE ANTI-VACUITY ARM. Without it, a timeout that fired on its FIRST frame would
+// satisfy every clause above: each of those tests proves the escape happens, none of
+// them proves it does not happen to a healthy warp. This one drives a complete,
+// well-formed transition and requires the timeout to stay entirely out of the way --
+// and requires the ARRIVAL TAIL to have run, which the timed-out escape deliberately
+// skips, so the two paths cannot be confused for one another.
+ZENITH_TEST(ZM_WorldTraversal, WarpCompletingWithinBudgetNeverTripsTheBarrierTimeout)
+{
+	ZM_GameStateManager::ResetRuntimeStateForTests();
+	ZENITH_ASSERT_TRUE(ResetEmptyPhysicsWorld());
+	Zenith_SceneSystem& xScenes = g_xEngine.Scenes();
+	Zenith_SceneData* pxSourceData = GetActiveSceneData();
+	ZENITH_ASSERT_NOT_NULL(pxSourceData);
+	if (pxSourceData == nullptr) { return; }
+
+	Zenith_Entity xSourcePlayer = CreatePlayer(pxSourceData);
+	Zenith_Entity xManagerEntity = CreateAuthoritativeManager(pxSourceData);
+	ZENITH_ASSERT_TRUE(xSourcePlayer.IsValid());
+	ZENITH_ASSERT_TRUE(xManagerEntity.IsValid());
+	if (!xSourcePlayer.IsValid() || !xManagerEntity.IsValid()) { return; }
+	const Zenith_EntityID xManagerID = xManagerEntity.GetEntityID();
+
+	LoadCallbackScope xCallbackScope;
+	bool bTimedOutAtAnyPoint = false;
+	ZENITH_ASSERT_TRUE(ZM_GameStateManager::RequestWarp(2u, "TownCenter"));
+	xManagerEntity.GetComponent<ZM_GameStateManager>().OnUpdate(
+		ZM_GameStateManager::fFADE_DURATION_SECONDS);
+	bTimedOutAtAnyPoint = bTimedOutAtAnyPoint
+		|| xManagerEntity.GetComponent<ZM_GameStateManager>()
+			.HasTransitionTimedOut();
+
+	Zenith_SceneData* pxTargetData =
+		ActivateWarpTargetScene("ZM_WarpWithinBudgetTarget");
+	ZENITH_ASSERT_NOT_NULL(pxTargetData);
+	if (pxTargetData == nullptr) { return; }
+	xSourcePlayer.DestroyImmediate();
+	Zenith_Entity xTargetPlayer = CreatePlayer(pxTargetData);
+	Zenith_Entity xSpawn = CreateSpawnPoint(
+		pxTargetData, "WithinBudgetTownCenter", "TownCenter");
+	Zenith_Entity xCamera = CreateFollowCamera(
+		pxTargetData, "WithinBudgetCamera", true);
+	ZENITH_ASSERT_TRUE(xTargetPlayer.IsValid());
+	ZENITH_ASSERT_TRUE(xSpawn.IsValid());
+	ZENITH_ASSERT_TRUE(xCamera.IsValid());
+	if (!xTargetPlayer.IsValid() || !xSpawn.IsValid() || !xCamera.IsValid())
+	{
+		return;
+	}
+	Zenith_UnitTests::SetMainCameraForTest(pxTargetData, xCamera.GetEntityID());
+	ZM_PlayerController& xTargetController =
+		xTargetPlayer.GetComponent<ZM_PlayerController>();
+	xTargetController.OnStart();
+	// The camera was created before the controller's explicit start, so refresh its
+	// generation-bearing target after the replacement Player is frozen.
+	xCamera.GetComponent<ZM_FollowCamera>().OnStart();
+
+	Zenith_Entity xResolvedManager = xScenes.ResolveEntity(xManagerID);
+	ZENITH_ASSERT_TRUE(xResolvedManager.IsValid());
+	if (!xResolvedManager.IsValid()) { return; }
+	ZM_GameStateManager& xManager =
+		xResolvedManager.GetComponent<ZM_GameStateManager>();
+
+	// Each barrier clears on its FIRST polled update -- three orders of magnitude
+	// inside the tightest budget. If any of these dwell counts ever grows, the budgets
+	// were the wrong shape, not this test.
+	xManager.OnUpdate(1.0f / 60.0f);
+	bTimedOutAtAnyPoint = bTimedOutAtAnyPoint || xManager.HasTransitionTimedOut();
+	ZENITH_ASSERT_EQ(xManager.GetTransitionState(),
+		ZM_WARP_TRANSITION_WAITING_FOR_SPAWN);
+	xManager.OnUpdate(1.0f / 60.0f);
+	bTimedOutAtAnyPoint = bTimedOutAtAnyPoint || xManager.HasTransitionTimedOut();
+	ZENITH_ASSERT_EQ(xManager.GetTransitionState(),
+		ZM_WARP_TRANSITION_WAITING_FOR_CAMERA);
+	ZENITH_ASSERT_EQ(xManager.GetFramesInTransitionState(), 0u);
+	xManager.OnUpdate(1.0f / 60.0f);
+	bTimedOutAtAnyPoint = bTimedOutAtAnyPoint || xManager.HasTransitionTimedOut();
+	ZENITH_ASSERT_EQ(xManager.GetTransitionState(), ZM_WARP_TRANSITION_FADING_IN);
+	ZENITH_ASSERT_EQ(xManager.GetFramesInTransitionState(), 0u);
+
+	xManager.OnUpdate(ZM_GameStateManager::fFADE_DURATION_SECONDS);
+	bTimedOutAtAnyPoint = bTimedOutAtAnyPoint || xManager.HasTransitionTimedOut();
+	ZENITH_ASSERT_FALSE(bTimedOutAtAnyPoint,
+		"a warp that clears every barrier on its first polled update must never "
+		"latch the timeout -- a timeout that fires instantly would otherwise pass "
+		"every other clause in this file");
+	ZENITH_ASSERT_EQ(xManager.GetTransitionState(), ZM_WARP_TRANSITION_IDLE);
+	ZENITH_ASSERT_EQ_FLOAT(xManager.GetFadeAlpha(), 0.0f, 0.0f);
+	ZENITH_ASSERT_TRUE(xTargetController.IsMovementEnabled());
+	ZENITH_ASSERT_STREQ(xManager.GetLastArrivedSpawnTag(), "TownCenter",
+		"the SUCCESS tail records the arrival -- which is exactly what the timed-out "
+		"escape must not do, and is how the two paths stay distinguishable");
+
+	// The success tail also LATCHES a milestone autosave for a later frame. Drop it
+	// here rather than leaving it armed for whatever runs next: this is the only test
+	// in the file that completes a warp and then stops, and a leaked latch would have
+	// the next IDLE update write a save slot on its behalf.
+	ZM_GameStateManager::ResetRuntimeStateForTests();
 }

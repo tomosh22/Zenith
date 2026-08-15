@@ -15,6 +15,67 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-08-15 -- ZM-D-200 -- the warp transition machine gets a FRAME budget, and the obvious escape does not escape
+
+**All three polling barriers -- `WAITING_FOR_SCENE`, `_SPAWN`, `_CAMERA` -- bare-`return`ed on
+failure with no counter, behind a fade already driven to FULLY OPAQUE in `QUEUED`. Any stall was
+a permanent black screen with the player frozen: no crash, no assert, no red test.** This shape
+came within one commit of shipping twice this week (ZM-D-197's player rename; the R1-3 trigger
+ordering). Boot units 3349 -> **3354** (+5); registry unchanged at 67; no scene byte moved.
+
+**FRAMES, NOT WALL-CLOCK.** One shared `m_uFramesInTransitionState`, reset by comparing against
+`m_ePreviouslyPolledState` at the top of `OnUpdate` rather than at any of the dozen
+`m_eTransitionState = ...` assignment sites -- one of those would eventually be missed. Seconds
+were rejected on this project's own evidence: Q-2026-08-14-001 records a wall-clock assertion
+making a REQUIRED check red from machine load alone.
+
+**`Zenith_Error`, never `Zenith_Assert`** -- a cold or half-authored tree is a legitimate
+developer state and `Zenith_DebugBreak` fires in every configuration.
+
+**★★ THE DESIGN AS BRIEFED WAS WRONG, AND THE IMPLEMENTER CAUGHT IT.** The brief said: on expiry,
+log and jump to `FADING_IN`, citing the `m_bTargetIsPlayerless` precedent. **But `AdvanceFadeIn`
+RE-CARRIES ALL THREE BARRIERS** (`ZM_GameStateManager.cpp:1165` for the scene, then
+`TryResolveFrozenTargetPlayer`, then `HasUniqueReadyFollowCamera`). A `WAITING_FOR_SCENE` expiry
+means precisely that the scene never became active, so the jump bounces straight back -- and
+because the bounce is a state CHANGE, the dwell counter resets. **The "escape" would have
+degraded into a permanent black screen that logs one error every 3600 frames instead of one that
+logs nothing.** The fix is a session-only `m_bTransitionTimedOut` latch putting `AdvanceFadeIn`
+on the same unconditional path `m_bTargetIsPlayerless` already takes -- which is exactly *why*
+that precedent works, a detail the brief cited without understanding.
+
+**Two consequences decided deliberately, both signed off:** the timed-out tail does NOT call
+`RecordArrivalAndLatchAutosave` (it writes `m_szLastArrivedSpawnTag`, can set a story flag and
+arms a milestone autosave -- the player did not arrive, and persisting that would be a lie on
+disk), and it ends with `ResetTransitionState(true)` releasing the frozen player, because a
+visible destination the player is frozen inside is still a hang.
+
+**DIAGNOSIS, NOT RECOVERY.** A missing spawn marker cannot be conjured at runtime, and there is
+no going back -- `IssueSingleLoad()` is `SCENE_LOAD_SINGLE`, so by `WAITING_FOR_SPAWN` the source
+scene is gone. The deliverable is the log line, which names the state, the frames, the target
+build index, the tag, and the per-barrier likely cause.
+
+**BUDGETS ARE PROVISIONAL AND INSTRUMENTED, AND THE FIRST DATA IS ALREADY IN.** 3600 / 1800 / 600
+frames. Every SUCCESSFUL barrier exit logs the frames it consumed, and a full 67-test batch shows
+**every real barrier clearing in 0 frames** -- e.g.
+`left WAITING_FOR_SCENE after 0 frame(s) of a 3600 frame budget -> WAITING_FOR_SPAWN (target
+build index 2, spawn tag "TownCenter")`. So the budgets have four orders of magnitude of headroom
+and can only fire on a genuine hang, never on a slow legitimate load. Tighten from that data, not
+from a second guess.
+
+**Known blind spot, recorded in the header:** a stall that OSCILLATES between two states every
+frame never dwells and so is invisible to a dwell counter. The only reachable candidate is
+`WAITING_FOR_SPAWN <-> WAITING_FOR_CAMERA`; every other failure in all three barriers parks.
+
+**Tests that lock it:** five units -- one per barrier, one pinning that the counter resets across
+a state change (the clause protecting the reset-by-comparison design), and an anti-vacuity arm
+proving a healthy warp completes without tripping it. That last one is what a timeout firing
+instantly would fail.
+
+**Follow-up, not done:** eleven comments and assertion messages across seven test files still say
+these barriers have "NO TIMEOUT". None changes a truth value; all want a sweep.
+
+---
+
 ## 2026-08-15 -- ZM-D-199 -- Route 1 and Thornacre EXIST: two new committed scenes, a measured-ground SPLIT, and eight OBSERVED ground literals
 
 **`Route1.zscen` (1,879 B) and `Thornacre.zscen` (1,733 B) are committed.** Both were produced by
