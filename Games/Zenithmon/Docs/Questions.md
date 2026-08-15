@@ -122,7 +122,7 @@ you simply pay for it again.
 
 **Status:** [RESOLVED 2026-08-02]
 
-### [OPEN] Q-2026-08-15-001 -- walking DIAGONALLY toward Professor Aster bounces the player back out of the lab
+### [RESOLVED] Q-2026-08-15-001 -- walking DIAGONALLY toward Professor Aster bounces the player back out of the lab
 
 **Question:** should ProfLab's exit sensor be retreated (or Aster moved shallower)
 so a diagonal walk-up cannot clip the door, or is this acceptable as shipped?
@@ -166,7 +166,21 @@ ZM-D-191, which placed him at `(spawnZ + innerMaxZ)/2` precisely so he sits insi
 the arrival frustum -- pulling him toward the camera narrows the frame at his depth
 and risks re-opening the off-screen bug SC-C existed to close.
 
-**Status:** OPEN -- deferred to the S8 visual gate by user ruling.
+**★★ SUPERSEDED SAME DAY -- FIXED, NOT DEFERRED. See ZM-D-195.** The user revised
+the ruling from "log it, judge at the gate" to **"retreat the sensor"**, and it
+landed: near face **6.25 -> 7.0625**, derived as "the sensor owns the last QUARTER
+of the 2.75 m walk-in corridor", all-dyadic so the authored centre is
+config-stable. Margin over the 45 degree leading edge is **0.7287 m**.
+**★ The binding constraint turned out NOT to be the diagonal.** Aster's BODY
+reaches 6.775 (his centre was only 0.125 m inside the old span; his body was
+0.525 m inside it), so the professor's own clearance set the floor -- deriving from
+the diagonal alone would have left him standing in the sensor.
+**★ And the workaround became the proof:** `ZM_AutoTests_IntroBeat`'s approach had
+been clamped to the arrival depth to dodge this bug; that clamp is DELETED, so the
+test now drives the real 45 degree W+A line a player would, with the
+touch-the-sensor guard kept and checked first.
+
+**Status:** RESOLVED 2026-08-15 (ZM-D-195). Nothing outstanding at the S8 gate.
 
 ### [OPEN] Q-2026-08-14-001 -- the boot unit gate carries a WALL-CLOCK assertion, so a REQUIRED check can red from machine load alone
 

@@ -1522,6 +1522,14 @@ ZENITH_TEST(ZM_WorldTraversal, ProfLab_ExitSensorFillsTheApertureAndClearsTheArr
 	//     fixed dt a running capsule covers fRUN_SPEED/30 per frame; a sensor
 	//     shallower than a couple of those is a plane a fast body can step over
 	//     between physics ticks.
+	//
+	//     ★ THIS CLAUSE BECAME THE BINDING ONE WHEN Q-2026-08-15-001 RETREATED THE
+	//     NEAR FACE. Depth is no longer a comfortable 1.5 m: the sensor gave up
+	//     0.8125 m of it to clear the diagonal walk-up (see the unit below), so
+	//     depth is now the SCARCE quantity in this room and this is the floor that
+	//     says how much further it can ever be spent. Do not weaken it to buy more
+	//     retreat -- a sensor a fast walker tunnels through is a worse door than one
+	//     that fires early.
 	constexpr float fMIN_SENSOR_TICKS = 2.0f;
 	const float fPerFrameAt30Hz = ZM_PlayerController::fRUN_SPEED / 30.0f;
 	ZENITH_ASSERT_GT(fZM_PROFLAB_EXIT_TRIGGER_SCALE_Z,
@@ -1531,6 +1539,49 @@ ZENITH_TEST(ZM_WorldTraversal, ProfLab_ExitSensorFillsTheApertureAndClearsTheArr
 		"is a sensor a running player can step across between ticks",
 		(double)fZM_PROFLAB_EXIT_TRIGGER_SCALE_Z, (double)fPerFrameAt30Hz,
 		(double)fMIN_SENSOR_TICKS);
+
+	// (4b) ★ ...AND THE QUANTITY THAT ACTUALLY DECIDES TUNNELLING IS NOT THE BOX.
+	//      ZM_WarpTrigger fires from OnCollisionEnter -- a BODY-vs-BODY contact --
+	//      and the player is a capsule of radius fZM_PROFLAB_PLAYER_RADIUS, so contact
+	//      opens a radius BEFORE his centre reaches the near face and persists a
+	//      radius past the far one. The window a walker spends in contact is
+	//      therefore the depth plus a full capsule DIAMETER, and that is the figure
+	//      the "is this still a usable exit?" question wants. Asserted against a
+	//      WALK, because walking is what the last metre to a doorway is done at, and
+	//      then again at run speed because a player may sprint at it.
+	constexpr float fMIN_CONTACT_TICKS_WALKING = 6.0f;
+	constexpr float fMIN_CONTACT_TICKS_RUNNING = 4.0f;
+	const float fContactWindow = fZM_PROFLAB_EXIT_TRIGGER_SCALE_Z
+		+ 2.0f * fZM_PROFLAB_PLAYER_RADIUS;
+	const float fWalkPerFrameAt30Hz = ZM_PlayerController::fWALK_SPEED / 30.0f;
+	ZENITH_ASSERT_GT(fContactWindow,
+		fWalkPerFrameAt30Hz * fMIN_CONTACT_TICKS_WALKING,
+		"a walking player is in contact with the exit sensor over only %.4f m "
+		"(%.4f m of depth plus a %.4f m capsule diameter), against %.4f m of travel "
+		"per 30 Hz frame at walk speed -- fewer than %.0f ticks of overlap. The "
+		"sensor has been retreated far enough that the door is no longer reliable",
+		(double)fContactWindow, (double)fZM_PROFLAB_EXIT_TRIGGER_SCALE_Z,
+		(double)(2.0f * fZM_PROFLAB_PLAYER_RADIUS), (double)fWalkPerFrameAt30Hz,
+		(double)fMIN_CONTACT_TICKS_WALKING);
+	ZENITH_ASSERT_GT(fContactWindow,
+		fPerFrameAt30Hz * fMIN_CONTACT_TICKS_RUNNING,
+		"a RUNNING player is in contact with the exit sensor over only %.4f m, "
+		"against %.4f m of travel per 30 Hz frame -- fewer than %.0f ticks",
+		(double)fContactWindow, (double)fPerFrameAt30Hz,
+		(double)fMIN_CONTACT_TICKS_RUNNING);
+
+	// (4c) The NAMED near-face plane IS the box's -Z face. Three readers now spell
+	//      that plane as fZM_PROFLAB_EXIT_TRIGGER_NEAR_Z rather than re-subtracting
+	//      half a depth from the centre (the arrival clearance, the unit below, and
+	//      the intro beat's walk-up guard), so the name has to stay welded to the
+	//      geometry it claims to describe.
+	ZENITH_ASSERT_EQ_FLOAT(xSensor.Min().z, fZM_PROFLAB_EXIT_TRIGGER_NEAR_Z,
+		fPROFLAB_PLANE_EPSILON,
+		"the exit sensor's box starts at z=%.5f but "
+		"fZM_PROFLAB_EXIT_TRIGGER_NEAR_Z says %.5f -- the named plane and the "
+		"authored box have parted company, and every clearance stated against the "
+		"name is now about a face the scene does not have",
+		(double)xSensor.Min().z, (double)fZM_PROFLAB_EXIT_TRIGGER_NEAR_Z);
 
 	// (5) ★★ THE ANTI-LOOP CLAUSE. The player warps IN to fZM_PROFLAB_SPAWN_Z on
 	//     the "Door" tag. If the arriving capsule -- the feet marker plus a body
@@ -1548,8 +1599,7 @@ ZENITH_TEST(ZM_WorldTraversal, ProfLab_ExitSensorFillsTheApertureAndClearsTheArr
 		"sensor deeper toward the doorway or the arrival marker further into the "
 		"room; do NOT weaken this clause",
 		(double)fZM_PROFLAB_SPAWN_Z, (double)fZM_PROFLAB_PLAYER_RADIUS,
-		(double)(fZM_PROFLAB_EXIT_TRIGGER_Z
-			- fZM_PROFLAB_EXIT_TRIGGER_SCALE_Z * 0.5f),
+		(double)fZM_PROFLAB_EXIT_TRIGGER_NEAR_Z,
 		(double)fClearance);
 
 	// ...and the same claim with a MARGIN, so the door does not merely work but
@@ -1765,4 +1815,240 @@ ZENITH_TEST(ZM_WorldTraversal, ProfLab_LabSeamEntityNamesAreUniqueLookupKeys)
 			"the exit sensor shares the entity name of shell block %u ('%s')",
 			u, szBlockName);
 	}
+}
+
+// ============================================================================
+// U16 -- THE WALK-UP TO THE PROFESSOR DOES NOT REACH THE DOORWAY WARP.
+// (Q-2026-08-15-001, and the CI-visible half of its fix.)
+//
+// ★★ THE PROPERTY EVERY OTHER UNIT IN THIS FILE MEASURED AROUND. U13 clause (5)
+// asks whether the player is clear of the exit sensor AT THE ARRIVAL POINT, which
+// they are for about a third of a second: they land on the marker and immediately
+// walk at the professor. ZM_PlayerController is driven by a MOVE action whose
+// keyboard scheme is W/A/S/D, so the natural "up and to the left toward him" input
+// is W+A HELD TOGETHER -- a 45-degree line, not the bearing -- and a diagonal spends
+// DEPTH as fast as it spends width. The shipped 1.5 m sensor put its near face at
+// 6.25; that walk closed to reach with its leading edge at 6.334, fired
+// ZM_WarpTrigger::OnCollisionEnter, and took the player back out to Dawnmere at the
+// exact moment Aster came into range. Every clause in this file stayed green,
+// because they all measured the arrival and the defect was in the walk.
+//
+// ★ WHAT THIS UNIT IS FOR, GIVEN ZM_AutoTests_IntroBeat ALREADY WALKS IT. That test
+// drives the real eight-way chooser at the real professor and reds on this defect
+// with a measured leading edge -- but it is ONE automated test with a 4,200-frame
+// budget and a terrain prerequisite elsewhere in its route. This is the arithmetic,
+// at boot, in the same file as the geometry, where it cannot be skipped and cannot
+// time out. The two are deliberately different KINDS of proof about one property.
+//
+// ★ AND IT IS NOT SELF-REFERENTIAL. The near face is derived from the walk-in span;
+// the leading edge is derived from Aster's XZ, the interact reach, the capsule
+// radius and a square root. They are different functions of overlapping inputs, so
+// the inequality between them has real content -- and the anti-vacuity arm feeds the
+// RETIRED 1.5 m depth through the identical predicate and requires it to CLIP.
+//
+// ★ THE STRAIGHT-DIAGONAL SOLVE IS CONSERVATIVE, WHICH IS WHY IT NEEDS NO DEAD ZONE.
+// The chooser drops W the moment the target's forward component falls inside its
+// dead zone, and a walk that stops gaining depth early arrives SHALLOWER than this
+// closed form says. So the figure below is an UPPER bound on the depth at closure,
+// and a margin against it is a margin against every path the chooser can produce.
+// ============================================================================
+
+namespace
+{
+	// ★ THE RETIRED SENSOR DEPTH, and the only reason this literal is in this file.
+	// It is what fZM_PROFLAB_EXIT_TRIGGER_SCALE_Z was before Q-2026-08-15-001, i.e.
+	// the geometry the 45-degree walk-up is KNOWN to clip. U16's anti-vacuity arm
+	// feeds it through the identical predicate, which is what proves the clause
+	// above it can red at all. NOT a shipped constant; nothing outside this file may
+	// read it, and it must never be restored to the header.
+	constexpr float fPROFLAB_RETIRED_SENSOR_DEPTH = 1.5f;
+
+	// How far past the closure ring the "the picker really does accept here" arm
+	// probes, and how far short of it the "...and not yet here" arm does. The first
+	// only has to beat float rounding on an INCLUSIVE boundary; the second is a real
+	// step, so that arm is about distance rather than about a tie.
+	constexpr float fPROFLAB_CLOSURE_NUDGE = 0.001f;
+	constexpr float fPROFLAB_CLOSURE_STEP_BACK = 0.05f;
+
+	// The eight-way chooser's answer for a target that is BOTH to the side and
+	// deeper, at the authored yaw: one unit step on each axis, normalised. Derived
+	// from the SIGNS of the offset rather than written as (-1, 0, +1), so a
+	// placement that moved Aster to +X would still describe the walk he is actually
+	// approached along.
+	Zenith_Maths::Vector3 ProfLabEightWayDiagonal(
+		const Zenith_Maths::Vector3& xFrom, const Zenith_Maths::Vector3& xTo)
+	{
+		const float fStepX = xTo.x > xFrom.x ? 1.0f : (xTo.x < xFrom.x ? -1.0f : 0.0f);
+		const float fStepZ = xTo.z > xFrom.z ? 1.0f : (xTo.z < xFrom.z ? -1.0f : 0.0f);
+		return ProfLabNormalise(Zenith_Maths::Vector3(fStepX, 0.0f, fStepZ));
+	}
+}
+
+ZENITH_TEST(ZM_WorldTraversal, ProfLab_ExitSensorClearsTheDiagonalWalkUpToTheProfessor)
+{
+	const Zenith_Maths::Vector3 xSpawnCentre = ProfLabSpawnCentre();
+	const Zenith_Maths::Vector3 xAster = ZM_GetProfLabAsterCenter();
+
+	// (1) THE INPUT UNDER TEST EXISTS. If the professor stood on the walk-in
+	//     centreline, or no deeper than the arrival marker, the eight-way chooser
+	//     would press ONE key and there would be no diagonal to clear -- and every
+	//     clause below would pass by describing a walk nobody takes.
+	const Zenith_Maths::Vector3 xDiagonal =
+		ProfLabEightWayDiagonal(xSpawnCentre, xAster);
+	ZENITH_ASSERT_GT(std::fabs(xDiagonal.x), fPROFLAB_EXACT_EPSILON,
+		"the eight-way walk toward Professor Aster has no sideways component "
+		"(direction x=%.5f) -- he is on the arrival marker's own column, so this "
+		"unit is about a diagonal that does not exist", (double)xDiagonal.x);
+	ZENITH_ASSERT_GT(xDiagonal.z, fPROFLAB_EXACT_EPSILON,
+		"the eight-way walk toward Professor Aster gains no DEPTH (direction "
+		"z=%.5f). He no longer stands deeper into the room than the arrival marker, "
+		"so a diagonal approach cannot carry the player toward the doorway and this "
+		"unit proves nothing", (double)xDiagonal.z);
+
+	// (2) SOLVE FOR THE CLOSURE POINT: the first t at which the walker's planar
+	//     distance to him equals the picker's effective reach, i.e. where
+	//     ZM_AutoTests_IntroBeat's approach phase ends and the player stops. With a
+	//     UNIT direction this is the smaller root of
+	//         t^2 - 2 (V . D) t + (|V|^2 - R^2) = 0.
+	const float fToAsterX = xAster.x - xSpawnCentre.x;
+	const float fToAsterZ = xAster.z - xSpawnCentre.z;
+	const float fAlong = fToAsterX * xDiagonal.x + fToAsterZ * xDiagonal.z;
+	const float fDistanceSquared = fToAsterX * fToAsterX + fToAsterZ * fToAsterZ;
+	const float fReach = fZM_PROFLAB_ASTER_EFFECTIVE_REACH;
+	const float fDiscriminant =
+		fAlong * fAlong - fDistanceSquared + fReach * fReach;
+
+	//     ANTI-VACUITY for the solve itself: a negative discriminant would mean the
+	//     45-degree line never enters his reach at all, so the "leading edge at
+	//     closure" below would be a square root of a negative number and the walk-up
+	//     in the intro beat would time out rather than warp.
+	ZENITH_ASSERT_GE(fDiscriminant, 0.0f,
+		"the 45-degree walk toward Professor Aster never closes to his %.4f m "
+		"effective reach (discriminant %.5f) -- the eight-way chooser would carry "
+		"the player past him and the intro beat's approach would stall, which is a "
+		"different defect from the one this unit is about",
+		(double)fReach, (double)fDiscriminant);
+	if (fDiscriminant < 0.0f)
+	{
+		return;   // already FAILED; everything below would be a NaN
+	}
+
+	const float fTravel = fAlong - std::sqrt(fDiscriminant);
+	ZENITH_ASSERT_GT(fTravel, 0.0f,
+		"the walk toward Professor Aster closes to reach after %.5f m of travel, "
+		"i.e. the player already stands inside his reach on arrival. "
+		"ProfLab_AsterStandsOutsideArrivalReachInsideTheShell says otherwise, so one "
+		"of the two is measuring a different geometry", (double)fTravel);
+
+	// (3) ★ THE HEADLINE. The capsule's LEADING EDGE at that point -- centre plus a
+	//     body radius, because ZM_WarpTrigger fires on a body contact and not on a
+	//     centre-in-box test -- must clear the sensor's near face by a real margin.
+	//     The floor is one full fZM_PROFLAB_PLAYER_RADIUS: a named body quantity
+	//     rather than a tuning number, and the smallest gap in which "the player was
+	//     nowhere near the door" is true rather than arithmetically survivable.
+	const float fDepthAtClosure = fTravel * xDiagonal.z;
+	const float fLeadingEdge =
+		xSpawnCentre.z + fDepthAtClosure + fZM_PROFLAB_PLAYER_RADIUS;
+	const float fMargin = fZM_PROFLAB_EXIT_TRIGGER_NEAR_Z - fLeadingEdge;
+	ZENITH_ASSERT_GT(fMargin, fZM_PROFLAB_PLAYER_RADIUS,
+		"a player walking W+A at Professor Aster -- the eight-way chooser's answer "
+		"for a target that is both sideways and deeper, and what a human holding two "
+		"keys produces -- closes to his %.4f m reach after %.4f m of travel, having "
+		"gained %.4f m of DEPTH. That puts the capsule's leading edge at z=%.4f "
+		"against an exit-sensor near face at z=%.4f: a margin of %.4f m, inside the "
+		"%.4f m floor. At or below ZERO the player is warped back out to Dawnmere at "
+		"the exact moment the professor comes into range, with the seam still "
+		"answering ZM_INTERACT_OK and nothing else in the gate saying a word "
+		"(Q-2026-08-15-001). RETREAT THE SENSOR, do not move the professor -- pulling "
+		"him toward the camera narrows the arrival frame at his depth and re-opens "
+		"the off-screen defect SC-C closed",
+		(double)fReach, (double)fTravel, (double)fDepthAtClosure,
+		(double)fLeadingEdge, (double)fZM_PROFLAB_EXIT_TRIGGER_NEAR_Z,
+		(double)fMargin, (double)fZM_PROFLAB_PLAYER_RADIUS);
+
+	// (4) ★ ANTI-VACUITY. The RETIRED 1.5 m depth, through the identical predicate,
+	//     must be CLIPPED by that same leading edge. Without this arm a solve that
+	//     had lost its depth term -- or a reach re-tuned to nothing -- would satisfy
+	//     clause (3) and this unit would be decoration.
+	const float fRetiredNearFace =
+		fZM_PROFLAB_INNER_MAX_Z - fPROFLAB_RETIRED_SENSOR_DEPTH;
+	ZENITH_ASSERT_GT(fLeadingEdge, fRetiredNearFace,
+		"the ANTI-VACUITY arm failed: the same 45-degree walk puts the leading edge "
+		"at z=%.4f, which CLEARS the retired %.2f m sensor's near face at z=%.4f. "
+		"That geometry is known to have warped the player out mid-walk-up, so clause "
+		"(3) above cannot currently red on the defect it was written for -- the "
+		"reach, the professor's anchor or the arrival marker has moved",
+		(double)fLeadingEdge, (double)fPROFLAB_RETIRED_SENSOR_DEPTH,
+		(double)fRetiredNearFace);
+
+	// (5) ★ THE STRUCTURAL BACKSTOP, which does not depend on the reach at all. The
+	//     chooser stops pressing W the moment the player draws level with him in
+	//     depth, so the DEEPEST leading edge any walk-up-to-Aster can produce is his
+	//     own depth plus a body radius -- whatever the picker's range is re-tuned to
+	//     tomorrow. Clause (3) can be re-opened by a longer reach; this one cannot.
+	const float fDeepestPossibleEdge =
+		fZM_PROFLAB_ASTER_Z + fZM_PROFLAB_PLAYER_RADIUS;
+	ZENITH_ASSERT_LT(fDeepestPossibleEdge, fZM_PROFLAB_EXIT_TRIGGER_NEAR_Z,
+		"the deepest point any walk-up to the professor can put the capsule's "
+		"leading edge (his own depth %.4f plus a %.4f m body radius = %.4f) is at or "
+		"past the exit sensor's near face (%.4f). The sensor is inside the walking "
+		"envelope, so SOME approach to him fires the doorway warp even if the "
+		"45-degree one above happens to clear it",
+		(double)fZM_PROFLAB_ASTER_Z, (double)fZM_PROFLAB_PLAYER_RADIUS,
+		(double)fDeepestPossibleEdge,
+		(double)fZM_PROFLAB_EXIT_TRIGGER_NEAR_Z);
+
+	// (6) ★ AND HE HIMSELF IS CLEAR OF IT IN DEPTH, not merely off to one side.
+	//     Before the retreat his CENTRE (6.375) stood inside the sensor's depth span
+	//     (near face 6.25) and the only thing keeping the professor out of the
+	//     doorway warp was his X. A clearance held by one axis in a room whose other
+	//     axis is the one everybody walks along is a coincidence, not a property.
+	const float fAsterDepthClearance =
+		ZM_GetProfLabAsterExitSensorDepthClearance();
+	ZENITH_ASSERT_GT(fAsterDepthClearance, 0.0f,
+		"Professor Aster's body reaches to z=%.4f, at or past the exit sensor's near "
+		"face (%.4f) -- clearance %.4f m. He is inside the sensor's DEPTH span and "
+		"stays out of the doorway warp only because the aperture is narrower than he "
+		"is far off centre",
+		(double)(fZM_PROFLAB_ASTER_Z + fZM_HUMAN_BODY_FOOTPRINT * 0.5f),
+		(double)fZM_PROFLAB_EXIT_TRIGGER_NEAR_Z, (double)fAsterDepthClearance);
+
+	// (7) ★ THE CLOSURE POINT IS THE SHIPPED PICKER'S, NOT THIS FILE'S ARITHMETIC.
+	//     Clauses (3) and (4) are about a ring computed from
+	//     fZM_PROFLAB_ASTER_EFFECTIVE_REACH; run ZM_PickInteractTarget at that point
+	//     -- and one real step short of it -- so the ring is known to be where the
+	//     walk actually STOPS rather than merely somewhere inside his range.
+	ZM_InteractProbe xProbe;
+	xProbe.m_xPosition = xAster;
+	xProbe.m_fRadius = fZM_PROFLAB_ASTER_REACH_BONUS;
+	xProbe.m_bEnabled = true;
+	const ZM_InteractTuning xTuning{};
+	u_int uBest = 0u;
+
+	ZM_InteractOrigin xAtClosure;
+	xAtClosure.m_xPosition =
+		xSpawnCentre + xDiagonal * (fTravel + fPROFLAB_CLOSURE_NUDGE);
+	xAtClosure.m_xForward = xAster - xAtClosure.m_xPosition;
+	const ZM_INTERACT_REJECT eAtClosure = ZM_PickInteractTarget(
+		&xProbe, 1u, xAtClosure, xTuning, uBest);
+	ZENITH_ASSERT_EQ((u_int)eAtClosure, (u_int)ZM_INTERACT_OK,
+		"the shipped picker answers '%s' at the point this unit solves for as the "
+		"end of the walk-up (%.4f m along the diagonal). The leading edge in clause "
+		"(3) is therefore measured somewhere the walk does not stop, and the margin "
+		"it reports is about the wrong frame",
+		ZM_InteractRejectName(eAtClosure), (double)fTravel);
+
+	ZM_InteractOrigin xShortOfClosure;
+	xShortOfClosure.m_xPosition =
+		xSpawnCentre + xDiagonal * (fTravel - fPROFLAB_CLOSURE_STEP_BACK);
+	xShortOfClosure.m_xForward = xAster - xShortOfClosure.m_xPosition;
+	const ZM_INTERACT_REJECT eShortOfClosure = ZM_PickInteractTarget(
+		&xProbe, 1u, xShortOfClosure, xTuning, uBest);
+	ZENITH_ASSERT_EQ(
+		(u_int)eShortOfClosure, (u_int)ZM_INTERACT_REJECT_OUT_OF_RANGE,
+		"the shipped picker ALREADY answers '%s' %.3f m short of the closure point "
+		"this unit solves for, so the walk stops shallower than clause (3) measures "
+		"and that clause is not the tight bound it claims to be",
+		ZM_InteractRejectName(eShortOfClosure),
+		(double)fPROFLAB_CLOSURE_STEP_BACK);
 }

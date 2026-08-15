@@ -15,6 +15,96 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-08-15 -- ZM-D-195 -- Q-2026-08-15-001 CLOSED: ProfLab's exit sensor retreated to the last QUARTER of the walk-in corridor
+
+**The defect (user-visible):** holding **W+A** -- the natural "up-left toward the
+professor" input -- walked a 45 degree line that clipped ProfLab's own exit sensor
+and warped the player back out to Dawnmere **just as Aster came into reach**. The
+direct bearing was always fine (clears by 0.462 m); only the diagonal failed.
+
+**Decision:** retreat the sensor's NEAR FACE **6.25 -> 7.0625**, derived rather
+than picked:
+
+```
+WALK_IN_SPAN   = INNER_MAX_Z - SPAWN_Z   = 7.75 - 5.0        = 2.75
+EXIT_SCALE_Z   = WALK_IN_SPAN * 0.25f                        = 0.6875   (was 1.5)
+EXIT_NEAR_Z    = INNER_MAX_Z - EXIT_SCALE_Z                  = 7.0625
+EXIT_CENTRE_Z  = INNER_MAX_Z - EXIT_SCALE_Z * 0.5f           = 7.40625  (was 7.0)
+```
+
+In one sentence: **the walk-in corridor from the arrival marker to the doorway
+wall is 2.75 m, Aster stands at its midpoint, and the sensor owns only its last
+quarter.** Every term is dyadic, so the authored centre is bit-identical Debug vs
+Release -- which it OWES, because it lands in the committed `ProfLab.zscen`
+(ZM-D-183). **The 45 degree figure itself must never become an authored constant:
+it needs a square root, and libm deciding bytes in a committed scene is exactly
+that defect.** It lives only in a boot unit.
+
+**★★ THE BINDING CONSTRAINT WAS NOT THE ONE THE TASK NAMED.** The brief ranked
+"clear the diagonal walk-up" first, which a near face of ~6.7 would satisfy. But
+**Aster's BODY reaches 6.775** (centre 6.375 + half footprint), so the professor's
+own clearance is what actually sets the floor. Deriving from the diagonal alone
+lands on a number that leaves him standing inside the sensor. Worth noting how the
+old numbers hid this: his CENTRE was only 0.125 m inside the old 6.25 span, but his
+BODY was **0.525 m** inside it -- he escaped solely because he is laterally outside
+the 6 m aperture. Reasoning about a centre where a body is what collides is the
+error shape here.
+
+**★ AND THERE IS A STRONGER BOUND THAN THE 45 DEGREE SOLVE, NOW ASSERTED.**
+`IBDriveTowardXZ`-style eight-way movement drops the forward key the moment the
+player draws level with Aster in depth, so the deepest leading edge ANY walk-up to
+him can produce is `ASTER_Z + radius = 6.775` -- **independent of the interact
+reach**. The 45 degree clause can be re-opened by a longer reach; the structural
+clause cannot. Both ship.
+
+**Margins:** 0.7287 m over the 45 degree leading edge (1.82 player radii, against
+an asserted floor of one), 0.2875 m over both the structural bound and Aster's
+body, and arrival clearance grows 0.85 -> 1.6625 m.
+
+**★ THE TUNNELLING QUESTION, ANSWERED HONESTLY RATHER THAN CONVENIENTLY.** The
+remaining box is 0.6875 m = **2.95 ticks at run speed**, which does NOT clear three
+whole frames. But `ZM_WarpTrigger` fires from `OnCollisionEnter`, a **body-vs-body**
+contact, so the quantity that decides tunnelling is the **contact window** = depth
++ capsule diameter = **1.4875 m** = 11.2 walk-ticks / **6.4 run-ticks**. The
+existing `fMIN_SENSOR_TICKS` floor was deliberately LEFT at 2.0 rather than
+tightened to a value the new depth would fail, and a separate clause (4b) asserts
+the contact window at 6 walk / 4 run ticks. **Untaken option, recorded for whoever
+needs depth back:** the aperture is a gap through a 0.5 m wall, so the FAR face
+could move from the inner plane (7.75) to the outer (8.25) for +0.5 m -- not taken
+because it breaks the "far face == inner plane" invariant.
+
+**Tests -- and the best part is what did NOT change.** `ZM_AutoTests_IntroBeat`'s
+approach phase had been CLAMPED to the arrival depth specifically to dodge this
+bug. **That workaround is DELETED**: the test now drives straight at Aster, so the
+eight-way chooser produces the real 45 degree W+A line -- *exactly what a player
+does*. The guard clause that fails if the capsule reaches the sensor footprint is
+KEPT and still checked FIRST, so **the test that found this defect is now the test
+that proves it fixed**, and re-advancing the sensor reds the intro beat with a
+measured leading edge instead of a mystery warp.
+New boot unit `ZM_WorldTraversal.ProfLab_ExitSensorClearsTheDiagonalWalkUpToThe-
+Professor` pins it in CI (the windowed beat is one test and can be skipped; a boot
+unit cannot), with an **anti-vacuity clause** requiring the retired 1.5 m depth to
+be CLIPPED by the identical predicate, and it measures closure through the
+**shipped** `ZM_PickInteractTarget` rather than a re-spelled radius.
+
+**Aster was NOT moved**, per the user's ruling and ZM-D-191: he sits at
+`(spawnZ + innerMaxZ)/2` precisely to be inside the arrival frustum, and pulling
+him toward the camera narrows the frame at his depth and risks re-opening the
+off-screen bug SC-C existed to close. A ★ note on `fZM_PROFLAB_ASTER_Z` now forbids
+that "fix".
+
+**Unaffected, verified rather than assumed:** Dawnmere's `LabDoorTrigger` is a
+different entity from different constants (`ZM_DawnmerePlacement.h` imports only
+the aperture and shell envelope from the ProfLab header, no `EXIT_TRIGGER` symbol),
+so SC-D's frozen ground row cannot move and `Dawnmere.zscen` does not change.
+`Zenithmon.cpp` needed no edit -- the authoring block already reads
+`ZM_GetProfLabExitTrigger()` and spells no geometry.
+
+**Boot units 3327 -> 3328. Registry unchanged at 64.**
+
+**Reversibility:** high -- one derived constant. But reverting re-opens a
+player-facing bug, so revert only with a replacement fix.
+
 ## 2026-08-15 -- ZM-D-194 -- S8 SC-F: the intro beat ships, a NEW GAME IS PARTYLESS, and the one-shot guard is NOT free
 
 **S8 item 1 is COMPLETE.** New Game -> PlayerHome -> Dawnmere -> ProfLab -> talk to

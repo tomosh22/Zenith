@@ -194,6 +194,12 @@ jobs:
           #
           # History, newest first (the DERIVATION is the audit trail; the OBSERVED
           # number is the authority):
+          #   3328  Q-2026-08-15-001 -- ProfLab's exit sensor RETREATED so a diagonal
+          #                   walk-up to the professor cannot clip it. +1 ZM unit:
+          #                   ZM_WorldTraversal.ProfLab_ExitSensorClearsTheDiagonal-
+          #                   WalkUpToTheProfessor. Registry unchanged at 64.
+          #                   Re-authors ProfLab.zscen (exit trigger only), so the
+          #                   authoring boot needs --skip-unit-tests (ZM-D-190).
           #   3327  S8 item 1 SC-F -- the intro beat; ITEM 1 COMPLETE. +15 ZM units,
           #                   no engine units: 14 in the new ZM_Intro category + 1
           #                   ZM_Data gate-polarity unit. Registry 63 -> 64
@@ -627,7 +633,7 @@ jobs:
           #   2817  ZM-D-173  = 2809 + 8: four ENGINE sensor-raycast units plus
           #                   two camera fixtures and two Home-placement units.
           $exe = 'Games\Zenithmon\Build\output\win64\null_vs2022_debug_win64_true\zenithmon.exe'
-          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 3327 -TimeoutSec 600
+          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 3328 -TimeoutSec 600
           if ($LASTEXITCODE -ne 0) { Write-Error "boot unit tests failed (see log above)"; exit $LASTEXITCODE }
 
       - name: Run Zenithmon tests

@@ -3,14 +3,15 @@
 **Last updated:** 2026-08-14
 
 **★ LIVE PIN (UPDATED 2026-08-14):
-ZM boot `3327`; engine boot (Null Combat) `1638`; registry **64**.** Observed
-2026-08-15 on a clean `Null_vs2022_Debug_Win64_True` Zenithmon build after S8
-SC-F: `3327 ran / 3325 passed / 0 failed / 2 skipped`. The walk this program:
+ZM boot `3328`; engine boot (Null Combat) `1638`; registry **64**.** Observed
+2026-08-15 on a clean `Null_vs2022_Debug_Win64_True` Zenithmon build after the
+Q-2026-08-15-001 sensor retreat. The walk this program:
 **3277 -> 3280** (SC-A, +3) **-> 3295** (SC-B, +15: 14 pure `ZM_Starter` units +
 1 `FrontEnd.zscen` needle) **-> 3299** (SC-C, +4: three `ZM_WorldTraversal`
 placement units + 1 `ProfLab.zscen` needle) **-> 3307** (SC-D, +8 lab-site units)
 **-> 3312** (SC-E, +5: 1 `Dawnmere.zscen` seam needle + 4 `ZM_WorldTraversal`)
-**-> 3327** (SC-F, +15: 14 `ZM_Intro` + 1 `ZM_Data` gate-polarity unit).
+**-> 3327** (SC-F, +15: 14 `ZM_Intro` + 1 `ZM_Data` gate-polarity unit)
+**-> 3328** (Q-2026-08-15-001, +1 `ZM_WorldTraversal` diagonal-walk-up unit).
 Registry 61 -> 62 (`ZM_DawnmereLabGroundTruth_Test`) -> 63 (`ZM_LabRoundTrip_Test`)
 -> 64 (`ZM_IntroBeat_Test`).
 Engine UNMOVED at 1638 -- no slice touched a file under `Zenith/`.
@@ -32,7 +33,7 @@ against **3295** on Null, a standing +37 gap.
 updated when the input program's WP3b grew the automated suite 55 -> 61 with the
 six `ZM_Touch*` tests, even though the prose LOWER IN THIS SAME FILE said so
 explicitly. Corrected to the enumerated count. The current pins are
-`zm-tests.yml` (`-Baseline 3327`) and `run_unit_gate.ps1` (default 1638, the
+`zm-tests.yml` (`-Baseline 3328`) and `run_unit_gate.ps1` (default 1638, the
 ENGINE number -- never used for Zenithmon).
 
 **★★ 3276 -> 3277 IS A FIX-FORWARD, NOT A FEATURE BUMP. THE `zm-tests` GATE WAS

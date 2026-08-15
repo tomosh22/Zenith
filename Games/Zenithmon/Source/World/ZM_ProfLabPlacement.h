@@ -578,12 +578,22 @@ inline Zenith_Maths::Vector3 ZM_GetProfLabArrivalPivot()
 //     the sensor is the LAST thing between the player and the gap, which is the
 //     property that makes "the player cannot leave except through the warp" true
 //     rather than likely.
-// (4) DEPTH = 1.5 m. A collision sensor is sampled at the physics tick, so it must
-//     be several frames deep at run speed (7 m/s at the round trip's 30 Hz dt is
-//     0.233 m/frame -- six frames inside this box) rather than a plane a fast
-//     capsule can tunnel through.
-// (5) ...and the two together put the NEAR face at 6.25, which is the one number
-//     here that is a CLEARANCE rather than a size. See below.
+// (4) NEAR FACE = the LAST QUARTER of the walk-in span, i.e. 7.0625. This is the
+//     one number here that is a CLEARANCE rather than a size, and it is the number
+//     Q-2026-08-15-001 moved. Both stars below are about it.
+// (5) DEPTH = whatever (3) and (4) leave, which is that same quarter span: 0.6875 m.
+//     A collision sensor is sampled at the physics tick, so it has to be several
+//     ticks deep rather than a plane a fast capsule steps over between ticks -- but
+//     the quantity that decides that is NOT the box. ZM_WarpTrigger fires from
+//     OnCollisionEnter, i.e. on a BODY-vs-BODY contact, and the player is a
+//     0.8 m-wide capsule: contact opens a body radius BEFORE the centre reaches the
+//     near face and persists a body radius past the far one. The window a walker
+//     actually spends in contact is therefore
+//         depth + 2 * fZM_PROFLAB_PLAYER_RADIUS = 1.4875 m
+//     which at the round trip's 30 Hz dt is 11.2 ticks at ZM_PlayerController's
+//     4 m/s walk (0.1333 m/tick) and still 6.4 at its 7 m/s run (0.2333 m/tick).
+//     Both figures are ASSERTED rather than claimed -- clauses (4) and (4b) of
+//     ProfLab_ExitSensorFillsTheApertureAndClearsTheArrivingBody.
 //
 // ★★ THE NEAR FACE MUST CLEAR THE ARRIVING BODY, OR THE DOOR IS AN INFINITE LOOP.
 // The player warps IN to fZM_PROFLAB_SPAWN_Z on the "Door" tag. If the arriving
@@ -591,14 +601,83 @@ inline Zenith_Maths::Vector3 ZM_GetProfLabArrivalPivot()
 // sensor, ZM_WarpTrigger would fire on the very first contact tick and send the
 // player straight back to Dawnmere, whose LabDoorTrigger would send them back
 // here, forever, with no input accepted between the two. The gap is
-//     6.25 - (5.0 + 0.4) = 0.85 m
+//     7.0625 - (5.0 + 0.4) = 1.6625 m
 // and it is asserted, not asserted-in-a-comment: clause (5) of the boot unit
 // ZM_WorldTraversal/ProfLab_ExitSensorFillsTheApertureAndClearsTheArrivingBody.
+//
+// ★★ ...AND IT MUST ALSO CLEAR THE WALK-UP TO THE PROFESSOR. THAT IS WHAT THIS
+// SENSOR SHIPPED 1.5 m DEEP FOR AND DID NOT DO (Q-2026-08-15-001, fixed here).
+//
+// The clause above measures the arrival point, which the player never stands on for
+// long: they immediately walk at Aster. ZM_PlayerController is driven by a MOVE
+// action whose keyboard scheme is W/A/S/D, so the natural "up and to the left toward
+// the professor" input is W+A HELD TOGETHER -- a 45-degree line, not the bearing.
+// A diagonal spends depth as fast as it spends width, so it arrives at the picker's
+// reach ring MUCH deeper into the room than a bearing-following walk does:
+//
+//     direct bearing to Aster  -- closes at z 5.388, leading edge 5.789
+//     45-degree W+A walk       -- closes at z 5.934, leading edge 6.334
+//
+// against a near face that used to be at 6.25. So the player was warped back out to
+// Dawnmere at the exact moment the professor came into reach, and every clause in
+// this file stayed green: they all measured the ARRIVAL, and the defect was in the
+// walk. (The gain is derived, not eyeballed: at 45 degrees the depth gained equals
+// the lateral travel, so solving |Aster - (spawn + t * D)| = the effective reach for
+// the unit diagonal D gives t = 1.3205 m of travel and 0.9338 m of depth.)
+//
+// ★ THE FIX RETREATED THE SENSOR, AND DELIBERATELY NOT THE PROFESSOR. Pulling Aster
+// toward the camera would have worked arithmetically and re-opened the bug SC-C
+// closed: the arrival frustum's half-width grows LINEARLY with depth, so a step
+// toward the camera narrows the frame at his depth and walks him back toward the
+// edge of the picture (see ProfLab_AsterStandsInsideTheArrivalFrustum). His anchor
+// is untouched; the sensor gave up depth instead.
+//
+// ★ AND THE NEW NEAR FACE IS DERIVED, NOT PICKED. The walk-in span from the arrival
+// marker to the doorway wall is 2.75 m. Aster stands at its MIDPOINT (see
+// fZM_PROFLAB_ASTER_Z); the sensor owns only its LAST QUARTER. That single
+// derivation buys all four properties at once, structurally rather than numerically:
+//   * the near face lands one quarter span (0.6875 m) PAST the professor, which is
+//     more than his own half footprint (0.4 m), so his body is clear of the sensor
+//     in DEPTH and no longer depends on being clear of it in width;
+//   * the eight-way drive stops pressing W the moment the player draws level with
+//     him, so the deepest leading edge any walk-up-to-Aster can produce is
+//     fZM_PROFLAB_ASTER_Z + fZM_PROFLAB_PLAYER_RADIUS = 6.775 -- still inside the
+//     near face by that same 0.2875 m, whatever the reach is re-tuned to;
+//   * the measured 45-degree leading edge (6.334) clears it by 0.7287 m, i.e. by
+//     nearly two body radii; and
+//   * the arrival clearance TRIPLES (0.85 -> 1.6625 m).
+// Every term is dyadic (2.75 and a quarter of it are both exact binary fractions),
+// so the authored centre is bit-identical in Debug and Release -- the ZM-D-183 rule,
+// which this value owes because it lands in the COMMITTED ProfLab.zscen.
+//
+// The 45-degree figure itself is a CHECK, never an authored value: it needs a square
+// root, and a libm result must not decide bytes in a committed scene. The boot unit
+// ZM_WorldTraversal/ProfLab_ExitSensorClearsTheDiagonalWalkUpToTheProfessor runs it
+// and compares it against the constants below -- with the retired 1.5 m depth fed
+// through the identical predicate as its anti-vacuity arm.
 inline constexpr float fZM_PROFLAB_EXIT_TRIGGER_SCALE_X =
 	fZM_PROFLAB_APERTURE_HALF_WIDTH * 2.0f;
 inline constexpr float fZM_PROFLAB_EXIT_TRIGGER_SCALE_Y =
 	fZM_PROFLAB_APERTURE_HEIGHT;
-inline constexpr float fZM_PROFLAB_EXIT_TRIGGER_SCALE_Z = 1.5f;
+
+// The walk-in span: arrival marker to the inner face of the wall the player came
+// through. Named here rather than at the arrival block because THIS is where it is
+// read -- the header's own rule about unread constants. fZM_PROFLAB_ASTER_Z is the
+// midpoint of this same span, spelled in its own terms; the two are deliberately
+// left as separate derivations so that moving one does not silently move the other.
+inline constexpr float fZM_PROFLAB_WALK_IN_SPAN =
+	fZM_PROFLAB_INNER_MAX_Z - fZM_PROFLAB_SPAWN_Z;
+
+// ...of which the sensor owns the last quarter, and nothing more.
+inline constexpr float fZM_PROFLAB_EXIT_TRIGGER_SCALE_Z =
+	fZM_PROFLAB_WALK_IN_SPAN * 0.25f;
+
+// The near face, as a named constant rather than a subtraction every reader repeats.
+// Three of them do -- the arrival clearance below, the boot units, and the intro
+// beat's walk-up guard -- and a plane spelled three times is a plane that can drift
+// twice.
+inline constexpr float fZM_PROFLAB_EXIT_TRIGGER_NEAR_Z =
+	fZM_PROFLAB_INNER_MAX_Z - fZM_PROFLAB_EXIT_TRIGGER_SCALE_Z;
 
 // The far face lands ON the doorway wall's inner plane, so the centre is half a
 // depth back from it. Both terms are dyadic, so this sum is exact in every
@@ -607,13 +686,12 @@ inline constexpr float fZM_PROFLAB_EXIT_TRIGGER_SCALE_Z = 1.5f;
 inline constexpr float fZM_PROFLAB_EXIT_TRIGGER_Z =
 	fZM_PROFLAB_INNER_MAX_Z - fZM_PROFLAB_EXIT_TRIGGER_SCALE_Z * 0.5f;
 
-// The clearance the block above spends its last paragraph on, named so the boot
-// unit and the round-trip walk can both state it rather than re-derive it.
+// The clearance the first star above spends its length on, named so the boot unit
+// and the round-trip walk can both state it rather than re-derive it.
 inline float ZM_GetProfLabExitTriggerArrivalClearance()
 {
-	const float fNearFace =
-		fZM_PROFLAB_EXIT_TRIGGER_Z - fZM_PROFLAB_EXIT_TRIGGER_SCALE_Z * 0.5f;
-	return fNearFace - (fZM_PROFLAB_SPAWN_Z + fZM_PROFLAB_PLAYER_RADIUS);
+	return fZM_PROFLAB_EXIT_TRIGGER_NEAR_Z
+		- (fZM_PROFLAB_SPAWN_Z + fZM_PROFLAB_PLAYER_RADIUS);
 }
 
 // The sensor as a blockout, in the same vocabulary as the shell pieces: a CENTRE
@@ -747,6 +825,14 @@ inline constexpr float fZM_PROFLAB_ASTER_X =
 //     frustum offers grows linearly with distance from the camera, so a step
 //     deeper BUYS lateral room while a step sideways SPENDS it. Every term is
 //     dyadic, so this result is exact whatever order the compiler associates in.
+//
+//     ★ DO NOT PULL HIM TOWARD THE DOOR TO SOLVE A DOORWAY PROBLEM. This anchor is
+//     the MIDPOINT of fZM_PROFLAB_WALK_IN_SPAN, and Q-2026-08-15-001 -- a 45-degree
+//     walk-up that clipped the exit sensor -- was fixed by retreating the SENSOR to
+//     the last quarter of that span, precisely so this value could stay put. A step
+//     toward the camera narrows the frame at his depth (the paragraph above) and
+//     walks him back toward the edge of the picture, which is the failure SC-C
+//     existed to close.
 inline constexpr float fZM_PROFLAB_ASTER_Z =
 	(fZM_PROFLAB_SPAWN_Z + fZM_PROFLAB_INNER_MAX_Z) * 0.5f;
 
@@ -784,6 +870,24 @@ inline float ZM_GetProfLabAsterArrivalStandoff()
 	const float fDeltaX = fZM_PROFLAB_ASTER_X - fZM_PROFLAB_SPAWN_X;
 	const float fDeltaZ = fZM_PROFLAB_ASTER_Z - fZM_PROFLAB_SPAWN_Z;
 	return std::sqrt(fDeltaX * fDeltaX + fDeltaZ * fDeltaZ);
+}
+
+// ★ HOW FAR HIS BODY STANDS CLEAR OF THE EXIT SENSOR IN **DEPTH**, and why that is
+// a quantity worth naming (Q-2026-08-15-001). Before the sensor was retreated his
+// centre (6.375) stood INSIDE its depth span (near face 6.25) and the only thing
+// keeping him out of the doorway warp was that his X put him outside the aperture --
+// a clearance held by ONE axis, in a room where the other axis is the one the player
+// walks along. It now holds on both: the near face sits a quarter of the walk-in
+// span past him, which is more than the half footprint his box reaches forward by.
+//
+// Lives HERE and not in the sensor block above because it needs fZM_PROFLAB_ASTER_Z,
+// which is declared below that block; the read direction is what fixes the position,
+// exactly as it does for the lab-seam names at the top of this file.
+inline float ZM_GetProfLabAsterExitSensorDepthClearance()
+{
+	const float fAsterFrontFace =
+		fZM_PROFLAB_ASTER_Z + fZM_HUMAN_BODY_FOOTPRINT * 0.5f;
+	return fZM_PROFLAB_EXIT_TRIGGER_NEAR_Z - fAsterFrontFace;
 }
 
 // ============================================================================

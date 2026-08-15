@@ -54,11 +54,14 @@
 // * SimulateKeyDown / SimulateKeyUp / SimulateKeyPress, NEVER SetKeyHeld -- that
 //   writes only the level array, the action layer never sees an edge, and the
 //   failure surfaces hundreds of frames later with an unrelated message.
-// * THE WALK-UP FOLLOWS A LANE, NOT A BEARING. IBDriveTowardXZ is an EIGHT-WAY
-//   chooser, so a target that is both sideways and deeper is walked at 45 degrees;
-//   in this room that crosses the doorway sensor and WARPS THE PLAYER OUT before he
-//   can be talked to, with every earlier clause still green. See the block above
-//   IBApproachLaneTarget -- it is the failure this file was found on.
+// * THE WALK-UP DRIVES AT THE PROFESSOR HIMSELF, WHICH IS TO SAY IT WALKS THE
+//   45-DEGREE DIAGONAL A HUMAN HOLDING W+A PRODUCES. IBDriveTowardXZ is an EIGHT-WAY
+//   chooser: a target that is both sideways and deeper presses both keys. That walk
+//   used to cross the lab's doorway sensor and WARP THE PLAYER OUT mid-approach
+//   (Q-2026-08-15-001), and this file carried a depth-clamped "lane" target to route
+//   around it. The sensor has since been RETREATED to the last quarter of the
+//   walk-in span, so the workaround is gone and the natural input is walked again --
+//   see the block above IBTouchesExitSensor.
 // * EVERY phase flag DEFAULTS TO FAILING, so a phase that never runs fails.
 // * EVERY phase owns a deadline that fires before the harness cap, or a stall is
 //   reported as a bare "timed out" with no captured state.
@@ -499,63 +502,55 @@ namespace
 	}
 
 	// ============================================================================
-	// ★★ THE WALK-UP LANE. THE APPROACH TARGET IS **NOT** ASTER, AND THE REASON IS
-	// A WARP OUT OF THE SCENE (measured 2026-08-15).
+	// ★★ THE APPROACH TARGET IS ASTER HIMSELF, AND THAT IS THE POINT. THE LANE
+	// WORKAROUND THAT USED TO LIVE HERE IS GONE (Q-2026-08-15-001, fixed 2026-08-15).
 	//
 	// IBDriveTowardXZ above is the shipped EIGHT-WAY chooser: every target component
 	// past the dead zone presses that key, so a target that is BOTH to the side AND
-	// deeper walks a 45-degree diagonal rather than the bearing. Across open Dawnmere
-	// that detour costs nothing. Inside this room it ends the test.
+	// deeper walks a 45-degree diagonal rather than the bearing. That is not an
+	// artefact of driving a test -- it is EXACTLY what a human holding W+A produces,
+	// which is the natural input for "up and to the left, toward the professor". So
+	// it is the input this test should be giving.
 	//
-	// The numbers, all read from the placement header rather than restated: Aster
-	// stands 3.8 m to the SIDE of the arrival marker but only 1.375 m DEEPER, while
-	// ZM_GetProfLabExitTrigger's near face sits 0.85 m in front of the arriving
-	// capsule. A 45-degree walk spends depth as fast as width, so it gains ~0.93 m of
-	// depth before the picker's 2.9 m reach is met -- and the capsule's leading edge
-	// (centre + fZM_PROFLAB_PLAYER_RADIUS) has crossed the sensor by then. That fires
-	// ZM_WarpTrigger::OnCollisionEnter, RequestWarp takes the player back to Dawnmere,
-	// and the interact press one frame later lands on a FROZEN player in a scene that
-	// no longer contains the professor. NOTHING warns: the seam had already answered
-	// ZM_INTERACT_OK, so the approach clause passes and only the raise count -- 0 -> 0
-	// -- ever says a word. A bearing-following drive would not have this problem; the
-	// eight-way one does, so the walk stays in the lane it arrived on.
+	// WHAT IT USED TO DO, and why the workaround existed: a diagonal spends DEPTH as
+	// fast as it spends width, so the walk gained 0.934 m of depth before the picker's
+	// 2.9 m reach was met, putting the capsule's leading edge (centre +
+	// fZM_PROFLAB_PLAYER_RADIUS) at 6.334 -- past an exit-sensor near face that then
+	// sat at 6.25. ZM_WarpTrigger::OnCollisionEnter fired, RequestWarp took the player
+	// back to Dawnmere, and the interact press one frame later landed on a FROZEN
+	// player in a scene that no longer contained the professor. NOTHING warned: the
+	// seam had already answered ZM_INTERACT_OK, so the approach clause passed and only
+	// the raise count -- 0 -> 0 -- ever said a word. This file worked around it by
+	// driving at Aster's XZ with the depth CLAMPED to the arrival depth.
 	//
-	// STRAIGHTER, NOT WEAKER: the picker measures XZ distance with Y ignored, and
-	// crossing the room at the arrival depth still closes to 2.9 m after ~1.25 m of
-	// pure sideways travel, with 1.375 m of depth left over. The professor is still
-	// walked up to from outside his reach; only the path changed.
+	// THE SENSOR WAS RETREATED INSTEAD (see the two stars on the exit-sensor block in
+	// Source/World/ZM_ProfLabPlacement.h): its near face is now the last quarter of
+	// the walk-in span, at 7.0625, which the same 45-degree leading edge clears by
+	// 0.729 m. The clamp is therefore deleted rather than kept "just in case" -- a
+	// workaround left in place is a test that can no longer see the defect come back.
+	//
+	// ★ AND THE GUARD BELOW IS WHAT MAKES THAT A REGRESSION TEST RATHER THAN A HOPE.
+	// With the lane gone, IBTouchesExitSensor is checked FIRST in PHASE 7, on the real
+	// walk, every frame: retreat the sensor back toward the room and this test reds
+	// with a measured leading edge against a measured near face, instead of a mystery
+	// warp three phases later. The boot unit ProfLab_ExitSensorClearsTheDiagonalWalkUp
+	// ToTheProfessor pins the same property in arithmetic, at boot, where it cannot be
+	// skipped; the two are deliberately different KINDS of proof about one property.
 	// ============================================================================
-
-	// The near face of the exit sensor, DERIVED from the same two constants
-	// ZM_GetProfLabExitTrigger builds the box from -- never re-spelled.
-	float IBExitSensorNearFaceZ()
-	{
-		return fZM_PROFLAB_EXIT_TRIGGER_Z - fZM_PROFLAB_EXIT_TRIGGER_SCALE_Z * 0.5f;
-	}
 
 	// "Would the player's CAPSULE be touching that sensor here?" Both axes are tested
 	// against the box half-extent PLUS the capsule radius, because ZM_WarpTrigger is
 	// driven by a physics contact between bodies and not by a centre-in-box test -- a
 	// depth-only check would false-fire for a player standing well off to the side.
+	// The near face is READ from fZM_PROFLAB_EXIT_TRIGGER_NEAR_Z rather than
+	// re-subtracted from the centre: a plane spelled twice is a plane that can drift.
 	bool IBTouchesExitSensor(const Zenith_Maths::Vector3& xPosition)
 	{
 		const float fHalfSpanX =
 			fZM_PROFLAB_EXIT_TRIGGER_SCALE_X * 0.5f + fZM_PROFLAB_PLAYER_RADIUS;
-		return xPosition.z + fZM_PROFLAB_PLAYER_RADIUS >= IBExitSensorNearFaceZ()
+		return xPosition.z + fZM_PROFLAB_PLAYER_RADIUS
+				>= fZM_PROFLAB_EXIT_TRIGGER_NEAR_Z
 			&& std::fabs(xPosition.x - fZM_PROFLAB_SPAWN_X) <= fHalfSpanX;
-	}
-
-	// Aster's position, with the DEPTH clamped to the lane. The clamp is written as a
-	// clamp rather than as "the arrival depth" so a future placement that stands him
-	// SHALLOWER than the door leaves the drive following the true bearing.
-	Zenith_Maths::Vector3 IBApproachLaneTarget()
-	{
-		Zenith_Maths::Vector3 xTarget = g_xIBAsterPosition;
-		if (xTarget.z > fZM_PROFLAB_SPAWN_Z)
-		{
-			xTarget.z = fZM_PROFLAB_SPAWN_Z;
-		}
-		return xTarget;
 	}
 
 	// ---- The ONE git-ignored prerequisite ------------------------------------
@@ -890,21 +885,28 @@ namespace
 			return false;
 		}
 
-		// ★ THE LANE IS A CLAIM ABOUT GEOMETRY, SO IT IS CHECKED, AND CHECKED FIRST --
+		// ★★ THE REGRESSION TEST FOR Q-2026-08-15-001, AND IT IS CHECKED FIRST --
 		// BEFORE the seam clause below. The frame this defect actually cost was one on
 		// which the seam said OK *and* the capsule was already in the sensor, so a
 		// guard placed after that early-out would have watched it happen and said
 		// nothing. Reported here, the scene cannot change out from under a later phase
-		// with only "raises 0 -> 0" to show for it.
+		// with only "raises 0 -> 0" to show for it. Now that the approach drives at the
+		// professor directly -- the real 45-degree W+A line -- this clause is the live
+		// proof that the retreated sensor clears that walk.
 		if (IBTouchesExitSensor(xPlayer.m_xPosition))
 		{
 			FailIBDetailed(
 				"the walk-up carried the player into the lab's EXIT SENSOR [capsule "
 				"leading edge %.3f m vs near face %.3f m at x=%.3f]. ZM_WarpTrigger is "
 				"about to send the player back to Dawnmere, so the interact press would "
-				"land on a frozen player in another scene",
+				"land on a frozen player in another scene. This is Q-2026-08-15-001: "
+				"the eight-way chooser walks a 45-degree diagonal at a target that is "
+				"both sideways and deeper, which gains depth as fast as width. The fix "
+				"is to RETREAT THE SENSOR (ZM_ProfLabPlacement.h), never to clamp this "
+				"walk back into a lane -- a clamped walk cannot see the defect return",
 				(double)(xPlayer.m_xPosition.z + fZM_PROFLAB_PLAYER_RADIUS),
-				(double)IBExitSensorNearFaceZ(), (double)xPlayer.m_xPosition.x);
+				(double)fZM_PROFLAB_EXIT_TRIGGER_NEAR_Z,
+				(double)xPlayer.m_xPosition.x);
 			return false;
 		}
 
@@ -949,9 +951,11 @@ namespace
 			return false;
 		}
 
-		// The LANE target, never Aster's own position -- see the block above
-		// IBApproachLaneTarget for the warp this one clamp prevents.
-		IBDriveTowardXZ(xPlayer.m_xPosition, IBApproachLaneTarget());
+		// ★ AT THE PROFESSOR HIMSELF -- the eight-way chooser turns that into the
+		// 45-degree W+A line a player actually holds, which is the whole point. See
+		// the block above IBTouchesExitSensor: this used to be a depth-clamped lane
+		// target that routed around the exit sensor, and that workaround is gone.
+		IBDriveTowardXZ(xPlayer.m_xPosition, g_xIBAsterPosition);
 		return true;
 	}
 
