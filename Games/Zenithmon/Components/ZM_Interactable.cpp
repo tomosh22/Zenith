@@ -215,6 +215,61 @@ const char* ZM_NpcRaiseKindName(ZM_NPC_RAISE_KIND eKind)
 	}
 }
 
+bool ZM_NpcRaisesStarterChoice(ZM_NPC_ID eNpcId, const ZM_StoryFlagSet& xFlags)
+{
+	// ONE row, named explicitly. See the header: this is a routing rule keyed on an
+	// NPC identity, not a role -- Aster is still a TALKER and still talks.
+	if (eNpcId != ZM_NPC_PROF_ASTER)
+	{
+		return false;
+	}
+	// ...and only until the starter has actually been handed over. THE one-shot
+	// guard; ZM_ApplyStarterChoice would happily grant a second monster and the
+	// row's line gate would happily keep raising the screen while changing only
+	// which words appear over it.
+	return !ZM_IsStoryFlagSet(xFlags, ZM_STORY_FLAG_STARTER_RECEIVED);
+}
+
+ZM_STORY_FLAG_ID ZM_IntroStoryFlagForArrival(u_int uBuildIndex, const char* szSpawnTag)
+{
+	// The lab. Its ONLY door is the Dawnmere lab seam, so the build index alone is
+	// the whole condition -- there is no second way in to distinguish.
+	if (uBuildIndex == ZM_GetWorldSpec(ZM_SCENE_PROFLAB).m_uBuildIndex)
+	{
+		return ZM_STORY_FLAG_MET_PROFESSOR;
+	}
+
+	// Dawnmere is reachable four ways (town centre, the route, the lab return and
+	// the front door), and only ONE of them is leaving home. The tag is read off the
+	// compiled PlayerHome -> Dawnmere connection rather than spelled, so a world-table
+	// edit that renames that edge moves this decision with it instead of silently
+	// leaving the flag unset forever.
+	if (uBuildIndex != ZM_GetWorldSpec(ZM_SCENE_DAWNMERE).m_uBuildIndex
+		|| szSpawnTag == nullptr
+		|| szSpawnTag[0] == '\0')
+	{
+		return ZM_STORY_FLAG_NONE;
+	}
+	const ZM_WorldSpec& xHome = ZM_GetWorldSpec(ZM_SCENE_PLAYERHOME);
+	if (xHome.m_pxConnections == nullptr)
+	{
+		return ZM_STORY_FLAG_NONE;
+	}
+	for (u_int uEdge = 0u; uEdge < xHome.m_uConnectionCount; ++uEdge)
+	{
+		const ZM_SceneConnection& xEdge = xHome.m_pxConnections[uEdge];
+		if (xEdge.m_eTarget != ZM_SCENE_DAWNMERE || xEdge.m_szSpawnTag == nullptr)
+		{
+			continue;
+		}
+		if (std::strcmp(xEdge.m_szSpawnTag, szSpawnTag) == 0)
+		{
+			return ZM_STORY_FLAG_INTRO_LEFT_HOME;
+		}
+	}
+	return ZM_STORY_FLAG_NONE;
+}
+
 ZM_Interactable::ZM_Interactable(Zenith_Entity& xParentEntity)
 	: m_xParentEntity(xParentEntity)
 {
@@ -749,12 +804,19 @@ void ZM_Interactable::TickTrainerSight(float fDeltaTime)
 	// trainer in any scene that runs without a GameStateManager -- a live behaviour
 	// change in exactly the windowed tests this commit must not move.
 	//
-	// INERT TODAY, and deliberately so (S8 item 1 SC3). ZM_Party exposes no removal
-	// path at all and all three seed sites grant a starter, so nothing production can
-	// reach shrinks a party to empty and ZM_CanEnterBattle answers true on every
-	// reachable path. Landing the wiring while it cannot fire is what makes the arm
-	// independently unit-testable at zero behavioural risk; a later sub-commit makes
-	// production partyless behind a gate that already shipped green.
+	// ★ NO LONGER INERT -- THIS ARM IS NOW A REAL PLAYTHROUGH STATE (ZM-D-188).
+	// SC3 landed this wiring with a note that "a later sub-commit makes production
+	// partyless"; that sub-commit is the intro beat. The two PRODUCTION seed sites no
+	// longer grant a starter (ZM_GameStateManager::OnStart and RequestNewGame), so a
+	// real player walks out of PlayerHome with an EMPTY party and past rival Vesper's
+	// 8 m cone on the way to the lab. ZM_CanEnterBattle is false for that whole stretch
+	// and this is the clause that keeps him silent through it -- a partyless player
+	// dragged into a battle has nothing to send out.
+	//
+	// The pure proof is IntroBeat_PartylessNewGamePlayerIsNeverEngagedByATrainer
+	// (Tests/ZM_Tests_IntroBeat.cpp), which drives ZM_MayTrainerEngage with
+	// ZM_CanEnterBattle(ZM_MakeNewGameState()) rather than a hand-written false; the
+	// live proof is the Dawnmere leg of ZM_IntroBeat_Test.
 	const bool bPlayerCanBattle = !bHasGameState || ZM_CanEnterBattle(*pxGameState);
 
 	ZM_TrainerSightInputs xInputs;
@@ -1203,10 +1265,36 @@ bool ZM_Interactable::Interact()
 		const ZM_StoryFlagSet& xFlags =
 			bHasGameState ? pxGameState->m_xStoryFlags : xNoFlags;
 
+		// ---- S8 item 1: THE LAB BEAT --------------------------------------------
+		//
+		// ★★ THE PICKER IS PUSHED **FIRST** AND THE LINES **SECOND**, WHICH IS THE
+		// REVERSE OF THE ORDER THE PLAYER EXPERIENCES THEM -- AND THAT IS THE WHOLE
+		// TRICK. ZM_MenuScreenStack is a LIFO: the screen pushed first is the one
+		// reached LAST. So this order gives, in play order, Aster's pre-starter lines
+		// and THEN the picker they invite -- with no cutscene system, no pending-action
+		// enum, no new ZM_MENU_SCREEN and no new raise seam. Swap the two calls and the
+		// player picks a starter before being told why, then reads the invitation.
+		//
+		// ★ AND THE PICKER IS RAISED BESIDE THE DIALOGUE, NEVER INSTEAD OF IT. A row's
+		// ZM_StoryGate selects CONTENT only -- ZM_RaiseKindForRole is untouched by any of
+		// this and Aster remains a TALKER whose seam is TryPushDialogue.
+		//
+		// ★ EXACTLY ONE FREEZE OWNER IS TAKEN. OpenStarterChoiceScreen freezes only when
+		// the stack was EMPTY; PushDialogueLines then sees a non-empty stack and does
+		// not freeze again. m_bMovementEnabled is a bare bool with no refcount, so a
+		// second claim here would be a bug, not redundancy.
+		const bool bStarterRaised =
+			ZM_NpcRaisesStarterChoice(m_eNpcId, xFlags)
+			&& ZM_UI_MenuStack::TryOpenStarterChoiceScreen();
+
 		const char* const* paszLines = nullptr;
 		u_int uLineCount = 0u;
 		ZM_SelectNpcLines(xRow, xFlags, paszLines, uLineCount);
-		bRaised = ZM_UI_MenuStack::TryPushDialogue(paszLines, uLineCount);
+		// The OR, not an AND: a refused dialogue (a full queue, an armed prompt) must
+		// not report "nothing was raised" while a starter picker the player cannot
+		// cancel out of is sitting on the stack.
+		bRaised = ZM_UI_MenuStack::TryPushDialogue(paszLines, uLineCount)
+			|| bStarterRaised;
 		break;
 	}
 	case ZM_NPC_RAISE_SHOP:

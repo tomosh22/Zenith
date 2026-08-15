@@ -334,6 +334,29 @@ public:
 	// the close, like the save/load latches).
 	u_int GetStarterGrantCount() const { return m_uStarterGrantCount; }
 
+	// ★ THE ONE PLACE THE GRANT AND ITS STORY FLAG HAPPEN TOGETHER (S8 item 1).
+	//
+	// A plain static over a by-reference state: no scene, no singleton, no canvas, so a
+	// boot unit drives it directly. The confirm arm calls exactly this and does nothing
+	// else, which is what stops "the grant" and "the flag that records the grant" from
+	// ever being two half-performed things.
+	//
+	// It DELEGATES the grant verbatim to the shipped ZM_ApplyStarterChoice and adds
+	// exactly one statement: ZM_STORY_FLAG_STARTER_RECEIVED, set ONLY on the true
+	// return. ZM_ApplyStarterChoice is not edited and never will be by this path -- it
+	// has ~40 call sites and its "touches PARTY AND DEX ONLY" contract is load-bearing
+	// for all of them.
+	//
+	// ★ AND IT IS NOT THE ONE-SHOT GUARD. It happily grants twice: ZM_ApplyStarterChoice
+	// refuses only an unregistered choice and a FULL party, and re-setting an already-set
+	// flag is a no-op, so calling this on a state that already has a starter appends a
+	// SECOND monster. "The intro cannot replay" is ZM_NpcRaisesStarterChoice's property
+	// (Components/ZM_Interactable.h), in the RAISE path, and is tested there.
+	//
+	// TOTAL. Returns whether the grant actually happened; a refusal mutates nothing at
+	// all, flag included.
+	static bool ApplyStarterGrant(ZM_GameState& xStateInOut, ZM_STARTER_CHOICE eChoice);
+
 	// ---- Title / Continue (S7 item 2 SC5) ----
 	const ZM_UI_TitleMenu& GetTitleScreen() const { return m_xTitle; }
 	// Pending is session state. Result latches survive an ordinary successful close

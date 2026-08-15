@@ -761,10 +761,17 @@ ZENITH_TEST(ZM_Story, StarterState_HasNoRegisteredFlagSet)
 {
 	ZENITH_ASSERT_GT((u_int)ZM_STORY_FLAG_COUNT, 0u, "an empty registry makes this walk vacuous");
 
-	// The composition every production seed site ships. ZM_ApplyStarterChoice sets
-	// NO story flag -- ZM_STORY_FLAG_STARTER_RECEIVED is deliberately left clear,
-	// because setting it would move the save bytes -- so this walk still expects a
-	// completely unwritten story.
+	// ★ THIS IS THE **TEST FIXTURE** COMPOSITION, NOT A PRODUCTION SEED (ZM-D-188).
+	// It used to be both. The intro beat deleted the starter grant from
+	// ZM_GameStateManager::OnStart and RequestNewGame -- a real new game is now
+	// PARTYLESS and the player chooses at Aster's lab -- and only the test-only
+	// reseed ZM_GameStateManager::ResetGameStateForTests still composes the two.
+	// The CLAIM below is unaffected either way, and that is exactly why it is worth
+	// keeping in this shape: ZM_ApplyStarterChoice sets NO story flag (it touches
+	// PARTY AND DEX ONLY), so a state composed with it must still read as a
+	// completely unwritten story. The flag that records a starter is set one layer
+	// up, by ZM_UI_MenuStack::ApplyStarterGrant, and is covered in
+	// Tests/ZM_Tests_IntroBeat.cpp.
 	ZM_GameState xStarter = ZM_MakeNewGameState();
 	ZM_ApplyStarterChoice(xStarter, ZM_STARTER_CHOICE_FERNFAWN);
 	for (u_int u = 0u; u < (u_int)ZM_STORY_FLAG_COUNT; ++u)

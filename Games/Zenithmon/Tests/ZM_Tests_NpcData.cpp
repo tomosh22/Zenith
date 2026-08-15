@@ -1081,13 +1081,16 @@ ZENITH_TEST(ZM_Data, Npc_AuthoredAppearancesAreMutuallyDistinct)
 //
 // ★ READ THE NAME BEFORE ADDING A CLAUSE. It says what the row IS -- a talker,
 // wearing Aster, naming no trainer -- and it deliberately says NOTHING about the
-// row being ungated. The starter beat is a later slice and it makes this row
-// STORY-GATED (a second, gated line set in the warden's ZM_StoryGate shape). A
-// clause asserting m_xLineGate is NONE, or a name promising "...IsAnUngatedTalker",
-// would then have to be deleted by the slice it exists to constrain -- and a test
-// whose NAME asserts the opposite of what the code does is the exact failure mode
-// this codebase has been bitten by before. So: gate state is UNPINNED here on
-// purpose, and ZM_SelectNpcLines' own units already cover both gate polarities.
+// row being ungated. The starter beat was a later slice and it HAS NOW LANDED
+// (ZM-D-188): this row is STORY-GATED on ZM_STORY_FLAG_STARTER_RECEIVED, in the
+// warden's ZM_StoryGate shape, and Npc_ProfessorRowIsGatedOnTheStarterFlag below
+// pins that half. A clause asserting m_xLineGate is NONE, or a name promising
+// "...IsAnUngatedTalker", would have had to be deleted by the slice it existed to
+// constrain -- and a test whose NAME asserts the opposite of what the code does is
+// the exact failure mode this codebase has been bitten by before. The prediction
+// held: this unit survived the beat unedited, and the TALKER clause below is still
+// true because the starter picker is raised BESIDE his dialogue by an NPC-identity
+// routing rule (ZM_NpcRaisesStarterChoice), never by a fourth ZM_NPC_ROLE.
 ZENITH_TEST(ZM_Data, Npc_ProfessorRowIsATalkerNamingAsterWithNoTrainer)
 {
 	const ZM_NpcData& xAster = ZM_GetNpcData(ZM_NPC_PROF_ASTER);
@@ -1138,6 +1141,53 @@ ZENITH_TEST(ZM_Data, Npc_ProfessorRowIsATalkerNamingAsterWithNoTrainer)
 	ZENITH_ASSERT_EQ(xAster.m_uStockCount, 0u,
 		"the professor is not a SHOPKEEP but carries %u stocked items",
 		xAster.m_uStockCount);
+}
+
+// The S8 intro beat's half of the row (ZM-D-188), kept as its OWN unit rather than
+// bolted onto the one above: that unit is about the row's IDENTITY and survived
+// this change unedited, which is a property worth not disturbing.
+//
+// Three roster-wide units change arms when this row becomes gated, and all three
+// are load-bearing here: Npc_UngatedRowsCarryNoGatedLines now SKIPS this row (it
+// would previously have caught a stray gated array on it),
+// Npc_EveryGatedRowAuthorsBothLineSets now CHECKS it, and
+// Npc_GatedLinePointerAndCountAgree covers the pair either way. What none of them
+// can say is WHICH FLAG, in WHICH POLARITY -- a row gated on the warden's flag, or
+// on this one inverted, satisfies every one of them while the professor offers a
+// starter forever or never. That is this unit's job. (Which of the two arrays is
+// the pre-starter set is checked by pointer identity in
+// Intro_AsterSpeaksHisPreStarterSetUntilTheFlagIsSet, Tests/ZM_Tests_IntroBeat.cpp.)
+ZENITH_TEST(ZM_Data, Npc_ProfessorRowIsGatedOnTheStarterFlag)
+{
+	const ZM_NpcData& xAster = ZM_GetNpcData(ZM_NPC_PROF_ASTER);
+
+	ZENITH_ASSERT_EQ((u_int)xAster.m_xLineGate.m_eFlag,
+		(u_int)ZM_STORY_FLAG_STARTER_RECEIVED,
+		"the professor gates his lines on flag %u, not on "
+		"ZM_STORY_FLAG_STARTER_RECEIVED -- his pre- and post-starter sets are "
+		"selected by the wrong beat entirely",
+		(u_int)xAster.m_xLineGate.m_eFlag);
+
+	// POLARITY. require-SET means "the ordinary set is the one spoken AFTER the
+	// grant". Inverted, he would greet a first-time player as though they had already
+	// chosen and go back to offering once they had.
+	ZENITH_ASSERT_TRUE(xAster.m_xLineGate.m_bRequireSet,
+		"the professor's gate is require-CLEAR, which swaps his two line sets: the "
+		"pre-starter greeting would play after the grant and vice versa");
+
+	// BOTH SETS, non-empty. The roster-wide gated unit says this too -- restated here
+	// because the two clauses above are only meaningful if there is a second set to
+	// select at all, and a reader of this unit should not have to go and find that out.
+	ZENITH_ASSERT_GT(xAster.m_uLineCount, 0u,
+		"the professor has no post-starter lines");
+	ZENITH_ASSERT_GT(xAster.m_uGatedLineCount, 0u,
+		"the professor has no pre-starter lines -- he would be MUTE on a first visit, "
+		"which is the ONE visit the whole intro beat happens on");
+	ZENITH_ASSERT_NOT_NULL(xAster.m_paszGatedLines,
+		"the professor claims pre-starter lines with no array");
+	ZENITH_ASSERT_TRUE(xAster.m_paszLines != xAster.m_paszGatedLines,
+		"the professor's two line sets are the SAME array, so the gate selects "
+		"between a thing and itself");
 }
 
 // ★ THE STRUCTURAL FIX, AND THE REASON IT IS HERE RATHER THAN IN THE Gen SUITE.

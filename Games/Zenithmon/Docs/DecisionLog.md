@@ -15,6 +15,99 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-08-15 -- ZM-D-194 -- S8 SC-F: the intro beat ships, a NEW GAME IS PARTYLESS, and the one-shot guard is NOT free
+
+**S8 item 1 is COMPLETE.** New Game -> PlayerHome -> Dawnmere -> ProfLab -> talk to
+Aster -> choose a starter, end to end, with the choice actually meaning something.
+
+**Decision 1 -- THE FERNFAWN GRANT IS DELETED FROM BOTH PRODUCTION SEED SITES**
+(`ZM_GameStateManager::OnStart` and `::RequestNewGame`), executing user ruling
+ZM-D-188. A new game now starts with an EMPTY party.
+
+**★ THE REASON THIS WAS A BLOCKER IS NOT THE ONE THE BRIEF GAVE, AND THE
+CORRECTION MATTERS.** The brief (and an earlier report to the user) claimed the
+starter screen "would never raise" because the party is never empty.
+**That is false.** `OpenStarterChoiceScreen` refuses on exactly two conditions --
+no live `ZM_GameState`, or a FULL party -- and never consults `ZM_CanEnterBattle`.
+With a Fernfawn granted the picker **would** have raised perfectly well; the
+player would simply have walked out of the lab holding **TWO** monsters, and the
+"choice" would have been cosmetic. The conclusion (remove the grant) survives; the
+mechanism did not, and both the code comments and `ZM_IntroBeat_Test`'s failure
+text now state the real one. **A right answer resting on a wrong mechanism is a
+trap for whoever reads it next.**
+
+**Decision 2 -- `ResetGameStateForTests` KEEPS its grant. The asymmetry is
+deliberate and loud.** It is test-only and the harness fires it before EVERY test,
+so it -- not `OnStart` -- is what ~60 windowed tests actually observe. Removing it
+would start them partyless, and several call `ZM_Party::Get(0u)`, which
+`Zenith_Assert`s and **breaks the process in every configuration**. Crucially it
+**cannot mask the change**: any test driving a real New Game gets
+`RequestNewGame`'s partyless state written straight over the fixture, which is
+exactly what `ZM_IntroBeat_Test` PHASE 3 asserts. Reasoning is a 20-line block at
+the function, pointed to from the between-tests hook.
+
+**★★ Decision 3 -- THE ONE-SHOT GUARD IS NOT FREE, BECAUSE THE SHIPPED GRANT
+HAPPILY GRANTS TWICE.** `ZM_ApplyStarterChoice` refuses on an unregistered choice
+and on a full 6-slot party -- **and nothing else**. A state that already received a
+starter silently receives a SECOND monster. So "the intro must not replay" had to
+be built, not assumed. It lives in the ROUTING layer as
+`ZM_NpcRaisesStarterChoice(npcId, flags)`, keyed on
+`ZM_STORY_FLAG_STARTER_RECEIVED` -- **not** on the NPC row's `ZM_StoryGate`, because
+a gate selects LINES and does not stop a screen raising. A unit
+(`Intro_ApplyStarterChoiceItselfWouldHappilyGrantTwice`) pins the shipped
+function's real behaviour so nobody "fixes" the guard by editing the grant, which
+has ~41 call sites.
+
+**Decision 4 -- routing is an NPC-IDENTITY predicate, not a fourth
+`ZM_NPC_ROLE`.** A new role would have to satisfy the roster's role-coverage
+invariant with exactly one row behind it forever, and would falsify the NAME of
+the shipped `Npc_ProfessorRowIsATalkerNamingAsterWithNoTrainer`. The picker is
+raised BESIDE Aster's dialogue (LIFO: he speaks, then you choose), so his seam
+genuinely is still `TryPushDialogue`.
+
+**Decision 5 -- Aster's line sets are gated with the ordinary set as POST-starter
+and the gated set as PRE-starter**, because the selector returns the GATED set
+while the gate FAILS. That polarity is trivially invertible and no roster-wide unit
+can see it, so `Npc_ProfessorRowIsGatedOnTheStarterFlag` pins flag identity AND
+polarity by pointer identity.
+
+**Save growth:** module 4 goes 0 -> 3 flags = `ceil(3/8)` = **one** extra byte per
+save. Documented no-migration growth path, so **no schema version bump is owed**,
+and the **824-byte v1 golden is confirmed UNMOVED** (its fixture is hand-built,
+sets flag 9 explicitly, and never touches `ZM_MakeNewGameState` or any manager
+path). `Intro_TheThreeFlagsCostModuleFourExactlyOneByte` pins the cost so a future
+sparse allocation cannot quietly make it 500.
+`ZM_AUTOSAVE_TRIGGER_STORY_FLAG_SET` is deliberately NOT shipped -- the
+SCENE_ENTERED autosave already persists the flags for free, and the rising-edge
+resolver is real new surface with its own decision behind it.
+
+**★ A LATENT LATCH LEAK FOUND WHILE CHECKING SOMETHING ELSE:**
+`m_uStarterGrantCount` survived an ordinary menu close and was never cleared, so
+the FIRST test to grant a starter would have handed "exactly one grant" to every
+later test in the batch with no press. Now reset in `ResetRuntimeStateForTests`.
+Conversely the brief's demand for a second freeze reset was REJECTED as a bug: the
+picker takes the freeze through the menu stack, so the existing reset already
+releases it via `CloseMenu -> UnfreezePlayer`, and a second reset would put a
+second owner on a refcount-free bool.
+
+**Partyless coverage (the accepted cost of ruling 1, now exercised):**
+`Intro_PartylessNewGamePlayerIsNeverEngagedByATrainer` walks every registered
+trainer in the most permissive configuration and requires refusal, driven off the
+REAL new-game state rather than a hand-written `false` -- so re-adding a grant reds
+it -- plus an anti-vacuity arm requiring the same rows to become engageable after a
+grant. **Booked honestly:** the LIVE clause in `ZM_IntroBeat_Test` is vacuous by
+distance today (Vesper sits ~56 m from the FromHome marker against an 8 m cone); it
+guards a future re-placement, and the pure unit is the discriminating proof.
+
+**Also corrected:** the "~41 migrated call sites" cost in the plan was largely
+imaginary -- those pairs build LOCAL fixtures and are unaffected by removing
+production grants. Exactly ONE test TU actually broke
+(`ZM_AutoTests_SaveContinue.cpp`), the only one that drives a real New Game and
+then compares the published state.
+
+**Reversibility:** moderate. Re-adding the grants restores the old start but makes
+the starter choice cosmetic again.
+
 ## 2026-08-14 -- ZM-D-193 -- S8 SC-E: the lab seam lands as ONE commit, and turning Aster required a COLLIDER change or it would have been a silent no-op
 
 **What shipped:** the Dawnmere lab exterior (shell + two jambs + lintel), the

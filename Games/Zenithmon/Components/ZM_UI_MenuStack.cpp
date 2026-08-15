@@ -14,6 +14,7 @@
 #include "Zenithmon/Components/ZM_PlayerController.h"    // SetMovementEnabled (freeze seam)
 #include "Zenithmon/Source/CareCenter/ZM_CareCenter.h"  // the SC8 prompt lines + the heal
 #include "Zenithmon/Source/Data/ZM_SpeciesData.h"       // ZM_SPECIES_COUNT (the dex size the DEX screen pages over)
+#include "Zenithmon/Source/Data/ZM_StoryFlags.h"        // ZM_SetStoryFlag -- ApplyStarterGrant's one added statement
 #include "Zenithmon/Source/Data/ZM_WorldSpec.h"         // ZM_FindSceneByBuildIndex / ZM_GetWorldSpec / ZM_SCENE_KIND
 #include "Zenithmon/Source/Interaction/ZM_TrainerSightFsm.h"   // ZM_TrainerCinematicLatch::IsActive (the FOURTH freeze owner)
 #include "Zenithmon/Source/Party/ZM_StarterChoice.h"    // the SHIPPED grant: ZM_ApplyStarterChoice (+ the registered-choice guard)
@@ -441,7 +442,7 @@ void ZM_UI_MenuStack::OnUpdate(float fDeltaSeconds)
 		// emptiness alone, so that file would then be refused every battle forever. The
 		// screen also carries no Back element for the same reason.
 		//
-		// ★ GRANT THEN POP, IN THAT ORDER. ZM_ApplyStarterChoice returns false with ZERO
+		// ★ GRANT THEN POP, IN THAT ORDER. ApplyStarterGrant returns false with ZERO
 		// mutation for an unregistered choice or a full party, so the pop lives INSIDE the
 		// true branch. Popping first (or unconditionally) would close the one screen that
 		// grants a starter without having granted one.
@@ -450,15 +451,20 @@ void ZM_UI_MenuStack::OnUpdate(float fDeltaSeconds)
 			const ZM_STARTER_CHOICE eChoice =
 				ZM_UI_StarterChoice::ChoiceFromElementName(ResolveFocusedElementName());
 			// The panel, the header, a foreign name and null all arrive as NONE, which this
-			// guard eats -- ZM_ApplyStarterChoice would refuse them anyway, but it would also
-			// log a Zenith_Error per press for what is just an un-aimed confirm.
+			// guard eats -- the grant would refuse them anyway, but it would also log a
+			// Zenith_Error per press for what is just an un-aimed confirm.
 			if (ZM_IsRegisteredStarterChoice(eChoice))
 			{
 				// The live state is resolved per press rather than cached (the bag / shop / heal
 				// idiom); a missing state simply eats the confirm instead of crashing.
+				//
+				// ★ S8 item 1: ApplyStarterGrant, NOT ZM_ApplyStarterChoice directly. The one
+				// difference is ZM_STORY_FLAG_STARTER_RECEIVED, and routing the press through
+				// the named pair is what stops the party edit and the story record from being
+				// separable -- see the contract on the declaration.
 				ZM_GameState* pxState = nullptr;
 				if (ZM_GameStateManager::TryGetGameState(pxState) && pxState != nullptr
-					&& ZM_ApplyStarterChoice(*pxState, eChoice))
+					&& ApplyStarterGrant(*pxState, eChoice))
 				{
 					++m_uStarterGrantCount;
 					PopTopScreen();
@@ -1142,6 +1148,25 @@ bool ZM_UI_MenuStack::OpenStarterChoiceScreen()
 	return true;
 }
 
+bool ZM_UI_MenuStack::ApplyStarterGrant(ZM_GameState& xStateInOut, ZM_STARTER_CHOICE eChoice)
+{
+	// VERBATIM, and first. Everything about which species, at which level, appended
+	// where, and marked in which dex set belongs to the shipped grant; this function
+	// adds no policy of its own and, on a refusal, leaves the state byte-identical.
+	if (!ZM_ApplyStarterChoice(xStateInOut, eChoice))
+	{
+		return false;
+	}
+	// ...and the one statement that makes the beat a STORY beat rather than a party
+	// edit. It is what Aster's gated line set reads, what ZM_NpcRaisesStarterChoice
+	// reads to refuse a replay, and -- because it is registered flag index 2 -- what
+	// the next SCENE_ENTERED autosave persists for free. NO new autosave trigger is
+	// armed here: ZM_AUTOSAVE_TRIGGER_STORY_FLAG_SET stays declared-but-not-live, and
+	// its rising-edge resolver remains its own decision.
+	ZM_SetStoryFlag(xStateInOut, ZM_STORY_FLAG_STARTER_RECEIVED, true);
+	return true;
+}
+
 bool ZM_UI_MenuStack::TryOpenStarterChoiceScreen()
 {
 	Zenith_EntityID xEntityID = INVALID_ENTITY_ID;
@@ -1675,6 +1700,22 @@ void ZM_UI_MenuStack::ResetRuntimeStateForTests()
 		pxMenu->m_xLastLoadStatus = Zenith_ErrorCode::INVALID_ARGUMENT;
 		pxMenu->m_uLoadReadCount = 0u;
 		pxMenu->m_eDialogueAction = ZM_DIALOGUE_ACTION_NONE;
+		// ★ S8 item 1. The starter GRANT COUNT is the same "new by-value latch" trap the
+		// save block above is here for, and it shipped uncleared: it survives CloseMenu
+		// on purpose (a successful grant pops to empty, which closes the menu, so a latch
+		// cleared by the close would be unobservable), it is never cleared by OnStart in a
+		// batched process that never re-boots, and ZM_MenuRoot is DontDestroyOnLoad. The
+		// intro beat is the first thing that moves it, and without this line the FIRST
+		// test to grant a starter would hand its count to every test that ran afterwards
+		// -- so "exactly one starter was granted" would pass without a press.
+		pxMenu->m_uStarterGrantCount = 0u;
+		// The STARTER SCREEN'S FREEZE needs no line of its own, and that is worth saying
+		// out loud rather than leaving to inference: it is taken by FreezePlayer inside
+		// OpenStarterChoiceScreen, so a test that died with the picker up leaves the menu
+		// OPEN and the CloseMenu() above releases it through the one arbitrated
+		// UnfreezePlayer. m_bMovementEnabled has no refcount, so a second reset here
+		// would be a second owner, not a safety net.
+		pxMenu->m_xStarterScreen.Reset();
 	}
 }
 

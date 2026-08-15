@@ -33,13 +33,21 @@
 // resolved pointer BEFORE the load and re-observed through a FRESH resolution
 // AFTER it: only the one persistent instance could carry that mutation across.
 //
-// The seed is the fixed D4 starter -- ZM_MakeNewGameState() composed with
-// ZM_ApplyStarterChoice(state, ZM_STARTER_CHOICE_FERNFAWN), which is what every
-// production seed site ships: a party whose sole lead is Fernfawn at L5, with
-// Fernfawn marked in the caught-set. The between-
-// tests hook re-seeds the GameState to this starter before every test, so the
-// starter assertions below are deterministic in the batch and this test needs no
-// manual GameState reset -- it only leaves the scene clean on the way out.
+// The seed is the fixed D4 BATCH FIXTURE -- ZM_MakeNewGameState() composed with
+// ZM_ApplyStarterChoice(state, ZM_STARTER_CHOICE_FERNFAWN): a party whose sole lead
+// is Fernfawn at L5, with Fernfawn marked in the caught-set. The between-tests hook
+// re-seeds the GameState to exactly that before every test (including the first),
+// so the starter assertions below are deterministic in the batch and this test needs
+// no manual GameState reset -- it only leaves the scene clean on the way out.
+//
+// ★ IT IS NO LONGER "WHAT EVERY PRODUCTION SEED SITE SHIPS", AND THAT PHRASE USED
+// TO BE HERE (ZM-D-188). The intro beat deleted the Fernfawn grant from both
+// production sites -- a real new game is PARTYLESS and the player chooses a starter
+// from Professor Aster -- and only the TEST-ONLY reseed
+// ZM_GameStateManager::ResetGameStateForTests still grants. This test is about the
+// persistent manager's OWNERSHIP of a GameState across a scene load, not about what
+// a new game contains, so the fixture is exactly the right thing for it to stand on;
+// the production composition is proved by ZM_IntroBeat_Test instead.
 //
 // GATING (C4/C6): requires graphics, so the headless CI batch skips it (no GPU)
 // and the unit baseline is unchanged. Setup RequestSkip()s when the baked

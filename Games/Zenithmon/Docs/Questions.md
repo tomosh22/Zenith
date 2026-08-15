@@ -122,6 +122,52 @@ you simply pay for it again.
 
 **Status:** [RESOLVED 2026-08-02]
 
+### [OPEN] Q-2026-08-15-001 -- walking DIAGONALLY toward Professor Aster bounces the player back out of the lab
+
+**Question:** should ProfLab's exit sensor be retreated (or Aster moved shallower)
+so a diagonal walk-up cannot clip the door, or is this acceptable as shipped?
+
+**The geometry, measured:**
+| thing | z |
+|---|---|
+| arrival spawn | **5.00** |
+| exit sensor near face | **6.25** (0.85 m of clearance after the 0.4 m capsule radius) |
+| Professor Aster | **6.375** -- DEEPER than the door's inner face, but at x = -3.8, laterally clear of the 6 m aperture |
+
+Walking the **direct bearing** to Aster is fine: it stops at z = 5.39, leading edge
+5.79, clear by 0.46 m. But a **45 degree** walk -- which is what holding **W+A**
+produces, the natural "up-left toward the professor" input -- gains 0.934 m of
+depth before closing to the 2.9 m interact reach, putting the capsule leading edge
+at **6.334 > 6.25**. `ZM_WarpTrigger::OnCollisionEnter` fires and the player is
+warped back to Dawnmere **just as Aster comes into reach**.
+
+**How it was found:** it broke `ZM_IntroBeat_Test`, whose drive helper is an
+eight-way chooser and therefore walked the same 45 degree line. That was a TEST
+bug -- production behaves correctly, the door does what a door should -- and the
+test now clamps its approach depth to the arrival depth. **But a real player has no
+such helper**, which is why this is booked rather than closed.
+
+**★ THE EVIDENCE THAT IT IS NOT A WIRING BUG**, recorded so nobody re-debugs it:
+`ZM_Interactable::Interact()` warns on EVERY false return, and there is not one
+`[Gameplay]` line in a 365,000-line batch log -- the function was never entered.
+The player was frozen mid-warp, so the press could not reach it. Terrain instance
+lifecycle `+1 / -1 / +1` and FOUR player collider rebuilds (against a plan with
+three) confirm the second Dawnmere load.
+
+**USER RULING 2026-08-15: LOG IT, SHIP SC-F.** Nothing is broken -- the direct
+route works and the door is correct -- so this is a feel question, best judged in
+the hand at the S8 visual playthrough rather than from arithmetic. **Surface it at
+that gate.**
+
+**Cost if the guess is wrong:** LOW. If it feels bad in play, the fix is a
+contained change to `ZM_ProfLabPlacement.h` plus a ProfLab re-author. Retreating
+the SENSOR is the safer of the two directions: moving ASTER shallower fights
+ZM-D-191, which placed him at `(spawnZ + innerMaxZ)/2` precisely so he sits inside
+the arrival frustum -- pulling him toward the camera narrows the frame at his depth
+and risks re-opening the off-screen bug SC-C existed to close.
+
+**Status:** OPEN -- deferred to the S8 visual gate by user ruling.
+
 ### [OPEN] Q-2026-08-14-001 -- the boot unit gate carries a WALL-CLOCK assertion, so a REQUIRED check can red from machine load alone
 
 **Question:** should `GraphComponent::ThousandEntityUpdateBenchmark`

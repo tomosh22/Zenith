@@ -762,14 +762,15 @@ ZENITH_AUTOMATED_TEST_REGISTER(g_xZMSaveContinueTest);
 
 namespace
 {
-	// Seed an EXISTING state to the exact composition the manager's three seed sites
-	// ship: a new game plus the Fernfawn grant, which is what the deleted starter
-	// seed produced field for field. Several fixtures below nickname or read
-	// m_xParty.Get(0u) -- and Get() Zenith_Asserts on an empty party, which breaks
-	// the process in EVERY config -- so this must stay the COMPOSED state, never a
-	// bare ZM_MakeNewGameState(). It also has to match what
-	// ZM_GameStateManager::RequestNewGame publishes, because
-	// SCPhaseAwaitNewGameAccepted compares the live state against it.
+	// Seed an EXISTING state to the D4 BATCH FIXTURE composition -- a new game plus the
+	// Fernfawn grant -- which is what ZM_GameStateManager::ResetGameStateForTests (the
+	// test-only reseed) still installs before every test. Several fixtures below
+	// nickname or read m_xParty.Get(0u) -- and Get() Zenith_Asserts on an empty party,
+	// which breaks the process in EVERY config -- so this must stay the COMPOSED state,
+	// never a bare ZM_MakeNewGameState().
+	//
+	// ★ IT NO LONGER DESCRIBES WHAT RequestNewGame PUBLISHES. See SCSeedPublishedNewGame
+	// immediately below.
 	//
 	// ★ BY REFERENCE, NOT A RETURNING FACTORY, AND THAT IS THE STACK BUDGET TALKING.
 	// A `ZM_GameState SCMake...()` would add a frame holding one more live
@@ -785,6 +786,27 @@ namespace
 	{
 		xStateOut = ZM_MakeNewGameState();
 		ZM_ApplyStarterChoice(xStateOut, ZM_STARTER_CHOICE_FERNFAWN);
+	}
+
+	// ★★ WHAT **RequestNewGame** ACTUALLY PUBLISHES, AND IT IS NO LONGER THE ABOVE
+	// (ZM-D-188). The lab beat deleted the Fernfawn grant from both production seed
+	// sites, so a new game now begins with an EMPTY PARTY and the player picks a
+	// starter from Professor Aster. The two helpers are kept SEPARATE rather than one
+	// being redefined as the other, because they answer different questions and only
+	// one of them moved:
+	//
+	//   SCSeedFernfawnStarter  -- the DISK FIXTURE composition. Several fixtures below
+	//     nickname or read m_xParty.Get(0u), which Zenith_Asserts on an empty party and
+	//     therefore BREAKS THE PROCESS in every configuration. It must stay composed,
+	//     and it still matches ZM_GameStateManager::ResetGameStateForTests (the
+	//     test-only reseed, which still grants -- see the block at that function).
+	//   SCSeedPublishedNewGame -- what SCPhaseAwaitNewGameAccepted compares the LIVE
+	//     state against after the real Enter edge. Bare, party-free, and the reason
+	//     re-adding a grant to RequestNewGame reds this test rather than passing
+	//     quietly.
+	void SCSeedPublishedNewGame(ZM_GameState& xStateOut)
+	{
+		xStateOut = ZM_MakeNewGameState();
 	}
 
 	void SCFail(const char* szReason)
@@ -1048,8 +1070,12 @@ namespace
 		if (pxManager != nullptr && pxMenu != nullptr
 			&& ZM_GameStateManager::IsWarpInProgress())
 		{
+			// ZM-D-188: the PUBLISHED new game, which is partyless. Deliberately NOT
+			// SCSeedFernfawnStarter -- comparing against the composed fixture here would
+			// red the moment the lab beat landed, and "fixing" it by re-adding the grant
+			// to production is exactly the regression this clause now guards.
 			ZM_GameState xStarter;
-			SCSeedFernfawnStarter(xStarter);
+			SCSeedPublishedNewGame(xStarter);
 			// ZM-D-176, and READ FROM THE CONSTANT: whatever the shipped new-game
 			// destination is, the real Enter edge must have queued a transition to
 			// exactly it. GetTargetBuildIndex() is u_int (ZM_GameStateManager.h),

@@ -12,11 +12,13 @@
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "Zenithmon/Components/ZM_BattleTransition.h"
 #include "Zenithmon/Components/ZM_FollowCamera.h"
+#include "Zenithmon/Components/ZM_Interactable.h"      // ZM_IntroStoryFlagForArrival -- the arrival tail's PURE decision
 #include "Zenithmon/Components/ZM_PlayerController.h"
 #include "Zenithmon/Components/ZM_SpawnPoint.h"
+#include "Zenithmon/Source/Data/ZM_StoryFlags.h"       // ZM_SetStoryFlag -- the intro flags' one producer
 #include "Zenithmon/Source/Data/ZM_WorldSpec.h"
 #include "Zenithmon/Source/Party/ZM_GameState.h"       // ZM_MakeNewGameState
-#include "Zenithmon/Source/Party/ZM_StarterChoice.h"   // ZM_ApplyStarterChoice + ZM_STARTER_CHOICE_FERNFAWN
+#include "Zenithmon/Source/Party/ZM_StarterChoice.h"   // ZM_ApplyStarterChoice -- the TEST-ONLY reseed only (see ResetGameStateForTests)
 #include "Zenithmon/Source/Save/ZM_Autosave.h"     // the milestone autosave latch (SC3)
 #include "Zenithmon/Source/Save/ZM_ResumePoint.h"  // the PURE resume decision surface (SC3)
 #include "Zenithmon/Source/Save/ZM_SaveSlots.h"
@@ -120,18 +122,19 @@ void ZM_GameStateManager::OnStart()
 	// exactly once for the lifetime of the authoritative singleton: every later
 	// re-authored manager is retired as a duplicate above and never gets here, and
 	// the singleton's OnStart runs only once. Seeding BEFORE DontDestroyOnLoad lets
-	// the starter ride the cross-scene move with the rest of this component.
+	// the state ride the cross-scene move with the rest of this component.
 	//
-	// Seeded as a NEW GAME plus an EXPLICIT Fernfawn grant (S8 item 1 SC3). The two
-	// statements together are byte-for-byte the state the deleted single-call seed
-	// produced -- the party/dex members ZM_ApplyStarterChoice touches are disjoint
-	// from the money/bag/whiteout members ZM_MakeNewGameState seeds, so the changed
-	// mutation order is unobservable. The Fernfawn choice is spelled HERE, at the
-	// production seed site, rather than hidden inside a composed helper: which
-	// starter a new game owns is a game decision, and the later lab beat replaces
-	// exactly this one line.
+	// ★★ NO STARTER IS GRANTED HERE ANY MORE (ZM-D-188). This used to be
+	// ZM_MakeNewGameState() plus an explicit Fernfawn, with a note saying "the later
+	// lab beat replaces exactly this one line" -- this is that beat, and the line is
+	// GONE rather than moved. A new game now begins with an EMPTY PARTY and the player
+	// chooses their first partner from Professor Aster in his lab; a Fernfawn handed
+	// out at boot would make that choice cosmetic and, because ZM_ApplyStarterChoice
+	// refuses only a FULL party, would leave the player holding TWO monsters after it.
+	//
+	// ★ THE THIRD SEED SITE IS DELIBERATELY ASYMMETRIC -- see the block on
+	// ResetGameStateForTests below. That one is TEST-ONLY and still grants.
 	m_xGameState = ZM_MakeNewGameState();
-	ZM_ApplyStarterChoice(m_xGameState, ZM_STARTER_CHOICE_FERNFAWN);
 
 	// Moving to the persistent scene relocates this component's pool entry.
 	// Nothing may access `this` after the call.
@@ -372,12 +375,20 @@ bool ZM_GameStateManager::RequestNewGame()
 	// Build the replacement first. No live state changes until the ordinary warp
 	// transaction has passed every validation gate and owns the transition.
 	//
-	// NON-CONST because the composition needs two statements (S8 item 1 SC3): a new
-	// game, then the explicit Fernfawn grant. It is still a pure LOCAL until the
-	// assignment below, so the transactional property this comment protects -- no
-	// live state changes before every gate passes -- is untouched.
-	ZM_GameState xStarter = ZM_MakeNewGameState();
-	ZM_ApplyStarterChoice(xStarter, ZM_STARTER_CHOICE_FERNFAWN);
+	// ★★ THE REAL PLAYER PATH, AND IT PUBLISHES A **PARTYLESS** STATE (ZM-D-188).
+	// This is the one seed site a human being can actually reach -- FrontEnd's New
+	// Game entry -- so it is the one that decides what "starting a new game" means.
+	// It used to compose ZM_MakeNewGameState() with an explicit Fernfawn grant; that
+	// grant is deleted, and the player now leaves PlayerHome with nothing and chooses
+	// a starter from Professor Aster.
+	//
+	// ★ THIS MAKES TWO PREVIOUSLY-UNREACHABLE ARMS REACHABLE, ON PURPOSE, AND BOTH
+	// ALREADY HAD COVERAGE WAITING FOR IT: ZM_CanEnterBattle answers FALSE for the
+	// whole stretch between the front door and the lab, so ZM_MayTrainerEngage's
+	// bPlayerCanBattle clause keeps rival Vesper silent when a partyless player
+	// crosses his cone, and ZM_BattleDirector's own emptiness test refuses a battle
+	// the player could not fight. Neither had ever run in a playthrough before this.
+	const ZM_GameState xNewGame = ZM_MakeNewGameState();
 	ZM_GameStateManager* pxManager = ResolveAuthoritativeManager();
 	if (pxManager == nullptr
 		|| !pxManager->TryQueueWarp(uNEW_GAME_BUILD_INDEX, szNEW_GAME_SPAWN_TAG))
@@ -385,7 +396,7 @@ bool ZM_GameStateManager::RequestNewGame()
 		return false;
 	}
 
-	pxManager->m_xGameState = xStarter;
+	pxManager->m_xGameState = xNewGame;
 	return true;
 }
 
@@ -667,10 +678,32 @@ void ZM_GameStateManager::ResetGameStateForTests()
 {
 	// The DontDestroyOnLoad manager (and its m_xGameState) usually survives between
 	// batched tests, so a test that caught a monster or levelled the party would leak
-	// forward. Re-seed to a new game plus the Fernfawn grant -- the SAME composition
-	// the two production seed sites use, so every batched windowed test still starts
-	// from exactly one full-health L5 Fernfawn and nothing about the between-tests
-	// fixture moves (S8 item 1 SC3). A safe no-op when no manager exists yet.
+	// forward. Re-seed to a new game PLUS the Fernfawn grant. A safe no-op when no
+	// manager exists yet.
+	//
+	// ★★ READ THIS BEFORE "FIXING" THE ASYMMETRY. As of ZM-D-188 this is the ONLY
+	// remaining site that grants a starter: the two PRODUCTION sites above -- OnStart's
+	// first-boot seed and RequestNewGame's published state -- deliberately do NOT, so a
+	// real player leaves home partyless and chooses at the lab. This one still does,
+	// and the difference is not an oversight:
+	//
+	//   * IT IS TEST-ONLY. Nothing production calls it; its whole job is to restore the
+	//     D4 batch FIXTURE (one full-health L5 Fernfawn) that ~60 windowed tests were
+	//     written against. The harness fires it before EVERY test including the first
+	//     (Zenith_AutomatedTest.cpp: FlushFirstFrameOnStart -> BetweenTests ->
+	//     FireBetweenTestsHooks -> ResetSimulatorAndCallSetup), so it -- not OnStart --
+	//     is what those tests actually observe.
+	//   * IT CANNOT MASK THE PRODUCTION CHANGE. Any test that drives the real New Game
+	//     entry gets RequestNewGame's partyless state written straight over this seed,
+	//     which is exactly what ZM_IntroBeat_Test relies on: it asserts an EMPTY party
+	//     at PlayerHome, so re-adding a grant to RequestNewGame reds it immediately.
+	//   * THE ALTERNATIVE IS WORSE. Dropping the grant here would make ~60 unrelated
+	//     tests start partyless -- several of them call ZM_Party::Get(0u), which
+	//     Zenith_Asserts and therefore BREAKS THE PROCESS in every configuration --
+	//     for no gameplay benefit whatsoever.
+	//
+	// If a future change needs the fixture partyless, that is a per-test decision made
+	// in the tests, not a quiet edit here.
 	ZM_GameState* pxGameState = nullptr;
 	if (TryGetGameState(pxGameState))
 	{
@@ -1045,6 +1078,36 @@ void ZM_GameStateManager::RecordArrivalAndLatchAutosave()
 		"the arrived-tag buffer must mirror the target-tag buffer exactly");
 	std::memcpy(m_szLastArrivedSpawnTag, m_szTargetSpawnTag,
 		sizeof(m_szLastArrivedSpawnTag));
+
+	// ---- S8 item 1: the intro beat's two ARRIVAL flags ------------------------
+	//
+	// ★ THIS IS THE FIRST THING IN PRODUCTION THAT HAS EVER SET A STORY FLAG.
+	// ZM_STORY_FLAG_INTRO_LEFT_HOME / MET_PROFESSOR / STARTER_RECEIVED have existed
+	// since the registry landed with nothing writing any of them; the first two are
+	// written here and the third by ZM_UI_MenuStack::ApplyStarterGrant.
+	//
+	// ★ IT RIDES THE EXISTING TAIL AND ARMS NO NEW AUTOSAVE. The write happens
+	// BEFORE m_bArrivalAutosavePending is latched below, so the SCENE_ENTERED autosave
+	// that this same arrival schedules persists the flag for free on a later frame.
+	// ZM_AUTOSAVE_TRIGGER_STORY_FLAG_SET stays declared-but-not-live: shipping its
+	// rising-edge resolver would be new production surface with a second producer, and
+	// nothing here needs it.
+	//
+	// ★ IDEMPOTENT BY CONSTRUCTION. ZM_SetStoryFlag on an already-set bit is a no-op
+	// and does not move a single save byte, so walking in and out of the lab ten times
+	// costs nothing -- there is no "have I done this already" latch to get wrong.
+	//
+	// The DECISION is the pure ZM_IntroStoryFlagForArrival (Components/ZM_Interactable.h);
+	// this site only performs it. The tag it reads is m_szTargetSpawnTag, which
+	// ResetTransitionState memsets moments from now -- another reason this belongs in
+	// the tail rather than anywhere downstream of it.
+	const ZM_STORY_FLAG_ID eArrivalFlag =
+		ZM_IntroStoryFlagForArrival(m_uTargetBuildIndex, m_szLastArrivedSpawnTag);
+	if (eArrivalFlag != ZM_STORY_FLAG_NONE)
+	{
+		ZM_SetStoryFlag(m_xGameState, eArrivalFlag, true);
+	}
+
 	m_bArrivalAutosavePending = true;
 }
 

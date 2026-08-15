@@ -3,14 +3,16 @@
 **Last updated:** 2026-08-14
 
 **★ LIVE PIN (UPDATED 2026-08-14):
-ZM boot `3312`; engine boot (Null Combat) `1638`; registry **63**.** Observed
-2026-08-14 on a clean `Null_vs2022_Debug_Win64_True` Zenithmon build after S8
-SC-E: `3312 ran / 3310 passed / 0 failed / 2 skipped`. The walk this session:
+ZM boot `3327`; engine boot (Null Combat) `1638`; registry **64**.** Observed
+2026-08-15 on a clean `Null_vs2022_Debug_Win64_True` Zenithmon build after S8
+SC-F: `3327 ran / 3325 passed / 0 failed / 2 skipped`. The walk this program:
 **3277 -> 3280** (SC-A, +3) **-> 3295** (SC-B, +15: 14 pure `ZM_Starter` units +
 1 `FrontEnd.zscen` needle) **-> 3299** (SC-C, +4: three `ZM_WorldTraversal`
 placement units + 1 `ProfLab.zscen` needle) **-> 3307** (SC-D, +8 lab-site units)
-**-> 3312** (SC-E, +5: 1 `Dawnmere.zscen` seam needle + 4 `ZM_WorldTraversal`).
-Registry 61 -> 62 (`ZM_DawnmereLabGroundTruth_Test`) -> 63 (`ZM_LabRoundTrip_Test`).
+**-> 3312** (SC-E, +5: 1 `Dawnmere.zscen` seam needle + 4 `ZM_WorldTraversal`)
+**-> 3327** (SC-F, +15: 14 `ZM_Intro` + 1 `ZM_Data` gate-polarity unit).
+Registry 61 -> 62 (`ZM_DawnmereLabGroundTruth_Test`) -> 63 (`ZM_LabRoundTrip_Test`)
+-> 64 (`ZM_IntroBeat_Test`).
 Engine UNMOVED at 1638 -- no slice touched a file under `Zenith/`.
 
 **★★ THIS GATE CAN RED FROM MACHINE LOAD ALONE. TRIAGE BEFORE YOU BISECT.** A
@@ -30,7 +32,7 @@ against **3295** on Null, a standing +37 gap.
 updated when the input program's WP3b grew the automated suite 55 -> 61 with the
 six `ZM_Touch*` tests, even though the prose LOWER IN THIS SAME FILE said so
 explicitly. Corrected to the enumerated count. The current pins are
-`zm-tests.yml` (`-Baseline 3312`) and `run_unit_gate.ps1` (default 1638, the
+`zm-tests.yml` (`-Baseline 3327`) and `run_unit_gate.ps1` (default 1638, the
 ENGINE number -- never used for Zenithmon).
 
 **★★ 3276 -> 3277 IS A FIX-FORWARD, NOT A FEATURE BUMP. THE `zm-tests` GATE WAS
@@ -1043,8 +1045,26 @@ in a slice that already owns a ProfLab re-author. **RECOMMENDATION: fold it into
 re-authors ProfLab for the exit trigger anyway) rather than paying two authoring boots and two
 scene-byte commits. Awaiting the user's sequencing call as of 2026-08-14.
 
-*STILL NOT BUILT -- what item 1 needs before its box may be ticked:*
-- **SC-B** the starter-choice SCREEN presenter (`ZM_UI_StarterChoice`, VERTICAL so it needs zero
+**★★★ S8 ITEM 1 IS COMPLETE (2026-08-15). ALL SIX SLICES SC-A..SC-F HAVE LANDED.** The beat plays
+end to end and is proven by `ZM_IntroBeat_Test` (77 frames, 18 phases): title -> partyless New Game
+-> PlayerHome -> Dawnmere -> ProfLab -> talk to Aster -> choose a starter -> **the CHOSEN species is
+in the party and Fernfawn is NOT**, the flag is set, and a second press is refused.
+
+**★ WHAT THE HEADLINE TEST CAUGHT THAT 3327 BOOT UNITS COULD NOT.** SC-F's fifteen new pure units
+all went GREEN while pressing E at the professor did nothing at all. The failure was localised
+instantly by the test's own composed phase table --
+`title=1 partyless=1 leftHome=1 vesperSilent=1 metProf=1 approach=1 raise=0 ...` -- i.e. everything
+up to the interaction worked and the raise did not. **Root cause was the TEST, not production:** its
+drive helper is an eight-way chooser, so it walked 45 deg instead of the bearing, gaining enough
+depth to clip ProfLab's own exit sensor and warp the player back to Dawnmere one frame before the
+press. Proof it was never a wiring bug: `Interact()` warns on every false return and there is not one
+`[Gameplay]` line in a 365,000-line log -- **the function was never entered**. See Q-2026-08-15-001
+for the player-facing wrinkle this exposed (holding W+A does the same thing to a human), which the
+user deferred to the S8 visual gate.
+
+*ITEM 1's SIX SLICES, AS LANDED:*
+- **SC-A** `864296df` -- Aster's data layer + the mandatory palette re-author (0.0677 -> 0.21547).
+- **SC-B** `b06c656d` -- the starter-choice SCREEN presenter (`ZM_UI_StarterChoice`, VERTICAL so it needs zero
   new input actions). Re-authors `FrontEnd.zscen`, but headless-authorable. ★ Critic finding: all
   12 proposed units test pure static maps and NONE can see the authored screen; needs a
   `ZM_CommittedSceneBytes` needle on the panel + three cell names, or a mis-typed element name

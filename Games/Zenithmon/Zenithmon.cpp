@@ -2520,6 +2520,16 @@ void Project_RegisterGameComponents()
 	Zenith_AutomatedTestRunner::RegisterBetweenTestsHook([]()
 	{
 		ZM_BattleTransition::ResetRuntimeStateForTests();
+		// ★ THIS ONE LINE IS ALSO THE S8 STARTER SCREEN'S FREEZE RELEASE AND ITS
+		// GRANT-LATCH RESET, and neither needed a second call site. The starter picker
+		// takes the freeze through ZM_UI_MenuStack::FreezePlayer (not a new owner --
+		// m_bMovementEnabled is a bare bool with NO refcount, so a second claim would be
+		// a bug), so a test that died with the picker up leaves the menu OPEN and the
+		// CloseMenu() inside this reset releases it through the one arbitrated
+		// UnfreezePlayer. What DID have to be added is inside that function: the
+		// by-value m_uStarterGrantCount latch survives an ordinary close and would
+		// otherwise let "exactly one starter was granted" pass in a later test with no
+		// press at all.
 		ZM_UI_MenuStack::ResetRuntimeStateForTests();
 		// The interaction latches are process-global (the runtime rides on whichever
 		// player exists), so a batched test must not inherit the previous test's
@@ -2549,6 +2559,15 @@ void Project_RegisterGameComponents()
 		ZM_GameStateManager::ResetRuntimeStateForTests();
 		// The persistent manager's GameState survives DontDestroyOnLoad across tests;
 		// re-seed the starter so a caught/levelled party cannot leak into the next test.
+		// ★ AND SO STORY FLAGS CANNOT EITHER (S8 item 1): the intro beat is the first
+		// thing in production that writes ZM_StoryFlagSet bits, and they live on this
+		// same DontDestroyOnLoad state. The reseed is a whole-state replacement, so it
+		// already clears them -- but that is now load-bearing rather than incidental,
+		// because a leaked ZM_STORY_FLAG_STARTER_RECEIVED would silently make Aster
+		// refuse to offer a starter for the rest of the batch.
+		// ★ IT IS ALSO THE ONE REMAINING SITE THAT GRANTS A STARTER -- deliberately, and
+		// asymmetrically with the two production sites. The reasoning is spelled at the
+		// function itself in ZM_GameStateManager.cpp; do not "restore symmetry" here.
 		ZM_GameStateManager::ResetGameStateForTests();
 		ZM_SetInstantBattlesForTests(false);
 		// Disk hygiene FIRST: Zenith_SaveData::ClearForTest wipes only the in-memory

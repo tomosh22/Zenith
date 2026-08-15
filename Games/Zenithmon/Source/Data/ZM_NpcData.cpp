@@ -104,21 +104,46 @@ namespace
 		"Come find me again when you've trained a bit.",
 	};
 
-	// Professor Aster's lab greeting. PRE-STARTER FLAVOUR ONLY, and deliberately so:
-	// he introduces himself and the lab, and he does NOT hand anything over. The
-	// starter beat is its own later slice, and it needs a gated SECOND line set
-	// (the warden's ZM_StoryGate shape) rather than an edit to these -- so this row
-	// ships UNGATED today and is expected to grow a gate, which is why the unit
-	// covering it asserts what the row IS (a talker wearing Aster, no trainer) and
-	// deliberately does NOT assert that it is ungated.
+	// ---- Professor Aster: the S8 intro beat's TWO line sets --------------------
 	//
-	// He names no creature, no item and no flag: every one of those is content a
-	// later slice owns, and a line naming one now would have to be rewritten rather
-	// than added to.
-	const char* const s_aszLinesAster[] =
+	// The slice that stands him in the lab predicted this exactly: his row was
+	// authored UNGATED with a note that "the starter beat is its own later slice, and
+	// it needs a gated SECOND line set (the warden's ZM_StoryGate shape) rather than
+	// an edit to these". This IS that slice, and the gate is the warden's shape
+	// verbatim -- { ZM_STORY_FLAG_STARTER_RECEIVED, true }.
+	//
+	// ★ WHICH ARRAY IS WHICH IS THE OPPOSITE OF THE OBVIOUS READING, SO READ IT
+	// TWICE. ZM_SelectNpcLines returns m_paszLines when the gate PASSES and
+	// m_paszGatedLines while it FAILS. The gate passes once the starter has been
+	// received, so:
+	//   m_paszLines       == the POST-starter set (s_aszLinesAster below)
+	//   m_paszGatedLines  == the PRE-starter set  (s_aszLinesAsterPreStarter)
+	// Swapping them would greet a first-time player with "good choice" and offer a
+	// starter forever afterwards, and every roster unit would still be green: they
+	// check that BOTH sets exist and fit the queue, never which is which. The
+	// discriminating check is IntroBeat_AsterSpeaksHisPreStarterSetUntilTheFlagIsSet
+	// in Tests/ZM_Tests_IntroBeat.cpp, which pins the two arrays by POINTER IDENTITY
+	// against the two flag polarities.
+	//
+	// PRE-STARTER. He introduces himself and then OFFERS -- and the offer is not
+	// decoration: ZM_NpcRaisesStarterChoice (Components/ZM_Interactable.h) reads the
+	// SAME flag this gate reads, so the press that queues these lines is the press
+	// that raises the starter picker underneath them. Text and behaviour move
+	// together or not at all.
+	const char* const s_aszLinesAsterPreStarter[] =
 	{
 		"Ah -- you found the lab. I'm Professor Aster.",
 		"Thirty years studying these creatures, and they still surprise me.",
+		"One of these three is looking for a trainer. Take your pick.",
+	};
+
+	// POST-STARTER. Spoken from the moment ZM_STORY_FLAG_STARTER_RECEIVED is set --
+	// which the grant does, in ZM_UI_MenuStack::ApplyStarterGrant. He names no
+	// specific creature: the player's pick is theirs, and a line naming Fernfawn
+	// would be wrong two times out of three.
+	const char* const s_aszLinesAster[] =
+	{
+		"Good choice. Look after it and it'll look after you.",
 		"Take a look around. The machines are friendlier than they look.",
 	};
 
@@ -133,7 +158,8 @@ namespace
 	static_assert(ZM_ARRLEN(s_aszLinesWarden)      <= uZM_NPC_MAX_LINES, "warden outgrew the dialogue queue");
 	static_assert(ZM_ARRLEN(s_aszLinesWardenGated) <= uZM_NPC_MAX_LINES, "warden refusal outgrew the dialogue queue");
 	static_assert(ZM_ARRLEN(s_aszLinesVesper)      <= uZM_NPC_MAX_LINES, "Vesper outgrew the dialogue queue");
-	static_assert(ZM_ARRLEN(s_aszLinesAster)       <= uZM_NPC_MAX_LINES, "Aster outgrew the dialogue queue");
+	static_assert(ZM_ARRLEN(s_aszLinesAster)           <= uZM_NPC_MAX_LINES, "Aster outgrew the dialogue queue");
+	static_assert(ZM_ARRLEN(s_aszLinesAsterPreStarter) <= uZM_NPC_MAX_LINES, "Aster's pre-starter set outgrew the dialogue queue");
 
 	const ZM_ITEM_ID s_aeStockClerk[] =
 	{
@@ -156,8 +182,20 @@ namespace
 		// ZM_TRAINER_NONE is spelled out, NOT omitted: the trailing column
 		// value-initialises to 0, and 0 is ZM_TRAINER_RIVAL_VESPER (see the header's
 		// trap note), so an omitted initialiser would silently make the professor the
-		// rival with no build error. He is a TALKER: the lab's beat is dialogue.
-		{ ZM_NPC_PROF_ASTER,       "Aster",     ZM_NPC_ROLE_TALKER,    ZM_HUMAN_PROF_ASTER,     s_aszLinesAster,     ZM_ARRLEN(s_aszLinesAster),     nullptr,        0,                          false, { ZM_STORY_FLAG_NONE, true },            nullptr,                0u,                               ZM_TRAINER_NONE         },
+		// rival with no build error.
+		//
+		// ★ HE STAYS A **TALKER**, AND THAT IS A DECISION, NOT AN OVERSIGHT (ZM-D-188
+		// implementation note). Raising the starter picker could have been a new
+		// ZM_NPC_ROLE arm; it is not. A role is the row's ANSWER TO "WHICH SEAM DO I
+		// TALK THROUGH", and Aster's answer is still TryPushDialogue -- the picker is
+		// raised BESIDE the dialogue, by a story-flag-gated routing rule
+		// (ZM_NpcRaisesStarterChoice), not INSTEAD of it. A fourth role would also have
+		// to satisfy the roster's role-coverage invariant with exactly one row behind
+		// it forever, and it would falsify the NAME of the shipped unit
+		// Npc_ProfessorRowIsATalkerNamingAsterWithNoTrainer -- a test whose name
+		// asserts the opposite of what the code does is the failure mode that unit's
+		// own header block warns about.
+		{ ZM_NPC_PROF_ASTER,       "Aster",     ZM_NPC_ROLE_TALKER,    ZM_HUMAN_PROF_ASTER,     s_aszLinesAster,     ZM_ARRLEN(s_aszLinesAster),     nullptr,        0,                          false, { ZM_STORY_FLAG_STARTER_RECEIVED, true }, s_aszLinesAsterPreStarter, ZM_ARRLEN(s_aszLinesAsterPreStarter), ZM_TRAINER_NONE   },
 	};
 
 #undef ZM_ARRLEN

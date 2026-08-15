@@ -3,6 +3,7 @@
 #include "Physics/Zenith_Physics_Fwd.h"
 #include "ZenithECS/Zenith_Entity.h"
 #include "Zenithmon/Source/Data/ZM_NpcData.h"   // ZM_NPC_ID / ZM_NPC_ROLE -- the row this component IS
+#include "Zenithmon/Source/Data/ZM_StoryFlags.h"                  // ZM_STORY_FLAG_ID / ZM_StoryFlagSet -- the S8 intro-beat decisions
 #include "Zenithmon/Source/Data/ZM_TrainerData.h"                 // ZM_TRAINER_ID
 #include "Zenithmon/Source/Interaction/ZM_NpcWalkerLogic.h"
 #include "Zenithmon/Source/Interaction/ZM_TrainerSightFsm.h"      // the by-value FSM
@@ -57,6 +58,56 @@ ZM_NPC_RAISE_KIND ZM_RaiseKindForRole(ZM_NPC_ROLE eRole);
 // A stable short name for a raise kind, for log lines and unit failure messages.
 // TOTAL: never returns nullptr, never indexes out of bounds ("UNKNOWN" otherwise).
 const char* ZM_NpcRaiseKindName(ZM_NPC_RAISE_KIND eKind);
+
+// ============================================================================
+// S8 item 1 -- THE INTRO BEAT'S PURE DECISION SURFACE.
+//
+// Two free functions, deliberately NOT members: both are total functions of plain
+// values, so a boot unit walks their whole truth table with no entity, no scene,
+// no singleton, no game state and nothing raised -- the same doctrine
+// ZM_RaiseKindForRole above is written under.
+//
+// ★ WHY THEY LIVE IN **THIS** HEADER. The routing half belongs here beyond
+// argument: ZM_Interactable::Interact() is its only production caller. The arrival
+// half is read by ZM_GameStateManager's arrival tail instead, and would sit more
+// naturally beside ZM_StoryFlags -- but keeping the intro beat's two decisions
+// adjacent means a reader who finds one finds the other, and it is the routing
+// half that has the harder invariant. If a third intro decision ever appears,
+// promote both to a Source/World/ZM_IntroBeat.h and move the units with them.
+// ============================================================================
+
+// "Does interacting with this NPC, RIGHT NOW, raise the starter-choice screen?"
+//
+// ★★ THIS IS THE ONE-SHOT GUARD, AND IT HAS TO BE, BECAUSE NOTHING BELOW IT IS ONE.
+// ZM_ApplyStarterChoice does NOT refuse a second grant: it refuses exactly two
+// things -- an unregistered choice and a FULL party (six slots) -- so a state that
+// already holds a starter would silently receive a SECOND monster. Neither does the
+// row's ZM_StoryGate: a story gate selects LINES, and a screen raised beside the
+// dialogue is not something a line selector can stop. So "the intro cannot replay"
+// is a property of THIS function and of nowhere else, which is why the unit that
+// pins it is named for the routing layer rather than for the grant.
+//
+// TOTAL: any id outside the roster (including ZM_NPC_NONE) answers false.
+//
+// The flag set is passed BY VALUE-REFERENCE rather than read from the live manager
+// so this stays pure. The caller resolves it, and an unreachable game state means
+// an ALL-CLEAR set -- the identical "NOTHING HAS HAPPENED YET" ruling Interact()
+// already makes for story-gated dialogue.
+bool ZM_NpcRaisesStarterChoice(ZM_NPC_ID eNpcId, const ZM_StoryFlagSet& xFlags);
+
+// "Which intro story flag does ARRIVING at this destination raise?" -- the pure
+// half of ZM_GameStateManager's arrival tail. ZM_STORY_FLAG_NONE for every
+// destination that raises nothing, which is all but two of them.
+//
+// Both answers are resolved from the COMPILED WORLD TABLE, never from a spelled
+// build index or tag: the ProfLab row's build index for MET_PROFESSOR, and the
+// PlayerHome -> Dawnmere connection's own spawn tag for INTRO_LEFT_HOME. Arriving
+// in Dawnmere on any OTHER tag (the town centre after a whiteout, the lab return,
+// the route) is not leaving home and must not claim to be.
+//
+// TOTAL: a null or empty tag, and any unknown build index, answer
+// ZM_STORY_FLAG_NONE. Never asserts -- the boot units feed it garbage on purpose.
+ZM_STORY_FLAG_ID ZM_IntroStoryFlagForArrival(u_int uBuildIndex, const char* szSpawnTag);
 
 // S7 item 1 SC3. The five observations the DYNAMIC-CAPSULE body contract is
 // decided from, carried together as ONE value.

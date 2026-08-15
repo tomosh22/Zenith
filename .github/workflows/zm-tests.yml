@@ -194,6 +194,11 @@ jobs:
           #
           # History, newest first (the DERIVATION is the audit trail; the OBSERVED
           # number is the authority):
+          #   3327  S8 item 1 SC-F -- the intro beat; ITEM 1 COMPLETE. +15 ZM units,
+          #                   no engine units: 14 in the new ZM_Intro category + 1
+          #                   ZM_Data gate-polarity unit. Registry 63 -> 64
+          #                   (ZM_IntroBeat_Test). Two NEW TUs, so `zenith regen`
+          #                   is required before the build or they never compile in.
           #   3312  S8 item 1 SC-E -- the lab seam (Dawnmere exterior + FromLab
           #                   marker + door trigger + ProfLab exit) and Aster turned
           #                   to face the arrival. +5 ZM units, no engine units:
@@ -622,7 +627,7 @@ jobs:
           #   2817  ZM-D-173  = 2809 + 8: four ENGINE sensor-raycast units plus
           #                   two camera fixtures and two Home-placement units.
           $exe = 'Games\Zenithmon\Build\output\win64\null_vs2022_debug_win64_true\zenithmon.exe'
-          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 3312 -TimeoutSec 600
+          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 3327 -TimeoutSec 600
           if ($LASTEXITCODE -ne 0) { Write-Error "boot unit tests failed (see log above)"; exit $LASTEXITCODE }
 
       - name: Run Zenithmon tests
