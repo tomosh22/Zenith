@@ -62,7 +62,7 @@ inline constexpr ZM_SceneRegistration axZM_SCENE_REGISTRATIONS[] =
 	{ ZM_SCENE_FRONTEND,   "FrontEnd"   },
 	{ ZM_SCENE_BATTLE,     "Battle"     },
 	{ ZM_SCENE_DAWNMERE,   "Dawnmere"   },
-	{ ZM_SCENE_THORNACRE,  "Thornacre"  },   // R1-3 authors the file; the row lands now
+	{ ZM_SCENE_THORNACRE,  "Thornacre"  },   // R1-2 authors the file; the row lands now
 	{ ZM_SCENE_ROUTE1,     "Route1"     },   // R1-2 authors the file; the row lands now
 	{ ZM_SCENE_PLAYERHOME, "PlayerHome" },
 	{ ZM_SCENE_PROFLAB,    "ProfLab"    },

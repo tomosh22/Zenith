@@ -81,7 +81,7 @@ inline constexpr const char* szZM_THORNACRE_SCENE_NAME = "Thornacre";
 inline constexpr const char* szZM_THORNACRE_TERRAIN_ENTITY_NAME = "ThornacreTerrain";
 
 // ★★ THE PLAYER ENTITY IS NAMED "Player", AND IT MUST STAY THAT WAY.
-// ZM_FollowCamera::AcquireTarget resolves its subject with
+// ZM_FollowCamera::ResolveTarget resolves its subject with
 // FindEntityByName("Player") (Components/ZM_FollowCamera.cpp:390) -- production,
 // scene-agnostic code, and the only FindEntityByName call in the whole game
 // layer. On a miss it clears its target and returns an invalid entity, and

@@ -234,7 +234,8 @@ inline const char* ZM_GetRoute1NorthGateSpawnTag()
 // ---- The ground plane --------------------------------------------------------
 //
 // ★★ PROVISIONAL / UNMEASURED -- RE-MEASURE IN R1-2 (see the raycast oracle
-// ZM_DawnmereNpcGroundTruth_Test, Tests/ZM_AutoTests_CameraClearance.cpp).
+// ZM_DawnmereNpcGroundTruth_Test, Tests/ZM_AutoTests_NpcTalk.cpp -- NOT
+// ZM_AutoTests_CameraClearance.cpp, which hosts the Home and Lab oracles).
 //
 // This is the Route 1 recipe's m_fTargetHeight, i.e. the height every FLATTEN dab
 // drives its paths and pads TO -- not a surface anybody has measured. Route 1 has
