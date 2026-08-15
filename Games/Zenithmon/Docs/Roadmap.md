@@ -220,7 +220,12 @@ sign-off.** Observed at closure: headless **49 passed / 0 failed**, full windowe
 
 ## S8 -- Vertical slice, go/no-go (M) -- critical path CHECKPOINT
 
-- [ ] Intro -> lab -> starter choice
+- [x] Intro -> lab -> starter choice **(COMPLETE 2026-08-15, six slices SC-A..SC-F:
+      `864296df` `b06c656d` `ce909063` `8dc85516` `83e75a90` `0e0a884c`)**. A new game is
+      PARTYLESS and the starter is genuinely chosen from Professor Aster (ZM-D-188/194).
+      Proven end to end by `ZM_IntroBeat_Test` (77 frames, 18 phases), which asserts the
+      CHOSEN species is in the party and Fernfawn is NOT -- an assertion the old seed would
+      otherwise have satisfied. ZM boot 3277 -> 3327, registry 61 -> 64.
 - [ ] Route 1 (encounters / trainers / items) -> town 2
 - [ ] Gym 1 (layout puzzle-lite + leader + badge + teach-move reward)
 - [ ] `ZM_AutoTests_Slice` mini-playthrough (CB_HumanSession-style flat Act script + PROBEs, ~4-6k frames, windowed)
