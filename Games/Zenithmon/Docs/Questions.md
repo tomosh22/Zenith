@@ -182,7 +182,7 @@ touch-the-sensor guard kept and checked first.
 
 **Status:** RESOLVED 2026-08-15 (ZM-D-195). Nothing outstanding at the S8 gate.
 
-### [OPEN] Q-2026-08-15-002 -- `ZM_FollowCamera` resolves the player by NAME, which makes `"Player"` a load-bearing string in every scene forever
+### [RESOLVED] Q-2026-08-15-002 -- `ZM_FollowCamera` resolved the player by NAME (FIXED 2026-08-15, `9b5a401b`)
 
 **Found while implementing S8 item 2 slice R1-1 (ZM-D-197). Not a blocker -- R1-1 shipped
 around it -- but it is a standing constraint the user may want removed before the world
@@ -214,7 +214,9 @@ loudly instead of hanging. **Cost if wrong / deferred:** low today, rising with 
 added; it is a one-file runtime change now and a re-author of every committed scene later if
 the name ever has to move.
 
-**Status:** OPEN. Deliberately NOT done inside R1-1, whose contract was purity (no runtime
+**Status:** RESOLVED 2026-08-15 by user ruling ("go ahead and fix it to use the component"), commit `9b5a401b`. `ResolveTarget` now acquires the unique `ZM_PlayerController` in the camera's OWN scene. Nothing was renamed and no scene byte moved -- entities are still named `"Player"`; nothing depends on it. NOT routed through `FindUniquePlayerInScene`, which early-outs on `!HasActiveSimulation()` and would have made the camera unable to acquire before physics starts. +3 boot units, all of which red on the pre-change code. ★ What is load-bearing NOW: every scene authoring a `ZM_FollowCamera` must author a `ZM_PlayerController` on exactly one entity. ★ STILL OPEN, deliberately: the camera barrier itself has no TIMEOUT -- a scene that authors no controller still hangs rather than logging. That is a separate, smaller fix.
+
+**Superseded note (the original entry's status line):** Deliberately NOT done inside R1-1, whose contract was purity (no runtime
 change, no scene byte moved).
 
 ### [OPEN] Q-2026-08-14-001 -- the boot unit gate carries a WALL-CLOCK assertion, so a REQUIRED check can red from machine load alone
