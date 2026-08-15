@@ -11,6 +11,7 @@
 #include "ZenithECS/Zenith_Scene.h"
 #include "ZenithECS/Zenith_SceneData.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
+#include "Zenithmon/Components/ZM_PlayerController.h"   // the target is resolved BY COMPONENT
 
 #ifdef ZENITH_TOOLS
 #include "imgui.h"
@@ -387,7 +388,61 @@ Zenith_Entity ZM_FollowCamera::ResolveTarget()
 	}
 
 	const Zenith_EntityID xPreviousTarget = m_xTargetEntityID;
-	Zenith_Entity xPlayer = pxSceneData->FindEntityByName("Player");
+
+	// ---- ACQUISITION IS BY COMPONENT, NEVER BY NAME. ------------------------
+	//
+	// ★ WHY THIS IS NOT pxSceneData->FindEntityByName("Player") ANY MORE.
+	// It was, from this component's first commit until now -- and it was the ONLY
+	// FindEntityByName call in the whole game layer. That made a bare string
+	// literal load-bearing in every scene ever authored, with nothing able to
+	// enforce it: rename the entity in ONE scene and this returns an invalid
+	// entity, ZM_GameStateManager::PollForCameraAndBeginFadeIn then bare-returns
+	// on a camera that has no target, and the warp sits on a barrier with NO
+	// TIMEOUT -- a permanent black screen behind an opaque fade, with every unit
+	// still green. The entities are all still NAMED "Player" (see
+	// Project_RegisterEditorAutomationSteps); the point is that NOTHING DEPENDS ON
+	// THAT any more. The name was also a substring of the serialized type name
+	// "ZM_PlayerController", so a committed-bytes needle on it could never be a
+	// clean equality.
+	//
+	// ★ WHY NOT ZM_GameStateManager::FindUniquePlayerInScene / its
+	// TryGetUniqueActiveScenePlayerEntityID wrapper -- DO NOT "SIMPLIFY" INTO IT.
+	// That seam early-outs on !g_xEngine.Physics().HasActiveSimulation() and
+	// additionally demands a live body, because it exists to authenticate a
+	// COLLIDING player. A camera that cannot acquire its subject until physics is
+	// simulating is a NEW hang, not a fix, and it would make this unobservable
+	// headlessly. ZM_InteractionRuntime::TryResolveActivePlayer avoids that seam
+	// for exactly the same reason and says so at its definition.
+	//
+	// ★ WHY THE SCENE'S OWN QUERY AND NOT QueryActiveScene.
+	// This camera follows the player in ITS OWN scene, not in whatever scene
+	// happens to be active -- S5 loads Battle additively and makes it active while
+	// this overworld camera is still alive. Zenith_SceneData::Query walks THIS
+	// scene's component pools, and Zenith_SceneSystem::MoveEntityInternal
+	// transfers an entity's components into the destination scene's pools, so pool
+	// membership IS the ownership property the cached-target path above has to
+	// spell out longhand (the global entity store cannot prove ownership after a
+	// MoveToScene / DontDestroyOnLoad).
+	//
+	// ★ EXACTLY ONE, OR NOTHING. Zero players and MANY players both produce the
+	// same "no target" outcome the old not-found branch produced. Silently taking
+	// the first of several would hide an authoring defect behind a camera that
+	// follows an arbitrary one of them.
+	u_int uPlayerCount = 0u;
+	Zenith_EntityID xPlayerEntityID = INVALID_ENTITY_ID;
+	pxSceneData->Query<ZM_PlayerController>().ForEach(
+		[&](Zenith_EntityID xEntityID, ZM_PlayerController&)
+		{
+			++uPlayerCount;
+			if (uPlayerCount == 1u)
+			{
+				xPlayerEntityID = xEntityID;
+			}
+		});
+
+	Zenith_Entity xPlayer = uPlayerCount == 1u
+		? pxSceneData->TryGetEntity(xPlayerEntityID)
+		: Zenith_Entity();
 	if (!xPlayer.IsValid())
 	{
 		m_xTargetEntityID = INVALID_ENTITY_ID;

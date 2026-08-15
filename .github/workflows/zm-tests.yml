@@ -194,6 +194,15 @@ jobs:
           #
           # History, newest first (the DERIVATION is the audit trail; the OBSERVED
           # number is the authority):
+          #   3349  Q-2026-08-15-002 -- ZM_FollowCamera acquires the player by
+          #                   COMPONENT (the unique ZM_PlayerController in the
+          #                   camera's OWN scene) instead of by the entity name
+          #                   "Player". +3 ZM units in the new ZM_FollowCamera
+          #                   category. Registry unchanged at 67. The name was the
+          #                   only FindEntityByName call in the game layer and sat
+          #                   behind a no-timeout fade barrier, so a rename in one
+          #                   scene was a permanent black screen with every test
+          #                   green. Names are unchanged, so NO scene byte moved.
           #   3346  R1-2 phase 2 step 1 -- the Dawnmere ROUTE-SEAM ground oracle.
           #                   +1 ZM unit: ZM_Interaction.RouteSeamGround_StandsOn-
           #                   TheFromRoute1LandmarkAndIsMeasured, which pins the
@@ -658,7 +667,7 @@ jobs:
           #   2817  ZM-D-173  = 2809 + 8: four ENGINE sensor-raycast units plus
           #                   two camera fixtures and two Home-placement units.
           $exe = 'Games\Zenithmon\Build\output\win64\null_vs2022_debug_win64_true\zenithmon.exe'
-          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 3346 -TimeoutSec 600
+          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 3349 -TimeoutSec 600
           if ($LASTEXITCODE -ne 0) { Write-Error "boot unit tests failed (see log above)"; exit $LASTEXITCODE }
 
       - name: Run Zenithmon tests

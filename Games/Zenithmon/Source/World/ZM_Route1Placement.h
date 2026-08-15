@@ -77,24 +77,29 @@ inline constexpr const char* szZM_ROUTE1_SCENE_NAME = "Route1";
 // in the file header before you point a committed-bytes count at this one.
 inline constexpr const char* szZM_ROUTE1_TERRAIN_ENTITY_NAME = "Route1Terrain";
 
-// ★ THE PLAYER IS NAMED "Player", IN EVERY SCENE, AND THIS ONE IS NOT NEGOTIABLE.
-// ZM_FollowCamera::ResolveTarget looks its subject up as
-// pxSceneData->FindEntityByName("Player") (Components/ZM_FollowCamera.cpp:390) --
-// production, scene-agnostic code, and the ONLY FindEntityByName call in the whole
-// of Games/Zenithmon/Components/ and Games/Zenithmon/Source/. On a miss it clears
-// m_xTargetEntityID and hands back an invalid entity, and
-// ZM_GameStateManager::PollForCameraAndBeginFadeIn then bare-returns while the
-// camera has no target -- another barrier with NO TIMEOUT, i.e. the same permanent
-// black screen this slice exists to make structurally impossible. A scene-unique
-// "Route1Player" would look tidier and would ship exactly that defect.
-// Source/World/ZM_ProfLabPlacement.h:69 spells the same constant for the same
-// reason. DO NOT "fix" this to a scene-unique name.
+// ★ THE PLAYER IS STILL NAMED "Player" IN EVERY SCENE -- BUT NOTHING DEPENDS ON
+// THAT ANY MORE (Q-2026-08-15-002, fixed 2026-08-15).
 //
-// The cost, stated rather than hidden: "Player" IS a strict substring of the
-// serialized component type name "ZM_PlayerController", so a committed-bytes
-// needle on it must use the STRICTLY-MORE clause the shipped tests already carry,
-// never a `== 1` equality, and it must be excluded from any "no entity name is a
-// substring of a component type name" battery.
+// It used to be load-bearing. ZM_FollowCamera::ResolveTarget acquired its subject
+// with pxSceneData->FindEntityByName("Player") -- the ONLY FindEntityByName call
+// in the whole game layer -- so renaming the player in ONE scene cleared the
+// camera's target, and ZM_GameStateManager::PollForCameraAndBeginFadeIn then
+// bare-returned on a camera with no target: a barrier with NO TIMEOUT, i.e. a
+// permanent black screen behind an opaque fade, with every unit still green.
+// R1-1's plan very nearly shipped a scene-unique "Route1Player" for tidiness.
+//
+// ResolveTarget now acquires the unique ZM_PlayerController in the camera's OWN
+// scene, so the name is CONVENTION, not contract. Keep it for consistency with the
+// shipped scenes; a rename is no longer a black screen.
+//
+// ★ WHAT IS LOAD-BEARING NOW: every scene that authors a ZM_FollowCamera must also
+// author a ZM_PlayerController on EXACTLY ONE entity. Zero or two resolve to no
+// target rather than a guess. Tests/ZM_Tests_FollowCamera.cpp pins all three cases.
+//
+// The byte-needle cost is UNCHANGED: "Player" is still a strict substring of the
+// serialized type name "ZM_PlayerController", so a committed-bytes needle on it
+// still uses the STRICTLY-MORE clause, never a `== 1` equality, and it is still
+// excluded from any "no entity name is a substring of a type name" battery.
 inline constexpr const char* szZM_ROUTE1_PLAYER_ENTITY_NAME = "Player";
 
 // The follow camera. Deliberately NOT "Route1PlayerCamera": a name that CONTAINED

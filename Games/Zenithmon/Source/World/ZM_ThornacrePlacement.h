@@ -83,23 +83,27 @@ inline constexpr const char* szZM_THORNACRE_SCENE_NAME = "Thornacre";
 // the player, arrival or gate names instead.
 inline constexpr const char* szZM_THORNACRE_TERRAIN_ENTITY_NAME = "ThornacreTerrain";
 
-// ★★ THE PLAYER ENTITY IS NAMED "Player", AND IT MUST STAY THAT WAY.
-// ZM_FollowCamera::ResolveTarget resolves its subject with
-// FindEntityByName("Player") (Components/ZM_FollowCamera.cpp:390) -- production,
-// scene-agnostic code, and the only FindEntityByName call in the whole game
-// layer. On a miss it clears its target and returns an invalid entity, and
-// ZM_GameStateManager::PollForCameraAndBeginFadeIn then bare-returns while the
-// camera has no target -- a barrier with NO TIMEOUT, i.e. a permanent black
-// screen behind an opaque fade with the player frozen. Not a crash, not a red
-// test. The shipped interiors spell it the same way
-// (szZM_PROFLAB_PLAYER_ENTITY_NAME = "Player"), and a scene-unique rename here
-// would be exactly the defect this slice exists to make impossible.
+// ★ THE PLAYER ENTITY IS STILL NAMED "Player" -- BUT THAT IS NOW CONVENTION, NOT
+// CONTRACT (Q-2026-08-15-002, fixed 2026-08-15).
 //
-// The consequence for byte needles, stated so nobody re-derives it: "Player" IS
-// a substring of the component type name "ZM_PlayerController", so a later
-// needle on it uses the STRICTLY-MORE clause ZM_Tests_CommittedSceneBytes.cpp
-// already ships, never a "== 1" equality -- and it is excluded from the
-// type-name battery entirely.
+// ZM_FollowCamera::ResolveTarget used to acquire its subject with
+// FindEntityByName("Player") -- the only FindEntityByName call in the whole game
+// layer -- so a rename in ONE scene cleared the camera's target and
+// ZM_GameStateManager::PollForCameraAndBeginFadeIn bare-returned on a camera with
+// no target: a barrier with NO TIMEOUT, i.e. a permanent black screen behind an
+// opaque fade. Not a crash, not a red test.
+//
+// It now acquires the unique ZM_PlayerController in the camera's OWN scene. Keep
+// the name for consistency with the shipped scenes; a rename is no longer fatal.
+//
+// ★ WHAT IS LOAD-BEARING NOW: a scene authoring a ZM_FollowCamera must also author
+// a ZM_PlayerController on EXACTLY ONE entity -- zero or two give no target rather
+// than a guess. Tests/ZM_Tests_FollowCamera.cpp pins all three cases.
+//
+// The byte-needle consequence is UNCHANGED: "Player" IS a substring of the
+// component type name "ZM_PlayerController", so a needle on it uses the
+// STRICTLY-MORE clause ZM_Tests_CommittedSceneBytes.cpp already ships, never a
+// "== 1" equality -- and it is excluded from the type-name battery entirely.
 inline constexpr const char* szZM_THORNACRE_PLAYER_ENTITY_NAME = "Player";
 
 // The follow camera. Deliberately NOT "ThornacrePlayerCamera", which would make

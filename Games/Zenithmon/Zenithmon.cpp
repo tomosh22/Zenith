@@ -3975,15 +3975,18 @@ void Project_RegisterEditorAutomationSteps()
 
 		// ---- The player ----------------------------------------------------
 		//
-		// ★★ NAMED "Player", IN EVERY SCENE, AND THIS IS NOT NEGOTIABLE.
-		// ZM_FollowCamera::ResolveTarget resolves its subject with
-		// FindEntityByName("Player") (Components/ZM_FollowCamera.cpp:390) -- the
-		// only FindEntityByName call in the whole game layer -- and on a miss
-		// ZM_GameStateManager::PollForCameraAndBeginFadeIn bare-returns while the
-		// camera has no target: another barrier with NO TIMEOUT, i.e. the same
-		// permanent black screen. A tidier scene-unique "Route1Player" would ship
-		// exactly that defect. The constant comes from the placement header, which
-		// argues this at length.
+		// ★ NAMED "Player" BY CONVENTION -- no longer a contract
+		// (Q-2026-08-15-002, fixed 2026-08-15). ZM_FollowCamera::ResolveTarget used
+		// to resolve its subject with FindEntityByName("Player"), the only
+		// FindEntityByName call in the whole game layer, so a rename cleared the
+		// camera's target and ZM_GameStateManager::PollForCameraAndBeginFadeIn
+		// bare-returned on a barrier with NO TIMEOUT -- a permanent black screen.
+		// It now acquires the unique ZM_PlayerController in the camera's own scene.
+		//
+		// ★ SO WHAT MATTERS HERE IS THE COMPONENT BELOW, NOT THE NAME: every scene
+		// that authors a ZM_FollowCamera must author a ZM_PlayerController on
+		// exactly one entity. Delete that AddComponent and the camera acquires
+		// nothing -- the same black screen, by a different route.
 		//
 		// ★ CAPSULE + DYNAMIC (it is the one body here that moves), authored ONE
 		// half-extent ABOVE its resting centre (ZM-D-184): a dynamic body authored

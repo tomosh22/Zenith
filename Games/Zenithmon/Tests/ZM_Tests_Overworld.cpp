@@ -982,6 +982,10 @@ ZENITH_TEST(ZM_OverworldCamera, RealOccluderPushesInThenCameraRecoversOutward)
 
 	Zenith_Entity xPlayer = g_xEngine.Scenes().CreateEntity(
 		xFixture.m_pxSceneData, "Player");
+	// ZM_FollowCamera acquires its subject by COMPONENT now, not by the entity name
+	// "Player" (Q-2026-08-15-002). The name is convention; the CONTROLLER is what the
+	// camera can see, so without this the fixture's player is invisible to it.
+	xPlayer.AddComponent<ZM_PlayerController>();
 	xPlayer.GetComponent<Zenith_TransformComponent>().SetPosition({ 0.0f, 0.0f, 0.0f });
 	Zenith_Entity xCamera = g_xEngine.Scenes().CreateEntity(
 		xFixture.m_pxSceneData, "FollowCamera");
@@ -1043,6 +1047,10 @@ ZENITH_TEST(ZM_OverworldCamera, SensorVolumeDoesNotClampTheArm)
 
 	Zenith_Entity xPlayer = g_xEngine.Scenes().CreateEntity(
 		xFixture.m_pxSceneData, "Player");
+	// ZM_FollowCamera acquires its subject by COMPONENT now, not by the entity name
+	// "Player" (Q-2026-08-15-002). The name is convention; the CONTROLLER is what the
+	// camera can see, so without this the fixture's player is invisible to it.
+	xPlayer.AddComponent<ZM_PlayerController>();
 	xPlayer.GetComponent<Zenith_TransformComponent>().SetPosition({ 0.0f, 0.0f, 0.0f });
 
 	// Straddles the whole arm ray, exactly as a doorway trigger does.
@@ -1083,6 +1091,10 @@ ZENITH_TEST(ZM_OverworldCamera, SolidOccluderStillClampsBesideASensor)
 
 	Zenith_Entity xPlayer = g_xEngine.Scenes().CreateEntity(
 		xFixture.m_pxSceneData, "Player");
+	// ZM_FollowCamera acquires its subject by COMPONENT now, not by the entity name
+	// "Player" (Q-2026-08-15-002). The name is convention; the CONTROLLER is what the
+	// camera can see, so without this the fixture's player is invisible to it.
+	xPlayer.AddComponent<ZM_PlayerController>();
 	xPlayer.GetComponent<Zenith_TransformComponent>().SetPosition({ 0.0f, 0.0f, 0.0f });
 
 	const Zenith_Maths::Vector3 xPivot(0.0f,
@@ -1217,6 +1229,10 @@ ZENITH_TEST(ZM_OverworldECS, MetaOrdersLifecycleAndMissingDependenciesAreSafe)
 
 	Zenith_Entity xOriginalPlayer = g_xEngine.Scenes().CreateEntity(
 		xFixture.m_pxSceneData, "Player");
+	// See the note above: the camera acquires by COMPONENT (Q-2026-08-15-002). The
+	// controller travels with the entity through MoveToScene, so each phase below
+	// still sees exactly one player in the camera's own scene.
+	xOriginalPlayer.AddComponent<ZM_PlayerController>();
 	Zenith_Entity xCamera = g_xEngine.Scenes().CreateEntity(
 		xFixture.m_pxSceneData, "CacheOwnerCamera");
 	xCamera.AddComponent<Zenith_CameraComponent>();
@@ -1235,6 +1251,7 @@ ZENITH_TEST(ZM_OverworldECS, MetaOrdersLifecycleAndMissingDependenciesAreSafe)
 
 	Zenith_Entity xSameSceneReplacement = g_xEngine.Scenes().CreateEntity(
 		xFixture.m_pxSceneData, "Player");
+	xSameSceneReplacement.AddComponent<ZM_PlayerController>();
 	xCacheFollow.OnLateUpdate(fTEST_DT);
 	ZENITH_ASSERT_EQ(xCacheFollow.GetTargetEntityID(),
 		xSameSceneReplacement.GetEntityID(),
@@ -1254,6 +1271,7 @@ ZENITH_TEST(ZM_OverworldECS, MetaOrdersLifecycleAndMissingDependenciesAreSafe)
 
 	Zenith_Entity xGenerationSafeReplacement = g_xEngine.Scenes().CreateEntity(
 		xFixture.m_pxSceneData, "Player");
+	xGenerationSafeReplacement.AddComponent<ZM_PlayerController>();
 	xCacheFollow.OnLateUpdate(fTEST_DT);
 	ZENITH_ASSERT_EQ(xCacheFollow.GetTargetEntityID(),
 		xGenerationSafeReplacement.GetEntityID(),
