@@ -440,18 +440,42 @@ boots (Debug x2 + Release x1, all identical). Boot units 2908 -> **2909**.
 > the bug was live, so "the suite passes" was never evidence either way here. The
 > reported repro is the authority for this one.
 
-**★ CURRENT COMMITTED-ASSET HASHES (OBSERVED 2026-08-05, after the ZM-D-184
-re-author).** Only `Dawnmere.zscen` moved; the other rows were re-hashed and match
-their previously recorded values exactly.
+**★★ CURRENT COMMITTED-ASSET HASHES -- RE-OBSERVED AND RE-PROVEN 2026-08-15 (before slice
+R1-2).** Every row below was taken from the file on disk at `f7e42a01` and then PROVEN by
+**two consecutive windowed `Vulkan_vs2022_Debug_Win64_True` authoring boots**
+(`--automated-test ZM_Boot_Test --skip-unit-tests`), both reporting
+`warmMask=0x7, queueMask=0x0, sceneAuthoring=AUTHOR_DAWNMERE` -- i.e. Dawnmere authoring
+genuinely RAN, not `DEFERRED` -- after which `git status` over the WHOLE
+`Games/Zenithmon/Assets/` tree was **empty**. Authoring is deterministic on this tree today.
 
-| Asset | SHA256 |
-|---|---|
-| `Dawnmere.zscen` | `76E33E5318AF951C212533587F53F76A61F75F4FB64D734CBBFE92B03F3D8709` (**proven by THREE boots: Debug x2 + Release x1, all identical**) |
-| `Battle.zscen` | `1BEB0615F7FE62D9439471A4123E1D2140C0053AEC2991B659F7A03288C8C60A` |
-| `FrontEnd.zscen` | `F7209CF525A1C66CF5F95AB68F12814465E419B6DBE200A08939465E608C910B` |
-| `PlayerHome.zscen` | `DBBFB78311A55BBF942A7A5BF9928F43E9493A10CDA89110515A3B6A7987C780` (unchanged) |
-| `ProfLab.zscen` | `1BCAABC9EA4A6FC559727C9573F47F7B7304052C586FB1D0519ADAF73DB75856` (unchanged) |
-| `Dawnmere.znavmesh` | `DCAA84035A258B12FA23627FF719C0567018470C8055A1E0FB54D6C1F1F96E1D` (unchanged) |
+> **★ THREE OF THE FIVE ROWS WERE STALE, AND THAT IS THE FIFTH RECORDED INSTANCE OF THIS
+> PATTERN IN THIS REPO** (cf. the ZM boot pin being stale three times, and Q-2026-08-02-001,
+> where a stale row was mistaken for drift). `Dawnmere.zscen` read `76E33E53...`,
+> `FrontEnd.zscen` read `F7209CF5...` and `ProfLab.zscen` read `1BCAABC9...`, while the files
+> really hashed as below. **None of that was drift** -- each moved in a legitimate commit
+> (ProfLab at `5d9d73bf`, FrontEnd at the WP3b touch-root change, Dawnmere across several) and
+> the table simply was not refreshed. **The cost of leaving it stale is real and specific: the
+> next agent to run the two-boot proof for R1-2 would diff against these rows, see a
+> mismatch, and start hunting a determinism bug that does not exist.** Refresh this table in
+> the same commit as any deliberate re-author.
+
+| Asset | Bytes | SHA256 |
+|---|---|---|
+| `Dawnmere.zscen` | 5,340 | `1DC1B639F86267256D02F862182EAD5468FB00FB4F8C9E1407B791C2F225C591` |
+| `Battle.zscen` | 4,965 | `1BEB0615F7FE62D9439471A4123E1D2140C0053AEC2991B659F7A03288C8C60A` (unchanged since 2026-08-05) |
+| `FrontEnd.zscen` | 29,740 | `D44D540512F1C373A5D5E747CE7FA76E7D19B467F5F1563EB298E229EEFBEDB5` |
+| `PlayerHome.zscen` | 1,832 | `DBBFB78311A55BBF942A7A5BF9928F43E9493A10CDA89110515A3B6A7987C780` (unchanged since 2026-08-05) |
+| `ProfLab.zscen` | 2,068 | `72DA12B73AB643B44F0B9374FCD6F4CCF865ECBAED5F9B0D2832E8BD972ABB32` |
+| `Dawnmere.znavmesh` | 373,412 | `DCAA84035A258B12FA23627FF719C0567018470C8055A1E0FB54D6C1F1F96E1D` (unchanged) |
+
+**★ WHAT THIS BASELINE IS FOR.** Slice R1-2 authors two NEW scenes and re-authors Dawnmere.
+Because the pipeline is proven deterministic *immediately before* that change, any byte that
+moves unexpectedly during R1-2 is attributable to R1-2 and not to pre-existing instability --
+which is exactly the ambiguity that cost a cycle at ZM-D-183 and again at Q-2026-08-02-001.
+
+**SUPERSEDED (kept for the reasoning trail):** the 2026-08-05 table read `Dawnmere.zscen`
+`76E33E53...` "proven by THREE boots: Debug x2 + Release x1". That proof was valid when taken;
+the row is simply older than the file.
 
 > **★ THE PROOF PROTOCOL NOW NAMES THE CONFIGURATION (the ZM-D-183 lesson).** Two boots
 > with matching SHA256 prove determinism only WITHIN one build configuration -- the three
