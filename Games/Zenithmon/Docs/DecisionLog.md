@@ -15,6 +15,135 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-08-15 -- ZM-D-196 -- USER RULINGS for S8 item 2 (Route 1 -> town 2), recorded BEFORE implementation per Scope.md section 4
+
+**Four user decisions plus the adopted defaults, taken 2026-08-15 after a planning
+pass returned 10 requested rulings, 5 blockers and NEEDS_REVISION from both
+critics. Scope.md section 4 is binding -- "Scope changes ... require a user
+decision recorded as a new entry in DecisionLog.md BEFORE any implementation
+work" -- and ruling 1 below is exactly such a change, so this entry precedes
+slice R1-1.**
+
+**★ FIRST, THE FINDING THAT RESHAPED THE ITEM: ROUTE 1 IS ALREADY MOSTLY BUILT.**
+`ZM_WorldSpec` already ships Route1 (build index 20, kind ROUTE) with its
+encounter slots, Thornacre (build 3, TOWN), all six
+Dawnmere<->Route1<->Thornacre(<->Gym1) connection edges and every spawn tag those
+edges target; both terrain recipes are authored and warm (Route1 1157 baked
+files, Thornacre 773). **Zero `ZM_WorldSpec` edits, zero new build indices and
+zero new terrain bakes are needed.** What remains is scene authoring, trainer
+content and test coverage. The Roadmap line reads like new-world work and is
+mostly placement.
+
+### Ruling 1 -- GROUND ITEMS ARE SPLIT OUT OF THIS ITEM
+
+**Decision:** close this item as "Route 1 (encounters / trainers) -> town 2".
+Ground-item pickups become their own Roadmap item behind their own ruling.
+
+**Why:** items here are **new production surface, not content**. There is no item
+component, no world prop, no pickup path, and **no way to USE an item at all** --
+`ZM_UI_Bag` rows are inert and the battle engine never includes `ZM_Bag`, so
+catching does not even consume a ball. The complete list of production bag
+writers is `ZM_MakeNewGameState`, `ZM_ShopBuy`/`ZM_ShopSell` and the save loader.
+Delivering it meant a new ECS component at order 115, a new pure-logic module,
+~18 boot units, a persistence decision and an extra windowed authoring boot.
+S8's gate is "mini-playthrough new-game -> Badge 1 green", which ground items do
+not appear in, so bundling them would let a defect in a from-scratch component
+block the traversal work and front-run a save-schema question ahead of **Gym 1**,
+which is the actual critical path to the go/no-go.
+
+**★ CONSEQUENCE FOR THE ROADMAP LINE, WHICH MUST NOT BE FUDGED:** the S8 line says
+"Route 1 (encounters / trainers / items) -> town 2". Per ZM-D-162 discipline a
+box is ticked only for the words actually written, so this item **amends the line**
+to drop "items" and adds the split-out item, rather than ticking a line whose
+text it did not satisfy.
+
+### Ruling 2 -- THORNACRE IS A TRAVERSAL STUB
+
+**Decision:** author terrain + the `FromRoute1` marker + player + camera + the
+return trigger, and **nothing else**. Explicitly **NO gym door**, backed by a byte
+needle asserting no gym-door entity exists.
+
+**Why:** the Roadmap line is satisfied by arriving somewhere real. Thornacre's
+recipe already reserves TownCenter, Market, Gym, FromGym and BerryFields for a
+later pass. **And a gym door would re-open the timeout-less hang:** Gym1 (build
+index 42) and the "FromGym" tag are declared but unauthored, and
+`IsWarpDestinationValid` consults only the compiled tag list -- so a door to an
+unauthored scene is a permanent black screen with no crash and no red test. The
+omission is therefore made EXPLICIT and asserted, not left to silence.
+
+### Ruling 3 -- TWO TRAINERS, BOTH PERSISTED BY PER-TRAINER STORY FLAG
+
+**Decision:** place the already-shipping `ZM_TRAINER_ROUTE1_RAMBLER` ("Rambler
+Perrin", 2-monster party, SILENT) -- which exists in data but stands nowhere in
+the world -- plus **one new barking trainer**. Both get their own
+`ZM_STORY_FLAG_ID`.
+
+**Why persisted:** `ZM_TrainerEngagementLatch::s_uEngagedMask` is a process-global
+`u_int` that appears **nowhere in `ZM_SaveSchema`**, so a flagless trainer re-arms
+on every app launch and his prize money is **farmable across restarts**. A flagged
+row instead consults `ZM_IsStoryFlagSet` and ignores the latch, so losing and
+returning works -- the canonical genre behaviour. Story flags are effectively free
+(4096 bits, 7 used), the enum is append-only, and this needs **no save-format
+version bump and no migration audit**. The dense "trainers defeated" bitset the
+`ZM_TRAINER_ID` header anticipates is deferred until the roster justifies a schema
+change.
+
+**★ TWO HAZARDS THE IMPLEMENTING SLICE OWNS:** (a) every armed trainer is a trap
+for every other test in its scene -- the between-tests hook clears the latch, so
+each trainer is RE-ARMED per test and **distance is the only guard** (8 m, cos30
+cone); place them >200 m apart with spelled minimum clearance from BOTH gate
+approaches, pinned as boot units. (b) Switching Rambler from flagless to flagged
+retires the only live flagless production example, so the flagless arm must stay
+covered by the existing test-only reconfiguration rather than by shipping a
+farmable trainer.
+
+### Ruling 4 -- KEEP THE SPECIES, HALVE THE RATE FOR ROUTE 1 ONLY
+
+**Decision:** keep {PIPWIT 2-4 w40, NIBBIN 2-4 w40, SPARKIT 3-5 w20} and drop
+Route 1's encounter rate from 40/256 (~15.6%) to **~20/256 (~7.8%)**.
+
+**Why:** the species set is deliberate content and the levels bracket a freshly
+chosen L5 starter correctly, but 40/256 over a 1.4 km corridor is an encounter
+every ~6-7 tile transitions -- aggressive for the player and noisy for every
+Route 1 test that must walk that corridor.
+
+**★ THE TRAP IN DOING THIS NAIVELY:** the rate column is spelled
+`uZM_DEFAULT_ROUTE_ENCOUNTER_RATE`, a **SHARED** constant. Editing it would
+silently re-rate every future ROUTE row S9 adds, and nothing would catch it --
+`WorldSpec_EncounterRateColumn` only asserts `> 0` for routes and `<= 256`, so a
+global halving passes green. The slice must therefore introduce a Route-1-specific
+named constant (or a per-row literal), leave the shared default untouched, and add
+a boot unit pinning the ROUTE1 row's rate to its spelled value.
+Do NOT disturb the frozen RNG draw order while retuning: `RollStep_InertAndMiss-
+DoNotPerturbRng` pins inert = 0 draws / miss = exactly 1.
+
+### Adopted defaults (no user ruling sought; recorded so they are not re-opened)
+
+- **Terrain recipes used EXACTLY as they ship.** Any seed/bounds/flatten/manifest
+  change invalidates a warm bake, and the authoring gate is `m_bAllWarm` over all
+  three recipes -- so the next windowed boot would queue an ~81 s re-bake, author
+  NOTHING, and log a clean-looking `DEFERRED`. It would also move
+  `uZM_ROUTE1_REQUIRED_OUTPUT_COUNT` (1155). Treat the recipes' landmarks and
+  reserved gate pads as the placement contract.
+- **Camera clearance:** coarsen the long-route spine spacing while KEEPING the
+  4x-finer gate-approach spacing, and raise `uCC_MAX_SAMPLES`. At the current 1.0 m
+  spacing the Route 1 spine alone is ~1409 samples against a 1024 ceiling already
+  603 occupied, and overflow is a hard FAILURE, never truncation -- so this reds on
+  day one otherwise. ★ A critic found the three clearance tests are hard-scoped to
+  Dawnmere's build index, so this needs per-region parameterisation, not a table
+  edit; that restructure precedes any Route 1 rows.
+- **Warden relocation onto Route 1: DO IT LAST**, isolated, so a regression is
+  unambiguously attributable. **Rival-battle-1 relocation: DEFERRED** to its own
+  item -- it touches the intro beat, the unimplemented counter-starter rule, and
+  the Dawnmere frozen-facing needle, and folding it in would make a failure in
+  either indistinguishable from a failure in the other.
+
+**Tests that lock these:** none in this entry; each ruling is locked by the slice
+that implements it, and ruling 4 additionally by the ROUTE1-rate pin above.
+
+**Reversibility:** ruling 1 is a scheduling split and fully reversible; rulings 2-4
+are content decisions reversible at the cost of a re-author.
+
 ## 2026-08-15 -- ZM-D-195 -- Q-2026-08-15-001 CLOSED: ProfLab's exit sensor retreated to the last QUARTER of the walk-in corridor
 
 **The defect (user-visible):** holding **W+A** -- the natural "up-left toward the

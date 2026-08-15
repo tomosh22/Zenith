@@ -226,7 +226,15 @@ sign-off.** Observed at closure: headless **49 passed / 0 failed**, full windowe
       Proven end to end by `ZM_IntroBeat_Test` (77 frames, 18 phases), which asserts the
       CHOSEN species is in the party and Fernfawn is NOT -- an assertion the old seed would
       otherwise have satisfied. ZM boot 3277 -> 3327, registry 61 -> 64.
-- [ ] Route 1 (encounters / trainers / items) -> town 2
+- [ ] Route 1 (encounters / trainers) -> town 2 **(scope amended 2026-08-15 by user ruling
+      ZM-D-196: "items" SPLIT OUT below.** Ground-item pickup is NEW production surface, not
+      content -- there is no item component, no world prop, no pickup path, and no way to USE an
+      item at all today. S8's gate is "mini-playthrough -> Badge 1 green", which ground items do
+      not appear in, so bundling them would let a from-scratch component block the traversal work
+      and front-run a save-schema question ahead of Gym 1. Per ZM-D-162 discipline the line is
+      AMENDED rather than ticked on words it did not satisfy.**)
+- [ ] Ground-item pickups (world props -> bag, with collected-state persistence) **[SPLIT OUT of
+      the Route 1 item by ZM-D-196; not required by the S8 gate]**
 - [ ] Gym 1 (layout puzzle-lite + leader + badge + teach-move reward)
 - [ ] `ZM_AutoTests_Slice` mini-playthrough (CB_HumanSession-style flat Act script + PROBEs, ~4-6k frames, windowed)
 
