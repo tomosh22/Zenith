@@ -3,8 +3,9 @@
 // ============================================================================
 // ZM_Tests_ThornacrePlacement (S8 item 2, R1-1) -- the boot units for the
 // Thornacre TRAVERSAL STUB: the arrival anchor reconciled against the terrain
-// recipe, the return edge resolved out of the compiled world table, and the
-// ruling-2 tripwire that says this town has NO GYM DOOR yet.
+// recipe, the return edge resolved out of the compiled world table, the ruling-2
+// tripwire that says this town has NO GYM DOOR yet, and the settled camera pose
+// the arriving player is filmed from.
 //
 // PURE, and it mirrors Tests/ZM_Tests_ProfLabPlacement.cpp deliberately: no
 // scene, no entity, no physics, no assets, no graphics, no g_xEngine, no file
@@ -32,11 +33,12 @@
 // against the terrain recipe's landmarks and pads; the return resolver against
 // the world table's connection list), or feeds a known-bad value through the
 // IDENTICAL predicate and requires it to fail. The only bare literals are the
-// five-name COUNT and the landmark/pad NAMES -- both deliberate tripwires for
-// silent growth, spelled here so the edit that grows them has to red something.
+// five-name COUNT, the landmark/pad NAMES, and the two component-type-table
+// COUNTS -- all of them deliberate tripwires for silent growth, spelled here so
+// the edit that grows them has to red something.
 // ============================================================================
 
-#include <cmath>     // sqrt / fabs -- the XZ distances every containment clause uses
+#include <cmath>     // sqrt / fabs -- the XZ distances; cos / sin -- U15's camera pose
 #include <cstring>   // strcmp / strstr -- the name-identity and needle-swallow claims
 
 #include "Core/Zenith_TestFramework.h"
@@ -215,6 +217,30 @@ namespace
 			}
 		}
 		return false;
+	}
+
+	// ---- The camera ---------------------------------------------------------
+
+	// The settled camera pose recomputed for an ARBITRARY pitch, so U15 can drive a
+	// SIGN-FLIPPED pitch through the identical arithmetic. It is asserted to agree
+	// with the SHIPPED accessor at the shipped pitch BEFORE the flipped value is
+	// trusted -- otherwise this would be a second implementation checking only
+	// itself, which proves nothing about ZM_GetThornacreSettledCameraPosition.
+	//
+	// It mirrors Route1CameraPositionForPitch in the sibling suite line for line;
+	// the two arrivals are the same shape and the two probes must be too.
+	Zenith_Maths::Vector3 THCameraPositionForPitch(float fPitch)
+	{
+		Zenith_Maths::Vector3 xPivot = ZM_GetThornacreSouthArrivalBodyCentre();
+		xPivot.y += fZM_THORNACRE_CAMERA_PIVOT_HEIGHT;
+
+		const float fCosPitch = std::cos(fPitch);
+		const Zenith_Maths::Vector3 xForward(
+			std::sin(fZM_THORNACRE_CAMERA_YAW) * fCosPitch,
+			std::sin(fPitch),
+			std::cos(fZM_THORNACRE_CAMERA_YAW) * fCosPitch);
+
+		return xPivot - xForward * fZM_THORNACRE_CAMERA_ARM;
 	}
 
 	// ★ THE GYM EDGE HAS NO ACCESSOR IN THE PLACEMENT HEADER, BY RULING, SO THE
@@ -787,6 +813,33 @@ ZENITH_TEST(ZM_WorldTraversal, Thornacre_StubAuthorsNoGymDoorAndItsNamesAreUniqu
 		"the component type-name inventory in this file is empty, so the "
 		"needle-swallow battery below iterates zero times and passes vacuously");
 
+	// ★ AND THE TWO TABLES ARE THE SIZE THE OTHER COPY OF THEM CLAIMS.
+	// Tests/ZM_Tests_Route1Placement.cpp transcribes these same 15 game and 17
+	// engine rows BYTE-IDENTICALLY (aszROUTE1_GAME_TYPE_NAMES /
+	// aszROUTE1_ENGINE_TYPE_NAMES) and NOTHING cross-checks the copies: a component
+	// registered later updates one of them and silently weakens the other file's
+	// needle-swallow battery, with both files green and no diff to read. Pinning the
+	// COUNT as a literal on BOTH sides is the cheap reconciliation -- a row added to
+	// one copy now reds the other.
+	//
+	// ★ THE DURABLE FIX IS A SHARED HEADER, and it is deliberately not landed here.
+	// One Games/Zenithmon/Tests/ZM_Tests_ComponentTypeNames.h that both suites
+	// include leaves one inventory instead of two; it belongs to whichever slice
+	// adds a THIRD battery, where the duplication stops being a pair and starts
+	// being a pattern. Until then: EDIT BOTH TABLES AND BOTH LITERALS IN ONE CHANGE.
+	ZENITH_ASSERT_EQ(uGameTypeCount, 15u,
+		"this file's GAME component type table holds %u rows, not the 15 that "
+		"Games/Zenithmon/Zenithmon.cpp's ZENITH_REGISTER_COMPONENT block registers. "
+		"Tests/ZM_Tests_Route1Placement.cpp carries a byte-identical copy pinned at "
+		"the same literal, so this reds when one copy is grown and the other is not "
+		"-- update BOTH tables and BOTH literals", uGameTypeCount);
+	ZENITH_ASSERT_EQ(uEngineTypeCount, 17u,
+		"this file's ENGINE component type table holds %u rows, not the 17 the "
+		"engine serializes (the 16 in Zenith_ComponentMeta_Registration.cpp plus "
+		"\"AIAgent\", registered at order 90 through Zenith_AI_RegisterComponents). "
+		"Tests/ZM_Tests_Route1Placement.cpp carries a byte-identical copy pinned at "
+		"the same literal", uEngineTypeCount);
+
 	for (u_int uName = 0u; uName < uDeclaredCount; ++uName)
 	{
 		const char* szName = aszDeclaredNames[uName];
@@ -907,4 +960,152 @@ ZENITH_TEST(ZM_WorldTraversal, Thornacre_StubAuthorsNoGymDoorAndItsNamesAreUniqu
 		"out of S8 item 2's scope: R1-1 registers exactly the scenes this "
 		"milestone authors, and a gym registration is the first half of finishing "
 		"a town the ruling says stays a traversal stub");
+}
+
+// ============================================================================
+// U15 -- the settled camera stands above the ground, behind the arrival, and
+// sees the town.
+//
+// ★ WHY THIS UNIT EXISTS, STATED BLUNTLY: until it landed, THE WHOLE CAMERA HALF
+// OF ZM_ThornacrePlacement.h HAD NO READER. ZM_GetThornacreSettledCameraPosition,
+// fZM_THORNACRE_CAMERA_FOV_DEGREES, _NEAR, _FAR, _ASPECT and
+// _MIN_GROUND_CLEARANCE were compiled constants nothing in the game and nothing
+// in the suite ever evaluated -- while the header's own comments said "the camera
+// unit's anti-vacuity arm runs through this same arithmetic to prove" and "the
+// floor the camera unit enforces". Those sentences described a check that did not
+// exist; this unit is what makes them true.
+//
+// Two silent shipping defects live in that gap, and BOTH leave every other clause
+// in this file perfectly green:
+//   * a SIGN ERROR ON THE PITCH swings the eye BELOW its pivot instead of above
+//     it and buries the camera in the terrain, with every constant in the header
+//     still reading exactly as intended;
+//   * a DEFAULT FAR PLANE (the 100 m the two interiors ship with) clips a
+//     1024 m-deep town away a few strides ahead of the player.
+//
+// ★ IT MIRRORS ROUTE 1'S TWIN CLAUSE FOR CLAUSE, deliberately --
+// Tests/ZM_Tests_Route1Placement.cpp's
+// Route1_SettledCameraStandsAboveGroundBehindTheArrival. The two arrivals are the
+// same shape, so a reader who has understood one has understood the other, and a
+// clause added to one is a clause obviously missing from the other.
+//
+// ★ AND THE FAR-PLANE CLAUSE IS MEASURED AGAINST THE RECIPE'S OWN Z EXTENT, not
+// against a number in the header, so re-cutting the town's bounds moves the
+// requirement with them rather than leaving a comment behind.
+// ============================================================================
+ZENITH_TEST(ZM_WorldTraversal, Thornacre_SettledCameraStandsAboveGroundBehindTheArrival)
+{
+	// (1) The projection parameters describe a usable frustum at all. A far plane
+	//     at or behind the near one, a non-positive near plane, an out-of-domain
+	//     FOV or a non-positive aspect each build a projection matrix that renders
+	//     NOTHING -- which reads to a player as a black screen and to a programmer
+	//     as anything but a camera constant.
+	ZENITH_ASSERT_LT(fZM_THORNACRE_CAMERA_NEAR, fZM_THORNACRE_CAMERA_FAR,
+		"the Thornacre camera's near plane %.4f is at or beyond its far plane %.4f",
+		(double)fZM_THORNACRE_CAMERA_NEAR, (double)fZM_THORNACRE_CAMERA_FAR);
+	ZENITH_ASSERT_GT(fZM_THORNACRE_CAMERA_NEAR, 0.0f,
+		"the Thornacre camera's near plane is %.4f; a non-positive near plane is "
+		"not a perspective projection", (double)fZM_THORNACRE_CAMERA_NEAR);
+	ZENITH_ASSERT_GT(fZM_THORNACRE_CAMERA_FOV_DEGREES, 0.0f,
+		"the Thornacre camera's field of view is %.4f degrees",
+		(double)fZM_THORNACRE_CAMERA_FOV_DEGREES);
+	ZENITH_ASSERT_LT(fZM_THORNACRE_CAMERA_FOV_DEGREES, 180.0f,
+		"the Thornacre camera's field of view is %.4f degrees, at or past the "
+		"degenerate half turn", (double)fZM_THORNACRE_CAMERA_FOV_DEGREES);
+	ZENITH_ASSERT_GT(fZM_THORNACRE_CAMERA_ASPECT, 0.0f,
+		"the Thornacre camera's aspect ratio is %.4f",
+		(double)fZM_THORNACRE_CAMERA_ASPECT);
+	ZENITH_ASSERT_GT(fZM_THORNACRE_CAMERA_ARM, 0.0f,
+		"the Thornacre camera's arm is %.4f -- a non-positive arm puts the eye at "
+		"or in front of its own pivot, which is not a follow camera",
+		(double)fZM_THORNACRE_CAMERA_ARM);
+
+	// (2) The far plane covers the town the camera is looking up. Measured against
+	//     the RECIPE's authored Z bounds, never against the header's comment, so
+	//     re-cutting the region moves the requirement with it.
+	//
+	//     THE MUTATION: drop the far plane back to the interiors' 100 m and the
+	//     town is clipped away in front of the arriving player.
+	const ZM_TerrainAuthoringRecipe& xRecipe = ZM_GetThornacreTerrainRecipe();
+	const float fTownDepth = xRecipe.m_fWorldMaxZ - xRecipe.m_fWorldMinZ;
+	ZENITH_ASSERT_GT(fTownDepth, 0.0f,
+		"the Thornacre recipe declares a non-positive Z extent (%.4f to %.4f), so "
+		"the far-plane clause below has nothing to measure against",
+		(double)xRecipe.m_fWorldMinZ, (double)xRecipe.m_fWorldMaxZ);
+	ZENITH_ASSERT_GE(fZM_THORNACRE_CAMERA_FAR, fTownDepth,
+		"the Thornacre camera's far plane is %.4f against a %.4f m town. The "
+		"default 100 m plane the two interiors ship with would clip the world away "
+		"a few strides ahead of the player",
+		(double)fZM_THORNACRE_CAMERA_FAR, (double)fTownDepth);
+
+	// (3) The settled eye stands clear of the ground.
+	//
+	//     THE MUTATION: flip the sign of fZM_THORNACRE_CAMERA_PITCH and the arm
+	//     swings the eye BELOW the pivot, into the terrain. Clause (5b) proves this
+	//     clause can actually see that.
+	const Zenith_Maths::Vector3 xCamera = ZM_GetThornacreSettledCameraPosition();
+	const float fClearanceFloor = fZM_THORNACRE_PROVISIONAL_GROUND_Y
+		+ fZM_THORNACRE_CAMERA_MIN_GROUND_CLEARANCE;
+	Zenith_Log(LOG_CATEGORY_UNITTEST,
+		"[ZM_ThornacrePlacement] settled camera (%.3f, %.3f, %.3f) against a %.3f m "
+		"floor (ground %.3f + %.3f clearance); arrival body centre z=%.3f, arm %.2f",
+		(double)xCamera.x, (double)xCamera.y, (double)xCamera.z,
+		(double)fClearanceFloor, (double)fZM_THORNACRE_PROVISIONAL_GROUND_Y,
+		(double)fZM_THORNACRE_CAMERA_MIN_GROUND_CLEARANCE,
+		(double)ZM_GetThornacreSouthArrivalBodyCentre().z,
+		(double)fZM_THORNACRE_CAMERA_ARM);
+	ZENITH_ASSERT_GE(xCamera.y, fClearanceFloor,
+		"the settled Thornacre camera sits at Y %.4f, below the %.4f m floor "
+		"(ground %.4f + %.4f clearance). A pitch sign error swings the eye BELOW "
+		"its pivot and buries it in the terrain, with every camera constant in the "
+		"header still reading exactly as intended", (double)xCamera.y,
+		(double)fClearanceFloor, (double)fZM_THORNACRE_PROVISIONAL_GROUND_Y,
+		(double)fZM_THORNACRE_CAMERA_MIN_GROUND_CLEARANCE);
+
+	// (4) It stands BEHIND the arriving body -- far enough back not to be inside
+	//     the capsule, and never further than its own arm.
+	//
+	//     THE MUTATIONS: a pose accessor that lost its arm term leaves the eye ON
+	//     the player (the near half reds); one that added the forward vector
+	//     instead of subtracting it, or that swung a longer arm than the constant
+	//     declares, puts the eye somewhere the follow camera's spring will never
+	//     settle (the far half reds).
+	const Zenith_Maths::Vector3 xArrival = ZM_GetThornacreSouthArrivalBodyCentre();
+	const float fToArrivalX = xCamera.x - xArrival.x;
+	const float fToArrivalZ = xCamera.z - xArrival.z;
+	const float fPlanarDistance =
+		std::sqrt(fToArrivalX * fToArrivalX + fToArrivalZ * fToArrivalZ);
+	ZENITH_ASSERT_GE(fPlanarDistance, fZM_HUMAN_BODY_CAPSULE_RADIUS,
+		"the settled Thornacre camera stands only %.4f m from the arriving body in "
+		"plan, inside its own %.4f m capsule radius -- the eye is inside the player",
+		(double)fPlanarDistance, (double)fZM_HUMAN_BODY_CAPSULE_RADIUS);
+	ZENITH_ASSERT_LE(fPlanarDistance, fZM_THORNACRE_CAMERA_ARM,
+		"the settled Thornacre camera stands %.4f m from the arriving body in plan, "
+		"further than its own %.4f m arm -- the pose accessor is no longer swinging "
+		"the arm back from the pivot", (double)fPlanarDistance,
+		(double)fZM_THORNACRE_CAMERA_ARM);
+
+	// (5) ★ ANTI-VACUITY, in two steps because the arm needs a second
+	//     implementation and a second implementation checking only itself would
+	//     prove nothing.
+	//     (5a) the local pose arithmetic AGREES with the shipped accessor at the
+	//          shipped pitch -- which is what makes it a stand-in for it;
+	//     (5b) the SIGN-FLIPPED pitch, through that same arithmetic, must FAIL
+	//          clause (3)'s floor. This is the arm the header's pitch comment
+	//          promises, and without it clause (3) is not known to be able to red
+	//          on the one defect it was written for.
+	const Zenith_Maths::Vector3 xLocalAtShippedPitch =
+		THCameraPositionForPitch(fZM_THORNACRE_CAMERA_PITCH);
+	ZENITH_ASSERT_NEAR_VEC3(xLocalAtShippedPitch, xCamera, fTH_EXACT_EPSILON,
+		"this unit's pose arithmetic disagrees with "
+		"ZM_GetThornacreSettledCameraPosition at the shipped pitch, so the "
+		"sign-flipped probe below is not exercising the accessor's geometry");
+
+	const Zenith_Maths::Vector3 xFlippedPitchCamera =
+		THCameraPositionForPitch(-fZM_THORNACRE_CAMERA_PITCH);
+	ZENITH_ASSERT_LT(xFlippedPitchCamera.y, fClearanceFloor,
+		"the ANTI-VACUITY arm failed: a sign-flipped pitch puts the settled eye at "
+		"Y %.4f, which still CLEARS the %.4f m floor clause (3) uses. Clause (3) "
+		"therefore cannot red on the pitch sign error it was written for",
+		(double)xFlippedPitchCamera.y, (double)fClearanceFloor);
 }

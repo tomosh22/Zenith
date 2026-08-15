@@ -36,9 +36,11 @@
 // itself and cannot red on any change to anything. Every claim below is measured
 // against an INDEPENDENT source: the terrain recipe's landmarks / pads / paths,
 // the human body contract, the sight cone's own constants, or an arithmetic
-// invariant of the accessor. The only bare literals in this file are the two
-// transcribed from OTHER files (see U10's player-name clause) and the sampling
-// density, and both say so where they are spelled.
+// invariant of the accessor. The only bare literals in this file are the ones
+// transcribed from OTHER files (see U10's player-name clause), the two
+// component-type-table COUNTS U10 pins against the sibling Thornacre suite's
+// byte-identical copy, and the sampling density -- and all of them say so where
+// they are spelled.
 // ============================================================================
 
 #include <cmath>     // sqrt / fabs / cos / sin / ceil
@@ -69,6 +71,12 @@ namespace
 	// exactly 1 and any slack here is pure headroom against a future non-exact
 	// rotation rather than a tolerance anything needs today.
 	constexpr float fROUTE1_UNIT_QUAT_EPSILON = 1.0e-6f;
+
+	// "The authored spawn clearance is EXACTLY one body half-extent." Tighter than
+	// the equality epsilon because the ZM-D-184 gap is one half-extent added to one
+	// half-extent and then subtracted back off -- exact to well under this. The same
+	// figure Tests/ZM_Tests_ThornacrePlacement.cpp pins its twin gap at.
+	constexpr float fROUTE1_CLEARANCE_EPSILON = 1.0e-5f;
 
 	// How deep inside a pad's flattened disc an anchor has to land before this
 	// file will call the ground under it levelled. Three quarters of the radius,
@@ -552,6 +560,12 @@ namespace
 // constant unit can see: the arriving body either floats above the hillside or
 // spawns inside it. R1-2 lands the raycast oracle that replaces this argument
 // with a measurement.
+//
+// ★ AND THE ZM-D-184 SPAWN CLEARANCE RIDES HERE, in clause (3). It is the same
+// ground plane the clauses above reconcile, read one step further up: how far
+// ABOVE it the authoring lifts a dynamic body before physics takes over. It has no
+// unit of its own because it has exactly one number in it and it belongs to the
+// anchor, not to a second subject.
 // ============================================================================
 
 ZENITH_TEST(ZM_WorldTraversal, Route1_ArrivalMarkersSitOnTheRecipeLandmarksTheTerrainFlattened)
@@ -658,6 +672,31 @@ ZENITH_TEST(ZM_WorldTraversal, Route1_ArrivalMarkersSitOnTheRecipeLandmarksTheTe
 			xClaim.m_szWhich, (double)fToPad, xClaim.m_szPad,
 			(double)pxPad->m_fFlattenRadius, (double)fLimit);
 	}
+
+	// (3) ★ ZM-D-184: THE AUTHORED PLAYER STARTS EXACTLY ONE HALF-EXTENT CLEAR.
+	//     ZM_GetRoute1AuthoredPlayerCentre had NO READER AT ALL before this clause,
+	//     so a Route-1-side spawn-clearance error would have shipped with every unit
+	//     in this file green -- the very hole the sibling Thornacre suite already
+	//     closes. Stated as a DIFFERENCE OF THE TWO ACCESSORS, exactly as Thornacre
+	//     states its own, so it follows any change to the ground plane instead of
+	//     re-spelling one.
+	//
+	//     ★ THE MUTATIONS IT CATCHES, BOTH REAL. A clearance of ZERO is the ZM-D-184
+	//     substep-burst fall-through: a dynamic body authored at exact contact with
+	//     the terrain bursts physics substeps on its first frame and drops straight
+	//     THROUGH the ground -- that is how Vesper vanished, with every compiled
+	//     constant reading correctly. TWO half-extents is the opposite mistake: the
+	//     body is floated a full body height up and visibly falls the moment the
+	//     route loads.
+	const float fAuthoredPlayerClearance = ZM_GetRoute1AuthoredPlayerCentre().y
+		- ZM_GetRoute1SouthArrivalBodyCentre().y;
+	ZENITH_ASSERT_EQ_FLOAT(fAuthoredPlayerClearance, fZM_HUMAN_BODY_HALF_HEIGHT,
+		fROUTE1_CLEARANCE_EPSILON,
+		"the authored Route 1 player starts %.5f m above its resting body centre; "
+		"the ZM-D-184 rule is exactly one body half-extent (%.5f). Zero is the "
+		"substep-burst fall-through that lost Vesper; two is a visible drop the "
+		"moment the route loads",
+		(double)fAuthoredPlayerClearance, (double)fZM_HUMAN_BODY_HALF_HEIGHT);
 }
 
 // ============================================================================
@@ -675,6 +714,10 @@ ZENITH_TEST(ZM_WorldTraversal, Route1_ArrivalMarkersSitOnTheRecipeLandmarksTheTe
 // off it immediately, and the eight-way MOVE drive makes the natural walk a
 // 45-degree diagonal, which spends depth as fast as it spends width. That is the
 // defect that shipped in ProfLab with every centre-based arrival clause green.
+//
+// ★ AND CLAUSE (5) NAMES uZM_ROUTE1_GATE_TARGET_UNRESOLVED. That is a claim about
+// the same two sensors -- where each one POINTS, rather than where it stands -- and
+// it lives here because these two gates are this unit's subject.
 // ============================================================================
 
 ZENITH_TEST(ZM_WorldTraversal, Route1_GatesStandBetweenTheirMarkerAndTheWorldEdgeWithArrivalClearance)
@@ -767,6 +810,34 @@ ZENITH_TEST(ZM_WorldTraversal, Route1_GatesStandBetweenTheirMarkerAndTheWorldEdg
 		"floor clause (2) uses. Clause (2) therefore cannot red on the defect it "
 		"was written for",
 		(double)fOnMarkerClearance, (double)fZM_ROUTE1_GATE_ARRIVAL_CLEARANCE_MIN);
+
+	// (5) ★ NEITHER GATE EVER RESOLVES THE UNRESOLVED SENTINEL, ASSERTED BY NAME.
+	//     ZM_Route1Placement.h says of uZM_ROUTE1_GATE_TARGET_UNRESOLVED that "the
+	//     boot units assert this value is never actually produced" -- and until this
+	//     clause NOTHING IN THE TREE NAMED THE CONSTANT, so the header was
+	//     describing a check that did not exist. (Thornacre's twin,
+	//     uZM_THORNACRE_RETURN_TARGET_UNRESOLVED, has always been asserted by name;
+	//     this is the Route 1 side of the same claim.)
+	//
+	//     ★ THE MUTATION IT CATCHES: drop or re-point either Route 1 edge in
+	//     Source/Data/ZM_WorldSpec.cpp and the resolver hands back 0xFFFFFFFF. R1-2
+	//     would then author a ZM_WarpTrigger at a build index no scene can hold --
+	//     and that warp is still ACCEPTED by
+	//     ZM_GameStateManager::IsWarpDestinationValid, which consults only the
+	//     compiled table, so the failure is not a rejection but
+	//     ZM_WARP_TRANSITION_WAITING_FOR_SCENE, a barrier with NO TIMEOUT: a
+	//     permanent black screen behind an opaque fade, not a crash and not a
+	//     visibly broken door.
+	ZENITH_ASSERT_NE(ZM_GetRoute1SouthGateTargetBuildIndex(),
+		uZM_ROUTE1_GATE_TARGET_UNRESOLVED,
+		"the Route 1 SOUTH gate resolves the unresolved-target sentinel, so the "
+		"compiled ZM_SCENE_ROUTE1 row carries no edge back to Dawnmere. The "
+		"authored trigger would take a build index no scene can hold -- fix "
+		"Source/Data/ZM_WorldSpec.cpp, not this test");
+	ZENITH_ASSERT_NE(ZM_GetRoute1NorthGateTargetBuildIndex(),
+		uZM_ROUTE1_GATE_TARGET_UNRESOLVED,
+		"the Route 1 NORTH gate resolves the unresolved-target sentinel, so the "
+		"compiled ZM_SCENE_ROUTE1 row carries no edge on to Thornacre");
 }
 
 // ============================================================================
@@ -894,28 +965,37 @@ ZENITH_TEST(ZM_WorldTraversal, Route1_TrainerStationsStandOnFlattenedGrassFreeGr
 		"trainer who can never be triggered -- move the anchor, never the cone",
 		(double)fZM_ROUTE1_TRAINER_MAX_LANE_OFFSET, (double)fSightCeiling);
 
-	// (2) The FLOOR IS STILL A DERIVATION OFF THE BODY CONTRACT, not a number
-	//     picked to sit under whatever the anchors happen to be.
+	// (2) THE FLOOR STANDS CLEAR OF THE BODY CONTRACT -- AN INDEPENDENT STATEMENT
+	//     ABOUT IT, NOT A RE-EVALUATION OF THE HEADER'S OWN DEFINITION.
 	//
-	//     ★ THE MUTATION THIS CATCHES, STATED PLAINLY, because it is the one
-	//     clause in this file that re-evaluates the header's own expression: the
-	//     day somebody replaces the derivation with a frozen 2.0f -- to make room
-	//     for an anchor that crowds the lane, or just to tidy it -- a later re-tune
-	//     of fZM_HUMAN_BODY_FOOTPRINT or fZM_HUMAN_BODY_CAPSULE_RADIUS stops
-	//     reaching this floor, and every trainer keeps a gap sized for a body the
-	//     game no longer has. Nothing else in the tree relates the two.
-	const float fDerivedFloor = fZM_HUMAN_BODY_FOOTPRINT * 0.5f
-		+ fZM_HUMAN_BODY_CAPSULE_RADIUS
-		+ fZM_ROUTE1_TRAINER_CLEAR_WALKING_GAP;
-	ZENITH_ASSERT_EQ_FLOAT(fZM_ROUTE1_TRAINER_MIN_LANE_OFFSET, fDerivedFloor,
-		fROUTE1_EXACT_EPSILON,
-		"the header's minimum lane offset is %.4f but the body contract derives "
-		"%.4f (half a %.4f m footprint + a %.4f m capsule radius + %.4f m of clear "
-		"air). A floor that is no longer a derivation is a number picked to fit the "
-		"anchors it is supposed to police",
-		(double)fZM_ROUTE1_TRAINER_MIN_LANE_OFFSET, (double)fDerivedFloor,
-		(double)fZM_HUMAN_BODY_FOOTPRINT, (double)fZM_HUMAN_BODY_CAPSULE_RADIUS,
-		(double)fZM_ROUTE1_TRAINER_CLEAR_WALKING_GAP);
+	//     ★ WHAT USED TO BE HERE, AND WHY IT IS GONE. DO NOT RESTORE IT. This
+	//     clause used to rebuild fZM_ROUTE1_TRAINER_MIN_LANE_OFFSET's defining
+	//     expression term for term -- half a footprint, plus a capsule radius, plus
+	//     the clear walking gap -- and assert equality against the constant that IS
+	//     that expression. Both sides moved together on any edit to any input, so it
+	//     could not red on anything at all: a value compared against a
+	//     re-computation of ITSELF -- exactly the species this file's own opening
+	//     star forbids, and the one that has already cost this repo a debugging
+	//     cycle on Vesper's facing (ZM-D-179 / ZM-D-183).
+	//
+	//     ★ WHAT REPLACES IT, AND THE MUTATION IT CATCHES. Two human capsules
+	//     cannot occupy the same metre. A trainer standing off the walked
+	//     centreline by less than two capsule radii is in bodily contact with the
+	//     passing player HOWEVER the header chooses to derive its floor -- so this
+	//     is a claim about the body contract that the floor has to satisfy, not a
+	//     copy of the floor. It reds on a re-tune of fZM_HUMAN_BODY_CAPSULE_RADIUS
+	//     past half the floor, and on a floor frozen down to a small literal to make
+	//     room for an anchor that crowds the lane. Neither was visible to the
+	//     equality it replaces.
+	ZENITH_ASSERT_GE(fZM_ROUTE1_TRAINER_MIN_LANE_OFFSET,
+		fZM_HUMAN_BODY_CAPSULE_RADIUS * 2.0f,
+		"the trainer lane-offset floor is %.4f m while two %.4f m capsule radii "
+		"need %.4f m. A trainer held no further off the centreline than two bodies "
+		"are wide is standing in contact with every player who walks past him, and "
+		"the walked lane is where this game spends its whole first hour",
+		(double)fZM_ROUTE1_TRAINER_MIN_LANE_OFFSET,
+		(double)fZM_HUMAN_BODY_CAPSULE_RADIUS,
+		(double)(fZM_HUMAN_BODY_CAPSULE_RADIUS * 2.0f));
 	ZENITH_ASSERT_LT(fZM_ROUTE1_TRAINER_MIN_LANE_OFFSET,
 		fZM_ROUTE1_TRAINER_MAX_LANE_OFFSET,
 		"the trainer lane-offset band is empty or inverted: floor %.4f, ceiling "
@@ -932,6 +1012,13 @@ ZENITH_TEST(ZM_WorldTraversal, Route1_TrainerStationsStandOnFlattenedGrassFreeGr
 			ZM_GetRoute1TrainerStation((ZM_ROUTE1_TRAINER_ID)uStation);
 		const float fOffset = Route1DistanceToLane(xStation.m_fX, xStation.m_fZ);
 
+		// ★ THE RAMBLER'S MARGIN IS TIGHT, AND THE NUMBER IS RECORDED HERE SO THE
+		//   NEXT BODY RE-TUNE IS NOT A SURPRISE. He measures 2.1288 m off the lane
+		//   centreline against today's 2.0 m derived floor -- 0.129 m of room, and
+		//   the forager's 2.4551 m is not much better. Grow fZM_HUMAN_BODY_FOOTPRINT
+		//   or fZM_HUMAN_BODY_CAPSULE_RADIUS by more than that and this clause reds
+		//   on an anchor nobody touched: move the ANCHOR, and re-derive the sight
+		//   window in U9b before believing the new one.
 		ZENITH_ASSERT_GE(fOffset, fZM_ROUTE1_TRAINER_MIN_LANE_OFFSET,
 			"trainer station '%s' stands %.4f m from the lane centreline, inside "
 			"the %.4f m floor -- his body crowds the walking line itself",
@@ -1307,6 +1394,33 @@ ZENITH_TEST(ZM_WorldTraversal, Route1_EntityNamesAreUniquePrintableLookupKeysNoN
 		"the transcribed engine component type table is empty");
 	ZENITH_ASSERT_GT(uGameTypeCount, 0u,
 		"the transcribed game component type table is empty");
+
+	// ★ AND THE TWO TABLES ARE THE SIZE THE OTHER COPY OF THEM CLAIMS.
+	// Tests/ZM_Tests_ThornacrePlacement.cpp transcribes these same 15 game and 17
+	// engine rows BYTE-IDENTICALLY (s_aszGameComponentTypeNames /
+	// s_aszEngineComponentTypeNames) and NOTHING cross-checks the copies: a
+	// component registered later updates one of them and silently weakens the other
+	// file's needle-swallow battery, with both files green and no diff to read.
+	// Pinning the COUNT as a literal on BOTH sides is the cheap reconciliation --
+	// a row added to one copy now reds the other.
+	//
+	// ★ THE DURABLE FIX IS A SHARED HEADER, and it is deliberately not landed here.
+	// One Games/Zenithmon/Tests/ZM_Tests_ComponentTypeNames.h that both suites
+	// include leaves one inventory instead of two; it belongs to whichever slice
+	// adds a THIRD battery, where the duplication stops being a pair and starts
+	// being a pattern. Until then: EDIT BOTH TABLES AND BOTH LITERALS IN ONE CHANGE.
+	ZENITH_ASSERT_EQ(uGameTypeCount, 15u,
+		"the transcribed GAME component type table holds %u rows, not the 15 that "
+		"Games/Zenithmon/Zenithmon.cpp's ZENITH_REGISTER_COMPONENT block registers. "
+		"Tests/ZM_Tests_ThornacrePlacement.cpp carries a byte-identical copy pinned "
+		"at the same literal, so this reds when one copy is grown and the other is "
+		"not -- update BOTH tables and BOTH literals", uGameTypeCount);
+	ZENITH_ASSERT_EQ(uEngineTypeCount, 17u,
+		"the transcribed ENGINE component type table holds %u rows, not the 17 the "
+		"engine serializes (the 16 in Zenith_ComponentMeta_Registration.cpp plus "
+		"\"AIAgent\", registered at order 90 through the AI forwarder). "
+		"Tests/ZM_Tests_ThornacrePlacement.cpp carries a byte-identical copy pinned "
+		"at the same literal", uEngineTypeCount);
 
 	for (u_int uIndex = 0u; uIndex < uNameCount; ++uIndex)
 	{

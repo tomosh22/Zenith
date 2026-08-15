@@ -313,8 +313,11 @@ inline constexpr float fZM_THORNACRE_CAMERA_YAW   = 0.0f;
 
 // Radians, tilted DOWN. Chosen independently for this arrival; it is not a mirror
 // of any other camera in the game, and the sign is load-bearing -- flip it and
-// the eye ends up under the terrain (which the camera unit's anti-vacuity arm
-// runs through this same arithmetic to prove).
+// the eye ends up under the terrain. The boot unit
+// Thornacre_SettledCameraStandsAboveGroundBehindTheArrival
+// (Tests/ZM_Tests_ThornacrePlacement.cpp) runs the sign-flipped pitch through
+// this same arithmetic and requires it to FAIL the clearance floor, so that claim
+// is checked rather than believed.
 inline constexpr float fZM_THORNACRE_CAMERA_PITCH = -0.22f;
 
 inline constexpr float fZM_THORNACRE_CAMERA_ARM          = 6.0f;   // pivot -> camera
@@ -330,6 +333,9 @@ inline constexpr float fZM_THORNACRE_CAMERA_ASPECT       = 16.0f / 9.0f;
 
 // The floor the camera unit enforces above the provisional ground: a pitch sign
 // error buries the eye in the terrain and nothing else in the game would notice.
+// The reader is Thornacre_SettledCameraStandsAboveGroundBehindTheArrival, which
+// also pins the far plane against the recipe's own Z extent and the settled eye
+// behind the arriving body.
 inline constexpr float fZM_THORNACRE_CAMERA_MIN_GROUND_CLEARANCE = 1.0f;
 
 // The pose the arriving player is actually FILMED FROM: the pivot (the arrival

@@ -3,9 +3,14 @@
 **Last updated:** 2026-08-14
 
 **★ LIVE PIN (UPDATED 2026-08-15):
-ZM boot `3344`; engine boot (Null Combat) `1638`; registry **64**.** Observed
+ZM boot `3345`; engine boot (Null Combat) `1638`; registry **64**.** Observed
 2026-08-15 on a clean `Null_vs2022_Debug_Win64_True` Zenithmon build after S8 item
-2 slice **R1-1** (`3344 ran / 3342 passed / 0 failed / 2 skipped`). R1-1 added
+2 slice **R1-1** and its review follow-up
+(`3345 ran / 3343 passed / 0 failed / 2 skipped`). The follow-up added **+1**
+(`ZM_WorldTraversal.Thornacre_SettledCameraStandsAboveGroundBehindTheArrival` --
+the camera unit Thornacre's header comments already claimed existed, while its
+five camera constants had no reader); its other four fixes are CLAUSES inside
+existing units and move no count. R1-1 itself added
 **+16 ZM units and no engine units**: 4 `ZM_SceneRegistry` (the new enumerable
 scene-registration table), 8 `ZM_WorldTraversal` Route 1 placement units, 3
 `ZM_WorldTraversal` Thornacre stub units, 1 `ZM_TerrainRecipeSet` material unit.
@@ -19,7 +24,8 @@ placement units + 1 `ProfLab.zscen` needle) **-> 3307** (SC-D, +8 lab-site units
 **-> 3312** (SC-E, +5: 1 `Dawnmere.zscen` seam needle + 4 `ZM_WorldTraversal`)
 **-> 3327** (SC-F, +15: 14 `ZM_Intro` + 1 `ZM_Data` gate-polarity unit)
 **-> 3328** (Q-2026-08-15-001, +1 `ZM_WorldTraversal` diagonal-walk-up unit)
-**-> 3344** (S8 item 2 slice R1-1, +16 as broken down above).
+**-> 3344** (S8 item 2 slice R1-1, +16 as broken down above)
+**-> 3345** (R1-1 review follow-up, +1 Thornacre camera unit).
 Registry 61 -> 62 (`ZM_DawnmereLabGroundTruth_Test`) -> 63 (`ZM_LabRoundTrip_Test`)
 -> 64 (`ZM_IntroBeat_Test`).
 Engine UNMOVED at 1638 -- no slice touched a file under `Zenith/`.
@@ -1069,21 +1075,29 @@ test coverage.
 - **Every live Route 1 test SKIPS on CI** (gitignored bake) and a skip counts as a PASS. The
   CI-visible spine of this whole item is boot units + committed-`.zscen` byte needles.
 
-### ★ THREE FOLLOW-UPS R1-1 BOOKED FOR R1-2 (do not rediscover them)
+### ★ THE ONE FOLLOW-UP R1-1 LEFT OPEN FOR R1-2 (do not rediscover it)
 - **`fZM_ROUTE1_PROVISIONAL_GROUND_Y` and its Thornacre twin are UNMEASURED** -- they are the
   recipes' `m_fTargetHeight`, not surfaces anyone probed. They are only legitimate while every
   anchor sits inside a flattened pad, which the R1-1 units assert. **R1-2 must land the raycast
   ground oracle (model it on `ZM_DawnmereNpcGroundTruth_Test`) and re-freeze the anchors as
   MEASURED literals.** Move an anchor off its pad before that lands and the constant becomes a
   lie no compiled-constant unit can see.
-- **The Thornacre camera constants (`fZM_THORNACRE_CAMERA_*`) currently have NO reader.** Route
-  1's camera unit (U11) polices the pitch-sign and short-far-plane defects; Thornacre's identical
-  constants are unpoliced. Either add the mirror unit in R1-2 or accept them consciously -- two
-  header comments currently claim a guard that does not exist and should be softened either way.
-- **The 15 game + 17 engine component-type-name table is transcribed into BOTH new test files**
-  as byte-identical copies, and nothing cross-checks them. A component registered later updates
-  one copy and silently weakens the other. The durable fix is a shared
-  `Tests/ZM_Tests_ComponentTypeNames.h`; it belongs to whichever slice adds a third battery.
+
+> The other two follow-ups are **CLOSED** by R1-1's review pass (same day): Thornacre gained the
+> camera unit its header comments already claimed
+> (`Thornacre_SettledCameraStandsAboveGroundBehindTheArrival`, with a sign-flipped-pitch
+> anti-vacuity arm), and both suites' duplicated component-type tables now pin their counts
+> (15 game / 17 engine) as literals, so a one-sided registration reds the other file. **A
+> stopgap, not the durable fix** -- that is one shared `Tests/ZM_Tests_ComponentTypeNames.h`,
+> owed by whichever slice adds a THIRD name battery.
+>
+> The same pass also killed a clause that could not red: U8 compared
+> `fZM_ROUTE1_TRAINER_MIN_LANE_OFFSET` against a term-for-term re-computation of its own
+> definition, so both sides moved together on any edit. It is now an independent
+> two-capsule-radii floor. **That species of defect has now been found three times in this
+> codebase (ZM-D-183, the self-referential-guard note, and here) -- check for it by reflex in
+> every review.** The rambler's 0.129 m margin against that floor is recorded in place, so a
+> body-contract re-tune reds as a known-tight anchor rather than a mystery.
 
 # ════════════════════════════════════════════════════════════════════════════
 # END COLD-START BLOCK. Historical context for earlier stages follows.
