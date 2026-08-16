@@ -261,9 +261,9 @@ baseline authority above, `zagent decide` appends to `DecisionLog.md`
 here, and a loop worker has no network — it reads `Docs/AgentBriefing.md`
 off disk with the Read tool. **Edit the Markdown; re-run the sync.** A
 Notion page a human has edited is reported and skipped, never replaced.
-(Known limitation: re-writing an already-populated page currently
-reports `verified: false` and leaves the old text — the pages are
-accurate as of their first sync.)
+(Every write is verified against the persisted snapshot; a re-write
+appends, confirms, then drops the superseded blocks, so a write that
+fails to land leaves the old text rather than a blank page.)
 
 A dirty tree here blocks the loop entirely — its precondition check
 treats uncommitted changes as fatal rather than something to work around

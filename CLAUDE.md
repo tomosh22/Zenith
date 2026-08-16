@@ -429,11 +429,11 @@ A Notion page a human has edited is reported as a conflict and SKIPPED,
 never replaced, so a comment added in the browser survives the next
 sync (`--force` if you actually want to discard it).
 
-**Known limitation today:** the first sync of a page works and is
-verified; RE-writing a page that already has content reports
-`verified: false` and leaves the old text in place. So the tree is
-correct as of its first sync, and a doc that has changed since needs the
-Markdown, not the page. Detail in `C:\dev\saas\packagesgent\CLAUDE.md`.
+Every page write is verified by re-reading the persisted CRDT
+snapshot, and a re-write is two-phase — append, confirm the append
+persisted, then drop the superseded blocks — so a write that fails to
+land leaves the page on its previous revision rather than blank, and
+says so with `verified: false`.
 
 **Filing a ticket from Zenith work.** The description IS the spec, and
 the loop refuses anything it cannot route. Three sections:
