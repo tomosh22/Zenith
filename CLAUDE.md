@@ -334,3 +334,45 @@ Located in `Build/`:
 - `Sharpmake_SentinelAI.cs` / `Sharpmake_SentinelECS.cs` / `Sharpmake_SentinelPhysics.cs` - Sentinel test modules
 - `Sharpmake_FreeType.cs` / `Sharpmake_Msdfgen.cs` / `Sharpmake_MsdfAtlasGen.cs` - Font/text dependency projects
 - `Sharpmake_TilePuzzleLevelGen.cs` / `Sharpmake_TilePuzzleRegistryViewer.cs` - TilePuzzle tooling projects
+
+## External agent board (`C:\dev\saas`, project `ZEN`)
+
+Some work in this repo is queued and executed by an autonomous Claude
+Code loop driven from a Jira-style board in a **separate** repo
+(`C:\dev\saas`, project key `ZEN`). This repo remains the source of
+truth for everything — the board is a queue and an audit log, not a
+spec. You can develop here and ignore it entirely, with three
+exceptions.
+
+**Unit-gate baselines are mirrored outside this repo.** A ticket's
+category selects which gate list runs, and each list spells `-Baseline`
+explicitly. So the pinned counts now live in one more place than the
+usual set:
+
+| Pin | Sites |
+|---|---|
+| Zenithmon boot | `Games/Zenithmon/Docs/Status.md`, `.github/workflows/zm-tests.yml`, **`C:\dev\saas\agent.config.json`** |
+| Engine boot (Null Combat) | `Tools/run_unit_gate.ps1` (`-Baseline` default), **`C:\dev\saas\agent.config.json`** |
+
+A backend-neutral engine unit still moves **every** game's pinned count
+(`run_unit_gate.ps1`, `zm-tests.yml`, `Docs/BuildSystem.md`, the ZM
+docs) — that config file is simply one more site on the same list. It
+is machine-local and gitignored there, so a stale mirror fails only on
+the machine running the loop, with an exact-equality error and zero
+failing tests.
+
+**Branching policy is enforced mechanically per area.** Zenithmon and
+Engine tickets carry `branching: "direct"` — the loop commits straight
+to `master` and hard-refuses `git switch -c`, `git worktree` and
+`gh pr` (ZM-D-031). DevilsPlayground overrides to `"branch"`, matching
+its `Docs/CIPolicy.md` squash-merge policy. Nothing is ever pushed.
+
+**Leave `master` clean.** The loop's precondition check treats a dirty
+tree as fatal and refuses the ticket rather than stashing around it — it
+has to, since `direct` mode commits in place. Uncommitted work here
+silently blocks the queue.
+
+Gate command lines are copied VERBATIM from this repo's own docs and CI
+(`.github/workflows/{zm-tests,engine-gate,dp-tests}.yml`,
+`Tools/run_unit_gate.ps1`), never paraphrased. If you change how a game
+is built or tested, that config is a downstream consumer.

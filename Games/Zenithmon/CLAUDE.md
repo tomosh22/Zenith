@@ -73,10 +73,12 @@ Games\Zenithmon\Build\output\win64\vulkan_vs2022_debug_win64_true\zenithmon.exe
 
 ## Scene authoring + committed assets (IMPORTANT)
 
-**SIX assets ARE committed** (verify with `git ls-files Games/Zenithmon/Assets`):
-`Assets/Navmesh/Dawnmere.znavmesh` (ZM-D-147) and all **five**
-`Assets/Scenes/*.zscen` -- `Battle`, `Dawnmere`, `FrontEnd`, `PlayerHome`,
-`ProfLab` (the fifth added by ZM-D-174) (ZM-D-148). `.gitignore` re-includes
+**EIGHT assets ARE committed** (verify with
+`git ls-files Games/Zenithmon/Assets`): `Assets/Navmesh/Dawnmere.znavmesh`
+(ZM-D-147) and all **seven** `Assets/Scenes/*.zscen` -- `Battle`, `Dawnmere`,
+`FrontEnd`, `PlayerHome`, `ProfLab` (the fifth added by ZM-D-174), and
+`Route1` + `Thornacre` (added by R1-2 step 2, ZM-D-199) (ZM-D-148).
+`.gitignore` re-includes
 `**/*.zscen` and `**/*.znavmesh` at any depth, which is what lets CI verify
 navigation and scene content with no GPU and no bake. **On a normal clone you
 need no bake step: the committed bytes are what the game loads**, in `_True`,
@@ -213,6 +215,45 @@ scene loads; automated tests (`Tests/ZM_AutoTests_*.cpp`) run via the harness.
 Conventions (state-setters only, between-tests hook, RequestSkip when baked
 assets are absent) are documented in `Docs/TestPlan.md`. CI gate:
 `.github/workflows/zm-tests.yml` (required check `zm-tests`).
+
+## The external agent board (`C:\dev\saas`, project `ZEN`)
+
+Zenithmon's remaining roadmap also exists as tickets on a Jira board in a
+separate repo, worked by an autonomous Claude Code loop. `Docs/Roadmap.md`
+and `Docs/Status.md` remain the SPEC; the board is only the queue and the
+audit log. **Nothing here changes if you ignore it** — but three things
+bite if you do not know it exists.
+
+**1. The unit-gate baseline now has a THIRD pinned site.** Adding or
+removing a `ZM_*` unit means bumping the number in *all three*:
+
+| Site | What |
+|---|---|
+| `Games/Zenithmon/Docs/Status.md` | the LIVE PIN block |
+| `.github/workflows/zm-tests.yml` | `-Baseline` on the required check |
+| `C:\dev\saas\agent.config.json` | the loop's Zenithmon gate line |
+
+The engine pin (Null Combat, currently 1638) is mirrored there too, under
+the `Engine` category. No gate tells you: `run_unit_gate.ps1` asserts
+`ran == Baseline` **exactly**, so a grown suite fails with zero failing
+tests, and a stale mirror fails only on the loop's machine.
+
+**2. ZM-D-031 is enforced mechanically now.** The `Zenithmon` and
+`Engine` categories carry `branching: "direct"`, so the loop commits
+straight to `master` and hard-refuses `git switch -c`, `git worktree` and
+`gh pr`. DevilsPlayground overrides it to `"branch"` because its
+`Docs/CIPolicy.md` is a squash-merge PR policy. Nothing is pushed —
+`push: false` everywhere.
+
+**3. Windowed authoring stays human, by engine law.** A headless run may
+CREATE a `.zscen` but never CHANGE one (the publish guard), so any slice
+that re-authors a committed scene is assigned to a person on the board
+and never enters the queue. R1-2 step 3, R1-3, R1-6 and R1-10 are all in
+that class. Handing one to the loop would either no-op or trip the guard.
+
+A dirty tree here blocks the loop entirely — its precondition check
+treats uncommitted changes as fatal rather than something to work around
+(it must, since `direct` mode commits in place). Leave `master` clean.
 
 ## Where to go next
 
