@@ -433,14 +433,31 @@ prompt, and the branching mode. A `ZEN` ticket without one comes back
 `contractValid: false` rather than being guessed at, because guessing
 between areas means ratcheting the wrong pin.
 
+`create` now refuses at FILE time — you no longer find out hours later
+when the loop reaches the card — but only when you file straight into
+*Ready for Agent*, where the loop could claim it immediately. Filing
+into *To Do* warns and lets you carry on drafting. It also refuses a
+body carrying its own `## Gates`, because a ticket's gate list REPLACES
+the category's rather than adding to it: pasting the Zenithmon list into
+a ticket is how a pinned baseline goes stale, and `echo ok` in a body
+would merge on `echo ok`.
+
 Size it deliberately: `--complexity TRIVIAL|SIMPLE|MODERATE|COMPLEX`
 picks the model, `--risk LOW|MEDIUM|HIGH` escalates it one tier. Risk
 never blocks a merge — it buys more thinking.
 
-**Windowed work gets `--assignee <email>`.** A headless run may CREATE a
-`.zscen` but never CHANGE one, so any slice that re-authors a committed
-scene must be assigned to a person; unassigned tickets are queue-eligible
-and the loop would take it and no-op.
+**Windowed work gets `--label windowed`.** A headless run may CREATE a
+`.zscen` but never CHANGE one, so a slice that re-authors a committed
+scene cannot be done by the loop at all — and the units that would
+notice are compiled constants that stay green, so the failure is a clean
+gate run with the deliverable missing. The label is filtered out of the
+claim query and fails the contract on a targeted claim, so the loop
+cannot take it either way. Add `--assignee <email>` as well when you
+want it to show up as someone's card; the label is what protects it.
+
+This used to be `--assignee` alone, which worked only because the queue
+skips assigned tickets — making the SAFE state the one nobody typed.
+Now the marker is explicit, greppable, and enforced.
 
 **Handing work over is a drag, not a command.** Nothing runs until a card
 reaches *Ready for Agent* on the board. To run one immediately instead,
