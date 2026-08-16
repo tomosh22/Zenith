@@ -411,6 +411,29 @@ Commands you would actually use from here:
 | `create --project ZEN --title "…" --file body.md --category Zenithmon --complexity … --risk …` | file a ticket |
 | `doctor` | pre-flight: DB, agent account, lanes, categories, repo cleanliness, gate executables |
 | `owns ZEN-6` | is the loop still holding it |
+| `docs status --project ZEN` | what a living-doc sync would change; writes nothing |
+| `docs sync --project ZEN` | mirror `Games/*/Docs` into the Notion page tree |
+
+**The living docs are MIRRORED into Notion, one way.** `zagent docs
+sync` renders `Games/Zenithmon/Docs` and `Games/DevilsPlayground/Docs`
+into a page tree — one section per game, a page per file, and an index
+page with a child per part for anything past the per-page budget
+(`DecisionLog.md` is 932 KB). **These files stay authoritative.** Nothing
+writes back: `Tools/doc_lint.ps1` still lints them off disk,
+`zagent decide` still appends to `Games/Zenithmon/Docs/DecisionLog.md`,
+`Status.md` is still the authority for the pinned ZM baseline, and a
+loop worker — which has no shell and no network — still reads its
+binding briefing with the Read tool. Edit the Markdown; re-run the sync.
+
+A Notion page a human has edited is reported as a conflict and SKIPPED,
+never replaced, so a comment added in the browser survives the next
+sync (`--force` if you actually want to discard it).
+
+**Known limitation today:** the first sync of a page works and is
+verified; RE-writing a page that already has content reports
+`verified: false` and leaves the old text in place. So the tree is
+correct as of its first sync, and a doc that has changed since needs the
+Markdown, not the page. Detail in `C:\dev\saas\packagesgent\CLAUDE.md`.
 
 **Filing a ticket from Zenith work.** The description IS the spec, and
 the loop refuses anything it cannot route. Three sections:

@@ -251,6 +251,20 @@ that re-authors a committed scene is assigned to a person on the board
 and never enters the queue. R1-2 step 3, R1-3, R1-6 and R1-10 are all in
 that class. Handing one to the loop would either no-op or trip the guard.
 
+**4. `Docs/` is MIRRORED into Notion, and stays authoritative here.**
+`zagent docs sync` renders this directory into a page tree under
+Agent › Documentation › Zenithmon — one page per file, plus an index
+page with a child per part for anything past the per-page budget
+(`Docs/DecisionLog.md` is 932 KB, twelve parts). It is one-way. Nothing
+writes back to these files, and nothing should: `Status.md` is the
+baseline authority above, `zagent decide` appends to `DecisionLog.md`
+here, and a loop worker has no network — it reads `Docs/AgentBriefing.md`
+off disk with the Read tool. **Edit the Markdown; re-run the sync.** A
+Notion page a human has edited is reported and skipped, never replaced.
+(Known limitation: re-writing an already-populated page currently
+reports `verified: false` and leaves the old text — the pages are
+accurate as of their first sync.)
+
 A dirty tree here blocks the loop entirely — its precondition check
 treats uncommitted changes as fatal rather than something to work around
 (it must, since `direct` mode commits in place). Leave `master` clean.
