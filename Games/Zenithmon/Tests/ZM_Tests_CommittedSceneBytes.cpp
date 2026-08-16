@@ -179,11 +179,12 @@ ZENITH_TEST(ZM_CommittedSceneBytes, DawnmereCarriesTheFrozenRivalFacingBitExactl
 // compiled ZM_WorldSpec tag list and NEVER the destination scene, and "FromLab"
 // has been a compiled Dawnmere tag since S1 -- so that exit validates whether or
 // not any entity in Dawnmere.zscen actually carries the tag. If the marker is
-// missing, the warp is ACCEPTED, the fade goes fully opaque, and the machine parks
-// in ZM_WARP_TRANSITION_WAITING_FOR_SPAWN, WHICH HAS NO TIMEOUT. The player is
-// frozen behind a black screen, forever. Not a crash, not an assert, not a red
-// test -- which is exactly why the check has to be somewhere, and why "somewhere"
-// has to run in CI.
+// missing, the warp is ACCEPTED, the fade goes fully opaque, and the machine
+// stalls in ZM_WARP_TRANSITION_WAITING_FOR_SPAWN until that barrier's frame budget
+// expires (ZM-D-200). The player is frozen behind a black screen until then, and
+// what he gets back is a Zenith_Error in the log and a town he never arrived in.
+// Not a crash, not an assert, not a red test -- which is exactly why the check has
+// to be somewhere, and why "somewhere" has to run in CI.
 //
 // ★ AND WHY IT IS HERE RATHER THAN IN A PURE UNIT. Every pure unit about this seam
 // reads the compiled constants the AUTHORING also reads, so both sides move
@@ -197,7 +198,7 @@ ZENITH_TEST(ZM_CommittedSceneBytes, DawnmereCarriesTheFrozenRivalFacingBitExactl
 // PREFIX of "FromLabSpawn", so every occurrence of the entity NAME is also an
 // occurrence of the TAG and a bare `tagHits > 0` would be satisfied by the name
 // alone -- i.e. it would pass on a scene that authored the marker entity and never
-// tagged it, which is precisely the WAITING_FOR_SPAWN hang (the resolver matches on
+// tagged it, which is precisely the WAITING_FOR_SPAWN stall (the resolver matches on
 // the TAG, not on the name). The claim is therefore STRICTLY MORE tag occurrences
 // than name occurrences: at least one occurrence of "FromLab" that is not part of
 // "FromLabSpawn", which is the serialized ZM_SpawnPoint tag.
@@ -266,9 +267,10 @@ ZENITH_TEST(ZM_CommittedSceneBytes, DawnmereCarriesTheLabSeamMarkerAndTag)
 		"once. A ZERO is the state a source-only change leaves behind: the authoring "
 		"steps are in Zenithmon.cpp but no WINDOWED *_True tools boot has re-authored "
 		"and re-committed the scene -- and ProfLab's exit is ALREADY shipped, so the "
-		"shipped game warps into WAITING_FOR_SPAWN (no timeout) and hangs behind an "
-		"opaque fade the moment anyone leaves the lab. More than one means the marker "
-		"was authored twice.",
+		"shipped game warps into WAITING_FOR_SPAWN and sits behind an opaque fade for "
+		"that barrier's whole frame budget (ZM-D-200) the moment anyone leaves the "
+		"lab, then errors out into a town it never arrived in. More than one means "
+		"the marker was authored twice.",
 		szSpawnEntityName);
 
 	ZENITH_ASSERT_EQ(uDoorTriggerHits, 1u,
@@ -287,15 +289,16 @@ ZENITH_TEST(ZM_CommittedSceneBytes, DawnmereCarriesTheLabSeamMarkerAndTag)
 
 	// ★ THE CLAUSE THE PREFIX TRAP IS ABOUT. Every "FromLabSpawn" contains a
 	// "FromLab", so equality here means the tag exists ONLY as part of the entity
-	// name -- an untagged marker, which resolves to nothing and hangs the warp.
+	// name -- an untagged marker, which resolves to nothing and stalls the warp.
 	ZENITH_ASSERT_GT(uTagHits, uNameHits,
 		"the committed Dawnmere.zscen contains the spawn tag '%s' %u time(s) and the "
 		"entity name '%s' %u time(s) -- and the tag is a PREFIX of the name, so those "
 		"counts being equal means every occurrence of the tag is part of the name and "
 		"the marker was never actually TAGGED. ZM_SpawnPoint resolution matches on the "
 		"TAG, not on the entity name, so an untagged marker leaves "
-		"RequestWarp(<Dawnmere>, \"%s\") parked in WAITING_FOR_SPAWN -- which has NO "
-		"timeout -- behind a fully opaque fade with the player frozen. Check that the "
+		"RequestWarp(<Dawnmere>, \"%s\") stalled in WAITING_FOR_SPAWN behind a fully "
+		"opaque fade with the player frozen for that barrier's whole frame budget "
+		"(ZM-D-200), then erroring out with nowhere to have arrived. Check that the "
 		"FromLabSpawn authoring in Zenithmon.cpp still calls "
 		"AddStep_Custom(&ZM_ConfigureFromLabSpawnPoint) and that the scene was "
 		"re-authored afterwards.",

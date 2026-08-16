@@ -399,8 +399,9 @@ ZENITH_TEST(ZM_WorldTraversal, ProfLab_WorldSpecRowIsTheInteriorWithNoTerrain)
 		}
 		ZENITH_ASSERT_TRUE(bTargetOffersIt,
 			"ProfLab's exit targets spawn tag '%s' in %s, which that scene does "
-			"not offer -- the warp would pass IsWarpDestinationValid and then park "
-			"in WAITING_FOR_SPAWN, which has no timeout",
+			"not offer -- the warp would pass IsWarpDestinationValid and then stall "
+			"in WAITING_FOR_SPAWN for its whole frame budget before erroring out "
+			"(ZM-D-200)",
 			xConn.m_szSpawnTag != nullptr ? xConn.m_szSpawnTag : "(null)",
 			ZM_GetSceneName(xConn.m_eTarget));
 	}
@@ -767,8 +768,8 @@ ZENITH_TEST(ZM_WorldTraversal, ProfLab_HeaderSpawnTagMatchesTheWorldSpecRow)
 		ZENITH_ASSERT_STREQ(szZM_PROFLAB_SPAWN_TAG, xSpec.m_pszSpawnTags[0],
 			"the placement header mirrors spawn tag '%s' but the world table "
 			"offers '%s' -- RequestWarp would be rejected by "
-			"IsWarpDestinationValid, or accepted and then parked forever in "
-			"WAITING_FOR_SPAWN because no marker carries the tag it wants",
+			"IsWarpDestinationValid, or accepted and then stalled for the whole "
+			"WAITING_FOR_SPAWN budget because no marker carries the tag it wants",
 			szZM_PROFLAB_SPAWN_TAG, xSpec.m_pszSpawnTags[0]);
 	}
 
@@ -1365,11 +1366,12 @@ ZENITH_TEST(ZM_WorldTraversal, ProfLab_AsterEntityNameIsAUniqueLookupKey)
 // and, crucially, that the tag it hands back is one Dawnmere actually OFFERS.
 //
 // ★ THAT LAST CLAUSE IS THE RECIPROCAL-INVENTORY ONE, and it is the only check in
-// this file that could ever have caught the shipped-exit-without-a-marker hang at
+// this file that could ever have caught the shipped-exit-without-a-marker stall at
 // the TABLE level. ZM_GameStateManager::IsWarpDestinationValid asks exactly this
 // question of the table and nothing else -- so if it fails here, the warp would
 // have been REJECTED at runtime (a visible no-op) rather than accepted into
-// WAITING_FOR_SPAWN. Both are defects; this one is at least diagnosable.
+// WAITING_FOR_SPAWN. Both are defects; this one at least fails immediately,
+// rather than after a whole barrier budget (ZM-D-200).
 // ============================================================================
 ZENITH_TEST(ZM_WorldTraversal, ProfLab_ExitSensorTargetsDawnmereByTheCompiledConnection)
 {
@@ -1414,7 +1416,8 @@ ZENITH_TEST(ZM_WorldTraversal, ProfLab_ExitSensorTargetsDawnmereByTheCompiledCon
 		"the ProfLab->Dawnmere connection's spawn tag '%s' is not a tag "
 		"ZM_SpawnPoint::SetTag will accept (capacity %u). SetTag fails CLOSED, so "
 		"the Dawnmere arrival marker would author itself untagged and the exit would "
-		"park the warp machine in WAITING_FOR_SPAWN, which has no timeout",
+		"stall the warp machine in WAITING_FOR_SPAWN for its whole frame budget "
+		"before erroring out (ZM-D-200)",
 		szTag, ZM_SpawnPoint::uTAG_CAPACITY);
 
 	// (4) ★ THE RECIPROCAL CLAUSE. Dawnmere must OFFER the tag the exit ASKS for.

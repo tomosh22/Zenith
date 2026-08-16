@@ -186,7 +186,8 @@ inline u_int ZM_GetProfLabExitTargetBuildIndex()
 // arrival marker must carry. ONE spelling for both sides of the seam is the whole
 // point: ZM_GameStateManager::IsWarpDestinationValid consults only this table and
 // never the scene, so a marker tagged with anything else passes validation and
-// then parks the warp machine in ZM_WARP_TRANSITION_WAITING_FOR_SPAWN forever.
+// then stalls the warp machine in ZM_WARP_TRANSITION_WAITING_FOR_SPAWN for that
+// barrier's whole frame budget before it errors out (ZM-D-200).
 inline const char* ZM_GetProfLabExitSpawnTag()
 {
 	const ZM_SceneConnection* pxEdge = ZM_GetProfLabExitConnection();
@@ -558,9 +559,11 @@ inline Zenith_Maths::Vector3 ZM_GetProfLabArrivalPivot()
 // never the destination scene, and "FromLab" has been a compiled Dawnmere tag
 // since S1 -- so RequestWarp(<Dawnmere>, "FromLab") returns TRUE with no marker in
 // the scene at all. The machine then advances to
-// ZM_WARP_TRANSITION_WAITING_FOR_SPAWN, WHICH HAS NO TIMEOUT, behind a fully
-// opaque fade with the player frozen. Not a crash, not a red test: a black screen
-// forever. That is why this sensor lands in the same commit as the Dawnmere
+// ZM_WARP_TRANSITION_WAITING_FOR_SPAWN and sits there behind a fully opaque fade
+// with the player frozen until that barrier's frame budget expires (ZM-D-200),
+// then escapes with a Zenith_Error naming the tag. Not a crash, not a red test --
+// a black screen that ends and says why, on a door that still leads nowhere.
+// That is why this sensor lands in the same commit as the Dawnmere
 // blockout, the FromLabSpawn marker and the LabDoorTrigger, and why the live-scene
 // clause I4 of ZM_ProfLabWarp_Test exists to red if one of them is ever removed.
 //

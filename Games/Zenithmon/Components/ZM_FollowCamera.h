@@ -24,11 +24,12 @@ struct ZM_FollowCameraPose
 // ★ THE TARGET IS THE UNIQUE ZM_PlayerController IN THIS CAMERA'S OWN SCENE --
 // a COMPONENT lookup, not the name lookup this component shipped with. The old
 // FindEntityByName("Player") made a string literal load-bearing in every
-// authored scene with no way to enforce it, and a miss parks
-// ZM_GameStateManager's fade-in on a barrier that has no timeout. Zero players
-// or several both mean "no target" rather than a guess. ResolveTarget in the
-// .cpp carries the full argument, including why this is deliberately NOT routed
-// through ZM_GameStateManager's player seam (it demands live physics).
+// authored scene with no way to enforce it, and a miss stalls
+// ZM_GameStateManager's fade-in on a barrier until its frame budget expires and
+// a Zenith_Error names the state (ZM-D-200) -- bounded now, still broken. Zero
+// players or several both mean "no target" rather than a guess. ResolveTarget in
+// the .cpp carries the full argument, including why this is deliberately NOT
+// routed through ZM_GameStateManager's player seam (it demands live physics).
 class ZM_FollowCamera
 {
 public:

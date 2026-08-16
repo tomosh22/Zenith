@@ -440,8 +440,9 @@ ZENITH_TEST(ZM_WorldTraversal, Thornacre_ArrivalSitsOnTheRecipeLandmarkTheTerrai
 	// (6) THE LANDMARK'S NAME IS A TAG THIS TOWN ACTUALLY OFFERS. The recipe names
 	//     its route arrival after the inbound spawn tag; the world table decides
 	//     what that tag is. Rename either and the marker the warp machine looks
-	//     for stops matching the landmark the terrain flattened -- which parks the
-	//     warp in ZM_WARP_TRANSITION_WAITING_FOR_SPAWN, a barrier with no timeout.
+	//     for stops matching the landmark the terrain flattened -- which stalls the
+	//     warp in ZM_WARP_TRANSITION_WAITING_FOR_SPAWN for that barrier's whole
+	//     frame budget before it errors out (ZM-D-200).
 	ZENITH_ASSERT_TRUE(
 		THRowOffersTag(ZM_GetWorldSpec(ZM_SCENE_THORNACRE), szTH_ARRIVAL_LANDMARK_NAME),
 		"the Thornacre recipe's arrival landmark is named '%s' but the compiled "
@@ -477,8 +478,9 @@ ZENITH_TEST(ZM_WorldTraversal, Thornacre_ArrivalSitsOnTheRecipeLandmarkTheTerrai
 // would lead to a scene with no file. Both are accepted by
 // ZM_GameStateManager::IsWarpDestinationValid, which consults ONLY the compiled
 // table -- never the registry, never the destination scene -- so the failure is
-// not a rejection but ZM_WARP_TRANSITION_WAITING_FOR_SCENE, which has NO TIMEOUT:
-// a permanent black screen behind an opaque fade with the player frozen.
+// not a rejection but ZM_WARP_TRANSITION_WAITING_FOR_SCENE: a black screen behind
+// an opaque fade with the player frozen for that barrier's whole frame budget,
+// then a Zenith_Error naming the build index it waited on (ZM-D-200).
 //
 // ★ AND THE SECOND HALF IS GEOMETRIC. A gate whose near face overlaps the
 // arriving body fires on the first contact tick and warps the player straight
@@ -542,16 +544,18 @@ ZENITH_TEST(ZM_WorldTraversal, Thornacre_ReturnGateTargetsRoute1ByTheCompiledCon
 	ZENITH_ASSERT_TRUE(ZM_SpawnPoint::IsTagValid(szTag),
 		"the Thornacre->Route1 spawn tag '%s' is not a tag ZM_SpawnPoint::SetTag "
 		"will accept (capacity %u). SetTag fails CLOSED, so Route 1's arrival "
-		"marker would author itself untagged and the return would park the warp "
-		"machine in WAITING_FOR_SPAWN, which has no timeout",
+		"marker would author itself untagged and the return would stall the warp "
+		"machine in WAITING_FOR_SPAWN for its whole frame budget before erroring "
+		"out (ZM-D-200)",
 		szTag, ZM_SpawnPoint::uTAG_CAPACITY);
 
 	// (5) ★ THE RECIPROCAL-INVENTORY CLAUSE. Route 1 must OFFER the tag the
 	//     return ASKS for -- and this is the exact predicate
 	//     IsWarpDestinationValid evaluates, run here against the same table it
 	//     reads. Failing here means the warp would be REJECTED at runtime (a
-	//     visible no-op) rather than accepted into a timeout-free wait; both are
-	//     defects, but that one is at least diagnosable.
+	//     visible no-op) rather than accepted into a barrier wait that burns its
+	//     whole frame budget before it says anything; both are defects, but that
+	//     one at least fails immediately.
 	const ZM_WorldSpec& xRoute1 = ZM_GetWorldSpec(ZM_SCENE_ROUTE1);
 	ZENITH_ASSERT_TRUE(THRowOffersTag(xRoute1, szTag),
 		"the Thornacre return asks Route 1 for spawn tag '%s', which is NOT in "
@@ -565,14 +569,15 @@ ZENITH_TEST(ZM_WorldTraversal, Thornacre_ReturnGateTargetsRoute1ByTheCompiledCon
 
 	// (6) ★ AND THE HALF IsWarpDestinationValid STRUCTURALLY CANNOT SEE. It never
 	//     consults the scene registry, so an ACCEPTED warp at an unregistered
-	//     index parks forever in WAITING_FOR_SCENE. R1-1 exists to make that
+	//     index burns the whole WAITING_FOR_SCENE budget. R1-1 exists to make that
 	//     unreachable: Route 1's registration row lands before any trigger points
 	//     at it. This clause reads the COMPILED table, never the live registry.
 	ZENITH_ASSERT_TRUE(ZM_IsSceneRegisteredForLoad(ZM_SCENE_ROUTE1),
 		"Route 1 has no row in the compiled scene-registration table, so the "
 		"Thornacre return would be ACCEPTED by IsWarpDestinationValid and then "
-		"park in ZM_WARP_TRANSITION_WAITING_FOR_SCENE -- a permanent black screen "
-		"behind an opaque fade, not a crash and not a red test. Restore the row "
+		"stall in ZM_WARP_TRANSITION_WAITING_FOR_SCENE for that barrier's whole "
+		"frame budget -- a black screen behind an opaque fade that ends in a "
+		"Zenith_Error, not a crash and not a red test. Restore the row "
 		"in Source/World/ZM_SceneRegistry.h");
 
 	// ---- The geometry -------------------------------------------------------
@@ -708,7 +713,7 @@ ZENITH_TEST(ZM_WorldTraversal, Thornacre_ReturnGateTargetsRoute1ByTheCompiledCon
 //      type name. DO NOT "fix" this into a symmetric form.
 //      The player is EXCLUDED from that battery entirely: it is named "Player"
 //      (mandatory -- ZM_FollowCamera.cpp:390 resolves its subject by that exact
-//      name, and a scene-unique rename is a permanent black screen), and "Player"
+//      name, and a scene-unique rename is a black screen), and "Player"
 //      IS a substring of the type name "ZM_PlayerController". A needle on it must
 //      therefore use the STRICTLY-MORE clause ZM_Tests_CommittedSceneBytes.cpp
 //      already ships. The anti-vacuity arm below asserts exactly that overlap, so
@@ -906,16 +911,17 @@ ZENITH_TEST(ZM_WorldTraversal, Thornacre_StubAuthorsNoGymDoorAndItsNamesAreUniqu
 	// ★ ANTI-VACUITY, THROUGH THE IDENTICAL PREDICATE, AND THE DOCUMENTATION OF
 	//   THE ONE EXCLUSION. If this fails, "Player" has stopped overlapping
 	//   "ZM_PlayerController" and the exclusion above is dead weight -- OR the
-	//   player was renamed, which is the permanent-black-screen defect itself.
+	//   player was renamed, which is the black-screen defect itself.
 	ZENITH_ASSERT_NOT_NULL(
 		std::strstr("ZM_PlayerController", szZM_THORNACRE_PLAYER_ENTITY_NAME),
 		"'%s' is no longer a substring of the component type name "
 		"'ZM_PlayerController'. Either the battery above can no longer fire at "
 		"all (and its exclusion of the player is meaningless), or the player "
-		"entity has been renamed -- and ZM_FollowCamera resolves its subject with "
-		"FindEntityByName(\"Player\"), so a rename leaves the camera with no "
-		"target and parks ZM_GameStateManager in a fade barrier that has no "
-		"timeout: a permanent black screen",
+		"entity has been renamed. Since Q-2026-08-15-002 a rename is NOT a black "
+		"screen -- ZM_FollowCamera acquires the unique ZM_PlayerController in its "
+		"own scene, not an entity called \"Player\" -- but it does invalidate "
+		"every committed-bytes needle that takes the STRICTLY-MORE form purely "
+		"because the player name nests inside the type name",
 		szZM_THORNACRE_PLAYER_ENTITY_NAME);
 
 	// (6) NO NAME CONTAINS A SPAWN TAG THIS SEAM USES. A marker named after its

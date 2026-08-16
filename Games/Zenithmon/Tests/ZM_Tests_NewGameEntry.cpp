@@ -21,9 +21,10 @@
 // ★ WHAT THESE UNITS CANNOT DO. They run BEFORE the initial scene loads, so they
 // see neither the scene registry nor one byte of Assets/Scenes/PlayerHome.zscen.
 // They cannot prove the destination is REGISTERED (an unregistered index passes
-// IsWarpDestinationValid, is ACCEPTED, and then parks forever in
-// ZM_WARP_TRANSITION_WAITING_FOR_SPAWN, which has no timeout), and they cannot
-// prove a real Enter on the title actually goes there. Those two claims belong to
+// IsWarpDestinationValid, is ACCEPTED, and then stalls in
+// ZM_WARP_TRANSITION_WAITING_FOR_SPAWN until its frame budget expires and a
+// Zenith_Error names the tag, ZM-D-200), and they cannot prove a real Enter on
+// the title actually goes there. Those two claims belong to
 // ZM_SaveContinue_Test's AwaitPlayerHome phase. Do not read this file's greenness
 // as "New Game works".
 //
@@ -91,16 +92,17 @@ ZENITH_TEST(ZM_Data, NewGameEntry_DestinationIsThePlayerHomeDoor)
 	const ZM_WorldSpec& xSpec = ZM_GetWorldSpec(eDestination);
 
 	// The row must OFFER the tag the flow asks for. Without this the warp is
-	// accepted by nothing, or -- worse -- accepted and then parked in
-	// WAITING_FOR_SPAWN, which has no timeout: a silent hang, not a crash.
+	// accepted by nothing, or -- worse -- accepted and then stalled in
+	// WAITING_FOR_SPAWN for that barrier's whole frame budget, ending in a
+	// Zenith_Error and a new run that never begins (ZM-D-200). Never a crash.
 	ZENITH_ASSERT_NOT_NULL(ZM_GameStateManager::szNEW_GAME_SPAWN_TAG,
 		"the new-game spawn tag constant is null");
 	ZENITH_ASSERT_TRUE(
 		NewGameEntrySceneOffersTag(
 			xSpec, ZM_GameStateManager::szNEW_GAME_SPAWN_TAG),
 		"%s does not offer spawn tag '%s', which is where a new run is sent -- "
-		"the transition would queue and then wait forever for a marker no scene "
-		"authors", xSpec.m_szName,
+		"the transition would queue and then wait out its whole WAITING_FOR_SPAWN "
+		"budget for a marker no scene authors", xSpec.m_szName,
 		ZM_GameStateManager::szNEW_GAME_SPAWN_TAG != nullptr
 			? ZM_GameStateManager::szNEW_GAME_SPAWN_TAG : "(null)");
 
@@ -313,7 +315,8 @@ ZENITH_TEST(ZM_Data, NewGameEntry_PlayerHomeConnectsBackToDawnmere)
 				ZM_GetWorldSpec(ZM_SCENE_DAWNMERE), xConn.m_szSpawnTag),
 			"PlayerHome's exit names spawn tag '%s' in Dawnmere, which that scene "
 			"does not offer -- the warp would pass IsWarpDestinationValid and then "
-			"park in WAITING_FOR_SPAWN, which has no timeout",
+			"stall in WAITING_FOR_SPAWN for its whole frame budget before erroring "
+			"out (ZM-D-200)",
 			xConn.m_szSpawnTag != nullptr ? xConn.m_szSpawnTag : "(null)");
 	}
 

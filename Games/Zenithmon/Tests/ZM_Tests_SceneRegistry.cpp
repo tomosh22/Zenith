@@ -11,12 +11,13 @@
 // IsTagValid, ZM_FindSceneByBuildIndex and the target row's offered spawn-tag
 // list. It never looks at the scene registry and never looks inside the
 // destination scene -- so a warp aimed at a build index NOTHING REGISTERED is
-// ACCEPTED, and the machine then parks in ZM_WARP_TRANSITION_WAITING_FOR_SCENE
-// or _WAITING_FOR_SPAWN, NEITHER OF WHICH HAS A TIMEOUT. Every failure path in
-// PollForSpawnAndPlacePlayer is a bare return with no counter and no error
-// state. The symptom is a permanent black screen behind a fully opaque fade
-// with the player frozen: not a crash, not an exception, and -- until this
-// file -- not a red test either.
+// ACCEPTED, and the machine then stalls in ZM_WARP_TRANSITION_WAITING_FOR_SCENE
+// or _WAITING_FOR_SPAWN. Every failure path in PollForSpawnAndPlacePlayer is
+// still a bare return; what bounds it is the shared dwell counter and the frame
+// budget of ZM-D-200, which escapes to FADING_IN with a named Zenith_Error once
+// the budget burns. So the symptom is a black screen behind a fully opaque fade
+// with the player frozen for that whole budget, then a loud log line: not a
+// crash, not an exception, and -- until this file -- not a red test either.
 //
 // Registration used to be five hand-written RegisterSceneBuildIndex calls with
 // no compiled table behind them, which is precisely why no unit could see it.
@@ -77,9 +78,10 @@ namespace
 	// A stem carries no directory and no extension: a stem that gained ".zscen"
 	// produces "Scenes/Route1.zscen.zscen", and a stem carrying a separator
 	// escapes the Scenes directory entirely. Both register a path that no scene
-	// file will ever be found at, and BOTH ARE SILENT -- the registration
-	// succeeds, and the failure only appears as a load that never completes,
-	// behind a fade with no timeout.
+	// file will ever be found at, and BOTH ARE SILENT AT REGISTRATION -- the
+	// registration succeeds, and the failure only appears as a load that never
+	// completes, behind a fade, until the WAITING_FOR_SCENE budget expires and
+	// names it (ZM-D-200).
 	bool SceneRegistryStemIsAFileStem(const char* szStem)
 	{
 		if (szStem == nullptr || szStem[0] == '\0')
@@ -176,8 +178,8 @@ namespace
 //     for '%s'" assert at boot the moment the loop reaches the second copy with
 //     a different path, i.e. a hard boot failure rather than a test failure;
 //   * a stem that gained ".zscen" or a directory -- registers
-//     "Scenes/Route1.zscen.zscen", which loads nothing, forever, behind a fade
-//     with no timeout;
+//     "Scenes/Route1.zscen.zscen", which loads nothing, behind a fade, until the
+//     WAITING_FOR_SCENE budget expires and errors out (ZM-D-200);
 //   * a re-pointed build index -- the row registers one scene's path under
 //     another scene's index, so a warp resolves to the wrong world.
 ZENITH_TEST(ZM_SceneRegistry, Registry_EveryRowResolvesToADistinctWorldRowAndBuildIndex)
@@ -224,7 +226,7 @@ ZENITH_TEST(ZM_SceneRegistry, Registry_EveryRowResolvesToADistinctWorldRowAndBui
 			"registration row %u (%s) resolves to the unresolved-build-index "
 			"sentinel; Project_LoadInitialScene SKIPS such a row, so this scene "
 			"would never be registered and any warp to it would be ACCEPTED and "
-			"then park forever in WAITING_FOR_SCENE",
+			"then burn the whole WAITING_FOR_SCENE budget before erroring out",
 			uRow, ZM_GetSceneName(xRow.m_eScene));
 
 		// ...and it round-trips. An index that does not resolve back to this row
@@ -449,10 +451,11 @@ ZENITH_TEST(ZM_SceneRegistry, Registry_TotalAccessorsAreFailClosedOnGarbage)
 // ★ THIS IS THE UNIT THE WHOLE SLICE EXISTS FOR. Author a gate trigger, forget
 // the registration, and NOTHING ELSE IN THE TREE NOTICES: IsWarpDestinationValid
 // accepts the destination (it consults only the compiled world table), the warp
-// is queued, the fade goes fully opaque, and the machine parks in
-// WAITING_FOR_SCENE / WAITING_FOR_SPAWN -- neither of which has a timeout, and
-// every failure path in PollForSpawnAndPlacePlayer is a bare return. The player
-// sees a black screen forever.
+// is queued, the fade goes fully opaque, and the machine stalls in
+// WAITING_FOR_SCENE / WAITING_FOR_SPAWN -- every failure path in
+// PollForSpawnAndPlacePlayer is still a bare return, and only the frame budget of
+// ZM-D-200 ends it. The player sees a black screen for that whole budget, and
+// then a log line instead of the town he walked to.
 //
 // So this unit walks the SAME compiled table Project_LoadInitialScene walks, and
 // requires it to cover every target the placement headers point a sensor at --
@@ -523,9 +526,10 @@ ZENITH_TEST(ZM_SceneRegistry, Registry_EveryPlacementGateTargetIsRegisteredForLo
 		ZENITH_ASSERT_TRUE(ZM_IsSceneRegisteredForLoad(xGate.m_eTarget),
 			"%s targets %s, which has NO registered scene file -- the warp "
 			"would be ACCEPTED by IsWarpDestinationValid (which never consults "
-			"the registry) and would then park in WAITING_FOR_SCENE, which has "
-			"no timeout: a permanent black screen behind an opaque fade, with "
-			"the player frozen. Add the row to ZM_SceneRegistry.h",
+			"the registry) and would then stall in WAITING_FOR_SCENE for that "
+			"barrier's whole frame budget (ZM-D-200): a black screen behind an "
+			"opaque fade with the player frozen, then an error naming a scene "
+			"that was never registered. Add the row to ZM_SceneRegistry.h",
 			xGate.m_szLabel, ZM_GetSceneName(xGate.m_eTarget));
 
 		// ...and by build index too, which is the spelling the runtime holds.
@@ -536,7 +540,7 @@ ZENITH_TEST(ZM_SceneRegistry, Registry_EveryPlacementGateTargetIsRegisteredForLo
 
 		// (4) The tag half of the seam. A gate that asked for a tag its target
 		//     does not offer passes nothing -- or worse, passes validation and
-		//     parks in WAITING_FOR_SPAWN, the other timeout-free barrier.
+		//     stalls in WAITING_FOR_SPAWN, the other polling barrier.
 		ZENITH_ASSERT_NOT_NULL(xGate.m_szSpawnTag,
 			"%s resolves a null spawn tag; the accessors answer \"\" on a miss, "
 			"never null, so this is a contract break rather than a miss",
@@ -548,8 +552,8 @@ ZENITH_TEST(ZM_SceneRegistry, Registry_EveryPlacementGateTargetIsRegisteredForLo
 		ZENITH_ASSERT_TRUE(
 			SceneRegistrySceneOffersTag(xTarget, xGate.m_szSpawnTag),
 			"%s asks %s for spawn tag '%s', which that row does not offer -- "
-			"the warp would pass validation and then wait forever for a marker "
-			"no scene authors",
+			"the warp would pass validation and then wait out its whole "
+			"WAITING_FOR_SPAWN budget for a marker no scene authors",
 			xGate.m_szLabel, ZM_GetSceneName(xGate.m_eTarget),
 			SceneRegistrySafe(xGate.m_szSpawnTag));
 

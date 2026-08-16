@@ -397,9 +397,11 @@ Zenith_Entity ZM_FollowCamera::ResolveTarget()
 	// literal load-bearing in every scene ever authored, with nothing able to
 	// enforce it: rename the entity in ONE scene and this returns an invalid
 	// entity, ZM_GameStateManager::PollForCameraAndBeginFadeIn then bare-returns
-	// on a camera that has no target, and the warp sits on a barrier with NO
-	// TIMEOUT -- a permanent black screen behind an opaque fade, with every unit
-	// still green. The entities are all still NAMED "Player" (see
+	// on a camera that has no target, and the warp sat on a barrier that back then
+	// had NO TIMEOUT AT ALL -- a permanent black screen behind an opaque fade, with
+	// every unit still green. (That barrier is bounded now, ZM-D-200: it escapes
+	// with a Zenith_Error naming the state. Still a broken warp, but a loud one.)
+	// The entities are all still NAMED "Player" (see
 	// Project_RegisterEditorAutomationSteps); the point is that NOTHING DEPENDS ON
 	// THAT any more. The name was also a substring of the serialized type name
 	// "ZM_PlayerController", so a committed-bytes needle on it could never be a

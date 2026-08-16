@@ -71,8 +71,23 @@ a state change (the clause protecting the reset-by-comparison design), and an an
 proving a healthy warp completes without tripping it. That last one is what a timeout firing
 instantly would fail.
 
-**Follow-up, not done:** eleven comments and assertion messages across seven test files still say
-these barriers have "NO TIMEOUT". None changes a truth value; all want a sweep.
+**Follow-up, DONE the same day.** This entry originally booked "eleven comments and assertion
+messages across seven test files" as a sweep. **The real figure was 66 sites across 15 files** --
+the estimate was off by 6x because it came from one agent's incidental notes rather than a
+systematic grep, and because several spellings defeat a literal-phrase search: `NO TIMEOUT`
+line-wrapped across two comment lines, and a `NEITHER OF WHICH HAS A TIMEOUT` phrasing.
+★ **The sweep was NOT a find-and-replace, and that is the point worth keeping.** Most of those
+sites were load-bearing RATIONALE whose CONCLUSION is still correct -- "markers land before
+triggers", "this deadline earns its place" -- and only the SYMPTOM changed (silent infinite hang
+-> bounded wait, named error, screen returns). Deleting the stale clause would have stripped the
+reason each guard exists. A handful needed their POINT replaced rather than a clause: the ones
+whose only content was "and you will never find out, because it hangs silently".
+★ It also surfaced a SECOND staleness the timeout sweep did not own: several clauses still
+justified themselves by "ZM_FollowCamera resolves by FindEntityByName" (dead since
+Q-2026-08-15-002). Those assertions were KEPT but re-grounded on what is still true -- the shared
+player-name spelling is what makes `"Player"` nest inside `"ZM_PlayerController"`, which every
+STRICTLY-MORE committed-bytes needle depends on. They pin a CONVENTION now, not a contract, and
+say so.
 
 ---
 

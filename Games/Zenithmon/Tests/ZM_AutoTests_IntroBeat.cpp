@@ -738,8 +738,9 @@ namespace
 				FailIBDetailed(
 					"the front-door warp never completed in %d frames [state=%d "
 					"activeBuildIndex=%d]. IF state READS %d (WAITING_FOR_SPAWN) the "
-					"'%s' tag resolved to no marker in the loaded Dawnmere, and that "
-					"state has NO TIMEOUT",
+					"'%s' tag resolved to no marker in the loaded Dawnmere -- this "
+					"deadline fires well inside that barrier's own frame budget "
+					"(ZM-D-200), so this message is what you get, not the runtime error",
 					iIB_DAWNMERE_DEADLINE,
 					pxManager != nullptr ? (int)pxManager->GetTransitionState() : -1,
 					IBActiveBuildIndex(),

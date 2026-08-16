@@ -10,9 +10,11 @@
 // the whole game layer. That made a bare string literal load-bearing in every
 // scene ever authored: rename the player entity in ONE scene and the camera
 // silently acquires nothing, ZM_GameStateManager::PollForCameraAndBeginFadeIn
-// bare-returns on a camera with no target, and the warp waits on a barrier that
-// has NO TIMEOUT -- a permanent black screen behind an opaque fade, with every
-// existing unit still green. Acquisition is now BY COMPONENT: the unique
+// bare-returns on a camera with no target, and the warp waits on a barrier that,
+// back then, had no timeout at all -- a permanent black screen behind an opaque
+// fade, with every existing unit still green. (That barrier is now bounded and
+// loud, ZM-D-200; the acquisition defect this file pins is not.) Acquisition is
+// now BY COMPONENT: the unique
 // ZM_PlayerController in the CAMERA'S OWN SCENE.
 //
 // Every case below is written so it RED-FAILS on the pre-change name lookup;
@@ -146,8 +148,8 @@ ZENITH_TEST(ZM_FollowCamera, TargetIsTheControllerAndNeverTheEntityNamedPlayer)
 
 	// PHASE B -- the real subject, named the scene-unique way a tidy-minded author
 	// would name it. Before the change this entity was invisible to the camera and
-	// the decoy above was the target; both facts are what shipped the no-timeout
-	// black screen risk.
+	// the decoy above was the target; both facts are what shipped the black-screen
+	// risk, back when the camera barrier had no budget to escape on.
 	Zenith_Entity xAvatar = CreatePlayerCarryingController(
 		xFixture.m_pxSceneData, "Route1Player");
 	ZENITH_ASSERT_TRUE(xAvatar.IsValid());

@@ -136,14 +136,21 @@ namespace
 	constexpr const char* szROUTE1_TYPE_CONTAINING_THE_PLAYER_NAME =
 		"ZM_PlayerController";
 
-	// ★ TRANSCRIBED FROM Games/Zenithmon/Components/ZM_FollowCamera.cpp:390, which
-	// resolves its subject as FindEntityByName("Player") -- production, scene-
-	// agnostic code, and the ONLY FindEntityByName call in the whole of
-	// Games/Zenithmon/Components/ and Games/Zenithmon/Source/. That literal is the
-	// INDEPENDENT source this file checks the header's player name against; on a
-	// miss the camera clears its target and ZM_GameStateManager::
-	// PollForCameraAndBeginFadeIn bare-returns forever behind an opaque fade.
-	constexpr const char* szROUTE1_FOLLOW_CAMERA_SUBJECT_NAME = "Player";
+	// ★ WHAT THIS LITERAL IS FOR CHANGED AT Q-2026-08-15-002, AND THE OLD REASON IS
+	// GONE. It used to be transcribed from ZM_FollowCamera.cpp, which acquired its
+	// subject as FindEntityByName("Player") -- so this was an INDEPENDENT source and
+	// a mismatch was a permanent black screen. The camera now acquires the unique
+	// ZM_PlayerController in its own scene and never reads the name at all.
+	//
+	// The clause below is KEPT anyway, on a narrower and still-live claim: every
+	// shipped scene spells its player the same way (szZM_PROFLAB_PLAYER_ENTITY_NAME
+	// and the rest), and that shared spelling is what makes "Player" a strict
+	// substring of the serialized type name "ZM_PlayerController" -- which is why
+	// every committed-bytes needle on it must take the STRICTLY-MORE form rather
+	// than an equality. A scene that spelled it differently would silently make
+	// that reasoning wrong for one scene only. This pins a CONVENTION now, not a
+	// contract -- do not re-describe it as one.
+	constexpr const char* szROUTE1_PLAYER_NAME_CONVENTION = "Player";
 
 	// ★ NOT SHIPPED NAMES. The pair U10 feeds through its OWN substring predicate
 	// as an anti-vacuity arm: a marker named after the gate beside it is exactly
@@ -879,9 +886,10 @@ ZENITH_TEST(ZM_WorldTraversal, Route1_GatesStandBetweenTheirMarkerAndTheWorldEdg
 	//     and that warp is still ACCEPTED by
 	//     ZM_GameStateManager::IsWarpDestinationValid, which consults only the
 	//     compiled table, so the failure is not a rejection but
-	//     ZM_WARP_TRANSITION_WAITING_FOR_SCENE, a barrier with NO TIMEOUT: a
-	//     permanent black screen behind an opaque fade, not a crash and not a
-	//     visibly broken door.
+	//     ZM_WARP_TRANSITION_WAITING_FOR_SCENE: an opaque fade over a frozen player
+	//     until that barrier's frame budget expires (ZM-D-200), then a Zenith_Error
+	//     naming the build index it waited on. Not a crash -- and until that budget
+	//     runs out, not a visibly broken door either.
 	ZENITH_ASSERT_NE(ZM_GetRoute1SouthGateTargetBuildIndex(),
 		uZM_ROUTE1_GATE_TARGET_UNRESOLVED,
 		"the Route 1 SOUTH gate resolves the unresolved-target sentinel, so the "
@@ -1428,22 +1436,24 @@ ZENITH_TEST(ZM_WorldTraversal, Route1_EntityNamesAreUniquePrintableLookupKeysNoN
 		"Route 1 declares no entity names, so every clause in this unit passes by "
 		"walking nothing");
 
-	// (1) ★ THE PLAYER IS NAMED "Player", AND THIS IS THE ONE CLAUSE IN THIS FILE
-	//     THAT SPELLS A NAME AS A LITERAL. The literal is not copied from the
-	//     header it checks -- it is transcribed from ZM_FollowCamera.cpp:390, which
-	//     resolves its subject as FindEntityByName("Player") in production,
-	//     scene-agnostic code. On a miss the camera clears its target and
-	//     ZM_GameStateManager::PollForCameraAndBeginFadeIn bare-returns forever
-	//     behind an opaque fade: a permanent black screen with the player frozen,
-	//     which is precisely the failure mode R1-1 exists to make impossible.
-	//     A scene-unique "Route1Player" would look tidier and ship exactly that.
+	// (1) ★ THE PLAYER IS SPELLED "Player" IN EVERY SCENE, AND THIS IS THE ONE
+	//     CLAUSE IN THIS FILE THAT SPELLS A NAME AS A LITERAL. It is a CONVENTION
+	//     clause since Q-2026-08-15-002 -- ZM_FollowCamera used to acquire by this
+	//     exact name, which made a mismatch a permanent black screen; it now
+	//     acquires the unique ZM_PlayerController in its own scene and never reads
+	//     the name. What survives is the byte-needle consequence: the shared
+	//     spelling is what makes "Player" a strict substring of the type name
+	//     "ZM_PlayerController", and every committed-bytes needle on it depends on
+	//     that being true for EVERY scene, not most of them.
 	ZENITH_ASSERT_STREQ(szZM_ROUTE1_PLAYER_ENTITY_NAME,
-		szROUTE1_FOLLOW_CAMERA_SUBJECT_NAME,
-		"Route 1's player entity is named '%s' while ZM_FollowCamera::ResolveTarget "
-		"looks its subject up as FindEntityByName(\"%s\") -- production code that "
-		"knows nothing about which scene it is in. The follow camera would never "
-		"acquire a target and the arrival fade would never lift",
-		szZM_ROUTE1_PLAYER_ENTITY_NAME, szROUTE1_FOLLOW_CAMERA_SUBJECT_NAME);
+		szROUTE1_PLAYER_NAME_CONVENTION,
+		"Route 1's player entity is named '%s' while every other shipped scene "
+		"spells it '%s'. The camera no longer cares (it acquires by "
+		"ZM_PlayerController), so this is not a black screen -- but the "
+		"committed-bytes needles rely on the player name being a strict substring "
+		"of \"ZM_PlayerController\" in EVERY scene, and a one-off spelling makes "
+		"that reasoning silently wrong for this one",
+		szZM_ROUTE1_PLAYER_ENTITY_NAME, szROUTE1_PLAYER_NAME_CONVENTION);
 
 	// (2) Every name is a usable lookup key.
 	for (u_int uIndex = 0u; uIndex < uNameCount; ++uIndex)
@@ -1590,7 +1600,7 @@ ZENITH_TEST(ZM_WorldTraversal, Route1_EntityNamesAreUniquePrintableLookupKeysNoN
 	//     still NECESSARY. The one pair everybody knows collides must be reported as
 	//     colliding by the identical predicate; if it ever stops, either the
 	//     predicate is broken or the player name moved -- and the player name moving
-	//     is the permanent-black-screen defect clause (1) polices.
+	//     is the black-screen defect clause (1) polices.
 	ZENITH_ASSERT_TRUE(
 		Route1NeedleIsSwallowedBy(szZM_ROUTE1_PLAYER_ENTITY_NAME,
 			szROUTE1_TYPE_CONTAINING_THE_PLAYER_NAME),

@@ -37,10 +37,12 @@
 // ★ WHY THAT MATTERS MORE HERE THAN ANYWHERE ELSE IN THE GAME.
 // ZM_GameStateManager::IsWarpDestinationValid consults ONLY the compiled table --
 // never the scene registry, never the destination scene -- so a warp at a scene
-// that does not exist is ACCEPTED, and the machine then parks in
-// ZM_WARP_TRANSITION_WAITING_FOR_SCENE / _WAITING_FOR_SPAWN, NEITHER OF WHICH HAS
-// A TIMEOUT: a permanent black screen behind an opaque fade with the player
-// frozen. Not a crash, not a red test. Source/World/ZM_SceneRegistry.h is the
+// that does not exist is ACCEPTED, and the machine then stalls in
+// ZM_WARP_TRANSITION_WAITING_FOR_SCENE / _WAITING_FOR_SPAWN behind an opaque fade
+// with the player frozen until that barrier's frame budget expires (ZM-D-200),
+// then escapes with a Zenith_Error naming the state and the tag. Not a crash and
+// not a red test either way -- the screen comes back on a warp to nowhere rather
+// than staying black. Source/World/ZM_SceneRegistry.h is the
 // other half of closing that hole; this file is the half that names the gates.
 //
 // ★ THIS HEADER DOES NOT INCLUDE ZM_TerrainAuthoring.h, DELIBERATELY. That header
@@ -84,8 +86,9 @@ inline constexpr const char* szZM_ROUTE1_TERRAIN_ENTITY_NAME = "Route1Terrain";
 // with pxSceneData->FindEntityByName("Player") -- the ONLY FindEntityByName call
 // in the whole game layer -- so renaming the player in ONE scene cleared the
 // camera's target, and ZM_GameStateManager::PollForCameraAndBeginFadeIn then
-// bare-returned on a camera with no target: a barrier with NO TIMEOUT, i.e. a
-// permanent black screen behind an opaque fade, with every unit still green.
+// bare-returned on a camera with no target: a barrier that, back then, had no
+// timeout at all, i.e. a permanent black screen behind an opaque fade, with every
+// unit still green.
 // R1-1's plan very nearly shipped a scene-unique "Route1Player" for tidiness.
 //
 // ResolveTarget now acquires the unique ZM_PlayerController in the camera's OWN
@@ -217,8 +220,9 @@ inline u_int ZM_GetRoute1NorthGateTargetBuildIndex()
 // The tag a gate asks its destination for -- and therefore ALSO the tag that
 // destination's arrival marker must carry. ONE spelling for both sides of the seam
 // is the whole point: IsWarpDestinationValid consults only the table and never the
-// scene, so a marker tagged with anything else passes validation and then parks the
-// warp machine in WAITING_FOR_SPAWN forever.
+// scene, so a marker tagged with anything else passes validation and then stalls
+// the warp machine in WAITING_FOR_SPAWN for that barrier's whole frame budget
+// before it errors out (ZM-D-200).
 //
 // TOTAL: "" on a miss, NEVER nullptr -- a caller may index [0] without checking.
 inline const char* ZM_GetRoute1GateSpawnTag(ZM_SCENE_ID eTarget)

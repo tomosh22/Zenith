@@ -15,10 +15,12 @@
 // RegisterSceneBuildIndex calls with no compiled table behind them, so NO boot
 // unit could guard "the gate trigger shipped, the registration did not".
 // IsWarpDestinationValid consults only the compiled world table and never the
-// registry, so an unregistered index is ACCEPTED, and the machine then parks in
-// ZM_WARP_TRANSITION_WAITING_FOR_SCENE / _WAITING_FOR_SPAWN, NEITHER OF WHICH
-// HAS A TIMEOUT -- a permanent black screen behind an opaque fade with the
-// player frozen. Not a crash, not a red test.
+// registry, so an unregistered index is ACCEPTED, and the machine then stalls in
+// ZM_WARP_TRANSITION_WAITING_FOR_SCENE / _WAITING_FOR_SPAWN behind an opaque fade
+// with the player frozen, until that barrier's frame budget expires (ZM-D-200)
+// and it escapes with a Zenith_Error naming the state and the tag. Loud now, but
+// still a warp to nowhere and still not a red test -- which is what this table
+// and its boot units exist to catch BEFORE it ships.
 //
 // ★ ROUTE1 AND THORNACRE ARE IN THIS TABLE BEFORE THEIR SCENES EXIST, ON
 // PURPOSE. A registration without a scene is INERT (nothing loads that index

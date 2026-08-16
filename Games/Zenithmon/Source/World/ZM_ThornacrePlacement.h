@@ -90,8 +90,8 @@ inline constexpr const char* szZM_THORNACRE_TERRAIN_ENTITY_NAME = "ThornacreTerr
 // FindEntityByName("Player") -- the only FindEntityByName call in the whole game
 // layer -- so a rename in ONE scene cleared the camera's target and
 // ZM_GameStateManager::PollForCameraAndBeginFadeIn bare-returned on a camera with
-// no target: a barrier with NO TIMEOUT, i.e. a permanent black screen behind an
-// opaque fade. Not a crash, not a red test.
+// no target: a barrier that, back then, had no timeout at all, i.e. a permanent
+// black screen behind an opaque fade. Not a crash, not a red test.
 //
 // It now acquires the unique ZM_PlayerController in the camera's OWN scene. Keep
 // the name for consistency with the shipped scenes; a rename is no longer fatal.
@@ -229,8 +229,9 @@ inline u_int ZM_GetThornacreReturnTargetBuildIndex()
 // Route 1 arrival marker must carry. ONE spelling for both sides of the seam is
 // the whole point: ZM_GameStateManager::IsWarpDestinationValid consults only this
 // table and never the destination scene, so a marker tagged with anything else
-// passes validation and then parks the warp machine in
-// ZM_WARP_TRANSITION_WAITING_FOR_SPAWN forever.
+// passes validation and then stalls the warp machine in
+// ZM_WARP_TRANSITION_WAITING_FOR_SPAWN for that barrier's whole frame budget
+// before it errors out (ZM-D-200).
 //
 // TOTAL: "" on a miss, NEVER nullptr.
 inline const char* ZM_GetThornacreReturnSpawnTag()

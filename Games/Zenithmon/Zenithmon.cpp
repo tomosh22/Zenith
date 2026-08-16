@@ -1883,8 +1883,10 @@ namespace
 	// OFFERS. A tag that matched the compiled table on one side only would still
 	// pass ZM_GameStateManager::IsWarpDestinationValid -- it consults that table and
 	// never the scene -- and then park the warp machine in
-	// ZM_WARP_TRANSITION_WAITING_FOR_SPAWN, which has NO timeout: an opaque fade and
-	// a frozen player, forever.
+	// ZM_WARP_TRANSITION_WAITING_FOR_SPAWN. That barrier now carries a frame budget
+	// (ZM-D-200), so the mismatch stalls behind an opaque fade, then names itself in
+	// a Zenith_Error and gives the screen back -- loud and recoverable instead of a
+	// frozen player forever, but still a lab door that leads nowhere.
 	// ============================================================================
 
 	// Dawnmere's return marker: where a player who leaves the lab comes out.
@@ -1921,7 +1923,7 @@ namespace
 	}
 
 	// ============================================================================
-	// R1-2 -- THE THREE ARRIVAL TAGS, AND THE ONE CONFUSION THAT HANGS THE GAME.
+	// R1-2 -- THE THREE ARRIVAL TAGS, AND THE ONE CONFUSION THAT BREAKS THE GAME.
 	//
 	// ★★ AN ARRIVAL MARKER CARRIES AN **INBOUND** TAG: the tag asked for by the
 	// scene the player is ARRIVING FROM, not by any edge leaving the scene the
@@ -1943,9 +1945,11 @@ namespace
 	// on screen: it produces a Route 1 whose two markers both offer a tag Route 1
 	// does not itself offer. ZM_GameStateManager::IsWarpDestinationValid would
 	// still return TRUE -- it consults ONLY the compiled table, never the
-	// destination scene -- and the warp machine would then park in
-	// ZM_WARP_TRANSITION_WAITING_FOR_SPAWN, WHICH HAS NO TIMEOUT: an opaque fade
-	// over a frozen player, forever. Not a crash, not a red test.
+	// destination scene -- and the warp machine would then stall in
+	// ZM_WARP_TRANSITION_WAITING_FOR_SPAWN behind an opaque fade until that
+	// barrier's frame budget expires (ZM-D-200), then escape with a Zenith_Error
+	// naming the tag it never found. Still not a crash and still not a red test --
+	// but you find out, instead of watching a frozen player forever.
 	//
 	// The resolver below removes the choice. It takes the SOURCE region and this
 	// region, walks the SOURCE row's connection list for the edge whose target is
@@ -3207,15 +3211,16 @@ void Project_RegisterEditorAutomationSteps()
 	// "FromLab" since S1, but Dawnmere.zscen authored only the "TownCenter" and
 	// "FromHome" markers -- and IsWarpDestinationValid reads ONLY the compiled tag
 	// list, never the scene, so an exit shipped on its own would have passed
-	// validation and then parked the warp machine in
-	// ZM_WARP_TRANSITION_WAITING_FOR_SPAWN, which has NO timeout: an opaque fade and
-	// a frozen player, forever.
+	// validation and then stalled the warp machine in
+	// ZM_WARP_TRANSITION_WAITING_FOR_SPAWN -- an opaque fade over a frozen player
+	// until that barrier's frame budget expires (ZM-D-200), then a Zenith_Error
+	// naming the tag and a screen that comes back on a door into nowhere.
 	//
 	// That is no longer the state of the world. The Dawnmere block at the bottom of
 	// this function now authors the lab blockout, the "FromLab" arrival marker and
 	// the LabDoorTrigger, and this block authors the exit that returns to them. The
 	// two halves are ONE change and must stay one: deleting either side re-opens
-	// exactly the hang described above, which is why the live-scene clause I4 of
+	// exactly the break described above, which is why the live-scene clause I4 of
 	// ZM_ProfLabWarp_Test (a CI gate -- it needs no terrain and never skips) checks
 	// this sensor's target and tag in the LOADED scene, and why
 	// ZM_CommittedSceneBytes/DawnmereCarriesTheLabSeamMarkerAndTag checks the other
@@ -3775,9 +3780,11 @@ void Project_RegisterEditorAutomationSteps()
 		// RequestWarp(<Dawnmere>, "FromLab") returns TRUE whether or not any marker
 		// in this scene carries that tag. Ship the ProfLab exit without the marker
 		// below and the warp is ACCEPTED, the fade goes fully opaque, and the
-		// machine parks in ZM_WARP_TRANSITION_WAITING_FOR_SPAWN -- WHICH HAS NO
-		// TIMEOUT -- with the player frozen. A black screen forever, not a crash and
-		// not a red test.
+		// machine stalls in ZM_WARP_TRANSITION_WAITING_FOR_SPAWN with the player
+		// frozen until that barrier's frame budget expires (ZM-D-200) and a
+		// Zenith_Error names the tag. Still not a crash and still not a red test --
+		// but a black screen that ENDS and says why, rather than one that lasts
+		// forever.
 		//
 		// ★ EVERY COORDINATE COMES FROM THE FROZEN SC-D BLOCK in
 		// Source/World/ZM_DawnmerePlacement.h, whose ten ground heights are MEASURED
@@ -3897,9 +3904,10 @@ void Project_RegisterEditorAutomationSteps()
 	// LAND FIRST AND ALONE. ZM_GameStateManager::IsWarpDestinationValid consults
 	// ONLY the compiled world table -- never the destination scene -- so a warp
 	// trigger shipped before its destination MARKER exists is ACCEPTED, and the
-	// machine then parks in ZM_WARP_TRANSITION_WAITING_FOR_SCENE /
-	// _WAITING_FOR_SPAWN, NEITHER OF WHICH HAS A TIMEOUT: an opaque fade over a
-	// frozen player, forever, with no crash and no red test. The markers land
+	// machine then stalls in ZM_WARP_TRANSITION_WAITING_FOR_SCENE /
+	// _WAITING_FOR_SPAWN until that barrier's frame budget expires (ZM-D-200): an
+	// opaque fade over a frozen player, then a Zenith_Error naming the state and the
+	// tag, with no crash and no red test either way. The markers land
 	// here; the gate sensors that aim at them are R1-3's, in one commit, once
 	// every marker exists. So: no ZM_WarpTrigger, no gate, no gym door, and no
 	// trainers (R1-5/R1-6) in either block below.
@@ -3941,7 +3949,7 @@ void Project_RegisterEditorAutomationSteps()
 		// CONNECTION LIST -- south from DAWNMERE ("FromDawnmere"), north from
 		// THORNACRE ("FromThornacre"). Route 1's own gate accessors both answer
 		// "FromRoute1" and are OUTBOUND; the full trap, and why using one here
-		// would hang the game with every test green, is written out at
+		// would break the game with every test green, is written out at
 		// ZM_ResolveInboundSpawnTag above. Read it before touching either step.
 		//
 		// ★ THE TRANSFORM IS THE MARKER'S FEET, NEVER A BODY CENTRE.
@@ -3980,13 +3988,16 @@ void Project_RegisterEditorAutomationSteps()
 		// to resolve its subject with FindEntityByName("Player"), the only
 		// FindEntityByName call in the whole game layer, so a rename cleared the
 		// camera's target and ZM_GameStateManager::PollForCameraAndBeginFadeIn
-		// bare-returned on a barrier with NO TIMEOUT -- a permanent black screen.
-		// It now acquires the unique ZM_PlayerController in the camera's own scene.
+		// bare-returned on a barrier that, back then, had no timeout at all -- a
+		// permanent black screen. It now acquires the unique ZM_PlayerController in
+		// the camera's own scene.
 		//
 		// ★ SO WHAT MATTERS HERE IS THE COMPONENT BELOW, NOT THE NAME: every scene
 		// that authors a ZM_FollowCamera must author a ZM_PlayerController on
 		// exactly one entity. Delete that AddComponent and the camera acquires
-		// nothing -- the same black screen, by a different route.
+		// nothing -- the same broken arrival by a different route, now bounded by
+		// that barrier's frame budget and a named Zenith_Error (ZM-D-200) rather
+		// than permanent.
 		//
 		// ★ CAPSULE + DYNAMIC (it is the one body here that moves), authored ONE
 		// half-extent ABOVE its resting centre (ZM-D-184): a dynamic body authored
@@ -4058,7 +4069,7 @@ void Project_RegisterEditorAutomationSteps()
 		// MILESTONE: terrain, ONE arrival marker, a player and a camera. NO GYM
 		// DOOR. The compiled world table already carries the Thornacre -> Gym1
 		// ("Door") edge and that edge is deliberately UNBACKED -- authoring a door
-		// into a room nobody has built is the WAITING_FOR_SCENE hang described at
+		// into a room nobody has built is the WAITING_FOR_SCENE stall described at
 		// the top of this block. No trainers, no shops, no gate sensor (R1-3's).
 		//
 		// ★ uZM_THORNACRE_PLACEMENT_ENTITY_COUNT IS 5u AND ITS INDEX 4 IS THE
@@ -4142,9 +4153,9 @@ void Project_LoadInitialScene()
 	// RegisterSceneBuildIndex calls that no boot unit could see. The table lives
 	// in Source/World/ZM_SceneRegistry.h and the ZM_SceneRegistry boot units walk
 	// the SAME rows -- so "the gate trigger shipped, the registration did not"
-	// (an ACCEPTED warp that parks forever in WAITING_FOR_SCENE /
-	// WAITING_FOR_SPAWN, neither of which has a timeout) reds at boot instead of
-	// shipping as a black screen.
+	// (an ACCEPTED warp that stalls in WAITING_FOR_SCENE / WAITING_FOR_SPAWN until
+	// each barrier's frame budget expires, ZM-D-200) reds at boot instead of
+	// shipping as a black screen that ends in a runtime error.
 	//
 	// The path is built here rather than in the header so the header stays free
 	// of <string> and of GAME_ASSETS_DIR; the concatenation is byte-identical to

@@ -14,9 +14,10 @@
 // ZM_GameStateManager::IsWarpDestinationValid consults ONLY the compiled
 // ZM_WorldSpec tag list and never Zenith_SceneSystem's build-index registry. An
 // UNREGISTERED destination therefore passes validation, the warp is ACCEPTED,
-// and the machine then parks in ZM_WARP_TRANSITION_WAITING_FOR_SPAWN -- which
-// has NO timeout -- leaving the player frozen behind a permanently opaque fade.
-// A silent hang, not a crash. This test is what turns that into a red run.
+// and the machine then stalls in ZM_WARP_TRANSITION_WAITING_FOR_SPAWN, leaving
+// the player frozen behind an opaque fade until that barrier's frame budget
+// expires and a Zenith_Error names the tag (ZM-D-200) -- loud in the log by
+// then, but never a crash and never a red run. This test is what turns it red.
 //
 // C6 DEVIATION -- ZM-D-147, stated verbatim from Docs/TestPlan.md:
 //   "DEVIATION -- the two COMMITTED asset families do NOT skip (ZM-D-147).
@@ -113,18 +114,18 @@ namespace
 
 	// ---- The two failure texts that must diagnose themselves ---------------
 
-	// The whole point of the WarpIn deadline. WAITING_FOR_SPAWN has no timeout,
-	// so without this text the ONLY symptom of an unregistered build index is a
-	// frame cap that names nothing.
+	// The whole point of the WarpIn deadline. The barrier's own frame budget
+	// (ZM-D-200) is far longer than this one, so without this text the ONLY
+	// symptom of an unregistered build index is a frame cap that names nothing.
 	const char* const szPROFLAB_WARP_IN_DEADLINE_FAILURE =
 		"ProfLab never became the active scene. FIRST SUSPECT: a MISSING "
 		"RegisterSceneBuildIndex(41, GAME_ASSETS_DIR \"Scenes/ProfLab\" "
 		"ZENITH_SCENE_EXT) line in Project_LoadInitialScene (Zenithmon.cpp) -- "
 		"ZM_GameStateManager::IsWarpDestinationValid consults ONLY the compiled "
 		"ZM_WorldSpec tag list and never the scene registry, so RequestWarp is "
-		"ACCEPTED for an unregistered index and the machine then parks in "
-		"ZM_WARP_TRANSITION_WAITING_FOR_SPAWN, which has NO timeout -- making a "
-		"bare frame cap the only symptom";
+		"ACCEPTED for an unregistered index and the machine then stalls in "
+		"ZM_WARP_TRANSITION_WAITING_FOR_SPAWN, whose own frame budget far "
+		"outlasts this deadline -- making a bare frame cap the only symptom";
 
 	// The primary-mutation detector. Re-pointing the registration at another
 	// interior leaves every fade/opacity/camera/teardown clause GREEN, because
@@ -1074,9 +1075,10 @@ namespace
 				"declares. ZM_GameStateManager::IsWarpDestinationValid consults ONLY "
 				"the compiled tag list, so a tag Dawnmere does not offer is REJECTED "
 				"(a silent no-op door) while a tag it offers but no marker carries "
-				"is ACCEPTED and parks the machine in "
-				"ZM_WARP_TRANSITION_WAITING_FOR_SPAWN, which has NO timeout -- an "
-				"opaque fade and a frozen player, forever",
+				"is ACCEPTED and stalls the machine in "
+				"ZM_WARP_TRANSITION_WAITING_FOR_SPAWN -- an opaque fade and a frozen "
+				"player until that barrier's frame budget expires (ZM-D-200), then a "
+				"Zenith_Error naming the tag and a door that still leads nowhere",
 				szSensorName, pxWarp->GetSpawnTag(),
 				szExpectedTag != nullptr ? szExpectedTag : "<unresolved>");
 			return false;

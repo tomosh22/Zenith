@@ -17,9 +17,10 @@
 // executes the round trip, and the failure this slice exists to prevent is a
 // RUNTIME state: ZM_GameStateManager::IsWarpDestinationValid consults ONLY the
 // compiled ZM_WorldSpec tag list and NEVER the destination scene, so a warp to a
-// tag no marker carries is ACCEPTED and the machine parks in
-// ZM_WARP_TRANSITION_WAITING_FOR_SPAWN -- WHICH HAS NO TIMEOUT -- behind a fully
-// opaque fade with the player frozen. A black screen forever, not a crash.
+// tag no marker carries is ACCEPTED and the machine stalls in
+// ZM_WARP_TRANSITION_WAITING_FOR_SPAWN behind a fully opaque fade with the player
+// frozen, until that barrier's frame budget expires and a Zenith_Error names the
+// tag (ZM-D-200). A black screen that ends in an error, not a crash.
 //
 // ★ PHASE 1 IS THE TEST. It issues RequestWarp(<Dawnmere>, <the ProfLab exit's
 // own tag>) from the playerless FrontEnd -- byte for byte the call the shipped
@@ -405,8 +406,10 @@ namespace
 	// IsWarpDestinationValid will return TRUE for it whether or not any entity in
 	// Dawnmere.zscen carries that tag -- it reads the compiled table and never the
 	// scene. So an authoring change that dropped the FromLabSpawn marker leaves
-	// this warp ACCEPTED and the machine parked in WAITING_FOR_SPAWN forever. The
-	// deadline below is the ONLY thing that turns that into a diagnosis.
+	// this warp ACCEPTED and the machine stalled in WAITING_FOR_SPAWN for that
+	// barrier's whole frame budget (ZM-D-200). The deadline below fires long before
+	// that, and is the ONLY thing that turns it into a red test rather than a log
+	// line nobody reads.
 	bool LabPhaseFrontEndBootstrap()
 	{
 		const Zenith_Scene xScene = g_xEngine.Scenes().GetActiveScene();
@@ -538,9 +541,9 @@ namespace
 				"Dawnmere.zscen carries no ZM_SpawnPoint tagged '%s'. "
 				"IsWarpDestinationValid consults ONLY the compiled ZM_WorldSpec tag "
 				"list and never the scene, so the warp was ACCEPTED and the machine "
-				"is now waiting for a marker that does not exist -- and that state "
-				"has NO TIMEOUT, so in the shipped game this is a fully opaque fade "
-				"and a frozen player, forever. Check that the FromLabSpawn authoring "
+				"is now waiting for a marker that does not exist. In the shipped game "
+				"that is an opaque fade and a frozen player until that barrier's frame "
+				"budget expires (ZM-D-200). Check that the FromLabSpawn authoring "
 				"is still in the Dawnmere block of Zenithmon.cpp AND that the scene "
 				"was re-authored by a WINDOWED *_True tools boot afterwards",
 				iLAB_DAWNMERE_ARRIVAL_DEADLINE,
@@ -908,8 +911,9 @@ namespace
 				"%d frames [state=%d activeBuildIndex=%d]. IF state READS %d "
 				"(WAITING_FOR_SPAWN) the exit's '%s' tag resolved to nothing in the "
 				"loaded Dawnmere -- the marker is missing, mis-tagged, or the scene "
-				"predates the SC-E authoring. That state has NO TIMEOUT, so the "
-				"shipped game hangs here behind an opaque fade",
+				"predates the SC-E authoring. The shipped game sits here behind an "
+				"opaque fade until that barrier's frame budget expires (ZM-D-200), "
+					"far later than this deadline",
 				iLAB_RETURN_DEADLINE,
 				(int)xManager.m_pxManager->GetTransitionState(),
 				g_xEngine.Scenes().GetSceneInfo(xActive).m_iBuildIndex,
