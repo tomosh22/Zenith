@@ -376,3 +376,74 @@ Gate command lines are copied VERBATIM from this repo's own docs and CI
 (`.github/workflows/{zm-tests,engine-gate,dp-tests}.yml`,
 `Tools/run_unit_gate.ps1`), never paraphrased. If you change how a game
 is built or tested, that config is a downstream consumer.
+
+### The `zagent` CLI
+
+`zagent` is the board's command line — the **only** thing that writes to
+it from outside the web app. It lives in the other repo, so from a
+session working in `C:\dev\Zenith` run it with `--dir`:
+
+```
+pnpm --dir C:/dev/saas zagent <command> [--json]
+```
+
+(From inside `C:\dev\saas` it is just `pnpm zagent <command>`.)
+
+Commands you would actually use from here:
+
+| Command | What it does |
+|---|---|
+| `queue --project ZEN` | what is sitting in Ready for Agent |
+| `show ZEN-6` | one ticket: routing, category, gates, contract errors |
+| `create --project ZEN --title "…" --file body.md --category Zenithmon --complexity … --risk …` | file a ticket |
+| `doctor` | pre-flight: DB, agent account, lanes, categories, repo cleanliness, gate executables |
+| `owns ZEN-6` | is the loop still holding it |
+
+**Filing a ticket from Zenith work.** The description IS the spec, and
+the loop refuses anything it cannot route. Three sections:
+
+```markdown
+## Goal
+<what outcome — quote the living docs rather than paraphrasing>
+
+## Definition of Done
+- [ ] <observable outcome>
+- [ ] Baseline bumped in Status.md AND zm-tests.yml AND agent.config.json
+
+## Gates
+<omit this — the category supplies the right gate list>
+```
+
+Always pass `--category`: `Zenithmon`, `Engine` or `DevilsPlayground`.
+It selects the gate list, the conventions inlined into the worker's
+prompt, and the branching mode. A `ZEN` ticket without one comes back
+`contractValid: false` rather than being guessed at, because guessing
+between areas means ratcheting the wrong pin.
+
+Size it deliberately: `--complexity TRIVIAL|SIMPLE|MODERATE|COMPLEX`
+picks the model, `--risk LOW|MEDIUM|HIGH` escalates it one tier. Risk
+never blocks a merge — it buys more thinking.
+
+**Windowed work gets `--assignee <email>`.** A headless run may CREATE a
+`.zscen` but never CHANGE one, so any slice that re-authors a committed
+scene must be assigned to a person; unassigned tickets are queue-eligible
+and the loop would take it and no-op.
+
+**Handing work over is a drag, not a command.** Nothing runs until a card
+reaches *Ready for Agent* on the board. To run one immediately instead,
+from a Claude Code session started in `C:\dev\saas` with
+`--add-dir C:\dev\Zenith`:
+
+```
+/tick ZEN            # one tick against the queue head
+/tick ZEN-11         # run that ticket wherever it sits, once
+/loop /tick          # unattended, until the queue empties
+```
+
+**Exit codes are the interface** — branch on them, not on the text:
+`0` ok · `3` nothing to claim · `4` contract invalid · `5` ownership
+lost / repo busy · `6` circuit breaker open · `1` error. Note that `5`
+is what you get when this repo already has a ticket in flight: one at a
+time, per repo, by design.
+
+`packages/agent/CLAUDE.md` in the other repo is the full reference.
