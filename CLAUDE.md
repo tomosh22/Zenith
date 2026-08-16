@@ -380,14 +380,27 @@ is built or tested, that config is a downstream consumer.
 ### The `zagent` CLI
 
 `zagent` is the board's command line — the **only** thing that writes to
-it from outside the web app. It lives in the other repo, so from a
-session working in `C:\dev\Zenith` run it with `--dir`:
+it from outside the web app. It lives in the other repo but is meant to
+be driven from THIS one, so it is a plain PATH command:
 
 ```
-pnpm --dir C:/dev/saas zagent <command> [--json]
+zagent <command> [--json]
 ```
 
-(From inside `C:\dev\saas` it is just `pnpm zagent <command>`.)
+That works from `C:\dev\Zenith` and from any subdirectory of it
+(`Games\Zenithmon`), in PowerShell, cmd or Git Bash. Nothing in the CLI
+reads the cwd — it resolves its own repo, its `.env` and its
+`agent.config.json` from the module's location — so there is no `--dir`
+and no "run it from the right place".
+
+Its scratch (`.agent/last.json`, `.agent/run/<KEY>/`) stays under
+`C:\dev\saas` by design: this tree must not sprout an untracked
+directory, since the loop's own precondition treats a dirty tree here as
+fatal.
+
+If `zagent` is not on PATH, it has not been linked on this machine —
+`pnpm --dir C:/dev/saas zagent:install` once, or fall back to
+`pnpm --dir C:/dev/saas zagent <command>`.
 
 Commands you would actually use from here:
 
