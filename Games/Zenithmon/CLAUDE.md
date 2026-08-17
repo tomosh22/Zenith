@@ -265,6 +265,17 @@ Notion page a human has edited is reported and skipped, never replaced.
 appends, confirms, then drops the superseded blocks, so a write that
 fails to land leaves the old text rather than a blank page.)
 
+You can READ any of it back without a browser —
+`zagent docs read Zenithmon/Status`, or
+`zagent docs read Zenithmon/DecisionLog --recursive` to get all twelve
+parts as one document — which is useful when you want the synced text
+and not the file. And "nothing writes back" is now enforced rather than
+asked for: `zagent docs write Zenithmon/Status …` is REFUSED, naming
+`Games/Zenithmon/Docs/Status.md` as the thing to edit. Forcing it past
+that guard is what makes the page stop tracking the file, because every
+later sync then reads the moved fingerprint as a human edit and skips
+the page — silently, and for good.
+
 A dirty tree here blocks the loop entirely — its precondition check
 treats uncommitted changes as fatal rather than something to work around
 (it must, since `direct` mode commits in place). Leave `master` clean.

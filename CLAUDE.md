@@ -411,8 +411,46 @@ Commands you would actually use from here:
 | `create --project ZEN --title "…" --file body.md --category Zenithmon --complexity … --risk …` | file a ticket |
 | `doctor` | pre-flight: DB, agent account, lanes, categories, repo cleanliness, gate executables |
 | `owns ZEN-6` | is the loop still holding it |
+| `docs ls [<path>]` | the Notion page tree, one full path per line |
+| `docs read <path>` | a page body as Markdown, on stdout |
+| `docs write <path> --file f.md` | write ONE page — **refuses a mirrored page** |
+| `docs search "<text>"` | titles + bodies, with a snippet |
+| `rows decisions\|questions\|shortfalls\|changelog\|suggestions` | read the knowledge databases |
 | `docs status --project ZEN` | what a living-doc sync would change; writes nothing |
 | `docs sync --project ZEN` | mirror `Games/*/Docs` into the Notion page tree |
+
+**Reading a doc from a Zenith session no longer needs a browser.** A
+`<path>` is slash-separated page TITLES resolved under
+`Agent/Documentation`, so `zagent docs read Zenithmon/Status` is the
+whole command — no page ids, no `--project`, no `--org`. `docs ls`
+prints exactly what `docs read` accepts, and a mistyped name comes back
+with the siblings listed rather than a bare failure. `--recursive`
+concatenates a document the sync split into parts
+(`zagent docs read Zenithmon/DecisionLog --recursive --out DecisionLog.md`).
+
+In **Git Bash**, spell the project root `//Agent/Scratch/…`, not
+`/Agent/Scratch/…` — MSYS rewrites a single leading slash into
+`C:/Program Files/Git/…` before the CLI is started. PowerShell and cmd
+take either.
+
+**`Games/*/Docs` stays authoritative, and that is now MECHANICAL.** A
+`docs write` aimed at a mirrored page is REFUSED, naming the source file
+to edit:
+
+```
+mirrored from Games/Zenithmon/Docs/Status.md — edit that file and run
+`zagent docs sync`. --force writes anyway, and the next sync will then
+report this page as a conflict and skip it.
+```
+
+That is not politeness. A hand write moves the page's fingerprint away
+from what the last sync recorded, so every later sync reports it as a
+human edit and skips it — the page stops tracking its file silently and
+forever. Targeted writes are for pages the mirror does not own.
+
+None of this reaches a **loop worker**, which still has no shell and no
+network and still reads `Docs/AgentBriefing.md` off disk with the Read
+tool. This is for your session and for the tick.
 
 **The living docs are MIRRORED into Notion, one way.** `zagent docs
 sync` renders `Games/Zenithmon/Docs` and `Games/DevilsPlayground/Docs`
