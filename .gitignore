@@ -183,3 +183,8 @@ ZenithHub/output/
 unit_test_scene.zscen
 # Local tool scratch dirs at repo root
 /.codex_tmp/
+
+# zagent run scratch (last.json, run/<KEY>/). Gitignored so the agent
+# loop preconditions still see a clean tree — `git status --porcelain`
+# must stay empty while a ticket is in flight.
+.zagent/

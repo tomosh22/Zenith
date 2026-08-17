@@ -1,0 +1,133 @@
+{
+  "$comment": [
+    "Zenith's half of the agent-board mapping. COMMITTED, and this repo",
+    "owns it. Everything a ticket is judged by — gate command lines,",
+    "pinned unit baselines, conventions, categories, living-doc dirs —",
+    "lives here, beside the code it judges. This file is sent to the board",
+    "with every request.",
+    "",
+    "The board keeps only POLICY (the agent account, complexity->model",
+    "routing, timeouts) and may be on an entirely different machine. It",
+    "holds no path into this filesystem: `project` below declares which",
+    "board project this checkout serves, rather than a config elsewhere",
+    "declaring where the checkout lives. That inversion is the only",
+    "direction that survives the two being on separate machines.",
+    "",
+    "WHY the gates live here: a pinned unit count already had three homes",
+    "in this repo (Games/*/Docs/Status.md, .github/workflows/*.yml,",
+    "Tools/run_unit_gate.ps1) and those move together in one commit",
+    "because a reviewer can see them. A fourth pin in another repo's",
+    "gitignored file could only be remembered, and a ticket that ratchets",
+    "against a stale pin fails with ZERO failing tests — the unit gate",
+    "asserts `ran == Baseline` EXACTLY, so a suite that GREW reds a",
+    "required check while every test passes.",
+    "",
+    "`protectedPaths` are UNIONed with the board's floor, never swapped",
+    "for it: this repo may add protections to itself and can never drop",
+    "the board's. `$`-prefixed keys are comments and are stripped.",
+    "",
+    "This file is itself protected: the loop may propose changes to its",
+    "own gates as a Suggestions row, never commit them."
+  ],
+  "project": "ZEN",
+  "baseBranch": "master",
+  "branching": "direct",
+  "merge": {
+    "push": false
+  },
+  "reviewOn": [
+    "HIGH",
+    "MEDIUM"
+  ],
+  "conventions": "Root CLAUDE.md is binding. No std:: containers; every .cpp starts with #include \"Zenith.h\"; tabs; braces on new lines; Zenith_Assert is the real assert (ZENITH_ASSERT is an empty marker). Never run Sharpmake in a worktree.",
+  "cleanup": [
+    "pwsh -NoProfile -Command \"Get-Process zenithmon,combat,devilsplayground -ErrorAction SilentlyContinue | Stop-Process -Force\""
+  ],
+  "categories": {
+    "Zenithmon": {
+      "$comment": [
+        "-Baseline 3354 is the ZM boot unit count. It moves with, and must",
+        "equal, the counts in Games/Zenithmon/Docs/Status.md and",
+        ".github/workflows/zm-tests.yml. Read it from a NULL-config exe —",
+        "the Vulkan exe reports a higher number for the same tree."
+      ],
+      "gates": [
+        "pwsh -NoProfile -File Tools\\zenith.ps1 build Zenithmon --headless",
+        "pwsh -NoProfile -File Tools\\zenith.ps1 test Zenithmon --headless",
+        "pwsh -NoProfile -ExecutionPolicy Bypass -File Tools\\run_unit_gate.ps1 -Exe Games\\Zenithmon\\Build\\output\\win64\\null_vs2022_debug_win64_true\\zenithmon.exe -Baseline 3354 -TimeoutSec 600"
+      ],
+      "conventions": "Games/Zenithmon/CLAUDE.md + Docs/AgentBriefing.md are binding. ZM_ prefix. NEVER create a branch, PR, or worktree (ZM-D-031).",
+      "decisionLog": "Games/Zenithmon/Docs/DecisionLog.md",
+      "decisionIdPrefix": "ZM-D-",
+      "docs": {
+        "dir": "Games/Zenithmon/Docs",
+        "title": "Zenithmon",
+        "icon": "🐾",
+        "order": [
+          "Status.md",
+          "Roadmap.md",
+          "AgentBriefing.md",
+          "TestPlan.md",
+          "DecisionLog.md",
+          "Questions.md",
+          "Shortfalls.md",
+          "GameDesignDocument.md",
+          "Scope.md",
+          "MasterPlan.md",
+          "OrchestratorPlaybook.md",
+          "CIPolicy.md",
+          "BuildEnvironment.md"
+        ]
+      }
+    },
+    "Engine": {
+      "$comment": [
+        "-Baseline 1638 is the engine boot count via Null Combat, and it is",
+        "ALSO the default of Tools/run_unit_gate.ps1's -Baseline parameter.",
+        "A backend-neutral engine unit moves EVERY game's pin, not just this",
+        "one — see the conventions string below."
+      ],
+      "gates": [
+        "pwsh -NoProfile -File Tools\\zenith.ps1 build engine",
+        "pwsh -NoProfile -File Tools\\zenith.ps1 build Combat --headless",
+        "pwsh -NoProfile -File Tools\\zenith.ps1 test Combat --headless",
+        "pwsh -NoProfile -ExecutionPolicy Bypass -File Tools\\run_unit_gate.ps1 -Exe Games\\Combat\\Build\\output\\win64\\null_vs2022_debug_win64_true\\combat.exe -Baseline 1638 -TimeoutSec 600"
+      ],
+      "conventions": "Engine work moves EVERY game's pinned unit count if it adds a backend-neutral engine unit - the ticket's Definition of Done must list every pinned site."
+    },
+    "DevilsPlayground": {
+      "$comment": "Overrides the project's `direct` branching — DP's Docs/CIPolicy.md is a squash-merge policy.",
+      "branching": "branch",
+      "branchPrefix": "agent/",
+      "gates": [
+        "pwsh -NoProfile -File Tools\\zenith.ps1 build DevilsPlayground --headless",
+        "pwsh -NoProfile -File Tools\\zenith.ps1 test DevilsPlayground --headless"
+      ],
+      "conventions": "Games/DevilsPlayground/Docs are binding; no paid/external services.",
+      "docs": {
+        "dir": "Games/DevilsPlayground/Docs",
+        "title": "DevilsPlayground",
+        "icon": "😈",
+        "order": [
+          "Status.md",
+          "MvpRoadmap.md",
+          "MVPScope.md",
+          "AgentBriefing.md",
+          "TestPlan.md",
+          "DecisionLog.md",
+          "Questions.md",
+          "Shortfalls.md",
+          "GameDesignDocument.md",
+          "OrchestratorPlaybook.md",
+          "CIPolicy.md",
+          "BuildEnvironment.md"
+        ]
+      }
+    }
+  },
+  "protectedPaths": [
+    ".claude/**",
+    "zagent.project.json",
+    ".github/**"
+  ]
+}

@@ -1,0 +1,352 @@
+---
+description: Run one agent ticket — the queue head, or a ticket you name
+allowed-tools: Bash(zagent:*), Bash(pwsh -NoProfile*), Bash(git:*), Bash(claude:*), Read, Write, Edit, ScheduleWakeup
+argument-hint: [PROJECT_KEY | TICKET_KEY]
+---
+
+Run **exactly ONE** ticket. Never start a second in the same tick.
+
+# Where things live
+
+Everything this tick needs is in THIS repo. The board is a web
+application that may be running on another machine entirely, and nothing
+here knows or needs to know where its source is.
+
+| Thing | Home |
+| --- | --- |
+| This skill | `.claude/commands/tick.md` |
+| Gates, pinned baselines, conventions, categories | `zagent.project.json` (committed, sent to the board with every request) |
+| The client | `Tools/zagent/` — a PowerShell script, no Node |
+| Run scratch | `.zagent/last.json`, `.zagent/run/<KEY>/` (gitignored) |
+| The board account, model routing, guardrail floors | the board itself |
+
+**A bare `claude` started in this repo is the whole setup** — no
+`--add-dir`, no second checkout. `zagent` needs `ZAGENT_URL` and
+`ZAGENT_TOKEN` on the machine; `Tools/zagent/README.md` covers that and
+`zagent doctor` says so if either is missing.
+
+# Operating invariants
+
+These are not style preferences. Each one exists because an unattended
+loop without it lies to itself.
+
+- **I1 — You own the gate; the worker only authors.** Subagents never
+  build, test, run, commit, or touch the board. This is enforced
+  structurally — the worker is spawned with `--tools` that omits Bash —
+  but state it in the prompt anyway, because a rule the worker can read
+  is a rule it can plan around.
+- **I2 — Never trust "it works".** A worker's claim that gates pass is
+  worthless by construction: it was forbidden from running them. Re-run
+  everything yourself after integrating, even when the claim is
+  plausible.
+- **I3 — Inline the work into the prompt.** Never say "see the ticket" or
+  "read Docs/X.md section 3". Paste the ticket body, the Definition of
+  Done, the file list and the conventions INTO the worker prompt.
+  `bodyPath` is a supplement, never the carrier.
+- **I4 — Single writer for shared state.** Only you write to the board.
+  The worker returns _proposed_ work-log and decision text; you apply it.
+- **I5 — Serial execution per repo.** One in-flight ticket per repo,
+  enforced atomically by the CLI's claim transaction. If a claim is
+  refused naming another key, that is I5 working — do not work around it.
+- **I6 — Idempotence over memory.** A firing may crash at any point and
+  the next must reconstruct from durable state alone: the board, git, and
+  `.zagent/run/<KEY>/`. Never from anything you remember.
+- **I7 — Never sign your own gate.** A `human-gate` ticket stops at
+  In Review no matter how green the gates are, and no matter whether a
+  human asked for it by name.
+
+**Two standing rules about this file and the config:**
+
+1. **Every gate line must be prefix-matched by an `allowed-tools` entry
+   above.** Gate lines live in this repo's `zagent.project.json`. Adding
+   a gate and not adding its prefix here stalls the unattended loop on a
+   permission prompt. `.claude/settings.json` documents the same trap —
+   its allowlist spells
+   `pwsh -NoProfile -ExecutionPolicy Bypass -File Tools\run_unit_gate.ps1*`
+   exactly, and dropping `-ExecutionPolicy Bypass` stalls it.
+2. **You may never edit this file or `zagent.project.json`.** Both are in
+   `protectedPaths` — `.claude/**` covers this one — and the board's
+   floor is UNIONed with this repo's, so a repo cannot unprotect itself
+   by editing the file that lists its protections. Workflow friction
+   becomes a Suggestions row for a human to triage, never a commit. A
+   loop that can rewrite its own gates does not have gates.
+
+# Never
+
+- No `psql`, no direct database access, no importing `@saas/database`.
+  Every board interaction is a `zagent …` call.
+- No `git push`. No `--force`. No `reset --hard`. No deleting a branch.
+- No `git switch -c`, `git worktree`, or `gh pr` when `branching` is
+  `"direct"`.
+- No editing files outside the ticket's `repo`.
+- No second ticket in this tick.
+- No stashing and no resetting to work around a dirty tree.
+
+# Running the CLI, and reading its output
+
+**`zagent …`, bare**, from this repo or any subdirectory of it — it walks
+up for `zagent.project.json` the way git walks up for `.git`. If it is
+not on PATH, `Tools/zagent/README.md` has the one-time setup.
+
+Its scratch is HERE now: `.zagent/last.json` and `.zagent/run/<KEY>/`, at
+the repo root, gitignored so `git status --porcelain` stays empty while a
+ticket is in flight. The precondition check below depends on that.
+
+Exits 3/4/5/6 are ordinary control flow, not failures. **Exit 7 is new
+and is not one of them**: it means the board was unreachable. Treat it as
+infrastructure, not as a verdict on the ticket — comment nothing, change
+no status, and reschedule. A network blip written into a ticket as a
+contract failure is a lie that outlives the blip.
+
+So:
+
+- **Branch on the exit code**, never on stdout prose.
+- **Read the JSON from a file**, not from the pipe: every `--json` call
+  writes `.zagent/last.json`, and a claim also writes
+  `.zagent/run/<KEY>/ticket.json` and `.zagent/run/<KEY>/body.md`. A
+  firing can crash between the call and the read, and a file survives
+  that where a pipe does not.
+
+---
+
+# Steps
+
+## 0. Pre-flight (first firing after a restart only)
+
+`zagent doctor`. A failing check here explains most "the loop did
+nothing for an hour" incidents. Report and stop if the agent account,
+the lanes, or a gate executable is missing.
+
+The report is assembled from BOTH sides: the board answers for the
+database, the lanes and the agent account; this machine answers for the
+repo's branch and cleanliness and whether each gate executable resolves.
+A board cannot answer the second set — it would be reporting about its
+own disk — so a `zagent doctor` that shows only board rows means the
+client half never ran.
+
+The `project <KEY> gates` row is the one that most often explains a
+silent tick: a project resolving to no gate lines can never merge.
+
+## 1. Pick the ticket
+
+The argument disambiguates itself: ticket keys always end in `-<digits>`,
+and project keys never can. Digits ARE legal inside a project key, so
+match on the suffix, not on "letters".
+
+- `$1` matches `/-\d+$/` → **targeted**: `zagent claim $1 --json`
+- `$1` is a project key, or absent → **queue**:
+  `zagent next --json` (the repo declares its own project)
+
+Then read `.zagent/last.json` and branch on the exit code:
+
+| Exit | Meaning                   | Do                                                                                                    |
+| ---- | ------------------------- | ----------------------------------------------------------------------------------------------------- |
+| 0    | Claimed, contract valid   | → step 2                                                                                              |
+| 3    | Queue empty               | `ScheduleWakeup{noop:true, delaySeconds:900}`, stop                                                   |
+| 4    | Claimed, contract invalid | → step 2                                                                                              |
+| 5    | Repo busy, or would steal | Report which key holds it. Queue mode: `ScheduleWakeup{noop:true, delaySeconds:300}`. Targeted: stop. |
+| 6    | Circuit breaker open      | Report, `ScheduleWakeup{stop:true}`. A loop that keeps failing should stop, not spin.                 |
+| 7    | Board unreachable         | Nothing was claimed. Change no status, comment nothing. `ScheduleWakeup{noop:true, delaySeconds:300}`. |
+
+## 2. Contract and label checks
+
+**Contract invalid (exit 4).** Read `contractError` from the payload.
+
+- Queue mode: `zagent comment <KEY> --text "<contractError>"`, then
+  `zagent move <KEY> Blocked`. Then step 9.
+- Targeted mode: **report the error and change nothing.** A human is
+  waiting and just asked for this ticket by name — do not Block it.
+
+**`windowed` label** (`windowed: true` in the payload, and exit 4). The
+ticket needs a person at a keyboard — a headless run cannot produce its
+deliverable, most often because it re-authors a committed `.zscen`,
+which a headless run may create but never change. Queue mode never sees
+one: the claim query filters it out. If a TARGETED claim returns it,
+**report and change nothing** — the same as any exit 4 in targeted mode.
+Do not dispatch a worker; green gates on this ticket would mean the
+deliverable is missing, not that the work is done.
+
+**`human-gate` label** (`humanGate: true` in the payload). Run the whole
+tick normally — preconditions, worker, gates, evidence — but at step 7
+move to **In Review** instead of Done and never merge. The reporter is
+notified automatically by `finish`. Then continue: queue mode schedules
+the next wakeup as usual, because the gated ticket is out of the queue by
+construction and one gated ticket must not starve the board. Targeted
+mode stops after it.
+
+## 3. Preconditions
+
+In `repo`:
+
+```
+git -C <repo> status --porcelain     # must be empty
+git -C <repo> rev-parse --abbrev-ref HEAD   # must equal <baseBranch>
+```
+
+Dirty tree or wrong branch → comment + Blocked, stop. **Never stash,
+never reset.** For `branching: "direct"` this check is the only thing
+standing between you and someone else's uncommitted work: treat a dirty
+tree as fatal, not as something to work around.
+
+## 4. Branch
+
+- `branching: "branch"` → `git -C <repo> switch -c <branch>`
+- `branching: "direct"` → do nothing; work on `baseBranch` in place.
+
+## 5. Dispatch the worker
+
+You do **not** implement the ticket. Assemble
+`.zagent/run/<KEY>/prompt.md` and spawn a worker at the routed model.
+
+The prompt must open with these clauses, filled in from the payload:
+
+> **DO NOT** attempt to run gates, build, test, commit, push, or touch
+> the board — you have no shell; the orchestrator does all of that.
+> **Files you may edit:** \<exhaustive list\>.
+> **Conventions:** \<`conventions` from the payload, verbatim\>.
+> **Report back:** files changed, a one-paragraph summary, proposed
+> work-log text, and any decisions, questions, shortfalls or workflow
+> suggestions you want recorded.
+
+Then inline (I3): the `## Goal`, the `## Definition of Done` items, the
+file list, and any relevant repo conventions. `bodyPath` is a supplement.
+
+Dispatch shape:
+
+```
+pwsh -NoProfile -Command "Set-Location <repo>; $env:MAX_THINKING_TOKENS='<per effort>';
+  Get-Content <scratch>/prompt.md -Raw | claude -p --model <routing.model>
+    --tools '<workerTools>' --permission-mode acceptEdits
+    --output-format json"
+```
+
+- `--tools` omits Bash entirely, so I1 holds no matter what the ticket
+  text tells the worker.
+- Pipe the prompt via stdin to avoid quoting hazards; save the
+  `--output-format json` result to `.zagent/run/<KEY>/report.json`.
+- Effort maps to a thinking budget (`MAX_THINKING_TOKENS`); model is the
+  primary lever. There is no reasoning-effort CLI flag.
+- **A Bash call caps at 10 minutes and a COMPLEX worker will outlive
+  it.** Run the dispatch with `run_in_background` and wait for its
+  completion notification. On wake, if elapsed wall-clock exceeds
+  `guardrails.ticketTimeoutMinutes`, kill the child process tree and
+  treat it as a failed attempt (→ Blocked, with a timeout note).
+
+Whatever the worker claims about correctness is discarded (I2). Its
+report is _proposed text_ that you apply (I4).
+
+## 6. Verify
+
+1. `zagent owns <KEY>` — exit 5 → abandon path (step 9).
+2. Run every command in `gates`, **in order, spelled exactly**, appending
+   combined output to `.zagent/run/<KEY>/gates.log`. First non-zero stops.
+   A gate list is copied from the payload, never paraphrased — and never
+   re-derived from `zagent.project.json` by hand, because the payload is
+   what the contract was validated against.
+3. **Reviewer pass** when the ticket's `risk` is in `reviewOn`: spawn a
+   second, read-only worker (`--tools 'Read,Grep,Glob'`) with the diff
+   inlined and "you are reviewing, not implementing". Findings go in the
+   work log; a finding that contradicts a gate result blocks.
+4. `git -C <repo> diff --name-only <baseBranch>...HEAD > .zagent/run/<KEY>/changed.txt`
+   then `zagent guard --file .zagent/run/<KEY>/changed.txt`.
+   Non-zero → Blocked regardless of gate colour.
+5. `zagent owns <KEY>` again, immediately before writing anything.
+
+An empty gate list can never merge. If `gates` is `[]`, Block it.
+
+**A unit-gate line pins a baseline, and the gate asserts `ran ==
+Baseline` EXACTLY.** So a ticket that ADDS units reds the gate with zero
+failing tests. That is the gate working. The fix is to bump every pinned
+site in the same commit — for Zenithmon: `Games/Zenithmon/Docs/Status.md`,
+`.github/workflows/zm-tests.yml`, and `zagent.project.json` — and a
+backend-neutral *engine* unit moves every game's pin, plus
+`Tools/run_unit_gate.ps1`'s default. The ticket's Definition of Done must
+have listed them; if it did not, that is a contract problem, not a
+licence to edit one site and move on.
+
+## 7. Integrate
+
+**Green** → `git -C <repo> commit -am "<KEY>: <title>"`, then:
+
+- `branch` mode: `git -C <repo> switch <baseBranch>` and
+  `git -C <repo> merge --ff-only <branch>`. Base moved and ff impossible
+  → Blocked. No rebase, no merge commit.
+- `direct` mode: already there.
+- `push` is false — nothing reaches a remote.
+
+**Red** → fix forward, at most `guardrails.fixForwardAttempts` times on
+the _same_ failure, then park: Blocked plus a Questions row. Three
+attempts then park beats a thrashing loop.
+
+## 8. Write back
+
+Build `.zagent/run/<KEY>/worklog.md` and `.zagent/run/<KEY>/result.md` from
+data you already have — `git rev-parse HEAD`, `git diff --stat`,
+`gates.log`, the routing line, the DoD checkboxes. Both open with the
+routing line:
+
+```
+ran on <model>/<effort> via <COMPLEXITY>+<RISK> · category <name>
+```
+
+so a mis-sized or mis-categorized ticket is visible on the board after
+the fact. The work log's shape:
+
+```markdown
+## Work Log — <date>
+
+**Outcome**: merged to `<base>` as `<sha>` · ran on <model>/<effort> via <C>+<R>
+
+**What changed**
+
+- `path` — one line each.
+
+**Files** (`git diff --stat`)
+...
+
+**Gates**
+| Command | Result |
+|---|---|
+
+**Definition of Done**
+
+- [x] …
+
+**Deviations / follow-ups**
+
+- None, or: what was assumed, what was left undone and why.
+```
+
+A work log is required on **every** terminal path, not just Done — a
+Blocked ticket's log saying how far it got is exactly the thing a human
+has to pick up.
+
+Then one call closes the ticket:
+
+```
+zagent finish <KEY> --status Done|Blocked|"In Review" \
+  --comment .zagent/run/<KEY>/result.md \
+  --worklog .zagent/run/<KEY>/worklog.md
+```
+
+The comment, the description append and the status move land in a single
+transaction, so a ticket can never show Done with no evidence attached.
+Do not overwrite the description yourself — `finish` appends below the
+spec inside sentinels and replaces its own previous block on a re-run.
+
+## 9. Close out
+
+Run the project's `cleanup` commands (the stray-process sweep — orphaned
+game exes lock build outputs for the next iteration).
+
+- **Queue mode** → `ScheduleWakeup{noop:false, delaySeconds:60}`.
+- **Targeted mode** → `ScheduleWakeup{stop:true}` and report. You were
+  asked for one specific ticket, not for a loop; rescheduling would
+  re-run the same key forever.
+- **Abandon path** (ownership lost at any checkpoint): write the work log
+  as far as it got, post it as a **comment only** — the human owns the
+  description now — leave the branch, change no status, sweep, then
+  `ScheduleWakeup{noop:false}`.
+
+`ScheduleWakeup` only exists when the session is driven by `/loop`; a
+bare `/tick` invocation simply ends instead of scheduling.

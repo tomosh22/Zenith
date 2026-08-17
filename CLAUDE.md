@@ -335,31 +335,56 @@ Located in `Build/`:
 - `Sharpmake_FreeType.cs` / `Sharpmake_Msdfgen.cs` / `Sharpmake_MsdfAtlasGen.cs` - Font/text dependency projects
 - `Sharpmake_TilePuzzleLevelGen.cs` / `Sharpmake_TilePuzzleRegistryViewer.cs` - TilePuzzle tooling projects
 
-## External agent board (`C:\dev\saas`, project `ZEN`)
+## External agent board (project `ZEN`)
 
 Some work in this repo is queued and executed by an autonomous Claude
-Code loop driven from a Jira-style board in a **separate** repo
-(`C:\dev\saas`, project key `ZEN`). This repo remains the source of
-truth for everything — the board is a queue and an audit log, not a
-spec. You can develop here and ignore it entirely, with three
-exceptions.
+Code loop driven from a Jira-style board. **The board is a web
+application that may run on an entirely different machine**, and nothing
+here knows where its source lives. This repo remains the source of truth
+for everything — the board is a queue and an audit log, not a spec. You
+can develop here and ignore it entirely, with three exceptions.
 
-**Unit-gate baselines are mirrored outside this repo.** A ticket's
-category selects which gate list runs, and each list spells `-Baseline`
-explicitly. So the pinned counts now live in one more place than the
-usual set:
+**Everything the loop enforces lives HERE, committed:**
+
+| File | Carries |
+|---|---|
+| `zagent.project.json` | Gate command lines, pinned unit baselines, per-category conventions, branching mode, living-doc directories. **Sent to the board with every request** |
+| `.claude/commands/tick.md` | The `/tick` protocol — nine steps, seven invariants |
+| `Tools/zagent/` | The client — `zagent.ps1` (argv/env/transport), `ZagentClient.psm1` (pure helpers), `Test-ZagentClient.ps1` (47 asserts), `zagent.cmd` shim. **No Node, no `node_modules`** |
+| `.zagent/` | Run scratch (`last.json`, `run/<KEY>/`). **Gitignored**, so the dirty-tree precondition still holds |
+
+The board keeps only POLICY — the agent account, the complexity→model
+routing, guardrail floors — and holds no path into this filesystem.
+`project: "ZEN"` in `zagent.project.json` declares which board project
+this checkout serves; that inversion is the only direction that survives
+the two being on separate machines.
+
+The file is **sent every time rather than registered once**. A stored
+copy goes stale, and a stale gate list is exactly how a green run
+ratchets the wrong pinned baseline. The board keeps a mirror purely so
+its web UI and file-time `create` validation can see categories.
+
+`protectedPaths` from both sides are UNIONed, so this repo may add
+protections to itself and can never drop the board's. Both files above
+are protected: the loop may file a Suggestions row about its own gates,
+never commit a change to them.
+
+**So a pinned unit baseline is back to being an in-repo fact.** A
+ticket's category selects which gate list runs, and each list spells
+`-Baseline` explicitly:
 
 | Pin | Sites |
 |---|---|
-| Zenithmon boot | `Games/Zenithmon/Docs/Status.md`, `.github/workflows/zm-tests.yml`, **`C:\dev\saas\agent.config.json`** |
-| Engine boot (Null Combat) | `Tools/run_unit_gate.ps1` (`-Baseline` default), **`C:\dev\saas\agent.config.json`** |
+| Zenithmon boot | `Games/Zenithmon/Docs/Status.md`, `.github/workflows/zm-tests.yml`, **`zagent.project.json`** |
+| Engine boot (Null Combat) | `Tools/run_unit_gate.ps1` (`-Baseline` default), **`zagent.project.json`** |
 
 A backend-neutral engine unit still moves **every** game's pinned count
 (`run_unit_gate.ps1`, `zm-tests.yml`, `Docs/BuildSystem.md`, the ZM
-docs) — that config file is simply one more site on the same list. It
-is machine-local and gitignored there, so a stale mirror fails only on
-the machine running the loop, with an exact-equality error and zero
-failing tests.
+docs) — `zagent.project.json` is simply one more site on the same list,
+and now one a reviewer can see in the same diff. It used to be a fourth
+pin in a gitignored file in the other repo, which is a site you can only
+keep in sync from memory; the gate asserts `ran == Baseline` EXACTLY, so
+a stale pin reds a required check with **zero failing tests**.
 
 **Branching policy is enforced mechanically per area.** Zenithmon and
 Engine tickets carry `branching: "direct"` — the loop commits straight
@@ -375,41 +400,78 @@ silently blocks the queue.
 Gate command lines are copied VERBATIM from this repo's own docs and CI
 (`.github/workflows/{zm-tests,engine-gate,dp-tests}.yml`,
 `Tools/run_unit_gate.ps1`), never paraphrased. If you change how a game
-is built or tested, that config is a downstream consumer.
+is built or tested, `zagent.project.json` is a downstream consumer in
+the same commit.
+
+### Running the loop
+
+A bare `claude` started in this repo is the whole setup:
+
+```
+/tick ZEN            # one tick against the queue head
+/tick ZEN-11         # run that ticket wherever it sits, once
+/loop /tick          # unattended, until the queue empties
+```
+
+**No `--add-dir`, no second checkout.** The scratch is local, the client
+is local, and the board is reached over HTTP. What the machine does need
+is `ZAGENT_URL` and `ZAGENT_TOKEN` — see `Tools/zagent/README.md`;
+`zagent doctor` names either if it is missing.
 
 ### The `zagent` CLI
 
 `zagent` is the board's command line — the **only** thing that writes to
-it from outside the web app. It lives in the other repo but is meant to
-be driven from THIS one, so it is a plain PATH command:
+it from outside the web app. It lives HERE, in `Tools/zagent/`, as a
+PowerShell script:
 
 ```
 zagent <command> [--json]
 ```
 
 That works from `C:\dev\Zenith` and from any subdirectory of it
-(`Games\Zenithmon`), in PowerShell, cmd or Git Bash. Nothing in the CLI
-reads the cwd — it resolves its own repo, its `.env` and its
-`agent.config.json` from the module's location — so there is no `--dir`
-and no "run it from the right place".
+(`Games\Zenithmon`), in PowerShell, cmd or Git Bash — it walks up for
+`zagent.project.json` the way git walks up for `.git`, so a run from
+`Games\Zenithmon` reads the same gates as one from the repo root.
 
-Its scratch (`.agent/last.json`, `.agent/run/<KEY>/`) stays under
-`C:\dev\saas` by design: this tree must not sprout an untracked
-directory, since the loop's own precondition treats a dirty tree here as
-fatal.
+Its scratch is `.zagent/last.json` and `.zagent/run/<KEY>/` at the repo
+root, gitignored so `git status --porcelain` stays empty while a ticket
+is in flight — the loop's precondition depends on that.
 
-If `zagent` is not on PATH, it has not been linked on this machine —
-`pnpm --dir C:/dev/saas zagent:install` once, or fall back to
-`pnpm --dir C:/dev/saas zagent <command>`.
+If `zagent` is not on PATH, `Tools/zagent/README.md` has the one-time
+setup; you can always call `pwsh -NoProfile -File Tools\zagent\zagent.ps1`
+directly.
+
+The client has its own tests — a plain assert script, matching
+`Tools/Test_T0Harness_*`, because the only PowerShell this repo requires
+is the `pwsh` every gate already needs:
+
+```
+pwsh -NoProfile -File Tools/zagent/Test-ZagentClient.ps1
+```
+
+They cover the parts that bite: `,@(…)` returns (a PowerShell function
+UNROLLS a returned collection, so a one-element `cleanup` array would go
+on the wire as a bare string), separator folding (a mismatch makes an
+uploaded docs tree match nothing, which mirrors zero pages and reports
+success), and reading optional fields through `PSObject.Properties[…]`
+(`Set-StrictMode` turns a missing property into a throw, so a project
+file that legally omits `baseBranch` would make `doctor` crash instead of
+report).
+
+★ **A parse-check plus green unit tests is NOT proof the client runs.**
+Splitting the helpers into a module once left `Get-BoardUrl` unexported:
+both files parsed, all 47 assertions passed, and every command failed.
+Smoke the real binary after touching either file.
 
 Commands you would actually use from here:
 
 | Command | What it does |
 |---|---|
-| `queue --project ZEN` | what is sitting in Ready for Agent |
+| `queue` | what is sitting in Ready for Agent (the repo declares its own project) |
+| `auth mint --name <machine>` | **on the board machine only** — a revocable token for one client |
 | `show ZEN-6` | one ticket: routing, category, gates, contract errors |
 | `create --project ZEN --title "…" --file body.md --category Zenithmon --complexity … --risk …` | file a ticket |
-| `doctor` | pre-flight: DB, agent account, lanes, categories, repo cleanliness, gate executables |
+| `doctor` | pre-flight, merged from BOTH sides: the board answers for DB/account/lanes/categories, this machine for branch, cleanliness and gate executables |
 | `owns ZEN-6` | is the loop still holding it |
 | `docs ls [<path>]` | the Notion page tree, one full path per line |
 | `docs read <path>` | a page body as Markdown, on stdout |
@@ -482,7 +544,7 @@ the loop refuses anything it cannot route. Three sections:
 
 ## Definition of Done
 - [ ] <observable outcome>
-- [ ] Baseline bumped in Status.md AND zm-tests.yml AND agent.config.json
+- [ ] Baseline bumped in Status.md AND zm-tests.yml AND zagent.project.json
 
 ## Gates
 <omit this — the category supplies the right gate list>
@@ -522,19 +584,26 @@ Now the marker is explicit, greppable, and enforced.
 
 **Handing work over is a drag, not a command.** Nothing runs until a card
 reaches *Ready for Agent* on the board. To run one immediately instead,
-from a Claude Code session started in `C:\dev\saas` with
-`--add-dir C:\dev\Zenith`:
-
-```
-/tick ZEN            # one tick against the queue head
-/tick ZEN-11         # run that ticket wherever it sits, once
-/loop /tick          # unattended, until the queue empties
-```
+use `/tick` from a session started here — see **Running the loop** above.
 
 **Exit codes are the interface** — branch on them, not on the text:
 `0` ok · `3` nothing to claim · `4` contract invalid · `5` ownership
-lost / repo busy · `6` circuit breaker open · `1` error. Note that `5`
-is what you get when this repo already has a ticket in flight: one at a
-time, per repo, by design.
+lost / repo busy · `6` circuit breaker open · `1` error · **`7` could not
+REACH the board**. Note that `5` is what you get when this repo already
+has a ticket in flight: one at a time, per repo, by design.
 
-`packages/agent/CLAUDE.md` in the other repo is the full reference.
+`7` is the client's own and is distinct from `1` deliberately: "the board
+said no" and "I never reached the board" want opposite responses from an
+unattended loop, and collapsing them is how a network blip gets written
+into a ticket as a contract failure. On a `7`, change no status and
+comment nothing.
+
+**Setting a machine up** (once): `ZAGENT_URL` and `ZAGENT_TOKEN` as user
+environment variables, and `Tools\zagent` on `PATH`. The token is minted
+**on the board machine** — `zagent auth mint --name <this-machine>` —
+shown exactly once, stored only as a SHA-256, and revocable per machine
+without disturbing anything else. `Tools/zagent/README.md` has the
+commands; `zagent doctor` names whichever piece is missing.
+
+`packages/agent/CLAUDE.md` in the other repo is the full reference for
+the dispatcher, `apps/jira/CLAUDE.md` for the HTTP surface.
