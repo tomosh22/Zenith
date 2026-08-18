@@ -125,6 +125,17 @@
       }
     }
   },
+  "conventionDocs": {
+    "$comment": [
+      "Every CLAUDE.md in the repo (root + every leaf module), mirrored",
+      "into its own Notion section — separate from the per-game Docs trees",
+      "above, and PROJECT-wide rather than one category's. Kept in sync by",
+      "the tick's step 9 (see tick.md) whenever a ticket's diff touches a",
+      "Docs/** path or any CLAUDE.md."
+    ],
+    "title": "Conventions",
+    "icon": "📐"
+  },
   "protectedPaths": [
     ".claude/**",
     "zagent.project.json",

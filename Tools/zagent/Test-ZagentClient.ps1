@@ -237,6 +237,66 @@ Assert-That 'is null when no category configures docs' {
 }
 Assert-That 'is null with no client at all' { $null -eq (Get-DocsTree -Client $null) }
 
+Write-Host "`n=== Get-ConventionsTree ===" -ForegroundColor Cyan
+$convRepo = New-TempDir
+New-Item -ItemType Directory -Path (Join-Path $convRepo 'Flux') -Force | Out-Null
+New-Item -ItemType Directory -Path (Join-Path $convRepo 'node_modules\pkg') -Force | Out-Null
+New-Item -ItemType Directory -Path (Join-Path $convRepo 'Games\Zenithmon\Build\output') -Force | Out-Null
+'# root' | Set-Content (Join-Path $convRepo 'CLAUDE.md') -Encoding utf8
+'# flux' | Set-Content (Join-Path $convRepo 'Flux\CLAUDE.md') -Encoding utf8
+'# onboarding, not a convention file' | Set-Content (Join-Path $convRepo 'Flux\Onboarding.md') -Encoding utf8
+'must never be read' | Set-Content (Join-Path $convRepo 'node_modules\pkg\CLAUDE.md') -Encoding utf8
+'must never be read' | Set-Content (Join-Path $convRepo 'Games\Zenithmon\Build\output\CLAUDE.md') -Encoding utf8
+
+$convClient = [pscustomobject]@{
+    repo = ConvertTo-PosixPath $convRepo
+    file = [pscustomobject]@{ conventionDocs = [pscustomobject]@{ title = 'Conventions' } }
+}
+$convTree = Get-ConventionsTree -Client $convClient
+
+Assert-That 'finds CLAUDE.md at the repo root and nested' { $convTree.Count -eq 2 }
+Assert-That 'excludes a same-named non-CLAUDE.md file' {
+    -not ($convTree.Keys | Where-Object { $_ -like '*Onboarding.md' })
+}
+Assert-That 'never descends into the built-in blocklist' {
+    -not ($convTree.Keys | Where-Object { $_ -like '*node_modules*' -or $_ -like '*Build*output*' })
+}
+Assert-That 'keys on POSIX absolute paths rooted at the repo' {
+    ($convTree.Keys | Where-Object { $_.StartsWith($convClient.repo) -and $_ -notmatch '\\' }).Count -eq 2
+}
+Assert-That 'a project exclude prunes on top of the built-in list' {
+    New-Item -ItemType Directory -Path (Join-Path $convRepo 'Skip') -Force | Out-Null
+    'must never be read' | Set-Content (Join-Path $convRepo 'Skip\CLAUDE.md') -Encoding utf8
+    # Unexcluded, `Skip` is picked up like any other directory.
+    (Get-ConventionsTree -Client $convClient).Count -eq 3 -and
+    (Get-ConventionsTree -Client ([pscustomobject]@{
+        repo = $convClient.repo
+        file = [pscustomobject]@{ conventionDocs = [pscustomobject]@{ exclude = @('Skip') } }
+    })).Count -eq 2
+}
+Assert-That 'is an empty (not null) tree when conventionDocs is absent' {
+    $tree = Get-ConventionsTree -Client ([pscustomobject]@{
+        repo = 'C:/x'; file = [pscustomobject]@{ gates = @('a') } })
+    $null -ne $tree -and $tree.Count -eq 0
+}
+Assert-That 'is an empty tree with no client at all' {
+    (Get-ConventionsTree -Client $null).Count -eq 0
+}
+Assert-That 'Get-DocsTree merges category docs and conventions in one tree' {
+    $merged = [pscustomobject]@{
+        repo = $docsClient.repo
+        file = [pscustomobject]@{
+            categories = $docsClient.file.categories
+            conventionDocs = [pscustomobject]@{}
+        }
+    }
+    New-Item -ItemType Directory -Path $docsRepo -Force | Out-Null
+    '# root' | Set-Content (Join-Path $docsRepo 'CLAUDE.md') -Encoding utf8
+    $combined = Get-DocsTree -Client $merged
+    # 2 markdown docs + 1 root CLAUDE.md
+    $combined.PSObject.Properties.Name.Count -eq 3
+}
+
 Write-Host "`n=== Get-AllGateLines ===" -ForegroundColor Cyan
 $gateClient = [pscustomobject]@{
     repo = 'C:/x'

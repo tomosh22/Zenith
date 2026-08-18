@@ -153,21 +153,91 @@ function Get-DocsTree {
     if (-not $Client) { return $null }
     $tree = [ordered]@{}
     $categories = $Client.file.PSObject.Properties['categories']
-    if (-not $categories) { return $null }
 
-    foreach ($category in $categories.Value.PSObject.Properties) {
-        $docs = $category.Value.PSObject.Properties['docs']
-        if (-not $docs) { continue }
-        $dir = $docs.Value.dir
-        $root = Join-Path $Client.repo $dir
-        if (-not (Test-Path -LiteralPath $root)) { continue }
-        foreach ($file in Get-ChildItem -LiteralPath $root -Recurse -File -Filter *.md) {
-            $key = ConvertTo-PosixPath $file.FullName
-            $tree[$key] = Get-Content -LiteralPath $file.FullName -Raw -Encoding utf8
+    if ($categories) {
+        foreach ($category in $categories.Value.PSObject.Properties) {
+            $docs = $category.Value.PSObject.Properties['docs']
+            if (-not $docs) { continue }
+            $dir = $docs.Value.dir
+            $root = Join-Path $Client.repo $dir
+            if (-not (Test-Path -LiteralPath $root)) { continue }
+            foreach ($file in Get-ChildItem -LiteralPath $root -Recurse -File -Filter *.md) {
+                $key = ConvertTo-PosixPath $file.FullName
+                $tree[$key] = Get-Content -LiteralPath $file.FullName -Raw -Encoding utf8
+            }
         }
     }
+
+    foreach ($entry in (Get-ConventionsTree -Client $Client).GetEnumerator()) {
+        $tree[$entry.Key] = $entry.Value
+    }
+
     if ($tree.Count -eq 0) { return $null }
     return [PSCustomObject]$tree
+}
+
+<#
+Directory basenames a `conventionDocs` walk never descends into — the
+built-in floor, before a project's own `exclude` list adds to it.
+
+Mirrors `DEFAULT_CONVENTIONS_EXCLUDE` in `packages/agent/src/docs.ts` in
+the other repo. The two lists cannot literally share code — one runs
+here, in PowerShell, before anything is shipped over the wire; the other
+runs in TypeScript, for the case where the board and the repo share a
+machine and `docs sync` reads the disk directly. Keep them in sync by
+hand if you touch either.
+#>
+$script:CONVENTIONS_EXCLUDE_DEFAULT = @(
+    '.git', '.zagent', '.claude', '.vs', '.worktrees',
+    'node_modules', 'Build', 'build', 'output', 'obj', 'dist',
+    '.next', '.turbo', 'coverage', 'playwright-report', 'test-results',
+    'ThirdParty', 'Middleware', 'vendor', 'Assets', 'Intermediate', 'Saved'
+)
+
+<#
+Every `CLAUDE.md` in the repo — root and every leaf module — keyed by
+absolute POSIX path so it lines up with what the board plans against
+(`repoJoin(repo, '')` plus the relative path, in `docs.ts`).
+
+`Get-ChildItem -Recurse -Filter CLAUDE.md` alone would still WALK every
+`node_modules`, every `Build\output`, every asset tree on the way past —
+recursion does not get to skip a directory just because nothing inside
+it will match. This prunes BEFORE descending: a blocked directory is
+never opened at all, matching `conventionsSource`'s contract that a
+blocked subtree is unreachable, not merely filtered from the result.
+
+Returns an empty (never null) hashtable when `conventionDocs` is absent
+or nothing matched, so `Get-DocsTree` can always `.GetEnumerator()` it.
+#>
+function Get-ConventionsTree {
+    param($Client)
+    $tree = [ordered]@{}
+    if (-not $Client) { return $tree }
+    $conventionDocs = $Client.file.PSObject.Properties['conventionDocs']
+    if (-not $conventionDocs) { return $tree }
+
+    $exclude = [System.Collections.Generic.HashSet[string]]::new([string[]]$script:CONVENTIONS_EXCLUDE_DEFAULT)
+    $excludeProp = $conventionDocs.Value.PSObject.Properties['exclude']
+    if ($excludeProp) {
+        foreach ($name in @($excludeProp.Value)) { [void]$exclude.Add($name) }
+    }
+
+    $stack = [System.Collections.Generic.Stack[string]]::new()
+    $stack.Push($Client.repo)
+    while ($stack.Count -gt 0) {
+        $dir = $stack.Pop()
+        $children = Get-ChildItem -LiteralPath $dir -Force -ErrorAction SilentlyContinue
+        foreach ($child in $children) {
+            if ($child.PSIsContainer) {
+                if ($exclude.Contains($child.Name)) { continue }
+                $stack.Push($child.FullName)
+            } elseif ($child.Name -eq 'CLAUDE.md') {
+                $key = ConvertTo-PosixPath $child.FullName
+                $tree[$key] = Get-Content -LiteralPath $child.FullName -Raw -Encoding utf8
+            }
+        }
+    }
+    return $tree
 }
 
 <#
@@ -316,6 +386,16 @@ function Get-ClientChecks {
             }
         }
     }
+
+    $conventionDocs = $Client.file.PSObject.Properties['conventionDocs']
+    if ($conventionDocs) {
+        $count = (Get-ConventionsTree -Client $Client).Count
+        $checks += @{
+            name = 'docs Conventions'; ok = ($count -gt 0)
+            detail = if ($count -gt 0) { "$count CLAUDE.md file(s) found" }
+                     else { 'no CLAUDE.md files found under the repo (after exclude)' }
+        }
+    }
     # `,@(…)` — a function returning a SINGLE check would otherwise hand
     # back a bare hashtable, and `.Count` on one of those answers "3"
     # (its key count). Same unrolling trap as Remove-Annotations.
@@ -346,5 +426,5 @@ function Get-AllGateLines {
 
 Export-ModuleMember -Function Find-ClientRepo, ConvertTo-PosixPath, Remove-Annotations,
     Get-ClientProject, Get-FlagValue, Test-Flag, Get-FileContents, Get-DocsTree,
-    Get-AmendContents, Get-ScratchRoot, Write-Results, Write-LastResult,
+    Get-ConventionsTree, Get-AmendContents, Get-ScratchRoot, Write-Results, Write-LastResult,
     Get-ClientChecks, Get-AllGateLines, Write-StdErr

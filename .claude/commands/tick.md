@@ -278,6 +278,22 @@ licence to edit one site and move on.
 the _same_ failure, then park: Blocked plus a Questions row. Three
 attempts then park beats a thrashing loop.
 
+**Docs mirror.** Only after a Green commit lands — never on a Blocked or
+abandoned ticket, whose edits may be half-done or uncommitted. Check
+`.zagent/run/<KEY>/changed.txt` (already written at step 6.4) against
+`/(^|\/)Docs\//` or `/(^|\/)CLAUDE\.md$/`. No match → skip, silently; a
+ticket that never touched a doc has nothing to mirror. A match →
+`zagent docs sync --json`, appended to `.zagent/run/<KEY>/docs-sync.log`.
+
+Never block the tick on this. `docs sync` reaches a Notion project over a
+WebSocket the tick has no other reason to depend on, and a mirror that is
+one commit behind is a stale Notion page — recoverable at the next sync
+that touches the same file. A commit that already landed on `master`
+staying uncommitted-to-Notion is not a failure mode this step exists to
+prevent. So: log the outcome into the work log's **Deviations /
+follow-ups** (created/updated page counts, or the error text on a
+non-zero exit), and continue to step 8 regardless.
+
 ## 8. Write back
 
 Build `.zagent/run/<KEY>/worklog.md` and `.zagent/run/<KEY>/result.md` from
