@@ -1,6 +1,6 @@
 ---
 description: Run one agent ticket — the queue head, or a ticket you name
-allowed-tools: Bash(zagent:*), Bash(pwsh -NoProfile*), Bash(git:*), Bash(claude:*), Read, Write, Edit, ScheduleWakeup
+allowed-tools: Bash(zagent:*), Bash(pwsh -NoProfile*), Bash(git:*), Agent, Read, Write, Edit, ScheduleWakeup
 argument-hint: [PROJECT_KEY | TICKET_KEY]
 ---
 
@@ -15,6 +15,7 @@ here knows or needs to know where its source is.
 | Thing | Home |
 | --- | --- |
 | This skill | `.claude/commands/tick.md` |
+| The worker and reviewer | `.claude/agents/zagent-worker.md`, `.claude/agents/zagent-reviewer.md` — subagent definitions whose tool lists omit Bash |
 | Gates, pinned baselines, conventions, categories | `zagent.project.json` (committed, sent to the board with every request) |
 | The client | `Tools/zagent/` — a PowerShell script, no Node |
 | Run scratch | `.zagent/last.json`, `.zagent/run/<KEY>/` (gitignored) |
@@ -32,9 +33,15 @@ loop without it lies to itself.
 
 - **I1 — You own the gate; the worker only authors.** Subagents never
   build, test, run, commit, or touch the board. This is enforced
-  structurally — the worker is spawned with `--tools` that omits Bash —
-  but state it in the prompt anyway, because a rule the worker can read
-  is a rule it can plan around.
+  structurally — `zagent-worker` grants only `Read, Edit, Write, Grep,
+  Glob`, so the worker has no Bash tool to run a gate with even if the
+  ticket text tells it to — but state it in the prompt anyway, because a
+  rule the worker can read is a rule it can plan around.
+
+  **The tool list in those two agent files IS the enforcement.** Add Bash
+  to `zagent-worker.md` and I1 is gone with no other file changing and
+  nothing failing loudly. They are protected by `.claude/**` for that
+  reason.
 - **I2 — Never trust "it works".** A worker's claim that gates pass is
   worthless by construction: it was forbidden from running them. Re-run
   everything yourself after integrating, even when the claim is
@@ -211,26 +218,53 @@ The prompt must open with these clauses, filled in from the payload:
 Then inline (I3): the `## Goal`, the `## Definition of Done` items, the
 file list, and any relevant repo conventions. `bodyPath` is a supplement.
 
-Dispatch shape:
+Dispatch shape — **the `Agent` tool, never a shelled-out CLI**:
 
 ```
-pwsh -NoProfile -Command "Set-Location <repo>; $env:MAX_THINKING_TOKENS='<per effort>';
-  Get-Content <scratch>/prompt.md -Raw | claude -p --model <routing.model>
-    --tools '<workerTools>' --permission-mode acceptEdits
-    --output-format json"
+Agent{
+  subagent_type: 'zagent-worker',
+  model:         <routing.model>,      # 'haiku' | 'sonnet' | 'opus'
+  description:   '<KEY> — <short title>',
+  prompt:        <the full text of .zagent/run/<KEY>/prompt.md>,
+  run_in_background: true,
+}
 ```
 
-- `--tools` omits Bash entirely, so I1 holds no matter what the ticket
-  text tells the worker.
-- Pipe the prompt via stdin to avoid quoting hazards; save the
-  `--output-format json` result to `.zagent/run/<KEY>/report.json`.
-- Effort maps to a thinking budget (`MAX_THINKING_TOKENS`); model is the
-  primary lever. There is no reasoning-effort CLI flag.
-- **A Bash call caps at 10 minutes and a COMPLEX worker will outlive
-  it.** Run the dispatch with `run_in_background` and wait for its
-  completion notification. On wake, if elapsed wall-clock exceeds
-  `guardrails.ticketTimeoutMinutes`, kill the child process tree and
-  treat it as a failed attempt (→ Blocked, with a timeout note).
+- **`zagent-worker` has no Bash tool**, so I1 holds no matter what the
+  ticket text tells the worker. That is the whole reason the dispatch
+  names an agent type rather than passing a tool list here: a tool list
+  written at the call site can be edited by whoever writes the call.
+- **Pass the prompt text, not a path.** `prompt.md` on disk is the
+  durable copy that makes a crashed firing reconstructible (I6); the
+  Agent call still carries the whole thing inline (I3).
+- **Write the returned report to `.zagent/run/<KEY>/report.json`**
+  yourself when it lands. Nothing else does, and step 8 reads it.
+- **`run_in_background: true`**, then wait for the completion
+  notification. Subagents outlive any single foreground call, and a
+  COMPLEX worker routinely runs for many minutes.
+- If elapsed wall-clock exceeds `guardrails.ticketTimeoutMinutes`, stop
+  the agent (`TaskStop`) and treat it as a failed attempt (→ Blocked,
+  with a timeout note).
+- **Effort is not settable per dispatch.** The `Agent` tool takes a model
+  but no effort parameter; reasoning effort comes from the agent
+  definition. `routing.effort` is therefore advisory — record it in the
+  routing line (step 8) so a mis-sized ticket is still visible, but do
+  not pretend it was applied.
+- `workerTools` in the payload is a **cross-check, not a control**. If it
+  names a tool `zagent-worker` does not grant, that is a contract
+  mismatch worth a Suggestions row — not a reason to widen the agent.
+
+**A dead subagent is infrastructure, not a verdict.** `Agent` returns
+null if the worker dies on a terminal API error or is skipped mid-run.
+That is the worker-side twin of `zagent` exit 7, and it gets the same
+answer: **do not treat it as a red.** A red means the gates ran and
+disagreed with the work. A null means no work happened at all, and
+fix-forwarding it just re-runs the same failure `fixForwardAttempts`
+times before parking an innocent ticket as Blocked — then does it to the
+next ticket, and the next, until `maxConsecutiveBlocked` trips the
+breaker on three tickets that were never even attempted. So on a null:
+comment what happened, **move the ticket back to its pre-claim status
+rather than Blocked**, and stop the tick. Report it as infrastructure.
 
 Whatever the worker claims about correctness is discarded (I2). Its
 report is _proposed text_ that you apply (I4).
@@ -243,10 +277,13 @@ report is _proposed text_ that you apply (I4).
    A gate list is copied from the payload, never paraphrased — and never
    re-derived from `zagent.project.json` by hand, because the payload is
    what the contract was validated against.
-3. **Reviewer pass** when the ticket's `risk` is in `reviewOn`: spawn a
-   second, read-only worker (`--tools 'Read,Grep,Glob'`) with the diff
-   inlined and "you are reviewing, not implementing". Findings go in the
-   work log; a finding that contradicts a gate result blocks.
+3. **Reviewer pass** when the ticket's `risk` is in `reviewOn`: dispatch
+   `Agent{subagent_type: 'zagent-reviewer', model: <routing.model>}` with
+   the diff inlined in the prompt. `zagent-reviewer` is read-only by
+   definition (`Read, Grep, Glob`), so it cannot quietly "fix" what it
+   finds and hand you back a diff you did not gate. Findings go in the
+   work log; a finding that contradicts a gate result blocks. A null
+   return here is infrastructure, same as step 5 — it is not a pass.
 4. `git -C <repo> diff --name-only <baseBranch>...HEAD > .zagent/run/<KEY>/changed.txt`
    then `zagent guard --file .zagent/run/<KEY>/changed.txt`.
    Non-zero → Blocked regardless of gate colour.
