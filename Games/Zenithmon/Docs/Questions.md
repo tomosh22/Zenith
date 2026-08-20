@@ -8,6 +8,10 @@
 
 ---
 
+**Board:** every `[OPEN]` entry below is an issue under epic `ZM-16`, so it can BLOCK
+the work that depends on it instead of waiting in a file nobody is prompted to read.
+The keys are inline on the headings. See [Board.md](Board.md).
+
 ## Open
 
 ### [RESOLVED] Q-2026-08-04-001 -- `Dawnmere.zscen` came back modified after every tools boot again, 2 bytes, same entity as Q-2026-08-01-002
@@ -219,7 +223,7 @@ the name ever has to move.
 **Superseded note (the original entry's status line):** Deliberately NOT done inside R1-1, whose contract was purity (no runtime
 change, no scene byte moved).
 
-### [OPEN] Q-2026-08-14-001 -- the boot unit gate carries a WALL-CLOCK assertion, so a REQUIRED check can red from machine load alone
+### [OPEN] Q-2026-08-14-001 [ZM-50 / ZEN-2] -- the boot unit gate carries a WALL-CLOCK assertion, so a REQUIRED check can red from machine load alone
 
 **Question:** should `GraphComponent::ThousandEntityUpdateBenchmark`
 (`Zenith/EntityComponent/Components/Zenith_GraphComponent.Tests.inl:1555`) keep
@@ -268,7 +272,7 @@ performance report.
 **Status:** OPEN -- engine-side change, needs a ruling before anyone edits a
 shared `Zenith/` test.
 
-### [OPEN] Q-2026-08-01-003 -- the player is always `ZM_HUMAN_PLAYER_M`; nothing selects a gender and the save has no field for one
+### [OPEN] Q-2026-08-01-003 [ZM-51] -- the player is always `ZM_HUMAN_PLAYER_M`; nothing selects a gender and the save has no field for one
 
 **Question.** `ZM_HUMAN_PLAYER_F` has a roster row and a baked model, exactly like
 `ZM_HUMAN_PLAYER_M`. Nothing in the game chooses between them: there is no
@@ -611,7 +615,7 @@ reverted to slot indices. **All four Zenithmon scenes are now tracked**, and
 
 **Status:** [RESOLVED] — the workaround (tracking one scene by exact path) is gone.
 
-### [OPEN] Q-2026-07-25-002 -- other games' `.zscen` and the LFS question for heavy assets
+### [OPEN] Q-2026-07-25-002 [ZM-52] -- other games' `.zscen` and the LFS question for heavy assets
 
 **Question (a):** should the other five games adopt tracked scenes/navmeshes,
 each gated on its own determinism probe? **(b):** should the heavy baked families

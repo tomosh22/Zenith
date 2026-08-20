@@ -17,6 +17,7 @@
 #
 # Usage:
 #   pwsh -NoProfile -File Tools/doc_lint.ps1
+#   pwsh -NoProfile -File Tools/doc_lint.ps1 -Game Zenithmon
 #   powershell -NoProfile -File Tools/doc_lint.ps1
 #
 # Exit codes:
@@ -35,6 +36,12 @@
 param(
     [string]$RepoRoot = (Split-Path -Parent $PSScriptRoot),
 
+    # Which game's Docs/ to lint. It used to be hardcoded to
+    # DevilsPlayground, which meant none of these six checks had ever run
+    # over Zenithmon -- and C6 (cross-references resolve) is exactly the
+    # one that would have caught its dangling ZM-D-177 citation.
+    [string]$Game = 'DevilsPlayground',
+
     # When -Verbose-equivalent: print PASS lines for each check too,
     # not just the summary. Helpful for CI logs.
     [switch]$ShowPassed
@@ -42,8 +49,9 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$docsDir = Join-Path $RepoRoot 'Games/DevilsPlayground/Docs'
-$configDir = Join-Path $RepoRoot 'Games/DevilsPlayground/Config'
+$gameDir = Join-Path $RepoRoot "Games/$Game"
+$docsDir = Join-Path $gameDir 'Docs'
+$configDir = Join-Path $gameDir 'Config'
 
 if (-not (Test-Path $docsDir)) {
     Write-Error "Docs dir not found: $docsDir"
@@ -76,7 +84,7 @@ function Report-Pass {
 # overshoot. Drift is detected as "doc claims N, registry has M, N > M".
 # =============================================================================
 function Check-TestCount {
-    $testsDir = Join-Path $RepoRoot 'Games/DevilsPlayground/Tests'
+    $testsDir = Join-Path $gameDir 'Tests'
     if (-not (Test-Path $testsDir)) {
         Report-Pass 'C1' "Tests dir missing -- skipping count check"
         return
@@ -134,6 +142,14 @@ function Check-TestCount {
 # Check 2: MVP archetype names agree across docs + JSON.
 # =============================================================================
 function Check-MvpArchetypeNames {
+    # DevilsPlayground-shaped: MVPScope.md and Config/Archetypes.json are
+    # its files. Skipping is correct for another game; FAILING would make
+    # the linter unusable anywhere else, which is how it came to be
+    # pointed at one game in the first place.
+    if (-not (Test-Path (Join-Path $docsDir 'MVPScope.md'))) {
+        Report-Pass 'C2' "no MVPScope.md in $Game -- check does not apply"
+        return
+    }
     $archetypesPath = Join-Path $configDir 'Archetypes.json'
     if (-not (Test-Path $archetypesPath)) {
         Report-Pass 'C2' "Archetypes.json missing -- skipping archetype check"
@@ -197,6 +213,12 @@ function Check-MvpArchetypeNames {
 # Check 3: roadmap task IDs are unique.
 # =============================================================================
 function Check-RoadmapUniqueIds {
+    # `MVP-N.N.N` task ids are a DevilsPlayground convention. Zenithmon
+    # identifies roadmap items by stage heading plus board key instead.
+    if (-not (Test-Path (Join-Path $docsDir 'MvpRoadmap.md'))) {
+        Report-Pass 'C3' "no MvpRoadmap.md in $Game -- check does not apply"
+        return
+    }
     $path = Join-Path $docsDir 'MvpRoadmap.md'
     if (-not (Test-Path $path)) { return }
 
@@ -289,12 +311,27 @@ function Check-MarkdownLinks {
                 if ($target -eq '') { continue }
                 # Skip external URLs.
                 if ($target -match '^https?://' -or $target -match '^mailto:') { continue }
-                # Relative path -- resolve against the doc's own directory.
+                # A line/anchor suffix is a pointer into the file, not
+                # part of its path: `Foo.cpp:692` names line 692 of Foo.cpp.
+                $bare = $target -replace ':\d+$', ''
+                # Two conventions coexist in these docs and BOTH are
+                # correct: a sibling doc is named relatively
+                # (`DecisionLog.md`), while source is named from the REPO
+                # ROOT (`Zenith/Flux/Terrain/Flux_TerrainConfig.h`).
+                # Resolving only against the doc's directory reported 17
+                # perfectly good source links as broken the first time
+                # this linter was pointed at Zenithmon.
                 try {
-                    $resolved = Join-Path $dir $target
-                    $normalized = [System.IO.Path]::GetFullPath($resolved)
-                    if (-not (Test-Path -LiteralPath $normalized)) {
-                        Report-Violation 'C6' "${name}:$($i+1): broken markdown link: '$target' (resolved to $normalized)"
+                    $candidates = @(
+                        [System.IO.Path]::GetFullPath((Join-Path $dir $bare)),
+                        [System.IO.Path]::GetFullPath((Join-Path $RepoRoot $bare))
+                    )
+                    $found = $false
+                    foreach ($candidate in $candidates) {
+                        if (Test-Path -LiteralPath $candidate) { $found = $true; break }
+                    }
+                    if (-not $found) {
+                        Report-Violation 'C6' "${name}:$($i+1): broken markdown link: '$target' (tried $($candidates -join ' and '))"
                     }
                 } catch {
                     # Malformed path -- count as broken.

@@ -335,7 +335,7 @@ Located in `Build/`:
 - `Sharpmake_FreeType.cs` / `Sharpmake_Msdfgen.cs` / `Sharpmake_MsdfAtlasGen.cs` - Font/text dependency projects
 - `Sharpmake_TilePuzzleLevelGen.cs` / `Sharpmake_TilePuzzleRegistryViewer.cs` - TilePuzzle tooling projects
 
-## External agent board (project `ZEN`)
+## External agent board (projects `ZM`, `ZEN`, `DP`)
 
 Some work in this repo is queued and executed by an autonomous Claude
 Code loop driven from a Jira-style board. **The board is a web
@@ -350,14 +350,34 @@ can develop here and ignore it entirely, with three exceptions.
 |---|---|
 | `zagent.project.json` | Gate command lines, pinned unit baselines, per-category conventions, branching mode, living-doc directories. **Sent to the board with every request** |
 | `.claude/commands/tick.md` | The `/tick` protocol — nine steps, seven invariants |
-| `Tools/zagent/` | The client — `zagent.ps1` (argv/env/transport), `ZagentClient.psm1` (pure helpers), `Test-ZagentClient.ps1` (47 asserts), `zagent.cmd` shim. **No Node, no `node_modules`** |
+| `Tools/zagent/` | The client — `zagent.ps1` (argv/env/transport), `ZagentClient.psm1` (pure helpers), `Test-ZagentClient.ps1` (55 asserts), `zagent.cmd` shim. **No Node, no `node_modules`** |
 | `.zagent/` | Run scratch (`last.json`, `run/<KEY>/`). **Gitignored**, so the dirty-tree precondition still holds |
 
 The board keeps only POLICY — the agent account, the complexity→model
 routing, guardrail floors — and holds no path into this filesystem.
-`project: "ZEN"` in `zagent.project.json` declares which board project
-this checkout serves; that inversion is the only direction that survives
-the two being on separate machines.
+`zagent.project.json` declares which board projects this checkout serves;
+that inversion is the only direction that survives the two being on
+separate machines.
+
+**One board project per game area.** `ZM` is Zenithmon, `ZEN` the engine,
+`DP` DevilsPlayground — each declared by its CATEGORY in
+`zagent.project.json`, with `ZEN` as the checkout default. Each area wants
+its own epics, sprints, releases and burndown, which is what a project is
+for; a component could carry none of them.
+
+**I5 is unaffected, and that is deliberate.** Every project this file
+declares resolves to the SAME checkout, so the advisory lock and the
+in-flight check still mean **one ticket at a time for `C:\dev\Zenith`**,
+not one per board. `zagent next` with no `--project` walks all three in
+declaration order and reports "nothing to claim" only when every one is
+empty.
+
+**Blockers are mechanical now.** A `BLOCKS` link between tickets is the
+one thing on the board that changes what the loop DOES: the claim query
+refuses any ticket whose predecessor has not reached a DONE-category
+status, and a targeted claim on one comes back exit 4 naming the ticket
+to finish first. Zenithmon's R1-x chain used to be a `deps` column in a
+Markdown table inside `Status.md`, which nothing could enforce.
 
 The file is **sent every time rather than registered once**. A stored
 copy goes stale, and a stale gate list is exactly how a green run
@@ -408,9 +428,10 @@ the same commit.
 A bare `claude` started in this repo is the whole setup:
 
 ```
-/tick ZEN            # one tick against the queue head
-/tick ZEN-11         # run that ticket wherever it sits, once
-/loop /tick          # unattended, until the queue empties
+/tick                # one tick against the head of whichever board has work
+/tick ZM             # ...constrained to Zenithmon's board
+/tick ZM-22          # run that ticket wherever it sits, once
+/loop /tick          # unattended, until the queues empty
 ```
 
 **No `--add-dir`, no second checkout.** The scratch is local, the client
@@ -480,6 +501,15 @@ Commands you would actually use from here:
 | `rows decisions\|questions\|shortfalls\|changelog\|suggestions` | read the knowledge databases |
 | `docs status --project ZEN` | what a living-doc sync would change; writes nothing |
 | `docs sync --project ZEN` | mirror `Games/*/Docs` into the Notion page tree |
+| `link <KEY> blocks\|relates\|duplicates\|causes <KEY>` | one directed link; `blocks` is the one the claim query reads |
+| `blocked --project ZM` | everything waiting, and on what |
+| `links <KEY>` / `epic <KEY>` / `parent <KEY> <PARENT>` | the dependency graph and the hierarchy |
+| `sprint list\|create\|start\|complete\|add\|remove` | one ACTIVE sprint per project |
+| `version list\|create\|release\|set` | milestones — what a BUILD contains |
+| `update <KEY> --points --severity --repro --environment --due` | field writes, with a history trail |
+| `estimate` / `flag` / `resolve` / `history` | the one-gesture shorthands |
+| `report epic\|velocity --project ZM` | per-epic progress; velocity over COMPLETED sprints only |
+| `board status --project ZM` | does `Roadmap.md` still describe the board? **exit 1 on drift** |
 
 **Reading a doc from a Zenith session no longer needs a browser.** A
 `<path>` is slash-separated page TITLES resolved under
@@ -552,7 +582,15 @@ the loop refuses anything it cannot route. Three sections:
 
 Always pass `--category`: `Zenithmon`, `Engine` or `DevilsPlayground`.
 It selects the gate list, the conventions inlined into the worker's
-prompt, and the branching mode. A `ZEN` ticket without one comes back
+prompt, the branching mode, **and now which board the ticket is filed
+on**.
+
+`create` also takes `--type EPIC|STORY|TASK|BUG|SUBTASK`, `--parent`,
+`--points N`, `--severity S1_CRITICAL…`, `--repro ALWAYS…`,
+`--environment "Null_vs2022_Debug_Win64_True"`, `--due`, `--sprint`,
+`--fix-version`, `--blocks a,b` and `--blocked-by a,b`. Sizing is TWO
+fields and they are not interchangeable: `--complexity`/`--risk` pick the
+MODEL, `--points` sizes the SPRINT. A `ZEN` ticket without one comes back
 `contractValid: false` rather than being guessed at, because guessing
 between areas means ratcheting the wrong pin.
 

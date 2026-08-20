@@ -4,8 +4,11 @@ Pokemon Sword/Shield-class monster-collecting RPG built entirely on Zenith
 systems: ~150 original species, 8 gyms, turn-based battles, all assets
 procedurally generated and baked by tools builds.
 
-> **Read `Docs/Status.md` first each session**, then `Docs/Roadmap.md` for the
-> S0-S12 stage plan. `Docs/AgentBriefing.md` is the session onboarding guide;
+> **Read `Docs/Status.md` first each session** — it carries the pinned baselines,
+> the committed-asset hashes and the current task; the S0-S7 narrative moved
+> verbatim to `Docs/History.md` on 2026-08-18. Then `Docs/Roadmap.md` for the
+> S0-S12 stage plan, which now carries the board keys, and `Docs/Board.md` for how
+> the docs and the board relate. `Docs/AgentBriefing.md` is the session onboarding guide;
 > `Docs/MasterPlan.md` is the full approved program plan behind the Roadmap;
 > `Docs/Scope.md` is the binding in/out list. Game code uses the `ZM_` prefix.
 > Unattended development runs on `Docs/StartPrompts.md` prompt 0 (the
@@ -50,7 +53,12 @@ Games/Zenithmon/
   Assets/Scenes/                 # BOOT-AUTHORED (see below) and COMMITTED --
                                  #   all FIVE scenes are tracked (ZM-D-148/174)
   Assets/Navmesh/                # Dawnmere.znavmesh -- COMMITTED, CI-loadable
-  Docs/                          # Cross-session knowledge base (Status/Roadmap/GDD/...)
+  Docs/                          # Cross-session knowledge base --
+                                 #   Status (live pins + current task), Roadmap (the
+                                 #   S0-S12 plan, keyed to the board), Board (how the
+                                 #   docs and the board relate), History (the S0-S7
+                                 #   narrative, moved out of Status 2026-08-18),
+                                 #   GDD, DecisionLog, Questions, Shortfalls, ...
   CLAUDE.md                      # This file
 ```
 
@@ -216,27 +224,51 @@ Conventions (state-setters only, between-tests hook, RequestSkip when baked
 assets are absent) are documented in `Docs/TestPlan.md`. CI gate:
 `.github/workflows/zm-tests.yml` (required check `zm-tests`).
 
-## The external agent board (`C:\dev\saas`, project `ZEN`)
+## The agent board (project `ZM`)
 
-Zenithmon's remaining roadmap also exists as tickets on a Jira board in a
-separate repo, worked by an autonomous Claude Code loop. `Docs/Roadmap.md`
-and `Docs/Status.md` remain the SPEC; the board is only the queue and the
-audit log. **Nothing here changes if you ignore it** — but three things
-bite if you do not know it exists.
+Zenithmon's WORK ITEMS live on a Jira board, worked by an autonomous
+Claude Code loop. **`Docs/Board.md` is the full mapping**; this section is
+what bites if you do not know the board exists.
 
-**1. The unit-gate baseline now has a THIRD pinned site.** Adding or
-removing a `ZM_*` unit means bumping the number in *all three*:
+**Zenithmon has its OWN board project — `ZM`.** It used to be a category
+inside `ZEN`; it is a project now, because epics, sprints, releases and a
+burndown are things a project has and a component cannot. The engine
+keeps `ZEN` and DevilsPlayground has `DP`. All three are served by this
+one checkout, so the loop still runs exactly one ticket at a time.
+
+**What moved, and what did not.** `Docs/Roadmap.md` and `Docs/Status.md`
+remain the SPEC — the roadmap carries each stage's epic key and each
+item's issue key, and where the two disagree the checkbox wins, scored
+against its literal text (ZM-D-162). What the board carries that a
+document cannot is the DEPENDENCIES: the R1-x chain used to be a `deps`
+column in a Markdown table, and nothing stopped the loop claiming R1-6
+before R1-5 existed. Those are `BLOCKS` links now, and the claim query
+refuses a ticket whose predecessor is unfinished.
+
+```
+zagent queue   --project ZM      # what the loop would take, and why not
+zagent blocked --project ZM      # the whole dependency graph
+zagent epic    ZM-9              # S8 and its children
+zagent board status --project ZM # roadmap <-> board drift; exit 1 on drift
+```
+
+**1. The unit-gate baseline has FOUR pinned sites.** Adding or removing a
+`ZM_*` unit means bumping the number in all of them, in one commit:
 
 | Site | What |
 |---|---|
-| `Games/Zenithmon/Docs/Status.md` | the LIVE PIN block |
+| `Games/Zenithmon/Docs/Status.md` | the LIVE PIN block — the authority |
 | `.github/workflows/zm-tests.yml` | `-Baseline` on the required check |
-| `C:\dev\saas\agent.config.json` | the loop's Zenithmon gate line |
+| `zagent.project.json` | the loop's Zenithmon gate line |
+| `Tools/run_unit_gate.ps1` | the `-Baseline` default — the ENGINE number only |
 
-The engine pin (Null Combat, currently 1638) is mirrored there too, under
-the `Engine` category. No gate tells you: `run_unit_gate.ps1` asserts
-`ran == Baseline` **exactly**, so a grown suite fails with zero failing
-tests, and a stale mirror fails only on the loop's machine.
+The engine pin (Null Combat, currently 1638) is spelled in
+`zagent.project.json` too, under the `Engine` category. **All four are in
+THIS repo**, which is the point — the gate line used to live in a
+gitignored file in the board's repo, where a reviewer could not see it
+and it could only be remembered. No gate tells you: `run_unit_gate.ps1`
+asserts `ran == Baseline` **exactly**, so a grown suite fails with zero
+failing tests.
 
 **2. ZM-D-031 is enforced mechanically now.** The `Zenithmon` and
 `Engine` categories carry `branching: "direct"`, so the loop commits

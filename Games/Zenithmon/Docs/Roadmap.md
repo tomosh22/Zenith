@@ -4,6 +4,17 @@
 
 **Stage gate (applies to EVERY stage, plus the per-stage additions listed below):** the required build matrix runs serially and is green + exact-baseline unit tests green + `zenith test Zenithmon --headless` green + stage-scoped windowed `--filter` runs green + any visual check explicitly listed for that stage + Docs updated (Roadmap.md, Shortfalls.md, and affected format docs in the same direct-master closure). The full local gate is the pre-commit/pre-push authority; `zm-tests` runs after the direct push as a backstop and is fixed forward if red.
 
+**Board:** each stage heading carries its EPIC key and each item its ISSUE key, on the
+`ZM` board (see [Board.md](Board.md)). The keys are the join between this file and the
+queue, not a replacement for it -- checkbox discipline above is unchanged, and where
+the two disagree the checkbox wins, scored against its LITERAL text (ZM-D-162).
+
+**What the board carries that this file cannot:** the DEPENDENCIES between items. The
+R1-x chain used to be a `deps` column in a table inside `Status.md`, which nothing
+could enforce -- so the loop was free to claim R1-6 before R1-5 existed. Those are
+`BLOCKS` links now, and the claim query refuses a ticket whose predecessor is
+unfinished. `zagent blocked --project ZM` prints the whole graph.
+
 **Critical path:** S0 -> S3 -> S5 -> S8 -> S9 -> S10 -> S12.
 
 **Parallelism:** S1+S2 (pure headless logic) run alongside S3+S4; S6 alongside late S5; S11 alongside late S10. MSBuild dispatch is SERIAL (known mspdbsrv constraint) -- parallelism is code-authoring, not builds.
@@ -12,7 +23,7 @@
 
 ---
 
-## S0 -- Skeleton, harness, CI, Docs (S-M) -- COMPLETE (2026-07-10)
+## [ZM-1] S0 -- Skeleton, harness, CI, Docs (S-M) -- COMPLETE (2026-07-10)
 
 - [x] Scaffold via `zenith new Zenithmon` (`Zenithmon.zproj` + `Zenithmon.cpp` + game component + boot characterization test from `Build/Templates/NewGame`, then regen)
 - [x] Engine change: game-name validators (`Test-ZenithGameNameSyntax` in `Build/zenith_buildsystem.psm1` + `ZenithHub_GameScan::ValidateName`) narrowed from blanket `Zenith*`/`Sentinel*` prefixes to a PascalCase word boundary; shared pinned vectors (`Tools/ZenithCli/Tests/name_validation_cases.txt`) + buildsystem tests updated (suite 45 / 0)
@@ -27,7 +38,7 @@
 
 *Gate:* **MET 2026-07-10** -- exe boots windowed + headless; `zenith test Zenithmon --headless` exits 0; first PR through zm-tests green.
 
-## S1 -- Data core (M) -- parallel with S3/S4
+## [ZM-2] S1 -- Data core (M) -- parallel with S3/S4
 
 - [x] `ZM_Types.h` + `ZM_TypeChart` (18 types) -- 18-type `enum ZM_TYPE` + golden-locked 18x18 chart + dual-type product; 9 `ZM_Data` unit tests (PR #147). Also wired the boot unit suite into CI (ZM-D-019).
 - [x] `ZM_SpeciesData` (152 species: archetype + evo stage + size class + family seed + stats + learnsets) -- structural roster (id/name/types/archetype/evo/family/rarity + derived size/seed; PR #148 ZM-D-020) + derived base stats (PR #149 ZM-D-021) + derived level-up learnsets (`ZM_Learnsets.h`, `ZM_GetSpeciesLearnset`; PR #151 ZM-D-023). 24 `ZM_Data` tests (16 species + 8 learnset). Base stats + learnsets are systematic placeholders for the S11 balance pass; TM/tutor learnsets come with `ZM_ItemData`.
@@ -40,7 +51,7 @@
 
 *Gate:* ~90 unit tests (chart matrix vs golden, stat/exp formula vectors, registry integrity). **MET 2026-07-10** -- 102 `ZM_*` `ZM_Data` unit tests (boot suite 1172 ran / 0 failed); no visual check for S1, so the loop proceeds to S2.
 
-## S2 -- Battle engine headless (L) -- parallel with S3/S4, after S1
+## [ZM-3] S2 -- Battle engine headless (L) -- parallel with S3/S4, after S1
 
 - [x] `ZM_BattleState` + `ZM_BattleEngine` (Begin(config,seed) -> SubmitAction -> ResolveTurn; append-only `ZM_BattleEvent` stream, no UI/string formatting in the engine) -- **box 1 (keystone)**: `Source/Battle/` (ZM_BattleTypes/BattleMonster/BattleEvent/DamageCalc/BattleState/BattleEngine) + 14 `ZM_Battle` unit tests incl. an offline-oracle-derived exact-event-stream characterization test + 50-battle fuzz-invariant smoke. Ships a REAL minimal Gen-V `ZM_DamageCalc` (plain damaging moves) so box 1 is end-to-end testable to a faint; 3-architect design panel + reviewer pass. Arch = ZM-D-032.
 - [x] `ZM_MoveExecutor` (one executor switch over the effect enum) + `ZM_DamageCalc` (EXTEND the box-1 minimal `ZM_CalcDamage`: burn/weather/screen inputs already seamed in) + `ZM_CatchCalc` + `ZM_StatusLogic` (major + volatile statuses; documented cuts stay cut) -- **box 2 COMPLETE** via 6 ordered sub-commits SC1-SC6 (ZM-D-033/034/035): executor seam, stat-stage effects, delivery variants + field/screen setters, 6 majors, 10 volatiles + Endure/Swagger/forced-switch, and `ZM_CatchCalc` + pre-move SWITCH/ITEM/RUN + the 2,000-battle soak. 228 `ZM_Battle` tests; move-only goldens byte-identical throughout.
@@ -53,7 +64,7 @@
 
 *Post-S2 (user-directed 2026-07-12, ZM-D-048):* **feature-complete breeding + gender** completes the box-6 SC1 reduced model to the full mainline breeding scope (Scope.md Section 1 already locks "breeding/eggs/daycare" + "mainline mechanics"). SC-A gender foundation (13 tests) + SC-B real egg groups + GLOOPET Ditto-analog + gendered compatibility (ZM-D-049; 22 new + 24 re-baselined) + SC-C egg moves + ability/hidden-ability inheritance + a derived hatch-cycle accessor (ZM-D-050; 20 new tests) ALL DONE -- **breeding is FEATURE-COMPLETE** (gender + ratios, real egg groups, GLOOPET Ditto, gendered compatibility, IV/nature/ability/hidden-ability + egg-move inheritance, hatch cycles). Boot baseline 1718. Shiny/Masuda deferred to S5+ (ZM-D-048).
 
-## S3 -- First overworld (L) -- critical path
+## [ZM-4] S3 -- First overworld (L) -- critical path
 
 - [x] Engine E1: serialized terrain-set name on `Zenith_TerrainComponent` (default "" = legacy `Terrain/`) replaces all 6 hard-coded path sites; strict contained paths, `AddStep_TerrainSetAssetSet`, staged editor bake-target, backward-compatible v1-v4 serialization, 7 engine tests, and RenderTest/CityBuilder/DevilsPlayground regressions are green (2026-07-12, ZM-D-051)
 - [x] Engine E2: inclusive anchor-containing `AddStep_TerrainExportChunksRect(minX,minY,maxX,maxY)` with transactional stale-mesh cleanup, shared terrain chunk layout, and terminal/tolerant missing-HIGH streaming (3 engine tests + full engine regression matrix green; 2026-07-13, ZM-D-052)
@@ -67,7 +78,7 @@
 
 - [x] **S3 visual sign-off** -- the human reviewed the captures under `Build/artifacts/zenithmon/s3/visual/`; the first pass was REJECTED for invisible Dawnmere grass, fixed by the ZM-D-058 grass-render rework, and the fresh `new_01/02/03` set was **APPROVED 2026-07-13**. **S3 complete; S4/S5 unblocked.**
 
-## S4 -- Asset generators (L) -- COMPLETE (2026-07-16)
+## [ZM-5] S4 -- Asset generators (L) -- COMPLETE (2026-07-16)
 
 > **★ THE HUMAN FAMILY GOT ITS FIRST SHIPPED CONSUMER AT ZM-D-181 (2026-08-01).**
 > S4 baked 35 humans that nothing but the asset-gallery test ever loaded. The six
@@ -87,7 +98,7 @@
 
 *Gate:* generator unit tests (determinism = same-seed byte-identical; winding/bounds/weights-sum/bone-caps; shiny differs; clip channels match skeleton); windowed gallery scene showing every species animating (batched species smoke tests); visual sign-off on a sampled dozen. **MET + SIGNED OFF 2026-07-16 (ZM-D-088):** boot unit gate 1908/0-fail (creature/anim/human/building/prop `ZM_Gen` units + 6 bake smokes + 3 `ZM_BakeManifest` units), full 5-config matrix, headless 7/0; the full-family `ZM_AssetGallery_Test` (26 reps across all four families, `ZM_BakeAllAssets()` disk bake) PASSED windowed and the user APPROVED the visual sign-off (after the ZM-D-087 building-overlap fix). **S4 COMPLETE.** The creature gallery was separately signed at ZM-D-067.
 
-## S5 -- Battle integration slice (L) -- critical path
+## [ZM-6] S5 -- Battle integration slice (L) -- critical path
 
 - [x] Battle scene (build index 1, world offset (0,-2000,0), enclosing dome + platforms, ~6 baked biome prop sets swapped at runtime) -- **DONE** (ZM-D-089): `ZM_BattleArena` component (order 108) spawns an always-visible dome (`CreateUnitSphere`) + 2 platforms (`CreateUnitCube`) + 6 per-biome dressing sets (`ZM_PROP_DRESSING_*` via `LoadModel`; exactly one shown via `SetEnabled`, `SetBiome` swaps). Self-contained `Battle` scene authored at world Y = -2000 (`fARENA_WORLD_Y`; NO engine scene-offset mechanism exists -- realized per-entity), registered build index 1 in `Project_LoadInitialScene` (non-tools-gated); WorldSpec `ZM_SCENE_BATTLE` row already existed (not edited). 5 T0 `ZM_BattleArena` units + windowed `ZM_BattleArena_Test` (`IsBuilt`/`IsFullyBuilt`/`SetBiome`/root-Y; end-to-end PASS with real assets). Boot baseline 1908->1913. Camera Z-sign + `IsFullyBuilt` coverage + read-reset fixes applied per reviewer.
 - [x] `ZM_EncounterZone` + `ZM_TallGrassSystem` (own CPU density copy, 1 m tile quantization, per-route encounter rolls) + engine E5 grass-reset hygiene -- **DONE (4 sub-commits, ZM-D-090/091/092/093).** Tall-grass -> encounter -> `ZM_OnWildEncounter` emission proven end-to-end (windowed `ZM_TallGrassEncounter_Test`); interior grass-clear proven (`ZM_TallGrassInteriorClear_Test`). Emit-only -- item 3 wires the additive-battle subscriber. Sub-commit history: SC2 DONE (ZM-D-090) -- `ZM_EncounterZone` pure roll + `ZM_OnWildEncounter` event + `ZM_WorldSpec.m_uEncounterRatePer256` (Route1=40); SC3 DONE (ZM-D-091) -- `ZM_TallGrassSystem` (order 109): own `ZM_GrassDensityMap` copy, 1 m tile quantization, transition roll on grass -> emits `ZM_OnWildEncounter` (emit-only); SC1 DONE (ZM-D-092) -- engine E5: `Flux_GrassImpl::Reset()` -> full `ClearSceneData()` clear, wired into the SINGLE-load render-reset hook (grass leak closed; +3 engine units, engine default 1078->1081; cross-game regression all green -- Combat/Zenithmon/DP/CityBuilder + windowed grass-regen; RenderTest pre-existingly red per Q-2026-07-16-001); **only SC4 (windowed integration + scene wiring) REMAINS.** Box ticks when SC4 lands.*
@@ -97,7 +108,7 @@
 
 *Gate:* windowed tests -- walk grass until encounter (rigged RNG), win via scripted input, assert exp + exact overworld resume; catch test; screenshot check for overworld bleed-through at offset (Questions.md Q-2026-07-09-003). **MET + SIGNED OFF 2026-07-18 (ZM-D-112):** automated gate all green (all items 1-5 code + tests; 5-config build matrix + D3D12 link proof; boot units 2025/0; headless 22/0; full windowed suite 22/0 incl. the 10-test battle suite; ~380 S2 goldens byte-identical), AND the user reviewed the rendered before->arena->after bleed-through evidence (`Build/artifacts/zenithmon/s5/visual/cap_*.png`) and **APPROVED** the visual sign-off -- no overworld bleed-through at the (0,-2000,0) offset (Q-2026-07-09-003 CLOSED). **S5 COMPLETE.**
 
-## S6 -- Dialogue, menus, NPCs, shops (M) -- COMPLETE (2026-07-21)
+## [ZM-7] S6 -- Dialogue, menus, NPCs, shops (M) -- COMPLETE (2026-07-21)
 
 - [x] Engine E4: `Zenith_UIGridLayoutGroup` (fixed columns/cell size) -- **DONE (ZM-D-113):** new engine UI element (grid analogue of `Zenith_UILayoutGroup`): fixed columns + cell size, row-major visible-child placement, spacing/padding, fit-to-content auto-size; anti-thrash resize guard. +9 engine `UIGrid` units (engine 1088->1097; zm boot 2025->2034); reviewer CLEAN; cross-game regression green (Combat 1097/0+14/0, DP 158/0, CB 45/0, RenderTest no-worse). Baselines bumped (`run_unit_gate.ps1` 1097, `zm-tests.yml` 2034). Additive-only -- nothing instantiates it yet (S6 UI screens will).
 - [x] `ZM_UI_DialogueBox` / `ZM_UI_MenuStack` / `ZM_UI_Party` / `ZM_UI_Bag` / `ZM_UI_Dex` / `ZM_UI_Shop` -- **DONE (item 2, SC1-SC9, ZM-D-114..122):** ONE ECS component (`ZM_UI_MenuStack`, order **112**, on the persistent `ZM_MenuRoot`); every SCREEN is a NON-ECS `Source/UI/` presenter owned BY VALUE by it, so the six screens together consumed exactly **one** ECS order. SC4 generalized dispatch into TWO per-screen switches, after which each new screen was one arm per site (proved four times over). Traversal is the ENGINE focus-nav throughout; confirm dispatches by the FOCUSED ELEMENT'S NAME. SC5's dex is the first E4 `Zenith_UIGridLayoutGroup` consumer (grid built once at runtime via `AddElement` + `ReparentElement`). +170 pure units across the nine sub-commits (zm boot 2034 -> 2231) + 8 windowed tests.
@@ -106,7 +117,7 @@
 
 *Gate:* UI-state units + automated talk / buy / heal / open-every-menu through real focus and interaction input. **MET; S6 COMPLETE 2026-07-21.** `ZM_S6UIGate_Test` covers the actual four-entry root menu -- **Party / Bag / Dex / Exit** -- in one uninterrupted session; Box is deferred to S7. **[SUPERSEDED 2026-07-29: S7 closed WITHOUT the Box screen; it is now re-deferred to S9 in writing -- see the S9 `ZM_UI_Box` line, ZM-D-165 and Q-2026-07-29-001. This sentence is the deferral that nearly expired unremarked.]** All five serial build configurations were green: Vulkan Debug/Release x Tools True/False plus the D3D12 Debug Tools=False link proof. Units were **2343 ran / 2342 passed / 0 failed / 1 skipped**. The headless registry was **36 passed / 0 failed**, comprising 3 executed semantic tests and 33 expected graphics skips. All six exact-name S6 windowed filters were green and non-skipped: `ZM_S6UIGate_Test` **158 frames**, `ZM_NpcTalk_Test` **85**, `ZM_NpcShop_Test` **286**, `ZM_NpcHeal_Test` **315**, `ZM_S6InteractGate_Test` **749**, and `ZM_NpcWander_Test` **830**. The full windowed registry was **36 passed / 0 failed / 0 skipped**, with no zero-frame tests. S6 has no visual gate and requires no human sign-off; **S7 is next**.
 
-## S7 -- Save/load, story flags, trainer battles (M) -- COMPLETE (2026-07-29)
+## [ZM-8] S7 -- Save/load, story flags, trainer battles (M) -- COMPLETE (2026-07-29)
 
 - [x] Full `ZM_SaveSchema` (versioned per-module Read/Write: party, boxes 16x30, dex bits, story-flag bitset, badges, bag, money, daycare/egg, tower streak, position/scene/spawn tag) round trip + initial canned-blob compatibility coverage -- **COMPLETE 2026-07-21 (SC1-SC2, ZM-D-135/136):** SC1 froze the complete durable `ZM_GameState` inventory with 18 `ZM_Save` units. SC2 ships the pure transactional schema-v1 codec: explicit little-endian widths, exactly 11 ordered independently length-framed v1 modules, a 61-byte monster record, exact-length atomic reads and append-atomic writes, strict field/cap/status validation, and the literal 824-byte v1 compatibility golden. SC2 adds 29 schema + 2 v1 compatibility units in the migration TU; observed combined gate **2392 / 2391 / 0 / 1**, engine reference **1103**, all five Zenithmon builds green, headless **36/0**, full windowed **36/0/0**. Slot I/O is deliberately not part of this codec item.
 - [x] Story-flag gating (roadblocks, NPC lines); menu-save anywhere + autosave at milestones (slots Save0-2 + Auto) -- **COMPLETE (SC1-SC6, ZM-D-137..142):** SC1 ships `Source/Data/ZM_StoryFlags.{h,cpp}` -- the save-stable `ZM_STORY_FLAG_ID` registry (enum VALUE is the module-4 bit index, six flags dense-from-zero, append-only), a deduced-bound compiled row table, total fail-closed accessors and `ZM_StoryGatePasses`, plus the first gameplay consumer: gated NPC dialogue via `ZM_SelectNpcLines` in the `ZM_NPC_RAISE_DIALOGUE` arm, with `Npc_Warden` the first gated row pinned by two mutation-verified phases on the CI-visible `ZM_NpcDispatch_Test` (+33 units, boot **2425**). SC2 ships `Source/Save/ZM_SaveSlots.{h,cpp}` -- the typed slot/disk layer OVER the frozen codec: Save0-2 + Auto, a three-state slot probe (EMPTY/READY/DAMAGED), typed transactional `WriteState`/`ReadState`, occupancy queries, slot deletion, and one pure save-blocker predicate. It adds a 4-byte little-endian length prefix INSIDE the engine payload ahead of the ZMSV blob (the codec demands an exact length while the engine's two load paths disagree about `GetCapacity()`); a rejected state creates NO file, success is proven ONLY by a verify re-probe, and a DAMAGED slot is surfaced not repaired (+33 units, boot **2458**). SC3 ships `Source/Save/ZM_ResumePoint.{h,cpp}` (pure validation + world-position construction + yaw) and `Source/Save/ZM_Autosave.{h,cpp}`, plus ~410 lines on `ZM_GameStateManager`: world-position capture (capsule CENTRE; spawn markers store FEET), resume placement (`SetBodyPosition` then rotation, since `TeleportBody` forces identity rotation; yaw via `atan2` of the rotated +Z survives `EnforceUpright`), quit-to-FrontEnd (both `AdvanceFadeIn` barriers bypassed for the playerless title), and the edge-triggered milestone autosave latch consulting SC2's blocker policy. +27 units + 2 graphics-gated windowed tests (`ZM_ResumePlacement_Test` restores to **planarErr 0.0000 / 10.5 m from spawn**, `ZM_QuitToFrontEnd_Test` refuses autosave), mutation-verified (boot **2485**, headless/windowed **38/0/0**, save dir empty). SC4 ships the by-value non-ECS `Source/UI/ZM_UI_SaveSlots.{h,cpp}` presenter and root Save/Quit: four `EMPTY / READY / DAMAGED` rows; manual writes restricted to Save0-2; immediate EMPTY writes; READY/DAMAGED overwrite confirmation; `Auto` visible but read-only in SAVE and available when READY in LOAD; no automatic damaged-slot repair/delete; input-driven Quit No/Yes; canonical `ResolveLiveSaveBlocker` checks at SAVE opening and the irreversible `blocker -> CaptureWorldPosition -> WriteState` boundary; and immediate focused-Save rehome to live Quit when a blocker arises. SC4 adds **23** save-screen + **5** menu-stack units and 2 graphics tests; observed gate: regen/build green, boot **2513 / 2512 / 0 / 1 documented skip**, headless discovery/gate **40/40**, focused SaveMenu **98** frames and RootQuit/BlockedSave **146**, full windowed **40/40 passed, 0 failed, 0 skipped, 0 zero-frame**, save dir empty, diff check green. `ZM_SaveSchema`/`ZM_GameState`/ECS order remain untouched; next-free is **114**. SC5 ships the by-value non-ECS `Source/UI/ZM_UI_TitleMenu.{h,cpp}` presenter (ambient on a settled FrontEnd, auto-raised only with an empty stack and no warp/battle, force-closed otherwise; Continue visible iff any slot probes non-EMPTY with DAMAGED counting) plus `ZM_GameStateManager::RequestNewGame()` / `RequestContinue(ZM_SAVE_SLOT)` -- Continue is transactional (ReadState into a local candidate -> SC3's validated QueueResume -> publish LAST, exact error and zero mutation on failure) and consumes SC4's READY-slot LOAD seam with EMPTY/DAMAGED non-loadable and LOAD ungated by the overworld-only SAVE predicate. `ZM_SaveSlots` gained a test-only operation observer (one event ON ENTRY per ProbeSlot/ReadState/WriteState; nullptr-inert; cleared by `DeleteAllSlotsForTests`). The disk-authentic gate `ZM_SaveContinue_Test` (**247 frames**) landed HERE: save -> quit -> scramble-and-prove -> Continue restores position/party/flags exactly from DISK, with exactly one READ_STATE on AUTO and zero writes in the Yes window. SC5 adds **6** `ZM_Title` + **2** `ZM_MenuStack` units and 1 graphics test; observed gate: regen/build green, boot **2521 / 2520 / 0 / 1 documented skip**, headless **41/41**, focused **247**/**158**/**98** frames, full windowed **41/41 passed, 0 failed, 0 skipped, 0 zero-frame**, save dir empty; adversarial review CLEAN. A measured 1.3 MB `Step` stack frame (six `ZM_GameState` locals vs the 1 MB reserve) was fixed by splitting the test into per-phase driver functions -- the standing shape for any multi-phase test touching `ZM_GameState`. **SC6 DONE (ZM-D-142)** ships the windowed `ZM_MilestoneAutosave_Test` (**134 frames**) -- the milestone-autosave producer gate: a real `SCENE_ENTERED` arrival writes the Auto slot EXACTLY ONCE on DISK with the full durable state (`ReadState` + field-compare vs a scrambled live state, twinned with a single `WRITE_STATE` observer event), the write is attributed to the `OnUpdate` IDLE drain via menu-term isolation, a blocked real arrival writes NOTHING (byte-identical Auto file), and the latch re-arms without a retry loop. TEST-ONLY (no production code shipped, no new ECS order, `uSERIALIZATION_VERSION` stays 1); a 5-mutation teeth battery all RED then restored GREEN. Observed gate: regen/build green, headless **42/42**, boot **2521 / 2520 / 0 / 1 documented skip** (NO delta -- `zm-tests.yml` unchanged), focused windowed **134** frames, full windowed **42/42 passed, 0 failed, 0 skipped, 0 zero-frame**, save dir empty. **S7 item 2 COMPLETE.** No schema redesign.
@@ -218,7 +229,7 @@ sign-off.** Observed at closure: headless **49 passed / 0 failed**, full windowe
 
 **S7 COMPLETE 2026-07-29.**
 
-## S8 -- Vertical slice, go/no-go (M) -- critical path CHECKPOINT
+## [ZM-9] S8 -- Vertical slice, go/no-go (M) -- critical path CHECKPOINT
 
 - [x] Intro -> lab -> starter choice **(COMPLETE 2026-08-15, six slices SC-A..SC-F:
       `864296df` `b06c656d` `ce909063` `8dc85516` `83e75a90` `0e0a884c`)**. A new game is
@@ -226,55 +237,77 @@ sign-off.** Observed at closure: headless **49 passed / 0 failed**, full windowe
       Proven end to end by `ZM_IntroBeat_Test` (77 frames, 18 phases), which asserts the
       CHOSEN species is in the party and Fernfawn is NOT -- an assertion the old seed would
       otherwise have satisfied. ZM boot 3277 -> 3327, registry 61 -> 64.
-- [ ] Route 1 (encounters / trainers) -> town 2 **(scope amended 2026-08-15 by user ruling
+- [ ] **[ZM-20] [ZM-21] [ZM-22] [ZM-23] [ZM-24] [ZM-25] [ZM-26]** Route 1 (encounters / trainers) -> town 2 **(scope amended 2026-08-15 by user ruling
       ZM-D-196: "items" SPLIT OUT below.** Ground-item pickup is NEW production surface, not
       content -- there is no item component, no world prop, no pickup path, and no way to USE an
       item at all today. S8's gate is "mini-playthrough -> Badge 1 green", which ground items do
       not appear in, so bundling them would let a from-scratch component block the traversal work
       and front-run a save-schema question ahead of Gym 1. Per ZM-D-162 discipline the line is
       AMENDED rather than ticked on words it did not satisfy.**)
-- [ ] Ground-item pickups (world props -> bag, with collected-state persistence) **[SPLIT OUT of
+- [ ] **[ZM-27]** Ground-item pickups (world props -> bag, with collected-state persistence) **[SPLIT OUT of
       the Route 1 item by ZM-D-196; not required by the S8 gate]**
-- [ ] Gym 1 (layout puzzle-lite + leader + badge + teach-move reward)
-- [ ] `ZM_AutoTests_Slice` mini-playthrough (CB_HumanSession-style flat Act script + PROBEs, ~4-6k frames, windowed)
+- [ ] **[ZM-28]** Gym 1 (layout puzzle-lite + leader + badge + teach-move reward)
+- [ ] **[ZM-29]** `ZM_AutoTests_Slice` mini-playthrough (CB_HumanSession-style flat Act script + PROBEs, ~4-6k frames, windowed)
 
 *Gate:* mini-playthrough new-game -> Badge 1 green; manual visual playthrough sign-off. **Checkpoint before content scale-up.**
 
-## S9 -- World buildout A (XL) -- critical path
+## [ZM-10] S9 -- World buildout A (XL) -- critical path
 
-- [ ] Towns 3-6, Routes 2-8, Gyms 2-4, interiors (content = `ZM_WorldSpec` rows + recipes, not bespoke code)
-- [ ] Encounter tables per route
-- [ ] Field evolution / stones; TM items
-- [ ] Daycare / breeding / eggs (step counting on the manager)
-- [ ] Weather zones (WorldSpec-driven, feeds battle modifiers)
-- [ ] **`ZM_UI_Box` -- the storage screen. RE-DEFERRED HERE FROM S7 on 2026-07-29 (ZM-D-165, Q-2026-07-29-001).** `Roadmap.md:98` deferred it out of S6 with "Box is deferred to S7", and S7 was closing without it and without any re-deferral recorded -- caught by a doc audit, not by tripping over it. The storage MODEL is not outstanding: `ZM_SaveSchema` has persisted boxes **16x30** since S7 item 1 (ZM-D-136). What is missing is a presenter, in the established S6 `Source/UI/ZM_UI_*` by-value idiom (no schema change, no new ECS order, no serialization bump -- it lands whenever with zero rework). It belongs HERE because a box is only *functional* once the player can exceed a full party, which needs S9's routes and encounter tables; built earlier its only reachable state is "empty", which cannot be play-tested. **Do not let this deferral expire unremarked a second time.**
+- [ ] **[ZM-31]** Towns 3-6, Routes 2-8, Gyms 2-4, interiors (content = `ZM_WorldSpec` rows + recipes, not bespoke code)
+- [ ] **[ZM-32]** Encounter tables per route
+- [ ] **[ZM-33]** Field evolution / stones; TM items
+- [ ] **[ZM-34]** Daycare / breeding / eggs (step counting on the manager)
+- [ ] **[ZM-35]** Weather zones (WorldSpec-driven, feeds battle modifiers)
+- [ ] **[ZM-36]** **`ZM_UI_Box` -- the storage screen. RE-DEFERRED HERE FROM S7 on 2026-07-29 (ZM-D-165, Q-2026-07-29-001).** `Roadmap.md:98` deferred it out of S6 with "Box is deferred to S7", and S7 was closing without it and without any re-deferral recorded -- caught by a doc audit, not by tripping over it. The storage MODEL is not outstanding: `ZM_SaveSchema` has persisted boxes **16x30** since S7 item 1 (ZM-D-136). What is missing is a presenter, in the established S6 `Source/UI/ZM_UI_*` by-value idiom (no schema change, no new ECS order, no serialization bump -- it lands whenever with zero rework). It belongs HERE because a box is only *functional* once the player can exceed a full party, which needs S9's routes and encounter tables; built earlier its only reachable state is "empty", which cannot be play-tested. **Do not let this deferral expire unremarked a second time.**
 
 *Gate:* per-region automated traversal tests (every warp edge walked, one scripted battle per route); bake-determinism check (re-run tools boot -> zero diffs).
 
-## S10 -- World buildout B (XL) -- critical path
+## [ZM-11] S10 -- World buildout B (XL) -- critical path
 
-- [ ] Towns 7-11, Routes 9-15, Gyms 5-8
-- [ ] Victory Road; League (4 Elite rooms + Champion)
-- [ ] Full rival arc; badge-gate audit
+- [ ] **[ZM-37]** Towns 7-11, Routes 9-15, Gyms 5-8
+- [ ] **[ZM-38]** Victory Road; League (4 Elite rooms + Champion)
+- [ ] **[ZM-39]** Full rival arc; badge-gate audit
 
 *Gate:* traversal tests for all remaining scenes; automated Elite-4 gauntlet with overleveled scripted team.
 
-## S11 -- Post-game (M) -- parallel with late S10
+## [ZM-12] S11 -- Post-game (M) -- parallel with late S10
 
-- [ ] Champion rematch row
-- [ ] Battle Tower (interior scene + streak/rental logic + AI escalation, boss every 7th)
-- [ ] Balance pass driven by headless AI-vs-AI simulation stats
+- [ ] **[ZM-40]** Champion rematch row
+- [ ] **[ZM-41]** Battle Tower (interior scene + streak/rental logic + AI escalation, boss every 7th)
+- [ ] **[ZM-42]** Balance pass driven by headless AI-vs-AI simulation stats
 
 *Gate:* headless 100-streak simulation invariants; automated 7-battle tower run.
 
-## S12 -- Full playthrough & hardening (L) -- critical path
+## [ZM-13] S12 -- Full playthrough & hardening (L) -- critical path
 
-- [ ] Per-chapter segment tests in the batch suite
-- [ ] `ZM_AutoTests_Playthrough`: full new-game -> Champion scripted run (CB_HumanSession pattern + `zm_instant_battles`, `m_bManualOnly`, run explicitly at this gate)
-- [ ] Perf pass (grass counts vs 2M cap, load times, suite runtime <= budget)
-- [ ] Save-migration audit; fix backlog
+- [ ] **[ZM-43]** Per-chapter segment tests in the batch suite
+- [ ] **[ZM-44]** `ZM_AutoTests_Playthrough`: full new-game -> Champion scripted run (CB_HumanSession pattern + `zm_instant_battles`, `m_bManualOnly`, run explicitly at this gate)
+- [ ] **[ZM-45]** Perf pass (grass counts vs 2M cap, load times, suite runtime <= budget)
+- [ ] **[ZM-46]** Save-migration audit; fix backlog
 
 *Gate:* full suite green + playthrough bot completes + budgets met.
+
+---
+
+## Cross-cutting — work with no stage
+
+These four epics carry items the stage plan has never had a home for. Each lived in a
+document section with no id at all, which is precisely why none of it could be
+scheduled, blocked or reported on. See [Board.md](Board.md) §2.
+
+- **[ZM-14] Engine gaps E1-E8** — [Shortfalls.md](Shortfalls.md) section 2. Open:
+  **[ZM-47]** E6 (terrain extent is a compile-time constant), **[ZM-48]** E7 (runtime
+  navmesh, option B), **[ZM-49]** E8 (no ground-height query). E1-E5 are RESOLVED.
+- **[ZM-15] Tech debt & shortfalls** — [Shortfalls.md](Shortfalls.md) sections 1 and 3.
+- **[ZM-16] Open questions** — the `[OPEN]` entries in [Questions.md](Questions.md),
+  including **[ZM-51]** (the player is always `ZM_HUMAN_PLAYER_M`) and **[ZM-52]**
+  (other games' `.zscen` and the LFS question).
+- **[ZM-17] Test infrastructure & gates** — the unit gate and its four pinned sites.
+- **[ZM-18] Visual polish debt** — the open ZM-D-168 audit items, including
+  **[ZM-60]** the camera cut for the trainer spotted beat.
+
+*These have no stage gate.* They are scheduled against sprints and releases on the
+board, not against S0-S12.
 
 ---
 

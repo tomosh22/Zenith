@@ -51,6 +51,7 @@
         ".github/workflows/zm-tests.yml. Read it from a NULL-config exe —",
         "the Vulkan exe reports a higher number for the same tree."
       ],
+      "project": "ZM",
       "gates": [
         "pwsh -NoProfile -File Tools\\zenith.ps1 build Zenithmon --headless",
         "pwsh -NoProfile -File Tools\\zenith.ps1 test Zenithmon --headless",
@@ -66,6 +67,7 @@
         "order": [
           "Status.md",
           "Roadmap.md",
+          "Board.md",
           "AgentBriefing.md",
           "TestPlan.md",
           "DecisionLog.md",
@@ -76,7 +78,8 @@
           "MasterPlan.md",
           "OrchestratorPlaybook.md",
           "CIPolicy.md",
-          "BuildEnvironment.md"
+          "BuildEnvironment.md",
+          "History.md"
         ]
       }
     },
@@ -97,6 +100,7 @@
     },
     "DevilsPlayground": {
       "$comment": "Overrides the project's `direct` branching — DP's Docs/CIPolicy.md is a squash-merge policy.",
+      "project": "DP",
       "branching": "branch",
       "branchPrefix": "agent/",
       "gates": [

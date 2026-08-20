@@ -451,3 +451,46 @@ or world positions, because procgen reshuffles those per seed.
   the navmesh agent steers the priest back to its nearest patrol-node
   polygon. Stage such tests by spawning fresh entities at known clear
   positions rather than teleporting procgen-spawned entities.
+
+## The agent board (project `DP`)
+
+DevilsPlayground has its own board project, worked by the same autonomous
+Claude Code loop that runs Zenithmon and the engine. `Docs/MvpRoadmap.md`
+and `Docs/Status.md` remain the SPEC; the board is the queue and the audit
+log. **Nothing here changes if you ignore it** — but four things bite if
+you do not know it exists.
+
+**1. `DP` is its own board project**, alongside `ZM` (Zenithmon) and `ZEN`
+(the engine). One board per game area, because each wants its own epics,
+sprints and releases. All three are served by this one checkout, so the
+loop still runs exactly one ticket at a time across all of them — a
+refusal naming a Zenithmon ticket is that invariant working, not a bug.
+
+**2. DP is the one area that BRANCHES.** The `DevilsPlayground` category
+overrides `branching: "branch"` with `branchPrefix: "agent/"`, because
+`Docs/CIPolicy.md` is a squash-merge PR policy — unlike Zenithmon and the
+engine, which carry `branching: "direct"` per ZM-D-031 and commit straight
+to `master`. Nothing is pushed either way (`push: false`).
+
+**3. DP has NO pinned unit baseline.** `dp-tests.yml` has no
+`run_unit_gate` step, and the `DevilsPlayground` gate list in
+`zagent.project.json` is just build + test. **Do not invent one** — an
+exact-equality ratchet that nobody bumps reds a required check with zero
+failing tests, which is a failure mode Zenithmon has hit three times.
+
+**4. `Docs/` is MIRRORED into Notion, one way.** `zagent docs sync`
+renders this directory into a page tree under Agent › Documentation ›
+DevilsPlayground. These files stay authoritative; a `zagent docs write`
+aimed at a mirrored page is refused and names the file to edit instead. A
+loop worker has no network and reads its briefing off disk with the Read
+tool.
+
+`Tools/doc_lint.ps1` defaults to this game and stays that way; it takes a
+`-Game` parameter now, so the same six checks also run over Zenithmon.
+Checks C2 (MVP archetype names) and C3 (`MVP-N.N.N` task-id uniqueness)
+are DP-shaped and skip themselves elsewhere.
+
+The full reference is `C:\dev\Zenith\CLAUDE.md`'s "External agent board"
+section, and `Games/Zenithmon/Docs/Board.md` for how a game's docs and its
+board relate.
+

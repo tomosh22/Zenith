@@ -260,6 +260,47 @@ Plus, always:
 
 ---
 
+## 2.4 The board
+
+Zenithmon's WORK ITEMS live on the `ZM` board — epics, stories, tasks, bugs,
+blockers, sprints and releases. This directory stays authoritative for the SPEC, the
+DECISIONS and the pinned baselines. [Board.md](Board.md) is the full mapping; what a
+session needs to know is short:
+
+* **`Roadmap.md` carries the keys.** Each `## S<n>` heading names its epic, each item
+  its issue. Where the two disagree, the checkbox wins, scored against its literal
+  text (ZM-D-162), and the board is what needs correcting.
+* **Blockers are mechanical.** A `BLOCKS` link stops the loop claiming work out of
+  order — the claim query refuses any ticket whose predecessor is unfinished, and a
+  targeted claim comes back exit 4 naming the ticket to finish first. Before this,
+  the R1-x chain was a column in a Markdown table and nothing enforced it.
+* **`windowed` means the loop cannot do it at all.** A headless run may CREATE a
+  `.zscen` but never CHANGE one. A slice that re-authors a committed scene would
+  either no-op or trip the publish guard — and the units that would notice are
+  compiled constants that stay green, so it looks like a clean gate run with the
+  deliverable missing. `human-gate` is a different thing: the loop does the work and
+  parks it at In Review, because it never signs its own gate (I7).
+* **`complexity` + `risk` route the MODEL; `storyPoints` size the SPRINT.** Two
+  fields, two jobs. Deriving either from the other means a re-estimate silently
+  reroutes the work, or a model change silently rewrites the sprint's capacity.
+
+**The pinned unit baseline has FOUR sites and they move in one commit:**
+
+| Site | Carries |
+|---|---|
+| `Games/Zenithmon/Docs/Status.md` | the LIVE PIN block — the authority |
+| `.github/workflows/zm-tests.yml` | `-Baseline` on the required check |
+| `zagent.project.json` | the loop's Zenithmon gate line |
+| `Tools/run_unit_gate.ps1` | the `-Baseline` default — the ENGINE number only |
+
+No gate tells you. `run_unit_gate.ps1` asserts `ran == Baseline` **exactly**, so a
+suite that GREW reds a required check with zero failing tests. That has happened
+three times.
+
+**As a loop worker you have none of this.** You are spawned with no shell and no
+network; you read this file off disk with the Read tool, and the ticket body carries
+everything else. The board is the orchestrator's concern, not yours.
+
 ## 3. Conventions
 
 ### 3.1 The ZM_ prefix

@@ -132,7 +132,11 @@ if ($client) { $body.client = $client }
 $files = Get-FileContents -Argv $argv
 if ($files) { $body.files = $files }
 
-if ($argv[0] -eq 'docs' -and $argv.Count -gt 1 -and $argv[1] -in @('sync', 'status')) {
+# `board status` reads Roadmap.md out of the SAME upload rather than
+# inventing a second way for the board to see this machine's disk.
+$needsDocs = ($argv[0] -eq 'docs' -and $argv.Count -gt 1 -and $argv[1] -in @('sync', 'status')) -or
+             ($argv[0] -eq 'board' -and $argv.Count -gt 1 -and $argv[1] -eq 'status')
+if ($needsDocs) {
     $tree = Get-DocsTree -Client $client
     if ($tree) { $body.docsTree = $tree }
 }
