@@ -1936,6 +1936,43 @@ Total. Docs only.
 
 ---
 
+## 2026-08-01 -- ZM-D-177 -- `ZM_InteriorTintPixels_Test`'s absolute framebuffer bounds are RETRACTED as a false premise; the relative margin survives
+
+*(TEST DECISION, made during the first windowed validation run of ZM-D-176's scene tint. An absolute framebuffer ratio is a property of the scene's lighting, not of the tint; only relative separation between two surfaces is a property of the material.)*
+
+### The false premise
+
+`ZM_InteriorTintPixels_Test` originally carried, alongside its relative red/blue margin, two ABSOLUTE bounds:
+- An untinted room (ProfLab) should land **BELOW 1.0** in red/blue ratio
+- A tinted room (PlayerHome) should land **ABOVE 1.0**
+
+This reasoning was rooted in the shipped blockout's albedo properties: the grey is COOL (B > G > R), so the expectation was that an untinted surface would measure below 1.0 and a tint would push it above.
+
+### The disproof and its cause
+
+The first windowed run after ZM-D-176 applied the tint measured:
+- ProfLab (untinted floor): **1.0742** — *above* the bound that demanded it stay under
+- PlayerHome (tinted floor): **1.3045**
+
+Both sit above 1.0. The bound failed its own logic immediately.
+
+The root cause: **albedo ordering does not survive to the framebuffer.** A rendered pixel is albedo TIMES illuminant. Under ZM-D-171's physically-grounded lighting, the illuminant is WARM (a sun key derived from atmosphere transmittance plus ground-bounce IBL). A neutral-to-cool albedo, when rendered under a warm illuminant, still appears warm. Both rooms are open-topped seven-block shells with no ceiling, making the floor the most sun-exposed surface in the room. The 0.887 figure the bound relied on came from `ZM_ShellLighting_Test`'s sun-averted, ambient-only measurement — the opposite lighting regime. **So the bound would have failed on an untinted room before the tint existed.** It never encoded a property of the tint.
+
+### What was retracted and what survives
+
+- **RETRACTED:** The pair of absolute bounds. They are tripwires for unrelated scene-lighting changes (exactly what ZM-D-176 did).
+- **RETAINED:** The signed relative margin — PlayerHome minus ProfLab ≥ 0.15. This survives because it is the only assertion that the tinted room renders measurably warmer than the untinted one. A tint that never reaches the framebuffer collapses the gap; a tint that leaked into the lab warms both rooms together and also collapses it.
+
+### Generalised rule for future pixel tests
+
+Pin a DIFFERENCE between two surfaces measured in the same regime. If an absolute bound is genuinely needed, it is a *capture-sanity* band — applied identically to both samples, deliberately generous, and explicitly labelled as NOT evidence of the property under test (e.g., a red/blue band of 0.70–3.00 exists only to catch a framing regression that might place one patch on open sky, which could widen the gap and pass falsely). An absolute ratio pinned tight is a structural failure waiting for an atmosphere re-tune.
+
+### Open question (test remains red)
+
+`ZM_InteriorTintPixels_Test` is red as of 2026-08-14 even after this retraction, measured on-device at the original calibration points. PlayerHome's tint is reading ~0.116 lower than first-run calibration (fell to 1.1888 from 1.3045) while ProfLab stayed nearly level (1.0684 from 1.0742, delta −0.0058). The relative margin (0.1204) fails the 0.15 floor. SC-C, the only contemporaneous scene change, touched only ProfLab and moved it marginally backward. The cause is unattributed — recorded here as deferred work requiring a windowed re-examination.
+
+---
+
 ## 2026-08-01 -- ZM-D-176 -- USER RULING: the New Game entry point MOVES to PlayerHome, and the home interior is tinted to distinguish it from the lab
 
 *(USER SCOPE DECISION, recorded BEFORE implementation as `Scope.md:78-84` requires.
