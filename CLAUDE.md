@@ -350,7 +350,7 @@ can develop here and ignore it entirely, with three exceptions.
 |---|---|
 | `zagent.project.json` | Gate command lines, pinned unit baselines, per-category conventions, branching mode, living-doc directories. **Sent to the board with every request** |
 | `.claude/commands/tick.md` | The `/tick` protocol — nine steps, seven invariants |
-| `Tools/zagent/` | The client — `zagent.ps1` (argv/env/transport), `ZagentClient.psm1` (pure helpers), `Test-ZagentClient.ps1` (55 asserts), `zagent.cmd` shim. **No Node, no `node_modules`** |
+| `Tools/zagent/` | The client — `zagent.ps1` (argv/env/transport), `ZagentClient.psm1` (pure helpers), `Test-ZagentClient.ps1` (the assert script — it prints its own count; do not pin one here, this line has been stale twice), `zagent.cmd` shim. **No Node, no `node_modules`** |
 | `.zagent/` | Run scratch (`last.json`, `run/<KEY>/`). **Gitignored**, so the dirty-tree precondition still holds |
 
 The board keeps only POLICY — the agent account, the complexity→model

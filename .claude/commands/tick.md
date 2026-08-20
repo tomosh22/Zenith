@@ -131,6 +131,22 @@ A board cannot answer the second set — it would be reporting about its
 own disk — so a `zagent doctor` that shows only board rows means the
 client half never ran.
 
+**Check that mechanically; do not eyeball it.** A `doctor` whose client
+half never ran still exits **0**, so branching on the exit code alone
+sails straight past the one check written to catch this:
+
+```
+zagent doctor | Select-String -Quiet 'client repo:|repo branch:|repo clean:'
+```
+
+False → **you are running the wrong `zagent`** and must stop. The usual
+cause is a stale shim earlier on `PATH` — an older client that talks
+straight to the database instead of over HTTP, which also violates the
+`Never` list above. Resolve `zagent` and confirm it is this repo's
+`Tools/zagent/zagent.ps1` before going further. `PATH` is ordered, so
+appending this repo's directory is not enough when a stale entry already
+sits ahead of it; it has to come first.
+
 The `project <KEY> gates` row is the one that most often explains a
 silent tick: a project resolving to no gate lines can never merge.
 
@@ -284,9 +300,31 @@ report is _proposed text_ that you apply (I4).
    finds and hand you back a diff you did not gate. Findings go in the
    work log; a finding that contradicts a gate result blocks. A null
    return here is infrastructure, same as step 5 — it is not a pass.
-4. `git -C <repo> diff --name-only <baseBranch>...HEAD > .zagent/run/<KEY>/changed.txt`
-   then `zagent guard --file .zagent/run/<KEY>/changed.txt`.
+4. Write the changed-file list, **and take it from where the changes
+   actually are — which differs by branching mode**:
+
+   - `branching: "branch"` → the work is committed on a branch:
+     `git -C <repo> diff --name-only <baseBranch>...HEAD`
+   - `branching: "direct"` → the work is **uncommitted in the working
+     tree**, because the commit is step 7:
+     `git -C <repo> diff --name-only`
+
+   Redirect it to `.zagent/run/<KEY>/changed.txt`, then
+   `zagent guard --file .zagent/run/<KEY>/changed.txt`.
    Non-zero → Blocked regardless of gate colour.
+
+   **Do not use the `<baseBranch>...HEAD` form in `direct` mode.** You are
+   ON `baseBranch` and have not committed yet, so the range is empty, the
+   file is empty, and `guard` exits 1 — which this step reads as Blocked.
+   That would Block every Zenithmon and Engine ticket, forever, with the
+   work sitting green and finished in the tree. It fails closed rather
+   than open, so nothing unsafe merges, but it is still a total stop for
+   two of the three categories.
+
+   **An empty `changed.txt` means the worker changed nothing.** That is a
+   failed attempt, not a guard failure — say so in the work log rather
+   than passing the empty file to `guard` and reporting its message.
+
 5. `zagent owns <KEY>` again, immediately before writing anything.
 
 An empty gate list can never merge. If `gates` is `[]`, Block it.

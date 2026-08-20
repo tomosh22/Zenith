@@ -18,6 +18,19 @@ Set-StrictMode -Version Latest
 
 $script:PROJECT_FILE = 'zagent.project.json'
 
+# `$script:` inside a MODULE is the module's own scope, NOT the scope of the
+# script that imported it. So a constant defined in `zagent.ps1` is invisible
+# here, and every `exit $script:EXIT_ERROR` below threw
+# "the variable cannot be retrieved because it has not been set" under
+# Set-StrictMode instead of exiting — turning a clean "file does not exist"
+# message into a crash. This is the same module-boundary class as the
+# unexported `Get-BoardUrl` the README records: both files parse, every unit
+# passes, and the real binary fails.
+#
+# These MUST match the values in `zagent.ps1`; Test-ZagentClient.ps1 asserts it.
+$script:EXIT_ERROR = 1
+$script:EXIT_UNREACHABLE = 7
+
 # ─── LOCATING THINGS ─────────────────────────────────
 
 <#

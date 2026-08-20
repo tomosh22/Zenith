@@ -387,6 +387,42 @@ Assert-That 'flags an executable that is not on PATH' {
     -not $row.ok -and $row.detail -match 'would stall'
 }
 
+Write-Host "`n=== exit-code constants survive the module boundary ===" -ForegroundColor Cyan
+
+# `$script:` inside a module is the MODULE's scope, so a constant defined in
+# zagent.ps1 is invisible to ZagentClient.psm1. Every `exit $script:EXIT_ERROR`
+# in the module threw under Set-StrictMode instead of exiting: `zagent guard
+# --file <missing>` reported "cannot be retrieved because it has not been set"
+# rather than naming the missing file. Both files parsed and all 62 assertions
+# passed, which is the same shape as the unexported `Get-BoardUrl` incident.
+Assert-That 'the module defines every EXIT_ constant its own code references' {
+    $psm1 = Get-Content (Join-Path $PSScriptRoot 'ZagentClient.psm1') -Raw
+    $used = [regex]::Matches($psm1, '\$script:(EXIT_[A-Z_]+)') |
+        ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique
+    $defined = [regex]::Matches($psm1, '(?m)^\s*\$script:(EXIT_[A-Z_]+)\s*=') |
+        ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique
+    if (-not $used) { return $true }
+    -not (@($used | Where-Object { $_ -notin $defined }).Count)
+}
+
+Assert-That 'module and script agree on every shared EXIT_ value' {
+    $psm1 = Get-Content (Join-Path $PSScriptRoot 'ZagentClient.psm1') -Raw
+    $ps1  = Get-Content (Join-Path $PSScriptRoot 'zagent.ps1')        -Raw
+    $vals = {
+        param($text)
+        $h = @{}
+        foreach ($m in [regex]::Matches($text, '(?m)^\s*\$script:(EXIT_[A-Z_]+)\s*=\s*(\d+)')) {
+            $h[$m.Groups[1].Value] = [int]$m.Groups[2].Value
+        }
+        return $h
+    }
+    $a = & $vals $psm1
+    $b = & $vals $ps1
+    $shared = $a.Keys | Where-Object { $b.ContainsKey($_) }
+    if (-not $shared) { return $false }   # they MUST overlap; no overlap means a rename slipped through
+    -not (@($shared | Where-Object { $a[$_] -ne $b[$_] }).Count)
+}
+
 Write-Host ""
 Write-Host ("{0}/{1} assertions passed." -f ($script:count - $script:failures), $script:count)
 if ($script:failures -eq 0) { Write-Host 'PASS' -ForegroundColor Green; exit 0 }

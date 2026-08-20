@@ -16,6 +16,8 @@
       "PowerShell(pwsh -NoProfile -File Tools\\zenith_gh.ps1*)",
       "PowerShell(pwsh -NoProfile -File Build\\regen.ps1*)",
       "PowerShell(pwsh -NoProfile -ExecutionPolicy Bypass -File Tools\\run_unit_gate.ps1*)",
+      "Bash(pwsh -NoProfile -File Tools/doc_lint.ps1*)",
+      "PowerShell(pwsh -NoProfile -File Tools\\doc_lint.ps1*)",
       "PowerShell(pwsh -NoProfile -ExecutionPolicy Bypass -File Tools\\test_scaffold.ps1*)",
       "PowerShell(.\\zenith.bat *)",
       "Bash(./zenith.bat *)",

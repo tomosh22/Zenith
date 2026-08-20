@@ -19,11 +19,23 @@ Two environment variables, once per machine:
 [Environment]::SetEnvironmentVariable('ZAGENT_TOKEN', 'zag_…',                     'User')
 ```
 
-Put `Tools\zagent` on `PATH` so a bare `zagent` resolves:
+Put `Tools\zagent` on `PATH` so a bare `zagent` resolves. **Prepend it, do
+not append it** — `PATH` is ordered, and a machine that once had an older
+`zagent` installed (a pnpm/npm global shim, say) still has that shim
+earlier in the list. Appending leaves the stale one winning, and the
+symptom is not an error: the old client answers, talks straight to the
+database instead of over HTTP, and `zagent doctor` still exits 0 while
+silently omitting every client-side row.
 
 ```powershell
 $path = [Environment]::GetEnvironmentVariable('PATH', 'User')
-[Environment]::SetEnvironmentVariable('PATH', "$path;C:\dev\Zenith\Tools\zagent", 'User')
+[Environment]::SetEnvironmentVariable('PATH', "C:\dev\Zenith\Tools\zagent;$path", 'User')
+```
+
+Confirm the right one won — this should print a path inside this repo:
+
+```powershell
+(Get-Command zagent).Source
 ```
 
 The token is minted **on the board machine**, which is the only place
@@ -78,7 +90,7 @@ written into a ticket as a contract failure.
 |---|---|
 | `zagent.ps1` | argv, environment, transport, main flow |
 | `ZagentClient.psm1` | the pure helpers — path resolution, JSON shaping, payload assembly, applying the board's writes, the client half of `doctor` |
-| `Test-ZagentClient.ps1` | 47 assertions over the module |
+| `Test-ZagentClient.ps1` | the assertions over the module — it prints its own count, which is why one is not pinned here |
 
 ```
 pwsh -NoProfile -File Tools/zagent/Test-ZagentClient.ps1
