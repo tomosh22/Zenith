@@ -141,6 +141,39 @@ function Get-FileContents {
     return [PSCustomObject]$files
 }
 
+function Test-NeedsDocsTree {
+    <#
+      Which commands ship the client's living-doc tree with them.
+
+      This rule is spelled TWICE — here, and as `needsDocsTree` in the
+      board's `packages/agent/src/dispatch.ts`. That duplication is not
+      avoidable: the two run on different machines, in different
+      languages, and the client has to decide what to upload BEFORE the
+      board sees the request. What is avoidable is the DRIFT, and the
+      failure mode when it happens is nasty — a command that reads the
+      docs but is missing from this list arrives with no tree, and the
+      board answers "no Roadmap.md in the uploaded tree", which reads
+      like a client mistake rather than a rule that disagrees with
+      itself.
+
+      So the assertions in Test-ZagentClient.ps1 are a deliberate COPY of
+      that file's, case for case. A divergence fails on one side.
+
+      It lived inline in zagent.ps1's main body until it grew a second
+      clause for `board status`, where nothing could reach it: the main
+      body runs only when the script is invoked, so no test could see it
+      and the board machine — which uses the Node client — cannot run it
+      at all.
+    #>
+    param([string[]]$Argv)
+
+    if (-not $Argv -or $Argv.Count -lt 2) { return $false }
+    if ($Argv[0] -eq 'docs' -and $Argv[1] -in @('sync', 'status')) { return $true }
+    # `board status` reads Roadmap.md out of the SAME upload rather than
+    # inventing a second way for the board to see a client's disk.
+    return ($Argv[0] -eq 'board' -and $Argv[1] -eq 'status')
+}
+
 <#
 The living-doc Markdown a `docs sync` mirrors.
 
@@ -425,6 +458,6 @@ function Get-AllGateLines {
 
 
 Export-ModuleMember -Function Find-ClientRepo, ConvertTo-PosixPath, Remove-Annotations,
-    Get-ClientProject, Get-FlagValue, Test-Flag, Get-FileContents, Get-DocsTree,
+    Get-ClientProject, Get-FlagValue, Test-Flag, Get-FileContents, Test-NeedsDocsTree, Get-DocsTree,
     Get-ConventionsTree, Get-AmendContents, Get-ScratchRoot, Write-Results, Write-LastResult,
     Get-ClientChecks, Get-AllGateLines, Write-StdErr

@@ -132,11 +132,12 @@ if ($client) { $body.client = $client }
 $files = Get-FileContents -Argv $argv
 if ($files) { $body.files = $files }
 
-# `board status` reads Roadmap.md out of the SAME upload rather than
-# inventing a second way for the board to see this machine's disk.
-$needsDocs = ($argv[0] -eq 'docs' -and $argv.Count -gt 1 -and $argv[1] -in @('sync', 'status')) -or
-             ($argv[0] -eq 'board' -and $argv.Count -gt 1 -and $argv[1] -eq 'status')
-if ($needsDocs) {
+# Which commands ship the docs tree lives in the MODULE, beside its twin
+# in the board's `needsDocsTree` — see `Test-NeedsDocsTree`. Inline here,
+# nothing could reach it: this file runs a command the moment it is
+# invoked, so a test cannot import it, and the board machine uses the
+# Node client and never executes this script at all.
+if (Test-NeedsDocsTree -Argv $argv) {
     $tree = Get-DocsTree -Client $client
     if ($tree) { $body.docsTree = $tree }
 }

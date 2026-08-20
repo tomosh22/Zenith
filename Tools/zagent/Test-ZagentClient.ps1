@@ -204,6 +204,52 @@ Assert-That 'tolerates a result with no writes' {
     $true
 }
 
+Write-Host "`n=== Test-NeedsDocsTree ===" -ForegroundColor Cyan
+# This predicate is spelled TWICE — here and as `needsDocsTree` in the
+# board's packages/agent/src/dispatch.ts. The cases below are a
+# deliberate COPY of that file's `describe('needsDocsTree')`, case for
+# case, so a rule that gains a command on one side and not the other
+# fails on THIS side rather than showing up as the board answering
+# "no Roadmap.md in the uploaded tree" — which reads like a client
+# mistake rather than two copies of a rule disagreeing.
+Assert-That 'covers the docs mirror' {
+    (Test-NeedsDocsTree -Argv @('docs', 'sync')) -and
+    (Test-NeedsDocsTree -Argv @('docs', 'status'))
+}
+Assert-That 'covers the doc-to-board drift check, which reads the SAME upload' {
+    Test-NeedsDocsTree -Argv @('board', 'status')
+}
+Assert-That 'leaves every other command alone' {
+    (-not (Test-NeedsDocsTree -Argv @('docs', 'read', 'Zenithmon/Status'))) -and
+    (-not (Test-NeedsDocsTree -Argv @('queue'))) -and
+    (-not (Test-NeedsDocsTree -Argv @('board'))) -and
+    (-not (Test-NeedsDocsTree -Argv @()))
+}
+# `$argv[0]` on an empty array is a Set-StrictMode violation, and this
+# script sets it — a bare index would throw rather than return false.
+Assert-That 'survives a null argv under Set-StrictMode' {
+    (-not (Test-NeedsDocsTree -Argv $null))
+}
+# A subcommand is required: `board` alone must not ship the tree, and
+# neither must a command that merely STARTS with one of these words.
+Assert-That 'needs the subcommand, not just the verb' {
+    (-not (Test-NeedsDocsTree -Argv @('docs'))) -and
+    (-not (Test-NeedsDocsTree -Argv @('boards', 'status'))) -and
+    (-not (Test-NeedsDocsTree -Argv @('board', 'statuses')))
+}
+# Extra arguments are normal — `board status --project ZM` is the form
+# the docs actually tell people to type.
+Assert-That 'ignores trailing flags' {
+    (Test-NeedsDocsTree -Argv @('board', 'status', '--project', 'ZM')) -and
+    (Test-NeedsDocsTree -Argv @('docs', 'sync', '--project', 'ZEN'))
+}
+# Returns a real boolean, not a truthy string or a one-element array —
+# the `,@(…)` unrolling hazard two functions up, from the other side.
+Assert-That 'returns a boolean, not a collection' {
+    ((Test-NeedsDocsTree -Argv @('board', 'status')) -is [bool]) -and
+    ((Test-NeedsDocsTree -Argv @('queue')) -is [bool])
+}
+
 Write-Host "`n=== Get-DocsTree ===" -ForegroundColor Cyan
 $docsRepo = New-TempDir
 New-Item -ItemType Directory -Path (Join-Path $docsRepo 'Docs\Sub') -Force | Out-Null
