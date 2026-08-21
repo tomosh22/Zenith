@@ -223,7 +223,7 @@ the name ever has to move.
 **Superseded note (the original entry's status line):** Deliberately NOT done inside R1-1, whose contract was purity (no runtime
 change, no scene byte moved).
 
-### [OPEN] Q-2026-08-14-001 [ZM-50 / ZEN-2] -- the boot unit gate carries a WALL-CLOCK assertion, so a REQUIRED check can red from machine load alone
+### [RESOLVED 2026-08-21] Q-2026-08-14-001 [ZM-50 / ZEN-2] -- the boot unit gate carries a WALL-CLOCK assertion, so a REQUIRED check can red from machine load alone
 
 **Question:** should `GraphComponent::ThousandEntityUpdateBenchmark`
 (`Zenith/EntityComponent/Components/Zenith_GraphComponent.Tests.inl:1555`) keep
@@ -269,8 +269,54 @@ and re-home the threshold in a dedicated perf job that controls for machine load
 -- the same split the terrain indirect-count work already uses for its
 performance report.
 
-**Status:** OPEN -- engine-side change, needs a ruling before anyone edits a
-shared `Zenith/` test.
+**Status:** RESOLVED 2026-08-21 (ZM-50). The ratio fix above was itself the
+first RED: a quiet-box gate run (gates ran sequentially, nothing else
+building) measured idle/active = 0.702 against that 0.5 budget and failed on
+it -- so the ratio approach did not survive contact with a real measurement,
+only the reasoning behind it did. That failure is the calibration datum this
+question never had: a healthy desktop ratio sits around 0.70. Combined with
+the only other fixed point on record -- the Android-emulator `#ifdef` near
+the top of this same test, where a fully short-circuited-away merge gate
+converges idle onto active at 8.67 vs 8.61 ms/frame (ratio ~1.007) -- the
+entire usable detection window for a ratio budget is 0.70..1.00, just 0.30
+wide. Re-centring a number inside that window risks relocating the flake
+rather than ending it, and once short-circuited the idle phase's cost is
+dominated by fixed per-entity `DispatchOnUpdate` bookkeeping rather than
+graph work, so idle and active are not guaranteed to scale together under
+load the way a ratio assumes.
+
+**The fix replaces the ratio with a direct assertion on the mechanism, not a
+retuned proxy for it.** The property this guard exists to protect was never
+"idle is fast" -- it is that `FireEventOnSlots`'s ON_UPDATE merge gate
+(`Zenith_GraphComponent.cpp`) reads `Zenith_BehaviourGraph::NeedsUpdateDispatch()`
+and skips a graph, before any snapshot allocation, whenever that returns
+false. `ThousandEntityUpdateBenchmark` now asserts the predicate itself on
+the two fixtures it already builds for the timing phases:
+`NeedsUpdateDispatch() == true` for the active graph (an `OnUpdate` source),
+`== false` for the idle one (an `OnCustomEvent`-only source, the same asset
+the merge gate exists to skip). That is fully deterministic and needs no
+calibration margin -- a load spike changes ms/frame, it cannot change this
+boolean -- so it cannot flake the way either the absolute bound or the ratio
+did. The wall-clock timings (including the idle/active ratio) stay as
+`Zenith_Log` output for a human comparing runs; nothing is asserted on them
+any more. The active-phase absolute pathology guard
+(`ZENITH_ASSERT_LT(fPerFrameMs, 20.0, ...)`) is untouched -- it was never the
+assertion that flaked. The Android `#ifdef ZENITH_SKIP` block is also
+untouched in behaviour; only its comment was corrected, since it used to
+claim "both budgets below are WALL-CLOCK ms calibrated" and that stopped
+being true of the idle side the moment it became a structural check instead
+of a timing. No `ZENITH_TEST` was added or removed, so no pinned baseline
+moves and no other site needs a matching edit.
+
+**Honest limit.** `NeedsUpdateDispatch()` is four OR'd terms -- an `OnUpdate`
+or `Timer` source, a suspended one-shot anchor, or a live chain cursor -- and
+this benchmark's two fixtures exercise only the first term (true) and the
+all-four-absent case (false). It does not independently re-prove the
+Timer/suspended-anchor/chain-cursor arms of the predicate; those are a
+correctness question for the Scripting-layer tests, not this benchmark,
+whose job is only to pin the specific idle-vs-active shape the 1000-entity
+load test builds. If `NeedsUpdateDispatch()`'s definition ever changes shape,
+this is the pair of fixtures to extend, not a threshold to retune.
 
 ### [OPEN] Q-2026-08-01-003 [ZM-51] -- the player is always `ZM_HUMAN_PLAYER_M`; nothing selects a gender and the save has no field for one
 

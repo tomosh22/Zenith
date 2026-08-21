@@ -54,17 +54,8 @@ Registry 61 -> 62 (`ZM_DawnmereLabGroundTruth_Test`) -> 63 (`ZM_LabRoundTrip_Tes
 -> 64 (`ZM_IntroBeat_Test`).
 Engine UNMOVED at 1638 -- no slice touched a file under `Zenith/`.
 
-**★★ THIS GATE CAN RED FROM MACHINE LOAD ALONE. TRIAGE BEFORE YOU BISECT.** A
-3307 run reported **3 failed**; one was
-`GraphComponent::ThousandEntityUpdateBenchmark`, an **ENGINE wall-clock**
-assertion (`ZENITH_ASSERT_LT(msPerFrame, 5.0)` over 1000 entities,
-`Zenith_GraphComponent.Tests.inl:1555`) that measured **6.684 ms** while this box
-was building and booting concurrently. It **passed on a quiet re-run with nothing
-else changed**, and had passed in all four earlier gate runs that day. The gate is
-otherwise an exact-equality determinism ratchet and `zm-tests` is a REQUIRED
-check, so this one unit makes a required check load-dependent **for every game**.
-A red naming that benchmark is a FLAKE to re-run quiet, not a regression. Booked
-in Questions.md; the fix is engine-side.
+**★★ FIXED 2026-08-21 (ZM-50) -- REVERSED: a red naming `GraphComponent::ThousandEntityUpdateBenchmark` now means INVESTIGATE, never re-run quiet.** It asserts `Zenith_BehaviourGraph::NeedsUpdateDispatch()` deterministically -- the ON_UPDATE merge gate that keeps an idle graph off the dispatch path before any snapshot allocation, fixed at graph construction. A ratio bound was rejected first: quiet-box idle/active measured **0.702** (1.922 vs 2.738 ms/frame), against ~1.0 for a fully broken gate.
+**★ One exception:** the active phase's own absolute `ZENITH_ASSERT_LT(fPerFrameMs, 20.0, ...)` guard (large margin, O(n^2)/allocation-storm catch) is unchanged -- a red naming IT is still worth a quiet re-run first. History: Questions.md Q-2026-08-14-001, DecisionLog ZM-D-192.
 **★ NEVER PIN FROM A `Vulkan_` EXE:** the same tree reported **3332** on Vulkan
 against **3295** on Null, a standing +37 gap.
 **★ `registry` read 55 here and that was ALSO stale** -- this block was never
