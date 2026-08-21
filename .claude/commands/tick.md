@@ -337,14 +337,46 @@ report is _proposed text_ that you apply (I4).
 An empty gate list can never merge. If `gates` is `[]`, Block it.
 
 **A unit-gate line pins a baseline, and the gate asserts `ran ==
-Baseline` EXACTLY.** So a ticket that ADDS units reds the gate with zero
-failing tests. That is the gate working. The fix is to bump every pinned
-site in the same commit — for Zenithmon: `Games/Zenithmon/Docs/Status.md`,
-`.github/workflows/zm-tests.yml`, and `zagent.project.json` — and a
-backend-neutral *engine* unit moves every game's pin, plus
-`Tools/run_unit_gate.ps1`'s default. The ticket's Definition of Done must
-have listed them; if it did not, that is a contract problem, not a
-licence to edit one site and move on.
+Baseline` EXACTLY.** So a ticket that ADDS or REMOVES units reds the gate
+with zero failing tests. That is the gate working.
+
+**★ AND YOU CANNOT FIX IT. STOP AND PARK — do not spend fix-forward
+attempts.** Bumping the pin means editing every site that carries it, and
+for Zenithmon two of the three are PROTECTED:
+
+| Site | |
+| --- | --- |
+| `Games/Zenithmon/Docs/Status.md` | editable |
+| `.github/workflows/zm-tests.yml` | **protected — `.github/**`** |
+| `zagent.project.json` | **protected** |
+
+`zagent guard` refuses both, so step 6.4 Blocks the ticket no matter how
+green everything else is. A backend-neutral *engine* unit is worse: it
+moves EVERY game's pin plus `Tools/run_unit_gate.ps1`'s default.
+
+This is a real limit on what the loop can do, not a puzzle to solve:
+**the loop can only land unit-count-NEUTRAL work.** Refactors, extractions,
+docs, and changes to assertions inside existing tests are fine. Anything
+that adds a test is human work, and this repo's conventions ask for a test
+with all new code — so expect this often.
+
+When you hit it:
+
+1. Read the exact count off the gate (`… N ran, … 0 failed`). That number
+   is the deliverable — it is what a human needs and cannot get without
+   running the suite.
+2. **Do not fix-forward.** Retrying cannot change the outcome; the
+   `fixForwardAttempts` budget exists for failures a retry could fix, and
+   burning it here just delays the same Blocked with three suites' worth
+   of wall-clock spent.
+3. Block, with a work log naming **all three sites and the new number**,
+   so the human edit is mechanical.
+4. File a follow-up ticket for the pin bump, and say in it that the loop
+   was structurally unable to do it.
+
+**Do not "solve" this by reverting the worker's tests.** A green gate
+bought by deleting coverage is the single worst outcome available here,
+and it would look identical to success on the board.
 
 ## 7. Integrate
 
