@@ -81,13 +81,18 @@ try {
             $null = Repair-ZenithRuntimeDlls -ExeDir (Resolve-Path (Split-Path $exe)).Path
             # Boot with unit tests ENABLED (the smoke's assertion) via the canonical
             # unit gate, so the engine baseline lives in ONE place
-            # (Tools/run_unit_gate.ps1 -Baseline default -- the same script
-            # engine-gate.yml runs). run_unit_gate deliberately keeps tool exports
+            # (Tools/unit_baselines.json -- the same file engine-gate.yml resolves
+            # through). -Game Combat is deliberate and is NOT a typo: a freshly
+            # scaffolded game has no game-specific tests yet, so it boots exactly
+            # the engine suite, and Combat is the game that pins that count. Without
+            # it the gate would try to derive a baseline from the scaffolded game's
+            # own name, find no manifest row, and hard-error.
+            # run_unit_gate deliberately keeps tool exports
             # ON so the asset-export unit tests find their generated assets
             # (see its header; the old inline boot here used --skip-tool-exports,
             # which wedges on a from-scratch checkout with no generated assets).
             & pwsh -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repoRoot 'Tools/run_unit_gate.ps1') `
-                -Exe $exe -LogPath (Join-Path $scratch "scaffold_boot_$Name.log")
+                -Exe $exe -Game Combat -LogPath (Join-Path $scratch "scaffold_boot_$Name.log")
             Check ($LASTEXITCODE -eq 0) "units-at-boot baseline met (run_unit_gate.ps1)"
         }
     }

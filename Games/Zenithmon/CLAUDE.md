@@ -252,15 +252,14 @@ zagent epic    ZM-9              # S8 and its children
 zagent board status --project ZM # roadmap <-> board drift; exit 1 on drift
 ```
 
-**1. The unit-gate baseline has FOUR pinned sites.** Adding or removing a
-`ZM_*` unit means bumping the number in all of them, in one commit:
+**1. The unit-gate baseline has ONE pinned site.** Adding or removing a
+`ZM_*` unit means bumping `Tools/unit_baselines.json`, in the same commit:
 
 | Site | What |
 |---|---|
-| `Games/Zenithmon/Docs/Status.md` | the LIVE PIN block — the authority |
-| `.github/workflows/zm-tests.yml` | `-Baseline` on the required check |
-| `zagent.project.json` | the loop's Zenithmon gate line |
-| `Tools/run_unit_gate.ps1` | the `-Baseline` default — the ENGINE number only |
+| `Tools/unit_baselines.json` | **the number — the only place it is written** |
+| `Games/Zenithmon/Docs/Status.md` | the LIVE PIN block: why it moved. Read by no gate |
+| `.github/workflows/zm-tests.yml`, `zagent.project.json` | name the GAME, never a number |
 
 The engine pin (Null Combat, currently 1638) is spelled in
 `zagent.project.json` too, under the `Engine` category. **All four are in

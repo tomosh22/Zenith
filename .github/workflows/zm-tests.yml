@@ -169,8 +169,9 @@ jobs:
           # shared engine-gate helper. It boots the Null exe with tool-exports ON
           # (some engine unit tests reload generated assets), watchdog-kills the
           # known tools-build idle after the units line is logged, and asserts the
-          # full registered count ran with 0 failed. Bump -Baseline when the ZM_*
-          # (or engine) unit-test count changes -- see Docs/CIPolicy.md.
+          # full registered count ran with 0 failed. Bump the Zenithmon row in
+          # Tools/unit_baselines.json when the ZM_* (or engine) unit-test count
+          # changes -- this file names the GAME, not a number. See Docs/CIPolicy.md.
           #
           # -TimeoutSec IS NOT OPTIONAL HERE, and the default was actively dangerous.
           # run_unit_gate.ps1 defaults to 180s, but the watchdog exists to kill the
@@ -679,7 +680,7 @@ jobs:
           #   2817  ZM-D-173  = 2809 + 8: four ENGINE sensor-raycast units plus
           #                   two camera fixtures and two Home-placement units.
           $exe = 'Games\Zenithmon\Build\output\win64\null_vs2022_debug_win64_true\zenithmon.exe'
-          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 3354 -TimeoutSec 600
+          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Game Zenithmon -TimeoutSec 600
           if ($LASTEXITCODE -ne 0) { Write-Error "boot unit tests failed (see log above)"; exit $LASTEXITCODE }
 
       - name: Run Zenithmon tests

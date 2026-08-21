@@ -304,7 +304,7 @@ round trip, then + 4 for WP4a's B10 graph action nodes — OnActionPressed/
 Released/Held + ReadActionAxis1D/2D and their builder factories, then + 10 for
 WP6's `Zenith_UserSettings` persistence store and the SYSTEM_BACK device-layer
 flag) — the
-authority is the `-Baseline` default in `Tools/run_unit_gate.ps1`, not this
+authority is the game's row in `Tools/unit_baselines.json`, not this
 number; read it there if the two ever disagree.
 
 > **A Slang probe does NOT move this number.** `Flux_MaterialTable.cpp` gates the
@@ -316,9 +316,9 @@ number; read it there if the two ever disagree.
 `Tools/test_scaffold.ps1` also invokes for the scaffold gate), tolerating
 exactly one known layout-sensitive skip
 (`GraphComponent::RegistryWideNodeRoundTrip`). **When you add engine unit
-tests, bump `-Baseline` in `Tools/run_unit_gate.ps1` in the same change** —
-and the ZM override in `.github/workflows/zm-tests.yml`, which counts the
-engine suite plus ZM's own. Combat carries the CI unit gate
+tests, bump the game's row in `Tools/unit_baselines.json` in the same
+change** — and note that a backend-neutral engine unit moves EVERY row in
+that file, including Zenithmon's, which counts the engine suite plus its own. Combat carries the CI unit gate
 (`engine-gate.yml`).
 
 **PowerShell selftests** (`zenith selftest`): dependency-free assert-runners
@@ -445,11 +445,12 @@ baked paths — overridable at runtime by `--assets-root`, §7).
    by selftest).
 5. Runner/tool outputs go under `Build/artifacts/`; packages under `dist/`.
 6. Config names/paths come from `zenith_config.psd1` accessors, not literals.
-7. Engine unit-test baseline bumps update FOUR pinned sites in the same
-   commit, each from an OBSERVED run (never arithmetic):
-   `Tools/run_unit_gate.ps1` (`-Baseline` default), the ZM override in
-   `.github/workflows/zm-tests.yml`, this file's two mentions, and
-   `Games/Zenithmon/Docs/Status.md`'s top block. (`Tools/test_scaffold.ps1`
+7. Engine unit-test baseline bumps edit ONE executable site, from an
+   OBSERVED run (never arithmetic): the game's row in
+   `Tools/unit_baselines.json`. A backend-neutral engine unit moves EVERY
+   row there. The prose copies — this file's two mentions and
+   `Games/Zenithmon/Docs/Status.md`'s top block — are narration read by no
+   gate; update them for humans, but stale prose there reds nothing. (`Tools/test_scaffold.ps1`
    pins no number — it inherits the script default.)
 8. Every new script function gets selftest coverage; every new engine
    type/method gets unit coverage.

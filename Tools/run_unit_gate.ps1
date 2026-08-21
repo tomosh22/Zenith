@@ -357,12 +357,82 @@ param(
     # The final neutral NativeCountDoesNotRequireMultiDrawIndirect test adds one
     # shared registrar; the +1 was confirmed by the complete Null RenderTest gate
     # (1729 ran / 1728 passed / 0 failed / 1 skipped) on 2026-08-13.
-    [int]$Baseline = 1638,
+    # ★ 0 means "not supplied" -- resolve from Tools/unit_baselines.json instead.
+    # An EXPLICIT -Baseline still wins over the manifest, so every caller that
+    # passed a number before this change behaves exactly as it did.
+    [int]$Baseline = 0,
+    # Which game's pin to read from the manifest. Omit it and the game is
+    # derived from -Exe, which is unambiguous: the path always contains
+    # Games/<Game>/Build/output/...
+    [string]$Game = "",
     [int]$TimeoutSec = 180,
     [string]$LogPath = ""
 )
 
 $ErrorActionPreference = 'Stop'
+
+# ─── BASELINE RESOLUTION ─────────────────────────────
+#
+# The pin used to live in THREE places -- this script's default,
+# .github/workflows/zm-tests.yml, and zagent.project.json -- and two of those
+# are protectedPaths. So bumping it was work the agent loop could never do:
+# adding one test redded a REQUIRED check with zero failing tests, and the fix
+# needed files `zagent guard` refuses. Tools/unit_baselines.json is the one
+# unprotected home; the workflows and zagent.project.json now name the GAME.
+#
+# Precedence, most specific first:
+#   1. explicit -Baseline   (unchanged behaviour for every pre-existing caller)
+#   2. -Game                (manifest lookup)
+#   3. derived from -Exe    (manifest lookup)
+# A miss is a hard error, NOT a fallback to some default. A wrong-but-plausible
+# baseline is the one failure this gate cannot survive: it asserts exact
+# equality, so a silently-wrong number either reds a clean tree or, worse,
+# passes a tree that has silently lost tests.
+$script:BaselineManifest = Join-Path $PSScriptRoot 'unit_baselines.json'
+
+function Resolve-UnitBaseline {
+    param([int]$Explicit, [string]$GameName, [string]$ExePath)
+
+    if ($Explicit -gt 0) { return $Explicit }
+
+    if (-not (Test-Path -LiteralPath $script:BaselineManifest)) {
+        Write-Error "[unit_gate] no -Baseline given and the manifest is missing: $script:BaselineManifest"
+        exit 1
+    }
+
+    $name = $GameName
+    if (-not $name) {
+        # Games/<Game>/Build/output/win64/<config>/<game>.exe -- take the
+        # segment after 'Games'. Match on the PATH, never on the exe stem:
+        # the stem is lowercased ('zenithmon.exe') and the manifest keys are
+        # not, and a game whose exe name differs from its directory would
+        # resolve to nothing at all.
+        $normalised = ($ExePath -replace '\\', '/')
+        if ($normalised -match '(?i)(^|/)Games/([^/]+)/') { $name = $Matches[2] }
+    }
+    if (-not $name) {
+        Write-Error "[unit_gate] no -Baseline, no -Game, and could not derive a game from -Exe '$ExePath'."
+        exit 1
+    }
+
+    try {
+        $manifest = Get-Content -LiteralPath $script:BaselineManifest -Raw -Encoding utf8 | ConvertFrom-Json
+    } catch {
+        Write-Error "[unit_gate] $script:BaselineManifest is not valid JSON -- $($_.Exception.Message)"
+        exit 1
+    }
+
+    $row = $manifest.baselines.PSObject.Properties[$name]
+    if (-not $row) {
+        $known = @($manifest.baselines.PSObject.Properties.Name | Where-Object { -not $_.StartsWith('$') }) -join ', '
+        Write-Error "[unit_gate] no baseline for game '$name' in $script:BaselineManifest (known: $known)"
+        exit 1
+    }
+    Write-Host "[unit_gate] baseline $($row.Value) for '$name' (from unit_baselines.json)" -ForegroundColor DarkGray
+    return [int]$row.Value
+}
+
+$Baseline = Resolve-UnitBaseline -Explicit $Baseline -GameName $Game -ExePath $Exe
 
 if (-not (Test-Path $Exe)) {
     Write-Error "[unit_gate] executable not found: $Exe"

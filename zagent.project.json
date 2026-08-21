@@ -13,14 +13,18 @@
     "declaring where the checkout lives. That inversion is the only",
     "direction that survives the two being on separate machines.",
     "",
-    "WHY the gates live here: a pinned unit count already had three homes",
-    "in this repo (Games/*/Docs/Status.md, .github/workflows/*.yml,",
-    "Tools/run_unit_gate.ps1) and those move together in one commit",
-    "because a reviewer can see them. A fourth pin in another repo's",
-    "gitignored file could only be remembered, and a ticket that ratchets",
-    "against a stale pin fails with ZERO failing tests — the unit gate",
-    "asserts `ran == Baseline` EXACTLY, so a suite that GREW reds a",
-    "required check while every test passes.",
+    "WHY the gates live here: a ticket that ratchets against a stale pin",
+    "fails with ZERO failing tests — the unit gate asserts `ran == Baseline`",
+    "EXACTLY, so a suite that GREW reds a required check while every test",
+    "passes. A pin in another repo's gitignored file could only be",
+    "remembered; here a reviewer sees it in the same diff.",
+    "",
+    "The NUMBERS themselves are no longer written here. They live in",
+    "Tools/unit_baselines.json — one unprotected home — and the gate lines",
+    "below name the GAME instead. While the number was duplicated into this",
+    "file and .github/workflows/, both protectedPaths, bumping a pin was",
+    "work the agent loop could never do, so every test-adding ticket was",
+    "unreachable.",
     "",
     "`protectedPaths` are UNIONed with the board's floor, never swapped",
     "for it: this repo may add protections to itself and can never drop",
@@ -47,16 +51,18 @@
   "categories": {
     "Zenithmon": {
       "$comment": [
-        "-Baseline 3354 is the ZM boot unit count. It moves with, and must",
-        "equal, the counts in Games/Zenithmon/Docs/Status.md and",
-        ".github/workflows/zm-tests.yml. Read it from a NULL-config exe —",
-        "the Vulkan exe reports a higher number for the same tree."
+        "The gate line names the GAME, not a number. The ZM boot count lives",
+        "in Tools/unit_baselines.json — the ONE unprotected home for it. This",
+        "file and .github/workflows/zm-tests.yml are both protectedPaths, so",
+        "while the number lived here the agent loop could never bump a pin,",
+        "which made every test-adding ticket unreachable. Read it from a",
+        "NULL-config exe — a Vulkan exe reports higher for the same tree."
       ],
       "project": "ZM",
       "gates": [
         "pwsh -NoProfile -File Tools\\zenith.ps1 build Zenithmon --headless",
         "pwsh -NoProfile -File Tools\\zenith.ps1 test Zenithmon --headless",
-        "pwsh -NoProfile -ExecutionPolicy Bypass -File Tools\\run_unit_gate.ps1 -Exe Games\\Zenithmon\\Build\\output\\win64\\null_vs2022_debug_win64_true\\zenithmon.exe -Baseline 3354 -TimeoutSec 600",
+        "pwsh -NoProfile -ExecutionPolicy Bypass -File Tools\\run_unit_gate.ps1 -Exe Games\\Zenithmon\\Build\\output\\win64\\null_vs2022_debug_win64_true\\zenithmon.exe -Game Zenithmon -TimeoutSec 600",
         "pwsh -NoProfile -File Tools\\doc_lint.ps1 -Game Zenithmon"
       ],
       "conventions": "Games/Zenithmon/CLAUDE.md + Docs/AgentBriefing.md are binding. ZM_ prefix. NEVER create a branch, PR, or worktree (ZM-D-031).",
@@ -87,16 +93,17 @@
     },
     "Engine": {
       "$comment": [
-        "-Baseline 1638 is the engine boot count via Null Combat, and it is",
-        "ALSO the default of Tools/run_unit_gate.ps1's -Baseline parameter.",
-        "A backend-neutral engine unit moves EVERY game's pin, not just this",
-        "one — see the conventions string below."
+        "The gate line names the GAME, not a number. The engine boot count",
+        "(via Null Combat) lives in Tools/unit_baselines.json, which is the",
+        "ONE place it is written. A backend-neutral engine unit moves EVERY",
+        "game's row in that file, not just this one — see the conventions",
+        "string below."
       ],
       "gates": [
         "pwsh -NoProfile -File Tools\\zenith.ps1 build engine",
         "pwsh -NoProfile -File Tools\\zenith.ps1 build Combat --headless",
         "pwsh -NoProfile -File Tools\\zenith.ps1 test Combat --headless",
-        "pwsh -NoProfile -ExecutionPolicy Bypass -File Tools\\run_unit_gate.ps1 -Exe Games\\Combat\\Build\\output\\win64\\null_vs2022_debug_win64_true\\combat.exe -Baseline 1638 -TimeoutSec 600"
+        "pwsh -NoProfile -ExecutionPolicy Bypass -File Tools\\run_unit_gate.ps1 -Exe Games\\Combat\\Build\\output\\win64\\null_vs2022_debug_win64_true\\combat.exe -Game Combat -TimeoutSec 600"
       ],
       "conventions": "Engine work moves EVERY game's pinned unit count if it adds a backend-neutral engine unit - the ticket's Definition of Done must list every pinned site."
     },

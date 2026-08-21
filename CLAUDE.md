@@ -389,22 +389,30 @@ protections to itself and can never drop the board's. Both files above
 are protected: the loop may file a Suggestions row about its own gates,
 never commit a change to them.
 
-**So a pinned unit baseline is back to being an in-repo fact.** A
-ticket's category selects which gate list runs, and each list spells
-`-Baseline` explicitly:
+**A pinned unit baseline has exactly ONE home: `Tools/unit_baselines.json`.**
+Gate lines and workflows name the GAME — `-Game Zenithmon` — and
+`run_unit_gate.ps1` resolves the number, deriving the game from the `-Exe`
+path when `-Game` is omitted. An explicit `-Baseline N` still wins, so any
+caller that passed a number keeps working.
 
-| Pin | Sites |
+| | |
 |---|---|
-| Zenithmon boot | `Games/Zenithmon/Docs/Status.md`, `.github/workflows/zm-tests.yml`, **`zagent.project.json`** |
-| Engine boot (Null Combat) | `Tools/run_unit_gate.ps1` (`-Baseline` default), **`zagent.project.json`** |
+| The number | `Tools/unit_baselines.json` — **the only place it is written** |
+| Who reads it | `zm-tests.yml`, `engine-gate.yml`, `test_scaffold.ps1`, `zagent.project.json`, all by game name |
+| Human narration | `Games/*/Docs/Status.md` — read by no gate; stale there reds nothing |
 
-A backend-neutral engine unit still moves **every** game's pinned count
-(`run_unit_gate.ps1`, `zm-tests.yml`, `Docs/BuildSystem.md`, the ZM
-docs) — `zagent.project.json` is simply one more site on the same list,
-and now one a reviewer can see in the same diff. It used to be a fourth
-pin in a gitignored file in the other repo, which is a site you can only
-keep in sync from memory; the gate asserts `ran == Baseline` EXACTLY, so
-a stale pin reds a required check with **zero failing tests**.
+It used to be duplicated across `Status.md`, `.github/workflows/*.yml`,
+`run_unit_gate.ps1`'s default and `zagent.project.json`. Two of those are
+`protectedPaths`, which made **bumping a pin work the agent loop could
+never do** — so every test-adding ticket was unreachable, in a repo whose
+conventions ask for a test with all new code. The gate asserts
+`ran == Baseline` EXACTLY, so a stale pin still reds a required check with
+**zero failing tests**; the difference is that fixing it is now one line in
+one unprotected file.
+
+A backend-neutral engine unit still moves **every** game's row, because
+they all boot the same engine suite — bump them together, and note which
+count you actually measured versus inferred.
 
 **Branching policy is enforced mechanically per area.** Zenithmon and
 Engine tickets carry `branching: "direct"` — the loop commits straight

@@ -13,7 +13,8 @@
 #      workflows run with --skip-unit-tests). Combat carries the gate: its
 #      Vulkan_Debug_True build also proves the engine lib transitively.
 #
-# Baseline lives in Tools/run_unit_gate.ps1 (-Baseline default); bump it there
+# Baseline lives in Tools/unit_baselines.json (resolved from the -Exe path);
+# bump it there -- it is the ONE place any pin is written.
 # when adding engine unit tests (Tools/test_scaffold.ps1 reuses the same script,
 # so there is exactly one place to bump).
 #

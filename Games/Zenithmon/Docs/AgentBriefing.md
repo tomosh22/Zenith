@@ -176,7 +176,7 @@ Plus, always:
 4. **Run the LOCAL gate (the authority):** `zenith build Zenithmon` AND
    `zenith build Zenithmon --headless`, then `zenith test Zenithmon --headless`,
    and only THEN the boot unit gate
-   (`pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe <Null exe> -Baseline N
+   (`pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe <Null exe> -Game Zenithmon
    -TimeoutSec 600` -- it runs the ZM_* unit tests `zenith test` skips). All
    green. Four details, each of which has cost a wasted run:
    - **Both builds are needed.** Headless is a BUILD CONFIG
@@ -288,14 +288,18 @@ session needs to know is short:
 
 | Site | Carries |
 |---|---|
-| `Games/Zenithmon/Docs/Status.md` | the LIVE PIN block — the authority |
-| `.github/workflows/zm-tests.yml` | `-Baseline` on the required check |
-| `zagent.project.json` | the loop's Zenithmon gate line |
-| `Tools/run_unit_gate.ps1` | the `-Baseline` default — the ENGINE number only |
+| `Tools/unit_baselines.json` | **the number — the ONLY place it is written** |
+| `Games/Zenithmon/Docs/Status.md` | the LIVE PIN block: human narration of WHY it moved. Read by no gate |
+| `.github/workflows/zm-tests.yml`, `zagent.project.json` | name the GAME (`-Game Zenithmon`), never a number |
 
-No gate tells you. `run_unit_gate.ps1` asserts `ran == Baseline` **exactly**, so a
-suite that GREW reds a required check with zero failing tests. That has happened
-three times.
+**One file, one edit.** It used to be four sites, two of them protected — which
+made bumping a pin work the agent loop could never do, so every test-adding
+ticket was unreachable.
+
+No gate tells you when it moves. `run_unit_gate.ps1` asserts `ran == Baseline`
+**exactly**, so a suite that GREW reds a required check with zero failing tests.
+That has happened three times. A backend-neutral ENGINE unit moves every game's
+row, not just Zenithmon's.
 
 **As a loop worker you have none of this.** You are spawned with no shell and no
 network; you read this file off disk with the Read tool, and the ticket body carries

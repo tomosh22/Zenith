@@ -368,43 +368,46 @@ An empty gate list can never merge. If `gates` is `[]`, Block it.
 Baseline` EXACTLY.** So a ticket that ADDS or REMOVES units reds the gate
 with zero failing tests. That is the gate working.
 
-**★ AND YOU CANNOT FIX IT. STOP AND PARK — do not spend fix-forward
-attempts.** Bumping the pin means editing every site that carries it, and
-for Zenithmon two of the three are PROTECTED:
+**Fix it in ONE file: `Tools/unit_baselines.json`.** That is the only place
+any pin is written. The gate lines and the workflows name the GAME
+(`-Game Zenithmon`), and `run_unit_gate.ps1` resolves the number from the
+manifest — so a count change is a one-line edit to an UNPROTECTED file that
+`zagent guard` permits.
 
-| Site | |
-| --- | --- |
-| `Games/Zenithmon/Docs/Status.md` | editable |
-| `.github/workflows/zm-tests.yml` | **protected — `.github/**`** |
-| `zagent.project.json` | **protected** |
+It did not use to be. The number was duplicated into
+`.github/workflows/zm-tests.yml` and `zagent.project.json`, both
+`protectedPaths`, so bumping a pin was work the loop could never do and
+every test-adding ticket was unreachable — in a repo whose conventions ask
+for a test with all new code. If you find yourself reading that a pin
+cannot be bumped, the doc is stale.
 
-`zagent guard` refuses both, so step 6.4 Blocks the ticket no matter how
-green everything else is. A backend-neutral *engine* unit is worse: it
-moves EVERY game's pin plus `Tools/run_unit_gate.ps1`'s default.
-
-This is a real limit on what the loop can do, not a puzzle to solve:
-**the loop can only land unit-count-NEUTRAL work.** Refactors, extractions,
-docs, and changes to assertions inside existing tests are fine. Anything
-that adds a test is human work, and this repo's conventions ask for a test
-with all new code — so expect this often.
-
-When you hit it:
+So when the gate reds with **zero failures**:
 
 1. Read the exact count off the gate (`… N ran, … 0 failed`). That number
-   is the deliverable — it is what a human needs and cannot get without
-   running the suite.
-2. **Do not fix-forward.** Retrying cannot change the outcome; the
-   `fixForwardAttempts` budget exists for failures a retry could fix, and
-   burning it here just delays the same Blocked with three suites' worth
-   of wall-clock spent.
-3. Block, with a work log naming **all three sites and the new number**,
-   so the human edit is mechanical.
-4. File a follow-up ticket for the pin bump, and say in it that the loop
-   was structurally unable to do it.
+   is the deliverable, and only a real suite run produces it.
+2. **YOU bump the row, not the worker** — `Tools/unit_baselines.json`, in
+   the SAME commit as the tests that moved it. This is the one edit the
+   orchestrator makes itself, and it does not breach I1: the worker cannot
+   run a gate, so it cannot know the number, and a worker that "bumps" a
+   pin is guessing. Recording a measurement you just took is not
+   authoring. Do NOT send the worker back for it — that costs a dispatch
+   to produce a number it would have to invent.
 
-**Do not "solve" this by reverting the worker's tests.** A green gate
-bought by deleting coverage is the single worst outcome available here,
-and it would look identical to success on the board.
+   Re-run the gate after bumping. A pin is only correct if the gate that
+   reads it goes green, and a second red here means the count moved again
+   (a flaky or order-dependent registration), which is a different problem
+   from the one you just fixed.
+3. **A backend-neutral ENGINE unit moves every game's row**, not just the
+   one you ran. Bump them all, and say so in the work log — you will only
+   have observed one of them, so name which you measured and which you
+   inferred.
+4. `Games/*/Docs/Status.md` still narrates pins for humans and is NOT
+   read by any gate. Update it when the ticket touches that game, but a
+   stale line there reds nothing.
+
+**Never "fix" this by reverting the worker's tests.** A green gate bought
+by deleting coverage is the worst outcome available here, and on the board
+it is indistinguishable from success.
 
 ## 7. Integrate
 
