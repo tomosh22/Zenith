@@ -9,12 +9,12 @@
 
   "baselines": {
     "$Zenithmon": "ZM boot units. Also narrated in Games/Zenithmon/Docs/Status.md, which stays the human-facing authority for WHY it moved; this file is what the gate reads.",
-    "Zenithmon": 3354,
+    "Zenithmon": 3360,
 
     "$Combat": "The engine boot pin. A backend-neutral ENGINE unit moves this AND every other game's number in the same commit, because they all boot the same engine suite.",
-    "Combat": 1638,
+    "Combat": 1644,
 
-    "$RenderTest": "Observed 1729 ran / 1728 passed / 0 failed / 1 skipped on a complete Null RenderTest gate, 2026-08-13.",
-    "RenderTest": 1729
+    "$RenderTest": "Observed 1735 ran / 1734 passed / 0 failed / 1 skipped, 2026-08-21 (ZM-49, +6 engine units for the terrain ground query). Every number in this file is OBSERVED from a real Null_ run, never arithmetic on the previous one -- a computed pin is how a suite that also LOST a test still ratchets green.",
+    "RenderTest": 1735
   }
 }

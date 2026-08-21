@@ -273,7 +273,13 @@ every JSON says passed — crash-mid-suite guard), and a slowest-tests report.
   known pre-existing failure: `ZM_InteriorTintPixels_Test`).
 
 **Engine unit tests** run at every boot unless `--skip-unit-tests`. Baseline:
-**1638 expected, 0 failed** (`1637` was observed 2026-08-12 on a `Null_` Combat
+**1644 expected, 0 failed** (**+6 on 2026-08-21** for ZM-49's terrain
+ground-height query, `Zenith_TerrainComponent::TryGetGroundHeightAt` and its two
+static cores. Those six are BACKEND-NEUTRAL, so the same units moved **every**
+game's row in one commit — Combat 1638 → **1644**, Null RenderTest 1729 →
+**1735**, Zenithmon boot 3354 → **3360** — each number OBSERVED on a `Null_` run
+rather than computed from the previous one. Before that, `1637` was observed
+2026-08-12 on a `Null_` Combat
 build, then the final backend-neutral indirect-count/multi-draw distinction test
 added one shared registrar; that +1 was confirmed by the complete 1,729-test Null
 RenderTest gate on 2026-08-13; 1600 → 1638 is +38 tests under the terrain

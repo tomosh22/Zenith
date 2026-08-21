@@ -223,7 +223,7 @@ the name ever has to move.
 **Superseded note (the original entry's status line):** Deliberately NOT done inside R1-1, whose contract was purity (no runtime
 change, no scene byte moved).
 
-### [RESOLVED 2026-08-21] Q-2026-08-14-001 [ZM-50 / ZEN-2] -- the boot unit gate carries a WALL-CLOCK assertion, so a REQUIRED check can red from machine load alone
+### [RESOLVED 2026-08-21] Q-2026-08-14-001 [ZM-50] -- the boot unit gate carries a WALL-CLOCK assertion, so a REQUIRED check can red from machine load alone
 
 **Question:** should `GraphComponent::ThousandEntityUpdateBenchmark`
 (`Zenith/EntityComponent/Components/Zenith_GraphComponent.Tests.inl:1555`) keep

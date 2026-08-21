@@ -17,8 +17,12 @@ The S0-S7 narrative that used to fill the back half of this file moved VERBATIM 
 [History.md](History.md) on 2026-08-18, so this file can hold to the ~25-line budget
 its own template in `AgentBriefing.md` §2.3 specifies. Nothing was deleted.
 
-**★ LIVE PIN (UPDATED 2026-08-15):
-ZM boot `3354`; engine boot (Null Combat) `1638`; registry **67**.**
+**★ LIVE PIN (UPDATED 2026-08-21):
+ZM boot `3360`; engine boot (Null Combat) `1644`; Null RenderTest `1735`; registry **67**.**
+**★ +6 on EVERY game (ZM-49):** the terrain COLLISION-height query
+(`TryGetGroundHeightAt` -- 4 m quads, NOT the rendered ground) added six
+BACKEND-NEUTRAL engine units, so all three boot pins moved in one commit --
+3354/1638/1729 -> 3360/1644/1735, each OBSERVED on `Null_`. No `ZM_*` unit added.
 **★ The GATE reads `Tools/unit_baselines.json`, not this block** (2026-08-21) --
 bump the number there, in the same commit as the tests that moved it. This block
 is the human narration of WHY it moved and is read by no gate, so a stale line
@@ -66,9 +70,9 @@ against **3295** on Null, a standing +37 gap.
 **★ `registry` read 55 here and that was ALSO stale** -- this block was never
 updated when the input program's WP3b grew the automated suite 55 -> 61 with the
 six `ZM_Touch*` tests, even though the prose LOWER IN THIS SAME FILE said so
-explicitly. Corrected to the enumerated count. The current pins are
-`zm-tests.yml` (`-Baseline 3328`) and `run_unit_gate.ps1` (default 1638, the
-ENGINE number -- never used for Zenithmon).
+explicitly. Corrected to the enumerated count. (That paragraph named
+`zm-tests.yml -Baseline 3328` and `run_unit_gate.ps1` default 1638 as "the current
+pins"; both moved to `Tools/unit_baselines.json` -- see the note at the top.)
 
 **★★ 3276 -> 3277 IS A FIX-FORWARD, NOT A FEATURE BUMP. THE `zm-tests` GATE WAS
 RED ON master BEFORE THIS COMMIT.** `3aeaa2d4` ("share the grass/rock ground sets

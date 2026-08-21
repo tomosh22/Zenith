@@ -130,42 +130,140 @@ public:
 	// to return a reference needs the full type.
 	const Flux_MeshGeometry& GetPhysicsMeshGeometry() const;
 
-	// TODO(terrain-height-query): there is NO way to ask this component "what is
-	// the ground height at world XZ?", and the only substitute -- a physics
-	// raycast -- answers a materially different question. Booked as Shortfalls E8
-	// (Games/Zenithmon/Docs/Shortfalls.md) / task_0515a49e.
+	// ===== Ground-height query (Shortfalls E8 TIER 1, ZM-D-173 / task_0515a49e) =====
 	//
-	// A raycast returns the first BODY below a point, not the terrain surface, so
-	// anything standing on the ground occludes the query. That is not a corner
-	// case, it is the normal case, and it is not filterable:
+	// "What is the COLLISION surface height at world XZ?", answered from the COMBINED
+	// PHYSICS MESH as a triangle lookup -- no Jolt, no body filtering.
+	//
+	// READ THE CAPITALISED WORD IN THAT QUESTION: THIS IS NOT THE GROUND THE PLAYER
+	// SEES, and the difference is not a rounding error. The physics mesh is baked at
+	// FOUR-METRE quads and the HIGH render mesh at ONE-METRE quads
+	// (Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_VERTEX_COUNT ==
+	// CalculateChunkVertexCount(4u), against uHIGH_CHUNK_VERTEX_COUNT ==
+	// CalculateChunkVertexCount(1u)), and that layout header states the gap is
+	// deliberate -- "collision deliberately remains lower density than the nearby HIGH
+	// render mesh". What comes back is therefore the 4 m CHORD across the rendered
+	// surface: BELOW the visible ground over a convex ridge, ABOVE it in a concave
+	// dip, equal to it only where the ground is planar across the quad. The error is
+	// bounded by local relief over 4 m, and an object placed at the returned height
+	// sinks into or floats over the drawn terrain by exactly that much.
+	//
+	// SO IT CANNOT MEASURE A VISUAL GAP, and that rules out one caller by name.
+	// ZM-D-173's door-jamb residual is *how far the jamb sits from the ground the
+	// player sees* -- which is the very quantity a 4 m proxy is wrong by, so a probe
+	// here answers it with an error the size of the thing being measured. Use this
+	// where the question is about PHYSICS (where will a body come to rest, does a
+	// capsule clear this step, is this column inside the collision world); do not use
+	// it to close a seam someone can look at. A render-accurate height is Shortfalls
+	// E8 TIER 2 (below), not this.
+	//
+	// WHY THIS API EXISTS RATHER THAN A RAYCAST, and why a caller must not quietly
+	// go back to one: a raycast returns the first BODY below a point, not the
+	// terrain surface, so anything standing on the ground occludes the query. That
+	// is not a corner case, it is the normal case, and it is not filterable:
 	//   * Zenith_Physics::Raycast / Zenith_PhysicsQuery::RaycastIgnoring take
 	//     exactly ONE ignore entity, so two overlapping bodies over a column are
 	//     unmeasurable, full stop;
 	//   * restarting the ray below a hit does not rescue it, because an object
 	//     STANDING on the ground has its underside AT the surface -- and anything
 	//     deliberately embedded (a shell sunk 0.05 m so no visible gap opens) has
-	//     it BELOW the surface, so the restart begins underneath the terrain;
-	//   * it needs the terrain physics body to have STREAMED IN, so it is
-	//     frame-dependent, and unusable at authoring time altogether -- the editor
-	//     add path uses the deserialization ctor and never calls
-	//     LoadCombinedPhysicsGeometry, so an authoring-time cast simply MISSES.
+	//     it BELOW the surface, so the restart begins underneath the terrain.
+	// The query below reads the terrain's own COLLISION SURFACE rather than a body,
+	// so none of that applies: the occlusion problem is gone outright. (It buys no
+	// accuracy against the RENDERED surface -- see the block above.)
 	//
-	// Two tiers, and they buy different things:
-	//   TIER 1 (cheap) -- serve the query from GetPhysicsMeshGeometry() directly,
-	//     a triangle lookup with no Jolt and no body filtering. Removes the
-	//     occlusion problem entirely. Still needs the geometry streamed.
-	//   TIER 2 (the real prize) -- keep or load the heightfield. NOTE this
-	//     component holds no height data at runtime: it loads baked mesh chunks,
-	//     and Terrain/<Set>/Height.ztxtr is read only by the TOOLS editor path.
-	//     Tier 2 would make the query work at AUTHORING time, which would retire
-	//     the whole measure-once-and-freeze-as-a-constant dance that
-	//     Games/Zenithmon/Source/World/ZM_DawnmerePlacement.h is built around.
+	// STILL TIER 1, FOR TWO REASONS NOW. (a) It reads m_pxPhysicsGeometry, which only
+	// LoadCombinedPhysicsGeometry fills. A scene LOAD does fill it
+	// (ReadFromDataStream calls it), so a runtime probe on a loaded terrain is
+	// answered; but the editor's Add-Component path constructs the component
+	// through the deserialization ctor WITHOUT ever deserializing, so a probe on a
+	// freshly added terrain MISSES -- this is not yet an authoring-time query, and
+	// callers must gate on the bool, always. (b) It answers the COLLISION surface,
+	// per the block at the top, so it cannot answer a question about the RENDERED
+	// one. TIER 2 -- keep or load the heightfield -- is what would fix BOTH: a
+	// heightfield can be held without any combined mesh existing (that is TIER 2's
+	// whole premise for (a)), and it is the source BOTH densities are sampled from
+	// (Tools/Zenith_Tools_TerrainExport.cpp's GenerateFullTerrain takes the same
+	// heightmap image and a density divisor), so it carries no chord error at all.
+	// NOTE this
+	// component holds no height data at runtime: it loads baked mesh chunks, and
+	// Terrain/<Set>/Height.ztxtr is read only by the TOOLS editor path. Tier 2 is
+	// also what would retire the measure-once-and-freeze-as-a-constant dance that
+	// Games/Zenithmon/Source/World/ZM_DawnmerePlacement.h is built around, and is
+	// still booked as Shortfalls E8 (Games/Zenithmon/Docs/Shortfalls.md).
 	//
-	// Live cost today (ZM-D-173): Zenithmon's Home door jambs sit on the shell's
-	// own face, so two solid bodies stand over each jamb's column and their
-	// authored heights are derived from ground sampled 0.5 m away instead. The
-	// residual is bounded by local relief but is genuinely UNMEASURED, because the
-	// column that would measure it is the one that cannot be probed.
+	// FAILURE IS NOT HEIGHT 0.0, and that distinction is the whole point. THREE
+	// distinct conditions return false, and every one of them leaves fHeightOut
+	// UNTOUCHED:
+	//   1. ABSENT physics geometry (see HasPhysicsGeometry above) -- every chunk's
+	//      source mesh failed to load, so there is nothing to scan;
+	//   2. an XZ OUTSIDE the combined mesh's footprint;
+	//   3. an XZ over a HOLE INSIDE that footprint. CombineTerrainChunkGridCore
+	//      SKIPS any chunk whose source mesh fails to load (it records the coord in
+	//      TerrainSparseLoadDiagnostics and LogSparseLoadDiagnostics warns), so a
+	//      sparse or partial bake produces a combined mesh with missing chunks --
+	//      and at this API a probe over one is indistinguishable from case 2.
+	// A caller that reads false as "outside the world" therefore misreads a sparse
+	// bake as a SMALLER world; one that reads it as height 0.0 authors geometry into
+	// a hole (ZM-D-173). [[nodiscard]] is deliberate: ignoring the answer is a
+	// compiler diagnostic, not a silent zero. A genuine ground height of 0.0 still
+	// arrives with TRUE.
+	//
+	// POSITIONS ARE READ RAW AND ARE NEVER TRANSFORMED. This query uses the physics
+	// mesh's own vertex positions verbatim, and so does
+	// Zenith_ColliderComponent::CreateTerrainShape when it hands Jolt the same
+	// triangles -- but the BODY is created at the entity's GetPosition() /
+	// GetRotation(). So the number agrees with physics, and with the renderer, ONLY
+	// while the terrain entity's transform is identity. That holds for every terrain
+	// authored today and NOTHING ENFORCES IT: give a terrain entity a transform and
+	// this query keeps answering, in the wrong space, with no diagnostic.
+	//
+	// Cost is a linear scan over the mesh's triangles, cut by a per-triangle XZ
+	// bounding-box reject. It is O(triangles) per call and does no allocation --
+	// fine for one-off probes and physics-space placement, NOT for a per-frame
+	// per-agent query over a full terrain. The box is NOT purely an accelerator, and
+	// saying so precisely matters: the barycentric test alone admits a thin band about
+	// 1e-5 of a triangle wide OUTSIDE the triangle (the tolerance that stops a point
+	// on an interior edge falling down a zero-width crack), and the box CLIPS that
+	// band. That is the behaviour we want -- it is what keeps the tolerance from
+	// extrapolating a height off the rim of the mesh -- but it CHANGES the answer at
+	// a boundary rather than merely speeding the scan up.
+	[[nodiscard]] bool TryGetGroundHeightAt(float fWorldX, float fWorldZ, float& fHeightOut) const;
+
+	// The same query against a caller-supplied geometry. Static, so the lookup is
+	// exercisable (and reusable) without a live component; a NULL pxGeometry, or
+	// one carrying no CPU position/index streams, IS the absent-geometry case and
+	// returns false. Out-of-line (.cpp) because Flux_MeshGeometry is only
+	// forward-declared here. Everything the block above says about the COLLISION
+	// surface, the three false cases and untransformed positions applies here too --
+	// this is the same lookup with the geometry supplied rather than owned.
+	[[nodiscard]] static bool TryGetGroundHeightFromGeometry(const Flux_MeshGeometry* pxGeometry,
+		float fWorldX, float fWorldZ, float& fHeightOut);
+
+	// The pure triangle-lookup core: find the triangle whose XZ projection contains
+	// (fWorldX, fWorldZ) and interpolate BARYCENTRICALLY across it, so an interior
+	// point gets the exact plane height rather than a nearest-vertex
+	// approximation. Split out with raw-array parameters so it names no Flux type,
+	// is testable against hand-built geometry, and is usable by anything holding an
+	// indexed triangle soup. A trailing PARTIAL index triple is dropped rather than
+	// read, as is any triangle with an out-of-range index or zero XZ area.
+	//
+	// MULTI-HIT POLICY, AND THE PRECONDITION IT RESTS ON -- read this before reusing
+	// it on a soup that is not a heightfield. The FIRST containing triangle in INDEX
+	// ORDER wins. That is safe for a heightfield, which has at most one triangle over
+	// any XZ column: the only points two of its triangles both contain lie on a
+	// shared edge or vertex, where both interpolate the same shared vertices and
+	// therefore agree, so the early-out cannot make the answer depend on index order.
+	// Hand it a soup with an OVERHANG -- a bridge, a cave roof, any closed mesh --
+	// and that premise is false: you get whichever surface the index buffer happens
+	// to list first, and index order is not a defensible *ground* policy. "The
+	// highest surface below the probe" would be one; this core does not implement it
+	// and does not detect the case.
+	[[nodiscard]] static bool TryGetGroundHeightFromTriangles(
+		const Zenith_Maths::Vector3* pxPositions, uint32_t uVertexCount,
+		const uint32_t* puIndices, uint32_t uIndexCount,
+		float fWorldX, float fWorldZ, float& fHeightOut);
+
 	// Material accessors (4-material palette)
 	static constexpr u_int TERRAIN_MATERIAL_COUNT = 4;
 	Zenith_MaterialAsset* GetMaterial(u_int uIndex) const { Zenith_Assert(uIndex < TERRAIN_MATERIAL_COUNT, "Invalid material index"); return m_axMaterials[uIndex].GetDirect(); }

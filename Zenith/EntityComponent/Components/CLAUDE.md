@@ -15,7 +15,7 @@ This directory contains all component types for the Entity-Component System.
 | `Zenith_SunComponent` | Exactly-one scene sun authority (direction or time-of-day orbit only; solar colour/radiance derives in Flux) |
 | `Zenith_AtmosphereComponent` | Scene-authored physical atmosphere medium (Rayleigh/Mie density scales, Mie-G phase asymmetry, both exponential scale heights, capture ground albedo) co-authored with a `Zenith_SunComponent` on one environment entity; resolved together via `Zenith_EnvironmentAuthorityData`. Also doubles as a **local blend volume** when `BlendRadius > 0` (see below). No radiometric anchor / exposure / renderer state (those are Flux-side) |
 | `Zenith_ColliderComponent` | Physics collision shapes (Jolt integration) |
-| `Zenith_TerrainComponent` | Heightmap-based terrain with streaming. **It exposes NO ground-height query** — see below |
+| `Zenith_TerrainComponent` | Heightmap-based terrain with streaming, plus a TIER 1 **collision**-surface height query (`TryGetGroundHeightAt` — 4 m quads, NOT the rendered ground) — see "Terrain ground-height query" below |
 | `Zenith_InstancedMeshComponent` | GPU-instanced mesh rendering |
 | `Zenith_ParticleEmitterComponent` | Particle effect emitters |
 | `Zenith_GraphComponent` | Behaviour Graph host (multiple .bgraph slots per entity, hot-reloadable) |
@@ -24,33 +24,116 @@ This directory contains all component types for the Entity-Component System.
 | `Zenith_AttachmentComponent` | Bone-attachment that follows a named bone on another entity each frame (e.g. racket in hand, held weapon) |
 | `Zenith_NavMeshComponent` | Baked-navmesh holder — loads a committed `.znavmesh` in `OnStart` and owns it for the component's lifetime; rich TOOLS debugging panel |
 
-## Terrain has no ground-height query (task_0515a49e / Zenithmon Shortfalls E8)
+## Terrain ground-height query: TIER 1 landed, TIER 2 still deferred (task_0515a49e / Zenithmon Shortfalls E8 / ZM-49)
 
-`Zenith_TerrainComponent` has no `GetHeightAt(x, z)` of any name — its public
-surface is render/culling/material/asset-set accessors plus `HasPhysicsGeometry()`
-/ `GetPhysicsMeshGeometry()`. **The only way to ask where the ground is, is a
-physics raycast, and that answers a materially different question:** *what is the
-first BODY below this point*. Anything standing on the ground occludes it, and the
-difference is not filterable —
+`Zenith_TerrainComponent` answers "what is the **collision** surface height at
+world XZ?" directly:
+`[[nodiscard]] bool TryGetGroundHeightAt(fWorldX, fWorldZ, fHeightOut) const`,
+plus two static cores usable without a live component —
+`TryGetGroundHeightFromGeometry(const Flux_MeshGeometry*, …)` and the Flux-free
+`TryGetGroundHeightFromTriangles(positions, vertexCount, indices, indexCount, …)`.
+It scans the terrain's combined physics geometry — the same data
+`HasPhysicsGeometry()` / `GetPhysicsMeshGeometry()` expose — for the triangle
+whose XZ projection contains the point and interpolates **barycentrically**, so
+an interior point gets the exact plane height rather than a nearest-vertex
+approximation. No Jolt, no body filtering; winding-agnostic (divides by the
+*signed* projected area, so it does not depend on which way a mesh's triangles
+wind).
+
+> **★ IT IS NOT THE RENDERED GROUND, AND THAT IS NOT A ROUNDING ERROR — so it is
+> NOT a general placement query.** The physics mesh is baked at **4 m** quads and
+> the HIGH render mesh at **1 m** quads
+> (`Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_VERTEX_COUNT ==
+> CalculateChunkVertexCount(4u)` against `uHIGH_CHUNK_VERTEX_COUNT ==
+> CalculateChunkVertexCount(1u)`), and that header says the gap is deliberate:
+> *"collision deliberately remains lower density than the nearby HIGH render
+> mesh"*. The answer is therefore the **4 m chord** across the visible surface —
+> **below** it over a convex ridge, **above** it in a concave dip, error bounded
+> by local relief over 4 m — so an object placed at the returned height sinks
+> into or floats over the terrain the player sees. Use it where the question is
+> about physics (where a body rests, whether a capsule clears a step); a question
+> about a **visible** gap — ZM-D-173's door-jamb residual is exactly one — needs
+> TIER 2, not this.
+>
+> **Positions are read RAW.** The lookup never applies the entity's transform, and
+> neither does `Zenith_ColliderComponent::CreateTerrainShape` when it feeds Jolt
+> the same triangles — but the *body* is created at the entity's
+> `GetPosition()`/`GetRotation()`. The query agrees with physics and with the
+> renderer only while the terrain entity is identity. True of every terrain
+> authored today; nothing enforces it.
+
+**Why this exists instead of a physics raycast, and why reaching for one
+instead would reintroduce the occlusion problem it exists to avoid:** a raycast
+answers a materially different question — *what is the first BODY below this
+point* — and anything standing on the ground occludes it. That is not a corner
+case, and it is not filterable:
 
 - `Zenith_Physics::Raycast` / `Zenith_PhysicsQuery::RaycastIgnoring` take exactly
   **one** ignore entity, so two overlapping bodies over a column are unmeasurable;
 - restarting the ray below a hit does not rescue it: an object *standing* on the
   ground has its underside AT the surface, and anything deliberately embedded (a
-  shell sunk 0.05 m so no visible gap opens) has it BELOW the surface;
-- it needs the terrain physics body **streamed in**, so it is frame-dependent and
-  unusable at authoring time — the editor add path uses the deserialization ctor
-  and never calls `LoadCombinedPhysicsGeometry`, so an authoring-time cast MISSES.
+  shell sunk 0.05 m so no visible gap opens) has it BELOW the surface, so the
+  restart begins underneath the terrain.
 
-Two tiers if you pick this up: **Tier 1** serves the query from
-`GetPhysicsMeshGeometry()` as a triangle lookup (no Jolt, no body filtering —
-removes the occlusion problem, still needs streaming); **Tier 2** keeps or loads
-the heightfield — note this component holds **no** height data at runtime, it
-loads baked mesh chunks and `Terrain/<Set>/Height.ztxtr` is read only by the TOOLS
-editor path — which would make the query work at authoring time.
+The query reads the terrain's own **collision** surface instead of a body, so the
+occlusion problem is gone outright for it — that is the whole reason it exists.
+(It buys no accuracy against the rendered surface; see the box above.)
 
-Full detail and the caller it currently bites (ZM-D-173's Home door jambs) is in
-the `TODO(terrain-height-query)` block in `Zenith_TerrainComponent.h`.
+**Failure contract — THREE cases, not two.** All three return `false` and leave
+`fHeightOut` UNTOUCHED, so a caller can never mistake any of them for a genuine
+ground height of 0.0 (and a real 0.0 still arrives with `true`):
+
+1. **absent** physics geometry (every chunk's source mesh failed to load);
+2. an XZ **outside** the combined mesh's footprint;
+3. an XZ over a **hole inside** that footprint. `CombineTerrainChunkGridCore`
+   skips any chunk whose source mesh fails to load (recording it in
+   `TerrainSparseLoadDiagnostics`, warned by `LogSparseLoadDiagnostics`), so a
+   sparse or partial bake leaves gaps in the combined mesh — and this API cannot
+   tell a probe over one from case 2. **A caller taught "false means outside the
+   world" will read a sparse bake as a smaller world.**
+
+`[[nodiscard]]` makes ignoring the bool a compiler diagnostic, not a silent zero.
+
+**Multi-hit policy lives on `TryGetGroundHeightFromTriangles`, and it has a
+precondition.** The **first containing triangle in index order** wins. That is
+safe for a *heightfield* — at most one triangle per XZ column, and the only
+doubly-contained points are on a shared edge or vertex where both triangles
+interpolate the same shared vertices and agree. For an arbitrary soup with an
+**overhang** the premise is false and you get whatever the index buffer lists
+first; index order is not a defensible *ground* policy (highest-below would be),
+and this core neither implements that nor detects the case.
+
+**What TIER 1 does NOT buy:**
+
+- it answers the **collision** surface, so it cannot answer a question about the
+  rendered one (see the box above);
+- it needs `m_pxPhysicsGeometry` populated, which only `LoadCombinedPhysicsGeometry`
+  fills. A scene **load** fills it (`ReadFromDataStream` calls it), so a runtime
+  probe on a terrain loaded from a scene is answered — but the editor's
+  **Add-Component** path constructs through the deserialization ctor without
+  ever deserializing, so a probe on a freshly-added terrain still MISSES;
+- it is a linear scan over the mesh's triangles behind a per-triangle XZ
+  bounding-box reject — O(triangles) per call, with no spatial index. Fine for
+  one-off probes and physics-space placement; not for a per-frame per-agent
+  query over a large terrain. That box is **not purely an accelerator**: the
+  barycentric test alone admits a ~1e-5-of-a-triangle band outside it (the tolerance
+  that keeps a point on an interior edge from falling down a zero-width crack)
+  and the box *clips* it. Desirable — it is what stops the tolerance
+  extrapolating a height off the rim of the mesh — but it changes the answer at
+  a boundary rather than merely speeding the scan up.
+
+**TIER 2** — keep or load the heightfield — is still DEFERRED, and it now has
+**two** jobs: make the query answer at **authoring time**, and make it answer for
+the **rendered** surface (the heightfield is what both densities are sampled
+from, so it carries no 4 m chord error). This component holds **no** height data
+at runtime even now: it loads baked mesh chunks, and
+`Terrain/<Set>/Height.ztxtr` is read only by the TOOLS editor path.
+
+Full mechanics are in the doc comment above `TryGetGroundHeightAt` in
+`Zenith_TerrainComponent.h`; the caller that motivated this work (ZM-D-173's
+Home door jambs — whose residual is a **visual** one and so is **not** measurable
+by TIER 1, per the box above) and the TIER 2 write-up are in
+`Games/Zenithmon/Docs/Shortfalls.md` section 2 (E8).
 
 ## AnimatorComponent is a forwarding handle (Wave-19 ownership relocation)
 

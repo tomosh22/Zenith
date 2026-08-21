@@ -297,7 +297,9 @@ scheduled, blocked or reported on. See [Board.md](Board.md) §2.
 
 - **[ZM-14] Engine gaps E1-E8** — [Shortfalls.md](Shortfalls.md) section 2. Open:
   **[ZM-47]** E6 (terrain extent is a compile-time constant), **[ZM-48]** E7 (runtime
-  navmesh, option B), **[ZM-49]** E8 (no ground-height query). E1-E5 are RESOLVED.
+  navmesh, option B). **[ZM-49]** E8's TIER 1 (ground-height query) landed 2026-08-21;
+  TIER 2 (authoring-time query, needs the heightfield) is still open. E1-E5 are
+  RESOLVED.
 - **[ZM-15] Tech debt & shortfalls** — [Shortfalls.md](Shortfalls.md) sections 1 and 3.
 - **[ZM-16] Open questions** — the `[OPEN]` entries in [Questions.md](Questions.md),
   including **[ZM-51]** (the player is always `ZM_HUMAN_PLAYER_M`) and **[ZM-52]**

@@ -695,6 +695,143 @@ const Flux_MeshGeometry& Zenith_TerrainComponent::GetPhysicsMeshGeometry() const
 	return *m_pxPhysicsGeometry;
 }
 
+// ========== Ground-height query (Shortfalls E8 TIER 1) ==========
+// WHY this exists instead of a physics raycast, what "still tier 1" means, and
+// the failure contract are all in the header, above TryGetGroundHeightAt. Only
+// the mechanics live here.
+
+namespace
+{
+	// A weight below -fBARYCENTRIC_EPSILON puts the point outside the triangle.
+	// The tolerance exists for ONE reason: a query landing exactly on an interior
+	// edge or vertex of the terrain grid must resolve into a triangle instead of
+	// falling down a zero-width crack, and float arithmetic will not reliably put
+	// it on the inside of either. Admitting such a point into BOTH triangles that
+	// share the edge is safe, not ambiguous -- along a shared edge both
+	// interpolate the SAME two shared vertices with the same weights, so they
+	// report the same height and it cannot matter which one the scan reaches
+	// first. Terrain grid spacing is metres and world coordinates run to a couple
+	// of thousand, so 1e-5 of a triangle is tens of microns: far above float noise
+	// at that magnitude, far below anything a caller could observe.
+	constexpr float fBARYCENTRIC_EPSILON = 1.0e-5f;
+
+	// Twice the signed XZ-projected area of the triangle. A vertical or collinear
+	// triangle projects to nothing and has no height to report for an XZ column,
+	// so it is rejected rather than divided by. Guarding the divisor EXPLICITLY
+	// (rather than letting an infinity or a NaN fall out and relying on the range
+	// test below to reject it) is deliberate: a fast-math build is entitled to
+	// assume neither ever occurs and optimise those comparisons away.
+	constexpr float fMIN_PROJECTED_DOUBLE_AREA = 1.0e-12f;
+
+	// Containment + plane interpolation for ONE XZ-projected triangle. Writes
+	// fHeightOut only when it returns true.
+	bool TryInterpolateTriangleHeightXZ(const Zenith_Maths::Vector3& xA,
+		const Zenith_Maths::Vector3& xB, const Zenith_Maths::Vector3& xC,
+		float fWorldX, float fWorldZ, float& fHeightOut)
+	{
+		// XZ bounding-box reject first. This is an accelerator -- a handful of
+		// compares ahead of a divide and a dozen multiplies, and it is what makes
+		// the linear scan over a large terrain bearable -- but it is ALSO the exact
+		// outer boundary of the lookup: a point outside a triangle's XZ box is outside
+		// the triangle with no tolerance involved, so fBARYCENTRIC_EPSILON can
+		// never extrapolate a height off the rim of the mesh. Interior shared
+		// edges are untouched by it, because a point on one lies within the box of
+		// both triangles meeting there (the comparisons are inclusive).
+		const float fMinX = std::min(xA.x, std::min(xB.x, xC.x));
+		const float fMaxX = std::max(xA.x, std::max(xB.x, xC.x));
+		const float fMinZ = std::min(xA.z, std::min(xB.z, xC.z));
+		const float fMaxZ = std::max(xA.z, std::max(xB.z, xC.z));
+		if (fWorldX < fMinX || fWorldX > fMaxX || fWorldZ < fMinZ || fWorldZ > fMaxZ)
+			return false;
+
+		// The standard 2D barycentric solve, in XZ. Dividing through by the SIGNED
+		// projected area makes it winding-agnostic, which matters: the terrain
+		// exporter emits clockwise XZ triangles, but this core also serves
+		// hand-built and imported geometry, and a winding-sensitive test would
+		// silently answer "outside" for an entire mesh rather than fail loudly.
+		const float fDoubleArea = (xB.z - xC.z) * (xA.x - xC.x) + (xC.x - xB.x) * (xA.z - xC.z);
+		if (std::fabs(fDoubleArea) < fMIN_PROJECTED_DOUBLE_AREA)
+			return false;
+
+		const float fInvDoubleArea = 1.0f / fDoubleArea;
+		const float fWeightA =
+			((xB.z - xC.z) * (fWorldX - xC.x) + (xC.x - xB.x) * (fWorldZ - xC.z)) * fInvDoubleArea;
+		const float fWeightB =
+			((xC.z - xA.z) * (fWorldX - xC.x) + (xA.x - xC.x) * (fWorldZ - xC.z)) * fInvDoubleArea;
+		const float fWeightC = 1.0f - fWeightA - fWeightB;
+
+		// BOTH bounds on every weight, deliberately. The lower bound is the
+		// containment test; the upper bound is what rejects the enormous weights a
+		// near-degenerate sliver yields, so no second area epsilon is needed.
+		if (fWeightA < -fBARYCENTRIC_EPSILON || fWeightA > 1.0f + fBARYCENTRIC_EPSILON ||
+			fWeightB < -fBARYCENTRIC_EPSILON || fWeightB > 1.0f + fBARYCENTRIC_EPSILON ||
+			fWeightC < -fBARYCENTRIC_EPSILON || fWeightC > 1.0f + fBARYCENTRIC_EPSILON)
+		{
+			return false;
+		}
+
+		// Barycentric, NOT nearest-vertex: an interior point gets the exact height
+		// of the triangle's plane.
+		fHeightOut = fWeightA * xA.y + fWeightB * xB.y + fWeightC * xC.y;
+		return true;
+	}
+}
+
+bool Zenith_TerrainComponent::TryGetGroundHeightFromTriangles(
+	const Zenith_Maths::Vector3* pxPositions, uint32_t uVertexCount,
+	const uint32_t* puIndices, uint32_t uIndexCount,
+	float fWorldX, float fWorldZ, float& fHeightOut)
+{
+	if (pxPositions == nullptr || puIndices == nullptr || uVertexCount == 0u || uIndexCount < 3u)
+		return false;
+
+	// A trailing partial triple is dropped rather than read: nothing the compiler
+	// can see guarantees uIndexCount is a multiple of three, and walking off the
+	// end of an index buffer is a far worse outcome than ignoring a triangle that
+	// does not exist. An out-of-range index is skipped for the same reason.
+	const uint32_t uTriangleCount = uIndexCount / 3u;
+	for (uint32_t uTriangle = 0u; uTriangle < uTriangleCount; ++uTriangle)
+	{
+		const uint32_t uBase = uTriangle * 3u;
+		const uint32_t uIndexA = puIndices[uBase];
+		const uint32_t uIndexB = puIndices[uBase + 1u];
+		const uint32_t uIndexC = puIndices[uBase + 2u];
+		if (uIndexA >= uVertexCount || uIndexB >= uVertexCount || uIndexC >= uVertexCount)
+			continue;
+
+		// FIRST containing triangle wins, and that early-out cannot make the
+		// answer depend on index order: a heightfield has at most one triangle
+		// over any XZ column, and the only points two triangles both contain are
+		// the ones on a shared edge or vertex -- where both interpolate the same
+		// shared vertices and therefore agree.
+		if (TryInterpolateTriangleHeightXZ(pxPositions[uIndexA], pxPositions[uIndexB],
+			pxPositions[uIndexC], fWorldX, fWorldZ, fHeightOut))
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+bool Zenith_TerrainComponent::TryGetGroundHeightFromGeometry(const Flux_MeshGeometry* pxGeometry,
+	float fWorldX, float fWorldZ, float& fHeightOut)
+{
+	// Absent geometry is exactly the HasPhysicsGeometry() case the header warns
+	// about: report failure, do not dereference, and above all do not answer 0.0.
+	// A geometry that exists but carries no retained CPU position/index streams
+	// falls through to the same answer inside the triangle core.
+	if (pxGeometry == nullptr)
+		return false;
+
+	return TryGetGroundHeightFromTriangles(pxGeometry->m_pxPositions, pxGeometry->GetNumVerts(),
+		pxGeometry->m_puIndices, pxGeometry->GetNumIndices(), fWorldX, fWorldZ, fHeightOut);
+}
+
+bool Zenith_TerrainComponent::TryGetGroundHeightAt(float fWorldX, float fWorldZ, float& fHeightOut) const
+{
+	return TryGetGroundHeightFromGeometry(m_pxPhysicsGeometry, fWorldX, fWorldZ, fHeightOut);
+}
+
 const Flux_IndirectBuffer& Zenith_TerrainComponent::GetIndirectDrawBuffer() const
 {
 	return m_pxStreamingState->m_xIndirectDrawBuffer;
@@ -1616,3 +1753,11 @@ static void Zenith_GatherTerrainRecordsImpl(Zenith_Vector<Flux_TerrainRenderReco
 }
 
 Zenith_TerrainGatherFn g_pfnZenithTerrainGather = &Zenith_GatherTerrainRecordsImpl;
+
+// The unit suite lives in a .inl included by THIS TU on purpose. MSVC dead-strips
+// the static initialisers of a .obj nothing references, so a .Tests.inl compiled
+// as its own TU would register nothing, run nothing, move no baseline, and leave
+// every gate green. This TU is always linked (the component registrar names
+// Zenith_TerrainComponent, and g_pfnZenithTerrainGather above is an extern the
+// renderer reads), so hosting the tests here is what makes them exist.
+#include "EntityComponent/Components/Zenith_TerrainComponent.Tests.inl"
