@@ -180,11 +180,20 @@ function Get-WorkingTreeChanges {
     return ,@($paths | Select-Object -Unique)
 }
 
-<# Path-valued flags, resolved to content. The board never opens a path. #>
+<#
+  Path-valued flags, resolved to content. The board never opens a path.
+
+  `body`, `goal` and `dod` are here for the same reason `comment` and
+  `worklog` are: no amount of shell quoting survives a multi-line
+  Markdown body, and the symptom is a ticket whose spec got truncated at
+  the first newline with a successful exit. The list is the twin of
+  FILE_FLAGS in the board's dispatch.ts -- a flag missing from one side
+  arrives as a path string the board then treats as prose.
+#>
 function Get-FileContents {
     param([string[]]$Argv)
     $files = [ordered]@{}
-    foreach ($name in @('file', 'comment', 'worklog')) {
+    foreach ($name in @('file', 'comment', 'worklog', 'body', 'goal', 'dod')) {
         $value = Get-FlagValue -Argv $Argv -Name $name
         if ($value) {
             if (-not (Test-Path -LiteralPath $value)) {
@@ -229,6 +238,33 @@ function Test-NeedsDocsTree {
     # `board status` reads Roadmap.md out of the SAME upload rather than
     # inventing a second way for the board to see a client's disk.
     return ($Argv[0] -eq 'board' -and $Argv[1] -eq 'status')
+}
+
+function Get-RequestTimeout {
+    <#
+      How long to wait before deciding the board is not going to answer.
+
+      There was NO timeout at all, so a board that accepted the
+      connection and then stopped responding hung the client forever --
+      and an unattended /tick has no operator to notice. A timeout falls
+      into the same catch as a refused connection and so exits 7, which
+      is right: "I never reached the board" is exactly what it means.
+
+      `docs sync` gets its own budget because it ships a ~1 MB Markdown
+      tree and writes a CRDT per page, which is legitimately slow.
+      Giving every command that allowance would mean a wedged `queue`
+      also took fifteen minutes to admit it.
+
+      In the MODULE rather than in zagent.ps1's main body, for the reason
+      Test-NeedsDocsTree is: that file runs a command the moment it is
+      invoked, so nothing there is reachable from a test.
+    #>
+    param([string[]]$Argv)
+
+    if ($Argv -and $Argv.Count -ge 2 -and $Argv[0] -eq 'docs' -and $Argv[1] -in @('sync', 'status')) {
+        return 900
+    }
+    return 120
 }
 
 function Test-NeedsChangedSet {
@@ -664,7 +700,8 @@ function Get-AllGateLines {
 
 Export-ModuleMember -Function Find-ClientRepo, ConvertTo-PosixPath, Remove-Annotations,
     Get-ClientProject, Get-FlagValue, Test-Flag, Get-FileContents, Get-WorkingTreeChanges,
-    Test-NeedsDocsTree, Test-NeedsChangedSet, Get-GuardTicketKey, Get-RecordedGateSelection,
+    Test-NeedsDocsTree, Test-NeedsChangedSet, Get-RequestTimeout, Get-GuardTicketKey,
+    Get-RecordedGateSelection,
     Get-BodyDrift, Format-BodyDrift, Get-DocsTree,
     Get-ConventionsTree, Get-AmendContents, Get-ScratchRoot, Write-Results, Write-LastResult,
     Get-ClientChecks, Get-AllGateLines, Write-StdErr

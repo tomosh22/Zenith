@@ -758,6 +758,67 @@ Assert-That 'says only that it is gone when no file of that name exists' {
     -not $text.Contains('a file of that name is at')
 }
 
+
+Write-Host "`n=== Get-RequestTimeout ===" -ForegroundColor Cyan
+# There was NO timeout, so a board that accepted the connection and then
+# stopped responding hung the client forever -- and an unattended /tick
+# has no operator to notice. A timeout lands in the same catch as a
+# refused connection, so it exits 7: "I never reached the board" is
+# exactly what it means.
+Assert-That 'gives every command a bounded wait' {
+    (Get-RequestTimeout -Argv @('queue')) -gt 0
+}
+# `docs sync` ships a ~1 MB Markdown tree and writes a CRDT per page.
+# Giving every command that budget would mean a wedged `queue` also took
+# fifteen minutes to admit it.
+Assert-That 'gives the docs upload a longer budget than everything else' {
+    (Get-RequestTimeout -Argv @('docs', 'sync')) -gt (Get-RequestTimeout -Argv @('queue'))
+}
+Assert-That 'covers docs status, which uploads the same tree' {
+    (Get-RequestTimeout -Argv @('docs', 'status')) -eq (Get-RequestTimeout -Argv @('docs', 'sync'))
+}
+Assert-That 'does not extend the budget for a docs READ' {
+    (Get-RequestTimeout -Argv @('docs', 'read', 'Zenithmon/Status')) -eq
+    (Get-RequestTimeout -Argv @('queue'))
+}
+Assert-That 'survives a null or one-element argv under Set-StrictMode' {
+    ((Get-RequestTimeout -Argv $null) -gt 0) -and ((Get-RequestTimeout -Argv @('docs')) -gt 0)
+}
+# The upload predicate and the timeout predicate must agree about which
+# commands ship the tree, or one of them is budgeting for a request the
+# other never makes.
+Assert-That 'is generous for exactly the commands that upload the docs tree' {
+    $long = (Get-RequestTimeout -Argv @('docs', 'sync'))
+    foreach ($argv in @(@('docs', 'sync'), @('docs', 'status'), @('queue'), @('docs', 'ls'))) {
+        $uploads = Test-NeedsDocsTree -Argv $argv
+        $generous = (Get-RequestTimeout -Argv $argv) -eq $long
+        # `board status` uploads the tree but is a cheap read of one
+        # file, so it is allowed to be either -- every OTHER command
+        # must have the two answers agree.
+        if ($argv[0] -ne 'board' -and $uploads -ne $generous) { return $false }
+    }
+    return $true
+}
+
+# The board resolves a path-valued flag from the CLIENT's disk, so the
+# two lists have to name the same flags. A flag missing here arrives at
+# the board as a PATH STRING which it then treats as prose -- a ticket
+# body silently replaced by the characters `C:\tmp\dod.md`.
+Assert-That 'resolves every path-valued flag the board declares in FILE_FLAGS' {
+    $psm1 = Get-Content (Join-Path $PSScriptRoot 'ZagentClient.psm1') -Raw
+    $match = [regex]::Match($psm1, "foreach \(\`$name in @\(([^)]*)\)\)")
+    if (-not $match.Success) { return $false }
+    $names = [regex]::Matches($match.Groups[1].Value, "'([a-z]+)'") |
+        ForEach-Object { $_.Groups[1].Value }
+    foreach ($required in @('file', 'comment', 'worklog', 'body', 'goal', 'dod')) {
+        if ($required -notin $names) {
+            Write-Host "       missing path-valued flag: $required"
+            return $false
+        }
+    }
+    return $true
+}
+
 Write-Host ""
 Write-Host ("{0}/{1} assertions passed." -f ($script:count - $script:failures), $script:count)
 if ($script:failures -eq 0) { Write-Host 'PASS' -ForegroundColor Green; exit 0 }

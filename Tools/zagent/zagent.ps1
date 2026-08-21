@@ -80,7 +80,7 @@ function Get-BoardToken {
 # ─── TRANSPORT ───────────────────────────────────────
 
 function Invoke-Board {
-    param([hashtable]$Body)
+    param([hashtable]$Body, [int]$TimeoutSec = 120)
     $url = Get-BoardUrl
     $token = Get-BoardToken
     # Depth matters: ConvertTo-Json defaults to 2 and would silently
@@ -90,6 +90,7 @@ function Invoke-Board {
         return Invoke-RestMethod -Method Post -Uri "$url/api/agent" `
             -Headers @{ Authorization = "Bearer $token" } `
             -ContentType 'application/json; charset=utf-8' `
+            -TimeoutSec $TimeoutSec `
             -Body ([System.Text.Encoding]::UTF8.GetBytes($json))
     } catch {
         $status = 0
@@ -181,7 +182,7 @@ if (Test-NeedsDocsTree -Argv $argv) {
 $amend = Get-AmendContents -Client $client -Argv $argv
 if ($amend) { $body.amend = $amend }
 
-$result = Invoke-Board -Body $body
+$result = Invoke-Board -Body $body -TimeoutSec (Get-RequestTimeout -Argv $argv)
 
 # `doctor` is the one command whose answer is assembled from both sides.
 if ($argv[0] -eq 'doctor') {

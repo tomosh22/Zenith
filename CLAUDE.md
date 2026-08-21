@@ -544,7 +544,10 @@ Commands you would actually use from here:
 | `links <KEY>` / `epic <KEY>` / `parent <KEY> <PARENT>` | the dependency graph and the hierarchy |
 | `sprint list\|create\|start\|complete\|add\|remove` | one ACTIVE sprint per project |
 | `version list\|create\|release\|set` | milestones — what a BUILD contains |
+| `check ZEN-6` | would a claim take it? **exit 4 if not** — writes nothing, claims nothing |
 | `update <KEY> --points --severity --repro --environment --due` | field writes, with a history trail |
+| `update <KEY> --body\|--goal\|--dod <file>` | edit the spec, keeping any appended work log |
+| `update <KEY> --label a,b --unlabel c` | apply a marker (e.g. `windowed`) AFTER filing, which is when you learn one is needed |
 | `estimate` / `flag` / `resolve` / `history` | the one-gesture shorthands |
 | `report epic\|velocity --project ZM` | per-epic progress; velocity over COMPLETED sprints only |
 | `board status --project ZM` | does `Roadmap.md` still describe the board? **exit 1 on drift** |
@@ -691,6 +694,14 @@ want it to show up as someone's card; the label is what protects it.
 This used to be `--assignee` alone, which worked only because the queue
 skips assigned tickets — making the SAFE state the one nobody typed.
 Now the marker is explicit, greppable, and enforced.
+
+**And it can be applied after filing** — `zagent update <KEY> --label
+windowed` — which is the point, because you learn a ticket needs a person
+by READING it, not by predicting it at create time. ZM-56 is
+*"`ZM_InteriorTintPixels_Test` passes windowed, or is retired with a
+recorded reason"*: a `requiresGraphics` test whose only headless-verifiable
+branch is deleting the coverage. Nothing stopped the loop claiming it,
+because labels could only be set at create time.
 
 **Handing work over is a drag, not a command.** Nothing runs until a card
 reaches *Ready for Agent* on the board. To run one immediately instead,

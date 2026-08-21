@@ -90,6 +90,17 @@ with an entire area unverified. Both commands compute the changed set
 with `Get-WorkingTreeChanges`; do not hand-assemble one and pass
 `--file`.
 
+## Requests are bounded
+
+There was no timeout at all, so a board that accepted the connection and
+then stopped answering hung the client forever — and an unattended
+`/tick` has no operator to notice. Every request now has a budget
+(`Get-RequestTimeout`), and `docs sync`/`docs status` get a much longer
+one because they ship a ~1 MB Markdown tree and write a CRDT per page.
+
+A timeout lands in the same `catch` as a refused connection and so exits
+**7**, which is exactly what it means: the board was never reached.
+
 ## Exit codes are the interface
 
 Branch on them, never on the text:
