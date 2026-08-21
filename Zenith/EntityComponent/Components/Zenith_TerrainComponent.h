@@ -537,7 +537,7 @@ public:
 	 */
 	void UpdateChunkLODAllocations();
 
-//private:
+private:
 	Zenith_Entity m_xParentEntity;
 
 	Flux_MeshGeometry* m_pxPhysicsGeometry = nullptr;
@@ -566,6 +566,13 @@ public:
 	// gates on m_pxPhysicsGeometry == nullptr first regardless of the table's
 	// state. The move constructor / move assignment transfer the pointer and
 	// its count together for the same reason.
+	//
+	// ZEN-5: genuinely private as of this commit. Every write site is this
+	// class's own member functions (Zenith_TerrainComponent.cpp /
+	// Zenith_TerrainComponent_Editor.cpp), verified repo-wide before this
+	// change -- so the lockstep invariant stated above ("every site that
+	// discards m_pxPhysicsGeometry also frees this table") now has the
+	// compiler behind it instead of resting on this comment alone.
 	PhysicsChunkSpan* m_pxPhysicsChunkSpans = nullptr;
 	uint32_t m_uPhysicsChunkSpanCount = 0u;
 	MaterialHandle m_axMaterials[4];
@@ -577,6 +584,7 @@ public:
 	// registration, culling resources) is intentionally short-circuited.
 	bool m_bTerrainGeometryUnusable = false;
 
+public:
 	// Per-component streaming state. Heap-allocated by the constructors
 	// (forward-declared type so this header doesn't need the full struct).
 	// Owned by this component. As of Wave-18 it ALSO owns the relocated Flux
@@ -590,8 +598,25 @@ public:
 	// it out of the registry so cross-thread access via the manager can't see
 	// a dead state. The component's public buffer/stride accessors forward
 	// into *m_pxStreamingState.
+	//
+	// DELIBERATELY PUBLIC (ZEN-5) -- the one member of this block that the
+	// `//private:` this ticket fixes could NOT simply cover, and that is a
+	// recorded decision, not an oversight. Three external, non-friend TUs
+	// dereference it directly rather than through an accessor --
+	// Games/RenderTest/RenderTest.cpp, Games/CityBuilder/Source/CB_RoadTerrain.cpp
+	// and Games/RenderTest/Tests/TerrainEditorSmoke.cpp -- and
+	// Flux/Terrain/Flux_TerrainStreamingManagerImpl.h documents the same
+	// contract from the manager's side ("Callers that hold a
+	// Zenith_TerrainComponent pass its (public) m_pxStreamingState"). Making
+	// this private would mean adding an accessor AND rewriting every one of
+	// those call sites across two different games plus an engine automated
+	// test -- none of them a Zenith_TerrainComponent file -- or friending
+	// three unrelated TUs one at a time, which is the same problem with extra
+	// steps. Left public on purpose; narrowing it is a separate ticket with
+	// its own file list, not a side effect of this one.
 	Flux_TerrainStreamingState* m_pxStreamingState = nullptr;
 
+private:
 	// Helper methods for culling
 	void BuildChunkData();
 	void ExtractFrustumPlanes(const Zenith_Maths::Matrix4& xViewProjMatrix, Zenith_FrustumPlaneGPU* pxOutPlanes);
@@ -608,6 +633,16 @@ public:
 	// 0. Called before every fresh combine attempt (a retry must not consult a
 	// span table built from a previous, possibly differently-sparse, combine)
 	// and everywhere m_pxPhysicsGeometry itself is discarded within this file.
+	//
+	// ZEN-5: genuinely PRIVATE now, not merely "within this file" by
+	// convention -- a private member function of this class, reachable only
+	// from this class's own member functions. Every direct caller is exactly
+	// that (this .cpp's constructors/destructor/move-ops/loaders and
+	// Zenith_TerrainComponent_Editor.cpp's CleanupPriorGenerationForRegenerate).
+	// No friend calls it directly: Zenith_TerrainCleanupPhysicsGeometryTests
+	// (below) reaches it only indirectly, through
+	// CleanupPriorGenerationForRegenerate (itself private); the sibling
+	// Zenith_TerrainChunkSpanRecorderTests never reaches it at all.
 	void FreePhysicsChunkSpans();
 
 	// Version-dispatched material deserialization helpers. Split out of
@@ -620,7 +655,28 @@ public:
 	void BackfillMissingMaterialSlots(const std::string& strEntityName);
 
 #ifdef ZENITH_TOOLS
-	// Editor UI — main entry point; section helpers below.
+public:
+	// Editor UI entry points reached from OUTSIDE this class (and outside its
+	// friends), so -- unlike the helper methods above -- they stay public
+	// rather than following that block into private: (ZEN-5, verified
+	// repo-wide before this change):
+	//   * RenderPropertiesPanel() is required public by the generic
+	//     component-panel dispatch every component type participates in --
+	//     ZenithECS/Internal/Zenith_ComponentPool.h's Zenith_Component concept
+	//     checks `t.RenderPropertiesPanel()` on every registered component
+	//     type, and EntityComponent/Zenith_ComponentEditorRegistry.h's "Add
+	//     Component" panel calls it through that same generic interface.
+	//     Private here would be a Terrain-only special case in a pattern
+	//     every other component follows;
+	//   * IsTerrainInitializedForEditor() is read directly by
+	//     Zenith/Editor/Zenith_EditorAutomation.cpp;
+	//   * WithPreparedTerrainAssetDirectory() and
+	//     RenamePreparedTerrainAssetFileAtomically() are called directly by
+	//     Games/Zenithmon/Source/World/ZM_TerrainAuthoring.cpp.
+	// Zenith_TerrainEditor's own calls to all four are already covered by the
+	// friend declaration near the top of this class -- it is specifically the
+	// callers outside that friend list, spanning two games plus one engine
+	// automation TU, that keep this sub-block public.
 	void RenderPropertiesPanel();
 	bool IsTerrainInitializedForEditor() const;
 	// Captureless thunk + opaque context, matching TerrainChunkLoadCallback above.
@@ -640,6 +696,13 @@ public:
 	static bool RenamePreparedTerrainAssetFileAtomically(const std::string& strAssetSet,
 		const std::string& strTerrainRoot, const std::string& strSourceFilename,
 		const std::string& strDestinationFilename);
+
+private:
+	// Unlike the four methods above, these two have zero callers outside this
+	// class and Zenith_TerrainEditor (already a friend) -- verified repo-wide
+	// (ZEN-5) -- so they follow the helper methods above into private rather
+	// than joining the public sub-block.
+	//
 	// Empty-set textures use the legacy Assets/Textures/Terrain sibling and need
 	// their own lease. Named textures delegate to the named Terrain target above.
 	static bool WithPreparedTerrainTextureDirectory(const std::string& strAssetSet,
@@ -652,7 +715,6 @@ public:
 	// Regenerate button with the in-memory image as the export source.
 	bool RegenerateFromHeightfield(const Zenith_Image& xHeightfield);
 
-private:
 	void RenderTerrainCreationSection();
 	void RenderTerrainRegenerationSection();
 	void RenderTerrainStatisticsSection();
