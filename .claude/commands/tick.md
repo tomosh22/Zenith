@@ -343,6 +343,29 @@ The prompt must open with these clauses, filled in from the payload:
 Then inline (I3): the `## Goal`, the `## Definition of Done` items, the
 file list, and any relevant repo conventions. `bodyPath` is a supplement.
 
+**Reconcile the DoD against the repo BEFORE you inline it — the ticket
+is the older document.** I3 means whatever you paste becomes the
+worker's instructions verbatim, so a stale line does not sit there
+harmlessly: it competes with everything else in the prompt, and the
+worker cannot tell which half is current because it has no shell and no
+board. Every body examined so far had drifted, seven for seven.
+
+Three things to check, in this order:
+
+1. `.zagent/run/<KEY>/drift.txt`, if the claim wrote one — it names
+   every cited path and symbol that does not resolve here, and where a
+   file of that name actually lives.
+2. Pin SITES. A DoD naming `Status.md`/`zm-tests.yml`/`zagent.project.json`
+   predates the baseline refactor; inline "every affected game's pinned
+   baseline bumped from an OBSERVED run" instead.
+3. The ticket's central claim. A DoD saying "X has no Y" when X grew a Y
+   last week describes work that is already done, and a worker handed
+   that will invent something to do.
+
+**Write down every correction in the work log.** A prompt that silently
+disagreed with the ticket is indistinguishable, afterwards, from a
+worker that ignored it.
+
 Dispatch shape — **the `Agent` tool, never a shelled-out CLI**:
 
 ```
@@ -505,7 +528,42 @@ report is _proposed text_ that you apply (I4).
    worker changed nothing** — a failed attempt, which `guard` now reports
    in those words rather than as a guard failure.
 
-5. `zagent owns <KEY>` again, immediately before writing anything.
+5. **Answer the coverage question, in writing.** For every source file
+   the diff touches: *does anything that just ran actually EXECUTE the
+   line I changed?* Name the test per file in the work log's
+   **Coverage** row, or say plainly that nothing covers it.
+
+   Green gates answer a narrower question than they look like they
+   answer. ZEN-2's Definition of Done said the telemetry recorder was
+   "provably unchanged"; the review found the recorder had ZERO
+   coverage while the test file asserted it was covered. Every gate
+   passed. A suite that never reaches a line cannot notice it changed,
+   and a pinned unit COUNT going green says only that the same number
+   of tests ran.
+
+   `review.required` catches the subset where the DoD makes the claim
+   out loud (step 6.3). Nothing catches the rest, which is why this is
+   a written answer rather than a thought: an empty **Coverage** row on
+   the board is visible, and a skipped consideration is not.
+
+6. `zagent owns <KEY>` again, immediately before writing anything.
+
+**Nothing you edit after a gate run is covered by that run.** The gates
+certified the bytes that existed when they ran, and `doc_lint.ps1` is one
+of them — so a `Games/*/Docs` edit made between step 6.2 and the commit
+ships doc bytes no gate has seen. So does the `Status.md` narration, and
+so does anything you touch while fix-forwarding.
+
+The rule is simply: **the gates are the LAST thing that runs before the
+guard.** Edit anything and you re-run `zagent gates <KEY>` and the gates,
+in that order. The pin bump below already says this for its own case;
+it is the general form.
+
+What the machinery covers here, and what it does not: `guard <KEY>` fails
+when your edit pulled in an area whose gates never ran, which is the
+expensive case. It says nothing when the edit stays inside the same area
+— a Docs file on a Zenithmon ticket — because the gate LIST is unchanged.
+That gap is why this paragraph exists, and it is the only reason it does.
 
 An empty gate list can never merge. If `gates` is `[]`, Block it.
 
@@ -631,6 +689,12 @@ the fact. The work log's shape:
 **Gates**
 | Command | Result |
 |---|---|
+<!-- mark any line unioned in by `zagent gates` with the category it came from -->
+
+**Coverage**
+| Changed file | What executes the changed line |
+|---|---|
+<!-- "nothing" is a legal answer and the one worth writing down -->
 
 **Definition of Done**
 
@@ -639,7 +703,14 @@ the fact. The work log's shape:
 **Deviations / follow-ups**
 
 - None, or: what was assumed, what was left undone and why.
+- Every correction you made to the ticket's own text before inlining it.
 ```
+
+**Coverage** is required and "nothing" is a legal answer. It is there
+because green gates answer a narrower question than they appear to:
+ZEN-2's recorder had zero coverage while its test file said otherwise,
+and every gate passed. An empty row on the board is visible; a skipped
+consideration is not.
 
 A work log is required on **every** terminal path, not just Done — a
 Blocked ticket's log saying how far it got is exactly the thing a human
