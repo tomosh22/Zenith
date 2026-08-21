@@ -379,6 +379,16 @@ status, and a targeted claim on one comes back exit 4 naming the ticket
 to finish first. Zenithmon's R1-x chain used to be a `deps` column in a
 Markdown table inside `Status.md`, which nothing could enforce.
 
+Which is exactly why **a `blocks` link REQUIRES `--reason`** and the
+other verbs do not. Nothing can verify the judgement — "does ZM-55
+really need ZM-49 first" is not computable — so the mechanism is to make
+the reasoning exist and put it where the block bites: in the refusal a
+claim comes back with, in `zagent blocked`, and in `zagent links`. ZM-55
+sat behind ZM-49 on reasoning that did not hold, and the refusal said
+only "blocked by ZM-49", so the person who could have falsified it never
+saw what it was. If the reasoning does not hold, `zagent unlink` is the
+fix — not an edit to the blocked ticket.
+
 The file is **sent every time rather than registered once**. A stored
 copy goes stale, and a stale gate list is exactly how a green run
 ratchets the wrong pinned baseline. The board keeps a mirror purely so
@@ -529,7 +539,7 @@ Commands you would actually use from here:
 | `rows decisions\|questions\|shortfalls\|changelog\|suggestions` | read the knowledge databases |
 | `docs status --project ZEN` | what a living-doc sync would change; writes nothing |
 | `docs sync --project ZEN` | mirror `Games/*/Docs` into the Notion page tree |
-| `link <KEY> blocks\|relates\|duplicates\|causes <KEY>` | one directed link; `blocks` is the one the claim query reads |
+| `link <KEY> blocks\|relates\|duplicates\|causes <KEY> --reason "…"` | one directed link; `blocks` is the one the claim query reads, and the only one that REQUIRES `--reason` |
 | `blocked --project ZM` | everything waiting, and on what |
 | `links <KEY>` / `epic <KEY>` / `parent <KEY> <PARENT>` | the dependency graph and the hierarchy |
 | `sprint list\|create\|start\|complete\|add\|remove` | one ACTIVE sprint per project |
