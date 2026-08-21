@@ -282,7 +282,14 @@ function Test-NeedsChangedSet {
     param([string[]]$Argv)
 
     if (-not $Argv -or $Argv.Count -lt 1) { return $false }
-    return ($Argv[0] -in @('guard', 'gates'))
+    if ($Argv[0] -notin @('guard', 'gates')) { return $false }
+    # An EXPLICIT set wins. `--file` is caught by the caller (it lands in
+    # the file map), but `--text` is read board-side and would otherwise
+    # be silently overridden by the working tree -- so someone debugging a
+    # guard decision with `--text` got a verdict about a completely
+    # different set of files and no hint that their input was discarded.
+    if ($null -ne (Get-FlagValue -Argv $Argv -Name 'text')) { return $false }
+    return $true
 }
 
 function Get-GuardTicketKey {

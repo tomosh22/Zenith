@@ -194,6 +194,17 @@ with one anyway — filed before the check existed, or dragged into Ready
 on the board — comes back as an ordinary exit 4 naming the path and the
 pattern. Handle it as any contract failure; do not re-derive the rule.
 
+**A `REACHABILITY` line on `show`/`check` is the near miss.** It fires when
+the GOAL names a protected path and the DoD names none — a ticket that is
+contract-VALID and says in its own words that it needs a human. ZEN-3's
+Goal reads *"This needs a human: `.github/**` is a protected path, so the
+agent loop is refused by `zagent guard`"*, and it passed every check,
+because its DoD says only "Some workflow runs …". It is a warning rather
+than a refusal on purpose: a Goal quoting a protected path as background
+is ordinary writing, and refusing that would make the check something
+people route around. When you see one, read the Goal — and if it is right,
+`zagent update <KEY> --label windowed` and release the ticket.
+
 That leaves the shapes no scanner can see, and these you do still read
 for:
 
@@ -355,6 +366,12 @@ Three things to check, in this order:
 1. `.zagent/run/<KEY>/drift.txt`, if the claim wrote one — it names
    every cited path and symbol that does not resolve here, and where a
    file of that name actually lives.
+   **`citations.lines` is the half nothing can check.** A line number is
+   true only relative to a commit nobody recorded, so it goes stale on the
+   next edit ABOVE it and no resolver can tell. ZEN-5's body cited line
+   522 for a specifier that was at 540; the drift check was silent and the
+   orchestrator caught it only by opening the file. If the payload lists
+   any, open the file and correct them before inlining.
 2. Pin SITES. A DoD naming `Status.md`/`zm-tests.yml`/`zagent.project.json`
    predates the baseline refactor; inline "every affected game's pinned
    baseline bumped from an OBSERVED run" instead.
@@ -434,8 +451,15 @@ fix-forwarding it just re-runs the same failure `fixForwardAttempts`
 times before parking an innocent ticket as Blocked — then does it to the
 next ticket, and the next, until `maxConsecutiveBlocked` trips the
 breaker on three tickets that were never even attempted. So on a null:
-comment what happened, **move the ticket back to its pre-claim status
-rather than Blocked**, and stop the tick. Report it as infrastructure.
+comment what happened, **move the ticket back to `previousStatus` rather
+than Blocked**, and stop the tick. Report it as infrastructure.
+
+`previousStatus` is on the claim payload, and that is the ONLY place the
+value survives: both claim paths move the row to In Progress and then
+read it back, so once the claim returns, nothing else can answer the
+question. Read it out of `.zagent/run/<KEY>/ticket.json` — I6 forbids
+reconstructing it from what you remember, and "it was probably To Do" is
+wrong for every ticket a human re-ran out of Blocked.
 
 Whatever the worker claims about correctness is discarded (I2). Its
 report is _proposed text_ that you apply (I4).
@@ -463,6 +487,19 @@ report is _proposed text_ that you apply (I4).
    effect. Running the extra gates by hand — which is what that run
    did — is a convention, and a convention is exactly the thing that
    holds until the one time nobody does it.
+
+   **An engine change compiles EVERY game, and that is why the Engine
+   list is long.** `Games/Combat` — which used to be the only game those
+   gates built — references `Zenith_TerrainComponent` in zero source
+   files, while Zenithmon, CityBuilder and RenderTest reference it in 12,
+   4 and 4. When ZEN-5 made members of that header private, all four
+   Engine gates went green and three games could have been left
+   un-compilable. The `paths` union cannot catch that one: the diff is
+   inside Engine's OWN paths, so there is no foreign category to pull in,
+   and a public header's blast radius is everything that INCLUDES it —
+   which no directory mapping expresses. Because Engine's `paths` is
+   `Zenith/**`, a Zenithmon ticket that edits engine code now gets the
+   whole list too, via the same union.
 
    Never paraphrase a gate line and never re-derive one from
    `zagent.project.json` by hand.
@@ -645,11 +682,21 @@ the _same_ failure, then park: Blocked plus a Questions row. Three
 attempts then park beats a thrashing loop.
 
 **Docs mirror.** Only after a Green commit lands — never on a Blocked or
-abandoned ticket, whose edits may be half-done or uncommitted. Check
-`.zagent/run/<KEY>/changed.txt` (already written at step 6.4) against
-`/(^|\/)Docs\//` or `/(^|\/)CLAUDE\.md$/`. No match → skip, silently; a
-ticket that never touched a doc has nothing to mirror. A match →
-`zagent docs sync --json`, appended to `.zagent/run/<KEY>/docs-sync.log`.
+abandoned ticket, whose edits may be half-done or uncommitted.
+
+**`guard` already decided this: read `docsMirrorNeeded` off its payload.**
+False → skip, silently; a ticket that never touched a doc has nothing to
+mirror. True → `zagent docs sync --json`, appended to
+`.zagent/run/<KEY>/docs-sync.log`; `docsMirrorPaths` names what triggered
+it.
+
+Do NOT re-derive it by matching `changed.txt` in the shell. That is what
+this step used to say, and a PowerShell implementation of it is wrong in
+a way nothing notices: `(Get-Content f) -match '…'` returns a **boolean**
+for a one-line file and a filtered **array** for a longer one, so counting
+the result reports a phantom match on every SINGLE-file change. The
+consequence — one needless sync — is benign, which is exactly why it would
+have gone on being wrong forever.
 
 Never block the tick on this. `docs sync` reaches a Notion project over a
 WebSocket the tick has no other reason to depend on, and a mirror that is
