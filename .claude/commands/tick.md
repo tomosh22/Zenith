@@ -300,39 +300,37 @@ report is _proposed text_ that you apply (I4).
    finds and hand you back a diff you did not gate. Findings go in the
    work log; a finding that contradicts a gate result blocks. A null
    return here is infrastructure, same as step 5 — it is not a pass.
-4. Write the changed-file list. **The work is UNCOMMITTED at this point
-   in both branching modes**, because the commit is step 7 — so read the
-   working tree, not a commit range, and include untracked files:
+4. `zagent guard` — **bare, with no `--file`**. Non-zero → Blocked
+   regardless of gate colour.
 
-   ```
-   git -C <repo> status --porcelain -uall     # then strip the 3-char status prefix
-   ```
+   With no `--file`/`--text` the client computes the changed set itself
+   from the working tree, which is where the work is at this point in
+   BOTH branching modes (the commit is step 7). **Do not hand-assemble
+   that list.** Both spellings this step used to prescribe were wrong and
+   neither failed loudly:
 
-   Redirect it to `.zagent/run/<KEY>/changed.txt`, then
-   `zagent guard --file .zagent/run/<KEY>/changed.txt`.
-   Non-zero → Blocked regardless of gate colour.
+   - `<baseBranch>...HEAD` is **empty** at guard time — in `direct` mode
+     you have not committed, and in `branch` mode step 4 only ran
+     `switch -c`, so the branch sits at `baseBranch` with zero commits.
+     Empty file → `guard` exits 1 → **every ticket in every category**
+     Blocks with its work sitting green and finished in the tree.
+   - `git diff --name-only` reports only **tracked modifications**, so a
+     file the worker CREATED never reaches the check. A new
+     `.claude/agents/anything.md` sails straight past it. That one fails
+     **open**, and is invisible on any ticket that only edits existing
+     files — which is why it survived two green ticks before a
+     file-creating ticket exposed it.
 
-   **Never use `<baseBranch>...HEAD` here, in either mode.** In `direct`
-   mode you are ON `baseBranch` and have not committed; in `branch` mode
-   step 4 only ran `switch -c`, so the branch is still at `baseBranch`
-   with zero commits. Either way the range is empty, `changed.txt` is
-   empty, `guard` exits 1, and this step reads that as Blocked — so
-   **every ticket in every category** Blocks with its work sitting green
-   and finished in the tree. It fails closed rather than open, so nothing
-   unsafe merges, but nothing merges at all.
+   The logic now lives in `Get-WorkingTreeChanges`, with assertions
+   covering created files, renames (both sides — moving a file OUT of a
+   protected directory still touches it), quoted paths, and gitignored
+   scratch. A guard whose input is assembled by hand is a guard with an
+   untested step in front of it.
 
-   **`git diff --name-only` is not enough either — it reports only
-   TRACKED modifications.** A worker that CREATES a file produces an
-   untracked path that never reaches `guard`, so a new
-   `.claude/agents/anything.md` or `.github/workflows/anything.yml` would
-   sail past the protected-path check. That one fails OPEN, which is the
-   dangerous direction, and it is invisible on any ticket that only edits
-   existing files. Hence `-uall`, which also expands a wholly-new
-   directory into its individual files instead of reporting the directory.
-
-   **An empty `changed.txt` means the worker changed nothing.** That is a
-   failed attempt, not a guard failure — say so in the work log rather
-   than passing the empty file to `guard` and reporting its message.
+   Still write the list to `.zagent/run/<KEY>/changed.txt` for step 7's
+   docs-mirror check and for the work log. A **clean tree here means the
+   worker changed nothing** — a failed attempt, which `guard` now reports
+   in those words rather than as a guard failure.
 
 5. `zagent owns <KEY>` again, immediately before writing anything.
 

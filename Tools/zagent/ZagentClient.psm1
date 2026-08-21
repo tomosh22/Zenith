@@ -136,6 +136,50 @@ function Test-Flag {
 
 # ─── PAYLOAD ASSEMBLY ────────────────────────────────
 
+<#
+Every path the working tree would stage, one per line — the input the
+protected-path guard actually wants.
+
+This lives in code rather than in `/tick`'s prose because BOTH ways of
+spelling it by hand were wrong, and both shipped:
+
+  * `git diff --name-only <base>...HEAD` is EMPTY at guard time in both
+    branching modes. The tick commits at step 7, and step 4 in branch mode
+    only runs `switch -c`, so the branch sits at baseBranch with zero
+    commits. Empty file -> guard exits 1 -> every ticket Blocks.
+  * `git diff --name-only` reports only TRACKED modifications, so a file
+    the worker CREATED never reaches the check at all. A new
+    `.claude/agents/anything.md` sails straight past it. That one fails
+    OPEN, and is invisible on any ticket that only edits existing files.
+
+`status --porcelain -uall` is the only form that sees modified, deleted
+AND untracked-but-not-ignored, and `-uall` expands a wholly-new directory
+into its files instead of naming the directory.
+
+A rename arrives as `R  old -> new`; BOTH sides are returned, because
+moving a file OUT of a protected directory still touches it.
+#>
+function Get-WorkingTreeChanges {
+    param([string]$Repo)
+    if (-not $Repo) { return ,@() }
+    $lines = & git -C $Repo status --porcelain -uall 2>$null
+    if (-not $lines) { return ,@() }
+    $paths = [System.Collections.Generic.List[string]]::new()
+    foreach ($line in @($lines)) {
+        if ($null -eq $line -or $line.Length -le 3) { continue }
+        foreach ($part in ($line.Substring(3) -split ' -> ')) {
+            $p = $part.Trim()
+            # git quotes paths containing spaces or non-ASCII bytes.
+            if ($p.Length -ge 2 -and $p.StartsWith('"') -and $p.EndsWith('"')) {
+                $p = $p.Substring(1, $p.Length - 2)
+            }
+            if ($p) { [void]$paths.Add($p) }
+        }
+    }
+    # `,@(…)` or a one-element result unrolls to a bare string on return.
+    return ,@($paths | Select-Object -Unique)
+}
+
 <# Path-valued flags, resolved to content. The board never opens a path. #>
 function Get-FileContents {
     param([string[]]$Argv)
@@ -471,6 +515,7 @@ function Get-AllGateLines {
 
 
 Export-ModuleMember -Function Find-ClientRepo, ConvertTo-PosixPath, Remove-Annotations,
-    Get-ClientProject, Get-FlagValue, Test-Flag, Get-FileContents, Test-NeedsDocsTree, Get-DocsTree,
+    Get-ClientProject, Get-FlagValue, Test-Flag, Get-FileContents, Get-WorkingTreeChanges,
+    Test-NeedsDocsTree, Get-DocsTree,
     Get-ConventionsTree, Get-AmendContents, Get-ScratchRoot, Write-Results, Write-LastResult,
     Get-ClientChecks, Get-AllGateLines, Write-StdErr

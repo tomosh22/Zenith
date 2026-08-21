@@ -132,6 +132,23 @@ if ($client) { $body.client = $client }
 $files = Get-FileContents -Argv $argv
 if ($files) { $body.files = $files }
 
+# `zagent guard` with no --file/--text computes its OWN input from the
+# working tree. The tick used to hand-assemble that git command in prose,
+# and BOTH spellings it reached for were wrong in ways nothing caught:
+# a commit range that is empty at guard time (so every ticket Blocked),
+# and `diff --name-only`, which cannot see a file the worker CREATED (so a
+# new .claude/** path evaded the check entirely). See
+# Get-WorkingTreeChanges. A guard whose input is assembled by hand is a
+# guard with an untested step in front of it.
+if ($argv[0] -eq 'guard' -and -not $files) {
+    $changed = Get-WorkingTreeChanges -Repo $repoPath
+    if ($changed.Count -eq 0) {
+        Write-StdErr "guard: nothing has changed in $repoPath — the worker wrote no files."
+        exit $script:EXIT_ERROR
+    }
+    $body.files = @{ file = (($changed -join "`n") + "`n") }
+}
+
 # Which commands ship the docs tree lives in the MODULE, beside its twin
 # in the board's `needsDocsTree` — see `Test-NeedsDocsTree`. Inline here,
 # nothing could reach it: this file runs a command the moment it is

@@ -387,6 +387,116 @@ Assert-That 'flags an executable that is not on PATH' {
     -not $row.ok -and $row.detail -match 'would stall'
 }
 
+Write-Host "`n=== Get-WorkingTreeChanges ===" -ForegroundColor Cyan
+
+# The guard's input used to be hand-assembled in /tick's prose, and both
+# spellings shipped broken: a commit range that is empty at guard time
+# (every ticket Blocked), and `diff --name-only`, which cannot see a
+# CREATED file (a new .claude/** path evaded the protected-path check).
+function New-GitRepo {
+    $dir = New-TempDir
+    & git -C $dir init --quiet 2>$null | Out-Null
+    & git -C $dir config user.email 't@t.invalid' 2>$null | Out-Null
+    & git -C $dir config user.name 'T' 2>$null | Out-Null
+    return $dir
+}
+
+Assert-That 'sees a file the worker CREATED (the case diff --name-only misses)' {
+    $repo = New-GitRepo
+    Set-Content (Join-Path $repo 'tracked.txt') 'x'
+    & git -C $repo add -A 2>$null | Out-Null
+    & git -C $repo commit -qm init 2>$null | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $repo '.claude') -Force | Out-Null
+    Set-Content (Join-Path $repo '.claude/evil.md') 'new file under a protected path'
+    $changed = Get-WorkingTreeChanges -Repo $repo
+    $changed -contains '.claude/evil.md'
+}
+
+Assert-That 'sees a modification to a tracked file' {
+    $repo = New-GitRepo
+    Set-Content (Join-Path $repo 'a.txt') 'one'
+    & git -C $repo add -A 2>$null | Out-Null
+    & git -C $repo commit -qm init 2>$null | Out-Null
+    Set-Content (Join-Path $repo 'a.txt') 'two'
+    (Get-WorkingTreeChanges -Repo $repo) -contains 'a.txt'
+}
+
+Assert-That 'returns BOTH sides of a rename' {
+    $repo = New-GitRepo
+    Set-Content (Join-Path $repo 'old.txt') 'content that stays identical so git calls it a rename'
+    & git -C $repo add -A 2>$null | Out-Null
+    & git -C $repo commit -qm init 2>$null | Out-Null
+    & git -C $repo mv old.txt new.txt 2>$null | Out-Null
+    $changed = Get-WorkingTreeChanges -Repo $repo
+    # Moving a file OUT of a protected directory still touches it, so a
+    # rename that reported only its destination would be a hole.
+    ($changed -contains 'old.txt') -and ($changed -contains 'new.txt')
+}
+
+Assert-That 'is an EMPTY ARRAY on a clean tree, not null and not a string' {
+    $repo = New-GitRepo
+    Set-Content (Join-Path $repo 'a.txt') 'x'
+    & git -C $repo add -A 2>$null | Out-Null
+    & git -C $repo commit -qm init 2>$null | Out-Null
+    $changed = Get-WorkingTreeChanges -Repo $repo
+    ($null -ne $changed) -and ($changed.Count -eq 0)
+}
+
+Assert-That 'returns an ARRAY for a single change, not an unrolled string' {
+    $repo = New-GitRepo
+    Set-Content (Join-Path $repo 'a.txt') 'x'
+    & git -C $repo add -A 2>$null | Out-Null
+    & git -C $repo commit -qm init 2>$null | Out-Null
+    Set-Content (Join-Path $repo 'a.txt') 'y'
+    $changed = Get-WorkingTreeChanges -Repo $repo
+    # `,@(…)` on return, or one element unrolls to a bare string and
+    # `.Count` answers with the string's LENGTH.
+    ($changed -is [array]) -and ($changed.Count -eq 1)
+}
+
+Assert-That 'unquotes a path containing a space' {
+    $repo = New-GitRepo
+    Set-Content (Join-Path $repo 'a.txt') 'x'
+    & git -C $repo add -A 2>$null | Out-Null
+    & git -C $repo commit -qm init 2>$null | Out-Null
+    Set-Content (Join-Path $repo 'has space.txt') 'y'
+    $changed = Get-WorkingTreeChanges -Repo $repo
+    # git wraps such a path in quotes in --porcelain output; a guard
+    # comparing '"has space.txt"' against a glob would never match.
+    $changed -contains 'has space.txt'
+}
+
+Assert-That 'expands a wholly-new directory into its files (-uall)' {
+    $repo = New-GitRepo
+    Set-Content (Join-Path $repo 'a.txt') 'x'
+    & git -C $repo add -A 2>$null | Out-Null
+    & git -C $repo commit -qm init 2>$null | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $repo 'brand/new') -Force | Out-Null
+    Set-Content (Join-Path $repo 'brand/new/one.md') '1'
+    Set-Content (Join-Path $repo 'brand/new/two.md') '2'
+    $changed = Get-WorkingTreeChanges -Repo $repo
+    # Without -uall git reports 'brand/' and a protected-path glob for
+    # 'brand/new/*.md' would not match it.
+    ($changed -contains 'brand/new/one.md') -and ($changed -contains 'brand/new/two.md')
+}
+
+Assert-That 'ignores gitignored files' {
+    $repo = New-GitRepo
+    Set-Content (Join-Path $repo '.gitignore') "ignored/`n"
+    & git -C $repo add -A 2>$null | Out-Null
+    & git -C $repo commit -qm init 2>$null | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $repo 'ignored') -Force | Out-Null
+    Set-Content (Join-Path $repo 'ignored/scratch.txt') 'x'
+    # .zagent/ is gitignored and holds run scratch; if it showed up here
+    # every guard would report paths the commit will never contain.
+    -not ((Get-WorkingTreeChanges -Repo $repo) -contains 'ignored/scratch.txt')
+}
+
+Assert-That 'is an empty array when the repo path is absent' {
+    $changed = Get-WorkingTreeChanges -Repo $null
+    ($null -ne $changed) -and ($changed.Count -eq 0)
+}
+
 Write-Host "`n=== exit-code constants survive the module boundary ===" -ForegroundColor Cyan
 
 # `$script:` inside a module is the MODULE's scope, so a constant defined in
