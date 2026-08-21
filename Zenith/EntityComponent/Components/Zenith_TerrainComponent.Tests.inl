@@ -953,4 +953,191 @@ void Zenith_TerrainChunkSpanRecorderTests::Run()
 	delete pxCombined;
 }
 
+// ============================================================================
+// CleanupPriorGenerationForRegenerate frees the physics-geometry table (ZEN-4
+// fix-forward). The reviewer verified the ZEN-2 fix by hand-tracing every
+// discard/transfer site and found no defect -- what it flagged instead was
+// that the fixed line has ZERO execution coverage: the one existing
+// caller-side test (Zenith_UnitTests.Tests.inl's preflight-rejection block,
+// ~line 15598) explicitly asserts the regenerate operation is REJECTED before
+// cleanup ever runs, so it pins the opposite of what would need to be true for
+// it to notice a use-after-free or double-free here. This block is that
+// coverage: it drives CleanupPriorGenerationForRegenerate() directly.
+//
+// UNLIKE EVERY TEST ABOVE THIS LINE, THIS ONE IS NOT A PURE UNIT, and that is
+// a fact about the function under test, not a choice made here.
+// CleanupPriorGenerationForRegenerate() unconditionally calls
+// g_xEngine.TerrainStreaming().UnregisterTerrainBuffers(...) and
+// g_xEngine.FluxMemory().Destroy{Vertex,Index}Buffer(...) -- there is no way
+// to reach it without a live g_xEngine. It also lives in a ZENITH_TOOLS-only
+// TU (Zenith_TerrainComponent_Editor.cpp), so both the friend declaration in
+// the header and this entire block are ZENITH_TOOLS-gated: omitting the guard
+// would not merely compile this test out of a ToolsEnabled=False
+// configuration, it would break that configuration's BUILD outright, for
+// every game, because CleanupPriorGenerationForRegenerate would not exist as
+// a member to call.
+//
+// WHY THIS IS SAFE TO CALL HERE, traced rather than assumed, because a crash
+// here would take the whole suite down with it, not just this one case:
+//   * g_xEngine IS fully initialised by the time this runs. The boot
+//     ZENITH_TEST batch executes from inside Zenith_Engine::InitialiseProject,
+//     which is the LAST step of Zenith_Engine::Initialise -- every Flux
+//     subsystem, including TerrainStreaming and FluxMemory, was allocated
+//     several steps earlier (AllocateFluxSubsystems) and is live by the time
+//     any ZENITH_TEST body runs;
+//   * DestroyCullingResources() early-returns on
+//     m_pxStreamingState->m_bCullingResourcesInitialized, which the
+//     never-rendered component built below leaves false (InitializeCullingResources
+//     is only ever called from InitializeRenderResources, which this test does
+//     not invoke);
+//   * TerrainStreaming().UnregisterTerrainBuffers is a registry search-and-remove
+//     that is a documented no-op when the state was never registered (or was
+//     already removed) -- RegisterTerrainBuffers is, like culling init, never
+//     called by the constructor this test uses;
+//   * FluxMemory().Destroy{Vertex,Index}Buffer both early-return on
+//     Flux_VRAMHandle::IsValid() (Vulkan/Zenith_Vulkan_MemoryManager_Buffers.cpp,
+//     DestroySimpleBuffer) -- this component's unified buffers were never
+//     created (InitializeUnifiedBuffers is likewise never invoked) -- and are
+//     unconditional no-ops on the Null backend the pinned gate actually runs
+//     (Zenith_Null_MemoryManager.h), regardless of handle state;
+//   * consequently, the SAME sequence runs again, harmlessly, when the test's
+//     local xTerrain destructs at the end of Run() below (its destructor
+//     repeats DestroyCullingResources / UnregisterTerrainBuffers /
+//     Destroy{Vertex,Index}Buffer unconditionally) -- m_pxPhysicsGeometry is
+//     already null by then, so the destructor's own `delete` and
+//     FreePhysicsChunkSpans() calls are no-ops too.
+// So the only thing CleanupPriorGenerationForRegenerate meaningfully touches
+// in this fixture is exactly the physics-geometry pair this test exists to
+// pin.
+//
+// The component itself uses the lighter of its two constructors --
+// Zenith_TerrainComponent(Zenith_Entity&), the "deserialization" one -- built
+// over a DEFAULT-CONSTRUCTED (invalid, scene-less) Zenith_Entity. Its body
+// heap-allocates m_pxStreamingState and reads a compile-time asset-directory
+// fallback (m_strTerrainAssetSet starts empty, which TryResolveTerrainAssetDirectory
+// treats as the legacy default rather than an error); it never dereferences
+// the entity, never touches a file, and never touches g_xEngine. That is the
+// narrowest way to get a real `this` for the private instance methods below.
+// ============================================================================
+#ifdef ZENITH_TOOLS
+struct Zenith_TerrainCleanupPhysicsGeometryTests
+{
+	// One always-succeeding 4-vertex/6-index quad "chunk", reused as the sole
+	// cell of a uGridSize=1 grid in Run() below: CombineTerrainChunkGridCore's
+	// grid loop only ever considers (0,0) (the anchor, loaded before the loop
+	// starts; a 1x1 grid's only loop iteration IS (0,0), and the loop's own
+	// `if (uX==0 && uY==0) continue;` skips it), so this fixture round-trips
+	// through Zenith_MemoryManagement::Allocate for both the combined geometry
+	// and the span table without needing the sparse/multi-chunk machinery
+	// Zenith_TerrainChunkSpanRecorderTests::BuildChunk above exercises -- this
+	// test's whole point is the FREE, not the combine, so the fixture is kept
+	// as small as one that still genuinely allocates both.
+	static bool BuildChunk(void* pContext, uint32_t uX, uint32_t uY, Flux_MeshGeometry& xGeometryOut);
+	static void Run();
+};
+
+bool Zenith_TerrainCleanupPhysicsGeometryTests::BuildChunk(void* pContext, uint32_t uX, uint32_t uY,
+	Flux_MeshGeometry& xGeometryOut)
+{
+	(void)pContext; (void)uX; (void)uY;
+	constexpr uint32_t uVERTS = 4u;
+	constexpr uint32_t uINDICES = 6u;
+	const Zenith_Maths::Vector3 axPositions[uVERTS] =
+	{
+		Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f),
+		Zenith_Maths::Vector3(2.0f, 2.0f, 0.0f),
+		Zenith_Maths::Vector3(0.0f, 3.0f, 2.0f),
+		Zenith_Maths::Vector3(2.0f, 4.0f, 2.0f)
+	};
+	const Flux_MeshGeometry::IndexType auIndices[uINDICES] = { 0u, 1u, 3u, 0u, 3u, 2u };
+
+	// Zenith_MemoryManagement::Allocate, NOT new[]: Flux_MeshGeometry::Reset()
+	// frees these with Deallocate, and CombineTerrainChunkGridCore Reallocate()s
+	// them. Mixing new[] with either is documented heap corruption
+	// (Core/CLAUDE.md, "Allocation Consistency") -- same discipline as every
+	// other in-memory fixture in this file.
+	const size_t ulPositionBytes = sizeof(axPositions);
+	const size_t ulIndexBytes = sizeof(auIndices);
+	Zenith_Maths::Vector3* pxPositions =
+		static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Allocate(ulPositionBytes));
+	Flux_MeshGeometry::IndexType* puIndices =
+		static_cast<Flux_MeshGeometry::IndexType*>(Zenith_MemoryManagement::Allocate(ulIndexBytes));
+	if (pxPositions == nullptr || puIndices == nullptr)
+	{
+		// Allocate is malloc underneath and may return null. Report the same way
+		// the real loader does -- as a failed load -- rather than memcpy-ing into
+		// null and taking the whole suite down; the test then fails on its own
+		// expectations in Run() below.
+		ZENITH_ASSERT_NOT_NULL(pxPositions, "test fixture could not allocate its position stream");
+		ZENITH_ASSERT_NOT_NULL(puIndices, "test fixture could not allocate its index stream");
+		if (pxPositions != nullptr) Zenith_MemoryManagement::Deallocate(pxPositions);
+		if (puIndices != nullptr) Zenith_MemoryManagement::Deallocate(puIndices);
+		return false;
+	}
+	std::memcpy(pxPositions, axPositions, ulPositionBytes);
+	std::memcpy(puIndices, auIndices, ulIndexBytes);
+
+	xGeometryOut.m_pxPositions = pxPositions;
+	xGeometryOut.m_puIndices = puIndices;
+	xGeometryOut.m_uNumVerts = uVERTS;
+	xGeometryOut.m_uNumIndices = uINDICES;
+	// Required even though nothing here draws -- CombineTerrainChunkGridCore
+	// sizes its up-front Reallocate as uTotalVerts * GetBufferLayout().GetStride(),
+	// and a layout-less chunk gives a ZERO-byte reallocation (realloc answers
+	// that with null, and the combine bails before recording anything). See
+	// Zenith_TerrainChunkSpanRecorderTests::BuildChunk above for the fuller
+	// explanation -- this call is load-bearing, not decorative.
+	xGeometryOut.GenerateLayoutAndVertexData();
+	xGeometryOut.m_ulReservedVertexDataSize = xGeometryOut.GetVertexDataSize();
+	xGeometryOut.m_ulReservedIndexDataSize = ulIndexBytes;
+	xGeometryOut.m_ulReservedPositionDataSize = ulPositionBytes;
+	return xGeometryOut.m_pVertexData != nullptr;
+}
+
+void Zenith_TerrainCleanupPhysicsGeometryTests::Run()
+{
+	// Default-constructed: no scene, invalid ID, never dereferenced by the
+	// constructor below (traced in the block comment above) -- this is what
+	// keeps CONSTRUCTION scene-free even though the function under test is not
+	// g_xEngine-free.
+	Zenith_Entity xInertEntity;
+	Zenith_TerrainComponent xTerrain(xInertEntity);
+
+	Zenith_TerrainComponent::TerrainSparseLoadDiagnostics xDiagnostics;
+	const bool bCombined = xTerrain.LoadCombinedPhysicsGeometryCore(1u,
+		&Zenith_TerrainCleanupPhysicsGeometryTests::BuildChunk, nullptr, xDiagnostics);
+	ZENITH_ASSERT_TRUE(bCombined, "a single always-succeeding chunk must combine");
+
+	// THE ASSERTION THAT MATTERS MOST. Without proving the fixture genuinely
+	// populated both members here, the after-cleanup null checks below could
+	// pass VACUOUSLY against a fixture that silently allocated nothing -- the
+	// exact gap a hand-assigned pointer (rather than this real
+	// LoadCombinedPhysicsGeometryCore call) would have been unable to rule out.
+	ZENITH_ASSERT_NOT_NULL(xTerrain.m_pxPhysicsGeometry,
+		"fixture must populate physics geometry before cleanup runs");
+	ZENITH_ASSERT_NOT_NULL(xTerrain.m_pxPhysicsChunkSpans,
+		"fixture must populate the chunk-span table before cleanup runs");
+	ZENITH_ASSERT_GT(xTerrain.m_uPhysicsChunkSpanCount, 0u,
+		"the populated span table must carry at least the anchor chunk's own span");
+
+	xTerrain.CleanupPriorGenerationForRegenerate();
+
+	ZENITH_ASSERT_NULL(xTerrain.m_pxPhysicsGeometry,
+		"cleanup must free and null the physics geometry");
+	ZENITH_ASSERT_NULL(xTerrain.m_pxPhysicsChunkSpans,
+		"cleanup must free and null the chunk-span table in the same call");
+	ZENITH_ASSERT_EQ(xTerrain.m_uPhysicsChunkSpanCount, 0u,
+		"...and reset the count alongside it");
+
+	// xTerrain now destructs normally, which is deliberately left to happen
+	// rather than short-circuited: see the block comment above for why running
+	// the destructor's own cleanup sequence a second time here is safe.
+}
+
+ZENITH_TEST(TerrainPhysicsGeometryCleanup, CleanupPriorGenerationForRegenerateFreesGeometryAndSpans)
+{
+	Zenith_TerrainCleanupPhysicsGeometryTests::Run();
+}
+#endif // ZENITH_TOOLS
+
 #endif // ZENITH_TESTING

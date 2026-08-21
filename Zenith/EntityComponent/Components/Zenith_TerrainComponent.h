@@ -125,6 +125,24 @@ private:
 	// live beside the component). A friend declaration of a type that is never
 	// defined in a given TU is legal and affects nothing but access.
 	friend struct Zenith_TerrainChunkSpanRecorderTests;
+	// Defined ONLY in Zenith_TerrainComponent.Tests.inl, ZENITH_TOOLS-gated --
+	// both the struct's own definition there and its one reason to exist,
+	// CleanupPriorGenerationForRegenerate (declared further down, inside this
+	// header's own "private:" block under #ifdef ZENITH_TOOLS). ZEN-4
+	// fix-forward coverage: the review that landed the ZEN-2 physics-geometry
+	// lifetime fix found the fixed line had ZERO execution coverage -- the one
+	// caller-side test (Zenith_UnitTests.Tests.inl's preflight-rejection block)
+	// explicitly proves cleanup is NEVER reached, so it pins the opposite of
+	// what this friend's test exercises. Reaches m_pxPhysicsGeometry /
+	// m_pxPhysicsChunkSpans / m_uPhysicsChunkSpanCount plus
+	// LoadCombinedPhysicsGeometryCore (to populate them for real, the same
+	// in-memory-fixture pattern Zenith_TerrainChunkSpanRecorderTests above
+	// uses) and CleanupPriorGenerationForRegenerate itself (to free them).
+	// Declared unconditionally, matching Zenith_TerrainEditor above -- a friend
+	// of a type this TU never defines (not building this .cpp at all, or
+	// building it without ZENITH_TOOLS) is legal and affects nothing, per the
+	// same reasoning already given for Zenith_TerrainChunkSpanRecorderTests.
+	friend struct Zenith_TerrainCleanupPhysicsGeometryTests;
 
 	static uint32_t s_uInstanceCount;
 	static void IncrementInstanceCount();
@@ -530,27 +548,24 @@ public:
 	// unaccelerated scan when this is null, so its absence changes speed, never
 	// correctness.
 	//
-	// THIS TABLE MAY OUTLIVE THE MESH IT DESCRIBES, AND THAT IS SAFE FOR A
-	// REASON WORTH STATING EXACTLY, because the obvious statement of it is
-	// FALSE: it is NOT true that every site discarding m_pxPhysicsGeometry also
-	// frees this. Zenith_TerrainComponent_Editor.cpp's
-	// CleanupPriorGenerationForRegenerate deletes and nulls the geometry and
-	// leaves the table standing, and its caller does NOT reliably re-combine
-	// afterwards -- the regenerate body returns early when
-	// DeleteExistingTerrainFilesInDirectory fails, before ever reaching
-	// LoadCombinedPhysicsGeometry(). What actually holds is a two-part
-	// invariant:
-	//   1. TryGetGroundHeightAt gates on m_pxPhysicsGeometry == nullptr FIRST and
-	//      returns false, so a table left behind by a discarded mesh is never
-	//      consulted while there is no mesh;
-	//   2. LoadCombinedPhysicsGeometryCore is the ONLY site that assigns a freshly
-	//      combined mesh, and it calls FreePhysicsChunkSpans() UNCONDITIONALLY
-	//      before combining, so a stale table can never be read against a
-	//      different mesh than the one it was built from.
-	// Together those make the leftover a DELAYED FREE (reclaimed by the next
-	// combine, the destructor, or a move), never a use-after-free and never a
-	// mismatched read. The move constructor / move assignment transfer the
-	// pointer and its count together for the same reason.
+	// THE TABLE'S LIFETIME MATCHES THE MESH'S: every site that discards
+	// m_pxPhysicsGeometry also frees this table, so a stale table can never
+	// describe a mesh that no longer exists. That was NOT always true --
+	// Zenith_TerrainComponent_Editor.cpp's CleanupPriorGenerationForRegenerate
+	// used to delete and null the geometry and leave the table standing, safe
+	// only because TryGetGroundHeightAt gates on the null geometry before ever
+	// consulting the table, and because the next LoadCombinedPhysicsGeometryCore
+	// call would clear the table unconditionally before combining again. It now
+	// frees the table itself, right where it frees the geometry, so that
+	// two-step reasoning is no longer load-bearing.
+	//
+	// LoadCombinedPhysicsGeometryCore -- the only site that assigns a freshly
+	// combined mesh -- still clears the table unconditionally before every
+	// combine attempt, so a table from an earlier, possibly differently-sparse,
+	// attempt is never consulted against a later one. TryGetGroundHeightAt still
+	// gates on m_pxPhysicsGeometry == nullptr first regardless of the table's
+	// state. The move constructor / move assignment transfer the pointer and
+	// its count together for the same reason.
 	PhysicsChunkSpan* m_pxPhysicsChunkSpans = nullptr;
 	uint32_t m_uPhysicsChunkSpanCount = 0u;
 	MaterialHandle m_axMaterials[4];

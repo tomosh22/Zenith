@@ -1164,6 +1164,10 @@ void Zenith_TerrainComponent::CleanupPriorGenerationForRegenerate()
 		Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Destroying existing physics geometry...");
 		delete m_pxPhysicsGeometry;
 		m_pxPhysicsGeometry = nullptr;
+		// Free the span table in the same place the mesh it describes is freed --
+		// see m_pxPhysicsChunkSpans' doc comment in Zenith_TerrainComponent.h for
+		// why every site that discards the geometry must also do this now.
+		FreePhysicsChunkSpans();
 	}
 }
 

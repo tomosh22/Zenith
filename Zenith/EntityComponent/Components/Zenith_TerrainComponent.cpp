@@ -740,14 +740,19 @@ namespace
 		const Zenith_Maths::Vector3& xB, const Zenith_Maths::Vector3& xC,
 		float fWorldX, float fWorldZ, float& fHeightOut)
 	{
-		// XZ bounding-box reject first. This is an accelerator -- a handful of
-		// compares ahead of a divide and a dozen multiplies, and it is what makes
-		// the linear scan over a large terrain bearable -- but it is ALSO the exact
-		// outer boundary of the lookup: a point outside a triangle's XZ box is outside
-		// the triangle with no tolerance involved, so fBARYCENTRIC_EPSILON can
-		// never extrapolate a height off the rim of the mesh. Interior shared
-		// edges are untouched by it, because a point on one lies within the box of
-		// both triangles meeting there (the comparisons are inclusive).
+		// XZ bounding-box reject first, and NOT purely an accelerator, though it
+		// is one too -- a handful of compares ahead of a divide and a dozen
+		// multiplies, which is what makes the linear scan over a large terrain
+		// bearable. The barycentric test below admits a thin band about 1e-5 of a
+		// triangle wide OUTSIDE the triangle (fBARYCENTRIC_EPSILON, the tolerance
+		// that stops a point on an interior edge falling down a zero-width
+		// crack), and this box CLIPS that band: a point outside a triangle's XZ
+		// box is outside the triangle with no tolerance involved, so
+		// fBARYCENTRIC_EPSILON can never extrapolate a height off the rim of the
+		// mesh. That means it CHANGES the answer at a boundary rather than merely
+		// speeding the scan up. Interior shared edges are untouched by it,
+		// because a point on one lies within the box of both triangles meeting
+		// there (the comparisons are inclusive).
 		const float fMinX = std::min(xA.x, std::min(xB.x, xC.x));
 		const float fMaxX = std::max(xA.x, std::max(xB.x, xC.x));
 		const float fMinZ = std::min(xA.z, std::min(xB.z, xC.z));
@@ -1544,10 +1549,13 @@ bool Zenith_TerrainComponent::LoadCombinedPhysicsGeometryCore(uint32_t uGridSize
 	const uint32_t uTotalIndices = Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_INDEX_COUNT * uGridSize * uGridSize;
 
 	// A retry must not consult a span table left over from an earlier, possibly
-	// differently-sparse, attempt (m_pxPhysicsGeometry is null on every path that
-	// reaches here, but this component's span table might not be, e.g. after a
-	// TOOLS regenerate discarded m_pxPhysicsGeometry directly -- see
-	// Zenith_TerrainComponent_Editor.cpp's CleanupPriorGenerationForRegenerate).
+	// differently-sparse, attempt. Every site that discards m_pxPhysicsGeometry
+	// (including Zenith_TerrainComponent_Editor.cpp's
+	// CleanupPriorGenerationForRegenerate) frees this table itself now, so
+	// m_pxPhysicsGeometry being null on every path that reaches here already
+	// implies this table is null too -- this call is a defensive backstop, kept
+	// so a future discard site that forgot to free the table would degrade to a
+	// redundant reset here rather than a stale read.
 	FreePhysicsChunkSpans();
 
 	// Upper-bound allocation: CombineTerrainChunkGridCore appends at most one
