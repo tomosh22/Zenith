@@ -268,6 +268,98 @@ function Get-GuardTicketKey {
     return $Argv[1]
 }
 
+function Get-BodyDrift {
+    <#
+      Which of a ticket body's citations no longer resolve in THIS repo.
+
+      Every ticket body examined in one session had drifted -- seven for
+      seven. One cited a file with zero matches, one quoted a hardcoded
+      path that had already been parameterised, one was entirely already
+      done. A body is a description of the past, and `master` moved.
+
+      The board extracts the citations and cannot check them: it may be
+      on another machine and has never seen this checkout. So the split
+      is not a technicality -- resolving them is the one half only the
+      client can do.
+
+      ADVISORY. A ticket that says "add `Zenith_GroundQuery`" cites
+      something that correctly does not exist yet, so an unresolved
+      citation is a prompt to READ the body, never a refusal. What it
+      replaces is "spot-check the ticket's central claim against the
+      repo" in a protocol paragraph, which is the shape of instruction
+      this loop keeps finding does not hold.
+
+      Symbols go through `git grep` rather than a filesystem walk: git is
+      already a hard dependency of every step of a tick, it searches only
+      tracked files, and it is fast enough to run per symbol.
+    #>
+    param([string]$Repo, $Citations)
+
+    if (-not $Repo -or -not $Citations) { return , @() }
+    $missing = [System.Collections.Generic.List[object]]::new()
+
+    $paths = $Citations.PSObject.Properties['paths']
+    if ($paths) {
+        foreach ($path in @($paths.Value)) {
+            if (-not $path) { continue }
+            if (Test-Path -LiteralPath (Join-Path $Repo $path)) { continue }
+            # "It moved" is far commoner than "it never existed", and it
+            # is the difference between a worker fixing a stale path and
+            # a worker CREATING a second file at the cited location.
+            # ZM-20 cites Tests/ZM_Tests_CommittedSceneBytes.cpp; the
+            # file is real and lives under Games/Zenithmon/Tests/.
+            $leaf = Split-Path $path -Leaf
+            $elsewhere = @(& git -C $Repo ls-files -- "*/$leaf" $leaf 2>$null) |
+                Where-Object { $_ } | Select-Object -First 1
+            [void]$missing.Add([PSCustomObject]@{
+                kind = 'path'; value = $path; movedTo = $elsewhere
+            })
+        }
+    }
+
+    $symbols = $Citations.PSObject.Properties['symbols']
+    if ($symbols) {
+        foreach ($symbol in @($symbols.Value)) {
+            if (-not $symbol) { continue }
+            & git -C $Repo grep --quiet --fixed-strings -- $symbol 2>$null
+            if ($LASTEXITCODE -ne 0) {
+                [void]$missing.Add([PSCustomObject]@{
+                    kind = 'symbol'; value = $symbol; movedTo = $null
+                })
+            }
+        }
+    }
+
+    # `,@(...)` or a one-element result unrolls to a bare object on return.
+    return , @($missing)
+}
+
+function Format-BodyDrift {
+    <#
+      The warning text, and $null when nothing drifted.
+
+      Separate from Get-BodyDrift so a test can assert the WORDS without
+      needing a repo: the sentence has to say "advisory" out loud, or the
+      first unresolved citation on a legitimately forward-looking ticket
+      teaches the reader to ignore the whole check.
+    #>
+    param([string]$Key, $Missing)
+
+    $rows = @($Missing)
+    if ($rows.Count -eq 0) { return $null }
+    $lines = @("$Key -- the body cites $($rows.Count) thing(s) this checkout does not have:")
+    foreach ($row in $rows) {
+        $line = "  $($row.kind)  $($row.value)"
+        $moved = $row.PSObject.Properties['movedTo']
+        if ($moved -and $moved.Value) { $line += "   (a file of that name is at $($moved.Value))" }
+        $lines += $line
+    }
+    $lines += 'A body describes the past. Re-read it against `master` before inlining it into a'
+    $lines += 'worker prompt -- this is ADVISORY, since a ticket may legitimately name what it is'
+    $lines += 'about to create.'
+    return ($lines -join [Environment]::NewLine)
+}
+
 function Get-RecordedGateSelection {
     <#
       The `gates.json` a `zagent gates <KEY>` left in the run scratch, or
@@ -573,6 +665,6 @@ function Get-AllGateLines {
 Export-ModuleMember -Function Find-ClientRepo, ConvertTo-PosixPath, Remove-Annotations,
     Get-ClientProject, Get-FlagValue, Test-Flag, Get-FileContents, Get-WorkingTreeChanges,
     Test-NeedsDocsTree, Test-NeedsChangedSet, Get-GuardTicketKey, Get-RecordedGateSelection,
-    Get-DocsTree,
+    Get-BodyDrift, Format-BodyDrift, Get-DocsTree,
     Get-ConventionsTree, Get-AmendContents, Get-ScratchRoot, Write-Results, Write-LastResult,
     Get-ClientChecks, Get-AllGateLines, Write-StdErr

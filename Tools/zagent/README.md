@@ -140,6 +140,12 @@ this repo requires is the `pwsh` every gate already needs.
 - **`$`-prefixed keys are comments** in `zagent.project.json`, stripped
   at every depth. JSON has no comments and that file pins baselines —
   the numbers most in need of a note beside them.
+- **Do not re-wrap a `,@(…)` return.** `@(Get-BodyDrift …)` nests the
+  rows one level down, and the symptom is not an error: `$rows[0].kind`
+  still interpolates correctly through member enumeration while
+  `$rows[0].PSObject.Properties['movedTo']` quietly answers with the
+  ARRAY's own properties. Half a check passes, which is how it survives
+  being written. Assign the call and use the result.
 - **`Get-ClientChecks` returns ONE pipeline item on purpose.** `,@(…)`
   keeps `.Count` honest for a single-row result — a bare hashtable would
   answer with its KEY count — at the cost that `| ForEach-Object` sees

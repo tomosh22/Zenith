@@ -204,6 +204,25 @@ if ($argv[0] -eq 'doctor') {
 $repoForWrites = if ($repoPath) { $repoPath } else { (Get-Location).Path }
 Write-Results -Result $result -Repo $repoForWrites
 
+# A claim carries the paths and symbols its body claims exist; only this
+# side can resolve them. Every ticket body examined in one session had
+# drifted from the repo, so the warning goes out on stderr AND into the
+# run scratch — stderr is what a human sees, and the file is what
+# survives a firing that crashes between the claim and the read.
+if ($repoPath -and $result.payload.PSObject.Properties['citations']) {
+    $drift = Get-BodyDrift -Repo $repoPath -Citations $result.payload.citations
+    $text = Format-BodyDrift -Key $result.payload.key -Missing $drift
+    if ($text) {
+        Write-StdErr $text
+        $driftDir = Join-Path (Get-ScratchRoot $repoForWrites) $result.payload.key
+        if (-not (Test-Path -LiteralPath $driftDir)) {
+            New-Item -ItemType Directory -Path $driftDir -Force | Out-Null
+        }
+        [System.IO.File]::WriteAllText((Join-Path $driftDir 'drift.txt'), $text,
+            [System.Text.UTF8Encoding]::new($false))
+    }
+}
+
 $isError = $result.PSObject.Properties['error'] -and $result.error
 
 if ($asJson) {

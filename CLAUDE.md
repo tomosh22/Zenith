@@ -602,11 +602,21 @@ the loop refuses anything it cannot route. Three sections:
 
 ## Definition of Done
 - [ ] <observable outcome>
-- [ ] Baseline bumped in Status.md AND zm-tests.yml AND zagent.project.json
+- [ ] Every affected game's pinned baseline bumped from an OBSERVED run
 
 ## Gates
 <omit this — the category supplies the right gate list>
 ```
+
+**Never name a pin SITE in a Definition of Done.** That line used to read
+"bumped in Status.md AND zm-tests.yml AND zagent.project.json", which was
+true until the baseline got one home and is now a worker prompt pointing
+at two `protectedPaths`. Ten open tickets still carry it. A DoD is
+inlined into the worker prompt verbatim (I3), so a stale one competes
+directly with the tick's own instructions — and naming sites in a DoD is
+the same duplication the manifest refactor removed from the build, just
+re-introduced one ticket at a time. Say the OUTCOME; the plumbing is
+allowed to move.
 
 Always pass `--category`: `Zenithmon`, `Engine` or `DevilsPlayground`.
 It selects the gate list, the conventions inlined into the worker's

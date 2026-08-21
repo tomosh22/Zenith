@@ -206,12 +206,24 @@ The pin bump is NO LONGER one of these: it has one unprotected home,
 `Tools/unit_baselines.json`, and a DoD naming it files and runs cleanly.
 See the baseline note in step 6.
 
-Check those against the DoD text, and spot-check the ticket's central
-claim against the repo — **every ticket run so far has had a body that
-drifted from the code**: one cited a file with zero matches, one described
-a trigger condition that had not occurred, one named a single assertion
+Check those against the DoD text.
+
+**And read the drift warning.** A claim now carries the paths and symbols
+the body says exist, and the client resolves them against this checkout —
+so an unresolved citation is printed on stderr and left in
+`.zagent/run/<KEY>/drift.txt` rather than depending on you to think of
+looking. **Every ticket body examined so far had drifted from the code —
+seven for seven**: one cited a file with zero matches, one described a
+trigger condition that had not occurred, one named a single assertion
 where the code has two, one quoted a hardcoded path that had already been
-parameterised. A body is a description of the past, not of `master`.
+parameterised, and one was entirely already done. A body is a description
+of the past, not of `master`.
+
+It is ADVISORY and must stay that way — a ticket may legitimately name
+what it is about to CREATE. What it buys is that you cannot inline a body
+into a worker prompt (I3) without having been told which half of it no
+longer resolves. When the warning names a path that MOVED, correct it in
+the prompt and say so in the work log.
 
 If the work is unreachable, **Block it now** with a work log naming which
 of the three it is and what a human must do, and file the human half as its
@@ -221,12 +233,20 @@ not let it consume fix-forward attempts.
 **A DoD that names a pin SITE is stale, not unreachable.** Ten open tickets
 still say "bumped in Status.md AND zm-tests.yml AND zagent.project.json",
 which was true before the baseline refactor and now points at two protected
-paths. The pin has ONE home — `Tools/unit_baselines.json`. **Do not Block on
-this and do not inline it verbatim**: correct it in the worker prompt, say
-you did in the work log, and let the Suggestions row fix the template.
+paths — so the reachability check refuses them at claim time, correctly and
+unhelpfully. The pin has ONE home: `Tools/unit_baselines.json`. **Do not
+Block on this and do not inline it verbatim**: correct it in the worker
+prompt to "every affected game's pinned baseline bumped from an OBSERVED
+run", say you did in the work log, and fix the ticket body with
+`zagent update <KEY> --dod <file>` if a human is not mid-edit on it.
 Blocking a ticket over a stale sentence, when the work it describes is a
 one-line edit to an unprotected file, is the contract failing the ticket
 rather than the reverse.
+
+The template no longer names sites at all (root `CLAUDE.md`). A DoD that
+names them is duplicating a fact that moves, which is the same duplication
+the manifest refactor removed from the build — re-introduced one ticket at
+a time.
 
 Also sanity-check SEQUENCE, and read the body for the ticket's OWN timing —
 several here defer themselves in prose that no field captures:

@@ -640,6 +640,124 @@ Assert-That 'every zagent.project.json category with paths also has gates' {
     $bad.Count -eq 0
 }
 
+
+Write-Host "`n=== Get-BodyDrift / Format-BodyDrift ===" -ForegroundColor Cyan
+# The board extracts what a body claims exists and CANNOT check it -- it
+# may be on another machine and has never seen this checkout. Resolving
+# is the one half only the client can do, and every ticket body examined
+# in one session had drifted: seven for seven.
+
+function New-DriftRepo {
+    $repo = New-TempDir
+    & git -C $repo init --quiet 2>$null | Out-Null
+    & git -C $repo config user.email 'test@example.invalid' 2>$null | Out-Null
+    & git -C $repo config user.name 'test' 2>$null | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $repo 'Tools') -Force | Out-Null
+    Set-Content -LiteralPath (Join-Path $repo 'Tools\present.ps1') -Value 'function Zenith_Present {}' -Encoding utf8
+    & git -C $repo add -A 2>$null | Out-Null
+    & git -C $repo commit -m init --quiet 2>$null | Out-Null
+    return $repo
+}
+
+Assert-That 'reports a cited path this checkout does not have' {
+    $repo = New-DriftRepo
+    try {
+        $c = [PSCustomObject]@{ paths = @('Tools/present.ps1', 'Tools/gone.ps1'); symbols = @() }
+        $missing = Get-BodyDrift -Repo $repo -Citations $c
+        (@($missing).Count -eq 1) -and (@($missing)[0].value -eq 'Tools/gone.ps1')
+    } finally { Remove-Item -LiteralPath $repo -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+Assert-That 'reports a cited symbol no tracked file contains' {
+    $repo = New-DriftRepo
+    try {
+        $c = [PSCustomObject]@{ paths = @(); symbols = @('Zenith_Present', 'Zenith_Vanished') }
+        $missing = Get-BodyDrift -Repo $repo -Citations $c
+        (@($missing).Count -eq 1) -and (@($missing)[0].kind -eq 'symbol')
+    } finally { Remove-Item -LiteralPath $repo -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+Assert-That 'is an EMPTY ARRAY when everything resolves, not null and not a string' {
+    $repo = New-DriftRepo
+    try {
+        $c = [PSCustomObject]@{ paths = @('Tools/present.ps1'); symbols = @('Zenith_Present') }
+        $missing = Get-BodyDrift -Repo $repo -Citations $c
+        ($null -ne $missing) -and ($missing -is [array]) -and ($missing.Count -eq 0)
+    } finally { Remove-Item -LiteralPath $repo -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+# `,@(...)` again: a PowerShell function UNROLLS a returned collection,
+# so a single drifted citation would come back as a bare object and
+# `.Count` would answer with its property count.
+Assert-That 'returns an ARRAY for a single drifted citation' {
+    $repo = New-DriftRepo
+    try {
+        $c = [PSCustomObject]@{ paths = @('Tools/gone.ps1'); symbols = @() }
+        (Get-BodyDrift -Repo $repo -Citations $c) -is [array]
+    } finally { Remove-Item -LiteralPath $repo -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+Assert-That 'tolerates a payload with no citations at all' {
+    ((Get-BodyDrift -Repo 'C:\nope' -Citations $null).Count -eq 0) -and
+    ((Get-BodyDrift -Repo '' -Citations ([PSCustomObject]@{ paths = @('x/y'); symbols = @() })).Count -eq 0)
+}
+
+# A payload that legitimately omits one of the two lists must not throw
+# under Set-StrictMode, which turns a missing property into an error.
+Assert-That 'reads each list through PSObject.Properties, not by direct access' {
+    $repo = New-DriftRepo
+    try {
+        $missing = Get-BodyDrift -Repo $repo -Citations ([PSCustomObject]@{ paths = @('Tools/gone.ps1') })
+        @($missing).Count -eq 1
+    } finally { Remove-Item -LiteralPath $repo -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+Assert-That 'says nothing at all when nothing drifted' {
+    $null -eq (Format-BodyDrift -Key 'ZM-50' -Missing @())
+}
+
+# The word ADVISORY has to be in the text. A ticket may legitimately name
+# what it is about to CREATE, and the first false alarm on one of those
+# teaches the reader to ignore the whole check.
+Assert-That 'says the warning is ADVISORY, and names the ticket and the citation' {
+    $text = Format-BodyDrift -Key 'ZM-50' -Missing @([PSCustomObject]@{ kind = 'path'; value = 'Tools/gone.ps1' })
+    $text.Contains('ZM-50') -and $text.Contains('Tools/gone.ps1') -and $text.Contains('ADVISORY')
+}
+
+# "It moved" is far commoner than "it never existed", and the difference
+# decides what a worker DOES: fix a stale path, or create a second file
+# at the cited location. ZM-20 cites Tests/ZM_Tests_CommittedSceneBytes.cpp
+# and the real file lives under Games/Zenithmon/Tests/.
+Assert-That 'points at a file of the same name living somewhere else' {
+    $repo = New-TempDir
+    try {
+        & git -C $repo init --quiet 2>$null | Out-Null
+        & git -C $repo config user.email 'test@example.invalid' 2>$null | Out-Null
+        & git -C $repo config user.name 'test' 2>$null | Out-Null
+        New-Item -ItemType Directory -Path (Join-Path $repo 'Games\Zenithmon\Tests') -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $repo 'Games\Zenithmon\Tests\ZM_Moved.cpp') -Value 'x' -Encoding utf8
+        & git -C $repo add -A 2>$null | Out-Null
+        & git -C $repo commit -m init --quiet 2>$null | Out-Null
+        $c = [PSCustomObject]@{ paths = @('Tests/ZM_Moved.cpp'); symbols = @() }
+        # NOT `@(Get-BodyDrift ...)`. The function returns `,@(...)` so a
+        # one-row result survives PowerShell's unrolling, and wrapping it
+        # again nests the rows one level down -- where `$rows[0].kind`
+        # still interpolates correctly through member enumeration while
+        # `$rows[0].PSObject.Properties['movedTo']` quietly answers with
+        # the ARRAY's properties. That combination fails half a check and
+        # passes the other half, which is how it survived being written.
+        $missing = Get-BodyDrift -Repo $repo -Citations $c
+        $text = Format-BodyDrift -Key 'ZM-20' -Missing $missing
+        ($missing[0].movedTo -eq 'Games/Zenithmon/Tests/ZM_Moved.cpp') -and
+        $text.Contains('Games/Zenithmon/Tests/ZM_Moved.cpp')
+    } finally { Remove-Item -LiteralPath $repo -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+Assert-That 'says only that it is gone when no file of that name exists' {
+    $text = Format-BodyDrift -Key 'ZM-1' -Missing @([PSCustomObject]@{ kind = 'path'; value = 'a/b.cpp'; movedTo = $null })
+    -not $text.Contains('a file of that name is at')
+}
+
 Write-Host ""
 Write-Host ("{0}/{1} assertions passed." -f ($script:count - $script:failures), $script:count)
 if ($script:failures -eq 0) { Write-Host 'PASS' -ForegroundColor Green; exit 0 }
