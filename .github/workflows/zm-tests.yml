@@ -274,10 +274,22 @@ jobs:
           #                   while this box was building and booting concurrently.
           #                   It passed on a quiet re-run with everything else
           #                   unchanged. An otherwise exact-equality, deterministic
-          #                   gate carries one timing-dependent test, so a red here
-          #                   naming that benchmark is a FLAKE to re-run quiet, not a
-          #                   regression to bisect -- and it affects every game, since
-          #                   the unit is engine-side.
+          #                   gate carried one timing-dependent test, and it affected
+          #                   every game, since the unit is engine-side.
+          #                   ★ FIXED 2026-08-21 (ZM-50) -- THE TRIAGE ADVICE THAT
+          #                   USED TO SIT HERE IS REVERSED. The idle phase no longer
+          #                   measures time at all: it asserts
+          #                   Zenith_BehaviourGraph::NeedsUpdateDispatch()
+          #                   deterministically (true for the OnUpdate-sourced
+          #                   fixture, false for the OnCustomEvent-only one), fixed at
+          #                   graph construction and untouchable by machine load. So a
+          #                   red naming that benchmark now means INVESTIGATE, never
+          #                   re-run quiet. The ONE survivor is the active phase's own
+          #                   absolute ZENITH_ASSERT_LT(fPerFrameMs, 20.0, ...)
+          #                   pathology guard (large margin, O(n^2)/allocation-storm
+          #                   catch) -- a red naming THAT is still worth a quiet re-run
+          #                   first. History: Questions.md Q-2026-08-14-001,
+          #                   DecisionLog ZM-D-192.
           #   3299  S8 item 1 SC-C -- Professor Aster authored into ProfLab.zscen at
           #                   identity rotation, observed 2026-08-14 on a Null_ build
           #                   (3299 ran / 3297 passed / 0 failed / 2 skipped).

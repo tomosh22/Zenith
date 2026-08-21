@@ -34,8 +34,26 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Run doc_lint.ps1
+      - name: Run doc_lint.ps1 (every game with a Docs tree)
         shell: pwsh
         run: |
-          pwsh -NoProfile -File ./Tools/doc_lint.ps1 -ShowPassed
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # -Game defaults to DevilsPlayground, so passing no flag lints THAT GAME
+          # ONLY. Zenithmon's docs were never linted here (ZM-62) even though the
+          # script has taken -Game for some time -- and C6 (cross-references
+          # resolve) is exactly the check that would have caught the dangling
+          # ZM-D-177 citation ZM-53 had to fix by hand.
+          #
+          # Both games run; a failure in EITHER fails the job. Do not early-exit on
+          # the first one -- a reader who fixes DevilsPlayground and pushes should
+          # not then discover Zenithmon was broken all along.
+          $failed = @()
+          foreach ($game in @('DevilsPlayground', 'Zenithmon')) {
+              Write-Host "::group::doc_lint -Game $game"
+              pwsh -NoProfile -File ./Tools/doc_lint.ps1 -Game $game -ShowPassed
+              if ($LASTEXITCODE -ne 0) { $failed += $game }
+              Write-Host "::endgroup::"
+          }
+          if ($failed.Count -gt 0) {
+              Write-Error "doc_lint failed for: $($failed -join ', ')"
+              exit 1
+          }
