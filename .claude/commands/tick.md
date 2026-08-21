@@ -180,6 +180,34 @@ Then read `.zagent/last.json` and branch on the exit code:
 - Targeted mode: **report the error and change nothing.** A human is
   waiting and just asked for this ticket by name — do not Block it.
 
+**Reachability — read the Definition of Done BEFORE dispatching a worker.**
+`contractValid: true` means the ticket can be ROUTED, not that it can be
+DONE. Validation checks category, complexity and risk; nothing checks
+whether the work is inside what an agent bound by `protectedPaths` can
+reach. Three shapes are provably impossible, and each one costs a claim, a
+slot in the one-ticket-per-repo lock, and a worker dispatch if you only
+notice afterwards:
+
+| DoD says | Why it cannot be done |
+| --- | --- |
+| adds or removes a **test** | the pin bump needs `.github/**` and `zagent.project.json` — see the baseline note in step 6 |
+| touches **CI**, `.claude/**`, or `zagent.project.json` | `guard` refuses it at 6.4 |
+| "a **user decision** recorded", or any ruling the ticket does not already contain | nobody in this loop is the user |
+
+Check those three against the DoD text, and spot-check the ticket's central
+claim against the repo — **every ticket run so far has had a body that
+drifted from the code**: one cited a file with zero matches, one described
+a trigger condition that had not occurred, one named a single assertion
+where the code has two, one quoted a hardcoded path that had already been
+parameterised. A body is a description of the past, not of `master`.
+
+If the work is unreachable, **Block it now** with a work log naming which
+of the three it is and what a human must do, and file the human half as its
+own ticket. Do not dispatch a worker to discover this expensively, and do
+not let it consume fix-forward attempts. Also sanity-check SEQUENCE: a
+ticket from a later sprint than the one in progress may be unreachable
+simply because what it measures does not exist yet.
+
 **`windowed` label** (`windowed: true` in the payload, and exit 4). The
 ticket needs a person at a keyboard — a headless run cannot produce its
 deliverable, most often because it re-authors a committed `.zscen`,
