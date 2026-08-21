@@ -7,7 +7,12 @@
 
   "$never": "Do NOT pin from a Vulkan_ exe. The same tree reports higher on Vulkan than on Null (a standing +37 gap was measured for Zenithmon), because Vulkan builds also compile the Vulkan-only backend tests. Every consumer of this file runs a Null_ executable.",
 
-  "$coverage": "NOT every row here is checked by CI. engine-gate.yml gates Combat and zm-tests.yml gates Zenithmon; NOTHING passes -Game RenderTest, so that row is verified only when somebody runs it locally. A pin nothing reads can drift silently, which is the failure this file exists to prevent -- so treat the RenderTest row as advisory until a workflow gates it, and re-observe it rather than trusting it. Filed as a ticket; do not quietly delete the row, because local cross-game sweeps use it and an engine change genuinely moves it.",
+  "$coverage": "NOT every row here is checked by CI, and that is now ENFORCED rather than merely noted. Test_UnitBaselineManifest.ps1 asserts every row is either named by some workflow's -Game or listed in `advisory` below with a reason. So a new ungated row cannot be added silently: you must gate it or declare it. A pin nothing reads can drift silently, which is the failure this file exists to prevent.",
+
+  "$advisory": "Rows CI does not gate. Each needs a reason, and the reason should describe what it would take to gate it -- an entry here is a debt, not a category. Re-OBSERVE an advisory row rather than trusting it.",
+  "advisory": {
+    "RenderTest": "engine-gate.yml compiles RenderTest but only in Vulkan_vs2022_Debug_Win64_True, as a compile proof -- hosted runners have no Vulkan ICD, so the exe is never run, and pinning from a Vulkan exe is forbidden anyway (it reports higher than Null for the same tree). Gating this row needs a SECOND, Null_-config RenderTest build in engine-gate, which is an extra compile of a game that job already compiles once. That is a CI-budget decision: see ZEN-3. Do not delete the row -- RenderTest boots the same engine suite, so every backend-neutral engine unit moves it (ZM-49 +6, ZEN-2 +5), and local cross-game sweeps read it."
+  },
 
   "baselines": {
     "$Zenithmon": "ZM boot units. Also narrated in Games/Zenithmon/Docs/Status.md, which stays the human-facing authority for WHY it moved; this file is what the gate reads.",

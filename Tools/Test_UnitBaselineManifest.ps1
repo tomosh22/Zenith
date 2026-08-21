@@ -110,6 +110,56 @@ Assert-That 'every -Game passed by a consumer has a manifest row' {
     $missing.Count -eq 0
 }
 
+Write-Host "`n=== no row is ungated by accident ===" -ForegroundColor Cyan
+
+# The manifest exists so a pin cannot drift. A row NO workflow reads defeats
+# that in the one place nobody looks: it cannot red, so it rots until somebody
+# runs it by hand and gets a failure that has nothing to do with their change.
+# RenderTest was added in exactly that state. The rule is not "every row must be
+# gated" -- gating one can cost a whole extra CI build -- it is that an ungated
+# row must be DECLARED, so the debt is visible and deliberate.
+Assert-That 'every baseline row is gated by a workflow, or declared advisory with a reason' {
+    $workflowDir = Join-Path $repoRoot '.github/workflows'
+    $gated = @()
+    if (Test-Path -LiteralPath $workflowDir) {
+        foreach ($wf in Get-ChildItem $workflowDir -Filter '*.yml' -ErrorAction SilentlyContinue) {
+            $text = Get-Content -LiteralPath $wf.FullName -Raw -Encoding utf8
+            foreach ($m in [regex]::Matches($text, 'run_unit_gate\.ps1[^\r\n]*?-Game\s+([A-Za-z0-9_]+)')) {
+                $gated += $m.Groups[1].Value
+            }
+            # A call with -Exe but no -Game derives the game from the path.
+            foreach ($m in [regex]::Matches($text, 'run_unit_gate\.ps1[\s\S]{0,400}?-Exe\s+''?[^\r\n'']*?Games[/\\]([A-Za-z0-9_]+)[/\\]')) {
+                $gated += $m.Groups[1].Value
+            }
+        }
+    }
+    $advisory = @()
+    if ($manifest.PSObject.Properties['advisory']) {
+        $advisory = @($manifest.advisory.PSObject.Properties |
+            Where-Object { -not $_.Name.StartsWith('$') -and $_.Value -is [string] -and $_.Value.Trim().Length -gt 40 } |
+            ForEach-Object { $_.Name })
+    }
+    $orphans = @($games | ForEach-Object { $_.Name } |
+        Where-Object { $_ -notin $gated -and $_ -notin $advisory })
+    if ($orphans.Count) {
+        Write-Host ("       ungated and undeclared: {0}" -f ($orphans -join ', ')) -ForegroundColor Yellow
+        # Single quotes: a backtick is PowerShell's escape character, so "`advisory`"
+        # in a double-quoted string emits a BEL and prints "dvisory".
+        Write-Host  '       -> gate it in a workflow, or add an "advisory" entry saying why not' -ForegroundColor Yellow
+    }
+    $orphans.Count -eq 0
+}
+
+Assert-That 'no advisory entry names a row that does not exist' {
+    # A stale advisory entry is the same hazard one layer up: it excuses a row
+    # nobody has, and hides the next real orphan behind a name that looks handled.
+    if (-not $manifest.PSObject.Properties['advisory']) { return $true }
+    $names = @($games | ForEach-Object { $_.Name })
+    $declared = @($manifest.advisory.PSObject.Properties |
+        Where-Object { -not $_.Name.StartsWith('$') } | ForEach-Object { $_.Name })
+    -not (@($declared | Where-Object { $_ -notin $names }).Count)
+}
+
 Assert-That 'test_scaffold.ps1 pins to Combat, not to the scaffolded game name' {
     # A freshly scaffolded game has no game-specific tests, so it boots exactly
     # the engine suite. Deriving from its own name would find no row and the
