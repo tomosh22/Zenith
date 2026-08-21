@@ -59,6 +59,10 @@
         "NULL-config exe — a Vulkan exe reports higher for the same tree."
       ],
       "project": "ZM",
+      "$paths": "The directories this area OWNS. A ticket filed under another category whose diff reaches one of these has THESE gates unioned into its own — see the Engine note below for the failure that motivated it.",
+      "paths": [
+        "Games/Zenithmon/**"
+      ],
       "gates": [
         "pwsh -NoProfile -File Tools\\zenith.ps1 build Zenithmon --headless",
         "pwsh -NoProfile -File Tools\\zenith.ps1 test Zenithmon --headless",
@@ -99,6 +103,23 @@
         "game's row in that file, not just this one — see the conventions",
         "string below."
       ],
+      "$paths": [
+        "Zenith/** is shared code that every game links, so a diff that",
+        "reaches it needs THESE gates whatever category the ticket was",
+        "filed under. Four consecutive tickets filed `Zenithmon` edited",
+        "Zenith/** and ran a gate list that builds one game and checks one",
+        "pin; ZM-50's own Goal said `the fix is engine-side` while the",
+        "category quietly decided otherwise, because only the category had",
+        "any mechanical effect. `zagent gates <KEY>` unions on these.",
+        "",
+        "Deliberately NOT Tools/**: Tools/unit_baselines.json holds every",
+        "game's pin, so listing it would make a one-line Zenithmon pin bump",
+        "rebuild and re-test Combat. This lists the code an engine gate",
+        "actually verifies, not everything an engine ticket might touch."
+      ],
+      "paths": [
+        "Zenith/**"
+      ],
       "gates": [
         "pwsh -NoProfile -File Tools\\zenith.ps1 build engine",
         "pwsh -NoProfile -File Tools\\zenith.ps1 build Combat --headless",
@@ -112,6 +133,9 @@
       "project": "DP",
       "branching": "branch",
       "branchPrefix": "agent/",
+      "paths": [
+        "Games/DevilsPlayground/**"
+      ],
       "gates": [
         "pwsh -NoProfile -File Tools\\zenith.ps1 build DevilsPlayground --headless",
         "pwsh -NoProfile -File Tools\\zenith.ps1 test DevilsPlayground --headless"

@@ -65,6 +65,31 @@ machine's.
 registered once. A stored copy goes stale, and a stale gate list is
 exactly how a green run ratchets the wrong baseline.
 
+## The two commands that read your working tree
+
+`guard` and `gates` are the only commands that look at the repo itself,
+and neither takes the file list from you:
+
+| | |
+|---|---|
+| `zagent gates <KEY>` | the gate list this DIFF needs — the ticket's own, plus every category whose declared `paths` the change touched. Records it in `.zagent/run/<KEY>/gates.json`. |
+| `zagent guard <KEY>` | protected paths, **and** that the recorded gate selection still describes the diff. Non-zero on either. |
+
+A gate list picked by the ticket's filing CATEGORY says who asked for the
+work, not what it touched. Four consecutive tickets filed `Zenithmon`
+edited `Zenith/**` — code every game links — and ran a list that builds
+one game and checks one pin; one of them said "the fix is engine-side" in
+its own Goal while the category quietly decided otherwise. `gates` gives
+the diff a vote, and it can only ever ADD: the category's own list stays
+a prefix of the result.
+
+`guard <KEY>` is where that becomes mechanical instead of remembered. It
+re-derives the selection and refuses a stale one, because the failure is
+silent otherwise — every gate that ran passes, so the ticket merges green
+with an entire area unverified. Both commands compute the changed set
+with `Get-WorkingTreeChanges`; do not hand-assemble one and pass
+`--file`.
+
 ## Exit codes are the interface
 
 Branch on them, never on the text:

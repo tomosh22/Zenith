@@ -130,24 +130,43 @@ $body = @{ argv = $argv }
 if ($client) { $body.client = $client }
 
 $files = Get-FileContents -Argv $argv
-if ($files) { $body.files = $files }
+$fileMap = [ordered]@{}
+if ($files) {
+    foreach ($property in $files.PSObject.Properties) { $fileMap[$property.Name] = $property.Value }
+}
 
-# `zagent guard` with no --file/--text computes its OWN input from the
-# working tree. The tick used to hand-assemble that git command in prose,
-# and BOTH spellings it reached for were wrong in ways nothing caught:
-# a commit range that is empty at guard time (so every ticket Blocked),
-# and `diff --name-only`, which cannot see a file the worker CREATED (so a
-# new .claude/** path evaded the check entirely). See
+# `guard` and `gates` with no --file/--text compute their OWN input from
+# the working tree. The tick used to hand-assemble that git command in
+# prose, and BOTH spellings it reached for were wrong in ways nothing
+# caught: a commit range that is empty at guard time (so every ticket
+# Blocked), and `diff --name-only`, which cannot see a file the worker
+# CREATED (so a new .claude/** path evaded the check entirely). See
 # Get-WorkingTreeChanges. A guard whose input is assembled by hand is a
 # guard with an untested step in front of it.
-if ($argv[0] -eq 'guard' -and -not $files) {
+if ((Test-NeedsChangedSet -Argv $argv) -and -not $fileMap.Contains('file')) {
     $changed = Get-WorkingTreeChanges -Repo $repoPath
-    if ($changed.Count -eq 0) {
+    # An empty set is a failed attempt for `guard` and a legitimate
+    # answer for `gates`, which the tick may run before the worker has
+    # written anything.
+    if ($argv[0] -eq 'guard' -and $changed.Count -eq 0) {
         Write-StdErr "guard: nothing has changed in $repoPath — the worker wrote no files."
         exit $script:EXIT_ERROR
     }
-    $body.files = @{ file = (($changed -join "`n") + "`n") }
+    $fileMap['file'] = (($changed -join "`n") + "`n")
 }
+
+# `zagent guard <KEY>` ships the gate selection `zagent gates <KEY>`
+# recorded, so the BOARD can re-derive it and refuse a stale one. A
+# MISSING file is sent as nothing on purpose: the board answers with the
+# message naming the step that was skipped, which keeps one explanation
+# of the rule rather than two that can drift.
+$gateKey = Get-GuardTicketKey -Argv $argv
+if ($gateKey) {
+    $recorded = Get-RecordedGateSelection -Repo $repoPath -Key $gateKey
+    if ($recorded) { $fileMap['gates'] = $recorded }
+}
+
+if ($fileMap.Count -gt 0) { $body.files = $fileMap }
 
 # Which commands ship the docs tree lives in the MODULE, beside its twin
 # in the board's `needsDocsTree` — see `Test-NeedsDocsTree`. Inline here,

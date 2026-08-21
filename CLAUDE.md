@@ -431,6 +431,24 @@ Gate command lines are copied VERBATIM from this repo's own docs and CI
 is built or tested, `zagent.project.json` is a downstream consumer in
 the same commit.
 
+**WHICH gate lines run is decided by the DIFF, not by the filing
+category.** Each category declares the directories it owns (`paths`), and
+`zagent gates <KEY>` unions in the gates of every category the change
+actually reached — so a ticket filed `Zenithmon` that edits `Zenith/**`
+builds and tests Combat and checks the engine pin as well. It only ever
+ADDS; the category's own list stays a prefix. `zagent guard <KEY>`
+re-derives that selection and refuses a stale one, which is what keeps it
+from being something a tick has to remember.
+
+Four consecutive tickets edited engine code under a one-game gate list
+before this existed. ZM-50's own Goal said *"the fix is engine-side"*
+while `category: Zenithmon` meant the gates never built Combat — the body
+and the category disagreed and only the category had any mechanical
+effect. Adding `Zenith/**` to a category's `paths` costs those gates on
+every ticket that touches it, which is the trade; `Tools/**` is
+deliberately NOT listed, because a one-line pin bump in
+`Tools/unit_baselines.json` does not need Combat rebuilt.
+
 ### Running the loop
 
 A bare `claude` started in this repo is the whole setup:
@@ -502,6 +520,8 @@ Commands you would actually use from here:
 | `create --project ZEN --title "…" --file body.md --category Zenithmon --complexity … --risk …` | file a ticket |
 | `doctor` | pre-flight, merged from BOTH sides: the board answers for DB/account/lanes/categories, this machine for branch, cleanliness and gate executables |
 | `owns ZEN-6` | is the loop still holding it |
+| `gates ZEN-6` | the gate list this DIFF needs — the ticket's own plus every category whose `paths` it touched |
+| `guard ZEN-6` | protected paths, **and** that the recorded gate selection still describes the diff |
 | `docs ls [<path>]` | the Notion page tree, one full path per line |
 | `docs read <path>` | a page body as Markdown, on stdout |
 | `docs write <path> --file f.md` | write ONE page — **refuses a mirrored page** |

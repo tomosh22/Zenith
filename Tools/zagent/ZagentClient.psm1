@@ -231,6 +231,62 @@ function Test-NeedsDocsTree {
     return ($Argv[0] -eq 'board' -and $Argv[1] -eq 'status')
 }
 
+function Test-NeedsChangedSet {
+    <#
+      Which commands compute the working-tree changed set for themselves.
+
+      `guard` has always done it. `gates` joins it because the two ask
+      the same question of the same tree — which files did this ticket
+      touch — and answering it twice, differently, is how the gate list
+      and the guard end up describing different diffs.
+
+      The repo is the only side that can answer: the board may be on
+      another machine and has never seen this filesystem.
+    #>
+    param([string[]]$Argv)
+
+    if (-not $Argv -or $Argv.Count -lt 1) { return $false }
+    return ($Argv[0] -in @('guard', 'gates'))
+}
+
+function Get-GuardTicketKey {
+    <#
+      The ticket key on a `zagent guard <KEY>`, or $null.
+
+      Matched on the `-<digits>` suffix, the same rule /tick uses to tell
+      a ticket key from a project key — digits ARE legal inside a project
+      key, so "letters versus digits" is the wrong test. Anything that is
+      not a ticket key is left for the board to reject by name rather
+      than silently treated as an absent key: a typo that reads as "no
+      key" would skip the gate-selection check and merge.
+    #>
+    param([string[]]$Argv)
+
+    if (-not $Argv -or $Argv.Count -lt 2) { return $null }
+    if ($Argv[0] -ne 'guard') { return $null }
+    if ($Argv[1] -notmatch '-\d+$') { return $null }
+    return $Argv[1]
+}
+
+function Get-RecordedGateSelection {
+    <#
+      The `gates.json` a `zagent gates <KEY>` left in the run scratch, or
+      $null when the step was never run.
+
+      Returned raw rather than parsed. The board re-derives the selection
+      from the ticket and the current changed set and compares — putting
+      the comparison there rather than here keeps one implementation of
+      "does this gate list still describe this diff", in the language
+      that already owns the glob dialect and the category map.
+    #>
+    param([string]$Repo, [string]$Key)
+
+    if (-not $Repo -or -not $Key) { return $null }
+    $path = Join-Path (Join-Path (Get-ScratchRoot $Repo) $Key) 'gates.json'
+    if (-not (Test-Path -LiteralPath $path)) { return $null }
+    return Get-Content -LiteralPath $path -Raw -Encoding utf8
+}
+
 <#
 The living-doc Markdown a `docs sync` mirrors.
 
@@ -516,6 +572,7 @@ function Get-AllGateLines {
 
 Export-ModuleMember -Function Find-ClientRepo, ConvertTo-PosixPath, Remove-Annotations,
     Get-ClientProject, Get-FlagValue, Test-Flag, Get-FileContents, Get-WorkingTreeChanges,
-    Test-NeedsDocsTree, Get-DocsTree,
+    Test-NeedsDocsTree, Test-NeedsChangedSet, Get-GuardTicketKey, Get-RecordedGateSelection,
+    Get-DocsTree,
     Get-ConventionsTree, Get-AmendContents, Get-ScratchRoot, Write-Results, Write-LastResult,
     Get-ClientChecks, Get-AllGateLines, Write-StdErr

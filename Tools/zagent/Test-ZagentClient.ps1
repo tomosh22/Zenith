@@ -533,6 +533,113 @@ Assert-That 'module and script agree on every shared EXIT_ value' {
     -not (@($shared | Where-Object { $a[$_] -ne $b[$_] }).Count)
 }
 
+
+Write-Host "`n=== Test-NeedsChangedSet ===" -ForegroundColor Cyan
+# `guard` and `gates` ask the same question of the same working tree —
+# which files did this ticket touch. Answering it twice, differently, is
+# how the gate list and the guard come to describe different diffs.
+Assert-That 'covers both commands that compute their own changed set' {
+    (Test-NeedsChangedSet -Argv @('guard')) -and
+    (Test-NeedsChangedSet -Argv @('gates', 'ZM-50'))
+}
+Assert-That 'leaves every other command alone' {
+    (-not (Test-NeedsChangedSet -Argv @('claim', 'ZM-50'))) -and
+    (-not (Test-NeedsChangedSet -Argv @('docs', 'sync'))) -and
+    (-not (Test-NeedsChangedSet -Argv @()))
+}
+Assert-That 'survives a null argv under Set-StrictMode' {
+    (-not (Test-NeedsChangedSet -Argv $null))
+}
+Assert-That 'returns a boolean, not a collection' {
+    ((Test-NeedsChangedSet -Argv @('guard')) -is [bool]) -and
+    ((Test-NeedsChangedSet -Argv @('queue')) -is [bool])
+}
+
+Write-Host "`n=== Get-GuardTicketKey ===" -ForegroundColor Cyan
+# Matched on the `-<digits>` SUFFIX, the same rule /tick step 1 uses.
+# Digits are legal inside a project key, so "letters versus digits" is
+# the wrong test and would misread a project named ZEN2.
+Assert-That 'reads the key off a keyed guard' {
+    (Get-GuardTicketKey -Argv @('guard', 'ZM-50')) -eq 'ZM-50'
+}
+Assert-That 'returns null for a bare guard' {
+    $null -eq (Get-GuardTicketKey -Argv @('guard'))
+}
+Assert-That 'returns null for a different command' {
+    ($null -eq (Get-GuardTicketKey -Argv @('gates', 'ZM-50'))) -and
+    ($null -eq (Get-GuardTicketKey -Argv @('claim', 'ZM-50')))
+}
+# A project key is not a ticket key. `zagent guard ZM` would otherwise
+# be sent as a key the board cannot resolve.
+Assert-That 'refuses a project key' {
+    $null -eq (Get-GuardTicketKey -Argv @('guard', 'ZM'))
+}
+Assert-That 'accepts digits INSIDE the project key' {
+    (Get-GuardTicketKey -Argv @('guard', 'ZEN2-7')) -eq 'ZEN2-7'
+}
+Assert-That 'survives a null argv under Set-StrictMode' {
+    $null -eq (Get-GuardTicketKey -Argv $null)
+}
+
+Write-Host "`n=== Get-RecordedGateSelection ===" -ForegroundColor Cyan
+# The gate selection is recorded by `zagent gates <KEY>` and re-derived
+# by the board at guard time. A MISSING file must come back as $null and
+# NOT as an empty string: the board reads "absent" as "the selection step
+# was skipped" and blocks, where an empty string would be a parse error
+# with a message about JSON rather than about the step nobody ran.
+Assert-That 'reads a recorded selection out of the run scratch' {
+    $repo = New-TempDir
+    try {
+        $dir = Join-Path (Join-Path (Join-Path $repo '.zagent') 'run') 'ZM-50'
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $dir 'gates.json') -Value '{"gates":["a"]}' -Encoding utf8
+        $raw = Get-RecordedGateSelection -Repo $repo -Key 'ZM-50'
+        ($raw -is [string]) -and ($raw.Contains('"gates"'))
+    } finally { Remove-Item -LiteralPath $repo -Recurse -Force -ErrorAction SilentlyContinue }
+}
+Assert-That 'returns null when the gate-selection step never ran' {
+    $repo = New-TempDir
+    try {
+        $null -eq (Get-RecordedGateSelection -Repo $repo -Key 'ZM-50')
+    } finally { Remove-Item -LiteralPath $repo -Recurse -Force -ErrorAction SilentlyContinue }
+}
+Assert-That 'returns null rather than throwing on a missing repo or key' {
+    ($null -eq (Get-RecordedGateSelection -Repo '' -Key 'ZM-50')) -and
+    ($null -eq (Get-RecordedGateSelection -Repo 'C:\nope' -Key ''))
+}
+# It must read the SAME location `zagent gates` writes to, which is
+# Get-ScratchRoot + <KEY> + gates.json. A second spelling of that path
+# would look exactly like "the step was never run".
+Assert-That 'reads from the scratch root the board writes to' {
+    $repo = New-TempDir
+    try {
+        $expected = Join-Path (Join-Path (Get-ScratchRoot $repo) 'ZM-50') 'gates.json'
+        New-Item -ItemType Directory -Path (Split-Path $expected) -Force | Out-Null
+        Set-Content -LiteralPath $expected -Value '{}' -Encoding utf8
+        $null -ne (Get-RecordedGateSelection -Repo $repo -Key 'ZM-50')
+    } finally { Remove-Item -LiteralPath $repo -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+# Every category that declares `paths` must also declare `gates`, or the
+# union it exists for silently adds nothing. The board treats a gateless
+# category as inert by design (a category may legitimately own no build),
+# but in THIS repo a paths-without-gates entry is always a mistake, and
+# it is invisible: the gates that do run all pass.
+Assert-That 'every zagent.project.json category with paths also has gates' {
+    $repo = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
+    $file = Get-Content (Join-Path $repo 'zagent.project.json') -Raw | ConvertFrom-Json
+    $bad = @()
+    foreach ($category in $file.categories.PSObject.Properties) {
+        $paths = $category.Value.PSObject.Properties['paths']
+        $gates = $category.Value.PSObject.Properties['gates']
+        if ($paths -and @($paths.Value).Count -gt 0) {
+            if (-not $gates -or @($gates.Value).Count -eq 0) { $bad += $category.Name }
+        }
+    }
+    if ($bad) { Write-Host ("       categories with paths and no gates: " + ($bad -join ', ')) }
+    $bad.Count -eq 0
+}
+
 Write-Host ""
 Write-Host ("{0}/{1} assertions passed." -f ($script:count - $script:failures), $script:count)
 if ($script:failures -eq 0) { Write-Host 'PASS' -ForegroundColor Green; exit 0 }

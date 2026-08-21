@@ -365,11 +365,29 @@ report is _proposed text_ that you apply (I4).
 ## 6. Verify
 
 1. `zagent owns <KEY>` — exit 5 → abandon path (step 9).
-2. Run every command in `gates`, **in order, spelled exactly**, appending
-   combined output to `.zagent/run/<KEY>/gates.log`. First non-zero stops.
-   A gate list is copied from the payload, never paraphrased — and never
-   re-derived from `zagent.project.json` by hand, because the payload is
-   what the contract was validated against.
+2. **`zagent gates <KEY>`**, then run every command it prints, **in
+   order, spelled exactly**, appending combined output to
+   `.zagent/run/<KEY>/gates.log`. First non-zero stops.
+
+   **The list comes from that command, not from the claim payload.** The
+   payload's gates were chosen by the ticket's filing CATEGORY, which
+   records who asked for the work rather than what it touched. `gates`
+   takes the same working-tree changed set `guard` computes and UNIONS in
+   every category whose declared `paths` the diff actually reached — so a
+   `Zenithmon` ticket that edits `Zenith/**` builds and tests Combat and
+   checks the engine pin too. The payload's list is always a PREFIX of
+   what comes back, so this widens verification and never narrows the
+   contract.
+
+   Four consecutive tickets edited engine code under a one-game gate
+   list. ZM-50's own Goal said *"the fix is engine-side"* while its
+   category said otherwise, and only the category had any mechanical
+   effect. Running the extra gates by hand — which is what that run
+   did — is a convention, and a convention is exactly the thing that
+   holds until the one time nobody does it.
+
+   Never paraphrase a gate line and never re-derive one from
+   `zagent.project.json` by hand.
 3. **Reviewer pass** when the ticket's `risk` is in `reviewOn`: dispatch
    `Agent{subagent_type: 'zagent-reviewer', model: <routing.model>}` with
    the diff inlined in the prompt. `zagent-reviewer` is read-only by
@@ -377,8 +395,19 @@ report is _proposed text_ that you apply (I4).
    finds and hand you back a diff you did not gate. Findings go in the
    work log; a finding that contradicts a gate result blocks. A null
    return here is infrastructure, same as step 5 — it is not a pass.
-4. `zagent guard` — **bare, with no `--file`**. Non-zero → Blocked
-   regardless of gate colour.
+4. `zagent guard <KEY>` — **with the key, and with no `--file`**.
+   Non-zero → Blocked regardless of gate colour.
+
+   The key is what makes step 6.2 mechanical rather than remembered.
+   `guard` re-derives the gate selection from the ticket and the CURRENT
+   changed set and compares it against the `gates.json` that `zagent
+   gates` recorded: no recording, or a recording that no longer covers
+   the diff, is a non-zero exit naming the gates that never ran. It is
+   checked here because `guard` is already the mandatory merge-blocking
+   step — a rule enforced at a check that already fails is a rule, and
+   the same rule in this paragraph is a hope. The failure it catches is
+   silent by construction: every gate that DID run passes, so the ticket
+   merges green with a whole area unverified.
 
    With no `--file`/`--text` the client computes the changed set itself
    from the working tree, which is where the work is at this point in
