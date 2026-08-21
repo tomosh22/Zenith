@@ -562,9 +562,10 @@ Zenith_TerrainComponent::~Zenith_TerrainComponent()
 	if (m_pxStreamingState == nullptr)
 	{
 		// Physics geometry was also stolen (nulled) by the move; delete is a
-		// no-op on null but kept for symmetry / clarity.
+		// no-op on null but kept for symmetry / clarity. Same for the span table.
 		delete m_pxPhysicsGeometry;
 		m_pxPhysicsGeometry = nullptr;
+		FreePhysicsChunkSpans();
 		return;
 	}
 
@@ -590,6 +591,7 @@ Zenith_TerrainComponent::~Zenith_TerrainComponent()
 
 	delete m_pxPhysicsGeometry;
 	m_pxPhysicsGeometry = nullptr;
+	FreePhysicsChunkSpans();
 
 	// MaterialHandle members (m_axMaterials[]) auto-release when destroyed
 
@@ -605,6 +607,8 @@ Zenith_TerrainComponent::~Zenith_TerrainComponent()
 Zenith_TerrainComponent::Zenith_TerrainComponent(Zenith_TerrainComponent&& xOther) noexcept
 	: m_xParentEntity(xOther.m_xParentEntity)
 	, m_pxPhysicsGeometry(xOther.m_pxPhysicsGeometry)
+	, m_pxPhysicsChunkSpans(xOther.m_pxPhysicsChunkSpans)
+	, m_uPhysicsChunkSpanCount(xOther.m_uPhysicsChunkSpanCount)
 	, m_bTerrainGeometryUnusable(xOther.m_bTerrainGeometryUnusable)
 	, m_pxStreamingState(xOther.m_pxStreamingState)
 	, m_strTerrainAssetSet(std::move(xOther.m_strTerrainAssetSet))
@@ -623,6 +627,8 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Zenith_TerrainComponent&& xOthe
 	// Null the source so its destructor frees nothing (no double-free).
 	xOther.m_pxStreamingState = nullptr;
 	xOther.m_pxPhysicsGeometry = nullptr;
+	xOther.m_pxPhysicsChunkSpans = nullptr;
+	xOther.m_uPhysicsChunkSpanCount = 0u;
 }
 
 Zenith_TerrainComponent& Zenith_TerrainComponent::operator=(Zenith_TerrainComponent&& xOther) noexcept
@@ -649,10 +655,13 @@ Zenith_TerrainComponent& Zenith_TerrainComponent::operator=(Zenith_TerrainCompon
 	}
 	delete m_pxPhysicsGeometry;
 	m_pxPhysicsGeometry = nullptr;
+	FreePhysicsChunkSpans();
 
 	// Steal from the source.
 	m_xParentEntity            = xOther.m_xParentEntity;
 	m_pxPhysicsGeometry        = xOther.m_pxPhysicsGeometry;
+	m_pxPhysicsChunkSpans      = xOther.m_pxPhysicsChunkSpans;
+	m_uPhysicsChunkSpanCount   = xOther.m_uPhysicsChunkSpanCount;
 	m_bTerrainGeometryUnusable = xOther.m_bTerrainGeometryUnusable;
 	m_pxStreamingState         = xOther.m_pxStreamingState;
 	m_strTerrainAssetSet       = std::move(xOther.m_strTerrainAssetSet);
@@ -666,6 +675,8 @@ Zenith_TerrainComponent& Zenith_TerrainComponent::operator=(Zenith_TerrainCompon
 
 	xOther.m_pxStreamingState  = nullptr;
 	xOther.m_pxPhysicsGeometry = nullptr;
+	xOther.m_pxPhysicsChunkSpans = nullptr;
+	xOther.m_uPhysicsChunkSpanCount = 0u;
 
 	return *this;
 }
@@ -813,6 +824,57 @@ bool Zenith_TerrainComponent::TryGetGroundHeightFromTriangles(
 	return false;
 }
 
+bool Zenith_TerrainComponent::TryGetGroundHeightFromTrianglesChunked(
+	const Zenith_Maths::Vector3* pxPositions, uint32_t uVertexCount,
+	const uint32_t* puIndices, uint32_t uIndexCount,
+	const PhysicsChunkSpan* pxChunkSpans, uint32_t uChunkSpanCount,
+	float fWorldX, float fWorldZ, float& fHeightOut)
+{
+	if (pxPositions == nullptr || puIndices == nullptr || pxChunkSpans == nullptr)
+		return false;
+
+	// Candidate spans are tried in ARRAY order, and TryGetGroundHeightFromTriangles
+	// tries a span's own triangles in their existing INDEX order -- see the header
+	// doc comment above this declaration for why that reproduces exactly the
+	// unrestricted scan's first-hit-in-index-order answer, restricted to a set
+	// that is provably big enough to contain it.
+	for (uint32_t uSpan = 0u; uSpan < uChunkSpanCount; ++uSpan)
+	{
+		const PhysicsChunkSpan& xSpan = pxChunkSpans[uSpan];
+
+		// Inclusive both ends, exactly like the per-triangle box below -- a point
+		// AT a chunk's own recorded edge must not be rejected here.
+		if (fWorldX < xSpan.m_fMinX || fWorldX > xSpan.m_fMaxX ||
+			fWorldZ < xSpan.m_fMinZ || fWorldZ > xSpan.m_fMaxZ)
+		{
+			continue;
+		}
+
+		// A malformed span (never produced by CombineTerrainChunkGridCore, but
+		// this entry point is public and reachable with a hand-built table) is
+		// skipped rather than read past the caller's index stream -- the same
+		// discipline TryGetGroundHeightFromTriangles applies to a malformed
+		// triangle.
+		if (xSpan.m_uIndexCount == 0u || xSpan.m_uFirstIndex >= uIndexCount ||
+			xSpan.m_uIndexCount > uIndexCount - xSpan.m_uFirstIndex)
+		{
+			continue;
+		}
+
+		// The UNMODIFIED per-triangle core, restricted to this span's run of the
+		// index buffer. pxPositions/uVertexCount are passed through in full (not
+		// restricted) -- an index inside the span's run still resolves against
+		// the same complete position array the unrestricted scan would use.
+		if (TryGetGroundHeightFromTriangles(pxPositions, uVertexCount,
+			puIndices + xSpan.m_uFirstIndex, xSpan.m_uIndexCount,
+			fWorldX, fWorldZ, fHeightOut))
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
 bool Zenith_TerrainComponent::TryGetGroundHeightFromGeometry(const Flux_MeshGeometry* pxGeometry,
 	float fWorldX, float fWorldZ, float& fHeightOut)
 {
@@ -829,6 +891,26 @@ bool Zenith_TerrainComponent::TryGetGroundHeightFromGeometry(const Flux_MeshGeom
 
 bool Zenith_TerrainComponent::TryGetGroundHeightAt(float fWorldX, float fWorldZ, float& fHeightOut) const
 {
+	if (m_pxPhysicsGeometry == nullptr)
+		return false;
+
+	// The chunk-accelerated path (see the header's cost note above
+	// TryGetGroundHeightAt, and PhysicsChunkSpan / TryGetGroundHeightFromTrianglesChunked).
+	// m_pxPhysicsChunkSpans is built once, alongside m_pxPhysicsGeometry, by
+	// LoadCombinedPhysicsGeometryCore -- every site in this file that assigns
+	// m_pxPhysicsGeometry a freshly combined mesh runs through that one
+	// function, so the two are always in lockstep for a live (non-null)
+	// m_pxPhysicsGeometry. A null span table here means the accelerator's own
+	// (much smaller) allocation failed at combine time; falling back to the
+	// unrestricted scan keeps the answer correct, merely slower.
+	if (m_pxPhysicsChunkSpans != nullptr)
+	{
+		return TryGetGroundHeightFromTrianglesChunked(
+			m_pxPhysicsGeometry->m_pxPositions, m_pxPhysicsGeometry->GetNumVerts(),
+			m_pxPhysicsGeometry->m_puIndices, m_pxPhysicsGeometry->GetNumIndices(),
+			m_pxPhysicsChunkSpans, m_uPhysicsChunkSpanCount,
+			fWorldX, fWorldZ, fHeightOut);
+	}
 	return TryGetGroundHeightFromGeometry(m_pxPhysicsGeometry, fWorldX, fWorldZ, fHeightOut);
 }
 
@@ -1186,6 +1268,7 @@ void Zenith_TerrainComponent::InitializeRenderResources()
 		// body so the anchor contract is independent of construction order.
 		delete m_pxPhysicsGeometry;
 		m_pxPhysicsGeometry = nullptr;
+		FreePhysicsChunkSpans();
 		Zenith_Error(LOG_CATEGORY_TERRAIN,
 			"Zenith_TerrainComponent::InitializeRenderResources - skipping unified-buffer / streaming / culling init because terrain geometry is unusable");
 		return;
@@ -1233,10 +1316,14 @@ bool Zenith_TerrainComponent::CombineTerrainChunkGridCore(uint32_t uGridSize,
 	TerrainChunkLoadCallback pfnLoadChunk, void* pLoadContext,
 	Flux_TerrainChunkInitData* pxChunkInitData,
 	Flux_MeshGeometry*& pxCombinedGeometryOut,
-	TerrainSparseLoadDiagnostics& xDiagnosticsOut)
+	TerrainSparseLoadDiagnostics& xDiagnosticsOut,
+	PhysicsChunkSpan* pxChunkSpansOut, uint32_t uChunkSpanCapacity,
+	uint32_t* puChunkSpanCountOut)
 {
 	xDiagnosticsOut = {};
 	pxCombinedGeometryOut = nullptr;
+	if (puChunkSpanCountOut != nullptr)
+		*puChunkSpanCountOut = 0u;
 	if (uGridSize == 0u || uGridSize > CHUNK_GRID_SIZE || pfnLoadChunk == nullptr)
 		return false;
 	if (pxChunkInitData != nullptr)
@@ -1277,6 +1364,48 @@ bool Zenith_TerrainComponent::CombineTerrainChunkGridCore(uint32_t uGridSize,
 		pxChunkInitData[uAnchorIndex].m_xAABB = Zenith_FrustumCulling::GenerateAABBFromVertices(
 			xCombinedGeometry.m_pxPositions, xCombinedGeometry.GetNumVerts());
 	}
+
+	// Records span[0] = the anchor chunk's own real-vertex-data XZ bounds and
+	// its [0, indexCount) run. Deliberately BEFORE the Reallocate block below:
+	// Reallocate may move xCombinedGeometry.m_pxPositions, but the anchor's own
+	// vertex data is exactly what is already there at this point, before any
+	// other chunk has been appended.
+	auto RecordChunkSpan = [&](const Flux_MeshGeometry& xGeometryForSpan, uint32_t uFirstIndexForSpan)
+	{
+		// BOTH pointers, not just the table. The header documents the three span
+		// parameters as one parameter in three pieces, and this lambda is the only
+		// thing that reads or writes the counter -- guarding on the table alone
+		// would dereference a null counter for a caller that got the pair half
+		// right, which is a crash at the exact moment the contract was breached
+		// rather than a diagnostic about it.
+		if (pxChunkSpansOut == nullptr || puChunkSpanCountOut == nullptr)
+			return;
+		// Capacity is CHECKED, not assumed. The bound used to be prose in the
+		// header ("at least uGridSize*uGridSize entries") on a function reachable
+		// from two friend classes, so a caller sizing its buffer wrong wrote past
+		// the end of a heap block with nothing to notice. Production cannot reach
+		// this -- the core appends at most one span per grid cell and
+		// LoadCombinedPhysicsGeometryCore allocates exactly that many -- so the
+		// assert fires only on a genuine contract breach; the return after it is
+		// what keeps a release build from corrupting the heap over it.
+		Zenith_Assert(*puChunkSpanCountOut < uChunkSpanCapacity,
+			"Terrain chunk-span table overflow: capacity %u cannot hold span %u. "
+			"pxChunkSpansOut must have at least uGridSize*uGridSize entries.",
+			uChunkSpanCapacity, *puChunkSpanCountOut);
+		if (*puChunkSpanCountOut >= uChunkSpanCapacity)
+			return;
+		const Zenith_AABB xSpanAABB = Zenith_FrustumCulling::GenerateAABBFromVertices(
+			xGeometryForSpan.m_pxPositions, xGeometryForSpan.GetNumVerts());
+		PhysicsChunkSpan& xSpan = pxChunkSpansOut[*puChunkSpanCountOut];
+		xSpan.m_fMinX = xSpanAABB.m_xMin.x;
+		xSpan.m_fMaxX = xSpanAABB.m_xMax.x;
+		xSpan.m_fMinZ = xSpanAABB.m_xMin.z;
+		xSpan.m_fMaxZ = xSpanAABB.m_xMax.z;
+		xSpan.m_uFirstIndex = uFirstIndexForSpan;
+		xSpan.m_uIndexCount = xGeometryForSpan.GetNumIndices();
+		(*puChunkSpanCountOut)++;
+	};
+	RecordChunkSpan(xCombinedGeometry, 0u);
 
 	const uint64_t ulVertexDataSize = static_cast<uint64_t>(uTotalVerts) * xCombinedGeometry.GetBufferLayout().GetStride();
 	const uint64_t ulIndexDataSize = static_cast<uint64_t>(uTotalIndices) * sizeof(Flux_MeshGeometry::IndexType);
@@ -1357,6 +1486,15 @@ bool Zenith_TerrainComponent::CombineTerrainChunkGridCore(uint32_t uGridSize,
 				pxCombinedGeometryOut = nullptr;
 				return false;
 			}
+
+			// xChunkGeometry (not xCombinedGeometry) on purpose: Combine() appends
+			// xChunkGeometry's data onto xCombinedGeometry starting at
+			// uPreviousIndexCount, but xChunkGeometry's OWN m_pxPositions/GetNumVerts()
+			// are untouched by the call (Combine's xSrc is const and the source
+			// documented above at the struct's declaration is the appended chunk's own
+			// data) -- so this is exactly that chunk's own real vertex footprint,
+			// independent of anything Reallocate did to xCombinedGeometry's buffers.
+			RecordChunkSpan(xChunkGeometry, uPreviousIndexCount);
 		}
 	}
 	return true;
@@ -1369,13 +1507,22 @@ bool Zenith_TerrainComponent::LoadAndCombineLowLODChunksCore(uint32_t uGridSize,
 	Flux_MeshGeometry*& pxLowLODGeometryOut,
 	TerrainSparseLoadDiagnostics& xDiagnosticsOut)
 {
+	// No table, no capacity, no counter: the LOW LOD/render combine has no
+	// per-chunk query to accelerate, so it does not build a span table (see
+	// PhysicsChunkSpan).
 	const bool bCombined = CombineTerrainChunkGridCore(uGridSize, uTotalVerts, uTotalIndices,
-		pfnLoadChunk, pLoadContext, pxChunkInitData, pxLowLODGeometryOut, xDiagnosticsOut);
+		pfnLoadChunk, pLoadContext, pxChunkInitData, pxLowLODGeometryOut, xDiagnosticsOut,
+		nullptr, 0u, nullptr);
 	if (!bCombined)
 	{
 		m_bTerrainGeometryUnusable = true;
 		delete m_pxPhysicsGeometry;
 		m_pxPhysicsGeometry = nullptr;
+		// LOW LOD authority failing discards any physics geometry already loaded
+		// (deserialization loads physics before render resources -- see the
+		// caller's comment), so its span table -- if this terrain had one -- is
+		// now describing a mesh that no longer exists. Discard it too.
+		FreePhysicsChunkSpans();
 		return false;
 	}
 	m_bTerrainGeometryUnusable = false;
@@ -1395,14 +1542,60 @@ bool Zenith_TerrainComponent::LoadCombinedPhysicsGeometryCore(uint32_t uGridSize
 		return true;
 	const uint32_t uTotalVerts = Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_VERTEX_COUNT * uGridSize * uGridSize;
 	const uint32_t uTotalIndices = Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_INDEX_COUNT * uGridSize * uGridSize;
+
+	// A retry must not consult a span table left over from an earlier, possibly
+	// differently-sparse, attempt (m_pxPhysicsGeometry is null on every path that
+	// reaches here, but this component's span table might not be, e.g. after a
+	// TOOLS regenerate discarded m_pxPhysicsGeometry directly -- see
+	// Zenith_TerrainComponent_Editor.cpp's CleanupPriorGenerationForRegenerate).
+	FreePhysicsChunkSpans();
+
+	// Upper-bound allocation: CombineTerrainChunkGridCore appends at most one
+	// span per grid cell. This buffer is a fraction of a percent of the size of
+	// the geometry it accelerates (up to 4096 * 24 bytes vs. tens of MB of
+	// physics mesh), so -- unlike the geometry itself -- a failure to allocate
+	// it is handled explicitly rather than trusted not to happen: Allocate()
+	// (not new[]) so a null return is a value to check rather than a global
+	// operator new that this codebase's overloads do not guarantee throws.
+	// pxSpans staying null degrades this terrain to the unaccelerated scan
+	// (TryGetGroundHeightAt's fallback) rather than failing physics load
+	// outright over an accelerator it can do without.
+	const uint32_t uMaxChunkSpans = uGridSize * uGridSize;
+	PhysicsChunkSpan* pxSpans = static_cast<PhysicsChunkSpan*>(
+		Zenith_MemoryManagement::Allocate(sizeof(PhysicsChunkSpan) * uMaxChunkSpans));
+	uint32_t uSpanCount = 0u;
+
+	// uMaxChunkSpans is the ELEMENT count the allocation above was sized for, and
+	// is what the core enforces its writes against -- the two are derived from the
+	// same expression here so they cannot drift apart.
 	const bool bCombined = CombineTerrainChunkGridCore(uGridSize, uTotalVerts, uTotalIndices,
-		pfnLoadChunk, pLoadContext, nullptr, m_pxPhysicsGeometry, xDiagnosticsOut);
+		pfnLoadChunk, pLoadContext, nullptr, m_pxPhysicsGeometry, xDiagnosticsOut,
+		pxSpans, uMaxChunkSpans, pxSpans != nullptr ? &uSpanCount : nullptr);
 	if (!bCombined)
 	{
 		delete m_pxPhysicsGeometry;
 		m_pxPhysicsGeometry = nullptr;
+		if (pxSpans != nullptr)
+			Zenith_MemoryManagement::Deallocate(pxSpans);
+		return false;
 	}
-	return bCombined;
+
+	if (pxSpans != nullptr)
+	{
+		m_pxPhysicsChunkSpans = pxSpans;
+		m_uPhysicsChunkSpanCount = uSpanCount;
+	}
+	return true;
+}
+
+void Zenith_TerrainComponent::FreePhysicsChunkSpans()
+{
+	if (m_pxPhysicsChunkSpans != nullptr)
+	{
+		Zenith_MemoryManagement::Deallocate(m_pxPhysicsChunkSpans);
+		m_pxPhysicsChunkSpans = nullptr;
+	}
+	m_uPhysicsChunkSpanCount = 0u;
 }
 
 void Zenith_TerrainComponent::LoadAndCombineLowLODChunks(uint32_t uTotalVerts, uint32_t uTotalIndices, Flux_TerrainChunkInitData* pxChunkInitData, Flux_MeshGeometry*& pxLowLODGeometryOut)

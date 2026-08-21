@@ -7,14 +7,16 @@
 
   "$never": "Do NOT pin from a Vulkan_ exe. The same tree reports higher on Vulkan than on Null (a standing +37 gap was measured for Zenithmon), because Vulkan builds also compile the Vulkan-only backend tests. Every consumer of this file runs a Null_ executable.",
 
+  "$coverage": "NOT every row here is checked by CI. engine-gate.yml gates Combat and zm-tests.yml gates Zenithmon; NOTHING passes -Game RenderTest, so that row is verified only when somebody runs it locally. A pin nothing reads can drift silently, which is the failure this file exists to prevent -- so treat the RenderTest row as advisory until a workflow gates it, and re-observe it rather than trusting it. Filed as a ticket; do not quietly delete the row, because local cross-game sweeps use it and an engine change genuinely moves it.",
+
   "baselines": {
     "$Zenithmon": "ZM boot units. Also narrated in Games/Zenithmon/Docs/Status.md, which stays the human-facing authority for WHY it moved; this file is what the gate reads.",
-    "Zenithmon": 3360,
+    "Zenithmon": 3365,
 
     "$Combat": "The engine boot pin. A backend-neutral ENGINE unit moves this AND every other game's number in the same commit, because they all boot the same engine suite.",
-    "Combat": 1644,
+    "Combat": 1649,
 
-    "$RenderTest": "Observed 1735 ran / 1734 passed / 0 failed / 1 skipped, 2026-08-21 (ZM-49, +6 engine units for the terrain ground query). Every number in this file is OBSERVED from a real Null_ run, never arithmetic on the previous one -- a computed pin is how a suite that also LOST a test still ratchets green.",
-    "RenderTest": 1735
+    "$RenderTest": "Every number in this file is OBSERVED from a real Null_ run, never arithmetic on the previous one -- a computed pin is how a suite that also LOST a test still ratchets green. Do NOT narrate individual bumps here: that note drifts at the next bump (it already did once). git log carries the derivation.",
+    "RenderTest": 1740
   }
 }

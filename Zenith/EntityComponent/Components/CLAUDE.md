@@ -112,15 +112,35 @@ and this core neither implements that nor detects the case.
   probe on a terrain loaded from a scene is answered — but the editor's
   **Add-Component** path constructs through the deserialization ctor without
   ever deserializing, so a probe on a freshly-added terrain still MISSES;
-- it is a linear scan over the mesh's triangles behind a per-triangle XZ
-  bounding-box reject — O(triangles) per call, with no spatial index. Fine for
-  one-off probes and physics-space placement; not for a per-frame per-agent
-  query over a large terrain. That box is **not purely an accelerator**: the
-  barycentric test alone admits a ~1e-5-of-a-triangle band outside it (the tolerance
-  that keeps a point on an interior edge from falling down a zero-width crack)
-  and the box *clips* it. Desirable — it is what stops the tolerance
-  extrapolating a height off the rim of the mesh — but it changes the answer at
-  a boundary rather than merely speeding the scan up.
+- it has **one level** of spatial index and no more (ZEN-2). `TryGetGroundHeightAt`
+  first rejects against each combined *physics chunk*'s own XZ bounds — a
+  per-chunk table (`PhysicsChunkSpan` / `m_pxPhysicsChunkSpans`) built ONCE when
+  the physics geometry is combined, never per call — and then runs the unchanged
+  linear per-triangle scan restricted to the one chunk (or, exactly at a shared
+  seam, two) whose bounds contain the point. So the cost is
+  O(chunks) + O(triangles in the matching chunk) — roughly 4096 float-compare
+  rejects plus ~512 triangles, rather than up to ~2.1M triangles. Still no
+  spatial index *within* a chunk, and still no allocation per query. Good enough
+  for one-off probes, placement, and occasional per-agent use; a per-frame,
+  per-agent query over a large terrain would want TIER 2's heightfield, not a
+  third level of this. **The two static entry points
+  (`TryGetGroundHeightFromGeometry` / `TryGetGroundHeightFromTriangles`) stay
+  unaccelerated by design** — they have no owning component to hold a table, so a
+  caller reaching them directly still pays the full per-triangle scan.
+- **The per-chunk table's offsets are OBSERVED, not computed from a grid
+  coordinate**, and that is load-bearing rather than stylistic: a sparse bake
+  reserves nothing for a chunk that failed to load, so `(x, y) -> index run` is
+  not a formula. See `PhysicsChunkSpan`'s doc comment in
+  `Zenith_TerrainComponent.h`.
+- the per-*triangle* XZ box underneath all of that is **not purely an
+  accelerator**: the barycentric test alone admits a ~1e-5-of-a-triangle band
+  outside it (the tolerance that keeps a point on an interior edge from falling
+  down a zero-width crack) and the box *clips* it. Desirable — it is what stops
+  the tolerance extrapolating a height off the rim of the mesh — but it changes
+  the answer at a boundary rather than merely speeding the scan up. The
+  per-chunk reject above it cannot change any answer: a triangle's bounds are
+  always a subset of its own chunk's, so a rejected chunk provably held no
+  containing triangle.
 
 **TIER 2** — keep or load the heightfield — is still DEFERRED, and it now has
 **two** jobs: make the query answer at **authoring time**, and make it answer for

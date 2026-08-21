@@ -60,9 +60,71 @@ public:
 	Zenith_TerrainComponent(const Zenith_TerrainComponent&) = delete;
 	Zenith_TerrainComponent& operator=(const Zenith_TerrainComponent&) = delete;
 
+	// One physics chunk's real-vertex-data XZ footprint, recorded by
+	// CombineTerrainChunkGridCore at the exact point it appends that chunk's
+	// triangles to the combined physics mesh, plus the [m_uFirstIndex,
+	// m_uFirstIndex + m_uIndexCount) run those triangles occupy in the combined
+	// index buffer. Declared PUBLIC and this early (rather than beside the
+	// ground-height query below, where the reject built from it is explained in
+	// full) so CombineTerrainChunkGridCore's private declaration further down can
+	// name it as a parameter type, and so a hand-built span array is
+	// constructible from a pure unit test -- a nested type's accessibility
+	// follows wherever it is FIRST declared, so it cannot be forward-declared
+	// private and "made public" by a later redefinition.
+	//
+	// BOTH FIELDS ARE OBSERVED, NEVER COMPUTED FROM A CHUNK COORDINATE, AND THAT
+	// IS THE WHOLE POINT OF THE TYPE. A sparse bake -- one where some chunk's
+	// source mesh failed to load -- is a supported, warned-about state
+	// (TerrainSparseLoadDiagnostics / LogSparseLoadDiagnostics), and
+	// CombineTerrainChunkGridCore reserves NOTHING for a chunk it skipped: the
+	// next chunk's triangles are appended immediately after the previous
+	// SURVIVING chunk's. So the mapping from grid coordinate to index run is not
+	// a formula. Deriving m_uFirstIndex as, say, (x * gridSize + y) * indicesPerChunk
+	// would be correct for a dense bake and WRONG for every chunk after the first
+	// hole, by exactly (skipped so far) * indicesPerChunk -- which either points
+	// the query at a DIFFERENT chunk's triangles (a wrong ground height, or a
+	// false "no ground" because that chunk's triangles do not cover this XZ) or
+	// runs past the end of the index buffer, where
+	// TryGetGroundHeightFromTrianglesChunked's malformed-span guard silently
+	// skips it and reports no ground over ground that exists. Likewise the XZ
+	// bounds come from that chunk's own vertex positions rather than its nominal
+	// world cell, so a chunk whose real data does not fill its cell still gets a
+	// bound that contains every one of its triangles.
+	//
+	// ALLOCATION CONTRACT, and why there are deliberately no default member
+	// initializers. The table is one bulk block from
+	// Zenith_MemoryManagement::Allocate (LoadCombinedPhysicsGeometryCore) --
+	// malloc underneath, so NO constructor runs over it and an NSDMI here would
+	// be dead code that reads as a guarantee the memory does not carry. Entries
+	// are therefore INDETERMINATE until written: exactly the first
+	// *puChunkSpanCountOut of them are initialised, in append order, and only
+	// that prefix may be read. Every consumer (TryGetGroundHeightFromTrianglesChunked,
+	// TryGetGroundHeightAt) is bounded by that count for this reason. The type
+	// stays an all-scalar aggregate so the bulk allocation is legitimate and so a
+	// test can brace-initialise one.
+	struct PhysicsChunkSpan
+	{
+		float m_fMinX;
+		float m_fMaxX;
+		float m_fMinZ;
+		float m_fMaxZ;
+		uint32_t m_uFirstIndex;
+		uint32_t m_uIndexCount;
+	};
+
 private:
 	friend class Zenith_UnitTests;
 	friend class Zenith_TerrainEditor;
+	// Defined ONLY in Zenith_TerrainComponent.Tests.inl, which this component's
+	// own .cpp includes. It drives CombineTerrainChunkGridCore directly -- with a
+	// load callback that deliberately fails one middle chunk -- so the span
+	// RECORDER has coverage rather than only the query that consumes a span
+	// table. That needs the private core and the private diagnostics type, and
+	// the .inl is at namespace scope in the .cpp rather than a member of
+	// Zenith_UnitTests (whose Core .inl cannot host it: this component's tests
+	// live beside the component). A friend declaration of a type that is never
+	// defined in a given TU is legal and affects nothing but access.
+	friend struct Zenith_TerrainChunkSpanRecorderTests;
 
 	static uint32_t s_uInstanceCount;
 	static void IncrementInstanceCount();
@@ -86,7 +148,33 @@ private:
 		TerrainChunkLoadCallback pfnLoadChunk, void* pLoadContext,
 		Flux_TerrainChunkInitData* pxChunkInitData,
 		Flux_MeshGeometry*& pxCombinedGeometryOut,
-		TerrainSparseLoadDiagnostics& xDiagnosticsOut);
+		TerrainSparseLoadDiagnostics& xDiagnosticsOut,
+		// Optional span table. Captures, in append order, the XZ footprint (from
+		// each chunk's OWN real vertex data) and the resulting
+		// [firstIndex, indexCount) run of every chunk actually appended to the
+		// combined mesh -- a chunk that was SKIPPED contributes no entry at all,
+		// not a placeholder, which is exactly why the offsets cannot be derived
+		// from a grid coordinate (see PhysicsChunkSpan). Only the physics combine
+		// (LoadCombinedPhysicsGeometryCore) passes one -- the LOW LOD/render
+		// combine has no per-chunk query to accelerate.
+		//
+		// THE THREE ARE ONE PARAMETER IN THREE PIECES, and the core ENFORCES that
+		// rather than describing it: the table is written only when BOTH pointers
+		// are non-null, and a write is refused (with an assert) once
+		// *puChunkSpanCountOut reaches uChunkSpanCapacity, so a caller that sized
+		// its buffer wrong gets a diagnostic instead of a heap overwrite. Pass the
+		// element count of pxChunkSpansOut, which must be at least
+		// uGridSize*uGridSize -- the core appends at most one span per grid cell.
+		// *puChunkSpanCountOut is reset to 0 and then counts up as chunks are
+		// appended.
+		//
+		// All three are defaulted rather than mandatory so the existing
+		// Zenith_UnitTests.Tests.inl call sites (Core/, friended onto this core to
+		// pin the sparse/anchor/dense combine behaviour directly) keep compiling
+		// unchanged -- they exercise the combine, not the ground-height query, and
+		// have no reason to pass a span table.
+		PhysicsChunkSpan* pxChunkSpansOut = nullptr, uint32_t uChunkSpanCapacity = 0u,
+		uint32_t* puChunkSpanCountOut = nullptr);
 	bool LoadAndCombineLowLODChunksCore(uint32_t uGridSize,
 		uint32_t uTotalVerts, uint32_t uTotalIndices,
 		TerrainChunkLoadCallback pfnLoadChunk, void* pLoadContext,
@@ -218,16 +306,43 @@ public:
 	// authored today and NOTHING ENFORCES IT: give a terrain entity a transform and
 	// this query keeps answering, in the wrong space, with no diagnostic.
 	//
-	// Cost is a linear scan over the mesh's triangles, cut by a per-triangle XZ
-	// bounding-box reject. It is O(triangles) per call and does no allocation --
-	// fine for one-off probes and physics-space placement, NOT for a per-frame
-	// per-agent query over a full terrain. The box is NOT purely an accelerator, and
-	// saying so precisely matters: the barycentric test alone admits a thin band about
-	// 1e-5 of a triangle wide OUTSIDE the triangle (the tolerance that stops a point
-	// on an interior edge falling down a zero-width crack), and the box CLIPS that
-	// band. That is the behaviour we want -- it is what keeps the tolerance from
-	// extrapolating a height off the rim of the mesh -- but it CHANGES the answer at
-	// a boundary rather than merely speeding the scan up.
+	// Cost, since the chunk-granularity reject (ZEN-2): TryGetGroundHeightAt first
+	// rejects against each combined PHYSICS chunk's OWN real-vertex-data XZ bounds
+	// -- a handful of float compares per chunk, at most CHUNK_GRID_SIZE^2 (4096)
+	// of them -- and only then runs the ORIGINAL per-triangle scan below,
+	// restricted to the one (or, exactly at a shared seam, two) chunk(s) whose
+	// bounds contain the point. That is O(chunks) + O(triangles in the matching
+	// chunk) rather than O(every triangle in the mesh): about 512 triangles
+	// scanned (one physics chunk's worth) instead of up to ~2.1M (4096 chunks x
+	// 512 triangles each), with the per-triangle maths below completely
+	// unchanged. Still no allocation PER QUERY -- the per-chunk table
+	// (PhysicsChunkSpan / m_pxPhysicsChunkSpans) is built ONCE, when the physics
+	// geometry itself is combined (LoadCombinedPhysicsGeometryCore), not on each
+	// call.
+	//
+	// The coarser per-chunk box can never clip TIGHTER than the per-triangle one
+	// immediately below: a triangle's own XZ bounds are always a subset of its
+	// owning chunk's (the chunk bound is generated from the SAME real vertex
+	// data, a superset of every one of its triangles' vertices), so restricting
+	// the scan to chunks whose bound contains the point can never exclude a
+	// triangle the unrestricted scan would have found -- see
+	// TryGetGroundHeightFromTrianglesChunked below for the argument in full, and
+	// PhysicsChunkSpan (near the constructors) for why BOTH the bounds and the
+	// index offsets are observed at append time rather than computed from a chunk
+	// coordinate, which is unsafe under a sparse bake.
+	//
+	// The static TryGetGroundHeightFromGeometry / TryGetGroundHeightFromTriangles
+	// entry points below stay UNACCELERATED by design: they have no owning
+	// component to hold a per-chunk table, so a caller reaching them directly (a
+	// hand-built mesh, a test) still pays the full per-triangle scan, cut only by
+	// the per-triangle XZ bounding-box reject described there. That reject is NOT
+	// purely an accelerator either, and saying so precisely matters: the
+	// barycentric test alone admits a thin band about 1e-5 of a triangle wide
+	// OUTSIDE the triangle (the tolerance that stops a point on an interior edge
+	// falling down a zero-width crack), and the box CLIPS that band. That is the
+	// behaviour we want -- it is what keeps the tolerance from extrapolating a
+	// height off the rim of the mesh -- but it CHANGES the answer at a boundary
+	// rather than merely speeding the scan up.
 	[[nodiscard]] bool TryGetGroundHeightAt(float fWorldX, float fWorldZ, float& fHeightOut) const;
 
 	// The same query against a caller-supplied geometry. Static, so the lookup is
@@ -262,6 +377,53 @@ public:
 	[[nodiscard]] static bool TryGetGroundHeightFromTriangles(
 		const Zenith_Maths::Vector3* pxPositions, uint32_t uVertexCount,
 		const uint32_t* puIndices, uint32_t uIndexCount,
+		float fWorldX, float fWorldZ, float& fHeightOut);
+
+	// PhysicsChunkSpan (one physics chunk's real-vertex-data XZ footprint plus
+	// its run in the combined index buffer) is declared PUBLIC further up, near
+	// the constructors -- it must be fully visible before CombineTerrainChunkGridCore's
+	// PRIVATE declaration below can name it as a parameter type, and a nested
+	// type's accessibility follows wherever it is first declared. Its doc comment
+	// there is where both of its contracts are written out in full: WHY both
+	// fields are observed at append time rather than computed from a chunk
+	// coordinate (the sparse-bake trap), and the allocation contract (one bulk
+	// Allocate, no constructor, hence deliberately no default member
+	// initializers, hence only the first *puChunkSpanCountOut entries may be
+	// read).
+	//
+	// The chunk-accelerated counterpart of TryGetGroundHeightFromTriangles just
+	// above: for each recorded span, an inclusive four-compare XZ reject against
+	// ITS OWN real-vertex-data bounds, and only on a match does it run the
+	// UNMODIFIED per-triangle scan (TryGetGroundHeightFromTriangles), restricted
+	// to that span's [m_uFirstIndex, m_uFirstIndex + m_uIndexCount) run. Every
+	// other argument (positions, vertex count, the full index buffer) is passed
+	// straight through unrestricted, so an index inside the matching span's run
+	// still resolves against the SAME full position array the unrestricted scan
+	// would use.
+	//
+	// PROVABLY THE SAME ANSWER AS THE UNRESTRICTED SCAN, for two reasons taken
+	// together. (1) A triangle's own XZ bounds are always a SUBSET of its owning
+	// chunk's span bounds -- the span is generated from that chunk's full vertex
+	// set, a superset of any one triangle's three vertices -- so a span whose
+	// bounds reject the point can only be rejecting chunks that provably contain
+	// no containing triangle; the true first-hit triangle's chunk can never be
+	// one of them. (2) Candidate spans are tried in ARRAY order and, within one,
+	// triangles are tried in their existing INDEX order (TryGetGroundHeightFromTriangles
+	// is untouched), so restricting to the candidate set and concatenating their
+	// runs in span order reproduces exactly the index-order scan the
+	// unrestricted function performs, restricted to a set that is proven to
+	// contain the answer. At a shared chunk seam, more than one span's bounds
+	// contain the point (both chunks' real vertex data include the shared edge),
+	// and TryGetGroundHeightFromTriangles's own documented multi-hit policy
+	// already covers that case: both sides interpolate the same shared vertices
+	// and agree, so it does not matter which candidate span's scan reaches it
+	// first. A point inside no span's bounds provably lies over either a hole in
+	// a sparse bake or outside the mesh's footprint -- exactly the two
+	// TryGetGroundHeightAt already documents as returning false.
+	[[nodiscard]] static bool TryGetGroundHeightFromTrianglesChunked(
+		const Zenith_Maths::Vector3* pxPositions, uint32_t uVertexCount,
+		const uint32_t* puIndices, uint32_t uIndexCount,
+		const PhysicsChunkSpan* pxChunkSpans, uint32_t uChunkSpanCount,
 		float fWorldX, float fWorldZ, float& fHeightOut);
 
 	// Material accessors (4-material palette)
@@ -361,6 +523,36 @@ public:
 	Zenith_Entity m_xParentEntity;
 
 	Flux_MeshGeometry* m_pxPhysicsGeometry = nullptr;
+	// Per-chunk acceleration for TryGetGroundHeightAt (see its cost note above).
+	// Built ONCE by LoadCombinedPhysicsGeometryCore. Non-null only if a physics
+	// combine both succeeded AND the accelerator's own (much smaller) allocation
+	// succeeded; TryGetGroundHeightAt falls back to the unrestricted,
+	// unaccelerated scan when this is null, so its absence changes speed, never
+	// correctness.
+	//
+	// THIS TABLE MAY OUTLIVE THE MESH IT DESCRIBES, AND THAT IS SAFE FOR A
+	// REASON WORTH STATING EXACTLY, because the obvious statement of it is
+	// FALSE: it is NOT true that every site discarding m_pxPhysicsGeometry also
+	// frees this. Zenith_TerrainComponent_Editor.cpp's
+	// CleanupPriorGenerationForRegenerate deletes and nulls the geometry and
+	// leaves the table standing, and its caller does NOT reliably re-combine
+	// afterwards -- the regenerate body returns early when
+	// DeleteExistingTerrainFilesInDirectory fails, before ever reaching
+	// LoadCombinedPhysicsGeometry(). What actually holds is a two-part
+	// invariant:
+	//   1. TryGetGroundHeightAt gates on m_pxPhysicsGeometry == nullptr FIRST and
+	//      returns false, so a table left behind by a discarded mesh is never
+	//      consulted while there is no mesh;
+	//   2. LoadCombinedPhysicsGeometryCore is the ONLY site that assigns a freshly
+	//      combined mesh, and it calls FreePhysicsChunkSpans() UNCONDITIONALLY
+	//      before combining, so a stale table can never be read against a
+	//      different mesh than the one it was built from.
+	// Together those make the leftover a DELAYED FREE (reclaimed by the next
+	// combine, the destructor, or a move), never a use-after-free and never a
+	// mismatched read. The move constructor / move assignment transfer the
+	// pointer and its count together for the same reason.
+	PhysicsChunkSpan* m_pxPhysicsChunkSpans = nullptr;
+	uint32_t m_uPhysicsChunkSpanCount = 0u;
 	MaterialHandle m_axMaterials[4];
 	TextureHandle m_xSplatmap;
 
@@ -397,6 +589,11 @@ public:
 
 	// Helper method to load and combine all physics chunks
 	void LoadCombinedPhysicsGeometry();
+	// Frees m_pxPhysicsChunkSpans (if any) and resets m_uPhysicsChunkSpanCount to
+	// 0. Called before every fresh combine attempt (a retry must not consult a
+	// span table built from a previous, possibly differently-sparse, combine)
+	// and everywhere m_pxPhysicsGeometry itself is discarded within this file.
+	void FreePhysicsChunkSpans();
 
 	// Version-dispatched material deserialization helpers. Split out of
 	// ReadFromDataStream so the top-level function reads as a short version
