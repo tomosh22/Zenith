@@ -231,10 +231,31 @@ several here defer themselves in prose that no field captures:
 
 And watch for a DoD whose only reachable branch is DESTRUCTIVE. ZM-56 is
 "the test passes windowed, or is retired with a recorded reason" — a
-`requiresGraphics` test the headless loop cannot run. It can only verify the
-*retire* branch, so an agent handed "fix it or delete it", with no way to
-test a fix, deletes coverage. Treat that as needing a person, whatever the
-labels say.
+`requiresGraphics` test. Handed "fix it or delete it" with no way to test a
+fix, an agent deletes coverage. **When only the destructive branch is
+verifiable, that is not a choice — take neither, and say why.**
+
+**But check WHOSE reach before you decide.** "The headless loop cannot do
+this" and "I cannot do this" are different sets, and collapsing them
+declines work that is perfectly doable:
+
+| | |
+| --- | --- |
+| An unattended CI loop | no display, no GPU — `requiresGraphics` is genuinely out |
+| A `/tick` on a developer box | a GPU is usually right there |
+
+ZM-56 was written off as unreachable on exactly that confusion, then done
+by building the `Vulkan_` config and running
+`--automated-test <name> --skip-unit-tests`. `--skip-unit-tests` is
+required: the SaveData sandbox unit fails BY DESIGN under the harness.
+So before declaring a graphics-gated ticket unreachable, check for a GPU —
+and if there is one, the windowed run is often the *only* way to get the
+measurement the ticket is actually asking for.
+
+What stays out of reach on any machine is **authoring**: a headless run may
+CREATE a `.zscen` but never CHANGE one, which is what the `windowed` label
+means and why it is filtered from the queue. Running a windowed TEST is not
+authoring.
 
 **`windowed` label** (`windowed: true` in the payload, and exit 4). The
 ticket needs a person at a keyboard — a headless run cannot produce its
