@@ -647,6 +647,18 @@ Size it deliberately: `--complexity TRIVIAL|SIMPLE|MODERATE|COMPLEX`
 picks the model, `--risk LOW|MEDIUM|HIGH` escalates it one tier. Risk
 never blocks a merge — it buys more thinking.
 
+**Risk no longer decides who gets REVIEWED, and that is the point.**
+Sizing is answered when a ticket is filed, before anyone has seen a
+diff; whether the work needs a reader is a property of what the ticket
+CLAIMS. A Definition of Done that asserts an equivalence
+(*"provably unchanged"*, *"byte-identical"*), an absence (*"no new
+allocations"*, *"must not"*) or something about the tests themselves
+(*"covered by a test"*) is asking for something no gate can settle, and
+`review.required` in the payload is now the OR of `reviewOn` and that
+scan. ZEN-2 was filed LOW, honestly, and its DoD said the recorder was
+provably unchanged; the review found the recorder had zero coverage
+while the test file said it was covered.
+
 **Windowed work gets `--label windowed`.** A headless run may CREATE a
 `.zscen` but never CHANGE one, so a slice that re-authors a committed
 scene cannot be done by the loop at all — and the units that would

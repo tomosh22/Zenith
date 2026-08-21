@@ -400,13 +400,25 @@ report is _proposed text_ that you apply (I4).
 
    Never paraphrase a gate line and never re-derive one from
    `zagent.project.json` by hand.
-3. **Reviewer pass** when the ticket's `risk` is in `reviewOn`: dispatch
-   `Agent{subagent_type: 'zagent-reviewer', model: <routing.model>}` with
-   the diff inlined in the prompt. `zagent-reviewer` is read-only by
-   definition (`Read, Grep, Glob`), so it cannot quietly "fix" what it
-   finds and hand you back a diff you did not gate. Findings go in the
-   work log; a finding that contradicts a gate result blocks. A null
-   return here is infrastructure, same as step 5 — it is not a pass.
+3. **Reviewer pass** when `review.required` is true in the payload.
+   Dispatch `Agent{subagent_type: 'zagent-reviewer', model:
+   <routing.model>}` with the diff inlined in the prompt, and inline
+   `review.reasons` too — they name the CLAIM to check.
+   `zagent-reviewer` is read-only by definition (`Read, Grep, Glob`), so
+   it cannot quietly "fix" what it finds and hand you back a diff you
+   did not gate. Findings go in the work log; a finding that contradicts
+   a gate result blocks. A null return here is infrastructure, same as
+   step 5 — it is not a pass.
+
+   **Do not re-derive this from `risk` and `reviewOn`.** They used to be
+   the whole rule, which conflates two different questions: risk is a
+   SIZING field — how much model does this deserve — while scrutiny is a
+   property of what the ticket CLAIMS. ZEN-2 was filed LOW, honestly, and
+   its Definition of Done said the recorder was "provably unchanged"; the
+   review that ran anyway found the recorder had zero coverage while the
+   test file asserted otherwise. `review.required` is now the OR of
+   `reviewOn` and a scan of the DoD for claims a gate cannot settle — an
+   equivalence, an absence, or an assertion about the tests themselves.
 4. `zagent guard <KEY>` — **with the key, and with no `--file`**.
    Non-zero → Blocked regardless of gate colour.
 
