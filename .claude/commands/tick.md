@@ -300,26 +300,35 @@ report is _proposed text_ that you apply (I4).
    finds and hand you back a diff you did not gate. Findings go in the
    work log; a finding that contradicts a gate result blocks. A null
    return here is infrastructure, same as step 5 — it is not a pass.
-4. Write the changed-file list, **and take it from where the changes
-   actually are — which differs by branching mode**:
+4. Write the changed-file list. **The work is UNCOMMITTED at this point
+   in both branching modes**, because the commit is step 7 — so read the
+   working tree, not a commit range, and include untracked files:
 
-   - `branching: "branch"` → the work is committed on a branch:
-     `git -C <repo> diff --name-only <baseBranch>...HEAD`
-   - `branching: "direct"` → the work is **uncommitted in the working
-     tree**, because the commit is step 7:
-     `git -C <repo> diff --name-only`
+   ```
+   git -C <repo> status --porcelain -uall     # then strip the 3-char status prefix
+   ```
 
    Redirect it to `.zagent/run/<KEY>/changed.txt`, then
    `zagent guard --file .zagent/run/<KEY>/changed.txt`.
    Non-zero → Blocked regardless of gate colour.
 
-   **Do not use the `<baseBranch>...HEAD` form in `direct` mode.** You are
-   ON `baseBranch` and have not committed yet, so the range is empty, the
-   file is empty, and `guard` exits 1 — which this step reads as Blocked.
-   That would Block every Zenithmon and Engine ticket, forever, with the
-   work sitting green and finished in the tree. It fails closed rather
-   than open, so nothing unsafe merges, but it is still a total stop for
-   two of the three categories.
+   **Never use `<baseBranch>...HEAD` here, in either mode.** In `direct`
+   mode you are ON `baseBranch` and have not committed; in `branch` mode
+   step 4 only ran `switch -c`, so the branch is still at `baseBranch`
+   with zero commits. Either way the range is empty, `changed.txt` is
+   empty, `guard` exits 1, and this step reads that as Blocked — so
+   **every ticket in every category** Blocks with its work sitting green
+   and finished in the tree. It fails closed rather than open, so nothing
+   unsafe merges, but nothing merges at all.
+
+   **`git diff --name-only` is not enough either — it reports only
+   TRACKED modifications.** A worker that CREATES a file produces an
+   untracked path that never reaches `guard`, so a new
+   `.claude/agents/anything.md` or `.github/workflows/anything.yml` would
+   sail past the protected-path check. That one fails OPEN, which is the
+   dangerous direction, and it is invisible on any ticket that only edits
+   existing files. Hence `-uall`, which also expands a wholly-new
+   directory into its individual files instead of reporting the directory.
 
    **An empty `changed.txt` means the worker changed nothing.** That is a
    failed attempt, not a guard failure — say so in the work log rather
@@ -341,7 +350,25 @@ licence to edit one site and move on.
 
 ## 7. Integrate
 
-**Green** → `git -C <repo> commit -am "<KEY>: <title>"`, then:
+**Green** → stage everything the worker produced, then commit:
+
+```
+git -C <repo> add -A
+git -C <repo> commit -m "<KEY>: <title>"
+```
+
+**`commit -am` is wrong and its failure is silent.** `-a` stages
+modifications to files git already tracks; a file the worker CREATED is
+untracked and is simply left behind. A ticket whose new header is
+`#include`d by the source files it also edited would land a commit on
+`master` that **does not compile from a clean checkout** — and every gate
+would have certified it green, because the gates ran against a working
+tree where the file existed. Nothing downstream catches it: the tree is
+clean afterwards, `finish` records Done, and the break surfaces on
+somebody else's next clone. `add -A` is what the guard at step 6.4 already
+listed, so the two stay consistent.
+
+Then:
 
 - `branch` mode: `git -C <repo> switch <baseBranch>` and
   `git -C <repo> merge --ff-only <branch>`. Base moved and ff impossible
