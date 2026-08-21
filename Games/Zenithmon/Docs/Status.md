@@ -18,11 +18,15 @@ The S0-S7 narrative that used to fill the back half of this file moved VERBATIM 
 its own template in `AgentBriefing.md` §2.3 specifies. Nothing was deleted.
 
 **★ LIVE PIN (UPDATED 2026-08-21):
-ZM boot `3360`; engine boot (Null Combat) `1644`; Null RenderTest `1735`; registry **67**.**
-**★ +6 on EVERY game (ZM-49):** the terrain COLLISION-height query
-(`TryGetGroundHeightAt` -- 4 m quads, NOT the rendered ground) added six
-BACKEND-NEUTRAL engine units, so all three boot pins moved in one commit --
-3354/1638/1729 -> 3360/1644/1735, each OBSERVED on `Null_`. No `ZM_*` unit added.
+ZM boot `3365`; engine boot (Null Combat) `1649`; Null RenderTest `1740`; registry **67**.**
+**★ +11 on EVERY game across two ENGINE tickets, no `ZM_*` unit added.**
+3354/1638/1729 -> **3360/1644/1735** (ZM-49, +6: the terrain COLLISION-height
+query `TryGetGroundHeightAt` -- 4 m quads, NOT the rendered ground) ->
+**3365/1649/1740** (ZEN-2, +4 then +1: its chunk-granularity reject, plus the
+recorder test a review found missing). Each number OBSERVED on `Null_`.
+★ **A backend-neutral ENGINE ticket moves this block and may not touch it** --
+ZEN-2 is `category: Engine`, so its gate list never opened a ZM doc and left
+this line reading 3360/1644/1735 until someone noticed.
 **★ The GATE reads `Tools/unit_baselines.json`, not this block** (2026-08-21) --
 bump the number there, in the same commit as the tests that moved it. This block
 is the human narration of WHY it moved and is read by no gate, so a stale line
