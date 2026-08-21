@@ -489,9 +489,16 @@ shipped with **eight OBSERVED literals**; registry 65 -> **67**; boot units unmo
 > camera unit its header comments already claimed
 > (`Thornacre_SettledCameraStandsAboveGroundBehindTheArrival`, with a sign-flipped-pitch
 > anti-vacuity arm), and both suites' duplicated component-type tables now pin their counts
-> (15 game / 17 engine) as literals, so a one-sided registration reds the other file. **A
-> stopgap, not the durable fix** -- that is one shared `Tests/ZM_Tests_ComponentTypeNames.h`,
-> owed by whichever slice adds a THIRD name battery.
+> (15 game / 17 engine) as literals, so a one-sided registration reds the other file.
+>
+> **The durable fix has since landed, via ZM-57: `Tests/ZM_Tests_ComponentTypeNames.h`.** It
+> holds the one copy of each table; both suites include it and alias the arrays under their own
+> existing local names, so the loops that walk them are unchanged. The pinned-literal
+> assertions in both files stay -- they now catch drift between the shared header and the REAL
+> registries (`Zenith_ComponentMeta_Registration.cpp`, `Zenithmon.cpp`) rather than drift
+> between two independent copies. It landed before a third name battery existed, as a
+> standalone debt payoff rather than the "next slice that needs one" trigger this note
+> originally expected.
 >
 > The same pass also killed a clause that could not red: U8 compared
 > `fZM_ROUTE1_TRAINER_MIN_LANE_OFFSET` against a term-for-term re-computation of its own

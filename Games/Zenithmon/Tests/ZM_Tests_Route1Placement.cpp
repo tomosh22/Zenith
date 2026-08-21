@@ -42,8 +42,9 @@
 // the human body contract, the sight cone's own constants, or an arithmetic
 // invariant of the accessor. The only bare literals in this file are the ones
 // transcribed from OTHER files (see U10's player-name clause), the two
-// component-type-table COUNTS U10 pins against the sibling Thornacre suite's
-// byte-identical copy, and the sampling density -- and all of them say so where
+// component-type-table COUNTS U10 pins against the shared table in
+// Tests/ZM_Tests_ComponentTypeNames.h (which the sibling Thornacre suite pins
+// the same way), and the sampling density -- and all of them say so where
 // they are spelled.
 // ============================================================================
 
@@ -58,6 +59,7 @@
 #include "Zenithmon/Source/World/ZM_HumanBody.h"                  // THE body contract -- by name, never by literal
 #include "Zenithmon/Source/World/ZM_Route1Placement.h"
 #include "Zenithmon/Source/World/ZM_TerrainAuthoring.h"           // the recipe. The UNITS may include this; the HEADER may not.
+#include "Zenithmon/Tests/ZM_Tests_ComponentTypeNames.h"          // the ONE shared component-type-name inventory (ZM-57)
 
 namespace
 {
@@ -103,31 +105,14 @@ namespace
 	// clause the two real stations pass. Nothing outside this file may read it.
 	constexpr const char* szROUTE1_OFF_LANE_LANDMARK = "TutorialFields";
 
-	// ★ TRANSCRIBED FROM Zenith/EntityComponent/Zenith_ComponentMeta_Registration.cpp
-	// AND Games/Zenithmon/Zenithmon.cpp -- the serialized component TYPE names, which
-	// land in the same .zscen byte range that entity names do. This is a COPY of
-	// another file's table on purpose: it is the CLAIM, and the entity names are the
-	// subject. Reading the live registry instead would need g_xEngine.
-	//
-	// Engine set, 17 rows: the 16 registered in Zenith_ComponentMeta_Registration.cpp
-	// plus "AIAgent", which Zenith_AIAgentComponent.cpp registers at order 90 through
-	// the AI forwarder.
-	const char* const aszROUTE1_ENGINE_TYPE_NAMES[] =
-	{
-		"Transform", "Model", "Tween", "Animator", "Camera", "Light", "Sun",
-		"Atmosphere", "Terrain", "Collider", "Graph", "UI", "InstancedMesh",
-		"ParticleEmitter", "Attachment", "NavMesh", "AIAgent",
-	};
-
-	// Game set, 15 rows (Zenithmon.cpp's ZENITH_REGISTER_COMPONENT block).
-	const char* const aszROUTE1_GAME_TYPE_NAMES[] =
-	{
-		"ZM_Game", "ZM_TerrainGrass", "ZM_PlayerController", "ZM_FollowCamera",
-		"ZM_GameStateManager", "ZM_SpawnPoint", "ZM_WarpTrigger", "ZM_GreyboxVisual",
-		"ZM_BattleArena", "ZM_TallGrassSystem", "ZM_BattleTransition",
-		"ZM_BattleDirector", "ZM_UI_MenuStack", "ZM_Interactable",
-		"ZM_TouchLayoutController",
-	};
+	// ★ SHARED WITH Tests/ZM_Tests_ThornacrePlacement.cpp, in
+	// Tests/ZM_Tests_ComponentTypeNames.h (landed by ZM-57 -- see that header for
+	// the full rationale: why this is a deliberate COPY of the registries rather
+	// than a live g_xEngine read, and why the anti-vacuity counts below stay
+	// local to each file rather than moving into the header too). Aliased under
+	// this file's existing names so every clause below is unchanged.
+	constexpr auto& aszROUTE1_ENGINE_TYPE_NAMES = aszZM_ENGINE_COMPONENT_TYPE_NAMES;
+	constexpr auto& aszROUTE1_GAME_TYPE_NAMES = aszZM_GAME_COMPONENT_TYPE_NAMES;
 
 	// ★ THE ONE TYPE NAME THAT SWALLOWS AN ENTITY NAME, NAMED SO THE EXCLUSION IS
 	// EXPLICIT. "Player" is a strict substring of this, and the player entity MUST
@@ -1497,32 +1482,33 @@ ZENITH_TEST(ZM_WorldTraversal, Route1_EntityNamesAreUniquePrintableLookupKeysNoN
 	ZENITH_ASSERT_GT(uGameTypeCount, 0u,
 		"the transcribed game component type table is empty");
 
-	// ★ AND THE TWO TABLES ARE THE SIZE THE OTHER COPY OF THEM CLAIMS.
-	// Tests/ZM_Tests_ThornacrePlacement.cpp transcribes these same 15 game and 17
-	// engine rows BYTE-IDENTICALLY (s_aszGameComponentTypeNames /
-	// s_aszEngineComponentTypeNames) and NOTHING cross-checks the copies: a
-	// component registered later updates one of them and silently weakens the other
-	// file's needle-swallow battery, with both files green and no diff to read.
-	// Pinning the COUNT as a literal on BOTH sides is the cheap reconciliation --
-	// a row added to one copy now reds the other.
+	// ★ THE TABLE ABOVE IS SHARED NOW (ZM-57): this file and
+	// Tests/ZM_Tests_ThornacrePlacement.cpp both include
+	// Tests/ZM_Tests_ComponentTypeNames.h and alias its two arrays under their
+	// own local names, so there is exactly one aszROUTE1_ENGINE_TYPE_NAMES /
+	// aszROUTE1_GAME_TYPE_NAMES table in the tree, not two copies that could
+	// drift from EACH OTHER. What the literal counts below still catch is
+	// drift from the REAL registries: an edit to the shared header that is not
+	// reconciled against Zenith_ComponentMeta_Registration.cpp and
+	// Zenithmon.cpp's ZENITH_REGISTER_COMPONENT block reds BOTH suites (this
+	// file's and Thornacre's) rather than neither, because both pin the same
+	// counts against the same shared table.
 	//
-	// ★ THE DURABLE FIX IS A SHARED HEADER, and it is deliberately not landed here.
-	// One Games/Zenithmon/Tests/ZM_Tests_ComponentTypeNames.h that both suites
-	// include leaves one inventory instead of two; it belongs to whichever slice
-	// adds a THIRD battery, where the duplication stops being a pair and starts
-	// being a pattern. Until then: EDIT BOTH TABLES AND BOTH LITERALS IN ONE CHANGE.
+	// EDIT THE SHARED HEADER AND BOTH FILES' LITERALS IN ONE CHANGE.
 	ZENITH_ASSERT_EQ(uGameTypeCount, 15u,
-		"the transcribed GAME component type table holds %u rows, not the 15 that "
-		"Games/Zenithmon/Zenithmon.cpp's ZENITH_REGISTER_COMPONENT block registers. "
-		"Tests/ZM_Tests_ThornacrePlacement.cpp carries a byte-identical copy pinned "
-		"at the same literal, so this reds when one copy is grown and the other is "
-		"not -- update BOTH tables and BOTH literals", uGameTypeCount);
+		"the shared GAME component type table (Tests/ZM_Tests_ComponentTypeNames.h) "
+		"holds %u rows, not the 15 that Games/Zenithmon/Zenithmon.cpp's "
+		"ZENITH_REGISTER_COMPONENT block registers. "
+		"Tests/ZM_Tests_ThornacrePlacement.cpp pins the SAME shared table at the "
+		"same literal, so this reds if the header is grown and that file's literal "
+		"is not -- update the header and BOTH files' literals", uGameTypeCount);
 	ZENITH_ASSERT_EQ(uEngineTypeCount, 17u,
-		"the transcribed ENGINE component type table holds %u rows, not the 17 the "
-		"engine serializes (the 16 in Zenith_ComponentMeta_Registration.cpp plus "
-		"\"AIAgent\", registered at order 90 through the AI forwarder). "
-		"Tests/ZM_Tests_ThornacrePlacement.cpp carries a byte-identical copy pinned "
-		"at the same literal", uEngineTypeCount);
+		"the shared ENGINE component type table (Tests/ZM_Tests_ComponentTypeNames.h) "
+		"holds %u rows, not the 17 the engine serializes (the 16 in "
+		"Zenith_ComponentMeta_Registration.cpp plus \"AIAgent\", registered at "
+		"order 90 through the AI forwarder). "
+		"Tests/ZM_Tests_ThornacrePlacement.cpp pins the SAME shared table at the "
+		"same literal", uEngineTypeCount);
 
 	for (u_int uIndex = 0u; uIndex < uNameCount; ++uIndex)
 	{
