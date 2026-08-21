@@ -188,3 +188,10 @@ unit_test_scene.zscen
 # loop preconditions still see a clean tree — `git status --porcelain`
 # must stay empty while a ticket is in flight.
 .zagent/
+
+# MSYS/Cygwin crash dumps. Git Bash's grep/sed/find drop these in the CWD
+# when they fault, so one crashed shell command leaves an untracked file
+# at the repo root — and the tick treats a dirty tree as FATAL and
+# refuses to stash, so the whole queue stalls on a file nobody wrote
+# deliberately and which has nothing to do with the work.
+*.stackdump
