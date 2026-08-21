@@ -181,20 +181,32 @@ Then read `.zagent/last.json` and branch on the exit code:
   waiting and just asked for this ticket by name — do not Block it.
 
 **Reachability — read the Definition of Done BEFORE dispatching a worker.**
-`contractValid: true` means the ticket can be ROUTED, not that it can be
-DONE. Validation checks category, complexity and risk; nothing checks
+`contractValid: true` used to mean only that the ticket could be ROUTED —
+it has a category, a complexity and a risk — and said nothing about
 whether the work is inside what an agent bound by `protectedPaths` can
-reach. Three shapes are provably impossible, and each one costs a claim, a
-slot in the one-ticket-per-repo lock, and a worker dispatch if you only
-notice afterwards:
+reach. Twice in one session that gap cost a claim, a slot in the
+one-ticket-per-repo lock and a worker dispatch each.
+
+**The board now scans the DoD for protected paths and refuses at FILE
+time**, the same way `windowed` does: filing straight into *Ready for
+Agent* is rejected, filing into *To Do* warns. A ticket that reaches you
+with one anyway — filed before the check existed, or dragged into Ready
+on the board — comes back as an ordinary exit 4 naming the path and the
+pattern. Handle it as any contract failure; do not re-derive the rule.
+
+That leaves the shapes no scanner can see, and these you do still read
+for:
 
 | DoD says | Why it cannot be done |
 | --- | --- |
-| adds or removes a **test** | the pin bump needs `.github/**` and `zagent.project.json` — see the baseline note in step 6 |
-| touches **CI**, `.claude/**`, or `zagent.project.json` | `guard` refuses it at 6.4 |
 | "a **user decision** recorded", or any ruling the ticket does not already contain | nobody in this loop is the user |
+| **CI** / "the workflow" / "the pin", naming no file | the same impossibility, said in prose — the scan needs a path to match |
 
-Check those three against the DoD text, and spot-check the ticket's central
+The pin bump is NO LONGER one of these: it has one unprotected home,
+`Tools/unit_baselines.json`, and a DoD naming it files and runs cleanly.
+See the baseline note in step 6.
+
+Check those against the DoD text, and spot-check the ticket's central
 claim against the repo — **every ticket run so far has had a body that
 drifted from the code**: one cited a file with zero matches, one described
 a trigger condition that had not occurred, one named a single assertion

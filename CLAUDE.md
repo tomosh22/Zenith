@@ -631,6 +631,18 @@ the category's rather than adding to it: pasting the Zenithmon list into
 a ticket is how a pinned baseline goes stale, and `echo ok` in a body
 would merge on `echo ok`.
 
+**It also refuses a DoD that names a protected path.** `contractValid`
+used to answer only "can this be ROUTED" — category, complexity, risk —
+and said nothing about whether the work is inside what an agent bound by
+`protectedPaths` can reach. Two consecutive tickets were valid and
+impossible: one required a `.github/workflows/` file, the other a pin
+bump in files the guard refuses. Each cost a claim, a slot in the
+one-ticket-per-repo lock and a worker dispatch before anyone noticed.
+The scan reads the **Definition of Done only** — the Goal may quote a
+protected path as background without being refused — and reports the
+path AND the pattern, so the fix is obvious: split the protected half
+out as a human task.
+
 Size it deliberately: `--complexity TRIVIAL|SIMPLE|MODERATE|COMPLEX`
 picks the model, `--risk LOW|MEDIUM|HIGH` escalates it one tier. Risk
 never blocks a merge — it buys more thinking.
