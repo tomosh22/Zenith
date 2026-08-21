@@ -370,6 +370,29 @@ Agent{
 - If elapsed wall-clock exceeds `guardrails.ticketTimeoutMinutes`, stop
   the agent (`TaskStop`) and treat it as a failed attempt (→ Blocked,
   with a timeout note).
+
+  **That number is already resolved for THIS ticket's complexity** —
+  read it, do not re-derive it and do not substitute your own. It was
+  one flat 30 for every ticket and was never once enforced, because
+  enforcing it would have been wrong: ZEN-2's opus worker ran 43 minutes,
+  45% over, and produced the chunk-span design that shipped. Killing it
+  would have destroyed correct work and cost a full re-dispatch, so the
+  guardrail was skipped and silently stopped existing. **A limit that is
+  right to ignore is worse than no limit** — it trains you to skip the
+  check, and then it is not there on the run that genuinely wedges.
+
+  The tiers come from measurement, not taste: every observed run over 15
+  minutes was opus on a COMPLEX ticket, and every sonnet/haiku run
+  finished well inside 30.
+
+  It is still a wall-clock cap, which is the wrong SHAPE for "wedged" —
+  what that means is "has produced no tool call for N minutes", and a
+  COMPLEX ticket working steadily for 40 minutes is not wedged while a
+  TRIVIAL one silent for 10 is. The `Agent` tool exposes no such signal,
+  so this is the closest enforceable approximation. If you can see the
+  worker still producing tool calls as the cap approaches, say so in the
+  work log rather than quietly extending it — a guardrail overridden
+  without a record is the state this replaced.
 - **Effort is not settable per dispatch.** The `Agent` tool takes a model
   but no effort parameter; reasoning effort comes from the agent
   definition. `routing.effort` is therefore advisory — record it in the
