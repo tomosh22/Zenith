@@ -459,6 +459,19 @@ every ticket that touches it, which is the trade; `Tools/**` is
 deliberately NOT listed, because a one-line pin bump in
 `Tools/unit_baselines.json` does not need Combat rebuilt.
 
+**AN ENGINE CHANGE COMPILES EVERY GAME**, and that is a separate rule the
+union cannot supply. `Games/Combat` — once the only game the Engine gates
+built — references `Zenith_TerrainComponent` in ZERO source files, while
+Zenithmon, CityBuilder and RenderTest reference it in 12, 4 and 4. ZEN-5
+made members of that header private and every Engine gate went green;
+three games could have been left un-compilable and nothing would have
+said so. The union cannot catch it because the diff is inside Engine's
+OWN `paths` — a public header's blast radius is everything that INCLUDES
+it, which no directory mapping expresses. So the Engine gate list names
+every game, and `Test-ZagentClient.ps1` asserts that a game with a
+`.zproj` appears in it: adding a game and forgetting the list FAILS
+instead of quietly narrowing engine coverage.
+
 ### Running the loop
 
 A bare `claude` started in this repo is the whole setup:

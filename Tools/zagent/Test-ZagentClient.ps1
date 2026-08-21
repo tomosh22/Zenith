@@ -555,6 +555,18 @@ Assert-That 'returns a boolean, not a collection' {
     ((Test-NeedsChangedSet -Argv @('queue')) -is [bool])
 }
 
+# An EXPLICIT changed set must win over the working tree. `--text` is read
+# board-side, so without this the client shipped the working tree instead
+# and the caller got a verdict about a different set of files with no hint
+# their input had been discarded.
+Assert-That 'lets an explicit --text override the working-tree changed set' {
+    (-not (Test-NeedsChangedSet -Argv @('guard', '--text', 'a/b.cpp'))) -and
+    (-not (Test-NeedsChangedSet -Argv @('gates', 'ZM-1', '--text', 'a/b.cpp')))
+}
+Assert-That 'still computes the set when no explicit input is given' {
+    (Test-NeedsChangedSet -Argv @('guard')) -and (Test-NeedsChangedSet -Argv @('gates', 'ZM-1'))
+}
+
 Write-Host "`n=== Get-GuardTicketKey ===" -ForegroundColor Cyan
 # Matched on the `-<digits>` SUFFIX, the same rule /tick step 1 uses.
 # Digits are legal inside a project key, so "letters versus digits" is
@@ -817,6 +829,53 @@ Assert-That 'resolves every path-valued flag the board declares in FILE_FLAGS' {
         }
     }
     return $true
+}
+
+
+Write-Host "`n=== Engine gates compile EVERY game ===" -ForegroundColor Cyan
+# An engine change can break a game it never mentions. Games/Combat --
+# which used to be the only game the Engine gate list built -- references
+# Zenith_TerrainComponent in ZERO source files, while Zenithmon,
+# CityBuilder and RenderTest reference it in 12, 4 and 4. ZEN-5 made
+# members of that header private and every Engine gate went green.
+#
+# The `paths` union cannot catch that: the diff is inside Engine's OWN
+# paths, so there is no foreign category to pull in. A public header's
+# blast radius is everything that INCLUDES it, which no directory mapping
+# expresses -- so the gate list has to name every game, and THIS is what
+# stops a newly-added game from being silently left out of it.
+Assert-That 'the Engine gate list builds every game that has a .zproj' {
+    $repo = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
+    $file = Get-Content (Join-Path $repo 'zagent.project.json') -Raw | ConvertFrom-Json
+    $gates = @($file.categories.Engine.gates) -join "`n"
+
+    $games = @(Get-ChildItem -Path (Join-Path $repo 'Games') -Directory -ErrorAction SilentlyContinue |
+        Where-Object { Test-Path (Join-Path $_.FullName ("{0}.zproj" -f $_.Name)) } |
+        ForEach-Object { $_.Name })
+    if ($games.Count -eq 0) { Write-Host '       no .zproj games found -- cannot assert'; return $false }
+
+    $missing = @($games | Where-Object { $gates -notmatch [regex]::Escape("build $_ ") })
+    if ($missing.Count) {
+        Write-Host ("       games missing from the Engine gate list: " + ($missing -join ', '))
+    }
+    $missing.Count -eq 0
+}
+
+# Compile before test: a compile break in ANY game should stop the run
+# before a minute goes into one game's suite. If a `test` line drifts
+# above a `build` line the list still passes, just slower and less
+# usefully, so this is a cheap ordering guard rather than a correctness
+# one.
+Assert-That 'every build line comes before the first test line' {
+    $repo = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
+    $file = Get-Content (Join-Path $repo 'zagent.project.json') -Raw | ConvertFrom-Json
+    $gates = @($file.categories.Engine.gates)
+    $lastBuild = -1; $firstTest = $gates.Count
+    for ($i = 0; $i -lt $gates.Count; $i++) {
+        if ($gates[$i] -match '\bbuild\s') { $lastBuild = $i }
+        if ($gates[$i] -match '\btest\s' -and $firstTest -eq $gates.Count) { $firstTest = $i }
+    }
+    $lastBuild -lt $firstTest
 }
 
 Write-Host ""

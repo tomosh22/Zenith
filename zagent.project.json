@@ -120,9 +120,36 @@
       "paths": [
         "Zenith/**"
       ],
+      "$gates": [
+        "EVERY GAME IS COMPILED, and that is the point of this list.",
+        "",
+        "Games/Combat references Zenith_TerrainComponent in ZERO source files,",
+        "while Zenithmon references it in 12, CityBuilder in 4 and RenderTest in",
+        "4. So when ZEN-5 made members of that header private, all four of the",
+        "gates this list used to hold went green while three games could have",
+        "been left un-compilable. Nobody would have known until somebody built",
+        "one by hand.",
+        "",
+        "That is the ZM-50 failure from the other direction, and the `paths`",
+        "union above cannot catch it: the diff is inside Engine's OWN paths, so",
+        "there is no foreign category to pull in. A public header's blast radius",
+        "is everything that INCLUDES it, which no directory mapping expresses.",
+        "",
+        "Builds come before tests deliberately -- a compile break in any game",
+        "should stop the run before a minute goes into Combat's suite.",
+        "",
+        "Test-ZagentClient.ps1 asserts every game with a .zproj appears here, so",
+        "adding a game to the repo and forgetting this list FAILS rather than",
+        "quietly narrowing engine coverage."
+      ],
       "gates": [
         "pwsh -NoProfile -File Tools\\zenith.ps1 build engine",
         "pwsh -NoProfile -File Tools\\zenith.ps1 build Combat --headless",
+        "pwsh -NoProfile -File Tools\\zenith.ps1 build Zenithmon --headless",
+        "pwsh -NoProfile -File Tools\\zenith.ps1 build CityBuilder --headless",
+        "pwsh -NoProfile -File Tools\\zenith.ps1 build RenderTest --headless",
+        "pwsh -NoProfile -File Tools\\zenith.ps1 build TilePuzzle --headless",
+        "pwsh -NoProfile -File Tools\\zenith.ps1 build DevilsPlayground --headless",
         "pwsh -NoProfile -File Tools\\zenith.ps1 test Combat --headless",
         "pwsh -NoProfile -ExecutionPolicy Bypass -File Tools\\run_unit_gate.ps1 -Exe Games\\Combat\\Build\\output\\win64\\null_vs2022_debug_win64_true\\combat.exe -Game Combat -TimeoutSec 600"
       ],
