@@ -204,9 +204,37 @@ parameterised. A body is a description of the past, not of `master`.
 If the work is unreachable, **Block it now** with a work log naming which
 of the three it is and what a human must do, and file the human half as its
 own ticket. Do not dispatch a worker to discover this expensively, and do
-not let it consume fix-forward attempts. Also sanity-check SEQUENCE: a
-ticket from a later sprint than the one in progress may be unreachable
-simply because what it measures does not exist yet.
+not let it consume fix-forward attempts.
+
+**A DoD that names a pin SITE is stale, not unreachable.** Ten open tickets
+still say "bumped in Status.md AND zm-tests.yml AND zagent.project.json",
+which was true before the baseline refactor and now points at two protected
+paths. The pin has ONE home — `Tools/unit_baselines.json`. **Do not Block on
+this and do not inline it verbatim**: correct it in the worker prompt, say
+you did in the work log, and let the Suggestions row fix the template.
+Blocking a ticket over a stale sentence, when the work it describes is a
+one-line edit to an unprotected file, is the contract failing the ticket
+rather than the reverse.
+
+Also sanity-check SEQUENCE, and read the body for the ticket's OWN timing —
+several here defer themselves in prose that no field captures:
+
+- a ticket from a later sprint than the one in progress may be unreachable
+  because what it measures does not exist yet (ZM-45's budgets, ZM-43's
+  chapters);
+- a ticket may say outright it should not be built yet. ZM-48 reads
+  *"Zenithmon does NOT need this now … lands when populated-world NPC
+  pathing actually needs it"*; ZM-47 is *"DEFERRED post-Zenithmon"*. Claim,
+  comment, release to To Do — do not dispatch. **An autonomous loop widening
+  scope on a self-deferred ticket is worse than one that does nothing**, and
+  the deferral is invisible to `contractValid`.
+
+And watch for a DoD whose only reachable branch is DESTRUCTIVE. ZM-56 is
+"the test passes windowed, or is retired with a recorded reason" — a
+`requiresGraphics` test the headless loop cannot run. It can only verify the
+*retire* branch, so an agent handed "fix it or delete it", with no way to
+test a fix, deletes coverage. Treat that as needing a person, whatever the
+labels say.
 
 **`windowed` label** (`windowed: true` in the payload, and exit 4). The
 ticket needs a person at a keyboard — a headless run cannot produce its
