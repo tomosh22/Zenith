@@ -109,12 +109,35 @@ Plus, always:
   date: S0-S7 COMPLETE, S7 item 1 having landed the durable-model and schema-v1 freezes
   (`ZM-D-135/136`). The model owns party-first 16x30
   box storage, seen/caught, 4096 story bits, 8 badges, daycare, tower, world,
-  options and complete monster instance state. `ZM_SaveSchema` now freezes that
-  inventory as a pure explicit-LE 11-module payload with 61-byte monster
-  records, append-transactional writes, exact-length transactional reads and an
-  independent literal 824-byte v1 golden. Its 29 schema + 2 compatibility units
-  join SC1's 18 model units. There is no fake v0 migration and the codec owns no
-  slot/disk/ECS concerns.
+  options and complete monster instance state. `ZM_SaveSchema` freezes that
+  inventory as a pure explicit-LE payload with 61-byte monster records,
+  append-transactional writes and exact-length transactional reads. There is no
+  fake v0 migration and the codec owns no slot/disk/ECS concerns.
+
+  **★ THE SCHEMA IS AT v2 (ZM-D-201, 2026-08-22), AND v1 IS STILL A LIVE READ
+  PATH.** v1 was the 11-module payload frozen at S7 item 1; v2 is exactly that
+  plus save module 12 -- the collected ground-item set -- appended LAST and
+  static_asserted to stay last. For the same state only three things differ: the
+  schemaVersion word, the moduleCount word (11 -> 12), and the twelfth framed
+  module. Modules 1..11 are byte-for-byte unchanged, which is what lets the
+  reader still accept a v1 blob and migrate it by clearing the ground-item set.
+
+  TWO independent literal goldens live in `Tests/ZM_Tests_SaveMigration.cpp`,
+  neither produced by the codec: `auV1Golden` (824 bytes, **never regenerated**
+  -- the only record of a wire format the writer can no longer emit) and
+  `auV2Golden` (842 bytes: the same fixture state plus two collected props, 2
+  bytes per id). The same state with an EMPTY module 12 encodes to 838 bytes
+  (824 + a 12-byte module header + a 2-byte entry count), which is what
+  `Tests/ZM_Tests_SaveSlots.cpp` pins as `uGOLDEN_V2_BLOB_BYTES`. Those three
+  numbers are the ones a save change has to move deliberately.
+
+  Unit counts in those TUs, counted off the tree on **2026-08-22** and dated for
+  that reason (they are `ZENITH_TEST` declarations, NOT a gate baseline -- see
+  the box below): 30 in `ZM_Tests_SaveSchema.cpp`, 5 in
+  `ZM_Tests_SaveMigration.cpp`, 18 model units in `ZM_Tests_SaveModel.cpp`. The
+  figures this paragraph carried before ZM-D-201 -- "29 schema + 2 compatibility
+  units" and an "independent literal 824-byte v1 golden" -- were both wrong the
+  moment module 12 landed.
 
   **★ DO NOT READ TEST COUNTS OUT OF THIS FILE. The ONE live source is the
   CURRENT BASELINE block at the top of `Status.md`.** The figures that used to sit
@@ -126,7 +149,7 @@ Plus, always:
   commit is the drift, not the cure. `Tools/doc_lint.ps1` cannot catch this -- it
   hardcodes DevilsPlayground's Docs and never reads this directory at all.
 
-  ECS orders 100-113 are occupied; **next free is 114**. The authoritative current
+  ECS orders 100-114 are occupied; **next free is 115**. The authoritative current
   stage and exact task live in Status.md.
 
 ### Document map
@@ -325,7 +348,8 @@ greybox unit cubes AND giving the six authored NPCs and the player their generat
 block when no human bake is loadable -- the battle-arena
 manager `ZM_BattleArena` = 108, the tall-grass encounter system
 `ZM_TallGrassSystem` = 109, `ZM_BattleTransition` = 110, `ZM_BattleDirector` =
-111, `ZM_UI_MenuStack` = 112, and `ZM_Interactable` = 113; **next free is 114**.
+111, `ZM_UI_MenuStack` = 112, `ZM_Interactable` = 113 and
+`ZM_TouchLayoutController` = 114; **next free is 115**.
 
 ### 3.2 Engine naming conventions (mandatory)
 
@@ -633,8 +657,8 @@ component:
 2. **Register in `Zenithmon.cpp`** -- `#include` the header and add the
    file-scope `ZENITH_REGISTER_COMPONENT(ZM_WarpTrigger, "ZM_WarpTrigger", 106u)`
    next to the existing registrations (106 is this component's locked order;
-   current registrations continue through `ZM_Interactable` at 113, so the
-   next free order is 114). The
+   current registrations continue through `ZM_TouchLayoutController` at 114, so
+   the next free order is 115). The
    macro must be static-init in an always-linked TU --
    `Zenithmon.cpp` defines the `Project_*` entry points, so it is safe. Do NOT
    call it from `Project_RegisterGameComponents` (the meta registry is sealed

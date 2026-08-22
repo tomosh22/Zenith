@@ -39,7 +39,18 @@ namespace
 	// silently wrong the moment any earlier module's content changed.
 	constexpr u_int uWIRE_INNER_HEADER_BYTES = 12u;   // magic + schemaVersion + moduleCount
 	constexpr u_int uWIRE_MODULE_HEADER_BYTES = 12u;  // id + version + payloadLength
-	constexpr u_int uWIRE_MODULE_COUNT = 11u;
+
+	// How many module frames FindStoryModule will step over before giving up. It is a
+	// SEARCH BOUND, not the payload's module count -- the walk returns the moment it
+	// reaches module 4, which is the fourth frame, so any bound at or above 4 finds
+	// it and every frame past that is only ever visited on a malformed payload. It
+	// was named uWIRE_MODULE_COUNT and held 11 while a payload really did carry
+	// exactly eleven modules; ZM-D-201's v2 payload carries twelve, which changes
+	// nothing here but made the old name a lie. The value is deliberately unchanged:
+	// raising it would alter what this walk does on a payload with no module 4, which
+	// no unit in this file exercises.
+	constexpr u_int uWIRE_MODULE_WALK_LIMIT = 11u;
+
 	constexpr u_int uWIRE_STORY_MODULE_ID = 4u;       // ZM_SaveSchema.cpp:19, uMODULE_STORY
 	constexpr u_int uWIRE_STORY_COUNT_BYTES = 2u;     // the u16 "highest set index + 1" prefix
 
@@ -111,7 +122,7 @@ namespace
 		}
 
 		u_int64 ulCursor = (u_int64)uWIRE_INNER_HEADER_BYTES;
-		for (u_int uModule = 0u; uModule < uWIRE_MODULE_COUNT; ++uModule)
+		for (u_int uModule = 0u; uModule < uWIRE_MODULE_WALK_LIMIT; ++uModule)
 		{
 			if (ulCursor + (u_int64)uWIRE_MODULE_HEADER_BYTES > ulLength)
 			{

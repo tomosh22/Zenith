@@ -6,6 +6,7 @@
 #include "Zenithmon/Source/Data/ZM_MoveData.h"
 #include "Zenithmon/Source/Data/ZM_SpeciesData.h"
 #include "Zenithmon/Source/Data/ZM_WorldSpec.h"
+#include "Zenithmon/Source/World/ZM_GroundItem.h"   // ZM_GROUND_ITEM_ID / ZM_GROUND_ITEM_COUNT (module 12)
 
 #include <cmath>
 #include <cstring>
@@ -24,13 +25,28 @@ namespace
 	static constexpr uint32_t uMODULE_TOWER = 9u;
 	static constexpr uint32_t uMODULE_WORLD = 10u;
 	static constexpr uint32_t uMODULE_OPTIONS = 11u;
+	// v2 ONLY (ZM-D-201). A v1 payload stops at module 11 and is migrated forward.
+	static constexpr uint32_t uMODULE_GROUND_ITEMS = 12u;
+
+	// The reader walks module ids 1..N IN ORDER, where N is the version's declared
+	// count -- so "which module is last" is not a comment, it is the boundary the two
+	// versions differ at. Both halves are pinned rather than trusted: inserting a
+	// module anywhere but the end, or bumping uMODULE_COUNT without adding one, is a
+	// COMPILE error here instead of a save that reads short.
+	static_assert(uMODULE_OPTIONS == ZM_SaveSchema::uMODULE_COUNT_V1,
+		"a v1 payload is exactly modules 1..Options; something was inserted before it");
+	static_assert(uMODULE_GROUND_ITEMS == ZM_SaveSchema::uMODULE_COUNT,
+		"a v2 payload is exactly modules 1..GroundItems; module 12 must stay LAST");
 
 	static constexpr uint16_t uOPTION_TAG_TEXT_SPEED = 1u;
 	static constexpr uint16_t uDEX_SANITY_CAP = 512u;
 	static constexpr uint16_t uBAG_ENTRY_SANITY_CAP = 512u;
+	static constexpr uint16_t uGROUND_ITEM_ENTRY_SANITY_CAP = 512u;
 	static constexpr uint32_t uMONSTER_WIRE_BYTES = 61u;
 	static_assert((u_int)ZM_SPECIES_COUNT <= uDEX_SANITY_CAP,
 		"The species table exceeds the save schema Dex sanity cap");
+	static_assert((u_int)ZM_GROUND_ITEM_COUNT <= uGROUND_ITEM_ENTRY_SANITY_CAP,
+		"The ground-item registry exceeds the save schema module 12 sanity cap");
 	static_assert(2u + 1u + 4u + ZM_STAT_COUNT + ZM_STAT_COUNT + 1u + 1u + 1u
 		+ uZM_MAX_MOVES * 2u + uZM_MAX_MOVES + uZM_MAX_MOVES + 4u + 1u + 1u + 1u
 		+ uZM_MONSTER_NICKNAME_CAPACITY == uMONSTER_WIRE_BYTES);
@@ -815,6 +831,46 @@ namespace
 		return true;
 	}
 
+	// Module 12 (v2 only). Mirrors module 6's discipline exactly: a uint16 entry
+	// count, then FIXED-WIDTH uint16 entries, STRICTLY ASCENDING and unique, every id
+	// resolved against the compiled registry.
+	//
+	// ★ A SET, NOT A MAP: an entry is an id and nothing else, because "collected" has
+	// no payload. That is also why an ABSENT id means "not collected" -- there is no
+	// zero-valued entry to write, exactly as module 6 never writes a count-0 stack.
+	//
+	// ★ AN ID PAST THE CURRENT REGISTRY IS CORRUPT, NOT A FORWARD-COMPATIBLE SKIP,
+	// which is verbatim module 6's policy for an item id past ZM_ITEM_COUNT. Appending
+	// registry rows therefore remains a no-migration growth path FORWARDS (an old save
+	// simply carries fewer ids); a save written by a NEWER build is rejected rather
+	// than silently losing the prop it remembered.
+	Zenith_Status ParseGroundItems(ZM_ByteReader& xReader, ZM_GameState& xState)
+	{
+		uint16_t uEntryCount = 0u;
+		if (!xReader.U16(uEntryCount)) { return Corrupt("GroundItems", "entryCountTruncated"); }
+		if (uEntryCount > uGROUND_ITEM_ENTRY_SANITY_CAP)
+		{
+			return Corrupt("GroundItems", "entryCount");
+		}
+		uint16_t uPreviousId = 0u;
+		for (u_int u = 0u; u < uEntryCount; ++u)
+		{
+			uint16_t uGroundItemId = 0u;
+			if (!xReader.U16(uGroundItemId)) { return Corrupt("GroundItems", "entryTruncated"); }
+			if (uGroundItemId >= (uint16_t)ZM_GROUND_ITEM_COUNT)
+			{
+				return Corrupt("GroundItems", "groundItemId");
+			}
+			if (u > 0u && uGroundItemId <= uPreviousId)
+			{
+				return Corrupt("GroundItems", "ordering");
+			}
+			uPreviousId = uGroundItemId;
+			xState.m_xCollectedGroundItems.Mark((ZM_GROUND_ITEM_ID)uGroundItemId);
+		}
+		return true;
+	}
+
 	Zenith_Status ParseDaycare(ZM_ByteReader& xReader, ZM_GameState& xState)
 	{
 		uint8_t uParentCount = 0u;
@@ -939,6 +995,7 @@ namespace
 			return true;
 		case uMODULE_WORLD: return ParseWorld(xReader, xState);
 		case uMODULE_OPTIONS: return ParseOptions(xReader, xState);
+		case uMODULE_GROUND_ITEMS: return ParseGroundItems(xReader, xState);
 		default: return Corrupt("Header", "moduleId");
 		}
 	}
@@ -1047,6 +1104,27 @@ namespace
 		xWriter.U16(1u);
 		xWriter.U8((uint8_t)xState.m_xOptions.m_eTextSpeed);
 		xWriter.EndModule(ulHeader);
+
+		// Module 12 (v2). The registry walk IS the sort: ids are emitted in
+		// ZM_GROUND_ITEM_ID order, so the ascending-and-unique property the reader
+		// enforces holds by construction, with no sort pass -- exactly how module 6
+		// gets its ordering out of the item table walk above.
+		//
+		// The set is a fixed array indexed by id, so its Count() can never exceed
+		// ZM_GROUND_ITEM_COUNT and that in turn can never exceed
+		// uGROUND_ITEM_ENTRY_SANITY_CAP (static_asserted at the top of this file).
+		// There is deliberately NO runtime entry-count clause in ValidateState to
+		// match module 6's: the bag's pocket counts are public writable fields with no
+		// invariant, so that check can genuinely fail; this one could only ever
+		// re-derive a compile-time truth and would be a guard that cannot fire.
+		ulHeader = xWriter.BeginModule(uMODULE_GROUND_ITEMS);
+		xWriter.U16((uint16_t)xState.m_xCollectedGroundItems.Count());
+		for (u_int u = 0u; u < (u_int)ZM_GROUND_ITEM_COUNT; ++u)
+		{
+			if (!xState.m_xCollectedGroundItems.IsSet((ZM_GROUND_ITEM_ID)u)) { continue; }
+			xWriter.U16((uint16_t)u);
+		}
+		xWriter.EndModule(ulHeader);
 	}
 }
 
@@ -1117,20 +1195,35 @@ Zenith_Status ZM_SaveSchema::Read(Zenith_DataStream& xInStream,
 	}
 	uint32_t uSchemaVersion = 0u;
 	if (!xReader.U32(uSchemaVersion)) { return Corrupt("Header", "schemaVersionTruncated"); }
-	if (uSchemaVersion != uSCHEMA_VERSION_CURRENT)
+	// ★ THE VERSION GATE IS NO LONGER A FLAT REJECT (ZM-D-201). v2 reads as written;
+	// v1 is READ AS v1 and migrated forward below. Everything else -- including any
+	// version ABOVE current -- is still VERSION_MISMATCH: there is no
+	// forward-compatible read path and no minimum-supported floor machinery.
+	//
+	// ModuleCountForSchemaVersion answers 0 for an unreadable version, so the
+	// supported-version test and the expected-count lookup are the SAME question
+	// asked once. A second `if (version == 1 || version == 2)` beside it would be a
+	// list that could drift from the one the count comes from.
+	const uint32_t uExpectedModuleCount =
+		ModuleCountForSchemaVersion(uSchemaVersion);
+	if (uExpectedModuleCount == 0u)
 	{
 		Zenith_Error(LOG_CATEGORY_GAMEPLAY,
-			"[ZM Save] schema version %u is unsupported (current %u)",
-			uSchemaVersion, uSCHEMA_VERSION_CURRENT);
+			"[ZM Save] schema version %u is unsupported (current %u, migratable %u)",
+			uSchemaVersion, uSCHEMA_VERSION_CURRENT, uSCHEMA_VERSION_V1);
 		return Zenith_ErrorCode::VERSION_MISMATCH;
 	}
 	uint32_t uModuleCount = 0u;
 	if (!xReader.U32(uModuleCount)) { return Corrupt("Header", "moduleCountTruncated"); }
-	if (uModuleCount != uMODULE_COUNT) { return Corrupt("Header", "moduleCount"); }
+	// VERSION-AWARE, never relaxed to "any plausible count": a v1 payload claiming 12
+	// modules and a v2 payload claiming 11 are both still corruption, and collapsing
+	// the check into `<= uMODULE_COUNT` would accept a v2 blob whose module 12 was
+	// truncated away as a perfectly good save with nothing collected.
+	if (uModuleCount != uExpectedModuleCount) { return Corrupt("Header", "moduleCount"); }
 
 	ZM_GameState xCandidate;
 	xCandidate.m_bPendingWhiteout = false;
-	for (uint32_t uExpectedId = 1u; uExpectedId <= uMODULE_COUNT; ++uExpectedId)
+	for (uint32_t uExpectedId = 1u; uExpectedId <= uExpectedModuleCount; ++uExpectedId)
 	{
 		uint32_t uModuleId = 0u;
 		uint32_t uModuleVersion = 0u;
@@ -1158,6 +1251,27 @@ Zenith_Status ZM_SaveSchema::Read(Zenith_DataStream& xInStream,
 		if (!xModuleReader.IsAtEnd()) { return Corrupt("Header", "moduleLengthExact"); }
 	}
 	if (!xReader.IsAtEnd()) { return Corrupt("Header", "trailingBytes"); }
+
+	// ---- MIGRATION v1 -> v2 (ZM-D-201) ------------------------------------------
+	//
+	// v1 predates save module 12 entirely, so there is nothing to read and nothing to
+	// infer: a save written before ground items existed cannot record having taken
+	// one, and inventing any other answer would hand an old player back items the
+	// world has not placed yet.
+	//
+	// ★ STATED, NOT INHERITED. xCandidate's set is already empty by construction, so
+	// this line changes no bit today -- it exists because the migration must be
+	// something a reader can FIND and a later member can be added to. A migration
+	// that is only a default is a migration nobody can see, and the next one will be
+	// written by copying this block.
+	//
+	// ★ AND IT RUNS BEFORE ValidateState AND BEFORE THE PUBLISH, so the transaction
+	// is unchanged: a malformed v1 blob still returns with xOutState byte-identical.
+	// Half-publishing a migration would be worse than the flat reject it replaces.
+	if (uSchemaVersion == uSCHEMA_VERSION_V1)
+	{
+		xCandidate.m_xCollectedGroundItems.Clear();
+	}
 
 	const char* szModule = nullptr;
 	const char* szField = nullptr;

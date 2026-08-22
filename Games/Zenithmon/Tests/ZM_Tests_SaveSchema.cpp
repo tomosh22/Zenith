@@ -1,10 +1,16 @@
 #include "Zenith.h"
 
 // ============================================================================
-// ZM_Tests_SaveSchema -- S7 item 1 SC2 contract for the complete v1 game
-// payload codec. These tests were authored and observed RED before the
-// production header/API landed. They are pure and headless: no SaveData slots,
-// disk, ECS, scenes, renderer, or automation.
+// ZM_Tests_SaveSchema -- S7 item 1 SC2 contract for the complete game payload
+// codec. These tests were authored and observed RED before the production
+// header/API landed. They are pure and headless: no SaveData slots, disk, ECS,
+// scenes, renderer, or automation.
+//
+// ★ THE FIXTURES ARE **v2** BLOBS (ZM-D-201): every one of them comes out of the
+// canonical writer, which now emits schemaVersion 2 and twelve modules. The v1
+// wire format and the v1 -> v2 migration are NOT this file's business -- they are
+// pinned by the literal canned blobs in Tests/ZM_Tests_SaveMigration.cpp, which is
+// the only file allowed to describe a retired version's bytes.
 // ============================================================================
 
 #include "Core/Zenith_TestFramework.h"
@@ -22,7 +28,11 @@ namespace
 {
 	static constexpr uint32_t uTEST_INNER_HEADER_BYTES = 12u;
 	static constexpr uint32_t uTEST_MODULE_HEADER_BYTES = 12u;
-	static constexpr uint32_t uTEST_MODULE_COUNT = 11u;
+	// The module count of a CURRENT (v2) payload. Restated here rather than read from
+	// ZM_SaveSchema::uMODULE_COUNT on purpose: a walk bounded by the very constant the
+	// writer used could never notice the two disagreeing.
+	static constexpr uint32_t uTEST_MODULE_COUNT = 12u;
+	static constexpr uint32_t uTEST_GROUND_ITEM_MODULE_ID = 12u;
 	static constexpr uint32_t uTEST_MONSTER_BYTES = 61u;
 
 	struct ZM_TestModuleSpan
@@ -260,6 +270,11 @@ namespace
 		xState.m_xWorldPosition.m_afPosition[2] = 480.75f;
 		xState.m_xWorldPosition.m_fYaw = -1.25f;
 		xState.m_xOptions.m_eTextSpeed = ZM_TEXT_SPEED_FAST;
+		// Module 12 (ZM-D-201). Deliberately a PROPER SUBSET with a gap in it: an
+		// all-collected fixture would pass against a decoder that marks everything, and
+		// a contiguous one would pass against a decoder that ignores the ids and counts.
+		xState.m_xCollectedGroundItems.Mark(ZM_GROUND_ITEM_ROUTE1_SOUTH_SALVE);
+		xState.m_xCollectedGroundItems.Mark(ZM_GROUND_ITEM_ROUTE1_NORTH_SALVE);
 		xState.m_bPendingWhiteout = true;
 		return xState;
 	}
@@ -382,6 +397,12 @@ namespace
 			"%s yaw", szContext);
 		ZENITH_ASSERT_EQ((u_int)xActual.m_xOptions.m_eTextSpeed,
 			(u_int)xExpected.m_xOptions.m_eTextSpeed, "%s text speed", szContext);
+		for (u_int u = 0u; u < (u_int)ZM_GROUND_ITEM_COUNT; ++u)
+		{
+			ZENITH_ASSERT_EQ(xActual.m_xCollectedGroundItems.IsSet((ZM_GROUND_ITEM_ID)u),
+				xExpected.m_xCollectedGroundItems.IsSet((ZM_GROUND_ITEM_ID)u),
+				"%s collected ground item %u", szContext, u);
+		}
 		ZENITH_ASSERT_EQ(xActual.m_bPendingWhiteout, xExpected.m_bPendingWhiteout,
 			"%s transient pending-whiteout state", szContext);
 	}
@@ -665,7 +686,11 @@ ZENITH_TEST(ZM_Save, Header_BadMagicReturnsBadMagic)
 ZENITH_TEST(ZM_Save, Header_SchemaVersionMismatchReturnsVersionMismatch)
 {
 	const std::vector<uint8_t> xBytes = Encode(MakeWireFixture());
-	for (uint32_t uVersion : { 0u, 2u, 0xffffffffu })
+	// 2 is the CURRENT version and 1 is the migratable one, so neither may appear
+	// here; 3 is the first unsupported version above current, and the codec still has
+	// no forward-compatible read path. The v1 acceptance and the version-aware module
+	// count are pinned in Tests/ZM_Tests_SaveMigration.cpp, where the v1 bytes live.
+	for (uint32_t uVersion : { 0u, 3u, 0xffffffffu })
 	{
 		std::vector<uint8_t> xMutant = xBytes;
 		WriteU32(xMutant, 4u, uVersion);
@@ -677,7 +702,11 @@ ZENITH_TEST(ZM_Save, Header_SchemaVersionMismatchReturnsVersionMismatch)
 ZENITH_TEST(ZM_Save, Header_ModuleCountOrderAndIdsAreExact)
 {
 	const std::vector<uint8_t> xBytes = Encode(MakeWireFixture());
-	for (uint32_t uCount : { 0u, 10u, 12u, 0xffffffffu })
+	// 11 is v1's legitimate count and is included ON PURPOSE: the header check is
+	// version-AWARE, not relaxed, so a v2 payload declaring eleven modules is still
+	// corruption. Collapsing the check into "any count v1 or v2 could carry" would
+	// accept a v2 blob whose module 12 had been truncated away.
+	for (uint32_t uCount : { 0u, 11u, 13u, 0xffffffffu })
 	{
 		std::vector<uint8_t> xMutant = xBytes;
 		WriteU32(xMutant, 8u, uCount);
@@ -1167,6 +1196,85 @@ ZENITH_TEST(ZM_Save, Bag_CountIdsCountsOrderingAndUniquenessAreEnforced)
 		AppendU16(xPayload, 0u);
 		AppendU16(xPayload, 1u);
 		CheckPayload(xPayload, bDuplicate ? "duplicate bag id" : "descending bag ids");
+	}
+}
+
+ZENITH_TEST(ZM_Save, GroundItems_CountIdsAndOrderingAreEnforced)
+{
+	// The WRITER half: the registry walk must emit ids ASCENDING, and skip the gap.
+	ZM_GameState xOrdered;
+	xOrdered.m_xCollectedGroundItems.Mark(ZM_GROUND_ITEM_ROUTE1_NORTH_SALVE);
+	xOrdered.m_xCollectedGroundItems.Mark(ZM_GROUND_ITEM_ROUTE1_SOUTH_SALVE);
+	const std::vector<uint8_t> xOrderedBytes = Encode(xOrdered);
+	const ZM_TestModuleSpan xModule = FindModule(xOrderedBytes, uTEST_GROUND_ITEM_MODULE_ID);
+	ZENITH_ASSERT_TRUE(xModule.m_bFound, "the payload carries no module 12");
+	if (!xModule.m_bFound) { return; }
+	ZENITH_ASSERT_EQ(xModule.m_uLength, 2u + 2u * 2u,
+		"module 12 is not entryCount plus one uint16 per collected prop");
+	ZENITH_ASSERT_EQ((u_int)ReadU16(xOrderedBytes, xModule.m_uPayload), 2u,
+		"ground-item entry count");
+	// The ids are asserted against the ENUM VALUES, which is the whole claim: the
+	// value IS the persisted id, and the LITERAL bytes for those ids are pinned by the
+	// v2 golden in Tests/ZM_Tests_SaveMigration.cpp.
+	ZENITH_ASSERT_EQ((u_int)ReadU16(xOrderedBytes, xModule.m_uPayload + 2u),
+		(u_int)ZM_GROUND_ITEM_ROUTE1_SOUTH_SALVE, "first ground-item id is ascending");
+	ZENITH_ASSERT_EQ((u_int)ReadU16(xOrderedBytes, xModule.m_uPayload + 4u),
+		(u_int)ZM_GROUND_ITEM_ROUTE1_NORTH_SALVE, "second ground-item id is ascending");
+
+	// An EMPTY set still writes its counted, framed module -- it is not omitted.
+	const ZM_GameState xEmpty;
+	const std::vector<uint8_t> xEmptyBytes = Encode(xEmpty);
+	const ZM_TestModuleSpan xEmptyModule =
+		FindModule(xEmptyBytes, uTEST_GROUND_ITEM_MODULE_ID);
+	ZENITH_ASSERT_TRUE(xEmptyModule.m_bFound, "an empty set omitted module 12");
+	if (xEmptyModule.m_bFound)
+	{
+		ZENITH_ASSERT_EQ(xEmptyModule.m_uLength, 2u, "an empty module 12 is not 2 bytes");
+		ZENITH_ASSERT_EQ((u_int)ReadU16(xEmptyBytes, xEmptyModule.m_uPayload), 0u,
+			"an empty module 12 declares entries");
+	}
+
+	// The READER half, in module 6's shape: cap, unknown id, duplicate, descending.
+	const std::vector<uint8_t> xBase = Encode(MakeWireFixture());
+	auto CheckPayload = [&](const std::vector<uint8_t>& xPayload, const char* szCase)
+	{
+		std::vector<uint8_t> xMutant = xBase;
+		ReplaceModulePayload(xMutant, uTEST_GROUND_ITEM_MODULE_ID, xPayload);
+		ExpectReadError(xMutant, Zenith_ErrorCode::CORRUPT_DATA, szCase);
+	};
+	{
+		std::vector<uint8_t> xPayload;
+		AppendU16(xPayload, 513u);
+		xPayload.resize(2u + 513u * 2u, 0u);
+		CheckPayload(xPayload, "ground-item entry count above 512");
+	}
+	{
+		std::vector<uint8_t> xPayload;
+		AppendU16(xPayload, 1u);
+		AppendU16(xPayload, (uint16_t)ZM_GROUND_ITEM_COUNT);
+		CheckPayload(xPayload, "ground-item id outside the registry");
+	}
+	{
+		std::vector<uint8_t> xPayload;
+		AppendU16(xPayload, 2u);
+		AppendU16(xPayload, 0u);
+		AppendU16(xPayload, 0u);
+		CheckPayload(xPayload, "duplicate ground-item id");
+	}
+	{
+		std::vector<uint8_t> xPayload;
+		AppendU16(xPayload, 2u);
+		AppendU16(xPayload, 1u);
+		AppendU16(xPayload, 0u);
+		CheckPayload(xPayload, "descending ground-item ids");
+	}
+	{
+		// The count and the payload must agree EXACTLY -- a short entry list is not a
+		// forgiving early stop, it is a module whose framing does not close.
+		std::vector<uint8_t> xPayload;
+		AppendU16(xPayload, 2u);
+		AppendU16(xPayload, 0u);
+		CheckPayload(xPayload, "ground-item entry count exceeds the entries present");
 	}
 }
 

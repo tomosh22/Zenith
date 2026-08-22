@@ -1,13 +1,15 @@
 # Zenithmon -- Save Format (ZM_SaveSchema)
 
 The versioned save-schema CONTRACT for Zenithmon. **Normative from S0; binary
-schema v1 shipped at S7 item 1 SC2** ([Roadmap.md](Roadmap.md)). Every later
-change to persistent state must update this document and the codec together;
-the migration gate below is binding from v1 onward.
+schema v1 shipped at S7 item 1 SC2, v2 at S8 (ZM-D-201)**
+([Roadmap.md](Roadmap.md)). Every later change to persistent state must update
+this document and the codec together; the migration gate below is binding from
+v1 onward.
 
-The v1 module order, field order, widths, encodings and validation rules below
-are frozen by `Tests/ZM_Tests_SaveSchema.cpp` plus the independent literal-byte
-golden in `Tests/ZM_Tests_SaveMigration.cpp`. They are no longer proposals.
+The module order, field order, widths, encodings and validation rules below are
+frozen by `Tests/ZM_Tests_SaveSchema.cpp` plus the independent literal-byte
+goldens in `Tests/ZM_Tests_SaveMigration.cpp` -- one per shipped version. They
+are no longer proposals.
 
 **Current status (S7 item 2 is COMPLETE; S7 closed 2026-07-29, ZM-D-167).**
 `Games/Zenithmon/Source/Core/ZM_SaveSchema.{h,cpp}` is a
@@ -21,13 +23,40 @@ Save0-2 UI and root Save/Quit without changing one persistent byte. SC5
 Continue gate; SC6 (ZM-D-142, 2026-07-24) closed the milestone-autosave test
 obligation and completed item 2. **Nothing in this document is still owed.**
 
-**The schema has NOT moved since v1 shipped.** In particular ZM-D-175 (S8 item 1
-SC3) split the starter seed -- `ZM_MakeStarterGameState` was DELETED and replaced
-by a partyless `ZM_MakeNewGameState()` plus `ZM_ApplyStarterChoice()`
+## Schema v2 (ZM-D-201) -- the first migration this codec has ever run
+
+**v2 is v1 plus save module 12, and nothing else.** Module 12 carries the
+COLLECTED GROUND-ITEM SET: which world props this save has already taken
+(`Source/World/ZM_GroundItem.h`). Modules 1..11 are byte-for-byte unchanged, so
+the retired 824-byte v1 golden still describes every module a v2 payload shares
+with it -- which is what
+`ZM_Save.GoldenV1_ModuleBytesSurviveVerbatimInsideTheV2Payload` measures rather
+than asserts in prose.
+
+- `Write` **always** emits v2.
+- `Read` accepts v2 and **migrates v1 forward**: it reads v1's eleven modules,
+  synthesizes an EMPTY collected set (a save written before ground items existed
+  cannot record having taken one) and publishes a v2-shaped `ZM_GameState`.
+  Every other version -- including anything above current -- is still
+  `VERSION_MISMATCH`. There is no forward-compatible read path and no
+  minimum-supported-floor machinery.
+- **The module-count check is VERSION-AWARE, never relaxed.** A v1 payload must
+  declare exactly 11 and a v2 payload exactly 12; either one declaring the
+  other's count is `CORRUPT_DATA`. `ZM_SaveSchema::ModuleCountForSchemaVersion`
+  is the single place both the supported-version test and the expected count come
+  from, so the two cannot drift.
+- **The migration runs BEFORE validation and BEFORE the publish**, so `Read`'s
+  transactional contract is unchanged: a malformed v1 blob still leaves the
+  caller's `ZM_GameState` byte-identical. A migration that half-published would
+  be worse than the flat reject it replaced.
+
+Earlier note, still true of what it describes: ZM-D-175 (S8 item 1 SC3) split the
+starter seed -- `ZM_MakeStarterGameState` was DELETED and replaced by a partyless
+`ZM_MakeNewGameState()` plus `ZM_ApplyStarterChoice()`
 (`Source/Party/ZM_StarterChoice.{h,cpp}`) -- and deliberately did NOT bump
 `uSCHEMA_VERSION_CURRENT`, add a module, or set a story flag.
 `ZM_STORY_FLAG_STARTER_RECEIVED` (index 2) exists in the registry and is left
-CLEAR, so the save bytes are unchanged. Any doc or comment still naming
+CLEAR, so the save bytes were unchanged by it. Any doc or comment still naming
 `ZM_MakeStarterGameState` is stale.
 
 Public API (`ZM_SaveSchema.h`):
@@ -94,24 +123,24 @@ pure codec described below.
 The game payload is an inner header followed by an ordered sequence of
 **framed modules**. Each module is independently versioned and length-framed
 so a reader can validate or later migrate one module without changing sibling
-module boundaries. Schema v1 requires all 11 modules exactly once in the
-ordered sequence below; unknown, missing, duplicate or reordered modules are
-corrupt data rather than a forward-compatible skip.
+module boundaries. Schema v1 requires all 11 modules and schema v2 all 12,
+exactly once each, in the ordered sequence below; unknown, missing, duplicate or
+reordered modules are corrupt data rather than a forward-compatible skip.
 
 Inner header:
 
-| Field | v1 type | Notes |
+| Field | type | Notes |
 |---|---|---|
 | `magic` | uint32 | `'ZMSV'` -- reads as `0x56534D5A` little-endian. Catches "not a Zenithmon save" before any field reads. |
-| `schemaVersion` | uint32 | Exactly 1. Every other value returns `VERSION_MISMATCH`; there is no invented v0 reader. |
-| `moduleCount` | uint32 | Exactly 11. |
+| `schemaVersion` | uint32 | 2 (written) or 1 (read and migrated forward). Every other value returns `VERSION_MISMATCH`; there is no invented v0 reader and no forward read. |
+| `moduleCount` | uint32 | Exactly 12 for v2, exactly 11 for v1. The two are not interchangeable -- see "Schema v2" above. |
 
 Each module:
 
-| Field | v1 type | Notes |
+| Field | type | Notes |
 |---|---|---|
 | `moduleId` | uint32 | Stable enum value from the table below; never reused. |
-| `moduleVersion` | uint32 | Exactly 1 for every v1 module. Any other value returns `VERSION_MISMATCH`. |
+| `moduleVersion` | uint32 | Exactly 1 for every module in both v1 and v2. Any other value returns `VERSION_MISMATCH`. |
 | `byteLength` | uint32 | Payload bytes that follow. The reader MUST land exactly `byteLength` bytes after parsing; a mismatch is CORRUPT. |
 | payload | ... | Module fields, in the documented order. |
 
@@ -162,6 +191,7 @@ here, never the compiler-chosen underlying type.
 | 9 | Tower | Battle Tower current/best streak + procedural seed |
 | 10 | WorldPos | Scene build index + spawn tag + transform |
 | 11 | Options | Player options |
+| 12 | GroundItems | Collected ground-item prop ids (**v2 only**) |
 
 ## ZM_Monster instance record
 
@@ -314,6 +344,60 @@ modules. The payload is a counted uint16 TLV sequence:
 | per field: `byteLength` | uint16 | Value length. Tag 1 requires exactly 1. |
 | per field: value | byte[byteLength] | Tag 1 stores `SLOW / NORMAL / FAST` as uint8. Exactly one tag-1 field is required; duplicate tag 1 and unknown-only payloads reject. New/starter state defaults to `NORMAL`. |
 
+### 12. GroundItems (**v2 only**, ZM-D-201)
+
+Which world props this save has already picked up. A **SET, not a map**: an
+entry is an id and nothing else, because "collected" has no payload -- which is
+also why an ABSENT id means "not collected", exactly as module 6 never writes a
+count-0 stack.
+
+| Field | v2 type | Notes |
+|---|---|---|
+| `entryCount` | uint16 | <= 512. |
+| entries | `groundItemId` uint16 x entryCount | Zero-based prop id, strictly ascending and unique; the id must exist in the registry below. |
+
+The writer emits ids by walking the registry in order, so ascending-and-unique
+holds by construction with no sort pass -- the same property module 6 gets from
+its item-table walk. An empty set still writes its counted, framed module (2
+bytes); it is never omitted.
+
+**A v1 payload has no module 12 at all**, and migrating one forward synthesizes
+the empty set. See "Schema v2" at the top.
+
+#### Index registry (authoritative: `Source/World/ZM_GroundItem.h`)
+
+The wire format above says nothing about WHICH prop each id means. That mapping
+is owned by `enum ZM_GROUND_ITEM_ID : u_int` in
+`Games/Zenithmon/Source/World/ZM_GroundItem.h`: **the enum value IS the id
+written by this module.** Governed by one rule, the same one the story-flag
+registry carries:
+
+- **Append only.** New props are added immediately before
+  `ZM_GROUND_ITEM_COUNT`. Never reorder, never renumber, and never reuse a
+  retired value -- any such reassignment silently changes which prop an existing
+  save remembers taking, and is therefore a versioned codec change under the
+  migration policy below, not an edit to the header. Debug names are not
+  persisted, so RENAMING a prop is free while renumbering one is not.
+  `ZM_GROUND_ITEM_NONE` aliases `ZM_GROUND_ITEM_COUNT`, is the "no prop"
+  sentinel in authored data, and is NEVER persisted.
+
+Unlike the story-flag registry, DENSITY IS NOT A STORAGE CONTRACT: this module is
+a sparse ascending id list rather than a bitset sized from the highest set index,
+so a numeric gap costs nothing on the wire. Allocate densely anyway, because
+`ZM_GroundItemSet` is a dense array in the durable model.
+
+Appending props is a **no-migration growth path forwards** (an older save simply
+carries fewer ids). An id at or past the CURRENT registry size is `CORRUPT_DATA`,
+not a forward-compatible skip -- verbatim module 6's policy for an item id past
+`ZM_ITEM_COUNT`.
+
+**The three shipped rows are still re-numberable today and will not be for
+long.** Nothing authors a ground-item prop into a committed scene yet, so no save
+in existence can carry one of these ids; a pre-content reshuffle costs only the
+v2 golden in `Tests/ZM_Tests_SaveMigration.cpp`, which spells ids 0 and 2 as
+literal wire bytes. The append-only rule becomes binding the day a scene authors
+one.
+
 ## Sanity caps -- corrupt saves fail LOUDLY, never UB
 
 Every read is bounds-checked BEFORE any allocation or field consumption. A
@@ -329,6 +413,7 @@ and field -- never a crash, never a partial apply, never silent clamping.
 | Dex species count | <= 512 (comfortably above the ~150 ship count) |
 | Story flag count | <= 4096 |
 | Bag entries | <= 512; item ids must exist in the item table |
+| Ground-item entries | <= 512; prop ids must exist in the registry, strictly ascending and unique |
 | Monster fields | species/move ids resolve; level 1..100 and EXP matches the growth curve; IVs <= 31; each EV <=252 and total <=510; current PP <= stored max PP (real `{0,0}` valid; empty slots require `{0,0}`); current HP <= derived max HP; ability slot/nature/status/gender valid; friendship <=255; reserved flag bits zero; nickname printable, NUL-terminated and zero-padded |
 | Tower | current streak <= best streak |
 | WorldPos | all four floats finite; scene/spawn-tag pair resolves, or unset scene has an all-zero tag |
@@ -443,33 +528,47 @@ show the exact `EMPTY / READY / DAMAGED` classification above.
 
 None of this changes the engine wrapper, the slot-layer prefix, the ZMSV payload,
 the eleven-module order, the 824-byte v1 artifact, `ZM_GameState` layout or ECS
-serialization order.
+serialization order. (A statement about what SC4 did, and still true of it. The
+CURRENT inventory is twelve modules -- see "Schema v2" at the top; the 824-byte v1
+artifact is unchanged and always will be.)
 
 ## Migration policy
 
-- **Today there is one real schema: v1.** The reader accepts global v1 plus
-  module v1 and rejects every other global/module version with
-  `VERSION_MISMATCH`. There is no fake v0 blob, v0 reader or migration path.
+- **There are two real schemas: v1 and v2.** The writer emits v2. The reader
+  accepts global v2, migrates global v1 forward, requires module version 1
+  throughout, and rejects every other global/module version with
+  `VERSION_MISMATCH`. There is still no fake v0 blob and no v0 reader.
 - **Gate rule (binding, from the approved plan):** ANY schema change -- global
   or per-module, field added/removed/widened/reordered -- ships a version bump
   PLUS a canned-blob migration test in the SAME commit. No exceptions; this is
-  a merge gate from the moment v1 ships at S7.
+  a merge gate from the moment v1 shipped at S7. ZM-D-201 is the first change to
+  go through it.
 - **Canned blobs are compiled C byte arrays** in
-  `Tests/ZM_Tests_SaveMigration.cpp` -- never disk assets. The initial
-  compatibility artifact is the complete literal **824-byte v1 golden**. One
-  test compares every byte emitted by the canonical writer; a second decodes
-  the literal, asserts every represented field, and re-encodes the same bytes.
-  It is a v1 compatibility/golden pair, not a claim that v0 existed. Future
-  versions add one literal blob per historical version and a real migration.
+  `Tests/ZM_Tests_SaveMigration.cpp` -- never disk assets, never regenerated
+  from the codec, never described by a zero-fill or compression helper. One
+  literal per shipped version: the **824-byte v1 golden** and the **842-byte v2
+  golden**.
+  - ★ **`auV1Golden` IS NEVER REGENERATED.** It is the only independent record
+    of a wire format the writer can no longer produce; re-deriving it from the
+    current codec would make the migration test self-referential -- it would then
+    prove "the reader agrees with the writer", which is true of any pair of
+    broken halves.
+  - The v1 pair now proves (a) that every byte of modules 1..11 survives verbatim
+    inside a v2 payload, with the entire delta being two header words plus one
+    appended module, and (b) that the literal v1 blob decodes to the state it
+    always meant PLUS an empty collected ground-item set.
+  - The v2 pair is the original shape: canonical-writer byte equality, and
+    literal decode + field assertions + byte-identical re-encode.
 - Module `byteLength` framing means a migration can absorb a dropped trailing
   field without touching sibling modules.
 - Versions above current are rejected; no forward-compatible global/module
   read path exists. A future migration chain may introduce a minimum-supported
-  floor, but no such machinery is present in v1.
+  floor, but no such machinery is present.
 - Documented no-migration growth paths (by construction): appending species
   (Dex writes its count), appending story flags (StoryFlags writes its count),
   appending options (tagged fields), appending bag item IDs (ids validated,
-  not positional).
+  not positional), appending ground-item props (GroundItems writes its count and
+  validates ids).
 
 ## When saves happen (runtime policy; SC3/SC4 shipped)
 
@@ -501,23 +600,37 @@ serialization order.
   by runtime coordination before saving is allowed.
 - NPC/trainer positions and graph state -- respawned from `ZM_WorldSpec` and
   scene data on load; defeat state persists via StoryFlags.
+- Ground-item prop POSITIONS, meshes and whether their entity is currently in
+  the scene -- all scene data, rebuilt on load. Module 12 persists only WHICH
+  props have been taken, keyed by the compiled registry id.
 - Grass/render/streaming state -- rebuilt per scene load.
 - Anything derivable from the data tables (species stats, move data, ...) --
   tables are compiled code, only instance state is persisted.
 
 ## Tests that lock this contract (S7; see TestPlan.md 5.7)
 
-- `Tests/ZM_Tests_SaveSchema.cpp` contains **29** pure `ZM_Save` tests:
+- `Tests/ZM_Tests_SaveSchema.cpp` contains **30** pure `ZM_Save` tests:
   maximal/empty/egg-only round trips; append-write and exact-slice-read
   transactionality; status mapping; every-byte truncation; exact header,
   module order/version/length and trailing-byte framing; monster/Dex/story/
-  bag/daycare/tower/world/options field domains; raw move and world-float wire
-  oracles; older/current/newer Dex-count policy; StoryFlags high-water output;
-  and counted-options TLV compatibility/rejection.
-- `Tests/ZM_Tests_SaveMigration.cpp` contains **2** v1 compatibility tests over
-  the independent literal **824-byte** array: canonical writer byte equality,
-  and literal decode + field assertions + byte-identical re-encode. No fake v0
-  migration is represented.
+  bag/daycare/tower/world/options/ground-item field domains; raw move and
+  world-float wire oracles; older/current/newer Dex-count policy; StoryFlags
+  high-water output; and counted-options TLV compatibility/rejection. Its
+  fixtures are **v2** blobs; the retired v1 bytes live only in the migration
+  file. (**29** before ZM-D-201, which added the module-12 domain unit.)
+- `Tests/ZM_Tests_SaveMigration.cpp` contains **5** compatibility tests over two
+  independent literal arrays -- the **824-byte v1** and **842-byte v2** goldens:
+  v1's modules surviving verbatim inside a v2 payload (with the schema-version
+  tripwire that forces a bumper back into this file), the v1 canned-blob
+  migration and its forward round trip, the version/module-count pairing in both
+  directions with atomicity, and the v2 pair (canonical writer byte equality;
+  literal decode + field assertions + byte-identical re-encode). No fake v0
+  migration is represented. (**2** before ZM-D-201.)
+- `Tests/ZM_Tests_GroundItem.cpp` contains **14** pure `ZM_GroundItem` tests over
+  the prop registry, the collected set and the pickup path -- including the two
+  that make the "Add first, mark collected only on success" ordering a contract
+  (a refused add must leave BOTH the bag and the flag untouched) and the
+  save-schema round trip of the collected state.
 - Item 1 SC2's observed combined boot gate was **2392 ran / 2391 passed / 0
   failed / 1 skipped**; the engine-only reference remains **1103**. All five
   Zenithmon configurations, headless automation **36/0**, and full windowed

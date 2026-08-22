@@ -49,8 +49,8 @@
 // this suite never runs there at all. If the "_Test" name indirection were keyed on
 // that flag alone it would be OFF in every run that can actually execute these
 // units, which leaves exactly two outcomes: skip everything (a skip counts as a
-// PASS in the gate, so EVERY unit below that constructs a ZM_SlotDiskScope -- 27 of
-// the 33 in this file as it stands, i.e. all but the six pure name/policy units --
+// PASS in the gate, so EVERY unit below that constructs a ZM_SlotDiskScope -- 28 of
+// the 34 in this file as it stands, i.e. all but the six pure name/policy units --
 // would be green-by-skip forever and the whole storage half of this SC would have
 // zero live coverage), or delete and overwrite
 // the player's real Save0/1/2/Auto .zsave on every boot -- permanently, because
@@ -144,10 +144,28 @@ namespace
 		"Auto",
 	};
 
-	// The frozen v1 golden payload length (Tests/ZM_Tests_SaveMigration.cpp:19,75).
-	// A LITERAL on purpose -- the whole point of tests 16/17 is that the framing
-	// carries a known blob length, not "whatever the codec happened to emit".
-	constexpr u_int uGOLDEN_BLOB_BYTES = 824u;
+	// The length of the CURRENT (v2) encoding of MakeGoldenV1State() below, whose
+	// module 12 -- the collected ground-item set -- is EMPTY:
+	//
+	//     824  the frozen v1 payload for that state (auV1Golden in
+	//          Tests/ZM_Tests_SaveMigration.cpp; v2 patches its schemaVersion and
+	//          moduleCount words in place, so modules 1..11 cost the same)
+	//    + 12  module 12's frame header (id + version + payloadLength, u32 each)
+	//    +  2  module 12's payload: the u16 entry count, here 0
+	//    ---
+	//     838
+	//
+	// The EMPTY module 12 is the whole difference from the 842-byte auV2Golden next
+	// door, which is the same state plus two collected props (2 bytes per id).
+	//
+	// A LITERAL on purpose -- the whole point of the framing units below is that the
+	// framing carries a KNOWN blob length, not "whatever the codec happened to
+	// emit". Never computed from ZM_SaveSchema, never taken from a Write() call.
+	//
+	// Cited by SYMBOL (auV1Golden / auV2Golden), never by line number: the previous
+	// citation here was a pair of line numbers and it went stale the first time that
+	// file was edited.
+	constexpr u_int uGOLDEN_V2_BLOB_BYTES = 838u;
 
 	// The prefix width, as a literal. ZM_SaveSlots::uLENGTH_PREFIX_BYTES is
 	// asserted AGAINST this, never used in place of it.
@@ -228,11 +246,16 @@ namespace
 		ZM_ApplyStarterChoice(xStateOut, ZM_STARTER_CHOICE_FERNFAWN);
 	}
 
-	// The exact state behind the frozen 824-byte v1 golden
-	// (Tests/ZM_Tests_SaveMigration.cpp:77-123). Duplicated rather than shared
-	// because Tests/ is .cpp-only with no shared header. If the golden ever moves,
-	// this copy and that one must move together -- and ZM_SaveSchema is FROZEN, so
-	// neither should ever move at all.
+	// The exact state BOTH wire goldens describe below module 12 -- the 824-byte
+	// auV1Golden and the 842-byte auV2Golden -- copied from MakeGoldenV1State() in
+	// Tests/ZM_Tests_SaveMigration.cpp. Duplicated rather than shared because Tests/
+	// is .cpp-only with no shared header; if that fixture ever moves, this copy must
+	// move with it.
+	//
+	// It keeps its v1 name because it is the state the v1 golden froze and ZM-D-201
+	// did not touch one field of it. What changed is how the CURRENT codec encodes
+	// it: modules 1..11 are byte-for-byte what they always were, and v2 appends an
+	// EMPTY module 12, so this state now weighs uGOLDEN_V2_BLOB_BYTES.
 	ZM_GameState MakeGoldenV1State()
 	{
 		ZM_GameState xState;
@@ -280,10 +303,19 @@ namespace
 		return xState;
 	}
 
-	// A state carrying a NON-DEFAULT value in ALL ELEVEN modules, so a framing bug
-	// that silently drops one module is visible. uSalt perturbs every module so two
+	// A state carrying a NON-DEFAULT value in all ELEVEN v1 modules, so a framing bug
+	// that silently drops one of them is visible. uSalt perturbs every module so two
 	// calls with different salts are distinguishable field-for-field (used by the
 	// per-slot-independence units).
+	//
+	// MODULE 12 (the collected ground-item set, added at v2 by ZM-D-201) IS
+	// DELIBERATELY LEFT EMPTY HERE, and AssertStateEqual below does not compare it.
+	// This layer only frames the codec's bytes, and module 12's content fidelity is
+	// owned next door -- GroundItems_CountIdsAndOrderingAreEnforced in
+	// Tests/ZM_Tests_SaveSchema.cpp and the two GoldenV2_ units in
+	// Tests/ZM_Tests_SaveMigration.cpp. A module 12 dropped by a FRAMING bug is
+	// still visible from here, via the codec's exact module-count gate and the
+	// uGOLDEN_V2_BLOB_BYTES length tripwire.
 	ZM_GameState MakeMaximalState(u_int uSalt)
 	{
 		ZM_GameState xState;
@@ -390,9 +422,11 @@ namespace
 			uZM_MONSTER_NICKNAME_CAPACITY) == 0, "%s nickname", szContext);
 	}
 
-	// Field-for-field over all ELEVEN durable modules. Check-then-use throughout:
-	// the assert macros RECORD and CONTINUE, so a failed count check must never
-	// fall through into an indexed read.
+	// Field-for-field over the ELEVEN v1 durable modules. Module 12 (collected
+	// ground items) is NOT compared, because no fixture in this file sets one -- see
+	// the note on MakeMaximalState above for where that coverage does live.
+	// Check-then-use throughout: the assert macros RECORD and CONTINUE, so a failed
+	// count check must never fall through into an indexed read.
 	void AssertStateEqual(const ZM_GameState& xExpected, const ZM_GameState& xActual,
 		const char* szContext)
 	{
@@ -1436,11 +1470,11 @@ ZENITH_TEST(ZM_Save, Slot_RecordedPayloadIsPrefixPlusBlob)
 		"the length prefix must stay a 4-byte field");
 
 	const ZM_GameState xGolden = MakeGoldenV1State();
-	// Tripwire: the frozen v1 payload for this state is 824 bytes. If this fires,
+	// Tripwire: the current codec encodes this state in 838 bytes. If this fires,
 	// the CODEC moved, not the framing.
 	const Zenith_Vector<u_int8> xBlob = EncodeBlob(xGolden, "golden v1 state");
-	ZENITH_ASSERT_EQ(xBlob.GetSize(), uGOLDEN_BLOB_BYTES,
-		"the frozen v1 golden payload length changed");
+	ZENITH_ASSERT_EQ(xBlob.GetSize(), uGOLDEN_V2_BLOB_BYTES,
+		"the golden fixture's encoded payload length changed");
 
 	AssertStatus(ZM_SaveSlots::WriteState(xGolden, ZM_SAVE_SLOT_0),
 		Zenith_ErrorCode::SUCCESS, "WriteState(golden, Save0)");
@@ -1451,8 +1485,8 @@ ZENITH_TEST(ZM_Save, Slot_RecordedPayloadIsPrefixPlusBlob)
 	Zenith_Vector<u_int8> xPayload;
 	ZENITH_ASSERT_TRUE(CaptureLastWrittenPayload(xPayload), "no Save() was recorded");
 	ZENITH_ASSERT_EQ(xPayload.GetSize(),
-		uEXPECTED_PREFIX_BYTES + uGOLDEN_BLOB_BYTES,
-		"the engine payload is not [4-byte prefix][824-byte ZMSV blob]");
+		uEXPECTED_PREFIX_BYTES + uGOLDEN_V2_BLOB_BYTES,
+		"the engine payload is not [4-byte prefix][838-byte ZMSV blob]");
 	if (xPayload.GetSize() < uEXPECTED_PREFIX_BYTES + 4u) { return; }
 
 	// The ZMSV magic must begin at byte 4 -- i.e. the prefix is FIRST, not appended
@@ -1493,15 +1527,15 @@ ZENITH_TEST(ZM_Save, Slot_PrefixIsLittleEndian)
 	if (xPayload.GetSize() < uEXPECTED_PREFIX_BYTES) { return; }
 
 	// Byte-by-byte, so a memcpy of a struct or a byte-swap is caught explicitly.
-	ZENITH_ASSERT_EQ((u_int)xPayload.Get(0u), (u_int)(uGOLDEN_BLOB_BYTES & 0xffu), "prefix byte 0");
-	ZENITH_ASSERT_EQ((u_int)xPayload.Get(1u), (u_int)((uGOLDEN_BLOB_BYTES >> 8u) & 0xffu),
+	ZENITH_ASSERT_EQ((u_int)xPayload.Get(0u), (u_int)(uGOLDEN_V2_BLOB_BYTES & 0xffu), "prefix byte 0");
+	ZENITH_ASSERT_EQ((u_int)xPayload.Get(1u), (u_int)((uGOLDEN_V2_BLOB_BYTES >> 8u) & 0xffu),
 		"prefix byte 1");
-	ZENITH_ASSERT_EQ((u_int)xPayload.Get(2u), (u_int)((uGOLDEN_BLOB_BYTES >> 16u) & 0xffu),
+	ZENITH_ASSERT_EQ((u_int)xPayload.Get(2u), (u_int)((uGOLDEN_V2_BLOB_BYTES >> 16u) & 0xffu),
 		"prefix byte 2");
-	ZENITH_ASSERT_EQ((u_int)xPayload.Get(3u), (u_int)((uGOLDEN_BLOB_BYTES >> 24u) & 0xffu),
+	ZENITH_ASSERT_EQ((u_int)xPayload.Get(3u), (u_int)((uGOLDEN_V2_BLOB_BYTES >> 24u) & 0xffu),
 		"prefix byte 3");
-	ZENITH_ASSERT_EQ((u_int)DecodeLE32(xPayload, 0u), uGOLDEN_BLOB_BYTES,
-		"the little-endian prefix does not decode to the 824-byte blob length");
+	ZENITH_ASSERT_EQ((u_int)DecodeLE32(xPayload, 0u), uGOLDEN_V2_BLOB_BYTES,
+		"the little-endian prefix does not decode to the 838-byte blob length");
 #else
 	ZENITH_SKIP("save-slot disk instrumentation is unavailable in this configuration");
 #endif
@@ -1520,7 +1554,7 @@ ZENITH_TEST(ZM_Save, Slot_StagedReadbackDecodesWithoutTouchingDisk)
 
 	// THE unit that pins the whole length-prefix decision. The staged-readback path
 	// hands the read callback a default-constructed OWNING stream whose GetCapacity()
-	// is the 1024-byte ALLOCATION (Zenith_SaveData.cpp:229-235), NOT the 828 staged
+	// is the 1024-byte ALLOCATION (Zenith_SaveData.cpp:229-235), NOT the 842 staged
 	// bytes. A read callback "simplified" to
 	//     ZM_SaveSchema::Read(xStream, xStream.GetCapacity(), ...)
 	// therefore hands the codec 1024 and is rejected with trailingBytes. It has to be
@@ -1533,8 +1567,8 @@ ZENITH_TEST(ZM_Save, Slot_StagedReadbackDecodesWithoutTouchingDisk)
 	Zenith_Vector<u_int8> xPayload;
 	ZENITH_ASSERT_TRUE(CaptureLastWrittenPayload(xPayload), "no Save() was recorded");
 	ZENITH_ASSERT_EQ(xPayload.GetSize(),
-		uEXPECTED_PREFIX_BYTES + uGOLDEN_BLOB_BYTES, "captured payload size");
-	if (xPayload.GetSize() != uEXPECTED_PREFIX_BYTES + uGOLDEN_BLOB_BYTES)
+		uEXPECTED_PREFIX_BYTES + uGOLDEN_V2_BLOB_BYTES, "captured payload size");
+	if (xPayload.GetSize() != uEXPECTED_PREFIX_BYTES + uGOLDEN_V2_BLOB_BYTES)
 	{
 		return;
 	}
@@ -1647,14 +1681,14 @@ ZENITH_TEST(ZM_Save, Slot_ReadRejectsADiskPayloadTooSmallForAPrefix)
 	// file itself and report CORRUPT_DATA without the layer's guard ever running.
 	const ZM_GameState xGolden = MakeGoldenV1State();
 	const Zenith_Vector<u_int8> xBlob = EncodeBlob(xGolden, "golden v1 state");
-	ZENITH_ASSERT_EQ(xBlob.GetSize(), uGOLDEN_BLOB_BYTES, "golden blob length");
-	if (xBlob.GetSize() != uGOLDEN_BLOB_BYTES) { return; }
+	ZENITH_ASSERT_EQ(xBlob.GetSize(), uGOLDEN_V2_BLOB_BYTES, "golden blob length");
+	if (xBlob.GetSize() != uGOLDEN_V2_BLOB_BYTES) { return; }
 
 	Zenith_Vector<u_int8> xWellFormed;
-	xWellFormed.PushBack((u_int8)(uGOLDEN_BLOB_BYTES & 0xffu));
-	xWellFormed.PushBack((u_int8)((uGOLDEN_BLOB_BYTES >> 8u) & 0xffu));
-	xWellFormed.PushBack((u_int8)((uGOLDEN_BLOB_BYTES >> 16u) & 0xffu));
-	xWellFormed.PushBack((u_int8)((uGOLDEN_BLOB_BYTES >> 24u) & 0xffu));
+	xWellFormed.PushBack((u_int8)(uGOLDEN_V2_BLOB_BYTES & 0xffu));
+	xWellFormed.PushBack((u_int8)((uGOLDEN_V2_BLOB_BYTES >> 8u) & 0xffu));
+	xWellFormed.PushBack((u_int8)((uGOLDEN_V2_BLOB_BYTES >> 16u) & 0xffu));
+	xWellFormed.PushBack((u_int8)((uGOLDEN_V2_BLOB_BYTES >> 24u) & 0xffu));
 	AppendBytes(xWellFormed, xBlob);
 	WriteHandBuiltSlotFile(ZM_SAVE_SLOT_0, xWellFormed.GetDataPointer(),
 		(uint64_t)xWellFormed.GetSize());
@@ -1763,7 +1797,7 @@ ZENITH_TEST(ZM_Save, Slot_ReadRejectsAnOversizedPrefix)
 	// the caller's state survives. It reds if the layer forwards a bogus length as a
 	// different status, or pre-clears/partially publishes the destination.
 	const Zenith_Vector<u_int8> xBlob = EncodeBlob(MakeGoldenV1State(), "golden v1 state");
-	ZENITH_ASSERT_EQ(xBlob.GetSize(), uGOLDEN_BLOB_BYTES, "golden blob length");
+	ZENITH_ASSERT_EQ(xBlob.GetSize(), uGOLDEN_V2_BLOB_BYTES, "golden blob length");
 	if (xBlob.GetSize() == 0u) { return; }
 
 	Zenith_Vector<u_int8> xStaged;
@@ -1823,8 +1857,8 @@ ZENITH_TEST(ZM_Save, Slot_ReadRejectsAStagedPayloadWithACorruptInnerMagic)
 		"the fixture file could not be read back");
 
 	Zenith_Vector<u_int8> xBlob = EncodeBlob(xGolden, "golden v1 state");
-	ZENITH_ASSERT_EQ(xBlob.GetSize(), uGOLDEN_BLOB_BYTES, "golden blob length");
-	if (xBlob.GetSize() != uGOLDEN_BLOB_BYTES) { return; }
+	ZENITH_ASSERT_EQ(xBlob.GetSize(), uGOLDEN_V2_BLOB_BYTES, "golden blob length");
+	if (xBlob.GetSize() != uGOLDEN_V2_BLOB_BYTES) { return; }
 
 	// Byte 0 of a ZMSV blob is the low byte of ZM_SaveSchema::uMAGIC. Pinned, so this
 	// unit fails loudly rather than silently corrupting some unrelated field if the
@@ -1840,10 +1874,10 @@ ZENITH_TEST(ZM_Save, Slot_ReadRejectsAStagedPayloadWithACorruptInnerMagic)
 	// length. Only the magic is wrong, so any rejection can only come from the
 	// codec's magic gate, never from the prefix bounds check above it.
 	Zenith_Vector<u_int8> xStaged;
-	xStaged.PushBack((u_int8)(uGOLDEN_BLOB_BYTES & 0xffu));
-	xStaged.PushBack((u_int8)((uGOLDEN_BLOB_BYTES >> 8u) & 0xffu));
-	xStaged.PushBack((u_int8)((uGOLDEN_BLOB_BYTES >> 16u) & 0xffu));
-	xStaged.PushBack((u_int8)((uGOLDEN_BLOB_BYTES >> 24u) & 0xffu));
+	xStaged.PushBack((u_int8)(uGOLDEN_V2_BLOB_BYTES & 0xffu));
+	xStaged.PushBack((u_int8)((uGOLDEN_V2_BLOB_BYTES >> 8u) & 0xffu));
+	xStaged.PushBack((u_int8)((uGOLDEN_V2_BLOB_BYTES >> 16u) & 0xffu));
+	xStaged.PushBack((u_int8)((uGOLDEN_V2_BLOB_BYTES >> 24u) & 0xffu));
 	AppendBytes(xStaged, xBlob);
 	Zenith_SaveData::SetReadbackForTest(ZM_SaveSlots::SlotName(ZM_SAVE_SLOT_0),
 		ZM_SaveSlots::uGAME_VERSION, xStaged.GetDataPointer(), (uint64_t)xStaged.GetSize());
@@ -1904,8 +1938,12 @@ ZENITH_TEST(ZM_Save, Slot_RecordedGameVersionIsTheDeclaredConstant)
 	// The declared constant is itself pinned to a LITERAL first. Without this, the
 	// comparison below has the production constant on BOTH sides and survives any
 	// change to it -- it would only catch WriteState passing something else entirely.
+	// Still 1, and deliberately so: uGAME_VERSION is its OWN axis and is NOT the ZMSV
+	// schema version, which ZM-D-201 moved to 2 (ZM_SaveSlots.h:78-83 -- LoadEx never
+	// inspects uGameVersion, and the real version gate lives inside the payload).
 	ZENITH_ASSERT_EQ((u_int)ZM_SaveSlots::uGAME_VERSION, 1u,
-		"the engine-header game version for this layer is v1");
+		"the engine-header game version for this layer is 1, independently of the "
+		"ZMSV schema version");
 
 	const Zenith_SaveData::WrittenSlot& xEntry = xLog.GetBack();
 	// The engine header's uGameVersion is metadata only: LoadEx never inspects it
@@ -2064,15 +2102,15 @@ ZENITH_TEST(ZM_Save, Slot_WriteAnswersFromTheVerifyProbeNotFromSaveReturn)
 	// report corruption here.
 	const ZM_GameState xGolden = MakeGoldenV1State();
 	Zenith_Vector<u_int8> xBlob = EncodeBlob(xGolden, "golden v1 state");
-	ZENITH_ASSERT_EQ(xBlob.GetSize(), uGOLDEN_BLOB_BYTES, "golden blob length");
-	if (xBlob.GetSize() != uGOLDEN_BLOB_BYTES) { return; }
+	ZENITH_ASSERT_EQ(xBlob.GetSize(), uGOLDEN_V2_BLOB_BYTES, "golden blob length");
+	if (xBlob.GetSize() != uGOLDEN_V2_BLOB_BYTES) { return; }
 	xBlob.Get(0u) = (u_int8)(xBlob.Get(0u) ^ 0xffu);   // break the ZMSV magic; honest length
 
 	Zenith_Vector<u_int8> xStaged;
-	xStaged.PushBack((u_int8)(uGOLDEN_BLOB_BYTES & 0xffu));
-	xStaged.PushBack((u_int8)((uGOLDEN_BLOB_BYTES >> 8u) & 0xffu));
-	xStaged.PushBack((u_int8)((uGOLDEN_BLOB_BYTES >> 16u) & 0xffu));
-	xStaged.PushBack((u_int8)((uGOLDEN_BLOB_BYTES >> 24u) & 0xffu));
+	xStaged.PushBack((u_int8)(uGOLDEN_V2_BLOB_BYTES & 0xffu));
+	xStaged.PushBack((u_int8)((uGOLDEN_V2_BLOB_BYTES >> 8u) & 0xffu));
+	xStaged.PushBack((u_int8)((uGOLDEN_V2_BLOB_BYTES >> 16u) & 0xffu));
+	xStaged.PushBack((u_int8)((uGOLDEN_V2_BLOB_BYTES >> 24u) & 0xffu));
 	AppendBytes(xStaged, xBlob);
 	Zenith_SaveData::SetReadbackForTest(ZM_SaveSlots::SlotName(ZM_SAVE_SLOT_1),
 		ZM_SaveSlots::uGAME_VERSION, xStaged.GetDataPointer(), (uint64_t)xStaged.GetSize());
@@ -2097,7 +2135,7 @@ ZENITH_TEST(ZM_Save, Slot_WriteAnswersFromTheVerifyProbeNotFromSaveReturn)
 	Zenith_Vector<u_int8> xPayload;
 	ZENITH_ASSERT_TRUE(CaptureLastWrittenPayload(xPayload), "no Save() was recorded");
 	ZENITH_ASSERT_EQ(xPayload.GetSize(),
-		uEXPECTED_PREFIX_BYTES + uGOLDEN_BLOB_BYTES, "written payload size");
+		uEXPECTED_PREFIX_BYTES + uGOLDEN_V2_BLOB_BYTES, "written payload size");
 	if (xPayload.GetSize() >= uEXPECTED_PREFIX_BYTES + 1u)
 	{
 		ZENITH_ASSERT_EQ((u_int)xPayload.Get(uEXPECTED_PREFIX_BYTES),

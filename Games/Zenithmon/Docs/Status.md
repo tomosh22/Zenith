@@ -17,13 +17,21 @@ The S0-S7 narrative that used to fill the back half of this file moved VERBATIM 
 [History.md](History.md) on 2026-08-18, so this file can hold to the ~25-line budget
 its own template in `AgentBriefing.md` §2.3 specifies. Nothing was deleted.
 
-**★ LIVE PIN (UPDATED 2026-08-21):
-ZM boot `3365`; engine boot (Null Combat) `1649`; Null RenderTest `1740`; registry **67**.**
+**★ LIVE PIN (UPDATED 2026-08-22):
+ZM boot `3384`; engine boot (Null Combat) `1650`; Null RenderTest `1741`; registry **67**.**
 **★ +11 on EVERY game across two ENGINE tickets, no `ZM_*` unit added.**
 3354/1638/1729 -> **3360/1644/1735** (ZM-49, +6: the terrain COLLISION-height
 query `TryGetGroundHeightAt` -- 4 m quads, NOT the rendered ground) ->
 **3365/1649/1740** (ZEN-2, +4 then +1: its chunk-granularity reject, plus the
-recorder test a review found missing). Each number OBSERVED on `Null_`.
+recorder test a review found missing) -> **3366/1650/1741**, an engine +1 that
+moved `Tools/unit_baselines.json` and was never narrated here, which is why this
+block read one behind the manifest on all three rows until 2026-08-22 ->
+**3384**/1650/1741 (ZM-27, +18 `ZM_*` units: 14 `ZM_GroundItem`, +3 in the save
+migration TU, +1 in the schema TU). Each number OBSERVED on `Null_`.
+★ ZM-27 measured **3384** from a real `Null_` Zenithmon run; 1650 and 1741 are
+CARRIED from the manifest, not re-observed -- its diff is confined to
+`Games/Zenithmon/**`, so no backend-neutral engine unit moved and `zagent gates`
+unioned in no engine gates.
 ★ **A backend-neutral ENGINE ticket moves this block and may not touch it** --
 ZEN-2 is `category: Engine`, so its gate list never opened a ZM doc and left
 this line reading 3360/1644/1735 until someone noticed.

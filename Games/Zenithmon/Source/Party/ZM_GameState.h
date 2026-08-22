@@ -5,12 +5,22 @@
 #include "Zenithmon/Source/Party/ZM_Bag.h"           // ZM_Bag (S6 item 2 SC3)
 #include "Zenithmon/Source/Battle/ZM_BattleTower.h" // ZM_TowerRun
 #include "Zenithmon/Source/Data/ZM_SpeciesData.h"   // ZM_SPECIES_ID, ZM_SPECIES_COUNT
+#include "Zenithmon/Source/World/ZM_GroundItem.h"   // ZM_GroundItemSet (save module 12, ZM-D-201)
 
 // ============================================================================
 // ZM_GameState -- the complete durable in-memory player model consumed by S7's
 // save modules: party, boxes, dex, flags, badges, bag, money, daycare, tower,
-// world resume position, and options. This file still performs no serialization
-// or I/O. The pending-whiteout latch remains transient runtime coordination state.
+// world resume position, options, and the collected ground-item set. This file
+// still performs no serialization or I/O. The pending-whiteout latch remains
+// transient runtime coordination state.
+//
+// ★ ZM-D-135 FROZE THIS MODEL AT S7 AND ZM-D-201 EXTENDED IT, ONCE, UNDER THE
+// GATE. The freeze was never "no field may ever be added" -- it was "a field is
+// durable save surface the moment it exists". m_xCollectedGroundItems is the first
+// member added since, and it arrived with schemaVersion 1 -> 2, save module 12,
+// a v1 -> v2 migration and a literal canned blob per version, all in one commit,
+// which is exactly what Docs/SaveFormat.md's migration gate demands. Anything else
+// added here owes the same four things.
 // ============================================================================
 
 // A per-species boolean set (seen or caught), indexed by ZM_SPECIES_ID. Backed by a
@@ -132,6 +142,13 @@ struct ZM_GameState
 	ZM_TowerRun         m_xTowerRun;
 	ZM_WorldPosition    m_xWorldPosition;
 	ZM_GameOptions      m_xOptions;
+	// Which world props this save has already taken. Declared LAST of the durable
+	// members because it is save module 12, the last framed module -- the struct
+	// order is not the wire order, but keeping the two in step is free and stops a
+	// reader having to hold two orderings at once. Written ONLY through
+	// ZM_TryPickUpGroundItem (Source/World/ZM_GroundItem.h), which marks a prop only
+	// after its stack has actually landed in the bag.
+	ZM_GroundItemSet    m_xCollectedGroundItems;
 	bool                m_bPendingWhiteout = false;   // transient; consumed by the whiteout warp, never saved
 
 	void  MarkSeen(ZM_SPECIES_ID eSpecies)         { m_xSeen.Mark(eSpecies); }
@@ -183,7 +200,8 @@ struct ZM_GameState
 };
 
 // A NEW GAME's durable state: NO party, an EMPTY dex, no story flags, no badges,
-// and the starting economy. Deterministic; pure (no RNG, no ECS, no I/O).
+// NO ground item collected, and the starting economy. Deterministic; pure (no RNG,
+// no ECS, no I/O).
 //
 // It grants NO monster. The starter arrives through ZM_ApplyStarterChoice
 // (ZM_StarterChoice.h), which every caller composes onto this state, so "what

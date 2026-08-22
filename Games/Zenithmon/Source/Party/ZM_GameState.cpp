@@ -23,6 +23,10 @@ ZM_GameState ZM_MakeNewGameState()
 {
 	ZM_GameState xState;
 	xState.m_bPendingWhiteout = false;
+	// Stated rather than inherited, exactly like the latch above. A new game has
+	// taken NO world prop, and the day someone gives ZM_GroundItemSet a non-empty
+	// default this line is what keeps a fresh save honest.
+	xState.m_xCollectedGroundItems.Clear();
 
 	// Through the helper, not a direct write: the seed can then never place the purse
 	// above the cap that AddMoney is the sole enforcer of.

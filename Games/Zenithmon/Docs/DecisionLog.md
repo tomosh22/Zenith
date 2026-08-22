@@ -15,6 +15,122 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-08-22 -- ZM-D-201 -- ground items get a SAVE MODULE, not a story flag, and the codec runs its first migration
+
+**ZM-27. The save schema moves for the first time since it shipped: `uSCHEMA_VERSION_CURRENT`
+1 -> 2, `uMODULE_COUNT` 11 -> 12, new module 12 = the collected ground-item set.** With it:
+`Source/World/ZM_GroundItem.{h,cpp}` (a save-stable prop registry, a per-prop collected set and
+one pure pickup path), a `ZM_GameState` member, a v1 -> v2 migration, and a second literal canned
+blob. The Roadmap line is ZM-27, split out of Route 1 by ZM-D-196 ruling 1.
+
+### The decision: a NEW MODULE over story flags, and it cost a version bump on purpose
+
+`ZM_StoryFlags` would have needed **no schema change at all** -- its wire payload is a FIXED 512
+bytes (`uZM_MAX_STORY_FLAGS = 4096`, seven used), so flag 7 changes no byte count. It was
+rejected for two reasons.
+
+1. That registry is hand-named and append-only **by design, for story beats**. Hundreds of ground
+   items across S9-S12 would bloat it into a per-prop enum, which is not what its own header says
+   it is for -- and its density rule is a STORAGE contract (module 4 sizes itself from the highest
+   SET index), so the bloat would be permanent and unreclaimable without renumbering.
+2. ZM-D-196 split this item out precisely so it could **"front-run a save-schema question ahead
+   of Gym 1"**. The schema question IS the deliverable. Answering it by hiding in a spare bitset
+   would have deferred it to a worse moment -- a live schema bump under Gym 1's deadline, with
+   saves in the wild.
+
+### v2 is v1 plus one module, and that is MEASURED rather than asserted
+
+Modules 1..11 are byte-for-byte unchanged. `GoldenV1_ModuleBytesSurviveVerbatimInsideTheV2Payload`
+drives the canonical writer over the v1 fixture and compares its output against the **untouched
+824-byte v1 golden** byte by byte outside the two patched header words, then pins that the whole
+of the delta is one empty framed module 12. The v1 golden was NOT regenerated and never will be:
+it is the only independent record of a format the writer can no longer produce, and re-deriving
+it from the codec would turn the migration test into "the reader agrees with the writer", which
+is true of any pair of broken halves.
+
+★ **The module-count check is VERSION-AWARE, not relaxed.** A v1 payload declaring 12 and a v2
+payload declaring 11 are both still `CORRUPT_DATA`, and the second is the one that matters: the
+obvious `count <= uMODULE_COUNT` relaxation would silently accept a v2 save whose module 12 had
+been truncated away as a good save with nothing collected. `ModuleCountForSchemaVersion` is the
+one place both "is this version readable" and "what count must it declare" come from, so a
+two-list drift is not expressible.
+
+★ **The migration runs BEFORE validation and BEFORE the publish**, so `Read`'s transaction is
+unchanged -- a malformed v1 blob still leaves the caller's state byte-identical. And it CLEARS the
+set explicitly rather than inheriting the default: the line changes no bit today, and exists
+because a migration that is only a default is a migration nobody can find, and the next one will
+be written by copying this block.
+
+### The pickup order is the whole of the pickup
+
+`ZM_TryPickUpGroundItem` **adds to the bag FIRST and marks the prop collected ONLY on success.**
+`ZM_Bag.h` already records what "SpendMoney then Add" cost the shop; "mark collected then Add" is
+the same shape and strictly worse -- a lost coin can be re-earned, a burnt prop is gone for the
+life of the save. ★ **Nothing else in the game could see that mistake**: the prop would read as
+taken, the bag would be untouched, and both are legal states in isolation. Two units
+(`Pickup_AStackAtTheCapLeavesBothTheBagAndTheFlagUntouched` and its full-pocket twin) are what
+make the ordering a contract rather than a comment. `ZM_CanPickUpGroundItem` is the accept rule
+with the mutation removed and `ZM_TryPickUpGroundItem` CALLS it, the ZM_Bag `CanAdd`/`Add`
+doctrine exactly, so the two cannot drift.
+
+Collected state is per-PROP, never per-ITEM: two Route 1 props both hand out a Salve, and a set
+keyed on `ZM_ITEM_ID` would exhaust both at once.
+
+### What this slice deliberately does NOT deliver, and why
+
+- **No ECS component and no authored prop.** The pickup path's live caller would be a
+  `ZM_Interactable`-shaped component at the next free game ECS order, registered TWICE in
+  `Zenithmon.cpp` (the macro AND the ZENITH_TOOLS "Add Component" registry). Both files are
+  outside this slice's scope. Booked as follow-up (a).
+- **No placement anchors.** A prop's world position needs a MEASURED ground column, and measuring
+  one needs a warm bake plus a windowed raycast oracle (`ZM_Route1Placement.h`, "THE GROUND").
+  Seeding coordinates by hand is exactly the invented-literal failure that table's banner
+  forbids, and ZM-20 (Route 1 authoring) is `windowed` and still open. Booked as follow-up (b).
+- So **the deliverable is the MECHANISM**, headlessly verifiable end to end, and the ticket's
+  "a world prop can be picked up into the bag" is satisfied at the logic layer only. Say so; do
+  not let a later reader infer that a player can walk up to something.
+
+### The three shipped rows are re-numberable TODAY and will not be for long
+
+`ZM_GROUND_ITEM_ROUTE1_SOUTH_SALVE` / `..._LANE_CATCHORB` / `..._NORTH_SALVE`, yielding 1 Salve /
+2 Catchorbs / 1 Salve. The two items are the two `ZM_MakeNewGameState` already grants, so a route
+pickup is a top-up of something the player understands rather than new content; the counts are
+PROVISIONAL placeholder tuning in the same sense as that function's starting economy (real drop
+tuning is S11). Because nothing authors a prop into a committed scene yet, **no save in existence
+can carry one of these ids**, so a pre-content reshuffle costs only the v2 golden (which spells
+ids 0 and 2 as literal wire bytes). The append-only rule binds the day a scene authors one.
+
+An empty registry was rejected as an alternative: `ZM_GROUND_ITEM_COUNT == 0` makes a zero-length
+table ill-formed and every positive unit vacuous, so "a prop can be picked up" would have shipped
+with no instance to prove it against.
+
+**Tests that lock it:** 14 new `ZM_GroundItem` units (registry density/self-consistency, accessor
+and name totality, the collected set, the four pickup outcomes and their precedence, the two
+refused-add clauses above, per-prop independence, every row collectable from a new game, the
+predicate/mutator agreement over four states x every id, and the save round trip); 3 new
+`ZM_Save` units in the migration file (the version/count pairing with atomicity, plus the v2
+golden pair, taking that file 2 -> 5); 1 new `ZM_Save` unit for module 12's wire domain (taking
+`ZM_Tests_SaveSchema.cpp` 29 -> 30); and the two pre-existing v1 golden units re-aimed rather
+than deleted. **18 new units in total** -- the observed boot count is the orchestrator's to
+record; nothing here claims one.
+
+**Reversibility:** LOW for the schema version and the module id -- both are on-disk surface the
+moment a v2 save exists. MEDIUM for the three registry rows (see above). HIGH for the pickup
+functions and the reject enum, which nothing persists.
+
+**Follow-ups booked, not done here:** (a) the ECS ground-item component + its `Zenithmon.cpp`
+registration, which is what turns `Interact()` into a call to `ZM_TryPickUpGroundItem`; (b) the
+placement anchors and the windowed authoring pass that puts a prop in Route 1; (c) `ZM_UI_Bag`
+rows are still inert and the battle engine still never consumes `ZM_Bag`, so a picked-up item
+still cannot be USED -- ZM-D-196's finding stands and this slice did not address it;
+(d) ~~`Tests/ZM_Tests_StoryFlags.cpp` carries a now-misnamed `uWIRE_MODULE_COUNT = 11u`~~ --
+**DONE in this same commit**, during the fix-forward: renamed `uWIRE_MODULE_WALK_LIMIT`, value
+and behaviour unchanged (it is a search bound that returns at module 4, not a module count).
+Booked in the first dispatch and done in the second, which is a structural blind spot of
+fix-forward rather than an oversight: the second worker cannot see what the first one booked.
+
+---
+
 ## 2026-08-15 -- ZM-D-200 -- the warp transition machine gets a FRAME budget, and the obvious escape does not escape
 
 **All three polling barriers -- `WAITING_FOR_SCENE`, `_SPAWN`, `_CAMERA` -- bare-`return`ed on
