@@ -190,10 +190,36 @@ function Get-WorkingTreeChanges {
   FILE_FLAGS in the board's dispatch.ts -- a flag missing from one side
   arrives as a path string the board then treats as prose.
 #>
+<#
+  Which of those flags are path-valued FOR THIS COMMAND.
+
+  `--goal` names two different things depending on where it lands. A
+  TICKET's goal replaces its `## Goal` section -- multi-line Markdown,
+  hence a path, for the reason above. A SPRINT's goal is a one-sentence
+  objective typed inline. They only ever shared a spelling, and while
+  this list was applied to every command the sprint one was unreachable:
+  `sprint create <NAME> --goal "some text"` read the text as a filename
+  and died on the Test-Path check above.
+
+  Twin of `fileFlagsFor` in the board's dispatch.ts, for the same reason
+  the list itself is spelled twice -- the slurp happens HERE, before any
+  request exists, so the board cannot decide it. A narrowing missing
+  from this side sends the board a path string it then stores as prose.
+#>
+function Get-FileFlags {
+    param([string[]]$Argv)
+    $all = @('file', 'comment', 'worklog', 'body', 'goal', 'dod')
+    if ($null -ne $Argv -and $Argv.Count -gt 0 -and $Argv[0] -eq 'sprint') {
+        # `,@(...)` or a one-element result unrolls to a bare string.
+        return ,@($all | Where-Object { $_ -ne 'goal' })
+    }
+    return ,@($all)
+}
+
 function Get-FileContents {
     param([string[]]$Argv)
     $files = [ordered]@{}
-    foreach ($name in @('file', 'comment', 'worklog', 'body', 'goal', 'dod')) {
+    foreach ($name in (Get-FileFlags -Argv $Argv)) {
         $value = Get-FlagValue -Argv $Argv -Name $name
         if ($value) {
             if (-not (Test-Path -LiteralPath $value)) {
@@ -706,7 +732,7 @@ function Get-AllGateLines {
 
 
 Export-ModuleMember -Function Find-ClientRepo, ConvertTo-PosixPath, Remove-Annotations,
-    Get-ClientProject, Get-FlagValue, Test-Flag, Get-FileContents, Get-WorkingTreeChanges,
+    Get-ClientProject, Get-FlagValue, Test-Flag, Get-FileFlags, Get-FileContents, Get-WorkingTreeChanges,
     Test-NeedsDocsTree, Test-NeedsChangedSet, Get-RequestTimeout, Get-GuardTicketKey,
     Get-RecordedGateSelection,
     Get-BodyDrift, Format-BodyDrift, Get-DocsTree,

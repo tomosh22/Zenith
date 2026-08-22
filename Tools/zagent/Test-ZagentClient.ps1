@@ -817,11 +817,11 @@ Assert-That 'is generous for exactly the commands that upload the docs tree' {
 # the board as a PATH STRING which it then treats as prose -- a ticket
 # body silently replaced by the characters `C:\tmp\dod.md`.
 Assert-That 'resolves every path-valued flag the board declares in FILE_FLAGS' {
-    $psm1 = Get-Content (Join-Path $PSScriptRoot 'ZagentClient.psm1') -Raw
-    $match = [regex]::Match($psm1, "foreach \(\`$name in @\(([^)]*)\)\)")
-    if (-not $match.Success) { return $false }
-    $names = [regex]::Matches($match.Groups[1].Value, "'([a-z]+)'") |
-        ForEach-Object { $_.Groups[1].Value }
+    # Asks the FUNCTION, not the file. This used to regex the psm1 source
+    # for its `foreach ($name in @(...))` literal, which meant the check
+    # tracked the shape of the code rather than its answer -- moving the
+    # list into Get-FileFlags broke it while the behaviour was correct.
+    $names = Get-FileFlags -Argv @('create')
     foreach ($required in @('file', 'comment', 'worklog', 'body', 'goal', 'dod')) {
         if ($required -notin $names) {
             Write-Host "       missing path-valued flag: $required"
@@ -876,6 +876,46 @@ Assert-That 'every build line comes before the first test line' {
         if ($gates[$i] -match '\btest\s' -and $firstTest -eq $gates.Count) { $firstTest = $i }
     }
     $lastBuild -lt $firstTest
+}
+
+Write-Host "`n=== Get-FileFlags ===" -ForegroundColor Cyan
+# `--goal` names two different things, and this list is what tells them
+# apart. A TICKET's goal is a `## Goal` SECTION -- multi-line Markdown,
+# so it arrives as a path. A SPRINT's is one inline sentence. While the
+# list was applied to every command the sprint form was unreachable:
+# `sprint create <NAME> --goal "some text"` treated the text as a
+# filename and died on Get-FileContents' Test-Path check.
+#
+# Spelled TWICE, like Test-NeedsDocsTree above and for the same reason:
+# the slurp happens on THIS side, before any request exists, so the
+# board cannot decide it. Mirrors `fileFlagsFor` in dispatch.ts.
+Assert-That 'keeps --goal path-valued for a ticket update' {
+    (Get-FileFlags -Argv @('update', 'ZM-1')) -contains 'goal'
+}
+Assert-That 'drops --goal for a sprint, whose goal is typed inline' {
+    -not ((Get-FileFlags -Argv @('sprint', 'create', 'S9')) -contains 'goal')
+}
+Assert-That 'narrows only --goal, never the other five' {
+    $flags = Get-FileFlags -Argv @('sprint', 'create', 'S9')
+    ($flags -contains 'file') -and ($flags -contains 'comment') -and
+    ($flags -contains 'worklog') -and ($flags -contains 'body') -and ($flags -contains 'dod')
+}
+Assert-That 'leaves every other command on the full list' {
+    ((Get-FileFlags -Argv @('create')) -contains 'goal') -and
+    ((Get-FileFlags -Argv @('finish', 'ZM-1')) -contains 'goal')
+}
+# `$Argv[0]` on an empty array is a Set-StrictMode violation, and this
+# script sets it -- a bare index would throw rather than fall through.
+Assert-That 'survives an empty and a null argv under Set-StrictMode' {
+    ((Get-FileFlags -Argv @()) -contains 'goal') -and
+    ((Get-FileFlags -Argv $null) -contains 'goal')
+}
+# The narrowing is a RETURNED collection, and a PowerShell function
+# unrolls one -- a five-element result must not arrive as five values
+# or a bare string. `,@(...)` is what keeps it an array.
+Assert-That 'returns an array, not an unrolled string' {
+    $flags = Get-FileFlags -Argv @('sprint', 'create', 'S9')
+    ($flags -is [array]) -and ($flags.Count -eq 5)
 }
 
 Write-Host ""
