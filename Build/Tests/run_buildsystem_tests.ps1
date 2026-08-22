@@ -256,6 +256,31 @@ try {
         Assert-AnyLike $scan.Errors "*has no .zproj descriptor*" "no-descriptor error"
     }
 
+    Invoke-Test "docs-only folder -> skipped, not an error" {
+        # A game written up before it is written. The whole point is that this must
+        # not stop the scan: a descriptor error aborts regen.ps1 REPO-WIDE, and a
+        # regen that never runs leaves newly created source files out of the vcxproj
+        # while `zenith build` still exits 0.
+        $root = New-IsolatedGamesRoot 'docsonly'
+        New-Item -ItemType Directory -Force -Path (Join-Path $root 'Concept/Docs') | Out-Null
+        Set-Content -LiteralPath (Join-Path $root 'Concept/Docs/GameDesignDocument.md') -Value '# Concept'
+        $scan = Get-ZenithGameDescriptors -GamesRoot $root
+        Assert-True ($scan.Errors.Count -eq 0) "docs-only folder produced no error (got: $($scan.Errors -join '; '))"
+        Assert-True ($scan.Descriptors.Count -eq 0) "docs-only folder contributed no descriptor"
+    }
+
+    Invoke-Test "folder with SOURCE but no descriptor -> still an error" {
+        # The carve-out above must stay narrow. A folder carrying anything besides a
+        # single Docs directory is a game somebody forgot to give a descriptor, which
+        # is the mistake the check exists for.
+        $root = New-IsolatedGamesRoot 'srcnodesc'
+        New-Item -ItemType Directory -Force -Path (Join-Path $root 'Halfling/Docs') | Out-Null
+        New-Item -ItemType Directory -Force -Path (Join-Path $root 'Halfling/Source') | Out-Null
+        Set-Content -LiteralPath (Join-Path $root 'Halfling/Source/Main.cpp') -Value '// game'
+        $scan = Get-ZenithGameDescriptors -GamesRoot $root
+        Assert-AnyLike $scan.Errors "*has no .zproj descriptor*" "source-bearing folder still errors"
+    }
+
     # ========================================================================
     Write-Host "`n[5] Codegen golden + SHA wiring" -ForegroundColor Cyan
 

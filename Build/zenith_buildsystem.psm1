@@ -304,6 +304,28 @@ function Get-ZenithGameDescriptors {
     foreach ($dir in $gameDirs) {
         $zprojs = @(Get-ChildItem -LiteralPath $dir.FullName -Filter '*.zproj' -File -ErrorAction SilentlyContinue)
         if ($zprojs.Count -eq 0) {
+            # A DESIGN-DOCS set is not a game yet. `Games/<Name>/` holding nothing
+            # but a `Docs/` tree is a game being written up before it is written,
+            # and it has no descriptor because there is nothing to generate.
+            #
+            # This carve-out is deliberately as narrow as it can be: the folder must
+            # contain a `Docs` directory and NOTHING else. An empty folder is still an
+            # error (it is ambiguous), and so is a folder with source in it -- which is
+            # the mistake this check actually exists to catch.
+            #
+            # It exists because the guard failed OPEN in the worst possible way.
+            # Commit 895a30d9 added Foundry, Hearth and Undervault as docs-only
+            # folders; every later `regen.ps1` exited 3 and regenerated NOTHING. The
+            # already-generated projects stayed on disk, so `zenith build` kept exiting
+            # 0 -- and a ticket that CREATED a source file built green with that file
+            # never compiled, because only a regen puts a new file into the vcxproj.
+            # Nothing downstream could see it: the build passes, and the unit-count
+            # gate moves by however many tests happened to live in files that already
+            # existed, which looks exactly like an ordinary baseline bump.
+            $children = @(Get-ChildItem -LiteralPath $dir.FullName -Force -ErrorAction SilentlyContinue)
+            $docsOnly = $children.Count -eq 1 -and $children[0].PSIsContainer -and $children[0].Name -eq 'Docs'
+            if ($docsOnly) { continue }
+
             $errs.Add("game folder '$($dir.Name)' has no .zproj descriptor")
             continue
         }
