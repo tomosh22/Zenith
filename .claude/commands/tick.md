@@ -187,11 +187,12 @@ whether the work is inside what an agent bound by `protectedPaths` can
 reach. Twice in one session that gap cost a claim, a slot in the
 one-ticket-per-repo lock and a worker dispatch each.
 
-**The board now scans the DoD for protected paths and refuses at FILE
-time**, the same way `windowed` does: filing straight into *Ready for
-Agent* is rejected, filing into *To Do* warns. A ticket that reaches you
-with one anyway — filed before the check existed, or dragged into Ready
-on the board — comes back as an ordinary exit 4 naming the path and the
+**The board scans the DoD for protected paths and refuses at FILE
+time**, the same way `windowed` does. It refuses whenever the ticket
+would be immediately claimable, which — since *To Do* became the queue —
+is every unassigned, un-`windowed` ticket, whatever lane it is filed
+into. A ticket that reaches you with one anyway, filed before the check
+existed, comes back as an ordinary exit 4 naming the path and the
 pattern. Handle it as any contract failure; do not re-derive the rule.
 
 **A `REACHABILITY` line on `show`/`check` is the near miss.** It fires when
@@ -268,9 +269,31 @@ several here defer themselves in prose that no field captures:
 - a ticket may say outright it should not be built yet. ZM-48 reads
   *"Zenithmon does NOT need this now … lands when populated-world NPC
   pathing actually needs it"*; ZM-47 is *"DEFERRED post-Zenithmon"*. Claim,
-  comment, release to To Do — do not dispatch. **An autonomous loop widening
-  scope on a self-deferred ticket is worse than one that does nothing**, and
-  the deferral is invisible to `contractValid`.
+  comment, **`zagent update <KEY> --label deferred`**, release to To Do —
+  do not dispatch. **An autonomous loop widening scope on a self-deferred
+  ticket is worse than one that does nothing**, and the deferral is
+  invisible to `contractValid`.
+
+  **The label is not optional and releasing without it is a live loop.**
+  This step used to be "release to To Do" alone, which worked because To
+  Do was OUTSIDE the queue: the ticket left the lane the loop claimed
+  from. To Do IS the queue now, so a bare release puts the ticket
+  straight back at the head and the next firing claims it again, and the
+  one after that, forever — a tick that burns a claim, a dispatch slot
+  and a wakeup on the same card indefinitely, with nothing ever going
+  red. `deferred` is filtered out of the claim query exactly like
+  `windowed`, so the card stays visible in To Do and stops being taken.
+
+  It is **not** `Blocked`. Nothing is wrong with these tickets, and three
+  of them would trip `maxConsecutiveBlocked` and stop the whole queue
+  over work that is merely early.
+
+  A TARGETED claim still takes a `deferred` ticket — unlike `windowed`,
+  which is refused either way. The asymmetry is deliberate: `windowed`
+  says the machine cannot produce the deliverable, while `deferred` is a
+  judgement about timing, and `/tick ZM-48` is how somebody overrules it.
+  If you are handed one by name, read the deferral, decide, and say in
+  the work log which way you went and why.
 
 And watch for a DoD whose only reachable branch is DESTRUCTIVE. ZM-56 is
 "the test passes windowed, or is retired with a recorded reason" — a

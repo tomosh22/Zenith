@@ -153,18 +153,24 @@ silent success.
 zagent transitions ZM-22     # what this ticket may do from where it is
 ```
 
-The default graph for the six lanes, which every ZM/ZEN/DP project now
+The default graph for the five lanes, which every ZM/ZEN/DP project now
 carries:
 
 | From | May reach |
 |---|---|
-| To Do | Ready for Agent, In Progress |
-| Ready for Agent | To Do, In Progress |
-| In Progress | To Do, Ready for Agent, In Review, Done |
+| To Do | In Progress |
+| In Progress | To Do, In Review, Done |
 | In Review | In Progress, Done |
 | Done | To Do, In Progress (reopen) |
-| Blocked | To Do, Ready for Agent, In Progress |
-| **anywhere** | Blocked |
+| Blocked | To Do, In Progress |
+| **anywhere** | Blocked, Done |
+
+**There were six lanes.** `Ready for Agent` sat between To Do and In
+Progress, and a card waited there until a person dragged it across --
+which put a human in front of every ticket. Migration `0026` retired it
+and carried the cards into To Do. **`To Do` IS the queue now**: a ticket
+filed there is claimable the moment it lands, and the loop takes it To Do
+-> Done with nobody in the middle.
 
 Edit it at **Project settings -> Workflow** on the board. Defining a
 workflow is ADMIN-only; using one is not -- the same split categories
@@ -174,6 +180,11 @@ agent could rewrite is a workflow that gates nothing.
 **`claim` is deliberately exempt.** It is the queue mechanism, not a
 move somebody chose -- a workflow edit that dropped one edge would stall
 the queue with work in it and nothing saying why.
+
+`zagent move` needs the claim too, with ONE exception: a move to **To
+Do** on a ticket nobody holds. Putting a card back in the queue by
+definition happens before ownership exists, and the advertised set and
+the accepted set have to agree.
 
 Three kinds of rule can hang off an edge, and they are Jira's:
 a **condition** (who may move it) hides the option, a **validator**
@@ -224,24 +235,47 @@ owner, and revoking `TRANSITION_ISSUE` from the agent's role would stop
 `zagent move` and `zagent finish` with a permission error rather than a
 workflow one.
 
-## 7. The two safety labels
+## 7. The three safety labels
 
 | Label | Meaning |
 |---|---|
 | `human-gate` | the loop does the work and parks it at In Review. It never signs its own gate (I7). |
 | `windowed` | the loop **cannot** do the work. Filtered out of the queue in SQL and refused by a targeted claim. |
+| `deferred` | "not yet". Filtered out of the queue in SQL, and a targeted claim takes it **anyway**. |
 
 `windowed` exists because a headless run may **CREATE** a `.zscen` but never **CHANGE**
 one. A slice that re-authors a committed scene would either no-op or trip the publish
 guard -- and the units that would notice are compiled constants that stay green, so
 the failure looks like a clean gate run with the deliverable missing.
 
-`ZM-20`, `ZM-21`, `ZM-24`, `ZM-26`, `ZM-29`, `ZM-30`, `ZM-44`, `ZM-58` and `ZM-59`
-carry it today.
+`ZM-20`, `ZM-21`, `ZM-24`, `ZM-26`, `ZM-29`, `ZM-30`, `ZM-44`, `ZM-58`, `ZM-59` and
+`ZM-63` carry it today.
+
+`deferred` exists because To Do became the queue. Several tickets defer THEMSELVES in
+prose no field captures -- `ZM-48` reads *"Zenithmon does NOT need this now"*, `ZM-47`
+is *"DEFERRED post-Zenithmon"* -- and the tick used to handle one by releasing it from
+`Ready for Agent` back to To Do, which took it OUT of the queue. That same release now
+puts it back at the HEAD, so an unattended loop would claim and release it forever with
+no gate ever going red. `ZM-47` and `ZM-48` carry it.
+
+**It is not `Blocked`.** Nothing is wrong with these tickets, and three of them would
+trip `maxConsecutiveBlocked` and stop the whole queue over work that is merely early.
+
+**And it is the one label a targeted claim ignores**, which is the difference from
+`windowed`: `windowed` says the machine cannot produce the deliverable, so naming the
+ticket changes nothing, while a deferral is a judgement about TIMING and `/tick ZM-48`
+is how a person overrules it.
 
 > **This used to be `--assignee` alone**, which protected those tickets only because
 > the queue skips assigned tickets -- a default-allow shape where the safe state was
-> the one nobody typed. The label is default-deny, greppable, and enforced.
+> the one nobody typed. The labels are default-deny, greppable, and enforced.
+
+★ **A ticket BODY that says it needs a person is NOT a marker**, and retiring the
+hand-off lane made that difference load-bearing for the first time. `ZM-9` (*"no agent
+may sign it"*), `ZM-18` and `ZM-60` (*"a human visual sign-off"*) each said so in their
+own words and carried nothing mechanical, and all three sat in To Do -- which the loop
+now claims from. They are labelled now. Nothing scans prose, so a NEW ticket in that
+shape needs its label applying when you file it.
 
 Descriptive labels carry no behaviour: `question`, `tech-debt`, `flaky`, `visual`,
 `engine-gap`, `content`, `docs`.
@@ -274,8 +308,19 @@ The description **is** the spec, and the loop refuses anything it cannot route.
 ## Definition of Done
 
 - [ ] <observable outcome>
-- [ ] Baseline bumped in Status.md AND zm-tests.yml AND zagent.project.json
+- [ ] Every affected game's pinned baseline bumped from an OBSERVED run
 ```
+
+**Never name a pin SITE in a Definition of Done.** That line used to read
+*"bumped in Status.md AND zm-tests.yml AND zagent.project.json"*, which was true until
+the baseline got one home (`Tools/unit_baselines.json`) and now points at two
+`protectedPaths`. A DoD is inlined into the worker's prompt VERBATIM (I3), so a stale
+one does not sit there harmlessly -- it competes with the tick's own instructions, and
+the worker has no shell and no board with which to tell which half is current. Say the
+OUTCOME; the plumbing is allowed to move.
+
+The reachability scan now REFUSES a DoD naming a protected path at file time, so a
+ticket written from the old template comes back exit 4 rather than failing hours later.
 
 Omit `## Gates`. A ticket's own gate list **replaces** the category's rather than
 adding to it, so pasting the Zenithmon list into a body is how a pinned baseline goes

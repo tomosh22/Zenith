@@ -537,7 +537,7 @@ Commands you would actually use from here:
 
 | Command | What it does |
 |---|---|
-| `queue` | what is sitting in Ready for Agent (the repo declares its own project) |
+| `queue` | what is claimable in To Do — the loop's queue (the repo declares its own project) |
 | `auth mint --name <machine>` | **on the board machine only** — a revocable token for one client |
 | `show ZEN-6` | one ticket: routing, category, gates, contract errors |
 | `create --project ZEN --title "…" --file body.md --category Zenithmon --complexity … --risk …` | file a ticket |
@@ -658,14 +658,19 @@ MODEL, `--points` sizes the SPRINT. A `ZEN` ticket without one comes back
 `contractValid: false` rather than being guessed at, because guessing
 between areas means ratcheting the wrong pin.
 
-`create` now refuses at FILE time — you no longer find out hours later
-when the loop reaches the card — but only when you file straight into
-*Ready for Agent*, where the loop could claim it immediately. Filing
-into *To Do* warns and lets you carry on drafting. It also refuses a
-body carrying its own `## Gates`, because a ticket's gate list REPLACES
-the category's rather than adding to it: pasting the Zenithmon list into
-a ticket is how a pinned baseline goes stale, and `echo ok` in a body
-would merge on `echo ok`.
+`create` refuses at FILE time — you no longer find out hours later when
+the loop reaches the card — whenever the ticket would be **immediately
+claimable**, which is every unassigned, un-`windowed` ticket. It used to
+refuse only a ticket filed straight into *Ready for Agent* and merely
+warn about one filed into *To Do*, on the reasoning that a stub in To Do
+was safe because the loop could not reach it there. **To Do IS the queue
+now**, so there is no lane where a malformed ticket sits harmlessly and
+no drafting lane to file one into: keep an unfinished body in a file
+until it is done, or file it with `--label windowed` / `--assignee`. It
+also refuses a body carrying its own `## Gates`, because a ticket's gate
+list REPLACES the category's rather than adding to it: pasting the
+Zenithmon list into a ticket is how a pinned baseline goes stale, and
+`echo ok` in a body would merge on `echo ok`.
 
 **It also refuses a DoD that names a protected path.** `contractValid`
 used to answer only "can this be ROUTED" — category, complexity, risk —
@@ -716,9 +721,52 @@ recorded reason"*: a `requiresGraphics` test whose only headless-verifiable
 branch is deleting the coverage. Nothing stopped the loop claiming it,
 because labels could only be set at create time.
 
-**Handing work over is a drag, not a command.** Nothing runs until a card
-reaches *Ready for Agent* on the board. To run one immediately instead,
-use `/tick` from a session started here — see **Running the loop** above.
+**Filing a ticket IS handing it over.** There is no hand-off column and
+no drag to perform: a card in *To Do* is claimable the moment it lands,
+and the loop carries it to Done with nobody in the middle. That is the
+whole point — a lane a person had to drag a card into put a human in
+front of every ticket, so it was retired (saas migration
+`0026_retire_ready_for_agent`) and its cards moved into *To Do*.
+
+**Four markers, and only four, put a person back in the loop**, and
+each of them is something the TICKET says out loud:
+
+| Marker | What it does |
+| --- | --- |
+| `--label windowed` | never claimed, by the queue or by a targeted claim — the deliverable needs a keyboard |
+| `--label human-gate` | the loop does the whole job, then stops at *In Review* instead of Done (I7) |
+| `--label deferred` | skipped by the QUEUE, still taken by a targeted claim — "not yet", not "not ever" |
+| `--assignee <email>` | an assigned ticket is invisible to the queue |
+
+Everything else runs unattended, To Do straight through to Done.
+*Blocked* is not a fifth marker: it is a FAILURE terminal the loop puts
+work in when it could not finish, not a step anything routine passes
+through.
+
+**`deferred` exists because To Do became the queue**, and it is the one
+new thing this change needed. Several tickets defer THEMSELVES in prose
+no field captures — ZM-48 reads *"Zenithmon does NOT need this now"*,
+ZM-47 is *"DEFERRED post-Zenithmon"* — and the tick used to handle one by
+releasing it from *Ready for Agent* back to *To Do*, which took it out of
+the queue. The same gesture now puts it straight back at the head, so the
+loop would claim and release it forever. `Blocked` would be the wrong
+home: nothing is wrong with these tickets, and three of them would trip
+`maxConsecutiveBlocked` and stop the queue over work that is merely
+early. A targeted claim still takes a `deferred` ticket, because the
+deferral is a judgement about timing and `/tick ZM-48` is how you
+overrule it.
+
+**A body that says it needs a person is not a marker.** Removing the
+hand-off lane made that difference load-bearing for the first time: five
+open tickets said so in their own words and carried nothing mechanical —
+ZM-9 and ZM-18 (*"no agent may sign it"*, *"a human visual sign-off"*),
+ZM-60, and the two self-deferred engine gaps — and every one of them sat
+in *To Do*, which the loop now claims from. They are labelled now. Any
+NEW ticket in that shape needs its marker applied at file time, because
+nothing scans prose for it and the queue will not hesitate.
+
+To run a ticket immediately rather than waiting for the queue, use
+`/tick` from a session started here — see **Running the loop** above.
 
 **Exit codes are the interface** — branch on them, not on the text:
 `0` ok · `3` nothing to claim · `4` contract invalid · `5` ownership
