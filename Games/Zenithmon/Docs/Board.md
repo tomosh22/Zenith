@@ -248,8 +248,8 @@ one. A slice that re-authors a committed scene would either no-op or trip the pu
 guard -- and the units that would notice are compiled constants that stay green, so
 the failure looks like a clean gate run with the deliverable missing.
 
-`ZM-20`, `ZM-21`, `ZM-24`, `ZM-26`, `ZM-29`, `ZM-30`, `ZM-44`, `ZM-58`, `ZM-59` and
-`ZM-63` carry it today.
+`ZM-20`, `ZM-21`, `ZM-24`, `ZM-26`, `ZM-29`, `ZM-30`, `ZM-44`, `ZM-58`, `ZM-59`,
+`ZM-63` and `ZM-64` carry it today.
 
 `deferred` exists because To Do became the queue. Several tickets defer THEMSELVES in
 prose no field captures -- `ZM-48` reads *"Zenithmon does NOT need this now"*, `ZM-47`
@@ -293,6 +293,46 @@ version spans many sprints, which is why the stages are epics and these are not.
 | **World Complete** | S9 + S10: every warp edge walked by a traversal test |
 | **Content Complete** | S11: 100-streak simulation invariants, 7-battle tower run |
 | **Ship Candidate** | S12: full suite green, playthrough bot completes, budgets met |
+
+---
+
+## 8a. Sprints
+
+**Every stage is also a sprint, one for one with its epic.** A sprint holds exactly
+that epic's children -- there is no judgement in the membership, so the two can never
+describe different scopes -- and its goal is the stage's own `*Gate:*` line from
+[Roadmap.md](Roadmap.md), so "what would close this sprint" and "what would tick this
+stage" cannot drift into two answers.
+
+| Sprint | Stage epic |
+|---|---|
+| `S8 — Vertical slice, go/no-go` | `ZM-9` |
+| `S9 — World buildout A` | `ZM-10` |
+| `S10 — World buildout B` | `ZM-11` |
+| `S11 — Post-game` | `ZM-12` |
+| `S12 — Full playthrough & hardening` | `ZM-13` |
+| `Cross-cutting — no stage` | the five in §2 that have none, plus anything parentless |
+
+**The epics themselves carry no sprint.** An epic spans sprints; putting `ZM-9` inside
+the sprint its own children fill would double-count the stage in every report.
+
+**S0-S7 have no sprint, deliberately.** They completed before the board existed in this
+shape and hold no child tickets, so a sprint each would be empty -- and because a sprint
+records `completedAt` when it is closed, not when the work happened, eight of them
+would land eight zero-point entries on the same day of the velocity chart. The Done
+epics in §2 are the audit trail for those stages; sprints would only add noise.
+
+**One is ACTIVE at a time**, which the board enforces -- `sprint start` refuses while
+another is active. `S8` is it.
+
+★ **The sprints are on the BACKLOG page, not the board.** `ZM`'s board is `KANBAN`, and
+per §6a a KANBAN board draws every issue while a SCRUM board draws only the active
+sprint. Looking for the sprint structure on the board tab and finding an undifferentiated
+wall of cards is the expected result, not a sign that no sprints exist.
+
+★ **`zagent sprint` cannot rename or delete one.** It is
+`list|create|start|complete|add|remove`; renaming and deleting exist only as server
+actions in the app, so those two are done in the browser.
 
 ---
 
