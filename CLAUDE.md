@@ -561,6 +561,7 @@ Commands you would actually use from here:
 | `update <KEY> --points --severity --repro --environment --due` | field writes, with a history trail |
 | `update <KEY> --body\|--goal\|--dod <file>` | edit the spec, keeping any appended work log |
 | `update <KEY> --label a,b --unlabel c` | apply a marker (e.g. `needs-human`) AFTER filing, which is when you learn one is needed |
+| `update <KEY> --assignee none` | UNASSIGN — the only way to undo a claim. A claim writes the assignee, `move` only changes status, and the queue skips anything assigned, so a release without this parks the card invisibly |
 | `estimate` / `flag` / `resolve` / `history` | the one-gesture shorthands |
 | `report epic\|velocity --project ZM` | per-epic progress; velocity over COMPLETED sprints only |
 | `board status --project ZM` | does `Roadmap.md` still describe the board? **exit 1 on drift** |

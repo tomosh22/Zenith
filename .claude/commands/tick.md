@@ -320,8 +320,17 @@ several here defer themselves in prose that no field captures:
 - a ticket may say outright it should not be built yet. ZM-48 reads
   *"Zenithmon does NOT need this now … lands when populated-world NPC
   pathing actually needs it"*; ZM-47 is *"DEFERRED post-Zenithmon"*. Claim,
-  comment, **`zagent update <KEY> --label deferred`**, release to To Do —
-  do not dispatch. **An autonomous loop widening scope on a self-deferred
+  comment, **`zagent update <KEY> --label deferred --assignee none`**,
+  release to To Do — do not dispatch.
+
+  **`--assignee none` is not optional either.** The claim wrote
+  `assignee_id`; `zagent move` only changes status; and the claim query
+  skips ANY assigned ticket. So a release without it puts the card back in
+  the lane permanently invisible to the queue — which looks like the
+  deferral working, right up until somebody wants the ticket back. Four
+  tickets were stranded exactly that way in one session, one of them
+  carrying no label at all, so the stale assignee was the only thing
+  holding it out and nothing would ever have returned it. **An autonomous loop widening scope on a self-deferred
   ticket is worse than one that does nothing**, and the deferral is
   invisible to `contractValid`.
 
@@ -925,6 +934,11 @@ game exes lock build outputs for the next iteration).
   as far as it got, post it as a **comment only** — the human owns the
   description now — leave the branch, change no status, sweep, then
   `ScheduleWakeup{noop:false}`.
+
+  Change no status, and **do not clear the assignee either** — somebody
+  else holds it now, and unassigning would take the card away from them.
+  That is the one release where the assignee must stay put; every other
+  one needs `--assignee none` (see step 2).
 
 `ScheduleWakeup` only exists when the session is driven by `/loop`; a
 bare `/tick` invocation simply ends instead of scheduling.
