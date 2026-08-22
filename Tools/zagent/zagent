@@ -1,0 +1,24 @@
+#!/bin/sh
+# POSIX entry point for `zagent`, so a bare `zagent` resolves HERE.
+#
+# Without this file Git Bash cannot run the client at all: it will not execute
+# `zagent.ps1` or `zagent.cmd` from a bare name, so a bare `zagent` walks past
+# this directory and takes whatever else is on PATH. On at least one machine
+# that was a pnpm global shim for the OLD in-saas Node client, which talks
+# straight to the database — exactly what the tick's `Never` list forbids.
+#
+# PATH ORDER DOES NOT FIX THIS. `Tools/zagent` was already ahead of the pnpm
+# directory; the problem is that there was nothing here for a POSIX shell to
+# execute, not that something else came first.
+#
+# The failure is silent and shell-dependent, which is what makes it expensive:
+#
+#   PowerShell : zagent doctor -> 25 rows, client half present
+#   Git Bash   : zagent doctor -> 18 rows, client half ABSENT, and STILL exit 0
+#
+# 18 rows with no `client repo:` line is precisely the symptom tick.md step 0
+# says means "stop, you are running the wrong zagent". But the check it
+# prescribes is a PowerShell pipeline, so an orchestrator that runs step 0 in
+# PowerShell and then does its work through a POSIX shell passes the check and
+# uses the wrong client for every call after it, mutating ones included.
+exec pwsh -NoProfile -File "$(cd -- "$(dirname -- "$0")" && pwd)/zagent.ps1" "$@"

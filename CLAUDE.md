@@ -560,7 +560,7 @@ Commands you would actually use from here:
 | `check ZEN-6` | would a claim take it? **exit 4 if not** — writes nothing, claims nothing |
 | `update <KEY> --points --severity --repro --environment --due` | field writes, with a history trail |
 | `update <KEY> --body\|--goal\|--dod <file>` | edit the spec, keeping any appended work log |
-| `update <KEY> --label a,b --unlabel c` | apply a marker (e.g. `windowed`) AFTER filing, which is when you learn one is needed |
+| `update <KEY> --label a,b --unlabel c` | apply a marker (e.g. `needs-human`) AFTER filing, which is when you learn one is needed |
 | `estimate` / `flag` / `resolve` / `history` | the one-gesture shorthands |
 | `report epic\|velocity --project ZM` | per-epic progress; velocity over COMPLETED sprints only |
 | `board status --project ZM` | does `Roadmap.md` still describe the board? **exit 1 on drift** |
@@ -660,13 +660,13 @@ between areas means ratcheting the wrong pin.
 
 `create` refuses at FILE time — you no longer find out hours later when
 the loop reaches the card — whenever the ticket would be **immediately
-claimable**, which is every unassigned, un-`windowed` ticket. It used to
+claimable**, which is every unassigned, un-`needs-human` ticket. It used to
 refuse only a ticket filed straight into *Ready for Agent* and merely
 warn about one filed into *To Do*, on the reasoning that a stub in To Do
 was safe because the loop could not reach it there. **To Do IS the queue
 now**, so there is no lane where a malformed ticket sits harmlessly and
 no drafting lane to file one into: keep an unfinished body in a file
-until it is done, or file it with `--label windowed` / `--assignee`. It
+until it is done, or file it with `--label needs-human` / `--assignee`. It
 also refuses a body carrying its own `## Gates`, because a ticket's gate
 list REPLACES the category's rather than adding to it: pasting the
 Zenithmon list into a ticket is how a pinned baseline goes stale, and
@@ -700,26 +700,49 @@ scan. ZEN-2 was filed LOW, honestly, and its DoD said the recorder was
 provably unchanged; the review found the recorder had zero coverage
 while the test file said it was covered.
 
-**Windowed work gets `--label windowed`.** A headless run may CREATE a
-`.zscen` but never CHANGE one, so a slice that re-authors a committed
-scene cannot be done by the loop at all — and the units that would
-notice are compiled constants that stay green, so the failure is a clean
-gate run with the deliverable missing. The label is filtered out of the
-claim query and fails the contract on a targeted claim, so the loop
-cannot take it either way. Add `--assignee <email>` as well when you
-want it to show up as someone's card; the label is what protects it.
+**Work the loop cannot finish gets `--label needs-human`.** No machine
+can produce the deliverable — a visual sign-off, a ruling the ticket does
+not contain. The units that would notice are compiled constants that stay
+green, so the failure mode is a clean gate run with the deliverable
+missing. The label is filtered out of the claim query and fails the
+contract on a targeted claim, so the loop cannot take it either way. Add
+`--assignee <email>` as well when you want it on someone's card; the
+label is what protects it.
 
 This used to be `--assignee` alone, which worked only because the queue
 skips assigned tickets — making the SAFE state the one nobody typed.
 Now the marker is explicit, greppable, and enforced.
 
-**And it can be applied after filing** — `zagent update <KEY> --label
-windowed` — which is the point, because you learn a ticket needs a person
-by READING it, not by predicting it at create time. ZM-56 is
-*"`ZM_InteriorTintPixels_Test` passes windowed, or is retired with a
-recorded reason"*: a `requiresGraphics` test whose only headless-verifiable
-branch is deleting the coverage. Nothing stopped the loop claiming it,
-because labels could only be set at create time.
+**Work that needs a GPU gets `--label needs-gpu`, and that gates
+NOTHING.** A GPU is assumed available, so the ticket is claimed like any
+other; the label tells the tick to build `Vulkan_*_True` and run windowed
+rather than the `--headless` `Null_` config every gate line defaults to.
+The pin still comes from a `Null_` run — a Vulkan exe reports higher for
+the same tree — so the shape is Vulkan to author, Null to verify and pin.
+
+**These two were ONE label, and splitting them was worth doing.**
+`windowed` meant "the loop cannot finish this" and collected unrelated
+reasons under one word. The guard that makes scene authoring look
+impossible is `Zenith_Editor.cpp:1425`, inside
+`if constexpr (Zenith_IsNullRenderer())` — **compiled out of a Vulkan
+build entirely**, with the comment *"Windowed boots never reach here —
+they author everything, so they publish unconditionally."* It protects
+against a Null boot serializing an incomplete world over a tracked asset,
+never against an absent human. Of 12 labelled tickets, 8 wanted only a
+graphics driver and 4 wanted a person — and two of those four had nothing
+to do with rendering (one's deliverable was a board row, the other's a
+`.github/**` workflow). Six of the ten tickets on Zenithmon's S8 critical
+path sat behind the label; exactly one needed a human.
+ZEN-6 tracks removing the underlying limit; `saas` migration
+`0028_split_windowed_marker` did the rename.
+
+**And a marker can be applied after filing** — `zagent update <KEY>
+--label needs-human` — which is the point, because you learn a ticket
+needs a person by READING it, not by predicting it at create time. ZM-56
+is *"`ZM_InteriorTintPixels_Test` passes windowed, or is retired with a
+recorded reason"*: a `requiresGraphics` test whose only
+headless-verifiable branch is deleting the coverage. Nothing stopped the
+loop claiming it, because labels could only be set at create time.
 
 **Filing a ticket IS handing it over.** There is no hand-off column and
 no drag to perform: a card in *To Do* is claimable the moment it lands,
@@ -728,15 +751,18 @@ whole point — a lane a person had to drag a card into put a human in
 front of every ticket, so it was retired (saas migration
 `0026_retire_ready_for_agent`) and its cards moved into *To Do*.
 
-**Four markers, and only four, put a person back in the loop**, and
+**Three markers, and only three, put a person back in the loop**, and
 each of them is something the TICKET says out loud:
 
 | Marker | What it does |
 | --- | --- |
-| `--label windowed` | never claimed, by the queue or by a targeted claim — the deliverable needs a keyboard |
+| `--label needs-human` | never claimed, by the queue or by a targeted claim — no machine can produce the deliverable |
 | `--label human-gate` | the loop does the whole job, then stops at *In Review* instead of Done (I7) |
 | `--label deferred` | skipped by the QUEUE, still taken by a targeted claim — "not yet", not "not ever" |
 | `--assignee <email>` | an assigned ticket is invisible to the queue |
+
+`--label needs-gpu` is deliberately NOT in that table. It changes how the
+tick builds a ticket, never whether it may take one.
 
 Everything else runs unattended, To Do straight through to Done.
 *Blocked* is not a fifth marker: it is a FAILURE terminal the loop puts

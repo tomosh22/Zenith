@@ -147,6 +147,27 @@ straight to the database instead of over HTTP, which also violates the
 appending this repo's directory is not enough when a stale entry already
 sits ahead of it; it has to come first.
 
+**★ RUN THIS CHECK IN THE SHELL YOU WILL ACTUALLY USE, and re-run it if you
+switch.** It is written as a PowerShell pipeline, and the answer is
+shell-dependent: `zagent` resolves differently in PowerShell and in a POSIX
+shell, so passing it in one proves nothing about the other. That is not
+hypothetical — `Tools/zagent/` held only `zagent.ps1` and `zagent.cmd`, neither
+of which a POSIX shell will run from a bare name, so Git Bash walked past this
+repo's directory (already first on `PATH`) and found a pnpm global shim for the
+old in-saas Node client. Board half only, 18 rows, **exit 0**. An orchestrator
+that ran step 0 in PowerShell and its work through Bash sailed past the one
+check written to catch this and mutated the board through the wrong client.
+
+`Tools/zagent/zagent` — extensionless, LF-pinned in `.gitattributes` — is what
+closes it. If that file is missing, this is happening again.
+
+**And `zagent` must be run from inside the checkout.** `Find-ClientRepo` walks up
+from the CURRENT directory for `zagent.project.json`; from outside, the client
+sends no `client` half and the board answers from its own config. The failure is
+partial and therefore confusing — `queue` still works while `show`, `check` and
+`doctor` fail with `Project <KEY> is not mapped in agent.config.json`, naming a
+file on the BOARD's disk that you did not misconfigure and cannot see.
+
 The `project <KEY> gates` row is the one that most often explains a
 silent tick: a project resolving to no gate lines can never merge.
 
@@ -157,8 +178,16 @@ and project keys never can. Digits ARE legal inside a project key, so
 match on the suffix, not on "letters".
 
 - `$1` matches `/-\d+$/` → **targeted**: `zagent claim $1 --json`
-- `$1` is a project key, or absent → **queue**:
-  `zagent next --json` (the repo declares its own project)
+- `$1` is a project key → **queue, THAT project**:
+  `zagent next --project $1 --json`
+- `$1` absent → **queue, every project this repo declares**, in declaration
+  order: `zagent next --json`
+
+**Pass `--project`. Both branches used to spell the same command**, which made
+`/tick ZM` a lie: with no `--project`, `next` walks all three declared projects
+in order and takes the first claimable ticket anywhere. A `/tick ZM` in a session
+where ZEN had work claimed ZEN-1, consuming the one-ticket-per-repo lock on a
+board the caller had just named a different one.
 
 Then read `.zagent/last.json` and branch on the exit code:
 
@@ -188,9 +217,9 @@ reach. Twice in one session that gap cost a claim, a slot in the
 one-ticket-per-repo lock and a worker dispatch each.
 
 **The board scans the DoD for protected paths and refuses at FILE
-time**, the same way `windowed` does. It refuses whenever the ticket
+time**, the same way `needs-human` does. It refuses whenever the ticket
 would be immediately claimable, which — since *To Do* became the queue —
-is every unassigned, un-`windowed` ticket, whatever lane it is filed
+is every unassigned, un-`needs-human` ticket, whatever lane it is filed
 into. A ticket that reaches you with one anyway, filed before the check
 existed, comes back as an ordinary exit 4 naming the path and the
 pattern. Handle it as any contract failure; do not re-derive the rule.
@@ -204,19 +233,41 @@ because its DoD says only "Some workflow runs …". It is a warning rather
 than a refusal on purpose: a Goal quoting a protected path as background
 is ordinary writing, and refusing that would make the check something
 people route around. When you see one, read the Goal — and if it is right,
-`zagent update <KEY> --label windowed` and release the ticket.
+`zagent update <KEY> --label needs-human` and release the ticket.
 
 That leaves the shapes no scanner can see, and these you do still read
 for:
 
-| DoD says | Why it cannot be done |
+| The ticket | Why it cannot be done |
 | --- | --- |
-| "a **user decision** recorded", or any ruling the ticket does not already contain | nobody in this loop is the user |
-| **CI** / "the workflow" / "the pin", naming no file | the same impossibility, said in prose — the scan needs a path to match |
+| DoD says "a **user decision** recorded", or any ruling the ticket does not already contain | nobody in this loop is the user |
+| DoD says **CI** / "the workflow" / "the pin", naming no file | the same impossibility, said in prose — the scan needs a path to match |
+| **`type: EPIC`** — DoD is "Every child issue Done" | a rollup container, not a unit of work. Comment, `--label deferred`, release |
+| It belongs to a **PLANNED sprint** while another is ACTIVE | what it measures does not exist yet. Comment, `--label deferred`, release |
 
 The pin bump is NO LONGER one of these: it has one unprotected home,
 `Tools/unit_baselines.json`, and a DoD naming it files and runs cleanly.
 See the baseline note in step 6.
+
+**The last two rows cost three claims in one session** and nothing mechanical
+catches either.
+
+`contractValid` answers "can this be ROUTED", so an EPIC passes every check and
+arrives with a full gate list and a routed model. ZM-17 was claimed at
+`sonnet/medium` with `zagent epic ZM-17` reporting **100% (1/1)** — already
+finished — and ZM-11 at **opus/high with a 90-minute cap** for a DoD of "Every
+child issue Done". Under I3 that line is pasted into the worker prompt as the
+specification, and a worker with no shell can only invent something to do with
+it. Of the 15 claimable ZM tickets, **6 were epics**.
+
+**Sprint membership is not on the payload at all** — the keys are `key, id,
+number, title, type, priority, complexity, risk, category, labels, …` and
+nothing else — so "sanity-check SEQUENCE" has nothing to check against. Run
+`zagent sprint list --project <KEY>`: if the ticket's own Goal names a stage
+later than the ACTIVE sprint, that is the answer. ZM-46 (S12, while S8 was
+active) turned out to have a DoD already vacuously satisfied — one schema
+version means zero migration steps — and only the string "S12" inside its Goal
+prose said so.
 
 Check those against the DoD text.
 
@@ -282,14 +333,14 @@ several here defer themselves in prose that no field captures:
   one after that, forever — a tick that burns a claim, a dispatch slot
   and a wakeup on the same card indefinitely, with nothing ever going
   red. `deferred` is filtered out of the claim query exactly like
-  `windowed`, so the card stays visible in To Do and stops being taken.
+  `needs-human`, so the card stays visible in To Do and stops being taken.
 
   It is **not** `Blocked`. Nothing is wrong with these tickets, and three
   of them would trip `maxConsecutiveBlocked` and stop the whole queue
   over work that is merely early.
 
-  A TARGETED claim still takes a `deferred` ticket — unlike `windowed`,
-  which is refused either way. The asymmetry is deliberate: `windowed`
+  A TARGETED claim still takes a `deferred` ticket — unlike `needs-human`,
+  which is refused either way. The asymmetry is deliberate: `needs-human`
   says the machine cannot produce the deliverable, while `deferred` is a
   judgement about timing, and `/tick ZM-48` is how somebody overrules it.
   If you are handed one by name, read the deferral, decide, and say in
@@ -318,27 +369,63 @@ So before declaring a graphics-gated ticket unreachable, check for a GPU —
 and if there is one, the windowed run is often the *only* way to get the
 measurement the ticket is actually asking for.
 
-What stays out of reach on any machine is **authoring**: a headless run may
-CREATE a `.zscen` but never CHANGE one, which is what the `windowed` label
-means and why it is filtered from the queue. Running a windowed TEST is not
-authoring.
+What that leaves out of reach is narrower than it looks. A headless run may
+CREATE a `.zscen` but never CHANGE one — and **that guard is about the BACKEND,
+not about a person**. It is `Zenith_Editor.cpp:1425`, inside
+`if constexpr (Zenith_IsNullRenderer())`, and it is compiled out of a Vulkan
+build entirely; its own comment reads *"Windowed boots never reach here — they
+author everything, so they publish unconditionally."* It exists because a Null
+boot authors an INCOMPLETE world, so serializing that subset over a tracked
+asset deletes content. A `Vulkan_` build authors the whole thing and needs no
+guard. Running a windowed TEST is not authoring either.
 
-**`windowed` label** (`windowed: true` in the payload, and exit 4). The
-ticket needs a person at a keyboard — a headless run cannot produce its
-deliverable, most often because it re-authors a committed `.zscen`,
-which a headless run may create but never change. Queue mode never sees
-one: the claim query filters it out. If a TARGETED claim returns it,
-**report and change nothing** — the same as any exit 4 in targeted mode.
-Do not dispatch a worker; green gates on this ticket would mean the
-deliverable is missing, not that the work is done.
+**`needs-gpu` label** (`needsGpu: true` in the payload). Claimed like any other
+ticket — **a GPU is assumed available** and this label gates nothing. What it
+tells you is HOW to build: the deliverable needs a `Vulkan_*_True` build and a
+windowed run, not the `--headless` `Null_` config every gate line defaults to.
+Pass `--skip-unit-tests` on a windowed `--automated-test` run; the SaveData
+sandbox unit fails BY DESIGN under the harness.
+
+The pin still comes from a `Null_` run. `Tools/unit_baselines.json` is explicit
+that a Vulkan exe reports higher for the same tree (a standing +37 for
+Zenithmon), so the shape is: **Vulkan to author, Null to verify and pin.**
+
+**`needs-human` label** (`needsHuman: true` in the payload, and exit 4). No
+machine can produce the deliverable — it is a person's judgement: a visual
+sign-off, a ruling the ticket does not contain. Queue mode never sees one; if a
+TARGETED claim returns it, **report and change nothing**, as with any exit 4 in
+targeted mode. Do not dispatch a worker.
+
+These two were ONE label until they were split. `windowed` meant "the loop
+cannot finish this" and collected unrelated reasons under it: of 12 such
+tickets, 8 wanted only a graphics driver and 4 wanted a person — and two of
+those four had nothing to do with rendering at all (one's deliverable was a
+board row, the other's a `.github/**` workflow). Six of the ten tickets on
+Zenithmon's S8 critical path were behind the label; one of them actually needed
+a human.
 
 **`human-gate` label** (`humanGate: true` in the payload). Run the whole
 tick normally — preconditions, worker, gates, evidence — but at step 7
-move to **In Review** instead of Done and never merge. The reporter is
+move to **In Review** instead of Done. The reporter is
 notified automatically by `finish`. Then continue: queue mode schedules
 the next wakeup as usual, because the gated ticket is out of the queue by
 construction and one gated ticket must not starve the board. Targeted
 mode stops after it.
+
+**★ In `direct` mode, "never merge" has no meaning, so do not try to honour
+it.** This used to read "move to In Review and never merge", which is coherent
+only under `branching: "branch"`, where the work sits on an unmerged branch.
+Zenithmon and Engine are both `direct`: step 4 does nothing and step 7 commits
+onto `baseBranch` in place, so there is no branch to withhold. The two
+reachable states are to commit and park at In Review, or to leave the work
+uncommitted — and the second is worse than anything it prevents, because the
+next tick's step-3 precondition treats a dirty tree as fatal and refuses the
+whole queue.
+
+So in `direct` mode: **commit, then park at In Review.** Nothing is pushed
+(`push` is false), the human reviews a commit on a local mainline, and a
+rejection is a `git revert`. What `human-gate` buys there is that the ticket is
+not CLOSED and the reporter is told — not that the code is withheld.
 
 ## 3. Preconditions
 
@@ -526,6 +613,32 @@ report is _proposed text_ that you apply (I4).
 
    Never paraphrase a gate line and never re-derive one from
    `zagent.project.json` by hand.
+
+   **★ IF THE WORKER CREATED A FILE, RUN `Build\regen.ps1` FIRST.** Sharpmake
+   bakes the file list into the vcxproj, so a new `.cpp` enters the build only
+   at a regen. Skip it and the build passes **green with the ticket's
+   deliverable never compiled** — measured on ZM-27: three new files, build
+   exit 0, zero occurrences of the new TU in the log.
+
+   Nothing downstream catches that. The unit gate still MOVES, by however many
+   tests landed in files that already existed, which is indistinguishable from
+   an ordinary bump — and the baseline instruction below would then write that
+   number into `Tools/unit_baselines.json` and ratchet the broken state in
+   permanently. `zagent doctor` cannot see it either: it checks that `pwsh`
+   resolves, not that `regen` succeeds.
+
+   So **confirm the new TU by name in the build log**. A green build is not
+   evidence it was compiled. And treat a non-zero `regen.ps1` as fatal to the
+   tick rather than as noise — it exits 3 and regenerates NOTHING while the
+   stale projects stay on disk, which is why it fails open.
+
+   **★ GATES OUTRUN A FORESHORTENED FOREGROUND CALL.** `zenith test <G>
+   --headless` runs past 20 minutes on Zenithmon and only the unit gate carries
+   a timeout of its own (`-TimeoutSec 600`). Run them so they cannot be cut off
+   — background the command and wait for it. A gate killed midway gives you no
+   exit code, so you cannot tell a timeout from a failure, and it **leaves the
+   game exe alive** holding build outputs; step 9's sweep is at the END of the
+   tick, far too late. If you do cut one off, sweep immediately and re-run it.
 3. **Reviewer pass** when `review.required` is true in the payload.
    Dispatch `Agent{subagent_type: 'zagent-reviewer', model:
    <routing.model>}` with the diff inlined in the prompt, and inline

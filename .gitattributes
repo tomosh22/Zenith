@@ -4,6 +4,17 @@
 * text=auto
 
 ###############################################################################
+# POSIX shims must keep LF endings.
+#
+# `* text=auto` above plus core.autocrlf=true checks these out with CRLF, which
+# turns the shebang into `#!/bin/sh\r` — the interpreter is then literally
+# "/bin/sh\r", and the shell reports it as "no such file or directory" naming a
+# path that plainly exists. Extensionless by design: it is what lets a POSIX
+# shell run a bare `zagent`, which is the whole reason the file exists.
+###############################################################################
+Tools/zagent/zagent text eol=lf
+
+###############################################################################
 # Set default behavior for command prompt diff.
 #
 # This is need for earlier builds of msysgit that does not have it on by
