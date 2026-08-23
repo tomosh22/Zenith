@@ -242,34 +242,27 @@ for:
 | --- | --- |
 | DoD says "a **user decision** recorded", or any ruling the ticket does not already contain | nobody in this loop is the user |
 | DoD says **CI** / "the workflow" / "the pin", naming no file | the same impossibility, said in prose — the scan needs a path to match |
-| **`type: EPIC`** — DoD is "Every child issue Done" | a rollup container, not a unit of work. Comment, `--label deferred`, release |
-| It belongs to a **PLANNED sprint** while another is ACTIVE | what it measures does not exist yet. Comment, `--label deferred`, release |
 
 The pin bump is NO LONGER one of these: it has one unprotected home,
 `Tools/unit_baselines.json`, and a DoD naming it files and runs cleanly.
 See the baseline note in step 6.
 
-**The last two rows cost three claims in one session** and nothing mechanical
-catches either.
-
-`contractValid` answers "can this be ROUTED", so an EPIC passes every check and
-arrives with a full gate list and a routed model. ZM-17 was claimed at
-`sonnet/medium` with `zagent epic ZM-17` reporting **100% (1/1)** — already
-finished — and ZM-11 at **opus/high with a 90-minute cap** for a DoD of "Every
-child issue Done". Under I3 that line is pasted into the worker prompt as the
-specification, and a worker with no shell can only invent something to do with
-it. Of the 15 claimable ZM tickets, **6 were epics**.
-
-**Sprint membership is not on the payload at all** — the keys are `key, id,
-number, title, type, priority, complexity, risk, category, labels, …` and
-nothing else — so "sanity-check SEQUENCE" has nothing to check against. Run
-`zagent sprint list --project <KEY>`: if the ticket's own Goal names a stage
-later than the ACTIVE sprint, that is the answer. ZM-46 (S12, while S8 was
-active) turned out to have a DoD already vacuously satisfied — one schema
-version means zero migration steps — and only the string "S12" inside its Goal
-prose said so.
-
 Check those against the DoD text.
+
+**Two shapes that were rows here are now refused by the claim query**,
+so you no longer read for them. An EPIC comes back exit 4 from `zagent
+check`, on the queue AND by name — it is a rollup container, and its
+"Every child issue Done" would be inlined into a worker prompt as the
+specification under I3. A ticket in a PLANNED sprint is skipped by the
+queue but still claimable BY NAME on purpose: `/tick ZM-46` is how you
+pull work forward, and `check`/`show` print an `OUT OF STAGE` line when
+it applies. `sprint` is on the claim payload now, so the sequence check
+needs no `zagent sprint list` and no squint at Goal prose.
+
+Together they cost three claims in one session before any of that
+existed: ZM-17 arrived at `sonnet/medium` already **100% (1/1)** done,
+6 of 15 claimable ZM tickets were epics, and the queue offered S10 and
+S12 work while S8 was active.
 
 **And read the drift warning.** A claim now carries the paths and symbols
 the body says exist, and the client resolves them against this checkout —
@@ -311,12 +304,13 @@ names them is duplicating a fact that moves, which is the same duplication
 the manifest refactor removed from the build — re-introduced one ticket at
 a time.
 
-Also sanity-check SEQUENCE, and read the body for the ticket's OWN timing —
-several here defer themselves in prose that no field captures:
+Read the body for the ticket's OWN timing — several defer themselves in
+prose that no field captures:
 
-- a ticket from a later sprint than the one in progress may be unreachable
-  because what it measures does not exist yet (ZM-45's budgets, ZM-43's
-  chapters);
+- a ticket from a later sprint is skipped by the queue and flagged
+  `OUT OF STAGE` on a targeted claim. That is the mechanism; the
+  judgement is still yours, and it is usually that what the ticket
+  measures does not exist yet (ZM-45's budgets, ZM-43's chapters);
 - a ticket may say outright it should not be built yet. ZM-48 reads
   *"Zenithmon does NOT need this now … lands when populated-world NPC
   pathing actually needs it"*; ZM-47 is *"DEFERRED post-Zenithmon"*. Claim,

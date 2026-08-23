@@ -765,7 +765,16 @@ each of them is something the TICKET says out loud:
 `--label needs-gpu` is deliberately NOT in that table. It changes how the
 tick builds a ticket, never whether it may take one.
 
-Everything else runs unattended, To Do straight through to Done.
+Everything else runs unattended, To Do straight through to Done — with
+two exceptions that are not markers, because nobody applies them. An
+**EPIC** is never claimable, by the queue or by name: it is a rollup
+container, and its "Every child issue Done" inlines under I3 as a
+specification no worker can act on. A ticket in a **PLANNED sprint**
+while another is ACTIVE is skipped by the QUEUE and still claimable by
+name — exactly the `deferred` shape, needing no label because the sprint
+IS the deferral. `zagent check` shows both: exit 4 for the epic, an
+`OUT OF STAGE` line for the sprint.
+
 *Blocked* is not a fifth marker: it is a FAILURE terminal the loop puts
 work in when it could not finish, not a step anything routine passes
 through.

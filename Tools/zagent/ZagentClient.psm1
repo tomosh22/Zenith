@@ -804,10 +804,107 @@ function Get-AllGateLines {
 }
 
 
+# ─── HELP, ANSWERED LOCALLY ──────────────────────────
+#
+# The board answers `help` too, and answers it better -- it owns the
+# command table, and duplicating that table here would give a fact that
+# changes two homes. So the POSITIONAL route (`zagent help`,
+# `zagent help next`) still goes to the board untouched.
+#
+# The FLAG forms do not, and that is the whole point. `zagent next
+# --help` CLAIMED A TICKET: `--help` is a flag, so it never reached the
+# `positional[0] -eq 'help'` branch, and `next` ran. That is fixed
+# server-side in packages/agent/src/flags.ts -- but server-side means the
+# guarantee arrives over the network, so it holds only while the board is
+# reachable AND running a build that has that file. Locally it depends on
+# nothing.
+
+$script:HELP_TOKENS = @('-h', '-help', '--help', '--h', '-?', '/?')
+
+function Test-HelpFlag {
+    <#
+    .SYNOPSIS
+      Is this argv asking for usage via a FLAG, rather than doing something?
+    .DESCRIPTION
+      Mirrors isHelpRequest in packages/agent/src/flags.ts, minus the two
+      cases that are better answered by the board: an EMPTY argv and a
+      bare `help` positional both still go out, so the real command table
+      stays one keystroke away and lives in exactly one place.
+
+      The scan is over every token, not just the ones that parse as
+      flags, and that asymmetry is deliberate. A help token passed as a
+      VALUE (`--text "--help"`) prints usage instead of posting a
+      comment, which is the harmless direction to be wrong in. Missing
+      one is how a `--help` claimed a ticket.
+    #>
+    param([string[]]$Argv)
+
+    if (-not $Argv -or $Argv.Count -eq 0) { return $false }
+    if ($Argv[0] -eq 'help') { return $false }
+    foreach ($token in $Argv) {
+        if ($script:HELP_TOKENS -contains $token) { return $true }
+    }
+    return $false
+}
+
+function Get-HelpSubject {
+    <#
+    .SYNOPSIS
+      The command the user was asking ABOUT, so the stub can point at
+      `zagent help <that>` rather than at the bare list.
+    .DESCRIPTION
+      Returns $null for `zagent --help`, which is asking about nothing in
+      particular. A leading `-`, `--` or `/` is a flag, never a command.
+    #>
+    param([string[]]$Argv)
+
+    if (-not $Argv -or $Argv.Count -eq 0) { return $null }
+    $first = $Argv[0]
+    if ($first -match '^[-/]') { return $null }
+    return $first
+}
+
+function Format-HelpStub {
+    <#
+    .SYNOPSIS
+      The local usage stub. Carries NO command list -- that is the
+      board's, and copying it here is how the copy goes stale.
+    .DESCRIPTION
+      It points at `zagent help` and at nothing else. `zagent help next`
+      IGNORES its argument and prints the same table, so a stub that
+      offered per-command help would be promising a view that does not
+      exist -- and the board's table already gives each command's usage
+      on its own line.
+    #>
+    param([string[]]$Argv)
+
+    $subject = Get-HelpSubject -Argv $Argv
+    $lines = [System.Collections.Generic.List[string]]::new()
+    $lines.Add('zagent <command> [--json]')
+    $lines.Add('')
+    if ($subject) {
+        $lines.Add("  You asked about ``$subject``. Every command, with its usage:")
+    } else {
+        $lines.Add('  Every command, with its usage:')
+    }
+    $lines.Add('')
+    $lines.Add('      zagent help')
+    $lines.Add('')
+    $lines.Add('  Printed locally -- nothing was sent, so nothing was claimed or')
+    $lines.Add('  changed. A help FLAG can never perform an action; the command')
+    $lines.Add('  table itself lives on the board so it has one home.')
+    $lines.Add('')
+    $lines.Add('  Exit codes: 0 ok - 3 nothing to claim - 4 contract invalid -')
+    $lines.Add('              5 ownership lost / repo busy - 6 breaker open -')
+    $lines.Add('              1 error - 7 could not reach the board')
+    return ($lines -join [Environment]::NewLine)
+}
+
 Export-ModuleMember -Function Find-ClientRepo, ConvertTo-PosixPath, Remove-Annotations,
     Get-ClientProject, Get-FlagValue, Test-Flag, Get-FileFlags, Get-FileContents, Get-WorkingTreeChanges,
     Test-NeedsDocsTree, Test-NeedsChangedSet, Get-RequestTimeout, Get-GuardTicketKey,
     Get-RecordedGateSelection,
     Get-BodyDrift, Format-BodyDrift, Get-CitationCount, Get-DocsTree,
     Get-ConventionsTree, Get-AmendContents, Get-ScratchRoot, Write-Results, Write-LastResult,
-    Get-ClientChecks, Get-AllGateLines, Write-StdErr
+    Get-ClientChecks, Get-AllGateLines, Write-StdErr,
+    Test-HelpFlag, Get-HelpSubject, Format-HelpStub

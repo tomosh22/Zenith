@@ -972,6 +972,72 @@ Assert-That 'returns an array, not an unrolled string' {
 }
 
 Write-Host ""
+Write-Host "=== help is answered locally, and only the FLAG forms are ===" -ForegroundColor Cyan
+
+# `zagent next --help` CLAIMED A TICKET. Every token here is one that
+# would have, so this block is the regression net for that.
+foreach ($token in @('--help', '-h', '-help', '--h', '-?', '/?')) {
+    Assert-That "``$token`` on an ACTING command is a help request, not the action" {
+        Test-HelpFlag -Argv @('next', $token)
+    }
+}
+
+Assert-That 'a help token ANYWHERE in argv still counts, not just position 2' {
+    Test-HelpFlag -Argv @('claim', '--project', 'ZM', '--help')
+}
+
+# These two are the other half of the design: the board owns the command
+# table, so the positional route has to keep reaching it. Intercepting
+# `help` here would mean the real list could never be printed at all.
+Assert-That '** a BARE `help` positional is NOT intercepted -- the board owns the list' {
+    -not (Test-HelpFlag -Argv @('help'))
+}
+
+Assert-That '** `help <command>` is NOT intercepted either' {
+    -not (Test-HelpFlag -Argv @('help', 'next'))
+}
+
+Assert-That 'an EMPTY argv is not intercepted -- it already routes to the board' {
+    (-not (Test-HelpFlag -Argv @())) -and (-not (Test-HelpFlag -Argv $null))
+}
+
+Assert-That 'an ordinary command is untouched' {
+    (-not (Test-HelpFlag -Argv @('queue', '--project', 'ZM'))) -and
+    (-not (Test-HelpFlag -Argv @('show', 'ZM-21')))
+}
+
+Assert-That 'the subject is the command asked about, and $null when there is none' {
+    ((Get-HelpSubject -Argv @('next', '--help')) -eq 'next') -and
+    ($null -eq (Get-HelpSubject -Argv @('--help'))) -and
+    ($null -eq (Get-HelpSubject -Argv @('/?')))
+}
+
+# `zagent help next` ignores its argument and prints the same table as
+# `zagent help`, so the stub must not offer per-command help. It names
+# the command you asked about and points at the one view that exists.
+Assert-That 'the stub names the subject but promises only `zagent help`' {
+    $stub = Format-HelpStub -Argv @('next', '--help')
+    ($stub -match 'You asked about `next`') -and
+    ($stub -match 'nothing was claimed') -and
+    (-not ($stub -match 'zagent help next'))
+}
+
+# The stub must stay a STUB. If someone ever pastes the command table in
+# to make it more helpful, the fact has two homes and the copy goes
+# stale -- which is the defect this whole client keeps finding. These
+# are board-side command names that must not appear locally.
+Assert-That '** the stub carries NO command list -- that fact has one home' {
+    $stub = Format-HelpStub -Argv @('--help')
+    # Counting `zagent <word>` LINES, not vocabulary. The first version
+    # of this matched command NAMES and failed on "nothing to claim" --
+    # which is an exit-code description, not a command listing. English
+    # and the command table share words; what they do not share is shape.
+    # A pasted table is many invocation lines, so the count is the tell.
+    $invocations = @([regex]::Matches($stub, 'zagent [<\w]'))
+    $invocations.Count -le 4
+}
+
+Write-Host ""
 Write-Host ("{0}/{1} assertions passed." -f ($script:count - $script:failures), $script:count)
 if ($script:failures -eq 0) { Write-Host 'PASS' -ForegroundColor Green; exit 0 }
 Write-Host ("FAIL -- {0} assertion(s)" -f $script:failures) -ForegroundColor Red

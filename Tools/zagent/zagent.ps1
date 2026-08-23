@@ -121,6 +121,17 @@ function Invoke-Board {
 # ─── MAIN ────────────────────────────────────────────
 
 $argv = @($Arguments)
+
+# Answered HERE, before Find-ClientRepo and before one byte goes out.
+# `zagent next --help` claimed a ticket for real; flags.ts fixes that on
+# the board, but a guarantee that travels over the network holds only
+# while the network does. See Test-HelpFlag for why the positional
+# `help` deliberately still goes out.
+if (Test-HelpFlag -Argv $argv) {
+    Write-Host (Format-HelpStub -Argv $argv)
+    exit 0
+}
+
 if ($argv.Count -eq 0) { $argv = @('help') }
 
 $repoPath = Find-ClientRepo
