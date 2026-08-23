@@ -804,6 +804,146 @@ function Get-AllGateLines {
 }
 
 
+# ─── THE FORWARD-REFERENCE TRAP ──────────────────────
+#
+# Keys are allocated SEQUENTIALLY, so a key written into a doc before
+# its ticket exists is a booby trap that arms itself later. Questions.md
+# tagged a question `[ZM-50 / ZEN-2]` meaning "and an engine twin,
+# unfiled"; ZEN-2 did not exist. Filing an unrelated engine ticket months
+# later allocated ZEN-2 to it, and that citation now resolves to a
+# terrain-performance ticket with nothing to do with the question.
+#
+# Strictly worse than the dangling state it replaced: a reader who
+# follows it lands somewhere plausible and WRONG, and nothing flags it.
+# `doc_lint.ps1` cannot see these — its C6 check resolves markdown
+# LINKS, and these are bare bracketed keys in prose.
+#
+# The check runs HERE rather than on the board, and AFTER the create
+# rather than before it. The board would have to be handed the docs tree
+# to grep it, and only `docs sync|status` upload that today — a 932 KB
+# DecisionLog on every `create` to answer a question the client can
+# answer locally. Running it on the key the board actually ALLOCATED
+# also beats predicting the next one, which is racy.
+
+function Get-LivingDocDirs {
+    <#
+    .SYNOPSIS
+      The `categories.*.docs.dir` values from a client project file.
+    .DESCRIPTION
+      Read through PSObject.Properties throughout: Set-StrictMode turns a
+      missing property into a throw, and a project file may legally have
+      no categories, a category with no docs, or docs with no dir.
+    #>
+    param([PSObject]$Client)
+
+    $dirs = [System.Collections.Generic.List[string]]::new()
+    if (-not $Client) { return , $dirs.ToArray() }
+    $file = $Client.PSObject.Properties['file']
+    if (-not $file -or -not $file.Value) { return , $dirs.ToArray() }
+    $categories = $file.Value.PSObject.Properties['categories']
+    if (-not $categories -or -not $categories.Value) { return , $dirs.ToArray() }
+
+    foreach ($category in $categories.Value.PSObject.Properties) {
+        $docs = $category.Value.PSObject.Properties['docs']
+        if (-not $docs -or -not $docs.Value) { continue }
+        $dir = $docs.Value.PSObject.Properties['dir']
+        if ($dir -and $dir.Value) { $dirs.Add([string]$dir.Value) }
+    }
+    return , $dirs.ToArray()
+}
+
+function Find-KeyCitations {
+    <#
+    .SYNOPSIS
+      Every mention of a ticket key in the living docs, as
+      @{ File; Line; Text }.
+    .DESCRIPTION
+      Word-bounded, so ZEN-2 does not match ZEN-20 — the whole point is
+      keys that differ by a trailing digit. Markdown only: these are
+      prose citations, and a key inside source or a lockfile is not one.
+    #>
+    param([string]$Repo, [string]$Key, [string[]]$Dirs)
+
+    $hits = [System.Collections.Generic.List[object]]::new()
+    if (-not $Repo -or -not $Key -or -not $Dirs) { return , $hits.ToArray() }
+    $pattern = '\b' + [regex]::Escape($Key) + '\b'
+
+    foreach ($dir in $Dirs) {
+        $full = Join-Path $Repo $dir
+        if (-not (Test-Path -LiteralPath $full)) { continue }
+        $files = Get-ChildItem -LiteralPath $full -Filter '*.md' -Recurse -File -ErrorAction SilentlyContinue
+        foreach ($file in $files) {
+            $n = 0
+            foreach ($line in [System.IO.File]::ReadLines($file.FullName)) {
+                $n++
+                if ($line -match $pattern) {
+                    $relative = $file.FullName.Substring($Repo.Length).TrimStart('\', '/')
+                    $hits.Add([PSCustomObject]@{
+                            File = (ConvertTo-PosixPath $relative)
+                            Line = $n
+                            Text = $line.Trim()
+                        })
+                }
+            }
+        }
+    }
+    return , $hits.ToArray()
+}
+
+function Get-CreatedKey {
+    <#
+    .SYNOPSIS
+      The key a `create` just allocated, or $null for anything else.
+    .DESCRIPTION
+      ★ THE KEY IS UNDER `payload`, not at the root. The first version of
+      this guard read `$result.key`, which is always $null, so the
+      forward-reference check silently never ran — a check that cannot
+      fire is worse than no check, because the absence of a warning reads
+      as a clean result. It shipped past a green unit suite (the helpers
+      it calls were all tested) and past a live `zagent create` that
+      exited 0. Only planting a citation and watching for the warning
+      found it.
+
+      Which is why it lives HERE rather than inline in `zagent.ps1`:
+      nothing in that file is reachable from a test, because it runs a
+      command the moment it is invoked.
+    #>
+    param([PSObject]$Result, [string[]]$Argv)
+
+    if (-not $Argv -or $Argv.Count -eq 0 -or $Argv[0] -ne 'create') { return $null }
+    if (-not $Result) { return $null }
+    $payload = $Result.PSObject.Properties['payload']
+    if (-not $payload -or -not $payload.Value) { return $null }
+    $key = $payload.Value.PSObject.Properties['key']
+    if (-not $key -or -not $key.Value) { return $null }
+    return [string]$key.Value
+}
+
+function Format-KeyCitations {
+    <#
+    .SYNOPSIS
+      The warning, or $null when the key is genuinely new.
+    .DESCRIPTION
+      Silence is right here, unlike the drift check: "no citations" is
+      the ordinary case for a freshly allocated key, not a check that
+      failed to run.
+    #>
+    param([string]$Key, [object[]]$Citations)
+
+    if (-not $Citations -or $Citations.Count -eq 0) { return $null }
+    $lines = [System.Collections.Generic.List[string]]::new()
+    $lines.Add("$Key was ALREADY CITED in the living docs before it existed:")
+    foreach ($hit in $Citations) {
+        $lines.Add("  $($hit.File):$($hit.Line)  $($hit.Text)")
+    }
+    $lines.Add('')
+    $lines.Add('Keys are allocated sequentially, so those citations now resolve to')
+    $lines.Add('the ticket just filed. If they meant something else -- "an engine')
+    $lines.Add('twin, unfiled" is the usual one -- fix the doc: describe the work')
+    $lines.Add('rather than naming a key that did not exist yet.')
+    return ($lines -join [Environment]::NewLine)
+}
+
 # ─── HELP, ANSWERED LOCALLY ──────────────────────────
 #
 # The board answers `help` too, and answers it better -- it owns the
@@ -907,4 +1047,5 @@ Export-ModuleMember -Function Find-ClientRepo, ConvertTo-PosixPath, Remove-Annot
     Get-BodyDrift, Format-BodyDrift, Get-CitationCount, Get-DocsTree,
     Get-ConventionsTree, Get-AmendContents, Get-ScratchRoot, Write-Results, Write-LastResult,
     Get-ClientChecks, Get-AllGateLines, Write-StdErr,
-    Test-HelpFlag, Get-HelpSubject, Format-HelpStub
+    Test-HelpFlag, Get-HelpSubject, Format-HelpStub,
+    Get-LivingDocDirs, Find-KeyCitations, Format-KeyCitations, Get-CreatedKey

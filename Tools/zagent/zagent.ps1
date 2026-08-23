@@ -241,6 +241,18 @@ if ($repoPath -and $result.payload.PSObject.Properties['citations']) {
     }
 }
 
+# A key written into a doc before its ticket existed is a forward
+# reference that comes true — wrongly — the moment the sequence reaches
+# it. Checked on the key the board ALLOCATED, so there is nothing to
+# predict. See Find-KeyCitations for why this is not a board check.
+$createdKey = Get-CreatedKey -Result $result -Argv $argv
+if ($repoPath -and $createdKey) {
+    $cited = Find-KeyCitations -Repo $repoPath -Key $createdKey `
+        -Dirs (Get-LivingDocDirs -Client $client)
+    $warning = Format-KeyCitations -Key $createdKey -Citations $cited
+    if ($warning) { Write-StdErr $warning }
+}
+
 $isError = $result.PSObject.Properties['error'] -and $result.error
 
 if ($asJson) {

@@ -972,6 +972,131 @@ Assert-That 'returns an array, not an unrolled string' {
 }
 
 Write-Host ""
+Write-Host "=== the forward-reference trap: a key cited before it existed ===" -ForegroundColor Cyan
+
+function New-DocsFixture {
+    $root = Join-Path ([System.IO.Path]::GetTempPath()) ("zdocs_" + [guid]::NewGuid().ToString('N').Substring(0, 8))
+    New-Item -ItemType Directory -Path (Join-Path $root 'Games/Zenithmon/Docs') -Force | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $root 'Games/Zenithmon/Docs/Sub') -Force | Out-Null
+    Set-Content -LiteralPath (Join-Path $root 'Games/Zenithmon/Docs/Questions.md') `
+        -Value "Q-2026-08-14-001 tracked as [ZM-50 / ZEN-2]`nunrelated line`nsee ZEN-20 for the other one" -Encoding utf8
+    Set-Content -LiteralPath (Join-Path $root 'Games/Zenithmon/Docs/Sub/Nested.md') `
+        -Value "nested mention of ZEN-2 here" -Encoding utf8
+    # Not markdown: a key in source or a lockfile is not a prose citation.
+    Set-Content -LiteralPath (Join-Path $root 'Games/Zenithmon/Docs/notes.txt') `
+        -Value "ZEN-2 in a text file" -Encoding utf8
+    return $root
+}
+
+$fakeClient = [PSCustomObject]@{
+    repo = 'x'
+    file = [PSCustomObject]@{
+        categories = [PSCustomObject]@{
+            Zenithmon = [PSCustomObject]@{ docs = [PSCustomObject]@{ dir = 'Games/Zenithmon/Docs' } }
+            Engine    = [PSCustomObject]@{ gates = @('build') }   # no docs at all
+        }
+    }
+}
+
+Assert-That 'the doc dirs come from categories.*.docs.dir, skipping a category with none' {
+    $dirs = Get-LivingDocDirs -Client $fakeClient
+    ($dirs.Count -eq 1) -and ($dirs[0] -eq 'Games/Zenithmon/Docs')
+}
+
+Assert-That 'a project with no categories yields an EMPTY ARRAY, not a throw' {
+    # Set-StrictMode turns a missing property into a throw, and a project
+    # file may legally have no categories at all.
+    $bare = [PSCustomObject]@{ repo = 'x'; file = [PSCustomObject]@{} }
+    $dirs = Get-LivingDocDirs -Client $bare
+    ($dirs -is [array]) -and ($dirs.Count -eq 0) -and
+    ((Get-LivingDocDirs -Client $null).Count -eq 0)
+}
+
+Assert-That 'finds the citation, with file and line' {
+    $root = New-DocsFixture
+    try {
+        $hits = Find-KeyCitations -Repo $root -Key 'ZEN-2' -Dirs @('Games/Zenithmon/Docs')
+        $q = $hits | Where-Object { $_.File -like '*Questions.md' }
+        ($q.Line -eq 1) -and ($q.File -eq 'Games/Zenithmon/Docs/Questions.md')
+    } finally { Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+Assert-That '** ZEN-2 does NOT match ZEN-20 -- the whole point is a trailing digit' {
+    $root = New-DocsFixture
+    try {
+        # NO @() around the call. `Find-KeyCitations` returns `,@(...)`,
+        # which emits the array as ONE pipeline item so a one-element
+        # result stays an array -- and `@()` around that collects one
+        # item and nests it, turning Count 2 into Count 1. Assign
+        # directly, the way every other test of a `,@()` return here does.
+        $hits = Find-KeyCitations -Repo $root -Key 'ZEN-2' -Dirs @('Games/Zenithmon/Docs')
+        # Questions.md line 1 and Sub/Nested.md line 1. The `see ZEN-20`
+        # line must not be among them.
+        ($hits.Count -eq 2) -and (-not ($hits.Text -match 'see ZEN-20'))
+    } finally { Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+Assert-That 'recurses into subdirectories but ignores non-markdown' {
+    $root = New-DocsFixture
+    try {
+        $hits = Find-KeyCitations -Repo $root -Key 'ZEN-2' -Dirs @('Games/Zenithmon/Docs')
+        ($hits.File -contains 'Games/Zenithmon/Docs/Sub/Nested.md') -and
+        (-not ($hits.File -like '*notes.txt'))
+    } finally { Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+Assert-That 'a missing docs dir is skipped, not fatal' {
+    $hits = Find-KeyCitations -Repo 'C:\does\not\exist' -Key 'ZEN-2' -Dirs @('Games/X/Docs')
+    ($hits -is [array]) -and ($hits.Count -eq 0)
+}
+
+Assert-That 'an uncited key returns an EMPTY ARRAY, and formats to $null' {
+    # Silence is RIGHT here, unlike the drift check: "no citations" is the
+    # ordinary case for a freshly allocated key, not a check that never ran.
+    $root = New-DocsFixture
+    try {
+        $hits = Find-KeyCitations -Repo $root -Key 'ZEN-99' -Dirs @('Games/Zenithmon/Docs')
+        ($hits.Count -eq 0) -and ($null -eq (Format-KeyCitations -Key 'ZEN-99' -Citations $hits))
+    } finally { Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+Assert-That 'the created key comes from payload.key on a create' {
+    $result = [PSCustomObject]@{ payload = [PSCustomObject]@{ key = 'ZEN-9' } }
+    (Get-CreatedKey -Result $result -Argv @('create', '--project', 'ZEN')) -eq 'ZEN-9'
+}
+
+Assert-That '** a key at the ROOT is NOT read -- the mistake that made this check inert' {
+    # `$result.key` is always $null; the key is under `payload`. The
+    # first guard read the root, so the check silently never ran, and a
+    # check that cannot fire reads exactly like a clean result. It got
+    # past a green suite and a live `create` that exited 0.
+    $rootOnly = [PSCustomObject]@{ key = 'ZEN-9' }
+    $null -eq (Get-CreatedKey -Result $rootOnly -Argv @('create'))
+}
+
+Assert-That 'no key for a command that is not create' {
+    $result = [PSCustomObject]@{ payload = [PSCustomObject]@{ key = 'ZEN-9' } }
+    ($null -eq (Get-CreatedKey -Result $result -Argv @('show', 'ZEN-9'))) -and
+    ($null -eq (Get-CreatedKey -Result $result -Argv @()))
+}
+
+Assert-That 'a create that returned no payload is not a throw under StrictMode' {
+    ($null -eq (Get-CreatedKey -Result ([PSCustomObject]@{}) -Argv @('create'))) -and
+    ($null -eq (Get-CreatedKey -Result $null -Argv @('create'))) -and
+    ($null -eq (Get-CreatedKey -Result ([PSCustomObject]@{ payload = $null }) -Argv @('create')))
+}
+
+Assert-That 'the warning names every file:line and says what to do' {
+    $root = New-DocsFixture
+    try {
+        $hits = Find-KeyCitations -Repo $root -Key 'ZEN-2' -Dirs @('Games/Zenithmon/Docs')
+        $text = Format-KeyCitations -Key 'ZEN-2' -Citations $hits
+        ($text -match 'ALREADY CITED') -and ($text -match 'Questions\.md:1') -and
+        ($text -match 'Nested\.md:1') -and ($text -match 'allocated sequentially')
+    } finally { Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+Write-Host ""
 Write-Host "=== help is answered locally, and only the FLAG forms are ===" -ForegroundColor Cyan
 
 # `zagent next --help` CLAIMED A TICKET. Every token here is one that
