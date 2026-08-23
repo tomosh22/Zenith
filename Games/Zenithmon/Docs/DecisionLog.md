@@ -15,6 +15,135 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-08-23 -- ZM-D-203 -- R1-3: all four seam triggers in one commit, the payload needle that closes critic blocker #2, and one deliberate deviation from the one-column-per-anchor rule
+
+**Slice R1-3, the slice R1-2 was sequenced to make safe.** Four `ZM_WarpTrigger` entities are
+added -- `DawnmereNorthGate`, `Route1SouthGate`, `Route1NorthGate`, `ThornacreSouthGate` -- and
+all three region scenes are re-authored by a **windowed `Vulkan_vs2022_Debug_Win64_True`** tools
+boot, Dawnmere in `sceneAuthoring=AUTHOR_DAWNMERE` mode. Route 1 stops being a corridor with no
+way off it at either end, and Thornacre stops being a room the player cannot leave.
+
+### Decision 1: all four land in ONE commit, and that is a safety ruling
+
+`ZM_GameStateManager::IsWarpDestinationValid` consults ONLY the compiled `ZM_WorldSpec` tag list
+and **never the destination scene**, so a gate shipped before its far-side arrival marker exists
+is ACCEPTED. The machine then goes to a fully opaque fade and sits in
+`ZM_WARP_TRANSITION_WAITING_FOR_SPAWN` until that barrier's frame budget expires (ZM-D-200),
+then escapes with a `Zenith_Error`. Not a crash, not an assert, not a red test. That is why
+R1-2 authored every MARKER and zero triggers, and why this slice authors every TRIGGER at once:
+**a partial set is a one-way seam, which is a world the player can walk into and not out of.**
+
+Each trigger is authored in the shape the shipped `LabDoorTrigger` established -- create,
+transform, scale, static AABB body, `ZM_WarpTrigger`, `AddStep_Custom(configure)` -- and each
+configure step **resolves its destination from the compiled world table** rather than spelling
+it. No build index and no spawn tag appears at any authoring site.
+
+★ **Every gate is APPENDED after the entities its scene already had**, never spliced in beside
+the arrival marker it stands beyond. Scene files carry DENSE AUTHORING-ORDER file indices
+(ZM-D-148), so appending costs one new entity record while inserting earlier renumbers
+everything after it and turns a four-entity change into three whole-file diffs.
+
+### Decision 2: a gate's tag is OUTBOUND -- the exact mirror of R1-2's markers
+
+R1-2's four markers carry INBOUND tags, resolved from the SOURCE region's row. A gate carries
+the tag its OWN region's row asks the DESTINATION for:
+
+| gate | target | asks for | (the marker that answers) |
+|---|---|---|---|
+| `DawnmereNorthGate` | Route 1 (20) | `"FromDawnmere"` | `Route1SouthArrival` |
+| `Route1SouthGate` | Dawnmere (2) | `"FromRoute1"` | `FromRoute1Spawn` |
+| `Route1NorthGate` | Thornacre (3) | `"FromRoute1"` | `ThornacreSouthArrival` |
+| `ThornacreSouthGate` | Route 1 (20) | `"FromThornacre"` | `Route1NorthArrival` |
+
+One table entry feeds both halves of every seam, so a re-tag in `Source/Data/ZM_WorldSpec.cpp`
+moves the marker, the sensor and the byte needle together and a mis-paired pair is not
+expressible.
+
+### Decision 3: critic blocker #2's fix -- needle the PAYLOAD, and pin its ORDER
+
+> *"A gate SWAP is invisible to every CI-visible test. Both Route1 connections carry the SAME
+> tag `"FromRoute1"`, so swapping SouthGate->Thornacre with NorthGate->Dawnmere changes not one
+> byte any name-based needle searches for."*
+
+`ZM_WarpTrigger::WriteToDataStream` emits
+`[u_int version][u_int targetBuildIndex][32-byte zero-padded tag]`, and
+`Configure` copies the tag into a **zero-initialised** buffer before writing the whole thing --
+which is what makes a fixed-width binary needle legitimate rather than an assumption about
+padding. The new boot unit
+`ZM_CommittedSceneBytes/EverySeamGatePayloadIsAuthoredExactlyOnceInItsOwnScene` builds all four
+payloads from `ZM_WarpTrigger`'s own constants and the same resolvers the authoring calls, and
+asserts each occurs exactly once in its own committed scene.
+
+★★ **A COUNT ALONE STILL CANNOT SEE THE SWAP, and the blocker's own wording does not say so.**
+Swap Route 1's two gates and the FILE still contains each payload exactly once; what moves is
+WHICH ENTITY RECORD each sits in. So the unit also pins the interleaving. A `.zscen` entity
+record is `[fileIndex][name][parentFileIndex]` followed by that entity's component payloads,
+written one entity at a time in authoring order (`Zenith_Entity::WriteToDataStream`), and the
+south gate is authored first -- therefore
+
+```
+offset(southName) < offset(southPayload) < offset(northName) < offset(northPayload)
+```
+
+holds if and only if each gate carries its own destination. No container parsing, no baked byte
+offsets, nothing that rots at the next schema bump: only relative order. Two anti-vacuity
+clauses guard it -- every needle must have BUILT (an all-zero needle would match runs of
+padding rather than count zero), and the two Route 1 payloads must DIFFER, without which the
+ordering claim is satisfied by either assignment.
+
+### Decision 4: the round-trip proof warps to each marker and walks ~12 m
+
+`ZM_SeamRoundTrip_Test` drives the real player with real input into all four sensors and asserts
+where each one comes out -- the only check in the game that can fail on a gate whose destination
+validates and then stalls. Four legs: Dawnmere -> Route 1, Route 1 -> Dawnmere, Route 1 ->
+Thornacre, Thornacre -> Route 1, i.e. **both directions of both seams.**
+
+★ **It does not walk the spine, and must not.** Route 1's DirtLane is ~1408 m -- ~6,000 frames
+one way and ~12-14k for a round trip against this harness's caps. Each leg therefore WARPS to
+the arrival marker it starts from and walks only the last ~12 m, which is exactly the gap the
+placement headers put between every gate and its own marker. The approach distance is asserted
+to be inside `(1, 40)` m BEFORE the walk starts: too far is the frame-budget failure, and too
+NEAR means an arriving body is standing in its own exit -- the infinite two-scene ping-pong the
+arrival-clearance floors exist to forbid.
+
+★ It skips without the three GITIGNORED terrain bakes, so it is a PASS on CI. That is why the
+payload needle above is a BOOT unit reading TRACKED files: a skip counts as a pass, and the gate
+needs something that runs with no GPU and no bake.
+
+### Decision 5 (the deviation): Dawnmere's gate reads the ARRIVAL column's measured ground
+
+Route 1 and Thornacre each measure their gate column separately, and their frozen tables show
+the ground genuinely moves over 12 m -- Thornacre's two columns differ by 0.254 m, Route 1's
+south pair by 0.475 m and its north pair by 0.962 m. **Dawnmere's north gate does not get its
+own column in this slice**, and derives its centre Y from the `FromRoute1` column 12 m south.
+
+**Why.** A route-seam row has to be a real downward raycast against the baked Dawnmere
+heightfield; an unmeasured row ships as a placeholder that `ZM_DawnmereRouteSeamGroundTruth_Test`
+reds on (0.15 m tolerance) and that no source-only change can close. The table is additionally
+pinned at exactly ONE row by
+`ZM_Interaction/RouteSeamGround_StandsOnTheFromRoute1LandmarkAndIsMeasured`.
+
+**What it costs, stated rather than waved at.** A 4 m-tall box seated on a neighbouring column
+is at worst ~1 m out of plumb against a 1.8 m body, so the sensor still spans the walked capsule
+from below its feet to well over its head. It is a cosmetic seating error, not a sensor that can
+be missed -- and `ZM_SeamRoundTrip_Test` walking into it is the check that says so.
+
+**The owed follow-up:** measure `(512, 876)` against a warm Dawnmere bake, give it its own
+route-seam row, and re-point `ZM_GetDawnmereNorthGateCentreY()` at it. That change moves this Y
+into the committed Dawnmere bytes, so it belongs with a slice already doing a windowed
+re-author.
+
+**Tests that lock it:** `ZM_CommittedSceneBytes/EverySeamGatePayloadIsAuthoredExactlyOnceInItsOwnScene`
+(the four payloads + the Route 1 ordering), the three per-scene committed-bytes clauses (gate
+entity names, and `ZM_WarpTrigger` component counts now 3 / 2 / 1), and `ZM_SeamRoundTrip_Test`
+(all four crossings, live).
+
+**Reversibility:** MEDIUM. The source is a self-contained set of authoring steps, four configure
+functions and one placement block. Reverting it also means re-authoring all three scenes from a
+windowed boot -- the committed bytes do not come back on their own.
+
+---
+
 ## 2026-08-23 -- ZM-D-202 -- R1-2 step 3: Dawnmere's `FromRoute1` arrival marker, and the two directional choices that would each have broken the game quietly
 
 **Slice R1-2 step 3, the last part of the item and the only one that RE-AUTHORS an already

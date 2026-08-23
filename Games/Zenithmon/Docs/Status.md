@@ -18,7 +18,36 @@ The S0-S7 narrative that used to fill the back half of this file moved VERBATIM 
 its own template in `AgentBriefing.md` §2.3 specifies. Nothing was deleted.
 
 **★ LIVE PIN (UPDATED 2026-08-23):
-ZM boot `3387`; engine boot (Null Combat) `1650`; Null RenderTest `1741`; registry **67**.**
+ZM boot `3389`; engine boot (Null Combat) `1650`; Null RenderTest `1741`; registry **68**.**
+
+> **★ R1-3 (ZM-21 / ZM-D-203) — OBSERVED 2026-08-23.** `Null_vs2022_Debug_Win64_True`
+> reported **`3389 ran / 3387 passed / 0 failed`** (2 skipped), so `Tools/unit_baselines.json`
+> moved `Zenithmon` **3388 -> 3389** — the +1 is the four-gate payload needle
+> (`ZM_CommittedSceneBytes/EverySeamGatePayloadIsAuthoredExactlyOnceInItsOwnScene`).
+> Engine `1650` and Null RenderTest `1741` are UNMOVED and were **inferred, not measured** —
+> the diff is confined to `Games/Zenithmon/**`, so no backend-neutral engine unit moved.
+>
+> **★★ TWO NARRATION NUMBERS ON THE LINE ABOVE WERE STALE BEFORE THIS SLICE, and neither is
+> gated.** The boot figure read `3387` while `Tools/unit_baselines.json` — the file the gate
+> actually reads — held `3388`. The cause is now traced: `28046d81` (ZM-20) bumped the
+> manifest `3384 -> 3388`, a +4, while its narration said "+3" and landed on 3387 — the
+> manifest took the MEASURED number and the prose took ARITHMETIC. This is the SECOND time
+> this block has run one behind the manifest (see the +11 narrative below for the first).
+> `registry` was **correct at 67** and is now **68** with `ZM_SeamRoundTrip_Test`.
+>
+> **★ COUNT THE REGISTRY FROM A RUN, NOT FROM `grep`.** A first pass at this block put 71
+> there, from `grep -c ZENITH_AUTOMATED_TEST_REGISTER Games/Zenithmon/Tests`. The engine
+> registers **68** (`zenith test` discovers 9 PASS + 59 MISSING = 68). The three extra hits
+> are **comments** in `ZM_AutoTests_TrainerSight.cpp:35,44,57`, each of which says in words
+> that the registry count does NOT move — so a comment denying a test was added is counted
+> as a test.
+>
+> That matters beyond this block, because **`Tools/doc_lint.ps1`'s C1 uses the same oracle**
+> ("Count `ZENITH_AUTOMATED_TEST_REGISTER` call sites. Each maps to one registered test"),
+> so its `registerCount` is 71 against a true 68. C1 only fails a doc that OVERSTATES
+> (`$claimed -gt $registerCount`), so an inflated oracle makes it *more* permissive: a doc
+> could claim 71 and pass. The `registry **N**` form does not match C1's regexes either
+> (`N/M passing`, `N tests passing|registered|...`), so this line is unchecked regardless.
 **★ +11 on EVERY game across two ENGINE tickets, no `ZM_*` unit added.**
 3354/1638/1729 -> **3360/1644/1735** (ZM-49, +6: the terrain COLLISION-height
 query `TryGetGroundHeightAt` -- 4 m quads, NOT the rendered ground) ->
@@ -27,8 +56,18 @@ recorder test a review found missing) -> **3366/1650/1741**, an engine +1 that
 moved `Tools/unit_baselines.json` and was never narrated here, which is why this
 block read one behind the manifest on all three rows until 2026-08-22 ->
 **3384**/1650/1741 (ZM-27, +18 `ZM_*` units: 14 `ZM_GroundItem`, +3 in the save
-migration TU, +1 in the schema TU) -> **3387**/1650/1741 (ZM-20, +3 committed-bytes
-needles for Dawnmere, Route1 and Thornacre). Each number OBSERVED on `Null_`.
+migration TU, +1 in the schema TU) -> **3388**/1650/1741 (ZM-20, committed-bytes needles
+for Dawnmere, Route1 and Thornacre) -> **3389**/1650/1741 (ZM-21/R1-3, +1: the four-gate
+payload needle). Each number OBSERVED on `Null_`.
+
+★★ **THIS CHAIN READ `3387` FOR ZM-20 UNTIL 2026-08-23, AND THAT WAS WRONG BY ONE.**
+`28046d81` moved `Tools/unit_baselines.json` **3384 -> 3388** — a +4 — while this prose
+narrated "+3 needles" and landed on 3387. So the miscount was INSIDE one ticket: the
+manifest took the measured number and the sentence took the arithmetic, which is exactly
+the failure the `$never` note in `unit_baselines.json` warns about ("never from arithmetic
+on the previous number"). It is the SECOND time this block has run one behind the manifest
+(the first is recorded two lines above), and nothing gates the pair — see the double-star
+note at the top of this file.
 ★ ZM-27 measured **3384** from a real `Null_` Zenithmon run; 1650 and 1741 are
 CARRIED from the manifest, not re-observed -- its diff is confined to
 `Games/Zenithmon/**`, so no backend-neutral engine unit moved and `zagent gates`
@@ -156,9 +195,9 @@ genuinely RAN, not `DEFERRED` -- after which `git status` over the WHOLE
 
 | Asset | Bytes | SHA256 |
 |---|---|---|
-| `Route1.zscen` | 1,879 | `666AC621AD11C0DEA7F6B716...` **NEW at R1-2 step 2**, proven by two consecutive windowed Debug authoring boots |
-| `Thornacre.zscen` | 1,733 | `A9295117F0F781D2608F33D0...` **NEW at R1-2 step 2**, same two-boot proof |
-| `Dawnmere.zscen` | 5,493 | `F163F33BBA7BD8A4606AB70BF6287E819F476C605E0F961F1C353047B0801421` (**RE-AUTHORED at R1-2 step 3**, ZM-20/ZM-D-202: +153 bytes, one `FromRoute1Spawn` entity record appended. Two consecutive windowed Debug boots, both `sceneAuthoring=AUTHOR_DAWNMERE`, second byte-identical. Previous value `1DC1B639...C591`, held from 2026-08-05 through step 2.) |
+| `Route1.zscen` | 2,253 | `09E165E0888D6213E4E031B0A3D39D0F32C2BA2B37B8E5557C2F7FD38BB353B4` (**RE-AUTHORED at R1-3**, ZM-21/ZM-D-203: +374 bytes, the `Route1SouthGate` and `Route1NorthGate` entity records appended. Two consecutive windowed Debug boots, second byte-identical. Previous value `666AC621AD11C0DEA7F6B716...`, held from R1-2 step 2.) |
+| `Thornacre.zscen` | 1,923 | `DB4AC7790604F3862F67D8F0C8563C396260F9AB118ADF614275EF0314298604` (**RE-AUTHORED at R1-3**, ZM-21/ZM-D-203: +190 bytes, the `ThornacreSouthGate` entity record appended. Same two-boot proof. Previous value `A9295117F0F781D2608F33D0...`, held from R1-2 step 2.) |
+| `Dawnmere.zscen` | 5,682 | `C819C84106AA42FBB6B33C892D0C339AD75E536EA01AB6B7B9891BD6FA53F2F5` (**RE-AUTHORED at R1-3**, ZM-21/ZM-D-203: +189 bytes, one `DawnmereNorthGate` entity record appended. Two consecutive windowed Debug boots, both `sceneAuthoring=AUTHOR_DAWNMERE, warmMask=0x7, queued=0`, second byte-identical. Previous value `F163F33BBA7BD8A4606AB70BF6287E819F476C605E0F961F1C353047B0801421`, held from R1-2 step 3.) |
 | `Battle.zscen` | 4,965 | `1BEB0615F7FE62D9439471A4123E1D2140C0053AEC2991B659F7A03288C8C60A` (unchanged since 2026-08-05) |
 | `FrontEnd.zscen` | 29,740 | `D44D540512F1C373A5D5E747CE7FA76E7D19B467F5F1563EB298E229EEFBEDB5` |
 | `PlayerHome.zscen` | 1,832 | `DBBFB78311A55BBF942A7A5BF9928F43E9493A10CDA89110515A3B6A7987C780` (unchanged since 2026-08-05) |
@@ -193,8 +232,18 @@ ZM boot pin **3345**, automated registry **64**, engine pin **1638** (unmoved).
 plus `5d9d73bf`). A new game is PARTYLESS and the starter is genuinely chosen from Professor
 Aster; `ZM_IntroBeat_Test` proves it end to end across 18 phases.
 
-**S8 ITEM 2 ("Route 1 -> town 2") IS IN PROGRESS. SLICES R1-1 AND R1-2 ARE BOTH
-COMPLETE (ZM-D-197; ZM-D-198/199/202). THE NEXT TASK IS SLICE R1-3.**
+**S8 ITEM 2 ("Route 1 -> town 2") IS IN PROGRESS. SLICES R1-1, R1-2 AND R1-3 ARE
+COMPLETE (ZM-D-197; ZM-D-198/199/202; ZM-D-203). THE NEXT TASK IS SLICE R1-4.**
+
+> **★ R1-3's SOURCE AND ITS BYTES MUST LAND TOGETHER.** The four gates are authoring
+> STEPS in `Zenithmon.cpp`; the committed `.zscen` bytes only move when a **windowed
+> `Vulkan_vs2022_Debug_Win64_True`** tools boot re-writes them (Dawnmere additionally
+> needs `sceneAuthoring=AUTHOR_DAWNMERE`), and that boot must carry
+> `--skip-unit-tests` -- the new committed-bytes clauses are RED until it runs, and a
+> failing boot unit aborts the boot **before** scene authoring, so without the flag they
+> block their own fix forever. **Re-observe the three `.zscen` hashes in the
+> committed-asset table above in the same commit.** All three scenes move: Dawnmere
+> gains one entity record, Route 1 two, Thornacre one.
 
 ### ★ WHAT R1-1 LANDED (the PURE slice -- no scene authored, no committed byte moved)
 Six new files + three modified, +16 boot units (3328 -> **3344** OBSERVED), registry
@@ -269,7 +318,7 @@ test coverage.
 | ~~R1-1~~ | ~~Placement headers + per-recipe terrain materials (PURE)~~ **DONE, +17 (not ~12), ZM-D-197** | 17 | none | -- |
 | R1-2 **ph.1** | ~~Per-recipe terrain materials (split out of R1-2, PURE)~~ **DONE, ZM-D-198** | 0 | none, PROVEN | R1-1 |
 | R1-2 | Author Route1 + Thornacre -- **MARKERS ONLY, zero triggers** | ~7 | creates Route1+Thornacre, re-authors Dawnmere -- **WINDOWED** | R1-1 |
-| R1-3 | **All four seam triggers in ONE commit** + round-trip proof | ~4 | all three -- **WINDOWED** | R1-2 |
+| ~~R1-3~~ | ~~**All four seam triggers in ONE commit** + round-trip proof~~ **DONE, +1 (not ~4), ZM-21/ZM-D-203 -- closes critic blocker #2** | 1 | all three, DONE -- **WINDOWED**, two boots, second byte-identical | R1-2 |
 | R1-4 | Wild encounters live + rate retune (ruling 4) | ~2 | none | R1-3 |
 | R1-5 | Trainer DATA + placement + Npc claim-check rewrite | ~12 | none | R1-4 |
 | R1-6 | Author the two trainers into Route1 | ~3 | Route1 only -- **WINDOWED** | R1-5 |
@@ -278,11 +327,15 @@ test coverage.
 | R1-10 | Warden relocation onto Route 1 (do LAST, isolated) | ~3 | Dawnmere + Route1 -- **WINDOWED** | R1-9 |
 
 ### ★★ FIVE BLOCKERS THE CRITICS FOUND. FOLD THE FIX INTO THE SLICE BRIEF -- DO NOT REDISCOVER.
-> **STATUS AFTER R1-1: #1 is RESOLVED** (the compiled registration table + its 4 boot units
+> **STATUS AFTER R1-3: #1 is RESOLVED** (the compiled registration table + its 4 boot units
 > shipped; Route1 and Thornacre are registered already). **#5 is RESOLVED for the new names**
 > -- they are scene-unique and collision-checked -- **EXCEPT the player, which is deliberately
-> `"Player"` and must use the strictly-more needle form (ZM-D-197).** #2, #3 and #4 are still
-> OPEN and belong to R1-3, R1-4 and R1-9 respectively.
+> `"Player"` and must use the strictly-more needle form (ZM-D-197).** **#2 is RESOLVED**
+> (ZM-D-203): `ZM_CommittedSceneBytes/EverySeamGatePayloadIsAuthoredExactlyOnceInItsOwnScene`
+> needles the whole `[version][targetBuildIndex][32-byte tag]` payload per gate, and -- because
+> a COUNT alone still cannot see a swap within one file -- also pins the interleaving of the two
+> Route 1 payloads with their own entity names. #3 and #4 are still OPEN and belong to R1-4 and
+> R1-9 respectively.
 1. **[R1-3] The proposed hang-guard unit CANNOT EXIST as described.**
    `Project_LoadInitialScene` is a hand-written sequence of five `RegisterSceneBuildIndex`
    calls with **no enumerable table**, and it runs **AFTER** the boot-unit suite. A boot unit
@@ -498,7 +551,11 @@ Next in the R1 chain is **R1-3** (ZM-21): the four seam triggers, in one commit.
 6. Second identical boot; hashes identical. **Only now** run `run_unit_gate.ps1` — it boots with
    `--exit-after-unit-tests` and cannot carry `--skip-unit-tests`, so running it earlier tells you
    nothing while the needles point at files that do not exist.
-7. `zenith test Zenithmon --headless`; confirm registry 67.
+7. `zenith test Zenithmon --headless`; confirm the registry against the LIVE PIN line at the
+   top of this file, and read the count off the RUN (`N PASS` + `N MISSING` = registered),
+   **never off `grep -c ZENITH_AUTOMATED_TEST_REGISTER`** — that oracle counts comments
+   mentioning the macro and currently over-reports by 3 (see the LIVE PIN block). This step
+   used to hardcode `67`, which was true for R1-2 and wrong the moment R1-3 landed.
 > ★ Every boot in steps 2-4 MUST carry `--skip-unit-tests`: a failing boot unit aborts the boot
 > BEFORE scene authoring runs, and this slice ships units that are RED BY DESIGN until the freeze
 > closes. Without the flag the tests block their own fix forever.

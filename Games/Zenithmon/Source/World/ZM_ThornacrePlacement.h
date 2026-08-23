@@ -275,11 +275,12 @@ inline constexpr float fZM_THORNACRE_SOUTH_ARRIVAL_Z = 112.0f;
 //
 // 12 m SOUTH of the arrival marker, still inside the flattened "RouteGate" pad.
 //
-// ★ NO GATE ENTITY IS AUTHORED BY THIS SLICE -- the return trigger is R1-3's, in
-// one commit, after the destination markers exist. The column is measured anyway
-// because the gate's Y derives from the ground under it: leaving it out of the
-// table below would strand it on the very scalar this split is retiring, and a
-// stranded column is how a sensor ends up 28 m under the player.
+// ★ THE RETURN TRIGGER IS AUTHORED AS OF R1-3, in the one commit that lands all
+// four seam triggers -- so this column now carries a SHIPPED sensor rather than a
+// reserved slot. (It was measured before the sensor existed, deliberately: the
+// gate's Y derives from the ground under it, and leaving it out of the table
+// below would have stranded it on the very scalar the R1-2 split was retiring. A
+// stranded column is how a sensor ends up 28 m under the player.)
 inline constexpr float fZM_THORNACRE_SOUTH_GATE_X = 512.0f;
 inline constexpr float fZM_THORNACRE_SOUTH_GATE_Z = 100.0f;
 
@@ -318,10 +319,10 @@ inline constexpr float fZM_THORNACRE_RECIPE_TARGET_GROUND_Y = 28.0f;
 struct ZM_ThornacreGroundSample
 {
 	// The column's name. Each row is named by the ENTITY that stands on it, read
-	// from the one place that spells it -- the gate is not authored until R1-3, but
-	// its name already exists above and re-typing it here would be a second
-	// spelling. It is also the key a ground-truth oracle prints its `paste=`
-	// literal against, so it is contract.
+	// from the one place that spells it -- both are authored as of R1-3 (the gate
+	// was the last), and re-typing a name here would be a second spelling. It is
+	// also the key a ground-truth oracle prints its `paste=` literal against, so it
+	// is contract.
 	const char* m_szEntityName;
 	float       m_fX;
 	float       m_fZ;

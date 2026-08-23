@@ -285,11 +285,12 @@ inline constexpr float fZM_ROUTE1_NORTH_ARRIVAL_Z = 1424.0f;
 // last thing between the player and the edge of the world, and an arriving player
 // is never already inside it. Both centres sit inside their pad's flattened disc.
 //
-// ★ NO GATE ENTITY IS AUTHORED BY THIS SLICE -- the triggers are R1-3's, in one
-// commit, after the destination markers exist. These two columns are measured
-// anyway because their Y derives from the ground under them: leaving them out of
-// the table below would strand them on the very scalar this split is retiring,
-// and a stranded column is how a sensor ends up 26 m under the player.
+// ★ BOTH GATE ENTITIES ARE AUTHORED AS OF R1-3, in the one commit that lands all
+// four seam triggers -- so these two columns now carry a SHIPPED sensor rather
+// than a reserved slot. (They were measured before either existed, deliberately:
+// their Y derives from the ground under them, and leaving them out of the table
+// below would have stranded them on the very scalar the R1-2 split was retiring.
+// A stranded column is how a sensor ends up 26 m under the player.)
 inline constexpr float fZM_ROUTE1_SOUTH_GATE_X = 512.0f;
 inline constexpr float fZM_ROUTE1_SOUTH_GATE_Z = 100.0f;
 inline constexpr float fZM_ROUTE1_NORTH_GATE_X = 512.0f;
@@ -374,10 +375,10 @@ inline constexpr float fZM_ROUTE1_RECIPE_TARGET_GROUND_Y = 26.0f;
 struct ZM_Route1GroundSample
 {
 	// The column's name. Every row is named by the ENTITY that stands on it, read
-	// from the one place that spells it -- two of the six entities are not authored
-	// until R1-3, but their names already exist above and re-typing one here would
-	// be a second spelling. It is also the key a ground-truth oracle prints its
-	// `paste=` literal against, so it is contract.
+	// from the one place that spells it -- all six are authored as of R1-3 (the
+	// two gates were the last), and re-typing a name here would be a second
+	// spelling. It is also the key a ground-truth oracle prints its `paste=`
+	// literal against, so it is contract.
 	const char* m_szEntityName;
 	float       m_fX;
 	float       m_fZ;

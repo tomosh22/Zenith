@@ -1,6 +1,13 @@
 #pragma once
 
 #include "Maths/Zenith_Maths.h"   // Vector3 / Quat / AngleAxis
+// The compiled world table. R1-3's north seam gate RESOLVES its target build
+// index and its outbound spawn tag by walking the ZM_SCENE_DAWNMERE row, exactly
+// as ZM_ProfLabPlacement.h's exit resolver walks the ZM_SCENE_PROFLAB one -- so
+// this header READS the table and never mirrors it. It arrived here transitively
+// through ZM_ProfLabPlacement.h below for a long time; it is named explicitly now
+// because this file has its own reason to need it.
+#include "Zenithmon/Source/Data/ZM_WorldSpec.h"
 #include "Zenithmon/Source/World/ZM_HumanBody.h"   // THE human body contract
 // The ProfLab INTERIOR contract. The S8 SC-D lab block at the bottom of this
 // file DERIVES the exterior's aperture from it rather than re-spelling 6.0 and
@@ -1003,4 +1010,242 @@ inline Zenith_Maths::Vector3 ZM_GetDawnmereFromRoute1SpawnFeet()
 	return Zenith_Maths::Vector3(fZM_DAWNMERE_FROM_ROUTE1_X,
 		ZM_DawnmereRouteSeamSampleFeetY(ZM_DAWNMERE_ROUTE_SEAM_SAMPLE_FROM_ROUTE1),
 		fZM_DAWNMERE_FROM_ROUTE1_Z);
+}
+
+// ============================================================================
+// R1-3 -- DAWNMERE'S NORTH SEAM GATE: the fourth and last of the four triggers
+//
+// ★ THE OTHER THREE LIVE IN THEIR OWN SCENES' HEADERS. Route 1's two gates are
+// spelled in Source/World/ZM_Route1Placement.h and Thornacre's return gate in
+// Source/World/ZM_ThornacrePlacement.h, each beside the arrival marker it stands
+// beyond. This block is the Dawnmere-side twin of those, and it is a SEAM gate
+// rather than a DOOR: the shipped HomeDoorTrigger / LabDoorTrigger take the
+// player into an interior a few metres away, whereas this one hands them off to
+// another region. That is why it is named for its scene and its compass bearing
+// (the R1-1 convention -- Route1SouthGate, Route1NorthGate, ThornacreSouthGate)
+// rather than for a building.
+//
+// ★★ ALL FOUR TRIGGERS LAND IN ONE COMMIT, AND THAT IS A SAFETY RULING, NOT
+// TIDINESS. ZM_GameStateManager::IsWarpDestinationValid consults ONLY the
+// compiled ZM_WorldSpec tag list -- never the destination scene -- so a gate
+// shipped before its far-side arrival marker exists is ACCEPTED, and the warp
+// machine then sits in ZM_WARP_TRANSITION_WAITING_FOR_SPAWN behind a fully
+// opaque fade until that barrier's frame budget expires (ZM-D-200), then errors
+// out into a region the player never arrived in. R1-2 landed every marker and
+// zero triggers for exactly that reason; this slice closes the other half.
+// ============================================================================
+
+// ★ THE NAME LIVES HERE, NOT AT THE AUTHORING SITE, for the reason
+// szZM_DAWNMERE_FROM_ROUTE1_SPAWN_ENTITY_NAME states above: Zenithmon.cpp
+// authors the entity and Tests/ZM_Tests_CommittedSceneBytes.cpp needles the
+// committed blob for it, and a literal at either site would move with a rename
+// on the other and pin nothing.
+//
+// ★ IT DELIBERATELY CONTAINS NO SPAWN TAG AND IS NOT A SUBSTRING OF -- NOR DOES
+// IT CONTAIN -- ANY OTHER AUTHORED DAWNMERE NAME. The gate's OUTBOUND tag is
+// "FromDawnmere" (resolved below, never spelled), which is a string the
+// committed Dawnmere.zscen has never carried; keeping the two disjoint is what
+// lets the committed-bytes clauses be plain `== 1` equalities instead of the
+// strictly-more form FromLabSpawn and FromRoute1Spawn both need.
+inline constexpr const char* szZM_DAWNMERE_NORTH_GATE_ENTITY_NAME =
+	"DawnmereNorthGate";
+
+// ---- The outbound edge, RESOLVED from the compiled world table --------------
+//
+// ★ WHY THESE ARE FUNCTIONS AND NOT `= 20` AND `= "FromDawnmere"`. The build
+// index and the spawn tag are the TABLE's property (Source/Data/ZM_WorldSpec.cpp,
+// row ZM_SCENE_DAWNMERE); a second spelling here would be an inventory nothing
+// reconciles. Same shape as ZM_GetProfLabExitTargetBuildIndex /
+// ZM_GetProfLabExitSpawnTag and as Route 1's and Thornacre's gate resolvers.
+//
+// ★ AND THE WALK IS BY TARGET, NOT BY INDEX 0. Dawnmere carries THREE edges --
+// Route 1, PlayerHome and ProfLab -- so m_pxConnections[0] would be a magic
+// index that silently hands back a doorway the day the table is reordered.
+
+// The answer when the compiled table carries no Dawnmere -> Route1 edge at all.
+// Deliberately a build index no scene can hold rather than a plausible one, so a
+// caller that skips the resolution check authors an obviously dead warp instead
+// of a subtly wrong one.
+inline constexpr u_int uZM_DAWNMERE_NORTH_GATE_TARGET_UNRESOLVED = 0xFFFFFFFFu;
+
+// TOTAL, in the house style of every accessor in this file: a table with no such
+// edge yields nullptr rather than UB, and the three accessors below turn that
+// into their own stated sentinels. NOTHING HERE ASSERTS -- Zenith_Assert calls
+// Zenith_DebugBreak() in EVERY configuration and the whole unit suite runs at
+// boot, so an assert on an argument a unit deliberately feeds does not fail one
+// test, it ends the run. ZM_GetWorldSpec ITSELF asserts fatally out of range,
+// which is why every call to it below is range-guarded first.
+inline const ZM_SceneConnection* ZM_GetDawnmereNorthGateConnection()
+{
+	const ZM_WorldSpec& xRow = ZM_GetWorldSpec(ZM_SCENE_DAWNMERE);
+	if (xRow.m_pxConnections == nullptr)
+	{
+		return nullptr;
+	}
+	for (u_int uEdge = 0u; uEdge < xRow.m_uConnectionCount; ++uEdge)
+	{
+		if (xRow.m_pxConnections[uEdge].m_eTarget == ZM_SCENE_ROUTE1)
+		{
+			return &xRow.m_pxConnections[uEdge];
+		}
+	}
+	return nullptr;
+}
+
+inline ZM_SCENE_ID ZM_GetDawnmereNorthGateTargetScene()
+{
+	const ZM_SceneConnection* pxEdge = ZM_GetDawnmereNorthGateConnection();
+	return pxEdge != nullptr ? pxEdge->m_eTarget : ZM_SCENE_NONE;
+}
+
+// ★ THE RANGE GUARD IS NOT DEFENSIVE DECORATION -- see the totality note above.
+inline u_int ZM_GetDawnmereNorthGateTargetBuildIndex()
+{
+	const ZM_SCENE_ID eTarget = ZM_GetDawnmereNorthGateTargetScene();
+	return eTarget < ZM_SCENE_COUNT
+		? ZM_GetWorldSpec(eTarget).m_uBuildIndex
+		: uZM_DAWNMERE_NORTH_GATE_TARGET_UNRESOLVED;
+}
+
+// The tag this gate asks ROUTE 1 for -- and therefore ALSO the tag Route 1's
+// south arrival marker must already carry (it does; R1-2 authored it from the
+// same row). ONE spelling for both sides of the seam is the whole point.
+//
+// TOTAL: "" on a miss, NEVER nullptr -- a caller may index [0] without checking,
+// and ZM_WarpTrigger::Configure rejects an empty tag, so the authoring assertion
+// fires instead of a silently dead sensor shipping.
+inline const char* ZM_GetDawnmereNorthGateSpawnTag()
+{
+	const ZM_SceneConnection* pxEdge = ZM_GetDawnmereNorthGateConnection();
+	return pxEdge != nullptr && pxEdge->m_szSpawnTag != nullptr
+		? pxEdge->m_szSpawnTag
+		: "";
+}
+
+// ---- The gate's column ------------------------------------------------------
+//
+// 12 m NORTH of the FromRoute1 arrival marker at (512, 864), i.e. between the
+// arriving player and the northern edge of the region -- the same relationship,
+// at the same 12 m separation, that Route 1's two gates and Thornacre's return
+// gate keep with their own markers. The sensor is therefore the last thing a
+// player walking north crosses, and an ARRIVING player is never already inside
+// it (see the clearance floor below).
+//
+// ★ BOTH CONTAINMENTS ARE ARITHMETIC, NOT TASTE, and both are stated here so a
+// later reader can re-check them rather than trust them. Against the Dawnmere
+// terrain recipe (Source/World/ZM_TerrainAuthoring.cpp):
+//   * the "RouteGate" PAD is at (512, 896) with a 30 m FLATTEN radius; this
+//     column is 20 m from its centre, i.e. inside it -- unlike the arrival
+//     column 12 m south, which at 32 m falls just outside;
+//   * the "Route" PATH runs (512, 928) -> (500, 760) -> ... with an 18 m flatten
+//     radius; this column lies ~3.7 m from that first segment.
+// So the ground under this gate is graded lane inside a graded pad, which is the
+// condition under which a flatten dab drives ground TO the recipe target.
+inline constexpr float fZM_DAWNMERE_NORTH_GATE_X = fZM_DAWNMERE_FROM_ROUTE1_X;
+inline constexpr float fZM_DAWNMERE_NORTH_GATE_Z =
+	fZM_DAWNMERE_FROM_ROUTE1_Z + 12.0f;
+
+// ---- The gate volume --------------------------------------------------------
+//
+// The three scales match Route 1's and Thornacre's gate boxes, and they are
+// declared INDEPENDENTLY here rather than read out of ZM_Route1Placement.h.
+// Dawnmere's header must not depend on another region's placement -- Route 1's
+// own banner refuses the mirror-image include for the same reason -- and the
+// numbers are re-derived below rather than copied on faith:
+//
+// (1) X SPAN. The Route corridor lays a 10 m dirt radius (a 20 m visible lane)
+//     inside an 18 m flatten radius, and the RouteGate pad is 30 m across the
+//     radius here. 48 m centred on the lane leaves no gap a player can slip
+//     through without leaving the walked corridor entirely.
+inline constexpr float fZM_DAWNMERE_NORTH_GATE_SCALE_X = 48.0f;
+
+// (2) Y SPAN -- taller than fZM_HUMAN_BODY_HEIGHT (1.8), so the sensor cannot be
+//     stepped or jumped over.
+inline constexpr float fZM_DAWNMERE_NORTH_GATE_SCALE_Y = 4.0f;
+
+// (3) DEPTH. ZM_WarpTrigger fires from OnCollisionEnter -- a body-vs-body
+//     contact sampled at the physics tick -- so the box has to be several ticks
+//     deep rather than a plane a running capsule steps over between two of them.
+//     Six metres is ~26 ticks at a 4 m/s walk and 60 Hz, plus a body radius of
+//     contact window either side.
+inline constexpr float fZM_DAWNMERE_NORTH_GATE_SCALE_Z = 6.0f;
+
+// ★★ THE NEAR FACE MUST CLEAR THE ARRIVING BODY, OR THE SEAM IS AN INFINITE
+// LOOP. A player warps IN onto FromRoute1Spawn; if the arriving capsule
+// overlapped this sensor it would fire on the first contact tick and send them
+// straight back to Route 1, whose south gate would send them straight here
+// again, forever, with no input accepted in between. The floor is stated on the
+// near FACE rather than on the centre because an arriving player does not stand
+// still: they walk off the marker immediately, and the eight-way MOVE drive
+// makes the natural walk a 45-degree diagonal that SPENDS DEPTH AS FAST AS IT
+// SPENDS WIDTH (Q-2026-08-15-001, the defect that shipped in ProfLab with every
+// arrival clause green). The clearance this placement actually holds is 9 m --
+// the marker sits 12 m from the gate centre and the box reaches 3 m back toward
+// it -- identical to both Route 1 gates.
+inline constexpr float fZM_DAWNMERE_NORTH_GATE_ARRIVAL_CLEARANCE_MIN = 4.0f;
+
+// ★ THE TWO FLOORS ABOVE ARE CHECKED HERE, AT COMPILE TIME, RATHER THAN LEFT TO A
+// UNIT. Route 1's and Thornacre's equivalents are read by boot units in their own
+// placement suites; this gate's live in the header because every term is a dyadic
+// constexpr float and a static_assert cannot be skipped, forgotten or left in
+// another file's slice. An unread constant is a decoration, and this file's own
+// rule against those is the reason these two lines exist.
+static_assert(
+	fZM_DAWNMERE_NORTH_GATE_Z - fZM_DAWNMERE_NORTH_GATE_SCALE_Z * 0.5f
+		- fZM_DAWNMERE_FROM_ROUTE1_Z
+			>= fZM_DAWNMERE_NORTH_GATE_ARRIVAL_CLEARANCE_MIN,
+	"the north gate's near face does not clear the FromRoute1 arrival marker by "
+	"fZM_DAWNMERE_NORTH_GATE_ARRIVAL_CLEARANCE_MIN -- an arriving player would be "
+	"warped straight back out, and Route 1's south gate would return them here, "
+	"forever, with no input accepted between the two");
+static_assert(fZM_DAWNMERE_NORTH_GATE_SCALE_Y > fZM_HUMAN_BODY_HEIGHT,
+	"the north gate is not taller than a person, so the sensor can be stepped over");
+
+// ★★ THE GATE'S CENTRE Y IS DERIVED FROM THE **ARRIVAL** COLUMN, AND THAT IS A
+// KNOWN DEVIATION FROM THE ONE-COLUMN-PER-ANCHOR RULE THE ROUTE 1 AND THORNACRE
+// HEADERS BOTH STATE. Write down why, because the rule is right and this is a
+// scoped exception rather than a disagreement with it:
+//
+//   * Route 1 and Thornacre each measure their gate column separately, and their
+//     frozen tables show the ground genuinely moves over 12 m -- Thornacre's two
+//     columns differ by 0.254 m, Route 1's south pair by 0.475 m and its north
+//     pair by 0.962 m. So a dedicated column IS the correct long-term answer
+//     here too.
+//   * What R1-3 cannot do is PRODUCE one. A new row in the route-seam table has
+//     to be a real downward raycast against the baked Dawnmere heightfield; an
+//     unmeasured row would ship as a placeholder that
+//     ZM_DawnmereRouteSeamGroundTruth_Test reds on (0.15 m tolerance) and that
+//     no source-only change can close. The table is also pinned at exactly ONE
+//     row by ZM_Interaction/RouteSeamGround_StandsOnTheFromRoute1LandmarkAndIsMeasured,
+//     which is outside this slice's file list.
+//   * What the deviation COSTS is bounded and small: a 4 m-tall box seated on a
+//     neighbouring column is at worst ~1 m out of plumb against a 1.8 m body, so
+//     the sensor still spans the walked capsule from below its feet to well over
+//     its head. It is a cosmetic seating error, not a sensor that can be missed.
+//
+// ★ THE OWED FOLLOW-UP, NAMED SO IT IS NOT LOST: measure (512, 876) against a
+// warm Dawnmere bake, give it its own route-seam row, and re-point the
+// derivation below at that row. That change re-authors Dawnmere.zscen (this Y
+// lands in the committed bytes), so it belongs with a slice that is already
+// doing a windowed re-author.
+inline float ZM_GetDawnmereNorthGateCentreY()
+{
+	return ZM_DawnmereRouteSeamSampleFeetY(
+			ZM_DAWNMERE_ROUTE_SEAM_SAMPLE_FROM_ROUTE1)
+		+ fZM_DAWNMERE_NORTH_GATE_SCALE_Y * 0.5f;
+}
+
+// The authored sensor, in the same centre+scale vocabulary as every other
+// Dawnmere blockout.
+inline ZM_DawnmereBlockout ZM_GetDawnmereNorthGate()
+{
+	return {
+		Zenith_Maths::Vector3(
+			fZM_DAWNMERE_NORTH_GATE_X,
+			ZM_GetDawnmereNorthGateCentreY(),
+			fZM_DAWNMERE_NORTH_GATE_Z),
+		Zenith_Maths::Vector3(
+			fZM_DAWNMERE_NORTH_GATE_SCALE_X,
+			fZM_DAWNMERE_NORTH_GATE_SCALE_Y,
+			fZM_DAWNMERE_NORTH_GATE_SCALE_Z) };
 }

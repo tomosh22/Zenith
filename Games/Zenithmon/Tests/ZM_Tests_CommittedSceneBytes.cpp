@@ -54,6 +54,7 @@
 #include "Core/Zenith_TestFramework.h"
 #include "FileAccess/Zenith_FileAccess.h"
 #include "Maths/Zenith_Maths.h"
+#include "Zenithmon/Components/ZM_WarpTrigger.h"   // R1-3: uSERIALIZATION_VERSION + uTAG_CAPACITY -- the payload needle's own shape, never re-spelled
 #include "Zenithmon/Source/UI/ZM_UI_StarterChoice.h"   // the S8 element-name constants (the needles)
 #include "Zenithmon/Source/World/ZM_DawnmerePlacement.h"
 #include "Zenithmon/Source/World/ZM_ProfLabPlacement.h"   // szZM_PROFLAB_ASTER_ENTITY_NAME + the SC-E lab-seam names/tag (the needles)
@@ -175,6 +176,101 @@ namespace
 			return 0u;
 		}
 		return CountOccurrences(pData, ulSize,
+			reinterpret_cast<const unsigned char*>(szName),
+			(uint64_t)std::strlen(szName));
+	}
+
+	// ========================================================================
+	// R1-3 -- THE WARP PAYLOAD NEEDLE, AND THE MUTATION IT EXISTS FOR
+	//
+	// ★★ A GATE SWAP IS INVISIBLE TO EVERY NAME-BASED NEEDLE IN THIS FILE. Both
+	// Route 1 connections carry the SAME spawn tag -- the compiled row is
+	// { ZM_SCENE_DAWNMERE, "FromRoute1" }, { ZM_SCENE_THORNACRE, "FromRoute1" } --
+	// so authoring the SOUTH gate against Thornacre and the NORTH gate against
+	// Dawnmere changes not one byte of any entity name, any tag string, or any
+	// component type name. Every clause below that counts strings passes. What
+	// ships is a route whose south end leads north: a player walking back toward
+	// Dawnmere arrives in Thornacre, and the return gate there sends them to the
+	// Route 1 NORTH marker, i.e. the world folds in half with no error anywhere.
+	//
+	// The ONE discriminating value is the target build index (2 vs 3), which
+	// ZM_WarpTrigger::WriteToDataStream emits as a raw u_int immediately before
+	// the zero-padded tag buffer. So the needle is the WHOLE payload:
+	//
+	//     [u_int uSERIALIZATION_VERSION][u_int targetBuildIndex][uTAG_CAPACITY tag]
+	//
+	// ★ ITS SHAPE IS READ FROM ZM_WarpTrigger, NEVER RE-SPELLED. A hand-typed 40
+	// would silently stop matching the day the component gains a field, and a
+	// needle that matches nothing counts zero -- which passes an absence clause
+	// vacuously and fails a presence clause for a reason its message does not name.
+	// ========================================================================
+	constexpr uint64_t ulZM_WARP_PAYLOAD_SIZE =
+		(uint64_t)sizeof(u_int) * 2u + (uint64_t)ZM_WarpTrigger::uTAG_CAPACITY;
+
+	// FALSE (and a zeroed needle) when the arguments could not produce a payload
+	// any authored gate could carry -- an unresolved build index, a null/empty tag,
+	// or a tag too long for the fixed buffer. Callers assert on the return BEFORE
+	// reading anything into a count, because a zeroed needle would match a run of
+	// padding rather than a gate.
+	bool BuildWarpPayloadNeedle(
+		u_int uTargetBuildIndex,
+		const char* szSpawnTag,
+		unsigned char (&auNeedleOut)[ulZM_WARP_PAYLOAD_SIZE])
+	{
+		std::memset(auNeedleOut, 0, sizeof(auNeedleOut));
+		if (szSpawnTag == nullptr || szSpawnTag[0] == '\0'
+			|| uTargetBuildIndex == ZM_WarpTrigger::uINVALID_BUILD_INDEX)
+		{
+			return false;
+		}
+		const size_t ulTagLength = std::strlen(szSpawnTag);
+		if (ulTagLength >= (size_t)ZM_WarpTrigger::uTAG_CAPACITY)
+		{
+			return false;
+		}
+
+		// ZM_WarpTrigger::Configure copies the tag into a ZERO-INITIALISED
+		// uTAG_CAPACITY buffer and then writes the whole buffer, so the trailing
+		// bytes are guaranteed zero -- which is what makes a fixed-width needle
+		// legitimate here rather than an assumption about padding.
+		const u_int uVersion = ZM_WarpTrigger::uSERIALIZATION_VERSION;
+		std::memcpy(auNeedleOut, &uVersion, sizeof(uVersion));
+		std::memcpy(auNeedleOut + sizeof(uVersion),
+			&uTargetBuildIndex, sizeof(uTargetBuildIndex));
+		std::memcpy(auNeedleOut + sizeof(uVersion) + sizeof(uTargetBuildIndex),
+			szSpawnTag, ulTagLength);
+		return true;
+	}
+
+	// The FIRST byte offset a needle occurs at, or ulSize when it does not occur
+	// at all. Used only for the ORDERING claim below; every presence claim is a
+	// count, so an absent needle lands past every real offset and fails loudly
+	// rather than comparing as "earliest".
+	uint64_t FindFirstOffset(const char* pData, uint64_t ulSize,
+		const unsigned char* puNeedle, uint64_t ulNeedleSize)
+	{
+		if (pData == nullptr || ulNeedleSize == 0 || ulSize < ulNeedleSize)
+		{
+			return ulSize;
+		}
+		const unsigned char* puData = reinterpret_cast<const unsigned char*>(pData);
+		for (uint64_t ul = 0; ul + ulNeedleSize <= ulSize; ++ul)
+		{
+			if (std::memcmp(puData + ul, puNeedle, (size_t)ulNeedleSize) == 0)
+			{
+				return ul;
+			}
+		}
+		return ulSize;
+	}
+
+	uint64_t FindFirstNameOffset(const char* pData, uint64_t ulSize, const char* szName)
+	{
+		if (szName == nullptr || szName[0] == '\0')
+		{
+			return ulSize;
+		}
+		return FindFirstOffset(pData, ulSize,
 			reinterpret_cast<const unsigned char*>(szName),
 			(uint64_t)std::strlen(szName));
 	}
@@ -508,7 +604,7 @@ ZENITH_TEST(ZM_CommittedSceneBytes, ProfLabCarriesTheAuthoredProfessorEntityName
 }
 
 // ============================================================================
-// R1-2 -- THE THREE-SCENE SEAM TRIPWIRE: Dawnmere, Route 1 and Thornacre.
+// R1-2 / R1-3 -- THE THREE-SCENE SEAM TRIPWIRE: Dawnmere, Route 1 and Thornacre.
 //
 // ★★ WHY ALL THREE ARE HERE AND NOT IN THE PLACEMENT SUITES. Every pure unit in
 // Tests/ZM_Tests_{Route1,Thornacre,Dawnmere}Placement.cpp reads the SAME compiled
@@ -518,15 +614,19 @@ ZENITH_TEST(ZM_CommittedSceneBytes, ProfLabCarriesTheAuthoredProfessorEntityName
 // bakes and therefore RequestSkip on CI -- and a skip counts as a PASS. Route 1
 // and Thornacre are the first committed Zenithmon scenes CI cannot load-verify at
 // all (ZM-D-199), which makes these boot units, reading TRACKED files with no GPU
-// and no terrain, the whole CI-visible spine of slice R1-2.
+// and no terrain, the whole CI-visible spine of both slices.
 //
 // ★★ THE MUTATION THEY EXIST FOR IS THE QUIET ONE. IsWarpDestinationValid consults
 // ONLY the compiled ZM_WorldSpec tag list and NEVER the destination scene, so a
-// marker that is missing, mis-named, untagged or tagged with the WRONG DIRECTION
+// marker OR A GATE that is missing, mis-named, untagged or pointed the WRONG WAY
 // still validates: the fade goes fully opaque and the machine sits in
 // ZM_WARP_TRANSITION_WAITING_FOR_SPAWN until that barrier's frame budget expires
 // (ZM-D-200), then errors out into a town the player never arrived in. Not a
 // crash, not an assert, not a red test anywhere else.
+//
+// ★ R1-2 LANDED THE MARKERS AND R1-3 THE FOUR GATES, so each clause below now
+// makes both halves of its scene's claim. The one thing a STRING count cannot say
+// -- which gate points where -- has its own unit at the bottom of this file.
 //
 // ★ EVERY NEEDLE IS DERIVED, none is typed: entity names from the placement
 // headers, spawn tags from the compiled world table through the SAME resolvers the
@@ -540,13 +640,14 @@ ZENITH_TEST(ZM_CommittedSceneBytes, ProfLabCarriesTheAuthoredProfessorEntityName
 // standing position on this asset family is that absence is a DEFECT, not a
 // configuration to tolerate.
 //
-// ★★ AND THE DAWNMERE CLAUSE BELOW IS RED BY DESIGN UNTIL THE RE-AUTHOR LANDS.
-// The marker's authoring steps ship in the same commit as this file, but the
-// committed bytes only move when a WINDOWED Vulkan_*_True tools boot in
-// sceneAuthoring=AUTHOR_DAWNMERE mode re-writes them -- a headless run may CREATE
-// a .zscen but never CHANGE one. So THAT BOOT MUST CARRY --skip-unit-tests: a
-// failing boot unit aborts the boot BEFORE scene authoring runs, and without the
-// flag this unit blocks its own fix forever.
+// ★★ AND EVERY CLAUSE BELOW IS RED BY DESIGN UNTIL THE RE-AUTHOR LANDS -- which
+// was true of the Dawnmere marker at R1-2 and is true of ALL THREE SCENES' gate
+// clauses at R1-3. The authoring steps ship in the same commit as this file, but
+// the committed bytes only move when a WINDOWED Vulkan_*_True tools boot
+// re-writes them (Dawnmere additionally needs sceneAuthoring=AUTHOR_DAWNMERE) --
+// a headless run may CREATE a .zscen but never CHANGE one. So THAT BOOT MUST
+// CARRY --skip-unit-tests: a failing boot unit aborts the boot BEFORE scene
+// authoring runs, and without the flag these units block their own fix forever.
 // ============================================================================
 
 // Dawnmere's half of the seam: the FromRoute1 arrival marker (R1-2 step 3).
@@ -571,10 +672,10 @@ ZENITH_TEST(ZM_CommittedSceneBytes, DawnmereCarriesTheRoute1ArrivalMarkerAndItsI
 
 	// ★ THE TAG COMES OFF THE ROUTE1 ROW'S DAWNMERE EDGE, which is the identical
 	// table entry the authoring's ZM_ResolveInboundSpawnTag(ROUTE1, DAWNMERE)
-	// walks and the identical one R1-3's Route 1 south gate will ASK Dawnmere
-	// for. One edge, one spelling, both halves of the seam -- so a table re-tag
-	// moves the marker, the future sensor and this needle together, and a needle
-	// that quietly disagreed with the authoring is not expressible.
+	// walks and the identical one Route 1's south gate ASKS Dawnmere for (R1-3
+	// authored that sensor). One edge, one spelling, both halves of the seam -- so
+	// a table re-tag moves the marker, the sensor and this needle together, and a
+	// needle that quietly disagreed with the authoring is not expressible.
 	const char* const szInboundTag = ZM_GetRoute1SouthGateSpawnTag();
 
 	const u_int uNameHits = CountNameOccurrences(pData, ulSize, szMarkerName);
@@ -583,13 +684,18 @@ ZENITH_TEST(ZM_CommittedSceneBytes, DawnmereCarriesTheRoute1ArrivalMarkerAndItsI
 		CountNameOccurrences(pData, ulSize, szZM_TYPE_SPAWN_POINT);
 	const u_int uWarpTriggerHits =
 		CountNameOccurrences(pData, ulSize, szZM_TYPE_WARP_TRIGGER);
+	// R1-3's addition to this scene: the outbound sensor that aims at Route 1.
+	const u_int uNorthGateHits = CountNameOccurrences(
+		pData, ulSize, szZM_DAWNMERE_NORTH_GATE_ENTITY_NAME);
 
 	Zenith_Log(LOG_CATEGORY_GAMEPLAY,
 		"[ZM_CommittedSceneBytes] '%s' %llu bytes; route seam: marker '%s' x%u, "
-		"inbound tag '%s' x%u (name-inclusive), ZM_SpawnPoint x%u, ZM_WarpTrigger x%u",
+		"inbound tag '%s' x%u (name-inclusive), ZM_SpawnPoint x%u, ZM_WarpTrigger "
+		"x%u, north gate '%s' x%u",
 		szZM_COMMITTED_DAWNMERE_SCENE, (unsigned long long)ulSize,
 		szMarkerName, uNameHits, szInboundTag, uTagHits,
-		uSpawnPointHits, uWarpTriggerHits);
+		uSpawnPointHits, uWarpTriggerHits,
+		szZM_DAWNMERE_NORTH_GATE_ENTITY_NAME, uNorthGateHits);
 
 	Zenith_FileAccess::FreeFileData(pData);
 
@@ -670,22 +776,40 @@ ZENITH_TEST(ZM_CommittedSceneBytes, DawnmereCarriesTheRoute1ArrivalMarkerAndItsI
 		"exists but carries no ZM_SpawnPoint -- an untagged, unresolvable transform.",
 		uSpawnPointHits, szMarkerName);
 
-	// ★ R1-2 IS MARKERS ONLY. Dawnmere's two shipped sensors are HomeDoorTrigger and
-	// LabDoorTrigger; this slice adds a marker and NO third trigger. R1-3 lands
-	// Dawnmere's outbound north gate and must bump this literal to 3 in the same
-	// commit -- which is the point of pinning it, since a trigger authored before
-	// its destination marker exists validates and then stalls (ZM-D-200).
-	ZENITH_ASSERT_EQ(uWarpTriggerHits, 2u,
+	// ★ THREE SENSORS SINCE R1-3. HomeDoorTrigger and LabDoorTrigger are the two
+	// interior doorways; DawnmereNorthGate is the outbound seam onto Route 1, and
+	// it was deliberately WITHHELD by R1-2 until every arrival marker existed (a
+	// trigger authored before its destination marker validates against the
+	// compiled table and then stalls in WAITING_FOR_SPAWN, ZM-D-200). Bump this
+	// literal in the same commit as any slice that adds or removes a Dawnmere
+	// sensor -- it is the only clause that can see one authored under a name no
+	// needle here knows about.
+	ZENITH_ASSERT_EQ(uWarpTriggerHits, 3u,
 		"the committed Dawnmere.zscen serializes %u ZM_WarpTrigger component(s), not "
-		"the 2 it authors (HomeDoorTrigger, LabDoorTrigger). R1-2 is MARKERS ONLY: if "
-		"you have just landed R1-3's north gate, bump this literal deliberately; if "
-		"you have not, a sensor was authored that this slice's ruling withholds.",
-		uWarpTriggerHits);
+		"the 3 it authors (HomeDoorTrigger, LabDoorTrigger, '%s'). A count of 2 with "
+		"the name clause below RED is the state a source-only R1-3 leaves behind: the "
+		"authoring steps are in Zenithmon.cpp but no WINDOWED *_True tools boot in "
+		"sceneAuthoring=AUTHOR_DAWNMERE mode has re-authored and re-committed the "
+		"scene. A count of 4 means a sensor was authored twice, or one arrived under "
+		"a name nothing here needles.",
+		uWarpTriggerHits, szZM_DAWNMERE_NORTH_GATE_ENTITY_NAME);
+
+	// ...and the ENTITY, which the component count above cannot distinguish from a
+	// third doorway. Exactly one: a zero is the un-re-authored tree, and more than
+	// one would leave FindEntityByName resolving whichever the scene stored first.
+	ZENITH_ASSERT_EQ(uNorthGateHits, 1u,
+		"the committed Dawnmere.zscen must carry the north seam gate '%s' exactly "
+		"once. Without it Dawnmere is a dead end: Route 1's south gate can bring a "
+		"player in, and nothing in town can send one out -- a ONE-WAY seam, which is "
+		"exactly what landing all four triggers in one commit exists to prevent.",
+		szZM_DAWNMERE_NORTH_GATE_ENTITY_NAME);
 }
 
-// Route 1's two arrival markers -- and everything it must NOT yet carry: either
-// gate ENTITY, any ZM_WarpTrigger under any name, and either gate's outbound TAG.
-ZENITH_TEST(ZM_CommittedSceneBytes, Route1CarriesBothArrivalMarkersAndNoGateSensor)
+// Route 1's two arrival markers AND its two gate sensors -- the four entities
+// that make the route a corridor rather than a cul-de-sac at both ends. Which
+// gate points where is NOT this unit's claim: both gates ask for the same tag, so
+// see EverySeamGatePayloadIsAuthoredExactlyOnceInItsOwnScene below.
+ZENITH_TEST(ZM_CommittedSceneBytes, Route1CarriesBothArrivalMarkersAndBothGateSensors)
 {
 	const std::string strScenePath = ZM_CommittedScenePath(ZM_SCENE_ROUTE1);
 
@@ -744,9 +868,12 @@ ZENITH_TEST(ZM_CommittedSceneBytes, Route1CarriesBothArrivalMarkersAndNoGateSens
 		uOfferedTagHits[uTag] = CountNameOccurrences(pData, ulSize, szTag);
 	}
 
-	// The tags Route 1's own future gates ASK FOR. Both walk the ROUTE1 row and
-	// both currently answer "FromRoute1" -- and neither may appear in this file
-	// yet, because a gate is a ZM_WarpTrigger and R1-2 authors none.
+	// The tag Route 1's two gates ASK FOR. Both accessors walk the ROUTE1 row and
+	// both answer "FromRoute1" -- an OUTBOUND tag Route 1 does not itself offer --
+	// so ONE count covers both and the expected total is TWO, one per gate's
+	// zero-padded 32-byte buffer. That the two answers are the same string is the
+	// whole reason the payload unit below exists, and it is asserted rather than
+	// assumed by the equality clause further down.
 	const u_int uSouthGateTagHits =
 		CountNameOccurrences(pData, ulSize, ZM_GetRoute1SouthGateSpawnTag());
 	const u_int uNorthGateTagHits =
@@ -834,45 +961,58 @@ ZENITH_TEST(ZM_CommittedSceneBytes, Route1CarriesBothArrivalMarkersAndNoGateSens
 			szTag, uOfferedTagHits[uTag]);
 	}
 
-	// ★★ ZERO TRIGGERS IS THIS SLICE'S CORE SAFETY RULING (ZM-D-199), and the two
-	// name clauses below are not enough on their own: they needle only the DECLARED
-	// gate names, so a sensor authored under any other name is invisible to them.
-	// The component-type count is what actually closes it.
-	ZENITH_ASSERT_EQ(uWarpTriggerHits, 0u,
-		"the committed Route1.zscen serializes %u ZM_WarpTrigger component(s) and must "
-		"serialize NONE. Markers land before sensors on purpose: "
-		"IsWarpDestinationValid consults only the compiled table, never the "
-		"destination scene, so a gate shipped before its far-side marker exists is "
-		"ACCEPTED and then stalls the player behind an opaque fade until that "
-		"barrier's frame budget expires (ZM-D-200). If you are landing R1-3, this "
-		"literal and the two gate-name clauses below move together.",
-		uWarpTriggerHits);
-	ZENITH_ASSERT_EQ(uSouthGateHits, 0u,
-		"the committed Route1.zscen already carries '%s'. R1-2 authors markers only.",
+	// ★★ EXACTLY TWO TRIGGERS SINCE R1-3, and the two name clauses below are not
+	// enough on their own: they needle only the DECLARED gate names, so a THIRD
+	// sensor authored under any other name would be invisible to them. The
+	// component-type count is what closes that, and it is what a later slice that
+	// adds (say) a gym-lane gate has to bump deliberately.
+	ZENITH_ASSERT_EQ(uWarpTriggerHits, 2u,
+		"the committed Route1.zscen serializes %u ZM_WarpTrigger component(s), not the "
+		"2 it authors ('%s', '%s'). A ZERO is the state a source-only R1-3 leaves "
+		"behind -- the authoring steps are in Zenithmon.cpp but no WINDOWED *_True "
+		"tools boot has re-authored and re-committed the scene, so the shipped route "
+		"is a corridor with no way off it at either end.",
+		uWarpTriggerHits, szZM_ROUTE1_SOUTH_GATE_ENTITY_NAME,
+		szZM_ROUTE1_NORTH_GATE_ENTITY_NAME);
+	ZENITH_ASSERT_EQ(uSouthGateHits, 1u,
+		"the committed Route1.zscen must carry the SOUTH gate '%s' exactly once -- it "
+		"is the only way back to Dawnmere.",
 		szZM_ROUTE1_SOUTH_GATE_ENTITY_NAME);
-	ZENITH_ASSERT_EQ(uNorthGateHits, 0u,
-		"the committed Route1.zscen already carries '%s'. R1-2 authors markers only.",
+	ZENITH_ASSERT_EQ(uNorthGateHits, 1u,
+		"the committed Route1.zscen must carry the NORTH gate '%s' exactly once -- it "
+		"is the only way on to Thornacre.",
 		szZM_ROUTE1_NORTH_GATE_ENTITY_NAME);
 
-	// ...and the tags those gates would ASK FOR are absent too, which is a distinct
-	// claim from the entity names above: a trigger authored under an unexpected name
-	// still serializes its target tag verbatim.
-	ZENITH_ASSERT_EQ(uSouthGateTagHits, 0u,
-		"the committed Route1.zscen carries the tag '%s' %u time(s) and must carry it "
-		"NONE: that is the tag Route 1's own south gate ASKS Dawnmere for, an OUTBOUND "
-		"tag Route 1 does not itself offer. Its presence means either a gate sensor "
-		"was authored here, or an arrival marker was tagged with the outbound tag "
-		"instead of the inbound one -- the exact confusion ZM_ResolveInboundSpawnTag "
-		"exists to prevent, and one that IsWarpDestinationValid cannot see.",
+	// ★★ THE TWO GATES ASK FOR THE SAME TAG, WHICH IS WHY THIS IS A COUNT OF TWO
+	// AND NOT A PAIR OF SEPARATE CLAIMS. "FromRoute1" is an OUTBOUND tag Route 1
+	// does not itself offer, so it can only get into this file inside a gate's
+	// serialized tag buffer -- one occurrence per gate. THREE would mean an arrival
+	// marker had been tagged with the outbound tag instead of its inbound one (the
+	// exact confusion ZM_ResolveInboundSpawnTag exists to prevent, and one
+	// IsWarpDestinationValid cannot see); ONE means a gate exists but was never
+	// configured, i.e. a sensor that fires into nothing.
+	//
+	// ★ AND THIS CLAUSE SAYS NOTHING ABOUT WHICH GATE POINTS WHERE. It cannot:
+	// swap the two and this count is unchanged. That claim belongs to the payload
+	// unit below, which is the whole reason it exists.
+	ZENITH_ASSERT_STREQ(
+		ZM_GetRoute1SouthGateSpawnTag(), ZM_GetRoute1NorthGateSpawnTag(),
+		"ZM_GetRoute1SouthGateSpawnTag() ('%s') and ZM_GetRoute1NorthGateSpawnTag() "
+		"('%s') no longer resolve to the same string, so the shared-tag reasoning "
+		"the count clause below rests on has changed -- and with it the reason the "
+		"payload unit exists at all. That is not necessarily wrong (it would make the "
+		"two gates distinguishable by tag), but re-read both before adjusting either.",
+		ZM_GetRoute1SouthGateSpawnTag(), ZM_GetRoute1NorthGateSpawnTag());
+	ZENITH_ASSERT_EQ(uSouthGateTagHits, 2u,
+		"the committed Route1.zscen carries the outbound tag '%s' %u time(s), not the "
+		"2 its two gate sensors must contribute (one zero-padded tag buffer each). "
+		"Route 1 does not OFFER this tag, so nothing else in the file may carry it.",
 		ZM_GetRoute1SouthGateSpawnTag(), uSouthGateTagHits);
-	ZENITH_ASSERT_EQ(uNorthGateTagHits, 0u,
-		"the committed Route1.zscen carries the north gate's outbound tag '%s' %u "
-		"time(s) and must carry it none -- see the south gate clause above.",
-		ZM_GetRoute1NorthGateSpawnTag(), uNorthGateTagHits);
 }
 
-// Thornacre's arrival marker -- and the gym door that is deliberately UNBACKED.
-ZENITH_TEST(ZM_CommittedSceneBytes, ThornacreCarriesItsArrivalMarkerAndNoGymDoor)
+// Thornacre's arrival marker and its ONE return gate -- and the gym door that is
+// still deliberately UNBACKED.
+ZENITH_TEST(ZM_CommittedSceneBytes, ThornacreCarriesItsReturnGateAndNoGymDoor)
 {
 	const std::string strScenePath = ZM_CommittedScenePath(ZM_SCENE_THORNACRE);
 
@@ -998,20 +1138,25 @@ ZENITH_TEST(ZM_CommittedSceneBytes, ThornacreCarriesItsArrivalMarkerAndNoGymDoor
 		szZM_THORNACRE_PLAYER_ENTITY_NAME, uPlayerNameHits,
 		szZM_TYPE_PLAYER_CONTROLLER, uPlayerControllerHits);
 
-	// ★★ NO TRIGGER OF ANY KIND -- the return gate AND the gym door. The name clause
-	// alone would miss a sensor authored under a different name, which is exactly
-	// how a gym door would arrive: ZM_ThornacrePlacement.h names no gym entity, so
-	// one would be spelled fresh at the authoring site.
-	ZENITH_ASSERT_EQ(uWarpTriggerHits, 0u,
-		"the committed Thornacre.zscen serializes %u ZM_WarpTrigger component(s) and "
-		"must serialize NONE. ZM-D-196 rules this town a traversal STUB for this "
-		"milestone: no gate sensor (R1-3's) and no gym door at all -- the compiled "
-		"Thornacre->Gym1 edge is deliberately UNBACKED, and authoring a door into a "
-		"room nobody has built is a warp that validates and then stalls in "
-		"WAITING_FOR_SCENE (ZM-D-200).", uWarpTriggerHits);
-	ZENITH_ASSERT_EQ(uGateHits, 0u,
-		"the committed Thornacre.zscen already carries '%s'. R1-2 authors markers "
-		"only; the return gate is R1-3's.",
+	// ★★ EXACTLY ONE TRIGGER -- the return gate, and NOT a gym door. The name clause
+	// below cannot make that second half of the claim: a gym door would be spelled
+	// fresh at the authoring site (ZM_ThornacrePlacement.h names no gym entity, by
+	// ruling), so no needle here would know its name. The component-type COUNT is
+	// what closes it, which is why it is `== 1` and not `>= 1`.
+	ZENITH_ASSERT_EQ(uWarpTriggerHits, 1u,
+		"the committed Thornacre.zscen serializes %u ZM_WarpTrigger component(s), not "
+		"the 1 it authors ('%s'). A ZERO leaves the town a DEAD END -- Route 1's north "
+		"gate can bring a player in and nothing can send one out -- and is the state a "
+		"source-only R1-3 leaves behind, before a WINDOWED *_True tools boot has "
+		"re-authored and re-committed the scene. A TWO means a gym door was authored: "
+		"ZM-D-196 rules this town a traversal STUB for this milestone, the compiled "
+		"Thornacre->Gym1 edge is deliberately UNBACKED, and a door into a room nobody "
+		"has built is a warp that validates and then stalls in WAITING_FOR_SCENE "
+		"(ZM-D-200).", uWarpTriggerHits, szZM_THORNACRE_SOUTH_GATE_ENTITY_NAME);
+	ZENITH_ASSERT_EQ(uGateHits, 1u,
+		"the committed Thornacre.zscen must carry the return gate '%s' exactly once. "
+		"It is the ONE entity that makes this stub traversable rather than a room the "
+		"player cannot leave.",
 		szZM_THORNACRE_SOUTH_GATE_ENTITY_NAME);
 
 	for (u_int uTag = 0u; uTag < uOfferedTagCount; ++uTag)
@@ -1030,5 +1175,237 @@ ZENITH_TEST(ZM_CommittedSceneBytes, ThornacreCarriesItsArrivalMarkerAndNoGymDoor
 			"gym's return marker, and the gym does not exist. If a later slice backs "
 			"it, move it out of this clause deliberately rather than deleting the "
 			"clause.", szTag, uUnbackedTagHits[uTag], szTag);
+	}
+}
+
+// ============================================================================
+// R1-3 -- THE FOUR SEAM GATES, NEEDLED BY THEIR WHOLE SERIALIZED PAYLOAD.
+//
+// ★★ THIS IS THE ONLY CI-VISIBLE CLAIM ABOUT WHICH GATE POINTS WHERE. Every
+// other clause in this file counts STRINGS, and the four gates are indexed by a
+// NUMBER: Route 1's south and north sensors ask their destinations for the same
+// tag ("FromRoute1", both edges of the ZM_SCENE_ROUTE1 row) and differ only in
+// the target build index -- 2 for Dawnmere, 3 for Thornacre. Author them the
+// wrong way round and every name count, every tag count and every component
+// count in this file is bit-identical, while the shipped world folds in half:
+// walking south off Route 1 lands you in Thornacre, whose return gate puts you
+// back at Route 1's NORTH marker, and no error is ever raised.
+//
+// ★ SO THE NEEDLE IS THE WHOLE PAYLOAD, per gate, ==1 each:
+//     [u_int version][u_int targetBuildIndex][32-byte zero-padded tag]
+// built from ZM_WarpTrigger's own constants and from the SAME resolvers the
+// authoring calls (Source/World/ZM_{Route1,Thornacre,Dawnmere}Placement.h), so a
+// re-pointed edge in Source/Data/ZM_WorldSpec.cpp moves the authoring and this
+// needle together and a needle that quietly disagreed is not expressible.
+//
+// ★★ AND A COUNT ALONE STILL CANNOT SEE THE SWAP -- WHICH IS WHY THE ORDERING
+// CLAUSE IS HERE. Swap Route 1's two gates and the FILE still contains each
+// payload exactly once; what moves is WHICH ENTITY RECORD each sits in. A .zscen
+// entity record is `[fileIndex][name][parentFileIndex]` followed by that
+// entity's component payloads, written one entity at a time in dense authoring
+// order (ZM-D-148, Zenith_Entity::WriteToDataStream), so a gate's payload always
+// lies between its OWN name and the NEXT entity's name. The south gate is
+// authored first, so the four offsets must interleave
+//     southName < southPayload < northName < northPayload
+// and a swap makes that false. No container parsing, no byte offsets baked in,
+// nothing that rots at the next schema bump -- only relative order.
+//
+// ★ THE LIVE PROOF IS ZM_SeamRoundTrip_Test, which walks all four gates and
+// asserts where each one lands. That one is definitive and this one is not; but
+// it needs the GITIGNORED terrain bakes and therefore RequestSkips on CI -- and
+// a skip counts as a PASS. This unit reads TRACKED files with no GPU and no
+// terrain, so it is what actually runs in the gate.
+// ============================================================================
+ZENITH_TEST(ZM_CommittedSceneBytes, EverySeamGatePayloadIsAuthoredExactlyOnceInItsOwnScene)
+{
+	// ---- The four needles, all DERIVED from the compiled world table --------
+	unsigned char auDawnmereNorth[ulZM_WARP_PAYLOAD_SIZE] = {};
+	unsigned char auRoute1South[ulZM_WARP_PAYLOAD_SIZE] = {};
+	unsigned char auRoute1North[ulZM_WARP_PAYLOAD_SIZE] = {};
+	unsigned char auThornacreReturn[ulZM_WARP_PAYLOAD_SIZE] = {};
+
+	const bool bDawnmereNorthBuilt = BuildWarpPayloadNeedle(
+		ZM_GetDawnmereNorthGateTargetBuildIndex(),
+		ZM_GetDawnmereNorthGateSpawnTag(), auDawnmereNorth);
+	const bool bRoute1SouthBuilt = BuildWarpPayloadNeedle(
+		ZM_GetRoute1SouthGateTargetBuildIndex(),
+		ZM_GetRoute1SouthGateSpawnTag(), auRoute1South);
+	const bool bRoute1NorthBuilt = BuildWarpPayloadNeedle(
+		ZM_GetRoute1NorthGateTargetBuildIndex(),
+		ZM_GetRoute1NorthGateSpawnTag(), auRoute1North);
+	const bool bThornacreReturnBuilt = BuildWarpPayloadNeedle(
+		ZM_GetThornacreReturnTargetBuildIndex(),
+		ZM_GetThornacreReturnSpawnTag(), auThornacreReturn);
+
+	Zenith_Log(LOG_CATEGORY_GAMEPLAY,
+		"[ZM_CommittedSceneBytes] seam gate payloads (%llu bytes each): "
+		"Dawnmere->%u '%s' built=%d | Route1 south->%u '%s' built=%d | "
+		"Route1 north->%u '%s' built=%d | Thornacre->%u '%s' built=%d",
+		(unsigned long long)ulZM_WARP_PAYLOAD_SIZE,
+		ZM_GetDawnmereNorthGateTargetBuildIndex(),
+		ZM_GetDawnmereNorthGateSpawnTag(), (int)bDawnmereNorthBuilt,
+		ZM_GetRoute1SouthGateTargetBuildIndex(),
+		ZM_GetRoute1SouthGateSpawnTag(), (int)bRoute1SouthBuilt,
+		ZM_GetRoute1NorthGateTargetBuildIndex(),
+		ZM_GetRoute1NorthGateSpawnTag(), (int)bRoute1NorthBuilt,
+		ZM_GetThornacreReturnTargetBuildIndex(),
+		ZM_GetThornacreReturnSpawnTag(), (int)bThornacreReturnBuilt);
+
+	// ★ ANTI-VACUITY FIRST, AND IT IS NOT DECORATION. A needle that could not be
+	// built is all zeros, and a run of zeros DOES occur in a .zscen -- so an
+	// unbuilt needle would not merely count zero, it could count many. Every
+	// clause below would then fail for a reason its own message does not name.
+	ZENITH_ASSERT_TRUE(bDawnmereNorthBuilt && bRoute1SouthBuilt
+			&& bRoute1NorthBuilt && bThornacreReturnBuilt,
+		"one of the four seam gate payloads could not be built from the compiled "
+		"world table (built: Dawnmere=%d Route1South=%d Route1North=%d "
+		"Thornacre=%d). That means an edge is missing from Source/Data/ZM_WorldSpec.cpp "
+		"or carries an empty/over-long spawn tag -- fix the TABLE before reading "
+		"anything into the counts below.",
+		(int)bDawnmereNorthBuilt, (int)bRoute1SouthBuilt,
+		(int)bRoute1NorthBuilt, (int)bThornacreReturnBuilt);
+	if (!bDawnmereNorthBuilt || !bRoute1SouthBuilt || !bRoute1NorthBuilt
+		|| !bThornacreReturnBuilt)
+	{
+		return;   // already FAILED above; nothing further is meaningful
+	}
+
+	// ★★ THE SECOND ANTI-VACUITY GUARD, and it is the one this unit is FOR. If
+	// Route 1's two gates ever resolved to the same payload, the two `== 1`
+	// clauses below would become one `== 2` claim and the ordering clause would
+	// be satisfied by either assignment -- i.e. this unit would stop being able
+	// to see the swap, silently, while still passing.
+	ZENITH_ASSERT_TRUE(
+		std::memcmp(auRoute1South, auRoute1North, sizeof(auRoute1South)) != 0,
+		"Route 1's south and north gate payloads are IDENTICAL (both target build "
+		"index %u with tag '%s'). The two edges of the ZM_SCENE_ROUTE1 row must "
+		"point at different scenes; while they do not, nothing in this file can "
+		"tell the two gates apart and the swap this unit exists to catch is "
+		"undetectable.",
+		ZM_GetRoute1SouthGateTargetBuildIndex(), ZM_GetRoute1SouthGateSpawnTag());
+
+	// ---- (1) DAWNMERE: the outbound north gate ------------------------------
+	{
+		uint64_t ulSize = 0;
+		char* pData = Zenith_FileAccess::ReadFile(
+			szZM_COMMITTED_DAWNMERE_SCENE, ulSize);
+		ZENITH_ASSERT_NOT_NULL(pData,
+			"the committed Dawnmere.zscen could not be read ('%s'). It is a TRACKED "
+			"asset (ZM-D-148), so this is a DEFECT and not a skip.",
+			szZM_COMMITTED_DAWNMERE_SCENE);
+		if (pData != nullptr)
+		{
+			const u_int uHits = CountOccurrences(
+				pData, ulSize, auDawnmereNorth, ulZM_WARP_PAYLOAD_SIZE);
+			Zenith_FileAccess::FreeFileData(pData);
+			ZENITH_ASSERT_EQ(uHits, 1u,
+				"the committed Dawnmere.zscen carries the north gate's configured "
+				"payload (target build %u, tag '%s') %u time(s), not exactly once. A "
+				"ZERO with '%s' PRESENT as an entity name means the sensor exists but "
+				"was never configured -- ZM_WarpTrigger::Configure returned false, so "
+				"the entity is a static box that warps nobody. A zero with the name "
+				"absent means the scene has not been re-authored since R1-3.",
+				ZM_GetDawnmereNorthGateTargetBuildIndex(),
+				ZM_GetDawnmereNorthGateSpawnTag(), uHits,
+				szZM_DAWNMERE_NORTH_GATE_ENTITY_NAME);
+		}
+	}
+
+	// ---- (2) ROUTE 1: both gates, and which is which ------------------------
+	{
+		const std::string strScenePath = ZM_CommittedScenePath(ZM_SCENE_ROUTE1);
+		uint64_t ulSize = 0;
+		char* pData = Zenith_FileAccess::ReadFile(strScenePath.c_str(), ulSize);
+		ZENITH_ASSERT_NOT_NULL(pData,
+			"the committed Route1.zscen could not be read ('%s'). It is a TRACKED "
+			"asset (ZM-D-199), so this is a DEFECT and not a skip.",
+			strScenePath.c_str());
+		if (pData != nullptr)
+		{
+			const u_int uSouthHits = CountOccurrences(
+				pData, ulSize, auRoute1South, ulZM_WARP_PAYLOAD_SIZE);
+			const u_int uNorthHits = CountOccurrences(
+				pData, ulSize, auRoute1North, ulZM_WARP_PAYLOAD_SIZE);
+			const uint64_t ulSouthName = FindFirstNameOffset(
+				pData, ulSize, szZM_ROUTE1_SOUTH_GATE_ENTITY_NAME);
+			const uint64_t ulNorthName = FindFirstNameOffset(
+				pData, ulSize, szZM_ROUTE1_NORTH_GATE_ENTITY_NAME);
+			const uint64_t ulSouthPayload = FindFirstOffset(
+				pData, ulSize, auRoute1South, ulZM_WARP_PAYLOAD_SIZE);
+			const uint64_t ulNorthPayload = FindFirstOffset(
+				pData, ulSize, auRoute1North, ulZM_WARP_PAYLOAD_SIZE);
+			const uint64_t ulFileSize = ulSize;
+			Zenith_FileAccess::FreeFileData(pData);
+
+			Zenith_Log(LOG_CATEGORY_GAMEPLAY,
+				"[ZM_CommittedSceneBytes] '%s' %llu bytes; gate payloads S x%u N x%u; "
+				"offsets southName=%llu southPayload=%llu northName=%llu "
+				"northPayload=%llu",
+				strScenePath.c_str(), (unsigned long long)ulFileSize,
+				uSouthHits, uNorthHits,
+				(unsigned long long)ulSouthName, (unsigned long long)ulSouthPayload,
+				(unsigned long long)ulNorthName, (unsigned long long)ulNorthPayload);
+
+			ZENITH_ASSERT_EQ(uSouthHits, 1u,
+				"the committed Route1.zscen carries the SOUTH gate's configured payload "
+				"(target build %u = Dawnmere, tag '%s') %u time(s), not exactly once.",
+				ZM_GetRoute1SouthGateTargetBuildIndex(),
+				ZM_GetRoute1SouthGateSpawnTag(), uSouthHits);
+			ZENITH_ASSERT_EQ(uNorthHits, 1u,
+				"the committed Route1.zscen carries the NORTH gate's configured payload "
+				"(target build %u = Thornacre, tag '%s') %u time(s), not exactly once.",
+				ZM_GetRoute1NorthGateTargetBuildIndex(),
+				ZM_GetRoute1NorthGateSpawnTag(), uNorthHits);
+
+			// ★★ THE SWAP CLAUSE. See the banner: a .zscen entity record puts a
+			// component payload after its OWN entity name and before the next
+			// entity's, and the south gate is authored first.
+			ZENITH_ASSERT_TRUE(
+				ulSouthName < ulSouthPayload && ulSouthPayload < ulNorthName
+					&& ulNorthName < ulNorthPayload,
+				"the two Route 1 gate payloads are not interleaved with their own "
+				"entity names: southName=%llu southPayload=%llu northName=%llu "
+				"northPayload=%llu (file %llu bytes), and a .zscen entity record puts "
+				"a component payload between its own name and the next entity's. The "
+				"overwhelmingly likely cause is that the two gates were authored "
+				"AGAINST EACH OTHER'S DESTINATIONS -- '%s' pointing at Thornacre and "
+				"'%s' at Dawnmere -- which no name, tag or component count in this "
+				"file can see, and which ships a route whose south end leads north. "
+				"Check ZM_ConfigureRoute1SouthGateTrigger / "
+				"ZM_ConfigureRoute1NorthGateTrigger and the ORDER of the two authoring "
+				"blocks in Zenithmon.cpp before touching this clause.",
+				(unsigned long long)ulSouthName, (unsigned long long)ulSouthPayload,
+				(unsigned long long)ulNorthName, (unsigned long long)ulNorthPayload,
+				(unsigned long long)ulFileSize,
+				szZM_ROUTE1_SOUTH_GATE_ENTITY_NAME,
+				szZM_ROUTE1_NORTH_GATE_ENTITY_NAME);
+		}
+	}
+
+	// ---- (3) THORNACRE: the return gate -------------------------------------
+	{
+		const std::string strScenePath = ZM_CommittedScenePath(ZM_SCENE_THORNACRE);
+		uint64_t ulSize = 0;
+		char* pData = Zenith_FileAccess::ReadFile(strScenePath.c_str(), ulSize);
+		ZENITH_ASSERT_NOT_NULL(pData,
+			"the committed Thornacre.zscen could not be read ('%s'). It is a TRACKED "
+			"asset (ZM-D-199), so this is a DEFECT and not a skip.",
+			strScenePath.c_str());
+		if (pData != nullptr)
+		{
+			const u_int uHits = CountOccurrences(
+				pData, ulSize, auThornacreReturn, ulZM_WARP_PAYLOAD_SIZE);
+			Zenith_FileAccess::FreeFileData(pData);
+			ZENITH_ASSERT_EQ(uHits, 1u,
+				"the committed Thornacre.zscen carries the return gate's configured "
+				"payload (target build %u = Route 1, tag '%s') %u time(s), not exactly "
+				"once. Note the tag is Route 1's OFFERED '%s', never Thornacre's own "
+				"inbound tag -- reaching for the wrong one produces a gate that "
+				"validates against the compiled table and then stalls the player in "
+				"WAITING_FOR_SPAWN behind an opaque fade (ZM-D-200).",
+				ZM_GetThornacreReturnTargetBuildIndex(),
+				ZM_GetThornacreReturnSpawnTag(), uHits,
+				ZM_GetThornacreReturnSpawnTag());
+		}
 	}
 }

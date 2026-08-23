@@ -21,7 +21,9 @@
 #include "Zenithmon/Components/ZM_SpawnPoint.h"
 #include "Zenithmon/Components/ZM_TerrainGrassComponent.h"
 #include "Zenithmon/Components/ZM_WarpTrigger.h"
-#include "Zenithmon/Source/World/ZM_DawnmerePlacement.h"   // ZM-D-173: the shared Home approach route
+#include "Zenithmon/Source/World/ZM_DawnmerePlacement.h"   // ZM-D-173: the shared Home approach route; R1-3: the north seam gate
+#include "Zenithmon/Source/World/ZM_Route1Placement.h"     // R1-3: Route 1's two gate entity names + the gate RESOLVERS
+#include "Zenithmon/Source/World/ZM_ThornacrePlacement.h"  // R1-3: Thornacre's return gate name + its return RESOLVERS
 
 #include <array>
 #include <cmath>
@@ -1479,6 +1481,580 @@ namespace
 		}
 		return g_bHomePassed;
 	}
+
+	// ========================================================================
+	// R1-3 -- ZM_SeamRoundTrip_Test: ALL FOUR SEAM GATES, BOTH DIRECTIONS.
+	//
+	// ★★ WHAT IT PROVES THAT NOTHING ELSE CAN. Every pure unit about this seam
+	// reads the same compiled constants the AUTHORING writes from, so both sides
+	// of every claim move together; and the committed-bytes needles prove a
+	// payload is IN a file, never that walking into the box does anything. This
+	// test drives the real player with real input into each of the four sensors
+	// and asserts WHERE IT COMES OUT. That is the only check in the game that can
+	// fail on the mutation the whole slice is sequenced around: a gate whose
+	// destination validates against the compiled table and then stalls, or a pair
+	// of gates authored against each other's destinations.
+	//
+	// ★★ AND IT PROVES BOTH DIRECTIONS, WHICH IS THE POINT OF LANDING FOUR
+	// TRIGGERS IN ONE COMMIT. Legs 0 and 1 are Dawnmere -> Route 1 and Route 1 ->
+	// Dawnmere; legs 2 and 3 are Route 1 -> Thornacre and Thornacre -> Route 1. A
+	// one-way seam -- a gate whose far side has no return -- is a world the player
+	// can walk into and not out of, and it is invisible to any test that only ever
+	// travels outbound.
+	//
+	// ★★ IT DOES NOT WALK THE SPINE, AND MUST NOT. Route 1's DirtLane is ~1408 m,
+	// which is ~6,000 frames one way and ~12-14k for a round trip against this
+	// harness's frame caps. Each leg therefore WARPS to the arrival marker it
+	// starts from and walks only the last few metres into that leg's gate volume
+	// -- the gates sit 12 m beyond their own markers by construction, so the
+	// walked distance is ~12 m per leg. fSEAM_MAX_APPROACH_M is asserted BEFORE
+	// the walk begins so a gate that ever moves far from its marker fails with a
+	// message that says so, instead of timing out with one that does not.
+	//
+	// ★ EVERY DESTINATION IS RESOLVED FROM THE COMPILED WORLD TABLE, through the
+	// SAME accessors the authoring calls. Nothing here spells a build index or a
+	// spawn tag, so a re-pointed edge in Source/Data/ZM_WorldSpec.cpp moves the
+	// authoring and this test together -- and, critically, this test still fails
+	// if the AUTHORING did not move with it, because it asserts against the LIVE
+	// scene rather than against the constants.
+	//
+	// ★ IT SKIPS WITHOUT THE THREE TERRAIN BAKES, which are GITIGNORED, so it is
+	// a PASS on CI. That is why Tests/ZM_Tests_CommittedSceneBytes.cpp carries the
+	// boot-level payload needles: a skip counts as a pass, and the gate needs
+	// something that runs with no GPU and no bake.
+	// ========================================================================
+
+	// The furthest a leg may have to walk. Every gate is authored 12 m from its
+	// own arrival marker, and the boxes are 6 m deep, so ~9 m of open ground is
+	// the real figure. 40 m is a generous ceiling that still fails FAST -- and
+	// with a message that names the cause -- if a gate is ever moved away from
+	// the marker it guards, rather than letting the walk deadline expire on a
+	// diagnostic about frames.
+	constexpr float fSEAM_MAX_APPROACH_M = 40.0f;
+
+	// How close the arriving body must be to the destination marker's computed
+	// spawn centre. Deliberately LOOSE (metres, not millimetres): the claim this
+	// test makes is "the player came out at the RIGHT MARKER", and the nearest
+	// wrong answer is 1312 m away (Route 1's two arrival markers). A tight
+	// epsilon here would instead be a statement about contact settle on
+	// provisionally-frozen terrain, which is ZM_*GroundTruth_Test's business.
+	constexpr float fSEAM_ARRIVAL_RADIUS_M = 2.0f;
+
+	// A leg must actually MOVE the player before its gate fires. Without this a
+	// warp triggered by anything other than the walk -- or a gate the player is
+	// already standing inside, i.e. the arrival-clearance defect that would
+	// ping-pong two scenes forever -- would read as a pass.
+	constexpr float fSEAM_MIN_WALKED_M = 1.0f;
+
+	constexpr int iSEAM_TRANSITION_DEADLINE_FRAMES = 420;
+	constexpr int iSEAM_WALK_DEADLINE_FRAMES = 600;
+	constexpr u_int uSEAM_LEG_COUNT = 4u;
+
+	// One crossing: warp to m_szStageTag in m_uFromBuildIndex, walk into
+	// m_szGateEntityName, and come out at m_szGateSpawnTag in m_uToBuildIndex.
+	//
+	// ★ THE LAST THREE FIELDS ARE RESOLVED AT SETUP, NOT SPELLED. m_uToBuildIndex
+	// and m_szGateSpawnTag are what the gate's OWN region asks its destination
+	// for; the accessors that answer them are the ones the configure steps in
+	// Zenithmon.cpp call, so this table cannot describe a gate the authoring did
+	// not build.
+	struct SeamLeg
+	{
+		const char* m_szLabel = "";
+		u_int m_uFromBuildIndex = ZM_GameStateManager::uINVALID_BUILD_INDEX;
+		const char* m_szStageTag = "";
+		const char* m_szGateEntityName = "";
+		u_int m_uToBuildIndex = ZM_GameStateManager::uINVALID_BUILD_INDEX;
+		const char* m_szGateSpawnTag = "";
+	};
+
+	enum class SeamPhase
+	{
+		Bootstrap,
+		StageWarp,
+		AwaitStage,
+		Approach,
+		AwaitLand,
+		Done,
+	};
+
+	SeamLeg g_axSeamLegs[uSEAM_LEG_COUNT];
+	SeamPhase g_eSeamPhase = SeamPhase::Done;
+	u_int g_uSeamLeg = 0u;
+	int g_iSeamPhaseFrames = 0;
+	bool g_bSeamPrerequisitesPresent = false;
+	bool g_bSeamPassed = false;
+	u_int g_uSeamCrossingsProven = 0u;
+	const char* g_szSeamFailure = "test did not reach verification";
+	Zenith_Maths::Vector3 g_xSeamApproachStart(0.0f);
+	Zenith_Maths::Vector3 g_xSeamGateXZ(0.0f);
+
+	void FailSeamRoundTrip(const char* szReason)
+	{
+		g_szSeamFailure = szReason;
+		g_bSeamPassed = false;
+		g_eSeamPhase = SeamPhase::Done;
+		ClearTraversalInput();
+	}
+
+	// The three region scenes plus their three terrain bakes. Route 1's and
+	// Thornacre's bakes are GITIGNORED, so this is what turns a CI run into a
+	// SKIP rather than a spurious failure -- and it is checked BEFORE any state
+	// is installed, because RequestSkip bypasses Verify.
+	bool SeamRegionAssetsPresent()
+	{
+		const std::string strRoot = std::string(GAME_ASSETS_DIR);
+		const std::array<std::string, 11> astrRequired = {
+			strRoot + "Scenes/FrontEnd" ZENITH_SCENE_EXT,
+			strRoot + "Scenes/Dawnmere" ZENITH_SCENE_EXT,
+			strRoot + "Scenes/Route1" ZENITH_SCENE_EXT,
+			strRoot + "Scenes/Thornacre" ZENITH_SCENE_EXT,
+			strRoot + "Terrain/Dawnmere/Height" ZENITH_TEXTURE_EXT,
+			strRoot + "Terrain/Dawnmere/Physics_0_0" ZENITH_MESH_EXT,
+			strRoot + "Terrain/Route1/Height" ZENITH_TEXTURE_EXT,
+			strRoot + "Terrain/Route1/GrassDensity" ZENITH_TEXTURE_EXT,
+			strRoot + "Terrain/Route1/Physics_0_0" ZENITH_MESH_EXT,
+			strRoot + "Terrain/Thornacre/Height" ZENITH_TEXTURE_EXT,
+			strRoot + "Terrain/Thornacre/Physics_0_0" ZENITH_MESH_EXT,
+		};
+		for (const std::string& strPath : astrRequired)
+		{
+			std::error_code xError;
+			if (!std::filesystem::is_regular_file(strPath, xError) || xError)
+			{
+				return false;
+			}
+			if (std::filesystem::file_size(strPath, xError) == 0u || xError)
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+
+	// True once the warp machine is idle, the named scene is active, and the
+	// player it placed is resolvable -- i.e. the transition genuinely COMPLETED
+	// at the tag it was asked for, rather than merely stopping.
+	bool SeamArrivedAt(u_int uBuildIndex, const char* szSpawnTag, PlayerView& xPlayerOut)
+	{
+		if (ZM_GameStateManager::IsWarpInProgress())
+		{
+			return false;
+		}
+		const Zenith_Scene xScene = g_xEngine.Scenes().GetActiveScene();
+		if (!xScene.IsValid()
+			|| (u_int)g_xEngine.Scenes().GetSceneInfo(xScene).m_iBuildIndex
+				!= uBuildIndex)
+		{
+			return false;
+		}
+		const char* szArrived = ZM_GameStateManager::GetActiveSceneArrivedSpawnTag();
+		if (szArrived == nullptr || std::strcmp(szArrived, szSpawnTag) != 0)
+		{
+			return false;
+		}
+		return FindUniqueActivePlayer(xPlayerOut) && xPlayerOut.m_pxCollider != nullptr;
+	}
+
+	// Where the marker carrying szSpawnTag says an arriving body belongs. FALSE
+	// when the active scene has no unique marker with that tag -- which is the
+	// WAITING_FOR_SPAWN stall's own precondition, and worth naming separately
+	// from "the player is in the wrong place".
+	bool SeamExpectedArrivalCentre(
+		const char* szSpawnTag, Zenith_Maths::Vector3& xCentreOut)
+	{
+		Zenith_EntityID xMarkerID = INVALID_ENTITY_ID;
+		if (ZM_SpawnPoint::FindUniqueInScene(
+				g_xEngine.Scenes().GetActiveScene(), szSpawnTag, xMarkerID)
+			!= ZM_SPAWN_POINT_LOOKUP_FOUND)
+		{
+			return false;
+		}
+		Zenith_Entity xMarker = g_xEngine.Scenes().ResolveEntity(xMarkerID);
+		if (!xMarker.IsValid())
+		{
+			return false;
+		}
+		Zenith_Maths::Vector3 xFeet(0.0f);
+		xMarker.GetComponent<Zenith_TransformComponent>().GetPosition(xFeet);
+		xCentreOut = ZM_GameStateManager::CalculateSpawnCenter(xFeet);
+		return true;
+	}
+
+	void Setup_SeamRoundTrip()
+	{
+		g_eSeamPhase = SeamPhase::Done;
+		g_uSeamLeg = 0u;
+		g_iSeamPhaseFrames = 0;
+		g_bSeamPassed = false;
+		g_uSeamCrossingsProven = 0u;
+		g_szSeamFailure = "test did not reach verification";
+		g_xSeamApproachStart = Zenith_Maths::Vector3(0.0f);
+		g_xSeamGateXZ = Zenith_Maths::Vector3(0.0f);
+		Zenith_InputSimulator::ResetAllInputState();
+
+		g_bSeamPrerequisitesPresent = SeamRegionAssetsPresent();
+		if (!g_bSeamPrerequisitesPresent)
+		{
+			Zenith_AutomatedTestRunner::RequestSkip(
+				"[ZM_SeamRoundTrip] one of FrontEnd/Dawnmere/Route1/Thornacre.zscen or "
+				"the three terrain bakes is absent -- there is no world to walk the "
+				"seams in (run a *_True config once to bake the terrain)");
+			return;
+		}
+
+		// The four crossings, in the order they are driven. Legs 0/1 are the
+		// Dawnmere seam out and back; legs 2/3 are the Thornacre seam out and
+		// back. Every build index and every tag below is RESOLVED, not spelled.
+		const u_int uDawnmere = ZM_GetWorldSpec(ZM_SCENE_DAWNMERE).m_uBuildIndex;
+		const u_int uRoute1 = ZM_GetWorldSpec(ZM_SCENE_ROUTE1).m_uBuildIndex;
+		const u_int uThornacre = ZM_GetWorldSpec(ZM_SCENE_THORNACRE).m_uBuildIndex;
+
+		g_axSeamLegs[0] = {
+			"Dawnmere -> Route 1 (north gate)",
+			uDawnmere,
+			// Staged at the marker Route 1's own south gate lands on, so the leg
+			// starts exactly where leg 1 will finish -- the two together are the
+			// round trip.
+			ZM_GetRoute1SouthGateSpawnTag(),
+			szZM_DAWNMERE_NORTH_GATE_ENTITY_NAME,
+			ZM_GetDawnmereNorthGateTargetBuildIndex(),
+			ZM_GetDawnmereNorthGateSpawnTag() };
+		g_axSeamLegs[1] = {
+			"Route 1 -> Dawnmere (south gate)",
+			uRoute1,
+			ZM_GetDawnmereNorthGateSpawnTag(),
+			szZM_ROUTE1_SOUTH_GATE_ENTITY_NAME,
+			ZM_GetRoute1SouthGateTargetBuildIndex(),
+			ZM_GetRoute1SouthGateSpawnTag() };
+		g_axSeamLegs[2] = {
+			"Route 1 -> Thornacre (north gate)",
+			uRoute1,
+			ZM_GetThornacreReturnSpawnTag(),
+			szZM_ROUTE1_NORTH_GATE_ENTITY_NAME,
+			ZM_GetRoute1NorthGateTargetBuildIndex(),
+			ZM_GetRoute1NorthGateSpawnTag() };
+		g_axSeamLegs[3] = {
+			"Thornacre -> Route 1 (return gate)",
+			uThornacre,
+			ZM_GetRoute1NorthGateSpawnTag(),
+			szZM_THORNACRE_SOUTH_GATE_ENTITY_NAME,
+			ZM_GetThornacreReturnTargetBuildIndex(),
+			ZM_GetThornacreReturnSpawnTag() };
+
+		// ★ ANTI-VACUITY. A leg whose destination did not resolve would drive the
+		// player into a gate and then wait for a build index no scene holds, and
+		// the failure would be a deadline rather than "the compiled table has no
+		// such edge". Say it here instead.
+		for (u_int uLeg = 0u; uLeg < uSEAM_LEG_COUNT; ++uLeg)
+		{
+			const SeamLeg& xLeg = g_axSeamLegs[uLeg];
+			if (xLeg.m_uFromBuildIndex == ZM_GameStateManager::uINVALID_BUILD_INDEX
+				|| xLeg.m_uToBuildIndex == ZM_GameStateManager::uINVALID_BUILD_INDEX
+				|| xLeg.m_szStageTag == nullptr || xLeg.m_szStageTag[0] == '\0'
+				|| xLeg.m_szGateSpawnTag == nullptr
+				|| xLeg.m_szGateSpawnTag[0] == '\0')
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_SeamRoundTrip] leg %u ('%s') did not resolve from the compiled "
+					"world table (from=%u to=%u stageTag='%s' gateTag='%s') -- fix "
+					"Source/Data/ZM_WorldSpec.cpp before reading anything into this run",
+					uLeg, xLeg.m_szLabel, xLeg.m_uFromBuildIndex, xLeg.m_uToBuildIndex,
+					xLeg.m_szStageTag != nullptr ? xLeg.m_szStageTag : "<null>",
+					xLeg.m_szGateSpawnTag != nullptr ? xLeg.m_szGateSpawnTag : "<null>");
+				g_szSeamFailure = "a seam leg did not resolve from the compiled world table";
+				return;
+			}
+		}
+
+		Zenith_InputSimulator::SetFixedDt(fROUND_TRIP_FIXED_DT);
+		g_eSeamPhase = SeamPhase::Bootstrap;
+	}
+
+	bool Step_SeamRoundTrip(int)
+	{
+		if (!g_bSeamPrerequisitesPresent || g_eSeamPhase == SeamPhase::Done)
+		{
+			return false;
+		}
+		++g_iSeamPhaseFrames;
+
+		const SeamLeg& xLeg = g_axSeamLegs[g_uSeamLeg];
+		switch (g_eSeamPhase)
+		{
+		case SeamPhase::Bootstrap:
+		{
+			ManagerView xManager;
+			const Zenith_Scene xScene = g_xEngine.Scenes().GetActiveScene();
+			if (!xScene.IsValid()
+				|| g_xEngine.Scenes().GetSceneInfo(xScene).m_iBuildIndex != 0
+				|| !FindUniqueManager(xManager)
+				|| xManager.m_pxManager->GetTransitionState()
+					!= ZM_WARP_TRANSITION_IDLE)
+			{
+				if (g_iSeamPhaseFrames > 180)
+				{
+					FailSeamRoundTrip(
+						"FrontEnd/manager bootstrap did not settle in 180 frames");
+					return false;
+				}
+				return true;
+			}
+			g_eSeamPhase = SeamPhase::StageWarp;
+			g_iSeamPhaseFrames = 0;
+			return true;
+		}
+
+		case SeamPhase::StageWarp:
+		{
+			// ★ STAGING IS A WARP, NOT A WALK, AND THAT IS THE FRAME BUDGET
+			// DECISION THIS TEST TURNS ON -- see the banner.
+			ClearTraversalInput();
+
+			// ★★ ...EXCEPT WHERE THE PREVIOUS LEG ALREADY LANDED HERE, which is
+			// the case for legs 1 and 3 by construction: leg 0's gate puts the
+			// player at Route 1's south marker, which is exactly where leg 1
+			// starts, and leg 2's puts them at Thornacre's, where leg 3 starts.
+			// Skipping the redundant warp is not just tidiness -- it makes each
+			// PAIR a genuinely continuous round trip (walk out, walk back)
+			// rather than two independent crossings that happen to be adjacent,
+			// and it avoids asking the warp machine to warp into the scene it is
+			// already in, which is a path nothing else in this game exercises.
+			PlayerView xStagedPlayer;
+			if (SeamArrivedAt(
+					xLeg.m_uFromBuildIndex, xLeg.m_szStageTag, xStagedPlayer))
+			{
+				g_eSeamPhase = SeamPhase::AwaitStage;
+				g_iSeamPhaseFrames = 0;
+				return true;
+			}
+
+			if (!ZM_GameStateManager::RequestWarp(
+					xLeg.m_uFromBuildIndex, xLeg.m_szStageTag))
+			{
+				FailSeamRoundTrip(
+					"a leg's staging warp was REFUSED -- the compiled table does not "
+					"consider the leg's own start point a valid destination");
+				return false;
+			}
+			g_eSeamPhase = SeamPhase::AwaitStage;
+			g_iSeamPhaseFrames = 0;
+			return true;
+		}
+
+		case SeamPhase::AwaitStage:
+		{
+			PlayerView xPlayer;
+			if (!SeamArrivedAt(xLeg.m_uFromBuildIndex, xLeg.m_szStageTag, xPlayer))
+			{
+				if (g_iSeamPhaseFrames > iSEAM_TRANSITION_DEADLINE_FRAMES)
+				{
+					FailSeamRoundTrip(
+						"a leg's staging warp never completed at its own arrival tag -- "
+						"the warp machine is stalled (WAITING_FOR_SCENE / "
+						"WAITING_FOR_SPAWN, ZM-D-200) or the marker is missing");
+					return false;
+				}
+				return true;
+			}
+
+			// The gate, resolved in the LIVE scene and checked against what the
+			// compiled table says it should carry. This is the swap detector:
+			// FindConfiguredActiveTrigger fails if this NAMED entity's trigger
+			// holds a different target build index or spawn tag.
+			Zenith_Entity xGate;
+			ZM_WarpTrigger* pxTrigger = nullptr;
+			if (!FindConfiguredActiveTrigger(xLeg.m_szGateEntityName,
+					xLeg.m_uToBuildIndex, xLeg.m_szGateSpawnTag, xGate, pxTrigger))
+			{
+				FailSeamRoundTrip(
+					"a seam gate is missing from its scene, has no static AABB sensor "
+					"body, or is configured against a DIFFERENT destination than the "
+					"compiled world table gives it (the south/north swap)");
+				return false;
+			}
+
+			Zenith_Maths::Vector3 xGatePos(0.0f);
+			xGate.GetComponent<Zenith_TransformComponent>().GetPosition(xGatePos);
+			g_xSeamGateXZ = Zenith_Maths::Vector3(xGatePos.x, 0.0f, xGatePos.z);
+			g_xSeamApproachStart = xPlayer.m_xPosition;
+
+			const float fApproach = glm::length(Zenith_Maths::Vector3(
+				xGatePos.x - xPlayer.m_xPosition.x, 0.0f,
+				xGatePos.z - xPlayer.m_xPosition.z));
+			if (!(fApproach > fSEAM_MIN_WALKED_M)
+				|| !(fApproach < fSEAM_MAX_APPROACH_M))
+			{
+				// Both arms matter. Too FAR is the frame-budget failure the
+				// banner is about; too NEAR means the arriving body is already
+				// on top of its own gate, which is the infinite two-scene
+				// ping-pong the arrival-clearance floors exist to forbid.
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_SeamRoundTrip] leg %u ('%s'): the walk from the arrival to "
+					"gate '%s' is %.3f m, outside (%.1f, %.1f). Too far is a walk this "
+					"harness cannot afford; too near means an arriving player is "
+					"standing in their own exit and will be warped straight back.",
+					g_uSeamLeg, xLeg.m_szLabel, xLeg.m_szGateEntityName,
+					(double)fApproach, (double)fSEAM_MIN_WALKED_M,
+					(double)fSEAM_MAX_APPROACH_M);
+				FailSeamRoundTrip("a seam gate is not a short walk from its own marker");
+				return false;
+			}
+
+			Zenith_Log(LOG_CATEGORY_UNITTEST,
+				"[ZM_SeamRoundTrip] leg %u ('%s'): staged in build %u at '%s'; walking "
+				"%.3f m into '%s' -> build %u at '%s'",
+				g_uSeamLeg, xLeg.m_szLabel, xLeg.m_uFromBuildIndex, xLeg.m_szStageTag,
+				(double)fApproach, xLeg.m_szGateEntityName, xLeg.m_uToBuildIndex,
+				xLeg.m_szGateSpawnTag);
+
+			g_eSeamPhase = SeamPhase::Approach;
+			g_iSeamPhaseFrames = 0;
+			return true;
+		}
+
+		case SeamPhase::Approach:
+		{
+			if (ZM_GameStateManager::IsWarpInProgress())
+			{
+				// The sensor fired. Prove the PLAYER got there under its own
+				// power before accepting it.
+				PlayerView xPlayer;
+				const bool bHavePlayer = FindUniqueActivePlayer(xPlayer);
+				const float fWalked = bHavePlayer
+					? glm::length(Zenith_Maths::Vector3(
+						xPlayer.m_xPosition.x - g_xSeamApproachStart.x, 0.0f,
+						xPlayer.m_xPosition.z - g_xSeamApproachStart.z))
+					: 0.0f;
+				if (fWalked < fSEAM_MIN_WALKED_M)
+				{
+					FailSeamRoundTrip(
+						"a seam gate fired without the player having walked into it -- "
+						"either the warp came from somewhere else, or the arriving body "
+						"was already overlapping the sensor");
+					return false;
+				}
+				ClearTraversalInput();
+				g_eSeamPhase = SeamPhase::AwaitLand;
+				g_iSeamPhaseFrames = 0;
+				return true;
+			}
+
+			PlayerView xPlayer;
+			if (!FindUniqueActivePlayer(xPlayer))
+			{
+				FailSeamRoundTrip(
+					"the unique active-scene player vanished during a seam approach");
+				return false;
+			}
+			DriveTowardXZ(xPlayer.m_xPosition, g_xSeamGateXZ);
+
+			if (g_iSeamPhaseFrames > iSEAM_WALK_DEADLINE_FRAMES)
+			{
+				FailSeamRoundTrip(
+					"a seam gate never fired while the player walked into it -- the "
+					"sensor is not on the ground under the walked line, is not a "
+					"sensor, or is too shallow for the physics tick to catch");
+				return false;
+			}
+			return true;
+		}
+
+		case SeamPhase::AwaitLand:
+		{
+			PlayerView xPlayer;
+			if (!SeamArrivedAt(xLeg.m_uToBuildIndex, xLeg.m_szGateSpawnTag, xPlayer))
+			{
+				if (g_iSeamPhaseFrames > iSEAM_TRANSITION_DEADLINE_FRAMES)
+				{
+					FailSeamRoundTrip(
+						"a seam crossing never completed at the destination its gate "
+						"asked for -- this is the stall the whole slice is sequenced "
+						"around (ZM-D-200): the compiled table ACCEPTED the warp and the "
+						"destination scene had no such marker");
+					return false;
+				}
+				return true;
+			}
+
+			// ...and the player came out ON the marker the gate named, not merely
+			// somewhere in the right scene.
+			Zenith_Maths::Vector3 xExpected(0.0f);
+			if (!SeamExpectedArrivalCentre(xLeg.m_szGateSpawnTag, xExpected))
+			{
+				FailSeamRoundTrip(
+					"the destination scene has no unique ZM_SpawnPoint carrying the tag "
+					"the gate asked for, yet the transition reported completion");
+				return false;
+			}
+			const float fOffset = glm::length(xPlayer.m_xPosition - xExpected);
+			if (!(fOffset <= fSEAM_ARRIVAL_RADIUS_M))
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_SeamRoundTrip] leg %u ('%s'): landed %.3f m from the '%s' "
+					"marker's spawn centre (%.3f, %.3f, %.3f), outside %.1f m",
+					g_uSeamLeg, xLeg.m_szLabel, (double)fOffset, xLeg.m_szGateSpawnTag,
+					(double)xExpected.x, (double)xExpected.y, (double)xExpected.z,
+					(double)fSEAM_ARRIVAL_RADIUS_M);
+				FailSeamRoundTrip("a seam crossing landed away from its own marker");
+				return false;
+			}
+
+			++g_uSeamCrossingsProven;
+			Zenith_Log(LOG_CATEGORY_UNITTEST,
+				"[ZM_SeamRoundTrip] leg %u ('%s') PROVEN: build %u at '%s', %.3f m from "
+				"the marker",
+				g_uSeamLeg, xLeg.m_szLabel, xLeg.m_uToBuildIndex,
+				xLeg.m_szGateSpawnTag, (double)fOffset);
+
+			++g_uSeamLeg;
+			if (g_uSeamLeg >= uSEAM_LEG_COUNT)
+			{
+				g_bSeamPassed = true;
+				g_eSeamPhase = SeamPhase::Done;
+				return false;
+			}
+			g_eSeamPhase = SeamPhase::StageWarp;
+			g_iSeamPhaseFrames = 0;
+			return true;
+		}
+
+		case SeamPhase::Done:
+			return false;
+		}
+		return false;
+	}
+
+	bool Verify_SeamRoundTrip()
+	{
+		ClearTraversalInput();
+		Zenith_InputSimulator::ClearFixedDt();
+		ZM_GameStateManager::ResetRuntimeStateForTests();
+		if (g_bSeamPrerequisitesPresent)
+		{
+			g_xEngine.Scenes().LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
+		}
+		if (!g_bSeamPrerequisitesPresent)
+		{
+			return true;   // RequestSkip already bypassed this; belt and braces
+		}
+
+		// ★ THE COUNT IS ASSERTED SEPARATELY FROM THE PASS FLAG. A run that
+		// silently proved fewer crossings than there are legs -- because a phase
+		// returned false early, say -- would otherwise report success.
+		if (!g_bSeamPassed || g_uSeamCrossingsProven != uSEAM_LEG_COUNT)
+		{
+			Zenith_Error(LOG_CATEGORY_UNITTEST,
+				"[ZM_SeamRoundTrip] %s (leg %u of %u, %u crossing(s) proven)",
+				g_szSeamFailure, g_uSeamLeg, uSEAM_LEG_COUNT, g_uSeamCrossingsProven);
+			return false;
+		}
+
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[ZM_SeamRoundTrip] all %u crossings proven: Dawnmere <-> Route 1 and "
+			"Route 1 <-> Thornacre, both directions each", g_uSeamCrossingsProven);
+		return true;
+	}
 }
 
 static const Zenith_AutomatedTest g_xZMWarpInfrastructureTest = {
@@ -1500,5 +2076,26 @@ static const Zenith_AutomatedTest g_xZMPlayerHomeRoundTripTest = {
 	false /* m_bRequiresGraphics */,
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xZMPlayerHomeRoundTripTest);
+
+// ★ THE FRAME CAP IS A BACKSTOP ABOVE THE PER-PHASE DEADLINES, NOT THE BUDGET.
+// Four legs, each at most one staging transition (420), one walk (600) and one
+// landing transition (420) = 5,760 worst case, and every one of those three
+// numbers owns a failure message that names what stalled. The REAL cost is far
+// lower -- the walks are ~12 m each -- but the cap must sit above the sum, or a
+// genuine stall reports "the test ran out of frames" instead of "the warp
+// machine never left WAITING_FOR_SPAWN".
+//
+// ★ NOT m_bRequiresGraphics. Every claim it makes is about scenes, physics and
+// the warp machine; a requiresGraphics test is SKIPPED-AS-PASSED on the headless
+// gate, which is precisely how a test rots invisibly.
+static const Zenith_AutomatedTest g_xZMSeamRoundTripTest = {
+	"ZM_SeamRoundTrip_Test",
+	&Setup_SeamRoundTrip,
+	&Step_SeamRoundTrip,
+	&Verify_SeamRoundTrip,
+	/* maxFrames */ 6000,
+	false /* m_bRequiresGraphics */,
+};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xZMSeamRoundTripTest);
 
 #endif // ZENITH_INPUT_SIMULATOR

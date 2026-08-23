@@ -126,9 +126,16 @@
 // ★ NOTHING IN THIS FILE AUTHORS, MOVES OR TELEPORTS ANYTHING. It loads the
 // committed scene and casts rays. In particular, MEASURING A GATE COLUMN IS NOT
 // AUTHORING A TRIGGER: the gate rows below exist so each sensor box's OWN column --
-// the row its centre height is derived from -- is measured BEFORE R1-3 authors it,
-// which is the same ordering that put the route-seam oracle a commit ahead of the
-// marker it serves.
+// the row its centre height is derived from -- was measured BEFORE R1-3 authored
+// it, which is the same ordering that put the route-seam oracle a commit ahead of
+// the marker it serves.
+//
+// ★ R1-3 HAS SINCE AUTHORED THOSE SENSORS, AND THE ROWS STILL MEASURE GROUND. A
+// warp trigger's body is a SENSOR, and both public Zenith_Physics::Raycast
+// overloads skip sensors (ZM-D-173), so a downward probe passes through the box to
+// the terrain underneath -- exactly as Dawnmere's oracle has done under
+// HomeDoorTrigger since that decision. The full reasoning, and the warning against
+// "fixing" it with an ignore entry, is on RGRoute1IgnoreEntityName below.
 //
 // Both run on the NULL backend (m_bRequiresGraphics = false): they need physics
 // and a terrain bake, not a swapchain.
@@ -419,10 +426,20 @@ namespace
 	// ground table. Ignoring the Player at his column instead would leave the trainer
 	// in the way; ignoring a trainer at somebody else's column would hide a real
 	// obstruction. Every other column names the authored Player: he stands on the
-	// SOUTH arrival, and once R1-3's return leg lands a warp puts a capsule on the
+	// SOUTH arrival, and since R1-3's return leg landed a warp puts a capsule on the
 	// north one too -- the self-confirming-measurement hazard the Dawnmere Home oracle
-	// guards against at the town centre. Naming him on the gate columns costs nothing
-	// today and keeps them measurable afterwards.
+	// guards against at the town centre.
+	//
+	// ★★ THE TWO GATE COLUMNS NOW HAVE A BOX STANDING ON THEM (R1-3), AND THAT DOES
+	// NOT BREAK THIS ORACLE -- but only because of a specific engine contract, so do
+	// not "fix" it by adding the gates to the ignore list. Both public
+	// Zenith_Physics::Raycast overloads SKIP SENSOR BODIES (ZM-D-173,
+	// Zenith/Physics/CLAUDE.md), and a ZM_WarpTrigger reasserts its collider as a
+	// sensor in OnStart -- so a downward probe passes straight through the gate to the
+	// terrain underneath. Dawnmere's oracle has relied on the same property since
+	// ZM-D-173: its TRIGGER column sits directly under HomeDoorTrigger. The per-row
+	// ignore is for SOLID bodies, and it holds ONE, which is why a second solid body
+	// over a column has to be a failure rather than a filter.
 	//
 	// TOTAL, and a SWITCH rather than a positional array on purpose: a reordering of
 	// ZM_ROUTE1_GROUND_SAMPLE cannot pair a column with somebody else's body.
@@ -509,13 +526,12 @@ namespace
 	void RGBuildThornacreRows(RGRegion& xRegion)
 	{
 		// ★ TWO ROWS, AND NO THIRD. Thornacre is a TRAVERSAL STUB by ruling
-		// (ZM-D-196): terrain, one arrival, a player, a camera and -- in a LATER
-		// slice -- one return trigger. The player and camera stand on the arrival
-		// column, so they need no rows of their own, and there is deliberately no
-		// gym anything to measure. The loop bound is the GROUND-SAMPLE count, never
+		// (ZM-D-196): terrain, one arrival, a player, a camera and -- since R1-3 --
+		// one return trigger. The player and camera stand on the arrival column, so
+		// they need no rows of their own, and there is deliberately no gym anything
+		// to measure. The loop bound is the GROUND-SAMPLE count, never
 		// uZM_THORNACRE_PLACEMENT_ENTITY_COUNT: that literal counts authored
-		// ENTITIES (index 4 of which is the trigger this milestone does not author),
-		// and a column is not an entity.
+		// ENTITIES, and a column is not an entity.
 		for (u_int uSample = 0u; uSample < ZM_GetThornacreGroundSampleCount();
 			++uSample)
 		{
@@ -524,9 +540,11 @@ namespace
 			const ZM_ThornacreGroundSample& xSample =
 				ZM_GetThornacreGroundSample(eSample);
 			// ONE BODY FOR BOTH COLUMNS: the stub authors no NPC at all, and the
-			// authored Player stands on the arrival 12 m from the gate. The return
-			// gate's own ground is measured BEFORE the sensor exists -- see the
-			// "measuring a gate column is not authoring a trigger" star above.
+			// authored Player stands on the arrival 12 m from the gate. The R1-3
+			// return gate now stands on the gate column, and the probe still reaches
+			// the terrain under it because a warp trigger's body is a SENSOR and both
+			// public Raycast overloads skip sensors (ZM-D-173) -- see the double star
+			// on RGRoute1IgnoreEntityName above before adding it to any ignore list.
 			RGAddRow(xRegion, xSample.m_szEntityName,
 				RGThornacreFreezeTarget(eSample), szZM_THORNACRE_PLAYER_ENTITY_NAME,
 				xSample.m_fX, xSample.m_fZ, xSample.m_fFeetY);

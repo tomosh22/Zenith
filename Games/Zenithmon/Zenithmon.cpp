@@ -1939,8 +1939,8 @@ namespace
 	//
 	// ★ THE INVISIBLE HALF: ZM_GetRoute1SouthGateSpawnTag() and
 	// ZM_GetRoute1NorthGateSpawnTag() BOTH answer "FromRoute1" -- they are what
-	// Route 1's own future gates ASK their destinations for (OUTBOUND, R1-3's
-	// business). Reaching for the "south gate" accessor while authoring the south
+	// Route 1's own gates ASK their destinations for (OUTBOUND; the four gate
+	// configure steps below). Reaching for the "south gate" accessor while authoring the south
 	// ARRIVAL marker is the natural mistake, and it does not even change the text
 	// on screen: it produces a Route 1 whose two markers both offer a tag Route 1
 	// does not itself offer. ZM_GameStateManager::IsWarpDestinationValid would
@@ -2036,11 +2036,11 @@ namespace
 	// the compiled table and never the destination scene. Read the resolver's
 	// banner above before touching this.
 	//
-	// ★ AND IT IS THE SAME EDGE, SO THE SAME ONE SPELLING, THAT R1-3's ROUTE 1
-	// SOUTH GATE WILL ASK DAWNMERE FOR (ZM_GetRoute1SouthGateSpawnTag walks the
-	// identical row). One table entry feeds both halves of the seam, which is the
-	// property that makes the marker and the future sensor impossible to
-	// mis-pair.
+	// ★ AND IT IS THE SAME EDGE, SO THE SAME ONE SPELLING, THAT ROUTE 1'S SOUTH
+	// GATE ASKS DAWNMERE FOR (ZM_GetRoute1SouthGateSpawnTag walks the identical
+	// row; R1-3 authored that sensor). One table entry feeds both halves of the
+	// seam, which is the property that makes the marker and the sensor impossible
+	// to mis-pair.
 	void ZM_ConfigureDawnmereFromRoute1ArrivalSpawnPoint()
 	{
 		const bool bTagSet = ZM_SetSelectedSpawnPointTag(
@@ -2048,6 +2048,98 @@ namespace
 		Zenith_Assert(bTagSet,
 			"the compiled Route1->Dawnmere edge carries no usable spawn tag, so "
 			"Dawnmere's Route 1 arrival marker has nothing valid to offer");
+	}
+
+	// ============================================================================
+	// R1-3 -- THE FOUR SEAM GATE CONFIGURE STEPS, AND WHY THEY ARE OUTBOUND
+	//
+	// ★★ A GATE CARRIES AN **OUTBOUND** TAG: the tag ITS OWN region's connection
+	// list asks the DESTINATION for. That is the exact mirror of the four ARRIVAL
+	// markers above, which carry INBOUND tags resolved from the SOURCE region's
+	// row, and the two are trivially confusable because three of the eight strings
+	// involved are the literal text "FromRoute1". Read the compiled table
+	// (Source/Data/ZM_WorldSpec.cpp) once and the pairing is forced:
+	//
+	//     Dawnmere  -> Route1     asks "FromDawnmere"   (Route 1 OFFERS it)
+	//     Route1    -> Dawnmere   asks "FromRoute1"     (Dawnmere OFFERS it)
+	//     Route1    -> Thornacre  asks "FromRoute1"     (Thornacre OFFERS it)
+	//     Thornacre -> Route1     asks "FromThornacre"  (Route 1 OFFERS it)
+	//
+	// ★★ NOT ONE OF THESE FOUR SPELLS A BUILD INDEX OR A TAG, and on this seam that
+	// is load-bearing rather than stylistic. Route 1's two gates ask for the SAME
+	// TAG as each other and differ ONLY in their target build index (2 vs 3), so a
+	// south/north SWAP changes not one byte of any name-based needle -- it produces
+	// a Route 1 whose south gate leads to Thornacre and whose north gate leads to
+	// Dawnmere, reading perfectly at every call site. The resolvers remove the
+	// choice: each walks its own region's row FOR A NAMED TARGET SCENE, so the one
+	// fact a reviewer has to check is the target named in each function below.
+	// Tests/ZM_Tests_CommittedSceneBytes.cpp needles the whole serialized payload
+	// -- [version][targetBuildIndex][32-byte tag] -- for exactly that reason.
+	//
+	// ★ EACH CHECKS ITS RESOLUTION **BEFORE** THE CONFIGURE CALL, in the shape
+	// ZM_ConfigureProfLabExitTrigger established, so a compiled table with the edge
+	// missing names ITSELF instead of surfacing as a generic "warp configuration is
+	// invalid" from ZM_WarpTrigger::Configure's return.
+	// ============================================================================
+
+	// Route 1's SOUTH gate: back down to Dawnmere, at Dawnmere's "FromRoute1".
+	void ZM_ConfigureRoute1SouthGateTrigger()
+	{
+		const u_int uTargetBuildIndex = ZM_GetRoute1SouthGateTargetBuildIndex();
+		Zenith_Assert(uTargetBuildIndex != uZM_ROUTE1_GATE_TARGET_UNRESOLVED,
+			"the compiled ZM_SCENE_ROUTE1 row carries no connection targeting "
+			"ZM_SCENE_DAWNMERE, so Route 1's south gate has no destination to "
+			"resolve");
+		Zenith_Assert(
+			ZM_ConfigureSelectedWarpTrigger(
+				uTargetBuildIndex, ZM_GetRoute1SouthGateSpawnTag()),
+			"Route 1 south gate warp configuration is invalid");
+	}
+
+	// Route 1's NORTH gate: on to Thornacre, at Thornacre's "FromRoute1". Same
+	// tag as the south gate, DIFFERENT build index -- see the banner.
+	void ZM_ConfigureRoute1NorthGateTrigger()
+	{
+		const u_int uTargetBuildIndex = ZM_GetRoute1NorthGateTargetBuildIndex();
+		Zenith_Assert(uTargetBuildIndex != uZM_ROUTE1_GATE_TARGET_UNRESOLVED,
+			"the compiled ZM_SCENE_ROUTE1 row carries no connection targeting "
+			"ZM_SCENE_THORNACRE, so Route 1's north gate has no destination to "
+			"resolve");
+		Zenith_Assert(
+			ZM_ConfigureSelectedWarpTrigger(
+				uTargetBuildIndex, ZM_GetRoute1NorthGateSpawnTag()),
+			"Route 1 north gate warp configuration is invalid");
+	}
+
+	// Thornacre's return gate: back down to Route 1, at Route 1's "FromThornacre".
+	// The ONE entity that makes the stub traversable rather than a dead end.
+	void ZM_ConfigureThornacreSouthGateTrigger()
+	{
+		const u_int uTargetBuildIndex = ZM_GetThornacreReturnTargetBuildIndex();
+		Zenith_Assert(uTargetBuildIndex != uZM_THORNACRE_RETURN_TARGET_UNRESOLVED,
+			"the compiled ZM_SCENE_THORNACRE row carries no connection targeting "
+			"ZM_SCENE_ROUTE1, so the town has no way back out to resolve");
+		Zenith_Assert(
+			ZM_ConfigureSelectedWarpTrigger(
+				uTargetBuildIndex, ZM_GetThornacreReturnSpawnTag()),
+			"Thornacre return gate warp configuration is invalid");
+	}
+
+	// Dawnmere's north gate: out onto Route 1, at Route 1's "FromDawnmere". The
+	// fourth seam, and the only one whose sensor lands in a scene that was already
+	// committed before this slice.
+	void ZM_ConfigureDawnmereNorthGateTrigger()
+	{
+		const u_int uTargetBuildIndex = ZM_GetDawnmereNorthGateTargetBuildIndex();
+		Zenith_Assert(
+			uTargetBuildIndex != uZM_DAWNMERE_NORTH_GATE_TARGET_UNRESOLVED,
+			"the compiled ZM_SCENE_DAWNMERE row carries no connection targeting "
+			"ZM_SCENE_ROUTE1, so Dawnmere's north gate has no destination to "
+			"resolve");
+		Zenith_Assert(
+			ZM_ConfigureSelectedWarpTrigger(
+				uTargetBuildIndex, ZM_GetDawnmereNorthGateSpawnTag()),
+			"Dawnmere north gate warp configuration is invalid");
 	}
 
 	// ---- S6 item 3 SC5: the authored Dawnmere NPCs ---------------------------
@@ -3920,12 +4012,13 @@ void Project_RegisterEditorAutomationSteps()
 		// frozen by R1-2 step 1, read through ZM_GetDawnmereFromRoute1SpawnFeet
 		// -- the literal is never re-spelled here.
 		//
-		// ★ AND STILL ZERO TRIGGERS. Dawnmere's outbound north gate is R1-3's,
-		// landing with all four seam sensors in one commit once every marker
-		// exists. Step list mirrors the shipped FromLabSpawn verbatim; like it
-		// and like the four Home blocks, this entity carries NO rotation step at
-		// all, so the ZM-D-183 frozen-quaternion rule does not apply (identity
-		// is the one rotation that is bit-exact in every configuration).
+		// ★ THE OUTBOUND SENSOR THAT AIMS AT ROUTE 1 IS THE NEXT BLOCK, NOT THIS
+		// ONE. R1-2 landed this marker with zero triggers anywhere in the game;
+		// R1-3 lands all four sensors together, once every marker exists. Step
+		// list mirrors the shipped FromLabSpawn verbatim; like it and like the
+		// four Home blocks, this entity carries NO rotation step at all, so the
+		// ZM-D-183 frozen-quaternion rule does not apply (identity is the one
+		// rotation that is bit-exact in every configuration).
 		const Zenith_Maths::Vector3 xFromRoute1SpawnFeet =
 			ZM_GetDawnmereFromRoute1SpawnFeet();
 		xAuto.AddStep_CreateEntity(szZM_DAWNMERE_FROM_ROUTE1_SPAWN_ENTITY_NAME);
@@ -3935,6 +4028,44 @@ void Project_RegisterEditorAutomationSteps()
 			xFromRoute1SpawnFeet.z);
 		xAuto.AddStep_AddComponent("ZM_SpawnPoint");
 		xAuto.AddStep_Custom(&ZM_ConfigureDawnmereFromRoute1ArrivalSpawnPoint);
+
+		// ---- R1-3: DAWNMERE'S NORTH SEAM GATE ------------------------------
+		//
+		// The fourth of the four seam sensors, and Dawnmere's third
+		// ZM_WarpTrigger (after HomeDoorTrigger and LabDoorTrigger). It stands
+		// 12 m NORTH of the marker just authored, so a player who arrives off
+		// Route 1 is 9 m clear of its near face and a player walking north out
+		// of town crosses it last -- the clearance derivation, and why an
+		// overlap on arrival would be an infinite two-scene ping-pong, are in
+		// Source/World/ZM_DawnmerePlacement.h beside the constants.
+		//
+		// ★★ APPENDED, AGAIN, AND STRICTLY BEFORE THE PRE-SAVE GUARD. Scene
+		// files carry DENSE AUTHORING-ORDER file indices (ZM-D-148), so this
+		// costs one new entity record while inserting it anywhere earlier would
+		// renumber every entity after it and turn a one-entity change into a
+		// whole-file diff. The rival-facing guard below must stay the last thing
+		// before the save, for the reason its own comment gives.
+		//
+		// ★ EVERY VALUE IS READ, NONE IS SPELLED: the centre and scale come from
+		// ZM_GetDawnmereNorthGate() and the destination from the compiled world
+		// table via ZM_ConfigureDawnmereNorthGateTrigger. Step list mirrors the
+		// shipped LabDoorTrigger verbatim -- create, transform, scale, static
+		// AABB body, ZM_WarpTrigger, configure -- and, like it, carries no
+		// rotation step: an AABB body forces JPH::Quat::sIdentity() anyway
+		// (ZM-D-193) and identity is bit-exact in every configuration.
+		const ZM_DawnmereBlockout xNorthGate = ZM_GetDawnmereNorthGate();
+		xAuto.AddStep_CreateEntity(szZM_DAWNMERE_NORTH_GATE_ENTITY_NAME);
+		xAuto.AddStep_SetEntityTransient(false);
+		xAuto.AddStep_SetTransformPosition(
+			xNorthGate.m_xCenter.x, xNorthGate.m_xCenter.y,
+			xNorthGate.m_xCenter.z);
+		xAuto.AddStep_SetTransformScale(
+			xNorthGate.m_xScale.x, xNorthGate.m_xScale.y, xNorthGate.m_xScale.z);
+		xAuto.AddStep_AddCollider();
+		xAuto.AddStep_AddColliderShape(
+			COLLISION_VOLUME_TYPE_AABB, RIGIDBODY_TYPE_STATIC);
+		xAuto.AddStep_AddComponent("ZM_WarpTrigger");
+		xAuto.AddStep_Custom(&ZM_ConfigureDawnmereNorthGateTrigger);
 
 		// ★ IMMEDIATELY BEFORE THE SAVE, NOT ANYWHERE EARLIER. The guard serializes the
 		// rival's transform for real and compares the resulting bytes with
@@ -3976,21 +4107,24 @@ void Project_RegisterEditorAutomationSteps()
 	// whereas authoring them from inside that block would splice new steps into a
 	// committed scene's step list.
 	//
-	// ★★ NEITHER SCENE AUTHORS A TRIGGER, AND THAT IS THE WHOLE REASON THESE TWO
-	// LAND FIRST AND ALONE. ZM_GameStateManager::IsWarpDestinationValid consults
-	// ONLY the compiled world table -- never the destination scene -- so a warp
-	// trigger shipped before its destination MARKER exists is ACCEPTED, and the
-	// machine then stalls in ZM_WARP_TRANSITION_WAITING_FOR_SCENE /
-	// _WAITING_FOR_SPAWN until that barrier's frame budget expires (ZM-D-200): an
-	// opaque fade over a frozen player, then a Zenith_Error naming the state and the
-	// tag, with no crash and no red test either way. The markers land
-	// here; the gate sensors that aim at them are R1-3's, in one commit, once
-	// every marker exists. So: no ZM_WarpTrigger, no gate, no gym door, and no
-	// trainers (R1-5/R1-6) in either block below.
+	// ★★ THE MARKERS LANDED FIRST AND ALONE (R1-2), AND THE SENSORS FOLLOWED AS A
+	// SET (R1-3). ZM_GameStateManager::IsWarpDestinationValid consults ONLY the
+	// compiled world table -- never the destination scene -- so a warp trigger
+	// shipped before its destination MARKER exists is ACCEPTED, and the machine
+	// then stalls in ZM_WARP_TRANSITION_WAITING_FOR_SCENE / _WAITING_FOR_SPAWN
+	// until that barrier's frame budget expires (ZM-D-200): an opaque fade over a
+	// frozen player, then a Zenith_Error naming the state and the tag, with no
+	// crash and no red test either way. That ordering is why R1-2 authored every
+	// marker and zero triggers, and why R1-3 authors all FOUR gates in one commit
+	// -- two here, one in Thornacre below, one appended to the Dawnmere block
+	// above. Splitting them would leave a one-way seam nobody notices.
+	//
+	// ★ STILL NO GYM DOOR (ZM-D-196) AND STILL NO TRAINERS (R1-5/R1-6) in either
+	// block below. The gates are the only entities R1-3 adds.
 	//
 	// ★ AND NOTHING IS AUTHORED INTO DAWNMERE HERE. Dawnmere's own "FromRoute1"
-	// arrival marker is a later step, deliberately, so the committed Dawnmere
-	// bytes stay untouched while these two new scenes are proven.
+	// arrival marker and its north gate are both steps of the Dawnmere block
+	// above, deliberately, so this block only ever touches its own two scenes.
 	//
 	// ★ THE HEIGHTS BELOW ARE PROVISIONAL, AND KNOWINGLY SO. Both placement
 	// headers' measured-ground tables are SEEDED WITH THEIR RECIPE TARGET HEIGHT
@@ -4136,23 +4270,87 @@ void Project_RegisterEditorAutomationSteps()
 		xAuto.AddStep_AddComponent("ZM_FollowCamera");
 		xAuto.AddStep_SetAsMainCamera();
 
+		// ---- R1-3: THE TWO SEAM GATES --------------------------------------
+		//
+		// ★★ THEY ASK FOR THE SAME TAG AND DIFFER ONLY IN THEIR TARGET BUILD
+		// INDEX, WHICH IS WHY THE TWO STEPS BELOW MUST NOT BE READ AS
+		// INTERCHANGEABLE. Both ZM_GetRoute1SouthGateSpawnTag() and
+		// ZM_GetRoute1NorthGateSpawnTag() answer "FromRoute1"; the discriminating
+		// value is 2 (Dawnmere) versus 3 (Thornacre), emitted as a raw u_int
+		// immediately before the 32-byte tag buffer. So a SOUTH/NORTH swap
+		// changes not one byte any name-based needle searches for, and produces a
+		// route whose south end leads north. Tests/ZM_Tests_CommittedSceneBytes.cpp
+		// needles the WHOLE serialized payload per gate for exactly that reason,
+		// and each accessor above resolves by NAMED TARGET SCENE rather than by
+		// connection index so the two cannot be transposed at this call site.
+		//
+		// ★ APPENDED AFTER THE CAMERA rather than slotted in beside the arrival
+		// markers they stand beyond. Route1.zscen is a COMMITTED asset with DENSE
+		// AUTHORING-ORDER file indices (ZM-D-148): appending costs two new entity
+		// records, while inserting after the markers would renumber the player and
+		// the camera and turn a two-entity change into a whole-file diff.
+		//
+		// ★ EACH SENSOR SITS **ON** ITS OWN MEASURED GROUND. The centres come
+		// from ZM_GetRoute1SouthGate() / ZM_GetRoute1NorthGate(), which read the
+		// two gate columns of the frozen Route 1 ground table -- the boxes are
+		// 1336 m apart on eroded terrain and a shared height would part-bury one
+		// and float the other with every scale constant still correct. Nothing
+		// here re-spells a coordinate.
+		//
+		// Step list mirrors the shipped LabDoorTrigger verbatim: create,
+		// transform, scale, static AABB body, ZM_WarpTrigger, configure. No
+		// rotation step -- an AABB body forces JPH::Quat::sIdentity() anyway
+		// (ZM-D-193), and identity is bit-exact in every configuration.
+		const ZM_Route1Volume xRoute1SouthGate = ZM_GetRoute1SouthGate();
+		xAuto.AddStep_CreateEntity(szZM_ROUTE1_SOUTH_GATE_ENTITY_NAME);
+		xAuto.AddStep_SetEntityTransient(false);
+		xAuto.AddStep_SetTransformPosition(
+			xRoute1SouthGate.m_xCenter.x, xRoute1SouthGate.m_xCenter.y,
+			xRoute1SouthGate.m_xCenter.z);
+		xAuto.AddStep_SetTransformScale(
+			xRoute1SouthGate.m_xScale.x, xRoute1SouthGate.m_xScale.y,
+			xRoute1SouthGate.m_xScale.z);
+		xAuto.AddStep_AddCollider();
+		xAuto.AddStep_AddColliderShape(
+			COLLISION_VOLUME_TYPE_AABB, RIGIDBODY_TYPE_STATIC);
+		xAuto.AddStep_AddComponent("ZM_WarpTrigger");
+		xAuto.AddStep_Custom(&ZM_ConfigureRoute1SouthGateTrigger);
+
+		const ZM_Route1Volume xRoute1NorthGate = ZM_GetRoute1NorthGate();
+		xAuto.AddStep_CreateEntity(szZM_ROUTE1_NORTH_GATE_ENTITY_NAME);
+		xAuto.AddStep_SetEntityTransient(false);
+		xAuto.AddStep_SetTransformPosition(
+			xRoute1NorthGate.m_xCenter.x, xRoute1NorthGate.m_xCenter.y,
+			xRoute1NorthGate.m_xCenter.z);
+		xAuto.AddStep_SetTransformScale(
+			xRoute1NorthGate.m_xScale.x, xRoute1NorthGate.m_xScale.y,
+			xRoute1NorthGate.m_xScale.z);
+		xAuto.AddStep_AddCollider();
+		xAuto.AddStep_AddColliderShape(
+			COLLISION_VOLUME_TYPE_AABB, RIGIDBODY_TYPE_STATIC);
+		xAuto.AddStep_AddComponent("ZM_WarpTrigger");
+		xAuto.AddStep_Custom(&ZM_ConfigureRoute1NorthGateTrigger);
+
 		xAuto.AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/Route1" ZENITH_SCENE_EXT);
 		xAuto.AddStep_UnloadScene();
 
 		// ---- THORNACRE -----------------------------------------------------
 		//
 		// ★★ A TRAVERSAL STUB BY RULING (ZM-D-196), AND IT MUST STAY ONE IN THIS
-		// MILESTONE: terrain, ONE arrival marker, a player and a camera. NO GYM
-		// DOOR. The compiled world table already carries the Thornacre -> Gym1
-		// ("Door") edge and that edge is deliberately UNBACKED -- authoring a door
-		// into a room nobody has built is the WAITING_FOR_SCENE stall described at
-		// the top of this block. No trainers, no shops, no gate sensor (R1-3's).
+		// MILESTONE: terrain, ONE arrival marker, a player, a camera and -- as of
+		// R1-3 -- the return gate that makes it traversable rather than a dead
+		// end. STILL NO GYM DOOR. The compiled world table already carries the
+		// Thornacre -> Gym1 ("Door") edge and that edge is deliberately UNBACKED
+		// -- authoring a door into a room nobody has built is the
+		// WAITING_FOR_SCENE stall described at the top of this block. No
+		// trainers and no shops either.
 		//
 		// ★ uZM_THORNACRE_PLACEMENT_ENTITY_COUNT IS 5u AND ITS INDEX 4 IS THE
 		// TRIGGER "ThornacreSouthGate". It is a NAME INVENTORY for the boot units,
-		// NOT an authoring loop bound -- walking [0, 5) here would author the very
-		// trigger this slice exists to withhold. The four entities below are
-		// spelled by name, one at a time, on purpose.
+		// NOT an authoring loop bound -- walking [0, 5) here would author the
+		// entities in the inventory's order rather than in the order this scene's
+		// committed bytes were written in, which is itself contract (ZM-D-148).
+		// The five entities below are spelled by name, one at a time, on purpose.
 		const ZM_TerrainAuthoringRecipe& xThornacreRecipe =
 			ZM_GetThornacreTerrainRecipe();
 		xAuto.AddStep_CreateScene(szZM_THORNACRE_SCENE_NAME);
@@ -4213,6 +4411,39 @@ void Project_RegisterEditorAutomationSteps()
 		xAuto.AddStep_SetCameraFar(fZM_THORNACRE_CAMERA_FAR);
 		xAuto.AddStep_AddComponent("ZM_FollowCamera");
 		xAuto.AddStep_SetAsMainCamera();
+
+		// ---- R1-3: THE RETURN GATE -----------------------------------------
+		//
+		// The third of the four seam sensors, and the ONE entity that takes a
+		// player back out of this town. It stands 12 m SOUTH of the arrival
+		// marker, inside the same flattened "RouteGate" pad, so an arriving body
+		// clears its near face by 9 m -- an overlap on arrival would fire on the
+		// first contact tick and ping-pong the player between two scenes forever
+		// (the derivation is in Source/World/ZM_ThornacrePlacement.h).
+		//
+		// ★ ITS TARGET AND TAG ARE RESOLVED FROM THE COMPILED TABLE by
+		// ZM_ConfigureThornacreSouthGateTrigger -- Route 1's build index and
+		// "FromThornacre", never Thornacre's own inbound "FromRoute1", which is
+		// what the ARRIVAL marker above carries. Nothing here spells either.
+		//
+		// ★ APPENDED AFTER THE CAMERA, for the ZM-D-148 dense-index reason the
+		// Route 1 gates above give. Step list mirrors the shipped LabDoorTrigger
+		// verbatim, and carries no rotation step: this stub authors nothing that
+		// has to face a direction, and an AABB body forces identity anyway.
+		const ZM_ThornacreVolume xThornacreSouthGate = ZM_GetThornacreSouthGate();
+		xAuto.AddStep_CreateEntity(szZM_THORNACRE_SOUTH_GATE_ENTITY_NAME);
+		xAuto.AddStep_SetEntityTransient(false);
+		xAuto.AddStep_SetTransformPosition(
+			xThornacreSouthGate.m_xCenter.x, xThornacreSouthGate.m_xCenter.y,
+			xThornacreSouthGate.m_xCenter.z);
+		xAuto.AddStep_SetTransformScale(
+			xThornacreSouthGate.m_xScale.x, xThornacreSouthGate.m_xScale.y,
+			xThornacreSouthGate.m_xScale.z);
+		xAuto.AddStep_AddCollider();
+		xAuto.AddStep_AddColliderShape(
+			COLLISION_VOLUME_TYPE_AABB, RIGIDBODY_TYPE_STATIC);
+		xAuto.AddStep_AddComponent("ZM_WarpTrigger");
+		xAuto.AddStep_Custom(&ZM_ConfigureThornacreSouthGateTrigger);
 
 		xAuto.AddStep_SaveScene(
 			GAME_ASSETS_DIR "Scenes/Thornacre" ZENITH_SCENE_EXT);
