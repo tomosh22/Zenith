@@ -17,8 +17,8 @@ The S0-S7 narrative that used to fill the back half of this file moved VERBATIM 
 [History.md](History.md) on 2026-08-18, so this file can hold to the ~25-line budget
 its own template in `AgentBriefing.md` §2.3 specifies. Nothing was deleted.
 
-**★ LIVE PIN (UPDATED 2026-08-22):
-ZM boot `3384`; engine boot (Null Combat) `1650`; Null RenderTest `1741`; registry **67**.**
+**★ LIVE PIN (UPDATED 2026-08-23):
+ZM boot `3387`; engine boot (Null Combat) `1650`; Null RenderTest `1741`; registry **67**.**
 **★ +11 on EVERY game across two ENGINE tickets, no `ZM_*` unit added.**
 3354/1638/1729 -> **3360/1644/1735** (ZM-49, +6: the terrain COLLISION-height
 query `TryGetGroundHeightAt` -- 4 m quads, NOT the rendered ground) ->
@@ -27,7 +27,8 @@ recorder test a review found missing) -> **3366/1650/1741**, an engine +1 that
 moved `Tools/unit_baselines.json` and was never narrated here, which is why this
 block read one behind the manifest on all three rows until 2026-08-22 ->
 **3384**/1650/1741 (ZM-27, +18 `ZM_*` units: 14 `ZM_GroundItem`, +3 in the save
-migration TU, +1 in the schema TU). Each number OBSERVED on `Null_`.
+migration TU, +1 in the schema TU) -> **3387**/1650/1741 (ZM-20, +3 committed-bytes
+needles for Dawnmere, Route1 and Thornacre). Each number OBSERVED on `Null_`.
 ★ ZM-27 measured **3384** from a real `Null_` Zenithmon run; 1650 and 1741 are
 CARRIED from the manifest, not re-observed -- its diff is confined to
 `Games/Zenithmon/**`, so no backend-neutral engine unit moved and `zagent gates`
@@ -157,7 +158,7 @@ genuinely RAN, not `DEFERRED` -- after which `git status` over the WHOLE
 |---|---|---|
 | `Route1.zscen` | 1,879 | `666AC621AD11C0DEA7F6B716...` **NEW at R1-2 step 2**, proven by two consecutive windowed Debug authoring boots |
 | `Thornacre.zscen` | 1,733 | `A9295117F0F781D2608F33D0...` **NEW at R1-2 step 2**, same two-boot proof |
-| `Dawnmere.zscen` | 5,340 | `1DC1B639F86267256D02F862182EAD5468FB00FB4F8C9E1407B791C2F225C591` (**UNCHANGED through R1-2 step 2** -- its `FromRoute1` marker is a later step) |
+| `Dawnmere.zscen` | 5,493 | `F163F33BBA7BD8A4606AB70BF6287E819F476C605E0F961F1C353047B0801421` (**RE-AUTHORED at R1-2 step 3**, ZM-20/ZM-D-202: +153 bytes, one `FromRoute1Spawn` entity record appended. Two consecutive windowed Debug boots, both `sceneAuthoring=AUTHOR_DAWNMERE`, second byte-identical. Previous value `1DC1B639...C591`, held from 2026-08-05 through step 2.) |
 | `Battle.zscen` | 4,965 | `1BEB0615F7FE62D9439471A4123E1D2140C0053AEC2991B659F7A03288C8C60A` (unchanged since 2026-08-05) |
 | `FrontEnd.zscen` | 29,740 | `D44D540512F1C373A5D5E747CE7FA76E7D19B467F5F1563EB298E229EEFBEDB5` |
 | `PlayerHome.zscen` | 1,832 | `DBBFB78311A55BBF942A7A5BF9928F43E9493A10CDA89110515A3B6A7987C780` (unchanged since 2026-08-05) |
@@ -192,8 +193,8 @@ ZM boot pin **3345**, automated registry **64**, engine pin **1638** (unmoved).
 plus `5d9d73bf`). A new game is PARTYLESS and the starter is genuinely chosen from Professor
 Aster; `ZM_IntroBeat_Test` proves it end to end across 18 phases.
 
-**S8 ITEM 2 ("Route 1 -> town 2") IS IN PROGRESS. SLICE R1-1 IS COMPLETE (ZM-D-197).
-THE NEXT TASK IS SLICE R1-2.**
+**S8 ITEM 2 ("Route 1 -> town 2") IS IN PROGRESS. SLICES R1-1 AND R1-2 ARE BOTH
+COMPLETE (ZM-D-197; ZM-D-198/199/202). THE NEXT TASK IS SLICE R1-3.**
 
 ### ★ WHAT R1-1 LANDED (the PURE slice -- no scene authored, no committed byte moved)
 Six new files + three modified, +16 boot units (3328 -> **3344** OBSERVED), registry
@@ -418,7 +419,22 @@ load-bearing content is transcribed below):
 `Route1.zscen` and `Thornacre.zscen` are committed and two-boot proven; the measured-ground split
 shipped with **eight OBSERVED literals**; registry 65 -> **67**; boot units unmoved at **3346**.
 
-**STEP 3 — THE ONLY PART OF R1-2 STILL OWED. It is the risky one: it re-authors Dawnmere.**
+#### ★★ STEP 3 IS DONE (ZM-20, ZM-D-202). **R1-2 IS COMPLETE.**
+Dawnmere re-authored windowed on a `Vulkan_vs2022_Debug_Win64_True` boot:
+`sceneAuthoring=AUTHOR_DAWNMERE, warmMask=0x7, queued=0` — **not `DEFERRED`**, which
+does nothing and looks successful. `1dc1b639…` -> **`f163f33b…`**, and a second
+identical boot reproduced `f163f33b…` exactly, so the bytes come from compiled
+constants. `git status`: exactly ONE tracked asset modified; the other six committed
+scenes are byte-unchanged. Boot units **3384 -> 3387** (+3 needles), 0 failed —
+and the Dawnmere needle was RED BY DESIGN until the re-author landed, so its going
+green is what proves the marker and its inbound tag are in the bytes.
+
+Next in the R1 chain is **R1-3** (ZM-21): the four seam triggers, in one commit.
+
+<details>
+<summary>The step 3 procedure, kept for R1-3 and for any later re-author</summary>
+
+**STEP 3 — DONE. It was the risky one: it re-authors Dawnmere.**
 1. Add the `FromRoute1` arrival marker to the Dawnmere authoring block, at the column already
    FROZEN by step 1 (`24.36592f`, `(512, 864)`). Its INBOUND tag is `"FromRoute1"` — resolve it
    from the world table (Route1's connections offer it), never spell it.
@@ -440,6 +456,26 @@ shipped with **eight OBSERVED literals**; registry 65 -> **67**; boot units unmo
 > re-commit: rotation-only drift beside a bit-identical position is ZM-D-183 (the authored value
 > moved); position+rotation together on a body-carrying entity is ZM-D-179 (the serializer wrote
 > the live Jolt pose).
+>
+> ★ **THE CROSS-CONFIG LEG HAS QUIETLY LAPSED, AND R1-3 INHERITS THAT.** The
+> 2026-08-05 baseline above used **Debug x2 + Release x1**; 2026-08-15 and ZM-20
+> both used Debug x2 only. For ZM-20's entity that is defensible on structure
+> rather than luck -- it carries no rotation, no scale and no collider, so it
+> touches neither `glm::angleAxis` nor a Jolt body, and its three floats are
+> compiled constants with no arithmetic between the table and the transform
+> (ZM-D-183 is exactly a Debug/Release authoring divergence on THIS file, so the
+> exemption has to be argued, not assumed). **An entity that carries a rotation,
+> a scale or a collider does NOT get that exemption and owes the Release boot.**
+> R1-3 authors trigger volumes; read this line before deciding two boots is enough.
+>
+> ★ **The authoring boot MUST carry `--skip-unit-tests`.** The needle for the marker you are
+> adding is RED until the re-author lands, and a failing boot unit aborts the boot BEFORE scene
+> authoring runs — so without the flag the unit blocks its own fix, forever. `zenith test` passes
+> it for you; a bare exe does not. A bare windowed exe also never EXITS (`--exit-after-frames` is
+> ignored without `--automated-test`), so drive the boot with a short automated test:
+> `zenithmon.exe --automated-test ZM_Boot_Test --skip-unit-tests`.
+
+</details>
 
 #### ★ ORCHESTRATOR BOOT SEQUENCE FOR PHASE 2 (the critics' corrected ordering)
 0. `Build\regen.ps1` (new files), build both configs.

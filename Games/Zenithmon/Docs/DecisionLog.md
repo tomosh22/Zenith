@@ -15,6 +15,147 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-08-23 -- ZM-D-202 -- R1-2 step 3: Dawnmere's `FromRoute1` arrival marker, and the two directional choices that would each have broken the game quietly
+
+**Slice R1-2 step 3, the last part of the item and the only one that RE-AUTHORS an already
+committed scene.** One entity is added to the Dawnmere authoring block -- a `ZM_SpawnPoint`
+marker named `FromRoute1Spawn` at the `(512, 864)` column step 1 froze at `24.36592` -- plus
+committed-bytes needles for all three R1-2 scenes. `Dawnmere.zscen` is re-authored by a
+**windowed `Vulkan_vs2022_Debug_Win64_True` tools boot** in `sceneAuthoring=AUTHOR_DAWNMERE`
+mode and the resulting bytes land in the same commit as this entry: a headless run may CREATE
+a `.zscen` but never CHANGE one, so there is no other way to produce them.
+
+### Decision 1: the tag is **INBOUND**, resolved from the ROUTE1 row, and it is never spelled
+
+`ZM_ConfigureDawnmereFromRoute1ArrivalSpawnPoint` calls
+`ZM_ResolveInboundSpawnTag(ZM_SCENE_ROUTE1, ZM_SCENE_DAWNMERE)` -- source ROUTE1, destination
+DAWNMERE -- which walks the Route 1 row for the edge targeting Dawnmere and answers
+`"FromRoute1"`. **The natural mistake is the other argument order**, and it does not look wrong:
+`(DAWNMERE, ROUTE1)` resolves the edge LEAVING Dawnmere and answers `"FromDawnmere"`, which is
+what Route 1's own south arrival marker already carries. Taking it that way round would leave
+two markers in the world offering `"FromDawnmere"` and none offering `"FromRoute1"`.
+
+**Why no gate would catch that.** `ZM_GameStateManager::IsWarpDestinationValid` consults ONLY
+the compiled `ZM_WorldSpec` tag list and never the destination scene, and `"FromRoute1"` has
+been a compiled Dawnmere tag since S1 -- so the warp still VALIDATES. The machine then goes to
+a fully opaque fade and sits in `ZM_WARP_TRANSITION_WAITING_FOR_SPAWN` until that barrier's
+frame budget expires (ZM-D-200), then escapes with a `Zenith_Error` naming a tag it never
+found. Not a crash, not an assert, and not a red test anywhere.
+
+★ **One table entry now feeds both halves of the seam.** `ZM_GetRoute1SouthGateSpawnTag()` --
+what R1-3's Route 1 south gate will ASK Dawnmere for -- walks the identical row and returns the
+identical string, which is why the byte needle uses that accessor rather than a second
+resolver. A re-tag in `Source/Data/ZM_WorldSpec.cpp` moves the marker, the future sensor and
+the needle together, and a marker/sensor pair that disagreed is not expressible.
+
+### Decision 2: the transform is **FEET**, and it comes from the measured column
+
+`ZM_GetDawnmereFromRoute1SpawnFeet()` (new, `inline` in `Source/World/ZM_DawnmerePlacement.h`)
+returns the header's own `fZM_DAWNMERE_FROM_ROUTE1_X/Z` with the height read through
+`ZM_DawnmereRouteSeamSampleFeetY(ZM_DAWNMERE_ROUTE_SEAM_SAMPLE_FROM_ROUTE1)`. Nothing at the
+authoring site re-spells `24.36592`, `512` or `864`.
+
+**Feet, never a body centre**, for the reason the shipped `FromHomeSpawn` / `FromLabSpawn`
+markers state: `ZM_GameStateManager::CalculateSpawnCenter` adds the capsule half-extent AT WARP
+TIME, so authoring a centre would drop every player arriving off Route 1 in from half a body
+up -- silently, since the capsule falls and settles and nothing measures the drop.
+
+★ It is `inline` in the header rather than a third sibling in the `.cpp` only because it needs
+nothing that file owns: the XZ are the header's constants and the height comes through the
+public route-seam accessor. The two older siblings stay where they are; they are not churned.
+
+### Decision 3: the marker is named `FromRoute1Spawn`, which knowingly walks into the prefix trap
+
+The name matches the two SHIPPED Dawnmere arrival markers (`FromHomeSpawn`, `FromLabSpawn`) and
+matches the label the measured route-seam row in `ZM_DawnmerePlacement.cpp` already carries and
+the ground oracle already prints on its `paste=` line. The cost is that the tag `"FromRoute1"`
+is a strict PREFIX of the name -- the FromLab/FromLabSpawn trap -- so the byte needle on the tag
+counts every occurrence of the NAME as well and the clause must be **strictly more tag hits
+than name hits**, never a plain equality. An equality would be satisfied by a marker that was
+created and never TAGGED, which is exactly the `WAITING_FOR_SPAWN` stall above.
+
+R1-1's newer `Route1SouthArrival` / `ThornacreSouthArrival` markers dodge the trap by not
+embedding their tags, and their needles ARE plain equalities. **Both conventions now exist in
+the tree on purpose**: the strictly-more clause is already written, understood and running on
+`FromLabSpawn` one entity away, and matching the neighbouring Dawnmere vocabulary was judged
+worth more than the clause. The name is spelled in two places -- the new header constant and
+that `.cpp` row -- and a `ZENITH_ASSERT_STREQ` clause compares them, because nothing else could.
+
+### Decision 4: inserted by SEMANTIC LANDMARK, at the very end of the block
+
+The steps go strictly between `AddStep_Custom(&ZM_ConfigureLabDoorTrigger)` and the rival
+pre-save guard. Scene files carry DENSE authoring-order file indices (ZM-D-148), so appending
+costs one new entity record while inserting anywhere earlier renumbers every entity after it
+and turns a one-entity change into a whole-file diff -- of the file that has drifted twice
+(ZM-D-179, ZM-D-183) and whose byte stability is this game's most expensive invariant. The
+rival-facing guard stays the last thing before the save, for the reason its own comment gives.
+The marker carries **no rotation step at all**, so the ZM-D-183 frozen-quaternion rule does not
+apply: identity is the one rotation that is bit-exact in every configuration.
+
+### Still ZERO TRIGGERS, and the needles now enforce it by COMPONENT rather than by name
+
+ZM-D-199's ruling holds for step 3: Dawnmere's outbound north gate is R1-3's, landing with all
+four seam sensors in one commit once every marker exists. The previous zero-trigger reasoning
+was only ever checkable against the DECLARED gate names, so a sensor authored under any other
+name was invisible; the new clauses count the serialized component TYPE name instead --
+`ZM_WarpTrigger == 0` on Route 1 and Thornacre, `== 2` on Dawnmere (`HomeDoorTrigger`,
+`LabDoorTrigger`). R1-3 must move those three literals deliberately, which is the point.
+
+★ The type-name needles are validated against `Tests/ZM_Tests_ComponentTypeNames.h` before use.
+An absence clause is uniquely prone to passing VACUOUSLY: a typo, or a registry rename that
+reached the shared inventory and not the test, counts zero occurrences of a string nothing
+serializes and every `== 0` goes green.
+
+**Tests that lock it:** three new boot units in `Tests/ZM_Tests_CommittedSceneBytes.cpp` --
+`DawnmereCarriesTheRoute1ArrivalMarkerAndItsInboundTag`,
+`Route1CarriesBothArrivalMarkersAndNoGateSensor` and
+`ThornacreCarriesItsArrivalMarkerAndNoGymDoor`. They read TRACKED files with no GPU and no
+terrain bake, which is what makes them the CI-visible spine of the whole item: every pure
+placement unit reads the same compiled constants the authoring writes from (both sides move
+together, so none can see whether a scene was ever re-authored), and every automated round trip
+needs a gitignored bake and therefore RequestSkips on CI, where a skip counts as a PASS.
+
+★★ **The Dawnmere unit is RED BY DESIGN until the re-author lands**, so the windowed authoring
+boot MUST carry `--skip-unit-tests`: a failing boot unit aborts the boot BEFORE scene authoring
+runs, and without the flag the unit blocks its own fix forever.
+
+### Follow-up (same day, after the re-author): two coverage gaps in the test layer
+
+Neither is a defect in what shipped above; both are things the review found the tests did not
+say. They are recorded here rather than as their own entry because they only make sense against
+Decisions 2 and 4.
+
+**1. The accessor's ASSEMBLY had no unit.** Decision 2's three ingredients were each pinned by
+`RouteSeamGround_StandsOnTheFromRoute1LandmarkAndIsMeasured`, but no clause anywhere CALLED
+`ZM_GetDawnmereFromRoute1SpawnFeet()` -- its only caller in the repo is the tools-only authoring
+site, which no headless run executes. A transposed X/Z or a Y/Z swap inside its one-line
+constructor would have been caught by nothing and authored straight into committed bytes, which
+only a windowed re-author can move back. Both siblings already had this coverage
+(`...FromHomeSpawnFeet` via `HomeApproachIsClearOfTheDriveCorridor`, `...FromLabSpawnFeet` via
+`LabSampleAccessors_AreTotalOnEveryDegenerateId`); this was the one new R1-2 symbol without it.
+One boot unit added -- `ZM_Interaction/FromRoute1SpawnFeet_AssemblesItsIngredientsWithoutTransposingThem`
+in `Tests/ZM_Tests_DawnmerePlacement.cpp` -- asserting each component against its OWN source and
+nothing else, so a re-derivation cannot transpose in lockstep with the accessor.
+
+★ **A swap is only detectable because 512 and 864 are different numbers**, and that premise is
+now a CLAUSE rather than a comment: if the two constants were ever made equal, the `.x` and `.z`
+clauses would both still pass under a transposition and the unit would silently stop testing the
+only thing it exists for. It fails on the premise instead.
+
+**2. The ★ above overstated what the Dawnmere needle did.** "The type-name needles are validated
+against `Tests/ZM_Tests_ComponentTypeNames.h` before use" was true of the Route 1 and Thornacre
+clauses and NOT of `DawnmereCarriesTheRoute1ArrivalMarkerAndItsInboundTag`, which used
+`ZM_SpawnPoint` and `ZM_WarpTrigger` unguarded. It was defensible -- Dawnmere's clauses are
+`== 4` and `== 2`, so a needle nothing serializes fails them rather than passing vacuously, which
+is not the case for the `== 0` absences the other two rest on -- but a registry rename would have
+surfaced as a baffling `4 != 0` against a scene that was perfectly fine. The guard is on all
+three now, and the sentence is true as written.
+
+**Reversibility:** low. A committed scene file moves, and R1-3's Route 1 south gate is written
+against this marker's tag.
+
+---
+
 ## 2026-08-22 -- ZM-D-201 -- ground items get a SAVE MODULE, not a story flag, and the codec runs its first migration
 
 **ZM-27. The save schema moves for the first time since it shipped: `uSCHEMA_VERSION_CURRENT`

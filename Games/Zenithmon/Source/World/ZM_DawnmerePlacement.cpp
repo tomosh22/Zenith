@@ -684,9 +684,15 @@ Zenith_Maths::Vector3 ZM_GetDawnmereLabDoorTargetXZ()
 // R1-2 STEP 1 -- the Route 1 arrival seam. See the header for the reserved
 // landmark, the corridor arithmetic that predicts this column is levelled
 // ground, the expected band, and the freeze procedure for the sentinel row
-// below. NOTHING is authored from this table yet: R1-2 step 2 is what adds the
-// "FromRoute1" marker to the committed Dawnmere, and it cannot be derived until
-// this row holds a real measurement.
+// below.
+//
+// ★ THIS TABLE IS NOW AUTHORED FROM (R1-2 step 3, ZM-D-202). The FromRoute1 row
+// is read by ZM_GetDawnmereFromRoute1SpawnFeet() and lands in the committed
+// Dawnmere as the arrival marker's position, so a re-measurement here MOVES
+// SCENE BYTES and owes a windowed re-author. The two sentences that used to sit
+// here -- "NOTHING is authored from this table yet" and "R1-2 step 2 is what
+// adds the marker" -- were both true when written and are both false now; it
+// was step 3, and it has landed.
 // ============================================================================
 
 namespace

@@ -2141,3 +2141,84 @@ ZENITH_TEST(ZM_Interaction, RouteSeamGround_StandsOnTheFromRoute1LandmarkAndIsMe
 		xSeam.m_szEntityName, fSeamFeetY, std::fabs(fSeamFeetY - fTarget),
 		fTarget, fROUTE_SEAM_GROUND_BAND_HALF_WIDTH);
 }
+
+// ============================================================================
+// R1-2 STEP 3 -- THE ARRIVAL ACCESSOR'S ASSEMBLY
+//
+// ★ THE THREE INGREDIENTS ARE PINNED ABOVE; NOTHING PINNED THE ASSEMBLY. The
+// unit above binds each of ZM_GetDawnmereFromRoute1SpawnFeet()'s three inputs to
+// the thing it is a measurement OF -- the two constants to the recipe's reserved
+// "FromRoute1" landmark, the height to the measured route-seam row -- but no
+// clause anywhere CALLS the accessor. Its only other caller in the repo is the
+// TOOLS-ONLY authoring site in Zenithmon.cpp, which no headless run executes, so
+// a transposed X/Z or a Y/Z swap inside its one-line constructor was caught by
+// nothing at all. That matters more here than it would for a derived quantity:
+// the value it returns is authored straight into the COMMITTED Dawnmere.zscen,
+// and only a WINDOWED *_True re-author can move those bytes back.
+//
+// Both siblings already had this and this symbol did not:
+// ZM_GetDawnmereFromHomeSpawnFeet is exercised by
+// HomeApproachIsClearOfTheDriveCorridor (Tests/ZM_Tests_Interaction.cpp) and
+// ZM_GetDawnmereFromLabSpawnFeet by LabSampleAccessors_AreTotalOnEveryDegenerateId
+// above.
+//
+// ★ EVERY COMPONENT IS ASSERTED AGAINST ITS OWN SOURCE, one clause each, never
+// against a second construction of the same three ingredients -- a clause built
+// that way would transpose in lockstep with the accessor and pin nothing.
+// ============================================================================
+
+ZENITH_TEST(ZM_Interaction, FromRoute1SpawnFeet_AssemblesItsIngredientsWithoutTransposingThem)
+{
+	// (a) ★ THE ANTI-VACUITY CLAUSE, AND IT IS THE WHOLE REASON A SWAP IS VISIBLE
+	// BELOW. This unit can only tell a transposed accessor from a correct one
+	// because the arrival column's X and Z are DIFFERENT numbers -- 512 and 864.
+	// If they were ever made equal (a square-symmetric relocation of the column
+	// would do it) the .x and .z clauses would both still pass under a swap and
+	// this test would silently stop testing the one thing it exists for. It fails
+	// HERE instead, and the finding would then be that the accessor needs a
+	// different oracle -- not that this clause should be dropped.
+	ZENITH_ASSERT_GT(
+		std::fabs(fZM_DAWNMERE_FROM_ROUTE1_X - fZM_DAWNMERE_FROM_ROUTE1_Z),
+		fLAB_EXACT_EPSILON,
+		"fZM_DAWNMERE_FROM_ROUTE1_X (%.5f) and fZM_DAWNMERE_FROM_ROUTE1_Z (%.5f) are "
+		"the same number, so the component clauses below can no longer distinguish a "
+		"transposed ZM_GetDawnmereFromRoute1SpawnFeet() from a correct one",
+		fZM_DAWNMERE_FROM_ROUTE1_X, fZM_DAWNMERE_FROM_ROUTE1_Z);
+
+	const Zenith_Maths::Vector3 xFeet = ZM_GetDawnmereFromRoute1SpawnFeet();
+	const float fSeamFeetY =
+		ZM_DawnmereRouteSeamSampleFeetY(ZM_DAWNMERE_ROUTE_SEAM_SAMPLE_FROM_ROUTE1);
+
+	// (b) TOTALITY FIRST, because a NaN satisfies every EQ_FLOAT clause below:
+	// AssertEqFloat fails on `fabs(a - b) > eps` and that comparison is FALSE for
+	// NaN, so a non-finite ingredient would pass the assembly silently and then be
+	// authored into a transform.
+	ZENITH_ASSERT_TRUE(std::isfinite(xFeet.x) && std::isfinite(xFeet.y)
+			&& std::isfinite(xFeet.z),
+		"ZM_GetDawnmereFromRoute1SpawnFeet() returned (%.5f, %.5f, %.5f), which has a "
+		"non-finite component -- authoring from it would put a non-finite transform "
+		"into the committed Dawnmere.zscen",
+		xFeet.x, xFeet.y, xFeet.z);
+
+	// (c) THE THREE COMPONENT CLAUSES. Exact (epsilon 0) on purpose: each side is
+	// the SAME compiled value, not a re-derivation of it, so any tolerance at all
+	// would only be room for a wrong answer to hide in.
+	ZENITH_ASSERT_EQ_FLOAT(xFeet.x, fZM_DAWNMERE_FROM_ROUTE1_X, 0.0f,
+		"ZM_GetDawnmereFromRoute1SpawnFeet().x is %.5f, not the arrival column's "
+		"fZM_DAWNMERE_FROM_ROUTE1_X (%.5f). If it reads %.5f the constructor's X and "
+		"Z arguments are transposed.",
+		xFeet.x, fZM_DAWNMERE_FROM_ROUTE1_X, fZM_DAWNMERE_FROM_ROUTE1_Z);
+	ZENITH_ASSERT_EQ_FLOAT(xFeet.z, fZM_DAWNMERE_FROM_ROUTE1_Z, 0.0f,
+		"ZM_GetDawnmereFromRoute1SpawnFeet().z is %.5f, not the arrival column's "
+		"fZM_DAWNMERE_FROM_ROUTE1_Z (%.5f). If it reads %.5f the constructor's X and "
+		"Z arguments are transposed; if it reads the seam height the Y and Z "
+		"arguments are.",
+		xFeet.z, fZM_DAWNMERE_FROM_ROUTE1_Z, fZM_DAWNMERE_FROM_ROUTE1_X);
+	ZENITH_ASSERT_EQ_FLOAT(xFeet.y, fSeamFeetY, 0.0f,
+		"ZM_GetDawnmereFromRoute1SpawnFeet().y is %.5f, not the MEASURED route-seam "
+		"surface ZM_DawnmereRouteSeamSampleFeetY(FROM_ROUTE1) reports (%.5f). This is "
+		"a FEET position and ZM_GameStateManager::CalculateSpawnCenter adds the "
+		"capsule half-extent at warp time, so a Y that is anything else drops every "
+		"player arriving off Route 1 in from the wrong height.",
+		xFeet.y, fSeamFeetY);
+}

@@ -2022,6 +2022,34 @@ namespace
 			"Thornacre's arrival marker has nothing valid to offer");
 	}
 
+	// Dawnmere's arrival (R1-2 step 3): where a player walking SOUTH off Route 1
+	// lands. The source is ROUTE1, so the tag is Route 1's DAWNMERE edge
+	// ("FromRoute1") -- the fourth and last of the R1-2 seam markers.
+	//
+	// ★ THE SOURCE IS ROUTE1 EVEN THOUGH THE MARKER STANDS IN DAWNMERE, and the
+	// natural mistake is the other order. ZM_ResolveInboundSpawnTag(DAWNMERE,
+	// ROUTE1) resolves the edge LEAVING Dawnmere and answers "FromDawnmere" --
+	// which is the tag Route 1's OWN south arrival marker carries, already
+	// authored a few hundred lines below. Getting it that way round would put two
+	// markers in the world offering "FromDawnmere" and none offering "FromRoute1",
+	// and IsWarpDestinationValid would STILL return true because it consults only
+	// the compiled table and never the destination scene. Read the resolver's
+	// banner above before touching this.
+	//
+	// ★ AND IT IS THE SAME EDGE, SO THE SAME ONE SPELLING, THAT R1-3's ROUTE 1
+	// SOUTH GATE WILL ASK DAWNMERE FOR (ZM_GetRoute1SouthGateSpawnTag walks the
+	// identical row). One table entry feeds both halves of the seam, which is the
+	// property that makes the marker and the future sensor impossible to
+	// mis-pair.
+	void ZM_ConfigureDawnmereFromRoute1ArrivalSpawnPoint()
+	{
+		const bool bTagSet = ZM_SetSelectedSpawnPointTag(
+			ZM_ResolveInboundSpawnTag(ZM_SCENE_ROUTE1, ZM_SCENE_DAWNMERE));
+		Zenith_Assert(bTagSet,
+			"the compiled Route1->Dawnmere edge carries no usable spawn tag, so "
+			"Dawnmere's Route 1 arrival marker has nothing valid to offer");
+	}
+
 	// ---- S6 item 3 SC5: the authored Dawnmere NPCs ---------------------------
 	//
 	// Reach BONUS authored onto every Dawnmere NPC. 0.4 is this NPC's OWN AABB
@@ -3859,6 +3887,54 @@ void Project_RegisterEditorAutomationSteps()
 			COLLISION_VOLUME_TYPE_AABB, RIGIDBODY_TYPE_STATIC);
 		xAuto.AddStep_AddComponent("ZM_WarpTrigger");
 		xAuto.AddStep_Custom(&ZM_ConfigureLabDoorTrigger);
+
+		// ---- R1-2 STEP 3: DAWNMERE'S "FromRoute1" ARRIVAL MARKER -----------
+		//
+		// The last of the four R1-2 seam markers, and the only one that lands in
+		// a scene that was ALREADY COMMITTED. Route 1's two and Thornacre's one
+		// went into new files; this one re-authors an asset that has drifted
+		// twice (ZM-D-179, ZM-D-183), which is why the whole slice was sequenced
+		// to measure this column first and touch these bytes last.
+		//
+		// ★★ APPENDED AT THE END OF THE DAWNMERE BLOCK, AFTER THE LAB SEAM AND
+		// STRICTLY BEFORE THE PRE-SAVE GUARD. Scene files carry DENSE
+		// AUTHORING-ORDER file indices (ZM-D-148), so appending costs one new
+		// entity record while inserting ANYWHERE EARLIER renumbers every entity
+		// after it and turns a one-entity change into a whole-file diff -- on
+		// exactly the file whose byte stability is this game's most expensive
+		// invariant. The rival-facing guard below is not something this may be
+		// placed after: it must stay the last thing before the save, for the
+		// reason its own comment gives.
+		//
+		// ★★ THE TAG IS **INBOUND** -- the tag asked for by the scene the player
+		// is ARRIVING FROM, which is ROUTE1, never by any edge LEAVING Dawnmere.
+		// The full trap, and why getting it backwards is a warp that validates,
+		// goes fully opaque and then stalls in WAITING_FOR_SPAWN until that
+		// barrier's frame budget expires (ZM-D-200), is written out at
+		// ZM_ResolveInboundSpawnTag. Nothing here spells the tag.
+		//
+		// ★ THE TRANSFORM IS THE MARKER'S FEET, NEVER A BODY CENTRE.
+		// ZM_GameStateManager::CalculateSpawnCenter adds the capsule half-extent
+		// at warp time, so authoring a centre would drop every arriving player
+		// in from half a body up. The height is the MEASURED (512, 864) column
+		// frozen by R1-2 step 1, read through ZM_GetDawnmereFromRoute1SpawnFeet
+		// -- the literal is never re-spelled here.
+		//
+		// ★ AND STILL ZERO TRIGGERS. Dawnmere's outbound north gate is R1-3's,
+		// landing with all four seam sensors in one commit once every marker
+		// exists. Step list mirrors the shipped FromLabSpawn verbatim; like it
+		// and like the four Home blocks, this entity carries NO rotation step at
+		// all, so the ZM-D-183 frozen-quaternion rule does not apply (identity
+		// is the one rotation that is bit-exact in every configuration).
+		const Zenith_Maths::Vector3 xFromRoute1SpawnFeet =
+			ZM_GetDawnmereFromRoute1SpawnFeet();
+		xAuto.AddStep_CreateEntity(szZM_DAWNMERE_FROM_ROUTE1_SPAWN_ENTITY_NAME);
+		xAuto.AddStep_SetEntityTransient(false);
+		xAuto.AddStep_SetTransformPosition(
+			xFromRoute1SpawnFeet.x, xFromRoute1SpawnFeet.y,
+			xFromRoute1SpawnFeet.z);
+		xAuto.AddStep_AddComponent("ZM_SpawnPoint");
+		xAuto.AddStep_Custom(&ZM_ConfigureDawnmereFromRoute1ArrivalSpawnPoint);
 
 		// ★ IMMEDIATELY BEFORE THE SAVE, NOT ANYWHERE EARLIER. The guard serializes the
 		// rival's transform for real and compares the resulting bytes with

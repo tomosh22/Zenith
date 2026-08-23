@@ -949,3 +949,58 @@ const ZM_DawnmereNpcAnchor& ZM_GetDawnmereRouteSeamSample(u_int uSample);
 // The measured surface at one route-seam sample. Out of range -> the sentinel's
 // height.
 float ZM_DawnmereRouteSeamSampleFeetY(u_int uSample);
+
+// ============================================================================
+// R1-2 STEP 3 -- THE AUTHORED "FromRoute1" ARRIVAL MARKER
+//
+// ★ WHY THE NAME LIVES IN THIS HEADER AND NOT AT THE AUTHORING SITE. Both sides
+// of the seam have to read the SAME symbol: Zenithmon.cpp's Dawnmere block
+// authors the entity, and Tests/ZM_Tests_CommittedSceneBytes.cpp needles the
+// committed blob for it. A literal at either site would move with a rename on
+// the other and pin nothing -- the whole reason szZM_DAWNMERE_FROM_LAB_SPAWN_
+// ENTITY_NAME sits in ZM_ProfLabPlacement.h rather than in the authoring.
+//
+// It is spelled to match the two SHIPPED Dawnmere arrival markers, FromHomeSpawn
+// and FromLabSpawn, rather than to a new convention -- a reader who knows those
+// recognises this one.
+//
+// ★★ AND THAT SPELLING KNOWINGLY WALKS INTO THE FromLab / FromLabSpawn TRAP.
+// "FromRoute1" is the INBOUND tag this marker carries and is a strict PREFIX of
+// this name, so a committed-bytes needle on the tag counts every occurrence of
+// the NAME as well. The consequence is a rule, not an inconvenience: the tag
+// clause must assert STRICTLY MORE tag hits than name hits, never a plain
+// equality -- an equality would be satisfied by a marker that was created and
+// never tagged, which is precisely the WAITING_FOR_SPAWN stall (ZM-D-200) the
+// needle exists to catch. R1-1's newer Route1/Thornacre markers dodge the trap
+// by being named ...Arrival; this one keeps the shipped Dawnmere vocabulary
+// because the strictly-more clause is already written, understood and running
+// on FromLabSpawn one entity away.
+//
+// ★ IT MUST ALSO EQUAL THE MEASURED ROW'S OWN LABEL. The route-seam row in
+// ZM_DawnmerePlacement.cpp is named "FromRoute1Spawn" and
+// ZM_DawnmereRouteSeamGroundTruth_Test prints that label on the `paste=` line a
+// re-measure is copied from, so a divergence would leave the oracle naming an
+// entity the committed scene does not contain. That equality is a TEST CLAUSE
+// rather than a comment -- see ZM_CommittedSceneBytes/
+// DawnmereCarriesTheRoute1ArrivalMarkerAndItsInboundTag -- because this header
+// cannot reach that row's name at compile time and a second spelling nothing
+// compares is exactly the drift this file's banner forbids.
+inline constexpr const char* szZM_DAWNMERE_FROM_ROUTE1_SPAWN_ENTITY_NAME =
+	"FromRoute1Spawn";
+
+// The FromRoute1 arrival marker's FEET position -- the MEASURED terrain surface
+// at (fZM_DAWNMERE_FROM_ROUTE1_X, fZM_DAWNMERE_FROM_ROUTE1_Z), never a body
+// centre. ZM_GameStateManager::CalculateSpawnCenter adds the capsule half-extent
+// at warp time, so authoring a centre here would drop every player arriving off
+// Route 1 in from half a body up. Same shape, and the same reasoning, as the
+// shipped ZM_GetDawnmereFromHomeSpawnFeet / ZM_GetDawnmereFromLabSpawnFeet.
+//
+// ★ INLINE HERE RATHER THAN IN THE .cpp, unlike its two siblings, purely because
+// it needs nothing the .cpp owns: the XZ are this header's own constants and the
+// height comes through the public route-seam accessor. Nothing is re-spelled.
+inline Zenith_Maths::Vector3 ZM_GetDawnmereFromRoute1SpawnFeet()
+{
+	return Zenith_Maths::Vector3(fZM_DAWNMERE_FROM_ROUTE1_X,
+		ZM_DawnmereRouteSeamSampleFeetY(ZM_DAWNMERE_ROUTE_SEAM_SAMPLE_FROM_ROUTE1),
+		fZM_DAWNMERE_FROM_ROUTE1_Z);
+}

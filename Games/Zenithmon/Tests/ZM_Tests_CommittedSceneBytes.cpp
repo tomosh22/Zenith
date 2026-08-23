@@ -49,6 +49,7 @@
 
 #include <bit>
 #include <cstring>   // memcpy -- building the needle from the frozen quaternion
+#include <string>    // the R1-2 scene paths, BUILT from the registry's file stems
 
 #include "Core/Zenith_TestFramework.h"
 #include "FileAccess/Zenith_FileAccess.h"
@@ -56,6 +57,10 @@
 #include "Zenithmon/Source/UI/ZM_UI_StarterChoice.h"   // the S8 element-name constants (the needles)
 #include "Zenithmon/Source/World/ZM_DawnmerePlacement.h"
 #include "Zenithmon/Source/World/ZM_ProfLabPlacement.h"   // szZM_PROFLAB_ASTER_ENTITY_NAME + the SC-E lab-seam names/tag (the needles)
+#include "Zenithmon/Source/World/ZM_Route1Placement.h"    // R1-2: Route 1's entity names + the gate tag RESOLVERS
+#include "Zenithmon/Source/World/ZM_SceneRegistry.h"      // R1-2: the file STEMS the two new scene paths are built from
+#include "Zenithmon/Source/World/ZM_ThornacrePlacement.h" // R1-2: Thornacre's entity names
+#include "Zenithmon/Tests/ZM_Tests_ComponentTypeNames.h"  // the ONE inventory of serialized component TYPE names
 
 namespace
 {
@@ -74,6 +79,60 @@ namespace
 	// ...and ProfLab, the interior that now has somebody in it.
 	const char* const szZM_COMMITTED_PROFLAB_SCENE =
 		GAME_ASSETS_DIR "Scenes/ProfLab" ZENITH_SCENE_EXT;
+
+	// ---- R1-2: the two scenes committed by step 2 ---------------------------
+	//
+	// ★ THEIR PATHS ARE BUILT, NOT SPELLED, and the three constants above are
+	// deliberately left alone rather than churned into the same shape. The file
+	// STEM is Source/World/ZM_SceneRegistry.h's property -- it is the ONE
+	// enumerable inventory of "which scene has a .zscen, under what stem", and
+	// Project_LoadInitialScene builds its registration paths from exactly this
+	// expression -- so a stem edit moves the needle test with the loader instead
+	// of leaving a needle pointed at a file nobody writes any more.
+	// ZM_FindSceneFileStem returns a const char*, which compile-time literal
+	// concatenation cannot consume, hence std::string here and a literal above.
+	//
+	// TOTAL: an unregistered scene yields "" and therefore a path ending in
+	// "Scenes/.zscen", which ReadFile misses -- and every clause below treats an
+	// unreadable TRACKED scene as a DEFECT, so that failure is loud.
+	std::string ZM_CommittedScenePath(ZM_SCENE_ID eScene)
+	{
+		return std::string(GAME_ASSETS_DIR) + "Scenes/"
+			+ ZM_FindSceneFileStem(eScene) + ZENITH_SCENE_EXT;
+	}
+
+	// ---- The serialized component TYPE names these clauses count ------------
+	//
+	// ★ WHY THEY ARE SPELLED HERE AND THEN CHECKED, rather than read out of the
+	// shared inventory by ordinal. Tests/ZM_Tests_ComponentTypeNames.h is an
+	// ARRAY with no per-row symbol, so aszZM_GAME_COMPONENT_TYPE_NAMES[6] would
+	// be a magic index that silently names a different component the day a row
+	// is inserted. The spelling below is instead VALIDATED against that
+	// inventory by GameComponentTypeIsRegistered before it is used, which closes
+	// the failure mode a zero-count needle is uniquely prone to: a typo, or a
+	// registry rename that reached the inventory and not this file, would
+	// otherwise count zero occurrences of a string nothing ever serializes and
+	// PASS -- vacuously, and exactly on the clause whose whole job is to assert
+	// an absence.
+	const char* const szZM_TYPE_WARP_TRIGGER = "ZM_WarpTrigger";
+	const char* const szZM_TYPE_SPAWN_POINT = "ZM_SpawnPoint";
+	const char* const szZM_TYPE_PLAYER_CONTROLLER = "ZM_PlayerController";
+
+	bool GameComponentTypeIsRegistered(const char* szTypeName)
+	{
+		if (szTypeName == nullptr)
+		{
+			return false;
+		}
+		for (u_int u = 0u; u < uZM_GAME_COMPONENT_TYPE_COUNT; ++u)
+		{
+			if (std::strcmp(aszZM_GAME_COMPONENT_TYPE_NAMES[u], szTypeName) == 0)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
 
 	// The 16 bytes a Transform blob carries for this rotation, in the order
 	// Zenith_DataStream writes them. Built from the frozen constants rather than
@@ -446,4 +505,530 @@ ZENITH_TEST(ZM_CommittedSceneBytes, ProfLabCarriesTheAuthoredProfessorEntityName
 		"scene, so the shipped lab is still empty. Do NOT weaken this to a >= 0 check -- "
 		"re-author the scene.",
 		szZM_PROFLAB_ASTER_ENTITY_NAME);
+}
+
+// ============================================================================
+// R1-2 -- THE THREE-SCENE SEAM TRIPWIRE: Dawnmere, Route 1 and Thornacre.
+//
+// ★★ WHY ALL THREE ARE HERE AND NOT IN THE PLACEMENT SUITES. Every pure unit in
+// Tests/ZM_Tests_{Route1,Thornacre,Dawnmere}Placement.cpp reads the SAME compiled
+// constants the authoring writes from, so both sides of every claim they make move
+// together and not one of them can tell whether a scene was ever re-authored. The
+// automated round trips that DO walk the real seam need the GITIGNORED terrain
+// bakes and therefore RequestSkip on CI -- and a skip counts as a PASS. Route 1
+// and Thornacre are the first committed Zenithmon scenes CI cannot load-verify at
+// all (ZM-D-199), which makes these boot units, reading TRACKED files with no GPU
+// and no terrain, the whole CI-visible spine of slice R1-2.
+//
+// ★★ THE MUTATION THEY EXIST FOR IS THE QUIET ONE. IsWarpDestinationValid consults
+// ONLY the compiled ZM_WorldSpec tag list and NEVER the destination scene, so a
+// marker that is missing, mis-named, untagged or tagged with the WRONG DIRECTION
+// still validates: the fade goes fully opaque and the machine sits in
+// ZM_WARP_TRANSITION_WAITING_FOR_SPAWN until that barrier's frame budget expires
+// (ZM-D-200), then errors out into a town the player never arrived in. Not a
+// crash, not an assert, not a red test anywhere else.
+//
+// ★ EVERY NEEDLE IS DERIVED, none is typed: entity names from the placement
+// headers, spawn tags from the compiled world table through the SAME resolvers the
+// authoring calls, component type names validated against the shared inventory in
+// Tests/ZM_Tests_ComponentTypeNames.h. A hand-typed needle moves in lockstep with
+// a rename and pins nothing.
+//
+// ★ THEY ARE ALL STRICT ABOUT AN UNREADABLE FILE, like the FrontEnd, ProfLab and
+// lab-seam clauses above and unlike the Dawnmere ROTATION clause at the top of
+// this file. All seven .zscen are TRACKED (ZM-D-148 / ZM-D-174 / ZM-D-199) and the
+// standing position on this asset family is that absence is a DEFECT, not a
+// configuration to tolerate.
+//
+// ★★ AND THE DAWNMERE CLAUSE BELOW IS RED BY DESIGN UNTIL THE RE-AUTHOR LANDS.
+// The marker's authoring steps ship in the same commit as this file, but the
+// committed bytes only move when a WINDOWED Vulkan_*_True tools boot in
+// sceneAuthoring=AUTHOR_DAWNMERE mode re-writes them -- a headless run may CREATE
+// a .zscen but never CHANGE one. So THAT BOOT MUST CARRY --skip-unit-tests: a
+// failing boot unit aborts the boot BEFORE scene authoring runs, and without the
+// flag this unit blocks its own fix forever.
+// ============================================================================
+
+// Dawnmere's half of the seam: the FromRoute1 arrival marker (R1-2 step 3).
+ZENITH_TEST(ZM_CommittedSceneBytes, DawnmereCarriesTheRoute1ArrivalMarkerAndItsInboundTag)
+{
+	uint64_t ulSize = 0;
+	char* pData = Zenith_FileAccess::ReadFile(
+		szZM_COMMITTED_DAWNMERE_SCENE, ulSize);
+
+	ZENITH_ASSERT_NOT_NULL(pData,
+		"the committed Dawnmere.zscen could not be read ('%s'). It is a TRACKED asset "
+		"(ZM-D-148), so this is a DEFECT and not a skip -- restore the file or "
+		"re-author it with a WINDOWED *_True tools boot in sceneAuthoring="
+		"AUTHOR_DAWNMERE mode.",
+		szZM_COMMITTED_DAWNMERE_SCENE);
+	if (pData == nullptr)
+	{
+		return;   // already FAILED above; nothing further is meaningful
+	}
+
+	const char* const szMarkerName = szZM_DAWNMERE_FROM_ROUTE1_SPAWN_ENTITY_NAME;
+
+	// ★ THE TAG COMES OFF THE ROUTE1 ROW'S DAWNMERE EDGE, which is the identical
+	// table entry the authoring's ZM_ResolveInboundSpawnTag(ROUTE1, DAWNMERE)
+	// walks and the identical one R1-3's Route 1 south gate will ASK Dawnmere
+	// for. One edge, one spelling, both halves of the seam -- so a table re-tag
+	// moves the marker, the future sensor and this needle together, and a needle
+	// that quietly disagreed with the authoring is not expressible.
+	const char* const szInboundTag = ZM_GetRoute1SouthGateSpawnTag();
+
+	const u_int uNameHits = CountNameOccurrences(pData, ulSize, szMarkerName);
+	const u_int uTagHits = CountNameOccurrences(pData, ulSize, szInboundTag);
+	const u_int uSpawnPointHits =
+		CountNameOccurrences(pData, ulSize, szZM_TYPE_SPAWN_POINT);
+	const u_int uWarpTriggerHits =
+		CountNameOccurrences(pData, ulSize, szZM_TYPE_WARP_TRIGGER);
+
+	Zenith_Log(LOG_CATEGORY_GAMEPLAY,
+		"[ZM_CommittedSceneBytes] '%s' %llu bytes; route seam: marker '%s' x%u, "
+		"inbound tag '%s' x%u (name-inclusive), ZM_SpawnPoint x%u, ZM_WarpTrigger x%u",
+		szZM_COMMITTED_DAWNMERE_SCENE, (unsigned long long)ulSize,
+		szMarkerName, uNameHits, szInboundTag, uTagHits,
+		uSpawnPointHits, uWarpTriggerHits);
+
+	Zenith_FileAccess::FreeFileData(pData);
+
+	// The tag has to be a real string before any count over it means anything --
+	// an empty needle counts 0 and would turn the strict inequality below into an
+	// arithmetic puzzle instead of a clear failure.
+	ZENITH_ASSERT_TRUE(szInboundTag != nullptr && szInboundTag[0] != '\0',
+		"the compiled ZM_SCENE_ROUTE1 row carries no connection targeting "
+		"ZM_SCENE_DAWNMERE, so ZM_GetRoute1SouthGateSpawnTag() resolved to the empty "
+		"string. Route 1 has no way back south and there is no tag to look for in the "
+		"committed scene -- fix Source/Data/ZM_WorldSpec.cpp first.");
+
+	// The same anti-vacuity guard the Route 1 and Thornacre clauses carry. It bites
+	// LESS here than it does there -- both component clauses below are `== N` for a
+	// non-zero N, so a needle nothing serializes fails them rather than passing
+	// them -- but it is what turns a registry rename into a message that names the
+	// cause instead of a baffling `4 != 0` against a scene that is perfectly fine.
+	ZENITH_ASSERT_TRUE(GameComponentTypeIsRegistered(szZM_TYPE_SPAWN_POINT)
+			&& GameComponentTypeIsRegistered(szZM_TYPE_WARP_TRIGGER),
+		"one of the component TYPE needles ('%s', '%s') is not a row of the shared "
+		"inventory in Tests/ZM_Tests_ComponentTypeNames.h -- reconcile the spelling "
+		"before reading anything into the counts below, which are taken over a string "
+		"nothing serializes.",
+		szZM_TYPE_SPAWN_POINT, szZM_TYPE_WARP_TRIGGER);
+
+	// ★ THE HEADER CONSTANT AND THE MEASURED ROW'S LABEL MUST AGREE. The route-seam
+	// ground row in Source/World/ZM_DawnmerePlacement.cpp carries the marker's name
+	// so a test can resolve the authored entity without re-spelling it, and
+	// ZM_DawnmereRouteSeamGroundTruth_Test prints that label on the `paste=` line a
+	// re-measure is copied from. The name is spelled in BOTH places -- the header
+	// constant the authoring and this needle read, and that .cpp row -- and nothing
+	// but this clause compares them, so without it a divergence would leave the
+	// oracle naming an entity the scene does not contain, silently and forever.
+	const ZM_DawnmereNpcAnchor& xSeamRow =
+		ZM_GetDawnmereRouteSeamSample(ZM_DAWNMERE_ROUTE_SEAM_SAMPLE_FROM_ROUTE1);
+	ZENITH_ASSERT_STREQ(szMarkerName, xSeamRow.m_szEntityName,
+		"the FromRoute1 marker's entity name is '%s' in "
+		"Source/World/ZM_DawnmerePlacement.h but the measured route-seam row in that "
+		"file's .cpp is labelled '%s'. One of the two moved without the other: the "
+		"ground oracle's paste line now names an entity the committed scene does not "
+		"contain, so a re-measure would be pasted against the wrong column.",
+		szMarkerName, xSeamRow.m_szEntityName);
+
+	ZENITH_ASSERT_EQ(uNameHits, 1u,
+		"the committed Dawnmere.zscen must carry the Route 1 arrival marker '%s' "
+		"exactly once. A ZERO is the state a source-only change leaves behind: the "
+		"authoring steps are in Zenithmon.cpp but no WINDOWED *_True tools boot in "
+		"sceneAuthoring=AUTHOR_DAWNMERE mode has re-authored and re-committed the "
+		"scene -- a headless run may CREATE a .zscen but never CHANGE one. Until it "
+		"does, R1-3's Route 1 south gate would warp into a town with nowhere to "
+		"arrive. More than one means the marker was authored twice.",
+		szMarkerName);
+
+	// ★ THE PREFIX-TRAP CLAUSE, and it is the FromLab / FromLabSpawn shape exactly:
+	// the tag "FromRoute1" is a strict PREFIX of the name "FromRoute1Spawn", so
+	// every occurrence of the name is also an occurrence of the tag and a bare
+	// `tagHits > 0` would be satisfied by the name alone -- i.e. by a marker that
+	// was created and never TAGGED. Spawn resolution matches on the TAG, not the
+	// name, so that is the WAITING_FOR_SPAWN stall, passing.
+	ZENITH_ASSERT_GT(uTagHits, uNameHits,
+		"the committed Dawnmere.zscen contains the spawn tag '%s' %u time(s) and the "
+		"marker name '%s' %u time(s) -- and the tag is a PREFIX of the name, so those "
+		"counts being equal means every occurrence of the tag is part of the name and "
+		"the marker was never actually TAGGED. Check that the authoring still calls "
+		"AddStep_Custom(&ZM_ConfigureDawnmereFromRoute1ArrivalSpawnPoint) and that the "
+		"scene was re-authored afterwards.",
+		szInboundTag, uTagHits, szMarkerName, uNameHits);
+
+	// FOUR markers now: TownCenterSpawn, FromHomeSpawn, FromLabSpawn and this one.
+	// The clause is about the COMPONENT, which the name clause above cannot see: an
+	// entity authored under the right name but without its ZM_SpawnPoint is a bare
+	// transform that resolves to nothing. Bump this literal in the same commit as
+	// any slice that adds or removes a Dawnmere marker.
+	ZENITH_ASSERT_EQ(uSpawnPointHits, 4u,
+		"the committed Dawnmere.zscen serializes %u ZM_SpawnPoint component(s), not "
+		"the 4 it authors (TownCenterSpawn, FromHomeSpawn, FromLabSpawn and '%s'). A "
+		"count one short with the name clause above green means the marker entity "
+		"exists but carries no ZM_SpawnPoint -- an untagged, unresolvable transform.",
+		uSpawnPointHits, szMarkerName);
+
+	// ★ R1-2 IS MARKERS ONLY. Dawnmere's two shipped sensors are HomeDoorTrigger and
+	// LabDoorTrigger; this slice adds a marker and NO third trigger. R1-3 lands
+	// Dawnmere's outbound north gate and must bump this literal to 3 in the same
+	// commit -- which is the point of pinning it, since a trigger authored before
+	// its destination marker exists validates and then stalls (ZM-D-200).
+	ZENITH_ASSERT_EQ(uWarpTriggerHits, 2u,
+		"the committed Dawnmere.zscen serializes %u ZM_WarpTrigger component(s), not "
+		"the 2 it authors (HomeDoorTrigger, LabDoorTrigger). R1-2 is MARKERS ONLY: if "
+		"you have just landed R1-3's north gate, bump this literal deliberately; if "
+		"you have not, a sensor was authored that this slice's ruling withholds.",
+		uWarpTriggerHits);
+}
+
+// Route 1's two arrival markers -- and everything it must NOT yet carry: either
+// gate ENTITY, any ZM_WarpTrigger under any name, and either gate's outbound TAG.
+ZENITH_TEST(ZM_CommittedSceneBytes, Route1CarriesBothArrivalMarkersAndNoGateSensor)
+{
+	const std::string strScenePath = ZM_CommittedScenePath(ZM_SCENE_ROUTE1);
+
+	uint64_t ulSize = 0;
+	char* pData = Zenith_FileAccess::ReadFile(strScenePath.c_str(), ulSize);
+
+	ZENITH_ASSERT_NOT_NULL(pData,
+		"the committed Route1.zscen could not be read ('%s'). It is a TRACKED asset "
+		"(ZM-D-199), so this is a DEFECT and not a skip -- restore the file or "
+		"re-author it with a WINDOWED *_True tools boot. Note the path is BUILT from "
+		"Source/World/ZM_SceneRegistry.h's file stem, so an empty stem lands here too.",
+		strScenePath.c_str());
+	if (pData == nullptr)
+	{
+		return;   // already FAILED above; nothing further is meaningful
+	}
+
+	const u_int uSouthArrivalHits = CountNameOccurrences(
+		pData, ulSize, szZM_ROUTE1_SOUTH_ARRIVAL_ENTITY_NAME);
+	const u_int uNorthArrivalHits = CountNameOccurrences(
+		pData, ulSize, szZM_ROUTE1_NORTH_ARRIVAL_ENTITY_NAME);
+	const u_int uCameraHits = CountNameOccurrences(
+		pData, ulSize, szZM_ROUTE1_CAMERA_ENTITY_NAME);
+	const u_int uSouthGateHits = CountNameOccurrences(
+		pData, ulSize, szZM_ROUTE1_SOUTH_GATE_ENTITY_NAME);
+	const u_int uNorthGateHits = CountNameOccurrences(
+		pData, ulSize, szZM_ROUTE1_NORTH_GATE_ENTITY_NAME);
+	const u_int uPlayerNameHits = CountNameOccurrences(
+		pData, ulSize, szZM_ROUTE1_PLAYER_ENTITY_NAME);
+	const u_int uPlayerControllerHits =
+		CountNameOccurrences(pData, ulSize, szZM_TYPE_PLAYER_CONTROLLER);
+	const u_int uSpawnPointHits =
+		CountNameOccurrences(pData, ulSize, szZM_TYPE_SPAWN_POINT);
+	const u_int uWarpTriggerHits =
+		CountNameOccurrences(pData, ulSize, szZM_TYPE_WARP_TRIGGER);
+
+	// The tags Route 1 OFFERS -- "FromDawnmere" and "FromThornacre" -- are exactly
+	// the tags its two arrival markers must carry, read straight off the compiled
+	// row rather than resolved edge by edge. Neither is a substring of the other
+	// and neither is contained in any Route 1 entity name (which
+	// ZM_Route1Placement's own boot unit proves, clause 5), so these are plain
+	// equalities and NOT the strictly-more form Dawnmere's marker needs.
+	//
+	// The 8-slot bound is a fixed local buffer, clamped rather than asserted: this
+	// row offers two tags today and the clause below walks whatever it offers up to
+	// eight. If Route 1 ever offers more than eight, the extras are simply not
+	// counted -- widen the buffer, do not read past it.
+	const ZM_WorldSpec& xRoute1Row = ZM_GetWorldSpec(ZM_SCENE_ROUTE1);
+	u_int uOfferedTagHits[8] = {};
+	const u_int uOfferedTagCount = xRoute1Row.m_uSpawnTagCount < 8u
+		? xRoute1Row.m_uSpawnTagCount : 8u;
+	for (u_int uTag = 0u; uTag < uOfferedTagCount; ++uTag)
+	{
+		const char* szTag = xRoute1Row.m_pszSpawnTags != nullptr
+			? xRoute1Row.m_pszSpawnTags[uTag] : nullptr;
+		uOfferedTagHits[uTag] = CountNameOccurrences(pData, ulSize, szTag);
+	}
+
+	// The tags Route 1's own future gates ASK FOR. Both walk the ROUTE1 row and
+	// both currently answer "FromRoute1" -- and neither may appear in this file
+	// yet, because a gate is a ZM_WarpTrigger and R1-2 authors none.
+	const u_int uSouthGateTagHits =
+		CountNameOccurrences(pData, ulSize, ZM_GetRoute1SouthGateSpawnTag());
+	const u_int uNorthGateTagHits =
+		CountNameOccurrences(pData, ulSize, ZM_GetRoute1NorthGateSpawnTag());
+
+	Zenith_Log(LOG_CATEGORY_GAMEPLAY,
+		"[ZM_CommittedSceneBytes] '%s' %llu bytes; arrivals S x%u N x%u, camera x%u, "
+		"gates S x%u N x%u, player name x%u / controller x%u, ZM_SpawnPoint x%u, "
+		"ZM_WarpTrigger x%u, offered tags %u, outbound tag hits S x%u N x%u",
+		strScenePath.c_str(), (unsigned long long)ulSize,
+		uSouthArrivalHits, uNorthArrivalHits, uCameraHits,
+		uSouthGateHits, uNorthGateHits, uPlayerNameHits, uPlayerControllerHits,
+		uSpawnPointHits, uWarpTriggerHits, uOfferedTagCount,
+		uSouthGateTagHits, uNorthGateTagHits);
+
+	Zenith_FileAccess::FreeFileData(pData);
+
+	ZENITH_ASSERT_TRUE(GameComponentTypeIsRegistered(szZM_TYPE_WARP_TRIGGER)
+			&& GameComponentTypeIsRegistered(szZM_TYPE_SPAWN_POINT)
+			&& GameComponentTypeIsRegistered(szZM_TYPE_PLAYER_CONTROLLER),
+		"one of the component TYPE needles ('%s', '%s', '%s') is not a row of the "
+		"shared inventory in Tests/ZM_Tests_ComponentTypeNames.h. A needle on a "
+		"string nothing serializes counts ZERO and would pass every absence clause "
+		"below vacuously -- reconcile the spelling before trusting any count.",
+		szZM_TYPE_WARP_TRIGGER, szZM_TYPE_SPAWN_POINT, szZM_TYPE_PLAYER_CONTROLLER);
+
+	ZENITH_ASSERT_EQ(uSouthArrivalHits, 1u,
+		"the committed Route1.zscen must carry the SOUTH arrival marker '%s' exactly "
+		"once -- it is where a player walking north out of Dawnmere lands.",
+		szZM_ROUTE1_SOUTH_ARRIVAL_ENTITY_NAME);
+	ZENITH_ASSERT_EQ(uNorthArrivalHits, 1u,
+		"the committed Route1.zscen must carry the NORTH arrival marker '%s' exactly "
+		"once -- it is where a player walking south out of Thornacre lands.",
+		szZM_ROUTE1_NORTH_ARRIVAL_ENTITY_NAME);
+	ZENITH_ASSERT_EQ(uCameraHits, 1u,
+		"the committed Route1.zscen must carry the follow camera '%s' exactly once.",
+		szZM_ROUTE1_CAMERA_ENTITY_NAME);
+
+	ZENITH_ASSERT_EQ(uSpawnPointHits, 2u,
+		"the committed Route1.zscen serializes %u ZM_SpawnPoint component(s), not the "
+		"2 it authors. The name clauses above cannot see this: an entity authored "
+		"under the right name but without its ZM_SpawnPoint is a bare transform no "
+		"warp can resolve.", uSpawnPointHits);
+
+	// ★ EXACTLY ONE ZM_PlayerController, and that is the load-bearing property --
+	// not the entity name. ZM_FollowCamera::ResolveTarget acquires the UNIQUE
+	// ZM_PlayerController in the camera's own scene (Q-2026-08-15-002); zero or two
+	// resolve to no target rather than a guess, and a camera with no target parks
+	// ZM_GameStateManager::PollForCameraAndBeginFadeIn on its barrier.
+	ZENITH_ASSERT_EQ(uPlayerControllerHits, 1u,
+		"the committed Route1.zscen serializes %u ZM_PlayerController component(s), "
+		"not exactly 1. The follow camera acquires the UNIQUE controller in its own "
+		"scene, so zero or two leave it with no target and the arrival fade with "
+		"nothing to poll for.", uPlayerControllerHits);
+
+	// ★ THE STRICTLY-MORE CLAUSE, and it is REQUIRED here rather than tidy: the
+	// entity name "Player" is a strict substring of the serialized type name
+	// "ZM_PlayerController", so a `== 1` equality on the name is arithmetically
+	// impossible in any scene that has a controller. The real claim is that at
+	// least one occurrence of "Player" is NOT part of the type name.
+	ZENITH_ASSERT_GT(uPlayerNameHits, uPlayerControllerHits,
+		"the committed Route1.zscen contains '%s' %u time(s) and the type name '%s' "
+		"%u time(s). Every occurrence of the type name contains the entity name, so "
+		"equality means the player ENTITY was never authored -- only its component "
+		"type string is present.",
+		szZM_ROUTE1_PLAYER_ENTITY_NAME, uPlayerNameHits,
+		szZM_TYPE_PLAYER_CONTROLLER, uPlayerControllerHits);
+
+	ZENITH_ASSERT_GT(uOfferedTagCount, 0u,
+		"the compiled ZM_SCENE_ROUTE1 row offers no spawn tags, so the tag clauses "
+		"below walk nothing -- fix Source/Data/ZM_WorldSpec.cpp first.");
+	for (u_int uTag = 0u; uTag < uOfferedTagCount; ++uTag)
+	{
+		const char* szTag = xRoute1Row.m_pszSpawnTags != nullptr
+			? xRoute1Row.m_pszSpawnTags[uTag] : "";
+		ZENITH_ASSERT_TRUE(szTag != nullptr && szTag[0] != '\0',
+			"offered spawn tag %u of the ZM_SCENE_ROUTE1 row is null or empty, so the "
+			"count taken over it is meaningless", uTag);
+		ZENITH_ASSERT_EQ(uOfferedTagHits[uTag], 1u,
+			"the committed Route1.zscen carries the spawn tag '%s' %u time(s), not "
+			"exactly once. Route 1 OFFERS this tag in the compiled world table, so "
+			"exactly one of its arrival markers must be tagged with it -- a ZERO is a "
+			"warp that validates and then stalls in WAITING_FOR_SPAWN behind an opaque "
+			"fade (ZM-D-200), which no other test in the CI gate can see.",
+			szTag, uOfferedTagHits[uTag]);
+	}
+
+	// ★★ ZERO TRIGGERS IS THIS SLICE'S CORE SAFETY RULING (ZM-D-199), and the two
+	// name clauses below are not enough on their own: they needle only the DECLARED
+	// gate names, so a sensor authored under any other name is invisible to them.
+	// The component-type count is what actually closes it.
+	ZENITH_ASSERT_EQ(uWarpTriggerHits, 0u,
+		"the committed Route1.zscen serializes %u ZM_WarpTrigger component(s) and must "
+		"serialize NONE. Markers land before sensors on purpose: "
+		"IsWarpDestinationValid consults only the compiled table, never the "
+		"destination scene, so a gate shipped before its far-side marker exists is "
+		"ACCEPTED and then stalls the player behind an opaque fade until that "
+		"barrier's frame budget expires (ZM-D-200). If you are landing R1-3, this "
+		"literal and the two gate-name clauses below move together.",
+		uWarpTriggerHits);
+	ZENITH_ASSERT_EQ(uSouthGateHits, 0u,
+		"the committed Route1.zscen already carries '%s'. R1-2 authors markers only.",
+		szZM_ROUTE1_SOUTH_GATE_ENTITY_NAME);
+	ZENITH_ASSERT_EQ(uNorthGateHits, 0u,
+		"the committed Route1.zscen already carries '%s'. R1-2 authors markers only.",
+		szZM_ROUTE1_NORTH_GATE_ENTITY_NAME);
+
+	// ...and the tags those gates would ASK FOR are absent too, which is a distinct
+	// claim from the entity names above: a trigger authored under an unexpected name
+	// still serializes its target tag verbatim.
+	ZENITH_ASSERT_EQ(uSouthGateTagHits, 0u,
+		"the committed Route1.zscen carries the tag '%s' %u time(s) and must carry it "
+		"NONE: that is the tag Route 1's own south gate ASKS Dawnmere for, an OUTBOUND "
+		"tag Route 1 does not itself offer. Its presence means either a gate sensor "
+		"was authored here, or an arrival marker was tagged with the outbound tag "
+		"instead of the inbound one -- the exact confusion ZM_ResolveInboundSpawnTag "
+		"exists to prevent, and one that IsWarpDestinationValid cannot see.",
+		ZM_GetRoute1SouthGateSpawnTag(), uSouthGateTagHits);
+	ZENITH_ASSERT_EQ(uNorthGateTagHits, 0u,
+		"the committed Route1.zscen carries the north gate's outbound tag '%s' %u "
+		"time(s) and must carry it none -- see the south gate clause above.",
+		ZM_GetRoute1NorthGateSpawnTag(), uNorthGateTagHits);
+}
+
+// Thornacre's arrival marker -- and the gym door that is deliberately UNBACKED.
+ZENITH_TEST(ZM_CommittedSceneBytes, ThornacreCarriesItsArrivalMarkerAndNoGymDoor)
+{
+	const std::string strScenePath = ZM_CommittedScenePath(ZM_SCENE_THORNACRE);
+
+	uint64_t ulSize = 0;
+	char* pData = Zenith_FileAccess::ReadFile(strScenePath.c_str(), ulSize);
+
+	ZENITH_ASSERT_NOT_NULL(pData,
+		"the committed Thornacre.zscen could not be read ('%s'). It is a TRACKED "
+		"asset (ZM-D-199), so this is a DEFECT and not a skip -- restore the file or "
+		"re-author it with a WINDOWED *_True tools boot.",
+		strScenePath.c_str());
+	if (pData == nullptr)
+	{
+		return;   // already FAILED above; nothing further is meaningful
+	}
+
+	// ★ THE ARRIVAL'S TAG IS ROUTE 1's THORNACRE EDGE, NOT Thornacre's own return
+	// accessor. ZM_GetThornacreReturnSpawnTag() answers "FromThornacre" -- the tag
+	// Thornacre's future gate ASKS Route 1 for -- and reaching for it here is the
+	// natural mistake the resolver banner in Zenithmon.cpp is written about. Both
+	// this and the authoring's ZM_ResolveInboundSpawnTag(ROUTE1, THORNACRE) walk the
+	// SAME ROUTE1 row for the edge targeting Thornacre.
+	const char* const szInboundTag = ZM_GetRoute1NorthGateSpawnTag();
+
+	const u_int uArrivalHits = CountNameOccurrences(
+		pData, ulSize, szZM_THORNACRE_SOUTH_ARRIVAL_ENTITY_NAME);
+	const u_int uCameraHits = CountNameOccurrences(
+		pData, ulSize, szZM_THORNACRE_CAMERA_ENTITY_NAME);
+	const u_int uGateHits = CountNameOccurrences(
+		pData, ulSize, szZM_THORNACRE_SOUTH_GATE_ENTITY_NAME);
+	const u_int uPlayerNameHits = CountNameOccurrences(
+		pData, ulSize, szZM_THORNACRE_PLAYER_ENTITY_NAME);
+	const u_int uPlayerControllerHits =
+		CountNameOccurrences(pData, ulSize, szZM_TYPE_PLAYER_CONTROLLER);
+	const u_int uSpawnPointHits =
+		CountNameOccurrences(pData, ulSize, szZM_TYPE_SPAWN_POINT);
+	const u_int uWarpTriggerHits =
+		CountNameOccurrences(pData, ulSize, szZM_TYPE_WARP_TRIGGER);
+	const u_int uInboundTagHits =
+		CountNameOccurrences(pData, ulSize, szInboundTag);
+
+	Zenith_Log(LOG_CATEGORY_GAMEPLAY,
+		"[ZM_CommittedSceneBytes] '%s' %llu bytes; arrival x%u (tag '%s' x%u), camera "
+		"x%u, gate x%u, player name x%u / controller x%u, ZM_SpawnPoint x%u, "
+		"ZM_WarpTrigger x%u",
+		strScenePath.c_str(), (unsigned long long)ulSize,
+		uArrivalHits, szInboundTag, uInboundTagHits, uCameraHits, uGateHits,
+		uPlayerNameHits, uPlayerControllerHits, uSpawnPointHits, uWarpTriggerHits);
+
+	// ★ EVERY OTHER TAG THORNACRE OFFERS MUST BE ABSENT, and today that means
+	// "FromGym" -- the return marker for a gym nobody has built. ZM-D-196 rules
+	// Thornacre a traversal STUB in this milestone; the compiled Thornacre->Gym1
+	// edge is deliberately UNBACKED. Derived by walking the row and skipping the
+	// arrival's own tag, so a third offered tag has to be BACKED or red here,
+	// rather than being spelled and quietly forgotten.
+	const ZM_WorldSpec& xThornacreRow = ZM_GetWorldSpec(ZM_SCENE_THORNACRE);
+	u_int uUnbackedTagHits[8] = {};
+	const u_int uOfferedTagCount = xThornacreRow.m_uSpawnTagCount < 8u
+		? xThornacreRow.m_uSpawnTagCount : 8u;
+	for (u_int uTag = 0u; uTag < uOfferedTagCount; ++uTag)
+	{
+		const char* szTag = xThornacreRow.m_pszSpawnTags != nullptr
+			? xThornacreRow.m_pszSpawnTags[uTag] : nullptr;
+		if (szTag == nullptr || szTag[0] == '\0'
+			|| std::strcmp(szTag, szInboundTag) == 0)
+		{
+			continue;   // the arrival's own tag is asserted present below
+		}
+		uUnbackedTagHits[uTag] = CountNameOccurrences(pData, ulSize, szTag);
+	}
+
+	Zenith_FileAccess::FreeFileData(pData);
+
+	ZENITH_ASSERT_TRUE(szInboundTag != nullptr && szInboundTag[0] != '\0',
+		"the compiled ZM_SCENE_ROUTE1 row carries no connection targeting "
+		"ZM_SCENE_THORNACRE, so ZM_GetRoute1NorthGateSpawnTag() resolved to the empty "
+		"string and there is no tag to look for -- fix Source/Data/ZM_WorldSpec.cpp.");
+
+	// Same anti-vacuity guard the Route 1 clause carries, and for the same reason:
+	// this test's load-bearing claims are ABSENCES (no trigger, no gym door), and a
+	// needle on a string nothing serializes counts zero and passes every one of them.
+	ZENITH_ASSERT_TRUE(GameComponentTypeIsRegistered(szZM_TYPE_WARP_TRIGGER)
+			&& GameComponentTypeIsRegistered(szZM_TYPE_SPAWN_POINT)
+			&& GameComponentTypeIsRegistered(szZM_TYPE_PLAYER_CONTROLLER),
+		"one of the component TYPE needles ('%s', '%s', '%s') is not a row of the "
+		"shared inventory in Tests/ZM_Tests_ComponentTypeNames.h -- reconcile the "
+		"spelling before trusting any count below.",
+		szZM_TYPE_WARP_TRIGGER, szZM_TYPE_SPAWN_POINT, szZM_TYPE_PLAYER_CONTROLLER);
+
+	ZENITH_ASSERT_EQ(uArrivalHits, 1u,
+		"the committed Thornacre.zscen must carry the arrival marker '%s' exactly "
+		"once -- it is the only place a player walking north off Route 1 can land.",
+		szZM_THORNACRE_SOUTH_ARRIVAL_ENTITY_NAME);
+	ZENITH_ASSERT_EQ(uCameraHits, 1u,
+		"the committed Thornacre.zscen must carry the follow camera '%s' exactly once.",
+		szZM_THORNACRE_CAMERA_ENTITY_NAME);
+
+	// ★ A PLAIN EQUALITY, DELIBERATELY, AND THE HEADER EARNED IT. The marker is
+	// named "ThornacreSouthArrival" rather than "ThornacreFromRoute1Spawn" precisely
+	// so its name does not CONTAIN its own tag -- which is what lets this be
+	// `== 1` instead of the strictly-more clause Dawnmere's FromRoute1Spawn needs.
+	ZENITH_ASSERT_EQ(uInboundTagHits, 1u,
+		"the committed Thornacre.zscen carries the inbound spawn tag '%s' %u time(s), "
+		"not exactly once. A ZERO means the marker exists but was never TAGGED -- "
+		"spawn resolution matches on the tag, not the entity name, so the Route 1 "
+		"north gate would validate and then stall in WAITING_FOR_SPAWN (ZM-D-200). "
+		"This is a plain equality because no Thornacre entity name contains this tag.",
+		szInboundTag, uInboundTagHits);
+
+	ZENITH_ASSERT_EQ(uSpawnPointHits, 1u,
+		"the committed Thornacre.zscen serializes %u ZM_SpawnPoint component(s), not "
+		"the 1 it authors -- a marker entity with no ZM_SpawnPoint is a bare transform "
+		"no warp can resolve.", uSpawnPointHits);
+
+	ZENITH_ASSERT_EQ(uPlayerControllerHits, 1u,
+		"the committed Thornacre.zscen serializes %u ZM_PlayerController component(s), "
+		"not exactly 1. The follow camera acquires the UNIQUE controller in its own "
+		"scene, so zero or two leave it with no target.", uPlayerControllerHits);
+	ZENITH_ASSERT_GT(uPlayerNameHits, uPlayerControllerHits,
+		"the committed Thornacre.zscen contains '%s' %u time(s) and the type name "
+		"'%s' %u time(s). The entity name is a strict substring of the type name, so "
+		"equality means the player ENTITY was never authored.",
+		szZM_THORNACRE_PLAYER_ENTITY_NAME, uPlayerNameHits,
+		szZM_TYPE_PLAYER_CONTROLLER, uPlayerControllerHits);
+
+	// ★★ NO TRIGGER OF ANY KIND -- the return gate AND the gym door. The name clause
+	// alone would miss a sensor authored under a different name, which is exactly
+	// how a gym door would arrive: ZM_ThornacrePlacement.h names no gym entity, so
+	// one would be spelled fresh at the authoring site.
+	ZENITH_ASSERT_EQ(uWarpTriggerHits, 0u,
+		"the committed Thornacre.zscen serializes %u ZM_WarpTrigger component(s) and "
+		"must serialize NONE. ZM-D-196 rules this town a traversal STUB for this "
+		"milestone: no gate sensor (R1-3's) and no gym door at all -- the compiled "
+		"Thornacre->Gym1 edge is deliberately UNBACKED, and authoring a door into a "
+		"room nobody has built is a warp that validates and then stalls in "
+		"WAITING_FOR_SCENE (ZM-D-200).", uWarpTriggerHits);
+	ZENITH_ASSERT_EQ(uGateHits, 0u,
+		"the committed Thornacre.zscen already carries '%s'. R1-2 authors markers "
+		"only; the return gate is R1-3's.",
+		szZM_THORNACRE_SOUTH_GATE_ENTITY_NAME);
+
+	for (u_int uTag = 0u; uTag < uOfferedTagCount; ++uTag)
+	{
+		const char* szTag = xThornacreRow.m_pszSpawnTags != nullptr
+			? xThornacreRow.m_pszSpawnTags[uTag] : "";
+		if (szTag == nullptr || szTag[0] == '\0'
+			|| std::strcmp(szTag, szInboundTag) == 0)
+		{
+			continue;
+		}
+		ZENITH_ASSERT_EQ(uUnbackedTagHits[uTag], 0u,
+			"the committed Thornacre.zscen carries the spawn tag '%s' %u time(s) and "
+			"must carry it none. Thornacre OFFERS this tag in the compiled world "
+			"table, but this milestone backs only the Route 1 arrival -- '%s' is the "
+			"gym's return marker, and the gym does not exist. If a later slice backs "
+			"it, move it out of this clause deliberately rather than deleting the "
+			"clause.", szTag, uUnbackedTagHits[uTag], szTag);
+	}
 }
