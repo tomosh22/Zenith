@@ -611,68 +611,48 @@ report is _proposed text_ that you apply (I4).
 ## 6. Verify
 
 1. `zagent owns <KEY>` — exit 5 → abandon path (step 9).
-2. **`zagent gates <KEY>`**, then run every command it prints, **in
-   order, spelled exactly**, appending combined output to
-   `.zagent/run/<KEY>/gates.log`. First non-zero stops.
+2. **`Tools/tick_gates.ps1`, backgrounded, in two phases:**
 
-   **The list comes from that command, not from the claim payload.** The
-   payload's gates were chosen by the ticket's filing CATEGORY, which
-   records who asked for the work rather than what it touched. `gates`
-   takes the same working-tree changed set `guard` computes and UNIONS in
-   every category whose declared `paths` the diff actually reached — so a
-   `Zenithmon` ticket that edits `Zenith/**` builds and tests Combat and
-   checks the engine pin too. The payload's list is always a PREFIX of
-   what comes back, so this widens verification and never narrows the
-   contract.
+   ```
+   pwsh -NoProfile -File Tools/tick_gates.ps1 <KEY> -Phase measure
+   ...write the pin, the Status.md narration, the reviewer's doc findings...
+   pwsh -NoProfile -File Tools/tick_gates.ps1 <KEY> -Phase verify
+   ```
 
-   Four consecutive tickets edited engine code under a one-game gate
-   list. ZM-50's own Goal said *"the fix is engine-side"* while its
-   category said otherwise, and only the category had any mechanical
-   effect. Running the extra gates by hand — which is what that run
-   did — is a convention, and a convention is exactly the thing that
-   holds until the one time nobody does it.
+   It runs `zagent gates <KEY>` and then every line that prints, in order,
+   appending to `.zagent/run/<KEY>/gates.log`. First non-zero stops.
 
-   **An engine change compiles EVERY game, and that is why the Engine
-   list is long.** `Games/Combat` — which used to be the only game those
-   gates built — references `Zenith_TerrainComponent` in zero source
-   files, while Zenithmon, CityBuilder and RenderTest reference it in 12,
-   4 and 4. When ZEN-5 made members of that header private, all four
-   Engine gates went green and three games could have been left
-   un-compilable. The `paths` union cannot catch that one: the diff is
-   inside Engine's OWN paths, so there is no foreign category to pull in,
-   and a public header's blast radius is everything that INCLUDES it —
-   which no directory mapping expresses. Because Engine's `paths` is
-   `Zenith/**`, a Zenithmon ticket that edits engine code now gets the
-   whole list too, via the same union.
+   **Read the exit code, not the transcript.** `0` green · `2` regen failed ·
+   `3` a created file never reached the compiler · `4` a gate line failed ·
+   `5` no gate list · **`10` MEASURED: a pin needs bumping — not a failure.**
+   `.zagent/run/<KEY>/tick_gates.json` carries the same verdict as data.
 
-   Never paraphrase a gate line and never re-derive one from
-   `zagent.project.json` by hand.
+   Four rules used to live here as four paragraphs, each added after the rule
+   was forgotten once. They are the script now; its header says why:
 
-   **★ IF THE WORKER CREATED A FILE, RUN `Build\regen.ps1` FIRST.** Sharpmake
-   bakes the file list into the vcxproj, so a new `.cpp` enters the build only
-   at a regen. Skip it and the build passes **green with the ticket's
-   deliverable never compiled** — measured on ZM-27: three new files, build
-   exit 0, zero occurrences of the new TU in the log.
+   | The script | The failure it closes |
+   | --- | --- |
+   | regens when the tree holds a created source file, and treats a non-zero regen as FATAL | Sharpmake bakes the file list into the vcxproj, so a new `.cpp` enters the build only at a regen — and `regen.ps1` exits 3 regenerating NOTHING while stale projects stay on disk. ZM-27: 3 new files, build exit 0, zero occurrences of the new TU in the log |
+   | asserts every created `.cpp` BY NAME in the build log | a green build proves what was IN the project compiled. The unit count still moves, by however many tests landed in files that already existed — and the pin bump then ratchets it in |
+   | runs the unit gate ALONE first, and stops | the count must be OBSERVED before it can be narrated, so the doc edit necessarily lands after a gate run. ZM-27 spent ~25 minutes re-certifying three comment edits only `doc_lint` reads |
+   | owns each gate as a child process, waits unbounded, sweeps stray game exes on every exit path | `zenith test Zenithmon --headless` runs past 20 minutes. A killed gate reports no exit code — a timeout is indistinguishable from a failure — and leaves the exe holding build outputs |
 
-   Nothing downstream catches that. The unit gate still MOVES, by however many
-   tests landed in files that already existed, which is indistinguishable from
-   an ordinary bump — and the baseline instruction below would then write that
-   number into `Tools/unit_baselines.json` and ratchet the broken state in
-   permanently. `zagent doctor` cannot see it either: it checks that `pwsh`
-   resolves, not that `regen` succeeds.
+   **Never hand-assemble the list, and never run a line in the foreground.**
+   `zagent gates` takes the same changed set `guard` computes and UNIONS in
+   every category whose declared `paths` the diff reached, so a `Zenithmon`
+   ticket that edits `Zenith/**` builds and tests Combat and checks the engine
+   pin too. It only ever ADDS — the ticket's own list stays a prefix — and it
+   RECORDS the selection, which `guard` re-derives and compares against.
 
-   So **confirm the new TU by name in the build log**. A green build is not
-   evidence it was compiled. And treat a non-zero `regen.ps1` as fatal to the
-   tick rather than as noise — it exits 3 and regenerates NOTHING while the
-   stale projects stay on disk, which is why it fails open.
+   That union exists because four consecutive tickets edited engine code under
+   a one-game gate list; ZM-50's own Goal said *"the fix is engine-side"* while
+   its category said otherwise, and only the category had mechanical effect.
+   The Engine list additionally names every game, which the union cannot
+   supply: a public header's blast radius is everything that INCLUDES it, and
+   `Games/Combat` — once the only game those gates built — references
+   `Zenith_TerrainComponent` in zero files while three other games reference it
+   in twenty.
 
-   **★ GATES OUTRUN A FORESHORTENED FOREGROUND CALL.** `zenith test <G>
-   --headless` runs past 20 minutes on Zenithmon and only the unit gate carries
-   a timeout of its own (`-TimeoutSec 600`). Run them so they cannot be cut off
-   — background the command and wait for it. A gate killed midway gives you no
-   exit code, so you cannot tell a timeout from a failure, and it **leaves the
-   game exe alive** holding build outputs; step 9's sweep is at the END of the
-   tick, far too late. If you do cut one off, sweep immediately and re-run it.
 3. **Reviewer pass** when `review.required` is true in the payload.
    Dispatch `Agent{subagent_type: 'zagent-reviewer', model:
    <routing.model>}` with the diff inlined in the prompt, and inline
@@ -755,41 +735,16 @@ report is _proposed text_ that you apply (I4).
 
 6. `zagent owns <KEY>` again, immediately before writing anything.
 
-**Nothing you edit after a gate run is covered by that run.** The gates
-certified the bytes that existed when they ran, and `doc_lint.ps1` is one
-of them — so a `Games/*/Docs` edit made between step 6.2 and the commit
-ships doc bytes no gate has seen. So does the `Status.md` narration, and
-so does anything you touch while fix-forwarding.
+**Nothing you edit after a gate run is covered by that run**, and `-Phase
+verify` exists to be that last run: it re-derives the gate list against the
+CURRENT diff and re-runs everything, so the pin, the `Status.md` narration and
+the reviewer's doc findings are all certified by it. Edit anything after it and
+you run it again.
 
-The rule is simply: **the gates are the LAST thing that runs before the
-guard.** Edit anything and you re-run `zagent gates <KEY>` and the gates,
-in that order. The pin bump below already says this for its own case;
-it is the general form.
-
-**★ SEQUENCE IT SO YOU ONLY GATE ONCE.** The rule above is correct and reads as
-though a full re-run after the fact is the only option, which is how ZM-27 spent
-~25 minutes re-certifying three comment edits that only `doc_lint` reads. The
-trap is that the pin narration in `Status.md` cannot be WRITTEN until the count
-has been OBSERVED, and observing it means running a gate — so the doc edit
-necessarily lands after a gate run. Do this instead:
-
-1. build, plus any windowed authoring the ticket needs;
-2. run **only the unit gate**, to observe the count — it reds at the old pin and
-   prints the new one, and that is the measurement;
-3. bump `Tools/unit_baselines.json`, update `Status.md`, fix any stale comments,
-   apply the reviewer's doc findings;
-4. run the FULL suite once, green;
-5. guard, commit.
-
-Same guarantee, one cycle.
-
-What the machinery covers here, and what it does not: `guard <KEY>` fails
-when your edit pulled in an area whose gates never ran, which is the
-expensive case. It says nothing when the edit stays inside the same area
-— a Docs file on a Zenithmon ticket — because the gate LIST is unchanged.
-That gap is why this paragraph exists, and it is the only reason it does.
-
-An empty gate list can never merge. If `gates` is `[]`, Block it.
+`guard <KEY>` catches the expensive half of that — an edit that pulled in an
+area whose gates never ran — and says nothing when the edit stays inside the
+same area, because the gate LIST is unchanged. That residue is judgement, and
+it is the only reason this paragraph survives.
 
 **A unit-gate line pins a baseline, and the gate asserts `ran ==
 Baseline` EXACTLY.** So a ticket that ADDS or REMOVES units reds the gate
@@ -808,42 +763,34 @@ every test-adding ticket was unreachable — in a repo whose conventions ask
 for a test with all new code. If you find yourself reading that a pin
 cannot be bumped, the doc is stale.
 
-So when the gate reds with **zero failures**:
+So when `-Phase measure` exits **10**:
 
-1. Read the exact count off the gate (`… N ran, … 0 failed`). That number
-   is the deliverable, and only a real suite run produces it.
-2. **YOU bump the row, not the worker** — `Tools/unit_baselines.json`, in
-   the SAME commit as the tests that moved it. This is the one edit the
-   orchestrator makes itself, and it does not breach I1: the worker cannot
-   run a gate, so it cannot know the number, and a worker that "bumps" a
-   pin is guessing. Recording a measurement you just took is not
-   authoring. Do NOT send the worker back for it — that costs a dispatch
-   to produce a number it would have to invent.
+1. It has already read the exact count off the gate and printed it. Only a real
+   suite run produces that number.
+2. **YOU write it into `Tools/unit_baselines.json`**, in the SAME commit as the
+   tests that moved it. This is the one edit the orchestrator makes itself, and
+   it does not breach I1: the worker cannot run a gate, so a worker that "bumps"
+   a pin is guessing. Recording a measurement is not authoring.
+3. **A backend-neutral ENGINE unit moves every game's row**, not just the one
+   you ran. Bump them all, and name in the work log which you MEASURED and which
+   you inferred.
+4. `Games/*/Docs/Status.md` narrates pins for humans and is read by no gate.
+   Update it when the ticket touches that game.
 
-   Re-run the gate after bumping. A pin is only correct if the gate that
-   reads it goes green, and a second red here means the count moved again
-   (a flaky or order-dependent registration), which is a different problem
-   from the one you just fixed.
-3. **A backend-neutral ENGINE unit moves every game's row**, not just the
-   one you ran. Bump them all, and say so in the work log — you will only
-   have observed one of them, so name which you measured and which you
-   inferred.
-4. `Games/*/Docs/Status.md` still narrates pins for humans and is NOT
-   read by any gate. Update it when the ticket touches that game, but a
-   stale line there reds nothing.
+   **★ IT HOLDS DATA AS WELL AS NARRATION — TWO SITES, NEITHER GATED.**
+   `Status.md` carries a committed-asset SHA256 table separate from its prose.
+   On ZM-20 the prose was updated and the table row left reading the pre-change
+   hash, so the file contradicted itself four hundred lines apart — and the
+   table's own text names the cost: *"the next agent to run the two-boot proof
+   would diff against these rows, see a mismatch, and start hunting a
+   determinism bug that does not exist"*. `doc_lint.ps1` has zero matches for
+   `SHA256|hash|zscen`. Whenever you touch a doc, **grep it for the value you
+   just changed** rather than patching the paragraph you happened to be reading.
 
-   **★ AND IT HOLDS DATA AS WELL AS NARRATION — TWO UPDATE SITES, NEITHER
-   GATED.** `Status.md` carries a committed-asset SHA256 table separate from its
-   prose. On ZM-20 the orchestrator updated the prose and left the table row
-   reading the pre-change hash, so the file contradicted itself four hundred
-   lines apart. The table's own text names the cost: *"the next agent to run the
-   two-boot proof would diff against these rows, see a mismatch, and start
-   hunting a determinism bug that does not exist"* — and the next ticket in that
-   chain was exactly that agent. `doc_lint.ps1` has zero matches for
-   `SHA256|hash|zscen`, so a green four-gate run says nothing about it.
-
-   Whenever you touch a doc, **grep it for the value you just changed** rather
-   than patching the paragraph you happened to be reading.
+Then run `-Phase verify`. The pin is only correct if the gate that reads it goes
+green, and a second red there means the count moved again — a flaky or
+order-dependent registration, which is a different problem from the one you just
+fixed.
 
 **Never "fix" this by reverting the worker's tests.** A green gate bought
 by deleting coverage is the worst outcome available here, and on the board
@@ -980,6 +927,12 @@ spec inside sentinels and replaces its own previous block on a re-run.
 
 Run the project's `cleanup` commands (the stray-process sweep — orphaned
 game exes lock build outputs for the next iteration).
+
+`tick_gates.ps1` already sweeps on every exit path, including a crash, so
+this is the belt to its braces — it catches an exe started outside the gate
+run (a windowed authoring boot on a `needs-gpu` ticket, say). This step used
+to be the ONLY sweep, and it runs after the gates: an exe left alive by a cut
+-off gate failed the NEXT build, for a reason naming a file nobody touched.
 
 - **Queue mode** → `ScheduleWakeup{noop:false, delaySeconds:60}`.
 - **Targeted mode** → `ScheduleWakeup{stop:true}` and report. You were

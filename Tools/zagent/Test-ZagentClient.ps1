@@ -724,15 +724,66 @@ Assert-That 'reads each list through PSObject.Properties, not by direct access' 
     } finally { Remove-Item -LiteralPath $repo -Recurse -Force -ErrorAction SilentlyContinue }
 }
 
-Assert-That 'says nothing at all when nothing drifted' {
-    $null -eq (Format-BodyDrift -Key 'ZM-50' -Missing @())
+# ★ "NOTHING EXTRACTED" AND "NOTHING DRIFTED" USED TO BE THE SAME OUTPUT,
+# WHICH WAS NO OUTPUT AT ALL. Three consecutive claims came back with
+# `citations: {paths:[], symbols:[], lines:[]}` and wrote no drift.txt,
+# so at the call site an unparsed body read exactly like a clean one --
+# while every body examined HAD drifted. ZM-27's Goal claimed there was
+# "no way to USE an item at all today" with ZM_Bag, ZM_ItemData,
+# ZM_UI_Bag and ZM_ShopLogic all present and the bag already persisting
+# as save module 6.
+Assert-That 'says NOTHING WAS CHECKED when the board extracted no citations' {
+    $c = [PSCustomObject]@{ paths = @(); symbols = @(); lines = @() }
+    $text = Format-BodyDrift -Key 'ZM-27' -Missing @() -Citations $c
+    ($null -ne $text) -and $text.Contains('NO citations') -and
+    $text.Contains('NOTHING was checked') -and $text.Contains('not a clean result')
+}
+
+Assert-That 'reports the COUNT when everything resolved, so a pass is evidence of something' {
+    $c = [PSCustomObject]@{ paths = @('a.cpp', 'b.cpp'); symbols = @('Zenith_X'); lines = @() }
+    $text = Format-BodyDrift -Key 'ZM-50' -Missing @() -Citations $c
+    $text.Contains('all 3 checkable citation(s) resolve')
+}
+
+Assert-That 'reports N of M when some drifted' {
+    $c = [PSCustomObject]@{ paths = @('a.cpp', 'b.cpp'); symbols = @('Zenith_X'); lines = @() }
+    $missing = @([PSCustomObject]@{ kind = 'path'; value = 'a.cpp'; movedTo = $null })
+    $text = Format-BodyDrift -Key 'ZM-50' -Missing $missing -Citations $c
+    $text.Contains('1 of 3 checkable') -and $text.Contains('(2 resolved.)')
+}
+
+# `lines` is the half nothing can resolve: a line number is true only
+# against a commit nobody recorded. Counting it as checked would be a
+# lie; omitting it would hide the one bucket that needs a human.
+Assert-That 'counts line citations SEPARATELY and says they were not checked' {
+    $c = [PSCustomObject]@{ paths = @('a.cpp'); symbols = @(); lines = @('Zenith.cpp:522') }
+    $text = Format-BodyDrift -Key 'ZEN-5' -Missing @() -Citations $c
+    $text.Contains('all 1 checkable') -and $text.Contains('NOT CHECKED')
+}
+
+Assert-That 'a body with ONLY line citations still reports that nothing checkable came back' {
+    $c = [PSCustomObject]@{ paths = @(); symbols = @(); lines = @('Zenith.cpp:522') }
+    $text = Format-BodyDrift -Key 'ZEN-5' -Missing @() -Citations $c
+    $text.Contains('0 checkable citation(s) resolve') -and $text.Contains('NOT CHECKED')
+}
+
+Assert-That 'Get-CitationCount tolerates a null, a missing field and empty strings' {
+    # `Set-StrictMode` turns a missing property into a throw, and a
+    # payload that legally omits one would otherwise crash the client
+    # rather than report.
+    $a = Get-CitationCount -Citations $null
+    $b = Get-CitationCount -Citations ([PSCustomObject]@{ paths = @('x') })
+    $c = Get-CitationCount -Citations ([PSCustomObject]@{ paths = @('', $null, 'x'); symbols = @() })
+    ($a.total -eq 0) -and ($b.checkable -eq 1) -and ($b.lines -eq 0) -and ($c.paths -eq 1)
 }
 
 # The word ADVISORY has to be in the text. A ticket may legitimately name
 # what it is about to CREATE, and the first false alarm on one of those
 # teaches the reader to ignore the whole check.
 Assert-That 'says the warning is ADVISORY, and names the ticket and the citation' {
-    $text = Format-BodyDrift -Key 'ZM-50' -Missing @([PSCustomObject]@{ kind = 'path'; value = 'Tools/gone.ps1' })
+    $c = [PSCustomObject]@{ paths = @('Tools/gone.ps1'); symbols = @(); lines = @() }
+    $text = Format-BodyDrift -Key 'ZM-50' -Citations $c `
+        -Missing @([PSCustomObject]@{ kind = 'path'; value = 'Tools/gone.ps1' })
     $text.Contains('ZM-50') -and $text.Contains('Tools/gone.ps1') -and $text.Contains('ADVISORY')
 }
 
@@ -759,14 +810,16 @@ Assert-That 'points at a file of the same name living somewhere else' {
         # the ARRAY's properties. That combination fails half a check and
         # passes the other half, which is how it survived being written.
         $missing = Get-BodyDrift -Repo $repo -Citations $c
-        $text = Format-BodyDrift -Key 'ZM-20' -Missing $missing
+        $text = Format-BodyDrift -Key 'ZM-20' -Missing $missing -Citations $c
         ($missing[0].movedTo -eq 'Games/Zenithmon/Tests/ZM_Moved.cpp') -and
         $text.Contains('Games/Zenithmon/Tests/ZM_Moved.cpp')
     } finally { Remove-Item -LiteralPath $repo -Recurse -Force -ErrorAction SilentlyContinue }
 }
 
 Assert-That 'says only that it is gone when no file of that name exists' {
-    $text = Format-BodyDrift -Key 'ZM-1' -Missing @([PSCustomObject]@{ kind = 'path'; value = 'a/b.cpp'; movedTo = $null })
+    $c = [PSCustomObject]@{ paths = @('a/b.cpp'); symbols = @(); lines = @() }
+    $text = Format-BodyDrift -Key 'ZM-1' -Citations $c `
+        -Missing @([PSCustomObject]@{ kind = 'path'; value = 'a/b.cpp'; movedTo = $null })
     -not $text.Contains('a file of that name is at')
 }
 

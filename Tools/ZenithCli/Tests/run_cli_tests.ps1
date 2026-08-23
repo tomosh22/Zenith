@@ -238,6 +238,22 @@ try {
         $rc = (Invoke-CliCode @('regen', '--check'))
         Assert ($rc -eq 0 -or $rc -eq 3) "regen --check -> 0|3 (got $rc)"
     }
+    # A flag whose VALUE is missing used to read past the end of the argument
+    # array and hand back $null, which then fell through to the DEFAULT config
+    # -- so `zenith build Combat --config` built something other than what was
+    # asked for and said nothing about it.
+    Invoke-Test "build --config with no value is a usage error, not the default config" {
+        Assert ((Invoke-CliCode @('build', 'Zenithmon', '--config')) -eq 1) "build --config <nothing> -> 1"
+    }
+    Invoke-Test "build --timeout with no value is a usage error" {
+        Assert ((Invoke-CliCode @('build', 'Zenithmon', '--timeout')) -eq 1) "build --timeout <nothing> -> 1"
+    }
+    # A SECOND positional was silently dropped: `zenith build Zenithmon Combat`
+    # built Zenithmon, exited 0, and read exactly like having built both.
+    Invoke-Test "build with two targets is refused rather than half-honoured" {
+        Assert ((Invoke-CliCode @('build', 'Zenithmon', 'Combat')) -eq 1) "build A B -> 1"
+    }
+
     Invoke-Test "build --timeout parses (missing target still usage=1)" {
         Assert ((Invoke-CliCode @('build', '--timeout', '5')) -eq 1) "build --timeout no target -> 1"
     }

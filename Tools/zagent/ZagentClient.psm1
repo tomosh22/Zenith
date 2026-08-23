@@ -403,26 +403,99 @@ function Get-BodyDrift {
     return , @($missing)
 }
 
+function Get-CitationCount {
+    <#
+      How many citations the board actually EXTRACTED, split by whether
+      this side can check them.
+
+      `lines` is deliberately its own bucket. A line number is true only
+      relative to a commit nobody recorded, so it goes stale on the next
+      edit ABOVE it and no resolver can tell -- ZEN-5's body cited line
+      522 for a specifier that was at 540 and the drift check was
+      silent. Counting it as "checked" would be a lie; omitting it
+      entirely would hide the one thing that needs a human's eyes.
+    #>
+    param($Citations)
+
+    $count = { param($Field)
+        if (-not $Citations) { return 0 }
+        $prop = $Citations.PSObject.Properties[$Field]
+        if (-not $prop) { return 0 }
+        return @($prop.Value | Where-Object { $_ }).Count
+    }
+    $paths = & $count 'paths'
+    $symbols = & $count 'symbols'
+    $lines = & $count 'lines'
+    return [PSCustomObject]@{
+        paths     = $paths
+        symbols   = $symbols
+        lines     = $lines
+        checkable = $paths + $symbols
+        total     = $paths + $symbols + $lines
+    }
+}
+
 function Format-BodyDrift {
     <#
-      The warning text, and $null when nothing drifted.
+      The drift report -- ALWAYS a string, never $null.
+
+      ★ "NOTHING EXTRACTED" AND "NOTHING DRIFTED" USED TO BE THE SAME
+      OUTPUT, WHICH WAS NO OUTPUT. Three consecutive claims came back
+      with `citations: {paths:[], symbols:[], lines:[]}` and wrote no
+      drift.txt, so at the call site an unparsed body was
+      indistinguishable from a clean one. Meanwhile every body examined
+      HAD drifted: ZM-27's Goal claimed there was "no way to USE an item
+      at all today" while ZM_Bag, ZM_ItemData, ZM_UI_Bag, ZM_ShopLogic
+      and item use in battle all existed, and the bag already persisted
+      as save module 6. The check reported nothing and the reader took
+      that for a pass.
+
+      So the count leads every report. `0 citations extracted` and `4 of
+      4 resolve` are different sentences now, and only the second is
+      evidence of anything.
 
       Separate from Get-BodyDrift so a test can assert the WORDS without
       needing a repo: the sentence has to say "advisory" out loud, or the
       first unresolved citation on a legitimately forward-looking ticket
       teaches the reader to ignore the whole check.
     #>
-    param([string]$Key, $Missing)
+    param([string]$Key, $Missing, $Citations)
 
     $rows = @($Missing)
-    if ($rows.Count -eq 0) { return $null }
-    $lines = @("$Key -- the body cites $($rows.Count) thing(s) this checkout does not have:")
-    foreach ($row in $rows) {
-        $line = "  $($row.kind)  $($row.value)"
-        $moved = $row.PSObject.Properties['movedTo']
-        if ($moved -and $moved.Value) { $line += "   (a file of that name is at $($moved.Value))" }
-        $lines += $line
+    $n = Get-CitationCount -Citations $Citations
+    $lines = @()
+
+    if ($n.total -eq 0) {
+        # The loud case. Nothing was checked, so nothing about this body
+        # has been established either way.
+        $lines += "$Key -- NO citations were extracted from this body, so NOTHING was checked."
+        $lines += 'That is not a clean result. A body with no quoted path or symbol has not been'
+        $lines += 'verified against anything -- read it against `master` yourself before inlining'
+        $lines += 'it into a worker prompt. Every body examined in one session had drifted.'
+        return ($lines -join [Environment]::NewLine)
     }
+
+    $resolved = $n.checkable - $rows.Count
+    if ($rows.Count -eq 0) {
+        $lines += "$Key -- all $($n.checkable) checkable citation(s) resolve in this checkout."
+    } else {
+        $lines += "$Key -- $($rows.Count) of $($n.checkable) checkable citation(s) do not resolve here:"
+        foreach ($row in $rows) {
+            $line = "  $($row.kind)  $($row.value)"
+            $moved = $row.PSObject.Properties['movedTo']
+            if ($moved -and $moved.Value) { $line += "   (a file of that name is at $($moved.Value))" }
+            $lines += $line
+        }
+        if ($resolved -gt 0) { $lines += "  ($resolved resolved.)" }
+    }
+
+    # Always, including on a clean report: it is the half the count above
+    # cannot speak for.
+    if ($n.lines -gt 0) {
+        $lines += "  $($n.lines) line-number citation(s) -- NOT CHECKED, and uncheckable. A line"
+        $lines += '  number is true only against a commit nobody recorded; open the file.'
+    }
+
     $lines += 'A body describes the past. Re-read it against `master` before inlining it into a'
     $lines += 'worker prompt -- this is ADVISORY, since a ticket may legitimately name what it is'
     $lines += 'about to create.'
@@ -735,6 +808,6 @@ Export-ModuleMember -Function Find-ClientRepo, ConvertTo-PosixPath, Remove-Annot
     Get-ClientProject, Get-FlagValue, Test-Flag, Get-FileFlags, Get-FileContents, Get-WorkingTreeChanges,
     Test-NeedsDocsTree, Test-NeedsChangedSet, Get-RequestTimeout, Get-GuardTicketKey,
     Get-RecordedGateSelection,
-    Get-BodyDrift, Format-BodyDrift, Get-DocsTree,
+    Get-BodyDrift, Format-BodyDrift, Get-CitationCount, Get-DocsTree,
     Get-ConventionsTree, Get-AmendContents, Get-ScratchRoot, Write-Results, Write-LastResult,
     Get-ClientChecks, Get-AllGateLines, Write-StdErr

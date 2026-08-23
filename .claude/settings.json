@@ -12,6 +12,8 @@
       "Bash(pwsh -NoProfile -File Tools/zenith.ps1*)",
       "Bash(pwsh -NoProfile -File Tools/zenith_gh.ps1*)",
       "Bash(pwsh -NoProfile -File Build/regen.ps1*)",
+      "Bash(pwsh -NoProfile -File Tools/tick_gates.ps1*)",
+      "PowerShell(pwsh -NoProfile -File Tools\\tick_gates.ps1*)",
       "PowerShell(pwsh -NoProfile -File Tools\\zenith.ps1*)",
       "PowerShell(pwsh -NoProfile -File Tools\\zenith_gh.ps1*)",
       "PowerShell(pwsh -NoProfile -File Build\\regen.ps1*)",

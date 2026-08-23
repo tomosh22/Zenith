@@ -717,6 +717,111 @@ function Repair-ZenithRuntimeDlls {
 
 # --- Regen drift detection ----------------------------------------------------
 
+function Get-ZenithProjectSourceDrift {
+    # Which .cpp files exist on disk but appear in NO generated vcxproj for
+    # their game -- i.e. source Sharpmake has never been told about.
+    #
+    # ★ THIS IS THE HOLE THAT LET A TICKET SHIP UNCOMPILED. Sharpmake bakes an
+    # explicit <ClCompile Include="..."> list into the vcxproj from a directory
+    # glob AT GENERATION TIME, so a .cpp added afterwards enters the build only
+    # at the next regen. Nothing noticed: `zenith build` exits 0 (the file is
+    # simply not in the project), and the unit-count gate moves by however many
+    # tests landed in files that ALREADY existed, which is indistinguishable
+    # from an ordinary baseline bump. Measured on ZM-27: three new files, build
+    # exit 0, zero occurrences of the new TU in the build log.
+    #
+    # `Test-ZenithRegenDrift` could not see it either, and that is the point of
+    # separating the two. Its notion of "stale" is descriptor-derived -- it
+    # byte-compares the generated .cs against a fresh codegen and checks that
+    # each sln exists. Adding a source file changes NEITHER: no descriptor
+    # moved, so the .cs is identical and every sln is present. It answered "in
+    # sync", truthfully, about a question nobody was asking.
+    #
+    # Returns @{ InSync = [bool]; Reasons = [string[]]; Orphans = [string[]] }.
+    # Orphans are repo-relative paths, sorted, so a caller can print them.
+    [CmdletBinding()]
+    param([string]$RepoRoot, [string]$GamesRoot)
+
+    if ([string]::IsNullOrEmpty($RepoRoot)) { $RepoRoot = Get-ZenithRepoRoot }
+    if ([string]::IsNullOrEmpty($GamesRoot)) { $GamesRoot = Join-Path $RepoRoot 'Games' }
+
+    $reasons = New-Object System.Collections.Generic.List[string]
+    $orphans = New-Object System.Collections.Generic.List[string]
+
+    # (source root, generated-project dir) pairs. THE ENGINE IS IN THE LIST and
+    # that is not a detail: an engine change compiles every game, and a new
+    # `Zenith/**/*.cpp` is exactly as invisible to descriptor-derived staleness
+    # as a game one -- no descriptor moved, so the generated .cs is
+    # byte-identical and every sln is present. Checking only Games/ would have
+    # left the largest source tree in the repo uncovered by the check written
+    # to catch this.
+    $units = New-Object System.Collections.Generic.List[object]
+    $units.Add([PSCustomObject]@{
+            Name       = 'Zenith (engine)'
+            SourceRoot = Join-Path $RepoRoot 'Zenith'
+            ProjectDir = Join-Path $RepoRoot 'Build'
+        })
+
+    $scan = Get-ZenithGameDescriptors -GamesRoot $GamesRoot
+    foreach ($d in $scan.Descriptors) {
+        $units.Add([PSCustomObject]@{
+                Name       = [string]$d.Name
+                SourceRoot = Join-Path $GamesRoot ([string]$d.Name)
+                ProjectDir = Join-Path (Join-Path $GamesRoot ([string]$d.Name)) 'build'
+            })
+    }
+
+    foreach ($u in $units.ToArray()) {
+        $gameDir = $u.SourceRoot
+        if (-not (Test-Path -LiteralPath $gameDir)) { continue }
+
+        # If there are no generated projects, this unit has never been
+        # generated -- a DIFFERENT failure, owned by Test-ZenithRegenDrift's
+        # missing-sln check. Saying "every source file is an orphan" would
+        # bury it under hundreds of lines.
+        $projDir = $u.ProjectDir
+        $projects = @(Get-ChildItem -LiteralPath $projDir -Filter '*.vcxproj' -File -ErrorAction SilentlyContinue)
+        if ($projects.Count -eq 0) { continue }
+
+        # One haystack per UNIT rather than per project: a .cpp compiled by the
+        # agde project and not the win64 one is legitimate, and asking "is this
+        # file known to ANY project here" is the question that distinguishes
+        # "never generated in" from "deliberately excluded".
+        $known = New-Object System.Collections.Generic.HashSet[string] ([StringComparer]::OrdinalIgnoreCase)
+        foreach ($proj in $projects) {
+            $text = Get-Content -LiteralPath $proj.FullName -Raw -Encoding utf8
+            foreach ($m in [regex]::Matches($text, '<ClCompile\s+Include="([^"]+)"')) {
+                [void]$known.Add((Split-Path -Leaf $m.Groups[1].Value))
+            }
+        }
+        # An empty list means the regex stopped matching the emitted format --
+        # a silent no-op dressed as a pass, which is the exact shape of defect
+        # this function exists to catch. Refuse rather than report clean.
+        if ($known.Count -eq 0) {
+            $reasons.Add("no <ClCompile> entries found in any $($u.Name) vcxproj -- the source-list check cannot run (has the Sharpmake output format changed?)")
+            continue
+        }
+
+        $onDisk = @(Get-ChildItem -LiteralPath $gameDir -Filter '*.cpp' -File -Recurse -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -notmatch '(?i)[\\/](build|Build)[\\/]' })
+        foreach ($file in $onDisk) {
+            if ($known.Contains($file.Name)) { continue }
+            $rel = $file.FullName.Substring($RepoRoot.Length).TrimStart('\', '/')
+            $orphans.Add(($rel -replace '\\', '/'))
+        }
+    }
+
+    $sorted = @($orphans | Sort-Object)
+    if ($sorted.Count -gt 0) {
+        $reasons.Add("$($sorted.Count) source file(s) exist on disk but are in no generated vcxproj -- they will NOT be compiled until 'zenith regen' runs")
+    }
+    return [PSCustomObject]@{
+        InSync  = ($reasons.Count -eq 0)
+        Reasons = $reasons.ToArray()
+        Orphans = $sorted
+    }
+}
+
 function Test-ZenithRegenDrift {
     # Read-only staleness check for the generated build files (never writes).
     # Since NOTHING generated is git-tracked (regenerate-first policy), a branch
@@ -768,6 +873,14 @@ function Test-ZenithRegenDrift {
             $reasons.Add("game solution missing: $sln")
         }
     }
+
+    # Source files the vcxproj has never heard of. Descriptor-derived staleness
+    # cannot see these -- no descriptor moved, so the generated .cs is
+    # byte-identical and every sln is present -- and they are the expensive
+    # case: the build goes GREEN with the new code never compiled.
+    $sourceDrift = Get-ZenithProjectSourceDrift -RepoRoot $RepoRoot -GamesRoot $GamesRoot
+    foreach ($r in $sourceDrift.Reasons) { $reasons.Add($r) }
+    foreach ($o in $sourceDrift.Orphans) { $reasons.Add("  not compiled: $o") }
 
     return [PSCustomObject]@{ InSync = ($reasons.Count -eq 0); Reasons = $reasons.ToArray() }
 }
@@ -930,5 +1043,6 @@ Export-ModuleMember -Function @(
     'Stop-ZenithBuildProcesses',
     'Repair-ZenithRuntimeDlls',
     'Test-ZenithRegenDrift',
+    'Get-ZenithProjectSourceDrift',
     'Remove-ZenithOrphanGameArtifacts'
 )

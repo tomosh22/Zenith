@@ -379,11 +379,22 @@ function Invoke-ZenithBuild {
     $target = $null; $config = $null; $timeoutMin = 0; $headless = $false
     for ($i = 0; $i -lt $CmdArgs.Count; $i++) {
         $a = $CmdArgs[$i]
-        if ($a -eq '--config') { $config = $CmdArgs[++$i] }
-        elseif ($a -eq '--timeout') { $timeoutMin = [int]$CmdArgs[++$i] }
+        # A flag whose VALUE is missing used to read past the end of the array
+        # and hand back $null, which then fell through to the default config --
+        # so `zenith build Combat --config` built something other than what was
+        # asked for and said nothing. An unknown option already errors; a
+        # half-typed known one must too.
+        if ($a -eq '--config' -or $a -eq '--timeout') {
+            if ($i + 1 -ge $CmdArgs.Count) { Write-CliError "$a needs a value"; return $script:EXIT_USAGE }
+            if ($a -eq '--config') { $config = $CmdArgs[++$i] } else { $timeoutMin = [int]$CmdArgs[++$i] }
+        }
         elseif ($a -eq '--headless') { $headless = $true }
         elseif ($a -like '--*') { Write-CliError "unknown option '$a'"; return $script:EXIT_USAGE }
-        else { if ($null -eq $target) { $target = $a } }
+        # A SECOND positional was silently dropped: `zenith build Zenithmon
+        # Combat` built Zenithmon and reported success, which reads exactly
+        # like having built both.
+        elseif ($null -eq $target) { $target = $a }
+        else { Write-CliError "unexpected argument '$a' (build takes ONE target; got '$target' and '$a')"; return $script:EXIT_USAGE }
     }
     if ([string]::IsNullOrEmpty($target)) { Write-CliError "usage: zenith build <Name|engine> [--config <C>] [--headless] [--timeout <min>]"; return $script:EXIT_USAGE }
     # --headless selects the Null-backend config (the GPU-less build every
@@ -438,6 +449,30 @@ function Invoke-ZenithBuild {
     $buildArgs = @($sln, "/t:$name", "/p:Configuration=$config", '/p:Platform=x64', '/m', '/nologo', '/v:minimal')
     $rc = Invoke-ZenithMsbuildStep -Msbuild $msbuild -BuildArgs $buildArgs -TimeoutMinutes $timeoutMin
     if ($rc -ne 0) { Write-CliError "build failed"; return $script:EXIT_BUILD }
+
+    # ★ HEAL THE RUNTIME DLLs, OR THIS COMMAND REPORTS SUCCESS FOR AN EXE THAT
+    # CANNOT START. Sharpmake's post-build copies slang.dll and not the rest of
+    # its dependency tree (slang-rt, slang-glslang, slang-glsl-module,
+    # slang-llvm, slang-compiler, gfx), so a fresh config leaf produces an exe
+    # that dies with STATUS_DLL_NOT_FOUND (0xC0000135) before main() -- an
+    # EMPTY log and no output at all.
+    #
+    # `zenith test` and `zenith package` have always healed. `zenith build` did
+    # not, and the gap was invisible for exactly as long as every consumer ran
+    # `test` first: build (green) -> test (heals) -> unit gate (works). Run the
+    # unit gate WITHOUT test in front of it -- which is what measuring a pin
+    # before the slow suite does, and what `Tools/tick_gates.ps1 -Phase measure`
+    # now does deliberately -- and it reports "no 'Unit tests complete' line",
+    # which reads as a test failure rather than as an unusable build.
+    #
+    # Copy-missing-only, so a healthy dir is untouched and this costs nothing.
+    $exe = Get-GameOutputExe -Name $name -Config $config
+    if ($exe) {
+        foreach ($dll in @(Repair-ZenithRuntimeDlls -ExeDir (Split-Path -Parent $exe.FullName))) {
+            Write-Host "  healed $dll -> exe dir" -ForegroundColor DarkGray
+        }
+    }
+
     Write-Host "Built $name ($config)." -ForegroundColor Green
     return $script:EXIT_OK
 }

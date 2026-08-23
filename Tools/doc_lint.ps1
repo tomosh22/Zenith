@@ -93,11 +93,28 @@ function Check-TestCount {
     # Count ZENITH_AUTOMATED_TEST_REGISTER call sites. Each maps to one
     # registered test. Some .cpp files declare multiple tests; counting
     # registration calls is the accurate signal.
+    #
+    # ★ EVERY .cpp, NOT 'Test_*.cpp'. The glob used to be 'Test_*.cpp', which is
+    # DevilsPlayground's convention and nobody else's: Zenithmon names its
+    # suites ZM_AutoTests_*.cpp, so this check counted a registry of ZERO,
+    # compared every doc claim against it, and reported PASS. It had therefore
+    # never once run against the game whose docs narrate a pinned baseline --
+    # which is the whole reason -Game was added.
     $registerCount = 0
-    Get-ChildItem -Path $testsDir -Filter 'Test_*.cpp' -Recurse | ForEach-Object {
+    Get-ChildItem -Path $testsDir -Filter '*.cpp' -Recurse | ForEach-Object {
         $content = Get-Content $_.FullName -Raw
         $matches = [regex]::Matches($content, 'ZENITH_AUTOMATED_TEST_REGISTER\s*\(')
         $registerCount += $matches.Count
+    }
+
+    # ★ A REGISTRY OF ZERO IS A BROKEN CHECK, NOT A CLEAN ONE. A Tests/ dir that
+    # exists and yields no registrations means this function is looking in the
+    # wrong place or for the wrong macro -- and reporting that as a pass is the
+    # exact shape of failure the check exists to catch, one level up. Every doc
+    # claim would sail past a ceiling of zero.
+    if ($registerCount -eq 0) {
+        Report-Violation 'C1' "${Game}: Tests/ exists but no ZENITH_AUTOMATED_TEST_REGISTER call sites were found under $testsDir -- the count check cannot run, and would pass every doc claim against a ceiling of 0"
+        return
     }
 
     # Doc claim sites. Each docs file may have multiple "N tests" mentions;

@@ -210,9 +210,15 @@ Write-Results -Result $result -Repo $repoForWrites
 # drifted from the repo, so the warning goes out on stderr AND into the
 # run scratch — stderr is what a human sees, and the file is what
 # survives a firing that crashes between the claim and the read.
+# It writes UNCONDITIONALLY now. It used to write only when something
+# drifted, so a missing drift.txt meant either "nothing drifted" or
+# "nothing was extracted to check" -- and the file was missing on three
+# consecutive claims whose bodies had all drifted badly. A check whose
+# silence has two meanings is a check the reader learns to skip.
 if ($repoPath -and $result.payload.PSObject.Properties['citations']) {
     $drift = Get-BodyDrift -Repo $repoPath -Citations $result.payload.citations
-    $text = Format-BodyDrift -Key $result.payload.key -Missing $drift
+    $text = Format-BodyDrift -Key $result.payload.key -Missing $drift `
+        -Citations $result.payload.citations
     if ($text) {
         Write-StdErr $text
         $driftDir = Join-Path (Get-ScratchRoot $repoForWrites) $result.payload.key
