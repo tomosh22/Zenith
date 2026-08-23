@@ -392,12 +392,37 @@ guard. Running a windowed TEST is not authoring either.
 ticket — **a GPU is assumed available** and this label gates nothing. What it
 tells you is HOW to build: the deliverable needs a `Vulkan_*_True` build and a
 windowed run, not the `--headless` `Null_` config every gate line defaults to.
-Pass `--skip-unit-tests` on a windowed `--automated-test` run; the SaveData
-sandbox unit fails BY DESIGN under the harness.
+
+**★★ DO NOT ASK PERMISSION TO RUN A VULKAN BUILD OR A WINDOWED BOOT.** They are
+ordinary steps of a `needs-gpu` tick, exactly as `zenith build --headless` is of
+any other, and stopping to confirm puts a person back in front of a ticket the
+label exists to hand to the loop — which is the whole defect `windowed` had.
+Build it, boot it, gate it, commit it. Say in the work log that a window opened;
+do not wait for someone to say yes.
 
 The pin still comes from a `Null_` run. `Tools/unit_baselines.json` is explicit
 that a Vulkan exe reports higher for the same tree (a standing +37 for
 Zenithmon), so the shape is: **Vulkan to author, Null to verify and pin.**
+
+Three mechanics that decide whether the windowed run works at all, all measured
+on ZM-20:
+
+- **A bare windowed exe NEVER EXITS.** `--exit-after-frames` is silently ignored
+  without `--automated-test`, and a tools build then "idles in the editor
+  forever". Drive the boot with a short automated test — the authoring runs at
+  boot, before the test does:
+  `zenithmon.exe --automated-test ZM_Boot_Test --skip-unit-tests`.
+- **`--skip-unit-tests` is not optional.** A failing boot unit aborts the boot
+  BEFORE scene authoring runs, and the needle for the thing you are authoring is
+  red until you author it — so without the flag the unit blocks its own fix,
+  forever. `zenith test` passes it for you; a bare exe does not.
+- **Read the authoring log line, not the exit code.** ZM-20's proof was
+  `sceneAuthoring=AUTHOR_DAWNMERE, warmMask=0x7, queued=0`. The failure mode is
+  `DEFERRED`, which authors nothing, exits 0, and looks successful — the same
+  fail-open shape as a skipped regen. Then **boot a second time and compare
+  hashes**: the bytes must be reproducible, and a scene built with
+  `AddStep_CreateScene` rather than loaded means the second boot is genuine
+  input-independence rather than repetition.
 
 **`needs-human` label** (`needsHuman: true` in the payload, and exit 4). No
 machine can produce the deliverable — it is a person's judgement: a visual
@@ -741,6 +766,23 @@ guard.** Edit anything and you re-run `zagent gates <KEY>` and the gates,
 in that order. The pin bump below already says this for its own case;
 it is the general form.
 
+**★ SEQUENCE IT SO YOU ONLY GATE ONCE.** The rule above is correct and reads as
+though a full re-run after the fact is the only option, which is how ZM-27 spent
+~25 minutes re-certifying three comment edits that only `doc_lint` reads. The
+trap is that the pin narration in `Status.md` cannot be WRITTEN until the count
+has been OBSERVED, and observing it means running a gate — so the doc edit
+necessarily lands after a gate run. Do this instead:
+
+1. build, plus any windowed authoring the ticket needs;
+2. run **only the unit gate**, to observe the count — it reds at the old pin and
+   prints the new one, and that is the measurement;
+3. bump `Tools/unit_baselines.json`, update `Status.md`, fix any stale comments,
+   apply the reviewer's doc findings;
+4. run the FULL suite once, green;
+5. guard, commit.
+
+Same guarantee, one cycle.
+
 What the machinery covers here, and what it does not: `guard <KEY>` fails
 when your edit pulled in an area whose gates never ran, which is the
 expensive case. It says nothing when the edit stays inside the same area
@@ -789,6 +831,19 @@ So when the gate reds with **zero failures**:
 4. `Games/*/Docs/Status.md` still narrates pins for humans and is NOT
    read by any gate. Update it when the ticket touches that game, but a
    stale line there reds nothing.
+
+   **★ AND IT HOLDS DATA AS WELL AS NARRATION — TWO UPDATE SITES, NEITHER
+   GATED.** `Status.md` carries a committed-asset SHA256 table separate from its
+   prose. On ZM-20 the orchestrator updated the prose and left the table row
+   reading the pre-change hash, so the file contradicted itself four hundred
+   lines apart. The table's own text names the cost: *"the next agent to run the
+   two-boot proof would diff against these rows, see a mismatch, and start
+   hunting a determinism bug that does not exist"* — and the next ticket in that
+   chain was exactly that agent. `doc_lint.ps1` has zero matches for
+   `SHA256|hash|zscen`, so a green four-gate run says nothing about it.
+
+   Whenever you touch a doc, **grep it for the value you just changed** rather
+   than patching the paragraph you happened to be reading.
 
 **Never "fix" this by reverting the worker's tests.** A green gate bought
 by deleting coverage is the worst outcome available here, and on the board
