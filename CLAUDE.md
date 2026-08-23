@@ -550,9 +550,10 @@ Commands you would actually use from here:
 | `docs write <path> --file f.md` | write ONE page — **refuses a mirrored page** |
 | `docs search "<text>"` | titles + bodies, with a snippet |
 | `rows decisions\|questions\|shortfalls\|changelog\|suggestions` | read the knowledge databases |
+| `suggestions [--all]` / `rows <db> resolve <ID> <STATUS> --reason "…"` | triage one row. `--reason` is REQUIRED, like `blocks` and for the same cause — nothing can recompute whether the friction is gone. Only questions, shortfalls and suggestions have a `Status`; decisions and changelog are append-only |
 | `docs status --project ZEN` | what a living-doc sync would change; writes nothing |
 | `docs sync --project ZEN` | mirror `Games/*/Docs` into the Notion page tree |
-| `link <KEY> blocks\|relates\|duplicates\|causes <KEY> --reason "…"` | one directed link; `blocks` is the one the claim query reads, and the only one that REQUIRES `--reason` |
+| `link <KEY> blocks\|relates\|duplicates\|causes <KEY> --reason "…"` | one directed link; `blocks` is the one the claim query reads, and the only LINK that REQUIRES `--reason` (a row resolve requires one too) |
 | `blocked --project ZM` | everything waiting, and on what |
 | `links <KEY>` / `epic <KEY>` / `parent <KEY> <PARENT>` | the dependency graph and the hierarchy |
 | `sprint list\|create\|start\|complete\|add\|remove` | one ACTIVE sprint per project |
