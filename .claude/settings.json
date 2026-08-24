@@ -7,6 +7,7 @@
       "Bash(gh run *)",
       "Bash(zagent *)",
       "PowerShell(zagent *)",
+      "Bash(timeout *)",
       "PowerShell(gh pr *)",
       "PowerShell(gh run *)",
       "Bash(pwsh -NoProfile -File Tools/zenith.ps1*)",

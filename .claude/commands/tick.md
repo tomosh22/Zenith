@@ -1,6 +1,6 @@
 ---
 description: Run one agent ticket — the queue head, or a ticket you name
-allowed-tools: Bash(zagent:*), Bash(pwsh -NoProfile*), Bash(git:*), Agent, Read, Write, Edit, ScheduleWakeup
+allowed-tools: Bash(zagent:*), Bash(timeout *), Bash(pwsh -NoProfile*), Bash(git:*), Agent, Read, Write, Edit, ScheduleWakeup, TaskStop
 argument-hint: [PROJECT_KEY | TICKET_KEY]
 ---
 
@@ -42,14 +42,53 @@ loop without it lies to itself.
   to `zagent-worker.md` and I1 is gone with no other file changing and
   nothing failing loudly. They are protected by `.claude/**` for that
   reason.
-- **I2 — Never trust "it works".** A worker's claim that gates pass is
-  worthless by construction: it was forbidden from running them. Re-run
-  everything yourself after integrating, even when the claim is
-  plausible.
+- **I2 — Never trust "it works", and never trust "it cannot be done"
+  either.** A worker's claim that gates pass is worthless by construction:
+  it was forbidden from running them. Re-run everything yourself after
+  integrating, even when the claim is plausible.
+
+  **★ THE SECOND HALF IS NEW AND IT IS THE MORE CONSEQUENTIAL ONE.** This
+  invariant was framed entirely against a SUCCESS claim, and the claim that
+  actually decides a ticket's fate is the opposite: ZM-23's worker reported
+  the ticket IMPOSSIBLE. Accepting that Blocks a ticket; rejecting it burns
+  a dispatch. Recomputing the palette arithmetic independently took about
+  two minutes and turned an assertion into a three-way corroboration — the
+  worker's analysis, an independent script, and a repo document that
+  predated the ticket. It held, and Blocking was right.
+
+  The same applies to the REVIEWER. ZM-65's review returned three blocking
+  findings, one of them refuting something the orchestrator had written
+  confidently; it was checked against the terrain recipe before being acted
+  on, and it held. **A claim that something is broken, or impossible, is
+  still a claim.**
 - **I3 — Inline the work into the prompt.** Never say "see the ticket" or
   "read Docs/X.md section 3". Paste the ticket body, the Definition of
-  Done, the file list and the conventions INTO the worker prompt.
+  Done, the file list, the conventions **and every recorded RULING that
+  governs the ticket's subject matter** INTO the worker prompt.
   `bodyPath` is a supplement, never the carrier.
+
+  **★★ THE RULINGS CLAUSE IS THE ONE THAT WAS MISSING, AND IT COST A
+  TICKET.** ZM-23 was dispatched with all four of the others pasted, plus
+  three reconciliations. The worker still shipped a trainer row that
+  contradicts `ZM-D-203` Ruling 3 — *"both get their own
+  `ZM_STORY_FLAG_ID`"*, because a flagless trainer's prize money is
+  **farmable across restarts** — and then PINNED the violation with a new
+  test asserting it was correct design.
+
+  Nothing else could see it. `contractValid` answers routing; the
+  reachability scan reads paths; the drift resolver checks that citations
+  RESOLVE, not that the ticket agrees with a decision. Three pre-existing
+  units actively *require* the flagless row, so the violation was the only
+  state that passed, and every gate went green. It surfaced solely because
+  `risk MEDIUM` happens to sit in `reviewOn` — on a LOW-risk ticket it
+  merges.
+
+  **The worker has no shell and no board: anything not inlined does not
+  exist for it.** `zagent.project.json` already declares `decisionLog` and
+  `decisionIdPrefix`, so you are told where the rulings live — you were
+  just never told to read them. Grep the decision log for the ticket's
+  nouns before writing the prompt, and paste what you find VERBATIM;
+  Status.md's "do NOT re-ask" list is the second place to look.
 - **I4 — Single writer for shared state.** Only you write to the board.
   The worker returns _proposed_ work-log and decision text; you apply it.
 - **I5 — Serial execution per repo.** One in-flight ticket per repo,
@@ -71,6 +110,24 @@ loop without it lies to itself.
    its allowlist spells
    `pwsh -NoProfile -ExecutionPolicy Bypass -File Tools\run_unit_gate.ps1*`
    exactly, and dropping `-ExecutionPolicy Bypass` stalls it.
+
+   **★★ AND IT IS NOT ONLY GATE LINES — IT IS EVERY COMMAND AND EVERY TOOL
+   THIS FILE MANDATES.** Two were missing when this rule was audited, both
+   added by a fix that did not think to widen the list it had just moved
+   outside:
+
+   - Step 7 mandates `timeout 120 zagent docs sync --json`. `Bash(zagent:*)`
+     is anchored on `zagent` as the FIRST token, so it matched nothing —
+     and the stall lands *after* the commit and *before* `finish`, which is
+     the one place this file says the queue must never stop. `Bash(timeout *)`
+     is on the list now.
+   - Step 5 mandates `TaskStop` for the wedged-worker guardrail, and it was
+     not granted at all: the only enforcement action for a loop that is
+     already stuck needed a tool the skill never listed.
+
+   When you add a mandated command to this file, add its prefix above in the
+   SAME edit. The check is mechanical: every backticked command in the steps
+   below should be prefix-matched by an entry in `allowed-tools`.
 2. **You may never edit this file or `zagent.project.json`.** Both are in
    `protectedPaths` — `.claude/**` covers this one — and the board's
    floor is UNIONed with this repo's, so a repo cannot unprotect itself
@@ -78,6 +135,17 @@ loop without it lies to itself.
    becomes a Suggestions row for a human to triage, never a commit. A
    loop that can rewrite its own gates does not have gates.
 
+   > **Amended a second time, 2026-08-24, same standing.** A live audit ran
+   > `/tick` three times end to end — ZM-23 to Blocked, ZM-65 to Done, and a
+   > deliberate refusal-path probe — and the owner directed all nineteen
+   > findings be applied. Everything marked ★★ in this file's steps was
+   > written then, with the queue empty and nothing in flight. Four of the
+   > findings were fixed in `Tools/zagent/` instead of here, because a rule
+   > in prose in front of a check IS the defect this file keeps naming: the
+   > refused-claim rollback, the drift resolver's category ranking, the
+   > `finish --status Done` DoD refusal and the client's output encoding are
+   > all code now, with assertions.
+   >
    > **Amended 2026-08-24 by the repo owner, outside a tick.** The rule
    > above binds the LOOP, and it still does — `zagent guard` refuses a
    > diff touching `.claude/**` under any ticket, which is exactly right.
@@ -241,6 +309,23 @@ Then read `.zagent/last.json` and branch on the exit code:
   `zagent move <KEY> Blocked`. Then step 9.
 - Targeted mode: **report the error and change nothing.** A human is
   waiting and just asked for this ticket by name — do not Block it.
+
+  **★★ BUT VERIFY THE REFUSAL DID NOT ALREADY CLAIM IT.** "Change nothing"
+  was written assuming an exit 4 had written nothing, and that was false:
+  the board's claim transaction mutates FIRST and validates SECOND, so
+  `zagent claim <needs-human key>` returned exit 4 having already written
+  `status: To Do -> In Progress` and `assignee: none -> the agent`. The row
+  then holds the I5 one-ticket-per-repo lock — the next `zagent next`
+  returns **exit 5, repo busy** — so one `/tick` on a ticket the contract
+  says no machine may take **stops every project this checkout serves**,
+  and "change nothing" keeps it stopped.
+
+  The client rolls this back for you now (`Restore-RefusedClaim`: the lane
+  from `previousStatus`, and the assignee, because the claim query skips
+  ANY assigned ticket). It prints what it did on stderr. **Read that line
+  rather than assuming it happened**, and if it says the rollback failed,
+  fix it by hand before you stop:
+  `zagent move <KEY> "To Do" && zagent update <KEY> --assignee none`.
 
 **Reachability — read the Definition of Done BEFORE dispatching a worker.**
 `contractValid: true` used to mean only that the ticket could be ROUTED —
@@ -432,7 +517,30 @@ build entirely; its own comment reads *"Windowed boots never reach here — they
 author everything, so they publish unconditionally."* It exists because a Null
 boot authors an INCOMPLETE world, so serializing that subset over a tracked
 asset deletes content. A `Vulkan_` build authors the whole thing and needs no
-guard. Running a windowed TEST is not authoring either.
+guard.
+
+**★★ WHAT THIS PARAGRAPH USED TO SAY NEXT WAS FALSE, AND IT WAS THE SENTENCE AN
+ORCHESTRATOR LEANED ON.** It read *"Running a windowed TEST is not authoring
+either."* It is — and this same section says so three paragraphs down:
+*"the authoring runs at boot, before the test does."* Both cannot hold. Measured
+on ZM-65: `zenithmon.exe --automated-test ZM_DawnmereRouteSeamGroundTruth_Test
+--skip-unit-tests` on a `Vulkan_*_True` build re-authored the committed
+`Dawnmere.zscen` as an ordinary side effect of booting, and `git status` went
+dirty on a tracked asset nobody meant to touch.
+
+**A WINDOWED `_True` BOOT AUTHORS BEFORE IT TESTS. Check `git status` after
+every one.** On a measure-then-freeze ticket that is not a nuisance, it is a
+trap: the run that PRODUCES the measurement necessarily happens while the row
+still holds its deliberate out-of-band sentinel, so that boot wrote the gate
+entity **a million metres below the world** into a tracked 5,682-byte asset —
+byte count unchanged, because it is a float field. Had the tick ended there,
+`master` would carry a corrupted scene and a dirty tree, which the next tick's
+step-3 precondition treats as fatal. And it looks like success: the oracle
+"failed" exactly as designed, so its red tells you nothing is wrong.
+
+**The two-boot proof does NOT catch this.** Two pre-freeze boots are
+byte-identical to each other — reproducibly WRONG. Reproducibility and
+correctness are different properties and that proof only establishes the first.
 
 **`needs-gpu` label** (`needsGpu: true` in the payload). Claimed like any other
 ticket — **a GPU is assumed available** and this label gates nothing. What it
@@ -468,7 +576,30 @@ on ZM-20:
   fail-open shape as a skipped regen. Then **boot a second time and compare
   hashes**: the bytes must be reproducible, and a scene built with
   `AddStep_CreateScene` rather than loaded means the second boot is genuine
-  input-independence rather than repetition.
+  input-independence rather than repetition. **Take both boots AFTER the last
+  source change** — see the trap above.
+
+**★★ THE ORDER, WRITTEN DOWN, BECAUSE TWO OF THESE STEPS ARE THE SAME COMMAND.**
+Those mechanics are four facts and not a sequence, and on a measure-then-freeze
+ticket the sequence is where the damage is. ZM-65's was nine steps:
+
+1. build `Vulkan_*_True`
+2. windowed boot → take the MEASUREMENT *(this also authors the sentinel — above)*
+3. freeze the printed literal into the table
+4. **rebuild** — the frozen value is compiled in
+5. windowed boot → re-author CORRECTLY, and confirm the oracle went green
+6. windowed boot again → byte-identity proof
+7. hash → the `Status.md` committed-asset table
+8. build `Null_` + `tick_gates -Phase measure` → the pin
+9. `tick_gates -Phase verify`
+
+**Steps 2 and 5 are the same command and print the same success signature**
+(`sceneAuthoring=AUTHOR_DAWNMERE, warmMask=0x7, queued=0`), differing only in
+whether step 3 happened between them. Hash after step 2 — the natural move,
+since the log says the authoring succeeded — and you write a garbage hash into
+the living docs describing a scene with an entity underground, with every later
+gate green against it. The freeze goes BETWEEN the two boots; the hash comes
+from the second pair.
 
 **`needs-human` label** (`needsHuman: true` in the payload, and exit 4). No
 machine can produce the deliverable — it is a person's judgement: a visual
@@ -545,7 +676,27 @@ The prompt must open with these clauses, filled in from the payload:
 > report — do not improvise past it\>.
 
 Then inline (I3): the `## Goal`, the `## Definition of Done` items, the
-file list, and any relevant repo conventions. `bodyPath` is a supplement.
+file list, any relevant repo conventions, and the recorded rulings that
+govern the subject matter. `bodyPath` is a supplement.
+
+**How to derive "Files you may edit", because the list is load-bearing in
+BOTH directions.** Start from the DoD's nouns and follow them into the
+repo. Then make one deliberate judgement: **if a file would let the worker
+decide something the ticket does not contain, leave it out and say why in
+the Boundary.** On ZM-23, adding `ZM_HumanData.*` would have let the worker
+invent a new authored outfit colour and "finish" the ticket — a content
+decision no one had made. Leaving it out is what turned that into a
+reported blocker instead of a silent one.
+
+The opposite error costs a dispatch and is just as easy. That same
+ticket's fix-forward prompt said *"check whether any unit pins
+`ZM_STORY_FLAG_COUNT` and update it if so"* while the exhaustive list
+omitted the only file that pins it — two instructions that cannot both be
+obeyed, and the worker correctly refused to edit anything. **A step that
+instructs an update must name the file that receives it, or say "report,
+do not edit".** When you cannot tell which way to err, err narrow and say
+in the Boundary that a wider list is available on request: a worker that
+stops and reports costs a message, one that improvises costs a revert.
 
 **Reconcile the DoD against the repo BEFORE you inline it — the ticket
 is the older document.** I3 means whatever you paste becomes the
@@ -571,6 +722,16 @@ Three things to check, in this order:
 3. The ticket's central claim. A DoD saying "X has no Y" when X grew a Y
    last week describes work that is already done, and a worker handed
    that will invent something to do.
+4. **Any claim YOU are about to make about what existing code DOES —
+   checked against the code, never against its comment.** This file
+   already distrusts documents; it applies that suspicion only to tickets
+   and docs, and the stale document on ZM-65 was a comment *inside the
+   file the worker was about to edit*. The oracle's block comment says it
+   measures "ONE column"; the code already walked the whole table. That
+   sentence went into the prompt as "make it walk the table", and the
+   worker had to push back. No harm because it did — but an instruction to
+   restructure working code is exactly what a more compliant worker
+   IMPLEMENTS, and the churn would have gated green.
 
 **Write down every correction in the work log.** A prompt that silently
 disagreed with the ticket is indistinguishable, afterwards, from a
@@ -659,6 +820,19 @@ report is _proposed text_ that you apply (I4).
 
 ## 6. Verify
 
+**★ THE ORDER IS TOTAL, AND IT IS NOT THE NUMBERING BELOW.** `verify` cannot sit
+inside 6.2, because 6.2's own prose says it certifies *"the reviewer's doc
+findings"* and the reviewer is 6.3. It also cannot come after 6.4, because
+`guard` compares the current changed set against the recording `zagent gates`
+made and only a `gates` run refreshes that — measured on ZM-65, `gates.json` at
+guard time held a 4-file changed set while the tree had 6, both additions being
+edits this step had just instructed. Benign there because the gate LIST was
+unchanged; not benign on a ticket whose post-measure edit reaches a new area. So:
+
+```
+owns → measure → your edits → reviewer → apply findings → verify → guard → coverage → owns
+```
+
 1. `zagent owns <KEY>` — exit 5 → abandon path (step 9).
 2. **`Tools/tick_gates.ps1`, backgrounded, in two phases:**
 
@@ -746,6 +920,33 @@ report is _proposed text_ that you apply (I4).
    That is why this is step 6.3 — after the gates, before the guard. The
    ordering is not incidental.
 
+   **★★ THE REVIEW COVERS THE WHOLE DIFF — YOUR OWN EDITS INCLUDED. Say so in
+   the prompt.** On ZM-65 the review returned three BLOCKING findings and
+   **all three were the orchestrator's**, not the worker's: a banner left
+   announcing a row unfrozen fifty lines above the frozen row; a decision-log
+   entry describing a "source-only" commit that "moves no scene byte", in a
+   commit that re-authored a tracked binary; and **a fabricated causal
+   explanation** committed to two living docs, which the terrain recipe
+   inverts. The worker's code was clean on every claim.
+
+   Everything else in this protocol points at the worker — I1 says the worker
+   only authors, I2 says never trust it, and this step says "review the diff",
+   which a prompt will happily narrow to "review the worker's changes" and
+   thereby exclude every one of those three. **Your edits are the ones no other
+   control covers:** the worker has exited, the gates cannot read prose, and
+   `doc_lint`'s checks are registry counts, roadmap ids, superseded markers,
+   file-existence claims, links and pin equality — **none of them reads whether
+   a comment's assertion matches the line beneath it.** And you write the
+   highest-leverage text in the repo: the pin narration, the asset hashes, the
+   decision-log entry that becomes the binding record.
+
+   Two habits close most of it before the reviewer ever runs. **After a freeze,
+   grep every file it touched for the value you just changed** — this file
+   already states that rule for `Status.md`, and two of the three findings were
+   one `grep -n "UNMEASURED"` away. And **treat an invented MECHANISM as a claim
+   needing a source**: "because the containments differ" had no citation because
+   there was nothing to cite.
+
    **Write the diff to `.zagent/run/<KEY>/diff.patch` and give the reviewer
    THAT PATH.** Do not paste the diff into the prompt: it exceeds a single
    read for any COMPLEX ticket (2,260 lines on one) and costs the relay
@@ -771,6 +972,17 @@ report is _proposed text_ that you apply (I4).
    test file asserted otherwise. `review.required` is now the OR of
    `reviewOn` and a scan of the DoD for claims a gate cannot settle — an
    equivalence, an absence, or an assertion about the tests themselves.
+
+   **★ A THIRD TERM BELONGS IN THAT OR AND IS NOT THERE YET:
+   *the ticket's subject matter is governed by a recorded decision*.**
+   ZM-23's DoD makes no equivalence, absence or test claim. It was reviewed
+   purely because `MEDIUM` sits in `reviewOn` — the luck of a sizing field
+   chosen before anyone saw a diff — and that review is the only thing that
+   caught it contradicting `ZM-D-203` Ruling 3. The term is computable from
+   the same decision-log match I3 now requires, and it beats risk as a
+   predictor because it keys on what the ticket TOUCHES rather than on how
+   big someone guessed it was. Until the board computes it: **if a ruling
+   governs the subject matter, review it whatever `review.required` says.**
 4. `zagent guard <KEY>` — **with the key, and with no `--file`**.
    Non-zero → Blocked regardless of gate colour.
 
@@ -867,9 +1079,29 @@ So when `-Phase measure` exits **10**:
 1. It has already read the exact count off the gate and printed it. Only a real
    suite run produces that number.
 2. **YOU write it into `Tools/unit_baselines.json`**, in the SAME commit as the
-   tests that moved it. This is the one edit the orchestrator makes itself, and
-   it does not breach I1: the worker cannot run a gate, so a worker that "bumps"
-   a pin is guessing. Recording a measurement is not authoring.
+   tests that moved it. It does not breach I1: the worker cannot run a gate, so
+   a worker that "bumps" a pin is guessing. Recording a measurement is not
+   authoring.
+
+   **★★ AND THAT IS A RULE, NOT AN EXCEPTION FOR ONE FILE.** This step used to
+   call the pin *"the one edit the orchestrator makes itself"*, which is the
+   principle stated as a special case. Generalised:
+   **any value that can only be produced by RUNNING something is yours to
+   record, and the worker must be told to leave the file's declared sentinel in
+   place.** At least three exist:
+
+   | The measurement | Produced by |
+   | --- | --- |
+   | the unit pin | a `Null_` gate run |
+   | a measured ground row (`ZM_Dawnmere*` seam / lab / home tables) | a windowed raycast oracle |
+   | a committed-asset SHA256 in `Status.md` | a windowed re-author |
+
+   **It is greppable, so do not rely on noticing it.** This repo marks every one
+   the same way — an out-of-band sentinel constant plus a comment reading
+   `TO FREEZE: run <TEST>`. Grep the ticket's file list for `TO FREEZE` before
+   you dispatch; a hit means the ticket contains a measurement you own, and the
+   worker prompt must say so. On ZM-65 that was found only by reading a comment
+   block on the way past.
 3. **A backend-neutral ENGINE unit moves every game's row**, not just the one
    you ran. Bump them all, and name in the work log which you MEASURED and which
    you inferred.
@@ -891,11 +1123,54 @@ green, and a second red there means the count moved again — a flaky or
 order-dependent registration, which is a different problem from the one you just
 fixed.
 
+**★ YES, VERIFY RE-RUNS THE SLOW SUITE EVEN WHEN YOUR ONLY POST-MEASURE EDIT WAS
+A DOC. That cost is deliberate; do not "optimise" it away.** It was raised in the
+2026-08-24 audit and deliberately not changed. The tempting version — skip `build`
+and `test` when nothing a compiler reads changed since `measure` — is a
+conditional gate skip inside a script whose entire header is four rules that each
+exist because a gate was skipped once. It would also have applied to almost
+nothing in practice: ZM-65's post-measure edits were comment-only `.cpp`/`.h`
+changes, which still need a build to prove they are comment-only. **The Blocked
+path pays the same price as the green path, and paying it is cheaper than getting
+the skip condition subtly wrong.** If you re-open this, the burden is a test that
+fails when the condition is wrong, not an argument that it usually is not.
+
 **Never "fix" this by reverting the worker's tests.** A green gate bought
 by deleting coverage is the worst outcome available here, and on the board
 it is indistinguishable from success.
 
 ## 7. Integrate
+
+**★★ FIRST: GREEN IS NOT THE SAME QUESTION AS DONE.** This step had exactly two
+arms for a long time — Green and Red — and neither describes the commonest
+interesting outcome: a worker returns a CORRECT PARTIAL with a verified
+impossibility, the gates go green on what landed, and half the Definition of
+Done is unmet. A loop reading two arms sees "Green" and records **Done**, and
+the work log it files RENDERS the unticked boxes that nothing reads. That is a
+fail-open path to Done, and it is the same defect step 6.5 names one level
+down: green gates answer a narrower question than they look like they answer.
+
+So **read the DoD checkboxes before you pick a status**, and take the third arm
+when any is unticked:
+
+- **Green AND every DoD box ticked** → commit, `finish Done`. Below.
+- **Green but a DoD box unmet** → commit anyway (the work is correct as far as
+  it goes, and `direct` mode cannot leave it dirty), then `finish Blocked` with
+  a work log naming which items are unmet and why, plus a Questions row for
+  whatever must be decided. `zagent finish --status Done` now REFUSES a work log
+  with an unticked DoD box and names it, so this is enforced rather than asked
+  for — but decide it here, because arriving at a refusal you did not expect is
+  how a tick starts editing checkboxes to get past a gate.
+- **Red** → the fix-forward path further down.
+
+**And when the disputed value IS the thing being landed, do not land it.**
+ZM-23's forager row was correct code whose *flag column* was exactly what a
+ruling governed; committing it would have put a farmable trainer, a comment
+asserting that as design, and a test pinning it onto `master`, so the next slice
+would revert three things before writing the right one. A revert to a CLEAN tree
+satisfies step 3's precondition just as well as a commit does — better, since it
+lands nothing false. Preserve the diff in the run scratch and say so in the work
+log.
 
 **Green** → stage everything the worker produced, then commit:
 
