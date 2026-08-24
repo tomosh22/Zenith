@@ -149,7 +149,7 @@ Plus, always:
   commit is the drift, not the cure. `Tools/doc_lint.ps1` cannot catch this -- it
   hardcodes DevilsPlayground's Docs and never reads this directory at all.
 
-  ECS orders 100-114 are occupied; **next free is 115**. The authoritative current
+  ECS orders 100-115 are occupied; **next free is 116**. The authoritative current
   stage and exact task live in Status.md.
 
 ### Document map
@@ -313,7 +313,7 @@ session needs to know is short:
   the deliverable missing. But the guard is `if constexpr (Zenith_IsNullRenderer())` at
   `Zenith/Editor/Zenith_Editor.cpp:1423`, **compiled OUT of a Vulkan build entirely**.
   So the answer to “this ticket needs a scene edit” is `needs-gpu` and a windowed boot,
-  never a ticket the loop cannot take.
+  never a ticket the loop cannot take. ZM-27 got this wrong and shipped half a story.
 * **`complexity` + `risk` route the MODEL; `storyPoints` size the SPRINT.** Two
   fields, two jobs. Deriving either from the other means a re-estimate silently
   reroutes the work, or a model change silently rewrites the sprint's capacity.
@@ -360,7 +360,7 @@ block when no human bake is loadable -- the battle-arena
 manager `ZM_BattleArena` = 108, the tall-grass encounter system
 `ZM_TallGrassSystem` = 109, `ZM_BattleTransition` = 110, `ZM_BattleDirector` =
 111, `ZM_UI_MenuStack` = 112, `ZM_Interactable` = 113 and
-`ZM_TouchLayoutController` = 114; **next free is 115**.
+`ZM_TouchLayoutController` = 114 and `ZM_GroundItemProp` = 115; **next free is 116**.
 
 ### 3.2 Engine naming conventions (mandatory)
 
@@ -668,8 +668,8 @@ component:
 2. **Register in `Zenithmon.cpp`** -- `#include` the header and add the
    file-scope `ZENITH_REGISTER_COMPONENT(ZM_WarpTrigger, "ZM_WarpTrigger", 106u)`
    next to the existing registrations (106 is this component's locked order;
-   current registrations continue through `ZM_TouchLayoutController` at 114, so
-   the next free order is 115). The
+   current registrations continue through `ZM_GroundItemProp` at 115, so
+   the next free order is 116). The
    macro must be static-init in an always-linked TU --
    `Zenithmon.cpp` defines the `Project_*` entry points, so it is safe. Do NOT
    call it from `Project_RegisterGameComponents` (the meta registry is sealed

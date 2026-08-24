@@ -1560,3 +1560,74 @@ ZENITH_TEST(ZM_CommittedSceneBytes, Route1CarriesTheTallGrassSystemAndThornacreA
 		}
 	}
 }
+
+// ★ ZM-27 / ZM-D-202: the three ground-item props are IN the committed bytes.
+//
+// A companion to ZM_GroundItemProp_Test rather than a duplicate of it, and the
+// difference is which artefact each reads. That test loads the scene and drives a
+// pickup, so it proves the feature WORKS. This one reads the FILE, so it proves
+// the props are in the bytes git carries -- which is the claim the ZM-D-179 /
+// ZM-D-183 pair exists for, where a scene loaded correctly in the running process
+// while the committed bytes had drifted. A `Null_` CI leg runs both; only this one
+// can see a Route1.zscen that was re-authored by a boot which had the authoring
+// steps removed.
+ZENITH_TEST(ZM_CommittedSceneBytes, Route1CarriesTheThreeGroundItemProps)
+{
+	const std::string strScenePath = ZM_CommittedScenePath(ZM_SCENE_ROUTE1);
+
+	uint64_t ulSize = 0;
+	char* pData = Zenith_FileAccess::ReadFile(strScenePath.c_str(), ulSize);
+
+	ZENITH_ASSERT_NOT_NULL(pData,
+		"the committed Route1.zscen could not be read ('%s'). It is a TRACKED asset "
+		"(ZM-D-199), so this is a DEFECT and not a skip",
+		strScenePath.c_str());
+	if (pData == nullptr)
+	{
+		return;
+	}
+
+	// Each prop's entity name appears EXACTLY ONCE. Not "at least once": a second
+	// occurrence would mean the authoring block ran twice, which is how a scene
+	// grows duplicate entities that both answer to the same id -- and taking either
+	// would mark the other collected, since the collected set is keyed on the ID and
+	// not on the entity.
+	//
+	// The Prop_ prefix is what keeps these needles from colliding with an NPC name,
+	// and no prop name is a substring of another (SouthSalve / LaneCatchorb /
+	// NorthSalve), so these are plain equalities rather than the strictly-more form
+	// Dawnmere's arrival marker needs.
+	const char* const aszPropNames[] =
+	{
+		szZM_ROUTE1_PROP_SOUTH_SALVE_ENTITY_NAME,
+		szZM_ROUTE1_PROP_LANE_CATCHORB_ENTITY_NAME,
+		szZM_ROUTE1_PROP_NORTH_SALVE_ENTITY_NAME,
+	};
+	constexpr u_int uPropNameCount =
+		(u_int)(sizeof(aszPropNames) / sizeof(aszPropNames[0]));
+
+	for (u_int u = 0u; u < uPropNameCount; ++u)
+	{
+		const u_int uHits = CountNameOccurrences(pData, ulSize, aszPropNames[u]);
+		ZENITH_ASSERT_EQ(uHits, 1u,
+			"the committed Route1.zscen carries the name '%s' %u times, not once. "
+			"Zero means the scene has not been re-authored since the ZM-27 props "
+			"landed (windowed Vulkan_*_True boot, sceneAuthoring=AUTHOR_DAWNMERE); "
+			"more than one means the authoring block ran twice and two entities now "
+			"share one save-stable ground-item id",
+			aszPropNames[u], uHits);
+	}
+
+	// ...and the COMPONENT type name appears once per prop. An entity present with
+	// its component stripped is a blockout cube nobody can interact with -- visible,
+	// authored, and inert -- which no name needle above would notice.
+	const u_int uPropComponentHits =
+		CountNameOccurrences(pData, ulSize, "ZM_GroundItemProp");
+	ZENITH_ASSERT_EQ(uPropComponentHits, uPropNameCount,
+		"the committed Route1.zscen carries %u ZM_GroundItemProp component payloads "
+		"for %u authored prop entities. A prop entity whose component was dropped is "
+		"a cube standing beside the path that can never be picked up",
+		uPropComponentHits, uPropNameCount);
+
+	Zenith_FileAccess::FreeFileData(pData);
+}

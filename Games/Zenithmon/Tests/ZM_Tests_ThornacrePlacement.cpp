@@ -843,9 +843,9 @@ ZENITH_TEST(ZM_WorldTraversal, Thornacre_StubAuthorsNoGymDoorAndItsNamesAreUniqu
 	// counts against the same shared table.
 	//
 	// EDIT THE SHARED HEADER AND BOTH FILES' LITERALS IN ONE CHANGE.
-	ZENITH_ASSERT_EQ(uGameTypeCount, 15u,
+	ZENITH_ASSERT_EQ(uGameTypeCount, 16u,
 		"the shared GAME component type table (Tests/ZM_Tests_ComponentTypeNames.h) "
-		"holds %u rows, not the 15 that Games/Zenithmon/Zenithmon.cpp's "
+		"holds %u rows, not the 16 that Games/Zenithmon/Zenithmon.cpp's "
 		"ZENITH_REGISTER_COMPONENT block registers. "
 		"Tests/ZM_Tests_Route1Placement.cpp pins the SAME shared table at the same "
 		"literal, so this reds if the header is grown and that file's literal is "

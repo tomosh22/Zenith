@@ -22,6 +22,7 @@
 #include "Zenithmon/Components/ZM_FollowCamera.h"
 #include "Zenithmon/Components/ZM_GameStateManager.h"
 #include "Zenithmon/Components/ZM_GraphNodes.h"                   // ZM_RegisterGraphNodes + the SC7 node counters
+#include "Zenithmon/Components/ZM_GroundItemProp.h"       // the ground-item prop (ZM-27 follow-up (a))
 #include "Zenithmon/Components/ZM_Interactable.h"
 #include "Zenithmon/Components/ZM_PlayerController.h"
 #include "Zenithmon/Components/ZM_SpawnPoint.h"
@@ -622,6 +623,7 @@ ZENITH_REGISTER_COMPONENT(ZM_BattleDirector, "ZM_BattleDirector", 111u)
 ZENITH_REGISTER_COMPONENT(ZM_UI_MenuStack, "ZM_UI_MenuStack", 112u)
 ZENITH_REGISTER_COMPONENT(ZM_Interactable, "ZM_Interactable", 113u)
 ZENITH_REGISTER_COMPONENT(ZM_TouchLayoutController, "ZM_TouchLayoutController", 114u)
+ZENITH_REGISTER_COMPONENT(ZM_GroundItemProp, "ZM_GroundItemProp", 115u)
 
 #ifdef ZENITH_TOOLS
 namespace
@@ -2111,6 +2113,48 @@ namespace
 			"Route 1 north gate warp configuration is invalid");
 	}
 
+	// ---- The three Route 1 ground-item props (ZM-27 follow-up (a)) -------
+	//
+	// ★ THE ID IS WHAT MAKES A PROP A PROP, and it is the only thing these steps
+	// author. Position, scale and the blockout visual are ordinary transform and
+	// component steps; WHICH prop this entity is comes from the save-stable
+	// ZM_GROUND_ITEM_ID written onto the component here and serialized with it.
+	// A prop authored without this step is an unconfigured component that reports
+	// itself non-interactable, which is exactly what SetGroundItemId's fail-closed
+	// contract is for -- but it would still be a prop nobody can pick up, so the
+	// assert below is a hard one.
+	bool ZM_ConfigureSelectedGroundItemProp(ZM_GROUND_ITEM_ID eId)
+	{
+		Zenith_Entity* pxSelectedEntity = g_xEngine.Editor().GetSelectedEntity();
+		ZM_GroundItemProp* pxProp = pxSelectedEntity != nullptr
+			? pxSelectedEntity->TryGetComponent<ZM_GroundItemProp>()
+			: nullptr;
+		Zenith_Assert(pxProp != nullptr,
+			"Ground-item prop authoring requires the selected ZM_GroundItemProp");
+		return pxProp != nullptr && pxProp->SetGroundItemId(eId);
+	}
+
+	void ZM_ConfigureRoute1SouthSalveProp()
+	{
+		Zenith_Assert(
+			ZM_ConfigureSelectedGroundItemProp(ZM_GROUND_ITEM_ROUTE1_SOUTH_SALVE),
+			"Route 1 south salve prop configuration is invalid");
+	}
+
+	void ZM_ConfigureRoute1LaneCatchorbProp()
+	{
+		Zenith_Assert(
+			ZM_ConfigureSelectedGroundItemProp(ZM_GROUND_ITEM_ROUTE1_LANE_CATCHORB),
+			"Route 1 lane catchorb prop configuration is invalid");
+	}
+
+	void ZM_ConfigureRoute1NorthSalveProp()
+	{
+		Zenith_Assert(
+			ZM_ConfigureSelectedGroundItemProp(ZM_GROUND_ITEM_ROUTE1_NORTH_SALVE),
+			"Route 1 north salve prop configuration is invalid");
+	}
+
 	// Thornacre's return gate: back down to Route 1, at Route 1's "FromThornacre".
 	// The ONE entity that makes the stub traversable rather than a dead end.
 	void ZM_ConfigureThornacreSouthGateTrigger()
@@ -2810,6 +2854,10 @@ void Project_RegisterGameComponents()
 	Zenith_ComponentEditorRegistry::Get().RegisterComponent<ZM_UI_MenuStack>("ZM_UI_MenuStack");
 	Zenith_ComponentEditorRegistry::Get().RegisterComponent<ZM_Interactable>("ZM_Interactable");
 	Zenith_ComponentEditorRegistry::Get().RegisterComponent<ZM_TouchLayoutController>("ZM_TouchLayoutController");
+	// ★ BOTH REGISTRATIONS OR NEITHER. Miss this second one and the component still
+	// serializes and still runs -- it just silently vanishes from the editor's "Add
+	// Component" menu, which is a defect no unit can see.
+	Zenith_ComponentEditorRegistry::Get().RegisterComponent<ZM_GroundItemProp>("ZM_GroundItemProp");
 
 	// Runtime toggle for the battle presenter's instant-battle mode (collapses all
 	// presentation timing). Bound by reference to the ZM_BattleDirectorCore backing
@@ -4359,6 +4407,69 @@ void Project_RegisterEditorAutomationSteps()
 			COLLISION_VOLUME_TYPE_AABB, RIGIDBODY_TYPE_STATIC);
 		xAuto.AddStep_AddComponent("ZM_WarpTrigger");
 		xAuto.AddStep_Custom(&ZM_ConfigureRoute1NorthGateTrigger);
+
+		// ---- ZM-27: THE THREE GROUND-ITEM PROPS ----------------------------
+		//
+		// ★ APPENDED AFTER THE GATES, for the identical reason the gates were
+		// appended after the camera: Route1.zscen is a COMMITTED asset with DENSE
+		// AUTHORING-ORDER file indices (ZM-D-148). Appending costs three new
+		// entity records; inserting anywhere earlier would renumber every entity
+		// after the insertion point and turn a three-entity change into a
+		// whole-file diff.
+		//
+		// ★★ NO COLLIDER, AND THAT IS THE DESIGN, NOT AN OMISSION. A prop is
+		// taken by INTERACT REACH (ZM_InteractionRuntime picks it out of the same
+		// probe set as an NPC), never by touching it, so a body would buy nothing
+		// and cost two things: it would stand in the walked lane as an obstacle,
+		// and it would become a SOLID body over its own ground column -- which
+		// ZM_Route1GroundTruth_Test treats as a failure rather than a filter,
+		// because its per-row ignore holds exactly one entity. A sensor would dodge
+		// the second problem (both Raycast overloads skip sensors, ZM-D-173) and
+		// not the first.
+		//
+		// ★ EACH PROP SITS **ON** ITS OWN MEASURED COLUMN. The centres come from
+		// the three accessors, which read the frozen ground table through
+		// ZM_Route1GroundFeetY and add half the cube edge in one place. The three
+		// columns span 26.189 .. 26.661 over a kilometre of route, so a shared
+		// height would part-bury one and float another.
+		const ZM_Route1Volume xRoute1SouthSalve = ZM_GetRoute1SouthSalveProp();
+		xAuto.AddStep_CreateEntity(szZM_ROUTE1_PROP_SOUTH_SALVE_ENTITY_NAME);
+		xAuto.AddStep_SetEntityTransient(false);
+		xAuto.AddStep_SetTransformPosition(
+			xRoute1SouthSalve.m_xCenter.x, xRoute1SouthSalve.m_xCenter.y,
+			xRoute1SouthSalve.m_xCenter.z);
+		xAuto.AddStep_SetTransformScale(
+			xRoute1SouthSalve.m_xScale.x, xRoute1SouthSalve.m_xScale.y,
+			xRoute1SouthSalve.m_xScale.z);
+		xAuto.AddStep_AddComponent("ZM_GreyboxVisual");
+		xAuto.AddStep_AddComponent("ZM_GroundItemProp");
+		xAuto.AddStep_Custom(&ZM_ConfigureRoute1SouthSalveProp);
+
+		const ZM_Route1Volume xRoute1LaneCatchorb = ZM_GetRoute1LaneCatchorbProp();
+		xAuto.AddStep_CreateEntity(szZM_ROUTE1_PROP_LANE_CATCHORB_ENTITY_NAME);
+		xAuto.AddStep_SetEntityTransient(false);
+		xAuto.AddStep_SetTransformPosition(
+			xRoute1LaneCatchorb.m_xCenter.x, xRoute1LaneCatchorb.m_xCenter.y,
+			xRoute1LaneCatchorb.m_xCenter.z);
+		xAuto.AddStep_SetTransformScale(
+			xRoute1LaneCatchorb.m_xScale.x, xRoute1LaneCatchorb.m_xScale.y,
+			xRoute1LaneCatchorb.m_xScale.z);
+		xAuto.AddStep_AddComponent("ZM_GreyboxVisual");
+		xAuto.AddStep_AddComponent("ZM_GroundItemProp");
+		xAuto.AddStep_Custom(&ZM_ConfigureRoute1LaneCatchorbProp);
+
+		const ZM_Route1Volume xRoute1NorthSalve = ZM_GetRoute1NorthSalveProp();
+		xAuto.AddStep_CreateEntity(szZM_ROUTE1_PROP_NORTH_SALVE_ENTITY_NAME);
+		xAuto.AddStep_SetEntityTransient(false);
+		xAuto.AddStep_SetTransformPosition(
+			xRoute1NorthSalve.m_xCenter.x, xRoute1NorthSalve.m_xCenter.y,
+			xRoute1NorthSalve.m_xCenter.z);
+		xAuto.AddStep_SetTransformScale(
+			xRoute1NorthSalve.m_xScale.x, xRoute1NorthSalve.m_xScale.y,
+			xRoute1NorthSalve.m_xScale.z);
+		xAuto.AddStep_AddComponent("ZM_GreyboxVisual");
+		xAuto.AddStep_AddComponent("ZM_GroundItemProp");
+		xAuto.AddStep_Custom(&ZM_ConfigureRoute1NorthSalveProp);
 
 		xAuto.AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/Route1" ZENITH_SCENE_EXT);
 		xAuto.AddStep_UnloadScene();

@@ -596,6 +596,144 @@ against this marker's tag.
 
 ---
 
+## 2026-08-24 -- ZM-D-202 -- the ground-item prop becomes REACHABLE: a component, three measured anchors, and the boot unit that can see an unpickable prop
+
+**ZM-27 follow-ups (a) and (b), which ZM-D-201 booked and could not do.** New
+`Components/ZM_GroundItemProp.{h,cpp}` at game ECS order 115 (registered TWICE in
+`Zenithmon.cpp`), three measured placement anchors in `Source/World/ZM_Route1Placement.h`,
+three prop entities appended to the committed `Route1.zscen`, a second probe source in
+`ZM_InteractionRuntime`, three boot units and one real-scene automated test.
+
+**"A world prop can be picked up into the bag" is now true.** It was not before: ZM-27
+shipped the mechanism with `ZM_TryPickUpGroundItem` having **zero production callers**.
+
+### ★★ THE PREMISE ZM-D-201 SCOPED AGAINST DID NOT EXIST
+
+Both exclusions in ZM-D-201 rest on one sentence in ZM-27's worker prompt:
+*"`ZM-20` is still To Do and is labelled `windowed`"*. Every clause of it is false.
+ZM-20 was already **Done**; `Route1.zscen` and `Thornacre.zscen` were both committed;
+and `windowed` had been **retired**, split into `needs-gpu` and `needs-human`. ZM-20
+carries `needs-gpu`, which **gates nothing** -- a GPU is assumed available and the tick
+simply builds `Vulkan_*_True` and boots windowed, where the `.zscen` publish guard
+(`Zenith_Editor.cpp:1423`, inside `if constexpr (Zenith_IsNullRenderer())`) is compiled
+out entirely.
+
+Nothing had stopped ZM-27 authoring the prop. The scope was cut against a constraint
+that was not there, and the ticket parked at *In Review* with its first Definition-of-Done
+line unmet.
+
+**The root cause was DOCUMENTATION, and it is fixed in this commit.** `AgentBriefing.md`
+(the file a shell-less worker reads off disk), `Board.md`, `Status.md` and this log all
+still taught `windowed`'s retired meaning -- *"the loop cannot do it at all"*. All four
+were corrected. The orchestrator believed them because they were the authority.
+
+### The decision: a NEW COMPONENT, not a fourth `ZM_NPC_ROLE`
+
+`ZM_Interactable` turned out to be concrete, dispatching on `ZM_NpcData`'s `ZM_NPC_ROLE`
+-- so reusing it would require every prop to first be an NPC with a roster row, a display
+name and dialogue lines. Three non-people would enter a roster whose ids are save-stable
+and whose rows are asserted content-complete (`ZM_Tests_NpcData.cpp`). Rejected.
+
+`ZM_GroundItemProp` sits beside it instead, and **`ZM_InteractionRuntime` gathers probes
+from both into the SAME by-value array**. That is the load-bearing choice: `ZM_InteractProbe`
+carries a position, a reach bonus and an enable flag and knows nothing about what is behind
+it, so a prop and an NPC compete on one ranking. Running `ZM_PickInteractTarget` twice and
+comparing winners would re-implement its distance/facing precedence in a second place, and
+a prop standing behind an NPC would win its own pick and beat the NPC the player is facing.
+
+**The component owns no rule.** Every accept/reject decision stays in
+`ZM_CanPickUpGroundItem`, every mutation in `ZM_TryPickUpGroundItem`, every byte in module 12.
+
+### A collected prop goes INERT rather than disappearing
+
+`IsInteractable()` drops to false the moment the save records the prop taken, so the picker
+stops offering it. The answer is **read from the save on every query, never latched on the
+component** -- which is why it survives a save/load round trip with no state of its own to
+restore, and why the component needs nothing in `OnStart`. Removing the entity would mean
+mutating a load-bearing committed asset at runtime.
+
+### The three anchors were MEASURED, and the six existing rows re-measured with them
+
+`ZM_Route1GroundTruth_Test` runs on the **Null backend** (`m_bRequiresGraphics = false`),
+so the measurement needed no GPU -- only a warm bake. Frozen 2026-08-24, every row
+`resolved=1 hitTerrain=1 finalHit='Route1Terrain'`:
+
+| column | feet Y |
+|---|---|
+| `PROP_SOUTH_SALVE` | 26.66135 |
+| `PROP_LANE_CATCHORB` | 26.61090 |
+| `PROP_NORTH_SALVE` | 26.18854 |
+
+The six pre-existing rows came back at `tableError = 0.00000` in the same run. That is the
+evidence this is an EXTENSION of a frozen set rather than a re-freeze of it -- a state the
+table's own banner did not describe, because it was written while nothing was frozen.
+
+The XZ positions are **derived perpendicularly from the recipe's own DirtLane polyline**,
+not eyeballed: each is the lane point at a chosen Z displaced along that segment's unit
+normal. No segment of this lane runs along +Z, so an axis-aligned nudge would not have
+produced these numbers.
+
+### ★★ THE UNIT THAT MATTERS IS THE REACHABILITY ONE
+
+`Route1_GroundItemPropsAreReachableFromTheWalkedLane`. A prop authored 3 m off the walked
+line is a valid entity on measured ground with a configured component, and **can never be
+picked up in any playthrough, forever** -- `ZM_PickInteractTarget` refuses a candidate
+beyond `fZM_INTERACT_MAX_DISTANCE` and these props carry `fDEFAULT_RADIUS` (zero bonus).
+Every other check stays green: the ground oracle resolves the column, the component units
+pass on compiled constants, the scene holds the entity.
+
+It measures against the recipe's own polyline through the same `Route1DistanceToLane` the
+trainer units use, and carries an anti-vacuity arm displaced 12 m along the perpendicular
+that anchor's own foot defines -- so it introduces no second geometry that could disagree
+with the measurement it is testing. This is the dead-forager failure (ZM-D-196) one layer up.
+
+### And one REAL-SCENE test, because pure units cannot see a beat
+
+`ZM_GroundItemProp_Test` loads the committed `Route1.zscen`, verifies all three props exist
+at their authored centres with the ids their placement rows name, takes one through the live
+component against the live save, and asserts the bag moved, the prop went inert, and a
+second press answers `ALREADY_COLLECTED` without moving the bag.
+
+**It does not walk the player up to the prop, and says so in its own header.** The geometry
+is the boot unit above; the picker is already driven end to end by `ZM_NpcTalk_Test`, and
+props enter that identical probe array through the same gather. A ~90 m physics walk would
+be a slow re-test of somebody else's approach loop.
+
+★ **Its first three runs failed, and the last cause is worth recording.** `RequestWarp` was
+being handed `ZM_GetRoute1SouthGateSpawnTag()` -- which is what Route 1's south GATE asks
+DAWNMERE for on the way out. Arriving ON Route 1 needs the tag Route 1 itself offers, the
+compiled `Dawnmere -> Route1` edge. The refusal is silent: `TryQueueWarp` simply returns
+false. The test now WALKS that row rather than spelling the tag.
+
+### The scene was re-authored windowed, and only Route1.zscen moved
+
+Two consecutive `Vulkan_vs2022_Debug_Win64_True` boots, both
+`warmMask=0x7, queued=0, sceneAuthoring=AUTHOR_DAWNMERE`, producing **byte-identical**
+`Route1.zscen`. The other six committed scenes were untouched -- the props are APPENDED
+after the gates, so ZM-D-148's dense authoring-order file indices are preserved and no
+earlier entity was renumbered.
+
+**No collider on any prop, deliberately.** A prop is taken by interact reach, never by
+touching it, so a body would buy nothing and cost two things: an obstacle in the walked
+lane, and a SOLID body over its own ground column -- which `ZM_Route1GroundTruth_Test`
+treats as a failure rather than a filter, because its per-row ignore holds exactly one entity.
+
+### Reversibility
+
+The component, its registrations, the anchors and the test are additive. Reverting means
+dropping them and re-authoring `Route1.zscen` from a windowed boot; the ground-table rows
+would be left measuring columns nothing stands on, which is harmless. `ZM_GROUND_ITEM_ID`
+values are now **genuinely frozen** -- a committed scene serializes them -- so the window
+ZM_GroundItem.h describes as "re-numberable TODAY" has closed.
+
+### Tests that lock it
+
+`Route1_GroundItemPropAnchorsCoverTheWholeRegistry`,
+`Route1_GroundItemPropsAreReachableFromTheWalkedLane`,
+`Route1_GroundItemPropsStandOnTheirOwnMeasuredColumn`, `ZM_GroundItemProp_Test`,
+`ZM_Route1GroundTruth_Test`.
+
+
 ## 2026-08-22 -- ZM-D-201 -- ground items get a SAVE MODULE, not a story flag, and the codec runs its first migration
 
 **ZM-27. The save schema moves for the first time since it shipped: `uSCHEMA_VERSION_CURRENT`

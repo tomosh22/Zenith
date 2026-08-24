@@ -326,7 +326,7 @@ namespace
 	// column past the slot bound -- which is the truncation hazard the lab oracle
 	// documents in the shipped file, and which would leave a real anchor unmeasured
 	// with this test still green.
-	constexpr u_int uRG_MAX_ROWS = 8u;
+	constexpr u_int uRG_MAX_ROWS = 12u;   // 9 Route 1 rows as of the ZM-27 props; headroom to 12
 	static_assert(uRG_MAX_ROWS >= (u_int)ZM_ROUTE1_GROUND_SAMPLE_COUNT,
 		"the Route 1 ground oracle needs one slot per row of "
 		"axZM_ROUTE1_GROUND_SAMPLES");
@@ -486,6 +486,15 @@ namespace
 		case ZM_ROUTE1_GROUND_SAMPLE_TRAINER_FORAGER:
 			return "axZM_ROUTE1_GROUND_SAMPLES["
 				"ZM_ROUTE1_GROUND_SAMPLE_TRAINER_FORAGER].m_fFeetY";
+		case ZM_ROUTE1_GROUND_SAMPLE_PROP_SOUTH_SALVE:
+			return "axZM_ROUTE1_GROUND_SAMPLES["
+				"ZM_ROUTE1_GROUND_SAMPLE_PROP_SOUTH_SALVE].m_fFeetY";
+		case ZM_ROUTE1_GROUND_SAMPLE_PROP_LANE_CATCHORB:
+			return "axZM_ROUTE1_GROUND_SAMPLES["
+				"ZM_ROUTE1_GROUND_SAMPLE_PROP_LANE_CATCHORB].m_fFeetY";
+		case ZM_ROUTE1_GROUND_SAMPLE_PROP_NORTH_SALVE:
+			return "axZM_ROUTE1_GROUND_SAMPLES["
+				"ZM_ROUTE1_GROUND_SAMPLE_PROP_NORTH_SALVE].m_fFeetY";
 		default: break;
 		}
 		return "<no such row of axZM_ROUTE1_GROUND_SAMPLES -- freeze nothing>";

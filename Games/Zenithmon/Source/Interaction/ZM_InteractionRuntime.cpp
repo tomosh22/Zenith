@@ -9,6 +9,7 @@
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "Zenithmon/Components/ZM_BattleTransition.h"   // IsTransitionActive -- the SAME predicate ShouldOpenMenu consults
 #include "Zenithmon/Components/ZM_GameStateManager.h"   // IsWarpInProgress    -- ditto
+#include "Zenithmon/Components/ZM_GroundItemProp.h"     // the SECOND probe source (ZM-27 follow-up (a))
 #include "Zenithmon/Components/ZM_Interactable.h"
 #include "Zenithmon/Components/ZM_PlayerController.h"   // IsMovementEnabled (the freeze flag)
 #include "Zenithmon/Components/ZM_UI_MenuStack.h"       // IsMenuOpen / IsActiveSceneOverworld -- ditto
@@ -65,19 +66,37 @@ void ZM_InteractionRuntime::Tick(const Zenith_Maths::Vector3& xPlayerPosition,
 	}
 
 	Zenith_Entity xEntity = g_xEngine.Scenes().ResolveEntity(xTarget);
-	ZM_Interactable* pxInteractable = xEntity.IsValid()
-		? xEntity.TryGetComponent<ZM_Interactable>()
-		: nullptr;
-	if (pxInteractable == nullptr)
+	if (!xEntity.IsValid())
 	{
 		return;
 	}
 
-	// The raise count moves ONLY when a screen genuinely went up, so it cannot be
-	// satisfied by a decision that merely said OK.
-	if (pxInteractable->Interact())
+	// ★ TWO COMPONENT TYPES, ONE DISPATCH, AND THE ORDER IS ARBITRARY BECAUSE THE
+	// GATHER MAKES IT SO. An entity carrying BOTH would be an authoring error -- a
+	// prop is not a person -- and the probe gather below would already have offered
+	// it twice, so the picker, not this switch, is where that would be visible.
+	// Neither arm falls through to the other: a ZM_Interactable that refused its
+	// raise is a refusal, not an invitation to try picking the NPC up.
+	if (ZM_Interactable* pxInteractable = xEntity.TryGetComponent<ZM_Interactable>())
 	{
-		++s_uRaiseCount;
+		// The raise count moves ONLY when a screen genuinely went up, so it cannot be
+		// satisfied by a decision that merely said OK.
+		if (pxInteractable->Interact())
+		{
+			++s_uRaiseCount;
+		}
+		return;
+	}
+
+	if (ZM_GroundItemProp* pxProp = xEntity.TryGetComponent<ZM_GroundItemProp>())
+	{
+		// Same contract: Interact() answers "did a screen go up", and a successful
+		// pickup whose dialogue was refused deliberately does NOT move this counter.
+		// What proves the pickup is the bag and ZM_GroundItemProp::GetLastPickupResult.
+		if (pxProp->Interact())
+		{
+			++s_uRaiseCount;
+		}
 	}
 }
 
@@ -184,6 +203,42 @@ ZM_INTERACT_REJECT ZM_InteractionRuntime::Decide(bool bHavePose,
 			axProbes[uProbeCount].m_xPosition = xPosition;
 			axProbes[uProbeCount].m_fRadius   = xInteractable.GetRadius();
 			axProbes[uProbeCount].m_bEnabled  = xInteractable.IsInteractable();
+			axProbeEntities[uProbeCount] = xEntityID;
+			++uProbeCount;
+		});
+
+	// ---- 2b. The SECOND probe source: ground-item props (ZM-27 follow-up (a)). ----
+	//
+	// ★ THE SAME by-value ZM_InteractProbe ARRAY, NOT A SECOND PICK. ZM_InteractProbe
+	// carries a position, a reach bonus and an enable flag and knows nothing about
+	// what is behind it, which is exactly what lets a prop and an NPC compete on one
+	// ranking. Running ZM_PickInteractTarget twice and comparing the winners would
+	// re-implement the picker's distance/facing precedence in this file, and the two
+	// copies would drift -- a prop standing behind an NPC would win the second pick
+	// on its own and beat the NPC the player is actually facing.
+	//
+	// ★ AND IT SHARES THE CAP AND THE OVERFLOW REPORT. uSeenCount counts BOTH kinds,
+	// so a scene dense enough to truncate says so once with an honest total rather
+	// than under-reporting by however many props it holds.
+	g_xEngine.Scenes().QueryActiveScene<ZM_GroundItemProp, Zenith_TransformComponent>().ForEach(
+		[&](Zenith_EntityID xEntityID,
+			ZM_GroundItemProp& xProp,
+			Zenith_TransformComponent& xTransform)
+		{
+			++uSeenCount;
+			if (uProbeCount >= uZM_MAX_INTERACT_PROBES)
+			{
+				return;   // overflow reported once, below
+			}
+			Zenith_Maths::Vector3 xPosition(0.0f);
+			xTransform.GetPosition(xPosition);
+			axProbes[uProbeCount].m_xPosition = xPosition;
+			axProbes[uProbeCount].m_fRadius   = xProp.GetRadius();
+			// A prop this save has already taken reports false here, so it stops being
+			// a candidate the moment it is picked up -- no entity removal, and the
+			// answer comes back correct after a save/load because it is read from the
+			// save rather than latched on the component.
+			axProbes[uProbeCount].m_bEnabled  = xProp.IsInteractable();
 			axProbeEntities[uProbeCount] = xEntityID;
 			++uProbeCount;
 		});

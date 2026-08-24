@@ -57,6 +57,8 @@
 #include "Zenithmon/Source/Interaction/ZM_InteractionLogic.h"     // ZM_ForwardFromRotation / ZM_FlattenXZ -- the SHIPPED facing
 #include "Zenithmon/Source/Interaction/ZM_TrainerSightLogic.h"    // the SHIPPED sight cone, constants and predicate
 #include "Zenithmon/Source/World/ZM_HumanBody.h"                  // THE body contract -- by name, never by literal
+#include "Zenithmon/Components/ZM_GroundItemProp.h"            // fDEFAULT_RADIUS -- a PURE static; nothing is constructed
+#include "Zenithmon/Source/World/ZM_GroundItem.h"              // the prop REGISTRY -- the other half of the placement claim
 #include "Zenithmon/Source/World/ZM_Route1Placement.h"
 #include "Zenithmon/Source/World/ZM_TerrainAuthoring.h"           // the recipe. The UNITS may include this; the HEADER may not.
 #include "Zenithmon/Tests/ZM_Tests_ComponentTypeNames.h"          // the ONE shared component-type-name inventory (ZM-57)
@@ -1495,9 +1497,9 @@ ZENITH_TEST(ZM_WorldTraversal, Route1_EntityNamesAreUniquePrintableLookupKeysNoN
 	// counts against the same shared table.
 	//
 	// EDIT THE SHARED HEADER AND BOTH FILES' LITERALS IN ONE CHANGE.
-	ZENITH_ASSERT_EQ(uGameTypeCount, 15u,
+	ZENITH_ASSERT_EQ(uGameTypeCount, 16u,
 		"the shared GAME component type table (Tests/ZM_Tests_ComponentTypeNames.h) "
-		"holds %u rows, not the 15 that Games/Zenithmon/Zenithmon.cpp's "
+		"holds %u rows, not the 16 that Games/Zenithmon/Zenithmon.cpp's "
 		"ZENITH_REGISTER_COMPONENT block registers. "
 		"Tests/ZM_Tests_ThornacrePlacement.cpp pins the SAME shared table at the "
 		"same literal, so this reds if the header is grown and that file's literal "
@@ -1771,4 +1773,229 @@ ZENITH_TEST(ZM_WorldTraversal, Route1_SettledCameraStandsAboveGroundBehindTheArr
 		"Y %.4f, which still CLEARS the %.4f m floor clause (3) uses. Clause (3) "
 		"therefore cannot red on the pitch sign error it was written for",
 		(double)xFlippedPitchCamera.y, (double)fClearanceFloor);
+}
+
+// ============================================================================
+// ---- ZM-27: THE THREE GROUND-ITEM PROPS ------------------------------------
+//
+// ★★ THE CLAIM THESE EXIST FOR IS **REACHABILITY**, and nothing else in this game
+// can make it. A prop authored 3 m off the walked line is a perfectly valid entity
+// standing on perfectly measured ground carrying a perfectly configured component,
+// and it can never be picked up in any playthrough, forever -- because
+// ZM_PickInteractTarget refuses a candidate beyond fZM_INTERACT_MAX_DISTANCE and
+// these props are authored at ZM_GroundItemProp::fDEFAULT_RADIUS (zero bonus).
+// Every other check in the suite would stay green: the ground oracle would resolve
+// its column, a scene-byte needle would find the entity, and the component's own
+// units would pass on compiled constants. This is the same failure shape as the
+// dead forager anchor the sight units above exist for, one layer up.
+// ============================================================================
+
+namespace
+{
+	// The reach a prop authored at the DEFAULT radius actually gets. Read from the
+	// two shipped constants rather than spelled -- widening either must move this
+	// oracle with it, or the unit stops testing the shipped rule.
+	constexpr float Route1PropInteractReach()
+	{
+		return fZM_INTERACT_MAX_DISTANCE + ZM_GroundItemProp::fDEFAULT_RADIUS;
+	}
+
+	// Every prop anchor, paired with the ground row it stands on, IN AUTHORING
+	// ORDER. A table rather than three copies of the same clause, so appending a
+	// fourth prop is one row here and the units below cover it automatically.
+	struct Route1PropAnchor
+	{
+		const char*             m_szEntityName;
+		float                   m_fX;
+		float                   m_fZ;
+		ZM_ROUTE1_GROUND_SAMPLE m_eGroundSample;
+		ZM_GROUND_ITEM_ID       m_eGroundItemId;
+	};
+
+	constexpr Route1PropAnchor axROUTE1_PROP_ANCHORS[] =
+	{
+		{ szZM_ROUTE1_PROP_SOUTH_SALVE_ENTITY_NAME,
+		  fZM_ROUTE1_PROP_SOUTH_SALVE_X, fZM_ROUTE1_PROP_SOUTH_SALVE_Z,
+		  ZM_ROUTE1_GROUND_SAMPLE_PROP_SOUTH_SALVE,
+		  ZM_GROUND_ITEM_ROUTE1_SOUTH_SALVE },
+		{ szZM_ROUTE1_PROP_LANE_CATCHORB_ENTITY_NAME,
+		  fZM_ROUTE1_PROP_LANE_CATCHORB_X, fZM_ROUTE1_PROP_LANE_CATCHORB_Z,
+		  ZM_ROUTE1_GROUND_SAMPLE_PROP_LANE_CATCHORB,
+		  ZM_GROUND_ITEM_ROUTE1_LANE_CATCHORB },
+		{ szZM_ROUTE1_PROP_NORTH_SALVE_ENTITY_NAME,
+		  fZM_ROUTE1_PROP_NORTH_SALVE_X, fZM_ROUTE1_PROP_NORTH_SALVE_Z,
+		  ZM_ROUTE1_GROUND_SAMPLE_PROP_NORTH_SALVE,
+		  ZM_GROUND_ITEM_ROUTE1_NORTH_SALVE },
+	};
+
+	// DEDUCED, never spelled -- the ZM_ROUTE1_GROUND_SAMPLE_COUNT idiom. An
+	// explicit bound would make the count clause below a tautology.
+	constexpr u_int uROUTE1_PROP_ANCHOR_COUNT =
+		sizeof(axROUTE1_PROP_ANCHORS) / sizeof(axROUTE1_PROP_ANCHORS[0]);
+}
+
+// EVERY registered prop is authored somewhere, and every authored prop is
+// registered. Without this the two tables drift silently: a fourth registry row
+// with no anchor is an item no scene yields, and an anchor naming an id the
+// registry lost is a prop that fails closed and is never takeable.
+ZENITH_TEST(ZM_WorldTraversal, Route1_GroundItemPropAnchorsCoverTheWholeRegistry)
+{
+	ZENITH_ASSERT_EQ(uROUTE1_PROP_ANCHOR_COUNT, (u_int)ZM_GROUND_ITEM_COUNT,
+		"the Route 1 prop anchor table holds %u rows while the ground-item registry "
+		"holds %u. Every registered prop must be authored somewhere and every "
+		"authored prop must be registered -- a registry row with no anchor is an "
+		"item no scene ever yields",
+		uROUTE1_PROP_ANCHOR_COUNT, (u_int)ZM_GROUND_ITEM_COUNT);
+
+	// And the ids are DISTINCT. Two anchors sharing an id would author two props
+	// that collapse into one collected bit -- taking either would silently retire
+	// the other, with every count clause above still green.
+	for (u_int uA = 0u; uA < uROUTE1_PROP_ANCHOR_COUNT; ++uA)
+	{
+		ZENITH_ASSERT_LT((u_int)axROUTE1_PROP_ANCHORS[uA].m_eGroundItemId,
+			(u_int)ZM_GROUND_ITEM_COUNT,
+			"prop anchor '%s' names ground-item id %u, which is outside the registry",
+			axROUTE1_PROP_ANCHORS[uA].m_szEntityName,
+			(u_int)axROUTE1_PROP_ANCHORS[uA].m_eGroundItemId);
+
+		for (u_int uB = uA + 1u; uB < uROUTE1_PROP_ANCHOR_COUNT; ++uB)
+		{
+			ZENITH_ASSERT_NE(
+				(u_int)axROUTE1_PROP_ANCHORS[uA].m_eGroundItemId,
+				(u_int)axROUTE1_PROP_ANCHORS[uB].m_eGroundItemId,
+				"prop anchors '%s' and '%s' both carry ground-item id %u -- taking "
+				"either would mark the other collected too",
+				axROUTE1_PROP_ANCHORS[uA].m_szEntityName,
+				axROUTE1_PROP_ANCHORS[uB].m_szEntityName,
+				(u_int)axROUTE1_PROP_ANCHORS[uA].m_eGroundItemId);
+		}
+	}
+}
+
+// ★★ THE ONE THAT CAN SEE AN UNPICKABLE PROP. Measured against the recipe's OWN
+// DirtLane polyline through Route1DistanceToLane -- the same independent oracle the
+// trainer units use -- so it re-derives the perpendicular offsets the placement
+// header states rather than trusting them.
+ZENITH_TEST(ZM_WorldTraversal, Route1_GroundItemPropsAreReachableFromTheWalkedLane)
+{
+	const float fReach = Route1PropInteractReach();
+	ZENITH_ASSERT_GT(fReach, 0.0f,
+		"the shipped interact reach resolved to %.4f m, so every clause below would "
+		"be vacuous", (double)fReach);
+
+	const float fFlattenRadius = Route1LaneFlattenRadius();
+
+	for (u_int uProp = 0u; uProp < uROUTE1_PROP_ANCHOR_COUNT; ++uProp)
+	{
+		const Route1PropAnchor& xAnchor = axROUTE1_PROP_ANCHORS[uProp];
+		const float fToLane = Route1DistanceToLane(xAnchor.m_fX, xAnchor.m_fZ);
+
+		ZENITH_ASSERT_LT(fToLane, fReach,
+			"prop '%s' stands %.4f m from the DirtLane while a player walking it "
+			"reaches only %.4f m. It can NEVER be picked up, in any playthrough, and "
+			"nothing else in this suite can see that -- its ground column resolves, "
+			"its scene bytes needle, and its component units pass on compiled "
+			"constants. MOVE THE ANCHOR; do not widen fZM_INTERACT_MAX_DISTANCE",
+			xAnchor.m_szEntityName, (double)fToLane, (double)fReach);
+
+		// ...AND INSIDE THE FLATTEN CORRIDOR, which is a different claim: reach says
+		// the player can address it, the corridor says the ground under it was
+		// levelled and its grass erased, so the prop is neither buried nor hidden in
+		// encounter grass.
+		ZENITH_ASSERT_LT(fToLane, fFlattenRadius,
+			"prop '%s' stands %.4f m from the DirtLane, outside the %.4f m FLATTEN "
+			"corridor. Its measured column is then unflattened ground carrying "
+			"erosion deposit, and it may be standing in encounter grass",
+			xAnchor.m_szEntityName, (double)fToLane, (double)fFlattenRadius);
+	}
+
+	// ★ THE ANTI-VACUITY ARM. A point pushed well past the reach must FAIL the same
+	// predicate through the same helper -- otherwise the clause above could be
+	// passing because Route1DistanceToLane returns something degenerate rather than
+	// because the anchors are close to the lane.
+	//
+	// It is displaced from a REAL anchor along the perpendicular that anchor's own
+	// foot already defines, so the failure it models is the actual mistake -- an
+	// author nudging a prop off the path -- and it introduces no second geometry
+	// that could disagree with the measurement it is testing.
+	constexpr float fPROBE_LATERAL_OFFSET = 12.0f;
+	const Route1PropAnchor& xFirst = axROUTE1_PROP_ANCHORS[0];
+	const Route1LaneFoot xFoot = Route1ClosestPointOnLane(xFirst.m_fX, xFirst.m_fZ);
+	ZENITH_ASSERT_TRUE(xFoot.m_bValid,
+		"the DirtLane polyline did not resolve, so the anti-vacuity probe below "
+		"cannot be constructed and the clauses above are unproven");
+
+	const float fAwayX = xFirst.m_fX - xFoot.m_fX;
+	const float fAwayZ = xFirst.m_fZ - xFoot.m_fZ;
+	const float fAwayLength = std::sqrt(fAwayX * fAwayX + fAwayZ * fAwayZ);
+	ZENITH_ASSERT_GT(fAwayLength, 0.0f,
+		"prop '%s' sits exactly ON the lane centreline, so there is no perpendicular "
+		"direction to push the anti-vacuity probe along", xFirst.m_szEntityName);
+
+	const float fProbeX = xFoot.m_fX + (fAwayX / fAwayLength) * fPROBE_LATERAL_OFFSET;
+	const float fProbeZ = xFoot.m_fZ + (fAwayZ / fAwayLength) * fPROBE_LATERAL_OFFSET;
+	const float fProbeToLane = Route1DistanceToLane(fProbeX, fProbeZ);
+	ZENITH_ASSERT_GT(fProbeToLane, fReach,
+		"the ANTI-VACUITY arm failed: a probe displaced %.4f m off the lane measures "
+		"only %.4f m from it and would still pass the %.4f m reach clause above, so "
+		"that clause cannot red on the misplacement it was written for",
+		(double)fPROBE_LATERAL_OFFSET, (double)fProbeToLane, (double)fReach);
+}
+
+// Each prop stands ON its own measured column, and the three columns are genuinely
+// PER-PROP rather than one number copied three times.
+ZENITH_TEST(ZM_WorldTraversal, Route1_GroundItemPropsStandOnTheirOwnMeasuredColumn)
+{
+	for (u_int uProp = 0u; uProp < uROUTE1_PROP_ANCHOR_COUNT; ++uProp)
+	{
+		const Route1PropAnchor& xAnchor = axROUTE1_PROP_ANCHORS[uProp];
+		const ZM_Route1GroundSample& xRow =
+			ZM_GetRoute1GroundSample(xAnchor.m_eGroundSample);
+
+		// The row this prop reads is the row NAMED for it. A mis-paired enum value
+		// would put a prop on somebody else's column with every height still finite
+		// and every other clause still green.
+		ZENITH_ASSERT_TRUE(strcmp(xRow.m_szEntityName, xAnchor.m_szEntityName) == 0,
+			"prop '%s' reads ground row '%s' -- the anchor table and the ground "
+			"table have been paired wrongly",
+			xAnchor.m_szEntityName, xRow.m_szEntityName);
+
+		// The column is the prop's own XZ, not merely a plausible height.
+		ZENITH_ASSERT_EQ_FLOAT(xRow.m_fX, xAnchor.m_fX, fROUTE1_EXACT_EPSILON,
+			"ground row '%s' was measured at X %.4f while the prop stands at X %.4f",
+			xRow.m_szEntityName, (double)xRow.m_fX, (double)xAnchor.m_fX);
+		ZENITH_ASSERT_EQ_FLOAT(xRow.m_fZ, xAnchor.m_fZ, fROUTE1_EXACT_EPSILON,
+			"ground row '%s' was measured at Z %.4f while the prop stands at Z %.4f",
+			xRow.m_szEntityName, (double)xRow.m_fZ, (double)xAnchor.m_fZ);
+
+		// The authored centre is feet + HALF the cube: the prop rests on the surface
+		// rather than being half-buried in it or hovering a whole edge above it.
+		const float fCentreY = ZM_Route1PropCentreY(xAnchor.m_eGroundSample);
+		ZENITH_ASSERT_EQ_FLOAT(fCentreY - xRow.m_fFeetY,
+			0.5f * fZM_ROUTE1_PROP_CUBE_EDGE, fROUTE1_EXACT_EPSILON,
+			"prop '%s' has its centre %.4f m above its measured surface, which is not "
+			"half its %.4f m cube -- it is buried or floating",
+			xAnchor.m_szEntityName, (double)(fCentreY - xRow.m_fFeetY),
+			(double)fZM_ROUTE1_PROP_CUBE_EDGE);
+	}
+
+	// ★ THE THREE COLUMNS ARE DISTINCT. All three rows carrying one height is the
+	// signature of a table that was seeded and never frozen -- which is precisely
+	// the state this table's own banner says no compiled-constant unit can detect.
+	// It cannot detect an unfrozen table in general; it CAN detect this one.
+	bool bAnyDistinct = false;
+	for (u_int uProp = 1u; uProp < uROUTE1_PROP_ANCHOR_COUNT; ++uProp)
+	{
+		if (ZM_Route1GroundFeetY(axROUTE1_PROP_ANCHORS[uProp].m_eGroundSample)
+			!= ZM_Route1GroundFeetY(axROUTE1_PROP_ANCHORS[0].m_eGroundSample))
+		{
+			bAnyDistinct = true;
+			break;
+		}
+	}
+	ZENITH_ASSERT_TRUE(bAnyDistinct,
+		"all %u prop ground columns carry the SAME height. Over a kilometre of "
+		"eroded route that is not a measurement -- the rows are still seeded, and "
+		"ZM_Route1GroundTruth_Test is what freezes them",
+		uROUTE1_PROP_ANCHOR_COUNT);
 }

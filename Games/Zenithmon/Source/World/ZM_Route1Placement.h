@@ -135,6 +135,22 @@ inline constexpr const char* szZM_ROUTE1_TRAINER_RAMBLER_ENTITY_NAME =
 inline constexpr const char* szZM_ROUTE1_TRAINER_FORAGER_ENTITY_NAME =
 	"Npc_Route1Forager";
 
+// The three ground-item props (ZM-27 follow-up (a) of ZM-D-201). A Prop_ prefix,
+// not Npc_: these are objects, they carry ZM_GroundItemProp rather than
+// ZM_Interactable, and no NPC roster row exists or should exist for them. The
+// prefix is also what keeps a committed-bytes needle for a prop from matching a
+// person.
+//
+// ★ THE NAME IS NOT THE ID. Which prop an entity IS comes from the serialized
+// ZM_GROUND_ITEM_ID on its ZM_GroundItemProp component, never from a name lookup
+// -- the id is save-stable and the name is not.
+inline constexpr const char* szZM_ROUTE1_PROP_SOUTH_SALVE_ENTITY_NAME =
+	"Prop_Route1SouthSalve";
+inline constexpr const char* szZM_ROUTE1_PROP_LANE_CATCHORB_ENTITY_NAME =
+	"Prop_Route1LaneCatchorb";
+inline constexpr const char* szZM_ROUTE1_PROP_NORTH_SALVE_ENTITY_NAME =
+	"Prop_Route1NorthSalve";
+
 // ---- The two gate edges, RESOLVED from the compiled world table ---------------
 //
 // ★ WHY THESE ARE FUNCTIONS AND NOT A PAIR OF BUILD INDICES AND A PAIR OF TAG
@@ -339,6 +355,36 @@ inline constexpr float fZM_ROUTE1_TRAINER_RAMBLER_Z = 650.0f;
 inline constexpr float fZM_ROUTE1_TRAINER_FORAGER_X = 522.5f;
 inline constexpr float fZM_ROUTE1_TRAINER_FORAGER_Z = 950.0f;
 
+// ---- The three ground-item prop anchors --------------------------------------
+//
+// ★ DERIVED PERPENDICULARLY FROM THE SHIPPED DirtLane POLYLINE, NOT EYEBALLED.
+// Each was computed as "the lane point at this Z, displaced along the segment's
+// unit NORMAL by this many metres", against the same polyline the trainer note
+// above measures: {(512,64),(480,300),(540,560),(500,820),(550,1080),(512,1472)}.
+// The resulting perpendicular distance is stated per row and is what the boot unit
+// re-derives -- an axis-aligned nudge would NOT have produced these numbers,
+// because no segment of this lane runs along +Z.
+//
+// ★★ THE CONSTRAINT THAT DECIDES THESE IS INTERACT REACH, NOT SIGHT. A prop is not
+// a trainer: there is no cone and no 4 m ceiling. What a prop must be is REACHABLE
+// from the walked line, and ZM_InteractionLogic.h ships
+// fZM_INTERACT_MAX_DISTANCE = 2.5 with these props authored at
+// ZM_GroundItemProp::fDEFAULT_RADIUS (zero bonus). So the perpendicular offset must
+// stay UNDER 2.5 m or the prop can never be picked up by a player walking the lane
+// -- and every unit in this game would stay green, because nothing compiled can see
+// an unreachable prop. Route1_GroundItemPropsAreReachableFromTheWalkedLane is the
+// boot unit that can.
+//
+// ★ AND THEY SIT INSIDE THE LANE'S 16 m FLATTEN RADIUS, so the ground under each is
+// levelled toward the recipe target and zeroed by the GRASS_ERASE phase -- a prop is
+// never buried in encounter grass, for the same reason a trainer never stands in it.
+inline constexpr float fZM_ROUTE1_PROP_SOUTH_SALVE_X = 495.1448f;   // perp 1.60 m, segment 0
+inline constexpr float fZM_ROUTE1_PROP_SOUTH_SALVE_Z = 200.2150f;
+inline constexpr float fZM_ROUTE1_PROP_LANE_CATCHORB_X = 518.0233f; // perp 2.00 m, segment 2
+inline constexpr float fZM_ROUTE1_PROP_LANE_CATCHORB_Z = 689.6959f;
+inline constexpr float fZM_ROUTE1_PROP_NORTH_SALVE_X = 540.1092f;   // perp 1.75 m, segment 4
+inline constexpr float fZM_ROUTE1_PROP_NORTH_SALVE_Z = 1200.1689f;
+
 // ============================================================================
 // ---- THE GROUND: A RECIPE MIRROR **AND** A MEASURED TABLE --------------------
 //
@@ -404,6 +450,9 @@ enum ZM_ROUTE1_GROUND_SAMPLE : u_int
 	ZM_ROUTE1_GROUND_SAMPLE_NORTH_GATE,
 	ZM_ROUTE1_GROUND_SAMPLE_TRAINER_RAMBLER,
 	ZM_ROUTE1_GROUND_SAMPLE_TRAINER_FORAGER,
+	ZM_ROUTE1_GROUND_SAMPLE_PROP_SOUTH_SALVE,
+	ZM_ROUTE1_GROUND_SAMPLE_PROP_LANE_CATCHORB,
+	ZM_ROUTE1_GROUND_SAMPLE_PROP_NORTH_SALVE,
 
 	ZM_ROUTE1_GROUND_SAMPLE_COUNT
 };
@@ -479,6 +528,21 @@ inline constexpr ZM_Route1GroundSample axZM_ROUTE1_GROUND_SAMPLES[] =
 	{ szZM_ROUTE1_NORTH_GATE_ENTITY_NAME,       fZM_ROUTE1_NORTH_GATE_X,      fZM_ROUTE1_NORTH_GATE_Z,      26.86820f },
 	{ szZM_ROUTE1_TRAINER_RAMBLER_ENTITY_NAME,  fZM_ROUTE1_TRAINER_RAMBLER_X, fZM_ROUTE1_TRAINER_RAMBLER_Z, 26.64679f },
 	{ szZM_ROUTE1_TRAINER_FORAGER_ENTITY_NAME,  fZM_ROUTE1_TRAINER_FORAGER_X, fZM_ROUTE1_TRAINER_FORAGER_Z, 26.19853f },
+
+	// ★★ THE THREE PROP COLUMNS, MEASURED 2026-08-24 BY THE SAME ORACLE AND IN THE
+	// SAME SHAPE AS THE SIX ABOVE (ZM_Route1GroundTruth_Test against a warm Route 1
+	// bake): resolved=1, hitTerrain=1, finalHit='Route1Terrain' on every row.
+	// OBSERVED, never derived -- do not recompute one of these from another, and do
+	// not interpolate one from its neighbours because the props lie between them.
+	//
+	// They were added to a table that was ALREADY FROZEN as a set, which is a state
+	// the banner above does not describe. The six existing rows were RE-MEASURED in
+	// the same oracle run and came back byte-identical to their committed literals,
+	// so this is an extension of the frozen set rather than a re-freeze of it -- and
+	// that re-measure is the evidence the terrain did not move underneath them.
+	{ szZM_ROUTE1_PROP_SOUTH_SALVE_ENTITY_NAME,   fZM_ROUTE1_PROP_SOUTH_SALVE_X,   fZM_ROUTE1_PROP_SOUTH_SALVE_Z,   26.66135f },
+	{ szZM_ROUTE1_PROP_LANE_CATCHORB_ENTITY_NAME, fZM_ROUTE1_PROP_LANE_CATCHORB_X, fZM_ROUTE1_PROP_LANE_CATCHORB_Z, 26.61090f },
+	{ szZM_ROUTE1_PROP_NORTH_SALVE_ENTITY_NAME,   fZM_ROUTE1_PROP_NORTH_SALVE_X,   fZM_ROUTE1_PROP_NORTH_SALVE_Z,   26.18854f },
 };
 // ==== END R1-2 MEASURED ROUTE 1 GROUND ====
 
@@ -748,6 +812,74 @@ inline ZM_Route1Volume ZM_GetRoute1NorthGate()
 			fZM_ROUTE1_GATE_SCALE_X,
 			fZM_ROUTE1_GATE_SCALE_Y,
 			fZM_ROUTE1_GATE_SCALE_Z) };
+}
+
+// ---- The three ground-item props ---------------------------------------------
+//
+// The blockout cube every prop is authored as. Small enough to read as an object
+// lying beside the path rather than a crate blocking it, and large enough to see
+// from the follow camera at fZM_ROUTE1_CAMERA_ARM.
+//
+// ★ IT IS AN EDGE, NOT A HALF-EDGE, and the centre accessor below is the ONLY
+// place the halving happens. ZM_GreyboxVisual's blockout is the engine unit cube,
+// so this value goes straight into AddStep_SetTransformScale and a second
+// half-extent spelled at the call site would be the classic capsule-arithmetic
+// duplication ZM_DawnmerePlacement.h warns about.
+inline constexpr float fZM_ROUTE1_PROP_CUBE_EDGE = 0.6f;
+
+// A prop standing ON its own measured column: the MEASURED surface plus half the
+// cube. Reads the ground table through ZM_Route1GroundFeetY -- never
+// fZM_ROUTE1_RECIPE_TARGET_GROUND_Y -- so a re-freeze of the table moves every
+// prop with it and no literal here has to be touched.
+inline constexpr float ZM_Route1PropCentreY(ZM_ROUTE1_GROUND_SAMPLE eSample)
+{
+	return ZM_Route1GroundFeetY(eSample) + 0.5f * fZM_ROUTE1_PROP_CUBE_EDGE;
+}
+
+// The three props, IN AUTHORING ORDER, each returning the centre and the uniform
+// scale its authoring steps consume. Same shape as the gate volumes above, and the
+// same rule: nothing at the call site re-spells a coordinate.
+//
+// ★ THE ORDER HERE IS SCENE-BYTE CONTRACT (ZM-D-148 dense authoring-order file
+// indices). Appending a fourth prop is free; reordering these three rewrites
+// Route1.zscen.
+inline ZM_Route1Volume ZM_GetRoute1SouthSalveProp()
+{
+	return {
+		Zenith_Maths::Vector3(
+			fZM_ROUTE1_PROP_SOUTH_SALVE_X,
+			ZM_Route1PropCentreY(ZM_ROUTE1_GROUND_SAMPLE_PROP_SOUTH_SALVE),
+			fZM_ROUTE1_PROP_SOUTH_SALVE_Z),
+		Zenith_Maths::Vector3(
+			fZM_ROUTE1_PROP_CUBE_EDGE,
+			fZM_ROUTE1_PROP_CUBE_EDGE,
+			fZM_ROUTE1_PROP_CUBE_EDGE) };
+}
+
+inline ZM_Route1Volume ZM_GetRoute1LaneCatchorbProp()
+{
+	return {
+		Zenith_Maths::Vector3(
+			fZM_ROUTE1_PROP_LANE_CATCHORB_X,
+			ZM_Route1PropCentreY(ZM_ROUTE1_GROUND_SAMPLE_PROP_LANE_CATCHORB),
+			fZM_ROUTE1_PROP_LANE_CATCHORB_Z),
+		Zenith_Maths::Vector3(
+			fZM_ROUTE1_PROP_CUBE_EDGE,
+			fZM_ROUTE1_PROP_CUBE_EDGE,
+			fZM_ROUTE1_PROP_CUBE_EDGE) };
+}
+
+inline ZM_Route1Volume ZM_GetRoute1NorthSalveProp()
+{
+	return {
+		Zenith_Maths::Vector3(
+			fZM_ROUTE1_PROP_NORTH_SALVE_X,
+			ZM_Route1PropCentreY(ZM_ROUTE1_GROUND_SAMPLE_PROP_NORTH_SALVE),
+			fZM_ROUTE1_PROP_NORTH_SALVE_Z),
+		Zenith_Maths::Vector3(
+			fZM_ROUTE1_PROP_CUBE_EDGE,
+			fZM_ROUTE1_PROP_CUBE_EDGE,
+			fZM_ROUTE1_PROP_CUBE_EDGE) };
 }
 
 // ---- The two trainer stations ------------------------------------------------

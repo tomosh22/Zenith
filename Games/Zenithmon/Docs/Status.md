@@ -18,7 +18,30 @@ The S0-S7 narrative that used to fill the back half of this file moved VERBATIM 
 its own template in `AgentBriefing.md` §2.3 specifies. Nothing was deleted.
 
 **★ LIVE PIN (UPDATED 2026-08-24):
-ZM boot `3395`; engine boot (Null Combat) `1650`; Null RenderTest `1741`; registry **68**.**
+ZM boot `3399`; engine boot (Null Combat) `1650`; Null RenderTest `1741`; registry **69**.**
+
+> **★ ZM-27 follow-ups (a) + (b) — ZM-D-202 — OBSERVED 2026-08-24.**
+> `Null_vs2022_Debug_Win64_True` reported **`3399 ran / 3397 passed / 0 failed`** (2 skipped),
+> so `Tools/unit_baselines.json` moved `Zenithmon` **3395 -> 3399**. The +4 is three
+> Route 1 prop placement units (`Route1_GroundItemPropAnchorsCoverTheWholeRegistry`,
+> `Route1_GroundItemPropsAreReachableFromTheWalkedLane`,
+> `Route1_GroundItemPropsStandOnTheirOwnMeasuredColumn`) plus the committed-bytes needle
+> `Route1CarriesTheThreeGroundItemProps`.
+> The registry moved **68 -> 69** with `ZM_GroundItemProp_Test`, COUNTED FROM THE RUN
+> (`zenith test Zenithmon --headless` reported "69 tests measured", exit 0) and not from a grep.
+>
+> Engine `1650` and Null RenderTest `1741` are UNMOVED and were **inferred, not measured** —
+> `git status` confirms the diff is confined to `Games/Zenithmon/**` plus the unprotected pin
+> file, so no backend-neutral engine unit moved.
+>
+> **★ WHAT THIS SLICE ACTUALLY CLOSED.** ZM-27 shipped the ground-item mechanism with
+> `ZM_TryPickUpGroundItem` having **zero production callers** — its first Definition-of-Done
+> line ("a world prop can be picked up into the bag") was unmet and the ticket parked at
+> *In Review*. It is met now: `ZM_GroundItemProp` at ECS order 115, three measured anchors,
+> three prop entities in the committed `Route1.zscen`, and `ZM_GroundItemProp_Test` driving a
+> real pickup. **The scope had been cut against a constraint that did not exist** — see
+> ZM-D-202, and the corrected `windowed` / `needs-gpu` text in `AgentBriefing.md` and
+> `Board.md`.
 
 > **★ R1-3 (ZM-21 / ZM-D-203) — OBSERVED 2026-08-23.** `Null_vs2022_Debug_Win64_True`
 > reported **`3389 ran / 3387 passed / 0 failed`** (2 skipped), so `Tools/unit_baselines.json`

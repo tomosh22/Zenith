@@ -61,7 +61,7 @@ inline constexpr u_int uZM_ENGINE_COMPONENT_TYPE_COUNT =
 	(u_int)(sizeof(aszZM_ENGINE_COMPONENT_TYPE_NAMES)
 		/ sizeof(aszZM_ENGINE_COMPONENT_TYPE_NAMES[0]));
 
-// Game set, 15 rows: Games/Zenithmon/Zenithmon.cpp's ZENITH_REGISTER_COMPONENT
+// Game set, 16 rows: Games/Zenithmon/Zenithmon.cpp's ZENITH_REGISTER_COMPONENT
 // block.
 inline constexpr const char* const aszZM_GAME_COMPONENT_TYPE_NAMES[] =
 {
@@ -69,7 +69,7 @@ inline constexpr const char* const aszZM_GAME_COMPONENT_TYPE_NAMES[] =
 	"ZM_GameStateManager", "ZM_SpawnPoint", "ZM_WarpTrigger", "ZM_GreyboxVisual",
 	"ZM_BattleArena", "ZM_TallGrassSystem", "ZM_BattleTransition",
 	"ZM_BattleDirector", "ZM_UI_MenuStack", "ZM_Interactable",
-	"ZM_TouchLayoutController",
+	"ZM_TouchLayoutController", "ZM_GroundItemProp",
 };
 
 inline constexpr u_int uZM_GAME_COMPONENT_TYPE_COUNT =
