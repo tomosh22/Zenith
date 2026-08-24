@@ -261,9 +261,10 @@ zagent board status --project ZM # roadmap <-> board drift; exit 1 on drift
 | `Games/Zenithmon/Docs/Status.md` | the LIVE PIN block: why it moved. Read by no gate |
 | `.github/workflows/zm-tests.yml`, `zagent.project.json` | name the GAME, never a number |
 
-The engine pin (Null Combat, currently 1638) is spelled in
-`zagent.project.json` too, under the `Engine` category. **All four are in
-THIS repo**, which is the point — the gate line used to live in a
+The engine pin lives in `Tools/unit_baselines.json` under `Combat`, like every
+other pin — this paragraph used to quote it as "currently 1638", which is a
+duplicate of a number that moves and was stale by 12 the day it was read.
+**Every pin is in THIS repo, in that one file**, which is the point — the gate line used to live in a
 gitignored file in the board's repo, where a reviewer could not see it
 and it could only be remembered. No gate tells you: `run_unit_gate.ps1`
 asserts `ran == Baseline` **exactly**, so a grown suite fails with zero
@@ -276,11 +277,27 @@ straight to `master` and hard-refuses `git switch -c`, `git worktree` and
 `Docs/CIPolicy.md` is a squash-merge PR policy. Nothing is pushed —
 `push: false` everywhere.
 
-**3. Windowed authoring stays human, by engine law.** A headless run may
-CREATE a `.zscen` but never CHANGE one (the publish guard), so any slice
-that re-authors a committed scene is assigned to a person on the board
-and never enters the queue. R1-2 step 3, R1-3, R1-6 and R1-10 are all in
-that class. Handing one to the loop would either no-op or trip the guard.
+**3. Windowed authoring is the LOOP's, and needs a GPU rather than a person.**
+This section used to read *"windowed authoring stays human, by engine law"*,
+naming R1-2 step 3, R1-3, R1-6 and R1-10 as work no agent could take. **That
+was wrong, and it cost six of S8's ten critical-path slices their place in the
+queue.** The `.zscen` publish guard is `Zenith_Editor.cpp:1425`, inside
+`if constexpr (Zenith_IsNullRenderer())` — **compiled out of a `Vulkan_` build
+entirely**, with its own comment reading *"Windowed boots never reach here —
+they author everything, so they publish unconditionally."* It protects against
+a Null boot serializing an incomplete world over a tracked asset. It has never
+had anything to do with whether a human is present.
+
+The marker is `needs-gpu`, and it **gates nothing**: a GPU is assumed
+available, and the label only tells the tick to build `Vulkan_*_True` and boot
+windowed instead of the `--headless` `Null_` default. `needs-human` is the
+separate marker for work a machine genuinely cannot produce. ZM-21 (R1-3) and
+ZM-66 both re-authored committed scenes from the loop on 2026-08-23/24, each
+proven by two consecutive boots producing byte-identical output.
+
+The shape is **Vulkan to author, Null to verify and pin** — a Vulkan exe
+reports a higher unit count for the same tree, so the pin always comes from a
+`Null_` run.
 
 **4. `Docs/` is MIRRORED into Notion, and stays authoritative here.**
 `zagent docs sync` renders this directory into a page tree under

@@ -1,8 +1,11 @@
 # =============================================================================
 # doc_lint.ps1 -- MVP-0.3.2 documentation cross-check linter.
 #
-# Runs 6 cross-document consistency checks per the round-5 peer-review
-# consensus (see Games/DevilsPlayground/Docs/MvpRoadmap.md MVP-0.3.2 entry):
+# Runs 7 cross-document consistency checks. Checks 1-6 come from the round-5
+# peer-review consensus (see Games/DevilsPlayground/Docs/MvpRoadmap.md MVP-0.3.2
+# entry); check 7 was added 2026-08-24 after a live /tick audit found the LIVE
+# PIN line -- the one line Status.md tells every cold session to read first --
+# was the least checked number in the repository:
 #
 #   1. Test count consistency across Status.md / TestPlan.md /
 #      BuildEnvironment.md / AgentBriefing.md / Shortfalls.md.
@@ -14,6 +17,10 @@
 #      (recurring stale-claim failure mode).
 #   6. Cross-references via markdown links resolve (no dead (./Path.md)
 #      pointers).
+#   7. Status.md's LIVE PIN block agrees with Tools/unit_baselines.json (the
+#      file the gate actually reads) and with the registry the tests declare.
+#      EQUALITY, both directions -- understating is the direction drift always
+#      travels, so an overshoot-only check is blind to the common case.
 #
 # Usage:
 #   pwsh -NoProfile -File Tools/doc_lint.ps1
@@ -21,7 +28,7 @@
 #   powershell -NoProfile -File Tools/doc_lint.ps1
 #
 # Exit codes:
-#   0 -- all 6 checks pass.
+#   0 -- all 7 checks pass.
 #   1 -- one or more violations detected (each violation is printed in
 #        a single grep-able line: "VIOLATION [check-id] path:line description").
 #
@@ -361,15 +368,114 @@ function Check-MarkdownLinks {
 }
 
 # =============================================================================
+# Check 7: the LIVE PIN block agrees with Tools/unit_baselines.json and with the
+#          registry the tests actually declare.
+#
+# ★★ WHY THIS EXISTS. `Status.md` carries DATA as well as narration, in four
+# independent places -- the LIVE PIN line, the `+N` history chain, the
+# committed-asset SHA256 table, and the STATE block -- and NOTHING compared any
+# of them against the file the gate actually reads. Measured drift, all live at
+# once on 2026-08-23:
+#
+#   * LIVE PIN read `3387` while `Tools/unit_baselines.json` held `3388`. Traced
+#     to 28046d81, which bumped the manifest 3384 -> 3388 (a +4) while its prose
+#     said "+3" and landed on 3387: the manifest took the MEASURED number and
+#     the sentence took ARITHMETIC, which the manifest's own `$never` note
+#     forbids in those words.
+#   * The STATE block read `pin 3345, registry 64` -- 44 units stale -- and
+#     claimed master was "PUSHED", a state this repo never reaches.
+#
+# C1 cannot catch either. It only fires when a doc OVERSTATES a "N tests"
+# claim, and `registry **N**` matches none of its regexes. So the LIVE PIN line
+# -- the one line this file tells every cold session to read first -- was the
+# least checked number in the repository.
+#
+# ★ SCOPED TO THE LIVE PIN BLOCK ON PURPOSE. Historical narration ("registry
+# 65 -> **67**", "3384 -> 3388") is legitimately full of superseded numbers; an
+# equality check over the whole file would red on its own history. One home per
+# value means exactly one line is authoritative, and this checks that one.
+# =============================================================================
+function Check-LivePin {
+    $statusPath = Join-Path $docsDir 'Status.md'
+    if (-not (Test-Path $statusPath)) {
+        Report-Pass 'C7' "no Status.md -- skipping live-pin check"
+        return
+    }
+    $manifestPath = Join-Path $repoRoot 'Tools/unit_baselines.json'
+    if (-not (Test-Path $manifestPath)) {
+        Report-Violation 'C7' "Tools/unit_baselines.json not found at $manifestPath -- the pin has no authority to compare against"
+        return
+    }
+
+    $lines = Get-Content $statusPath
+    $pinIdx = -1
+    for ($i = 0; $i -lt $lines.Length; $i++) {
+        if ($lines[$i] -match 'LIVE PIN') { $pinIdx = $i; break }
+    }
+    if ($pinIdx -lt 0) {
+        Report-Pass 'C7' "no LIVE PIN block in Status.md -- nothing to reconcile"
+        return
+    }
+
+    # The block is the marker line plus the next few; the numbers usually sit on
+    # the line after the marker.
+    $block = ($lines[$pinIdx..([Math]::Min($pinIdx + 3, $lines.Length - 1))]) -join "`n"
+
+    $manifest = Get-Content $manifestPath -Raw | ConvertFrom-Json
+    $expected = $null
+    if ($manifest.baselines.PSObject.Properties[$Game]) {
+        $expected = [int]$manifest.baselines.$Game
+    }
+
+    $ok = $true
+
+    # --- the boot pin -------------------------------------------------------
+    if ($null -ne $expected) {
+        if ($block -match '(?im)boot\s+`?(\d{3,6})`?') {
+            $claimed = [int]$Matches[1]
+            if ($claimed -ne $expected) {
+                Report-Violation 'C7' "Status.md:$($pinIdx+2): LIVE PIN says ${Game} boot $claimed but Tools/unit_baselines.json -- the file the gate reads -- says $expected. One home per value; the manifest is it."
+                $ok = $false
+            }
+        } else {
+            Report-Violation 'C7' "Status.md:$($pinIdx+1): a LIVE PIN block exists but no boot number could be parsed from it, so the pin narration is unchecked"
+            $ok = $false
+        }
+    }
+
+    # --- the registry -------------------------------------------------------
+    # EQUALITY, both directions. Understating is the direction drift always
+    # travels -- every new test raises the true count while the prose stays put
+    # -- so a check that only catches overstatement is blind to the common case.
+    $testsDir = Join-Path $gameDir 'Tests'
+    if (Test-Path $testsDir) {
+        $registry = 0
+        Get-ChildItem -Path $testsDir -Filter '*.cpp' -Recurse | ForEach-Object {
+            $registry += ([regex]::Matches((Get-Content $_.FullName -Raw), 'ZENITH_AUTOMATED_TEST_REGISTER\s*\(')).Count
+        }
+        if ($registry -gt 0 -and $block -match '(?im)registry\s*\*{0,2}\s*(\d{1,4})\s*\*{0,2}') {
+            $claimedReg = [int]$Matches[1]
+            if ($claimedReg -ne $registry) {
+                Report-Violation 'C7' "Status.md:$($pinIdx+2): LIVE PIN says registry $claimedReg but $registry ZENITH_AUTOMATED_TEST_REGISTER call sites exist under $testsDir"
+                $ok = $false
+            }
+        }
+    }
+
+    if ($ok) { Report-Pass 'C7' "LIVE PIN agrees with unit_baselines.json and the registry" }
+}
+
+# =============================================================================
 # Run all checks.
 # =============================================================================
-Write-Host "doc_lint.ps1: running 6 checks against $docsDir" -ForegroundColor Cyan
+Write-Host "doc_lint.ps1: running 7 checks against $docsDir" -ForegroundColor Cyan
 Check-TestCount
 Check-MvpArchetypeNames
 Check-RoadmapUniqueIds
 Check-SupersededMarkers
 Check-StaleClaims
 Check-MarkdownLinks
+Check-LivePin
 
 Write-Host ""
 if ($script:violations -eq 0) {

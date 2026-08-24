@@ -78,6 +78,15 @@ loop without it lies to itself.
    becomes a Suggestions row for a human to triage, never a commit. A
    loop that can rewrite its own gates does not have gates.
 
+   > **Amended 2026-08-24 by the repo owner, outside a tick.** The rule
+   > above binds the LOOP, and it still does — `zagent guard` refuses a
+   > diff touching `.claude/**` under any ticket, which is exactly right.
+   > It does not bind the human the rule defers to. After a live audit ran
+   > `/tick` three times end to end, the owner directed the findings be
+   > applied, and the sections marked ★★ below were written then, with no
+   > ticket in flight. Recording it here because a file that says "never
+   > edited" beside a git history showing edits is worse than either.
+
 # Never
 
 - No `psql`, no direct database access, no importing `@saas/database`.
@@ -113,6 +122,30 @@ So:
   `.zagent/run/<KEY>/ticket.json` and `.zagent/run/<KEY>/body.md`. A
   firing can crash between the call and the read, and a file survives
   that where a pipe does not.
+- **★★ NEVER PIPE OR SUFFIX A CALL WHOSE EXIT CODE YOU INTEND TO READ.**
+  This is the single most-broken rule in the protocol — it failed three
+  times in one tick, through three different ordinary shell idioms, and
+  the third would have committed a RED ticket as Done with evidence
+  claiming the gates passed:
+
+  ```
+  zagent guard ZM-21 | head            # $? is HEAD's (0), not guard's (1)
+  pwsh tick_gates.ps1 … ; echo "$?"    # $? is ECHO's; the run had exited 10
+  pwsh tick_gates.ps1 … ; echo "$?"    # …and here it had exited 4 — GATE FAILED
+  ```
+
+  In a POSIX shell `$?` is the LAST command's, and a pipeline's is the
+  last stage's. Worse, the harness's own completion notification reports
+  that same mangled code, so *"completed (exit code 0)"* is not
+  independent confirmation of anything. Redirect to a file and read `$?`
+  immediately, or read the JSON verdict — which is the only channel a
+  shell cannot corrupt:
+
+  ```
+  zagent guard <KEY> --json > out.json 2> err.txt ; echo "EXIT=$?"   # WRONG
+  zagent guard <KEY> --json > out.json 2> err.txt                    # right
+  # …then read $? on its own line, or read the file.
+  ```
 
 ---
 
@@ -242,6 +275,25 @@ for:
 | --- | --- |
 | DoD says "a **user decision** recorded", or any ruling the ticket does not already contain | nobody in this loop is the user |
 | DoD says **CI** / "the workflow" / "the pin", naming no file | the same impossibility, said in prose — the scan needs a path to match |
+| **The ticket's stated SCOPE contradicts its own GOAL** | it cannot be finished as filed, whoever runs it |
+
+**★★ THAT THIRD ROW IS NEW, AND IT IS THE ONE THAT COST A DISPATCH.** ZM-22's
+goal was *"wild encounters LIVE on Route 1"* while the R1 slice table budgeted
+R1-4 as re-authoring **nothing** — and making encounters fire required scene
+content. Both statements were months old and could not both hold. The
+contradiction was spotted at reconciliation and the response was to encode the
+doubt into the worker prompt as a STOP CONDITION and dispatch anyway. It worked,
+and it cost a full opus-tier dispatch to confirm what was already known.
+
+**Resolve it HERE instead.** Three moves, in preference order: relabel the
+ticket (`needs-gpu` and do both halves — you probably have a GPU); rescope it
+with `zagent update <KEY> --dod <file>`; or Block it *before* dispatching and
+file the properly-scoped replacement. Encoding the doubt into a worker prompt
+is not one of them — step 2 says plainly **"do not dispatch a worker to
+discover this expensively"**.
+
+In this repo it is even mechanically checkable: the slice table's "re-authors"
+column and the ticket's Goal are both structured text.
 
 The pin bump is NO LONGER one of these: it has one unprotected home,
 `Tools/unit_baselines.json`, and a DoD naming it files and runs cleanly.
@@ -481,13 +533,16 @@ You do **not** implement the ticket. Assemble
 
 The prompt must open with these clauses, filled in from the payload:
 
-> **DO NOT** attempt to run gates, build, test, commit, push, or touch
-> the board — you have no shell; the orchestrator does all of that.
+> **DO NOT** attempt to run **CI gate command lines**, build, test, commit,
+> push, or touch the board — you have no shell; the orchestrator does all of
+> that.
 > **Files you may edit:** \<exhaustive list\>.
 > **Conventions:** \<`conventions` from the payload, verbatim\>.
 > **Report back:** files changed, a one-paragraph summary, proposed
 > work-log text, and any decisions, questions, shortfalls or workflow
 > suggestions you want recorded.
+> **Boundary:** \<the known edge of this ticket, and: on reaching it, STOP and
+> report — do not improvise past it\>.
 
 Then inline (I3): the `## Goal`, the `## Definition of Done` items, the
 file list, and any relevant repo conventions. `bodyPath` is a supplement.
@@ -616,10 +671,36 @@ report is _proposed text_ that you apply (I4).
    It runs `zagent gates <KEY>` and then every line that prints, in order,
    appending to `.zagent/run/<KEY>/gates.log`. First non-zero stops.
 
-   **Read the exit code, not the transcript.** `0` green · `2` regen failed ·
-   `3` a created file never reached the compiler · `4` a gate line failed ·
-   `5` no gate list · **`10` MEASURED: a pin needs bumping — not a failure.**
-   `.zagent/run/<KEY>/tick_gates.json` carries the same verdict as data.
+   **★★ READ `.zagent/run/<KEY>/tick_gates.json`. Full stop — not "the exit
+   code, or the JSON".** The shell's exit code is corruptible by a pipe or a
+   trailing `echo` and the harness notification repeats the corrupted value;
+   the JSON is not. It is written on every completion path including the
+   top-level catch, and it now carries the verdict AS DATA:
+
+   ```json
+   { "state": "complete", "exitCode": 4, "headSha": "7d3d6c49…",
+     "startedUtc": "…", "finishedUtc": "…", "steps": [ … ], "skipped": [ … ] }
+   ```
+
+   Codes: `0` green · `2` regen failed · `3` a created file never reached the
+   compiler · `4` a gate line failed · `5` no gate list · **`10` MEASURED: a
+   pin needs bumping — not a failure.**
+
+   Three fields exist because reading this file used to be ambiguous:
+
+   - **`state`** is `running` while a phase is in flight. A killed run leaves
+     `running`, not the previous run's verdict.
+   - **`headSha`** is the commit the phase gated. **If it does not match
+     current HEAD, the verdict describes a different tree — treat it as
+     absent.** This directory has held a stale `all gates green` from an
+     unrelated tree at claim time, and a superseded `exit 4` mid-run.
+   - **`skipped`** names the gate lines that never ran. A failing line stops
+     the list, and the remainder used to be silently absent — on one ticket
+     that meant the unit gate and `doc_lint` never ran, so a freshly-bumped
+     pin was unconfirmed and the linter had never seen the edited docs.
+
+   **A red gate VOIDS every gate behind it.** Read `skipped` before concluding
+   anything about what was verified.
 
    Four rules used to live here as four paragraphs, each added after the rule
    was forgotten once. They are the script now; its header says why:
@@ -648,9 +729,33 @@ report is _proposed text_ that you apply (I4).
    in twenty.
 
 3. **Reviewer pass** when `review.required` is true in the payload.
-   Dispatch `Agent{subagent_type: 'zagent-reviewer', model:
-   <routing.model>}` with the diff inlined in the prompt, and inline
-   `review.reasons` too — they name the CLAIM to check.
+
+   **★★ DISPATCH IT ONLY AFTER EVERY EDIT OF YOURS IS DONE** — the pin, the
+   `Status.md` narration, the hash table, everything. Not in parallel with
+   them, however tempting the wall-clock saving is. **`zagent-reviewer` reads
+   a LIVE working tree and cannot know which commit it is on.** Dispatched
+   alongside orchestrator edits it will read a file mid-write and report
+   correct values as stale — measured: a reviewer opened with a blocking
+   *"the LIVE PIN and SHA256 table are stale relative to disk"*, citing exact
+   line numbers, having seen a block added second but not a change made
+   first. Its citations no longer matched the file, which was the only tell.
+   An orchestrator that believed it would have "fixed" correct values or
+   Blocked a green ticket, and an unattended loop cannot tell that apart from
+   a real finding.
+
+   That is why this is step 6.3 — after the gates, before the guard. The
+   ordering is not incidental.
+
+   **Write the diff to `.zagent/run/<KEY>/diff.patch` and give the reviewer
+   THAT PATH.** Do not paste the diff into the prompt: it exceeds a single
+   read for any COMPLEX ticket (2,260 lines on one) and costs the relay
+   twice, once to read and once to send. The reviewer has `Read`, so it
+   consumes the diff on its own budget — and the step's actual reason for
+   "inline it" (the reviewer has no Bash and cannot *produce* a diff) is
+   fully satisfied by handing it a pre-computed one. Say in the prompt that
+   the patch file is immutable and the working tree is not.
+
+   Inline `review.reasons` — they name the CLAIM to check.
    `zagent-reviewer` is read-only by definition (`Read, Grep, Glob`), so
    it cannot quietly "fix" what it finds and hand you back a diff you
    did not gate. Findings go in the work log; a finding that contradicts
@@ -818,18 +923,67 @@ Then:
 - `direct` mode: already there.
 - `push` is false — nothing reaches a remote.
 
-**Red** → fix forward, at most `guardrails.fixForwardAttempts` times on
-the _same_ failure, then park: Blocked plus a Questions row. Three
-attempts then park beats a thrashing loop.
+**Red** → **first, re-run the FAILING GATE LINE ONLY, once.** This suite carries
+an intermittent hard abort: a verify run died after 9 of 68 tests at
+`0x80000003` (`EXCEPTION_BREAKPOINT`), and the identical command on the
+identical tree then returned 68 passed / 0 failed. The pre-change tree also
+produced one red, with a *different* exit code and a *different* abort point.
+A red is therefore not reliably a fact about the tree.
+
+- **red → green** is a **FLAKE**. Do not treat it as a pass and do not treat it
+  as a failure: record a Shortfalls row naming the test, the exit code and both
+  outcomes, say so in the work log, and continue. It costs no fix-forward
+  attempt.
+- **red → red** is a real failure. Now fix forward, at most
+  `guardrails.fixForwardAttempts` times on the _same_ failure.
+
+Without this, flakes consume the fix-forward budget, `maxConsecutiveBlocked`
+trips the breaker on tickets that were never broken, and an unattended loop
+resolves the ambiguity against the ticket every time.
+
+**And the assert text will not be there.** `Zenith_DebugBreak()` kills the
+process with the log buffer unflushed, so a hard abort leaves the gate output
+and `Logs/zenith_*.log` both stopping mid-sentence. `--assertions-log` does NOT
+help — it is a harness feature that records test-level failures from result
+JSONs, and on a hard abort there is no JSON to derive a row from. Reproduce
+with `zenith test <Game> --headless --tests A,B,C` for an ordered minimal case,
+`--per-process` to isolate, `--batch-order reverse|rotate:N` to test
+order-dependence.
+
+**Then park: Blocked plus a Questions row.**
+
+> **★★ IN `direct` MODE, COMMIT BEFORE YOU PARK.** There is no branch — the
+> work sits **uncommitted**, and step 3's precondition treats a dirty tree as
+> fatal. So parking Blocked without committing means the next tick claims a
+> ticket, finds this one's work, and Blocks it too. And the one after that. At
+> `maxConsecutiveBlocked: 3`, **one red ticket Blocks three innocent tickets and
+> trips the breaker**, each carrying a work log blaming a dirty tree it never
+> touched.
+>
+> This is the same argument `human-gate` already makes below, and it is
+> *stronger* here: a gated ticket is green, whereas a red one may sit dirty for
+> days. So commit onto `baseBranch` with a `WIP(<KEY>): <title> — GATES RED`
+> subject, then move to Blocked. Nothing is pushed; a rejection is one
+> `git revert`. Leaving the tree dirty is worse than anything it prevents.
 
 **Docs mirror.** Only after a Green commit lands — never on a Blocked or
 abandoned ticket, whose edits may be half-done or uncommitted.
 
 **`guard` already decided this: read `docsMirrorNeeded` off its payload.**
 False → skip, silently; a ticket that never touched a doc has nothing to
-mirror. True → `zagent docs sync --json`, appended to
-`.zagent/run/<KEY>/docs-sync.log`; `docsMirrorPaths` names what triggered
-it.
+mirror. True → **`timeout 120 zagent docs sync --json`**, appended to
+`.zagent/run/<KEY>/docs-sync.log`; `docsMirrorPaths` names what triggered it.
+
+**★★ THE TIMEOUT IS NOT OPTIONAL. This command HANGS.** Three ticks, three
+hangs, three zero-byte logs — at 300 s, 120 s and 120 s. It has never once
+completed. Without a bound the documented invocation hangs forever *after* the
+commit has landed and *before* `finish`: the work is on `master`, the ticket is
+never closed, and the one-ticket-per-repo lock is never released. The queue
+stops with the job done.
+
+A hang also produces neither of the outcomes this step tells you to record —
+there are no page counts and no error text, only an empty file. **"timed out —
+the mirror is one commit behind" is a legal and expected work-log outcome.**
 
 Do NOT re-derive it by matching `changed.txt` in the shell. That is what
 this step used to say, and a PowerShell implementation of it is wrong in

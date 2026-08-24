@@ -42,12 +42,20 @@ ZM boot `3395`; engine boot (Null Combat) `1650`; Null RenderTest `1741`; regist
 > that the registry count does NOT move — so a comment denying a test was added is counted
 > as a test.
 >
-> That matters beyond this block, because **`Tools/doc_lint.ps1`'s C1 uses the same oracle**
-> ("Count `ZENITH_AUTOMATED_TEST_REGISTER` call sites. Each maps to one registered test"),
-> so its `registerCount` is 71 against a true 68. C1 only fails a doc that OVERSTATES
-> (`$claimed -gt $registerCount`), so an inflated oracle makes it *more* permissive: a doc
-> could claim 71 and pass. The `registry **N**` form does not match C1's regexes either
-> (`N/M passing`, `N tests passing|registered|...`), so this line is unchecked regardless.
+> **★ AND A CORRECTION, because the first version of this block got it wrong.** It claimed
+> `Tools/doc_lint.ps1`'s C1 shared the same flaw and read 71. **It does not.** C1's regex is
+> `ZENITH_AUTOMATED_TEST_REGISTER\s*\(` — it requires the OPENING PAREN, which the three
+> comment mentions do not have — so C1 has always read the correct **68**. The inflated count
+> was the bare `grep`, and attributing it to C1 was exactly the mistake this block warns
+> against: asserting a number without checking the thing that produces it.
+>
+> What WAS true of C1: it only fails a doc that OVERSTATES (`$claimed -gt $registerCount`),
+> and understating is the direction drift always travels, since every new test raises the true
+> count while the prose stays put. And `registry **N**` matched none of its regexes. **Both are
+> now closed by `doc_lint` check C7** (2026-08-24), which reconciles this LIVE PIN block against
+> `Tools/unit_baselines.json` and against the registry count, with EQUALITY in both directions.
+> It is scoped to this block on purpose — the history chain below is legitimately full of
+> superseded numbers.
 
 > **★ R1-4 COMPLETE (ZM-66 / ZM-D-205) — OBSERVED 2026-08-24.**
 > `Null_vs2022_Debug_Win64_True` reported **`3395 ran / 3393 passed / 0 failed`** (2 skipped), so

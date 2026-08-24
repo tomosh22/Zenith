@@ -89,6 +89,30 @@ if (-not $NoRun -and -not (Test-Path -LiteralPath $runDir)) {
 
 $script:Steps = New-Object System.Collections.Generic.List[object]
 
+# ★★ PROVENANCE. A verdict with no commit and no state is indistinguishable from
+# a stale one left by an earlier attempt -- and I6 points a crash-resumed firing
+# straight at this directory and tells it to trust what it finds. Measured on one
+# ticket: this file held `all gates green` from a DIFFERENT tree at claim time,
+# and a superseded `exit 4` while a later phase was mid-run. Both read exactly
+# like the truth.
+#
+# So: stamp WHICH tree and WHEN, and write a `running` record at START. A reader
+# now has three distinguishable states -- `running` (re-run it), a headSha that
+# does not match HEAD (ignore it), or a verdict it can trust.
+$script:HeadSha = ''
+try {
+    $sha = & git -C $RepoRoot rev-parse HEAD 2>$null
+    if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($sha)) {
+        $script:HeadSha = ([string]$sha).Trim()
+    }
+} catch { }
+$script:StartedUtc = (Get-Date).ToUniversalTime().ToString('o')
+
+# The lines THIS phase intends to run. `skipped` is derived from it, because a
+# gate list that stops at the first failure leaves the rest un-run and the steps
+# array simply ENDS -- absence was an inference, not data.
+$script:PlannedLines = New-Object System.Collections.Generic.List[string]
+
 function Write-Line([string]$Text, [string]$Colour = 'Gray') {
     Write-Host $Text -ForegroundColor $Colour
     Add-Content -LiteralPath $logPath -Value $Text -Encoding utf8
@@ -192,14 +216,27 @@ function Invoke-GateLine {
 # genuinely failed and the report of it crashed. The catch block below now
 # names the file and line for exactly this reason.
 function Write-Result([int]$Code, [string]$Verdict, $Extra) {
+    # Every planned line that never produced a step. When a gate list stops at
+    # the first failure the remainder is silently absent -- on one ticket that
+    # meant the unit gate and doc_lint never ran, so a freshly-bumped pin was
+    # unconfirmed and the linter had never seen the edited docs, and nothing
+    # said so. Now it is a field.
+    $ran = @($script:Steps.ToArray() | ForEach-Object { $_.Line })
+    $skipped = @($script:PlannedLines.ToArray() | Where-Object { $ran -notcontains $_ })
+
     $payload = [ordered]@{
-        key      = $Key
-        phase    = $Phase
-        exitCode = $Code
-        verdict  = $Verdict
-        steps    = @($script:Steps.ToArray() | ForEach-Object {
+        key         = $Key
+        phase       = $Phase
+        state       = 'complete'
+        exitCode    = $Code
+        verdict     = $Verdict
+        headSha     = $script:HeadSha
+        startedUtc  = $script:StartedUtc
+        finishedUtc = (Get-Date).ToUniversalTime().ToString('o')
+        steps       = @($script:Steps.ToArray() | ForEach-Object {
                 [PSCustomObject]@{ label = $_.Label; line = $_.Line; exitCode = $_.ExitCode; seconds = $_.Seconds }
             })
+        skipped     = $skipped
     }
     if ($null -ne $Extra) { foreach ($k in $Extra.Keys) { $payload[$k] = $Extra[$k] } }
     Set-Content -LiteralPath $resultPath -Value ($payload | ConvertTo-Json -Depth 6) -Encoding utf8
@@ -284,9 +321,37 @@ function Get-CreatedSourceFiles {
 # =============================================================================
 if ($NoRun) { return }
 
+# ---- Start-of-phase housekeeping -------------------------------------------
+#
+# 1. ROTATE the transcript. `gates.log` was Add-Content-only and reached 112 MB
+#    on one ticket; the whole `.zagent/` scratch reached 608 MB, gitignored, so
+#    it grew invisibly forever. One phase, one transcript, one archived
+#    predecessor -- bounded at two.
+# 2. PRUNE the per-gate wrappers and their output. Individual `gate_*.out` files
+#    run to 50 MB each and were never removed, so a re-attempted ticket
+#    accumulated every previous run's. The verdict lives in tick_gates.json and
+#    the transcript in gates.log; these are raw child stdout and are superseded
+#    the moment a new phase starts.
+if (Test-Path -LiteralPath $logPath) {
+    Move-Item -LiteralPath $logPath -Destination (Join-Path $runDir 'gates.prev.log') -Force
+}
+Get-ChildItem -LiteralPath $runDir -Filter 'gate_*' -File -ErrorAction SilentlyContinue |
+    Remove-Item -Force -ErrorAction SilentlyContinue
+
+# 3. The `running` record, written BEFORE anything can fail. A killed run now
+#    leaves `state: running` rather than the previous run's verdict.
+$startPayload = [ordered]@{
+    key = $Key; phase = $Phase; state = 'running'; exitCode = $null
+    verdict = 'in progress -- this run has not produced a verdict yet'
+    headSha = $script:HeadSha; startedUtc = $script:StartedUtc
+    steps = @(); skipped = @()
+}
+Set-Content -LiteralPath $resultPath -Value ($startPayload | ConvertTo-Json -Depth 6) -Encoding utf8
+
 try {
     Write-Line ''
     Write-Line "[tick_gates] $Key - phase '$Phase' - $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+    Write-Line "[tick_gates] HEAD $(if ($script:HeadSha) { $script:HeadSha.Substring(0, [Math]::Min(12, $script:HeadSha.Length)) } else { '(unknown)' })"
 
     $gateLines = Get-GateList
     if ($null -eq $gateLines) {
@@ -363,6 +428,11 @@ try {
         }
 
         # 4. The unit gate, ALONE, to observe the count.
+        # measure deliberately runs only the build and the unit gate, so those
+        # are what it PLANNED; the rest are verify's and are not "skipped" here.
+        $script:PlannedLines.Clear()
+        foreach ($l in $buildLines) { $script:PlannedLines.Add($l) }
+        foreach ($l in $unitLines) { $script:PlannedLines.Add($l) }
         Write-Banner "unit gate alone ($($unitLines.Count) line(s)) -- measuring"
         $measurements = New-Object System.Collections.Generic.List[object]
         $pinNeedsBump = $false
@@ -428,10 +498,28 @@ try {
             }
         }
 
+        # verify intends to run EVERY line, so anything missing from the steps
+        # array when this returns is genuinely un-run -- which is exactly the
+        # case worth naming, since the list stops at the first failure.
+        $script:PlannedLines.Clear()
+        foreach ($l in $gateLines) { $script:PlannedLines.Add($l) }
+
         Write-Banner "verify -- every gate, in order ($($gateLines.Count) line(s))"
         foreach ($line in $gateLines) {
             $step = Invoke-GateLine -Line $line -Label 'verify'
             if ($step.ExitCode -ne 0) {
+                # ★ A FAILED GATE VOIDS EVERY GATE BEHIND IT. Stopping here is
+                # correct and cheap, but the lines that never ran are the ones a
+                # reader most needs named: on one ticket the unit gate and
+                # doc_lint were both behind a failing suite, so a freshly-bumped
+                # pin was unconfirmed and the linter had never seen the edited
+                # docs -- and nothing in the result said so.
+                $notRun = @($gateLines | Where-Object { $_ -ne $line -and @($script:Steps.ToArray() | ForEach-Object { $_.Line }) -notcontains $_ })
+                if ($notRun.Count -gt 0) {
+                    Write-Line ''
+                    Write-Line "[tick_gates] $($notRun.Count) gate line(s) NEVER RAN because this one failed:" 'Yellow'
+                    foreach ($n in $notRun) { Write-Line "  not run: $n" 'Yellow' }
+                }
                 Write-Result 4 "gate failed: $line" $null
                 exit 4
             }
