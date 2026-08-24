@@ -51,10 +51,28 @@ namespace
 	};
 
 	// Per-tile-transition wild-encounter rate /256 for a ROUTE with an encounter
-	// table (~15.6%/step). A gameplay tuning value for the S11 balance pass; the
-	// exact figure is not test-critical (unit tests rig the RNG). Non-route scenes
-	// and routes with no slots carry rate 0.
+	// table. A gameplay tuning value for the S11 balance pass; the exact figure
+	// is not test-critical (unit tests rig the RNG). Non-route scenes and routes
+	// with no slots carry rate 0.
+	//
+	// ★ SHARED ACROSS EVERY FUTURE ROUTE ROW (ZM-D-196 ruling 4, R1-4). Do NOT
+	// retune THIS constant for one route's balance pass: S9 appends more ROUTE
+	// rows and every one of them would silently re-rate too, with nothing to
+	// catch it -- WorldSpec_EncounterRateColumn (Tests/ZM_Tests_WorldSpec.cpp)
+	// only asserts a route-with-slots rate is > 0 and <= 256, so a global
+	// halving would still pass green. A route that wants its OWN rate gets its
+	// OWN named constant instead (uZM_ROUTE1_ENCOUNTER_RATE below).
 	constexpr u_int uZM_DEFAULT_ROUTE_ENCOUNTER_RATE = 40u;
+
+	// Route 1's OWN rate (ZM-D-196 ruling 4, R1-4): halved from the shared
+	// default (40/256 ~15.6% -> 20/256 ~7.8% per tile transition), because a
+	// 1.4 km corridor at the shared rate is an encounter roll every ~6-7 tile
+	// transitions -- aggressive for the player and noisy for every Route 1 test
+	// that has to walk the corridor. Deliberately a SEPARATE constant from
+	// uZM_DEFAULT_ROUTE_ENCOUNTER_RATE (see the warning above) -- never retune
+	// the shared default for one route. Pinned by
+	// WorldSpec_Route1EncounterRatePinnedAt20 (Tests/ZM_Tests_WorldSpec.cpp).
+	constexpr u_int uZM_ROUTE1_ENCOUNTER_RATE = 20u;
 
 	const ZM_WorldSpec s_axScenes[ZM_SCENE_COUNT] =
 	{
@@ -62,7 +80,7 @@ namespace
 		{ ZM_SCENE_BATTLE,     "Battlefield",      1,  ZM_SCENE_KIND_BATTLE,   "",          nullptr,           0,                            nullptr,            0,                             nullptr,        0,                       0 },
 		{ ZM_SCENE_DAWNMERE,   "Dawnmere Village", 2,  ZM_SCENE_KIND_TOWN,     "Dawnmere",  s_axConnDawnmere,  ZM_ARRLEN(s_axConnDawnmere),  s_aszTagsDawnmere,  ZM_ARRLEN(s_aszTagsDawnmere),  nullptr,        0,                       0 },
 		{ ZM_SCENE_THORNACRE,  "Thornacre Town",   3,  ZM_SCENE_KIND_TOWN,     "Thornacre", s_axConnThornacre, ZM_ARRLEN(s_axConnThornacre), s_aszTagsThornacre, ZM_ARRLEN(s_aszTagsThornacre), nullptr,        0,                       0 },
-		{ ZM_SCENE_ROUTE1,     "Route 1",          20, ZM_SCENE_KIND_ROUTE,    "Route1",    s_axConnRoute1,    ZM_ARRLEN(s_axConnRoute1),    s_aszTagsRoute1,    ZM_ARRLEN(s_aszTagsRoute1),    s_axEncRoute1,  ZM_ARRLEN(s_axEncRoute1), uZM_DEFAULT_ROUTE_ENCOUNTER_RATE },
+		{ ZM_SCENE_ROUTE1,     "Route 1",          20, ZM_SCENE_KIND_ROUTE,    "Route1",    s_axConnRoute1,    ZM_ARRLEN(s_axConnRoute1),    s_aszTagsRoute1,    ZM_ARRLEN(s_aszTagsRoute1),    s_axEncRoute1,  ZM_ARRLEN(s_axEncRoute1), uZM_ROUTE1_ENCOUNTER_RATE },
 		{ ZM_SCENE_PLAYERHOME, "Player's Home",    40, ZM_SCENE_KIND_INTERIOR, "",          s_axConnPlayerHome,ZM_ARRLEN(s_axConnPlayerHome),s_aszTagsPlayerHome,ZM_ARRLEN(s_aszTagsPlayerHome),nullptr,        0,                       0 },
 		{ ZM_SCENE_PROFLAB,    "Aster's Lab",      41, ZM_SCENE_KIND_INTERIOR, "",          s_axConnProfLab,   ZM_ARRLEN(s_axConnProfLab),   s_aszTagsProfLab,   ZM_ARRLEN(s_aszTagsProfLab),   nullptr,        0,                       0 },
 		{ ZM_SCENE_GYM1,       "Thornacre Gym",    42, ZM_SCENE_KIND_GYM,      "",          s_axConnGym1,      ZM_ARRLEN(s_axConnGym1),      s_aszTagsGym1,      ZM_ARRLEN(s_aszTagsGym1),      nullptr,        0,                       0 },

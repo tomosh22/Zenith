@@ -18,7 +18,7 @@ The S0-S7 narrative that used to fill the back half of this file moved VERBATIM 
 its own template in `AgentBriefing.md` §2.3 specifies. Nothing was deleted.
 
 **★ LIVE PIN (UPDATED 2026-08-23):
-ZM boot `3389`; engine boot (Null Combat) `1650`; Null RenderTest `1741`; registry **68**.**
+ZM boot `3394`; engine boot (Null Combat) `1650`; Null RenderTest `1741`; registry **68**.**
 
 > **★ R1-3 (ZM-21 / ZM-D-203) — OBSERVED 2026-08-23.** `Null_vs2022_Debug_Win64_True`
 > reported **`3389 ran / 3387 passed / 0 failed`** (2 skipped), so `Tools/unit_baselines.json`
@@ -48,6 +48,14 @@ ZM boot `3389`; engine boot (Null Combat) `1650`; Null RenderTest `1741`; regist
 > (`$claimed -gt $registerCount`), so an inflated oracle makes it *more* permissive: a doc
 > could claim 71 and pass. The `registry **N**` form does not match C1's regexes either
 > (`N/M passing`, `N tests passing|registered|...`), so this line is unchecked regardless.
+
+> **★ R1-4 (ZM-22 / ZM-D-204) — OBSERVED 2026-08-24.** `Null_vs2022_Debug_Win64_True`
+> reported **`3394 ran / 3392 passed / 0 failed`** (2 skipped), so `Tools/unit_baselines.json`
+> moved `Zenithmon` **3389 -> 3394**. The +5 are all `ZENITH_TEST` boot units:
+> `WorldSpec_Route1EncounterRatePinnedAt20`, `BiomeForScene_Route1IsMeadowAndIdTagCorrect`,
+> and three in the new `ZM_Tests_RouteEncounterSeam.cpp`. **Registry UNMOVED at 68** — the
+> slice adds no `ZENITH_AUTOMATED_TEST_REGISTER`. Engine `1650` and Null RenderTest `1741`
+> UNMOVED and inferred, not measured: no file under `Zenith/` was touched.
 **★ +11 on EVERY game across two ENGINE tickets, no `ZM_*` unit added.**
 3354/1638/1729 -> **3360/1644/1735** (ZM-49, +6: the terrain COLLISION-height
 query `TryGetGroundHeightAt` -- 4 m quads, NOT the rendered ground) ->
@@ -58,7 +66,8 @@ block read one behind the manifest on all three rows until 2026-08-22 ->
 **3384**/1650/1741 (ZM-27, +18 `ZM_*` units: 14 `ZM_GroundItem`, +3 in the save
 migration TU, +1 in the schema TU) -> **3388**/1650/1741 (ZM-20, committed-bytes needles
 for Dawnmere, Route1 and Thornacre) -> **3389**/1650/1741 (ZM-21/R1-3, +1: the four-gate
-payload needle). Each number OBSERVED on `Null_`.
+payload needle) -> **3394**/1650/1741 (ZM-22/R1-4, +5: the ROUTE1 rate pin, the biome
+id-tag self-check, and three synthetic roll-seam units). Each number OBSERVED on `Null_`.
 
 ★★ **THIS CHAIN READ `3387` FOR ZM-20 UNTIL 2026-08-23, AND THAT WAS WRONG BY ONE.**
 `28046d81` moved `Tools/unit_baselines.json` **3384 -> 3388** — a +4 — while this prose
@@ -224,16 +233,29 @@ the row is simply older than the file.
 # ★★★ COLD-START BLOCK -- WRITTEN 2026-08-15 FOR A NEW SESSION. READ THIS FIRST.
 # ════════════════════════════════════════════════════════════════════════════
 
-**STATE:** master is CLEAN and PUSHED. R1-1 landed as `0f68e823` (the slice) and `00247005`
-(its review follow-up). Nothing is in flight, nothing is half-landed.
-ZM boot pin **3345**, automated registry **64**, engine pin **1638** (unmoved).
+**STATE:** master is CLEAN. **Nothing here is ever PUSHED** -- the agent loop runs
+`push: false`, so "pushed" was never a state this block could report; it said so anyway
+until 2026-08-24.
+
+**★ THIS BLOCK CARRIED PIN NUMBERS AND THEY WENT 44 UNITS STALE.** It read
+`ZM boot pin 3345, automated registry 64, engine pin 1638` -- against an actual
+3389/68/1650 at the time it was caught -- while the LIVE PIN line at the top of this file
+was correct. That is a FOURTH data site in one file (LIVE PIN, the `+N` chain, the
+committed-asset hash table, and this), none of them gated against each other, and this is
+the one a cold session and a loop worker are told to read FIRST. **The numbers are gone
+from here on purpose: read the LIVE PIN line at the top.** One home per value.
 
 **S8 ITEM 1 IS COMPLETE AND TICKED** (six slices `864296df`..`0e0a884c`, ticked `f4d30f89`,
 plus `5d9d73bf`). A new game is PARTYLESS and the starter is genuinely chosen from Professor
 Aster; `ZM_IntroBeat_Test` proves it end to end across 18 phases.
 
 **S8 ITEM 2 ("Route 1 -> town 2") IS IN PROGRESS. SLICES R1-1, R1-2 AND R1-3 ARE
-COMPLETE (ZM-D-197; ZM-D-198/199/202; ZM-D-203). THE NEXT TASK IS SLICE R1-4.**
+COMPLETE (ZM-D-197; ZM-D-198/199/202; ZM-D-203). R1-4 IS PARTIAL (ZM-22/ZM-D-204):
+the rate retune + id-tagged biome table + headless synthetic roll-seam proof are
+DONE; the SCENE-ATTACH half ("encounters live on Route 1" in the literal,
+in-game sense) is UNDONE and needs a windowed re-author no headless worker can
+perform -- see the R1-4 row below. THE NEXT TASK is deciding how to close that
+half (human/`needs-gpu` re-author, or re-scope) before R1-5.**
 
 > **★ R1-3's SOURCE AND ITS BYTES MUST LAND TOGETHER.** The four gates are authoring
 > STEPS in `Zenithmon.cpp`; the committed `.zscen` bytes only move when a **windowed
@@ -319,7 +341,7 @@ test coverage.
 | R1-2 **ph.1** | ~~Per-recipe terrain materials (split out of R1-2, PURE)~~ **DONE, ZM-D-198** | 0 | none, PROVEN | R1-1 |
 | R1-2 | Author Route1 + Thornacre -- **MARKERS ONLY, zero triggers** | ~7 | creates Route1+Thornacre, re-authors Dawnmere -- **WINDOWED** | R1-1 |
 | ~~R1-3~~ | ~~**All four seam triggers in ONE commit** + round-trip proof~~ **DONE, +1 (not ~4), ZM-21/ZM-D-203 -- closes critic blocker #2** | 1 | all three, DONE -- **WINDOWED**, two boots, second byte-identical | R1-2 |
-| R1-4 | Wild encounters live + rate retune (ruling 4) | ~2 | none | R1-3 |
+| R1-4 | Wild encounters live + rate retune (ruling 4) -- **PARTIAL, ZM-22/ZM-D-204: rate + id-tag + synthetic roll-seam proof DONE; SCENE-ATTACH ("live") BLOCKED, see below** | ~2 | none (but "live" needs one -- see Decision 4, ZM-D-204) | R1-3 |
 | R1-5 | Trainer DATA + placement + Npc claim-check rewrite | ~12 | none | R1-4 |
 | R1-6 | Author the two trainers into Route1 | ~3 | Route1 only -- **WINDOWED** | R1-5 |
 | R1-7/8 | **DROPPED from this item by ruling 1** (ground items) | -- | -- | -- |
@@ -334,8 +356,11 @@ test coverage.
 > (ZM-D-203): `ZM_CommittedSceneBytes/EverySeamGatePayloadIsAuthoredExactlyOnceInItsOwnScene`
 > needles the whole `[version][targetBuildIndex][32-byte tag]` payload per gate, and -- because
 > a COUNT alone still cannot see a swap within one file -- also pins the interleaving of the two
-> Route 1 payloads with their own entity names. #3 and #4 are still OPEN and belong to R1-4 and
-> R1-9 respectively.
+> Route 1 payloads with their own entity names. **#3's FIX IS DONE (ZM-22/ZM-D-204):** the biome
+> table is id-tagged + self-checked and the roll seam has a headless synthetic-density-map proof
+> (`Tests/ZM_Tests_RouteEncounterSeam.cpp`) -- but the SLICE GOAL #3 was written against
+> ("encounters live on Route 1") is not, because that needs a scene re-author of `Route1.zscen`
+> no headless worker can perform (see the R1-4 row above). #4 is still OPEN and belongs to R1-9.
 1. **[R1-3] The proposed hang-guard unit CANNOT EXIST as described.**
    `Project_LoadInitialScene` is a hand-written sequence of five `RegisterSceneBuildIndex`
    calls with **no enumerable table**, and it runs **AFTER** the boot-unit suite. A boot unit
@@ -357,6 +382,12 @@ test coverage.
    **FIX:** id-tag the biome rows (`{ZM_SCENE_ROUTE1, MEADOW}`) and assert
    `row.m_eScene == index`; plus drive the roll seam from a SYNTHETIC in-memory density map so
    one encounter proof does not skip on the gitignored bake.
+   **DONE (ZM-22/ZM-D-204):** `ls_aeBiome` is now `ls_axBiome`, an id-tagged
+   `{ZM_SCENE_ID, ZM_BATTLE_BIOME}` table, and `BiomeForScene` asserts the row's own tag matches
+   its index; `Tests/ZM_Tests_RouteEncounterSeam.cpp` drives the density -> tile-transition ->
+   grass-gate -> `RollStepForScene` composition against a hand-built 4x4 in-memory density map.
+   **STILL OPEN:** this fixes the PROOF, not the CONTENT gap #3 exists to close -- see Decision 4
+   in ZM-D-204 and the R1-4 row above.
 4. **[R1-9] The three camera-clearance tests are HARD-SCOPED to Dawnmere** (`iCC_DAWNMERE_BUILD_INDEX = 2`,
    `LoadSceneByIndex` at three sites), so Route 1 rows would raycast Route 1 columns against
    the DAWNMERE physics world and mostly fall off it. The constants also live in an anonymous
@@ -389,6 +420,16 @@ test coverage.
   Add an oracle in R1-2 modelled on `ZM_DawnmereNpcGroundTruth_Test`.
 - **Every live Route 1 test SKIPS on CI** (gitignored bake) and a skip counts as a PASS. The
   CI-visible spine of this whole item is boot units + committed-`.zscen` byte needles.
+- **[R1-4, ZM-D-204] `ZM_TallGrassSystem` only ever reaches an entity via SCENE CONTENT.**
+  Every existing case of it living on an entity (`ZM_AutoTests_TallGrass.cpp` and its siblings)
+  runtime-attaches it BY HAND, in test code, explicitly so no scene change is needed. There is no
+  production code path that attaches a gameplay component to a freshly-loaded scene's entities --
+  `ZM_TerrainGrass` (its terrain sibling) reaches the entity the SAME way `ZM_TallGrassSystem`
+  would have to: `Project_RegisterEditorAutomationSteps` (tools-only) + `AddStep_SaveScene`. So
+  making Route 1 actually roll encounters in a real boot is a scene-authoring change to the
+  ALREADY-COMMITTED `Route1.zscen` (a CHANGE, not a create), which is exactly the class of work
+  ZM-D-031 / the headless publish guard keeps out of a worker's reach. It needs a windowed
+  `Vulkan_*_True` re-author, by a human or a `needs-gpu` tick.
 
 ### ★★★ R1-2 IS IN FLIGHT. PHASE 1 IS DONE AND PUSHED; PHASE 2 IS PLANNED AND CRITIQUED, NOT STARTED.
 

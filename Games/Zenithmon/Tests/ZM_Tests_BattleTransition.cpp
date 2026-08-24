@@ -31,11 +31,14 @@
 //   7. BiomeForScene_EverySceneMapsInRange -- total function over ZM_SCENE_ID.
 //   8. BiomeForScene_UnknownSceneDefaultsToMeadow -- out-of-range default.
 //   9. BiomeForScene_DawnmereIsMeadow -- the pinned starter-town mapping.
-//  10. ShouldAcceptBattleEnd_OnlyInBattle -- IN_BATTLE and nothing else.
-//  11. OwnsFade_EveryNonIdleStateOwnsTheScreen -- fade ownership == non-idle.
-//  12. IsOverworldPausedInState_MatchesPauseWindow -- the exact pause window.
+//  10. BiomeForScene_Route1IsMeadowAndIdTagCorrect -- R1-4 (critic blocker #3):
+//      Route 1's pinned mapping, and proof the row is genuinely id-tagged
+//      rather than reading the same zero value an unauthored row would.
+//  11. ShouldAcceptBattleEnd_OnlyInBattle -- IN_BATTLE and nothing else.
+//  12. OwnsFade_EveryNonIdleStateOwnsTheScreen -- fade ownership == non-idle.
+//  13. IsOverworldPausedInState_MatchesPauseWindow -- the exact pause window.
 //
-// Cases 10-12 pin the state-machine PREDICATES the round trip is built on. They
+// Cases 11-13 pin the state-machine PREDICATES the round trip is built on. They
 // walk the whole ZM_BATTLE_TRANSITION_STATE enum rather than spot-checking, so
 // INSERTING a state without classifying it is caught here: an unclassified state
 // silently defaults to "not IN_BATTLE / not paused", which would either let item
@@ -236,7 +239,29 @@ ZENITH_TEST(ZM_BattleTransition, BiomeForScene_DawnmereIsMeadow)
 }
 
 // ############################################################################
-// 10. ShouldAcceptBattleEnd -- IN_BATTLE is the ONLY state that may be ended
+// 10. BiomeForScene -- Route 1's pinned MEADOW mapping is genuinely AUTHORED
+// ############################################################################
+
+// R1-4 / critic blocker #3: ZM_BATTLE_BIOME_MEADOW is enumerator 0, so a plain
+// value-equality check here could not, by itself, distinguish "Route 1's row
+// was deliberately authored as MEADOW" from "the table was never touched for
+// this row and just reads the zero default". BiomeForScene now id-tags every
+// row and asserts (Zenith_Assert -- the real one) that the row's OWN scene tag
+// matches the index it lives at, so a swapped, misordered, or accidentally
+// defaulted Route 1 row would trip that assert rather than silently returning
+// a biome that happens to look plausible. A clean return here is therefore
+// proof the row exists, is correctly positioned, AND is MEADOW -- not a
+// coincidence of the enum's numbering.
+ZENITH_TEST(ZM_BattleTransition, BiomeForScene_Route1IsMeadowAndIdTagCorrect)
+{
+	ZENITH_ASSERT_EQ(
+		(u_int)ZM_BattleTransition::BiomeForScene(ZM_SCENE_ROUTE1),
+		(u_int)ZM_BATTLE_BIOME_MEADOW,
+		"Route 1 must dress the arena with the MEADOW set (R1-4, ZM-D-196)");
+}
+
+// ############################################################################
+// 11. ShouldAcceptBattleEnd -- IN_BATTLE is the ONLY state that may be ended
 // ############################################################################
 
 // RequestBattleEnd() is the SOLE exit from IN_BATTLE -- there is deliberately no
@@ -264,7 +289,7 @@ ZENITH_TEST(ZM_BattleTransition, ShouldAcceptBattleEnd_OnlyInBattle)
 }
 
 // ############################################################################
-// 11. OwnsFade -- every non-idle state owns the screen
+// 12. OwnsFade -- every non-idle state owns the screen
 // ############################################################################
 
 // OwnsFade is what OnUpdate consults when the persistent root has LOST its
@@ -289,7 +314,7 @@ ZENITH_TEST(ZM_BattleTransition, OwnsFade_EveryNonIdleStateOwnsTheScreen)
 }
 
 // ############################################################################
-// 12. IsOverworldPausedInState -- the pause window is exactly ENTERING..RESUMING
+// 13. IsOverworldPausedInState -- the pause window is exactly ENTERING..RESUMING
 // ############################################################################
 
 // The pause window is bounded on BOTH sides for concrete reasons. It opens no
@@ -336,7 +361,7 @@ ZENITH_TEST(ZM_BattleTransition, IsOverworldPausedInState_MatchesPauseWindow)
 }
 
 // ############################################################################
-// 13/14. IsTrainerEncounterPayloadValid -- the SECOND entry channel's gate
+// 14/15. IsTrainerEncounterPayloadValid -- the SECOND entry channel's gate
 //        (S7 item 3 SC5)
 //
 // A DISTINCT validator, deliberately a SIBLING of IsEncounterPayloadValid rather

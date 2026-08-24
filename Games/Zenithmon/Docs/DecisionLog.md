@@ -15,6 +15,88 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-08-24 -- ZM-D-204 -- R1-4: Route 1's encounter rate is retuned via its OWN constant, the biome table is id-tagged, and the roll seam gets a headless synthetic-density-map proof -- the SCENE-ATTACH half stays UNDONE
+
+**Slice R1-4** (ZM-22), continuing the S8 item 2 chain (ZM-D-197; ZM-D-198/199/202; ZM-D-203).
+Ruling 4 (ZM-D-196) is applied and critic blocker #3 (`Status.md`, "the slice has NO falsifiable
+proof") is fixed. **The slice is PARTIAL: the data + test half is done; the runtime half --
+making a live boot actually roll on Route 1 -- is blocked and left undone. See Decision 4.**
+
+### Decision 1: the rate retune uses a NEW `uZM_ROUTE1_ENCOUNTER_RATE` constant, never the shared default
+
+`ZM_WorldSpec.cpp` gets a second named rate constant, `uZM_ROUTE1_ENCOUNTER_RATE = 20u`, and the
+`ZM_SCENE_ROUTE1` row switches to it. `uZM_DEFAULT_ROUTE_ENCOUNTER_RATE` (40u, the shared ROUTE
+default) is left completely untouched, per the ruling's own warning: editing the shared constant
+would silently re-rate every future ROUTE row S9 appends, and `WorldSpec_EncounterRateColumn`
+only asserts a route-with-slots rate is `> 0` and `<= 256`, so a global halving would still pass
+green. A new boot unit, `WorldSpec_Route1EncounterRatePinnedAt20`
+(`Tests/ZM_Tests_WorldSpec.cpp`), pins the ROUTE1 row's rate to its spelled value (20) directly,
+so a future edit that reaches for the shared default instead is caught even though every generic
+invariant still passes.
+
+### Decision 2: the biome table is id-tagged, closing critic blocker #3's first half
+
+`ZM_BattleTransition::BiomeForScene`'s `ls_aeBiome` table was a bare `ZM_BATTLE_BIOME[]` in
+`ZM_SCENE_ID` order. `ZM_BATTLE_BIOME_MEADOW` is enumerator 0, so a value-initialised (or
+accidentally misordered/dropped) row for any scene whose real answer is MEADOW -- which includes
+Route 1's -- reads identically to a deliberately-authored one; no value-equality unit could tell
+the two apart. The table is now `{ZM_SCENE_ID, ZM_BATTLE_BIOME}` pairs
+(`{ ZM_SCENE_ROUTE1, ZM_BATTLE_BIOME_MEADOW }`, ...), and `BiomeForScene` asserts
+`ls_axBiome[eScene].m_eScene == eScene` (`Zenith_Assert`, the real one) before returning the row's
+biome. A swapped, misordered, or accidentally-defaulted row now fails loudly instead of silently
+returning a biome that happens to look plausible. `ZM_Tests_BattleTransition.cpp` gets a new case,
+`BiomeForScene_Route1IsMeadowAndIdTagCorrect`, pinning Route 1's mapping explicitly (mirroring the
+existing Dawnmere case) -- the existing `BiomeForScene_EverySceneMapsInRange` case (walks every
+`ZM_SCENE_ID`) now also exercises the id-tag self-check for every row as a side effect.
+
+### Decision 3: the roll seam gets a SYNTHETIC in-memory density map, not the gitignored bake
+
+Critic blocker #3's second half: the only existing proof that an on-grass tile transition reaches
+a roll is `ZM_TallGrassEncounter_Test` (windowed, `Tests/ZM_AutoTests_TallGrass.cpp`), which walks
+the REAL baked Dawnmere terrain and `RequestSkip()`s -- reporting PASS -- whenever that bake is
+absent, which it always is on a fresh checkout (the bake is gitignored). CI therefore never
+actually exercises the density-sample -> tile-transition -> grass-gate -> per-scene-roll
+composition. New file `Tests/ZM_Tests_RouteEncounterSeam.cpp` replicates that exact composition
+headless, against a hand-built 4x4 `ZM_GrassDensityMap` (via `LoadDecoded`, the same seam
+`ZM_Tests_TerrainGrass.cpp`'s fixture test already uses) with a bare half and a grass half, using
+ONLY the already-test-exposed public statics
+(`ZM_TallGrassSystem::QuantizeToTile`/`IsTileTransition`/`IsGrassDensity`,
+`ZM_EncounterZone::RollStepForScene`) -- no entity, scene, Flux, or disk access. Three cases: a
+fixture self-check (anti-vacuity), a grass-side sweep (6000 seeds against Route 1's LIVE, retuned
+rate; every hit checked against the route's own slot table, so it survives a future roster
+retune) asserting at least one encounter fires, and a bare-side sweep proving the density gate
+stops the roll from being called AT ALL -- not just that it happens to miss -- by comparing the
+RNG stream against an untouched control (the same idiom `RollStep_InertAndMissDoNotPerturbRng`
+already uses in `ZM_Tests_Encounter.cpp`).
+
+### Decision 4: the SCENE-ATTACH half is left UNDONE -- this is a finding, not an oversight
+
+Status.md's own structural fact #2 says `ZM_TallGrassSystem` is "registered (ECS order 109) but
+attached to NO authored scene, so no shipped scene can emit a wild encounter" and that "Route 1 is
+where it comes alive." Making that literally true -- a live, non-test boot on Route 1 actually
+rolling encounters -- requires `ZM_TallGrassSystem` to exist on Route 1's terrain entity, which
+(mirroring how `ZM_TerrainGrass` gets onto that same entity) is only ever added via
+`Project_RegisterEditorAutomationSteps` (**tools-only**) + `AddStep_SaveScene`, i.e. it is SCENE
+CONTENT, not something any production code path attaches at runtime -- every existing case of a
+test attaching `ZM_TallGrassSystem` post-load (`ZM_AutoTests_TallGrass.cpp` and siblings) does so
+by hand, explicitly because "NO Dawnmere re-bake, no `Zenithmon.cpp`/scene change needed" was the
+point of doing it that way (S5 item 2 SC4). `Route1.zscen` is already committed, so adding the
+component is a CHANGE to an existing scene, not a create -- exactly the re-author class this
+ticket's own stop condition named, and exactly what a headless worker (no shell, no boot, no
+window) categorically cannot perform regardless of the branching/label question.
+
+The rate retune, the id-tagging, and the synthetic roll-seam proof are real and correct on their
+own terms -- they prove the PLUMBING is live and correctly rated. But "encounters fire on Route 1"
+in the literal, in-game sense still needs a windowed `Vulkan_*_True` re-author of `Route1.zscen`
+(append `ZM_TallGrassSystem` after `ZM_TerrainGrass` on the terrain entity, mirroring the existing
+`Terrain`/`ZM_TerrainGrass` authoring block in `Zenithmon.cpp`), by a human or a `needs-gpu` tick
+-- never by a headless worker. Left undone rather than worked around.
+
+**Reversibility:** trivial to extend -- `uZM_ROUTE1_ENCOUNTER_RATE` and the biome id-tag are purely
+additive, and nothing here touches committed scene bytes. **Tests:** see Decisions 1-3 above
+(`Tests/ZM_Tests_WorldSpec.cpp`, `Tests/ZM_Tests_BattleTransition.cpp`,
+`Tests/ZM_Tests_RouteEncounterSeam.cpp`).
+
 ## 2026-08-23 -- ZM-D-203 -- R1-3: all four seam triggers in one commit, the payload needle that closes critic blocker #2, and one deliberate deviation from the one-column-per-anchor rule
 
 **Slice R1-3, the slice R1-2 was sequenced to make safe.** Four `ZM_WarpTrigger` entities are

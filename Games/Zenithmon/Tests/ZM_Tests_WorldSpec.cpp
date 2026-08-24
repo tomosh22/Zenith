@@ -219,6 +219,24 @@ ZENITH_TEST(ZM_Data, WorldSpec_EncounterRateColumn)
 	}
 }
 
+// R1-4 / ZM-D-196 ruling 4: Route 1's encounter rate is HALVED from the shared
+// ROUTE default via its OWN named constant (uZM_ROUTE1_ENCOUNTER_RATE in
+// ZM_WorldSpec.cpp), deliberately NOT an edit to the shared
+// uZM_DEFAULT_ROUTE_ENCOUNTER_RATE -- that constant would silently re-rate
+// every future ROUTE row S9 appends, and WorldSpec_EncounterRateColumn above
+// only asserts a route-with-slots rate is > 0 and <= 256, so a global halving
+// would still pass green. This pins the ROUTE1 row's rate to its SPELLED
+// value, so a future edit that reaches for the shared default (or forgets the
+// halving) fails HERE even though it would still pass every generic invariant
+// above.
+ZENITH_TEST(ZM_Data, WorldSpec_Route1EncounterRatePinnedAt20)
+{
+	ZENITH_ASSERT_EQ(ZM_GetWorldSpec(ZM_SCENE_ROUTE1).m_uEncounterRatePer256, 20u,
+		"Route 1's encounter rate must be pinned at 20/256 (ZM-D-196 ruling 4); "
+		"retune via ZM_WorldSpec.cpp's OWN uZM_ROUTE1_ENCOUNTER_RATE constant, "
+		"never the shared ROUTE default");
+}
+
 ZENITH_TEST(ZM_Data, WorldSpec_AccessorAndToString)
 {
 	for (u_int i = 0; i < ZM_SCENE_COUNT; ++i)

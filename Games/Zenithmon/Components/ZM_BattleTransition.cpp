@@ -351,23 +351,53 @@ bool ZM_BattleTransition::IsSceneEligibleForBattle(ZM_SCENE_ID eScene)
 	return eKind != ZM_SCENE_KIND_BATTLE && eKind != ZM_SCENE_KIND_FRONTEND;
 }
 
+namespace
+{
+	// One row per ZM_SCENE_ID, EXPLICITLY id-tagged with the scene it names
+	// (R1-4, critic blocker #3: "the slice has NO falsifiable proof"). Bare
+	// ZM_BATTLE_BIOME_MEADOW is enumerator 0, so a table of plain biome VALUES
+	// reads identically whether a row was deliberately authored as MEADOW or
+	// simply never touched -- a value-equality unit on, say, Route 1's row
+	// cannot tell the two apart. The id tag plus the self-check in
+	// BiomeForScene below is what makes a mistagged, swapped, or accidentally
+	// value-initialised row FAIL LOUDLY instead of silently returning the zero
+	// value.
+	struct ZM_BiomeRow
+	{
+		ZM_SCENE_ID     m_eScene;
+		ZM_BATTLE_BIOME m_eBiome;
+	};
+}
+
 ZM_BATTLE_BIOME ZM_BattleTransition::BiomeForScene(ZM_SCENE_ID eScene)
 {
 	// S5 v1 mapping. ZM_WorldSpec carries no biome column yet; index by
 	// ZM_SCENE_ID, MEADOW for anything unmapped/out of range. One row per
 	// enumerator, in ZM_SCENE_ID order -- appending a scene appends a row.
-	static const ZM_BATTLE_BIOME ls_aeBiome[ZM_SCENE_COUNT] =
+	static const ZM_BiomeRow ls_axBiome[ZM_SCENE_COUNT] =
 	{
-		ZM_BATTLE_BIOME_MEADOW,    // ZM_SCENE_FRONTEND   (never eligible; MEADOW default)
-		ZM_BATTLE_BIOME_MEADOW,    // ZM_SCENE_BATTLE     (never eligible; MEADOW default)
-		ZM_BATTLE_BIOME_MEADOW,    // ZM_SCENE_DAWNMERE
-		ZM_BATTLE_BIOME_WETLAND,   // ZM_SCENE_THORNACRE
-		ZM_BATTLE_BIOME_MEADOW,    // ZM_SCENE_ROUTE1
-		ZM_BATTLE_BIOME_MEADOW,    // ZM_SCENE_PLAYERHOME
-		ZM_BATTLE_BIOME_MEADOW,    // ZM_SCENE_PROFLAB
-		ZM_BATTLE_BIOME_CANYON,    // ZM_SCENE_GYM1
+		{ ZM_SCENE_FRONTEND,   ZM_BATTLE_BIOME_MEADOW },    // never eligible; MEADOW default
+		{ ZM_SCENE_BATTLE,     ZM_BATTLE_BIOME_MEADOW },    // never eligible; MEADOW default
+		{ ZM_SCENE_DAWNMERE,   ZM_BATTLE_BIOME_MEADOW },
+		{ ZM_SCENE_THORNACRE,  ZM_BATTLE_BIOME_WETLAND },
+		{ ZM_SCENE_ROUTE1,     ZM_BATTLE_BIOME_MEADOW },    // R1-4: pinned explicitly, see ZM_Tests_BattleTransition.cpp
+		{ ZM_SCENE_PLAYERHOME, ZM_BATTLE_BIOME_MEADOW },
+		{ ZM_SCENE_PROFLAB,    ZM_BATTLE_BIOME_MEADOW },
+		{ ZM_SCENE_GYM1,       ZM_BATTLE_BIOME_CANYON },
 	};
-	return (eScene < ZM_SCENE_COUNT) ? ls_aeBiome[eScene] : ZM_BATTLE_BIOME_MEADOW;
+
+	if (eScene >= ZM_SCENE_COUNT)
+	{
+		return ZM_BATTLE_BIOME_MEADOW;
+	}
+
+	// The row's OWN id tag must match the index it lives at. A swapped,
+	// misordered, or accidentally-defaulted row fails HERE rather than
+	// silently returning a biome that happens to look plausible.
+	Zenith_Assert(ls_axBiome[eScene].m_eScene == eScene,
+		"ZM_BattleTransition::BiomeForScene: biome table row %u is mistagged (row claims scene %u)",
+		(u_int)eScene, (u_int)ls_axBiome[eScene].m_eScene);
+	return ls_axBiome[eScene].m_eBiome;
 }
 
 bool ZM_BattleTransition::ShouldAcceptBattleEnd(ZM_BATTLE_TRANSITION_STATE eState)
