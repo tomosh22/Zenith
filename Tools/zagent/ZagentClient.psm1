@@ -233,6 +233,63 @@ function Get-FileContents {
     return [PSCustomObject]$files
 }
 
+function Get-UnmetDoneCriteria {
+    <#
+      The unticked Definition-of-Done boxes in a work log that is about
+      to be filed as DONE.
+
+      ★★ `/tick` STEP 7 BRANCHES ON GATE COLOUR AND NOTHING ELSE. Its two
+      arms are Green -> commit + finish Done, and Red -> fix forward ->
+      Blocked. There is no arm for the case that actually happens: a
+      worker returns a correct PARTIAL with a verified impossibility, the
+      gates go green on what landed, and half the DoD is unmet. A loop
+      reading step 7 literally sees "Green" and records Done -- and the
+      work log it files RENDERS the unticked boxes, which nothing reads.
+
+      That is a fail-open path to Done, and it is the same defect the
+      protocol names one level down at step 6.5: green gates answer a
+      narrower question than they look like they answer. Here they decide
+      the terminal status.
+
+      So the boxes decide it instead, at the call that already writes the
+      status. Scanning only the Definition-of-Done section matters -- a
+      work log's "Deviations" prose legitimately contains unticked
+      checklists, and refusing on those would make this a check people
+      route around.
+
+      Blocked and In Review are deliberately unaffected: an unmet DoD is
+      the NORMAL state for both, and a Blocked ticket's log saying how far
+      it got is the thing a human picks up.
+    #>
+    param([string]$WorkLog)
+
+    if (-not $WorkLog) { return , @() }
+
+    $unmet = [System.Collections.Generic.List[string]]::new()
+    $inSection = $false
+    foreach ($line in ($WorkLog -split "`r?`n")) {
+        # Any heading shape the template or a hand-written log might use.
+        if ($line -match '^\s*(#{1,6}\s*|\*\*)\s*Definition of Done') {
+            $inSection = $true
+            continue
+        }
+        if (-not $inSection) { continue }
+
+        # The section ends at the next heading or bold run-in label.
+        if ($line -match '^\s*#{1,6}\s' -or ($line -match '^\s*\*\*' -and $line -notmatch '^\s*[-*+]\s*\[')) {
+            $inSection = $false
+            continue
+        }
+        if ($line -match '^\s*[-*+]\s*\[\s\]\s*(.*)$') {
+            $text = $Matches[1].Trim()
+            if (-not $text) { $text = '(unlabelled item)' }
+            [void]$unmet.Add($text)
+        }
+    }
+
+    return , $unmet.ToArray()
+}
+
 function Test-NeedsDocsTree {
     <#
       Which commands ship the client's living-doc tree with them.
@@ -337,6 +394,115 @@ function Get-GuardTicketKey {
     return $Argv[1]
 }
 
+function Restore-RefusedClaim {
+    <#
+      Undo the write a REFUSED claim left behind.
+
+      The board's claim transaction mutates before it validates, so an
+      exit-4 contract failure comes back with the row already moved to In
+      Progress and assigned to the agent. That row then holds the I5
+      one-ticket-per-repo lock: the next `zagent next` returns exit 5 and
+      the whole queue stops, on a ticket the contract just said no
+      machine may take.
+
+      Two writes undo it, and BOTH are needed. `move` restores the lane;
+      only `--assignee none` restores visibility, because the claim query
+      skips ANY assigned ticket -- which is the stranded-assignee failure
+      the tick protocol documents at length. Doing one without the other
+      leaves the card parked where nobody will look for it.
+
+      `previousStatus` is on the claim payload and that is the ONLY place
+      it survives: the claim reads the old status, writes the new one and
+      returns, so nothing afterwards can answer the question. If the
+      payload does not carry it, restoring the lane is a GUESS, and this
+      declines to guess -- it clears the assignee (which releases the
+      lock and is always right) and says the lane needs a human.
+
+      Returns the notes to print. Never throws: this runs on a path that
+      is already failing, and a rollback that raises would replace a
+      readable contract error with a stack trace.
+    #>
+    param($Payload, $Client, [scriptblock]$Invoke)
+
+    $notes = [System.Collections.Generic.List[string]]::new()
+    if (-not $Payload -or -not $Invoke) { return , @() }
+
+    $keyProp = $Payload.PSObject.Properties['key']
+    if (-not $keyProp -or -not $keyProp.Value) { return , @() }
+    $key = $keyProp.Value
+
+    # Nothing to undo unless the refusal actually claimed it. A board that
+    # validates first (the real fix) sends neither, and this becomes inert
+    # rather than issuing two pointless writes.
+    $prevProp = $Payload.PSObject.Properties['previousStatus']
+    $prev = if ($prevProp) { $prevProp.Value } else { $null }
+    $claimed = $false
+    foreach ($name in @('assignedByClaim', 'claimed', 'assigneeId', 'assignee')) {
+        $p = $Payload.PSObject.Properties[$name]
+        if ($p -and $p.Value) { $claimed = $true }
+    }
+    # previousStatus is only ever emitted BY a claim, so its presence is
+    # itself the signal on a board that does not report the assignee.
+    if ($prev) { $claimed = $true }
+    if (-not $claimed) { return , @() }
+
+    try {
+        if ($prev) {
+            [void](& $Invoke @('move', $key, [string]$prev))
+            [void](& $Invoke @('update', $key, '--assignee', 'none'))
+            [void]$notes.Add("zagent: the claim on $key was REFUSED after it had already been written, so $key was rolled back to '$prev' and unassigned.")
+            [void]$notes.Add("        Without this it would sit In Progress holding the one-ticket-per-repo lock, and the next claim would return exit 5.")
+        } else {
+            [void](& $Invoke @('update', $key, '--assignee', 'none'))
+            [void]$notes.Add("zagent: the claim on $key was REFUSED after it had already been written. The assignee was cleared (which releases the repo lock),")
+            [void]$notes.Add("        but the payload carried no previousStatus, so the LANE was not restored -- check $key by hand.")
+        }
+    } catch {
+        [void]$notes.Add("zagent: $key was claimed and then refused, and the rollback FAILED -- $($_.Exception.Message)")
+        [void]$notes.Add("        $key is probably still In Progress and assigned, holding the repo lock. Fix by hand: zagent move $key `"To Do`" && zagent update $key --assignee none")
+    }
+
+    return , $notes.ToArray()
+}
+
+function Get-CategoryPathPrefixes {
+    <#
+      The literal directory prefixes a category owns, for ranking an
+      ambiguous citation.
+
+      `paths` is declared as globs (`Games/Zenithmon/**`), and every one
+      in this repo is a plain directory glob -- so the prefix is the text
+      up to the first wildcard. That is deliberately dumber than a glob
+      matcher: this ranks candidates, it never decides whether a file is
+      in scope, and `zagent guard` owns the question that actually gates
+      a merge. A half-implemented glob engine here would be a second
+      answer to a question already answered elsewhere.
+
+      Returns @() for an unknown category, which makes the caller fall
+      back to "no preference" rather than to "nothing matches".
+    #>
+    param($Client, [string]$Category)
+
+    if (-not $Client -or -not $Category) { return , @() }
+    $categories = $Client.file.PSObject.Properties['categories']
+    if (-not $categories) { return , @() }
+
+    $out = [System.Collections.Generic.List[string]]::new()
+    foreach ($entry in $categories.Value.PSObject.Properties) {
+        if ($entry.Name -ne $Category) { continue }
+        $paths = $entry.Value.PSObject.Properties['paths']
+        if (-not $paths) { continue }
+        foreach ($glob in @($paths.Value)) {
+            if (-not $glob) { continue }
+            $normalised = ($glob -replace '\\', '/')
+            $star = $normalised.IndexOf('*')
+            $prefix = if ($star -ge 0) { $normalised.Substring(0, $star) } else { $normalised }
+            if ($prefix) { [void]$out.Add($prefix) }
+        }
+    }
+    return , $out.ToArray()
+}
+
 function Get-BodyDrift {
     <#
       Which of a ticket body's citations no longer resolve in THIS repo.
@@ -362,7 +528,7 @@ function Get-BodyDrift {
       already a hard dependency of every step of a tick, it searches only
       tracked files, and it is fast enough to run per symbol.
     #>
-    param([string]$Repo, $Citations)
+    param([string]$Repo, $Citations, [string[]]$CategoryPaths)
 
     if (-not $Repo -or -not $Citations) { return , @() }
     $missing = [System.Collections.Generic.List[object]]::new()
@@ -378,10 +544,39 @@ function Get-BodyDrift {
             # ZM-20 cites Tests/ZM_Tests_CommittedSceneBytes.cpp; the
             # file is real and lives under Games/Zenithmon/Tests/.
             $leaf = Split-Path $path -Leaf
-            $elsewhere = @(& git -C $Repo ls-files -- "*/$leaf" $leaf 2>$null) |
-                Where-Object { $_ } | Select-Object -First 1
+            $all = @(& git -C $Repo ls-files -- "*/$leaf" $leaf 2>$null) |
+                Where-Object { $_ }
+
+            # ★★ THIS USED TO BE `Select-Object -First 1`, AND THAT MADE THE
+            # HINT WRONG EXACTLY WHEN IT CARRIED INFORMATION. `git ls-files`
+            # returns path order, so with two candidates the alphabetically
+            # first won: a `Status.md` cited by a ZENITHMON ticket resolved to
+            # Games/DevilsPlayground/Docs/Status.md, every time, because D
+            # sorts before Z. Measured across four tickets -- Roadmap.md and
+            # Board.md exist under one game and were right BY LUCK, while
+            # Status.md and Shortfalls.md exist under both and were wrong every
+            # time. And the report printed that pick as an answer ("a file of
+            # that name is at X") with no sign a second candidate existed,
+            # while the tick protocol tells the orchestrator to correct the
+            # worker prompt from it.
+            #
+            # So: prefer a candidate inside the ticket's own category, and when
+            # the choice is still ambiguous hand back ALL of them and let the
+            # report ask rather than answer.
+            $preferred = @()
+            foreach ($prefix in @($CategoryPaths)) {
+                if (-not $prefix) { continue }
+                $preferred += @($all | Where-Object { $_.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase) })
+            }
+            $preferred = @($preferred | Select-Object -Unique)
+
+            $ranked = @(if ($preferred.Count -gt 0) { $preferred } else { $all })
+            # A single survivor is an answer; more than one is a question.
+            $best = if ($ranked.Count -eq 1) { $ranked[0] } else { $null }
+
             [void]$missing.Add([PSCustomObject]@{
-                kind = 'path'; value = $path; movedTo = $elsewhere
+                kind = 'path'; value = $path; movedTo = $best
+                candidates = @($ranked)
             })
         }
     }
@@ -483,8 +678,21 @@ function Format-BodyDrift {
         foreach ($row in $rows) {
             $line = "  $($row.kind)  $($row.value)"
             $moved = $row.PSObject.Properties['movedTo']
-            if ($moved -and $moved.Value) { $line += "   (a file of that name is at $($moved.Value))" }
-            $lines += $line
+            $cands = $row.PSObject.Properties['candidates']
+            $cn = if ($cands) { @($cands.Value).Count } else { 0 }
+            if ($moved -and $moved.Value) {
+                $line += "   (a file of that name is at $($moved.Value))"
+                $lines += $line
+            } elseif ($cn -gt 1) {
+                # AMBIGUOUS ON PURPOSE. One path reads as an answer; a list
+                # reads as a question, which is what this is. Naming one
+                # arbitrary candidate is how a Zenithmon ticket got pointed at
+                # DevilsPlayground's Status.md.
+                $lines += $line + "   ($cn files of that name -- WHICH ONE is a judgement, not a lookup:)"
+                foreach ($c in @($cands.Value)) { $lines += "      $c" }
+            } else {
+                $lines += $line
+            }
         }
         if ($resolved -gt 0) { $lines += "  ($resolved resolved.)" }
     }
@@ -1041,10 +1249,10 @@ function Format-HelpStub {
 }
 
 Export-ModuleMember -Function Find-ClientRepo, ConvertTo-PosixPath, Remove-Annotations,
-    Get-ClientProject, Get-FlagValue, Test-Flag, Get-FileFlags, Get-FileContents, Get-WorkingTreeChanges,
+    Get-ClientProject, Get-FlagValue, Test-Flag, Get-FileFlags, Get-FileContents, Get-UnmetDoneCriteria, Get-WorkingTreeChanges,
     Test-NeedsDocsTree, Test-NeedsChangedSet, Get-RequestTimeout, Get-GuardTicketKey,
     Get-RecordedGateSelection,
-    Get-BodyDrift, Format-BodyDrift, Get-CitationCount, Get-DocsTree,
+    Get-BodyDrift, Format-BodyDrift, Get-CitationCount, Get-CategoryPathPrefixes, Restore-RefusedClaim, Get-DocsTree,
     Get-ConventionsTree, Get-AmendContents, Get-ScratchRoot, Write-Results, Write-LastResult,
     Get-ClientChecks, Get-AllGateLines, Write-StdErr,
     Test-HelpFlag, Get-HelpSubject, Format-HelpStub,

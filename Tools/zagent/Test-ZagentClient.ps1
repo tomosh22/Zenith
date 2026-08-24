@@ -1162,6 +1162,143 @@ Assert-That '** the stub carries NO command list -- that fact has one home' {
     $invocations.Count -le 4
 }
 
+Write-Host "`n=== AUDIT FIXES 2026-08-24 ===" -ForegroundColor Cyan
+# Four defects found by running /tick three times end to end against the ZM
+# board. Each assertion below names the failure it closes, because every one
+# of them went GREEN on every gate before it was found.
+
+function New-TwoGameRepo {
+    # Two games that BOTH carry a Status.md -- the shape that made the drift
+    # hint wrong. DevilsPlayground sorts before Zenithmon, so `git ls-files`
+    # returns it first and `Select-Object -First 1` always picked the wrong one.
+    $repo = New-TempDir
+    & git -C $repo init --quiet 2>$null | Out-Null
+    & git -C $repo config user.email 'test@example.invalid' 2>$null | Out-Null
+    & git -C $repo config user.name 'test' 2>$null | Out-Null
+    foreach ($g in @('DevilsPlayground', 'Zenithmon')) {
+        $d = Join-Path $repo "Games\$g\Docs"
+        New-Item -ItemType Directory -Path $d -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $d 'Status.md') -Value "# $g" -Encoding utf8
+    }
+    & git -C $repo add -A 2>$null | Out-Null
+    & git -C $repo commit -m init --quiet 2>$null | Out-Null
+    return $repo
+}
+
+Assert-That '** an ambiguous citation prefers the TICKET CATEGORY over path order' {
+    $repo = New-TwoGameRepo
+    try {
+        $c = [PSCustomObject]@{ paths = @('Status.md'); symbols = @() }
+        $m = @(Get-BodyDrift -Repo $repo -Citations $c -CategoryPaths @('Games/Zenithmon/'))
+        # Without the category it resolved to DevilsPlayground, deterministically.
+        ($m.Count -eq 1) -and ($m[0].movedTo -like '*Zenithmon*')
+    } finally { Remove-Item -LiteralPath $repo -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+Assert-That '** with NO category to rank by, it names every candidate and picks none' {
+    $repo = New-TwoGameRepo
+    try {
+        $c = [PSCustomObject]@{ paths = @('Status.md'); symbols = @() }
+        $m = @(Get-BodyDrift -Repo $repo -Citations $c)
+        # movedTo stays $null on purpose: one path reads as an answer.
+        ($m.Count -eq 1) -and ($null -eq $m[0].movedTo) -and (@($m[0].candidates).Count -eq 2)
+    } finally { Remove-Item -LiteralPath $repo -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+Assert-That '** an ambiguous drift report ASKS rather than answers' {
+    $repo = New-TwoGameRepo
+    try {
+        $c = [PSCustomObject]@{ paths = @('Status.md'); symbols = @() }
+        $m = Get-BodyDrift -Repo $repo -Citations $c
+        $text = Format-BodyDrift -Key 'ZM-1' -Missing $m -Citations $c
+        ($text -match 'WHICH ONE is a judgement') -and
+            ($text -match 'Games/DevilsPlayground/Docs/Status\.md') -and
+            ($text -match 'Games/Zenithmon/Docs/Status\.md')
+    } finally { Remove-Item -LiteralPath $repo -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+Assert-That 'a category path glob resolves to its literal prefix' {
+    $client = [PSCustomObject]@{ repo = 'C:/x'; file = [PSCustomObject]@{
+        categories = [PSCustomObject]@{ Zenithmon = [PSCustomObject]@{ paths = @('Games/Zenithmon/**') } } } }
+    $p = @(Get-CategoryPathPrefixes -Client $client -Category 'Zenithmon')
+    ($p.Count -eq 1) -and ($p[0] -eq 'Games/Zenithmon/')
+}
+
+Assert-That 'an unknown category ranks by nothing rather than by nothing-matches' {
+    $client = [PSCustomObject]@{ repo = 'C:/x'; file = [PSCustomObject]@{
+        categories = [PSCustomObject]@{ Zenithmon = [PSCustomObject]@{ paths = @('Games/Zenithmon/**') } } } }
+    # NOT `@(...)`. These return `,@()`, so an extra @() wraps the empty array
+    # into a ONE-element array and Count reads 1. Same trap the file already
+    # documents at Get-BodyDrift: call it directly and read .Count.
+    ((Get-CategoryPathPrefixes -Client $client -Category 'Nope').Count -eq 0) -and
+        ((Get-CategoryPathPrefixes -Client $null -Category 'Zenithmon').Count -eq 0)
+}
+
+Assert-That '** a REFUSED claim is rolled back -- lane AND assignee' {
+    # The board writes before it validates, so exit 4 arrives with the row
+    # already In Progress and assigned. Left alone it holds the I5 repo lock
+    # and the next `zagent next` returns exit 5: one /tick on a needs-human
+    # ticket stops every project this checkout serves.
+    $calls = [System.Collections.Generic.List[string]]::new()
+    $payload = [PSCustomObject]@{ key = 'ZM-64'; previousStatus = 'To Do' }
+    $notes = Restore-RefusedClaim -Payload $payload -Client $null -Invoke {
+        param($a) [void]$calls.Add($a -join ' '); return $null }
+    ($calls.Count -eq 2) -and
+        ($calls[0] -eq 'move ZM-64 To Do') -and
+        ($calls[1] -eq 'update ZM-64 --assignee none') -and
+        (@($notes).Count -ge 1)
+}
+
+Assert-That '** a claim that was NOT written is left alone -- no pointless writes' {
+    # A board that validates first sends no previousStatus. The rollback must
+    # become inert rather than issuing two writes against an untouched row.
+    $calls = [System.Collections.Generic.List[string]]::new()
+    $payload = [PSCustomObject]@{ key = 'ZM-64' }
+    $notes = Restore-RefusedClaim -Payload $payload -Client $null -Invoke {
+        param($a) [void]$calls.Add($a -join ' '); return $null }
+    ($calls.Count -eq 0) -and (@($notes).Count -eq 0)
+}
+
+Assert-That 'a rollback whose writes THROW reports instead of crashing the refusal' {
+    $payload = [PSCustomObject]@{ key = 'ZM-64'; previousStatus = 'To Do' }
+    $notes = Restore-RefusedClaim -Payload $payload -Client $null -Invoke {
+        param($a) throw 'board said no' }
+    ($notes.Count -ge 1) -and (($notes -join ' ') -match 'rollback FAILED')
+}
+
+Assert-That '** an unticked Definition-of-Done box is found' {
+    $log = @'
+## Work Log
+
+**Definition of Done**
+
+- [x] the first thing
+- [ ] the second thing, which is not done
+
+**Deviations / follow-ups**
+
+- [ ] this is NOT a DoD box and must not count
+'@
+    $unmet = @(Get-UnmetDoneCriteria -WorkLog $log)
+    ($unmet.Count -eq 1) -and ($unmet[0] -eq 'the second thing, which is not done')
+}
+
+Assert-That 'a fully ticked Definition of Done is clean' {
+    $log = "**Definition of Done**`n`n- [x] one`n- [x] two`n"
+    (Get-UnmetDoneCriteria -WorkLog $log).Count -eq 0
+}
+
+Assert-That 'a work log with no Definition of Done section is clean, not a crash' {
+    ((Get-UnmetDoneCriteria -WorkLog "## Work Log`n`n- [ ] a bare checklist").Count -eq 0) -and
+        ((Get-UnmetDoneCriteria -WorkLog $null).Count -eq 0) -and
+        ((Get-UnmetDoneCriteria -WorkLog '').Count -eq 0)
+}
+
+Assert-That 'a heading-style Definition of Done is read the same as a bold one' {
+    $log = "### Definition of Done`n`n- [ ] still counts`n"
+    @(Get-UnmetDoneCriteria -WorkLog $log).Count -eq 1
+}
+
 Write-Host ""
 Write-Host ("{0}/{1} assertions passed." -f ($script:count - $script:failures), $script:count)
 if ($script:failures -eq 0) { Write-Host 'PASS' -ForegroundColor Green; exit 0 }

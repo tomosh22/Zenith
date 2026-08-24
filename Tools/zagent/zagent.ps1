@@ -39,6 +39,22 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+# The board speaks UTF-8 and this client's output is READ BY THINGS: a tick
+# redirects it to a file, tick_gates.ps1 appends it to gates.log, and a work
+# log quotes it. Windows PowerShell hands a redirected stream the OEM code
+# page, so `·` (U+00B7) -- which the queue and doctor summaries use as a
+# separator -- went out as the single byte 0xFA, which is not valid UTF-8 at
+# all. The em dash was already being folded to `-` elsewhere, so the fold
+# table looked complete while one character quietly corrupted every capture.
+# Setting the encoding fixes the whole class rather than one more character.
+try {
+    [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+    $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+} catch {
+    # A redirected or absent console can refuse this. Losing a separator is
+    # cosmetic; refusing to run the command is not.
+}
+
 $script:EXIT_ERROR = 1
 $script:EXIT_UNREACHABLE = 7
 $script:PROJECT_FILE = 'zagent.project.json'
@@ -180,6 +196,35 @@ if ($gateKey) {
 
 if ($fileMap.Count -gt 0) { $body.files = $fileMap }
 
+# ★★ DONE IS THE ONE STATUS THE DoD GETS A VOTE ON.
+#
+# `/tick` step 7 branches on GATE COLOUR and nothing else, so a worker that
+# returns a correct partial with a verified impossibility -- gates green on
+# what landed, half the DoD unmet -- reads as "Green" and gets recorded Done.
+# The work log filed alongside it RENDERS the unticked boxes and nothing has
+# ever read them. Checking here rather than in the protocol is the point: this
+# is the call that writes the status, so the rule is enforced at a check that
+# already fails instead of asked for in a paragraph.
+#
+# Blocked and In Review pass untouched -- an unmet DoD is the normal state for
+# both, and a Blocked log saying how far it got is exactly what a human picks up.
+if ($argv[0] -eq 'finish' -and $fileMap.Contains('worklog')) {
+    $claimedStatus = Get-FlagValue -Argv $argv -Name 'status'
+    if ($claimedStatus -and $claimedStatus.Trim().ToLowerInvariant() -eq 'done') {
+        $unmet = Get-UnmetDoneCriteria -WorkLog $fileMap['worklog']
+        if (@($unmet).Count -gt 0) {
+            Write-StdErr "zagent: refusing to finish $($argv[1]) as Done -- its work log leaves $(@($unmet).Count) Definition-of-Done item(s) unticked:"
+            foreach ($item in @($unmet)) { Write-StdErr "  [ ] $item" }
+            Write-StdErr ''
+            Write-StdErr 'A green gate says the tree compiles and the pinned count matches. It does not'
+            Write-StdErr 'say the ticket was finished. Either tick the box because the work IS done, or'
+            Write-StdErr 'finish as Blocked / "In Review" -- both accept an unmet DoD, and a Blocked log'
+            Write-StdErr 'saying how far it got is the thing a human picks up.'
+            exit $script:EXIT_ERROR
+        }
+    }
+}
+
 # Which commands ship the docs tree lives in the MODULE, beside its twin
 # in the board's `needsDocsTree` — see `Test-NeedsDocsTree`. Inline here,
 # nothing could reach it: this file runs a command the moment it is
@@ -194,6 +239,33 @@ $amend = Get-AmendContents -Client $client -Argv $argv
 if ($amend) { $body.amend = $amend }
 
 $result = Invoke-Board -Body $body -TimeoutSec (Get-RequestTimeout -Argv $argv)
+
+# ★★ A REFUSED CLAIM USED TO LEAVE THE TICKET CLAIMED, AND THAT HALTED THE REPO.
+#
+# The board's claim transaction writes FIRST and validates SECOND, so
+# `zagent claim <needs-human key>` returned exit 4 -- "no machine can produce
+# this deliverable" -- having already written:
+#
+#     status:   To Do -> In Progress
+#     assignee: none  -> the agent
+#
+# Three consequences, the third fatal. The ticket is left ASSIGNED, so the claim
+# query can never see it again; it is left OUT of To Do; and it HOLDS THE I5
+# one-ticket-per-repo lock, so the very next `zagent next` returns exit 5, repo
+# busy. One `/tick` on a ticket the system says can never be claimed stops every
+# project this checkout serves -- and `/tick`'s own step 2 ("targeted exit 4:
+# report the error and change nothing") guarantees it stays stopped, because that
+# instruction was written assuming a refusal had written nothing.
+#
+# `needs-human`'s printed contract is "never claimed, by the queue OR BY NAME".
+# This is what makes the second half true. Rolling back HERE rather than in the
+# protocol is deliberate: a rule in prose in front of a check is the defect this
+# repo keeps naming, and every caller of the CLI gets this one, not just a tick.
+if ($result.exitCode -eq 4 -and ($argv[0] -eq 'claim' -or $argv[0] -eq 'next')) {
+    $rolled = Restore-RefusedClaim -Payload $result.payload -Client $client `
+        -Invoke { param($a) Invoke-Board -Body @{ argv = $a; client = $client } -TimeoutSec 60 }
+    foreach ($note in @($rolled)) { Write-StdErr $note }
+}
 
 # `doctor` is the one command whose answer is assembled from both sides.
 if ($argv[0] -eq 'doctor') {
@@ -227,7 +299,16 @@ Write-Results -Result $result -Repo $repoForWrites
 # consecutive claims whose bodies had all drifted badly. A check whose
 # silence has two meanings is a check the reader learns to skip.
 if ($repoPath -and $result.payload.PSObject.Properties['citations']) {
-    $drift = Get-BodyDrift -Repo $repoPath -Citations $result.payload.citations
+    # The ticket's own category ranks an ambiguous citation. Without it a
+    # `Status.md` cited by a Zenithmon ticket resolved to DevilsPlayground's,
+    # deterministically, because git ls-files returns path order and D sorts
+    # before Z -- and the report printed that pick as though it were an answer.
+    $driftCategory = $null
+    if ($result.payload.PSObject.Properties['category']) {
+        $driftCategory = $result.payload.category
+    }
+    $drift = Get-BodyDrift -Repo $repoPath -Citations $result.payload.citations `
+        -CategoryPaths (Get-CategoryPathPrefixes -Client $client -Category $driftCategory)
     $text = Format-BodyDrift -Key $result.payload.key -Missing $drift `
         -Citations $result.payload.citations
     if ($text) {
