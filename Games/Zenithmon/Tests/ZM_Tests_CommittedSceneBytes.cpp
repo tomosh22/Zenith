@@ -1561,7 +1561,7 @@ ZENITH_TEST(ZM_CommittedSceneBytes, Route1CarriesTheTallGrassSystemAndThornacreA
 	}
 }
 
-// ★ ZM-27 / ZM-D-202: the three ground-item props are IN the committed bytes.
+// ★ ZM-27 / ZM-D-207: the three ground-item props are IN the committed bytes.
 //
 // A companion to ZM_GroundItemProp_Test rather than a duplicate of it, and the
 // difference is which artefact each reads. That test loads the scene and drives a

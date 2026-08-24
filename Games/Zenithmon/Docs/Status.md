@@ -20,7 +20,7 @@ its own template in `AgentBriefing.md` §2.3 specifies. Nothing was deleted.
 **★ LIVE PIN (UPDATED 2026-08-24):
 ZM boot `3399`; engine boot (Null Combat) `1650`; Null RenderTest `1741`; registry **69**.**
 
-> **★ ZM-27 follow-ups (a) + (b) — ZM-D-202 — OBSERVED 2026-08-24.**
+> **★ ZM-27 follow-ups (a) + (b) — ZM-D-207 — OBSERVED 2026-08-24.**
 > `Null_vs2022_Debug_Win64_True` reported **`3399 ran / 3397 passed / 0 failed`** (2 skipped),
 > so `Tools/unit_baselines.json` moved `Zenithmon` **3395 -> 3399**. The +4 is three
 > Route 1 prop placement units (`Route1_GroundItemPropAnchorsCoverTheWholeRegistry`,
@@ -40,7 +40,7 @@ ZM boot `3399`; engine boot (Null Combat) `1650`; Null RenderTest `1741`; regist
 > *In Review*. It is met now: `ZM_GroundItemProp` at ECS order 115, three measured anchors,
 > three prop entities in the committed `Route1.zscen`, and `ZM_GroundItemProp_Test` driving a
 > real pickup. **The scope had been cut against a constraint that did not exist** — see
-> ZM-D-202, and the corrected `windowed` / `needs-gpu` text in `AgentBriefing.md` and
+> ZM-D-207, and the corrected `windowed` / `needs-gpu` text in `AgentBriefing.md` and
 > `Board.md`.
 
 > **★ R1-3 (ZM-21 / ZM-D-203) — OBSERVED 2026-08-23.** `Null_vs2022_Debug_Win64_True`

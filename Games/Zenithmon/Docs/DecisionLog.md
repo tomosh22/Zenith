@@ -15,6 +15,289 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-08-24 -- ZM-D-208 -- USER RULINGS unblocking R1-5 (ZM-23): the appearance palette gains a slot, and the flagless-arm coverage moves to a by-ROW seam
+
+**ZM-23 (R1-5) was moved to `Blocked` by a tick on 2026-08-24 with two
+ruling-shaped blockers, neither of them an implementation difficulty.** Both are
+answered here, recorded BEFORE implementation per `Scope.md` section 4. The
+corresponding `Agent · Questions` rows are `resolved` with the same reasoning.
+
+---
+
+### RULING 1 -- the NPC appearance palette gains a SLOT (option C)
+
+**The problem.** `ZM_GetHumanPaletteColour`
+(`Source/Gen/ZM_HumanAppearance.cpp:824`) is
+`0.45 * outfit.primary + 0.25 * outfit.accent + 0.30 * hair`. It reads NEITHER
+skin tone, build, attachment NOR hair *style*. With `LEADER` and `DYED` excluded
+as type-themed, the usable space is **6 x 6 = 36 cells**. Against the 0.15
+separation floor (`Npc_AuthoredAppearancesAreMutuallyDistinct`, plus 0.15 from the
+blockout grey), **none of the 15 `ZM_HUMAN_ID`s outside the 7-row cast clears it**
+-- the best is `TRAINER_ANGLER` at 0.1350. Exactly ONE cell is free
+(`TRAVELER` + `BLONDE`) and no id stands in it. R1-5 needs TWO appearances.
+
+**RULED: append an outfit slot and/or a hair colour.** Both enums are APPEND-only
+and save-stable (`Source/Data/ZM_HumanData.h:53` and `:68`). A new outfit adds a
+whole ROW of 6 candidate cells, a new hair colour a whole COLUMN of 6, and
+**no existing NPC colour moves by a single float** -- so no committed scene, no
+material scan and no quoted value is disturbed.
+
+**Rejected, with reasons:**
+
+* **(A) new `ZM_HumanData` rows alone.** Fails on arithmetic, not principle: a new
+  row still has to land in a cell and there is one free cell, so it can supply one
+  of the two appearances R1-5 needs.
+* **(B) widen the palette basis** to read skin / build / attachment. It moves EVERY
+  existing colour, redding `ZM_AutoTests_RivalVesper`'s material scan and
+  invalidating every value quoted in `ZM_HumanData.cpp` and `Shortfalls.md`. The
+  blast radius is a one-time cost this repo absorbs routinely; the real objection
+  is that it deepens the proxy's entanglement with appearance instead of fixing
+  the category error Ruling 1's follow-up names.
+* **(D) re-scope the invariant** to rows that can share a frame. **This is the
+  CORRECT fix** and is filed as **ZM-68** (S9, related to ZM-31). It is not taken
+  here because it needs a scene column on `ZM_NpcData` that does not exist, and
+  R1-5 should not wait on a data-model change.
+* **Lowering the 0.15 floor** was considered and REJECTED. It is the same shape as
+  widening a sight cone to fit a badly-placed anchor, and this codebase's own rule
+  (`ZM_Route1Placement.h`) is *"do not widen the cone to fit an anchor. Move the
+  anchor."*
+
+★ **TWO CAVEATS THE IMPLEMENTER MUST CARRY.**
+
+1. **Appending a slot yields CANDIDATE cells, not usable ones.** The new outfit's
+   primary and accent must be chosen so every resulting blend clears 0.15 against
+   all existing rows AND against the blockout grey (0.52, 0.55, 0.60). **Report the
+   achieved separations rather than asserting them** -- an assertion that a colour
+   is far enough, written by whoever chose the colour, is a self-referential guard.
+2. **This is a REFILL, not a fix.** Six cells covers R1-5's two and little else.
+   S9's "Towns 3-6, Routes 2-8, Gyms 2-4" wants far more, and each repeat of this
+   ruling gets harder as the space fills. ZM-68 is the structural half.
+
+---
+
+### RULING 2 -- the flagless arm's coverage moves to a by-ROW seam (option (a), extended)
+
+**The problem.** Ruling 3 (`ZM-D-196`, restated in `Status.md`) requires both Route 1
+trainers to carry a defeat flag, which retires `ZM_TRAINER_ROUTE1_RAMBLER` as the
+only flagless PRODUCTION row. Ruling 3's own remedy -- "the existing test-only
+reconfiguration" -- reaches only ONE of the three `ZM_STORY_FLAG_NONE` consumers:
+`ZM_MayTrainerEngage(const ZM_TrainerData&, ...)` takes a ROW, so a test-local
+fixture reaches it. `ZM_ApplyTrainerResultToGameState` (BOTH overloads,
+`ZM_BattleWriteBack.h:105` and `:112`) and
+`ZM_Interactable::ConfigureTrainerSight` take a `ZM_TRAINER_ID`, and no hand-built
+row can reach either. Once every registered row is flagged, the only flagless ids
+are UNREGISTERED ones, which are a total silent no-op and therefore cannot
+exercise "pays money but writes no flag".
+
+**RULED: option (a), extended to name phase 8's disposition** -- (a) as filed
+covers `ZM_Tests_Party.cpp` only and is silent on the third consumer, which is
+where an implementer would hit the same wall. Three parts:
+
+1. **Add the by-ROW primitive**
+   `ZM_ApplyTrainerResultToGameState(ZM_GameState&, const ZM_TrainerData&, ZM_SIDE, bool)`
+   and re-point `ZM_Tests_Party.cpp:1099` at it. This is an **EXTRACTION, not new
+   logic**: the by-id function already resolves the row at
+   `ZM_BattleWriteBack.cpp:133` and works purely from it thereafter, so by-id
+   becomes classify + `ZM_IsRegisteredTrainer` + resolve + forward -- mirroring how
+   the `ZM_BattleDirectorCore` overload already forwards. Coverage is
+   **strengthened**, not merely preserved: a hand-built row cannot drift when
+   content changes.
+2. **RETIRE phase 8 of `ZM_AutoTests_TrainerSight.cpp`**, with the reason recorded
+   IN THE TEST FILE. Its precondition is a flagless **registered** row, and Ruling 3
+   makes that state deliberately unreachable -- so the phase would prove the
+   behaviour of a configuration production can no longer produce.
+   ★ **Do NOT keep some row flagless to preserve the phase.** That is the
+   farmable-prize state Ruling 3 exists to forbid, and preserving a test by
+   preserving the defect it warns about is the wrong trade.
+3. **Do NOT give `ZM_Interactable::ConfigureTrainerSight` a by-row overload.** It
+   stores `m_eTrainerId` and re-derives it in `OnStart` from the serialized NPC row
+   (the deliberate zero-byte route, `ZM_Interactable.h`); a by-row configure would
+   need somewhere to put a row outside the registry and would fight that design.
+
+**What survives:** `ZM_MayTrainerEngage`'s flagless/latch arm by row in
+`ZM_Tests_IntroBeat.cpp:176` (with an anti-vacuity arm); the FSM latch in
+`ZM_Tests_TrainerSightFsm.cpp`; the write-back `NONE` arm by row in
+`ZM_Tests_Party.cpp`.
+
+**What is genuinely LOST:** the live-component end-to-end proof that a flagless row
+pays and does not raise. That is a real cost, recorded rather than waved away.
+
+★ **AND RULING 3'S STATED MECHANISM IS CORRECTED HERE.** Ruling 3 reasons that the
+defeat flag stops prize farming. It does not do so through the payout helper --
+`ZM_BattleWriteBack.h:101-104` records that a second win credits the money AGAIN,
+because "pay once" is a CALLER-side gate and ZM-D-135 forbids a new `ZM_GameState`
+member to record it. The flag stops farming because `ZM_MayTrainerEngage` refuses
+to raise a defeated flagged trainer. The flag's value is real, but it is delivered
+through the sight FSM, not the payout helper. Anyone reasoning from Ruling 3's
+wording alone will predict the wrong failure.
+
+---
+
+### What this unblocks, and what it does not
+
+R1-5 (ZM-23) can be re-filed and run. Per its tick's `result.md`, the re-filed
+ticket must add `Tests/ZM_Tests_StoryFlags.cpp`, `Tests/ZM_Tests_Party.cpp`,
+`Tests/ZM_AutoTests_TrainerSight.cpp` and `Source/Data/ZM_StoryFlags.{h,cpp}` to
+scope. Its DoD item 1 reds **at HEAD** -- `ZM_TRAINER_ROUTE1_RAMBLER` has had no
+NPC claimant since S7 -- so items 1 and 2 are one indivisible commit, not two.
+
+**ZM-24 (R1-6) was blocked behind R1-5 in substance, not just on the board:** the
+trainers it authors had no appearance to wear. Ruling 1 is what changes that.
+
+### Reversibility
+
+Ruling 1 is append-only on two save-stable enums and moves no existing value, so
+backing it out costs the new slot and whatever authored it. Ruling 2's by-row
+overload is additive production surface; the retired phase 8 is recoverable from
+git if ZM-68 ever makes a flagless registered row reachable again.
+
+### Tests that lock it
+
+Ruling 1: `Npc_AuthoredAppearancesAreMutuallyDistinct`,
+`Npc_EveryAuthoredRowClearsTheBlockoutFallbackGrey`, `HumanGen_PaletteDistinctness`.
+Ruling 2: `TrainerReward_UnflaggedRowStillPaysAndWritesNoFlag` (re-pointed at the
+by-row overload), and the `ZM_Tests_IntroBeat.cpp` / `ZM_Tests_TrainerSightFsm.cpp`
+arms named above.
+
+
+## 2026-08-24 -- ZM-D-207 -- the ground-item prop becomes REACHABLE: a component, three measured anchors, and the boot unit that can see an unpickable prop
+
+**ZM-27 follow-ups (a) and (b), which ZM-D-201 booked and could not do.** New
+`Components/ZM_GroundItemProp.{h,cpp}` at game ECS order 115 (registered TWICE in
+`Zenithmon.cpp`), three measured placement anchors in `Source/World/ZM_Route1Placement.h`,
+three prop entities appended to the committed `Route1.zscen`, a second probe source in
+`ZM_InteractionRuntime`, three boot units and one real-scene automated test.
+
+**"A world prop can be picked up into the bag" is now true.** It was not before: ZM-27
+shipped the mechanism with `ZM_TryPickUpGroundItem` having **zero production callers**.
+
+### ★★ THE PREMISE ZM-D-201 SCOPED AGAINST DID NOT EXIST
+
+Both exclusions in ZM-D-201 rest on one sentence in ZM-27's worker prompt:
+*"`ZM-20` is still To Do and is labelled `windowed`"*. Every clause of it is false.
+ZM-20 was already **Done**; `Route1.zscen` and `Thornacre.zscen` were both committed;
+and `windowed` had been **retired**, split into `needs-gpu` and `needs-human`. ZM-20
+carries `needs-gpu`, which **gates nothing** -- a GPU is assumed available and the tick
+simply builds `Vulkan_*_True` and boots windowed, where the `.zscen` publish guard
+(`Zenith_Editor.cpp:1423`, inside `if constexpr (Zenith_IsNullRenderer())`) is compiled
+out entirely.
+
+Nothing had stopped ZM-27 authoring the prop. The scope was cut against a constraint
+that was not there, and the ticket parked at *In Review* with its first Definition-of-Done
+line unmet.
+
+**The root cause was DOCUMENTATION, and it is fixed in this commit.** `AgentBriefing.md`
+(the file a shell-less worker reads off disk), `Board.md`, `Status.md` and this log all
+still taught `windowed`'s retired meaning -- *"the loop cannot do it at all"*. All four
+were corrected. The orchestrator believed them because they were the authority.
+
+### The decision: a NEW COMPONENT, not a fourth `ZM_NPC_ROLE`
+
+`ZM_Interactable` turned out to be concrete, dispatching on `ZM_NpcData`'s `ZM_NPC_ROLE`
+-- so reusing it would require every prop to first be an NPC with a roster row, a display
+name and dialogue lines. Three non-people would enter a roster whose ids are save-stable
+and whose rows are asserted content-complete (`ZM_Tests_NpcData.cpp`). Rejected.
+
+`ZM_GroundItemProp` sits beside it instead, and **`ZM_InteractionRuntime` gathers probes
+from both into the SAME by-value array**. That is the load-bearing choice: `ZM_InteractProbe`
+carries a position, a reach bonus and an enable flag and knows nothing about what is behind
+it, so a prop and an NPC compete on one ranking. Running `ZM_PickInteractTarget` twice and
+comparing winners would re-implement its distance/facing precedence in a second place, and
+a prop standing behind an NPC would win its own pick and beat the NPC the player is facing.
+
+**The component owns no rule.** Every accept/reject decision stays in
+`ZM_CanPickUpGroundItem`, every mutation in `ZM_TryPickUpGroundItem`, every byte in module 12.
+
+### A collected prop goes INERT rather than disappearing
+
+`IsInteractable()` drops to false the moment the save records the prop taken, so the picker
+stops offering it. The answer is **read from the save on every query, never latched on the
+component** -- which is why it survives a save/load round trip with no state of its own to
+restore, and why the component needs nothing in `OnStart`. Removing the entity would mean
+mutating a load-bearing committed asset at runtime.
+
+### The three anchors were MEASURED, and the six existing rows re-measured with them
+
+`ZM_Route1GroundTruth_Test` runs on the **Null backend** (`m_bRequiresGraphics = false`),
+so the measurement needed no GPU -- only a warm bake. Frozen 2026-08-24, every row
+`resolved=1 hitTerrain=1 finalHit='Route1Terrain'`:
+
+| column | feet Y |
+|---|---|
+| `PROP_SOUTH_SALVE` | 26.66135 |
+| `PROP_LANE_CATCHORB` | 26.61090 |
+| `PROP_NORTH_SALVE` | 26.18854 |
+
+The six pre-existing rows came back at `tableError = 0.00000` in the same run. That is the
+evidence this is an EXTENSION of a frozen set rather than a re-freeze of it -- a state the
+table's own banner did not describe, because it was written while nothing was frozen.
+
+The XZ positions are **derived perpendicularly from the recipe's own DirtLane polyline**,
+not eyeballed: each is the lane point at a chosen Z displaced along that segment's unit
+normal. No segment of this lane runs along +Z, so an axis-aligned nudge would not have
+produced these numbers.
+
+### ★★ THE UNIT THAT MATTERS IS THE REACHABILITY ONE
+
+`Route1_GroundItemPropsAreReachableFromTheWalkedLane`. A prop authored 3 m off the walked
+line is a valid entity on measured ground with a configured component, and **can never be
+picked up in any playthrough, forever** -- `ZM_PickInteractTarget` refuses a candidate
+beyond `fZM_INTERACT_MAX_DISTANCE` and these props carry `fDEFAULT_RADIUS` (zero bonus).
+Every other check stays green: the ground oracle resolves the column, the component units
+pass on compiled constants, the scene holds the entity.
+
+It measures against the recipe's own polyline through the same `Route1DistanceToLane` the
+trainer units use, and carries an anti-vacuity arm displaced 12 m along the perpendicular
+that anchor's own foot defines -- so it introduces no second geometry that could disagree
+with the measurement it is testing. This is the dead-forager failure (ZM-D-196) one layer up.
+
+### And one REAL-SCENE test, because pure units cannot see a beat
+
+`ZM_GroundItemProp_Test` loads the committed `Route1.zscen`, verifies all three props exist
+at their authored centres with the ids their placement rows name, takes one through the live
+component against the live save, and asserts the bag moved, the prop went inert, and a
+second press answers `ALREADY_COLLECTED` without moving the bag.
+
+**It does not walk the player up to the prop, and says so in its own header.** The geometry
+is the boot unit above; the picker is already driven end to end by `ZM_NpcTalk_Test`, and
+props enter that identical probe array through the same gather. A ~90 m physics walk would
+be a slow re-test of somebody else's approach loop.
+
+★ **Its first three runs failed, and the last cause is worth recording.** `RequestWarp` was
+being handed `ZM_GetRoute1SouthGateSpawnTag()` -- which is what Route 1's south GATE asks
+DAWNMERE for on the way out. Arriving ON Route 1 needs the tag Route 1 itself offers, the
+compiled `Dawnmere -> Route1` edge. The refusal is silent: `TryQueueWarp` simply returns
+false. The test now WALKS that row rather than spelling the tag.
+
+### The scene was re-authored windowed, and only Route1.zscen moved
+
+Two consecutive `Vulkan_vs2022_Debug_Win64_True` boots, both
+`warmMask=0x7, queued=0, sceneAuthoring=AUTHOR_DAWNMERE`, producing **byte-identical**
+`Route1.zscen`. The other six committed scenes were untouched -- the props are APPENDED
+after the gates, so ZM-D-148's dense authoring-order file indices are preserved and no
+earlier entity was renumbered.
+
+**No collider on any prop, deliberately.** A prop is taken by interact reach, never by
+touching it, so a body would buy nothing and cost two things: an obstacle in the walked
+lane, and a SOLID body over its own ground column -- which `ZM_Route1GroundTruth_Test`
+treats as a failure rather than a filter, because its per-row ignore holds exactly one entity.
+
+### Reversibility
+
+The component, its registrations, the anchors and the test are additive. Reverting means
+dropping them and re-authoring `Route1.zscen` from a windowed boot; the ground-table rows
+would be left measuring columns nothing stands on, which is harmless. `ZM_GROUND_ITEM_ID`
+values are now **genuinely frozen** -- a committed scene serializes them -- so the window
+ZM_GroundItem.h describes as "re-numberable TODAY" has closed.
+
+### Tests that lock it
+
+`Route1_GroundItemPropAnchorsCoverTheWholeRegistry`,
+`Route1_GroundItemPropsAreReachableFromTheWalkedLane`,
+`Route1_GroundItemPropsStandOnTheirOwnMeasuredColumn`, `ZM_GroundItemProp_Test`,
+`ZM_Route1GroundTruth_Test`.
+
+
 ## 2026-08-24 -- ZM-D-206 -- ZM-65: the north gate gets its own MEASURED route-seam row, closing ZM-D-203 §5, and that section's cost claim is corrected for sign dependence
 
 > **★ READ THIS FIRST — the sections below were drafted BEFORE the measurement and describe a
@@ -595,144 +878,6 @@ three now, and the sentence is true as written.
 against this marker's tag.
 
 ---
-
-## 2026-08-24 -- ZM-D-202 -- the ground-item prop becomes REACHABLE: a component, three measured anchors, and the boot unit that can see an unpickable prop
-
-**ZM-27 follow-ups (a) and (b), which ZM-D-201 booked and could not do.** New
-`Components/ZM_GroundItemProp.{h,cpp}` at game ECS order 115 (registered TWICE in
-`Zenithmon.cpp`), three measured placement anchors in `Source/World/ZM_Route1Placement.h`,
-three prop entities appended to the committed `Route1.zscen`, a second probe source in
-`ZM_InteractionRuntime`, three boot units and one real-scene automated test.
-
-**"A world prop can be picked up into the bag" is now true.** It was not before: ZM-27
-shipped the mechanism with `ZM_TryPickUpGroundItem` having **zero production callers**.
-
-### ★★ THE PREMISE ZM-D-201 SCOPED AGAINST DID NOT EXIST
-
-Both exclusions in ZM-D-201 rest on one sentence in ZM-27's worker prompt:
-*"`ZM-20` is still To Do and is labelled `windowed`"*. Every clause of it is false.
-ZM-20 was already **Done**; `Route1.zscen` and `Thornacre.zscen` were both committed;
-and `windowed` had been **retired**, split into `needs-gpu` and `needs-human`. ZM-20
-carries `needs-gpu`, which **gates nothing** -- a GPU is assumed available and the tick
-simply builds `Vulkan_*_True` and boots windowed, where the `.zscen` publish guard
-(`Zenith_Editor.cpp:1423`, inside `if constexpr (Zenith_IsNullRenderer())`) is compiled
-out entirely.
-
-Nothing had stopped ZM-27 authoring the prop. The scope was cut against a constraint
-that was not there, and the ticket parked at *In Review* with its first Definition-of-Done
-line unmet.
-
-**The root cause was DOCUMENTATION, and it is fixed in this commit.** `AgentBriefing.md`
-(the file a shell-less worker reads off disk), `Board.md`, `Status.md` and this log all
-still taught `windowed`'s retired meaning -- *"the loop cannot do it at all"*. All four
-were corrected. The orchestrator believed them because they were the authority.
-
-### The decision: a NEW COMPONENT, not a fourth `ZM_NPC_ROLE`
-
-`ZM_Interactable` turned out to be concrete, dispatching on `ZM_NpcData`'s `ZM_NPC_ROLE`
--- so reusing it would require every prop to first be an NPC with a roster row, a display
-name and dialogue lines. Three non-people would enter a roster whose ids are save-stable
-and whose rows are asserted content-complete (`ZM_Tests_NpcData.cpp`). Rejected.
-
-`ZM_GroundItemProp` sits beside it instead, and **`ZM_InteractionRuntime` gathers probes
-from both into the SAME by-value array**. That is the load-bearing choice: `ZM_InteractProbe`
-carries a position, a reach bonus and an enable flag and knows nothing about what is behind
-it, so a prop and an NPC compete on one ranking. Running `ZM_PickInteractTarget` twice and
-comparing winners would re-implement its distance/facing precedence in a second place, and
-a prop standing behind an NPC would win its own pick and beat the NPC the player is facing.
-
-**The component owns no rule.** Every accept/reject decision stays in
-`ZM_CanPickUpGroundItem`, every mutation in `ZM_TryPickUpGroundItem`, every byte in module 12.
-
-### A collected prop goes INERT rather than disappearing
-
-`IsInteractable()` drops to false the moment the save records the prop taken, so the picker
-stops offering it. The answer is **read from the save on every query, never latched on the
-component** -- which is why it survives a save/load round trip with no state of its own to
-restore, and why the component needs nothing in `OnStart`. Removing the entity would mean
-mutating a load-bearing committed asset at runtime.
-
-### The three anchors were MEASURED, and the six existing rows re-measured with them
-
-`ZM_Route1GroundTruth_Test` runs on the **Null backend** (`m_bRequiresGraphics = false`),
-so the measurement needed no GPU -- only a warm bake. Frozen 2026-08-24, every row
-`resolved=1 hitTerrain=1 finalHit='Route1Terrain'`:
-
-| column | feet Y |
-|---|---|
-| `PROP_SOUTH_SALVE` | 26.66135 |
-| `PROP_LANE_CATCHORB` | 26.61090 |
-| `PROP_NORTH_SALVE` | 26.18854 |
-
-The six pre-existing rows came back at `tableError = 0.00000` in the same run. That is the
-evidence this is an EXTENSION of a frozen set rather than a re-freeze of it -- a state the
-table's own banner did not describe, because it was written while nothing was frozen.
-
-The XZ positions are **derived perpendicularly from the recipe's own DirtLane polyline**,
-not eyeballed: each is the lane point at a chosen Z displaced along that segment's unit
-normal. No segment of this lane runs along +Z, so an axis-aligned nudge would not have
-produced these numbers.
-
-### ★★ THE UNIT THAT MATTERS IS THE REACHABILITY ONE
-
-`Route1_GroundItemPropsAreReachableFromTheWalkedLane`. A prop authored 3 m off the walked
-line is a valid entity on measured ground with a configured component, and **can never be
-picked up in any playthrough, forever** -- `ZM_PickInteractTarget` refuses a candidate
-beyond `fZM_INTERACT_MAX_DISTANCE` and these props carry `fDEFAULT_RADIUS` (zero bonus).
-Every other check stays green: the ground oracle resolves the column, the component units
-pass on compiled constants, the scene holds the entity.
-
-It measures against the recipe's own polyline through the same `Route1DistanceToLane` the
-trainer units use, and carries an anti-vacuity arm displaced 12 m along the perpendicular
-that anchor's own foot defines -- so it introduces no second geometry that could disagree
-with the measurement it is testing. This is the dead-forager failure (ZM-D-196) one layer up.
-
-### And one REAL-SCENE test, because pure units cannot see a beat
-
-`ZM_GroundItemProp_Test` loads the committed `Route1.zscen`, verifies all three props exist
-at their authored centres with the ids their placement rows name, takes one through the live
-component against the live save, and asserts the bag moved, the prop went inert, and a
-second press answers `ALREADY_COLLECTED` without moving the bag.
-
-**It does not walk the player up to the prop, and says so in its own header.** The geometry
-is the boot unit above; the picker is already driven end to end by `ZM_NpcTalk_Test`, and
-props enter that identical probe array through the same gather. A ~90 m physics walk would
-be a slow re-test of somebody else's approach loop.
-
-★ **Its first three runs failed, and the last cause is worth recording.** `RequestWarp` was
-being handed `ZM_GetRoute1SouthGateSpawnTag()` -- which is what Route 1's south GATE asks
-DAWNMERE for on the way out. Arriving ON Route 1 needs the tag Route 1 itself offers, the
-compiled `Dawnmere -> Route1` edge. The refusal is silent: `TryQueueWarp` simply returns
-false. The test now WALKS that row rather than spelling the tag.
-
-### The scene was re-authored windowed, and only Route1.zscen moved
-
-Two consecutive `Vulkan_vs2022_Debug_Win64_True` boots, both
-`warmMask=0x7, queued=0, sceneAuthoring=AUTHOR_DAWNMERE`, producing **byte-identical**
-`Route1.zscen`. The other six committed scenes were untouched -- the props are APPENDED
-after the gates, so ZM-D-148's dense authoring-order file indices are preserved and no
-earlier entity was renumbered.
-
-**No collider on any prop, deliberately.** A prop is taken by interact reach, never by
-touching it, so a body would buy nothing and cost two things: an obstacle in the walked
-lane, and a SOLID body over its own ground column -- which `ZM_Route1GroundTruth_Test`
-treats as a failure rather than a filter, because its per-row ignore holds exactly one entity.
-
-### Reversibility
-
-The component, its registrations, the anchors and the test are additive. Reverting means
-dropping them and re-authoring `Route1.zscen` from a windowed boot; the ground-table rows
-would be left measuring columns nothing stands on, which is harmless. `ZM_GROUND_ITEM_ID`
-values are now **genuinely frozen** -- a committed scene serializes them -- so the window
-ZM_GroundItem.h describes as "re-numberable TODAY" has closed.
-
-### Tests that lock it
-
-`Route1_GroundItemPropAnchorsCoverTheWholeRegistry`,
-`Route1_GroundItemPropsAreReachableFromTheWalkedLane`,
-`Route1_GroundItemPropsStandOnTheirOwnMeasuredColumn`, `ZM_GroundItemProp_Test`,
-`ZM_Route1GroundTruth_Test`.
-
 
 ## 2026-08-22 -- ZM-D-201 -- ground items get a SAVE MODULE, not a story flag, and the codec runs its first migration
 
