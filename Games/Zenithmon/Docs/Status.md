@@ -17,8 +17,8 @@ The S0-S7 narrative that used to fill the back half of this file moved VERBATIM 
 [History.md](History.md) on 2026-08-18, so this file can hold to the ~25-line budget
 its own template in `AgentBriefing.md` §2.3 specifies. Nothing was deleted.
 
-**★ LIVE PIN (UPDATED 2026-08-23):
-ZM boot `3394`; engine boot (Null Combat) `1650`; Null RenderTest `1741`; registry **68**.**
+**★ LIVE PIN (UPDATED 2026-08-24):
+ZM boot `3395`; engine boot (Null Combat) `1650`; Null RenderTest `1741`; registry **68**.**
 
 > **★ R1-3 (ZM-21 / ZM-D-203) — OBSERVED 2026-08-23.** `Null_vs2022_Debug_Win64_True`
 > reported **`3389 ran / 3387 passed / 0 failed`** (2 skipped), so `Tools/unit_baselines.json`
@@ -49,6 +49,21 @@ ZM boot `3394`; engine boot (Null Combat) `1650`; Null RenderTest `1741`; regist
 > could claim 71 and pass. The `registry **N**` form does not match C1's regexes either
 > (`N/M passing`, `N tests passing|registered|...`), so this line is unchecked regardless.
 
+> **★ R1-4 COMPLETE (ZM-66 / ZM-D-205) — OBSERVED 2026-08-24.**
+> `Null_vs2022_Debug_Win64_True` reported **`3395 ran / 3393 passed / 0 failed`** (2 skipped), so
+> `Tools/unit_baselines.json` moved `Zenithmon` **3394 -> 3395**. The +1 is
+> `ZM_CommittedSceneBytes/Route1CarriesTheTallGrassSystemAndThornacreAndDawnmereDoNot`.
+> **Registry UNMOVED at 68** — no automated test added. Engine `1650` and Null RenderTest `1741`
+> UNMOVED and inferred, not measured.
+>
+> **★★ THE RESULT THAT MATTERED IS WHAT DID *NOT* MOVE.** `ZM_TallGrassSystem` was attached at
+> Route 1's **call site**, not inside `ZM_QueueTerrainHostEntity` — the helper Route 1 and
+> **Thornacre** share. The obvious implementation would have given Thornacre tall grass too,
+> changing a scene ZM-D-196 rules a deliberate TRAVERSAL STUB, and it would still have looked
+> correct. Two windowed boots returned `Thornacre.zscen` and `Dawnmere.zscen` BYTE-IDENTICAL with
+> exactly one asset modified. That is the proof, and the new committed-bytes clause is what keeps
+> it true: it asserts the type name occurs **once** in Route1 and **zero** times in the other two.
+
 > **★ R1-4 (ZM-22 / ZM-D-204) — OBSERVED 2026-08-24.** `Null_vs2022_Debug_Win64_True`
 > reported **`3394 ran / 3392 passed / 0 failed`** (2 skipped), so `Tools/unit_baselines.json`
 > moved `Zenithmon` **3389 -> 3394**. The +5 are all `ZENITH_TEST` boot units:
@@ -67,7 +82,8 @@ block read one behind the manifest on all three rows until 2026-08-22 ->
 migration TU, +1 in the schema TU) -> **3388**/1650/1741 (ZM-20, committed-bytes needles
 for Dawnmere, Route1 and Thornacre) -> **3389**/1650/1741 (ZM-21/R1-3, +1: the four-gate
 payload needle) -> **3394**/1650/1741 (ZM-22/R1-4, +5: the ROUTE1 rate pin, the biome
-id-tag self-check, and three synthetic roll-seam units). Each number OBSERVED on `Null_`.
+id-tag self-check, and three synthetic roll-seam units) -> **3395**/1650/1741 (ZM-66, +1: the
+Route1-carries-TallGrassSystem committed-bytes clause). Each number OBSERVED on `Null_`.
 
 ★★ **THIS CHAIN READ `3387` FOR ZM-20 UNTIL 2026-08-23, AND THAT WAS WRONG BY ONE.**
 `28046d81` moved `Tools/unit_baselines.json` **3384 -> 3388** — a +4 — while this prose
@@ -204,7 +220,7 @@ genuinely RAN, not `DEFERRED` -- after which `git status` over the WHOLE
 
 | Asset | Bytes | SHA256 |
 |---|---|---|
-| `Route1.zscen` | 2,253 | `09E165E0888D6213E4E031B0A3D39D0F32C2BA2B37B8E5557C2F7FD38BB353B4` (**RE-AUTHORED at R1-3**, ZM-21/ZM-D-203: +374 bytes, the `Route1SouthGate` and `Route1NorthGate` entity records appended. Two consecutive windowed Debug boots, second byte-identical. Previous value `666AC621AD11C0DEA7F6B716...`, held from R1-2 step 2.) |
+| `Route1.zscen` | 2,287 | `F1486214807474E6EE91088AC5500B9BC2AA93C47618C9F81EF72F8D4898EED9` (**RE-AUTHORED at R1-4's scene-attach half**, ZM-66/ZM-D-205: +34 bytes, one `ZM_TallGrassSystem` component record appended to `Route1Terrain` after `ZM_TerrainGrass`. Two consecutive windowed Debug boots, second byte-identical. ★ `Thornacre.zscen` and `Dawnmere.zscen` came back BYTE-IDENTICAL in the same boots -- the component was attached at Route 1's call site, NOT inside the shared `ZM_QueueTerrainHostEntity` helper Thornacre also uses. Previous value `09E165E0888D6213...`, held from R1-3.) |
 | `Thornacre.zscen` | 1,923 | `DB4AC7790604F3862F67D8F0C8563C396260F9AB118ADF614275EF0314298604` (**RE-AUTHORED at R1-3**, ZM-21/ZM-D-203: +190 bytes, the `ThornacreSouthGate` entity record appended. Same two-boot proof. Previous value `A9295117F0F781D2608F33D0...`, held from R1-2 step 2.) |
 | `Dawnmere.zscen` | 5,682 | `C819C84106AA42FBB6B33C892D0C339AD75E536EA01AB6B7B9891BD6FA53F2F5` (**RE-AUTHORED at R1-3**, ZM-21/ZM-D-203: +189 bytes, one `DawnmereNorthGate` entity record appended. Two consecutive windowed Debug boots, both `sceneAuthoring=AUTHOR_DAWNMERE, warmMask=0x7, queued=0`, second byte-identical. Previous value `F163F33BBA7BD8A4606AB70BF6287E819F476C605E0F961F1C353047B0801421`, held from R1-2 step 3.) |
 | `Battle.zscen` | 4,965 | `1BEB0615F7FE62D9439471A4123E1D2140C0053AEC2991B659F7A03288C8C60A` (unchanged since 2026-08-05) |
@@ -249,13 +265,16 @@ from here on purpose: read the LIVE PIN line at the top.** One home per value.
 plus `5d9d73bf`). A new game is PARTYLESS and the starter is genuinely chosen from Professor
 Aster; `ZM_IntroBeat_Test` proves it end to end across 18 phases.
 
-**S8 ITEM 2 ("Route 1 -> town 2") IS IN PROGRESS. SLICES R1-1, R1-2 AND R1-3 ARE
-COMPLETE (ZM-D-197; ZM-D-198/199/202; ZM-D-203). R1-4 IS PARTIAL (ZM-22/ZM-D-204):
-the rate retune + id-tagged biome table + headless synthetic roll-seam proof are
-DONE; the SCENE-ATTACH half ("encounters live on Route 1" in the literal,
-in-game sense) is UNDONE and needs a windowed re-author no headless worker can
-perform -- see the R1-4 row below. THE NEXT TASK is deciding how to close that
-half (human/`needs-gpu` re-author, or re-scope) before R1-5.**
+**S8 ITEM 2 ("Route 1 -> town 2") IS IN PROGRESS. SLICES R1-1, R1-2, R1-3 AND
+R1-4 ARE COMPLETE (ZM-D-197; ZM-D-198/199/202; ZM-D-203; ZM-D-204 + ZM-66/ZM-D-205).
+R1-4's scene-attach half closed at ZM-66/ZM-D-205: `ZM_TallGrassSystem` is now
+authored onto Route 1's terrain entity ONLY (Zenithmon.cpp, mirroring the
+`Terrain`/`ZM_TerrainGrass` block; Thornacre and Dawnmere are untouched), proven
+by a new committed-bytes needle in `Tests/ZM_Tests_CommittedSceneBytes.cpp`. The
+windowed re-author of `Route1.zscen` and the observed pin/hash update are this
+commit's mechanical follow-up -- see the callout below. THE NEXT TASK is R1-5
+(trainer DATA + placement + the `Npc_ExactlyOneRowNamesARegisteredTrainer`
+rewrite).**
 
 > **★ R1-3's SOURCE AND ITS BYTES MUST LAND TOGETHER.** The four gates are authoring
 > STEPS in `Zenithmon.cpp`; the committed `.zscen` bytes only move when a **windowed
@@ -266,6 +285,21 @@ half (human/`needs-gpu` re-author, or re-scope) before R1-5.**
 > block their own fix forever. **Re-observe the three `.zscen` hashes in the
 > committed-asset table above in the same commit.** All three scenes move: Dawnmere
 > gains one entity record, Route 1 two, Thornacre one.
+
+> **★ ZM-66/ZM-D-205's SOURCE AND ITS BYTES MUST LAND TOGETHER TOO.** The scene-attach
+> step is one authoring line (`AddStep_AddComponent("ZM_TallGrassSystem")`) appended
+> immediately after Route 1's `ZM_QueueTerrainHostEntity(...)` call and before the next
+> `AddStep_CreateEntity`, landing it on the terrain host entity after `ZM_TerrainGrass`
+> (ZM-D-148 append-only ordering) -- **Route 1 ONLY**, never inside the shared helper
+> (which would also move Thornacre, a traversal STUB by ZM-D-196) and never inside
+> Dawnmere's inline block. The committed `Route1.zscen` bytes only move once a windowed
+> `Vulkan_vs2022_Debug_Win64_True` tools boot re-writes them; `Thornacre.zscen` and
+> `Dawnmere.zscen` must come back byte-identical -- the new committed-bytes clause
+> (`Route1CarriesTheTallGrassSystemAndThornacreAndDawnmereDoNot`) asserts exactly that
+> split and is RED BY DESIGN until the re-author runs (carry `--skip-unit-tests`, same
+> reason as every other R1-2/R1-3 needle above). **Re-observe Route1.zscen's row in the
+> committed-asset table above (bytes + SHA256) and the LIVE PIN line in the same commit
+> -- both are left as the orchestrator's OBSERVED numbers, deliberately not guessed here.**
 
 ### ★ WHAT R1-1 LANDED (the PURE slice -- no scene authored, no committed byte moved)
 Six new files + three modified, +16 boot units (3328 -> **3344** OBSERVED), registry
@@ -327,9 +361,10 @@ test coverage.
    the destination scene. `WAITING_FOR_SPAWN` has NO timeout. A trigger without its marker is
    a **permanent black screen**: no crash, no red test. **Hence markers land FIRST (R1-2, zero
    triggers anywhere) and ALL FOUR triggers SECOND (R1-3). DO NOT merge or reorder those two.**
-2. **`ZM_TallGrassSystem` is registered (ECS order 109) but attached to NO authored scene**, so
-   no shipped scene can emit a wild encounter. The battle plumbing exists and has simply never
-   had a producer. Route 1 is where it comes alive.
+2. **`ZM_TallGrassSystem` is registered (ECS order 109) and, as of ZM-66/ZM-D-205, authored onto
+   Route 1's terrain entity** (Zenithmon.cpp, Route 1 ONLY -- Thornacre and Dawnmere are
+   untouched, ZM-D-196). The battle plumbing existed with no producer since S5; Route 1 is where
+   it comes alive, once the windowed re-author moves `Route1.zscen`'s committed bytes.
 3. **Route 1 CANNOT be terrain-free.** `WorldSpec_TerrainByKind` reds any ROUTE/TOWN row with an
    empty terrain set, and the encounter loop is grass-density driven. Authoring needs a
    **WINDOWED `Vulkan_*_True` boot with `--skip-unit-tests`** and all three recipes warm.
@@ -341,7 +376,7 @@ test coverage.
 | R1-2 **ph.1** | ~~Per-recipe terrain materials (split out of R1-2, PURE)~~ **DONE, ZM-D-198** | 0 | none, PROVEN | R1-1 |
 | R1-2 | Author Route1 + Thornacre -- **MARKERS ONLY, zero triggers** | ~7 | creates Route1+Thornacre, re-authors Dawnmere -- **WINDOWED** | R1-1 |
 | ~~R1-3~~ | ~~**All four seam triggers in ONE commit** + round-trip proof~~ **DONE, +1 (not ~4), ZM-21/ZM-D-203 -- closes critic blocker #2** | 1 | all three, DONE -- **WINDOWED**, two boots, second byte-identical | R1-2 |
-| R1-4 | Wild encounters live + rate retune (ruling 4) -- **PARTIAL, ZM-22/ZM-D-204: rate + id-tag + synthetic roll-seam proof DONE; SCENE-ATTACH ("live") BLOCKED, see below** | ~2 | none (but "live" needs one -- see Decision 4, ZM-D-204) | R1-3 |
+| R1-4 | Wild encounters live + rate retune (ruling 4) -- **DONE: ZM-22/ZM-D-204 (rate + id-tag + synthetic roll-seam proof) + ZM-66/ZM-D-205 (scene-attach: `ZM_TallGrassSystem` authored onto Route 1's terrain entity, Route 1 ONLY)** | ~2 | Route1 only -- **WINDOWED** (ZM-66) | R1-3 |
 | R1-5 | Trainer DATA + placement + Npc claim-check rewrite | ~12 | none | R1-4 |
 | R1-6 | Author the two trainers into Route1 | ~3 | Route1 only -- **WINDOWED** | R1-5 |
 | R1-7/8 | **DROPPED from this item by ruling 1** (ground items) | -- | -- | -- |
@@ -356,11 +391,12 @@ test coverage.
 > (ZM-D-203): `ZM_CommittedSceneBytes/EverySeamGatePayloadIsAuthoredExactlyOnceInItsOwnScene`
 > needles the whole `[version][targetBuildIndex][32-byte tag]` payload per gate, and -- because
 > a COUNT alone still cannot see a swap within one file -- also pins the interleaving of the two
-> Route 1 payloads with their own entity names. **#3's FIX IS DONE (ZM-22/ZM-D-204):** the biome
+> Route 1 payloads with their own entity names. **#3 is now FULLY RESOLVED:** the biome
 > table is id-tagged + self-checked and the roll seam has a headless synthetic-density-map proof
-> (`Tests/ZM_Tests_RouteEncounterSeam.cpp`) -- but the SLICE GOAL #3 was written against
-> ("encounters live on Route 1") is not, because that needs a scene re-author of `Route1.zscen`
-> no headless worker can perform (see the R1-4 row above). #4 is still OPEN and belongs to R1-9.
+> (`Tests/ZM_Tests_RouteEncounterSeam.cpp`, ZM-22/ZM-D-204), and the SLICE GOAL #3 was written
+> against ("encounters live on Route 1") is now source-complete too (ZM-66/ZM-D-205:
+> `ZM_TallGrassSystem` authored onto Route 1's terrain entity; the windowed re-author is this
+> commit's mechanical follow-up). #4 is still OPEN and belongs to R1-9.
 1. **[R1-3] The proposed hang-guard unit CANNOT EXIST as described.**
    `Project_LoadInitialScene` is a hand-written sequence of five `RegisterSceneBuildIndex`
    calls with **no enumerable table**, and it runs **AFTER** the boot-unit suite. A boot unit
@@ -386,8 +422,10 @@ test coverage.
    `{ZM_SCENE_ID, ZM_BATTLE_BIOME}` table, and `BiomeForScene` asserts the row's own tag matches
    its index; `Tests/ZM_Tests_RouteEncounterSeam.cpp` drives the density -> tile-transition ->
    grass-gate -> `RollStepForScene` composition against a hand-built 4x4 in-memory density map.
-   **STILL OPEN:** this fixes the PROOF, not the CONTENT gap #3 exists to close -- see Decision 4
-   in ZM-D-204 and the R1-4 row above.
+   **CLOSED (ZM-66/ZM-D-205):** the CONTENT gap this line used to name is now source-complete --
+   `ZM_TallGrassSystem` is authored onto Route 1's terrain entity, Route 1 ONLY (never inside the
+   shared `ZM_QueueTerrainHostEntity` helper, which would also move Thornacre). See Decision 4 in
+   ZM-D-204 for why the gap existed, ZM-D-205 for the closing reasoning, and the R1-4 row above.
 4. **[R1-9] The three camera-clearance tests are HARD-SCOPED to Dawnmere** (`iCC_DAWNMERE_BUILD_INDEX = 2`,
    `LoadSceneByIndex` at three sites), so Route 1 rows would raycast Route 1 columns against
    the DAWNMERE physics world and mostly fall off it. The constants also live in an anonymous
@@ -430,6 +468,10 @@ test coverage.
   ALREADY-COMMITTED `Route1.zscen` (a CHANGE, not a create), which is exactly the class of work
   ZM-D-031 / the headless publish guard keeps out of a worker's reach. It needs a windowed
   `Vulkan_*_True` re-author, by a human or a `needs-gpu` tick.
+  **CLOSED at the source level by ZM-66/ZM-D-205**: `AddStep_AddComponent("ZM_TallGrassSystem")`
+  now exists at Route 1's authoring call site (Route 1 ONLY). What remains is exactly the
+  mechanical windowed re-author + observed pin/hash this bullet already described -- this
+  commit's own follow-up, not a new decision.
 
 ### ★★★ R1-2 IS IN FLIGHT. PHASE 1 IS DONE AND PUSHED; PHASE 2 IS PLANNED AND CRITIQUED, NOT STARTED.
 

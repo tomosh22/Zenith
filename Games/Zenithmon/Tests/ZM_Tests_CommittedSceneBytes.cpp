@@ -118,6 +118,8 @@ namespace
 	const char* const szZM_TYPE_WARP_TRIGGER = "ZM_WarpTrigger";
 	const char* const szZM_TYPE_SPAWN_POINT = "ZM_SpawnPoint";
 	const char* const szZM_TYPE_PLAYER_CONTROLLER = "ZM_PlayerController";
+	// R1-4 scene-attach (ZM-66/ZM-D-205): the wild-encounter producer.
+	const char* const szZM_TYPE_TALL_GRASS_SYSTEM = "ZM_TallGrassSystem";
 
 	bool GameComponentTypeIsRegistered(const char* szTypeName)
 	{
@@ -1406,6 +1408,155 @@ ZENITH_TEST(ZM_CommittedSceneBytes, EverySeamGatePayloadIsAuthoredExactlyOnceInI
 				ZM_GetThornacreReturnTargetBuildIndex(),
 				ZM_GetThornacreReturnSpawnTag(), uHits,
 				ZM_GetThornacreReturnSpawnTag());
+		}
+	}
+}
+
+// ============================================================================
+// R1-4 (ZM-66/ZM-D-205) -- THE SCENE-ATTACH NEEDLE: ZM_TallGrassSystem is
+// authored onto Route 1's terrain entity, and ROUTE 1 ONLY.
+//
+// ★★ WHY THIS IS THE PROOF THAT MATTERS. ZM-D-204 landed the retuned rate, the
+// id-tagged biome table and a headless synthetic-density-map proof that the
+// roll SEAM works -- but none of that makes a live boot on Route 1 actually
+// roll, because ZM_TallGrassSystem reached no shipped scene's terrain entity
+// at all (Status.md structural fact #2). Making that literally true is a
+// scene-authoring change, and the obvious live proof (extending
+// ZM_TallGrassEncounter_Test's shape to Route 1) would need the GITIGNORED
+// Route1 terrain bake and therefore RequestSkip() on a fresh checkout -- and a
+// skip counts as a PASS. This unit reads the TRACKED .zscen bytes directly, so
+// it is what actually runs in the gate.
+//
+// ★★ AND IT IS EQUALLY A CLAIM ABOUT WHERE THE COMPONENT MUST NOT BE.
+// ZM_QueueTerrainHostEntity (Zenithmon.cpp) authors BOTH Route 1's and
+// Thornacre's terrain host entity from ONE shared definition, so the easy
+// mistake is adding the AddStep_AddComponent call INSIDE that helper instead
+// of at the Route 1 call site -- which would give Thornacre a wild-encounter
+// surface too. ZM-D-196 rules Thornacre a TRAVERSAL STUB for this milestone
+// (terrain, one arrival marker, a player, a camera, a return trigger,
+// deliberately nothing else), so this clause asserts the negative on
+// Thornacre exactly as deliberately as it asserts the positive on Route 1.
+// Dawnmere authors its terrain host INLINE, a third independent path, and
+// gets the same negative assertion.
+//
+// ★ THE NEEDLE IS THE SERIALIZED COMPONENT TYPE NAME, validated against the
+// shared inventory (Tests/ZM_Tests_ComponentTypeNames.h) before use, same as
+// every other component-type clause in this file.
+//
+// ★ THE PREFIX TRAP DOES NOT APPLY HERE, AND THAT WAS CHECKED RATHER THAN
+// ASSUMED. "ZM_TallGrassSystem" is not a substring of, nor a superstring of,
+// any OTHER row in the shared component-type inventory, and
+// ZM_TallGrassSystem::WriteToDataStream serializes nothing but its version
+// tag -- no path, no name, no tag field -- so the string cannot arrive in a
+// .zscen via any route except the component-type-name record itself. A plain
+// equality is therefore safe here, unlike the FromLab/FromLabSpawn or
+// Player/ZM_PlayerController pairs elsewhere in this file, which both need
+// the strictly-more form.
+//
+// ★★ RED BY DESIGN UNTIL THE WINDOWED RE-AUTHOR LANDS, exactly like every
+// other R1-2/R1-3 needle in this file: the authoring step ships in the same
+// commit as this clause, but the committed Route1.zscen bytes only move when
+// a WINDOWED Vulkan_*_True tools boot re-writes them -- a headless run may
+// CREATE a .zscen but never CHANGE one. That boot MUST carry
+// --skip-unit-tests, or this failing unit aborts the boot before scene
+// authoring runs and blocks its own fix forever.
+// ============================================================================
+ZENITH_TEST(ZM_CommittedSceneBytes, Route1CarriesTheTallGrassSystemAndThornacreAndDawnmereDoNot)
+{
+	ZENITH_ASSERT_TRUE(GameComponentTypeIsRegistered(szZM_TYPE_TALL_GRASS_SYSTEM),
+		"the component TYPE needle '%s' is not a row of the shared inventory in "
+		"Tests/ZM_Tests_ComponentTypeNames.h -- reconcile the spelling before "
+		"trusting any count below, which is taken over a string nothing serializes.",
+		szZM_TYPE_TALL_GRASS_SYSTEM);
+
+	// ---- ROUTE 1: exactly once ----------------------------------------------
+	{
+		const std::string strScenePath = ZM_CommittedScenePath(ZM_SCENE_ROUTE1);
+		uint64_t ulSize = 0;
+		char* pData = Zenith_FileAccess::ReadFile(strScenePath.c_str(), ulSize);
+		ZENITH_ASSERT_NOT_NULL(pData,
+			"the committed Route1.zscen could not be read ('%s'). It is a TRACKED "
+			"asset (ZM-D-199), so this is a DEFECT and not a skip -- restore the "
+			"file or re-author it with a WINDOWED *_True tools boot.",
+			strScenePath.c_str());
+		if (pData != nullptr)
+		{
+			const u_int uHits =
+				CountNameOccurrences(pData, ulSize, szZM_TYPE_TALL_GRASS_SYSTEM);
+			Zenith_Log(LOG_CATEGORY_GAMEPLAY,
+				"[ZM_CommittedSceneBytes] '%s' %llu bytes; %s x%u",
+				strScenePath.c_str(), (unsigned long long)ulSize,
+				szZM_TYPE_TALL_GRASS_SYSTEM, uHits);
+			Zenith_FileAccess::FreeFileData(pData);
+			ZENITH_ASSERT_EQ(uHits, 1u,
+				"the committed Route1.zscen serializes %u '%s' component(s), not "
+				"exactly 1. A ZERO is the state a source-only R1-4 scene-attach "
+				"leaves behind: the AddStep_AddComponent call is in Zenithmon.cpp "
+				"but no WINDOWED *_True tools boot has re-authored and "
+				"re-committed the scene, so Route 1's grass still has no producer "
+				"and no wild encounter can ever fire. MORE than one means the "
+				"component was authored twice (check the Route 1 block was not "
+				"accidentally merged with the shared ZM_QueueTerrainHostEntity "
+				"helper, which would also serialize it once per every call site).",
+				uHits, szZM_TYPE_TALL_GRASS_SYSTEM);
+		}
+	}
+
+	// ---- THORNACRE: never ----------------------------------------------------
+	{
+		const std::string strScenePath = ZM_CommittedScenePath(ZM_SCENE_THORNACRE);
+		uint64_t ulSize = 0;
+		char* pData = Zenith_FileAccess::ReadFile(strScenePath.c_str(), ulSize);
+		ZENITH_ASSERT_NOT_NULL(pData,
+			"the committed Thornacre.zscen could not be read ('%s'). It is a "
+			"TRACKED asset (ZM-D-199), so this is a DEFECT and not a skip.",
+			strScenePath.c_str());
+		if (pData != nullptr)
+		{
+			const u_int uHits =
+				CountNameOccurrences(pData, ulSize, szZM_TYPE_TALL_GRASS_SYSTEM);
+			Zenith_Log(LOG_CATEGORY_GAMEPLAY,
+				"[ZM_CommittedSceneBytes] '%s' %llu bytes; %s x%u",
+				strScenePath.c_str(), (unsigned long long)ulSize,
+				szZM_TYPE_TALL_GRASS_SYSTEM, uHits);
+			Zenith_FileAccess::FreeFileData(pData);
+			ZENITH_ASSERT_EQ(uHits, 0u,
+				"the committed Thornacre.zscen serializes %u '%s' component(s), "
+				"not the 0 ZM-D-196 rules for this milestone. Thornacre is a "
+				"TRAVERSAL STUB by ruling -- terrain, one arrival marker, a "
+				"player, a camera, a return trigger, deliberately nothing else. "
+				"A non-zero count almost certainly means the AddStep_AddComponent "
+				"call moved INTO the shared ZM_QueueTerrainHostEntity helper, "
+				"which authors both regions' terrain host from one definition.",
+				uHits, szZM_TYPE_TALL_GRASS_SYSTEM);
+		}
+	}
+
+	// ---- DAWNMERE: never (untouched by this slice) ---------------------------
+	{
+		uint64_t ulSize = 0;
+		char* pData = Zenith_FileAccess::ReadFile(
+			szZM_COMMITTED_DAWNMERE_SCENE, ulSize);
+		ZENITH_ASSERT_NOT_NULL(pData,
+			"the committed Dawnmere.zscen could not be read ('%s'). It is a "
+			"TRACKED asset (ZM-D-148), so this is a DEFECT and not a skip.",
+			szZM_COMMITTED_DAWNMERE_SCENE);
+		if (pData != nullptr)
+		{
+			const u_int uHits =
+				CountNameOccurrences(pData, ulSize, szZM_TYPE_TALL_GRASS_SYSTEM);
+			Zenith_Log(LOG_CATEGORY_GAMEPLAY,
+				"[ZM_CommittedSceneBytes] '%s' %llu bytes; %s x%u",
+				szZM_COMMITTED_DAWNMERE_SCENE, (unsigned long long)ulSize,
+				szZM_TYPE_TALL_GRASS_SYSTEM, uHits);
+			Zenith_FileAccess::FreeFileData(pData);
+			ZENITH_ASSERT_EQ(uHits, 0u,
+				"the committed Dawnmere.zscen serializes %u '%s' component(s). "
+				"This ticket (ZM-66/ZM-D-205) authors the component onto Route "
+				"1's terrain entity ONLY and does not touch Dawnmere's authoring "
+				"block -- a non-zero count means Dawnmere was re-authored "
+				"unexpectedly, or the component reached it by some other path.",
+				uHits, szZM_TYPE_TALL_GRASS_SYSTEM);
 		}
 	}
 }

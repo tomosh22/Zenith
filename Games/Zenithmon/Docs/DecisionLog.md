@@ -15,6 +15,87 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-08-24 -- ZM-D-205 -- R1-4's scene-attach half closes: `ZM_TallGrassSystem` is authored onto Route 1's terrain entity, Route 1 ONLY
+
+**ZM-66**, closing the half of R1-4 that ZM-D-204 Decision 4 recorded as left undone rather than
+worked around. `Route1.zscen`'s terrain entity now carries `ZM_TallGrassSystem` in the authoring
+SOURCE (`Zenithmon.cpp`), appended after `ZM_TerrainGrass` inside the Route 1 authoring block --
+never inside the shared `ZM_QueueTerrainHostEntity` helper, and never inside Dawnmere's inline
+block. The windowed `Vulkan_*_True` re-author that moves `Route1.zscen`'s committed bytes, and the
+observed pin/hash update that follows it, are this commit's mechanical continuation, not a second
+decision.
+
+### Decision 1: the component is added at the ROUTE 1 CALL SITE, never inside the shared helper
+
+`ZM_QueueTerrainHostEntity` authors BOTH Route 1's and Thornacre's terrain host entity from one
+definition (ZM-D-199). Adding `ZM_TallGrassSystem` inside it would attach the component to
+Thornacre too, and ZM-D-196 rules Thornacre a TRAVERSAL STUB for this milestone -- terrain, one
+arrival marker, a player, a camera and a return trigger, deliberately nothing else. An encounter
+surface on the town scene is not a mistake that would announce itself: every existing test stays
+green, because nothing asserted Thornacre carried ZERO `ZM_TallGrassSystem` until this ticket gave
+it a reason to. So the step is appended at the Route 1 call site (`Zenithmon.cpp`, immediately
+after `ZM_QueueTerrainHostEntity(xAuto, szZM_ROUTE1_TERRAIN_ENTITY_NAME, xRoute1Recipe)` and before
+the next `AddStep_CreateEntity`), which lands it on the terrain host entity: `Zenith_Editor::
+AddComponentToSelected` always targets the current SELECTION, `Zenith_Editor::CreateEntity`
+selects the entity it just created, and nothing between the helper's return and the next arrival
+marker's `AddStep_CreateEntity` re-selects anything else. Dawnmere authors its terrain host INLINE
+-- a third, independent code path (see the ZM-D-148 comment already above it in `Zenithmon.cpp`
+explaining why it was never migrated onto the shared helper) -- and this ticket does not touch it.
+
+### Decision 2: appended AFTER `ZM_TerrainGrass`, never spliced earlier
+
+ZM-D-148: scene files carry dense authoring-order file indices. `ZM_QueueTerrainHostEntity`'s own
+comment already rules "the collider is TERRAIN + STATIC and `ZM_TerrainGrass` goes LAST".
+`ZM_TallGrassSystem` is a component NEW to Route 1's terrain entity, not a reorder of an existing
+one, so it is appended as the final step of the Route 1 terrain host block -- after the collider
+and after `ZM_TerrainGrass` -- costing one new component record on an already-authored entity
+rather than renumbering anything.
+
+### Decision 3: the CI-visible proof is a committed-bytes needle, not a live walk
+
+The DoD's "a walk into Route 1 grass produces a wild encounter" is unfalsifiable on CI as a LIVE
+claim: any test that drives the real terrain bake needs the GITIGNORED Route1 bake and
+`RequestSkip()`s on a fresh checkout, and a skip counts as a PASS -- the same shape ZM-D-204's
+Decision 3 worked around for the roll-seam proof, and the same shape every Route1/Thornacre live
+round trip in this item has always had. `Tests/ZM_Tests_CommittedSceneBytes.cpp` gets a new case,
+`Route1CarriesTheTallGrassSystemAndThornacreAndDawnmereDoNot`, needling the serialized component
+TYPE name `"ZM_TallGrassSystem"` -- `== 1` on `Route1.zscen`, `== 0` on `Thornacre.zscen` and on
+`Dawnmere.zscen`. The needle is checked against the shared inventory
+(`Tests/ZM_Tests_ComponentTypeNames.h`) before use, matching every other component-type clause in
+that file.
+
+**The prefix trap was checked, not assumed.** `ZM_TallGrassSystem` is neither a substring of, nor
+a superstring of, any other row in the shared component-type inventory, and
+`ZM_TallGrassSystem::WriteToDataStream` serializes nothing but its version tag -- no path, no
+name, no tag field -- so the string cannot reach a `.zscen` by any route except the
+component-type-name record itself. A plain equality is therefore safe here, unlike the
+`FromLab`/`FromLabSpawn` or `Player`/`ZM_PlayerController` pairs already on file in this suite,
+which both need the strictly-more form.
+
+A live windowed walk test (extending `ZM_TallGrassEncounter_Test`'s shape to Route 1) was
+considered and left undone deliberately -- it needs the same gitignored bake, so it would skip as
+a PASS on every CI run and add windowed-boot risk for a claim the committed-bytes needle already
+covers more cheaply. Recorded here rather than silently dropped; not written to `Shortfalls.md`
+by this change (out of the file list this ticket was scoped to) -- worth a deliberate follow-up
+entry there if a later slice wants Route 1's live round trip covered end to end.
+
+### Decision 4: no runtime attach hook, per ZM-D-204's own prior ruling
+
+ZM-D-204 Decision 4 already weighed and declined a runtime "on scene load, attach
+`ZM_TallGrassSystem` if the scene is a ROUTE and its terrain lacks it" hook, and this ticket does
+not revisit that: it would invent an unreviewed architectural pattern for a component whose own
+header says it owns nothing but the transition, on top of the `OnAwake`-not-firing-on-runtime-
+`AddComponent` territory this project's DecisionLog has already been burned by. The component is
+SCENE CONTENT, authored exactly like its `ZM_TerrainGrass` sibling.
+
+**Reversibility:** high. One authoring line and one test clause; reverting means dropping the
+`AddStep_AddComponent` call and re-authoring `Route1.zscen` again, windowed.
+
+**Tests:** `Tests/ZM_Tests_CommittedSceneBytes.cpp`,
+`Route1CarriesTheTallGrassSystemAndThornacreAndDawnmereDoNot`.
+
+---
+
 ## 2026-08-24 -- ZM-D-204 -- R1-4: Route 1's encounter rate is retuned via its OWN constant, the biome table is id-tagged, and the roll seam gets a headless synthetic-density-map proof -- the SCENE-ATTACH half stays UNDONE
 
 **Slice R1-4** (ZM-22), continuing the S8 item 2 chain (ZM-D-197; ZM-D-198/199/202; ZM-D-203).

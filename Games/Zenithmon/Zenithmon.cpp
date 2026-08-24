@@ -4153,6 +4153,35 @@ void Project_RegisterEditorAutomationSteps()
 		ZM_QueueTerrainHostEntity(
 			xAuto, szZM_ROUTE1_TERRAIN_ENTITY_NAME, xRoute1Recipe);
 
+		// ---- R1-4 scene-attach (ZM-66/ZM-D-205): the wild-encounter producer ---
+		//
+		// ★★ ROUTE 1 ONLY -- APPENDED HERE, NEVER INSIDE ZM_QueueTerrainHostEntity.
+		// That helper also authors Thornacre's terrain host (see the Thornacre call
+		// below), and ZM-D-196 rules Thornacre a TRAVERSAL STUB for this milestone --
+		// terrain, one arrival marker, a player, a camera and a return trigger,
+		// deliberately nothing else. Folding this step into the shared helper would
+		// give Thornacre a wild-encounter surface the design does not want, and no
+		// existing test would have caught it (nothing asserted Thornacre carried
+		// ZERO ZM_TallGrassSystem, because until this ticket nothing had reason to).
+		// Dawnmere authors its own terrain host INLINE, a third path untouched here.
+		//
+		// ★ LANDS ON THE TERRAIN HOST ENTITY because ZM_QueueTerrainHostEntity's own
+		// AddStep_CreateEntity is still the most recently SELECTED entity at this
+		// point -- nothing between its return and this line issues another
+		// CreateEntity or SelectEntityByName step, and AddComponentToSelected always
+		// targets the current selection (Zenith_Editor::CreateEntity calls
+		// SelectEntity internally).
+		//
+		// ★ APPENDED AFTER ZM_TerrainGrass, PER ZM-D-148 (dense authoring-order file
+		// indices: this is a NEW component record on an already-authored entity, not
+		// a reorder of an existing one) and per ZM_QueueTerrainHostEntity's own
+		// "goes LAST" rule for the grass component immediately above it.
+		//
+		// ★ NO RUNTIME ATTACH HOOK. ZM-D-204 Decision 4 already weighed and declined
+		// one; this ticket does not revisit that ruling. The component is SCENE
+		// CONTENT, exactly like its ZM_TerrainGrass sibling.
+		xAuto.AddStep_AddComponent("ZM_TallGrassSystem");
+
 		// ---- The two ARRIVAL markers ---------------------------------------
 		//
 		// ★★ EACH CARRIES ITS **INBOUND** TAG, RESOLVED FROM THE SOURCE REGION'S
