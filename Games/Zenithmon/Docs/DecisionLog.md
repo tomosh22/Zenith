@@ -671,6 +671,26 @@ keyed on `ZM_ITEM_ID` would exhaust both at once.
   "a world prop can be picked up into the bag" is satisfied at the logic layer only. Say so; do
   not let a later reader infer that a player can walk up to something.
 
+> **★ CORRECTION (2026-08-24, retro-annotation — the reasoning above does not hold).**
+> Both exclusions rest on "ZM-20 (Route 1 authoring) is `windowed` and still open". Every
+> clause of that is false. `ZM-20` was already **Done** when this was written;
+> `Route1.zscen` and `Thornacre.zscen` were both committed; and `windowed` had already
+> been **retired**, split into `needs-gpu` and `needs-human`. `ZM-20` carries `needs-gpu`,
+> which **gates nothing** — a GPU is assumed available and the tick simply builds
+> `Vulkan_*_True` and boots windowed, where the `.zscen` publish guard
+> (`Zenith_Editor.cpp:1423`, inside `if constexpr (Zenith_IsNullRenderer())`) is compiled
+> out entirely.
+>
+> Nothing had stopped this slice authoring the prop. The scope was cut against a
+> constraint that did not exist, `ZM-27` parked at In Review with its first
+> Definition-of-Done line unmet, and follow-ups (a) and (b) below were booked for work
+> that was reachable all along. The stale label semantics were still being taught by
+> `AgentBriefing.md`, `Board.md` and `Status.md`, which is why the orchestrator believed
+> them; all three were corrected in the same commit as this annotation.
+>
+> **The decision itself is left standing as written**, per the append-only rule — what is
+> corrected is the record of why, so the next reader does not inherit the premise.
+
 ### The three shipped rows are re-numberable TODAY and will not be for long
 
 `ZM_GROUND_ITEM_ROUTE1_SOUTH_SALVE` / `..._LANE_CATCHORB` / `..._NORTH_SALVE`, yielding 1 Salve /

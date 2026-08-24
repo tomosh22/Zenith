@@ -240,16 +240,40 @@ workflow one.
 | Label | Meaning |
 |---|---|
 | `human-gate` | the loop does the work and parks it at In Review. It never signs its own gate (I7). |
-| `windowed` | the loop **cannot** do the work. Filtered out of the queue in SQL and refused by a targeted claim. |
+| `needs-human` | the loop **cannot** do the work. Filtered out of the queue in SQL and refused by a targeted claim. |
 | `deferred` | "not yet". Filtered out of the queue in SQL, and a targeted claim takes it **anyway**. |
 
-`windowed` exists because a headless run may **CREATE** a `.zscen` but never **CHANGE**
-one. A slice that re-authors a committed scene would either no-op or trip the publish
-guard -- and the units that would notice are compiled constants that stay green, so
-the failure looks like a clean gate run with the deliverable missing.
+`needs-human` exists because some deliverables are not machine-producible at all -- a
+visual sign-off, a ruling the ticket does not contain, a board row. `ZM-30`, `ZM-58` and
+`ZM-64` carry it today.
 
-`ZM-20`, `ZM-21`, `ZM-24`, `ZM-26`, `ZM-29`, `ZM-30`, `ZM-44`, `ZM-58`, `ZM-59`,
-`ZM-63` and `ZM-64` carry it today.
+### `needs-gpu` is NOT a safety label
+
+It is deliberately absent from the table above, because **it gates nothing**. A GPU is
+assumed available and the ticket is claimed like any other; the label says only HOW to
+build -- a `Vulkan_*_True` build and a windowed run, instead of the `--headless` `Null_`
+config every gate line defaults to. The pin still comes from a `Null_` run (a Vulkan exe
+reports higher for the same tree), so the shape is **Vulkan to author, Null to verify and
+pin**. `ZM-20`, `ZM-21`, `ZM-24`, `ZM-26`, `ZM-29`, `ZM-44`, `ZM-59` and `ZM-63` carry it.
+
+**Do not ask permission to run a Vulkan build or a windowed boot.** They are ordinary
+steps of a `needs-gpu` tick.
+
+> ### These two were ONE label, and the merge cost a shipped half-story
+>
+> `windowed` meant "the loop cannot finish this" and collected unrelated reasons under
+> one word. The guard that makes scene authoring look impossible is
+> `Zenith_Editor.cpp:1423`, inside `if constexpr (Zenith_IsNullRenderer())` -- **compiled
+> out of a Vulkan build entirely**. It protects against a Null boot serializing an
+> incomplete world over a tracked asset, never against an absent human. Of the 11 tickets
+> that carried `windowed`, 8 wanted only a graphics driver and 3 wanted a person.
+>
+> **`ZM-27` is what the conflation costs.** Its worker prompt cited "`ZM-20` is still To
+> Do and is labelled `windowed`" -- ZM-20 was already Done and carries `needs-gpu`, and
+> `Route1.zscen` was committed -- and scoped the ticket down to what a `Null_` build
+> could reach. It shipped the pickup mechanism with no ECS component and no placed prop,
+> and parked at In Review with its first Definition-of-Done line unmet. Nothing had
+> stopped a Vulkan build.
 
 `deferred` exists because To Do became the queue. Several tickets defer THEMSELVES in
 prose no field captures -- `ZM-48` reads *"Zenithmon does NOT need this now"*, `ZM-47`
@@ -262,8 +286,8 @@ no gate ever going red. `ZM-47` and `ZM-48` carry it.
 trip `maxConsecutiveBlocked` and stop the whole queue over work that is merely early.
 
 **And it is the one label a targeted claim ignores**, which is the difference from
-`windowed`: `windowed` says the machine cannot produce the deliverable, so naming the
-ticket changes nothing, while a deferral is a judgement about TIMING and `/tick ZM-48`
+`needs-human`: `needs-human` says the machine cannot produce the deliverable, so naming
+the ticket changes nothing, while a deferral is a judgement about TIMING and `/tick ZM-48`
 is how a person overrules it.
 
 > **This used to be `--assignee` alone**, which protected those tickets only because

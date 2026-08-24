@@ -750,11 +750,17 @@ Next in the R1 chain is **R1-3** (ZM-21): the four seam triggers, in one commit.
 
 ## Notes for next agent
 
-* **The next task is R1-2 step 3** (`ZM-20`) — the only part of R1-2 still owed, and
-  the risky one: it re-authors Dawnmere. The cold-start block above is its brief.
-* **It is `windowed`.** A headless run may CREATE a `.zscen` but never CHANGE one, so
-  the loop cannot take it and will not try — the label is filtered out of the claim
-  query in SQL. Run it yourself, windowed, `Vulkan_*_True`, `--skip-unit-tests`.
+* **`ZM-20` (R1-2 step 3) is DONE**, along with R1-3 and R1-4. The next task is
+  **R1-5 (`ZM-23`)** — trainer DATA + placement + Npc claim-check rewrite.
+* **`windowed` no longer exists.** It was split into `needs-gpu` and `needs-human`, and
+  `ZM-20` carries `needs-gpu`. **That label gates NOTHING** — a GPU is assumed available
+  and the loop claims such a ticket like any other; it says only that the deliverable
+  needs a `Vulkan_*_True` build and a windowed run rather than the `--headless` `Null_`
+  config. The `.zscen` publish guard is `if constexpr (Zenith_IsNullRenderer())` at
+  `Zenith/Editor/Zenith_Editor.cpp:1423` and is compiled OUT of a Vulkan build, so it
+  never protected against an absent human. Read this line as *how to build*, not as
+  *run it yourself*. The pin still comes from a `Null_` run: **Vulkan to author, Null to
+  verify and pin.**
 * **Everything after it is BLOCKED behind it**, mechanically:
   `ZM-20 → ZM-21 → ZM-22 → ZM-23 → ZM-24 → ZM-25 → ZM-26 → ZM-28 → ZM-29 → ZM-30`,
   and `ZM-30` (the S8 go/no-go) blocks all five S9 stories. `zagent blocked --project ZM`

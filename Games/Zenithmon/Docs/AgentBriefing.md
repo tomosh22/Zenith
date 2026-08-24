@@ -297,12 +297,23 @@ session needs to know is short:
   order — the claim query refuses any ticket whose predecessor is unfinished, and a
   targeted claim comes back exit 4 naming the ticket to finish first. Before this,
   the R1-x chain was a column in a Markdown table and nothing enforced it.
-* **`windowed` means the loop cannot do it at all.** A headless run may CREATE a
-  `.zscen` but never CHANGE one. A slice that re-authors a committed scene would
-  either no-op or trip the publish guard — and the units that would notice are
-  compiled constants that stay green, so it looks like a clean gate run with the
-  deliverable missing. `human-gate` is a different thing: the loop does the work and
-  parks it at In Review, because it never signs its own gate (I7).
+* **`needs-gpu` gates NOTHING. `needs-human` is the one that stops the loop.** These
+  were a single label called `windowed`, and splitting them mattered: of the 11 tickets
+  that carried it, 8 wanted only a graphics driver and 3 wanted a person. `needs-gpu`
+  says HOW to build — a `Vulkan_*_True` build and a windowed run, instead of the
+  `--headless` `Null_` config every gate line defaults to — and the ticket is claimed
+  like any other. **Do not ask permission to run a Vulkan build or a windowed boot.**
+  `needs-human` means no machine can produce the deliverable: filtered out of the queue
+  and refused by a targeted claim. `human-gate` is a third thing again — the loop does
+  the whole job and parks it at In Review, because it never signs its own gate (I7).
+* **The `.zscen` publish guard is a NULL-BUILD guard, not an absent-human guard.** A
+  headless run may CREATE a `.zscen` but never CHANGE one, so a slice that re-authors a
+  committed scene would either no-op or trip the guard — and the units that would
+  notice are compiled constants that stay green, so it looks like a clean gate run with
+  the deliverable missing. But the guard is `if constexpr (Zenith_IsNullRenderer())` at
+  `Zenith/Editor/Zenith_Editor.cpp:1423`, **compiled OUT of a Vulkan build entirely**.
+  So the answer to “this ticket needs a scene edit” is `needs-gpu` and a windowed boot,
+  never a ticket the loop cannot take.
 * **`complexity` + `risk` route the MODEL; `storyPoints` size the SPRINT.** Two
   fields, two jobs. Deriving either from the other means a re-estimate silently
   reroutes the work, or a model change silently rewrites the sprint's capacity.
