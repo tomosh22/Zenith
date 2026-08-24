@@ -693,17 +693,30 @@ Zenith_Maths::Vector3 ZM_GetDawnmereLabDoorTargetXZ()
 // here -- "NOTHING is authored from this table yet" and "R1-2 step 2 is what
 // adds the marker" -- were both true when written and are both false now; it
 // was step 3, and it has landed.
+//
+// ★ ZM-65 ADDED A SECOND ROW, DawnmereNorthGate, BELOW THE FIRST -- closing
+// ZM-D-203 §5's scoped deviation (the north seam gate's centre Y used to borrow
+// the FromRoute1 row's measurement instead of having its own; see the R1-3
+// block in the header for the corrected cost reasoning). It was authored
+// UNMEASURED and FROZEN at 24.29772 in the same commit, and Dawnmere was
+// re-authored from a windowed boot -- so BOTH rows are frozen and the deviation
+// is CLOSED.
 // ============================================================================
 
 namespace
 {
-	// ==== R1-2 MEASURED ROUTE SEAM GROUND -- NOT YET FROZEN ====
+	// ==== R1-2 / ZM-65 MEASURED ROUTE SEAM GROUND -- BOTH ROWS FROZEN ====
 	//
-	// ★★ THIS ROW IS AN EXPLICIT, INVALID PLACEHOLDER, exactly as the ten lab rows
-	// above were before 2026-08-14. fZM_DAWNMERE_ROUTE_SEAM_GROUND_UNMEASURED is
-	// NOT a height and is nowhere near one, and
-	// ZM_Interaction/RouteSeamGround_StandsOnTheFromRoute1LandmarkAndIsMeasured is
-	// RED until it is replaced -- deliberately, and its message says so.
+	// ★★ NEITHER ROW IS A PLACEHOLDER ANY MORE. Each was authored carrying
+	// fZM_DAWNMERE_ROUTE_SEAM_GROUND_UNMEASURED -- which is NOT a height and is
+	// nowhere near one -- and each was then frozen from a real raycast:
+	// FromRoute1Spawn on 2026-08-15, DawnmereNorthGate on 2026-08-24.
+	// ZM_Interaction/RouteSeamGround_EachRowStandsOnItsOwnAnchorAndIsMeasured is
+	// GREEN, and it hard-reds if EITHER row ever returns to the sentinel.
+	//
+	// The freeze procedure below is kept because it is what a RE-measure follows
+	// (a recipe, seed, flatten-radius or collision-density change re-measures
+	// every table in this file), not because anything here is currently unfrozen.
 	//
 	// TO FREEZE: run ZM_DawnmereRouteSeamGroundTruth_Test
 	// (Tests/ZM_AutoTests_CameraClearance.cpp) against a warm Dawnmere terrain
@@ -745,8 +758,50 @@ namespace
 		// NEAR their targets too. Do not treat a near-target measurement there as a
 		// broken probe.
 		{ "FromRoute1Spawn",   fZM_DAWNMERE_FROM_ROUTE1_X, fZM_DAWNMERE_FROM_ROUTE1_Z, 24.36592f },
+		// FROZEN 2026-08-24 (ZM-65, closing ZM-D-203 §5 -- see the header) from
+		// ZM_DawnmereRouteSeamGroundTruth_Test against a warm Dawnmere bake:
+		// hitTerrain=1, finalHit='DawnmereTerrain', resolved=1, playerPresent=1
+		// (the capsule was found and correctly IGNORED by the probe). The same
+		// run re-read row 0 at tableError=0.00000, so the probe agreed with the
+		// 2026-08-15 freeze on the column that had not moved.
+		//
+		// The north seam gate's OWN column, 12 m north of the row above. X/Z are
+		// the gate's existing compiled constants
+		// (Source/World/ZM_DawnmerePlacement.h), read here rather than
+		// re-spelled; both containments (the "RouteGate" pad's 30 m flatten
+		// radius, the "Route" path's 18 m flatten radius) are stated where those
+		// constants are declared.
+		//
+		// ★★ THE DEVIATION'S REAL COST WAS 0.068 m, NOT THE 0.37 m PREDICTED --
+		// AND THE PREDICTION'S *SIGN* IS THE HALF THAT MATTERED. 24.29772 is
+		// 0.0682 m BELOW row 0's 24.36592, i.e. the borrowed column sat slightly
+		// ABOVE this one. That is the favourable sign ZM-D-206 reasoned to, so
+		// the derived value never endangered the sensor -- but note it is also
+		// INSIDE this oracle's own 0.15 m tolerance, which is why no test could
+		// ever have caught the deviation by watching the number. It was only ever
+		// visible as a MISSING ROW, which is the whole argument of ZM-D-203
+		// Decision 1.
+		//
+		// ★ IT IS ALSO AN ORDER OF MAGNITUDE UNDER THE OTHER REGIONS' 12 m DELTAS
+		// (Thornacre 0.254, Route 1 south 0.475, Route 1 north 0.962), AND THAT
+		// IS NOT EXPLAINED. Do not invent a reason for it. The obvious one --
+		// "those pairs straddle a flatten boundary and this one does not" -- is
+		// FALSE, and the recipe data inverts it: Thornacre's pair sits inside the
+		// RouteGate pad {512,96} r=30 (ZM_TerrainAuthoring.cpp; ZM_ThornacrePlacement.h
+		// says so in as many words), and both Route 1 pairs sit inside their own
+		// r=30 gate pads AND within the DirtLane's r=16 corridor. All three
+		// comparison pairs are IDENTICALLY contained on both columns. The pair
+		// here is the only one whose two columns differ in containment at all
+		// (row 0 in the "Route" corridor alone, row 1 also inside "RouteGate"),
+		// and it moved the LEAST.
+		//
+		// So the honest statement is: four measured 12 m seam pairs span 0.068 to
+		// 0.962 m and nothing in this repo currently accounts for the spread.
+		// ★ THEREFORE DO NOT GENERALISE 0.068 INTO "SEAM PAIRS ARE CLOSE" -- the
+		// rule stands, on measurement rather than on a mechanism.
+		{ "DawnmereNorthGate", fZM_DAWNMERE_NORTH_GATE_X, fZM_DAWNMERE_NORTH_GATE_Z, 24.29772f },
 	};
-	// ==== END R1-2 MEASURED ROUTE SEAM GROUND ====
+	// ==== END R1-2 / ZM-65 MEASURED ROUTE SEAM GROUND ====
 
 	// The bound is DEDUCED, never spelled, for the reason both tables above give:
 	// an explicit [ZM_DAWNMERE_ROUTE_SEAM_SAMPLE_COUNT] would make this a

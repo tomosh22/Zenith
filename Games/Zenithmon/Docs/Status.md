@@ -57,6 +57,41 @@ ZM boot `3395`; engine boot (Null Combat) `1650`; Null RenderTest `1741`; regist
 > It is scoped to this block on purpose — the history chain below is legitimately full of
 > superseded numbers.
 
+> **★ ZM-65 / ZM-D-206 — ZM-D-203 §5's DEVIATION IS CLOSED. OBSERVED 2026-08-24.**
+> `DawnmereNorthGate` now has its own measured route-seam row instead of borrowing the
+> `FromRoute1` arrival column 12 m south. **Measured `24.29772`** —
+> `ZM_DawnmereRouteSeamGroundTruth_Test` against a warm Dawnmere bake:
+> `name=DawnmereNorthGate paste=24.29772f xz=(512.000, 876.000)`, `hitTerrain=1`,
+> `finalHit='DawnmereTerrain'`, `resolved=1`, `playerPresent=1` and correctly ignored.
+> The same run re-read row 0 at `tableError=0.00000`, so the probe agreed with the
+> 2026-08-15 freeze on the column that had not moved — which is what makes this a
+> measurement of the gate column rather than of a drifted probe.
+> `Dawnmere.zscen` re-authored, **±0 bytes** (a float moved in place); two consecutive
+> windowed boots, second byte-identical, oracle PASSED on both. `Route1.zscen` and
+> `Thornacre.zscen` byte-identical in the same boots.
+>
+> **★★ THE NUMBER ARGUES AGAINST THE TICKET'S OWN PREMISE, AND FOR ZM-D-203 DECISION 1.**
+> The ticket reasoned from the other regions' 12 m deltas (Thornacre 0.254, Route 1 south
+> 0.475, Route 1 north 0.962) that Dawnmere's gate must be materially mis-seated, and
+> ZM-D-206 predicted **−0.37 m**. The truth is **−0.068 m** — right in sign, wrong by 5×,
+> and **inside the oracle's own 0.150 m tolerance**. So a derived row would have PASSED the
+> ground-truth check had one ever pointed at this column: the deviation was never
+> detectable by watching the value, only as a MISSING ROW. That is exactly Decision 1's
+> claim that a rule living only in prose is what lets a seam ship half-built, and it is the
+> real answer to "was this worth a ticket rather than a comment" — the cost was not the
+> error, it was that nothing in the repo could have told you the error was small.
+>
+> **★ DO NOT GENERALISE 0.068 INTO "SEAM PAIRS ARE CLOSE" — AND DO NOT EXPLAIN IT EITHER.**
+> The rule stands on measurement, not on a mechanism. An earlier draft of this block claimed
+> the other regions' pairs "differ in flatten CONTAINMENT" while this one does not; **that was
+> fabricated and the recipe data inverts it**, as the ZM-65 review found. Thornacre's pair sits
+> inside the `RouteGate` pad `{512,96} r=30` (`ZM_ThornacrePlacement.h` says so in as many
+> words), and both Route 1 pairs sit inside their own r=30 gate pads *and* the `DirtLane`
+> corridor — all three comparison pairs are **identically** contained on both columns. The
+> Dawnmere pair is the only one whose columns differ in containment at all, and it moved the
+> **least**. The honest statement: four measured 12 m seam pairs span 0.068–0.962 m and nothing
+> in this repo accounts for the spread.
+
 > **★ R1-4 COMPLETE (ZM-66 / ZM-D-205) — OBSERVED 2026-08-24.**
 > `Null_vs2022_Debug_Win64_True` reported **`3395 ran / 3393 passed / 0 failed`** (2 skipped), so
 > `Tools/unit_baselines.json` moved `Zenithmon` **3394 -> 3395**. The +1 is
@@ -230,7 +265,7 @@ genuinely RAN, not `DEFERRED` -- after which `git status` over the WHOLE
 |---|---|---|
 | `Route1.zscen` | 2,287 | `F1486214807474E6EE91088AC5500B9BC2AA93C47618C9F81EF72F8D4898EED9` (**RE-AUTHORED at R1-4's scene-attach half**, ZM-66/ZM-D-205: +34 bytes, one `ZM_TallGrassSystem` component record appended to `Route1Terrain` after `ZM_TerrainGrass`. Two consecutive windowed Debug boots, second byte-identical. ★ `Thornacre.zscen` and `Dawnmere.zscen` came back BYTE-IDENTICAL in the same boots -- the component was attached at Route 1's call site, NOT inside the shared `ZM_QueueTerrainHostEntity` helper Thornacre also uses. Previous value `09E165E0888D6213...`, held from R1-3.) |
 | `Thornacre.zscen` | 1,923 | `DB4AC7790604F3862F67D8F0C8563C396260F9AB118ADF614275EF0314298604` (**RE-AUTHORED at R1-3**, ZM-21/ZM-D-203: +190 bytes, the `ThornacreSouthGate` entity record appended. Same two-boot proof. Previous value `A9295117F0F781D2608F33D0...`, held from R1-2 step 2.) |
-| `Dawnmere.zscen` | 5,682 | `C819C84106AA42FBB6B33C892D0C339AD75E536EA01AB6B7B9891BD6FA53F2F5` (**RE-AUTHORED at R1-3**, ZM-21/ZM-D-203: +189 bytes, one `DawnmereNorthGate` entity record appended. Two consecutive windowed Debug boots, both `sceneAuthoring=AUTHOR_DAWNMERE, warmMask=0x7, queued=0`, second byte-identical. Previous value `F163F33BBA7BD8A4606AB70BF6287E819F476C605E0F961F1C353047B0801421`, held from R1-2 step 3.) |
+| `Dawnmere.zscen` | 5,682 | `E607281BAB6C91236B7D2DE36684D433B63C20DA896A941184350CF280126C9A` (**RE-AUTHORED at ZM-65/ZM-D-206**: **±0 bytes** — `DawnmereNorthGate`'s centre Y moved in place, from the borrowed `FromRoute1` column to its own measured row, so a float field changed and no record was added or removed. `ZM_GetDawnmereNorthGateCentreY()` now reads `24.29772 + scaleY*0.5` instead of `24.36592 + scaleY*0.5` — the gate sits **0.068 m lower**. Two consecutive windowed Debug boots, both `sceneAuthoring=AUTHOR_DAWNMERE, warmMask=0x7, queued=0`, second byte-identical, `ZM_DawnmereRouteSeamGroundTruth_Test` PASSED on both. ★ `Route1.zscen` and `Thornacre.zscen` came back BYTE-IDENTICAL in the same boots. Previous value `C819C84106AA42FBB6B33C892D0C339AD75E536EA01AB6B7B9891BD6FA53F2F5`, held from R1-3.) |
 | `Battle.zscen` | 4,965 | `1BEB0615F7FE62D9439471A4123E1D2140C0053AEC2991B659F7A03288C8C60A` (unchanged since 2026-08-05) |
 | `FrontEnd.zscen` | 29,740 | `D44D540512F1C373A5D5E747CE7FA76E7D19B467F5F1563EB298E229EEFBEDB5` |
 | `PlayerHome.zscen` | 1,832 | `DBBFB78311A55BBF942A7A5BF9928F43E9493A10CDA89110515A3B6A7987C780` (unchanged since 2026-08-05) |
@@ -544,8 +579,11 @@ load-bearing content is transcribed below):
 `ZM_DawnmereRouteSeamGroundTruth_Test` (registry 64 -> **65**) measured the `FromRoute1` column
 `(512, 864)` against the CURRENT committed scene and it is **FROZEN at `24.36592f`**
 (`hitTerrain=1`, `finalHit='DawnmereTerrain'`, `playerPresent=1` and correctly ignored).
-`ZM_Interaction/RouteSeamGround_StandsOnTheFromRoute1LandmarkAndIsMeasured` pins it; boot
-3345 -> **3346**.
+`ZM_Interaction/RouteSeamGround_EachRowStandsOnItsOwnAnchorAndIsMeasured` pins it; boot
+3345 -> **3346**. (That unit was named `…StandsOnTheFromRoute1LandmarkAndIsMeasured` when this
+block was written; **ZM-65 renamed it**, because a second row — `DawnmereNorthGate` — mirrors no
+`FromRoute1` landmark and the old name asserted something false of it. The rename is recorded
+here rather than left dangling: the historical claim above is unchanged and still true.)
 
 > **★★ THE MEASUREMENT CONTRADICTED ITS OWN PREDICTION, AND THE CORRECTION MATTERS FOR THE REST
 > OF THE ITEM.** The column was predicted at ~25.6-26.5, extrapolated from Dawnmere's other

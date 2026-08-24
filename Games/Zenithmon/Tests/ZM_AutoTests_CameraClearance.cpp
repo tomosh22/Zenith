@@ -1630,40 +1630,50 @@ static const Zenith_AutomatedTest g_xZMDawnmereLabGroundTruthTest = {
 ZENITH_AUTOMATED_TEST_REGISTER(g_xZMDawnmereLabGroundTruthTest);
 
 // ============================================================================
-// (4) ZM_DawnmereRouteSeamGroundTruth_Test (R1-2 step 1) -- the ROUTE 1 ARRIVAL
-// SEAM measurement oracle.
+// (4) ZM_DawnmereRouteSeamGroundTruth_Test (R1-2 step 1; ZM-65 generalised it to
+// every row) -- the ROUTE 1 ARRIVAL SEAM measurement oracle.
 //
-// Same job as (1) and (3) for ONE column: cast a real downward ray at the
-// Dawnmere terrain recipe's "FromRoute1" landmark (512, 864), LOG the value at
-// LOG_CATEGORY_UNITTEST on every run, and red if the compiled row in
-// Source/World/ZM_DawnmerePlacement.h has drifted from the surface the world
-// actually has.
+// Same job as (1) and (3), walked over EVERY row of the route-seam table: cast a
+// real downward ray at each compiled column, LOG the value at
+// LOG_CATEGORY_UNITTEST on every run, and red if any compiled row in
+// Source/World/ZM_DawnmerePlacement.cpp has drifted from the surface the world
+// actually has. Two rows today -- FromRoute1 (frozen 2026-08-15) and the north
+// seam gate's own column, DawnmereNorthGate (added by ZM-65, still unfrozen) --
+// and the loop below does not know or care how many rows there are.
 //
 // ★★ WHY THIS EXISTS BEFORE THE THING IT SERVES, AND WHY THAT ORDER IS THE WHOLE
-// POINT. Slice R1-2 will author a "FromRoute1" arrival marker into the COMMITTED
-// Dawnmere.zscen so the Route 1 return leg has somewhere to land. Nobody has ever
-// measured the ground at that column. Authoring first would move a tracked asset
-// -- one that has drifted twice in this project's history (ZM-D-179, ZM-D-183) --
-// before knowing the column was usable, with "revert a committed asset" as the
-// only recovery. The measurement does not depend on the marker, so it goes first,
-// and this run therefore measures PURE TERRAIN against the CURRENT committed
-// scene, with no route-seam geometry in the world at all.
+// POINT. Slice R1-2 authored a "FromRoute1" arrival marker into the COMMITTED
+// Dawnmere.zscen so the Route 1 return leg has somewhere to land, and R1-3
+// authored the north seam gate itself -- but seated on a BORROWED column (see
+// ZM-D-203 §5 and the R1-3 block in Source/World/ZM_DawnmerePlacement.h) because
+// nobody had ever measured its own ground. Both times, authoring first would
+// have moved a tracked asset -- one that has drifted twice in this project's
+// history (ZM-D-179, ZM-D-183) -- before knowing the column was usable, with
+// "revert a committed asset" as the only recovery. The measurement does not
+// depend on the marker, so it goes first, and this run therefore measures PURE
+// TERRAIN against the CURRENT committed scene, with no route-seam geometry in
+// the world at all.
 //
-// On this run the row it checks against is the deliberate UNMEASURED SENTINEL, so
-// the height clause is EXPECTED TO RED until the printed literal is pasted in and
-// the binary rebuilt. That is the measure -> freeze -> rebuild loop, and this test
-// is its instrument -- exactly as the lab oracle above was for SC-D.
+// On this run, a row still holding the deliberate UNMEASURED SENTINEL is
+// EXPECTED TO RED until its printed literal is pasted in and the binary
+// rebuilt; a row already frozen is expected to stay inside tolerance. That is
+// the measure -> freeze -> rebuild loop, once per row, and this test is its
+// instrument -- exactly as the lab oracle above was for SC-D's ten.
 //
-// ★ THE IGNORE ENTITY IS THE PLAYER, AND IT BUYS NOTHING TODAY. In the committed
-// Dawnmere the player capsule stands at the town centre (512, 480), 384 m south of
-// this column, so nothing can be over it right now. It is passed anyway for the
-// SECOND run of this oracle: once R1-2 lands, the return leg WARPS the player to
-// precisely this column, so a later batch can easily leave the capsule standing on
-// the very ground being measured -- the self-confirming-measurement hazard the
-// Home oracle guards against at the town centre and the W5 NPC oracle guards
-// against at each anchor. Ignoring it now means the same column stays measurable
-// afterwards, which is the same forward-looking reason the lab's door rows sit half
-// a metre out into the forecourt.
+// ★ THE IGNORE ENTITY IS THE PLAYER, AND IT BUYS NOTHING TODAY, FOR EITHER ROW.
+// In the committed Dawnmere the player capsule stands at the town centre
+// (512, 480), 384 m south of the FromRoute1 column and 396 m south of the
+// DawnmereNorthGate column 12 m further on, so nothing can be over either of
+// them right now. It is passed anyway for the SECOND run of this oracle against
+// each row: the FromRoute1 return leg already WARPS the player to precisely that
+// column, and the north gate sensor -- once authored from its own frozen row --
+// will send an outbound player standing close to ITS column, so a later batch
+// can easily leave the capsule standing on the very ground being measured -- the
+// self-confirming-measurement hazard the Home oracle guards against at the town
+// centre and the W5 NPC oracle guards against at each anchor. Ignoring it now
+// means the same columns stay measurable afterwards, which is the same
+// forward-looking reason the lab's door rows sit half a metre out into the
+// forecourt.
 //
 // ★ AND AN ABSENT PLAYER IS "THERE IS NO BODY TO IGNORE", NEVER A FAILURE. Only
 // the TERRAIN is required here: it is what every probe must terminate on, and a
@@ -1679,15 +1689,22 @@ ZENITH_AUTOMATED_TEST_REGISTER(g_xZMDawnmereLabGroundTruthTest);
 // pass here: CCProbeGroundAt only sets m_bHitTerrain when the hit entity IS the
 // terrain, and Verify names whatever it did hit via CCDescribeEntity.
 //
-// ★ THE PROBE WINDOW IS REUSED UNCHANGED, AND IS SIZED FROM THE TOWN-CENTRE
-// ANCHOR RATHER THAN FROM THE ROW. CCProbeGroundAt starts 10 m above the
-// reference and runs 20 m, i.e. a 15.99 .. 35.99 window around Dawnmere's measured
-// town-centre feet. The expectation for this column is ~25.6 .. 26.5 (see the R1-2
-// block in Source/World/ZM_DawnmerePlacement.h for the corridor arithmetic behind
-// that), comfortably inside it. Sizing the window from the ROW instead would start
-// the ray a million metres below the world while the sentinel is in place, find
-// nothing, and time out WITHOUT EVER PRINTING A MEASUREMENT -- i.e. the freeze loop
-// could never close. That is the same trap the lab oracle documents.
+// ★ THE PROBE WINDOW IS REUSED UNCHANGED FOR EVERY ROW, AND IS SIZED FROM THE
+// TOWN-CENTRE ANCHOR RATHER THAN FROM THE ROW. CCProbeGroundAt starts 10 m above
+// the reference and runs 20 m, i.e. a 15.99 .. 35.99 window around Dawnmere's
+// measured town-centre feet. FromRoute1's real measurement (24.36592) sits
+// comfortably inside it, and DawnmereNorthGate is expected close by: both
+// columns sit in graded corridors (see the R1-3 block in
+// Source/World/ZM_DawnmerePlacement.h for the corridor arithmetic and why the
+// original ~25.6 .. 26.5 prediction for a graded column read too high once a
+// real measurement landed). Sizing the window from the ROW instead would start
+// the ray a million metres below the world while a sentinel is in place, find
+// nothing, and time out WITHOUT EVER PRINTING A MEASUREMENT -- i.e. the freeze
+// loop could never close for that row. That is the same trap the lab oracle
+// documents, and it is why the window's REFERENCE is a compile-time constant --
+// the town-centre feet height -- rather than anything read from the table. The
+// probe itself is still called once per row inside the loop; what never varies
+// per row is where the ray starts.
 //
 // ★ SKIPS ON THE GITIGNORED BAKE ONLY. A missing Dawnmere.zscen is a missing
 // TRACKED asset, which is a defect and is reported as a failure -- see the
@@ -1888,9 +1905,9 @@ namespace
 		{
 			Zenith_Log(LOG_CATEGORY_UNITTEST,
 				"[ZM_DawnmereRouteSeamGroundTruth] SKIPPED -- no baked Dawnmere terrain, "
-				"so nothing was measured. The R1-2 route-seam ground table in "
-				"Source/World/ZM_DawnmerePlacement.cpp is UNVERIFIED on this run, and if "
-				"it still holds its sentinel it CANNOT be frozen from a run that "
+				"so nothing was measured. The R1-2 / ZM-65 route-seam ground table in "
+				"Source/World/ZM_DawnmerePlacement.cpp is UNVERIFIED on this run, and any "
+				"row that still holds the sentinel CANNOT be frozen from a run that "
 				"skipped.");
 			return true;
 		}
@@ -1903,9 +1920,9 @@ namespace
 				: "no player entity was found, so the probe ignores nothing and measures "
 					"whatever is over the column");
 
-		// ★ THE PASTE-READY LOG, EMITTED ON EVERY RUN, PASS OR FAIL. This is how the
-		// R1-2 route-seam row is obtained in the first place and re-obtained after a
-		// terrain change: replace the row's
+		// ★ THE PASTE-READY LOG, EMITTED ON EVERY RUN, PASS OR FAIL, ONE LINE PER ROW.
+		// This is how each R1-2 / ZM-65 route-seam row is obtained in the first place
+		// and re-obtained after a terrain change: replace that row's
 		// fZM_DAWNMERE_ROUTE_SEAM_GROUND_UNMEASURED initialiser in
 		// Source/World/ZM_DawnmerePlacement.cpp with the `paste=` literal, keying on
 		// the row NAME (the table is in this same order).
@@ -1917,7 +1934,7 @@ namespace
 			CCDescribeEntity(g_axRSGTProbes[u].m_xFinalHitEntity, acFinal);
 			Zenith_Log(LOG_CATEGORY_UNITTEST,
 				"[ZM_DawnmereRouteSeamGroundTruth] MEASURED FEET Y -- PASTE row %u of "
-				"the R1-2 MEASURED ROUTE SEAM GROUND table in "
+				"the R1-2 / ZM-65 MEASURED ROUTE SEAM GROUND table in "
 				"Source/World/ZM_DawnmerePlacement.cpp: name=%s paste=%.5ff "
 				"xz=(%.3f, %.3f) table=%.5f tableError=%.5f | resolved=%d hitTerrain=%d "
 				"finalHit='%s'",
@@ -1971,12 +1988,16 @@ namespace
 				Zenith_Error(LOG_CATEGORY_UNITTEST,
 					"[ZM_DawnmereRouteSeamGroundTruth] '%s': the compiled feet height "
 					"%.5f is %.5f m off the terrain surface %.5f (tolerance %.3f). If it "
-					"reads %.1f this row is still the R1-2 SENTINEL and has never been "
-					"frozen -- paste the `paste=` literal above into the R1-2 MEASURED "
-					"ROUTE SEAM GROUND block in Source/World/ZM_DawnmerePlacement.cpp and "
-					"rebuild. If it reads a real height far outside ~25.6 .. 26.5, that "
-					"is a FINDING about the Route corridor for R1-3, not a tolerance to "
-					"widen.",
+					"reads %.1f this row is still UNMEASURED "
+					"(fZM_DAWNMERE_ROUTE_SEAM_GROUND_UNMEASURED) and has never been "
+					"frozen -- paste the `paste=` literal above for THIS row's name into "
+					"the R1-2 / ZM-65 MEASURED ROUTE SEAM GROUND block in "
+					"Source/World/ZM_DawnmerePlacement.cpp and rebuild. If it reads a "
+					"real height far from the recipe's flatten target (~24 m -- see that "
+					"row's own comment in ZM_DawnmerePlacement.cpp for why a graded "
+					"corridor column reads close to it rather than the higher "
+					"un-flattened band), that is a FINDING about the Route corridor, not "
+					"a tolerance to widen.",
 					xSample.m_szEntityName, (double)xSample.m_fFeetY, (double)fError,
 					(double)g_axRSGTProbes[u].m_fFeetY, (double)fCC_HEIGHT_TOLERANCE,
 					(double)fZM_DAWNMERE_ROUTE_SEAM_GROUND_UNMEASURED);

@@ -15,6 +15,154 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-08-24 -- ZM-D-206 -- ZM-65: the north gate gets its own MEASURED route-seam row, closing ZM-D-203 §5, and that section's cost claim is corrected for sign dependence
+
+> **★ READ THIS FIRST — the sections below were drafted BEFORE the measurement and describe a
+> commit that did not ship.** They say the row ships unfrozen, that the deviation is not yet
+> closed, that the two tests are red by design, and that the change "moves no scene byte". **None
+> of that is true of the commit this entry ships in.** The measurement was taken in the same tick:
+> the row is FROZEN at `24.29772`, both tests are GREEN, `Dawnmere.zscen` WAS re-authored
+> (±0 bytes, a float in place), and the deviation is CLOSED. The pre-measurement text is kept —
+> it is the reasoning that produced the prediction, and the ★★ MEASURED block below is only
+> meaningful against it — but every claim in it about what this commit DOES is superseded here.
+> The framing was caught by the ZM-65 review, not by any gate.
+
+**ZM-65**, opening the follow-up ZM-D-203 §5 recorded as owed. The route-seam table
+(`Source/World/ZM_DawnmerePlacement.cpp`) gains a second row, `DawnmereNorthGate`, and
+`ZM_GetDawnmereNorthGateCentreY()` (`Source/World/ZM_DawnmerePlacement.h`) now reads it instead of
+borrowing the `FromRoute1` row 12 m south. **The new row ships at
+`fZM_DAWNMERE_ROUTE_SEAM_GROUND_UNMEASURED`, exactly as `FromRoute1` did before its 2026-08-15
+freeze — this commit does NOT close the deviation, it makes closing it a one-value paste.** The
+measurement itself needs a real downward raycast against a warm Dawnmere bake, which a source-only
+change cannot produce.
+
+### Decision 1: the row is added and the accessor re-pointed, in source, before the value exists
+
+`ZM_DAWNMERE_ROUTE_SEAM_SAMPLE` gains `ZM_DAWNMERE_ROUTE_SEAM_SAMPLE_NORTH_GATE`, appended before
+`_COUNT` (never spliced in, for the reason every enum in this file gives: a deduced bound turns a
+forgotten row into a compile error rather than a silently zero-initialised one). Its X/Z are
+`fZM_DAWNMERE_NORTH_GATE_X` / `fZM_DAWNMERE_NORTH_GATE_Z` -- the header's own gate-column constants,
+read rather than re-spelled. `ZM_GetDawnmereNorthGateCentreY()` is re-pointed at the new row NOW,
+ahead of the freeze, so the source-level fix (closing the one-column-per-anchor deviation) and the
+data-level fix (measuring the real ground) are independently visible: a reviewer can see the accessor
+reads its own row without needing to trust a number nobody has measured yet.
+
+**What this means until the freeze lands.** `ZM_GetDawnmereNorthGateCentreY()` currently returns a
+value built from the sentinel (~-1,000,000 m), and `ZM_DawnmereRouteSeamGroundTruth_Test`
+(`Tests/ZM_AutoTests_CameraClearance.cpp`) and the route-seam pin unit (Decision 3 below) are RED BY
+DESIGN. Nothing headless calls `ZM_GetDawnmereNorthGate()` -- its only caller anywhere in the repo is
+the tools-only authoring site in `Zenithmon.cpp` -- so nothing else observes the garbage value before
+the freeze and windowed re-author land.
+
+### Decision 2: ZM-D-203 §5's cost claim was sign-dependent, and did not say so
+
+The original note read: *"a 4 m-tall box seated on a neighbouring column is at worst ~1 m out of
+plumb against a 1.8 m body, so the sensor still spans the walked capsule."* That holds ONLY when the
+borrowed column sits AT OR ABOVE the gate's own true ground. Had the gate's real ground been 1.8 m
+LOWER than the borrowed `FromRoute1` column, the box would have had NO overlap with a capsule
+standing on the real ground, and the sensor would never have fired -- not a cosmetic seating error
+but a dead trigger. Nothing before this ticket checked which side of that line the real ground was on.
+
+**The expected sign is favourable.** `(512, 876)` sits inside BOTH the `"RouteGate"` pad's 30 m
+flatten radius and the `"Route"` path's 18 m flatten radius (3.71 m from the path), while the
+borrowed `(512, 864)` column sits in the path corridor alone, outside the pad's radius. A column
+flattened by two dabs is expected to land closer to the recipe's target height than one flattened by
+a single dab, so the gate's real ground is PREDICTED around -0.37 m against the `FromRoute1`
+measurement (24.36592) -- the favourable direction. This is a PREDICTION, stated before the
+measurement so the measurement can contradict it, exactly as `FromRoute1`'s own pre-measurement
+prediction (`~25.6 .. 26.5`) was corrected once its real raycast landed (see that row's own comment
+in `Source/World/ZM_DawnmerePlacement.cpp`).
+
+Both the header block (`Source/World/ZM_DawnmerePlacement.h`, immediately above
+`ZM_GetDawnmereNorthGateCentreY()`) and this entry carry the correction. ZM-D-203 §5's own text is
+left UNCHANGED (append-only) rather than edited in place.
+
+**★★ MEASURED 2026-08-24: `24.29772`. The prediction was RIGHT IN SIGN and WRONG BY 5x.**
+`ZM_DawnmereRouteSeamGroundTruth_Test` against a warm Dawnmere bake reported
+`name=DawnmereNorthGate paste=24.29772f xz=(512.000, 876.000)`, `hitTerrain=1`,
+`finalHit='DawnmereTerrain'`, `resolved=1`, `playerPresent=1` and correctly ignored. The same run
+re-read row 0 at `tableError=0.00000`, so the probe agreed with the 2026-08-15 freeze on the column
+that had not moved -- which is what makes this a measurement of the gate column rather than of a
+drifted probe.
+
+The real delta against `FromRoute1`'s `24.36592` is **-0.068 m**, not the predicted **-0.37 m**. The
+two-dabs-land-closer-to-target reasoning holds DIRECTIONALLY; what it over-estimated is how far a
+second flatten dab moves ground a single dab had already driven to the same 24.0 m target. Both
+columns are graded lane; only the erosion pass separates them.
+
+**★ AND THE NUMBER VINDICATES ZM-D-203 DECISION 1 RATHER THAN THIS TICKET'S PREMISE.** 0.068 m is
+INSIDE the oracle's own 0.150 m tolerance, so a derived row would have PASSED the ground-truth check
+had one ever pointed at this column. The deviation was never detectable by watching the value -- it
+was only ever visible as a MISSING ROW. That is exactly Decision 1's claim that a rule living only
+in prose is what lets a seam ship half-built, and it is the answer to "was this worth a ticket
+rather than a comment": the cost was not the 0.37 m of error anyone predicted, it was that nothing
+in the repo could have told you the error was small.
+
+It is also an order of magnitude under the other regions' 12 m deltas (Thornacre 0.254, Route 1
+south 0.475, Route 1 north 0.962), **and that is NOT explained.**
+
+**★ A FABRICATED EXPLANATION WAS CAUGHT HERE BY REVIEW, AND IT IS WORTH RECORDING AS ITSELF.**
+The first draft of this entry asserted the reason was structural -- *"those pairs differ in
+flatten CONTAINMENT, while both rows here sit inside the `Route` corridor"*. **That is false and
+the recipe data inverts it.** Thornacre's pair sits inside the `RouteGate` pad `{512,96} r=30`
+(`ZM_TerrainAuthoring.cpp`; `ZM_ThornacrePlacement.h` states it outright: *"only 12 m apart
+inside one 30 m flatten pad"*), and both Route 1 pairs sit inside their own r=30 gate pads AND
+within the `DirtLane`'s r=16 corridor. All three comparison pairs are **identically contained on
+both columns**. The pair measured here is the **only** one whose two columns differ in
+containment (row 0 in the `Route` corridor alone, row 1 also inside `RouteGate`) -- and it moved
+the **least**, which is the opposite of what the invented mechanism predicts.
+
+The honest statement is: four measured 12 m seam pairs span 0.068 to 0.962 m and nothing in this
+repo currently accounts for the spread. **Do not generalise 0.068 into "seam pairs are close"** --
+that rule stands on measurement, not on a mechanism -- and do not re-derive a mechanism for it
+without checking the pad and path radii in `ZM_TerrainAuthoring.cpp` first.
+
+★ The defect is instructive beyond this number. It was written by the ORCHESTRATOR, not by the
+worker, in the same commit as three correct measurements -- a plausible causal story attached to
+real data. Every gate went green: `doc_lint`'s seven checks read registry counts, roadmap ids,
+superseded markers, file-existence claims, links and pin equality, and none of them cross-reads a
+containment claim against a terrain recipe. Only an adversarial reader with the recipe open
+could see it.
+
+### Decision 3: the pin renamed, from one row to two
+
+`ZM_Interaction/RouteSeamGround_StandsOnTheFromRoute1LandmarkAndIsMeasured`
+(`Tests/ZM_Tests_DawnmerePlacement.cpp`) checked exactly one row against exactly one terrain-recipe
+landmark; neither is true of a two-row table where the second row has no landmark of its own. Renamed
+to `RouteSeamGround_EachRowStandsOnItsOwnAnchorAndIsMeasured`. It still: reds on ANY row holding the
+unmeasured sentinel (the tripwire, generalised to a loop rather than weakened); checks `FromRoute1`
+against the Dawnmere recipe's `"FromRoute1"` landmark BY NAME (Thornacre carries a landmark of the
+same name at `(512, 112)`, so the lookup must stay recipe-scoped); and checks `DawnmereNorthGate`
+against the header's own gate-column constants, its actual mirror. A new clause asserts the two
+frozen rows cannot read the identical height, guarding against a paste-time copy once both are frozen.
+
+### Decision 4: the oracle needed no code change, only corrected prose
+
+`ZM_DawnmereRouteSeamGroundTruth_Test` (`Tests/ZM_AutoTests_CameraClearance.cpp`) already walked
+`[0, ZM_GetDawnmereRouteSeamSampleCount())` and printed one labelled `paste=` line per row -- written
+that way when the table held one row, matching the Lab oracle's shape rather than hardcoding a count.
+Adding the second row required no loop change, no slot-bound change (`uRSGT_SAMPLE_SLOTS = 4` already
+covers it) and no new static_assert. The surrounding block comment, which described "ONE column" and
+quoted the now-corrected `~25.6 .. 26.5` predicted band, was rewritten to describe both rows honestly.
+
+**Tests that lock it:** `ZM_Interaction/RouteSeamGround_EachRowStandsOnItsOwnAnchorAndIsMeasured`
+(Decision 3) and `ZM_DawnmereRouteSeamGroundTruth_Test` (the oracle). Both were red by design while
+the row held the sentinel and both are **GREEN as shipped** -- the oracle PASSED on two consecutive
+windowed boots, reporting `tableError=-0.00000` for `DawnmereNorthGate` and `0.00000` for
+`FromRoute1Spawn`. The pin unit hard-reds if EITHER row ever returns to the sentinel. Neither
+`ZM_Tests_CommittedSceneBytes.cpp` nor any other headless unit reads `ZM_GetDawnmereNorthGate()`'s
+Y, so nothing else moves; the ZM boot pin is UNCHANGED at 3395 (a rename, not a new unit).
+
+**Reversibility:** MEDIUM, and the "HIGH / source-only / moves no scene byte" this line originally
+carried was **wrong for the commit that actually shipped** -- the freeze landed in the same tick, so
+`Dawnmere.zscen` DID move. Reverting means restoring the source AND re-authoring Dawnmere from a
+windowed boot, exactly as any other route-seam change does. That matters more here than the word
+"medium" suggests: `Dawnmere.zscen` is a tracked binary that has silently drifted twice
+(ZM-D-179, ZM-D-183), so a revert that skips the re-author leaves the committed bytes describing a
+gate the source no longer places.
+
+---
+
 ## 2026-08-24 -- ZM-D-205 -- R1-4's scene-attach half closes: `ZM_TallGrassSystem` is authored onto Route 1's terrain entity, Route 1 ONLY
 
 **ZM-66**, closing the half of R1-4 that ZM-D-204 Decision 4 recorded as left undone rather than

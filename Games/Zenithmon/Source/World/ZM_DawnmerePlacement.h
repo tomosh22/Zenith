@@ -869,7 +869,8 @@ Zenith_Maths::Vector3 ZM_GetDawnmereLabDoorTargetXZ();
 // constants below MIRROR that landmark rather than reading it (this header is
 // pure and must not depend on ZM_TerrainAuthoring), which is exactly why the
 // mirror is a boot unit rather than a comment:
-// ZM_Interaction/RouteSeamGround_StandsOnTheFromRoute1LandmarkAndIsMeasured.
+// ZM_Interaction/RouteSeamGround_EachRowStandsOnItsOwnAnchorAndIsMeasured (the
+// rename is ZM-65's -- see the R1-3 block below for the second row it added).
 // ★ THE NAME "FromRoute1" IS NOT UNIQUE ACROSS RECIPES -- Thornacre carries one
 // too, at (512, 112) -- so that lookup reads the DAWNMERE recipe by name and
 // nothing here may be checked against "the FromRoute1 landmark" in the abstract.
@@ -898,10 +899,15 @@ Zenith_Maths::Vector3 ZM_GetDawnmereLabDoorTargetXZ();
 // loosening the boot unit below would hide exactly the thing this slice was
 // sequenced to find out.
 //
-// ★★ THE ROW SHIPS AS THE FILE'S UNMEASURED SENTINEL, exactly as the lab table
-// above shipped before its 2026-08-14 freeze. It is NOT a height and is nowhere
-// near one, and the boot unit below is RED BY DESIGN until it is replaced.
-// TO FREEZE IT: run ZM_DawnmereRouteSeamGroundTruth_Test
+// ★★ THIS ROW SHIPPED AS THE FILE'S UNMEASURED SENTINEL and was FROZEN at
+// 24.36592 on 2026-08-15, exactly as the lab table above was on 2026-08-14. The
+// sentinel is NOT a height and is nowhere near one, and the boot unit below is
+// RED BY DESIGN whenever a row still holds it -- which no row does today
+// (ZM-65 froze the second row, DawnmereNorthGate, on 2026-08-24).
+// (This paragraph read "THE ROW SHIPS AS … RED BY DESIGN until it is replaced"
+// for nine days after the freeze that falsified it. The procedure below is what
+// a RE-measure follows, not a description of the current state.)
+// TO (RE-)FREEZE A ROW: run ZM_DawnmereRouteSeamGroundTruth_Test
 // (Tests/ZM_AutoTests_CameraClearance.cpp) on a boot with a warm Dawnmere
 // terrain bake, read the single `paste=` literal it logs at
 // LOG_CATEGORY_UNITTEST on EVERY run, replace the row's
@@ -943,6 +949,13 @@ enum ZM_DAWNMERE_ROUTE_SEAM_SAMPLE : u_int
 	// capsule half-extent to it, so a wrong value puts the arriving player
 	// embedded in the ground or falling out of the air.
 	ZM_DAWNMERE_ROUTE_SEAM_SAMPLE_FROM_ROUTE1,
+	// The north seam gate's OWN column (ZM-D-203 §5, closed by ZM-65). Before
+	// this row existed, ZM_GetDawnmereNorthGateCentreY() borrowed the row above
+	// -- 12 m south of the gate -- because a new route-seam row cannot be
+	// produced without a real raycast against a warm bake. See that function,
+	// further down this file, for the sign-dependence the borrowing's cost claim
+	// used to omit.
+	ZM_DAWNMERE_ROUTE_SEAM_SAMPLE_NORTH_GATE,
 
 	ZM_DAWNMERE_ROUTE_SEAM_SAMPLE_COUNT
 };
@@ -1201,37 +1214,78 @@ static_assert(
 static_assert(fZM_DAWNMERE_NORTH_GATE_SCALE_Y > fZM_HUMAN_BODY_HEIGHT,
 	"the north gate is not taller than a person, so the sensor can be stepped over");
 
-// ★★ THE GATE'S CENTRE Y IS DERIVED FROM THE **ARRIVAL** COLUMN, AND THAT IS A
-// KNOWN DEVIATION FROM THE ONE-COLUMN-PER-ANCHOR RULE THE ROUTE 1 AND THORNACRE
-// HEADERS BOTH STATE. Write down why, because the rule is right and this is a
-// scoped exception rather than a disagreement with it:
+// ★★ THE GATE'S CENTRE Y USED TO BE DERIVED FROM THE **ARRIVAL** COLUMN -- A
+// KNOWN, SCOPED DEVIATION FROM THE ONE-COLUMN-PER-ANCHOR RULE THE ROUTE 1 AND
+// THORNACRE HEADERS BOTH STATE (ZM-D-203 §5). ZM-65 closes it STRUCTURALLY: the
+// gate now reads its OWN row, ZM_DAWNMERE_ROUTE_SEAM_SAMPLE_NORTH_GATE, below.
+// The history stays, because it explains a claim this file made and got only
+// half right:
 //
 //   * Route 1 and Thornacre each measure their gate column separately, and their
 //     frozen tables show the ground genuinely moves over 12 m -- Thornacre's two
 //     columns differ by 0.254 m, Route 1's south pair by 0.475 m and its north
-//     pair by 0.962 m. So a dedicated column IS the correct long-term answer
-//     here too.
-//   * What R1-3 cannot do is PRODUCE one. A new row in the route-seam table has
-//     to be a real downward raycast against the baked Dawnmere heightfield; an
-//     unmeasured row would ship as a placeholder that
+//     pair by 0.962 m. So a dedicated column was always the correct long-term
+//     answer here too.
+//   * What R1-3 could not do was PRODUCE one on the spot. A new row in the
+//     route-seam table has to be a real downward raycast against the baked
+//     Dawnmere heightfield; an unmeasured row ships as a placeholder that
 //     ZM_DawnmereRouteSeamGroundTruth_Test reds on (0.15 m tolerance) and that
-//     no source-only change can close. The table is also pinned at exactly ONE
-//     row by ZM_Interaction/RouteSeamGround_StandsOnTheFromRoute1LandmarkAndIsMeasured,
-//     which is outside this slice's file list.
-//   * What the deviation COSTS is bounded and small: a 4 m-tall box seated on a
-//     neighbouring column is at worst ~1 m out of plumb against a 1.8 m body, so
-//     the sensor still spans the walked capsule from below its feet to well over
-//     its head. It is a cosmetic seating error, not a sensor that can be missed.
+//     no source-only change can close. R1-3 therefore borrowed the FromRoute1
+//     row 12 m south instead of leaving the gate unseated.
+//   * ★★ WHAT THE BORROWING COST WAS SIGN-DEPENDENT, AND THE ORIGINAL NOTE DID
+//     NOT SAY SO. It read: "a 4 m-tall box seated on a neighbouring column is at
+//     worst ~1 m out of plumb against a 1.8 m body, so the sensor still spans
+//     the walked capsule." That holds ONLY when the borrowed column sits AT OR
+//     ABOVE the gate's own true ground. If the gate's real ground had been
+//     1.8 m LOWER than the borrowed FromRoute1 column, there would have been NO
+//     overlap between the box and a capsule standing on the real ground, and
+//     the sensor would never have fired -- not a cosmetic seating error but a
+//     dead trigger. Nothing before ZM-65 checked which side of that line the
+//     real ground was on.
+//   * ★ THE EXPECTED SIGN IS FAVOURABLE, WHICH IS WHY THE UNCHECKED CLAIM
+//     HAPPENED TO BE SAFE. (512, 876) sits inside BOTH the "RouteGate" pad's
+//     30 m flatten radius and the "Route" path's 18 m flatten radius (3.71 m
+//     from the path), while the borrowed (512, 864) column sits in the path
+//     corridor ALONE, outside the pad's radius -- the two containments stated
+//     above this block. A column flattened by two dabs is expected to land
+//     closer to the recipe's target height than one flattened by a single dab,
+//     so the gate's real ground is PREDICTED around -0.37 m against the
+//     FromRoute1 measurement (24.36592) -- the favourable direction, nowhere
+//     near the >= 1.8 m adverse threshold above. This is a PREDICTION, stated
+//     before the measurement so the measurement can contradict it, exactly as
+//     the FromRoute1 row's own pre-measurement prediction was stated in the
+//     R1-2 block above (and was itself corrected once the real raycast
+//     landed).
 //
-// ★ THE OWED FOLLOW-UP, NAMED SO IT IS NOT LOST: measure (512, 876) against a
-// warm Dawnmere bake, give it its own route-seam row, and re-point the
-// derivation below at that row. That change re-authors Dawnmere.zscen (this Y
-// lands in the committed bytes), so it belongs with a slice that is already
-// doing a windowed re-author.
+// ★ STATUS: FROZEN 2026-08-24 at 24.29772 (ZM-65). The row was authored at
+// fZM_DAWNMERE_ROUTE_SEAM_GROUND_UNMEASURED, exactly as the FromRoute1 row was
+// before its 2026-08-15 freeze, and ZM_DawnmereRouteSeamGroundTruth_Test plus
+// the route-seam pin unit (Tests/ZM_Tests_DawnmerePlacement.cpp,
+// ZM_Interaction/RouteSeamGround_EachRowStandsOnItsOwnAnchorAndIsMeasured -- the
+// rename is ZM-65's, since the old name no longer fit a two-row table) were RED
+// BY DESIGN until the measurement landed. `ZM_GetDawnmereNorthGateCentreY()` now
+// reads this row's OWN column; the ZM-D-203 §5 deviation is CLOSED.
+//
+// ★★ THE PREDICTION ABOVE WAS RIGHT IN SIGN AND WRONG BY 5x IN MAGNITUDE, AND
+// THE SIGN IS THE HALF THAT MATTERED. The measurement is 24.29772 against the
+// FromRoute1 row's 24.36592 -- **-0.068 m**, not the predicted -0.37 m. The
+// two-dabs-land-closer-to-target reasoning holds directionally; what it
+// over-estimated is how far a SECOND flatten dab moves ground that a single dab
+// had already driven to the same 24.0 m target. Both columns are graded; only
+// the erosion pass separates them.
+//
+// ★ SO THE DEVIATION WAS NEVER DETECTABLE BY WATCHING THE NUMBER. 0.068 m is
+// INSIDE this oracle's own 0.150 m tolerance, so a derived row would have passed
+// the ground-truth check had one ever pointed at this column. The deviation was
+// only ever visible as a MISSING ROW -- which is precisely ZM-D-203 Decision 1's
+// argument, and the reason this was worth a ticket rather than a comment.
+//
+// This Y lands in the committed Dawnmere bytes, so the freeze and the windowed
+// re-author belong to the same commit.
 inline float ZM_GetDawnmereNorthGateCentreY()
 {
 	return ZM_DawnmereRouteSeamSampleFeetY(
-			ZM_DAWNMERE_ROUTE_SEAM_SAMPLE_FROM_ROUTE1)
+			ZM_DAWNMERE_ROUTE_SEAM_SAMPLE_NORTH_GATE)
 		+ fZM_DAWNMERE_NORTH_GATE_SCALE_Y * 0.5f;
 }
 

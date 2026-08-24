@@ -1984,20 +1984,23 @@ ZENITH_TEST(ZM_Interaction, LabSampleAccessors_AreTotalOnEveryDegenerateId)
 }
 
 // ============================================================================
-// R1-2 STEP 1 -- THE ROUTE 1 ARRIVAL SEAM'S MEASURED GROUND
+// R1-2 STEP 1 / ZM-65 -- THE ROUTE 1 ARRIVAL SEAM'S MEASURED GROUND, TWO ROWS
 //
-// ★★ THIS UNIT IS RED BY DESIGN UNTIL THE R1-2 FREEZE LANDS, AND THAT IS ITS JOB
-// RATHER THAN A DEFECT. The route-seam row in Source/World/ZM_DawnmerePlacement.cpp
-// ships at fZM_DAWNMERE_ROUTE_SEAM_GROUND_UNMEASURED -- a deliberate, invalid
-// sentinel -- because nobody has ever measured the ground at (512, 864) and this
-// slice deliberately measures it BEFORE anything is authored into the committed
-// Dawnmere.zscen. Two clauses below red on that, loudly, and name the freeze that
-// closes them:
+// ★★ THIS UNIT IS RED BY DESIGN UNTIL EVERY ROW'S FREEZE LANDS, AND THAT IS ITS
+// JOB RATHER THAN A DEFECT. The route-seam table in
+// Source/World/ZM_DawnmerePlacement.cpp holds two rows: FromRoute1 (R1-2, frozen
+// 2026-08-15) and DawnmereNorthGate (ZM-65, closing the ZM-D-203 §5 scoped
+// deviation from the one-column-per-anchor rule). A row still shipping at
+// fZM_DAWNMERE_ROUTE_SEAM_GROUND_UNMEASURED -- a deliberate, invalid sentinel --
+// means nobody has yet measured its ground, and this slice deliberately
+// measures each column BEFORE anything using it is authored into the committed
+// Dawnmere.zscen. The clauses below red on an unmeasured row, loudly, and name
+// the freeze that closes it:
 //
 //     RUN ZM_DawnmereRouteSeamGroundTruth_Test
 //     (Games/Zenithmon/Tests/ZM_AutoTests_CameraClearance.cpp) AGAINST A WARM
-//     DAWNMERE TERRAIN BAKE, PASTE ITS `paste=` LITERAL INTO THE
-//     "R1-2 MEASURED ROUTE SEAM GROUND" BLOCK IN
+//     DAWNMERE TERRAIN BAKE, PASTE THE `paste=` LITERAL FOR THE UNFROZEN ROW'S
+//     NAME INTO THE "R1-2 / ZM-65 MEASURED ROUTE SEAM GROUND" BLOCK IN
 //     Source/World/ZM_DawnmerePlacement.cpp, AND REBUILD.
 //
 // This is the same measure -> freeze -> rebuild loop S8 SC-D ran for the ten lab
@@ -2006,11 +2009,14 @@ ZENITH_TEST(ZM_Interaction, LabSampleAccessors_AreTotalOnEveryDegenerateId)
 // LabGroundSamples_NoRowSilentlyRepeatsAnother) are the worked example.
 //
 // ★ WHAT THIS UNIT CAN AND CANNOT SEE. It is a claim about COMPILED CONSTANTS: it
-// binds the row's XZ to the terrain recipe's reserved landmark and bounds its
-// height against the recipe's own flatten target. It touches no heightfield, so it
-// CANNOT prove the frozen value matches the terrain -- a plausible-but-wrong height
-// inside the band passes every clause here. Only the oracle can catch that, and the
-// oracle RequestSkips without a gitignored bake, which is precisely why this unit
+// binds the FromRoute1 row's XZ to the terrain recipe's reserved landmark, binds
+// the DawnmereNorthGate row's XZ to the header's own gate-column constants (it
+// has no terrain-recipe landmark of its own -- see the R1-3 block in
+// Source/World/ZM_DawnmerePlacement.h), and bounds both rows' height against the
+// recipe's own flatten target. It touches no heightfield, so it CANNOT prove a
+// frozen value matches the terrain -- a plausible-but-wrong height inside the
+// band passes every clause here. Only the oracle can catch that, and the oracle
+// RequestSkips without a gitignored bake, which is precisely why this unit
 // exists to carry the CI-visible weight.
 // ============================================================================
 
@@ -2030,38 +2036,48 @@ namespace
 	// un-flattened field, and every degenerate default (0, the sentinel, a Y from
 	// another scene).
 	//
-	// ★ IF A REAL MEASUREMENT LANDS OUTSIDE THIS, THE FINDING IS THAT THE ROUTE
-	// CORRIDOR DOES NOT ACTUALLY REACH THE ARRIVAL COLUMN -- an R1-3 terrain-recipe
-	// question -- NOT that the band should be widened. The corridor arithmetic this
-	// expectation rests on is written out in the R1-2 block in
-	// Source/World/ZM_DawnmerePlacement.h: (512, 864) sits 4.56 m from the "Route"
-	// path's (512, 928) -> (500, 760) segment against an 18 m flatten radius, and the
-	// "RouteGate" pad (r = 30 at (512, 896)) is 32 m away and does NOT reach it.
+	// ★ IF A REAL MEASUREMENT LANDS OUTSIDE THIS, THE FINDING IS THAT THE
+	// CORRIDOR DOES NOT ACTUALLY REACH THE COLUMN -- a terrain-recipe question --
+	// NOT that the band should be widened. The corridor arithmetic each row's
+	// expectation rests on is written out in the R1-2 / R1-3 blocks in
+	// Source/World/ZM_DawnmerePlacement.h: FromRoute1 (512, 864) sits 4.56 m from
+	// the "Route" path's (512, 928) -> (500, 760) segment against an 18 m flatten
+	// radius, and the "RouteGate" pad (r = 30 at (512, 896)) is 32 m away and does
+	// NOT reach it -- ONE flatten dab. DawnmereNorthGate (512, 876), added by
+	// ZM-65, sits inside BOTH: 3.71 m from the same path segment AND 20 m from
+	// the RouteGate pad centre, inside its 30 m radius -- TWO flatten dabs, so
+	// its real measurement is expected closer still to the target than
+	// FromRoute1's own 24.36592. Reused for both rows rather than split in two,
+	// because a band wide enough for the weaker (single-dab) case comfortably
+	// admits the stronger one.
 	constexpr float fROUTE_SEAM_GROUND_BAND_HALF_WIDTH = 4.0f;
 }
 
-ZENITH_TEST(ZM_Interaction, RouteSeamGround_StandsOnTheFromRoute1LandmarkAndIsMeasured)
+ZENITH_TEST(ZM_Interaction, RouteSeamGround_EachRowStandsOnItsOwnAnchorAndIsMeasured)
 {
-	// (a) SHAPE. One row, and the accessor agrees with its own enum. A table that
-	// grew or collapsed would make every clause below measure something else.
+	// (a) SHAPE. Two rows now -- FromRoute1 (R1-2) and the north seam gate's own
+	// column (ZM-D-203 §5, ZM-65) -- and the accessor agrees with its own enum. A
+	// table that grew or collapsed would make every clause below measure
+	// something else.
 	const u_int uCount = ZM_GetDawnmereRouteSeamSampleCount();
 	ZENITH_ASSERT_EQ(uCount, (u_int)ZM_DAWNMERE_ROUTE_SEAM_SAMPLE_COUNT,
 		"the route-seam sample accessor disagrees with its own enum");
-	ZENITH_ASSERT_EQ(uCount, 1u,
-		"the route-seam ground table no longer holds exactly the one arrival column "
-		"R1-2 measures");
+	ZENITH_ASSERT_EQ(uCount, 2u,
+		"the route-seam ground table no longer holds exactly the two rows this "
+		"unit checks -- FromRoute1 and the north gate's own column");
 
-	// (b) THE SITE IS RESERVED IN THE TERRAIN RECIPE, AND THIS IS WHERE THE TWO ARE
-	// TIED TOGETHER. ZM_DawnmerePlacement.h is pure and cannot include terrain
-	// authoring, so it MIRRORS the landmark; this is what makes the mirror safe.
-	// The lookup is BY NAME on the DAWNMERE recipe specifically -- Thornacre carries
-	// a "FromRoute1" landmark of its own at (512, 112), so "the FromRoute1 landmark"
-	// in the abstract names two different columns in two different worlds.
+	// (b) THE FromRoute1 ROW IS RESERVED IN THE TERRAIN RECIPE, AND THIS IS WHERE
+	// THE TWO ARE TIED TOGETHER. ZM_DawnmerePlacement.h is pure and cannot include
+	// terrain authoring, so it MIRRORS the landmark; this is what makes the mirror
+	// safe. The lookup is BY NAME on the DAWNMERE recipe specifically -- Thornacre
+	// carries a "FromRoute1" landmark of its own at (512, 112), so "the FromRoute1
+	// landmark" in the abstract names two different columns in two different
+	// worlds.
 	const ZM_TerrainLandmarkSpec* pxLandmark = LabFindLandmark("FromRoute1");
 	ZENITH_ASSERT_NOT_NULL(pxLandmark,
 		"the Dawnmere terrain recipe no longer carries the 'FromRoute1' landmark -- "
 		"the Route 1 return leg has no reserved arrival column, so there is nothing "
-		"for this table to be a measurement OF");
+		"for the FromRoute1 row to be a measurement OF");
 	if (pxLandmark == nullptr)
 	{
 		return;
@@ -2090,11 +2106,39 @@ ZENITH_TEST(ZM_Interaction, RouteSeamGround_StandsOnTheFromRoute1LandmarkAndIsMe
 		"'FromRoute1' landmark z=%.5f", xSeam.m_szEntityName, xSeam.m_fZ,
 		pxLandmark->m_xPosition.m_fZ);
 
+	// (b2) THE NORTH-GATE ROW HAS NO TERRAIN-RECIPE LANDMARK OF ITS OWN -- IT
+	// MIRRORS THE HEADER'S COMPILED GATE COLUMN INSTEAD. ZM_DawnmerePlacement.h
+	// derives fZM_DAWNMERE_NORTH_GATE_X/Z arithmetically (12 m north of
+	// fZM_DAWNMERE_FROM_ROUTE1_Z), so the row this unit checks is checked against
+	// THOSE constants rather than against a second landmark lookup that does not
+	// exist.
+	//
+	// ★ THIS CLAUSE IS WEAKER THAN (b) ABOVE AND THE DIFFERENCE MATTERS. (b)
+	// compares row 0 against the INDEPENDENTLY authored terrain recipe, so it can
+	// see the two drift apart. The row below is INITIALISED FROM the very
+	// constants it is compared against (ZM_DawnmerePlacement.cpp), so the two
+	// sides move together and this clause cannot see that kind of drift at all --
+	// the self-referential-guard shape. What it DOES catch is a future hand-typed
+	// literal in the row replacing the symbolic initialiser, which is a real and
+	// cheap thing to guard. Do not read it as (b)'s equal, and do not delete it
+	// on the grounds that it is not.
+	const ZM_DawnmereNpcAnchor& xGate = ZM_GetDawnmereRouteSeamSample(
+		ZM_DAWNMERE_ROUTE_SEAM_SAMPLE_NORTH_GATE);
+	ZENITH_ASSERT_EQ_FLOAT(xGate.m_fX, fZM_DAWNMERE_NORTH_GATE_X, 0.0f,
+		"the route-seam row '%s' is measured at x=%.5f, not on the header's own "
+		"fZM_DAWNMERE_NORTH_GATE_X (%.5f)", xGate.m_szEntityName, xGate.m_fX,
+		fZM_DAWNMERE_NORTH_GATE_X);
+	ZENITH_ASSERT_EQ_FLOAT(xGate.m_fZ, fZM_DAWNMERE_NORTH_GATE_Z, 0.0f,
+		"the route-seam row '%s' is measured at z=%.5f, not on the header's own "
+		"fZM_DAWNMERE_NORTH_GATE_Z (%.5f)", xGate.m_szEntityName, xGate.m_fZ,
+		fZM_DAWNMERE_NORTH_GATE_Z);
+
 	// (c) THE BAND'S CENTRE IS ONE NUMBER, NOT TWO. The recipe states its nominal
 	// height twice -- once as the flatten TARGET and once as every landmark's
 	// metadata Y -- and the band below is stated against the target. If those two
 	// ever part, the band would be centred on something the landmark disagrees with,
-	// so they are pinned to each other here rather than assumed.
+	// so they are pinned to each other here rather than assumed. Checked against
+	// the FromRoute1 landmark, the only one of the two rows with metadata to check.
 	const float fTarget = ZM_GetDawnmereTerrainRecipe().m_fTargetHeight;
 	ZENITH_ASSERT_EQ_FLOAT(pxLandmark->m_xPosition.m_fY, fTarget, fLAB_EXACT_EPSILON,
 		"the 'FromRoute1' landmark's metadata height %.5f is no longer the Dawnmere "
@@ -2102,44 +2146,85 @@ ZENITH_TEST(ZM_Interaction, RouteSeamGround_StandsOnTheFromRoute1LandmarkAndIsMe
 		"height have parted, so the band below is centred on the wrong one",
 		pxLandmark->m_xPosition.m_fY, fTarget);
 
-	// (d) ★★ THE FREEZE TRIPWIRE. This is the clause that says, in CI, that R1-2
-	// step 1 has not finished. It is RED ON PURPOSE while the row holds the
-	// sentinel.
+	// (d) ★★ THE FREEZE TRIPWIRE, FOR EVERY ROW. This is the clause that says, in
+	// CI, that a row has not been measured yet. It is RED ON PURPOSE while ANY row
+	// holds the sentinel -- today, DawnmereNorthGate.
 	//
-	// Both height clauses read through ZM_DawnmereRouteSeamSampleFeetY rather than
-	// off the row struct, so the id-taking accessor is exercised too: wired to the
-	// wrong table it would hand back a lab or Home height, and only a clause that
-	// actually calls it can see that.
-	const float fSeamFeetY =
-		ZM_DawnmereRouteSeamSampleFeetY(ZM_DAWNMERE_ROUTE_SEAM_SAMPLE_FROM_ROUTE1);
-	ZENITH_ASSERT_EQ_FLOAT(fSeamFeetY, xSeam.m_fFeetY, 0.0f,
-		"ZM_DawnmereRouteSeamSampleFeetY disagrees with the row it is supposed to be "
-		"reading -- one of the two route-seam accessors is wired to another table");
-	ZENITH_ASSERT_GT(
-		std::fabs(fSeamFeetY - fZM_DAWNMERE_ROUTE_SEAM_GROUND_UNMEASURED),
-		fLAB_EXACT_EPSILON,
-		"the route-seam row '%s' still holds "
-		"fZM_DAWNMERE_ROUTE_SEAM_GROUND_UNMEASURED (%.1f), which is not a height. The "
-		"R1-2 measure -> freeze -> rebuild loop has not closed: run "
+	// Every row's height clause reads through ZM_DawnmereRouteSeamSampleFeetY
+	// rather than off the row struct, so the id-taking accessor is exercised too:
+	// wired to the wrong table it would hand back a lab or Home height, and only a
+	// clause that actually calls it can see that.
+	u_int uStillUnmeasured = 0u;
+	for (u_int u = 0u; u < uCount; ++u)
+	{
+		const ZM_DawnmereNpcAnchor& xRow = ZM_GetDawnmereRouteSeamSample(u);
+		const float fRowFeetY = ZM_DawnmereRouteSeamSampleFeetY(u);
+		ZENITH_ASSERT_EQ_FLOAT(fRowFeetY, xRow.m_fFeetY, 0.0f,
+			"ZM_DawnmereRouteSeamSampleFeetY(%u) disagrees with row '%s' -- the "
+			"id-taking accessor is wired to another table", u, xRow.m_szEntityName);
+		if (std::fabs(fRowFeetY - fZM_DAWNMERE_ROUTE_SEAM_GROUND_UNMEASURED)
+			<= fLAB_EXACT_EPSILON)
+		{
+			++uStillUnmeasured;
+		}
+	}
+	ZENITH_ASSERT_EQ(uStillUnmeasured, 0u,
+		"%u of the %u route-seam rows still hold "
+		"fZM_DAWNMERE_ROUTE_SEAM_GROUND_UNMEASURED (%.1f), which is not a height. "
+		"The measure -> freeze -> rebuild loop has not closed for them: run "
 		"ZM_DawnmereRouteSeamGroundTruth_Test against a warm Dawnmere terrain bake, "
-		"paste its `paste=` literal into the R1-2 MEASURED ROUTE SEAM GROUND block in "
-		"Source/World/ZM_DawnmerePlacement.cpp, and rebuild. NOTHING may be authored "
-		"into Dawnmere from this row until it does",
-		xSeam.m_szEntityName, fZM_DAWNMERE_ROUTE_SEAM_GROUND_UNMEASURED);
+		"paste each unmeasured row's `paste=` literal into the R1-2 / ZM-65 "
+		"MEASURED ROUTE SEAM GROUND block in Source/World/ZM_DawnmerePlacement.cpp, "
+		"and rebuild. NOTHING may be authored from an unmeasured row until it does",
+		uStillUnmeasured, uCount, fZM_DAWNMERE_ROUTE_SEAM_GROUND_UNMEASURED);
 
-	// (e) THE BAND ITSELF, once frozen. A graded lane deposits 1.5 - 2.6 m above the
-	// target; +/- 4 m admits that and nothing else.
-	ZENITH_ASSERT_LT(std::fabs(fSeamFeetY - fTarget),
-		fROUTE_SEAM_GROUND_BAND_HALF_WIDTH,
-		"route-seam row '%s' reads %.5f, which is %.5f m from the Dawnmere recipe's "
-		"%.2f m flatten target -- outside the +/-%.1f m band a graded lane can "
-		"produce. It is the unfrozen sentinel, a height from another part of the "
-		"world, or -- and this is the case R1-2 was sequenced to find out about -- the "
-		"Route corridor does not actually level the arrival column. Read the oracle's "
-		"measured value before doing anything: if it is a REAL height outside this "
-		"band, that is an R1-3 terrain finding, NOT a band to widen",
-		xSeam.m_szEntityName, fSeamFeetY, std::fabs(fSeamFeetY - fTarget),
-		fTarget, fROUTE_SEAM_GROUND_BAND_HALF_WIDTH);
+	// (e) THE BAND ITSELF, once frozen, for EVERY ROW -- see
+	// fROUTE_SEAM_GROUND_BAND_HALF_WIDTH's own comment for why the same +/-4 m
+	// band covers both rows' corridor arithmetic. Skipped for a row that is still
+	// the sentinel: that row already failed clause (d) above, and a sentinel is
+	// billions of metres outside this band by construction, which would only
+	// repeat the same finding under a less specific message.
+	for (u_int u = 0u; u < uCount; ++u)
+	{
+		const ZM_DawnmereNpcAnchor& xRow = ZM_GetDawnmereRouteSeamSample(u);
+		if (std::fabs(xRow.m_fFeetY - fZM_DAWNMERE_ROUTE_SEAM_GROUND_UNMEASURED)
+			<= fLAB_EXACT_EPSILON)
+		{
+			continue;
+		}
+		ZENITH_ASSERT_LT(std::fabs(xRow.m_fFeetY - fTarget),
+			fROUTE_SEAM_GROUND_BAND_HALF_WIDTH,
+			"route-seam row '%s' reads %.5f, which is %.5f m from the Dawnmere "
+			"recipe's %.2f m flatten target -- outside the +/-%.1f m band a graded "
+			"corridor can produce. It is a height from another part of the world, "
+			"or -- and this is the case R1-2/R1-3 were sequenced to find out about "
+			"-- the Route corridor does not actually level this column. Read the "
+			"oracle's measured value before doing anything: if it is a REAL height "
+			"outside this band, that is a terrain finding, NOT a band to widen",
+			xRow.m_szEntityName, xRow.m_fFeetY, std::fabs(xRow.m_fFeetY - fTarget),
+			fTarget, fROUTE_SEAM_GROUND_BAND_HALF_WIDTH);
+	}
+
+	// (f) THE TWO ROWS MUST BE INDEPENDENTLY MEASURED, NOT ONE VALUE PASTED
+	// TWICE. Once both are frozen this also guards against the ZM-D-203 §5
+	// deviation quietly reappearing as a paste-time slip: 12 m of real Dawnmere
+	// terrain has never read the same to 5 decimal places anywhere else in this
+	// file (Thornacre's pair differs by 0.254 m, Route 1's by 0.475 / 0.962 m),
+	// so an exact repeat is evidence of a copy, not a coincidence.
+	if (uStillUnmeasured == 0u)
+	{
+		const float fRoute1FeetY = ZM_DawnmereRouteSeamSampleFeetY(
+			ZM_DAWNMERE_ROUTE_SEAM_SAMPLE_FROM_ROUTE1);
+		const float fGateFeetY = ZM_DawnmereRouteSeamSampleFeetY(
+			ZM_DAWNMERE_ROUTE_SEAM_SAMPLE_NORTH_GATE);
+		ZENITH_ASSERT_GT(std::fabs(fRoute1FeetY - fGateFeetY), fLAB_EXACT_EPSILON,
+			"the FromRoute1 row (%.5f) and the DawnmereNorthGate row (%.5f) read "
+			"the identical height -- 12 m of Dawnmere terrain has never measured "
+			"the same twice anywhere else in this file, so this is almost "
+			"certainly one paste-ready value copied into both rows rather than two "
+			"independent measurements",
+			fRoute1FeetY, fGateFeetY);
+	}
 }
 
 // ============================================================================
