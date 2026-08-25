@@ -17,6 +17,16 @@ Tuning-value changes go in git history, not here.
 
 ## 2026-08-24 -- ZM-D-208 -- USER RULINGS unblocking R1-5 (ZM-23): the appearance palette gains a slot, and the flagless-arm coverage moves to a by-ROW seam
 
+### ZM-D-209 — 2026-08-25
+
+**Decision:** ZM-28 (Gym 1) is SPLIT into three slices: G1-1 ZM-28 data + placement header (PURE, re-authors nothing), G1-2 ZM-69 authors Gym1.zscen + the Thornacre door (needs-gpu + human-gate), G1-3 ZM-70 badge + teach-move on a leader win (PURE). G1-2 and G1-3 both depend only on G1-1 and run in PARALLEL. ZM-29's blocker moves from ZM-28 to ZM-69 AND ZM-70.
+
+**Why:** One STORY carried a whole gym -- a scene, a leader battle, a badge award and a teach-move reward -- behind a four-line Definition of Done, and a survey done before dispatching found three separable seams plus a mislabelling. (1) SHAPE: the R1 slice table already splits PURE data and placement from SCENE AUTHORING, for the reason that authoring writes a tracked asset and pure work does not; Gym 1 has exactly that seam. (2) LABELS: ZM-28 carried human-gate, so even the pure data work would have parked at In Review and needed a person before the next slice could start. Only the scene slice wants a visual sign-off, and only it needs needs-gpu -- Gym1.zscen does NOT exist so creating it is headless-legal, but the Thornacre door is a CHANGE to a committed scene, which the .zscen publish guard refuses headless. That distinction is invisible at the whole-gym granularity. (3) PARALLELISM: the 2026-08-25 link audit found S8 composed as a single linear chain, so its queue depth was 1 and any stall stopped the sprint; G1-3 needs no scene, so making it depend on G1-1 rather than on G1-2 gives the sprint two claimable strands instead of one. (4) SCOPE was overestimated: badge state is already complete and persisted (uZM_BADGE_COUNT, m_uBadgeMask, AwardBadge/HasBadge in ZM_GameState.h:89-176, save module 5), and teach-move already exists as ZM_ITEM_EFFECT_TEACH_MOVE -- so G1-3 is a wiring slice, not a systems one, and the bodies say so to stop a worker rebuilding either. The design was NOT invented: GameDesignDocument.md already specifies Thornacre, Fenna (Grass, L13), the Bloom Badge, Verdant Lash and a hedge-maze layout, and all three bodies inline it per I3.
+
+**Tests that lock it:** G1-1 carries a headless solvability unit over the declared maze WITH an anti-vacuity arm (a reachability test over an empty room passes vacuously, so at least one wall must be proven to block a shorter route). G1-2 requires two byte-identical windowed boots and a git status showing only the intended scene paths. G1-3 requires a save/load ROUND TRIP for both the badge and the taught move, read back off a reloaded save rather than off the mutated object, plus a by-ROW seam so its coverage cannot be retired by a content change (ZM-D-208 ruling 2's reasoning, applied here).
+
+**Reversibility:** easy
+
 **ZM-23 (R1-5) was moved to `Blocked` by a tick on 2026-08-24 with two
 ruling-shaped blockers, neither of them an implementation difficulty.** Both are
 answered here, recorded BEFORE implementation per `Scope.md` section 4. The

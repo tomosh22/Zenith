@@ -246,7 +246,16 @@ sign-off.** Observed at closure: headless **49 passed / 0 failed**, full windowe
       AMENDED rather than ticked on words it did not satisfy.**)
 - [ ] **[ZM-27]** Ground-item pickups (world props -> bag, with collected-state persistence) **[SPLIT OUT of
       the Route 1 item by ZM-D-196; not required by the S8 gate]**
-- [ ] **[ZM-28]** Gym 1 (layout puzzle-lite + leader + badge + teach-move reward)
+- [ ] **[ZM-67]** Ground-item props to AAA quality -- real meshes and materials, not blockout cubes
+      **[follow-up to ZM-27; In Review 2026-08-25, awaiting a visual sign-off]**
+- [ ] **[ZM-28] [ZM-69] [ZM-70]** Gym 1 (layout puzzle-lite + leader + badge + teach-move reward)
+      **(SPLIT into three slices 2026-08-25 -- ZM-D-209.** One STORY carried a whole gym
+      behind a four-line Definition of Done, and its `human-gate` label meant even the pure
+      data work would have parked at In Review. Same PURE-then-AUTHOR shape the R1 slice
+      table uses: **G1-1** `ZM-28` data + placement header, re-authors nothing; **G1-2**
+      `ZM-69` authors `Gym1.zscen` + the Thornacre door, `needs-gpu` + `human-gate`;
+      **G1-3** `ZM-70` badge + teach-move on a leader win, PURE and runs in PARALLEL with
+      G1-2. Per ZM-D-162 discipline the line is AMENDED rather than replaced.**)
 - [ ] **[ZM-29]** `ZM_AutoTests_Slice` mini-playthrough (CB_HumanSession-style flat Act script + PROBEs, ~4-6k frames, windowed)
 
 *Gate:* mini-playthrough new-game -> Badge 1 green; manual visual playthrough sign-off. **Checkpoint before content scale-up.**
@@ -254,6 +263,9 @@ sign-off.** Observed at closure: headless **49 passed / 0 failed**, full windowe
 ## [ZM-10] S9 -- World buildout A (XL) -- critical path
 
 - [ ] **[ZM-31]** Towns 3-6, Routes 2-8, Gyms 2-4, interiors (content = `ZM_WorldSpec` rows + recipes, not bespoke code)
+- [ ] **[ZM-68]** Scene-aware NPC appearance distinctness -- the invariant is global where the
+      property is local **[the structural fix ZM-D-208 ruling 1 named and deferred here; the
+      palette refill it took instead buys six cells and little more]**
 - [ ] **[ZM-32]** Encounter tables per route
 - [ ] **[ZM-33]** Field evolution / stones; TM items
 - [ ] **[ZM-34]** Daycare / breeding / eggs (step counting on the manager)
