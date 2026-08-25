@@ -457,7 +457,19 @@ test coverage.
    **WINDOWED `Vulkan_*_True` boot with `--skip-unit-tests`** and all three recipes warm.
 
 ### The ten slices (four need a WINDOWED authoring boot)
-| id | title | +units | re-authors | deps |
+
+> **★ THE `deps` COLUMN IS A MIRROR, NOT THE AUTHORITY.** `Roadmap.md` records
+> that this column is exactly what the board's `BLOCKS` links replaced — *"the
+> R1-x chain used to be a `deps` column in a table inside `Status.md`, which
+> nothing could enforce, so the loop was free to claim R1-6 before R1-5 existed"*.
+> The links are what the claim query actually reads; this column is kept only
+> because the table is how a human reads the slice in one go. **Read
+> `zagent blocked --project ZM` for the real graph**, and if the two ever
+> disagree, the links win and this column is stale. Editing this column changes
+> nothing; `zagent link … --reason "…"` and `zagent unlink` are the gestures that
+> do. Every edge now carries its reasoning, audited 2026-08-25.
+
+| id | title | +units | re-authors | deps (mirror — see above) |
 |---|---|---|---|---|
 | ~~R1-1~~ | ~~Placement headers + per-recipe terrain materials (PURE)~~ **DONE, +17 (not ~12), ZM-D-197** | 17 | none | -- |
 | R1-2 **ph.1** | ~~Per-recipe terrain materials (split out of R1-2, PURE)~~ **DONE, ZM-D-198** | 0 | none, PROVEN | R1-1 |

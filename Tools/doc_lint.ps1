@@ -126,12 +126,20 @@ function Check-TestCount {
 
     # Doc claim sites. Each docs file may have multiple "N tests" mentions;
     # report any that overshoot.
+    # AssetManifest.md was absent from this list until 2026-08-25, so a whole
+    # living-doc file had ZERO gate coverage -- and it is the file that carries
+    # roster arithmetic ("Family total: 25 props x 4 = 100 files") and generator
+    # version stamps, both of which a content ticket moves. ZM-67 took the prop
+    # roster 25 -> 28 and uZM_PROPGEN_VERSION 1 -> 2, and five claims across this
+    # file and TestPlan.md went stale with every gate green; a human reviewer
+    # found them.
     $docFiles = @(
         'Status.md',
         'TestPlan.md',
         'BuildEnvironment.md',
         'AgentBriefing.md',
-        'Shortfalls.md'
+        'Shortfalls.md',
+        'AssetManifest.md'
     )
 
     foreach ($docFile in $docFiles) {

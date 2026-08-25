@@ -113,6 +113,37 @@ $script:StartedUtc = (Get-Date).ToUniversalTime().ToString('o')
 # array simply ENDS -- absence was an inference, not data.
 $script:PlannedLines = New-Object System.Collections.Generic.List[string]
 
+# Lines this phase DELIBERATELY does not run, as opposed to lines a failure cut
+# off. `measure` runs the build and the unit gate only (rule 3 above), so on a
+# clean measure `skipped` is legitimately empty while HALF THE GATE LIST has not
+# run -- and tick.md tells the reader to "read `skipped` before concluding
+# anything about what was verified". Following that literally at measure is how a
+# subset run gets mistaken for a full one. `skipped` keeps meaning "a failure
+# stopped the list"; this is the other reason a line did not run.
+$script:DeferredLines = New-Object System.Collections.Generic.List[string]
+
+# The automated-test registry count, derived EXACTLY as doc_lint.ps1 check C7
+# derives it -- the paren is load-bearing. A bare `grep -c
+# ZENITH_AUTOMATED_TEST_REGISTER` also counts the paren-less mentions in comments
+# (three of them live in ZM_AutoTests_TrainerSight.cpp) and over-reports by that
+# many. Status.md's LIVE PIN block carries this number beside the boot pin and C7
+# asserts BOTH, but only the boot pin comes out of a gate run -- the registry
+# count comes from `zenith test`, which `measure` does not run. So a phase whose
+# whole job is "observe the numbers before you narrate them" was handing over one
+# of the two. This closes that.
+function Get-AutomatedRegistryCount([string]$Game) {
+    $testsDir = Join-Path $repoRoot "Games/$Game/Tests"
+    if (-not (Test-Path -LiteralPath $testsDir)) { return $null }
+    $n = 0
+    Get-ChildItem -LiteralPath $testsDir -Filter '*.cpp' -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
+        $raw = Get-Content -LiteralPath $_.FullName -Raw -ErrorAction SilentlyContinue
+        if ($null -ne $raw) {
+            $n += ([regex]::Matches($raw, 'ZENITH_AUTOMATED_TEST_REGISTER\s*\(')).Count
+        }
+    }
+    return $n
+}
+
 function Write-Line([string]$Text, [string]$Colour = 'Gray') {
     Write-Host $Text -ForegroundColor $Colour
     Add-Content -LiteralPath $logPath -Value $Text -Encoding utf8
@@ -237,6 +268,7 @@ function Write-Result([int]$Code, [string]$Verdict, $Extra) {
                 [PSCustomObject]@{ label = $_.Label; line = $_.Line; exitCode = $_.ExitCode; seconds = $_.Seconds }
             })
         skipped     = $skipped
+        deferred    = @($script:DeferredLines.ToArray())
     }
     if ($null -ne $Extra) { foreach ($k in $Extra.Keys) { $payload[$k] = $Extra[$k] } }
     Set-Content -LiteralPath $resultPath -Value ($payload | ConvertTo-Json -Depth 6) -Encoding utf8
@@ -433,6 +465,18 @@ try {
         $script:PlannedLines.Clear()
         foreach ($l in $buildLines) { $script:PlannedLines.Add($l) }
         foreach ($l in $unitLines) { $script:PlannedLines.Add($l) }
+        # Everything else is verify's. Recorded as DEFERRED rather than left to
+        # inference: `skipped` will be empty on a clean measure, and a reader told
+        # to "read skipped before concluding anything about what was verified"
+        # would otherwise read a green subset as a green whole.
+        $script:DeferredLines.Clear()
+        foreach ($l in $gateLines) {
+            if ($script:PlannedLines -notcontains $l) { $script:DeferredLines.Add($l) }
+        }
+        if ($script:DeferredLines.Count -gt 0) {
+            Write-Line "[tick_gates] measure runs $($script:PlannedLines.Count) of $($gateLines.Count) gate line(s); $($script:DeferredLines.Count) DEFERRED to -Phase verify:" 'DarkGray'
+            foreach ($l in $script:DeferredLines) { Write-Line "[tick_gates]   deferred: $l" 'DarkGray' }
+        }
         Write-Banner "unit gate alone ($($unitLines.Count) line(s)) -- measuring"
         $measurements = New-Object System.Collections.Generic.List[object]
         $pinNeedsBump = $false
@@ -455,6 +499,10 @@ try {
                 Write-Line ''
                 Write-Line "[tick_gates] MEASURED: $game ran $($tally.ran) with 0 failures." 'Yellow'
                 Write-Line "[tick_gates] Bump '$game' to $($tally.ran) in Tools/unit_baselines.json -- the ONE home for a pin." 'Yellow'
+                $reg = Get-AutomatedRegistryCount $game
+                if ($null -ne $reg) {
+                    Write-Line "[tick_gates] REGISTRY: $game has $reg ZENITH_AUTOMATED_TEST_REGISTER call site(s) -- the OTHER number Status.md's LIVE PIN block carries, and doc_lint C7 asserts it too. Derived with C7's own paren-anchored regex (a bare grep over-reports)." 'Yellow'
+                }
                 Write-Line '[tick_gates] A backend-neutral ENGINE unit moves EVERY game row; say in the work log which you measured and which you inferred.' 'Yellow'
                 continue
             }

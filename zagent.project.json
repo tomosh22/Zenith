@@ -65,6 +65,7 @@
       ],
       "gates": [
         "pwsh -NoProfile -File Tools\\zenith.ps1 build Zenithmon --headless",
+        "pwsh -NoProfile -File Tools\\zenith.ps1 build Zenithmon --config D3D12_vs2022_Debug_Win64_False",
         "pwsh -NoProfile -File Tools\\zenith.ps1 test Zenithmon --headless",
         "pwsh -NoProfile -ExecutionPolicy Bypass -File Tools\\run_unit_gate.ps1 -Exe Games\\Zenithmon\\Build\\output\\win64\\null_vs2022_debug_win64_true\\zenithmon.exe -Game Zenithmon -TimeoutSec 600",
         "pwsh -NoProfile -File Tools\\doc_lint.ps1 -Game Zenithmon"
@@ -145,6 +146,7 @@
       "gates": [
         "pwsh -NoProfile -File Tools\\zenith.ps1 build engine",
         "pwsh -NoProfile -File Tools\\zenith.ps1 build Combat --headless",
+        "pwsh -NoProfile -File Tools\\zenith.ps1 build Combat --config D3D12_vs2022_Debug_Win64_False",
         "pwsh -NoProfile -File Tools\\zenith.ps1 build Zenithmon --headless",
         "pwsh -NoProfile -File Tools\\zenith.ps1 build CityBuilder --headless",
         "pwsh -NoProfile -File Tools\\zenith.ps1 build RenderTest --headless",
@@ -165,6 +167,7 @@
       ],
       "gates": [
         "pwsh -NoProfile -File Tools\\zenith.ps1 build DevilsPlayground --headless",
+        "pwsh -NoProfile -File Tools\\zenith.ps1 build DevilsPlayground --config D3D12_vs2022_Debug_Win64_False",
         "pwsh -NoProfile -File Tools\\zenith.ps1 test DevilsPlayground --headless"
       ],
       "conventions": "Games/DevilsPlayground/Docs are binding; no paid/external services.",

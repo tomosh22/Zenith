@@ -198,21 +198,42 @@ So:
 
   ```
   zagent guard ZM-21 | head            # $? is HEAD's (0), not guard's (1)
-  pwsh tick_gates.ps1 … ; echo "$?"    # $? is ECHO's; the run had exited 10
-  pwsh tick_gates.ps1 … ; echo "$?"    # …and here it had exited 4 — GATE FAILED
+  pwsh tick_gates.ps1 … ; echo "$?"    # the run had exited 10, and you read 0
+  pwsh tick_gates.ps1 … ; echo "$?"    # …and here 4 — A GATE HAD FAILED
   ```
 
-  In a POSIX shell `$?` is the LAST command's, and a pipeline's is the
-  last stage's. Worse, the harness's own completion notification reports
-  that same mangled code, so *"completed (exit code 0)"* is not
-  independent confirmation of anything. Redirect to a file and read `$?`
-  immediately, or read the JSON verdict — which is the only channel a
-  shell cannot corrupt:
+  **★ THE MECHANISM, CORRECTED — it was stated wrongly here and this is the one
+  place a wrong explanation costs most.** It read *"in a POSIX shell `$?` is the
+  LAST command's"*. That is true of a PIPELINE and false of a `;` suffix:
+  `$?` is expanded BEFORE `echo` runs, so it holds your command's code. Measured
+  twice, once synthetically and once on a live gate run:
 
   ```
-  zagent guard <KEY> --json > out.json 2> err.txt ; echo "EXIT=$?"   # WRONG
-  zagent guard <KEY> --json > out.json 2> err.txt                    # right
-  # …then read $? on its own line, or read the file.
+  ( exit 42 ) ; echo "$?"              →  42        # the text is CORRECT
+
+  pwsh tick_gates.ps1 -Phase measure   →  file:      10
+                                          JSON:      10
+                                          harness:    0   ← the notification
+  ```
+
+  So **what lies is the harness's reported exit code**, not the shell's: the
+  completion notification reports the COMPOUND statement's status, which is
+  `echo`'s 0. *"completed (exit code 0)"* is never independent confirmation of
+  anything, and a pipeline additionally destroys `$?` at the source.
+
+  That measure run was reporting `10 — MEASURED: a pin needs bumping`. An
+  orchestrator branching on the notification reads *all gates green*, skips the
+  pin, and commits a stale baseline. **Write the code to a file and read it in a
+  separate step, or read the JSON verdict** — the only channel neither a shell
+  nor the harness can corrupt:
+
+  ```
+  zagent guard <KEY> --json > out.json 2> err.txt ; echo "EXIT=$?"   # the TEXT is
+                                                                     # right; the
+                                                                     # notification
+                                                                     # is not
+  zagent guard <KEY> --json > out.json 2> err.txt
+  echo $? > exit.txt                   # right: a separate step, then read the file
   ```
 
 ---
@@ -239,6 +260,18 @@ sails straight past the one check written to catch this:
 ```
 zagent doctor | Select-String -Quiet 'client repo:|repo branch:|repo clean:'
 ```
+
+**In a POSIX shell** — and read the count, not an exit code:
+
+```
+zagent doctor > doctor.txt 2>&1
+grep -c 'client repo:\|repo branch:\|repo clean:' doctor.txt     # must be 3
+```
+
+Both spellings are here because the paragraph below says the answer is
+shell-dependent and must be re-run in whichever shell you actually use. Giving
+only one of them makes the reader translate the single check written to catch a
+wrong-client mutation, which is the worst possible place for a translation error.
 
 False → **you are running the wrong `zagent`** and must stop. The usual
 cause is a stale shim earlier on `PATH` — an older client that talks
@@ -554,6 +587,26 @@ label exists to hand to the loop — which is the whole defect `windowed` had.
 Build it, boot it, gate it, commit it. Say in the work log that a window opened;
 do not wait for someone to say yes.
 
+**★ AND HERE IS THE COMMAND, because it is written down nowhere else.** Root
+`CLAUDE.md`'s CLI table shows only `zenith build <Game>`, and every gate line
+uses `--headless`; the `--config` flag lives in `Tools/ZenithCli/ZenithCli.psm1`.
+A step that says *do not hesitate* should not send you reading a module to find
+out how:
+
+```
+zenith build <Game> --config Vulkan_vs2022_Debug_Win64_True   # windowed/authoring
+<exe> --automated-test <TestName> --skip-unit-tests            # drive the boot
+zenith build <Game> --config Null_vs2022_Debug_Win64_False     # the non-tools path
+```
+
+The first is the build this label exists to select. The second is how a windowed
+exe ever EXITS (see the three mechanics below). The third compiles the
+`#ifdef ZENITH_TOOLS` `#else` branch, which **nothing used to build**: every gate
+line is `--headless`, i.e. `Null_*_True` with tools ON, so a non-tools break
+merged green and — because `push` is false — CI never ran to catch it either.
+Each category's gate list now carries one `D3D12_*_False` compile, copied from
+the step CI already had (`zm-tests.yml`), so you no longer have to remember this.
+
 The pin still comes from a `Null_` run. `Tools/unit_baselines.json` is explicit
 that a Vulkan exe reports higher for the same tree (a standing +37 for
 Zenithmon), so the shape is: **Vulkan to author, Null to verify and pin.**
@@ -679,6 +732,26 @@ Then inline (I3): the `## Goal`, the `## Definition of Done` items, the
 file list, any relevant repo conventions, and the recorded rulings that
 govern the subject matter. `bodyPath` is a supplement.
 
+**★★ INLINE THE DoD FROM `body.md`, NEVER FROM THE `definitionOfDone` ARRAY.**
+The payload's `definitionOfDone[].text` **truncates every checkbox at its first
+line**, and the array is the obvious thing to reach for: it is structured, it is
+already parsed, and it sits right there next to `goal`. On ZM-23 that truncation
+deleted the entire substance of two items:
+
+| `body.md` | `definitionOfDone[].text` |
+| --- | --- |
+| "…rewritten as a PER-ID claim check — **not bumped to a larger count** — and a row that omits its trailing trainer initializer is caught as a **DOUBLE CLAIM** on `ZM_TRAINER_RIVAL_VESPER`, proven by an **anti-vacuity arm**" | "…is rewritten as a PER-ID claim" |
+| "…the separations they achieve against every existing row and against the blockout grey are **REPORTED from the shipped tables rather than asserted**" | "…the separations they achieve against" |
+
+The first is the only guard the ticket exists to install; the second is the one
+clause preventing a self-referential assertion. Under I3 the DoD **is** the
+worker's specification, so a truncated one is a mutilated instruction — and the
+worker cannot tell, having no shell and no board. It also weakens `finish
+--status Done`'s unticked-box refusal, which reads the same truncated text.
+
+The array is for COUNTING boxes, not for quoting them. `bodyPath` is a
+supplement to everything else in this step and the **carrier** for this one.
+
 **How to derive "Files you may edit", because the list is load-bearing in
 BOTH directions.** Start from the DoD's nouns and follow them into the
 repo. Then make one deliberate judgement: **if a file would let the worker
@@ -697,6 +770,28 @@ instructs an update must name the file that receives it, or say "report,
 do not edit".** When you cannot tell which way to err, err narrow and say
 in the Boundary that a wider list is available on request: a worker that
 stops and reports costs a message, one that improvises costs a revert.
+
+**★ AND OPEN THE WORKER'S PROMPT WITH THE BLAST-RADIUS SURVEY, AS ITS FIRST
+INSTRUCTION.** Deriving the list is your job, but VERIFYING it is work you are
+the worst-placed party to do: you must survey before you have read the code the
+ticket is about, while holding the whole tick's state. The worker has the task
+context and a fresh budget. So make the list a hypothesis the worker is required
+to falsify before it edits anything:
+
+> **Step zero, before you edit anything.** For every identifier and every
+> behaviour you intend to change, grep the whole of `<game>` and confirm each hit
+> is inside the list below. Read the UNITS that reference them, not just the file
+> names — a test can pin your change without naming it in a way that greps.
+> **If ANY hit lands outside the list, STOP and report the complete corrected
+> list before making a single edit.** Say what the survey found even if it found
+> nothing.
+
+Two tickets paid for this clause. ZM-23 under-scoped despite a careful survey,
+because a ruling asserted the missing file was unaffected. On ZM-67 the same
+prompt clause found a comment that the ticket's own change had falsified, in a
+file the worker was told not to edit — it reported it instead of editing it,
+which is exactly the intended behaviour. A survey that costs ten worker-minutes
+is cheaper than a dispatch.
 
 **Reconcile the DoD against the repo BEFORE you inline it — the ticket
 is the older document.** I3 means whatever you paste becomes the
@@ -733,9 +828,97 @@ Three things to check, in this order:
    restructure working code is exactly what a more compliant worker
    IMPLEMENTS, and the churn would have gated green.
 
+**★★ AND RULE 4 IS NOT A DoD RULE. EVERY FACTUAL CLAIM IN THE PROMPT IS YOURS.**
+It is written above as item 4 of a list headed *"Reconcile the DoD against the
+repo"*, which reads as scoped to the TICKET's claims — and the claims that
+actually bite are the ones you wrote yourself. Most of a good prompt is
+scaffolding: *"X does Y"*, *"follow the pattern in Z"*, *"the helper returns a
+bool"*. **No other step checks any of it.**
+
+Measured on ZM-67, in a single prompt, on the tick immediately after this failure
+was written up one level down:
+
+- *"include an assertion that fails if the dump call returns false"* —
+  `Flux_Screenshot::RequestDump` returns **void**.
+- *"put them under the exe's own output directory, **as the gallery test does**"* —
+  the gallery test writes to `<repo>/Build/artifacts/…`, not the exe dir.
+
+The worker flagged both instead of obeying them. Note the asymmetry if it had
+not: the void-return instruction fails **loudly** at compile, the wrong directory
+**works** and quietly writes outside the gitignored root. So open the file before
+you assert what is in it — including, and especially, in the sentences that are
+not about the ticket at all.
+
+**★★ A RULING'S "WHAT SURVIVES" LIST IS A SURVEY, NOT A RULING — AND I3 DOES NOT
+COVER IT.** I3 says paste the governing rulings verbatim, and their authority is
+the whole reason they exist. But a decision record contains two different kinds
+of sentence, and only one of them is a decision:
+
+| | |
+| --- | --- |
+| the **judgement** — *"append an outfit slot"*, *"retire phase 8"* | binding, paste it verbatim |
+| the **survey** — *"what survives"*, *"what is unaffected"*, *"the blast radius is"* | a claim about what the code does TODAY, and exactly the half that goes stale |
+
+ZM-D-208 recorded that *"the FSM latch in `ZM_Tests_TrainerSightFsm.cpp`"*
+survives Ruling 3. It was pasted verbatim, correctly, and used to bound the
+worker's file list — the file is absent from that list **because the ruling says
+it survives**. It does not: three `Gate_*` units there pin the flagless arm
+against the Rambler's **roster row**. Two red; the third stays green while its
+own `"the FLAGLESS rambler"` label becomes false. The ruling surveyed at FILE
+granularity and the breakage was at UNIT granularity.
+
+Cost: one opus dispatch, one slot in the one-ticket-per-repo lock, and a second
+consecutive Block on a ticket that had been re-filed specifically to fix the
+first one. **Paste the ruling verbatim AND re-derive its survey against the code
+before you let it bound anything.** This protocol already distrusts citations; a
+ruling's survey is a citation wearing a ruling's clothes.
+
+The mechanical form is cheap, and it is what the ZM-23 worker itself proposed:
+**grep the whole game for every identifier the DoD will change, and confirm each
+hit is inside the file list.** One `rg ZM_TRAINER_ROUTE1_RAMBLER` would have
+found it in a second, before the claim. Better still, put that grep in the
+WORKER's prompt as its first instruction — see the note on the file list above.
+It has the task context and a fresh budget; you have neither, and you must survey
+before you have read the code the ticket is about.
+
 **Write down every correction in the work log.** A prompt that silently
 disagreed with the ticket is indistinguishable, afterwards, from a
 worker that ignored it.
+
+**★★ A DoD THAT ASKS FOR *BEFORE* EVIDENCE ORDERS YOUR DISPATCHES. DECIDE THE
+STAGES BEFORE THE FIRST ONE.** This step reads as one dispatch per ticket, and
+nothing in it warns that an evidence-producing DoD item constrains the ORDER in
+which things may be authored.
+
+ZM-67's DoD ended *"Before/after captures of all three props recorded in the work
+log, so the visual sign-off has something to judge"*, on a `human-gate` ticket —
+so that evidence **is** the deliverable. No capture harness existed. **A BEFORE
+image can only be taken from a tree that has the harness and does NOT yet have
+the change**, and one worker authors both at once. A loop dispatching once lands
+them together, captures only an AFTER, and files a work log whose BEFORE row is
+empty or — worse — reconstructed from prose. On a `human-gate` ticket that
+silently destroys the thing the gate exists for.
+
+So: **the harness that produces the evidence must land, and be run, before the
+change it measures.** ZM-67 ran as stage 1 (the harness alone, with the
+appearance explicitly frozen and the boundary saying so) → build → capture BEFORE
+→ stage 2 (the visual work) → build → capture AFTER. Both stages land in ONE
+commit; the staging is a dispatch ordering, not a property of the repo, and the
+harness's own comments must not claim otherwise.
+
+**This is the same shape step 6.2 already documents one level up**, where the
+ZM-65 nine-step order exists precisely because *"steps 2 and 5 are the same
+command and print the same success signature"* and the freeze has to go BETWEEN
+them. That lesson was learned for **pins** and never generalised to **evidence**.
+Three practical consequences, all measured:
+
+- **Copy the BEFORE artifacts out of the shared output directory** before the
+  AFTER run — a harness that clears stale captures at `Setup` will delete them,
+  and a stale TGA pasted into a work log as "BEFORE" is worse than a missing one.
+- **The framing is the contract.** Two captures are comparable only while the
+  lens derivation and the shot stems are unchanged. Say so in stage 2's boundary.
+- **Look at the pixels.** Structural checks — the file landed, it re-loads, the
+  subject's patch is in bounds — are all true of a photograph of the wrong thing.
 
 Dispatch shape — **the `Agent` tool, never a shelled-out CLI**:
 
@@ -983,6 +1166,26 @@ owns → measure → your edits → reviewer → apply findings → verify → g
    predictor because it keys on what the ticket TOUCHES rather than on how
    big someone guessed it was. Until the board computes it: **if a ruling
    governs the subject matter, review it whatever `review.required` says.**
+
+   **★ A ZERO-DIFF TICKET HAS NOTHING TO REVIEW. Do the review's JOB instead, and
+   say so.** When the worker changed no files, `review.required` is still true and
+   there is no patch — so dispatching a reviewer hands it an empty diff, which
+   returns nothing and reads exactly like a pass. Skipping the step silently is no
+   better: the board then shows a required review that never happened.
+
+   In its place, do what the step is FOR: **verify the worker's central claim
+   yourself against the code** (I2's second half), and record in the work log that
+   you did and what you checked. On ZM-23 that meant opening the three units the
+   worker said would break and confirming them at the exact cited lines, then
+   recomputing the palette arithmetic independently — about four minutes, and it
+   turned an assertion into a corroboration. An impossibility accepted on hearsay
+   Blocks a ticket; one rejected without checking burns a dispatch.
+
+   **And ask the reviewer, when there IS a diff, to name the categories it did
+   NOT check.** A category that came back clean and a category nobody looked at
+   are different facts, and only one of them is otherwise visible. On ZM-67 that
+   section is what surfaced the fact that **no gate compiles the non-tools path** —
+   nothing else in the pipeline would have said so.
 4. `zagent guard <KEY>` — **with the key, and with no `--file`**.
    Non-zero → Blocked regardless of gate colour.
 
@@ -1095,6 +1298,25 @@ So when `-Phase measure` exits **10**:
    | the unit pin | a `Null_` gate run |
    | a measured ground row (`ZM_Dawnmere*` seam / lab / home tables) | a windowed raycast oracle |
    | a committed-asset SHA256 in `Status.md` | a windowed re-author |
+
+   **★★ AND THE CLAUSE IS "DO NOT QUOTE A NUMBER", NOT "DO NOT EDIT THE FILE".**
+   ZM-67's worker was told to leave `Tools/unit_baselines.json` untouched. It
+   complied exactly — and then wrote **`3395 → 3397, INFERRED`** into its proposed
+   work-log text. Both halves were wrong: the manifest read 3399, and the observed
+   run came back 3401. It had grepped `Status.md`, which narrates every pin move it
+   has ever made, so the file offers 3394, 3395, 3399 **and 3397 — a *passed*
+   count that looks exactly like a pin.**
+
+   Harmless there, because this step makes the pin yours and demands an OBSERVED
+   run. But step 8 builds the work log FROM the worker's report, so a tick that
+   pastes the proposal publishes a false pin narration into the human-facing
+   authority, where the next worker reads it. Tell the worker:
+
+   > The pin is the orchestrator's. Do not edit it and **do not quote a number for
+   > it, not even an inferred one** — say `+N units` and let the measurement supply
+   > the total.
+
+   `+2 units` was the genuinely useful half of what it told me, and it was right.
 
    **It is greppable, so do not rely on noticing it.** This repo marks every one
    the same way — an out-of-band sentinel constant plus a comment reading
