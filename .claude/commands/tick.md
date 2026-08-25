@@ -733,24 +733,35 @@ file list, any relevant repo conventions, and the recorded rulings that
 govern the subject matter. `bodyPath` is a supplement.
 
 **★★ INLINE THE DoD FROM `body.md`, NEVER FROM THE `definitionOfDone` ARRAY.**
-The payload's `definitionOfDone[].text` **truncates every checkbox at its first
-line**, and the array is the obvious thing to reach for: it is structured, it is
-already parsed, and it sits right there next to `goal`. On ZM-23 that truncation
-deleted the entire substance of two items:
+
+**The truncation that prompted this rule is FIXED** — `parseTicket` kept only the
+line each `- [ ]` sat on until saas `9d03869` (2026-08-25), and now carries
+continuation lines. Verified against ZM-23, the ticket that exposed it. *This
+paragraph is here because the rule outlived its original reason within the hour,
+which is the exact failure the section below is about: do not read the history as
+the current state.*
+
+**The rule stands, for a reason that did not depend on the bug.** The array holds
+the checkboxes and nothing else — never the prose that qualifies them. ZM-23's
+body carries *"What the rulings changed about this slice's scope"* and
+*"★ ITEMS 1 AND 2 ARE ONE INDIVISIBLE COMMIT"* **outside** any checkbox, and
+both are load-bearing instructions. I3 says paste the ticket BODY; the array is
+for COUNTING boxes, not for quoting them, and `bodyPath` is the carrier.
+
+What the truncation cost while it lasted, kept as the worked example of why a
+mutilated spec is invisible — the worker has no shell and no board and cannot
+tell it was cut:
 
 | `body.md` | `definitionOfDone[].text` |
 | --- | --- |
 | "…rewritten as a PER-ID claim check — **not bumped to a larger count** — and a row that omits its trailing trainer initializer is caught as a **DOUBLE CLAIM** on `ZM_TRAINER_RIVAL_VESPER`, proven by an **anti-vacuity arm**" | "…is rewritten as a PER-ID claim" |
 | "…the separations they achieve against every existing row and against the blockout grey are **REPORTED from the shipped tables rather than asserted**" | "…the separations they achieve against" |
 
-The first is the only guard the ticket exists to install; the second is the one
-clause preventing a self-referential assertion. Under I3 the DoD **is** the
-worker's specification, so a truncated one is a mutilated instruction — and the
-worker cannot tell, having no shell and no board. It also weakens `finish
---status Done`'s unticked-box refusal, which reads the same truncated text.
-
-The array is for COUNTING boxes, not for quoting them. `bodyPath` is a
-supplement to everything else in this step and the **carrier** for this one.
+The first is the guard ZM-23 exists to install; the second is the one clause
+preventing a self-referential assertion. Two other checks read that same text and
+were reading it truncated: `finish --status Done`'s unticked-box refusal, and the
+reachability scan that refuses a DoD naming a `protectedPath` — so a protected
+path written on a continuation line was invisible to the check built to catch it.
 
 **How to derive "Files you may edit", because the list is load-bearing in
 BOTH directions.** Start from the DoD's nouns and follow them into the
