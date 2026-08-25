@@ -37,6 +37,8 @@
 *.map
 
 *.ilk
+# MSBuild code-analysis marker; drops beside the exe in every output dir.
+*.lastcodeanalysissucceeded
 
 
 **/Build/obj/
