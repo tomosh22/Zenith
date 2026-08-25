@@ -480,9 +480,11 @@ try {
         Write-Banner "unit gate alone ($($unitLines.Count) line(s)) -- measuring"
         $measurements = New-Object System.Collections.Generic.List[object]
         $pinNeedsBump = $false
+        $measuredGames = New-Object System.Collections.Generic.List[string]
         foreach ($line in $unitLines) {
             $step = Invoke-GateLine -Line $line -Label 'unit'
             $game = if ($line -match '-Game\s+([A-Za-z0-9_]+)') { $Matches[1] } else { '(derived from -Exe)' }
+            if (-not $measuredGames.Contains($game)) { $measuredGames.Add($game) }
             $tally = $null
             if ($step.Output -match '(\d+)\s+ran,\s+(\d+)\s+passed,\s+(\d+)\s+failed') {
                 $tally = [PSCustomObject]@{ ran = [int]$Matches[1]; passed = [int]$Matches[2]; failed = [int]$Matches[3] }
@@ -499,15 +501,26 @@ try {
                 Write-Line ''
                 Write-Line "[tick_gates] MEASURED: $game ran $($tally.ran) with 0 failures." 'Yellow'
                 Write-Line "[tick_gates] Bump '$game' to $($tally.ran) in Tools/unit_baselines.json -- the ONE home for a pin." 'Yellow'
-                $reg = Get-AutomatedRegistryCount $game
-                if ($null -ne $reg) {
-                    Write-Line "[tick_gates] REGISTRY: $game has $reg ZENITH_AUTOMATED_TEST_REGISTER call site(s) -- the OTHER number Status.md's LIVE PIN block carries, and doc_lint C7 asserts it too. Derived with C7's own paren-anchored regex (a bare grep over-reports)." 'Yellow'
-                }
                 Write-Line '[tick_gates] A backend-neutral ENGINE unit moves EVERY game row; say in the work log which you measured and which you inferred.' 'Yellow'
                 continue
             }
             Write-Result 4 "unit gate failed with real failures: $line" @{ measurements = $measurements.ToArray() }
             exit 4
+        }
+
+        # The registry count, for EVERY measured game and whether or not the pin
+        # moved. It was printed only on a bump, which is exactly backwards: the
+        # case that needs it most is a ticket that adds an AUTOMATED test and no
+        # boot units -- the registry moves, the pin does not, and nothing else in
+        # the run would have said so. (ZM-67 stage 1 was 69 -> 70 with the pin
+        # unchanged.) Status.md's LIVE PIN block carries both numbers and
+        # doc_lint C7 asserts both, so a phase whose job is "observe before you
+        # narrate" has to hand over both.
+        foreach ($g in $measuredGames) {
+            $reg = Get-AutomatedRegistryCount $g
+            if ($null -ne $reg) {
+                Write-Line "[tick_gates] REGISTRY: $g has $reg ZENITH_AUTOMATED_TEST_REGISTER call site(s). Derived with doc_lint C7's own paren-anchored regex -- a bare grep also counts paren-less mentions in comments and over-reports." 'Yellow'
+            }
         }
 
         if ($pinNeedsBump) {
