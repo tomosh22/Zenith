@@ -364,6 +364,14 @@ enum ZM_MOVE_ID : u_int
 	ZM_MOVE_PIXIEDUST,
 	ZM_MOVE_SERENITYHYMN,
 	ZM_MOVE_PRISMBEAM,
+	// ---- GYM REWARD TEACH-MOVES (GDD 3.4) -------------------------------------
+	// ★ APPENDED AT THE VERY END, NOT FILED UNDER THEIR TYPE. The enum above is
+	// grouped by type only as a READING convenience; the ordinals are save-stable
+	// (a party monster persists its move ids), so slotting a GRASS move in beside
+	// ZM_MOVE_BARKTONIC would renumber every move after it and silently rewrite the
+	// movesets of every existing save. The header's own rule is binding: APPEND
+	// before ZM_MOVE_COUNT, never reorder. Later gyms' reward moves land here too.
+	ZM_MOVE_VERDANTLASH,   // GRASS -- Gym 1, Fenna's Bloom Badge reward (GDD 194)
 
 	ZM_MOVE_COUNT,
 	ZM_MOVE_NONE = ZM_MOVE_COUNT   // "no move" sentinel (empty move slots)

@@ -17,7 +17,9 @@
 
 namespace
 {
-	constexpr u_int uEXPECTED_MOVES = 218;
+	// 218 through R1-x; 219 from S8's Gym 1 slice G1-1, which appended
+	// ZM_MOVE_VERDANTLASH (Fenna's Bloom Badge teach-move, GDD 194).
+	constexpr u_int uEXPECTED_MOVES = 219;
 	constexpr u_int uMAX_PP = 40;
 
 	const ZM_MoveData& Mv(u_int uIndex)

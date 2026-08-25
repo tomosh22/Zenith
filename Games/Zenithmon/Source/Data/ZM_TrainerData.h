@@ -48,6 +48,7 @@ enum ZM_TRAINER_ID : u_int
 {
 	ZM_TRAINER_RIVAL_VESPER,     // the rival's first battle (Dawnmere); sets RIVAL1_DEFEATED
 	ZM_TRAINER_ROUTE1_RAMBLER,   // a generic route trainer: no story flag, no fixed place in the plot
+	ZM_TRAINER_GYM1_FENNA,       // Gym 1's leader (Thornacre); sets GYM1_DEFEATED
 
 	ZM_TRAINER_COUNT,
 	ZM_TRAINER_NONE = ZM_TRAINER_COUNT   // "no trainer" sentinel

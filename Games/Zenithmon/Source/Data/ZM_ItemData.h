@@ -199,6 +199,18 @@ enum ZM_ITEM_ID : u_int
 	ZM_ITEM_SEEKSCOPE,
 	ZM_ITEM_BADGECASE,
 	ZM_ITEM_EGGVOUCHER,
+	// ---- GYM REWARD TMs (GDD 3.4) ---------------------------------------------
+	// ★ THESE SIT AFTER THE KEY ITEMS, NOT UP IN THE TM BLOCK, AND THAT IS
+	// DELIBERATE. The grouping above is a READING convenience; the ordinals are
+	// save-stable -- ZM_SaveSchema writes a bag stack's item id as a uint16 and
+	// rejects anything at or past ZM_ITEM_COUNT -- so slotting this row in beside
+	// ZM_ITEM_TM_BULWARK would renumber all six key items. Insertion shifts each of
+	// them UP one ordinal, so the stored number that used to mean Badge Case would
+	// come back as the item BEFORE it, Seek Scope, and the old Egg Voucher ordinal
+	// would come back as Badge Case -- every key item in every existing save reading
+	// as its predecessor. The header's own rule is binding: APPEND before
+	// ZM_ITEM_COUNT, never reorder. Later gyms' reward TMs land here.
+	ZM_ITEM_TM_VERDANTLASH,   // Gym 1, Fenna's teach-move reward (GDD 194)
 
 	ZM_ITEM_COUNT,
 	ZM_ITEM_NONE = ZM_ITEM_COUNT   // "no item" sentinel (empty bag / held slots)

@@ -255,7 +255,10 @@ sign-off.** Observed at closure: headless **49 passed / 0 failed**, full windowe
       table uses: **G1-1** `ZM-28` data + placement header, re-authors nothing; **G1-2**
       `ZM-69` authors `Gym1.zscen` + the Thornacre door, `needs-gpu` + `human-gate`;
       **G1-3** `ZM-70` badge + teach-move on a leader win, PURE and runs in PARALLEL with
-      G1-2. Per ZM-D-162 discipline the line is AMENDED rather than replaced.**)
+      G1-2. Per ZM-D-162 discipline the line is AMENDED rather than replaced.**
+      **G1-1 `ZM-28` DONE 2026-08-25** -- `ZM_Gym1Placement.h`, the badge table, Fenna's
+      trainer row and the Verdant Lash move/TM landed with a headless solvability proof.
+      The box stays unticked: it covers all three slices, and G1-2/G1-3 are open.)
 - [ ] **[ZM-29]** `ZM_AutoTests_Slice` mini-playthrough (CB_HumanSession-style flat Act script + PROBEs, ~4-6k frames, windowed)
 
 *Gate:* mini-playthrough new-game -> Badge 1 green; manual visual playthrough sign-off. **Checkpoint before content scale-up.**

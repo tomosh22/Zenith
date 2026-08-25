@@ -18,7 +18,26 @@ The S0-S7 narrative that used to fill the back half of this file moved VERBATIM 
 its own template in `AgentBriefing.md` §2.3 specifies. Nothing was deleted.
 
 **★ LIVE PIN (UPDATED 2026-08-25):
-ZM boot `3401`; engine boot (Null Combat) `1650`; Null RenderTest `1741`; registry **70**.**
+ZM boot `3415`; engine boot (Null Combat) `1650`; Null RenderTest `1741`; registry **70**.**
+
+> **★ ZM-28 / G1-1 — Gym 1 DATA + placement header — OBSERVED 2026-08-25.**
+> `Null_vs2022_Debug_Win64_True` reported **`3415 ran / 3413 passed / 0 failed`** (2 skipped),
+> so `Tools/unit_baselines.json` moved `Zenithmon` **3401 -> 3415**. The +14 is 13 units in
+> the new `Tests/ZM_Tests_Gym1Placement.cpp` (the maze solvability BFS and its three
+> anti-vacuity arms, the shell/hedge/camera/exit/leader geometry, accessor totality, the
+> badge table, and one cross-table unit that the leader, the badge and the teach-move all
+> describe the same gym) plus `Fenna_AuthoredValuesAreExact` in `ZM_Tests_TrainerData.cpp`.
+> Combat (`1650`) and Null RenderTest (`1741`) are UNCHANGED and were NOT re-measured: the
+> diff touches no engine file, registers no component and renames no component type, so
+> nothing backend-neutral moved. Stated as INFERRED, not observed.
+> The registry is UNCHANGED at **70** — every new unit is a boot unit, and this slice adds
+> no `ZENITH_AUTOMATED_TEST_REGISTER` call site.
+> Three pinned counts moved with the data and are part of the +14's context rather than of
+> its arithmetic: `uEXPECTED_TRAINERS` 2 -> 3, `uEXPECTED_ITEMS` 90 -> 91, `uEXPECTED_MOVES`
+> 218 -> 219. Each is spelled in its TEST rather than read off the table, on purpose, so a
+> roster change is a failure rather than a silently-agreeing tautology.
+> **This slice authored nothing:** no `.zscen` byte moved, and the committed-asset hash
+> table below is untouched.
 
 > **★ ZM-67 — ground-item props to AAA quality — OBSERVED 2026-08-25.**
 > `Null_vs2022_Debug_Win64_True` reported **`3401 ran / 3399 passed / 0 failed`** (2 skipped),

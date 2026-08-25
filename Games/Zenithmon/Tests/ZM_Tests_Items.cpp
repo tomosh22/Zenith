@@ -19,7 +19,9 @@
 
 namespace
 {
-	constexpr u_int uEXPECTED_ITEMS = 90;
+	// 90 through R1-x; 91 from S8's Gym 1 slice G1-1, which appended
+	// ZM_ITEM_TM_VERDANTLASH (Fenna's teach-move reward, GDD 194).
+	constexpr u_int uEXPECTED_ITEMS = 91;
 
 	const ZM_ItemData& It(u_int uIndex)
 	{

@@ -16,7 +16,7 @@
 
   "baselines": {
     "$Zenithmon": "ZM boot units. Also narrated in Games/Zenithmon/Docs/Status.md, which stays the human-facing authority for WHY it moved; this file is what the gate reads.",
-    "Zenithmon": 3401,
+    "Zenithmon": 3415,
 
     "$Combat": "The engine boot pin. A backend-neutral ENGINE unit moves this AND every other game's number in the same commit, because they all boot the same engine suite.",
     "Combat": 1650,

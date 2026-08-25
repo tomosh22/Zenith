@@ -126,7 +126,11 @@ struct ZM_NpcData
 	//
 	// ★★ THE ZERO VALUE IS A TRAP, AND IT IS NOT THEORETICAL.
 	// ZM_TRAINER_RIVAL_VESPER == 0 (it is the FIRST enumerator in ZM_TRAINER_ID),
-	// while ZM_TRAINER_NONE aliases ZM_TRAINER_COUNT == 2. A row that OMITS this
+	// while ZM_TRAINER_NONE aliases ZM_TRAINER_COUNT -- whatever the roster's size
+	// happens to be that day, which is why neither number is spelled here. (This
+	// comment used to read "== 2", and S8's Gym 1 slice made it three; the trap has
+	// nothing to do with the count and everything to do with the FIRST enumerator
+	// being a real trainer.) A row that OMITS this
 	// trailing initializer therefore value-initialises it to 0 and SILENTLY BECOMES
 	// THE RIVAL -- MSVC does not warn on missing aggregate initialisers, so there is
 	// no build error. Every non-trainer row must spell ZM_TRAINER_NONE explicitly.

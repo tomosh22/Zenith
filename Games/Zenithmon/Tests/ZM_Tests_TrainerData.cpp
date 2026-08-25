@@ -44,7 +44,10 @@ namespace
 {
 	// Spelled in the TEST, not read back off the table, so "the roster changed"
 	// is a failure rather than a silently-agreeing tautology.
-	constexpr u_int uEXPECTED_TRAINERS = 2u;
+	//
+	// 2 through R1-x; 3 from S8's Gym 1 slice G1-1, which appended
+	// ZM_TRAINER_GYM1_FENNA.
+	constexpr u_int uEXPECTED_TRAINERS = 3u;
 
 	// The authored values, spelled here so each pin cannot degenerate into
 	// "whatever the row happens to say".
@@ -54,6 +57,14 @@ namespace
 	constexpr u_int uEXPECTED_RAMBLER_PARTY  = 2u;
 	constexpr u_int uEXPECTED_RAMBLER_LEVEL  = 4u;
 	constexpr u_int uEXPECTED_RAMBLER_PRIZE  = 120u;
+	// Gym 1's leader. The LEVEL is the load-bearing one, and it comes from ONE row:
+	// Docs/GameDesignDocument.md's pacing table puts Fenna's team at 13 against
+	// Routes 1-2 at L2-8 (GDD 433). GDD 194 is the badge table -- leader, type,
+	// town, badge and teach-move, no level -- so it is not a citation for this
+	// number. L13 is the game's first difficulty step and not a number to drift.
+	constexpr u_int uEXPECTED_FENNA_PARTY    = 3u;
+	constexpr u_int uEXPECTED_FENNA_LEVEL    = 13u;
+	constexpr u_int uEXPECTED_FENNA_PRIZE    = 2600u;
 
 	const ZM_TrainerData& Trainer(u_int i) { return ZM_GetTrainerData((ZM_TRAINER_ID)i); }
 
@@ -417,6 +428,86 @@ ZENITH_TEST(ZM_Data, Rambler_AuthoredValuesAreExact)
 	ZENITH_ASSERT_NE((u_int)x.m_eAITier, (u_int)xVesper.m_eAITier,
 		"both rows carry the same AI tier -- the tier column is never exercised as a "
 		"variable");
+}
+
+// Gym 1's leader (S8, slice G1-1). Same column-by-column shape as the two rows
+// above, and for the same reason: the roster-wide walks can only say a row is
+// well-FORMED, never that it says what the design document says.
+ZENITH_TEST(ZM_Data, Fenna_AuthoredValuesAreExact)
+{
+	const ZM_TrainerData& x        = ZM_GetTrainerData(ZM_TRAINER_GYM1_FENNA);
+	const ZM_TrainerData& xVesper  = ZM_GetTrainerData(ZM_TRAINER_RIVAL_VESPER);
+	const ZM_TrainerData& xRambler = ZM_GetTrainerData(ZM_TRAINER_ROUTE1_RAMBLER);
+
+	ZENITH_ASSERT_EQ((u_int)x.m_eId, (u_int)ZM_TRAINER_GYM1_FENNA,
+		"the leader row does not identify as the leader");
+	ZENITH_ASSERT_STREQ(x.m_szDisplayName, "Fenna", "the leader's name changed");
+	ZENITH_ASSERT_NOT_NULL(x.m_paxParty, "the leader brings no party array");
+	ZENITH_ASSERT_EQ(x.m_uPartyCount, uEXPECTED_FENNA_PARTY,
+		"the leader's party size changed");
+
+	// EVERY member at the GDD's level, not just the lead: a leader whose ace drifted
+	// off-spec is exactly the shape a lead-only pin cannot see.
+	if (PartyIsWalkable(x) && x.m_uPartyCount >= uEXPECTED_FENNA_PARTY)
+	{
+		ZENITH_ASSERT_EQ((u_int)x.m_paxParty[0].m_eSpecies, (u_int)ZM_SPECIES_SPORELING,
+			"the leader's opener is not the authored species");
+		ZENITH_ASSERT_EQ((u_int)x.m_paxParty[1].m_eSpecies, (u_int)ZM_SPECIES_DANDELIFT,
+			"the leader's second is not the authored species");
+		ZENITH_ASSERT_EQ((u_int)x.m_paxParty[2].m_eSpecies, (u_int)ZM_SPECIES_MANTISPRIG,
+			"the leader's ace is not the authored species");
+
+		for (u_int uSlot = 0u; uSlot < uEXPECTED_FENNA_PARTY; ++uSlot)
+		{
+			ZENITH_ASSERT_EQ(x.m_paxParty[uSlot].m_uLevel, uEXPECTED_FENNA_LEVEL,
+				"Gym 1 slot %u is not at the GDD's level %u -- Routes 1-2 run L2-8, so "
+				"this number IS the game's first difficulty step",
+				uSlot, uEXPECTED_FENNA_LEVEL);
+
+			// THE TYPE CLAIM, and it is the one thing about this row a reader would
+			// otherwise have to take on trust. GDD 194 makes Fenna the GRASS leader;
+			// a party member of any other primary type would leave the badge, the
+			// teach-move and the gym's whole identity disagreeing with the team.
+			// Guarded on resolvability first, because ZM_GetSpeciesData ASSERTS on an
+			// out-of-range id and the macros record-and-continue.
+			const ZM_SPECIES_ID eSpecies = x.m_paxParty[uSlot].m_eSpecies;
+			if (SpeciesIsResolvable(eSpecies))
+			{
+				ZENITH_ASSERT_EQ(
+					(u_int)ZM_GetSpeciesData(eSpecies).m_aeTypes[0], (u_int)ZM_TYPE_GRASS,
+					"Gym 1 slot %u is not GRASS-primary, but Fenna is the GRASS leader",
+					uSlot);
+			}
+		}
+	}
+
+	ZENITH_ASSERT_EQ(x.m_uPrizeMoney, uEXPECTED_FENNA_PRIZE, "the leader's prize changed");
+	ZENITH_ASSERT_EQ((u_int)x.m_eDefeatFlag, (u_int)ZM_STORY_FLAG_GYM1_DEFEATED,
+		"the leader's defeat must write GYM1_DEFEATED -- the flag S6 registered for "
+		"exactly this row, so that adding a gym costs no ZM_STORY_FLAG_ID");
+	ZENITH_ASSERT_EQ((u_int)x.m_eAITier, (u_int)ZM_AI_TIER_SMART,
+		"a three-monster leader is the first opponent for whom switching is a real "
+		"decision, which is what SMART adds over the rival's GREEDY");
+	ZENITH_ASSERT_STREQ(ZM_GetTrainerName(ZM_TRAINER_GYM1_FENNA), "Fenna",
+		"the name accessor and the leader row disagree");
+
+	// SHE BARKS. The rambler is the roster's silent row and stays that way (pinned by
+	// TrainerData_ChallengeColumnsAreWellFormedAndBothArmsExist); a leader who walked
+	// straight into the battle would waste the one beat the maze was built for.
+	ZENITH_ASSERT_GT(x.m_uChallengeLineCount, 0u,
+		"the gym leader says nothing before the badge battle");
+
+	// The cross-row difference claims that make the THIRD row worth having: it is the
+	// only one that makes party count and AI tier three-valued, so no roster-wide
+	// walk over them can be satisfied by a two-case implementation.
+	ZENITH_ASSERT_NE(x.m_uPartyCount, xVesper.m_uPartyCount,
+		"the leader and the rival carry the same party size");
+	ZENITH_ASSERT_NE(x.m_uPartyCount, xRambler.m_uPartyCount,
+		"the leader and the rambler carry the same party size");
+	ZENITH_ASSERT_NE((u_int)x.m_eAITier, (u_int)xVesper.m_eAITier,
+		"the leader and the rival carry the same AI tier");
+	ZENITH_ASSERT_NE((u_int)x.m_eAITier, (u_int)xRambler.m_eAITier,
+		"the leader and the rambler carry the same AI tier");
 }
 
 // ---- Accessor totality ------------------------------------------------------

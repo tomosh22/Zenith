@@ -117,6 +117,16 @@ namespace
 		{ ZM_ITEM_SEEKSCOPE,       "Seek Scope",      ZM_ITEM_CATEGORY_KEY,         0,    0, ZM_ITEM_EFFECT_NONE,                0, false, ZM_MOVE_NONE },
 		{ ZM_ITEM_BADGECASE,       "Badge Case",      ZM_ITEM_CATEGORY_KEY,         0,    0, ZM_ITEM_EFFECT_NONE,                0, false, ZM_MOVE_NONE },
 		{ ZM_ITEM_EGGVOUCHER,      "Egg Voucher",     ZM_ITEM_CATEGORY_KEY,         0,    0, ZM_ITEM_EFFECT_NONE,                0, false, ZM_MOVE_NONE },
+		// GYM REWARD TMs (GDD 3.4). Appended at the END of the table, after the key
+		// items rather than inside the TM block -- see the matching comment in
+		// ZM_ItemData.h for why the ordinals may not move.
+		//
+		// The columns are the shipped TM template verbatim (compare ZM_ITEM_TM_TITANBEAM
+		// above): category TM, 1000/500, the EXISTING ZM_ITEM_EFFECT_TEACH_MOVE, no
+		// effect param, NOT consumable (TMs in this game are reusable), and a real
+		// m_eTaughtMove. Nothing new is introduced here -- neither an item CATEGORY nor
+		// an item EFFECT kind -- which is what makes this a one-row content addition.
+		{ ZM_ITEM_TM_VERDANTLASH,  "TM Verdant Lash", ZM_ITEM_CATEGORY_TM,       1000,  500, ZM_ITEM_EFFECT_TEACH_MOVE,          0, false, ZM_MOVE_VERDANTLASH },
 	};
 }
 

@@ -254,6 +254,30 @@ namespace
 		{ ZM_MOVE_PIXIEDUST,     "Pixie Dust",    ZM_TYPE_FEY,     ZM_MOVE_CATEGORY_STATUS,    0,  75, 20,  0, 0, 0, ZM_MOVE_EFFECT_SLEEP,                100,  0, ZM_MOVE_TARGET_OPPONENT },
 		{ ZM_MOVE_SERENITYHYMN,  "Serenity Hymn", ZM_TYPE_FEY,     ZM_MOVE_CATEGORY_STATUS,    0,   0, 20,  0, 0, 0, ZM_MOVE_EFFECT_RAISE_SPDEFENSE,      100,  2, ZM_MOVE_TARGET_SELF },
 		{ ZM_MOVE_PRISMBEAM,     "Prism Beam",    ZM_TYPE_FEY,     ZM_MOVE_CATEGORY_SPECIAL, 120,  90,  5,  0, 0, 0, ZM_MOVE_EFFECT_NONE,                   0,  0, ZM_MOVE_TARGET_OPPONENT },
+		// GYM REWARD TEACH-MOVES (GDD 3.4). Appended at the END of the table, not
+		// filed under their type -- see the matching block in ZM_MoveData.h for why
+		// the ordinals may not move.
+		//
+		// ★ VERDANT LASH IS TUNED AGAINST TWO THINGS AT ONCE, and the second one is
+		// not obvious. (a) As CONTENT it is Gym 1's reward at level 13 (GDD 433: the
+		// first step up from Routes 1-2 at L2-8), so 65 power with a 20% defence drop
+		// is a solid early physical GRASS option rather than a late-game beam.
+		// (b) As DATA it lands in a table that ZM_Learnsets.cpp SCANS: every species'
+		// level-up list is DERIVED by sorting the damaging moves of its type by
+		// power ASCENDING, so adding a GRASS move re-sorts every GRASS species'
+		// learnset. 65 sits above Leafcut (55), which puts it at sorted STAB index 3
+		// or later -- past the first TWO STAB picks, which are the only ones a
+		// level-5 build reaches. (The spread is 1 + k*49/(count-1) over a cap of
+		// 10 + evoStage*2, so entry k=1 sits at level 5/4/4 and k=2 already at 9/8/7;
+		// the third STAB pick is auPicks[3], at level 14/12/10. The bound above
+		// therefore carries one index of margin, which is deliberate slack, not the
+		// requirement.) That is what keeps ZM_BuildWildEnemySpec's answer for the
+		// starter and for every Route 1 encounter byte-identical to what it was
+		// before this row existed. A power STRICTLY BELOW 50 would have moved them:
+		// at exactly 50 the sort is stable and ties keep table order, so Verdant Lash
+		// would land after Seedshot (50) at index 2 and still leave a level-5 build
+		// untouched.
+		{ ZM_MOVE_VERDANTLASH,   "Verdant Lash",  ZM_TYPE_GRASS,   ZM_MOVE_CATEGORY_PHYSICAL, 65, 100, 20,  0, 0, 1, ZM_MOVE_EFFECT_LOWER_DEFENSE,         20,  1, ZM_MOVE_TARGET_OPPONENT },
 	};
 }
 

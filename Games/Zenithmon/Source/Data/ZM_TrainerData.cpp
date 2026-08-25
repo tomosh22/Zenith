@@ -19,10 +19,14 @@ static_assert(uZM_TRAINER_MAX_PARTY == uZM_MAX_PARTY_SIZE,
 //   id, "display name", party, partyCount, prize, defeatFlag, aiTier,
 //   challengeLines, challengeLineCount
 //
-// The roster is deliberately TWO rows: the authored rival, and one generic route
+// The roster opened at TWO rows -- the authored rival, and one generic route
 // trainer that carries NO story flag. One row would let a "walk every row" unit
 // pass while the accessors only ever saw index 0, and it would leave the
-// ZM_STORY_FLAG_NONE arm of the defeat-flag column entirely unexercised.
+// ZM_STORY_FLAG_NONE arm of the defeat-flag column entirely unexercised. S8's Gym 1
+// slice added a THIRD, Fenna, and that shape still holds: the silent / unflagged
+// arms are still live content through the rambler, and the three rows now differ in
+// party count (1 / 2 / 3) and in AI tier (GREEDY / RANDOM / SMART), so no column
+// here is a constant a builder could fake.
 //
 // NOTHING IN THIS FILE MAY Zenith_Assert ON ITS ARGUMENTS. Zenith_Assert calls
 // Zenith_DebugBreak() in EVERY configuration -- there is no build in which it
@@ -59,11 +63,36 @@ namespace
 		{ ZM_SPECIES_PIPWIT, 4u },
 	};
 
+	// Gym 1's leader (S8, slice G1-1). Two GDD rows fix the three columns that
+	// matter here, and they are NOT interchangeable: GDD 194 is the badge table
+	// (leader / type / town / badge / teach-move, and NO level), which is what makes
+	// Fenna the GRASS leader of Thornacre; GDD 433 is the pacing table, and it is
+	// the only row carrying a number -- her team at L13 against Routes 1-2 at L2-8.
+	// That level is the first real step up, and the reason the room in front of her
+	// is a maze rather than a corridor.
+	//
+	// THREE members, weakest-first with the ace last, all GRASS-primary and all
+	// distinct species. Three is also a party count neither shipped row carries
+	// (Vesper brings 1, the rambler 2), which keeps the roster exercising
+	// m_uPartyCount as a genuine variable rather than a two-valued flag.
+	//
+	// ★ ALL THREE ARE AT THE SAME LEVEL 13, WHICH IS THE GDD FIGURE VERBATIM. Do not
+	// "improve" this by giving the ace a level of its own: the GDD states one number
+	// for Gym 1, ZM_Tests_TrainerData pins that number, and a leader whose ace is
+	// off-spec is a balance decision nobody has made.
+	const ZM_TrainerPartyMember s_axPartyFenna[] =
+	{
+		{ ZM_SPECIES_SPORELING,  13u },   // Grass/Umbral, stage 1 -- the opener
+		{ ZM_SPECIES_DANDELIFT,  13u },   // Grass/Sky,    stage 2
+		{ ZM_SPECIES_MANTISPRIG, 13u },   // Grass/Swarm,  stage 2 -- the ace
+	};
+
 	// The data is entirely compile-time, so an author who pastes a seventh member
 	// should find out at BUILD time rather than at boot. The runtime unit stays --
 	// it still covers rows added later, and rows whose array is not named here.
 	static_assert(ZM_ARRLEN(s_axPartyVesper)  <= uZM_TRAINER_MAX_PARTY, "Vesper's party outgrew the engine party cap");
 	static_assert(ZM_ARRLEN(s_axPartyRambler) <= uZM_TRAINER_MAX_PARTY, "the rambler's party outgrew the engine party cap");
+	static_assert(ZM_ARRLEN(s_axPartyFenna)   <= uZM_TRAINER_MAX_PARTY, "Fenna's party outgrew the engine party cap");
 
 	// -- the pre-battle challenge barks (S7 item 3 SC7) --
 
@@ -82,6 +111,19 @@ namespace
 	static_assert(ZM_ARRLEN(s_aszChallengeVesper) <= uZM_TRAINER_MAX_CHALLENGE_LINES,
 		"Vesper's challenge outgrew the dialogue queue -- QueueLines is all-or-nothing, so he would go MUTE");
 
+	// Fenna's bark, under the SAME <= 40-character budget and for the same reason:
+	// the typewriter rate is a hard 45 chars/sec that ZM_SetInstantBattlesForTests
+	// cannot touch, so every character she speaks costs the walk-up test real frames.
+	// Two lines, in the voice GDD 205 gives her -- Thornacre's youngest-ever leader,
+	// who grew the maze the player has just solved to reach her.
+	const char* const s_aszChallengeFenna[] =
+	{
+		"You found your way through my maze!",
+		"Now let's see you through my team.",
+	};
+	static_assert(ZM_ARRLEN(s_aszChallengeFenna) <= uZM_TRAINER_MAX_CHALLENGE_LINES,
+		"Fenna's challenge outgrew the dialogue queue -- QueueLines is all-or-nothing, so she would go MUTE");
+
 	// The bound is DEDUCED, never spelled. With an explicit [ZM_TRAINER_COUNT] the
 	// static_assert below would be a tautology -- true by construction -- and a
 	// forgotten row would merely zero-initialise the tail into a nameless trainer
@@ -94,6 +136,31 @@ namespace
 		// the "no lines -> straight to the battle" arm, so that arm is live content
 		// rather than only a unit fixture.
 		{ ZM_TRAINER_ROUTE1_RAMBLER, "Rambler Perrin", s_axPartyRambler, ZM_ARRLEN(s_axPartyRambler), 120u, ZM_STORY_FLAG_NONE,            ZM_AI_TIER_RANDOM, nullptr,              0u                              },
+		// GYM 1'S LEADER (S8, slice G1-1).
+		//
+		// ★ THE DEFEAT FLAG IS THE ONE THAT ALREADY EXISTS. ZM_STORY_FLAG_GYM1_DEFEATED
+		// has been registered since S6 (ZM_StoryFlags.h, wire bit 5, with its name row
+		// and its ZM_IsMilestoneStoryFlag arm already in place) precisely so this row
+		// could name it without touching ZM_StoryFlags at all. Appending a new flag id
+		// would move ZM_STORY_FLAG_COUNT, which is save-affecting and separately pinned
+		// by Tests/ZM_Tests_StoryFlags.cpp.
+		//
+		// ★ PRIZE 2600 = 200 x her team's level, which is the first prize in the game
+		// that is neither a story beat's fixed purse (Vesper's 500) nor a route
+		// trainer's pocket change (the rambler's 120). Comfortably under uZM_MONEY_CAP,
+		// which matters because ZM_GameState::AddMoney is a NO-OP over cap, not a clamp.
+		//
+		// ★ AI TIER SMART, AND THAT IS A THIRD DISTINCT TIER ON PURPOSE. A leader with
+		// three monsters is the first opponent in the game for whom "switch out of a
+		// hopeless matchup" is a real decision, which is exactly what SMART adds over
+		// GREEDY. It also keeps Setup_TierIsTheRowsTier's anti-vacuity clause honest:
+		// a roster where every row shared a tier could not tell a row read from a
+		// constant-returning builder.
+		//
+		// She BARKS, like the rival and unlike the rambler -- the silent arm stays live
+		// content through ZM_TRAINER_ROUTE1_RAMBLER, which is what
+		// TrainerData_ChallengeColumnsAreWellFormedAndBothArmsExist requires.
+		{ ZM_TRAINER_GYM1_FENNA,     "Fenna",          s_axPartyFenna,   ZM_ARRLEN(s_axPartyFenna),   2600u, ZM_STORY_FLAG_GYM1_DEFEATED,  ZM_AI_TIER_SMART,  s_aszChallengeFenna,  ZM_ARRLEN(s_aszChallengeFenna)  },
 	};
 
 	static_assert(sizeof(s_axTrainers) / sizeof(s_axTrainers[0]) == ZM_TRAINER_COUNT,
