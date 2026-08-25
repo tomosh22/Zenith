@@ -31,7 +31,12 @@
 
 // ZM_BakeManifest (a later box) stamps this per-family version; bump it whenever
 // this module's generation algorithms change so stale bakes self-invalidate.
-constexpr u_int uZM_PROPGEN_VERSION          = 1u;
+//
+// 2 (ZM-67): the box composition gained ZM_PROP_KIND_ITEM_PICKUP and
+// ZM_PROP_KIND_ITEM_SPENT. NO existing prop's bytes moved -- every pre-existing
+// kind's switch arm and every pre-existing roster row is untouched -- but the
+// algorithm did change, which is what this number is for.
+constexpr u_int uZM_PROPGEN_VERSION          = 2u;
 
 // The placeholder albedo resolution SC4 fills with a flat palette colour + accent
 // band. Not golden.
@@ -40,6 +45,22 @@ constexpr u_int uZM_PROP_ALBEDO_RESOLUTION   = 128u;
 // Props have no evolution, so the seed-derivation evo-stage slot is a fixed
 // constant (keeps ZM_GenDeriveSeed's signature shared with creatures/humans).
 constexpr u_int uZM_PROP_SYNTHETIC_EVO_STAGE = 1u;
+
+// ★★ THE ONE PLACE THE ITEM KINDS' GROUND PLANE IS SPELLED, AND THE ONLY EXCEPTION
+// TO "grounded at y = 0" IN THIS MODULE.
+//
+// A scenery prop is dropped onto an identity transform, so its composition starts
+// at y = 0 and that IS the ground. A GROUND-ITEM prop is worn by an entity the
+// scene authored at "measured surface + half the cube edge", scaled uniformly by
+// that same edge (ZM_Route1PropCentreY / fZM_ROUTE1_PROP_CUBE_EDGE) -- so its local
+// origin sits half a unit ABOVE the ground and a composition grounded at 0 would
+// hover there. The two ZM_PROP_KIND_ITEM_* arms therefore start here instead.
+//
+// ★ IT IS -0.5 BECAUSE THE TRANSFORM IS FROZEN, NOT BECAUSE -0.5 IS TIDY. The
+// anchors, their measured ground columns and the 2.5 m reach budget that holds
+// each prop beside the walked lane are all fixed by ZM-D-207; the picture had to
+// move to the transform rather than the other way round.
+constexpr float fZM_PROP_ITEM_BASE_Y         = -0.5f;
 
 // ---------------------------------------------------------------------------
 // ZM_PropRecipe -- the fully resolved per-prop generation inputs. Pure data;
@@ -85,6 +106,16 @@ void        ZM_BuildPropMesh   (const ZM_PropRecipe& xR, ZM_GenMesh& xMesh);
 // channel jitter, with an accent band. ALL randomness is drawn from the ALBEDO
 // domain ONLY, so a MESH-seed change can never perturb the texture.
 ZM_GenImage ZM_BuildPropTexture(const ZM_PropRecipe& xR);
+
+// The palette's BASE colour, before any biome tint or per-prop jitter. Public
+// since ZM-67 for exactly one reason: a caller that must present a prop with no
+// baked albedo available -- the cold-start shape ZM_GreyboxVisual falls back to on
+// a tree that has never run a tools build -- has to paint the same family colour
+// the bake would have produced. A second copy of these five constants at that call
+// site could drift, and the drift would show up as a prop that changes colour the
+// moment a bake appears. Bounds-asserted on a garbage palette, like the roster
+// accessors.
+Zenith_Maths::Vector3 ZM_PropPaletteColour(ZM_PROP_PALETTE ePalette);
 
 // ---------------------------------------------------------------------------
 // ZM_Prop -- the full in-memory bundle SC4 produces (mesh + placeholder albedo).
@@ -158,7 +189,25 @@ bool ZM_PropAssetPath(ZM_PROP_ID eId, ZM_PROP_ASSET_KIND eKind, char* szOut, u_i
 #ifdef ZENITH_TOOLS
 bool ZM_BakeProp(ZM_PROP_ID eId);    // static bundle: .zmesh/_albedo.ztxtr/.zmtrl/.zmodel
 bool ZM_BakeAllProps();               // bakes every prop in the roster
+
+// Is this ONE prop's bundle loadable right now -- and if not, bake just it and
+// re-ask. Returns whether all four per-model files are present non-empty after the
+// attempt. Idempotent and cheap when warm (four stats, no build).
+//
+// ★ DELIBERATELY NOT ZM_BakeAllProps, AND NOT A FAMILY STAMP. ZM_BakeManifest.h
+// records why no boot bakes a whole family synchronously ("wiring a synchronous
+// cold full-family bake into the unconditional tools boot would slow every gate/CI
+// boot"), and that reasoning holds for a scene load too. This bakes ONE model and
+// writes NO stamp, so ZM_BakeManifestCheck keeps telling the truth about whether
+// the FAMILY is warm -- a stamp written here would make every family-guarded test
+// skip its own bake and then miss files.
+bool ZM_EnsurePropBaked(ZM_PROP_ID eId);
 #else
 inline bool ZM_BakeProp(ZM_PROP_ID) { return false; }
 inline bool ZM_BakeAllProps()       { return false; }
+// NOT "the bundle is absent" -- "this build cannot bake". A caller must still try
+// to LOAD the model: on Android whatever shipped in the APK IS the bake (the same
+// ruling ZM_HumanAssetPolicy.cpp records), so treating false as absent would
+// permanently ignore assets that are right there.
+inline bool ZM_EnsurePropBaked(ZM_PROP_ID) { return false; }
 #endif

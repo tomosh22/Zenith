@@ -866,15 +866,15 @@ ships **9** pure/all-config `ZM_Gen` units in `Tests/ZM_Tests_BuildingGen.cpp`
 
 #### ZM_Gen -- prop generator (SHIPPED)
 
-`ZM_PropGen` turns each of the 25 prop roster rows into a deterministic STATIC
+`ZM_PropGen` turns each of the 28 prop roster rows into a deterministic STATIC
 model -- like buildings, a box composition via `ZM_StaticMesh` with NO skeleton
 and NO animation, baked as a 4-file static bundle per prop. Determinism is
-golden-pinned (`uZM_PROPGEN_VERSION` = 1). It ships **8** pure/all-config
+golden-pinned (`uZM_PROPGEN_VERSION` = 2). It ships **9** pure/all-config
 `ZM_Gen` units in `Tests/ZM_Tests_PropGen.cpp` (SC4), plus 1 `ZENITH_TOOLS`-only
 bake smoke (SC5) in `Tests/ZM_Tests_PropBake.cpp`:
 
 - **Roster + purity + static contract** (`Tests/ZM_Tests_PropGen.cpp`, 5 units,
-  mirroring BuildingGen's SC1): `PropGen_RosterTotality` (all 25 rows self-index +
+  mirroring BuildingGen's SC1): `PropGen_RosterTotality` (all 28 rows self-index +
   build + `ZM_ValidateProp` pass + static contract + biome contract: DRESSING
   rows carry a real biome, all others NONE), `PropGen_RecipePurity` (pure f(id) +
   pairwise-distinct synthetic seeds + MESH != ALBEDO seed),

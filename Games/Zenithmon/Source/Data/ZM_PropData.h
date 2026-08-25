@@ -21,6 +21,15 @@
 
 // Prop silhouette family -- drives the (SC4) box composition. APPEND-only +
 // save-stable; ZM_PROP_KIND_COUNT is the sentinel, never a stored value.
+//
+// ★ THE LAST TWO ARE THE ONLY **CENTRE-ANCHORED** KINDS, and that is a property of
+// where they STAND, not a style choice. Every kind above them is grounded at y = 0
+// because it is authored at the surface. The two ITEM kinds present a GROUND-ITEM
+// PROP, whose authored transform is "measured surface + half the cube edge" with
+// that same edge as its uniform scale (ZM_Route1PropCentreY /
+// fZM_ROUTE1_PROP_CUBE_EDGE), so their local origin IS the centre of a unit volume
+// and local y = -0.5 IS the ground. See fZM_PROP_ITEM_BASE_Y in ZM_PropGen.h --
+// the one place that offset is spelled.
 enum ZM_PROP_KIND : u_int
 {
 	ZM_PROP_KIND_FENCE,
@@ -31,6 +40,8 @@ enum ZM_PROP_KIND : u_int
 	ZM_PROP_KIND_ROCK,
 	ZM_PROP_KIND_FURNITURE,
 	ZM_PROP_KIND_DRESSING,
+	ZM_PROP_KIND_ITEM_PICKUP,   // a takeable item standing on a small plinth
+	ZM_PROP_KIND_ITEM_SPENT,    // the same plinth with the item GONE -- an empty tray
 
 	ZM_PROP_KIND_COUNT
 };
@@ -83,6 +94,13 @@ enum ZM_PROP_ID : u_int
 	ZM_PROP_DRESSING_MEADOW, ZM_PROP_DRESSING_VOLCANIC, ZM_PROP_DRESSING_COAST,
 	ZM_PROP_DRESSING_WETLAND, ZM_PROP_DRESSING_SNOW, ZM_PROP_DRESSING_CANYON,
 
+	// 3 ground-item pickup presentations (ZM-67) -> 28 total. NOT dressing and NOT
+	// scenery: these are what a ZM_GroundItemProp entity WEARS, chosen per frame by
+	// ZM_GroundItemPropModel from the item the prop yields and whether this save has
+	// already taken it. One model per SILHOUETTE, never one per prop, so a fourth
+	// ground item costs a registry row and no art.
+	ZM_PROP_ITEM_PHIAL, ZM_PROP_ITEM_ORB, ZM_PROP_ITEM_TAKEN,
+
 	ZM_PROP_COUNT,
 	ZM_PROP_NONE = ZM_PROP_COUNT   // "no prop" sentinel
 };
@@ -91,6 +109,14 @@ enum ZM_PROP_ID : u_int
 // game:Props/<Name>/...). The kind/biome/palette/dims fields drive the SC4 box
 // composition + the placeholder albedo. m_eBiome is ZM_PROP_BIOME_NONE except for
 // the DRESSING rows, whose biome tags the battle-dome set they belong to.
+//
+// ★ THE DIMENSIONS ARE METRES **EXCEPT** ON THE TWO ITEM KINDS, where they are
+// units of the authored entity scale. A scenery prop is dropped onto an identity
+// transform, so its row is metres and reads as metres. A ground-item prop is worn
+// by an entity whose scale is already fZM_ROUTE1_PROP_CUBE_EDGE and CANNOT be
+// re-authored (ZM-D-207 froze the anchors; moving one would need a windowed
+// re-author of a committed scene), so an ITEM row states the fraction of that
+// volume it fills. Multiply by the entity's scale to get metres.
 struct ZM_PropData
 {
 	ZM_PROP_ID      m_eId;

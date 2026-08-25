@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Zenithmon/Source/Data/ZM_ItemData.h"   // ZM_ITEM_ID / ZM_ITEM_COUNT -- what a prop YIELDS
+#include "Zenithmon/Source/Data/ZM_PropData.h"   // ZM_PROP_ID -- which generated model PRESENTS a prop
 
 // The pickup path writes a ZM_GameState and owns none: forward-declared and taken
 // by reference, so this header stays below Source/Party and the include graph has
@@ -209,3 +210,32 @@ ZM_GROUND_ITEM_PICKUP ZM_CanPickUpGroundItem(const ZM_GameState& xState,
 // for the pre-call state.
 ZM_GROUND_ITEM_PICKUP ZM_TryPickUpGroundItem(ZM_GameState& xStateInOut,
 	ZM_GROUND_ITEM_ID eId);
+
+// ---- What a prop LOOKS like (ZM-67) -------------------------------------------
+
+// Which generated prop MODEL presents this ground item, given whether it is still
+// takeable. PURE and TOTAL, like everything else here: it reads the compiled
+// registry and the compiled item table and touches no scene, no save and no disk.
+//
+// ★ bInteractable IS ZM_GroundItemProp::IsInteractable()'s ANSWER, PASSED IN --
+// this file deliberately cannot reach a ZM_GameState it was not handed, and the
+// component already owns that question. Passing it in rather than recomputing it
+// is what stops the picture and the picker ever disagreeing about whether a prop
+// is live: there is exactly one predicate and both read it.
+//
+// The mapping, and why it is keyed where it is:
+//   * NOT takeable, OR an id the registry does not carry -> ZM_PROP_ITEM_TAKEN.
+//     An unconfigured prop is inert (ZM_GroundItemProp::IsInteractable says so), so
+//     it must LOOK inert; showing a pickup nobody can take is the exact failure
+//     ZM_GroundItemProp.h's "A COLLECTED PROP GOES INERT" note is about.
+//   * Otherwise the row's ZM_ITEM_CATEGORY decides -- the item's OWN taxonomy, not
+//     a per-prop table. BALL -> ZM_PROP_ITEM_ORB, everything else ->
+//     ZM_PROP_ITEM_PHIAL. Keyed on the category so the answer is TOTAL over every
+//     item the table will ever hold: a new ground item inherits a silhouette
+//     instead of falling into a default nobody remembered to extend.
+//
+// SHORTFALL, recorded rather than hidden: eight of the nine categories share the
+// PHIAL silhouette today, so a future TM or key-item prop would look like medicine.
+// That is a content gap for S11 drop tuning, not a defect in this mapping -- adding
+// a row to ZM_PropData and an arm below is the whole fix.
+ZM_PROP_ID ZM_GroundItemPropModel(ZM_GROUND_ITEM_ID eId, bool bInteractable);

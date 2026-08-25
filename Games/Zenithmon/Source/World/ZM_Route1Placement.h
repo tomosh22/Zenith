@@ -816,21 +816,34 @@ inline ZM_Route1Volume ZM_GetRoute1NorthGate()
 
 // ---- The three ground-item props ---------------------------------------------
 //
-// The blockout cube every prop is authored as. Small enough to read as an object
+// The UNIFORM SCALE every prop is authored at. Small enough to read as an object
 // lying beside the path rather than a crate blocking it, and large enough to see
 // from the follow camera at fZM_ROUTE1_CAMERA_ARM.
 //
 // ★ IT IS AN EDGE, NOT A HALF-EDGE, and the centre accessor below is the ONLY
-// place the halving happens. ZM_GreyboxVisual's blockout is the engine unit cube,
-// so this value goes straight into AddStep_SetTransformScale and a second
-// half-extent spelled at the call site would be the classic capsule-arithmetic
-// duplication ZM_DawnmerePlacement.h warns about.
+// place the halving happens. It goes straight into AddStep_SetTransformScale, and
+// a second half-extent spelled at the call site would be the classic
+// capsule-arithmetic duplication ZM_DawnmerePlacement.h warns about.
+//
+// ★ IT IS STILL CALLED CUBE_EDGE AFTER ZM-67, AND THAT IS NOT A LEFTOVER. The
+// picture is a generated prop model now rather than the engine unit cube, but this
+// value is a TRANSFORM number, not an art one: it names the edge of the unit volume
+// the entity scales, which the generated meshes are anchored to fill
+// (fZM_PROP_ITEM_BASE_Y in ZM_PropGen.h) exactly so this constant, the measured
+// ground columns and the reach budget below never had to move. Renaming it would
+// rewrite nothing and cost the trail from here to why -0.5 is the ground.
 inline constexpr float fZM_ROUTE1_PROP_CUBE_EDGE = 0.6f;
 
 // A prop standing ON its own measured column: the MEASURED surface plus half the
-// cube. Reads the ground table through ZM_Route1GroundFeetY -- never
+// scaled volume. Reads the ground table through ZM_Route1GroundFeetY -- never
 // fZM_ROUTE1_RECIPE_TARGET_GROUND_Y -- so a re-freeze of the table moves every
 // prop with it and no literal here has to be touched.
+//
+// ★ THIS IS THE FUNCTION THE PROP MESHES WERE BUILT AROUND (ZM-67). Because the
+// authored Y is surface + HALF the volume, the entity origin is the volume's
+// CENTRE and its underside is at local -0.5 -- which is why the two
+// ZM_PROP_KIND_ITEM_* compositions start there instead of at 0. Change the halving
+// here and the props hover or sink, with every other check in the suite green.
 inline constexpr float ZM_Route1PropCentreY(ZM_ROUTE1_GROUND_SAMPLE eSample)
 {
 	return ZM_Route1GroundFeetY(eSample) + 0.5f * fZM_ROUTE1_PROP_CUBE_EDGE;

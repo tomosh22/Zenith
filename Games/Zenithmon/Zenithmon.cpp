@@ -35,6 +35,12 @@
 #include "Zenithmon/Source/Battle/ZM_BattleDirectorCore.h"
 #include "Zenithmon/Source/Data/ZM_NpcData.h"                     // ZM_GetNpcData -- the greybox's appearance row (W4)
 #include "Zenithmon/Source/Gen/ZM_HumanAppearance.h"              // ZM_GetHumanPaletteColour (W4)
+// ★ UNCONDITIONAL, like ZM_HumanAppearance.h beside it and NOT in the ZENITH_TOOLS
+// block below. ZM_GreyboxVisual's PROP branch compiles in EVERY configuration and
+// reads the asset-path scheme, the palette colours and the (tools-only, no-op
+// elsewhere) single-prop bake from here; the bake guard is inside the header, not
+// at this include.
+#include "Zenithmon/Source/Gen/ZM_PropGen.h"                      // prop asset refs + palette + ZM_EnsurePropBaked (ZM-67)
 #include "Zenithmon/Source/Graph/ZM_GraphAuthoring.h"             // the challenge graph's asset path + builder (S7 SC7)
 #include "Zenithmon/Source/Interaction/ZM_InteractionRuntime.h"   // ResetRuntimeStateForTests (between-tests hook)
 #include "Zenithmon/Source/Interaction/ZM_TrainerSightFsm.h"      // ZM_TrainerEngagementLatch + ZM_TrainerCinematicLatch (between-tests hook)
@@ -95,7 +101,7 @@
 // ZM_GreyboxVisual -- the ONE visual component every authored Zenithmon entity
 // wears, and the thing that decides what it looks like.
 //
-// It serves TWO POPULATIONS, and keeping them apart is the whole design:
+// It serves THREE POPULATIONS, and keeping them apart is the whole design:
 //
 //   BLOCKOUT  -- every wall, floor, door, lintel and interior shell. A unit cube
 //                in the shipped blockout grey (or PlayerHome's warm interior tint,
@@ -106,6 +112,12 @@
 //                generated humanoid MODEL (ZM_HumanGen's centre-anchored bind
 //                space) plus an Idle/Walk animator, and their physics body is
 //                installed from the COMPILED body contract.
+//   PROP      -- an entity carrying a ZM_GroundItemProp (ZM-67). A generated
+//                STATIC prop MODEL chosen per frame from the item the prop yields
+//                and whether this save has already taken it. No skeleton, no
+//                animator, and -- unlike HUMAN -- NO BODY: a ground-item prop
+//                deliberately has no collider (ZM-D-207), so this branch installs
+//                nothing physical and must never grow a call that does.
 //
 // ★ THE HUMAN BRANCH IS THE ONE THAT MOVED. Before this, an NPC and a doorframe
 // were the same object on screen: both a grey unit cube, the NPC merely tinted
@@ -155,6 +167,17 @@
 // touched here at all (ZM_PlayerController::EnsureAndConfigureBody owns it and
 // installs the same dimensions immediately before its own configuration block).
 //
+// ★ WHY THE PROP BRANCH IS THE ONLY ONE WITH AN OnUpdate, AND WHY IT IS AN UPDATE
+// AND NOT A NOTIFICATION. A prop stops being takeable MID-SCENE, the moment the
+// player picks it up, and ZM_GroundItemProp.h is explicit that the answer "is READ
+// from the save rather than latched here". A hook fired from the pickup would latch
+// it: any other route into the collected set -- a save loaded over a live scene, a
+// debug grant -- would leave the picture claiming a pickup that is gone. So the
+// visual asks the same predicate the picker asks, every frame, and rebuilds only
+// when the ANSWER changes. OnUpdate returns on its first compare for every blockout
+// and every human in the game; only the three Route 1 props go further, and only
+// once each per playthrough do they do any work.
+//
 // NOTHING NEW IS SERIALIZED. WriteToDataStream still emits a single version u_int,
 // so the committed .zscen bytes cannot move; everything below is re-derived on
 // every load from bytes that were already there.
@@ -180,15 +203,70 @@ public:
 		}
 
 		// THE EARLY BRANCH, and deliberately so: an entity that resolves to no NPC
-		// row and carries no ZM_PlayerController is a blockout, and never reaches a
-		// line of human code.
+		// row and carries no ZM_PlayerController is a prop or a blockout, and never
+		// reaches a line of human code.
 		const ZM_HUMAN_ID eHumanId = ResolveHumanId();
 		if (eHumanId >= ZM_HUMAN_COUNT)
 		{
+			// ★ THE THREE POPULATIONS ARE MUTUALLY EXCLUSIVE BY CONSTRUCTION, so the
+			// order of these two is a readability choice and not a precedence rule: a
+			// ground-item prop carries neither ZM_Interactable nor ZM_PlayerController
+			// (that separation is ZM-D-207's whole ruling), and no wall carries a
+			// ZM_GroundItemProp. The BLOCKOUT call below is reached by exactly the
+			// entities that reached it before.
+			if (m_xParentEntity.TryGetComponent<ZM_GroundItemProp>() != nullptr)
+			{
+				ApplyProp();
+				return;
+			}
 			ApplyBlockout();
 			return;
 		}
 		ApplyHuman(eHumanId);
+	}
+
+	// The ONLY per-frame work this component does, and it is gated to one population
+	// on its first line. See the OnUpdate note in the class comment for why a prop's
+	// look is polled rather than pushed.
+	//
+	// ★★ RECORDED HAZARD -- THIS GATE READS WHAT **OnStart** MANAGED TO DO, NOT WHAT
+	// THE ENTITY IS. A prop that never reached ZM_VISUAL_PROP or _PROP_FALLBACK is
+	// stuck at ZM_VISUAL_NONE, and NONE fails this compare on every frame for the
+	// rest of the session: the poll never runs again and nothing retries. There are
+	// exactly two ways in --
+	//   * OnStart did not see a ZM_GroundItemProp on the entity (it takes the
+	//     BLOCKOUT arm instead, and a blockout never polls);
+	//   * ApplyProp ran, the model did not load, and the cold fallback's
+	//     BuildMeshEntry ALSO returned false -- a null geometry asset, a null
+	//     material, or a Flux_MeshGeometry that never built -- which leaves
+	//     m_eLoadedKind untouched at NONE.
+	//
+	// ★ THE ONE OBSERVABLE SYMPTOM: the prop's picture stops tracking the save. Most
+	// visibly, the player picks the item up -- the bag gains it and the collected set
+	// records it -- and the prop on the ground still shows its PICKUP, forever,
+	// offering something that is gone. (Or shows nothing at all, if the second case
+	// left the entity with no mesh entry.)
+	//
+	// ★ AND THE ONLY TEST THAT COULD SEE IT IS BLIND WHERE CI LOOKS. This is a
+	// pixels-on-screen failure; the tests that photograph these props carry
+	// m_bRequiresGraphics, and a requiresGraphics test is SKIPPED-AS-PASSED on the
+	// Null backend every gate runs on. Nothing headless can distinguish "the prop
+	// re-evaluated and chose the same model" from "the prop stopped re-evaluating".
+	//
+	// ★ NOT REDESIGNED HERE, DELIBERATELY. The component-ORDER premise this rests on
+	// -- that ZM_GroundItemProp is readable at order 107 -- predates ZM-67 and is
+	// argued in full in the class comment above ApplyProp; re-entering the gate on an
+	// entity that carries the component but is stuck at NONE is a behaviour change
+	// with its own failure modes (a per-frame TryGetComponent on every blockout and
+	// every human in the game, and a retry loop against a bake that is absent by
+	// design on a cold clone). Recorded so the next reader is not surprised.
+	void OnUpdate(float /*fDt*/)
+	{
+		if (m_eLoadedKind != ZM_VISUAL_PROP && m_eLoadedKind != ZM_VISUAL_PROP_FALLBACK)
+		{
+			return;
+		}
+		ApplyProp();   // a strict no-op unless the prop's desired MODEL has changed
 	}
 
 	void WriteToDataStream(Zenith_DataStream& xStream) const
@@ -201,10 +279,10 @@ public:
 		u_int uVersion = 0u;
 		xStream >> uVersion;
 		(void)uVersion;
-		// m_eLoadedKind / m_eLoadedHumanId / m_bAnimatorAuthored are deliberately NOT
-		// cleared: they record what THIS instance actually did to the model and the
-		// animator, which a stream read does not undo. A genuine scene load builds a
-		// FRESH component, so it starts at NONE and takes the normal path.
+		// m_eLoadedKind / m_eLoadedHumanId / m_eLoadedPropId / m_bAnimatorAuthored are
+		// deliberately NOT cleared: they record what THIS instance actually did to the
+		// model and the animator, which a stream read does not undo. A genuine scene
+		// load builds a FRESH component, so it starts at NONE and takes the normal path.
 	}
 
 #ifdef ZENITH_TOOLS
@@ -219,6 +297,23 @@ public:
 				xColour.x, xColour.y, xColour.z);
 			return;
 		}
+		if (const ZM_GroundItemProp* pxProp =
+			m_xParentEntity.TryGetComponent<ZM_GroundItemProp>())
+		{
+			// DERIVED live, like the blockout colour below and for the same reason: the
+			// panel must show what the NEXT frame would present, not what the last one
+			// happened to build.
+			const ZM_PROP_ID eDesired = ZM_GroundItemPropModel(
+				pxProp->GetGroundItemId(), pxProp->IsInteractable());
+			ImGui::Text("Ground-item prop: %s (%s)",
+				ZM_GetPropName(eDesired), KindName(m_eLoadedKind));
+			ImGui::Text("Interactable: %s", pxProp->IsInteractable() ? "yes" : "no");
+			const Zenith_Maths::Vector4 xPropColour = PropFallbackColour(eDesired);
+			ImGui::Text("Cold-start fallback colour: %.3f, %.3f, %.3f",
+				xPropColour.x, xPropColour.y, xPropColour.z);
+			return;
+		}
+
 		ImGui::TextUnformatted("Replaceable S3 greybox unit cube");
 		// DERIVED live rather than read back off the material, so the panel shows
 		// what the NEXT start would paint.
@@ -238,6 +333,8 @@ private:
 		ZM_VISUAL_BLOCKOUT,
 		ZM_VISUAL_HUMAN_FALLBACK,
 		ZM_VISUAL_HUMAN,
+		ZM_VISUAL_PROP,
+		ZM_VISUAL_PROP_FALLBACK,
 	};
 
 	static const char* KindName(ZM_VISUAL_KIND eKind)
@@ -247,9 +344,17 @@ private:
 		case ZM_VISUAL_BLOCKOUT:       return "blockout";
 		case ZM_VISUAL_HUMAN_FALLBACK: return "cold fallback block";
 		case ZM_VISUAL_HUMAN:          return "model";
+		case ZM_VISUAL_PROP:           return "prop model";
+		case ZM_VISUAL_PROP_FALLBACK:  return "cold fallback prop shape";
 		default:                       return "nothing yet";
 		}
 	}
+
+	// The material every PROP wears. NOT "ZM_Greybox": ZM_RivalVesperAuthored_Test
+	// finds both the blockout and the human-fallback populations by that exact name
+	// (this class is file-local and cannot be named from Tests/), so a third
+	// population borrowing it would silently change what that test counts.
+	static constexpr const char* szPROP_MATERIAL_NAME = "ZM_GroundItemProp";
 
 	// ---- Who is this? -------------------------------------------------------
 	// NAME-INDEPENDENT on purpose, so all three scenes work: an NPC is whoever its
@@ -383,6 +488,191 @@ private:
 
 		EnsureHumanAnimator(*pxSkeleton);
 		return true;
+	}
+
+	// ---- PROP: a generated model whose choice is re-derived every frame ------
+	//
+	// ★ IT MOVES NOTHING AND ADDS NO BODY. The authored transform -- the measured
+	// ground column, the interact origin, the uniform fZM_ROUTE1_PROP_CUBE_EDGE
+	// scale -- is read by nobody here and written by nobody here, and the generated
+	// meshes are anchored at fZM_PROP_ITEM_BASE_Y precisely so they land on that
+	// frozen transform without it having to move. No collider, no rigid body, no
+	// InstallHumanBody sibling: ZM-D-207 rules a prop has no physics at all, and
+	// ZM_Route1GroundTruth_Test treats a second SOLID body over a prop's own ground
+	// column as a failure rather than something it filters out.
+	//
+	// ★ WHY READING ZM_GroundItemProp AT ORDER 107 IS SAFE, GIVEN IT IS 115. The
+	// identical argument the class comment makes for ZM_Interactable at 113, and it
+	// is stronger here: ZM_GroundItemProp::OnStart establishes NOTHING AT ALL (its
+	// body is a comment saying so). The authored id arrives from ReadFromDataStream,
+	// which provably runs for every component of an entity before any pending start
+	// is dispatched, or from the AddStep_Custom authoring step, which runs with the
+	// editor Stopped and no OnStart fired.
+	//
+	// ★ AND WHY A MISSING GAME STATE COSTS NOTHING. IsCollected() answers "not
+	// collected" when no ZM_GameState is reachable -- the fresh-save ruling in
+	// ZM_GroundItemProp.h -- so a prop started before the manager exists shows its
+	// PICKUP. That is the right guess, and because this is a poll rather than a
+	// latch the next frame corrects it for free if the save says otherwise. A
+	// notification fired from the pickup would have had no way to.
+	void ApplyProp()
+	{
+		// Re-resolved every call, never cached: component pools RELOCATE their
+		// elements, so a pointer held across a frame is a dangling pointer waiting.
+		const ZM_GroundItemProp* pxProp =
+			m_xParentEntity.TryGetComponent<ZM_GroundItemProp>();
+		if (pxProp == nullptr)
+		{
+			return;   // the component was removed under us; leave whatever is drawn
+		}
+
+		// ★ ONE PREDICATE, ASKED -- NOT A SECOND OPINION. IsInteractable() is the
+		// same answer ZM_InteractionRuntime gates the interact press on, so the thing
+		// the player sees and the thing the player can press E at cannot disagree.
+		const ZM_PROP_ID eDesired = ZM_GroundItemPropModel(
+			pxProp->GetGroundItemId(), pxProp->IsInteractable());
+
+		const bool bAlreadyPresenting =
+			(m_eLoadedKind == ZM_VISUAL_PROP || m_eLoadedKind == ZM_VISUAL_PROP_FALLBACK);
+		if (bAlreadyPresenting && m_eLoadedPropId == eDesired)
+		{
+			return;   // the common frame: no LoadModel, no AddMeshEntry, no stat
+		}
+
+		if (m_eLoadedKind == ZM_VISUAL_NONE)
+		{
+			// ★ WARM THE **OTHER** STATE AT LOAD, NOT AT PICKUP. The spent model is
+			// wanted the instant the player presses E, and generating it on that frame
+			// would put a hitch exactly where the game is meant to feel responsive.
+			// Tools-only and a four-stat no-op once the bundle is on disk; the result is
+			// ignored for the same reason it is ignored in ApplyPropModel.
+			(void)ZM_EnsurePropBaked(
+				ZM_GroundItemPropModel(pxProp->GetGroundItemId(), false));
+		}
+
+		Zenith_ModelComponent* pxModel =
+			m_xParentEntity.TryGetComponent<Zenith_ModelComponent>();
+		if (pxModel == nullptr)
+		{
+			pxModel = &m_xParentEntity.AddComponent<Zenith_ModelComponent>();
+		}
+
+		if (ApplyPropModel(*pxModel, eDesired))
+		{
+			m_eLoadedKind   = ZM_VISUAL_PROP;
+			m_eLoadedPropId = eDesired;
+			return;
+		}
+
+		// Cold, or the model refused to load. ★ CLEAR FIRST, for the reason the human
+		// path states AND one more: LoadModel REFUSES a missing file WITHOUT clearing,
+		// so on a live -> spent swap whose spent bundle is absent the OLD pickup model
+		// is still on the entity, and AddMeshEntry would stack the fallback on top of
+		// it -- a prop that reads as taken AND as takeable at the same time.
+		if (m_eLoadedKind != ZM_VISUAL_NONE)
+		{
+			pxModel->ClearModel();
+		}
+		m_xGeometry = PropFallbackGeometry(eDesired);
+		if (!BuildMeshEntry(szPROP_MATERIAL_NAME, PropFallbackColour(eDesired),
+			fPROP_ROUGHNESS, fPROP_METALLIC))
+		{
+			return;
+		}
+		m_eLoadedKind   = ZM_VISUAL_PROP_FALLBACK;
+		m_eLoadedPropId = eDesired;
+	}
+
+	// Load one generated prop bundle. False if it did not land, in which case the
+	// caller falls back to the cold shape.
+	bool ApplyPropModel(Zenith_ModelComponent& xModel, ZM_PROP_ID eProp)
+	{
+		char acModelRef[256];
+		if (!ZM_PropAssetPath(eProp, ZM_PROP_ASSET_MODEL, acModelRef,
+			static_cast<u_int>(sizeof(acModelRef))))
+		{
+			return false;
+		}
+
+		// Tools-only and a four-stat no-op once the bundle is on disk; an inline
+		// `return false` everywhere else. The RESULT IS DELIBERATELY IGNORED: on
+		// Android whatever shipped in the APK IS the bake (the ruling
+		// ZM_HumanAssetPolicy.cpp records), so treating "this build cannot bake" as
+		// "the model is absent" would refuse assets that are sitting right there.
+		(void)ZM_EnsurePropBaked(eProp);
+
+		xModel.LoadModel(std::string(acModelRef));
+
+		// ★ THE PATH IS THE ONLY HONEST SIGNAL, NOT HasModel(). LoadModel refuses a
+		// missing file before it clears anything, so HasModel() can still be true --
+		// describing the model this call was meant to REPLACE. Zenith_ModelComponent
+		// assigns m_strModelPath on its success path and nowhere else.
+		if (xModel.GetModelPath() != acModelRef || xModel.GetNumMeshes() == 0u)
+		{
+			Zenith_Warning(LOG_CATEGORY_GAMEPLAY,
+				"[ZM_GreyboxVisual] prop model '%s' did not load; using the cold-start "
+				"shape", acModelRef);
+			return false;
+		}
+
+		// The material handle belongs to the fallback path; a model carries its own.
+		m_xMaterial = MaterialHandle();
+		m_xGeometry = MeshGeometryHandle();
+		return true;
+	}
+
+	// The cold-start shape, for a tree that has never run a tools build.
+	//
+	// ★ THREE DISTINCT SHAPES, NOT THREE COLOURS. The point of the ticket is that the
+	// presentations are tellable apart at walking distance, and a cold tree is still
+	// a tree somebody plays; three identically-shaped blocks in three colours would
+	// fail that the moment the sky is re-tuned.
+	//
+	// ★ IT PRESERVES THE **PICKUP** SILHOUETTES AND DELIBERATELY NOT THE SPENT ONE,
+	// AND THE ASYMMETRY IS FORCED. A capsule for the phial and a sphere for the orb
+	// are fair stand-ins for those two baked compositions -- tall-and-thin against
+	// squat-and-round, the same read. The SPENT tray is not: its roster row is 0.22
+	// tall (a flat, open tray) and Zenith_MeshGeometryAsset::CreateUnitCylinder is
+	// radius 0.5 by height 1.0, so the cold spent prop is a full-height drum where
+	// the baked one is a saucer. It is a THIRD distinct shape in the STONE grey, so
+	// "taken" still reads as neither pickup, but its FLATNESS is a bake-only
+	// property. Do not describe a cold capture as showing the spent silhouette.
+	//
+	// ★ AND THAT CANNOT BE FIXED BY SHRINKING THE CYLINDER, WHICH IS WHY IT WAS NOT.
+	// Every shape here has to be centred on the origin spanning [-0.5, +0.5] (see
+	// below); a 0.22-tall tray centred on the origin spans [-0.11, +0.11] and would
+	// HOVER 0.39 of a cube above the measured surface, because there is nothing in
+	// this path that can offset a geometry downward -- the entity transform is frozen
+	// and shared with the baked model. A hovering prop is a worse cold start than a
+	// too-tall one.
+	//
+	// ★ EVERY ONE OF THESE IS CENTRED ON THE ORIGIN SPANNING [-0.5, +0.5]. That is
+	// the same anchor fZM_PROP_ITEM_BASE_Y gives the baked meshes and the same one
+	// the blockout unit cube had, so the fallback stands exactly where the cube stood
+	// -- on the measured surface, not hovering over it. CreateUnitCone is
+	// deliberately NOT used: it spans [0, 1] and would float by half a cube.
+	static MeshGeometryHandle PropFallbackGeometry(ZM_PROP_ID eProp)
+	{
+		switch (eProp)
+		{
+		case ZM_PROP_ITEM_ORB:   return Zenith_MeshGeometryAsset::CreateUnitSphere(16u);
+		case ZM_PROP_ITEM_PHIAL: return Zenith_MeshGeometryAsset::CreateUnitCapsule(16u);
+		default:                 return Zenith_MeshGeometryAsset::CreateUnitCylinder(16u);
+		}
+	}
+
+	// ★ DERIVED FROM THE ROSTER ROW, NEVER CHOSEN HERE. The fallback wears the same
+	// palette family the bake would have painted, so the two presentations cannot
+	// drift into a prop that changes colour the moment a bake appears -- and there
+	// is no colour constant in this file for a test to accidentally pin.
+	static Zenith_Maths::Vector4 PropFallbackColour(ZM_PROP_ID eProp)
+	{
+		if (static_cast<u_int>(eProp) >= static_cast<u_int>(ZM_PROP_COUNT))
+		{
+			return Zenith_Maths::Vector4(ZM_PropPaletteColour(ZM_PROP_PALETTE_STONE), 1.0f);
+		}
+		return Zenith_Maths::Vector4(
+			ZM_PropPaletteColour(ZM_GetPropData(eProp).m_ePalette), 1.0f);
 	}
 
 	// ---- The body: a COMPILED contract, never the transform scale ------------
@@ -526,7 +816,28 @@ private:
 	// Both wear the name "ZM_Greybox" on purpose: it is the only handle a test TU
 	// has on these materials (this class is file-local and cannot be named from
 	// Tests/), and ZM_RivalVesperAuthored_Test uses it to find both populations.
+	//
+	// The surface constants live here, spelled once. The BLOCKOUT pair are the
+	// values that branch has always carried and must not move (ZM_AutoTests_
+	// InteriorTint measures its base colour to 1.0e-4); the PROP pair are separate
+	// numbers for a separate population, so tuning one can never disturb the other.
+	static constexpr float fBLOCK_ROUGHNESS = 0.90f;
+	static constexpr float fBLOCK_METALLIC  = 0.0f;
+	static constexpr float fPROP_ROUGHNESS  = 0.80f;   // matches the baked prop .zmtrl
+	static constexpr float fPROP_METALLIC   = 0.0f;
+
 	bool BuildBlockMesh(const Zenith_Maths::Vector4& xBaseColour)
+	{
+		return BuildMeshEntry("ZM_Greybox", xBaseColour, fBLOCK_ROUGHNESS, fBLOCK_METALLIC);
+	}
+
+	// The ONE place a procedurally-built mesh entry is put on the entity. Extracted
+	// from BuildBlockMesh so the PROP fallback can wear its own material NAME and
+	// surface without a second copy of the create/fetch-or-add/AddMeshEntry dance --
+	// a second copy is how the "AddMeshEntry APPENDS" trap gets re-introduced. The
+	// blockout call above passes exactly the literals it always passed.
+	bool BuildMeshEntry(const char* szMaterialName,
+		const Zenith_Maths::Vector4& xBaseColour, float fRoughness, float fMetallic)
 	{
 		m_xMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 		Zenith_MeshGeometryAsset* pxGeometryAsset = m_xGeometry.GetDirect();
@@ -536,10 +847,10 @@ private:
 			return false;
 		}
 
-		pxMaterial->SetName("ZM_Greybox");
+		pxMaterial->SetName(szMaterialName);
 		ApplyAppearance(*pxMaterial, xBaseColour);
-		pxMaterial->SetRoughness(0.90f);
-		pxMaterial->SetMetallic(0.0f);
+		pxMaterial->SetRoughness(fRoughness);
+		pxMaterial->SetMetallic(fMetallic);
 
 		Zenith_ModelComponent* pxModel =
 			m_xParentEntity.TryGetComponent<Zenith_ModelComponent>();
@@ -595,6 +906,11 @@ private:
 	// instance did to the model and the animator, which a stream read does not undo.
 	ZM_VISUAL_KIND m_eLoadedKind = ZM_VISUAL_NONE;
 	ZM_HUMAN_ID m_eLoadedHumanId = ZM_HUMAN_NONE;
+	// Which generated prop model is on the entity RIGHT NOW. The sentinel is the
+	// default so the first ApplyProp can never mistake "nothing loaded" for "already
+	// showing prop 0" -- ZM_PROP_ITEM_PHIAL would otherwise be indistinguishable
+	// from an untouched instance and the first frame would draw nothing.
+	ZM_PROP_ID m_eLoadedPropId = ZM_PROP_NONE;
 	bool m_bAnimatorAuthored = false;
 };
 
@@ -4432,6 +4748,17 @@ void Project_RegisterEditorAutomationSteps()
 		// ZM_Route1GroundFeetY and add half the cube edge in one place. The three
 		// columns span 26.189 .. 26.661 over a kilometre of route, so a shared
 		// height would part-bury one and float another.
+		//
+		// ★ THE POSITION AND SCALE STEPS BELOW ARE UNCHANGED BY ZM-67 AND MUST
+		// STAY THAT WAY. The props stopped being grey cubes -- ZM_GreyboxVisual's
+		// PROP branch gives each one a generated model chosen from the item it
+		// yields and whether this save has taken it -- but not one authored number
+		// moved to make that happen. The new art was anchored to the transform
+		// (fZM_PROP_ITEM_BASE_Y) rather than the transform re-authored to the art,
+		// because these coordinates are what hold each prop inside
+		// fZM_INTERACT_MAX_DISTANCE of the walked lane (ZM-D-207) and a prop nudged
+		// off it can never be picked up in any playthrough with every other check
+		// still green. The visual is a runtime decision and reaches no .zscen byte.
 		const ZM_Route1Volume xRoute1SouthSalve = ZM_GetRoute1SouthSalveProp();
 		xAuto.AddStep_CreateEntity(szZM_ROUTE1_PROP_SOUTH_SALVE_ENTITY_NAME);
 		xAuto.AddStep_SetEntityTransient(false);

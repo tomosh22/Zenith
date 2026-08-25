@@ -328,11 +328,11 @@ files under `game:Props/<Name>/`:
 | `<Name>.zmtrl` | 1 | matte dielectric, .zmtrl v5 -- albedo in BASE_COLOR |
 | `<Name>.zmodel` | 1 | single-submesh mesh + one material, .zmodel v2 -- NO skeleton path, NO animation paths |
 
-Family total: **25 props x 4 = 100 files**.
+Family total: **28 props x 4 = 112 files**.
 
 **Determinism / version stamp.** Every output byte is a pure function of the
 roster id (section 6.2); the generator versions are `uZM_BUILDINGGEN_VERSION`
-(currently **1**) and `uZM_PROPGEN_VERSION` (currently **1**), golden-pinned -- a
+(currently **1**) and `uZM_PROPGEN_VERSION` (currently **2**), golden-pinned -- a
 change to either generation algorithm bumps its version and forces a cold family
 re-bake. Locked by the `ZM_Gen` BuildingGen/PropGen units
 ([TestPlan.md](TestPlan.md) 5.4).
@@ -734,7 +734,7 @@ The creature generator already stamps its generation version via
 `uZM_CREATUREGEN_VERSION` (currently 3; section 1.2), the human family likewise
 stamps `uZM_HUMANGEN_VERSION` (currently 1; section 2), and the building and prop
 families stamp `uZM_BUILDINGGEN_VERSION` (currently 1) and `uZM_PROPGEN_VERSION`
-(currently 1; section 3). The full per-family `ZM_BakeManifest` marker is now
+(currently 2; section 3). The full per-family `ZM_BakeManifest` marker is now
 **SHIPPED (ZM-D-085)**: a per-family 12-byte `ZMBM` stamp (ASCII magic + u32-LE
 generator version + u32-LE expected-file count) at `game:<Family>/.manifest`,
 written atomically after a successful `ZM_BakeAll*` and read fail-open by

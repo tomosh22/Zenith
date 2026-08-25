@@ -154,3 +154,44 @@ ZM_GROUND_ITEM_PICKUP ZM_TryPickUpGroundItem(ZM_GameState& xStateInOut,
 	xStateInOut.m_xCollectedGroundItems.Mark(eId);
 	return ZM_GROUND_ITEM_PICKUP_OK;
 }
+
+ZM_PROP_ID ZM_GroundItemPropModel(ZM_GROUND_ITEM_ID eId, bool bInteractable)
+{
+	// The two inert answers COLLAPSE, and that is the contract rather than a
+	// shortcut: an unregistered id and a collected prop are both "you cannot take
+	// this", which is the single thing the picture has to say.
+	if (!bInteractable || (u_int)eId >= (u_int)ZM_GROUND_ITEM_COUNT)
+	{
+		return ZM_PROP_ITEM_TAKEN;
+	}
+
+	// Indexed directly, not through ZM_GetGroundItemInfo, for the reason
+	// ZM_CanPickUpGroundItem gives at its own range check: the accessor logs a
+	// (correct, but here unwanted) error for an id a caller is merely ASKING about,
+	// and this function runs on every frame a prop is on screen.
+	const ZM_ITEM_ID eItem = axZM_GROUND_ITEMS[(u_int)eId].m_eItem;
+	if ((u_int)eItem >= (u_int)ZM_ITEM_COUNT)
+	{
+		// A row yielding no real item is a prop ZM_Bag::CanAdd refuses forever, so it
+		// is inert in fact whatever IsInteractable happened to answer. Show that.
+		return ZM_PROP_ITEM_TAKEN;
+	}
+
+	switch (ZM_GetItemData(eItem).m_eCategory)
+	{
+	case ZM_ITEM_CATEGORY_BALL:
+		return ZM_PROP_ITEM_ORB;
+	// EXPLICIT rather than folded into the default, so the day a TM or a berry earns
+	// its own silhouette the arm to add is obvious and the others do not move.
+	case ZM_ITEM_CATEGORY_MEDICINE:
+	case ZM_ITEM_CATEGORY_BATTLE:
+	case ZM_ITEM_CATEGORY_HELD:
+	case ZM_ITEM_CATEGORY_BERRY:
+	case ZM_ITEM_CATEGORY_EVO:
+	case ZM_ITEM_CATEGORY_TM:
+	case ZM_ITEM_CATEGORY_KEY:
+	case ZM_ITEM_CATEGORY_FIELD:
+	default:
+		return ZM_PROP_ITEM_PHIAL;
+	}
+}

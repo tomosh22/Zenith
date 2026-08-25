@@ -60,23 +60,6 @@ namespace
 	inline Zenith_Maths::Vector3 ZM_LerpV3(const Zenith_Maths::Vector3& a, const Zenith_Maths::Vector3& b, float t)
 	{ return Zenith_Maths::Vector3(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t); }
 
-	// Per-palette base colour (the SC4 albedo base before the biome tint + jitter;
-	// distinct per palette so different-palette props never collide).
-	Zenith_Maths::Vector3 ZM_PropPaletteColour(ZM_PROP_PALETTE e)
-	{
-		switch (e)
-		{
-		case ZM_PROP_PALETTE_WOOD:    return Zenith_Maths::Vector3(0.55f, 0.36f, 0.20f);
-		case ZM_PROP_PALETTE_STONE:   return Zenith_Maths::Vector3(0.55f, 0.54f, 0.50f);
-		case ZM_PROP_PALETTE_METAL:   return Zenith_Maths::Vector3(0.45f, 0.47f, 0.52f);
-		case ZM_PROP_PALETTE_PAINTED: return Zenith_Maths::Vector3(0.75f, 0.30f, 0.28f);
-		case ZM_PROP_PALETTE_FOLIAGE: return Zenith_Maths::Vector3(0.28f, 0.45f, 0.24f);
-		default:
-			Zenith_Assert(false, "ZM_PropPaletteColour: bad palette %u", (u_int)e);
-			return Zenith_Maths::Vector3(0.5f, 0.5f, 0.5f);
-		}
-	}
-
 	// Per-biome tint (the dressing sets lerp their palette base toward this; the
 	// generic town props stay ZM_PROP_BIOME_NONE and never tint).
 	Zenith_Maths::Vector3 ZM_PropBiomeColour(ZM_PROP_BIOME e)
@@ -116,6 +99,25 @@ namespace
 			Zenith_Assert(false, "ZM_PropBasenameFmt: bad kind %u", (u_int)eKind);
 			return "%s.bin";
 		}
+	}
+}
+
+// Per-palette base colour (the SC4 albedo base before the biome tint + jitter;
+// distinct per palette so different-palette props never collide). PUBLIC since
+// ZM-67 -- see the header for why the cold-start presenter must read these five
+// constants rather than keep a copy.
+Zenith_Maths::Vector3 ZM_PropPaletteColour(ZM_PROP_PALETTE e)
+{
+	switch (e)
+	{
+	case ZM_PROP_PALETTE_WOOD:    return Zenith_Maths::Vector3(0.55f, 0.36f, 0.20f);
+	case ZM_PROP_PALETTE_STONE:   return Zenith_Maths::Vector3(0.55f, 0.54f, 0.50f);
+	case ZM_PROP_PALETTE_METAL:   return Zenith_Maths::Vector3(0.45f, 0.47f, 0.52f);
+	case ZM_PROP_PALETTE_PAINTED: return Zenith_Maths::Vector3(0.75f, 0.30f, 0.28f);
+	case ZM_PROP_PALETTE_FOLIAGE: return Zenith_Maths::Vector3(0.28f, 0.45f, 0.24f);
+	default:
+		Zenith_Assert(false, "ZM_PropPaletteColour: bad palette %u", (u_int)e);
+		return Zenith_Maths::Vector3(0.5f, 0.5f, 0.5f);
 	}
 }
 
@@ -214,6 +216,33 @@ void ZM_BuildPropMesh(const ZM_PropRecipe& xR, ZM_GenMesh& xMesh)
 		ZM_AppendPropBox(xMesh, 0.0f, 0.0f, 0.0f,        fW,         0.60f * fH, fD,         xUV);
 		ZM_AppendPropBox(xMesh, 0.0f, 0.0f, 0.60f * fH,  0.90f * fW, 0.40f * fH, 0.90f * fD, xUV);
 		break;
+
+	// ---- The two CENTRE-ANCHORED kinds -------------------------------------
+	//
+	// ★ THESE TWO START AT fZM_PROP_ITEM_BASE_Y, NOT AT ZERO, and the header says
+	// why in full: their entity's authored origin is the CENTRE of a unit volume,
+	// so -0.5 is the ground and 0.0 would hover. The stack below sums to exactly
+	// 1.0 * fH, so the top lands at -0.5 + fH and a row's height is still literally
+	// how tall the thing is.
+	case ZM_PROP_KIND_ITEM_PICKUP:
+		// A plinth, the item's BODY, and a cap/stopper. The body and cap are the
+		// silhouette; the plinth is shared with SPENT below on purpose, so a prop that
+		// has been taken reads as "the place the item was" rather than as a new object.
+		ZM_AppendPropBox(xMesh, 0.0f, 0.0f, fZM_PROP_ITEM_BASE_Y,               fW,         0.14f * fH, fD,         xUV);
+		ZM_AppendPropBox(xMesh, 0.0f, 0.0f, fZM_PROP_ITEM_BASE_Y + 0.14f * fH,  0.62f * fW, 0.62f * fH, 0.62f * fD, xUV);
+		ZM_AppendPropBox(xMesh, 0.0f, 0.0f, fZM_PROP_ITEM_BASE_Y + 0.76f * fH,  0.30f * fW, 0.24f * fH, 0.30f * fD, xUV);
+		break;
+	case ZM_PROP_KIND_ITEM_SPENT:
+		// The plinth with the body REMOVED and a rim added: an open, empty tray. The
+		// emptiness is the whole point -- a spent prop must not read as a pickup, and
+		// something small still standing on the plinth would.
+		ZM_AppendPropBox(xMesh, 0.0f, 0.0f, fZM_PROP_ITEM_BASE_Y,  fW,         0.45f * fH, fD,         xUV);
+		ZM_AppendPropBox(xMesh, 0.0f, +(hD - 0.06f * fD), fZM_PROP_ITEM_BASE_Y,  fW,         fH, 0.12f * fD, xUV);
+		ZM_AppendPropBox(xMesh, 0.0f, -(hD - 0.06f * fD), fZM_PROP_ITEM_BASE_Y,  fW,         fH, 0.12f * fD, xUV);
+		ZM_AppendPropBox(xMesh, +(hW - 0.06f * fW), 0.0f, fZM_PROP_ITEM_BASE_Y,  0.12f * fW, fH, fD,         xUV);
+		ZM_AppendPropBox(xMesh, -(hW - 0.06f * fW), 0.0f, fZM_PROP_ITEM_BASE_Y,  0.12f * fW, fH, fD,         xUV);
+		break;
+
 	case ZM_PROP_KIND_DRESSING:
 	default:
 	{
@@ -441,5 +470,60 @@ bool ZM_BakeAllProps()
 		bOk &= ZM_WriteBakeManifest(ZM_ASSET_FAMILY_PROPS, xRoot);   // stamp only after a fully-successful bake
 	}
 	return bOk;
+}
+
+namespace
+{
+	// Are all four of ONE prop's per-model files on disk and non-empty? The same
+	// existence-AND-size pair ZM_BakeManifestCheck uses per file: a zero-byte file is
+	// what a bake interrupted mid-write leaves, and it loads as a missing model while
+	// existing as a present one.
+	bool ZM_PropBundlePresent(ZM_PROP_ID eId)
+	{
+		for (u_int k = 0; k < static_cast<u_int>(ZM_PROP_ASSET_KIND_COUNT); ++k)
+		{
+			char acRef[512];
+			if (!ZM_PropAssetPath(eId, static_cast<ZM_PROP_ASSET_KIND>(k), acRef, sizeof(acRef)))
+			{
+				return false;
+			}
+			const std::filesystem::path xPath(
+				Zenith_AssetRegistry::ResolvePath(std::string(acRef)));
+
+			std::error_code xEc;
+			if (!std::filesystem::is_regular_file(xPath, xEc) || xEc)
+			{
+				return false;
+			}
+			if (std::filesystem::file_size(xPath, xEc) == 0u || xEc)
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+}
+
+bool ZM_EnsurePropBaked(ZM_PROP_ID eId)
+{
+	// TOTAL on a garbage id, like every other entry point here: ZM_GetPropName would
+	// answer "NONE" and we would stat game:Props/NONE/... forever.
+	if (static_cast<u_int>(eId) >= static_cast<u_int>(ZM_PROP_COUNT))
+	{
+		return false;
+	}
+	if (ZM_PropBundlePresent(eId))
+	{
+		return true;   // warm -- no build, no writes
+	}
+	if (!ZM_BakeProp(eId))
+	{
+		return false;
+	}
+	// RE-ASKED rather than trusting the bake's own bool. ZM_BakeProp already ANDs
+	// exists() for the two artifacts whose writers report nothing, but the mesh and
+	// albedo writers report their own status and this is the one check that covers
+	// all four the same way.
+	return ZM_PropBundlePresent(eId);
 }
 #endif   // ZENITH_TOOLS

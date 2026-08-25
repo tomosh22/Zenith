@@ -510,3 +510,108 @@ ZENITH_TEST(ZM_GroundItem, Persistence_CollectedStateSurvivesASaveSchemaRoundTri
 		(u_int)ZM_GROUND_ITEM_PICKUP_OK,
 		"a restored save withheld a prop the player never took");
 }
+
+// ★ ZM-67: the PICTURE half of the same registry.
+//
+// ZM_GroundItemPropModel is what turns "is this prop still takeable" into "which
+// generated model is on the entity", and ZM_GreyboxVisual asks it every frame a
+// prop is on screen. Everything below is still PURE: a compiled registry, a
+// compiled item table and a bool -- no ECS, no save, no bake.
+//
+// ★ WHAT IT DOES **NOT** ASSERT, and why. Whether the two live silhouettes read
+// apart at walking distance is the judgement ZM-67 is `human-gate` for, and a unit
+// claiming "these two are different enough" would only be re-stating the choice
+// whoever picked them made. The clauses here are the ones a machine can actually
+// settle: totality, the collapse to the spent model, agreement with the ITEM
+// table's OWN category, and the content fact that Route 1 as shipped still authors
+// more than one kind. The look itself is measured and logged by
+// PropGen_GroundItemPickupRowsAreCentreAnchoredAndDistinct.
+ZENITH_TEST(ZM_GroundItem, Presentation_ModelChoiceIsTotalAndCollapsesWhenNotTakeable)
+{
+	// The spent model must be a REAL roster row, or every inert answer below points
+	// at nothing and the prop draws its cold fallback forever.
+	ZENITH_ASSERT_LT((u_int)ZM_PROP_ITEM_TAKEN, (u_int)ZM_PROP_COUNT,
+		"the spent presentation is outside the prop roster");
+
+	u_int uDistinctLiveModels = 0u;
+	ZM_PROP_ID aeSeenLive[(u_int)ZM_GROUND_ITEM_COUNT] = {};
+
+	for (u_int uProp = 0u; uProp < (u_int)ZM_GROUND_ITEM_COUNT; ++uProp)
+	{
+		const ZM_GROUND_ITEM_ID eId = (ZM_GROUND_ITEM_ID)uProp;
+		const ZM_GroundItemInfo& xRow = ZM_GetGroundItemInfo(eId);
+
+		const ZM_PROP_ID eLive  = ZM_GroundItemPropModel(eId, true);
+		const ZM_PROP_ID eSpent = ZM_GroundItemPropModel(eId, false);
+
+		// A live prop resolves to a real, NON-spent model. "Renders as a pickup" is
+		// exactly this clause.
+		ZENITH_ASSERT_LT((u_int)eLive, (u_int)ZM_PROP_COUNT,
+			"prop %u ('%s') resolves to prop model %u, which is outside the roster",
+			uProp, xRow.m_szDebugName, (u_int)eLive);
+		ZENITH_ASSERT_NE((u_int)eLive, (u_int)ZM_PROP_ITEM_TAKEN,
+			"prop %u ('%s') presents the SPENT model while it is still takeable, so a "
+			"player would walk past an item that is there", uProp, xRow.m_szDebugName);
+
+		// ...and a prop this save has taken resolves to the spent one. This is the
+		// clause that makes ZM_GroundItemProp.h's "A COLLECTED PROP GOES INERT, IT
+		// DOES NOT DISAPPEAR" true of the PICTURE and not only of the picker.
+		ZENITH_ASSERT_EQ((u_int)eSpent, (u_int)ZM_PROP_ITEM_TAKEN,
+			"prop %u ('%s') still presents model %u after it has been taken",
+			uProp, xRow.m_szDebugName, (u_int)eSpent);
+
+		// The live choice agrees with the ITEM TABLE'S OWN category rather than with a
+		// per-prop expectation written here -- so re-pointing a registry row at a
+		// different item moves this check with it instead of failing it.
+		const ZM_PROP_ID eExpected =
+			ZM_GetItemData(xRow.m_eItem).m_eCategory == ZM_ITEM_CATEGORY_BALL
+				? ZM_PROP_ITEM_ORB
+				: ZM_PROP_ITEM_PHIAL;
+		ZENITH_ASSERT_EQ((u_int)eLive, (u_int)eExpected,
+			"prop %u ('%s') yields '%s' (category %u) but presents model '%s'",
+			uProp, xRow.m_szDebugName, ZM_GetItemName(xRow.m_eItem),
+			(u_int)ZM_GetItemData(xRow.m_eItem).m_eCategory, ZM_GetPropName(eLive));
+
+		bool bSeen = false;
+		for (u_int u = 0u; u < uDistinctLiveModels; ++u)
+		{
+			if (aeSeenLive[u] == eLive) { bSeen = true; }
+		}
+		if (!bSeen) { aeSeenLive[uDistinctLiveModels++] = eLive; }
+
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[ZM_GroundItem] OBSERVED prop '%s' yields '%s' -> live model '%s', "
+			"spent model '%s'",
+			xRow.m_szDebugName, ZM_GetItemName(xRow.m_eItem),
+			ZM_GetPropName(eLive), ZM_GetPropName(eSpent));
+	}
+
+	// ★ THE CONTENT CLAIM ZM-67's SIGN-OFF RESTS ON. The ticket asks that "the two
+	// item kinds are distinguishable"; that presupposes there ARE two, which is a
+	// fact about the shipped registry rather than about this mapping. Re-pointing
+	// the catchorb row at a salve would leave every clause above green and quietly
+	// turn the deliverable into three pictures of the same object.
+	ZENITH_ASSERT_GE(uDistinctLiveModels, 2u,
+		"every registered ground item presents the SAME model, so no two props on the "
+		"route can be told apart on sight");
+
+	// TOTALITY: the sentinel and plain garbage collapse to the spent model whichever
+	// way the predicate is answered. An unconfigured prop IS inert -- ZM_GroundItem-
+	// Prop::IsInteractable says so -- and showing a pickup nobody can take is the
+	// exact failure the inert state exists to prevent.
+	const ZM_GROUND_ITEM_ID aeBadIds[] =
+	{
+		ZM_GROUND_ITEM_NONE,
+		eZM_TEST_GROUND_ITEM_GARBAGE,
+		(ZM_GROUND_ITEM_ID)0xffffffffu,
+	};
+	for (const ZM_GROUND_ITEM_ID eBad : aeBadIds)
+	{
+		ZENITH_ASSERT_EQ((u_int)ZM_GroundItemPropModel(eBad, true),
+			(u_int)ZM_PROP_ITEM_TAKEN,
+			"unregistered prop id %u presents a pickup", (u_int)eBad);
+		ZENITH_ASSERT_EQ((u_int)ZM_GroundItemPropModel(eBad, false),
+			(u_int)ZM_PROP_ITEM_TAKEN,
+			"unregistered prop id %u presents a pickup", (u_int)eBad);
+	}
+}

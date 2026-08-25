@@ -17,8 +17,29 @@ The S0-S7 narrative that used to fill the back half of this file moved VERBATIM 
 [History.md](History.md) on 2026-08-18, so this file can hold to the ~25-line budget
 its own template in `AgentBriefing.md` §2.3 specifies. Nothing was deleted.
 
-**★ LIVE PIN (UPDATED 2026-08-24):
-ZM boot `3399`; engine boot (Null Combat) `1650`; Null RenderTest `1741`; registry **69**.**
+**★ LIVE PIN (UPDATED 2026-08-25):
+ZM boot `3401`; engine boot (Null Combat) `1650`; Null RenderTest `1741`; registry **70**.**
+
+> **★ ZM-67 — ground-item props to AAA quality — OBSERVED 2026-08-25.**
+> `Null_vs2022_Debug_Win64_True` reported **`3401 ran / 3399 passed / 0 failed`** (2 skipped),
+> so `Tools/unit_baselines.json` moved `Zenithmon` **3399 -> 3401**. The +2 is
+> `PropGen_GroundItemPickupRowsAreCentreAnchoredAndDistinct` (every roster row's anchor
+> measured both ways round, the ITEM volume bound, and pairwise mesh/texture/palette
+> distinctness) and `Presentation_ModelChoiceIsTotalAndCollapsesWhenNotTakeable`
+> (totality of `ZM_GroundItemPropModel`, the collapse to the spent model, and agreement
+> with the item table's own `ZM_ITEM_CATEGORY`).
+> Combat (`1650`) and Null RenderTest (`1741`) are UNCHANGED and were NOT re-measured:
+> the diff touches no engine file, registers no component and renames no component type,
+> so nothing backend-neutral moved. Stated as inferred, not observed.
+> Neither new unit asserts a colour distance chosen by whoever picked the colours:
+> `PropGen_…Distinct` **measures and logs** the achieved palette separations and asserts
+> only inequality and structure, and `Presentation_ModelChoiceIsTotal…` logs the id →
+> model mapping and asserts totality and collapse, which are structural equalities.
+> The registry moved **69 -> 70** with `ZM_GroundItemPropCapture_Test`, the windowed
+> before/after capture harness this ticket's visual sign-off is judged from. It is
+> `m_bRequiresGraphics = true`, so it is SKIPPED-AS-PASSED on the Null backend and CI
+> can never see it rot — which is why every clause in it is a hard failure with a
+> diagnostic rather than a log line.
 
 > **★ ZM-27 follow-ups (a) + (b) — ZM-D-207 — OBSERVED 2026-08-24.**
 > `Null_vs2022_Debug_Win64_True` reported **`3399 ran / 3397 passed / 0 failed`** (2 skipped),
