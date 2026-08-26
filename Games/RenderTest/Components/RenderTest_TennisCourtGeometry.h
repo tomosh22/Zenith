@@ -33,7 +33,7 @@ namespace RenderTest_Tennis
 
 	struct TennisCourt
 	{
-		float m_fCenterX        = 2048.0f;  // == RenderTest_Tennis::fCOURT_CX (campus centre)
+		float m_fCenterX        = 512.0f;  // == RenderTest_Tennis::fCOURT_CX (campus centre)
 		float m_fNetZ           = 1992.0f;  // == RenderTest_Tennis::fCOURT_CZ (court centre Z)
 		float m_fSurfaceY       = 48.75f;   // == RenderTest_Tennis::fSURFACE_Y (campus deck-top)
 

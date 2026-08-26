@@ -218,6 +218,23 @@ void Zenith_TerrainEditor::BakeMeshesToPreparedDirectory(
 {
 	EnsureImagesAllocated();
 
+	// ★ WIPE FIRST, exactly as the rect bake does. A full bake writes one chunk
+	// per cell of the CURRENT grid, so a bake into a directory left over from a
+	// LARGER grid leaves every out-of-range chunk behind -- 11,530 of them when
+	// RenderTest went from 64x64 to 16x16. Those orphans are never opened (the
+	// component iterates the active grid) and the dimensions manifest is
+	// rewritten below, so they are not a correctness hazard; they are a disk and
+	// comprehension one, and "the bake output is the bake" is worth more than the
+	// seconds the delete costs. The delete also takes the previous manifest, so a
+	// re-dimensioning bake can never be refused by its own predecessor.
+	if (!Zenith_TerrainComponent::DeleteExistingTerrainFilesInDirectory(strMeshDirectory))
+	{
+		m_strStatus = "Cannot export meshes: failed to clean the prepared output directory.";
+		Zenith_Warning(LOG_CATEGORY_EDITOR,
+			"[TerrainEditor] Chunk-mesh export aborted: could not clean %s", strMeshDirectory.c_str());
+		return;
+	}
+
 	m_strStatus = "Exporting terrain chunk meshes (this takes a while)...";
 	Zenith_Log(LOG_CATEGORY_EDITOR,
 		"[TerrainEditor] Exporting chunk meshes to %s", strMeshDirectory.c_str());

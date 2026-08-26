@@ -1040,13 +1040,32 @@ void Zenith_TerrainEditor::UpdateChunkAABB(Flux_TerrainStreamingState& xState, u
 		}
 	}
 
+	// ★ THE AABB IS IN WORLD SPACE. The height SCAN above is in heightfield
+	// pixels; the bounds below must not be. They used to be the pixel range cast
+	// straight to float -- correct only while one pixel was one metre, and
+	// silently catastrophic otherwise: on a 1024m terrain read from a 4096px
+	// field, chunk (10,10) spans px [2560, 2816] but world [640, 704], so the
+	// AABB was EXPANDED to include a point 2.5km outside the terrain. That moves
+	// the chunk's centre far from the camera, the streamer stops considering it
+	// for HIGH LOD, and -- because this expansion is deliberately one-way -- it
+	// never recovers. Only SESSION-DIRTY chunks reach here, so the symptom was
+	// precisely "the chunks you just sculpted are the ones that never re-stream".
+	//
+	// The XZ bounds come from the chunk's own world footprint rather than from
+	// converting the pixel range back, so they are exact and independent of the
+	// pixel rounding the scan needed.
+	const float fWorldX0 = static_cast<float>(uChunkX) * m_xDims.m_fChunkWorldSize;
+	const float fWorldZ0 = static_cast<float>(uChunkZ) * m_xDims.m_fChunkWorldSize;
+	const float fWorldX1 = fWorldX0 + m_xDims.m_fChunkWorldSize;
+	const float fWorldZ1 = fWorldZ0 + m_xDims.m_fChunkWorldSize;
+
 	// EXPAND-only during live editing: shrinking could frustum-cull a chunk
 	// whose stale LOW LOD geometry still pokes above the new bounds. The bake
 	// recomputes exact AABBs via the full re-init.
 	const u_int uIdx = uChunkX * uCHUNK_GRID + uChunkZ;
 	Zenith_AABB& xAABB = xState.m_axChunkAABBs[uIdx];
-	xAABB.ExpandToInclude(Zenith_Maths::Vector3(static_cast<float>(uPx0), fMinH * fTERRAIN_MAX_HEIGHT - 1.0f, static_cast<float>(uPz0)));
-	xAABB.ExpandToInclude(Zenith_Maths::Vector3(static_cast<float>(uPx1), fMaxH * fTERRAIN_MAX_HEIGHT + 1.0f, static_cast<float>(uPz1)));
+	xAABB.ExpandToInclude(Zenith_Maths::Vector3(fWorldX0, fMinH * fTERRAIN_MAX_HEIGHT - 1.0f, fWorldZ0));
+	xAABB.ExpandToInclude(Zenith_Maths::Vector3(fWorldX1, fMaxH * fTERRAIN_MAX_HEIGHT + 1.0f, fWorldZ1));
 }
 
 void Zenith_TerrainEditor::ProcessPendingEvictions()

@@ -930,6 +930,30 @@ Flux_TerrainStreamInResult Flux_TerrainStreamingManagerImpl::StreamInLOD(Flux_Te
 	if (uLODLevel != LOD_HIGH)
 		return Flux_TerrainStreamInResult::AllocationFailure;
 
+	// ★ "THE TERRAIN IS NOT READY YET" IS NOT "THE CHUNK'S FILE IS BAD", and the
+	// difference is permanent. A zero vertex stride means InitializeUnifiedBuffers
+	// has not run, so there is nothing to stream INTO -- but the loader below
+	// rejects a zero stride, which used to classify the request as
+	// MissingOrInvalidSource and latch the chunk SOURCE_UNAVAILABLE **forever**
+	// (the latch is only cleared by a terrain regeneration). Streaming is driven
+	// every frame from component creation onward, so a freshly-added terrain
+	// spends a few frames in exactly this state and poisons every chunk the
+	// active set happens to reach.
+	//
+	// It went unnoticed while every terrain was 4096m: the active set covered a
+	// fraction of a 64x64 grid, and whichever chunks a test cared about were
+	// usually outside it. On a 1024m terrain the ENTIRE 16x16 grid is inside the
+	// streaming radius, so all 256 chunks were latched off during authoring and
+	// nothing HIGH ever streamed again -- which is how RenderTest's windowed
+	// TerrainEditorSmoke found it ("edited chunk did not re-stream HIGH after
+	// eviction", with 183 chunks reporting a missing source whose files were all
+	// present and valid).
+	//
+	// AllocationFailure is the non-latching "ask again later" result, which is
+	// exactly what this is.
+	if (xState.m_uVertexStride == 0u)
+		return Flux_TerrainStreamInResult::AllocationFailure;
+
 	uint32_t uChunkX, uChunkY;
 	ChunkIndexToCoords(uChunkIndex, uChunkX, uChunkY);
 

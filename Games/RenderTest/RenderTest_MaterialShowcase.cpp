@@ -55,10 +55,12 @@ namespace
 {
 	// ---- World framing constants (were RenderTest_Showcase:: in RenderTest.cpp) ----
 	// Centred on the terrain with the rest of the campus; the showcase sits 44 m north
-	// of the campus centre (2048, 2048). Co-planar with the player deck (top Y 48.75)
+	// of the campus centre (512, 512). Co-planar with the player deck (top Y 48.75)
 	// and the tennis court so the three platforms form one connected campus.
-	constexpr float fPLATFORM_CX    = 2048.0f;
-	constexpr float fPLATFORM_CZ    = 2048.0f + 44.0f;
+	// Tracks RenderTest.cpp's fCAMPUS_C{X,Z} -- the centre of the 1024m terrain,
+	// which moved from 2048 when the terrain shrank from 4096m to 1024m.
+	constexpr float fPLATFORM_CX    = 512.0f;
+	constexpr float fPLATFORM_CZ    = 512.0f + 44.0f;
 	constexpr float fPLATFORM_TOP_Y = 48.75f;
 	constexpr int   iROWS           = 5;
 	constexpr float fCOL_SPACING    = 3.0f;

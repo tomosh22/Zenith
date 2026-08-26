@@ -32,10 +32,12 @@ namespace
 {
 	constexpr int iFRAMES_PER_SCENARIO = 420;
 
-	// Campus recentred from the (256,256) corner to the terrain centre (2048,2048);
+	// Campus recentred from the (256,256) corner to the terrain centre (512,512);
 	// every sculpt site below is the legacy layout shifted by fSHIFT so the demo
 	// keeps modifying the ground in front of the (now-centred) player photo camera.
-	constexpr float fSHIFT = 1792.0f;
+	// The shift tracks RenderTest.cpp's fCAMPUS_SHIFT -- it moved from 1792 to 256
+	// when the terrain shrank from 4096m to 1024m.
+	constexpr float fSHIFT = 256.0f;
 
 	void Showcase_Mark(const char* szName)
 	{

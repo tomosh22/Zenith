@@ -34,9 +34,11 @@ namespace RenderTest_Showcase
 
 namespace
 {
-	// Campus recentred from the (256,256) corner to the terrain centre (2048,2048);
-	// every world XZ below is the legacy layout shifted by fSHIFT.
-	constexpr float fSHIFT = 1792.0f;
+	// Campus recentred from the (256,256) corner to the terrain centre (512,512);
+	// every world XZ below is the legacy layout shifted by fSHIFT. The shift
+	// tracks RenderTest.cpp's fCAMPUS_SHIFT -- it moved from 1792 to 256 when the
+	// terrain shrank from 4096m to 1024m.
+	constexpr float fSHIFT = 256.0f;
 	constexpr float fCZ    = 300.0f + fSHIFT;	// platform centre Z (matches RenderTest_Showcase)
 	constexpr float fTOP_Y = 48.75f;	// platform top (matches RenderTest_Showcase::fPLATFORM_TOP_Y)
 	constexpr float fGridY = fTOP_Y + 0.8f;	// approx shape-centre height

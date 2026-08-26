@@ -157,11 +157,22 @@ namespace
 
 	// The "few visible" pose: pitch UP so the lower screen half is sky, with
 	// only the far horizon in frame — this exercises the stale-tail path
-	// because visibility shrinks from thousands of chunks to roughly the
-	// horizon line. The readback after this pose asserts the count dropped
-	// materially (the culling shader compacts live records into [0, N) and
-	// the reset pass kept the [N, 4096) tail zeroed, so no chunk replays).
-	constexpr float fTIC_CAM_FEW_PITCH = 0.45f;  // up: ~80% sky, thin horizon
+	// because visibility shrinks to roughly the horizon line. The readback after
+	// this pose asserts the count dropped materially (the culling shader compacts
+	// live records into [0, N) and the reset pass kept the [N, 4096) tail zeroed,
+	// so no chunk replays).
+	//
+	// ★ THE PITCH IS OBSERVED, NOT COMPUTED, and it is a FIXTURE rather than a
+	// threshold — the test's own non-vacuity clause requires visibleFew to be
+	// STRICTLY below visibleReturn, so a pose that stops shrinking fails loudly
+	// instead of passing vacuously. It did: at 0.45 rad this pose shrank the old
+	// 4096m terrain from many chunks to few, but on the 1024m terrain both poses
+	// saw exactly 80 — the terrain is nearer and smaller, so a 26-degree tilt no
+	// longer clears it out of a 70-degree frustum. Re-derived by MEASUREMENT at
+	// 0.75 rad: visibleFew=28, visibleReturn=80, visibleZero=0, tail zeroed at
+	// all three (4068 / 4016 / 4096 of 4096). Re-observe it if the terrain's size
+	// or the camera FOV moves again; never compute it.
+	constexpr float fTIC_CAM_FEW_PITCH = 0.75f;  // up: ~80% sky, thin horizon
 
 	// Cull-all pose: from the same camera position, look almost straight up.
 	// Every terrain AABB is below the camera/frustum, while streaming remains

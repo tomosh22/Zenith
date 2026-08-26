@@ -210,6 +210,8 @@ public:
 	float WorldToHeightPx(float fWorld) const { return fWorld * HeightPxPerWorld(); }
 	float HeightPxToWorld(float fPx) const { return fPx * WorldPerHeightPx(); }
 	float WorldPerSplatPx() const { return m_xDims.WorldPerImagePixel(uSPLATMAP_SIZE); }
+	float SplatPxPerWorld() const { return m_xDims.ImagePixelPerWorld(uSPLATMAP_SIZE); }
+	float WorldToSplatPx(float fWorld) const { return fWorld * SplatPxPerWorld(); }
 	// Image-to-image ratios are DIMENSION-INDEPENDENT: every map spans the same
 	// square domain, so the splat/grass maps sit at a fixed fraction of the
 	// heightfield's resolution whatever the terrain measures.

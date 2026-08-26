@@ -25,8 +25,10 @@ namespace RenderTest_Tennis
 	// axis (baseline to baseline), +X is the court width. The net sits at the
 	// centre (Z = fCZ). Surface top is at fSURFACE_Y (= the player deck top).
 	// Centred on the 4096 m terrain with the rest of the campus (the court is 56 m
-	// south of the campus centre 2048 — was Z=200 vs the old 256 corner anchor).
-	constexpr float fCOURT_CX   = 2048.0f;
+	// south of the campus centre 512 — was Z=200 vs the old 256 corner anchor).
+	// Tracks RenderTest.cpp's fCAMPUS_CX -- the centre of the 1024m terrain,
+	// which moved from 2048 when the terrain shrank from 4096m to 1024m.
+	constexpr float fCOURT_CX   = 512.0f;
 	constexpr float fCOURT_CZ   = 1992.0f;
 	constexpr float fSURFACE_Y  = 48.75f;
 

@@ -112,16 +112,29 @@ static MaterialHandle s_xTestbedVtxColorMaterial;
 
 // Campus origin. RenderTest's entire "campus" — the player, the three co-planar
 // platforms (IK deck, tennis court, material showcase), the ring of hills/grass/trees,
-// and every demo/capture vantage — sits at the CENTRE of the 4096 m terrain
-// (Flux_TerrainConfig::TERRAIN_SIZE * 0.5), not the (256,256) corner it was historically
-// authored around. fCAMPUS_C{X,Z} is that centre; fCAMPUS_SHIFT (= centre - 256, the old
-// anchor) translates the legacy 256-anchored local offsets (IK cubes, grass meadows,
-// scattered feature hills) onto it so the whole layout moves rigidly with no relative
-// drift. Bumping the terrain marker re-bakes the heightfield with the features at the
-// new centre, leaving the old corner as plain procedural ground.
-static constexpr float fCAMPUS_CX    = 2048.0f;
-static constexpr float fCAMPUS_CZ    = 2048.0f;
-static constexpr float fCAMPUS_SHIFT = 1792.0f;   // = fCAMPUS_CX - 256.0f (legacy anchor)
+// and every demo/capture vantage — sits at the CENTRE of the terrain, not the
+// (256,256) corner it was historically authored around. fCAMPUS_C{X,Z} is that
+// centre; fCAMPUS_SHIFT (= centre - 256, the old anchor) translates the legacy
+// 256-anchored local offsets (IK cubes, grass meadows) onto it so the whole layout
+// moves rigidly with no relative drift.
+//
+// ★ THE TERRAIN IS 1024 x 1024 m (a 16x16 grid of 64m chunks), not 4096. The campus
+// occupied about 720m of a 4096m terrain — roughly 3% of its area — and the other
+// 97% cost 12,298 baked asset files to produce ground nothing ever stood on. The
+// terrain's dimensions are per-terrain data now (Zenith_TerrainDimensions), so the
+// grid is declared beside the component rather than assumed from a constant; see
+// the AddStep_TerrainSetDimensions call in the terrain-entity block below.
+//
+// The centre is derived from that grid rather than spelled, so the two cannot drift:
+// a terrain declared at a different size moves the campus with it.
+static constexpr u_int uCAMPUS_GRID_CHUNKS = 16u;
+static constexpr float fCAMPUS_CHUNK_SIZE  = 64.0f;
+static constexpr float fCAMPUS_TERRAIN_SIZE = fCAMPUS_CHUNK_SIZE * static_cast<float>(uCAMPUS_GRID_CHUNKS);
+static constexpr float fCAMPUS_CX    = fCAMPUS_TERRAIN_SIZE * 0.5f;   // 512
+static constexpr float fCAMPUS_CZ    = fCAMPUS_TERRAIN_SIZE * 0.5f;   // 512
+static constexpr float fCAMPUS_SHIFT = fCAMPUS_CX - 256.0f;           // 256 (legacy anchor)
+static_assert(fCAMPUS_CX == 512.0f && fCAMPUS_SHIFT == 256.0f,
+	"the campus centre and the legacy-anchor shift must track the declared terrain grid");
 
 // Defined alongside Project_LoadInitialScene below; also queued as a
 // post-scene-load automation step in tools builds (ZENITH_TOOLS-only — the
@@ -229,13 +242,23 @@ static void RenderTest_RequestClose()
 #endif
 }
 
+// ★ BOTH COUNTERS WALK THE ACTIVE GRID, NOT THE FIXED 4096-SLOT CAPACITY.
+// The residency table is capacity-sized whatever the terrain measures, and a
+// slot outside the active grid is CORRECTLY non-resident with a zero index
+// count -- that is what "this terrain is 16x16 of a 64x64 slot table" means.
+// Counting those would report a perfectly healthy 16x16 terrain as having 3,840
+// LOW zero-count chunks and fail the smoke on the one number it exists to watch.
 static uint32_t RenderTest_CountHighResidentChunks(const Flux_TerrainStreamingState& xState)
 {
 	uint32_t uCount = 0;
-	for (uint32_t u = 0; u < TOTAL_CHUNKS; u++)
+	for (uint32_t uX = 0; uX < xState.m_xDims.m_uGridChunksX; uX++)
 	{
-		if (xState.m_axChunkResidency[u].m_aeStates[LOD_HIGH] == Flux_TerrainLODResidencyState::RESIDENT)
-			uCount++;
+		for (uint32_t uZ = 0; uZ < xState.m_xDims.m_uGridChunksZ; uZ++)
+		{
+			const uint32_t u = Flux_TerrainConfig::ChunkCoordsToIndex(uX, uZ);
+			if (xState.m_axChunkResidency[u].m_aeStates[LOD_HIGH] == Flux_TerrainLODResidencyState::RESIDENT)
+				uCount++;
+		}
 	}
 	return uCount;
 }
@@ -243,11 +266,15 @@ static uint32_t RenderTest_CountHighResidentChunks(const Flux_TerrainStreamingSt
 static uint32_t RenderTest_CountLowZeroChunks(const Flux_TerrainStreamingState& xState)
 {
 	uint32_t uCount = 0;
-	for (uint32_t u = 0; u < TOTAL_CHUNKS; u++)
+	for (uint32_t uX = 0; uX < xState.m_xDims.m_uGridChunksX; uX++)
 	{
-		const Flux_TerrainLODAllocation& xAlloc = xState.m_axChunkResidency[u].m_axAllocations[LOD_LOW];
-		if (xAlloc.m_uIndexCount == 0)
-			uCount++;
+		for (uint32_t uZ = 0; uZ < xState.m_xDims.m_uGridChunksZ; uZ++)
+		{
+			const uint32_t u = Flux_TerrainConfig::ChunkCoordsToIndex(uX, uZ);
+			const Flux_TerrainLODAllocation& xAlloc = xState.m_axChunkResidency[u].m_axAllocations[LOD_LOW];
+			if (xAlloc.m_uIndexCount == 0)
+				uCount++;
+		}
 	}
 	return uCount;
 }
@@ -396,6 +423,9 @@ static bool RenderTest_LogTerrainSmokeState(uint32_t uFrame)
 
 		const uint32_t uActiveCount = pxState ? static_cast<uint32_t>(pxState->m_xActiveChunkIndices.GetSize()) : 0;
 		const uint32_t uHighResident = pxState ? RenderTest_CountHighResidentChunks(*pxState) : 0;
+		// No state means nothing loaded at all, so report the whole ACTIVE grid as
+		// broken rather than the slot capacity -- with no state there is no grid
+		// to read, and TOTAL_CHUNKS is the honest "everything is missing" answer.
 		const uint32_t uLowZero = pxState ? RenderTest_CountLowZeroChunks(*pxState) : TOTAL_CHUNKS;
 
 		Zenith_Log(LOG_CATEGORY_TERRAIN,
@@ -1039,9 +1069,11 @@ static void SetupPBRTerrainMaterial(MaterialHandle& xHandle, const std::string& 
 	pxMaterial->SetRoughnessMetallicTexture(TextureHandle(strRelativeDir + "rm_packed" ZENITH_TEXTURE_EXT));
 	pxMaterial->SetOcclusionTexture        (TextureHandle(strRelativeDir + "ao"        ZENITH_TEXTURE_EXT));
 
-	// The terrain vertex UV (`a_xUV`) is heightmap pixel coordinates, scaled
-	// by g_fUVScale (= 0.07) in the vertex shader, so input.uv ≈ [0, 286] across
-	// the 4096-unit terrain: tiling t gives 1 / (0.07 * t) world units per tile.
+	// The terrain vertex UV (`a_xUV`) is AUTHORED WORLD METRES, scaled by
+	// g_fUVScale (= 0.07) in the vertex shader, so input.uv ≈ [0, 72] across this
+	// 1024m terrain: tiling t gives 1 / (0.07 * t) world units per tile —
+	// independent of how big the terrain is, which is exactly what reading the UV
+	// as metres rather than heightmap pixels buys.
 	// 0.9 → ~16 m per tile. The set used to tile at 0.05 (~290 m per tile), which
 	// stretched one photo across a whole hillside and read as a smear rather than
 	// ground. This is the SHARED figure — Zenithmon's meadow slot tiles the same
@@ -1180,11 +1212,17 @@ static void InitializeRenderTestResources()
 // no LOW geometry, no collision.
 // v11: terrain dimensions became per-terrain, and a baked set now carries a
 // REQUIRED TerrainDims.zdata manifest recording the dimensions its chunks were
-// quantised against. The chunk BYTES are unchanged at the default dimensions
-// RenderTest still bakes at, but a v10 set has no manifest, so the loader treats
+// quantised against. The chunk BYTES were unchanged at the default dimensions
+// RenderTest still baked at, but a v10 set has no manifest, so the loader treats
 // it as a stale bake and refuses it -- no LOW geometry and no collision.
+// v12: THE TERRAIN SHRANK, 4096 x 4096 m to 1024 x 1024 m (a 16x16 grid of 64m
+// chunks). The campus recentred from (2048,2048) to (512,512), the four far
+// "feature hills" that only existed to dress a 4km horizon were dropped, and the
+// bake went from 12,298 files to ~772. Every chunk's world position, its
+// quantisation box and the terrain's own dimensions all moved, so a v11 set is
+// wrong in every way a stale bake can be.
 // Bump this for any baked-BYTE change, not only when the heightfield moves.
-static const char* sk_szTerrainProcMarkerRel = "Terrain/terrain_proc_v11.marker";
+static const char* sk_szTerrainProcMarkerRel = "Terrain/terrain_proc_v12.marker";
 
 static bool RenderTest_TerrainAssetsNeedRegeneration()
 {
@@ -1899,11 +1937,21 @@ void Project_RegisterEditorAutomationSteps()
 	{
 		Zenith_EditorAutomation& xAuto = g_xEngine.EditorAutomation();
 		const int iSetHeight = static_cast<int>(Zenith_TerrainBrushTool::SetHeight);
-		const int iTerrace   = static_cast<int>(Zenith_TerrainBrushTool::Terrace);
-		const int iNoise     = static_cast<int>(Zenith_TerrainBrushTool::Noise);
-		const int iStamp     = static_cast<int>(Zenith_TerrainBrushTool::Stamp);
 		const int iGrass     = static_cast<int>(Zenith_TerrainBrushTool::GrassDensity);
 		const int iGrassType = static_cast<int>(Zenith_TerrainBrushTool::GrassType);
+
+		// ★ DIMENSIONS FIRST, BEFORE ANY STROKE OR THE BAKE. This block runs on a
+		// STANDALONE editor session -- it fires before the terrain entity exists,
+		// so the session cannot read its shape from a component and would
+		// otherwise stage the DEFAULT 64x64 grid. Every brush coordinate below is
+		// world-space and every bake output is sized from this spec, so a step
+		// placed after the strokes (or beside the terrain entity further down)
+		// would author a 1024m layout into a 4096m bake: 12,298 files again, with
+		// the campus crammed into the first ninth of the terrain. Same grid the
+		// terrain entity declares; both derive from fCAMPUS_* so they cannot drift.
+		xAuto.AddStep_TerrainSetDimensions(
+			fCAMPUS_CHUNK_SIZE, 1.0f,
+			static_cast<int>(uCAMPUS_GRID_CHUNKS), static_cast<int>(uCAMPUS_GRID_CHUNKS));
 
 		// Start from defaults — the session seeds from any previous bake's
 		// textures on disk, and the splat/grass strokes below BLEND (a re-run
@@ -1913,15 +1961,19 @@ void Project_RegisterEditorAutomationSteps()
 		// Rolling FBM base around 46m with a ridged accent.
 		xAuto.AddStep_TerrainGenerateProcedural(1337, 0.09f, 0.05f, 0.0008f, 6, 2.0f, 0.5f, 0.25f);
 
-		// Feature hills: a smooth dome, a terraced mesa, a roughened noise
-		// field, and the dome cloned east via the copy/stamp brush.
-		// (all +fCAMPUS_SHIFT so they cluster NE of the recentred campus, not the corner)
-		xAuto.AddStep_TerrainBrushStroke(iSetHeight, 760.0f + fCAMPUS_SHIFT, 420.0f + fCAMPUS_SHIFT, 220.0f, 0.9f, 120.0f);
-		xAuto.AddStep_TerrainBrushStroke(iSetHeight, 1500.0f + fCAMPUS_SHIFT, 900.0f + fCAMPUS_SHIFT, 260.0f, 0.85f, 95.0f);
-		xAuto.AddStep_TerrainBrushStroke(iTerrace, 1500.0f + fCAMPUS_SHIFT, 900.0f + fCAMPUS_SHIFT, 300.0f, 0.8f, 10.0f);
-		xAuto.AddStep_TerrainBrushStroke(iNoise, 1100.0f + fCAMPUS_SHIFT, 1500.0f + fCAMPUS_SHIFT, 280.0f, 0.7f, 14.0f);
-		xAuto.AddStep_TerrainSampleStamp(760.0f + fCAMPUS_SHIFT, 420.0f + fCAMPUS_SHIFT, 240.0f);
-		xAuto.AddStep_TerrainBrushStroke(iStamp, 2100.0f + fCAMPUS_SHIFT, 600.0f + fCAMPUS_SHIFT, 240.0f, 0.9f, 0.0f);
+		// ★ THE FOUR FAR "FEATURE HILLS" ARE GONE, deliberately. They were a
+		// smooth dome at (760,420)+SHIFT, a terraced mesa at (1500,900)+SHIFT, a
+		// roughened noise field at (1100,1500)+SHIFT, and the dome cloned east to
+		// (2100,600)+SHIFT via a sample-stamp pair — every one of them 1.5 to
+		// 3.9 km from the campus, i.e. horizon dressing on a terrain the campus
+		// used 3% of. On a 1024m terrain they fall outside the grid entirely, and
+		// clamping them inward would jam them into the hill rings below rather
+		// than restore what they were for. The two rings ARE the skyline now.
+		//
+		// The iTerrace / iNoise / iStamp brush tools consequently have no
+		// remaining user in this recipe. They are still exercised by the terrain
+		// editor's own unit suite; nothing here needs to keep a stroke alive to
+		// prove they compile.
 
 		// Hills ENTIRELY surrounding the spawn campus (player + the 3 co-planar
 		// platforms, all at deck-top 48.75): a CONTINUOUS inner ring the player
@@ -1943,9 +1995,11 @@ void Project_RegisterEditorAutomationSteps()
 			xAuto.AddStep_TerrainBrushStroke(iSetHeight, fCAMPUS_CX + fInnerR * cosf(fA),
 				fCAMPUS_CZ + fInnerR * sinf(fA), fInnerBrush, 0.9f, fPeak);
 		}
-		// Outer ring: 18 taller dabs at r=255, brush 78, offset +10deg so its
+		// Outer ring: 18 taller dabs at r=265, brush 95, offset +10deg so its
 		// peaks interleave the inner ring → a layered hill belt receding into the
-		// distance. Outer edge (255+78=333) stays well inside the dome (760,420).
+		// distance. Outer edge (265+95=360) leaves ~150m of open ground before the
+		// terrain's 1024m boundary, so the belt reads as a horizon rather than as
+		// a wall at the edge of the world.
 		const int   iOUTER_HILLS = 18;
 		const float fOuterR = 265.0f, fOuterBrush = 95.0f;
 		for (int iHill = 0; iHill < iOUTER_HILLS; ++iHill)
@@ -2054,6 +2108,16 @@ void Project_RegisterEditorAutomationSteps()
 	g_xEngine.EditorAutomation().AddStep_CreateEntity("RenderTestTerrain");
 	g_xEngine.EditorAutomation().AddStep_SetEntityTransient(false);
 	g_xEngine.EditorAutomation().AddStep_AddComponent("Terrain");
+	// ★ 16x16 chunks of 64m = a 1024 x 1024 m terrain, at the default 1m vertex
+	// spacing. Declared BEFORE the materials so the component carries its shape
+	// before anything sizes against it, and stated here rather than left to the
+	// default because this terrain is deliberately NOT the default 4096m one --
+	// the campus occupies ~720m and the other 3.3km cost 11,500 asset files to
+	// bake ground nothing ever reached. Everything else in this file derives its
+	// world coordinates from fCAMPUS_TERRAIN_SIZE, which is the same grid.
+	g_xEngine.EditorAutomation().AddStep_TerrainSetDimensions(
+		fCAMPUS_CHUNK_SIZE, 1.0f,
+		static_cast<int>(uCAMPUS_GRID_CHUNKS), static_cast<int>(uCAMPUS_GRID_CHUNKS));
 	g_xEngine.EditorAutomation().AddStep_SetTerrainMaterial(0, RenderTest::Resources().m_axTerrainMaterials[0].GetDirect());
 	g_xEngine.EditorAutomation().AddStep_SetTerrainMaterial(1, RenderTest::Resources().m_axTerrainMaterials[1].GetDirect());
 	g_xEngine.EditorAutomation().AddStep_SetTerrainMaterial(2, RenderTest::Resources().m_axTerrainMaterials[2].GetDirect());

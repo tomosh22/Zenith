@@ -42,8 +42,10 @@ namespace
 	// The campus centre + the spawn meadow ring the terrain recipe paints
 	// (RenderTest.cpp: four GrassDensity dabs at +/- 74 m, then GrassType dabs
 	// stamping types 1/2/3 into three of those four lobes).
-	constexpr float fCAMPUS_CX = 2048.0f;
-	constexpr float fCAMPUS_CZ = 2048.0f;
+	// Tracks RenderTest.cpp's fCAMPUS_C{X,Z} -- the centre of the 1024m terrain,
+	// which moved from 2048 when the terrain shrank from 4096m.
+	constexpr float fCAMPUS_CX = 512.0f;
+	constexpr float fCAMPUS_CZ = 512.0f;
 	constexpr float fGROUND_Y  = 48.25f;   // the flattened gameplay plateau
 
 	// Setup's Play -> Stopped switch queues a DEFERRED scene restore, and that
