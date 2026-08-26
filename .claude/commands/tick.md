@@ -531,15 +531,31 @@ So before declaring a graphics-gated ticket unreachable, check for a GPU —
 and if there is one, the windowed run is often the *only* way to get the
 measurement the ticket is actually asking for.
 
-What that leaves out of reach is narrower than it looks. A headless run may
-CREATE a `.zscen` but never CHANGE one — and **that guard is about the BACKEND,
-not about a person**. It is `Zenith_Editor.cpp:1425`, inside
-`if constexpr (Zenith_IsNullRenderer())`, and it is compiled out of a Vulkan
-build entirely; its own comment reads *"Windowed boots never reach here — they
-author everything, so they publish unconditionally."* It exists because a Null
-boot authors an INCOMPLETE world, so serializing that subset over a tracked
-asset deletes content. A `Vulkan_` build authors the whole thing and needs no
-guard.
+**★★ AND SCENE AUTHORING IS NO LONGER OUT OF REACH AT ALL. ZEN-6 REMOVED THE
+`.zscen` PUBLISH GUARD (2026-08-26, `cbebea74`).** A headless run may now CHANGE
+a committed scene, not only create a missing one.
+
+This paragraph used to say the opposite, and it was the standing reason a
+scene-authoring ticket got `needs-gpu`. **It is not a reason any more.**
+`Zenith_TerrainEditor::EnsureTreeEntities` used to refuse to run on the Null
+backend, so a headless tools boot authored an INCOMPLETE world and
+`Zenith_Editor::SaveActiveScene` had to refuse any save that would overwrite a
+tracked asset with that subset — it once dropped RenderTest's two instanced-tree
+entities, ~323 KB of a 361,753-byte file. Entity creation is backend-neutral now;
+only the GPU allocation is skipped, which the Null memory manager was already
+doing. The refusal is gone and `CompareWithFile` survives it as a backend-neutral
+audit.
+
+Proven rather than assumed: a `Null_*_True` boot re-authors every scene both
+RenderTest and Zenithmon publish and reports `[ScenePublish] IDENTICAL` for all
+of them.
+
+★ **One trap survives, and it is the one that nearly fooled the tick that landed
+this.** The UNIT-GATE boot authors nothing — it exits before the
+editor-automation queue drains, so it emits no `[ScenePublish]` line and leaves a
+clean tree. **A clean tree is therefore not evidence that a re-author reproduced
+the bytes.** Drive an authoring boot with
+`--automated-test <T> --skip-unit-tests` and read the marker.
 
 **★★ A WINDOWED TEST RUN IS AUTHORING.** Measured on ZM-65:
 `zenithmon.exe --automated-test ZM_DawnmereRouteSeamGroundTruth_Test
@@ -565,6 +581,20 @@ correctness are different properties and that proof only establishes the first.
 ticket — **a GPU is assumed available** and this label gates nothing. What it
 tells you is HOW to build: the deliverable needs a `Vulkan_*_True` build and a
 windowed run, not the `--headless` `Null_` config every gate line defaults to.
+
+**★★ AND SINCE ZEN-6, A TICKET LABELLED `needs-gpu` ONLY BECAUSE IT RE-AUTHORS A
+SCENE IS MISLABELLED.** That was the commonest reason for the label and it stopped
+being a reason on 2026-08-26 — a headless boot may now change a committed `.zscen`
+(see the guard note above). So when you claim one, **read WHY it carries the
+label**: if the deliverable genuinely needs a graphics driver — a rendered capture,
+a visual measurement, a `requiresGraphics` test — build Vulkan and boot windowed as
+below. If the only reason is "it re-authors a committed scene", do it headless, and
+say in the work log that you did.
+
+Several open Zenithmon tickets predate ZEN-6 and still carry the label on the old
+reasoning. Removing it is `zagent update <KEY> --unlabel needs-gpu`, and it is worth
+doing when you notice one — six of the ten tickets on Zenithmon's S8 critical path
+sat behind that label, which is the cost ZEN-6 existed to remove.
 
 **★★ DO NOT ASK PERMISSION TO RUN A VULKAN BUILD OR A WINDOWED BOOT.** They are
 ordinary steps of a `needs-gpu` tick, exactly as `zenith build --headless` is of

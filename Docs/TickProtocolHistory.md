@@ -142,6 +142,36 @@ them: regen when a created source file is present (and treat a non-zero regen
 as fatal), assert every created `.cpp` by name in the build log, run the unit
 gate alone first, and own each gate as a child process waited on unbounded.
 
+## "A headless run may CREATE a `.zscen` but never CHANGE one" (step 2)
+
+**Deleted 2026-08-26, because the guard it described was removed** (ZEN-6, `cbebea74`).
+
+The paragraph read: *"that guard is about the BACKEND, not about a person. It is
+`Zenith_Editor.cpp:1425`, inside `if constexpr (Zenith_IsNullRenderer())` … A
+`Vulkan_` build authors the whole thing and needs no guard."* Every clause was
+true when written, and it was the standing justification for labelling a
+scene-authoring ticket `needs-gpu`.
+
+The guard existed because `Zenith_TerrainEditor::EnsureTreeEntities` refused to run
+on the Null backend, so a headless tools boot authored an INCOMPLETE world and
+`SaveActiveScene` had to refuse any save that would overwrite a tracked asset with
+that subset — it once dropped RenderTest's two instanced-tree entities, ~323 KB of
+a 361,753-byte file, on every headless boot. ZEN-6 fixed the cause rather than the
+symptom: entity creation is backend-neutral now and only the GPU allocation is
+skipped, which the Null memory manager was already doing.
+
+**The consequence for the protocol is larger than the deleted sentence.** "It
+re-authors a committed scene" was the commonest reason for `needs-gpu`, and six of
+the ten tickets on Zenithmon's S8 critical path sat behind the label on that
+reasoning alone. Step 2 now says to read WHY a ticket carries it, and to unlabel one
+that carries it only for scene authoring.
+
+★ The one thing that survived: **the unit-gate boot authors nothing.** It exits
+before the editor-automation queue drains, emits no `[ScenePublish]` line and leaves
+a clean tree — so a clean tree is not evidence that a re-author reproduced the
+bytes. That trap nearly fooled the tick that landed ZEN-6, and it is now stated at
+the same place.
+
 ## Amendments to the "never edit this file" rule
 
 `tick.md` says the loop may never edit `.claude/**` or `zagent.project.json`,
