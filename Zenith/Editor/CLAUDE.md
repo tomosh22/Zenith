@@ -343,46 +343,78 @@ simulated input deterministic. This is what lets automated tests drive the
 editor with real clicks/keys — flagship proofs: `Test_GraphEditorLiveAuthoring`
 and `Test_GraphEditorScreenshotTour` (DP suite, windowed).
 
-### A headless boot may CREATE a scene asset, never CHANGE one
+### Every backend authors the same scene, and every publish is audited
 
 `Zenith_Editor::SaveActiveScene` — the one verb `AddStep_SaveScene` routes to, and
-the only way an authored scene reaches disk — carries a **publish guard on the Null
-backend**. A Null boot authors an INCOMPLETE world: every authoring step that needs
-a live GPU resource no-ops (`Zenith_TerrainEditor::EnsureTreeEntities` is the
-canonical one — it refuses to create the instanced-tree entities because instance
-groups allocate GPU buffers). Serializing that subset over a tracked `.zscen`
-silently DELETES content. That is not hypothetical: every headless RenderTest run
-rewrote its committed 361721-byte scene down to ~38 KB, dropping the two
-`TerrainTrees_*` instanced entities (~323 KB), and the only symptom was a dirty
-`git status` nobody was reading.
+the only way an authored scene reaches disk — **publishes on every backend**, Null
+included. That rests on a rule the authoring steps have to keep:
 
-So on `Zenith_IsNullRenderer()` the save is decided by
-`Zenith_SceneData::CompareWithFile` (a `Zenith_ScenePublishDelta`), which serializes
-exactly the bytes `SaveToFile` would write and diffs them against the file:
+> **A `Zenith_IsNullRenderer()` bail is a defect whenever it skips ENTITY or
+> COMPONENT creation, and correct when it skips device traffic.** Entity and
+> component state is what `WriteToDataStream` serializes; the GPU allocation
+> underneath it is already a no-op on the Null backend
+> (`Zenith_Null_MemoryManager` hands back dummy handles and copies nothing), so
+> the "skip only the GPU half" behaviour needs no branch in the authoring code at
+> all.
 
-| Delta | What the guard does |
+The save is still preceded by `AuditScenePublish`, which asks
+`Zenith_SceneData::CompareWithFile` (a `Zenith_ScenePublishDelta`) to serialize
+exactly the bytes `SaveToFile` would write and diff them against the file:
+
+| Delta | What the audit does |
 |---|---|
-| `NO_FILE` | **writes** — nothing to lose, and it is how a new game's scene first appears |
-| `IDENTICAL` | skips the write (it was a no-op) and logs it |
-| `DIFFERENT`, fewer entities than the file | **refuses**, `Zenith_Error` naming both counts and both sizes |
-| `DIFFERENT`, same or more entities | **refuses**, `Zenith_Warning` |
+| `NO_FILE` | **writes**, logging the counts — it is how a new game's scene first appears |
+| `IDENTICAL` | **skips the write** and logs `[ScenePublish] IDENTICAL`. Nothing is lost (the bytes match) and the file's mtime stays put |
+| `DIFFERENT`, fewer entities than the file | **writes**, and reports it with `Zenith_Error` naming both counts and both sizes |
+| `DIFFERENT`, same or more entities | **writes**, logging the change |
 
-Windowed boots never reach the guard — they author everything, so they publish
-unconditionally. A headless boot that refuses simply goes on to LOAD the committed
-scene, which is strictly more complete than the one it authored.
+The two rows that changed meaning are worth being explicit about. `IDENTICAL` is
+now a **completeness proof, not a guard**: "a headless boot re-authored a committed
+scene to the same bytes" is precisely the assertion that the Null authoring path is
+missing nothing, and it is checked on every publish without needing a machine with
+a graphics driver. And the fewer-entities row is a **report, not a refusal** —
+deleting an entity is a legitimate authoring change, so it is published; what is
+not acceptable is doing it by accident, which is why both counts are shouted.
 
 `CompareWithFile` shares `SerializeToDataStream` with `SaveToFile`, so "what a save
-would write" and "what a save writes" cannot drift apart. Both halves are pinned by
-`Editor, SceneSaveDeltaClassifiesPublish` (the four delta classifications, plus
-"transient entities never move the counts") and `Editor,
-HeadlessSaveNeverRewritesSceneAsset` (the policy end-to-end — asserting the file is
-byte-identical afterwards under Null, and changed under a real backend, so the test
-is meaningful in both configs).
+would write" and "what a save writes" cannot drift apart. Three units pin one link
+each of the chain: `Editor, TreeAuthoringIsBackendNeutral` (the AUTHORING half —
+`Zenith_TerrainEditor::EnsureTreeEntities` produces its two NAMED entities on
+whichever backend is running), `Editor, SceneSaveDeltaClassifiesPublish` (the
+COMPARISON — all four classifications, plus "transient entities never move the
+counts"), and `Editor, ScenePublishWritesOnEveryBackend` (the POLICY — a
+byte-identical save is a skipped no-op and a differing save publishes, on Null
+exactly as on a real backend).
+
+<details><summary>History: the headless publish guard, and why it is gone</summary>
+
+There used to be a **refusal** here: on `Zenith_IsNullRenderer()`, a save that would
+CHANGE an existing `.zscen` was rejected outright, and the boot went on to LOAD the
+committed scene instead. The reason was real. A Null boot authored an INCOMPLETE
+world, because authoring steps that wanted a live GPU resource bailed out *entirely*
+rather than skipping only the GPU part — `Zenith_TerrainEditor::EnsureTreeEntities`
+returned `false` on its first line, so the instanced-tree entities were never
+created. Serializing that subset over a tracked asset silently DELETED content:
+every headless RenderTest run rewrote its committed scene down to ~38 KB, dropping
+the two `TerrainTrees_*` entities and ~323 KB of instance data, and the only symptom
+was a dirty `git status` nobody was reading.
+
+The refusal was correct for the world as it was, and its cost was that
+**re-authoring a scene required a windowed tools boot** — a graphics driver in front
+of every scene edit, and the reason a batch of tickets carried a "needs a GPU"
+marker. ZEN-6 fixed the cause rather than the symptom: the bail conflated "create
+scene data" with "allocate GPU buffers" and skipped the wrong one. With authoring
+backend-neutral there is nothing left for a refusal to protect, so it went, and the
+unit that pinned it (`Editor, HeadlessSaveNeverRewritesSceneAsset`) went with it.
+
+</details>
 
 **Corollary for games:** a per-run harness entity (a smoke runner, a capture rig)
 must be spawned **transient, post-load**, never authored before `AddStep_SaveScene`
 — otherwise every run of that mode writes an entity into the tracked asset that no
-other run has. RenderTest's `RenderTestSmokeRunner` is the worked example.
+other run has. RenderTest's `RenderTestSmokeRunner` is the worked example. This
+matters on **every** backend now: the refusal used to shield headless runs from the
+mistake as a side effect, and a headless run publishes like any other.
 
 ### Graph Authoring via Editor Automation
 

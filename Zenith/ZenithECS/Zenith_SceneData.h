@@ -330,7 +330,12 @@ private:
 	// publish BEFORE overwriting an asset. Entity counts come from the two file
 	// headers, so they count what each side would/does SERIALIZE (transient entities
 	// excluded), not what a scene holds in memory.
-	// Used by Zenith_Editor::SaveActiveScene's headless publish guard.
+	// Used by Zenith_Editor::SaveActiveScene's publish audit, on EVERY backend: an
+	// IDENTICAL verdict skips the write as a no-op and is what proves a headless
+	// re-author reproduced the committed bytes, while a save that would publish
+	// fewer entities than the file holds is reported with both counts. (It began as
+	// a headless-only REFUSAL, back when Null authoring was entity-incomplete; that
+	// guard is gone — see Zenith/Editor/CLAUDE.md.)
 	Zenith_ScenePublishDelta CompareWithFile(const std::string& strFilename, bool bIncludeTransient = false);
 
 	// Editor-only hooks used by the play-mode backup/restore path

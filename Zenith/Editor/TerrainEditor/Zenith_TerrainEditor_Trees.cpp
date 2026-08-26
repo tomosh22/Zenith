@@ -22,15 +22,38 @@
 
 namespace
 {
-	constexpr const char* szTREE_TRUNK_ENTITY  = "TerrainTrees_Trunk";
-	constexpr const char* szTREE_LEAVES_ENTITY = "TerrainTrees_Leaves";
+	// The entity NAMES are public members of Zenith_TerrainEditor (they are the
+	// observable outcome a unit pins and RenderTest's asset guard greps for), so
+	// they are deliberately not re-declared here.
 	constexpr float fTREE_SWAY_DURATION = 4.0f;   // matches the generated clip
 
 	// Bounding sphere shared by all instances of a group (local space, scaled
 	// by the instance transform): generous enough for the ~7.5m tree + crown.
 	constexpr float fTREE_BOUNDS_RADIUS = 8.5f;
 
-	Zenith_InstancedMeshComponent* ResolveTreeComponent(Zenith_EntityID uEntity)
+	// The cached target IDs are never cleared — not on Open, not on Close, not on a
+	// scene change — so this is the ONLY thing standing between a destroyed target
+	// and a stale write.
+	//
+	// The generation half of Zenith_EntityID is NOT sufficient on its own, and the
+	// comment that used to claim it was is the reason this now takes a name. A
+	// generation only discriminates within ONE entity-store lifetime:
+	// Zenith_SceneSystem::ResetForNextTest calls Zenith_ECS_EntityStore().Reset(),
+	// which wipes slots AND generations, and the unit batch runs it after every test
+	// while these cached IDs live in the editor singleton for the whole boot. After
+	// such a reset the cached (slot, generation) pair can compare equal to a live,
+	// completely unrelated entity — and if that entity happens to carry an
+	// instanced-mesh component, ApplyTreeDab would scatter its trees into the wrong
+	// instance group.
+	//
+	// So the NAME is the authority, exactly as it is in EnsureTreeEntities' adopt
+	// path: an ID that resolves to anything not called szTREE_TRUNK_ENTITY /
+	// szTREE_LEAVES_ENTITY is rejected and the caller re-authors by name. On the
+	// healthy path the check always passes (the IDs are only ever assigned from
+	// entities found or created under those names), so nothing about authored bytes
+	// changes.
+	Zenith_InstancedMeshComponent* ResolveTreeComponent(Zenith_EntityID uEntity,
+		const char* szExpectedName)
 	{
 		if (uEntity == INVALID_ENTITY_ID)
 		{
@@ -42,6 +65,10 @@ namespace
 			return nullptr;
 		}
 		Zenith_Entity xEntity = pxSceneData->GetEntity(uEntity);
+		if (xEntity.GetName() != szExpectedName)
+		{
+			return nullptr;
+		}
 		Zenith_InstancedMeshComponent* pxComp = xEntity.TryGetComponent<Zenith_InstancedMeshComponent>();
 		if (pxComp == nullptr)
 		{
@@ -77,15 +104,27 @@ void Zenith_TerrainEditor::SetTreeBrushSettings(u_int uTreesPerDab, float fScale
 
 bool Zenith_TerrainEditor::EnsureTreeEntities()
 {
-	// Instance groups allocate GPU buffers on first spawn — a tools-bake
-	// semantic that a Null build deliberately skips.
-	if (Zenith_IsNullRenderer())
-	{
-		return false;
-	}
-
-	if (ResolveTreeComponent(m_uTreeTrunkEntity) != nullptr &&
-		ResolveTreeComponent(m_uTreeLeavesEntity) != nullptr)
+	// ZEN-6: this used to `return false` on its FIRST line under
+	// Zenith_IsNullRenderer(), on the reasoning that "instance groups allocate GPU
+	// buffers on first spawn". That conflated two different things and skipped the
+	// wrong one. Creating the entities and their Zenith_InstancedMeshComponents is
+	// SCENE DATA — it is what Zenith_InstancedMeshComponent::WriteToDataStream
+	// serializes — while the GPU allocation is Flux_InstanceGroup's buffer init,
+	// which on the Null backend is already Zenith_Null_MemoryManager handing back
+	// dummy handles and copying nothing. So the entity half must run on every
+	// backend and the GPU half needs no branch at all.
+	//
+	// The proof that the whole chain below is backend-neutral is that a headless
+	// boot ALREADY executes it, verbatim, every time it loads the committed scene:
+	// Zenith_InstancedMeshComponent::ReadFromDataStream runs LoadMesh ->
+	// EnsureInstanceGroupCreated -> Reserve -> InitialiseGPUBuffers ->
+	// SpawnInstanceWithMatrix for each of RenderTest's 2520 tree instances.
+	//
+	// Consequence, and the whole point of the ticket: a Null tools boot now
+	// authors an entity-COMPLETE world, so Zenith_Editor::SaveActiveScene no
+	// longer needs a publish guard to stop it deleting content it never created.
+	if (ResolveTreeComponent(m_uTreeTrunkEntity, szTREE_TRUNK_ENTITY) != nullptr &&
+		ResolveTreeComponent(m_uTreeLeavesEntity, szTREE_LEAVES_ENTITY) != nullptr)
 	{
 		return true;
 	}
@@ -118,8 +157,8 @@ bool Zenith_TerrainEditor::EnsureTreeEntities()
 
 	m_uTreeTrunkEntity = xTrunk.GetEntityID();
 	m_uTreeLeavesEntity = xLeaves.GetEntityID();
-	return ResolveTreeComponent(m_uTreeTrunkEntity) != nullptr &&
-	       ResolveTreeComponent(m_uTreeLeavesEntity) != nullptr;
+	return ResolveTreeComponent(m_uTreeTrunkEntity, szTREE_TRUNK_ENTITY) != nullptr &&
+	       ResolveTreeComponent(m_uTreeLeavesEntity, szTREE_LEAVES_ENTITY) != nullptr;
 }
 
 // Deterministic-FP: every value this function computes — scatter position, yaw quat,
@@ -138,8 +177,8 @@ void Zenith_TerrainEditor::ApplyTreeDab(float fWorldX, float fWorldZ, float fRad
 	{
 		return;
 	}
-	Zenith_InstancedMeshComponent* pxTrunk = ResolveTreeComponent(m_uTreeTrunkEntity);
-	Zenith_InstancedMeshComponent* pxLeaves = ResolveTreeComponent(m_uTreeLeavesEntity);
+	Zenith_InstancedMeshComponent* pxTrunk = ResolveTreeComponent(m_uTreeTrunkEntity, szTREE_TRUNK_ENTITY);
+	Zenith_InstancedMeshComponent* pxLeaves = ResolveTreeComponent(m_uTreeLeavesEntity, szTREE_LEAVES_ENTITY);
 	if (pxTrunk == nullptr || pxLeaves == nullptr ||
 		pxTrunk->GetInstanceGroup() == nullptr)
 	{
@@ -182,7 +221,13 @@ void Zenith_TerrainEditor::ApplyTreeDab(float fWorldX, float fWorldZ, float fRad
 	// sampling enforces slope and spacing limits.
 	const u_int uTarget = std::max(1u, static_cast<u_int>(
 		static_cast<float>(m_xBrush.m_uTreesPerDab) * std::max(0.1f, fStrength) + 0.5f));
-	const float fMaxSlopeTan = tanf(glm::radians(m_xBrush.m_fTreeMaxSlopeDeg));
+	// AuthoringRadians, not glm::radians. The pin above this function is a pragma at
+	// THIS call site and does not reach into glm: the template takes its FP model
+	// from its own definition point and is a COMDAT shared with every /fp:fast TU.
+	// Same source expression either way — degrees * 0.01745329251994329576923690768489f,
+	// transcribed from glm/trigonometric.inl — so this is a compile-model swap, not a
+	// math change. See Zenith_Maths.h.
+	const float fMaxSlopeTan = tanf(Zenith_Maths::AuthoringRadians(m_xBrush.m_fTreeMaxSlopeDeg));
 	const float fSpacingSq = m_xBrush.m_fTreeSpacing * m_xBrush.m_fTreeSpacing;
 
 	// Snapshot the enabled instances once for the spacing test (positions
@@ -273,8 +318,8 @@ void Zenith_TerrainEditor::TickTreeSway(float fDt)
 	// Playing mode advances via the component's OnUpdate lifecycle hook;
 	// this editor-side tick keeps the wind alive in Stopped/Paused so
 	// placement previews sway.
-	Zenith_InstancedMeshComponent* pxTrunk = ResolveTreeComponent(m_uTreeTrunkEntity);
-	Zenith_InstancedMeshComponent* pxLeaves = ResolveTreeComponent(m_uTreeLeavesEntity);
+	Zenith_InstancedMeshComponent* pxTrunk = ResolveTreeComponent(m_uTreeTrunkEntity, szTREE_TRUNK_ENTITY);
+	Zenith_InstancedMeshComponent* pxLeaves = ResolveTreeComponent(m_uTreeLeavesEntity, szTREE_LEAVES_ENTITY);
 	if (pxTrunk != nullptr)
 	{
 		pxTrunk->Update(fDt);

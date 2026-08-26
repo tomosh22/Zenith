@@ -14,6 +14,10 @@
 #include "EntityComponent/Zenith_ComponentEditorRegistry.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
+// TreeAuthoringIsBackendNeutral names both: the authoring step under test, and the
+// component its two entities must carry (TryGetComponent needs the complete type).
+#include "Editor/TerrainEditor/Zenith_TerrainEditor.h"
+#include "EntityComponent/Components/Zenith_InstancedMeshComponent.h"
 #include "Input/Zenith_Input.h"
 #include "Maths/Zenith_Maths.h"
 #include "Editor/Panels/Zenith_EditorPanel_Hierarchy.h"
@@ -1657,15 +1661,32 @@ ZENITH_TEST(Editor, UniqueFilenameWithExisting)
 }
 
 //------------------------------------------------------------------------------
-// Headless scene-publish guard
+// Scene publishing, and the completeness it depends on (ZEN-6)
 //
-// A Null-backend boot authors an INCOMPLETE world -- every authoring step that
-// needs a live GPU resource no-ops -- so serializing what it holds over a scene
-// asset a windowed boot authored silently DELETES content (this is what stripped
-// RenderTest's two instanced tree entities, ~323 KB, on every headless boot).
-// Two tests, one per half of the fix: the Zenith_SceneData::CompareWithFile seam
-// that answers "would this save change the file, and would it lose entities?",
-// and the Zenith_Editor::SaveActiveScene policy built on that answer.
+// A Null-backend boot USED to author an INCOMPLETE world -- authoring steps that
+// wanted a live GPU resource bailed out entirely rather than skipping only the GPU
+// part -- so serializing what it held over a scene asset a windowed boot authored
+// silently DELETED content (this is what stripped RenderTest's two instanced tree
+// entities, ~323 KB, on every headless boot). Zenith_Editor::SaveActiveScene
+// carried a REFUSAL for exactly that reason, and the refusal is now gone: a
+// headless run may CHANGE a committed scene, because the authoring steps create
+// their entities on every backend.
+//
+// Three tests, one per link in that chain:
+//   * TreeAuthoringIsBackendNeutral      -- the AUTHORING half. The canonical step
+//                                           (Zenith_TerrainEditor::EnsureTreeEntities)
+//                                           produces its two NAMED entities on
+//                                           whichever backend is running.
+//   * SceneSaveDeltaClassifiesPublish    -- the COMPARISON seam that survived the
+//                                           refusal: Zenith_SceneData::CompareWithFile
+//                                           still answers "would this save change the
+//                                           file, and would it lose entities?", and
+//                                           IDENTICAL is what proves a headless
+//                                           re-author reproduced the committed bytes.
+//   * ScenePublishWritesOnEveryBackend   -- the POLICY built on that answer: a
+//                                           byte-identical save is a skipped no-op,
+//                                           and a differing save publishes, on Null
+//                                           exactly as on a real backend.
 //------------------------------------------------------------------------------
 namespace
 {
@@ -1752,19 +1773,19 @@ ZENITH_TEST(Editor, SceneSaveDeltaClassifiesPublish)
 	std::filesystem::remove(strPath);
 }
 
-ZENITH_TEST(Editor, HeadlessSaveNeverRewritesSceneAsset)
+ZENITH_TEST(Editor, ScenePublishWritesOnEveryBackend)
 {
 	const std::string strPath =
-		(std::filesystem::temp_directory_path() / "zenith_headless_publish_test.zscen").string();
+		(std::filesystem::temp_directory_path() / "zenith_scene_publish_test.zscen").string();
 	std::filesystem::remove(strPath);
 
 	Zenith_SceneData* pxData = g_xEngine.Scenes().GetActiveSceneData();
-	ZENITH_ASSERT_NOT_NULL(pxData, "Publish-guard test needs an active scene");
+	ZENITH_ASSERT_NOT_NULL(pxData, "Publish-policy test needs an active scene");
 
 	// First publish: no file yet, so EVERY backend writes -- that is the only way a
 	// scene asset first appears, and refusing it would strand a brand-new game.
-	Zenith_Entity xKeep = g_xEngine.Scenes().CreateEntity(pxData, "HeadlessPublish_Keep");
-	Zenith_Entity xDrop = g_xEngine.Scenes().CreateEntity(pxData, "HeadlessPublish_Drop");
+	Zenith_Entity xKeep = g_xEngine.Scenes().CreateEntity(pxData, "ScenePublish_Keep");
+	Zenith_Entity xDrop = g_xEngine.Scenes().CreateEntity(pxData, "ScenePublish_Drop");
 	xKeep.SetTransient(false);   // transient is the default, and transient is never serialized
 	xDrop.SetTransient(false);
 	g_xEngine.Editor().SaveActiveScene(strPath.c_str());
@@ -1774,28 +1795,119 @@ ZENITH_TEST(Editor, HeadlessSaveNeverRewritesSceneAsset)
 
 	const Zenith_ScenePublishDelta xPublishedDelta = Zenith_EditorSceneAccess::CompareWithFile(pxData, strPath);
 	ZENITH_ASSERT_GE(xPublishedDelta.m_uOnDiskEntityCount, 2u,
-		"Both test entities must actually be IN the published asset, or the guard below proves nothing");
+		"Both test entities must actually be IN the published asset, or the checks below prove nothing");
 
-	// Now make the in-memory scene LOSSY the way a Null boot's is (an entity the
-	// published asset holds is simply not there) and publish again.
+	// A re-publish of an UNCHANGED scene is a no-op. SaveActiveScene skips the write
+	// on an IDENTICAL delta, so the asset must come back byte-for-byte -- which is
+	// also the shape of the completeness proof a headless re-author relies on: an
+	// entity-complete Null boot re-authors a committed scene to the same bytes.
+	g_xEngine.Editor().SaveActiveScene(strPath.c_str());
+	const std::vector<char> xUnchanged = ReadWholeFileForSaveGuardTest(strPath.c_str());
+	ZENITH_ASSERT_TRUE(xUnchanged == xPublished,
+		"Re-publishing an unchanged scene must leave the asset byte-for-byte alone");
+
+	// Now change the scene so the save is genuinely LOSSY -- an entity the published
+	// asset holds is simply not there any more. This is the case the removed headless
+	// guard REFUSED. It must publish now, on Null exactly as on a real backend:
+	// "a headless run must be able to CHANGE a committed .zscen" is the whole point,
+	// and the protection against an incomplete world is that authoring is
+	// backend-neutral (see TreeAuthoringIsBackendNeutral), not a refusal here.
 	xDrop.DestroyImmediate();
 	g_xEngine.Editor().SaveActiveScene(strPath.c_str());
 	const std::vector<char> xAfter = ReadWholeFileForSaveGuardTest(strPath.c_str());
+	ZENITH_ASSERT_TRUE(xAfter != xPublished,
+		"A changed scene must publish on EVERY backend -- a headless boot no longer refuses "
+		"to alter an asset that already exists");
 
-	if constexpr (Zenith_IsNullRenderer())
-	{
-		ZENITH_ASSERT_TRUE(xAfter == xPublished,
-			"A headless boot must leave an existing scene asset byte-for-byte alone rather than "
-			"publishing the subset it authored");
-	}
-	else
-	{
-		ZENITH_ASSERT_TRUE(xAfter != xPublished,
-			"A windowed boot authors the complete scene, so it must still publish normally");
-	}
+	// ...and the write actually landed: the file now matches what we hold.
+	const Zenith_ScenePublishDelta xAfterDelta = Zenith_EditorSceneAccess::CompareWithFile(pxData, strPath);
+	ZENITH_ASSERT_EQ(static_cast<int>(xAfterDelta.m_eResult), static_cast<int>(Zenith_ScenePublishDelta::IDENTICAL),
+		"After publishing, the asset on disk must be exactly what the scene would serialize");
 
 	xKeep.DestroyImmediate();
 	std::filesystem::remove(strPath);
+}
+
+//------------------------------------------------------------------------------
+// The authoring half: an authoring step creates ENTITIES on every backend and
+// skips only the GPU allocation.
+//
+// Zenith_TerrainEditor::EnsureTreeEntities is the canonical case and the one whose
+// bail caused the damage: it returned false on its FIRST line under
+// Zenith_IsNullRenderer(), before any entity work, so a Null tools boot authored
+// RenderTest's campus WITHOUT its two instanced-tree entities.
+//
+// The entities are named, not counted, deliberately: a count moves for a dozen
+// unrelated reasons and would go green against the wrong two entities.
+//------------------------------------------------------------------------------
+ZENITH_TEST(Editor, TreeAuthoringIsBackendNeutral)
+{
+	Zenith_SceneData* pxData = g_xEngine.Scenes().GetActiveSceneData();
+	ZENITH_ASSERT_NOT_NULL(pxData, "Tree-authoring test needs an active scene");
+
+	Zenith_TerrainEditor& xTerrainEditor = g_xEngine.TerrainEditor();
+
+	// Only tear down what THIS test authored. A game whose active scene already
+	// carries painted trees when the boot unit batch runs would otherwise have two
+	// of its own entities deleted out from under it.
+	const bool bTrunkPreexisted =
+		pxData->FindEntityByName(Zenith_TerrainEditor::szTREE_TRUNK_ENTITY).IsValid();
+	const bool bLeavesPreexisted =
+		pxData->FindEntityByName(Zenith_TerrainEditor::szTREE_LEAVES_ENTITY).IsValid();
+
+	ZENITH_ASSERT_TRUE(xTerrainEditor.EnsureTreeEntities(),
+		"EnsureTreeEntities must succeed on EVERY backend -- entity creation is scene data, "
+		"and only the GPU allocation underneath it is backend-specific");
+
+	Zenith_Entity xTrunk = pxData->FindEntityByName(Zenith_TerrainEditor::szTREE_TRUNK_ENTITY);
+	Zenith_Entity xLeaves = pxData->FindEntityByName(Zenith_TerrainEditor::szTREE_LEAVES_ENTITY);
+	ZENITH_ASSERT_TRUE(xTrunk.IsValid(), "TerrainTrees_Trunk must exist after EnsureTreeEntities");
+	ZENITH_ASSERT_TRUE(xLeaves.IsValid(), "TerrainTrees_Leaves must exist after EnsureTreeEntities");
+
+	ZENITH_ASSERT_NOT_NULL(xTrunk.TryGetComponent<Zenith_InstancedMeshComponent>(),
+		"TerrainTrees_Trunk must carry the instanced-mesh component -- an entity without it "
+		"serializes no instances and the trees are still missing from the asset");
+	ZENITH_ASSERT_NOT_NULL(xLeaves.TryGetComponent<Zenith_InstancedMeshComponent>(),
+		"TerrainTrees_Leaves must carry the instanced-mesh component");
+
+	// A TRANSIENT entity is never serialized, so a tree entity that was transient
+	// would satisfy every check above and still leave the saved scene short by two.
+	ZENITH_ASSERT_FALSE(xTrunk.IsTransient(), "TerrainTrees_Trunk must be non-transient, or it never reaches the file");
+	ZENITH_ASSERT_FALSE(xLeaves.IsTransient(), "TerrainTrees_Leaves must be non-transient, or it never reaches the file");
+
+	// Idempotent: TreePaint calls this on every dab, so a second call must ADOPT the
+	// pair rather than author a second one (which would double the scatter).
+	ZENITH_ASSERT_TRUE(xTerrainEditor.EnsureTreeEntities(), "A second call must adopt, not fail");
+	ZENITH_ASSERT_TRUE(pxData->FindEntityByName(Zenith_TerrainEditor::szTREE_TRUNK_ENTITY).GetEntityID()
+		== xTrunk.GetEntityID(), "A second call must adopt the SAME trunk entity, not create another");
+	ZENITH_ASSERT_TRUE(pxData->FindEntityByName(Zenith_TerrainEditor::szTREE_LEAVES_ENTITY).GetEntityID()
+		== xLeaves.GetEntityID(), "A second call must adopt the SAME leaves entity, not create another");
+
+	// The editor's cached target IDs outlive this teardown — Zenith_TerrainEditor is
+	// a boot-lifetime singleton and nothing clears them — so what makes that safe is
+	// worth stating precisely, because the obvious answer is WRONG.
+	//
+	// It is NOT "Zenith_EntityID is generational". A generation only discriminates
+	// within one entity-store lifetime, and this test does not get one: the runner
+	// calls Zenith_SceneSystem::ResetForNextTest after every test, which wipes slots
+	// and generations, and the unit batch runs long before a game's authoring steps
+	// do. A cached ID could therefore compare equal to a live, unrelated entity by
+	// the time TreePaint next runs.
+	//
+	// What actually closes it is the by-NAME check in the tree resolver
+	// (Zenith_TerrainEditor_Trees.cpp): a cached ID that resolves to anything not
+	// named szTREE_TRUNK_ENTITY / szTREE_LEAVES_ENTITY is rejected, and
+	// EnsureTreeEntities falls through to its adopt-or-create path. This test is the
+	// first caller of EnsureTreeEntities from a unit, so it is the first thing that
+	// ever left those IDs populated across a store reset.
+	if (!bTrunkPreexisted)
+	{
+		xTrunk.DestroyImmediate();
+	}
+	if (!bLeavesPreexisted)
+	{
+		xLeaves.DestroyImmediate();
+	}
 }
 
 #endif // ZENITH_TOOLS

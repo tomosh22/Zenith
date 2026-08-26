@@ -1358,59 +1358,76 @@ void Zenith_Editor::CreateNewScene(const char* szName)
 
 namespace
 {
-	// A Null-backend boot authors an INCOMPLETE world: every authoring step that needs
-	// a live GPU resource no-ops (Zenith_TerrainEditor::EnsureTreeEntities is the
-	// canonical one — it refuses to create the instanced-tree entities because instance
-	// groups allocate GPU buffers), so the scene such a boot holds in memory is a SUBSET
-	// of the one a windowed tools boot authors. Serializing that subset over a tracked
-	// .zscen silently DELETES content — which is exactly what dropped RenderTest's two
-	// instanced tree entities (~323 KB of a 361 KB file) on every headless boot.
+	// THE PUBLISH AUDIT — what is left of the headless publish guard (ZEN-6).
 	//
-	// The rule for a headless boot is therefore: it may CREATE a scene asset that does
-	// not exist yet (nothing to lose, and it is how a brand-new game's scene first
-	// appears), but it may never CHANGE one that does. A save whose bytes already match
-	// the file is a no-op and is skipped; one whose bytes differ is refused and
-	// reported, because only a windowed tools boot authors the complete scene. Windowed
-	// boots never reach here — they author everything, so they publish unconditionally.
+	// There USED to be a refusal here: on Zenith_IsNullRenderer() a save that would
+	// CHANGE an existing .zscen was rejected, because a Null-backend boot authored a
+	// strict SUBSET of the windowed world and serializing that subset silently DELETED
+	// content (it dropped RenderTest's two instanced-tree entities, ~323 KB of a 361 KB
+	// file, on every headless boot). The refusal was correct for the world as it was,
+	// and it is gone because the world changed: the authoring steps it protected
+	// against — Zenith_TerrainEditor::EnsureTreeEntities first among them — now create
+	// their entities and components on EVERY backend and skip only the GPU allocation,
+	// so a Null boot's in-memory scene is entity-complete and there is nothing left to
+	// protect. A headless run may now CHANGE a committed scene, which is the point:
+	// re-authoring an asset no longer requires a machine with a graphics driver.
+	//
+	// The COMPARISON stays, for two reasons that outlive the refusal:
+	//
+	//   1. IDENTICAL is the completeness PROOF. "A Null boot re-authors a committed
+	//      scene to the same bytes" is exactly the assertion that the Null authoring
+	//      path is not missing anything, and it needs no windowed run to check. That
+	//      verdict is logged on every publish, on every backend, with a stable marker.
+	//   2. A save that publishes FEWER entities than the asset held is still worth
+	//      saying out loud. It is no longer refused — deleting an entity is a
+	//      legitimate authoring change — but it is the exact shape of the defect above,
+	//      so it is reported with both counts rather than passing in silence.
+	//
+	// A byte-identical save is skipped rather than rewritten. That is not the guard:
+	// it writes the same bytes either way, and skipping keeps a no-op re-author from
+	// touching the file's mtime. It now applies on every backend, not just Null.
 	//
 	// Returns true when the caller should go ahead and write.
-	bool HeadlessMayPublishScene(Zenith_SceneData* pxData, const char* szPath)
+	bool AuditScenePublish(Zenith_SceneData* pxData, const char* szPath)
 	{
 		const Zenith_ScenePublishDelta xDelta = Zenith_EditorSceneAccess::CompareWithFile(pxData, szPath);
 
 		if (xDelta.m_eResult == Zenith_ScenePublishDelta::NO_FILE)
 		{
+			Zenith_Log(LOG_CATEGORY_EDITOR,
+				"[ScenePublish] CREATED '%s' — no asset on disk (%u entities/%llu bytes)",
+				szPath, xDelta.m_uPendingEntityCount, xDelta.m_ulPendingBytes);
 			return true;
 		}
 
 		if (xDelta.m_eResult == Zenith_ScenePublishDelta::IDENTICAL)
 		{
 			Zenith_Log(LOG_CATEGORY_EDITOR,
-				"[EditorOp] Headless save of '%s' is byte-identical to the asset on disk — skipped (%llu bytes)",
-				szPath, xDelta.m_ulOnDiskBytes);
+				"[ScenePublish] IDENTICAL '%s' — this boot re-authored the committed bytes exactly "
+				"(%u entities/%llu bytes); write skipped",
+				szPath, xDelta.m_uOnDiskEntityCount, xDelta.m_ulOnDiskBytes);
 			return false;
 		}
 
 		if (xDelta.WouldDropEntities())
 		{
 			Zenith_Error(LOG_CATEGORY_EDITOR,
-				"[EditorOp] REFUSED headless save of '%s': this Null-backend boot authored %u entities "
-				"but the asset on disk holds %u, so saving would DROP %u of them (%llu -> %llu bytes). "
-				"Re-author from a windowed tools boot.",
+				"[ScenePublish] CHANGED '%s' and it DROPS ENTITIES: this boot authored %u entities but the "
+				"asset on disk holds %u, so %u are about to be deleted (%llu -> %llu bytes). Publishing "
+				"anyway — confirm this is an intended authoring change and not an authoring step that "
+				"failed to run on this backend.",
 				szPath, xDelta.m_uPendingEntityCount, xDelta.m_uOnDiskEntityCount,
 				xDelta.m_uOnDiskEntityCount - xDelta.m_uPendingEntityCount,
 				xDelta.m_ulOnDiskBytes, xDelta.m_ulPendingBytes);
 		}
 		else
 		{
-			Zenith_Warning(LOG_CATEGORY_EDITOR,
-				"[EditorOp] REFUSED headless save of '%s': the authored scene differs from the asset on disk "
-				"(%u entities/%llu bytes -> %u entities/%llu bytes) and a Null-backend boot is not "
-				"authoritative. Re-author from a windowed tools boot.",
+			Zenith_Log(LOG_CATEGORY_EDITOR,
+				"[ScenePublish] CHANGED '%s' (%u entities/%llu bytes -> %u entities/%llu bytes)",
 				szPath, xDelta.m_uOnDiskEntityCount, xDelta.m_ulOnDiskBytes,
 				xDelta.m_uPendingEntityCount, xDelta.m_ulPendingBytes);
 		}
-		return false;
+		return true;
 	}
 }
 
@@ -1420,12 +1437,9 @@ void Zenith_Editor::SaveActiveScene(const char* szPath)
 	Zenith_SceneData* pxData = g_xEngine.Scenes().GetSceneData(xScene);
 	Zenith_Assert(pxData, "No active scene data");
 
-	if constexpr (Zenith_IsNullRenderer())
+	if (!AuditScenePublish(pxData, szPath))
 	{
-		if (!HeadlessMayPublishScene(pxData, szPath))
-		{
-			return;
-		}
+		return;
 	}
 
 	Zenith_EditorSceneAccess::SaveToFile(pxData, szPath);

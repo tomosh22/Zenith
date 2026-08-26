@@ -724,13 +724,21 @@ the same tree — so the shape is Vulkan to author, Null to verify and pin.
 
 **These two were ONE label, and splitting them was worth doing.**
 `windowed` meant "the loop cannot finish this" and collected unrelated
-reasons under one word. The guard that makes scene authoring look
-impossible is `Zenith_Editor.cpp:1425`, inside
-`if constexpr (Zenith_IsNullRenderer())` — **compiled out of a Vulkan
-build entirely**, with the comment *"Windowed boots never reach here —
-they author everything, so they publish unconditionally."* It protects
-against a Null boot serializing an incomplete world over a tracked asset,
-never against an absent human. Of 12 labelled tickets, 8 wanted only a
+reasons under one word. The guard that made scene authoring LOOK
+impossible was a `if constexpr (Zenith_IsNullRenderer())` refusal in
+`Zenith_Editor::SaveActiveScene`, **compiled out of a Vulkan build
+entirely** — so it protected against a Null boot serializing an
+incomplete world over a tracked asset, never against an absent human.
+
+**★ ZEN-6 REMOVED THAT GUARD (2026-08-26), and the reason it existed is
+gone with it.** Entity creation on the authoring path is backend-neutral
+now — only the GPU allocation is skipped, which the Null memory manager
+was already doing — so a headless boot authors a complete world and
+publishes it. A `Null_*_True` boot re-authors every committed scene both
+RenderTest and Zenithmon publish and reports `[ScenePublish] IDENTICAL`.
+**So "it re-authors a committed scene" is no longer a reason for
+`needs-gpu` at all.** The label still means what it says — the
+deliverable needs a graphics driver — but scene authoring is not that. Of 12 labelled tickets, 8 wanted only a
 graphics driver and 4 wanted a person — and two of those four had nothing
 to do with rendering (one's deliverable was a board row, the other's a
 `.github/**` workflow). Six of the ten tickets on Zenithmon's S8 critical

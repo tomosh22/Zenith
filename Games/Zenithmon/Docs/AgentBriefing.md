@@ -306,14 +306,26 @@ session needs to know is short:
   `needs-human` means no machine can produce the deliverable: filtered out of the queue
   and refused by a targeted claim. `human-gate` is a third thing again — the loop does
   the whole job and parks it at In Review, because it never signs its own gate (I7).
-* **The `.zscen` publish guard is a NULL-BUILD guard, not an absent-human guard.** A
-  headless run may CREATE a `.zscen` but never CHANGE one, so a slice that re-authors a
-  committed scene would either no-op or trip the guard — and the units that would
-  notice are compiled constants that stay green, so it looks like a clean gate run with
-  the deliverable missing. But the guard is `if constexpr (Zenith_IsNullRenderer())` at
-  `Zenith/Editor/Zenith_Editor.cpp:1423`, **compiled OUT of a Vulkan build entirely**.
-  So the answer to “this ticket needs a scene edit” is `needs-gpu` and a windowed boot,
-  never a ticket the loop cannot take. ZM-27 got this wrong and shipped half a story.
+* **★ A HEADLESS RUN MAY NOW CHANGE A COMMITTED `.zscen`. The publish guard is GONE
+  (ZEN-6, 2026-08-26), and re-authoring a scene no longer needs `needs-gpu`.**
+  `Zenith_TerrainEditor::EnsureTreeEntities` used to refuse to run on the Null backend,
+  so a headless tools boot authored an INCOMPLETE world and
+  `Zenith_Editor::SaveActiveScene` had to refuse any save that would change an asset on
+  disk. Entity creation is backend-neutral now — only the GPU allocation is skipped, and
+  the Null memory manager was already doing that — so a headless boot authors the whole
+  world and publishes it. Proven, not assumed: a `Null_*_True` boot re-authored all four
+  ZM scenes and reported `[ScenePublish] IDENTICAL` for every one, and RenderTest's at
+  82 entities / 361,753 bytes byte-for-byte.
+  **So do not label a ticket `needs-gpu` merely because it re-authors a scene.** That was
+  the reason six of the ten tickets on the S8 critical path sat behind the label, and it
+  is no longer true. `needs-gpu` is still right when the deliverable genuinely needs a
+  graphics driver — a rendered capture, a visual measurement, a `requiresGraphics` test.
+  The terrain BAKE is a separate thing and is still deferred headless.
+  ★ One trap survives the change and is worth knowing: **the unit-gate boot authors
+  nothing.** It exits before the editor-automation queue drains, so it emits no
+  `[ScenePublish]` line and leaves a clean tree. A clean tree is therefore NOT evidence
+  that a re-author reproduced the bytes — drive an authoring boot with
+  `--automated-test <T> --skip-unit-tests` and read the marker.
 * **`complexity` + `risk` route the MODEL; `storyPoints` size the SPRINT.** Two
   fields, two jobs. Deriving either from the other means a re-estimate silently
   reroutes the work, or a model change silently rewrites the sprint's capacity.

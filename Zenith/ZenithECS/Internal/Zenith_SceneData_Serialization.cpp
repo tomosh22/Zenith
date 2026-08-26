@@ -26,8 +26,10 @@ void Zenith_SceneData::SaveToFile(const std::string& strFilename, bool bIncludeT
 }
 
 // The write half of SaveToFile, split out so a caller can produce exactly the bytes
-// a save WOULD write without touching disk -- what the headless publish guard in
-// Zenith_Editor::SaveActiveScene compares against the asset already on disk.
+// a save WOULD write without touching disk -- what the publish audit in
+// Zenith_Editor::SaveActiveScene compares against the asset already on disk, on
+// every backend. Sharing this function with SaveToFile is the point: "what a save
+// would write" and "what a save writes" cannot drift apart.
 void Zenith_SceneData::SerializeToDataStream(Zenith_DataStream& xStream, bool bIncludeTransient)
 {
 	xStream << uSCENE_MAGIC;

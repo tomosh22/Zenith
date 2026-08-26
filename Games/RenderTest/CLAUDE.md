@@ -5,27 +5,54 @@ The renderer/engine feature testbed: a 4096 m procedural terrain campus (seed
 testbed, a jetpack, a StickFigure third-person player, and the **autonomous
 tennis court** (two AI NPCs playing a rule-correct physics match under a
 passive referee). Single scene, build index 0 (`Assets/Scenes/RenderTest.zscen`),
-fully re-authored + saved by editor automation every **windowed** tools boot.
+fully re-authored + saved by editor automation on **every** tools boot — windowed
+or headless.
 
-**A headless (`Null_`) boot authors the same scene MINUS its instanced trees** —
-`Zenith_TerrainEditor::EnsureTreeEntities` refuses to run without a GPU, so the
-`TerrainTrees_Trunk` / `_Leaves` entities (82 authored entities windowed, 80
-headless; ~323 KB of the 361721-byte file) never exist. It therefore does not
-publish: `Zenith_Editor::SaveActiveScene`'s publish guard refuses the lossy save
-(logging both entity counts) and the run loads the committed scene instead, trees
-included. Until that guard existed, EVERY headless run silently rewrote the tracked
-asset down to ~38 KB. Consequences worth knowing:
+**A headless (`Null_`) boot authors the SAME scene a windowed one does**: 82
+entities, 361753 bytes, `TerrainTrees_Trunk` / `_Leaves` and their ~323 KB of
+instance data included. Entity and component creation is backend-neutral (ZEN-6);
+only the GPU allocation underneath it is skipped, and on the Null backend that is
+`Zenith_Null_MemoryManager` handing back dummy handles. So a headless boot
+re-authors the committed bytes exactly and `Zenith_Editor::SaveActiveScene` logs
+`[ScenePublish] IDENTICAL`, skipping the write because it would be a no-op.
+Consequences worth knowing:
 
-* **Re-authoring the scene needs a WINDOWED tools boot.** A headless boot will not
-  pick up an authoring change — it will log `REFUSED headless save` and load the
-  committed bytes. That is the intended failure mode, not a bug.
+* **Re-authoring the scene does NOT need a GPU.** A headless tools boot picks up an
+  authoring change and publishes it. What it must not do is publish a scene that is
+  short of entities for a reason nobody intended — see the audit below.
+* **Every publish is audited, on every backend.** `AuditScenePublish` diffs what the
+  save would write against the file: `IDENTICAL` skips the write (and is the
+  standing proof that headless authoring is not missing anything), `NO_FILE`
+  creates, and a change that publishes FEWER entities than the asset holds is
+  published but reported with both counts via `Zenith_Error`. Deleting an entity is
+  a legitimate authoring change; doing so by accident is the historical defect.
 * **Per-run harness entities are spawned transient, post-load**, never authored
   before `AddStep_SaveScene` (`RenderTest_EnterSmokePlayMode` creates
   `RenderTestSmokeRunner` this way). Authoring one would write it into the tracked
   asset on every `--rendertest-smoke` run.
 * `RT_SceneAssetIntegrity` (`Tests/SceneAssetIntegrity.cpp`) guards all of the
   above by inspecting the file on disk after boot: both tree entities present, the
-  campus + tennis testbed present, no `RenderTestSmokeRunner`.
+  campus + tennis testbed present, no `RenderTestSmokeRunner`. These assertions got
+  STRONGER when the guard went away — a headless boot now actually writes the file,
+  so "both tree entities are in the asset" is an end-to-end check rather than a
+  near-vacuous one.
+
+<details><summary>History: why a headless boot used to be forbidden from saving</summary>
+
+`Zenith_TerrainEditor::EnsureTreeEntities` used to `return false` on its first line
+under `Zenith_IsNullRenderer()`, so a headless boot authored the campus WITHOUT its
+two instanced-tree entities (82 windowed, 80 headless) and serialized that subset
+straight over the tracked asset — every headless run silently rewrote the committed
+scene down to ~38 KB, and the only symptom was a dirty `git status` nobody was
+reading. A publish guard in `SaveActiveScene` then refused any headless save that
+would CHANGE an existing file, which made **re-authoring require a windowed boot**
+and put a graphics driver in front of a scene edit. ZEN-6 fixed the cause instead:
+the bail conflated "create scene data" with "allocate GPU buffers" and skipped the
+wrong one. Keep the distinction in mind when adding an authoring step — a
+`Zenith_IsNullRenderer()` bail is a defect whenever it skips entity or component
+creation, and fine when it skips device traffic.
+
+</details>
 
 ### Authoring is byte-reproducible across configurations — keep it that way
 
@@ -57,7 +84,9 @@ The fix has two halves, both in `Zenith/Core/Zenith.h`'s
    left the tree yaw and the racket matrices still config-dependent. `angleAxis`,
    the quaternion product, `mat4_cast`/`translate`/`scale` and `radians` therefore
    go through `Zenith_Maths::Authoring*` — same formulas, transcribed from glm,
-   compiled once under the pin.
+   compiled once under the pin. (`radians` was the last straggler: `ApplyTreeDab`'s
+   slope threshold still called `glm::radians` inside the pin until ZEN-6, on the
+   mistaken reasoning that the pin covered it.)
 
 **If you add authoring code that computes a float landing in this scene, use those
 helpers, and re-verify by authoring from both configs and comparing the bytes.**

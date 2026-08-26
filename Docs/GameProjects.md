@@ -161,12 +161,14 @@ in (a `.zscen` would rot with engine churn). `Project_RegisterEditorAutomationSt
 (tools-only) authors + `AddStep_SaveScene`s it, so the **first build+run must be a
 `*_True` config** to bake the scene; thereafter `_False`/Android load it.
 
-A `Null_*_True` (headless) first run bakes it fine — the publish guard in
-`Zenith_Editor::SaveActiveScene` only ever refuses to CHANGE a scene asset, never to
-create one. But note the flip side: once the file exists, a headless boot will not
-re-author it (it logs `REFUSED headless save` and loads what is on disk), because a
-Null boot authors an incomplete world — see `Zenith/Editor/CLAUDE.md`. Re-authoring
-after an authoring change is a **windowed** tools boot.
+A `Null_*_True` (headless) first run bakes it fine, and re-authoring works headless
+too: `Zenith_Editor::SaveActiveScene` publishes on every backend, so a Null tools
+boot picks up an authoring change and writes it. A save whose bytes match the file
+is skipped as a no-op and logged `[ScenePublish] IDENTICAL` — which doubles as the
+proof that headless authoring produced the same scene a windowed run would. **No GPU
+is required to author a scene.** (Until ZEN-6 a headless boot was refused any save
+that would CHANGE an existing asset, because Null authoring was entity-incomplete;
+`Zenith/Editor/CLAUDE.md` keeps that history and the rule that replaced it.)
 
 ## Troubleshooting
 

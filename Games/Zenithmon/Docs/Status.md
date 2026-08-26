@@ -18,7 +18,29 @@ The S0-S7 narrative that used to fill the back half of this file moved VERBATIM 
 its own template in `AgentBriefing.md` §2.3 specifies. Nothing was deleted.
 
 **★ LIVE PIN (UPDATED 2026-08-26):
-ZM boot `3419`; engine boot (Null Combat) `1650`; Null RenderTest `1741`; registry **70**.**
+ZM boot `3420`; engine boot (Null Combat) `1651`; Null RenderTest `1742`; registry **70**.**
+
+> **★ ZEN-6 — the headless `.zscen` publish guard is REMOVED — OBSERVED 2026-08-26.**
+> An ENGINE ticket, and its unit is backend-neutral, so **all three rows moved by +1 and all
+> three were MEASURED, none inferred**: ZM **3419 -> 3420** (`3420 ran / 3418 passed /
+> 0 failed`, 2 skipped), Combat **1650 -> 1651** (`1651 / 1650 / 0`), Null RenderTest
+> **1741 -> 1742** (`1742 / 1741 / 0`, 1 skipped). Registry UNCHANGED at **70**.
+> `Zenith_TerrainEditor::EnsureTreeEntities` no longer refuses to run on the Null backend,
+> so a headless tools boot now authors an ENTITY-COMPLETE world and
+> `Zenith_Editor::SaveActiveScene` no longer needs to refuse a save that would change a
+> committed asset.
+> **What this means for Zenithmon: a scene-authoring ticket no longer needs `needs-gpu`
+> merely because it re-authors a committed `.zscen`.** That was the reason six of the ten
+> tickets on the S8 critical path sat behind the label.
+> ★ **PROVEN, not assumed.** A `Null_*_True` boot re-authored all four ZM scenes and
+> reported `[ScenePublish] IDENTICAL` for every one — `FrontEnd`, `PlayerHome`, `Battle`
+> and `ProfLab` — with `git status` clean afterwards and ZERO `CHANGED` verdicts. The same
+> boot on RenderTest reproduced its committed scene at **82 entities / 361,753 bytes**,
+> byte-for-byte, which is the whole file including the two instanced-tree entities whose
+> loss (~323 KB of 361 KB) is why the guard existed.
+> ★ Note the FIRST attempt at this proof was worthless and looked identical to success: the
+> unit-gate boot exits before the editor-automation queue drains, so it authors nothing and
+> leaves a clean tree. The proof requires `--automated-test <T> --skip-unit-tests`.
 
 > **★ ZM-70 / G1-3 — Bloom Badge + Verdant Lash on a leader win — OBSERVED 2026-08-26.**
 > `Null_vs2022_Debug_Win64_True` reported **`3419 ran / 3417 passed / 0 failed`** (2 skipped),
@@ -599,9 +621,11 @@ test coverage.
   `ZM_TerrainGrass` (its terrain sibling) reaches the entity the SAME way `ZM_TallGrassSystem`
   would have to: `Project_RegisterEditorAutomationSteps` (tools-only) + `AddStep_SaveScene`. So
   making Route 1 actually roll encounters in a real boot is a scene-authoring change to the
-  ALREADY-COMMITTED `Route1.zscen` (a CHANGE, not a create), which is exactly the class of work
-  ZM-D-031 / the headless publish guard keeps out of a worker's reach. It needs a windowed
-  `Vulkan_*_True` re-author, by a human or a `needs-gpu` tick.
+  ALREADY-COMMITTED `Route1.zscen` (a CHANGE, not a create), which USED to be the class of work
+  the headless publish guard kept out of a worker's reach — it needed a windowed
+  `Vulkan_*_True` re-author. **★ NO LONGER TRUE as of ZEN-6 (2026-08-26): the guard is
+  removed and a headless boot may change a committed scene.** Left in place because it
+  records why the work stalled at the time.
   **CLOSED at the source level by ZM-66/ZM-D-205**: `AddStep_AddComponent("ZM_TallGrassSystem")`
   now exists at Route 1's authoring call site (Route 1 ONLY). What remains is exactly the
   mechanical windowed re-author + observed pin/hash this bullet already described -- this
@@ -847,9 +871,11 @@ Next in the R1 chain is **R1-3** (ZM-21): the four seam triggers, in one commit.
   `ZM-20` carries `needs-gpu`. **That label gates NOTHING** — a GPU is assumed available
   and the loop claims such a ticket like any other; it says only that the deliverable
   needs a `Vulkan_*_True` build and a windowed run rather than the `--headless` `Null_`
-  config. The `.zscen` publish guard is `if constexpr (Zenith_IsNullRenderer())` at
-  `Zenith/Editor/Zenith_Editor.cpp:1423` and is compiled OUT of a Vulkan build, so it
-  never protected against an absent human. Read this line as *how to build*, not as
+  config. **★ ZEN-6 (2026-08-26) REMOVED the `.zscen` publish guard entirely**, so
+  "it re-authors a committed scene" is no longer a reason to label anything `needs-gpu`;
+  when this was written the guard was `if constexpr (Zenith_IsNullRenderer())` in
+  `Zenith_Editor.cpp` and compiled OUT of a Vulkan build, so even then it never protected
+  against an absent human. Read this line as *how to build*, not as
   *run it yourself*. The pin still comes from a `Null_` run: **Vulkan to author, Null to
   verify and pin.**
 * **Everything after it is BLOCKED behind it**, mechanically:

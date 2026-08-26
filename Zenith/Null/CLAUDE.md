@@ -140,14 +140,35 @@ Null together**. A concept added to only one backend fails `Flux_BackendConforma
 
 ## Tools-bake semantics (what a Null build deliberately does NOT do)
 
-A Null build must never author render content — a null backend would bake garbage
-over good assets. These stay gated on `Zenith_IsNullRenderer()`:
+A Null build must never bake **render** content — a null backend would write
+garbage over good assets, because the bytes come out of GPU resources it does not
+have. These stay gated on `Zenith_IsNullRenderer()`:
 
 - terrain chunk/texture bakes and grass map rebuilds (`Zenith_TerrainEditor`;
   `RebuildGrass` returns early because the grass coverage/type/height maps land
   in GPU textures),
 - RenderTest's testbed asset generation,
-- Zenithmon's terrain bake + Dawnmere scene authoring.
+- Zenithmon's terrain bake + Dawnmere scene authoring (a game-level deferral that
+  exists because those scenes depend on a baked terrain, not because scene saving
+  is gated).
 
 Everything else — including scenes with no terrain dependency — is authored in
 every config, so the committed output stays byte-identical across backends.
+
+**Draw the line at where the bytes come from, not at "is this authoring".** Entity
+and component creation is CPU state that `WriteToDataStream` serializes; a bake
+reads back a GPU resource. So:
+
+> A `Zenith_IsNullRenderer()` bail is a **defect** whenever it skips entity or
+> component creation, and correct when it skips device traffic or a GPU readback.
+
+That distinction was not always drawn, and getting it wrong was expensive.
+`Zenith_TerrainEditor::EnsureTreeEntities` used to bail on its first line under
+Null "because instance groups allocate GPU buffers" — but the allocation is
+`Zenith_Null_MemoryManager` handing back dummy handles either way, while the
+entities it skipped were pure scene data. A headless boot therefore authored an
+entity-incomplete world, and `Zenith_Editor::SaveActiveScene` needed a **publish
+guard** refusing any headless save that would CHANGE an existing `.zscen` — which
+in turn meant re-authoring a scene required a machine with a graphics driver.
+ZEN-6 removed the bail and the guard with it; a Null tools boot now publishes
+scenes like any other. See `Zenith/Editor/CLAUDE.md`.

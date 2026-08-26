@@ -275,6 +275,27 @@ public:
 	void SetTreeBrushSettings(u_int uTreesPerDab, float fScaleMin, float fScaleMax,
 		float fSpacing, float fMaxSlopeDeg, u_int uSeed);
 
+	// The two scene entities TreePaint keeps in lockstep. They live here rather
+	// than in the .cpp's anonymous namespace because they are the OBSERVABLE
+	// outcome of EnsureTreeEntities below: the unit that pins that step names
+	// these entities instead of counting entities, and RenderTest's scene-asset
+	// guard greps the same two strings out of the saved file.
+	static constexpr const char* szTREE_TRUNK_ENTITY  = "TerrainTrees_Trunk";
+	static constexpr const char* szTREE_LEAVES_ENTITY = "TerrainTrees_Leaves";
+
+	// Create (or adopt) those two entities on the active scene, each carrying a
+	// configured Zenith_InstancedMeshComponent, and return true once both
+	// components resolve. ApplyTreeDab's first call.
+	//
+	// BACKEND-NEUTRAL, deliberately (ZEN-6). Entity + component creation is scene
+	// data, not render state, so it must happen on every backend or a Null tools
+	// boot authors a world that is a strict SUBSET of the windowed one. The only
+	// GPU-flavoured work underneath is Flux_InstanceGroup's buffer init, which on
+	// the Null backend is Zenith_Null_MemoryManager handing back dummy handles —
+	// i.e. the "skip only the GPU allocation" half is already provided by the
+	// backend and needs no branch here.
+	bool EnsureTreeEntities();
+
 #ifdef ZENITH_TESTING
 	// Test-only: inspect the TreePaint scatter RNG state (seeded by
 	// SetTreeBrushSettings) to pin the byte-stable-save contract.
@@ -497,14 +518,14 @@ private:
 	void ApplyGrassTypeDab(float fPxX, float fPxZ, float fRadius, u_int8 uTypeIndex);
 
 	// TreePaint: scatters (or erases, bErase) instanced trees on the terrain.
-	// Trees live as two scene entities ("TerrainTrees_Trunk"/"_Leaves", one
-	// Zenith_InstancedMeshComponent each — instance groups are single-material,
+	// Trees live as two scene entities (szTREE_TRUNK_ENTITY / szTREE_LEAVES_ENTITY,
+	// one Zenith_InstancedMeshComponent each — instance groups are single-material,
 	// so opaque bark + alpha-tested leaves need a pair) kept in strict
 	// LOCKSTEP: every spawn/remove hits both with identical arguments so
-	// instance IDs stay aligned. Windowed-only (instances need GPU buffers);
-	// NOT part of the terrain undo system.
+	// instance IDs stay aligned. Runs on EVERY backend (the scatter is CPU maths
+	// serialized into the scene; see EnsureTreeEntities above); NOT part of the
+	// terrain undo system.
 	void ApplyTreeDab(float fWorldX, float fWorldZ, float fRadius, float fStrength, bool bErase);
-	bool EnsureTreeEntities();
 	void TickTreeSway(float fDt);   // editor-mode VAT time advance (Playing uses OnUpdate)
 
 	//--------------------------------------------------------------------------

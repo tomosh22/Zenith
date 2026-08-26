@@ -2326,13 +2326,16 @@ void Project_RegisterEditorAutomationSteps()
 		// Height.ztxtr, so SampleHeightWorld reads the ring-hill heights for tree
 		// Y + slope rejection. Re-painted into the FRESH scene every tools boot
 		// (CreateScene makes a new scene each boot => no accumulation); the fixed
-		// seed + deterministic heightfield keep the save byte-stable. Windowed-
-		// ONLY: EnsureTreeEntities refuses to run on the Null backend (instance
-		// groups allocate GPU buffers), so a headless boot authors this scene
-		// WITHOUT its two instanced tree entities. That is why a headless boot may
-		// not publish the scene — Zenith_Editor::SaveActiveScene's guard refuses the
-		// save rather than writing the ~323 KB-lighter subset over the tracked asset,
-		// and the headless run then loads the committed scene, trees included.
+		// seed + deterministic heightfield keep the save byte-stable. Runs on EVERY
+		// backend (ZEN-6): EnsureTreeEntities used to refuse on the Null backend, so
+		// a headless boot authored this scene WITHOUT its two instanced tree entities
+		// and Zenith_Editor::SaveActiveScene had to refuse the ~323 KB-lighter save.
+		// Both halves are gone — entity creation is backend-neutral and the publish
+		// refusal with it — so a headless boot re-authors the SAME scene a windowed
+		// one does. The scatter is CPU maths under the authoring-determinism pin, so
+		// what proves the completeness is that a headless no-op re-author leaves
+		// RenderTest.zscen byte-identical (SaveActiveScene logs `[ScenePublish]
+		// IDENTICAL`; anything else shows up as a dirty git status).
 		{
 			const int iTreeTool = static_cast<int>(Zenith_TerrainBrushTool::TreePaint);
 			// Dense brush: many attempts/dab, tight spacing, allow steeper flanks

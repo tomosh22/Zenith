@@ -398,6 +398,37 @@ void Zenith_TerrainEditor::RebuildGrass()
 
 	// Tools-bake semantic: the grass maps are GPU textures, so a Null build
 	// deliberately does not author them (see Zenith/Null/CLAUDE.md).
+	//
+	// ZEN-6 AUDIT — CORRECT AS WRITTEN, and audited rather than changed. The
+	// ticket's rule is that a Null bail is a defect only when it skips ENTITY or
+	// COMPONENT creation, because that is what reaches a committed .zscen. This
+	// one creates nothing: it feeds Flux_GrassImpl::BuildFromMaps, whose whole
+	// output is grass GPU textures plus Flux-side CPU query maps. Grass appears
+	// nowhere in Zenith_TerrainComponent::WriteToDataStream (nor in any other
+	// component's), so no byte this skips can ever reach a scene file — unlike
+	// Zenith_TerrainEditor::EnsureTreeEntities, whose bail dropped two serialized
+	// entities and ~323 KB of instance data from every headless RenderTest boot.
+	//
+	// The audit covered the WHOLE editor subsystem. Five Zenith_IsNullRenderer()
+	// sites survive it; every one is device traffic or process policy, none of them
+	// creates an entity or a component, so none can move a serialized byte:
+	//
+	//   this function                        grass GPU textures + Flux CPU query
+	//                                        maps; nothing serialized
+	//   Zenith_TerrainEditor.cpp (splat)     m_bSplatGPUDirty re-upload of a CPU
+	//                                        image that is authored either way
+	//   Zenith_TerrainEditor.cpp (cursor)    DrawBrushIndicatorDecal — a viewport
+	//                                        overlay with no CPU-side state at all
+	//   Zenith_Editor.cpp (imgui ini)        IniFilename = nullptr; a Null build is
+	//                                        a CI run and must not read/write a user
+	//                                        ini. Layout, not scene data
+	//   Zenith_Editor_SceneOps.cpp (GPU wait) WaitForGPUAndFlushDeferred; Flush /
+	//                                        WaitForGPUIdle / ProcessDeferredDeletions
+	//                                        are each already no-ops under Null, so
+	//                                        this saves cost and changes no outcome
+	//
+	// Two further sites live in Flux (Flux_Grass.cpp CreateMapTextures and its
+	// upload path) and are outside the editor, on the same grounds as row one.
 	if (Zenith_IsNullRenderer())
 	{
 		return;

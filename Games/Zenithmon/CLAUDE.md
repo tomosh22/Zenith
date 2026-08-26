@@ -281,12 +281,14 @@ straight to `master` and hard-refuses `git switch -c`, `git worktree` and
 This section used to read *"windowed authoring stays human, by engine law"*,
 naming R1-2 step 3, R1-3, R1-6 and R1-10 as work no agent could take. **That
 was wrong, and it cost six of S8's ten critical-path slices their place in the
-queue.** The `.zscen` publish guard is `Zenith_Editor.cpp:1425`, inside
-`if constexpr (Zenith_IsNullRenderer())` — **compiled out of a `Vulkan_` build
-entirely**, with its own comment reading *"Windowed boots never reach here —
-they author everything, so they publish unconditionally."* It protects against
-a Null boot serializing an incomplete world over a tracked asset. It has never
-had anything to do with whether a human is present.
+queue.** The `.zscen` publish guard that made scene authoring look impossible
+protected against a **Null boot serializing an incomplete world** over a tracked
+asset — a `Vulkan_` build never reached it at all, and it never had anything to
+do with whether a human was present. **ZEN-6 has since removed it outright:** the
+authoring steps it guarded now create their entities on every backend, so
+`Zenith_Editor::SaveActiveScene` publishes headless too and a scene publish needs
+no GPU whatsoever (see `Zenith/Editor/CLAUDE.md`). Zenithmon's terrain BAKE is a
+separate matter and is still deferred headless by the game's own choice.
 
 The marker is `needs-gpu`, and it **gates nothing**: a GPU is assumed
 available, and the label only tells the tick to build `Vulkan_*_True` and boot

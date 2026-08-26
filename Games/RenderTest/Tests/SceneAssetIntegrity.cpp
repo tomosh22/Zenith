@@ -16,14 +16,27 @@
 // RT_SceneAssetIntegrity -- the boot this test runs inside must not have damaged
 // Assets/Scenes/RenderTest.zscen.
 //
-// The scene is re-authored and saved every tools boot, and the authoring is NOT
-// backend-complete: Zenith_TerrainEditor::EnsureTreeEntities refuses to run on the
-// Null backend (instance groups allocate GPU buffers), so a headless boot authors
-// the campus WITHOUT its two instanced tree entities. Before the publish guard in
-// Zenith_Editor::SaveActiveScene, that subset was serialized straight over the
-// tracked asset -- every headless run silently rewrote a committed 361721-byte
-// scene down to ~38 KB, deleting ~323 KB of tree instance data, and the only
-// symptom was a dirty `git status` nobody was looking at.
+// The scene is re-authored and saved every tools boot. The authoring used to be
+// backend-INCOMPLETE: Zenith_TerrainEditor::EnsureTreeEntities refused to run on
+// the Null backend (on the reasoning that instance groups allocate GPU buffers), so
+// a headless boot authored the campus WITHOUT its two instanced tree entities, and
+// that subset was serialized straight over the tracked asset -- every headless run
+// silently rewrote the committed scene (361753 bytes as it stands today) down to
+// ~38 KB, deleting ~323 KB of tree instance data, and the only symptom was a dirty
+// `git status` nobody was looking at. A publish guard in
+// Zenith_Editor::SaveActiveScene then refused any headless save that would CHANGE
+// an existing asset.
+//
+// ZEN-6 fixed the cause instead of the symptom: entity and component creation is
+// backend-neutral now (only the GPU allocation underneath it is skipped), so a Null
+// tools boot authors the same scene a windowed one does -- and the publish refusal
+// is gone with it, which is what lets a headless run re-author a committed scene at
+// all. THE ASSERTIONS BELOW ARE UNCHANGED, and this is where they earn their keep:
+// they used to be near-vacuous headless, because a headless boot never wrote the
+// file. Now a headless boot DOES write it, so "both tree entities are in the asset"
+// is a real end-to-end check of the completeness the removed guard used to stand in
+// for. A regression that re-introduces a Null-backend bail in an authoring step
+// reddens this test in the headless gate rather than passing quietly.
 //
 // So this asserts on the FILE, not on the loaded scene: whichever backend booted,
 // the asset on disk still carries both tree entities, and it carries no per-run
@@ -93,10 +106,11 @@ namespace
 		}
 
 		// The two instanced-tree entities the terrain editor's TreePaint brush
-		// authors. These are exactly what a headless boot cannot author and used to
-		// delete on save.
-		RequireInScene("TerrainTrees_Trunk", "the headless boot rewrote the scene without its instanced trees");
-		RequireInScene("TerrainTrees_Leaves", "the headless boot rewrote the scene without its instanced trees");
+		// authors. These are exactly what a headless boot could not author, and used
+		// to delete on save; a headless boot authors them now, so on THIS backend
+		// their absence means the authoring step stopped being backend-neutral.
+		RequireInScene("TerrainTrees_Trunk", "the boot rewrote the scene without its instanced trees");
+		RequireInScene("TerrainTrees_Leaves", "the boot rewrote the scene without its instanced trees");
 
 		// A spot-check that the rest of the campus survived too, so a save that
 		// dropped everything BUT the trees still reddens this.
