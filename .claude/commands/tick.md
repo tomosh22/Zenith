@@ -139,25 +139,12 @@ loop without it lies to itself.
    becomes a Suggestions row for a human to triage, never a commit. A
    loop that can rewrite its own gates does not have gates.
 
-   > **Amended a second time, 2026-08-24, same standing.** A live audit ran
-   > `/tick` three times end to end — ZM-23 to Blocked, ZM-65 to Done, and a
-   > deliberate refusal-path probe — and the owner directed all nineteen
-   > findings be applied. Everything marked ★★ in this file's steps was
-   > written then, with the queue empty and nothing in flight. Four of the
-   > findings were fixed in `Tools/zagent/` instead of here, because a rule
-   > in prose in front of a check IS the defect this file keeps naming: the
-   > refused-claim rollback, the drift resolver's category ranking, the
-   > `finish --status Done` DoD refusal and the client's output encoding are
-   > all code now, with assertions.
-   >
-   > **Amended 2026-08-24 by the repo owner, outside a tick.** The rule
-   > above binds the LOOP, and it still does — `zagent guard` refuses a
-   > diff touching `.claude/**` under any ticket, which is exactly right.
-   > It does not bind the human the rule defers to. After a live audit ran
-   > `/tick` three times end to end, the owner directed the findings be
-   > applied, and the sections marked ★★ below were written then, with no
-   > ticket in flight. Recording it here because a file that says "never
-   > edited" beside a git history showing edits is worse than either.
+   > **This rule binds the LOOP, and the owner has amended the file three
+   > times outside a tick** (2026-08-24 twice, 2026-08-26). `zagent guard`
+   > still refuses any diff touching `.claude/**` under a ticket, which is
+   > the part that matters. Recorded because a file saying "never edited"
+   > beside a git history showing edits is worse than either;
+   > `Docs/TickProtocolHistory.md` has the rounds and what each changed.
 
 # Never
 
@@ -503,14 +490,12 @@ prose that no field captures:
   invisible to `contractValid`.
 
   **The label is not optional and releasing without it is a live loop.**
-  This step used to be "release to To Do" alone, which worked because To
-  Do was OUTSIDE the queue: the ticket left the lane the loop claimed
-  from. To Do IS the queue now, so a bare release puts the ticket
-  straight back at the head and the next firing claims it again, and the
-  one after that, forever — a tick that burns a claim, a dispatch slot
-  and a wakeup on the same card indefinitely, with nothing ever going
-  red. `deferred` is filtered out of the claim query exactly like
-  `needs-human`, so the card stays visible in To Do and stops being taken.
+  To Do IS the queue, so a bare release puts the ticket straight back at
+  the head and the next firing claims it again, and the one after that,
+  forever — a tick that burns a claim, a dispatch slot and a wakeup on the
+  same card indefinitely, with nothing ever going red. `deferred` is
+  filtered out of the claim query exactly like `needs-human`, so the card
+  stays visible in To Do and stops being taken.
 
   It is **not** `Blocked`. Nothing is wrong with these tickets, and three
   of them would trip `maxConsecutiveBlocked` and stop the whole queue
@@ -556,11 +541,8 @@ boot authors an INCOMPLETE world, so serializing that subset over a tracked
 asset deletes content. A `Vulkan_` build authors the whole thing and needs no
 guard.
 
-**★★ WHAT THIS PARAGRAPH USED TO SAY NEXT WAS FALSE, AND IT WAS THE SENTENCE AN
-ORCHESTRATOR LEANED ON.** It read *"Running a windowed TEST is not authoring
-either."* It is — and this same section says so three paragraphs down:
-*"the authoring runs at boot, before the test does."* Both cannot hold. Measured
-on ZM-65: `zenithmon.exe --automated-test ZM_DawnmereRouteSeamGroundTruth_Test
+**★★ A WINDOWED TEST RUN IS AUTHORING.** Measured on ZM-65:
+`zenithmon.exe --automated-test ZM_DawnmereRouteSeamGroundTruth_Test
 --skip-unit-tests` on a `Vulkan_*_True` build re-authored the committed
 `Dawnmere.zscen` as an ordinary side effect of booting, and `git status` went
 dirty on a tracked asset nobody meant to touch.
@@ -738,34 +720,17 @@ govern the subject matter. `bodyPath` is a supplement.
 
 **★★ INLINE THE DoD FROM `body.md`, NEVER FROM THE `definitionOfDone` ARRAY.**
 
-**The truncation that prompted this rule is FIXED** — `parseTicket` kept only the
-line each `- [ ]` sat on until saas `9d03869` (2026-08-25), and now carries
-continuation lines. Verified against ZM-23, the ticket that exposed it. *This
-paragraph is here because the rule outlived its original reason within the hour,
-which is the exact failure the section below is about: do not read the history as
-the current state.*
+**The array holds the checkboxes and nothing else — never the prose that
+qualifies them.** ZM-23's body carries *"What the rulings changed about this
+slice's scope"* and *"★ ITEMS 1 AND 2 ARE ONE INDIVISIBLE COMMIT"* **outside**
+any checkbox, and both are load-bearing instructions. I3 says paste the ticket
+BODY; the array is for COUNTING boxes, not for quoting them, and `bodyPath` is
+the carrier.
 
-**The rule stands, for a reason that did not depend on the bug.** The array holds
-the checkboxes and nothing else — never the prose that qualifies them. ZM-23's
-body carries *"What the rulings changed about this slice's scope"* and
-*"★ ITEMS 1 AND 2 ARE ONE INDIVISIBLE COMMIT"* **outside** any checkbox, and
-both are load-bearing instructions. I3 says paste the ticket BODY; the array is
-for COUNTING boxes, not for quoting them, and `bodyPath` is the carrier.
-
-What the truncation cost while it lasted, kept as the worked example of why a
-mutilated spec is invisible — the worker has no shell and no board and cannot
-tell it was cut:
-
-| `body.md` | `definitionOfDone[].text` |
-| --- | --- |
-| "…rewritten as a PER-ID claim check — **not bumped to a larger count** — and a row that omits its trailing trainer initializer is caught as a **DOUBLE CLAIM** on `ZM_TRAINER_RIVAL_VESPER`, proven by an **anti-vacuity arm**" | "…is rewritten as a PER-ID claim" |
-| "…the separations they achieve against every existing row and against the blockout grey are **REPORTED from the shipped tables rather than asserted**" | "…the separations they achieve against" |
-
-The first is the guard ZM-23 exists to install; the second is the one clause
-preventing a self-referential assertion. Two other checks read that same text and
-were reading it truncated: `finish --status Done`'s unticked-box refusal, and the
-reachability scan that refuses a DoD naming a `protectedPath` — so a protected
-path written on a continuation line was invisible to the check built to catch it.
+A mutilated spec is invisible to the worker, which has no shell and no board and
+cannot tell it was cut — so nothing downstream reports it either.
+`Docs/TickProtocolHistory.md` keeps the worked example, from when `parseTicket`
+truncated every checkbox at its first newline.
 
 **How to derive "Files you may edit", because the list is load-bearing in
 BOTH directions.** Start from the DoD's nouns and follow them into the
@@ -820,12 +785,31 @@ to falsify before it edits anything:
 > list before making a single edit.** Say what the survey found even if it found
 > nothing.
 
-Two tickets paid for this clause. ZM-23 under-scoped despite a careful survey,
+Three tickets paid for this clause. ZM-23 under-scoped despite a careful survey,
 because a ruling asserted the missing file was unaffected. On ZM-67 the same
 prompt clause found a comment that the ticket's own change had falsified, in a
 file the worker was told not to edit — it reported it instead of editing it,
 which is exactly the intended behaviour. A survey that costs ten worker-minutes
 is cheaper than a dispatch.
+
+**★★ AND ON ZM-69 IT WAS THE ONLY CONTROL THAT COULD HAVE CAUGHT THE DEFECT.**
+The file list was short by two files, and one omission was fatal: `Gym1` had no
+row in `ZM_SceneRegistry.h`, and `IsWarpDestinationValid` consults only the
+compiled world table, never the registry — so the authored door would have been
+ACCEPTED, stalled in `WAITING_FOR_SCENE`, and shown a black screen **with every
+unit green**, including the three units asserting the gym's absence, which stay
+green because the absence stays real.
+
+Nothing else in the pipeline could see it. `contractValid` answers routing. The
+reachability scan reads `protectedPaths` and nothing here is protected. The
+drift resolver checks that citations RESOLVE, not that a list is COMPLETE. And
+no gate can catch a runtime stall. **A ticket can be contract-valid, fully
+reachable, and still unbuildable as scoped** — and `contractValid` has no term
+for "the file list is sufficient", nor could it have one.
+
+★ **Note what the worker had to do to find it: READ a file it was forbidden to
+EDIT.** A file list bounds writes, not reads, and the survey must read wider
+than it edits. Say so in the prompt if the list is narrow.
 
 **Reconcile the DoD against the repo BEFORE you inline it — the ticket
 is the older document.** I3 means whatever you paste becomes the
@@ -1109,8 +1093,8 @@ owns → measure → your edits → reviewer → apply findings → verify → g
    **A red gate VOIDS every gate behind it.** Read `skipped` before concluding
    anything about what was verified.
 
-   Four rules used to live here as four paragraphs, each added after the rule
-   was forgotten once. They are the script now; its header says why:
+   Four rules the script enforces, each added after it was forgotten once.
+   Its header carries them; the failures are why:
 
    | The script | The failure it closes |
    | --- | --- |
@@ -1253,22 +1237,14 @@ owns → measure → your edits → reviewer → apply findings → verify → g
    With no `--file`/`--text` the client computes the changed set itself
    from the working tree, which is where the work is at this point in
    BOTH branching modes (the commit is step 7). **Do not hand-assemble
-   that list.** Both spellings this step used to prescribe were wrong and
-   neither failed loudly:
+   that list.** Both hand spellings anyone reaches for are wrong and
+   neither fails loudly — `<baseBranch>...HEAD` is EMPTY at guard time
+   (nothing is committed yet), which Blocks every ticket in every
+   category, and `git diff --name-only` cannot see a file the worker
+   CREATED, which fails OPEN. `Docs/TickProtocolHistory.md` has the
+   detail.
 
-   - `<baseBranch>...HEAD` is **empty** at guard time — in `direct` mode
-     you have not committed, and in `branch` mode step 4 only ran
-     `switch -c`, so the branch sits at `baseBranch` with zero commits.
-     Empty file → `guard` exits 1 → **every ticket in every category**
-     Blocks with its work sitting green and finished in the tree.
-   - `git diff --name-only` reports only **tracked modifications**, so a
-     file the worker CREATED never reaches the check. A new
-     `.claude/agents/anything.md` sails straight past it. That one fails
-     **open**, and is invisible on any ticket that only edits existing
-     files — which is why it survived two green ticks before a
-     file-creating ticket exposed it.
-
-   The logic now lives in `Get-WorkingTreeChanges`, with assertions
+   The logic lives in `Get-WorkingTreeChanges`, with assertions
    covering created files, renames (both sides — moving a file OUT of a
    protected directory still touches it), quoted paths, and gitignored
    scratch. A guard whose input is assembled by hand is a guard with an
@@ -1435,6 +1411,30 @@ when any is unticked:
   how a tick starts editing checkboxes to get past a gate.
 - **Red** → the fix-forward path further down.
 
+**★★ AND WHEN YOU BLOCK, SAY WHICH KIND OF BLOCK IT IS.**
+`zagent update <KEY> --label blocked-scope` whenever the ticket was **not
+buildable as filed** — a scope gap, a missing file list, a ruling nobody has
+made — as opposed to a run that failed.
+
+The two land in the same lane and want opposite fixes. A FAILURE block wants
+the ticket re-run; a SCOPE block wants its ruling answered, and re-running it
+changes nothing. The board now reads the label: a scope block does not count
+toward `maxConsecutiveBlocked`, and is still reported, so three
+under-specified tickets no longer trip a breaker whose message says the loop
+is thrashing.
+
+**Only label what you can defend.** The marker is explicit precisely so it
+cannot be inferred — "it filed a Questions row" and "it committed nothing"
+are both true of a tick that simply failed, and both would let a thrashing
+loop past the breaker by accident. If the gates went red, it is a failure
+block whatever else is also true of it.
+
+ZM-69 is the worked example: claimed, surveyed, found to be missing
+`ZM_SceneRegistry.h` — without which the authored door stalls in
+`WAITING_FOR_SCENE`, a black screen with every unit green — released in
+minutes with two rulings filed and a corrected file list, zero fix-forward
+attempts consumed.
+
 **And when the disputed value IS the thing being landed, do not land it.**
 ZM-23's forager row was correct code whose *flag column* was exactly what a
 ruling governed; committing it would have put a farmable trainer, a comment
@@ -1546,13 +1546,10 @@ failure worth recording rather than the expected case — and if you find
 yourself reaching for a timeout again, check whether the page count has grown
 rather than re-adding the wrapper.
 
-Do NOT re-derive it by matching `changed.txt` in the shell. That is what
-this step used to say, and a PowerShell implementation of it is wrong in
-a way nothing notices: `(Get-Content f) -match '…'` returns a **boolean**
-for a one-line file and a filtered **array** for a longer one, so counting
-the result reports a phantom match on every SINGLE-file change. The
-consequence — one needless sync — is benign, which is exactly why it would
-have gone on being wrong forever.
+Do NOT re-derive it by matching `changed.txt` in the shell: a PowerShell
+implementation of that is wrong in a way nothing notices, and the wrong
+answer is benign, which is why it would go on being wrong forever.
+`Docs/TickProtocolHistory.md` has the mechanism.
 
 Never block the tick on this. `docs sync` reaches a Notion project over a
 WebSocket the tick has no other reason to depend on, and a mirror that is
