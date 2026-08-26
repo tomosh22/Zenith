@@ -2,6 +2,7 @@
 
 #include "Flux/Flux_Buffers.h"
 #include "Flux/Terrain/Flux_TerrainConfig.h"
+#include "Core/Zenith_TerrainDimensions.h"
 #include "Flux/Terrain/Flux_TerrainGPUStructs.h"
 // The chunk-vertex hook below hands out raw packed vertex bytes and asks callers to
 // re-shape them. Since the compression flip that is not something a caller can do
@@ -116,6 +117,16 @@ struct Flux_TerrainStreamingStats
 struct Flux_TerrainStreamingState
 {
 	std::string                 m_strTerrainAssetDirectory;
+	// The owning terrain's shape. Pushed here by Zenith_TerrainComponent BEFORE
+	// any sizing happens, because every loop bound, world<->chunk conversion and
+	// expected chunk topology below reads it.
+	//
+	// The residency and AABB tables stay CAPACITY-sized (the fixed 64x64 slot
+	// table the culling shader and the indirect argument buffer address); only
+	// the ITERATION shrinks to the active grid. Slots outside it hold zero-count
+	// records, which cull to nothing -- exactly how the existing sparse bakes
+	// (a 16x16 region of a 64x64 grid) already behave.
+	Zenith_TerrainDimensions    m_xDims = Zenith_TerrainDimensions::Default();
 	Flux_TerrainBufferAllocator m_xVertexAllocator;
 	Flux_TerrainBufferAllocator m_xIndexAllocator;
 	Flux_TerrainChunkResidency  m_axChunkResidency[TOTAL_CHUNKS];
@@ -157,7 +168,13 @@ struct Flux_TerrainStreamingState
 	// MAX_FRAMES_IN_FLIGHT+1 frames ago so the GPU is guaranteed done reading it) — no GPU sync
 	// needed here, unlike an in-place edit of an actively-rendered resident chunk. Null = no
 	// deformation. Args: (pUser, chunkX, chunkY, pVertexData, numVerts, vertexStride).
-	typedef void (*ChunkVertexHook)(void*, uint32_t, uint32_t, void*, uint32_t, uint32_t);
+	// (user, chunkX, chunkZ, vertexData, numVerts, stride, dims). The DIMENSIONS
+	// are part of the contract because a hook that rewrites a packed position has
+	// to re-encode it against the terrain's own quantisation box -- and neither
+	// registered hook (the editor session, CityBuilder's road carve) can reach the
+	// state it was registered on from its own user pointer.
+	typedef void (*ChunkVertexHook)(void*, uint32_t, uint32_t, void*, uint32_t, uint32_t,
+		const Zenith_TerrainDimensions&);
 	ChunkVertexHook m_pfnChunkVertexHook   = nullptr;
 	void*           m_pChunkVertexHookUser = nullptr;
 
@@ -194,7 +211,14 @@ struct Flux_TerrainStreamingState
 	// that the previous staged-upload path was exposed to.
 	Flux_DynamicReadWriteBuffer m_xChunkDataBuffer;
 	Flux_IndirectBuffer         m_xIndirectDrawBuffer;   // Indirect draw commands (written by compute)
-	Flux_DynamicConstantBuffer  m_xFrustumPlanesBuffer;  // Camera frustum + position (read-only in compute)
+	Flux_DynamicConstantBuffer  m_xFrustumPlanesBuffer;
+	// PER-TERRAIN dequantisation constants (the TerrainConstants CB the vertex
+	// shader dequantises packed positions and UVs with). It used to be ONE
+	// process-wide buffer bound once per pass, which was only correct while every
+	// terrain shared one quantisation box. With per-terrain boxes a single shared
+	// buffer would decode the second terrain in a scene against the first
+	// terrain's extent -- geometry in the wrong place, nothing failing.
+	Flux_DynamicConstantBuffer  m_xTerrainConstantsBuffer;  // Camera frustum + position (read-only in compute)
 	Flux_IndirectBuffer         m_xVisibleCountBuffer;   // Atomic counter for visible chunks
 	Flux_ReadWriteBuffer        m_xLODLevelBuffer;       // LOD level for each chunk (visualization)
 
@@ -350,7 +374,8 @@ public:
 	static void BuildChunkDataForGPU_Internal(const Flux_TerrainStreamingState& xState, Zenith_TerrainChunkData* pxChunkDataOut);
 
 	static Zenith_Maths::Vector3 GetChunkCenter(const Flux_TerrainStreamingState& xState, uint32_t uChunkX, uint32_t uChunkY);
-	static void WorldPosToChunkCoords(const Zenith_Maths::Vector3& xWorldPos, int32_t& iChunkX, int32_t& iChunkY);
+	static void WorldPosToChunkCoords(const Zenith_TerrainDimensions& xDims,
+		const Zenith_Maths::Vector3& xWorldPos, int32_t& iChunkX, int32_t& iChunkY);
 
 	static inline uint32_t ChunkCoordsToIndex(uint32_t uChunkX, uint32_t uChunkY)
 	{

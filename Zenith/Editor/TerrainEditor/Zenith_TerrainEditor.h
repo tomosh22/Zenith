@@ -2,6 +2,7 @@
 
 #ifdef ZENITH_TOOLS
 
+#include "Core/Zenith_TerrainDimensions.h"
 #include "AssetHandling/Zenith_Image.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
 #include "Collections/Zenith_Vector.h"
@@ -168,16 +169,56 @@ struct Zenith_TerrainEditorFrameContext
 class Zenith_TerrainEditor
 {
 public:
-	// Fixed terrain dimensions (static_asserted against Flux_TerrainConfig in
-	// the .cpp — this header deliberately includes no Flux header).
+	// FIXED CAPACITIES, not extents (static_asserted against Flux_TerrainConfig
+	// in the .cpp — this header deliberately includes no Flux header).
+	//
+	// The four image resolutions are fixed for every terrain: an authoring map
+	// always spans the SQUARE AUTHORING DOMAIN [0, m_xDims.MaxWorldSize()]^2, so
+	// only the world-per-texel SCALE varies. uCHUNK_GRID / uCHUNK_COUNT are the
+	// fixed chunk-slot capacity; a session's ACTIVE grid is m_xDims.
 	static constexpr u_int uHEIGHTFIELD_SIZE   = 4096;
 	static constexpr u_int uSPLATMAP_SIZE      = 2048;
 	static constexpr u_int uGRASS_DENSITY_SIZE = 1024;
 	static constexpr u_int uGRASS_TYPE_SIZE    = 1024;
 	static constexpr u_int uCHUNK_GRID         = 64;
 	static constexpr u_int uCHUNK_COUNT        = uCHUNK_GRID * uCHUNK_GRID;
-	static constexpr float fTERRAIN_WORLD_SIZE = 4096.0f;
 	static constexpr float fTERRAIN_MAX_HEIGHT = 512.0f;
+
+	// ★ fTERRAIN_WORLD_SIZE IS GONE ON PURPOSE, and its absence is a
+	// compile-time straggler detector. It was 4096.0f and doubled as "the world
+	// is 4096m" AND "one heightfield pixel is one metre"; roughly ninety sites
+	// across these eight files relied on the second reading WITHOUT NAMING IT,
+	// by passing a world coordinate straight into a pixel-indexed function. Any
+	// such site that survived this change would be invisible at default
+	// dimensions and silently wrong at any other, so the constant it would have
+	// referenced no longer exists. Use WorldSize() / the conversion helpers.
+
+	// The session's terrain shape. Taken from the component on Open, or staged
+	// on a standalone session; a bake applies it to the component.
+	const Zenith_TerrainDimensions& GetDimensions() const { return m_xDims; }
+	bool SetDimensions(const Zenith_TerrainDimensions& xDims);
+
+	// The SQUARE authoring domain every map above spans.
+	float WorldSize() const { return m_xDims.MaxWorldSize(); }
+
+	// ---- world <-> authoring-image conversions ------------------------------
+	// EXACTLY 1.0f at default dimensions over the 4096px heightfield, which is
+	// what keeps a default-dimensioned session bit-identical to the 1m/px
+	// arithmetic these replace.
+	float HeightPxPerWorld() const { return m_xDims.ImagePixelPerWorld(uHEIGHTFIELD_SIZE); }
+	float WorldPerHeightPx() const { return m_xDims.WorldPerImagePixel(uHEIGHTFIELD_SIZE); }
+	float WorldToHeightPx(float fWorld) const { return fWorld * HeightPxPerWorld(); }
+	float HeightPxToWorld(float fPx) const { return fPx * WorldPerHeightPx(); }
+	float WorldPerSplatPx() const { return m_xDims.WorldPerImagePixel(uSPLATMAP_SIZE); }
+	// Image-to-image ratios are DIMENSION-INDEPENDENT: every map spans the same
+	// square domain, so the splat/grass maps sit at a fixed fraction of the
+	// heightfield's resolution whatever the terrain measures.
+	static constexpr float fSPLAT_PX_PER_HEIGHT_PX =
+		static_cast<float>(uSPLATMAP_SIZE) / static_cast<float>(uHEIGHTFIELD_SIZE);
+	static constexpr float fGRASS_DENSITY_PX_PER_HEIGHT_PX =
+		static_cast<float>(uGRASS_DENSITY_SIZE) / static_cast<float>(uHEIGHTFIELD_SIZE);
+	static constexpr float fGRASS_TYPE_PX_PER_HEIGHT_PX =
+		static_cast<float>(uGRASS_TYPE_SIZE) / static_cast<float>(uHEIGHTFIELD_SIZE);
 	static constexpr u_int64 ulUNDO_BUDGET_BYTES = 256ull * 1024ull * 1024ull;
 
 	Zenith_TerrainEditor() = default;
@@ -244,6 +285,7 @@ public:
 	std::string GetMeshAssetDirectory() const;
 	std::string GetTextureAssetDirectory() const;
 	const std::string& GetAssetSetValidationError() const { return m_strAssetSetValidationError; }
+	const std::string& GetDimensionsValidationError() const { return m_strDimensionsValidationError; }
 
 	//--------------------------------------------------------------------------
 	// Scriptable editing API — the ImGui panel and editor automation share
@@ -437,7 +479,8 @@ public:
 	// so untouched chunks keep their baked bytes exactly.
 	//--------------------------------------------------------------------------
 	static void ChunkVertexHook(void* pUser, uint32_t uChunkX, uint32_t uChunkY,
-		void* pVerts, uint32_t uNumVerts, uint32_t uStride);
+		void* pVerts, uint32_t uNumVerts, uint32_t uStride,
+		const Zenith_TerrainDimensions& xDims);
 
 	bool IsChunkSessionDirty(u_int uChunkIndex) const
 	{
@@ -562,6 +605,9 @@ private:
 	Zenith_EntityID m_uTargetEntity = INVALID_ENTITY_ID;
 	std::string m_strAssetSet;
 	std::string m_strAssetSetValidationError;
+	// Staged alongside the asset set and applied to the component by BakeFull.
+	Zenith_TerrainDimensions m_xDims = Zenith_TerrainDimensions::Default();
+	std::string m_strDimensionsValidationError;
 
 	// Brush-indicator decal texture, lazily resolved on first cursor draw
 	// (the file is regenerated at boot by RegenerateBrushTextures). Owning handle so

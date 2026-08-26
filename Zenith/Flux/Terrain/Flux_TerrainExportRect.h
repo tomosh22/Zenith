@@ -9,6 +9,12 @@
 struct Flux_TerrainExportRect
 {
 public:
+	// CAPACITY, not a terrain's extent. This header is deliberately
+	// <cstdint>-only so it stays unit-testable in every configuration, so it
+	// cannot see a Zenith_TerrainDimensions -- it bounds a rect to the fixed
+	// 64x64 chunk-slot table and nothing more. A rect must ALSO fall inside the
+	// ACTIVE grid, which is a per-terrain question the exporter answers at the
+	// call site (ExportMeshInternal refuses a rect past dims.m_uGridChunksX/Z).
 	static constexpr int32_t iCHUNK_GRID_SIZE = 64;
 
 	static bool TryCreate(int32_t iMinX, int32_t iMinY,

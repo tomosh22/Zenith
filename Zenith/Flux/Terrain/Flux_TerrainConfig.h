@@ -23,16 +23,38 @@
 namespace Flux_TerrainConfig {
 
 // ========== Grid Configuration ==========
-// Number of chunks in each dimension (64x64 = 4096 total chunks)
+//
+// ★ THESE ARE CAPACITY AND DEFAULTS, NOT A TERRAIN'S ACTUAL SHAPE.
+// A terrain's chunk world size, vertex density and grid extent live on its
+// Zenith_TerrainDimensions (Core/Zenith_TerrainDimensions.h), reached through
+// Zenith_TerrainComponent::GetTerrainDimensions() or the owning
+// Flux_TerrainStreamingState::m_xDims. Read those for anything per-terrain.
+//
+// CHUNK_GRID_SIZE / TOTAL_CHUNKS are the FIXED slot capacity every GPU-side
+// array is sized for -- the indirect argument buffer, the residency and AABB
+// tables, the reset dispatch, the culling shader's slot count -- and the flat
+// chunk index keeps its stride-64 spelling so a chunk's slot never moves when a
+// grid shrinks. An active grid may be smaller in either axis and need not be
+// square; slots outside it are zero-count no-op records.
+//
+// CHUNK_SIZE_WORLD and TERRAIN_SIZE describe the DEFAULT terrain --
+// Zenith_TerrainDimensions::Default() -- which is what every bake on disk was
+// authored at before the knobs existed. The static_asserts in
+// Flux_TerrainStreamingManager.cpp pin the two descriptions together.
+//
+// (The exporter's TERRAIN_SCALE define is GONE. It was a multiply by exactly
+// 1.0f applied to every position, and the sample step IS the world step now, so
+// there is nothing left to rescale.)
 static constexpr uint32_t CHUNK_GRID_SIZE = 64;
 static constexpr uint32_t TOTAL_CHUNKS = CHUNK_GRID_SIZE * CHUNK_GRID_SIZE;
 
-// Size of each chunk in world units (actual exported mesh positions)
-// CRITICAL: Export tool uses TERRAIN_SCALE=1, so chunks are 64 units wide
-// Do NOT multiply by TERRAIN_SCALE here - that was a major bug source
+// Size of a DEFAULT terrain's chunk in world units. A terrain's own is
+// m_xDims.m_fChunkWorldSize.
 static constexpr float CHUNK_SIZE_WORLD = 64.0f;
 
-// Total terrain size in world units
+// Total size of a DEFAULT terrain in world units. A terrain's own extent is
+// m_xDims.WorldSizeX() / WorldSizeZ(), and the square authoring domain every
+// per-set image spans is m_xDims.MaxWorldSize().
 static constexpr float TERRAIN_SIZE = CHUNK_GRID_SIZE * CHUNK_SIZE_WORLD;
 
 // Number of LOD levels (HIGH = highest detail, LOW = always-resident)
@@ -100,7 +122,15 @@ static constexpr float LOD_FORCED_EVICTION_HYSTERESIS = 1.2f;  // 20% beyond LOD
 inline constexpr float SquaredHysteresis(float fLinear) { return fLinear * fLinear; }
 
 // Active chunk radius - only consider chunks within this many chunks of camera
-// Reduces streaming updates from 4096 to ~1024 chunks
+// Reduces streaming updates from 4096 to ~1024 chunks.
+//
+// DELIBERATELY IN CHUNKS, NOT METRES, and therefore deliberately GLOBAL: it is a
+// budget on how many chunks the streamer examines per rebuild, which is what it
+// costs whatever a chunk measures. The same is true of the LOD distance
+// thresholds above, which stay in metres. A terrain with smaller chunks
+// therefore keeps a smaller world-space active set (and a larger one a bigger
+// set); that is a behaviour change, not a defect, and it is bounded by the
+// active grid, which is smaller too.
 static constexpr uint32_t ACTIVE_CHUNK_RADIUS = 16;
 
 // Frame interval for streaming updates (not every frame needs full update)
@@ -116,12 +146,18 @@ static constexpr uint32_t STREAMING_UPDATE_INTERVAL = 2;
 // static_asserts in Flux_TerrainStreamingManager.cpp pin against the reflected
 // shader layout.
 //
-// UV is UNORM16, not HALF2: terrain UVs are heightmap pixel coordinates (up to
-// 4096), and HALF's 10-bit mantissa loses sub-integer precision above 1024 /
-// 2-unit precision above 2048. With HALF the upper half of any large terrain
-// shows a stretched/compressed strip artefact at vertex spacing in the diffuse
-// channel. Unorm16 normalised by the terrain extent is uniform at 1/16 pixel
-// across the whole range.
+// UV is UNORM16, not HALF2: terrain UVs are AUTHORED WORLD XZ IN METRES over the
+// terrain's square authoring domain (up to 4096 for a default terrain), and
+// HALF's 10-bit mantissa loses sub-integer precision above 1024 / 2-unit
+// precision above 2048. With HALF the far half of any large terrain shows a
+// stretched/compressed strip artefact at vertex spacing in the diffuse channel.
+// Unorm16 normalised by the terrain's own extent is uniform across the whole
+// range -- 1/16 metre on a default terrain, and FINER on a smaller one, so
+// shrinking a terrain can never cost UV precision.
+//
+// (Metres and heightmap pixels were the same number while every terrain was
+// 4096m wide baked from a 4096px image, which is why the two readings were
+// indistinguishable until terrains could differ in size.)
 static constexpr uint32_t VERTEX_STRIDE_BYTES = 20;
 
 // ========== Helper Functions ==========

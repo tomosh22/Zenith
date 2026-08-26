@@ -591,7 +591,7 @@ bool Flux_GrassImpl::BuildFromMaps(const MapSet& xMaps, const BuildParams& xPara
 	return true;
 }
 
-bool Flux_GrassImpl::BuildFromTerrainTextures(const std::string& strDir, const BuildParams& xParams)
+bool Flux_GrassImpl::BuildFromTerrainTextures(const std::string& strDir, float fWorldSize, const BuildParams& xParams)
 {
 	// Height + GrassDensity are REQUIRED; GrassType is optional content.
 	Flux_SurfaceInfo xHeightInfo;
@@ -634,7 +634,9 @@ bool Flux_GrassImpl::BuildFromTerrainTextures(const std::string& strDir, const B
 	xMaps.uCoverageSize = xCoverageInfo.m_uWidth;
 	xMaps.pType = bHasType ? aucTypeBytes.GetDataPointer() : nullptr;
 	xMaps.uTypeSize = bHasType ? xTypeInfo.m_uWidth : 0u;
-	xMaps.fWorldSize = Flux_TerrainConfig::TERRAIN_SIZE;
+	// The OWNING TERRAIN's square authoring domain, supplied by the caller. The
+	// maps in this directory were authored over exactly that extent.
+	xMaps.fWorldSize = fWorldSize;
 	return BuildFromMaps(xMaps, xParams);
 }
 

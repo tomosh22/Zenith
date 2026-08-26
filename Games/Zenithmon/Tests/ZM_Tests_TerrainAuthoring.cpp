@@ -228,7 +228,9 @@ ZENITH_TEST(ZM_TerrainAuthoring, DawnmereRecipeIdentityAndBounds)
 	ZENITH_ASSERT_EQ(uChunkHeight, 16u);
 	ZENITH_ASSERT_EQ(uChunkWidth * uChunkHeight, 256u);
 	ZENITH_ASSERT_EQ(uChunkWidth * uChunkHeight * 3u, 768u);
-	ZENITH_ASSERT_EQ(uChunkWidth * uChunkHeight * 3u + 3u,
+	// chunks x 3 mesh files, plus Height/Splatmap_RGBA/GrassDensity, plus the
+	// TerrainDims.zdata manifest the runtime loader requires.
+	ZENITH_ASSERT_EQ(uChunkWidth * uChunkHeight * 3u + 4u,
 		uZM_DAWNMERE_REQUIRED_OUTPUT_COUNT);
 
 	ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_fTargetHeight, 24.0f, fEPSILON);
@@ -469,7 +471,9 @@ ZENITH_TEST(ZM_TerrainAuthoring, DawnmereManifestRequiresEveryOutput)
 	ZENITH_ASSERT_EQ(uRender, 256u);
 	ZENITH_ASSERT_EQ(uRenderLow, 256u);
 	ZENITH_ASSERT_EQ(uPhysics, 256u);
-	ZENITH_ASSERT_EQ(uTextures, 3u);
+	// Three .ztxtr maps plus TerrainDims.zdata -- the manifest lands in this
+	// bucket because it is not a Render_/Render_LOW_/Physics_ chunk.
+	ZENITH_ASSERT_EQ(uTextures, 4u);
 	ZENITH_ASSERT_STREQ(ZM_GetTerrainGrassAssetPath(xRecipe).c_str(),
 		"game:Terrain/Dawnmere/GrassDensity.ztxtr");
 	ZENITH_ASSERT_STREQ(ZM_GetTerrainManifestRelativePath(xRecipe).c_str(),
@@ -537,7 +541,7 @@ ZENITH_TEST(ZM_TerrainAuthoring, DawnmereManifestRequiresEveryOutput)
 	// exhaustively and for free. So this loop samples one representative of each
 	// category plus both ends.
 	//
-	// It used to remove-and-restore all 771 outputs, taking a full warm check each
+	// It used to remove-and-restore EVERY output, taking a full warm check each
 	// time. That is O(n^2) in FILESYSTEM syscalls -- ~594,000 file-existence checks
 	// for zero extra defect-detection power -- and was 27 s, ~20% of the entire
 	// engine unit suite on its own. The sibling
@@ -553,9 +557,9 @@ ZENITH_TEST(ZM_TerrainAuthoring, DawnmereManifestRequiresEveryOutput)
 			uCount / 4u,           // inside the Render_LOW_ run
 			uCount / 2u,           // inside the Physics_ run
 			(uCount * 3u) / 4u,
-			uCount - 4u,           // the three trailing textures
+			uCount - 4u,           // the three trailing textures + the dims manifest
 			uCount - 2u,
-			uCount - 1u,           // last
+			uCount - 1u,           // last (TerrainDims.zdata)
 		};
 		for (u_int uSample = 0; uSample < sizeof(auSampleIndices) / sizeof(auSampleIndices[0]); ++uSample)
 		{
@@ -584,16 +588,22 @@ ZENITH_TEST(ZM_TerrainAuthoring, DawnmereManifestRequiresEveryOutput)
 	// control below into a false failure and the wrong-version negative into a
 	// false pass. (Observed for real: the ZM-D-182 bump to v2 reddened both.)
 	// The wrong-version case is therefore stated RELATIVE to the constant.
+	// ★ THE COUNT TRACKS ITS CONSTANT TOO, for exactly the reason the version
+	// does: these clauses each inject ONE defect, so a literal 771 became a
+	// SECOND defect the moment the required-output count moved (it did, when the
+	// dimensions manifest joined the set) -- turning the positive control into a
+	// false failure and the wrong-count negative into a false pass.
 	constexpr u_int uCURRENT = uZM_TERRAIN_MANIFEST_VERSION;
-	WriteTestManifest(xMarker, "ZMTR", uCURRENT, 771u, 8u);   // defect: short stamp
+	constexpr u_int uEXPECTED_OUTPUTS = uZM_DAWNMERE_REQUIRED_OUTPUT_COUNT;
+	WriteTestManifest(xMarker, "ZMTR", uCURRENT, uEXPECTED_OUTPUTS, 8u);   // defect: short stamp
 	ZENITH_ASSERT_FALSE(ZM_IsTerrainBakeWarm(xRecipe, xGuard.m_xRoot));
-	WriteTestManifest(xMarker, "BAD!", uCURRENT, 771u);       // defect: magic
+	WriteTestManifest(xMarker, "BAD!", uCURRENT, uEXPECTED_OUTPUTS);       // defect: magic
 	ZENITH_ASSERT_FALSE(ZM_IsTerrainBakeWarm(xRecipe, xGuard.m_xRoot));
-	WriteTestManifest(xMarker, "ZMTR", uCURRENT + 1u, 771u);  // defect: version
+	WriteTestManifest(xMarker, "ZMTR", uCURRENT + 1u, uEXPECTED_OUTPUTS);  // defect: version
 	ZENITH_ASSERT_FALSE(ZM_IsTerrainBakeWarm(xRecipe, xGuard.m_xRoot));
-	WriteTestManifest(xMarker, "ZMTR", uCURRENT, 770u);       // defect: count
+	WriteTestManifest(xMarker, "ZMTR", uCURRENT, uEXPECTED_OUTPUTS - 1u);  // defect: count
 	ZENITH_ASSERT_FALSE(ZM_IsTerrainBakeWarm(xRecipe, xGuard.m_xRoot));
-	WriteTestManifest(xMarker, "ZMTR", uCURRENT, 771u);       // no defect: warm again
+	WriteTestManifest(xMarker, "ZMTR", uCURRENT, uEXPECTED_OUTPUTS);       // no defect: warm again
 	ZENITH_ASSERT_TRUE(ZM_IsTerrainBakeWarm(xRecipe, xGuard.m_xRoot));
 
 	// Phase one invalidates every completion signal and all old textures before
@@ -659,7 +669,8 @@ ZENITH_TEST(ZM_TerrainAuthoring, DawnmereManifestRequiresEveryOutput)
 	const std::filesystem::path xOutsideSentinel = xOutside / "must-not-change.sentinel";
 	// Current version, not a literal: this stamp stands in for a REAL warm tree
 	// outside the junction, and the clause is that nothing here is touched.
-	WriteTestManifest(xOutsideMarker, "ZMTR", uZM_TERRAIN_MANIFEST_VERSION, 771u);
+	WriteTestManifest(xOutsideMarker, "ZMTR", uZM_TERRAIN_MANIFEST_VERSION,
+		uZM_DAWNMERE_REQUIRED_OUTPUT_COUNT);
 	ZENITH_ASSERT_TRUE(WriteNonEmptyFile(xOutsideHeight));
 	ZENITH_ASSERT_TRUE(WriteNonEmptyFile(xOutsideSplat));
 	ZENITH_ASSERT_TRUE(WriteNonEmptyFile(xOutsideGrass));

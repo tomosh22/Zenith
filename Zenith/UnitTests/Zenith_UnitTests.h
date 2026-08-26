@@ -592,6 +592,7 @@ public:
 	static void TestTerrainAssetSetIsolatedAcrossComponentsAndMove();
 	static void TestTerrainAssetSetSerializationRoundTrip();
 	static void TestTerrainAssetSetLegacyV3DefaultsEmpty();
+	static void TestTerrainDimensionsSerializationRoundTrip();
 	static void TestTerrainEditorAssetSetResolvesLegacyAndNamedBakeDirectories();
 	static void TestEditorAutomationTerrainAssetSetActionOwnsArgument();
 	static void TestTerrainEditorChunkExportRectUsesInclusiveBounds();

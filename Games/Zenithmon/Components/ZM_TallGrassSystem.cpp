@@ -50,7 +50,7 @@ void ZM_TallGrassSystem::OnAwake()
 
 	const std::string strDensityPath =
 		ZM_GrassDensityMap::BuildCanonicalPath(pxTerrain->GetTerrainAssetDirectory());
-	if (!m_xDensityMap.Load(strDensityPath))
+	if (!m_xDensityMap.Load(strDensityPath, pxTerrain->GetTerrainDimensions().MaxWorldSize()))
 	{
 		// Missing / malformed map: disabled, but harmless (encounters simply never fire).
 		m_xDensityMap.Clear();

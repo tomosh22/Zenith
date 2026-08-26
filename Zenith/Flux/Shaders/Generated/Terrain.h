@@ -90,8 +90,9 @@ namespace Flux_Generated_Terrain
 			unsigned char m_aPad_4[12];
 			unsigned char m_ag_xPosQuantScale[16]; // slang=vector offset=16 arrayCount=4 (no C++ mapping)
 			unsigned char m_ag_xPosQuantBias[16]; // slang=vector offset=32 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_xTerrainDims[16]; // slang=vector offset=48 arrayCount=4 (no C++ mapping)
 		};
-		static_assert(sizeof(TerrainConstants_CB) == 48, "TerrainConstants_CB size drifted from Slang reflection");
+		static_assert(sizeof(TerrainConstants_CB) == 64, "TerrainConstants_CB size drifted from Slang reflection");
 		static_assert(offsetof(TerrainConstants_CB, m_fg_fUVScale) == 0, "TerrainConstants.g_fUVScale offset drifted from Slang reflection");
 		// kind: ConstantBuffer
 		inline constexpr Flux_BindingHandle hTerrainMaterialConstants{ 3u, 1u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
@@ -156,8 +157,9 @@ namespace Flux_Generated_Terrain
 			unsigned char m_aPad_4[12];
 			unsigned char m_ag_xPosQuantScale[16]; // slang=vector offset=16 arrayCount=4 (no C++ mapping)
 			unsigned char m_ag_xPosQuantBias[16]; // slang=vector offset=32 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_xTerrainDims[16]; // slang=vector offset=48 arrayCount=4 (no C++ mapping)
 		};
-		static_assert(sizeof(TerrainConstants_CB) == 48, "TerrainConstants_CB size drifted from Slang reflection");
+		static_assert(sizeof(TerrainConstants_CB) == 64, "TerrainConstants_CB size drifted from Slang reflection");
 		static_assert(offsetof(TerrainConstants_CB, m_fg_fUVScale) == 0, "TerrainConstants.g_fUVScale offset drifted from Slang reflection");
 		// kind: ConstantBuffer
 		inline constexpr Flux_BindingHandle hTerrainMaterialConstants{ 3u, 1u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
@@ -222,8 +224,9 @@ namespace Flux_Generated_Terrain
 			unsigned char m_aPad_4[12];
 			unsigned char m_ag_xPosQuantScale[16]; // slang=vector offset=16 arrayCount=4 (no C++ mapping)
 			unsigned char m_ag_xPosQuantBias[16]; // slang=vector offset=32 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_xTerrainDims[16]; // slang=vector offset=48 arrayCount=4 (no C++ mapping)
 		};
-		static_assert(sizeof(TerrainConstants_CB) == 48, "TerrainConstants_CB size drifted from Slang reflection");
+		static_assert(sizeof(TerrainConstants_CB) == 64, "TerrainConstants_CB size drifted from Slang reflection");
 		static_assert(offsetof(TerrainConstants_CB, m_fg_fUVScale) == 0, "TerrainConstants.g_fUVScale offset drifted from Slang reflection");
 		// vertex inputs: { semantic, semantic index, STORAGE format, binding, byte offset }
 		inline constexpr Flux_VertexLayoutElement kaxVertexAttribs[] =

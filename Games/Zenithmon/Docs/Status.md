@@ -18,7 +18,35 @@ The S0-S7 narrative that used to fill the back half of this file moved VERBATIM 
 its own template in `AgentBriefing.md` §2.3 specifies. Nothing was deleted.
 
 **★ LIVE PIN (UPDATED 2026-08-26):
-ZM boot `3420`; engine boot (Null Combat) `1651`; Null RenderTest `1742`; registry **70**.**
+ZM boot `3438`; engine boot (Null Combat) `1669`; Null RenderTest `1760`; registry **70**.**
+
+> **★ CONFIGURABLE TERRAIN DIMENSIONS — the engine change, OBSERVED 2026-08-26.**
+> An ENGINE ticket whose units are backend-neutral, so **all three rows moved by
+> +18 and all three were MEASURED**: ZM **3420 -> 3438** (`3438 ran / 3436 passed /
+> 0 failed`, 2 skipped), Combat **1651 -> 1669** (`1669 / 1668 / 0`, 1 skipped),
+> Null RenderTest **1742 -> 1760** (`1760 / 1759 / 0`, 1 skipped). CityBuilder,
+> TilePuzzle and DevilsPlayground moved with them (`1670` / `1669` / `1670`).
+> Registry UNCHANGED at **70**.
+>
+> Chunk world size, vertex spacing and grid extent are per-terrain
+> (`Zenith_TerrainDimensions`, `Zenith/Core/`) rather than compile-time constants,
+> and a baked set now carries a REQUIRED `TerrainDims.zdata` manifest recording
+> the dimensions its chunks were quantised against. **Zenithmon still bakes every
+> recipe at the DEFAULT dimensions**, so the chunk bytes are unchanged; what moved
+> is `uZM_TERRAIN_MANIFEST_VERSION` **4 -> 5** (a v4 set has no manifest and the
+> loader refuses it as stale) and the three required-output counts by exactly one
+> each — Dawnmere/Thornacre **771 -> 772**, Route 1 **1155 -> 1156** — for that one
+> new file. All three sets were re-baked windowed
+> (`--zm-force-terrain-bake`, 44.6 s / 56.4 s / 65.1 s, `result=SUCCESS`,
+> `manifest finalized`).
+>
+> **All three terrain scenes were re-authored: +16 bytes each, and EXACTLY 16.**
+> That is the component's v5 serialization tail (one float + three u_int) appended
+> after the complete v4 payload and nothing else — the proof that the default
+> dimension arithmetic is floating-point-IDENTICAL to the constants it replaced.
+> The four non-terrain scenes (`FrontEnd`, `PlayerHome`, `Battle`, `ProfLab`) came
+> back `[ScenePublish] IDENTICAL` in the same boot, and a third boot reported all
+> SEVEN identical. Re-observe the committed-asset table below.
 
 > **★ ZEN-6 — the headless `.zscen` publish guard is REMOVED — OBSERVED 2026-08-26.**
 > An ENGINE ticket, and its unit is backend-neutral, so **all three rows moved by +1 and all
@@ -364,9 +392,9 @@ genuinely RAN, not `DEFERRED` -- after which `git status` over the WHOLE
 
 | Asset | Bytes | SHA256 |
 |---|---|---|
-| `Route1.zscen` | 2,287 | `F1486214807474E6EE91088AC5500B9BC2AA93C47618C9F81EF72F8D4898EED9` (**RE-AUTHORED at R1-4's scene-attach half**, ZM-66/ZM-D-205: +34 bytes, one `ZM_TallGrassSystem` component record appended to `Route1Terrain` after `ZM_TerrainGrass`. Two consecutive windowed Debug boots, second byte-identical. ★ `Thornacre.zscen` and `Dawnmere.zscen` came back BYTE-IDENTICAL in the same boots -- the component was attached at Route 1's call site, NOT inside the shared `ZM_QueueTerrainHostEntity` helper Thornacre also uses. Previous value `09E165E0888D6213...`, held from R1-3.) |
-| `Thornacre.zscen` | 1,923 | `DB4AC7790604F3862F67D8F0C8563C396260F9AB118ADF614275EF0314298604` (**RE-AUTHORED at R1-3**, ZM-21/ZM-D-203: +190 bytes, the `ThornacreSouthGate` entity record appended. Same two-boot proof. Previous value `A9295117F0F781D2608F33D0...`, held from R1-2 step 2.) |
-| `Dawnmere.zscen` | 5,682 | `E607281BAB6C91236B7D2DE36684D433B63C20DA896A941184350CF280126C9A` (**RE-AUTHORED at ZM-65/ZM-D-206**: **±0 bytes** — `DawnmereNorthGate`'s centre Y moved in place, from the borrowed `FromRoute1` column to its own measured row, so a float field changed and no record was added or removed. `ZM_GetDawnmereNorthGateCentreY()` now reads `24.29772 + scaleY*0.5` instead of `24.36592 + scaleY*0.5` — the gate sits **0.068 m lower**. Two consecutive windowed Debug boots, both `sceneAuthoring=AUTHOR_DAWNMERE, warmMask=0x7, queued=0`, second byte-identical, `ZM_DawnmereRouteSeamGroundTruth_Test` PASSED on both. ★ `Route1.zscen` and `Thornacre.zscen` came back BYTE-IDENTICAL in the same boots. Previous value `C819C84106AA42FBB6B33C892D0C339AD75E536EA01AB6B7B9891BD6FA53F2F5`, held from R1-3.) |
+| `Route1.zscen` | 2,818 | `3B1C5C930DE2798A6A7677CEF05F5294996E5157A17655ECE3589B19B2BCEC38` (**RE-AUTHORED at the configurable-terrain-dimensions engine change**: **+16 bytes**, `Zenith_TerrainComponent`'s v5 serialization tail — one float + three u_int, appended after the complete v4 payload. Nothing else moved, which is the byte-level proof that default-dimension arithmetic is FP-identical to the constants it replaced. Three consecutive windowed Debug boots; the third reported `[ScenePublish] IDENTICAL` for all seven scenes. Previous value `F1486214807474E6...` at 2,802 bytes. ★ The 2,287 recorded here before was STALE — it predated R1-4's own re-author and nothing reconciled it, which is exactly what this table exists to prevent.) |
+| `Thornacre.zscen` | 1,939 | `AC8AD81C997D6611C543F83659D1EEEDAFD89921661E9409C616F29604B94149` (**RE-AUTHORED at the configurable-terrain-dimensions engine change**: **+16 bytes**, the same v5 terrain tail. Same three-boot proof. Previous value `DB4AC7790604F386...` at 1,923 bytes, held from R1-3.) |
+| `Dawnmere.zscen` | 5,698 | `433E7E9242C0D2F1F64500163032348025E90734E523A6C96371932C5094FA06` (**RE-AUTHORED at the configurable-terrain-dimensions engine change**: **+16 bytes**, the same v5 terrain tail. No placement constant moved and no re-measure was performed — the terrain re-baked at the DEFAULT dimensions, so every authored height is unchanged. Same three-boot proof, `sceneAuthoring=AUTHOR_DAWNMERE`. Previous value `E607281BAB6C9123...` at 5,682 bytes, held from ZM-65/ZM-D-206.) |
 | `Battle.zscen` | 4,965 | `1BEB0615F7FE62D9439471A4123E1D2140C0053AEC2991B659F7A03288C8C60A` (unchanged since 2026-08-05) |
 | `FrontEnd.zscen` | 29,740 | `D44D540512F1C373A5D5E747CE7FA76E7D19B467F5F1563EB298E229EEFBEDB5` |
 | `PlayerHome.zscen` | 1,832 | `DBBFB78311A55BBF942A7A5BF9928F43E9493A10CDA89110515A3B6A7987C780` (unchanged since 2026-08-05) |

@@ -21,6 +21,7 @@
 
 #include "Core/Zenith_TestFramework.h"
 #include "Core/Zenith_TerrainChunkLayout.h"
+#include "Core/Zenith_TerrainDimensions.h"
 #include "Flux/Terrain/Flux_TerrainSourceGrid.h"
 #include "Flux/Terrain/Flux_TerrainVertexQuant.h"
 // Phase 2 of the terrain indirect-count compatibility plan: the terrain
@@ -337,25 +338,110 @@ ZENITH_TEST(FluxTerrainSourceGrid, ChunkSlotCountsMatchTheOnDiskContract)
 
 // ---- the packed-vertex quantisation bridge ----------------------------------
 
-ZENITH_TEST(FluxTerrain, TerrainConstantsFillMatchesAuthoredBox)
+ZENITH_TEST(FluxTerrain, TerrainConstantsFillMatchesTheTerrainsOwnBox)
 {
-	// The CB fill in Initialise is the ONE bridge from the authored box to the three
+	// The CB fill is the ONE bridge from a terrain's authored box to the three
 	// shaders' Flux_DequantPosition, and nothing else validates it — the
-	// static_asserts beside the struct pin layout, not values. A dropped fill leaves
-	// scale at its 1.0f default (terrain collapses to a metre cube at the origin);
-	// a dropped .w makes every terrain UV 4096x too small. Unit tests run after
-	// engine init, so the file-static has been filled by the time this executes.
-	const Flux_PosQuant xExpected = Flux_MakeTerrainPosQuant();
-	for (int i = 0; i < 3; i++)
+	// static_asserts beside the struct pin layout, not values. A dropped fill
+	// leaves scale at its 1.0f default (terrain collapses to a metre cube at the
+	// origin); a dropped .w makes every terrain UV MaxWorldSize-times too small.
+	//
+	// It is filled PER TERRAIN now, so the test drives the filler directly across
+	// several specs rather than inspecting one process-wide instance — which is
+	// also the only way to catch a fill that reads a global instead of its
+	// argument, the exact regression the per-terrain box introduces the risk of.
+	auto CheckSpec = [](const Zenith_TerrainDimensions& xDims, const char* szWhat)
 	{
-		ZENITH_ASSERT_EQ_FLOAT(s_xTerrainConstants.m_afPosQuantScale[i], xExpected.m_xScale[i], 1.0e-4f,
-			"CB dequant scale axis %d must be the authored box extent", i);
-		ZENITH_ASSERT_EQ_FLOAT(s_xTerrainConstants.m_afPosQuantBias[i], xExpected.m_xBias[i], 1.0e-4f,
-			"CB dequant bias axis %d must be the authored box min", i);
+		TerrainConstants xFilled;
+		Flux_FillTerrainConstants(xDims, xFilled);
+
+		const Flux_PosQuant xExpected = Flux_MakeTerrainPosQuant(xDims);
+		for (int i = 0; i < 3; i++)
+		{
+			ZENITH_ASSERT_EQ_FLOAT(xFilled.m_afPosQuantScale[i], xExpected.m_xScale[i], 1.0e-4f,
+				"%s: CB dequant scale axis %d must be this terrain's box extent", szWhat, i);
+			ZENITH_ASSERT_EQ_FLOAT(xFilled.m_afPosQuantBias[i], xExpected.m_xBias[i], 1.0e-4f,
+				"%s: CB dequant bias axis %d must be this terrain's box min", szWhat, i);
+		}
+		ZENITH_ASSERT_EQ_FLOAT(xFilled.m_afPosQuantScale[3], xDims.MaxWorldSize(), 1.0e-4f,
+			"%s: CB scale.w must carry the UV dequant extent the shaders multiply the unorm16 UV back up by", szWhat);
+		ZENITH_ASSERT_EQ_FLOAT(xFilled.m_afTerrainDims[0], xDims.m_fChunkWorldSize, 1.0e-4f,
+			"%s: the dims lane must carry the chunk world size the debug modes draw the grid with", szWhat);
+		ZENITH_ASSERT_EQ_FLOAT(xFilled.m_afTerrainDims[1], xDims.WorldSizeX(), 1.0e-4f,
+			"%s: the dims lane must carry the terrain's world X extent", szWhat);
+		ZENITH_ASSERT_EQ_FLOAT(xFilled.m_afTerrainDims[2], xDims.WorldSizeZ(), 1.0e-4f,
+			"%s: the dims lane must carry the terrain's world Z extent", szWhat);
+	};
+
+	// DEFAULT: reproduces the historical 4096/512 box exactly. This is the arm
+	// that keeps a default-dimensioned terrain rendering where it always did.
+	const Zenith_TerrainDimensions xDefault = Zenith_TerrainDimensions::Default();
+	CheckSpec(xDefault, "default");
+	{
+		TerrainConstants xFilled;
+		Flux_FillTerrainConstants(xDefault, xFilled);
+		ZENITH_ASSERT_EQ_FLOAT(xFilled.m_afPosQuantScale[3],
+			Zenith_TerrainChunkLayout::fUV_BOX_MAX, 1.0e-4f,
+			"the default UV extent must still be the layout header's historical constant");
 	}
-	ZENITH_ASSERT_EQ_FLOAT(s_xTerrainConstants.m_afPosQuantScale[3],
-		Zenith_TerrainChunkLayout::fUV_BOX_MAX, 1.0e-4f,
-		"CB scale.w must carry the UV dequant extent the shaders multiply the unorm16 UV back up by");
+
+	// NON-DEFAULT and NON-SQUARE. The narrow spec is Route1's shape: its X box is
+	// six times tighter than its Z box, which is the whole point of a per-axis
+	// box, and its UV extent is the LONGER axis so the square authoring images
+	// still cover it.
+	Zenith_TerrainDimensions xNarrow;
+	xNarrow.m_fChunkWorldSize = 64.0f;
+	xNarrow.m_uQuadsPerChunkEdge = 64u;
+	xNarrow.m_uGridChunksX = 4u;
+	xNarrow.m_uGridChunksZ = 24u;
+	CheckSpec(xNarrow, "narrow 4x24");
+	{
+		TerrainConstants xFilled;
+		Flux_FillTerrainConstants(xNarrow, xFilled);
+		ZENITH_ASSERT_LT(xFilled.m_afPosQuantScale[0], xFilled.m_afPosQuantScale[2],
+			"a narrow terrain must spend LESS box on X than on Z — that is the per-axis precision win");
+		ZENITH_ASSERT_EQ_FLOAT(xFilled.m_afPosQuantScale[3], 1536.0f, 1.0e-4f,
+			"the UV extent must be the LONGER axis, so the square authoring maps still cover the terrain");
+	}
+
+	// A denser, smaller terrain: both knobs off their defaults at once.
+	Zenith_TerrainDimensions xDense;
+	xDense.m_fChunkWorldSize = 32.0f;
+	xDense.m_uQuadsPerChunkEdge = 64u;
+	xDense.m_uGridChunksX = 10u;
+	xDense.m_uGridChunksZ = 14u;
+	CheckSpec(xDense, "dense 10x14 @ 32m");
+}
+
+ZENITH_TEST(FluxTerrain, TerrainConstantsAreIndependentAcrossSpecs)
+{
+	// TWO terrains in one scene, filled back to back. The fill must be a pure
+	// function of its argument: if it ever reads a shared instance again, the
+	// second fill would overwrite the first and both terrains would decode
+	// against one box — geometry in the wrong place, with nothing failing.
+	Zenith_TerrainDimensions xSmall;
+	xSmall.m_fChunkWorldSize = 64.0f;
+	xSmall.m_uQuadsPerChunkEdge = 64u;
+	xSmall.m_uGridChunksX = 6u;
+	xSmall.m_uGridChunksZ = 9u;
+
+	TerrainConstants xA;
+	TerrainConstants xB;
+	Flux_FillTerrainConstants(xSmall, xA);
+	Flux_FillTerrainConstants(Zenith_TerrainDimensions::Default(), xB);
+
+	// Re-fill A's spec into a third block AFTER B: A's values must be unchanged.
+	TerrainConstants xARepeat;
+	Flux_FillTerrainConstants(xSmall, xARepeat);
+	for (int i = 0; i < 4; i++)
+	{
+		ZENITH_ASSERT_EQ_FLOAT(xARepeat.m_afPosQuantScale[i], xA.m_afPosQuantScale[i], 1.0e-4f,
+			"filling a second terrain must not disturb the first terrain's box (lane %d)", i);
+	}
+	ZENITH_ASSERT_LT(xA.m_afPosQuantScale[0], xB.m_afPosQuantScale[0],
+		"a 384m-wide terrain's X box must be tighter than a 4096m one's");
+	ZENITH_ASSERT_EQ_FLOAT(xB.m_afPosQuantScale[0], 4096.0f, 1.0e-4f,
+		"the default terrain's X box must remain the historical 4096m");
 }
 
 ZENITH_TEST(FluxTerrain, TerrainVertexQuantWritesLandAtShaderOffsets)
@@ -365,7 +451,9 @@ ZENITH_TEST(FluxTerrain, TerrainVertexQuantWritesLandAtShaderOffsets)
 	// pin those equal at compile time, and this pins the bytes at runtime: decode at
 	// the GENERATED offsets and the authored values must come back. Against a 0xCD
 	// sentinel fill, a transposed offset decodes wild values, not near-misses.
-	const Flux_PosQuant xQuant = Flux_MakeTerrainPosQuant();
+	const Zenith_TerrainDimensions xDims = Zenith_TerrainDimensions::Default();
+	const Flux_PosQuant xQuant = Flux_MakeTerrainPosQuant(xDims);
+	const float fUVBoxMax = Flux_TerrainUVBoxMax(xDims);
 	const Zenith_Maths::Vector3 xPos(123.0f, 45.0f, 678.0f);
 	const Zenith_Maths::Vector2 xUV(321.0f, 87.0f);
 	const u_int uNormalWord = 0xA1B2C3D4u;
@@ -374,7 +462,7 @@ ZENITH_TEST(FluxTerrain, TerrainVertexQuantWritesLandAtShaderOffsets)
 	u_int8 aucVertex[Zenith_TerrainChunkLayout::uVERTEX_STRIDE];
 	std::memset(aucVertex, 0xCD, sizeof(aucVertex));
 	Flux_WriteTerrainVertexPosition(aucVertex, xPos, xQuant);
-	Flux_WriteTerrainVertexUV(aucVertex, xUV);
+	Flux_WriteTerrainVertexUV(aucVertex, xUV, fUVBoxMax);
 	Flux_WriteTerrainVertexNormalWord(aucVertex, uNormalWord);
 	Flux_WriteTerrainVertexTangentWord(aucVertex, uTangentWord);
 
@@ -393,8 +481,7 @@ ZENITH_TEST(FluxTerrain, TerrainVertexQuantWritesLandAtShaderOffsets)
 
 	u_int uUVWord = 0u;
 	std::memcpy(&uUVWord, aucVertex + paxShader[1].m_uOffset, sizeof(uUVWord));
-	const Zenith_Maths::Vector2 xDecodedUV =
-		Flux_UnpackUnorm16x2(uUVWord) * Zenith_TerrainChunkLayout::fUV_BOX_MAX;
+	const Zenith_Maths::Vector2 xDecodedUV = Flux_UnpackUnorm16x2(uUVWord) * fUVBoxMax;
 	for (int i = 0; i < 2; i++)
 	{
 		ZENITH_ASSERT_EQ_FLOAT(xDecodedUV[i], xUV[i], Zenith_TerrainChunkLayout::fUV_QUANT_STEP,
@@ -417,27 +504,40 @@ ZENITH_TEST(FluxTerrain, TerrainVertexQuantReencodeIsIdentity)
 	// bit-exactly (a quantum representative must be its own fixed point), because
 	// the un-brushed neighbour chunk keeps its original baked words along the shared
 	// border. Words are integers, so exact equality is /fp:fast-safe.
-	const Flux_PosQuant xQuant = Flux_MakeTerrainPosQuant();
-	u_int8 aucVertex[Zenith_TerrainChunkLayout::uVERTEX_STRIDE] = {};
-	for (u_int u = 0; u < 97u; u++)
+	//
+	// Run over THREE specs: the identity has to hold for whatever box a terrain
+	// carries, not just the historical one, because the sculpt hook re-encodes
+	// against the terrain it is attached to.
+	Zenith_TerrainDimensions axSpecs[3];
+	axSpecs[0] = Zenith_TerrainDimensions::Default();
+	axSpecs[1] = { 64.0f, 64u, 6u, 9u };
+	axSpecs[2] = { 32.0f, 128u, 4u, 24u };
+
+	for (u_int uSpec = 0; uSpec < 3u; uSpec++)
 	{
-		// Off-lattice authored positions across the whole box — the first pack
-		// rounds arbitrarily; the identity under test is the SECOND pack.
-		const float fT = static_cast<float>(u) / 96.0f;
-		const Zenith_Maths::Vector3 xAuthored(
-			4096.0f * fT, 512.0f * (1.0f - fT), 4096.0f * fT * fT);
-		Flux_WriteTerrainVertexPosition(aucVertex, xAuthored, xQuant);
-		u_int64 ulFirst = 0u;
-		std::memcpy(&ulFirst, aucVertex + Zenith_TerrainChunkLayout::uPOSITION_OFFSET, sizeof(ulFirst));
+		const Zenith_TerrainDimensions& xDims = axSpecs[uSpec];
+		const Flux_PosQuant xQuant = Flux_MakeTerrainPosQuant(xDims);
+		u_int8 aucVertex[Zenith_TerrainChunkLayout::uVERTEX_STRIDE] = {};
+		for (u_int u = 0; u < 97u; u++)
+		{
+			// Off-lattice authored positions across the whole box — the first pack
+			// rounds arbitrarily; the identity under test is the SECOND pack.
+			const float fT = static_cast<float>(u) / 96.0f;
+			const Zenith_Maths::Vector3 xAuthored(
+				xDims.WorldSizeX() * fT, 512.0f * (1.0f - fT), xDims.WorldSizeZ() * fT * fT);
+			Flux_WriteTerrainVertexPosition(aucVertex, xAuthored, xQuant);
+			u_int64 ulFirst = 0u;
+			std::memcpy(&ulFirst, aucVertex + Zenith_TerrainChunkLayout::uPOSITION_OFFSET, sizeof(ulFirst));
 
-		const Zenith_Maths::Vector3 xDecoded = Flux_ReadTerrainVertexPosition(aucVertex, xQuant);
-		Flux_WriteTerrainVertexPosition(aucVertex, xDecoded, xQuant);
-		u_int64 ulSecond = 0u;
-		std::memcpy(&ulSecond, aucVertex + Zenith_TerrainChunkLayout::uPOSITION_OFFSET, sizeof(ulSecond));
+			const Zenith_Maths::Vector3 xDecoded = Flux_ReadTerrainVertexPosition(aucVertex, xQuant);
+			Flux_WriteTerrainVertexPosition(aucVertex, xDecoded, xQuant);
+			u_int64 ulSecond = 0u;
+			std::memcpy(&ulSecond, aucVertex + Zenith_TerrainChunkLayout::uPOSITION_OFFSET, sizeof(ulSecond));
 
-		ZENITH_ASSERT_EQ(ulFirst, ulSecond,
-			"decode->re-encode must be the identity on the packed word (case %u) — "
-			"a sculpted chunk's untouched XZ words have to survive the round trip", u);
+			ZENITH_ASSERT_EQ(ulFirst, ulSecond,
+				"decode->re-encode must be the identity on the packed word (spec %u case %u) — "
+				"a sculpted chunk's untouched XZ words have to survive the round trip", uSpec, u);
+		}
 	}
 }
 
@@ -448,22 +548,43 @@ ZENITH_TEST(FluxTerrain, TerrainVertexQuantUVRoundTrip)
 	// Integer pixel coordinates — all the exporter ever authors — must come back
 	// within one unorm16 quantum AND snap back to the exact integer, which is the
 	// property the sculpt hook's std::round of the decoded UV stands on.
+	// Two specs. The default one keeps the historical 4096m extent (where a UV is
+	// both a metre and a heightfield pixel); the small one is where the two
+	// readings come apart, and where the quantum gets FINER rather than coarser.
+	Zenith_TerrainDimensions axSpecs[2];
+	axSpecs[0] = Zenith_TerrainDimensions::Default();
+	axSpecs[1] = { 64.0f, 64u, 6u, 9u };
+
 	u_int8 aucVertex[Zenith_TerrainChunkLayout::uVERTEX_STRIDE] = {};
-	for (u_int u = 0; u <= 16u; u++)
+	for (u_int uSpec = 0; uSpec < 2u; uSpec++)
 	{
-		const float fPixel = Zenith_TerrainChunkLayout::fUV_BOX_MAX * static_cast<float>(u) / 16.0f;
-		const Zenith_Maths::Vector2 xAuthored(fPixel, Zenith_TerrainChunkLayout::fUV_BOX_MAX - fPixel);
-		Flux_WriteTerrainVertexUV(aucVertex, xAuthored);
-		const Zenith_Maths::Vector2 xDecoded = Flux_ReadTerrainVertexUV(aucVertex);
-		for (int i = 0; i < 2; i++)
+		const float fUVBoxMax = Flux_TerrainUVBoxMax(axSpecs[uSpec]);
+		const float fQuantStep = fUVBoxMax / 65535.0f;
+		for (u_int u = 0; u <= 16u; u++)
 		{
-			ZENITH_ASSERT_TRUE(
-				std::fabs(xDecoded[i] - xAuthored[i]) <= Zenith_TerrainChunkLayout::fUV_QUANT_STEP,
-				"decoded UV axis %d must sit within one unorm16 quantum of the authored pixel (case %u)", i, u);
-			ZENITH_ASSERT_EQ_FLOAT(std::round(xDecoded[i]), xAuthored[i], 1.0e-4f,
-				"an integer authored UV must snap back exactly (case %u axis %d)", u, i);
+			// Integer metres, which is what the exporter authors at any spacing
+			// that divides a metre.
+			const float fMetres = std::floor(fUVBoxMax * static_cast<float>(u) / 16.0f);
+			const Zenith_Maths::Vector2 xAuthored(fMetres, std::floor(fUVBoxMax) - fMetres);
+			Flux_WriteTerrainVertexUV(aucVertex, xAuthored, fUVBoxMax);
+			const Zenith_Maths::Vector2 xDecoded = Flux_ReadTerrainVertexUV(aucVertex, fUVBoxMax);
+			for (int i = 0; i < 2; i++)
+			{
+				ZENITH_ASSERT_TRUE(
+					std::fabs(xDecoded[i] - xAuthored[i]) <= fQuantStep,
+					"decoded UV axis %d must sit within one unorm16 quantum of the authored metre "
+					"(spec %u case %u)", i, uSpec, u);
+				ZENITH_ASSERT_EQ_FLOAT(std::round(xDecoded[i]), xAuthored[i], 1.0e-4f,
+					"an integer authored UV must snap back exactly (spec %u case %u axis %d)", uSpec, u, i);
+			}
 		}
 	}
+
+	// The precision claim in the layout header: a SMALLER terrain gets a FINER
+	// UV quantum, so shrinking a terrain can never cost UV precision.
+	ZENITH_ASSERT_LT(Flux_TerrainUVBoxMax(axSpecs[1]) / 65535.0f,
+		Flux_TerrainUVBoxMax(axSpecs[0]) / 65535.0f,
+		"a smaller square authoring domain must give a finer unorm16 UV quantum");
 }
 
 //------------------------------------------------------------------------------
@@ -512,6 +633,77 @@ ZENITH_TEST(FluxTerrain, IndirectBufferLastRecordEndsAtAllocationBoundary)
 	constexpr uint32_t uLastEnd = uLastOffset + uSTRIDE;
 	ZENITH_ASSERT_EQ(uLastEnd, uTOTAL * uSTRIDE,
 		"the last record's end byte must equal TOTAL_CHUNKS * stride — exactly the allocation boundary");
+}
+
+ZENITH_TEST(FluxTerrainSourceGrid, SampleToWorldToImageMappingSeparatesThreeUnits)
+{
+	// The exporter used to weld three quantities into one number: a heightmap
+	// PIXEL was a source SAMPLE was a world METRE. These functions are where they
+	// come apart, and they are the arithmetic a fractional bilinear tap stands on.
+	using namespace Flux_TerrainSourceGrid;
+
+	// DEFAULT dimensions over a 4096px heightfield: the step is exactly the
+	// divisor and the image scale is exactly 1.0, so every result is the integer
+	// the old code produced. This arm is what makes a default re-bake
+	// byte-identical, so it asserts EXACT equality.
+	{
+		const Zenith_TerrainDimensions xDims = Zenith_TerrainDimensions::Default();
+		const double dSpacing = static_cast<double>(xDims.VertexSpacing());
+		const double dImagePerWorld = static_cast<double>(xDims.ImagePixelPerWorld(4096u));
+		ZENITH_ASSERT_TRUE(dSpacing == 1.0, "default vertex spacing must be exactly 1m");
+		ZENITH_ASSERT_TRUE(dImagePerWorld == 1.0, "a 4096px map over 4096m must be exactly 1px per metre");
+
+		ZENITH_ASSERT_TRUE(SampleStepWorld(dSpacing, 1u) == 1.0, "the HIGH bake steps one metre per sample");
+		ZENITH_ASSERT_TRUE(SampleStepWorld(dSpacing, 4u) == 4.0, "a divisor-4 bake steps four metres per sample");
+		ZENITH_ASSERT_TRUE(WorldForSample(1000u, 1.0) == 1000.0, "sample 1000 is 1000m in at 1m spacing");
+		ZENITH_ASSERT_TRUE(WorldForSample(1000u, 4.0) == 4000.0, "sample 1000 is 4000m in at 4m spacing");
+		ZENITH_ASSERT_TRUE(ImageCoordForSample(1000u, 1.0, dImagePerWorld) == 1000.0,
+			"at 1m/px the image coordinate IS the sample index — the identity the old code assumed");
+		ZENITH_ASSERT_TRUE(ImageCoordForSample(1000u, 4.0, dImagePerWorld) == 4000.0,
+			"a divisor-4 sample taps four times as far into the image");
+	}
+
+	// A SMALLER terrain over the SAME 4096px heightfield: the image is now
+	// oversampled, and the tap coordinate is FRACTIONAL. This is the case a
+	// closing sample has to clamp and an integer-only tap would silently truncate.
+	{
+		const Zenith_TerrainDimensions xDims{ 64.0f, 64u, 6u, 9u };   // 384 x 576 m
+		ZENITH_ASSERT_TRUE(xDims.MaxWorldSize() == 576.0f, "the square domain is the longer axis");
+		const double dSpacing = static_cast<double>(xDims.VertexSpacing());
+		const double dImagePerWorld = static_cast<double>(xDims.ImagePixelPerWorld(4096u));
+		ZENITH_ASSERT_TRUE(dSpacing == 1.0, "spacing is unchanged — only the extent shrank");
+
+		// 4096 px over 576 m is a hair over 7.1 px per metre: fractional, and the
+		// bilinear tap has to interpolate rather than land on a texel.
+		const double dCoord = ImageCoordForSample(1u, SampleStepWorld(dSpacing, 1u), dImagePerWorld);
+		ZENITH_ASSERT_GT(dCoord, 7.0, "one metre must tap more than seven pixels in on a 576m domain");
+		ZENITH_ASSERT_LT(dCoord, 7.2, "...and not more than about 7.11");
+		ZENITH_ASSERT_TRUE(dCoord != static_cast<double>(static_cast<int>(dCoord)),
+			"the tap coordinate must be genuinely fractional — an integer-only tap would truncate it");
+
+		// The LAST sample of the grid lands exactly on the image's far edge, which
+		// is where the closing sample's clamp takes over.
+		const uint32_t uLastSample = SampleCountPerEdge(xDims.m_uGridChunksZ, xDims.m_uQuadsPerChunkEdge) - 1u;
+		ZENITH_ASSERT_EQ(uLastSample, 576u, "a 9x64-quad axis closes on sample 576");
+		ZENITH_ASSERT_EQ_FLOAT(static_cast<float>(WorldForSample(uLastSample, SampleStepWorld(dSpacing, 1u))),
+			xDims.WorldSizeZ(), 1.0e-3f,
+			"the closing sample must land exactly on the terrain's outer boundary");
+		ZENITH_ASSERT_EQ_FLOAT(static_cast<float>(ImageCoordForSample(uLastSample,
+			SampleStepWorld(dSpacing, 1u), dImagePerWorld)), 4096.0f, 1.0e-2f,
+			"the closing sample taps one texel PAST the image, which is what the clamp exists for");
+	}
+
+	// A DENSER terrain: the sample step drops below a metre, which is the knob
+	// nothing shipped uses yet and would therefore never be exercised otherwise.
+	{
+		const Zenith_TerrainDimensions xDims{ 64.0f, 128u, 8u, 8u };   // 0.5m spacing
+		ZENITH_ASSERT_TRUE(xDims.VertexSpacing() == 0.5f, "128 quads over a 64m chunk is 0.5m spacing");
+		ZENITH_ASSERT_TRUE(SampleStepWorld(0.5, 1u) == 0.5, "a HIGH sample advances half a metre");
+		ZENITH_ASSERT_TRUE(SampleStepWorld(0.5, 4u) == 2.0, "a divisor-4 sample advances two metres");
+		// Twice the samples across the same extent.
+		ZENITH_ASSERT_EQ(SampleCountPerEdge(xDims.m_uGridChunksX, xDims.m_uQuadsPerChunkEdge), 1025u,
+			"8 chunks of 128 quads need 1025 samples per edge");
+	}
 }
 
 ZENITH_TEST(FluxTerrain, TotalChunksPinnedToFourThousandNinetySix)

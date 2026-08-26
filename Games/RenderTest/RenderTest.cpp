@@ -1178,8 +1178,13 @@ static void InitializeRenderTestResources()
 // position + UNORM16x2 UV). Every chunk's bytes moved and a v9 chunk's serialized
 // element table no longer matches Zenith_TerrainChunkLayout, so it is rejected --
 // no LOW geometry, no collision.
+// v11: terrain dimensions became per-terrain, and a baked set now carries a
+// REQUIRED TerrainDims.zdata manifest recording the dimensions its chunks were
+// quantised against. The chunk BYTES are unchanged at the default dimensions
+// RenderTest still bakes at, but a v10 set has no manifest, so the loader treats
+// it as a stale bake and refuses it -- no LOW geometry and no collision.
 // Bump this for any baked-BYTE change, not only when the heightfield moves.
-static const char* sk_szTerrainProcMarkerRel = "Terrain/terrain_proc_v10.marker";
+static const char* sk_szTerrainProcMarkerRel = "Terrain/terrain_proc_v11.marker";
 
 static bool RenderTest_TerrainAssetsNeedRegeneration()
 {
@@ -2454,7 +2459,8 @@ RenderTest_GrassApplyResult RenderTest_TryApplyGrassFromDisk()
 
 	// One call owns the whole load: the .ztxtr parsing, the normalized-to-metres
 	// height scale and the quantization all live behind it.
-	if (!g_xEngine.Grass().BuildFromTerrainTextures(strTerrainTextureDir, Flux_GrassImpl::BuildParams{ 1.0f }))
+	if (!g_xEngine.Grass().BuildFromTerrainTextures(strTerrainTextureDir,
+		pxTerrain->GetTerrainDimensions().MaxWorldSize(), Flux_GrassImpl::BuildParams{ 1.0f }))
 	{
 		return RenderTest_GrassApplyResult::FileMissing;   // unusable set — treat as missing (caller warns once)
 	}

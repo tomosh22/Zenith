@@ -216,7 +216,11 @@ public:
 	// directory. GrassType is OPTIONAL (absent => every texel type 0); a missing or
 	// malformed Height/GrassDensity is a hard failure that leaves the prior state
 	// completely untouched.
-	bool BuildFromTerrainTextures(const std::string& strDir, const BuildParams& xParams);
+	// fWorldSize is the SQUARE authoring domain the maps in strDir span -- the
+	// owning terrain's Zenith_TerrainDimensions::MaxWorldSize(). It used to be
+	// read from the fixed config constant inside, which silently placed every
+	// grass blade on a 4096m footprint regardless of how big the terrain was.
+	bool BuildFromTerrainTextures(const std::string& strDir, float fWorldSize, const BuildParams& xParams);
 
 	// The same build from raw pointers (editor live maps + headless tests). Invalid
 	// input is rejected with the prior state intact.

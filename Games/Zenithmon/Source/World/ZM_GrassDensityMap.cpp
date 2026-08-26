@@ -17,7 +17,7 @@ std::string ZM_GrassDensityMap::BuildCanonicalPath(const std::string& strTerrain
 	return xPath.lexically_normal().generic_string();
 }
 
-bool ZM_GrassDensityMap::Load(const std::string& strPath)
+bool ZM_GrassDensityMap::Load(const std::string& strPath, float fWorldSize)
 {
 	Flux_SurfaceInfo xInfo;
 	Zenith_Vector<uint8_t> xBytes;
@@ -29,7 +29,7 @@ bool ZM_GrassDensityMap::Load(const std::string& strPath)
 
 	return LoadDecoded(xInfo.m_eFormat, xInfo.m_uWidth, xInfo.m_uHeight,
 		xBytes.GetDataPointer(), static_cast<size_t>(xBytes.GetSize()),
-		uEXPECTED_WIDTH, uEXPECTED_HEIGHT, fWORLD_SIZE);
+		uEXPECTED_WIDTH, uEXPECTED_HEIGHT, fWorldSize);
 }
 
 void ZM_GrassDensityMap::Clear()

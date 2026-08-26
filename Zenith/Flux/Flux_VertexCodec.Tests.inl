@@ -1,6 +1,7 @@
 #include "UnitTests/Zenith_UnitTests.h"
 #include "Flux/Flux_VertexCodec.h"
-#include "Core/Zenith_TerrainChunkLayout.h"   // the authored box Flux_DequantPosition's only caller uses
+#include "Core/Zenith_TerrainChunkLayout.h"
+#include "Core/Zenith_TerrainDimensions.h"   // the authored box Flux_DequantPosition's only caller uses
 
 #include <cmath>   // sinf/cosf — sweep generation for the SNORM10 bit-identity pin
 #include <bit>     // std::bit_cast — constructed float bits for the half pins + the finite-bits branches
@@ -358,7 +359,9 @@ ZENITH_TEST(VertexCodec, DequantPositionMatchesSlangTranscription)
 		const char* m_szName;
 	};
 	const QuantBox axBOXES[] = {
-		// The authored terrain box — Flux_DequantPosition's first production caller.
+		// The DEFAULT authored terrain box — Flux_DequantPosition's first
+		// production caller, and the box every chunk on disk today was packed
+		// against.
 		{
 			Zenith_Maths::Vector3(Zenith_TerrainChunkLayout::afPOSITION_BOX_MIN[0],
 				Zenith_TerrainChunkLayout::afPOSITION_BOX_MIN[1],
@@ -366,7 +369,29 @@ ZENITH_TEST(VertexCodec, DequantPositionMatchesSlangTranscription)
 			Zenith_Maths::Vector3(Zenith_TerrainChunkLayout::afPOSITION_BOX_MAX[0],
 				Zenith_TerrainChunkLayout::afPOSITION_BOX_MAX[1],
 				Zenith_TerrainChunkLayout::afPOSITION_BOX_MAX[2]),
-			"authored terrain box"
+			"default authored terrain box"
+		},
+		// A NON-SQUARE per-terrain box, straight out of the spec type. The two
+		// horizontal axes now differ by 6x, which is exactly the case a decoder
+		// that had a square box baked into it would get wrong -- and it is the
+		// shape Route1 ships.
+		{
+			Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f),
+			Zenith_Maths::Vector3(
+				Zenith_TerrainDimensions{ 64.0f, 64u, 4u, 24u }.WorldSizeX(),
+				Zenith_TerrainChunkLayout::afPOSITION_BOX_MAX[1],
+				Zenith_TerrainDimensions{ 64.0f, 64u, 4u, 24u }.WorldSizeZ()),
+			"narrow per-terrain box (4x24 chunks)"
+		},
+		// A SMALL per-terrain box: the quantum is finer than the default's, and
+		// the transcription has to hold there too.
+		{
+			Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f),
+			Zenith_Maths::Vector3(
+				Zenith_TerrainDimensions{ 64.0f, 64u, 6u, 9u }.WorldSizeX(),
+				Zenith_TerrainChunkLayout::afPOSITION_BOX_MAX[1],
+				Zenith_TerrainDimensions{ 64.0f, 64u, 6u, 9u }.WorldSizeZ()),
+			"small per-terrain box (6x9 chunks)"
 		},
 		// A box straddling the origin with a negative bias and a sub-metre axis.
 		{ Zenith_Maths::Vector3(-128.0f, -4.5f, 0.25f), Zenith_Maths::Vector3(128.0f, 60.0f, 0.5f), "asymmetric box" },

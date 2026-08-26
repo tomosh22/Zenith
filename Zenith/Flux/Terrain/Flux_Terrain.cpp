@@ -88,13 +88,59 @@ struct TerrainConstants
 	float m_afPad[3] = { 0.0f, 0.0f, 0.0f };
 	float m_afPosQuantScale[4] = { 1.0f, 1.0f, 1.0f, 1.0f };   // xyz = box extent, w = UV dequant scale
 	float m_afPosQuantBias[4] = { 0.0f, 0.0f, 0.0f, 0.0f };    // xyz = box min
-} s_xTerrainConstants;
+	// x = chunk world size, yz = terrain world extent, w = pad. Read only by the
+	// debug visualisation modes, which used to spell 64.0 / 63.5 as literals and
+	// so drew a chunk grid that was simply wrong on any terrain whose chunks are
+	// not 64 metres.
+	float m_afTerrainDims[4] = { 64.0f, 4096.0f, 4096.0f, 0.0f };
+};
+// THERE IS NO FILE-STATIC INSTANCE ANY MORE, and that is the point of the
+// per-terrain box: one shared instance uploaded once per frame could only ever
+// describe one terrain, so a scene with two would decode the second against the
+// first's extent. Each Flux_TerrainStreamingState owns its own CB, filled and
+// uploaded per record in PreRenderUpdate and bound INSIDE the record loop.
+//
+// m_fUVScale stays a single process-wide debug variable (it is a look knob, not
+// a property of a terrain); it is folded into every record's upload.
+static float s_fTerrainUVScale = 0.07f;
+
+uint32_t Flux_TerrainConstantsBufferBytes()
+{
+	return static_cast<uint32_t>(sizeof(TerrainConstants));
+}
+
 static_assert(sizeof(TerrainConstants) == sizeof(Flux_Generated_Terrain::Terrain_ToGBuffer::TerrainConstants_CB),
 	"TerrainConstants CPU size != reflected CB size — regenerate codegen or update padding");
 static_assert(offsetof(TerrainConstants, m_fUVScale) == 0,
 	"TerrainConstants.m_fUVScale must remain at offset 0 to match the reflected layout");
 static_assert(offsetof(TerrainConstants, m_afPosQuantScale) == 16 && offsetof(TerrainConstants, m_afPosQuantBias) == 32,
 	"TerrainConstants dequant lanes must sit on the std140 float4 boundaries the shader reads them from");
+static_assert(offsetof(TerrainConstants, m_afTerrainDims) == 48,
+	"TerrainConstants.m_afTerrainDims must sit on the std140 float4 boundary the shader reads it from");
+
+// Fills the per-terrain dequantisation constants from one terrain's dimensions.
+// The box comes from the SAME helper the exporter and the live-edit hooks pack
+// against -- a chunk decodes where the shader is looking only because both sides
+// read Flux_MakeTerrainPosQuant.
+static void Flux_FillTerrainConstants(const Zenith_TerrainDimensions& xDims, TerrainConstants& xOut)
+{
+	const Flux_PosQuant xQuant = Flux_MakeTerrainPosQuant(xDims);
+	for (int i = 0; i < 3; i++)
+	{
+		xOut.m_afPosQuantScale[i] = xQuant.m_xScale[i];
+		xOut.m_afPosQuantBias[i] = xQuant.m_xBias[i];
+	}
+	// The UV lane is the SQUARE authoring domain the packer normalised against,
+	// so multiplying the dequantised lane by it yields world metres -- which is
+	// what keeps a material's world-space tiling correct at any terrain size
+	// without re-tuning m_fUVScale per terrain.
+	xOut.m_afPosQuantScale[3] = Flux_TerrainUVBoxMax(xDims);
+	xOut.m_fUVScale = s_fTerrainUVScale;
+	xOut.m_afTerrainDims[0] = xDims.m_fChunkWorldSize;
+	xOut.m_afTerrainDims[1] = xDims.WorldSizeX();
+	xOut.m_afTerrainDims[2] = xDims.WorldSizeZ();
+	xOut.m_afTerrainDims[3] = 0.0f;
+}
 
 // The velocity and shadow TerrainConstants blocks are HAND-MAINTAINED COPIES in
 // their own .slang files (same hazard as the VsIn copies, pinned in
@@ -320,24 +366,13 @@ void Flux_TerrainImpl::Initialise()
 {
 	BuildPipelines();
 
-	g_xEngine.FluxMemory().InitialiseDynamicConstantBuffer(nullptr, sizeof(struct TerrainConstants
-		), m_xTerrainConstantsBuffer);
-
-	// The dequant box, from the one helper the exporter and the live-edit hooks pack
-	// against. Constant for the process — it describes the authored terrain extent,
-	// not any particular component — so it is written once here rather than per frame.
-	{
-		const Flux_PosQuant xQuant = Flux_MakeTerrainPosQuant();
-		for (int i = 0; i < 3; i++)
-		{
-			s_xTerrainConstants.m_afPosQuantScale[i] = xQuant.m_xScale[i];
-			s_xTerrainConstants.m_afPosQuantBias[i] = xQuant.m_xBias[i];
-		}
-		s_xTerrainConstants.m_afPosQuantScale[3] = Zenith_TerrainChunkLayout::fUV_BOX_MAX;
-	}
+	// The dequant box is PER TERRAIN and lives on each Flux_TerrainStreamingState;
+	// there is nothing process-wide left to allocate or fill here. Each terrain's
+	// CB is created with its other culling buffers and filled per record in
+	// PreRenderUpdate.
 
 #ifdef ZENITH_DEBUG_VARIABLES
-	g_xEngine.DebugVariables().AddFloat({ "Render", "Terrain", "UV Scale" }, s_xTerrainConstants.m_fUVScale, 0., 10.);
+	g_xEngine.DebugVariables().AddFloat({ "Render", "Terrain", "UV Scale" }, s_fTerrainUVScale, 0., 10.);
 	g_xEngine.DebugVariables().AddBoolean({ "Render", "Terrain", "Wireframe" }, dbg_bWireframe);
 	g_xEngine.DebugVariables().AddUInt32({ "Render", "Terrain", "Debug Mode" }, dbg_uDebugMode, 0, 13);
 #endif
@@ -364,7 +399,6 @@ void Flux_TerrainImpl::ReleaseAssetReferences()
 
 void Flux_TerrainImpl::Shutdown()
 {
-	g_xEngine.FluxMemory().DestroyDynamicConstantBuffer(m_xTerrainConstantsBuffer);
 
 	// Manager Shutdown asserts the per-terrain state registry is empty —
 	// any terrain component still alive at engine teardown is a leak that
@@ -508,7 +542,24 @@ void Flux_TerrainImpl::PreRenderUpdate(void* /*pUserData*/)
 		}
 	}
 
-	g_xEngine.FluxMemory().UploadBufferData(m_xTerrainConstantsBuffer.GetBuffer().m_xVRAMHandle, &s_xTerrainConstants, sizeof(TerrainConstants));
+	// PER-TERRAIN dequantisation constants. One upload per record, into that
+	// record's own CB -- the fill reads the terrain's dimensions, so two terrains
+	// of different sizes in one scene each decode against their own box.
+	for (u_int u = 0; u < m_xTerrainRenderRecords.GetSize(); u++)
+	{
+		Flux_TerrainRenderRecord& xRec = m_xTerrainRenderRecords.Get(u);
+		// The CB is created with the terrain's other culling buffers, so a record
+		// gathered before InitializeCullingResources ran -- or one whose geometry
+		// was found unusable, which skips that init entirely -- has no VRAM behind
+		// it yet. ExecuteGBuffer skips the same records on its own guard.
+		if (xRec.m_pxState == nullptr || !xRec.m_pxState->m_bCullingResourcesInitialized)
+			continue;
+		TerrainConstants xConstants;
+		Flux_FillTerrainConstants(xRec.m_pxState->m_xDims, xConstants);
+		g_xEngine.FluxMemory().UploadBufferData(
+			xRec.m_pxState->m_xTerrainConstantsBuffer.GetBuffer().m_xVRAMHandle,
+			&xConstants, sizeof(TerrainConstants));
+	}
 
 	// ========== Per-Terrain Streaming + Chunk Data Upload ==========
 	// Each terrain has its own Flux_TerrainStreamingState, so streaming runs
@@ -657,8 +708,13 @@ static void ExecuteGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 	// Spine: the camera matrix comes from the VIEW set (set 1) g_xView, sourced
 	// from m_xViewConstantsBuffer (was the old per-frame FrameConstants bind).
 	// The GBuffer shader reads only the camera (no sun/time), so only g_xView is
-	// bound here. TerrainConstants (per-frame UV scale) is now a PassParams member.
-	xBinder.BindCBV(TGB::hTerrainConstants, &xTerrain.m_xTerrainConstantsBuffer.GetCBV());
+	// bound here.
+	//
+	// ★ TerrainConstants is bound INSIDE the record loop below, not here. It used
+	// to be bound once per pass, which was correct only while every terrain shared
+	// one quantisation box; with per-terrain boxes a single bind would decode every
+	// terrain after the first against the wrong extent -- geometry in the wrong
+	// place, with nothing failing.
 
 	// Phase 4c: bindless terrain layer textures via the material table. g_axMaterials is in
 	// the persistent GLOBAL set (set 0, Phase 5.3); the per-slot material indices ride the
@@ -670,13 +726,25 @@ static void ExecuteGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 		const Flux_TerrainRenderRecord& xRec = xTerrain.m_xTerrainRenderRecords.Get(u);
 		Flux_TerrainStreamingState* const pxState = xRec.m_pxState;
 		if(!pxState->m_xUnifiedVertexBuffer.GetBuffer().m_ulSize) continue;
+		// Its per-terrain constants CB comes from the same init as its culling
+		// buffers; binding one that was never created would hand the VS an
+		// undefined descriptor and dequantise against garbage.
+		if (!pxState->m_bCullingResourcesInitialized) continue;
+
+		// This terrain's own dequantisation box (see the note above the loop).
+		xBinder.BindCBV(TGB::hTerrainConstants, &pxState->m_xTerrainConstantsBuffer.GetCBV());
 
 		Zenith_MaterialAsset* apxMaterials[4] = { xRec.m_apxMaterials[0], xRec.m_apxMaterials[1], xRec.m_apxMaterials[2], xRec.m_apxMaterials[3] };
 
 		// Build and push terrain material constants - uses scratch buffer in set 3.
 		TerrainMaterialDrawConstants xTerrainMatConst;
+		// The splat region is the terrain's own SQUARE authoring domain -- the same
+		// extent every per-set image (heightfield, splat, grass) spans -- not the
+		// config's fixed 4096. A shrunken terrain sampling the splatmap over 4096m
+		// would read only the first few percent of it.
+		const float fSplatExtent = pxState->m_xDims.MaxWorldSize();
 		BuildTerrainMaterialDrawConstants(xTerrainMatConst, apxMaterials, 4, dbg_uDebugMode,
-			0.0f, 0.0f, Flux_TerrainConfig::TERRAIN_SIZE, Flux_TerrainConfig::TERRAIN_SIZE);
+			0.0f, 0.0f, fSplatExtent, fSplatExtent);
 		// Phase 4c: the per-slot GPU material-table indices (resolved on the main
 		// thread in PreRenderUpdate). The shader loads g_axMaterials[idx] per slot
 		// and samples its bindless texture indices from g_axTextures.

@@ -54,16 +54,17 @@ const char* ZM_ResumeValidityName(ZM_RESUME_VALIDITY eValidity);
 // The coordinate sanity bound a restored transform must satisfy on ALL THREE
 // axes, in metres from the origin.
 //
-// This constant is invented HERE rather than imported because the engine has no
-// world-extent value this layer may reach: the only world-size number in the
-// game is ZM_GrassDensityMap::fWORLD_SIZE (4096), and that header drags in
-// Flux/Flux_Enums.h plus <string>/<vector>, none of which may enter a pure
-// Source/Save/ TU. ZM_WorldSpec carries no extent either. 4096 m matches the
-// grass map's world size and is comfortably larger than anything authored today
+// This constant is invented HERE rather than imported because a world extent is
+// PER-TERRAIN now (Zenith_TerrainDimensions), and this layer has no terrain to
+// ask: a resume point is validated before any scene is loaded, so there is no
+// component, no streaming state and no recipe in reach. ZM_WorldSpec carries no
+// extent either. 4096 m is the DEFAULT terrain's extent -- what every Zenithmon
+// recipe bakes at -- and is comfortably larger than anything authored today
 // (Dawnmere sits around x/z 384..540), so the bound only ever fires on an edited
 // or corrupted save -- which is exactly what it is for: a garbage transform must
 // degrade to marker placement, never teleport the player into the void where
-// nothing can reach them.
+// nothing can reach them. It is a SANITY bound, not a world extent: it must stay
+// at least as large as the biggest terrain the game ships, never track one.
 static constexpr float fZM_RESUME_WORLD_EXTENT = 4096.0f;
 
 // PURE. bTagGrammarValid is the caller's ALREADY-COMPUTED

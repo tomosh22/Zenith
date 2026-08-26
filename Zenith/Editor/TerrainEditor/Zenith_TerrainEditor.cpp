@@ -31,10 +31,34 @@ extern Zenith_Image Zenith_Tools_LoadHeightmapAuto(const std::string& strPath);
 
 // The header deliberately includes no Flux header — pin its mirrored terrain
 // constants against the real config here instead.
+// CAPACITY pins, not extent pins: the session's chunk-slot table and the render
+// config address the same fixed 64x64 grid, and the height lid is global.
 static_assert(Zenith_TerrainEditor::uCHUNK_GRID == Flux_TerrainConfig::CHUNK_GRID_SIZE, "Terrain editor chunk grid out of sync with Flux_TerrainConfig");
 static_assert(Zenith_TerrainEditor::uCHUNK_COUNT == Flux_TerrainConfig::TOTAL_CHUNKS, "Terrain editor chunk count out of sync with Flux_TerrainConfig");
-static_assert(Zenith_TerrainEditor::fTERRAIN_WORLD_SIZE == Flux_TerrainConfig::TERRAIN_SIZE, "Terrain editor world size out of sync with Flux_TerrainConfig");
 static_assert(Zenith_TerrainEditor::fTERRAIN_MAX_HEIGHT == Flux_TerrainConfig::MAX_TERRAIN_HEIGHT, "Terrain editor max height out of sync with Flux_TerrainConfig");
+// The DEFAULT session domain must still be the historical 4096m, and one
+// heightfield pixel must still be exactly one metre there -- that exactness is
+// what makes a default-dimensioned session reproduce the sculpt arithmetic it
+// replaces bit-for-bit.
+static_assert(Zenith_TerrainDimensions::Default().MaxWorldSize() == Flux_TerrainConfig::TERRAIN_SIZE,
+	"The default terrain editor domain must remain the configured terrain size");
+static_assert(Zenith_TerrainDimensions::Default().WorldPerImagePixel(Zenith_TerrainEditor::uHEIGHTFIELD_SIZE) == 1.0f,
+	"A default-dimensioned session must remain exactly one metre per heightfield pixel");
+
+bool Zenith_TerrainEditor::SetDimensions(const Zenith_TerrainDimensions& xDims)
+{
+	if (!xDims.IsValid())
+	{
+		m_strDimensionsValidationError =
+			"Invalid terrain dimensions: chunk size must be positive, quads per chunk edge a power of two "
+			"in [4, 256], and each grid axis in [1, 64].";
+		return false;
+	}
+
+	m_xDims = xDims;
+	m_strDimensionsValidationError.clear();
+	return true;
+}
 
 //-----------------------------------------------------------------------------
 // Session lifecycle
@@ -148,8 +172,21 @@ void Zenith_TerrainEditor::Open(Zenith_EntityID uTerrainEntity)
 		{
 			m_strAssetSet.clear();
 		}
+
+		// The DIMENSIONS come from the component for the same reason the set
+		// does, and it matters more: every world<->pixel conversion this session
+		// makes, and the quantisation box its sculpt hook re-encodes against, are
+		// derived from them. A session left on the default spec while attached to
+		// a 6x9 terrain would put every brush stroke in the wrong place.
+		m_xDims = pxTerrain->GetTerrainDimensions();
+		Zenith_Assert(m_xDims.IsValid(), "Terrain component exposed invalid persisted dimensions");
+		if (!m_xDims.IsValid())
+		{
+			m_xDims = Zenith_TerrainDimensions::Default();
+		}
 	}
 	m_strAssetSetValidationError.clear();
+	m_strDimensionsValidationError.clear();
 
 	// The engine's live table is the session's starting point, not the built-in
 	// set: a game that ships GrassTypes.zdata loaded it at boot, and an editor
@@ -187,7 +224,13 @@ void Zenith_TerrainEditor::OpenStandalone()
 	}
 	GrassTypes_Reload();
 
-	Zenith_Log(LOG_CATEGORY_EDITOR, "[TerrainEditor] Standalone (component-less) session opened");
+	// A standalone session keeps whatever dimensions were STAGED on it (an
+	// authoring step may set them before opening one), and a fresh session
+	// starts on the default spec -- there is no component to read them from.
+
+	Zenith_Log(LOG_CATEGORY_EDITOR,
+		"[TerrainEditor] Standalone (component-less) session opened (%ux%u chunks @ %.2fm)",
+		m_xDims.m_uGridChunksX, m_xDims.m_uGridChunksZ, m_xDims.m_fChunkWorldSize);
 }
 
 void Zenith_TerrainEditor::Close()
@@ -304,8 +347,9 @@ void Zenith_TerrainEditor::EnsureImagesAllocated()
 	if (m_xGrassDensity.IsEmpty())
 	{
 		// Default 0 — grass is painted IN (Unity detail-painting convention).
-		// A default of 1 would ask the grass system for ~800M blades over the
-		// 4096m terrain and slam into its 2M instance cap on the first corner.
+		// A default of 1 would ask the grass system for ~800M blades over a
+		// default-sized (4096m) terrain and slam into its 2M instance cap on the
+		// first corner. A smaller terrain scales that down, never away.
 		m_xGrassDensity = Zenith_Image(uGRASS_DENSITY_SIZE, uGRASS_DENSITY_SIZE);
 	}
 	if (m_xGrassType.GetSize() == 0)
@@ -825,8 +869,12 @@ float Zenith_TerrainEditor::SampleHeightNorm(float fPixelX, float fPixelZ) const
 
 float Zenith_TerrainEditor::SampleHeightWorld(float fWorldX, float fWorldZ) const
 {
-	// World X/Z == heightmap pixel coordinates (TERRAIN_SCALE == 1).
-	return SampleHeightNorm(fWorldX, fWorldZ) * fTERRAIN_MAX_HEIGHT;
+	// World X/Z -> heightfield PIXEL coordinates. The scale is exactly 1.0f at
+	// default dimensions, so this is bit-identical to the direct pass-through it
+	// replaces -- and it is the one place that used to encode "one pixel is one
+	// metre" as an unstated fact.
+	const float fPxPerWorld = HeightPxPerWorld();
+	return SampleHeightNorm(fWorldX * fPxPerWorld, fWorldZ * fPxPerWorld) * fTERRAIN_MAX_HEIGHT;
 }
 
 ZENITH_AUTHORING_DETERMINISM_END
@@ -843,7 +891,8 @@ bool Zenith_TerrainEditor::RaycastHeightfield(const Zenith_Maths::Vector3& xOrig
 	float fTMin = 0.0f;
 	float fTMax = 16384.0f;
 	const float afBoxMin[3] = { 0.0f, -32.0f, 0.0f };
-	const float afBoxMax[3] = { fTERRAIN_WORLD_SIZE, fTERRAIN_MAX_HEIGHT + 32.0f, fTERRAIN_WORLD_SIZE };
+	// PER-AXIS: a narrow terrain must not accept a ray hit off its long side.
+	const float afBoxMax[3] = { m_xDims.WorldSizeX(), fTERRAIN_MAX_HEIGHT + 32.0f, m_xDims.WorldSizeZ() };
 	const float afOrigin[3] = { xOrigin.x, xOrigin.y, xOrigin.z };
 	const float afDir[3] = { xDir.x, xDir.y, xDir.z };
 	for (u_int u = 0; u < 3; u++)
@@ -935,11 +984,14 @@ void Zenith_TerrainEditor::MarkHeightRegionDirty(float fMinPxX, float fMinPxZ, f
 		return;
 	}
 
-	const float fChunkSize = fTERRAIN_WORLD_SIZE / static_cast<float>(uCHUNK_GRID);
-	const u_int uCXMin = static_cast<u_int>(fMinPxX / fChunkSize);
-	const u_int uCXMax = std::min(static_cast<u_int>(fMaxPxX / fChunkSize), uCHUNK_GRID - 1);
-	const u_int uCZMin = static_cast<u_int>(fMinPxZ / fChunkSize);
-	const u_int uCZMax = std::min(static_cast<u_int>(fMaxPxZ / fChunkSize), uCHUNK_GRID - 1);
+	// The rect arrives in HEIGHTFIELD PIXELS, so the chunk pitch has to be in
+	// pixels too -- world chunk size scaled by the session's pixels-per-metre.
+	// The clamp is the ACTIVE grid, not the fixed capacity.
+	const float fChunkSizePx = m_xDims.m_fChunkWorldSize * HeightPxPerWorld();
+	const u_int uCXMin = static_cast<u_int>(fMinPxX / fChunkSizePx);
+	const u_int uCXMax = std::min(static_cast<u_int>(fMaxPxX / fChunkSizePx), m_xDims.m_uGridChunksX - 1);
+	const u_int uCZMin = static_cast<u_int>(fMinPxZ / fChunkSizePx);
+	const u_int uCZMax = std::min(static_cast<u_int>(fMaxPxZ / fChunkSizePx), m_xDims.m_uGridChunksZ - 1);
 
 	// One target resolve for the whole rect (standalone sessions resolve null
 	// and just track the dirty bits).
@@ -969,11 +1021,11 @@ void Zenith_TerrainEditor::MarkHeightRegionDirty(float fMinPxX, float fMinPxZ, f
 
 void Zenith_TerrainEditor::UpdateChunkAABB(Flux_TerrainStreamingState& xState, u_int uChunkX, u_int uChunkZ)
 {
-	const float fChunkSize = fTERRAIN_WORLD_SIZE / static_cast<float>(uCHUNK_GRID);
-	const u_int uPx0 = static_cast<u_int>(uChunkX * fChunkSize);
-	const u_int uPz0 = static_cast<u_int>(uChunkZ * fChunkSize);
-	const u_int uPx1 = std::min(uPx0 + static_cast<u_int>(fChunkSize), uHEIGHTFIELD_SIZE - 1);
-	const u_int uPz1 = std::min(uPz0 + static_cast<u_int>(fChunkSize), uHEIGHTFIELD_SIZE - 1);
+	const float fChunkSizePx = m_xDims.m_fChunkWorldSize * HeightPxPerWorld();
+	const u_int uPx0 = static_cast<u_int>(uChunkX * fChunkSizePx);
+	const u_int uPz0 = static_cast<u_int>(uChunkZ * fChunkSizePx);
+	const u_int uPx1 = std::min(uPx0 + static_cast<u_int>(fChunkSizePx), uHEIGHTFIELD_SIZE - 1);
+	const u_int uPz1 = std::min(uPz0 + static_cast<u_int>(fChunkSizePx), uHEIGHTFIELD_SIZE - 1);
 
 	float fMinH = 1.0f;
 	float fMaxH = 0.0f;
@@ -1065,7 +1117,7 @@ void Zenith_TerrainEditor::ForceEvictSessionDirtyChunks()
 //-----------------------------------------------------------------------------
 
 void Zenith_TerrainEditor::ChunkVertexHook(void* pUser, uint32_t uChunkX, uint32_t uChunkY,
-	void* pVerts, uint32_t uNumVerts, uint32_t uStride)
+	void* pVerts, uint32_t uNumVerts, uint32_t uStride, const Zenith_TerrainDimensions& xDims)
 {
 	Zenith_TerrainEditor* pxThis = static_cast<Zenith_TerrainEditor*>(pUser);
 	if (pxThis == nullptr || pVerts == nullptr || uNumVerts == 0u ||
@@ -1084,7 +1136,13 @@ void Zenith_TerrainEditor::ChunkVertexHook(void* pUser, uint32_t uChunkX, uint32
 	}
 
 	u_int8* pBytes = static_cast<u_int8*>(pVerts);
-	const Flux_PosQuant xQuant = Flux_MakeTerrainPosQuant();
+	// The box comes from the STREAMING STATE's dimensions, not the session's: the
+	// bytes being re-shaped were baked against the terrain this hook is attached
+	// to, and a standalone session may be staging different dimensions for a
+	// future bake.
+	const Flux_PosQuant xQuant = Flux_MakeTerrainPosQuant(xDims);
+	const float fUVBoxMax = Flux_TerrainUVBoxMax(xDims);
+	const float fHeightPxPerWorld = pxThis->HeightPxPerWorld();
 	for (uint32_t i = 0; i < uNumVerts; i++)
 	{
 		u_int8* pVertex = pBytes + static_cast<size_t>(i) * uStride;
@@ -1103,9 +1161,12 @@ void Zenith_TerrainEditor::ChunkVertexHook(void* pUser, uint32_t uChunkX, uint32
 		// word its un-brushed neighbour still carries (a visible dirty<->clean seam on
 		// steep slopes). Rounding recovers the authored pixel exactly: the dequant
 		// error is 0.031 px against a 0.5 px rounding threshold.
-		const Zenith_Maths::Vector2 xUV = Flux_ReadTerrainVertexUV(pVertex);
-		const float fU = std::round(xUV.x);
-		const float fV = std::round(xUV.y);
+		// The UV lane decodes to authored WORLD METRES; the heightfield is indexed
+		// in PIXELS, so convert before snapping. At default dimensions the scale
+		// is exactly 1.0f and this is the same round() it always was.
+		const Zenith_Maths::Vector2 xUVWorld = Flux_ReadTerrainVertexUV(pVertex, fUVBoxMax);
+		const float fU = std::round(xUVWorld.x * fHeightPxPerWorld);
+		const float fV = std::round(xUVWorld.y * fHeightPxPerWorld);
 
 		// Decode / rewrite Y / re-encode. Re-encoding a value that came out of the
 		// decode is the identity — it is already a quantum representative and the

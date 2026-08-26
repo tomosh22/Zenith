@@ -818,7 +818,7 @@ void Zenith_TerrainChunkSpanRecorderTests::Run()
 	// LoadCombinedPhysicsGeometryCore computes them -- the core reserves for a
 	// full grid and the sparse result simply uses less of it.
 	ZENITH_ASSERT_TRUE(Zenith_TerrainComponent::CombineTerrainChunkGridCore(
-		uGRID_SIZE, uVERTS_PER_CHUNK * uCELL_COUNT, uINDICES_PER_CHUNK * uCELL_COUNT,
+		uGRID_SIZE, uGRID_SIZE, uVERTS_PER_CHUNK * uCELL_COUNT, uINDICES_PER_CHUNK * uCELL_COUNT,
 		&Zenith_TerrainChunkSpanRecorderTests::BuildChunk, &xContext, nullptr,
 		pxCombined, xDiagnostics, axSpans, uCELL_COUNT, &uSpanCount),
 		"a grid whose (0,0) anchor loads must still combine with one middle chunk missing");
@@ -1104,7 +1104,7 @@ void Zenith_TerrainCleanupPhysicsGeometryTests::Run()
 	Zenith_TerrainComponent xTerrain(xInertEntity);
 
 	Zenith_TerrainComponent::TerrainSparseLoadDiagnostics xDiagnostics;
-	const bool bCombined = xTerrain.LoadCombinedPhysicsGeometryCore(1u,
+	const bool bCombined = xTerrain.LoadCombinedPhysicsGeometryCore(1u, 1u,
 		&Zenith_TerrainCleanupPhysicsGeometryTests::BuildChunk, nullptr, xDiagnostics);
 	ZENITH_ASSERT_TRUE(bCombined, "a single always-succeeding chunk must combine");
 

@@ -3262,6 +3262,48 @@ ZENITH_TEST(EditorAutomation, AutomationSessionGating)
 }
 
 //=============================================================================
+// Terrain dimensions authoring step
+//=============================================================================
+
+ZENITH_TEST(Automation, TerrainSetDimensionsPacksItsPayload)
+{
+	// The step's payload is the only place the four knobs cross from a game's
+	// authoring code into the editor session, and the packing is positional
+	// (afArgs[0..1] + aiArgs[0..1]). A transposed slot would stage a terrain of
+	// the wrong shape with nothing failing until a bake produced the wrong number
+	// of chunks, so the lane assignment is pinned here.
+	Zenith_EditorAutomation xAuto;
+	xAuto.Reset();
+	xAuto.AddStep_TerrainSetDimensions(32.0f, 0.5f, 6, 9);
+
+	ZENITH_ASSERT_EQ(xAuto.m_axActions.GetSize(), 1u, "the step must queue exactly one action");
+	const Zenith_EditorAction& xAction = xAuto.m_axActions.Get(0);
+	ZENITH_ASSERT_TRUE(xAction.m_eType == Zenith_EditorActionType::TERRAIN_EDITOR_SET_DIMENSIONS,
+		"the step must queue TERRAIN_EDITOR_SET_DIMENSIONS");
+	ZENITH_ASSERT_EQ_FLOAT(xAction.m_afArgs[0], 32.0f, 1.0e-5f, "afArgs[0] carries the chunk world size");
+	ZENITH_ASSERT_EQ_FLOAT(xAction.m_afArgs[1], 0.5f, 1.0e-5f, "afArgs[1] carries the vertex spacing");
+	ZENITH_ASSERT_EQ(xAction.m_aiArgs[0], 6, "aiArgs[0] carries the X grid extent");
+	ZENITH_ASSERT_EQ(xAction.m_aiArgs[1], 9, "aiArgs[1] carries the Z grid extent");
+
+	xAuto.Reset();
+}
+
+ZENITH_TEST(Automation, TerrainSetDimensionsIsInsideTheTerrainRoutingRange)
+{
+	// The block is routed by a pair of range comparisons, and SET_DIMENSIONS was
+	// APPENDED past what used to be the last member. If the upper comparison were
+	// not moved with it, the action would fall through to the generic executor and
+	// assert at boot rather than at build time -- so the membership is asserted
+	// from this side too, not only by the header's width static_assert.
+	const int iAction = static_cast<int>(Zenith_EditorActionType::TERRAIN_EDITOR_SET_DIMENSIONS);
+	const int iFirst = static_cast<int>(Zenith_EditorActionType::TERRAIN_EDITOR_SET_ASSET_SET);
+	ZENITH_ASSERT_GE(iAction, iFirst, "SET_DIMENSIONS must sit at or after the terrain block's first member");
+	ZENITH_ASSERT_EQ(iAction - static_cast<int>(Zenith_EditorActionType::TERRAIN_EDITOR_EXPORT_CHUNKS_RECT), 1,
+		"SET_DIMENSIONS must be the member immediately after the previous last one — the router "
+		"compares against it as the block's upper bound");
+}
+
+//=============================================================================
 // Sub-executor range contiguity
 //=============================================================================
 
@@ -3291,7 +3333,7 @@ ZENITH_TEST(Automation, GrassTypesEnumBlockIsContiguous)
 	// ... and the block must not have grown INTO its neighbours: the terrain
 	// editor range ends immediately before it, and the prefab range begins
 	// immediately after, so both boundaries are pinned from this side too.
-	ZENITH_ASSERT_EQ(iFirst - static_cast<int>(Zenith_EditorActionType::TERRAIN_EDITOR_EXPORT_CHUNKS_RECT), 1,
+	ZENITH_ASSERT_EQ(iFirst - static_cast<int>(Zenith_EditorActionType::TERRAIN_EDITOR_SET_DIMENSIONS), 1,
 		"the grass-type block must start immediately after the terrain-editor range ends");
 	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::CREATE_PREFAB_FROM_SELECTED) -
 		static_cast<int>(Zenith_EditorActionType::GRASS_TYPES_SAVE), 1,

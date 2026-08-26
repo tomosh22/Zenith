@@ -195,7 +195,9 @@ survive it** — VRAM is released only by `Shutdown`.
 // From a terrain texture directory: Height + GrassDensity are REQUIRED,
 // GrassType is optional (absent => every texel type 0). A malformed required
 // map is a hard failure that leaves the prior state completely untouched.
-g_xEngine.Grass().BuildFromTerrainTextures(strTexDir, { .m_fDensityScale = 1.0f });
+// fWorldSize is the OWNING TERRAIN's square authoring domain --
+// pxTerrain->GetTerrainDimensions().MaxWorldSize() -- not a constant.
+g_xEngine.Grass().BuildFromTerrainTextures(strTexDir, fWorldSize, { .m_fDensityScale = 1.0f });
 
 // The same build from raw CPU pointers (editor live maps + headless tests).
 Flux_GrassImpl::MapSet xMaps{ ... };   // data is COPIED, quantized to the GPU formats
@@ -241,15 +243,22 @@ truth* and must never be asserted on in a `Null_` test.
 
 1. **Paint the maps** in the terrain editor: the `GrassDensity` tool paints
    coverage `[0,1]`, the `GrassType` tool stamps the per-texel type index
-   (0 = default, 255 = no grass). Both are 1024² maps over the terrain footprint.
+   (0 = default, 255 = no grass). Both are 1024² maps over the terrain's square
+   authoring domain — a FIXED resolution over a per-terrain extent, so a smaller
+   terrain gets finer texels rather than fewer.
 2. **Bake** them out beside the terrain's other textures as `GrassDensity.ztxtr`
    (R32_SFLOAT) and `GrassType.ztxtr` (R8_UNORM, POINT-sampled). `Height.ztxtr`
    (R32_SFLOAT, **normalized** — scaled to metres on load) is the third input.
    Height and GrassDensity are required; GrassType is optional.
-3. **Feed** the directory to `BuildFromTerrainTextures`. The world footprint is
-   taken from `Flux_TerrainConfig::TERRAIN_SIZE`, not from the files. Coverage and
-   type are quantized to R8 and height to R16 unorm over `[bias, bias + scale]`
-   metres, so the fixed-point range tracks the terrain actually loaded.
+3. **Feed** the directory to `BuildFromTerrainTextures`, ALONG WITH the owning
+   terrain's world footprint (`GetTerrainDimensions().MaxWorldSize()`). That
+   footprint used to be read from `Flux_TerrainConfig::TERRAIN_SIZE` inside, which
+   silently placed every blade on a 4096m square regardless of how big the terrain
+   actually was — correct only while every terrain was that size. It is still not
+   taken from the FILES (the maps are square and fixed-resolution; only the
+   world-per-texel scale varies). Coverage and type are quantized to R8 and height
+   to R16 unorm over `[bias, bias + scale]` metres, so the fixed-point range tracks
+   the terrain actually loaded.
 4. **Type parameters** come from `game:Vegetation/GrassTypes.zdata`
    (`Zenith_GrassTypeTableAsset`) if the game ships one, loaded once at
    `Initialise` before the first gather. **No game ships one today: absence is the

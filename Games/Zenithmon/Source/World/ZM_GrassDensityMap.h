@@ -12,15 +12,22 @@
 class ZM_GrassDensityMap
 {
 public:
+	// The map's RESOLUTION is fixed for every terrain; only the world extent it
+	// spans varies, which is why that extent is a Load parameter and not a
+	// constant here. It used to be `fWORLD_SIZE = 4096.0f`, which silently
+	// sampled every terrain's grass over a 4096m square regardless of how big
+	// the terrain actually was -- correct only while every terrain was that size.
 	static constexpr u_int uEXPECTED_WIDTH = 1024;
 	static constexpr u_int uEXPECTED_HEIGHT = 1024;
 	static constexpr size_t ulEXPECTED_BYTE_COUNT =
 		static_cast<size_t>(uEXPECTED_WIDTH) * uEXPECTED_HEIGHT * sizeof(float);
-	static constexpr float fWORLD_SIZE = 4096.0f;
 
 	static std::string BuildCanonicalPath(const std::string& strTerrainAssetDirectory);
 
-	bool Load(const std::string& strPath);
+	// fWorldSize is the owning terrain's SQUARE AUTHORING DOMAIN --
+	// Zenith_TerrainDimensions::MaxWorldSize() -- the extent this 1024-square map
+	// was painted over.
+	bool Load(const std::string& strPath, float fWorldSize);
 	void Clear();
 
 	// Shared decoded-data validation seam. Production calls this with the fixed

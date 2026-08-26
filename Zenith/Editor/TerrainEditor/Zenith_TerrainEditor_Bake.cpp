@@ -17,9 +17,11 @@
 #include <filesystem>
 
 // Tools export entry point (extern declaration).
-extern void ExportHeightmapFromMat(const Zenith_Image& xHeightmap, const std::string& strOutputDir);
+extern void ExportHeightmapFromMat(const Zenith_Image& xHeightmap, const std::string& strOutputDir,
+	const Zenith_TerrainDimensions& xDims);
 extern bool ExportHeightmapFromMatRect(const Zenith_Image& xHeightmap,
-	const std::string& strOutputDir, const Flux_TerrainExportRect& xRect);
+	const std::string& strOutputDir, const Zenith_TerrainDimensions& xDims,
+	const Flux_TerrainExportRect& xRect);
 
 //=============================================================================
 // Persistence: texture save (.ztxtr to the game assets dir), chunk-mesh bake,
@@ -220,7 +222,7 @@ void Zenith_TerrainEditor::BakeMeshesToPreparedDirectory(
 	Zenith_Log(LOG_CATEGORY_EDITOR,
 		"[TerrainEditor] Exporting chunk meshes to %s", strMeshDirectory.c_str());
 
-	ExportHeightmapFromMat(m_xHeightfield, strMeshDirectory);
+	ExportHeightmapFromMat(m_xHeightfield, strMeshDirectory, m_xDims);
 
 	m_strStatus = "Terrain chunk meshes exported";
 	Zenith_Log(LOG_CATEGORY_EDITOR, "[TerrainEditor] Chunk-mesh export complete");
@@ -273,7 +275,7 @@ bool Zenith_TerrainEditor::BakeMeshesRectForTerrainRoot(
 				xBounds.GetMinX(), xBounds.GetMinY(), xBounds.GetMaxX(), xBounds.GetMaxY(),
 				uChunkCount, uFileCount, strOutputDir.c_str());
 
-			if (!ExportHeightmapFromMatRect(xEditor.m_xHeightfield, strOutputDir, xBounds))
+			if (!ExportHeightmapFromMatRect(xEditor.m_xHeightfield, strOutputDir, xEditor.m_xDims, xBounds))
 			{
 				xEditor.m_strStatus = "Bounded terrain chunk-mesh export failed.";
 				return false;
@@ -357,6 +359,14 @@ bool Zenith_TerrainEditor::BakeFullForTerrainRoot(const std::string& strTerrainR
 					if (!pxTerrain->SetTerrainAssetSet(xEditor.m_strAssetSet))
 					{
 						xEditor.m_strStatus = "Terrain bake failed to commit the validated staged set.";
+						return false;
+					}
+					// The staged dimensions travel with the staged set: the bytes
+					// just written were quantised against THIS box, so the component
+					// has to decode them against the same one.
+					if (!pxTerrain->SetTerrainDimensions(xEditor.m_xDims))
+					{
+						xEditor.m_strStatus = "Terrain bake failed to commit the staged terrain dimensions.";
 						return false;
 					}
 					if (!pxTerrain->RegenerateFromHeightfield(xEditor.m_xHeightfield))
@@ -465,7 +475,7 @@ void Zenith_TerrainEditor::RebuildGrass()
 	xMaps.uCoverageSize = uGRASS_DENSITY_SIZE;
 	xMaps.pType = m_xGrassType.GetDataPointer();
 	xMaps.uTypeSize = uGRASS_TYPE_SIZE;
-	xMaps.fWorldSize = fTERRAIN_WORLD_SIZE;
+	xMaps.fWorldSize = WorldSize();
 
 	Flux_GrassImpl::BuildParams xParams;
 	xParams.m_fDensityScale = 1.0f;

@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Core/Zenith_TerrainDimensions.h"
 
 #include "Core/Zenith_TestFramework.h"
 #include "Zenithmon/Source/World/ZM_TerrainAuthoring.h"
@@ -29,11 +30,11 @@ namespace
 	const ZM_ExpectedTerrainRecipe s_axExpectedRecipes[] =
 	{
 		{ ZM_SCENE_DAWNMERE, ZM_SCENE_KIND_TOWN, 2u, "Dawnmere",
-			0x7BF32CA4u, 16, 16, 771u, 772u },
+			0x7BF32CA4u, 16, 16, 772u, 773u },
 		{ ZM_SCENE_THORNACRE, ZM_SCENE_KIND_TOWN, 3u, "Thornacre",
-			0x9D41BD83u, 16, 16, 771u, 772u },
+			0x9D41BD83u, 16, 16, 772u, 773u },
 		{ ZM_SCENE_ROUTE1, ZM_SCENE_KIND_ROUTE, 20u, "Route1",
-			0x552E711Du, 16, 24, 1155u, 1156u },
+			0x552E711Du, 16, 24, 1156u, 1157u },
 	};
 	static_assert(sizeof(s_axExpectedRecipes) / sizeof(s_axExpectedRecipes[0]) ==
 		uZM_TERRAIN_RECIPE_COUNT);
@@ -376,9 +377,10 @@ ZENITH_TEST(ZM_TerrainRecipeSet, RegistryHasExactlyThreeWorldSpecRecipesInFixedO
 {
 	ZENITH_ASSERT_EQ(ZM_GetTerrainAuthoringRecipeCount(), 3u);
 	ZENITH_ASSERT_EQ(ZM_GetTerrainAuthoringRecipeCount(), uZM_TERRAIN_RECIPE_COUNT);
-	ZENITH_ASSERT_EQ(uZM_DAWNMERE_REQUIRED_OUTPUT_COUNT, 771u);
-	ZENITH_ASSERT_EQ(uZM_THORNACRE_REQUIRED_OUTPUT_COUNT, 771u);
-	ZENITH_ASSERT_EQ(uZM_ROUTE1_REQUIRED_OUTPUT_COUNT, 1155u);
+	// chunks x 3 mesh files + Height/Splatmap_RGBA/GrassDensity + TerrainDims.zdata.
+	ZENITH_ASSERT_EQ(uZM_DAWNMERE_REQUIRED_OUTPUT_COUNT, 772u);
+	ZENITH_ASSERT_EQ(uZM_THORNACRE_REQUIRED_OUTPUT_COUNT, 772u);
+	ZENITH_ASSERT_EQ(uZM_ROUTE1_REQUIRED_OUTPUT_COUNT, 1156u);
 
 	for (u_int i = 0; i < uZM_TERRAIN_RECIPE_COUNT; ++i)
 	{
@@ -819,7 +821,9 @@ ZENITH_TEST(ZM_TerrainRecipeSet, OutputsAreUniqueSetContainedAndQueuePolicyIsPur
 		ZENITH_ASSERT_EQ(uRenderCount, uArea);
 		ZENITH_ASSERT_EQ(uRenderLowCount, uArea);
 		ZENITH_ASSERT_EQ(uPhysicsCount, uArea);
-		ZENITH_ASSERT_EQ(uTextureCount, 3u);
+		// Three .ztxtr maps plus TerrainDims.zdata -- the manifest lands in this
+		// bucket because it is not a Render_/Render_LOW_/Physics_ chunk.
+		ZENITH_ASSERT_EQ(uTextureCount, 4u);
 
 		const char* aszMeshPrefixes[] = { "Render", "Render_LOW", "Physics" };
 		u_int uExpectedOutputIndex = 0u;
@@ -842,12 +846,17 @@ ZENITH_TEST(ZM_TerrainRecipeSet, OutputsAreUniqueSetContainedAndQueuePolicyIsPur
 			}
 		}
 		ZENITH_ASSERT_EQ(uExpectedOutputIndex, uArea * 3u);
-		ZENITH_ASSERT_STREQ(xOutputsA.Get(xOutputsA.GetSize() - 3u).c_str(),
+		// The four non-chunk outputs, in emission order. TerrainDims.zdata is
+		// LAST and is a REQUIRED output: a set missing it is a stale bake the
+		// runtime loader refuses outright.
+		ZENITH_ASSERT_STREQ(xOutputsA.Get(xOutputsA.GetSize() - 4u).c_str(),
 			(strPrefix + "Height.ztxtr").c_str());
-		ZENITH_ASSERT_STREQ(xOutputsA.Get(xOutputsA.GetSize() - 2u).c_str(),
+		ZENITH_ASSERT_STREQ(xOutputsA.Get(xOutputsA.GetSize() - 3u).c_str(),
 			(strPrefix + "Splatmap_RGBA.ztxtr").c_str());
-		ZENITH_ASSERT_STREQ(xOutputsA.GetBack().c_str(),
+		ZENITH_ASSERT_STREQ(xOutputsA.Get(xOutputsA.GetSize() - 2u).c_str(),
 			(strPrefix + "GrassDensity.ztxtr").c_str());
+		ZENITH_ASSERT_STREQ(xOutputsA.GetBack().c_str(),
+			(strPrefix + Zenith_TerrainDimsManifestFormat::szFILENAME).c_str());
 		ZENITH_ASSERT_STREQ(ZM_GetTerrainManifestRelativePath(xRecipe).c_str(),
 			(strPrefix + "ZM_TerrainRecipe.manifest").c_str());
 		ZENITH_ASSERT_STREQ(ZM_GetTerrainGrassAssetPath(xRecipe).c_str(),

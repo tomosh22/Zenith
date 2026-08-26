@@ -25,8 +25,94 @@
 #pragma comment(lib, "Comdlg32.lib")
 
 // Terrain export functionality (extern declarations to avoid include path issues)
-extern void ExportHeightmapFromPaths(const std::string& strHeightmapPath, const std::string& strOutputDir);
-extern void ExportHeightmapFromMat(const Zenith_Image& xHeightmap, const std::string& strOutputDir);
+extern void ExportHeightmapFromPaths(const std::string& strHeightmapPath, const std::string& strOutputDir,
+	const Zenith_TerrainDimensions& xDims);
+extern void ExportHeightmapFromMat(const Zenith_Image& xHeightmap, const std::string& strOutputDir,
+	const Zenith_TerrainDimensions& xDims);
+
+// The four knobs the creation panel stages before the first bake. They are
+// applied to the component through SetTerrainDimensions, which refuses an
+// already-initialised terrain -- so this UI only ever appears (and only ever
+// bites) before there is baked geometry to invalidate.
+static float s_fPendingChunkWorldSize = 64.0f;
+static float s_fPendingVertexSpacing = 1.0f;
+static int s_iPendingGridChunksX = 64;
+static int s_iPendingGridChunksZ = 64;
+
+// Spacing is the number an artist thinks in; quads-per-edge is what the format
+// stores. Round to the nearest power of two so the divisor-4 bakes stay
+// integral, then clamp into the validated range.
+static u_int ResolveQuadsPerChunkEdge(float fChunkWorldSize, float fVertexSpacing)
+{
+	if (!(fChunkWorldSize > 0.0f) || !(fVertexSpacing > 0.0f))
+	{
+		return 0u;
+	}
+	const float fRawQuads = fChunkWorldSize / fVertexSpacing;
+	u_int uQuads = Zenith_TerrainDimensionsLimits::uMIN_QUADS_PER_CHUNK_EDGE;
+	while (uQuads < Zenith_TerrainDimensionsLimits::uMAX_QUADS_PER_CHUNK_EDGE &&
+		static_cast<float>(uQuads) * 2.0f <= fRawQuads)
+	{
+		uQuads *= 2u;
+	}
+	return uQuads;
+}
+
+static Zenith_TerrainDimensions ResolvePendingTerrainDimensions()
+{
+	Zenith_TerrainDimensions xDims;
+	xDims.m_fChunkWorldSize = s_fPendingChunkWorldSize;
+	xDims.m_uQuadsPerChunkEdge = ResolveQuadsPerChunkEdge(s_fPendingChunkWorldSize, s_fPendingVertexSpacing);
+	xDims.m_uGridChunksX = static_cast<u_int>(s_iPendingGridChunksX);
+	xDims.m_uGridChunksZ = static_cast<u_int>(s_iPendingGridChunksZ);
+	return xDims;
+}
+
+// The four staged fields plus the derived read-outs an artist needs to judge
+// them: real vertex spacing after the power-of-two snap, the world extent the
+// grid produces, and the advisory streaming cost.
+static void RenderTerrainDimensionFields()
+{
+	ImGui::DragFloat("Chunk Size (m)", &s_fPendingChunkWorldSize, 1.0f, 1.0f, 1024.0f, "%.1f");
+	ImGui::DragFloat("Vertex Spacing (m)", &s_fPendingVertexSpacing, 0.05f, 0.01f, 64.0f, "%.3f");
+	ImGui::DragInt("Grid Chunks X", &s_iPendingGridChunksX, 1.0f, 1,
+		static_cast<int>(Zenith_TerrainDimensionsLimits::uCHUNK_GRID_CAPACITY));
+	ImGui::DragInt("Grid Chunks Z", &s_iPendingGridChunksZ, 1.0f, 1,
+		static_cast<int>(Zenith_TerrainDimensionsLimits::uCHUNK_GRID_CAPACITY));
+
+	const Zenith_TerrainDimensions xDims = ResolvePendingTerrainDimensions();
+	if (!xDims.IsValid())
+	{
+		ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f),
+			"Invalid: chunk size must be positive, spacing must give a power-of-two quad count "
+			"in [4, 256], and each grid axis must be in [1, 64].");
+		return;
+	}
+
+	ImGui::Text("Resolved: %u quads/chunk edge -> %.3f m spacing, %u verts/chunk",
+		xDims.m_uQuadsPerChunkEdge, xDims.VertexSpacing(),
+		xDims.ChunkVertexCount(Zenith_TerrainDimensionsLimits::uHIGH_DENSITY_DIVISOR));
+	ImGui::Text("World: %.1f x %.1f m, %u chunks",
+		xDims.WorldSizeX(), xDims.WorldSizeZ(), xDims.ChunkCount());
+
+	// ADVISORY ONLY -- nothing refuses a bake over it, but a terrain that cannot
+	// keep its HIGH ring resident thrashes the streamer instead of failing.
+	const uint64_t ulEstimate = xDims.EstimatedHighLodStreamingBytes(
+		Zenith_TerrainChunkLayout::uVERTEX_STRIDE, 1000.0f);
+	const uint64_t ulBudget = Flux_TerrainConfig::STREAMING_VERTEX_BUFFER_BYTES;
+	const float fEstimateMB = static_cast<float>(ulEstimate) / (1024.0f * 1024.0f);
+	if (ulEstimate > ulBudget)
+	{
+		ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.3f, 1.0f),
+			"Peak HIGH-LOD residency ~%.1f MB exceeds the %llu MB streaming vertex budget.",
+			fEstimateMB, static_cast<unsigned long long>(Flux_TerrainConfig::STREAMING_VERTEX_BUFFER_MB));
+	}
+	else
+	{
+		ImGui::Text("Peak HIGH-LOD residency ~%.1f MB of %llu MB streaming budget",
+			fEstimateMB, static_cast<unsigned long long>(Flux_TerrainConfig::STREAMING_VERTEX_BUFFER_MB));
+	}
+}
 
 //=============================================================================
 // TerrainComponent Editor UI
@@ -193,11 +279,17 @@ void Zenith_TerrainComponent::RenderTerrainCreationSection()
 	RenderHeightmapPathInput("HeightmapPath");
 
 	ImGui::Separator();
+	ImGui::TextWrapped("Terrain dimensions. These are baked into the chunk bytes and cannot be "
+		"changed after creation without a full re-bake.");
+	RenderTerrainDimensionFields();
+
+	ImGui::Separator();
 
 	const std::string strOutputDir = GetTerrainAssetDirectory();
 	ImGui::Text("Output Directory: %s", strOutputDir.c_str());
 
-	const bool bCanCreate = strlen(s_szHeightmapPath) > 0 && !s_bTerrainExportInProgress;
+	const bool bCanCreate = strlen(s_szHeightmapPath) > 0 && !s_bTerrainExportInProgress &&
+		ResolvePendingTerrainDimensions().IsValid();
 
 	if (!bCanCreate)
 		ImGui::BeginDisabled();
@@ -225,6 +317,16 @@ void Zenith_TerrainComponent::RenderTerrainCreationSection()
 			{
 				return false;
 			}
+			// Commit the staged dimensions BEFORE the export: the exporter is
+			// handed the same spec the component will decode the result with, and
+			// SetTerrainDimensions refuses an already-initialised terrain, so a
+			// second Create cannot silently re-shape live geometry.
+			if (!xSelf.SetTerrainDimensions(ResolvePendingTerrainDimensions()))
+			{
+				s_strTerrainExportStatus = "Terrain creation refused the staged dimensions.";
+				return false;
+			}
+
 			s_bTerrainExportInProgress = true;
 			s_strTerrainExportStatus = "Exporting terrain meshes...";
 
@@ -232,7 +334,7 @@ void Zenith_TerrainComponent::RenderTerrainCreationSection()
 			Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent]   Heightmap: %s", s_szHeightmapPath);
 			Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent]   Output: %s", strValidatedOutputDir.c_str());
 
-			ExportHeightmapFromPaths(s_szHeightmapPath, strValidatedOutputDir);
+			ExportHeightmapFromPaths(s_szHeightmapPath, strValidatedOutputDir, xSelf.m_xDims);
 
 			s_strTerrainExportStatus = "Export complete. Initializing terrain...";
 			Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Export complete. Initializing terrain...");
@@ -934,7 +1036,8 @@ bool Zenith_TerrainComponent::DeleteExistingTerrainFilesForAssetSet(
 }
 
 // Private non-recursive core. Named sets also keep Height/Splatmap/GrassDensity
-// textures here, so only direct generated .zmesh files are removed. Production
+// textures here, so only direct generated .zmesh files -- and the
+// TerrainDims.zdata manifest that describes them -- are removed. Production
 // reaches this only through the canonical wrapper; the friend test seam may use
 // an arbitrary Build/artifacts sandbox.
 bool Zenith_TerrainComponent::DeleteExistingTerrainFilesInDirectory(const std::string& strDirectory)
@@ -946,7 +1049,14 @@ bool Zenith_TerrainComponent::DeleteExistingTerrainFilesInDirectory(const std::s
 		{
 			for (const auto& entry : std::filesystem::directory_iterator(strDirectory))
 			{
-				if (entry.is_regular_file() && entry.path().extension().string() == ZENITH_MESH_EXT)
+				// The dimensions manifest goes with the meshes it describes: a
+				// manifest left behind would claim a set that no longer exists,
+				// and would then REFUSE the re-bake that is about to replace it.
+				const bool bIsChunkMesh =
+					entry.path().extension().string() == ZENITH_MESH_EXT;
+				const bool bIsDimsManifest =
+					entry.path().filename().string() == Zenith_TerrainDimsManifestFormat::szFILENAME;
+				if (entry.is_regular_file() && (bIsChunkMesh || bIsDimsManifest))
 				{
 					std::filesystem::remove(entry.path());
 				}
@@ -1065,12 +1175,12 @@ bool Zenith_TerrainComponent::RunTerrainRegenerationInternalForTerrainRoot(
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent]   Output: %s", strValidatedDirectory.c_str());
 	if (pxHeightfield != nullptr)
 	{
-		ExportHeightmapFromMat(*pxHeightfield, strValidatedDirectory);
+		ExportHeightmapFromMat(*pxHeightfield, strValidatedDirectory, xSelf.m_xDims);
 	}
 	else
 	{
 		Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent]   Heightmap: %s", s_szHeightmapPath);
-		ExportHeightmapFromPaths(s_szHeightmapPath, strValidatedDirectory);
+		ExportHeightmapFromPaths(s_szHeightmapPath, strValidatedDirectory, xSelf.m_xDims);
 	}
 
 	s_strTerrainExportStatus = "Initializing render resources...";
@@ -1177,7 +1287,14 @@ void Zenith_TerrainComponent::RenderTerrainStatisticsSection()
 		return;
 
 	ImGui::Text("Chunks: %d x %d", CHUNK_GRID_SIZE, CHUNK_GRID_SIZE);
-	ImGui::Text("Total Chunks: %d", TOTAL_CHUNKS);
+	// The LIVE spec, not the fixed capacity -- a 6x9 terrain reporting "Total
+	// Chunks: 4096" is the exact confusion this whole change removes.
+	ImGui::Text("Grid: %u x %u chunks @ %.2f m (%.1f x %.1f m world)",
+		m_xDims.m_uGridChunksX, m_xDims.m_uGridChunksZ, m_xDims.m_fChunkWorldSize,
+		m_xDims.WorldSizeX(), m_xDims.WorldSizeZ());
+	ImGui::Text("Vertex Spacing: %.3f m (%u quads/chunk edge)",
+		m_xDims.VertexSpacing(), m_xDims.m_uQuadsPerChunkEdge);
+	ImGui::Text("Active Chunks: %u (of %u slot capacity)", m_xDims.ChunkCount(), TOTAL_CHUNKS);
 	ImGui::Text("LOD Count: %d", LOD_COUNT);
 	ImGui::Text("Vertex Buffer Size: %.2f MB", m_pxStreamingState->m_ulUnifiedVertexBufferSize / (1024.0f * 1024.0f));
 	ImGui::Text("Index Buffer Size: %.2f MB", m_pxStreamingState->m_ulUnifiedIndexBufferSize / (1024.0f * 1024.0f));

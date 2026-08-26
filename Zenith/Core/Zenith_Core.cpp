@@ -454,4 +454,5 @@ void Zenith_Core::Zenith_MainLoop()
 
 #ifdef ZENITH_TESTING
 #include "Core/Zenith_UnitTests.Tests.inl"
+#include "Core/Zenith_TerrainDimensions.Tests.inl"
 #endif

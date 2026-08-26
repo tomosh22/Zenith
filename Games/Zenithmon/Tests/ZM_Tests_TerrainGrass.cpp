@@ -2,6 +2,7 @@
 
 #include "Core/Zenith_TestFramework.h"
 #include "FileAccess/Zenith_FileAccess.h"
+#include "Core/Zenith_TerrainDimensions.h"
 #include "Zenithmon/Source/World/ZM_GrassDensityMap.h"
 
 #include <array>
@@ -11,7 +12,11 @@ ZENITH_TEST(ZM_Grass, GrassDensityMapValidatesAndSamples)
 	ZENITH_ASSERT_EQ(ZM_GrassDensityMap::uEXPECTED_WIDTH, 1024u);
 	ZENITH_ASSERT_EQ(ZM_GrassDensityMap::uEXPECTED_HEIGHT, 1024u);
 	ZENITH_ASSERT_EQ(ZM_GrassDensityMap::ulEXPECTED_BYTE_COUNT, size_t(4194304));
-	ZENITH_ASSERT_EQ_FLOAT(ZM_GrassDensityMap::fWORLD_SIZE, 4096.0f, 0.0f);
+	// The world extent is no longer a constant on this class -- it is the owning
+	// terrain's square authoring domain, passed to Load. What IS still pinned is
+	// that a DEFAULT-dimensioned terrain spans the historical 4096m, which is
+	// what every Zenithmon recipe still bakes at.
+	ZENITH_ASSERT_EQ_FLOAT(Zenith_TerrainDimensions::Default().MaxWorldSize(), 4096.0f, 0.0f);
 
 	const std::string strTerrainDirectory =
 		std::string(GAME_ASSETS_DIR) + "Terrain/Dawnmere/";

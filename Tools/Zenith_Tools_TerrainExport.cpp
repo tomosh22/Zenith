@@ -45,14 +45,15 @@ static_assert(static_cast<float>(MAX_TERRAIN_HEIGHT) ==
 // box makes those duplicated world positions produce identical words in both
 // chunks. A per-chunk fit would open a crack along every border.
 //
-// UV is UNORM16 (not HALF2) because terrain UVs are full heightmap pixel
-// coordinates (e.g. [0, 4096]). HALF only has 10 bits of mantissa, so values
-// above 1024 lose sub-integer precision and above 2048 the step is 2 — causing
-// pairs of adjacent vertices on the upper half of the terrain to collapse onto
-// the same UV, which shows as a stretched/compressed strip pattern at vertex
-// spacing in any high-contrast diffuse. Unorm16 normalised by the same extent is
-// uniform across the whole range, at a sixteenth of a pixel.
-static void GenerateTerrainLayoutAndVertexData(Flux_MeshGeometry& xMesh)
+// UV is UNORM16 (not HALF2) because terrain UVs are authored world metres over
+// the whole terrain (e.g. [0, 4096]). HALF only has 10 bits of mantissa, so
+// values above 1024 lose sub-integer precision and above 2048 the step is 2 —
+// causing pairs of adjacent vertices on the far half of the terrain to collapse
+// onto the same UV, which shows as a stretched/compressed strip pattern at
+// vertex spacing in any high-contrast diffuse. Unorm16 normalised by the same
+// extent is uniform across the whole range, and gets FINER as a terrain shrinks.
+static void GenerateTerrainLayoutAndVertexData(Flux_MeshGeometry& xMesh,
+	const Zenith_TerrainDimensions& xDims)
 {
 	for (uint32_t uElement = 0; uElement < Zenith_TerrainChunkLayout::uELEMENT_COUNT; uElement++)
 	{
@@ -69,7 +70,8 @@ static void GenerateTerrainLayoutAndVertexData(Flux_MeshGeometry& xMesh)
 
 	xMesh.m_pVertexData = static_cast<u_int8*>(Zenith_MemoryManagement::Allocate(xMesh.m_uNumVerts * uStride));
 
-	const Flux_PosQuant xQuant = Flux_MakeTerrainPosQuant();
+	const Flux_PosQuant xQuant = Flux_MakeTerrainPosQuant(xDims);
+	const float fUVBoxMax = Flux_TerrainUVBoxMax(xDims);
 
 	for (uint32_t i = 0; i < xMesh.m_uNumVerts; i++)
 	{
@@ -78,8 +80,8 @@ static void GenerateTerrainLayoutAndVertexData(Flux_MeshGeometry& xMesh)
 		// Position: SNORM16x4 (8 bytes) against the authored box.
 		Flux_WriteTerrainVertexPosition(pVertex, xMesh.m_pxPositions[i], xQuant);
 
-		// UV: UNORM16x2 (4 bytes), heightmap pixel coordinates in and out.
-		Flux_WriteTerrainVertexUV(pVertex, xMesh.m_pxUVs[i]);
+		// UV: UNORM16x2 (4 bytes), authored world XZ metres in and out.
+		Flux_WriteTerrainVertexUV(pVertex, xMesh.m_pxUVs[i], fUVBoxMax);
 
 		// Normal: SNORM10:10:10:2 (4 bytes), w=0
 		Flux_WriteTerrainVertexNormalWord(pVertex, Flux_PackSnorm10_10_10_2(
@@ -243,45 +245,69 @@ Zenith_Image Zenith_Tools_LoadHeightmapAuto(const std::string& strPath)
 	return LoadHeightmapAuto(strPath);
 }
 
-//#TO width/height that heightmap is divided into
-#define TERRAIN_SIZE 64
-//#TO world units per heightmap pixel. 1.0 => a 4096px heightmap bakes a
-// 4096-unit-wide terrain, which is what Flux_TerrainConfig (CHUNK_SIZE_WORLD=64
-// * CHUNK_GRID_SIZE=64 = 4096) and the games assume. Was 0.1f, a long-standing
-// bug that produced a 409.6-unit terrain mismatched with the config/LOD/docs.
-#define TERRAIN_SCALE 1.0f
-
-// ★ THE SOURCE GRID CARRIES ONE MORE SAMPLE PER EDGE THAN THE HEIGHTMAP HAS
-// COLUMNS, AND THAT CLOSING SAMPLE IS LOAD-BEARING.
+// THE TERRAIN_SIZE / TERRAIN_SCALE DEFINES ARE GONE, and their absence is the
+// point of this file's parameterisation. They welded three separate quantities
+// into one number: heightmap PIXELS per chunk, world METRES per chunk, and
+// SAMPLES per chunk edge. That weld is why a terrain could only ever be 4096m
+// wide at 1m spacing. Each is now read from the caller's
+// Zenith_TerrainDimensions -- m_uQuadsPerChunkEdge, m_fChunkWorldSize, and the
+// image-to-world scale derived from MaxWorldSize().
 //
-// ExportChunkBatch below splits this mesh into uNumSplits x uNumSplits chunks of
-// uCells quads each, and every chunk closes itself by stitching the FIRST
+// TERRAIN_SCALE was additionally a multiply by exactly 1.0f applied to every
+// position. It is not replaced by a "scale of 1" anywhere: the sample step
+// below IS the world step, so there is nothing left to rescale.
+
+// ★ THE SOURCE GRID CARRIES ONE MORE SAMPLE PER EDGE THAN IT HAS CELLS, AND
+// THAT CLOSING SAMPLE IS LOAD-BEARING.
+//
+// ExportChunkBatch below splits this mesh into uNumSplitsX x uNumSplitsZ chunks
+// of uCells quads each, and every chunk closes itself by stitching the FIRST
 // column/row of its +X / +Z neighbour. The grid therefore needs
-// uNumSplits * uCells + 1 samples per edge -- exactly one more than
-// (heightmap width * density). Without it the final chunk column (x == 63) and
-// row (z == 63) have no neighbour to stitch from, and used to bake incomplete:
-// their stitch vertices stayed UNINITIALISED and their stitch index triples
-// stayed (0,0,0), which Zenith_TerrainComponent's chunk-topology validator
-// rejects outright -- 127 of 4096 chunks silently dropped from LOW LOD *and*
-// physics, i.e. no always-resident geometry and no collision along the outer
-// +X/+Z strip of every full-grid terrain.
+// uNumSplits * uCells + 1 samples per edge. Without it the final chunk column
+// and row have no neighbour to stitch from, and used to bake incomplete: their
+// stitch vertices stayed UNINITIALISED and their stitch index triples stayed
+// (0,0,0), which Zenith_TerrainComponent's chunk-topology validator rejects
+// outright -- 127 of 4096 chunks silently dropped from LOW LOD *and* physics,
+// i.e. no always-resident geometry and no collision along the outer +X/+Z strip
+// of every full-grid terrain.
 //
 // The closing sample is taken with its heightmap coordinate CLAMPED to the last
 // texel -- the same clamp the bilinear tap already applies -- so it costs no new
 // sampling policy and lands the terrain's outer boundary exactly on
-// TERRAIN_SIZE * uNumSplits world units (4096). Before this the terrain stopped
-// one sample short of its own configured extent.
-void GenerateFullTerrain(const Zenith_Image& xHeightmapImage, Flux_MeshGeometry& xMesh, u_int uDensityDivisor)
+// (grid chunks * chunk world size), which is what the per-terrain quantisation
+// box describes. Before this the terrain stopped one sample short of its own
+// configured extent.
+//
+// The grid is sized in CHUNKS and SAMPLES; the heightmap is sized in PIXELS.
+// Those used to be the same number. They are not any more, and a border special
+// case must never be reintroduced on either count.
+void GenerateFullTerrain(const Zenith_Image& xHeightmapImage, Flux_MeshGeometry& xMesh,
+	u_int uDensityDivisor, const Zenith_TerrainDimensions& xDims)
 {
 	Zenith_Assert((uDensityDivisor & (uDensityDivisor - 1)) == 0, "Density divisor must be a power of 2");
-
-	float fDensity = 1.f / uDensityDivisor;
+	Zenith_Assert(xDims.IsValid(), "Terrain export needs valid terrain dimensions");
 
 	u_int uWidth = xHeightmapImage.GetWidth();
 	u_int uHeight = xHeightmapImage.GetHeight();
 
-	const u_int uSamplesX = Flux_TerrainSourceGrid::SampleCountForCells(static_cast<u_int>(uWidth * fDensity));
-	const u_int uSamplesZ = Flux_TerrainSourceGrid::SampleCountForCells(static_cast<u_int>(uHeight * fDensity));
+	// THE SOURCE GRID IS SIZED BY THE GRID, NOT BY THE IMAGE. It used to be
+	// (image width * density), which silently made the heightmap resolution the
+	// terrain's vertex density -- the weld this parameterisation removes. The
+	// image is now a SAMPLED FIELD over the square authoring domain, tapped at
+	// whatever fractional coordinate each world-space sample lands on.
+	const u_int uSamplesX = Flux_TerrainSourceGrid::SampleCountForCells(
+		xDims.m_uGridChunksX * xDims.QuadsPerChunkEdge(uDensityDivisor));
+	const u_int uSamplesZ = Flux_TerrainSourceGrid::SampleCountForCells(
+		xDims.m_uGridChunksZ * xDims.QuadsPerChunkEdge(uDensityDivisor));
+
+	// World metres per source sample, and authoring-image pixels per world
+	// metre. At default dimensions over a 4096px heightfield these are exactly
+	// (1 * divisor) and exactly 1.0, so every product below is bit-identical to
+	// the integer arithmetic it replaces.
+	const double dSampleStep = Flux_TerrainSourceGrid::SampleStepWorld(
+		static_cast<double>(xDims.VertexSpacing()), uDensityDivisor);
+	const double dImagePerWorldX = static_cast<double>(xDims.ImagePixelPerWorld(uWidth));
+	const double dImagePerWorldZ = static_cast<double>(xDims.ImagePixelPerWorld(uHeight));
 
 	xMesh.m_uNumVerts = uSamplesX * uSamplesZ;
 	xMesh.m_uNumIndices = (uSamplesX - 1) * (uSamplesZ - 1) * 6;
@@ -304,7 +330,12 @@ void GenerateFullTerrain(const Zenith_Image& xHeightmapImage, Flux_MeshGeometry&
 	{
 		for (u_int x = 0; x < uSamplesX; ++x)
 		{
-			glm::vec2 xUV = { static_cast<double>(x) / fDensity , static_cast<double>(z) / fDensity };
+			// The authoring-image coordinate this world-space sample taps.
+			// FRACTIONAL in general; the bilinear filter below is what consumes
+			// it, and both of its taps clamp.
+			const double dWorldX = Flux_TerrainSourceGrid::WorldForSample(x, dSampleStep);
+			const double dWorldZ = Flux_TerrainSourceGrid::WorldForSample(z, dSampleStep);
+			glm::vec2 xUV = { dWorldX * dImagePerWorldX, dWorldZ * dImagePerWorldZ };
 			u_int offset = (z * uSamplesX) + x;
 
 			// BOTH taps clamp. The closing sample sits one texel past the
@@ -343,9 +374,12 @@ void GenerateFullTerrain(const Zenith_Image& xHeightmapImage, Flux_MeshGeometry&
 				dHeight = std::clamp(dHeight, 0.0, 1.0);
 			}
 
-			xMesh.m_pxPositions[offset] = glm::highp_vec3((double)x / fDensity, dHeight * MAX_TERRAIN_HEIGHT, (double)z / fDensity) * static_cast<float>(TERRAIN_SCALE);
-			glm::vec2 fUV = glm::vec2(x, z);
-			xMesh.m_pxUVs[offset] = fUV / fDensity;
+			xMesh.m_pxPositions[offset] = glm::highp_vec3(dWorldX, dHeight * MAX_TERRAIN_HEIGHT, dWorldZ);
+			// UVs are AUTHORED WORLD XZ IN METRES, not heightmap pixels. They
+			// coincide at default dimensions (1m per pixel), which is why the
+			// two spellings were indistinguishable until now; only the world
+			// reading survives a terrain whose image and extent differ.
+			xMesh.m_pxUVs[offset] = glm::vec2(dWorldX, dWorldZ);
 		}
 	}
 
@@ -380,7 +414,8 @@ struct ChunkExportData
 	u_int uTotalChunks;
 	Flux_TerrainExportRect xRect;
 	bool bUseRect;
-	float fDensity;
+	u_int uDensityDivisor;
+	Zenith_TerrainDimensions xDims;
 	std::string strOutputDir;
 	std::string strName;
 };
@@ -407,17 +442,21 @@ static void ResolveChunkExportCoordinates(const ChunkExportData& xData,
 	}
 }
 
-static void ValidateHighChunkCounts(float fDensity, const Flux_MeshGeometry& xMesh)
+static void ValidateHighChunkCounts(u_int uDensityDivisor,
+	const Zenith_TerrainDimensions& xDims, const Flux_MeshGeometry& xMesh)
 {
-	if (fDensity != 1.0f)
+	if (uDensityDivisor != Zenith_TerrainDimensionsLimits::uHIGH_DENSITY_DIVISOR)
 	{
 		return;
 	}
 
-	Zenith_Assert(xMesh.m_uNumVerts == Zenith_TerrainChunkLayout::uHIGH_CHUNK_VERTEX_COUNT,
-		"HIGH terrain exporter vertex count must match the canonical terrain contract");
-	Zenith_Assert(xMesh.m_uNumIndices == Zenith_TerrainChunkLayout::uHIGH_CHUNK_INDEX_COUNT,
-		"HIGH terrain exporter index count must match the canonical terrain contract");
+	// The counts come from the SPEC now, not from the layout header's default
+	// pins -- the two agree only at default dimensions, and the runtime chunk
+	// validator checks against the component's spec by the same route.
+	Zenith_Assert(xMesh.m_uNumVerts == xDims.ChunkVertexCount(uDensityDivisor),
+		"HIGH terrain exporter vertex count must match the terrain's own dimensions");
+	Zenith_Assert(xMesh.m_uNumIndices == xDims.ChunkIndexCount(uDensityDivisor),
+		"HIGH terrain exporter index count must match the terrain's own dimensions");
 	(void)xMesh;
 }
 
@@ -426,14 +465,15 @@ static void ExportChunkBatch(void* pData, u_int uInvocationIndex, u_int uNumInvo
 	const ChunkExportData* pxData = static_cast<const ChunkExportData*>(pData);
 	const Flux_MeshGeometry& xFullMesh = *pxData->pxFullMesh;
 	const u_int uTotalChunks = pxData->uTotalChunks;
-	const float fDensity = pxData->fDensity;
+	const u_int uDensityDivisor = pxData->uDensityDivisor;
+	const Zenith_TerrainDimensions& xDims = pxData->xDims;
 
 	// Quads per chunk edge, and the row stride of the source grid
 	// GenerateFullTerrain produced -- one MORE than the heightmap's column count
 	// at this density (see the note there). That closing column/row is what lets
 	// EVERY chunk, the last one included, stitch its +X / +Z edge; there is no
 	// border special case below and there must never be one again.
-	const u_int uCells = static_cast<u_int>(TERRAIN_SIZE * fDensity);
+	const u_int uCells = xDims.QuadsPerChunkEdge(uDensityDivisor);
 	const u_int uSourceRowLength = Flux_TerrainSourceGrid::SampleCountPerEdge(pxData->uNumSplitsX, uCells);
 
 	u_int uChunksPerInvocation = (uTotalChunks + uNumInvocations - 1) / uNumInvocations;
@@ -449,7 +489,7 @@ static void ExportChunkBatch(void* pData, u_int uInvocationIndex, u_int uNumInvo
 	Flux_MeshGeometry xSubMesh;
 	xSubMesh.m_uNumVerts = Flux_TerrainSourceGrid::ChunkVertexCount(uCells);
 	xSubMesh.m_uNumIndices = Flux_TerrainSourceGrid::ChunkIndexCount(uCells);
-	ValidateHighChunkCounts(fDensity, xSubMesh);
+	ValidateHighChunkCounts(uDensityDivisor, xDims, xSubMesh);
 	xSubMesh.m_pxPositions = static_cast<glm::highp_vec3*>(Zenith_MemoryManagement::Allocate(xSubMesh.m_uNumVerts * sizeof(glm::highp_vec3)));
 	xSubMesh.m_pxUVs = static_cast<glm::vec2*>(Zenith_MemoryManagement::Allocate(xSubMesh.m_uNumVerts * sizeof(glm::vec2)));
 	xSubMesh.m_pxNormals = static_cast<glm::vec3*>(Zenith_MemoryManagement::Allocate(xSubMesh.m_uNumVerts * sizeof(glm::vec3)));
@@ -700,7 +740,7 @@ static void ExportChunkBatch(void* pData, u_int uInvocationIndex, u_int uNumInvo
 		"Terrain chunk (%u,%u) wrote %u of %u vertices -- incomplete chunk",
 		x, z, uHeighestNewOffset + 1, xSubMesh.m_uNumVerts);
 
-	GenerateTerrainLayoutAndVertexData(xSubMesh);
+	GenerateTerrainLayoutAndVertexData(xSubMesh, xDims);
 	xSubMesh.Export((pxData->strOutputDir + pxData->strName + std::string("_") + std::to_string(x) + std::string("_") + std::to_string(z) + std::string(ZENITH_MESH_EXT)).c_str());
 
 	Zenith_MemoryManagement::Deallocate(puRightEdgeIndices);
@@ -710,41 +750,47 @@ static void ExportChunkBatch(void* pData, u_int uInvocationIndex, u_int uNumInvo
 
 static bool ExportMeshInternal(u_int uDensityDivisor, const std::string& strName,
 	const Zenith_Image& xHeightmap, const std::string& strOutputDir,
-	const Flux_TerrainExportRect* pxRect)
+	const Zenith_TerrainDimensions& xDims, const Flux_TerrainExportRect* pxRect)
 {
 	Zenith_Assert((uDensityDivisor & (uDensityDivisor-1)) == 0, "Density divisor must be a power of 2");
-
-	float fDensity = 1.f / uDensityDivisor;
 
 	Zenith_Assert(!xHeightmap.IsEmpty(), "Invalid heightmap image");
 
 	u_int uImageWidth = xHeightmap.GetWidth();
 	u_int uImageHeight = xHeightmap.GetHeight();
 
-	Zenith_Assert(static_cast<u_int>(uImageWidth * fDensity) % TERRAIN_SIZE == 0, "Invalid terrain width");
-	Zenith_Assert(static_cast<u_int>(uImageHeight * fDensity) % TERRAIN_SIZE == 0, "Invalid terrain height");
-	// GenerateFullTerrain's closing sample lands the outer boundary exactly on
-	// (heightmap pixels * TERRAIN_SCALE), which is what the authored XZ quantisation
-	// box describes. A heightmap of any other size bakes positions the packer CLAMPS
-	// to the box lid — silently, and only along the far edge.
-	Zenith_Assert(static_cast<float>(uImageWidth) * TERRAIN_SCALE == Zenith_TerrainChunkLayout::afPOSITION_BOX_MAX[0] &&
-		static_cast<float>(uImageHeight) * TERRAIN_SCALE == Zenith_TerrainChunkLayout::afPOSITION_BOX_MAX[2],
-		"Terrain heightmap %ux%u does not span the authored position quantisation box", uImageWidth, uImageHeight);
+	// THE IMAGE NO LONGER SIZES THE GRID -- the spec does, and the image is a
+	// field sampled over the SQUARE AUTHORING DOMAIN [0, MaxWorldSize()]^2 that
+	// every per-set map (heightfield, splat, grass) shares. So the only thing
+	// left to require of it is that it IS square; a non-square one would give
+	// the two axes different world-per-pixel scales and shear the terrain.
+	if (!xDims.IsValid())
+	{
+		Zenith_Warning(LOG_CATEGORY_TOOLS, "Terrain export refused: invalid terrain dimensions");
+		return false;
+	}
+	if (uImageWidth != uImageHeight)
+	{
+		Zenith_Warning(LOG_CATEGORY_TOOLS,
+			"Terrain export refused: heightmap %ux%u is not square, so it cannot span the square authoring domain",
+			uImageWidth, uImageHeight);
+		return false;
+	}
 
-	u_int uNumSplitsX = uImageWidth / TERRAIN_SIZE;
-	u_int uNumSplitsZ = uImageHeight / TERRAIN_SIZE;
+	u_int uNumSplitsX = xDims.m_uGridChunksX;
+	u_int uNumSplitsZ = xDims.m_uGridChunksZ;
 	if (pxRect != nullptr && (!pxRect->IsValid() ||
 		static_cast<u_int>(pxRect->GetMaxX()) >= uNumSplitsX ||
 		static_cast<u_int>(pxRect->GetMaxY()) >= uNumSplitsZ))
 	{
 		Zenith_Warning(LOG_CATEGORY_TOOLS,
-			"Terrain export rectangle exceeds the heightmap chunk grid (%ux%u)",
+			"Terrain export rectangle exceeds the active chunk grid (%ux%u)",
 			uNumSplitsX, uNumSplitsZ);
 		return false;
 	}
 
 	Flux_MeshGeometry xFullMesh;
-	GenerateFullTerrain(xHeightmap, xFullMesh, uDensityDivisor);
+	GenerateFullTerrain(xHeightmap, xFullMesh, uDensityDivisor, xDims);
 
 	u_int uTotalChunks = pxRect != nullptr
 		? static_cast<u_int>(pxRect->ChunkCount())
@@ -760,7 +806,8 @@ static bool ExportMeshInternal(u_int uDensityDivisor, const std::string& strName
 	{
 		xChunkData.xRect = *pxRect;
 	}
-	xChunkData.fDensity = fDensity;
+	xChunkData.uDensityDivisor = uDensityDivisor;
+	xChunkData.xDims = xDims;
 	xChunkData.strOutputDir = strOutputDir;
 	xChunkData.strName = strName;
 
@@ -771,30 +818,109 @@ static bool ExportMeshInternal(u_int uDensityDivisor, const std::string& strName
 	return true;
 }
 
-void ExportMesh(u_int uDensityDivisor, std::string strName,
-	const Zenith_Image& xHeightmap, const std::string& strOutputDir)
+static void ExportMesh(u_int uDensityDivisor, std::string strName,
+	const Zenith_Image& xHeightmap, const std::string& strOutputDir,
+	const Zenith_TerrainDimensions& xDims)
 {
-	(void)ExportMeshInternal(uDensityDivisor, strName, xHeightmap, strOutputDir, nullptr);
+	(void)ExportMeshInternal(uDensityDivisor, strName, xHeightmap, strOutputDir, xDims, nullptr);
 }
 
-static void ExportHeightmapInternal(const Zenith_Image& xHeightmap, const std::string& strOutputDir)
+// ---- the dimensions manifest ------------------------------------------------
+//
+// A baked set is a directory of quantised chunks whose bytes mean nothing
+// without the dimensions they were packed against. The manifest is written LAST
+// -- after all three bakes succeed -- so a half-written set never claims to be
+// a complete one at these dimensions.
+
+static std::string TerrainDimsManifestPath(const std::string& strOutputDir)
+{
+	return strOutputDir + Zenith_TerrainDimsManifestFormat::szFILENAME;
+}
+
+static void WriteTerrainDimsManifest(const std::string& strOutputDir,
+	const Zenith_TerrainDimensions& xDims, u_int uHeightmapImageSize)
+{
+	const Zenith_TerrainDimsManifest xManifest =
+		Zenith_TerrainDimsManifest::FromDimensions(xDims, uHeightmapImageSize);
+	u_int8 auBytes[uZENITH_TERRAIN_DIMS_MANIFEST_BYTES] = {};
+	Zenith_TerrainDimsManifestFormat::Write(xManifest, auBytes);
+	Zenith_FileAccess::WriteFile(TerrainDimsManifestPath(strOutputDir).c_str(),
+		auBytes, uZENITH_TERRAIN_DIMS_MANIFEST_BYTES);
+
+	Zenith_Log(LOG_CATEGORY_TOOLS,
+		"[TerrainDims] wrote manifest: chunk=%.2fm quads=%u grid=%ux%u world=%.1fx%.1fm image=%upx",
+		xDims.m_fChunkWorldSize, xDims.m_uQuadsPerChunkEdge,
+		xDims.m_uGridChunksX, xDims.m_uGridChunksZ,
+		xDims.WorldSizeX(), xDims.WorldSizeZ(), uHeightmapImageSize);
+}
+
+// A RECT bake writes SOME of a set's chunks. Mixing dimensions inside one
+// directory produces a set that loads, validates, and renders a terrain torn in
+// half -- which is exactly the failure mode a manifest exists to make impossible.
+//
+// So: an existing manifest that DISAGREES refuses the export outright. A
+// directory with no manifest is one this export is ESTABLISHING (the editor's
+// rect bake deletes the set's meshes and its manifest before it runs, and a
+// recipe-driven bake prepares a fresh directory), so the manifest is written.
+static bool EnsureTerrainDimsManifest(const std::string& strOutputDir,
+	const Zenith_TerrainDimensions& xDims, u_int uHeightmapImageSize)
+{
+	const std::string strPath = TerrainDimsManifestPath(strOutputDir);
+	u_int8 auBytes[uZENITH_TERRAIN_DIMS_MANIFEST_BYTES] = {};
+	if (!Zenith_FileAccess::ReadPrefix(strPath.c_str(), auBytes, uZENITH_TERRAIN_DIMS_MANIFEST_BYTES))
+	{
+		WriteTerrainDimsManifest(strOutputDir, xDims, uHeightmapImageSize);
+		return true;
+	}
+
+	Zenith_TerrainDimsManifest xExisting;
+	if (!Zenith_TerrainDimsManifestFormat::Read(auBytes, uZENITH_TERRAIN_DIMS_MANIFEST_BYTES, xExisting))
+	{
+		Zenith_Warning(LOG_CATEGORY_TOOLS,
+			"[TerrainDims] rect export refused: %s carries a corrupt dimensions manifest. "
+			"Delete it and re-bake the whole set.",
+			strPath.c_str());
+		return false;
+	}
+
+	if (!xExisting.DescribesDimensions(xDims) || xExisting.m_uHeightmapImageSize != uHeightmapImageSize)
+	{
+		Zenith_Warning(LOG_CATEGORY_TOOLS,
+			"[TerrainDims] rect export refused: set was baked at chunk=%.2fm quads=%u grid=%ux%u image=%upx, "
+			"but this export is chunk=%.2fm quads=%u grid=%ux%u image=%upx. "
+			"A partial re-bake at other dimensions would tear the terrain in half.",
+			xExisting.m_fChunkWorldSize, xExisting.m_uQuadsPerChunkEdge,
+			xExisting.m_uGridChunksX, xExisting.m_uGridChunksZ, xExisting.m_uHeightmapImageSize,
+			xDims.m_fChunkWorldSize, xDims.m_uQuadsPerChunkEdge,
+			xDims.m_uGridChunksX, xDims.m_uGridChunksZ, uHeightmapImageSize);
+		return false;
+	}
+
+	return true;
+}
+
+static void ExportHeightmapInternal(const Zenith_Image& xHeightmap, const std::string& strOutputDir,
+	const Zenith_TerrainDimensions& xDims)
 {
 	Zenith_Assert(!xHeightmap.IsEmpty(), "Invalid heightmap");
 
 	// Export HIGH detail render meshes (density divisor 1, streamed dynamically)
-	ExportMesh(1, "Render", xHeightmap, strOutputDir);
+	ExportMesh(Zenith_TerrainDimensionsLimits::uHIGH_DENSITY_DIVISOR, "Render", xHeightmap, strOutputDir, xDims);
 
 	// Export LOW detail render meshes (density divisor 4, always resident)
-	ExportMesh(4, "Render_LOW", xHeightmap, strOutputDir);
+	ExportMesh(Zenith_TerrainDimensionsLimits::uLOW_DENSITY_DIVISOR, "Render_LOW", xHeightmap, strOutputDir, xDims);
 
 	// Export physics mesh (density divisor 4). This remains lower-poly than the
 	// HIGH render mesh, but gives characters a four-metre collision surface rather
 	// than the visibly coarse eight-metre one.
-	ExportMesh(4, "Physics", xHeightmap, strOutputDir);
+	ExportMesh(Zenith_TerrainDimensionsLimits::uPHYSICS_DENSITY_DIVISOR, "Physics", xHeightmap, strOutputDir, xDims);
+
+	WriteTerrainDimsManifest(strOutputDir, xDims, xHeightmap.GetWidth());
 }
 
 static bool ExportHeightmapRectInternal(const Zenith_Image& xHeightmap,
-	const std::string& strOutputDir, const Flux_TerrainExportRect& xRect)
+	const std::string& strOutputDir, const Zenith_TerrainDimensions& xDims,
+	const Flux_TerrainExportRect& xRect)
 {
 	if (xHeightmap.IsEmpty() || !xRect.IsValid())
 	{
@@ -803,37 +929,50 @@ static bool ExportHeightmapRectInternal(const Zenith_Image& xHeightmap,
 		return false;
 	}
 
-	return ExportMeshInternal(1, "Render", xHeightmap, strOutputDir, &xRect) &&
-		ExportMeshInternal(4, "Render_LOW", xHeightmap, strOutputDir, &xRect) &&
-		ExportMeshInternal(4, "Physics", xHeightmap, strOutputDir, &xRect);
+	if (!EnsureTerrainDimsManifest(strOutputDir, xDims, xHeightmap.GetWidth()))
+	{
+		return false;
+	}
+
+	return ExportMeshInternal(Zenith_TerrainDimensionsLimits::uHIGH_DENSITY_DIVISOR,
+			"Render", xHeightmap, strOutputDir, xDims, &xRect) &&
+		ExportMeshInternal(Zenith_TerrainDimensionsLimits::uLOW_DENSITY_DIVISOR,
+			"Render_LOW", xHeightmap, strOutputDir, xDims, &xRect) &&
+		ExportMeshInternal(Zenith_TerrainDimensionsLimits::uPHYSICS_DENSITY_DIVISOR,
+			"Physics", xHeightmap, strOutputDir, xDims, &xRect);
 }
 
-void ExportHeightmapFromPaths(const std::string& strHeightmapPath, const std::string& strOutputDir)
+void ExportHeightmapFromPaths(const std::string& strHeightmapPath, const std::string& strOutputDir,
+	const Zenith_TerrainDimensions& xDims)
 {
-	Zenith_Log(LOG_CATEGORY_TOOLS, "ExportHeightmapFromPaths: Heightmap=%s, Output=%s",
-		strHeightmapPath.c_str(), strOutputDir.c_str());
+	Zenith_Log(LOG_CATEGORY_TOOLS, "ExportHeightmapFromPaths: Heightmap=%s, Output=%s, Grid=%ux%u @ %.2fm",
+		strHeightmapPath.c_str(), strOutputDir.c_str(),
+		xDims.m_uGridChunksX, xDims.m_uGridChunksZ, xDims.m_fChunkWorldSize);
 
 	Zenith_Image xHeightmap = LoadHeightmapAuto(strHeightmapPath);
-	ExportHeightmapInternal(xHeightmap, strOutputDir);
+	ExportHeightmapInternal(xHeightmap, strOutputDir, xDims);
 
 	Zenith_Log(LOG_CATEGORY_TOOLS, "ExportHeightmapFromPaths: Export complete");
 }
 
-void ExportHeightmapFromMat(const Zenith_Image& xHeightmap, const std::string& strOutputDir)
+void ExportHeightmapFromMat(const Zenith_Image& xHeightmap, const std::string& strOutputDir,
+	const Zenith_TerrainDimensions& xDims)
 {
-	Zenith_Log(LOG_CATEGORY_TOOLS, "ExportHeightmapFromMat: Output=%s", strOutputDir.c_str());
-	ExportHeightmapInternal(xHeightmap, strOutputDir);
+	Zenith_Log(LOG_CATEGORY_TOOLS, "ExportHeightmapFromMat: Output=%s, Grid=%ux%u @ %.2fm",
+		strOutputDir.c_str(), xDims.m_uGridChunksX, xDims.m_uGridChunksZ, xDims.m_fChunkWorldSize);
+	ExportHeightmapInternal(xHeightmap, strOutputDir, xDims);
 	Zenith_Log(LOG_CATEGORY_TOOLS, "ExportHeightmapFromMat: Export complete");
 }
 
 bool ExportHeightmapFromMatRect(const Zenith_Image& xHeightmap,
-	const std::string& strOutputDir, const Flux_TerrainExportRect& xRect)
+	const std::string& strOutputDir, const Zenith_TerrainDimensions& xDims,
+	const Flux_TerrainExportRect& xRect)
 {
 	Zenith_Log(LOG_CATEGORY_TOOLS,
 		"ExportHeightmapFromMatRect: Output=%s Bounds=[%d,%d]-[%d,%d] Chunks=%u Files=%u",
 		strOutputDir.c_str(), xRect.GetMinX(), xRect.GetMinY(),
 		xRect.GetMaxX(), xRect.GetMaxY(), xRect.ChunkCount(), xRect.ChunkCount() * 3);
-	const bool bExported = ExportHeightmapRectInternal(xHeightmap, strOutputDir, xRect);
+	const bool bExported = ExportHeightmapRectInternal(xHeightmap, strOutputDir, xDims, xRect);
 	Zenith_Log(LOG_CATEGORY_TOOLS, "ExportHeightmapFromMatRect: Export %s",
 		bExported ? "complete" : "failed");
 	return bExported;

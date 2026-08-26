@@ -255,6 +255,11 @@ enum class Zenith_EditorActionType
 	TERRAIN_EDITOR_SAVE_TEXTURES,
 	TERRAIN_EDITOR_EXPORT_CHUNKS,
 	TERRAIN_EDITOR_EXPORT_CHUNKS_RECT,
+	// APPENDED AT THE END of the terrain block on purpose: the block is routed by
+	// a pair of range comparisons against its FIRST and LAST member, so a new
+	// action inserted in the middle silently joins the block while one appended
+	// here requires the comparison below to move with it.
+	TERRAIN_EDITOR_SET_DIMENSIONS,
 
 	// Grass-type authoring (Zenith_TerrainEditor's WORKING copy of the
 	// Flux_GrassTypeTable — the same object the terrain editor panel edits).
@@ -303,6 +308,14 @@ enum class Zenith_EditorActionType
 static_assert(static_cast<int>(Zenith_EditorActionType::GRASS_TYPES_SAVE) -
 	static_cast<int>(Zenith_EditorActionType::GRASS_TYPES_CREATE) == 5,
 	"the GRASS_TYPES block must stay CONTIGUOUS and six wide — ExecuteAction routes it by range");
+// The same pin for the TERRAIN_EDITOR block, whose last member moved when
+// SET_DIMENSIONS was appended: TryRouteTerrainEditorAction compares against
+// SET_DIMENSIONS as the upper bound, so an action added after it that forgets to
+// move that comparison would never be routed at all -- it would fall through to
+// the generic executor and assert at runtime rather than at build time.
+static_assert(static_cast<int>(Zenith_EditorActionType::TERRAIN_EDITOR_SET_DIMENSIONS) -
+	static_cast<int>(Zenith_EditorActionType::TERRAIN_EDITOR_SET_ASSET_SET) == 12,
+	"the TERRAIN_EDITOR block must stay CONTIGUOUS and thirteen wide — ExecuteAction routes it by range");
 
 //-----------------------------------------------------------------------------
 // Action Data
@@ -743,6 +756,17 @@ void AddStep_SetTerrainSplatmapPath(const char* szPath);
 	// A selected fresh Terrain component is stamped for a following SaveScene;
 	// an initialized component with a different set must use BakeFull instead.
 void AddStep_TerrainSetAssetSet(const char* szSet);
+
+	// Stage the terrain's DIMENSIONS on the editor session, and stamp them onto
+	// a selected FRESH terrain component so a following SaveScene persists them.
+	// Refuses an already-initialised terrain for the same reason
+	// AddStep_TerrainSetAssetSet does: its chunks were decoded against the
+	// current quantisation box, and moving the box would silently relocate them.
+	//
+	// fVertexSpacingMetres is metres BETWEEN VERTICES; it is converted to the
+	// stored quads-per-chunk-edge, which must be a power of two in [4, 256].
+void AddStep_TerrainSetDimensions(float fChunkSizeMetres, float fVertexSpacingMetres,
+	int iGridChunksX, int iGridChunksZ);
 
 	// Reset the session's CPU maps to defaults. From-scratch recipes run this
 	// FIRST so regeneration is byte-identical even when a previous bake's

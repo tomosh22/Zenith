@@ -81,25 +81,41 @@ namespace Zenith_TerrainChunkLayout
 
 	// ---- the dequantisation box -----------------------------------------------
 	// A snorm16 position is meaningless without the box it was normalised against,
-	// so the box is part of the FILE FORMAT and lives here beside the element table.
+	// so the box is part of the FILE FORMAT. What lives here is the DEFAULT box --
+	// the one every terrain baked before Zenith_TerrainDimensions existed. A
+	// terrain's ACTUAL box derives from its own dimensions, per-axis:
+	//   { 0, 0, 0 } .. { dims.WorldSizeX(), MAX_TERRAIN_HEIGHT, dims.WorldSizeZ() }
+	// and Flux/Terrain/Flux_TerrainVertexQuant.h is the one place that builds it.
+	// A set's dimensions travel with it in TerrainDims.zdata, because a chunk
+	// cannot be decoded without them.
 	//
-	// It is the AUTHORED terrain extent, not a per-chunk fit. That is deliberate and
-	// load-bearing: adjacent chunks share their stitch vertices by VALUE, and one
-	// global box makes a shared world position quantise to the same word in both
-	// chunks, so a seam cannot open. A per-chunk AABB would give the two chunks
-	// different boxes and re-introduce cracks along every border.
+	// It is the AUTHORED terrain extent, never a per-chunk fit, and that is
+	// deliberate and load-bearing: adjacent chunks share their stitch vertices by
+	// VALUE, and ONE box per terrain makes a shared world position quantise to the
+	// same word in both chunks, so a seam cannot open. A per-chunk AABB would give
+	// the two chunks different boxes and re-introduce cracks along every border.
+	// Per-TERRAIN is safe for exactly the reason per-chunk is not: every chunk of
+	// one terrain shares one box.
 	//
-	// XZ is [0, 4096] exactly -- the closing-sample fix landed the grid's outer
-	// boundary on CHUNK_SIZE_WORLD * CHUNK_GRID_SIZE, so this is authored, never
-	// data-derived. Y is [0, MAX_TERRAIN_HEIGHT]: the exporter's heights are a
-	// normalised heightmap sample scaled by that constant. A live edit (editor
-	// sculpt, CityBuilder's carve/terraform) that leaves the box is CLAMPED to it
-	// rather than wrapped.
+	// XZ is [0, 4096] at DEFAULT dimensions -- the closing-sample fix landed the
+	// grid's outer boundary on chunk size * grid size, so this is authored, never
+	// data-derived. Y is [0, MAX_TERRAIN_HEIGHT] for every terrain: the exporter's
+	// heights are a normalised heightmap sample scaled by that constant, and height
+	// is deliberately NOT per-terrain. A live edit (editor sculpt, CityBuilder's
+	// carve/terraform) that leaves the box is CLAMPED to it rather than wrapped.
 	inline constexpr float afPOSITION_BOX_MIN[3] = { 0.0f, 0.0f, 0.0f };
 	inline constexpr float afPOSITION_BOX_MAX[3] = { 4096.0f, 512.0f, 4096.0f };
 
-	// Vertex UVs are GLOBAL heightmap pixel coordinates in [0, uUV_BOX_MAX]; the
-	// unorm16 lane carries that divided through by the same extent.
+	// Vertex UVs are AUTHORED WORLD XZ IN METRES over the terrain's square
+	// authoring domain; the unorm16 lane carries that divided through by the same
+	// extent. This constant is the DEFAULT domain -- a terrain's own is
+	// dims.MaxWorldSize(). At 4096m over a 4096px heightfield the two readings
+	// (metres and heightmap pixels) coincide, which is why they were
+	// indistinguishable until terrains could differ in size.
+	//
+	// UNORM16 over the smallest domain a game is likely to author (a few hundred
+	// metres) is finer than a hundredth of a metre, so the precision argument
+	// below only gets stronger as terrains shrink.
 	inline constexpr float fUV_BOX_MAX = 4096.0f;
 
 	// One quantisation step, in world units. snorm16 spends 65534 steps across the
@@ -114,6 +130,10 @@ namespace Zenith_TerrainChunkLayout
 
 	inline constexpr float fUV_QUANT_STEP = fUV_BOX_MAX / 65535.0f;
 
+	// The DEFAULT quads per chunk edge. A terrain's own count is
+	// Zenith_TerrainDimensions::m_uQuadsPerChunkEdge, and the counts below are
+	// this default's -- kept as pins, because every chunk baked before the knob
+	// existed carries exactly these topologies.
 	inline constexpr uint32_t uCHUNK_QUADS_PER_EDGE = 64u;
 
 	constexpr uint32_t CalculateChunkVertexCount(uint32_t uDensityDivisor)

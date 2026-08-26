@@ -878,6 +878,18 @@ void Zenith_EditorAutomation::AddStep_TerrainSetAssetSet(const char* szSet)
 	Push(m_axActions, ActionType::TERRAIN_EDITOR_SET_ASSET_SET, szSet);
 }
 
+void Zenith_EditorAutomation::AddStep_TerrainSetDimensions(float fChunkSizeMetres,
+	float fVertexSpacingMetres, int iGridChunksX, int iGridChunksZ)
+{
+	Zenith_EditorAction xAction;
+	xAction.m_eType = ActionType::TERRAIN_EDITOR_SET_DIMENSIONS;
+	xAction.m_afArgs[0] = fChunkSizeMetres;
+	xAction.m_afArgs[1] = fVertexSpacingMetres;
+	xAction.m_aiArgs[0] = iGridChunksX;
+	xAction.m_aiArgs[1] = iGridChunksZ;
+	m_axActions.PushBack(xAction);
+}
+
 void Zenith_EditorAutomation::AddStep_TerrainResetSession()
 {
 	Zenith_EditorAction xAction;
@@ -1129,6 +1141,27 @@ static bool ExecuteTerrainRectExport(const Zenith_EditorAction& xAction,
 	return bExported;
 }
 
+// Vertex SPACING is what an authoring step spells; quads-per-chunk-edge is what
+// the format stores. Snap down to the nearest power of two so the divisor-4 LOW
+// and physics bakes stay integral -- an exact spacing (64/64, 64/128) is
+// unchanged by the snap, and a spacing that does not divide cleanly resolves to
+// the next coarser legal one rather than silently rounding the chunk size.
+static u_int ResolveQuadsPerChunkEdgeFromSpacing(float fChunkWorldSize, float fVertexSpacing)
+{
+	if (!(fChunkWorldSize > 0.0f) || !(fVertexSpacing > 0.0f))
+	{
+		return 0u;
+	}
+	const float fRawQuads = fChunkWorldSize / fVertexSpacing;
+	u_int uQuads = Zenith_TerrainDimensionsLimits::uMIN_QUADS_PER_CHUNK_EDGE;
+	while (uQuads < Zenith_TerrainDimensionsLimits::uMAX_QUADS_PER_CHUNK_EDGE &&
+		static_cast<float>(uQuads) * 2.0f <= fRawQuads)
+	{
+		uQuads *= 2u;
+	}
+	return uQuads;
+}
+
 static bool ExecuteTerrainEditorAction(const Zenith_EditorAction& xAction,
 	Zenith_TerrainEditor& xTerrainEditor, TerrainRectExecutionMode eRectMode)
 {
@@ -1186,6 +1219,64 @@ static bool ExecuteTerrainEditorAction(const Zenith_EditorAction& xAction,
 			}
 		}
 	}
+	if (xAction.m_eType == Zenith_EditorActionType::TERRAIN_EDITOR_SET_DIMENSIONS)
+	{
+		// Same transactional shape as SET_ASSET_SET above: validate the payload
+		// and every selected-component constraint BEFORE anything is staged, so a
+		// refused spec leaves neither the editor nor the live component changed.
+		Zenith_TerrainDimensions xCandidate;
+		xCandidate.m_fChunkWorldSize = xAction.m_afArgs[0];
+		xCandidate.m_uQuadsPerChunkEdge = ResolveQuadsPerChunkEdgeFromSpacing(
+			xAction.m_afArgs[0], xAction.m_afArgs[1]);
+		xCandidate.m_uGridChunksX = static_cast<u_int>(xAction.m_aiArgs[0]);
+		xCandidate.m_uGridChunksZ = static_cast<u_int>(xAction.m_aiArgs[1]);
+		if (!xCandidate.IsValid())
+		{
+			Zenith_Assert(false,
+				"TERRAIN_EDITOR_SET_DIMENSIONS rejected chunk=%.3fm spacing=%.3fm grid=%dx%d "
+				"(spacing must divide the chunk size into a power-of-two quad count in [4, 256], "
+				"and each grid axis must be in [1, 64])",
+				xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_aiArgs[0], xAction.m_aiArgs[1]);
+			return false;
+		}
+
+		Zenith_Entity* pxSelected = g_xEngine.Editor().GetSelectedEntity();
+		Zenith_TerrainComponent* pxSelectedTerrain = pxSelected
+			? pxSelected->TryGetComponent<Zenith_TerrainComponent>()
+			: nullptr;
+		if (pxSelectedTerrain != nullptr &&
+			pxSelectedTerrain->IsTerrainInitializedForEditor() &&
+			!(pxSelectedTerrain->GetTerrainDimensions() == xCandidate))
+		{
+			Zenith_Assert(false,
+				"TERRAIN_EDITOR_SET_DIMENSIONS cannot re-shape an initialized terrain; use TerrainEditor::BakeFull");
+			return false;
+		}
+
+		if (!xTerrainEditor.IsActive())
+		{
+			xTerrainEditor.OpenStandalone();
+		}
+		const bool bStaged = xTerrainEditor.SetDimensions(xCandidate);
+		Zenith_Assert(bStaged, "Validated terrain dimensions unexpectedly failed to stage");
+		if (!bStaged)
+		{
+			return false;
+		}
+
+		if (pxSelectedTerrain != nullptr && !pxSelectedTerrain->IsTerrainInitializedForEditor())
+		{
+			// A fresh component has no live buffers to invalidate. Stamp the
+			// validated spec so a following SaveScene persists it (v5 tail).
+			const bool bStamped = pxSelectedTerrain->SetTerrainDimensions(xCandidate);
+			Zenith_Assert(bStamped,
+				"TERRAIN_EDITOR_SET_DIMENSIONS failed to stamp validated dimensions on fresh terrain");
+			if (!bStamped)
+			{
+				return false;
+			}
+		}
+	}
 	// Validate the exact signed payload before OpenStandalone can allocate or
 	// load any editor state. Rejected bounds therefore have no side effects.
 	if (xAction.m_eType == Zenith_EditorActionType::TERRAIN_EDITOR_EXPORT_CHUNKS_RECT &&
@@ -1201,6 +1292,9 @@ static bool ExecuteTerrainEditorAction(const Zenith_EditorAction& xAction,
 	switch (xAction.m_eType)
 	{
 	case Zenith_EditorActionType::TERRAIN_EDITOR_SET_ASSET_SET:
+	case Zenith_EditorActionType::TERRAIN_EDITOR_SET_DIMENSIONS:
+		// Both are fully handled above, transactionally, before the session was
+		// opened. Nothing left to do once it is.
 		break;
 
 	case Zenith_EditorActionType::TERRAIN_EDITOR_RESET:
@@ -1290,7 +1384,7 @@ static bool TryRouteTerrainEditorAction(const Zenith_EditorAction& xAction,
 	bool& bSucceededOut)
 {
 	if (xAction.m_eType < Zenith_EditorActionType::TERRAIN_EDITOR_SET_ASSET_SET ||
-		xAction.m_eType > Zenith_EditorActionType::TERRAIN_EDITOR_EXPORT_CHUNKS_RECT)
+		xAction.m_eType > Zenith_EditorActionType::TERRAIN_EDITOR_SET_DIMENSIONS)
 	{
 		return false;
 	}

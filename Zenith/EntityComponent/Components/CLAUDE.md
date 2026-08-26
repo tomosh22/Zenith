@@ -118,8 +118,10 @@ and this core neither implements that nor detects the case.
   the physics geometry is combined, never per call — and then runs the unchanged
   linear per-triangle scan restricted to the one chunk (or, exactly at a shared
   seam, two) whose bounds contain the point. So the cost is
-  O(chunks) + O(triangles in the matching chunk) — roughly 4096 float-compare
-  rejects plus ~512 triangles, rather than up to ~2.1M triangles. Still no
+  O(chunks) + O(triangles in the matching chunk) — roughly one float-compare
+  reject per chunk in the ACTIVE grid (up to 4096, and far fewer on a terrain
+  smaller than the fixed slot capacity) plus ~512 triangles, rather than up to
+  ~2.1M triangles. Still no
   spatial index *within* a chunk, and still no allocation per query. Good enough
   for one-off probes, placement, and occasional per-agent use; a per-frame,
   per-agent query over a large terrain would want TIER 2's heightfield, not a

@@ -11,6 +11,8 @@ Engine core utilities, configuration, and main loop.
 - `FrameContext.h` - Per-frame timing state owned by the engine
 - `ZenithConfig.h` - Central configuration constants
 - `Zenith_String.h` - String utilities
+- `Zenith_TerrainChunkLayout.h` - The on-disk contract for a baked terrain chunk (element table, stride, byte offsets, the DEFAULT quantisation box, per-density vertex/index counts). In Core because it is read from both directions: Flux as a GPU vertex layout, the asset side as a file format
+- `Zenith_TerrainDimensions.h` - A terrain's SHAPE: chunk world size, quads per chunk edge (the density knob) and the grid extent in X and Z, plus the `TerrainDims.zdata` manifest a baked set carries so its chunks can be recognised as stale rather than decoded against the wrong box. Dependency-light (`<cstdint>`/`<cmath>`/`<cstring>`) so it is unit-testable in every configuration. Full contract: `Zenith/Flux/Terrain/CLAUDE.md` -> *Grid Layout*
 - `Zenith_CommandLine.h/cpp` - Parsed once at process start, read-only after
 - `Zenith_GraphicsOptions.h/cpp` - Set once by `Project_SetGraphicsOptions`, read-only after
 - `Zenith_UserSettings.h/cpp` - The engine-owned PLAYER PREFERENCE store (B12): one SaveData slot (`"user_settings"`) per project, holding the persisted input-profile override. Instance class on `g_xEngine.UserSettings()`; loaded and applied by `InitialiseProject`'s four-step boot order (SaveData init → load → `Project_RegisterGameComponents` → validate + apply BY NAME). Full contract: `Zenith/Input/CLAUDE.md` → *Persisted settings*

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Core/Zenith_TerrainDimensions.h"
 #include "Collections/Zenith_Vector.h"
 #include "Maths/Zenith_Maths.h"
 #include "CityBuilder/Source/CB_RoadGraph.h"
@@ -120,7 +121,8 @@ namespace CB_RoadTerrain
 	// stream-out/in cycle. pUser is a const CB_TerrainHeightfield*. Defined in CB_RoadTerrain.cpp;
 	// runs on the main thread (streaming is main-thread).
 	void ChunkVertexCarveHook(void* pUser, uint32_t uChunkX, uint32_t uChunkY,
-	                          void* pVertexData, uint32_t uNumVerts, uint32_t uVertexStride);
+	                          void* pVertexData, uint32_t uNumVerts, uint32_t uVertexStride,
+	                          const Zenith_TerrainDimensions& xDims);
 
 	// Register / clear the stream-in hook on a terrain's streaming state. The hook reads the live
 	// heightfield (the engine holds a raw pointer — it must outlive the registration; unregister in

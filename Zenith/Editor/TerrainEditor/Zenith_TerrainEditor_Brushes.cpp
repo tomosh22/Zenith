@@ -52,34 +52,49 @@ void Zenith_TerrainEditor::ApplyBrushDab(Zenith_TerrainBrushTool eTool, float fW
 	fRadius = std::max(0.5f, fRadius);
 	fStrength = std::max(0.0f, std::min(1.0f, fStrength));
 
+	// ★ THE ONE WORLD->PIXEL CONVERSION. Every map-editing dab below works in
+	// HEIGHTFIELD PIXELS (their parameters are named fPxX/fPxZ and index the
+	// image directly); the brush radius the panel supplies is in METRES. Those
+	// were the same number only while one pixel was one metre, and this call
+	// site is where the two used to be silently equated. Both scales are exactly
+	// 1.0f at default dimensions.
+	//
+	// TreePaint is the exception and stays in WORLD units: trees are scene
+	// entities scattered at world positions, not texels.
+	const float fPxPerWorld = HeightPxPerWorld();
+	const float fPxX = fWorldX * fPxPerWorld;
+	const float fPxZ = fWorldZ * fPxPerWorld;
+	const float fRadiusPx = std::max(0.5f, fRadius * fPxPerWorld);
+
 	// The first dab of a stroke anchors the Ramp corridor; outside a stroke
-	// (automation dabs) every dab re-anchors itself.
+	// (automation dabs) every dab re-anchors itself. In PIXELS -- the corridor
+	// maths in ApplyHeightDab is pixel-space.
 	if (!m_bStrokeStartCaptured || !m_bStrokeActive)
 	{
 		m_bStrokeStartCaptured = true;
-		m_xStrokeStartPos = { fWorldX, fWorldZ };
-		m_fStrokeStartHeightNorm = SampleHeightNorm(fWorldX, fWorldZ);
+		m_xStrokeStartPos = { fPxX, fPxZ };
+		m_fStrokeStartHeightNorm = SampleHeightNorm(fPxX, fPxZ);
 	}
 
 	switch (eTool)
 	{
 	case Zenith_TerrainBrushTool::SplatPaint:
-		ApplySplatDab(fWorldX, fWorldZ, fRadius, fStrength, static_cast<u_int>(fToolValue));
+		ApplySplatDab(fPxX, fPxZ, fRadiusPx, fStrength, static_cast<u_int>(fToolValue));
 		break;
 	case Zenith_TerrainBrushTool::GrassDensity:
-		ApplyGrassDab(fWorldX, fWorldZ, fRadius, fStrength, fToolValue);
+		ApplyGrassDab(fPxX, fPxZ, fRadiusPx, fStrength, fToolValue);
 		break;
 	case Zenith_TerrainBrushTool::GrassType:
 		// fToolValue = the type index to stamp; 255 (erase) must survive the cast.
-		ApplyGrassTypeDab(fWorldX, fWorldZ, fRadius,
+		ApplyGrassTypeDab(fPxX, fPxZ, fRadiusPx,
 			static_cast<u_int8>(std::max(0.0f, std::min(255.0f, fToolValue))));
 		break;
 	case Zenith_TerrainBrushTool::TreePaint:
-		// fToolValue > 0.5 selects erase (Shift while painting).
+		// fToolValue > 0.5 selects erase (Shift while painting). WORLD units.
 		ApplyTreeDab(fWorldX, fWorldZ, fRadius, fStrength, fToolValue > 0.5f);
 		break;
 	default:
-		ApplyHeightDab(eTool, fWorldX, fWorldZ, fRadius, fStrength, fToolValue);
+		ApplyHeightDab(eTool, fPxX, fPxZ, fRadiusPx, fStrength, fToolValue);
 		break;
 	}
 }
@@ -252,8 +267,10 @@ void Zenith_TerrainEditor::ApplySplatDab(float fPxX, float fPxZ, float fRadius, 
 		return;
 	}
 
-	// World -> splat texel space (2048 texels over 4096 m).
-	const float fScale = static_cast<float>(uSPLATMAP_SIZE) / fTERRAIN_WORLD_SIZE;
+	// Heightfield texel -> splat texel space. Both images span the SAME square
+	// authoring domain, so the ratio is a property of their resolutions alone
+	// (2048 over 4096) and does not move when the terrain does.
+	const float fScale = fSPLAT_PX_PER_HEIGHT_PX;
 	const float fCX = fPxX * fScale;
 	const float fCZ = fPxZ * fScale;
 	const float fR = std::max(1.0f, fRadius * fScale);
@@ -346,8 +363,8 @@ void Zenith_TerrainEditor::ApplyGrassDab(float fPxX, float fPxZ, float fRadius, 
 		return;
 	}
 
-	// World -> grass texel space (1024 texels over 4096 m).
-	const float fScale = static_cast<float>(uGRASS_DENSITY_SIZE) / fTERRAIN_WORLD_SIZE;
+	// Heightfield texel -> grass texel space (1024 over 4096; see ApplySplatDab).
+	const float fScale = fGRASS_DENSITY_PX_PER_HEIGHT_PX;
 	const float fCX = fPxX * fScale;
 	const float fCZ = fPxZ * fScale;
 	const float fR = std::max(1.0f, fRadius * fScale);
@@ -399,8 +416,8 @@ void Zenith_TerrainEditor::ApplyGrassTypeDab(float fPxX, float fPxZ, float fRadi
 		return;
 	}
 
-	// World -> grass-type texel space (1024 texels over 4096 m).
-	const float fScale = static_cast<float>(uGRASS_TYPE_SIZE) / fTERRAIN_WORLD_SIZE;
+	// Heightfield texel -> grass-type texel space (1024 over 4096; see ApplySplatDab).
+	const float fScale = fGRASS_TYPE_PX_PER_HEIGHT_PX;
 	const float fCX = fPxX * fScale;
 	const float fCZ = fPxZ * fScale;
 	const float fR = std::max(1.0f, fRadius * fScale);

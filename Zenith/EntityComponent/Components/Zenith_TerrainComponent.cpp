@@ -7,8 +7,10 @@
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 #include "Flux/Terrain/Flux_TerrainStreamingManagerImpl.h"
+#include "Flux/Terrain/Flux_TerrainImpl.h"   // Flux_TerrainConstantsBufferBytes — the renderer owns the CB struct
 #include "Core/Zenith_TerrainChunkLayout.h"
 #include "Core/Zenith_BakedMeshReader.h"
+#include "FileAccess/Zenith_FileAccess.h"
 #include "Maths/Zenith_FrustumCulling.h"
 // Phase 1 of the terrain indirect-count compatibility plan: the terrain
 // indirect-command allocation/seed and the per-backend recorder all name the
@@ -139,13 +141,14 @@ namespace
 	// its normal is finite and non-degenerate. Fills the per-vertex grid
 	// coordinates stage 3 needs.
 	bool ValidateVertexGrid(const TerrainChunkSourceSnapshot& xSnapshot, const TerrainGridExtents& xExtents,
+		const Zenith_TerrainDimensions& xDims,
 		Zenith_Vector<uint32_t>& auVertexGridXOut, Zenith_Vector<uint32_t>& auVertexGridZOut)
 	{
 		auVertexGridXOut.Resize(xSnapshot.m_uVertexCount, 0u);
 		auVertexGridZOut.Resize(xSnapshot.m_uVertexCount, 0u);
 		Zenith_Vector<int32_t> aiGridOwners(xSnapshot.m_uVertexCount);
 		aiGridOwners.Resize(xSnapshot.m_uVertexCount, -1);
-		const Flux_PosQuant xPositionQuant = Flux_MakeTerrainPosQuant();
+		const Flux_PosQuant xPositionQuant = Flux_MakeTerrainPosQuant(xDims);
 
 		for (uint32_t u = 0u; u < xSnapshot.m_uVertexCount; ++u)
 		{
@@ -328,7 +331,8 @@ namespace
 	// per-vertex grid coordinates stage 2 fills. Rejection ORDER is therefore
 	// unchanged from the single function this replaced, which matters - the
 	// Terrain suite's fixture mutations each pin one specific rejection.
-	bool ValidateTerrainGridTopology(const TerrainChunkSourceSnapshot& xSnapshot, bool bRequireNormals)
+	bool ValidateTerrainGridTopology(const TerrainChunkSourceSnapshot& xSnapshot,
+		const Zenith_TerrainDimensions& xDims, bool bRequireNormals)
 	{
 		TerrainGridExtents xExtents;
 		if (!ValidateGridDimensions(xSnapshot, bRequireNormals, xExtents))
@@ -336,14 +340,15 @@ namespace
 
 		Zenith_Vector<uint32_t> auVertexGridX(xSnapshot.m_uVertexCount);
 		Zenith_Vector<uint32_t> auVertexGridZ(xSnapshot.m_uVertexCount);
-		if (!ValidateVertexGrid(xSnapshot, xExtents, auVertexGridX, auVertexGridZ))
+		if (!ValidateVertexGrid(xSnapshot, xExtents, xDims, auVertexGridX, auVertexGridZ))
 			return false;
 
 		return ValidateIndexTopology(xSnapshot, xExtents, auVertexGridX, auVertexGridZ);
 	}
 
-	bool TryReadTerrainChunkSnapshot(const std::string& strPath, uint32_t uExpectedVertexCount,
-		uint32_t uExpectedIndexCount, bool bRequireNormals, TerrainChunkSourceSnapshot& xSnapshotOut)
+	bool TryReadTerrainChunkSnapshot(const std::string& strPath, const Zenith_TerrainDimensions& xDims,
+		uint32_t uExpectedVertexCount, uint32_t uExpectedIndexCount, bool bRequireNormals,
+		TerrainChunkSourceSnapshot& xSnapshotOut)
 	{
 		Zenith_BakedMeshReader xReader(strPath.c_str());
 		uint32_t uElementCount = 0;
@@ -407,16 +412,17 @@ namespace
 			return false;
 		if (!bNormalsPresent)
 			xSnapshotOut.m_axNormals.Clear();
-		return ValidateTerrainGridTopology(xSnapshotOut, bRequireNormals);
+		return ValidateTerrainGridTopology(xSnapshotOut, xDims, bRequireNormals);
 	}
 }
 
 bool Zenith_TerrainComponent::TryLoadTerrainChunkSource(const std::string& strPath,
+	const Zenith_TerrainDimensions& xDims,
 	uint32_t uExpectedVertexCount, uint32_t uExpectedIndexCount, bool bRequireNormals,
 	Flux_MeshGeometry& xGeometryOut)
 {
 	TerrainChunkSourceSnapshot xSnapshot;
-	if (!TryReadTerrainChunkSnapshot(strPath, uExpectedVertexCount, uExpectedIndexCount, bRequireNormals, xSnapshot))
+	if (!TryReadTerrainChunkSnapshot(strPath, xDims, uExpectedVertexCount, uExpectedIndexCount, bRequireNormals, xSnapshot))
 		return false;
 
 	const uint64_t ulVertexDataSize = xSnapshot.m_auVertexData.GetSize();
@@ -1037,6 +1043,80 @@ const std::string& Zenith_TerrainComponent::GetTerrainAssetSet() const
 	return m_strTerrainAssetSet;
 }
 
+bool Zenith_TerrainComponent::SetTerrainDimensions(const Zenith_TerrainDimensions& xDims)
+{
+	if (!xDims.IsValid())
+	{
+		Zenith_Warning(LOG_CATEGORY_TERRAIN,
+			"Terrain dimensions rejected: chunk=%.3fm quads=%u grid=%ux%u is not a bakeable shape",
+			xDims.m_fChunkWorldSize, xDims.m_uQuadsPerChunkEdge,
+			xDims.m_uGridChunksX, xDims.m_uGridChunksZ);
+		return false;
+	}
+
+	// Same refusal as retargeting an initialised terrain's asset set, and for a
+	// sharper reason: the resident chunks were DECODED against the current box.
+	// Swapping it underneath them would silently relocate live geometry and the
+	// physics body built from it, with nothing failing.
+	const bool bAlreadyInitialised = m_pxStreamingState != nullptr &&
+		m_pxStreamingState->m_ulUnifiedVertexBufferSize > 0;
+	if (bAlreadyInitialised && !(xDims == m_xDims))
+	{
+		Zenith_Warning(LOG_CATEGORY_TERRAIN,
+			"Terrain dimensions refused: this terrain is already initialised at grid=%ux%u @ %.2fm. "
+			"Set dimensions before the first bake, or on a fresh component.",
+			m_xDims.m_uGridChunksX, m_xDims.m_uGridChunksZ, m_xDims.m_fChunkWorldSize);
+		return false;
+	}
+
+	m_xDims = xDims;
+	if (m_pxStreamingState)
+	{
+		m_pxStreamingState->m_xDims = xDims;
+	}
+	return true;
+}
+
+bool Zenith_TerrainComponent::VerifyBakedDimensionsManifest(const char* szContext) const
+{
+	const std::string strPath = GetTerrainAssetDirectory() + Zenith_TerrainDimsManifestFormat::szFILENAME;
+	u_int8 auBytes[uZENITH_TERRAIN_DIMS_MANIFEST_BYTES] = {};
+	if (!Zenith_FileAccess::ReadPrefix(strPath.c_str(), auBytes, uZENITH_TERRAIN_DIMS_MANIFEST_BYTES))
+	{
+		Zenith_Error(LOG_CATEGORY_TERRAIN,
+			"[TerrainPhysics] %s load refused: %s has no TerrainDims.zdata manifest. "
+			"This is a STALE BAKE -- re-bake the terrain. The terrain will not render and will have no physics body.",
+			szContext, strPath.c_str());
+		return false;
+	}
+
+	Zenith_TerrainDimsManifest xManifest;
+	if (!Zenith_TerrainDimsManifestFormat::Read(auBytes, uZENITH_TERRAIN_DIMS_MANIFEST_BYTES, xManifest))
+	{
+		Zenith_Error(LOG_CATEGORY_TERRAIN,
+			"[TerrainPhysics] %s load refused: %s is not a readable terrain dimensions manifest. "
+			"The terrain will not render and will have no physics body.",
+			szContext, strPath.c_str());
+		return false;
+	}
+
+	if (!xManifest.DescribesDimensions(m_xDims))
+	{
+		Zenith_Error(LOG_CATEGORY_TERRAIN,
+			"[TerrainPhysics] %s load refused: baked set is chunk=%.2fm quads=%u grid=%ux%u, "
+			"but this component expects chunk=%.2fm quads=%u grid=%ux%u. "
+			"This is a STALE BAKE -- re-bake the terrain. It will not render and will have no physics body.",
+			szContext,
+			xManifest.m_fChunkWorldSize, xManifest.m_uQuadsPerChunkEdge,
+			xManifest.m_uGridChunksX, xManifest.m_uGridChunksZ,
+			m_xDims.m_fChunkWorldSize, m_xDims.m_uQuadsPerChunkEdge,
+			m_xDims.m_uGridChunksX, m_xDims.m_uGridChunksZ);
+		return false;
+	}
+
+	return true;
+}
+
 std::string Zenith_TerrainComponent::GetTerrainAssetDirectory() const
 {
 	std::string strDirectory;
@@ -1053,7 +1133,7 @@ std::string Zenith_TerrainComponent::GetTerrainAssetDirectory() const
 void Zenith_TerrainComponent::WriteToDataStream(Zenith_DataStream& xStream) const
 {
 	// Serialization version
-	uint32_t uVersion = 4;
+	uint32_t uVersion = 5;
 	xStream << uVersion;
 
 	// Serialize the combined physics source path for reference; reconstruction
@@ -1082,6 +1162,14 @@ void Zenith_TerrainComponent::WriteToDataStream(Zenith_DataStream& xStream) cons
 
 	// Version 4: append the terrain asset-set name after the complete v3 payload.
 	xStream << m_strTerrainAssetSet;
+
+	// Version 5: append the terrain dimensions after the complete v4 payload.
+	// A terrain's baked chunks cannot be decoded without them, so they belong in
+	// the scene beside the asset set that names the directory they live in.
+	xStream << m_xDims.m_fChunkWorldSize;
+	xStream << m_xDims.m_uQuadsPerChunkEdge;
+	xStream << m_xDims.m_uGridChunksX;
+	xStream << m_xDims.m_uGridChunksZ;
 }
 
 // ReadFromDataStream helpers — keep the top-level function focused on the
@@ -1167,6 +1255,10 @@ void Zenith_TerrainComponent::ReadSerializedFields(Zenith_DataStream& xStream)
 	// Deserialization always begins from the safe legacy set. A rejected v4
 	// candidate therefore cannot preserve a stale destination value.
 	SetTerrainAssetSet("");
+	// Same contract for the dimensions: a rejected v5 candidate, or a pre-v5
+	// stream, lands on Default() -- which is exactly what every terrain baked
+	// before this field existed was authored at.
+	m_xDims = Zenith_TerrainDimensions::Default();
 
 	uint32_t uVersion;
 	xStream >> uVersion;
@@ -1192,6 +1284,23 @@ void Zenith_TerrainComponent::ReadSerializedFields(Zenith_DataStream& xStream)
 		{
 			Zenith_Warning(LOG_CATEGORY_TERRAIN,
 				"Terrain deserialization rejected an invalid terrain asset-set name; using legacy Terrain/.");
+		}
+	}
+
+	// Version 5 appends the dimensions after the complete v4 payload. Versions
+	// 1-4 retain the Default() installed at parser entry, which is correct for
+	// every terrain baked before the knobs existed.
+	if (uVersion >= 5)
+	{
+		Zenith_TerrainDimensions xDims;
+		xStream >> xDims.m_fChunkWorldSize;
+		xStream >> xDims.m_uQuadsPerChunkEdge;
+		xStream >> xDims.m_uGridChunksX;
+		xStream >> xDims.m_uGridChunksZ;
+		if (!SetTerrainDimensions(xDims))
+		{
+			Zenith_Warning(LOG_CATEGORY_TERRAIN,
+				"Terrain deserialization rejected invalid terrain dimensions; using the default 64x64 grid at 64m.");
 		}
 	}
 
@@ -1245,10 +1354,24 @@ void Zenith_TerrainComponent::InitializeRenderResources()
 	// NOTE: Materials are stored in m_axMaterials[] handles by the caller
 	// (constructor or ReadFromDataStream) before this method is invoked
 
+	// Push the dimensions onto the streaming state BEFORE anything is sized or
+	// iterated: every loop bound, world<->chunk conversion and expected chunk
+	// topology below reads them from there, and the streaming manager validates
+	// them at registration. SetTerrainDimensions does this too, but a component
+	// deserialized before its state existed (or one whose state was recreated)
+	// would otherwise register on a stale default.
+	if (m_pxStreamingState != nullptr)
+	{
+		m_pxStreamingState->m_xDims = m_xDims;
+	}
+
 	uint32_t uLowLODTotalVerts = 0;
 	uint32_t uLowLODTotalIndices = 0;
 	CalculateLowLODBufferSizes(uLowLODTotalVerts, uLowLODTotalIndices);
 
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "Terrain dimensions: %ux%u chunks @ %.2fm (%.1f x %.1f m world), %.3fm vertex spacing",
+		m_xDims.m_uGridChunksX, m_xDims.m_uGridChunksZ, m_xDims.m_fChunkWorldSize,
+		m_xDims.WorldSizeX(), m_xDims.WorldSizeZ(), m_xDims.VertexSpacing());
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "LOW LOD (always-resident) buffer requirements:");
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "Vertices: %u (%.2f MB)", uLowLODTotalVerts, (uLowLODTotalVerts * TERRAIN_VERTEX_STRIDE) / (1024.0f * 1024.0f));
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "Indices: %u (%.2f MB)", uLowLODTotalIndices, (uLowLODTotalIndices * 4.0f) / (1024.0f * 1024.0f));
@@ -1294,11 +1417,19 @@ void Zenith_TerrainComponent::InitializeRenderResources()
 
 void Zenith_TerrainComponent::CalculateLowLODBufferSizes(uint32_t& uTotalVertsOut, uint32_t& uTotalIndicesOut) const
 {
-	// Each exporter output is a self-contained 16x16-quad LOW chunk. The
-	// previous seam allowance over-reserved every interior chunk even though
-	// no extra seam geometry exists in the serialized source.
-	uTotalVertsOut = Zenith_TerrainChunkLayout::uLOW_CHUNK_VERTEX_COUNT * TOTAL_CHUNKS;
-	uTotalIndicesOut = Zenith_TerrainChunkLayout::uLOW_CHUNK_INDEX_COUNT * TOTAL_CHUNKS;
+	// Each exporter output is a self-contained LOW chunk at the terrain's own
+	// divisor-4 topology. The previous seam allowance over-reserved every
+	// interior chunk even though no extra seam geometry exists in the serialized
+	// source.
+	//
+	// Sized for the ACTIVE grid, not the fixed capacity: a 6x9 terrain reserves
+	// 54 chunks' worth of always-resident buffer, not 4096. (The GPU-side arrays
+	// -- residency, AABBs, indirect args -- stay capacity-sized; this is real
+	// vertex memory, so it tracks what is actually baked.)
+	const uint32_t uLowVerts = m_xDims.ChunkVertexCount(Zenith_TerrainDimensionsLimits::uLOW_DENSITY_DIVISOR);
+	const uint32_t uLowIndices = m_xDims.ChunkIndexCount(Zenith_TerrainDimensionsLimits::uLOW_DENSITY_DIVISOR);
+	uTotalVertsOut = uLowVerts * m_xDims.ChunkCount();
+	uTotalIndicesOut = uLowIndices * m_xDims.ChunkCount();
 }
 
 void Zenith_TerrainComponent::LogSparseLoadDiagnostics(const char* szSourceKind,
@@ -1316,7 +1447,7 @@ void Zenith_TerrainComponent::LogSparseLoadDiagnostics(const char* szSourceKind,
 	}
 }
 
-bool Zenith_TerrainComponent::CombineTerrainChunkGridCore(uint32_t uGridSize,
+bool Zenith_TerrainComponent::CombineTerrainChunkGridCore(uint32_t uGridSizeX, uint32_t uGridSizeZ,
 	uint32_t uTotalVerts, uint32_t uTotalIndices,
 	TerrainChunkLoadCallback pfnLoadChunk, void* pLoadContext,
 	Flux_TerrainChunkInitData* pxChunkInitData,
@@ -1329,16 +1460,20 @@ bool Zenith_TerrainComponent::CombineTerrainChunkGridCore(uint32_t uGridSize,
 	pxCombinedGeometryOut = nullptr;
 	if (puChunkSpanCountOut != nullptr)
 		*puChunkSpanCountOut = 0u;
-	if (uGridSize == 0u || uGridSize > CHUNK_GRID_SIZE || pfnLoadChunk == nullptr)
+	// The bound is the fixed chunk CAPACITY, not the active grid: a chunk's flat
+	// slot is stride-64 whatever the grid is, so a grid wider than capacity would
+	// alias two chunks onto one slot.
+	if (uGridSizeX == 0u || uGridSizeZ == 0u ||
+		uGridSizeX > CHUNK_GRID_SIZE || uGridSizeZ > CHUNK_GRID_SIZE || pfnLoadChunk == nullptr)
 		return false;
 	if (pxChunkInitData != nullptr)
 	{
 		// A retry may reuse caller-owned init storage. Clear every coordinate in
 		// the requested grid before loading so a now-missing sparse chunk cannot
 		// retain stale counts/AABB from an earlier complete bake.
-		for (uint32_t uX = 0u; uX < uGridSize; ++uX)
+		for (uint32_t uX = 0u; uX < uGridSizeX; ++uX)
 		{
-			for (uint32_t uY = 0u; uY < uGridSize; ++uY)
+			for (uint32_t uY = 0u; uY < uGridSizeZ; ++uY)
 			{
 				pxChunkInitData[Flux_TerrainConfig::ChunkCoordsToIndex(uX, uY)] = {};
 			}
@@ -1395,7 +1530,7 @@ bool Zenith_TerrainComponent::CombineTerrainChunkGridCore(uint32_t uGridSize,
 		// what keeps a release build from corrupting the heap over it.
 		Zenith_Assert(*puChunkSpanCountOut < uChunkSpanCapacity,
 			"Terrain chunk-span table overflow: capacity %u cannot hold span %u. "
-			"pxChunkSpansOut must have at least uGridSize*uGridSize entries.",
+			"pxChunkSpansOut must have at least uGridSizeX*uGridSizeZ entries.",
 			uChunkSpanCapacity, *puChunkSpanCountOut);
 		if (*puChunkSpanCountOut >= uChunkSpanCapacity)
 			return;
@@ -1459,9 +1594,9 @@ bool Zenith_TerrainComponent::CombineTerrainChunkGridCore(uint32_t uGridSize,
 		}
 	};
 
-	for (uint32_t uX = 0u; uX < uGridSize; ++uX)
+	for (uint32_t uX = 0u; uX < uGridSizeX; ++uX)
 	{
-		for (uint32_t uY = 0u; uY < uGridSize; ++uY)
+		for (uint32_t uY = 0u; uY < uGridSizeZ; ++uY)
 		{
 			if (uX == 0u && uY == 0u)
 				continue;
@@ -1505,7 +1640,7 @@ bool Zenith_TerrainComponent::CombineTerrainChunkGridCore(uint32_t uGridSize,
 	return true;
 }
 
-bool Zenith_TerrainComponent::LoadAndCombineLowLODChunksCore(uint32_t uGridSize,
+bool Zenith_TerrainComponent::LoadAndCombineLowLODChunksCore(uint32_t uGridSizeX, uint32_t uGridSizeZ,
 	uint32_t uTotalVerts, uint32_t uTotalIndices,
 	TerrainChunkLoadCallback pfnLoadChunk, void* pLoadContext,
 	Flux_TerrainChunkInitData* pxChunkInitData,
@@ -1515,7 +1650,7 @@ bool Zenith_TerrainComponent::LoadAndCombineLowLODChunksCore(uint32_t uGridSize,
 	// No table, no capacity, no counter: the LOW LOD/render combine has no
 	// per-chunk query to accelerate, so it does not build a span table (see
 	// PhysicsChunkSpan).
-	const bool bCombined = CombineTerrainChunkGridCore(uGridSize, uTotalVerts, uTotalIndices,
+	const bool bCombined = CombineTerrainChunkGridCore(uGridSizeX, uGridSizeZ, uTotalVerts, uTotalIndices,
 		pfnLoadChunk, pLoadContext, pxChunkInitData, pxLowLODGeometryOut, xDiagnosticsOut,
 		nullptr, 0u, nullptr);
 	if (!bCombined)
@@ -1537,7 +1672,7 @@ bool Zenith_TerrainComponent::LoadAndCombineLowLODChunksCore(uint32_t uGridSize,
 	return true;
 }
 
-bool Zenith_TerrainComponent::LoadCombinedPhysicsGeometryCore(uint32_t uGridSize,
+bool Zenith_TerrainComponent::LoadCombinedPhysicsGeometryCore(uint32_t uGridSizeX, uint32_t uGridSizeZ,
 	TerrainChunkLoadCallback pfnLoadChunk, void* pLoadContext,
 	TerrainSparseLoadDiagnostics& xDiagnosticsOut)
 {
@@ -1545,8 +1680,10 @@ bool Zenith_TerrainComponent::LoadCombinedPhysicsGeometryCore(uint32_t uGridSize
 		return false;
 	if (m_pxPhysicsGeometry != nullptr)
 		return true;
-	const uint32_t uTotalVerts = Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_VERTEX_COUNT * uGridSize * uGridSize;
-	const uint32_t uTotalIndices = Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_INDEX_COUNT * uGridSize * uGridSize;
+	const uint32_t uPhysicsChunkVerts = m_xDims.ChunkVertexCount(Zenith_TerrainDimensionsLimits::uPHYSICS_DENSITY_DIVISOR);
+	const uint32_t uPhysicsChunkIndices = m_xDims.ChunkIndexCount(Zenith_TerrainDimensionsLimits::uPHYSICS_DENSITY_DIVISOR);
+	const uint32_t uTotalVerts = uPhysicsChunkVerts * uGridSizeX * uGridSizeZ;
+	const uint32_t uTotalIndices = uPhysicsChunkIndices * uGridSizeX * uGridSizeZ;
 
 	// A retry must not consult a span table left over from an earlier, possibly
 	// differently-sparse, attempt. Every site that discards m_pxPhysicsGeometry
@@ -1568,7 +1705,7 @@ bool Zenith_TerrainComponent::LoadCombinedPhysicsGeometryCore(uint32_t uGridSize
 	// pxSpans staying null degrades this terrain to the unaccelerated scan
 	// (TryGetGroundHeightAt's fallback) rather than failing physics load
 	// outright over an accelerator it can do without.
-	const uint32_t uMaxChunkSpans = uGridSize * uGridSize;
+	const uint32_t uMaxChunkSpans = uGridSizeX * uGridSizeZ;
 	PhysicsChunkSpan* pxSpans = static_cast<PhysicsChunkSpan*>(
 		Zenith_MemoryManagement::Allocate(sizeof(PhysicsChunkSpan) * uMaxChunkSpans));
 	uint32_t uSpanCount = 0u;
@@ -1576,7 +1713,7 @@ bool Zenith_TerrainComponent::LoadCombinedPhysicsGeometryCore(uint32_t uGridSize
 	// uMaxChunkSpans is the ELEMENT count the allocation above was sized for, and
 	// is what the core enforces its writes against -- the two are derived from the
 	// same expression here so they cannot drift apart.
-	const bool bCombined = CombineTerrainChunkGridCore(uGridSize, uTotalVerts, uTotalIndices,
+	const bool bCombined = CombineTerrainChunkGridCore(uGridSizeX, uGridSizeZ, uTotalVerts, uTotalIndices,
 		pfnLoadChunk, pLoadContext, nullptr, m_pxPhysicsGeometry, xDiagnosticsOut,
 		pxSpans, uMaxChunkSpans, pxSpans != nullptr ? &uSpanCount : nullptr);
 	if (!bCombined)
@@ -1608,24 +1745,38 @@ void Zenith_TerrainComponent::FreePhysicsChunkSpans()
 
 void Zenith_TerrainComponent::LoadAndCombineLowLODChunks(uint32_t uTotalVerts, uint32_t uTotalIndices, Flux_TerrainChunkInitData* pxChunkInitData, Flux_MeshGeometry*& pxLowLODGeometryOut)
 {
-	Zenith_Log(LOG_CATEGORY_TERRAIN, "Loading LOW LOD meshes for all %u chunks...", TOTAL_CHUNKS);
+	// The manifest gate runs BEFORE a single chunk is opened. A set baked at
+	// other dimensions would pass every per-chunk check while decoding against
+	// the wrong box -- geometry in the wrong place rather than absent -- which
+	// is the one failure the per-chunk validator structurally cannot see.
+	if (!VerifyBakedDimensionsManifest("LOW LOD"))
+	{
+		m_bTerrainGeometryUnusable = true;
+		return;
+	}
+
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "Loading LOW LOD meshes for all %u chunks (%ux%u grid)...",
+		m_xDims.ChunkCount(), m_xDims.m_uGridChunksX, m_xDims.m_uGridChunksZ);
 	struct DirectoryLoadContext
 	{
 		std::string m_strDirectory;
+		Zenith_TerrainDimensions m_xDims;
 	};
-	DirectoryLoadContext xContext{ GetTerrainAssetDirectory() };
+	DirectoryLoadContext xContext{ GetTerrainAssetDirectory(), m_xDims };
 	auto LoadChunk = [](void* pContext, uint32_t uX, uint32_t uY, Flux_MeshGeometry& xGeometryOut) -> bool
 	{
 		const DirectoryLoadContext& xLoadContext = *static_cast<const DirectoryLoadContext*>(pContext);
 		const std::string strPath = xLoadContext.m_strDirectory + "Render_LOW_" +
 			std::to_string(uX) + "_" + std::to_string(uY) + ZENITH_MESH_EXT;
-		return TryLoadTerrainChunkSource(strPath,
-			Zenith_TerrainChunkLayout::uLOW_CHUNK_VERTEX_COUNT,
-			Zenith_TerrainChunkLayout::uLOW_CHUNK_INDEX_COUNT, false, xGeometryOut);
+		return TryLoadTerrainChunkSource(strPath, xLoadContext.m_xDims,
+			xLoadContext.m_xDims.ChunkVertexCount(Zenith_TerrainDimensionsLimits::uLOW_DENSITY_DIVISOR),
+			xLoadContext.m_xDims.ChunkIndexCount(Zenith_TerrainDimensionsLimits::uLOW_DENSITY_DIVISOR),
+			false, xGeometryOut);
 	};
 
 	TerrainSparseLoadDiagnostics xDiagnostics;
-	if (!LoadAndCombineLowLODChunksCore(CHUNK_GRID_SIZE, uTotalVerts, uTotalIndices,
+	if (!LoadAndCombineLowLODChunksCore(m_xDims.m_uGridChunksX, m_xDims.m_uGridChunksZ,
+		uTotalVerts, uTotalIndices,
 		LoadChunk, &xContext, pxChunkInitData, pxLowLODGeometryOut, xDiagnostics))
 	{
 		Zenith_Error(LOG_CATEGORY_TERRAIN,
@@ -1697,24 +1848,32 @@ void Zenith_TerrainComponent::LoadCombinedPhysicsGeometry()
 		return;
 	}
 
+	if (!VerifyBakedDimensionsManifest("physics"))
+	{
+		return;
+	}
+
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "Loading and combining all physics chunks...");
 	struct DirectoryLoadContext
 	{
 		std::string m_strDirectory;
+		Zenith_TerrainDimensions m_xDims;
 	};
-	DirectoryLoadContext xContext{ GetTerrainAssetDirectory() };
+	DirectoryLoadContext xContext{ GetTerrainAssetDirectory(), m_xDims };
 	auto LoadChunk = [](void* pContext, uint32_t uX, uint32_t uY, Flux_MeshGeometry& xGeometryOut) -> bool
 	{
 		const DirectoryLoadContext& xLoadContext = *static_cast<const DirectoryLoadContext*>(pContext);
 		const std::string strPath = xLoadContext.m_strDirectory + "Physics_" +
 			std::to_string(uX) + "_" + std::to_string(uY) + ZENITH_MESH_EXT;
-		return TryLoadTerrainChunkSource(strPath,
-			Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_VERTEX_COUNT,
-			Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_INDEX_COUNT, true, xGeometryOut);
+		return TryLoadTerrainChunkSource(strPath, xLoadContext.m_xDims,
+			xLoadContext.m_xDims.ChunkVertexCount(Zenith_TerrainDimensionsLimits::uPHYSICS_DENSITY_DIVISOR),
+			xLoadContext.m_xDims.ChunkIndexCount(Zenith_TerrainDimensionsLimits::uPHYSICS_DENSITY_DIVISOR),
+			true, xGeometryOut);
 	};
 
 	TerrainSparseLoadDiagnostics xDiagnostics;
-	if (!LoadCombinedPhysicsGeometryCore(CHUNK_GRID_SIZE, LoadChunk, &xContext, xDiagnostics))
+	if (!LoadCombinedPhysicsGeometryCore(m_xDims.m_uGridChunksX, m_xDims.m_uGridChunksZ,
+		LoadChunk, &xContext, xDiagnostics))
 	{
 		Zenith_Error(LOG_CATEGORY_TERRAIN,
 			"Terrain physics chunk (0,0) failed validation (Physics_0_0%s missing or invalid). Terrain will have no physics body.",
@@ -1747,6 +1906,14 @@ void Zenith_TerrainComponent::InitializeCullingResources()
 		nullptr,
 		sizeof(Zenith_CameraDataGPU),
 		m_pxStreamingState->m_xFrustumPlanesBuffer
+	);
+
+	// Per-terrain dequantisation constants. Sized by the renderer, which owns
+	// the CPU-side struct; filled and uploaded per record in PreRenderUpdate.
+	xVulkanMemory.InitialiseDynamicConstantBuffer(
+		nullptr,
+		Flux_TerrainConstantsBufferBytes(),
+		m_pxStreamingState->m_xTerrainConstantsBuffer
 	);
 
 	// Indirect draw command buffer (one command per chunk, max).
@@ -1862,6 +2029,7 @@ void Zenith_TerrainComponent::DestroyCullingResources()
 	auto& xVulkanMemory = g_xEngine.FluxMemory();
 	xVulkanMemory.DestroyDynamicReadWriteBuffer(m_pxStreamingState->m_xChunkDataBuffer);
 	xVulkanMemory.DestroyDynamicConstantBuffer(m_pxStreamingState->m_xFrustumPlanesBuffer);
+	xVulkanMemory.DestroyDynamicConstantBuffer(m_pxStreamingState->m_xTerrainConstantsBuffer);
 	xVulkanMemory.DestroyIndirectBuffer(m_pxStreamingState->m_xIndirectDrawBuffer);
 	xVulkanMemory.DestroyIndirectBuffer(m_pxStreamingState->m_xVisibleCountBuffer);
 	xVulkanMemory.DestroyReadWriteBuffer(m_pxStreamingState->m_xLODLevelBuffer);

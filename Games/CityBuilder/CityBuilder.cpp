@@ -37,7 +37,8 @@
 #include "Editor/Zenith_EditorAutomation.h"
 #include "CityBuilder/Source/CB_ToolIconGen.h"   // procedural toolbar-icon drawing (tools build)
 // Offline terrain bake (engine lib, ZENITH_TOOLS): heightmap -> chunk meshes.
-extern void ExportHeightmapFromPaths(const std::string& strHeightmapPath, const std::string& strOutputDir);
+extern void ExportHeightmapFromPaths(const std::string& strHeightmapPath, const std::string& strOutputDir,
+	const Zenith_TerrainDimensions& xDims);
 #endif
 
 // ============================================================================
@@ -291,14 +292,25 @@ static void CB_EnsureTerrainAssets()
 	// table no longer matches Zenith_TerrainChunkLayout, so every one of them is
 	// rejected -- the city would load with neither always-resident LOW geometry nor
 	// collision.
-	const std::string strHillMarker = strTerrainDir + "terrain_hills_v7.marker";   // bump to force a re-bake when HillNorm or the baked chunk layout changes
+	// v8 is not a shape change either, and the chunk BYTES are unchanged: terrain
+	// dimensions became per-terrain, and a baked set now carries a REQUIRED
+	// TerrainDims.zdata manifest describing the dimensions its chunks were
+	// quantised against. A v7 set has no manifest, so the loader treats it as a
+	// stale bake and refuses it -- no LOW geometry and no collision -- which is
+	// exactly the outcome this stamp exists to prevent.
+	const std::string strHillMarker = strTerrainDir + "terrain_hills_v8.marker";   // bump to force a re-bake when HillNorm or the baked chunk layout changes
 	if (!std::filesystem::exists(strHillMarker))
 	{
 		const std::string strHeightmap = strTerrainDir + "CityHeightmap" ZENITH_TEXTURE_EXT;
 		CB_WriteHillHeightmap(strHeightmap, 4096);
 		Zenith_Log(LOG_CATEGORY_TERRAIN,
 			"[CityBuilder] Baking rolling-hills terrain (4096px @ scale 1.0 -> 4096m). This takes a few minutes...");
-		ExportHeightmapFromPaths(strHeightmap, strTerrainDir);
+		// CityBuilder is contractually a DEFAULT-dimensioned terrain: its road
+		// carve and its stream-in hook both assume 1m quads (CB_RoadTerrain
+		// rewrites per-vertex heights against a 1m-resolution heightfield), and
+		// CB_Terrain.cpp pins that with a unit test. Passed explicitly rather
+		// than defaulted so the dependency is visible at the call site.
+		ExportHeightmapFromPaths(strHeightmap, strTerrainDir, Zenith_TerrainDimensions::Default());
 		Zenith_DataStream xMark; xMark << static_cast<int32_t>(1); xMark.WriteToFile(strHillMarker.c_str());
 		Zenith_Log(LOG_CATEGORY_TERRAIN, "[CityBuilder] Terrain bake complete.");
 	}
@@ -468,6 +480,9 @@ void Project_RegisterEditorAutomationSteps()
 		g_xEngine.EditorAutomation().AddStep_CreateEntity("CityTerrain");
 		g_xEngine.EditorAutomation().AddStep_SetEntityTransient(false);
 		g_xEngine.EditorAutomation().AddStep_AddComponent("Terrain");
+		// Explicit beats implicit-default: CityBuilder's 1m road-carve contract is
+		// a property of the terrain's dimensions, so the scene says so out loud.
+		g_xEngine.EditorAutomation().AddStep_TerrainSetDimensions(64.0f, 1.0f, 64, 64);
 		g_xEngine.EditorAutomation().AddStep_SetTerrainMaterial(0, g_axCBTerrainMaterials[0].GetDirect());
 		g_xEngine.EditorAutomation().AddStep_SetTerrainMaterial(1, g_axCBTerrainMaterials[1].GetDirect());
 		g_xEngine.EditorAutomation().AddStep_SetTerrainMaterial(2, g_axCBTerrainMaterials[2].GetDirect());

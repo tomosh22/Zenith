@@ -38,7 +38,6 @@ public:
 	void PreRenderUpdate(void* pUserData);
 
 	Flux_Pipeline& GetShadowPipeline()                          { return m_xTerrainShadowPipeline; }
-	Flux_DynamicConstantBuffer& GetTerrainConstantsBuffer()     { return m_xTerrainConstantsBuffer; }
 	Flux_Pipeline& GetCullingPipeline()                         { return m_xCullingPipeline; }
 
 	u_int& GetDebugMode();
@@ -88,6 +87,9 @@ public:
 	float    m_fCullingTimeMs      = 0.0f;
 	float    m_fStreamingTimeMs    = 0.0f;
 
-	// Terrain constants buffer (TerrainConstants GPU struct is .cpp-local).
-	Flux_DynamicConstantBuffer m_xTerrainConstantsBuffer;
 };
+
+// Byte size of the TerrainConstants CB. The struct itself stays .cpp-local (it
+// is pinned there against the reflected layout), but Zenith_TerrainComponent has
+// to size one PER TERRAIN, so the size -- and only the size -- is published.
+uint32_t Flux_TerrainConstantsBufferBytes();

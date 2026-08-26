@@ -59,19 +59,25 @@ struct VsOut
 
 // Per-frame UV scale + the dequantisation box the packed VsIn above needs.
 //
-// The box is the AUTHORED terrain extent (Core/Zenith_TerrainChunkLayout.h), never a
-// per-chunk fit: neighbouring chunks share their stitch vertices by value, and only a
-// SHARED box makes one world position quantise to one word in both, which is what
-// keeps the seam closed. It rides ordinary CB data — only the vertex LAYOUT is
-// reflection-generated.
+// The box is THIS TERRAIN's authored extent, built from its Zenith_TerrainDimensions
+// (Flux/Terrain/Flux_TerrainVertexQuant.h), never a per-chunk fit: neighbouring
+// chunks share their stitch vertices by value, and only a box SHARED BY THE WHOLE
+// TERRAIN makes one world position quantise to one word in both, which is what keeps
+// the seam closed. The CB is therefore bound per RECORD, not once per pass. It rides
+// ordinary CB data — only the vertex LAYOUT is reflection-generated.
 //
-// std140 puts the two float4s on 16-byte boundaries (offsets 16 and 32), so the CB is
-// 48 bytes; the CPU mirror in Flux_Terrain.cpp static_asserts against exactly that.
+// std140 puts each float4 on a 16-byte boundary (offsets 16, 32 and 48), so the CB
+// is 64 bytes; the CPU mirror in Flux_Terrain.cpp static_asserts against exactly that.
 struct TerrainConstantsLayout
 {
 	float  g_fUVScale;         // artist/debug tiling multiplier
-	float4 g_xPosQuantScale;   // xyz = authored box extent; w = the UV dequant scale
-	float4 g_xPosQuantBias;    // xyz = authored box min
+	float4 g_xPosQuantScale;   // xyz = this terrain's box extent; w = the UV dequant scale
+	float4 g_xPosQuantBias;    // xyz = this terrain's box min
+	// (chunk world size, terrain world size X, terrain world size Z, unused).
+	// Read only by the debug visualisation modes, which used to spell 64.0 and
+	// 63.5 as literals and drew a wrong chunk grid on any terrain whose chunks
+	// are not 64 metres.
+	float4 g_xTerrainDims;
 };
 
 // Per-draw 288-byte CB. g_xTerrainParams2.y holds the debug-mode index
@@ -298,12 +304,16 @@ GBufferOut fsMain(VsOut input)
 				break;
 			}
 			case 5u: case 6u: case 7u: bHandled = false; break; // need texture sampling — fall through
-			case 8u: xDebugColor = frac(input.worldPos / 64.0); break;
+			case 8u: xDebugColor = frac(input.worldPos / g_xPassSet.TerrainConstants.g_xTerrainDims.x); break;
 			case 9u:
 			{
-				float2 xChunkLocal = fmod(input.worldPos.xz, 64.0);
-				float fBorder = step(xChunkLocal.x, 0.5) + step(63.5, xChunkLocal.x)
-							  + step(xChunkLocal.y, 0.5) + step(63.5, xChunkLocal.y);
+				// 0.5m of border on each side of a chunk edge, wherever that edge
+				// falls -- the old 63.5 was "chunk size minus half a metre" with
+				// the chunk size baked in.
+				float fChunkSize = g_xPassSet.TerrainConstants.g_xTerrainDims.x;
+				float2 xChunkLocal = fmod(input.worldPos.xz, fChunkSize);
+				float fBorder = step(xChunkLocal.x, 0.5) + step(fChunkSize - 0.5, xChunkLocal.x)
+							  + step(xChunkLocal.y, 0.5) + step(fChunkSize - 0.5, xChunkLocal.y);
 				xDebugColor = lerp(float3(0.2), float3(1.0, 0.5, 0.0), min(fBorder, 1.0));
 				break;
 			}

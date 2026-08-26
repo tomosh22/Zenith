@@ -7,6 +7,11 @@
 #include "CityBuilder/Source/CB_TerrainModifier.h"
 #include "CityBuilder/Source/CB_TerrainGen.h"
 #include "CityBuilder/Components/CB_CityManagerComponent.h"
+#include "Core/Zenith_Engine.h"
+#include "Core/Zenith_TerrainDimensions.h"
+#include "EntityComponent/Components/Zenith_TerrainComponent.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_Query.h"
 #include <cmath>
 
 // ============================================================================
@@ -151,6 +156,72 @@ static bool Verify_CB_Terrain_Active()
 	return true;
 }
 
+// ---- CB_Terrain_DefaultDimensions: the 1m-quad contract, stated out loud ----
+//
+// CityBuilder's terrain is DEFAULT-dimensioned and everything about its roads
+// depends on that. CB_RoadTerrain's carve rewrites per-vertex heights against a
+// heightfield indexed at ONE SAMPLE PER METRE, and its stream-in hook re-applies
+// the same delta on every chunk that streams back in; CB_TerrainGen's hill field
+// and CB_TerrainModifier's brushes are metre-resolution too. None of that fails
+// LOUDLY at other dimensions -- a 32m-chunk terrain would carve roads into the
+// wrong place and terraform the wrong texels, with every existing test still
+// green -- so the dependency is asserted here rather than assumed.
+static bool Verify_CB_Terrain_DefaultDimensions()
+{
+	Zenith_TerrainComponent* pxTerrain = nullptr;
+	g_xEngine.Scenes().QueryAllScenes<Zenith_TerrainComponent>().ForEach(
+		[&pxTerrain](Zenith_EntityID, Zenith_TerrainComponent& xTerrain)
+		{
+			if (pxTerrain == nullptr)
+			{
+				pxTerrain = &xTerrain;
+			}
+		});
+	if (pxTerrain == nullptr)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "CB_Terrain_DefaultDimensions: no terrain component in the scene");
+		return false;
+	}
+
+	const Zenith_TerrainDimensions& xDims = pxTerrain->GetTerrainDimensions();
+	bool bOk = true;
+	if (!(xDims == Zenith_TerrainDimensions::Default()))
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"CB_Terrain_DefaultDimensions: city terrain is %ux%u chunks @ %.2fm / %.3fm spacing, "
+			"but the road carve and the terraform brushes assume the DEFAULT 64x64 @ 64m / 1m",
+			xDims.m_uGridChunksX, xDims.m_uGridChunksZ, xDims.m_fChunkWorldSize, xDims.VertexSpacing());
+		bOk = false;
+	}
+	// Spelled separately from the equality above so a failure names the property
+	// that actually broke rather than just "the spec differs".
+	if (xDims.VertexSpacing() != 1.0f)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"CB_Terrain_DefaultDimensions: vertex spacing is %.3fm — the road carve indexes its heightfield at one sample per METRE",
+			xDims.VertexSpacing());
+		bOk = false;
+	}
+	// CB_TerrainGen centres the city on half the terrain, so the extent and that
+	// centre have to describe the same world.
+	const float fExpectedExtent = CB_TerrainGen::TERRAIN_CENTRE * 2.0f;
+	if (xDims.WorldSizeX() != fExpectedExtent || xDims.WorldSizeZ() != fExpectedExtent)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"CB_Terrain_DefaultDimensions: terrain spans %.1f x %.1f m but CB_TerrainGen is centred for %.1f m",
+			xDims.WorldSizeX(), xDims.WorldSizeZ(), fExpectedExtent);
+		bOk = false;
+	}
+	if (bOk)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"CB_Terrain_DefaultDimensions: %ux%u chunks @ %.2fm, %.3fm spacing, %.1f x %.1f m",
+			xDims.m_uGridChunksX, xDims.m_uGridChunksZ, xDims.m_fChunkWorldSize,
+			xDims.VertexSpacing(), xDims.WorldSizeX(), xDims.WorldSizeZ());
+	}
+	return bOk;
+}
+
 static bool Step_Once(int iFrame) { return iFrame < 1; }
 
 static const Zenith_AutomatedTest g_xTerrainFlatTest    = { "CB_Terrain_Flat",    nullptr, &Step_Once, &Verify_CB_Terrain_Flat,    30, false };
@@ -158,11 +229,13 @@ static const Zenith_AutomatedTest g_xTerrainRaiseTest   = { "CB_Terrain_Raise", 
 static const Zenith_AutomatedTest g_xTerrainFlattenTest = { "CB_Terrain_Flatten", nullptr, &Step_Once, &Verify_CB_Terrain_Flatten, 30, false };
 static const Zenith_AutomatedTest g_xTerraformTest      = { "CB_Terraform_RaiseLower", nullptr, &Step_Once, &Verify_CB_Terraform_RaiseLower, 30, false };
 static const Zenith_AutomatedTest g_xTerrainActiveTest  = { "CB_Terrain_Active",  nullptr, &Step_Once, &Verify_CB_Terrain_Active,  30, false };
+static const Zenith_AutomatedTest g_xTerrainDimsTest    = { "CB_Terrain_DefaultDimensions", nullptr, &Step_Once, &Verify_CB_Terrain_DefaultDimensions, 30, false };
 
 ZENITH_AUTOMATED_TEST_REGISTER(g_xTerrainFlatTest);
 ZENITH_AUTOMATED_TEST_REGISTER(g_xTerrainRaiseTest);
 ZENITH_AUTOMATED_TEST_REGISTER(g_xTerrainFlattenTest);
 ZENITH_AUTOMATED_TEST_REGISTER(g_xTerraformTest);
 ZENITH_AUTOMATED_TEST_REGISTER(g_xTerrainActiveTest);
+ZENITH_AUTOMATED_TEST_REGISTER(g_xTerrainDimsTest);
 
 #endif // ZENITH_INPUT_SIMULATOR

@@ -64,4 +64,42 @@ namespace Flux_TerrainSourceGrid
 	{
 		return uCellsPerChunk * uCellsPerChunk * 6u;
 	}
+
+	// ---- sample <-> world <-> authoring-image mapping ------------------------
+	//
+	// The exporter used to weld three things together: one heightmap PIXEL was
+	// one source SAMPLE was one world METRE. That only held because every
+	// terrain was 4096 metres wide baked from a 4096px heightfield. With
+	// per-terrain dimensions the three come apart, and the arithmetic that
+	// separates them is stated here -- as pure doubles, so the fractional
+	// bilinear tap it produces is testable without a heightmap, a task system
+	// or a file, exactly like the sample-count functions above.
+	//
+	// EXACTNESS AT DEFAULTS IS LOAD-BEARING. At 1m vertex spacing and a 4096px
+	// image over a 4096m domain, dSampleStepWorld is 1.0 (or the divisor) and
+	// dImagePixelsPerWorldUnit is 1.0, so every result below is bit-identical
+	// to the integer arithmetic it replaces and a default re-bake reproduces
+	// the assets already on disk.
+
+	// World metres between adjacent source-grid samples at one bake density.
+	// A divisor-4 bake steps four times as far as the HIGH bake does.
+	constexpr double SampleStepWorld(double dVertexSpacing, uint32_t uDensityDivisor)
+	{
+		return dVertexSpacing * static_cast<double>(uDensityDivisor);
+	}
+
+	// World coordinate of sample uSample along one axis of the source grid.
+	constexpr double WorldForSample(uint32_t uSample, double dSampleStepWorld)
+	{
+		return static_cast<double>(uSample) * dSampleStepWorld;
+	}
+
+	// The authoring-image coordinate that sample lands on. FRACTIONAL in
+	// general -- the bilinear tap at the call site is what consumes it, and its
+	// closing sample still clamps to the last texel.
+	constexpr double ImageCoordForSample(uint32_t uSample, double dSampleStepWorld,
+		double dImagePixelsPerWorldUnit)
+	{
+		return WorldForSample(uSample, dSampleStepWorld) * dImagePixelsPerWorldUnit;
+	}
 }

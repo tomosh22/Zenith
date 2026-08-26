@@ -768,8 +768,8 @@ namespace
 	{
 		const u_int uRequiredOutputCount =
 			ZM_GetTerrainRequiredOutputCount(xRecipe);
-		return uRequiredOutputCount >= 3u ?
-			(uRequiredOutputCount - 3u) / 3u : 0u;
+		return uRequiredOutputCount >= 4u ?
+			(uRequiredOutputCount - 4u) / 3u : 0u;
 	}
 
 	void BeginTerrainBakeMeasurement(const ZM_TerrainAuthoringRecipe& xRecipe)
@@ -1309,7 +1309,9 @@ u_int ZM_GetTerrainRequiredOutputCount(const ZM_TerrainAuthoringRecipe& xRecipe)
 	{
 		return 0u;
 	}
-	return static_cast<u_int>(ulWidth * ulHeight * 3u + 3u);
+	// chunks x 3 mesh files, plus Height / Splatmap_RGBA / GrassDensity, plus the
+	// TerrainDims.zdata manifest the runtime loader now REQUIRES.
+	return static_cast<u_int>(ulWidth * ulHeight * 3u + 4u);
 }
 
 void ZM_EnumerateRequiredTerrainOutputs(const ZM_TerrainAuthoringRecipe& xRecipe,
@@ -1342,6 +1344,10 @@ void ZM_EnumerateRequiredTerrainOutputs(const ZM_TerrainAuthoringRecipe& xRecipe
 	xOutputsOut.PushBack((xDirectory / (std::string("Height") + ZENITH_TEXTURE_EXT)).generic_string());
 	xOutputsOut.PushBack((xDirectory / (std::string("Splatmap_RGBA") + ZENITH_TEXTURE_EXT)).generic_string());
 	xOutputsOut.PushBack((xDirectory / (std::string("GrassDensity") + ZENITH_TEXTURE_EXT)).generic_string());
+	// The dimensions manifest the exporter writes beside the chunks. A set
+	// missing it is a stale bake the loader refuses, so it is a REQUIRED output
+	// exactly like the chunk meshes.
+	xOutputsOut.PushBack((xDirectory / Zenith_TerrainDimsManifestFormat::szFILENAME).generic_string());
 	Zenith_Assert(xOutputsOut.GetSize() == uRequiredOutputCount,
 		"Terrain required-output count drifted from manifest contract");
 }

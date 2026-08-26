@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Core/Zenith_TerrainDimensions.h"
 
 #ifdef ZENITH_INPUT_SIMULATOR
 
@@ -120,10 +121,23 @@ namespace
 			FailGrassTest("Flux grass coverage-map size is not 1024");
 			return false;
 		}
-		if (std::fabs(xGrass.GetCoverageWorldSize() - ZM_GrassDensityMap::fWORLD_SIZE)
-			> 0.0001f)
+		// The footprint is the TERRAIN's square authoring domain now, not a
+		// constant on the density map. Both halves -- the CPU map this component
+		// keeps and the coverage map it pushed into Flux -- were fed from that
+		// one number, so asserting they AGREE is the invariant that actually
+		// matters; re-spelling 4096 here would only pin the default again.
+		const float fCPUMapWorldSize = xComponent.GetDensityMap().GetWorldSize();
+		if (std::fabs(xGrass.GetCoverageWorldSize() - fCPUMapWorldSize) > 0.0001f)
 		{
-			FailGrassTest("Flux grass coverage-map world size is not 4096");
+			FailGrassTest("Flux grass coverage-map world size does not match the CPU density map's");
+			return false;
+		}
+		// ...and that it is the DEFAULT domain, which is what Zenithmon's recipes
+		// still bake at. A recipe that shrinks its terrain moves this number and
+		// should move this line with it.
+		if (std::fabs(fCPUMapWorldSize - Zenith_TerrainDimensions::Default().MaxWorldSize()) > 0.0001f)
+		{
+			FailGrassTest("Dawnmere grass world size is not the default terrain's 4096m authoring domain");
 			return false;
 		}
 		if (std::fabs(xComponent.GetAppliedDensityScale() - 0.70f) > 0.0001f)

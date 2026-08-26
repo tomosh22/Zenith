@@ -36,7 +36,7 @@ namespace
 		const uint32_t uStride = xState.m_uVertexStride;
 		if (uNum == 0 || xMesh.m_pVertexData == nullptr || uStride == 0) { return; }
 
-		const Flux_PosQuant xQuant = Flux_MakeTerrainPosQuant();
+		const Flux_PosQuant xQuant = Flux_MakeTerrainPosQuant(xState.m_xDims);
 		Zenith_AABB xAABB;
 		xAABB.Reset();
 		for (uint32_t i = 0; i < uNum; ++i)
@@ -77,7 +77,7 @@ namespace
 		const uint32_t uStride = xState.m_uVertexStride;
 		if (uNum == 0 || xMesh.m_pVertexData == nullptr || uStride == 0) { return; }
 
-		const Flux_PosQuant xQuant = Flux_MakeTerrainPosQuant();
+		const Flux_PosQuant xQuant = Flux_MakeTerrainPosQuant(xState.m_xDims);
 		Zenith_AABB xAABB;
 		xAABB.Reset();
 		for (uint32_t i = 0; i < uNum; ++i)
@@ -166,13 +166,14 @@ void CB_RoadTerrain::CarveTerrainMesh(const CB_RoadGraph& xGraph, Zenith_Terrain
 // The engine uploads to a deferred-safe slot, so no GPU sync is needed here. This is the single
 // race-free path for both the road carve and the terraform tool.
 void CB_RoadTerrain::ChunkVertexCarveHook(void* pUser, uint32_t /*uChunkX*/, uint32_t /*uChunkY*/,
-                                          void* pVertexData, uint32_t uNumVerts, uint32_t uVertexStride)
+                                          void* pVertexData, uint32_t uNumVerts, uint32_t uVertexStride,
+                                          const Zenith_TerrainDimensions& xDims)
 {
 	const CB_TerrainHeightfield* pxField = static_cast<const CB_TerrainHeightfield*>(pUser);
 	if (pxField == nullptr || pVertexData == nullptr || uNumVerts == 0u || uVertexStride == 0u) { return; }
 
 	u_int8* pBytes = static_cast<u_int8*>(pVertexData);
-	const Flux_PosQuant xQuant = Flux_MakeTerrainPosQuant();
+	const Flux_PosQuant xQuant = Flux_MakeTerrainPosQuant(xDims);
 	for (uint32_t i = 0; i < uNumVerts; ++i)
 	{
 		// Decode the quantised position, move Y only, re-encode against the same

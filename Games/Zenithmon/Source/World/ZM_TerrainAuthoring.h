@@ -288,11 +288,19 @@ struct ZM_TerrainBakeBatchPlan
 //             its serialized element table no longer matches
 //             Zenith_TerrainChunkLayout, so a v3 bake is rejected outright --
 //             no LOW geometry and no physics body.
-constexpr u_int uZM_TERRAIN_MANIFEST_VERSION = 4u;
+//   v4 -> v5: terrain dimensions became per-terrain, and a baked set now carries
+//             a REQUIRED TerrainDims.zdata manifest recording the dimensions its
+//             chunks were quantised against. The chunk BYTES are unchanged at
+//             default dimensions (which is what these recipes still bake at), but
+//             a v4 set has no dimensions manifest, so the runtime loader treats
+//             it as a stale bake and refuses it outright -- no LOW geometry and
+//             no physics body. The required-output count also gains that one
+//             file, which is why all three counts move by exactly one.
+constexpr u_int uZM_TERRAIN_MANIFEST_VERSION = 5u;
 constexpr u_int uZM_TERRAIN_RECIPE_COUNT = 3u;
-constexpr u_int uZM_DAWNMERE_REQUIRED_OUTPUT_COUNT = 771u;
-constexpr u_int uZM_THORNACRE_REQUIRED_OUTPUT_COUNT = 771u;
-constexpr u_int uZM_ROUTE1_REQUIRED_OUTPUT_COUNT = 1155u;
+constexpr u_int uZM_DAWNMERE_REQUIRED_OUTPUT_COUNT = 772u;
+constexpr u_int uZM_THORNACRE_REQUIRED_OUTPUT_COUNT = 772u;
+constexpr u_int uZM_ROUTE1_REQUIRED_OUTPUT_COUNT = 1156u;
 constexpr u_int uZM_TERRAIN_MANIFEST_SIZE = 12u;
 constexpr const char* szZM_FORCE_TERRAIN_BAKE_FLAG = "--zm-force-terrain-bake";
 

@@ -58,8 +58,9 @@ struct VsOut
 struct TerrainConstantsLayout
 {
 	float  g_fUVScale;
-	float4 g_xPosQuantScale;   // xyz = authored box extent; w = the UV dequant scale
-	float4 g_xPosQuantBias;    // xyz = authored box min
+	float4 g_xPosQuantScale;   // xyz = this terrain's box extent; w = the UV dequant scale
+	float4 g_xPosQuantBias;    // xyz = this terrain's box min
+	float4 g_xTerrainDims;     // (chunk world size, world size X, world size Z, unused)
 };
 
 struct TerrainMaterialConstantsLayout
@@ -160,12 +161,16 @@ GBufferVelocityOut fsMain(VsOut input)
 				break;
 			}
 			case 5u: case 6u: case 7u: bHandled = false; break;
-			case 8u: xDebugColor = frac(input.worldPos / 64.0); break;
+			case 8u: xDebugColor = frac(input.worldPos / g_xPassSet.TerrainConstants.g_xTerrainDims.x); break;
 			case 9u:
 			{
-				float2 xChunkLocal = fmod(input.worldPos.xz, 64.0);
-				float fBorder = step(xChunkLocal.x, 0.5) + step(63.5, xChunkLocal.x)
-							  + step(xChunkLocal.y, 0.5) + step(63.5, xChunkLocal.y);
+				// 0.5m of border on each side of a chunk edge, wherever that edge
+				// falls -- the old 63.5 was "chunk size minus half a metre" with
+				// the chunk size baked in.
+				float fChunkSize = g_xPassSet.TerrainConstants.g_xTerrainDims.x;
+				float2 xChunkLocal = fmod(input.worldPos.xz, fChunkSize);
+				float fBorder = step(xChunkLocal.x, 0.5) + step(fChunkSize - 0.5, xChunkLocal.x)
+							  + step(xChunkLocal.y, 0.5) + step(fChunkSize - 0.5, xChunkLocal.y);
 				xDebugColor = lerp(float3(0.2), float3(1.0, 0.5, 0.0), min(fBorder, 1.0));
 				break;
 			}

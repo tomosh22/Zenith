@@ -964,4 +964,123 @@ ZENITH_TEST(TerrainEditor, GrassTypesSaveWritesTheAssetAndApplies)
 	Zenith_AssetRegistry::ForceUnload(szZENITH_GRASS_TYPE_TABLE_ASSET_PATH);
 }
 
+//=============================================================================
+// Configurable dimensions: the world <-> heightfield-pixel conversions.
+//=============================================================================
+
+ZENITH_TEST(TerrainEditor, DimensionValidationMatchesTheSpec)
+{
+	Zenith_TerrainEditor xEditor;
+	xEditor.OpenStandalone();
+
+	// A fresh session starts on the historical shape.
+	ZENITH_ASSERT_TRUE(xEditor.GetDimensions() == Zenith_TerrainDimensions::Default(),
+		"a fresh session must start on the default dimensions");
+	ZENITH_ASSERT_TRUE(xEditor.WorldSize() == 4096.0f, "the default session domain is 4096m");
+	ZENITH_ASSERT_TRUE(xEditor.HeightPxPerWorld() == 1.0f,
+		"a default session must be EXACTLY one heightfield pixel per metre — the identity every "
+		"default-dimensioned sculpt reproduces");
+
+	const Zenith_TerrainDimensions xSmall{ 64.0f, 64u, 6u, 9u };
+	ZENITH_ASSERT_TRUE(xEditor.SetDimensions(xSmall), "a valid spec must stage");
+	ZENITH_ASSERT_TRUE(xEditor.GetDimensions() == xSmall, "the staged spec must be observable");
+	ZENITH_ASSERT_TRUE(xEditor.GetDimensionsValidationError().empty(),
+		"a valid spec must clear the validation error");
+	ZENITH_ASSERT_TRUE(xEditor.WorldSize() == 576.0f,
+		"the domain is the LONGER axis of a 6x9 grid at 64m");
+
+	// A refused spec is transactional: the session keeps what it had.
+	const Zenith_TerrainDimensions xBad{ 64.0f, 48u, 6u, 9u };   // 48 is not a power of two
+	ZENITH_ASSERT_FALSE(xEditor.SetDimensions(xBad), "a non-power-of-two quad count must be refused");
+	ZENITH_ASSERT_TRUE(xEditor.GetDimensions() == xSmall,
+		"a refused spec must leave the staged one untouched");
+	ZENITH_ASSERT_FALSE(xEditor.GetDimensionsValidationError().empty(),
+		"a refused spec must report why");
+}
+
+ZENITH_TEST(TerrainEditor, BrushDabLandsOnThePredictedTexelsAtNonDefaultDimensions)
+{
+	// ★ THE STRAGGLER DETECTOR. Roughly ninety sites in these files used to pass a
+	// WORLD coordinate straight into a PIXEL-indexed function, which was correct
+	// only because one pixel was one metre. Every one of those is invisible at
+	// default dimensions, so this test is the only thing that can see them: it
+	// sculpts a NON-default session and checks the edit landed where the
+	// conversion says it should — and, just as importantly, that it did NOT land
+	// where the old 1m/px assumption would have put it.
+	Zenith_TerrainEditor xEditor;
+	xEditor.OpenStandalone();
+
+	// 384 x 576 m over the same 4096px heightfield: about 7.11 px per metre, so a
+	// world coordinate and its pixel coordinate are far apart.
+	const Zenith_TerrainDimensions xSmall{ 64.0f, 64u, 6u, 9u };
+	ZENITH_ASSERT_TRUE(xEditor.SetDimensions(xSmall), "fixture spec must stage");
+	const float fPxPerWorld = xEditor.HeightPxPerWorld();
+	ZENITH_ASSERT_GT(fPxPerWorld, 7.0f, "the fixture must actually differ from 1 px per metre");
+
+	const float fWORLD_X = 100.0f;
+	const float fWORLD_Z = 100.0f;
+	const float fWORLD_RADIUS = 4.0f;
+
+	// The texel the dab must move, and one the old 1m/px reading would have moved
+	// instead. They are ~600 px apart, so no falloff can blur them together.
+	const float fExpectedPxX = fWORLD_X * fPxPerWorld;
+	const float fStalePxX = fWORLD_X;
+	ZENITH_ASSERT_GT(fExpectedPxX - fStalePxX, 100.0f,
+		"the correct and the stale pixel must be far enough apart that only one can be inside the brush");
+
+	const float fBeforeAtTarget = xEditor.SampleHeightNorm(fExpectedPxX, fWORLD_Z * fPxPerWorld);
+	const float fBeforeAtStale = xEditor.SampleHeightNorm(fStalePxX, fWORLD_Z);
+
+	xEditor.ApplyBrushDab(Zenith_TerrainBrushTool::Raise, fWORLD_X, fWORLD_Z,
+		fWORLD_RADIUS, 1.0f, 0.0f);
+
+	ZENITH_ASSERT_GT(xEditor.SampleHeightNorm(fExpectedPxX, fWORLD_Z * fPxPerWorld), fBeforeAtTarget,
+		"the dab must raise the texel the world->pixel conversion points at");
+	ZENITH_ASSERT_EQ_FLOAT(xEditor.SampleHeightNorm(fStalePxX, fWORLD_Z), fBeforeAtStale, 1.0e-6f,
+		"the dab must NOT touch the texel the old one-pixel-per-metre reading would have hit");
+
+	// SampleHeightWorld must agree with the same conversion -- it is the other
+	// direction of the same weld, and the raycast/tree paths stand on it.
+	ZENITH_ASSERT_EQ_FLOAT(xEditor.SampleHeightWorld(fWORLD_X, fWORLD_Z),
+		xEditor.SampleHeightNorm(fExpectedPxX, fWORLD_Z * fPxPerWorld) * Zenith_TerrainEditor::fTERRAIN_MAX_HEIGHT,
+		1.0e-4f,
+		"SampleHeightWorld must read the same texel the brush wrote");
+
+	// The dab's chunk-dirty bit must be the chunk the WORLD position falls in
+	// (chunk 1 of a 64m grid at x=100m), not the chunk a pixel-as-metre reading
+	// would have produced.
+	const u_int uExpectedChunkX = static_cast<u_int>(fWORLD_X / xSmall.m_fChunkWorldSize);
+	const u_int uExpectedChunkZ = static_cast<u_int>(fWORLD_Z / xSmall.m_fChunkWorldSize);
+	ZENITH_ASSERT_EQ(uExpectedChunkX, 1u, "100m at 64m chunks is chunk 1");
+	ZENITH_ASSERT_TRUE(xEditor.IsChunkSessionDirty(uExpectedChunkX * Zenith_TerrainEditor::uCHUNK_GRID + uExpectedChunkZ),
+		"the dab must dirty the chunk its WORLD position falls in");
+}
+
+ZENITH_TEST(TerrainEditor, DefaultDimensionsReproduceTheOnePixelPerMetreArithmetic)
+{
+	// The other half of the straggler detector: at default dimensions the new
+	// conversion has to be the IDENTITY, or commit A moves every existing sculpt.
+	Zenith_TerrainEditor xEditor;
+	xEditor.OpenStandalone();
+
+	ZENITH_ASSERT_TRUE(xEditor.HeightPxPerWorld() == 1.0f, "exactly one pixel per metre");
+	ZENITH_ASSERT_TRUE(xEditor.WorldPerHeightPx() == 1.0f, "exactly one metre per pixel");
+	for (u_int u = 0; u <= 8u; u++)
+	{
+		const float fWorld = static_cast<float>(u) * 512.0f;
+		ZENITH_ASSERT_TRUE(xEditor.WorldToHeightPx(fWorld) == fWorld,
+			"world->pixel must be the identity at default dimensions (case %u)", u);
+		ZENITH_ASSERT_TRUE(xEditor.HeightPxToWorld(fWorld) == fWorld,
+			"pixel->world must be the identity at default dimensions (case %u)", u);
+	}
+
+	// And the image-to-image ratios are dimension-independent by construction.
+	ZENITH_ASSERT_TRUE(Zenith_TerrainEditor::fSPLAT_PX_PER_HEIGHT_PX == 0.5f,
+		"2048 splat texels over a 4096px heightfield is one half, whatever the terrain measures");
+	ZENITH_ASSERT_TRUE(Zenith_TerrainEditor::fGRASS_DENSITY_PX_PER_HEIGHT_PX == 0.25f,
+		"1024 grass texels over a 4096px heightfield is one quarter");
+	ZENITH_ASSERT_TRUE(Zenith_TerrainEditor::fGRASS_TYPE_PX_PER_HEIGHT_PX == 0.25f,
+		"1024 grass-type texels over a 4096px heightfield is one quarter");
+}
+
 #endif // ZENITH_TESTING

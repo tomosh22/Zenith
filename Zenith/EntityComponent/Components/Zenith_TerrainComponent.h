@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Core/Zenith_TerrainDimensions.h"
 #include "ZenithECS/Zenith_Entity.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
@@ -148,8 +149,18 @@ private:
 	static void IncrementInstanceCount();
 	static void DecrementInstanceCount();
 	void ReadSerializedFields(Zenith_DataStream& xStream);
-	static bool TryLoadTerrainChunkSource(const std::string& strPath, uint32_t uExpectedVertexCount,
+	// xDims is the terrain the chunk BELONGS to, not a property of the file:
+	// the packed position lane is quantised against that terrain's box, and the
+	// cross-stream agreement check cannot be made without it.
+	static bool TryLoadTerrainChunkSource(const std::string& strPath,
+		const Zenith_TerrainDimensions& xDims, uint32_t uExpectedVertexCount,
 		uint32_t uExpectedIndexCount, bool bRequireNormals, Flux_MeshGeometry& xGeometryOut);
+
+	// Reads <terrain asset directory>/TerrainDims.zdata and reports whether it
+	// describes m_xDims. A set with no manifest, a corrupt one, or one baked at
+	// other dimensions is a STALE BAKE: its chunks would decode against the
+	// wrong box, so it is refused rather than rendered wrong. Logs the mismatch.
+	bool VerifyBakedDimensionsManifest(const char* szContext) const;
 
 	static constexpr uint32_t uMAX_SPARSE_WARNING_SAMPLES = 8u;
 	struct TerrainSparseLoadDiagnostics
@@ -161,7 +172,7 @@ private:
 		uint32_t m_auSampleY[uMAX_SPARSE_WARNING_SAMPLES] = {};
 	};
 	using TerrainChunkLoadCallback = bool(*)(void*, uint32_t, uint32_t, Flux_MeshGeometry&);
-	static bool CombineTerrainChunkGridCore(uint32_t uGridSize,
+	static bool CombineTerrainChunkGridCore(uint32_t uGridSizeX, uint32_t uGridSizeZ,
 		uint32_t uTotalVerts, uint32_t uTotalIndices,
 		TerrainChunkLoadCallback pfnLoadChunk, void* pLoadContext,
 		Flux_TerrainChunkInitData* pxChunkInitData,
@@ -182,7 +193,7 @@ private:
 		// *puChunkSpanCountOut reaches uChunkSpanCapacity, so a caller that sized
 		// its buffer wrong gets a diagnostic instead of a heap overwrite. Pass the
 		// element count of pxChunkSpansOut, which must be at least
-		// uGridSize*uGridSize -- the core appends at most one span per grid cell.
+		// uGridSizeX*uGridSizeZ -- the core appends at most one span per grid cell.
 		// *puChunkSpanCountOut is reset to 0 and then counts up as chunks are
 		// appended.
 		//
@@ -193,13 +204,13 @@ private:
 		// have no reason to pass a span table.
 		PhysicsChunkSpan* pxChunkSpansOut = nullptr, uint32_t uChunkSpanCapacity = 0u,
 		uint32_t* puChunkSpanCountOut = nullptr);
-	bool LoadAndCombineLowLODChunksCore(uint32_t uGridSize,
+	bool LoadAndCombineLowLODChunksCore(uint32_t uGridSizeX, uint32_t uGridSizeZ,
 		uint32_t uTotalVerts, uint32_t uTotalIndices,
 		TerrainChunkLoadCallback pfnLoadChunk, void* pLoadContext,
 		Flux_TerrainChunkInitData* pxChunkInitData,
 		Flux_MeshGeometry*& pxLowLODGeometryOut,
 		TerrainSparseLoadDiagnostics& xDiagnosticsOut);
-	bool LoadCombinedPhysicsGeometryCore(uint32_t uGridSize,
+	bool LoadCombinedPhysicsGeometryCore(uint32_t uGridSizeX, uint32_t uGridSizeZ,
 		TerrainChunkLoadCallback pfnLoadChunk, void* pLoadContext,
 		TerrainSparseLoadDiagnostics& xDiagnosticsOut);
 	static void LogSparseLoadDiagnostics(const char* szSourceKind,
@@ -458,6 +469,19 @@ public:
 	bool SetTerrainAssetSet(const std::string& strSet);
 	const std::string& GetTerrainAssetSet() const;
 	std::string GetTerrainAssetDirectory() const;
+
+	// ---- terrain dimensions -------------------------------------------------
+	// Chunk world size, vertex density and grid extent. Every dimensional
+	// quantity this component computes -- expected chunk vertex/index counts,
+	// LOW-region buffer sizes, the physics combine, the quantisation box the
+	// packed chunk bytes decode against -- comes from here.
+	//
+	// REFUSED ONCE THE TERRAIN IS INITIALISED, exactly like SetTerrainAssetSet:
+	// the chunks already streamed in were decoded against the current box, and
+	// swapping it underneath them would silently relocate live geometry. Set it
+	// before the first bake or on a fresh component.
+	bool SetTerrainDimensions(const Zenith_TerrainDimensions& xDims);
+	const Zenith_TerrainDimensions& GetTerrainDimensions() const { return m_xDims; }
 
 	// Backward compatibility wrappers
 	Zenith_MaterialAsset* GetMaterial0() const { return m_axMaterials[0].GetDirect(); }
@@ -754,4 +778,7 @@ private:
 private:
 	// Kept private so every mutation passes through the validating setter.
 	std::string m_strTerrainAssetSet;
+	// Likewise: the dimensions must never move under a terrain that has already
+	// decoded chunks against them.
+	Zenith_TerrainDimensions m_xDims = Zenith_TerrainDimensions::Default();
 };

@@ -11,6 +11,8 @@
 
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
+#include "Core/Zenith_TerrainChunkLayout.h"          // the vertex stride the streaming advisory costs in
+#include "Flux/Terrain/Flux_TerrainConfig.h"           // the streaming vertex budget the advisory compares against
 #include "ZenithECS/Zenith_SceneSystem.h"
 
 namespace
@@ -473,6 +475,138 @@ namespace
 		}
 	}
 
+	// The staged dimension fields. They mirror the session's spec on first sight
+	// and whenever the session's spec moves out from under them, exactly like the
+	// asset-set draft above -- an artist must never be looking at a stale number
+	// while a bake writes a different one.
+	float s_fDimsChunkSizeDraft = 64.0f;
+	float s_fDimsSpacingDraft = 1.0f;
+	int s_iDimsGridXDraft = 64;
+	int s_iDimsGridZDraft = 64;
+	Zenith_TerrainDimensions s_xObservedStagedDims = Zenith_TerrainDimensions::Default();
+	bool s_bDimsDraftSeeded = false;
+
+	// Spacing is what an artist thinks in; quads-per-chunk-edge is what the
+	// format stores. Snap DOWN to a power of two so the divisor-4 LOW and physics
+	// bakes stay integral; an exact spacing is unchanged by the snap.
+	u_int ResolveQuadsPerEdgeFromDraft()
+	{
+		if (!(s_fDimsChunkSizeDraft > 0.0f) || !(s_fDimsSpacingDraft > 0.0f))
+		{
+			return 0u;
+		}
+		const float fRawQuads = s_fDimsChunkSizeDraft / s_fDimsSpacingDraft;
+		u_int uQuads = Zenith_TerrainDimensionsLimits::uMIN_QUADS_PER_CHUNK_EDGE;
+		while (uQuads < Zenith_TerrainDimensionsLimits::uMAX_QUADS_PER_CHUNK_EDGE &&
+			static_cast<float>(uQuads) * 2.0f <= fRawQuads)
+		{
+			uQuads *= 2u;
+		}
+		return uQuads;
+	}
+
+	Zenith_TerrainDimensions ResolveDimsDraft()
+	{
+		Zenith_TerrainDimensions xDims;
+		xDims.m_fChunkWorldSize = s_fDimsChunkSizeDraft;
+		xDims.m_uQuadsPerChunkEdge = ResolveQuadsPerEdgeFromDraft();
+		xDims.m_uGridChunksX = static_cast<u_int>(s_iDimsGridXDraft);
+		xDims.m_uGridChunksZ = static_cast<u_int>(s_iDimsGridZDraft);
+		return xDims;
+	}
+
+	void RefreshDimsDraftForSession(const Zenith_TerrainEditor& xEditor)
+	{
+		const Zenith_TerrainDimensions& xStaged = xEditor.GetDimensions();
+		if (s_bDimsDraftSeeded && xStaged == s_xObservedStagedDims)
+		{
+			return;
+		}
+		s_xObservedStagedDims = xStaged;
+		s_bDimsDraftSeeded = true;
+		s_fDimsChunkSizeDraft = xStaged.m_fChunkWorldSize;
+		s_fDimsSpacingDraft = xStaged.VertexSpacing();
+		s_iDimsGridXDraft = static_cast<int>(xStaged.m_uGridChunksX);
+		s_iDimsGridZDraft = static_cast<int>(xStaged.m_uGridChunksZ);
+	}
+
+	void RenderDimensionsSection(Zenith_TerrainEditor& xEditor)
+	{
+		ImGui::Separator();
+		ImGui::TextUnformatted("Terrain Dimensions");
+		ImGui::TextWrapped("Baked into the chunk bytes. Applied to the live component when Bake "
+			"Terrain begins regeneration; an already-initialised terrain is refused.");
+		RefreshDimsDraftForSession(xEditor);
+
+		ImGui::DragFloat("Chunk Size (m)", &s_fDimsChunkSizeDraft, 1.0f, 1.0f, 1024.0f, "%.1f");
+		ImGui::DragFloat("Vertex Spacing (m)", &s_fDimsSpacingDraft, 0.05f, 0.01f, 64.0f, "%.3f");
+		ImGui::DragInt("Grid Chunks X", &s_iDimsGridXDraft, 1.0f, 1,
+			static_cast<int>(Zenith_TerrainDimensionsLimits::uCHUNK_GRID_CAPACITY));
+		ImGui::DragInt("Grid Chunks Z", &s_iDimsGridZDraft, 1.0f, 1,
+			static_cast<int>(Zenith_TerrainDimensionsLimits::uCHUNK_GRID_CAPACITY));
+
+		const Zenith_TerrainDimensions xDraft = ResolveDimsDraft();
+		if (xDraft.IsValid())
+		{
+			ImGui::Text("Resolved: %u quads/chunk edge -> %.3f m spacing, %u verts/chunk",
+				xDraft.m_uQuadsPerChunkEdge, xDraft.VertexSpacing(),
+				xDraft.ChunkVertexCount(Zenith_TerrainDimensionsLimits::uHIGH_DENSITY_DIVISOR));
+			ImGui::Text("World: %.1f x %.1f m, %u chunks (%u files to bake)",
+				xDraft.WorldSizeX(), xDraft.WorldSizeZ(), xDraft.ChunkCount(),
+				xDraft.ChunkCount() * 3u);
+
+			// ADVISORY. Nothing refuses a bake over budget, but a terrain that
+			// cannot keep its HIGH ring resident thrashes the streamer rather
+			// than failing, which is far harder to diagnose than a warning here.
+			const uint64_t ulEstimate = xDraft.EstimatedHighLodStreamingBytes(
+				Zenith_TerrainChunkLayout::uVERTEX_STRIDE, 1000.0f);
+			const float fEstimateMB = static_cast<float>(ulEstimate) / (1024.0f * 1024.0f);
+			const unsigned long long ulBudgetMB =
+				static_cast<unsigned long long>(Flux_TerrainConfig::STREAMING_VERTEX_BUFFER_MB);
+			if (ulEstimate > Flux_TerrainConfig::STREAMING_VERTEX_BUFFER_BYTES)
+			{
+				ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.3f, 1.0f),
+					"Peak HIGH-LOD residency ~%.1f MB exceeds the %llu MB streaming vertex budget.",
+					fEstimateMB, ulBudgetMB);
+			}
+			else
+			{
+				ImGui::TextDisabled("Peak HIGH-LOD residency ~%.1f MB of %llu MB streaming budget",
+					fEstimateMB, ulBudgetMB);
+			}
+		}
+		else
+		{
+			ImGui::TextColored(ImVec4(1.0f, 0.25f, 0.2f, 1.0f),
+				"Invalid: chunk size must be positive, spacing must give a power-of-two quad "
+				"count in [4, 256], and each grid axis must be in [1, 64].");
+		}
+
+		if (!xDraft.IsValid())
+		{
+			ImGui::BeginDisabled();
+		}
+		if (ImGui::Button("Apply Staged Dimensions"))
+		{
+			xEditor.SetDimensions(xDraft);
+			s_xObservedStagedDims = xEditor.GetDimensions();
+		}
+		if (!xDraft.IsValid())
+		{
+			ImGui::EndDisabled();
+		}
+
+		const Zenith_TerrainDimensions& xStaged = xEditor.GetDimensions();
+		ImGui::Text("Staged: %u x %u chunks @ %.2f m (%.1f x %.1f m world), %.3f m spacing",
+			xStaged.m_uGridChunksX, xStaged.m_uGridChunksZ, xStaged.m_fChunkWorldSize,
+			xStaged.WorldSizeX(), xStaged.WorldSizeZ(), xStaged.VertexSpacing());
+		if (!xEditor.GetDimensionsValidationError().empty())
+		{
+			ImGui::TextColored(ImVec4(1.0f, 0.25f, 0.2f, 1.0f), "%s",
+				xEditor.GetDimensionsValidationError().c_str());
+		}
+	}
+
 	void RenderPersistenceSection(Zenith_TerrainEditor& xEditor)
 	{
 		ImGui::Separator();
@@ -497,6 +631,9 @@ namespace
 		{
 			ImGui::TextDisabled("Empty uses the legacy shared terrain paths");
 		}
+		RenderDimensionsSection(xEditor);
+
+		ImGui::Separator();
 		const std::string strMeshOutputDir = xEditor.GetMeshAssetDirectory();
 		const std::string strTextureOutputDir = xEditor.GetTextureAssetDirectory();
 		ImGui::TextWrapped("Mesh Output: %s", strMeshOutputDir.c_str());

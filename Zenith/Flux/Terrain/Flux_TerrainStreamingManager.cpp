@@ -112,13 +112,33 @@ namespace
 	// see both halves of that claim. A box narrower than the grid clamps the far edge
 	// of every terrain into a wall; a box wider than it spends precision on space no
 	// vertex occupies. Neither shows up as a build error anywhere else.
+	//
+	// The box is PER-TERRAIN now (Flux_TerrainVertexQuant.h builds it from a
+	// Zenith_TerrainDimensions), so what is pinnable at compile time is that the
+	// DEFAULT spec reproduces the constants every baked terrain on disk was
+	// authored against -- and that the config's own grid constants still describe
+	// that same default. A runtime spec is validated on registration instead.
+	static_assert(Zenith_TerrainDimensions::Default().WorldSizeX() == TERRAIN_SIZE &&
+		Zenith_TerrainDimensions::Default().WorldSizeZ() == TERRAIN_SIZE,
+		"The default terrain dimensions must span the configured terrain size");
 	static_assert(Zenith_TerrainChunkLayout::afPOSITION_BOX_MAX[0] - Zenith_TerrainChunkLayout::afPOSITION_BOX_MIN[0] == TERRAIN_SIZE &&
 		Zenith_TerrainChunkLayout::afPOSITION_BOX_MAX[2] - Zenith_TerrainChunkLayout::afPOSITION_BOX_MIN[2] == TERRAIN_SIZE,
-		"The terrain position quantisation box's XZ extent must be the configured terrain size");
+		"The DEFAULT terrain position quantisation box's XZ extent must be the configured terrain size");
 	static_assert(Zenith_TerrainChunkLayout::afPOSITION_BOX_MAX[1] - Zenith_TerrainChunkLayout::afPOSITION_BOX_MIN[1] == MAX_TERRAIN_HEIGHT,
 		"The terrain position quantisation box's Y extent must be the configured terrain height");
 	static_assert(Zenith_TerrainChunkLayout::fUV_BOX_MAX == TERRAIN_SIZE,
-		"Terrain UVs are heightmap pixel coordinates over the same extent as the world grid");
+		"The DEFAULT terrain UV box must span the same extent as the default world grid");
+
+	// CAPACITY, not extent: the config's grid constants and the spec's fixed
+	// capacity address the SAME 64x64 slot table, and the flat chunk index is
+	// spelled stride-64 in both. If these ever part company, a shrunken grid
+	// would renumber chunks out from under the culling shader.
+	static_assert(CHUNK_GRID_SIZE == Zenith_TerrainDimensionsLimits::uCHUNK_GRID_CAPACITY,
+		"Flux_TerrainConfig's chunk grid must be the terrain spec's fixed chunk-grid capacity");
+	static_assert(TOTAL_CHUNKS == Zenith_TerrainDimensionsLimits::uTOTAL_CHUNK_CAPACITY,
+		"Flux_TerrainConfig's total chunk count must be the terrain spec's fixed chunk capacity");
+	static_assert(CHUNK_SIZE_WORLD == Zenith_TerrainDimensions::Default().m_fChunkWorldSize,
+		"Flux_TerrainConfig's chunk world size must remain the default spec's chunk world size");
 
 	static_assert(Zenith_TerrainChunkLayout::uVERTEX_STRIDE == VERTEX_STRIDE_BYTES,
 		"Flux_TerrainConfig's documented stride must track the on-disk chunk layout");
@@ -137,7 +157,8 @@ namespace
 	};
 
 
-	bool TryLoadTerrainMeshSource(const char* szPath, uint32_t uExpectedVertexStride, TerrainMeshSourceData& xDataOut)
+	bool TryLoadTerrainMeshSource(const char* szPath, uint32_t uExpectedVertexStride,
+		uint32_t uExpectedVertexCount, uint32_t uExpectedIndexCount, TerrainMeshSourceData& xDataOut)
 	{
 		Zenith_BakedMeshReader xReader(szPath);
 
@@ -169,8 +190,8 @@ namespace
 		uint32_t uBoneMapCount = 0;
 		if (!xReader.Read(xDataOut.m_uNumVerts) || !xReader.Read(xDataOut.m_uNumIndices) ||
 			!xReader.Read(uNumBones) || !xReader.Read(uBoneMapCount) ||
-			xDataOut.m_uNumVerts != Zenith_TerrainChunkLayout::uHIGH_CHUNK_VERTEX_COUNT ||
-			xDataOut.m_uNumIndices != Zenith_TerrainChunkLayout::uHIGH_CHUNK_INDEX_COUNT ||
+			xDataOut.m_uNumVerts != uExpectedVertexCount ||
+			xDataOut.m_uNumIndices != uExpectedIndexCount ||
 			uNumBones != 0u || uBoneMapCount != 0u)
 		{
 			return false;
@@ -472,6 +493,23 @@ void Flux_TerrainStreamingManagerImpl::RegisterTerrainBuffers(Flux_TerrainStream
 	Zenith_Assert(pxState != nullptr,
 		"RegisterTerrainBuffers: null streaming state — constructor should have allocated one");
 
+	// The dimensions must be pushed onto the state BEFORE registration, because
+	// everything below sizes and iterates from them. This replaces the
+	// compile-time box/grid pins that used to guard the one-size-fits-all
+	// constants: a spec is per-terrain data now, so its validity is a RUNTIME
+	// claim, and an invalid one here would index the residency table out of
+	// bounds rather than merely render wrong.
+	Zenith_Assert(pxState->m_xDims.IsValid(),
+		"RegisterTerrainBuffers: terrain dimensions are not bakeable (chunk=%.3fm quads=%u grid=%ux%u)",
+		pxState->m_xDims.m_fChunkWorldSize, pxState->m_xDims.m_uQuadsPerChunkEdge,
+		pxState->m_xDims.m_uGridChunksX, pxState->m_xDims.m_uGridChunksZ);
+	if (!pxState->m_xDims.IsValid())
+	{
+		// Release builds degrade to the historical shape rather than walking off
+		// the end of a fixed-capacity array.
+		pxState->m_xDims = Zenith_TerrainDimensions::Default();
+	}
+
 	Flux_TerrainStreamingState& xState = *pxState;
 	xState.m_bRegistered = true; // (was: xState.m_pxOwner = pxTerrainComponent)
 
@@ -503,9 +541,12 @@ void Flux_TerrainStreamingManagerImpl::RegisterTerrainBuffers(Flux_TerrainStream
 	uint32_t uCurrentLowLODVertexOffset = 0;
 	uint32_t uCurrentLowLODIndexOffset  = 0;
 
-	for (uint32_t x = 0; x < CHUNK_GRID_SIZE; ++x)
+	// The ACTIVE grid, not the fixed capacity. A slot outside the grid has no
+	// baked chunk behind it, and marking it RESIDENT with a zero index count is
+	// exactly what the "LOW zero-count chunks" smoke failure reports.
+	for (uint32_t x = 0; x < xState.m_xDims.m_uGridChunksX; ++x)
 	{
-		for (uint32_t y = 0; y < CHUNK_GRID_SIZE; ++y)
+		for (uint32_t y = 0; y < xState.m_xDims.m_uGridChunksZ; ++y)
 		{
 			uint32_t uChunkIndex = ChunkCoordsToIndex(x, y);
 			Flux_TerrainChunkResidency& xResidency = xState.m_axChunkResidency[uChunkIndex];
@@ -541,7 +582,9 @@ void Flux_TerrainStreamingManagerImpl::RegisterTerrainBuffers(Flux_TerrainStream
 		m_pxFluxRenderer->RequestGraphRebuild();
 	}
 
-	Zenith_Log(LOG_CATEGORY_TERRAIN, "Terrain buffers registered: LOW LOD resident for all %u chunks (zero redundant file reads)", TOTAL_CHUNKS);
+	Zenith_Log(LOG_CATEGORY_TERRAIN,
+		"Terrain buffers registered: LOW LOD resident for all %u chunks of the %ux%u grid (zero redundant file reads)",
+		xState.m_xDims.ChunkCount(), xState.m_xDims.m_uGridChunksX, xState.m_xDims.m_uGridChunksZ);
 }
 
 void Flux_TerrainStreamingManagerImpl::UnregisterTerrainBuffers(Flux_TerrainStreamingState* pxState)
@@ -894,7 +937,10 @@ Flux_TerrainStreamInResult Flux_TerrainStreamingManagerImpl::StreamInLOD(Flux_Te
 	std::string strChunkPath = xState.m_strTerrainAssetDirectory + "Render_" + std::to_string(uChunkX) + "_" + std::to_string(uChunkY) + ZENITH_MESH_EXT;
 
 	TerrainMeshSourceData xChunkMesh;
-	if (!TryLoadTerrainMeshSource(strChunkPath.c_str(), xState.m_uVertexStride, xChunkMesh))
+	if (!TryLoadTerrainMeshSource(strChunkPath.c_str(), xState.m_uVertexStride,
+		xState.m_xDims.ChunkVertexCount(Zenith_TerrainDimensionsLimits::uHIGH_DENSITY_DIVISOR),
+		xState.m_xDims.ChunkIndexCount(Zenith_TerrainDimensionsLimits::uHIGH_DENSITY_DIVISOR),
+		xChunkMesh))
 		return Flux_TerrainStreamInResult::MissingOrInvalidSource;
 
 	const uint32_t uNumVerts   = xChunkMesh.m_uNumVerts;
@@ -953,7 +999,7 @@ Flux_TerrainStreamInResult Flux_TerrainStreamingManagerImpl::StreamInLOD(Flux_Te
 	if (xState.m_pfnChunkVertexHook != nullptr)
 	{
 		xState.m_pfnChunkVertexHook(xState.m_pChunkVertexHookUser, uChunkX, uChunkY,
-			xChunkMesh.m_auVertexData.GetDataPointer(), uNumVerts, uVertexStride);
+			xChunkMesh.m_auVertexData.GetDataPointer(), uNumVerts, uVertexStride, xState.m_xDims);
 	}
 
 	// Upload to GPU
@@ -1100,8 +1146,8 @@ Zenith_Maths::Vector3 Flux_TerrainStreamingManagerImpl::GetChunkCenter(const Flu
 	}
 
 	// Fallback (shouldn't happen after initialization)
-	const float fX = (static_cast<float>(uChunkX) + 0.5f) * CHUNK_WORLD_SIZE;
-	const float fZ = (static_cast<float>(uChunkY) + 0.5f) * CHUNK_WORLD_SIZE;
+	const float fX = xState.m_xDims.ChunkCentreX(uChunkX);
+	const float fZ = xState.m_xDims.ChunkCentreZ(uChunkY);
 	const float fY = MAX_TERRAIN_HEIGHT * 0.5f;
 
 	return Zenith_Maths::Vector3(fX, fY, fZ);
@@ -1115,16 +1161,19 @@ float Flux_TerrainStreamingManagerImpl::GetChunkDistanceSq(const Flux_TerrainStr
 	return glm::distance2(xWorldPos, xChunkCenter);
 }
 
-void Flux_TerrainStreamingManagerImpl::WorldPosToChunkCoords(const Zenith_Maths::Vector3& xWorldPos, int32_t& iChunkX, int32_t& iChunkY)
+void Flux_TerrainStreamingManagerImpl::WorldPosToChunkCoords(const Zenith_TerrainDimensions& xDims,
+	const Zenith_Maths::Vector3& xWorldPos, int32_t& iChunkX, int32_t& iChunkY)
 {
-	iChunkX = static_cast<int32_t>(xWorldPos.x / CHUNK_WORLD_SIZE);
-	iChunkY = static_cast<int32_t>(xWorldPos.z / CHUNK_WORLD_SIZE);
+	iChunkX = static_cast<int32_t>(xWorldPos.x / xDims.m_fChunkWorldSize);
+	iChunkY = static_cast<int32_t>(xWorldPos.z / xDims.m_fChunkWorldSize);
 
-	// Clamp to valid range (use std:: prefix to avoid Windows macro conflicts)
+	// Clamp to the ACTIVE grid (use std:: prefix to avoid Windows macro conflicts)
+	const int32_t iMaxX = static_cast<int32_t>(xDims.m_uGridChunksX) - 1;
+	const int32_t iMaxZ = static_cast<int32_t>(xDims.m_uGridChunksZ) - 1;
 	if (iChunkX < 0) iChunkX = 0;
-	if (iChunkX >= static_cast<int32_t>(CHUNK_GRID_SIZE)) iChunkX = static_cast<int32_t>(CHUNK_GRID_SIZE - 1);
+	if (iChunkX > iMaxX) iChunkX = iMaxX;
 	if (iChunkY < 0) iChunkY = 0;
-	if (iChunkY >= static_cast<int32_t>(CHUNK_GRID_SIZE)) iChunkY = static_cast<int32_t>(CHUNK_GRID_SIZE - 1);
+	if (iChunkY > iMaxZ) iChunkY = iMaxZ;
 }
 
 uint32_t Flux_TerrainStreamingManagerImpl::FindNearestChunkByAABB(const Flux_TerrainStreamingState& xState, const Zenith_Maths::Vector3& xWorldPos)
@@ -1132,13 +1181,21 @@ uint32_t Flux_TerrainStreamingManagerImpl::FindNearestChunkByAABB(const Flux_Ter
 	uint32_t uBestChunkIndex = 0;
 	float fBestDistanceSq = FLT_MAX;
 
-	for (uint32_t uChunkIndex = 0; uChunkIndex < TOTAL_CHUNKS; ++uChunkIndex)
+	// The ACTIVE grid. Slots outside it carry a default-constructed AABB centred
+	// on the origin, which would win this search for any camera near the origin
+	// of a shrunken terrain and anchor the whole active set on a chunk that does
+	// not exist.
+	for (uint32_t x = 0; x < xState.m_xDims.m_uGridChunksX; ++x)
 	{
-		const float fDistanceSq = GetChunkDistanceSq(xState, uChunkIndex, xWorldPos);
-		if (fDistanceSq < fBestDistanceSq)
+		for (uint32_t y = 0; y < xState.m_xDims.m_uGridChunksZ; ++y)
 		{
-			fBestDistanceSq = fDistanceSq;
-			uBestChunkIndex = uChunkIndex;
+			const uint32_t uChunkIndex = ChunkCoordsToIndex(x, y);
+			const float fDistanceSq = GetChunkDistanceSq(xState, uChunkIndex, xWorldPos);
+			if (fDistanceSq < fBestDistanceSq)
+			{
+				fBestDistanceSq = fDistanceSq;
+				uBestChunkIndex = uChunkIndex;
+			}
 		}
 	}
 
@@ -1157,20 +1214,27 @@ void Flux_TerrainStreamingManagerImpl::ResolveCameraChunkCoords(const Flux_Terra
 		return;
 	}
 
-	WorldPosToChunkCoords(xWorldPos, iChunkX, iChunkY);
+	WorldPosToChunkCoords(xState.m_xDims, xWorldPos, iChunkX, iChunkY);
 	uNearestChunkIndex = ChunkCoordsToIndex(static_cast<uint32_t>(iChunkX), static_cast<uint32_t>(iChunkY));
 }
 
 uint32_t Flux_TerrainStreamingManagerImpl::CountLowZeroChunks(const Flux_TerrainStreamingState& xState)
 {
 	uint32_t uLowZeroCount = 0;
-	for (uint32_t uChunkIndex = 0; uChunkIndex < TOTAL_CHUNKS; ++uChunkIndex)
+	// Over the ACTIVE grid only. A slot outside it is EXPECTED to be non-resident
+	// with a zero index count -- that is what "the grid is smaller than the fixed
+	// capacity" means -- so counting it would report a healthy 6x9 terrain as
+	// having 4042 broken chunks.
+	for (uint32_t x = 0; x < xState.m_xDims.m_uGridChunksX; ++x)
 	{
-		const Flux_TerrainChunkResidency& xResidency = xState.m_axChunkResidency[uChunkIndex];
-		if (xResidency.m_aeStates[LOD_LOW] != Flux_TerrainLODResidencyState::RESIDENT ||
-			xResidency.m_axAllocations[LOD_LOW].m_uIndexCount == 0)
+		for (uint32_t y = 0; y < xState.m_xDims.m_uGridChunksZ; ++y)
 		{
-			uLowZeroCount++;
+			const Flux_TerrainChunkResidency& xResidency = xState.m_axChunkResidency[ChunkCoordsToIndex(x, y)];
+			if (xResidency.m_aeStates[LOD_LOW] != Flux_TerrainLODResidencyState::RESIDENT ||
+				xResidency.m_axAllocations[LOD_LOW].m_uIndexCount == 0)
+			{
+				uLowZeroCount++;
+			}
 		}
 	}
 	return uLowZeroCount;
@@ -1190,8 +1254,12 @@ uint32_t Flux_TerrainStreamingManagerImpl::CountHighResidentChunks(const Flux_Te
 void Flux_TerrainStreamingManagerImpl::LogLowZeroChunkCoordinates(const Flux_TerrainStreamingState& xState, uint32_t uMaxToLog)
 {
 	uint32_t uLogged = 0;
-	for (uint32_t uChunkIndex = 0; uChunkIndex < TOTAL_CHUNKS; ++uChunkIndex)
+	// Same active-grid scope as CountLowZeroChunks -- these two must agree, or
+	// the count and the sample coordinates describe different sets.
+	for (uint32_t uChunkX = 0; uChunkX < xState.m_xDims.m_uGridChunksX && uLogged < uMaxToLog; ++uChunkX)
+	for (uint32_t uChunkY = 0; uChunkY < xState.m_xDims.m_uGridChunksZ; ++uChunkY)
 	{
+		const uint32_t uChunkIndex = ChunkCoordsToIndex(uChunkX, uChunkY);
 		const Flux_TerrainChunkResidency& xResidency = xState.m_axChunkResidency[uChunkIndex];
 		if (xResidency.m_aeStates[LOD_LOW] == Flux_TerrainLODResidencyState::RESIDENT &&
 			xResidency.m_axAllocations[LOD_LOW].m_uIndexCount != 0)
@@ -1199,8 +1267,6 @@ void Flux_TerrainStreamingManagerImpl::LogLowZeroChunkCoordinates(const Flux_Ter
 			continue;
 		}
 
-		uint32_t uChunkX, uChunkY;
-		ChunkIndexToCoords(uChunkIndex, uChunkX, uChunkY);
 		Zenith_Log(LOG_CATEGORY_TERRAIN,
 			"[Terrain] LOW zero-count chunk (%u,%u): state=%u, indexCount=%u",
 			uChunkX, uChunkY,
@@ -1245,7 +1311,10 @@ void Flux_TerrainStreamingManagerImpl::RebuildActiveChunkSet(Flux_TerrainStreami
 	xState.m_xActiveChunkIndices.Clear();
 
 	const int32_t iRadius  = static_cast<int32_t>(xState.m_uActiveChunkRadius);
-	const int32_t iGridMax = static_cast<int32_t>(CHUNK_GRID_SIZE - 1);
+	// Per-axis, and the ACTIVE grid -- a non-square terrain has two different
+	// bounds, and streaming a chunk outside the grid is a guaranteed file miss.
+	const int32_t iGridMaxX = static_cast<int32_t>(xState.m_xDims.m_uGridChunksX) - 1;
+	const int32_t iGridMaxY = static_cast<int32_t>(xState.m_xDims.m_uGridChunksZ) - 1;
 
 	// Calculate bounds (avoid Windows min/max macro conflicts)
 	int32_t iMinX = iCameraChunkX - iRadius;
@@ -1254,9 +1323,9 @@ void Flux_TerrainStreamingManagerImpl::RebuildActiveChunkSet(Flux_TerrainStreami
 	int32_t iMaxY = iCameraChunkY + iRadius;
 
 	if (iMinX < 0) iMinX = 0;
-	if (iMaxX > iGridMax) iMaxX = iGridMax;
+	if (iMaxX > iGridMaxX) iMaxX = iGridMaxX;
 	if (iMinY < 0) iMinY = 0;
-	if (iMaxY > iGridMax) iMaxY = iGridMax;
+	if (iMaxY > iGridMaxY) iMaxY = iGridMaxY;
 
 	// Build (chunk, distSq) pairs over the rectangle, sort ascending, then
 	// drop the indices into the active vector. Sorting nearest-first means
@@ -1347,6 +1416,13 @@ void Flux_TerrainStreamingManagerImpl::BuildChunkDataForGPU_Internal(const Flux_
 	uint32_t uLowZeroCountChunks    = 0;  // expected: 0 for healthy terrain
 	uint32_t uHighResidentChunks    = 0;  // expected: climbs near camera
 
+	// THE FILL IS CAPACITY-WIDE AND MUST STAY THAT WAY. Every one of the fixed
+	// 4096 slots is uploaded and read by the culling shader; a slot left unwritten
+	// would carry whatever the previous terrain put there. Slots outside the
+	// active grid fill with zero-count records, which cull to nothing.
+	//
+	// The DIAGNOSTIC counters below are scoped to the active grid instead: outside
+	// it, a zero-count LOW record is the correct state, not a hole in the terrain.
 	for (uint32_t x = 0; x < CHUNK_GRID_SIZE; ++x)
 	{
 		for (uint32_t y = 0; y < CHUNK_GRID_SIZE; ++y)
@@ -1355,6 +1431,9 @@ void Flux_TerrainStreamingManagerImpl::BuildChunkDataForGPU_Internal(const Flux_
 			Zenith_TerrainChunkData& xChunkData = pxChunkDataOut[uChunkIndex];
 
 			BuildOneChunkData(xState, uChunkIndex, xChunkData);
+
+			if (!xState.m_xDims.ContainsChunk(x, y))
+				continue;
 
 			const Flux_TerrainChunkResidency& xResidency = xState.m_axChunkResidency[uChunkIndex];
 			if (xChunkData.m_axLODs[LOD_LOW].m_uIndexCount == 0) uLowZeroCountChunks++;

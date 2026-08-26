@@ -34,7 +34,7 @@ void ZM_TerrainGrass::OnAwake()
 
 	const std::string strDensityPath = ZM_GrassDensityMap::BuildCanonicalPath(
 		pxTerrain->GetTerrainAssetDirectory());
-	if (!m_xDensityMap.Load(strDensityPath))
+	if (!m_xDensityMap.Load(strDensityPath, pxTerrain->GetTerrainDimensions().MaxWorldSize()))
 	{
 		WarnTerminalOnce(
 			"[Zenithmon] grass density map missing or malformed; grass disabled for this terrain instance");
@@ -157,6 +157,7 @@ bool ZM_TerrainGrass::TryApplyToReadyTerrain()
 	// this terrain's baked texture set; m_xDensityMap stays the INDEPENDENT
 	// gameplay copy and is deliberately not fed to Flux.
 	xGrass.BuildFromTerrainTextures(pxTerrain->GetTerrainAssetDirectory(),
+		pxTerrain->GetTerrainDimensions().MaxWorldSize(),
 		Flux_GrassImpl::BuildParams{ fGRASS_DENSITY_SCALE });
 
 	m_bGrassApplied = true;

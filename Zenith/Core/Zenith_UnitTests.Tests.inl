@@ -15291,12 +15291,19 @@ void Zenith_UnitTests::TestTerrainAssetSetSerializationRoundTrip()
 	xV4Stream.SetCursor(0);
 	uint32_t uVersion = 0u;
 	xV4Stream >> uVersion;
-	ZENITH_ASSERT_EQ(uVersion, 4u, "Terrain writer must emit component serialization version 4 exactly");
+	ZENITH_ASSERT_EQ(uVersion, 5u, "Terrain writer must emit component serialization version 5 exactly");
 
 	Zenith_DataStream xExpectedV3Prefix;
 	WriteTerrainSerializedPrefix(xExpectedV3Prefix, 3u);
 	const uint64_t ulExpectedV3Size = xExpectedV3Prefix.GetCursor();
-	ZENITH_ASSERT_EQ(ulV4Size, ulExpectedV3Size + sizeof(u_int) + std::string("HomeVillage").size(), "v4 must append exactly one serialized set string to the complete v3 payload");
+	// v4 appended the set string; v5 appends the four dimension fields after it
+	// (one float + three u_int). The size arithmetic is spelled out rather than
+	// measured so an accidentally-reordered or dropped append fails HERE, at the
+	// framing, rather than as a silently misparsed component later.
+	const uint64_t ulDIMENSION_FIELD_BYTES = sizeof(float) + 3u * sizeof(uint32_t);
+	ZENITH_ASSERT_EQ(ulV4Size,
+		ulExpectedV3Size + sizeof(u_int) + std::string("HomeVillage").size() + ulDIMENSION_FIELD_BYTES,
+		"v5 must append the set string and then exactly four dimension fields to the complete v3 payload");
 	ZENITH_ASSERT_TRUE(memcmp(static_cast<const u_int8*>(xV4Stream.GetData()) + sizeof(uint32_t), static_cast<const u_int8*>(xExpectedV3Prefix.GetData()) + sizeof(uint32_t), static_cast<size_t>(ulExpectedV3Size - sizeof(uint32_t))) == 0, "Every pre-E1 field after the version must remain byte-identical to the old v3 sequence");
 
 	// Independently parse the prefix in its historical order and prove the new
@@ -15314,7 +15321,15 @@ void Zenith_UnitTests::TestTerrainAssetSetSerializationRoundTrip()
 	std::string strSerializedSet;
 	xV4Stream >> strSerializedSet;
 	ZENITH_ASSERT_EQ(strSerializedSet, std::string("HomeVillage"), "The appended v4 field must contain the named set");
-	ZENITH_ASSERT_EQ(xV4Stream.GetCursor(), ulV4Size, "The v4 reader must consume exactly the bytes written");
+
+	Zenith_TerrainDimensions xSerializedDims;
+	xV4Stream >> xSerializedDims.m_fChunkWorldSize;
+	xV4Stream >> xSerializedDims.m_uQuadsPerChunkEdge;
+	xV4Stream >> xSerializedDims.m_uGridChunksX;
+	xV4Stream >> xSerializedDims.m_uGridChunksZ;
+	ZENITH_ASSERT_TRUE(xSerializedDims == Zenith_TerrainDimensions::Default(),
+		"A component that was never re-dimensioned must serialize the default spec");
+	ZENITH_ASSERT_EQ(xV4Stream.GetCursor(), ulV4Size, "The v5 reader must consume exactly the bytes written");
 
 	xV4Stream.SetCursor(0);
 	ReadTerrainComponentFieldsForTest(xRestored, xV4Stream);
@@ -15325,6 +15340,7 @@ void Zenith_UnitTests::TestTerrainAssetSetSerializationRoundTrip()
 	Zenith_DataStream xInvalidV4;
 	WriteTerrainSerializedPrefix(xInvalidV4, 4u);
 	xInvalidV4 << std::string("../Escape");
+	// A v4 stream: no dimension fields follow, and the reader must not consume any.
 	const uint64_t ulInvalidPayloadEnd = xInvalidV4.GetCursor();
 	const uint32_t uSentinel = 0xE104BADu;
 	xInvalidV4 << uSentinel;
@@ -15337,6 +15353,108 @@ void Zenith_UnitTests::TestTerrainAssetSetSerializationRoundTrip()
 	uint32_t uReadSentinel = 0u;
 	xInvalidV4 >> uReadSentinel;
 	ZENITH_ASSERT_EQ(uReadSentinel, uSentinel, "Invalid v4 parsing must leave trailing framed data intact");
+	ZENITH_ASSERT_TRUE(xInvalidRestored.GetTerrainDimensions() == Zenith_TerrainDimensions::Default(),
+		"A v4 stream carries no dimensions, so the reader must land on the default spec");
+}
+
+ZENITH_TEST(Terrain, DimensionsSerializationRoundTrip) { Zenith_UnitTests::TestTerrainDimensionsSerializationRoundTrip(); }
+
+void Zenith_UnitTests::TestTerrainDimensionsSerializationRoundTrip()
+{
+	// A terrain's dimensions are the box its baked chunks decode against, so
+	// losing them in serialization does not fail loudly -- it renders the terrain
+	// somewhere else. Three arms: a custom spec must survive, a pre-v5 stream must
+	// land on the default (which is what every terrain baked before this field
+	// existed was authored at), and an invalid one must be REFUSED back to the
+	// default rather than installed.
+	Zenith_TempScene xScene("TerrainDimensionsRoundTrip");
+
+	const Zenith_TerrainDimensions xCustom{ 32.0f, 128u, 6u, 9u };
+	ZENITH_ASSERT_TRUE(xCustom.IsValid(), "the fixture spec must itself be valid");
+	ZENITH_ASSERT_FALSE(xCustom == Zenith_TerrainDimensions::Default(),
+		"the fixture spec must differ from the default, or the round trip proves nothing");
+
+	{
+		Zenith_Entity xSourceEntity = xScene.CreateEntity("TerrainDimsSource");
+		Zenith_TerrainComponent xSource(xSourceEntity);
+		ZENITH_ASSERT_TRUE(xSource.SetTerrainDimensions(xCustom),
+			"a fresh component must accept valid dimensions");
+
+		Zenith_DataStream xStream;
+		xSource.WriteToDataStream(xStream);
+		const uint64_t ulEnd = xStream.GetCursor();
+		const uint32_t uSentinel = 0xD1503EEDu;
+		xStream << uSentinel;
+		xStream.SetCursor(0);
+
+		Zenith_Entity xRestoredEntity = xScene.CreateEntity("TerrainDimsRestored");
+		Zenith_TerrainComponent xRestored(xRestoredEntity);
+		ReadTerrainComponentFieldsForTest(xRestored, xStream);
+		ZENITH_ASSERT_TRUE(xRestored.GetTerrainDimensions() == xCustom,
+			"a v5 payload must round-trip every dimension field");
+		ZENITH_ASSERT_EQ(xStream.GetCursor(), ulEnd,
+			"the v5 reader must consume exactly the bytes the writer produced");
+		uint32_t uReadSentinel = 0u;
+		xStream >> uReadSentinel;
+		ZENITH_ASSERT_EQ(uReadSentinel, uSentinel,
+			"v5 parsing must leave trailing framed data intact");
+	}
+
+	// A v4 stream: the reader must install the default and consume nothing extra.
+	{
+		Zenith_DataStream xStream;
+		WriteTerrainSerializedPrefix(xStream, 4u);
+		xStream << std::string("HomeVillage");
+		const uint64_t ulEnd = xStream.GetCursor();
+		const uint32_t uSentinel = 0xD1504EEDu;
+		xStream << uSentinel;
+		xStream.SetCursor(0);
+
+		Zenith_Entity xEntity = xScene.CreateEntity("TerrainDimsLegacyV4");
+		Zenith_TerrainComponent xRestored(xEntity);
+		ZENITH_ASSERT_TRUE(xRestored.SetTerrainDimensions(xCustom),
+			"stale-value setup must succeed so the reader has something to overwrite");
+		ReadTerrainComponentFieldsForTest(xRestored, xStream);
+		ZENITH_ASSERT_TRUE(xRestored.GetTerrainDimensions() == Zenith_TerrainDimensions::Default(),
+			"a v4 payload must reset the dimensions to the default, never keep a stale spec");
+		ZENITH_ASSERT_EQ(xStream.GetCursor(), ulEnd,
+			"the v4 path must not consume dimension bytes that are not there");
+		uint32_t uReadSentinel = 0u;
+		xStream >> uReadSentinel;
+		ZENITH_ASSERT_EQ(uReadSentinel, uSentinel,
+			"v4 parsing must leave trailing framed data intact");
+	}
+
+	// An INVALID v5 payload: 65 chunks is past the fixed slot capacity, so the
+	// setter refuses it. The reader must still consume the four fields (framing)
+	// and land on the default rather than installing an unbakeable spec.
+	{
+		Zenith_DataStream xStream;
+		WriteTerrainSerializedPrefix(xStream, 5u);
+		xStream << std::string("HomeVillage");
+		xStream << 64.0f;
+		xStream << static_cast<uint32_t>(64u);
+		xStream << static_cast<uint32_t>(65u);   // past uCHUNK_GRID_CAPACITY
+		xStream << static_cast<uint32_t>(64u);
+		const uint64_t ulEnd = xStream.GetCursor();
+		const uint32_t uSentinel = 0xD1505EEDu;
+		xStream << uSentinel;
+		xStream.SetCursor(0);
+
+		Zenith_Entity xEntity = xScene.CreateEntity("TerrainDimsInvalidV5");
+		Zenith_TerrainComponent xRestored(xEntity);
+		ZENITH_ASSERT_TRUE(xRestored.SetTerrainDimensions(xCustom),
+			"stale-value setup must succeed so a rejected candidate has something to fail to preserve");
+		ReadTerrainComponentFieldsForTest(xRestored, xStream);
+		ZENITH_ASSERT_TRUE(xRestored.GetTerrainDimensions() == Zenith_TerrainDimensions::Default(),
+			"a rejected v5 spec must fall back to the default, not keep the stale one");
+		ZENITH_ASSERT_EQ(xStream.GetCursor(), ulEnd,
+			"a rejected v5 spec must still consume its four fields so later framing stays aligned");
+		uint32_t uReadSentinel = 0u;
+		xStream >> uReadSentinel;
+		ZENITH_ASSERT_EQ(uReadSentinel, uSentinel,
+			"rejected-v5 parsing must leave trailing framed data intact");
+	}
 }
 
 ZENITH_TEST(Terrain, AssetSetLegacyV3DefaultsEmpty) { Zenith_UnitTests::TestTerrainAssetSetLegacyV3DefaultsEmpty(); }
@@ -15361,6 +15479,8 @@ void Zenith_UnitTests::TestTerrainAssetSetLegacyV3DefaultsEmpty()
 		ReadTerrainComponentFieldsForTest(xRestored, xStream);
 
 		ZENITH_ASSERT_TRUE(xRestored.GetTerrainAssetSet().empty(), "Every valid v1-v3 payload must explicitly default the v4 set to empty");
+		ZENITH_ASSERT_TRUE(xRestored.GetTerrainDimensions() == Zenith_TerrainDimensions::Default(),
+			"Every valid v1-v3 payload must explicitly default the v5 dimensions");
 		ZENITH_ASSERT_EQ(xRestored.GetTerrainAssetDirectory(), strLegacyDirectory, "Every valid v1-v3 payload must retain the legacy directory");
 		ZENITH_ASSERT_EQ(xRestored.m_pxStreamingState->m_strTerrainAssetDirectory, strLegacyDirectory, "Every legacy default must synchronize the per-terrain streaming state");
 		ZENITH_ASSERT_EQ(xStream.GetCursor(), ulPayloadEnd, "Legacy parser must consume exactly its version-specific payload");
@@ -15774,7 +15894,7 @@ void Zenith_UnitTests::TestEditorAutomationTerrainAssetSetActionOwnsArgument()
 		xStream.SetCursor(0);
 		uint32_t uVersion = 0u;
 		xStream >> uVersion;
-		ZENITH_ASSERT_EQ(uVersion, 4u, "The automation-stamped component must serialize as terrain version 4");
+		ZENITH_ASSERT_EQ(uVersion, 5u, "The automation-stamped component must serialize as terrain version 5");
 		xStream.SetCursor(0);
 		Zenith_Entity xRestoredEntity = xScene.CreateEntity("EditorAutomationTerrainAssetSetRestored");
 		Zenith_TerrainComponent xRestored(xRestoredEntity);
@@ -16155,7 +16275,11 @@ void Zenith_UnitTests::TestTerrainStreamingMissingHighLODSourceDoesNotEvictOrAll
 		// The packed stream is written through the SAME codec bridge the exporter
 		// bakes with, so the fixture exercises the quantisation the validator has to
 		// tolerate rather than a hand-rolled approximation of it.
-		const Flux_PosQuant xFixtureQuant = Flux_MakeTerrainPosQuant();
+		// These fixtures describe a DEFAULT-dimensioned terrain, which is what
+		// every chunk on disk today was baked at -- so the validator must accept
+		// them against exactly that box.
+		const Flux_PosQuant xFixtureQuant = Flux_MakeTerrainPosQuant(Zenith_TerrainDimensions::Default());
+		const float fFixtureUVBoxMax = Flux_TerrainUVBoxMax(Zenith_TerrainDimensions::Default());
 		auto WriteVertex = [&](uint32_t uVertex, uint32_t uX, uint32_t uZ)
 		{
 			float fY = 0.25f * static_cast<float>((uX + uZ) % 3u);
@@ -16180,7 +16304,7 @@ void Zenith_UnitTests::TestTerrainStreamingMissingHighLODSourceDoesNotEvictOrAll
 				static_cast<size_t>(uVertex) * Zenith_TerrainChunkLayout::uVERTEX_STRIDE;
 			Flux_WriteTerrainVertexPosition(pVertex, xPosition, xFixtureQuant);
 			Flux_WriteTerrainVertexUV(pVertex, Zenith_Maths::Vector2(
-				static_cast<float>(uX), static_cast<float>(uZ)));
+				static_cast<float>(uX), static_cast<float>(uZ)), fFixtureUVBoxMax);
 		};
 		// Match ExportChunkBatch exactly: N x N interior vertices first, then
 		// the positive-X edge, positive-Z edge, and final shared corner.
@@ -16277,7 +16401,7 @@ void Zenith_UnitTests::TestTerrainStreamingMissingHighLODSourceDoesNotEvictOrAll
 			u_int8* const pVertex1 = auVertices.data() +
 				static_cast<size_t>(Zenith_TerrainChunkLayout::uVERTEX_STRIDE);
 			Flux_WriteTerrainVertexPosition(pVertex1, axPositions[1], xFixtureQuant);
-			Flux_WriteTerrainVertexUV(pVertex1, Zenith_Maths::Vector2(0.0f, 0.0f));
+			Flux_WriteTerrainVertexUV(pVertex1, Zenith_Maths::Vector2(0.0f, 0.0f), fFixtureUVBoxMax);
 		}
 		else if (uFixtureMutation == 6u)
 		{
@@ -16337,7 +16461,7 @@ void Zenith_UnitTests::TestTerrainStreamingMissingHighLODSourceDoesNotEvictOrAll
 		Zenith_TerrainChunkLayout::uLOW_CHUNK_VERTEX_COUNT,
 		Zenith_TerrainChunkLayout::uLOW_CHUNK_INDEX_COUNT, false, 0u);
 	Flux_MeshGeometry xLowAnchor;
-	ZENITH_ASSERT_TRUE(Zenith_TerrainComponent::TryLoadTerrainChunkSource(xLowAnchorPath.string(),
+	ZENITH_ASSERT_TRUE(Zenith_TerrainComponent::TryLoadTerrainChunkSource(xLowAnchorPath.string(), Zenith_TerrainDimensions::Default(),
 		Zenith_TerrainChunkLayout::uLOW_CHUNK_VERTEX_COUNT,
 		Zenith_TerrainChunkLayout::uLOW_CHUNK_INDEX_COUNT, false, xLowAnchor),
 		"A canonical LOW (0,0) authority must remain loadable without a GPU upload");
@@ -16345,7 +16469,7 @@ void Zenith_UnitTests::TestTerrainStreamingMissingHighLODSourceDoesNotEvictOrAll
 		"The LOW authority must retain the exporter topology");
 	Flux_MeshGeometry xMissingLowAuthority;
 	ZENITH_ASSERT_FALSE(Zenith_TerrainComponent::TryLoadTerrainChunkSource(
-		(xArtifacts.m_xDirectory / "MissingAuthority" / "Render_LOW_0_0.zmesh").string(),
+		(xArtifacts.m_xDirectory / "MissingAuthority" / "Render_LOW_0_0.zmesh").string(), Zenith_TerrainDimensions::Default(),
 		Zenith_TerrainChunkLayout::uLOW_CHUNK_VERTEX_COUNT,
 		Zenith_TerrainChunkLayout::uLOW_CHUNK_INDEX_COUNT, false, xMissingLowAuthority),
 		"A missing LOW (0,0) authority must fail validation so runtime marks render geometry unusable");
@@ -16355,20 +16479,20 @@ void Zenith_UnitTests::TestTerrainStreamingMissingHighLODSourceDoesNotEvictOrAll
 		Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_VERTEX_COUNT,
 		Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_INDEX_COUNT, true, 0u);
 	Flux_MeshGeometry xPhysicsAnchor;
-	ZENITH_ASSERT_TRUE(Zenith_TerrainComponent::TryLoadTerrainChunkSource(xPhysicsAnchorPath.string(),
+	ZENITH_ASSERT_TRUE(Zenith_TerrainComponent::TryLoadTerrainChunkSource(xPhysicsAnchorPath.string(), Zenith_TerrainDimensions::Default(),
 		Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_VERTEX_COUNT,
 		Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_INDEX_COUNT, true, xPhysicsAnchor),
 		"A canonical physics (0,0) authority with normals must remain loadable without a GPU upload");
 	Flux_MeshGeometry xMissingPhysicsAuthority;
 	ZENITH_ASSERT_FALSE(Zenith_TerrainComponent::TryLoadTerrainChunkSource(
-		(xArtifacts.m_xDirectory / "MissingAuthority" / "Physics_0_0.zmesh").string(),
+		(xArtifacts.m_xDirectory / "MissingAuthority" / "Physics_0_0.zmesh").string(), Zenith_TerrainDimensions::Default(),
 		Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_VERTEX_COUNT,
 		Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_INDEX_COUNT, true, xMissingPhysicsAuthority),
 		"A missing physics (0,0) authority must fail validation so runtime produces no physics body");
 
 	Flux_MeshGeometry xMissingLow;
 	ZENITH_ASSERT_FALSE(Zenith_TerrainComponent::TryLoadTerrainChunkSource(
-		(xArtifacts.m_xDirectory / "Render_LOW_0_1.zmesh").string(),
+		(xArtifacts.m_xDirectory / "Render_LOW_0_1.zmesh").string(), Zenith_TerrainDimensions::Default(),
 		Zenith_TerrainChunkLayout::uLOW_CHUNK_VERTEX_COUNT,
 		Zenith_TerrainChunkLayout::uLOW_CHUNK_INDEX_COUNT, false, xMissingLow),
 		"A missing non-anchor LOW source must be rejected nonassertingly as zero geometry");
@@ -16380,7 +16504,7 @@ void Zenith_UnitTests::TestTerrainStreamingMissingHighLODSourceDoesNotEvictOrAll
 	xTruncatedPhysics << uint32_t(Zenith_TerrainChunkLayout::uELEMENT_COUNT);
 	xTruncatedPhysics.WriteToFile(xCorruptPhysicsPath.string().c_str());
 	Flux_MeshGeometry xCorruptPhysics;
-	ZENITH_ASSERT_FALSE(Zenith_TerrainComponent::TryLoadTerrainChunkSource(xCorruptPhysicsPath.string(),
+	ZENITH_ASSERT_FALSE(Zenith_TerrainComponent::TryLoadTerrainChunkSource(xCorruptPhysicsPath.string(), Zenith_TerrainDimensions::Default(),
 		Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_VERTEX_COUNT,
 		Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_INDEX_COUNT, true, xCorruptPhysics),
 		"A truncated non-anchor physics source must be rejected before the assertion-based loader");
@@ -16392,7 +16516,7 @@ void Zenith_UnitTests::TestTerrainStreamingMissingHighLODSourceDoesNotEvictOrAll
 		Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_VERTEX_COUNT,
 		Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_INDEX_COUNT, false, 0u);
 	Flux_MeshGeometry xPhysicsWithoutNormals;
-	ZENITH_ASSERT_FALSE(Zenith_TerrainComponent::TryLoadTerrainChunkSource(xPhysicsWithoutNormalsPath.string(),
+	ZENITH_ASSERT_FALSE(Zenith_TerrainComponent::TryLoadTerrainChunkSource(xPhysicsWithoutNormalsPath.string(), Zenith_TerrainDimensions::Default(),
 		Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_VERTEX_COUNT,
 		Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_INDEX_COUNT, true, xPhysicsWithoutNormals),
 		"A physics source without the required normal stream must contribute no physics geometry");
@@ -16404,7 +16528,7 @@ void Zenith_UnitTests::TestTerrainStreamingMissingHighLODSourceDoesNotEvictOrAll
 		Zenith_TerrainChunkLayout::uLOW_CHUNK_INDEX_COUNT, false, 1u);
 	Flux_MeshGeometry xAlternateDiagonal;
 	ZENITH_ASSERT_FALSE(Zenith_TerrainComponent::TryLoadTerrainChunkSource(
-		xAlternateDiagonalPath.string(), Zenith_TerrainChunkLayout::uLOW_CHUNK_VERTEX_COUNT,
+		xAlternateDiagonalPath.string(), Zenith_TerrainDimensions::Default(), Zenith_TerrainChunkLayout::uLOW_CHUNK_VERTEX_COUNT,
 		Zenith_TerrainChunkLayout::uLOW_CHUNK_INDEX_COUNT, false, xAlternateDiagonal),
 		"A regular grid using the non-exporter diagonal must fail exact terrain-topology validation");
 
@@ -16415,7 +16539,7 @@ void Zenith_UnitTests::TestTerrainStreamingMissingHighLODSourceDoesNotEvictOrAll
 		Zenith_TerrainChunkLayout::uLOW_CHUNK_INDEX_COUNT, false, 2u);
 	Flux_MeshGeometry xReversedWinding;
 	ZENITH_ASSERT_FALSE(Zenith_TerrainComponent::TryLoadTerrainChunkSource(
-		xReversedWindingPath.string(), Zenith_TerrainChunkLayout::uLOW_CHUNK_VERTEX_COUNT,
+		xReversedWindingPath.string(), Zenith_TerrainDimensions::Default(), Zenith_TerrainChunkLayout::uLOW_CHUNK_VERTEX_COUNT,
 		Zenith_TerrainChunkLayout::uLOW_CHUNK_INDEX_COUNT, false, xReversedWinding),
 		"A single reversed terrain triangle must fail canonical winding validation");
 
@@ -16426,7 +16550,7 @@ void Zenith_UnitTests::TestTerrainStreamingMissingHighLODSourceDoesNotEvictOrAll
 		Zenith_TerrainChunkLayout::uLOW_CHUNK_INDEX_COUNT, false, 3u);
 	Flux_MeshGeometry xNonFinite;
 	ZENITH_ASSERT_FALSE(Zenith_TerrainComponent::TryLoadTerrainChunkSource(
-		xNonFinitePath.string(), Zenith_TerrainChunkLayout::uLOW_CHUNK_VERTEX_COUNT,
+		xNonFinitePath.string(), Zenith_TerrainDimensions::Default(), Zenith_TerrainChunkLayout::uLOW_CHUNK_VERTEX_COUNT,
 		Zenith_TerrainChunkLayout::uLOW_CHUNK_INDEX_COUNT, false, xNonFinite),
 		"A non-finite terrain position must fail before geometry allocation");
 
@@ -16437,7 +16561,7 @@ void Zenith_UnitTests::TestTerrainStreamingMissingHighLODSourceDoesNotEvictOrAll
 		Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_INDEX_COUNT, true, 4u);
 	Flux_MeshGeometry xDegenerateNormal;
 	ZENITH_ASSERT_FALSE(Zenith_TerrainComponent::TryLoadTerrainChunkSource(
-		xDegenerateNormalPath.string(), Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_VERTEX_COUNT,
+		xDegenerateNormalPath.string(), Zenith_TerrainDimensions::Default(), Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_VERTEX_COUNT,
 		Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_INDEX_COUNT, true, xDegenerateNormal),
 		"A required zero-length physics normal must fail validation");
 
@@ -16471,7 +16595,7 @@ void Zenith_UnitTests::TestTerrainStreamingMissingHighLODSourceDoesNotEvictOrAll
 			Zenith_TerrainChunkLayout::uLOW_CHUNK_INDEX_COUNT, false, xCase.m_uMutation);
 		Flux_MeshGeometry xCaseGeometry;
 		ZENITH_ASSERT_FALSE(Zenith_TerrainComponent::TryLoadTerrainChunkSource(
-			xCasePath.string(), Zenith_TerrainChunkLayout::uLOW_CHUNK_VERTEX_COUNT,
+			xCasePath.string(), Zenith_TerrainDimensions::Default(), Zenith_TerrainChunkLayout::uLOW_CHUNK_VERTEX_COUNT,
 			Zenith_TerrainChunkLayout::uLOW_CHUNK_INDEX_COUNT, false, xCaseGeometry),
 			"%s (fixture mutation %u: %s)", xCase.m_szExpectation,
 			xCase.m_uMutation, xCase.m_szName);
@@ -16509,7 +16633,7 @@ void Zenith_UnitTests::TestTerrainStreamingMissingHighLODSourceDoesNotEvictOrAll
 			*static_cast<const SparseGridLoadContext*>(pContext);
 		const std::filesystem::path xPath = xContext.m_xDirectory /
 			("Render_LOW_" + std::to_string(uX) + "_" + std::to_string(uY) + ".zmesh");
-		return Zenith_TerrainComponent::TryLoadTerrainChunkSource(xPath.string(),
+		return Zenith_TerrainComponent::TryLoadTerrainChunkSource(xPath.string(), Zenith_TerrainDimensions::Default(),
 			Zenith_TerrainChunkLayout::uLOW_CHUNK_VERTEX_COUNT,
 			Zenith_TerrainChunkLayout::uLOW_CHUNK_INDEX_COUNT, false, xGeometryOut);
 	};
@@ -16529,7 +16653,7 @@ void Zenith_UnitTests::TestTerrainStreamingMissingHighLODSourceDoesNotEvictOrAll
 	Flux_MeshGeometry* pxSparseCombined = nullptr;
 	const uint32_t uSparseGridSize = 4u;
 	ZENITH_ASSERT_TRUE(Zenith_TerrainComponent::CombineTerrainChunkGridCore(
-		uSparseGridSize,
+		uSparseGridSize, uSparseGridSize,
 		Zenith_TerrainChunkLayout::uLOW_CHUNK_VERTEX_COUNT * uSparseGridSize * uSparseGridSize,
 		Zenith_TerrainChunkLayout::uLOW_CHUNK_INDEX_COUNT * uSparseGridSize * uSparseGridSize,
 		LoadLowChunk, &xSparseContext, axSparseInit.data(), pxSparseCombined,
@@ -16582,7 +16706,7 @@ void Zenith_UnitTests::TestTerrainStreamingMissingHighLODSourceDoesNotEvictOrAll
 	Zenith_TerrainComponent::TerrainSparseLoadDiagnostics xMissingAnchorDiagnostics;
 	Flux_MeshGeometry* pxMissingAnchorCombined = reinterpret_cast<Flux_MeshGeometry*>(1);
 	ZENITH_ASSERT_FALSE(Zenith_TerrainComponent::CombineTerrainChunkGridCore(
-		2u, Zenith_TerrainChunkLayout::uLOW_CHUNK_VERTEX_COUNT * 4u,
+		2u, 2u, Zenith_TerrainChunkLayout::uLOW_CHUNK_VERTEX_COUNT * 4u,
 		Zenith_TerrainChunkLayout::uLOW_CHUNK_INDEX_COUNT * 4u,
 		LoadLowChunk, &xMissingAnchorContext, nullptr, pxMissingAnchorCombined,
 		xMissingAnchorDiagnostics), "A missing (0,0) source must reject the complete grid transaction");
@@ -16600,7 +16724,7 @@ void Zenith_UnitTests::TestTerrainStreamingMissingHighLODSourceDoesNotEvictOrAll
 	Zenith_TerrainComponent::TerrainSparseLoadDiagnostics xDenseDiagnostics;
 	Flux_MeshGeometry* pxDenseCombined = nullptr;
 	ZENITH_ASSERT_TRUE(Zenith_TerrainComponent::CombineTerrainChunkGridCore(
-		2u, Zenith_TerrainChunkLayout::uLOW_CHUNK_VERTEX_COUNT * 4u,
+		2u, 2u, Zenith_TerrainChunkLayout::uLOW_CHUNK_VERTEX_COUNT * 4u,
 		Zenith_TerrainChunkLayout::uLOW_CHUNK_INDEX_COUNT * 4u,
 		LoadLowChunk, &xSparseContext, nullptr, pxDenseCombined, xDenseDiagnostics),
 		"A complete dense 2x2 grid must retain legacy startup behavior through the shared core");
@@ -16634,14 +16758,14 @@ void Zenith_UnitTests::TestTerrainStreamingMissingHighLODSourceDoesNotEvictOrAll
 			*static_cast<const SparseGridLoadContext*>(pContext);
 		const std::filesystem::path xPath = xContext.m_xDirectory /
 			("Physics_" + std::to_string(uX) + "_" + std::to_string(uY) + ".zmesh");
-		return Zenith_TerrainComponent::TryLoadTerrainChunkSource(xPath.string(),
+		return Zenith_TerrainComponent::TryLoadTerrainChunkSource(xPath.string(), Zenith_TerrainDimensions::Default(),
 			Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_VERTEX_COUNT,
 			Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_INDEX_COUNT, true, xGeometryOut);
 	};
 	Zenith_TerrainComponent::TerrainSparseLoadDiagnostics xPhysicsDiagnostics;
 	Flux_MeshGeometry* pxPhysicsCombined = nullptr;
 	ZENITH_ASSERT_TRUE(Zenith_TerrainComponent::CombineTerrainChunkGridCore(
-		2u, Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_VERTEX_COUNT * 4u,
+		2u, 2u, Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_VERTEX_COUNT * 4u,
 		Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_INDEX_COUNT * 4u,
 		LoadPhysicsChunk, &xSparsePhysicsContext, nullptr, pxPhysicsCombined,
 		xPhysicsDiagnostics),

@@ -79,7 +79,7 @@ void Zenith_TerrainEditor::RunAutoSplat()
 	Zenith_Vector<u_int8> xBefore;
 	CopyMapRegion(Zenith_TerrainEditMap::Splat, 0, 0, uSPLATMAP_SIZE, uSPLATMAP_SIZE, xBefore);
 
-	const float fWorldPerTexel = fTERRAIN_WORLD_SIZE / static_cast<float>(uSPLATMAP_SIZE);
+	const float fWorldPerTexel = WorldPerSplatPx();
 	u_int8* pSplat = m_xSplatmap.GetDataPointer();
 
 	for (u_int uZ = 0; uZ < uSPLATMAP_SIZE; uZ++)

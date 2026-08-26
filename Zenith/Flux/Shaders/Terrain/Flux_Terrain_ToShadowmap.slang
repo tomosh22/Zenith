@@ -41,8 +41,9 @@ struct VsIn
 struct TerrainConstantsLayout
 {
 	float  g_fUVScale;
-	float4 g_xPosQuantScale;   // xyz = authored box extent; w = the UV dequant scale
-	float4 g_xPosQuantBias;    // xyz = authored box min
+	float4 g_xPosQuantScale;   // xyz = this terrain's box extent; w = the UV dequant scale
+	float4 g_xPosQuantBias;    // xyz = this terrain's box min
+	float4 g_xTerrainDims;     // (chunk world size, world size X, world size Z, unused)
 };
 
 struct PassParams

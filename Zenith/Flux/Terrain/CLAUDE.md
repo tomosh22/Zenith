@@ -10,13 +10,13 @@ GPU-driven terrain rendering with LOD streaming and frustum culling. Supports 4,
 
 ## Files
 
-- `Flux_TerrainConfig.h` - Central configuration (grid size, LOD distances, buffer sizes)
+- `Flux_TerrainConfig.h` - Central configuration: the fixed chunk-slot CAPACITY, the DEFAULT terrain's chunk/world size, LOD distances, buffer sizes. A terrain's own shape is `Zenith_TerrainDimensions` (`Core/Zenith_TerrainDimensions.h`) — see *Grid Layout*.
 - `Flux_Terrain.cpp` / `Flux_TerrainImpl.h` - Rendering coordination, compute culling dispatch (`Flux_TerrainImpl` class)
 - `Flux_TerrainStreamingManager.cpp` / `Flux_TerrainStreamingManagerImpl.h` - LOD streaming and buffer management (public API reached via `Zenith_TerrainComponent`; the impl header holds the implementation)
 - `Flux_TerrainGPUStructs.h` - GPU-side struct definitions (chunk data, per-LOD offsets/counts)
 - `Flux_TerrainPipelineSelect.h` - Pure `(velocity latch, wireframe) -> G-buffer pipeline variant` selector plus the attachment-count contract. `<cstdint>`-only (no Flux headers) so it is unit-testable in every configuration — same shape as `Flux_TerrainExportRect.h`. See *Debug wireframe* below.
 - `Flux_TerrainExportRect.h` - Inclusive chunk rectangle for authoring exports; transactional `TryCreate` (invalid bounds leave the caller's rect untouched). Consumed by the terrain editor bake, `Zenith_EditorAutomation`, `Tools/Zenith_Tools_TerrainExport.*` and `ZM_TerrainAuthoring.cpp`.
-- `Flux_TerrainVertexQuant.h` - The ONE place a baked terrain position/UV is quantised, and the only thing that knows where they sit in the packed vertex. Joins the on-disk contract (`Core/Zenith_TerrainChunkLayout.h`: which bytes, which box) to the bit layouts (`Flux/Flux_VertexCodec.h`). Used by the exporter, the editor sculpt hook, CityBuilder's carve + stream-in hook and the runtime chunk validator — five producers that would otherwise each carry their own copy of the box.
+- `Flux_TerrainVertexQuant.h` - The ONE place a baked terrain position/UV is quantised, and the only thing that knows where they sit in the packed vertex. Joins the on-disk contract (`Core/Zenith_TerrainChunkLayout.h`: which bytes, which box) to the bit layouts (`Flux/Flux_VertexCodec.h`). Used by the exporter, the editor sculpt hook, CityBuilder's carve + stream-in hook and the runtime chunk validator — five producers that would otherwise each carry their own copy of the box. `Flux_MakeTerrainPosQuant` takes the terrain's `Zenith_TerrainDimensions` and builds a **per-terrain, per-axis** box `{0,0,0}..{WorldSizeX, MAX_TERRAIN_HEIGHT, WorldSizeZ}` — a narrow terrain spends its snorm16 precision on the space it occupies. Per-TERRAIN is safe for exactly the reason per-CHUNK is not: every chunk of one terrain shares one box, so a stitch vertex duplicated into two neighbours still quantises to the same word.
 - `Flux_TerrainSourceGrid.h` - The exporter's source-sample grid as pure arithmetic (`SampleCountForCells` / `SampleCountPerEdge` / `SampleIndex` / `ChunkVertexCount` / `ChunkIndexCount`). `<cstdint>`-only, same shape as the two headers above. See *Every chunk closes on its neighbour* below.
 - `Flux_Terrain.Tests.inl` - Unit tests for the pipeline-variant selection, included at the bottom of `Flux_Terrain.cpp` (the module-owns-its-tests idiom)
 - `Flux_Terrain_Shaders.h` - Shader program declarations (`Flux_ShaderDecl` + `apxALL`)
@@ -45,7 +45,64 @@ GPU-driven terrain rendering with LOD streaming and frustum culling. Supports 4,
 ## Core Architecture
 
 ### Grid Layout
-Terrain divided into 64x64 = 4,096 chunks. Each chunk is 64 world units square, giving 4,096x4,096 unit total terrain. Chunks indexed as `(x, y)` where both range 0-63.
+
+> Terrain divided into up to 64x64 = 4,096 chunks. At the DEFAULT dimensions each
+> chunk is 64 world units square, giving a 4,096 x 4,096 unit terrain; chunks are
+> indexed as `(x, y)` with both in `[0, 63]`. The rest of this section is what
+> makes those numbers a default rather than a law.
+
+**A terrain's shape is per-terrain data, not a constant.** Chunk world size,
+vertex spacing (as quads per chunk edge) and the grid extent in X and Z live on
+`Zenith_TerrainDimensions` (`Core/Zenith_TerrainDimensions.h`), reached through
+`Zenith_TerrainComponent::GetTerrainDimensions()` or the owning
+`Flux_TerrainStreamingState::m_xDims`. Everything dimensional derives from those
+four numbers: the world extent, the quantisation box, the exporter's split
+count, and the image-to-world scale every authoring map is read through.
+
+**CAPACITY vs EXTENT — the distinction the whole system turns on.** The grid is
+configurable *up to* a fixed capacity of **64x64 = 4,096 chunk slots**. Every
+GPU-side array stays sized for the full 4,096 — the indirect argument buffer,
+the residency and AABB tables, the reset dispatch, the culling shader's slot
+count — and the flat chunk index keeps its **stride-64** spelling
+(`FlatChunkIndex(x, z) == x * 64 + z == ChunkCoordsToIndex`), so shrinking a grid
+never renumbers the chunks that remain. Slots outside the active grid are
+zero-count no-op records that cull to nothing; that is exactly how the existing
+sparse bakes (Zenithmon's 16x16 region of a 64x64 grid) already behaved.
+
+What SHRINKS with the active grid: iteration (`gridX x gridZ`), the LOW-LOD
+always-resident buffer reservation, the physics combine, the exporter's split
+count, the streaming active set, and the "LOW zero-count chunks" smoke counter.
+What does NOT: any of the capacity-sized arrays above.
+
+`Zenith_TerrainDimensions::Default()` is `64` chunks of `64.0f` metres at `64`
+quads each — a 4,096m grid at 1m vertex spacing — which is what every bake on
+disk was authored at before the knobs existed. **Every derived quantity is
+EXACTLY value-identical at Default()**, so a default-dimensioned re-bake
+reproduces the assets already on disk byte for byte. That exactness is pinned by
+`static_assert`s in the header and by
+`ZenithTerrainDimensions::DefaultReproducesTheHistoricalConstantsExactly`.
+
+**The square authoring domain.** Every per-set image keeps its fixed square
+resolution (heightfield 4096², splatmap 2048², grass 1024²) and spans
+`[0, MaxWorldSize()]²`, where `MaxWorldSize()` is the LONGER of the two world
+axes; the terrain occupies the `[0, WorldSizeX] x [0, WorldSizeZ]` corner of it.
+So ONE scalar per terrain converts every image coordinate to world metres and
+back — `WorldPerImagePixel(uImageSize)` — and it is exactly `1.0f` for a 4096px
+heightfield at default dimensions. A non-square terrain shares one domain
+between its axes rather than shearing them.
+
+**The dimensions travel with the bake.** A baked set carries
+`TerrainDims.zdata` (`Zenith_TerrainDimsManifest`, a fixed 28-byte record: magic
+`ZTDM`, version, the four fields, plus the authoring image size) beside its
+chunks, because a quantised chunk's bytes are MEANINGLESS without the box they
+were packed against — the same `Render_3_4.zmesh` decodes to different world
+positions under different dimensions. **A set with no manifest, a corrupt one,
+or one that disagrees with the component's spec is a STALE BAKE**: the loader
+refuses it through the same path as a chunk-count mismatch, logging a
+`[TerrainPhysics] ... load refused` line and leaving the terrain with no geometry
+and no physics body. The exporter writes it after all three bakes succeed; a
+RECT bake refuses a mismatched existing one and writes one when the directory has
+none (the editor's rect path deletes the set's meshes *and* its manifest first).
 
 ### LOD System
 Two detail levels with distance-based selection:
@@ -347,12 +404,20 @@ explicit bake (full re-export + render re-init) refreshes it.
 
 ### Physics System
 Terrain collision uses separate mesh, not render LODs:
-- Single combined mesh for all 4,096 chunks (no subdivision) — `LoadCombinedPhysicsGeometry()` loads each `Physics_X_Y.zmesh` and `Flux_MeshGeometry::Combine()`s them into one unified Jolt mesh
+- Single combined mesh for every chunk of the ACTIVE grid (no subdivision) — `LoadCombinedPhysicsGeometry()` loads each `Physics_X_Y.zmesh` over `gridX x gridZ` and `Flux_MeshGeometry::Combine()`s them into one unified Jolt mesh
 - Always resident, never streamed
 - Generated at component initialization
 - Physics chunks use a density divisor of 4 (17 x 17 vertices / 4 m quads in a 64 m chunk), intentionally lower density than HIGH render chunks (65 x 65 / 1 m). Do not raise it to render density merely to correct a visual issue; choose collision density explicitly and rebake affected terrain assets.
 
 > **★ CHANGING THE DIVISOR IS A BREAKING ASSET CHANGE — BUMP EVERY GAME'S BAKE STAMP IN THE SAME COMMIT.**
+> (**So is changing a terrain's DIMENSIONS**, and so was introducing the
+> `TerrainDims.zdata` manifest itself: it is a REQUIRED output, so every set
+> baked before it existed reads as stale. The manifest closes the specific hole
+> this box describes for *dimensions* — a set baked at other dimensions is now
+> caught by name rather than decoded wrong — but it cannot see a chunk-BYTE
+> change at the same dimensions, so the stamps below are still the mechanism for
+> that. Adding the manifest also moved every game's required-output count by
+> one.)
 > `TryReadTerrainChunkSnapshot` REJECTS any chunk whose vertex/index counts differ from
 > `Zenith_TerrainChunkLayout` (`Core/Zenith_TerrainChunkLayout.h` -- the baked-chunk
 > file-format contract, moved out of Flux so the EntityComponent chunk loader can read it
@@ -394,10 +459,20 @@ Terrain submits separate task each frame:
 
 All constants in `Flux_TerrainConfig.h`:
 
-**Grid:**
-- `CHUNK_GRID_SIZE = 64` (64x64 chunks)
-- `CHUNK_SIZE_WORLD = 64.0f` (units per chunk)
-- `TERRAIN_SIZE = 4096.0f` (total world size)
+**Grid — CAPACITY and DEFAULTS, not a terrain's actual shape** (read
+`m_xDims` for that; see *Grid Layout* above):
+- `CHUNK_GRID_SIZE = 64` / `TOTAL_CHUNKS = 4096` — the FIXED slot capacity every
+  GPU-side array is sized for, and the stride the flat chunk index uses
+- `CHUNK_SIZE_WORLD = 64.0f` — a DEFAULT terrain's chunk (`m_xDims.m_fChunkWorldSize`)
+- `TERRAIN_SIZE = 4096.0f` — a DEFAULT terrain's extent
+  (`m_xDims.WorldSizeX()` / `WorldSizeZ()`; the square authoring domain is
+  `m_xDims.MaxWorldSize()`)
+
+`ACTIVE_CHUNK_RADIUS` and the LOD distance thresholds stay GLOBAL: the radius is
+a budget in CHUNKS (what the streamer examines per rebuild, which costs the same
+whatever a chunk measures) and the thresholds are in metres. A terrain with
+smaller chunks therefore keeps a smaller world-space active set — a behaviour
+change, not a defect, and bounded by the smaller active grid anyway.
 
 **LOD Thresholds (squared):**
 - `LOD_HIGH_MAX_DISTANCE_SQ = 1000000.0` (1000m)
@@ -410,10 +485,10 @@ All constants in `Flux_TerrainConfig.h`:
 - `MAX_EVICTIONS_PER_FRAME = 16`
 
 **Vertex Format (20 bytes, packed):**
-- `VERTEX_STRIDE_BYTES = 20` (SNORM16x4 Position + UNORM16x2 UV + SNORM10:10:10:2 Normal + SNORM10:10:10:2 Tangent+BitangentSign). UV holds GLOBAL heightmap pixel coordinates [0, 4096] normalised by that same extent — UNORM16 and not HALF2, because a half mantissa loses sub-integer precision above 1024. There is no per-vertex material lerp; material blending comes from the RGBA8 splatmap.
-- **The position is quantised against an AUTHORED box, not a per-chunk AABB.** The box (XZ `[0, 4096]`, Y `[0, MAX_TERRAIN_HEIGHT]`), the byte offsets and the quantisation steps all live with the on-disk contract in `Core/Zenith_TerrainChunkLayout.h`; `Flux/Terrain/Flux_TerrainVertexQuant.h` joins them to `Flux_VertexCodec` and is the ONE place a terrain position or UV is packed (exporter, editor sculpt hook, CityBuilder carve + stream-in hook, chunk validator). A per-chunk box would be tighter but would crack every seam: a chunk's closing edge IS its neighbour's first edge, and only a shared box makes those duplicated world positions quantise to identical words in both chunks.
+- `VERTEX_STRIDE_BYTES = 20` (SNORM16x4 Position + UNORM16x2 UV + SNORM10:10:10:2 Normal + SNORM10:10:10:2 Tangent+BitangentSign). UV holds **AUTHORED WORLD XZ IN METRES** over the terrain's square authoring domain `[0, MaxWorldSize()]`, normalised by that same extent — UNORM16 and not HALF2, because a half mantissa loses sub-integer precision above 1024. (Metres and heightmap pixels were the SAME NUMBER while every terrain was 4096m wide baked from a 4096px image, which is why the two readings were indistinguishable until terrains could differ in size. Only the world reading survives a terrain whose image and extent differ, and it is what keeps a material's world-space tiling correct at any size without re-tuning `m_fUVScale`.) There is no per-vertex material lerp; material blending comes from the RGBA8 splatmap.
+- **The position is quantised against an AUTHORED box, not a per-chunk AABB — and the box is PER TERRAIN.** It is `{0,0,0} .. {dims.WorldSizeX(), MAX_TERRAIN_HEIGHT, dims.WorldSizeZ()}`, so a narrow terrain spends its snorm16 precision on the space it actually occupies (a 256m-wide Route1 gets ~6x the X precision a 1536m one would). The DEFAULT box (XZ `[0, 4096]`, Y `[0, MAX_TERRAIN_HEIGHT]`), the byte offsets and the quantisation steps live with the on-disk contract in `Core/Zenith_TerrainChunkLayout.h`; `Flux/Terrain/Flux_TerrainVertexQuant.h` builds the per-terrain box from a `Zenith_TerrainDimensions` and is the ONE place a terrain position or UV is packed (exporter, editor sculpt hook, CityBuilder carve + stream-in hook, chunk validator). A per-CHUNK box would be tighter still but would crack every seam: a chunk's closing edge IS its neighbour's first edge, and only a shared box makes those duplicated world positions quantise to identical words in both chunks. Per-TERRAIN is safe for exactly that reason — every chunk of one terrain shares one box.
 - Steps: **6.25 cm** in XZ, **7.8 mm** in Y, **1/16 pixel** in UV. Anything comparing a decoded position against its authored value (the chunk-topology validator's cross-stream check) must use those, not an equality epsilon. The `m_pxPositions` attribute stream stays uncompressed `float3`, so physics, the chunk AABBs and the validator's grid-slot test are unaffected by the quantisation.
-- The shader half is `Flux_DequantPosition` (`Shaders/Common/VertexFormats.slang`), fed scale/bias from terrain's own constant buffer (`TerrainConstants`, filled once in `Flux_TerrainImpl::Initialise` from `Flux_MakeTerrainPosQuant`). Its agreement with the CPU codec has no runtime tripwire, so it is pinned by a frozen transcription in `Flux_VertexCodec.Tests.inl` (`VertexCodec, DequantPositionMatchesSlangTranscription`).
+- The shader half is `Flux_DequantPosition` (`Shaders/Common/VertexFormats.slang`), fed scale/bias from the terrain's own constant buffer (`TerrainConstants`). **That CB is PER TERRAIN and is bound INSIDE the record loop, not once per pass** — it lives on `Flux_TerrainStreamingState::m_xTerrainConstantsBuffer`, is filled by `Flux_FillTerrainConstants(dims, …)` and uploaded per record in `PreRenderUpdate`. A single shared buffer bound once per pass was correct only while every terrain shared one box; with per-terrain boxes it would decode every terrain after the first against the wrong extent — geometry in the wrong place, with nothing failing. The CB also carries a `g_xTerrainDims` lane `(chunkWorldSize, worldSizeX, worldSizeZ, 0)` that the debug visualisation modes read instead of the `64.0`/`63.5` literals they used to spell. Its agreement with the CPU codec has no runtime tripwire, so it is pinned by a frozen transcription in `Flux_VertexCodec.Tests.inl` (`VertexCodec, DequantPositionMatchesSlangTranscription`, which now covers a non-square and a small per-terrain box as well as the default one) and by `FluxTerrain, TerrainConstantsFillMatchesTheTerrainsOwnBox` / `TerrainConstantsAreIndependentAcrossSpecs`.
 
 ## Important Constraints
 
