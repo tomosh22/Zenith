@@ -138,11 +138,13 @@ void ZM_BattleDirector::OnUpdate(float fDeltaSeconds)
 					ZM_ApplyBattleResultToParty(*pxGS, m_xCore);   // win-only inside; loss/flee no-op
 				}
 			}
-			// SC5 TRAINER PAYOUT: prize money + defeat flag. WIN-ONLY inside the pure
-			// helper, which routes through the SAME ZM_ClassifyBattleResult the block
-			// above uses -- so a draw, a double-KO or any other third outcome pays
-			// nothing. The LOSS half is UNCHANGED: the shipped write-back above is
-			// still the single owner of m_bPendingWhiteout.
+			// SC5 TRAINER PAYOUT: prize money + defeat flag, extended by S8 G1-3
+			// (ZM-70) to the badge + take-home item -- all four read straight off the
+			// row. WIN-ONLY inside the pure helper, which routes through the SAME
+			// ZM_ClassifyBattleResult the block above uses -- so a draw, a double-KO
+			// or any other third outcome pays nothing. The LOSS half is UNCHANGED:
+			// the shipped write-back above is still the single owner of
+			// m_bPendingWhiteout.
 			//
 			// Deliberately NOT gated on m_bWriteBackToLead: money and story flags are
 			// GAME-STATE level, not lead level, so a placeholder-player trainer battle

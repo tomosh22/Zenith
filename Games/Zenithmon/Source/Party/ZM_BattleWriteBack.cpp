@@ -108,29 +108,28 @@ void ZM_ApplyBattleResultToParty(ZM_GameState& xGameStateInOut, const ZM_BattleD
 }
 
 // ============================================================================
-// S7 item 3 SC5 -- the TRAINER payout. APPENDED beside the shipped write-back;
-// nothing above this line is edited, so the whiteout latch, the catch scan and
-// the lead write-back behave identically for the (byte-frozen) wild path.
+// S7 item 3 SC5 -- the TRAINER payout, extended by S8 G1-3 (ZM-70) to the badge +
+// take-home item. APPENDED beside the shipped write-back; nothing above this line
+// is edited, so the whiteout latch, the catch scan and the lead write-back behave
+// identically for the (byte-frozen) wild path.
 // ============================================================================
 
 ZM_TrainerRewardResult ZM_ApplyTrainerResultToGameState(ZM_GameState& xGameStateInOut,
-	ZM_TRAINER_ID eTrainer, ZM_SIDE eWinner, bool bLeadFainted)
+	const ZM_TrainerData& xRow, ZM_SIDE eWinner, bool bLeadFainted)
 {
 	ZM_TrainerRewardResult xResult;
 
 	// FAIL CLOSED on everything that is not an outright player win. Reusing the
 	// shipped classifier is load-bearing: a ZM_SIDE_COUNT draw whose lead fainted is
-	// a party WIPE, not a stalemate, and must never pay a prize.
+	// a party WIPE, not a stalemate, and must never pay a prize. This primitive is
+	// called both directly (a hand-built row) and via the by-id overload below (which
+	// already classified once) -- re-classifying here is what keeps this function
+	// TOTAL and safe on its own, per the header's contract, rather than trusting a
+	// caller to have checked first.
 	if (ZM_ClassifyBattleResult(eWinner, bLeadFainted) != ZM_BRA_WRITE_BACK_WIN)
 	{
 		return xResult;
 	}
-	if (!ZM_IsRegisteredTrainer(eTrainer))
-	{
-		return xResult;   // silent: see the header's totality table
-	}
-
-	const ZM_TrainerData& xRow = ZM_GetTrainerData(eTrainer);
 
 	// Through AddMoney, never a raw m_uMoney write: it is the sole enforcer of
 	// uZM_MONEY_CAP and it is headroom-first, so a prize can never wrap the purse.
@@ -144,8 +143,48 @@ ZM_TrainerRewardResult ZM_ApplyTrainerResultToGameState(ZM_GameState& xGameState
 	const bool bWritten    = ZM_SetStoryFlag(xGameStateInOut, xRow.m_eDefeatFlag, true);
 	xResult.m_bFlagNewlySet = bWritten && !bAlreadySet;
 
+	// S8 G1-3 (ZM-70): the badge + take-home item, read straight off the row. Both
+	// ZM_GameState::AwardBadge and ZM_Bag::Add are already TOTAL over their own
+	// sentinel (ZM_BADGE_NONE aliases ZM_BADGE_ID_COUNT past AwardBadge's valid
+	// range; ZM_ITEM_NONE aliases ZM_ITEM_COUNT past Add's valid range), so a row
+	// that names neither -- every row but Fenna's, today -- takes both calls as
+	// total, silent no-ops with no branch needed here.
+	const bool bBadgeAlreadyHeld = xGameStateInOut.HasBadge((u_int)xRow.m_eBadgeReward);
+	const bool bBadgeAccepted    = xGameStateInOut.AwardBadge((u_int)xRow.m_eBadgeReward);
+	xResult.m_bBadgeNewlyAwarded = bBadgeAccepted && !bBadgeAlreadyHeld;
+
+	// The item DEDUPLICATES on a repeat win -- unlike the prize money, and for a
+	// DIFFERENT reason than the badge (ZM-70 review correction: BLOCKING). m_xBag IS
+	// its own record of "does the player already own this" (ZM_Bag::Has), so the
+	// grant is gated on that read with ZERO new GameState state; ZM-D-135 never
+	// governs this column because there is nothing here for it to forbid. Has() is
+	// TOTAL over ZM_ITEM_NONE (GetCount range-checks before touching the item
+	// table), so a NONE row's bAlreadyHasItem is always false and Add() still
+	// rejects the sentinel itself -- m_bItemGranted stays false exactly as it did
+	// before this gate existed.
+	const bool bAlreadyHasItem = xGameStateInOut.m_xBag.Has(xRow.m_eItemReward);
+	xResult.m_bItemGranted = !bAlreadyHasItem && xGameStateInOut.m_xBag.Add(xRow.m_eItemReward, 1u);
+
 	xResult.m_bApplied = true;
 	return xResult;
+}
+
+ZM_TrainerRewardResult ZM_ApplyTrainerResultToGameState(ZM_GameState& xGameStateInOut,
+	ZM_TRAINER_ID eTrainer, ZM_SIDE eWinner, bool bLeadFainted)
+{
+	// Same fail-closed short-circuit the primitive re-checks below, kept here too so
+	// an unregistered id NEVER reaches ZM_GetTrainerData on a non-win -- that
+	// accessor logs a non-fatal Zenith_Error for an unregistered id, and this path
+	// must stay silent per the header's totality table.
+	if (ZM_ClassifyBattleResult(eWinner, bLeadFainted) != ZM_BRA_WRITE_BACK_WIN)
+	{
+		return ZM_TrainerRewardResult();
+	}
+	if (!ZM_IsRegisteredTrainer(eTrainer))
+	{
+		return ZM_TrainerRewardResult();   // silent: see the header's totality table
+	}
+	return ZM_ApplyTrainerResultToGameState(xGameStateInOut, ZM_GetTrainerData(eTrainer), eWinner, bLeadFainted);
 }
 
 ZM_TrainerRewardResult ZM_ApplyTrainerResultToGameState(ZM_GameState& xGameStateInOut,

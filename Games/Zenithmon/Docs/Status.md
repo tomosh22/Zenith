@@ -17,8 +17,24 @@ The S0-S7 narrative that used to fill the back half of this file moved VERBATIM 
 [History.md](History.md) on 2026-08-18, so this file can hold to the ~25-line budget
 its own template in `AgentBriefing.md` §2.3 specifies. Nothing was deleted.
 
-**★ LIVE PIN (UPDATED 2026-08-25):
-ZM boot `3415`; engine boot (Null Combat) `1650`; Null RenderTest `1741`; registry **70**.**
+**★ LIVE PIN (UPDATED 2026-08-26):
+ZM boot `3419`; engine boot (Null Combat) `1650`; Null RenderTest `1741`; registry **70**.**
+
+> **★ ZM-70 / G1-3 — Bloom Badge + Verdant Lash on a leader win — OBSERVED 2026-08-26.**
+> `Null_vs2022_Debug_Win64_True` reported **`3419 ran / 3417 passed / 0 failed`** (2 skipped),
+> so `Tools/unit_baselines.json` moved `Zenithmon` **3415 -> 3419**. The +4 are the reward
+> units in `Tests/ZM_Tests_Party.cpp`: the production Fenna case, the by-ROW mechanism driven
+> by a non-Fenna fixture (with its fail-closed loss arm), repeat-win idempotency for BOTH the
+> badge and the item, and a save/load ROUND TRIP that reads back off a freshly-decoded
+> `ZM_GameState` rather than off the mutated original. The existing Vesper reward test was STRENGTHENED with badge/item
+> neutrality rather than duplicated, so it moves no count.
+> Combat (`1650`) and Null RenderTest (`1741`) are UNCHANGED and were NOT re-measured: the
+> diff touches no engine file. Stated as INFERRED, not observed.
+> Registry UNCHANGED at **70** — every new unit is a boot unit and no
+> `ZENITH_AUTOMATED_TEST_REGISTER` call site was added.
+> **This slice authored nothing:** no `.zscen` byte moved, no save-schema change, and no new
+> `ZM_GameState` state — the badge goes through the shipped `AwardBadge` mask (module 5) and
+> the TM through `ZM_Bag::Add` (module 6).
 
 > **★ ZM-28 / G1-1 — Gym 1 DATA + placement header — OBSERVED 2026-08-25.**
 > `Null_vs2022_Debug_Win64_True` reported **`3415 ran / 3413 passed / 0 failed`** (2 skipped),

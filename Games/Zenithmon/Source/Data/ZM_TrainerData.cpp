@@ -17,7 +17,7 @@ static_assert(uZM_TRAINER_MAX_PARTY == uZM_MAX_PARTY_SIZE,
 // shape ZM_WorldSpec uses for its per-scene tables.
 // Column legend:
 //   id, "display name", party, partyCount, prize, defeatFlag, aiTier,
-//   challengeLines, challengeLineCount
+//   challengeLines, challengeLineCount, badgeReward, itemReward
 //
 // The roster opened at TWO rows -- the authored rival, and one generic route
 // trainer that carries NO story flag. One row would let a "walk every row" unit
@@ -131,11 +131,16 @@ namespace
 	// table itself.
 	const ZM_TrainerData s_axTrainers[] =
 	{
-		{ ZM_TRAINER_RIVAL_VESPER,   "Vesper",         s_axPartyVesper,  ZM_ARRLEN(s_axPartyVesper),  500u, ZM_STORY_FLAG_RIVAL1_DEFEATED, ZM_AI_TIER_GREEDY, s_aszChallengeVesper, ZM_ARRLEN(s_aszChallengeVesper) },
+		// Neither Vesper nor the rambler awards a badge or an item -- their two
+		// trailing columns default to ZM_BADGE_NONE / ZM_ITEM_NONE (ZM_TrainerData.h),
+		// spelled out here rather than left to the default for the same reason every
+		// other column in this table is spelled explicitly: a reader should not have
+		// to open the header to know what a row does NOT do.
+		{ ZM_TRAINER_RIVAL_VESPER,   "Vesper",         s_axPartyVesper,  ZM_ARRLEN(s_axPartyVesper),  500u, ZM_STORY_FLAG_RIVAL1_DEFEATED, ZM_AI_TIER_GREEDY, s_aszChallengeVesper, ZM_ARRLEN(s_aszChallengeVesper), ZM_BADGE_NONE, ZM_ITEM_NONE },
 		// SILENT BY DESIGN. The generic route trainer is the production instance of
 		// the "no lines -> straight to the battle" arm, so that arm is live content
 		// rather than only a unit fixture.
-		{ ZM_TRAINER_ROUTE1_RAMBLER, "Rambler Perrin", s_axPartyRambler, ZM_ARRLEN(s_axPartyRambler), 120u, ZM_STORY_FLAG_NONE,            ZM_AI_TIER_RANDOM, nullptr,              0u                              },
+		{ ZM_TRAINER_ROUTE1_RAMBLER, "Rambler Perrin", s_axPartyRambler, ZM_ARRLEN(s_axPartyRambler), 120u, ZM_STORY_FLAG_NONE,            ZM_AI_TIER_RANDOM, nullptr,              0u,                               ZM_BADGE_NONE, ZM_ITEM_NONE },
 		// GYM 1'S LEADER (S8, slice G1-1).
 		//
 		// ★ THE DEFEAT FLAG IS THE ONE THAT ALREADY EXISTS. ZM_STORY_FLAG_GYM1_DEFEATED
@@ -160,7 +165,14 @@ namespace
 		// She BARKS, like the rival and unlike the rambler -- the silent arm stays live
 		// content through ZM_TRAINER_ROUTE1_RAMBLER, which is what
 		// TrainerData_ChallengeColumnsAreWellFormedAndBothArmsExist requires.
-		{ ZM_TRAINER_GYM1_FENNA,     "Fenna",          s_axPartyFenna,   ZM_ARRLEN(s_axPartyFenna),   2600u, ZM_STORY_FLAG_GYM1_DEFEATED,  ZM_AI_TIER_SMART,  s_aszChallengeFenna,  ZM_ARRLEN(s_aszChallengeFenna)  },
+		//
+		// ★ S8 G1-3 (ZM-70): THE FIRST ROW TO CARRY A REAL REWARD. Beating Fenna awards
+		// ZM_BADGE_BLOOM (GDD 194) and grants ZM_ITEM_TM_VERDANTLASH -- the TM whose own
+		// m_eEffect is ZM_ITEM_EFFECT_TEACH_MOVE (ZM_ItemData.cpp), i.e. the player
+		// receives the teach-move item exactly as a gym leader hands one over in the
+		// genre. ZM_ApplyTrainerResultToGameState (ZM_BattleWriteBack.cpp) reads both
+		// columns straight off this row; there is no per-trainer branch anywhere else.
+		{ ZM_TRAINER_GYM1_FENNA,     "Fenna",          s_axPartyFenna,   ZM_ARRLEN(s_axPartyFenna),   2600u, ZM_STORY_FLAG_GYM1_DEFEATED,  ZM_AI_TIER_SMART,  s_aszChallengeFenna,  ZM_ARRLEN(s_aszChallengeFenna),  ZM_BADGE_BLOOM, ZM_ITEM_TM_VERDANTLASH },
 	};
 
 	static_assert(sizeof(s_axTrainers) / sizeof(s_axTrainers[0]) == ZM_TRAINER_COUNT,
@@ -171,11 +183,13 @@ namespace
 	// past, and a roster whose job is to make bad ids safe should not have that
 	// hole. Every field is the INERT answer: no party, no prize, no flag written,
 	// and ZM_AI_TIER_NONE, so a caller that ignores the id check still cannot start
-	// a battle out of it -- and, since SC7, no challenge lines either, so the
-	// UNKNOWN row is silent as well as inert.
+	// a battle out of it -- and, since SC7, no challenge lines either, and since
+	// S8 G1-3, no badge or item either, so the UNKNOWN row is silent, rewardless
+	// and inert.
 	const ZM_TrainerData s_xInvalidTrainer =
 	{
-		ZM_TRAINER_NONE, "UNKNOWN", nullptr, 0u, 0u, ZM_STORY_FLAG_NONE, ZM_AI_TIER_NONE, nullptr, 0u
+		ZM_TRAINER_NONE, "UNKNOWN", nullptr, 0u, 0u, ZM_STORY_FLAG_NONE, ZM_AI_TIER_NONE, nullptr, 0u,
+		ZM_BADGE_NONE, ZM_ITEM_NONE
 	};
 
 #undef ZM_ARRLEN

@@ -9,6 +9,8 @@
 
 #include "Core/Zenith_TestFramework.h"
 #include "UnitTests/Zenith_AssertCapture.h"               // SC5: the trainer payout's totality proof
+#include "DataStream/Zenith_DataStream.h"                // S8 G1-3: the badge/item save round trip
+#include "Zenithmon/Source/Core/ZM_SaveSchema.h"          // S8 G1-3: ZM_SaveSchema::Write / ::Read
 #include "Zenithmon/Source/Party/ZM_Monster.h"
 #include "Zenithmon/Source/Party/ZM_Party.h"
 #include "Zenithmon/Source/Party/ZM_GameState.h"          // ZM_MakeNewGameState
@@ -17,12 +19,16 @@
 #include "Zenithmon/Source/Battle/ZM_BattleMonster.h"    // ZM_BuildBattleMonster, uZM_CURHP_UNSPECIFIED
 #include "Zenithmon/Source/Battle/ZM_BattleDirectorCore.h" // ZM_BuildWildEnemySpec
 #include "Zenithmon/Source/Battle/ZM_ExpAndLevel.h"      // ZM_ExpForLevel, ZM_GetSpeciesGrowthRate
+#include "Zenithmon/Source/Data/ZM_BadgeData.h"          // ZM_BADGE_BLOOM / ZM_BADGE_KILN (S8 G1-3 reward)
+#include "Zenithmon/Source/Data/ZM_ItemData.h"           // ZM_ITEM_TM_VERDANTLASH (S8 G1-3 reward)
 #include "Zenithmon/Source/Data/ZM_SpeciesData.h"        // ZM_GetSpeciesBaseStats/Abilities
 #include "Zenithmon/Source/Data/ZM_StoryFlags.h"         // ZM_SetStoryFlag / ZM_IsStoryFlagSet (SC5 trainer reward)
 #include "Zenithmon/Source/Data/ZM_TrainerData.h"        // ZM_TRAINER_ID + the authored roster rows (SC5)
 #include "Zenithmon/Source/Data/ZM_StatCalc.h"           // ZM_CalcStat, uZM_MAX_IV
 #include "Zenithmon/Source/Data/ZM_MoveData.h"           // ZM_GetMoveData
 #include "Zenithmon/Source/Data/ZM_Learnsets.h"          // ZM_GetSpeciesLearnset
+
+#include <vector>                                         // S8 G1-3: byte snapshot for the save round trip
 
 namespace
 {
@@ -942,6 +948,8 @@ ZENITH_TEST(ZM_Party, TrainerReward_WinCreditsThePrizeAndSetsTheDefeatFlag)
 	const ZM_TrainerData& xRow = ZM_GetTrainerData(ZM_TRAINER_RIVAL_VESPER);
 	const u_int uMoneyBefore = xState.m_uMoney;
 	const u_int uPartyBefore = xState.m_xParty.Count();
+	const u_int uBadgeCountBefore = xState.GetBadgeCount();
+	const u_int uBagStacksBefore = xState.m_xBag.TotalStackCount();
 
 	// ANTI-VACUITY, before anything is applied: an already-set flag would make the
 	// transition meaningless, and a purse near the cap would make the delta a
@@ -968,6 +976,16 @@ ZENITH_TEST(ZM_Party, TrainerReward_WinCreditsThePrizeAndSetsTheDefeatFlag)
 		"a WIN must never latch a whiteout -- this helper is not the latch owner at all");
 	ZENITH_ASSERT_EQ(xState.m_xParty.Count(), uPartyBefore,
 		"the trainer payout touched a monster record -- it owns money and flags ONLY");
+
+	// S8 G1-3: Vesper's row carries ZM_BADGE_NONE / ZM_ITEM_NONE -- confirm the
+	// reward columns are a genuine TOTAL no-op for a row that names neither, not
+	// merely untested. A helper that awarded SOME badge or item regardless of the
+	// row would only be caught here and at the by-row fixture below.
+	ZENITH_ASSERT_FALSE(xResult.m_bBadgeNewlyAwarded, "Vesper's row carries no badge reward");
+	ZENITH_ASSERT_FALSE(xResult.m_bItemGranted, "Vesper's row carries no item reward");
+	ZENITH_ASSERT_EQ(xState.GetBadgeCount(), uBadgeCountBefore, "a rival win must not award any badge");
+	ZENITH_ASSERT_EQ(xState.m_xBag.TotalStackCount(), uBagStacksBefore,
+		"a rival win must not add any bag stack");
 }
 
 // Fail closed on every outcome that is not an outright player win, and leave the
@@ -1177,4 +1195,201 @@ ZENITH_TEST(ZM_Party, TrainerReward_UnregisteredTrainerIsATotalSilentNoOp)
 		ZENITH_ASSERT_FALSE(ZM_IsStoryFlagSet(xState, (ZM_STORY_FLAG_ID)u),
 			"an unregistered id's payout set story flag %u", u);
 	}
+}
+
+// ############################################################################
+// I. Gym-leader reward: badge + take-home item on a win (S8 G1-3, ZM-70)
+//
+// ZM_TrainerRewardResult::m_bBadgeNewlyAwarded / m_bItemGranted extend the SAME
+// by-id/by-row primitive section H already pins for money+flag; the classify /
+// registered / fail-closed / totality arms proven there are NOT re-proven here.
+// ZM_TRAINER_GYM1_FENNA is the first (and, today, only) row whose m_eBadgeReward /
+// m_eItemReward are not both NONE, so she is what exercises the PRODUCTION content;
+// the by-row unit below exercises the MECHANISM independent of her, per
+// ZM-D-208 Ruling 2's reasoning applied to the reward half (ZM-D-209).
+// ############################################################################
+
+// The headline case: beating Fenna credits her prize, sets her flag, AND awards the
+// Bloom Badge + grants Verdant Lash -- all four in one call, all read off her row.
+ZENITH_TEST(ZM_Party, TrainerReward_BeatingFennaAwardsTheBloomBadgeAndGrantsVerdantLash)
+{
+	ZM_GameState xState;
+	SeedFernfawnStarterFixture(xState);
+	ZENITH_ASSERT_FALSE(xState.HasBadge((u_int)ZM_BADGE_BLOOM),
+		"the starter state already has the Bloom Badge -- the transition is vacuous");
+	ZENITH_ASSERT_FALSE(xState.m_xBag.Has(ZM_ITEM_TM_VERDANTLASH),
+		"the starter bag already carries Verdant Lash -- the transition is vacuous");
+	ZENITH_ASSERT_LT(xState.m_uMoney + 2600u, uZM_MONEY_CAP,
+		"the starter purse plus Fenna's prize is at/over the cap -- the credit delta would be "
+		"a saturation artefact rather than the routed prize");
+
+	const ZM_TrainerRewardResult xResult = ZM_ApplyTrainerResultToGameState(
+		xState, ZM_TRAINER_GYM1_FENNA, ZM_SIDE_PLAYER, false);
+
+	ZENITH_ASSERT_TRUE(xResult.m_bApplied, "a PLAYER win over Fenna must pay out");
+	ZENITH_ASSERT_EQ(xResult.m_uMoneyCredited, 2600u, "Fenna's authored prize is 2600");
+	ZENITH_ASSERT_TRUE(xResult.m_bFlagNewlySet, "beating Fenna must set ZM_STORY_FLAG_GYM1_DEFEATED");
+	ZENITH_ASSERT_TRUE(ZM_IsStoryFlagSet(xState, ZM_STORY_FLAG_GYM1_DEFEATED),
+		"ZM_STORY_FLAG_GYM1_DEFEATED must actually be set");
+
+	ZENITH_ASSERT_TRUE(xResult.m_bBadgeNewlyAwarded, "beating Fenna must newly award a badge");
+	ZENITH_ASSERT_TRUE(xState.HasBadge((u_int)ZM_BADGE_BLOOM), "the Bloom Badge must be held");
+	ZENITH_ASSERT_EQ(xState.GetBadgeCount(), 1u, "exactly one badge after the first gym win");
+
+	ZENITH_ASSERT_TRUE(xResult.m_bItemGranted, "beating Fenna must grant an item");
+	ZENITH_ASSERT_TRUE(xState.m_xBag.Has(ZM_ITEM_TM_VERDANTLASH), "Verdant Lash must be in the bag");
+	ZENITH_ASSERT_EQ(xState.m_xBag.GetCount(ZM_ITEM_TM_VERDANTLASH), 1u,
+		"exactly one Verdant Lash after the first win");
+}
+
+// ZM-D-208 Ruling 2's reasoning, applied to the reward half: a helper keyed on
+// ZM_TRAINER_ID can only be exercised through the shipped roster, so its coverage
+// dies the moment content changes. This drives the badge+item grant off a
+// HAND-BUILT row that is not Fenna's and carries NEITHER her badge NOR her item,
+// proving the mechanism reads BOTH rewards OFF THE ROW rather than off a
+// hardcoded trainer id -- and that fail-closed still holds through the by-row
+// seam. (ZM-70 review correction N7: the item used to reuse Fenna's own TM, which
+// could not distinguish row-driven from hard-coded the way the badge check
+// already did -- ZM_ITEM_TM_TITANBEAM closes that gap for free.)
+ZENITH_TEST(ZM_Party, TrainerReward_ByRowPrimitiveGrantsWhateverTheRowNames)
+{
+	// Deliberately NOT Fenna: m_eId borrows the rambler's (irrelevant to this
+	// primitive, which never inspects m_eId), the badge is Gym 2's, not Gym 1's,
+	// and the item is a DIFFERENT TM -- not Verdant Lash, which is what
+	// TrainerReward_BeatingFennaAwardsTheBloomBadgeAndGrantsVerdantLash above
+	// already exercises as PRODUCTION content.
+	const ZM_TrainerData xFixtureRow =
+	{
+		ZM_TRAINER_ROUTE1_RAMBLER, "fixture leader", nullptr, 0u, 0u,
+		ZM_STORY_FLAG_NONE, ZM_AI_TIER_NONE,
+		nullptr, 0u,
+		ZM_BADGE_KILN, ZM_ITEM_TM_TITANBEAM
+	};
+
+	ZM_GameState xState;
+
+	// A WIN grants exactly what the row names.
+	SeedFernfawnStarterFixture(xState);
+	ZENITH_ASSERT_FALSE(xState.HasBadge((u_int)ZM_BADGE_KILN),
+		"the starter state already has the Kiln badge -- the transition is vacuous");
+	ZENITH_ASSERT_FALSE(xState.m_xBag.Has(ZM_ITEM_TM_TITANBEAM),
+		"the starter bag already carries TM Titan Beam -- the transition is vacuous");
+	{
+		const ZM_TrainerRewardResult xResult = ZM_ApplyTrainerResultToGameState(
+			xState, xFixtureRow, ZM_SIDE_PLAYER, false);
+		ZENITH_ASSERT_TRUE(xResult.m_bApplied, "a by-row PLAYER win must apply");
+		ZENITH_ASSERT_TRUE(xResult.m_bBadgeNewlyAwarded, "the row's badge must be newly awarded");
+		ZENITH_ASSERT_TRUE(xResult.m_bItemGranted, "the row's item must be granted");
+		ZENITH_ASSERT_TRUE(xState.HasBadge((u_int)ZM_BADGE_KILN),
+			"the by-row primitive must award the badge THE ROW NAMES, not a hardcoded one");
+		ZENITH_ASSERT_FALSE(xState.HasBadge((u_int)ZM_BADGE_BLOOM),
+			"a fixture row unrelated to Fenna must never award HER badge");
+		ZENITH_ASSERT_TRUE(xState.m_xBag.Has(ZM_ITEM_TM_TITANBEAM),
+			"the by-row primitive must grant the item THE ROW NAMES, not a hardcoded one");
+		ZENITH_ASSERT_FALSE(xState.m_xBag.Has(ZM_ITEM_TM_VERDANTLASH),
+			"a fixture row unrelated to Fenna must never grant HER item -- proves this reads "
+			"the item off the row rather than off the TM Fenna happens to award");
+	}
+
+	// Fail-closed still holds through the by-row seam: a non-win outcome grants
+	// nothing, exactly as section H already pins for money+flag via the by-id path.
+	SeedFernfawnStarterFixture(xState);
+	{
+		const ZM_TrainerRewardResult xLossResult = ZM_ApplyTrainerResultToGameState(
+			xState, xFixtureRow, ZM_SIDE_ENEMY, true);
+		ZENITH_ASSERT_FALSE(xLossResult.m_bApplied, "a loss through the by-row seam must not apply");
+		ZENITH_ASSERT_FALSE(xLossResult.m_bBadgeNewlyAwarded, "a loss must not report a badge award");
+		ZENITH_ASSERT_FALSE(xLossResult.m_bItemGranted, "a loss must not report an item grant");
+		ZENITH_ASSERT_FALSE(xState.HasBadge((u_int)ZM_BADGE_KILN), "a loss must not award a badge");
+		ZENITH_ASSERT_FALSE(xState.m_xBag.Has(ZM_ITEM_TM_TITANBEAM), "a loss must not grant an item");
+	}
+}
+
+// DoD: "Awarding twice does not double-grant, and the badge count is right after a
+// repeat win." AwardBadge ORs a single bit, so the badge is STRUCTURALLY idempotent
+// -- no dedup logic exists or is needed. The item ALSO does not double-grant (ZM-70
+// review correction: BLOCKING), but by a DIFFERENT mechanism than the badge: it is
+// gated on ZM_Bag::Has before the Add, because the bag is ALREADY the record of
+// "does the player own this" -- see ZM_TrainerRewardResult's header comment. The
+// item does NOT follow the prize money's shape: money still pays again because
+// ZM-D-135 forbids the GameState member that would record "already paid", and no
+// such member is needed here, so ZM-D-135 never governs this column at all. Both
+// halves are PROVEN here, not merely assumed.
+ZENITH_TEST(ZM_Party, TrainerReward_SecondWinDoesNotDoubleAwardTheBadge)
+{
+	ZM_GameState xState;
+	SeedFernfawnStarterFixture(xState);
+
+	const ZM_TrainerRewardResult xFirst = ZM_ApplyTrainerResultToGameState(
+		xState, ZM_TRAINER_GYM1_FENNA, ZM_SIDE_PLAYER, false);
+	ZENITH_ASSERT_TRUE(xFirst.m_bBadgeNewlyAwarded, "the FIRST win must newly award the Bloom Badge");
+	ZENITH_ASSERT_EQ(xState.GetBadgeCount(), 1u, "one badge after the first win");
+	ZENITH_ASSERT_TRUE(xFirst.m_bItemGranted, "the FIRST win must grant Verdant Lash");
+	ZENITH_ASSERT_EQ(xState.m_xBag.GetCount(ZM_ITEM_TM_VERDANTLASH), 1u, "one TM copy after the first win");
+
+	const ZM_TrainerRewardResult xSecond = ZM_ApplyTrainerResultToGameState(
+		xState, ZM_TRAINER_GYM1_FENNA, ZM_SIDE_PLAYER, false);
+
+	ZENITH_ASSERT_TRUE(xSecond.m_bApplied, "a second win over the same trainer still applies");
+	ZENITH_ASSERT_FALSE(xSecond.m_bBadgeNewlyAwarded,
+		"the badge is idempotent -- AwardBadge ORs a bit, so the SECOND win must report no NEW badge");
+	ZENITH_ASSERT_TRUE(xState.HasBadge((u_int)ZM_BADGE_BLOOM), "the badge is still held after the second win");
+	ZENITH_ASSERT_EQ(xState.GetBadgeCount(), 1u,
+		"the badge count must still be exactly 1 after a repeat win -- awarding twice must not double-grant");
+
+	// The item: OBSERVED and asserted, not assumed. It DEDUPLICATES -- unlike the
+	// prize money -- because m_xBag.Has() already answers "does the player own
+	// this" with zero new state, so nothing needs a ZM-D-135-forbidden member to
+	// gate it. A second copy would exist purely to be sold: Verdant Lash (like
+	// every TM) is m_bConsumable == false, so ZM_ShopSell converting the duplicate
+	// to its m_uSellPrice is its ONLY use -- a farmable prize the per-trainer
+	// defeat flag exists to forbid.
+	ZENITH_ASSERT_FALSE(xSecond.m_bItemGranted, "the second win must NOT grant a second copy of the item");
+	ZENITH_ASSERT_TRUE(xState.m_xBag.Has(ZM_ITEM_TM_VERDANTLASH), "the first copy must still be held");
+	ZENITH_ASSERT_EQ(xState.m_xBag.GetCount(ZM_ITEM_TM_VERDANTLASH), 1u,
+		"two wins must NOT stack two TM copies -- the bag itself is the dedupe record");
+}
+
+// DoD: "Both survive a save/load ROUND TRIP, proven by reading them back off a
+// reloaded save rather than off the mutated object." Every assertion below reads
+// xReloaded -- xState, the object the reward actually mutated, is never consulted
+// again after the encode -- so a reward that never reached the wire cannot pass by
+// accident. No new save module and no schema change: badges are module 5, the bag
+// is module 6 (Source/Core/ZM_SaveSchema.cpp), both already wired before this ticket.
+ZENITH_TEST(ZM_Party, TrainerReward_BadgeAndItemSurviveASaveLoadRoundTrip)
+{
+	ZM_GameState xState;
+	SeedFernfawnStarterFixture(xState);
+
+	const ZM_TrainerRewardResult xResult = ZM_ApplyTrainerResultToGameState(
+		xState, ZM_TRAINER_GYM1_FENNA, ZM_SIDE_PLAYER, false);
+	ZENITH_ASSERT_TRUE(xResult.m_bBadgeNewlyAwarded, "beating Fenna must newly award the Bloom Badge");
+	ZENITH_ASSERT_TRUE(xResult.m_bItemGranted, "beating Fenna must grant Verdant Lash into the bag");
+
+	Zenith_DataStream xWriteStream;
+	const Zenith_Status xWriteStatus = ZM_SaveSchema::Write(xState, xWriteStream);
+	ZENITH_ASSERT_TRUE(xWriteStatus.IsOk(), "encoding the post-reward state failed (error %u)",
+		(u_int)xWriteStatus.Error());
+	if (!xWriteStatus.IsOk()) { return; }
+
+	// Snapshot the encoded bytes into an owned buffer -- ZM_SaveSchema::Read takes a
+	// stream over a caller-owned byte range, mirroring Tests/ZM_Tests_SaveSchema.cpp's
+	// own Encode/Decode idiom for the identical mechanism.
+	const uint8_t* pEncoded = (const uint8_t*)xWriteStream.GetData();
+	const std::vector<uint8_t> xBytes(pEncoded, pEncoded + xWriteStream.GetCursor());
+
+	ZM_GameState xReloaded;
+	Zenith_DataStream xReadStream((void*)xBytes.data(), xBytes.size());
+	const Zenith_Status xReadStatus = ZM_SaveSchema::Read(xReadStream, xBytes.size(), xReloaded);
+	ZENITH_ASSERT_TRUE(xReadStatus.IsOk(), "decoding the post-reward state failed (error %u)",
+		(u_int)xReadStatus.Error());
+	if (!xReadStatus.IsOk()) { return; }
+
+	ZENITH_ASSERT_TRUE(xReloaded.HasBadge((u_int)ZM_BADGE_BLOOM),
+		"the Bloom Badge did not survive a save/load round trip");
+	ZENITH_ASSERT_EQ(xReloaded.GetBadgeCount(), 1u, "the reloaded badge count is wrong");
+	ZENITH_ASSERT_TRUE(xReloaded.m_xBag.Has(ZM_ITEM_TM_VERDANTLASH),
+		"Verdant Lash did not survive a save/load round trip");
+	ZENITH_ASSERT_EQ(xReloaded.m_xBag.GetCount(ZM_ITEM_TM_VERDANTLASH), 1u,
+		"the reloaded Verdant Lash count is wrong");
 }

@@ -2,6 +2,8 @@
 
 #include "Zenithmon/Source/Battle/ZM_BattleAI.h"      // ZM_AI_TIER -- Begin()'s 7th argument, not a config field
 #include "Zenithmon/Source/Battle/ZM_BattleTypes.h"   // uZM_MAX_PARTY_SIZE -- the cap this row DERIVES from
+#include "Zenithmon/Source/Data/ZM_BadgeData.h"       // ZM_BADGE_ID / ZM_BADGE_NONE (S8 G1-3 reward column)
+#include "Zenithmon/Source/Data/ZM_ItemData.h"        // ZM_ITEM_ID / ZM_ITEM_NONE (S8 G1-3 reward column)
 #include "Zenithmon/Source/Data/ZM_SpeciesData.h"     // ZM_SPECIES_ID
 #include "Zenithmon/Source/Data/ZM_StoryFlags.h"      // ZM_STORY_FLAG_ID / ZM_STORY_FLAG_NONE
 #include "Zenithmon/Source/UI/ZM_UI_DialogueBox.h"    // uMAX_QUEUED_LINES -- the challenge cap is DERIVED from it
@@ -108,13 +110,61 @@ struct ZM_TrainerData
 	// (ZM_TRAINER_ROUTE1_RAMBLER ships exactly that).
 	const char* const*				m_paszChallengeLines;  // null when the row barks nothing
 	u_int							m_uChallengeLineCount; // 0 == silent; <= uZM_TRAINER_MAX_CHALLENGE_LINES
+
+	// ---- S8 G1-3 (ZM-70): the badge + take-home item a defeat awards -----------
+	// APPENDED AT THE END, same rule as the challenge columns above. This is the
+	// TRAINER -> badge/item link ZM_BadgeData.h's own note defers to this slice --
+	// it lives HERE rather than as a "which trainer" column on ZM_BadgeData because
+	// only ONE of the eight gym leaders exists as a ZM_TRAINER_ID today, so a column
+	// on the 8-row badge table would be seven invented ids; a column on this
+	// 3-row roster costs two harmless ZM_BADGE_NONE/ZM_ITEM_NONE rows instead.
+	//
+	// DEFAULT MEMBER INITIALIZERS ARE LOAD-BEARING, not decoration: several hand-built
+	// fixture rows elsewhere (Tests/ZM_Tests_TrainerData.cpp's challenge-line fixtures)
+	// spell only the first 9 columns. Without a default, C++ aggregate init would
+	// value-initialize these trailing enums to 0 -- which is ZM_BADGE_BLOOM, the FIRST
+	// enumerator, not "no badge". A silent false claim is worse than a compile error,
+	// so every row that does not care about a reward gets the inert answer for free.
+	ZM_BADGE_ID						m_eBadgeReward = ZM_BADGE_NONE;   // badge awarded on defeat; ZM_BADGE_NONE == none (most rows)
+	ZM_ITEM_ID						m_eItemReward  = ZM_ITEM_NONE;    // item granted into the bag on defeat; ZM_ITEM_NONE == none (most rows)
 };
+
+// ★ ZM-70 REVIEW CORRECTION (N1): the two default member initializers above are
+// LOAD-BEARING but had ZERO coverage -- every real row in ZM_TrainerData.cpp spells
+// all eleven columns explicitly, and no fixture in Tests/ZM_Tests_TrainerData.cpp
+// ever READS m_eBadgeReward or m_eItemReward off a hand-built row, so the comment
+// asserting the defaults matter was standing in for a guard that did not exist
+// (Docs/DecisionLog.md ZM-D-212: "a comment asserting a guard exists is worse than
+// no guard, because the next author reads it and stops looking"). This closes it
+// AT COMPILE TIME -- needs no test file, moves no unit count: a NINE-field
+// aggregate, the same shape Tests/ZM_Tests_TrainerData.cpp's own challenge-line
+// fixtures already use, must still produce the NONE sentinels on the two TRAILING
+// columns this struct appends.
+//
+// Enumerator 0 on EACH enum is a REAL value here, not a placebo: ZM_BADGE_BLOOM is
+// Gym 1's actual badge and ZM_ITEM_CATCHORB is a real, purchasable item -- so a
+// silently value-initialized row would not merely be wrong, it would claim a
+// specific, plausible reward pair nobody authored.
+inline constexpr ZM_TrainerData xZM_TRAINER_DATA_NINE_COLUMN_DEFAULTS_PROBE =
+{
+	ZM_TRAINER_NONE, "probe", nullptr, 0u, 0u, ZM_STORY_FLAG_NONE, ZM_AI_TIER_NONE, nullptr, 0u
+	// m_eBadgeReward, m_eItemReward: DELIBERATELY UNSPELLED -- that omission is the
+	// entire point of this probe.
+};
+static_assert(xZM_TRAINER_DATA_NINE_COLUMN_DEFAULTS_PROBE.m_eBadgeReward == ZM_BADGE_NONE,
+	"a 9-column ZM_TrainerData aggregate init no longer defaults m_eBadgeReward to "
+	"ZM_BADGE_NONE -- every under-spelled row would silently award ZM_BADGE_BLOOM "
+	"(enumerator 0), a REAL badge, not an absence");
+static_assert(xZM_TRAINER_DATA_NINE_COLUMN_DEFAULTS_PROBE.m_eItemReward == ZM_ITEM_NONE,
+	"a 9-column ZM_TrainerData aggregate init no longer defaults m_eItemReward to "
+	"ZM_ITEM_NONE -- every under-spelled row would silently grant ZM_ITEM_CATCHORB "
+	"(enumerator 0), a REAL item, not an absence");
 
 // TOTAL: an unregistered id (including the sentinel) yields the shared UNKNOWN
 // row -- { ZM_TRAINER_NONE, "UNKNOWN", nullptr, 0u, 0u, ZM_STORY_FLAG_NONE,
-// ZM_AI_TIER_NONE, nullptr, 0u } -- rather than a table read, and logs a non-fatal
-// Zenith_Error because such a lookup means mis-authored data or a mis-typed
-// caller.
+// ZM_AI_TIER_NONE, nullptr, 0u, ZM_BADGE_NONE, ZM_ITEM_NONE } -- rather than a
+// table read, and logs a non-fatal Zenith_Error because such a lookup means
+// mis-authored data or a mis-typed caller.
 const ZM_TrainerData&	ZM_GetTrainerData(ZM_TRAINER_ID eId);
 u_int					ZM_GetTrainerCount();                        // == ZM_TRAINER_COUNT
 // TOTAL: "NONE" for the sentinel, "UNKNOWN" out of range, and SILENT for both --
