@@ -116,11 +116,15 @@ loop without it lies to itself.
    added by a fix that did not think to widen the list it had just moved
    outside:
 
-   - Step 7 mandates `timeout 120 zagent docs sync --json`. `Bash(zagent:*)`
+   - Step 7 once mandated `timeout 120 zagent docs sync --json`. `Bash(zagent:*)`
      is anchored on `zagent` as the FIRST token, so it matched nothing —
      and the stall lands *after* the commit and *before* `finish`, which is
      the one place this file says the queue must never stop. `Bash(timeout *)`
-     is on the list now.
+     went on the list then and stays there, though **step 7 no longer wraps
+     that command**: the underlying hang was a per-page WebSocket and is fixed
+     (saas `05408ef`). Kept as the worked example, because the rule it
+     illustrates is untouched — a mandated command whose first token is not
+     prefix-matched stalls the loop on a permission prompt.
    - Step 5 mandates `TaskStop` for the wedged-worker guardrail, and it was
      not granted at all: the only enforcement action for a loop that is
      already stuck needed a tool the skill never listed.
@@ -765,7 +769,26 @@ path written on a continuation line was invisible to the check built to catch it
 
 **How to derive "Files you may edit", because the list is load-bearing in
 BOTH directions.** Start from the DoD's nouns and follow them into the
-repo. Then make one deliberate judgement: **if a file would let the worker
+repo — but **grep the SYMBOL, never the prose.**
+
+**★★ THAT DISTINCTION COST 4 OF 8 SITES ON ZM-69.** The ticket was a
+REVERSAL: Thornacre carried a deliberate three-site tripwire asserting it has
+no gym door, and `ZM_ThornacrePlacement.h` says so out loud — *"adding a gym
+door means a human edits this line … so the edit reds instead of shipping."*
+The orchestrator's survey enumerated files that MENTION "gym door" and found
+four. It missed `ZM_Tests_SceneRegistry.cpp`, which never uses that phrase —
+it says *"the Gym"* — and which holds the one omission that mattered: without
+a `{ ZM_SCENE_GYM1, "Gym1" }` row the authored door is ACCEPTED, stalls in
+`WAITING_FOR_SCENE`, and is a black screen **with every unit still green**,
+including the three units asserting the gym's absence, which stay green
+because the absence stays real.
+
+The sites that matter ASSERT AN ABSENCE, and an absence is spelled as an
+identifier (`ZM_SCENE_GYM1`, `ZM_IsSceneRegisteredForLoad`), never as the
+English description of the feature. Nouns are prose. **On any ticket that
+reverses a recorded assertion, the survey pattern is the symbol.**
+
+Then make one deliberate judgement: **if a file would let the worker
 decide something the ticket does not contain, leave it out and say why in
 the Boundary.** On ZM-23, adding `ZM_HumanData.*` would have let the worker
 invent a new authored outfit colour and "finish" the ticket — a content
@@ -869,6 +892,22 @@ of sentence, and only one of them is a decision:
 | --- | --- |
 | the **judgement** — *"append an outfit slot"*, *"retire phase 8"* | binding, paste it verbatim |
 | the **survey** — *"what survives"*, *"what is unaffected"*, *"the blast radius is"* | a claim about what the code does TODAY, and exactly the half that goes stale |
+| the **why** — *"because X is not authored yet"* | the judgement's PRECONDITION, and a ticket may have discharged it |
+
+**★★ THE THIRD ROW IS NEW, AND WITHOUT IT A LEGITIMATE TICKET READS AS A RULING
+VIOLATION.** `ZM-D-196` Ruling 2 says *"Explicitly **NO gym door**"*. Pasted as a
+judgement — which is exactly what "paste the ruling verbatim" naturally produces,
+because the Decision line is the ruling — it forbids ZM-69 outright. Its **why**
+says *"Gym1 … declared but unauthored, and `IsWarpDestinationValid` consults only
+the compiled tag list — so a door to an unauthored scene is a permanent black
+screen"*. ZM-69 **authors Gym1**. The ruling is a precondition that the ticket
+satisfies, not a prohibition it breaks, and the tripwires guarding it may move
+now precisely because they could not before.
+
+So **always paste the WHY beside the Decision**, and ask which of the three kinds
+of sentence you are relying on. A judgement whose stated reason no longer holds
+is not binding in the same way — but only its reason can tell you that, and a
+verbatim Decision line hides it.
 
 ZM-D-208 recorded that *"the FSM latch in `ZM_Tests_TrainerSightFsm.cpp`"*
 survives Ruling 3. It was pasted verbatim, correctly, and used to bound the
@@ -1479,19 +1518,33 @@ abandoned ticket, whose edits may be half-done or uncommitted.
 
 **`guard` already decided this: read `docsMirrorNeeded` off its payload.**
 False → skip, silently; a ticket that never touched a doc has nothing to
-mirror. True → **`timeout 120 zagent docs sync --json`**, appended to
+mirror. True → **`zagent docs sync --json`**, appended to
 `.zagent/run/<KEY>/docs-sync.log`; `docsMirrorPaths` names what triggered it.
 
-**★★ THE TIMEOUT IS NOT OPTIONAL. This command HANGS.** Three ticks, three
-hangs, three zero-byte logs — at 300 s, 120 s and 120 s. It has never once
-completed. Without a bound the documented invocation hangs forever *after* the
-commit has landed and *before* `finish`: the work is on `master`, the ticket is
-never closed, and the one-ticket-per-repo lock is never released. The queue
-stops with the job done.
+**★★ IT NEVER HUNG, AND FIVE TICKS BELIEVED IT DID.** This step used to
+mandate `timeout 120` and record *"timed out — the mirror is one commit
+behind"* as an expected outcome. Both were wrong, and the second was a lie
+the protocol told itself: the mirror was never behind.
 
-A hang also produces neither of the outcomes this step tells you to record —
-there are no page counts and no error text, only an empty file. **"timed out —
-the mirror is one commit behind" is a legal and expected work-log outcome.**
+`docs sync` opened a WebSocket per page for **every** page — 199 on this
+checkout, 597 across the three projects that map to it — including every page
+already identical to its source, at a handshake plus two settles each and two
+sessions per replace. A no-op sync therefore ran about **ten minutes**, so
+every caller's bound killed it around page 40 of 199 and discarded the
+`--json` report, which is emitted at the end. Hence the zero-byte logs. It had
+been writing correctly the whole time, which is exactly why the mirror always
+looked current for the docs that sort early (`Status`, `DecisionLog`) and never
+for `Conventions`.
+
+Fixed in saas `05408ef`: a page needing no write is now answered from the
+persisted row with no socket, by the same `decideWrite` the live path applies.
+A CONFLICT and `--force` still open a session. **Measured: five consecutive
+timeouts became exit 0 in 9 seconds.**
+
+So run it unbounded and read its report. A non-zero exit is now a real
+failure worth recording rather than the expected case — and if you find
+yourself reaching for a timeout again, check whether the page count has grown
+rather than re-adding the wrapper.
 
 Do NOT re-derive it by matching `changed.txt` in the shell. That is what
 this step used to say, and a PowerShell implementation of it is wrong in
@@ -1555,6 +1608,28 @@ the fact. The work log's shape:
 - None, or: what was assumed, what was left undone and why.
 - Every correction you made to the ticket's own text before inlining it.
 ```
+
+**★★ A FINDING THAT OUTLIVES THE TICKET IS A DECISION, NOT A WORK-LOG LINE.**
+I3 tells every tick to grep `decisionLog` for the rulings that govern its
+subject — and no step in this file has ever told you to WRITE one. So a worker's
+durable discovery lands in **Deviations / follow-ups**, on a ticket that is about
+to close, which the next worker never reads. The grep and the thing it greps for
+were never connected.
+
+ZM-28's worker found that **appending a move is not inert**: `ZM_Learnsets.cpp`
+rebuilds every species' level-up list by scanning the WHOLE move table and
+sorting it, and `ZM_SpeciesData.cpp` scans it again for egg moves. No
+blast-radius grep finds that — the coupling is by table scan, not by identifier
+— and **seven more gym reward moves remain**, so it recurs seven times.
+
+So: when the tick learns something TRUE OF THE CODEBASE rather than of this
+ticket, `zagent decide` it. The test is whether the next worker on a different
+ticket would need it. A ticket-specific deviation stays in the work log; a fact
+about how the repo behaves goes where I3 will find it.
+
+Record the **why** as carefully as the decision — see the three kinds of
+sentence at step 5. A future tick will read this entry the way you read
+ZM-D-196, and only its reason will tell them whether it still binds.
 
 **Coverage** is required and "nothing" is a legal answer. It is there
 because green gates answer a narrower question than they appear to:

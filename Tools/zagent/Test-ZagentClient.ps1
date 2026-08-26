@@ -1299,6 +1299,46 @@ Assert-That 'a heading-style Definition of Done is read the same as a bold one' 
     @(Get-UnmetDoneCriteria -WorkLog $log).Count -eq 1
 }
 
+# ─── THE EXIT CODE, RECORDED WHERE A PIPE CANNOT REACH IT ────────────
+#
+# `tick.md`'s most-broken rule is "never pipe a call whose exit code you
+# intend to read", and it broke twice more on 2026-08-25. These pin the
+# file that retires it. Measured before the fix: a piped `zagent owns`
+# reported 0 while the real code was 5.
+
+Assert-That '** the exit code is written to .zagent/last.exit' {
+    $dir = Join-Path ([System.IO.Path]::GetTempPath()) ("zagent-exit-" + [guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $dir -Force | Out-Null
+    try {
+        Write-LastExit -Code 5 -Repo $dir
+        $read = Get-Content -LiteralPath (Join-Path $dir '.zagent/last.exit') -Raw
+        [int]($read.Trim()) -eq 5
+    } finally { Remove-Item -LiteralPath $dir -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+Assert-That 'a later exit OVERWRITES the previous one rather than appending' {
+    $dir = Join-Path ([System.IO.Path]::GetTempPath()) ("zagent-exit-" + [guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $dir -Force | Out-Null
+    try {
+        Write-LastExit -Code 4 -Repo $dir
+        Write-LastExit -Code 0 -Repo $dir
+        $read = (Get-Content -LiteralPath (Join-Path $dir '.zagent/last.exit') -Raw).Trim()
+        $read -eq '0'
+    } finally { Remove-Item -LiteralPath $dir -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+Assert-That 'recording an exit code NEVER throws -- an empty or bad repo is a no-op' {
+    # It runs on the way out of a failure path. A throw here would replace
+    # the real exit code with a crash, which is strictly worse than the bug.
+    try {
+        Write-LastExit -Code 1 -Repo ''
+        Write-LastExit -Code 1 -Repo $null
+        Write-LastExit -Code 1 -Repo 'Q:
+o\such\drivenywhere'
+        $true
+    } catch { $false }
+}
+
 Write-Host ""
 Write-Host ("{0}/{1} assertions passed." -f ($script:count - $script:failures), $script:count)
 if ($script:failures -eq 0) { Write-Host 'PASS' -ForegroundColor Green; exit 0 }

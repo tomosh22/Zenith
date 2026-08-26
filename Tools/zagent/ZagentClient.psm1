@@ -902,6 +902,45 @@ function Write-LastResult {
     }
 }
 
+<#
+★★ THE EXIT CODE, AS A FILE. This is the one value the protocol tells you
+to trust and never gave you a way to read safely.
+
+`tick.md` spends forty lines and three measured war stories on "NEVER PIPE
+OR SUFFIX A CALL WHOSE EXIT CODE YOU INTEND TO READ", and it is still the
+most-broken rule in the protocol. Two more breaks on 2026-08-25 alone:
+`zagent check ZM-70 2>&1 | head; echo $?` read 0 where the real code was
+5, and the harness's own completion notification reported 0 for a
+`tick_gates` run that exited 10 (a pin needing a bump). Branching on
+either commits a stale baseline with every gate reported green.
+
+The asymmetry is the whole defect. EVERY other value the protocol says to
+read from a file already IS one — `ticket.json`, `body.md`, `drift.txt`,
+`gates.json`, `tick_gates.json` — precisely because a pipe corrupts them.
+The exit code was reachable only through the channel the protocol says
+never to trust. `tick_gates.ps1` solved this for itself with
+`tick_gates.json`, which is exactly why its verdict survived a run whose
+shell status did not.
+
+So: one line beside `last.json`, written on EVERY exit path including the
+early ones, and read the way `last.json` is read. A rule enforced by a
+file beats a rule repeated in prose.
+#>
+function Write-LastExit {
+    param([int]$Code, [string]$Repo)
+    try {
+        if (-not $Repo) { return }
+        $dir = Join-Path $Repo '.zagent'
+        if (-not (Test-Path -LiteralPath $dir)) {
+            New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        }
+        [System.IO.File]::WriteAllText((Join-Path $dir 'last.exit'), "$Code`n",
+            [System.Text.UTF8Encoding]::new($false))
+    } catch {
+        # Best effort — never let recording the code change the code.
+    }
+}
+
 # ─── CLIENT-SIDE DOCTOR ──────────────────────────────
 
 <#
@@ -1253,7 +1292,7 @@ Export-ModuleMember -Function Find-ClientRepo, ConvertTo-PosixPath, Remove-Annot
     Test-NeedsDocsTree, Test-NeedsChangedSet, Get-RequestTimeout, Get-GuardTicketKey,
     Get-RecordedGateSelection,
     Get-BodyDrift, Format-BodyDrift, Get-CitationCount, Get-CategoryPathPrefixes, Restore-RefusedClaim, Get-DocsTree,
-    Get-ConventionsTree, Get-AmendContents, Get-ScratchRoot, Write-Results, Write-LastResult,
+    Get-ConventionsTree, Get-AmendContents, Get-ScratchRoot, Write-Results, Write-LastResult, Write-LastExit,
     Get-ClientChecks, Get-AllGateLines, Write-StdErr,
     Test-HelpFlag, Get-HelpSubject, Format-HelpStub,
     Get-LivingDocDirs, Find-KeyCitations, Format-KeyCitations, Get-CreatedKey

@@ -37,6 +37,13 @@ param(
 )
 
 Set-StrictMode -Version Latest
+
+# MUST be initialised before any function that reads it. Set-StrictMode turns
+# a reference to an unset variable into a THROW, and `--help` exits through
+# Exit-Zagent long before the repo is resolved -- so leaving this to line ~175
+# would crash the one path that never touches the network. Same
+# module-boundary class this file's header already warns about.
+$script:RepoForExit = $null
 $ErrorActionPreference = 'Stop'
 
 # The board speaks UTF-8 and this client's output is READ BY THINGS: a tick
@@ -79,7 +86,7 @@ ZAGENT_URL is not set — this client does not know where the board is.
 Set them permanently with:
   [Environment]::SetEnvironmentVariable('ZAGENT_URL', '…', 'User')
 '@
-        exit $script:EXIT_ERROR
+        Exit-Zagent $script:EXIT_ERROR
     }
     return $url.TrimEnd('/')
 }
@@ -88,9 +95,27 @@ function Get-BoardToken {
     $token = $env:ZAGENT_TOKEN
     if (-not $token) {
         Write-StdErr "ZAGENT_TOKEN is not set. Mint one on the board with ``zagent auth mint --name <this-machine>``."
-        exit $script:EXIT_ERROR
+        Exit-Zagent $script:EXIT_ERROR
     }
     return $token
+}
+
+<#
+Exit, having RECORDED the code where a pipe cannot corrupt it.
+
+`.zagent/last.exit` is the twin of `.zagent/last.json`, and it exists for
+the same reason: a caller must be able to read this without the value
+passing through a shell. See Write-LastExit in ZagentClient.psm1 for the
+two measured breaks that motivated it.
+
+Every `exit` in this file goes through here. The repo may not be resolved
+yet on the earliest paths (ZAGENT_URL missing, `--help`), and
+Write-LastExit no-ops on an empty repo rather than guessing a location.
+#>
+function Exit-Zagent {
+    param([int]$Code)
+    Write-LastExit -Code $Code -Repo $script:RepoForExit
+    exit $Code
 }
 
 # ─── TRANSPORT ───────────────────────────────────────
@@ -122,15 +147,15 @@ function Invoke-Board {
         }
         if ($status -eq 401) {
             Write-StdErr "The board rejected this token (401). Mint a new one with ``zagent auth mint``, or check ZAGENT_TOKEN."
-            exit $script:EXIT_ERROR
+            Exit-Zagent $script:EXIT_ERROR
         }
         if ($status -ge 400 -and $status -lt 500) {
             Write-StdErr "The board refused the request ($status): $detail"
-            exit $script:EXIT_ERROR
+            Exit-Zagent $script:EXIT_ERROR
         }
         Write-StdErr "Could not reach the board at $url — $($_.Exception.Message)"
         if ($detail) { Write-StdErr $detail }
-        exit $script:EXIT_UNREACHABLE
+        Exit-Zagent $script:EXIT_UNREACHABLE
     }
 }
 
@@ -145,12 +170,16 @@ $argv = @($Arguments)
 # `help` deliberately still goes out.
 if (Test-HelpFlag -Argv $argv) {
     Write-Host (Format-HelpStub -Argv $argv)
-    exit 0
+    Exit-Zagent 0
 }
 
 if ($argv.Count -eq 0) { $argv = @('help') }
 
 $repoPath = Find-ClientRepo
+# Exit-Zagent records the exit code under this repo. Set as soon as the
+# checkout is known and left $null before that, so the earliest failures
+# (no ZAGENT_URL, `--help`) write nothing rather than guessing a location.
+$script:RepoForExit = $repoPath
 $client = Get-ClientProject -Repo $repoPath
 $asJson = Test-Flag -Argv $argv -Name 'json'
 
@@ -178,7 +207,7 @@ if ((Test-NeedsChangedSet -Argv $argv) -and -not $fileMap.Contains('file')) {
     # written anything.
     if ($argv[0] -eq 'guard' -and $changed.Count -eq 0) {
         Write-StdErr "guard: nothing has changed in $repoPath — the worker wrote no files."
-        exit $script:EXIT_ERROR
+        Exit-Zagent $script:EXIT_ERROR
     }
     $fileMap['file'] = (($changed -join "`n") + "`n")
 }
@@ -220,7 +249,7 @@ if ($argv[0] -eq 'finish' -and $fileMap.Contains('worklog')) {
             Write-StdErr 'say the ticket was finished. Either tick the box because the work IS done, or'
             Write-StdErr 'finish as Blocked / "In Review" -- both accept an unmet DoD, and a Blocked log'
             Write-StdErr 'saying how far it got is the thing a human picks up.'
-            exit $script:EXIT_ERROR
+            Exit-Zagent $script:EXIT_ERROR
         }
     }
 }
@@ -282,10 +311,47 @@ if ($argv[0] -eq 'doctor') {
             Write-Output "$mark  $($check.name): $($check.detail)"
         }
     }
-    exit $(if ($ok) { 0 } else { 1 })
+    Exit-Zagent $(if ($ok) { 0 } else { 1 })
 }
 
 $repoForWrites = if ($repoPath) { $repoPath } else { (Get-Location).Path }
+
+# ★★ A CLAIM IS THE BOUNDARY OF AN ATTEMPT, SO THE PREVIOUS ATTEMPT'S GATE
+# ARTIFACTS MUST NOT SURVIVE IT.
+#
+# A claim rewrites ticket.json, body.md and drift.txt and used to leave
+# everything else in place. Measured on 2026-08-25: claiming ZM-28 found a
+# tick_gates.json already sitting there reading
+# `state=complete, exitCode=0, verdict="all gates green"` -- from a DIFFERENT
+# commit -- beside a gates.json whose recorded changed-set was an unrelated
+# one-file diff. The only thing standing between that and a tick which skips
+# its gates was a paragraph of prose telling the reader to compare headSha
+# against HEAD by hand, which is precisely the shape this repo keeps naming
+# as the defect: a rule in prose in front of a check.
+#
+# Archived rather than deleted, because I6 says a crashed firing must be
+# reconstructible from durable state and the previous attempt's logs are
+# part of the forensics. Only ONE generation is kept -- the point is that a
+# STALE verdict cannot be read as a current one, not that history is free.
+if ($repoPath -and $result.payload -and $result.payload.PSObject.Properties['key'] -and
+    ($argv[0] -eq 'claim' -or $argv[0] -eq 'next')) {
+    try {
+        $runDir = Join-Path (Get-ScratchRoot $repoForWrites) $result.payload.key
+        if (Test-Path -LiteralPath $runDir) {
+            $prev = "$runDir.prev"
+            if (Test-Path -LiteralPath $prev) {
+                Remove-Item -LiteralPath $prev -Recurse -Force -ErrorAction SilentlyContinue
+            }
+            Move-Item -LiteralPath $runDir -Destination $prev -Force -ErrorAction Stop
+            Write-StdErr "archived the previous attempt's scratch to $($result.payload.key).prev/ -- a stale gate verdict cannot be read as this run's."
+        }
+    } catch {
+        # Never let housekeeping cost a claim. Say so, and carry on: the
+        # tick still has headSha to fall back on.
+        Write-StdErr "could not archive the previous run scratch ($($_.Exception.Message)) -- check .zagent/run/$($result.payload.key)/tick_gates.json's headSha against HEAD before trusting it."
+    }
+}
+
 Write-Results -Result $result -Repo $repoForWrites
 
 # A claim carries the paths and symbols its body claims exist; only this
@@ -353,4 +419,4 @@ if ($asJson) {
     Write-Output $result.text
 }
 
-exit $result.exitCode
+Exit-Zagent $result.exitCode
