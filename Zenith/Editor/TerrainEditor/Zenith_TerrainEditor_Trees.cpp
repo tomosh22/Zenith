@@ -18,6 +18,13 @@
 // alpha-tested leaf cards (instance groups are single-material). Both
 // components VAT-sway in the wind; persistence rides the scene file via
 // Zenith_InstancedMeshComponent's instance serialization.
+//
+// The TRUNK also carries a per-instance collider config, so every painted tree
+// gets one static Jolt capsule and the player collides with the grove instead
+// of walking through it. The leaves deliberately do not — leaf cards are foliage
+// you brush past, and a second capsule per tree would double the body count for
+// nothing. Bodies are the component's, not the scene's: they are created from
+// the serialized config on load and destroyed with the instance.
 //=============================================================================
 
 namespace
@@ -30,6 +37,22 @@ namespace
 	// Bounding sphere shared by all instances of a group (local space, scaled
 	// by the instance transform): generous enough for the ~7.5m tree + crown.
 	constexpr float fTREE_BOUNDS_RADIUS = 8.5f;
+
+	// Trunk collider, in the trunk mesh's LOCAL space (scaled per instance).
+	// Generator dims, from Zenith_Tools_TreeAssetExport.cpp BuildTreeGraph:
+	// trunk height 6.6-7.4 m, base radius 0.30-0.34 m tapering to ~62%. The
+	// radius is the base-radius FLOOR -- it matches the visual at player height
+	// and is only slightly proud near the crown, which is above head height and
+	// so never touched. HalfCyl 3.2 + offset 3.5 span local y in [0.3, 7.0] for
+	// an average trunk (capsule caps included).
+	//
+	// Plain literals, deliberately: these three floats serialize into
+	// RenderTest.zscen through Zenith_InstancedMeshComponent, so they must never
+	// be computed through glm/libm at authoring time (see the
+	// ZENITH_AUTHORING_DETERMINISM pin below).
+	constexpr float fTREE_TRUNK_COLLIDER_RADIUS = 0.30f;
+	constexpr float fTREE_TRUNK_COLLIDER_HALF_HEIGHT = 3.2f;
+	constexpr float fTREE_TRUNK_COLLIDER_Y_OFFSET = 3.5f;
 
 	// The cached target IDs are never cleared — not on Open, not on Close, not on a
 	// scene change — so this is the ONLY thing standing between a destroyed target
@@ -146,6 +169,12 @@ bool Zenith_TerrainEditor::EnsureTreeEntities()
 		xTrunk.SetTransient(false);
 		Zenith_InstancedMeshComponent& xComp = xTrunk.AddComponent<Zenith_InstancedMeshComponent>();
 		ConfigureTreeComponent(xComp, "Tree_Trunk", "Tree_Bark.zmtrl");
+		// CREATE path only. An ADOPTED trunk carries its own serialized config
+		// (v5+), and re-authoring one would overwrite a scene's deliberate
+		// choice; the setter's idempotence guard makes adding this to the adopt
+		// path safe later if a migration ever wants it.
+		xComp.SetInstanceColliderCapsule(fTREE_TRUNK_COLLIDER_RADIUS,
+			fTREE_TRUNK_COLLIDER_HALF_HEIGHT, fTREE_TRUNK_COLLIDER_Y_OFFSET);
 	}
 	if (!xLeaves.IsValid())
 	{

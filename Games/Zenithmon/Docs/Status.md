@@ -18,7 +18,26 @@ The S0-S7 narrative that used to fill the back half of this file moved VERBATIM 
 its own template in `AgentBriefing.md` §2.3 specifies. Nothing was deleted.
 
 **★ LIVE PIN (UPDATED 2026-08-27):
-ZM boot `3438`; engine boot (Null Combat) `1669`; Null RenderTest `1760`; registry **70**.**
+ZM boot `3462`; engine boot (Null Combat) `1693`; Null RenderTest `1784`; registry **70**.**
+
+> **★ PER-INSTANCE COLLIDERS FOR INSTANCED MESHES — the engine change, OBSERVED 2026-08-27.**
+> **ALL THREE BOOT PINS MOVED +24**, which is the shape an ENGINE change has: the 24 new
+> units are backend-neutral (19 `InstancedMesh`, 1 `Maths`, 3 `Physics`, 1 `Core`), so
+> every game that boots the engine suite counts them. ZM **3438 -> 3462**
+> (`3462 ran / 3460 passed / 0 failed`, 2 skipped), Combat **1669 -> 1693**, RenderTest
+> **1760 -> 1784** — each OBSERVED on its own `Null_vs2022_Debug_Win64_True` exe, none
+> inferred by arithmetic from another. The registry is untouched at **70**: no Zenithmon
+> GAME component was added.
+>
+> `Zenith_InstancedMeshComponent` can now declare a per-instance collider, and a group
+> that does gets one STATIC Jolt capsule per live instance, owned by the component rather
+> than by an entity apiece. Nothing in Zenithmon enables it — the config defaults to NONE
+> and every hook early-returns on a single enum compare — so no ZM scene, asset or
+> behaviour changed. The consumer is RenderTest's 2520 painted tree trunks.
+>
+> ★ The pin bump is the whole of Zenithmon's exposure, and it is exactly the case this
+> file exists for: a green ZM suite with a stale number here reds `doc_lint -Game
+> Zenithmon` (C7) with zero failing tests.
 
 > **★ THE THREE OUTDOOR MAPS SHRANK TO FIT THEIR CONTENT. OBSERVED 2026-08-27.**
 > **NO PIN MOVED**, and that is the headline: this is a Zenithmon-only change

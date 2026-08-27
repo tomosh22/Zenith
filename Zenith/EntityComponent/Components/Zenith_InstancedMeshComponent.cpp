@@ -11,6 +11,11 @@
 #include "Flux/InstancedMeshes/Flux_InstanceGroup.h"
 #include "Flux/InstancedMeshes/Flux_AnimationTexture.h"
 #include "AssetHandling/Zenith_MeshAsset.h"
+// Per-instance colliders. Physics is reached through Zenith_Physics::Get() /
+// TryGet() -- leaf statics, NOT g_xEngine: this file is capped at 3 g_xEngine
+// reaches by Tools/engine_singleton_allowlist.txt and already has exactly 3.
+#include "Physics/Zenith_Physics.h"
+#include "Maths/Zenith_Maths.h"
 
 //=============================================================================
 // Constructor / Destructor
@@ -23,6 +28,12 @@ Zenith_InstancedMeshComponent::Zenith_InstancedMeshComponent(Zenith_Entity& xEnt
 
 Zenith_InstancedMeshComponent::~Zenith_InstancedMeshComponent()
 {
+	// FIRST: the instance bodies, while the group (and the Jolt world, if it is
+	// still up) are both still reachable. Goes through Zenith_Physics::TryGet(),
+	// so a component pool destroyed after Physics::Shutdown is a quiet no-op
+	// rather than the assert Get() would raise.
+	DestroyAllInstanceBodies();
+
 	// Unregister from renderer
 	if (m_pxInstanceGroup != nullptr)
 	{
@@ -60,17 +71,27 @@ Zenith_InstancedMeshComponent::Zenith_InstancedMeshComponent(Zenith_InstancedMes
 	, m_fAnimationDuration(xOther.m_fAnimationDuration)
 	, m_fAnimationSpeed(xOther.m_fAnimationSpeed)
 	, m_bAnimationsPaused(xOther.m_bAnimationsPaused)
+	, m_xInstanceColliderConfig(xOther.m_xInstanceColliderConfig)
+	, m_axInstanceBodyIDs(std::move(xOther.m_axInstanceBodyIDs))
 {
 	xOther.m_pxInstanceGroup = nullptr;
 	xOther.m_pxOwnedMeshInstance = nullptr;
 	xOther.m_pxOwnedAnimTexture = nullptr;
+	// The source MUST end with an EMPTY ledger: its destructor still runs, and a
+	// ledger it shares with us would destroy bodies this component now owns
+	// (the move-op regression class -- see commit 7fd3ccdc).
+	xOther.m_axInstanceBodyIDs.Clear();
+	xOther.m_xInstanceColliderConfig = Zenith_InstanceColliderConfig();
 }
 
 Zenith_InstancedMeshComponent& Zenith_InstancedMeshComponent::operator=(Zenith_InstancedMeshComponent&& xOther) noexcept
 {
 	if (this != &xOther)
 	{
-		// Clean up existing resources
+		// Clean up existing resources. The bodies go FIRST, for the same reason
+		// the destructor destroys them first: they are keyed to OUR slots, and the
+		// ledger is about to be overwritten with the source's.
+		DestroyAllInstanceBodies();
 		if (m_pxInstanceGroup != nullptr)
 		{
 			g_xEngine.InstancedMeshes().UnregisterInstanceGroup(m_pxInstanceGroup);
@@ -93,10 +114,14 @@ Zenith_InstancedMeshComponent& Zenith_InstancedMeshComponent::operator=(Zenith_I
 		m_fAnimationDuration = xOther.m_fAnimationDuration;
 		m_fAnimationSpeed = xOther.m_fAnimationSpeed;
 		m_bAnimationsPaused = xOther.m_bAnimationsPaused;
+		m_xInstanceColliderConfig = xOther.m_xInstanceColliderConfig;
+		m_axInstanceBodyIDs = std::move(xOther.m_axInstanceBodyIDs);
 
 		xOther.m_pxInstanceGroup = nullptr;
 		xOther.m_pxOwnedMeshInstance = nullptr;
 		xOther.m_pxOwnedAnimTexture = nullptr;
+		xOther.m_axInstanceBodyIDs.Clear();
+		xOther.m_xInstanceColliderConfig = Zenith_InstanceColliderConfig();
 	}
 	return *this;
 }
@@ -242,6 +267,8 @@ uint32_t Zenith_InstancedMeshComponent::SpawnInstance(
 	uint32_t uID = m_pxInstanceGroup->AddInstance();
 	Zenith_Maths::Matrix4 xMatrix = BuildMatrix(xPosition, xRotation, xScale);
 	m_pxInstanceGroup->SetInstanceTransform(uID, xMatrix);
+	// After the transform, never before: the body pose is decomposed from it.
+	CreateInstanceBody(uID);
 
 	return uID;
 }
@@ -252,6 +279,7 @@ uint32_t Zenith_InstancedMeshComponent::SpawnInstanceWithMatrix(const Zenith_Mat
 
 	uint32_t uID = m_pxInstanceGroup->AddInstance();
 	m_pxInstanceGroup->SetInstanceTransform(uID, xMatrix);
+	CreateInstanceBody(uID);
 
 	return uID;
 }
@@ -260,6 +288,9 @@ void Zenith_InstancedMeshComponent::DespawnInstance(uint32_t uInstanceID)
 {
 	if (m_pxInstanceGroup != nullptr)
 	{
+		// BEFORE RemoveInstance: the slot is about to go on the free list, and a
+		// recycled slot must not inherit the previous occupant's body.
+		DestroyInstanceBody(uInstanceID);
 		m_pxInstanceGroup->RemoveInstance(uInstanceID);
 	}
 }
@@ -268,6 +299,7 @@ void Zenith_InstancedMeshComponent::ClearInstances()
 {
 	if (m_pxInstanceGroup != nullptr)
 	{
+		DestroyAllInstanceBodies();
 		m_pxInstanceGroup->Clear();
 	}
 }
@@ -292,6 +324,7 @@ void Zenith_InstancedMeshComponent::SetInstanceTransform(
 	{
 		Zenith_Maths::Matrix4 xMatrix = BuildMatrix(xPosition, xRotation, xScale);
 		m_pxInstanceGroup->SetInstanceTransform(uInstanceID, xMatrix);
+		RefreshInstanceBody(uInstanceID);
 	}
 }
 
@@ -300,6 +333,7 @@ void Zenith_InstancedMeshComponent::SetInstanceMatrix(uint32_t uInstanceID, cons
 	if (m_pxInstanceGroup != nullptr)
 	{
 		m_pxInstanceGroup->SetInstanceTransform(uInstanceID, xMatrix);
+		RefreshInstanceBody(uInstanceID);
 	}
 }
 
@@ -377,7 +411,251 @@ void Zenith_InstancedMeshComponent::SetInstanceEnabled(uint32_t uInstanceID, boo
 	if (m_pxInstanceGroup != nullptr)
 	{
 		m_pxInstanceGroup->SetInstanceEnabled(uInstanceID, bEnabled);
+		// A disabled instance is not rendered and must not collide either.
+		// Re-enabling an already-enabled slot is legal here, which is why
+		// CreateInstanceBody early-returns on an occupied ledger slot rather
+		// than asserting.
+		if (bEnabled)
+		{
+			CreateInstanceBody(uInstanceID);
+		}
+		else
+		{
+			DestroyInstanceBody(uInstanceID);
+		}
 	}
+}
+
+//=============================================================================
+// Instance Colliders
+//
+// One static Jolt capsule per LIVE instance, owned by this component. The
+// alternative -- one entity + ColliderComponent per instance -- would pay the
+// per-frame Zenith_SyncPhysicsTransforms sweep (it has no static filter) and
+// turn every tree into a navmesh obstruction box, for a group that is 2520
+// instances in RenderTest alone.
+//
+// Deliberate v1 exclusions, all of them consequences of "no component per
+// body": instance bodies are invisible to Zenith_SyncPhysicsTransforms,
+// Zenith_AINavGeometry and Zenith_PhysicsDebugDraw, and a contact or raycast
+// attributes to the GROUP entity rather than an individual instance. A group
+// approaching Zenith_Physics::s_uMaxBodies (65536) must not enable a config.
+//=============================================================================
+
+void Zenith_InstancedMeshComponent::SetInstanceColliderCapsule(float fRadius,
+	float fCylinderHalfHeight, float fLocalYOffset)
+{
+	// Idempotent for an identical config that already has bodies -- the terrain
+	// editor's tree authoring calls this on a component it may have just
+	// adopted, and a rebuild there would destroy and recreate thousands of Jolt
+	// bodies for nothing.
+	if (m_xInstanceColliderConfig.m_eType == INSTANCE_COLLIDER_TYPE_CAPSULE &&
+		m_xInstanceColliderConfig.m_fRadius == fRadius &&
+		m_xInstanceColliderConfig.m_fCylinderHalfHeight == fCylinderHalfHeight &&
+		m_xInstanceColliderConfig.m_fLocalYOffset == fLocalYOffset &&
+		HasInstanceColliders())
+	{
+		return;
+	}
+
+	m_xInstanceColliderConfig.m_eType = INSTANCE_COLLIDER_TYPE_CAPSULE;
+	m_xInstanceColliderConfig.m_fRadius = fRadius;
+	m_xInstanceColliderConfig.m_fCylinderHalfHeight = fCylinderHalfHeight;
+	m_xInstanceColliderConfig.m_fLocalYOffset = fLocalYOffset;
+	RebuildInstanceBodies();
+}
+
+void Zenith_InstancedMeshComponent::ClearInstanceColliderConfig()
+{
+	DestroyAllInstanceBodies();
+	m_xInstanceColliderConfig = Zenith_InstanceColliderConfig();
+}
+
+bool Zenith_InstancedMeshComponent::HasInstanceColliders() const
+{
+	for (uint32_t u = 0; u < m_axInstanceBodyIDs.GetSize(); ++u)
+	{
+		if (m_axInstanceBodyIDs.Get(u).IsValid())
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+uint32_t Zenith_InstancedMeshComponent::GetInstanceBodyCount() const
+{
+	uint32_t uCount = 0;
+	for (uint32_t u = 0; u < m_axInstanceBodyIDs.GetSize(); ++u)
+	{
+		if (m_axInstanceBodyIDs.Get(u).IsValid())
+		{
+			++uCount;
+		}
+	}
+	return uCount;
+}
+
+Zenith_PhysicsBodyID Zenith_InstancedMeshComponent::GetInstanceBodyID(uint32_t uSlot) const
+{
+	if (uSlot >= m_axInstanceBodyIDs.GetSize())
+	{
+		return Zenith_PhysicsBodyID();
+	}
+	return m_axInstanceBodyIDs.Get(uSlot);
+}
+
+void Zenith_InstancedMeshComponent::CreateInstanceBody(uint32_t uSlot)
+{
+	if (m_xInstanceColliderConfig.m_eType != INSTANCE_COLLIDER_TYPE_CAPSULE)
+	{
+		return;
+	}
+	if (m_pxInstanceGroup == nullptr)
+	{
+		return;
+	}
+
+	// A DEAD slot never gets a body, and this check is what makes the two creation
+	// paths agree: CreateAllInstanceBodies filters through the enabled-slot list,
+	// so the per-slot path has to apply the same rule or they disagree about what
+	// "live instance" means. Without it, SetInstanceTransform on a slot that
+	// SetInstanceEnabled(false) just disabled RESURRECTS its collider -- an
+	// invisible instance that still blocks the player, and one WriteToDataStream
+	// does not serialize (it writes visible slots only), so it would exist in the
+	// authoring session and vanish on reload.
+	const Zenith_Vector<Flux_InstanceAnimData>& axAnimData = m_pxInstanceGroup->GetAnimData();
+	if (uSlot >= axAnimData.GetSize() || axAnimData.Get(uSlot).m_uFlags == 0)
+	{
+		return;
+	}
+
+	// The ledger is slot-indexed, so it grows to cover the highest slot ever
+	// given a body. The group allocates from its free list before extending, so
+	// this stays dense in practice.
+	while (m_axInstanceBodyIDs.GetSize() <= uSlot)
+	{
+		m_axInstanceBodyIDs.PushBack(Zenith_PhysicsBodyID());
+	}
+	if (m_axInstanceBodyIDs.Get(uSlot).IsValid())
+	{
+		// Already has one: SetInstanceEnabled(true) on an enabled slot, or a
+		// config sweep over a slot a spawn just gave a body. A second body here
+		// would leak the first.
+		return;
+	}
+
+	Zenith_Maths::Vector3 xPosition;
+	Zenith_Maths::Quat xRotation;
+	Zenith_Maths::Vector3 xScale;
+	Zenith_Maths::DecomposeTRS(m_pxInstanceGroup->GetTransforms().Get(uSlot), xPosition, xRotation, xScale);
+
+	const Zenith_InstanceColliderConfig& xConfig = m_xInstanceColliderConfig;
+	// A capsule has ONE radius, so a non-uniform XZ scale has to collapse to a
+	// scalar; the larger of the two keeps the collider from being narrower than
+	// the mesh on its wider axis.
+	const float fRadius = xConfig.m_fRadius * std::max(std::abs(xScale.x), std::abs(xScale.z));
+	const float fCylinderHalfHeight = xConfig.m_fCylinderHalfHeight * std::abs(xScale.y);
+	// The offset is a LOCAL displacement: scaled, then rotated into world space
+	// by the instance's own rotation.
+	const Zenith_Maths::Vector3 xBodyPosition = xPosition +
+		xRotation * Zenith_Maths::Vector3(0.0f, xConfig.m_fLocalYOffset * xScale.y, 0.0f);
+
+	m_axInstanceBodyIDs.Get(uSlot) = Zenith_Physics::Get().CreateStaticCapsuleBody(
+		xBodyPosition, xRotation, fRadius, fCylinderHalfHeight, m_xParentEntity.GetEntityID());
+}
+
+void Zenith_InstancedMeshComponent::DestroyInstanceBody(uint32_t uSlot)
+{
+	if (uSlot >= m_axInstanceBodyIDs.GetSize())
+	{
+		return;
+	}
+	Zenith_PhysicsBodyID& xBodyID = m_axInstanceBodyIDs.Get(uSlot);
+	if (xBodyID.IsInvalid())
+	{
+		return;
+	}
+	// TryGet, NOT Get: component-pool teardown can run after Physics::Shutdown,
+	// and Get() asserts. Every IsAdded / null guard lives once, in DestroyBody.
+	if (Zenith_Physics* pxPhysics = Zenith_Physics::TryGet())
+	{
+		pxPhysics->DestroyBody(xBodyID);
+	}
+	// Invalidated even when there was no live simulation to destroy it in -- the
+	// id names nothing either way, and a stale ledger entry would block a later
+	// CreateInstanceBody on this slot.
+	xBodyID = Zenith_PhysicsBodyID();
+}
+
+void Zenith_InstancedMeshComponent::CreateAllInstanceBodies()
+{
+	if (m_xInstanceColliderConfig.m_eType != INSTANCE_COLLIDER_TYPE_CAPSULE)
+	{
+		return;
+	}
+	if (m_pxInstanceGroup == nullptr)
+	{
+		return;
+	}
+	Zenith_Vector<uint32_t> xEnabledSlots;
+	m_pxInstanceGroup->ComputeVisibleIndices(xEnabledSlots);
+
+	// The create sweep has no choice but to trust the GROUP's enabled-slot list --
+	// after a ClearInstances the ledger is empty, so the group is the only source
+	// of truth left. That trust is now warranted (Flux_InstanceGroup::Clear() zeroes
+	// per-slot flags, so the list cannot outlive the instances) and this assert is
+	// what keeps it warranted: an enabled list LONGER than the live count is the
+	// stale-flag state and nothing else. It fired for real before that fix -- a
+	// config set after a bare Clear() built one invisible wall per stale flag, and
+	// the occupied-slot early-return in CreateInstanceBody then denied the real
+	// respawned instance its collider.
+	Zenith_Assert(xEnabledSlots.GetSize() <= m_pxInstanceGroup->GetInstanceCount(),
+		"InstancedMesh collider sweep: %u enabled slots but only %u live instances -- "
+		"Flux_InstanceGroup::Clear() left stale per-slot flags behind",
+		xEnabledSlots.GetSize(), m_pxInstanceGroup->GetInstanceCount());
+
+	for (uint32_t u = 0; u < xEnabledSlots.GetSize(); ++u)
+	{
+		CreateInstanceBody(xEnabledSlots.Get(u));
+	}
+}
+
+void Zenith_InstancedMeshComponent::DestroyAllInstanceBodies()
+{
+	// Ledger-driven, NOT ComputeVisibleIndices-driven -- and still so now that
+	// Flux_InstanceGroup::Clear() zeroes per-slot flags. The ledger is the record of
+	// which slots WE gave a body to, which is the question this function is asking;
+	// the group's enabled list answers a different one and would strand any body
+	// whose slot the group has since forgotten.
+	for (uint32_t u = 0; u < m_axInstanceBodyIDs.GetSize(); ++u)
+	{
+		DestroyInstanceBody(u);
+	}
+}
+
+void Zenith_InstancedMeshComponent::RebuildInstanceBodies()
+{
+	DestroyAllInstanceBodies();
+	CreateAllInstanceBodies();
+	// Same reason ReadFromDataStream does this: a bulk one-at-a-time re-add leaves
+	// Jolt's broadphase quadtree unoptimised, and the reconfigure path is the OTHER
+	// bulk-add site. Skipping it here was an asymmetry, not a decision.
+	if (GetInstanceBodyCount() > 64)
+	{
+		if (Zenith_Physics* pxPhysics = Zenith_Physics::TryGet())
+		{
+			pxPhysics->OptimizeBroadPhase();
+		}
+	}
+}
+
+void Zenith_InstancedMeshComponent::RefreshInstanceBody(uint32_t uSlot)
+{
+	// The capsule's dimensions are scale-derived, so a transform change can move
+	// the shape as well as the pose: destroy + recreate rather than SetPosition.
+	DestroyInstanceBody(uSlot);
+	CreateInstanceBody(uSlot);
 }
 
 //=============================================================================
@@ -434,7 +712,7 @@ Flux_AnimationTexture* Zenith_InstancedMeshComponent::GetAnimationTexture() cons
 void Zenith_InstancedMeshComponent::WriteToDataStream(Zenith_DataStream& xStream) const
 {
 	// Version
-	uint32_t uVersion = 4;  // Version 4: serialize instance data (transforms)
+	uint32_t uVersion = 5;  // Version 5: per-instance collider config
 	xStream << uVersion;
 
 	// Asset paths (get from handles for registry assets)
@@ -460,6 +738,14 @@ void Zenith_InstancedMeshComponent::WriteToDataStream(Zenith_DataStream& xStream
 	xStream << m_fAnimationDuration;
 	xStream << m_fAnimationSpeed;
 	xStream << m_bAnimationsPaused;
+
+	// Version 5+: instance collider config. Written BEFORE the instance data so
+	// the read path has it in hand by the time SpawnInstanceWithMatrix starts
+	// creating bodies inline.
+	xStream << static_cast<uint32_t>(m_xInstanceColliderConfig.m_eType);
+	xStream << m_xInstanceColliderConfig.m_fRadius;
+	xStream << m_xInstanceColliderConfig.m_fCylinderHalfHeight;
+	xStream << m_xInstanceColliderConfig.m_fLocalYOffset;
 
 	// Instance data (version 4+). Serialize the ENABLED slots, not the first
 	// N slots: RemoveInstance disables a slot in place and free-lists its ID,
@@ -547,6 +833,21 @@ void Zenith_InstancedMeshComponent::ReadFromDataStream(Zenith_DataStream& xStrea
 	xStream >> m_fAnimationSpeed;
 	xStream >> m_bAnimationsPaused;
 
+	// Version 5+: instance collider config. Written directly into the members
+	// rather than through SetInstanceColliderCapsule -- the ledger is empty at
+	// this point so there is nothing to sweep, and every instance the v4+ loop
+	// below spawns creates its body inline. A v4 stream skips the block entirely,
+	// leaving the config NONE: byte-for-byte today's behaviour.
+	if (uVersion >= 5)
+	{
+		uint32_t uColliderType = 0;
+		xStream >> uColliderType;
+		m_xInstanceColliderConfig.m_eType = static_cast<InstanceColliderType>(uColliderType);
+		xStream >> m_xInstanceColliderConfig.m_fRadius;
+		xStream >> m_xInstanceColliderConfig.m_fCylinderHalfHeight;
+		xStream >> m_xInstanceColliderConfig.m_fLocalYOffset;
+	}
+
 	// Instance count
 	uint32_t uInstanceCount;
 	xStream >> uInstanceCount;
@@ -581,6 +882,18 @@ void Zenith_InstancedMeshComponent::ReadFromDataStream(Zenith_DataStream& xStrea
 				const float fPhase = fmodf(static_cast<float>(uInstanceID) * 0.618034f, 1.0f);
 				SetInstanceAnimationByIndex(uInstanceID, 0, fPhase);
 			}
+		}
+	}
+
+	// Bulk one-at-a-time static adds leave Jolt's broadphase quadtree
+	// unoptimised until simulation steps have run. RenderTest's trunk group is
+	// 2520 of them in one deserialize; the threshold keeps a handful of
+	// instances from paying for a rebuild.
+	if (GetInstanceBodyCount() > 64)
+	{
+		if (Zenith_Physics* pxPhysics = Zenith_Physics::TryGet())
+		{
+			pxPhysics->OptimizeBroadPhase();
 		}
 	}
 }
@@ -641,5 +954,62 @@ void Zenith_InstancedMeshComponent::RenderPropertiesPanel()
 	ImGui::DragFloat("Duration", &m_fAnimationDuration, 0.1f, 0.1f, 60.0f);
 	ImGui::DragFloat("Speed", &m_fAnimationSpeed, 0.1f, 0.0f, 10.0f);
 	ImGui::Checkbox("Paused", &m_bAnimationsPaused);
+
+	// Instance collider. Edits go through the public setters (never straight
+	// into m_xInstanceColliderConfig) so the body sweep runs -- a direct write
+	// would leave the authored numbers and the live bodies disagreeing.
+	ImGui::Separator();
+	ImGui::Text("Instance Collider");
+	const char* aszTypes[] = { "None", "Capsule" };
+	int iType = static_cast<int>(m_xInstanceColliderConfig.m_eType);
+	if (ImGui::Combo("Type", &iType, aszTypes, IM_ARRAYSIZE(aszTypes)))
+	{
+		if (iType == static_cast<int>(INSTANCE_COLLIDER_TYPE_CAPSULE))
+		{
+			SetInstanceColliderCapsule(m_xInstanceColliderConfig.m_fRadius,
+				m_xInstanceColliderConfig.m_fCylinderHalfHeight,
+				m_xInstanceColliderConfig.m_fLocalYOffset);
+		}
+		else
+		{
+			ClearInstanceColliderConfig();
+		}
+	}
+	if (m_xInstanceColliderConfig.m_eType == INSTANCE_COLLIDER_TYPE_CAPSULE)
+	{
+		// ★ APPLY ON RELEASE, NOT PER DRAG FRAME. The dimensions are edited in
+		// place (so the widget tracks the drag) and the BODIES are rebuilt only
+		// when the drag ends. Rebuilding every frame would destroy and recreate
+		// one Jolt body per instance per frame -- 2520 of them for RenderTest's
+		// trunk group -- and the editor's Stopped mode never calls
+		// PhysicsSystem::Update (Zenith_Core.cpp gates it on Playing), so nothing
+		// reclaims the broadphase nodes that churn allocates. The comparable
+		// destructive rebuild on Zenith_ColliderComponent's panel is behind a
+		// BUTTON for the same reason.
+		bool bCommitted = false;
+		ImGui::DragFloat("Radius", &m_xInstanceColliderConfig.m_fRadius, 0.01f, 0.01f, 20.0f);
+		bCommitted |= ImGui::IsItemDeactivatedAfterEdit();
+		ImGui::DragFloat("Cyl Half-Height", &m_xInstanceColliderConfig.m_fCylinderHalfHeight, 0.05f, 0.01f, 100.0f);
+		bCommitted |= ImGui::IsItemDeactivatedAfterEdit();
+		ImGui::DragFloat("Local Y Offset", &m_xInstanceColliderConfig.m_fLocalYOffset, 0.05f, -100.0f, 100.0f);
+		bCommitted |= ImGui::IsItemDeactivatedAfterEdit();
+		if (bCommitted)
+		{
+			// The members already carry the edited values, so routing through
+			// SetInstanceColliderCapsule would hit its idempotence guard and skip
+			// the rebuild entirely. Rebuild explicitly.
+			RebuildInstanceBodies();
+		}
+	}
+	ImGui::Text("Instance bodies: %u", GetInstanceBodyCount());
 }
+#endif
+
+// Instance-collider unit tests live aggregate-side (they exercise the concrete
+// component + Zenith_Physics, neither of which the Physics leaf may name).
+// Hosted in THIS TU because it is ALWAYS linked -- the component registrar
+// references this component -- so the ZENITH_TEST registrars survive /OPT:REF in
+// every config. Same reasoning as Zenith_ColliderComponent.cpp's host block.
+#ifdef ZENITH_TESTING
+#include "EntityComponent/Zenith_InstancedMeshComponent.Tests.inl"
 #endif

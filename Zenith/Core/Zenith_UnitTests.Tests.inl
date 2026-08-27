@@ -18982,6 +18982,52 @@ void Zenith_UnitTests::TestFeatureRegistryUnifiedMeshPrecedesShadows(){
 // allocation, which would assert without a Vulkan allocator).
 #include "Flux/InstancedMeshes/Flux_InstanceGroup.h"
 
+// Clear() must zero every slot's ENABLED flag, not just the counts. It used to
+// reset only m_uInstanceCount / m_uVisibleCount / the free list, leaving m_uFlags
+// at 1 for every slot the group had ever used -- and ComputeVisibleIndices is a
+// pure scan for m_uFlags != 0 over [0, m_uCapacity), so it kept reporting all of
+// them as live. Everything downstream inherited that: UpdateGPUBuffers drew ghost
+// instances at stale transforms whenever the live count SHRANK (CityBuilder
+// rebuilds its buildings every frame as Clear() + N spawns, so a demolished
+// building kept rendering), Zenith_InstancedMeshComponent::WriteToDataStream would
+// serialize them, and its per-instance collider sweep gave each one a physics body.
+//
+// Headless-safe: SeedInstancesForTest fills only the CPU arrays, and Clear() and
+// ComputeVisibleIndices touch no GPU state.
+ZENITH_TEST(Core, InstanceGroupClearZeroesPerSlotFlags)
+{
+	static constexpr uint32_t uSEEDED = 512;
+
+	Flux_InstanceGroup xGroup;
+	xGroup.SeedInstancesForTest(uSEEDED, 0xBEEFu);
+
+	Zenith_Vector<uint32_t> auBefore;
+	xGroup.ComputeVisibleIndices(auBefore);
+	ZENITH_ASSERT_GT(auBefore.GetSize(), 0u,
+		"the seeded group must report SOME live slots, or the clear below proves nothing");
+
+	xGroup.Clear();
+
+	Zenith_Vector<uint32_t> auAfter;
+	xGroup.ComputeVisibleIndices(auAfter);
+	ZENITH_ASSERT_EQ(auAfter.GetSize(), 0u,
+		"after Clear() no slot may still report as live -- a stale flag here becomes a ghost "
+		"instance in the draw, in the serialized scene, and in the per-instance collider sweep");
+	ZENITH_ASSERT_EQ(xGroup.GetInstanceCount(), 0u, "and the live count is zero");
+
+	// The load-bearing half: the enabled list must track the RE-populated group,
+	// not the high-water mark. This is the shrink case that rendered ghosts.
+	const uint32_t uFirst = xGroup.AddInstance();
+	const uint32_t uSecond = xGroup.AddInstance();
+	Zenith_Vector<uint32_t> auRepopulated;
+	xGroup.ComputeVisibleIndices(auRepopulated);
+	ZENITH_ASSERT_EQ(auRepopulated.GetSize(), 2u,
+		"a group re-populated after Clear() must report exactly the NEW instances, not the "
+		"slots it used to hold");
+	ZENITH_ASSERT_EQ(auRepopulated.Get(0), uFirst, "and they must be the slots just added");
+	ZENITH_ASSERT_EQ(auRepopulated.Get(1), uSecond, "and they must be the slots just added");
+}
+
 ZENITH_TEST(Core, InstancedMeshesPrepareDeterminism) { Zenith_UnitTests::TestInstancedMeshesPrepareDeterminism(); }
 void Zenith_UnitTests::TestInstancedMeshesPrepareDeterminism(){
 

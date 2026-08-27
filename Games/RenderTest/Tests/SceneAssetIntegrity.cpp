@@ -21,7 +21,7 @@
 // the Null backend (on the reasoning that instance groups allocate GPU buffers), so
 // a headless boot authored the campus WITHOUT its two instanced tree entities, and
 // that subset was serialized straight over the tracked asset -- every headless run
-// silently rewrote the committed scene (361753 bytes as it stands today) down to
+// silently rewrote the committed scene (361801 bytes as it stands today) down to
 // ~38 KB, deleting ~323 KB of tree instance data, and the only symptom was a dirty
 // `git status` nobody was looking at. A publish guard in
 // Zenith_Editor::SaveActiveScene then refused any headless save that would CHANGE

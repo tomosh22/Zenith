@@ -30,12 +30,18 @@
 // forward-declares JPH::Body, so the definition is carried explicitly rather than
 // leaned on some other header having reached it first.
 #include <Jolt/Physics/Body/Body.h>
+// CreateStaticCapsuleBody's shape (the leaf body-creation API below).
+#include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
 
 // Wrapper<->Jolt conversion: Zenith_PhysicsBodyID mirrors JPH::BodyID's
 // single-uint32 representation, so conversion is a bit copy.
 static JPH::BodyID ToJolt(Zenith_PhysicsBodyID xID)
 {
 	return JPH::BodyID(xID.m_uID);
+}
+static Zenith_PhysicsBodyID FromJolt(JPH::BodyID xID)
+{
+	return Zenith_PhysicsBodyID(xID.GetIndexAndSequenceNumber());
 }
 
 // Self back-pointer. Zenith_Physics is a single per-engine instance (owned by
@@ -848,6 +854,108 @@ Zenith_Maths::Quat Zenith_Physics::GetBodyRotation(Zenith_PhysicsBodyID xBodyID)
 	JPH::Quat xJoltRot = xBodyInterface.GetRotation(ToJolt(xBodyID));
 	// glm::quat ctor is (w, x, y, z).
 	return Zenith_Maths::Quat(xJoltRot.GetW(), xJoltRot.GetX(), xJoltRot.GetY(), xJoltRot.GetZ());
+}
+
+// ============================================================================
+// LEAF BODY-CREATION API
+//
+// The second body-creation site in the repo (the first is
+// Zenith_ColliderComponent::AddCollider). It exists so a caller can own physics
+// bodies WITHOUT owning a component per body: Zenith_InstancedMeshComponent
+// gives each live instance of a 2500-instance tree group one static capsule,
+// which as 2500 entities+ColliderComponents would pay the per-frame
+// Zenith_SyncPhysicsTransforms sweep and become 2500 navmesh obstruction boxes.
+//
+// Defined here, below the Layers namespace, because it names Layers::NON_MOVING.
+// ============================================================================
+
+namespace
+{
+	// Mirrors Zenith_ColliderComponent's SanitiseExplicitExtent. Jolt's convex
+	// radius is the floor every shape gets clamped to anyway, so a smaller request
+	// could never have been honoured. Returns false (writing nothing) when the
+	// value is unusable, so the caller fails the WHOLE request rather than building
+	// a body out of half-sanitised numbers.
+	bool SanitiseCapsuleExtent(float fValue, float& fOut)
+	{
+		if (!std::isfinite(fValue) || fValue <= 0.0f)
+		{
+			return false;
+		}
+		fOut = std::max(fValue, static_cast<float>(JPH::cDefaultConvexRadius));
+		return true;
+	}
+}
+
+Zenith_PhysicsBodyID Zenith_Physics::CreateStaticCapsuleBody(const Zenith_Maths::Vector3& xPosition,
+	const Zenith_Maths::Quat& xRotation, float fRadius, float fCylinderHalfHeight,
+	Zenith_EntityID xOwnerEntity)
+{
+	if (m_pxPhysicsSystem == nullptr)
+	{
+		return Zenith_PhysicsBodyID();
+	}
+
+	float fSafeRadius = 0.0f;
+	float fSafeHalfHeight = 0.0f;
+	if (!SanitiseCapsuleExtent(fRadius, fSafeRadius) ||
+		!SanitiseCapsuleExtent(fCylinderHalfHeight, fSafeHalfHeight))
+	{
+		Zenith_Warning(LOG_CATEGORY_PHYSICS,
+			"CreateStaticCapsuleBody: unusable dimensions (radius %f, half-height %f) -- no body created",
+			fRadius, fCylinderHalfHeight);
+		return Zenith_PhysicsBodyID();
+	}
+
+	// Jolt asserts IsNormalized() on the rotation. A quaternion recovered from a
+	// decomposed matrix is only normalised to within FP slop, so normalise here
+	// rather than trusting every caller to have done it.
+	const Zenith_Maths::Quat xNorm = glm::normalize(xRotation);
+
+	// JPH::CapsuleShape(halfHeightOfCylinder, radius) -- that argument order.
+	// Total half-extent is halfCyl + radius.
+	JPH::RefConst<JPH::Shape> pxShape = new JPH::CapsuleShape(fSafeHalfHeight, fSafeRadius);
+	JPH::BodyCreationSettings xSettings(pxShape,
+		JPH::RVec3(xPosition.x, xPosition.y, xPosition.z),
+		JPH::Quat(xNorm.x, xNorm.y, xNorm.z, xNorm.w),
+		JPH::EMotionType::Static, Layers::NON_MOVING);
+	// UserData is what the contact listener and Raycast read to resolve the hit
+	// entity, so stamping it at creation is what makes an instance body report its
+	// OWNING entity -- no BodyLockWrite dance needed (BodyCreationSettings carries
+	// the field, unlike the collider path which predates its use here).
+	xSettings.mUserData = xOwnerEntity.GetPacked();
+
+	JPH::BodyInterface& xBodyInterface = m_pxPhysicsSystem->GetBodyInterface();
+	return FromJolt(xBodyInterface.CreateAndAddBody(xSettings, JPH::EActivation::DontActivate));
+}
+
+void Zenith_Physics::DestroyBody(Zenith_PhysicsBodyID xBodyID)
+{
+	if (xBodyID.IsInvalid() || m_pxPhysicsSystem == nullptr)
+	{
+		return;
+	}
+	JPH::BodyInterface& xBodyInterface = m_pxPhysicsSystem->GetBodyInterface();
+	// IsAdded first: a scene restore (or a Physics::Reset that rebuilt the world
+	// underneath a live ledger) can leave ids that name nothing.
+	if (xBodyInterface.IsAdded(ToJolt(xBodyID)))
+	{
+		xBodyInterface.RemoveBody(ToJolt(xBodyID));
+		xBodyInterface.DestroyBody(ToJolt(xBodyID));
+	}
+}
+
+Zenith_Physics* Zenith_Physics::TryGet()
+{
+	return PhysicsSelf();
+}
+
+void Zenith_Physics::OptimizeBroadPhase()
+{
+	if (m_pxPhysicsSystem != nullptr)
+	{
+		m_pxPhysicsSystem->OptimizeBroadPhase();
+	}
 }
 
 // ============================================================================

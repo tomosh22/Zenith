@@ -9,7 +9,7 @@ fully re-authored + saved by editor automation on **every** tools boot — windo
 or headless.
 
 **A headless (`Null_`) boot authors the SAME scene a windowed one does**: 82
-entities, 361753 bytes, `TerrainTrees_Trunk` / `_Leaves` and their ~323 KB of
+entities, 361801 bytes, `TerrainTrees_Trunk` / `_Leaves` and their ~323 KB of
 instance data included. Entity and component creation is backend-neutral (ZEN-6);
 only the GPU allocation underneath it is skipped, and on the Null backend that is
 `Zenith_Null_MemoryManager` handing back dummy handles. So a headless boot
@@ -36,6 +36,16 @@ Consequences worth knowing:
   STRONGER when the guard went away — a headless boot now actually writes the file,
   so "both tree entities are in the asset" is an end-to-end check rather than a
   near-vacuous one.
+* **The scene serializes InstancedMesh at v5**, which carries a per-instance collider
+  config. `TerrainTrees_Trunk` authors a CAPSULE (radius 0.30, cylinder half-height
+  3.2, local Y offset 3.5 — trunk-generator dimensions, scaled per instance) so the
+  player collides with the grove; `TerrainTrees_Leaves` stays NONE, because leaf cards
+  are foliage you brush past and a second capsule per tree would double the body count
+  for nothing. On load that becomes 2520 static Jolt bodies, one per trunk instance,
+  owned by the component rather than by an entity apiece — see
+  `Zenith/EntityComponent/Components/CLAUDE.md`. The bump cost +32 bytes (16 per
+  instanced-mesh component) and republished itself on the next tools boot, byte-identical
+  from Null, Vulkan Debug and Vulkan Release.
 
 <details><summary>History: why a headless boot used to be forbidden from saving</summary>
 
@@ -314,7 +324,13 @@ Games\RenderTest\RunTerrainIndirectPerformance.ps1 -Mode padded -CameraCase hori
   the scene FILE the boot left behind rather than on the loaded scene, so it reddens
   in whichever config damaged the asset — and `RT_SimPad_Test`
   (`Tests/Test_SimPad.cpp`), the GAMEPAD column of the action table end to end
-  (see *Controls* below), and `TerrainIndirectCompatibility` (`Tests/TerrainIndirectCompatibility.cpp`,
+  (see *Controls* below), and `RT_TreeCollision` (`Tests/Test_TreeCollision.cpp`),
+  which walks the real player into a real tree on the real input path and asserts it
+  cannot get through — its assertions are ANDed and each is named, because "blocked" on
+  its own is satisfied by a player that never moved, so the walked/reached clauses are
+  what make the block mean anything; it also pins trunk-bodies == trunk-instances,
+  leaf-bodies == 0, and that a horizontal raycast resolves through the body's UserData
+  to the `TerrainTrees_Trunk` entity, and `TerrainIndirectCompatibility` (`Tests/TerrainIndirectCompatibility.cpp`,
   `m_bRequiresGraphics = true`, Phase 7 of the indirect-count compatibility plan
   — see the dedicated section above for its three-process wrapper + non-vacuity
   + stale-tail readback), plus the manual-only `TerrainIndirectPerformance`

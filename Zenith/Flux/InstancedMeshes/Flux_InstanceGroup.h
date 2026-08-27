@@ -64,10 +64,16 @@ public:
 	// Add a new instance, returns instance ID (0 to MAX_INSTANCES-1)
 	uint32_t AddInstance();
 
-	// Remove an instance by ID (uses swap-and-pop, so IDs may change)
+	// Remove an instance by ID. DISABLE-IN-PLACE, not swap-and-pop: the slot's
+	// flags are zeroed where it sits and its ID goes on a free list for a later
+	// AddInstance to reuse. So a live instance's ID NEVER changes -- which is
+	// what lets a caller key external per-instance state (Zenith_InstancedMesh-
+	// Component's physics-body ledger) by slot -- but live slots are NOT
+	// contiguous after any removal.
 	void RemoveInstance(uint32_t uInstanceID);
 
-	// Remove all instances
+	// Remove all instances. Zeroes every slot's flags (the all-slots case of
+	// RemoveInstance), so ComputeVisibleIndices reports nothing live afterwards.
 	void Clear();
 
 	// Set transform for an instance

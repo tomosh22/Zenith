@@ -72,8 +72,54 @@ int main()
 		Zenith_Maths::Vector3(0.0f, -1.0f, 0.0f), 100.0f);
 	Expect(!xHit.m_bHit, "Raycast into empty world misses");
 
+	// Leaf body-creation API. Bodies without a ColliderComponent are the whole
+	// point of this surface, so proving it HERE -- in an exe that links no
+	// concrete component and no engine lib -- is the leaf proof for it.
+	{
+		const Zenith_EntityID xOwner = { 7u, 3u };
+		const Zenith_PhysicsBodyID xTrunk = xPhysics.CreateStaticCapsuleBody(
+			Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f),
+			Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f),
+			/*radius*/ 0.5f, /*cylinder half-height*/ 2.0f, xOwner);
+		Expect(xTrunk.IsValid(), "CreateStaticCapsuleBody returned a valid body id");
+
+		Zenith_Physics::RaycastResult xCapsuleHit = xPhysics.Raycast(
+			Zenith_Maths::Vector3(0.0f, 10.0f, 0.0f),
+			Zenith_Maths::Vector3(0.0f, -1.0f, 0.0f), 100.0f);
+		Expect(xCapsuleHit.m_bHit, "Raycast finds the static capsule");
+		// UserData -> hit entity is the whole reason the owner id is stamped at
+		// creation: without it a contact against an instance body names nothing.
+		Expect(xCapsuleHit.m_xHitEntity == xOwner,
+			"the capsule's UserData resolves to the owning entity id");
+
+		// Garbage dimensions are refused rather than half-sanitised.
+		Expect(!xPhysics.CreateStaticCapsuleBody(Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f),
+			Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f), -1.0f, 2.0f, xOwner).IsValid(),
+			"a negative radius returns an INVALID body id");
+
+		xPhysics.DestroyBody(xTrunk);
+		Zenith_Physics::RaycastResult xAfter = xPhysics.Raycast(
+			Zenith_Maths::Vector3(0.0f, 10.0f, 0.0f),
+			Zenith_Maths::Vector3(0.0f, -1.0f, 0.0f), 100.0f);
+		Expect(!xAfter.m_bHit, "DestroyBody removed the capsule from the world");
+
+		// Both no-op shapes every teardown path relies on.
+		xPhysics.DestroyBody(xTrunk);
+		xPhysics.DestroyBody(Zenith_PhysicsBodyID());
+		Expect(true, "double-destroy and destroy-INVALID are no-ops");
+
+		xPhysics.OptimizeBroadPhase();
+		Expect(true, "OptimizeBroadPhase runs on a live world");
+	}
+
 	xPhysics.Shutdown();
 	Expect(!xPhysics.HasActiveSimulation(), "Shutdown freed the Jolt system");
+	// The teardown-after-Shutdown shape a component destructor hits: TryGet is
+	// null instead of asserting, and the destroy/optimize calls are inert.
+	Expect(Zenith_Physics::TryGet() == nullptr, "TryGet returns null after Shutdown");
+	xPhysics.DestroyBody(Zenith_PhysicsBodyID(0u));
+	xPhysics.OptimizeBroadPhase();
+	Expect(true, "DestroyBody / OptimizeBroadPhase are inert with no simulation");
 
 	delete pxScenes;
 	pxScenes = nullptr;

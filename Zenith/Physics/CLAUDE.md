@@ -16,7 +16,9 @@ Integration with Jolt Physics library for rigid body dynamics. Features fixed 60
 
 Uses Jolt Physics types internally:
 - `JPH::PhysicsSystem` - Main simulation engine (private member; engine-internal code reaches it via `GetJoltSystem()`)
-- `JPH::Body` - Rigid body (stored in `Zenith_ColliderComponent`)
+- `JPH::Body` - Rigid body. MOST are owned by a `Zenith_ColliderComponent`, but that is
+  not the whole story: see **Leaf body-creation API** below for bodies a caller owns
+  without a component
 - `JPH::TempAllocatorImpl` - Per-frame scratch memory (10MB)
 - `JPH::JobSystemThreadPool` - Multi-threaded physics jobs (uses hardware_concurrency - 1 threads)
 
@@ -36,6 +38,45 @@ Static manager for physics simulation. Key responsibilities:
 - Manage body lifecycle
 - Process deferred collision events on main thread
 - Raycast functionality for camera/editor interaction. Two public `Raycast(...)` overloads return a `RaycastResult` (`m_bHit`, `m_xHitPoint`, `m_xHitNormal`, `m_fDistance`, `m_xHitEntity`); the second overload takes a `Zenith_PhysicsBodyID` to ignore. The EntityID-ignore convenience form lives engine-side in `Zenith_PhysicsQuery::RaycastIgnoring`. **Both overloads IGNORE SENSOR BODIES** — see below.
+
+### Leaf body-creation API
+
+Four methods on `Zenith_Physics` let a caller own physics bodies **without** owning a
+`Zenith_ColliderComponent` per body. They name only Maths types, `Zenith_EntityID` and
+`Zenith_PhysicsBodyID`, so the leaf stays a leaf:
+
+| Method | Contract |
+|---|---|
+| `CreateStaticCapsuleBody(pos, rot, radius, cylHalfHeight, ownerEntity)` | STATIC, `Layers::NON_MOVING`, Y-axis capsule centred on `pos`. `rot` is normalised before it reaches Jolt. `ownerEntity` is stamped into `mUserData` at creation. Dimensions are sanitised (finite, > 0, floored to `JPH::cDefaultConvexRadius`); a garbage dimension or a missing simulation returns an INVALID id and warns |
+| `DestroyBody(id)` | Remove + destroy **iff** currently added. No-op on an INVALID id or with no live simulation, so a destructor can call it unconditionally |
+| `static TryGet()` | Null-instead-of-assert sibling of `Get()`. `Get()` asserts; a destructor running after `Shutdown` cannot |
+| `OptimizeBroadPhase()` | Forwards `PhysicsSystem::OptimizeBroadPhase`, null-guarded. Call after a bulk one-at-a-time body load — Jolt otherwise leaves the quadtree unoptimised until simulation steps run |
+
+`Zenith_ColliderComponent::AddCollider` is the OTHER body-creation site, and the two
+differ deliberately. The collider path creates DYNAMIC-or-static bodies from a
+transform and stamps UserData through a `BodyLockWrite` after the fact; this path
+creates static bodies only and stamps UserData through `BodyCreationSettings::mUserData`
+at creation, which is simpler and is what makes an owner-less body still resolve as a
+hit entity.
+
+**`TryGet()` vs `Get()` is not a style choice.** Every DESTROY path must use `TryGet()`:
+component-pool teardown can run after `Zenith_Physics::Shutdown`, and `Get()` asserts
+there. Creation paths run while the world is live and may use `Get()`.
+
+**What a body created here is NOT.** It has no `Zenith_ColliderComponent`, so it is
+invisible to `Zenith_SyncPhysicsTransforms` (nothing writes its pose back into a
+transform — which is correct, it is static), to `Zenith_AINavGeometry` (it obstructs no
+navmesh) and to `Zenith_PhysicsDebugDraw`. Contacts and raycasts attribute to whatever
+entity the caller stamped, which for a group of instances is the GROUP, not the
+individual. The one shipped consumer is
+`Zenith_InstancedMeshComponent`'s per-instance colliders — see
+`EntityComponent/Components/CLAUDE.md`.
+
+`SentinelPhysics` exercises the whole surface (create -> raycast -> UserData ->
+destroy -> double-destroy -> post-Shutdown inertness) in an exe that links no engine
+lib, which is the leaf proof for it. The behaviour is pinned by the `Physics,
+CreateStaticCapsuleBody*` / `DestroyBody*` units in
+`EntityComponent/Zenith_Physics.Tests.inl`.
 
 ### Ordinary raycasts ignore sensors (ZM-D-173)
 

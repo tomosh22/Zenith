@@ -1870,6 +1870,21 @@ ZENITH_TEST(Editor, TreeAuthoringIsBackendNeutral)
 	ZENITH_ASSERT_NOT_NULL(xLeaves.TryGetComponent<Zenith_InstancedMeshComponent>(),
 		"TerrainTrees_Leaves must carry the instanced-mesh component");
 
+	// The trunk authors a per-instance capsule so the player collides with the
+	// grove; the leaves deliberately do NOT (leaf cards are foliage you brush
+	// past, and a second capsule per tree would double the body count). Both
+	// halves are pinned: authoring a collider on the leaves would be as wrong as
+	// dropping it from the trunk, and neither shows up in a render.
+	ZENITH_ASSERT_EQ(static_cast<uint32_t>(xTrunk.GetComponent<Zenith_InstancedMeshComponent>()
+			.GetInstanceColliderConfig().m_eType),
+		static_cast<uint32_t>(INSTANCE_COLLIDER_TYPE_CAPSULE),
+		"TerrainTrees_Trunk must author a CAPSULE instance collider -- without it the scene "
+		"serializes trees you walk straight through");
+	ZENITH_ASSERT_EQ(static_cast<uint32_t>(xLeaves.GetComponent<Zenith_InstancedMeshComponent>()
+			.GetInstanceColliderConfig().m_eType),
+		static_cast<uint32_t>(INSTANCE_COLLIDER_TYPE_NONE),
+		"TerrainTrees_Leaves must author NO instance collider");
+
 	// A TRANSIENT entity is never serialized, so a tree entity that was transient
 	// would satisfy every check above and still leave the saved scene short by two.
 	ZENITH_ASSERT_FALSE(xTrunk.IsTransient(), "TerrainTrees_Trunk must be non-transient, or it never reaches the file");

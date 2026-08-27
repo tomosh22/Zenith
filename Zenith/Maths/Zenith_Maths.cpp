@@ -120,4 +120,40 @@ namespace Zenith_Maths
 	}
 
 	ZENITH_AUTHORING_DETERMINISM_END
+
+	// Deliberately OUTSIDE the authoring-determinism pin above -- see the header.
+	// A decomposed pose is consumed by Jolt at runtime and never serialized, so it
+	// has nothing to be bit-identical WITH.
+	void DecomposeTRS(const Matrix4& xMatrix, Vector3& xPositionOut,
+		Quat& xRotationOut, Vector3& xScaleOut)
+	{
+		xPositionOut = Vector3(xMatrix[3]);
+
+		// Column lengths are the scale. A degenerate column is floored so the
+		// division below cannot produce inf/NaN, and its basis direction falls back
+		// to the matching axis unit vector.
+		constexpr float fMIN_AXIS_LENGTH = 1e-6f;
+		Vector3 axBasis[3];
+		for (int iCol = 0; iCol < 3; ++iCol)
+		{
+			const Vector3 xColumn(xMatrix[iCol]);
+			const float fLength = glm::length(xColumn);
+			if (fLength < fMIN_AXIS_LENGTH)
+			{
+				xScaleOut[iCol] = fMIN_AXIS_LENGTH;
+				axBasis[iCol] = Vector3(0.0f);
+				axBasis[iCol][iCol] = 1.0f;
+			}
+			else
+			{
+				xScaleOut[iCol] = fLength;
+				axBasis[iCol] = xColumn / fLength;
+			}
+		}
+
+		const Matrix3 xRotationBasis(axBasis[0], axBasis[1], axBasis[2]);
+		// normalize is MANDATORY, not defensive: quat_cast of an almost-orthonormal
+		// basis returns an almost-unit quat, and Jolt asserts IsNormalized().
+		xRotationOut = glm::normalize(glm::quat_cast(xRotationBasis));
+	}
 }

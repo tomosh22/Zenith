@@ -2,6 +2,8 @@
 
 #include "ZenithECS/Zenith_Entity.h"
 #include "AssetHandling/Zenith_AssetHandle.h"	// MeshHandle/MaterialHandle typedefs + Zenith_Mesh/MaterialAsset fwd-decls (were pulled in transitively via the now-removed Flux includes)
+#include "Physics/Zenith_Physics_Fwd.h"	// Zenith_PhysicsBodyID (the per-instance body ledger) -- fwd header, no Jolt
+#include "Collections/Zenith_Vector.h"
 #include <string>
 #include <vector>
 
@@ -14,6 +16,25 @@ class Flux_MeshInstance;
 #include "imgui.h"
 #include "EntityComponent/Zenith_ComponentEditorRegistry.h"
 #endif
+
+//=============================================================================
+// Per-instance collider authored on the component and serialized with it (v5).
+// NONE (the default) preserves today's behaviour exactly: no bodies, no physics
+// access, byte-identical v4 semantics.
+//=============================================================================
+enum InstanceColliderType : uint32_t
+{
+	INSTANCE_COLLIDER_TYPE_NONE = 0,
+	INSTANCE_COLLIDER_TYPE_CAPSULE = 1,
+};
+
+struct Zenith_InstanceColliderConfig
+{
+	InstanceColliderType m_eType = INSTANCE_COLLIDER_TYPE_NONE;
+	float m_fRadius = 0.3f;              // local (pre-scale)
+	float m_fCylinderHalfHeight = 3.2f;  // Jolt convention: total half-extent = this + radius
+	float m_fLocalYOffset = 3.5f;        // capsule centre above the instance origin (pre-scale)
+};
 
 //=============================================================================
 // Zenith_InstancedMeshComponent
@@ -121,6 +142,30 @@ public:
 	void SetInstanceEnabled(uint32_t uInstanceID, bool bEnabled);
 
 	//-------------------------------------------------------------------------
+	// Instance Colliders (one static physics body per live instance)
+	//-------------------------------------------------------------------------
+	// A group of 2500 trees becomes 2500 static Jolt capsules owned by THIS
+	// component -- deliberately not 2500 entities with ColliderComponents, which
+	// would pay the per-frame Zenith_SyncPhysicsTransforms sweep and become 2500
+	// navmesh obstruction boxes. Contacts and raycasts against an instance body
+	// therefore attribute to the GROUP entity, not to an individual instance.
+	//
+	// Enable a per-instance static capsule. Bodies are created for every
+	// currently-enabled instance AND for every instance spawned afterwards;
+	// despawn / disable / clear destroys them. Idempotent for an identical config.
+	void SetInstanceColliderCapsule(float fRadius, float fCylinderHalfHeight, float fLocalYOffset);
+	// Destroy every instance body and reset the config to NONE.
+	void ClearInstanceColliderConfig();
+	const Zenith_InstanceColliderConfig& GetInstanceColliderConfig() const { return m_xInstanceColliderConfig; }
+	bool HasInstanceColliders() const;      // any live instance body
+	uint32_t GetInstanceBodyCount() const;  // number of live instance bodies
+	// The body for one instance slot, or an INVALID id when that slot has none
+	// (out of range, disabled, despawned, or the config is NONE). Lets a caller
+	// query a specific tree's pose / shape through Zenith_Physics without this
+	// component re-exporting the whole physics surface.
+	Zenith_PhysicsBodyID GetInstanceBodyID(uint32_t uSlot) const;
+
+	//-------------------------------------------------------------------------
 	// Animation Playback
 	//-------------------------------------------------------------------------
 
@@ -193,6 +238,15 @@ private:
 
 	void EnsureInstanceGroupCreated();
 
+	// Instance-collider internals. Every one is a no-op when the config is NONE,
+	// so the collider-free path costs a single enum compare.
+	void CreateInstanceBody(uint32_t uSlot);    // early-returns when the slot already has a body
+	void DestroyInstanceBody(uint32_t uSlot);   // no-op when no body; always invalidates the ledger slot
+	void CreateAllInstanceBodies();             // sweep over ComputeVisibleIndices (the enabled slots)
+	void DestroyAllInstanceBodies();            // sweep over the LEDGER (robust vs stale group flags)
+	void RefreshInstanceBody(uint32_t uSlot);   // destroy + recreate (pose / scale change)
+	void RebuildInstanceBodies();               // destroy-all + create-all + broadphase re-optimise
+
 	//-------------------------------------------------------------------------
 	// Data
 	//-------------------------------------------------------------------------
@@ -214,4 +268,11 @@ private:
 	float m_fAnimationDuration = 1.0f;
 	float m_fAnimationSpeed = 1.0f;
 	bool m_bAnimationsPaused = false;
+
+	// Authored collider config (serialized, v5) + the slot-indexed body ledger.
+	// Ledger index == instance slot id; an INVALID id means "no body for that
+	// slot". Slot-indexed rather than packed because Flux_InstanceGroup recycles
+	// slots through a free list, so live slots are NOT contiguous after removals.
+	Zenith_InstanceColliderConfig m_xInstanceColliderConfig;
+	Zenith_Vector<Zenith_PhysicsBodyID> m_axInstanceBodyIDs;
 };

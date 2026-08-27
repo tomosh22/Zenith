@@ -24,7 +24,10 @@ ImGui-based scene editor for creating, editing, and testing game content. Active
   height brushes (raise/lower/smooth/flatten/set-height/noise/terrace/ramp/
   copy-stamp with radius/strength/falloff), splatmap layer painting (4 material
   slots, weights kept normalized), grass-density painting and grass-type
-  stamping (the two Flux_Grass maps — a session owns FOUR maps in all,
+  stamping, tree painting (TreePaint scatters the ProceduralTree assets across two
+  lockstep instanced entities; the TRUNK entity also authors a per-instance capsule
+  collider config, so painted trees are solid, while the leaf cards deliberately stay
+  collider-free) (the two Flux_Grass maps — a session owns FOUR maps in all,
   Height / Splat / GrassDensity / GrassType, each with its own texel count and
   bytes-per-texel, so undo rects are sized per map: 1 byte/texel for GrassType
   against 4 for the others), seeded procedural generation (deterministic

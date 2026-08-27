@@ -83,6 +83,17 @@ namespace Zenith_Maths
 	// glm::radians for float.
 	float AuthoringRadians(float fDegrees);
 
+	// Inverse of a TRS compose, for AFFINE, positive-scale, shear-free matrices --
+	// exactly what AuthoringTRS (and Zenith_InstancedMeshComponent::BuildMatrix)
+	// produce. The rotation comes back NORMALISED: Jolt asserts IsNormalized() and
+	// a quat recovered from basis columns is only unit to within FP slop.
+	//
+	// NOT an Authoring* helper, despite sitting beside them. Its outputs feed
+	// runtime physics body poses and never reach serialized bytes, so it carries
+	// no FP-determinism obligation and is free to use glm.
+	void DecomposeTRS(const Matrix4& xMatrix, Vector3& xPositionOut,
+		Quat& xRotationOut, Vector3& xScaleOut);
+
 	// ========== GLM Wrapper Functions for Flux_Primitives ==========
 
 	// Vector operations

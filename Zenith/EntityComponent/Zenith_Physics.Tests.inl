@@ -8,6 +8,10 @@
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
+// The reset precondition scans instance colliders too -- bodies owned by a
+// component rather than by a ColliderComponent are just as stale after a
+// Physics::Reset, and nothing else would notice.
+#include "EntityComponent/Components/Zenith_InstancedMeshComponent.h"
 #include "AssetHandling/Zenith_MeshGeometryAsset.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
@@ -141,6 +145,20 @@ static void ResetPhysicsState()
 		"BodyID and trip a Jolt assertion on next dtor or method call. Destroy or unload any "
 		"collider-bearing scenes BEFORE calling this helper — the convention is to call it "
 		"after creating the empty test scene and before AddCollider.", axLiveColliders.GetSize());
+
+	// Same hazard, SECOND owner: Zenith_InstancedMeshComponent owns one static
+	// body per live instance WITHOUT a ColliderComponent, so the scan above is
+	// blind to every one of them. A reset under a live instance ledger leaves
+	// thousands of ids naming nothing.
+	uint32_t uLiveInstanceBodies = 0;
+	g_xEngine.Scenes().QueryAllScenes<Zenith_InstancedMeshComponent>().ForEach(
+		[&uLiveInstanceBodies](Zenith_EntityID, Zenith_InstancedMeshComponent& xComp)
+		{
+			uLiveInstanceBodies += xComp.GetInstanceBodyCount();
+		});
+	ZENITH_ASSERT_EQ(uLiveInstanceBodies, 0u, "ResetPhysicsState: %u live instance-collider body/bodies "
+		"detected across all loaded scenes. Tearing down the Jolt PhysicsSystem now would leave the "
+		"owning Zenith_InstancedMeshComponent's ledger full of stale ids.", uLiveInstanceBodies);
 
 	g_xEngine.Physics().Reset();
 	g_xEngine.Physics().m_fTimestepAccumulator = 0;
@@ -1654,6 +1672,125 @@ ZENITH_TEST(Physics, TransformSerializationFollowsAGenuineBodyMove)
 		"SerialiseMoved: a body that really moved must serialize where it moved to");
 	ZENITH_ASSERT_EQ_FLOAT(xSerialisedRot.y, xTurned.y, 0.001f,
 		"SerialiseMoved: a body that really turned must serialize the turned rotation");
+
+	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
+}
+
+//==============================================================================
+// Leaf body-creation API (Zenith_Physics::CreateStaticCapsuleBody & friends)
+//
+// The sanctioned way to own a physics body WITHOUT a ColliderComponent.
+// SentinelPhysics proves it links and runs with no engine externals; these
+// prove it BEHAVES.
+//==============================================================================
+ZENITH_TEST(Physics, CreateStaticCapsuleBodyIsStaticAndQueryable)
+{
+	Zenith_Scene xTestScene = g_xEngine.Scenes().LoadScene("PhysicsTest_LeafCapsule", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
+	ResetPhysicsState();
+
+	// A REAL entity, so the UserData assertion below pins the resolution end to
+	// end rather than round-tripping a number nothing else agrees with.
+	Zenith_Entity xOwner = g_xEngine.Scenes().CreateEntity(pxSceneData, "LeafCapsuleOwner");
+	const Zenith_PhysicsBodyID xBodyID = g_xEngine.Physics().CreateStaticCapsuleBody(
+		Zenith_Maths::Vector3(0.0f, 5.0f, 0.0f),
+		Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f),
+		/*radius*/ 0.5f, /*cylinder half-height*/ 1.0f, xOwner.GetEntityID());
+	ZENITH_ASSERT_TRUE(xBodyID.IsValid(), "CreateStaticCapsuleBody must return a valid id");
+
+	StepPhysics(60);
+
+	const Zenith_Maths::Vector3 xPos = g_xEngine.Physics().GetBodyPosition(xBodyID);
+	ZENITH_ASSERT_NEAR_VEC3(xPos, Zenith_Maths::Vector3(0.0f, 5.0f, 0.0f), 0.01f,
+		"the body must not have moved");
+
+	// ★ THE POSITION CHECK ABOVE CANNOT SEE THE MOTION TYPE, so the motion type is
+	// asserted DIRECTLY. The body is added with EActivation::DontActivate, and Jolt
+	// integrates only bodies on the ACTIVE list (JobApplyGravity and
+	// JobIntegrateVelocity both iterate GetActiveBodiesUnsafe) -- so a DYNAMIC body
+	// created here would also sit at (0,5,0) forever in an otherwise-empty world,
+	// and a Static->Dynamic mutation would ship 2520 topple-prone trees past a green
+	// suite. The object layer is invisible to a position probe for the same reason:
+	// with nothing to collide against, NON_MOVING and MOVING look identical.
+	{
+		JPH::BodyLockRead xLock(g_xEngine.Physics().GetJoltSystem()->GetBodyLockInterface(),
+			JPH::BodyID(xBodyID.m_uID));
+		ZENITH_ASSERT_TRUE(xLock.Succeeded(), "the new body must be lockable for inspection");
+		if (xLock.Succeeded())
+		{
+			ZENITH_ASSERT_TRUE(xLock.GetBody().GetMotionType() == JPH::EMotionType::Static,
+				"CreateStaticCapsuleBody must produce a STATIC body");
+			// Layers::NON_MOVING is file-static in Zenith_Physics.cpp, so its VALUE is
+			// spelled here on purpose: comparing against a re-read of the same constant
+			// would be a guard checking a value against a re-computation of itself.
+			ZENITH_ASSERT_EQ(static_cast<uint32_t>(xLock.GetBody().GetObjectLayer()), 0u,
+				"the body must be in Layers::NON_MOVING (0) -- in MOVING, 2520 tree capsules "
+				"would test against each other every step");
+		}
+	}
+
+	Zenith_Physics::RaycastResult xHit = g_xEngine.Physics().Raycast(
+		Zenith_Maths::Vector3(0.0f, 10.0f, 0.0f), Zenith_Maths::Vector3(0.0f, -1.0f, 0.0f), 100.0f);
+	ZENITH_ASSERT_TRUE(xHit.m_bHit, "a ray down the capsule's axis must hit it");
+	ZENITH_ASSERT_TRUE(xHit.m_xHitEntity == xOwner.GetEntityID(),
+		"the body's UserData must resolve to the OWNING entity -- that stamp is the only wiring "
+		"between an instance body and anything able to name it");
+
+	g_xEngine.Physics().DestroyBody(xBodyID);
+	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
+}
+
+ZENITH_TEST(Physics, DestroyBodyRemovesAndIsIdempotent)
+{
+	Zenith_Scene xTestScene = g_xEngine.Scenes().LoadScene("PhysicsTest_LeafDestroy", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
+	ResetPhysicsState();
+
+	Zenith_Entity xOwner = g_xEngine.Scenes().CreateEntity(pxSceneData, "LeafDestroyOwner");
+	const Zenith_PhysicsBodyID xBodyID = g_xEngine.Physics().CreateStaticCapsuleBody(
+		Zenith_Maths::Vector3(0.0f, 5.0f, 0.0f),
+		Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f), 0.5f, 1.0f, xOwner.GetEntityID());
+	ZENITH_ASSERT_TRUE(g_xEngine.Physics().Raycast(Zenith_Maths::Vector3(0.0f, 10.0f, 0.0f),
+		Zenith_Maths::Vector3(0.0f, -1.0f, 0.0f), 100.0f).m_bHit, "the capsule is there to begin with");
+
+	g_xEngine.Physics().DestroyBody(xBodyID);
+	ZENITH_ASSERT_FALSE(g_xEngine.Physics().Raycast(Zenith_Maths::Vector3(0.0f, 10.0f, 0.0f),
+		Zenith_Maths::Vector3(0.0f, -1.0f, 0.0f), 100.0f).m_bHit,
+		"DestroyBody must remove the body from the world, not merely release the handle");
+
+	// Both no-op shapes every teardown path leans on: a destructor cannot know
+	// whether some earlier path already released the body.
+	g_xEngine.Physics().DestroyBody(xBodyID);
+	g_xEngine.Physics().DestroyBody(Zenith_PhysicsBodyID());
+	ZENITH_ASSERT_TRUE(true, "double-destroy and destroy-INVALID are no-ops");
+
+	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
+}
+
+ZENITH_TEST(Physics, CreateStaticCapsuleBodyRejectsGarbageDims)
+{
+	Zenith_Scene xTestScene = g_xEngine.Scenes().LoadScene("PhysicsTest_LeafGarbage", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
+	ResetPhysicsState();
+
+	Zenith_Entity xOwner = g_xEngine.Scenes().CreateEntity(pxSceneData, "LeafGarbageOwner");
+	const Zenith_Maths::Vector3 xOrigin(0.0f, 0.0f, 0.0f);
+	const Zenith_Maths::Quat xIdentity(1.0f, 0.0f, 0.0f, 0.0f);
+	const uint32_t uBaseline = g_xEngine.Physics().GetJoltSystem()->GetNumBodies();
+
+	const float fNaN = std::nanf("");
+	ZENITH_ASSERT_FALSE(g_xEngine.Physics().CreateStaticCapsuleBody(
+		xOrigin, xIdentity, fNaN, 1.0f, xOwner.GetEntityID()).IsValid(), "a NaN radius is refused");
+	ZENITH_ASSERT_FALSE(g_xEngine.Physics().CreateStaticCapsuleBody(
+		xOrigin, xIdentity, 0.5f, fNaN, xOwner.GetEntityID()).IsValid(), "a NaN half-height is refused");
+	ZENITH_ASSERT_FALSE(g_xEngine.Physics().CreateStaticCapsuleBody(
+		xOrigin, xIdentity, 0.0f, 1.0f, xOwner.GetEntityID()).IsValid(), "a zero radius is refused");
+	ZENITH_ASSERT_FALSE(g_xEngine.Physics().CreateStaticCapsuleBody(
+		xOrigin, xIdentity, 0.5f, -1.0f, xOwner.GetEntityID()).IsValid(), "a negative half-height is refused");
+
+	ZENITH_ASSERT_EQ(g_xEngine.Physics().GetJoltSystem()->GetNumBodies(), uBaseline,
+		"a refused request must create NO body -- half-sanitising one is how a garbage dimension "
+		"becomes an invisible wall");
 
 	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
 }

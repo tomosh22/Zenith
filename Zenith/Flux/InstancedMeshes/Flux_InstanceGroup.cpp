@@ -159,6 +159,25 @@ void Flux_InstanceGroup::RemoveInstance(uint32_t uInstanceID)
 
 void Flux_InstanceGroup::Clear()
 {
+	// ★ ZEROING THE PER-SLOT FLAGS IS THE POINT, not bookkeeping around it.
+	// Clear() used to reset only the counts and the free list, leaving every slot's
+	// m_uFlags at 1 -- so ComputeVisibleIndices, which is a pure scan for
+	// m_uFlags != 0 over [0, m_uCapacity), kept reporting every slot the group had
+	// EVER used as live. Everything downstream of that list inherited the lie:
+	// UpdateGPUBuffers drew ghost instances at stale transforms whenever the count
+	// shrank (CityBuilder rebuilds its buildings every frame with Clear() + N
+	// spawns, so a demolished building kept rendering), Zenith_InstancedMeshComponent
+	// ::WriteToDataStream would serialize them, and its per-instance collider sweep
+	// would give each one a physics body.
+	//
+	// This is exactly what RemoveInstance already does per slot; Clear() is just the
+	// all-slots case and was the only one that skipped it.
+	for (uint32_t i = 0; i < m_uCapacity; ++i)
+	{
+		m_axAnimData.Get(i).m_uFlags = 0;
+		m_abDirty.Get(i) = true;
+	}
+
 	m_uInstanceCount = 0;
 	m_uVisibleCount = 0;
 	m_auFreeIDs.Clear();

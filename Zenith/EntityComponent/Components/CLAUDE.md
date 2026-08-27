@@ -16,7 +16,7 @@ This directory contains all component types for the Entity-Component System.
 | `Zenith_AtmosphereComponent` | Scene-authored physical atmosphere medium (Rayleigh/Mie density scales, Mie-G phase asymmetry, both exponential scale heights, capture ground albedo) co-authored with a `Zenith_SunComponent` on one environment entity; resolved together via `Zenith_EnvironmentAuthorityData`. Also doubles as a **local blend volume** when `BlendRadius > 0` (see below). No radiometric anchor / exposure / renderer state (those are Flux-side) |
 | `Zenith_ColliderComponent` | Physics collision shapes (Jolt integration) |
 | `Zenith_TerrainComponent` | Heightmap-based terrain with streaming, plus a TIER 1 **collision**-surface height query (`TryGetGroundHeightAt` — 4 m quads, NOT the rendered ground) — see "Terrain ground-height query" below |
-| `Zenith_InstancedMeshComponent` | GPU-instanced mesh rendering |
+| `Zenith_InstancedMeshComponent` | GPU-instanced mesh rendering, plus an optional **per-instance collider** — one static Jolt capsule per live instance, owned by the component (see below) |
 | `Zenith_ParticleEmitterComponent` | Particle effect emitters |
 | `Zenith_GraphComponent` | Behaviour Graph host (multiple .bgraph slots per entity, hot-reloadable) |
 | `Zenith_UIComponent` | UI element support |
@@ -156,6 +156,140 @@ Full mechanics are in the doc comment above `TryGetGroundHeightAt` in
 Home door jambs — whose residual is a **visual** one and so is **not** measurable
 by TIER 1, per the box above) and the TIER 2 write-up are in
 `Games/Zenithmon/Docs/Shortfalls.md` section 2 (E8).
+
+## Instance colliders: one static body per live instance, owned by the component
+
+`Zenith_InstancedMeshComponent` can declare a per-instance collider. Enabling it gives
+**every live instance one static Jolt capsule** — RenderTest's `TerrainTrees_Trunk` is
+2520 of them — created from the component's authored config and destroyed with the
+instance. It is what makes the player collide with instanced trees instead of walking
+through them.
+
+### The config, and what it costs when it is NONE
+
+```cpp
+enum InstanceColliderType : uint32_t { INSTANCE_COLLIDER_TYPE_NONE = 0, INSTANCE_COLLIDER_TYPE_CAPSULE = 1 };
+
+struct Zenith_InstanceColliderConfig
+{
+    InstanceColliderType m_eType = INSTANCE_COLLIDER_TYPE_NONE;
+    float m_fRadius = 0.3f;              // local (pre-scale)
+    float m_fCylinderHalfHeight = 3.2f;  // Jolt convention: total half-extent = this + radius
+    float m_fLocalYOffset = 3.5f;        // capsule centre above the instance origin (pre-scale)
+};
+```
+
+`NONE` is the default and is the whole compatibility story: every hook below
+early-returns on a single enum compare, so an instanced-mesh user that never enables a
+collider behaves exactly as it did — no physics access, no bodies, no per-frame cost.
+The one thing that does change for it is the stream: a NONE component still WRITES the
+four values (type 0 plus the three defaults), so every serialized instanced-mesh
+component grows by 16 bytes whether or not it uses the feature.
+
+Public surface: `SetInstanceColliderCapsule(radius, cylHalfHeight, localYOffset)` (creates
+bodies for every currently-enabled instance AND every one spawned after; idempotent for an
+identical config), `ClearInstanceColliderConfig()`, `GetInstanceColliderConfig()`,
+`HasInstanceColliders()`, `GetInstanceBodyCount()`, `GetInstanceBodyID(slot)`.
+
+### The slot ledger
+
+`Zenith_Vector<Zenith_PhysicsBodyID> m_axInstanceBodyIDs`, indexed **by instance slot**,
+INVALID meaning "no body for that slot". Slot-indexed rather than packed because
+`Flux_InstanceGroup::RemoveInstance` is disable-in-place + free-list reuse, not
+swap-and-pop: a live instance's ID never changes (which is what makes keying external
+state by slot legal at all), but live slots are **not contiguous** after any removal.
+
+`DestroyAllInstanceBodies` sweeps the LEDGER, never `ComputeVisibleIndices` —
+`Flux_InstanceGroup::Clear()` zeroes the counts and free list but leaves per-slot flags
+set, so the enabled-slot list can disagree with reality after one. The ledger cannot.
+
+★ **The CREATE sweep has no such escape** — after a `Clear()` the ledger is empty, so the
+group is the only source of truth left — so it carries a named `Zenith_Assert` instead:
+an enabled list LONGER than `GetInstanceCount()` is that stale-flag state and nothing
+else. Left unguarded, a config set after a bare `Clear()` would build one body per stale
+flag (invisible walls at deleted instances' transforms) and the occupied-slot early-return
+would then deny a real respawned instance its collider. **The root fix belongs in
+`Flux_InstanceGroup::Clear()`** — zeroing per-slot flags there, matching `RemoveInstance` —
+which would also stop the same stale list reaching `WriteToDataStream` and
+`UpdateGPUBuffers`, where it can already render and serialize ghost instances. That is a
+pre-existing Flux defect with its own blast radius (CityBuilder is the other `Clear()`
+caller) and is deliberately NOT fixed here; the assert is what stops it reaching physics
+meanwhile.
+
+### Every mutation entry point is hooked
+
+| Site | Hook |
+|---|---|
+| `SpawnInstance` / `SpawnInstanceWithMatrix` | `CreateInstanceBody(slot)`, AFTER the transform is set (the body pose is decomposed from it) |
+| `DespawnInstance` | `DestroyInstanceBody(slot)` **before** `RemoveInstance` — the slot is about to be free-listed and must not be inherited with a body |
+| `ClearInstances` | `DestroyAllInstanceBodies()` before `Clear()` |
+| `SetInstanceTransform` / `SetInstanceMatrix` | `RefreshInstanceBody(slot)` = destroy + recreate (the capsule's dimensions are scale-derived, so a transform change can move the shape too) |
+| `SetInstanceEnabled` | create on true, destroy on false. `CreateInstanceBody` early-RETURNS on an occupied ledger slot rather than asserting, because enabling an already-enabled instance is legal here |
+
+**`CreateInstanceBody` refuses a DEAD slot**, and that is what keeps the two creation
+paths agreeing on what "live instance" means. `CreateAllInstanceBodies` filters through
+the group's enabled-slot list; the per-slot path reads the same `m_uFlags` before
+building anything. Without that check, `SetInstanceTransform` on a slot that
+`SetInstanceEnabled(false)` had just disabled would RESURRECT its collider — an
+invisible instance that still blocks the player, and one `WriteToDataStream` (visible
+slots only) would not serialize, so it would exist in the authoring session and vanish
+on reload. Pinned by `InstancedMesh, RefreshDoesNotResurrectDisabledInstanceBody`.
+| destructor | `DestroyAllInstanceBodies()` FIRST, through `Zenith_Physics::TryGet()` — pool teardown can run after `Physics::Shutdown` |
+| move ctor / move assign | both new members transfer, and the SOURCE ledger is emptied; move-assign destroys its OWN bodies first. A shared ledger means the moved-from destructor takes bodies the target now owns (the `7fd3ccdc` move-op regression class) |
+
+**Reconfiguring goes through `RebuildInstanceBodies()`** — destroy-all, create-all, then
+`Zenith_Physics::OptimizeBroadPhase()` past 64 bodies, exactly as the deserialize path
+does. It is the second bulk-add site and needs the same broadphase re-optimise; skipping
+it there was an asymmetry rather than a decision. `SetInstanceColliderCapsule` short-circuits
+entirely when the four authored values are unchanged AND bodies already exist, so a
+re-call (the tree authoring and the editor panel both re-call) costs nothing and does not
+recycle body ids. Pinned by `InstancedMesh, ReconfigureRebuildsWithNewDimensions`.
+
+★ **The editor panel applies on RELEASE, not per drag frame** (`ImGui::IsItemDeactivatedAfterEdit`).
+A live-apply drag would destroy and recreate one Jolt body per instance per frame — 2520 for
+RenderTest's trunk group — and the editor's Stopped mode never calls `PhysicsSystem::Update`
+(`Zenith_Core.cpp` gates it on Playing), so nothing reclaims the broadphase nodes that churn
+allocates. The comparable destructive rebuild on `Zenith_ColliderComponent`'s panel sits
+behind a button for the same reason.
+
+Body pose: `Zenith_Maths::DecomposeTRS` on the instance matrix, then
+`position + rotation * (0, localYOffset * scale.y, 0)`, radius `* max(|scale.x|, |scale.z|)`
+(a capsule has one radius, so a non-uniform XZ scale must collapse to a scalar) and cylinder
+half-height `* |scale.y|`.
+
+### Serialization: v4 -> v5
+
+The stream gained four values, written **after** `m_bAnimationsPaused` and **before** the
+instance count: `uint32 type`, `float radius`, `float cylHalfHeight`, `float localYOffset`
+(+16 bytes per serialized component). The read is gated on `uVersion >= 5`, so a v4 stream
+skips the block and the config stays NONE — byte-for-byte the old behaviour. The config is
+written before the instance data deliberately: the read path needs it in hand by the time
+`SpawnInstanceWithMatrix` starts creating bodies inline. After the spawn loop, a
+deserialize that created more than 64 bodies calls
+`Zenith_Physics::OptimizeBroadPhase()` (2520 one-at-a-time static adds otherwise leave
+Jolt's quadtree unoptimised until simulation steps run).
+
+Only `Games/RenderTest/Assets/Scenes/RenderTest.zscen` carries InstancedMesh component
+data among the committed scenes, and RenderTest re-authors + republishes it on every tools
+boot, so the version bump self-publishes.
+
+### Deliberate v1 exclusions
+
+These follow from "no component per body", and each is a real limitation rather than an
+oversight:
+
+- instance bodies are invisible to `Zenith_SyncPhysicsTransforms` (nothing writes their
+  pose back — correct, they are static), to `Zenith_AINavGeometry` (they obstruct no
+  navmesh; instanced trees never did) and to `Zenith_PhysicsDebugDraw`;
+- a contact or raycast attributes to the **group** entity, not to an individual instance.
+  `OnCollisionEnter/Stay/Exit` fire with the group's entity;
+- a 128K-instance group must **not** enable a collider config —
+  `Zenith_Physics::s_uMaxBodies` is 65536.
+
+Pinned by the `InstancedMesh, *` units in
+`EntityComponent/Zenith_InstancedMeshComponent.Tests.inl` (config sweeps, slot recycling,
+pose + shape, v5 round-trip, v4 compatibility, both move ops) and end-to-end by
+RenderTest's `RT_TreeCollision`.
 
 ## AnimatorComponent is a forwarding handle (Wave-19 ownership relocation)
 

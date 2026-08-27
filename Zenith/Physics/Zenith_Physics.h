@@ -99,6 +99,41 @@ public:
 	// The EntityID convenience form lives engine-side in Zenith_PhysicsQuery::RaycastIgnoring.
 	RaycastResult Raycast(const Zenith_Maths::Vector3& xOrigin, const Zenith_Maths::Vector3& xDirection, float fMaxDistance, Zenith_PhysicsBodyID xIgnoreBody);
 
+	// ---- Leaf body-creation API ------------------------------------------------
+	// The sanctioned way to own a physics body WITHOUT a Zenith_ColliderComponent.
+	// Everything below names only Maths types, Zenith_EntityID and
+	// Zenith_PhysicsBodyID, so the Physics leaf stays a leaf.
+	//
+	// Static NON_MOVING capsule body (Y-axis capsule, centred on xPosition).
+	// xRotation is normalised before it reaches Jolt (see "Quaternion
+	// Normalization" in Physics/CLAUDE.md). uOwnerEntity is stamped into the
+	// body's UserData at creation, so contact callbacks and Raycast resolve it as
+	// the hit entity with no extra wiring. Dimensions are sanitised (finite, > 0,
+	// floored to Jolt's convex radius); a garbage dimension or a missing
+	// simulation returns an INVALID id and warns rather than building a body out
+	// of half-usable numbers. Used by Zenith_InstancedMeshComponent for
+	// per-instance colliders -- bodies created here have NO ColliderComponent and
+	// are invisible to the transform-sync sweep and navmesh collection BY DESIGN.
+	Zenith_PhysicsBodyID CreateStaticCapsuleBody(const Zenith_Maths::Vector3& xPosition,
+		const Zenith_Maths::Quat& xRotation, float fRadius, float fCylinderHalfHeight,
+		Zenith_EntityID xOwnerEntity);
+
+	// Remove + destroy iff the body is currently added (mirrors the collider
+	// dtor's stale-ID guard). No-op on an INVALID id or when no simulation is
+	// live, so every caller's teardown path can be unconditional.
+	void DestroyBody(Zenith_PhysicsBodyID xBodyID);
+
+	// Null-instead-of-assert sibling of Get(), for teardown paths that may run
+	// after Shutdown (component-pool destruction at scene unload). Get() asserts;
+	// a destructor cannot.
+	static Zenith_Physics* TryGet();
+
+	// Forwards PhysicsSystem::OptimizeBroadPhase (null-guarded). Call after a bulk
+	// one-at-a-time body load (a scene deserialize spawning thousands of instance
+	// bodies) -- Jolt otherwise leaves the quadtree unoptimised until simulation
+	// steps have run.
+	void OptimizeBroadPhase();
+
 	static constexpr double s_fDesiredFramerate = 1.0 / 60.0;
 
 	struct DeferredCollisionEvent
