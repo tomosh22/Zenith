@@ -1221,8 +1221,11 @@ static void InitializeRenderTestResources()
 // bake went from 12,298 files to ~772. Every chunk's world position, its
 // quantisation box and the terrain's own dimensions all moved, so a v11 set is
 // wrong in every way a stale bake can be.
+// v13: grass coverage is authored across the complete map at full density, and
+// all four editor-authored grass types use shorter 0.72x height ranges with full
+// per-type acceptance. Runtime only consumes the saved editor data.
 // Bump this for any baked-BYTE change, not only when the heightfield moves.
-static const char* sk_szTerrainProcMarkerRel = "Terrain/terrain_proc_v12.marker";
+static const char* sk_szTerrainProcMarkerRel = "Terrain/terrain_proc_v13.marker";
 
 static bool RenderTest_TerrainAssetsNeedRegeneration()
 {
@@ -2025,6 +2028,11 @@ void Project_RegisterEditorAutomationSteps()
 		xAuto.AddStep_TerrainRunAutoSplat();
 
 		// Grass meadows painted in around the gameplay plateau + the dome foot.
+		// The editor-authored density pass covers the complete map; the smaller
+		// dabs below retain the showcase's local density/type variation.
+		xAuto.AddStep_TerrainBrushStroke(iGrass, fCAMPUS_CX, fCAMPUS_CZ,
+			fCAMPUS_TERRAIN_SIZE, 1.0f, 1.0f);
+
 		// The spawn meadow is a RING of four dabs around the CenterPlatform
 		// footprint (X/Z 241-271) rather than one dab over it — blades root in
 		// the terrain under the platform and would poke up through its deck.
@@ -2061,6 +2069,23 @@ void Project_RegisterEditorAutomationSteps()
 		xAuto.AddStep_TerrainBrushStroke(iGrassType, fCAMPUS_CX - 74.0f, fCAMPUS_CZ, 50.0f, 1.0f, 3.0f);   // Flowers
 		xAuto.AddStep_TerrainBrushStroke(iGrassType, 420.0f + fCAMPUS_SHIFT, 360.0f + fCAMPUS_SHIFT,
 			70.0f, 1.0f, 2.0f);                                                                            // Dry
+
+		// Author the shorter/dense type parameters through the same Grass Types
+		// working-copy path used by the editor panel, then persist and apply them.
+		xAuto.AddStep_GrassTypesCreate();
+		xAuto.AddStep_GrassTypesSetParamFloat(0, "HeightMin", 0.3024f);
+		xAuto.AddStep_GrassTypesSetParamFloat(0, "HeightMax", 0.5616f);
+		xAuto.AddStep_GrassTypesSetParamFloat(0, "Density", 1.0f);
+		xAuto.AddStep_GrassTypesSetParamFloat(1, "HeightMin", 0.6840f);
+		xAuto.AddStep_GrassTypesSetParamFloat(1, "HeightMax", 1.1160f);
+		xAuto.AddStep_GrassTypesSetParamFloat(1, "Density", 1.0f);
+		xAuto.AddStep_GrassTypesSetParamFloat(2, "HeightMin", 0.1440f);
+		xAuto.AddStep_GrassTypesSetParamFloat(2, "HeightMax", 0.3024f);
+		xAuto.AddStep_GrassTypesSetParamFloat(2, "Density", 1.0f);
+		xAuto.AddStep_GrassTypesSetParamFloat(3, "HeightMin", 0.2160f);
+		xAuto.AddStep_GrassTypesSetParamFloat(3, "HeightMax", 0.3960f);
+		xAuto.AddStep_GrassTypesSetParamFloat(3, "Density", 1.0f);
+		xAuto.AddStep_GrassTypesSave();
 
 		// Persist the textures + bake every chunk mesh, then write the marker.
 		xAuto.AddStep_TerrainSaveTextures();
