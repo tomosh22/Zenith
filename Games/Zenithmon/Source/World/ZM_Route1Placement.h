@@ -289,9 +289,9 @@ inline const char* ZM_GetRoute1NorthGateSpawnTag()
 // Route1_ArrivalMarkersSitOnTheRecipeLandmarksTheTerrainFlattened reconciles these
 // four numbers against the recipe -- two independently authored tables compared,
 // which is why it is a check and not a re-spelling.
-inline constexpr float fZM_ROUTE1_SOUTH_ARRIVAL_X = 512.0f;
+inline constexpr float fZM_ROUTE1_SOUTH_ARRIVAL_X = 328.0f;
 inline constexpr float fZM_ROUTE1_SOUTH_ARRIVAL_Z = 112.0f;
-inline constexpr float fZM_ROUTE1_NORTH_ARRIVAL_X = 512.0f;
+inline constexpr float fZM_ROUTE1_NORTH_ARRIVAL_X = 328.0f;
 inline constexpr float fZM_ROUTE1_NORTH_ARRIVAL_Z = 1424.0f;
 
 // ---- The two gate columns ----------------------------------------------------
@@ -307,9 +307,9 @@ inline constexpr float fZM_ROUTE1_NORTH_ARRIVAL_Z = 1424.0f;
 // their Y derives from the ground under them, and leaving them out of the table
 // below would have stranded them on the very scalar the R1-2 split was retiring.
 // A stranded column is how a sensor ends up 26 m under the player.)
-inline constexpr float fZM_ROUTE1_SOUTH_GATE_X = 512.0f;
+inline constexpr float fZM_ROUTE1_SOUTH_GATE_X = 328.0f;
 inline constexpr float fZM_ROUTE1_SOUTH_GATE_Z = 100.0f;
-inline constexpr float fZM_ROUTE1_NORTH_GATE_X = 512.0f;
+inline constexpr float fZM_ROUTE1_NORTH_GATE_X = 328.0f;
 inline constexpr float fZM_ROUTE1_NORTH_GATE_Z = 1436.0f;
 
 // ---- The two trainer stations' columns ---------------------------------------
@@ -336,7 +336,7 @@ inline constexpr float fZM_ROUTE1_NORTH_GATE_Z = 1436.0f;
 // ★ AND THE SIGHT CONSTANTS ARE OUT OF SCOPE -- do not widen the cone to fit an
 // anchor. Move the anchor.
 //
-// ★ ONE OF THESE TWO ANCHORS WAS ALREADY DEAD ONCE. A draft forager at (528, 950)
+// ★ ONE OF THESE TWO ANCHORS WAS ALREADY DEAD ONCE. A draft forager at (344, 950)
 // stood EAST of the lane while the perpendicular foot of the lane fell ~0.56 m
 // north of him; facing -Z, his cone window and his range window were disjoint and
 // the station produced ZERO in-cone samples at 200, 2000 and 20000 samples per
@@ -344,15 +344,15 @@ inline constexpr float fZM_ROUTE1_NORTH_GATE_Z = 1436.0f;
 // a trainer nobody can meet.
 //
 // Measured against the shipped DirtLane polyline
-// {(512,64),(480,300),(540,560),(500,820),(550,1080),(512,1472)}:
+// {(328,64),(296,300),(356,560),(316,820),(366,1080),(328,1472)}:
 //   rambler  perpendicular offset 2.1288 m, ~2.2 m of in-cone walked arc
 //   forager  perpendicular offset 2.4551 m, a comfortably wider window
 // Both sit inside the lane's 16 m FLATTEN radius, so the ground under them is
 // levelled toward the recipe target **and** zeroed by the GRASS_ERASE phase -- a
 // trainer can never be standing in encounter grass.
-inline constexpr float fZM_ROUTE1_TRAINER_RAMBLER_X = 524.0f;
+inline constexpr float fZM_ROUTE1_TRAINER_RAMBLER_X = 340.0f;
 inline constexpr float fZM_ROUTE1_TRAINER_RAMBLER_Z = 650.0f;
-inline constexpr float fZM_ROUTE1_TRAINER_FORAGER_X = 522.5f;
+inline constexpr float fZM_ROUTE1_TRAINER_FORAGER_X = 338.5f;
 inline constexpr float fZM_ROUTE1_TRAINER_FORAGER_Z = 950.0f;
 
 // ---- The three ground-item prop anchors --------------------------------------
@@ -360,7 +360,7 @@ inline constexpr float fZM_ROUTE1_TRAINER_FORAGER_Z = 950.0f;
 // ★ DERIVED PERPENDICULARLY FROM THE SHIPPED DirtLane POLYLINE, NOT EYEBALLED.
 // Each was computed as "the lane point at this Z, displaced along the segment's
 // unit NORMAL by this many metres", against the same polyline the trainer note
-// above measures: {(512,64),(480,300),(540,560),(500,820),(550,1080),(512,1472)}.
+// above measures: {(328,64),(296,300),(356,560),(316,820),(366,1080),(328,1472)}.
 // The resulting perpendicular distance is stated per row and is what the boot unit
 // re-derives -- an axis-aligned nudge would NOT have produced these numbers,
 // because no segment of this lane runs along +Z.
@@ -378,11 +378,11 @@ inline constexpr float fZM_ROUTE1_TRAINER_FORAGER_Z = 950.0f;
 // ★ AND THEY SIT INSIDE THE LANE'S 16 m FLATTEN RADIUS, so the ground under each is
 // levelled toward the recipe target and zeroed by the GRASS_ERASE phase -- a prop is
 // never buried in encounter grass, for the same reason a trainer never stands in it.
-inline constexpr float fZM_ROUTE1_PROP_SOUTH_SALVE_X = 495.1448f;   // perp 1.60 m, segment 0
+inline constexpr float fZM_ROUTE1_PROP_SOUTH_SALVE_X = 311.1448f;   // perp 1.60 m, segment 0
 inline constexpr float fZM_ROUTE1_PROP_SOUTH_SALVE_Z = 200.2150f;
-inline constexpr float fZM_ROUTE1_PROP_LANE_CATCHORB_X = 518.0233f; // perp 2.00 m, segment 2
+inline constexpr float fZM_ROUTE1_PROP_LANE_CATCHORB_X = 334.0233f; // perp 2.00 m, segment 2
 inline constexpr float fZM_ROUTE1_PROP_LANE_CATCHORB_Z = 689.6959f;
-inline constexpr float fZM_ROUTE1_PROP_NORTH_SALVE_X = 540.1092f;   // perp 1.75 m, segment 4
+inline constexpr float fZM_ROUTE1_PROP_NORTH_SALVE_X = 356.1092f;   // perp 1.75 m, segment 4
 inline constexpr float fZM_ROUTE1_PROP_NORTH_SALVE_Z = 1200.1689f;
 
 // ============================================================================
@@ -513,21 +513,29 @@ inline constexpr ZM_Route1GroundSample axZM_ROUTE1_GROUND_SAMPLES[] =
 	// that would silently freeze a body-height plane instead of a surface.
 	// OBSERVED, never derived: do not recompute one of these from another.
 	//
-	// The spread is 26.199 .. 27.830 over 1,324 m of route, and every row sits
-	// +0.199 .. +1.830 ABOVE the 26.0 recipe target -- i.e. NEAR it, which is the
+	// The spread is 26.271 .. 28.110 over 1,324 m of route, and every row sits
+	// +0.271 .. +2.110 ABOVE the 26.0 recipe target -- i.e. NEAR it, which is the
 	// signature of flattened ground. That is the R1-2 step-1 finding holding:
-	// Dawnmere's seam column read target + 0.366 because it lies in a FLATTEN
-	// CORRIDOR, while Dawnmere's UNFLATTENED columns carry ~+2 m of erosion
-	// deposit. No column here disagrees with its neighbours in a way that would
-	// mean an anchor had drifted off the flattened lane.
+	// Dawnmere's seam column reads target + 0.549 because it lies in a FLATTEN
+	// CORRIDOR, while UNFLATTENED ground carries the hydraulic-erosion deposit on
+	// top. No column here disagrees with its neighbours in a way that would mean
+	// an anchor had drifted off the flattened lane.
+	//
+	// ★ THE NORTH END CLIMBED THE MOST (+0.280 on the arrival, +0.760 on the
+	// northern prop) BECAUSE THE HILL ABOVE IT IS NEW. Route 1 shrank in X only,
+	// so every Z here is exactly what it was and the lane runs where it ran; the
+	// five flanking landforms were re-authored for a 704 m corridor rather than a
+	// 1024 m one, and the northernmost of them straddles the lane at the route's
+	// end. That is the one place the terrain's SHAPE changed under an anchor
+	// rather than just its erosion.
 	//
 	// entity name,                             x,                            z,                            feet Y (MEASURED)
-	{ szZM_ROUTE1_SOUTH_ARRIVAL_ENTITY_NAME,    fZM_ROUTE1_SOUTH_ARRIVAL_X,   fZM_ROUTE1_SOUTH_ARRIVAL_Z,   26.91279f },
-	{ szZM_ROUTE1_NORTH_ARRIVAL_ENTITY_NAME,    fZM_ROUTE1_NORTH_ARRIVAL_X,   fZM_ROUTE1_NORTH_ARRIVAL_Z,   27.82981f },
-	{ szZM_ROUTE1_SOUTH_GATE_ENTITY_NAME,       fZM_ROUTE1_SOUTH_GATE_X,      fZM_ROUTE1_SOUTH_GATE_Z,      26.43808f },
-	{ szZM_ROUTE1_NORTH_GATE_ENTITY_NAME,       fZM_ROUTE1_NORTH_GATE_X,      fZM_ROUTE1_NORTH_GATE_Z,      26.86820f },
-	{ szZM_ROUTE1_TRAINER_RAMBLER_ENTITY_NAME,  fZM_ROUTE1_TRAINER_RAMBLER_X, fZM_ROUTE1_TRAINER_RAMBLER_Z, 26.64679f },
-	{ szZM_ROUTE1_TRAINER_FORAGER_ENTITY_NAME,  fZM_ROUTE1_TRAINER_FORAGER_X, fZM_ROUTE1_TRAINER_FORAGER_Z, 26.19853f },
+	{ szZM_ROUTE1_SOUTH_ARRIVAL_ENTITY_NAME,    fZM_ROUTE1_SOUTH_ARRIVAL_X,   fZM_ROUTE1_SOUTH_ARRIVAL_Z,   26.65247f },
+	{ szZM_ROUTE1_NORTH_ARRIVAL_ENTITY_NAME,    fZM_ROUTE1_NORTH_ARRIVAL_X,   fZM_ROUTE1_NORTH_ARRIVAL_Z,   28.10992f },
+	{ szZM_ROUTE1_SOUTH_GATE_ENTITY_NAME,       fZM_ROUTE1_SOUTH_GATE_X,      fZM_ROUTE1_SOUTH_GATE_Z,      26.27097f },
+	{ szZM_ROUTE1_NORTH_GATE_ENTITY_NAME,       fZM_ROUTE1_NORTH_GATE_X,      fZM_ROUTE1_NORTH_GATE_Z,      27.02931f },
+	{ szZM_ROUTE1_TRAINER_RAMBLER_ENTITY_NAME,  fZM_ROUTE1_TRAINER_RAMBLER_X, fZM_ROUTE1_TRAINER_RAMBLER_Z, 26.85882f },
+	{ szZM_ROUTE1_TRAINER_FORAGER_ENTITY_NAME,  fZM_ROUTE1_TRAINER_FORAGER_X, fZM_ROUTE1_TRAINER_FORAGER_Z, 26.36815f },
 
 	// ★★ THE THREE PROP COLUMNS, MEASURED 2026-08-24 BY THE SAME ORACLE AND IN THE
 	// SAME SHAPE AS THE SIX ABOVE (ZM_Route1GroundTruth_Test against a warm Route 1
@@ -540,9 +548,9 @@ inline constexpr ZM_Route1GroundSample axZM_ROUTE1_GROUND_SAMPLES[] =
 	// the same oracle run and came back byte-identical to their committed literals,
 	// so this is an extension of the frozen set rather than a re-freeze of it -- and
 	// that re-measure is the evidence the terrain did not move underneath them.
-	{ szZM_ROUTE1_PROP_SOUTH_SALVE_ENTITY_NAME,   fZM_ROUTE1_PROP_SOUTH_SALVE_X,   fZM_ROUTE1_PROP_SOUTH_SALVE_Z,   26.66135f },
-	{ szZM_ROUTE1_PROP_LANE_CATCHORB_ENTITY_NAME, fZM_ROUTE1_PROP_LANE_CATCHORB_X, fZM_ROUTE1_PROP_LANE_CATCHORB_Z, 26.61090f },
-	{ szZM_ROUTE1_PROP_NORTH_SALVE_ENTITY_NAME,   fZM_ROUTE1_PROP_NORTH_SALVE_X,   fZM_ROUTE1_PROP_NORTH_SALVE_Z,   26.18854f },
+	{ szZM_ROUTE1_PROP_SOUTH_SALVE_ENTITY_NAME,   fZM_ROUTE1_PROP_SOUTH_SALVE_X,   fZM_ROUTE1_PROP_SOUTH_SALVE_Z,   26.72937f },
+	{ szZM_ROUTE1_PROP_LANE_CATCHORB_ENTITY_NAME, fZM_ROUTE1_PROP_LANE_CATCHORB_X, fZM_ROUTE1_PROP_LANE_CATCHORB_Z, 26.76690f },
+	{ szZM_ROUTE1_PROP_NORTH_SALVE_ENTITY_NAME,   fZM_ROUTE1_PROP_NORTH_SALVE_X,   fZM_ROUTE1_PROP_NORTH_SALVE_Z,   26.94874f },
 };
 // ==== END R1-2 MEASURED ROUTE 1 GROUND ====
 

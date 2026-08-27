@@ -27,14 +27,22 @@ namespace
 		u_int m_uFamilyFileCount;
 	};
 
+	// Chunk counts and the file counts that follow from them. Each map used to be
+	// a 16-wide slice of a fixed 4096 m grid; they carry their own grids now and
+	// are sized to their content, so these numbers moved with the shrink:
+	//   Dawnmere   9 x 10 =  90 chunks -> 90*3 + 4 = 274 required outputs
+	//   Thornacre 13 x 15 = 195 chunks -> 195*3 + 4 = 589
+	//   Route 1   11 x 24 = 264 chunks -> 264*3 + 4 = 796
+	// (+4 = Height, Splatmap_RGBA, GrassDensity, TerrainDims.zdata; the family
+	// count adds the recipe manifest the required list does not enumerate.)
 	const ZM_ExpectedTerrainRecipe s_axExpectedRecipes[] =
 	{
 		{ ZM_SCENE_DAWNMERE, ZM_SCENE_KIND_TOWN, 2u, "Dawnmere",
-			0x7BF32CA4u, 16, 16, 772u, 773u },
+			0x7BF32CA4u, 9, 10, 274u, 275u },
 		{ ZM_SCENE_THORNACRE, ZM_SCENE_KIND_TOWN, 3u, "Thornacre",
-			0x9D41BD83u, 16, 16, 772u, 773u },
+			0x9D41BD83u, 13, 15, 589u, 590u },
 		{ ZM_SCENE_ROUTE1, ZM_SCENE_KIND_ROUTE, 20u, "Route1",
-			0x552E711Du, 16, 24, 1156u, 1157u },
+			0x552E711Du, 11, 24, 796u, 797u },
 	};
 	static_assert(sizeof(s_axExpectedRecipes) / sizeof(s_axExpectedRecipes[0]) ==
 		uZM_TERRAIN_RECIPE_COUNT);
@@ -245,6 +253,7 @@ namespace
 	{
 		switch (eType)
 		{
+		case ZM_TERRAIN_PLAN_SET_DIMENSIONS:
 		case ZM_TERRAIN_PLAN_SET_ASSET_SET:
 		case ZM_TERRAIN_PLAN_RESET:
 		case ZM_TERRAIN_PLAN_GENERATE_PROCEDURAL:
@@ -377,10 +386,12 @@ ZENITH_TEST(ZM_TerrainRecipeSet, RegistryHasExactlyThreeWorldSpecRecipesInFixedO
 {
 	ZENITH_ASSERT_EQ(ZM_GetTerrainAuthoringRecipeCount(), 3u);
 	ZENITH_ASSERT_EQ(ZM_GetTerrainAuthoringRecipeCount(), uZM_TERRAIN_RECIPE_COUNT);
-	// chunks x 3 mesh files + Height/Splatmap_RGBA/GrassDensity + TerrainDims.zdata.
-	ZENITH_ASSERT_EQ(uZM_DAWNMERE_REQUIRED_OUTPUT_COUNT, 772u);
-	ZENITH_ASSERT_EQ(uZM_THORNACRE_REQUIRED_OUTPUT_COUNT, 772u);
-	ZENITH_ASSERT_EQ(uZM_ROUTE1_REQUIRED_OUTPUT_COUNT, 1156u);
+	// chunks x 3 mesh files + Height/Splatmap_RGBA/GrassDensity + TerrainDims.zdata,
+	// on grids sized to each map's own content: 9x10, 13x15 and 11x24 where all
+	// three used to be a 16-wide slice of one fixed 4096 m terrain.
+	ZENITH_ASSERT_EQ(uZM_DAWNMERE_REQUIRED_OUTPUT_COUNT, 274u);
+	ZENITH_ASSERT_EQ(uZM_THORNACRE_REQUIRED_OUTPUT_COUNT, 589u);
+	ZENITH_ASSERT_EQ(uZM_ROUTE1_REQUIRED_OUTPUT_COUNT, 796u);
 
 	for (u_int i = 0; i < uZM_TERRAIN_RECIPE_COUNT; ++i)
 	{
@@ -399,19 +410,19 @@ ZENITH_TEST(ZM_TerrainRecipeSet, RegistryHasExactlyThreeWorldSpecRecipesInFixedO
 		ZENITH_ASSERT_TRUE(&ZM_GetTerrainAuthoringRecipe(i) == &xRecipe,
 			"registry references must be stable");
 
-		ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_fWorldMinX, 0.0f, fEPSILON);
-		ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_fWorldMinZ, 0.0f, fEPSILON);
-		ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_fWorldMaxX,
+		ZENITH_ASSERT_EQ_FLOAT(xRecipe.WorldMinX(), 0.0f, fEPSILON);
+		ZENITH_ASSERT_EQ_FLOAT(xRecipe.WorldMinZ(), 0.0f, fEPSILON);
+		ZENITH_ASSERT_EQ_FLOAT(xRecipe.WorldMaxX(),
 			static_cast<float>(xExpected.m_iChunkWidth) * fTERRAIN_CHUNK_SIZE,
 			fEPSILON);
-		ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_fWorldMaxZ,
+		ZENITH_ASSERT_EQ_FLOAT(xRecipe.WorldMaxZ(),
 			static_cast<float>(xExpected.m_iChunkHeight) * fTERRAIN_CHUNK_SIZE,
 			fEPSILON);
-		ZENITH_ASSERT_EQ(xRecipe.m_xExportRect.m_iMinX, 0);
-		ZENITH_ASSERT_EQ(xRecipe.m_xExportRect.m_iMinY, 0);
-		ZENITH_ASSERT_EQ(xRecipe.m_xExportRect.m_iMaxX,
+		ZENITH_ASSERT_EQ(xRecipe.ExportRect().m_iMinX, 0);
+		ZENITH_ASSERT_EQ(xRecipe.ExportRect().m_iMinY, 0);
+		ZENITH_ASSERT_EQ(xRecipe.ExportRect().m_iMaxX,
 			xExpected.m_iChunkWidth - 1);
-		ZENITH_ASSERT_EQ(xRecipe.m_xExportRect.m_iMaxY,
+		ZENITH_ASSERT_EQ(xRecipe.ExportRect().m_iMaxY,
 			xExpected.m_iChunkHeight - 1);
 		ZENITH_ASSERT_EQ(ZM_GetTerrainRequiredOutputCount(xRecipe),
 			xExpected.m_uRequiredOutputCount);
@@ -542,10 +553,10 @@ ZENITH_TEST(ZM_TerrainRecipeSet, RecipesCarryDistinctDocumentedOutdoorPlans)
 		ZENITH_ASSERT_TRUE(xRecipe.m_xErosion.m_bRegionOnly,
 			"measurement recipes must use regional rather than full-sheet erosion");
 		ZENITH_ASSERT_GT(xRecipe.m_xErosion.m_fRadius, 0.0f);
-		ZENITH_ASSERT_GE(xRecipe.m_xErosion.m_xCentre.m_fX, xRecipe.m_fWorldMinX);
-		ZENITH_ASSERT_LE(xRecipe.m_xErosion.m_xCentre.m_fX, xRecipe.m_fWorldMaxX);
-		ZENITH_ASSERT_GE(xRecipe.m_xErosion.m_xCentre.m_fZ, xRecipe.m_fWorldMinZ);
-		ZENITH_ASSERT_LE(xRecipe.m_xErosion.m_xCentre.m_fZ, xRecipe.m_fWorldMaxZ);
+		ZENITH_ASSERT_GE(xRecipe.m_xErosion.m_xCentre.m_fX, xRecipe.WorldMinX());
+		ZENITH_ASSERT_LE(xRecipe.m_xErosion.m_xCentre.m_fX, xRecipe.WorldMaxX());
+		ZENITH_ASSERT_GE(xRecipe.m_xErosion.m_xCentre.m_fZ, xRecipe.WorldMinZ());
+		ZENITH_ASSERT_LE(xRecipe.m_xErosion.m_xCentre.m_fZ, xRecipe.WorldMaxZ());
 
 		for (u_int uPath = 0; uPath < xRecipe.m_uPathCount; ++uPath)
 		{
@@ -618,13 +629,13 @@ ZENITH_TEST(ZM_TerrainRecipeSet, RecipesCarryDistinctDocumentedOutdoorPlans)
 			ZENITH_ASSERT_LE(xRule.m_fJitter, 1.0f);
 		}
 		ZENITH_ASSERT_GE(xRecipe.m_xPreviewCamera.m_xPosition.m_fX,
-			xRecipe.m_fWorldMinX);
+			xRecipe.WorldMinX());
 		ZENITH_ASSERT_LE(xRecipe.m_xPreviewCamera.m_xPosition.m_fX,
-			xRecipe.m_fWorldMaxX);
+			xRecipe.WorldMaxX());
 		ZENITH_ASSERT_GE(xRecipe.m_xPreviewCamera.m_xPosition.m_fZ,
-			xRecipe.m_fWorldMinZ);
+			xRecipe.WorldMinZ());
 		ZENITH_ASSERT_LE(xRecipe.m_xPreviewCamera.m_xPosition.m_fZ,
-			xRecipe.m_fWorldMaxZ);
+			xRecipe.WorldMaxZ());
 		ZENITH_ASSERT_GT(xRecipe.m_xPreviewCamera.m_fFovDegrees, 0.0f);
 		ZENITH_ASSERT_LT(xRecipe.m_xPreviewCamera.m_fFovDegrees, 180.0f);
 		ZENITH_ASSERT_GT(xRecipe.m_xPreviewCamera.m_fNearPlane, 0.0f);
@@ -642,10 +653,10 @@ ZENITH_TEST(ZM_TerrainRecipeSet, RecipesCarryDistinctDocumentedOutdoorPlans)
 		{
 			const ZM_TerrainPoint3& xPoint =
 				xRecipe.m_pxLandmarks[uLandmark].m_xPosition;
-			ZENITH_ASSERT_GE(xPoint.m_fX, xRecipe.m_fWorldMinX);
-			ZENITH_ASSERT_LE(xPoint.m_fX, xRecipe.m_fWorldMaxX);
-			ZENITH_ASSERT_GE(xPoint.m_fZ, xRecipe.m_fWorldMinZ);
-			ZENITH_ASSERT_LE(xPoint.m_fZ, xRecipe.m_fWorldMaxZ);
+			ZENITH_ASSERT_GE(xPoint.m_fX, xRecipe.WorldMinX());
+			ZENITH_ASSERT_LE(xPoint.m_fX, xRecipe.WorldMaxX());
+			ZENITH_ASSERT_GE(xPoint.m_fZ, xRecipe.WorldMinZ());
+			ZENITH_ASSERT_LE(xPoint.m_fZ, xRecipe.WorldMaxZ());
 		}
 	}
 
@@ -680,11 +691,17 @@ ZENITH_TEST(ZM_TerrainRecipeSet, PlansAreDeterministicContainedAndEndWithGrassEr
 
 		ZENITH_ASSERT_EQ(xPlanA.GetSize(), xPlanB.GetSize());
 		ZENITH_ASSERT_GT(xPlanA.GetSize(), 3u);
+		// Every recipe stages its SHAPE first: the bake runs on a standalone
+		// editor session, so nothing downstream can infer the grid from a
+		// component, and every coordinate after this point is world-space
+		// against it.
 		ZENITH_ASSERT_EQ((u_int)xPlanA.Get(0u).m_eType,
-			(u_int)ZM_TERRAIN_PLAN_RESET);
+			(u_int)ZM_TERRAIN_PLAN_SET_DIMENSIONS);
 		ZENITH_ASSERT_EQ((u_int)xPlanA.Get(1u).m_eType,
-			(u_int)ZM_TERRAIN_PLAN_SET_ASSET_SET);
+			(u_int)ZM_TERRAIN_PLAN_RESET);
 		ZENITH_ASSERT_EQ((u_int)xPlanA.Get(2u).m_eType,
+			(u_int)ZM_TERRAIN_PLAN_SET_ASSET_SET);
+		ZENITH_ASSERT_EQ((u_int)xPlanA.Get(3u).m_eType,
 			(u_int)ZM_TERRAIN_PLAN_GENERATE_PROCEDURAL);
 		ZENITH_ASSERT_EQ((u_int)xPlanA.GetBack().m_eType,
 			(u_int)ZM_TERRAIN_PLAN_TERMINAL_BAKE);
@@ -725,16 +742,16 @@ ZENITH_TEST(ZM_TerrainRecipeSet, PlansAreDeterministicContainedAndEndWithGrassEr
 				"recipe %u introduced an unsupported/tree dab at %u", uRecipe, i);
 			ZENITH_ASSERT_GT(xOp.m_fRadius, 0.0f);
 			ZENITH_ASSERT_GE(xOp.m_fWorldX - xOp.m_fRadius,
-				xRecipe.m_fWorldMinX,
+				xRecipe.WorldMinX(),
 				"recipe %u dab %u escaped minimum X", uRecipe, i);
 			ZENITH_ASSERT_LE(xOp.m_fWorldX + xOp.m_fRadius,
-				xRecipe.m_fWorldMaxX,
+				xRecipe.WorldMaxX(),
 				"recipe %u dab %u escaped maximum X", uRecipe, i);
 			ZENITH_ASSERT_GE(xOp.m_fWorldZ - xOp.m_fRadius,
-				xRecipe.m_fWorldMinZ,
+				xRecipe.WorldMinZ(),
 				"recipe %u dab %u escaped minimum Z", uRecipe, i);
 			ZENITH_ASSERT_LE(xOp.m_fWorldZ + xOp.m_fRadius,
-				xRecipe.m_fWorldMaxZ,
+				xRecipe.WorldMaxZ(),
 				"recipe %u dab %u escaped maximum Z", uRecipe, i);
 
 			if (xOp.m_eDabKind != ZM_TERRAIN_DAB_GRASS_DENSITY)
@@ -829,11 +846,11 @@ ZENITH_TEST(ZM_TerrainRecipeSet, OutputsAreUniqueSetContainedAndQueuePolicyIsPur
 		u_int uExpectedOutputIndex = 0u;
 		for (u_int uPrefix = 0; uPrefix < 3u; ++uPrefix)
 		{
-			for (int iY = xRecipe.m_xExportRect.m_iMinY;
-				iY <= xRecipe.m_xExportRect.m_iMaxY; ++iY)
+			for (int iY = xRecipe.ExportRect().m_iMinY;
+				iY <= xRecipe.ExportRect().m_iMaxY; ++iY)
 			{
-				for (int iX = xRecipe.m_xExportRect.m_iMinX;
-					iX <= xRecipe.m_xExportRect.m_iMaxX; ++iX)
+				for (int iX = xRecipe.ExportRect().m_iMinX;
+					iX <= xRecipe.ExportRect().m_iMaxX; ++iX)
 				{
 					const std::string strExpected = strPrefix + aszMeshPrefixes[uPrefix] +
 						"_" + std::to_string(iX) + "_" + std::to_string(iY) + ".zmesh";

@@ -10,6 +10,7 @@
 #include "Input/Zenith_InputSimulator.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "Zenithmon/Components/ZM_TerrainGrassComponent.h"
+#include "Zenithmon/Source/World/ZM_TerrainAuthoring.h"
 
 #include <array>
 #include <cmath>
@@ -132,12 +133,17 @@ namespace
 			FailGrassTest("Flux grass coverage-map world size does not match the CPU density map's");
 			return false;
 		}
-		// ...and that it is the DEFAULT domain, which is what Zenithmon's recipes
-		// still bake at. A recipe that shrinks its terrain moves this number and
-		// should move this line with it.
-		if (std::fabs(fCPUMapWorldSize - Zenith_TerrainDimensions::Default().MaxWorldSize()) > 0.0001f)
+		// ...and that it is DAWNMERE'S OWN authoring domain. This used to read the
+		// engine DEFAULT (4096 m), with a note saying "a recipe that shrinks its
+		// terrain moves this number and should move this line with it" -- which is
+		// exactly what happened: Dawnmere is a 9x10 chunk grid, so its square
+		// authoring domain is 640 m. Reading the recipe rather than a literal is
+		// what stops this line from being the same trap twice.
+		const float fRecipeWorldSize =
+			ZM_GetDawnmereTerrainRecipe().m_xDims.MaxWorldSize();
+		if (std::fabs(fCPUMapWorldSize - fRecipeWorldSize) > 0.0001f)
 		{
-			FailGrassTest("Dawnmere grass world size is not the default terrain's 4096m authoring domain");
+			FailGrassTest("Dawnmere grass world size is not the recipe's own authoring domain");
 			return false;
 		}
 		if (std::fabs(xComponent.GetAppliedDensityScale() - 0.70f) > 0.0001f)

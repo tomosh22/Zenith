@@ -567,9 +567,9 @@ namespace
 				&& g_xEngine.Scenes().FindMainCameraEntityAcrossScenes()
 					== xCamera.m_xEntityID;
 			const bool bExactPlacement =
-				std::fabs(xMarkerFeet.x - 512.0f) <= fPOSITION_EPSILON
-				&& std::fabs(xMarkerFeet.y - 25.99055f) <= fPOSITION_EPSILON
-				&& std::fabs(xMarkerFeet.z - 480.0f) <= fPOSITION_EPSILON
+				std::fabs(xMarkerFeet.x - 280.0f) <= fPOSITION_EPSILON
+				&& std::fabs(xMarkerFeet.y - 24.10121f) <= fPOSITION_EPSILON
+				&& std::fabs(xMarkerFeet.z - 160.0f) <= fPOSITION_EPSILON
 				&& std::fabs(fCapsuleHalfExtent - 0.9f) <= fPOSITION_EPSILON
 				&& glm::length(xPlayer.m_xPosition - xExpectedCenter)
 					<= fPOSITION_EPSILON
@@ -1428,7 +1428,7 @@ namespace
 						// and stop proving that the scene was re-authored at all.
 						// Observed on the divisor-4 collision mesh, 2026-08-02.
 						|| glm::length(xFeet - Zenith_Maths::Vector3(
-							384.0f, 26.542120f, 468.0f)) > fPOSITION_EPSILON
+							152.0f, 24.34438f, 148.0f)) > fPOSITION_EPSILON
 						|| !bPlayerContactSettled || !bBodyContactSettled
 						|| glm::length(g_xEngine.Physics().GetLinearVelocity(xBody))
 							> fVELOCITY_EPSILON

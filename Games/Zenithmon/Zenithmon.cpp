@@ -3060,6 +3060,17 @@ namespace
 		xAuto.AddStep_SetEntityTransient(false);
 		xAuto.AddStep_AddComponent("Terrain");
 		xAuto.AddStep_TerrainSetAssetSet(xRecipe.m_pxWorldSpec->m_szTerrainSet);
+		// The component's own copy of the shape, stamped before it initialises.
+		// The BAKE stages the same spec on a standalone session (the recipe's
+		// SET_DIMENSIONS op); this is the RUNTIME half -- it is what gets
+		// serialized into the .zscen v5 tail and what the loader checks the baked
+		// TerrainDims.zdata against. Without it a shrunken set would be loaded by
+		// a component still describing the 64x64 default and refused as stale.
+		xAuto.AddStep_TerrainSetDimensions(
+			xRecipe.m_xDims.m_fChunkWorldSize,
+			xRecipe.m_xDims.VertexSpacing(),
+			(int)xRecipe.m_xDims.m_uGridChunksX,
+			(int)xRecipe.m_xDims.m_uGridChunksZ);
 		const MaterialHandle* paxTerrainMaterials =
 			ZM_GetTerrainMaterialsForRecipe(xRecipe);
 		for (u_int uSlot = 0u; uSlot < uZM_TERRAIN_MATERIAL_SLOT_COUNT; ++uSlot)
@@ -3968,6 +3979,17 @@ void Project_RegisterEditorAutomationSteps()
 		xAuto.AddStep_SetEntityTransient(false);
 		xAuto.AddStep_AddComponent("Terrain");
 		xAuto.AddStep_TerrainSetAssetSet(xRecipe.m_pxWorldSpec->m_szTerrainSet);
+		// The component's own copy of the shape, stamped before it initialises.
+		// The BAKE stages the same spec on a standalone session (the recipe's
+		// SET_DIMENSIONS op); this is the RUNTIME half -- it is what gets
+		// serialized into the .zscen v5 tail and what the loader checks the baked
+		// TerrainDims.zdata against. Without it a shrunken set would be loaded by
+		// a component still describing the 64x64 default and refused as stale.
+		xAuto.AddStep_TerrainSetDimensions(
+			xRecipe.m_xDims.m_fChunkWorldSize,
+			xRecipe.m_xDims.VertexSpacing(),
+			(int)xRecipe.m_xDims.m_uGridChunksX,
+			(int)xRecipe.m_xDims.m_uGridChunksZ);
 		const MaterialHandle* paxTerrainMaterials =
 			ZM_GetTerrainMaterialsForRecipe(xRecipe);
 		for (int iSlot = 0; iSlot < 4; ++iSlot)

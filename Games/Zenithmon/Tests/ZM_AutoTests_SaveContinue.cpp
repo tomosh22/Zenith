@@ -504,6 +504,67 @@ namespace
 			&& SCBytesEqual(xABytes, xBBytes);
 	}
 
+	// ★ THE LIVE STATE AFTER A RESUME IS NOT A COPY OF THE SAVED ONE -- ITS POSE
+	// HAS BEEN THROUGH THE PHYSICS. Restoring writes the saved yaw into the body
+	// as ZM_RotationFromYaw(yaw); a later CaptureWorldPosition reads it back as
+	// ZM_YawFromRotation(quat). That is a float round trip through a quaternion
+	// and an atan2, so it returns the same yaw only for values that happen to
+	// survive it -- and which values those are depends on nothing more meaningful
+	// than where the player was facing.
+	//
+	// So the FINAL clause compares the state in two pieces, and both halves are
+	// asserted: everything that is NOT the pose must come back BYTE-IDENTICAL,
+	// and the pose itself is checked by the pose clause against the tolerances
+	// that exist for exactly this reason (fSC_MAX_PLANAR/VERTICAL/YAW_ERROR).
+	// Demanding byte-equality of the whole state asserted that a yaw survives a
+	// quaternion round trip, which is a claim about libm, not about save/restore.
+	//
+	// This helper is deliberately NOT used for the disk readback and scramble
+	// comparisons: those hold two in-memory states that never touched a body, and
+	// there byte-equality is exactly the right claim.
+	ZM_GameState SCWithSavedPose(const ZM_GameState& xLive, const ZM_GameState& xSaved)
+	{
+		ZM_GameState xCopy = xLive;
+		xCopy.m_xWorldPosition = xSaved.m_xWorldPosition;
+		return xCopy;
+	}
+
+	// WHICH field differs, as a name. SCFieldsEqual answers yes/no, and a bare
+	// "fields=false" in the failure line is the one thing a reader cannot act on:
+	// this state carries a party, money, story flags, a scene index, a spawn tag,
+	// a pose and a yaw, and "one of those" is not a finding.
+	const char* SCFirstDifferingField(const ZM_GameState& xA, const ZM_GameState& xB)
+	{
+		if (xA.m_xParty.Count() != xB.m_xParty.Count()) { return "partyCount"; }
+		if (xA.m_uMoney != xB.m_uMoney) { return "money"; }
+		if (std::memcmp(xA.m_xStoryFlags.m_auFlags, xB.m_xStoryFlags.m_auFlags,
+			uZM_STORY_FLAG_BYTE_COUNT) != 0) { return "storyFlags"; }
+		if (xA.m_xWorldPosition.m_uSceneBuildIndex
+			!= xB.m_xWorldPosition.m_uSceneBuildIndex) { return "sceneBuildIndex"; }
+		if (std::strcmp(xA.m_xWorldPosition.m_szSpawnTag,
+			xB.m_xWorldPosition.m_szSpawnTag) != 0) { return "spawnTag"; }
+		if (xA.m_xWorldPosition.m_afPosition[0]
+			!= xB.m_xWorldPosition.m_afPosition[0]) { return "position.x"; }
+		if (xA.m_xWorldPosition.m_afPosition[1]
+			!= xB.m_xWorldPosition.m_afPosition[1]) { return "position.y"; }
+		if (xA.m_xWorldPosition.m_afPosition[2]
+			!= xB.m_xWorldPosition.m_afPosition[2]) { return "position.z"; }
+		if (xA.m_xWorldPosition.m_fYaw != xB.m_xWorldPosition.m_fYaw) { return "yaw"; }
+		for (u_int u = 0u; u < xA.m_xParty.Count(); ++u)
+		{
+			const ZM_Monster& xAMon = xA.m_xParty.Get(u);
+			const ZM_Monster& xBMon = xB.m_xParty.Get(u);
+			if (xAMon.m_eSpecies != xBMon.m_eSpecies) { return "party.species"; }
+			if (xAMon.m_uLevel != xBMon.m_uLevel) { return "party.level"; }
+			if (xAMon.m_uCurrentHp != xBMon.m_uCurrentHp) { return "party.currentHp"; }
+			if (std::strcmp(xAMon.m_szNickname, xBMon.m_szNickname) != 0)
+			{
+				return "party.nickname";
+			}
+		}
+		return "<none>";
+	}
+
 	bool SCFieldsEqual(const ZM_GameState& xA, const ZM_GameState& xB)
 	{
 		if (xA.m_xParty.Count() != xB.m_xParty.Count()
@@ -731,6 +792,7 @@ namespace
 	bool g_bSCRestoredDawnmere = false;
 	bool g_bSCFinalCanonicalSaved = false;
 	bool g_bSCFinalFieldsSaved = false;
+	const char* g_szSCFinalDifferingField = "<unread>";
 	bool g_bSCFinalNotScramble = false;
 	bool g_bSCFinalPoseSaved = false;
 	bool g_bSCFinalNotTownCenter = false;
@@ -882,6 +944,7 @@ namespace
 		g_bSCRestoredDawnmere = false;
 		g_bSCFinalCanonicalSaved = false;
 		g_bSCFinalFieldsSaved = false;
+		g_szSCFinalDifferingField = "<unread>";
 		g_bSCFinalNotScramble = false;
 		g_bSCFinalPoseSaved = false;
 		g_bSCFinalNotTownCenter = false;
@@ -1896,8 +1959,15 @@ namespace
 		g_fSCFinalYawError = std::fabs(SCWrappedAngleDifference(fFinalYaw, g_fSCSavedYaw));
 		g_fSCFinalFromTownCenter = SCPlanarDistance(xFinal, g_xSCTownCenter);
 		g_fSCFinalFromScramble = SCPlanarDistance(xFinal, g_xSCScramblePose);
-		g_bSCFinalCanonicalSaved = SCCanonicalEqual(*pxLive, g_xSCSaved);
-		g_bSCFinalFieldsSaved = SCFieldsEqual(*pxLive, g_xSCSaved);
+		// Pose-normalised: see SCWithSavedPose. The pose is judged by
+		// g_bSCFinalPoseSaved below, against its own tolerances.
+		const ZM_GameState xLiveComparable = SCWithSavedPose(*pxLive, g_xSCSaved);
+		g_bSCFinalCanonicalSaved = SCCanonicalEqual(xLiveComparable, g_xSCSaved);
+		g_bSCFinalFieldsSaved = SCFieldsEqual(xLiveComparable, g_xSCSaved);
+		g_szSCFinalDifferingField =
+			SCFirstDifferingField(xLiveComparable, g_xSCSaved);
+		// The scramble check keeps the REAL live state: it must differ from the
+		// scrambled one in a way no pose normalisation could manufacture.
 		g_bSCFinalNotScramble = !SCCanonicalEqual(*pxLive, g_xSCScramble);
 		g_bSCFinalPoseSaved = g_fSCFinalPlanarError <= fSC_MAX_PLANAR_ERROR
 			&& g_fSCFinalVerticalError <= fSC_MAX_VERTICAL_ERROR
@@ -2092,7 +2162,7 @@ namespace
 				"[ZM_SaveContinue] final restore failed "
 				"(settled/canonical/fields/notRAM/pose/notTown/notScramble/damaged="
 				"%s/%s/%s/%s/%s/%s/%s/%s; planar=%.4f vertical=%.4f yaw=%.4f "
-				"fromTown=%.4f fromScramble=%.4f)",
+				"fromTown=%.4f fromScramble=%.4f firstDifferingField=%s)",
 				g_bSCRestoredDawnmere ? "true" : "false",
 				g_bSCFinalCanonicalSaved ? "true" : "false",
 				g_bSCFinalFieldsSaved ? "true" : "false",
@@ -2101,7 +2171,8 @@ namespace
 				g_bSCFinalNotScramblePose ? "true" : "false",
 				g_bSCFinalDamagedUnchanged ? "true" : "false",
 				g_fSCFinalPlanarError, g_fSCFinalVerticalError, g_fSCFinalYawError,
-				g_fSCFinalFromTownCenter, g_fSCFinalFromScramble);
+				g_fSCFinalFromTownCenter, g_fSCFinalFromScramble,
+				g_szSCFinalDifferingField);
 		}
 		return bPassed;
 	}

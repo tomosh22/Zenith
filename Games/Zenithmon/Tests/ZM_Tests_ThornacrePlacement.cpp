@@ -408,18 +408,18 @@ ZENITH_TEST(ZM_WorldTraversal, Thornacre_ArrivalSitsOnTheRecipeLandmarkTheTerrai
 	// (5) THE ANCHOR IS INSIDE THE EXPORTED WORLD. An anchor past the recipe's
 	//     bounds has no baked chunk under it at all -- not merely an unflattened
 	//     one -- and therefore no physics body either.
-	ZENITH_ASSERT_GE(xFeet.x, xRecipe.m_fWorldMinX,
+	ZENITH_ASSERT_GE(xFeet.x, xRecipe.WorldMinX(),
 		"the Thornacre arrival is at x=%.3f, west of the recipe's exported world "
-		"(%.3f)", (double)xFeet.x, (double)xRecipe.m_fWorldMinX);
-	ZENITH_ASSERT_LE(xFeet.x, xRecipe.m_fWorldMaxX,
+		"(%.3f)", (double)xFeet.x, (double)xRecipe.WorldMinX());
+	ZENITH_ASSERT_LE(xFeet.x, xRecipe.WorldMaxX(),
 		"the Thornacre arrival is at x=%.3f, east of the recipe's exported world "
-		"(%.3f)", (double)xFeet.x, (double)xRecipe.m_fWorldMaxX);
-	ZENITH_ASSERT_GE(xFeet.z, xRecipe.m_fWorldMinZ,
+		"(%.3f)", (double)xFeet.x, (double)xRecipe.WorldMaxX());
+	ZENITH_ASSERT_GE(xFeet.z, xRecipe.WorldMinZ(),
 		"the Thornacre arrival is at z=%.3f, south of the recipe's exported world "
-		"(%.3f)", (double)xFeet.z, (double)xRecipe.m_fWorldMinZ);
-	ZENITH_ASSERT_LE(xFeet.z, xRecipe.m_fWorldMaxZ,
+		"(%.3f)", (double)xFeet.z, (double)xRecipe.WorldMinZ());
+	ZENITH_ASSERT_LE(xFeet.z, xRecipe.WorldMaxZ(),
 		"the Thornacre arrival is at z=%.3f, north of the recipe's exported world "
-		"(%.3f)", (double)xFeet.z, (double)xRecipe.m_fWorldMaxZ);
+		"(%.3f)", (double)xFeet.z, (double)xRecipe.WorldMaxZ());
 
 	// (6) THE LANDMARK'S NAME IS A TAG THIS TOWN ACTUALLY OFFERS. The recipe names
 	//     its route arrival after the inbound spawn tag; the world table decides
@@ -1046,11 +1046,11 @@ ZENITH_TEST(ZM_WorldTraversal, Thornacre_SettledCameraStandsAboveGroundBehindThe
 	//     THE MUTATION: drop the far plane back to the interiors' 100 m and the
 	//     town is clipped away in front of the arriving player.
 	const ZM_TerrainAuthoringRecipe& xRecipe = ZM_GetThornacreTerrainRecipe();
-	const float fTownDepth = xRecipe.m_fWorldMaxZ - xRecipe.m_fWorldMinZ;
+	const float fTownDepth = xRecipe.WorldMaxZ() - xRecipe.WorldMinZ();
 	ZENITH_ASSERT_GT(fTownDepth, 0.0f,
 		"the Thornacre recipe declares a non-positive Z extent (%.4f to %.4f), so "
 		"the far-plane clause below has nothing to measure against",
-		(double)xRecipe.m_fWorldMinZ, (double)xRecipe.m_fWorldMaxZ);
+		(double)xRecipe.WorldMinZ(), (double)xRecipe.WorldMaxZ());
 	ZENITH_ASSERT_GE(fZM_THORNACRE_CAMERA_FAR, fTownDepth,
 		"the Thornacre camera's far plane is %.4f against a %.4f m town. The "
 		"default 100 m plane the two interiors ship with would clip the world away "

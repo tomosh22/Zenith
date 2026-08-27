@@ -38,18 +38,23 @@ namespace
 	// SC1's asserted polygon band for a 16 m bake of the Dawnmere rect. Written
 	// as literals, never derived from the cell size, so a change to either end
 	// has to be a deliberate edit.
-	constexpr u_int uZM_NAV_POLY_BAND_MIN = 3969u;
-	constexpr u_int uZM_NAV_POLY_BAND_MAX = 4489u;
+	//
+	// 37 x 41 = 1517 on the 576 x 640 m map, bracketed 35*39 .. 39*43 -- the same
+	// band and the same derivation ZM_Tests_NavEval.cpp states for the in-memory
+	// evaluation, which is what makes the two agree by construction rather than by
+	// coincidence. It was 63*63 .. 67*67 when Dawnmere was a 1024 m square.
+	constexpr u_int uZM_NAV_POLY_BAND_MIN = 1365u;
+	constexpr u_int uZM_NAV_POLY_BAND_MAX = 1677u;
 
 	// Dawnmere's TownCenter spawn in world XZ -- inside the baked rect by
 	// construction, so the navmesh must cover it.
-	constexpr float fZM_NAV_TOWN_CENTER_X = 512.0f;
-	constexpr float fZM_NAV_TOWN_CENTER_Z = 480.0f;
+	constexpr float fZM_NAV_TOWN_CENTER_X = 280.0f;
+	constexpr float fZM_NAV_TOWN_CENTER_Z = 160.0f;
 
 	// The sampled ground height the coverage grid is built at. The generator
 	// voxelises at 0.2 m cell height, so the baked surface lands NEAR this, not
 	// exactly on it -- hence the coarse band. Exact agreement is phase C's job.
-	constexpr float fZM_NAV_GROUND_HEIGHT = 25.99055f;
+	constexpr float fZM_NAV_GROUND_HEIGHT = 24.10121f;
 	constexpr float fZM_NAV_GROUND_TOLERANCE = 2.0f;
 
 	// A generated polygon counts as walkable when its normal points up.

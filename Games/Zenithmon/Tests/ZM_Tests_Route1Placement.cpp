@@ -1703,11 +1703,11 @@ ZENITH_TEST(ZM_WorldTraversal, Route1_SettledCameraStandsAboveGroundBehindTheArr
 	// (2) The far plane covers the route the camera is looking down. Measured
 	//     against the RECIPE's authored Z bounds, not against a comment.
 	const ZM_TerrainAuthoringRecipe& xRecipe = ZM_GetRoute1TerrainRecipe();
-	const float fRouteDepth = xRecipe.m_fWorldMaxZ - xRecipe.m_fWorldMinZ;
+	const float fRouteDepth = xRecipe.WorldMaxZ() - xRecipe.WorldMinZ();
 	ZENITH_ASSERT_GT(fRouteDepth, 0.0f,
 		"the Route 1 recipe declares a non-positive Z extent (%.4f to %.4f), so the "
 		"far-plane clause below has nothing to measure against",
-		(double)xRecipe.m_fWorldMinZ, (double)xRecipe.m_fWorldMaxZ);
+		(double)xRecipe.WorldMinZ(), (double)xRecipe.WorldMaxZ());
 	ZENITH_ASSERT_GE(fZM_ROUTE1_CAMERA_FAR, fRouteDepth,
 		"the Route 1 camera's far plane is %.4f against a %.4f m route. The default "
 		"100 m plane the two interiors ship with would clip the world away a few "

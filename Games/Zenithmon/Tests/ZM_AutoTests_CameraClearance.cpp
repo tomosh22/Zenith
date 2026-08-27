@@ -84,6 +84,7 @@ namespace
 
 	// The terrain recipe's name for the lab walkway. Spelled once.
 	constexpr const char* szCC_LAB_PATH_NAME = "Lab";
+	constexpr const char* szCC_HOME_PATH_NAME = "Home";
 
 	// The SAME tolerance the W5 NPC oracle uses, so "the compiled height is stale"
 	// means the same thing in both files.
@@ -634,6 +635,7 @@ namespace
 	// deletion there must not silently drop a whole coverage group, so it is
 	// recorded and reported as a failure exactly like an overflow.
 	bool g_bCCLabPathMissing = false;
+	bool g_bCCHomePathMissing = false;
 
 	enum class CCPhase { Resolve, Probe, Evaluate, Done };
 
@@ -706,6 +708,50 @@ namespace
 		}
 	}
 
+	// One authored dirt path, sampled segment by segment, READ FROM THE RECIPE.
+	// Returns false (and leaves nothing added) when the recipe carries no such
+	// path, which the caller turns into a named failure rather than a silently
+	// short sample table.
+	//
+	// ★ THIS EXISTS BECAUSE THE HOME ROUTE USED TO BE SPELLED AS LITERALS AND
+	// DRIFTED. The comment beside the Lab route already said what would happen --
+	// "a route spelled twice cannot red a drift" -- and then Dawnmere's map shrank
+	// from 1024 m to 576 x 640 and every authored coordinate translated by
+	// (-232, -320). The Home literals stayed at (512,512) -> (454,486) -> (384,456),
+	// which is still INSIDE the new world, so the down-probes found terrain and
+	// nothing looked malformed; the samples were simply 230 m from the town centre,
+	// outside the streamed physics region, and the probe phase timed out at its
+	// 900-frame deadline with the whole table unevaluated. A route spelled twice
+	// does not red a drift -- it reds something else, much later, and says the
+	// wrong thing about it.
+	bool CCAddRecipePath(const ZM_TerrainAuthoringRecipe& xRecipe,
+		const char* szName, u_int uGroup)
+	{
+		const ZM_TerrainPathSpec* pxPath = nullptr;
+		for (u_int u = 0u; u < xRecipe.m_uPathCount; ++u)
+		{
+			if (std::strcmp(xRecipe.m_pxPaths[u].m_szName, szName) == 0)
+			{
+				pxPath = &xRecipe.m_pxPaths[u];
+				break;
+			}
+		}
+		if (pxPath == nullptr || pxPath->m_uPointCount < 2u)
+		{
+			return false;
+		}
+		// The interior vertices are sampled twice (once as each segment's
+		// endpoint); a duplicate sample costs one probe and keeps the per-segment
+		// endpoints exact.
+		for (u_int u = 0u; u + 1u < pxPath->m_uPointCount; ++u)
+		{
+			CCAddSegment(pxPath->m_pxPoints[u].m_fX, pxPath->m_pxPoints[u].m_fZ,
+				pxPath->m_pxPoints[u + 1u].m_fX, pxPath->m_pxPoints[u + 1u].m_fZ,
+				fCC_ROUTE_SPACING, uGroup);
+		}
+		return true;
+	}
+
 	// ★ THE AUTHORITATIVE SAMPLE TABLE. Deterministic, actor-free, and limited to
 	// the critical movement areas -- see the coverage-boundary note at the top of
 	// this file before adding or removing anything here.
@@ -714,6 +760,7 @@ namespace
 		g_uCCSampleCount = 0u;
 		g_bCCSampleOverflow = false;
 		g_bCCLabPathMissing = false;
+		g_bCCHomePathMissing = false;
 		for (u_int u = 0u; u < CC_GROUP_COUNT; ++u)
 		{
 			g_auCCGroupCounts[u] = 0u;
@@ -736,13 +783,11 @@ namespace
 		CCAddSegment(xStaging.x, xStaging.z, xTarget.x, xTarget.z,
 			fCC_APPROACH_SPACING, CC_GROUP_STAGING_TO_TRIGGER);
 
-		// (c) The authored Home dirt path, segment by segment. Its interior vertex
-		// is sampled twice (once as each segment's endpoint); a duplicate sample
-		// costs one probe and keeps the per-segment endpoints exact.
-		CCAddSegment(512.0f, 512.0f, 454.0f, 486.0f,
-			fCC_ROUTE_SPACING, CC_GROUP_HOME_DIRT_PATH);
-		CCAddSegment(454.0f, 486.0f, 384.0f, 456.0f,
-			fCC_ROUTE_SPACING, CC_GROUP_HOME_DIRT_PATH);
+		// (c) The authored Home dirt path, READ FROM THE RECIPE like the Lab one
+		// below. It used to be two literal segments; see CCAddRecipePath.
+		const ZM_TerrainAuthoringRecipe& xRecipe = ZM_GetDawnmereTerrainRecipe();
+		g_bCCHomePathMissing =
+			!CCAddRecipePath(xRecipe, szCC_HOME_PATH_NAME, CC_GROUP_HOME_DIRT_PATH);
 
 		// (d)+(e) The two warp arrival points, each with a ring the player can
 		// step onto immediately after arriving.
@@ -785,33 +830,11 @@ namespace
 		CCAddSegment(xLabStaging.x, xLabStaging.z, xLabTarget.x, xLabTarget.z,
 			fCC_APPROACH_SPACING, CC_GROUP_LAB_STAGING_TO_TRIGGER);
 
-		// (h) The authored Lab dirt path, segment by segment, READ FROM THE RECIPE
-		// rather than re-typed. The Home group above spells its path as literals
-		// (it predates the rule); a route spelled twice cannot red a drift, and
-		// this particular route is load-bearing -- it is what forced the lab
-		// entrance plane to 527 rather than 528 (see ZM_DawnmerePlacement.h).
-		const ZM_TerrainAuthoringRecipe& xRecipe = ZM_GetDawnmereTerrainRecipe();
-		const ZM_TerrainPathSpec* pxLabPath = nullptr;
-		for (u_int u = 0u; u < xRecipe.m_uPathCount; ++u)
-		{
-			if (std::strcmp(xRecipe.m_pxPaths[u].m_szName, szCC_LAB_PATH_NAME) == 0)
-			{
-				pxLabPath = &xRecipe.m_pxPaths[u];
-				break;
-			}
-		}
-		g_bCCLabPathMissing = pxLabPath == nullptr || pxLabPath->m_uPointCount < 2u;
-		if (!g_bCCLabPathMissing)
-		{
-			for (u_int u = 0u; u + 1u < pxLabPath->m_uPointCount; ++u)
-			{
-				CCAddSegment(pxLabPath->m_pxPoints[u].m_fX,
-					pxLabPath->m_pxPoints[u].m_fZ,
-					pxLabPath->m_pxPoints[u + 1u].m_fX,
-					pxLabPath->m_pxPoints[u + 1u].m_fZ,
-					fCC_ROUTE_SPACING, CC_GROUP_LAB_DIRT_PATH);
-			}
-		}
+		// (h) The authored Lab dirt path, READ FROM THE RECIPE rather than
+		// re-typed. This route is load-bearing -- it is what forced the lab
+		// entrance plane to 207 rather than 208 (see ZM_DawnmerePlacement.h).
+		g_bCCLabPathMissing =
+			!CCAddRecipePath(xRecipe, szCC_LAB_PATH_NAME, CC_GROUP_LAB_DIRT_PATH);
 
 		// (i) The FromLab warp arrival, with the same ring the other two get. Spelt
 		// from the two placement constants rather than from
@@ -1100,6 +1123,15 @@ namespace
 		}
 
 		// ...and so would a coverage group that never got built at all.
+		if (g_bCCHomePathMissing)
+		{
+			bPassed = false;
+			Zenith_Error(LOG_CATEGORY_UNITTEST,
+				"[ZM_DawnmereCameraClearance] the Dawnmere terrain recipe has no "
+				"usable path named '%s', so the home walkway group is EMPTY -- a "
+				"renamed or deleted recipe path silently removes coverage",
+				szCC_HOME_PATH_NAME);
+		}
 		if (g_bCCLabPathMissing)
 		{
 			bPassed = false;

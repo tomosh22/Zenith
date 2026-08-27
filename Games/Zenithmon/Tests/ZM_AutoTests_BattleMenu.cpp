@@ -39,6 +39,7 @@
 #include "Zenithmon/Source/Party/ZM_Party.h"                  // ZM_Party::Lead()
 #include "Zenithmon/Source/UI/ZM_UI_BattleHUD.h"              // ZM_BattleMenuScreen + ZM_BATTLE_MENU_* enums
 #include "Zenithmon/Source/World/ZM_GrassDensityMap.h"
+#include "Zenithmon/Tests/ZM_GrassBaseline.h"
 
 #ifdef ZENITH_TOOLS
 #include "Core/Zenith_EditorQuery.h"
@@ -2197,11 +2198,14 @@ namespace
 						"invariant is vacuous", szTag);
 					bPassed = false;
 				}
-				if (g_uBMGrassAfter != g_uBMGrassAtPark)
+				if (!ZM_GrassBaseline::Restored(g_uBMGrassAtPark, g_uBMGrassAfter))
 				{
 					Zenith_Error(LOG_CATEGORY_UNITTEST,
-						"[%s] resumed grass blade count was %u, expected %u (resume must restore the same "
-						"deterministic blade count)", szTag, g_uBMGrassAfter, g_uBMGrassAtPark);
+						"[%s] resumed grass blade count was %u against a parked %u -- "
+						"either the field is EMPTY or it converged by more than %u tiles "
+						"(see ZM_GrassBaseline.h for why this is not an equality)",
+						szTag, g_uBMGrassAfter, g_uBMGrassAtPark,
+						ZM_GrassBaseline::uMAX_CONVERGENCE_TILES);
 					bPassed = false;
 				}
 			}

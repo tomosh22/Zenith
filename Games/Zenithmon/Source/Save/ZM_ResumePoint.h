@@ -60,7 +60,7 @@ const char* ZM_ResumeValidityName(ZM_RESUME_VALIDITY eValidity);
 // component, no streaming state and no recipe in reach. ZM_WorldSpec carries no
 // extent either. 4096 m is the DEFAULT terrain's extent -- what every Zenithmon
 // recipe bakes at -- and is comfortably larger than anything authored today
-// (Dawnmere sits around x/z 384..540), so the bound only ever fires on an edited
+// (Dawnmere sits around x/z 152..280, and Route 1, the longest, reaches z 1436), so the bound only ever fires on an edited
 // or corrupted save -- which is exactly what it is for: a garbage transform must
 // degrade to marker placement, never teleport the player into the void where
 // nothing can reach them. It is a SANITY bound, not a world extent: it must stay

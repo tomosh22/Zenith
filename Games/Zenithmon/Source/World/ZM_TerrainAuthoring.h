@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Core/Zenith_TerrainDimensions.h"
+
 #include "Collections/Zenith_Vector.h"
 #include "Zenithmon/Source/Data/ZM_WorldSpec.h"
 
@@ -141,22 +143,17 @@ struct ZM_TerrainAuthoringRecipe
 {
 	const ZM_WorldSpec* m_pxWorldSpec;
 	u_int m_uSeed;
-	// Exported authoring bounds are rectangular. The anonymous aliases retain
-	// source compatibility with Dawnmere's original square-only contract while
-	// making X/Z containment explicit for route recipes.
-	union
-	{
-		float m_fWorldMinX;
-		float m_fWorldMin;
-	};
-	union
-	{
-		float m_fWorldMaxX;
-		float m_fWorldMax;
-	};
-	float m_fWorldMinZ;
-	float m_fWorldMaxZ;
-	ZM_TerrainExportRect m_xExportRect;
+	// ★ THE DIMENSIONS ARE THE SINGLE SOURCE OF TRUTH for this recipe's extent.
+	// The authoring bounds and the export rectangle used to be four floats and
+	// four ints stored alongside them, which is three descriptions of one fact:
+	// a recipe whose bounds said 1024 while its rect said 0..15 and its terrain
+	// said something else would bake a map nothing agreed about. They are
+	// ACCESSORS now, derived here and nowhere else, so the three cannot drift.
+	//
+	// A recipe's terrain always starts at world (0,0) -- there is no grid origin
+	// offset in the design -- so the authored content of a shrunken map is
+	// TRANSLATED toward the origin rather than the grid being moved to meet it.
+	Zenith_TerrainDimensions m_xDims;
 	float m_fTargetHeight;
 	ZM_TerrainProceduralSpec m_xProcedural;
 	const ZM_TerrainLandformSpec* m_pxLandforms;
@@ -175,10 +172,42 @@ struct ZM_TerrainAuthoringRecipe
 	const ZM_TerrainMaterialSpec* m_pxMaterials;
 	u_int m_uMaterialCount;
 	ZM_TerrainPreviewCameraSpec m_xPreviewCamera;
+
+	// The authoring domain, derived. Min is always zero: a terrain's grid starts
+	// at world (0,0).
+	constexpr float WorldMinX() const { return 0.0f; }
+	constexpr float WorldMaxX() const { return m_xDims.WorldSizeX(); }
+	constexpr float WorldMinZ() const { return 0.0f; }
+	constexpr float WorldMaxZ() const { return m_xDims.WorldSizeZ(); }
+	// There are deliberately NO square-only WorldMin()/WorldMax() aliases. They
+	// existed because Dawnmere's original contract was square and X could stand
+	// in for both axes; none of the three maps is square any more (576x640,
+	// 832x960, 704x1536), so an unqualified WorldMax() would silently answer for
+	// X while reading as if it answered for the map.
+
+	// Every recipe exports its WHOLE grid. It used to export an interior
+	// rectangle of a fixed 64x64 grid -- which is what a configurable grid
+	// replaces: the rect and the grid are the same thing now, so the rect is
+	// derived rather than authored beside it.
+	constexpr ZM_TerrainExportRect ExportRect() const
+	{
+		return ZM_TerrainExportRect{
+			0, 0,
+			static_cast<int>(m_xDims.m_uGridChunksX) - 1,
+			static_cast<int>(m_xDims.m_uGridChunksZ) - 1 };
+	}
 };
 
 enum ZM_TERRAIN_PLAN_OP_TYPE : u_int
 {
+	// ★ FIRST, AND THAT ORDERING IS LOAD-BEARING. The bake runs on a STANDALONE
+	// editor session -- it fires before the terrain entity exists, so the session
+	// cannot read its shape from a component. Every brush coordinate that follows
+	// is world-space and every bake output is sized from this spec, so a step
+	// emitted after the strokes would author a small layout into a default-sized
+	// bake. (RenderTest learned this the expensive way: 12,298 files and a campus
+	// crammed into one ninth of the terrain.)
+	ZM_TERRAIN_PLAN_SET_DIMENSIONS,
 	ZM_TERRAIN_PLAN_SET_ASSET_SET,
 	ZM_TERRAIN_PLAN_RESET,
 	ZM_TERRAIN_PLAN_GENERATE_PROCEDURAL,
@@ -296,11 +325,20 @@ struct ZM_TerrainBakeBatchPlan
 //             it as a stale bake and refuses it outright -- no LOW geometry and
 //             no physics body. The required-output count also gains that one
 //             file, which is why all three counts move by exactly one.
-constexpr u_int uZM_TERRAIN_MANIFEST_VERSION = 5u;
+//   v5 -> v6: EVERY MAP SHRANK AND ITS LANDSCAPE WAS RE-AUTHORED. Dawnmere goes
+//             16x16 -> 9x10 (1024x1024 m -> 576x640), Route 1 16x24 -> 11x24
+//             (1024x1536 -> 704x1536), Thornacre 16x16 -> 13x15
+//             (1024x1024 -> 832x960), and every authored coordinate translates
+//             toward the origin with it. Chunk bytes, world positions, the
+//             quantisation box and the required-output counts all move; a v5 set
+//             is wrong in every way a stale bake can be. 896 chunks -> 549.
+constexpr u_int uZM_TERRAIN_MANIFEST_VERSION = 6u;
 constexpr u_int uZM_TERRAIN_RECIPE_COUNT = 3u;
-constexpr u_int uZM_DAWNMERE_REQUIRED_OUTPUT_COUNT = 772u;
-constexpr u_int uZM_THORNACRE_REQUIRED_OUTPUT_COUNT = 772u;
-constexpr u_int uZM_ROUTE1_REQUIRED_OUTPUT_COUNT = 1156u;
+// chunks x 3 mesh files + Height/Splatmap_RGBA/GrassDensity + TerrainDims.zdata.
+// Dawnmere 9x10 = 90 chunks, Thornacre 13x15 = 195, Route 1 11x24 = 264.
+constexpr u_int uZM_DAWNMERE_REQUIRED_OUTPUT_COUNT = 274u;
+constexpr u_int uZM_THORNACRE_REQUIRED_OUTPUT_COUNT = 589u;
+constexpr u_int uZM_ROUTE1_REQUIRED_OUTPUT_COUNT = 796u;
 constexpr u_int uZM_TERRAIN_MANIFEST_SIZE = 12u;
 constexpr const char* szZM_FORCE_TERRAIN_BAKE_FLAG = "--zm-force-terrain-bake";
 

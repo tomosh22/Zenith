@@ -17,8 +17,62 @@ The S0-S7 narrative that used to fill the back half of this file moved VERBATIM 
 [History.md](History.md) on 2026-08-18, so this file can hold to the ~25-line budget
 its own template in `AgentBriefing.md` §2.3 specifies. Nothing was deleted.
 
-**★ LIVE PIN (UPDATED 2026-08-26):
+**★ LIVE PIN (UPDATED 2026-08-27):
 ZM boot `3438`; engine boot (Null Combat) `1669`; Null RenderTest `1760`; registry **70**.**
+
+> **★ THE THREE OUTDOOR MAPS SHRANK TO FIT THEIR CONTENT. OBSERVED 2026-08-27.**
+> **NO PIN MOVED**, and that is the headline: this is a Zenithmon-only change
+> (nothing under `Zenith/**`), it adds no unit and retires none, so ZM stays at
+> **3438** (`3438 ran / 3436 passed / 0 failed`, 2 skipped, measured on
+> `Null_vs2022_Debug_Win64_True`) and the registry stays at **70**. The engine and
+> RenderTest rows are untouched for the same reason.
+>
+> Each map now carries its OWN grid instead of a 16-wide slice of a fixed 4096 m
+> world, sized to what is authored on it:
+>
+> | Map | Was | Now | Chunks | Content translated by |
+> |---|---|---|---|---|
+> | Dawnmere | 16x16 | **9x10** (576 x 640 m) | 256 -> **90** | (-232, -320) |
+> | Thornacre | 16x16 | **13x15** (832 x 960 m) | 256 -> **195** | (-100, -16) |
+> | Route 1 | 16x24 | **11x24** (704 x 1536 m) | 384 -> **264** | (-184, 0), X only |
+>
+> **896 -> 549 baked chunks, a 39% cut in the terrain asset tree** (2,706 -> 1,665
+> files). Route 1 shrinks in X only because its LENGTH is the point of it; every
+> waypoint's distance along the route is exactly what it was.
+>
+> ★ **THE OFFSETS ARE MULTIPLES OF 4 ON PURPOSE.** The physics mesh is built at
+> density divisor 4, so an anchor whose X and Z are both multiples of 4 is a
+> SHARED VERTEX of the render and physics meshes and samples exactly rather than
+> by interpolation — the property `ZM_DawnmerePlacement.h`'s ZM-D-186 note relies
+> on. -230 would have put every Dawnmere anchor mid-quad; -232 keeps 512/384/640
+> on 280/152/408, at a cost of two metres of empty edge.
+>
+> ★ **THE LANDSCAPES WERE RE-AUTHORED, NOT TRANSLATED.** Every hill was sized to
+> fill a 1024 m square (radii 160-190, one of them spelled "850 + 174 = 1024" to
+> touch the east boundary), so translating them would have put five of six centres
+> outside the new worlds. They are re-placed and re-scaled to frame each town at
+> the new size, and the erosion radii scale with the axis that shrank so
+> "region-only" means the same thing at three scales. **A dab must fit ENTIRELY
+> inside its terrain** — `AssertTerrainAuthoringPlanContained` checks centre +/-
+> radius — which is why no ridge hugs an edge.
+>
+> ★ **EVERY MEASURED HEIGHT IN ALL THREE MAPS WAS RE-MEASURED** from its own
+> oracle against the new bake (the Dawnmere roster, Home, Lab and both route-seam
+> rows; Thornacre's two; Route 1's nine). Dawnmere's ground changed CHARACTER, not
+> just value: every column now reads within a few tenths of the 24 m flatten
+> target and two read BELOW it, where the old map had unflattened columns sitting
+> ~+2 m up on erosion deposit. `Dawnmere.znavmesh` re-baked with it (4,225 -> 1,517
+> polygons at the same 16 m cell size — the domain moved, not the resolution).
+>
+> ★ **ONE TEST IS LEFT RED AND IT IS NOT A COORDINATE.**
+> `ZM_InteriorTintPixels_Test` reads the two interiors' floor red/blue ratios as
+> 1.1888 (PlayerHome) and 1.0684 (ProfLab), a gap of **0.1204** against its 0.15
+> floor. The gap is POSITIVE and in the asserted direction, deterministic across
+> runs, and neither interior scene's bytes changed here (both report
+> `[ScenePublish] IDENTICAL` on every boot). The clause's own instructions forbid
+> shrinking the floor to make it pass — "if the two bands OVERLAP, RECORD THAT" —
+> and ZM-56 marks the judgement `needs-human`, so it is recorded here rather than
+> adjusted. See the R1 notes below.
 
 > **★ CONFIGURABLE TERRAIN DIMENSIONS — the engine change, OBSERVED 2026-08-26.**
 > An ENGINE ticket whose units are backend-neutral, so **all three rows moved by
@@ -392,14 +446,14 @@ genuinely RAN, not `DEFERRED` -- after which `git status` over the WHOLE
 
 | Asset | Bytes | SHA256 |
 |---|---|---|
-| `Route1.zscen` | 2,818 | `3B1C5C930DE2798A6A7677CEF05F5294996E5157A17655ECE3589B19B2BCEC38` (**RE-AUTHORED at the configurable-terrain-dimensions engine change**: **+16 bytes**, `Zenith_TerrainComponent`'s v5 serialization tail — one float + three u_int, appended after the complete v4 payload. Nothing else moved, which is the byte-level proof that default-dimension arithmetic is FP-identical to the constants it replaced. Three consecutive windowed Debug boots; the third reported `[ScenePublish] IDENTICAL` for all seven scenes. Previous value `F1486214807474E6...` at 2,802 bytes. ★ The 2,287 recorded here before was STALE — it predated R1-4's own re-author and nothing reconciled it, which is exactly what this table exists to prevent.) |
-| `Thornacre.zscen` | 1,939 | `AC8AD81C997D6611C543F83659D1EEEDAFD89921661E9409C616F29604B94149` (**RE-AUTHORED at the configurable-terrain-dimensions engine change**: **+16 bytes**, the same v5 terrain tail. Same three-boot proof. Previous value `DB4AC7790604F386...` at 1,923 bytes, held from R1-3.) |
-| `Dawnmere.zscen` | 5,698 | `433E7E9242C0D2F1F64500163032348025E90734E523A6C96371932C5094FA06` (**RE-AUTHORED at the configurable-terrain-dimensions engine change**: **+16 bytes**, the same v5 terrain tail. No placement constant moved and no re-measure was performed — the terrain re-baked at the DEFAULT dimensions, so every authored height is unchanged. Same three-boot proof, `sceneAuthoring=AUTHOR_DAWNMERE`. Previous value `E607281BAB6C9123...` at 5,682 bytes, held from ZM-65/ZM-D-206.) |
+| `Route1.zscen` | 2,818 | `E87BDAA9D41CB39D90D6334EE785A36F4D483937B9780A674B45C456ABD841FD` (**RE-AUTHORED at the map shrink, 2026-08-27**: the terrain became an **11x24 chunk grid (704 x 1536 m)** where it was 16x24 of a fixed 4096 m world, and every authored coordinate translated by **(-184, 0)** — X only, because the route's LENGTH is the whole point of it and did not shrink. **Byte count UNCHANGED at 2,818**: nothing was added or removed, only coordinate VALUES moved, which is itself the proof that the shrink is a re-placement and not a re-shaping. Three windowed Debug boots; the third reported `[ScenePublish] IDENTICAL` for all seven scenes. Previous value `3B1C5C930DE2798A...` at 2,818 bytes, held from the configurable-terrain-dimensions engine change.) |
+| `Thornacre.zscen` | 1,939 | `7053FBFFF23B9DE5D4B502354C5C4E183CE764A09BDDCFBE14F01E2068BD1D50` (**RE-AUTHORED at the map shrink, 2026-08-27**: a **13x15 chunk grid (832 x 960 m)**, translated by **(-100, -16)**. Thornacre shrinks least of the three — its Gym sits 588 m east of the berry fields, so its content is the widest. Byte count UNCHANGED at 1,939; same three-boot proof. Previous value `AC8AD81C997D6611...` at 1,939 bytes.) |
+| `Dawnmere.zscen` | 5,698 | `B545518EDE70D1FD4C8E40B5BD2218EC4B4C8115900250F6AE2A57201DB1787A` (**RE-AUTHORED at the map shrink, 2026-08-27**: a **9x10 chunk grid (576 x 640 m)**, translated by **(-232, -320)**. ★ Both offsets are multiples of 4 ON PURPOSE — the physics mesh is built at density divisor 4, so an anchor on a 4 m lattice is a shared vertex of the render and physics meshes and samples exactly; -230 would have put every Dawnmere anchor mid-quad and turned every measured row in `ZM_DawnmerePlacement.h` into an interpolation. **Every measured height in this map was RE-MEASURED from its own oracle** (the roster, the Home block, the Lab block and both route-seam rows), because the landscape was re-authored for the smaller domain rather than translated onto it. Byte count UNCHANGED at 5,698; same three-boot proof, `sceneAuthoring=AUTHOR_DAWNMERE`. Previous value `433E7E9242C0D2F1...` at 5,698 bytes.) |
 | `Battle.zscen` | 4,965 | `1BEB0615F7FE62D9439471A4123E1D2140C0053AEC2991B659F7A03288C8C60A` (unchanged since 2026-08-05) |
 | `FrontEnd.zscen` | 29,740 | `D44D540512F1C373A5D5E747CE7FA76E7D19B467F5F1563EB298E229EEFBEDB5` |
 | `PlayerHome.zscen` | 1,832 | `DBBFB78311A55BBF942A7A5BF9928F43E9493A10CDA89110515A3B6A7987C780` (unchanged since 2026-08-05) |
 | `ProfLab.zscen` | 2,068 | `72DA12B73AB643B44F0B9374FCD6F4CCF865ECBAED5F9B0D2832E8BD972ABB32` |
-| `Dawnmere.znavmesh` | 373,412 | `DCAA84035A258B12FA23627FF719C0567018470C8055A1E0FB54D6C1F1F96E1D` (unchanged) |
+| `Dawnmere.znavmesh` | 134,484 | `2D4EC0A3263806EB3092C2E0AD43895852735E099C2A42ACC31485762DC1B5D8` (**RE-BAKED at the map shrink, 2026-08-27**: 1,517 polygons over 1,596 vertices where it was 4,225 over a 1024 m square. The bake cell size is UNCHANGED at 16 m — what moved is the domain: 576 x 640 m gives 36 x 40 coverage quads and, with the generator's 0.4 m agent padding either side, a 37 x 41 voxel grid whose one-quad-per-column output is 37*41 = 1,517. It re-bakes because `fZM_DAWNMERE_TOWN_CENTER_FEET_Y` is the flat grid's height and that anchor was re-measured. Previous value `DCAA84035A258B12...` at 373,412 bytes.) |
 
 **★ WHAT THIS BASELINE IS FOR.** Slice R1-2 authors two NEW scenes and re-authors Dawnmere.
 Because the pipeline is proven deterministic *immediately before* that change, any byte that

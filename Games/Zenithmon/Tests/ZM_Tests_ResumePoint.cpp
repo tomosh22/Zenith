@@ -95,9 +95,11 @@ namespace
 	constexpr u_int uUNRESOLVABLE_BUILD_INDEX = 999u;
 
 	// The authored Dawnmere player CENTRE (the TownCenter feet anchor
-	// (512, 25.99055, 480) + the 0.9 capsule half-extent). Re-measured at ZM-D-173,
-	// when moving the Home terrain pad regenerated the whole Dawnmere heightmap.
-	const Zenith_Maths::Vector3 xVALID_CENTRE(512.0f, 26.89055f, 480.0f);
+	// (280, 24.10121, 160) + the 0.9 capsule half-extent). Re-measured whenever the
+	// Dawnmere heightmap is regenerated -- at ZM-D-173 when the Home terrain pad
+	// moved, and again when the map shrank to a 9x10 grid and the town translated
+	// by (-232, -320).
+	const Zenith_Maths::Vector3 xVALID_CENTRE(280.0f, 25.00121f, 160.0f);
 	constexpr float fVALID_YAW = 0.7f;
 
 	// Far outside ANY plausible world extent. Deliberately NOT written against a

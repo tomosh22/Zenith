@@ -16,6 +16,8 @@
 #include "Zenithmon/Components/ZM_FollowCamera.h"
 #include "Zenithmon/Components/ZM_PlayerController.h"
 #include "Zenithmon/Components/ZM_TerrainGrassComponent.h"
+#include "Zenithmon/Source/World/ZM_DawnmerePlacement.h"
+#include "Zenithmon/Source/World/ZM_HumanBody.h"
 
 #include <array>
 #include <cmath>
@@ -483,9 +485,18 @@ namespace
 				}
 				return true;
 			}
-			if (std::fabs(xPlayer.m_xPosition.x - 512.0f) > 1.0f
-				|| std::fabs(xPlayer.m_xPosition.z - 480.0f) > 1.0f
-				|| std::fabs(xPlayer.m_xPosition.y - 26.9f) > 1.5f)
+			// ★ NAMED, NOT RE-SPELLED. This compares the LOADED scene's settled
+			// player against the compiled placement -- two independent artifacts,
+			// so reading the constants here is not self-referential. It used to
+			// spell 512 / 480 / 26.9, which stopped describing Dawnmere the moment
+			// the map shrank and the town translated by (-232, -320); the failure
+			// then read "Player did not settle", which is the wrong thing to be
+			// told when the placement is fine and the expectation is stale.
+			if (std::fabs(xPlayer.m_xPosition.x - fZM_DAWNMERE_TOWN_CENTER_X) > 1.0f
+				|| std::fabs(xPlayer.m_xPosition.z - fZM_DAWNMERE_TOWN_CENTER_Z) > 1.0f
+				|| std::fabs(xPlayer.m_xPosition.y
+					- (fZM_DAWNMERE_TOWN_CENTER_FEET_Y + fZM_HUMAN_BODY_HALF_HEIGHT))
+					> 1.5f)
 			{
 				FailDawnmere("Player did not settle near the authored TownCenter placement");
 				return false;

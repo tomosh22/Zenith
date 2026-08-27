@@ -268,8 +268,8 @@ inline const char* ZM_GetThornacreReturnSpawnTag()
 // Both claims are reconciled against the recipe by the boot unit; nothing here
 // reads the recipe itself (see the banner), and the landmark's name is not
 // spelled here because it is also a spawn tag.
-inline constexpr float fZM_THORNACRE_SOUTH_ARRIVAL_X = 512.0f;
-inline constexpr float fZM_THORNACRE_SOUTH_ARRIVAL_Z = 112.0f;
+inline constexpr float fZM_THORNACRE_SOUTH_ARRIVAL_X = 412.0f;
+inline constexpr float fZM_THORNACRE_SOUTH_ARRIVAL_Z = 96.0f;
 
 // ---- The return gate's column ------------------------------------------------
 //
@@ -281,8 +281,8 @@ inline constexpr float fZM_THORNACRE_SOUTH_ARRIVAL_Z = 112.0f;
 // gate's Y derives from the ground under it, and leaving it out of the table
 // below would have stranded it on the very scalar the R1-2 split was retiring. A
 // stranded column is how a sensor ends up 28 m under the player.)
-inline constexpr float fZM_THORNACRE_SOUTH_GATE_X = 512.0f;
-inline constexpr float fZM_THORNACRE_SOUTH_GATE_Z = 100.0f;
+inline constexpr float fZM_THORNACRE_SOUTH_GATE_X = 412.0f;
+inline constexpr float fZM_THORNACRE_SOUTH_GATE_Z = 84.0f;
 
 // ============================================================================
 // ---- THE GROUND: A RECIPE MIRROR **AND** A MEASURED TABLE --------------------
@@ -361,14 +361,12 @@ enum ZM_THORNACRE_GROUND_SAMPLE : u_int
 // there.
 //
 // ★★ AND THE SEED IS GOOD TO WELL UNDER A METRE, WHICH IS A MEASUREMENT RATHER
-// THAN A HOPE (R1-2 step 1). Dawnmere's route-seam column froze at 24.36592
-// against a 24.0 recipe target -- target + 0.366 -- while every OTHER measured
-// Dawnmere column reads ~2 m above its target. The difference is that the seam
-// column is the first measured Dawnmere column INSIDE A FLATTEN CORRIDOR, and a
-// FLATTEN dab drives ground TO the target; the ~+2 m on the others is the
-// region-wide hydraulic-erosion deposit pass sitting on top of UNFLATTENED ground.
-// Both columns here sit inside the flattened "RouteGate" pad, so each seed is
-// expected to be within a fraction of a metre of the truth.
+// THAN A HOPE (R1-2 step 1). Dawnmere's route-seam column measures 24.549 against
+// a 24.0 recipe target -- target + 0.549 -- because it sits INSIDE A FLATTEN
+// CORRIDOR, and a FLATTEN dab drives ground TO the target; UNFLATTENED ground
+// carries the region-wide hydraulic-erosion deposit pass on top of the grade
+// instead. Both columns here sit inside the flattened "RouteGate" pad, so each
+// seed is expected to be within a fraction of a metre of the truth.
 // ★ DO NOT READ A NEAR-TARGET RESULT AS A BROKEN PROBE when the oracle finally
 // runs. Near-target is the PREDICTION here, not a symptom.
 //
@@ -403,16 +401,16 @@ inline constexpr ZM_ThornacreGroundSample axZM_THORNACRE_GROUND_SAMPLES[] =
 	// resolved=1, hitTerrain=1, finalHit='ThornacreTerrain' -- never 'Player'.
 	// OBSERVED, never derived.
 	//
-	// Both sit +0.376 .. +0.630 above the 28.0 recipe target, i.e. NEAR it, which
-	// is what flattened ground reads (see the sibling note in
+	// Both sit +0.048 .. +0.074 above the 28.0 recipe target, i.e. essentially ON
+	// it, which is what flattened ground reads (see the sibling note in
 	// ZM_Route1Placement.h). The two columns are only 12 m apart inside one 30 m
-	// flatten pad and differ by 0.254 m, so do NOT add a minimum-spread clause
+	// flatten pad and differ by 0.026 m, so do NOT add a minimum-spread clause
 	// here -- a spread assertion copied from a table whose columns are hundreds of
 	// metres apart would red on entirely correct content.
 	//
 	// entity name,                              x,                             z,                             feet Y (MEASURED)
-	{ szZM_THORNACRE_SOUTH_ARRIVAL_ENTITY_NAME,  fZM_THORNACRE_SOUTH_ARRIVAL_X, fZM_THORNACRE_SOUTH_ARRIVAL_Z, 28.63044f },
-	{ szZM_THORNACRE_SOUTH_GATE_ENTITY_NAME,     fZM_THORNACRE_SOUTH_GATE_X,    fZM_THORNACRE_SOUTH_GATE_Z,    28.37605f },
+	{ szZM_THORNACRE_SOUTH_ARRIVAL_ENTITY_NAME,  fZM_THORNACRE_SOUTH_ARRIVAL_X, fZM_THORNACRE_SOUTH_ARRIVAL_Z, 28.04793f },
+	{ szZM_THORNACRE_SOUTH_GATE_ENTITY_NAME,     fZM_THORNACRE_SOUTH_GATE_X,    fZM_THORNACRE_SOUTH_GATE_Z,    28.07402f },
 };
 // ==== END R1-2 MEASURED THORNACRE GROUND ====
 
@@ -531,9 +529,11 @@ inline constexpr float fZM_THORNACRE_CAMERA_PIVOT_HEIGHT = 0.60f;  // above body
 inline constexpr float fZM_THORNACRE_CAMERA_FOV_DEGREES  = 65.0f;
 inline constexpr float fZM_THORNACRE_CAMERA_NEAR         = 0.1f;
 
-// The town is a 1024 x 1024 m region and the camera looks up its length from the
+// The town is an 832 x 960 m region and the camera looks up its length from the
 // southern gate, so a 100 m far plane (the interiors' figure) would clip the
-// world away in front of the player.
+// world away in front of the player. The far plane is deliberately NOT re-tuned
+// down with the map: the reader below pins it against the recipe's own Z extent,
+// which is a floor, and a plane with room to spare costs nothing.
 inline constexpr float fZM_THORNACRE_CAMERA_FAR          = 2400.0f;
 inline constexpr float fZM_THORNACRE_CAMERA_ASPECT       = 16.0f / 9.0f;
 

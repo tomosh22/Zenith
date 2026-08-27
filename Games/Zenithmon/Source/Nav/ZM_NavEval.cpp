@@ -56,15 +56,17 @@ namespace
 ZM_NavEvalRect ZM_GetDawnmereNavRect()
 {
 	// Bounds come straight from Dawnmere's authoring recipe (a pure const table,
-	// safe to read headless). These are the 1024 m export sub-rect of the
-	// engine's fixed 4096 m terrain grid -- NOT the whole grid.
+	// safe to read headless), which derives them from its own configured grid.
+	// They used to be a 1024 m sub-rect of a fixed 4096 m grid; the terrain IS
+	// its grid now, so this rect follows the recipe automatically and no longer
+	// has to be kept in step with it by hand.
 	const ZM_TerrainAuthoringRecipe& xRecipe = ZM_GetDawnmereTerrainRecipe();
 
 	ZM_NavEvalRect xRect;
-	xRect.m_fMinX = xRecipe.m_fWorldMinX;
-	xRect.m_fMaxX = xRecipe.m_fWorldMaxX;
-	xRect.m_fMinZ = xRecipe.m_fWorldMinZ;
-	xRect.m_fMaxZ = xRecipe.m_fWorldMaxZ;
+	xRect.m_fMinX = xRecipe.WorldMinX();
+	xRect.m_fMaxX = xRecipe.WorldMaxX();
+	xRect.m_fMinZ = xRecipe.WorldMinZ();
+	xRect.m_fMaxZ = xRecipe.WorldMaxZ();
 	xRect.m_fGroundHeight = fZM_DAWNMERE_GROUND_HEIGHT;
 	return xRect;
 }
@@ -78,7 +80,8 @@ ZM_NavEvalGrid ZM_BuildCoverageGrid(
 {
 	ZM_NavEvalGrid xGrid;
 	xGrid.m_bBuilt = false;
-	xGrid.m_uQuadsPerSide = 0u;
+	xGrid.m_uQuadsX = 0u;
+	xGrid.m_uQuadsZ = 0u;
 	xGrid.m_uGeneratorGridDim = 0u;
 
 	axVerticesOut.Clear();
@@ -183,7 +186,8 @@ ZM_NavEvalGrid ZM_BuildCoverageGrid(
 	}
 
 	xGrid.m_bBuilt = true;
-	xGrid.m_uQuadsPerSide = uQuadsX;   // Dawnmere is square, so uQuadsX == uQuadsZ
+	xGrid.m_uQuadsX = uQuadsX;
+	xGrid.m_uQuadsZ = uQuadsZ;
 	return xGrid;
 }
 
@@ -196,7 +200,8 @@ ZM_NavEvalResult ZM_EvaluateDawnmereNavGeneration(float fCellSize, bool bUpwardN
 	xResult.m_uPolygonCount = 0u;
 	xResult.m_uVertexCount = 0u;
 	xResult.m_uWalkablePolygonCount = 0u;
-	xResult.m_uQuadsPerSide = 0u;
+	xResult.m_uQuadsX = 0u;
+	xResult.m_uQuadsZ = 0u;
 	xResult.m_uGeneratorGridDim = 0u;
 	xResult.m_fMinSafeCellSize = 0.0f;
 	xResult.m_xBoundsMin = Zenith_Maths::Vector3(0.0f);
@@ -215,7 +220,8 @@ ZM_NavEvalResult ZM_EvaluateDawnmereNavGeneration(float fCellSize, bool bUpwardN
 	const ZM_NavEvalGrid xGrid =
 		ZM_BuildCoverageGrid(xRect, fCellSize, bUpwardNormals, axVertices, auIndices);
 
-	xResult.m_uQuadsPerSide = xGrid.m_uQuadsPerSide;
+	xResult.m_uQuadsX = xGrid.m_uQuadsX;
+	xResult.m_uQuadsZ = xGrid.m_uQuadsZ;
 	xResult.m_uGeneratorGridDim = xGrid.m_uGeneratorGridDim;
 
 	if (!xGrid.m_bBuilt)

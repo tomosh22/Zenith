@@ -25,7 +25,7 @@
 // ============================================================================
 
 // The bake cell size. 16 m is SC1's evaluated resolution: it lands the polygon
-// count in the asserted 3969..4489 band and stays far clear of the generator's
+// count in the asserted 1365..1677 band and stays far clear of the generator's
 // iMaxDim=1024 voxel-grid clamp. A finer re-bake is a DATA-only change later
 // (Shortfalls E7 / option B); nothing in the pipeline hard-codes 16 elsewhere.
 constexpr float fZM_DAWNMERE_NAVMESH_CELL_SIZE = 16.0f;

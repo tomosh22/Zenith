@@ -47,7 +47,7 @@ ZENITH_TEST(ZM_Nav, DawnmereNavmeshAssetRefSpelling)
 ZENITH_TEST(ZM_Nav, DawnmereNavmeshBakeCellSize)
 {
 	// 16 m is SC1's evaluated resolution: it lands the polygon count inside the
-	// 3969..4489 band ZM_NavmeshAsset_Test asserts, and stays far clear of the
+	// 1365..1677 band ZM_NavmeshAsset_Test asserts, and stays far clear of the
 	// generator's iMaxDim=1024 voxel-grid clamp.
 	ZENITH_ASSERT_EQ_FLOAT(fZM_DAWNMERE_NAVMESH_CELL_SIZE, 16.0f, 0.0001f,
 		"The Dawnmere bake cell size decides the committed asset's resolution");

@@ -25,7 +25,7 @@
 // Zenith_TerrainComponent -- see ZM_TerrainAuthoring.cpp). There is NO pure
 // height(x,z) recipe function reachable without the terrain component / a GPU,
 // so this spike takes the sanctioned fallback: a flat coverage grid at the
-// TownCenter-sampled ground height over the 1024 m rect. That is sufficient to
+// TownCenter-sampled ground height over the recipe's rect. That is sufficient to
 // evaluate whether the generator accepts a Dawnmere-scale ground surface.
 //
 // PERSISTENCE DECISION (Q-2026-07-24-002 Q-A, RESOLVED by user -> ZM-D-145):
@@ -88,7 +88,13 @@ ZM_NavEvalRect ZM_GetDawnmereNavRect();
 struct ZM_NavEvalGrid
 {
 	bool  m_bBuilt;
-	u_int m_uQuadsPerSide;      // soup resolution actually emitted (0 when not built)
+	// Soup resolution actually emitted, PER AXIS (0 when not built). This used to
+	// be one m_uQuadsPerSide because Dawnmere's rect was square; it is 576 x 640 m
+	// now, so a single scalar would have silently reported X and called it "per
+	// side". Nothing in the harvester ever required a square rect -- only the
+	// reporting did.
+	u_int m_uQuadsX;
+	u_int m_uQuadsZ;
 	u_int m_uGeneratorGridDim;  // ceil((domain + 2*pad)/cellSize) the generator WOULD use
 };
 
@@ -117,7 +123,8 @@ struct ZM_NavEvalResult
 	u_int m_uPolygonCount;          // total polygons in the returned navmesh
 	u_int m_uVertexCount;           // total vertices
 	u_int m_uWalkablePolygonCount;  // polygons whose normal.y clears the up-threshold
-	u_int m_uQuadsPerSide;          // coverage soup resolution actually emitted
+	u_int m_uQuadsX;                // coverage soup resolution actually emitted, per axis
+	u_int m_uQuadsZ;
 	u_int m_uGeneratorGridDim;      // voxel grid dim the generator WOULD use (pre-clamp)
 	float m_fMinSafeCellSize;       // smallest cell size that stays under the clamp
 

@@ -23,36 +23,68 @@ namespace
 	constexpr char acMANIFEST_MAGIC[uMANIFEST_MAGIC_SIZE] = { 'Z', 'M', 'T', 'R' };
 	constexpr const char* szMANIFEST_NAME = "ZM_TerrainRecipe.manifest";
 
+	// ★ RE-AUTHORED FOR THE 576 x 640 m MAP, not translated. The old four hills
+	// were sized to fill a 1024 x 1024 world (radii 160-190, one of them
+	// explicitly "850 + 174 = 1024" to touch the east boundary); translating them
+	// would have put every centre outside the new grid. What they DID was frame
+	// the town on all four sides from ~350 m out, and that is what these
+	// reproduce at ~200 m out with radii scaled to match.
+	//
+	// ★★ A LANDFORM CANNOT HUG AN EDGE, AND THAT IS ENFORCED. Every brush dab is
+	// checked centre +/- radius against the recipe's own bounds
+	// (AssertTerrainAuthoringPlanContained), so a "flanking ridge centred ON the
+	// west edge" is not a thing a small map can have -- the first draft of this
+	// table put five of its six hills outside the world and would have asserted on
+	// the first bake. A hill's centre must be at least its radius in from each
+	// edge, which on a 576 m axis means a 95 m hill lives in X [95, 481].
+	//
+	// The town core plus its pads occupy X 104..456 of 576 after the translate, so
+	// these sit AROUND that footprint with their inner slopes reaching into it.
+	// That is fine and is how the 1024 m original worked too: pads and paths
+	// flatten in a LATER phase, so wherever a ridge foot crosses the plaza, the
+	// Lab pad or the route corridor, the flatten wins and the town reads as
+	// built into the foot of the hills rather than perched on them.
 	const ZM_TerrainLandformSpec s_axDawnmereLandforms[] =
 	{
-		{ { 224.0f, 650.0f }, 180.0f, 0.55f, 42.0f },
-		{ { 810.0f, 690.0f }, 190.0f, 0.55f, 46.0f },
-		{ { 180.0f, 260.0f }, 160.0f, 0.45f, 34.0f },
-		// One metre below the original 175 m draft keeps the east edge inside
-		// Dawnmere's inclusive X=1024 authoring boundary (850 + 174 = 1024).
-		{ { 850.0f, 300.0f }, 174.0f, 0.45f, 38.0f },
+		{ { 95.0f, 300.0f }, 95.0f, 0.52f, 38.0f },     // west flank ridge
+		{ { 490.0f, 350.0f }, 85.0f, 0.52f, 42.0f },    // east flank ridge, behind the Lab
+		{ { 300.0f, 85.0f }, 85.0f, 0.45f, 34.0f },     // south backdrop behind the town
+		{ { 90.0f, 545.0f }, 90.0f, 0.48f, 36.0f },     // north-west, framing the route corridor
+		{ { 485.0f, 520.0f }, 90.0f, 0.48f, 38.0f },    // north-east, ditto
 	};
 
+	// Paths, pads, landmarks and the preview camera below are the SAME authored
+	// layout translated by (-232, -320) -- every relative distance is preserved
+	// exactly, so the town reads as it always did; only its world origin moved.
+	//
+	// ★ BOTH OFFSETS ARE MULTIPLES OF 4, AND THAT IS THE REASON THEY ARE THOSE
+	// NUMBERS. The physics mesh is built at density divisor 4 (4 m quads) against
+	// a 1 m render mesh, so an anchor on a 4 m lattice is a SHARED VERTEX of both
+	// and samples exactly rather than by interpolation -- the property
+	// ZM_DawnmerePlacement.h's ZM-D-186 note relies on when it explains why the
+	// town centre did not move when the collision density changed under it. -230
+	// would have put every Dawnmere anchor mid-quad; -232 keeps 512/384/640 on
+	// 280/152/408. The margin this spends is two metres of empty edge.
 	const ZM_TerrainPoint2 s_axDawnmereRoutePath[] =
 	{
-		{ 512.0f, 928.0f },
-		{ 500.0f, 760.0f },
-		{ 524.0f, 620.0f },
-		{ 512.0f, 512.0f },
+		{ 280.0f, 608.0f },
+		{ 268.0f, 440.0f },
+		{ 292.0f, 300.0f },
+		{ 280.0f, 192.0f },
 	};
 
 	const ZM_TerrainPoint2 s_axDawnmereHomePath[] =
 	{
-		{ 512.0f, 512.0f },
-		{ 454.0f, 486.0f },
-		{ 384.0f, 456.0f },
+		{ 280.0f, 192.0f },
+		{ 222.0f, 166.0f },
+		{ 152.0f, 136.0f },
 	};
 
 	const ZM_TerrainPoint2 s_axDawnmereLabPath[] =
 	{
-		{ 512.0f, 512.0f },
-		{ 574.0f, 526.0f },
-		{ 640.0f, 552.0f },
+		{ 280.0f, 192.0f },
+		{ 342.0f, 206.0f },
+		{ 408.0f, 232.0f },
 	};
 
 	const ZM_TerrainPathSpec s_axDawnmerePaths[] =
@@ -64,20 +96,20 @@ namespace
 
 	const ZM_TerrainPadSpec s_axDawnmerePads[] =
 	{
-		{ "Plaza", { 512.0f, 512.0f }, 60.0f, 45.0f, 4u },
+		{ "Plaza", { 280.0f, 192.0f }, 60.0f, 45.0f, 4u },
 		// ZM-D-173: the Home pad moved +40 m in Z with the shell it flattens
-		// ground for. The shell now occupies z 476..516 with its entrance on the
-		// -Z face, so a pad still centred at z=456 would flatten the forecourt and
+		// ground for. The shell now occupies z 156..196 with its entrance on the
+		// -Z face, so a pad still centred at z=136 would flatten the forecourt and
 		// leave the building itself on unlevelled ground. Radius, target height and
 		// pass count are UNCHANGED -- only the centre moves.
 		//
 		// ★ THE PATH ENDPOINT DELIBERATELY DID NOT MOVE WITH IT. The Home dirt path
-		// still terminates at (384, 456); its flatten radius overlaps this pad, so
+		// still terminates at (152, 136); its flatten radius overlaps this pad, so
 		// the two together pave one continuous walkway from the plaza into the
 		// forecourt the camera now trails into.
-		{ "Home", { 384.0f, 496.0f }, 36.0f, 26.0f, 4u },
-		{ "Lab", { 640.0f, 552.0f }, 48.0f, 38.0f, 4u },
-		{ "RouteGate", { 512.0f, 896.0f }, 30.0f, 0.0f, 0u },
+		{ "Home", { 152.0f, 176.0f }, 36.0f, 26.0f, 4u },
+		{ "Lab", { 408.0f, 232.0f }, 48.0f, 38.0f, 4u },
+		{ "RouteGate", { 280.0f, 576.0f }, 30.0f, 0.0f, 0u },
 	};
 
 	const ZM_TerrainAutoSplatSpec s_axDawnmereAutoSplat[] =
@@ -88,39 +120,44 @@ namespace
 		{ "Heath", 28.0f, 90.0f, 0.0f, 25.0f, 0.55f, 0.25f },
 	};
 
+	// RE-AUTHORED with the landforms: the peripheral dabs sat on the old hills at
+	// radii 80-110 across a 1024 m map, so they are re-placed on the new ridges at
+	// radii scaled to the 576 m one. The two CENTRAL dabs are the town lawn and
+	// are translated rather than re-placed -- their job is tied to the plaza, not
+	// to the terrain shape.
 	const ZM_TerrainGrassDabSpec s_axDawnmereGrassDabs[] =
 	{
-		{ { 315.0f, 650.0f }, 110.0f, 0.55f },
-		{ { 325.0f, 800.0f }, 95.0f, 0.70f },
-		{ { 705.0f, 660.0f }, 105.0f, 0.55f },
-		{ { 700.0f, 810.0f }, 90.0f, 0.70f },
-		{ { 260.0f, 430.0f }, 80.0f, 0.45f },
-		{ { 780.0f, 500.0f }, 80.0f, 0.45f },
-		// Central town lawn so grass surrounds the TownCenter spawn (512,480) and
+		{ { 100.0f, 300.0f }, 80.0f, 0.55f },    // west ridge
+		{ { 476.0f, 330.0f }, 80.0f, 0.55f },    // east ridge
+		{ { 95.0f, 530.0f }, 70.0f, 0.70f },     // north-west knoll
+		{ { 480.0f, 505.0f }, 70.0f, 0.70f },    // north-east knoll
+		{ { 150.0f, 75.0f }, 70.0f, 0.45f },     // south backdrop, west lobe
+		{ { 400.0f, 90.0f }, 70.0f, 0.45f },     // south backdrop, east lobe
+		// Central town lawn so grass surrounds the TownCenter spawn (280,160) and
 		// the returning-Home marker; the Plaza/Home pads and the paths erase their
 		// paved footprints in the later grass-erase phase, leaving lawn between
 		// the walkways. Without this the player stood in a grass-free hole and the
 		// exterior view showed only distant peripheral grass.
-		{ { 512.0f, 470.0f }, 150.0f, 0.60f },
-		{ { 512.0f, 610.0f }, 130.0f, 0.55f },
+		{ { 280.0f, 150.0f }, 110.0f, 0.60f },
+		{ { 280.0f, 290.0f }, 95.0f, 0.55f },
 	};
 
 	const ZM_TerrainLandmarkSpec s_axDawnmereLandmarks[] =
 	{
-		{ "TownCenter", { 512.0f, 24.0f, 480.0f } },
-		{ "Plaza", { 512.0f, 24.0f, 512.0f } },
+		{ "TownCenter", { 280.0f, 24.0f, 160.0f } },
+		{ "Plaza", { 280.0f, 24.0f, 192.0f } },
 		// ZM-D-173: both moved with the relocated Home. "Home" tracks the shell's
 		// new centre; "FromHome" tracks the return spawn, which is now SOUTH of the
 		// -Z entrance rather than north of the old +Z one. Y stays 24 -- these are
 		// recipe METADATA at the nominal target height, not measured surfaces.
-		{ "Home", { 384.0f, 24.0f, 496.0f } },
-		{ "FromHome", { 384.0f, 24.0f, 468.0f } },
-		{ "Lab", { 640.0f, 24.0f, 552.0f } },
-		{ "FromLab", { 640.0f, 24.0f, 520.0f } },
-		{ "FromRoute1", { 512.0f, 24.0f, 864.0f } },
-		{ "RouteBoundary", { 512.0f, 24.0f, 928.0f } },
-		{ "ReservedRivalHome", { 360.0f, 24.0f, 560.0f } },
-		{ "PlazaLandmark", { 462.0f, 24.0f, 548.0f } },
+		{ "Home", { 152.0f, 24.0f, 176.0f } },
+		{ "FromHome", { 152.0f, 24.0f, 148.0f } },
+		{ "Lab", { 408.0f, 24.0f, 232.0f } },
+		{ "FromLab", { 408.0f, 24.0f, 200.0f } },
+		{ "FromRoute1", { 280.0f, 24.0f, 544.0f } },
+		{ "RouteBoundary", { 280.0f, 24.0f, 608.0f } },
+		{ "ReservedRivalHome", { 128.0f, 24.0f, 240.0f } },
+		{ "PlazaLandmark", { 230.0f, 24.0f, 228.0f } },
 	};
 
 	// Meadow is the only TEXTURED slot: it samples the engine's shared grass
@@ -141,35 +178,43 @@ namespace
 	// Thornacre is the GDD's hedgerow farming town: pasture rolls around a
 	// central lane, berry rows, a drystone gym approach, and two required warp
 	// landmarks. Building/tree dressing is deliberately outside terrain recipes.
+	// RE-AUTHORED for the 832 x 960 m map, under the same containment rule
+	// Dawnmere's landform note states: a hill's centre is at least its radius in
+	// from every edge, so these four sit with their outer slopes reaching exactly
+	// to the boundary rather than crossing it. Content occupies X 122..710 of 832
+	// after the translate, which leaves the west and east flanks clear of the
+	// lane and the berry rows; the fourth is the south-east shoulder above the
+	// route gate, which is what it framed before.
 	const ZM_TerrainLandformSpec s_axThornacreLandforms[] =
 	{
-		{ { 210.0f, 650.0f }, 190.0f, 0.50f, 44.0f },
-		{ { 820.0f, 700.0f }, 180.0f, 0.55f, 48.0f },
-		{ { 200.0f, 260.0f }, 170.0f, 0.42f, 37.0f },
-		{ { 520.0f, 850.0f }, 160.0f, 0.48f, 46.0f },
+		{ { 115.0f, 400.0f }, 115.0f, 0.50f, 44.0f },   // west flank
+		{ { 715.0f, 450.0f }, 115.0f, 0.55f, 48.0f },   // east flank
+		{ { 110.0f, 845.0f }, 110.0f, 0.42f, 37.0f },   // north-west shoulder
+		{ { 715.0f, 135.0f }, 115.0f, 0.48f, 46.0f },   // south-east, above the route gate
 	};
 
+	// Translated by (-100, -16); every relative distance preserved.
 	const ZM_TerrainPoint2 s_axThornacreMainLane[] =
 	{
-		{ 512.0f, 64.0f },
-		{ 500.0f, 240.0f },
-		{ 520.0f, 440.0f },
-		{ 512.0f, 540.0f },
+		{ 412.0f, 48.0f },
+		{ 400.0f, 224.0f },
+		{ 420.0f, 424.0f },
+		{ 412.0f, 524.0f },
 	};
 
 	const ZM_TerrainPoint2 s_axThornacreGymLane[] =
 	{
-		{ 512.0f, 540.0f },
-		{ 610.0f, 650.0f },
-		{ 704.0f, 760.0f },
-		{ 760.0f, 864.0f },
+		{ 412.0f, 524.0f },
+		{ 510.0f, 634.0f },
+		{ 604.0f, 744.0f },
+		{ 660.0f, 848.0f },
 	};
 
 	const ZM_TerrainPoint2 s_axThornacreBerryRow[] =
 	{
-		{ 512.0f, 540.0f },
-		{ 390.0f, 570.0f },
-		{ 270.0f, 650.0f },
+		{ 412.0f, 524.0f },
+		{ 290.0f, 554.0f },
+		{ 170.0f, 634.0f },
 	};
 
 	const ZM_TerrainPathSpec s_axThornacrePaths[] =
@@ -181,10 +226,10 @@ namespace
 
 	const ZM_TerrainPadSpec s_axThornacrePads[] =
 	{
-		{ "Market", { 512.0f, 540.0f }, 60.0f, 45.0f, 4u },
-		{ "Gym", { 760.0f, 864.0f }, 50.0f, 38.0f, 4u },
-		{ "BerryFields", { 270.0f, 650.0f }, 48.0f, 32.0f, 3u },
-		{ "RouteGate", { 512.0f, 96.0f }, 30.0f, 0.0f, 0u },
+		{ "Market", { 412.0f, 524.0f }, 60.0f, 45.0f, 4u },
+		{ "Gym", { 660.0f, 848.0f }, 50.0f, 38.0f, 4u },
+		{ "BerryFields", { 170.0f, 634.0f }, 48.0f, 32.0f, 3u },
+		{ "RouteGate", { 412.0f, 80.0f }, 30.0f, 0.0f, 0u },
 	};
 
 	const ZM_TerrainAutoSplatSpec s_axThornacreAutoSplat[] =
@@ -195,24 +240,25 @@ namespace
 		{ "Hedgerow", 30.0f, 88.0f, 0.0f, 24.0f, 0.62f, 0.22f },
 	};
 
+	// Re-placed onto the new flanks at radii scaled to the 832 m map.
 	const ZM_TerrainGrassDabSpec s_axThornacreGrassDabs[] =
 	{
-		{ { 250.0f, 420.0f }, 150.0f, 0.65f },
-		{ { 250.0f, 820.0f }, 140.0f, 0.78f },
-		{ { 760.0f, 400.0f }, 140.0f, 0.62f },
-		{ { 760.0f, 700.0f }, 150.0f, 0.72f },
-		{ { 500.0f, 900.0f }, 100.0f, 0.58f },
+		{ { 100.0f, 300.0f }, 90.0f, 0.65f },
+		{ { 100.0f, 780.0f }, 85.0f, 0.78f },
+		{ { 735.0f, 300.0f }, 85.0f, 0.62f },
+		{ { 730.0f, 640.0f }, 90.0f, 0.72f },
+		{ { 400.0f, 875.0f }, 80.0f, 0.58f },
 	};
 
 	const ZM_TerrainLandmarkSpec s_axThornacreLandmarks[] =
 	{
-		{ "FromRoute1", { 512.0f, 28.0f, 112.0f } },
-		{ "RouteBoundary", { 512.0f, 28.0f, 64.0f } },
-		{ "TownCenter", { 512.0f, 28.0f, 540.0f } },
-		{ "Market", { 468.0f, 28.0f, 570.0f } },
-		{ "Gym", { 760.0f, 28.0f, 864.0f } },
-		{ "FromGym", { 760.0f, 28.0f, 814.0f } },
-		{ "BerryFields", { 270.0f, 28.0f, 650.0f } },
+		{ "FromRoute1", { 412.0f, 28.0f, 96.0f } },
+		{ "RouteBoundary", { 412.0f, 28.0f, 48.0f } },
+		{ "TownCenter", { 412.0f, 28.0f, 524.0f } },
+		{ "Market", { 368.0f, 28.0f, 554.0f } },
+		{ "Gym", { 660.0f, 28.0f, 848.0f } },
+		{ "FromGym", { 660.0f, 28.0f, 798.0f } },
+		{ "BerryFields", { 170.0f, 28.0f, 634.0f } },
 	};
 
 	const ZM_TerrainMaterialSpec s_axThornacreMaterials[] =
@@ -231,30 +277,42 @@ namespace
 
 	// Route 1 is a 16x24-chunk coastal-meadow corridor. Its broad encounter
 	// fields flank one readable dirt lane, with a small rival/tutorial spur.
+	// RE-AUTHORED for the 704 x 1536 m corridor. Z is unchanged (the route's
+	// LENGTH is its whole point and did not shrink), so only the flanking hills
+	// move inward: the corridor is 704 m wide instead of 1024, and the lane plus
+	// its rival spur and the tutorial clearing occupy X 280..584, so the flanks
+	// sit either side of that with their outer slopes on the boundary (the same
+	// containment rule Dawnmere's landform note states). The northern hill still
+	// straddles the lane at the route's end, as before.
 	const ZM_TerrainLandformSpec s_axRoute1Landforms[] =
 	{
-		{ { 170.0f, 300.0f }, 150.0f, 0.42f, 34.0f },
-		{ { 850.0f, 430.0f }, 150.0f, 0.45f, 38.0f },
-		{ { 210.0f, 930.0f }, 180.0f, 0.50f, 42.0f },
-		{ { 830.0f, 1160.0f }, 170.0f, 0.52f, 45.0f },
-		{ { 500.0f, 1400.0f }, 120.0f, 0.38f, 39.0f },
+		{ { 125.0f, 300.0f }, 125.0f, 0.42f, 34.0f },
+		{ { 580.0f, 430.0f }, 120.0f, 0.45f, 38.0f },
+		{ { 130.0f, 930.0f }, 130.0f, 0.50f, 42.0f },
+		{ { 575.0f, 1160.0f }, 125.0f, 0.52f, 45.0f },
+		// The one hill the lane runs THROUGH rather than past, exactly as before:
+		// it straddles the route's northern end and the NorthGate pad cuts the
+		// gateway back out of it.
+		{ { 318.0f, 1400.0f }, 120.0f, 0.38f, 39.0f },
 	};
 
+	// Translated by (-184, 0); Z untouched. Four divides it, for the reason
+	// Dawnmere's translate note gives.
 	const ZM_TerrainPoint2 s_axRoute1DirtLane[] =
 	{
-		{ 512.0f, 64.0f },
-		{ 480.0f, 300.0f },
-		{ 540.0f, 560.0f },
-		{ 500.0f, 820.0f },
-		{ 550.0f, 1080.0f },
-		{ 512.0f, 1472.0f },
+		{ 328.0f, 64.0f },
+		{ 296.0f, 300.0f },
+		{ 356.0f, 560.0f },
+		{ 316.0f, 820.0f },
+		{ 366.0f, 1080.0f },
+		{ 328.0f, 1472.0f },
 	};
 
 	const ZM_TerrainPoint2 s_axRoute1RivalSpur[] =
 	{
-		{ 500.0f, 820.0f },
-		{ 650.0f, 820.0f },
-		{ 720.0f, 880.0f },
+		{ 316.0f, 820.0f },
+		{ 466.0f, 820.0f },
+		{ 536.0f, 880.0f },
 	};
 
 	const ZM_TerrainPathSpec s_axRoute1Paths[] =
@@ -265,10 +323,10 @@ namespace
 
 	const ZM_TerrainPadSpec s_axRoute1Pads[] =
 	{
-		{ "SouthGate", { 512.0f, 96.0f }, 30.0f, 0.0f, 0u },
-		{ "Midway", { 500.0f, 820.0f }, 38.0f, 28.0f, 3u },
-		{ "TutorialClearing", { 720.0f, 880.0f }, 48.0f, 34.0f, 3u },
-		{ "NorthGate", { 512.0f, 1440.0f }, 30.0f, 0.0f, 0u },
+		{ "SouthGate", { 328.0f, 96.0f }, 30.0f, 0.0f, 0u },
+		{ "Midway", { 316.0f, 820.0f }, 38.0f, 28.0f, 3u },
+		{ "TutorialClearing", { 536.0f, 880.0f }, 48.0f, 34.0f, 3u },
+		{ "NorthGate", { 328.0f, 1440.0f }, 30.0f, 0.0f, 0u },
 	};
 
 	const ZM_TerrainAutoSplatSpec s_axRoute1AutoSplat[] =
@@ -279,27 +337,29 @@ namespace
 		{ "Wildflower", 24.0f, 78.0f, 0.0f, 23.0f, 0.58f, 0.27f },
 	};
 
+	// Re-placed onto the narrowed corridor; Z positions and weights unchanged, so
+	// the meadow rhythm along the route's length is exactly what it was.
 	const ZM_TerrainGrassDabSpec s_axRoute1GrassDabs[] =
 	{
-		{ { 270.0f, 260.0f }, 180.0f, 0.72f },
-		{ { 760.0f, 340.0f }, 170.0f, 0.68f },
-		{ { 260.0f, 650.0f }, 180.0f, 0.78f },
-		{ { 760.0f, 690.0f }, 180.0f, 0.74f },
-		{ { 260.0f, 1080.0f }, 180.0f, 0.76f },
-		{ { 760.0f, 1190.0f }, 180.0f, 0.70f },
-		{ { 280.0f, 1400.0f }, 110.0f, 0.64f },
-		{ { 750.0f, 1420.0f }, 100.0f, 0.62f },
+		{ { 135.0f, 260.0f }, 130.0f, 0.72f },
+		{ { 570.0f, 340.0f }, 125.0f, 0.68f },
+		{ { 135.0f, 650.0f }, 130.0f, 0.78f },
+		{ { 570.0f, 690.0f }, 130.0f, 0.74f },
+		{ { 135.0f, 1080.0f }, 130.0f, 0.76f },
+		{ { 570.0f, 1190.0f }, 130.0f, 0.70f },
+		{ { 110.0f, 1400.0f }, 90.0f, 0.64f },
+		{ { 590.0f, 1420.0f }, 85.0f, 0.62f },
 	};
 
 	const ZM_TerrainLandmarkSpec s_axRoute1Landmarks[] =
 	{
-		{ "FromDawnmere", { 512.0f, 26.0f, 112.0f } },
-		{ "DawnmereBoundary", { 512.0f, 26.0f, 64.0f } },
-		{ "Midway", { 500.0f, 26.0f, 820.0f } },
-		{ "RivalBattle", { 720.0f, 26.0f, 880.0f } },
-		{ "TutorialFields", { 300.0f, 26.0f, 650.0f } },
-		{ "FromThornacre", { 512.0f, 26.0f, 1424.0f } },
-		{ "ThornacreBoundary", { 512.0f, 26.0f, 1472.0f } },
+		{ "FromDawnmere", { 328.0f, 26.0f, 112.0f } },
+		{ "DawnmereBoundary", { 328.0f, 26.0f, 64.0f } },
+		{ "Midway", { 316.0f, 26.0f, 820.0f } },
+		{ "RivalBattle", { 536.0f, 26.0f, 880.0f } },
+		{ "TutorialFields", { 116.0f, 26.0f, 650.0f } },
+		{ "FromThornacre", { 328.0f, 26.0f, 1424.0f } },
+		{ "ThornacreBoundary", { 328.0f, 26.0f, 1472.0f } },
 	};
 
 	const ZM_TerrainMaterialSpec s_axRoute1Materials[] =
@@ -329,53 +389,73 @@ namespace
 			{
 				&ZM_GetWorldSpec(ZM_SCENE_DAWNMERE),
 				0x7BF32CA4u,
-				0.0f, 1024.0f, 0.0f, 1024.0f,
-				{ 0, 0, 15, 15 },
+				// 9x10 chunks of 64 m at 1 m spacing = 576 x 640 m. Was
+				// 16x16 (1024 x 1024) with the town using a third of it; the
+				// authored content translated by (-232, -320) and the landscape
+				// was re-authored to frame it at this scale.
+				{ 64.0f, 64u, 9u, 10u },
 				24.0f,
 				{ 0.046875f, 0.018f, 0.00125f, 5u, 2.0f, 0.5f, 0.10f },
 				s_axDawnmereLandforms, CountOf(s_axDawnmereLandforms),
 				s_axDawnmerePaths, CountOf(s_axDawnmerePaths),
 				s_axDawnmerePads, CountOf(s_axDawnmerePads),
-				{ 60000u, 1u, true, { 512.0f, 512.0f }, 725.0f },
+				// ★ THE RADIUS SCALES WITH THE AXIS THAT SHRANK, and all three
+				// recipes below follow the same rule: the old radius times the new
+				// width over the old 1024. It keeps each map eroded over the same
+				// PROPORTION of itself, which is what makes "region-only" mean the
+				// same thing at three different scales -- 725 unchanged on a 576 m
+				// map would blanket the sheet and erase the distinction entirely.
+				// 725 * 576/1024 = 407.8.
+				{ 60000u, 1u, true, { 280.0f, 192.0f }, 400.0f },
 				s_axDawnmereAutoSplat, CountOf(s_axDawnmereAutoSplat),
 				s_axDawnmereGrassDabs, CountOf(s_axDawnmereGrassDabs),
 				s_axDawnmereLandmarks, CountOf(s_axDawnmereLandmarks),
 				s_axDawnmereMaterials, CountOf(s_axDawnmereMaterials),
-				{ { 512.0f, 52.0f, 420.0f }, 0.0f, -0.22f, 65.0f, 0.1f, 2000.0f },
+				{ { 280.0f, 52.0f, 100.0f }, 0.0f, -0.22f, 65.0f, 0.1f, 2000.0f },
 			},
 			{
 				&ZM_GetWorldSpec(ZM_SCENE_THORNACRE),
 				0x9D41BD83u,
-				0.0f, 1024.0f, 0.0f, 1024.0f,
-				{ 0, 0, 15, 15 },
+				// 13x15 chunks = 832 x 960 m, was 16x16. Thornacre's content is
+				// the widest of the three (the Gym sits 588 m east of the berry
+				// fields), so it shrinks least. Translated by (-100, -16).
+				{ 64.0f, 64u, 13u, 15u },
 				28.0f,
 				{ 0.0546875f, 0.020f, 0.00115f, 5u, 2.0f, 0.5f, 0.12f },
 				s_axThornacreLandforms, CountOf(s_axThornacreLandforms),
 				s_axThornacrePaths, CountOf(s_axThornacrePaths),
 				s_axThornacrePads, CountOf(s_axThornacrePads),
-				{ 60000u, 1u, true, { 512.0f, 512.0f }, 725.0f },
+				// 725 * 832/1024 = 589.2.
+				{ 60000u, 1u, true, { 412.0f, 496.0f }, 590.0f },
 				s_axThornacreAutoSplat, CountOf(s_axThornacreAutoSplat),
 				s_axThornacreGrassDabs, CountOf(s_axThornacreGrassDabs),
 				s_axThornacreLandmarks, CountOf(s_axThornacreLandmarks),
 				s_axThornacreMaterials, CountOf(s_axThornacreMaterials),
-				{ { 512.0f, 58.0f, 470.0f }, 0.05f, -0.24f, 65.0f, 0.1f, 2000.0f },
+				{ { 412.0f, 58.0f, 454.0f }, 0.05f, -0.24f, 65.0f, 0.1f, 2000.0f },
 			},
 			{
 				&ZM_GetWorldSpec(ZM_SCENE_ROUTE1),
 				0x552E711Du,
-				0.0f, 1024.0f, 0.0f, 1536.0f,
-				{ 0, 0, 15, 23 },
+				// 11x24 chunks = 704 x 1536 m, was 16x24. Only the WIDTH shrinks:
+				// the route's length is the whole point of it. Translated by
+				// (-184, 0) -- Z is untouched, so every waypoint's distance along
+				// the route is exactly what it was.
+				{ 64.0f, 64u, 11u, 24u },
 				26.0f,
 				{ 0.05078125f, 0.019f, 0.00110f, 5u, 2.0f, 0.5f, 0.09f },
 				s_axRoute1Landforms, CountOf(s_axRoute1Landforms),
 				s_axRoute1Paths, CountOf(s_axRoute1Paths),
 				s_axRoute1Pads, CountOf(s_axRoute1Pads),
-				{ 75000u, 1u, true, { 512.0f, 768.0f }, 500.0f },
+				// 500 * 704/1024 = 343.75. Route 1 shrank only in X, so it is the
+				// WIDTH that sets this -- the corridor's length is untouched and the
+				// erosion still runs the same distance up and down it as a fraction
+				// of the reach it had.
+				{ 75000u, 1u, true, { 328.0f, 768.0f }, 350.0f },
 				s_axRoute1AutoSplat, CountOf(s_axRoute1AutoSplat),
 				s_axRoute1GrassDabs, CountOf(s_axRoute1GrassDabs),
 				s_axRoute1Landmarks, CountOf(s_axRoute1Landmarks),
 				s_axRoute1Materials, CountOf(s_axRoute1Materials),
-				{ { 512.0f, 62.0f, 700.0f }, 0.0f, -0.23f, 65.0f, 0.1f, 2400.0f },
+				{ { 328.0f, 62.0f, 700.0f }, 0.0f, -0.23f, 65.0f, 0.1f, 2400.0f },
 			},
 		};
 		return s_axRecipes;
@@ -413,25 +493,31 @@ namespace
 		return true;
 	}
 
-	bool HasRectDerivedWorldBounds(const ZM_TerrainAuthoringRecipe& xRecipe)
+	// This USED to compare the recipe's four bounds floats against a
+	// recomputation of them from its export rectangle -- two authored copies of
+	// one fact, checked against each other. The bounds and the rect both derive
+	// from m_xDims now, so that comparison would be a tautology: it can only
+	// ever return true, and a guard that cannot fail is worse than no guard,
+	// because it reads like coverage.
+	//
+	// What is worth asserting is what the dims themselves cannot enforce and
+	// Zenithmon's authoring genuinely depends on:
+	//   * the dims are internally valid and inside the 64x64 chunk capacity;
+	//   * chunks are 64 m, because the nav grid, the bake manifest and every
+	//     authored coordinate in this file are written in metres against that;
+	//   * spacing is 1 m/vertex, which is the weld the splat and grass images
+	//     rely on (world metre == image pixel at these image sizes).
+	bool HasSupportedTerrainDimensions(const ZM_TerrainAuthoringRecipe& xRecipe)
 	{
-		const ZM_TerrainExportRect& xRect = xRecipe.m_xExportRect;
-		if (xRect.m_iMinX > xRect.m_iMaxX || xRect.m_iMinY > xRect.m_iMaxY)
+		if (!xRecipe.m_xDims.IsValid())
 		{
 			return false;
 		}
-		const float fExpectedMinX = static_cast<float>(
-			static_cast<int64_t>(xRect.m_iMinX)) * fTERRAIN_CHUNK_WORLD_SIZE;
-		const float fExpectedMaxX = static_cast<float>(
-			static_cast<int64_t>(xRect.m_iMaxX) + 1) * fTERRAIN_CHUNK_WORLD_SIZE;
-		const float fExpectedMinZ = static_cast<float>(
-			static_cast<int64_t>(xRect.m_iMinY)) * fTERRAIN_CHUNK_WORLD_SIZE;
-		const float fExpectedMaxZ = static_cast<float>(
-			static_cast<int64_t>(xRect.m_iMaxY) + 1) * fTERRAIN_CHUNK_WORLD_SIZE;
-		return xRecipe.m_fWorldMinX == fExpectedMinX &&
-			xRecipe.m_fWorldMaxX == fExpectedMaxX &&
-			xRecipe.m_fWorldMinZ == fExpectedMinZ &&
-			xRecipe.m_fWorldMaxZ == fExpectedMaxZ;
+		if (xRecipe.m_xDims.m_fChunkWorldSize != fTERRAIN_CHUNK_WORLD_SIZE)
+		{
+			return false;
+		}
+		return xRecipe.m_xDims.VertexSpacing() == 1.0f;
 	}
 
 	std::filesystem::path RelativeTerrainDirectory(const ZM_TerrainAuthoringRecipe& xRecipe)
@@ -717,8 +803,8 @@ namespace
 		const ZM_TerrainAuthoringRecipe& xRecipe,
 		const Zenith_Vector<ZM_TerrainPlanOp>& xPlan)
 	{
-		Zenith_Assert(HasRectDerivedWorldBounds(xRecipe),
-			"Terrain recipe world bounds must derive from its 64m export rectangle");
+		Zenith_Assert(HasSupportedTerrainDimensions(xRecipe),
+			"Terrain recipe dimensions must be valid, 64m chunks at 1m spacing");
 		bool bGrassEraseSeen = false;
 		for (u_int i = 0; i < xPlan.GetSize(); ++i)
 		{
@@ -728,10 +814,10 @@ namespace
 				continue;
 			}
 			Zenith_Assert(xOp.m_fRadius >= 0.0f &&
-				xOp.m_fWorldX - xOp.m_fRadius >= xRecipe.m_fWorldMinX &&
-				xOp.m_fWorldX + xOp.m_fRadius <= xRecipe.m_fWorldMaxX &&
-				xOp.m_fWorldZ - xOp.m_fRadius >= xRecipe.m_fWorldMinZ &&
-				xOp.m_fWorldZ + xOp.m_fRadius <= xRecipe.m_fWorldMaxZ,
+				xOp.m_fWorldX - xOp.m_fRadius >= xRecipe.WorldMinX() &&
+				xOp.m_fWorldX + xOp.m_fRadius <= xRecipe.WorldMaxX() &&
+				xOp.m_fWorldZ - xOp.m_fRadius >= xRecipe.WorldMinZ() &&
+				xOp.m_fWorldZ + xOp.m_fRadius <= xRecipe.WorldMaxZ(),
 				"Terrain plan dab %u escapes the recipe's rectangular world bounds", i);
 
 			if (xOp.m_eDabKind == ZM_TERRAIN_DAB_GRASS_DENSITY)
@@ -751,10 +837,10 @@ namespace
 		for (u_int i = 0; i < xRecipe.m_uLandmarkCount; ++i)
 		{
 			const ZM_TerrainPoint3& xPoint = xRecipe.m_pxLandmarks[i].m_xPosition;
-			Zenith_Assert(xPoint.m_fX >= xRecipe.m_fWorldMinX &&
-				xPoint.m_fX <= xRecipe.m_fWorldMaxX &&
-				xPoint.m_fZ >= xRecipe.m_fWorldMinZ &&
-				xPoint.m_fZ <= xRecipe.m_fWorldMaxZ,
+			Zenith_Assert(xPoint.m_fX >= xRecipe.WorldMinX() &&
+				xPoint.m_fX <= xRecipe.WorldMaxX() &&
+				xPoint.m_fZ >= xRecipe.WorldMinZ() &&
+				xPoint.m_fZ <= xRecipe.WorldMaxZ(),
 				"Terrain landmark %u escapes the recipe's rectangular world bounds", i);
 		}
 	}
@@ -919,9 +1005,10 @@ namespace
 				Flux_TerrainExportRect xRect;
 				if (bStepSucceeded)
 				{
+					const ZM_TerrainExportRect xRecipeRect = xRecipe.ExportRect();
 					bStepSucceeded = Flux_TerrainExportRect::TryCreate(
-						xRecipe.m_xExportRect.m_iMinX, xRecipe.m_xExportRect.m_iMinY,
-						xRecipe.m_xExportRect.m_iMaxX, xRecipe.m_xExportRect.m_iMaxY,
+						xRecipeRect.m_iMinX, xRecipeRect.m_iMinY,
+						xRecipeRect.m_iMaxX, xRecipeRect.m_iMaxY,
 						xRect);
 					if (!bStepSucceeded)
 					{
@@ -1259,8 +1346,14 @@ void ZM_BuildTerrainAuthoringPlan(const ZM_TerrainAuthoringRecipe& xRecipe,
 	Zenith_Vector<ZM_TerrainPlanOp>& xPlanOut)
 {
 	xPlanOut.Clear();
+	// DIMENSIONS before everything, including the reset. The executor opens the
+	// standalone session on the first terrain action and ResetImagesToDefaults
+	// clears the CPU maps, not the staged spec -- so staging the shape first is
+	// both safe and necessary: every coordinate below is world-space against it,
+	// and the bake sizes its outputs from it.
+	xPlanOut.PushBack(MakeSimpleOp(ZM_TERRAIN_PLAN_SET_DIMENSIONS));
 	xPlanOut.PushBack(MakeSimpleOp(ZM_TERRAIN_PLAN_RESET));
-	// RESET is deliberately first. The automation executor opens a standalone
+	// RESET is deliberately second. The automation executor opens a standalone
 	// session on the first terrain action; staging before that open relied on
 	// session internals retaining the candidate. Staging immediately after the
 	// clean reset makes the recipe's named set the unambiguous target for every
@@ -1293,10 +1386,11 @@ void ZM_BuildTerrainAuthoringPlan(const ZM_TerrainAuthoringRecipe& xRecipe,
 
 u_int ZM_GetTerrainRequiredOutputCount(const ZM_TerrainAuthoringRecipe& xRecipe)
 {
-	const int64_t iWidth = static_cast<int64_t>(xRecipe.m_xExportRect.m_iMaxX) -
-		static_cast<int64_t>(xRecipe.m_xExportRect.m_iMinX) + 1;
-	const int64_t iHeight = static_cast<int64_t>(xRecipe.m_xExportRect.m_iMaxY) -
-		static_cast<int64_t>(xRecipe.m_xExportRect.m_iMinY) + 1;
+	const ZM_TerrainExportRect xRect = xRecipe.ExportRect();
+	const int64_t iWidth = static_cast<int64_t>(xRect.m_iMaxX) -
+		static_cast<int64_t>(xRect.m_iMinX) + 1;
+	const int64_t iHeight = static_cast<int64_t>(xRect.m_iMaxY) -
+		static_cast<int64_t>(xRect.m_iMinY) + 1;
 	if (iWidth <= 0 || iHeight <= 0)
 	{
 		return 0u;
@@ -1327,13 +1421,12 @@ void ZM_EnumerateRequiredTerrainOutputs(const ZM_TerrainAuthoringRecipe& xRecipe
 	}
 	const std::filesystem::path xDirectory = RelativeTerrainDirectory(xRecipe);
 	const char* aszPrefixes[] = { "Render", "Render_LOW", "Physics" };
+	const ZM_TerrainExportRect xRect = xRecipe.ExportRect();
 	for (u_int uPrefix = 0; uPrefix < CountOf(aszPrefixes); ++uPrefix)
 	{
-		for (int iY = xRecipe.m_xExportRect.m_iMinY;
-			iY <= xRecipe.m_xExportRect.m_iMaxY; ++iY)
+		for (int iY = xRect.m_iMinY; iY <= xRect.m_iMaxY; ++iY)
 		{
-			for (int iX = xRecipe.m_xExportRect.m_iMinX;
-				iX <= xRecipe.m_xExportRect.m_iMaxX; ++iX)
+			for (int iX = xRect.m_iMinX; iX <= xRect.m_iMaxX; ++iX)
 			{
 				const std::string strName = std::string(aszPrefixes[uPrefix]) + "_" +
 					std::to_string(iX) + "_" + std::to_string(iY) + ZENITH_MESH_EXT;
@@ -1518,6 +1611,13 @@ ZM_TERRAIN_BAKE_QUEUE_RESULT ZM_QueueTerrainBake(
 		const ZM_TerrainPlanOp& xOp = xPlan.Get(i);
 		switch (xOp.m_eType)
 		{
+		case ZM_TERRAIN_PLAN_SET_DIMENSIONS:
+			xAutomation.AddStep_TerrainSetDimensions(
+				xRecipe.m_xDims.m_fChunkWorldSize,
+				xRecipe.m_xDims.VertexSpacing(),
+				static_cast<int>(xRecipe.m_xDims.m_uGridChunksX),
+				static_cast<int>(xRecipe.m_xDims.m_uGridChunksZ));
+			break;
 		case ZM_TERRAIN_PLAN_SET_ASSET_SET:
 			xAutomation.AddStep_TerrainSetAssetSet(xRecipe.m_pxWorldSpec->m_szTerrainSet);
 			break;

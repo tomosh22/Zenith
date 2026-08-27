@@ -24,6 +24,7 @@
 #include "Zenithmon/Source/Data/ZM_WorldSpec.h"
 #include "Zenithmon/Source/Gen/ZM_BakeManifest.h"
 #include "Zenithmon/Source/World/ZM_GrassDensityMap.h"
+#include "Zenithmon/Tests/ZM_GrassBaseline.h"
 
 #include <array>
 #include <cstdint>
@@ -1011,12 +1012,15 @@ namespace
 					"paused)", (double)fDrift);
 				bPassed = false;
 			}
-			if (g_uBDGrassAfter != g_uBDGrassAtPark)
+			if (!ZM_GrassBaseline::Restored(g_uBDGrassAtPark, g_uBDGrassAfter))
 			{
 				Zenith_Error(LOG_CATEGORY_UNITTEST,
-					"[ZM_BattleDirectorRoundTrip] resumed grass blade count was %u, expected %u (resume "
-					"must restore the same deterministic blade count)",
-					g_uBDGrassAfter, g_uBDGrassAtPark);
+					"[ZM_BattleDirectorRoundTrip] resumed grass blade count was %u "
+					"against a parked %u -- either the field is EMPTY or it converged "
+					"by more than %u tiles (see ZM_GrassBaseline.h for why this is not "
+					"an equality)",
+					g_uBDGrassAfter, g_uBDGrassAtPark,
+					ZM_GrassBaseline::uMAX_CONVERGENCE_TILES);
 				bPassed = false;
 			}
 		}

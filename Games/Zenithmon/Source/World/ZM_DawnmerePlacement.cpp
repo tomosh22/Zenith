@@ -66,7 +66,7 @@ namespace
 		// entity name,          X,                                          Z,                                          feet Y
 		// townCentre.x, townCentre.z + 10 -- straight +Z of the spawn, the walk-up target.
 		{ "Npc_Villager",       fZM_DAWNMERE_TOWN_CENTER_X,          fZM_DAWNMERE_TOWN_CENTER_Z + 10.0f, fZM_DAWNMERE_FEET_Y_VILLAGER     },
-		// townCentre.x + 14, townCentre.z + 18 -- 18 m off the z=480 Home corridor.
+		// townCentre.x + 14, townCentre.z + 18 -- 18 m off the z=160 Home corridor.
 		{ "Npc_TradePostClerk", fZM_DAWNMERE_TOWN_CENTER_X + 14.0f,  fZM_DAWNMERE_TOWN_CENTER_Z + 18.0f, fZM_DAWNMERE_FEET_Y_CLERK        },
 		// townCentre.x - 14, townCentre.z + 18 -- the mirror of the clerk.
 		{ "Npc_Caretaker",      fZM_DAWNMERE_TOWN_CENTER_X - 14.0f,  fZM_DAWNMERE_TOWN_CENTER_Z + 18.0f, fZM_DAWNMERE_FEET_Y_CARETAKER    },
@@ -231,9 +231,9 @@ namespace
 	// jamb's authored height comes from ground half a metre away, and the ground at
 	// its OWN column is unmeasurable by construction -- so the difference between
 	// them is never observed. Do not quote a figure for it. The samples that
-	// bracket the doorway do not agree on even the SIGN: (384, 474) reads 26.28675
-	// while the two door columns at z=475.5 read 26.22059/26.19279 (falling with +Z),
-	// yet the shell corners at z=476 -- 26.30927 at x=376 and 26.22234 at x=392 --
+	// bracket the doorway do not agree on even the SIGN: (152, 154) reads 26.28675
+	// while the two door columns at z=155.5 read 26.22059/26.19279 (falling with +Z),
+	// yet the shell corners at z=156 -- 26.30927 at x=144 and 26.22234 at x=160 --
 	// interpolate ABOVE those door samples (rising with +Z). Eroded terrain is not
 	// locally linear and neither extrapolation is evidence.
 	// What IS bounded is the consequence: the local relief over half a metre here
@@ -266,15 +266,15 @@ namespace
 	constexpr ZM_DawnmereNpcAnchor s_axDawnmereHomeSamples[] =
 	{
 		// name,                x,                              z,                              measured feet Y
-		{ "HomeShell_MinXMinZ", fZM_HOME_SHELL_MIN_X,           fZM_HOME_SHELL_MIN_Z,           26.30927f },
-		{ "HomeShell_MaxXMinZ", fZM_HOME_SHELL_MAX_X,           fZM_HOME_SHELL_MIN_Z,           26.22234f },
-		{ "HomeShell_MinXMaxZ", fZM_HOME_SHELL_MIN_X,           fZM_HOME_SHELL_MAX_Z,           25.61314f },
-		{ "HomeShell_MaxXMaxZ", fZM_HOME_SHELL_MAX_X,           fZM_HOME_SHELL_MAX_Z,           25.59459f },
-		{ "HomeDoorLeft",       fZM_DAWNMERE_HOME_DOOR_LEFT_X,  fZM_HOME_DOOR_SAMPLE_Z,         26.22059f },
-		{ "HomeDoorRight",      fZM_DAWNMERE_HOME_DOOR_RIGHT_X, fZM_HOME_DOOR_SAMPLE_Z,         26.19279f },
-		{ "HomeDoorTrigger",    fZM_DAWNMERE_HOME_X,            fZM_DAWNMERE_HOME_TRIGGER_Z,    26.28675f },
-		{ "FromHomeSpawn",      fZM_DAWNMERE_HOME_X,            fZM_DAWNMERE_FROM_HOME_SPAWN_Z, 26.54212f },
-		{ "HomeDoorStaging",    fZM_DAWNMERE_HOME_X,            fZM_DAWNMERE_HOME_DOOR_STAGING_Z, 26.48395f },
+		{ "HomeShell_MinXMinZ", fZM_HOME_SHELL_MIN_X,           fZM_HOME_SHELL_MIN_Z,           24.03514f },
+		{ "HomeShell_MaxXMinZ", fZM_HOME_SHELL_MAX_X,           fZM_HOME_SHELL_MIN_Z,           23.99380f },
+		{ "HomeShell_MinXMaxZ", fZM_HOME_SHELL_MIN_X,           fZM_HOME_SHELL_MAX_Z,           23.87985f },
+		{ "HomeShell_MaxXMaxZ", fZM_HOME_SHELL_MAX_X,           fZM_HOME_SHELL_MAX_Z,           24.08647f },
+		{ "HomeDoorLeft",       fZM_DAWNMERE_HOME_DOOR_LEFT_X,  fZM_HOME_DOOR_SAMPLE_Z,         23.99215f },
+		{ "HomeDoorRight",      fZM_DAWNMERE_HOME_DOOR_RIGHT_X, fZM_HOME_DOOR_SAMPLE_Z,         23.93810f },
+		{ "HomeDoorTrigger",    fZM_DAWNMERE_HOME_X,            fZM_DAWNMERE_HOME_TRIGGER_Z,    24.06054f },
+		{ "FromHomeSpawn",      fZM_DAWNMERE_HOME_X,            fZM_DAWNMERE_FROM_HOME_SPAWN_Z, 24.34438f },
+		{ "HomeDoorStaging",    fZM_DAWNMERE_HOME_X,            fZM_DAWNMERE_HOME_DOOR_STAGING_Z, 24.25396f },
 		// The anchor row, so the oracle re-checks the town centre on the same run.
 		{ "TownCenter",         fZM_DAWNMERE_TOWN_CENTER_X,     fZM_DAWNMERE_TOWN_CENTER_Z,     fZM_DAWNMERE_TOWN_CENTER_FEET_Y },
 	};
@@ -523,18 +523,18 @@ namespace
 	constexpr ZM_DawnmereNpcAnchor s_axDawnmereLabSamples[] =
 	{
 		// name,                x,                             z,                            measured feet Y
-		{ "LabShell_MinXMinZ",  fZM_LAB_SHELL_MIN_X,           fZM_LAB_SHELL_MIN_Z,          25.88701f },
-		{ "LabShell_MaxXMinZ",  fZM_LAB_SHELL_MAX_X,           fZM_LAB_SHELL_MIN_Z,          25.74946f },
-		{ "LabShell_MinXMaxZ",  fZM_LAB_SHELL_MIN_X,           fZM_LAB_SHELL_MAX_Z,          24.37600f },
-		{ "LabShell_MaxXMaxZ",  fZM_LAB_SHELL_MAX_X,           fZM_LAB_SHELL_MAX_Z,          25.17580f },
-		{ "LabDoorLeft",        fZM_DAWNMERE_LAB_DOOR_LEFT_X,  fZM_LAB_DOOR_SAMPLE_Z,        25.78080f },
-		{ "LabDoorRight",       fZM_DAWNMERE_LAB_DOOR_RIGHT_X, fZM_LAB_DOOR_SAMPLE_Z,        25.72527f },
-		{ "LabDoorTrigger",     fZM_DAWNMERE_LAB_X,            fZM_DAWNMERE_LAB_TRIGGER_Z,   25.81471f },
-		{ "FromLabSpawn",       fZM_DAWNMERE_LAB_X,            fZM_DAWNMERE_FROM_LAB_SPAWN_Z, 26.03916f },
-		{ "LabDoorStaging",     fZM_DAWNMERE_LAB_X,            fZM_DAWNMERE_LAB_DOOR_STAGING_Z, 25.95101f },
+		{ "LabShell_MinXMinZ",  fZM_LAB_SHELL_MIN_X,           fZM_LAB_SHELL_MIN_Z,          25.09159f },
+		{ "LabShell_MaxXMinZ",  fZM_LAB_SHELL_MAX_X,           fZM_LAB_SHELL_MIN_Z,          25.58217f },
+		{ "LabShell_MinXMaxZ",  fZM_LAB_SHELL_MIN_X,           fZM_LAB_SHELL_MAX_Z,          24.19491f },
+		{ "LabShell_MaxXMaxZ",  fZM_LAB_SHELL_MAX_X,           fZM_LAB_SHELL_MAX_Z,          24.44405f },
+		{ "LabDoorLeft",        fZM_DAWNMERE_LAB_DOOR_LEFT_X,  fZM_LAB_DOOR_SAMPLE_Z,        25.01930f },
+		{ "LabDoorRight",       fZM_DAWNMERE_LAB_DOOR_RIGHT_X, fZM_LAB_DOOR_SAMPLE_Z,        25.21366f },
+		{ "LabDoorTrigger",     fZM_DAWNMERE_LAB_X,            fZM_DAWNMERE_LAB_TRIGGER_Z,   25.05533f },
+		{ "FromLabSpawn",       fZM_DAWNMERE_LAB_X,            fZM_DAWNMERE_FROM_LAB_SPAWN_Z, 25.36531f },
+		{ "LabDoorStaging",     fZM_DAWNMERE_LAB_X,            fZM_DAWNMERE_LAB_DOOR_STAGING_Z, 25.21712f },
 		// The reserved pad's own centre, so the oracle states the site's reference
 		// height on the same run it measures everything derived from it.
-		{ "LabPadCenter",       fZM_DAWNMERE_LAB_X,            fZM_DAWNMERE_LAB_PAD_CENTER_Z, 24.32298f },
+		{ "LabPadCenter",       fZM_DAWNMERE_LAB_X,            fZM_DAWNMERE_LAB_PAD_CENTER_Z, 24.07768f },
 	};
 	// ==== END S8 SC-D MEASURED LAB GROUND ====
 
@@ -736,28 +736,29 @@ namespace
 	constexpr ZM_DawnmereNpcAnchor s_axDawnmereRouteSeamSamples[] =
 	{
 		// name,               x,                          z,                          measured feet Y
-		// FROZEN 2026-08-15 from ZM_DawnmereRouteSeamGroundTruth_Test against a warm
-		// Dawnmere bake: hitTerrain=1, finalHit='DawnmereTerrain', playerPresent=1
-		// (the capsule was found and correctly IGNORED by the probe).
+		// RE-MEASURED 2026-08-27 from ZM_DawnmereRouteSeamGroundTruth_Test against a
+		// warm Dawnmere bake of the SHRUNKEN map: hitTerrain=1,
+		// finalHit='DawnmereTerrain', playerPresent=1 (the capsule was found and
+		// correctly IGNORED by the probe). Both rows moved because the terrain under
+		// them is new -- a 9x10 grid, the content translated onto it, and the hills
+		// re-authored for the smaller domain.
 		//
-		// ★★ 24.366 IS NOT THE ~25.6-26.5 THIS ROW WAS PREDICTED TO READ, AND THE
-		// PREDICTION WAS WRONG FOR A REASON WORTH KEEPING. It was extrapolated from
-		// Dawnmere's OTHER measured columns (town centre 25.99, the Home and Lab
-		// rows 25.59-26.54), which all sit ~+2 m ABOVE the recipe's 24.0 m target.
-		// This column does not, because it is the first measured Dawnmere column
-		// INSIDE A FLATTEN CORRIDOR: it lies 4.56 m from the "Route" path polyline
-		// against an 18 m flatten radius, and a FLATTEN dab drives ground TO the
-		// target. So it reads target + 0.366, while the unflattened columns carry
-		// the hydraulic-erosion deposit pass on top.
+		// ★★ THIS ROW USED TO BE THE ODD ONE OUT AND NOW IT IS TYPICAL, WHICH IS THE
+		// FINDING WORTH KEEPING. It reads 24.549 against a 24.0 target -- target +
+		// 0.549 -- because it lies 4.56 m from the "Route" path polyline against an
+		// 18 m flatten radius, and a FLATTEN dab drives ground TO the target. That
+		// was the ONLY Dawnmere column with that property before the shrink; every
+		// other one sat ~+2 m above target on hydraulic-erosion deposit over
+		// UNFLATTENED ground, and this row's near-target reading had to be explained.
 		//
-		// ★ THAT ALSO CORRECTS AN EXPECTATION FOR THE REST OF R1-2. The spec warned
-		// that Route1's and Thornacre's provisional constants (their recipe targets,
-		// 26.0 and 28.0) would measure "metres, not ULPs" off. This measurement says
-		// that gap is a property of UNFLATTENED ground -- and every Route1/Thornacre
-		// arrival anchor sits on a flattened pad or lane. Expect those to come back
-		// NEAR their targets too. Do not treat a near-target measurement there as a
-		// broken probe.
-		{ "FromRoute1Spawn",   fZM_DAWNMERE_FROM_ROUTE1_X, fZM_DAWNMERE_FROM_ROUTE1_Z, 24.36592f },
+		// It no longer does. The shrink re-centred the erosion disc on the plaza and
+		// scaled its radius with the map, so the whole town is inside the eroded
+		// region and every Dawnmere column now reads within a few tenths of target
+		// (23.70 .. 25.58, two of them BELOW it). The flattened/unflattened split
+		// this comment was written to explain is not visible in Dawnmere's numbers
+		// any more -- but it is still the mechanism, and it is still why every
+		// Route1 and Thornacre arrival anchor reads near ITS target.
+		{ "FromRoute1Spawn",   fZM_DAWNMERE_FROM_ROUTE1_X, fZM_DAWNMERE_FROM_ROUTE1_Z, 24.54869f },
 		// FROZEN 2026-08-24 (ZM-65, closing ZM-D-203 §5 -- see the header) from
 		// ZM_DawnmereRouteSeamGroundTruth_Test against a warm Dawnmere bake:
 		// hitTerrain=1, finalHit='DawnmereTerrain', resolved=1, playerPresent=1
@@ -787,7 +788,7 @@ namespace
 		// IS NOT EXPLAINED. Do not invent a reason for it. The obvious one --
 		// "those pairs straddle a flatten boundary and this one does not" -- is
 		// FALSE, and the recipe data inverts it: Thornacre's pair sits inside the
-		// RouteGate pad {512,96} r=30 (ZM_TerrainAuthoring.cpp; ZM_ThornacrePlacement.h
+		// RouteGate pad {412,80} r=30 (ZM_TerrainAuthoring.cpp; ZM_ThornacrePlacement.h
 		// says so in as many words), and both Route 1 pairs sit inside their own
 		// r=30 gate pads AND within the DirtLane's r=16 corridor. All three
 		// comparison pairs are IDENTICALLY contained on both columns. The pair
@@ -799,7 +800,7 @@ namespace
 		// 0.962 m and nothing in this repo currently accounts for the spread.
 		// ★ THEREFORE DO NOT GENERALISE 0.068 INTO "SEAM PAIRS ARE CLOSE" -- the
 		// rule stands, on measurement rather than on a mechanism.
-		{ "DawnmereNorthGate", fZM_DAWNMERE_NORTH_GATE_X, fZM_DAWNMERE_NORTH_GATE_Z, 24.29772f },
+		{ "DawnmereNorthGate", fZM_DAWNMERE_NORTH_GATE_X, fZM_DAWNMERE_NORTH_GATE_Z, 24.46398f },
 	};
 	// ==== END R1-2 / ZM-65 MEASURED ROUTE SEAM GROUND ====
 
