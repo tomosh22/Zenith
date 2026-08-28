@@ -4206,6 +4206,9 @@ void GenerateTestAssets()
 	Zenith_Log(LOG_CATEGORY_ASSET, "=== Generating Test Assets ===");
 	GenerateStickFigureAssets();
 	GenerateProceduralTreeAssets();
+	GenerateProceduralRockAssets();
+	GenerateFallenTreeAssets();
+	GenerateBushAssets();
 	GenerateRenderTestAssets();
 	Zenith_Log(LOG_CATEGORY_ASSET, "=== Test Asset Generation Complete ===");
 }

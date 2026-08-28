@@ -8,9 +8,10 @@ passive referee). Single scene, build index 0 (`Assets/Scenes/RenderTest.zscen`)
 fully re-authored + saved by editor automation on **every** tools boot — windowed
 or headless.
 
-**A headless (`Null_`) boot authors the SAME scene a windowed one does**: 82
-entities, 361801 bytes, `TerrainTrees_Trunk` / `_Leaves` and their ~323 KB of
-instance data included. Entity and component creation is backend-neutral (ZEN-6);
+**A headless (`Null_`) boot authors the SAME scene a windowed one does**: 93
+entities, 432534 bytes, `TerrainTrees_Trunk` / `_Leaves` and their ~323 KB of
+instance data included, and the eleven `TerrainRocks_*` / `FallenTrees_*` /
+`TerrainBushes_*` groups below. Entity and component creation is backend-neutral (ZEN-6);
 only the GPU allocation underneath it is skipped, and on the Null backend that is
 `Zenith_Null_MemoryManager` handing back dummy handles. So a headless boot
 re-authors the committed bytes exactly and `Zenith_Editor::SaveActiveScene` logs
@@ -31,8 +32,9 @@ Consequences worth knowing:
   `RenderTestSmokeRunner` this way). Authoring one would write it into the tracked
   asset on every `--rendertest-smoke` run.
 * `RT_SceneAssetIntegrity` (`Tests/SceneAssetIntegrity.cpp`) guards all of the
-  above by inspecting the file on disk after boot: both tree entities present, the
-  campus + tennis testbed present, no `RenderTestSmokeRunner`. These assertions got
+  above by inspecting the file on disk after boot: both tree entities present, all
+  eleven prop groups present, the campus + tennis testbed present, no
+  `RenderTestSmokeRunner`. These assertions got
   STRONGER when the guard went away — a headless boot now actually writes the file,
   so "both tree entities are in the asset" is an end-to-end check rather than a
   near-vacuous one.
@@ -100,6 +102,111 @@ The fix has two halves, both in `Zenith/Core/Zenith.h`'s
 
 **If you add authoring code that computes a float landing in this scene, use those
 helpers, and re-verify by authoring from both configs and comparing the bytes.**
+(Re-verified with the animated-bush scatter rows: `Vulkan_vs2022_Debug_Win64_True`
+authored 93 entities / 432534 bytes, and following
+`Vulkan_vs2022_Release_Win64_True` and `Null_vs2022_Debug_Win64_True` boots both
+logged `[ScenePublish] IDENTICAL` over it. The bush rows added no new authoring
+maths — VAT path and duration are strings and literals, and the per-instance sway
+phase is transient — so the surface the pin protects did not grow.)
+
+## Scattered props (the shared engine stone + deadwood + bush sets)
+
+Eleven more instanced-mesh entities ride the campus alongside the two tree ones —
+**1060 instances** between them, authored by `RenderTest_ScatterInstancedProps`
+(an `AddStep_Custom` queued after the tree paint and before `AddStep_SaveScene`)
+and serialized into `RenderTest.zscen` by `Zenith_InstancedMeshComponent`, so
+non-tools boots — which run no automation — get them from the file. The scene
+went 82 entities / 361801 bytes → 90 / 414390 (stone + deadwood) →
+**93 entities / 432534 bytes** (the three animated bush groups).
+
+The meshes and materials are **not this game's**: they are the shared sets at
+`Zenith/Assets/Meshes/Rocks/`, `.../FallenTrees/` and `.../Bushes/`, regenerated
+every tools boot by their generators in `Tools/` (see
+`Zenith/AssetHandling/CLAUDE.md`). RenderTest supplies only the placement. That
+split is the point — a second game wanting rocks, deadwood or bushes writes a
+scatter, not a generator. There is likewise ONE table and ONE placement loop
+here: the rejection sampling, slope test, spacing test and determinism reasoning
+do not care whether the thing being placed is a boulder, a log or a bush.
+
+| Group | Mesh / material | Count | Band (r from centre) | Slope ceiling | Tipped | VAT | Collider |
+|---|---|---|---|---|---|---|---|
+| `TerrainRocks_Boulder` | Boulder / Granite | 150 | 106–340 m | tan 0.85 (~40°) | — | — | capsule r0.90, halfcyl 0.12, y+0.78 |
+| `TerrainRocks_Slab` | Slab / Sandstone | 70 | 112–320 m | tan 0.30 | — | — | none |
+| `TerrainRocks_Shard` | Shard / Granite | 55 | 150–330 m | tan 0.70 | — | — | capsule r0.42, halfcyl 1.05, y+1.45 |
+| `TerrainRocks_Pebbles` | Pebble cluster / Granite | 260 | 104–360 m | tan 1.05 | — | — | none |
+| `FallenTrees_Log` | Fallen trunk / Bark | 45 | 110–330 m | tan 0.42 | 90° | — | capsule r0.28, halfcyl 2.97, y+3.25 |
+| `FallenTrees_LogMossy` | Mossy trunk / MossyBark | 30 | 130–320 m | tan 0.38 | 90° | — | capsule r0.34, halfcyl 1.96, y+2.30 |
+| `FallenTrees_Stump` | Broken stump / Bark | 60 | 108–340 m | tan 0.62 | — | — | capsule r0.36, halfcyl 0.26, y+0.62 |
+| `FallenTrees_Branches` | Branch tangle / Bark | 120 | 106–350 m | tan 0.85 | 90° | — | none |
+| `TerrainBushes_Broad` | Broad shrub / Foliage | 90 | 105–345 m | tan 0.55 | — | Sway 4 s | none |
+| `TerrainBushes_Mound` | Low mound / Foliage | 120 | 104–355 m | tan 0.80 | — | Sway 4 s | none |
+| `TerrainBushes_Spindly` | Spindly upright / Foliage | 60 | 130–340 m | tan 0.60 | — | Sway 4 s | none |
+
+Things that are load-bearing rather than taste:
+
+* **The inner radius of every band clears the ~100 m gameplay plateau.** The player
+  spawn, the IK deck, the tennis court and the material showcase all sit on it, and
+  the post-erode `r=100` re-flatten is what guarantees it is level. A band that
+  reached inside would drop boulders through the tennis court.
+* **The scatter is inside `ZENITH_AUTHORING_DETERMINISM_BEGIN`**, for exactly the
+  reason `ApplyTreeDab` is: position, rotation and scale are all SERIALIZED, so
+  under `/fp:fast` a Debug tools boot and a Release one would author different
+  bytes into a tracked asset. The rotations go through
+  `Zenith_Maths::Authoring*` (the pin does not reach into glm's header inlines),
+  and the rejection tests are inside the pin too — a 1-ULP shift in the slope test
+  would accept a prop one build rejects and desync the RNG stream for the whole
+  scatter. Same verification: re-author from both configs and compare the bytes.
+* **★ EVERY RNG DRAW IS HOISTED INTO ITS OWN NAMED CONST**, in the order it is
+  meant to happen. C++ does not order the evaluation of function ARGUMENTS, so
+  `AuthoringQuatMul(RotX(Next()), RotZ(Next()))` leaves it to the compiler which
+  draw feeds which axis — stable for one toolchain, and a silent re-scatter of
+  every instance on the day that changes. The first version of this loop had that
+  shape in two places (the lean quaternion and the scale vector). The pin cannot
+  help: it constrains float MATH, not evaluation order.
+* **★ THE DEADWOOD IS MODELLED STANDING AND TIPPED BY THE INSTANCE ROTATION**
+  (`m_fLayDownDeg`). That is what makes its collider work:
+  `Zenith_InstanceColliderConfig` can only describe a Y-aligned capsule, but
+  `CreateInstanceBody` rotates the capsule and its local Y offset by the
+  instance's rotation — so a log authored along +Y comes out with a correctly
+  aligned HORIZONTAL capsule. Their `m_fSinkFraction` is consequently NEGATIVE:
+  once a log is on its side its axis sits one radius above the ground, so the
+  instance is LIFTED rather than sunk.
+* **Five of the eight groups carry colliders, and the capsule radius is a FLOOR**
+  on the visual half-width (0.90 against a ~1.2 m boulder), for the same reason
+  the tree trunk's is: proud nowhere the player can reach beats an invisible wall.
+  Flagstones, pebble clusters and loose branches are low enough to be scenery; a
+  capsule is the wrong shape for a plate in any case, and
+  `INSTANCE_COLLIDER_TYPE_CAPSULE` is the only per-instance shape the component
+  serializes. That ON/OFF split is invisible in a render, so `RT_PropCollision`
+  (`Tests/Test_PropCollision.cpp`) pins it on the LOADED scene: bodies ==
+  instances for the five, exactly ZERO for the three, plus the world-space
+  attitude of each group's long axis and a downward ray that must resolve through
+  the body's UserData back to its group entity.
+  * The ray goes **DOWN**, not broadside: props stand on sloping ground, so a
+    side shot is behind the terrain about as often as not — which failed on the
+    boulders while passing on everything else, reading like a boulder bug rather
+    than an aiming bug.
+  * For a tipped piece it aims **70% of the way along the trunk**, which is what
+    makes it discriminating. If the instance rotation ever stopped reaching the
+    collider, the log would still be DRAWN on its side and the ledger would still
+    count one body per log — but the capsule would be standing upright through the
+    butt end, and there would be nothing out at the far end to hit.
+* **The clusters are several pieces in ONE mesh** — six stones per pebble
+  instance, three branches per tangle — so 380 instances read as ~1900 loose
+  objects for 380 transforms.
+* **★ THE BUSH ROWS ARE ANIMATED, AND THAT IS TWO TABLE COLUMNS, NOT A SECOND
+  LOOP.** `m_szVATFile` names the wind-sway VAT baked beside the mesh (empty for
+  every static row) and `m_fAnimDuration` the clip length — a plain literal,
+  because it serializes through `Zenith_InstancedMeshComponent`. The scatter
+  loads both onto the component before spawning, then seeds each instance's
+  phase with `fmodf(instanceID * 0.618034f, 1.0f)` — deliberately the SAME
+  derivation `ReadFromDataStream` re-applies on load (phase is transient, never
+  serialized), so the authoring session's sway matches every reload, and no RNG
+  draw is consumed. Bushes carry no collider (foliage you brush past — the
+  tree-leaves reasoning) and stand upright, so they take the plain lean path.
+  In the editor's Stopped mode nothing services their VAT time (the terrain
+  editor hand-ticks only its own tree entities), so they sway in Play and stand
+  still in Stopped — known, accepted.
 
 ## Behaviour Graphs (W3 conversion)
 
@@ -324,7 +431,10 @@ Games\RenderTest\RunTerrainIndirectPerformance.ps1 -Mode padded -CameraCase hori
   the scene FILE the boot left behind rather than on the loaded scene, so it reddens
   in whichever config damaged the asset — and `RT_SimPad_Test`
   (`Tests/Test_SimPad.cpp`), the GAMEPAD column of the action table end to end
-  (see *Controls* below), and `RT_TreeCollision` (`Tests/Test_TreeCollision.cpp`),
+  (see *Controls* below), `RT_PropCollision` (`Tests/Test_PropCollision.cpp`, the
+  instanced-prop body ledger + attitude + ray probe described under *Scattered
+  props* above),
+  and `RT_TreeCollision` (`Tests/Test_TreeCollision.cpp`),
   which walks the real player into a real tree on the real input path and asserts it
   cannot get through — its assertions are ANDed and each is named, because "blocked" on
   its own is satisfied by a player that never moved, so the walked/reached clauses are

@@ -21,7 +21,7 @@
 // the Null backend (on the reasoning that instance groups allocate GPU buffers), so
 // a headless boot authored the campus WITHOUT its two instanced tree entities, and
 // that subset was serialized straight over the tracked asset -- every headless run
-// silently rewrote the committed scene (361801 bytes as it stands today) down to
+// silently rewrote the committed scene (361801 bytes at the time) down to
 // ~38 KB, deleting ~323 KB of tree instance data, and the only symptom was a dirty
 // `git status` nobody was looking at. A publish guard in
 // Zenith_Editor::SaveActiveScene then refused any headless save that would CHANGE
@@ -39,8 +39,8 @@
 // reddens this test in the headless gate rather than passing quietly.
 //
 // So this asserts on the FILE, not on the loaded scene: whichever backend booted,
-// the asset on disk still carries both tree entities, and it carries no per-run
-// harness entity. Reading names out of the raw bytes deliberately avoids depending
+// the asset on disk still carries both tree entities and all eleven instanced-prop
+// entities, and it carries no per-run harness entity. Reading names out of the raw bytes deliberately avoids depending
 // on which entities THIS run happens to have loaded (the strings are the entity
 // names the serializer writes; a scene missing an entity cannot contain its name).
 namespace
@@ -111,6 +111,24 @@ namespace
 		// their absence means the authoring step stopped being backend-neutral.
 		RequireInScene("TerrainTrees_Trunk", "the boot rewrote the scene without its instanced trees");
 		RequireInScene("TerrainTrees_Leaves", "the boot rewrote the scene without its instanced trees");
+
+		// The eleven instanced-prop entities RenderTest_ScatterInstancedProps authors
+		// from the SHARED engine sets. They are here for the same reason the trees are:
+		// they are authored by a custom step rather than by an AddStep_* the
+		// automation batch understands, so nothing else would notice a step that
+		// silently stopped running -- the scene would just save that many entities
+		// lighter.
+		RequireInScene("TerrainRocks_Boulder", "the boot rewrote the scene without its scattered rocks");
+		RequireInScene("TerrainRocks_Slab", "the boot rewrote the scene without its scattered rocks");
+		RequireInScene("TerrainRocks_Shard", "the boot rewrote the scene without its scattered rocks");
+		RequireInScene("TerrainRocks_Pebbles", "the boot rewrote the scene without its scattered rocks");
+		RequireInScene("FallenTrees_Log", "the boot rewrote the scene without its scattered deadwood");
+		RequireInScene("FallenTrees_LogMossy", "the boot rewrote the scene without its scattered deadwood");
+		RequireInScene("FallenTrees_Stump", "the boot rewrote the scene without its scattered deadwood");
+		RequireInScene("FallenTrees_Branches", "the boot rewrote the scene without its scattered deadwood");
+		RequireInScene("TerrainBushes_Broad", "the boot rewrote the scene without its animated bushes");
+		RequireInScene("TerrainBushes_Mound", "the boot rewrote the scene without its animated bushes");
+		RequireInScene("TerrainBushes_Spindly", "the boot rewrote the scene without its animated bushes");
 
 		// A spot-check that the rest of the campus survived too, so a save that
 		// dropped everything BUT the trees still reddens this.

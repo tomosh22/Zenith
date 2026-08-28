@@ -16,6 +16,28 @@ extern void GenerateStickFigureAssets();
 // Output: ENGINE_ASSETS_DIR/Meshes/ProceduralTree/
 extern void GenerateProceduralTreeAssets();
 
+// Generate the SHARED procedural rock set
+// Creates: 4 stone meshes (boulder / slab / shard / pebble cluster) as
+// .zasset + .zmesh + .zmodel, plus granite and sandstone PBR texture sets
+// (albedo / normal / RM / AO) and their materials
+// Output: ENGINE_ASSETS_DIR/Meshes/Rocks/
+extern void GenerateProceduralRockAssets();
+
+// Generate the SHARED deadwood set
+// Creates: 4 pieces (fallen log / mossy log / broken stump / branch tangle) as
+// .zasset + .zmesh + .zmodel, plus bark and mossy-bark PBR texture sets
+// (albedo / normal / RM / AO) and their materials
+// Output: ENGINE_ASSETS_DIR/Meshes/FallenTrees/
+extern void GenerateFallenTreeAssets();
+
+// Generate the SHARED wind-animated bush set
+// Creates: 3 foliage bushes (broad shrub / low mound / spindly upright), each
+// as .zasset + .zmesh + .zskel + a sway VAT (.zanmt), plus the masked foliage
+// albedo texture and material. One instance group per bush (all alpha-tested
+// foliage; no opaque stem half) -- see the .cpp header for why.
+// Output: ENGINE_ASSETS_DIR/Meshes/Bushes/
+extern void GenerateBushAssets();
+
 // Generate RenderTest game-specific assets (bullet sphere mesh + model)
 // Output: GAME_ASSETS_DIR/Meshes/Bullet_Sphere.{zasset,zmodel}
 extern void GenerateRenderTestAssets();

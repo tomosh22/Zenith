@@ -17,8 +17,16 @@ The S0-S7 narrative that used to fill the back half of this file moved VERBATIM 
 [History.md](History.md) on 2026-08-18, so this file can hold to the ~25-line budget
 its own template in `AgentBriefing.md` §2.3 specifies. Nothing was deleted.
 
-**★ LIVE PIN (UPDATED 2026-08-27):
-ZM boot `3462`; engine boot (Null Combat) `1693`; Null RenderTest `1784`; registry **70**.**
+**★ LIVE PIN (UPDATED 2026-08-28):
+ZM boot `3498`; engine boot (Null Combat) `1729`; Null RenderTest `1820`; registry **70**.**
+
+> **ENGINE-SIDE +36 (2026-08-28), Zenithmon code untouched.** Three shared prop-set
+> unit suites landed in `Tools/` — rocks (+13), deadwood (+14), wind-animated
+> bushes (+9) — and every game boots the same engine suite, so all three rows moved
+> together. Each number OBSERVED from its own `Null_vs2022_Debug_Win64_True` run
+> (`3498 ran / 3496 passed / 0 failed`, 2 skipped); registry unchanged. The two
+> earlier bumps (3475, 3489) were narrated only in the manifest's git history —
+> this line was stale against the manifest from 3475 on, which C7 caught.
 
 > **★ THE LANES ARE PAVED — the shared CLAY ground set, OBSERVED 2026-08-28 (ZM-D-216).**
 > **NO PIN MOVED.** Zenithmon-only in effect (the one engine-tree edit is RenderTest's

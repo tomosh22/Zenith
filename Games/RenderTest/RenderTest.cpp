@@ -98,6 +98,7 @@
 #include "Editor/Zenith_Editor.h"
 #include "Editor/Zenith_UndoSystem.h"
 #include "Editor/TerrainEditor/Zenith_TerrainEditor.h"
+#include "EntityComponent/Components/Zenith_InstancedMeshComponent.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
 #endif
 
@@ -1927,6 +1928,417 @@ static void BuildGraph_RenderTestPlayerActions(Zenith_GraphBuilder& xBuilder)
 // different bytes into the tracked scene. See ZENITH_AUTHORING_DETERMINISM_BEGIN.
 ZENITH_AUTHORING_DETERMINISM_BEGIN
 
+//=============================================================================
+// Scattered props — the SHARED engine sets (Zenith/Assets/Meshes/Rocks,
+// .../FallenTrees and .../Bushes, all regenerated every tools boot by their
+// generators in Tools/) dressed onto this map. One instance group per
+// (mesh, material) pair, because an instance group is single-material and
+// single-mesh by construction.
+//
+// ONE table and ONE placement loop for all three families. The rejection
+// sampling, the slope test, the spacing test and the determinism reasoning are
+// identical whether the thing being placed is a boulder, a log or a bush; the
+// genuine differences are rows in the table rather than second copies of the
+// loop: deadwood gets TIPPED OVER (m_fLayDownDeg), and bushes are ANIMATED
+// (m_szVATFile + m_fAnimDuration — a wind-sway VAT loaded onto the component,
+// with each instance's phase seeded by the same golden-ratio derivation the
+// load path re-applies, since phase is transient and never serialized).
+//
+// Deterministic-FP, for exactly the reason ApplyTreeDab is: every value below —
+// scatter position, per-instance rotation and scale — is SERIALIZED into
+// RenderTest.zscen by Zenith_InstancedMeshComponent, so under the project's
+// /fp:fast a Debug tools boot and a Release one would otherwise author different
+// bytes into a tracked asset. Hence the pin above this point, the
+// Zenith_Maths::Authoring* quaternion helpers (the pin is a pragma at THIS call
+// site and does not reach into glm's header inlines), and the rejection tests
+// living inside the pin too: a 1-ULP shift in a slope test would accept a prop
+// one build rejects, desyncing the RNG stream and moving the whole scatter.
+//
+// ★ EVERY RNG DRAW IS HOISTED INTO ITS OWN NAMED CONST, in the order it is meant
+// to happen. C++ does not order the evaluation of function ARGUMENTS, so
+// `AuthoringQuatMul(RotX(Next()), RotZ(Next()))` leaves it to the compiler which
+// draw feeds which axis — stable for one toolchain, and a silent re-scatter of
+// every instance on the day that changes. The first version of this loop had
+// exactly that shape in two places (the lean quaternion and the scale vector).
+//=============================================================================
+namespace
+{
+	struct RenderTestScatterGroup
+	{
+		const char* m_szEntity;
+		const char* m_szAssetDir;         // under ENGINE_ASSETS_DIR, e.g. "Meshes/Rocks/"
+		const char* m_szMeshBase;         // stem within that directory
+		const char* m_szMaterialFile;
+		const char* m_szVATFile;          // "" = static prop; else a sway VAT beside the mesh
+		float       m_fAnimDuration;      // seconds; read only when m_szVATFile is non-empty
+		float       m_fBoundsCentreY;     // local-space cull sphere, scaled per instance
+		float       m_fBoundsRadius;
+		u_int       m_uCount;
+		float       m_fRingMin;           // annulus about the campus centre
+		float       m_fRingMax;
+		float       m_fMaxSlopeTan;       // rise/run ceiling for the site
+		float       m_fSpacing;           // minimum metres between two of THIS prop
+		float       m_fScaleMin;
+		float       m_fScaleMax;
+		float       m_fTiltDeg;           // max lean off the piece's rest attitude
+		float       m_fLayDownDeg;        // 0 = stands as authored; 90 = tipped onto its side
+		float       m_fLengthMetres;      // tipped rows only: how far ahead to read the ground
+		float       m_fSinkFraction;      // metres sunk per unit of scale; NEGATIVE LIFTS,
+		                                  // which is what a round log resting on the ground needs
+		u_int       m_uSeed;
+		bool        m_bCollider;
+		float       m_fColliderRadius;    // local (pre-scale), Jolt capsule
+		float       m_fColliderHalfHeight;
+		float       m_fColliderYOffset;
+	};
+
+	// Plain literals throughout, deliberately: the four collider floats serialize
+	// into RenderTest.zscen through Zenith_InstancedMeshComponent's v5 stream, so
+	// they must never be computed through glm/libm at authoring time.
+	//
+	// The inner radius of every band clears the ~100 m gameplay plateau. The
+	// player spawn, the IK deck, the tennis court and the material showcase all
+	// sit on it, and the post-erode `r=100` re-flatten is what guarantees it is
+	// level. The outer radius stops ~150 m short of the 1024 m terrain edge,
+	// matching the hill belt: this is scenery for the bowl the campus sits in.
+	const RenderTestScatterGroup g_axScatterGroups[] =
+	{
+		// ---- Stone ---------------------------------------------------------
+		// Boulders: the readable ones. Big enough to collide with, so they do.
+		// The capsule radius is a FLOOR on the ~1.2 m visual half-width — proud
+		// nowhere the player can reach, and never an invisible wall.
+		{ "TerrainRocks_Boulder",  "Meshes/Rocks/", "Rock_Boulder",  "Rock_Granite.zmtrl", "", 0.0f,
+		  0.75f, 2.10f, 150u, 106.0f, 340.0f, 0.85f, 10.0f, 0.85f, 2.05f, 11.0f, 0.0f, 0.0f, 0.16f,
+		  0x5B0D1E3u, true,  0.90f, 0.12f, 0.78f },
+
+		// Slabs: low fractured flagstones on the flats. No collider — a 0.7 m
+		// slab is a step, and a capsule is the wrong shape for a plate anyway.
+		{ "TerrainRocks_Slab",     "Meshes/Rocks/", "Rock_Slab",     "Rock_Sandstone.zmtrl", "", 0.0f,
+		  0.35f, 2.40f,  70u, 112.0f, 320.0f, 0.30f, 13.0f, 0.70f, 1.45f, 16.0f, 0.0f, 0.0f, 0.22f,
+		  0x2C71A9Fu, false, 0.0f,  0.0f,  0.0f },
+
+		// Shards: upright standing stones, on the hill flanks where they read
+		// against the sky. Tight tilt so they stay standing.
+		{ "TerrainRocks_Shard",    "Meshes/Rocks/", "Rock_Shard",    "Rock_Granite.zmtrl", "", 0.0f,
+		  1.30f, 2.60f,  55u, 150.0f, 330.0f, 0.70f, 17.0f, 0.85f, 1.90f,  7.0f, 0.0f, 0.0f, 0.10f,
+		  0x71E4C05u, true,  0.42f, 1.05f, 1.45f },
+
+		// Pebble clusters: the density layer. Six stones per instance, so 260
+		// instances read as ~1500 stones for 260 transforms.
+		{ "TerrainRocks_Pebbles",  "Meshes/Rocks/", "Rock_Pebbles",  "Rock_Granite.zmtrl", "", 0.0f,
+		  0.20f, 1.10f, 260u, 104.0f, 360.0f, 1.05f,  4.5f, 0.65f, 1.70f, 14.0f, 0.0f, 0.0f, 0.20f,
+		  0x1A3F77Bu, false, 0.0f,  0.0f,  0.0f },
+
+		// ---- Deadwood ------------------------------------------------------
+		// ★ The three tipped rows below are why m_fLayDownDeg exists. Every piece
+		// is MODELLED STANDING (along +Y, origin on the butt), and the instance
+		// rotation lays it down — which is also what gives it a correctly aligned
+		// horizontal capsule, since Zenith_InstanceColliderConfig can only
+		// describe a Y-aligned one and CreateInstanceBody rotates it by the
+		// instance transform. See Tools/Zenith_Tools_FallenTreeAssetExport.cpp.
+		//
+		// Their m_fSinkFraction is NEGATIVE: once a log is on its side its axis
+		// sits one radius above the ground, so the instance has to be LIFTED by
+		// roughly that much or the trunk is buried to its midline.
+		//
+		// The collider spans the trunk: halfHeight = length/2 - radius, offset =
+		// length/2, both in the mesh's own standing frame.
+		{ "FallenTrees_Log",       "Meshes/FallenTrees/", "FallenTree_Log",      "FallenTree_Bark.zmtrl", "", 0.0f,
+		  3.25f, 3.70f,  45u, 110.0f, 330.0f, 0.42f, 20.0f, 0.80f, 1.25f,  5.0f, 90.0f, 6.50f, -0.26f,
+		  0x3D91C77u, true,  0.28f, 2.97f, 3.25f },
+
+		{ "FallenTrees_LogMossy",  "Meshes/FallenTrees/", "FallenTree_LogMossy", "FallenTree_MossyBark.zmtrl", "", 0.0f,
+		  2.30f, 2.90f,  30u, 130.0f, 320.0f, 0.38f, 22.0f, 0.85f, 1.35f,  6.0f, 90.0f, 4.60f, -0.33f,
+		  0x64B2E19u, true,  0.34f, 1.96f, 2.30f },
+
+		// The stump is NOT tipped: it is what the fallen tree left behind, and it
+		// keeps the authored standing attitude (m_fLayDownDeg 0), so it also takes
+		// the upright rotation path below.
+		// ★ The capsule is sized from the stump's REAL height, not from
+		// m_fLengthMetres. A stump's root flare and its 0.40 splinter depth add
+		// ~28% on top of the axis length (1.25 m of axis, ~1.60 m of mesh), and
+		// sizing the capsule from the axis left its top 0.36 m with no collider --
+		// which the unit suite's extent check is what surfaced.
+		{ "FallenTrees_Stump",     "Meshes/FallenTrees/", "FallenTree_Stump",    "FallenTree_Bark.zmtrl", "", 0.0f,
+		  0.62f, 1.30f,  60u, 108.0f, 340.0f, 0.62f, 14.0f, 0.75f, 1.40f,  6.0f, 0.0f, 0.0f, 0.08f,
+		  0x9C05D41u, true,  0.36f, 0.44f, 0.80f },
+
+		// Loose branches: debris, walked through, no collider.
+		{ "FallenTrees_Branches",  "Meshes/FallenTrees/", "FallenTree_Branches", "FallenTree_Bark.zmtrl", "", 0.0f,
+		  0.30f, 1.60f, 120u, 106.0f, 350.0f, 0.85f,  7.0f, 0.75f, 1.45f, 12.0f, 90.0f, 1.70f, -0.07f,
+		  0x2F8A653u, false, 0.0f,  0.0f,  0.0f },
+
+		// ---- Bushes --------------------------------------------------------
+		// The three wind-animated rows, and the reason the table grew its VAT
+		// column. Each names the sway VAT baked beside its mesh and the clip
+		// duration (a plain literal — it serializes through the component).
+		// All three are foliage you brush past: no collider, same reasoning as
+		// the tree leaves and the pebble clusters. Upright (m_fLayDownDeg 0),
+		// small positive sink so the stems root into a slope. The bounds
+		// spheres carry ~0.3 m of slack over the authored envelope so a card
+		// at sway peak cannot cross its own cull sphere.
+		{ "TerrainBushes_Broad",   "Meshes/Bushes/", "Bush_Broad",   "Bush_Foliage.zmtrl", "Bush_Broad_Sway.zanmt", 4.0f,
+		  0.60f, 2.00f,  90u, 105.0f, 345.0f, 0.55f,  7.0f, 0.80f, 1.35f,  7.0f, 0.0f, 0.0f, 0.06f,
+		  0x6B31F4Du, false, 0.0f,  0.0f,  0.0f },
+
+		// The mound is the density layer of the three: hardy, climbs further
+		// up the flanks (slope ceiling near the pebbles'), packs tightest.
+		{ "TerrainBushes_Mound",   "Meshes/Bushes/", "Bush_Mound",   "Bush_Foliage.zmtrl", "Bush_Mound_Sway.zanmt", 4.0f,
+		  0.42f, 1.50f, 120u, 104.0f, 355.0f, 0.80f,  4.5f, 0.70f, 1.30f,  9.0f, 0.0f, 0.0f, 0.06f,
+		  0x2D85C1Bu, false, 0.0f,  0.0f,  0.0f },
+
+		// Spindly: sparse, further out, reads as a distinct silhouette against
+		// the hill flanks the shards stand on.
+		{ "TerrainBushes_Spindly", "Meshes/Bushes/", "Bush_Spindly", "Bush_Foliage.zmtrl", "Bush_Spindly_Sway.zanmt", 4.0f,
+		  0.85f, 1.90f,  60u, 130.0f, 340.0f, 0.60f,  9.0f, 0.85f, 1.40f,  6.0f, 0.0f, 0.0f, 0.04f,
+		  0x7A19E63u, false, 0.0f,  0.0f,  0.0f },
+	};
+}
+
+static void RenderTest_ScatterInstancedProps()
+{
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetActiveSceneData();
+	if (pxSceneData == nullptr)
+	{
+		Zenith_Error(LOG_CATEGORY_MESH, "[RenderTest] prop scatter: no active scene");
+		return;
+	}
+
+	// Same "open one if the automation batch has not already" contract the
+	// terrain-editor automation actions use — this step runs after the tree paint
+	// on a normal boot, but it must not depend on that ordering to read heights.
+	Zenith_TerrainEditor& xTerrainEditor = g_xEngine.TerrainEditor();
+	if (!xTerrainEditor.IsActive())
+	{
+		xTerrainEditor.OpenStandalone();
+	}
+
+	const float fEDGE_MARGIN = 14.0f;   // keep every prop off the terrain boundary
+
+	u_int uTotalPlaced = 0u;
+	for (const RenderTestScatterGroup& xGroup : g_axScatterGroups)
+	{
+		Zenith_Entity xEntity = pxSceneData->FindEntityByName(xGroup.m_szEntity);
+		if (!xEntity.IsValid())
+		{
+			xEntity = g_xEngine.Scenes().CreateEntity(pxSceneData, xGroup.m_szEntity);
+			xEntity.SetTransient(false);
+		}
+		Zenith_InstancedMeshComponent* pxComp = xEntity.TryGetComponent<Zenith_InstancedMeshComponent>();
+		if (pxComp == nullptr)
+		{
+			pxComp = &xEntity.AddComponent<Zenith_InstancedMeshComponent>();
+		}
+		pxComp->ClearInstances();
+		pxComp->LoadMesh(std::string(ENGINE_ASSETS_DIR) + xGroup.m_szAssetDir
+			+ xGroup.m_szMeshBase + ZENITH_MESH_ASSET_EXT);
+		pxComp->LoadMaterial(std::string("engine:") + xGroup.m_szAssetDir + xGroup.m_szMaterialFile);
+		// Animated rows (the bushes) carry a sway VAT beside their mesh. The
+		// duration comes from the table as a plain literal because it
+		// SERIALIZES (LoadAnimationTexture would also derive it from the VAT
+		// file, but the explicit set is what the tree groups do and it keeps
+		// the authored value visible here).
+		const bool bAnimated = (xGroup.m_szVATFile[0] != '\0');
+		if (bAnimated)
+		{
+			pxComp->LoadAnimationTexture(std::string(ENGINE_ASSETS_DIR) + xGroup.m_szAssetDir
+				+ xGroup.m_szVATFile);
+			pxComp->SetAnimationDuration(xGroup.m_fAnimDuration);
+		}
+		pxComp->SetBounds(Zenith_Maths::Vector3(0.0f, xGroup.m_fBoundsCentreY, 0.0f),
+			xGroup.m_fBoundsRadius);
+		if (xGroup.m_bCollider)
+		{
+			pxComp->SetInstanceColliderCapsule(xGroup.m_fColliderRadius,
+				xGroup.m_fColliderHalfHeight, xGroup.m_fColliderYOffset);
+		}
+		pxComp->Reserve(xGroup.m_uCount);
+
+		// xorshift32, inline for the same reason ApplyTreeDab keeps its own: the
+		// stream position IS part of the authored result, so nothing may consume
+		// a draw that a different build would not.
+		u_int uRngState = xGroup.m_uSeed;
+		auto NextFloat01 = [&uRngState]() -> float
+		{
+			u_int uX = uRngState;
+			uX ^= uX << 13; uX ^= uX >> 17; uX ^= uX << 5;
+			uRngState = uX;
+			return static_cast<float>(uX & 0xFFFFFFu) / 16777215.0f;
+		};
+
+		Zenith_Vector<Zenith_Maths::Vector2> xPlaced;
+		Zenith_Maths::Vector3 xFirstPlacement(0.0f, 0.0f, 0.0f);
+		const float fSpacingSq = xGroup.m_fSpacing * xGroup.m_fSpacing;
+		const float fRingMinSq = xGroup.m_fRingMin * xGroup.m_fRingMin;
+		const float fRingSpanSq = xGroup.m_fRingMax * xGroup.m_fRingMax - fRingMinSq;
+		const float fLayDownRadians = Zenith_Maths::AuthoringRadians(xGroup.m_fLayDownDeg);
+		const bool bLaidDown = (xGroup.m_fLayDownDeg != 0.0f);
+
+		u_int uPlaced = 0u;
+		for (u_int uAttempt = 0; uAttempt < xGroup.m_uCount * 12u && uPlaced < xGroup.m_uCount; uAttempt++)
+		{
+			// Uniform over the ANNULUS: sqrt on the squared radii, not a lerp on
+			// the radii, or the inner edge would be over-dense.
+			const float fAngleDraw = NextFloat01();
+			const float fRadiusDraw = NextFloat01();
+			const float fAngle = fAngleDraw * 6.2831853f;
+			const float fDist = sqrtf(fRingMinSq + fRadiusDraw * fRingSpanSq);
+			const float fPX = fCAMPUS_CX + cosf(fAngle) * fDist;
+			const float fPZ = fCAMPUS_CZ + sinf(fAngle) * fDist;
+
+			if (fPX < fEDGE_MARGIN || fPX > fCAMPUS_TERRAIN_SIZE - fEDGE_MARGIN ||
+				fPZ < fEDGE_MARGIN || fPZ > fCAMPUS_TERRAIN_SIZE - fEDGE_MARGIN)
+			{
+				continue;
+			}
+
+			// Slope rejection, central differences over 1 m — the same estimator
+			// the tree brush uses, so the two scatters agree about what "steep" is.
+			const float fHL = xTerrainEditor.SampleHeightWorld(fPX - 1.0f, fPZ);
+			const float fHR = xTerrainEditor.SampleHeightWorld(fPX + 1.0f, fPZ);
+			const float fHD = xTerrainEditor.SampleHeightWorld(fPX, fPZ - 1.0f);
+			const float fHU = xTerrainEditor.SampleHeightWorld(fPX, fPZ + 1.0f);
+			const float fSlopeTan = 0.5f * sqrtf((fHR - fHL) * (fHR - fHL) + (fHU - fHD) * (fHU - fHD));
+			if (fSlopeTan > xGroup.m_fMaxSlopeTan)
+			{
+				continue;
+			}
+
+			// A tipped piece also has to REJECT ground its length cannot bridge:
+			// pitching to the average slope still leaves a log crossing a dip with
+			// its middle in the air and both ends buried. The draw order is
+			// unaffected -- this consumes nothing.
+			if (bLaidDown)
+			{
+				const float fRunProbe = xGroup.m_fLengthMetres * xGroup.m_fScaleMax;
+				const float fHereH = xTerrainEditor.SampleHeightWorld(fPX, fPZ);
+				const float fMidH = xTerrainEditor.SampleHeightWorld(
+					fPX + fRunProbe * 0.5f, fPZ);
+				const float fMidH2 = xTerrainEditor.SampleHeightWorld(
+					fPX, fPZ + fRunProbe * 0.5f);
+				if (std::abs(fMidH - fHereH) > fRunProbe * 0.22f ||
+					std::abs(fMidH2 - fHereH) > fRunProbe * 0.22f)
+				{
+					continue;
+				}
+			}
+
+			bool bTooClose = false;
+			for (u_int u = 0; u < xPlaced.GetSize(); u++)
+			{
+				const float fDX = xPlaced.Get(u).x - fPX;
+				const float fDZ = xPlaced.Get(u).y - fPZ;
+				if (fDX * fDX + fDZ * fDZ < fSpacingSq)
+				{
+					bTooClose = true;
+					break;
+				}
+			}
+			if (bTooClose)
+			{
+				continue;
+			}
+
+			// --- Every draw, hoisted and ordered. See the note at the top. -----
+			const float fScaleDraw = NextFloat01();
+			const float fYawDraw = NextFloat01();
+			const float fTiltADraw = NextFloat01();
+			const float fTiltBDraw = NextFloat01();
+			const float fScaleXDraw = NextFloat01();
+			const float fScaleYDraw = NextFloat01();
+			const float fScaleZDraw = NextFloat01();
+
+			const float fBaseScale = xGroup.m_fScaleMin +
+				(xGroup.m_fScaleMax - xGroup.m_fScaleMin) * fScaleDraw;
+			const float fTiltLimit = Zenith_Maths::AuthoringRadians(xGroup.m_fTiltDeg);
+			const Zenith_Maths::Quat xYaw = Zenith_Maths::AuthoringRotationY(fYawDraw * 6.2831853f);
+
+			// An upright prop leans a little off vertical; a laid-down one pitches
+			// its far end a little and ROLLS about its own long axis, which is what
+			// varies where its branch stubs point. Rolling an upright rock would
+			// only re-spin it about the same axis the yaw already covers, so the
+			// two attitudes genuinely want different compositions.
+			Zenith_Maths::Quat xAttitude;
+			if (bLaidDown)
+			{
+				// ★ A TIPPED PIECE FOLLOWS THE GROUND ALONG ITS OWN LENGTH, and the
+				// one-metre slope test above cannot do that for it. A 6.5 m trunk on
+				// the 23-degree ground that test still admits drops 2.7 m end to end,
+				// so a log laid dead level buries half of itself in the hillside --
+				// which is exactly what the first capture showed. Read the height
+				// under the FAR end and pitch to match.
+				//
+				// Local +Y goes to world (sin yaw, 0, cos yaw) once RotX(90) has
+				// tipped it, so that is where the far end lands.
+				const float fYawAngle = fYawDraw * 6.2831853f;
+				const float fRun = xGroup.m_fLengthMetres * fBaseScale;
+				const float fFarX = fPX + sinf(fYawAngle) * fRun;
+				const float fFarZ = fPZ + cosf(fYawAngle) * fRun;
+				const float fRise = xTerrainEditor.SampleHeightWorld(fFarX, fFarZ)
+					- xTerrainEditor.SampleHeightWorld(fPX, fPZ);
+
+				// RotX(90 + phi) sends the far end's vertical component to -sin(phi),
+				// so matching a rise of fRise/fRun means phi = -asin(fRise/fRun).
+				const float fSlopeSin = std::clamp(fRise / std::max(0.01f, fRun), -1.0f, 1.0f);
+				const Zenith_Maths::Quat xPitch = Zenith_Maths::AuthoringRotationX(
+					fLayDownRadians - asinf(fSlopeSin) + (fTiltADraw * 2.0f - 1.0f) * fTiltLimit);
+				const Zenith_Maths::Quat xRoll = Zenith_Maths::AuthoringRotationY(
+					fTiltBDraw * 6.2831853f);
+				xAttitude = Zenith_Maths::AuthoringQuatMul(xPitch, xRoll);
+			}
+			else
+			{
+				const Zenith_Maths::Quat xLeanX = Zenith_Maths::AuthoringRotationX(
+					(fTiltADraw * 2.0f - 1.0f) * fTiltLimit);
+				const Zenith_Maths::Quat xLeanZ = Zenith_Maths::AuthoringRotationZ(
+					(fTiltBDraw * 2.0f - 1.0f) * fTiltLimit);
+				xAttitude = Zenith_Maths::AuthoringQuatMul(xLeanX, xLeanZ);
+			}
+			const Zenith_Maths::Quat xRotation = Zenith_Maths::AuthoringQuatMul(xYaw, xAttitude);
+
+			// The mesh's origin sits on its own base, so the sample height IS the
+			// resting height; the sink buries the seam on a slope (and a negative
+			// sink lifts a tipped log onto its own radius).
+			const float fY = xTerrainEditor.SampleHeightWorld(fPX, fPZ)
+				- xGroup.m_fSinkFraction * fBaseScale;
+			const Zenith_Maths::Vector3 xPosition(fPX, fY, fPZ);
+			const Zenith_Maths::Vector3 xScale(
+				fBaseScale * (0.92f + 0.16f * fScaleXDraw),
+				fBaseScale * (0.86f + 0.28f * fScaleYDraw),
+				fBaseScale * (0.92f + 0.16f * fScaleZDraw));
+
+			const uint32_t uInstanceID = pxComp->SpawnInstance(xPosition, xRotation, xScale);
+			if (bAnimated)
+			{
+				// The SAME golden-ratio derivation ReadFromDataStream applies on
+				// load (phase is transient, never serialized), so the authoring
+				// session's sway matches what every reload of the scene shows.
+				// Not an RNG draw -- the placement stream is untouched.
+				pxComp->SetInstanceAnimationByIndex(uInstanceID, 0,
+					fmodf(static_cast<float>(uInstanceID) * 0.618034f, 1.0f));
+			}
+			xPlaced.PushBack(Zenith_Maths::Vector2(fPX, fPZ));
+			if (uPlaced == 0u)
+			{
+				xFirstPlacement = xPosition;
+			}
+			uPlaced++;
+		}
+
+		uTotalPlaced += uPlaced;
+		// The first placement is logged because it is the only cheap way to answer
+		// "where did the scatter actually land" from outside the process -- a camera
+		// pose for a capture, or a sanity check that a band moved when its numbers did.
+		Zenith_Log(LOG_CATEGORY_MESH,
+			"[RenderTest] props: %s x%u (of %u requested), first at (%.1f, %.1f, %.1f)",
+			xGroup.m_szEntity, uPlaced, xGroup.m_uCount,
+			xFirstPlacement.x, xFirstPlacement.y, xFirstPlacement.z);
+	}
+
+	Zenith_Log(LOG_CATEGORY_MESH, "[RenderTest] prop scatter complete: %u instances in %u groups",
+		uTotalPlaced, static_cast<u_int>(sizeof(g_axScatterGroups) / sizeof(g_axScatterGroups[0])));
+}
+
 void Project_RegisterEditorAutomationSteps()
 {
 	using namespace Flux_TerrainConfig;
@@ -2460,6 +2872,19 @@ void Project_RegisterEditorAutomationSteps()
 					fCAMPUS_CZ + 265.0f * sinf(fA), 90.0f, 1.0f, 0.0f);
 			}
 		}
+
+		// --- Scattered props from the SHARED engine sets (stone + deadwood +
+		// wind-animated bushes). Same authoring window and the same reasons as
+		// the trees above: after CreateScene (the instance groups need a scene
+		// to live in) and before SaveScene (the instances persist through
+		// Zenith_InstancedMeshComponent, so non-tools boots — which run no
+		// automation — get the props from the file; the bush VAT path and
+		// duration serialize with the component, and per-instance sway phase is
+		// re-derived on load). One custom step rather than a brush stroke
+		// because the terrain editor's brushes know about trees and grass, not
+		// about an arbitrary shared mesh; nothing engine-side had to learn what
+		// a rock or a bush is.
+		xAuto.AddStep_Custom(&RenderTest_ScatterInstancedProps);
 
 		// Stamp per-instance config (gun type/ammo, NPC side) after all the testbed
 		// entities exist, before SaveScene serializes them.

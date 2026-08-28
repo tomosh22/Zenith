@@ -925,17 +925,62 @@ ZENITH_TEST(TerrainEditor, GrassTypesSaveWritesTheAssetAndApplies)
 	// byte-exact restore.
 	GrassTypeSaveGuard xGuard;
 
+	auto RunAutomation = [](Zenith_EditorAutomation& xAutomation)
+	{
+		xAutomation.Begin();
+		while (!xAutomation.IsComplete())
+		{
+			xAutomation.ExecuteNextStep();
+		}
+	};
+
+	// ★★ PRIME THE REGISTRY CACHE WITH A DELIBERATELY WRONG TABLE FIRST.
+	// The round-trip clause at the bottom reads the written bytes back through
+	// Zenith_AssetRegistry::GetView, which returns a CACHED asset when the path is
+	// already loaded — so without an eviction it can answer with a table that has
+	// nothing to do with the bytes this test just wrote, and pass or fail on
+	// something else entirely.
+	//
+	// That is not hypothetical: Flux_GrassImpl::LoadAuthoredTypeTable
+	// (Flux_Grass.cpp) boot-loads this exact path through GetView, but ONLY when
+	// the file exists — it early-returns on absence, by design, so a missing table
+	// does not log two load failures on every boot of every game. The consequence
+	// is that the cache is primed on a game that SHIPS an authored table and empty
+	// on one that does not, and this unit's outcome followed the game rather than
+	// the code: it was red on RenderTest (whose automation authors 4 types) and
+	// green on Zenithmon (which authors none) for the same engine tree, with the
+	// stale 4 read as the "round-tripped" count.
+	//
+	// So the precondition is CREATED here rather than depended upon. Priming with 5
+	// — distinct from this test's 3, from the 4 built-ins Create seeds, and from
+	// RenderTest's 4 — means a regression of the eviction below reds on EVERY game
+	// instead of only on one whose pin CI never runs.
+	Zenith_EditorAutomation xPrime;
+	xPrime.AddStep_GrassTypesCreate();
+	xPrime.AddStep_GrassTypesSetCount(5);
+	xPrime.AddStep_GrassTypesSetName(4, "StaleCacheSentinel");
+	xPrime.AddStep_GrassTypesSave();
+	RunAutomation(xPrime);
+
+	// Evict whatever the boot cached, then load — so the cache now holds the
+	// 5-entry table on every game, not "whatever this game happened to ship".
+	Zenith_AssetRegistry::ForceUnload(szZENITH_GRASS_TYPE_TABLE_ASSET_PATH);
+	const Zenith_GrassTypeTableAsset* pxPrimed =
+		Zenith_AssetRegistry::GetView<Zenith_GrassTypeTableAsset>(szZENITH_GRASS_TYPE_TABLE_ASSET_PATH);
+	ZENITH_ASSERT_TRUE(pxPrimed != nullptr && pxPrimed->LoadedOk(),
+		"the priming save must itself round-trip, or the stale-cache precondition "
+		"below is not actually set up");
+	ZENITH_ASSERT_EQ(pxPrimed->GetTable().GetCount(), 5u,
+		"the cache must hold the 5-entry priming table — if it does not, the "
+		"eviction assertion further down proves nothing");
+
 	Zenith_EditorAutomation xAuto;
 	xAuto.AddStep_GrassTypesCreate();
 	xAuto.AddStep_GrassTypesSetCount(3);
 	xAuto.AddStep_GrassTypesSetName(2, "SavedType");
 	xAuto.AddStep_GrassTypesSetParamFloat(2, "Density", 0.125f);
 	xAuto.AddStep_GrassTypesSave();
-	xAuto.Begin();
-	while (!xAuto.IsComplete())
-	{
-		xAuto.ExecuteNextStep();
-	}
+	RunAutomation(xAuto);
 
 	ZENITH_ASSERT_TRUE(xGuard.FileExists(), "GrassTypesSave must create the .zdata (parent directories included)");
 
@@ -948,13 +993,27 @@ ZENITH_TEST(TerrainEditor, GrassTypesSaveWritesTheAssetAndApplies)
 
 	// The bytes must LOAD back through the real asset path, not merely exist: a
 	// file whose envelope or table version were wrong would still be a file.
+	//
+	// ★ THE EVICTION IS THE ASSERTION. GetView returns the CACHED asset for a path
+	// that is already loaded, and the priming block above deliberately left a
+	// 5-entry one there, so without this ForceUnload every clause below would read
+	// that stale sibling and the whole round-trip claim would be vacuous. Dropping
+	// the entry first is what makes the load come off disk — still THROUGH the
+	// registry, so the envelope and table-version handling this clause exists to
+	// cover are genuinely exercised, rather than side-stepped by parsing the file
+	// by hand.
+	Zenith_AssetRegistry::ForceUnload(szZENITH_GRASS_TYPE_TABLE_ASSET_PATH);
 	Zenith_GrassTypeTableAsset* pxLoaded =
 		Zenith_AssetRegistry::GetView<Zenith_GrassTypeTableAsset>(szZENITH_GRASS_TYPE_TABLE_ASSET_PATH);
 	ZENITH_ASSERT_TRUE(pxLoaded != nullptr, "the written file must load through the registry");
 	if (pxLoaded != nullptr)
 	{
 		ZENITH_ASSERT_TRUE(pxLoaded->LoadedOk(), "the written file must pass the fail-safe reader");
-		ZENITH_ASSERT_EQ(pxLoaded->GetTable().GetCount(), 3u, "the round-tripped count must match");
+		// A count of 5 here specifically means the eviction above stopped working
+		// and this is the priming table, not the written one.
+		ZENITH_ASSERT_EQ(pxLoaded->GetTable().GetCount(), 3u,
+			"the round-tripped count must match (a 5 means GetView answered from the "
+			"cache instead of the bytes just written)");
 		ZENITH_ASSERT_STREQ(pxLoaded->GetTable().GetName(2u).c_str(), "SavedType", "the round-tripped name must match");
 		ZENITH_ASSERT_EQ_FLOAT(pxLoaded->GetTable().Get(2u).m_fDensity, 0.125f, 0.0001f,
 			"the round-tripped param must match");

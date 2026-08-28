@@ -234,9 +234,9 @@ runtime lives in `Zenith/Scripting/`, see its CLAUDE.md). Surface:
   their graphs every tools boot through `Zenith_EditorAutomation` graph steps,
   exactly like `.zscen` scenes.
 
-## Export Pipeline
+## Export Pipeline (meshes)
 
-The export pipeline is in `Tools/Zenith_Tools_MeshExport.cpp`. It processes source files through these stages:
+The MESH export pipeline is in `Tools/Zenith_Tools_MeshExport.cpp`. It processes source files through these stages. Textures have their own pipeline — see **Texture Export Pipeline** below.
 
 ### 1. Scene Loading
 Assimp loads the source file with these post-processing flags:
@@ -282,6 +282,224 @@ Animations are extracted from `aiAnimation` structures:
 **Animation Duration:** Stored in seconds, computed from the maximum keyframe time.
 
 **Node Hierarchy Preservation:** Animation keyframes are relative to scene graph parents, matching how bones store their local TRS values.
+
+## Texture Export Pipeline
+
+Source images (`.png` / `.jpg` / `.jpeg`) become `.ztxtr` in **two stages, and only
+the first is automatic.** This is the thing people forget, because stage 1 needs no
+action at all and stage 2 needs a code edit.
+
+### Stage 1 -- image files to `.ztxtr` (automatic)
+
+`ExportAllTextures()` (`Tools/Zenith_Tools_TextureExport.cpp`) walks
+`GAME_ASSETS_DIR/Textures` and **all of `ENGINE_ASSETS_DIR`**, recursively, and writes
+a sibling `.ztxtr` for every `.png` / `.jpg` / `.jpeg` it finds -- **BC1**, auto-upgraded
+to **BC3** when the source has alpha, with an offline-baked mip chain (a v2 `.ztxtr`).
+
+It runs at boot on **any** `ZENITH_TOOLS` build, from `Zenith/Core/Zenith_Engine.cpp`,
+before Flux comes up. There is no opt-in and **no freshness check** -- every image is
+re-exported on every boot; `--skip-tool-exports` turns the whole export phase off.
+So dropping new images into an asset directory and booting any tools exe is the whole
+of stage 1. There is also a debug-variable button, **Export -> Textures -> Export All
+Textures**.
+
+The Content Browser's right-click **"Export to .ztxtr"** is a per-file alternative, but
+note it exports jpgs **Uncompressed** rather than BC1, so a set built that way will not
+match one built by the boot path. Prefer the boot path.
+
+`ExportFromHeightmapImageFile` is the PNG-specific variant that preserves bit depth
+(16-bit heightmaps stay `R16_UNORM`, single-channel stays single-channel) -- this is what
+terrain heightmaps go through, and what the Content Browser uses for `.png`.
+
+### Stage 2 -- `rm_packed.ztxtr` for PBR ground sets (NOT automatic)
+
+The terrain shader reads roughness and metallic from **one packed RGBA8 texture**
+(`xRM.gb` in `Flux/Shaders/Terrain/Flux_Terrain_ToGBuffer.slang`), not from the separate
+`roughness` / `metallic` maps a downloaded PBR set ships with. That packed file is
+written by `RenderTest_PackRoughnessMetallic` in `Games/RenderTest/RenderTest.cpp`,
+driven from a **hand-maintained list of set directories** in
+`RenderTest_PackTerrainRoughnessMetallic`.
+
+* **That list is the only producer of `rm_packed.ztxtr` for any game.** RenderTest owns
+  the packer; a Zenithmon or CityBuilder boot will not create these files however many
+  times you run it. A shared ground set that is not named in the list ends up with three
+  of its four maps, and a terrain slot sampling it **falls back silently to the default
+  RM texture** -- no error, no red test.
+* It is idempotent on **file presence**, not mtime: once `rm_packed.ztxtr` exists it is
+  never re-packed until you pass `--rendertest-force-regenerate` or delete it.
+* It expects the roughness and metallic `.ztxtr` to be **BC1** and the same resolution,
+  and logs an error rather than guessing if either is not.
+
+### Adding a new shared ground set, end to end
+
+1. Put the source jpgs in `Zenith/Assets/Textures/Terrain/<Name>/`. The maps that matter
+   downstream are `diffuse`, `normal`, `roughness`, `metallic` and `ao`; `gloss`,
+   `height` and `reflection` are converted too but nothing samples them today.
+2. Add
+   `RenderTest_PackRoughnessMetallic(std::string(ENGINE_ASSETS_DIR) + "Textures/Terrain/<Name>/");`
+   to `RenderTest_PackTerrainRoughnessMetallic`.
+3. Build and boot RenderTest tools:
+   `rendertest.exe --automated-test EngineBootShutdownSmoke --skip-unit-tests`.
+   Stage 1 runs at engine boot, stage 2 runs in the editor-automation batch after it, so
+   one boot does both. Use an `--automated-test` -- a bare windowed tools boot idles in
+   the editor forever and never exits.
+4. Confirm all four consumed maps exist: `diffuse` / `normal` / `rm_packed` / `ao`. That
+   is exactly the set a terrain material's four slots expect (see
+   `ZM_TerrainMaterialSpec` in Zenithmon, or `SetupPBRTerrainMaterial` in RenderTest).
+
+## Generated shared assets (`Zenith/Assets/Meshes/`)
+
+Five asset sets are not imported from anywhere -- they are GENERATED, in full, on
+every tools boot, by `GenerateTestAssets()` (`Tools/Zenith_Tools_TestAssetExport.cpp`,
+called from `Zenith_Engine` before Flux comes up). They live under `ENGINE_ASSETS_DIR`
+rather than a game's assets because more than one game consumes them.
+
+| Set | Generator | Output |
+|---|---|---|
+| StickFigure | `Zenith_Tools_TestAssetExport.cpp` | 16-bone rig, lofted body, painted atlas, 13 clips |
+| ProceduralTree | `Zenith_Tools_TreeAssetExport.cpp` | branching trunk + leaf cards, bark/leaf textures, sway VATs |
+| **Rocks** | `Zenith_Tools_RockAssetExport.cpp` | 4 stone meshes + granite/sandstone PBR sets |
+| **FallenTrees** | `Zenith_Tools_FallenTreeAssetExport.cpp` | 4 deadwood meshes + bark/mossy-bark PBR sets |
+| **Bushes** | `Zenith_Tools_BushAssetExport.cpp` | 3 wind-animated foliage bushes (skeleton + sway VAT each) + masked foliage material |
+
+Every one of them is SEEDED: a re-boot rewrites the same bytes, so a generator that
+drifts shows up as churn rather than as a silent visual change. `--skip-tool-exports`
+turns the whole phase off (and then needs one prior full tools run to have produced
+the files).
+
+### The rock set
+
+`Zenith/Assets/Meshes/Rocks/` -- `Rock_Boulder`, `Rock_Slab`, `Rock_Shard` and
+`Rock_Pebbles` (a six-stone cluster in one mesh), each as `.zasset` (what
+`Zenith_InstancedMeshComponent::LoadMesh` takes), `.zmesh` (static geometry) and
+`.zmodel` (what `AddStep_LoadModel` / a `ModelComponent` takes) -- plus two full PBR
+texture sets, `Rock_Granite_*` and `Rock_Sandstone_*` (`Albedo` / `Normal` / `RM` /
+`AO`), and the two materials that wire them into the four slots
+`EvaluateMaterialSurface` samples.
+
+Four things about it are worth knowing before changing it:
+
+* **The textures TILE, and the meshes depend on that.** Rock UVs are box-projected
+  along each triangle's dominant axis at a fixed metres-per-tile, which is what avoids
+  the pole pinch and wrap seam a sphere unwrap puts on a 2 m boulder -- but it means
+  the maps meet their own edges constantly. The generator therefore samples a WRAPPED
+  integer lattice (its local `TileableFBM`), not `Zenith_TerrainNoise::FBM`, which
+  cannot tile. `RockAssets.RockTexturesTileExactlyAcrossTheWrap` pins this.
+* **`RM` is the glTF layout the engine samples: G = roughness, B = metallic.** This is
+  the same convention as the terrain's `rm_packed` (`Common/Material.slang`
+  `SampleRoughnessMetallic`), NOT a separate roughness map. Stone is a dielectric, so
+  B is 0 and the material's metallic multiplier is 0 as well.
+* **The icosphere's winding is normalised to the ENGINE convention before anything
+  reads it** (`cross(C-A, B-A)` outward). The published icosahedron face list is the
+  other way round, and the difference is not cosmetic: the smooth-normal pass
+  accumulates `cross(C-A, B-A)`, so an unnormalised shell hands every vertex an
+  INWARD smooth normal, the emitter blends its (correctly wound) face normal toward
+  it, and a stone with `m_fNormalSmooth` above ~0.5 shades with a normal pointing
+  into itself. It still silhouettes correctly, so it reads as "the albedo is too
+  dark" — which cost one round of albedo tuning before
+  `RockAssets.NormalsAndTangentsAreOrthonormalAndOutward` named it. That test
+  compares each shading normal against ITS OWN face; a radial check alone passes on
+  the shard, which blends only 0.22.
+* **A rock's origin sits on its own flattened underside.** That is a contract a scatter
+  relies on -- it places an instance AT the sampled terrain height with no per-mesh
+  offset table -- and `RockAssets.RockSitsOnItsBaseAtTheRequestedWidth` pins it
+  alongside `m_fWidthMetres` meaning the actual horizontal extent in metres.
+
+Adding a stone type is a new row in `RockVariantAt` -- the ONE table the exporter and
+the unit tests both read, so a tuned knob cannot drift out of the tests. Nothing
+engine-side knows what a rock is; RenderTest's `RenderTest_ScatterRocks` is the
+reference consumer (see `Games/RenderTest/CLAUDE.md`).
+
+### The deadwood set
+
+`Zenith/Assets/Meshes/FallenTrees/` -- `FallenTree_Log`, `FallenTree_LogMossy`,
+`FallenTree_Stump` and `FallenTree_Branches` (three loose pieces in one mesh), with the
+same `.zasset` / `.zmesh` / `.zmodel` trio and the same four-map PBR sets as the rocks
+(`FallenTree_Bark_*`, `FallenTree_MossyBark_*`). It shares the rock set's tileable
+noise, its RM layout and its origin-on-the-base contract, so only the differences are
+worth writing down:
+
+* *** EVERY PIECE IS MODELLED STANDING UP**, along +Y with its origin on the butt end,
+  and the SCATTER lays it down. That is not stylistic. `Zenith_InstanceColliderConfig`
+  can only describe a **Y-aligned** capsule -- but `CreateInstanceBody` rotates the
+  capsule, and its local Y offset, by the instance's own rotation. So a log authored
+  along +Y and tipped 90 degrees by the scatter gets a correctly aligned HORIZONTAL
+  capsule for free. Modelling the log lying down would need a per-instance shape axis
+  on the component, i.e. a serialization bump, to express the same thing. The stump
+  follows the same convention and is simply never tipped.
+* **The bark noise is ANISOTROPIC** -- a high lattice period across U against a low one
+  along V -- because bark ridges run ALONG a trunk. That is why the shared tileable
+  noise takes per-axis periods, and
+  `FallenTreeAssets.BarkHeightFieldIsAnisotropicAlongTheTrunk` measures it rather than
+  trusting the parameters.
+* **A WRAPPED LATTICE OF PERIOD 1 IS CONSTANT.** It has exactly one distinct sample, so
+  both interpolants are the same value and the field does not vary at all. The first
+  version of the trunk's surface noise passed period 1 along the length and the bark
+  relief simply vanished -- which reads as a tuning problem, not a bug. `SurfaceRadius`
+  clamps to >= 2 and `FallenTreeAssets.ALatticePeriodOfOneWouldBeConstant` pins both
+  halves.
+* **UVs are cylindrical at world scale**, not box-projected: a tube has an exact
+  unwrap, and the rocks' dominant-axis projection would smear across a curved flank.
+  The broken end caps map V **radially** instead of axially, so the same along-trunk
+  ridges come out as concentric rings -- end grain from the bark texture, with no
+  second material and no second instance group.
+* **The settle is a post-pass**, not part of the tube builder: a broken end's splinter
+  offsets are what push geometry below the axis origin, and a cluster only knows its
+  own floor once every piece is in.
+
+### The bush set
+
+`Zenith/Assets/Meshes/Bushes/` -- `Bush_Broad` (waist-high dome), `Bush_Mound`
+(knee-high hemisphere) and `Bush_Spindly` (tall sparse upright), each as `.zasset`
++ `.zmesh` + its own `.zskel` and `_Sway.zanmt` VAT, sharing one
+`Bush_Foliage_Albedo.ztxtr` + `Bush_Foliage.zmtrl`. It is the first ANIMATED set
+after the ProceduralTree, and the differences from its static siblings are the
+whole story:
+
+* **ONE instance group per bush, not the tree's lockstep trunk+leaves pair.** An
+  instance group is single-material; the tree splits because its trunk is OPAQUE
+  while its leaves are MASKED. A bush is alpha-tested foliage all the way
+  through -- the card shell is dense enough that interior stems would never be
+  seen -- so a stem group would double the entity count and serialized instance
+  data for invisible geometry. A game wanting leggy see-through bushes authors a
+  second lockstep group the tree's way; it is not a change to this set.
+* **A VAT needs a SKINNED mesh**, so the chain is the tree's: branch graph ->
+  `Zenith_SkeletonAsset` (one bone per branch + a root anchor; `AddBone` takes
+  PARENT-LOCAL positions) -> cards skinned wholly to their branch bone (weight
+  exactly 1 -- an unskinned vertex bakes frozen while its neighbours sway, which
+  is very visible and has a dedicated unit) -> per-bone rotation clip with
+  keyframe times in **TICKS** (0..120, not 0..4 seconds) ->
+  `Zenith_Tools_CreateFluxMeshGeometry` (the SKINNED converter --
+  `CreateStaticFluxMeshGeometry` drops the bone lanes and the bake would have
+  nothing to deform) -> `Flux_AnimationTexture::BakeFromAnimations`.
+* **Per-instance sway phase is transient, never serialized.**
+  `Zenith_InstancedMeshComponent::ReadFromDataStream` re-derives it on load
+  (`fmodf(instanceID * 0.618034f, 1.0f)`), so a reloaded scene comes back
+  de-synchronised for free; RenderTest's scatter seeds the SAME derivation at
+  authoring time so the authoring session matches every reload. In the editor's
+  Stopped mode nothing services these components' VAT time (the terrain editor
+  hand-ticks only its own tree entities), so bushes sway in Play and stand still
+  in Stopped -- accepted.
+* **The foliage material is `MATERIAL_BLEND_MASKED` with cutoff 0.45**, and the
+  albedo's alpha is a REAL leaf mask -- `BuildMaterialDrawConstants` writes
+  cutoff 0 for OPAQUE, so an opaque material (or an all-255 alpha) renders every
+  card as the leaf texture on an opaque black square. Both halves are pinned by
+  units (`BushAssets.FoliageAlbedoAlphaIsARealMask`).
+* **Cards are double-sided by emission**: both windings per card, in a fixed
+  pair order the unit tests check, because the instanced pipeline backface-culls
+  and foliage is seen from both sides. The rock set's
+  every-triangle-faces-outward test is therefore the WRONG shape here.
+* **`m_fHeightMetres` means metres EXACTLY, not a band.** After card placement
+  the whole cluster (branch graph included -- the skeleton is built after) is
+  uniformly rescaled so the highest card corner sits at the authored height, so
+  a consumer's bounds sphere and sink depth derive from a true number. This is
+  the lesson the deadwood's stump capsule learned as a band the hard way.
+* **No `.zmodel`** -- the instanced component is the consumer; a ModelComponent
+  would render the bush frozen at bind pose.
+
+Adding a bush shape is a new row in `BushVariantAt` -- the ONE table the exporter
+and the unit tests both read. RenderTest's `RenderTest_ScatterInstancedProps` is
+the reference consumer (three `TerrainBushes_*` rows, the table's VAT columns).
 
 ## Runtime Loading
 
