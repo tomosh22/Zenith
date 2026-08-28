@@ -1,6 +1,6 @@
 # Zenithmon Status
 
-**Last updated:** 2026-08-18
+**Last updated:** 2026-08-28
 
 **Board:** `ZM` on the agent board. **The work items live there** — epics, stories,
 tasks, bugs, blockers, sprints and releases — and [Board.md](Board.md) explains the
@@ -19,6 +19,63 @@ its own template in `AgentBriefing.md` §2.3 specifies. Nothing was deleted.
 
 **★ LIVE PIN (UPDATED 2026-08-27):
 ZM boot `3462`; engine boot (Null Combat) `1693`; Null RenderTest `1784`; registry **70**.**
+
+> **★ THE LANES ARE PAVED — the shared CLAY ground set, OBSERVED 2026-08-28 (ZM-D-216).**
+> **NO PIN MOVED.** Zenithmon-only in effect (the one engine-tree edit is RenderTest's
+> RM-packer list), the existing ground-slot units were WIDENED again rather than
+> duplicated, so ZM stays at **3462** (`3462 ran / 3460 passed / 0 failed`, 2 skipped,
+> `Null_vs2022_Debug_Win64_True`) and the registry stays at **70**.
+>
+> Splat slot 2 of all three outdoor recipes — the `Dirt` slot the path and pad specs
+> paint via `m_fDirtRadius` — now samples `engine:Textures/Terrain/Clay/` with a
+> **WHITE** base colour. Slot 3 (Heath / Hedgerow / Wildflower) is the last flat-colour
+> slot in the game.
+>
+> ★★ **IT TILES AT 3.6, NOT 0.9, AND THAT IS DELIBERATE.** Grass and rock are
+> non-repeating photographic ground, so their 16 m repeat (tiling 0.9) hides. The clay
+> map is a **regular 6x6 grid of paving slabs**, so its repeat is an architectural
+> dimension the player measures directly: at 0.9 each slab would be 15.9/6 = **2.6 m**
+> and every lane would read as a chessboard. 3.6 gives a 3.97 m repeat and a **0.66 m**
+> slab. The unit that polices tile size therefore carries **two windows** — 14-18 m for
+> ground, 3.5-4.5 m for paving — with a `static_assert` that they do not overlap, so a
+> later "tidy these to one number" cannot pass.
+>
+> **THE THREE OUTDOOR `.zscen` FILES MOVED AGAIN** — see the hash table below; +164
+> bytes each, entity counts unchanged, same two-boot proof as the rock set.
+>
+> ★ **The Clay set had to be BUILT first, and the second stage is easy to miss.** Stage 1
+> (`ExportAllTextures`, `Zenith/Core/Zenith_Engine.cpp`) converts every jpg under the
+> engine assets tree to a BC1 `.ztxtr` on ANY tools boot. Stage 2 — the packed
+> roughness+metallic map the terrain shader samples as `xRM.gb` — is written ONLY by
+> `RenderTest_PackTerrainRoughnessMetallic`, from a hand-maintained list of set
+> directories in `Games/RenderTest/RenderTest.cpp`. A set missing from that list has
+> three of its four maps and falls back silently on the fourth, so the ground-slot unit
+> now checks all four maps exist for the clay row too.
+
+> **★ THE STEEPS STOPPED BEING A FLAT COLOUR — the shared ROCK ground set, OBSERVED 2026-08-27 (ZM-D-215).**
+> **NO PIN MOVED.** Zenithmon-only (nothing under `Zenith/**`), and the two existing
+> ground-slot units were WIDENED rather than duplicated, so ZM stays at **3462**
+> (`3462 ran / 3460 passed / 0 failed`, 2 skipped, `Null_vs2022_Debug_Win64_True`) and
+> the registry stays at **70**.
+>
+> Splat slot 1 of all three outdoor recipes — Dawnmere's `Stone`, Thornacre's
+> `Drystone`, Route 1's `Chalk` — now samples `engine:Textures/Terrain/Rock/` at
+> tiling 0.9 with a **WHITE** base colour, exactly as slot 0 has sampled the shared
+> grass set since `3aeaa2d4`. That commit moved BOTH sets into the engine tree; only
+> the grass half ever gained a second consumer, so the rock half was a shared asset
+> with one game in it. This overrides "R1-1 ruling 8: slot 1 stays flat".
+>
+> ★ **The base colour is the trap, not the texture ref.** `Flux_Terrain_ToGBuffer ->
+> SampleDiffuseWithBaseColor` MULTIPLIES base colour into the sampled diffuse, so
+> leaving `Stone` at 0.34/0.36/0.33 would have dimmed the rock maps to a third and read
+> as a rendering bug rather than as a data error.
+>
+> **THE THREE OUTDOOR `.zscen` FILES MOVED** — see the hash table below. Each grew by
+> exactly **164 bytes** with its entity count unchanged: four texture-ref paths on one
+> material payload. **A `Null_` boot cannot re-author them** —
+> `ZM_DetermineTerrainBakeQueueResult` returns `HEADLESS` before it inspects a manifest,
+> so `sceneAuthoring=DEFERRED` and only the four interiors compare. That is ZM's terrain
+> bake being `needs-gpu`, NOT the engine publish guard, which ZEN-6 already removed.
 
 > **★ PER-INSTANCE COLLIDERS FOR INSTANCED MESHES — the engine change, OBSERVED 2026-08-27.**
 > **ALL THREE BOOT PINS MOVED +24**, which is the shape an ENGINE change has: the 24 new
@@ -465,9 +522,9 @@ genuinely RAN, not `DEFERRED` -- after which `git status` over the WHOLE
 
 | Asset | Bytes | SHA256 |
 |---|---|---|
-| `Route1.zscen` | 2,818 | `E87BDAA9D41CB39D90D6334EE785A36F4D483937B9780A674B45C456ABD841FD` (**RE-AUTHORED at the map shrink, 2026-08-27**: the terrain became an **11x24 chunk grid (704 x 1536 m)** where it was 16x24 of a fixed 4096 m world, and every authored coordinate translated by **(-184, 0)** — X only, because the route's LENGTH is the whole point of it and did not shrink. **Byte count UNCHANGED at 2,818**: nothing was added or removed, only coordinate VALUES moved, which is itself the proof that the shrink is a re-placement and not a re-shaping. Three windowed Debug boots; the third reported `[ScenePublish] IDENTICAL` for all seven scenes. Previous value `3B1C5C930DE2798A...` at 2,818 bytes, held from the configurable-terrain-dimensions engine change.) |
-| `Thornacre.zscen` | 1,939 | `7053FBFFF23B9DE5D4B502354C5C4E183CE764A09BDDCFBE14F01E2068BD1D50` (**RE-AUTHORED at the map shrink, 2026-08-27**: a **13x15 chunk grid (832 x 960 m)**, translated by **(-100, -16)**. Thornacre shrinks least of the three — its Gym sits 588 m east of the berry fields, so its content is the widest. Byte count UNCHANGED at 1,939; same three-boot proof. Previous value `AC8AD81C997D6611...` at 1,939 bytes.) |
-| `Dawnmere.zscen` | 5,698 | `B545518EDE70D1FD4C8E40B5BD2218EC4B4C8115900250F6AE2A57201DB1787A` (**RE-AUTHORED at the map shrink, 2026-08-27**: a **9x10 chunk grid (576 x 640 m)**, translated by **(-232, -320)**. ★ Both offsets are multiples of 4 ON PURPOSE — the physics mesh is built at density divisor 4, so an anchor on a 4 m lattice is a shared vertex of the render and physics meshes and samples exactly; -230 would have put every Dawnmere anchor mid-quad and turned every measured row in `ZM_DawnmerePlacement.h` into an interpolation. **Every measured height in this map was RE-MEASURED from its own oracle** (the roster, the Home block, the Lab block and both route-seam rows), because the landscape was re-authored for the smaller domain rather than translated onto it. Byte count UNCHANGED at 5,698; same three-boot proof, `sceneAuthoring=AUTHOR_DAWNMERE`. Previous value `433E7E9242C0D2F1...` at 5,698 bytes.) |
+| `Route1.zscen` | 3,146 | `F3E9A4613E8942F17E80A2AB6BD699F22B97E71CBB2AFC317D796DDF75795110` (**RE-AUTHORED for the shared CLAY ground set, 2026-08-28, ZM-D-216**: splat slot 2 (`Dirt` -- the lanes and pads) stopped being a flat brown and now samples `engine:Textures/Terrain/Clay/` at tiling **3.6**, not 0.9, with a WHITE base colour. **Entity count UNCHANGED; the file grew by exactly 164 bytes** (2,982 -> 3,146) -- the same signature the rock slot produced one day earlier: four texture-ref paths appended to ONE material payload and nothing else. Two windowed `Vulkan_vs2022_Debug_Win64_True` boots with `--skip-unit-tests` (`--automated-test ZM_Boot_Test`, so the process exits on its own), all three recipes warm (`warmMask=0x7`, `sceneAuthoring=AUTHOR_DAWNMERE`); the second reported `[ScenePublish] IDENTICAL` for all seven scenes. Previous value `3BE837CBEB0CA5E0...` at 2,982 bytes, held from the rock-set re-author.) |
+| `Thornacre.zscen` | 2,267 | `878C9F02E95476974F44EFDE6B2E34D3FC82911F6C15BFEE8B5F88234A213297` (**RE-AUTHORED for the shared CLAY ground set, 2026-08-28, ZM-D-216**: splat slot 2 (`Dirt` -- the lanes and pads) stopped being a flat brown and now samples `engine:Textures/Terrain/Clay/` at tiling **3.6**, not 0.9, with a WHITE base colour. **Entity count UNCHANGED; the file grew by exactly 164 bytes** (2,103 -> 2,267) -- the same signature the rock slot produced one day earlier: four texture-ref paths appended to ONE material payload and nothing else. Two windowed `Vulkan_vs2022_Debug_Win64_True` boots with `--skip-unit-tests` (`--automated-test ZM_Boot_Test`, so the process exits on its own), all three recipes warm (`warmMask=0x7`, `sceneAuthoring=AUTHOR_DAWNMERE`); the second reported `[ScenePublish] IDENTICAL` for all seven scenes. Previous value `094BADF64CF6FB95...` at 2,103 bytes, held from the rock-set re-author.) |
+| `Dawnmere.zscen` | 6,026 | `41F2E2DCF3577A7B92EBCDB7C6C31DB50A73717A8850BB67E99CDE497DFD9147` (**RE-AUTHORED for the shared CLAY ground set, 2026-08-28, ZM-D-216**: splat slot 2 (`Dirt` -- the lanes and pads) stopped being a flat brown and now samples `engine:Textures/Terrain/Clay/` at tiling **3.6**, not 0.9, with a WHITE base colour. **Entity count UNCHANGED; the file grew by exactly 164 bytes** (5,862 -> 6,026) -- the same signature the rock slot produced one day earlier: four texture-ref paths appended to ONE material payload and nothing else. Two windowed `Vulkan_vs2022_Debug_Win64_True` boots with `--skip-unit-tests` (`--automated-test ZM_Boot_Test`, so the process exits on its own), all three recipes warm (`warmMask=0x7`, `sceneAuthoring=AUTHOR_DAWNMERE`); the second reported `[ScenePublish] IDENTICAL` for all seven scenes. Previous value `11D49864EB1CC900...` at 5,862 bytes, held from the rock-set re-author.) |
 | `Battle.zscen` | 4,965 | `1BEB0615F7FE62D9439471A4123E1D2140C0053AEC2991B659F7A03288C8C60A` (unchanged since 2026-08-05) |
 | `FrontEnd.zscen` | 29,740 | `D44D540512F1C373A5D5E747CE7FA76E7D19B467F5F1563EB298E229EEFBEDB5` |
 | `PlayerHome.zscen` | 1,832 | `DBBFB78311A55BBF942A7A5BF9928F43E9493A10CDA89110515A3B6A7987C780` (unchanged since 2026-08-05) |

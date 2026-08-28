@@ -445,48 +445,63 @@ ZENITH_TEST(ZM_TerrainRecipeSet, RegistryHasExactlyThreeWorldSpecRecipesInFixedO
 	ZENITH_ASSERT_TRUE(ZM_FindTerrainAuthoringRecipe(ZM_SCENE_NONE) == nullptr);
 }
 
-// Dawnmere's meadow slot is the one TEXTURED terrain material in the game: it
-// samples the ENGINE's shared grass ground set (Zenith/Assets/Textures/Terrain/
-// Grass), the same maps RenderTest's terrain uses. Two things can silently undo
-// that -- someone re-tinting the slot (base colour multiplies the sampled
-// diffuse, so a green tint puts the flat look back), and someone moving the set
-// out from under the "engine:" ref. Both are pinned here.
-ZENITH_TEST(ZM_TerrainRecipeSet, DawnmereMeadowSamplesTheSharedEngineGrassSet)
+// Dawnmere's meadow, stone and dirt slots are the TEXTURED terrain materials:
+// they sample the ENGINE's shared grass, rock and clay ground sets
+// (Zenith/Assets/Textures/Terrain/{Grass,Rock,Clay}); the first two are the maps
+// RenderTest's terrain uses on the same two slots. Two things can silently undo
+// that -- someone re-tinting a slot (base colour multiplies the sampled diffuse,
+// so a green, grey or brown tint puts the flat look back), and someone moving a
+// set out from under its "engine:" ref. Both are pinned here.
+ZENITH_TEST(ZM_TerrainRecipeSet, DawnmereGroundSlotsSampleTheSharedEngineSets)
 {
 	const ZM_TerrainAuthoringRecipe& xDawnmere = ZM_GetDawnmereTerrainRecipe();
-	const ZM_TerrainMaterialSpec& xMeadow = xDawnmere.m_pxMaterials[0];
 
-	ZENITH_ASSERT_STREQ(xMeadow.m_szName, "Meadow");
-	ZENITH_ASSERT_TRUE(xMeadow.m_szTextureSetDir != nullptr,
-		"Dawnmere's Meadow slot lost its texture set and is a flat colour again");
-	ZENITH_ASSERT_STREQ(xMeadow.m_szTextureSetDir, "engine:Textures/Terrain/Grass/");
-	ZENITH_ASSERT_GT(xMeadow.m_fUVTiling, 0.0f);
-	for (u_int uChannel = 0; uChannel < 4u; ++uChannel)
+	const char* aszSlotNames[] = { "Meadow", "Stone", "Dirt" };
+	const char* aszSetRefs[] =
+		{ "engine:Textures/Terrain/Grass/", "engine:Textures/Terrain/Rock/",
+		  "engine:Textures/Terrain/Clay/" };
+	const char* aszSetDirs[] = { "Grass", "Rock", "Clay" };
+	constexpr u_int uTEXTURED_SLOT_COUNT = 3u;
+
+	for (u_int uSlot = 0; uSlot < uTEXTURED_SLOT_COUNT; ++uSlot)
 	{
-		ZENITH_ASSERT_EQ_FLOAT(xMeadow.m_afBaseColour[uChannel], 1.0f, fEPSILON);
+		const ZM_TerrainMaterialSpec& xGround = xDawnmere.m_pxMaterials[uSlot];
+
+		ZENITH_ASSERT_STREQ(xGround.m_szName, aszSlotNames[uSlot]);
+		ZENITH_ASSERT_TRUE(xGround.m_szTextureSetDir != nullptr,
+			"Dawnmere's %s slot lost its texture set and is a flat colour again",
+			aszSlotNames[uSlot]);
+		ZENITH_ASSERT_STREQ(xGround.m_szTextureSetDir, aszSetRefs[uSlot]);
+		ZENITH_ASSERT_GT(xGround.m_fUVTiling, 0.0f);
+		for (u_int uChannel = 0; uChannel < 4u; ++uChannel)
+		{
+			ZENITH_ASSERT_EQ_FLOAT(xGround.m_afBaseColour[uChannel], 1.0f, fEPSILON);
+		}
+
+		// The maps themselves are gitignored workspace assets, so their absence is
+		// a cold clone rather than a defect -- but a set that IS present must be
+		// complete, or the slot silently falls back to default textures.
+		const std::filesystem::path xSetDir =
+			std::filesystem::path(ENGINE_ASSETS_DIR) / "Textures" / "Terrain" /
+			aszSetDirs[uSlot];
+		if (std::filesystem::exists(xSetDir))
+		{
+			const char* aszMaps[] = { "diffuse", "normal", "rm_packed", "ao" };
+			for (const char* szMap : aszMaps)
+			{
+				const std::filesystem::path xMap =
+					xSetDir / (std::string(szMap) + ZENITH_TEXTURE_EXT);
+				ZENITH_ASSERT_TRUE(std::filesystem::exists(xMap),
+					"shared %s set is missing %s", aszSetDirs[uSlot],
+					xMap.generic_string().c_str());
+			}
+		}
 	}
 
-	// The remaining three slots stay flat-colour by design.
-	for (u_int uSlot = 1u; uSlot < xDawnmere.m_uMaterialCount; ++uSlot)
+	// Heath, the one remaining slot, stays flat-colour by design.
+	for (u_int uSlot = uTEXTURED_SLOT_COUNT; uSlot < xDawnmere.m_uMaterialCount; ++uSlot)
 	{
 		ZENITH_ASSERT_TRUE(xDawnmere.m_pxMaterials[uSlot].m_szTextureSetDir == nullptr);
-	}
-
-	// The maps themselves are gitignored workspace assets, so their absence is a
-	// cold clone rather than a defect -- but a set that IS present must be
-	// complete, or the meadow silently falls back to default textures.
-	const std::filesystem::path xSetDir =
-		std::filesystem::path(ENGINE_ASSETS_DIR) / "Textures" / "Terrain" / "Grass";
-	if (std::filesystem::exists(xSetDir))
-	{
-		const char* aszMaps[] = { "diffuse", "normal", "rm_packed", "ao" };
-		for (const char* szMap : aszMaps)
-		{
-			const std::filesystem::path xMap =
-				xSetDir / (std::string(szMap) + ZENITH_TEXTURE_EXT);
-			ZENITH_ASSERT_TRUE(std::filesystem::exists(xMap),
-				"shared grass set is missing %s", xMap.generic_string().c_str());
-		}
 	}
 }
 
@@ -1155,9 +1170,14 @@ ZENITH_TEST(ZM_TerrainRecipeSet, ManifestsEncodePerRecipeCountsAndInvalidateMiss
 // ---------------------------------------------------------------------------
 namespace
 {
-	// The ONE shared ENGINE ground set every outdoor recipe's grass slot samples.
-	// Frozen here as the CLAIM -- the three recipe rows are the subject.
+	// The THREE shared ENGINE ground sets every outdoor recipe samples: grass on
+	// the flats (slot 0), rock on the steeps (slot 1) and clay on the lanes and
+	// pads (slot 2). Grass and rock are the same two sets RenderTest's terrain
+	// uses, on the same two slots. Frozen here as the CLAIM; the nine recipe rows
+	// are the subject.
 	constexpr const char* szSHARED_GRASS_SET_DIR = "engine:Textures/Terrain/Grass/";
+	constexpr const char* szSHARED_ROCK_SET_DIR = "engine:Textures/Terrain/Rock/";
+	constexpr const char* szSHARED_CLAY_SET_DIR = "engine:Textures/Terrain/Clay/";
 
 	// The renderer's terrain UV scale (Flux_Terrain.cpp's m_fUVScale): uv ~=
 	// worldUnits * 0.07, so a slot tiled at t repeats every 1 / (0.07 * t) world
@@ -1165,16 +1185,28 @@ namespace
 	// symbol, and it is what turns an opaque tiling number into metres.
 	constexpr float fTERRAIN_SHADER_UV_SCALE = 0.07f;
 
-	// One tile should read as roughly a 16 m patch of ground in every outdoor
-	// region. The window is deliberately wide: this is an order-of-magnitude
-	// guard on the DERIVED tile size, not a second spelling of the tiling number.
+	// ★ TWO WINDOWS, NOT ONE, AND THE DIFFERENCE IS A PROPERTY OF THE IMAGES.
+	// Grass and rock are non-repeating photographic ground: one tile should read as
+	// roughly a 16 m patch, and at that size the repeat hides. Clay is a REGULAR
+	// 6x6 GRID OF PAVING SLABS, so its repeat is an architectural dimension the eye
+	// measures directly -- a 16 m repeat would mean 2.6 m slabs and the lanes would
+	// read as a chessboard. Its ~4 m repeat gives a 0.66 m slab. Both windows are
+	// deliberately wide: these are order-of-magnitude guards on the DERIVED tile
+	// size, not second spellings of the tiling numbers.
 	constexpr float fMIN_GROUND_TILE_METRES = 14.0f;
 	constexpr float fMAX_GROUND_TILE_METRES = 18.0f;
+	constexpr float fMIN_PAVING_TILE_METRES = 3.5f;
+	constexpr float fMAX_PAVING_TILE_METRES = 4.5f;
 
-	bool SamplesSharedEngineGrassSet(const ZM_TerrainMaterialSpec& xMaterial)
+	// Does this row sample the NAMED shared ENGINE set at a usable tiling? The set
+	// directory is a PARAMETER rather than baked in, so one predicate answers for
+	// all three sets alike -- and, crucially, can still say NO, which is what the
+	// anti-vacuity arm below leans on.
+	bool SamplesSharedEngineSet(const ZM_TerrainMaterialSpec& xMaterial,
+		const char* szSetDir)
 	{
 		return xMaterial.m_szTextureSetDir != nullptr &&
-			strcmp(xMaterial.m_szTextureSetDir, szSHARED_GRASS_SET_DIR) == 0 &&
+			strcmp(xMaterial.m_szTextureSetDir, szSetDir) == 0 &&
 			xMaterial.m_fUVTiling > 0.0f;
 	}
 
@@ -1221,20 +1253,23 @@ namespace
 	}
 }
 
-// Route 1 and Thornacre now carry a TEXTURED ground slot -- the same shared
-// ENGINE grass set Dawnmere's Meadow samples. Both were flat colour until S8
-// item 2, so the two new outdoor regions would have read as painted cardboard
-// beside a photographic Dawnmere.
+// All three outdoor recipes carry THREE textured slots -- the shared ENGINE
+// grass set on the flats (slot 0), the shared rock set on the steeps (slot 1)
+// and the shared clay set on the lanes and pads (slot 2). Grass and rock are the
+// two sets RenderTest's terrain samples on the same two slots. Every one of
+// those nine rows was flat colour at some point, and a flat slot reads as
+// painted cardboard beside a photographic one.
 //
-// This is a CROSS-RECIPE claim on purpose. Spelling the set directory three
+// This is a CROSS-RECIPE claim on purpose. Spelling the set directories nine
 // times would only restate the rows; what is pinned here is that all three
-// outdoor grounds resolve to ONE set at ONE physical scale, that each recipe
-// textures exactly ONE slot and that it is always slot 0, and that the tiling
-// number still turns into roughly a 16 m tile once the shader's UV scale is
-// applied. So a revert of either new row to nullptr, a re-pointed set, a set
-// hung on the wrong slot, a re-tint, and a lockstep re-tiling of all three all
-// red here -- and so does moving DAWNMERE's row out from under the other two.
-ZENITH_TEST(ZM_TerrainRecipeSet, RouteAndTownMeadowSlotsSampleTheSharedEngineGrassSet)
+// outdoor regions resolve to the SAME three sets at the SAME per-set scale, that
+// each recipe textures exactly THREE slots and that they are slots 0, 1 and 2,
+// and that each tiling number still turns into a sensible tile once the shader's
+// UV scale is applied. So a revert of any row to nullptr, a re-pointed set, a
+// set hung on the wrong slot, a re-tint, and a lockstep re-tiling of all three
+// all red here -- and so does moving DAWNMERE's rows out from under the other
+// two.
+ZENITH_TEST(ZM_TerrainRecipeSet, OutdoorGroundSlotsSampleTheSharedEngineGroundSets)
 {
 	const ZM_TerrainAuthoringRecipe& xDawnmere = ZM_GetDawnmereTerrainRecipe();
 	const ZM_TerrainAuthoringRecipe& xThornacre = ZM_GetThornacreTerrainRecipe();
@@ -1248,30 +1283,64 @@ ZENITH_TEST(ZM_TerrainRecipeSet, RouteAndTownMeadowSlotsSampleTheSharedEngineGra
 	const ZM_TerrainMaterialSpec& xPasture = xThornacre.m_pxMaterials[0];
 	const ZM_TerrainMaterialSpec& xCoastalMeadow = xRoute1.m_pxMaterials[0];
 
+	const ZM_TerrainMaterialSpec& xStone = xDawnmere.m_pxMaterials[1];
+	const ZM_TerrainMaterialSpec& xDrystone = xThornacre.m_pxMaterials[1];
+	const ZM_TerrainMaterialSpec& xChalk = xRoute1.m_pxMaterials[1];
+
+	const ZM_TerrainMaterialSpec& xDawnmereDirt = xDawnmere.m_pxMaterials[2];
+	const ZM_TerrainMaterialSpec& xThornacreDirt = xThornacre.m_pxMaterials[2];
+	const ZM_TerrainMaterialSpec& xRoute1Dirt = xRoute1.m_pxMaterials[2];
+
 	// The anchor: these are the rows this unit is talking about. A renamed slot
 	// would also break its auto-splat rule pairing, which is a different unit's
 	// business -- here it just proves we are reading the intended row.
 	ZENITH_ASSERT_STREQ(xMeadow.m_szName, "Meadow");
 	ZENITH_ASSERT_STREQ(xPasture.m_szName, "Pasture");
 	ZENITH_ASSERT_STREQ(xCoastalMeadow.m_szName, "CoastalMeadow");
+	ZENITH_ASSERT_STREQ(xStone.m_szName, "Stone");
+	ZENITH_ASSERT_STREQ(xDrystone.m_szName, "Drystone");
+	ZENITH_ASSERT_STREQ(xChalk.m_szName, "Chalk");
+	ZENITH_ASSERT_STREQ(xDawnmereDirt.m_szName, "Dirt");
+	ZENITH_ASSERT_STREQ(xThornacreDirt.m_szName, "Dirt");
+	ZENITH_ASSERT_STREQ(xRoute1Dirt.m_szName, "Dirt");
 
-	const ZM_TerrainAuthoringRecipe* apxOutdoorRecipes[] =
-		{ &xDawnmere, &xThornacre, &xRoute1 };
-	const ZM_TerrainMaterialSpec* apxGroundSlots[] =
-		{ &xMeadow, &xPasture, &xCoastalMeadow };
-	const char* aszGroundOwners[] = { "Dawnmere", "Thornacre", "Route1" };
-	constexpr u_int uGROUND_SLOT_COUNT = 3u;
-	static_assert(sizeof(apxGroundSlots) / sizeof(apxGroundSlots[0]) ==
+	// One walk over all NINE textured rows. The expected set AND the expected tile
+	// window travel with the row, so the grass, rock and clay thirds are policed
+	// by the same clauses rather than by three divergent copies of them.
+	struct GroundSlotUnderTest
+	{
+		const ZM_TerrainMaterialSpec* m_pxSlot;
+		const char* m_szExpectedSetDir;
+		float m_fMinTileMetres;
+		float m_fMaxTileMetres;
+		const char* m_szOwner;
+	};
+	const GroundSlotUnderTest axGroundSlots[] =
+	{
+		{ &xMeadow, szSHARED_GRASS_SET_DIR, fMIN_GROUND_TILE_METRES, fMAX_GROUND_TILE_METRES, "Dawnmere flats" },
+		{ &xPasture, szSHARED_GRASS_SET_DIR, fMIN_GROUND_TILE_METRES, fMAX_GROUND_TILE_METRES, "Thornacre flats" },
+		{ &xCoastalMeadow, szSHARED_GRASS_SET_DIR, fMIN_GROUND_TILE_METRES, fMAX_GROUND_TILE_METRES, "Route1 flats" },
+		{ &xStone, szSHARED_ROCK_SET_DIR, fMIN_GROUND_TILE_METRES, fMAX_GROUND_TILE_METRES, "Dawnmere steeps" },
+		{ &xDrystone, szSHARED_ROCK_SET_DIR, fMIN_GROUND_TILE_METRES, fMAX_GROUND_TILE_METRES, "Thornacre steeps" },
+		{ &xChalk, szSHARED_ROCK_SET_DIR, fMIN_GROUND_TILE_METRES, fMAX_GROUND_TILE_METRES, "Route1 steeps" },
+		{ &xDawnmereDirt, szSHARED_CLAY_SET_DIR, fMIN_PAVING_TILE_METRES, fMAX_PAVING_TILE_METRES, "Dawnmere paving" },
+		{ &xThornacreDirt, szSHARED_CLAY_SET_DIR, fMIN_PAVING_TILE_METRES, fMAX_PAVING_TILE_METRES, "Thornacre paving" },
+		{ &xRoute1Dirt, szSHARED_CLAY_SET_DIR, fMIN_PAVING_TILE_METRES, fMAX_PAVING_TILE_METRES, "Route1 paving" },
+	};
+	constexpr u_int uGROUND_SLOT_COUNT = 9u;
+	static_assert(sizeof(axGroundSlots) / sizeof(axGroundSlots[0]) ==
 		uGROUND_SLOT_COUNT);
 
 	for (u_int i = 0; i < uGROUND_SLOT_COUNT; ++i)
 	{
-		const ZM_TerrainMaterialSpec& xGround = *apxGroundSlots[i];
-		const bool bSamplesSharedSet = SamplesSharedEngineGrassSet(xGround);
+		const ZM_TerrainMaterialSpec& xGround = *axGroundSlots[i].m_pxSlot;
+		const bool bSamplesSharedSet =
+			SamplesSharedEngineSet(xGround, axGroundSlots[i].m_szExpectedSetDir);
 		ZENITH_ASSERT_TRUE(bSamplesSharedSet,
-			"%s's ground slot '%s' no longer samples the shared engine grass set "
-			"-- a flat-colour revert or a re-pointed set puts the painted-cardboard "
-			"ground straight back", aszGroundOwners[i], xGround.m_szName);
+			"%s slot '%s' no longer samples %s -- a flat-colour revert or a "
+			"re-pointed set puts the painted-cardboard ground straight back",
+			axGroundSlots[i].m_szOwner, xGround.m_szName,
+			axGroundSlots[i].m_szExpectedSetDir);
 		if (!bSamplesSharedSet)
 		{
 			continue;
@@ -1284,50 +1353,101 @@ ZENITH_TEST(ZM_TerrainRecipeSet, RouteAndTownMeadowSlotsSampleTheSharedEngineGra
 		for (u_int uChannel = 0; uChannel < 4u; ++uChannel)
 		{
 			ZENITH_ASSERT_EQ_FLOAT(xGround.m_afBaseColour[uChannel], 1.0f, fEPSILON,
-				"%s's ground slot '%s' tints channel %u -- a textured slot authors "
-				"white", aszGroundOwners[i], xGround.m_szName, uChannel);
+				"%s slot '%s' tints channel %u -- a textured slot authors white",
+				axGroundSlots[i].m_szOwner, xGround.m_szName, uChannel);
 		}
 
 		// The tiling number only means something once the shader's UV scale is
 		// applied. Deriving metres catches an order-of-magnitude slip that the
 		// cross-recipe equality below cannot -- because that one still passes if
-		// somebody re-tiles all three rows together.
+		// somebody re-tiles all nine rows together.
 		const float fTileMetres =
 			1.0f / (fTERRAIN_SHADER_UV_SCALE * xGround.m_fUVTiling);
-		ZENITH_ASSERT_GE(fTileMetres, fMIN_GROUND_TILE_METRES,
-			"%s's ground tiles every %.2f m -- far finer than the ~16 m patch the "
-			"outdoor regions are meant to read at", aszGroundOwners[i], fTileMetres);
-		ZENITH_ASSERT_LE(fTileMetres, fMAX_GROUND_TILE_METRES,
-			"%s's ground tiles every %.2f m -- far coarser than the ~16 m patch the "
-			"outdoor regions are meant to read at", aszGroundOwners[i], fTileMetres);
-
-		// ★ ANTI-VACUITY, through the IDENTICAL predicate: slot 1 of the same
-		// recipe is a flat-colour slot by design, so the check above must be able
-		// to say no. A predicate that accepted everything would pass every clause
-		// in this unit while proving nothing.
-		ZENITH_ASSERT_FALSE(
-			SamplesSharedEngineGrassSet(apxOutdoorRecipes[i]->m_pxMaterials[1]),
-			"%s's slot 1 reads as textured, so the shared-set predicate cannot "
-			"distinguish a textured slot from a flat one", aszGroundOwners[i]);
+		ZENITH_ASSERT_GE(fTileMetres, axGroundSlots[i].m_fMinTileMetres,
+			"%s slot tiles every %.2f m -- finer than the %.1f m floor this slot's "
+			"imagery is authored for", axGroundSlots[i].m_szOwner, fTileMetres,
+			axGroundSlots[i].m_fMinTileMetres);
+		ZENITH_ASSERT_LE(fTileMetres, axGroundSlots[i].m_fMaxTileMetres,
+			"%s slot tiles every %.2f m -- coarser than the %.1f m ceiling this "
+			"slot's imagery is authored for", axGroundSlots[i].m_szOwner,
+			fTileMetres, axGroundSlots[i].m_fMaxTileMetres);
 	}
 
-	// One set, one scale, across all three outdoor regions. Dawnmere is the
-	// already-shipped reference the two new rows are tied to, so re-pointing or
-	// re-tiling ANY single recipe breaks the tie -- including Dawnmere's own row.
-	ZENITH_ASSERT_STREQ(xPasture.m_szTextureSetDir, xMeadow.m_szTextureSetDir,
-		"Thornacre's ground drifted off the set Dawnmere samples");
-	ZENITH_ASSERT_STREQ(xCoastalMeadow.m_szTextureSetDir, xMeadow.m_szTextureSetDir,
-		"Route1's ground drifted off the set Dawnmere samples");
-	ZENITH_ASSERT_EQ_FLOAT(xPasture.m_fUVTiling, xMeadow.m_fUVTiling, fEPSILON,
-		"Thornacre's ground reads at a different physical scale to Dawnmere's");
-	ZENITH_ASSERT_EQ_FLOAT(xCoastalMeadow.m_fUVTiling, xMeadow.m_fUVTiling, fEPSILON,
-		"Route1's ground reads at a different physical scale to Dawnmere's");
+	// ★ THE PAVING WINDOW IS A SEPARATE CLAIM FROM THE GROUND WINDOW, AND IT MUST
+	// STAY ONE. Clay is a regular 6x6 grid of slabs, so its repeat is a size the
+	// player reads directly; the other two sets are non-repeating photographs
+	// whose repeat is meant to hide. Proving the two windows do not overlap is
+	// what stops a later "tidy them to one number" from passing this unit while
+	// turning every lane into 2.6 m flagstones.
+	static_assert(fMAX_PAVING_TILE_METRES < fMIN_GROUND_TILE_METRES,
+		"the paving and ground tile windows overlap, so a clay row tiled like "
+		"grass would satisfy both");
 
-	// Exactly ONE textured slot per outdoor recipe, and always slot 0. This is
-	// what catches a set hung on the WRONG slot: texturing Chalk or Drystone
-	// leaves every clause above green while the ground stays flat. The running
-	// total is the loop's anti-vacuity arm -- if the registry ever went empty, or
-	// every recipe lost its texture, the total stops matching the recipe count.
+	// ★ ANTI-VACUITY, through the IDENTICAL predicate. The flat-colour control has
+	// walked out along the slots as each one gained a texture -- it was slot 1,
+	// then slot 2, and slot 3 (Heath / Hedgerow / Wildflower) is the last one
+	// left. A predicate that accepted everything would pass every clause above
+	// while proving nothing -- and the control must also say no to the WRONG set,
+	// or hanging the grass maps on the paving would read as green.
+	const ZM_TerrainAuthoringRecipe* apxOutdoorRecipes[] =
+		{ &xDawnmere, &xThornacre, &xRoute1 };
+	const char* aszRecipeOwners[] = { "Dawnmere", "Thornacre", "Route1" };
+	for (u_int i = 0; i < uZM_TERRAIN_RECIPE_COUNT; ++i)
+	{
+		const ZM_TerrainMaterialSpec& xFlat = apxOutdoorRecipes[i]->m_pxMaterials[3];
+		ZENITH_ASSERT_FALSE(
+			SamplesSharedEngineSet(xFlat, szSHARED_GRASS_SET_DIR) ||
+			SamplesSharedEngineSet(xFlat, szSHARED_ROCK_SET_DIR) ||
+			SamplesSharedEngineSet(xFlat, szSHARED_CLAY_SET_DIR),
+			"%s's slot 3 reads as textured, so the shared-set predicate cannot "
+			"distinguish a textured slot from a flat one", aszRecipeOwners[i]);
+	}
+	ZENITH_ASSERT_FALSE(SamplesSharedEngineSet(xStone, szSHARED_GRASS_SET_DIR),
+		"the shared-set predicate cannot tell the rock set from the grass one, so "
+		"the nine rows above prove nothing about WHICH maps they sample");
+	ZENITH_ASSERT_FALSE(SamplesSharedEngineSet(xDawnmereDirt, szSHARED_ROCK_SET_DIR),
+		"the shared-set predicate cannot tell the clay set from the rock one, so "
+		"the nine rows above prove nothing about WHICH maps they sample");
+
+	// Three sets, one scale PER SET, across all three outdoor regions. Dawnmere is
+	// the already-shipped reference the other two rows are tied to, so re-pointing
+	// or re-tiling ANY single recipe breaks the tie -- including Dawnmere's own
+	// rows. Note the clay rows are tied to each OTHER, not to the grass tiling: a
+	// paving slab is the same size in all three towns, which is a different claim
+	// from "the ground reads at one scale".
+	ZENITH_ASSERT_STREQ(xPasture.m_szTextureSetDir, xMeadow.m_szTextureSetDir,
+		"Thornacre's flats drifted off the set Dawnmere samples");
+	ZENITH_ASSERT_STREQ(xCoastalMeadow.m_szTextureSetDir, xMeadow.m_szTextureSetDir,
+		"Route1's flats drifted off the set Dawnmere samples");
+	ZENITH_ASSERT_STREQ(xDrystone.m_szTextureSetDir, xStone.m_szTextureSetDir,
+		"Thornacre's steeps drifted off the set Dawnmere samples");
+	ZENITH_ASSERT_STREQ(xChalk.m_szTextureSetDir, xStone.m_szTextureSetDir,
+		"Route1's steeps drifted off the set Dawnmere samples");
+	ZENITH_ASSERT_STREQ(xThornacreDirt.m_szTextureSetDir, xDawnmereDirt.m_szTextureSetDir,
+		"Thornacre's paving drifted off the set Dawnmere samples");
+	ZENITH_ASSERT_STREQ(xRoute1Dirt.m_szTextureSetDir, xDawnmereDirt.m_szTextureSetDir,
+		"Route1's paving drifted off the set Dawnmere samples");
+
+	ZENITH_ASSERT_EQ_FLOAT(xPasture.m_fUVTiling, xMeadow.m_fUVTiling, fEPSILON,
+		"Thornacre's flats read at a different physical scale to Dawnmere's");
+	ZENITH_ASSERT_EQ_FLOAT(xCoastalMeadow.m_fUVTiling, xMeadow.m_fUVTiling, fEPSILON,
+		"Route1's flats read at a different physical scale to Dawnmere's");
+	ZENITH_ASSERT_EQ_FLOAT(xStone.m_fUVTiling, xMeadow.m_fUVTiling, fEPSILON,
+		"Dawnmere's steeps read at a different physical scale to its flats");
+	ZENITH_ASSERT_EQ_FLOAT(xDrystone.m_fUVTiling, xStone.m_fUVTiling, fEPSILON,
+		"Thornacre's steeps read at a different physical scale to Dawnmere's");
+	ZENITH_ASSERT_EQ_FLOAT(xChalk.m_fUVTiling, xStone.m_fUVTiling, fEPSILON,
+		"Route1's steeps read at a different physical scale to Dawnmere's");
+	ZENITH_ASSERT_EQ_FLOAT(xThornacreDirt.m_fUVTiling, xDawnmereDirt.m_fUVTiling, fEPSILON,
+		"a Thornacre paving slab is a different size to a Dawnmere one");
+	ZENITH_ASSERT_EQ_FLOAT(xRoute1Dirt.m_fUVTiling, xDawnmereDirt.m_fUVTiling, fEPSILON,
+		"a Route1 paving slab is a different size to a Dawnmere one");
+
+	// Exactly THREE textured slots per outdoor recipe, and they are slots 0, 1 and
+	// 2. This is what catches a set hung on the WRONG slot: texturing Heath leaves
+	// every clause above green while a lane stays flat. The running total is the
+	// loop's anti-vacuity arm -- if the registry ever went empty, or every recipe
+	// lost its textures, the total stops matching 3x the recipe count.
 	u_int uTexturedSlotTotal = 0u;
 	for (u_int uRecipe = 0; uRecipe < uZM_TERRAIN_RECIPE_COUNT; ++uRecipe)
 	{
@@ -1336,41 +1456,63 @@ ZENITH_TEST(ZM_TerrainRecipeSet, RouteAndTownMeadowSlotsSampleTheSharedEngineGra
 		u_int uFirstTexturedSlot = UINT_MAX;
 		const u_int uTexturedSlots =
 			CountTexturedMaterialSlots(xRecipe, uFirstTexturedSlot);
-		ZENITH_ASSERT_EQ(uTexturedSlots, 1u,
+		ZENITH_ASSERT_EQ(uTexturedSlots, 3u,
 			"recipe %u ('%s') carries %u textured slots -- outdoor recipes texture "
-			"exactly their ground slot in this milestone (R1-1 ruling 8: slot 1 "
-			"stays flat)", uRecipe, xRecipe.m_pxWorldSpec->m_szTerrainSet,
+			"their ground slot 0, their steeps slot 1 and their lane slot 2, and "
+			"nothing else", uRecipe, xRecipe.m_pxWorldSpec->m_szTerrainSet,
 			uTexturedSlots);
 		ZENITH_ASSERT_EQ(uFirstTexturedSlot, 0u,
 			"recipe %u ('%s') textured slot %u rather than its ground slot 0",
 			uRecipe, xRecipe.m_pxWorldSpec->m_szTerrainSet, uFirstTexturedSlot);
+		ZENITH_ASSERT_TRUE(
+			SamplesSharedEngineSet(xRecipe.m_pxMaterials[1], szSHARED_ROCK_SET_DIR),
+			"recipe %u ('%s') textured three slots, but slot 1 is not the shared "
+			"rock set", uRecipe, xRecipe.m_pxWorldSpec->m_szTerrainSet);
+		ZENITH_ASSERT_TRUE(
+			SamplesSharedEngineSet(xRecipe.m_pxMaterials[2], szSHARED_CLAY_SET_DIR),
+			"recipe %u ('%s') textured three slots, but slot 2 is not the shared "
+			"clay set", uRecipe, xRecipe.m_pxWorldSpec->m_szTerrainSet);
 		uTexturedSlotTotal += uTexturedSlots;
 	}
-	ZENITH_ASSERT_EQ(uTexturedSlotTotal, uZM_TERRAIN_RECIPE_COUNT,
+	ZENITH_ASSERT_EQ(uTexturedSlotTotal, uZM_TERRAIN_RECIPE_COUNT * 3u,
 		"the textured-slot walk found nothing to police");
 
 	// ★ ACCEPTED I/O EXCEPTION -- a boot unit is otherwise pure, but the only way
-	// to prove the "engine:" ref RESOLVES is to look, and this file's Dawnmere
-	// unit already sets that precedent. The path is DERIVED from the row under
-	// test rather than hard-coded, so it follows a future move of the set. The
+	// to prove the "engine:" refs RESOLVE is to look, and this file's Dawnmere
+	// unit already sets that precedent. The paths are DERIVED from the rows under
+	// test rather than hard-coded, so they follow a future move of any set. The
 	// maps are gitignored workspace assets, so an absent directory is a cold
 	// clone and is skipped; a directory that IS present must be complete, or the
 	// ground silently falls back to default textures.
-	const std::filesystem::path xSetDir =
-		ResolveTextureSetDirectory(xCoastalMeadow.m_szTextureSetDir);
-	ZENITH_ASSERT_FALSE(xSetDir.empty(),
-		"the route/town ground set ref carries no engine:/game: prefix, so the "
-		"asset registry cannot resolve it at all");
-	if (!xSetDir.empty() && std::filesystem::exists(xSetDir))
+	//
+	// ★★ `rm_packed` IS THE ONE THAT GOES MISSING. Stage 1 of the asset pipeline
+	// (`ExportAllTextures`) turns every jpg under the engine tree into a .ztxtr on
+	// any tools boot, but the packed roughness+metallic map the terrain shader
+	// samples (`xRM.gb`) is written only by RenderTest's
+	// `RenderTest_PackTerrainRoughnessMetallic`, from a hand-maintained list of
+	// set directories. A set added there and forgotten here has three of its four
+	// maps and falls back silently on the fourth.
+	const ZM_TerrainMaterialSpec* apxSetOwners[] =
+		{ &xCoastalMeadow, &xChalk, &xRoute1Dirt };
+	for (u_int i = 0; i < 3u; ++i)
 	{
-		const char* aszSharedGrassMaps[] = { "diffuse", "normal", "rm_packed", "ao" };
-		for (const char* szMap : aszSharedGrassMaps)
+		const std::filesystem::path xSetDir =
+			ResolveTextureSetDirectory(apxSetOwners[i]->m_szTextureSetDir);
+		ZENITH_ASSERT_FALSE(xSetDir.empty(),
+			"the '%s' ground set ref carries no engine:/game: prefix, so the asset "
+			"registry cannot resolve it at all", apxSetOwners[i]->m_szName);
+		if (xSetDir.empty() || !std::filesystem::exists(xSetDir))
+		{
+			continue;
+		}
+		const char* aszSharedGroundMaps[] = { "diffuse", "normal", "rm_packed", "ao" };
+		for (const char* szMap : aszSharedGroundMaps)
 		{
 			const std::filesystem::path xMap =
 				xSetDir / (std::string(szMap) + ZENITH_TEXTURE_EXT);
 			ZENITH_ASSERT_TRUE(std::filesystem::exists(xMap),
-				"the shared grass set Route1 and Thornacre now sample is missing %s",
-				xMap.generic_string().c_str());
+				"the shared ground set slot '%s' samples is missing %s",
+				apxSetOwners[i]->m_szName, xMap.generic_string().c_str());
 		}
 	}
 }

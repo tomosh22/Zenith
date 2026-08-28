@@ -160,18 +160,27 @@ namespace
 		{ "PlazaLandmark", { 230.0f, 24.0f, 228.0f } },
 	};
 
-	// Meadow is the only TEXTURED slot: it samples the engine's shared grass
-	// ground set (Zenith/Assets/Textures/Terrain/Grass), the same maps RenderTest's
-	// terrain uses. Its base colour is therefore WHITE -- the shader multiplies
-	// base colour into the sampled diffuse, so the old flat green would tint the
-	// photographic grass. Tiling 0.9 ~= one 16 m tile (1 / (0.07 * 0.9)) -- the
-	// SAME figure RenderTest tiles the shared set at, so the ground reads at one
-	// physical scale in both games. The other three slots stay flat-colour.
+	// Meadow, Stone and Dirt are the TEXTURED slots: they sample the engine's
+	// shared grass, rock and clay ground sets (Zenith/Assets/Textures/Terrain/
+	// {Grass,Rock,Clay}); the first two are the same maps RenderTest's terrain uses
+	// for its own flats and steeps. Their base colour is WHITE -- the shader
+	// multiplies base colour into the sampled diffuse, so the old flat
+	// green/grey/brown would tint the photographic ground. Only Heath stays
+	// flat-colour.
+	//
+	// ★ THE CLAY SLOT TILES DIFFERENTLY, AND THAT IS THE POINT. Grass and Rock are
+	// non-repeating photographic ground, so a 16 m repeat (tiling 0.9 =
+	// 1 / (0.07 * 0.9)) hides. Clay is a REGULAR 6x6 GRID OF PAVING SLABS, so its
+	// repeat is a visible architectural dimension rather than noise: at 0.9 each
+	// slab would be 15.9/6 = 2.6 m across and the lanes would read as a chessboard.
+	// Tiling 3.6 gives a 3.97 m repeat and so a 0.66 m slab, which is a paving
+	// stone. Dirt paints the LANES AND PADS (see m_fDirtRadius on the path and pad
+	// specs), so this slot is the town's paving, not its soil.
 	const ZM_TerrainMaterialSpec s_axDawnmereMaterials[] =
 	{
 		{ "Meadow", { 1.0f, 1.0f, 1.0f, 1.0f }, 0.92f, 0.0f, "engine:Textures/Terrain/Grass/", 0.9f },
-		{ "Stone", { 0.34f, 0.36f, 0.33f, 1.0f }, 0.88f, 0.0f, nullptr, 0.0f },
-		{ "Dirt", { 0.38f, 0.25f, 0.14f, 1.0f }, 0.96f, 0.0f, nullptr, 0.0f },
+		{ "Stone", { 1.0f, 1.0f, 1.0f, 1.0f }, 0.88f, 0.0f, "engine:Textures/Terrain/Rock/", 0.9f },
+		{ "Dirt", { 1.0f, 1.0f, 1.0f, 1.0f }, 0.96f, 0.0f, "engine:Textures/Terrain/Clay/", 3.6f },
 		{ "Heath", { 0.48f, 0.55f, 0.20f, 1.0f }, 0.90f, 0.0f, nullptr, 0.0f },
 	};
 
@@ -263,15 +272,17 @@ namespace
 
 	const ZM_TerrainMaterialSpec s_axThornacreMaterials[] =
 	{
-		// Textured like Dawnmere's Meadow: the shared ENGINE grass ground set. The
-		// base colour MULTIPLIES the sampled diffuse (Flux_Terrain_ToGBuffer ->
-		// SampleDiffuseWithBaseColor), so a textured slot authors WHITE and lets the
-		// texture carry the hue -- a green tint here puts the flat look straight back.
-		// Tiling matches Dawnmere's (~one 16 m tile) so the three outdoor regions read
-		// at one ground scale. Slot 1 (Drystone) stays flat-colour for now.
+		// Textured like Dawnmere's Meadow / Stone / Dirt: the shared ENGINE grass,
+		// rock and clay ground sets. The base colour MULTIPLIES the sampled diffuse
+		// (Flux_Terrain_ToGBuffer -> SampleDiffuseWithBaseColor), so a textured slot
+		// authors WHITE and lets the texture carry the hue -- a green, grey or brown
+		// tint here puts the flat look straight back. Every tiling number matches
+		// Dawnmere's row-for-row, INCLUDING clay's 3.6: the ground slots read at one
+		// scale across the three regions, and a paving slab is the same size in all
+		// three towns. See Dawnmere's block for why clay is not 0.9.
 		{ "Pasture", { 1.0f, 1.0f, 1.0f, 1.0f }, 0.94f, 0.0f, "engine:Textures/Terrain/Grass/", 0.9f },
-		{ "Drystone", { 0.39f, 0.39f, 0.34f, 1.0f }, 0.91f, 0.0f, nullptr, 0.0f },
-		{ "Dirt", { 0.36f, 0.24f, 0.13f, 1.0f }, 0.97f, 0.0f, nullptr, 0.0f },
+		{ "Drystone", { 1.0f, 1.0f, 1.0f, 1.0f }, 0.91f, 0.0f, "engine:Textures/Terrain/Rock/", 0.9f },
+		{ "Dirt", { 1.0f, 1.0f, 1.0f, 1.0f }, 0.97f, 0.0f, "engine:Textures/Terrain/Clay/", 3.6f },
 		{ "Hedgerow", { 0.15f, 0.33f, 0.09f, 1.0f }, 0.93f, 0.0f, nullptr, 0.0f },
 	};
 
@@ -364,13 +375,16 @@ namespace
 
 	const ZM_TerrainMaterialSpec s_axRoute1Materials[] =
 	{
-		// Same argument as Thornacre's Pasture above: the one textured slot samples
-		// the shared ENGINE grass set at Dawnmere's tiling, so its base colour is
-		// WHITE (base colour multiplies the sampled diffuse). Slot 1 (Chalk) stays
-		// flat-colour for now.
+		// Same argument as Thornacre's Pasture/Drystone/Dirt above: the three textured
+		// slots sample the shared ENGINE grass, rock and clay sets at Dawnmere's
+		// tilings, so their base colour is WHITE (base colour multiplies the sampled
+		// diffuse). Chalk keeps its NAME -- the route's steeps are chalk downland in
+		// the GDD -- while its surface is the shared rock set rather than a flat pale
+		// grey. Route 1's Dirt is the LANE the whole route is built around, which is
+		// the slot the clay paving most obviously reads on.
 		{ "CoastalMeadow", { 1.0f, 1.0f, 1.0f, 1.0f }, 0.93f, 0.0f, "engine:Textures/Terrain/Grass/", 0.9f },
-		{ "Chalk", { 0.56f, 0.57f, 0.49f, 1.0f }, 0.89f, 0.0f, nullptr, 0.0f },
-		{ "Dirt", { 0.42f, 0.28f, 0.15f, 1.0f }, 0.96f, 0.0f, nullptr, 0.0f },
+		{ "Chalk", { 1.0f, 1.0f, 1.0f, 1.0f }, 0.89f, 0.0f, "engine:Textures/Terrain/Rock/", 0.9f },
+		{ "Dirt", { 1.0f, 1.0f, 1.0f, 1.0f }, 0.96f, 0.0f, "engine:Textures/Terrain/Clay/", 3.6f },
 		{ "Wildflower", { 0.52f, 0.56f, 0.24f, 1.0f }, 0.91f, 0.0f, nullptr, 0.0f },
 	};
 

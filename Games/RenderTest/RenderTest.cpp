@@ -1430,9 +1430,20 @@ static void RenderTest_PackTerrainRoughnessMetallic()
 {
 	// The sets are engine-owned now, so the packed RM output is written beside
 	// them under ENGINE_ASSETS_DIR — the same file every game that samples these
-	// sets reads (Zenithmon's meadow slot does).
+	// sets reads (Zenithmon's three ground slots do).
+	//
+	// ★ THIS LIST IS THE ONLY PRODUCER OF `rm_packed.ztxtr`, FOR ANY GAME. Stage 1
+	// (`ExportAllTextures`, Zenith_Engine.cpp) turns every jpg under the engine
+	// assets tree into a BC1 `.ztxtr` on any tools boot, but nothing packs
+	// roughness+metallic into the single RGBA8 the terrain shader samples
+	// (`xRM.gb` in Flux_Terrain_ToGBuffer). So a shared ground set that is not
+	// named here is missing exactly one of its four maps, and a terrain slot that
+	// samples it silently falls back to the default RM texture rather than failing.
+	// RenderTest is the producer because it is the game that owns the packer; a
+	// Zenithmon boot alone will NOT create these files.
 	RenderTest_PackRoughnessMetallic(std::string(ENGINE_ASSETS_DIR) + "Textures/Terrain/Grass/");
 	RenderTest_PackRoughnessMetallic(std::string(ENGINE_ASSETS_DIR) + "Textures/Terrain/Rock/");
+	RenderTest_PackRoughnessMetallic(std::string(ENGINE_ASSETS_DIR) + "Textures/Terrain/Clay/");
 }
 
 #endif

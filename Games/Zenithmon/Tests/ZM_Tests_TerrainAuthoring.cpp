@@ -342,13 +342,18 @@ ZENITH_TEST(ZM_TerrainAuthoring, DawnmereRecipeIdentityAndBounds)
 
 	ZENITH_ASSERT_EQ(xRecipe.m_uMaterialCount, 4u);
 	ZENITH_ASSERT_STREQ(xRecipe.m_pxMaterials[0].m_szName, "Meadow");
-	// Meadow is textured (the shared engine grass set), so its base colour is
-	// WHITE -- the terrain shader multiplies base colour into the sampled
-	// diffuse, and the old 0.26/0.46/0.16 green would tint it. The set ref
-	// itself is pinned by ZM_TerrainRecipeSet::DawnmereMeadowSamplesTheShared-
-	// EngineGrassSet.
+	// Meadow, Stone and Dirt are textured (the shared engine grass, rock and clay
+	// sets), so their base colour is WHITE -- the terrain shader multiplies base
+	// colour into the sampled diffuse, and the old 0.26/0.46/0.16 green,
+	// 0.34/0.36/0.33 grey and 0.38/0.25/0.14 brown would tint them. The set refs
+	// themselves are pinned by
+	// ZM_TerrainRecipeSet::DawnmereGroundSlotsSampleTheSharedEngineSets. Heath is
+	// the one slot still carrying an authored hue, so it is the only row whose
+	// base colour this unit can still pin to a NON-white value.
 	ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_pxMaterials[0].m_afBaseColour[0], 1.0f, fEPSILON);
-	ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_pxMaterials[2].m_afBaseColour[2], 0.14f, fEPSILON);
+	ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_pxMaterials[1].m_afBaseColour[0], 1.0f, fEPSILON);
+	ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_pxMaterials[2].m_afBaseColour[2], 1.0f, fEPSILON);
+	ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_pxMaterials[3].m_afBaseColour[1], 0.55f, fEPSILON);
 	ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_pxMaterials[0].m_fRoughness, 0.92f, fEPSILON);
 	ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_pxMaterials[3].m_fRoughness, 0.90f, fEPSILON);
 	for (u_int i = 0; i < xRecipe.m_uMaterialCount; ++i)
