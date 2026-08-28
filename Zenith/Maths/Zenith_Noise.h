@@ -63,9 +63,18 @@ namespace Zenith_TerrainNoise
 		return fTop + (fBottom - fTop) * fSY;
 	}
 
-	// Fractal Brownian motion over ValueNoise, [0,1] (normalized by total
-	// amplitude). uOctaves clamped to [1,12].
-	inline float FBM(float fX, float fY, u_int uSeed, u_int uOctaves, float fLacunarity, float fGain)
+	// The one octave-summation loop the 2D and 3D FBMs share: per octave,
+	// sample a field at the current frequency, accumulate amplitude-weighted,
+	// normalize by total amplitude to [0,1]. uOctaves clamped to [1,12].
+	//
+	// The per-octave sample is a callable (frequency, octave) -> value so the
+	// dimensionality lives at the call site. It is header-inline and fully
+	// inlined into each caller, so the compiled float ops are IDENTICAL to the
+	// hand-written loops this replaces — which matters here more than usual:
+	// this file's determinism contract feeds committed terrain bakes, so a
+	// dedupe of these loops must be a codegen no-op, not merely equivalent.
+	template <typename TSampleOctave>
+	inline float FBMSum(u_int uOctaves, float fLacunarity, float fGain, TSampleOctave&& fnSample)
 	{
 		uOctaves = uOctaves < 1 ? 1 : (uOctaves > 12 ? 12 : uOctaves);
 		float fAmplitude = 1.0f;
@@ -74,12 +83,19 @@ namespace Zenith_TerrainNoise
 		float fTotal = 0.0f;
 		for (u_int u = 0; u < uOctaves; u++)
 		{
-			fSum += ValueNoise(fX * fFrequency, fY * fFrequency, uSeed + u * 1013u) * fAmplitude;
+			fSum += fnSample(fFrequency, u) * fAmplitude;
 			fTotal += fAmplitude;
 			fAmplitude *= fGain;
 			fFrequency *= fLacunarity;
 		}
 		return fTotal > 0.0f ? fSum / fTotal : 0.0f;
+	}
+
+	// Fractal Brownian motion over ValueNoise, [0,1].
+	inline float FBM(float fX, float fY, u_int uSeed, u_int uOctaves, float fLacunarity, float fGain)
+	{
+		return FBMSum(uOctaves, fLacunarity, fGain, [fX, fY, uSeed](float fFrequency, u_int u)
+			{ return ValueNoise(fX * fFrequency, fY * fFrequency, uSeed + u * 1013u); });
 	}
 
 	// Ridged multifractal variant, [0,1] — sharp crests, eroded-looking.
@@ -157,25 +173,17 @@ namespace Zenith_TerrainNoise
 		return fY0 + (fY1 - fY0) * fSZ;
 	}
 
-	// Fractal Brownian motion over ValueNoise3D, [0,1] (normalized by total
-	// amplitude). uOctaves clamped to [1,12], matching FBM.
+	// Fractal Brownian motion over ValueNoise3D, [0,1] — FBMSum with the 3D
+	// field, same octave seeds as the 2D form.
 	inline float FBM3D(float fX, float fY, float fZ, u_int uSeed, u_int uOctaves,
 		float fLacunarity, float fGain)
 	{
-		uOctaves = uOctaves < 1 ? 1 : (uOctaves > 12 ? 12 : uOctaves);
-		float fAmplitude = 1.0f;
-		float fFrequency = 1.0f;
-		float fSum = 0.0f;
-		float fTotal = 0.0f;
-		for (u_int u = 0; u < uOctaves; u++)
-		{
-			fSum += ValueNoise3D(fX * fFrequency, fY * fFrequency, fZ * fFrequency,
-				uSeed + u * 1013u) * fAmplitude;
-			fTotal += fAmplitude;
-			fAmplitude *= fGain;
-			fFrequency *= fLacunarity;
-		}
-		return fTotal > 0.0f ? fSum / fTotal : 0.0f;
+		return FBMSum(uOctaves, fLacunarity, fGain,
+			[fX, fY, fZ, uSeed](float fFrequency, u_int u)
+			{
+				return ValueNoise3D(fX * fFrequency, fY * fFrequency, fZ * fFrequency,
+					uSeed + u * 1013u);
+			});
 	}
 
 	//-------------------------------------------------------------------------
