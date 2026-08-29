@@ -2,6 +2,7 @@
 #include "Scripting/Zenith_GraphNodeRegistry.h"
 #include "Scripting/Zenith_GraphBlackboard.h"
 #include "EntityComponent/Zenith_GraphOps.h"
+#include "EntityComponent/Zenith_GraphNodeHelpers.h"
 
 #include <cmath>
 
@@ -16,6 +17,12 @@
 // Conventions: an optional m_str*Var property overrides its constant twin when
 // set; m_strResultVar defaulting "" means "write back in place" for nodes
 // whose natural output type matches the input.
+//
+// The list family is READ + WRITE from a graph: GetListCount / GetListElement
+// consume, ListAdd / ListRemoveAt / ListClear produce. Before those three the
+// only producers were FindEntitiesInRadius and QueryPerceivedTargets, both of
+// which Clear() and refill wholesale - so a graph could not build a list of
+// its own at all.
 //------------------------------------------------------------------------------
 
 namespace
@@ -66,6 +73,185 @@ namespace
 			return GRAPH_NODE_STATUS_SUCCESS;
 		}
 		const char* GetTypeName() const override { return "GetListElement"; }
+	};
+
+	// list.PushBack(<the value of m_strValueVar>). Takes a VARIABLE rather than
+	// a constant on purpose: an element is a Zenith_PropertyValue, so a constant
+	// form would need one property per type and the usual const-or-var idiom
+	// does not apply. FAILURE when the source variable is absent - appending a
+	// silently-defaulted value would grow the list with something nobody
+	// authored, and the chain should stop instead.
+	class Zenith_GraphNode_ListAdd : public Zenith_GraphNode
+	{
+	public:
+		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_ListAdd)
+	public:
+		ZENITH_PROPERTY(std::string, m_strListVar, "list")
+		ZENITH_PROPERTY(std::string, m_strValueVar, "item")
+
+		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
+		{
+			const Zenith_PropertyValue* pxValue = xContext.m_pxBlackboard->TryGetValue(m_strValueVar);
+			if (pxValue == nullptr)
+			{
+				return GRAPH_NODE_STATUS_FAILURE;
+			}
+			// The value store and the list store are separate maps, so growing
+			// the list cannot invalidate pxValue.
+			xContext.m_pxBlackboard->GetOrCreateList(m_strListVar).PushBack(*pxValue);
+			return GRAPH_NODE_STATUS_SUCCESS;
+		}
+		const char* GetTypeName() const override { return "ListAdd"; }
+	};
+
+	// Removes one element by index (const or int32 var, var wins when set).
+	//
+	// ORDER-PRESERVING (Zenith_Vector::Remove, not RemoveSwap): GetListElement
+	// and ForEach are both INDEX-based, so element order is observable from a
+	// graph and a swap-remove would silently reorder a list something is
+	// walking.
+	//
+	// FAILURE when the list is absent or the index is out of range - the same
+	// bounds gate GetListElement uses, and deliberately WITHOUT creating the
+	// list, so a failed removal leaves the blackboard exactly as it found it.
+	class Zenith_GraphNode_ListRemoveAt : public Zenith_GraphNode
+	{
+	public:
+		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_ListRemoveAt)
+	public:
+		ZENITH_PROPERTY(std::string, m_strListVar, "list")
+		ZENITH_PROPERTY(int32_t, m_iIndex, 0)
+		ZENITH_PROPERTY(std::string, m_strIndexVar, "")
+
+		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
+		{
+			const Zenith_Vector<Zenith_PropertyValue>* pxList = xContext.m_pxBlackboard->TryGetList(m_strListVar);
+			const int32_t iIndex = m_strIndexVar.empty()
+				? m_iIndex : xContext.m_pxBlackboard->GetInt32(m_strIndexVar, m_iIndex);
+			if (!pxList || iIndex < 0 || iIndex >= static_cast<int32_t>(pxList->GetSize()))
+			{
+				return GRAPH_NODE_STATUS_FAILURE;
+			}
+			xContext.m_pxBlackboard->GetOrCreateList(m_strListVar).Remove(static_cast<u_int>(iIndex));
+			return GRAPH_NODE_STATUS_SUCCESS;
+		}
+		const char* GetTypeName() const override { return "ListRemoveAt"; }
+	};
+
+	// Empties a list. ALWAYS SUCCESS, including for a list that does not exist
+	// yet: "no elements" is precisely the state the caller asked for, and
+	// failing on it would make a teardown chain depend on whether anything had
+	// ever been added.
+	class Zenith_GraphNode_ListClear : public Zenith_GraphNode
+	{
+	public:
+		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_ListClear)
+	public:
+		ZENITH_PROPERTY(std::string, m_strListVar, "list")
+
+		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
+		{
+			xContext.m_pxBlackboard->GetOrCreateList(m_strListVar).Clear();
+			return GRAPH_NODE_STATUS_SUCCESS;
+		}
+		const char* GetTypeName() const override { return "ListClear"; }
+	};
+
+	//==========================================================================
+	// Boolean logic
+	//==========================================================================
+
+	// N-ary AND / OR / XOR over a comma-separated list of bool variables ->
+	// one bool variable. ONE node per operand-type family carrying an m_iOp,
+	// like CompareBlackboardFloat / CompareBlackboardInt / MathBlackboardFloat;
+	// the operand LIST is spelled the way SwitchOnString.m_strCases and
+	// StateMachine.m_strStateNames already are.
+	//
+	// N-ary rather than binary because that is the actual complaint: without
+	// this node a 4-way AND costs three chained compares and two scratch
+	// blackboard variables.
+	//
+	// Semantics, each pinned by a unit test:
+	//   * XOR is PARITY (an odd number of true operands), not "exactly one".
+	//   * AND/OR over ONE operand is that operand, so m_bInvert alone is NOT -
+	//     and over a longer list the same flag gives NAND / NOR.
+	//   * an EMPTY operand list is FAILURE, not the vacuous `true` and not
+	//     `false`: an unauthored node must abort its chain rather than write a
+	//     plausible-looking value.
+	//   * an out-of-range m_iOp is FAILURE, matching every other m_iOp switch.
+	//   * tokens are used VERBATIM - "a, b" reads a variable named " b", which
+	//     is absent and so takes m_bMissingIsTrue. See
+	//     Zenith_GraphNode_ParseCommaList for why trimming is not an option.
+	//   * a missing OR wrongly-typed operand reads as m_bMissingIsTrue, which is
+	//     GetBool's documented default contract rather than anything new here.
+	class Zenith_GraphNode_LogicBlackboardBool : public Zenith_GraphNode
+	{
+	public:
+		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_LogicBlackboardBool)
+	public:
+		ZENITH_PROPERTY(std::string, m_strVars, "a,b")
+		ZENITH_PROPERTY(int32_t, m_iOp, 0)
+		ZENITH_PROPERTY(bool, m_bInvert, false)
+		ZENITH_PROPERTY(bool, m_bMissingIsTrue, false)
+		ZENITH_PROPERTY(std::string, m_strResultVar, "result")
+
+		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
+		{
+			EnsureVarsParsed();
+			const u_int uCount = m_axVars.GetSize();
+			if (uCount == 0)
+			{
+				return GRAPH_NODE_STATUS_FAILURE;
+			}
+
+			u_int uTrue = 0;
+			for (u_int u = 0; u < uCount; ++u)
+			{
+				if (xContext.m_pxBlackboard->GetBool(m_axVars.Get(u), m_bMissingIsTrue))
+				{
+					++uTrue;
+				}
+			}
+
+			bool bResult = false;
+			switch (static_cast<Zenith_GraphLogicBoolOp>(m_iOp))
+			{
+			case GRAPH_LOGIC_BOOL_OP_AND: bResult = uTrue == uCount;    break;
+			case GRAPH_LOGIC_BOOL_OP_OR:  bResult = uTrue > 0u;         break;
+			case GRAPH_LOGIC_BOOL_OP_XOR: bResult = (uTrue & 1u) != 0u; break;
+			default: return GRAPH_NODE_STATUS_FAILURE;
+			}
+			if (m_bInvert)
+			{
+				bResult = !bResult;
+			}
+
+			Zenith_PropertyValue xResult;
+			xResult.SetBool(bResult);
+			xContext.m_pxBlackboard->SetValue(m_strResultVar, xResult);
+			return GRAPH_NODE_STATUS_SUCCESS;
+		}
+		const char* GetTypeName() const override { return "LogicBlackboardBool"; }
+
+	private:
+		// Keyed on the property STRING rather than on a one-shot "parsed" flag
+		// (SwitchOnString's idiom): the editor property panel writes m_strVars
+		// on a LIVE node instance, and a latched flag would keep executing the
+		// operand list the author just replaced. One string compare per fire.
+		void EnsureVarsParsed()
+		{
+			if (m_bParsed && m_strParsedFrom == m_strVars)
+			{
+				return;
+			}
+			Zenith_GraphNode_ParseCommaList(m_strVars, m_axVars);
+			m_strParsedFrom = m_strVars;
+			m_bParsed = true;
+		}
+
+		Zenith_Vector<std::string> m_axVars;
+		std::string m_strParsedFrom;
+		bool m_bParsed = false;
 	};
 
 	//==========================================================================
@@ -474,6 +660,10 @@ void Zenith_RegisterEngineGraphNodes_Math()
 
 	xRegistry.RegisterNodeType<Zenith_GraphNode_GetListCount>("GetListCount", GRAPH_EVENT_NONE, 1, false, "Blackboard");
 	xRegistry.RegisterNodeType<Zenith_GraphNode_GetListElement>("GetListElement", GRAPH_EVENT_NONE, 1, false, "Blackboard");
+	xRegistry.RegisterNodeType<Zenith_GraphNode_ListAdd>("ListAdd", GRAPH_EVENT_NONE, 1, false, "Blackboard");
+	xRegistry.RegisterNodeType<Zenith_GraphNode_ListRemoveAt>("ListRemoveAt", GRAPH_EVENT_NONE, 1, false, "Blackboard");
+	xRegistry.RegisterNodeType<Zenith_GraphNode_ListClear>("ListClear", GRAPH_EVENT_NONE, 1, false, "Blackboard");
+	xRegistry.RegisterNodeType<Zenith_GraphNode_LogicBlackboardBool>("LogicBlackboardBool", GRAPH_EVENT_NONE, 1, false, "Blackboard");
 
 	xRegistry.RegisterNodeType<Zenith_GraphNode_AddBlackboardInt>("AddBlackboardInt", GRAPH_EVENT_NONE, 1, false, "Blackboard");
 	xRegistry.RegisterNodeType<Zenith_GraphNode_AddBlackboardVector3>("AddBlackboardVector3", GRAPH_EVENT_NONE, 1, false, "Blackboard");

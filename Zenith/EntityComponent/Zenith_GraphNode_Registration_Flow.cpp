@@ -3,6 +3,7 @@
 #include "Scripting/Zenith_GraphBlackboard.h"
 #include "Scripting/Zenith_BehaviourGraph.h"
 #include "EntityComponent/Components/Zenith_GraphComponent.h"
+#include "EntityComponent/Zenith_GraphNodeHelpers.h"
 #include "AssetHandling/Zenith_BehaviourGraphAsset.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #ifdef ZENITH_TOOLS
@@ -31,29 +32,10 @@
 
 namespace
 {
-	// Shared: split a comma-separated property into a token list.
-	void ParseCommaList(const std::string& strList, Zenith_Vector<std::string>& axOut)
-	{
-		axOut.Clear();
-		size_t uStart = 0;
-		while (uStart <= strList.size())
-		{
-			size_t uComma = strList.find(',', uStart);
-			if (uComma == std::string::npos)
-			{
-				uComma = strList.size();
-			}
-			if (uComma > uStart)
-			{
-				axOut.PushBack(strList.substr(uStart, uComma - uStart));
-			}
-			if (uComma == strList.size())
-			{
-				break;
-			}
-			uStart = uComma + 1;
-		}
-	}
+	// The comma-list parser this TU used to own privately now lives in
+	// Zenith_GraphNodeHelpers.h as Zenith_GraphNode_ParseCommaList -- the
+	// Blackboard TU's LogicBlackboardBool needs the same token semantics, and a
+	// second copy is exactly how the two would drift on whitespace.
 
 	//==========================================================================
 	// SwitchOnInt - 1-of-N dispatch on an int32 blackboard variable.
@@ -156,7 +138,7 @@ namespace
 		{
 			if (!m_bCasesParsed)
 			{
-				ParseCommaList(m_strCases, m_axCases);
+				Zenith_GraphNode_ParseCommaList(m_strCases, m_axCases);
 				m_bCasesParsed = true;
 			}
 		}
@@ -247,7 +229,7 @@ namespace
 		{
 			if (!m_bNamesParsed)
 			{
-				ParseCommaList(m_strStateNames, m_axNames);
+				Zenith_GraphNode_ParseCommaList(m_strStateNames, m_axNames);
 				m_bNamesParsed = true;
 			}
 		}

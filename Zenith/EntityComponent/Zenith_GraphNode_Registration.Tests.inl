@@ -45,6 +45,10 @@ static_assert(GRAPH_MATH_FLOAT_OP_ABS == 6, "");
 static_assert(GRAPH_MATH_FLOAT_OP_SIN == 7, "");
 static_assert(GRAPH_MATH_FLOAT_OP_COS == 8, "");
 
+static_assert(GRAPH_LOGIC_BOOL_OP_AND == 0, "");
+static_assert(GRAPH_LOGIC_BOOL_OP_OR == 1, "");
+static_assert(GRAPH_LOGIC_BOOL_OP_XOR == 2, "");
+
 // --- 2. Execution + fallback --------------------------------------------------
 
 // Runs a CompareBlackboardFloat over var "v" (pre-seeded) and returns its bool
@@ -386,6 +390,127 @@ ZENITH_TEST(EngineGraphBuilder, FireCustomEventFactoryAndDefaults)
 		Zenith_GraphDefinition xFac; { Zenith_GraphBuilder xBd(xFac); Zenith_EngineGraphBuilder xB(xBd); xB.FireCustomEvent("E", nullptr, "pl"); ZENITH_ASSERT_TRUE(xBd.Build()); }
 		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder xBd(xRaw); const u_int u = xBd.Node("FireCustomEvent"); xBd.ParamString(u, "m_strEventName", "E"); xBd.ParamString(u, "m_strPayloadVar", "pl"); ZENITH_ASSERT_TRUE(xBd.Build()); }
 		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xFac, xRaw));
+	}
+}
+
+// The blackboard-logic and list factories. Same equivalence contract as every
+// other factory, plus the exact-default guard on the two optional bools.
+ZENITH_TEST(EngineGraphBuilder, LogicAndListFactoriesMatchRaw)
+{
+	{	// LogicBool with the non-default XOR op and a NON-default invert
+		Zenith_GraphDefinition xFac; { Zenith_GraphBuilder xBd(xFac); Zenith_EngineGraphBuilder xB(xBd); xB.LogicBool("armed,jammed", GRAPH_LOGIC_BOOL_OP_XOR, "odd", true, true); ZENITH_ASSERT_TRUE(xBd.Build()); }
+		Zenith_GraphDefinition xRaw;
+		{
+			Zenith_GraphBuilder xBd(xRaw);
+			const u_int u = xBd.Node("LogicBlackboardBool");
+			ZENITH_ASSERT_NE(u, 0u);	// engine node resolved (test not vacuous)
+			xBd.ParamString(u, "m_strVars", "armed,jammed");
+			xBd.ParamInt(u, "m_iOp", 2);
+			xBd.ParamBool(u, "m_bInvert", true);
+			xBd.ParamBool(u, "m_bMissingIsTrue", true);
+			xBd.ParamString(u, "m_strResultVar", "odd");
+			ZENITH_ASSERT_TRUE(xBd.Build());
+		}
+		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xFac, xRaw));
+	}
+	{	// GetListCount
+		Zenith_GraphDefinition xFac; { Zenith_GraphBuilder xBd(xFac); Zenith_EngineGraphBuilder xB(xBd); xB.GetListCount("bag", "n"); ZENITH_ASSERT_TRUE(xBd.Build()); }
+		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder xBd(xRaw); const u_int u = xBd.Node("GetListCount"); ZENITH_ASSERT_NE(u, 0u); xBd.ParamString(u, "m_strListVar", "bag"); xBd.ParamString(u, "m_strResultVar", "n"); ZENITH_ASSERT_TRUE(xBd.Build()); }
+		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xFac, xRaw));
+	}
+	{	// GetListElement WITH an index var
+		Zenith_GraphDefinition xFac; { Zenith_GraphBuilder xBd(xFac); Zenith_EngineGraphBuilder xB(xBd); xB.GetListElement("bag", 3, "elem", "cursor"); ZENITH_ASSERT_TRUE(xBd.Build()); }
+		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder xBd(xRaw); const u_int u = xBd.Node("GetListElement"); ZENITH_ASSERT_NE(u, 0u); xBd.ParamString(u, "m_strListVar", "bag"); xBd.ParamInt(u, "m_iIndex", 3); xBd.ParamString(u, "m_strResultVar", "elem"); xBd.ParamString(u, "m_strIndexVar", "cursor"); ZENITH_ASSERT_TRUE(xBd.Build()); }
+		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xFac, xRaw));
+	}
+	{	// ForEach WITH an index var
+		Zenith_GraphDefinition xFac; { Zenith_GraphBuilder xBd(xFac); Zenith_EngineGraphBuilder xB(xBd); xB.ForEach("bag", "elem", "idx"); ZENITH_ASSERT_TRUE(xBd.Build()); }
+		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder xBd(xRaw); const u_int u = xBd.Node("ForEach"); ZENITH_ASSERT_NE(u, 0u); xBd.ParamString(u, "m_strListVar", "bag"); xBd.ParamString(u, "m_strElementVar", "elem"); xBd.ParamString(u, "m_strIndexVar", "idx"); ZENITH_ASSERT_TRUE(xBd.Build()); }
+		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xFac, xRaw));
+	}
+	{	// ListAdd
+		Zenith_GraphDefinition xFac; { Zenith_GraphBuilder xBd(xFac); Zenith_EngineGraphBuilder xB(xBd); xB.ListAdd("bag", "spawned"); ZENITH_ASSERT_TRUE(xBd.Build()); }
+		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder xBd(xRaw); const u_int u = xBd.Node("ListAdd"); ZENITH_ASSERT_NE(u, 0u); xBd.ParamString(u, "m_strListVar", "bag"); xBd.ParamString(u, "m_strValueVar", "spawned"); ZENITH_ASSERT_TRUE(xBd.Build()); }
+		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xFac, xRaw));
+	}
+	{	// ListRemoveAt WITH an index var
+		Zenith_GraphDefinition xFac; { Zenith_GraphBuilder xBd(xFac); Zenith_EngineGraphBuilder xB(xBd); xB.ListRemoveAt("bag", 2, "cursor"); ZENITH_ASSERT_TRUE(xBd.Build()); }
+		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder xBd(xRaw); const u_int u = xBd.Node("ListRemoveAt"); ZENITH_ASSERT_NE(u, 0u); xBd.ParamString(u, "m_strListVar", "bag"); xBd.ParamInt(u, "m_iIndex", 2); xBd.ParamString(u, "m_strIndexVar", "cursor"); ZENITH_ASSERT_TRUE(xBd.Build()); }
+		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xFac, xRaw));
+	}
+	{	// ListClear
+		Zenith_GraphDefinition xFac; { Zenith_GraphBuilder xBd(xFac); Zenith_EngineGraphBuilder xB(xBd); xB.ListClear("bag"); ZENITH_ASSERT_TRUE(xBd.Build()); }
+		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder xBd(xRaw); const u_int u = xBd.Node("ListClear"); ZENITH_ASSERT_NE(u, 0u); xBd.ParamString(u, "m_strListVar", "bag"); ZENITH_ASSERT_TRUE(xBd.Build()); }
+		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xFac, xRaw));
+	}
+}
+
+// The exact-default rule for the new optional args, asserted in BOTH directions
+// the way OnCustomEventOmittedPayloadKeepsNodeDefault does: an omitted argument
+// must MATCH raw-with-the-node-default, and DIFFER from raw forced to the other
+// value. One direction alone would pass on a factory that silently ignored the
+// argument entirely.
+ZENITH_TEST(EngineGraphBuilder, LogicAndListOmittedArgsKeepNodeDefaults)
+{
+	{	// LogicBool: omitted bInvert / bMissingIsTrue keep the node's false.
+		Zenith_GraphDefinition xFac;
+		{
+			Zenith_GraphBuilder xBd(xFac);
+			Zenith_EngineGraphBuilder xB(xBd);
+			xB.LogicBool("a,b", GRAPH_LOGIC_BOOL_OP_AND, "r");	// no flags
+			ZENITH_ASSERT_TRUE(xBd.Build());
+		}
+		Zenith_GraphDefinition xRawDefault;
+		{
+			Zenith_GraphBuilder xBd(xRawDefault);
+			const u_int u = xBd.Node("LogicBlackboardBool");
+			xBd.ParamString(u, "m_strVars", "a,b");
+			xBd.ParamInt(u, "m_iOp", 0);
+			xBd.ParamString(u, "m_strResultVar", "r");
+			ZENITH_ASSERT_TRUE(xBd.Build());
+		}
+		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xFac, xRawDefault));
+
+		Zenith_GraphDefinition xRawInverted;
+		{
+			Zenith_GraphBuilder xBd(xRawInverted);
+			const u_int u = xBd.Node("LogicBlackboardBool");
+			xBd.ParamString(u, "m_strVars", "a,b");
+			xBd.ParamInt(u, "m_iOp", 0);
+			xBd.ParamBool(u, "m_bInvert", true);
+			xBd.ParamString(u, "m_strResultVar", "r");
+			ZENITH_ASSERT_TRUE(xBd.Build());
+		}
+		ZENITH_ASSERT_FALSE(GraphDefsSerializeIdentically(xFac, xRawInverted));
+	}
+	{	// ForEach: an omitted index var must keep "", NOT become something else.
+		Zenith_GraphDefinition xFac;
+		{
+			Zenith_GraphBuilder xBd(xFac);
+			Zenith_EngineGraphBuilder xB(xBd);
+			xB.ForEach("bag", "elem");	// no index var
+			ZENITH_ASSERT_TRUE(xBd.Build());
+		}
+		Zenith_GraphDefinition xRawDefault;
+		{
+			Zenith_GraphBuilder xBd(xRawDefault);
+			const u_int u = xBd.Node("ForEach");
+			xBd.ParamString(u, "m_strListVar", "bag");
+			xBd.ParamString(u, "m_strElementVar", "elem");
+			ZENITH_ASSERT_TRUE(xBd.Build());
+		}
+		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xFac, xRawDefault));
+
+		Zenith_GraphDefinition xRawIndexed;
+		{
+			Zenith_GraphBuilder xBd(xRawIndexed);
+			const u_int u = xBd.Node("ForEach");
+			xBd.ParamString(u, "m_strListVar", "bag");
+			xBd.ParamString(u, "m_strElementVar", "elem");
+			xBd.ParamString(u, "m_strIndexVar", "idx");
+			ZENITH_ASSERT_TRUE(xBd.Build());
+		}
+		ZENITH_ASSERT_FALSE(GraphDefsSerializeIdentically(xFac, xRawIndexed));
 	}
 }
 

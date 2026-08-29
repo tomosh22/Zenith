@@ -173,6 +173,85 @@ public:
 		return Anchor(uNode);
 	}
 
+	// --- blackboard logic -----------------------------------------------------
+	// szVars is a COMMA-SEPARATED operand list, verbatim (no trimming - see
+	// Zenith_GraphNode_ParseCommaList). bInvert defaults to the node's own
+	// default, so LogicBool(v, OP, r) is byte-identical to the raw form that
+	// leaves m_bInvert alone; the same holds for bMissingIsTrue.
+	Zenith_GraphChain LogicBool(
+		const char* szVars,
+		Zenith_GraphLogicBoolOp eOp,
+		const char* szResultVar,
+		bool bInvert = false,
+		bool bMissingIsTrue = false)
+	{
+		const u_int uNode = m_xBuilder.Node("LogicBlackboardBool");
+		m_xBuilder.ParamString(uNode, "m_strVars", szVars);
+		m_xBuilder.ParamEnum(uNode, "m_iOp", eOp);
+		m_xBuilder.ParamBool(uNode, "m_bInvert", bInvert);
+		m_xBuilder.ParamBool(uNode, "m_bMissingIsTrue", bMissingIsTrue);
+		m_xBuilder.ParamString(uNode, "m_strResultVar", szResultVar);
+		return Anchor(uNode);
+	}
+
+	// --- blackboard lists -----------------------------------------------------
+	// Read (GetListCount / GetListElement / ForEach) and write (ListAdd /
+	// ListRemoveAt / ListClear). None of these had a DSL helper before, so a
+	// list-walking graph had to drop to raw Node()+Param* for every one.
+	Zenith_GraphChain GetListCount(const char* szListVar, const char* szResultVar)
+	{
+		const u_int uNode = m_xBuilder.Node("GetListCount");
+		m_xBuilder.ParamString(uNode, "m_strListVar", szListVar);
+		m_xBuilder.ParamString(uNode, "m_strResultVar", szResultVar);
+		return Anchor(uNode);
+	}
+
+	// szIndexVar omitted -> keep the node default ("", i.e. use iIndex).
+	Zenith_GraphChain GetListElement(const char* szListVar, int32_t iIndex, const char* szResultVar, const char* szIndexVar = nullptr)
+	{
+		const u_int uNode = m_xBuilder.Node("GetListElement");
+		m_xBuilder.ParamString(uNode, "m_strListVar", szListVar);
+		m_xBuilder.ParamInt(uNode, "m_iIndex", iIndex);
+		m_xBuilder.ParamString(uNode, "m_strResultVar", szResultVar);
+		if (szIndexVar) { m_xBuilder.ParamString(uNode, "m_strIndexVar", szIndexVar); }
+		return Anchor(uNode);
+	}
+
+	// szIndexVar omitted -> keep the node default ("" = no index written).
+	Zenith_GraphChain ForEach(const char* szListVar, const char* szElementVar, const char* szIndexVar = nullptr)
+	{
+		const u_int uNode = m_xBuilder.Node("ForEach");
+		m_xBuilder.ParamString(uNode, "m_strListVar", szListVar);
+		m_xBuilder.ParamString(uNode, "m_strElementVar", szElementVar);
+		if (szIndexVar) { m_xBuilder.ParamString(uNode, "m_strIndexVar", szIndexVar); }
+		return Anchor(uNode);
+	}
+
+	Zenith_GraphChain ListAdd(const char* szListVar, const char* szValueVar)
+	{
+		const u_int uNode = m_xBuilder.Node("ListAdd");
+		m_xBuilder.ParamString(uNode, "m_strListVar", szListVar);
+		m_xBuilder.ParamString(uNode, "m_strValueVar", szValueVar);
+		return Anchor(uNode);
+	}
+
+	// szIndexVar omitted -> keep the node default ("", i.e. use iIndex).
+	Zenith_GraphChain ListRemoveAt(const char* szListVar, int32_t iIndex, const char* szIndexVar = nullptr)
+	{
+		const u_int uNode = m_xBuilder.Node("ListRemoveAt");
+		m_xBuilder.ParamString(uNode, "m_strListVar", szListVar);
+		m_xBuilder.ParamInt(uNode, "m_iIndex", iIndex);
+		if (szIndexVar) { m_xBuilder.ParamString(uNode, "m_strIndexVar", szIndexVar); }
+		return Anchor(uNode);
+	}
+
+	Zenith_GraphChain ListClear(const char* szListVar)
+	{
+		const u_int uNode = m_xBuilder.Node("ListClear");
+		m_xBuilder.ParamString(uNode, "m_strListVar", szListVar);
+		return Anchor(uNode);
+	}
+
 	// --- events out -----------------------------------------------------------
 	// szTargetVar omitted -> node default ("" = self); szPayloadVar omitted ->
 	// node default ("" = no payload). Both obey the exact-default rule.

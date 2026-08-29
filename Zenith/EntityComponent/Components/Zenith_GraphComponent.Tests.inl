@@ -17,6 +17,7 @@
 #include "UnitTests/Zenith_UnitTests.h"
 #include "Input/Zenith_KeyCodes.h"
 #include "Input/Zenith_InputActions.h"
+#include "EntityComponent/Zenith_GraphOps.h"
 #ifdef ZENITH_INPUT_SIMULATOR
 #include "Input/Zenith_InputSimulator.h"
 #endif
@@ -125,6 +126,12 @@ namespace
 		{
 			Zenith_PropertyValue xValue;
 			xValue.SetInt32(iValue);
+			Set(szProperty, xValue);
+		}
+		void SetBool(const char* szProperty, bool bValue)
+		{
+			Zenith_PropertyValue xValue;
+			xValue.SetBool(bValue);
 			Set(szProperty, xValue);
 		}
 
@@ -3461,6 +3468,133 @@ ZENITH_TEST(GraphComponent, ActionNodeSerializationRoundTrip)
 			pxResult->m_pfnGet(pxNode, xValue);
 			ZENITH_ASSERT_STREQ(xValue.GetString().c_str(), xCase.m_szResultVar);
 		}
+	}
+}
+
+ZENITH_TEST(GraphComponent, BlackboardLogicAndListNodeSerializationRoundTrip)
+{
+	// ★ SAME REASON AS ActionNodeSerializationRoundTrip ABOVE: the unit that
+	// would otherwise cover a new node type for free -- RegistryWideNodeRoundTrip
+	// -- is QUARANTINED, so a family added while it sleeps has no round-trip
+	// coverage unless it brings its own. This is LogicBlackboardBool's and the
+	// three list mutators'.
+	//
+	// Every param is set to a NON-DEFAULT value, deliberately: a round trip that
+	// happened to drop a property would still read back correct if the value
+	// under test were the default the fresh instance already carries.
+	Zenith_GraphNodeRegistry& xRegistry = Zenith_GraphNodeRegistry::Get();
+	const char* aszTypes[] = { "LogicBlackboardBool", "ListAdd", "ListRemoveAt", "ListClear" };
+	for (u_int u = 0; u < sizeof(aszTypes) / sizeof(aszTypes[0]); ++u)
+	{
+		ZENITH_ASSERT_NOT_NULL(xRegistry.Find(aszTypes[u]), "%s is not registered", aszTypes[u]);
+	}
+
+	Zenith_GraphDefinition xDef;
+
+	const u_int uLogic = xDef.AddNode("LogicBlackboardBool");
+	{
+		NodeParamWriter xParams(xDef, uLogic, "LogicBlackboardBool");
+		xParams.SetString("m_strVars", "armed,jammed,fuelled");
+		xParams.SetInt("m_iOp", GRAPH_LOGIC_BOOL_OP_XOR);
+		xParams.SetBool("m_bInvert", true);
+		xParams.SetBool("m_bMissingIsTrue", true);
+		xParams.SetString("m_strResultVar", "canFire");
+	}
+
+	const u_int uAdd = xDef.AddNode("ListAdd");
+	{
+		NodeParamWriter xParams(xDef, uAdd, "ListAdd");
+		xParams.SetString("m_strListVar", "bag");
+		xParams.SetString("m_strValueVar", "spawned");
+	}
+
+	const u_int uRemove = xDef.AddNode("ListRemoveAt");
+	{
+		NodeParamWriter xParams(xDef, uRemove, "ListRemoveAt");
+		xParams.SetString("m_strListVar", "bag");
+		xParams.SetInt("m_iIndex", 3);
+		xParams.SetString("m_strIndexVar", "cursor");
+	}
+
+	const u_int uClear = xDef.AddNode("ListClear");
+	{
+		NodeParamWriter xParams(xDef, uClear, "ListClear");
+		xParams.SetString("m_strListVar", "bag");
+	}
+
+	Zenith_DataStream xStream;
+	xDef.WriteToDataStream(xStream);
+	xStream.SetCursor(0);
+	Zenith_GraphDefinition xReloaded;
+	ZENITH_ASSERT_TRUE(xReloaded.ReadFromDataStream(xStream));
+	ZENITH_ASSERT_EQ(xReloaded.GetNodeCount(), 4u);
+
+	Zenith_BehaviourGraph xGraph;
+	xGraph.InitialiseFromDefinition(xReloaded);
+	ZENITH_ASSERT_EQ(xGraph.GetUnresolvedCount(), 0u);
+
+	struct ReadParam
+	{
+		static std::string Str(const Zenith_GraphNode* pxNode, const char* szProperty)
+		{
+			const Zenith_ReflectedProperty* pxProperty = FindNodeProperty(pxNode, szProperty);
+			if (pxProperty == nullptr) { return std::string("<absent>"); }
+			Zenith_PropertyValue xValue;
+			pxProperty->m_pfnGet(const_cast<Zenith_GraphNode*>(pxNode), xValue);
+			return xValue.GetString();
+		}
+		static int32_t Int(const Zenith_GraphNode* pxNode, const char* szProperty)
+		{
+			const Zenith_ReflectedProperty* pxProperty = FindNodeProperty(pxNode, szProperty);
+			if (pxProperty == nullptr) { return -12345; }
+			Zenith_PropertyValue xValue;
+			pxProperty->m_pfnGet(const_cast<Zenith_GraphNode*>(pxNode), xValue);
+			return xValue.GetInt32();
+		}
+		static bool Bool(const Zenith_GraphNode* pxNode, const char* szProperty)
+		{
+			const Zenith_ReflectedProperty* pxProperty = FindNodeProperty(pxNode, szProperty);
+			if (pxProperty == nullptr) { return false; }
+			Zenith_PropertyValue xValue;
+			pxProperty->m_pfnGet(const_cast<Zenith_GraphNode*>(pxNode), xValue);
+			return xValue.GetBool();
+		}
+	};
+
+	Zenith_GraphNode* pxLogic = xGraph.FindNode(uLogic);
+	ZENITH_ASSERT_NOT_NULL(pxLogic, "LogicBlackboardBool did not survive the round trip");
+	if (pxLogic != nullptr)
+	{
+		ZENITH_ASSERT_STREQ(pxLogic->GetTypeName(), "LogicBlackboardBool");
+		ZENITH_ASSERT_STREQ(ReadParam::Str(pxLogic, "m_strVars").c_str(), "armed,jammed,fuelled");
+		ZENITH_ASSERT_EQ(ReadParam::Int(pxLogic, "m_iOp"), static_cast<int32_t>(GRAPH_LOGIC_BOOL_OP_XOR));
+		ZENITH_ASSERT_TRUE(ReadParam::Bool(pxLogic, "m_bInvert"));
+		ZENITH_ASSERT_TRUE(ReadParam::Bool(pxLogic, "m_bMissingIsTrue"));
+		ZENITH_ASSERT_STREQ(ReadParam::Str(pxLogic, "m_strResultVar").c_str(), "canFire");
+	}
+
+	Zenith_GraphNode* pxAdd = xGraph.FindNode(uAdd);
+	ZENITH_ASSERT_NOT_NULL(pxAdd, "ListAdd did not survive the round trip");
+	if (pxAdd != nullptr)
+	{
+		ZENITH_ASSERT_STREQ(ReadParam::Str(pxAdd, "m_strListVar").c_str(), "bag");
+		ZENITH_ASSERT_STREQ(ReadParam::Str(pxAdd, "m_strValueVar").c_str(), "spawned");
+	}
+
+	Zenith_GraphNode* pxRemove = xGraph.FindNode(uRemove);
+	ZENITH_ASSERT_NOT_NULL(pxRemove, "ListRemoveAt did not survive the round trip");
+	if (pxRemove != nullptr)
+	{
+		ZENITH_ASSERT_STREQ(ReadParam::Str(pxRemove, "m_strListVar").c_str(), "bag");
+		ZENITH_ASSERT_EQ(ReadParam::Int(pxRemove, "m_iIndex"), 3);
+		ZENITH_ASSERT_STREQ(ReadParam::Str(pxRemove, "m_strIndexVar").c_str(), "cursor");
+	}
+
+	Zenith_GraphNode* pxClear = xGraph.FindNode(uClear);
+	ZENITH_ASSERT_NOT_NULL(pxClear, "ListClear did not survive the round trip");
+	if (pxClear != nullptr)
+	{
+		ZENITH_ASSERT_STREQ(ReadParam::Str(pxClear, "m_strListVar").c_str(), "bag");
 	}
 }
 

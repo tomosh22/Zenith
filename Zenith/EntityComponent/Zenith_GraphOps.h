@@ -67,3 +67,19 @@ enum Zenith_GraphMathFloatOp : int32_t
 	GRAPH_MATH_FLOAT_OP_SIN      = 7,
 	GRAPH_MATH_FLOAT_OP_COS      = 8,
 };
+
+// LogicBlackboardBool::m_iOp. N-ary over a comma-separated operand list, so the
+// binary cases are just a two-token list.
+//
+// XOR IS PARITY -- true when an ODD number of operands is true. The other
+// reading, "exactly one", is a different function that does not generalise the
+// binary case and does not compose associatively; this one does.
+//
+// There is deliberately no NOT: m_bInvert over a one-token list is NOT, and the
+// same flag over a longer one buys NAND and NOR without three more enumerators.
+enum Zenith_GraphLogicBoolOp : int32_t
+{
+	GRAPH_LOGIC_BOOL_OP_AND = 0,
+	GRAPH_LOGIC_BOOL_OP_OR  = 1,
+	GRAPH_LOGIC_BOOL_OP_XOR = 2,
+};
