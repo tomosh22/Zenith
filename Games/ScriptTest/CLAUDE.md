@@ -135,7 +135,7 @@ The **index** is graph contract: every `LoadSceneByIndex` node names one, and
 | 3 | `Gym_Physics` | A timer-driven prefab spawner (and Space for one on demand) + a static sensor kill volume, with cross-entity UI counters written through a packed `EntityID` in a blackboard var — the *Spawned* readout's text is asserted against the live counter (C10), so that target var is covered end to end |
 | 4 | `Gym_Events` | Targeted custom events — pressure plate → `OpenDoor`/`CloseDoor` at an entity it looked up by name — and a broadcast: one `Bell` pulsing all three independent listeners, each of which then settles back |
 | 5 | `Gym_State` | A `StateMachine` traffic light (Red → Green → Amber) with enter/exit visual events on the three lamps |
-| 6 | `Gym_UI` | Buttons and keys → blackboard → text, fill and colour binding: a formatted clock, a 5 s sawtooth fill bar, a colour that flips past 80%. Coverage is uneven and deliberately stated: **text is asserted** (C12b reads the `Counter` element back), **fill only structurally** (via the `fill01`/`hot` vars its chain feeds), **colour not at all** — both `SetUIColor` nodes are terminal, so nothing but an eye can see them |
+| 6 | `Gym_UI` | Buttons and keys → blackboard → text, fill and colour binding: a formatted clock, a 5 s sawtooth fill bar, a colour that flips past 80%. Coverage is uneven and deliberately stated: **text and colour are asserted** (C12b reads the `Counter` element's string back, and `BarFill`'s RGBA on both sides of the hot boundary), **fill only structurally** — via the `fill01`/`hot` vars its chain feeds |
 
 Every scene also authors a **`Sun`** entity (time-of-day 55°, late morning) —
 without one the environment authority falls back to a near-horizon default and
@@ -165,7 +165,7 @@ So each is spelled **exactly once**, in `ScriptTest_Graphs.h`, and shared by the
 two things that must agree: the builders and scene recipes in `ScriptTest.cpp`,
 and the tests. **A test that restated a literal would prove only that the test
 agrees with itself.** Namespaces: `Graphs`, `Scenes`, `Entities`, `UINames`,
-`Vars`, `Events`, `Materials`, `Meshes`, `Prefabs`.
+`Vars`, `Events`, `Colours`, `Materials`, `Meshes`, `Prefabs`.
 
 `Events::szTL_*` is the sharpest case: `StateMachine` composes its event names as
 `"<m_strEventPrefix>Enter_<stateName>"`, so `szTL_PREFIX`, `szTL_STATE_NAMES` and
@@ -278,7 +278,7 @@ gate rather than being skipped-as-passed there. All are guarded by
 | `ST_PhysicsGym_Test` | `ScriptTest_GymBehaviour.cpp` (C10) | The spawn/kill loop actually loops: both counters climb, Space spawns on demand (pressed on the frame a **timer** spawn is observed, so the next increment has only one possible author), the *Spawned* HUD text written **cross-entity through the packed-`EntityID` target var** matches the live counter, and the live-ball population stays **bounded** — i.e. balls are really destroyed, not merely counted. |
 | `ST_MotionGym_Test` | `ScriptTest_GymBehaviour.cpp` (C11) | All three transform drivers move: `RotateEntity`, the `Repeat`/Tween ping-pong, and the blackboard-maths bob. |
 | `ST_StateGym_Test` | `ScriptTest_GymBehaviour.cpp` (C12a) | The `StateMachine` reaches Green on schedule **and** its `TLEnter_`/`TLExit_` chains reached the lamps (Enter_Green scaled `Lamp_Green` to 1.4, Exit_Red put `Lamp_Red` back to 1.0) — the variable alone would pass with the lamps unwired. |
-| `ST_UIGym_Test` | `ScriptTest_GymBehaviour.cpp` (C12b) | Two buttons and a key mutate one blackboard int **and the `Counter` element's text is read back** (`SetUIText` is chain-terminal, so a typo'd element name fails silently otherwise); the clock/modulo/compare chain crosses the hot boundary in both directions. **Fill** is covered only structurally — `fill01` is asserted in `(0, 1]` and the `hot` flag downstream of it flips, so a broken chain aborts before either — and **colour is not asserted at all**: both `SetUIColor` nodes are terminal and visual-only. |
+| `ST_UIGym_Test` | `ScriptTest_GymBehaviour.cpp` (C12b) | Two buttons and a key mutate one blackboard int **and the `Counter` element's text is read back** (`SetUIText` is chain-terminal, so a typo'd element name fails silently otherwise); the clock/modulo/compare chain crosses the hot boundary in both directions **and `BarFill`'s colour is read back at each sample point** — the two must differ, and each must equal the `Colours::` constant its `SetUIColor` was authored from, which is what proves the Branch's two terminal pins reach anything at all. **Fill** is covered only structurally: `fill01` is asserted in `(0, 1]` and the `hot` flag downstream of it flips, so a broken chain aborts before either. |
 
 **C5 and C6 are deliberately not redundant.** A slot whose `.bgraph` cannot be
 loaded keeps its path and override bytes verbatim (the unresolved-slot contract in

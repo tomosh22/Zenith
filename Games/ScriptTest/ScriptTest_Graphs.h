@@ -1,6 +1,7 @@
 #pragma once
 
 #include "FileAccess/Zenith_FileAccess.h"
+#include "Maths/Zenith_Maths.h"
 
 #include <cstdint>
 
@@ -21,9 +22,9 @@
 // that assert on the result. A test that restated a literal would prove only
 // that the test agrees with itself.
 //
-// Deliberately light: only the extension defines come in, and
-// Zenith_GraphBuilder is forward-declared, so a test TU pays nothing to
-// include this.
+// Deliberately light: only the extension defines and the maths types come in
+// (the latter already arrives through the precompiled header, so it costs a
+// TU nothing), and Zenith_GraphBuilder is forward-declared.
 // ============================================================================
 
 class Zenith_GraphBuilder;
@@ -133,6 +134,18 @@ namespace ScriptTest
 		inline constexpr const char* szBAR_FILL   = "BarFill";
 		inline constexpr const char* szBTN_PLUS   = "BtnPlus";
 		inline constexpr const char* szBTN_MINUS  = "BtnMinus";
+	}
+
+	// --- UI colours ------------------------------------------------------------
+	// The two RGBA values ST_UIPlayground's Branch paints onto BarFill. They live
+	// here for the same reason every other literal in this file does: the builder
+	// writes them into a SetUIColor node and ST_UIGym_Test reads them back off the
+	// element, and a test that restated (1, 0.3, 0.2, 1) would prove only that the
+	// test agrees with itself.
+	namespace Colours
+	{
+		inline constexpr Zenith_Maths::Vector4 xBAR_HOT  = Zenith_Maths::Vector4(1.0f, 0.3f, 0.2f, 1.0f);
+		inline constexpr Zenith_Maths::Vector4 xBAR_COOL = Zenith_Maths::Vector4(0.2f, 0.8f, 1.0f, 1.0f);
 	}
 
 	// --- Blackboard variable names ---------------------------------------------

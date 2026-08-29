@@ -793,14 +793,18 @@ void BuildGraph_ST_UIPlayground(Zenith_GraphBuilder& xBuilder)
 		ScriptTest::Vars::szFILL01, GRAPH_COMPARE_FLOAT_OP_GREATER, 0.8f, ScriptTest::Vars::szHOT);
 	const u_int uBranch = xB.Branch(ScriptTest::Vars::szHOT);
 
+	// Both colours come from the header, not from literals here: SetUIColor is
+	// chain-TERMINAL on both Branch pins, so ST_UIGym_Test reading the element's
+	// colour back is the only thing that can see either one -- and it has to
+	// compare against the same spelling the node was authored with.
 	Zenith_PropertyValue xHotColour;
-	xHotColour.SetVector4(Zenith_Maths::Vector4(1.0f, 0.3f, 0.2f, 1.0f));
+	xHotColour.SetVector4(ScriptTest::Colours::xBAR_HOT);
 	const u_int uHot = xB.Node("SetUIColor");
 	xB.ParamString(uHot, "m_strElement", ScriptTest::UINames::szBAR_FILL);
 	xB.Param(uHot, "m_xColor", xHotColour);
 
 	Zenith_PropertyValue xCoolColour;
-	xCoolColour.SetVector4(Zenith_Maths::Vector4(0.2f, 0.8f, 1.0f, 1.0f));
+	xCoolColour.SetVector4(ScriptTest::Colours::xBAR_COOL);
 	const u_int uCool = xB.Node("SetUIColor");
 	xB.ParamString(uCool, "m_strElement", ScriptTest::UINames::szBAR_FILL);
 	xB.Param(uCool, "m_xColor", xCoolColour);

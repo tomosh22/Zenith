@@ -34,8 +34,9 @@
 //   ST_StateGym_Test       - the StateMachine reaches Green on schedule AND
 //                            its TLEnter_/TLExit_ chains reached the lamps.
 //   ST_UIGym_Test          - two buttons and a key mutate one blackboard int,
-//                            and the clock/modulo/compare chain crosses the
-//                            hot boundary in both directions.
+//                            the clock/modulo/compare chain crosses the hot
+//                            boundary in both directions, and the BarFill
+//                            element's COLOUR is read back on both sides of it.
 //
 // SINGLE SPELLING. Every scene index, entity name, UI element name and
 // blackboard variable comes from ScriptTest_Graphs.h -- the same header the
@@ -318,6 +319,56 @@ namespace
 		}
 		strOut = static_cast<Zenith_UI::Zenith_UIText*>(pxElement)->GetText();
 		return true;
+	}
+
+	// The colour twin of ST_ReadUIText, and the ONLY thing in this suite that can
+	// see a SetUIColor node at all.
+	//
+	// ★ BOTH SetUIColor NODES ARE CHAIN-TERMINAL, one on each of ST_UIPlayground's
+	// Branch pins. A typo'd m_strElement returns FAILURE with nothing downstream
+	// to abort, so the bar simply keeps its authored colour while every other
+	// assertion in this file -- including the 'hot' flag that selects between the
+	// two -- still passes. Reading the element's colour is what closes that.
+	//
+	// The type branch mirrors the node's own: Zenith_GraphNode_SetUIColor writes a
+	// Button's NORMAL style rather than its base colour (buttons render per-state
+	// styles and ignore m_xColor), so the read has to come back out of the same
+	// place. BarFill is a Rect, so GetColor() is the branch that fires today --
+	// but a probe that only knew about Rects would silently read a stale white
+	// off any button a later gym points a SetUIColor at.
+	bool ST_ReadUIColor(const char* szElement, Zenith_Maths::Vector4& xOut)
+	{
+		Zenith_Entity xManager = ST_FindEntity(ScriptTest::Entities::szGAME_MANAGER);
+		if (!xManager.IsValid())
+		{
+			return false;
+		}
+		Zenith_UIComponent* pxUI = xManager.TryGetComponent<Zenith_UIComponent>();
+		if (pxUI == nullptr)
+		{
+			return false;
+		}
+		Zenith_UI::Zenith_UIElement* pxElement = pxUI->FindElement(szElement);
+		if (pxElement == nullptr)
+		{
+			return false;
+		}
+		xOut = pxElement->GetType() == Zenith_UI::UIElementType::Button
+			? static_cast<Zenith_UI::Zenith_UIButton*>(pxElement)->GetNormalColor()
+			: pxElement->GetColor();
+		return true;
+	}
+
+	// Componentwise equality for an authored RGBA that made one trip through
+	// Zenith_PropertyValue and the .bgraph serializer. Both are float32 the whole
+	// way, so this is generous by a wide margin -- it exists to keep the assertion
+	// about "the node ran and wrote ITS colour" rather than about float exactness.
+	bool ST_ColourNear(const Zenith_Maths::Vector4& xA, const Zenith_Maths::Vector4& xB, float fEpsilon)
+	{
+		return std::fabs(xA.x - xB.x) <= fEpsilon
+			&& std::fabs(xA.y - xB.y) <= fEpsilon
+			&& std::fabs(xA.z - xB.z) <= fEpsilon
+			&& std::fabs(xA.w - xB.w) <= fEpsilon;
 	}
 }
 
@@ -1794,6 +1845,14 @@ ZENITH_AUTOMATED_TEST_REGISTER(g_xStateGymTest);
 // FAILURE with nothing downstream to notice, so the blackboard int would keep
 // its exact expected value while the readout stayed frozen on its authored seed.
 // Reading the element's string is what closes that.
+//
+// ★ THE SAME ARGUMENT, TWICE OVER, FOR THE BAR'S COLOUR. Both SetUIColor nodes
+// hang off the Branch's true/false pins with nothing after them, so the 'hot'
+// flag asserted above proves only that the Branch had the right INPUT -- the two
+// pins could reach nothing at all and every other check here would still pass.
+// So the colour is sampled on the SAME frames as the flag and checked three
+// ways: the two samples must DIFFER (a frozen bar fails), and each must match
+// the constant ScriptTest_Graphs.h hands the builder (a mis-wired pin fails).
 // ============================================================================
 
 namespace
@@ -1805,6 +1864,7 @@ namespace
 	constexpr float fST_UI_COOL_CLOCK      = 1.0f;	// fill01 = 0.2 -> not hot
 	constexpr float fST_UI_HOT_CLOCK       = 4.6f;	// fill01 = 0.92 -> hot
 	constexpr int   iST_UI_CLOCK_POLL      = 420;	// 4.6 s = 276 frames, plus slack
+	constexpr float fST_UI_COLOUR_EPSILON  = 1e-4f;	// float32 the whole way; see ST_ColourNear
 
 	enum class UIPhase { Boot, WaitScene, Warm, Act, Sample, AwaitCool, AwaitHot, Done };
 
@@ -1824,6 +1884,10 @@ namespace
 	bool    g_bHotAtHot     = false;
 	bool    g_bSawCool      = false;
 	bool    g_bSawHot       = false;
+	Zenith_Maths::Vector4 g_xBarColourAtCool = Zenith_Maths::Vector4(0.0f);
+	Zenith_Maths::Vector4 g_xBarColourAtHot  = Zenith_Maths::Vector4(0.0f);
+	bool    g_bBarColourReadCool = false;
+	bool    g_bBarColourReadHot  = false;
 
 	int32_t ST_ReadUICount()
 	{
@@ -1856,6 +1920,10 @@ static void Setup_UIGym()
 	g_bHotAtHot = false;
 	g_bSawCool = false;
 	g_bSawHot = false;
+	g_xBarColourAtCool = Zenith_Maths::Vector4(0.0f);
+	g_xBarColourAtHot = Zenith_Maths::Vector4(0.0f);
+	g_bBarColourReadCool = false;
+	g_bBarColourReadHot = false;
 }
 
 static bool Step_UIGym(int iFrame)
@@ -1954,6 +2022,11 @@ static bool Step_UIGym(int iFrame)
 			g_bSawCool = true;
 			g_bHotAtCool = ST_ReadBool(
 				ScriptTest::Entities::szGAME_MANAGER, iST_UI_PLAYGROUND_SLOT, ScriptTest::Vars::szHOT, true);
+			// Same frame as the flag, deliberately: advance -> modulo -> divide ->
+			// compare -> Branch -> SetUIColor is ONE OnUpdate chain, so the colour on
+			// the element and the 'hot' bool that selected it are always consistent
+			// with each other and with the clock this phase polled.
+			g_bBarColourReadCool = ST_ReadUIColor(ScriptTest::UINames::szBAR_FILL, g_xBarColourAtCool);
 			g_iUIFrame = 0;
 			g_eUIPhase = UIPhase::AwaitHot;
 			return true;
@@ -1971,6 +2044,7 @@ static bool Step_UIGym(int iFrame)
 			g_bSawHot = true;
 			g_bHotAtHot = ST_ReadBool(
 				ScriptTest::Entities::szGAME_MANAGER, iST_UI_PLAYGROUND_SLOT, ScriptTest::Vars::szHOT, false);
+			g_bBarColourReadHot = ST_ReadUIColor(ScriptTest::UINames::szBAR_FILL, g_xBarColourAtHot);
 			g_eUIPhase = UIPhase::Done;
 			return false;
 		}
@@ -2066,6 +2140,51 @@ static bool Verify_UIGym()
 	{
 		Zenith_Log(LOG_CATEGORY_UNITTEST, "[UIGym] '%s' was false at clock ~%.1f s, expected true",
 			ScriptTest::Vars::szHOT, fST_UI_HOT_CLOCK);
+		return false;
+	}
+	// --- and the two terminal SetUIColor nodes -----------------------------
+	// The flag above only proves the Branch had the right INPUT. These four
+	// checks prove the Branch's two pins reached their nodes and each wrote its
+	// own authored colour: both reads succeeded, the two samples DIFFER (so the
+	// bar is not simply frozen on whatever the recipe left it), and each matches
+	// the constant its builder used.
+	if (!g_bBarColourReadCool || !g_bBarColourReadHot)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[UIGym] the '%s' bar is not readable on the %s canvas (cool %d, hot %d)",
+			ScriptTest::UINames::szBAR_FILL, ScriptTest::Entities::szGAME_MANAGER,
+			g_bBarColourReadCool ? 1 : 0, g_bBarColourReadHot ? 1 : 0);
+		return false;
+	}
+	if (ST_ColourNear(g_xBarColourAtCool, g_xBarColourAtHot, fST_UI_COLOUR_EPSILON))
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[UIGym] '%s' is the same colour either side of the hot boundary "
+			"(%.3f %.3f %.3f %.3f) -- the Branch's two SetUIColor pins are not both wired",
+			ScriptTest::UINames::szBAR_FILL,
+			g_xBarColourAtCool.x, g_xBarColourAtCool.y, g_xBarColourAtCool.z, g_xBarColourAtCool.w);
+		return false;
+	}
+	if (!ST_ColourNear(g_xBarColourAtCool, ScriptTest::Colours::xBAR_COOL, fST_UI_COLOUR_EPSILON))
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[UIGym] '%s' at clock ~%.1f s reads (%.3f %.3f %.3f %.3f), expected the COOL colour "
+			"(%.3f %.3f %.3f %.3f)",
+			ScriptTest::UINames::szBAR_FILL, fST_UI_COOL_CLOCK,
+			g_xBarColourAtCool.x, g_xBarColourAtCool.y, g_xBarColourAtCool.z, g_xBarColourAtCool.w,
+			ScriptTest::Colours::xBAR_COOL.x, ScriptTest::Colours::xBAR_COOL.y,
+			ScriptTest::Colours::xBAR_COOL.z, ScriptTest::Colours::xBAR_COOL.w);
+		return false;
+	}
+	if (!ST_ColourNear(g_xBarColourAtHot, ScriptTest::Colours::xBAR_HOT, fST_UI_COLOUR_EPSILON))
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[UIGym] '%s' at clock ~%.1f s reads (%.3f %.3f %.3f %.3f), expected the HOT colour "
+			"(%.3f %.3f %.3f %.3f)",
+			ScriptTest::UINames::szBAR_FILL, fST_UI_HOT_CLOCK,
+			g_xBarColourAtHot.x, g_xBarColourAtHot.y, g_xBarColourAtHot.z, g_xBarColourAtHot.w,
+			ScriptTest::Colours::xBAR_HOT.x, ScriptTest::Colours::xBAR_HOT.y,
+			ScriptTest::Colours::xBAR_HOT.z, ScriptTest::Colours::xBAR_HOT.w);
 		return false;
 	}
 	return true;
