@@ -19,7 +19,32 @@ namespace
 
 namespace Zenith_AI
 {
-	void SetEngineTickEnabled(bool bEnabled) { EngineTickEnabledRef() = bEnabled; }
+	// ★ ENABLING THE TICK MUST ALSO ARM THE MANAGERS THAT REQUIRE IT.
+	// Zenith_SquadManager::Update and Zenith_TacticalPointSystem::Update both
+	// assert on an uninitialised system, so the "one line at init" this header
+	// advertises used to fire `SquadManager::Update called before Initialise()`
+	// on the very first game-logic frame. No game in the repo had ever taken the
+	// opt-in -- every one of them ticks the managers from its own component, and
+	// initialises them there -- so the path was untried until ScriptTest, which
+	// is forbidden a component to do it from.
+	//
+	// Both Initialise() calls are idempotent no-ops when already initialised, so
+	// a game that enables the tick AND initialises the managers itself is
+	// unaffected.
+	//
+	// Zenith_PerceptionSystem is deliberately NOT initialised here. Its Update
+	// needs no initialisation (buckets are created on demand), while its
+	// Initialise CLEARS every registered agent and target -- so calling it from a
+	// toggle that may be flipped after agents exist would silently drop them.
+	void SetEngineTickEnabled(bool bEnabled)
+	{
+		if (bEnabled)
+		{
+			Zenith_SquadManager::Initialise();
+			Zenith_TacticalPointSystem::Initialise();
+		}
+		EngineTickEnabledRef() = bEnabled;
+	}
 	bool IsEngineTickEnabled() { return EngineTickEnabledRef(); }
 
 	void Update(float fDt)

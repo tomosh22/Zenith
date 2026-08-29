@@ -140,6 +140,15 @@ g_xEngine.Scenes().QueryActiveScene<Zenith_NavMeshComponent>().ForEach(
     [](Zenith_EntityID, Zenith_NavMeshComponent& xNav) { /* xNav.GetNavMesh() */ });
 ```
 
+**★ `GetRemainingDistance()` IS NOT "DISTANCE TO GO", and reading it as one is
+a trap.** It sums waypoint-to-waypoint segments from the current waypoint
+onward and deliberately omits the leg the agent is walking — the steering code
+adds that term itself. On a straight-line path across open ground (two waypoints,
+cursor past the first) the sum has **no terms at all** and it returns 0 for the
+entire journey. `GetDistanceToGo()` is the reader's version, and it is what
+`ReadNavState` publishes; a graph reading a permanently-zero "remaining distance"
+was worse than having no output at all.
+
 **★ AND FROM A GRAPH, WITH NO GAME C++ AT ALL — that is new.** Until the
 `EnsureNavAgent` node existed, `Zenith_AIAgentComponent::SetNavMeshAgent` had
 exactly **three** callers, every one of them game C++

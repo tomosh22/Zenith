@@ -410,6 +410,7 @@ public:
 	static void TestNavAgentStop();
 	static void TestNavAgentSpeedSettings();
 	static void TestNavAgentRemainingDistanceBounds();
+	static void TestNavAgentDistanceToGoIncludesTheCurrentLeg();
 	static void TestPathfindingNoDuplicateWaypoints();
 	static void TestPathfindingBatchProcessing();
 	static void TestPathfindingPartialPath();

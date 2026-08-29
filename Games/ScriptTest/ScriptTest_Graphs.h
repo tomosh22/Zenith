@@ -6,7 +6,7 @@
 #include <cstdint>
 
 // ============================================================================
-// ScriptTest_Graphs.h -- the game's STRING CONTRACT plus the 18 Behaviour
+// ScriptTest_Graphs.h -- the game's STRING CONTRACT plus the 20 Behaviour
 // Graph builder declarations.
 //
 // ScriptTest carries zero gameplay C++: every behaviour is an engine-owned
@@ -52,6 +52,8 @@ namespace ScriptTest
 		inline constexpr const char* szDISPENSER      = "game:Graphs/ST_Dispenser"    ZENITH_BGRAPH_EXT;
 		inline constexpr const char* szFLOW_SCORE     = "game:Graphs/ST_FlowScore"    ZENITH_BGRAPH_EXT;
 		inline constexpr const char* szFLOW_PLATE     = "game:Graphs/ST_FlowPlate"    ZENITH_BGRAPH_EXT;
+		inline constexpr const char* szNAV_WALKER     = "game:Graphs/ST_NavWalker"    ZENITH_BGRAPH_EXT;
+		inline constexpr const char* szPREY           = "game:Graphs/ST_Prey"         ZENITH_BGRAPH_EXT;
 	}
 
 	// --- Scenes: build index + on-disk path -----------------------------------
@@ -68,7 +70,8 @@ namespace ScriptTest
 		inline constexpr int32_t iGYM_STATE   = 5;
 		inline constexpr int32_t iGYM_UI      = 6;
 		inline constexpr int32_t iGYM_FLOW    = 7;
-		inline constexpr int32_t iCOUNT       = 8;
+		inline constexpr int32_t iGYM_AI      = 8;
+		inline constexpr int32_t iCOUNT       = 9;
 
 		inline constexpr const char* szHUB_PATH         = GAME_ASSETS_DIR "Scenes/Hub"         ZENITH_SCENE_EXT;
 		inline constexpr const char* szGYM_MOTION_PATH  = GAME_ASSETS_DIR "Scenes/Gym_Motion"  ZENITH_SCENE_EXT;
@@ -78,6 +81,7 @@ namespace ScriptTest
 		inline constexpr const char* szGYM_STATE_PATH   = GAME_ASSETS_DIR "Scenes/Gym_State"   ZENITH_SCENE_EXT;
 		inline constexpr const char* szGYM_UI_PATH      = GAME_ASSETS_DIR "Scenes/Gym_UI"      ZENITH_SCENE_EXT;
 		inline constexpr const char* szGYM_FLOW_PATH    = GAME_ASSETS_DIR "Scenes/Gym_Flow"    ZENITH_SCENE_EXT;
+		inline constexpr const char* szGYM_AI_PATH      = GAME_ASSETS_DIR "Scenes/Gym_AI"      ZENITH_SCENE_EXT;
 
 		// The scratch scene the ST_Ball prefab is captured from. Deliberately
 		// NEVER saved -- it exists only so CreatePrefabFromSelected has a live
@@ -111,6 +115,9 @@ namespace ScriptTest
 		inline constexpr const char* szLAMP_GREEN      = "Lamp_Green";
 		inline constexpr const char* szNOZZLE          = "Nozzle";
 		inline constexpr const char* szPLATE           = "Plate";
+		inline constexpr const char* szNAVMESH_HOLDER  = "NavMeshHolder";
+		inline constexpr const char* szWALKER          = "Walker";
+		inline constexpr const char* szPREY            = "Prey";
 
 		// The prefab template entity (scratch scene only) and the runtime name
 		// SpawnPrefab stamps on each ball it instantiates.
@@ -132,6 +139,7 @@ namespace ScriptTest
 		inline constexpr const char* szBTN_STATE   = "Btn_State";
 		inline constexpr const char* szBTN_UI      = "Btn_UI";
 		inline constexpr const char* szBTN_FLOW    = "Btn_Flow";
+		inline constexpr const char* szBTN_AI      = "Btn_AI";
 
 		inline constexpr const char* szSPAWNED    = "Spawned";
 		inline constexpr const char* szKILLED     = "Killed";
@@ -144,6 +152,7 @@ namespace ScriptTest
 		inline constexpr const char* szBTN_MINUS  = "BtnMinus";
 
 		inline constexpr const char* szDISPENSED  = "Dispensed";
+		inline constexpr const char* szNAV_STATE  = "NavState";
 	}
 
 	// --- UI colours ------------------------------------------------------------
@@ -217,6 +226,24 @@ namespace ScriptTest
 
 		inline constexpr const char* szNORMAL_RUNS  = "normalRuns";   // Selector pin 1
 		inline constexpr const char* szALARM_RUNS   = "alarmRuns";    // Selector pin 0
+
+		// --- Gym_AI (ST_NavWalker + ST_Prey) ---------------------------------
+		inline constexpr const char* szNAV_READY    = "navReady";     // EnsureNavAgent succeeded
+		inline constexpr const char* szGO           = "go";           // gates the NavMoveTo chain
+		inline constexpr const char* szDEST         = "dest";         // vec3, also FindRandomReachablePoint's OUTPUT
+		inline constexpr const char* szNAV_STATE    = "navState";     // ReadNavState: 0 none/1 pending/2 moving/3 arrived
+		inline constexpr const char* szNAV_LEFT     = "navLeft";      // ReadNavState remaining distance
+		inline constexpr const char* szNAV_VEL      = "navVel";       // ReadNavState velocity
+
+		inline constexpr const char* szPREY_REF     = "preyRef";      // packed EntityID
+		inline constexpr const char* szPERCEIVED    = "perceived";    // LIST of packed EntityIDs
+		inline constexpr const char* szPERCEIVED_N  = "perceivedCount";
+		inline constexpr const char* szPRIMARY      = "primary";      // QueryPrimaryPerceivedTarget
+		inline constexpr const char* szPRIMARY_SEEN = "primarySeen";  // true only on a frame that query SUCCEEDED
+		inline constexpr const char* szAWARENESS    = "awareness";
+		inline constexpr const char* szHEARD_POS    = "heardPos";
+		inline constexpr const char* szHEARD_SOURCE = "heardSource";
+		inline constexpr const char* szFIRST_TARGET = "firstTarget";  // GetListElement(perceived, 0)
 	}
 
 	// --- Gym_Flow mode labels ---------------------------------------------------
@@ -288,6 +315,27 @@ namespace ScriptTest
 		inline constexpr const char* szUNIT_SPHERE_MODEL = GAME_ASSETS_DIR "Meshes/UnitSphere" ZENITH_MODEL_EXT;
 	}
 
+	// --- Navmesh ---------------------------------------------------------------
+	// ★ THIS FILE IS COMMITTED, exactly like the eight .zscen. `.gitignore`
+	// re-admits `**/*.znavmesh` under `Assets/` at any depth (ZM-D-145) because a
+	// baked navmesh is small, byte-deterministic and loadable with no GPU -- so
+	// it is a first-class tracked asset rather than a bake product, and the
+	// cold-bake CI guard checks it the same way it checks the scenes.
+	//
+	// Two spellings, as usual: the ABSOLUTE path Project_InitializeResources
+	// bakes to, and the `game:` ref AddStep_SetNavMeshAsset stores and the saved
+	// scene persists.
+	namespace Navmesh
+	{
+		inline constexpr const char* szBAKE_PATH = GAME_ASSETS_DIR "Navmesh/ST_Gym" ZENITH_NAVMESH_EXT;
+		inline constexpr const char* szASSET     = "game:Navmesh/ST_Gym"            ZENITH_NAVMESH_EXT;
+
+		// The baked footprint, half-extent in metres, centred on the origin. The
+		// scene's floor prop is sized from this and ST_AIGym_Test asserts a
+		// wander point lands inside it, so all three read the same number.
+		inline constexpr float fHALF_EXTENT = 8.0f;
+	}
+
 	// --- Prefabs ---------------------------------------------------------------
 	// szBALL_NAME is the prefab's logical name; szBALL_SAVE_PATH is where the
 	// authoring pass writes it; szBALL_ASSET is the registry path the
@@ -301,7 +349,7 @@ namespace ScriptTest
 }
 
 // ============================================================================
-// The 18 graph builders. Each authors ONE .bgraph through a
+// The 20 graph builders. Each authors ONE .bgraph through a
 // Zenith_EngineGraphBuilder over the plain builder it is handed.
 //
 // Deliberately NOT tools-gated -- unlike Combat's, which are static and live
@@ -314,7 +362,7 @@ namespace ScriptTest
 //
 // ★ THAT SCOPE IS THE WHOLE CLAIM -- the other nine tests DO depend on a prior
 // authoring pass. They load the committed .zscen, whose slots reference the
-// eighteen .bgraph, the two generated meshes and the ball prefab, and all of
+// twenty .bgraph, the two generated meshes and the ball prefab, and all of
 // those are gitignored BAKE PRODUCTS that only a *_True boot writes. That is
 // why a fresh checkout's first build + run must be a tools config.
 // ============================================================================
@@ -336,3 +384,5 @@ void BuildGraph_ST_UIPlayground(Zenith_GraphBuilder& xBuilder);
 void BuildGraph_ST_Dispenser(Zenith_GraphBuilder& xBuilder);
 void BuildGraph_ST_FlowScore(Zenith_GraphBuilder& xBuilder);
 void BuildGraph_ST_FlowPlate(Zenith_GraphBuilder& xBuilder);
+void BuildGraph_ST_NavWalker(Zenith_GraphBuilder& xBuilder);
+void BuildGraph_ST_Prey(Zenith_GraphBuilder& xBuilder);

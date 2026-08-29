@@ -9,7 +9,7 @@
 // graph attachment produces a game that boots cleanly and does nothing. Neither
 // half of that is visible to any other test:
 //
-//   C5  ST_SceneAssetIntegrity  asserts on the eight .zscen FILES -- the bytes
+//   C5  ST_SceneAssetIntegrity  asserts on the nine .zscen FILES -- the bytes
 //                               ON DISK, which in a tools (*_True) build are the
 //                               ones THIS BOOT just authored, not the committed
 //                               ones. Whichever backend wrote them, they still
@@ -22,7 +22,7 @@
 //
 //                               ★ IT DOES NOT COMPARE AGAINST THE COMMITTED
 //                               BYTES, AND CANNOT. The gated config re-authors
-//                               all seven before any test runs, so a recipe that
+//                               all nine before any test runs, so a recipe that
 //                               drifted away from what is checked in produces a
 //                               file this test happily accepts. The cold-bake
 //                               step in .github/workflows/st-tests.yml is what
@@ -31,7 +31,7 @@
 //                               "is this file a real scene"; the workflow
 //                               answers "is it the committed one".
 //
-//   C6  ST_AllScenesBoot        asserts on the eight scenes LOADED. Every build
+//   C6  ST_AllScenesBoot        asserts on the nine scenes LOADED. Every build
 //                               index 0..iCOUNT-1 is loaded in order and, once
 //                               live, its key entities must resolve by name and
 //                               every Zenith_GraphComponent slot in it must
@@ -72,7 +72,7 @@
 namespace
 {
 	//==========================================================================
-	// The expectation table -- ONE description of the eight scenes, shared by
+	// The expectation table -- ONE description of the nine scenes, shared by
 	// both tests.
 	//
 	// Both lists are nullptr-TERMINATED rather than paired with a count: a count
@@ -247,6 +247,27 @@ namespace
 	// one graph this game authors that no scene slot references -- which is also
 	// why C5/C6 cannot see it and ST_FlowGym_Test's `score` assertion must.
 
+	const char* const g_apszGYM_AI_ENTITIES[] =
+	{
+		ScriptTest::Entities::szGAME_MANAGER,
+		ScriptTest::Entities::szSUN,
+		ScriptTest::Entities::szKEY_LIGHT,
+		ScriptTest::Entities::szNAVMESH_HOLDER,
+		ScriptTest::Entities::szFLOOR,
+		ScriptTest::Entities::szWALKER,
+		ScriptTest::Entities::szPREY,
+		nullptr
+	};
+	const char* const g_apszGYM_AI_GRAPHS[] =
+	{
+		ScriptTest::Graphs::szESC_TO_HUB,	// GameManager slot 0
+		ScriptTest::Graphs::szNAV_WALKER,	// Walker
+		ScriptTest::Graphs::szPREY,			// Prey
+		nullptr
+	};
+	// The NavMeshHolder carries NO graph: it holds the asset ref, and
+	// EnsureNavAgent finds it by an ordinary active-scene component query.
+
 	// Build-index order. C6 walks this array in order and reads m_iBuildIndex
 	// from the row rather than from its own loop counter, so the two can be
 	// checked against each other rather than assumed equal.
@@ -260,6 +281,7 @@ namespace
 		{ ScriptTest::Scenes::iGYM_STATE,   ScriptTest::Scenes::szGYM_STATE_PATH,   g_apszGYM_STATE_ENTITIES,   g_apszGYM_STATE_GRAPHS   },
 		{ ScriptTest::Scenes::iGYM_UI,      ScriptTest::Scenes::szGYM_UI_PATH,      g_apszGYM_UI_ENTITIES,      g_apszGYM_UI_GRAPHS      },
 		{ ScriptTest::Scenes::iGYM_FLOW,    ScriptTest::Scenes::szGYM_FLOW_PATH,    g_apszGYM_FLOW_ENTITIES,    g_apszGYM_FLOW_GRAPHS    },
+		{ ScriptTest::Scenes::iGYM_AI,      ScriptTest::Scenes::szGYM_AI_PATH,      g_apszGYM_AI_ENTITIES,      g_apszGYM_AI_GRAPHS      },
 	};
 
 	constexpr u_int uST_SCENE_ROWS = static_cast<u_int>(sizeof(g_axSCENES) / sizeof(g_axSCENES[0]));

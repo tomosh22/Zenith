@@ -12,11 +12,13 @@
 #include "Scripting/Zenith_GraphBuilder.h"
 #include "EntityComponent/Zenith_EngineGraphBuilder.h"
 #include "EntityComponent/Zenith_GraphOps.h"
+#include "AI/Zenith_AI.h"
 
 #include <filesystem>
 #include <string>
 
 #ifdef ZENITH_TOOLS
+#include "AI/Navigation/Zenith_NavMeshBaker.h"
 #include "AssetHandling/Zenith_MeshAsset.h"
 #include "AssetHandling/Zenith_ModelAsset.h"
 #include "Editor/Zenith_EditorAutomation.h"
@@ -30,14 +32,19 @@
 // ScriptTest -- a zero-gameplay-C++ game.
 //
 // There is no game component, no game graph node, and no input binding table
-// in this project. Every behaviour in all eight scenes is executed by
-// ENGINE-owned Behaviour Graph nodes, wired by the eighteen BuildGraph_ST_*
+// in this project. Every behaviour in all nine scenes is executed by
+// ENGINE-owned Behaviour Graph nodes, wired by the twenty BuildGraph_ST_*
 // functions below and attached to boot-authored entities. What the C++ here
-// does is exactly three things:
+// does is exactly four things:
 //
-//   1. create the seven flat-colour materials the scenes reference by path;
+//   1. create the seven flat-colour materials the scenes reference by path,
+//      and turn ON the engine's optional AI tick (Gym_AI's perception nodes
+//      report nothing without it, and this game may not tick it from a
+//      component of its own);
 //   2. generate the two primitive meshes the scenes load (tools only);
-//   3. author the graphs, the ball prefab and the eight scenes (tools only).
+//   3. bake the Gym_AI navmesh -- a COMMITTED asset, like the scenes (tools
+//      only);
+//   4. author the graphs, the ball prefab and the nine scenes (tools only).
 //
 // That split is why (1) is NOT tools-gated while (2) and (3) are: a committed
 // .zscen stores material and model PATHS, so a _False boot -- which runs no
@@ -207,13 +214,36 @@ void Project_SetGraphicsOptions(Zenith_GraphicsOptions&)
 	// not a rendering one.
 }
 
-// Materials ONLY. No game components, no game graph nodes, no input bindings:
-// this game deliberately owns none. Unconditional (not tools-gated) because a
-// _False boot loads committed scenes whose material references have to resolve
-// with no authoring pass to create them.
+// Materials and one engine toggle. No game components, no game graph nodes, no
+// input bindings: this game deliberately owns none. Unconditional (not
+// tools-gated) because a _False boot loads committed scenes whose material
+// references have to resolve with no authoring pass to create them.
+//
+// ★ THE AI TICK OPT-IN IS LEGITIMATE HERE, AND WORTH SPELLING OUT.
+// Zenith_AI::SetEngineTickEnabled(true) makes the main loop drive perception
+// (Zenith_Core.cpp gates on it), which Gym_AI's perception nodes need in order
+// to report anything at all. Most games instead tick Zenith_PerceptionSystem
+// from a game COMPONENT so they can order it against their own AI step -- the
+// route this project is forbidden -- and no game in the repo had ever used the
+// engine's own opt-in, so ScriptTest is its first exerciser.
+//
+// It does NOT breach the claim: ST_NoGameExtensionsContract observes REGISTRIES,
+// and this registers nothing, adds no game component, no game node and no
+// per-frame branch of its own.
+//
+// ★ AND IT IS NOT TOOLS-GATED, deliberately. Project_InitializeResources is,
+// and putting it there would leave a _False boot with dead perception while
+// every scene still loaded -- the quiet half-working state this project exists
+// to make impossible.
+//
+// SCOPE IT HONESTLY: this closes ScriptTest's own coverage. It does not make
+// perception graph-only for a NEW game, which still needs this one line of C++
+// (or its own component tick). Making perception reachable with zero C++ would
+// be a separate change.
 void Project_RegisterGameComponents()
 {
 	ST_CreateMaterials();
+	Zenith_AI::SetEngineTickEnabled(true);
 }
 
 void Project_Shutdown()
@@ -235,7 +265,7 @@ void Project_LoadInitialScene();	// forward decl for the automation step below
 //
 //   * NO EXEC FAN-IN. A node with two exec predecessors is forbidden, so a
 //     chain that would converge duplicates the node instance per pin instead.
-//     ST_HubFlow's fourteen LoadSceneByIndex instances are the extreme case.
+//     ST_HubFlow's sixteen LoadSceneByIndex instances are the extreme case.
 //   * EVERY NON-ON_UPDATE DISPATCH CARRIES dt = 0. Not just custom events:
 //     OnStart, OnCollisionEnter/Exit and OnCustomEvent (including the
 //     StateMachine's TLEnter_*/TLExit_* transitions) all fire with a zero delta
@@ -382,8 +412,8 @@ void BuildGraph_ST_EscToHub(Zenith_GraphBuilder& xBuilder)
 }
 
 // --- 2. ST_HubFlow ----------------------------------------------------------
-// Fourteen independent chains: each gym is reachable by clicking its button or
-// by pressing its number. Fourteen LoadSceneByIndex instances, not one shared
+// Sixteen independent chains: each gym is reachable by clicking its button or
+// by pressing its number. Sixteen LoadSceneByIndex instances, not one shared
 // node -- see the exec-fan-in rule above.
 void BuildGraph_ST_HubFlow(Zenith_GraphBuilder& xBuilder)
 {
@@ -396,6 +426,7 @@ void BuildGraph_ST_HubFlow(Zenith_GraphBuilder& xBuilder)
 	ST_BuildHubButtonChain(xB, ScriptTest::UINames::szBTN_STATE,   ScriptTest::Scenes::iGYM_STATE);
 	ST_BuildHubButtonChain(xB, ScriptTest::UINames::szBTN_UI,      ScriptTest::Scenes::iGYM_UI);
 	ST_BuildHubButtonChain(xB, ScriptTest::UINames::szBTN_FLOW,    ScriptTest::Scenes::iGYM_FLOW);
+	ST_BuildHubButtonChain(xB, ScriptTest::UINames::szBTN_AI,      ScriptTest::Scenes::iGYM_AI);
 
 	ST_BuildHubKeyChain(xB, ZENITH_KEY_1, ScriptTest::Scenes::iGYM_MOTION);
 	ST_BuildHubKeyChain(xB, ZENITH_KEY_2, ScriptTest::Scenes::iGYM_INPUT);
@@ -404,6 +435,7 @@ void BuildGraph_ST_HubFlow(Zenith_GraphBuilder& xBuilder)
 	ST_BuildHubKeyChain(xB, ZENITH_KEY_5, ScriptTest::Scenes::iGYM_STATE);
 	ST_BuildHubKeyChain(xB, ZENITH_KEY_6, ScriptTest::Scenes::iGYM_UI);
 	ST_BuildHubKeyChain(xB, ZENITH_KEY_7, ScriptTest::Scenes::iGYM_FLOW);
+	ST_BuildHubKeyChain(xB, ZENITH_KEY_8, ScriptTest::Scenes::iGYM_AI);
 }
 
 // --- 3. ST_Spin -------------------------------------------------------------
@@ -1111,6 +1143,221 @@ void BuildGraph_ST_FlowPlate(Zenith_GraphBuilder& xBuilder)
 	xPress.Then(uFind).Then(uFire);
 }
 
+// --- 19. ST_NavWalker -------------------------------------------------------
+// The whole nav + perception node family on one entity, and the FIRST scene in
+// the repo where navigation is authored with no game C++ behind it at all.
+//
+// ★ EnsureNavAgent IS WHAT MAKES THIS POSSIBLE. Zenith_AIAgentComponent's agent
+// pointer used to be wired only by SetNavMeshAgent, whose three callers were all
+// game components -- so every nav node here would have returned FAILURE on the
+// null pointer. Chain 2 wires it, and returns RUNNING until the holder's
+// deferred navmesh load completes, which is why it can sit at the head of a
+// per-frame chain and simply start working when the mesh arrives.
+//
+// ★ THE MOVEMENT CHAIN IS GATED, NOT KEY-ANCHORED. A suspended chain resumes at
+// the node that suspended it, so a NavMoveTo under a key would be re-entered
+// forever without ever re-testing the key. Gate(go) under OnUpdate re-tests the
+// flag every time the chain COMPLETES, which is what lets StopNav actually stop.
+//
+// ★ AND m_fRepathInterval IS DELIBERATELY HUGE. The destination is a static
+// vec3, so nothing needs repathing -- and with the default 0.5 s, StopNav could
+// land one frame before a repath and be immediately undone, which would make
+// "the stop persists" a 1-in-30 flake instead of an assertion.
+void BuildGraph_ST_NavWalker(Zenith_GraphBuilder& xBuilder)
+{
+	auto DeclareBool = [&xBuilder](const char* szName, bool bValue)
+	{
+		Zenith_PropertyValue xValue;
+		xValue.SetBool(bValue);
+		xBuilder.Variable(szName, xValue);
+	};
+	auto DeclareInt = [&xBuilder](const char* szName, int32_t iValue)
+	{
+		Zenith_PropertyValue xValue;
+		xValue.SetInt32(iValue);
+		xBuilder.Variable(szName, xValue);
+	};
+	auto DeclareFloat = [&xBuilder](const char* szName, float fValue)
+	{
+		Zenith_PropertyValue xValue;
+		xValue.SetFloat(fValue);
+		xBuilder.Variable(szName, xValue);
+	};
+
+	DeclareBool(ScriptTest::Vars::szNAV_READY, false);
+	DeclareBool(ScriptTest::Vars::szGO, false);
+	DeclareBool(ScriptTest::Vars::szPRIMARY_SEEN, false);
+	DeclareInt(ScriptTest::Vars::szNAV_STATE, -1);
+	DeclareInt(ScriptTest::Vars::szPERCEIVED_N, -1);
+	DeclareFloat(ScriptTest::Vars::szNAV_LEFT, -1.0f);
+	DeclareFloat(ScriptTest::Vars::szAWARENESS, -1.0f);
+
+	// The first destination. FindRandomReachablePoint later OVERWRITES this same
+	// variable, so the wander leg reuses the movement chain rather than needing
+	// one of its own -- and the test can read the wander point back out of it.
+	Zenith_PropertyValue xDest;
+	xDest.SetVector3(Zenith_Maths::Vector3(5.0f, 0.0f, 5.0f));
+	xBuilder.Variable(ScriptTest::Vars::szDEST, xDest);
+
+	Zenith_EngineGraphBuilder xB(xBuilder);
+
+	// --- Chain 1: resolve the two entities this graph addresses by name.
+	Zenith_GraphChain xStart = xB.OnStart();
+	const u_int uFindPrey = xB.Node("FindEntityByName");
+	xB.ParamString(uFindPrey, "m_strName", ScriptTest::Entities::szPREY);
+	xB.ParamString(uFindPrey, "m_strResultVar", ScriptTest::Vars::szPREY_REF);
+	const u_int uFindManager = xB.Node("FindEntityByName");
+	xB.ParamString(uFindManager, "m_strName", ScriptTest::Entities::szGAME_MANAGER);
+	xB.ParamString(uFindManager, "m_strResultVar", ScriptTest::Vars::szMANAGER_REF);
+	xStart.Then(uFindPrey).Then(uFindManager);
+
+	// --- Chain 2: wire the agent, then publish its state every frame.
+	Zenith_GraphChain xNavTick = xB.OnUpdate();
+	const u_int uEnsure = xB.Node("EnsureNavAgent");	// m_strNavMeshVar "" = the scene's one holder
+	const u_int uReady = xB.SetBlackboardBool(ScriptTest::Vars::szNAV_READY, true);
+	const u_int uReadState = xB.Node("ReadNavState");
+	xB.ParamString(uReadState, "m_strStateVar", ScriptTest::Vars::szNAV_STATE);
+	xB.ParamString(uReadState, "m_strRemainingVar", ScriptTest::Vars::szNAV_LEFT);
+	xB.ParamString(uReadState, "m_strVelocityVar", ScriptTest::Vars::szNAV_VEL);
+	xNavTick.Then(uEnsure).Then(uReady).Then(uReadState);
+
+	// --- Chain 3: the movement, gated.
+	Zenith_GraphChain xMoveTick = xB.OnUpdate();
+	const u_int uGoGate = xB.Gate(ScriptTest::Vars::szGO);
+	const u_int uIssue = xB.Node("SetNavDestination");
+	xB.ParamString(uIssue, "m_strDestinationVar", ScriptTest::Vars::szDEST);
+	const u_int uMove = xB.Node("NavMoveTo");
+	xB.ParamString(uMove, "m_strDestinationVar", ScriptTest::Vars::szDEST);
+	xB.ParamFloat(uMove, "m_fAcceptanceRadius", 1.5f);
+	xB.ParamFloat(uMove, "m_fRepathInterval", 30.0f);	// see the header comment
+	xB.ParamBool(uMove, "m_bXZDistance", true);
+	xMoveTick.Then(uGoGate).Then(uIssue).Then(uMove);
+
+	// --- Chains 4-7: the keys the test (and a person) drive it with.
+	Zenith_GraphChain xGo = xB.OnKeyPressed(ZENITH_KEY_SPACE);
+	xGo.Then(xB.SetBlackboardBool(ScriptTest::Vars::szGO, true));
+
+	// Un-gate FIRST, then stop: a StopNav that left the gate open would let the
+	// suspended NavMoveTo re-path on its very next completion.
+	Zenith_GraphChain xHalt = xB.OnKeyPressed(ZENITH_KEY_X);
+	const u_int uUngate = xB.SetBlackboardBool(ScriptTest::Vars::szGO, false);
+	const u_int uStop = xB.Node("StopNav");
+	xHalt.Then(uUngate).Then(uStop);
+
+	Zenith_GraphChain xSlow = xB.OnKeyPressed(ZENITH_KEY_N);
+	const u_int uSpeed = xB.Node("SetNavSpeed");
+	xB.ParamFloat(uSpeed, "m_fSpeed", 2.0f);	// half the node's 5.0 default
+	xSlow.Then(uSpeed);
+
+	// The wander point lands in 'dest', so chain 3 walks to it unchanged --
+	// which is also what proves the point is REACHABLE and not merely in-radius.
+	Zenith_GraphChain xWander = xB.OnKeyPressed(ZENITH_KEY_W);
+	const u_int uWanderPoint = xB.Node("FindRandomReachablePoint");
+	xB.ParamFloat(uWanderPoint, "m_fRadius", 6.0f);
+	xB.ParamString(uWanderPoint, "m_strResultVar", ScriptTest::Vars::szDEST);
+	xWander.Then(uWanderPoint);
+
+	// --- Chain 8: retire the prey.
+	Zenith_GraphChain xRetire = xB.OnKeyPressed(ZENITH_KEY_K);
+	const u_int uDestroy = xB.Node("DestroyEntity");
+	xB.ParamString(uDestroy, "m_strTargetVar", ScriptTest::Vars::szPREY_REF);
+	xRetire.Then(uDestroy);
+
+	// --- Chain 9: the perceived-target list, and its first element.
+	// GetListElement FAILS on an empty list and aborts here, which is exactly
+	// what leaves 'firstTarget' unwritten while nothing is perceived.
+	Zenith_GraphChain xPerceiveTick = xB.OnUpdate();
+	const u_int uQueryTargets = xB.Node("QueryPerceivedTargets");
+	xB.ParamString(uQueryTargets, "m_strListVar", ScriptTest::Vars::szPERCEIVED);
+	xB.ParamString(uQueryTargets, "m_strCountVar", ScriptTest::Vars::szPERCEIVED_N);
+	const u_int uFirst = xB.GetListElement(
+		ScriptTest::Vars::szPERCEIVED, 0, ScriptTest::Vars::szFIRST_TARGET);
+	xPerceiveTick.Then(uQueryTargets).Then(uFirst);
+
+	// --- Chain 10: the primary (HOSTILE) target, on its own anchor because it
+	// FAILS when there is none -- the has-target gate.
+	//
+	// ★ THE FLAG IS CLEARED AT THE HEAD OF THE SAME CHAIN, NOT ELSEWHERE, so it
+	// means "the query succeeded THIS FRAME" rather than "it has succeeded at
+	// some point". A latch cleared from another chain is a race: the key chain
+	// that retires the prey runs BEFORE this one in the same dispatch, and
+	// perception has not re-run in between -- so the query still returns the
+	// doomed prey and re-sets a flag nothing would clear again.
+	Zenith_GraphChain xPrimaryTick = xB.OnUpdate();
+	const u_int uUnseen = xB.SetBlackboardBool(ScriptTest::Vars::szPRIMARY_SEEN, false);
+	const u_int uPrimary = xB.Node("QueryPrimaryPerceivedTarget");
+	xB.ParamString(uPrimary, "m_strResultVar", ScriptTest::Vars::szPRIMARY);
+	const u_int uSeen = xB.SetBlackboardBool(ScriptTest::Vars::szPRIMARY_SEEN, true);
+	xPrimaryTick.Then(uUnseen).Then(uPrimary).Then(uSeen);
+
+	// --- Chain 11: awareness of the named prey (always SUCCESS, 0 when unknown).
+	Zenith_GraphChain xAwareTick = xB.OnUpdate();
+	const u_int uAware = xB.Node("QueryAwarenessOf");
+	xB.ParamString(uAware, "m_strOfVar", ScriptTest::Vars::szPREY_REF);
+	xB.ParamString(uAware, "m_strResultVar", ScriptTest::Vars::szAWARENESS);
+	xAwareTick.Then(uAware);
+
+	// --- Chain 12: the last heard sound. FAILS until something is heard, so it
+	// gets its own anchor too.
+	Zenith_GraphChain xHearTick = xB.OnUpdate();
+	const u_int uHeard = xB.Node("QueryLastHeardSound");
+	xB.ParamString(uHeard, "m_strPositionVar", ScriptTest::Vars::szHEARD_POS);
+	xB.ParamString(uHeard, "m_strSourceVar", ScriptTest::Vars::szHEARD_SOURCE);
+	xHearTick.Then(uHeard);
+
+	// --- Chain 13: the HUD, cross-entity through the packed EntityID chain 1
+	// stashed -- the same shape ST_BallSpawner uses for its counters.
+	Zenith_GraphChain xHudTick = xB.OnUpdate();
+	const u_int uHud = xB.Node("SetUIText");
+	xB.ParamString(uHud, "m_strTargetVar", ScriptTest::Vars::szMANAGER_REF);
+	xB.ParamString(uHud, "m_strElement", ScriptTest::UINames::szNAV_STATE);
+	xB.ParamString(uHud, "m_strText", "Nav: {}");
+	xB.ParamString(uHud, "m_strValueVar", ScriptTest::Vars::szNAV_STATE);
+	xHudTick.Then(uHud);
+}
+
+// --- 20. ST_Prey ------------------------------------------------------------
+// What the walker perceives, and the noise it hears.
+//
+// ★ THE SYMMETRIC UNREGISTER IS PART OF THE DELIVERABLE, not an extra.
+// RegisterPerceptionTarget's own comment says nothing auto-unregisters on entity
+// destruction -- so a target destroyed without one lingers in the perception
+// system as a record whose position no longer resolves, and only decays out over
+// a couple of seconds. ST_AIGym_Test asserts the count reaches zero inside a
+// window far shorter than that decay, which is what makes chain 2 observable.
+//
+// ★ AND THE SOUND IS EMITTED FROM *HERE*, NOT FROM THE WALKER. Two reasons, and
+// either alone would be enough: EmitSoundStimulus attributes the sound to the
+// source entity and agents never hear their own, and Zenith_AI::Update runs
+// AFTER the scene update, so a query in the same chain as its emit always reads
+// stale. The walker queries on its NEXT frame instead.
+//
+// The prey deliberately does not move: every perception assertion is about a
+// cone, a range and a line of sight, and a moving subject would make each of
+// them time-dependent for no added coverage.
+void BuildGraph_ST_Prey(Zenith_GraphBuilder& xBuilder)
+{
+	Zenith_EngineGraphBuilder xB(xBuilder);
+
+	// m_strTargetVar "" = self throughout: the prey registers, unregisters and
+	// makes noise as itself.
+	Zenith_GraphChain xStart = xB.OnStart();
+	const u_int uRegister = xB.Node("RegisterPerceptionTarget");
+	xB.ParamBool(uRegister, "m_bHostile", true);
+	xStart.Then(uRegister);
+
+	const u_int uOnDestroy = xB.Node("OnDestroy");
+	const u_int uUnregister = xB.Node("RegisterPerceptionTarget");
+	xB.ParamBool(uUnregister, "m_bUnregister", true);
+	xB.Chain(uOnDestroy, uUnregister);
+
+	Zenith_GraphChain xNoise = xB.OnKeyPressed(ZENITH_KEY_S);
+	const u_int uSound = xB.Node("EmitSoundStimulus");
+	xB.ParamFloat(uSound, "m_fLoudness", 1.0f);
+	xB.ParamFloat(uSound, "m_fRadius", 20.0f);
+	xNoise.Then(uSound);
+}
+
 #ifdef ZENITH_TOOLS
 
 //=============================================================================
@@ -1162,18 +1409,107 @@ namespace
 	}
 }
 
+//=============================================================================
+// The Gym_AI navmesh (tools only) -- a COMMITTED asset, not a bake product
+//
+// `.gitignore` re-admits `**/*.znavmesh` under `Assets/` at any depth: a baked
+// navmesh is small, byte-deterministic and loadable with no GPU, so it is a
+// first-class tracked asset (ZM-D-145). It is therefore re-baked on every tools
+// boot and saved over the committed file, exactly like the nine `.zscen`, and
+// `st-tests.yml`'s cold-bake step checks it the same way.
+//
+// DETERMINISTIC-FP for the same reason the scene recipes are: the vertices below
+// are computed and every byte of the result is committed. What the pin CANNOT
+// reach is the generator's own internals, which are compiled elsewhere under the
+// project's /fp:fast -- so this makes the INPUT config-independent, not provably
+// the output. The cold-bake guard runs one config and would catch drift within
+// it; a Debug-vs-Release comparison is not something anything checks today.
+//
+// ★ WINDING IS LOAD-BEARING, AND THE TWO NAVMESH PATHS DISAGREE ABOUT IT.
+// GenerateFromGeometry (which BakeToFile uses) runs a voxeliser SLOPE FILTER, so
+// the triangles need an upward +Y face normal -- {v0,v2,v3},{v0,v3,v1} for the
+// corner order below. A downward winding silently yields an EMPTY navmesh rather
+// than an error. The hand-built AddPolygon fixture in the AI unit suite uses
+// 0,1,2,3 and gets away with it only because it skips the filter entirely; do
+// not copy one winding into the other context.
+//=============================================================================
+
+ZENITH_AUTHORING_DETERMINISM_BEGIN
+
+namespace
+{
+	void ST_BakeGymNavMesh()
+	{
+		std::filesystem::create_directories(
+			std::filesystem::path(ScriptTest::Navmesh::szBAKE_PATH).parent_path());
+
+		// A flat square centred on the origin, 1 m quads. The half-extent is the
+		// header's, so the floor prop, the wander-radius assertion and this bake
+		// cannot disagree about how big the walkable world is.
+		constexpr int32_t iQUADS = static_cast<int32_t>(ScriptTest::Navmesh::fHALF_EXTENT) * 2;
+		constexpr int32_t iSTRIDE = iQUADS + 1;
+
+		Zenith_Vector<Zenith_Maths::Vector3> axVertices;
+		Zenith_Vector<uint32_t> auIndices;
+		for (int32_t iZ = 0; iZ <= iQUADS; ++iZ)
+		{
+			for (int32_t iX = 0; iX <= iQUADS; ++iX)
+			{
+				axVertices.PushBack(Zenith_Maths::Vector3(
+					static_cast<float>(iX) - ScriptTest::Navmesh::fHALF_EXTENT,
+					0.0f,
+					static_cast<float>(iZ) - ScriptTest::Navmesh::fHALF_EXTENT));
+			}
+		}
+		for (int32_t iZ = 0; iZ < iQUADS; ++iZ)
+		{
+			for (int32_t iX = 0; iX < iQUADS; ++iX)
+			{
+				const uint32_t uV0 = static_cast<uint32_t>(iZ * iSTRIDE + iX);
+				const uint32_t uV1 = uV0 + 1u;
+				const uint32_t uV2 = uV0 + static_cast<uint32_t>(iSTRIDE);
+				const uint32_t uV3 = uV2 + 1u;
+				// CCW seen from above -> upward normal (see the header comment).
+				auIndices.PushBack(uV0); auIndices.PushBack(uV2); auIndices.PushBack(uV3);
+				auIndices.PushBack(uV0); auIndices.PushBack(uV3); auIndices.PushBack(uV1);
+			}
+		}
+
+		NavMeshGenerationConfig xConfig;
+		// ★ A COARSER VOXEL THAN THE DEFAULT 0.3 m, DELIBERATELY. This surface is
+		// a featureless plane, and the file is COMMITTED: at the default cell
+		// size a flat 16 m square bakes to 2916 polygons and 252 KB -- nearly
+		// twice Zenithmon's whole-town navmesh -- for a shape a handful of
+		// polygons describes. 1 m cells cost nothing here (destinations are
+		// metres apart and NavMoveTo's acceptance radius is 1.5 m) and they erode
+		// the walkable border by about one cell, which the gym's ~14 m of usable
+		// ground absorbs with room to spare.
+		xConfig.m_fCellSize = 1.0f;
+		const Zenith_NavMeshBakeResult xResult = Zenith_NavMeshBaker::BakeToFile(
+			axVertices, auIndices, xConfig, ScriptTest::Navmesh::szBAKE_PATH);
+		if (!xResult.m_bSuccess)
+		{
+			Zenith_Error(LOG_CATEGORY_AI, "[ScriptTest] Gym_AI navmesh bake failed: %s",
+				Zenith_NavMeshBakeErrorToString(xResult.m_eError));
+		}
+	}
+}
+
 void Project_InitializeResources()
 {
 	ST_EnsureGeneratedModel(
 		ScriptTest::Meshes::szUNIT_CUBE_ASSET, ScriptTest::Meshes::szUNIT_CUBE_MODEL, "UnitCube", false);
 	ST_EnsureGeneratedModel(
 		ScriptTest::Meshes::szUNIT_SPHERE_ASSET, ScriptTest::Meshes::szUNIT_SPHERE_MODEL, "UnitSphere", true);
+	ST_BakeGymNavMesh();
 }
+
+ZENITH_AUTHORING_DETERMINISM_END
 
 //=============================================================================
 // Scene authoring (tools only)
 //
-// Eight scenes, regenerated from scratch on every tools boot and saved over
+// Nine scenes, regenerated from scratch on every tools boot and saved over
 // their committed .zscen files -- the same contract RenderTest and Combat use.
 //
 // Deterministic-FP for the whole block below: these functions compute the
@@ -1309,8 +1645,9 @@ namespace
 		ST_AddHubButton(xAuto, ScriptTest::UINames::szBTN_STATE,   "5. State",    116.0f);
 		ST_AddHubButton(xAuto, ScriptTest::UINames::szBTN_UI,      "6. UI",       180.0f);
 		ST_AddHubButton(xAuto, ScriptTest::UINames::szBTN_FLOW,    "7. Flow",     244.0f);
+		ST_AddHubButton(xAuto, ScriptTest::UINames::szBTN_AI,      "8. AI",       308.0f);
 
-		ST_AddHintText(xAuto, "Click a gym or press 1-7");
+		ST_AddHintText(xAuto, "Click a gym or press 1-8");
 
 		// The hub is the one scene with no ST_EscToHub: it IS the hub.
 		xAuto.AddStep_AttachGraph(ScriptTest::Graphs::szHUB_FLOW);
@@ -1632,13 +1969,73 @@ namespace
 		xAuto.AddStep_SaveScene(ScriptTest::Scenes::szGYM_FLOW_PATH);
 		xAuto.AddStep_UnloadScene();
 	}
+
+	// ---- Scene 8: Gym_AI ---------------------------------------------------
+	// Navigation and perception, authored end to end with no game C++.
+	//
+	// ★ THE FLOOR SITS BELOW THE NAVMESH ON PURPOSE. Perception's line-of-sight
+	// check raycasts from the agent's position to the target's, and both walk at
+	// the navmesh's y = 0. A floor whose top face were also at y = 0 would put a
+	// static collider exactly in that ray. Dropping its top to -0.5 keeps the
+	// cubes visually seated (they are 1 m and centred at y = 0, so their bottoms
+	// meet it) while leaving the sight line clear.
+	//
+	// ★ AND NEITHER WALKER NOR PREY HAS A COLLIDER. The walker is moved by the
+	// nav agent writing its transform -- the non-physics path, the same one the
+	// Motion gym's props take -- and a collider on either would additionally sit
+	// in the line of sight between them.
+	void ST_AuthorGymAIScene(Zenith_EditorAutomation& xAuto)
+	{
+		xAuto.AddStep_CreateScene("Gym_AI");
+
+		xAuto.AddStep_CreateEntity(ScriptTest::Entities::szGAME_MANAGER);
+		ST_AddSceneCamera(xAuto, 0.0f, 9.0f, 14.0f, -0.5f);
+		xAuto.AddStep_AddUI();
+		ST_AddTitleText(xAuto, "Gym 8 - AI", 40.0f);
+		ST_AddHintText(xAuto, "Space go, X stop, N slow, W wander, S noise, K retire prey");
+		ST_AddCornerReadout(xAuto, ScriptTest::UINames::szNAV_STATE, "Nav: 0", 20.0f);
+		xAuto.AddStep_AttachGraph(ScriptTest::Graphs::szESC_TO_HUB);	// slot 0
+
+		// The navmesh holder. No model and no transform of its own: it exists to
+		// carry the asset ref, and EnsureNavAgent finds it by an ordinary
+		// active-scene query rather than by name.
+		xAuto.AddStep_CreateEntity(ScriptTest::Entities::szNAVMESH_HOLDER);
+		xAuto.AddStep_AddComponent("NavMesh");
+		xAuto.AddStep_SetNavMeshAsset(ScriptTest::Navmesh::szASSET);
+
+		// Sized from the baked half-extent (+0.5 m of margin either side) so the
+		// visible ground and the walkable surface cannot drift apart.
+		const float fFloorSpan = (ScriptTest::Navmesh::fHALF_EXTENT + 0.5f) * 2.0f;
+		ST_AddProp(xAuto, ScriptTest::Entities::szFLOOR, ScriptTest::Meshes::szUNIT_CUBE_MODEL,
+			g_apxMaterials[ST_MATERIAL_FLOOR], 0.0f, -0.75f, 0.0f, fFloorSpan, 0.5f, fFloorSpan);
+		xAuto.AddStep_AddCollider();
+		xAuto.AddStep_AddColliderShape(COLLISION_VOLUME_TYPE_OBB, RIGIDBODY_TYPE_STATIC);
+
+		// Yaw 0 faces +Z, and the walker is authored with no rotation -- so it
+		// starts looking straight at the prey, which is what puts the prey inside
+		// the default 90-degree sight cone before anything has moved.
+		ST_AddProp(xAuto, ScriptTest::Entities::szWALKER, ScriptTest::Meshes::szUNIT_CUBE_MODEL,
+			g_apxMaterials[ST_MATERIAL_PLAYER], 0.0f, 0.0f, -4.0f, 1.0f, 1.0f, 1.0f);
+		xAuto.AddStep_AddComponent("AIAgent");
+		xAuto.AddStep_AttachGraph(ScriptTest::Graphs::szNAV_WALKER);
+
+		ST_AddProp(xAuto, ScriptTest::Entities::szPREY, ScriptTest::Meshes::szUNIT_SPHERE_MODEL,
+			g_apxMaterials[ST_MATERIAL_RED], 0.0f, 0.0f, 3.0f, 0.8f, 0.8f, 0.8f);
+		xAuto.AddStep_AttachGraph(ScriptTest::Graphs::szPREY);
+
+		ST_AddSun(xAuto);
+		ST_AddKeyLight(xAuto);
+
+		xAuto.AddStep_SaveScene(ScriptTest::Scenes::szGYM_AI_PATH);
+		xAuto.AddStep_UnloadScene();
+	}
 }
 
 void Project_RegisterEditorAutomationSteps()
 {
 	Zenith_EditorAutomation& xAuto = g_xEngine.EditorAutomation();
 
-	// ---- 1. The eighteen graphs, regenerated from their builders every boot.
+	// ---- 1. The twenty graphs, regenerated from their builders every boot.
 	// Before the scenes, because AddStep_AttachGraph resolves an asset PATH and
 	// a scene authored first would attach a slot pointing at a stale .bgraph.
 	xAuto.AddStep_GraphBuild(ScriptTest::Graphs::szESC_TO_HUB,     &BuildGraph_ST_EscToHub);
@@ -1663,6 +2060,8 @@ void Project_RegisterEditorAutomationSteps()
 	xAuto.AddStep_GraphBuild(ScriptTest::Graphs::szFLOW_SCORE,     &BuildGraph_ST_FlowScore);
 	xAuto.AddStep_GraphBuild(ScriptTest::Graphs::szDISPENSER,      &BuildGraph_ST_Dispenser);
 	xAuto.AddStep_GraphBuild(ScriptTest::Graphs::szFLOW_PLATE,     &BuildGraph_ST_FlowPlate);
+	xAuto.AddStep_GraphBuild(ScriptTest::Graphs::szNAV_WALKER,     &BuildGraph_ST_NavWalker);
+	xAuto.AddStep_GraphBuild(ScriptTest::Graphs::szPREY,           &BuildGraph_ST_Prey);
 
 	// ---- 2. The ST_Ball prefab.
 	// CreatePrefabFromSelected needs a live entity to capture, so it gets a
@@ -1680,7 +2079,7 @@ void Project_RegisterEditorAutomationSteps()
 	xAuto.AddStep_CreatePrefabFromSelected(ScriptTest::Prefabs::szBALL_NAME, ScriptTest::Prefabs::szBALL_SAVE_PATH);
 	xAuto.AddStep_UnloadScene();
 
-	// ---- 3. The eight scenes, in build-index order.
+	// ---- 3. The nine scenes, in build-index order.
 	ST_AuthorHubScene(xAuto);
 	ST_AuthorGymMotionScene(xAuto);
 	ST_AuthorGymInputScene(xAuto);
@@ -1689,6 +2088,7 @@ void Project_RegisterEditorAutomationSteps()
 	ST_AuthorGymStateScene(xAuto);
 	ST_AuthorGymUIScene(xAuto);
 	ST_AuthorGymFlowScene(xAuto);
+	ST_AuthorGymAIScene(xAuto);
 
 	// ---- 4. And only then boot into the hub.
 	xAuto.AddStep_LoadInitialScene(&Project_LoadInitialScene);
@@ -1702,7 +2102,7 @@ ZENITH_AUTHORING_DETERMINISM_END
 // Initial scene load
 //
 // Unconditional: a _False boot runs no automation, so this is the ONLY place
-// the eight build indices get registered. Every LoadSceneByIndex node in
+// the nine build indices get registered. Every LoadSceneByIndex node in
 // ST_HubFlow and ST_EscToHub depends on this table, which is why the indices
 // are constants in ScriptTest_Graphs.h rather than literals in two places.
 //=============================================================================
@@ -1719,6 +2119,7 @@ void Project_LoadInitialScene()
 	xScenes.RegisterSceneBuildIndex(ScriptTest::Scenes::iGYM_STATE,   ScriptTest::Scenes::szGYM_STATE_PATH);
 	xScenes.RegisterSceneBuildIndex(ScriptTest::Scenes::iGYM_UI,      ScriptTest::Scenes::szGYM_UI_PATH);
 	xScenes.RegisterSceneBuildIndex(ScriptTest::Scenes::iGYM_FLOW,    ScriptTest::Scenes::szGYM_FLOW_PATH);
+	xScenes.RegisterSceneBuildIndex(ScriptTest::Scenes::iGYM_AI,      ScriptTest::Scenes::szGYM_AI_PATH);
 
 	xScenes.LoadSceneByIndex(ScriptTest::Scenes::iHUB, SCENE_LOAD_SINGLE);
 }

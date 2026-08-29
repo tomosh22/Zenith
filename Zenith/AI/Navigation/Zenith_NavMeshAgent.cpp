@@ -90,7 +90,9 @@ float Zenith_NavMeshAgent::GetRemainingDistance() const
 		return 0.0f;
 	}
 
-	// Distance from current position to current waypoint + rest of path
+	// Waypoint-to-waypoint segments only -- see the header. The leg the agent is
+	// currently on is deliberately absent; every caller that wants a real
+	// distance adds it (or uses GetDistanceToGo below).
 	float fDistance = 0.0f;
 	for (uint32_t u = m_uCurrentWaypoint; u + 1 < m_xCurrentPath.m_axWaypoints.GetSize(); ++u)
 	{
@@ -98,6 +100,22 @@ float Zenith_NavMeshAgent::GetRemainingDistance() const
 			m_xCurrentPath.m_axWaypoints.Get(u));
 	}
 	return fDistance;
+}
+
+float Zenith_NavMeshAgent::GetDistanceToGo() const
+{
+	if (!HasPath() || m_bReachedDestination)
+	{
+		return 0.0f;
+	}
+	if (m_uCurrentWaypoint >= m_xCurrentPath.m_axWaypoints.GetSize())
+	{
+		return 0.0f;
+	}
+	// The same two terms the steering code sums, in one place a reader can use.
+	const float fToCurrentWaypoint = Zenith_Maths::Length(
+		m_xCurrentPath.m_axWaypoints.Get(m_uCurrentWaypoint) - m_xPathStartPos);
+	return fToCurrentWaypoint + GetRemainingDistance();
 }
 
 void Zenith_NavMeshAgent::Update(float fDt, Zenith_EntityID xEntity)

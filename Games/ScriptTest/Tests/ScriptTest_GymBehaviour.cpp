@@ -9,7 +9,7 @@
 // carry the entities they should). Nothing there can see a graph that builds
 // perfectly and then does nothing -- a Timer that never fires, a sensor that
 // never reports, a state machine whose transition events reach no lamp. These
-// eight tests DRIVE each gym through the real seams a player would and assert
+// nine tests DRIVE each gym through the real seams a player would and assert
 // on the observable result:
 //
 //   ST_HubNavigation_Test  - every hub button AND every number key reaches its
@@ -43,6 +43,12 @@
 //                            Selector, ForEach, CallGraph, the three list
 //                            mutators and LogicBlackboardBool, each against a
 //                            distinct observable.
+//   ST_AIGym_Test          - all twelve AI nodes, authored with NO game C++:
+//                            EnsureNavAgent wires an agent to the scene's
+//                            navmesh, the walker paths / stops / slows /
+//                            wanders, and the perception family reports the
+//                            prey, hears it and forgets it on the symmetric
+//                            unregister.
 //
 // SINGLE SPELLING. Every scene index, entity name, UI element name and
 // blackboard variable comes from ScriptTest_Graphs.h -- the same header the
@@ -221,6 +227,29 @@ namespace
 	{
 		const Zenith_GraphBlackboard* pxBlackboard = ST_Blackboard(szEntity, uSlot);
 		return pxBlackboard != nullptr ? pxBlackboard->GetString(szVar, szDefault) : std::string(szDefault);
+	}
+
+	Zenith_Maths::Vector3 ST_ReadVec3(const char* szEntity, u_int uSlot, const char* szVar)
+	{
+		const Zenith_GraphBlackboard* pxBlackboard = ST_Blackboard(szEntity, uSlot);
+		return pxBlackboard != nullptr
+			? pxBlackboard->GetVector3(szVar) : Zenith_Maths::Vector3(0.0f);
+	}
+
+	// A packed Zenith_EntityID, which is how every cross-entity reference in
+	// these graphs travels. 0 is the "nothing there" sentinel: no entity ever
+	// packs to it.
+	u_int64 ST_ReadPacked(const char* szEntity, u_int uSlot, const char* szVar)
+	{
+		const Zenith_GraphBlackboard* pxBlackboard = ST_Blackboard(szEntity, uSlot);
+		return pxBlackboard != nullptr ? pxBlackboard->GetPackedEntityID(szVar, 0) : 0;
+	}
+
+	float ST_XZDistance(const Zenith_Maths::Vector3& xA, const Zenith_Maths::Vector3& xB)
+	{
+		const float fDX = xA.x - xB.x;
+		const float fDZ = xA.z - xB.z;
+		return std::sqrt(fDX * fDX + fDZ * fDZ);
 	}
 
 	// --- Body-aware placement -------------------------------------------------
@@ -426,6 +455,7 @@ namespace
 		{ ScriptTest::UINames::szBTN_STATE,   ZENITH_KEY_5, ScriptTest::Scenes::iGYM_STATE   },
 		{ ScriptTest::UINames::szBTN_UI,      ZENITH_KEY_6, ScriptTest::Scenes::iGYM_UI      },
 		{ ScriptTest::UINames::szBTN_FLOW,    ZENITH_KEY_7, ScriptTest::Scenes::iGYM_FLOW    },
+		{ ScriptTest::UINames::szBTN_AI,      ZENITH_KEY_8, ScriptTest::Scenes::iGYM_AI      },
 	};
 
 	constexpr u_int iST_HUB_ROWS = static_cast<u_int>(sizeof(g_axHubRows) / sizeof(g_axHubRows[0]));
@@ -2840,5 +2870,638 @@ static const Zenith_AutomatedTest g_xFlowGymTest = {
 	/*maxFrames*/ 1200,
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xFlowGymTest);
+
+// ============================================================================
+// ST_AIGym_Test (C14)
+// ----------------------------------------------------------------------------
+// All twelve AI nodes, driven from graphs with no game C++ behind any of it --
+// which was impossible before EnsureNavAgent existed: SetNavMeshAgent's only
+// callers were game components, so every nav node returned FAILURE on a null
+// pointer and a graph could not navigate at all.
+//
+// ★ HEADLESS, AND DELIBERATELY NOT m_bRequiresGraphics. Navigation and
+// perception carry 13 headless automated tests across DevilsPlayground and
+// Zenithmon plus dozens of boot units, and the line-of-sight check is a Jolt
+// raycast proven headless by Test_P1Priest_PursuesAfterLineOfSight. A SKIPPED
+// test counts as a PASS, so gating this one on graphics would make it go quiet
+// exactly when it broke.
+//
+// ★ PERCEPTION IS ASSERTED BEFORE ANYTHING MOVES. The nav agent rewrites the
+// walker's ROTATION to face its path, and the sight cone is 90 degrees wide --
+// so every cone/range/LOS assertion happens while the walker still holds its
+// authored facing, looking straight down +Z at the prey.
+//
+// ★ AND THE SOUND IS EMITTED BY THE PREY, QUERIED BY THE WALKER A FRAME LATER.
+// Two independent reasons: agents never hear their own sounds, and
+// Zenith_AI::Update runs AFTER the scene update, so a query in the same frame as
+// its emit always reads stale.
+// ============================================================================
+
+namespace
+{
+	constexpr u_int iST_AI_WALKER_SLOT = 0u;	// the Walker carries only ST_NavWalker
+
+	// 0.5 s at the harness's pinned dt -- one full awareness ramp at the default
+	// 2.0/s gain rate, so the prey is fully perceived by the time it is sampled.
+	constexpr int   iST_AI_PERCEIVE_FRAMES = 30;
+	// Long enough for the agent to reach its cruising speed before a sample.
+	constexpr int   iST_AI_SETTLE_FRAMES   = 20;
+	// The window both speed samples are measured over. Same length for both, so
+	// the comparison is purely about speed.
+	constexpr int   iST_AI_SPEED_WINDOW    = 30;
+	constexpr int   iST_AI_ARRIVE_POLL     = 600;
+	// The graph's NavMoveTo acceptance radius, plus a little slack for the frame
+	// the arrival is observed on.
+	constexpr float fST_AI_ARRIVE_RADIUS   = 1.6f;
+	// ST_NavWalker's FindRandomReachablePoint m_fRadius.
+	constexpr float fST_AI_WANDER_RADIUS   = 6.0f;
+
+	int32_t ST_AIInt(const char* szVar)   { return ST_ReadInt(ScriptTest::Entities::szWALKER, iST_AI_WALKER_SLOT, szVar, -99); }
+	bool    ST_AIBool(const char* szVar)  { return ST_ReadBool(ScriptTest::Entities::szWALKER, iST_AI_WALKER_SLOT, szVar, false); }
+	float   ST_AIFloat(const char* szVar) { return ST_ReadFloat(ScriptTest::Entities::szWALKER, iST_AI_WALKER_SLOT, szVar, -1.0f); }
+	Zenith_Maths::Vector3 ST_AIVec3(const char* szVar) { return ST_ReadVec3(ScriptTest::Entities::szWALKER, iST_AI_WALKER_SLOT, szVar); }
+	u_int64 ST_AIPacked(const char* szVar) { return ST_ReadPacked(ScriptTest::Entities::szWALKER, iST_AI_WALKER_SLOT, szVar); }
+
+	Zenith_Maths::Vector3 ST_AIWalkerPos()
+	{
+		Zenith_Maths::Vector3 xPos(0.0f);
+		ST_GetPosition(ScriptTest::Entities::szWALKER, xPos);
+		return xPos;
+	}
+
+	// --- recorded observations ---------------------------------------------
+	bool    g_bAIReady            = false;
+	bool    g_bAIFinished         = false;
+	bool    g_bAINavReady         = false;
+
+	u_int64 g_ulAIPreyPacked      = 0;
+	int32_t g_iAIPerceivedCount   = -1;
+	u_int64 g_ulAIFirstTarget     = 0;
+	bool    g_bAIPrimarySeen      = false;
+	u_int64 g_ulAIPrimary         = 0;
+	float   g_fAIAwareness        = -1.0f;
+
+	u_int64 g_ulAIHeardSource     = 0;
+	Zenith_Maths::Vector3 g_xAIHeardPos = Zenith_Maths::Vector3(0.0f);
+	Zenith_Maths::Vector3 g_xAIPreyPos  = Zenith_Maths::Vector3(0.0f);
+
+	Zenith_Maths::Vector3 g_xAIStartPos = Zenith_Maths::Vector3(0.0f);
+	Zenith_Maths::Vector3 g_xAIFullA    = Zenith_Maths::Vector3(0.0f);
+	Zenith_Maths::Vector3 g_xAIFullB    = Zenith_Maths::Vector3(0.0f);
+	Zenith_Maths::Vector3 g_xAIStopA    = Zenith_Maths::Vector3(0.0f);
+	Zenith_Maths::Vector3 g_xAIStopB    = Zenith_Maths::Vector3(0.0f);
+	Zenith_Maths::Vector3 g_xAIHalfA    = Zenith_Maths::Vector3(0.0f);
+	Zenith_Maths::Vector3 g_xAIHalfB    = Zenith_Maths::Vector3(0.0f);
+
+	int32_t g_iAINavStateMoving   = -99;
+	int32_t g_iAINavStateStopped  = -99;
+	float   g_fAINavLeftEarly     = -1.0f;
+	float   g_fAINavLeftLate      = -1.0f;
+	float   g_fAINavSpeedSample   = -1.0f;
+
+	bool    g_bAIArrived          = false;
+	Zenith_Maths::Vector3 g_xAIArrivedAt   = Zenith_Maths::Vector3(0.0f);
+	Zenith_Maths::Vector3 g_xAIFirstDest   = Zenith_Maths::Vector3(0.0f);
+
+	Zenith_Maths::Vector3 g_xAIWanderFrom  = Zenith_Maths::Vector3(0.0f);
+	Zenith_Maths::Vector3 g_xAIWanderPoint = Zenith_Maths::Vector3(0.0f);
+	bool    g_bAIWanderArrived    = false;
+	Zenith_Maths::Vector3 g_xAIWanderEnd   = Zenith_Maths::Vector3(0.0f);
+
+	int32_t g_iAICountAfterRetire = -1;
+	bool    g_bAIPrimaryAfterRetire = true;
+	bool    g_bAIPreyGone         = false;
+
+	// --- the script ---------------------------------------------------------
+	// Same flat table as ST_FlowGym_Test, plus an optional POLL: a stage may wait
+	// for a condition (arrival) rather than a fixed number of frames, which is
+	// the only honest way to write "it got there" without pinning a travel time.
+	struct ST_AIStage
+	{
+		int  m_iLeadFrames;
+		bool (*m_pfnPoll)();	// null = no poll
+		int  m_iPollLimit;
+		void (*m_pfnBody)();
+	};
+
+	bool ST_AIArrivedAtDest()
+	{
+		return ST_XZDistance(ST_AIWalkerPos(), ST_AIVec3(ScriptTest::Vars::szDEST)) <= fST_AI_ARRIVE_RADIUS;
+	}
+
+	void ST_AIPressGo()     { Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_SPACE); }
+	void ST_AIPressStop()   { Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_X); }
+	void ST_AIPressWander() { Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_W); }
+	void ST_AIPressNoise()  { Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_S); }
+	void ST_AIPressRetire() { Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_K); }
+
+	void ST_AISampleWired()
+	{
+		g_bAINavReady = ST_AIBool(ScriptTest::Vars::szNAV_READY);
+	}
+
+	void ST_AISamplePerception()
+	{
+		Zenith_Entity xPrey = ST_FindEntity(ScriptTest::Entities::szPREY);
+		g_ulAIPreyPacked = xPrey.IsValid() ? xPrey.GetEntityID().GetPacked() : 0;
+		ST_GetPosition(ScriptTest::Entities::szPREY, g_xAIPreyPos);
+
+		g_iAIPerceivedCount = ST_AIInt(ScriptTest::Vars::szPERCEIVED_N);
+		g_ulAIFirstTarget = ST_AIPacked(ScriptTest::Vars::szFIRST_TARGET);
+		g_bAIPrimarySeen = ST_AIBool(ScriptTest::Vars::szPRIMARY_SEEN);
+		g_ulAIPrimary = ST_AIPacked(ScriptTest::Vars::szPRIMARY);
+		g_fAIAwareness = ST_AIFloat(ScriptTest::Vars::szAWARENESS);
+	}
+
+	void ST_AISampleHeard()
+	{
+		g_ulAIHeardSource = ST_AIPacked(ScriptTest::Vars::szHEARD_SOURCE);
+		g_xAIHeardPos = ST_AIVec3(ScriptTest::Vars::szHEARD_POS);
+	}
+
+	void ST_AIStartRun()
+	{
+		g_xAIStartPos = ST_AIWalkerPos();
+		g_xAIFirstDest = ST_AIVec3(ScriptTest::Vars::szDEST);
+		ST_AIPressGo();
+	}
+
+	void ST_AISampleFullA() { g_xAIFullA = ST_AIWalkerPos(); }
+
+	void ST_AISampleFullB()
+	{
+		g_xAIFullB = ST_AIWalkerPos();
+		g_iAINavStateMoving = ST_AIInt(ScriptTest::Vars::szNAV_STATE);
+		g_fAINavLeftEarly = ST_AIFloat(ScriptTest::Vars::szNAV_LEFT);
+		const Zenith_Maths::Vector3 xVel = ST_AIVec3(ScriptTest::Vars::szNAV_VEL);
+		g_fAINavSpeedSample = std::sqrt(xVel.x * xVel.x + xVel.y * xVel.y + xVel.z * xVel.z);
+	}
+
+	void ST_AIStopRun()
+	{
+		ST_AIPressStop();
+		g_xAIStopA = ST_AIWalkerPos();
+	}
+
+	void ST_AISampleStopped()
+	{
+		g_xAIStopB = ST_AIWalkerPos();
+		g_iAINavStateStopped = ST_AIInt(ScriptTest::Vars::szNAV_STATE);
+	}
+
+	void ST_AIResumeSlow()
+	{
+		Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_N);	// half speed
+		ST_AIPressGo();
+	}
+
+	void ST_AISampleHalfA() { g_xAIHalfA = ST_AIWalkerPos(); }
+
+	void ST_AISampleHalfB()
+	{
+		g_xAIHalfB = ST_AIWalkerPos();
+		g_fAINavLeftLate = ST_AIFloat(ScriptTest::Vars::szNAV_LEFT);
+	}
+
+	void ST_AISampleArrived()
+	{
+		g_bAIArrived = ST_AIArrivedAtDest();
+		g_xAIArrivedAt = ST_AIWalkerPos();
+	}
+
+	void ST_AIStartWander()
+	{
+		g_xAIWanderFrom = ST_AIWalkerPos();
+		ST_AIPressWander();
+	}
+
+	void ST_AISampleWanderPoint()
+	{
+		// FindRandomReachablePoint writes straight into 'dest', so the movement
+		// chain picks it up unchanged -- which is what turns "in radius" into
+		// "reachable".
+		g_xAIWanderPoint = ST_AIVec3(ScriptTest::Vars::szDEST);
+	}
+
+	void ST_AISampleWanderArrived()
+	{
+		g_bAIWanderArrived = ST_AIArrivedAtDest();
+		g_xAIWanderEnd = ST_AIWalkerPos();
+	}
+
+	void ST_AISampleRetired()
+	{
+		g_iAICountAfterRetire = ST_AIInt(ScriptTest::Vars::szPERCEIVED_N);
+		g_bAIPrimaryAfterRetire = ST_AIBool(ScriptTest::Vars::szPRIMARY_SEEN);
+		g_bAIPreyGone = !ST_EntityExists(ScriptTest::Entities::szPREY);
+	}
+
+	const ST_AIStage g_axAIStages[] =
+	{
+		{ 10,                     nullptr,              0,                  &ST_AISampleWired },
+		{ iST_AI_PERCEIVE_FRAMES, nullptr,              0,                  &ST_AISamplePerception },
+		{ 2,                      nullptr,              0,                  &ST_AIPressNoise },
+		{ 3,                      nullptr,              0,                  &ST_AISampleHeard },	// a LATER frame than the emit
+		{ 2,                      nullptr,              0,                  &ST_AIStartRun },
+		{ iST_AI_SETTLE_FRAMES,   nullptr,              0,                  &ST_AISampleFullA },
+		{ iST_AI_SPEED_WINDOW,    nullptr,              0,                  &ST_AISampleFullB },
+		{ 2,                      nullptr,              0,                  &ST_AIStopRun },
+		{ 30,                     nullptr,              0,                  &ST_AISampleStopped },
+		{ 2,                      nullptr,              0,                  &ST_AIResumeSlow },
+		{ iST_AI_SETTLE_FRAMES,   nullptr,              0,                  &ST_AISampleHalfA },
+		{ iST_AI_SPEED_WINDOW,    nullptr,              0,                  &ST_AISampleHalfB },
+		{ 1,                      &ST_AIArrivedAtDest,  iST_AI_ARRIVE_POLL, &ST_AISampleArrived },
+		{ 2,                      nullptr,              0,                  &ST_AIStartWander },
+		{ 3,                      nullptr,              0,                  &ST_AISampleWanderPoint },
+		{ 1,                      &ST_AIArrivedAtDest,  iST_AI_ARRIVE_POLL, &ST_AISampleWanderArrived },
+		{ 2,                      nullptr,              0,                  &ST_AIPressRetire },
+		{ 20,                     nullptr,              0,                  &ST_AISampleRetired },
+	};
+
+	constexpr u_int uST_AI_STAGES = static_cast<u_int>(sizeof(g_axAIStages) / sizeof(g_axAIStages[0]));
+
+	enum class AIPhase { Boot, WaitScene, Script, Done };
+
+	AIPhase g_eAIPhase = AIPhase::Boot;
+	u_int   g_uAIStage = 0;
+	int     g_iAIWait  = 0;
+	int     g_iAIPoll  = 0;
+	bool    g_bAIPollTimedOut = false;
+}
+
+static void Setup_AIGym()
+{
+	g_eAIPhase = AIPhase::Boot;
+	g_uAIStage = 0;
+	g_iAIWait = 0;
+	g_iAIPoll = 0;
+	g_bAIPollTimedOut = false;
+	g_bAIReady = false;
+	g_bAIFinished = false;
+	g_bAINavReady = false;
+
+	g_ulAIPreyPacked = 0;
+	g_iAIPerceivedCount = -1;
+	g_ulAIFirstTarget = 0;
+	g_bAIPrimarySeen = false;
+	g_ulAIPrimary = 0;
+	g_fAIAwareness = -1.0f;
+
+	g_ulAIHeardSource = 0;
+	g_xAIHeardPos = Zenith_Maths::Vector3(0.0f);
+	g_xAIPreyPos = Zenith_Maths::Vector3(0.0f);
+
+	g_xAIStartPos = Zenith_Maths::Vector3(0.0f);
+	g_xAIFullA = Zenith_Maths::Vector3(0.0f);
+	g_xAIFullB = Zenith_Maths::Vector3(0.0f);
+	g_xAIStopA = Zenith_Maths::Vector3(0.0f);
+	g_xAIStopB = Zenith_Maths::Vector3(0.0f);
+	g_xAIHalfA = Zenith_Maths::Vector3(0.0f);
+	g_xAIHalfB = Zenith_Maths::Vector3(0.0f);
+
+	g_iAINavStateMoving = -99;
+	g_iAINavStateStopped = -99;
+	g_fAINavLeftEarly = -1.0f;
+	g_fAINavLeftLate = -1.0f;
+	g_fAINavSpeedSample = -1.0f;
+
+	g_bAIArrived = false;
+	g_xAIArrivedAt = Zenith_Maths::Vector3(0.0f);
+	g_xAIFirstDest = Zenith_Maths::Vector3(0.0f);
+
+	g_xAIWanderFrom = Zenith_Maths::Vector3(0.0f);
+	g_xAIWanderPoint = Zenith_Maths::Vector3(0.0f);
+	g_bAIWanderArrived = false;
+	g_xAIWanderEnd = Zenith_Maths::Vector3(0.0f);
+
+	// Seeded to the values that FAIL, so a stage that never ran cannot pass by
+	// leaving its slot at something plausible.
+	g_iAICountAfterRetire = -1;
+	g_bAIPrimaryAfterRetire = true;
+	g_bAIPreyGone = false;
+}
+
+static bool Step_AIGym(int iFrame)
+{
+	switch (g_eAIPhase)
+	{
+	case AIPhase::Boot:
+		g_xEngine.Scenes().LoadSceneByIndex(ScriptTest::Scenes::iGYM_AI, SCENE_LOAD_SINGLE);
+		g_eAIPhase = AIPhase::WaitScene;
+		return true;
+
+	case AIPhase::WaitScene:
+		// All three behaviour-carrying entities are part of the gate: the holder
+		// is what EnsureNavAgent discovers, and a scene missing any of them would
+		// make every later stage fail for a reason this phase can name instead.
+		if (ST_IsSceneActive(ScriptTest::Scenes::iGYM_AI)
+			&& ST_EntityExists(ScriptTest::Entities::szNAVMESH_HOLDER)
+			&& ST_EntityExists(ScriptTest::Entities::szWALKER)
+			&& ST_EntityExists(ScriptTest::Entities::szPREY)
+			&& ST_Blackboard(ScriptTest::Entities::szWALKER, iST_AI_WALKER_SLOT) != nullptr)
+		{
+			g_bAIReady = true;
+			g_iAIWait = 0;
+			g_eAIPhase = AIPhase::Script;
+			return true;
+		}
+		return iFrame < 240;
+
+	case AIPhase::Script:
+	{
+		const ST_AIStage& xStage = g_axAIStages[g_uAIStage];
+		if (++g_iAIWait < xStage.m_iLeadFrames)
+		{
+			return true;
+		}
+		if (xStage.m_pfnPoll != nullptr && !xStage.m_pfnPoll())
+		{
+			if (++g_iAIPoll > xStage.m_iPollLimit)
+			{
+				g_bAIPollTimedOut = true;
+				g_eAIPhase = AIPhase::Done;
+				return false;
+			}
+			return true;
+		}
+		g_iAIWait = 0;
+		g_iAIPoll = 0;
+		xStage.m_pfnBody();
+		if (++g_uAIStage >= uST_AI_STAGES)
+		{
+			g_bAIFinished = true;
+			g_eAIPhase = AIPhase::Done;
+			return false;
+		}
+		return true;
+	}
+
+	case AIPhase::Done:
+		return false;
+	}
+	return false;
+}
+
+static bool Verify_AIGym()
+{
+	if (!g_bAIReady)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[AIGym] Gym_AI never became active with its %s, %s and %s",
+			ScriptTest::Entities::szNAVMESH_HOLDER, ScriptTest::Entities::szWALKER,
+			ScriptTest::Entities::szPREY);
+		return false;
+	}
+	if (g_bAIPollTimedOut)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[AIGym] stage %u timed out waiting for arrival: walker at (%.2f, %.2f) is %.2f m from "
+			"'%s' (%.2f, %.2f)",
+			g_uAIStage, ST_AIWalkerPos().x, ST_AIWalkerPos().z,
+			ST_XZDistance(ST_AIWalkerPos(), ST_AIVec3(ScriptTest::Vars::szDEST)),
+			ScriptTest::Vars::szDEST,
+			ST_AIVec3(ScriptTest::Vars::szDEST).x, ST_AIVec3(ScriptTest::Vars::szDEST).z);
+		return false;
+	}
+	if (!g_bAIFinished)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "[AIGym] the script stopped at stage %u of %u",
+			g_uAIStage, uST_AI_STAGES);
+		return false;
+	}
+
+	// --- EnsureNavAgent -----------------------------------------------------
+	// The flag is downstream of the node, so it is false unless EnsureNavAgent
+	// returned SUCCESS -- which needs the holder's deferred navmesh load to have
+	// completed AND an agent to have been allocated and bound.
+	if (!g_bAINavReady)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[AIGym] '%s' never turned true -- EnsureNavAgent did not bind an agent to the scene's navmesh",
+			ScriptTest::Vars::szNAV_READY);
+		return false;
+	}
+
+	// --- perception: registration, list, primary, awareness -----------------
+	if (g_ulAIPreyPacked == 0)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "[AIGym] %s could not be resolved", ScriptTest::Entities::szPREY);
+		return false;
+	}
+	if (g_iAIPerceivedCount < 1)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[AIGym] '%s' = %d after %d frames, expected >= 1 -- either RegisterPerceptionTarget never ran "
+			"or the engine AI tick is not driving perception",
+			ScriptTest::Vars::szPERCEIVED_N, g_iAIPerceivedCount, iST_AI_PERCEIVE_FRAMES);
+		return false;
+	}
+	// The LIST, not just the count: element 0 must be the prey itself.
+	if (g_ulAIFirstTarget != g_ulAIPreyPacked)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[AIGym] '%s' = %llu, expected %s's packed id %llu",
+			ScriptTest::Vars::szFIRST_TARGET, static_cast<unsigned long long>(g_ulAIFirstTarget),
+			ScriptTest::Entities::szPREY, static_cast<unsigned long long>(g_ulAIPreyPacked));
+		return false;
+	}
+	if (!g_bAIPrimarySeen || g_ulAIPrimary != g_ulAIPreyPacked)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[AIGym] QueryPrimaryPerceivedTarget: seen %d, '%s' = %llu, expected %llu -- the prey is "
+			"registered HOSTILE, so it must surface as the primary",
+			g_bAIPrimarySeen ? 1 : 0, ScriptTest::Vars::szPRIMARY,
+			static_cast<unsigned long long>(g_ulAIPrimary),
+			static_cast<unsigned long long>(g_ulAIPreyPacked));
+		return false;
+	}
+	if (!(g_fAIAwareness > 0.0f))
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[AIGym] '%s' = %.3f, expected > 0 while the prey is in the sight cone",
+			ScriptTest::Vars::szAWARENESS, g_fAIAwareness);
+		return false;
+	}
+
+	// --- the sound, emitted by the prey and heard a frame later -------------
+	if (g_ulAIHeardSource != g_ulAIPreyPacked)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[AIGym] '%s' = %llu, expected the prey's %llu -- EmitSoundStimulus attributes the sound to its "
+			"SOURCE entity, and an agent never hears its own",
+			ScriptTest::Vars::szHEARD_SOURCE, static_cast<unsigned long long>(g_ulAIHeardSource),
+			static_cast<unsigned long long>(g_ulAIPreyPacked));
+		return false;
+	}
+	if (ST_XZDistance(g_xAIHeardPos, g_xAIPreyPos) > 0.1f)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[AIGym] '%s' = (%.2f, %.2f), expected the prey's own position (%.2f, %.2f)",
+			ScriptTest::Vars::szHEARD_POS, g_xAIHeardPos.x, g_xAIHeardPos.z,
+			g_xAIPreyPos.x, g_xAIPreyPos.z);
+		return false;
+	}
+
+	// --- SetNavDestination + NavMoveTo + ReadNavState ------------------------
+	if (g_iAINavStateMoving != 2)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[AIGym] '%s' = %d while en route, expected 2 (moving)",
+			ScriptTest::Vars::szNAV_STATE, g_iAINavStateMoving);
+		return false;
+	}
+	if (!(g_fAINavSpeedSample > 0.1f))
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[AIGym] '%s' had magnitude %.3f while en route, expected a moving agent",
+			ScriptTest::Vars::szNAV_VEL, g_fAINavSpeedSample);
+		return false;
+	}
+	const float fFullDistance = ST_XZDistance(g_xAIFullB, g_xAIFullA);
+	if (!(fFullDistance > 0.5f))
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[AIGym] the walker covered %.3f m in %d frames at full speed, expected it to be moving",
+			fFullDistance, iST_AI_SPEED_WINDOW);
+		return false;
+	}
+
+	// --- StopNav, and that the stop PERSISTS ---------------------------------
+	// ★ A one-frame check would pass on a stop that was immediately undone by
+	// the next repath. Holding still for a further 30 frames is the assertion.
+	const float fDriftWhileStopped = ST_XZDistance(g_xAIStopB, g_xAIStopA);
+	if (fDriftWhileStopped > 0.15f)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[AIGym] the walker drifted %.3f m over 30 frames after StopNav -- the stop did not persist",
+			fDriftWhileStopped);
+		return false;
+	}
+	if (g_iAINavStateStopped != 0)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[AIGym] '%s' = %d after StopNav, expected 0 (none)",
+			ScriptTest::Vars::szNAV_STATE, g_iAINavStateStopped);
+		return false;
+	}
+
+	// --- SetNavSpeed: an ORDERING, never an absolute time --------------------
+	const float fHalfDistance = ST_XZDistance(g_xAIHalfB, g_xAIHalfA);
+	if (!(fHalfDistance > 0.1f))
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[AIGym] the walker covered %.3f m in %d frames after SetNavSpeed -- it never resumed",
+			fHalfDistance, iST_AI_SPEED_WINDOW);
+		return false;
+	}
+	if (!(fHalfDistance < fFullDistance * 0.75f))
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[AIGym] over the same %d-frame window the walker covered %.3f m at half speed and %.3f m at "
+			"full speed -- SetNavSpeed had no effect",
+			iST_AI_SPEED_WINDOW, fHalfDistance, fFullDistance);
+		return false;
+	}
+	// The remaining distance shrinks as it goes -- read at two points a leg apart.
+	if (!(g_fAINavLeftLate < g_fAINavLeftEarly))
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[AIGym] '%s' went %.3f -> %.3f, expected it to shrink as the walker advanced",
+			ScriptTest::Vars::szNAV_LEFT, g_fAINavLeftEarly, g_fAINavLeftLate);
+		return false;
+	}
+
+	// --- arrival -------------------------------------------------------------
+	if (!g_bAIArrived)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "[AIGym] the walker never reached its first destination");
+		return false;
+	}
+	const float fTravelled = ST_XZDistance(g_xAIArrivedAt, g_xAIStartPos);
+	if (!(fTravelled > 2.0f))
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[AIGym] the walker moved only %.3f m in total, expected > 2 m", fTravelled);
+		return false;
+	}
+	if (ST_XZDistance(g_xAIArrivedAt, g_xAIFirstDest) > fST_AI_ARRIVE_RADIUS)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[AIGym] the walker stopped %.3f m from (%.2f, %.2f), outside the acceptance radius",
+			ST_XZDistance(g_xAIArrivedAt, g_xAIFirstDest), g_xAIFirstDest.x, g_xAIFirstDest.z);
+		return false;
+	}
+
+	// --- FindRandomReachablePoint --------------------------------------------
+	// In radius, on the baked surface, AND actually walked to -- the last of
+	// those is what separates "reachable" from "merely nearby".
+	const float fWanderOffset = ST_XZDistance(g_xAIWanderPoint, g_xAIWanderFrom);
+	if (fWanderOffset > fST_AI_WANDER_RADIUS + 0.01f)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[AIGym] the wander point is %.3f m away, outside the requested %.1f m radius",
+			fWanderOffset, fST_AI_WANDER_RADIUS);
+		return false;
+	}
+	if (std::fabs(g_xAIWanderPoint.x) > ScriptTest::Navmesh::fHALF_EXTENT + 0.01f
+		|| std::fabs(g_xAIWanderPoint.z) > ScriptTest::Navmesh::fHALF_EXTENT + 0.01f)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[AIGym] the wander point (%.2f, %.2f) is off the baked %.1f m half-extent",
+			g_xAIWanderPoint.x, g_xAIWanderPoint.z, ScriptTest::Navmesh::fHALF_EXTENT);
+		return false;
+	}
+	if (!g_bAIWanderArrived || ST_XZDistance(g_xAIWanderEnd, g_xAIWanderPoint) > fST_AI_ARRIVE_RADIUS)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[AIGym] the walker did not reach the wander point: %.3f m away at (%.2f, %.2f)",
+			ST_XZDistance(g_xAIWanderEnd, g_xAIWanderPoint), g_xAIWanderEnd.x, g_xAIWanderEnd.z);
+		return false;
+	}
+
+	// --- the SYMMETRIC unregister --------------------------------------------
+	// ★ THE WINDOW IS THE ASSERTION. Nothing auto-unregisters a destroyed
+	// perception target, so without ST_Prey's OnDestroy chain the record survives
+	// and only decays out at 0.5 awareness/second -- about 120 frames. Sampling
+	// 20 frames after the destroy is inside that decay and outside the
+	// unregister, so only the unregister can produce a zero here.
+	if (!g_bAIPreyGone)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "[AIGym] DestroyEntity did not remove %s",
+			ScriptTest::Entities::szPREY);
+		return false;
+	}
+	if (g_iAICountAfterRetire != 0)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[AIGym] '%s' = %d 20 frames after the prey was destroyed, expected 0 -- the OnDestroy "
+			"RegisterPerceptionTarget(unregister) chain did not run",
+			ScriptTest::Vars::szPERCEIVED_N, g_iAICountAfterRetire);
+		return false;
+	}
+	// And the has-target gate closes. The flag is cleared at the head of its own
+	// chain every frame, so it reads "the query succeeded THIS frame" -- a latch
+	// cleared from somewhere else would race the retire chain, which runs first
+	// in the same dispatch while perception still remembers the doomed prey.
+	if (g_bAIPrimaryAfterRetire)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[AIGym] '%s' is still true 20 frames after the prey was retired -- "
+			"QueryPrimaryPerceivedTarget still reports a target",
+			ScriptTest::Vars::szPRIMARY_SEEN);
+		return false;
+	}
+
+	return true;
+}
+
+static const Zenith_AutomatedTest g_xAIGymTest = {
+	"ST_AIGym_Test",
+	&Setup_AIGym,
+	&Step_AIGym,
+	&Verify_AIGym,
+	/*maxFrames*/ 2000,
+};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xAIGymTest);
 
 #endif // ZENITH_INPUT_SIMULATOR

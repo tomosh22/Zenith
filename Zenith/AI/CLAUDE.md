@@ -188,6 +188,17 @@ perception to run.
 `Zenith_AI::Update(dt)` (perception → squad → tactical-point) each game-logic frame,
 after the scene update. Do not also tick the managers from game code when enabled.
 
+**★ ENABLING IT ALSO INITIALISES THE SQUAD AND TACTICAL-POINT MANAGERS**, both of
+which assert if `Update` reaches them uninitialised. Until ScriptTest's Gym_AI,
+**no game in the repo had ever taken this opt-in** — every one of them ticks the
+managers from a component and initialises them there — so the advertised "one
+line at init" fired `SquadManager::Update called before Initialise()` on the very
+first game-logic frame. Both calls are idempotent, so a game that also
+initialises them itself is unaffected. `Zenith_PerceptionSystem` is deliberately
+left alone: its `Update` needs no initialisation (buckets are created on demand),
+while its `Initialise` **clears every registered agent and target**, so calling it
+from a toggle that may be flipped after agents exist would silently drop them.
+
 The typical per-frame sequence (whichever drives the managers):
 1. Physics update (provides collision data)
 2. AI managers: `PerceptionSystem::Update()` (+ squad / tactical-point) — game-driven, or the opt-in engine tick

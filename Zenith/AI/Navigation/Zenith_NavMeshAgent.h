@@ -84,9 +84,28 @@ public:
 	const Zenith_Maths::Vector3& GetDestination() const { return m_xDestination; }
 
 	/**
-	 * Get remaining distance to destination
+	 * Length of every waypoint-to-waypoint segment still ahead, EXCLUDING the
+	 * leg the agent is currently walking.
+	 *
+	 * ★ THIS IS NOT "DISTANCE TO GO", and the difference is not academic. The
+	 * steering code adds the current-position-to-current-waypoint term itself
+	 * (CalculateVelocity: `fDistToTarget + GetRemainingDistance()`), which is why
+	 * this one omits it. On a straight-line path across open ground -- two
+	 * waypoints, cursor past the first -- the sum below has no terms at all and
+	 * this returns 0 for the ENTIRE journey. Use GetDistanceToGo() for anything
+	 * a human or a graph will read as a distance.
 	 */
 	float GetRemainingDistance() const;
+
+	/**
+	 * Total distance still to travel: the leg the agent is on, plus every
+	 * remaining segment. This is what "remaining distance" means to a caller,
+	 * and what ReadNavState publishes.
+	 *
+	 * Measured from the position the agent last steered from (updated every
+	 * Update), so it is one frame old at most.
+	 */
+	float GetDistanceToGo() const;
 
 	// ========== Batch Pathfinding Support ==========
 

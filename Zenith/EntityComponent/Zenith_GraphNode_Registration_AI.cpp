@@ -340,7 +340,9 @@ namespace
 
 	// Nav state -> blackboard. State int: 0 = none (no path, none pending -
 	// idle or failed), 1 = path pending, 2 = moving, 3 = arrived (end of
-	// path). Optional remaining-distance + velocity outputs.
+	// path). Optional remaining-distance + velocity outputs; the remaining
+	// distance is the agent's DistanceToGo (the leg it is on plus every segment
+	// after it), not the waypoint-only sum.
 	class Zenith_GraphNode_ReadNavState : public Zenith_GraphNode
 	{
 	public:
@@ -379,7 +381,12 @@ namespace
 			}
 			if (!m_strRemainingVar.empty())
 			{
-				xValue.SetFloat(pxNav->GetRemainingDistance());
+				// GetDistanceToGo, NOT GetRemainingDistance: the latter is
+				// waypoint-to-waypoint segments only and reads 0 for the whole
+				// final leg -- which on a straight-line path across open ground
+				// is the entire journey. A graph reading a permanently-zero
+				// "remaining distance" is worse than having no node at all.
+				xValue.SetFloat(pxNav->GetDistanceToGo());
 				xContext.m_pxBlackboard->SetValue(m_strRemainingVar, xValue);
 			}
 			if (!m_strVelocityVar.empty())

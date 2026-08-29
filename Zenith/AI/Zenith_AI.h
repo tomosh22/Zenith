@@ -23,6 +23,13 @@ namespace Zenith_AI
 
 	// Opt-in toggle (default false). When true, Zenith_Core::Zenith_MainLoop ticks
 	// the AI managers via Update() each game-logic frame.
+	//
+	// Enabling ALSO initialises the squad and tactical-point managers, both of
+	// which assert if Update() reaches them uninitialised -- so this really is
+	// the single line at init the paragraph above promises. Both calls are
+	// idempotent, so a game that also initialises them itself is unaffected.
+	// Perception is deliberately left alone: it needs no initialisation, and its
+	// Initialise() clears every registered agent.
 	void SetEngineTickEnabled(bool bEnabled);
 	bool IsEngineTickEnabled();
 

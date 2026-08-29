@@ -110,17 +110,18 @@ jobs:
           pwsh -NoProfile -File Tools\zenith.ps1 build ScriptTest --config D3D12_vs2022_Debug_Win64_False
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
-      - name: Cold-bake stale-scene guard
+      - name: Cold-bake stale-asset guard
         shell: pwsh
         run: |
-          # ★ CI-ONLY, AND IT HAS TO BE. ScriptTest's .zscen files (seven today)
-          # are COMMITTED, and they are also re-authored from scratch by
-          # Project_RegisterEditorAutomationSteps on every tools boot. Those two
-          # facts only stay consistent if the recipes in ScriptTest.cpp still
-          # reproduce the committed bytes -- and nothing notices when they stop:
-          # a run that loads the committed scene renders fine while its recipe
-          # rots, and a recipe change that a developer forgot to commit renders
-          # fine too, on their machine, forever.
+          # ★ CI-ONLY, AND IT HAS TO BE. ScriptTest's committed assets -- the
+          # .zscen scenes and, since Gym_AI, the .znavmesh it walks on -- are also
+          # re-authored from scratch on every tools boot (the scenes by
+          # Project_RegisterEditorAutomationSteps, the navmesh by
+          # Project_InitializeResources). Those two facts only stay consistent if
+          # the code still reproduces the committed bytes -- and nothing notices
+          # when it stops: a run that loads the committed asset works fine while
+          # its recipe rots, and a recipe change a developer forgot to commit
+          # works fine too, on their machine, forever.
           #
           # So this deletes every one of them and makes the boot re-author them
           # from nothing. Locally the same step would be actively harmful: it would
@@ -129,48 +130,56 @@ jobs:
           #
           # Three assertions, because each catches something the others cannot:
           #   (i)   all of them exist again    -> every recipe actually RAN (a
-          #                                       silently-skipped scene leaves a
+          #                                       silently-skipped asset leaves a
           #                                       hole a diff cannot see, since a
           #                                       deleted file with no replacement
           #                                       is a deletion, not a difference)
           #   (ii)  git diff is clean          -> the bytes MATCH the committed ones
           #   (iii) porcelain is empty         -> no untracked strays (a renamed
-          #                                       scene would satisfy (ii) by
+          #                                       asset would satisfy (ii) by
           #                                       leaving the old file untouched)
           #
           # ★ THE FILE LIST IS DERIVED FROM GIT, NEVER SPELLED OUT HERE. The
-          # guard's SUBJECT is "every committed .zscen", so restating the set is
-          # a second place to be wrong -- and it fails OPEN rather than closed: a
-          # scene added to the repo without being added to a hardcoded list is
-          # never deleted, so it never differs, so `git diff` stays clean and its
-          # recipe escapes this check forever. `git ls-files` IS the committed
-          # set, by definition. An EMPTY result is treated as a failure for the
-          # same reason: a guard with nothing to delete passes vacuously.
+          # guard's SUBJECT is "every committed ScriptTest asset", so restating
+          # the set is a second place to be wrong -- and it fails OPEN rather than
+          # closed: an asset added to the repo without being added to a hardcoded
+          # list is never deleted, so it never differs, so `git diff` stays clean
+          # and its recipe escapes this check forever. `git ls-files` IS the
+          # committed set, by definition. An EMPTY result is treated as a failure
+          # for the same reason: a guard with nothing to delete passes vacuously.
+          #
+          # ★ AND THE SUBJECT IS THE WHOLE Assets/ TREE, NOT Assets/Scenes.
+          # `.gitignore` ignores `**/Assets/**` and re-admits exactly two things:
+          # `*.zscen` and `*.znavmesh`. So `git ls-files -- Games/ScriptTest/Assets/**`
+          # IS the committed-asset set with no extension list of its own to drift
+          # -- and a THIRD re-admitted extension arriving later is covered for
+          # free. Scoped to Assets/Scenes, as this was, a navmesh generated but
+          # never committed would have left CI green.
           #
           # We branch on native exit codes ourselves, so do not let pwsh 7.4+ turn
           # a non-zero `git` into a terminating error before the message is printed.
           $PSNativeCommandUseErrorActionPreference = $false
 
-          $sceneDir = 'Games/ScriptTest/Assets/Scenes'
-          $scenes = @(git ls-files -- "$sceneDir/*.zscen")
+          $assetDir = 'Games/ScriptTest/Assets'
+          $assets = @(git ls-files -- "$assetDir")
           if ($LASTEXITCODE -ne 0) {
-              Write-Error "git ls-files failed under ${sceneDir}; cannot derive the committed scene set."
+              Write-Error "git ls-files failed under ${assetDir}; cannot derive the committed asset set."
               exit 1
           }
-          if ($scenes.Count -eq 0) {
-              Write-Error "no committed .zscen under ${sceneDir} -- this guard would pass having checked nothing. Failing instead."
+          if ($assets.Count -eq 0) {
+              Write-Error "no committed assets under ${assetDir} -- this guard would pass having checked nothing. Failing instead."
               exit 1
           }
-          Write-Host ("committed scenes under ${sceneDir}: " + ($scenes -join ', '))
+          Write-Host ("committed assets under ${assetDir}: " + ($assets -join ', '))
 
-          foreach ($scene in $scenes) {
-              if (-not (Test-Path $scene)) {
-                  Write-Error "committed scene missing BEFORE the cold bake: $scene -- the repo, not the bake, is wrong."
+          foreach ($asset in $assets) {
+              if (-not (Test-Path $asset)) {
+                  Write-Error "committed asset missing BEFORE the cold bake: $asset -- the repo, not the bake, is wrong."
                   exit 1
               }
-              Remove-Item $scene -Force
+              Remove-Item $asset -Force
           }
-          Write-Host "deleted $($scenes.Count) committed scene(s); re-authoring from the boot recipes..."
+          Write-Host "deleted $($assets.Count) committed asset(s); re-authoring from the boot recipes..."
 
           # The boot test only has to BOOT: authoring runs before the main loop, so
           # the cheapest registered test is enough to drive it. (--skip-tool-exports,
@@ -183,25 +192,29 @@ jobs:
               exit $LASTEXITCODE
           }
 
-          $missing = @($scenes | Where-Object { -not (Test-Path $_) })
+          $missing = @($assets | Where-Object { -not (Test-Path $_) })
           if ($missing.Count -gt 0) {
-              Write-Error ("the bake did not re-author: " + ($missing -join ', ') + " -- a scene recipe did not run.")
+              Write-Error ("the bake did not re-author: " + ($missing -join ', ') + " -- an authoring recipe did not run.")
               exit 1
           }
 
-          git diff --exit-code -- $sceneDir
+          git diff --exit-code -- $assetDir
           if ($LASTEXITCODE -ne 0) {
-              Write-Error "re-authored scene bytes DIFFER from the committed ones (diff above). Either the recipe changed and the .zscen was not committed with it, or authoring is no longer deterministic."
+              Write-Error "re-authored asset bytes DIFFER from the committed ones (diff above). Either the recipe changed and the asset was not committed with it, or authoring is no longer deterministic."
               exit 1
           }
 
-          $stray = @(git status --porcelain --untracked-files=all -- $sceneDir)
+          # --untracked-files=all would list every gitignored bake product under
+          # Assets/ if they were not ignored; they are, so this reports only real
+          # strays -- a renamed committed asset, or a newly-tracked one nobody
+          # added.
+          $stray = @(git status --porcelain --untracked-files=all -- $assetDir)
           if ($stray.Count -gt 0) {
-              Write-Error ("unexpected changes under ${sceneDir}:`n" + ($stray -join "`n"))
+              Write-Error ("unexpected changes under ${assetDir}:`n" + ($stray -join "`n"))
               exit 1
           }
 
-          Write-Host "cold bake reproduced all $($scenes.Count) committed scenes byte-for-byte."
+          Write-Host "cold bake reproduced all $($assets.Count) committed assets byte-for-byte."
 
       - name: Run ScriptTest tests
         shell: pwsh

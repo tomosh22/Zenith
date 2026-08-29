@@ -238,6 +238,59 @@ void Zenith_UnitTests::TestNavAgentRemainingDistanceBounds(){
 
 }
 
+ZENITH_TEST(AI, NavAgentDistanceToGoIncludesTheCurrentLeg) { Zenith_UnitTests::TestNavAgentDistanceToGoIncludesTheCurrentLeg(); }
+
+void Zenith_UnitTests::TestNavAgentDistanceToGoIncludesTheCurrentLeg(){
+	// ★ THE CASE THAT MADE GetRemainingDistance USELESS TO A READER.
+	// A straight-line path across open ground is TWO waypoints, and the agent
+	// skips the first when it starts on top of it -- so the waypoint-to-waypoint
+	// sum has no terms at all and reports 0 for the whole journey. That is
+	// correct for the steering code, which adds the current leg itself, and
+	// wrong for anything reading it as a distance. GetDistanceToGo is the
+	// reader's version, and ReadNavState publishes it.
+	Zenith_NavMeshAgent xAgent;
+
+	// No path: both are 0, and neither may invent a distance.
+	ZENITH_ASSERT_EQ(xAgent.GetRemainingDistance(), 0.0f, "no path -> no waypoint sum");
+	ZENITH_ASSERT_EQ(xAgent.GetDistanceToGo(), 0.0f, "no path -> nothing to go");
+
+	Zenith_NavMesh xNavMesh;
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(20.0f, 0.0f, 0.0f));
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(20.0f, 0.0f, 20.0f));
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(0.0f, 0.0f, 20.0f));
+	Zenith_Vector<uint32_t> axIndices;
+	axIndices.PushBack(0); axIndices.PushBack(1); axIndices.PushBack(2); axIndices.PushBack(3);
+	xNavMesh.AddPolygon(axIndices);
+	xNavMesh.ComputeSpatialData();
+	xNavMesh.BuildSpatialGrid();
+
+	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
+	Zenith_Entity xEntity = g_xEngine.Scenes().CreateEntity(pxSceneData, "DistanceToGoAgent");
+	xEntity.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(1.0f, 0.0f, 1.0f));
+
+	xAgent.SetNavMesh(&xNavMesh);
+	xAgent.SetMoveSpeed(0.0f);	// hold position, so the sample is about geometry only
+	xAgent.SetDestination(Zenith_Maths::Vector3(15.0f, 0.0f, 15.0f));
+	xAgent.Update(0.016f, xEntity.GetEntityID());
+
+	ZENITH_ASSERT_TRUE(xAgent.HasPath(), "the fixture path must exist for this to mean anything");
+	// The distance-to-go must be a real length -- roughly the ~19.8 m diagonal.
+	const float fToGo = xAgent.GetDistanceToGo();
+	ZENITH_ASSERT_TRUE(fToGo > 10.0f,
+		"GetDistanceToGo reported %.3f m on a ~19.8 m straight-line path -- the current leg is missing",
+		fToGo);
+	// ...and it must be at least the waypoint-only sum, which is the term it adds to.
+	ZENITH_ASSERT_TRUE(fToGo >= xAgent.GetRemainingDistance(),
+		"GetDistanceToGo (%.3f) must include GetRemainingDistance (%.3f)",
+		fToGo, xAgent.GetRemainingDistance());
+
+	// Stopping clears both, with no residue.
+	xAgent.Stop();
+	ZENITH_ASSERT_EQ(xAgent.GetDistanceToGo(), 0.0f, "a stopped agent has nowhere left to go");
+}
+
 // Regression: an agent FACING the -Z hemisphere turns toward its travel direction.
 // The current heading used to be read via glm::eulerAngles(quat).y, which collapses for
 // a 180-deg facing (decoding to yaw 0) and re-encodes a corrupted pitch=pi/roll=pi
