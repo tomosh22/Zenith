@@ -9,7 +9,7 @@
 // graph attachment produces a game that boots cleanly and does nothing. Neither
 // half of that is visible to any other test:
 //
-//   C5  ST_SceneAssetIntegrity  asserts on the seven .zscen FILES -- the bytes
+//   C5  ST_SceneAssetIntegrity  asserts on the eight .zscen FILES -- the bytes
 //                               ON DISK, which in a tools (*_True) build are the
 //                               ones THIS BOOT just authored, not the committed
 //                               ones. Whichever backend wrote them, they still
@@ -31,7 +31,7 @@
 //                               "is this file a real scene"; the workflow
 //                               answers "is it the committed one".
 //
-//   C6  ST_AllScenesBoot        asserts on the seven scenes LOADED. Every build
+//   C6  ST_AllScenesBoot        asserts on the eight scenes LOADED. Every build
 //                               index 0..iCOUNT-1 is loaded in order and, once
 //                               live, its key entities must resolve by name and
 //                               every Zenith_GraphComponent slot in it must
@@ -72,7 +72,7 @@
 namespace
 {
 	//==========================================================================
-	// The expectation table -- ONE description of the seven scenes, shared by
+	// The expectation table -- ONE description of the eight scenes, shared by
 	// both tests.
 	//
 	// Both lists are nullptr-TERMINATED rather than paired with a count: a count
@@ -223,6 +223,30 @@ namespace
 		nullptr
 	};
 
+	const char* const g_apszGYM_FLOW_ENTITIES[] =
+	{
+		ScriptTest::Entities::szGAME_MANAGER,
+		ScriptTest::Entities::szSUN,
+		ScriptTest::Entities::szKEY_LIGHT,
+		ScriptTest::Entities::szFLOOR,
+		ScriptTest::Entities::szNOZZLE,
+		ScriptTest::Entities::szPLATE,
+		nullptr
+	};
+	// The Nozzle carries NO graph: ST_Dispenser's SwitchOnInt pins find it by
+	// name and scale it. Three slots for the whole scene is what keeps that true.
+	const char* const g_apszGYM_FLOW_GRAPHS[] =
+	{
+		ScriptTest::Graphs::szESC_TO_HUB,	// GameManager slot 0
+		ScriptTest::Graphs::szDISPENSER,	// GameManager slot 1
+		ScriptTest::Graphs::szFLOW_PLATE,	// Plate
+		nullptr
+	};
+	// ST_FlowScore is deliberately absent: it is never ATTACHED to anything.
+	// CallGraph resolves it by asset path from inside ST_Dispenser, so it is the
+	// one graph this game authors that no scene slot references -- which is also
+	// why C5/C6 cannot see it and ST_FlowGym_Test's `score` assertion must.
+
 	// Build-index order. C6 walks this array in order and reads m_iBuildIndex
 	// from the row rather than from its own loop counter, so the two can be
 	// checked against each other rather than assumed equal.
@@ -235,6 +259,7 @@ namespace
 		{ ScriptTest::Scenes::iGYM_EVENTS,  ScriptTest::Scenes::szGYM_EVENTS_PATH,  g_apszGYM_EVENTS_ENTITIES,  g_apszGYM_EVENTS_GRAPHS  },
 		{ ScriptTest::Scenes::iGYM_STATE,   ScriptTest::Scenes::szGYM_STATE_PATH,   g_apszGYM_STATE_ENTITIES,   g_apszGYM_STATE_GRAPHS   },
 		{ ScriptTest::Scenes::iGYM_UI,      ScriptTest::Scenes::szGYM_UI_PATH,      g_apszGYM_UI_ENTITIES,      g_apszGYM_UI_GRAPHS      },
+		{ ScriptTest::Scenes::iGYM_FLOW,    ScriptTest::Scenes::szGYM_FLOW_PATH,    g_apszGYM_FLOW_ENTITIES,    g_apszGYM_FLOW_GRAPHS    },
 	};
 
 	constexpr u_int uST_SCENE_ROWS = static_cast<u_int>(sizeof(g_axSCENES) / sizeof(g_axSCENES[0]));

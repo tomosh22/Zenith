@@ -1,8 +1,8 @@
 # ScriptTest
 
-A **zero-gameplay-C++ game**: seven scenes of working behaviour — motion, input,
-physics, events, state machines and UI — with no game component and no game graph
-node behind any of it. It exists to prove the Behaviour Graph runtime
+A **zero-gameplay-C++ game**: eight scenes of working behaviour — motion, input,
+physics, events, state machines, UI and multi-way control flow — with no game
+component and no game graph node behind any of it. It exists to prove the Behaviour Graph runtime
 (`Zenith/Scripting/` + `Zenith/EntityComponent/Zenith_GraphOps.*`) is complete
 enough to build a game with, and to keep it that way: a node the graph layer is
 missing shows up here as a scene that cannot be authored, not as a quiet fallback
@@ -22,7 +22,7 @@ provenance** rather than by grepping source:
   type would make the two sets differ.
 - **Component-meta allowlist** — every registered component name must be an
   engine one.
-- **Per-builder node-type membership** — every node type each of the fifteen
+- **Per-builder node-type membership** — every node type each of the eighteen
   `BuildGraph_ST_*` builders emits must be in the engine-derived registry.
 
 **The constant project accessors are exempt, and that is expected, not tolerated.**
@@ -53,13 +53,13 @@ what it is for, not a fix.
 ```
 Games/ScriptTest/
   ScriptTest.zproj      # Build descriptor. "android": false -- win64 only.
-  ScriptTest_Graphs.h   # THE STRING CONTRACT + the 15 builder declarations
-  ScriptTest.cpp        # Project_* hooks, the 15 BuildGraph_ST_* builders,
-                        #   the 7 scene recipes, the build-index registration
+  ScriptTest_Graphs.h   # THE STRING CONTRACT + the 18 builder declarations
+  ScriptTest.cpp        # Project_* hooks, the 18 BuildGraph_ST_* builders,
+                        #   the 8 scene recipes, the build-index registration
   Tests/                # The automated tests (see the inventory below)
   Assets/
-    Scenes/*.zscen      # COMMITTED (7) -- and re-authored on every tools boot
-    Graphs/*.bgraph     # gitignored bake product (15), tools boots only
+    Scenes/*.zscen      # COMMITTED (8) -- and re-authored on every tools boot
+    Graphs/*.bgraph     # gitignored bake product (18), tools boots only
     Meshes/UnitCube|UnitSphere.{zasset,zmodel}   # gitignored bake product, tools boots only
     Prefabs/ST_Ball.zprfb                        # gitignored bake product, tools boots only
     Textures/ST_*.ztxtr # gitignored, 7 1x1 colour textures -- rewritten by EVERY
@@ -71,13 +71,13 @@ The C++ does exactly three things: create the seven materials the scenes
 reference by path (**not** tools-gated — a `_False` boot loads a committed scene
 whose material paths must resolve with no authoring pass), generate the two
 primitive meshes (tools only), and author the graphs, the ball prefab and the
-seven scenes (tools only). The materials are **texture-backed, not
+eight scenes (tools only). The materials are **texture-backed, not
 base-colour-tinted**: each one's colour lives in a 1×1 `.ztxtr` the hook writes
 (Combat's `ExportColoredTexture` pattern) with the base-colour factor left white,
 because the uber-shader multiplies texture × factor and a colour in both places
 would square itself.
 
-## The 15 graphs
+## The 18 graphs
 
 Attach order per entity **is** the slot order, so the slot column is a contract,
 not a description.
@@ -99,13 +99,16 @@ not a description.
 | `ST_BellListener` | `BuildGraph_ST_BellListener` | Gym_Events / `BellListener_A`, `_B`, `_C` (the same asset, three entities) |
 | `ST_TrafficLight` | `BuildGraph_ST_TrafficLight` | Gym_State / `GameManager` → 1 |
 | `ST_UIPlayground` | `BuildGraph_ST_UIPlayground` | Gym_UI / `GameManager` → 1 |
+| `ST_Dispenser` | `BuildGraph_ST_Dispenser` | Gym_Flow / `GameManager` → 1 |
+| `ST_FlowPlate` | `BuildGraph_ST_FlowPlate` | Gym_Flow / `Plate` |
+| `ST_FlowScore` | `BuildGraph_ST_FlowScore` | **nothing** — the only graph here no slot references; `ST_Dispenser`'s `CallGraph` resolves it by asset path at runtime, so C5/C6 cannot see it and only `ST_FlowGym_Test`'s `score` assertion can |
 
 Two shapes govern every builder above and are worth knowing before editing one:
 
 - **No exec fan-in.** A node may not have two exec predecessors, so a chain that
   would converge duplicates the node instance per pin instead. `ST_HubFlow`'s
-  twelve `LoadSceneByIndex` instances (six buttons + six keys) are the extreme
-  case.
+  fourteen `LoadSceneByIndex` instances (seven buttons + seven keys) are the
+  extreme case.
 - **Every non-`ON_UPDATE` dispatch carries `dt = 0`.** Not only custom events:
   `OnStart`, `OnCollisionEnter`/`Exit` and `OnCustomEvent` (including the
   StateMachine's `TLEnter_*`/`TLExit_*` transitions) all fire with a zero delta —
@@ -122,30 +125,31 @@ Two shapes govern every builder above and are worth knowing before editing one:
   the *old* value — `ST_StateGym_Test` reads after a grace window for exactly this
   reason.
 
-## The seven scenes
+## The eight scenes
 
 The **index** is graph contract: every `LoadSceneByIndex` node names one, and
 `Project_LoadInitialScene` registers the same index against the same path.
 
 | # | Scene | What it demonstrates |
 |---|---|---|
-| 0 | `Hub` | UI navigation — six buttons and six keys, each loading a gym by build index |
+| 0 | `Hub` | UI navigation — seven buttons and seven keys, each loading a gym by build index |
 | 1 | `Gym_Motion` | Transform motion three ways: `ST_Spin` (a rate), `ST_PingPong` (an endless `Repeat` driving tweens from a fire-once source), `ST_SineBob` (blackboard math into a translate) |
 | 2 | `Gym_Input` | The WASD quad → velocity, plus a raycast-gated jump (grounded check before the impulse). **Only the W axis is exercised by a test** (C4 hermetically, C8 in the scene); one axis stands in for four |
 | 3 | `Gym_Physics` | A timer-driven prefab spawner (and Space for one on demand) + a static sensor kill volume, with cross-entity UI counters written through a packed `EntityID` in a blackboard var — the *Spawned* readout's text is asserted against the live counter (C10), so that target var is covered end to end |
 | 4 | `Gym_Events` | Targeted custom events — pressure plate → `OpenDoor`/`CloseDoor` at an entity it looked up by name — and a broadcast: one `Bell` pulsing all three independent listeners, each of which then settles back |
 | 5 | `Gym_State` | A `StateMachine` traffic light (Red → Green → Amber) with enter/exit visual events on the three lamps |
 | 6 | `Gym_UI` | Buttons and keys → blackboard → text, fill and colour binding: a formatted clock, a 5 s sawtooth fill bar, a colour that flips past 80%. Coverage is uneven and deliberately stated: **text and colour are asserted** (C12b reads the `Counter` element's string back, and `BarFill`'s RGBA on both sides of the hot boundary), **fill only structurally** — via the `fill01`/`hot` vars its chain feeds |
+| 7 | `Gym_Flow` | The **multi-way** flow constructs, which no other scene reaches, themed as a dispenser: `Once`, `Cooldown`, `Gate`, `WaitForCondition`, `SwitchOnInt`, `SwitchOnString`, `Selector`, `ForEach`, `CallGraph`, the three list mutators and `LogicBlackboardBool` — fifteen chains on one `GameManager`, plus a `Plate` that arms it from outside its graph and a passive `Nozzle` the int switch rescales so its choice is visible in the world, not only on a blackboard |
 
 Every scene also authors a **`Sun`** entity (time-of-day 55°, late morning) —
 without one the environment authority falls back to a near-horizon default and
-every prop reads near-black on screen — and the five gyms with geometry add a
+every prop reads near-black on screen — and the six gyms with geometry add a
 `KeyLight` fill. Both are furniture, not behaviour: no graph touches them.
 
 **★ Every scene camera carries a 180° yaw, and it is load-bearing.** Yaw 0 faces
 **+Z** in this engine (`Zenith_CameraComponent::GetFacingDir`), and every recipe
 here places its camera at *positive* Z looking back at content around the origin.
-`ST_AddSceneCamera` applies the half-turn once for all seven; author a new camera
+`ST_AddSceneCamera` applies the half-turn once for all eight; author a new camera
 without it and the whole scene sits **behind** the camera — the GPU frustum cull
 then (correctly) rejects every object, and the only symptom is a sky-and-UI
 screenshot that looks exactly like a renderer bug. A sky-only view verifies
@@ -165,11 +169,20 @@ So each is spelled **exactly once**, in `ScriptTest_Graphs.h`, and shared by the
 two things that must agree: the builders and scene recipes in `ScriptTest.cpp`,
 and the tests. **A test that restated a literal would prove only that the test
 agrees with itself.** Namespaces: `Graphs`, `Scenes`, `Entities`, `UINames`,
-`Vars`, `Events`, `Colours`, `Materials`, `Meshes`, `Prefabs`.
+`Vars`, `Events`, `Colours`, `Labels`, `Materials`, `Meshes`, `Prefabs`.
 
 `Events::szTL_*` is the sharpest case: `StateMachine` composes its event names as
 `"<m_strEventPrefix>Enter_<stateName>"`, so `szTL_PREFIX`, `szTL_STATE_NAMES` and
 the six `TLEnter_*`/`TLExit_*` spellings have to agree character for character.
+
+**★ The newer comma lists are COMPOSED, not spelled out, and that is the shape to
+copy.** `ST_Dispenser`'s `SwitchOnString` case list and its `LogicBlackboardBool`
+operand list are both built in the builder from the individual `Labels::` /
+`Vars::` constants (`std::string(szRED) + "," + szGREEN + …`). A comma list is
+parsed **verbatim** — no whitespace trimming — and an unmatched case takes the
+**default pin**, which is a legitimate outcome, so a list that drifted by one
+character would fail *silently*. `szTL_STATE_NAMES` predates that and is the
+older, hand-agreed form.
 
 ## Iterating on a graph
 
@@ -182,7 +195,7 @@ Two directions, and they are not symmetric:
    fast loop for tuning.
 
 **★ Boot re-authoring OVERWRITES live edits.** The builders are the single source
-of truth: every tools boot regenerates all fifteen graphs from scratch. So a
+of truth: every tools boot regenerates all eighteen graphs from scratch. So a
 graph-editor experiment is a *sketch* — transcribe what you liked back into the
 builder before the next boot, or it is gone.
 
@@ -191,8 +204,8 @@ the graph it is about in-process from the same `BuildGraph_ST_*` function, so
 there is no `.bgraph` on disk to go stale and no dependency on a prior tools run
 having left one behind.
 
-**That scope is the whole claim — the other nine tests DO depend on bake
-products.** They load the committed `.zscen`, whose slots reference the fifteen
+**That scope is the whole claim — the other ten tests DO depend on bake
+products.** They load the committed `.zscen`, whose slots reference the eighteen
 `.bgraph`, the two generated meshes and the ball prefab, and every one of those
 is gitignored and written only by a `*_True` boot's authoring pass. A single
 tools process authors them before any test runs, so the suite is self-sufficient
@@ -206,7 +219,7 @@ It bakes the graphs, the two meshes and the ball prefab, all of which are
 gitignored. `_False` configs run no automation at all and simply load what is on
 disk.
 
-The **scenes are different: all seven `.zscen` are COMMITTED** — and also
+The **scenes are different: all eight `.zscen` are COMMITTED** — and also
 re-authored on every tools boot. `st-tests.yml` is what keeps those two facts
 consistent: it derives the committed set from `git ls-files` (never a hardcoded
 list — a scene missing from one would never be deleted, never differ, and its
@@ -216,7 +229,7 @@ contents and no strays. A recipe that stops reproducing its committed scene reds
 a required check instead of drifting silently. Do not run that deletion locally —
 it would throw away in-progress scene work.
 
-**★ EVERY `zenith test ScriptTest` RUN REWRITES ALL SEVEN TRACKED SCENE FILES,
+**★ EVERY `zenith test ScriptTest` RUN REWRITES ALL EIGHT TRACKED SCENE FILES,
 and byte-determinism is the only reason `git status` stays clean afterwards.**
 The moment authoring stops being deterministic, an ordinary gate run dirties the
 working tree — which also trips the agent loop's dirty-tree precondition and
@@ -248,18 +261,22 @@ zenith run ScriptTest --config Vulkan_vs2022_Debug_Win64_True
 which is very often the `Null_` build a gate just produced — and that one creates
 its window hidden, so it looks like nothing happened.
 
-1. From the hub, click each of the six buttons and press **Esc** to come back.
-   All six round-trips work, and the hub is reachable from every gym.
+1. From the hub, click each of the seven buttons and press **Esc** to come back.
+   All seven round-trips work, and the hub is reachable from every gym.
 2. In **Gym_State**, watch the lamps cycle **Red → Green → Amber** on their own.
 3. In **Gym_Physics**, press **Space** and watch the *Spawned* and *Killed*
    counters move as balls drop past the platform into the kill volume.
-4. Then — the demo this game exists for — open `ST_Spin.bgraph` in the graph
+4. In **Gym_Flow**, press **P** to arm the dispenser, then **Space** — the
+   counter moves once per press and refuses a second press inside 0.75 s. **M**
+   cycles the nozzle through three sizes and a fourth default; **A** hands
+   priority to the alarm branch.
+5. Then — the demo this game exists for — open `ST_Spin.bgraph` in the graph
    editor, change `m_fDegreesPerSecond` (it ships at `45.0`), and **Save**. The
    spinner's speed changes **live, without a reboot**.
 
 ## Test inventory
 
-Thirteen tests in four files. **Every one is headless-safe** — nothing reads a
+Fourteen tests in four files. **Every one is headless-safe** — nothing reads a
 pixel, so none sets `m_bRequiresGraphics` and the whole suite runs in the Null
 gate rather than being skipped-as-passed there. All are guarded by
 `#ifdef ZENITH_INPUT_SIMULATOR`, which is unconditional in `Zenith.h`.
@@ -270,15 +287,16 @@ gate rather than being skipped-as-passed there. All are guarded by
 | `ST_NoGameExtensionsContract` | `ScriptTest_Contracts.cpp` (C2) | THE CLAIM, mechanically: node-registry reset/re-derive set-equality, the component-meta allowlist, and per-builder node-type membership. Read its header for the two properties it *cannot* see. |
 | `ST_TrafficLightContract` | `ScriptTest_Contracts.cpp` (C3) | The `StateMachine` + `Wait` cadence, read off the **blackboard** rather than off a rendered lamp. |
 | `ST_PlayerMoveContract` | `ScriptTest_Contracts.cpp` (C4) | The input → blackboard half of the movement chain, driven through the real device layer. |
-| `ST_SceneAssetIntegrity` | `ScriptTest_SceneIntegrity.cpp` (C5) | A byte-substring scan of the seven `.zscen` **files**: every one still names its authored entities and its attached `.bgraph` slot paths, carries `ST_EscToHub` (every gym does; the hub does not), leaks no prefab-scratch entity, and is not a header-only stub. It resolves nothing and looks at no model, material or prefab. Never loads a scene, so it reddens in the configuration that *damaged* the asset — but in a `*_True` build the bytes it reads are the ones **this boot just authored**; only the CI cold-bake step compares them to the committed ones. |
-| `ST_AllScenesBoot` | `ScriptTest_SceneIntegrity.cpp` (C6) | Asserts on the seven scenes **loaded**: every build index in order, key entities resolving by name, and every `Zenith_GraphComponent` slot carrying a resolved graph with zero unresolved nodes. |
-| `ST_HubNavigation_Test` | `ScriptTest_GymBehaviour.cpp` (C7) | All 6 hub buttons **and** all 6 number keys reach their gym, and Escape returns from every one — 24 scene transitions. |
+| `ST_SceneAssetIntegrity` | `ScriptTest_SceneIntegrity.cpp` (C5) | A byte-substring scan of the eight `.zscen` **files**: every one still names its authored entities and its attached `.bgraph` slot paths, carries `ST_EscToHub` (every gym does; the hub does not), leaks no prefab-scratch entity, and is not a header-only stub. It resolves nothing and looks at no model, material or prefab. Never loads a scene, so it reddens in the configuration that *damaged* the asset — but in a `*_True` build the bytes it reads are the ones **this boot just authored**; only the CI cold-bake step compares them to the committed ones. |
+| `ST_AllScenesBoot` | `ScriptTest_SceneIntegrity.cpp` (C6) | Asserts on the eight scenes **loaded**: every build index in order, key entities resolving by name, and every `Zenith_GraphComponent` slot carrying a resolved graph with zero unresolved nodes. |
+| `ST_HubNavigation_Test` | `ScriptTest_GymBehaviour.cpp` (C7) | Every hub button **and** every number key reaches its gym, and Escape returns from every one. The row count is **derived** from the table and `static_assert`ed against `Scenes::iCOUNT`, so a gym added without a hub row is a compile error rather than a silent narrowing of what this covers. |
 | `ST_InputGym_Test` | `ScriptTest_GymBehaviour.cpp` (C8) | Held W moves the cube in +Z, releasing stops it, and Space clears the grounded raycast and lifts it. |
 | `ST_EventsGym_Test` | `ScriptTest_GymBehaviour.cpp` (C9) | The plate's **targeted** `FireCustomEvent` raises the door and stepping off lowers it; one `Bell` **broadcast** pulses **all three** listeners that nothing names, and **each settles back** — the settle is what proves `WaitForTween`'s suspended anchor resumed, which a peak-only read would miss. |
 | `ST_PhysicsGym_Test` | `ScriptTest_GymBehaviour.cpp` (C10) | The spawn/kill loop actually loops: both counters climb, Space spawns on demand (pressed on the frame a **timer** spawn is observed, so the next increment has only one possible author), the *Spawned* HUD text written **cross-entity through the packed-`EntityID` target var** matches the live counter, and the live-ball population stays **bounded** — i.e. balls are really destroyed, not merely counted. |
 | `ST_MotionGym_Test` | `ScriptTest_GymBehaviour.cpp` (C11) | All three transform drivers move: `RotateEntity`, the `Repeat`/Tween ping-pong, and the blackboard-maths bob. |
 | `ST_StateGym_Test` | `ScriptTest_GymBehaviour.cpp` (C12a) | The `StateMachine` reaches Green on schedule **and** its `TLEnter_`/`TLExit_` chains reached the lamps (Enter_Green scaled `Lamp_Green` to 1.4, Exit_Red put `Lamp_Red` back to 1.0) — the variable alone would pass with the lamps unwired. |
 | `ST_UIGym_Test` | `ScriptTest_GymBehaviour.cpp` (C12b) | Two buttons and a key mutate one blackboard int **and the `Counter` element's text is read back** (`SetUIText` is chain-terminal, so a typo'd element name fails silently otherwise); the clock/modulo/compare chain crosses the hot boundary in both directions **and `BarFill`'s colour is read back at each sample point** — the two must differ, and each must equal the `Colours::` constant its `SetUIColor` was authored from, which is what proves the Branch's two terminal pins reach anything at all. **Fill** is covered only structurally: `fill01` is asserted in `(0, 1]` and the `hot` flag downstream of it flips, so a broken chain aborts before either. |
+| `ST_FlowGym_Test` | `ScriptTest_GymBehaviour.cpp` (C13) | The **multi-way flow constructs**, one distinct observable each — a row an unwired graph could also satisfy is not a row. `Once` (**exactly** 1, not ≥ 1), `Cooldown` (two presses one frame apart raise the counter by **one**, and a third a window later raises it again — the second half is what separates a throttle from a stuck gate), `Gate`, `WaitForCondition` (a one-shot `OnStart` chain that *waited*), `SwitchOnInt` / `SwitchOnString` including both **default** pins, `Selector` (preemption is observable **only** as the normal counter going flat), `ForEach`, `ListAdd`/`GetListCount`, `ListRemoveAt` (the new **head**, not the count, is what distinguishes order-preserving from swap-remove), `ListClear` (whose emptiness is proved by a *sentinel the aborted chain never wrote*), `LogicBlackboardBool` over the full (armed, jammed) 2×2, and `CallGraph` (`score` lands on the **caller's** blackboard). |
 
 **C5 and C6 are deliberately not redundant.** A slot whose `.bgraph` cannot be
 loaded keeps its path and override bytes verbatim (the unresolved-slot contract in
@@ -287,7 +305,7 @@ graph itself is null — C5 stays green on a scene whose every graph is dead.
 Conversely, a scene the boot re-authored one entity short loads perfectly well;
 only the committed bytes remember what was meant to be there.
 
-The behavioural seven exist because nothing in C5/C6 can see **a graph that builds
+The behavioural eight exist because nothing in C5/C6 can see **a graph that builds
 perfectly and then does nothing** — a `Timer` that never fires, a sensor that never
 reports, a state machine whose transitions reach no lamp. They drive each gym
 through the seams a player would. The harness pins `dt` at 1/60 across reset,

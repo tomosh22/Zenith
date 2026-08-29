@@ -14,6 +14,7 @@
 #include "EntityComponent/Zenith_GraphOps.h"
 
 #include <filesystem>
+#include <string>
 
 #ifdef ZENITH_TOOLS
 #include "AssetHandling/Zenith_MeshAsset.h"
@@ -29,14 +30,14 @@
 // ScriptTest -- a zero-gameplay-C++ game.
 //
 // There is no game component, no game graph node, and no input binding table
-// in this project. Every behaviour in all seven scenes is executed by
-// ENGINE-owned Behaviour Graph nodes, wired by the fifteen BuildGraph_ST_*
+// in this project. Every behaviour in all eight scenes is executed by
+// ENGINE-owned Behaviour Graph nodes, wired by the eighteen BuildGraph_ST_*
 // functions below and attached to boot-authored entities. What the C++ here
 // does is exactly three things:
 //
 //   1. create the seven flat-colour materials the scenes reference by path;
 //   2. generate the two primitive meshes the scenes load (tools only);
-//   3. author the graphs, the ball prefab and the seven scenes (tools only).
+//   3. author the graphs, the ball prefab and the eight scenes (tools only).
 //
 // That split is why (1) is NOT tools-gated while (2) and (3) are: a committed
 // .zscen stores material and model PATHS, so a _False boot -- which runs no
@@ -234,7 +235,7 @@ void Project_LoadInitialScene();	// forward decl for the automation step below
 //
 //   * NO EXEC FAN-IN. A node with two exec predecessors is forbidden, so a
 //     chain that would converge duplicates the node instance per pin instead.
-//     ST_HubFlow's twelve LoadSceneByIndex instances are the extreme case.
+//     ST_HubFlow's fourteen LoadSceneByIndex instances are the extreme case.
 //   * EVERY NON-ON_UPDATE DISPATCH CARRIES dt = 0. Not just custom events:
 //     OnStart, OnCollisionEnter/Exit and OnCustomEvent (including the
 //     StateMachine's TLEnter_*/TLExit_* transitions) all fire with a zero delta
@@ -344,6 +345,28 @@ static void ST_BuildLampExitChain(Zenith_EngineGraphBuilder& xB, const char* szE
 	xExit.Then(uFind).Then(uShrink);
 }
 
+// One SwitchOnInt case for ST_Dispenser: name the mode, then resize the nozzle
+// to a value UNIQUE to this pin. The scale is what makes the pin identifiable
+// from outside -- the label alone could have been written by any of the four.
+static void ST_BuildModeCase(
+	Zenith_EngineGraphBuilder& xB, u_int uSwitch, u_int uPin, const char* szLabel, float fNozzleScale)
+{
+	const u_int uName = xB.Node("SetBlackboardString");
+	xB.ParamString(uName, "m_strVariable", ScriptTest::Vars::szLABEL);
+	xB.ParamString(uName, "m_strValue", szLabel);
+
+	const u_int uFind = xB.Node("FindEntityByName");
+	xB.ParamString(uFind, "m_strName", ScriptTest::Entities::szNOZZLE);
+	xB.ParamString(uFind, "m_strResultVar", ScriptTest::Vars::szNOZZLE_REF);
+
+	const u_int uScale = xB.Node("SetEntityScale");
+	xB.ParamVec3(uScale, "m_xScale", Zenith_Maths::Vector3(fNozzleScale, fNozzleScale, fNozzleScale));
+	xB.ParamString(uScale, "m_strTargetVar", ScriptTest::Vars::szNOZZLE_REF);
+
+	xB.Edge(uSwitch, uPin, uName);
+	xB.Chain(uName, uFind).Chain(uFind, uScale);
+}
+
 // --- 1. ST_EscToHub ---------------------------------------------------------
 // Escape leaves any gym. The load is LAST in its chain by necessity: a
 // SINGLE-mode load tears down the dispatching entity's own scene, so nothing
@@ -359,8 +382,8 @@ void BuildGraph_ST_EscToHub(Zenith_GraphBuilder& xBuilder)
 }
 
 // --- 2. ST_HubFlow ----------------------------------------------------------
-// Twelve independent chains: each gym is reachable by clicking its button or
-// by pressing its number. Twelve LoadSceneByIndex instances, not one shared
+// Fourteen independent chains: each gym is reachable by clicking its button or
+// by pressing its number. Fourteen LoadSceneByIndex instances, not one shared
 // node -- see the exec-fan-in rule above.
 void BuildGraph_ST_HubFlow(Zenith_GraphBuilder& xBuilder)
 {
@@ -372,6 +395,7 @@ void BuildGraph_ST_HubFlow(Zenith_GraphBuilder& xBuilder)
 	ST_BuildHubButtonChain(xB, ScriptTest::UINames::szBTN_EVENTS,  ScriptTest::Scenes::iGYM_EVENTS);
 	ST_BuildHubButtonChain(xB, ScriptTest::UINames::szBTN_STATE,   ScriptTest::Scenes::iGYM_STATE);
 	ST_BuildHubButtonChain(xB, ScriptTest::UINames::szBTN_UI,      ScriptTest::Scenes::iGYM_UI);
+	ST_BuildHubButtonChain(xB, ScriptTest::UINames::szBTN_FLOW,    ScriptTest::Scenes::iGYM_FLOW);
 
 	ST_BuildHubKeyChain(xB, ZENITH_KEY_1, ScriptTest::Scenes::iGYM_MOTION);
 	ST_BuildHubKeyChain(xB, ZENITH_KEY_2, ScriptTest::Scenes::iGYM_INPUT);
@@ -379,6 +403,7 @@ void BuildGraph_ST_HubFlow(Zenith_GraphBuilder& xBuilder)
 	ST_BuildHubKeyChain(xB, ZENITH_KEY_4, ScriptTest::Scenes::iGYM_EVENTS);
 	ST_BuildHubKeyChain(xB, ZENITH_KEY_5, ScriptTest::Scenes::iGYM_STATE);
 	ST_BuildHubKeyChain(xB, ZENITH_KEY_6, ScriptTest::Scenes::iGYM_UI);
+	ST_BuildHubKeyChain(xB, ZENITH_KEY_7, ScriptTest::Scenes::iGYM_FLOW);
 }
 
 // --- 3. ST_Spin -------------------------------------------------------------
@@ -814,6 +839,278 @@ void BuildGraph_ST_UIPlayground(Zenith_GraphBuilder& xBuilder)
 	xB.Edge(uBranch, 1, uCool);	// false
 }
 
+// --- 16. ST_Dispenser -------------------------------------------------------
+// A dispenser, and the one graph in this game that uses the MULTI-WAY flow
+// constructs. Fifteen independent chains on one entity, because every one of
+// them needs its own source (no exec fan-in):
+//
+//   Once ............ a start-up bonus that must land EXACTLY once
+//   WaitForCondition. RUNNING under a one-shot OnStart anchor until the plate
+//                     arms it -- the ST_PingPong re-drive mechanism, and the
+//                     reason a fire-once source can wait on something
+//   Cooldown ........ throttles the dispense key. Reads m_fTimeSeconds (which
+//                     ACCUMULATES dt, so it is frame-deterministic under the
+//                     test harness's pinned 1/60), not the dispatched dt
+//   Gate ............ blocks the dispense until armed
+//   CallGraph ....... scoring, delegated to ST_FlowScore against THIS
+//                     blackboard -- the child writes 'score' here
+//   ListAdd/RemoveAt/Clear + GetListCount/GetListElement + ForEach ... the
+//                     whole list family, produce and consume
+//   LogicBlackboardBool ... twice: once as NOT (one operand + m_bInvert), once
+//                     as the N-ary AND over the result
+//   SwitchOnInt ..... mode -> a label and a nozzle scale, 3 cases + default
+//   SwitchOnString .. that label -> an index, 3 cases + default
+//   Selector ........ an alarm branch with priority over the normal one
+//
+// ★ EVERY CHAIN BELOW IS ANCHORED ON A KEY OR ON OnUpdate, both of which carry
+// a REAL dt, so the no-timed-node-under-a-zero-dt-source rule never bites here.
+// OnKeyPressed is registered as an ON_UPDATE source that gates on the key edge,
+// so it fires every frame and resumes suspended chains exactly like OnUpdate.
+// The one exception is chain 3, a custom event -- and it contains no timed node.
+void BuildGraph_ST_Dispenser(Zenith_GraphBuilder& xBuilder)
+{
+	// Declared with defaults so the graph editor shows them and, more
+	// importantly, so 'sentinel' carries a value DISTINGUISHABLE from the one
+	// its chain would write: chain 11 proves a node did NOT run, which needs a
+	// pre-existing value to survive.
+	auto DeclareInt = [&xBuilder](const char* szName, int32_t iValue)
+	{
+		Zenith_PropertyValue xValue;
+		xValue.SetInt32(iValue);
+		xBuilder.Variable(szName, xValue);
+	};
+	auto DeclareBool = [&xBuilder](const char* szName, bool bValue)
+	{
+		Zenith_PropertyValue xValue;
+		xValue.SetBool(bValue);
+		xBuilder.Variable(szName, xValue);
+	};
+
+	DeclareInt(ScriptTest::Vars::szBONUS, 0);
+	DeclareInt(ScriptTest::Vars::szDISPENSED, 0);
+	DeclareInt(ScriptTest::Vars::szSCORE, 0);
+	DeclareInt(ScriptTest::Vars::szMODE, 0);
+	DeclareInt(ScriptTest::Vars::szLABEL_INDEX, -1);
+	DeclareInt(ScriptTest::Vars::szBAG_COUNT, 0);
+	DeclareInt(ScriptTest::Vars::szVISITED, 0);
+	DeclareInt(ScriptTest::Vars::szIDX, -1);
+	DeclareInt(ScriptTest::Vars::szHEAD, -1);
+	DeclareInt(ScriptTest::Vars::szSENTINEL, -1);
+	DeclareInt(ScriptTest::Vars::szNORMAL_RUNS, 0);
+	DeclareInt(ScriptTest::Vars::szALARM_RUNS, 0);
+	DeclareBool(ScriptTest::Vars::szREADY, false);
+	DeclareBool(ScriptTest::Vars::szARMED, false);
+	DeclareBool(ScriptTest::Vars::szJAMMED, false);
+	DeclareBool(ScriptTest::Vars::szALARM, false);
+	DeclareBool(ScriptTest::Vars::szNOT_JAMMED, false);
+	DeclareBool(ScriptTest::Vars::szCAN_DISPENSE, false);
+
+	Zenith_EngineGraphBuilder xB(xBuilder);
+
+	// --- Chain 1: the one-off bonus.
+	// Once returns FAILURE forever after its first pass, so even a re-driven
+	// anchor could not move the counter twice -- which is why the test asserts
+	// == 1 rather than >= 1.
+	Zenith_GraphChain xBonus = xB.OnStart();
+	const u_int uOnce = xB.Node("Once");
+	const u_int uBonus = xB.Node("AddBlackboardInt");
+	xB.ParamString(uBonus, "m_strVariable", ScriptTest::Vars::szBONUS);
+	xB.ParamInt(uBonus, "m_iDelta", 1);
+	xBonus.Then(uOnce).Then(uBonus);
+
+	// --- Chain 2: arm the dispenser, whenever the plate gets around to it.
+	// WaitForCondition returns RUNNING while 'ready' is false, which suspends
+	// this one-shot OnStart chain; the ON_UPDATE dispatch re-drives it every
+	// frame until the plate's event flips the flag.
+	Zenith_GraphChain xArm = xB.OnStart();
+	const u_int uWaitReady = xB.Node("WaitForCondition");
+	xB.ParamString(uWaitReady, "m_strConditionVar", ScriptTest::Vars::szREADY);
+	const u_int uSetArmed = xB.SetBlackboardBool(ScriptTest::Vars::szARMED, true);
+	xArm.Then(uWaitReady).Then(uSetArmed);
+
+	// --- Chain 3: the plate's event, arriving from ANOTHER entity's graph.
+	Zenith_GraphChain xPlate = xB.OnCustomEvent(ScriptTest::Events::szPLATE_ARMED);
+	const u_int uSetReady = xB.SetBlackboardBool(ScriptTest::Vars::szREADY, true);
+	xPlate.Then(uSetReady);
+
+	// --- Chain 4: dispense. Cooldown first, then the gate, then the effects.
+	// ListAdd pushes the value of 'dispensed' AFTER the increment, so the bag
+	// reads [1, 2, 3, ...] and GetListCount tracks the counter exactly.
+	Zenith_GraphChain xDispense = xB.OnKeyPressed(ZENITH_KEY_SPACE);
+	const u_int uCooldown = xB.Node("Cooldown");
+	xB.ParamFloat(uCooldown, "m_fSeconds", 0.75f);
+	const u_int uGateArmed = xB.Gate(ScriptTest::Vars::szARMED);
+	const u_int uCount = xB.Node("AddBlackboardInt");
+	xB.ParamString(uCount, "m_strVariable", ScriptTest::Vars::szDISPENSED);
+	xB.ParamInt(uCount, "m_iDelta", 1);
+	const u_int uRecord = xB.ListAdd(ScriptTest::Vars::szBAG, ScriptTest::Vars::szDISPENSED);
+	const u_int uScore = xB.Node("CallGraph");
+	xB.ParamString(uScore, "m_strGraphAssetPath", ScriptTest::Graphs::szFLOW_SCORE);
+	xDispense.Then(uCooldown).Then(uGateArmed).Then(uCount).Then(uRecord).Then(uScore);
+
+	// --- Chains 5-8: the four single-key state pokes the test drives.
+	Zenith_GraphChain xJam = xB.OnKeyPressed(ZENITH_KEY_J);
+	xJam.Then(xB.SetBlackboardBool(ScriptTest::Vars::szJAMMED, true));
+
+	Zenith_GraphChain xUnarm = xB.OnKeyPressed(ZENITH_KEY_U);
+	xUnarm.Then(xB.SetBlackboardBool(ScriptTest::Vars::szARMED, false));
+
+	Zenith_GraphChain xAlarm = xB.OnKeyPressed(ZENITH_KEY_A);
+	xAlarm.Then(xB.SetBlackboardBool(ScriptTest::Vars::szALARM, true));
+
+	Zenith_GraphChain xCycle = xB.OnKeyPressed(ZENITH_KEY_M);
+	const u_int uNextMode = xB.Node("AddBlackboardInt");
+	xB.ParamString(uNextMode, "m_strVariable", ScriptTest::Vars::szMODE);
+	xB.ParamInt(uNextMode, "m_iDelta", 1);
+	xCycle.Then(uNextMode);
+
+	// --- Chain 9: walk the bag. The counter is RESET first, so the assertion is
+	// "one pass visited exactly three elements", not "the body ran at least
+	// three times ever".
+	Zenith_GraphChain xWalk = xB.OnKeyPressed(ZENITH_KEY_F);
+	const u_int uResetVisited = xB.SetBlackboardInt(ScriptTest::Vars::szVISITED, 0);
+	const u_int uForEach = xB.ForEach(ScriptTest::Vars::szBAG, ScriptTest::Vars::szITEM, ScriptTest::Vars::szIDX);
+	const u_int uVisit = xB.Node("AddBlackboardInt");
+	xB.ParamString(uVisit, "m_strVariable", ScriptTest::Vars::szVISITED);
+	xB.ParamInt(uVisit, "m_iDelta", 1);
+	xWalk.Then(uResetVisited).Then(uForEach);
+	xB.Edge(uForEach, 0, uVisit);	// pin 0 = body; pin 1 (done) deliberately unwired
+
+	// --- Chain 10: drop the head of the bag, then READ the new head.
+	// [1,2,3] minus index 0 must leave [2,3], so 'head' becomes 2. A swap-remove
+	// would leave [3,2] and make it 3 -- which is the whole reason ListRemoveAt
+	// is order-preserving, asserted here through the graph rather than only in
+	// the node's own unit.
+	Zenith_GraphChain xDrop = xB.OnKeyPressed(ZENITH_KEY_R);
+	const u_int uRemove = xB.ListRemoveAt(ScriptTest::Vars::szBAG, 0);
+	const u_int uHead = xB.GetListElement(ScriptTest::Vars::szBAG, 0, ScriptTest::Vars::szHEAD);
+	xDrop.Then(uRemove).Then(uHead);
+
+	// --- Chain 11: empty the bag, and prove the emptiness by ABORTING.
+	// GetListElement on an empty list returns FAILURE, so the SetBlackboardInt
+	// after it never runs and 'sentinel' keeps its declared -1. A graph has no
+	// status variable, so an unwritten sentinel is the ONLY way one can observe
+	// "that node failed".
+	Zenith_GraphChain xEmpty = xB.OnKeyPressed(ZENITH_KEY_C);
+	const u_int uClear = xB.ListClear(ScriptTest::Vars::szBAG);
+	const u_int uProbe = xB.GetListElement(ScriptTest::Vars::szBAG, 0, ScriptTest::Vars::szITEM);
+	const u_int uSentinel = xB.SetBlackboardInt(ScriptTest::Vars::szSENTINEL, 99);
+	xEmpty.Then(uClear).Then(uProbe).Then(uSentinel);
+
+	// --- Chain 12: the per-frame logic + the mode switch.
+	//   notJammed   = NOT jammed              (one operand + m_bInvert)
+	//   canDispense = armed AND notJammed     (the N-ary form, at two operands)
+	//
+	// ★ THE OPERAND LIST IS COMPOSED FROM THE TWO VARIABLE CONSTANTS, not typed
+	// out as "armed,notJammed". The list is parsed VERBATIM -- no trimming --
+	// so a hand-written copy that drifted from Vars:: by one character would
+	// look up a variable that does not exist and silently read `false`.
+	Zenith_GraphChain xTick = xB.OnUpdate();
+	const u_int uNotJammed = xB.LogicBool(
+		ScriptTest::Vars::szJAMMED, GRAPH_LOGIC_BOOL_OP_AND, ScriptTest::Vars::szNOT_JAMMED, /*invert*/ true);
+	const std::string strDispenseOperands =
+		std::string(ScriptTest::Vars::szARMED) + "," + ScriptTest::Vars::szNOT_JAMMED;
+	const u_int uCanDispense = xB.LogicBool(
+		strDispenseOperands.c_str(), GRAPH_LOGIC_BOOL_OP_AND, ScriptTest::Vars::szCAN_DISPENSE);
+	const u_int uBagCount = xB.GetListCount(ScriptTest::Vars::szBAG, ScriptTest::Vars::szBAG_COUNT);
+	const u_int uMode = xB.SwitchOnInt(ScriptTest::Vars::szMODE, 3);
+	xTick.Then(uNotJammed).Then(uCanDispense).Then(uBagCount).Then(uMode);
+
+	// Each case writes its OWN nozzle scale, so the scale identifies WHICH pin
+	// ran -- four pins scaling to the same value would prove only that some pin
+	// ran. Pin 3 is the DEFAULT (m_iCaseCount == 3).
+	ST_BuildModeCase(xB, uMode, 0, ScriptTest::Labels::szRED,   1.0f);
+	ST_BuildModeCase(xB, uMode, 1, ScriptTest::Labels::szGREEN, 1.4f);
+	ST_BuildModeCase(xB, uMode, 2, ScriptTest::Labels::szBLUE,  1.8f);
+	ST_BuildModeCase(xB, uMode, 3, ScriptTest::Labels::szNONE,  0.6f);
+
+	// --- Chain 13: the label, back into an index. Its own OnUpdate anchor
+	// because SwitchOnInt above has no pass-through exec output to chain from.
+	// The case list is composed from the same three label constants chain 12
+	// writes, for the reason spelled out there.
+	Zenith_GraphChain xLabelTick = xB.OnUpdate();
+	const std::string strModeCases = std::string(ScriptTest::Labels::szRED) + ","
+		+ ScriptTest::Labels::szGREEN + "," + ScriptTest::Labels::szBLUE;
+	const u_int uLabelSwitch = xB.Node("SwitchOnString");
+	xB.ParamString(uLabelSwitch, "m_strVar", ScriptTest::Vars::szLABEL);
+	xB.ParamString(uLabelSwitch, "m_strCases", strModeCases.c_str());
+	xLabelTick.Then(uLabelSwitch);
+
+	const u_int uIndexRed   = xB.SetBlackboardInt(ScriptTest::Vars::szLABEL_INDEX, 0);
+	const u_int uIndexGreen = xB.SetBlackboardInt(ScriptTest::Vars::szLABEL_INDEX, 1);
+	const u_int uIndexBlue  = xB.SetBlackboardInt(ScriptTest::Vars::szLABEL_INDEX, 2);
+	const u_int uIndexNone  = xB.SetBlackboardInt(ScriptTest::Vars::szLABEL_INDEX, -1);
+	xB.Edge(uLabelSwitch, 0, uIndexRed);
+	xB.Edge(uLabelSwitch, 1, uIndexGreen);
+	xB.Edge(uLabelSwitch, 2, uIndexBlue);
+	xB.Edge(uLabelSwitch, 3, uIndexNone);	// pin 3 = default (3 cases)
+
+	// --- Chain 14: priority. Pin 0 is the alarm branch, gated; pin 1 is normal.
+	// While 'alarm' is false the gate FAILS pin 0 and the Selector falls through
+	// to pin 1, so normalRuns climbs. The moment it is true, pin 0 SUCCEEDS and
+	// pin 1 is never reached -- and preemption is observable ONLY as normalRuns
+	// going flat, because nothing in the alarm branch touches it.
+	Zenith_GraphChain xPriority = xB.OnUpdate();
+	const u_int uSelector = xB.Node("Selector");
+	xB.ParamInt(uSelector, "m_iBranchCount", 2);
+	xPriority.Then(uSelector);
+
+	const u_int uAlarmGate = xB.Gate(ScriptTest::Vars::szALARM);
+	const u_int uAlarmRuns = xB.Node("AddBlackboardInt");
+	xB.ParamString(uAlarmRuns, "m_strVariable", ScriptTest::Vars::szALARM_RUNS);
+	xB.ParamInt(uAlarmRuns, "m_iDelta", 1);
+	xB.Edge(uSelector, 0, uAlarmGate);
+	xB.Chain(uAlarmGate, uAlarmRuns);
+
+	const u_int uNormalRuns = xB.Node("AddBlackboardInt");
+	xB.ParamString(uNormalRuns, "m_strVariable", ScriptTest::Vars::szNORMAL_RUNS);
+	xB.ParamInt(uNormalRuns, "m_iDelta", 1);
+	xB.Edge(uSelector, 1, uNormalRuns);
+
+	// --- Chain 15: the HUD, on its own anchor so a missing element can never
+	// abort the logic chain above it.
+	Zenith_GraphChain xHud = xB.OnUpdate();
+	const u_int uHudText = xB.Node("SetUIText");
+	xB.ParamString(uHudText, "m_strElement", ScriptTest::UINames::szDISPENSED);
+	xB.ParamString(uHudText, "m_strText", "Dispensed: {}");
+	xB.ParamString(uHudText, "m_strValueVar", ScriptTest::Vars::szDISPENSED);
+	xHud.Then(uHudText);
+}
+
+// --- 17. ST_FlowScore -------------------------------------------------------
+// The CallGraph child. Deliberately trivial: what it proves is SCOPE, not
+// behaviour. It writes 'score' with no target var and no payload, and the value
+// shows up on the CALLER'S blackboard -- the whole contract of CallGraph's
+// shared-blackboard model. A child with a board of its own would leave the
+// caller's score at zero and nothing else would look any different.
+void BuildGraph_ST_FlowScore(Zenith_GraphBuilder& xBuilder)
+{
+	Zenith_EngineGraphBuilder xB(xBuilder);
+
+	const u_int uCall = xB.Node("OnGraphCall");
+	const u_int uAdd = xB.Node("AddBlackboardInt");
+	xB.ParamString(uAdd, "m_strVariable", ScriptTest::Vars::szSCORE);
+	xB.ParamInt(uAdd, "m_iDelta", 10);
+	xB.Chain(uCall, uAdd);
+}
+
+// --- 18. ST_FlowPlate -------------------------------------------------------
+// A second ENTITY arming the dispenser, so the WaitForCondition it unblocks is
+// waiting on something outside its own graph. The plate does not know what
+// "armed" means -- it names an entity and fires an event at it, exactly like
+// ST_PressurePlate and its door.
+void BuildGraph_ST_FlowPlate(Zenith_GraphBuilder& xBuilder)
+{
+	Zenith_EngineGraphBuilder xB(xBuilder);
+
+	Zenith_GraphChain xPress = xB.OnKeyPressed(ZENITH_KEY_P);
+	const u_int uFind = xB.Node("FindEntityByName");
+	xB.ParamString(uFind, "m_strName", ScriptTest::Entities::szGAME_MANAGER);
+	xB.ParamString(uFind, "m_strResultVar", ScriptTest::Vars::szMANAGER_REF);
+	const u_int uFire = xB.FireCustomEvent(ScriptTest::Events::szPLATE_ARMED, ScriptTest::Vars::szMANAGER_REF);
+	xPress.Then(uFind).Then(uFire);
+}
+
 #ifdef ZENITH_TOOLS
 
 //=============================================================================
@@ -876,7 +1173,7 @@ void Project_InitializeResources()
 //=============================================================================
 // Scene authoring (tools only)
 //
-// Seven scenes, regenerated from scratch on every tools boot and saved over
+// Eight scenes, regenerated from scratch on every tools boot and saved over
 // their committed .zscen files -- the same contract RenderTest and Combat use.
 //
 // Deterministic-FP for the whole block below: these functions compute the
@@ -1011,8 +1308,9 @@ namespace
 		ST_AddHubButton(xAuto, ScriptTest::UINames::szBTN_EVENTS,  "4. Events",    52.0f);
 		ST_AddHubButton(xAuto, ScriptTest::UINames::szBTN_STATE,   "5. State",    116.0f);
 		ST_AddHubButton(xAuto, ScriptTest::UINames::szBTN_UI,      "6. UI",       180.0f);
+		ST_AddHubButton(xAuto, ScriptTest::UINames::szBTN_FLOW,    "7. Flow",     244.0f);
 
-		ST_AddHintText(xAuto, "Click a gym or press 1-6");
+		ST_AddHintText(xAuto, "Click a gym or press 1-7");
 
 		// The hub is the one scene with no ST_EscToHub: it IS the hub.
 		xAuto.AddStep_AttachGraph(ScriptTest::Graphs::szHUB_FLOW);
@@ -1293,13 +1591,54 @@ namespace
 		xAuto.AddStep_SaveScene(ScriptTest::Scenes::szGYM_UI_PATH);
 		xAuto.AddStep_UnloadScene();
 	}
+
+	// ---- Scene 7: Gym_Flow -------------------------------------------------
+	// The multi-way flow constructs, themed as a dispenser. Three entities carry
+	// behaviour: the GameManager runs ST_Dispenser (fifteen chains), the Plate
+	// arms it from OUTSIDE its graph, and the Nozzle is passive -- it is scaled
+	// by whichever SwitchOnInt pin is live, which is how the switch's choice
+	// becomes observable in the world rather than only on a blackboard.
+	void ST_AuthorGymFlowScene(Zenith_EditorAutomation& xAuto)
+	{
+		xAuto.AddStep_CreateScene("Gym_Flow");
+
+		xAuto.AddStep_CreateEntity(ScriptTest::Entities::szGAME_MANAGER);
+		ST_AddSceneCamera(xAuto, 0.0f, 5.0f, 12.0f, -0.3f);
+		xAuto.AddStep_AddUI();
+		ST_AddTitleText(xAuto, "Gym 7 - Flow", 40.0f);
+		ST_AddHintText(xAuto, "P arm, Space dispense, M mode, A alarm, F/R/C bag");
+		ST_AddCornerReadout(xAuto, ScriptTest::UINames::szDISPENSED, "Dispensed: 0", 20.0f);
+		xAuto.AddStep_AttachGraph(ScriptTest::Graphs::szESC_TO_HUB);	// slot 0
+		xAuto.AddStep_AttachGraph(ScriptTest::Graphs::szDISPENSER);	// slot 1
+
+		ST_AddProp(xAuto, ScriptTest::Entities::szFLOOR, ScriptTest::Meshes::szUNIT_CUBE_MODEL,
+			g_apxMaterials[ST_MATERIAL_FLOOR], 0.0f, -0.5f, 0.0f, 10.0f, 0.5f, 10.0f);
+		xAuto.AddStep_AddCollider();
+		xAuto.AddStep_AddColliderShape(COLLISION_VOLUME_TYPE_OBB, RIGIDBODY_TYPE_STATIC);
+
+		// No collider on either of these two: nothing in this gym is physical.
+		// The nozzle is moved only by SetEntityScale, and the plate is driven by
+		// a key, not by a body entering it.
+		ST_AddProp(xAuto, ScriptTest::Entities::szNOZZLE, ScriptTest::Meshes::szUNIT_CUBE_MODEL,
+			g_apxMaterials[ST_MATERIAL_PROP], 0.0f, 2.0f, 0.0f, 1.0f, 1.0f, 1.0f);
+
+		ST_AddProp(xAuto, ScriptTest::Entities::szPLATE, ScriptTest::Meshes::szUNIT_CUBE_MODEL,
+			g_apxMaterials[ST_MATERIAL_RED], -4.0f, 0.1f, 2.0f, 2.0f, 0.2f, 2.0f);
+		xAuto.AddStep_AttachGraph(ScriptTest::Graphs::szFLOW_PLATE);
+
+		ST_AddSun(xAuto);
+		ST_AddKeyLight(xAuto);
+
+		xAuto.AddStep_SaveScene(ScriptTest::Scenes::szGYM_FLOW_PATH);
+		xAuto.AddStep_UnloadScene();
+	}
 }
 
 void Project_RegisterEditorAutomationSteps()
 {
 	Zenith_EditorAutomation& xAuto = g_xEngine.EditorAutomation();
 
-	// ---- 1. The fifteen graphs, regenerated from their builders every boot.
+	// ---- 1. The eighteen graphs, regenerated from their builders every boot.
 	// Before the scenes, because AddStep_AttachGraph resolves an asset PATH and
 	// a scene authored first would attach a slot pointing at a stale .bgraph.
 	xAuto.AddStep_GraphBuild(ScriptTest::Graphs::szESC_TO_HUB,     &BuildGraph_ST_EscToHub);
@@ -1317,6 +1656,13 @@ void Project_RegisterEditorAutomationSteps()
 	xAuto.AddStep_GraphBuild(ScriptTest::Graphs::szBELL_LISTENER,  &BuildGraph_ST_BellListener);
 	xAuto.AddStep_GraphBuild(ScriptTest::Graphs::szTRAFFIC_LIGHT,  &BuildGraph_ST_TrafficLight);
 	xAuto.AddStep_GraphBuild(ScriptTest::Graphs::szUI_PLAYGROUND,  &BuildGraph_ST_UIPlayground);
+	// ST_FlowScore before ST_Dispenser: CallGraph resolves its child by ASSET
+	// PATH at runtime rather than at build time, so the order is not strictly
+	// load-bearing -- but every other producer in this list is written before
+	// its consumer, and a reader should not have to check which.
+	xAuto.AddStep_GraphBuild(ScriptTest::Graphs::szFLOW_SCORE,     &BuildGraph_ST_FlowScore);
+	xAuto.AddStep_GraphBuild(ScriptTest::Graphs::szDISPENSER,      &BuildGraph_ST_Dispenser);
+	xAuto.AddStep_GraphBuild(ScriptTest::Graphs::szFLOW_PLATE,     &BuildGraph_ST_FlowPlate);
 
 	// ---- 2. The ST_Ball prefab.
 	// CreatePrefabFromSelected needs a live entity to capture, so it gets a
@@ -1334,7 +1680,7 @@ void Project_RegisterEditorAutomationSteps()
 	xAuto.AddStep_CreatePrefabFromSelected(ScriptTest::Prefabs::szBALL_NAME, ScriptTest::Prefabs::szBALL_SAVE_PATH);
 	xAuto.AddStep_UnloadScene();
 
-	// ---- 3. The seven scenes, in build-index order.
+	// ---- 3. The eight scenes, in build-index order.
 	ST_AuthorHubScene(xAuto);
 	ST_AuthorGymMotionScene(xAuto);
 	ST_AuthorGymInputScene(xAuto);
@@ -1342,6 +1688,7 @@ void Project_RegisterEditorAutomationSteps()
 	ST_AuthorGymEventsScene(xAuto);
 	ST_AuthorGymStateScene(xAuto);
 	ST_AuthorGymUIScene(xAuto);
+	ST_AuthorGymFlowScene(xAuto);
 
 	// ---- 4. And only then boot into the hub.
 	xAuto.AddStep_LoadInitialScene(&Project_LoadInitialScene);
@@ -1355,7 +1702,7 @@ ZENITH_AUTHORING_DETERMINISM_END
 // Initial scene load
 //
 // Unconditional: a _False boot runs no automation, so this is the ONLY place
-// the seven build indices get registered. Every LoadSceneByIndex node in
+// the eight build indices get registered. Every LoadSceneByIndex node in
 // ST_HubFlow and ST_EscToHub depends on this table, which is why the indices
 // are constants in ScriptTest_Graphs.h rather than literals in two places.
 //=============================================================================
@@ -1371,6 +1718,7 @@ void Project_LoadInitialScene()
 	xScenes.RegisterSceneBuildIndex(ScriptTest::Scenes::iGYM_EVENTS,  ScriptTest::Scenes::szGYM_EVENTS_PATH);
 	xScenes.RegisterSceneBuildIndex(ScriptTest::Scenes::iGYM_STATE,   ScriptTest::Scenes::szGYM_STATE_PATH);
 	xScenes.RegisterSceneBuildIndex(ScriptTest::Scenes::iGYM_UI,      ScriptTest::Scenes::szGYM_UI_PATH);
+	xScenes.RegisterSceneBuildIndex(ScriptTest::Scenes::iGYM_FLOW,    ScriptTest::Scenes::szGYM_FLOW_PATH);
 
 	xScenes.LoadSceneByIndex(ScriptTest::Scenes::iHUB, SCENE_LOAD_SINGLE);
 }

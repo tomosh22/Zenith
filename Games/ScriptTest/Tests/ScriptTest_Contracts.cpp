@@ -236,7 +236,7 @@ namespace
 	// (c)'s table: every graph this game authors, keyed by its ASSET PATH, which
 	// is the one spelling of a graph's identity ScriptTest_Graphs.h owns.
 	//
-	// A SIXTEENTH BUILDER ADDED WITHOUT A ROW HERE GOES UNCHECKED, and nothing
+	// A NINETEENTH BUILDER ADDED WITHOUT A ROW HERE GOES UNCHECKED, and nothing
 	// mechanical stops that: the builders are free functions, so there is no list
 	// to enumerate at compile time and no count to compare against. The row goes
 	// in with the builder, or the graph has no coverage.
@@ -264,6 +264,9 @@ namespace
 		{ ScriptTest::Graphs::szBELL_LISTENER,  &BuildGraph_ST_BellListener },
 		{ ScriptTest::Graphs::szTRAFFIC_LIGHT,  &BuildGraph_ST_TrafficLight },
 		{ ScriptTest::Graphs::szUI_PLAYGROUND,  &BuildGraph_ST_UIPlayground },
+		{ ScriptTest::Graphs::szDISPENSER,      &BuildGraph_ST_Dispenser },
+		{ ScriptTest::Graphs::szFLOW_SCORE,     &BuildGraph_ST_FlowScore },
+		{ ScriptTest::Graphs::szFLOW_PLATE,     &BuildGraph_ST_FlowPlate },
 	};
 
 	constexpr u_int uGRAPH_BUILDER_ROWS =
@@ -478,11 +481,11 @@ namespace
 	void RunBuilderIntegrityChecks(const Zenith_Vector<std::string>& xEngineNames)
 	{
 		// A floor, honestly labelled: it catches a row DELETED from the table
-		// above, not a sixteenth builder added without one. Nothing enumerates
+		// above, not a nineteenth builder added without one. Nothing enumerates
 		// the builders at compile time, so the only guard against a new graph
 		// slipping past this test is the row going in with it.
-		CheckEqInt(static_cast<int>(uGRAPH_BUILDER_ROWS), 15,
-			"the builder table still lists all fifteen graphs ScriptTest authors");
+		CheckEqInt(static_cast<int>(uGRAPH_BUILDER_ROWS), 18,
+			"the builder table still lists all eighteen graphs ScriptTest authors");
 
 		for (u_int uRow = 0; uRow < uGRAPH_BUILDER_ROWS; ++uRow)
 		{

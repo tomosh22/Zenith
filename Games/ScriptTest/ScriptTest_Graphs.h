@@ -6,7 +6,7 @@
 #include <cstdint>
 
 // ============================================================================
-// ScriptTest_Graphs.h -- the game's STRING CONTRACT plus the 15 Behaviour
+// ScriptTest_Graphs.h -- the game's STRING CONTRACT plus the 18 Behaviour
 // Graph builder declarations.
 //
 // ScriptTest carries zero gameplay C++: every behaviour is an engine-owned
@@ -49,6 +49,9 @@ namespace ScriptTest
 		inline constexpr const char* szBELL_LISTENER  = "game:Graphs/ST_BellListener" ZENITH_BGRAPH_EXT;
 		inline constexpr const char* szTRAFFIC_LIGHT  = "game:Graphs/ST_TrafficLight" ZENITH_BGRAPH_EXT;
 		inline constexpr const char* szUI_PLAYGROUND  = "game:Graphs/ST_UIPlayground" ZENITH_BGRAPH_EXT;
+		inline constexpr const char* szDISPENSER      = "game:Graphs/ST_Dispenser"    ZENITH_BGRAPH_EXT;
+		inline constexpr const char* szFLOW_SCORE     = "game:Graphs/ST_FlowScore"    ZENITH_BGRAPH_EXT;
+		inline constexpr const char* szFLOW_PLATE     = "game:Graphs/ST_FlowPlate"    ZENITH_BGRAPH_EXT;
 	}
 
 	// --- Scenes: build index + on-disk path -----------------------------------
@@ -64,7 +67,8 @@ namespace ScriptTest
 		inline constexpr int32_t iGYM_EVENTS  = 4;
 		inline constexpr int32_t iGYM_STATE   = 5;
 		inline constexpr int32_t iGYM_UI      = 6;
-		inline constexpr int32_t iCOUNT       = 7;
+		inline constexpr int32_t iGYM_FLOW    = 7;
+		inline constexpr int32_t iCOUNT       = 8;
 
 		inline constexpr const char* szHUB_PATH         = GAME_ASSETS_DIR "Scenes/Hub"         ZENITH_SCENE_EXT;
 		inline constexpr const char* szGYM_MOTION_PATH  = GAME_ASSETS_DIR "Scenes/Gym_Motion"  ZENITH_SCENE_EXT;
@@ -73,6 +77,7 @@ namespace ScriptTest
 		inline constexpr const char* szGYM_EVENTS_PATH  = GAME_ASSETS_DIR "Scenes/Gym_Events"  ZENITH_SCENE_EXT;
 		inline constexpr const char* szGYM_STATE_PATH   = GAME_ASSETS_DIR "Scenes/Gym_State"   ZENITH_SCENE_EXT;
 		inline constexpr const char* szGYM_UI_PATH      = GAME_ASSETS_DIR "Scenes/Gym_UI"      ZENITH_SCENE_EXT;
+		inline constexpr const char* szGYM_FLOW_PATH    = GAME_ASSETS_DIR "Scenes/Gym_Flow"    ZENITH_SCENE_EXT;
 
 		// The scratch scene the ST_Ball prefab is captured from. Deliberately
 		// NEVER saved -- it exists only so CreatePrefabFromSelected has a live
@@ -104,6 +109,8 @@ namespace ScriptTest
 		inline constexpr const char* szLAMP_RED        = "Lamp_Red";
 		inline constexpr const char* szLAMP_AMBER      = "Lamp_Amber";
 		inline constexpr const char* szLAMP_GREEN      = "Lamp_Green";
+		inline constexpr const char* szNOZZLE          = "Nozzle";
+		inline constexpr const char* szPLATE           = "Plate";
 
 		// The prefab template entity (scratch scene only) and the runtime name
 		// SpawnPrefab stamps on each ball it instantiates.
@@ -124,6 +131,7 @@ namespace ScriptTest
 		inline constexpr const char* szBTN_EVENTS  = "Btn_Events";
 		inline constexpr const char* szBTN_STATE   = "Btn_State";
 		inline constexpr const char* szBTN_UI      = "Btn_UI";
+		inline constexpr const char* szBTN_FLOW    = "Btn_Flow";
 
 		inline constexpr const char* szSPAWNED    = "Spawned";
 		inline constexpr const char* szKILLED     = "Killed";
@@ -134,6 +142,8 @@ namespace ScriptTest
 		inline constexpr const char* szBAR_FILL   = "BarFill";
 		inline constexpr const char* szBTN_PLUS   = "BtnPlus";
 		inline constexpr const char* szBTN_MINUS  = "BtnMinus";
+
+		inline constexpr const char* szDISPENSED  = "Dispensed";
 	}
 
 	// --- UI colours ------------------------------------------------------------
@@ -175,6 +185,57 @@ namespace ScriptTest
 		inline constexpr const char* szCYCLE        = "cycle";
 		inline constexpr const char* szFILL01       = "fill01";
 		inline constexpr const char* szHOT          = "hot";
+
+		// --- Gym_Flow (ST_Dispenser + ST_FlowScore + ST_FlowPlate) ------------
+		// Grouped rather than scattered because the flow gym is the one graph in
+		// this game whose variables are read by a dozen different node families;
+		// each comment names the node that WRITES it, since that is the half a
+		// typo silently disables.
+		inline constexpr const char* szBONUS        = "bonus";        // Once
+		inline constexpr const char* szDISPENSED    = "dispensed";    // the Cooldown/Gate chain
+		inline constexpr const char* szSCORE        = "score";        // the CallGraph CHILD, into the caller's board
+		inline constexpr const char* szMODE         = "mode";         // the M key
+		inline constexpr const char* szLABEL        = "label";        // SwitchOnInt's pins
+		inline constexpr const char* szLABEL_INDEX  = "labelIndex";   // SwitchOnString's pins
+		inline constexpr const char* szNOZZLE_REF   = "nozzleRef";    // packed EntityID
+		inline constexpr const char* szMANAGER_REF  = "managerRef";   // packed EntityID (the plate's target)
+
+		inline constexpr const char* szREADY        = "ready";        // the PlateArmed event
+		inline constexpr const char* szARMED        = "armed";        // WaitForCondition's chain
+		inline constexpr const char* szJAMMED       = "jammed";       // the J key
+		inline constexpr const char* szNOT_JAMMED   = "notJammed";    // LogicBlackboardBool, m_bInvert = NOT
+		inline constexpr const char* szCAN_DISPENSE = "canDispense";  // LogicBlackboardBool, N-ary AND
+		inline constexpr const char* szALARM        = "alarm";        // the A key
+
+		inline constexpr const char* szBAG          = "bag";          // ListAdd -- a LIST, not a value
+		inline constexpr const char* szBAG_COUNT    = "bagCount";     // GetListCount
+		inline constexpr const char* szITEM         = "item";         // ForEach's element
+		inline constexpr const char* szIDX          = "idx";          // ForEach's index
+		inline constexpr const char* szVISITED      = "visited";      // ForEach's body
+		inline constexpr const char* szHEAD         = "head";         // GetListElement after ListRemoveAt
+		inline constexpr const char* szSENTINEL     = "sentinel";     // the node AFTER a failed GetListElement
+
+		inline constexpr const char* szNORMAL_RUNS  = "normalRuns";   // Selector pin 1
+		inline constexpr const char* szALARM_RUNS   = "alarmRuns";    // Selector pin 0
+	}
+
+	// --- Gym_Flow mode labels ---------------------------------------------------
+	// SwitchOnInt writes one of these into Vars::szLABEL; SwitchOnString matches
+	// the same value back to an index.
+	//
+	// ★ THERE IS NO szMODE_CASES CONSTANT HERE, DELIBERATELY. The comma list
+	// SwitchOnString takes is COMPOSED in the builder from the three names
+	// below. Events::szTL_STATE_NAMES is the older shape -- a hand-written
+	// "Red,Green,Amber" beside six event spellings that "have to agree character
+	// for character" -- and a list parsed VERBATIM (no trimming) is exactly the
+	// place where agreeing-by-inspection fails quietly: an unmatched case takes
+	// the DEFAULT pin, which is a legitimate outcome, so nothing errors.
+	namespace Labels
+	{
+		inline constexpr const char* szRED   = "Red";
+		inline constexpr const char* szGREEN = "Green";
+		inline constexpr const char* szBLUE  = "Blue";
+		inline constexpr const char* szNONE  = "none";
 	}
 
 	// --- Custom event names ----------------------------------------------------
@@ -187,6 +248,7 @@ namespace ScriptTest
 		inline constexpr const char* szOPEN_DOOR  = "OpenDoor";
 		inline constexpr const char* szCLOSE_DOOR = "CloseDoor";
 		inline constexpr const char* szBELL       = "Bell";
+		inline constexpr const char* szPLATE_ARMED = "PlateArmed";
 
 		inline constexpr const char* szTL_PREFIX      = "TL";
 		inline constexpr const char* szTL_STATE_NAMES = "Red,Green,Amber";
@@ -239,7 +301,7 @@ namespace ScriptTest
 }
 
 // ============================================================================
-// The 15 graph builders. Each authors ONE .bgraph through a
+// The 18 graph builders. Each authors ONE .bgraph through a
 // Zenith_EngineGraphBuilder over the plain builder it is handed.
 //
 // Deliberately NOT tools-gated -- unlike Combat's, which are static and live
@@ -252,7 +314,7 @@ namespace ScriptTest
 //
 // ★ THAT SCOPE IS THE WHOLE CLAIM -- the other nine tests DO depend on a prior
 // authoring pass. They load the committed .zscen, whose slots reference the
-// fifteen .bgraph, the two generated meshes and the ball prefab, and all of
+// eighteen .bgraph, the two generated meshes and the ball prefab, and all of
 // those are gitignored BAKE PRODUCTS that only a *_True boot writes. That is
 // why a fresh checkout's first build + run must be a tools config.
 // ============================================================================
@@ -271,3 +333,6 @@ void BuildGraph_ST_BellRing(Zenith_GraphBuilder& xBuilder);
 void BuildGraph_ST_BellListener(Zenith_GraphBuilder& xBuilder);
 void BuildGraph_ST_TrafficLight(Zenith_GraphBuilder& xBuilder);
 void BuildGraph_ST_UIPlayground(Zenith_GraphBuilder& xBuilder);
+void BuildGraph_ST_Dispenser(Zenith_GraphBuilder& xBuilder);
+void BuildGraph_ST_FlowScore(Zenith_GraphBuilder& xBuilder);
+void BuildGraph_ST_FlowPlate(Zenith_GraphBuilder& xBuilder);

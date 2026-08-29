@@ -9,12 +9,12 @@
 // carry the entities they should). Nothing there can see a graph that builds
 // perfectly and then does nothing -- a Timer that never fires, a sensor that
 // never reports, a state machine whose transition events reach no lamp. These
-// seven tests DRIVE each gym through the real seams a player would and assert
+// eight tests DRIVE each gym through the real seams a player would and assert
 // on the observable result:
 //
-//   ST_HubNavigation_Test  - all 6 hub buttons + all 6 number keys reach their
-//                            gym, and Escape returns from every one of them
-//                            (24 scene transitions).
+//   ST_HubNavigation_Test  - every hub button AND every number key reaches its
+//                            gym, and Escape returns from every one of them.
+//                            The row count is derived, not written down.
 //   ST_InputGym_Test       - held W moves the cube in +Z, releasing it stops
 //                            the cube, and Space clears the grounded raycast
 //                            and lifts it.
@@ -37,6 +37,12 @@
 //                            the clock/modulo/compare chain crosses the hot
 //                            boundary in both directions, and the BarFill
 //                            element's COLOUR is read back on both sides of it.
+//   ST_FlowGym_Test        - the multi-way flow constructs, which no other
+//                            scene reaches: Once, Cooldown, Gate,
+//                            WaitForCondition, SwitchOnInt, SwitchOnString,
+//                            Selector, ForEach, CallGraph, the three list
+//                            mutators and LogicBlackboardBool, each against a
+//                            distinct observable.
 //
 // SINGLE SPELLING. Every scene index, entity name, UI element name and
 // blackboard variable comes from ScriptTest_Graphs.h -- the same header the
@@ -211,6 +217,12 @@ namespace
 		return pxBlackboard != nullptr ? pxBlackboard->GetBool(szVar, bDefault) : bDefault;
 	}
 
+	std::string ST_ReadString(const char* szEntity, u_int uSlot, const char* szVar, const char* szDefault)
+	{
+		const Zenith_GraphBlackboard* pxBlackboard = ST_Blackboard(szEntity, uSlot);
+		return pxBlackboard != nullptr ? pxBlackboard->GetString(szVar, szDefault) : std::string(szDefault);
+	}
+
 	// --- Body-aware placement -------------------------------------------------
 
 	// The same shape Zenith_GraphNode_SetEntityPosition takes on its teleport
@@ -375,10 +387,14 @@ namespace
 // ============================================================================
 // ST_HubNavigation_Test (C7)
 // ----------------------------------------------------------------------------
-// Twenty-four scene transitions: each of the six hub rows entered by CLICKING
-// its button and again by pressing its NUMBER KEY, each followed by Escape
-// back to the hub. This is the only test that exercises ST_HubFlow's twelve
+// Two scene transitions per hub row per pass: each row entered by CLICKING its
+// button and again by pressing its NUMBER KEY, each followed by Escape back to
+// the hub. This is the only test that exercises every one of ST_HubFlow's
 // independent chains and every gym's ST_EscToHub in one run.
+//
+// The row COUNT is derived from the table and static_asserted against
+// Scenes::iCOUNT, so adding a gym without a hub row is a compile error rather
+// than a silent narrowing of what this covers.
 //
 // Two latencies are structural, not incidental:
 //   * the OnUIButtonClicked trampoline installs on the first OnUpdate after a
@@ -402,18 +418,33 @@ namespace
 	// Hub order. The button name and the scene index are the header's; the key
 	// codes are the engine's own constants, spelled in ST_BuildHubKeyChain the
 	// same way.
-	const ST_HubRow g_axHubRows[6] = {
+	const ST_HubRow g_axHubRows[] = {
 		{ ScriptTest::UINames::szBTN_MOTION,  ZENITH_KEY_1, ScriptTest::Scenes::iGYM_MOTION  },
 		{ ScriptTest::UINames::szBTN_INPUT,   ZENITH_KEY_2, ScriptTest::Scenes::iGYM_INPUT   },
 		{ ScriptTest::UINames::szBTN_PHYSICS, ZENITH_KEY_3, ScriptTest::Scenes::iGYM_PHYSICS },
 		{ ScriptTest::UINames::szBTN_EVENTS,  ZENITH_KEY_4, ScriptTest::Scenes::iGYM_EVENTS  },
 		{ ScriptTest::UINames::szBTN_STATE,   ZENITH_KEY_5, ScriptTest::Scenes::iGYM_STATE   },
 		{ ScriptTest::UINames::szBTN_UI,      ZENITH_KEY_6, ScriptTest::Scenes::iGYM_UI      },
+		{ ScriptTest::UINames::szBTN_FLOW,    ZENITH_KEY_7, ScriptTest::Scenes::iGYM_FLOW    },
 	};
 
-	constexpr int iST_HUB_STEPS       = 12;	// 6 button entries + 6 key entries
-	constexpr int iST_HUB_WARM_FRAMES = 3;	// trampoline install + latch
-	constexpr int iST_HUB_POLL_LIMIT  = 45;	// deferred load + settle
+	constexpr u_int iST_HUB_ROWS = static_cast<u_int>(sizeof(g_axHubRows) / sizeof(g_axHubRows[0]));
+
+	// ★ A GYM ADDED WITHOUT A HUB ROW IS THE FAILURE THIS CATCHES, and it used
+	// to be catchable only by reading. Every scene except the hub itself is
+	// reachable from the hub by construction, so the row count IS iCOUNT - 1;
+	// a new gym that forgot its row would otherwise leave this test quietly
+	// exercising the same six it always did while every assertion still passed.
+	static_assert(iST_HUB_ROWS + 1u == static_cast<u_int>(ScriptTest::Scenes::iCOUNT),
+		"every gym needs a hub row here -- otherwise ST_HubNavigation_Test silently "
+		"stops covering the newest one");
+
+	// Two passes over the table: buttons, then keys. Derived rather than written
+	// down, for the same reason as the static_assert above.
+	constexpr int   iST_HUB_STEPS       = static_cast<int>(iST_HUB_ROWS) * 2;
+	constexpr u_int32 uST_HUB_ALL_ROWS  = (1u << iST_HUB_ROWS) - 1u;
+	constexpr int   iST_HUB_WARM_FRAMES = 3;	// trampoline install + latch
+	constexpr int   iST_HUB_POLL_LIMIT  = 45;	// deferred load + settle
 
 	enum class HubPhase { WaitHub, WarmHub, Trigger, AwaitGym, WarmGym, AwaitHub, Done };
 
@@ -429,12 +460,12 @@ namespace
 
 	const ST_HubRow& CurrentHubRow()
 	{
-		return g_axHubRows[g_iHubStep % 6];
+		return g_axHubRows[static_cast<u_int>(g_iHubStep) % iST_HUB_ROWS];
 	}
 
 	bool HubStepIsKeyPass()
 	{
-		return g_iHubStep >= 6;
+		return static_cast<u_int>(g_iHubStep) >= iST_HUB_ROWS;
 	}
 }
 
@@ -503,13 +534,14 @@ static bool Step_HubNavigation(int iFrame)
 		const ST_HubRow& xRow = CurrentHubRow();
 		if (ST_IsSceneActive(xRow.m_iScene))
 		{
+			const u_int uRow = static_cast<u_int>(g_iHubStep) % iST_HUB_ROWS;
 			if (HubStepIsKeyPass())
 			{
-				g_uHubKeysReached |= (1u << (g_iHubStep % 6));
+				g_uHubKeysReached |= (1u << uRow);
 			}
 			else
 			{
-				g_uHubButtonsReached |= (1u << (g_iHubStep % 6));
+				g_uHubButtonsReached |= (1u << uRow);
 			}
 			g_iHubWarm = 0;
 			g_eHubPhase = HubPhase::WarmGym;
@@ -569,8 +601,6 @@ static bool Step_HubNavigation(int iFrame)
 
 static bool Verify_HubNavigation()
 {
-	constexpr u_int32 uALL_SIX = 0x3Fu;
-
 	if (g_bHubClickFailed)
 	{
 		Zenith_Log(LOG_CATEGORY_UNITTEST, "[HubNavigation] aborted: a hub button could not be resolved");
@@ -581,14 +611,16 @@ static bool Verify_HubNavigation()
 		Zenith_Log(LOG_CATEGORY_UNITTEST, "[HubNavigation] aborted: a transition timed out (step %d)", g_iHubStep);
 		return false;
 	}
-	if (g_uHubButtonsReached != uALL_SIX)
+	if (g_uHubButtonsReached != uST_HUB_ALL_ROWS)
 	{
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "[HubNavigation] button rows reached = 0x%02X, expected 0x3F", g_uHubButtonsReached);
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "[HubNavigation] button rows reached = 0x%02X, expected 0x%02X",
+			g_uHubButtonsReached, uST_HUB_ALL_ROWS);
 		return false;
 	}
-	if (g_uHubKeysReached != uALL_SIX)
+	if (g_uHubKeysReached != uST_HUB_ALL_ROWS)
 	{
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "[HubNavigation] key rows reached = 0x%02X, expected 0x3F", g_uHubKeysReached);
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "[HubNavigation] key rows reached = 0x%02X, expected 0x%02X",
+			g_uHubKeysReached, uST_HUB_ALL_ROWS);
 		return false;
 	}
 	if (g_iHubEscReturns != iST_HUB_STEPS)
@@ -605,7 +637,10 @@ static const Zenith_AutomatedTest g_xHubNavigationTest = {
 	&Setup_HubNavigation,
 	&Step_HubNavigation,
 	&Verify_HubNavigation,
-	/*maxFrames*/ 2400,
+	// Per step: warm + a deferred load + warm + a deferred unload, each capped by
+	// iST_HUB_POLL_LIMIT. 200 frames a step is roughly double the observed cost,
+	// and it scales with the table rather than needing a bump per gym.
+	/*maxFrames*/ iST_HUB_STEPS * 200,
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xHubNavigationTest);
 
@@ -2198,5 +2233,612 @@ static const Zenith_AutomatedTest g_xUIGymTest = {
 	/*maxFrames*/ 700,
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xUIGymTest);
+
+// ============================================================================
+// ST_FlowGym_Test (C13)
+// ----------------------------------------------------------------------------
+// Gym_Flow is the only scene that reaches the MULTI-WAY flow constructs, and
+// this is the only thing that can see them work. Every row below is a distinct
+// observable: a row an unwired graph could also satisfy is not a row.
+//
+//   Once .............. bonus == 1 EXACTLY. Not >= 1 -- "at least once" would
+//                       pass on a node that fired every frame.
+//   Cooldown .......... two presses one frame apart raise the counter by ONE,
+//                       and a third press a second later raises it again. The
+//                       second half is what separates a throttle from a
+//                       permanently-closed gate.
+//   Gate .............. a press before the plate arms it changes nothing.
+//   WaitForCondition .. 'armed' stays false while 'ready' is false and flips
+//                       within a few frames of the plate's event -- a one-shot
+//                       OnStart chain that waited, which only works because the
+//                       ON_UPDATE dispatch re-drives suspended anchors.
+//   SwitchOnInt ....... mode 0/1/2 pick their label AND their own nozzle scale;
+//                       mode 3 takes the DEFAULT pin. The scale is what proves
+//                       WHICH pin ran.
+//   SwitchOnString .... the label maps back to 0/1/2, and an unlisted one to -1
+//                       through its default pin.
+//   Selector .......... with no alarm, normalRuns climbs and alarmRuns is zero.
+//                       With one, alarmRuns climbs AND normalRuns FREEZES --
+//                       preemption has no other signature.
+//   ForEach ........... one pass over a 3-element bag: visited == 3, idx == 2.
+//   ListAdd/Count ..... the bag tracks the dispense counter.
+//   ListRemoveAt ...... the count drops by one AND the new head is the FORMER
+//                       SECOND element. A swap-remove would leave the last one
+//                       there instead, which is the only way to tell them apart.
+//   ListClear ......... the count is zero, and the GetListElement after it FAILS
+//                       -- observable only as a sentinel the aborted chain never
+//                       wrote, because a graph has no status variable.
+//   LogicBlackboardBool the full 2x2 of (armed, jammed) -> canDispense, computed
+//                       as NOT then N-ary AND.
+//   CallGraph ......... 'score' rises 10 per dispense, and 'score' is the
+//                       CALLER'S variable -- which is the shared-blackboard
+//                       contract. A child with its own board leaves it at 0.
+//
+// ★ THE COOLDOWN WINDOWS ARE FRAME COUNTS, AND THAT IS SOUND. Cooldown reads
+// Zenith_GraphContext::m_fTimeSeconds, which is FrameContext::GetTimePassed() --
+// an ACCUMULATION of dt, not a wall clock. The harness pins dt at 1/60 across
+// every Step, so 0.75 s is exactly 45 frames here however fast the machine runs.
+// The 55-frame lead-ins below are that plus a wide margin.
+//
+// ★ AND THE FIRST, GATED PRESS BURNS THE COOLDOWN. Chain 4 is Cooldown THEN
+// Gate, so a press that the gate rejects has still passed the throttle. Every
+// dispense below therefore waits out a full window, including the first.
+// ============================================================================
+
+namespace
+{
+	constexpr u_int iST_FLOW_DISPENSER_SLOT = 1u;	// slot 0 is ST_EscToHub
+
+	// 0.75 s = 45 frames at the harness's pinned dt, plus margin.
+	constexpr int iST_FLOW_COOLDOWN_LEAD = 55;
+	// Long enough for both OnUpdate switch chains and the HUD chain to settle.
+	constexpr int iST_FLOW_SETTLE        = 8;
+
+	int32_t ST_FlowInt(const char* szVar, int32_t iDefault)
+	{
+		return ST_ReadInt(ScriptTest::Entities::szGAME_MANAGER, iST_FLOW_DISPENSER_SLOT, szVar, iDefault);
+	}
+
+	bool ST_FlowBool(const char* szVar, bool bDefault)
+	{
+		return ST_ReadBool(ScriptTest::Entities::szGAME_MANAGER, iST_FLOW_DISPENSER_SLOT, szVar, bDefault);
+	}
+
+	std::string ST_FlowString(const char* szVar)
+	{
+		return ST_ReadString(ScriptTest::Entities::szGAME_MANAGER, iST_FLOW_DISPENSER_SLOT, szVar, "<unset>");
+	}
+
+	float ST_FlowNozzleScale()
+	{
+		Zenith_Maths::Vector3 xScale(0.0f);
+		return ST_GetScale(ScriptTest::Entities::szNOZZLE, xScale) ? xScale.y : -1.0f;
+	}
+
+	// One SwitchOnInt outcome: what the int switch wrote, what the string switch
+	// made of it, and what the world looks like as a result.
+	struct ST_FlowModeSample
+	{
+		std::string m_strLabel = "<unsampled>";
+		int32_t     m_iLabelIndex = -99;
+		float       m_fNozzleScale = -1.0f;
+	};
+
+	ST_FlowModeSample g_axFlowModes[4];
+
+	int32_t g_iFlowBonusEarly       = -1;
+	int32_t g_iFlowBonusLate        = -1;
+	int32_t g_iFlowDispensedUnarmed = -1;
+	int32_t g_iFlowDispensedDouble  = -1;
+	int32_t g_iFlowDispensedSecond  = -1;
+	int32_t g_iFlowDispensedThird   = -1;
+	int32_t g_iFlowBagAfterFill     = -1;
+	int32_t g_iFlowScoreAfterFill   = -1;
+	int32_t g_iFlowVisited          = -1;
+	int32_t g_iFlowLastIdx          = -99;
+	int32_t g_iFlowBagAfterDrop     = -1;
+	int32_t g_iFlowHeadAfterDrop    = -99;
+	int32_t g_iFlowBagAfterClear    = -1;
+	int32_t g_iFlowSentinel         = -99;
+	int32_t g_iFlowNormalA          = -1;
+	int32_t g_iFlowNormalB          = -1;
+	int32_t g_iFlowNormalC          = -1;
+	int32_t g_iFlowAlarmA           = -1;
+	int32_t g_iFlowAlarmB           = -1;
+	int32_t g_iFlowAlarmC           = -1;
+	bool    g_bFlowArmedBeforePlate = true;
+	bool    g_bFlowArmedAfterPlate  = false;
+	// The (armed, jammed) truth table, in the order the stages walk it.
+	bool    g_abFlowCanDispense[4]  = { true, false, true, true };
+
+	bool    g_bFlowReady            = false;
+	bool    g_bFlowNozzleMissing    = false;
+
+	void ST_FlowSampleMode(u_int uMode)
+	{
+		ST_FlowModeSample& xSample = g_axFlowModes[uMode];
+		xSample.m_strLabel = ST_FlowString(ScriptTest::Vars::szLABEL);
+		xSample.m_iLabelIndex = ST_FlowInt(ScriptTest::Vars::szLABEL_INDEX, -99);
+		xSample.m_fNozzleScale = ST_FlowNozzleScale();
+		if (xSample.m_fNozzleScale < 0.0f)
+		{
+			g_bFlowNozzleMissing = true;
+		}
+	}
+
+	// --- the script ---------------------------------------------------------
+	// A flat, ordered list rather than a phase enum: this test drives thirty-one
+	// steps and a switch over thirty-one states would be the same table written
+	// less legibly. Each row waits m_iLeadFrames, then runs its body once.
+	struct ST_FlowStage
+	{
+		int  m_iLeadFrames;
+		void (*m_pfnBody)();
+	};
+
+	void ST_FlowPressSpace() { Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_SPACE); }
+	void ST_FlowPressPlate() { Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_P); }
+	void ST_FlowPressMode()  { Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_M); }
+	void ST_FlowPressWalk()  { Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_F); }
+	void ST_FlowPressDrop()  { Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_R); }
+	void ST_FlowPressEmpty() { Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_C); }
+	void ST_FlowPressAlarm() { Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_A); }
+	void ST_FlowPressJam()   { Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_J); }
+	void ST_FlowPressUnarm() { Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_U); }
+
+	void ST_FlowSampleStart()
+	{
+		g_iFlowBonusEarly = ST_FlowInt(ScriptTest::Vars::szBONUS, -1);
+		g_bFlowArmedBeforePlate = ST_FlowBool(ScriptTest::Vars::szARMED, true);
+		g_abFlowCanDispense[0] = ST_FlowBool(ScriptTest::Vars::szCAN_DISPENSE, true);
+		g_iFlowNormalA = ST_FlowInt(ScriptTest::Vars::szNORMAL_RUNS, -1);
+		g_iFlowAlarmA = ST_FlowInt(ScriptTest::Vars::szALARM_RUNS, -1);
+		ST_FlowSampleMode(0);
+	}
+
+	void ST_FlowSampleUnarmedPress()
+	{
+		g_iFlowDispensedUnarmed = ST_FlowInt(ScriptTest::Vars::szDISPENSED, -1);
+	}
+
+	void ST_FlowSampleArmed()
+	{
+		g_bFlowArmedAfterPlate = ST_FlowBool(ScriptTest::Vars::szARMED, false);
+		g_abFlowCanDispense[1] = ST_FlowBool(ScriptTest::Vars::szCAN_DISPENSE, false);
+	}
+
+	void ST_FlowSampleDouble()  { g_iFlowDispensedDouble = ST_FlowInt(ScriptTest::Vars::szDISPENSED, -1); }
+	void ST_FlowSampleSecond()  { g_iFlowDispensedSecond = ST_FlowInt(ScriptTest::Vars::szDISPENSED, -1); }
+
+	void ST_FlowSampleThird()
+	{
+		g_iFlowDispensedThird = ST_FlowInt(ScriptTest::Vars::szDISPENSED, -1);
+		g_iFlowBagAfterFill = ST_FlowInt(ScriptTest::Vars::szBAG_COUNT, -1);
+		g_iFlowScoreAfterFill = ST_FlowInt(ScriptTest::Vars::szSCORE, -1);
+	}
+
+	void ST_FlowSampleWalk()
+	{
+		g_iFlowVisited = ST_FlowInt(ScriptTest::Vars::szVISITED, -1);
+		g_iFlowLastIdx = ST_FlowInt(ScriptTest::Vars::szIDX, -99);
+	}
+
+	void ST_FlowSampleDrop()
+	{
+		g_iFlowBagAfterDrop = ST_FlowInt(ScriptTest::Vars::szBAG_COUNT, -1);
+		g_iFlowHeadAfterDrop = ST_FlowInt(ScriptTest::Vars::szHEAD, -99);
+	}
+
+	void ST_FlowSampleClear()
+	{
+		g_iFlowBagAfterClear = ST_FlowInt(ScriptTest::Vars::szBAG_COUNT, -1);
+		g_iFlowSentinel = ST_FlowInt(ScriptTest::Vars::szSENTINEL, -99);
+	}
+
+	void ST_FlowSampleMode1() { ST_FlowSampleMode(1); }
+	void ST_FlowSampleMode2() { ST_FlowSampleMode(2); }
+	void ST_FlowSampleMode3() { ST_FlowSampleMode(3); }
+
+	void ST_FlowSampleAlarmB()
+	{
+		g_iFlowNormalB = ST_FlowInt(ScriptTest::Vars::szNORMAL_RUNS, -1);
+		g_iFlowAlarmB = ST_FlowInt(ScriptTest::Vars::szALARM_RUNS, -1);
+	}
+
+	void ST_FlowSampleAlarmC()
+	{
+		g_iFlowNormalC = ST_FlowInt(ScriptTest::Vars::szNORMAL_RUNS, -1);
+		g_iFlowAlarmC = ST_FlowInt(ScriptTest::Vars::szALARM_RUNS, -1);
+	}
+
+	void ST_FlowSampleJammed()  { g_abFlowCanDispense[2] = ST_FlowBool(ScriptTest::Vars::szCAN_DISPENSE, true); }
+
+	void ST_FlowSampleUnarmed()
+	{
+		g_abFlowCanDispense[3] = ST_FlowBool(ScriptTest::Vars::szCAN_DISPENSE, true);
+		g_iFlowBonusLate = ST_FlowInt(ScriptTest::Vars::szBONUS, -1);
+	}
+
+	const ST_FlowStage g_axFlowStages[] =
+	{
+		{ iST_FLOW_SETTLE,        &ST_FlowSampleStart },
+		{ 2,                      &ST_FlowPressSpace },			// GATED: armed is false
+		{ iST_FLOW_SETTLE,        &ST_FlowSampleUnarmedPress },
+		{ 2,                      &ST_FlowPressPlate },
+		{ iST_FLOW_SETTLE,        &ST_FlowSampleArmed },
+		{ iST_FLOW_COOLDOWN_LEAD, &ST_FlowPressSpace },			// the gated press burned the window
+		{ 1,                      &ST_FlowPressSpace },			// ...one frame later: swallowed
+		{ iST_FLOW_SETTLE,        &ST_FlowSampleDouble },
+		{ iST_FLOW_COOLDOWN_LEAD, &ST_FlowPressSpace },
+		{ iST_FLOW_SETTLE,        &ST_FlowSampleSecond },
+		{ iST_FLOW_COOLDOWN_LEAD, &ST_FlowPressSpace },
+		{ iST_FLOW_SETTLE,        &ST_FlowSampleThird },
+		{ 2,                      &ST_FlowPressWalk },
+		{ iST_FLOW_SETTLE,        &ST_FlowSampleWalk },
+		{ 2,                      &ST_FlowPressDrop },
+		{ iST_FLOW_SETTLE,        &ST_FlowSampleDrop },
+		{ 2,                      &ST_FlowPressEmpty },
+		{ iST_FLOW_SETTLE,        &ST_FlowSampleClear },
+		{ 2,                      &ST_FlowPressMode },
+		{ iST_FLOW_SETTLE,        &ST_FlowSampleMode1 },
+		{ 2,                      &ST_FlowPressMode },
+		{ iST_FLOW_SETTLE,        &ST_FlowSampleMode2 },
+		{ 2,                      &ST_FlowPressMode },
+		{ iST_FLOW_SETTLE,        &ST_FlowSampleMode3 },
+		{ 2,                      &ST_FlowPressAlarm },
+		{ iST_FLOW_SETTLE,        &ST_FlowSampleAlarmB },
+		{ 40,                     &ST_FlowSampleAlarmC },
+		{ 2,                      &ST_FlowPressJam },
+		{ iST_FLOW_SETTLE,        &ST_FlowSampleJammed },
+		{ 2,                      &ST_FlowPressUnarm },
+		{ iST_FLOW_SETTLE,        &ST_FlowSampleUnarmed },
+	};
+
+	constexpr u_int uST_FLOW_STAGES = static_cast<u_int>(sizeof(g_axFlowStages) / sizeof(g_axFlowStages[0]));
+
+	enum class FlowPhase { Boot, WaitScene, Script, Done };
+
+	FlowPhase g_eFlowPhase = FlowPhase::Boot;
+	u_int     g_uFlowStage = 0;
+	int       g_iFlowWait  = 0;
+	bool      g_bFlowFinished = false;
+}
+
+static void Setup_FlowGym()
+{
+	g_eFlowPhase = FlowPhase::Boot;
+	g_uFlowStage = 0;
+	g_iFlowWait = 0;
+	g_bFlowReady = false;
+	g_bFlowFinished = false;
+	g_bFlowNozzleMissing = false;
+
+	for (u_int u = 0; u < 4u; ++u)
+	{
+		g_axFlowModes[u] = ST_FlowModeSample();
+	}
+
+	g_iFlowBonusEarly = -1;
+	g_iFlowBonusLate = -1;
+	g_iFlowDispensedUnarmed = -1;
+	g_iFlowDispensedDouble = -1;
+	g_iFlowDispensedSecond = -1;
+	g_iFlowDispensedThird = -1;
+	g_iFlowBagAfterFill = -1;
+	g_iFlowScoreAfterFill = -1;
+	g_iFlowVisited = -1;
+	g_iFlowLastIdx = -99;
+	g_iFlowBagAfterDrop = -1;
+	g_iFlowHeadAfterDrop = -99;
+	g_iFlowBagAfterClear = -1;
+	g_iFlowSentinel = -99;
+	g_iFlowNormalA = -1;
+	g_iFlowNormalB = -1;
+	g_iFlowNormalC = -1;
+	g_iFlowAlarmA = -1;
+	g_iFlowAlarmB = -1;
+	g_iFlowAlarmC = -1;
+	g_bFlowArmedBeforePlate = true;
+	g_bFlowArmedAfterPlate = false;
+	// Seeded to the values that FAIL, so a stage that never ran cannot pass by
+	// leaving its slot at something plausible.
+	g_abFlowCanDispense[0] = true;
+	g_abFlowCanDispense[1] = false;
+	g_abFlowCanDispense[2] = true;
+	g_abFlowCanDispense[3] = true;
+}
+
+static bool Step_FlowGym(int iFrame)
+{
+	switch (g_eFlowPhase)
+	{
+	case FlowPhase::Boot:
+		g_xEngine.Scenes().LoadSceneByIndex(ScriptTest::Scenes::iGYM_FLOW, SCENE_LOAD_SINGLE);
+		g_eFlowPhase = FlowPhase::WaitScene;
+		return true;
+
+	case FlowPhase::WaitScene:
+		// The Plate is part of the readiness gate: its graph is what arms the
+		// dispenser, so a scene that loaded without it would make every later
+		// stage fail for a reason this phase can name instead.
+		if (ST_IsSceneActive(ScriptTest::Scenes::iGYM_FLOW)
+			&& ST_EntityExists(ScriptTest::Entities::szPLATE)
+			&& ST_EntityExists(ScriptTest::Entities::szNOZZLE)
+			&& ST_Blackboard(ScriptTest::Entities::szGAME_MANAGER, iST_FLOW_DISPENSER_SLOT) != nullptr)
+		{
+			g_bFlowReady = true;
+			g_iFlowWait = 0;
+			g_eFlowPhase = FlowPhase::Script;
+			return true;
+		}
+		return iFrame < 180;
+
+	case FlowPhase::Script:
+		if (++g_iFlowWait < g_axFlowStages[g_uFlowStage].m_iLeadFrames)
+		{
+			return true;
+		}
+		g_iFlowWait = 0;
+		g_axFlowStages[g_uFlowStage].m_pfnBody();
+		if (++g_uFlowStage >= uST_FLOW_STAGES)
+		{
+			g_bFlowFinished = true;
+			g_eFlowPhase = FlowPhase::Done;
+			return false;
+		}
+		return true;
+
+	case FlowPhase::Done:
+		return false;
+	}
+	return false;
+}
+
+namespace
+{
+	// Every mode expectation in one place: the label SwitchOnInt writes, the
+	// index SwitchOnString derives from it, and the nozzle scale that identifies
+	// the pin. Row 3 is the DEFAULT pin of both switches.
+	struct ST_FlowModeExpectation
+	{
+		const char* m_szLabel;
+		int32_t     m_iLabelIndex;
+		float       m_fNozzleScale;
+	};
+
+	const ST_FlowModeExpectation g_axFlowModeExpectations[4] = {
+		{ ScriptTest::Labels::szRED,   0,  1.0f },
+		{ ScriptTest::Labels::szGREEN, 1,  1.4f },
+		{ ScriptTest::Labels::szBLUE,  2,  1.8f },
+		{ ScriptTest::Labels::szNONE, -1,  0.6f },	// default pins
+	};
+}
+
+static bool Verify_FlowGym()
+{
+	if (!g_bFlowReady)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[FlowGym] Gym_Flow never became active with its Plate, Nozzle and dispenser graph");
+		return false;
+	}
+	if (!g_bFlowFinished)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "[FlowGym] the script stopped at stage %u of %u",
+			g_uFlowStage, uST_FLOW_STAGES);
+		return false;
+	}
+
+	// --- Once ---------------------------------------------------------------
+	// EXACTLY one, at both ends of the run. ">= 1" would pass on a node that
+	// fired every frame, which is the failure Once exists to prevent.
+	if (g_iFlowBonusEarly != 1 || g_iFlowBonusLate != 1)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[FlowGym] '%s' = %d early / %d late, expected exactly 1 both times -- Once let its chain through more than once",
+			ScriptTest::Vars::szBONUS, g_iFlowBonusEarly, g_iFlowBonusLate);
+		return false;
+	}
+
+	// --- WaitForCondition + Gate --------------------------------------------
+	if (g_bFlowArmedBeforePlate)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[FlowGym] '%s' was already true before the plate fired '%s' -- WaitForCondition did not wait",
+			ScriptTest::Vars::szARMED, ScriptTest::Events::szPLATE_ARMED);
+		return false;
+	}
+	if (g_iFlowDispensedUnarmed != 0)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[FlowGym] '%s' = %d after a press taken while unarmed, expected 0 -- the Gate is not gating",
+			ScriptTest::Vars::szDISPENSED, g_iFlowDispensedUnarmed);
+		return false;
+	}
+	if (!g_bFlowArmedAfterPlate)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[FlowGym] '%s' never turned true after the plate's event -- the suspended OnStart chain was not re-driven",
+			ScriptTest::Vars::szARMED);
+		return false;
+	}
+
+	// --- Cooldown -----------------------------------------------------------
+	if (g_iFlowDispensedDouble != 1)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[FlowGym] two presses one frame apart gave '%s' = %d, expected 1 -- the Cooldown let both through",
+			ScriptTest::Vars::szDISPENSED, g_iFlowDispensedDouble);
+		return false;
+	}
+	if (g_iFlowDispensedSecond != 2 || g_iFlowDispensedThird != 3)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[FlowGym] '%s' = %d then %d after two further presses a window apart, expected 2 then 3 -- "
+			"the Cooldown never re-opened",
+			ScriptTest::Vars::szDISPENSED, g_iFlowDispensedSecond, g_iFlowDispensedThird);
+		return false;
+	}
+
+	// --- ListAdd + GetListCount + CallGraph ---------------------------------
+	if (g_iFlowBagAfterFill != g_iFlowDispensedThird)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[FlowGym] '%s' = %d but '%s' = %d -- ListAdd and the counter disagree",
+			ScriptTest::Vars::szBAG_COUNT, g_iFlowBagAfterFill,
+			ScriptTest::Vars::szDISPENSED, g_iFlowDispensedThird);
+		return false;
+	}
+	// 10 per call is the child's own m_iDelta; the point of the assertion is
+	// that the value landed on the CALLER'S blackboard at all.
+	if (g_iFlowScoreAfterFill != g_iFlowDispensedThird * 10)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[FlowGym] '%s' = %d after %d dispenses, expected %d -- the CallGraph child did not write the caller's blackboard",
+			ScriptTest::Vars::szSCORE, g_iFlowScoreAfterFill, g_iFlowDispensedThird, g_iFlowDispensedThird * 10);
+		return false;
+	}
+
+	// --- ForEach ------------------------------------------------------------
+	if (g_iFlowVisited != 3 || g_iFlowLastIdx != 2)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[FlowGym] one ForEach pass over a 3-element bag gave '%s' = %d and '%s' = %d, expected 3 and 2",
+			ScriptTest::Vars::szVISITED, g_iFlowVisited, ScriptTest::Vars::szIDX, g_iFlowLastIdx);
+		return false;
+	}
+
+	// --- ListRemoveAt -------------------------------------------------------
+	// The bag was [1, 2, 3]; dropping index 0 must leave [2, 3]. A swap-remove
+	// would leave [3, 2] and make the head 3 -- that value, not the count, is
+	// what distinguishes the two.
+	if (g_iFlowBagAfterDrop != 2)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "[FlowGym] '%s' = %d after ListRemoveAt, expected 2",
+			ScriptTest::Vars::szBAG_COUNT, g_iFlowBagAfterDrop);
+		return false;
+	}
+	if (g_iFlowHeadAfterDrop != 2)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[FlowGym] '%s' = %d after dropping index 0 of [1,2,3], expected 2 -- ListRemoveAt reordered the list",
+			ScriptTest::Vars::szHEAD, g_iFlowHeadAfterDrop);
+		return false;
+	}
+
+	// --- ListClear, and the abort it causes ---------------------------------
+	if (g_iFlowBagAfterClear != 0)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "[FlowGym] '%s' = %d after ListClear, expected 0",
+			ScriptTest::Vars::szBAG_COUNT, g_iFlowBagAfterClear);
+		return false;
+	}
+	if (g_iFlowSentinel != -1)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[FlowGym] '%s' = %d, expected its declared -1 -- GetListElement on the emptied bag returned SUCCESS "
+			"and let the rest of the chain run",
+			ScriptTest::Vars::szSENTINEL, g_iFlowSentinel);
+		return false;
+	}
+
+	// --- SwitchOnInt + SwitchOnString ---------------------------------------
+	for (u_int uMode = 0; uMode < 4u; ++uMode)
+	{
+		const ST_FlowModeExpectation& xWant = g_axFlowModeExpectations[uMode];
+		const ST_FlowModeSample& xGot = g_axFlowModes[uMode];
+		if (xGot.m_strLabel != xWant.m_szLabel)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST,
+				"[FlowGym] mode %u wrote '%s' = \"%s\", expected \"%s\"",
+				uMode, ScriptTest::Vars::szLABEL, xGot.m_strLabel.c_str(), xWant.m_szLabel);
+			return false;
+		}
+		if (xGot.m_iLabelIndex != xWant.m_iLabelIndex)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST,
+				"[FlowGym] mode %u gave '%s' = %d, expected %d -- SwitchOnString matched the wrong pin for \"%s\"",
+				uMode, ScriptTest::Vars::szLABEL_INDEX, xGot.m_iLabelIndex, xWant.m_iLabelIndex, xWant.m_szLabel);
+			return false;
+		}
+		if (std::fabs(xGot.m_fNozzleScale - xWant.m_fNozzleScale) > 0.01f)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST,
+				"[FlowGym] mode %u left %s at scale %.3f, expected %.3f -- a different SwitchOnInt pin ran",
+				uMode, ScriptTest::Entities::szNOZZLE, xGot.m_fNozzleScale, xWant.m_fNozzleScale);
+			return false;
+		}
+	}
+	if (g_bFlowNozzleMissing)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "[FlowGym] %s vanished mid-test", ScriptTest::Entities::szNOZZLE);
+		return false;
+	}
+
+	// --- Selector -----------------------------------------------------------
+	if (g_iFlowAlarmA != 0 || g_iFlowNormalA <= 0)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[FlowGym] before the alarm: '%s' = %d (expected 0), '%s' = %d (expected > 0) -- "
+			"the Selector is not falling through its gated pin 0",
+			ScriptTest::Vars::szALARM_RUNS, g_iFlowAlarmA, ScriptTest::Vars::szNORMAL_RUNS, g_iFlowNormalA);
+		return false;
+	}
+	if (g_iFlowNormalB <= g_iFlowNormalA)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[FlowGym] '%s' did not climb between the two pre-alarm samples (%d then %d)",
+			ScriptTest::Vars::szNORMAL_RUNS, g_iFlowNormalA, g_iFlowNormalB);
+		return false;
+	}
+	if (g_iFlowAlarmC <= g_iFlowAlarmB)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[FlowGym] '%s' did not climb after the alarm (%d then %d) -- pin 0 never took over",
+			ScriptTest::Vars::szALARM_RUNS, g_iFlowAlarmB, g_iFlowAlarmC);
+		return false;
+	}
+	// ★ PREEMPTION HAS NO OTHER SIGNATURE. Nothing in the alarm branch touches
+	// normalRuns, so the ONLY evidence pin 1 stopped being reached is that its
+	// counter went flat while the other one moved.
+	if (g_iFlowNormalC != g_iFlowNormalB)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[FlowGym] '%s' kept climbing after the alarm (%d then %d) -- the Selector ran BOTH branches",
+			ScriptTest::Vars::szNORMAL_RUNS, g_iFlowNormalB, g_iFlowNormalC);
+		return false;
+	}
+
+	// --- LogicBlackboardBool: the full (armed, jammed) table -----------------
+	const bool abExpected[4] = { false, true, false, false };
+	const char* aszWhen[4] = {
+		"armed=false jammed=false (start)",
+		"armed=true  jammed=false (after the plate)",
+		"armed=true  jammed=true  (after J)",
+		"armed=false jammed=true  (after U)",
+	};
+	for (u_int u = 0; u < 4u; ++u)
+	{
+		if (g_abFlowCanDispense[u] != abExpected[u])
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST,
+				"[FlowGym] '%s' = %d at %s, expected %d",
+				ScriptTest::Vars::szCAN_DISPENSE, g_abFlowCanDispense[u] ? 1 : 0,
+				aszWhen[u], abExpected[u] ? 1 : 0);
+			return false;
+		}
+	}
+
+	return true;
+}
+
+static const Zenith_AutomatedTest g_xFlowGymTest = {
+	"ST_FlowGym_Test",
+	&Setup_FlowGym,
+	&Step_FlowGym,
+	&Verify_FlowGym,
+	/*maxFrames*/ 1200,
+};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xFlowGymTest);
 
 #endif // ZENITH_INPUT_SIMULATOR
