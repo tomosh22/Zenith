@@ -222,7 +222,7 @@ too, plus an ABI fragment** — `Vulkan_arm64_v8a_…` (devices) and `Vulkan_x86
 | Zenith | Core engine library | Static lib (.lib) |
 | FluxCompiler | Shader compiler utility (Windows only) | Executable (.exe) |
 | ZenithTools | Asset tools (Windows only) | Executable (.exe) |
-| Game projects | Combat, TilePuzzle, RenderTest, CityBuilder (SimCity/C:S-style — see Games/CityBuilder/CLAUDE.md), DevilsPlayground, Zenithmon (monster-collecting RPG — see Games/Zenithmon/CLAUDE.md) | Executable (.exe) / Shared lib (.so) |
+| Game projects | Combat, TilePuzzle, RenderTest, CityBuilder (SimCity/C:S-style — see Games/CityBuilder/CLAUDE.md), DevilsPlayground, Zenithmon (monster-collecting RPG — see Games/Zenithmon/CLAUDE.md), ScriptTest (zero-gameplay-C++ Behaviour Graph proving ground — see Games/ScriptTest/CLAUDE.md) | Executable (.exe) / Shared lib (.so) |
 
 ### Building and Running
 
@@ -646,10 +646,12 @@ the same duplication the manifest refactor removed from the build, just
 re-introduced one ticket at a time. Say the OUTCOME; the plumbing is
 allowed to move.
 
-Always pass `--category`: `Zenithmon`, `Engine` or `DevilsPlayground`.
-It selects the gate list, the conventions inlined into the worker's
-prompt, the branching mode, **and now which board the ticket is filed
-on**.
+Always pass `--category`: `Zenithmon`, `Engine`, `DevilsPlayground` or
+`ScriptTest`. It selects the gate list, the conventions inlined into the
+worker's prompt, the branching mode, **and now which board the ticket is
+filed on**. `ScriptTest` declares no `project` of its own, so it files on
+the checkout default (`ZEN`) and inherits `direct` branching — a game
+area is not automatically a board.
 
 `create` also takes `--type EPIC|STORY|TASK|BUG|SUBTASK`, `--parent`,
 `--points N`, `--severity S1_CRITICAL…`, `--repro ALWAYS…`,

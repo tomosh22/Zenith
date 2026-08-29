@@ -52,8 +52,9 @@ Each game is fully described by a small JSON file checked in at the game root:
 Unknown JSON keys are a **hard error** (a typo net — `andriod` or `extraDefine` must
 not silently no-op).
 
-**Android note:** `CityBuilder` is `android:false` (it has no `Android/`
-Gradle tree). The other 5 games are `android:true`.
+**Android note:** `CityBuilder` and `ScriptTest` are `android:false` (neither has an
+`Android/` Gradle tree). The other 5 games — Combat, TilePuzzle, RenderTest,
+DevilsPlayground, Zenithmon — are `android:true`.
 
 ## Generation — one command, one Sharpmake run
 
@@ -91,7 +92,7 @@ Sharpmake lowercases solution filenames.
 | Solution | Location | Contents |
 |----------|----------|----------|
 | `<name>_win64.sln` | `Games/<Name>/` | ZenithBase/ECS/Physics/AI + Zenith aggregate + FluxCompiler (Vulkan) + font libs (tools) + **the one game** + its `extraSharpmakeProjects`. No Sentinels, no other games. |
-| `<name>_agde.sln` | `Games/<Name>/` | Same, Android — only for `android:true` games (5 of 6). |
+| `<name>_agde.sln` | `Games/<Name>/` | Same, Android — only for `android:true` games (5 of 7). |
 | `zenith_engine_win64.sln` | `Build/` | Engine libs + Sentinels (`_False`) + FluxCompiler + font libs + **ZenithHub**. **Zero games, ever.** Engine CI gates + pure engine work. |
 
 The game **vcxproj** files stay under `Games/<Name>/Build/` (so output dirs and config
@@ -136,6 +137,7 @@ downloads), then builds via `/t:`. Full CI reference incl. the static gates
 |----------|--------------------|
 | `cb-tests.yml` | `msbuild Games\CityBuilder\citybuilder_win64.sln /t:CityBuilder` (Vulkan `_True` + D3D12 `_False`) + `zenith test CityBuilder --headless` (45) |
 | `dp-tests.yml` | `msbuild Games\DevilsPlayground\devilsplayground_win64.sln /t:DevilsPlayground` (same) + `zenith test DevilsPlayground --headless` (158) |
+| `st-tests.yml` | `zenith build ScriptTest --headless` + D3D12 `_False` + a **cold-bake stale-scene guard** (deletes ScriptTest's committed `.zscen` set — derived from `git ls-files`, never a hardcoded list — re-authors it from the boot recipes, asserts byte-identical return) + `zenith test ScriptTest --headless`. Drives `zenith` rather than msbuild so its lines are character-identical to the zagent gates |
 | `engine-gate.yml` | Sentinels (`Vulkan_Debug_Win64_False`) built + executed; Combat unit gate (`Tools/run_unit_gate.ps1`) |
 | `release-build.yml` | nightly, build-only: engine + DP in `Vulkan_vs2022_Release_Win64_True` |
 | `shader-validation.yml` | `msbuild Build\zenith_engine_win64.sln /t:FluxCompiler` (first consumer + permanent gate of the engine sln) |
@@ -169,6 +171,15 @@ proof that headless authoring produced the same scene a windowed run would. **No
 is required to author a scene.** (Until ZEN-6 a headless boot was refused any save
 that would CHANGE an existing asset, because Null authoring was entity-incomplete;
 `Zenith/Editor/CLAUDE.md` keeps that history and the rule that replaced it.)
+
+**Boot-authored and COMMITTED is also a valid shape**, and `ScriptTest` is the worked
+example: its seven `.zscen` files are checked in *and* re-authored from the recipes in
+`ScriptTest.cpp` on every tools boot. The rot the template avoids by not committing is
+instead caught mechanically — `st-tests.yml` deletes all seven, re-authors them cold
+and asserts the bytes come back identical, so a recipe that stops reproducing its
+committed scene reds a required check instead of going unnoticed. The same first-run
+rule still applies: the first build+run must be a `*_True` config, since only a tools
+build bakes the graphs, meshes and prefab those scenes reference.
 
 ## Troubleshooting
 

@@ -1,0 +1,260 @@
+#pragma once
+
+#include "FileAccess/Zenith_FileAccess.h"
+
+#include <cstdint>
+
+// ============================================================================
+// ScriptTest_Graphs.h -- the game's STRING CONTRACT plus the 15 Behaviour
+// Graph builder declarations.
+//
+// ScriptTest carries zero gameplay C++: every behaviour is an engine-owned
+// graph node, wired by the builders below and attached to boot-authored scene
+// entities. That makes a whole class of strings load-bearing and unchecked --
+// an entity name a FindEntityByName node looks up, a UI element name a
+// SetUIText node addresses, a blackboard variable two nodes share, a custom
+// event one graph fires and another listens for. None of them is validated at
+// compile time; a typo produces a graph that builds cleanly and does nothing.
+//
+// So each is spelled EXACTLY ONCE, here, and shared by the two things that
+// must agree: the builders + scene recipes in ScriptTest.cpp, and the tests
+// that assert on the result. A test that restated a literal would prove only
+// that the test agrees with itself.
+//
+// Deliberately light: only the extension defines come in, and
+// Zenith_GraphBuilder is forward-declared, so a test TU pays nothing to
+// include this.
+// ============================================================================
+
+class Zenith_GraphBuilder;
+
+namespace ScriptTest
+{
+	// --- Behaviour graph assets (attach order per entity = the B1 slot order) ---
+	namespace Graphs
+	{
+		inline constexpr const char* szESC_TO_HUB     = "game:Graphs/ST_EscToHub"     ZENITH_BGRAPH_EXT;
+		inline constexpr const char* szHUB_FLOW       = "game:Graphs/ST_HubFlow"      ZENITH_BGRAPH_EXT;
+		inline constexpr const char* szSPIN           = "game:Graphs/ST_Spin"         ZENITH_BGRAPH_EXT;
+		inline constexpr const char* szPING_PONG      = "game:Graphs/ST_PingPong"     ZENITH_BGRAPH_EXT;
+		inline constexpr const char* szSINE_BOB       = "game:Graphs/ST_SineBob"      ZENITH_BGRAPH_EXT;
+		inline constexpr const char* szPLAYER_MOVE    = "game:Graphs/ST_PlayerMove"   ZENITH_BGRAPH_EXT;
+		inline constexpr const char* szJUMP           = "game:Graphs/ST_Jump"         ZENITH_BGRAPH_EXT;
+		inline constexpr const char* szBALL_SPAWNER   = "game:Graphs/ST_BallSpawner"  ZENITH_BGRAPH_EXT;
+		inline constexpr const char* szKILL_VOLUME    = "game:Graphs/ST_KillVolume"   ZENITH_BGRAPH_EXT;
+		inline constexpr const char* szPRESSURE_PLATE = "game:Graphs/ST_PressurePlate" ZENITH_BGRAPH_EXT;
+		inline constexpr const char* szDOOR           = "game:Graphs/ST_Door"         ZENITH_BGRAPH_EXT;
+		inline constexpr const char* szBELL_RING      = "game:Graphs/ST_BellRing"     ZENITH_BGRAPH_EXT;
+		inline constexpr const char* szBELL_LISTENER  = "game:Graphs/ST_BellListener" ZENITH_BGRAPH_EXT;
+		inline constexpr const char* szTRAFFIC_LIGHT  = "game:Graphs/ST_TrafficLight" ZENITH_BGRAPH_EXT;
+		inline constexpr const char* szUI_PLAYGROUND  = "game:Graphs/ST_UIPlayground" ZENITH_BGRAPH_EXT;
+	}
+
+	// --- Scenes: build index + on-disk path -----------------------------------
+	// The INDEX is graph contract: every LoadSceneByIndex node in ST_HubFlow /
+	// ST_EscToHub names one, and Project_LoadInitialScene registers the same
+	// index against the same path. Keep the two columns in lockstep.
+	namespace Scenes
+	{
+		inline constexpr int32_t iHUB         = 0;
+		inline constexpr int32_t iGYM_MOTION  = 1;
+		inline constexpr int32_t iGYM_INPUT   = 2;
+		inline constexpr int32_t iGYM_PHYSICS = 3;
+		inline constexpr int32_t iGYM_EVENTS  = 4;
+		inline constexpr int32_t iGYM_STATE   = 5;
+		inline constexpr int32_t iGYM_UI      = 6;
+		inline constexpr int32_t iCOUNT       = 7;
+
+		inline constexpr const char* szHUB_PATH         = GAME_ASSETS_DIR "Scenes/Hub"         ZENITH_SCENE_EXT;
+		inline constexpr const char* szGYM_MOTION_PATH  = GAME_ASSETS_DIR "Scenes/Gym_Motion"  ZENITH_SCENE_EXT;
+		inline constexpr const char* szGYM_INPUT_PATH   = GAME_ASSETS_DIR "Scenes/Gym_Input"   ZENITH_SCENE_EXT;
+		inline constexpr const char* szGYM_PHYSICS_PATH = GAME_ASSETS_DIR "Scenes/Gym_Physics" ZENITH_SCENE_EXT;
+		inline constexpr const char* szGYM_EVENTS_PATH  = GAME_ASSETS_DIR "Scenes/Gym_Events"  ZENITH_SCENE_EXT;
+		inline constexpr const char* szGYM_STATE_PATH   = GAME_ASSETS_DIR "Scenes/Gym_State"   ZENITH_SCENE_EXT;
+		inline constexpr const char* szGYM_UI_PATH      = GAME_ASSETS_DIR "Scenes/Gym_UI"      ZENITH_SCENE_EXT;
+
+		// The scratch scene the ST_Ball prefab is captured from. Deliberately
+		// NEVER saved -- it exists only so CreatePrefabFromSelected has a live
+		// entity to capture, and is unloaded immediately after.
+		inline constexpr const char* szPREFAB_SCRATCH   = "PrefabScratch";
+	}
+
+	// --- Entity names ----------------------------------------------------------
+	// Every one of these is looked up by a FindEntityByName node, or targeted by
+	// a scene recipe's SelectEntity, or both.
+	namespace Entities
+	{
+		inline constexpr const char* szGAME_MANAGER    = "GameManager";
+		inline constexpr const char* szSUN             = "Sun";
+		inline constexpr const char* szKEY_LIGHT       = "KeyLight";
+		inline constexpr const char* szFLOOR           = "Floor";
+		inline constexpr const char* szPLATFORM        = "Platform";
+		inline constexpr const char* szSPINNER         = "Spinner";
+		inline constexpr const char* szPING_PONG       = "PingPong";
+		inline constexpr const char* szBOBBER          = "Bobber";
+		inline constexpr const char* szPLAYER_CUBE     = "PlayerCube";
+		inline constexpr const char* szSPAWNER         = "Spawner";
+		inline constexpr const char* szKILL_VOLUME     = "KillVolume";
+		inline constexpr const char* szPRESSURE_PLATE  = "PressurePlate";
+		inline constexpr const char* szGYM_DOOR        = "Gym_Door";
+		inline constexpr const char* szBELL_LISTENER_A = "BellListener_A";
+		inline constexpr const char* szBELL_LISTENER_B = "BellListener_B";
+		inline constexpr const char* szBELL_LISTENER_C = "BellListener_C";
+		inline constexpr const char* szLAMP_RED        = "Lamp_Red";
+		inline constexpr const char* szLAMP_AMBER      = "Lamp_Amber";
+		inline constexpr const char* szLAMP_GREEN      = "Lamp_Green";
+
+		// The prefab template entity (scratch scene only) and the runtime name
+		// SpawnPrefab stamps on each ball it instantiates.
+		inline constexpr const char* szBALL_TEMPLATE   = "ST_BallTemplate";
+		inline constexpr const char* szBALL            = "Ball";
+	}
+
+	// --- UI element names ------------------------------------------------------
+	// Addressed by SetUIText / SetUIColor / SetUIFillAmount / OnUIButtonClicked.
+	namespace UINames
+	{
+		inline constexpr const char* szTITLE      = "Title";
+		inline constexpr const char* szHINT       = "Hint";
+
+		inline constexpr const char* szBTN_MOTION  = "Btn_Motion";
+		inline constexpr const char* szBTN_INPUT   = "Btn_Input";
+		inline constexpr const char* szBTN_PHYSICS = "Btn_Physics";
+		inline constexpr const char* szBTN_EVENTS  = "Btn_Events";
+		inline constexpr const char* szBTN_STATE   = "Btn_State";
+		inline constexpr const char* szBTN_UI      = "Btn_UI";
+
+		inline constexpr const char* szSPAWNED    = "Spawned";
+		inline constexpr const char* szKILLED     = "Killed";
+		inline constexpr const char* szSTATE_NAME = "StateName";
+
+		inline constexpr const char* szCOUNTER    = "Counter";
+		inline constexpr const char* szCLOCK      = "Clock";
+		inline constexpr const char* szBAR_FILL   = "BarFill";
+		inline constexpr const char* szBTN_PLUS   = "BtnPlus";
+		inline constexpr const char* szBTN_MINUS  = "BtnMinus";
+	}
+
+	// --- Blackboard variable names ---------------------------------------------
+	// Each is written by one node and read by another; a mismatch is silent
+	// (the reader gets its default), which is exactly why they live here.
+	namespace Vars
+	{
+		inline constexpr const char* szT            = "t";           // SineBob phase
+		inline constexpr const char* szCOS_T        = "cosT";
+		inline constexpr const char* szBOB_VEL      = "bobVel";
+
+		inline constexpr const char* szMOVE_DIR     = "moveDir";     // PlayerMove
+		inline constexpr const char* szMOVE_VEL     = "moveVel";
+
+		inline constexpr const char* szUI_TARGET    = "uiTarget";    // packed EntityID
+		inline constexpr const char* szSPAWN_COUNT  = "spawnCount";
+		inline constexpr const char* szKILL_COUNT   = "killCount";
+		inline constexpr const char* szOTHER        = "other";       // collision payload
+
+		inline constexpr const char* szDOOR         = "door";        // packed EntityID
+		inline constexpr const char* szLAMP         = "lamp";        // packed EntityID
+
+		inline constexpr const char* szLIGHT        = "light";       // TrafficLight state
+
+		inline constexpr const char* szCOUNT        = "count";       // UIPlayground
+		inline constexpr const char* szCLOCK        = "clock";
+		inline constexpr const char* szCYCLE        = "cycle";
+		inline constexpr const char* szFILL01       = "fill01";
+		inline constexpr const char* szHOT          = "hot";
+	}
+
+	// --- Custom event names ----------------------------------------------------
+	// The TL* names are NOT free-form: StateMachine composes them as
+	// "<m_strEventPrefix>Enter_<stateName>" / "<prefix>Exit_<stateName>", so
+	// szTL_PREFIX + szTL_STATE_NAMES and the six event strings below have to
+	// agree character for character.
+	namespace Events
+	{
+		inline constexpr const char* szOPEN_DOOR  = "OpenDoor";
+		inline constexpr const char* szCLOSE_DOOR = "CloseDoor";
+		inline constexpr const char* szBELL       = "Bell";
+
+		inline constexpr const char* szTL_PREFIX      = "TL";
+		inline constexpr const char* szTL_STATE_NAMES = "Red,Green,Amber";
+
+		inline constexpr const char* szTL_ENTER_RED   = "TLEnter_Red";
+		inline constexpr const char* szTL_EXIT_RED    = "TLExit_Red";
+		inline constexpr const char* szTL_ENTER_GREEN = "TLEnter_Green";
+		inline constexpr const char* szTL_EXIT_GREEN  = "TLExit_Green";
+		inline constexpr const char* szTL_ENTER_AMBER = "TLEnter_Amber";
+		inline constexpr const char* szTL_EXIT_AMBER  = "TLExit_Amber";
+	}
+
+	// --- Materials (registry paths) --------------------------------------------
+	// Created unconditionally in Project_RegisterGameComponents -- NOT under
+	// ZENITH_TOOLS -- because a committed scene serializes these paths and a
+	// _False boot has to resolve them with no authoring pass.
+	namespace Materials
+	{
+		inline constexpr const char* szFLOOR  = "game:Materials/ST_Floor"  ZENITH_MATERIAL_EXT;
+		inline constexpr const char* szPLAYER = "game:Materials/ST_Player" ZENITH_MATERIAL_EXT;
+		inline constexpr const char* szBALL   = "game:Materials/ST_Ball"   ZENITH_MATERIAL_EXT;
+		inline constexpr const char* szPROP   = "game:Materials/ST_Prop"   ZENITH_MATERIAL_EXT;
+		inline constexpr const char* szRED    = "game:Materials/ST_Red"    ZENITH_MATERIAL_EXT;
+		inline constexpr const char* szAMBER  = "game:Materials/ST_Amber"  ZENITH_MATERIAL_EXT;
+		inline constexpr const char* szGREEN  = "game:Materials/ST_Green"  ZENITH_MATERIAL_EXT;
+	}
+
+	// --- Generated meshes ------------------------------------------------------
+	// The .zasset is the CPU mesh; the .zmodel is the bundle AddStep_LoadModel
+	// references and the saved scene persists. Both are written by
+	// Project_InitializeResources on a tools boot only.
+	namespace Meshes
+	{
+		inline constexpr const char* szUNIT_CUBE_ASSET   = GAME_ASSETS_DIR "Meshes/UnitCube"   ZENITH_MESH_ASSET_EXT;
+		inline constexpr const char* szUNIT_CUBE_MODEL   = GAME_ASSETS_DIR "Meshes/UnitCube"   ZENITH_MODEL_EXT;
+		inline constexpr const char* szUNIT_SPHERE_ASSET = GAME_ASSETS_DIR "Meshes/UnitSphere" ZENITH_MESH_ASSET_EXT;
+		inline constexpr const char* szUNIT_SPHERE_MODEL = GAME_ASSETS_DIR "Meshes/UnitSphere" ZENITH_MODEL_EXT;
+	}
+
+	// --- Prefabs ---------------------------------------------------------------
+	// szBALL_NAME is the prefab's logical name; szBALL_SAVE_PATH is where the
+	// authoring pass writes it; szBALL_ASSET is the registry path the
+	// SpawnPrefab node resolves at runtime. Three spellings of one artifact.
+	namespace Prefabs
+	{
+		inline constexpr const char* szBALL_NAME      = "ST_Ball";
+		inline constexpr const char* szBALL_SAVE_PATH = GAME_ASSETS_DIR "Prefabs/ST_Ball" ZENITH_PREFAB_EXT;
+		inline constexpr const char* szBALL_ASSET     = "game:Prefabs/ST_Ball"            ZENITH_PREFAB_EXT;
+	}
+}
+
+// ============================================================================
+// The 15 graph builders. Each authors ONE .bgraph through a
+// Zenith_EngineGraphBuilder over the plain builder it is handed.
+//
+// Deliberately NOT tools-gated -- unlike Combat's, which are static and live
+// inside #ifdef ZENITH_TOOLS. ZENITH_INPUT_SIMULATOR is unconditional, so the
+// hermetic tests reference every builder in _False configurations too;
+// tools-gating them would break the D3D12_*_False link gate. They are also the
+// SINGLE definition of each graph: the tools boot writes the .bgraph from them,
+// and the three HERMETIC contract tests (C2/C3/C4) build them in-process, so
+// THOSE THREE depend on no asset on disk.
+//
+// ★ THAT SCOPE IS THE WHOLE CLAIM -- the other nine tests DO depend on a prior
+// authoring pass. They load the committed .zscen, whose slots reference the
+// fifteen .bgraph, the two generated meshes and the ball prefab, and all of
+// those are gitignored BAKE PRODUCTS that only a *_True boot writes. That is
+// why a fresh checkout's first build + run must be a tools config.
+// ============================================================================
+void BuildGraph_ST_EscToHub(Zenith_GraphBuilder& xBuilder);
+void BuildGraph_ST_HubFlow(Zenith_GraphBuilder& xBuilder);
+void BuildGraph_ST_Spin(Zenith_GraphBuilder& xBuilder);
+void BuildGraph_ST_PingPong(Zenith_GraphBuilder& xBuilder);
+void BuildGraph_ST_SineBob(Zenith_GraphBuilder& xBuilder);
+void BuildGraph_ST_PlayerMove(Zenith_GraphBuilder& xBuilder);
+void BuildGraph_ST_Jump(Zenith_GraphBuilder& xBuilder);
+void BuildGraph_ST_BallSpawner(Zenith_GraphBuilder& xBuilder);
+void BuildGraph_ST_KillVolume(Zenith_GraphBuilder& xBuilder);
+void BuildGraph_ST_PressurePlate(Zenith_GraphBuilder& xBuilder);
+void BuildGraph_ST_Door(Zenith_GraphBuilder& xBuilder);
+void BuildGraph_ST_BellRing(Zenith_GraphBuilder& xBuilder);
+void BuildGraph_ST_BellListener(Zenith_GraphBuilder& xBuilder);
+void BuildGraph_ST_TrafficLight(Zenith_GraphBuilder& xBuilder);
+void BuildGraph_ST_UIPlayground(Zenith_GraphBuilder& xBuilder);

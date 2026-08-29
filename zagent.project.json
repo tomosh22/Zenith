@@ -152,6 +152,7 @@
         "pwsh -NoProfile -File Tools\\zenith.ps1 build RenderTest --headless",
         "pwsh -NoProfile -File Tools\\zenith.ps1 build TilePuzzle --headless",
         "pwsh -NoProfile -File Tools\\zenith.ps1 build DevilsPlayground --headless",
+        "pwsh -NoProfile -File Tools\\zenith.ps1 build ScriptTest --headless",
         "pwsh -NoProfile -File Tools\\zenith.ps1 test Combat --headless",
         "pwsh -NoProfile -ExecutionPolicy Bypass -File Tools\\run_unit_gate.ps1 -Exe Games\\Combat\\Build\\output\\win64\\null_vs2022_debug_win64_true\\combat.exe -Game Combat -TimeoutSec 600"
       ],
@@ -190,6 +191,32 @@
           "BuildEnvironment.md"
         ]
       }
+    },
+    "ScriptTest": {
+      "$comment": [
+        "No `project` key, so tickets land on the checkout default (ZEN), and no",
+        "`branching` key, so they inherit the project's `direct` mode -- this game",
+        "is a scripting testbed for the engine, not an area with its own board.",
+        "",
+        "NO run_unit_gate.ps1 line, and deliberately NO ScriptTest row in",
+        "Tools/unit_baselines.json: Test_UnitBaselineManifest.ps1 asserts every row",
+        "there is named by some workflow's -Game or declared advisory with a reason,",
+        "so an ungated row cannot be added silently. ScriptTest's coverage is its",
+        "automated tests, which `test ScriptTest --headless` runs.",
+        "",
+        "The build line also appears in the Engine category above -- an engine",
+        "change compiles EVERY game, and Test-ZagentClient.ps1 fails if a game with",
+        "a .zproj is missing from that list."
+      ],
+      "paths": [
+        "Games/ScriptTest/**"
+      ],
+      "gates": [
+        "pwsh -NoProfile -File Tools\\zenith.ps1 build ScriptTest --headless",
+        "pwsh -NoProfile -File Tools\\zenith.ps1 build ScriptTest --config D3D12_vs2022_Debug_Win64_False",
+        "pwsh -NoProfile -File Tools\\zenith.ps1 test ScriptTest --headless"
+      ],
+      "conventions": "Games/ScriptTest/CLAUDE.md is binding. ST_ prefix. ZERO gameplay C++: the game defines no game ECS component and no game graph-node implementation -- every behaviour is an engine-owned node wired by a BuildGraph_ST_* builder in ScriptTest.cpp. ST_NoGameExtensionsContract enforces that mechanically; adding either is a redesign, not a fix. Every string two things must agree on lives once in ScriptTest_Graphs.h."
     }
   },
   "conventionDocs": {

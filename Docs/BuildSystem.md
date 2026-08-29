@@ -388,6 +388,7 @@ Concurrency groups cancel superseded PR runs (master pushes always complete).
 |----------|-------|
 | `cb-tests` | CityBuilder Vulkan `_True` compile proof + **Null `_True` build (the exe every step runs)** + D3D12 `_False` link proof + 45-test headless suite via `zenith test` |
 | `dp-tests` | Same shape for DevilsPlayground (158 tests) |
+| `st-tests` | ScriptTest headless build + D3D12 `_False` link proof + **cold-bake stale-scene guard** (deletes the committed `.zscen` set — derived from `git ls-files`, never a hardcoded list — re-authors it from the boot recipes, asserts byte-identical return) + the 13-test headless suite. Drives `zenith` rather than msbuild so its gate lines stay character-identical to the zagent category |
 | `engine-gate` | Sentinels (`Vulkan_Debug_Win64_False`) built AND executed + Combat unit gate (`Tools/run_unit_gate.ps1`; it passes no `-Baseline`, so the script's default is the pin — 1638 as of 2026-08-13 — known flake tolerated). Rollout: dispatch → burn-in → required |
 | `release-build` | NIGHTLY (not PR-blocking): engine + DP in `Vulkan_vs2022_Release_Win64_True`, build-only — the only Release compile in CI |
 | `shader-validation` | FluxCompiler (Release `_True`) catalog/parity/spine-lint + git-status drift gate on shader outputs |
