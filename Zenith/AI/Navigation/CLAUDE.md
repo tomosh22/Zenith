@@ -140,6 +140,34 @@ g_xEngine.Scenes().QueryActiveScene<Zenith_NavMeshComponent>().ForEach(
     [](Zenith_EntityID, Zenith_NavMeshComponent& xNav) { /* xNav.GetNavMesh() */ });
 ```
 
+**★ AND FROM A GRAPH, WITH NO GAME C++ AT ALL — that is new.** Until the
+`EnsureNavAgent` node existed, `Zenith_AIAgentComponent::SetNavMeshAgent` had
+exactly **three** callers, every one of them game C++
+(`RenderTest_TennisMatchComponent`, `Priest_Component` twice). There was no graph
+node, no editor-automation step and no engine component that created or bound a
+`Zenith_NavMeshAgent` — so every nav node returned FAILURE on the null pointer,
+and navigation was unusable from a graph. That contradicted the engine's own
+doctrine (systems are components, gameplay logic is graphs). The authored path is
+now complete end to end:
+
+```
+AddStep_AddComponent("NavMesh")          # the holder entity
+AddStep_SetNavMeshAsset("game:Navmesh/MyLevel.znavmesh")
+
+# ...and on the agent entity, in a graph:
+OnStart -> EnsureNavAgent -> SetNavDestination -> NavMoveTo
+```
+
+`EnsureNavAgent` returns **RUNNING** while a *configured* `Zenith_NavMeshComponent`
+has not finished loading (`OnStart` is deferred to the entity's first Update), so
+that one-shot chain is re-driven by the ON_UPDATE dispatch until the mesh
+resolves. It returns FAILURE for an **unconfigured** one — the load state alone
+cannot tell the two apart, because `NAVMESH_LOAD_STATE_UNLOADED` is documented as
+*"no ref, **or** explicitly unloaded"*, so the node consults the asset ref too.
+"Already wired" means bound to **this** mesh, not merely non-null: a component
+owns its mesh for its own lifetime, so an agent left over from a previous scene
+would otherwise read as wired while pointing at freed memory.
+
 **Ownership is the component's, deliberately.** There is no path-keyed cache and
 no static state anywhere in this feature: a navmesh's lifetime is its level's, so
 scene switching frees and re-loads automatically and there is nothing to

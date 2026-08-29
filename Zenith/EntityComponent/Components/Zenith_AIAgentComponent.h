@@ -15,8 +15,10 @@ class Zenith_NavMeshAgent;
  *
  * Provides an entity's AI-system integration seams:
  * - Perception registration (via PerceptionSystem, in OnAwake/OnDestroy)
- * - Navigation: a non-owning NavMeshAgent borrow, ticked every frame in
- *   OnUpdate while the agent is enabled
+ * - Navigation: a NavMeshAgent, ticked every frame in OnUpdate while enabled.
+ *   It may be BORROWED (SetNavMeshAgent, the historical path -- game code owns
+ *   the lifetime) or OWNED (EnsureOwnedNavMeshAgent, the opt-in path the
+ *   EnsureNavAgent graph node uses). Nothing auto-creates one.
  * - An enable flag that gates the per-frame nav tick (game logic / behaviour
  *   graphs park an agent by disabling it)
  *
@@ -26,7 +28,8 @@ class Zenith_NavMeshAgent;
  *
  * Usage:
  *   auto& xAI = xEntity.AddComponent<Zenith_AIAgentComponent>();
- *   xAI.SetNavMeshAgent(&xMyNavAgent);
+ *   xAI.SetNavMeshAgent(&xMyNavAgent);        // borrow: caller owns it
+ *   Zenith_NavMeshAgent* p = xAI.EnsureOwnedNavMeshAgent();  // or: we own it
  */
 class Zenith_AIAgentComponent
 {
@@ -50,14 +53,37 @@ public:
 	void OnDestroy();
 
 	// ========== Navigation ==========
+	//
+	// TWO POINTERS, not a pointer plus an ownership bool. The bool form makes
+	// the self-assignment and borrow-vs-own cases easy to get subtly wrong, and
+	// gives you nothing to assert; this shape has one checkable invariant:
+	//
+	//   m_pxOwnedNavMeshAgent != nullptr  =>  m_pxOwnedNavMeshAgent == m_pxNavMeshAgent
+	//
+	// Neither pointer is SERIALIZED. They are runtime-only, so this adds no
+	// .zscen format change and no cross-game scene republish.
 
-	// The NavMeshAgent pointer is non-owning. Lifetime is managed externally
-	// (typically by the navigation system or a parent component that creates
-	// agents alongside the navmesh). Setting/clearing this pointer never
-	// allocates or frees the underlying agent — callers are responsible for
-	// nulling it before the agent it points to is destroyed.
-	void SetNavMeshAgent(Zenith_NavMeshAgent* pxAgent) { m_pxNavMeshAgent = pxAgent; }
+	// Installs a BORROWED agent: this component never frees it, and the caller
+	// must null the borrow before destroying what it points at.
+	//
+	// ★ p == the currently-installed pointer is a NO-OP, and that is the case
+	// that bites: freeing the owned agent first would destroy the very object
+	// being installed. SetNavMeshAgent(nullptr) clears both pointers (freeing an
+	// owned agent). Any other value frees an owned agent and installs the borrow.
+	void SetNavMeshAgent(Zenith_NavMeshAgent* pxAgent);
+
+	// Returns an agent, allocating one this component OWNS if there is none.
+	//
+	// ★ AN EXISTING BORROW WINS AND IS RETURNED UNTOUCHED. A game's explicit
+	// SetNavMeshAgent is a deliberate decision; an auto-wire (the EnsureNavAgent
+	// graph node) must never quietly replace it. Idempotent.
+	Zenith_NavMeshAgent* EnsureOwnedNavMeshAgent();
+
 	Zenith_NavMeshAgent* GetNavMeshAgent() const { return m_pxNavMeshAgent; }
+
+	// True when the ACTIVE agent is one this component allocated. Exists for the
+	// ownership units and the editor panel; game code should not need it.
+	bool OwnsNavMeshAgent() const { return m_pxOwnedNavMeshAgent != nullptr; }
 
 	// ========== Entity Access ==========
 
@@ -85,9 +111,18 @@ public:
 #endif
 
 private:
+	// Frees m_pxOwnedNavMeshAgent and nulls both pointers. The one place the
+	// owned agent is deleted, so the destructor, SetNavMeshAgent and both move
+	// operations cannot disagree about it.
+	void ReleaseOwnedNavMeshAgent();
+
 	Zenith_Entity m_xParentEntity;
-	// Non-owning. See SetNavMeshAgent() for ownership rules.
+
+	// ACTIVE: borrowed or owned. Every consumer reads this one.
 	Zenith_NavMeshAgent* m_pxNavMeshAgent = nullptr;
+	// Non-null ONLY when we allocated it, in which case it equals the pointer
+	// above. See the invariant in the Navigation section.
+	Zenith_NavMeshAgent* m_pxOwnedNavMeshAgent = nullptr;
 
 	float m_fUpdateInterval = 0.1f;
 

@@ -4,7 +4,10 @@
 #include "Scripting/Zenith_GraphBlackboard.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "EntityComponent/Components/Zenith_AIAgentComponent.h"
+#include "EntityComponent/Components/Zenith_NavMeshComponent.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
+#include "ZenithECS/Zenith_Query.h"
+#include "ZenithECS/Zenith_SceneData.h"
 #include "EntityComponent/Zenith_GraphNodeHelpers.h"
 #include "AI/Navigation/Zenith_NavMesh.h"
 #include "AI/Navigation/Zenith_NavMeshAgent.h"
@@ -16,8 +19,10 @@
 // Engine Behaviour Graph node library - AI domain (navigation + perception).
 //
 // Navigation nodes reach the agent via Zenith_AIAgentComponent::
-// GetNavMeshAgent() - a NON-OWNING pointer wired by game code, frequently
-// null; every node null-checks component AND agent (FAILURE). The agent is
+// GetNavMeshAgent() - null until something wires it; every node null-checks
+// component AND agent (FAILURE). EnsureNavAgent is what a GRAPH uses to do
+// that wiring: before it existed, SetNavMeshAgent had exactly three callers,
+// all in game C++, so navigation was unreachable from a graph alone. The agent is
 // ticked by the component's OnUpdate - nodes never call agent Update.
 // NavMoveTo transplants the Zenith_BTAction_MoveTo/MoveToEntity semantics:
 // node-owned repath timer (no agent-side repath exists), and the
@@ -48,6 +53,121 @@ namespace
 	//==========================================================================
 	// Navigation
 	//==========================================================================
+
+	// Binds a Zenith_NavMeshAgent to the target's Zenith_AIAgentComponent,
+	// allocating one the component OWNS if it has none. This is the node that
+	// makes every other nav node reachable from a graph.
+	//
+	// ★ WHY IT EXISTS. Zenith_AIAgentComponent::SetNavMeshAgent had three
+	// callers before this, every one of them game C++ (RenderTest's tennis
+	// component and DevilsPlayground's priest). There was no graph node, no
+	// editor-automation step and no engine component that created or bound an
+	// agent -- so every nav node returned FAILURE on the null pointer and
+	// navigation could not be authored without dropping into C++. That
+	// contradicts the engine's own doctrine (systems are components, gameplay is
+	// graphs) and is exactly the class of gap ScriptTest exists to surface.
+	//
+	// RUNNING is what makes it compose under a one-shot anchor:
+	//   OnStart -> EnsureNavAgent -> SetNavDestination -> NavMoveTo
+	// is re-driven by the ON_UPDATE dispatch until the mesh resolves, the same
+	// mechanism a suspended WaitForCondition relies on.
+	class Zenith_GraphNode_EnsureNavAgent : public Zenith_GraphNode
+	{
+	public:
+		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_EnsureNavAgent)
+	public:
+		// "" = the first Zenith_NavMeshComponent in the active scene; otherwise
+		// an EntityID var naming the entity that holds it.
+		ZENITH_PROPERTY(std::string, m_strNavMeshVar, "")
+		// "" = self. Declared LAST, per the AI-family convention.
+		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
+
+		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
+		{
+			Zenith_Entity xTarget = xContext.ResolveTargetEntity(m_strTargetVar);
+			if (!xTarget.IsValid())
+			{
+				return GRAPH_NODE_STATUS_FAILURE;
+			}
+			Zenith_AIAgentComponent* pxAgentComponent = xTarget.TryGetComponent<Zenith_AIAgentComponent>();
+			if (pxAgentComponent == nullptr)
+			{
+				return GRAPH_NODE_STATUS_FAILURE;
+			}
+
+			Zenith_NavMeshComponent* pxNavMeshComponent = FindNavMeshComponent(xContext);
+			if (pxNavMeshComponent == nullptr)
+			{
+				return GRAPH_NODE_STATUS_FAILURE;
+			}
+
+			// ★ THE LOAD STATE ALONE CANNOT SEPARATE "not yet" FROM "never".
+			// NAVMESH_LOAD_STATE_UNLOADED is documented as "no ref, OR explicitly
+			// unloaded", so the asset ref has to be consulted too: an unconfigured
+			// component is a FAILURE (nothing is coming), while a configured one
+			// whose OnStart has not run yet is RUNNING (it is coming next frame).
+			switch (pxNavMeshComponent->GetLoadState())
+			{
+			case NAVMESH_LOAD_STATE_LOADED:
+				break;
+			case NAVMESH_LOAD_STATE_FAILED:
+				// The header calls a ref that will not load a DEFECT, not a wait
+				// state -- so this never becomes RUNNING and never resolves.
+				return GRAPH_NODE_STATUS_FAILURE;
+			default:
+				return pxNavMeshComponent->GetAssetRef().empty()
+					? GRAPH_NODE_STATUS_FAILURE	// unconfigured: nothing is coming
+					: GRAPH_NODE_STATUS_RUNNING;	// OnStart is deferred to the first Update
+			}
+
+			Zenith_NavMesh* pxNavMesh = pxNavMeshComponent->GetNavMesh();
+			if (pxNavMesh == nullptr)
+			{
+				return GRAPH_NODE_STATUS_FAILURE;
+			}
+
+			Zenith_NavMeshAgent* pxNavAgent = pxAgentComponent->EnsureOwnedNavMeshAgent();
+			if (pxNavAgent == nullptr)
+			{
+				return GRAPH_NODE_STATUS_FAILURE;
+			}
+
+			// ★ "ALREADY WIRED" MEANS BOUND TO *THIS* MESH, NOT MERELY NON-NULL.
+			// A component owns its mesh for its own lifetime and the header warns
+			// never to hold the pointer across a scene change -- so an agent left
+			// over from a previous scene reads as wired while pointing at freed
+			// memory. Comparing the two pointers is what catches that.
+			if (pxNavAgent->GetNavMesh() != pxNavMesh)
+			{
+				pxNavAgent->SetNavMesh(pxNavMesh);
+			}
+			return GRAPH_NODE_STATUS_SUCCESS;
+		}
+		const char* GetTypeName() const override { return "EnsureNavAgent"; }
+
+	private:
+		Zenith_NavMeshComponent* FindNavMeshComponent(Zenith_GraphContext& xContext) const
+		{
+			if (!m_strNavMeshVar.empty())
+			{
+				Zenith_Entity xHolder = xContext.ResolveTargetEntity(m_strNavMeshVar);
+				return xHolder.IsValid() ? xHolder.TryGetComponent<Zenith_NavMeshComponent>() : nullptr;
+			}
+			// Ordinary ECS discovery -- the same query the component's own docs
+			// name. First match wins; a scene with two navmeshes should name one
+			// through m_strNavMeshVar rather than rely on query order.
+			Zenith_NavMeshComponent* pxFound = nullptr;
+			g_xEngine.Scenes().QueryActiveScene<Zenith_NavMeshComponent>().ForEach(
+				[&pxFound](Zenith_EntityID, Zenith_NavMeshComponent& xComponent)
+				{
+					if (pxFound == nullptr)
+					{
+						pxFound = &xComponent;
+					}
+				});
+			return pxFound;
+		}
+	};
 
 	// Moves the agent to a position ref (re-resolved every repath, so an
 	// EntityID var gives entity-follow). RUNNING until within
@@ -567,6 +687,7 @@ void Zenith_RegisterEngineGraphNodes_AI()
 	Zenith_GraphNodeRegistry& xRegistry = Zenith_GraphNodeRegistry::Get();
 
 	// Navigation
+	xRegistry.RegisterNodeType<Zenith_GraphNode_EnsureNavAgent>("EnsureNavAgent", GRAPH_EVENT_NONE, 1, false, "AI");
 	xRegistry.RegisterNodeType<Zenith_GraphNode_NavMoveTo>("NavMoveTo", GRAPH_EVENT_NONE, 1, false, "AI");
 	xRegistry.RegisterNodeType<Zenith_GraphNode_SetNavDestination>("SetNavDestination", GRAPH_EVENT_NONE, 1, false, "AI");
 	xRegistry.RegisterNodeType<Zenith_GraphNode_StopNav>("StopNav", GRAPH_EVENT_NONE, 1, false, "AI");

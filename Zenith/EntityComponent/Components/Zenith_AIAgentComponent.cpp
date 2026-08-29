@@ -42,18 +42,24 @@ Zenith_AIAgentComponent::Zenith_AIAgentComponent(Zenith_Entity& xParentEntity)
 
 Zenith_AIAgentComponent::~Zenith_AIAgentComponent()
 {
-	// Note: we don't own the nav agent, it's set externally.
+	// A BORROWED agent is still not ours to free; an OWNED one is.
+	ReleaseOwnedNavMeshAgent();
 }
 
 Zenith_AIAgentComponent::Zenith_AIAgentComponent(Zenith_AIAgentComponent&& xOther) noexcept
 	: m_xParentEntity(xOther.m_xParentEntity)
 	, m_pxNavMeshAgent(xOther.m_pxNavMeshAgent)
+	, m_pxOwnedNavMeshAgent(xOther.m_pxOwnedNavMeshAgent)
 	, m_fUpdateInterval(xOther.m_fUpdateInterval)
 	, m_bEnabled(xOther.m_bEnabled)
 {
-	// Clear moved-from object's pointer to prevent a dangling borrow, and disable
-	// it so the pool's move-construct-then-destruct-source never ticks a corpse.
+	// NEUTRALISE THE SOURCE, both pointers. Clearing only the active one would
+	// leave the moved-from component still holding the owned agent and free it
+	// from its destructor -- which the pool runs immediately after this. Also
+	// disable it, so the pool's move-construct-then-destruct-source never ticks
+	// a corpse.
 	xOther.m_pxNavMeshAgent = nullptr;
+	xOther.m_pxOwnedNavMeshAgent = nullptr;
 	xOther.m_bEnabled = false;
 }
 
@@ -61,15 +67,62 @@ Zenith_AIAgentComponent& Zenith_AIAgentComponent::operator=(Zenith_AIAgentCompon
 {
 	if (this != &xOther)
 	{
+		// Our own agent goes first: overwriting the pointer without this would
+		// leak it, and there is no other owner left to free it.
+		ReleaseOwnedNavMeshAgent();
+
 		m_xParentEntity = xOther.m_xParentEntity;
 		m_pxNavMeshAgent = xOther.m_pxNavMeshAgent;
+		m_pxOwnedNavMeshAgent = xOther.m_pxOwnedNavMeshAgent;
 		m_fUpdateInterval = xOther.m_fUpdateInterval;
 		m_bEnabled = xOther.m_bEnabled;
 
 		xOther.m_pxNavMeshAgent = nullptr;
+		xOther.m_pxOwnedNavMeshAgent = nullptr;
 		xOther.m_bEnabled = false;
 	}
 	return *this;
+}
+
+void Zenith_AIAgentComponent::ReleaseOwnedNavMeshAgent()
+{
+	if (m_pxOwnedNavMeshAgent != nullptr)
+	{
+		// The invariant says the active pointer is the same object, so it dies
+		// with it -- never left dangling.
+		Zenith_Assert(m_pxOwnedNavMeshAgent == m_pxNavMeshAgent,
+			"AIAgent: owned nav agent is not the active one");
+		delete m_pxOwnedNavMeshAgent;
+		m_pxOwnedNavMeshAgent = nullptr;
+		m_pxNavMeshAgent = nullptr;
+	}
+}
+
+void Zenith_AIAgentComponent::SetNavMeshAgent(Zenith_NavMeshAgent* pxAgent)
+{
+	// ★ Installing the pointer that is already installed must do NOTHING. The
+	// naive "free the old one, then assign" would delete the very agent being
+	// installed and hand back a dangling pointer -- and this is reachable:
+	// SetNavMeshAgent(GetNavMeshAgent()) is what a re-wire pass looks like.
+	if (pxAgent == m_pxNavMeshAgent)
+	{
+		return;
+	}
+	ReleaseOwnedNavMeshAgent();
+	m_pxNavMeshAgent = pxAgent;
+}
+
+Zenith_NavMeshAgent* Zenith_AIAgentComponent::EnsureOwnedNavMeshAgent()
+{
+	// A BORROW WINS. Game code that wired an agent deliberately keeps it; an
+	// auto-wire never replaces an explicit decision.
+	if (m_pxNavMeshAgent != nullptr)
+	{
+		return m_pxNavMeshAgent;
+	}
+	m_pxOwnedNavMeshAgent = new Zenith_NavMeshAgent();
+	m_pxNavMeshAgent = m_pxOwnedNavMeshAgent;
+	return m_pxNavMeshAgent;
 }
 
 void Zenith_AIAgentComponent::OnAwake()
@@ -136,7 +189,8 @@ void Zenith_AIAgentComponent::RenderPropertiesPanel()
 {
 	ImGui::Checkbox("Enabled", &m_bEnabled);
 	ImGui::DragFloat("Update Interval", &m_fUpdateInterval, 0.01f, 0.016f, 1.0f, "%.3f sec");
-	ImGui::Text("Nav agent: %s", m_pxNavMeshAgent ? "wired" : "(none)");
+	ImGui::Text("Nav agent: %s", m_pxNavMeshAgent
+		? (m_pxOwnedNavMeshAgent ? "owned" : "borrowed") : "(none)");
 }
 #endif
 

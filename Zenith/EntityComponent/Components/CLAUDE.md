@@ -20,7 +20,7 @@ This directory contains all component types for the Entity-Component System.
 | `Zenith_ParticleEmitterComponent` | Particle effect emitters |
 | `Zenith_GraphComponent` | Behaviour Graph host (multiple .bgraph slots per entity, hot-reloadable) |
 | `Zenith_UIComponent` | UI element support |
-| `Zenith_AIAgentComponent` | Behaviour tree execution + blackboard state (AI system integration) |
+| `Zenith_AIAgentComponent` | AI integration seams: perception registration + a `Zenith_NavMeshAgent` that is either **borrowed** or **owned** (see below). Decision-making is graphs, not a behaviour tree |
 | `Zenith_AttachmentComponent` | Bone-attachment that follows a named bone on another entity each frame (e.g. racket in hand, held weapon) |
 | `Zenith_NavMeshComponent` | Baked-navmesh holder — loads a committed `.znavmesh` in `OnStart` and owns it for the component's lifetime; rich TOOLS debugging panel |
 
@@ -290,6 +290,32 @@ Pinned by the `InstancedMesh, *` units in
 `EntityComponent/Zenith_InstancedMeshComponent.Tests.inl` (config sweeps, slot recycling,
 pose + shape, v5 round-trip, v4 compatibility, both move ops) and end-to-end by
 RenderTest's `RT_TreeCollision`.
+
+## AIAgentComponent's nav agent: borrowed OR owned, via two pointers
+
+```cpp
+Zenith_NavMeshAgent* m_pxNavMeshAgent      = nullptr;  // ACTIVE: borrowed or owned
+Zenith_NavMeshAgent* m_pxOwnedNavMeshAgent = nullptr;  // non-null only when WE allocated
+// INVARIANT: m_pxOwnedNavMeshAgent != nullptr  =>  m_pxOwnedNavMeshAgent == m_pxNavMeshAgent
+```
+
+**Two pointers, not a pointer plus an ownership bool.** The bool form makes the
+self-assignment and borrow-vs-own cases easy to get subtly wrong and gives you
+nothing to assert; this shape has one checkable invariant, and
+`ReleaseOwnedNavMeshAgent()` is the single place the owned agent is deleted, so
+the destructor, `SetNavMeshAgent` and both move operations cannot disagree.
+
+| Operation | Contract |
+|---|---|
+| `EnsureOwnedNavMeshAgent()` | **Preserves an existing borrow** — a game's explicit wiring is a decision an auto-wire must never replace. Otherwise allocates into both pointers. Idempotent. |
+| `SetNavMeshAgent(p)` | `p == the installed pointer` is a **no-op** — the case that bites, since "free the old one then assign" would delete the very agent being installed. `nullptr` clears both. Anything else frees an owned agent, then installs the borrow. |
+| destructor | frees the owned agent only |
+| move-construct / move-assign | both pointers transfer and the **source is neutralised**; move-assign frees its own agent first. A source left holding the owned pointer would free it out from under the target — the pool move-constructs then destructs the source. |
+
+**Neither pointer is serialized**, so this added no `.zscen` format change and no
+cross-game scene republish. Nothing auto-creates an agent: one appears only when
+something asks. The graph-side asker is the **`EnsureNavAgent`** node — see
+`../../AI/Navigation/CLAUDE.md`.
 
 ## AnimatorComponent is a forwarding handle (Wave-19 ownership relocation)
 

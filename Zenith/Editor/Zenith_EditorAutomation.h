@@ -287,6 +287,12 @@ enum class Zenith_EditorActionType
 	ADD_PREFAB_VARIANT_OVERRIDE_VEC3,
 	INSTANTIATE_PREFAB,
 
+	// NavMesh. Deliberately NOT appended to the Terrain block above, which is
+	// routed by a range comparison: a standalone action sits outside every
+	// range and reaches ExecuteAction's own switch, which is what a
+	// single-verb family wants.
+	SET_NAVMESH_ASSET,
+
 	// Scene loading
 	LOAD_INITIAL_SCENE,                 // Combined: registers the initial-scene-load callback,
 	                                    // then invokes it once under a lifecycle-deferral guard.
@@ -496,6 +502,17 @@ void AddStep_SetLightColor(float fR, float fG, float fB);
 	// Sun component field edits. Apply after AddStep_AddComponent("Sun").
 void AddStep_SetSunDirection(float fX, float fY, float fZ);
 void AddStep_SetSunTimeOfDay(float fAngleDegrees, float fOrbitAzimuthDegrees);
+
+	// NavMesh component field edit. Apply after AddStep_AddComponent("NavMesh").
+	//
+	// ★ THIS WAS THE MISSING HALF OF AUTHORED NAVMESHES. Zenith_NavMeshComponent
+	// documents an "AUTHORED scenes" recipe -- add the component, set its ref,
+	// the ref serializes -- but there was no automation verb for the second
+	// step, so a recipe could add the component and never populate it. The ref
+	// goes through Zenith_NavMeshComponent::SetAssetRef, which resolves a
+	// `game:`/`engine:` prefix through Zenith_AssetRegistry and LOADS
+	// IMMEDIATELY (so a following step can already query the mesh).
+void AddStep_SetNavMeshAsset(const char* szAssetRef);
 
 	//--------------------------------------------------------------------------
 	// UI Step Helpers

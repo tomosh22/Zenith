@@ -38,6 +38,8 @@
 #include "Physics/Zenith_Physics.h"
 #include "AI/Navigation/Zenith_NavMesh.h"
 #include "AI/Navigation/Zenith_NavMeshAgent.h"
+#include "AI/Navigation/Zenith_NavMeshBaker.h"
+#include "EntityComponent/Components/Zenith_NavMeshComponent.h"
 #include "AI/Perception/Zenith_PerceptionSystem.h"
 #include "Prefab/Zenith_Prefab.h"
 #include "Flux/MeshAnimation/Flux_AnimationStateMachine.h"
@@ -3596,6 +3598,329 @@ ZENITH_TEST(GraphComponent, BlackboardLogicAndListNodeSerializationRoundTrip)
 	{
 		ZENITH_ASSERT_STREQ(ReadParam::Str(pxClear, "m_strListVar").c_str(), "bag");
 	}
+}
+
+//=============================================================================
+// The nav-agent WIRING gap (EnsureNavAgent + the component's owned agent)
+//
+// Zenith_AIAgentComponent::SetNavMeshAgent had three callers before this, every
+// one of them game C++. There was no graph node, no editor-automation step and
+// no engine component that created or bound a Zenith_NavMeshAgent -- so every
+// nav node returned FAILURE on the null pointer and navigation could not be
+// authored from a graph at all. These pin the two halves that closed it.
+//=============================================================================
+
+namespace
+{
+	// A baked .znavmesh in the OS temp dir, removed on ANY exit path.
+	//
+	// ★ THE OS TEMP DIR, NOT Assets/Navmesh, AND THAT IS NOT ARBITRARY.
+	// .gitignore re-admits `**/*.znavmesh` under Assets/ as a first-class TRACKED
+	// asset, so a bake left in a game's asset tree by a failing early-return
+	// would show up as an untracked file and dirty the working tree of every
+	// game that runs the engine suite. Zenith_AssetRegistry::ResolvePath passes
+	// an unprefixed path through verbatim, so an absolute temp path is a
+	// perfectly good asset ref and nothing has to be cleaned out of the repo.
+	struct EnsureNavAgentBakedMesh
+	{
+		std::string m_strPath;
+		bool        m_bBaked = false;
+
+		explicit EnsureNavAgentBakedMesh(const char* szLeafName)
+		{
+			std::error_code xEC;
+			std::filesystem::path xDir = std::filesystem::temp_directory_path(xEC);
+			if (xEC)
+			{
+				xDir = ".";
+			}
+			m_strPath = (xDir / szLeafName).string();
+			std::filesystem::remove(m_strPath, xEC);
+
+			// A flat 4x4 m ground grid. ★ WINDING IS LOAD-BEARING HERE and the
+			// two navmesh paths disagree about it: BakeToFile runs the
+			// generator's voxeliser + SLOPE FILTER, so the triangles need an
+			// upward +Y normal or the bake silently yields an EMPTY mesh. The
+			// hand-built AddPolygon fixture the older AI units use skips the
+			// filter entirely and gets away with any order.
+			Zenith_Vector<Zenith_Maths::Vector3> axVertices;
+			Zenith_Vector<uint32_t> auIndices;
+			constexpr u_int uQUADS = 4u;
+			constexpr u_int uSTRIDE = uQUADS + 1u;
+			for (u_int uZ = 0; uZ <= uQUADS; ++uZ)
+			{
+				for (u_int uX = 0; uX <= uQUADS; ++uX)
+				{
+					axVertices.PushBack(Zenith_Maths::Vector3(
+						static_cast<float>(uX), 0.0f, static_cast<float>(uZ)));
+				}
+			}
+			for (u_int uZ = 0; uZ < uQUADS; ++uZ)
+			{
+				for (u_int uX = 0; uX < uQUADS; ++uX)
+				{
+					const uint32_t uV0 = uZ * uSTRIDE + uX;
+					const uint32_t uV1 = uV0 + 1u;
+					const uint32_t uV2 = uV0 + uSTRIDE;
+					const uint32_t uV3 = uV2 + 1u;
+					auIndices.PushBack(uV0); auIndices.PushBack(uV2); auIndices.PushBack(uV3);
+					auIndices.PushBack(uV0); auIndices.PushBack(uV3); auIndices.PushBack(uV1);
+				}
+			}
+
+			NavMeshGenerationConfig xConfig;
+			const Zenith_NavMeshBakeResult xResult =
+				Zenith_NavMeshBaker::BakeToFile(axVertices, auIndices, xConfig, m_strPath);
+			m_bBaked = xResult.m_bSuccess;
+		}
+
+		~EnsureNavAgentBakedMesh()
+		{
+			std::error_code xEC;
+			std::filesystem::remove(m_strPath, xEC);
+		}
+	};
+
+	// Fires ONE EnsureNavAgent through the real graph machinery and returns the
+	// resulting status, so every row of the node's status table is exercised the
+	// way a graph would reach it rather than by calling Execute() directly.
+	std::string SaveEnsureNavAgentGraphAsset(const char* szLeafName, const char* szNavMeshVar)
+	{
+		const std::string strAssetPath = std::string("game:Graphs/") + szLeafName;
+		std::error_code xEC;
+		std::filesystem::create_directories(Zenith_AssetRegistry::ResolvePath("game:Graphs"), xEC);
+
+		Zenith_BehaviourGraphAsset xAsset;
+		Zenith_GraphDefinition& xDef = xAsset.GetDefinition();
+
+		const u_int uSource = xDef.AddNode("OnCustomEvent");
+		{
+			NodeParamWriter xParams(xDef, uSource, "OnCustomEvent");
+			xParams.SetString("m_strEventName", "Wire");
+		}
+		const u_int uEnsure = xDef.AddNode("EnsureNavAgent");
+		{
+			NodeParamWriter xParams(xDef, uEnsure, "EnsureNavAgent");
+			xParams.SetString("m_strNavMeshVar", szNavMeshVar);
+		}
+		// Only reached on SUCCESS -- a FAILURE or RUNNING aborts the chain, so
+		// this flag distinguishes "the node ran" from "the node succeeded"
+		// without the test needing the node's return value.
+		const u_int uWired = xDef.AddNode("SetBlackboardBool");
+		{
+			NodeParamWriter xParams(xDef, uWired, "SetBlackboardBool");
+			xParams.SetString("m_strVariable", "wired");
+		}
+		xDef.AddEdge(uSource, 0, uEnsure, 0);
+		xDef.AddEdge(uEnsure, 0, uWired, 0);
+
+		Zenith_AssetRegistry::Save(&xAsset, strAssetPath);
+		return strAssetPath;
+	}
+}
+
+ZENITH_TEST(AIAgentComponent, NavMeshAgentOwnershipMatrix)
+{
+	// The whole ownership contract, against a bare stack agent -- no navmesh
+	// needed, and no scene: these are the rules that decide whether an agent is
+	// freed once, twice or never.
+	Zenith_TempScene xTempScene("TestAIAgentOwnershipScene");
+	Zenith_SceneData* pxSceneData = xTempScene.Data();
+	Zenith_Entity xEntity = g_xEngine.Scenes().CreateEntity(pxSceneData, "OwnershipAgent");
+
+	Zenith_AIAgentComponent& xAI = xEntity.AddComponent<Zenith_AIAgentComponent>();
+	ZENITH_ASSERT_NULL(xAI.GetNavMeshAgent(), "a fresh AIAgent must not auto-create an agent");
+	ZENITH_ASSERT_FALSE(xAI.OwnsNavMeshAgent());
+
+	// --- Ensure allocates, and is IDEMPOTENT -------------------------------
+	Zenith_NavMeshAgent* pxOwned = xAI.EnsureOwnedNavMeshAgent();
+	ZENITH_ASSERT_NOT_NULL(pxOwned);
+	ZENITH_ASSERT_TRUE(xAI.OwnsNavMeshAgent());
+	ZENITH_ASSERT_EQ(static_cast<const void*>(xAI.EnsureOwnedNavMeshAgent()), static_cast<const void*>(pxOwned),
+		"EnsureOwnedNavMeshAgent must not allocate a second agent");
+
+	// --- SetNavMeshAgent(same pointer) is a NO-OP ---------------------------
+	// ★ THE CASE THAT BITES. "free the old one, then assign" would delete the
+	// very agent being installed and leave a dangling pointer behind -- and this
+	// call is exactly what a re-wire pass looks like.
+	xAI.SetNavMeshAgent(pxOwned);
+	ZENITH_ASSERT_EQ(static_cast<const void*>(xAI.GetNavMeshAgent()), static_cast<const void*>(pxOwned));
+	ZENITH_ASSERT_TRUE(xAI.OwnsNavMeshAgent(), "re-installing the owned agent must not drop ownership");
+
+	// --- installing a BORROW frees the owned one ----------------------------
+	Zenith_NavMeshAgent xBorrowed;
+	xAI.SetNavMeshAgent(&xBorrowed);
+	ZENITH_ASSERT_EQ(static_cast<const void*>(xAI.GetNavMeshAgent()), static_cast<const void*>(&xBorrowed));
+	ZENITH_ASSERT_FALSE(xAI.OwnsNavMeshAgent(), "an installed borrow is not owned");
+
+	// --- and a BORROW WINS over Ensure --------------------------------------
+	// A game's explicit wiring is a decision; an auto-wire must never replace it.
+	ZENITH_ASSERT_EQ(static_cast<const void*>(xAI.EnsureOwnedNavMeshAgent()), static_cast<const void*>(&xBorrowed),
+		"EnsureOwnedNavMeshAgent replaced an explicitly installed borrow");
+	ZENITH_ASSERT_FALSE(xAI.OwnsNavMeshAgent());
+
+	// --- clearing --------------------------------------------------------
+	xAI.SetNavMeshAgent(nullptr);
+	ZENITH_ASSERT_NULL(xAI.GetNavMeshAgent());
+	ZENITH_ASSERT_FALSE(xAI.OwnsNavMeshAgent());
+
+	// Re-own, then let the component die owning it. A double-free or a leak here
+	// is what the debug heap / the leak report at shutdown would report.
+	ZENITH_ASSERT_NOT_NULL(xAI.EnsureOwnedNavMeshAgent());
+	ZENITH_ASSERT_TRUE(xAI.OwnsNavMeshAgent());
+	xEntity.RemoveComponent<Zenith_AIAgentComponent>();
+}
+
+ZENITH_TEST(AIAgentComponent, NavMeshAgentMovesWithoutDoubleFree)
+{
+	// Both move operations, in the shape the component POOL performs them:
+	// move-construct (or move-assign) then destruct the source. A source left
+	// holding the owned pointer would free it out from under the target.
+	Zenith_TempScene xTempScene("TestAIAgentMoveScene");
+	Zenith_SceneData* pxSceneData = xTempScene.Data();
+	Zenith_Entity xEntity = g_xEngine.Scenes().CreateEntity(pxSceneData, "MoveAgent");
+
+	{
+		Zenith_AIAgentComponent xSource(xEntity);
+		Zenith_NavMeshAgent* pxOwned = xSource.EnsureOwnedNavMeshAgent();
+		ZENITH_ASSERT_NOT_NULL(pxOwned);
+
+		Zenith_AIAgentComponent xMoved(std::move(xSource));
+		ZENITH_ASSERT_EQ(static_cast<const void*>(xMoved.GetNavMeshAgent()), static_cast<const void*>(pxOwned));
+		ZENITH_ASSERT_TRUE(xMoved.OwnsNavMeshAgent());
+		ZENITH_ASSERT_NULL(xSource.GetNavMeshAgent(), "the moved-from source still points at the agent");
+		ZENITH_ASSERT_FALSE(xSource.OwnsNavMeshAgent(), "the moved-from source still claims ownership");
+		// Both destruct at the end of this scope -- the source must free nothing.
+	}
+
+	{
+		Zenith_AIAgentComponent xSource(xEntity);
+		Zenith_NavMeshAgent* pxOwned = xSource.EnsureOwnedNavMeshAgent();
+
+		Zenith_AIAgentComponent xTarget(xEntity);
+		// The target has its OWN agent, which move-assign must free rather than
+		// leak: nothing else is left holding it.
+		ZENITH_ASSERT_NOT_NULL(xTarget.EnsureOwnedNavMeshAgent());
+		xTarget = std::move(xSource);
+
+		ZENITH_ASSERT_EQ(static_cast<const void*>(xTarget.GetNavMeshAgent()), static_cast<const void*>(pxOwned));
+		ZENITH_ASSERT_TRUE(xTarget.OwnsNavMeshAgent());
+		ZENITH_ASSERT_NULL(xSource.GetNavMeshAgent());
+		ZENITH_ASSERT_FALSE(xSource.OwnsNavMeshAgent());
+	}
+}
+
+ZENITH_TEST(GraphComponent, EnsureNavAgentStatusTableWithoutAMesh)
+{
+	// Every row of the node's status table that needs NO navmesh. The 'wired'
+	// flag is downstream of the node, so it is set only on SUCCESS -- FAILURE
+	// and RUNNING both abort the chain before it.
+	const std::string strAssetPath = SaveEnsureNavAgentGraphAsset("UnitTest_EnsureNavAgent.bgraph", "");
+
+	Zenith_TempScene xTempScene("TestEnsureNavAgentScene");
+	Zenith_SceneData* pxSceneData = xTempScene.Data();
+
+	// --- no Zenith_NavMeshComponent anywhere in the scene -> FAILURE --------
+	Zenith_Entity xAgent = g_xEngine.Scenes().CreateEntity(pxSceneData, "EnsureAgent");
+	xAgent.AddComponent<Zenith_AIAgentComponent>();
+	Zenith_GraphComponent& xGraphs = xAgent.AddComponent<Zenith_GraphComponent>();
+	Zenith_BehaviourGraph* pxGraph = xGraphs.AddGraphByAssetPath(strAssetPath.c_str());
+	ZENITH_ASSERT_NOT_NULL(pxGraph);
+	if (!pxGraph) { return; }
+	ZENITH_ASSERT_EQ(pxGraph->GetUnresolvedCount(), 0u, "EnsureNavAgent is not registered");
+	Zenith_GraphBlackboard& xBlackboard = pxGraph->GetBlackboard();
+
+	xGraphs.FireCustomEvent("Wire");
+	ZENITH_ASSERT_FALSE(xBlackboard.GetBool("wired", false), "no NavMeshComponent must FAIL");
+	ZENITH_ASSERT_NULL(xAgent.GetComponent<Zenith_AIAgentComponent>().GetNavMeshAgent(),
+		"a failed EnsureNavAgent must not have allocated an agent");
+
+	// --- a holder with NO ref -> FAILURE, not RUNNING ----------------------
+	// ★ THE LOAD STATE ALONE CANNOT TELL THESE APART. UNLOADED is documented as
+	// "no ref, OR explicitly unloaded", so an unconfigured component looks
+	// exactly like one whose deferred OnStart has not run yet. Consulting the
+	// ref is what separates "never coming" from "not yet".
+	Zenith_Entity xHolder = g_xEngine.Scenes().CreateEntity(pxSceneData, "EnsureNavHolder");
+	Zenith_NavMeshComponent& xNavMesh = xHolder.AddComponent<Zenith_NavMeshComponent>();
+	ZENITH_ASSERT_EQ(static_cast<int>(xNavMesh.GetLoadState()), static_cast<int>(NAVMESH_LOAD_STATE_UNLOADED));
+	ZENITH_ASSERT_TRUE(xNavMesh.GetAssetRef().empty());
+
+	xGraphs.FireCustomEvent("Wire");
+	ZENITH_ASSERT_FALSE(xBlackboard.GetBool("wired", false), "an unconfigured NavMeshComponent must FAIL");
+	ZENITH_ASSERT_NULL(xAgent.GetComponent<Zenith_AIAgentComponent>().GetNavMeshAgent());
+
+	// --- an entity with no AIAgentComponent at all -> FAILURE --------------
+	Zenith_Entity xBare = g_xEngine.Scenes().CreateEntity(pxSceneData, "EnsureNavBare");
+	Zenith_GraphComponent& xBareGraphs = xBare.AddComponent<Zenith_GraphComponent>();
+	Zenith_BehaviourGraph* pxBareGraph = xBareGraphs.AddGraphByAssetPath(strAssetPath.c_str());
+	ZENITH_ASSERT_NOT_NULL(pxBareGraph);
+	if (!pxBareGraph) { return; }
+	xBareGraphs.FireCustomEvent("Wire");
+	ZENITH_ASSERT_FALSE(pxBareGraph->GetBlackboard().GetBool("wired", false),
+		"an entity with no AIAgentComponent must FAIL");
+}
+
+ZENITH_TEST(GraphComponent, EnsureNavAgentBindsABakedNavMesh)
+{
+	// The SUCCESS path, end to end through the REAL load path: bake a navmesh,
+	// point a Zenith_NavMeshComponent at it, and let a graph wire an agent to it.
+	//
+	// ★ WHY A BAKE RATHER THAN THE HAND-BUILT QUAD THE OTHER AI UNITS USE.
+	// Zenith_NavMeshComponent exposes no mesh-injection setter -- only
+	// SetAssetRef -- so a mesh built in memory cannot be pushed into a
+	// COMPONENT, and this node resolves its mesh through the component. Adding a
+	// production seam for a test would be the wrong trade; baking a 4x4 m quad
+	// grid into a temp file exercises the path the game actually takes.
+	EnsureNavAgentBakedMesh xBaked("zenith_ensure_nav_agent_test.znavmesh");
+	ZENITH_ASSERT_TRUE(xBaked.m_bBaked, "the fixture navmesh did not bake");
+	if (!xBaked.m_bBaked) { return; }
+
+	const std::string strAssetPath = SaveEnsureNavAgentGraphAsset("UnitTest_EnsureNavAgentBound.bgraph", "");
+
+	Zenith_TempScene xTempScene("TestEnsureNavAgentBoundScene");
+	Zenith_SceneData* pxSceneData = xTempScene.Data();
+
+	Zenith_Entity xHolder = g_xEngine.Scenes().CreateEntity(pxSceneData, "BoundNavHolder");
+	Zenith_NavMeshComponent& xNavMesh = xHolder.AddComponent<Zenith_NavMeshComponent>();
+	// An unprefixed ref passes through Zenith_AssetRegistry::ResolvePath verbatim,
+	// and SetAssetRef loads immediately -- no frame tick needed.
+	ZENITH_ASSERT_TRUE(xNavMesh.SetAssetRef(xBaked.m_strPath), "the baked navmesh would not load");
+	ZENITH_ASSERT_EQ(static_cast<int>(xNavMesh.GetLoadState()), static_cast<int>(NAVMESH_LOAD_STATE_LOADED));
+	const Zenith_NavMesh* pxLoadedMesh = xNavMesh.GetNavMesh();
+	ZENITH_ASSERT_NOT_NULL(pxLoadedMesh);
+
+	Zenith_Entity xAgent = g_xEngine.Scenes().CreateEntity(pxSceneData, "BoundAgent");
+	Zenith_AIAgentComponent& xAI = xAgent.AddComponent<Zenith_AIAgentComponent>();
+	ZENITH_ASSERT_NULL(xAI.GetNavMeshAgent(), "the fixture agent must start UNWIRED");
+
+	Zenith_GraphComponent& xGraphs = xAgent.AddComponent<Zenith_GraphComponent>();
+	Zenith_BehaviourGraph* pxGraph = xGraphs.AddGraphByAssetPath(strAssetPath.c_str());
+	ZENITH_ASSERT_NOT_NULL(pxGraph);
+	if (!pxGraph) { return; }
+
+	xGraphs.FireCustomEvent("Wire");
+	ZENITH_ASSERT_TRUE(pxGraph->GetBlackboard().GetBool("wired", false), "EnsureNavAgent did not SUCCEED");
+
+	Zenith_NavMeshAgent* pxNavAgent = xAgent.GetComponent<Zenith_AIAgentComponent>().GetNavMeshAgent();
+	ZENITH_ASSERT_NOT_NULL(pxNavAgent, "EnsureNavAgent reported SUCCESS without wiring an agent");
+	if (pxNavAgent == nullptr) { return; }
+	ZENITH_ASSERT_TRUE(xAgent.GetComponent<Zenith_AIAgentComponent>().OwnsNavMeshAgent(),
+		"the auto-wired agent must be OWNED by the component");
+	// Bound to THAT mesh, not merely to something: an agent left over from a
+	// previous scene would read as wired while pointing at freed memory.
+	ZENITH_ASSERT_EQ(static_cast<const void*>(pxNavAgent->GetNavMesh()), static_cast<const void*>(pxLoadedMesh));
+
+	// Idempotent: a second fire neither reallocates nor rebinds.
+	xGraphs.FireCustomEvent("Wire");
+	ZENITH_ASSERT_EQ(
+		static_cast<const void*>(xAgent.GetComponent<Zenith_AIAgentComponent>().GetNavMeshAgent()),
+		static_cast<const void*>(pxNavAgent),
+		"a second EnsureNavAgent allocated a second agent");
+
+	// And it can actually navigate now -- which is the point of the whole
+	// commit: a path request on a graph-wired agent, with no game C++ anywhere.
+	ZENITH_ASSERT_TRUE(pxNavAgent->SetDestination(Zenith_Maths::Vector3(3.0f, 0.0f, 3.0f)),
+		"the graph-wired agent could not path on the mesh it was bound to");
 }
 
 #endif // ZENITH_TESTING

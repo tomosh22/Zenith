@@ -21,7 +21,7 @@ only** and never names Flux, Physics, AssetHandling, or any concrete component
   (slot list, blackboard overrides, lifecycle/collision dispatch, custom-event
   firing with optional payload, registered at meta order 60 as "Graph").
 - `EntityComponent/Zenith_GraphNode_Registration.cpp` — the engine node library
-  (**137 nodes** — count them with
+  (**138 nodes** — count them with
   `grep -c "RegisterNodeType<" EntityComponent/Zenith_GraphNode_Registration*.cpp`
   rather than trusting this line, which has been stale before: core
   events/blackboard/flow in

@@ -17,6 +17,7 @@
 #include "EntityComponent/Components/Zenith_ParticleEmitterComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
+#include "EntityComponent/Components/Zenith_NavMeshComponent.h"
 #include "EntityComponent/Components/Zenith_AttachmentComponent.h"
 #include "Editor/TerrainEditor/Zenith_TerrainEditor.h"
 #include "Editor/Panels/Zenith_EditorPanel_GraphEditor.h"
@@ -557,6 +558,7 @@ void Zenith_EditorAutomation::AddStep_SetLightColor    (float fR, float fG, floa
 
 void Zenith_EditorAutomation::AddStep_SetSunDirection(float fX, float fY, float fZ) { Push(Zenith_EditorAutomation::m_axActions, ActionType::SET_SUN_DIRECTION, fX, fY, fZ); }
 void Zenith_EditorAutomation::AddStep_SetSunTimeOfDay(float fAngleDegrees, float fOrbitAzimuthDegrees) { Push(Zenith_EditorAutomation::m_axActions, ActionType::SET_SUN_TIME_OF_DAY, fAngleDegrees, fOrbitAzimuthDegrees); }
+void Zenith_EditorAutomation::AddStep_SetNavMeshAsset(const char* szAssetRef) { Push(Zenith_EditorAutomation::m_axActions, ActionType::SET_NAVMESH_ASSET, szAssetRef); }
 
 // -- UI --
 
@@ -2970,6 +2972,25 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 	// Script operations
 	//--------------------------------------------------------------------------
 	case Zenith_EditorActionType::ATTACH_GRAPH:  g_xEngine.Editor().AttachGraphToSelected(xAction.m_szArg1.c_str()); break;
+
+	//--------------------------------------------------------------------------
+	// NavMesh
+	//--------------------------------------------------------------------------
+	case Zenith_EditorActionType::SET_NAVMESH_ASSET:
+	{
+		Zenith_Entity& xEntity = GetSelectedEntityChecked("SET_NAVMESH_ASSET");
+		Zenith_Assert(xEntity.HasComponent<Zenith_NavMeshComponent>(),
+			"SET_NAVMESH_ASSET: selected entity has no NavMeshComponent "
+			"(AddStep_AddComponent(\"NavMesh\") first)");
+		Zenith_Assert(!xAction.m_szArg1.empty(), "SET_NAVMESH_ASSET: empty asset ref");
+		// SetAssetRef LOADS as well as storing, and returns whether a mesh is
+		// live afterwards. A failure is NOT asserted here: the component records
+		// it as NAVMESH_LOAD_STATE_FAILED plus a human-readable reason its panel
+		// shows, and Zenith_NavMesh::LoadFromFile has already asserted on the
+		// real cause -- a second assert here would only obscure it.
+		xEntity.GetComponent<Zenith_NavMeshComponent>().SetAssetRef(xAction.m_szArg1);
+		break;
+	}
 
 	//--------------------------------------------------------------------------
 	// Scene loading operations
