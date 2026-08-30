@@ -682,6 +682,28 @@ bool ZM_SynthBakeAlbedoSRGB(const ZM_GenImage& xImg, const char* szPath)
 	return true;
 }
 
+bool ZM_SynthBakeLinearBC1(const ZM_GenImage& xImg, const char* szPath)
+{
+	if (xImg.IsEmpty() || szPath == nullptr)
+	{
+		return false;
+	}
+	// ★ THE ONLY DIFFERENCE FROM ZM_SynthBakeAlbedoBC1 IS THE OETF, AND IT IS THE
+	// WHOLE POINT. A roughness/metallic or occlusion map is DATA: the shader reads
+	// the stored number and uses it directly. Baking the sRGB curve into it -- which
+	// the albedo path does deliberately, because BC1 has no sRGB variant -- would
+	// leave every roughness read through a gamma the shader never undoes, which
+	// looks like "the material is slightly too glossy everywhere" and is close
+	// enough to plausible to survive a review.
+	Zenith_Vector<u_int8> xBytes;
+	xImg.PackRGBA8(xBytes, /*bSRGBEncode*/ false);
+	EnsureParentDir(szPath);
+	Zenith_Tools_TextureExport::ExportFromDataCompressed(
+		xBytes.GetDataPointer(), std::string(szPath),
+		(int32_t)xImg.GetWidth(), (int32_t)xImg.GetHeight(), TextureCompressionMode::BC1);
+	return true;
+}
+
 bool ZM_SynthBakeNormalBC5(const ZM_GenImage& xNormalImg, const char* szPath)
 {
 	if (xNormalImg.IsEmpty() || szPath == nullptr)
@@ -706,3 +728,181 @@ bool ZM_SynthBakeIconBC1(const ZM_GenImage& xImg, const char* szPath)
 	return ZM_SynthBakeAlbedoBC1(xImg, szPath);
 }
 #endif
+// ===========================================================================
+// TILEABLE PROCEDURAL PRIMITIVES -- shared by every ARCHITECTURAL generator.
+//
+// ★ EVERY TEXEL IS A PURE FUNCTION OF ITS COORDINATE. There is no RNG here on
+// purpose: a per-texel RNG draw makes an image depend on iteration order, which
+// makes it depend on the resolution, which is how a "deterministic" generator
+// stops being one. Callers draw a SALT once and pass it in.
+//
+// ★ AND EVERYTHING WRAPS. The lattices are periodic in texel space, so a surface
+// that repeats shows no seam -- which is what makes the world-scaled tiling UVs
+// in ZM_StaticMesh::AppendWorldBox usable at all.
+// ===========================================================================
+// Integer hash -> [0,1). Deterministic across compilers: pure u_int arithmetic,
+// no float reassociation to disagree about.
+float ZM_SynthTexHash01(u_int uX, u_int uY, u_int uSalt)
+{
+	u_int uH = uX * 374761393u + uY * 668265263u + uSalt * 2246822519u;
+	uH = (uH ^ (uH >> 13)) * 1274126177u;
+	uH ^= (uH >> 16);
+	return static_cast<float>(uH & 0xFFFFFFu) * (1.0f / 16777216.0f);
+}
+
+// Value noise on a wrapping lattice.
+//
+// ★ THE PERIOD IS THE LATTICE SIZE, AND IT MUST DIVIDE THE IMAGE. A lattice
+// that does not wrap leaves a visible seam at the tile edge -- and a period of
+// ONE is CONSTANT, which is the trap that has already cost this repo a
+// debugging cycle on a wrapped scatter. uPeriod is asserted > 1.
+float ZM_SynthValueNoise(float fU, float fV, u_int uPeriod, u_int uSalt)
+{
+	Zenith_Assert(uPeriod > 1u, "ZM_SynthValueNoise: period %u is constant", uPeriod);
+	const float fX = fU * static_cast<float>(uPeriod);
+	const float fY = fV * static_cast<float>(uPeriod);
+	const u_int uX0 = static_cast<u_int>(fX) % uPeriod;
+	const u_int uY0 = static_cast<u_int>(fY) % uPeriod;
+	const u_int uX1 = (uX0 + 1u) % uPeriod;
+	const u_int uY1 = (uY0 + 1u) % uPeriod;
+	const float fTx = fX - static_cast<float>(static_cast<u_int>(fX));
+	const float fTy = fY - static_cast<float>(static_cast<u_int>(fY));
+	// Smoothstep so the lattice does not read as diamonds.
+	const float fSx = fTx * fTx * (3.0f - 2.0f * fTx);
+	const float fSy = fTy * fTy * (3.0f - 2.0f * fTy);
+
+	const float f00 = ZM_SynthTexHash01(uX0, uY0, uSalt);
+	const float f10 = ZM_SynthTexHash01(uX1, uY0, uSalt);
+	const float f01 = ZM_SynthTexHash01(uX0, uY1, uSalt);
+	const float f11 = ZM_SynthTexHash01(uX1, uY1, uSalt);
+	const float fA = f00 + (f10 - f00) * fSx;
+	const float fB = f01 + (f11 - f01) * fSx;
+	return fA + (fB - fA) * fSy;
+}
+
+// Two octaves is enough for a surface this size and keeps the bake cheap.
+float ZM_SynthFbm(float fU, float fV, u_int uPeriod, u_int uSalt)
+{
+	return ZM_SynthValueNoise(fU, fV, uPeriod, uSalt) * 0.65f
+		+ ZM_SynthValueNoise(fU, fV, uPeriod * 2u, uSalt + 91u) * 0.35f;
+}
+
+ZM_SynthCourseSample ZM_SynthSampleCourses(float fU, float fV, u_int uRows, u_int uCols,
+	float fJointWidth, bool bStagger, u_int uSalt)
+{
+	const float fRow = fV * static_cast<float>(uRows);
+	const u_int uRow = static_cast<u_int>(fRow) % uRows;
+	// Every other course offset by half a unit -- a stretcher bond.
+	const float fOffset = (bStagger && (uRow & 1u)) ? 0.5f : 0.0f;
+	const float fCol = fU * static_cast<float>(uCols) + fOffset;
+	const u_int uCol = static_cast<u_int>(fCol) % uCols;
+
+	const float fFracV = fRow - static_cast<float>(static_cast<u_int>(fRow));
+	const float fFracU = fCol - static_cast<float>(static_cast<u_int>(fCol));
+
+	ZM_SynthCourseSample xOut;
+	const bool bJoint = fFracV < fJointWidth || fFracV > 1.0f - fJointWidth
+		|| fFracU < fJointWidth || fFracU > 1.0f - fJointWidth;
+	xOut.m_fJoint = bJoint ? 1.0f : 0.0f;
+	xOut.m_fUnit  = ZM_SynthTexHash01(uCol, uRow, uSalt);
+	return xOut;
+}
+
+// ===========================================================================
+// The shared PBR map set.
+// ===========================================================================
+bool ZM_SynthPbrSet::Equals(const ZM_SynthPbrSet& xOther) const
+{
+	return m_xNormal.Equals(xOther.m_xNormal)
+		&& m_xRoughnessMetallic.Equals(xOther.m_xRoughnessMetallic)
+		&& m_xOcclusion.Equals(xOther.m_xOcclusion);
+}
+
+bool ZM_SynthPbrSet::NonEmpty() const
+{
+	return !m_xNormal.IsEmpty() && !m_xRoughnessMetallic.IsEmpty()
+		&& !m_xOcclusion.IsEmpty();
+}
+
+ZM_SynthPbrSet ZM_SynthBuildPbrSet(const ZM_GenImage& xHeight,
+	const ZM_SynthPbrResponse& xResponse)
+{
+	ZM_SynthPbrSet xOut;
+	if (xHeight.IsEmpty())
+	{
+		Zenith_Error(LOG_CATEGORY_MESH,
+			"[ZM_TextureSynth] ZM_SynthBuildPbrSet: empty height field -- returning an "
+			"empty set rather than three maps that would load and render as no maps");
+		return xOut;
+	}
+
+	const u_int uW = xHeight.GetWidth();
+	const u_int uH = xHeight.GetHeight();
+	xOut.m_xRoughnessMetallic = ZM_GenImage(uW, uH);
+	xOut.m_xOcclusion         = ZM_GenImage(uW, uH);
+
+	for (u_int uY = 0u; uY < uH; ++uY)
+	{
+		for (u_int uX = 0u; uX < uW; ++uX)
+		{
+			// The height field's R channel IS the height, matching
+			// ZM_SynthNormalFromHeight's contract so both read the same source.
+			const float fCavity = 1.0f - Clamp01(xHeight.Get(uY, uX).x);
+
+			// Cavities hold dirt and are rougher; proud faces wear smoother.
+			const float fRough = Clamp01(xResponse.m_fRoughness
+				+ xResponse.m_fRoughnessJitter
+				+ (fCavity - 0.5f) * xResponse.m_fCavityRoughness);
+			xOut.m_xRoughnessMetallic.Set(uY, uX,
+				Vector4(0.0f, fRough, xResponse.m_fMetallic, 1.0f));
+
+			// ★ THE CONTACT DARKENING THE ENGINE'S SSAO CANNOT SEE. SSAO works on
+			// the depth buffer, where a 3 mm board gap or a mortar bed does not
+			// exist at all. This is the only occlusion those get.
+			const float fAO = Clamp01(1.0f - fCavity * xResponse.m_fCavityOcclusion);
+			xOut.m_xOcclusion.Set(uY, uX, Vector4(fAO, fAO, fAO, 1.0f));
+		}
+	}
+
+	xOut.m_xNormal = ZM_SynthNormalFromHeight(xHeight, xResponse.m_fNormalStrength);
+	return xOut;
+}
+
+ZM_GenImage ZM_SynthHeightFromAlbedoLuma(const ZM_GenImage& xAlbedo, float fFlatten)
+{
+	ZM_GenImage xOut;
+	if (xAlbedo.IsEmpty())
+	{
+		return xOut;
+	}
+	const u_int uW = xAlbedo.GetWidth();
+	const u_int uH = xAlbedo.GetHeight();
+	xOut = ZM_GenImage(uW, uH);
+
+	// Rec709 luma, then pulled toward the MEAN by fFlatten. Two passes, because
+	// the mean is not known until the first one finishes -- and using a fixed 0.5
+	// instead would turn any uniformly-dark asset into one big dent.
+	float fSum = 0.0f;
+	for (u_int uY = 0u; uY < uH; ++uY)
+	{
+		for (u_int uX = 0u; uX < uW; ++uX)
+		{
+			const Vector4 xC = xAlbedo.Get(uY, uX);
+			fSum += 0.2126f * xC.x + 0.7152f * xC.y + 0.0722f * xC.z;
+		}
+	}
+	const float fMean = fSum / static_cast<float>(uW * uH);
+	const float fKeep = Clamp01(1.0f - Clamp01(fFlatten));
+
+	for (u_int uY = 0u; uY < uH; ++uY)
+	{
+		for (u_int uX = 0u; uX < uW; ++uX)
+		{
+			const Vector4 xC = xAlbedo.Get(uY, uX);
+			const float fLuma = 0.2126f * xC.x + 0.7152f * xC.y + 0.0722f * xC.z;
+			const float fH = Clamp01(fMean + (fLuma - fMean) * fKeep);
+			xOut.Set(uY, uX, Vector4(fH, fH, fH, 1.0f));
+		}
+	}
+	return xOut;
+}

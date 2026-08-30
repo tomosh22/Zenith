@@ -18,7 +18,28 @@ The S0-S7 narrative that used to fill the back half of this file moved VERBATIM 
 its own template in `AgentBriefing.md` §2.3 specifies. Nothing was deleted.
 
 **★ LIVE PIN (UPDATED 2026-08-30):
-ZM boot `3538`; engine boot (Null Combat) `1748`; Null RenderTest `1839`; registry **70**.**
+ZM boot `3554`; engine boot (Null Combat) `1748`; Null RenderTest `1839`; registry **70**.**
+
+> **★ ZM +16 (2026-08-30), the Dawnmere BUILDING FACADE + INTERIOR overhaul and the game-wide PBR pass, Zenithmon-only.**
+> `ZM_BuildingGen` stopped emitting one box with a flat 256^2 picture on it and
+> now emits FOUR SURFACE MESHES per building (wall / roof / trim / glass), each
+> with its own tiling world-scaled UVs and its own four-map PBR set (albedo,
+> BC5 normal, packed roughness/metallic, AO). Six units migrated and nine are
+> new: the surface tables, the asset-kind algebra, the shell-metric derivation,
+> the site-fixed jitter suppression, surface registration, world-UV density,
+> the map-set structure, texture domain isolation, and the clause that pins the
+> two Dawnmere buildings inside their blockout colliders. Plus two facade
+> placement units and `EveryGameComponentIsInBothRegistries`. OBSERVED at
+> `3554 ran / 3552 passed / 0 failed`, 2 skipped, from a
+> `Null_vs2022_Debug_Win64_True` run. Nothing under `Zenith/**` was touched, so
+> the Combat and RenderTest rows do NOT move.
+>
+> **★ AND `ZM_InteriorTintPixels_Test` IS GREEN, HONESTLY.** The last open
+> `requiresGraphics` rot item measured a red/blue gap of **0.121** against a 0.15
+> floor while the two rooms were the same grey blockout box under one hue nudge.
+> They are now made of different materials and lit by differently-coloured lamps:
+> OBSERVED PlayerHome 1.5258, ProfLab 0.7809, **gap 0.7449** -- five times the
+> floor, which was NOT moved.
 
 > **★ ZM +8 (2026-08-30, ZM-D-218 follow-up), Zenithmon-only.** The eight
 > duplicated copies of the automated suites' walk driver became ONE --
@@ -728,11 +749,11 @@ genuinely RAN, not `DEFERRED` -- after which `git status` over the WHOLE
 |---|---|---|
 | `Route1.zscen` | 3,146 | `F3E9A4613E8942F17E80A2AB6BD699F22B97E71CBB2AFC317D796DDF75795110` (**RE-AUTHORED for the shared CLAY ground set, 2026-08-28, ZM-D-216**: splat slot 2 (`Dirt` -- the lanes and pads) stopped being a flat brown and now samples `engine:Textures/Terrain/Clay/` at tiling **3.6**, not 0.9, with a WHITE base colour. **Entity count UNCHANGED; the file grew by exactly 164 bytes** (2,982 -> 3,146) -- the same signature the rock slot produced one day earlier: four texture-ref paths appended to ONE material payload and nothing else. Two windowed `Vulkan_vs2022_Debug_Win64_True` boots with `--skip-unit-tests` (`--automated-test ZM_Boot_Test`, so the process exits on its own), all three recipes warm (`warmMask=0x7`, `sceneAuthoring=AUTHOR_DAWNMERE`); the second reported `[ScenePublish] IDENTICAL` for all seven scenes. Previous value `3BE837CBEB0CA5E0...` at 2,982 bytes, held from the rock-set re-author.) |
 | `Thornacre.zscen` | 2,267 | `878C9F02E95476974F44EFDE6B2E34D3FC82911F6C15BFEE8B5F88234A213297` (**RE-AUTHORED for the shared CLAY ground set, 2026-08-28, ZM-D-216**: splat slot 2 (`Dirt` -- the lanes and pads) stopped being a flat brown and now samples `engine:Textures/Terrain/Clay/` at tiling **3.6**, not 0.9, with a WHITE base colour. **Entity count UNCHANGED; the file grew by exactly 164 bytes** (2,103 -> 2,267) -- the same signature the rock slot produced one day earlier: four texture-ref paths appended to ONE material payload and nothing else. Two windowed `Vulkan_vs2022_Debug_Win64_True` boots with `--skip-unit-tests` (`--automated-test ZM_Boot_Test`, so the process exits on its own), all three recipes warm (`warmMask=0x7`, `sceneAuthoring=AUTHOR_DAWNMERE`); the second reported `[ScenePublish] IDENTICAL` for all seven scenes. Previous value `094BADF64CF6FB95...` at 2,103 bytes, held from the rock-set re-author.) |
-| `Dawnmere.zscen` | 79,067 | `A666F5DF3ADC9AF0A35AF361586F2482CBA06E8138871FCE3FB6736138BD7AD3` (**RE-AUTHORED for the v8 COMPACTION, 2026-08-30, ZM-D-218**: the map went 6x6 -> 4x4 chunks and every anchor moved with it; rival Vesper moved to (80, 60) and his frozen facing was re-derived to yaw pi/2. 38 entities, unchanged in COUNT from v7 -- the scenery layer is instanced, so a smaller town writes FEWER bytes, not fewer entities. Proven byte-identical across two consecutive tools boots.) |
+| `Dawnmere.zscen` | 79,066 | `FC85CA58B14AA38B2A5834EBA614ED0C612B2CF1C4743E07F303C23458BFB2D2` (**RE-AUTHORED for the BUILDING FACADE OVERHAUL, 2026-08-30**: the Home and Lab greybox shells became real generated buildings. The four blockouts per building keep their exact authored centres, scales and AABB colliders and simply lose `ZM_GreyboxVisual`; two new visual-only entities, `DawnmereHomeFacade` and `DawnmereLabFacade`, carry a `ZM_BuildingFacade` component that loads the generated multi-surface `.zmodel` at runtime. **40 entities, up 2 from v8; the file MOVED BY ONE BYTE** (79,067 -> 79,066) because eight dropped component payloads very nearly pay for two new entities. NO measured ground row, camera-clearance clause, door trigger or pad was re-derived, and none needed to be: the physics blockouts did not move. Proven byte-identical across two consecutive windowed `Vulkan_vs2022_Debug_Win64_True` boots. Previous value `A666F5DF3ADC9AF0...` at 79,067 bytes, held from the v8 compaction.) |
 | `Battle.zscen` | 4,965 | `1BEB0615F7FE62D9439471A4123E1D2140C0053AEC2991B659F7A03288C8C60A` (unchanged since 2026-08-05) |
 | `FrontEnd.zscen` | 29,740 | `D44D540512F1C373A5D5E747CE7FA76E7D19B467F5F1563EB298E229EEFBEDB5` |
-| `PlayerHome.zscen` | 1,832 | `DBBFB78311A55BBF942A7A5BF9928F43E9493A10CDA89110515A3B6A7987C780` (unchanged since 2026-08-05) |
-| `ProfLab.zscen` | 2,068 | `72DA12B73AB643B44F0B9374FCD6F4CCF865ECBAED5F9B0D2832E8BD972ABB32` |
+| `PlayerHome.zscen` | 3,000 | `C50470EF5A1FEAF01EB785D9C9466E199BA3FB917F555780AE51D1D4C92F6875` (**RE-AUTHORED for the INTERIOR overhaul, 2026-08-30**: the seven shell blocks keep their exact centres, scales and colliders and lose `ZM_GreyboxVisual`; a `PlayerHomeShell` entity carries the generated four-surface room model, five pieces of furniture stand in it -- SOLID, each with its own AABB static body -- and three warm point lights light it. **11 -> 20 entities, 1,832 -> 3,000 bytes.** Proven byte-identical across two consecutive tools boots. Previous value `DBBFB78311A55BBF...` at 1,832 bytes, held since 2026-08-05.) |
+| `ProfLab.zscen` | 3,542 | `8800FCB1E236354E9E4A44BFA4770E4928E288B055CA2794198749471689A6B0` (**RE-AUTHORED for the INTERIOR overhaul, 2026-08-30**: same split as PlayerHome -- collider-only blocks, a `ProfLabShell` entity with the generated room model, six pieces of laboratory furniture (solid) and four cool point lights. **12 -> 23 entities, 2,068 -> 3,542 bytes.** Proven byte-identical across two consecutive tools boots.) |
 | `Dawnmere.znavmesh` | 25,892 | `5E725579C3B38197596976BF883235B01A334F8294433CEE5E8BC9A67671FFD8` (**RE-BAKED at the v8 compaction, 2026-08-30, ZM-D-218**: 324 vertices / 289 polygons over a 256 x 256 m sheet. The bake cell size is UNCHANGED -- the polygon count fell because the SHEET did, which is the whole point of the compaction.) |
 
 **★ WHAT THIS BASELINE IS FOR.** Slice R1-2 authors two NEW scenes and re-authors Dawnmere.

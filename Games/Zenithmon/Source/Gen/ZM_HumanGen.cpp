@@ -87,6 +87,9 @@ namespace
 		{
 		case ZM_HUMAN_ASSET_MESH:     return "%s.zmesh";
 		case ZM_HUMAN_ASSET_ALBEDO:   return "%s_albedo.ztxtr";
+		case ZM_HUMAN_ASSET_NORMAL:   return "%s_normal.ztxtr";
+		case ZM_HUMAN_ASSET_ROUGH_METAL: return "%s_rm.ztxtr";
+		case ZM_HUMAN_ASSET_OCCLUSION:   return "%s_ao.ztxtr";
 		case ZM_HUMAN_ASSET_MATERIAL: return "%s.zmtrl";
 		case ZM_HUMAN_ASSET_MODEL:    return "%s.zmodel";
 		default:
@@ -233,6 +236,19 @@ void ZM_BuildHuman(ZM_HUMAN_ID eId, ZM_Human& xOut)
 	xOut.m_eId = eId;
 	ZM_BuildHumanMesh(xRecipe, xOut.m_xMesh);
 	xOut.m_xAlbedo = ZM_BuildHumanAlbedo(xRecipe);
+
+	// The PBR set, derived from the albedo's luma. FLATTENED hard (0.72): a dark
+	// marking on flat skin is NOT a dent, and the honest use of a luma heuristic is
+	// subtle break-up rather than sculpted form. Skin and cloth are dielectrics and
+	// fairly rough; the normal is deliberately gentle.
+	ZM_SynthPbrResponse xResponse;
+	xResponse.m_fRoughness       = 0.68f;
+	xResponse.m_fMetallic        = 0.0f;
+	xResponse.m_fNormalStrength  = 0.55f;
+	xResponse.m_fCavityRoughness = 0.10f;
+	xResponse.m_fCavityOcclusion = 0.30f;
+	xOut.m_xPbr = ZM_SynthBuildPbrSet(
+		ZM_SynthHeightFromAlbedoLuma(xOut.m_xAlbedo, 0.72f), xResponse);
 }
 
 // ============================================================================
@@ -455,9 +471,13 @@ bool ZM_BakeHuman(ZM_HUMAN_ID eId)
 	ZM_BuildHuman(eId, xHuman);   // mesh (16 shared bones) + placeholder albedo
 
 	char acMeshRef[512], acAlbedoRef[512], acMatRef[512], acModelRef[512], acSkelRef[512];
+	char acNormalRef[512], acRmRef[512], acAoRef[512];
 	bool bOk = true;
 	bOk &= ZM_HumanAssetPath(eId, ZM_HUMAN_ASSET_MESH,     acMeshRef,   sizeof(acMeshRef));
 	bOk &= ZM_HumanAssetPath(eId, ZM_HUMAN_ASSET_ALBEDO,   acAlbedoRef, sizeof(acAlbedoRef));
+	bOk &= ZM_HumanAssetPath(eId, ZM_HUMAN_ASSET_NORMAL,      acNormalRef, sizeof(acNormalRef));
+	bOk &= ZM_HumanAssetPath(eId, ZM_HUMAN_ASSET_ROUGH_METAL, acRmRef,     sizeof(acRmRef));
+	bOk &= ZM_HumanAssetPath(eId, ZM_HUMAN_ASSET_OCCLUSION,   acAoRef,     sizeof(acAoRef));
 	bOk &= ZM_HumanAssetPath(eId, ZM_HUMAN_ASSET_MATERIAL, acMatRef,    sizeof(acMatRef));
 	bOk &= ZM_HumanAssetPath(eId, ZM_HUMAN_ASSET_MODEL,    acModelRef,  sizeof(acModelRef));
 	bOk &= ZM_HumanSharedAssetPath(ZM_HUMAN_SHARED_ASSET_SKELETON, acSkelRef, sizeof(acSkelRef));
@@ -468,12 +488,19 @@ bool ZM_BakeHuman(ZM_HUMAN_ID eId)
 
 	const std::string strMeshFs   = Zenith_AssetRegistry::ResolvePath(std::string(acMeshRef));
 	const std::string strAlbedoFs = Zenith_AssetRegistry::ResolvePath(std::string(acAlbedoRef));
+	const std::string strNormalFs = Zenith_AssetRegistry::ResolvePath(std::string(acNormalRef));
+	const std::string strRmFs     = Zenith_AssetRegistry::ResolvePath(std::string(acRmRef));
+	const std::string strAoFs     = Zenith_AssetRegistry::ResolvePath(std::string(acAoRef));
 	const std::string strMatFs    = Zenith_AssetRegistry::ResolvePath(std::string(acMatRef));
 	const std::string strModelFs  = Zenith_AssetRegistry::ResolvePath(std::string(acModelRef));
 
 	// Mesh (.zmesh) binding the SHARED skeleton ref; NO per-model .zskel. Albedo (BC1).
 	bOk &= ZM_GenBakeMeshWithSharedSkeleton(xHuman.m_xMesh, strMeshFs.c_str(), acSkelRef);
 	bOk &= ZM_SynthBakeAlbedoBC1(xHuman.m_xAlbedo, strAlbedoFs.c_str());
+	// ALBEDO is colour; the other three are DATA and stay LINEAR.
+	bOk &= ZM_SynthBakeNormalBC5(xHuman.m_xPbr.m_xNormal,            strNormalFs.c_str());
+	bOk &= ZM_SynthBakeLinearBC1(xHuman.m_xPbr.m_xRoughnessMetallic, strRmFs.c_str());
+	bOk &= ZM_SynthBakeLinearBC1(xHuman.m_xPbr.m_xOcclusion,         strAoFs.c_str());
 
 	const std::string strName = ZM_GetHumanName(eId);
 
@@ -485,8 +512,12 @@ bool ZM_BakeHuman(ZM_HUMAN_ID eId)
 		Zenith_MaterialAsset* pxMat = xMat.GetDirect();
 		pxMat->SetName(strName);
 		pxMat->SetDiffuseTexture(TextureHandle(std::string(acAlbedoRef)));
-		pxMat->SetRoughness(0.8f);
+		pxMat->SetNormalTexture(TextureHandle(std::string(acNormalRef)));
+		pxMat->SetRoughnessMetallicTexture(TextureHandle(std::string(acRmRef)));
+		pxMat->SetOcclusionTexture(TextureHandle(std::string(acAoRef)));
+		pxMat->SetRoughness(0.68f);
 		pxMat->SetMetallic(0.0f);
+		pxMat->SetNormalStrength(0.55f);
 		pxMat->SaveToFile(strMatFs);
 	}
 

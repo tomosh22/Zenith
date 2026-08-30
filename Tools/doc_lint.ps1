@@ -473,10 +473,105 @@ function Check-LivePin {
     if ($ok) { Report-Pass 'C7' "LIVE PIN agrees with unit_baselines.json and the registry" }
 }
 
+
+# =============================================================================
+# Check 8: ArtBrief.md tick rows are not lying about a file.
+#
+# ArtBrief.md lists hand-authored assets as checkbox rows with stable ids, in
+# the same shape Roadmap.md uses. A tick there means "the game loads this asset
+# instead of the generated one", and the row must name the source file that
+# makes that true.
+#
+# A checkbox nobody reconciles is the failure this repo keeps paying for -- it
+# still LOOKS like coverage. So this reconciles the doc against the filesystem,
+# exactly as C7 reconciles the LIVE PIN block against unit_baselines.json.
+#
+# ★ WHAT IT CAN AND CANNOT SEE, stated here so a green C8 is not over-read. It
+# checks that a ticked row names a source, that the source EXISTS, that an
+# unticked row does NOT name one, and that no two rows share an id. It cannot
+# check that the import produced the right file set, or that the generated
+# fallback still works -- those are judgement and stay the reviewer's, and
+# ArtBrief.md section 0.2 says so in the same words.
+# =============================================================================
+function Check-ArtBriefTicks {
+    $path = Join-Path $docsDir 'ArtBrief.md'
+    if (-not (Test-Path $path)) {
+        Report-Pass 'C8' "no ArtBrief.md in $Game -- check does not apply"
+        return
+    }
+
+    $lines = Get-Content $path
+    $seen = @{}
+    $ticked = 0
+    $total = 0
+    $inFence = $false
+
+    for ($i = 0; $i -lt $lines.Length; $i++) {
+        $line = $lines[$i]
+
+        # SKIP FENCED BLOCKS. Section 0.1 shows the row format by EXAMPLE, inside
+        # a code fence, and the first version of this check read those examples as
+        # real rows -- reporting a duplicate id and a missing source file for an
+        # asset nobody had ever claimed. A doc that documents its own format is
+        # the normal case, not the exception.
+        if ($line -match '^\s*```') { $inFence = -not $inFence; continue }
+        if ($inFence) { continue }
+
+        # A row is: "- [ ] `AB-FAM-NN` ..." or "- [x] `AB-FAM-NN` ...".
+        $m = [regex]::Match($line, '^\s*-\s*\[( |x|X)\]\s*`(AB-[A-Z]+-\d+)`')
+        if (-not $m.Success) { continue }
+
+        $total++
+        $box = $m.Groups[1].Value
+        $id  = $m.Groups[2].Value
+        $isTicked = ($box -ne ' ')
+
+        if ($seen.ContainsKey($id)) {
+            Report-Violation 'C8' "ArtBrief.md:$($i+1): duplicate art id '$id' (first seen line $($seen[$id])). Ids are stable and never reused -- a ticket or an invoice may reference one"
+        } else {
+            $seen[$id] = $i + 1
+        }
+
+        # "source: `path`" -- the evidence a tick is making a claim about.
+        $srcMatch = [regex]::Match($line, 'source:\s*`([^`]+)`')
+
+        if ($isTicked) {
+            $ticked++
+            if (-not $srcMatch.Success) {
+                Report-Violation 'C8' "ArtBrief.md:$($i+1): '$id' is TICKED but names no ``source:`` path. A tick asserts the game loads this asset instead of the generated one; without a path that claim cannot be checked by anyone"
+                continue
+            }
+            $src = $srcMatch.Groups[1].Value
+            $candidates = @(
+                (Join-Path $repoRoot $src),
+                (Join-Path (Split-Path $docsDir -Parent) $src)
+            )
+            $found = $false
+            foreach ($c in $candidates) {
+                if (Test-Path $c) { $found = $true; break }
+            }
+            if (-not $found) {
+                Report-Violation 'C8' "ArtBrief.md:$($i+1): '$id' is TICKED and names source '$src', which does not exist. Either the asset was moved, or the row was ticked before it landed"
+            }
+        }
+        elseif ($srcMatch.Success) {
+            Report-Violation 'C8' "ArtBrief.md:$($i+1): '$id' is UNTICKED but already names a ``source:`` path. A part-delivered asset belongs in section 9 (In-flight notes), not as a ticked-with-a-caveat row"
+        }
+    }
+
+    # ANTI-VACUITY: a parse that finds no rows would pass silently, which is
+    # exactly what a changed row format would produce.
+    if ($total -eq 0) {
+        Report-Violation 'C8' "ArtBrief.md exists but no ``- [ ] ``AB-FAM-NN``` rows were parsed -- the row format has moved and this check is now asserting nothing"
+        return
+    }
+
+    Report-Pass 'C8' "ArtBrief.md tick rows consistent ($ticked of $total ticked, $($seen.Count) unique ids)"
+}
 # =============================================================================
 # Run all checks.
 # =============================================================================
-Write-Host "doc_lint.ps1: running 7 checks against $docsDir" -ForegroundColor Cyan
+Write-Host "doc_lint.ps1: running 8 checks against $docsDir" -ForegroundColor Cyan
 Check-TestCount
 Check-MvpArchetypeNames
 Check-RoadmapUniqueIds
@@ -484,6 +579,7 @@ Check-SupersededMarkers
 Check-StaleClaims
 Check-MarkdownLinks
 Check-LivePin
+Check-ArtBriefTicks
 
 Write-Host ""
 if ($script:violations -eq 0) {

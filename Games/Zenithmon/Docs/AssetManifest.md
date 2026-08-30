@@ -11,7 +11,10 @@ written against them.
 **Companion docs:** GameDesignDocument.md (what the assets depict),
 Scope.md (what is cut), TestPlan.md (determinism + generator test specs),
 BuildEnvironment.md (the tools build that runs the bake), CIPolicy.md
-(why CI never sees these files), Roadmap.md (S3/S4 stage gates).
+(why CI never sees these files), Roadmap.md (S3/S4 stage gates),
+ArtBrief.md (the wishlist of what a HUMAN artist would make instead, ordered by
+where the generators fall shortest -- nothing in it is scheduled, and section 0.1
+below is the rule it is written against).
 
 **Last updated:** 2026-08-01 (audited against HEAD `c9d64994`). The S4
 asset-generator contract remains unchanged: `ZM_BakeManifest` SHIPPED (ZM-D-085),

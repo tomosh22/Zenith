@@ -735,6 +735,38 @@ namespace ZM_StaticMesh
 			Zenith_Maths::Vector3(xEaveMin.x, xEaveMin.y,            xEaveMin.z),
 			Zenith_Maths::Vector3(xEaveMax.x, xEaveMin.y + fParapet, xEaveMax.z), xIsland);
 	}
+
+	void ApplyWorldUVs(ZM_GenMesh& xMesh, u_int uFirstVert, float fTileMetres)
+	{
+		const float fInv = (fTileMetres > 1.0e-6f) ? (1.0f / fTileMetres) : 1.0f;
+		const u_int uEnd = xMesh.GetNumVerts();
+		for (u_int v = uFirstVert; v < uEnd; ++v)
+		{
+			const Zenith_Maths::Vector3& xP = xMesh.m_xPositions.Get(v);
+			const Zenith_Maths::Vector3& xN = xMesh.m_xNormals.Get(v);
+			const float fAx = xN.x < 0.0f ? -xN.x : xN.x;
+			const float fAy = xN.y < 0.0f ? -xN.y : xN.y;
+			const float fAz = xN.z < 0.0f ? -xN.z : xN.z;
+
+			float fU, fV;
+			if (fAy >= fAx && fAy >= fAz)      { fU = xP.x; fV = xP.z; }   // horizontal face
+			else if (fAx >= fAz)               { fU = xP.z; fV = xP.y; }   // faces +/-X
+			else                               { fU = xP.x; fV = xP.y; }   // faces +/-Z
+
+			xMesh.m_xUVs.Get(v) = Zenith_Maths::Vector2(fU * fInv, fV * fInv);
+		}
+	}
+
+	u_int AppendWorldBox(ZM_GenMesh& xMesh, const Zenith_Maths::Vector3& xMin,
+		const Zenith_Maths::Vector3& xMax, float fTileMetres)
+	{
+		// The island is a placeholder that never survives -- ApplyWorldUVs
+		// overwrites every UV the emitter just wrote.
+		const ZM_GenUVIsland xUnit = { 0.0f, 0.0f, 1.0f, 1.0f };
+		const u_int uFirst = AppendBox(xMesh, xMin, xMax, xUnit);
+		ApplyWorldUVs(xMesh, uFirst, fTileMetres);
+		return uFirst;
+	}
 }
 
 // ============================================================================

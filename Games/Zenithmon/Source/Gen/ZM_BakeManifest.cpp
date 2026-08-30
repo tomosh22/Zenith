@@ -18,6 +18,7 @@
 #include "Zenithmon/Source/Gen/ZM_HumanGen.h"
 #include "Zenithmon/Source/Gen/ZM_BuildingGen.h"
 #include "Zenithmon/Source/Gen/ZM_PropGen.h"
+#include "Zenithmon/Source/Gen/ZM_InteriorGen.h"
 
 #include <cstring>     // memcmp / memcpy
 #include <filesystem>
@@ -111,6 +112,7 @@ u_int ZM_BakeManifestFamilyVersion(ZM_ASSET_FAMILY eFamily)
 	case ZM_ASSET_FAMILY_HUMANS:    return uZM_HUMANGEN_VERSION;
 	case ZM_ASSET_FAMILY_BUILDINGS: return uZM_BUILDINGGEN_VERSION;
 	case ZM_ASSET_FAMILY_PROPS:     return uZM_PROPGEN_VERSION;
+	case ZM_ASSET_FAMILY_INTERIORS: return uZM_INTERIORGEN_VERSION;
 	default:
 		Zenith_Assert(false, "ZM_BakeManifestFamilyVersion: unknown family %u", (u_int)eFamily);
 		return 0u;
@@ -125,6 +127,7 @@ const char* ZM_BakeManifestFamilyRootRef(ZM_ASSET_FAMILY eFamily)
 	case ZM_ASSET_FAMILY_HUMANS:    return "game:Humans";
 	case ZM_ASSET_FAMILY_BUILDINGS: return "game:Buildings";
 	case ZM_ASSET_FAMILY_PROPS:     return "game:Props";
+	case ZM_ASSET_FAMILY_INTERIORS: return "game:Interiors";
 	default:
 		Zenith_Assert(false, "ZM_BakeManifestFamilyRootRef: unknown family %u", (u_int)eFamily);
 		return "game:";
@@ -199,6 +202,21 @@ void ZM_EnumerateFamilyFiles(ZM_ASSET_FAMILY eFamily, Zenith_Vector<std::string>
 				const bool bOk = ZM_PropAssetPath(static_cast<ZM_PROP_ID>(u),
 					static_cast<ZM_PROP_ASSET_KIND>(k), acRef, sizeof(acRef));
 				Zenith_Assert(bOk, "ZM_EnumerateFamilyFiles: prop ref overflow (prop %u kind %u)", u, k);
+				xOut.PushBack(std::string(acRef));
+			}
+		}
+		break;
+	}
+	case ZM_ASSET_FAMILY_INTERIORS:
+	{
+		const u_int uCount = static_cast<u_int>(ZM_INTERIOR_ROOM_COUNT);
+		for (u_int u = 0; u < uCount; ++u)
+		{
+			for (u_int k = 0; k < static_cast<u_int>(ZM_INTERIOR_ASSET_KIND_COUNT); ++k)
+			{
+				const bool bOk = ZM_InteriorAssetPath(static_cast<ZM_INTERIOR_ROOM>(u),
+					static_cast<ZM_INTERIOR_ASSET_KIND>(k), acRef, sizeof(acRef));
+				Zenith_Assert(bOk, "ZM_EnumerateFamilyFiles: interior ref overflow (room %u kind %u)", u, k);
 				xOut.PushBack(std::string(acRef));
 			}
 		}
@@ -300,6 +318,6 @@ bool ZM_BakeAllAssets()
 	// successful bake. AND all four. NO shipped caller yet (S4 gallery gate defers
 	// wiring), exactly like the ZM_BakeAll* this wraps.
 	return ZM_BakeAllCreatures() && ZM_BakeAllHumans() &&
-		ZM_BakeAllBuildings() && ZM_BakeAllProps();
+		ZM_BakeAllBuildings() && ZM_BakeAllProps() && ZM_BakeAllInteriors();
 }
 #endif   // ZENITH_TOOLS

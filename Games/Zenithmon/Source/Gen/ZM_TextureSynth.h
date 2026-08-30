@@ -167,11 +167,103 @@ ZM_GenImage ZM_SynthCreatureAlbedo(const ZM_CreatureTexRecipe& xRecipe, ZM_GenRN
 #ifdef ZENITH_TOOLS
 bool ZM_SynthBakeAlbedoBC1 (const ZM_GenImage& xImg, const char* szPath);
 bool ZM_SynthBakeAlbedoSRGB(const ZM_GenImage& xImg, const char* szPath);
+// LINEAR data (roughness/metallic, occlusion): non-sRGB bytes into BC1. See the
+// implementation for why sharing the albedo path would be a silent gamma bug.
+bool ZM_SynthBakeLinearBC1 (const ZM_GenImage& xImg, const char* szPath);
 bool ZM_SynthBakeNormalBC5 (const ZM_GenImage& xNormalImg, const char* szPath);
 bool ZM_SynthBakeIconBC1   (const ZM_GenImage& xImg, const char* szPath);
 #else
 inline bool ZM_SynthBakeAlbedoBC1 (const ZM_GenImage&, const char*) { return false; }
 inline bool ZM_SynthBakeAlbedoSRGB(const ZM_GenImage&, const char*) { return false; }
+inline bool ZM_SynthBakeLinearBC1 (const ZM_GenImage&, const char*) { return false; }
 inline bool ZM_SynthBakeNormalBC5 (const ZM_GenImage&, const char*) { return false; }
 inline bool ZM_SynthBakeIconBC1   (const ZM_GenImage&, const char*) { return false; }
 #endif
+
+// ===========================================================================
+// TILEABLE PROCEDURAL PRIMITIVES -- shared by every ARCHITECTURAL generator
+// (ZM_BuildingGen's four surface classes, ZM_InteriorGen's room shells).
+//
+// ★ EVERY TEXEL IS A PURE FUNCTION OF ITS COORDINATE, never of an RNG draw. A
+// per-texel draw makes the image depend on iteration order, hence on the
+// resolution, which is exactly how a "deterministic" generator stops being one.
+// Callers draw a SALT once, from their own domain RNG, and pass it in.
+//
+// ★ AND EVERYTHING WRAPS: the lattices are periodic in texel space, so a
+// repeated surface shows no seam. That is what makes the world-scaled tiling UVs
+// of ZM_StaticMesh::AppendWorldBox usable at all.
+// ===========================================================================
+
+// Integer hash -> [0,1). Pure u_int arithmetic, so no float reassociation can
+// make two compilers disagree.
+float ZM_SynthTexHash01(u_int uX, u_int uY, u_int uSalt);
+
+// Smoothstepped value noise on a WRAPPING lattice.
+// ★ uPeriod MUST be > 1: a period-1 lattice is CONSTANT, which renders as a flat
+// surface and is the trap this repo has already paid for once on a wrapped
+// scatter. Asserted.
+float ZM_SynthValueNoise(float fU, float fV, u_int uPeriod, u_int uSalt);
+
+// Two octaves of the above -- enough for an architectural surface, and cheap.
+float ZM_SynthFbm(float fU, float fV, u_int uPeriod, u_int uSalt);
+
+// One masonry / tile / board course lattice.
+struct ZM_SynthCourseSample
+{
+	float m_fJoint = 0.0f;   // 1 inside a joint, 0 on the unit face
+	float m_fUnit  = 0.0f;   // per-unit hash in [0,1), so units vary from each other
+};
+ZM_SynthCourseSample ZM_SynthSampleCourses(float fU, float fV, u_int uRows, u_int uCols,
+	float fJointWidth, bool bStagger, u_int uSalt);
+
+// ===========================================================================
+// THE PBR MAP SET -- one builder, shared by every generator that ships a
+// material.
+//
+// ★★ WHY THIS IS SHARED RATHER THAN COPIED FOR A FOURTH TIME. Buildings,
+// interiors, props, humans and creatures all need the same three derived maps
+// from the same one input: a HEIGHT field. Normal is its gradient, occlusion is
+// its cavity, and roughness is a constant modulated by that cavity. Only the
+// height field and the response differ per family, so only those stay local.
+//
+// ★ AND THE THREE ARE DERIVED FROM ONE SOURCE ON PURPOSE. A normal map and an
+// AO map built from different fields disagree about where the surface is, and
+// the disagreement reads as dirt that does not line up with the relief -- the
+// most common way a procedurally-generated material looks synthetic.
+// ===========================================================================
+struct ZM_SynthPbrResponse
+{
+	float m_fRoughness      = 0.85f;   // the base, before cavity modulation
+	float m_fMetallic       = 0.0f;    // 0 for every dielectric; 1 only for real metal
+	float m_fNormalStrength = 1.0f;
+	float m_fRoughnessJitter = 0.0f;   // one per-asset offset, drawn by the caller
+	float m_fCavityRoughness = 0.16f;  // how much a cavity roughens (0 disables)
+	float m_fCavityOcclusion = 0.50f;  // how dark a full cavity gets
+};
+
+struct ZM_SynthPbrSet
+{
+	ZM_GenImage m_xNormal;              // tangent-space, from the height gradient
+	ZM_GenImage m_xRoughnessMetallic;   // G = roughness, B = metallic (glTF packing)
+	ZM_GenImage m_xOcclusion;           // R = AO
+
+	bool Equals(const ZM_SynthPbrSet& xOther) const;
+	bool NonEmpty() const;
+};
+
+// Build all three from one height field. The result is the same size as the
+// input, and is a PURE function of (height, response) -- no RNG is drawn here;
+// the caller passes any jitter in through m_fRoughnessJitter.
+ZM_SynthPbrSet ZM_SynthBuildPbrSet(const ZM_GenImage& xHeight,
+	const ZM_SynthPbrResponse& xResponse);
+
+// A height field from an ALBEDO image's luminance, for the families whose
+// surface detail lives in their colour rather than in a separate pattern (skin,
+// fur, scales, painted props).
+//
+// ★ IT IS A HEURISTIC AND IS DOCUMENTED AS ONE. Luminance is not height: a dark
+// marking on flat skin becomes a dent. fFlatten pulls the field back toward the
+// mean so the derived relief stays subtle, which is the honest use -- it buys
+// grain and pore-scale break-up, not sculpted form. Where a family HAS a real
+// height source (masonry courses, board joints) it should pass that instead.
+ZM_GenImage ZM_SynthHeightFromAlbedoLuma(const ZM_GenImage& xAlbedo, float fFlatten);

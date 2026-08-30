@@ -124,6 +124,18 @@ inline constexpr const char* szZM_DAWNMERE_LAB_DOOR_RIGHT_ENTITY_NAME =
 inline constexpr const char* szZM_DAWNMERE_LAB_DOOR_LINTEL_ENTITY_NAME =
 	"DawnmereLabDoorLintel";
 
+// The BUILDING the four blockouts above are wearing lives in
+// Source/World/ZM_DawnmereFacades.h -- szZM_DAWNMERE_LAB_FACADE_ENTITY_NAME, plus
+// the total name -> ZM_BUILDING_ID mapping its runtime component resolves through.
+//
+// ★ IT CARRIES NO COLLIDER, AND THAT IS WHAT KEEPS THE GROUND ORACLE HONEST. The
+// warning at the top of this block is about a physics body standing over the
+// columns ZM_DawnmereLabGroundTruth_Test probes; that test ignores the SHELL by
+// name. A facade with a collider would be a second body over the same ground that
+// no ignore list mentions, and ten rows of ground truth would quietly be measured
+// off a roof. Being visual-only means a raycast cannot see it at all, which is a
+// stronger guarantee than a name it would have to remember.
+
 // The arrival marker the ProfLab exit sends the player to, and the sensor that
 // sends them the other way. Named to match the shipped Home pair (FromHomeSpawn /
 // HomeDoorTrigger) rather than to a new convention.

@@ -37,7 +37,8 @@
 // v3 (SC6):  the baked .zmodel now self-lists 6 AddAnimationPath entries (the
 //            procedural clip set), so existing v2 bakes are stale and must
 //            self-invalidate to pick up the animation refs.
-constexpr u_int uZM_CREATUREGEN_VERSION      = 3u;
+// 4: creatures gained the full four-map PBR set, shared by the shiny variant.
+constexpr u_int uZM_CREATUREGEN_VERSION      = 4u;
 
 // Flat dex/party/box icon resolution (AssetManifest 1.2). BC1 128x128.
 constexpr u_int uZM_CREATURE_ICON_RESOLUTION = 128u;
@@ -200,6 +201,8 @@ struct ZM_Creature
 	ZM_GenImage   m_xAlbedo;
 	ZM_GenImage   m_xShiny;
 	ZM_GenImage   m_xIcon;
+	// The full PBR set, derived from the ALBEDO luma and shared by both variants.
+	ZM_SynthPbrSet m_xPbr;
 };
 
 // Build the complete bundle for a species (resolve -> mesh -> albedo -> shiny ->
@@ -264,6 +267,13 @@ enum ZM_CREATURE_ASSET_KIND : u_int
 	ZM_CREATURE_ASSET_ALBEDO,          // <Name>_albedo.ztxtr
 	ZM_CREATURE_ASSET_SHINY,           // <Name>_shiny.ztxtr
 	ZM_CREATURE_ASSET_ICON,            // <Name>_icon.ztxtr
+	// ★ ONE RELIEF SET, SHARED BY BOTH VARIANTS. The shiny albedo is a HUE
+	// ROTATION of the normal one (ZM_SynthHueRotate) -- same creature, same scales,
+	// different colour -- so its surface is identical and a second normal/AO pair
+	// would be a byte-for-byte duplicate that could drift.
+	ZM_CREATURE_ASSET_NORMAL,          // <Name>_normal.ztxtr (BC5)
+	ZM_CREATURE_ASSET_ROUGH_METAL,     // <Name>_rm.ztxtr
+	ZM_CREATURE_ASSET_OCCLUSION,       // <Name>_ao.ztxtr
 	ZM_CREATURE_ASSET_MATERIAL,        // <Name>.zmtrl        (SC5)
 	ZM_CREATURE_ASSET_MATERIAL_SHINY,  // <Name>_shiny.zmtrl  (SC5)
 	ZM_CREATURE_ASSET_MODEL,           // <Name>.zmodel       (SC5)

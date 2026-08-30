@@ -311,6 +311,35 @@ namespace ZM_StaticMesh
 	// 12 tris. NO bones.
 	u_int AppendFlatRoof(ZM_GenMesh& xMesh, const Zenith_Maths::Vector3& xEaveMin,
 		const Zenith_Maths::Vector3& xEaveMax, float fParapet, const ZM_GenUVIsland& xIsland);
+
+	// ---- Architectural surfaces: world-scaled TILING UVs ---------------------
+	//
+	// ★ WHY THIS IS NOT AppendBox WITH AN ISLAND. An atlas island gives every face
+	// the SAME [0,1] rect, so a 16.5 m wall and a 0.4 m quoin receive identical
+	// texture area and their texel densities differ by more than an order of
+	// magnitude -- the "correct material at the wrong scale reads as plastic"
+	// failure, worst on the largest surface in frame. These write
+	// uv = worldPosition / fTileMetres instead, so density is IDENTICAL everywhere
+	// and independent of how a surface was cut into boxes.
+	//
+	// The consequence, stated because it is load-bearing: the resulting UVs are
+	// UNBOUNDED. A 16.5 m wall at a 2 m tile reaches u = 8.25. That is legal only
+	// against a material whose sampler REPEATS, so a mesh built this way must own
+	// a tiling material and must NOT be validated with the [0,1]-clamped
+	// ZM_ValidateGenMeshStatic.
+
+	// Re-derive the UVs of every vertex from uFirstVert onward by world-space
+	// projection: the dominant axis of each vertex's normal picks the plane, and
+	// the other two world axes divide by fTileMetres. Faces sharing a plane agree
+	// at every shared edge, so a wall is continuous across the boxes making it up.
+	void ApplyWorldUVs(ZM_GenMesh& xMesh, u_int uFirstVert, float fTileMetres);
+
+	// AppendBox followed by ApplyWorldUVs -- the pairing every architectural box
+	// wants. Emitting normally and RE-DERIVING the UVs is deliberate: it avoids
+	// owning a second copy of AppendBox's winding-correct 24-vertex emission that
+	// could drift from the first.
+	u_int AppendWorldBox(ZM_GenMesh& xMesh, const Zenith_Maths::Vector3& xMin,
+		const Zenith_Maths::Vector3& xMax, float fTileMetres);
 }
 
 // ---- Skeleton + finalisation ----------------------------------------------

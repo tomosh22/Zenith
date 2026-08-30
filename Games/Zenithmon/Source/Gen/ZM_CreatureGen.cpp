@@ -97,6 +97,9 @@ namespace
 		case ZM_CREATURE_ASSET_MESH:           return "%s.zmesh";
 		case ZM_CREATURE_ASSET_SKELETON:       return "%s.zskel";
 		case ZM_CREATURE_ASSET_ALBEDO:         return "%s_albedo.ztxtr";
+		case ZM_CREATURE_ASSET_NORMAL:         return "%s_normal.ztxtr";
+		case ZM_CREATURE_ASSET_ROUGH_METAL:    return "%s_rm.ztxtr";
+		case ZM_CREATURE_ASSET_OCCLUSION:      return "%s_ao.ztxtr";
 		case ZM_CREATURE_ASSET_SHINY:          return "%s_shiny.ztxtr";
 		case ZM_CREATURE_ASSET_ICON:           return "%s_icon.ztxtr";
 		case ZM_CREATURE_ASSET_MATERIAL:       return "%s.zmtrl";
@@ -369,6 +372,19 @@ void ZM_BuildCreature(ZM_SPECIES_ID eId, ZM_Creature& xOut)
 	xOut.m_xAlbedo = ZM_BuildCreatureAlbedo(xRecipe);
 	xOut.m_xShiny  = ZM_BuildCreatureShiny(xRecipe, xOut.m_xAlbedo);
 	xOut.m_xIcon   = ZM_BuildCreatureIcon(xRecipe, xOut.m_xAlbedo);
+
+	// The PBR set, from the ALBEDO luma and shared by the shiny variant (a hue
+	// rotation is the same surface). Flattened hard, for the reason
+	// ZM_SynthHeightFromAlbedoLuma records: a dark marking on a flank is a MARKING,
+	// not a dent, and a luma heuristic taken literally would emboss every stripe.
+	ZM_SynthPbrResponse xResponse;
+	xResponse.m_fRoughness       = 0.62f;
+	xResponse.m_fMetallic        = 0.0f;
+	xResponse.m_fNormalStrength  = 0.65f;
+	xResponse.m_fCavityRoughness = 0.12f;
+	xResponse.m_fCavityOcclusion = 0.32f;
+	xOut.m_xPbr = ZM_SynthBuildPbrSet(
+		ZM_SynthHeightFromAlbedoLuma(xOut.m_xAlbedo, 0.78f), xResponse);
 }
 
 // ============================================================================
@@ -577,6 +593,17 @@ bool ZM_BakeCreature(ZM_SPECIES_ID eId)
 	bOk &= ZM_SynthBakeAlbedoBC1(xCreature.m_xAlbedo, acAlbedoFs);
 	bOk &= ZM_SynthBakeAlbedoBC1(xCreature.m_xShiny,  acShinyFs);
 	bOk &= ZM_SynthBakeIconBC1(xCreature.m_xIcon,     acIconFs);
+	// The shared relief set. ALBEDO/SHINY/ICON are colour; these three are DATA
+	// and stay LINEAR, or the shader reads a gamma-curved roughness.
+	{
+		char acNormalFs[512], acRmFs[512], acAoFs[512];
+		bOk &= ZM_CreatureFsPath(eId, ZM_CREATURE_ASSET_NORMAL,      acNormalFs, sizeof(acNormalFs));
+		bOk &= ZM_CreatureFsPath(eId, ZM_CREATURE_ASSET_ROUGH_METAL, acRmFs,     sizeof(acRmFs));
+		bOk &= ZM_CreatureFsPath(eId, ZM_CREATURE_ASSET_OCCLUSION,   acAoFs,     sizeof(acAoFs));
+		bOk &= ZM_SynthBakeNormalBC5(xCreature.m_xPbr.m_xNormal,            acNormalFs);
+		bOk &= ZM_SynthBakeLinearBC1(xCreature.m_xPbr.m_xRoughnessMetallic, acRmFs);
+		bOk &= ZM_SynthBakeLinearBC1(xCreature.m_xPbr.m_xOcclusion,         acAoFs);
+	}
 
 	// SC6: the 6 procedural clips (.zanim). Runs AFTER the mesh bake created this
 	// species' folder (Flux_AnimationClip::Export creates NO directories).
@@ -617,6 +644,16 @@ bool ZM_BakeCreature(ZM_SPECIES_ID eId)
 
 	const std::string strName = ZM_GetSpeciesName(eId);
 
+	// The three relief refs BOTH materials share -- one surface, two colourways.
+	char acNormalRef[512], acRmRef[512], acAoRef[512];
+	bOk &= ZM_CreatureAssetPath(eId, ZM_CREATURE_ASSET_NORMAL,      acNormalRef, sizeof(acNormalRef));
+	bOk &= ZM_CreatureAssetPath(eId, ZM_CREATURE_ASSET_ROUGH_METAL, acRmRef,     sizeof(acRmRef));
+	bOk &= ZM_CreatureAssetPath(eId, ZM_CREATURE_ASSET_OCCLUSION,   acAoRef,     sizeof(acAoRef));
+	if (!bOk)
+	{
+		return false;
+	}
+
 	// Base material (.zmtrl v5): baked albedo in the BASE_COLOR slot, matte dielectric.
 	// Create<>()+GetDirect() keeps the asset alive across SaveToFile (never a stack
 	// object). The albedo is passed as a "game:" ref (stored as a path, NOT loaded now).
@@ -625,8 +662,12 @@ bool ZM_BakeCreature(ZM_SPECIES_ID eId)
 		Zenith_MaterialAsset* pxMat = xMat.GetDirect();
 		pxMat->SetName(strName);
 		pxMat->SetDiffuseTexture(TextureHandle(std::string(acAlbedoRef)));
-		pxMat->SetRoughness(0.8f);
+		pxMat->SetNormalTexture(TextureHandle(std::string(acNormalRef)));
+		pxMat->SetRoughnessMetallicTexture(TextureHandle(std::string(acRmRef)));
+		pxMat->SetOcclusionTexture(TextureHandle(std::string(acAoRef)));
+		pxMat->SetRoughness(0.62f);
 		pxMat->SetMetallic(0.0f);
+		pxMat->SetNormalStrength(0.65f);
 		pxMat->SaveToFile(std::string(acMatFs));
 	}
 
@@ -639,8 +680,13 @@ bool ZM_BakeCreature(ZM_SPECIES_ID eId)
 		Zenith_MaterialAsset* pxMatShiny = xMatShiny.GetDirect();
 		pxMatShiny->SetName(strName + "_shiny");
 		pxMatShiny->SetDiffuseTexture(TextureHandle(std::string(acShinyTexRef)));
-		pxMatShiny->SetRoughness(0.8f);
+		// The SAME relief maps as the base: a hue rotation does not move a scale.
+		pxMatShiny->SetNormalTexture(TextureHandle(std::string(acNormalRef)));
+		pxMatShiny->SetRoughnessMetallicTexture(TextureHandle(std::string(acRmRef)));
+		pxMatShiny->SetOcclusionTexture(TextureHandle(std::string(acAoRef)));
+		pxMatShiny->SetRoughness(0.62f);
 		pxMatShiny->SetMetallic(0.0f);
+		pxMatShiny->SetNormalStrength(0.65f);
 		pxMatShiny->SaveToFile(std::string(acMatShinyFs));
 	}
 

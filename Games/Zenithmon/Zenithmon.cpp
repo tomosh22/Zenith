@@ -41,6 +41,10 @@
 // elsewhere) single-prop bake from here; the bake guard is inside the header, not
 // at this include.
 #include "Zenithmon/Source/Gen/ZM_PropGen.h"                      // prop asset refs + palette + ZM_EnsurePropBaked (ZM-67)
+#include "Zenithmon/Source/Gen/ZM_BuildingGen.h"                  // building asset refs + ZM_EnsureBuildingBaked -- the Dawnmere facades
+#include "Zenithmon/Source/World/ZM_DawnmereFacades.h"            // facade entity names + the total name -> building mapping
+#include "Zenithmon/Source/Gen/ZM_InteriorGen.h"                  // room-shell asset refs + ZM_EnsureInteriorBaked
+#include "Zenithmon/Source/World/ZM_InteriorDressing.h"           // shell names, prop + light tables
 #include "Zenithmon/Source/Graph/ZM_GraphAuthoring.h"             // the challenge graph's asset path + builder (S7 SC7)
 #include "Zenithmon/Source/Interaction/ZM_InteractionRuntime.h"   // ResetRuntimeStateForTests (between-tests hook)
 #include "Zenithmon/Source/Interaction/ZM_TrainerSightFsm.h"      // ZM_TrainerEngagementLatch + ZM_TrainerCinematicLatch (between-tests hook)
@@ -183,6 +187,7 @@
 // NOTHING NEW IS SERIALIZED. WriteToDataStream still emits a single version u_int,
 // so the committed .zscen bytes cannot move; everything below is re-derived on
 // every load from bytes that were already there.
+// ============================================================================
 class ZM_GreyboxVisual
 {
 public:
@@ -205,23 +210,38 @@ public:
 		}
 
 		// THE EARLY BRANCH, and deliberately so: an entity that resolves to no NPC
-		// row and carries no ZM_PlayerController is a prop or a blockout, and never
+		// row and carries no ZM_PlayerController is a ground-item prop, and never
 		// reaches a line of human code.
 		const ZM_HUMAN_ID eHumanId = ResolveHumanId();
 		if (eHumanId >= ZM_HUMAN_COUNT)
 		{
-			// ★ THE THREE POPULATIONS ARE MUTUALLY EXCLUSIVE BY CONSTRUCTION, so the
-			// order of these two is a readability choice and not a precedence rule: a
-			// ground-item prop carries neither ZM_Interactable nor ZM_PlayerController
-			// (that separation is ZM-D-207's whole ruling), and no wall carries a
-			// ZM_GroundItemProp. The BLOCKOUT call below is reached by exactly the
-			// entities that reached it before.
+			// ★★ THERE USED TO BE A THIRD POPULATION HERE -- BLOCKOUTS -- AND IT IS
+			// GONE. Every wall, floor, door and lintel in the game wore a greybox
+			// cube built by ApplyBlockout. Dawnmere's eight exterior blockouts became
+			// collider-only under real building models, the two interiors' fourteen
+			// became collider-only under real room models, and ZM_QueueGreyboxBlock
+			// was deleted with its last caller. Nothing authored reaches this arm any
+			// more, so the arm is gone rather than left as unreachable code that
+			// still reads like a supported case.
+			//
+			// ★ AND THE REMAINING CASE IS AN ERROR, NOT A FALLBACK. This component is
+			// now for humans and ground-item props ONLY. An entity carrying it that
+			// is neither is a wiring mistake -- most likely a ZM_GroundItemProp that
+			// was never added, or an NPC whose row stopped resolving -- and it used
+			// to be silently absorbed as "it must be a wall", which is exactly how a
+			// prop with a missing component became an anonymous grey cube nobody
+			// questioned.
 			if (m_xParentEntity.TryGetComponent<ZM_GroundItemProp>() != nullptr)
 			{
 				ApplyProp();
 				return;
 			}
-			ApplyBlockout();
+			Zenith_Error(LOG_CATEGORY_GAMEPLAY,
+				"[ZM_GreyboxVisual] entity '%s' carries this component but resolves to "
+				"no human row and carries no ZM_GroundItemProp. Since the blockout arm "
+				"was removed this component serves those two populations only -- the "
+				"entity will render nothing",
+				m_xParentEntity.GetName().c_str());
 			return;
 		}
 		ApplyHuman(eHumanId);
@@ -316,12 +336,11 @@ public:
 			return;
 		}
 
-		ImGui::TextUnformatted("Replaceable S3 greybox unit cube");
-		// DERIVED live rather than read back off the material, so the panel shows
-		// what the NEXT start would paint.
-		const Zenith_Maths::Vector4 xColour = ResolveBlockoutColour();
-		ImGui::Text("Appearance (derived): %.3f, %.3f, %.3f",
-			xColour.x, xColour.y, xColour.z);
+		// Neither a human nor a ground-item prop. That was the BLOCKOUT case until
+		// the arm was removed; it is a wiring error now, and the panel says so
+		// rather than describing a cube this component will not build.
+		ImGui::TextUnformatted(
+			"UNSERVED: no human row and no ZM_GroundItemProp -- nothing will render");
 	}
 #endif
 
@@ -332,7 +351,6 @@ private:
 	enum ZM_VISUAL_KIND : u_int
 	{
 		ZM_VISUAL_NONE,
-		ZM_VISUAL_BLOCKOUT,
 		ZM_VISUAL_HUMAN_FALLBACK,
 		ZM_VISUAL_HUMAN,
 		ZM_VISUAL_PROP,
@@ -343,7 +361,6 @@ private:
 	{
 		switch (eKind)
 		{
-		case ZM_VISUAL_BLOCKOUT:       return "blockout";
 		case ZM_VISUAL_HUMAN_FALLBACK: return "cold fallback block";
 		case ZM_VISUAL_HUMAN:          return "model";
 		case ZM_VISUAL_PROP:           return "prop model";
@@ -387,30 +404,6 @@ private:
 		return ZM_HUMAN_NONE;
 	}
 
-	// ---- BLOCKOUT: unchanged, and it must stay unchanged ---------------------
-	void ApplyBlockout()
-	{
-		const Zenith_Maths::Vector4 xBaseColour = ResolveBlockoutColour();
-
-		// A RE-RUN must REFRESH, never restack. ReadFromDataStream can hand this
-		// instance a different sibling row, and a second AddMeshEntry would leave the
-		// entity drawing two overlapping cubes with the OLD material on the first.
-		if (m_eLoadedKind == ZM_VISUAL_BLOCKOUT)
-		{
-			if (Zenith_MaterialAsset* pxOwnedMaterial = m_xMaterial.GetDirect())
-			{
-				ApplyAppearance(*pxOwnedMaterial, xBaseColour);
-			}
-			return;
-		}
-
-		m_xGeometry = Zenith_MeshGeometryAsset::CreateUnitCube();
-		if (!BuildBlockMesh(xBaseColour))
-		{
-			return;
-		}
-		m_eLoadedKind = ZM_VISUAL_BLOCKOUT;
-	}
 
 	// ---- HUMAN: model when warm, proportioned palette block when cold --------
 	void ApplyHuman(ZM_HUMAN_ID eHumanId)
@@ -883,24 +876,6 @@ private:
 		xMaterial.SetEmissiveIntensity(0.0f);
 	}
 
-	// ZM-D-176. The non-human answer is not a single colour: the seven PlayerHome
-	// shell blocks wear a warm interior tint so the player's bedroom stops reading
-	// as the same greybox room as ProfLab. Keyed on the ENTITY NAME, matched EXACTLY
-	// against the same inventory the authoring loop walks
-	// (Source/World/ZM_PlayerHomePlacement.h) -- one spelling, so a rename moves
-	// both sides together. Nothing here is serialized.
-	//
-	// ★ WHY THE NAME IS SAFE TO READ AT ORDER 107. It is established by
-	// AddStep_CreateEntity at authoring time (editor Stopped, no OnStart has fired)
-	// and by scene deserialization before any pending start is drained -- the
-	// identical argument the class comment makes for the NPC row.
-	Zenith_Maths::Vector4 ResolveBlockoutColour() const
-	{
-		return ZM_IsPlayerHomeBlockName(m_xParentEntity.GetName().c_str())
-			? ZM_GetPlayerHomeInteriorTintColour()
-			: ZM_GetHumanPaletteFallbackColour();
-	}
-
 	Zenith_Entity m_xParentEntity;
 	MeshGeometryHandle m_xGeometry;
 	MaterialHandle m_xMaterial;
@@ -914,6 +889,417 @@ private:
 	// from an untouched instance and the first frame would draw nothing.
 	ZM_PROP_ID m_eLoadedPropId = ZM_PROP_NONE;
 	bool m_bAnimatorAuthored = false;
+};
+
+
+// ============================================================================
+// ZM_BuildingFacade -- the PICTURE a Dawnmere blockout is wearing.
+//
+// A visual-only presenter: it owns nothing but a Zenith_ModelComponent carrying
+// the generated multi-surface building model (wall / roof / trim / glass, each
+// with its own full PBR material). The physics belongs to the sibling blockout
+// entity, which is why nothing here touches a collider.
+//
+// ★★ WHY THIS COMPONENT EXISTS AT ALL, RATHER THAN AN AUTHORED MODEL. The
+// authoring could simply AddStep_AddModel + AddStep_LoadModel and be done. That
+// was written first, and it broke the scene-byte invariant:
+// Zenith_ModelComponent::WriteToDataStream writes the model GUID and then EVERY
+// MATERIAL INLINE, so how many bytes a facade occupies depends on how much of the
+// bundle had resolved when the scene was saved. Two consecutive authoring boots
+// produced 79,058 and then 82,152 bytes for the SAME 40 entities. A committed
+// scene that grows by three kilobytes on its second boot is the exact failure
+// ZM-D-179 and ZM-D-183 were about, and it would additionally freeze a copy of
+// every material into the scene where a later material edit could never reach it.
+//
+// The scene therefore stores a component name and a version u_int, and the model
+// is resolved and loaded HERE, at OnStart. That is not a special case -- it is
+// what every model-bearing entity in this game already does, which is why a
+// Zenithmon .zscen contains no game:Props/... or game:Humans/... reference.
+//
+// ★ THE BUILDING IS RESOLVED FROM THE ENTITY NAME (ZM_DawnmereFacades.h), the
+// same way ZM_GreyboxVisual resolves a human and the PlayerHome tint. Nothing is
+// serialized but the version, so this component cannot make the scene bytes move.
+// ============================================================================
+class ZM_BuildingFacade
+{
+public:
+	ZM_BuildingFacade() = delete;
+	explicit ZM_BuildingFacade(Zenith_Entity& xParentEntity)
+		: m_xParentEntity(xParentEntity)
+	{
+	}
+
+	ZM_BuildingFacade(const ZM_BuildingFacade&) = delete;
+	ZM_BuildingFacade& operator=(const ZM_BuildingFacade&) = delete;
+	ZM_BuildingFacade(ZM_BuildingFacade&&) noexcept = default;
+	ZM_BuildingFacade& operator=(ZM_BuildingFacade&&) noexcept = default;
+
+	void OnStart()
+	{
+		if (!m_xParentEntity.IsValid())
+		{
+			return;
+		}
+
+		const ZM_BUILDING_ID eBuilding =
+			ZM_BuildingForFacadeEntity(m_xParentEntity.GetName().c_str());
+		if (eBuilding >= ZM_BUILDING_COUNT)
+		{
+			// TOTAL, and LOUD. A facade entity whose name no longer maps is a
+			// building that silently does not render -- the one failure mode a
+			// headless test cannot see, because the entity, its transform and its
+			// sibling collider are all still perfectly correct.
+			Zenith_Error(LOG_CATEGORY_MESH,
+				"[ZM_BuildingFacade] entity '%s' carries a facade component but maps "
+				"to no building (see Source/World/ZM_DawnmereFacades.h) -- its "
+				"blockout will collide and show nothing",
+				m_xParentEntity.GetName().c_str());
+			return;
+		}
+
+		char acModelRef[512];
+		if (!ZM_BuildingAssetPath(eBuilding, ZM_BUILDING_ASSET_MODEL, acModelRef,
+			static_cast<u_int>(sizeof(acModelRef))))
+		{
+			return;
+		}
+
+		// Tools-only and a stat-per-artifact no-op once the bundle is on disk; an
+		// inline `return false` everywhere else. The RESULT IS DELIBERATELY IGNORED,
+		// for the reason ZM_GreyboxVisual::ApplyPropModel records: on Android
+		// whatever shipped in the APK IS the bake, so treating "this build cannot
+		// bake" as "the model is absent" would refuse assets that are present.
+		(void)ZM_EnsureBuildingBaked(eBuilding);
+
+		Zenith_ModelComponent* pxModel =
+			m_xParentEntity.TryGetComponent<Zenith_ModelComponent>();
+		if (pxModel == nullptr)
+		{
+			pxModel = &m_xParentEntity.AddComponent<Zenith_ModelComponent>();
+		}
+		pxModel->LoadModel(std::string(acModelRef));
+
+		// ★ THE PATH IS THE ONLY HONEST SIGNAL, NOT HasModel(). LoadModel refuses a
+		// missing file before it clears anything, so HasModel() can still be true
+		// while describing whatever the component held before. Zenith_ModelComponent
+		// assigns m_strModelPath on its success path and nowhere else.
+		if (pxModel->GetModelPath() != acModelRef || pxModel->GetNumMeshes() == 0u)
+		{
+			Zenith_Warning(LOG_CATEGORY_MESH,
+				"[ZM_BuildingFacade] '%s' did not load for entity '%s'; the blockout "
+				"will collide and show nothing. On a clone with no bake this is "
+				"expected -- every generated asset in this game is gitignored",
+				acModelRef, m_xParentEntity.GetName().c_str());
+			return;
+		}
+		m_bLoaded = true;
+		// Logged on SUCCESS as well as failure, deliberately. This is a purely
+		// visual component with no gameplay effect: if it silently does nothing the
+		// only symptom is a building that is not there, and every headless test in
+		// the game still passes. One INFO line per facade per scene load is what
+		// makes "did the house load?" answerable from a log rather than a screenshot.
+		Zenith_Log(LOG_CATEGORY_MESH,
+			"[ZM_BuildingFacade] '%s' loaded '%s' (%u submeshes)",
+			m_xParentEntity.GetName().c_str(), acModelRef, pxModel->GetNumMeshes());
+	}
+
+	// Read by ZM_Tests/automated coverage: did the picture actually arrive?
+	bool IsLoaded() const { return m_bLoaded; }
+
+	void WriteToDataStream(Zenith_DataStream& xStream) const
+	{
+		// ★ A VERSION AND NOTHING ELSE, DELIBERATELY. Every byte this writes lands
+		// in a COMMITTED scene, and the building id is already a pure function of
+		// the entity name. Serializing it too would create a second inventory
+		// nothing reconciles -- and one that could disagree with the name.
+		xStream << 1u;
+	}
+
+	void ReadFromDataStream(Zenith_DataStream& xStream)
+	{
+		u_int uVersion = 0u;
+		xStream >> uVersion;
+		(void)uVersion;
+		// m_bLoaded is NOT cleared: it records what THIS instance did to the model,
+		// which a stream read does not undo. A genuine scene load builds a FRESH
+		// component, so it starts false and takes the normal path.
+	}
+
+#ifdef ZENITH_TOOLS
+	void RenderPropertiesPanel()
+	{
+		const ZM_BUILDING_ID eBuilding =
+			ZM_BuildingForFacadeEntity(m_xParentEntity.GetName().c_str());
+		ImGui::Text("Building: %s",
+			eBuilding < ZM_BUILDING_COUNT ? ZM_GetBuildingName(eBuilding) : "<unmapped>");
+		ImGui::Text("Model loaded: %s", m_bLoaded ? "yes" : "no");
+	}
+#endif
+
+private:
+	Zenith_Entity m_xParentEntity;
+	bool m_bLoaded = false;
+};
+
+// ============================================================================
+// ZM_InteriorShell -- the ROOM a set of interior blockouts is wearing.
+//
+// The interior twin of ZM_BuildingFacade, and it exists for exactly the same two
+// reasons, which are worth not re-deriving:
+//
+//   * The blockouts must stay MODEL-FREE so their AABB colliders keep being
+//     sized from transform scale alone. Those seven boxes per room are the walls
+//     the player stops against, and Zenith_ColliderComponent switches to
+//     mesh-bounds sizing the moment a Zenith_ModelComponent appears -- falling
+//     back to a UNIT CUBE if the mesh has not streamed yet, which would put a
+//     1 m collider where a 16 m wall should be, non-deterministically.
+//
+//   * The model must NOT be authored into the scene. Zenith_ModelComponent
+//     serializes every material INLINE, so the committed byte count would track
+//     asset load state; the exterior slice measured that at 79,058 bytes on one
+//     boot and 82,152 on the next for the same entity set.
+//
+// So the scene carries a component name and a version u_int, and the room model
+// is resolved from the entity name here at OnStart.
+// ============================================================================
+class ZM_InteriorShell
+{
+public:
+	ZM_InteriorShell() = delete;
+	explicit ZM_InteriorShell(Zenith_Entity& xParentEntity)
+		: m_xParentEntity(xParentEntity)
+	{
+	}
+
+	ZM_InteriorShell(const ZM_InteriorShell&) = delete;
+	ZM_InteriorShell& operator=(const ZM_InteriorShell&) = delete;
+	ZM_InteriorShell(ZM_InteriorShell&&) noexcept = default;
+	ZM_InteriorShell& operator=(ZM_InteriorShell&&) noexcept = default;
+
+	void OnStart()
+	{
+		if (!m_xParentEntity.IsValid())
+		{
+			return;
+		}
+
+		const ZM_INTERIOR_ROOM eRoom =
+			ZM_RoomForShellEntity(m_xParentEntity.GetName().c_str());
+		if (eRoom >= ZM_INTERIOR_ROOM_COUNT)
+		{
+			Zenith_Error(LOG_CATEGORY_MESH,
+				"[ZM_InteriorShell] entity '%s' carries a shell component but maps to "
+				"no room (see Source/World/ZM_InteriorDressing.h) -- its blockouts will "
+				"collide and show nothing", m_xParentEntity.GetName().c_str());
+			return;
+		}
+
+		char acModelRef[512];
+		if (!ZM_InteriorAssetPath(eRoom, ZM_INTERIOR_ASSET_MODEL, acModelRef,
+			static_cast<u_int>(sizeof(acModelRef))))
+		{
+			return;
+		}
+
+		// Tools-only, a stat-per-artifact no-op once warm, and the RESULT IS
+		// DELIBERATELY IGNORED for the reason ZM_GreyboxVisual::ApplyPropModel
+		// records: on Android whatever shipped in the APK IS the bake.
+		(void)ZM_EnsureInteriorBaked(eRoom);
+
+		Zenith_ModelComponent* pxModel =
+			m_xParentEntity.TryGetComponent<Zenith_ModelComponent>();
+		if (pxModel == nullptr)
+		{
+			pxModel = &m_xParentEntity.AddComponent<Zenith_ModelComponent>();
+		}
+		pxModel->LoadModel(std::string(acModelRef));
+
+		// The PATH is the only honest signal, not HasModel(): LoadModel refuses a
+		// missing file before it clears anything.
+		if (pxModel->GetModelPath() != acModelRef || pxModel->GetNumMeshes() == 0u)
+		{
+			Zenith_Warning(LOG_CATEGORY_MESH,
+				"[ZM_InteriorShell] '%s' did not load for entity '%s'; the room will be "
+				"an empty collider box. On a clone with no bake this is expected -- "
+				"every generated asset in this game is gitignored",
+				acModelRef, m_xParentEntity.GetName().c_str());
+			return;
+		}
+		m_bLoaded = true;
+		// Logged on SUCCESS too: this is a purely visual component, so if it
+		// silently does nothing the only symptom is a room that is not there and
+		// every headless test still passes.
+		Zenith_Log(LOG_CATEGORY_MESH,
+			"[ZM_InteriorShell] '%s' loaded '%s' (%u submeshes)",
+			m_xParentEntity.GetName().c_str(), acModelRef, pxModel->GetNumMeshes());
+	}
+
+	bool IsLoaded() const { return m_bLoaded; }
+
+	void WriteToDataStream(Zenith_DataStream& xStream) const
+	{
+		// A version and nothing else. The room is already a pure function of the
+		// entity name; serializing it too would be a second inventory nothing
+		// reconciles, and one that could disagree with the name.
+		xStream << 1u;
+	}
+
+	void ReadFromDataStream(Zenith_DataStream& xStream)
+	{
+		u_int uVersion = 0u;
+		xStream >> uVersion;
+		(void)uVersion;
+	}
+
+#ifdef ZENITH_TOOLS
+	void RenderPropertiesPanel()
+	{
+		const ZM_INTERIOR_ROOM eRoom =
+			ZM_RoomForShellEntity(m_xParentEntity.GetName().c_str());
+		ImGui::Text("Room: %s",
+			eRoom < ZM_INTERIOR_ROOM_COUNT ? ZM_InteriorRoomName(eRoom) : "<unmapped>");
+		ImGui::Text("Model loaded: %s", m_bLoaded ? "yes" : "no");
+	}
+#endif
+
+private:
+	Zenith_Entity m_xParentEntity;
+	bool m_bLoaded = false;
+};
+
+// ============================================================================
+// ZM_InteriorFurniture -- one piece of furniture standing in an interior room.
+//
+// The third member of the same family as ZM_BuildingFacade and ZM_InteriorShell,
+// and it resolves and loads the same way: the scene carries a component name and
+// a version u_int, and the prop id comes from the entity's name
+// (ZM_InteriorDressing.h). See ZM_BuildingFacade for why a model is never
+// authored into a committed scene.
+//
+// ★★ FURNITURE IS SOLID, AND THE ORDER OF OPERATIONS IS THE WHOLE TRICK.
+//
+// An earlier draft made these visual-only, on the reasoning that
+// Zenith_ColliderComponent serializes only the volume and body TYPE -- so
+// explicit half-extents cannot survive a save, and a loaded scene re-derives the
+// box from mesh bounds or, when no mesh has arrived yet, from a UNIT CUBE. That
+// is true, and it turned out not to be the obstacle it looked like.
+//
+// The sequence on a scene load is: the collider deserializes and calls
+// AddCollider (no ModelComponent exists yet, so it sizes a 1 m cube), and THEN
+// this component's OnStart runs and loads the model. The sizing is therefore
+// wrong only in the window between those two, and RebuildCollider() closes it --
+// it re-runs ComputeBoxDimensionsAndOffset with the mesh present, taking the
+// mesh-aware branch: half-extents = meshExtents * scale, plus a local offset that
+// recentres the box on the mesh. The prop meshes are authored in real metres at
+// scale 1, so that is exactly the furniture's own footprint.
+//
+// ★ IT IS CALLED ONLY ON THE SUCCESS PATH, and that matters. Rebuilding after a
+// FAILED load would re-derive from whatever stale or absent mesh was there and
+// leave a 1 m cube standing in the middle of a bed nobody can see. On a
+// bake-less clone the furniture keeps its authored sizing and stays invisible,
+// which is the same degradation every other generated asset in this game has.
+//
+// ★ AND THE CORRIDOR RULE IS A SAFETY PROPERTY NOW, not a tidiness one. The
+// shared walk driver has NO OBSTACLE AVOIDANCE (map playbook 3.4): a collider on
+// the line wedges a traversal test into its frame cap with a failure naming a
+// DISTANCE rather than the blocker. Every prop clears
+// fZM_INTERIOR_CORRIDOR_HALF_WIDTH and
+// ZM_Interaction/InteriorPropsClearTheEntranceCorridor enforces it -- that clause
+// existed before these colliders did, which is what made adding them safe.
+// ============================================================================
+class ZM_InteriorFurniture
+{
+public:
+	ZM_InteriorFurniture() = delete;
+	explicit ZM_InteriorFurniture(Zenith_Entity& xParentEntity)
+		: m_xParentEntity(xParentEntity)
+	{
+	}
+
+	ZM_InteriorFurniture(const ZM_InteriorFurniture&) = delete;
+	ZM_InteriorFurniture& operator=(const ZM_InteriorFurniture&) = delete;
+	ZM_InteriorFurniture(ZM_InteriorFurniture&&) noexcept = default;
+	ZM_InteriorFurniture& operator=(ZM_InteriorFurniture&&) noexcept = default;
+
+	void OnStart()
+	{
+		if (!m_xParentEntity.IsValid())
+		{
+			return;
+		}
+
+		const ZM_PROP_ID eProp =
+			ZM_PropForInteriorPropEntity(m_xParentEntity.GetName().c_str());
+		if (eProp >= ZM_PROP_COUNT)
+		{
+			Zenith_Error(LOG_CATEGORY_MESH,
+				"[ZM_InteriorFurniture] entity '%s' carries a furniture component but "
+				"maps to no prop (see Source/World/ZM_InteriorDressing.h) -- it will "
+				"stand in the room showing nothing", m_xParentEntity.GetName().c_str());
+			return;
+		}
+
+		char acModelRef[512];
+		if (!ZM_PropAssetPath(eProp, ZM_PROP_ASSET_MODEL, acModelRef,
+			static_cast<u_int>(sizeof(acModelRef))))
+		{
+			return;
+		}
+		(void)ZM_EnsurePropBaked(eProp);
+
+		Zenith_ModelComponent* pxModel =
+			m_xParentEntity.TryGetComponent<Zenith_ModelComponent>();
+		if (pxModel == nullptr)
+		{
+			pxModel = &m_xParentEntity.AddComponent<Zenith_ModelComponent>();
+		}
+		pxModel->LoadModel(std::string(acModelRef));
+
+		if (pxModel->GetModelPath() != acModelRef || pxModel->GetNumMeshes() == 0u)
+		{
+			Zenith_Warning(LOG_CATEGORY_MESH,
+				"[ZM_InteriorFurniture] '%s' did not load for entity '%s'. On a clone "
+				"with no bake this is expected -- every generated asset is gitignored",
+				acModelRef, m_xParentEntity.GetName().c_str());
+			return;
+		}
+		m_bLoaded = true;
+
+		// ★ NOW that the mesh is present, re-size the collider to it. Until this
+		// line the box is the 1 m cube AddCollider built during deserialization,
+		// when no ModelComponent existed. See the class comment for why this is on
+		// the success path only.
+		if (Zenith_ColliderComponent* pxCollider =
+			m_xParentEntity.TryGetComponent<Zenith_ColliderComponent>())
+		{
+			pxCollider->RebuildCollider();
+		}
+	}
+
+	bool IsLoaded() const { return m_bLoaded; }
+
+	void WriteToDataStream(Zenith_DataStream& xStream) const { xStream << 1u; }
+	void ReadFromDataStream(Zenith_DataStream& xStream)
+	{
+		u_int uVersion = 0u;
+		xStream >> uVersion;
+		(void)uVersion;
+	}
+
+#ifdef ZENITH_TOOLS
+	void RenderPropertiesPanel()
+	{
+		const ZM_PROP_ID eProp =
+			ZM_PropForInteriorPropEntity(m_xParentEntity.GetName().c_str());
+		ImGui::Text("Prop: %s",
+			eProp < ZM_PROP_COUNT ? ZM_GetPropName(eProp) : "<unmapped>");
+		ImGui::Text("Model loaded: %s", m_bLoaded ? "yes" : "no");
+	}
+#endif
+
+private:
+	Zenith_Entity m_xParentEntity;
+	bool m_bLoaded = false;
 };
 
 // ============================================================================
@@ -942,6 +1328,9 @@ ZENITH_REGISTER_COMPONENT(ZM_UI_MenuStack, "ZM_UI_MenuStack", 112u)
 ZENITH_REGISTER_COMPONENT(ZM_Interactable, "ZM_Interactable", 113u)
 ZENITH_REGISTER_COMPONENT(ZM_TouchLayoutController, "ZM_TouchLayoutController", 114u)
 ZENITH_REGISTER_COMPONENT(ZM_GroundItemProp, "ZM_GroundItemProp", 115u)
+ZENITH_REGISTER_COMPONENT(ZM_BuildingFacade, "ZM_BuildingFacade", 116u)
+ZENITH_REGISTER_COMPONENT(ZM_InteriorShell, "ZM_InteriorShell", 117u)
+ZENITH_REGISTER_COMPONENT(ZM_InteriorFurniture, "ZM_InteriorFurniture", 118u)
 
 #ifdef ZENITH_TOOLS
 namespace
@@ -3010,7 +3399,28 @@ namespace
 		xAuto.AddStep_Custom(pfnConfigure);
 	}
 
-	void ZM_QueueGreyboxBlock(
+	// ---- A blockout that COLLIDES and is never seen --------------------------
+	//
+	// ★★ WHY THE VISUAL AND THE COLLIDER ARE TWO ENTITIES, AND WHY THIS ONE MUST
+	// CARRY NO MODEL. Zenith_ColliderComponent::ComputeBoxDimensionsAndOffset is
+	// MESH-AWARE: when the entity has a Zenith_ModelComponent whose mesh exposes
+	// bounds, the box is meshExtents * transformScale; only when there is NO model
+	// does it fall back to the unit-cube assumption that makes half-extents exactly
+	// scale/2. Every Dawnmere clearance constant, the camera clamp and the keep-out
+	// were measured against that fallback, so hanging a real building model on the
+	// shell entity would silently redefine all of them.
+	//
+	// ★ AND THE FAILURE WOULD BE INTERMITTENT. Explicit half-extents
+	// (SetExplicitBoxHalfExtents) are NOT serialized -- ZM_ColliderComponent's
+	// stream carries only the volume/body pair -- so a LOADED scene rebuilds the
+	// box from whatever the model reports at that instant. If the mesh has not
+	// streamed in yet the code takes the unit-cube branch, and a 17 m building
+	// gets a 1 m collider on some boots and not others.
+	//
+	// So: this entity is the volume the player may not enter, exactly as it always
+	// was, byte for byte. The picture is a sibling (ZM_QueueBuildingFacade) with a
+	// model, scale 1 and no collider at all.
+	void ZM_QueueColliderBlock(
 		Zenith_EditorAutomation& xAuto,
 		const char* szName,
 		const Zenith_Maths::Vector3& xPosition,
@@ -3021,10 +3431,124 @@ namespace
 		xAuto.AddStep_SetTransformPosition(
 			xPosition.x, xPosition.y, xPosition.z);
 		xAuto.AddStep_SetTransformScale(xScale.x, xScale.y, xScale.z);
-		xAuto.AddStep_AddComponent("ZM_GreyboxVisual");
 		xAuto.AddStep_AddCollider();
 		xAuto.AddStep_AddColliderShape(
 			COLLISION_VOLUME_TYPE_AABB, RIGIDBODY_TYPE_STATIC);
+	}
+
+	// ---- Everything that turns an interior blockout box into a room ----------
+	//
+	// One shell entity (the generated floor/wall/ceiling/trim model), the room's
+	// furniture, and its lights -- queued in that fixed order, which is part of
+	// the scene-byte contract (ZM-D-148 dense authoring-order file indices):
+	// appending is fine, REORDERING rewrites the committed bytes.
+	//
+	// ★ THE LIGHTS ARE THE HALF THAT CANNOT BE SKIPPED. Zenithmon authored no
+	// Zenith_LightComponent anywhere before this, so both interiors were lit by
+	// the global ambient term alone -- a constant with no direction, which no
+	// amount of PBR material can look like anything but flat under. SSAO has no
+	// shading to darken and CSM has no caster in a scene with no lights.
+	void ZM_QueueInteriorDressing(Zenith_EditorAutomation& xAuto, ZM_INTERIOR_ROOM eRoom)
+	{
+		// The shell. Visual-only, at the room origin, scale 1 -- the mesh is
+		// authored in real metres and the seven blockouts keep the collision.
+		if (!ZM_EnsureInteriorBaked(eRoom))
+		{
+			Zenith_Error(LOG_CATEGORY_MESH,
+				"[Zenithmon] ZM_QueueInteriorDressing: room %u could not be baked, so "
+				"its shell would be authored against a missing model",
+				(u_int)eRoom);
+		}
+		const char* szShell = (eRoom == ZM_INTERIOR_ROOM_PROF_LAB)
+			? szZM_PROFLAB_SHELL_ENTITY_NAME
+			: szZM_PLAYERHOME_SHELL_ENTITY_NAME;
+		xAuto.AddStep_CreateEntity(szShell);
+		xAuto.AddStep_SetEntityTransient(false);
+		xAuto.AddStep_SetTransformPosition(0.0f, 0.0f, 0.0f);
+		xAuto.AddStep_SetTransformScale(1.0f, 1.0f, 1.0f);
+		xAuto.AddStep_AddComponent("ZM_InteriorShell");
+
+		// The furniture. SOLID: an AABB static body, sized to the prop's own mesh by
+		// ZM_InteriorFurniture::OnStart once the model has loaded (the collider
+		// authored here is a placeholder cube until then -- see that component).
+		// AABB rather than OBB because these are axis-aligned box compositions and
+		// an AABB body is forced to identity rotation anyway.
+		const u_int uProps = ZM_GetInteriorPropCount(eRoom);
+		for (u_int p = 0u; p < uProps; ++p)
+		{
+			const ZM_InteriorProp& xProp = ZM_GetInteriorProp(eRoom, p);
+			xAuto.AddStep_CreateEntity(xProp.m_szEntityName);
+			xAuto.AddStep_SetEntityTransient(false);
+			xAuto.AddStep_SetTransformPosition(xProp.m_fX, 0.0f, xProp.m_fZ);
+			// ★ A QUATERNION, VERBATIM -- NOT AddStep_SetTransformYaw. The yaw step
+			// runs glm::angleAxis, whose sin/cos differ by 1-2 ULP between MSVC
+			// Debug and Release codegen, so a committed scene authored through it
+			// ping-pongs in git forever (ZM-D-183). These four values are frozen
+			// literals in the dressing table.
+			xAuto.AddStep_SetTransformRotationQuat(
+				0.0f, xProp.m_fQuatY, 0.0f, xProp.m_fQuatW);
+			xAuto.AddStep_AddCollider();
+			xAuto.AddStep_AddColliderShape(
+				COLLISION_VOLUME_TYPE_AABB, RIGIDBODY_TYPE_STATIC);
+			xAuto.AddStep_AddComponent("ZM_InteriorFurniture");
+		}
+
+		// The lights.
+		const u_int uLights = ZM_GetInteriorLightCount(eRoom);
+		for (u_int l = 0u; l < uLights; ++l)
+		{
+			const ZM_InteriorLight& xLight = ZM_GetInteriorLight(eRoom, l);
+			xAuto.AddStep_CreateEntity(xLight.m_szEntityName);
+			xAuto.AddStep_SetEntityTransient(false);
+			xAuto.AddStep_SetTransformPosition(xLight.m_fX, xLight.m_fY, xLight.m_fZ);
+			xAuto.AddStep_AddComponent("Light");
+			xAuto.AddStep_SetLightIntensity(xLight.m_fLumens);
+			xAuto.AddStep_SetLightRange(xLight.m_fRange);
+			xAuto.AddStep_SetLightColor(xLight.m_fR, xLight.m_fG, xLight.m_fB);
+		}
+	}
+
+	// ---- The building a blockout is wearing ----------------------------------
+	//
+	// A visual-only entity: a ModelComponent loading the generated multi-surface
+	// .zmodel (wall / roof / trim / glass, each with its own PBR material), at
+	// SCALE 1 because the mesh is authored in real metres, and with NO collider
+	// because the sibling blockout owns the physics.
+	//
+	// ★ THE POSITION IS THE BLOCKOUT'S FLOOR, NOT ITS CENTRE. Every generated
+	// building is ground-anchored at y=0 (the same feet-on-floor convention the
+	// humans and props use), so the entity sits at the bottom face of the box --
+	// which is already embedded 0.05 m below the measured terrain so no gap can
+	// open under the plinth.
+	void ZM_QueueBuildingFacade(
+		Zenith_EditorAutomation& xAuto,
+		const char* szName,
+		const ZM_DawnmereBlockout& xShell)
+	{
+		// ★ NO MODEL IS AUTHORED HERE, AND THAT IS THE WHOLE DESIGN. The scene gets
+		// an entity, a transform and a COMPONENT NAME; ZM_BuildingFacade::OnStart
+		// resolves the building from the entity name and loads the model at runtime.
+		// Authoring the model directly makes the scene's byte count depend on how
+		// much of the asset bundle had resolved at save time -- measured at 79,058
+		// bytes on one boot and 82,152 on the next, same 40 entities. The full
+		// argument is on the component and in Source/World/ZM_DawnmereFacades.h.
+		Zenith_Assert(ZM_IsDawnmereFacadeEntity(szName),
+			"ZM_QueueBuildingFacade: '%s' maps to no building, so the component "
+			"would author an entity that renders nothing", szName);
+
+		xAuto.AddStep_CreateEntity(szName);
+		xAuto.AddStep_SetEntityTransient(false);
+		// THE BLOCKOUT'S FLOOR, NOT ITS CENTRE: every generated building is
+		// ground-anchored at y=0, and the blockout's bottom face is already embedded
+		// 0.05 m below the measured terrain so no gap can open under the plinth.
+		xAuto.AddStep_SetTransformPosition(
+			xShell.m_xCenter.x, xShell.Min().y, xShell.m_xCenter.z);
+		// Explicit unit scale. The default is already 1, but a facade whose scale
+		// silently became anything else would stretch the masonry tile off its
+		// world-metre pitch -- the exact "correct material at the wrong scale reads
+		// as plastic" failure -- so it is stated rather than assumed.
+		xAuto.AddStep_SetTransformScale(1.0f, 1.0f, 1.0f);
+		xAuto.AddStep_AddComponent("ZM_BuildingFacade");
 	}
 
 	// ---- R1-2: the terrain host entity a NEW outdoor scene is built on -------
@@ -3184,10 +3708,27 @@ void Project_RegisterGameComponents()
 	Zenith_ComponentEditorRegistry::Get().RegisterComponent<ZM_UI_MenuStack>("ZM_UI_MenuStack");
 	Zenith_ComponentEditorRegistry::Get().RegisterComponent<ZM_Interactable>("ZM_Interactable");
 	Zenith_ComponentEditorRegistry::Get().RegisterComponent<ZM_TouchLayoutController>("ZM_TouchLayoutController");
-	// ★ BOTH REGISTRATIONS OR NEITHER. Miss this second one and the component still
-	// serializes and still runs -- it just silently vanishes from the editor's "Add
-	// Component" menu, which is a defect no unit can see.
+	// ★★ BOTH REGISTRATIONS OR NEITHER, AND THE COST IS WORSE THAN THIS COMMENT
+	// USED TO SAY. It read "the component just silently vanishes from the editor's
+	// Add Component menu, which is a defect no unit can see". That is the SMALL
+	// half. `AddStep_AddComponent` resolves through THIS registry too
+	// (Zenith_Editor::AddComponentToSelected walks Zenith_ComponentEditorRegistry
+	// by display name), so a component registered only with the META registry is
+	// one the SCENE AUTHORING cannot add:
+	//
+	//   * the authoring logs one `[EditorOp] Component 'X' not found in registry`
+	//     at Error and CARRIES ON,
+	//   * the entity is still created, still transient-false, still transformed,
+	//   * the scene is published, and both boots agree it is byte-identical --
+	//     because the missing component is missing CONSISTENTLY.
+	//
+	// ZM_BuildingFacade was added with only the meta registration and Dawnmere
+	// published twice, byte-stable, with two facade entities carrying nothing but a
+	// Transform. Every gate was green; the houses were simply not there.
 	Zenith_ComponentEditorRegistry::Get().RegisterComponent<ZM_GroundItemProp>("ZM_GroundItemProp");
+	Zenith_ComponentEditorRegistry::Get().RegisterComponent<ZM_BuildingFacade>("ZM_BuildingFacade");
+	Zenith_ComponentEditorRegistry::Get().RegisterComponent<ZM_InteriorShell>("ZM_InteriorShell");
+	Zenith_ComponentEditorRegistry::Get().RegisterComponent<ZM_InteriorFurniture>("ZM_InteriorFurniture");
 
 	// Runtime toggle for the battle presenter's instant-battle mode (collapses all
 	// presentation timing). Bound by reference to the ZM_BattleDirectorCore backing
@@ -3590,9 +4131,13 @@ void Project_RegisterEditorAutomationSteps()
 	{
 		const ZM_PLAYERHOME_BLOCK eBlock = (ZM_PLAYERHOME_BLOCK)uBlock;
 		const ZM_PlayerHomeBlockout xBlock = ZM_GetPlayerHomeBlock(eBlock);
-		ZM_QueueGreyboxBlock(xAuto, ZM_GetPlayerHomeBlockName(eBlock),
+		ZM_QueueColliderBlock(xAuto, ZM_GetPlayerHomeBlockName(eBlock),
 			xBlock.m_xCenter, xBlock.m_xScale);
 	}
+
+	// The room itself: shell model, furniture and lights. Queued straight after
+	// the blockouts so the collision and the picture stay adjacent in the file.
+	ZM_QueueInteriorDressing(xAuto, ZM_INTERIOR_ROOM_PLAYER_HOME);
 
 	xAuto.AddStep_CreateEntity("DoorSpawn");
 	xAuto.AddStep_SetEntityTransient(false);
@@ -3728,9 +4273,13 @@ void Project_RegisterEditorAutomationSteps()
 	{
 		const ZM_PROFLAB_BLOCK eBlock = (ZM_PROFLAB_BLOCK)uBlock;
 		const ZM_ProfLabBlockout xBlock = ZM_GetProfLabBlock(eBlock);
-		ZM_QueueGreyboxBlock(xAuto, ZM_GetProfLabBlockName(eBlock),
+		ZM_QueueColliderBlock(xAuto, ZM_GetProfLabBlockName(eBlock),
 			xBlock.m_xCenter, xBlock.m_xScale);
 	}
+
+	// The room itself: shell model, furniture and lights. Queued straight after
+	// the blockouts so the collision and the picture stay adjacent in the file.
+	ZM_QueueInteriorDressing(xAuto, ZM_INTERIOR_ROOM_PROF_LAB);
 
 	// The single arrival marker. Its transform is the marker's FEET: the warp adds
 	// the capsule half-extent at spawn time (ZM_GameStateManager::CalculateSpawnCenter),
@@ -4043,14 +4592,25 @@ void Project_RegisterEditorAutomationSteps()
 		const ZM_DawnmereBlockout xHomeTrigger = ZM_GetDawnmereHomeDoorTrigger();
 		const Zenith_Maths::Vector3 xFromHomeSpawnFeet =
 			ZM_GetDawnmereFromHomeSpawnFeet();
-		ZM_QueueGreyboxBlock(xAuto, "DawnmereHomeShell",
+		// ★ THE FOUR BLOCKOUTS ARE UNCHANGED GEOMETRY AND ARE NOW INVISIBLE. Their
+		// centres, scales and colliders are byte-for-byte what they have always
+		// been -- every measured ground row, the camera-clearance clause, the door
+		// trigger and the keep-out still describe exactly these boxes -- but the
+		// greybox cube they used to wear is gone. The building below is the picture.
+		//
+		// The jambs and lintel keep their colliders because the doorway must stay
+		// solid (entry is the trigger in front of it, not a walk-through), and they
+		// lose their visual because the generated facade emits its own door surround
+		// at the aperture these three describe.
+		ZM_QueueColliderBlock(xAuto, "DawnmereHomeShell",
 			xHomeShell.m_xCenter, xHomeShell.m_xScale);
-		ZM_QueueGreyboxBlock(xAuto, "DawnmereHomeDoorLeft",
+		ZM_QueueColliderBlock(xAuto, "DawnmereHomeDoorLeft",
 			xHomeDoorLeft.m_xCenter, xHomeDoorLeft.m_xScale);
-		ZM_QueueGreyboxBlock(xAuto, "DawnmereHomeDoorRight",
+		ZM_QueueColliderBlock(xAuto, "DawnmereHomeDoorRight",
 			xHomeDoorRight.m_xCenter, xHomeDoorRight.m_xScale);
-		ZM_QueueGreyboxBlock(xAuto, "DawnmereHomeDoorLintel",
+		ZM_QueueColliderBlock(xAuto, "DawnmereHomeDoorLintel",
 			xHomeLintel.m_xCenter, xHomeLintel.m_xScale);
+		ZM_QueueBuildingFacade(xAuto, szZM_DAWNMERE_HOME_FACADE_ENTITY_NAME, xHomeShell);
 
 		xAuto.AddStep_CreateEntity("FromHomeSpawn");
 		xAuto.AddStep_SetEntityTransient(false);
@@ -4336,14 +4896,18 @@ void Project_RegisterEditorAutomationSteps()
 		const ZM_DawnmereBlockout xLabTrigger = ZM_GetDawnmereLabDoorTrigger();
 		const Zenith_Maths::Vector3 xFromLabSpawnFeet =
 			ZM_GetDawnmereFromLabSpawnFeet();
-		ZM_QueueGreyboxBlock(xAuto, szZM_DAWNMERE_LAB_SHELL_ENTITY_NAME,
+		// Same split as the Home block above: the four blockouts keep their exact
+		// authored geometry and their colliders, lose their greybox cube, and the
+		// generated Lab model is queued behind them as the picture.
+		ZM_QueueColliderBlock(xAuto, szZM_DAWNMERE_LAB_SHELL_ENTITY_NAME,
 			xLabShell.m_xCenter, xLabShell.m_xScale);
-		ZM_QueueGreyboxBlock(xAuto, szZM_DAWNMERE_LAB_DOOR_LEFT_ENTITY_NAME,
+		ZM_QueueColliderBlock(xAuto, szZM_DAWNMERE_LAB_DOOR_LEFT_ENTITY_NAME,
 			xLabDoorLeft.m_xCenter, xLabDoorLeft.m_xScale);
-		ZM_QueueGreyboxBlock(xAuto, szZM_DAWNMERE_LAB_DOOR_RIGHT_ENTITY_NAME,
+		ZM_QueueColliderBlock(xAuto, szZM_DAWNMERE_LAB_DOOR_RIGHT_ENTITY_NAME,
 			xLabDoorRight.m_xCenter, xLabDoorRight.m_xScale);
-		ZM_QueueGreyboxBlock(xAuto, szZM_DAWNMERE_LAB_DOOR_LINTEL_ENTITY_NAME,
+		ZM_QueueColliderBlock(xAuto, szZM_DAWNMERE_LAB_DOOR_LINTEL_ENTITY_NAME,
 			xLabLintel.m_xCenter, xLabLintel.m_xScale);
+		ZM_QueueBuildingFacade(xAuto, szZM_DAWNMERE_LAB_FACADE_ENTITY_NAME, xLabShell);
 
 		// The arrival marker. Its transform is the marker's FEET -- the MEASURED
 		// terrain surface at (fZM_DAWNMERE_LAB_X, fZM_DAWNMERE_FROM_LAB_SPAWN_Z) --

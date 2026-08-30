@@ -36,7 +36,9 @@
 // ZM_PROP_KIND_ITEM_SPENT. NO existing prop's bytes moved -- every pre-existing
 // kind's switch arm and every pre-existing roster row is untouched -- but the
 // algorithm did change, which is what this number is for.
-constexpr u_int uZM_PROPGEN_VERSION          = 2u;
+// 3: props gained the full four-map PBR set (normal / roughness-metallic /
+// occlusion) beside the albedo, derived from a per-palette height field.
+constexpr u_int uZM_PROPGEN_VERSION          = 3u;
 
 // The placeholder albedo resolution SC4 fills with a flat palette colour + accent
 // band. Not golden.
@@ -117,15 +119,34 @@ ZM_GenImage ZM_BuildPropTexture(const ZM_PropRecipe& xR);
 // accessors.
 Zenith_Maths::Vector3 ZM_PropPaletteColour(ZM_PROP_PALETTE ePalette);
 
+// The per-PALETTE height field the normal / roughness / occlusion maps are all
+// derived from. Wood runs a stretched grain, stone is isotropic pitting, metal a
+// fine brushed direction, painted a near-flat skim, foliage a leafy break-up.
+// Deterministic and tileable: every texel is a pure function of its coordinate
+// and the prop's own seed (see the ZM_Synth* primitives).
+ZM_GenImage ZM_BuildPropHeight(const ZM_PropRecipe& xR);
+
+// The material response one palette answers to. Metal is the only arm that
+// returns m_fMetallic = 1, and it is correct there for the same reason it is
+// wrong everywhere else: a lamp post really is a conductor.
+ZM_SynthPbrResponse ZM_PropPbrResponse(ZM_PROP_PALETTE ePalette);
+
 // ---------------------------------------------------------------------------
 // ZM_Prop -- the full in-memory bundle SC4 produces (mesh + placeholder albedo).
 // The .zmtrl / .zmodel bundle bake is deferred to SC5.
 // ---------------------------------------------------------------------------
 struct ZM_Prop
 {
-	ZM_PROP_ID  m_eId = ZM_PROP_NONE;
-	ZM_GenMesh  m_xMesh;      // static: positions/normals/uvs/tangents/colours, zero bones
-	ZM_GenImage m_xTexture;   // SC4: a flat palette + accent placeholder
+	ZM_PROP_ID     m_eId = ZM_PROP_NONE;
+	ZM_GenMesh     m_xMesh;      // static: positions/normals/uvs/tangents/colours, zero bones
+	ZM_GenImage    m_xTexture;   // the base colour
+	// ★ THE FULL PBR SET, not an albedo alone. A prop lit by the same lights and
+	// the same SSGI as the room around it, wearing only a base colour, reads as
+	// painted card next to a wall that has relief -- and the interiors gave it
+	// exactly that comparison to lose. Derived from a per-PALETTE height field
+	// (ZM_BuildPropHeight), so wood gets grain, stone gets pitting and metal a
+	// brushed direction.
+	ZM_SynthPbrSet m_xPbr;
 };
 
 // Build the complete bundle for a prop (resolve -> mesh -> texture), in that
@@ -169,6 +190,9 @@ enum ZM_PROP_ASSET_KIND : u_int
 {
 	ZM_PROP_ASSET_MESH,       // <Name>.zmesh
 	ZM_PROP_ASSET_ALBEDO,     // <Name>_albedo.ztxtr
+	ZM_PROP_ASSET_NORMAL,     // <Name>_normal.ztxtr   (BC5)
+	ZM_PROP_ASSET_ROUGH_METAL,// <Name>_rm.ztxtr
+	ZM_PROP_ASSET_OCCLUSION,  // <Name>_ao.ztxtr
 	ZM_PROP_ASSET_MATERIAL,   // <Name>.zmtrl
 	ZM_PROP_ASSET_MODEL,      // <Name>.zmodel
 

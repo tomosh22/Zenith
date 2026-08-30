@@ -81,6 +81,8 @@
 #include "Zenithmon/Source/Gen/ZM_HumanAppearance.h"
 #include "Zenithmon/Source/World/ZM_PlayerHomePlacement.h"
 #include "Zenithmon/Source/World/ZM_ProfLabPlacement.h"
+#include "Zenithmon/Source/Gen/ZM_InteriorGen.h"          // the room + surface names the shell materials carry
+#include "Zenithmon/Source/World/ZM_InteriorDressing.h"   // the shell entity names
 
 namespace
 {
@@ -224,44 +226,87 @@ namespace
 		Zenith_Maths::Vector4 axColours[uIT_MAX_SAMPLED] = {};
 		u_int uCollected = 0u;
 
+		// ★★ THIS WALKS THE ROOM SHELL, NOT THE SEVEN BLOCKOUTS, and the change is
+		// a re-derivation rather than a relaxation.
+		//
+		// Until the interior overhaul, both rooms were seven grey blockout boxes
+		// distinguished by a per-scene VERTEX TINT, and this scan sampled that tint
+		// off each block's ZM_GreyboxVisual material. The blockouts are
+		// COLLIDER-ONLY now -- they carry no model and no material at all, by
+		// design, because Zenith_ColliderComponent sizes an AABB from mesh bounds
+		// the moment a model appears. The picture is one visual-only shell entity
+		// per room carrying the generated four-surface room model.
+		//
+		// So the old scan would report all fourteen blocks UNRESOLVED, which its own
+		// guard correctly calls "an entity whose ZM_GreyboxVisual built no
+		// model/material". The premise died on purpose; the CLAIM did not.
+		//
+		// ★ WHAT IS MEASURED NOW, AND WHY IT IS NOT A COLOUR. The rooms' colours
+		// come from TEXTURES, not from a material base-colour factor, so there is no
+		// longer a runtime float to compare -- sampling GetBaseColor() would read
+		// the same default from both rooms and pass vacuously forever. What CAN go
+		// wrong at runtime, and what this therefore checks, is IDENTITY: that each
+		// scene resolved a shell, that it carries one submesh per surface class, and
+		// that every one of those materials is THIS room's own. A PlayerHome scene
+		// that loaded ProfLab's room model would be a complete, correct-looking
+		// interior belonging to the wrong building, and nothing else would see it.
+		//
+		// The "the two rooms read apart" half of ZM-D-176 is a property of compiled
+		// constants, so it moved to a unit that can state it exactly:
+		// ZM_Gen/InteriorRoomsAreVisuallySeparated.
 		Zenith_SceneData* pxData = g_xEngine.Scenes().GetActiveSceneData();
-		const u_int uBlockCount = ITRoomBlockCount((u_int)eRoom);
-		for (u_int uBlock = 0u; uBlock < uBlockCount; ++uBlock)
+		const ZM_INTERIOR_ROOM eGenRoom = (eRoom == IT_ROOM_PROFLAB)
+			? ZM_INTERIOR_ROOM_PROF_LAB : ZM_INTERIOR_ROOM_PLAYER_HOME;
+		const char* szShellName = (eRoom == IT_ROOM_PROFLAB)
+			? szZM_PROFLAB_SHELL_ENTITY_NAME : szZM_PLAYERHOME_SHELL_ENTITY_NAME;
+
+		Zenith_Entity xShell = pxData != nullptr
+			? pxData->FindEntityByName(szShellName) : Zenith_Entity();
+		const Zenith_ModelComponent* pxShellModel = xShell.IsValid()
+			? xShell.TryGetComponent<Zenith_ModelComponent>() : nullptr;
+		if (pxShellModel == nullptr || pxShellModel->GetNumMeshes() == 0u)
 		{
-			const char* szBlockName = ITRoomBlockName((u_int)eRoom, uBlock);
-			if (uCollected >= uIT_MAX_SAMPLED)
+			++xRoom.m_uUnresolved;
+			xRoom.m_szFirstUnresolved = szShellName;
+		}
+		else
+		{
+			const u_int uMeshes = pxShellModel->GetNumMeshes();
+			for (u_int uSurface = 0u; uSurface < uMeshes; ++uSurface)
 			{
-				++xRoom.m_uOverflow;   // Verify reds on this rather than judging a subset
-				continue;
-			}
-
-			Zenith_Entity xEntity = pxData != nullptr
-				? pxData->FindEntityByName(szBlockName) : Zenith_Entity();
-			const Zenith_ModelComponent* pxModel = xEntity.IsValid()
-				? xEntity.TryGetComponent<Zenith_ModelComponent>() : nullptr;
-			const Zenith_MaterialAsset* pxMaterial =
-				(pxModel != nullptr && pxModel->GetNumMeshes() != 0u)
-					? pxModel->GetMaterial(0u) : nullptr;
-			if (pxMaterial == nullptr)
-			{
-				++xRoom.m_uUnresolved;
-				if (xRoom.m_szFirstUnresolved == nullptr)
+				if (uCollected >= uIT_MAX_SAMPLED)
 				{
-					xRoom.m_szFirstUnresolved = szBlockName;
+					++xRoom.m_uOverflow;   // Verify reds rather than judging a subset
+					continue;
 				}
-				continue;
-			}
+				const Zenith_MaterialAsset* pxMaterial = pxShellModel->GetMaterial(uSurface);
+				if (pxMaterial == nullptr)
+				{
+					++xRoom.m_uUnresolved;
+					if (xRoom.m_szFirstUnresolved == nullptr)
+					{
+						xRoom.m_szFirstUnresolved = szShellName;
+					}
+					continue;
+				}
 
-			// The material NAME is still asserted -- it is the evidence that
-			// ZM_GreyboxVisual::OnStart built its model and material on the Null
-			// backend -- it is simply no longer what decides who is measured.
-			if (pxMaterial->GetName() != szIT_GREYBOX_MATERIAL)
-			{
-				++xRoom.m_uWrongMaterial;
-			}
+				// The material name is "<Room>_<surface>" -- the evidence that THIS
+				// room's bundle reached THIS scene, and the one thing here that a
+				// cross-wired scene would fail.
+				char acExpected[128];
+				snprintf(acExpected, sizeof(acExpected), "%s_%s",
+					ZM_InteriorRoomName(eGenRoom),
+					ZM_InteriorSurfaceName((ZM_INTERIOR_SURFACE)
+						(uSurface < (u_int)ZM_INTERIOR_SURFACE_COUNT
+							? uSurface : 0u)));
+				if (pxMaterial->GetName() != acExpected)
+				{
+					++xRoom.m_uWrongMaterial;
+				}
 
-			axColours[uCollected] = pxMaterial->GetBaseColor();
-			++uCollected;
+				axColours[uCollected] = pxMaterial->GetBaseColor();
+				++uCollected;
+			}
 		}
 
 		xRoom.m_uCollected = uCollected;
@@ -415,10 +460,13 @@ static bool Verify_ZMInteriorTint()
 		Zenith_Error(LOG_CATEGORY_UNITTEST, "[ZM_InteriorTint] %s", g_szITFailure);
 	}
 
+	// One material per SURFACE CLASS -- the shell model has exactly that many
+	// submeshes. It used to be one per BLOCKOUT; the blockouts carry no material
+	// now, by design (see ITScanActiveScene).
 	const u_int auExpectedBlocks[IT_ROOM_COUNT] =
 	{
-		(u_int)ZM_PLAYERHOME_BLOCK_COUNT,
-		(u_int)ZM_PROFLAB_BLOCK_COUNT,
+		(u_int)ZM_INTERIOR_SURFACE_COUNT,
+		(u_int)ZM_INTERIOR_SURFACE_COUNT,
 	};
 
 	// ---- THE VACUITY GUARD, FIRST AND SEPARATE ------------------------------
@@ -493,70 +541,48 @@ static bool Verify_ZMInteriorTint()
 
 	if (bScansUsable)
 	{
-		// ---- ARM 1: the bedroom wears the tint ------------------------------
-		if (g_axITRooms[IT_ROOM_PLAYERHOME].m_uOffExpected != 0u)
+		// ---- THE ONE LIVE CLAIM: EACH SCENE LOADED ITS OWN ROOM -------------
+		//
+		// ★ THE THREE COLOUR ARMS THAT STOOD HERE ARE GONE, AND NOT BECAUSE THEY
+		// WERE INCONVENIENT. They asserted that PlayerHome's blockouts wore the
+		// ZM-D-176 warm tint EXACTLY, that ProfLab's wore the shipped grey exactly,
+		// and that the two sampled colours were far enough apart. All three read
+		// Zenith_MaterialAsset::GetBaseColor() off a per-block greybox material.
+		//
+		// Both premises are now deliberately false. The blockouts are collider-only
+		// -- there is no per-block material to sample -- and the rooms' colour comes
+		// from TEXTURES on a shell model, not from a base-colour factor. Left in
+		// place, all three would read the same untouched default from both rooms:
+		// arms 1 and 2 would red forever, and arm 3 would pass VACUOUSLY at a
+		// separation of exactly zero-versus-zero. A clause that cannot fail is worse
+		// than a deleted one, because it still looks like coverage.
+		//
+		// So the claim splits along what each layer can actually see:
+		//
+		//   HERE, live: identity. Each scene resolved a shell, it carries one
+		//   material per surface class, and every one of them is THIS room's own.
+		//   A PlayerHome scene that had loaded ProfLab's model would be a complete,
+		//   correct-looking interior belonging to the wrong building -- the one
+		//   thing that can go wrong at runtime, and invisible to everything else.
+		//
+		//   ZM_Gen/InteriorRoomsAreVisuallySeparated, pure: the ZM-D-176 magnitude.
+		//   The two rooms' palettes are compiled constants, so a unit can state the
+		//   separation exactly, over EVERY surface rather than one sampled block,
+		//   and can assert the direction too (the bedroom warm, the lab cool) --
+		//   which is what the pixel test downstream actually measures.
+		for (u_int u = 0u; u < (u_int)IT_ROOM_COUNT; ++u)
 		{
-			const Zenith_Maths::Vector4 xTint = ZM_GetPlayerHomeInteriorTintColour();
-			Zenith_Error(LOG_CATEGORY_UNITTEST,
-				"[ZM_InteriorTint] %u of %u PlayerHome blockout bodies are not "
-				"wearing the ZM-D-176 interior tint (%.4f, %.4f, %.4f); worst "
-				"channel error %.6f, first sampled (%.4f, %.4f, %.4f). The tint "
-				"never reached the material, so the bedroom still reads as the "
-				"same greybox room as the lab",
-				g_axITRooms[IT_ROOM_PLAYERHOME].m_uOffExpected,
-				g_axITRooms[IT_ROOM_PLAYERHOME].m_uCollected,
-				(double)xTint.x, (double)xTint.y, (double)xTint.z,
-				(double)g_axITRooms[IT_ROOM_PLAYERHOME].m_fWorstError,
-				(double)g_axITRooms[IT_ROOM_PLAYERHOME].m_xFirstColour.x,
-				(double)g_axITRooms[IT_ROOM_PLAYERHOME].m_xFirstColour.y,
-				(double)g_axITRooms[IT_ROOM_PLAYERHOME].m_xFirstColour.z);
-			bPassed = false;
-		}
-
-		// ---- ARM 2: the lab did not move ------------------------------------
-		// EXACT equality, deliberately: the ruling was that ProfLab is left
-		// exactly as it is, and that is a claim about bytes that did not move at
-		// all -- not about bytes that moved a little.
-		if (g_axITRooms[IT_ROOM_PROFLAB].m_uOffExpected != 0u)
-		{
-			const Zenith_Maths::Vector4 xGrey = ZM_GetHumanPaletteFallbackColour();
-			Zenith_Error(LOG_CATEGORY_UNITTEST,
-				"[ZM_InteriorTint] %u of %u ProfLab blockout bodies are no longer "
-				"EXACTLY the shipped blockout grey (%.4f, %.4f, %.4f); worst "
-				"channel error %.6f, first sampled (%.4f, %.4f, %.4f). ZM-D-176 "
-				"tints PLAYERHOME ONLY -- this is what a tint predicate that "
-				"widened past exact name matching looks like",
-				g_axITRooms[IT_ROOM_PROFLAB].m_uOffExpected,
-				g_axITRooms[IT_ROOM_PROFLAB].m_uCollected,
-				(double)xGrey.x, (double)xGrey.y, (double)xGrey.z,
-				(double)g_axITRooms[IT_ROOM_PROFLAB].m_fWorstError,
-				(double)g_axITRooms[IT_ROOM_PROFLAB].m_xFirstColour.x,
-				(double)g_axITRooms[IT_ROOM_PROFLAB].m_xFirstColour.y,
-				(double)g_axITRooms[IT_ROOM_PROFLAB].m_xFirstColour.z);
-			bPassed = false;
-		}
-
-		// ---- ARM 3: THE TWO ROOMS DO NOT READ THE SAME ----------------------
-		// ★ COMPUTED FROM THE TWO SAMPLES, NOT FROM THE TWO CONSTANTS. A clause
-		// that measured the constants would be the boot unit again, one layer
-		// further from the truth; this one measures what the two scenes actually
-		// PUT ON THEIR WALLS, which is the user's motivation stated as a number.
-		const float fSampledSeparation = ZM_HumanPaletteSeparation(
-			g_axITRooms[IT_ROOM_PLAYERHOME].m_xFirstColour,
-			g_axITRooms[IT_ROOM_PROFLAB].m_xFirstColour);
-		Zenith_Log(LOG_CATEGORY_UNITTEST,
-			"[ZM_InteriorTint] OBSERVED sampled separation between the two "
-			"interiors: %.5f against a %.5f floor",
-			(double)fSampledSeparation, (double)fZM_HUMAN_PALETTE_MIN_SEPARATION);
-		if (fSampledSeparation < fZM_HUMAN_PALETTE_MIN_SEPARATION)
-		{
-			Zenith_Error(LOG_CATEGORY_UNITTEST,
-				"[ZM_InteriorTint] the two interiors' sampled wall colours sit only "
-				"%.5f apart, under the %.5f margin -- PlayerHome and ProfLab still "
-				"read as the same room, which is the complaint ZM-D-176 exists to "
-				"answer", (double)fSampledSeparation,
-				(double)fZM_HUMAN_PALETTE_MIN_SEPARATION);
-			bPassed = false;
+			if (g_axITRooms[u].m_uWrongMaterial != 0u)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_InteriorTint] %u of %u materials on the %s shell do not belong "
+					"to that room. The scene has loaded another room's model: it will "
+					"render as a complete and entirely convincing interior, of the wrong "
+					"building",
+					g_axITRooms[u].m_uWrongMaterial, g_axITRooms[u].m_uCollected,
+					g_aszITRoomNames[u]);
+				bPassed = false;
+			}
 		}
 	}
 

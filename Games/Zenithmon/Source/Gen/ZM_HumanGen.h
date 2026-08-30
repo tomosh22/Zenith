@@ -52,7 +52,9 @@ class Flux_AnimationClip;
 //             tree the stamp would still match and the v2 grey-haired bake would
 //             be served forever. Any future edit to a generation algorithm or to a
 //             ZM_HumanData variety axis owes the same bump.
-constexpr u_int uZM_HUMANGEN_VERSION = 3u;
+// 4: humans gained the full four-map PBR set beside the albedo, derived from the
+// albedo luma (see ZM_SynthHeightFromAlbedoLuma for why that is a heuristic).
+constexpr u_int uZM_HUMANGEN_VERSION = 4u;
 
 // The shared humanoid skeleton is EXACTLY these 16 bones (the frozen StickFigure
 // core names). ZM_AppendSharedHumanBones is the single canonical emit; both the
@@ -255,7 +257,14 @@ struct ZM_Human
 {
 	ZM_HUMAN_ID m_eId = ZM_HUMAN_PLAYER_M;
 	ZM_GenMesh  m_xMesh;      // positions/normals/uvs/tangents/skin + shared bones
-	ZM_GenImage m_xAlbedo;    // SC1: a flat skin-tone placeholder; SC3 does the real texture
+	ZM_GenImage m_xAlbedo;    // the base colour (skin, hair, clothing)
+	// ★ THE FULL PBR SET. A character standing in a room whose walls have relief,
+	// wearing only a base colour, reads as a cardboard cut-out -- and the interior
+	// overhaul gave every human in this game exactly that comparison to lose. The
+	// height field is derived from the albedo's LUMA, which is a heuristic and is
+	// documented as one on ZM_SynthHeightFromAlbedoLuma: it buys pore-scale and
+	// fabric-scale break-up, not sculpted form.
+	ZM_SynthPbrSet m_xPbr;
 };
 
 // Build the complete bundle for a human (resolve -> mesh -> placeholder albedo),
@@ -314,6 +323,9 @@ enum ZM_HUMAN_ASSET_KIND : u_int
 {
 	ZM_HUMAN_ASSET_MESH,       // <Name>.zmesh
 	ZM_HUMAN_ASSET_ALBEDO,     // <Name>_albedo.ztxtr
+	ZM_HUMAN_ASSET_NORMAL,     // <Name>_normal.ztxtr   (BC5)
+	ZM_HUMAN_ASSET_ROUGH_METAL,// <Name>_rm.ztxtr
+	ZM_HUMAN_ASSET_OCCLUSION,  // <Name>_ao.ztxtr
 	ZM_HUMAN_ASSET_MATERIAL,   // <Name>.zmtrl
 	ZM_HUMAN_ASSET_MODEL,      // <Name>.zmodel
 

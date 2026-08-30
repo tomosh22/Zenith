@@ -12,8 +12,10 @@
 //
 //   1. HumanVisual_BodyContractIsTheShippedBody -- the compiled contract still
 //      answers exactly what the retired scale-derived formula answered.
-//   2. HumanVisual_BlockoutIsUntouched -- a wall gets the unit cube in the shipped
-//      grey and NEVER a human model, an animator or an explicit body.
+//   2. HumanVisual_UnservedEntityIsLeftAlone -- an entity that is neither a human
+//      nor a ground-item prop comes away with NO geometry, no animator and no
+//      explicit body. (Was "BlockoutIsUntouched"; the blockout arm was removed
+//      once every blockout in the game became collider-only under a real model.)
 //   3. HumanVisual_ColdFallbackShipsTheContractBlock -- a resolved NPC on a cold
 //      tree gets a proportioned palette block whose GAMEPLAY dimensions are the
 //      contract, not the drawing scale.
@@ -195,13 +197,27 @@ ZENITH_TEST(ZM_HumanVisual, HumanVisual_BodyContractIsTheShippedBody)
 }
 
 // ############################################################################
-// 2. Blockouts are untouched
+// 2. An entity this component does NOT serve is left alone
 // ############################################################################
 
-// Every wall, floor, door, lintel and interior shell must still get the unit cube
-// in the shipped grey, and must NEVER acquire a human model, an animator or an
-// explicit body -- the human branch is for resolved NPCs and the player only.
-ZENITH_TEST(ZM_HumanVisual, HumanVisual_BlockoutIsUntouched)
+// ★★ THIS TEST USED TO BE "BLOCKOUTS ARE UNTOUCHED", AND THE POPULATION IT
+// NAMED NO LONGER EXISTS. Every wall, floor, door and lintel in the game wore a
+// greybox unit cube built by ZM_GreyboxVisual::ApplyBlockout; it asserted the
+// cube, the shipped grey, the unit extent and the scale-derived body. Dawnmere's
+// eight exterior blockouts became collider-only under real building models, the
+// two interiors' fourteen became collider-only under real room models,
+// ZM_QueueGreyboxBlock went with its last caller, and the arm itself was removed.
+//
+// So the fixture below is no longer "a wall". It is an entity carrying this
+// component that resolves to NO human row and carries NO ZM_GroundItemProp --
+// which used to be silently absorbed as "it must be a wall" and is a WIRING
+// MISTAKE now. That absorption is exactly how a ground-item prop with a missing
+// component became an anonymous grey cube nobody questioned.
+//
+// ★ WHAT SURVIVED IS THE HALF THAT WAS ALWAYS THE POINT: none of the human
+// machinery may reach an entity the human branch did not claim. That clause is
+// unchanged; what changed is that there is now no cube either.
+ZENITH_TEST(ZM_HumanVisual, HumanVisual_UnservedEntityIsLeftAlone)
 {
 	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetActiveSceneData();
 	ZENITH_ASSERT_NOT_NULL(pxSceneData, "no active scene to build the fixture in");
@@ -219,45 +235,22 @@ ZENITH_TEST(ZM_HumanVisual, HumanVisual_BlockoutIsUntouched)
 		"the '%s' component meta is missing -- nothing below tested a visual",
 		szHV_VISUAL_META);
 
-	// The unit cube, in the shipped grey, BYTE FOR BYTE.
-	const Zenith_MaterialAsset* pxMaterial = HVFirstMaterial(xWall);
-	ZENITH_ASSERT_NOT_NULL(pxMaterial, "a blockout must draw exactly one mesh");
-	if (pxMaterial != nullptr)
-	{
-		ZENITH_ASSERT_TRUE(pxMaterial->GetName() == "ZM_Greybox",
-			"a blockout must still wear the 'ZM_Greybox' material (got '%s')",
-			pxMaterial->GetName().c_str());
-		const Zenith_Maths::Vector4 xGrey = ZM_GetHumanPaletteFallbackColour();
-		const Zenith_Maths::Vector4 xLive = pxMaterial->GetBaseColor();
-		ZENITH_ASSERT_TRUE(xLive.x == xGrey.x && xLive.y == xGrey.y
-			&& xLive.z == xGrey.z && xLive.w == xGrey.w,
-			"a blockout is no longer EXACTLY the shipped grey (%.6f, %.6f, %.6f) vs "
-			"(%.6f, %.6f, %.6f)", xLive.x, xLive.y, xLive.z, xGrey.x, xGrey.y, xGrey.z);
-	}
-
-	// A UNIT cube: its drawn extent is exactly the transform scale.
-	float fHeight = 0.0f;
-	float fWidth = 0.0f;
-	ZENITH_ASSERT_TRUE(HVMeasureDrawnHeight(xWall, fHeight, fWidth),
-		"the blockout's geometry could not be measured");
-	ZENITH_ASSERT_EQ_FLOAT(fHeight, 6.0f, 1.0e-4f,
-		"a blockout no longer draws a UNIT cube (a 6 m-scaled wall measured %.4f)",
-		fHeight);
-	ZENITH_ASSERT_EQ_FLOAT(fWidth, 16.0f, 1.0e-4f,
-		"a blockout no longer draws a UNIT cube in X (measured %.4f)", fWidth);
-
-	// ...and none of the human machinery reached it.
-	ZENITH_ASSERT_NULL(xWall.TryGetComponent<Zenith_AnimatorComponent>(),
-		"a blockout acquired an animator");
+	// NOTHING IS DRAWN. The component serves humans and ground-item props; this
+	// entity is neither, so it must come away with no geometry rather than the
+	// grey cube that used to stand in for one.
 	const Zenith_ModelComponent* pxModel = xWall.TryGetComponent<Zenith_ModelComponent>();
-	ZENITH_ASSERT_NOT_NULL(pxModel, "a blockout must carry a model component");
 	if (pxModel != nullptr)
 	{
-		ZENITH_ASSERT_EQ(pxModel->GetNumMeshes(), 1u,
-			"a blockout must draw exactly ONE mesh");
-		ZENITH_ASSERT_TRUE(pxModel->GetModelPath().empty(),
-			"a blockout loaded a model asset ('%s')", pxModel->GetModelPath().c_str());
+		ZENITH_ASSERT_EQ(pxModel->GetNumMeshes(), 0u,
+			"an entity this component does not serve came away drawing %u meshes -- "
+			"the blockout arm is back, or something else is building geometry for a "
+			"population that has none", pxModel->GetNumMeshes());
 	}
+
+	// ...and none of the human machinery reached it. This is the clause the test
+	// existed for, and it is untouched.
+	ZENITH_ASSERT_NULL(xWall.TryGetComponent<Zenith_AnimatorComponent>(),
+		"an unserved entity acquired an animator");
 
 	// The body is still scale-derived: 16 x 6 x 40 -> half extents 8 x 3 x 20. An
 	// explicit human box would have shrunk it to 0.4 x 0.9 x 0.4.
@@ -265,13 +258,18 @@ ZENITH_TEST(ZM_HumanVisual, HumanVisual_BlockoutIsUntouched)
 	xCollider.ComputeBoxDimensionsAndOffset(
 		Zenith_Maths::Vector3(16.0f, 6.0f, 40.0f), xHalf, xOffset, false);
 	ZENITH_ASSERT_TRUE(std::abs(xHalf.y - 3.0f) < 1.0e-4f,
-		"a blockout's body is no longer scale-derived (half height %.4f) -- the "
-		"human body contract was installed on a wall", xHalf.y);
+		"an unserved entity's body is no longer scale-derived (half height %.4f) -- "
+		"the human body contract was installed on something that is not a human",
+		xHalf.y);
 
-	// Re-running must REFRESH, never restack.
+	// Re-running must stay a no-op, never accumulate.
 	ZENITH_ASSERT_TRUE(HVRestartVisual(xWall), "restart failed");
-	ZENITH_ASSERT_EQ(xWall.GetComponent<Zenith_ModelComponent>().GetNumMeshes(), 1u,
-		"a second OnStart stacked a second cube on a blockout");
+	const Zenith_ModelComponent* pxAfter = xWall.TryGetComponent<Zenith_ModelComponent>();
+	if (pxAfter != nullptr)
+	{
+		ZENITH_ASSERT_EQ(pxAfter->GetNumMeshes(), 0u,
+			"a second OnStart built geometry on an entity this component does not serve");
+	}
 }
 
 // ############################################################################

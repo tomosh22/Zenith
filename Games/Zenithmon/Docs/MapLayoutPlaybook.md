@@ -430,9 +430,11 @@ Read the whole block.
 * **The pin has one home**, `Tools/unit_baselines.json`, and the gate asserts
   `ran == baseline` EXACTLY. Only bump it from an OBSERVED `Null_` run — a Vulkan
   exe reports a different number.
-* **`ZM_InteriorTintPixels_Test` fails and is pre-existing** (interior lighting,
-  the last `requiresGraphics` rot item). Registry 70: 69 pass. Do not chase it as
-  a regression from a layout change.
+* ~~`ZM_InteriorTintPixels_Test` fails and is pre-existing~~ **-- CLOSED
+  2026-08-30 (ZM-D-220).** The interiors are generated, dressed and LIT now, so
+  the two rooms read apart on pixels honestly: the gap went 0.121 -> **0.7449**
+  against its unmoved 0.15 floor. Registry 70: **70 pass**. If it reds again it is
+  a real regression, not the standing exception it used to be.
 
 ---
 

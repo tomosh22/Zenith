@@ -38,6 +38,11 @@
 #include "Zenithmon/Source/World/ZM_DawnmerePlacement.h"
 #include "Zenithmon/Source/World/ZM_PlayerHomePlacement.h"
 #include "Zenithmon/Source/World/ZM_ProfLabPlacement.h"         // the INTERIOR the lab exterior must wrap
+#include "Zenithmon/Source/World/ZM_DawnmereFacades.h"           // the facade name -> building mapping
+#ifdef ZENITH_TOOLS
+#include "EntityComponent/Zenith_ComponentEditorRegistry.h"    // the SECOND registry AddStep_AddComponent resolves through
+#endif
+#include "ZenithECS/Zenith_ComponentMeta.h"                     // the first one
 #include "Zenithmon/Source/World/ZM_TerrainAuthoring.h"         // the RESERVED lab site (compiled recipe, no bake)
 
 namespace
@@ -2496,3 +2501,164 @@ ZENITH_TEST(ZM_Interaction, FromRoute1SpawnFeet_AssemblesItsIngredientsWithoutTr
 		"player arriving off Route 1 in from the wrong height.",
 		xFeet.y, fSeamFeetY);
 }
+
+// ############################################################################
+// The facade name -> building mapping
+// ############################################################################
+
+// ZM_BuildingForFacadeEntity is what decides which model a Dawnmere facade wears,
+// and it is the ONE thing standing between "the entity is authored correctly" and
+// "the building actually appears". A facade entity whose name stops mapping is
+// invisible at runtime while its transform, its component and its sibling
+// collider all remain perfectly correct -- and no headless clause elsewhere can
+// see that, because there is no pixel to look at and nothing errors.
+ZENITH_TEST(ZM_Interaction, DawnmereFacadeNamesMapToTheirBuildings)
+{
+	ZENITH_ASSERT_EQ((u_int)ZM_BuildingForFacadeEntity(
+		szZM_DAWNMERE_HOME_FACADE_ENTITY_NAME), (u_int)ZM_BUILDING_PLAYER_HOME,
+		"the Home facade entity no longer maps to the PlayerHome building");
+	ZENITH_ASSERT_EQ((u_int)ZM_BuildingForFacadeEntity(
+		szZM_DAWNMERE_LAB_FACADE_ENTITY_NAME), (u_int)ZM_BUILDING_LAB,
+		"the Lab facade entity no longer maps to the Lab building");
+	ZENITH_ASSERT_TRUE(ZM_IsDawnmereFacadeEntity(szZM_DAWNMERE_HOME_FACADE_ENTITY_NAME),
+		"the Home facade entity is not recognised as a facade");
+	ZENITH_ASSERT_TRUE(ZM_IsDawnmereFacadeEntity(szZM_DAWNMERE_LAB_FACADE_ENTITY_NAME),
+		"the Lab facade entity is not recognised as a facade");
+
+	// ★ TOTAL, AND IT ANSWERS "NOT A FACADE" RATHER THAN A PLAUSIBLE BUILDING.
+	// Every entity in Dawnmere runs past this predicate. If an unmapped name
+	// resolved to, say, PlayerHome, a blockout or an NPC would quietly grow a
+	// complete and correct-looking house on top of it.
+	const char* aszNotFacades[7] = {
+		nullptr, "", "DawnmereHomeShell", "DawnmereLabShell",
+		"DawnmereHomeDoorLeft", "Npc_RivalVesper", "dawnmerehomefacade" };
+	for (u_int i = 0u; i < 7u; ++i)
+	{
+		ZENITH_ASSERT_EQ((u_int)ZM_BuildingForFacadeEntity(aszNotFacades[i]),
+			(u_int)ZM_BUILDING_COUNT,
+			"'%s' is not a facade entity but resolved to a building",
+			aszNotFacades[i] == nullptr ? "<null>" : aszNotFacades[i]);
+		ZENITH_ASSERT_FALSE(ZM_IsDawnmereFacadeEntity(aszNotFacades[i]),
+			"'%s' was recognised as a facade entity",
+			aszNotFacades[i] == nullptr ? "<null>" : aszNotFacades[i]);
+	}
+
+	// The two facades are DISTINCT buildings. A copy-paste that pointed both at
+	// PlayerHome would pass every clause above except this one, and the Lab would
+	// silently become a second house.
+	ZENITH_ASSERT_NE(
+		(u_int)ZM_BuildingForFacadeEntity(szZM_DAWNMERE_HOME_FACADE_ENTITY_NAME),
+		(u_int)ZM_BuildingForFacadeEntity(szZM_DAWNMERE_LAB_FACADE_ENTITY_NAME),
+		"both Dawnmere facades resolve to the same building");
+}
+
+// The facade stands on the blockout that carries its collider -- the authoring
+// reads xShell.Min().y for the transform, and a building is ground-anchored at
+// y=0, so the two agree only if the facade sits on the box's FLOOR. Authoring it
+// at the blockout's CENTRE (the obvious mistake, and what every other block in
+// this scene uses) would float the Home two metres in the air.
+ZENITH_TEST(ZM_Interaction, DawnmereFacadesStandOnTheirBlockoutFloor)
+{
+	const ZM_DawnmereBlockout xHome = ZM_GetDawnmereHomeShell();
+	const ZM_DawnmereBlockout xLab  = ZM_GetDawnmereLabShell();
+
+	ZENITH_ASSERT_LT(xHome.Min().y, xHome.m_xCenter.y,
+		"the Home blockout's floor is not below its centre");
+	ZENITH_ASSERT_EQ_FLOAT(xHome.Min().y,
+		xHome.m_xCenter.y - fZM_DAWNMERE_HOME_SHELL_SCALE_Y * 0.5f, 1.0e-4f,
+		"the Home blockout's floor is not half its height below its centre");
+	ZENITH_ASSERT_EQ_FLOAT(xLab.Min().y,
+		xLab.m_xCenter.y - fZM_DAWNMERE_LAB_SHELL_SCALE_Y * 0.5f, 1.0e-4f,
+		"the Lab blockout's floor is not half its height below its centre");
+
+	// The gap between a facade's feet and the blockout's centre is exactly the
+	// half-height the authoring subtracts. Spelled against the scale constants so
+	// changing a shell height reds here rather than floating a building.
+	ZENITH_ASSERT_GT(xHome.m_xCenter.y - xHome.Min().y, 1.0f,
+		"the Home facade would be authored less than a metre below the blockout "
+		"centre -- if this is near zero the two conventions have converged and the "
+		"distinction this test protects has been lost");
+}
+
+// ############################################################################
+// ★★ EVERY ZM_ COMPONENT IS IN **BOTH** REGISTRIES
+// ############################################################################
+
+// ZENITH_REGISTER_COMPONENT puts a component in the META registry -- serialization,
+// lifecycle, the ECS. A second, separate call puts it in the EDITOR registry.
+// Zenithmon.cpp has carried a comment saying "both registrations or neither" for a
+// while; a comment is not a check, and this is what it costs when it is missed.
+//
+// ★ THE FAILURE IS SILENT AT EVERY LAYER THAT COULD HAVE CAUGHT IT.
+// AddStep_AddComponent resolves through the EDITOR registry
+// (Zenith_Editor::AddComponentToSelected walks it by display name). A component
+// missing from it cannot be added by the scene authoring at all -- and the
+// authoring does not stop. It logs one Error, creates the entity anyway, writes
+// its transform, publishes the scene, and BOTH authoring boots agree the result is
+// byte-identical, because the component is missing consistently.
+//
+// ZM_BuildingFacade shipped that way for one round: Dawnmere published twice at a
+// stable 79,000 bytes with two facade entities carrying nothing but a Transform,
+// every gate green, and the two buildings simply absent from the world. The only
+// artefact that could see it was a screenshot.
+//
+// So the rule moves out of the comment and into a clause.
+//
+// ★ TOOLS-ONLY, because the thing it guards is. Zenith_ComponentEditorRegistry is
+// compiled out of a _False build entirely -- there is no editor and no authoring
+// there, so there is no second registration to miss. The unit gate runs on
+// Null_*_True, which HAS tools, so this is checked on every gated run.
+#ifdef ZENITH_TOOLS
+ZENITH_TEST(ZM_Interaction, EveryGameComponentIsInBothRegistries)
+{
+	const Zenith_Vector<const Zenith_ComponentMeta*>& xMetas =
+		Zenith_ComponentMetaRegistry::Get().GetAllMetasSorted();
+	const Zenith_Vector<Zenith_ComponentEditorRegistryEntry>& xEditor =
+		Zenith_ComponentEditorRegistry::Get().GetEntries();
+
+	u_int uGameComponents = 0u;
+	for (u_int m = 0u; m < xMetas.GetSize(); ++m)
+	{
+		const Zenith_ComponentMeta* pxMeta = xMetas.Get(m);
+		if (pxMeta == nullptr)
+		{
+			continue;
+		}
+		const std::string& strName = pxMeta->m_strTypeName;
+
+		// GAME components only. The engine's own components register through their
+		// own TUs and are not this game's to police.
+		if (strName.rfind("ZM_", 0u) != 0u)
+		{
+			continue;
+		}
+		++uGameComponents;
+
+		bool bInEditorRegistry = false;
+		for (u_int e = 0u; e < xEditor.GetSize(); ++e)
+		{
+			if (xEditor.Get(e).m_strDisplayName == strName)
+			{
+				bInEditorRegistry = true;
+				break;
+			}
+		}
+		ZENITH_ASSERT_TRUE(bInEditorRegistry,
+			"'%s' is registered with the component META registry but NOT with the "
+			"EDITOR registry. AddStep_AddComponent(\"%s\") will log one Error and "
+			"then author the entity WITHOUT it -- byte-stably, so both authoring "
+			"boots will agree and every gate will stay green. Add "
+			"Zenith_ComponentEditorRegistry::Get().RegisterComponent<%s>(\"%s\") "
+			"beside the others in Project_InitializeResources.",
+			strName.c_str(), strName.c_str(), strName.c_str(), strName.c_str());
+	}
+
+	// ANTI-VACUITY: the loop above passes trivially if it finds no ZM_ components
+	// at all -- which is exactly what a change to the meta registry's enumeration,
+	// or to the naming convention, would produce.
+	ZENITH_ASSERT_GT(uGameComponents, 10u,
+		"only %u ZM_ components were found in the meta registry; this game has well "
+		"over ten, so the enumeration or the name convention has moved and this "
+		"clause is now checking nothing", uGameComponents);
+}
+#endif   // ZENITH_TOOLS

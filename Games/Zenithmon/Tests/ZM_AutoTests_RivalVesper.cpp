@@ -3111,21 +3111,46 @@ namespace
 
 			// ===== KNOWN-LIMIT W4: THE AUTHORED APPEARANCE ======================
 			// The GUARD comes first and is separate on purpose: it names a MISSING
-			// OBSERVATION, while the clauses under it name a wiring violation. Without
-			// it a run whose scan found no blockout bodies at all would satisfy
-			// "blocksOffGrey == 0" having measured nothing.
+			// OBSERVATION, while the clauses under it name a wiring violation.
+			//
+			// ★★ IT USED TO REQUIRE g_uRVGreyboxBlockCount > 0, AND THAT PREMISE IS
+			// NOW DELIBERATELY FALSE. Dawnmere's only greybox blockout bodies were the
+			// Home and Lab shells with their door leaves and lintels; the building
+			// facade overhaul (ZM-D-219) turned all eight into collider-only blockouts
+			// wearing generated models, so this scene contains ZERO greybox blocks by
+			// design and the scan correctly reports blocks=0. This is the recurring
+			// stale-clause shape the map playbook names in section 3.15: a cheap proxy
+			// that was conservative under an assumption nobody wrote down, red on
+			// something that is exactly right.
+			//
+			// ★ THE FLOOR IS NOT BEING LOWERED, THE WITNESS MOVED -- and it moved to a
+			// BIGGER one. The property is "W4's repaint touched NPCs only, and every
+			// non-NPC blockout still wears the shipped grey". This test could only ever
+			// witness it over Dawnmere's FOUR Home blocks (its own comment below says
+			// so). ZM_InteriorTint_Test walks all FOURTEEN interior shell blocks --
+			// PlayerHome's seven and ProfLab's seven -- asserting the material name
+			// per block, and it is a hard CI gate that needs no terrain and never
+			// skips. So the anti-vacuity requirement is dropped HERE, where the
+			// population is legitimately empty, and the clause below is kept, where it
+			// still fires the moment a greybox block reappears in Dawnmere wearing
+			// anything but grey.
+			//
+			// The NPC half of the guard is UNTOUCHED: two bodies minimum, the rival
+			// found, and a sampled palette when the humans are cold. That is what stops
+			// the clauses under it passing on an empty scan.
 			if (!g_bRVAppearanceSampled || g_uRVAppearanceOverflow != 0u
-				|| g_uRVGreyboxBlockCount == 0u
 				|| g_uRVNpcVisualCount < 2u
 					|| (!g_bRVHumansWarm && g_uRVNpcColoursSampled == 0u)
 				|| !g_bRVVesperVisualFound)
 			{
 				Zenith_Error(LOG_CATEGORY_UNITTEST,
-					"[ZM_RivalVesper] the appearance scan did not observe BOTH "
-					"populations off the committed scene (sampled=%s overflow=%u blocks=%u "
+					"[ZM_RivalVesper] the appearance scan did not observe the NPC "
+					"population off the committed scene (sampled=%s overflow=%u blocks=%u "
 					"npcBodies=%u warm=%s otherNpcColours=%u vesperFound=%s) -- every "
 					"appearance clause below would be vacuous, or would be judging a "
-					"truncated subset",
+					"truncated subset. NOTE blocks=0 is EXPECTED since ZM-D-219 and is "
+					"no longer part of this guard; the blockout-colour witness is "
+					"ZM_InteriorTint_Test over the 14 interior shell blocks",
 					g_bRVAppearanceSampled ? "true" : "false", g_uRVAppearanceOverflow,
 					g_uRVGreyboxBlockCount, g_uRVNpcVisualCount,
 					g_bRVHumansWarm ? "true" : "false", g_uRVNpcColoursSampled,
@@ -3135,13 +3160,20 @@ namespace
 			else
 			{
 				// THE BEHAVIOUR-PRESERVATION NET, SCOPED HONESTLY. The scan walks the
-				// ACTIVE scene, so this clause covers DAWNMERE'S authored blockout
-				// entities -- its home shell, the two door leaves and the lintel -- and
-				// nothing else. It used to claim "four committed scenes", which was
-				// never true of a scene-scoped walk and became actively misleading at
-				// ZM-D-176: PlayerHome's seven shell blocks now wear a warm interior
-				// tint on purpose, and this test cannot see them (nor should it red on
-				// them). The other interiors are ZM_InteriorTint_Test's job.
+				// ACTIVE scene, so this clause covers whatever greybox blockout bodies
+				// DAWNMERE holds -- and since ZM-D-219 that is NONE: the Home and Lab
+				// shells, their door leaves and their lintels became collider-only
+				// blockouts wearing generated building models. The clause is therefore
+				// vacuously true today and is kept as a TRIPWIRE: it fires the moment a
+				// greybox block reappears in this scene wearing anything but the
+				// shipped grey.
+				//
+				// It used to claim "four committed scenes", which was never true of a
+				// scene-scoped walk and became actively misleading at ZM-D-176:
+				// PlayerHome's seven shell blocks wear a warm interior tint on purpose,
+				// and this test cannot see them (nor should it red on them). The
+				// interiors -- all fourteen blocks, which is now the ONLY live witness
+				// of this property -- are ZM_InteriorTint_Test's job.
 				if (g_uRVGreyboxBlockOffGrey != 0u)
 				{
 					Zenith_Error(LOG_CATEGORY_UNITTEST,

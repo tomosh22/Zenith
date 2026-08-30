@@ -93,6 +93,9 @@ namespace
 		{
 		case ZM_PROP_ASSET_MESH:     return "%s.zmesh";
 		case ZM_PROP_ASSET_ALBEDO:   return "%s_albedo.ztxtr";
+		case ZM_PROP_ASSET_NORMAL:   return "%s_normal.ztxtr";
+		case ZM_PROP_ASSET_ROUGH_METAL: return "%s_rm.ztxtr";
+		case ZM_PROP_ASSET_OCCLUSION:   return "%s_ao.ztxtr";
 		case ZM_PROP_ASSET_MATERIAL: return "%s.zmtrl";
 		case ZM_PROP_ASSET_MODEL:    return "%s.zmodel";
 		default:
@@ -287,6 +290,94 @@ ZM_GenImage ZM_BuildPropTexture(const ZM_PropRecipe& xR)
 	return xImg;
 }
 
+
+// ============================================================================
+// The per-palette height field and material response.
+//
+// ★ THE HEIGHT FIELD IS THE ONE INPUT, and all three derived maps come from it
+// (ZM_SynthBuildPbrSet). Deriving them separately is how a normal map and an AO
+// map end up disagreeing about where the surface is, which reads as dirt that
+// does not line up with the relief.
+// ============================================================================
+ZM_GenImage ZM_BuildPropHeight(const ZM_PropRecipe& xR)
+{
+	const u_int uRes = uZM_PROP_ALBEDO_RESOLUTION;
+	const u_int uSalt = xR.m_uSyntheticSeed;
+
+	ZM_GenImage xImg(uRes, uRes);
+	const float fInv = 1.0f / static_cast<float>(uRes);
+	for (u_int uY = 0u; uY < uRes; ++uY)
+	{
+		const float fV = (static_cast<float>(uY) + 0.5f) * fInv;
+		for (u_int uX = 0u; uX < uRes; ++uX)
+		{
+			const float fU = (static_cast<float>(uX) + 0.5f) * fInv;
+			float fH = 0.5f;
+
+			switch (xR.m_ePalette)
+			{
+			case ZM_PROP_PALETTE_WOOD:
+				// Grain: stretched hard along U so it runs the length of a board,
+				// plus a coarse ring lattice for the growth rings.
+				fH += (ZM_SynthValueNoise(fU * 0.20f, fV * 10.0f, 16u, uSalt) - 0.5f) * 0.34f;
+				fH += (ZM_SynthValueNoise(fU * 0.08f, fV * 3.0f,  8u, uSalt + 31u) - 0.5f) * 0.16f;
+				break;
+			case ZM_PROP_PALETTE_STONE:
+				// Isotropic pitting: two octaves, no direction.
+				fH += (ZM_SynthFbm(fU, fV, 12u, uSalt) - 0.5f) * 0.44f;
+				break;
+			case ZM_PROP_PALETTE_METAL:
+				// Brushed: very fine, very directional, and shallow. Metal relief is
+				// almost all in the roughness rather than in the normal.
+				fH += (ZM_SynthValueNoise(fU * 24.0f, fV * 0.15f, 24u, uSalt) - 0.5f) * 0.18f;
+				break;
+			case ZM_PROP_PALETTE_PAINTED:
+				// A skim of orange peel, and little else -- paint hides the substrate.
+				fH += (ZM_SynthFbm(fU, fV, 20u, uSalt) - 0.5f) * 0.12f;
+				break;
+			case ZM_PROP_PALETTE_FOLIAGE:
+			default:
+				// Leafy break-up: mid-frequency clumps.
+				fH += (ZM_SynthFbm(fU, fV, 7u, uSalt) - 0.5f) * 0.40f;
+				break;
+			}
+
+			const float fC = fH < 0.0f ? 0.0f : (fH > 1.0f ? 1.0f : fH);
+			xImg.Set(uY, uX, Zenith_Maths::Vector4(fC, fC, fC, 1.0f));
+		}
+	}
+	return xImg;
+}
+
+ZM_SynthPbrResponse ZM_PropPbrResponse(ZM_PROP_PALETTE ePalette)
+{
+	ZM_SynthPbrResponse xR;
+	switch (ePalette)
+	{
+	case ZM_PROP_PALETTE_WOOD:
+		xR.m_fRoughness = 0.72f; xR.m_fNormalStrength = 1.05f;
+		break;
+	case ZM_PROP_PALETTE_STONE:
+		xR.m_fRoughness = 0.90f; xR.m_fNormalStrength = 1.25f;
+		break;
+	case ZM_PROP_PALETTE_METAL:
+		// ★ THE ONLY ARM THAT IS ACTUALLY METAL, and the only place metallic=1 is
+		// right. A lamp post is a conductor: its diffuse should vanish and its
+		// reflection should take the base colour's tint. Everywhere else -- wood,
+		// stone, paint, leaves, glass, plaster -- metallic=1 would kill the diffuse
+		// and tint the reflection by a colour that is not a conductor's.
+		xR.m_fRoughness = 0.34f; xR.m_fMetallic = 1.0f; xR.m_fNormalStrength = 0.55f;
+		break;
+	case ZM_PROP_PALETTE_PAINTED:
+		xR.m_fRoughness = 0.44f; xR.m_fNormalStrength = 0.60f;
+		break;
+	case ZM_PROP_PALETTE_FOLIAGE:
+	default:
+		xR.m_fRoughness = 0.80f; xR.m_fNormalStrength = 0.90f;
+		break;
+	}
+	return xR;
+}
 void ZM_BuildProp(ZM_PROP_ID eId, ZM_Prop& xOut)
 {
 	const ZM_PropRecipe xR = ZM_ResolvePropRecipe(eId);
@@ -294,6 +385,15 @@ void ZM_BuildProp(ZM_PROP_ID eId, ZM_Prop& xOut)
 	xOut.m_eId = eId;
 	ZM_BuildPropMesh(xR, xOut.m_xMesh);
 	xOut.m_xTexture = ZM_BuildPropTexture(xR);
+
+	// FIXED ORDER: albedo, then the height field it does NOT depend on, then the
+	// three maps derived from that height. Part of the determinism contract.
+	ZM_SynthPbrResponse xResponse = ZM_PropPbrResponse(xR.m_ePalette);
+	// One roughness jitter per prop, from the ALBEDO domain -- the same domain the
+	// texture draws from, because it is a surface-finish property, not a shape one.
+	ZM_GenRNG xRng = ZM_MakeGenRNG(xR, ZM_GEN_DOMAIN_ALBEDO);
+	xResponse.m_fRoughnessJitter = xRng.NextFloatRange(-0.05f, 0.05f);
+	xOut.m_xPbr = ZM_SynthBuildPbrSet(ZM_BuildPropHeight(xR), xResponse);
 }
 
 // ============================================================================
@@ -396,9 +496,13 @@ bool ZM_BakeProp(ZM_PROP_ID eId)
 	ZM_BuildProp(eId, xProp);
 
 	char acMeshRef[512], acAlbedoRef[512], acMatRef[512], acModelRef[512];
+	char acNormalRef[512], acRmRef[512], acAoRef[512];
 	bool bOk = true;
-	bOk &= ZM_PropAssetPath(eId, ZM_PROP_ASSET_MESH,     acMeshRef,   sizeof(acMeshRef));
-	bOk &= ZM_PropAssetPath(eId, ZM_PROP_ASSET_ALBEDO,   acAlbedoRef, sizeof(acAlbedoRef));
+	bOk &= ZM_PropAssetPath(eId, ZM_PROP_ASSET_MESH,        acMeshRef,   sizeof(acMeshRef));
+	bOk &= ZM_PropAssetPath(eId, ZM_PROP_ASSET_ALBEDO,      acAlbedoRef, sizeof(acAlbedoRef));
+	bOk &= ZM_PropAssetPath(eId, ZM_PROP_ASSET_NORMAL,      acNormalRef, sizeof(acNormalRef));
+	bOk &= ZM_PropAssetPath(eId, ZM_PROP_ASSET_ROUGH_METAL, acRmRef,     sizeof(acRmRef));
+	bOk &= ZM_PropAssetPath(eId, ZM_PROP_ASSET_OCCLUSION,   acAoRef,     sizeof(acAoRef));
 	bOk &= ZM_PropAssetPath(eId, ZM_PROP_ASSET_MATERIAL, acMatRef,    sizeof(acMatRef));
 	bOk &= ZM_PropAssetPath(eId, ZM_PROP_ASSET_MODEL,    acModelRef,  sizeof(acModelRef));
 	if (!bOk)
@@ -408,12 +512,20 @@ bool ZM_BakeProp(ZM_PROP_ID eId)
 
 	const std::string strMeshFs   = Zenith_AssetRegistry::ResolvePath(std::string(acMeshRef));
 	const std::string strAlbedoFs = Zenith_AssetRegistry::ResolvePath(std::string(acAlbedoRef));
+	const std::string strNormalFs = Zenith_AssetRegistry::ResolvePath(std::string(acNormalRef));
+	const std::string strRmFs     = Zenith_AssetRegistry::ResolvePath(std::string(acRmRef));
+	const std::string strAoFs     = Zenith_AssetRegistry::ResolvePath(std::string(acAoRef));
 	const std::string strMatFs    = Zenith_AssetRegistry::ResolvePath(std::string(acMatRef));
 	const std::string strModelFs  = Zenith_AssetRegistry::ResolvePath(std::string(acModelRef));
 
 	// Static mesh (.zmesh) -- NO skeleton, NO skin. Albedo (.ztxtr, BC1).
 	bOk &= ZM_GenBakeStaticMesh(xProp.m_xMesh, strMeshFs.c_str());
 	bOk &= ZM_SynthBakeAlbedoBC1(xProp.m_xTexture, strAlbedoFs.c_str());
+	// ALBEDO is colour (sRGB baked into BC1); the other three are DATA and must
+	// stay LINEAR or the shader reads a gamma-curved roughness.
+	bOk &= ZM_SynthBakeNormalBC5(xProp.m_xPbr.m_xNormal,            strNormalFs.c_str());
+	bOk &= ZM_SynthBakeLinearBC1(xProp.m_xPbr.m_xRoughnessMetallic, strRmFs.c_str());
+	bOk &= ZM_SynthBakeLinearBC1(xProp.m_xPbr.m_xOcclusion,         strAoFs.c_str());
 
 	const std::string strName = ZM_GetPropName(eId);
 
@@ -424,9 +536,16 @@ bool ZM_BakeProp(ZM_PROP_ID eId)
 		Zenith_AssetHandle<Zenith_MaterialAsset> xMat = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 		Zenith_MaterialAsset* pxMat = xMat.GetDirect();
 		pxMat->SetName(strName);
+		const ZM_SynthPbrResponse xResp = ZM_PropPbrResponse(ZM_GetPropData(eId).m_ePalette);
 		pxMat->SetDiffuseTexture(TextureHandle(std::string(acAlbedoRef)));
-		pxMat->SetRoughness(0.8f);
-		pxMat->SetMetallic(0.0f);
+		pxMat->SetNormalTexture(TextureHandle(std::string(acNormalRef)));
+		pxMat->SetRoughnessMetallicTexture(TextureHandle(std::string(acRmRef)));
+		pxMat->SetOcclusionTexture(TextureHandle(std::string(acAoRef)));
+		// The scalars are what the maps MODULATE, and what a cold boot with an
+		// absent bake falls back to.
+		pxMat->SetRoughness(xResp.m_fRoughness);
+		pxMat->SetMetallic(xResp.m_fMetallic);
+		pxMat->SetNormalStrength(xResp.m_fNormalStrength);
 		pxMat->SaveToFile(strMatFs);
 	}
 

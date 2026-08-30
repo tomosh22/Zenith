@@ -95,10 +95,47 @@ struct ZM_BuildingData
 	ZM_ROOF_KIND        m_eRoof;
 	float               m_fWidth;
 	float               m_fDepth;
+	// Floor-to-eave height of ONE storey. Was a fixed 3.0f recipe default until the
+	// facade overhaul; it is a roster column now because the two site-fixed rows
+	// below must match the wall height of the interior scene they wrap, and those
+	// two disagree (PlayerHome 3.0, ProfLab 3.5).
+	float               m_fStoreyHeight;
+	// Roof rise as a fraction of the SHORTER footprint half-extent. 0.70 is the
+	// value every row carried implicitly before it became data; a wide building
+	// wants a shallower number or its ridge towers over the street.
+	float               m_fRoofPitch;
 	u_int               m_uStoreys;
 	u_int               m_uWindowCols;
 	u_int               m_uWindowRows;
 	ZM_TYPE             m_eThemeType;    // ZM_TYPE_NONE except gyms
+
+	// ★ SITE-FIXED: this building's footprint is pinned to a hand-authored site and
+	// may NOT be perturbed by the generator's per-id shape jitter.
+	//
+	// Every other row is free-standing set dressing, and the +/-3% jitter is what
+	// stops three CottageWarms in a row reading as the same stamped box. The two
+	// Dawnmere buildings are different in kind: their walls ARE the outer envelope
+	// of a separately-loaded interior scene, and they sit inside a blockout collider
+	// whose extents are compiled constants that a dozen clearance clauses measure
+	// against. A +3% draw on a 16.5 m wall pushes 0.25 m of visible geometry through
+	// the face of the collider that is supposed to stop the player short of it.
+	//
+	// The jitter draws still HAPPEN for these rows (see ZM_BuildBuildingMesh) -- the
+	// RNG stream position is part of the authored result, so skipping a draw would
+	// re-roll every downstream domain. Only the APPLICATION is suppressed.
+	bool                m_bSiteFixed;
+
+	// The VISIBLE entrance, in metres.
+	//
+	// ★ FOR A SITE-FIXED ROW THIS IS NOT A STYLE CHOICE, IT IS THE INTERIOR'S
+	// APERTURE. A Dawnmere building's doorway is a blockout that a warp sensor is
+	// sized against and a contract unit pins (the Home's is 4.0 x 2.5, the Lab's
+	// 6.0 x 3.0). With the generator's generic 1.30 x 2.20 leaf the player would
+	// walk through a four-metre sensor while looking at a domestic front door, and
+	// nothing would fail: the sensor is invisible and the unit only ever read the
+	// blockout. Pinned by ZM_Gen/BuildingGen_DawnmereBuildingsFitTheirBlockouts.
+	float               m_fDoorWidth;
+	float               m_fDoorHeight;
 };
 
 // Table accessors (bounds-asserted). ZM_GetBuildingData indexes by ZM_BUILDING_ID.

@@ -1124,7 +1124,17 @@ ZENITH_TEST(ZM_Gen, HumanGen_ClipMetadataGolden)
 {
 	static_assert((u_int)ZM_HUMAN_CLIP_COUNT == 9u,
 		"the shared human clip enum must stay complete at nine entries");
-	static_assert((u_int)ZM_HUMAN_ASSET_KIND_COUNT == 4u,
+	// ★ WHAT THIS NUMBER IS MADE OF, so the next reader knows which additions are
+	// legitimate. The per-model kinds are: mesh, albedo, normal, roughness-metallic,
+	// occlusion, material, model. It was 4 until humans gained the full PBR map set
+	// beside their albedo -- a texture addition, which is exactly the kind of growth
+	// this clause is NOT guarding against.
+	//
+	// What it IS guarding against is ANIMATION files appearing here. Human clips are
+	// SHARED across every model (ZM_HUMAN_SHARED_ASSET_ANIM_*), and a per-model anim
+	// kind would silently multiply nine clips by the whole roster on disk while every
+	// other clause stayed green.
+	static_assert((u_int)ZM_HUMAN_ASSET_KIND_COUNT == 7u,
 		"human animation files are shared, never appended to the per-model asset kinds");
 	static_assert((u_int)ZM_HUMAN_SHARED_ASSET_ANIM_IDLE
 		== (u_int)ZM_HUMAN_SHARED_ASSET_SKELETON + 1u,
