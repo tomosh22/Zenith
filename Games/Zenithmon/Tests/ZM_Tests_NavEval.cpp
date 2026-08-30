@@ -25,14 +25,15 @@
 //
 // Numeric guards below are bracketed from BOTH sides with hand-written literals
 // (never spelled against the production constant they pin): the polygon band is
-// written as 1365 / 1677 rather than derived from the 1024 clamp, and the
+// written as 225 / 361 rather than derived from the 1024 clamp, and the
 // too-fine-rejection recommendation is bracketed 0.5 / 0.8 rather than against
 // (domain + 2*pad)/1024.
 //
-// ★ EVERY NUMBER IN THIS FILE MOVED WHEN DAWNMERE SHRANK, AND NONE OF THEM IS A
-// DENSITY CONSTANT. The rect used to be a 1024 m square carved out of a fixed
-// 4096 m terrain; the terrain carries its own 9x10-chunk grid now, so the domain
-// is 576 x 640 m. Cell sizes, the clamp and the agent pad are all UNCHANGED --
+// ★ EVERY NUMBER IN THIS FILE MOVED WHEN DAWNMERE SHRANK -- TWICE NOW -- AND
+// NONE OF THEM IS A DENSITY CONSTANT. The rect used to be a 1024 m square carved
+// out of a fixed 4096 m terrain; the terrain carries its own grid now, and it
+// has shrunk twice more -- 9x10 -> 6x6 at v7, 6x6 -> 4x4 at v8 -- so the domain
+// is 256 x 256 m. Cell sizes, the clamp and the agent pad are all UNCHANGED --
 // what changed is the domain they are applied to, so these bands were
 // re-observed from a run rather than rescaled by hand.
 // ============================================================================
@@ -59,7 +60,7 @@ namespace
 	// is still rejected with a wide margin, which is why it is still the case this
 	// unit uses; if the domain ever shrinks below ~307 m on its long axis, 0.3 m
 	// would become legal and this unit would need a finer one.
-	constexpr float fTOO_FINE_CELL_SIZE = 0.3f;
+	constexpr float fTOO_FINE_CELL_SIZE = 0.2f;
 
 	// A second valid cell size used as the "not rejecting everything" control.
 	constexpr float fCONTROL_CELL_SIZE = 8.0f;
@@ -88,28 +89,29 @@ ZENITH_TEST(ZM_Nav, DawnmereFlatGridYieldsWalkableNavmeshInBand)
 	// where 1517 comes from: 36 x 40 soup quads and a 41-cell generator grid on
 	// the longer axis. Bracketed with hand literals, not the clamp constant.
 	//
-	// ★ TWO NUMBERS, NOT ONE. Dawnmere is 576 x 640 m -- it is not square any
-	// more -- so a single "quads per side" would report X and say nothing about Z.
-	// Asserting both is what would catch a harvester that used one axis's count
-	// for the other and covered a square region of a rectangular rect.
-	ZENITH_ASSERT_EQ(xResult.m_uQuadsX, 36u,
-		"576 m / 16 m must give 36 coverage quads in X");
-	ZENITH_ASSERT_EQ(xResult.m_uQuadsZ, 40u,
-		"640 m / 16 m must give 40 coverage quads in Z");
-	ZENITH_ASSERT_GE(xResult.m_uGeneratorGridDim, 40u,
-		"the generator voxel grid must be at least 40 cells on the longer side");
-	ZENITH_ASSERT_LE(xResult.m_uGeneratorGridDim, 42u,
-		"the generator voxel grid must be about 41 cells on the longer side (padding spill)");
+	// ★ TWO NUMBERS, NOT ONE, AND THAT STAYS TRUE EVEN THOUGH v7's DAWNMERE IS
+	// SQUARE AGAIN (384 x 384 m). A single "quads per side" would report X and say
+	// nothing about Z, and asserting both is what would catch a harvester that used
+	// one axis's count for the other -- a defect a square domain HIDES, which is
+	// exactly why the clause is kept now that the map no longer forces the issue.
+	ZENITH_ASSERT_EQ(xResult.m_uQuadsX, 16u,
+		"256 m / 16 m must give 16 coverage quads in X");
+	ZENITH_ASSERT_EQ(xResult.m_uQuadsZ, 16u,
+		"256 m / 16 m must give 16 coverage quads in Z");
+	ZENITH_ASSERT_GE(xResult.m_uGeneratorGridDim, 16u,
+		"the generator voxel grid must be at least 16 cells on the longer side");
+	ZENITH_ASSERT_LE(xResult.m_uGeneratorGridDim, 19u,
+		"the generator voxel grid must be about 17 cells on the longer side (padding spill)");
 
-	// The band: 37*41 = 1517 polygons, bracketed 35*39 = 1365 .. 39*43 = 1677 to
+	// The band: 17*17 = 289 polygons, bracketed 15*15 = 225 .. 19*19 = 361 to
 	// tolerate a couple of border columns either way. A generator that stopped
 	// emitting one quad per walkable span (or a harvester that left gaps / wound
 	// the far columns wrongly) would fall out of this band.
-	ZENITH_ASSERT_GE(xResult.m_uPolygonCount, 1365u,
+	ZENITH_ASSERT_GE(xResult.m_uPolygonCount, 225u,
 		"far too few polygons -- the flat grid did not cover the Dawnmere rect (got %u)",
 		xResult.m_uPolygonCount);
-	ZENITH_ASSERT_LE(xResult.m_uPolygonCount, 1677u,
-		"far too many polygons for a 37x41 voxel grid (got %u)",
+	ZENITH_ASSERT_LE(xResult.m_uPolygonCount, 361u,
+		"far too many polygons for a 17x17 voxel grid (got %u)",
 		xResult.m_uPolygonCount);
 
 	// Every polygon in a generated navmesh is walkable by construction (only
@@ -122,7 +124,7 @@ ZENITH_TEST(ZM_Nav, DawnmereFlatGridYieldsWalkableNavmeshInBand)
 	// MUTATION: reds if Zenith_NavMeshGenerator::BuildPolygonMesh stops emitting
 	// one quad per walkable span, or if ZM_BuildCoverageGrid's upward winding is
 	// broken so the far columns get no walkable span -- the polygon count drops
-	// below 1365.
+	// below 225.
 }
 
 // ============================================================================
@@ -145,24 +147,37 @@ ZENITH_TEST(ZM_Nav, TooFineCellSizeIsRejectedFailClosed)
 	ZENITH_ASSERT_EQ(xTooFine.m_uPolygonCount, 0u,
 		"a rejected harvest must have zero polygons");
 
-	// Why it is rejected: the generator voxel grid it WOULD need is 2136 cells
-	// (640.8 / 0.3), still more than twice the clamp. Bracketed 2000 / 2300 with
-	// hand literals, independent of the clamp constant itself.
-	ZENITH_ASSERT_GT(xTooFine.m_uGeneratorGridDim, 2000u,
-		"0.3 m must demand far more than 2000 voxel cells (got %u)",
+	// Why it is rejected: the generator voxel grid it WOULD need is 1284 cells
+	// (256.8 / 0.2), comfortably over the clamp. Bracketed 1150 / 1400 with hand
+	// literals, independent of the clamp constant itself.
+	//
+	// ★★ THE PROBE MOVED FROM 0.3 m TO 0.2 m AT v8, AND v7's OWN NOTE PREDICTED
+	// IT: "if Dawnmere ever shrinks again, check this first -- below ~307 m square,
+	// 0.3 m stops being rejected at all and this unit goes vacuous." At 256 m a
+	// 0.3 m cell needs 856 voxels, comfortably UNDER the 1024 clamp, so the old
+	// probe would have been ACCEPTED and every clause here would have passed while
+	// proving nothing. 0.2 m needs 1284, 25% over, which is the same margin 0.3
+	// held at v7.
+	// ★ THE PROBE IS SIZED TO THE MAP, NOT LOOSENED TO THE ABSURD. A clause that
+	// only rejects a cell size nobody would try proves less than one that rejects
+	// a tempting one; the recommended floor for this domain is 0.2508 m, so 0.2 is
+	// the nearest round number a person would actually reach for. Below ~205 m
+	// square this needs revisiting again.
+	ZENITH_ASSERT_GT(xTooFine.m_uGeneratorGridDim, 1150u,
+		"0.2 m must demand far more than 1150 voxel cells (got %u)",
 		xTooFine.m_uGeneratorGridDim);
-	ZENITH_ASSERT_LT(xTooFine.m_uGeneratorGridDim, 2300u,
-		"0.3 m should demand about 2136 voxel cells (got %u)",
+	ZENITH_ASSERT_LT(xTooFine.m_uGeneratorGridDim, 1400u,
+		"0.2 m should demand about 1284 voxel cells (got %u)",
 		xTooFine.m_uGeneratorGridDim);
 
 	// The recommended floor: the smallest cell size that stays under the clamp
-	// for this domain is ~0.6258 m. Bracketed 0.5 / 0.8 with hand literals --
+	// for this domain is ~0.2508 m. Bracketed 0.2 / 0.35 with hand literals --
 	// NOT spelled against (domain + 2*pad)/1024.
-	ZENITH_ASSERT_GT(xTooFine.m_fMinSafeCellSize, 0.5f,
-		"the min safe cell size for a 640 m domain must be about 0.63 m (got %.4f)",
+	ZENITH_ASSERT_GT(xTooFine.m_fMinSafeCellSize, 0.2f,
+		"the min safe cell size for a 256 m domain must be about 0.25 m (got %.4f)",
 		(double)xTooFine.m_fMinSafeCellSize);
-	ZENITH_ASSERT_LT(xTooFine.m_fMinSafeCellSize, 0.8f,
-		"the min safe cell size must be just above 0.6 m, not larger (got %.4f)",
+	ZENITH_ASSERT_LT(xTooFine.m_fMinSafeCellSize, 0.35f,
+		"the min safe cell size must be just above 0.25 m, not larger (got %.4f)",
 		(double)xTooFine.m_fMinSafeCellSize);
 
 	// Control: a valid cell size at the SAME domain IS attempted and walkable,
@@ -235,19 +250,20 @@ ZENITH_TEST(ZM_Nav, DawnmereRectIsTheRecipesOwnAuthoredTerrain)
 	const float fDomainX = xRect.m_fMaxX - xRect.m_fMinX;
 	const float fDomainZ = xRect.m_fMaxZ - xRect.m_fMinZ;
 
-	// 9 x 10 chunks of 64 m = 576 x 640 m, bracketed with hand literals either
-	// side. ★ THE TWO AXES ARE ASSERTED SEPARATELY AND WITH DIFFERENT BANDS: a
-	// single shared band would pass for a harvester that used X's extent for both
-	// and covered a 576 m square of a 640 m deep rect, losing the northern
-	// route corridor entirely.
-	ZENITH_ASSERT_GT(fDomainX, 560.0f,
-		"Dawnmere X extent must be 576 m (got %.1f)", (double)fDomainX);
-	ZENITH_ASSERT_LT(fDomainX, 592.0f,
-		"Dawnmere X extent must be 576 m (got %.1f)", (double)fDomainX);
-	ZENITH_ASSERT_GT(fDomainZ, 624.0f,
-		"Dawnmere Z extent must be 640 m (got %.1f)", (double)fDomainZ);
-	ZENITH_ASSERT_LT(fDomainZ, 656.0f,
-		"Dawnmere Z extent must be 640 m (got %.1f)", (double)fDomainZ);
+	// 6 x 6 chunks of 64 m = 384 x 384 m, bracketed with hand literals either side.
+	// ★ THE TWO AXES ARE STILL ASSERTED SEPARATELY EVEN THOUGH v7's DAWNMERE IS
+	// SQUARE AGAIN, and that is deliberate: a harvester that used X's extent for
+	// both axes is invisible on a square domain, so this is exactly the shape of
+	// map where a shared band would start passing a broken harvester. The bands
+	// are kept distinct in FORM so the clause survives the next non-square map.
+	ZENITH_ASSERT_GT(fDomainX, 240.0f,
+		"Dawnmere X extent must be 256 m (got %.1f)", (double)fDomainX);
+	ZENITH_ASSERT_LT(fDomainX, 272.0f,
+		"Dawnmere X extent must be 256 m (got %.1f)", (double)fDomainX);
+	ZENITH_ASSERT_GT(fDomainZ, 240.0f,
+		"Dawnmere Z extent must be 256 m (got %.1f)", (double)fDomainZ);
+	ZENITH_ASSERT_LT(fDomainZ, 272.0f,
+		"Dawnmere Z extent must be 256 m (got %.1f)", (double)fDomainZ);
 
 	// Explicitly NOT the engine's DEFAULT 4096 m domain, and not the 1024 m
 	// sub-rect this used to be either: Dawnmere is sized to its own content.
@@ -266,10 +282,10 @@ ZENITH_TEST(ZM_Nav, DawnmereRectIsTheRecipesOwnAuthoredTerrain)
 
 	// TownCenter (280, 160) must sit inside the rect -- otherwise the flat grid
 	// is not covering the playable area the player spawns in.
-	ZENITH_ASSERT_LT(xRect.m_fMinX, 280.0f, "TownCenter X (280) must be inside the rect");
-	ZENITH_ASSERT_GT(xRect.m_fMaxX, 280.0f, "TownCenter X (280) must be inside the rect");
-	ZENITH_ASSERT_LT(xRect.m_fMinZ, 160.0f, "TownCenter Z (160) must be inside the rect");
-	ZENITH_ASSERT_GT(xRect.m_fMaxZ, 160.0f, "TownCenter Z (160) must be inside the rect");
+	ZENITH_ASSERT_LT(xRect.m_fMinX, 120.0f, "TownCenter X (192) must be inside the rect");
+	ZENITH_ASSERT_GT(xRect.m_fMaxX, 120.0f, "TownCenter X (192) must be inside the rect");
+	ZENITH_ASSERT_LT(xRect.m_fMinZ, 60.0f, "TownCenter Z (128) must be inside the rect");
+	ZENITH_ASSERT_GT(xRect.m_fMaxZ, 60.0f, "TownCenter Z (128) must be inside the rect");
 
 	// The flat ground height is the sampled TownCenter surface (~25.99 m),
 	// bracketed 20 / 30 with hand literals.

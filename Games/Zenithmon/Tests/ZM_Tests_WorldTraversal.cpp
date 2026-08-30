@@ -848,13 +848,13 @@ ZENITH_TEST(ZM_WorldTraversal, PlacementUsesMarkerFeetPlusContractCapsuleHalfExt
 	ZENITH_ASSERT_TRUE(xPlayer.IsValid());
 	if (!xPlayer.IsValid()) { return; }
 
-	const Zenith_Maths::Vector3 xMarkerFeet(280.0f, 24.10121f, 160.0f);
+	const Zenith_Maths::Vector3 xMarkerFeet(120.0f, 25.05666f, 60.0f);
 	const float fHalfExtent = fZM_HUMAN_BODY_HALF_HEIGHT;
 	const Zenith_Maths::Vector3 xSpawnCenter =
 		ZM_GameStateManager::CalculateSpawnCenter(xMarkerFeet);
 	ZENITH_ASSERT_EQ_FLOAT(fHalfExtent, 0.9f, 0.00001f);
 	ZENITH_ASSERT_NEAR_VEC3(xSpawnCenter,
-		Zenith_Maths::Vector3(280.0f, 25.00121f, 160.0f), 0.00001f);
+		Zenith_Maths::Vector3(120.0f, 25.95666f, 60.0f), 0.00001f);
 	ZENITH_ASSERT_EQ_FLOAT(xSpawnCenter.y - fHalfExtent,
 		xMarkerFeet.y, 0.00001f);
 

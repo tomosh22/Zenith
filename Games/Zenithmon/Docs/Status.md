@@ -17,8 +17,44 @@ The S0-S7 narrative that used to fill the back half of this file moved VERBATIM 
 [History.md](History.md) on 2026-08-18, so this file can hold to the ~25-line budget
 its own template in `AgentBriefing.md` §2.3 specifies. Nothing was deleted.
 
-**★ LIVE PIN (UPDATED 2026-08-28):
-ZM boot `3498`; engine boot (Null Combat) `1729`; Null RenderTest `1820`; registry **70**.**
+**★ LIVE PIN (UPDATED 2026-08-30):
+ZM boot `3538`; engine boot (Null Combat) `1748`; Null RenderTest `1839`; registry **70**.**
+
+> **★ ZM +8 (2026-08-30, ZM-D-218 follow-up), Zenithmon-only.** The eight
+> duplicated copies of the automated suites' walk driver became ONE --
+> `Tests/ZM_TestWalkDrive.{h,cpp}` -- and the arithmetic is now a PURE function
+> with its own suite, `ZM_WalkDrive` (`Tests/ZM_Tests_WalkDrive.cpp`, 8 units):
+> the camera basis, the fixed points, the anti-vacuity half that fails if the
+> quantisation is ever removed, the dead zone as the arrival condition, opposed
+> keys, totality, and planarity. OBSERVED at
+> `3538 ran / 3536 passed / 0 failed`, 2 skipped, from a
+> `Null_vs2022_Debug_Win64_True` run. Nothing under `Zenith/**` was touched, so
+> the Combat and RenderTest rows do NOT move.
+
+> **★ ZM +0 (the v8 compaction itself, 2026-08-30, ZM-D-218).** The Dawnmere v8 compaction adds NO units and
+> the pin does NOT move: it re-derives three clauses that had rotted into Z-gap
+> proxies and re-records constants, all inside suites that already existed.
+> OBSERVED at `3530 ran / 3528 passed / 0 failed`, 2 skipped, from a
+> `Null_vs2022_Debug_Win64_True` run AFTER the change. Registry stays **70**;
+> 69 pass and the one failure is the pre-existing, tracked
+> `ZM_InteriorTintPixels_Test` (interior lighting, nothing to do with Dawnmere).
+
+> **ZM +13 (2026-08-30, ZM-D-217), Zenithmon-only.** The Dawnmere v7 shrink and
+> its scenery layer add ONE new suite, `ZM_Dressing`
+> (`Tests/ZM_Tests_DawnmereDressing.cpp`, 13 units): the tree-clump keep-out
+> clearances, the two keep-out variants and their divergence, the scatter table's
+> well-formedness and the accessors' totality. OBSERVED at
+> `3530 ran / 3528 passed / 0 failed`, 2 skipped, from a
+> `Null_vs2022_Debug_Win64_True` run, and confirmed through
+> `Tools/run_unit_gate.ps1 -Game Zenithmon`. Nothing under `Zenith/**` was
+> touched, so the Combat and RenderTest rows do NOT move -- the figures quoted
+> above for them are `Tools/unit_baselines.json`'s, carried forward and NOT
+> re-observed on this tree.
+>
+> ★ THE PREVIOUS LINE HERE SAID `3498` AND THE GATE'S OWN FILE SAID `3517`.
+> `Tools/unit_baselines.json` is the authority and was right; this narration had
+> drifted by 19 across the ScriptTest commits, which added backend-neutral engine
+> units that move every game's row. Re-read the JSON before trusting this block.
 
 > **ENGINE-SIDE +36 (2026-08-28), Zenithmon code untouched.** Three shared prop-set
 > unit suites landed in `Tools/` — rocks (+13), deadwood (+14), wind-animated
@@ -27,6 +63,166 @@ ZM boot `3498`; engine boot (Null Combat) `1729`; Null RenderTest `1820`; regist
 > (`3498 ran / 3496 passed / 0 failed`, 2 skipped); registry unchanged. The two
 > earlier bumps (3475, 3489) were narrated only in the manifest's git history —
 > this line was stale against the manifest from 3475 on, which C7 caught.
+
+> **★★★ BEFORE THE NEXT LAYOUT CHANGE, READ
+> [MapLayoutPlaybook.md](MapLayoutPlaybook.md).** Dawnmere has been re-laid-out
+> four times and every one of them rediscovered something on that page the hard
+> way. It carries the order of operations, the "if you change X you must
+> re-derive Y" table, and fifteen traps indexed by SYMPTOM. Everything below
+> this line is the narrative; the playbook is the procedure.
+
+> **★★ THE HOUSE AND THE LAB ARE 56 m APART -- v8, OBSERVED 2026-08-30 (ZM-D-218).**
+> **ZM PIN 3530 -> 3530 (unchanged).** Zenithmon-only; nothing under `Zenith/**`.
+>
+> v7 shrank the sheet and compacted the content, and the walk from the player's
+> house to Aster's lab was still 135 m. v8 halves the sheet again and re-plans the
+> town centre around that ONE distance.
+>
+> * **4 x 4 chunks = 256 x 256 m** (was 6x6 = 384x384), 16 chunks not 36, **52**
+>   required bake outputs not 112. Terrain manifest **v7 -> v8**. The sheet is now
+>   44% of v7's area and 18% of v5's.
+> * **Home door -> Lab door 135.0 m -> 56.1 m, a 58% cut**, which was the ask.
+>   spawn->Home 64.0 -> 48.8 m, spawn->Lab 76.9 -> 52.2 m, plaza->route boundary
+>   192 -> 128 m. Everything HUMAN-scale is untouched again.
+> * **The structural unlock was ending the Lab lane at the FORECOURT** instead of
+>   behind the building. v7's Lab was pushed far out on a diagonal by a coupling
+>   nobody had named: `LabDirtPath_ClearsTheShellByTheShippedCameraClamp` wanted
+>   camera clearance BEHIND the shell, so the lane had to run past it. Ending the
+>   lane at the door removes the coupling; the clause's anti-vacuity half was
+>   RE-DERIVED (the lane must reach the door and arrive from the -Z side) rather
+>   than deleted.
+> * **Rival Vesper moved to (80, 60)** -- due west of the town-centre spawn, on
+>   the same Z -- and his frozen facing was re-derived to yaw `atan2f(40, 0)` =
+>   pi/2, whose two quaternion words are both `0x3F3504F3`.
+>
+> ★★ **THE MOST USEFUL THING v8 MEASURED: THE WALK-UP'S DRIVER DOES NOT WALK IN
+> A STRAIGHT LINE, AND THE RIVAL'S FACING IS DERIVED FROM ONE.** `DriveTowardXZ`
+> in `Tests/ZM_AutoTests_RivalVesper.cpp` is CAMERA-RELATIVE and quantised to
+> eight directions -- it holds W/A/S/D, never a steering angle -- while the camera
+> swings to follow the player's own heading. The player therefore walks a pursuit
+> curve that cuts the corner, and the lateral offset grows with the length of the
+> walk. The first v8 placement put the rival at (80, 88), a 48.8 m diagonal, and
+> the player arrived **4.44 m to one side** -- a 31-degree bearing error against a
+> cone that admits 30. MEASURED, closing in:
+>
+> | gap | coneDot | | gap | coneDot |
+> |---|---|---|---|---|
+> | 24.0 m | 0.974 | | 10.3 m | 0.853 **out** |
+> | 12.0 m | 0.888 | | 5.0 m | 0.787 |
+> | 8.5 m | 0.853 **out** | | 0.8 m | 0.543 |
+>
+> (the cone admits `>= 0.86603`.) The dot DECAYS as he closes, because the player
+> is arriving from the side he drifted to. So the rival was correctly placed,
+> exactly facing, armed, WATCHING, with the player driven to **0.077 m** of him --
+> and permanently blind, with every clause the test already printed GREEN. Three
+> plausible hypotheses (props on the sight line, the approach being too long,
+> unflattened ground under a dynamic capsule) were each expensive to falsify and
+> none of them was it. **A due-west or 45-degree-diagonal target is a FIXED POINT
+> of that driver** -- both camera orientations drive the same straight line -- so
+> the cone dot now holds flat at ~0.95 the whole way in.
+>
+> ★ **AND THE DIAGNOSTIC IS PERMANENT NOW.** `RVLogSightGateBreakdown` prints the
+> four FSM inputs, the cone arithmetic and the camera basis on every failing exit
+> of the approach, because none of them was reachable through an accessor and all
+> of them are pure functions of state the test already held.
+>
+> ★★ **THREE DEAD Z-GAP PROXIES RETIRED IN ONE PASS.** Every one read
+> `|npcZ - townCentreZ| > k` on the reasoning that a traversal corridor is a line
+> of constant Z. None has been since ZM-D-173. In the compacted town they are
+> wrong in BOTH directions: one failed the warden at a 4 m Z gap while he stands
+> 18.0 m from the leg measured properly, and all three would have passed an NPC
+> standing ON a diagonal. They now measure perpendicular distance to the legs in
+> `ZM_DawnmereDressing.h`'s table -- the one place those legs are described, and
+> the same table the scenery keep-out reads, so a body and a boulder are held to
+> one definition of "the corridor".
+>
+> ★ **A TREE IS NOT SUBJECT TO THE PROP KEEP-OUT.** The tree brush is a TERRAIN
+> tool and knows nothing about `ZM_DawnmereDressing`, so `SouthWestLobe` reached
+> to within 2.4 m of the armed rival while every scatter clause was green. A trunk
+> on his line makes `ZM_ProbeTrainerSightLine` report blocked and he never reacts.
+> `TreeClumps_AreEntirelyOutsideTheTownKeepOut` measures against the HARD
+> clearance, which carries his sight radius, and is what reds if it creeps back.
+>
+> ★ **A DRIVE LEG BELONGS IN THAT TABLE ONLY IF SOME TEST DRIVES IT.** v8 briefly
+> carried an invented `townCentre->routeArrival` leg -- the whole length of the
+> route lane -- on the assumption that `ZM_SeamRoundTrip_Test` walks north out of
+> town. It does not: it WARPS onto the departure scene's spawn tag and drives
+> ~12 m from there. The invented leg sterilised an 84 m strip for scenery and, once
+> the roster started measuring against the table, failed the VILLAGER, who has
+> stood on the lane centreline since S6 and is on nothing anything drives.
+
+> **★★ DAWNMERE IS 40% OF ITS OLD AREA AND HAS SCENERY -- v7, OBSERVED 2026-08-30 (ZM-D-217).**
+> **ZM PIN 3517 -> 3530.** Zenithmon-only; nothing under `Zenith/**`.
+>
+> The complaint was that Dawnmere read as empty, and it was two separate
+> problems. **The map was too big for its content:** 576 x 640 m with the plaza
+> and the two buildings 128 m apart and a 416 m unbroken run from the plaza to
+> the north boundary. **And it had no scenery at all:** every entity in it was a
+> blockout, a marker or a person. v7 answers both.
+>
+> * **6 x 6 chunks = 384 x 384 m** (was 9x10 = 576 x 640), 36 chunks not 90,
+>   112 required bake outputs not 274. Terrain manifest **v6 -> v7**.
+> * **The content is COMPACTED, not translated** -- v5 -> v6 was a pure translate
+>   and left the town exactly as sparse as it had been. plaza->Home 128.9 -> 65.9 m,
+>   plaza->Lab 134.1 -> 75.5 m, plaza->route boundary 416 -> 192 m, town core width
+>   352 -> 194 m. Everything HUMAN-scale (door apertures, jamb widths, sensor
+>   depths, shell envelopes, the 12 m gate-to-arrival separation) is untouched.
+> * **~770 instanced props + ~440 trunk/leaf tree pairs**, all from the SHARED
+>   engine sets (`Meshes/{ProceduralTree,Rocks,FallenTrees,Bushes}`) -- the same
+>   sets RenderTest dresses its campus with. No Zenithmon-owned art.
+>   `Dawnmere.zscen` **25 entities / 6,026 bytes -> 38 / 113,627**.
+> * **All 23 measured ground columns re-frozen** from a warm v7 bake, and the
+>   frozen rival facing re-derived (yaw `atan2f(24, -40)`).
+>
+> ★★ **THE MOST USEFUL THING v7 MEASURED: A PAD DOES NOT FLATTEN ANYTHING.**
+> Zenith_TerrainEditor's FLATTEN kernel moves a texel
+> `(target - h) * falloff * strength * 0.35` per dab and a PAD contributes exactly
+> two dabs, so it converges at most 58% even at its own centre. The Plaza pad has
+> NEVER flattened the town square; v6 read within 0.85 m of target because its
+> base noise happened to sit near 24 m there. v7's first bake exposed it as a
+> 3.15 m spread across the roster. The fix is three **SetHeight SHELVES** in the
+> landform table, all at strength < 0.5 -- 0.5 SATURATES and assigns the target
+> outright, which two separate units caught (the W5 spread clause at 1.0, the lab
+> no-repeated-rows clause at 0.6). Both clauses were left alone and the DATA moved.
+>
+> ★ **The scenery is kept off every walked line BY GEOMETRY, in a unit.**
+> `Source/World/ZM_DawnmereDressing.h` computes the keep-out from the recipe's own
+> pads and paths, the placement header's anchors and markers, and the seven blind
+> `DriveTowardXZ` legs; `ZM_Tests_DawnmereDressing.cpp` walks every leg end to
+> end. That hazard had been PROSE in `Zenithmon.cpp` since S6. There are TWO
+> variants and the collider decides: colliding props take pads/paths at their
+> FLATTEN radius, collider-free foliage at their DIRT radius, because a bush
+> cannot wedge a blind drive and the only rule left for it is "stay off the paving".
+>
+> ★ **Two columns do NOT read the 24.0 target and that is a finding, not a
+> tolerance:** the route seam (22.325) and the north gate (22.681) sit outside the
+> town shelf and are corrected only by path flatten dabs. It falsifies a claim
+> both `ZM_DawnmerePlacement.h` and its north-gate block made -- "a flatten dab
+> drives ground TO the recipe target" -- and both are corrected. Left as measured
+> rather than shelved flat: 1.7 m of descent over the 128 m to the seam is a 1.3%
+> grade, i.e. a road, and the per-column tables are exactly what lets the seam
+> entities sit correctly on it.
+>
+> ★★ **AND ONE THING THIS SLICE GOT WRONG AND UNDID: CHECK WHICH SCENE A CAPTURE
+> IS OF.** A screenshot of "the north walk" showed a player at the bottom of a
+> rock-splatted ravine, which produced a plausible diagnosis (a graded lane's
+> shoulder is steeper than the hills, so the auto-splat's 18-degree `Stone` rule
+> paints it as cliff) and two real terrain changes: a fourth shelf over the
+> corridor and the route's flatten radius 14 -> 22. Both worked -- the seam
+> columns came up from 22.33/22.68 to 23.92/23.90. **The frame was ROUTE 1, not
+> Dawnmere**: `ZM_SeamRoundTrip_Test` warps out of town on its second leg, and
+> Route 1's recipe was never touched by any of this. The tell was there and was
+> read late: the capture came back PIXEL-IDENTICAL across two substantive terrain
+> edits and a forced re-bake. Both changes are REVERTED rather than kept with the
+> justification quietly rewritten, and `Dawnmere.zscen` hashing back to its
+> pre-experiment value is the proof the revert was complete. The boot log prints
+> `[TerrainPhysics] context='...<scene>.zscen'` on every warp.
+>
+> Proof: two windowed `Vulkan_vs2022_Debug_Win64_True` boots with
+> `--skip-unit-tests`, `warmMask=0x7`, `sceneAuthoring=AUTHOR_DAWNMERE`; the
+> second reported `[ScenePublish] IDENTICAL` for all seven scenes. All four
+> ground-truth oracles green, 70/70 automated tests pass, and
+> `Tools/run_unit_gate.ps1 -Game Zenithmon` reports PASS at 3530.
 
 > **★ THE LANES ARE PAVED — the shared CLAY ground set, OBSERVED 2026-08-28 (ZM-D-216).**
 > **NO PIN MOVED.** Zenithmon-only in effect (the one engine-tree edit is RenderTest's
@@ -532,12 +728,12 @@ genuinely RAN, not `DEFERRED` -- after which `git status` over the WHOLE
 |---|---|---|
 | `Route1.zscen` | 3,146 | `F3E9A4613E8942F17E80A2AB6BD699F22B97E71CBB2AFC317D796DDF75795110` (**RE-AUTHORED for the shared CLAY ground set, 2026-08-28, ZM-D-216**: splat slot 2 (`Dirt` -- the lanes and pads) stopped being a flat brown and now samples `engine:Textures/Terrain/Clay/` at tiling **3.6**, not 0.9, with a WHITE base colour. **Entity count UNCHANGED; the file grew by exactly 164 bytes** (2,982 -> 3,146) -- the same signature the rock slot produced one day earlier: four texture-ref paths appended to ONE material payload and nothing else. Two windowed `Vulkan_vs2022_Debug_Win64_True` boots with `--skip-unit-tests` (`--automated-test ZM_Boot_Test`, so the process exits on its own), all three recipes warm (`warmMask=0x7`, `sceneAuthoring=AUTHOR_DAWNMERE`); the second reported `[ScenePublish] IDENTICAL` for all seven scenes. Previous value `3BE837CBEB0CA5E0...` at 2,982 bytes, held from the rock-set re-author.) |
 | `Thornacre.zscen` | 2,267 | `878C9F02E95476974F44EFDE6B2E34D3FC82911F6C15BFEE8B5F88234A213297` (**RE-AUTHORED for the shared CLAY ground set, 2026-08-28, ZM-D-216**: splat slot 2 (`Dirt` -- the lanes and pads) stopped being a flat brown and now samples `engine:Textures/Terrain/Clay/` at tiling **3.6**, not 0.9, with a WHITE base colour. **Entity count UNCHANGED; the file grew by exactly 164 bytes** (2,103 -> 2,267) -- the same signature the rock slot produced one day earlier: four texture-ref paths appended to ONE material payload and nothing else. Two windowed `Vulkan_vs2022_Debug_Win64_True` boots with `--skip-unit-tests` (`--automated-test ZM_Boot_Test`, so the process exits on its own), all three recipes warm (`warmMask=0x7`, `sceneAuthoring=AUTHOR_DAWNMERE`); the second reported `[ScenePublish] IDENTICAL` for all seven scenes. Previous value `094BADF64CF6FB95...` at 2,103 bytes, held from the rock-set re-author.) |
-| `Dawnmere.zscen` | 6,026 | `41F2E2DCF3577A7B92EBCDB7C6C31DB50A73717A8850BB67E99CDE497DFD9147` (**RE-AUTHORED for the shared CLAY ground set, 2026-08-28, ZM-D-216**: splat slot 2 (`Dirt` -- the lanes and pads) stopped being a flat brown and now samples `engine:Textures/Terrain/Clay/` at tiling **3.6**, not 0.9, with a WHITE base colour. **Entity count UNCHANGED; the file grew by exactly 164 bytes** (5,862 -> 6,026) -- the same signature the rock slot produced one day earlier: four texture-ref paths appended to ONE material payload and nothing else. Two windowed `Vulkan_vs2022_Debug_Win64_True` boots with `--skip-unit-tests` (`--automated-test ZM_Boot_Test`, so the process exits on its own), all three recipes warm (`warmMask=0x7`, `sceneAuthoring=AUTHOR_DAWNMERE`); the second reported `[ScenePublish] IDENTICAL` for all seven scenes. Previous value `11D49864EB1CC900...` at 5,862 bytes, held from the rock-set re-author.) |
+| `Dawnmere.zscen` | 79,067 | `A666F5DF3ADC9AF0A35AF361586F2482CBA06E8138871FCE3FB6736138BD7AD3` (**RE-AUTHORED for the v8 COMPACTION, 2026-08-30, ZM-D-218**: the map went 6x6 -> 4x4 chunks and every anchor moved with it; rival Vesper moved to (80, 60) and his frozen facing was re-derived to yaw pi/2. 38 entities, unchanged in COUNT from v7 -- the scenery layer is instanced, so a smaller town writes FEWER bytes, not fewer entities. Proven byte-identical across two consecutive tools boots.) |
 | `Battle.zscen` | 4,965 | `1BEB0615F7FE62D9439471A4123E1D2140C0053AEC2991B659F7A03288C8C60A` (unchanged since 2026-08-05) |
 | `FrontEnd.zscen` | 29,740 | `D44D540512F1C373A5D5E747CE7FA76E7D19B467F5F1563EB298E229EEFBEDB5` |
 | `PlayerHome.zscen` | 1,832 | `DBBFB78311A55BBF942A7A5BF9928F43E9493A10CDA89110515A3B6A7987C780` (unchanged since 2026-08-05) |
 | `ProfLab.zscen` | 2,068 | `72DA12B73AB643B44F0B9374FCD6F4CCF865ECBAED5F9B0D2832E8BD972ABB32` |
-| `Dawnmere.znavmesh` | 134,484 | `2D4EC0A3263806EB3092C2E0AD43895852735E099C2A42ACC31485762DC1B5D8` (**RE-BAKED at the map shrink, 2026-08-27**: 1,517 polygons over 1,596 vertices where it was 4,225 over a 1024 m square. The bake cell size is UNCHANGED at 16 m — what moved is the domain: 576 x 640 m gives 36 x 40 coverage quads and, with the generator's 0.4 m agent padding either side, a 37 x 41 voxel grid whose one-quad-per-column output is 37*41 = 1,517. It re-bakes because `fZM_DAWNMERE_TOWN_CENTER_FEET_Y` is the flat grid's height and that anchor was re-measured. Previous value `DCAA84035A258B12...` at 373,412 bytes.) |
+| `Dawnmere.znavmesh` | 25,892 | `5E725579C3B38197596976BF883235B01A334F8294433CEE5E8BC9A67671FFD8` (**RE-BAKED at the v8 compaction, 2026-08-30, ZM-D-218**: 324 vertices / 289 polygons over a 256 x 256 m sheet. The bake cell size is UNCHANGED -- the polygon count fell because the SHEET did, which is the whole point of the compaction.) |
 
 **★ WHAT THIS BASELINE IS FOR.** Slice R1-2 authors two NEW scenes and re-authors Dawnmere.
 Because the pipeline is proven deterministic *immediately before* that change, any byte that

@@ -42,18 +42,22 @@
 // yaw 0) or is issued BEFORE the marker teleport that overwrites it.
 //
 // ---- WHY THIS FILE CARRIES ITS OWN WALK MACHINERY --------------------------
-// Games/Zenithmon/Tests is .cpp-only with NO shared header, and every helper in
-// ZM_AutoTests_NpcServices.cpp lives in a per-file anonymous namespace. The
-// CAMERA-RELATIVE drive (DriveTowardXZ) is copied from
-// ZM_AutoTests_NpcServices.cpp:546-604 with its reasoning intact: player movement
-// is camera-relative and ZM_FollowCamera's yaw swings as the player turns, so
-// choosing W/A/S/D from world-space dx/dz is correct ONLY for a single leg walked
-// from rest. The rest of that file's WalkContext machine is an NPC-APPROACH
-// machine (it resolves a target entity by name, polls the interaction seam and
-// emits an interact edge); this test walks to a COORDINATE and never interacts,
-// so copying the interaction stages verbatim would ship dead code. The parts that
-// are load-bearing here -- the camera-relative key choice, the stall watchdog and
-// AccumulatePhysicsMotionEvidence -- are carried over unchanged.
+// It carries the walk STATE -- the target, the stall watchdog, the physics-motion
+// evidence -- because this test walks to a COORDINATE and never interacts, while
+// ZM_AutoTests_NpcServices.cpp's WalkContext is an NPC-APPROACH machine that
+// resolves a target entity by name, polls the interaction seam and emits an
+// interact edge. Copying those stages here would ship dead code.
+//
+// ★★ IT NO LONGER CARRIES ITS OWN DRIVER, AND THE PARAGRAPH THAT SAID IT MUST IS
+// WHY THERE WERE EIGHT OF THEM. This block used to open "Games/Zenithmon/Tests is
+// .cpp-only with NO shared header", and that premise was already false when it was
+// written (ZM_BindingsTestRig.h and ZM_GrassBaseline.h both predate it). On the
+// strength of it, DriveTowardXZ was pasted into eight files -- so the camera-basis
+// correction at ZM-D-130/131 had to be applied three separate times, and the
+// pursuit-curve finding at ZM-D-218 landed on seven suites nobody had looked at.
+// The driver is now Tests/ZM_TestWalkDrive.{h,cpp}, with its own units. A comment
+// asserting that something cannot be shared is a claim, and this one cost more
+// than the sharing would have.
 //
 // ---- DESIGN RULES ----------------------------------------------------------
 //   * EVERY phase flag DEFAULTS TO FAILING, so a phase that never runs fails.
@@ -88,6 +92,7 @@
 // transitive chain, which is nobody's contract to keep.
 #include "FileAccess/Zenith_FileAccess.h"
 #include "Input/Zenith_InputSimulator.h"
+#include "Zenithmon/Tests/ZM_TestWalkDrive.h"   // the ONE walk driver -- read its header before trusting a straight line
 #include "Input/Zenith_KeyCodes.h"
 #include "Maths/Zenith_Maths.h"
 #include "Physics/Zenith_Physics.h"
@@ -321,17 +326,8 @@ namespace
 	}
 
 	// ------------------------------------------------------------------------
-	// The camera-relative drive, copied from ZM_AutoTests_NpcServices.cpp:546-604.
-	//
-	// Player movement is camera-relative: ZM_PlayerController::OnUpdate reads the
-	// main camera's facing dir and hands it to BuildCameraRelativeDirection, which
-	// builds xForward = flatten(cameraForward), xRight = (xForward.z, 0, -xForward.x)
-	// and moves along xForward * input.y + xRight * input.x. So "W" does NOT mean
-	// +Z -- it means "the way the camera is facing", and ZM_FollowCamera's yaw
-	// swings as the player turns. Choosing keys from world-space dx/dz is correct
-	// only for a SINGLE leg walked from rest; this is the exact INVERSE of the
-	// controller's mapping and degenerates to the world-space version at the
-	// authored yaw of 0.
+	// The walk state this file drives. The DRIVER itself is shared -- see
+	// Tests/ZM_TestWalkDrive.h -- and only the per-walk bookkeeping is local.
 	// ------------------------------------------------------------------------
 
 	struct PointWalk
@@ -360,57 +356,27 @@ namespace
 		xWalk.m_abHeldKeys[3] = false;
 	}
 
-	void DriveTowardXZ(PointWalk& xWalk, const Zenith_Maths::Vector3& xPosition,
+	// The shared, unit-tested walk driver. See
+	// Tests/ZM_TestWalkDrive.h -- it is CAMERA-RELATIVE and QUANTISED TO EIGHT
+	// DIRECTIONS, so the player walks a PURSUIT CURVE rather than the straight
+	// line, and anything this suite must approach ON A BEARING wants one of the
+	// driver's fixed points. This wrapper exists only to keep the local name and
+	// to mirror the held keys where this file reports them.
+	void DriveTowardXZ(
+		PointWalk& xWalk,
+		const Zenith_Maths::Vector3& xPosition,
 		const Zenith_Maths::Vector3& xTarget)
 	{
+		// ★ THE CLEAR STAYS HERE, AND DROPPING IT COST A BATCH. Consolidating the
+		// driver moved this call out on the assumption that callers cleared before
+		// driving; they do not -- every one of the eight originals cleared INSIDE,
+		// and without it last frame's keys stay held and the walk curves away.
+		// Six automated tests went red. The shared driver deliberately does not
+		// clear, because each caller releases a DIFFERENT key set.
 		ClearWalkInput(xWalk);
-		constexpr float fDEAD_ZONE = 0.08f;
-
-		Zenith_Maths::Vector3 xCameraForward(0.0f, 0.0f, 1.0f);
-		if (Zenith_CameraComponent* pxCamera = Zenith_GetMainCameraAcrossScenes())
-		{
-			pxCamera->GetFacingDir(xCameraForward);
-		}
-		Zenith_Maths::Vector3 xForward(xCameraForward.x, 0.0f, xCameraForward.z);
-		const float fForwardLengthSq = xForward.x * xForward.x + xForward.z * xForward.z;
-		if (fForwardLengthSq <= 0.000001f)
-		{
-			xForward = Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f);
-		}
-		else
-		{
-			xForward /= std::sqrt(fForwardLengthSq);
-		}
-		const Zenith_Maths::Vector3 xRight(xForward.z, 0.0f, -xForward.x);
-
-		const Zenith_Maths::Vector3 xToTarget(
-			xTarget.x - xPosition.x, 0.0f, xTarget.z - xPosition.z);
-		const float fForwardAmount = xToTarget.x * xForward.x + xToTarget.z * xForward.z;
-		const float fRightAmount   = xToTarget.x * xRight.x   + xToTarget.z * xRight.z;
-
-		const float fDeltaX = fRightAmount;
-		const float fDeltaZ = fForwardAmount;
-		if (fDeltaX < -fDEAD_ZONE)
-		{
-			Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_A);
-			xWalk.m_abHeldKeys[1] = true;
-		}
-		else if (fDeltaX > fDEAD_ZONE)
-		{
-			Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_D);
-			xWalk.m_abHeldKeys[3] = true;
-		}
-		if (fDeltaZ < -fDEAD_ZONE)
-		{
-			Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_S);
-			xWalk.m_abHeldKeys[2] = true;
-		}
-		else if (fDeltaZ > fDEAD_ZONE)
-		{
-			Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_W);
-			xWalk.m_abHeldKeys[0] = true;
-		}
-		Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_LEFT_SHIFT);
+		const ZM_WalkDriveKeys xKeys =
+			ZM_DriveWalkTowardXZ(xPosition, xTarget, /*bRun*/ true);
+		xKeys.CopyTo(xWalk.m_abHeldKeys);
 	}
 
 	// This frame's evidence that the motion is PHYSICS-DRIVEN rather than a

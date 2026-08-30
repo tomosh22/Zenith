@@ -174,10 +174,10 @@ ZENITH_TEST(ZM_HumanVisual, HumanVisual_BodyContractIsTheShippedBody)
 
 	// The feet -> centre conversion every warp, every spawn marker and the authored
 	// placement all share.
-	const Zenith_Maths::Vector3 xFeet(280.0f, 24.10121f, 160.0f);
+	const Zenith_Maths::Vector3 xFeet(120.0f, 25.05666f, 60.0f);
 	const Zenith_Maths::Vector3 xCentre = xFeet
 		+ Zenith_Maths::Vector3(0.0f, fZM_HUMAN_BODY_HALF_HEIGHT, 0.0f);
-	ZENITH_ASSERT_EQ_FLOAT(xCentre.y, 25.00121f, 1.0e-5f,
+	ZENITH_ASSERT_EQ_FLOAT(xCentre.y, 25.95666f, 1.0e-5f,
 		"the Dawnmere town-centre body height moved");
 	ZENITH_ASSERT_EQ_FLOAT(xCentre.y - fZM_HUMAN_BODY_HALF_HEIGHT, xFeet.y, 1.0e-5f,
 		"the feet <-> centre conversion is not its own inverse");

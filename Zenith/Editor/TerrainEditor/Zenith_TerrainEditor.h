@@ -46,6 +46,44 @@ struct Flux_TerrainStreamingState;
 // paints the grass-density map; TreePaint scatters instanced trees (Shift
 // erases); GrassType stamps the per-texel grass-type index; everything else
 // sculpts the heightfield.
+//
+//=============================================================================
+// ★★ FLATTEN IS A RATE, SetHeight IS AN ASSIGNMENT, AND CONFUSING THEM HAS
+// COST A GAME A FULL DEBUGGING CYCLE. Read this before levelling any ground.
+//
+// The two kernels, verbatim from Zenith_TerrainEditor_Brushes.cpp, per DAB:
+//
+//     Flatten     h += (target - h) * w * strength * 0.35
+//     SetHeight   h += (target - h) * min(1, w * strength * 2)
+//
+// (`w` is the falloff weight, 1 at the dab centre and 0 at the brush edge.)
+//
+// ★ FLATTEN CONVERGES ONLY IF YOU DAB IT MANY TIMES. One dab at full strength
+// and full weight moves a texel 35% of the way to the target. A caller that
+// issues a fixed, small number of dabs -- Zenithmon's terrain "pads" issue
+// exactly TWO, one before erosion and one after -- reaches at most
+// 1 - 0.65^2 = 57.8% even at the dab's own centre, and about 32% at half the
+// brush radius. **A two-dab Flatten has never levelled anything.** It can still
+// LOOK level for years if the underlying noise happens to sit near the target
+// there, which is precisely how Zenithmon shipped a "flattened" town square
+// that was within 0.85 m of target by coincidence and came back with a 3.15 m
+// spread the moment the noise frequency changed (ZM-D-217).
+//
+// ★ SetHeight SATURATES AT strength >= 0.5. `min(1, w * strength * 2)` reaches
+// 1 wherever `w * strength >= 0.5`, and a fraction of 1 ASSIGNS the target
+// outright. So a SetHeight stroke at strength 1.0 does not "level firmly", it
+// stamps a perfectly flat disc and destroys every height variation under it --
+// including the variation that game code may be measuring. Two independent
+// Zenithmon units caught saturated versions of exactly this and were correctly
+// left alone while the data moved.
+//
+// ★ SO: to level ground for gameplay, use **SetHeight at strength < 0.5**, not
+// a wider or stronger Flatten. That leaves a residual gradient (the ground
+// still reads as terrain) while pulling everything close enough to the target
+// for height-banded gameplay checks. To BLEND a stroke into surrounding
+// terrain over many dabs -- a hand-painted path, a cursor drag -- Flatten is
+// the right tool and its slow rate is the feature.
+//=============================================================================
 enum class Zenith_TerrainBrushTool
 {
 	Raise,

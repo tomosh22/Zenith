@@ -1,5 +1,23 @@
 #pragma once
 
+// ★★ BEFORE YOU CHANGE ANY OF THIS, READ
+// `Games/Zenithmon/Docs/MapLayoutPlaybook.md`.
+//
+// A map layout change is not one edit -- it is a FIXED POINT you iterate to,
+// because the compiled constants below describe terrain that is generated from
+// the compiled constants below. The playbook carries the order of operations,
+// the "if you change X you must re-derive Y" table, and fifteen traps indexed by
+// SYMPTOM, every one of which has already cost this game a debugging cycle. The
+// two that bite hardest here:
+//
+//   * A PAD HAS NEVER FLATTENED ANYTHING. Flatten is a RATE (35% per dab) and a
+//     pad issues exactly two dabs, so it converges at most 58% at its own
+//     centre. Level ground with a SetHeight SHELF in the landform table --
+//     at strength < 0.5, or it SATURATES and stamps a perfectly flat disc.
+//   * ANY TERRAIN EDIT INVALIDATES ALL 23 MEASURED GROUND COLUMNS. Re-bake,
+//     re-run the four ground-truth oracles, paste, rebuild, THEN author.
+//
+
 #include "Core/Zenith_TerrainDimensions.h"
 
 #include "Collections/Zenith_Vector.h"
@@ -332,11 +350,29 @@ struct ZM_TerrainBakeBatchPlan
 //             toward the origin with it. Chunk bytes, world positions, the
 //             quantisation box and the required-output counts all move; a v5 set
 //             is wrong in every way a stale bake can be. 896 chunks -> 549.
-constexpr u_int uZM_TERRAIN_MANIFEST_VERSION = 6u;
+//   v6 -> v7: DAWNMERE SHRANK AGAIN AND ITS TOWN WAS COMPACTED. 9x10 -> 6x6
+//             (576x640 m -> 384x384), and unlike v6 this is not a translate:
+//             the plaza-to-Home, plaza-to-Lab and plaza-to-route-boundary legs
+//             are cut to ~45-55% of their v6 lengths, the landforms are
+//             re-authored again at the new scale, the base-noise frequency
+//             scales with the sheet and the erosion droplet count scales with
+//             its area. Thornacre and Route 1 are UNTOUCHED -- but the stamp is
+//             per-recipe-tree and the required-output count is what carries the
+//             invalidation, so Dawnmere's count moves 274 -> 112 and the version
+//             moves for all three (a shared stamp cannot be bumped for one).
+//   v7 -> v8: DAWNMERE SHRANK A THIRD TIME AND ITS TOWN BECAME A STREET.
+//             6x6 -> 4x4 (384x384 m -> 256x256, i.e. one SIXTEENTH of the area
+//             this map shipped with). The structural change is that the Home and
+//             the Lab now stand SIDE BY SIDE on the north edge of the square with
+//             the route lane between them, instead of on opposite sides of the
+//             plaza -- 135 m door to door becomes 56. Every landform, path, pad
+//             and landmark moves with it, and Dawnmere's required-output count
+//             goes 112 -> 52.
+constexpr u_int uZM_TERRAIN_MANIFEST_VERSION = 8u;
 constexpr u_int uZM_TERRAIN_RECIPE_COUNT = 3u;
 // chunks x 3 mesh files + Height/Splatmap_RGBA/GrassDensity + TerrainDims.zdata.
-// Dawnmere 9x10 = 90 chunks, Thornacre 13x15 = 195, Route 1 11x24 = 264.
-constexpr u_int uZM_DAWNMERE_REQUIRED_OUTPUT_COUNT = 274u;
+// Dawnmere 4x4 = 16 chunks, Thornacre 13x15 = 195, Route 1 11x24 = 264.
+constexpr u_int uZM_DAWNMERE_REQUIRED_OUTPUT_COUNT = 52u;
 constexpr u_int uZM_THORNACRE_REQUIRED_OUTPUT_COUNT = 589u;
 constexpr u_int uZM_ROUTE1_REQUIRED_OUTPUT_COUNT = 796u;
 constexpr u_int uZM_TERRAIN_MANIFEST_SIZE = 12u;

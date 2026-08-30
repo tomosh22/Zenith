@@ -34,6 +34,7 @@
 #include "Zenithmon/Source/Interaction/ZM_InteractionLogic.h"   // ZM_ForwardFromRotation
 #include "Zenithmon/Source/Interaction/ZM_TrainerSightFsm.h"    // ZM_TrainerSightFsmTuning -- the walk-up standoff
 #include "Zenithmon/Source/Interaction/ZM_TrainerSightLogic.h"
+#include "Zenithmon/Source/World/ZM_DawnmereDressing.h"      // the ONE table the blind drive legs live in
 #include "Zenithmon/Source/World/ZM_DawnmerePlacement.h"
 #include "Zenithmon/Source/World/ZM_PlayerHomePlacement.h"
 #include "Zenithmon/Source/World/ZM_ProfLabPlacement.h"         // the INTERIOR the lab exterior must wrap
@@ -120,6 +121,26 @@ namespace
 			&& std::strcmp(xAnchor.m_szEntityName, "UNKNOWN") == 0
 			&& xAnchor.m_fX == fZM_DAWNMERE_TOWN_CENTER_X
 			&& xAnchor.m_fZ == fZM_DAWNMERE_TOWN_CENTER_Z;
+	}
+
+	// Perpendicular distance from a point to a SEGMENT, clamped at both ends.
+	// A blind drive leg is a segment, not a line: DriveTowardXZ stops at its
+	// target, so a body BEYOND the endpoint is not on the corridor.
+	float SegmentDistance(float fPX, float fPZ,
+		float fAX, float fAZ, float fBX, float fBZ)
+	{
+		const float fDX = fBX - fAX;
+		const float fDZ = fBZ - fAZ;
+		const float fLenSq = fDX * fDX + fDZ * fDZ;
+		if (fLenSq <= 0.0f)
+		{
+			return std::sqrt((fPX - fAX) * (fPX - fAX) + (fPZ - fAZ) * (fPZ - fAZ));
+		}
+		float fT = ((fPX - fAX) * fDX + (fPZ - fAZ) * fDZ) / fLenSq;
+		fT = fT < 0.0f ? 0.0f : (fT > 1.0f ? 1.0f : fT);
+		const float fCX = fAX + fDX * fT;
+		const float fCZ = fAZ + fDZ * fT;
+		return std::sqrt((fPX - fCX) * (fPX - fCX) + (fPZ - fCZ) * (fPZ - fCZ));
 	}
 
 	float W5PlanarSeparation(
@@ -450,16 +471,16 @@ ZENITH_TEST(ZM_Interaction, DawnmereNpcAnchors_KeepTheirAuthoredXZDerivations)
 	// The derivations, spelled as ARITHMETIC on the town-centre anchor rather than
 	// as re-typed literals: a moved town centre must move the plaza roster with it.
 	ZENITH_ASSERT_EQ_FLOAT(xVillager.m_fX, fZM_DAWNMERE_TOWN_CENTER_X, 0.0f,
-		"the villager left the x = 512 spawn-to-villager corridor");
+		"the villager left the spawn-to-villager corridor");
 	ZENITH_ASSERT_EQ_FLOAT(xVillager.m_fZ, fZM_DAWNMERE_TOWN_CENTER_Z + 10.0f, 0.0f,
 		"the villager is no longer 10 m straight +Z of the spawn");
-	ZENITH_ASSERT_EQ_FLOAT(xClerk.m_fX, fZM_DAWNMERE_TOWN_CENTER_X + 14.0f, 0.0f);
+	ZENITH_ASSERT_EQ_FLOAT(xClerk.m_fX, fZM_DAWNMERE_TOWN_CENTER_X + 24.0f, 0.0f);
 	ZENITH_ASSERT_EQ_FLOAT(xClerk.m_fZ, fZM_DAWNMERE_TOWN_CENTER_Z + 18.0f, 0.0f);
-	ZENITH_ASSERT_EQ_FLOAT(xCaretaker.m_fX, fZM_DAWNMERE_TOWN_CENTER_X - 14.0f, 0.0f);
+	ZENITH_ASSERT_EQ_FLOAT(xCaretaker.m_fX, fZM_DAWNMERE_TOWN_CENTER_X - 24.0f, 0.0f);
 	ZENITH_ASSERT_EQ_FLOAT(xCaretaker.m_fZ, fZM_DAWNMERE_TOWN_CENTER_Z + 18.0f, 0.0f);
-	ZENITH_ASSERT_EQ_FLOAT(xWarden.m_fX, fZM_DAWNMERE_TOWN_CENTER_X - 34.0f, 0.0f);
-	ZENITH_ASSERT_EQ_FLOAT(xWarden.m_fZ, fZM_DAWNMERE_TOWN_CENTER_Z + 18.0f, 0.0f);
-	ZENITH_ASSERT_EQ_FLOAT(xWanderer.m_fX, fZM_DAWNMERE_TOWN_CENTER_X + 28.0f, 0.0f);
+	ZENITH_ASSERT_EQ_FLOAT(xWarden.m_fX, fZM_DAWNMERE_TOWN_CENTER_X - 20.0f, 0.0f);
+	ZENITH_ASSERT_EQ_FLOAT(xWarden.m_fZ, fZM_DAWNMERE_TOWN_CENTER_Z - 4.0f, 0.0f);
+	ZENITH_ASSERT_EQ_FLOAT(xWanderer.m_fX, fZM_DAWNMERE_TOWN_CENTER_X + 20.0f, 0.0f);
 	ZENITH_ASSERT_EQ_FLOAT(xWanderer.m_fZ, fZM_DAWNMERE_TOWN_CENTER_Z - 4.0f, 0.0f);
 	// The rival's XZ is derived in this file's header; the table must not restate it.
 	ZENITH_ASSERT_EQ_FLOAT(xVesper.m_fX, fZM_DAWNMERE_VESPER_X, 0.0f,
@@ -467,19 +488,65 @@ ZENITH_TEST(ZM_Interaction, DawnmereNpcAnchors_KeepTheirAuthoredXZDerivations)
 		"stands -- his yaw derivation reads the header, so they would silently part");
 	ZENITH_ASSERT_EQ_FLOAT(xVesper.m_fZ, fZM_DAWNMERE_VESPER_Z, 0.0f);
 
-	// ★★ THE THREE FLANK NPCs MUST STAY OFF z = 480. A solid STATIC AABB on that
-	// line wedges ZM_PlayerHomeRoundTrip_Test, which drives from (512, 480) to
-	// (384, 0, 480) with NO obstacle avoidance and dies at its frame cap naming a
-	// distance rather than naming the NPC that blocked it.
-	const ZM_DawnmereNpcAnchor* apxOffCorridor[] = { &xClerk, &xCaretaker, &xWarden };
-	for (u_int u = 0u; u < 3u; ++u)
+	// ★★ EVERY AUTHORED NPC MUST STAY OFF EVERY BLIND DRIVE CORRIDOR. A solid
+	// STATIC AABB on one of those lines wedges a suite that never mentions it:
+	// ZM_PlayerHomeRoundTrip_Test and the lab round trip both drive with
+	// DriveTowardXZ, which has NO obstacle avoidance, and die at their frame cap
+	// naming a DISTANCE rather than naming the NPC that blocked them.
+	//
+	// ★★ THIS USED TO BE A Z-GAP PROXY AND v8 KILLED IT (ZM-D-218). It read
+	// `|npcZ - townCentreZ| > 10` over three flank NPCs, on the reasoning that the
+	// Home corridor ran roughly along a line of constant Z. In v7 that was
+	// conservative; in the compacted v8 town the corridor is a STEEP DIAGONAL from
+	// the spawn to a doorway 45 m away, so a Z gap says nothing about it in either
+	// direction -- the proxy failed the warden at a 4 m Z gap while he stands 18.0 m
+	// from the leg measured properly, and it would equally have passed an NPC
+	// standing ON the diagonal 12 m north of the spawn.
+	//
+	// It measures the real thing now: perpendicular distance to the legs
+	// themselves, read from ZM_DawnmereDressing.h's table -- the ONE place those
+	// legs are described, and the same table the scenery keep-out is built from, so
+	// an NPC and a boulder are now held to one definition of "the corridor" instead
+	// of two.
+	const ZM_DawnmereNpcAnchor* apxOffCorridor[] =
+		{ &xVillager, &xClerk, &xCaretaker, &xWarden, &xWanderer, &xVesper };
+	constexpr u_int uOFF_CORRIDOR_COUNT =
+		(u_int)(sizeof(apxOffCorridor) / sizeof(apxOffCorridor[0]));
+	// A body is 0.8 m wide and the player capsule adds 0.4 m of radius, so 3 m of
+	// perpendicular clearance is already twice what a head-on stop needs. The
+	// authored roster holds 6.36 m at its tightest (the villager against the Home
+	// leg), which is where this floor comes from -- it is a FLOOR, not the margin.
+	constexpr float fMIN_CORRIDOR_CLEARANCE = 3.0f;
+	for (u_int u = 0u; u < uOFF_CORRIDOR_COUNT; ++u)
 	{
-		ZENITH_ASSERT_GT(
-			std::fabs(apxOffCorridor[u]->m_fZ - fZM_DAWNMERE_TOWN_CENTER_Z), 10.0f,
-			"'%s' has drifted onto the z = %.1f Home traversal corridor -- it will "
-			"wedge a suite that never mentions it",
-			apxOffCorridor[u]->m_szEntityName, fZM_DAWNMERE_TOWN_CENTER_Z);
+		for (u_int uLeg = 0u; uLeg < ZM_GetDawnmereDriveLegCount(); ++uLeg)
+		{
+			const ZM_DawnmereDriveLeg& xLeg = ZM_GetDawnmereDriveLeg(uLeg);
+			// The walk-up leg ENDS on the villager: he is its target, not an
+			// obstacle on it, and the picker's whole job is that the player
+			// arrives within reach of him.
+			const bool bIsWalkUpTarget =
+				(apxOffCorridor[u] == &xVillager)
+				&& std::fabs(xLeg.m_fBX - xVillager.m_fX) < 0.001f
+				&& std::fabs(xLeg.m_fBZ - xVillager.m_fZ) < 0.001f;
+			if (bIsWalkUpTarget)
+			{
+				continue;
+			}
+			const float fDistance = SegmentDistance(
+				apxOffCorridor[u]->m_fX, apxOffCorridor[u]->m_fZ,
+				xLeg.m_fAX, xLeg.m_fAZ, xLeg.m_fBX, xLeg.m_fBZ);
+			ZENITH_ASSERT_GT(fDistance, fMIN_CORRIDOR_CLEARANCE,
+				"'%s' stands %.2f m from the blind drive leg '%s' -- it will wedge a "
+				"suite that never mentions it",
+				apxOffCorridor[u]->m_szEntityName, fDistance, xLeg.m_szName);
+		}
 	}
+	// The retired proxy's message, kept as the anti-vacuity check it always
+	// implied: the loop above really walked a roster.
+	ZENITH_ASSERT_GT(uOFF_CORRIDOR_COUNT, 3u,
+		"fewer NPCs are checked against the drive corridors than the Z-gap proxy "
+		"this clause replaced covered");
 
 	// THE CLOSEST PAIR. The picker resolves the NEAREST FACED candidate, so two NPCs
 	// within reach of each other make "which one answered?" a function of sub-metre
@@ -585,12 +652,37 @@ ZENITH_TEST(ZM_Interaction, Vesper_PlacementCannotSpawnCampOnTheWhiteoutTarget)
 		fZM_SIGHT_MAX_DISTANCE * 4.0f,
 		"the rival must clear the whiteout respawn by a real margin");
 
-	// (d) the z = 480 Home corridor ZM_PlayerHomeRoundTrip_Test drives BLIND.
-	ZENITH_ASSERT_GT(
-		std::fabs(fZM_DAWNMERE_VESPER_Z - fZM_DAWNMERE_TOWN_CENTER_Z),
-		fZM_SIGHT_MAX_DISTANCE * 4.0f,
-		"the rival is close enough to the z=480 traversal corridor to hijack a "
-		"suite that never mentions him");
+	// (d) EVERY BLIND DRIVE CORRIDOR, measured properly.
+	//
+	// ★★ THIS WAS A Z-GAP PROXY AND v8 KILLED IT (ZM-D-218). It read
+	// `|vesperZ - townCentreZ| > 4 * sightRange`, with the comment "the z = 480
+	// Home corridor ZM_PlayerHomeRoundTrip_Test drives BLIND" -- true when that
+	// corridor ran along a line of constant Z, which it has not done since ZM-D-173
+	// and certainly does not in the compacted v8 town, where it is a steep diagonal
+	// from the spawn to a doorway 45 m away. A Z gap says nothing about a diagonal
+	// in either direction: the proxy would pass a rival standing ON the corridor
+	// 40 m north of the spawn, and it fails one standing 13 m clear of it.
+	//
+	// What it always meant is this: an ARMED trainer whose 8 m sight cone overlaps
+	// a line some suite drives blind will take that suite into a forced battle it
+	// never mentions. So it measures the legs, read from the ONE table that
+	// describes them -- the same table the scenery keep-out and the roster
+	// clearances now use.
+	for (u_int uLeg = 0u; uLeg < ZM_GetDawnmereDriveLegCount(); ++uLeg)
+	{
+		const ZM_DawnmereDriveLeg& xLeg = ZM_GetDawnmereDriveLeg(uLeg);
+		const float fDistance = SegmentDistance(
+			fZM_DAWNMERE_VESPER_X, fZM_DAWNMERE_VESPER_Z,
+			xLeg.m_fAX, xLeg.m_fAZ, xLeg.m_fBX, xLeg.m_fBZ);
+		// The rival can WALK once he spots, so the margin is his sight range plus
+		// the standoff ring he closes to -- not the sight range alone.
+		ZENITH_ASSERT_GT(fDistance, fZM_SIGHT_MAX_DISTANCE * 1.5f,
+			"the armed rival stands %.2f m from the blind drive leg '%s', inside "
+			"1.5x his %.1f m sight range -- a suite that never mentions him will "
+			"take a forced battle", fDistance, xLeg.m_szName, fZM_SIGHT_MAX_DISTANCE);
+	}
+	ZENITH_ASSERT_GT(ZM_GetDawnmereDriveLegCount(), 0u,
+		"no blind drive legs are declared, so clause (d) is vacuous");
 }
 
 // The facing is DERIVED from the two authored anchors, and the argument order of
@@ -856,13 +948,13 @@ ZENITH_TEST(ZM_Interaction, Vesper_ApproachStandoffClearsEveryAuthoredNeighbour)
 	// than leaving a comment that quietly describes a different town.
 	ZENITH_ASSERT_EQ_FLOAT(
 		W5PlanarSeparation(xVesper, ZM_GetDawnmereNpcAnchor(ZM_DAWNMERE_NPC_CARETAKER)),
-		27.20f, 0.01f, "the recorded caretaker clearance (27.2 m) has drifted");
+		24.08f, 0.01f, "the recorded caretaker clearance (24.1 m) has drifted");
 	ZENITH_ASSERT_EQ_FLOAT(
 		W5PlanarSeparation(xVesper, ZM_GetDawnmereNpcAnchor(ZM_DAWNMERE_NPC_WARDEN)),
-		28.64f, 0.01f, "the recorded warden clearance (28.6 m) has drifted");
+		20.40f, 0.01f, "the recorded warden clearance (20.4 m) has drifted");
 	ZENITH_ASSERT_EQ_FLOAT(
 		W5PlanarSeparation(xVesper, ZM_GetDawnmereNpcAnchor(ZM_DAWNMERE_NPC_VILLAGER)),
-		40.50f, 0.01f, "the recorded villager clearance (40.5 m) has drifted");
+		41.23f, 0.01f, "the recorded villager clearance (41.2 m) has drifted");
 
 	// ---- (c) THE WHITEOUT SOFTLOCK, RE-ARGUED UNDER MOTION -------------------
 	// Vesper_PlacementCannotSpawnCampOnTheWhiteoutTarget proves he cannot see the
@@ -879,15 +971,40 @@ ZENITH_TEST(ZM_Interaction, Vesper_ApproachStandoffClearsEveryAuthoredNeighbour)
 		fSpawnSeparation, fWalkRadius, fSpawnSeparation - fWalkRadius,
 		fZM_SIGHT_MAX_DISTANCE);
 
-	// ---- (d) THE z = 480 HOME CORRIDOR, same treatment ----------------------
-	// ZM_PlayerHomeRoundTrip_Test drives that line BLIND with no obstacle avoidance,
-	// and the rival is now a DYNAMIC body that can be walked into rather than a
-	// static wall that would at least stop the capsule predictably.
-	ZENITH_ASSERT_GT(
-		std::fabs(fZM_DAWNMERE_VESPER_Z - fZM_DAWNMERE_TOWN_CENTER_Z) - fWalkRadius,
-		fZM_SIGHT_MAX_DISTANCE,
-		"the rival can walk close enough to the z = %.1f traversal corridor to hijack "
-		"a suite that never mentions him", fZM_DAWNMERE_TOWN_CENTER_Z);
+	// ---- (d) EVERY BLIND DRIVE CORRIDOR, from his REACHABLE DISC --------------
+	//
+	// ★★ THE THIRD Z-GAP PROXY v8 KILLED, AND THE LAST (ZM-D-218). It read
+	// `|vesperZ - townCentreZ| - walkRadius > sightRange`, described as "the z = 480
+	// Home corridor", from a town in which that corridor really was a line of
+	// constant Z. It has not been one since ZM-D-173, and in the v8 town the rival
+	// stands DELIBERATELY on the spawn's own Z -- due west of it, because that is the
+	// one bearing the walk-up's camera-relative driver tracks without drifting
+	// sideways (see the derivation in ZM_DawnmerePlacement.h). The proxy therefore
+	// reported -6.0 m of clearance for a rival whose true clearance from the nearest
+	// blind leg is 31.0 m.
+	//
+	// A Z gap cannot describe a diagonal, and every corridor in this town is one.
+	// So this measures what the clause always MEANT: from the worst point of the
+	// rival's REACHABLE disc -- he is not a static wall any more, he walks -- every
+	// leg some suite drives blind must still be further away than his sight cone
+	// reaches. The legs come from ZM_DawnmereDressing.h's table, the same one the
+	// scenery keep-out and the roster clearances read, so a body and a boulder are
+	// held to one definition of "the corridor".
+	ZENITH_ASSERT_GT(ZM_GetDawnmereDriveLegCount(), 0u,
+		"no blind drive legs are declared, so this clause is vacuous");
+	for (u_int uLeg = 0u; uLeg < ZM_GetDawnmereDriveLegCount(); ++uLeg)
+	{
+		const ZM_DawnmereDriveLeg& xLeg = ZM_GetDawnmereDriveLeg(uLeg);
+		const float fDistance = SegmentDistance(
+			fZM_DAWNMERE_VESPER_X, fZM_DAWNMERE_VESPER_Z,
+			xLeg.m_fAX, xLeg.m_fAZ, xLeg.m_fBX, xLeg.m_fBZ);
+		ZENITH_ASSERT_GT(fDistance - fWalkRadius, fZM_SIGHT_MAX_DISTANCE,
+			"the rival stands %.2f m from the blind drive leg '%s' and the walk-up can "
+			"carry him %.2f m of it, leaving %.2f m against a %.1f m sight range -- he "
+			"can hijack a suite that never mentions him",
+			fDistance, xLeg.m_szName, fWalkRadius, fDistance - fWalkRadius,
+			fZM_SIGHT_MAX_DISTANCE);
+	}
 }
 
 // The Dawnmere facade is a visual exterior for the separately loaded PlayerHome
@@ -1477,13 +1594,85 @@ ZENITH_TEST(ZM_Interaction, LabDirtPath_ClearsTheShellByTheShippedCameraClamp)
 		"point (%.3f, %.3f)) -- the building is standing on the path, so that "
 		"stretch is not walkable at all", fInsideX, fInsideZ);
 
-	// The crossing this unit exists for. If it has gone, the entrance plane's
-	// derivation in ZM_DawnmerePlacement.h is stale rather than merely satisfied.
-	ZENITH_ASSERT_GT(uPointsInBand, 0u,
-		"the authored Lab walkway no longer passes north of the lab shell's X band, "
-		"so this clearance claim is vacuous -- the entrance plane was derived from "
-		"that crossing, and it can now be re-derived");
+	// ★★ THE ANTI-VACUITY CLAUSE CHANGED SHAPE AT v8 (ZM-D-218), AND THE OLD ONE
+	// WOULD NOW BE ASSERTING THE DEFECT. It read:
+	//
+	//     ZENITH_ASSERT_GT(uPointsInBand, 0u, "the authored Lab walkway no longer
+	//     passes north of the lab shell's X band, so this clearance claim is
+	//     vacuous -- the entrance plane was derived from that crossing, and it can
+	//     now be re-derived");
+	//
+	// That was right for every layout up to v7, where the Lab lane ran PAST the
+	// building to a pad centre behind it: a walked point north of the shell, with
+	// the camera trailing -Z into its back face, was the hazard, and requiring the
+	// crossing to exist is what stopped the clause going quietly empty.
+	//
+	// v8 ends the lane at the FORECOURT instead -- 8 m in FRONT of the door, as the
+	// Home's always has -- because that coupling is exactly what held the lab 135 m
+	// from the player's house (the crossing can only land north of the building if
+	// the lane travels a long way in X while climbing in Z, which forces the whole
+	// site out along a diagonal). With no walkway behind the building there is no
+	// crossing, and demanding one would demand the v7 topology back.
+	//
+	// So the loop above is allowed to find nothing, and what replaces the old
+	// clause is the property that makes finding nothing LEGITIMATE rather than
+	// accidental: the lane must genuinely lead to this building, and it must
+	// arrive from the -Z side. If someone re-routes it behind the shell the
+	// approach clause below fails, and the gap arithmetic further down -- which is
+	// unchanged -- polices the crossing it would create.
+	float fApproachX = 0.0f;
+	float fApproachZ = 0.0f;
+	float fApproach = 1.0e9f;
+	for (u_int uSegment = 0u; uSegment + 1u < pxPath->m_uPointCount; ++uSegment)
+	{
+		const ZM_TerrainPoint2& xA = pxPath->m_pxPoints[uSegment];
+		const ZM_TerrainPoint2& xB = pxPath->m_pxPoints[uSegment + 1u];
+		const float fLength =
+			LabPlanarDistance(xA.m_fX, xA.m_fZ, xB.m_fX, xB.m_fZ);
+		u_int uSteps = (u_int)std::ceil(fLength / fLAB_ROUTE_WALK_STEP);
+		if (uSteps == 0u)
+		{
+			uSteps = 1u;
+		}
+		for (u_int uStep = 0u; uStep <= uSteps; ++uStep)
+		{
+			const float fT = (float)uStep / (float)uSteps;
+			const float fX = xA.m_fX + (xB.m_fX - xA.m_fX) * fT;
+			const float fZ = xA.m_fZ + (xB.m_fZ - xA.m_fZ) * fT;
+			const float fD = LabPlanarDistance(fX, fZ, fZM_DAWNMERE_LAB_X,
+				fZM_DAWNMERE_LAB_ENTRANCE_Z);
+			if (fD < fApproach)
+			{
+				fApproach = fD;
+				fApproachX = fX;
+				fApproachZ = fZ;
+			}
+		}
+	}
 
+	// (1) The lane REACHES the lab. Without this the whole unit is satisfied by a
+	// walkway that never comes near the building -- which is the vacuity the old
+	// crossing clause was guarding against, restated for the new topology.
+	ZENITH_ASSERT_LT(fApproach, 15.0f,
+		"the authored Lab walkway's closest approach to the entrance is %.2f m at "
+		"(%.2f, %.2f) -- this lane does not lead to the lab, so every clearance "
+		"clause in this unit is about a path that goes somewhere else",
+		fApproach, fApproachX, fApproachZ);
+
+	// (2) ...and it arrives from the FRONT. ZM_FollowCamera trails toward -Z at the
+	// authored yaw, so a lane that ends on the +Z side of the entrance plane puts
+	// the whole 21 x 17 m shell between the player and the camera at the doorway --
+	// which is the defect ZM-D-173 moved the Home 40 m to fix, and the reason the
+	// gap arithmetic below exists at all.
+	ZENITH_ASSERT_LT(fApproachZ, fShellMinZ,
+		"the authored Lab walkway's closest approach to the entrance is at "
+		"(%.2f, %.2f), which is NORTH of the shell's -Z face at %.2f -- the lane "
+		"arrives behind the building and the camera would clip through it at the "
+		"door", fApproachX, fApproachZ, fShellMinZ);
+
+	// The gap arithmetic below is UNCHANGED and still runs whenever the walkway
+	// does put a point north of the shell in its X band. It is simply allowed to
+	// have nothing to check on a front-approach layout.
 	if (uPointsInBand == 0u)
 	{
 		return;

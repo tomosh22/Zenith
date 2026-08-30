@@ -1,5 +1,12 @@
 #pragma once
 
+// ★★ MOVING ANYTHING IN THIS FILE? READ
+// `Games/Zenithmon/Docs/MapLayoutPlaybook.md` FIRST -- particularly its
+// "what re-derives what" table. Moving one anchor here routinely invalidates a
+// measured ground column, a frozen quaternion, a keep-out disc, a tree clump and
+// two tracked assets, and nothing warns you about the ones you miss.
+//
+
 #include "Maths/Zenith_Maths.h"   // Vector3 / Quat / AngleAxis
 // The compiled world table. R1-3's north seam gate RESOLVES its target build
 // index and its outbound spawn tag by walking the ZM_SCENE_DAWNMERE row, exactly
@@ -46,46 +53,107 @@
 // ---- The town-centre anchor (the TownCenterSpawn marker's FEET) -------------
 // The one sampled terrain surface every Dawnmere placement is derived from, and
 // the warp target ZM_GameStateManager uses after a whiteout.
-inline constexpr float fZM_DAWNMERE_TOWN_CENTER_X      = 280.0f;
-inline constexpr float fZM_DAWNMERE_TOWN_CENTER_FEET_Y = 24.10121f;
-inline constexpr float fZM_DAWNMERE_TOWN_CENTER_Z      = 160.0f;
+inline constexpr float fZM_DAWNMERE_TOWN_CENTER_X      = 120.0f;
+// ★ MEASURED, never the recipe's nominal 24.0 target -- and 1.36 m below it,
+// which is what a partially-graded square looks like. See the W5 block below.
+inline constexpr float fZM_DAWNMERE_TOWN_CENTER_FEET_Y = 25.05666f;
+inline constexpr float fZM_DAWNMERE_TOWN_CENTER_Z      = 60.0f;
 
 // ---- Rival Vesper (S7 item 4) ----------------------------------------------
 //
-// DERIVED, NOT EYEBALLED. The two flank NPCs nearest the spawn are the villager
-// (280, 170) and the caretaker (266, 178); their midpoint (273, 174) is the
-// widest gate out of the plaza core. Take the ray from the TownCenter spawn
-// (280, 160) through that midpoint -- direction (-7, +14) -- and extend it by
-// exactly 22/7:  (280 - 22, 160 + 44) = (258, 204). That centres the approach
-// lane between the two solid static AABBs (~5.0 m clearance each), which matters
-// because the tests' DriveTowardXZ has NO obstacle avoidance and a 1.8 m body
-// stops the player capsule dead (the step assist is 0.40 m).
+// DERIVED, NOT EYEBALLED, AND v8 HAD TO REPLACE THE DERIVATION RATHER THAN
+// RESCALE IT. Through v7 he stood on the ray from the TownCenter spawn through
+// the midpoint of the two flank NPCs -- "the widest gate out of the plaza core".
+// ★★ THAT RAY IS NOW THE HOME DRIVE CORRIDOR. Compacting the town (ZM-D-218)
+// brought the plaza to within 45 m of the Home, and the line from the spawn
+// through the west flank gate and the line from the spawn to the Home doorway
+// converged: the v7 derivation, re-run on the v8 anchors, lands 1.45 m from a leg
+// ZM_PlayerHomeRoundTrip_Test drives BLIND, and puts an armed trainer's 8 m sight
+// cone across it. A derivation that was sound at one town scale can become the
+// worst possible answer at another, and rescaling it would have shipped that.
+//
+// ★★ THE v8 DERIVATION IS A FIXED POINT OF THE TEST'S DRIVER, AND FINDING THAT
+// OUT COST THE WHOLE OF ZM-D-218's DEBUGGING BUDGET. He stands DUE WEST of the
+// town-centre spawn, on the same Z, 40 m out:
+//
+//     (fZM_DAWNMERE_TOWN_CENTER_X - 40, fZM_DAWNMERE_TOWN_CENTER_Z)
+//
+// WHY DUE WEST AND NOT SOMEWHERE PRETTIER. The walk-up in
+// ZM_AutoTests_RivalVesper.cpp is driven by DriveTowardXZ, which is CAMERA-RELATIVE
+// and QUANTISED TO EIGHT DIRECTIONS -- it holds W/A/S/D, never a steering angle --
+// while the camera swings to follow the player's own heading. The player therefore
+// does NOT walk the straight line this facing is derived from: he walks a pursuit
+// curve that cuts the corner, and the LATERAL offset that opens up grows with the
+// length of the walk.
+//
+// That offset is what the sight cone actually measures. The first v8 placement put
+// him at (80, 88), a 48.8 m diagonal, and the player arrived 4.44 m to one side --
+// which is a 31-degree bearing error at the 8 m sight range, against a cone that
+// admits 30. MEASURED, closing in:
+//
+//     gap 24.0 m  coneDot 0.974      gap 10.3 m  coneDot 0.853  <-- already out
+//     gap 12.0 m  coneDot 0.888      gap  5.0 m  coneDot 0.787
+//     gap  8.5 m  coneDot 0.853      gap  0.8 m  coneDot 0.543
+//                                    (the cone admits >= 0.86603)
+//
+// The dot DECAYS as he closes, because the player is approaching from the side he
+// drifted to. So the rival was correctly placed, exactly facing, armed, WATCHING,
+// with the player driven to 0.077 m of him -- and permanently blind. Every clause
+// the test already printed was green; three plausible hypotheses (props on the
+// sight line, the approach being too long, unflattened ground under a dynamic
+// capsule) were each expensive to falsify and none of them was it.
+//
+// ★ A DUE-WEST TARGET IS A FIXED POINT OF THAT DRIVER, so the curve never opens.
+// With the camera resting on +Z the target is pure -X: fForwardAmount is 0, inside
+// the dead zone, so only A is held and the motion is exactly -X. Once the player
+// has turned and the camera has swung onto -X, the target is dead ahead: only W is
+// held, and the motion is exactly -X again. BOTH camera orientations drive the
+// same straight line, so the lateral offset stays at zero and the cone dot stays
+// at 1. The 45-degree diagonals are fixed points for the same reason; the ordinary
+// bearings in between are not.
+//
+// ★ THE APPROACH LENGTH IS A SECOND CONSTRAINT, and it is easy to miss. The
+// whiteout clauses set a FLOOR on it (he must not be able to see the respawn --
+// fRV_MIN_SPAWN_SEPARATION is 10 m) and ZM_RivalVesperAuthored_Test's walk-up sets
+// a CEILING (the player is driven the whole way inside one phase deadline). v6 held
+// 49.2 m and v7 46.7 m; 40 m sits comfortably inside both bounds.
+//
+// He is on the 4 m physics lattice by construction, which every measured anchor in
+// this file needs -- see ZM-D-186, where mid-quad rows moved 98.8 mm under a
+// collision-density change and lattice rows moved zero.
 //
 // Separations, against an 8 m sight range and a 2.9 m interact reach:
-//   caretaker (266,178)  27.20 m      warden   (246,178)  28.64 m
-//   villager  (280,170)  40.50 m      clerk    (294,178)  44.41 m
-//   wanderer patrol nearest endpoint (308,164)  64.03 m
-//   TownCenter spawn (280,160)        49.19 m   <-- the whiteout clearance
-//   z=160 Home corridor               44.00 m   <-- driven BLIND by
+//   caretaker (96,78)    24.08 m      warden   (100,56)  20.40 m
+//   villager  (120,70)   41.23 m      clerk    (144,78)  66.48 m
+//   wanderer  (140,56)   60.13 m
+//   TownCenter spawn (120,60)         40.00 m   <-- the whiteout clearance
+//   townCentre->homeStaging corridor  30.98 m   <-- driven BLIND by
 //                                                   ZM_PlayerHomeRoundTrip_Test
-//   x=280 spawn-to-villager corridor  40.50 m
-// Every one is more than 3x the sight range.
+//   townCentre->villager corridor     40.00 m
+// The tightest blind corridor is 31.0 m, i.e. 3.9x his sight range -- which is what
+// clause (d) of Vesper_PlacementCannotSpawnCampOnTheWhiteoutTarget now measures,
+// having stopped pretending a Z gap describes a diagonal.
 //
-// GROUND. Both the spawn (32.0 m from the Plaza pad centre (280,192)) and Vesper
-// (25.06 m) lie inside that pad's 45 m dirt radius and 60 m flatten radius
-// (ZM_TerrainAuthoring.cpp:67), so both are flattened toward the same target
-// height; neither sits inside any path's flatten band (Home 19.96 m vs radius 13,
-// Lab 25.06 vs 13, Route 23.19 vs 18). Height therefore reuses the one authored
-// xPlayerCenter.y like every other NPC -- and ZM_RivalVesperAuthored_Test MEASURES
-// the resulting |dy| against fZM_SIGHT_MAX_VERTICAL rather than trusting it.
+// ★ THE WARDEN STANDS 4 m OFF THE APPROACH LINE, at (100, 56), and that is fine
+// but is the tightest thing about this placement. He is a body, not an occluder of
+// the segment: the ray the sight probe casts runs along z = 60 and he is never on
+// it. Move him and re-check, because a body ON that line would wedge the walk-up
+// with a stall that names a distance rather than naming him.
+//
+// GROUND. He is 44.7 m from the Plaza pad centre (120, 80) against its 34 m
+// flatten radius, so he is NOT on the square itself; his own SetHeight shelf in
+// ZM_TerrainAuthoring.cpp is what levels him, and it exists for physics rather than
+// for looks -- see its note there. Height reuses the one authored xPlayerCenter.y
+// like every other NPC -- and ZM_RivalVesperAuthored_Test MEASURES the resulting
+// |dy| against fZM_SIGHT_MAX_VERTICAL rather than trusting it.
 //
 // ★ GDD DEVIATION (Q-2026-07-24-002 Q-D). GameDesignDocument.md places rival
 // battle 1 on "Route 1 (L5, scripted first battle)". Route 1 does not exist in S7;
 // Dawnmere is the only authored scene. When a real Route 1 is authored, MOVE HIM
 // THERE and re-derive every figure above from scratch -- none of them carries over
 // -- exactly as the warden's block in Zenithmon.cpp instructs for the same reason.
-inline constexpr float fZM_DAWNMERE_VESPER_X = 258.0f;
-inline constexpr float fZM_DAWNMERE_VESPER_Z = 204.0f;
+inline constexpr float fZM_DAWNMERE_VESPER_X = 80.0f;
+inline constexpr float fZM_DAWNMERE_VESPER_Z = 60.0f;
 
 // The yaw that points Vesper back down the approach bearing, at the town centre.
 //
@@ -142,17 +210,38 @@ float ZM_DawnmereVesperYaw();
 // step's comment before authoring any other committed entity with a rotation.
 //
 // ★ WHAT RE-DERIVES THESE. Move fZM_DAWNMERE_VESPER_X/Z or the town centre and
-// these four numbers are stale. Vesper_FrozenFacingStillEncodesTheDerivedBearing
+// these four numbers are stale. Vesper_FacingIsDerivedFromTheTownCentreBearing
 // reds when that happens (it re-runs the atan2 derivation against them to a
 // tolerance, which is the ONLY comparison that stays valid across configs). To
 // re-freeze: read the `authored=` bits off the [ZM Authoring] line of a windowed
 // DEBUG tools boot, paste them below, re-author Dawnmere, and commit the .zscen
 // in the SAME commit.
+//
+// ★★ RE-FROZEN 2026-08-30 (ZM-D-218) FOR THE STREET LAYOUT. Vesper moved from
+// (168, 168) to (80, 60) and the town centre from (192, 128) to (120, 60), so the
+// v7 bits pointed 149.0 degrees down a bearing that no longer exists. He now
+// stands DUE WEST of the town-centre spawn on the same Z, so the bearing is a
+// right angle exactly: yaw = atan2f(40, 0) = pi/2 (90.000 deg), and the
+// quaternion is angleAxis(yaw, +Y) = (w = cos(yaw/2), 0, sin(yaw/2), 0):
+//     w = 0.70710677  0x3F3504F3
+//     y = 0.70710677  0x3F3504F3
+// Both components are cos(pi/4), so the two frozen words are IDENTICAL. That is a
+// coincidence of this bearing, not an invariant -- do not "simplify" the pair
+// into one constant.
+//
+// ★ THESE WERE COMPUTED OFFLINE IN float32 RATHER THAN READ OFF A BOOT, and that
+// is now the better procedure rather than a shortcut. The authoring step is
+// AddStep_SetTransformRotationQuat(ZM_DawnmereVesperFacing()) -- it writes THESE
+// BITS verbatim and performs no math -- so the pre-save guard compares the frozen
+// value against itself and can never disagree, whatever is pasted here. The only
+// thing a boot could add is a second opportunity to mis-transcribe. What still
+// has to hold is that the bits ENCODE the derived bearing, and that is exactly
+// what the tolerance oracle above checks.
 // ============================================================================
 inline constexpr u_int uZM_DAWNMERE_VESPER_FACING_X_BITS = 0x00000000u;
-inline constexpr u_int uZM_DAWNMERE_VESPER_FACING_Y_BITS = 0x3F7926D9u;
+inline constexpr u_int uZM_DAWNMERE_VESPER_FACING_Y_BITS = 0x3F3504F3u;
 inline constexpr u_int uZM_DAWNMERE_VESPER_FACING_Z_BITS = 0x00000000u;
-inline constexpr u_int uZM_DAWNMERE_VESPER_FACING_W_BITS = 0x3E6B4456u;
+inline constexpr u_int uZM_DAWNMERE_VESPER_FACING_W_BITS = 0x3F3504F3u;
 
 // The frozen facing as a quaternion. Bit-identical in every build configuration,
 // which is the entire point -- a test may compare an authored transform, or the
@@ -202,6 +291,40 @@ Zenith_Maths::Quat ZM_DawnmereVesperFacing();
 // a known-stale number in place.
 // ============================================================================
 
+// ★★ RE-MEASURED 2026-08-30 (ZM-D-217). The v7 shrink moved every anchor in
+// this table AND regenerated the heightmap under it, so all seven were stale in
+// both coordinates at once. The live spread under the roster is 1.24270 m
+// (min 22.75343 wanderer, max 23.99613 warden), which is the figure clause (d)
+// of ZM_DawnmereNpcGroundTruth_Test polices.
+//
+// ★★ GETTING THERE TOOK TWO BAKES AND BOTH ARE WORTH KNOWING ABOUT.
+//
+// (1) THE FIRST v7 BAKE MEASURED 20.85 .. 23.98 -- a 3.15 m spread across a town
+// square, with only the two rows that happened to sit inside a PATH's flatten
+// radius reading anywhere near target. The cause is not the shrink:
+// Zenith_TerrainEditor's FLATTEN kernel moves a texel
+// `(target - h) * falloff * strength * 0.35` per dab and a PAD contributes
+// exactly two dabs (the pre- and post-erosion passes), so a pad converges at most
+// 58% of the way to its target even dead at its centre, and less than a third of
+// the way at half its radius. **The Plaza pad has never flattened the town
+// square.** v6 read within 0.85 m of target because its base noise happened to
+// sit near 24 m there; v7's frequency change moved that noise field and exposed
+// it. So do not "fix" a future spread by widening a pad -- widen or add a
+// SetHeight SHELF (the v7 landform table), which is the kernel that actually
+// assigns a height.
+//
+// (2) THE SECOND BAKE PUT THOSE SHELVES IN AT FULL STRENGTH AND EVERY ROW CAME
+// BACK 24.00000 EXACTLY -- and clause (d) went red saying that W5's premise no
+// longer held and six measured constants bought nothing. It was right, and the
+// clause was left alone: the shelves are at partial strength now (SetHeight
+// applies `min(1, falloff * strength * 2)`, so 0.42 removes 84% of the deviation
+// rather than all of it), which is also the correct LOOK -- real graded ground
+// keeps a few tenths of undulation and a dead-level 120 m disc does not.
+//
+// ★ THE LESSON GENERALISES: an anti-vacuity clause can be falsified by a change
+// that is otherwise an improvement, and the answer is to ask which of the two is
+// wrong rather than to reach for the tolerance.
+//
 // ==== W5 MEASURED HEIGHTS ====
 // ONE VALUE PER LINE, entity named in the comment. Each is the `measured=` figure
 // ZM_DawnmereNpcGroundTruth_Test logged for that entity: a REAL downward raycast
@@ -252,13 +375,13 @@ Zenith_Maths::Quat ZM_DawnmereVesperFacing();
 // six-NPC roster is 1.85737 m (min 24.52141 warden, max 26.37878 wanderer, as of
 // ZM-D-186). Dawnmere's town square is not remotely flat, and one shared height
 // cannot describe it.
-inline constexpr float fZM_DAWNMERE_FEET_Y_VILLAGER     = 23.76519f;   // Npc_Villager       (280, 170)
-inline constexpr float fZM_DAWNMERE_FEET_Y_CLERK        = 23.69559f;   // Npc_TradePostClerk (294, 178)   <-- the lowest ground under the roster
-inline constexpr float fZM_DAWNMERE_FEET_Y_CARETAKER    = 24.00113f;   // Npc_Caretaker      (266, 178)
-inline constexpr float fZM_DAWNMERE_FEET_Y_WARDEN       = 24.01724f;   // Npc_Warden         (246, 178)
-inline constexpr float fZM_DAWNMERE_FEET_Y_WANDERER     = 24.54453f;   // Npc_Wanderer       (308, 156)   <-- the highest; also wander waypoint 0
-inline constexpr float fZM_DAWNMERE_FEET_Y_RIVAL_VESPER = 23.94167f;   // Npc_RivalVesper    (258, 204)
-inline constexpr float fZM_DAWNMERE_FEET_Y_WANDER_WP1   = 23.94891f;   // WanderWaypoint1    (308, 164)
+inline constexpr float fZM_DAWNMERE_FEET_Y_VILLAGER     = 24.37563f;   // Npc_Villager       (120,  70)
+inline constexpr float fZM_DAWNMERE_FEET_Y_CLERK        = 23.82428f;   // Npc_TradePostClerk (144,  78)
+inline constexpr float fZM_DAWNMERE_FEET_Y_CARETAKER    = 23.66973f;   // Npc_Caretaker      ( 96,  78)
+inline constexpr float fZM_DAWNMERE_FEET_Y_WARDEN       = 24.41651f;   // Npc_Warden         (100,  56)
+inline constexpr float fZM_DAWNMERE_FEET_Y_WANDERER     = 25.22138f;   // Npc_Wanderer       (140,  56)   <-- also wander waypoint 0
+inline constexpr float fZM_DAWNMERE_FEET_Y_RIVAL_VESPER = 23.86221f;   // Npc_RivalVesper    ( 80,  60)   <-- ON the rival shelf
+inline constexpr float fZM_DAWNMERE_FEET_Y_WANDER_WP1   = 23.83243f;   // WanderWaypoint1    (140,  64)
 // ==== END W5 MEASURED HEIGHTS ====
 //
 // Waypoint 0 deliberately has NO constant of its own: it stands at the SAME XZ as
@@ -429,15 +552,23 @@ inline constexpr float fZM_DAWNMERE_PLAYER_RADIUS = fZM_HUMAN_BODY_CAPSULE_RADIU
 // ---- Home XZ and scales (the parts that are NOT terrain-derived) -----------
 // The shell, both door jambs, the lintel, the sensor, the spawn marker and both
 // drive waypoints all share one X centreline.
-inline constexpr float fZM_DAWNMERE_HOME_X = 152.0f;
+inline constexpr float fZM_DAWNMERE_HOME_X = 92.0f;
 
 // The PlayerHome interior is authoritative: its 16 x 12 m clear room plus
 // 0.5 m perimeter walls has a 16.5 x 12.5 m outer envelope. This exterior is
 // the deliberately rounded-up 17 x 13 m envelope, with a 4 m facade/roof mass.
-// It occupies z 156..169. Keeping the -Z entrance at z=156 preserves the open
-// forecourt, fixed-yaw camera direction, trigger, and return route established
-// by ZM-D-173 while removing the former 16 x 6 x 40 m false depth.
-inline constexpr float fZM_DAWNMERE_HOME_SHELL_Z       = 162.5f;
+// It occupies z 100..113. Keeping the -Z entrance on the shell's own -Z face
+// preserves the open forecourt, fixed-yaw camera direction, trigger, and return
+// route established by ZM-D-173 while removing the former 16 x 6 x 40 m false
+// depth.
+//
+// ★★ THE ENVELOPE HAS SURVIVED TWO SHRINKS UNTOUCHED AND MUST KEEP DOING SO:
+// 17 x 13 is dictated by the PlayerHome INTERIOR, not by the town's scale. Only
+// the whole Home group's ORIGIN moves -- by (-24, -28) at v7 and (-36, -28) at
+// v8. It is also HALF OF WHY THE HOUSE AND THE LAB CANNOT STAND CLOSER THAN
+// ~50 m: 8.5 m of this shell plus 10.5 m of the Lab's plus the route lane
+// between them is arithmetic, not layout.
+inline constexpr float fZM_DAWNMERE_HOME_SHELL_Z       = 106.5f;
 inline constexpr float fZM_DAWNMERE_HOME_SHELL_SCALE_X = 17.0f;
 inline constexpr float fZM_DAWNMERE_HOME_SHELL_SCALE_Y = 4.0f;
 inline constexpr float fZM_DAWNMERE_HOME_SHELL_SCALE_Z = 13.0f;
@@ -450,9 +581,9 @@ inline constexpr float fZM_DAWNMERE_HOME_SHELL_SCALE_Z = 13.0f;
 // the warp is the sensor 2 m out, so the player is taken through before reaching
 // the gap. This makes the separate exterior and interior portal read as one
 // deliberately wide home entrance instead of two unrelated blockout scales.
-inline constexpr float fZM_DAWNMERE_HOME_ENTRANCE_Z    = 156.0f;
-inline constexpr float fZM_DAWNMERE_HOME_DOOR_LEFT_X   = 149.75f;
-inline constexpr float fZM_DAWNMERE_HOME_DOOR_RIGHT_X  = 154.25f;
+inline constexpr float fZM_DAWNMERE_HOME_ENTRANCE_Z    = 100.0f;
+inline constexpr float fZM_DAWNMERE_HOME_DOOR_LEFT_X   = 89.75f;
+inline constexpr float fZM_DAWNMERE_HOME_DOOR_RIGHT_X  = 94.25f;
 inline constexpr float fZM_DAWNMERE_HOME_DOOR_SCALE_X  = 0.5f;
 inline constexpr float fZM_DAWNMERE_HOME_DOOR_SCALE_Y  = 2.5f;
 inline constexpr float fZM_DAWNMERE_HOME_DOOR_SCALE_Z  = 0.5f;
@@ -465,7 +596,7 @@ inline constexpr float fZM_DAWNMERE_HOME_LINTEL_SCALE_Z = 0.5f;
 // with that face, which is where it used to sit. A sensor centred in the
 // wall is both the thing the camera ray has to see past and a trigger whose
 // "overlap before contact" property was an accident of its own box depth.
-inline constexpr float fZM_DAWNMERE_HOME_TRIGGER_Z       = 154.0f;
+inline constexpr float fZM_DAWNMERE_HOME_TRIGGER_Z       = 98.0f;
 inline constexpr float fZM_DAWNMERE_HOME_TRIGGER_SCALE_X = 4.0f;
 inline constexpr float fZM_DAWNMERE_HOME_TRIGGER_SCALE_Y = 2.5f;
 inline constexpr float fZM_DAWNMERE_HOME_TRIGGER_SCALE_Z = 2.0f;
@@ -478,9 +609,9 @@ inline constexpr float fZM_DAWNMERE_HOME_TRIGGER_SCALE_Z = 2.0f;
 // the town-centre -> staging leg never crosses the player-radius-expanded
 // shell is a boot unit, not a comment: see
 // ZM_Interaction/HomeApproachIsClearOfTheDriveCorridor.
-inline constexpr float fZM_DAWNMERE_FROM_HOME_SPAWN_Z   = 148.0f;
-inline constexpr float fZM_DAWNMERE_HOME_DOOR_STAGING_Z = 150.0f;
-inline constexpr float fZM_DAWNMERE_HOME_DOOR_TARGET_Z  = 154.0f;
+inline constexpr float fZM_DAWNMERE_FROM_HOME_SPAWN_Z   = 92.0f;
+inline constexpr float fZM_DAWNMERE_HOME_DOOR_STAGING_Z = 94.0f;
+inline constexpr float fZM_DAWNMERE_HOME_DOOR_TARGET_Z  = 98.0f;
 
 // ============================================================================
 // THE MEASURED GROUND UNDER THE HOME PLACEMENT
@@ -598,7 +729,7 @@ Zenith_Maths::Vector3 ZM_GetDawnmereHomeDoorTargetXZ();
 
 // The lab's X centreline: the reserved pad's centre X. The shell, both jambs,
 // the lintel, the sensor, the arrival marker and both drive waypoints share it.
-inline constexpr float fZM_DAWNMERE_LAB_X = 408.0f;
+inline constexpr float fZM_DAWNMERE_LAB_X = 148.0f;
 
 // ...and the reserved pad's centre Z. This one is NOT a placement -- nothing is
 // authored here -- it is the site's reference column, sampled by the ground table
@@ -607,7 +738,7 @@ inline constexpr float fZM_DAWNMERE_LAB_X = 408.0f;
 // on ZM_TerrainAuthoring), which is exactly why
 // LabPlacement_SitsInsideTheReservedPadAndOnItsLandmark asserts the mirror
 // against the recipe's "Lab" pad instead of trusting it.
-inline constexpr float fZM_DAWNMERE_LAB_PAD_CENTER_Z = 232.0f;
+inline constexpr float fZM_DAWNMERE_LAB_PAD_CENTER_Z = 108.0f;
 
 // ---- The shell envelope ----------------------------------------------------
 // The ProfLab interior is authoritative: its 20 x 16 m hall plus 0.5 m perimeter
@@ -629,10 +760,10 @@ inline constexpr float fZM_DAWNMERE_LAB_PAD_CENTER_Z = 232.0f;
 // i.e. the height this constant needs is FIXED FRAME + EMBED + the site's own
 // relief, and only the first two terms are design values.
 //
-// ★ AND THE FROZEN MEASUREMENTS PUT THAT RELIEF AT 1.4048 m, WHICH IS WHY 4.5
-// WAS NOT ENOUGH. The graded pad still falls ~1.5 m across a 21 x 17 m footprint
+// ★ THE v6 MEASUREMENTS PUT THAT RELIEF AT 1.4048 m, WHICH IS WHY 4.5 WAS NOT
+// ENOUGH. The graded pad still fell ~1.5 m across the 21 x 17 m footprint
 // (corner MinX/MinZ 25.88701 down to MinX/MaxZ 24.37600) while the higher door
-// column reads 25.78080, so:
+// column read 25.78080, so:
 //     lowest corner 24.37600 | higher door ground 25.78080 | relief 1.40480
 //     minimum viable SCALE_Y = 3.5 + 0.05 + 1.40480 = 4.95480
 // At 4.5 the roofline sat at 28.8260 with the lintel top at 29.2808 -- the frame
@@ -640,15 +771,24 @@ inline constexpr float fZM_DAWNMERE_LAB_PAD_CENTER_Z = 232.0f;
 // LabExterior_EnvelopeAndEntranceMatchProfLabContract went RED on exactly that
 // clause the moment the ground table was frozen, exactly as its note predicted.
 //
-// ★ 5.5 IS CHOSEN FOR MARGIN, NOT FOR THE FLOOR. It puts the roofline at 29.8260,
-// i.e. 0.5452 m of clearance over the lintel, where the bare minimum would leave
-// none. These grounds are MEASUREMENTS: the largest single-row movement this file
-// has ever recorded from a re-measure is 98.8 mm (ZM-D-186, the collision-density
-// change), and 0.5452 m survives roughly five times that with the corner row and
-// the door row moving in OPPOSITE directions at once. For scale, the shipped Home
-// carries a 4.0 m facade over a 3.0 m frame on 0.626 m of relief -- 0.324 m of
-// margin. This site's relief is 2.2x the Home's, so its facade is taller in
-// proportion rather than by taste.
+// ★★ v7 (ZM-D-217) TOOK THE RELIEF TO 0.73490 m AND 5.5 STAYS. The site is
+// re-measured on a v7 bake with a SetHeight "Lab shelf" under it (see the W5
+// block above for why a PAD never graded anything), and the east flank ridge's
+// foot still tilts the pad: the two -Z corners read 24.515 / 24.791 against
+// 24.040 / 24.244 on the +Z pair, and the higher door column reads 24.775. So
+//     lowest corner 24.03970 | higher door ground 24.77460 | relief 0.73490
+//     minimum viable SCALE_Y = 3.5 + 0.05 + 0.73490 = 4.28490
+// and 5.5 puts the roofline at 29.4897 against a 28.2746 frame top -- 1.2151 m
+// of clearance, where v6 held 0.5452 m. The constant is NOT cut to match the
+// lower floor: the whole point of the arithmetic above is that the floor MOVES
+// with the terrain, and 1.2151 m of headroom is what makes the next re-measure
+// a re-measure rather than a re-model.
+//
+// ★ 5.5 IS THEREFORE STILL CHOSEN FOR MARGIN, NOT FOR THE FLOOR. For scale, the
+// shipped Home carries a 4.0 m facade over a 3.0 m frame on 0.578 m of relief --
+// 0.372 m of margin, where v6's 0.626 m of Home relief left it 0.324 m. This
+// site's relief is 1.3x the Home's, so its facade is taller in proportion
+// rather than by taste.
 // ★ IF THIS CLAUSE EVER REDS AGAIN, RAISE THIS CONSTANT, DO NOT WEAKEN THE CLAUSE
 // -- a red there means the reserved site's relief genuinely pushes the lintel
 // through the roof, which is a modelling defect a player would look straight at.
@@ -656,23 +796,39 @@ inline constexpr float fZM_DAWNMERE_LAB_SHELL_SCALE_X = 21.0f;
 inline constexpr float fZM_DAWNMERE_LAB_SHELL_SCALE_Y = 5.5f;
 inline constexpr float fZM_DAWNMERE_LAB_SHELL_SCALE_Z = 17.0f;
 
-// ★ THE ENTRANCE PLANE IS THE ONE NUMBER IN THIS BLOCK THAT WAS DERIVED FROM A
-// CAMERA CLEARANCE RATHER THAN FROM A BUILDING, AND IT MUST NOT BE ROUNDED
-// "TIDILY" BACK TO 208. The authored Lab dirt path runs (342, 206) -> (408, 232)
-// and therefore crosses the shell's X band (397.5 .. 418.5) at
-// (397.5, 227.8636) -- a point a player walks, with the camera trailing 5.5 m
-// toward -Z straight into the building's BACK face. The contract
-// (fCC_MIN_ARM_FRACTION, the ZM-D-173 block above) needs at least
-//   0.5 * |pivot->camera| + collisionPadding   of ray, i.e. 2.9333 m of
-// HORIZONTAL gap at this heading. An entrance at 208 puts the back face at 225
-// and leaves 2.864 m -- a VIOLATION, and one that would only appear once SC-E
-// authored the shell, in a test that never mentions the lab. At 207 the back
-// face is 224 and the gap is 3.8636 m, i.e. 0.93 m of margin.
-// ZM_Interaction/LabDirtPath_ClearsTheShellByTheShippedCameraClamp runs that
-// arithmetic through ZM_FollowCamera::ClampArmDistance itself, so moving the
-// entrance, the shell depth or the terrain path reds a UNIT rather than shipping
-// a camera that clips into a wall.
-inline constexpr float fZM_DAWNMERE_LAB_ENTRANCE_Z = 207.0f;
+// ★★ THE ENTRANCE PLANE IS NO LONGER DERIVED FROM A CAMERA CLEARANCE, AND THAT
+// IS THE SINGLE CHANGE THAT LET THE LAB COME CLOSE TO THE HOUSE (ZM-D-218).
+//
+// THROUGH v7 THE LAB LANE RAN PAST THE BUILDING TO A PAD CENTRE BEHIND IT. That
+// put a walked point in the shell's X band NORTH of it, with the camera trailing
+// 5.5 m toward -Z straight into the building's BACK face, so the entrance plane
+// had to be pushed far enough south that
+//   0.5 * |pivot->camera| + collisionPadding = 2.9333 m
+// of horizontal ray survived. The inversion is worth keeping written down:
+//   entrance <= crossingZ - 2.9333 - SHELL_SCALE_Z.
+// ★ AND ITS REAL COST WAS NOT THE ENTRANCE -- IT WAS THE WHOLE SITE. For that
+// crossing to land north of the building the lane had to travel a long way in X
+// while climbing in Z, which forced the lab far out along a diagonal from the
+// plaza. That is why v7's lab sat 76 m from the town centre and 135 m from the
+// player's front door, and why its pad had to be 48/40 -- the largest on the map
+// -- to reach an arrival marker 36 m away on the far side of the building.
+//
+// v8's Lab lane ends at the FORECOURT, (148, 96), which is 8 m in FRONT of the
+// door, exactly as the Home's always has. No authored walkway passes behind the
+// building, the camera never has the shell between it and the player on any
+// authored route, and the entrance plane is free to sit wherever the SITE wants
+// it. 104 puts the shell at z 104..121 with its four corners and both jambs
+// inside a 26/20 pad, and the two doors 56.1 m apart.
+//
+// ★ THE CLEARANCE UNIT WAS RE-DERIVED, NOT DELETED.
+// ZM_Interaction/LabDirtPath_ClearsTheShellByTheShippedCameraClamp still runs the
+// inversion through ZM_FollowCamera::ClampArmDistance itself and still refuses
+// any walked point that has the shell within the required gap on its -Z side;
+// what changed is that its old anti-vacuity clause ("the walkway must pass north
+// of the shell") is now the WRONG shape, and has been replaced by one that says
+// the lane leads to the door FROM THE FRONT. Read that test before moving the
+// entrance, the shell depth or the terrain path.
+inline constexpr float fZM_DAWNMERE_LAB_ENTRANCE_Z = 104.0f;
 
 // ...and the shell centre follows the entrance, never the other way round. Both
 // terms are dyadic, so this sum is exact in every configuration (the ZM-D-183
@@ -725,12 +881,12 @@ inline constexpr float fZM_DAWNMERE_LAB_TRIGGER_SCALE_Z = 2.0f;
 // landmark at (152, 148). A boot unit asserts the equality against the recipe;
 // this constant exists so no consumer has to reach into terrain authoring for it.
 // It leaves a 7 m forecourt between the arrival point and the entrance face.
-inline constexpr float fZM_DAWNMERE_FROM_LAB_SPAWN_Z = 200.0f;
+inline constexpr float fZM_DAWNMERE_FROM_LAB_SPAWN_Z = 97.0f;
 
 // Staging aligns with the doorway while the capsule is still well clear of the
 // solid entrance face; the target is a short +Z step from staging INTO the
 // sensor, and is therefore the sensor's own centre (the Home does the same).
-inline constexpr float fZM_DAWNMERE_LAB_DOOR_STAGING_Z = 202.0f;
+inline constexpr float fZM_DAWNMERE_LAB_DOOR_STAGING_Z = 99.0f;
 inline constexpr float fZM_DAWNMERE_LAB_DOOR_TARGET_Z = fZM_DAWNMERE_LAB_TRIGGER_Z;
 
 // ============================================================================
@@ -868,8 +1024,8 @@ Zenith_Maths::Vector3 ZM_GetDawnmereLabDoorTargetXZ();
 // marker, so it goes first.
 //
 // ★ THE COLUMN IS NOT A CHOICE. It is the Dawnmere terrain recipe's "FromRoute1"
-// LANDMARK, at (280, 544) -- the same relationship the Home keeps with its
-// "FromHome" landmark (152, 148) and the lab with "FromLab" (408, 200). The two
+// LANDMARK, at (192, 288) -- the same relationship the Home keeps with its
+// "FromHome" landmark (128, 120) and the lab with "FromLab" (256, 164). The two
 // constants below MIRROR that landmark rather than reading it (this header is
 // pure and must not depend on ZM_TerrainAuthoring), which is exactly why the
 // mirror is a boot unit rather than a comment:
@@ -883,22 +1039,23 @@ Zenith_Maths::Vector3 ZM_GetDawnmereLabDoorTargetXZ();
 //
 // ★ WHY THIS COLUMN IS EXPECTED TO BE LEVELLED GROUND, WRITTEN DOWN BEFORE THE
 // MEASUREMENT SO THE MEASUREMENT CAN CONTRADICT IT. The recipe's "Route" path
-// runs (280, 608) -> (268, 440) -> (292, 300) -> (280, 192) with an 18 m FLATTEN
-// radius and a 10 m dirt radius. (280, 544) lies 4.56 m from the first of those
-// segments (closest point (275.451, 544.320)), i.e. deep inside both corridors,
-// so it is graded lane rather than natural hillside. The "RouteGate" PAD at
-// (280, 576) does NOT contribute: its 30 m flatten radius falls 2 m short of the
-// 32 m to this column, and its dirt radius is 0. No Dawnmere landform reaches it
-// either -- the nearest, the north-west knoll at (90, 545) with a 90 m radius, is
-// 190 m away, so its 90 m foot stops 100 m short. (That clause used to name a
-// 180 m hill at (224, 650): the landforms were RE-AUTHORED for the 576 x 640 m
-// map rather than translated onto it, so it is a different set of hills and this
-// figure was re-derived, not shifted.)
+// runs (120, 208) -> (114, 170) -> (122, 124) -> (120, 80) with a 9 m FLATTEN
+// radius and a 5 m dirt radius. (120, 144) lies 1.5 m from the second of those
+// segments, i.e. deep inside both corridors, so it is graded lane rather than
+// natural hillside. The "RouteGate" PAD at (120, 176) does NOT contribute: its
+// 22 m flatten radius falls 10 m short of the 32 m to this column, and its dirt
+// radius is 0. No Dawnmere landform reaches it either -- the nearest, the
+// north-west ridge at (40, 218) with a 38 m radius, is 105 m away, so its foot
+// stops 67 m short. (The v6 clause named a 90 m hill at (90, 545), and the v5 one a 180 m
+// hill at (224, 650): the landforms are RE-AUTHORED at each shrink rather than
+// translated, so every one of these figures is re-derived, never shifted.)
 //
 // So the EXPECTATION is a surface within a few tenths of the recipe's 24 m
-// flatten target, which is the band every other measured Dawnmere column reads
-// on the re-authored map: the town centre 24.10, the ten Home columns
-// 23.88 - 24.34, the ten lab columns 24.08 - 25.58.
+// flatten target, which is the band every other measured Dawnmere column reads.
+// ★ THE COMPARATIVE FIGURES THAT USED TO BE QUOTED HERE (town centre 24.10, ten
+// Home columns 23.88-24.34, ten lab columns 24.08-25.58) WERE THE v6 MAP'S AND
+// ARE DELETED RATHER THAN CARRIED FORWARD. v7 regenerated the heightmap under
+// all 23 of them; re-state the band from the v7 run that re-freezes the tables.
 //
 // ★★ THAT BAND USED TO BE ~25.6 .. 26.5, AND WHY IT MOVED IS THE INTERESTING
 // PART. On the 1024 m map the erosion disc was centred at the map's middle and
@@ -945,8 +1102,8 @@ Zenith_Maths::Vector3 ZM_GetDawnmereLabDoorTargetXZ();
 // ============================================================================
 
 // The arrival column, MIRRORING the Dawnmere recipe's "FromRoute1" landmark.
-inline constexpr float fZM_DAWNMERE_FROM_ROUTE1_X = 280.0f;
-inline constexpr float fZM_DAWNMERE_FROM_ROUTE1_Z = 544.0f;
+inline constexpr float fZM_DAWNMERE_FROM_ROUTE1_X = 120.0f;
+inline constexpr float fZM_DAWNMERE_FROM_ROUTE1_Z = 144.0f;
 
 // The initialiser the route-seam row still carries. Deliberately the SAME value
 // the lab table shipped on -- aliased rather than re-typed, because a sentinel
@@ -1166,13 +1323,23 @@ inline const char* ZM_GetDawnmereNorthGateSpawnTag()
 // ★ BOTH CONTAINMENTS ARE ARITHMETIC, NOT TASTE, and both are stated here so a
 // later reader can re-check them rather than trust them. Against the Dawnmere
 // terrain recipe (Source/World/ZM_TerrainAuthoring.cpp):
-//   * the "RouteGate" PAD is at (280, 576) with a 30 m FLATTEN radius; this
+//   * the "RouteGate" PAD is at (120, 176) with a 22 m FLATTEN radius; this
 //     column is 20 m from its centre, i.e. inside it -- unlike the arrival
-//     column 12 m south, which at 32 m falls just outside;
-//   * the "Route" PATH runs (280, 608) -> (268, 440) -> ... with an 18 m flatten
-//     radius; this column lies ~3.7 m from that first segment.
-// So the ground under this gate is graded lane inside a graded pad, which is the
-// condition under which a flatten dab drives ground TO the recipe target.
+//     column 12 m south, which at 32 m falls outside;
+//   * the "Route" PATH runs (120, 208) -> (114, 170) -> (122, 124) -> ... with a
+//     9 m flatten radius; this column lies ~3.6 m from the second segment.
+// So the ground under this gate is graded lane inside a graded pad.
+//
+// ★★ WHAT THAT DOES **NOT** MEAN, AND THIS SENTENCE USED TO SAY IT DID: "a
+// flatten dab drives ground TO the recipe target". It does not.
+// Zenith_TerrainEditor's FLATTEN kernel moves a texel
+// `(target - h) * falloff * strength * 0.35` per dab, so being inside a corridor
+// buys a fraction of the correction per overlapping dab and nothing more. v7
+// measures this column at 22.681 against a 24.0 target -- 1.3 m out, inside two
+// graded footprints -- while every column that sits on a SetHeight SHELF reads
+// within a few tenths of it. The containments above are still worth stating:
+// they are why this column is 1.3 m out rather than 3 m. They are not a
+// guarantee of level ground, and nothing derived from this gate may assume one.
 inline constexpr float fZM_DAWNMERE_NORTH_GATE_X = fZM_DAWNMERE_FROM_ROUTE1_X;
 inline constexpr float fZM_DAWNMERE_NORTH_GATE_Z =
 	fZM_DAWNMERE_FROM_ROUTE1_Z + 12.0f;
@@ -1185,11 +1352,19 @@ inline constexpr float fZM_DAWNMERE_NORTH_GATE_Z =
 // own banner refuses the mirror-image include for the same reason -- and the
 // numbers are re-derived below rather than copied on faith:
 //
-// (1) X SPAN. The Route corridor lays a 10 m dirt radius (a 20 m visible lane)
-//     inside an 18 m flatten radius, and the RouteGate pad is 30 m across the
-//     radius here. 48 m centred on the lane leaves no gap a player can slip
-//     through without leaving the walked corridor entirely.
-inline constexpr float fZM_DAWNMERE_NORTH_GATE_SCALE_X = 48.0f;
+// (1) X SPAN. The Route corridor lays a 5 m dirt radius (a 10 m visible lane)
+//     inside a 9 m flatten radius, and the RouteGate pad reaches 9.2 m either
+//     side of the lane at this column (sqrt(22^2 - 20^2)). 32 m centred on the
+//     lane covers all of that with 6.8 m to spare either side and leaves no gap
+//     a player can slip through without leaving the walked corridor entirely.
+//     ★ IT DID NOT SHRINK AT v7 AND IT DID AT v8, AND BOTH WERE RIGHT. The span
+//     is set by how wide the GRADED ground is at this column, not by the town's
+//     scale: v7 kept its 48 m because the RouteGate pad kept its 30 m radius, and
+//     v8 cuts it to 32 because the corridor genuinely narrowed (route flatten
+//     14 -> 9, gate pad 30 -> 22). WIDEN EITHER OF THOSE AND WIDEN THIS WITH
+//     THEM -- a gate narrower than its own graded corridor is a gate a player
+//     walks around.
+inline constexpr float fZM_DAWNMERE_NORTH_GATE_SCALE_X = 32.0f;
 
 // (2) Y SPAN -- taller than fZM_HUMAN_BODY_HEIGHT (1.8), so the sensor cannot be
 //     stepped or jumped over.

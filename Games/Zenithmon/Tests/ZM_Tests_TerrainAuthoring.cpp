@@ -1,6 +1,7 @@
 #include "Zenith.h"
 
 #include "Core/Zenith_TestFramework.h"
+#include "Zenithmon/Source/World/ZM_DawnmerePlacement.h"   // the rival's authored XZ -- his shelf must be ON it
 #include "Zenithmon/Source/World/ZM_TerrainAuthoring.h"
 
 #if defined(ZENITH_TOOLS) && defined(ZENITH_WINDOWS)
@@ -219,24 +220,24 @@ ZENITH_TEST(ZM_TerrainAuthoring, DawnmereRecipeIdentityAndBounds)
 	// these read one authored fact rather than three that could disagree.
 	ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_xDims.m_fChunkWorldSize, 64.0f, fEPSILON);
 	ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_xDims.VertexSpacing(), 1.0f, fEPSILON);
-	ZENITH_ASSERT_EQ(xRecipe.m_xDims.m_uGridChunksX, 9u);
-	ZENITH_ASSERT_EQ(xRecipe.m_xDims.m_uGridChunksZ, 10u);
+	ZENITH_ASSERT_EQ(xRecipe.m_xDims.m_uGridChunksX, 4u);
+	ZENITH_ASSERT_EQ(xRecipe.m_xDims.m_uGridChunksZ, 4u);
 	ZENITH_ASSERT_EQ_FLOAT(xRecipe.WorldMinX(), 0.0f, fEPSILON);
-	ZENITH_ASSERT_EQ_FLOAT(xRecipe.WorldMaxX(), 576.0f, fEPSILON);
+	ZENITH_ASSERT_EQ_FLOAT(xRecipe.WorldMaxX(), 256.0f, fEPSILON);
 	ZENITH_ASSERT_EQ_FLOAT(xRecipe.WorldMinZ(), 0.0f, fEPSILON);
-	ZENITH_ASSERT_EQ_FLOAT(xRecipe.WorldMaxZ(), 640.0f, fEPSILON);
+	ZENITH_ASSERT_EQ_FLOAT(xRecipe.WorldMaxZ(), 256.0f, fEPSILON);
 	ZENITH_ASSERT_EQ(xRecipe.ExportRect().m_iMinX, 0);
 	ZENITH_ASSERT_EQ(xRecipe.ExportRect().m_iMinY, 0);
-	ZENITH_ASSERT_EQ(xRecipe.ExportRect().m_iMaxX, 8);
-	ZENITH_ASSERT_EQ(xRecipe.ExportRect().m_iMaxY, 9);
+	ZENITH_ASSERT_EQ(xRecipe.ExportRect().m_iMaxX, 3);
+	ZENITH_ASSERT_EQ(xRecipe.ExportRect().m_iMaxY, 3);
 	const u_int uChunkWidth = static_cast<u_int>(
 		xRecipe.ExportRect().m_iMaxX - xRecipe.ExportRect().m_iMinX + 1);
 	const u_int uChunkHeight = static_cast<u_int>(
 		xRecipe.ExportRect().m_iMaxY - xRecipe.ExportRect().m_iMinY + 1);
-	ZENITH_ASSERT_EQ(uChunkWidth, 9u);
-	ZENITH_ASSERT_EQ(uChunkHeight, 10u);
-	ZENITH_ASSERT_EQ(uChunkWidth * uChunkHeight, 90u);
-	ZENITH_ASSERT_EQ(uChunkWidth * uChunkHeight * 3u, 270u);
+	ZENITH_ASSERT_EQ(uChunkWidth, 4u);
+	ZENITH_ASSERT_EQ(uChunkHeight, 4u);
+	ZENITH_ASSERT_EQ(uChunkWidth * uChunkHeight, 16u);
+	ZENITH_ASSERT_EQ(uChunkWidth * uChunkHeight * 3u, 48u);
 	// chunks x 3 mesh files, plus Height/Splatmap_RGBA/GrassDensity, plus the
 	// TerrainDims.zdata manifest the runtime loader requires.
 	ZENITH_ASSERT_EQ(uChunkWidth * uChunkHeight * 3u + 4u,
@@ -245,64 +246,112 @@ ZENITH_TEST(ZM_TerrainAuthoring, DawnmereRecipeIdentityAndBounds)
 	ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_fTargetHeight, 24.0f, fEPSILON);
 	ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_xProcedural.m_fBaseHeight, 0.046875f, fEPSILON);
 	ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_xProcedural.m_fAmplitude, 0.018f, fEPSILON);
-	ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_xProcedural.m_fFrequency, 0.00125f, fEPSILON);
+	// ★ The frequency scales with the SHEET so the map always carries the same
+	// NUMBER of base undulations: 0.00125 at 576 m, 0.001875 at 384, and
+	// 0.001875 * 384/256 = 0.0028125 at v8's 256. It is the one procedural term
+	// measured in world units; base height and amplitude are metres of height
+	// and do not move.
+	ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_xProcedural.m_fFrequency, 0.0028125f, fEPSILON);
 	ZENITH_ASSERT_EQ(xRecipe.m_xProcedural.m_uOctaves, 5u);
 	ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_xProcedural.m_fLacunarity, 2.0f, fEPSILON);
 	ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_xProcedural.m_fGain, 0.5f, fEPSILON);
 	ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_xProcedural.m_fRidgedBlend, 0.10f, fEPSILON);
 
-	// FIVE hills now, not four, and they were RE-AUTHORED rather than translated:
-	// the old set was sized to fill a 1024 m square (radii 160-190) and every
-	// centre would have fallen outside a 576 x 640 m world.
-	ZENITH_ASSERT_EQ(xRecipe.m_uLandformCount, 5u);
-	AssertPoint2(xRecipe.m_pxLandforms[0].m_xCentre, 95.0f, 300.0f);
-	AssertPoint2(xRecipe.m_pxLandforms[4].m_xCentre, 485.0f, 520.0f);
-	ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_pxLandforms[0].m_fHeight, 38.0f, fEPSILON);
-	ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_pxLandforms[1].m_fHeight, 42.0f, fEPSILON);
-	ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_pxLandforms[2].m_fHeight, 34.0f, fEPSILON);
-	ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_pxLandforms[3].m_fHeight, 36.0f, fEPSILON);
-	ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_pxLandforms[4].m_fHeight, 38.0f, fEPSILON);
+	// NINE landform rows: the same FIVE ridges, re-authored again for v8's 256 m
+	// square, plus FOUR SHELVES (checked below) -- the town square, the two
+	// building sites, and the rival, who needs one because he is a DYNAMIC body.
+	ZENITH_ASSERT_EQ(xRecipe.m_uLandformCount, 9u);
+	AssertPoint2(xRecipe.m_pxLandforms[0].m_xCentre, 42.0f, 132.0f);
+	AssertPoint2(xRecipe.m_pxLandforms[4].m_xCentre, 216.0f, 214.0f);
+	ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_pxLandforms[0].m_fHeight, 34.0f, fEPSILON);
+	ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_pxLandforms[1].m_fHeight, 36.0f, fEPSILON);
+	ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_pxLandforms[2].m_fHeight, 32.0f, fEPSILON);
+	ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_pxLandforms[3].m_fHeight, 32.0f, fEPSILON);
+	ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_pxLandforms[4].m_fHeight, 34.0f, fEPSILON);
 	// ★ THE WEST RIDGE IS THE TIGHTEST FIT IN THE TABLE, and the clause that
 	// replaces the old "ends exactly at X=1024" one. Its centre EQUALS its radius,
 	// so its west foot lands exactly on x=0 -- one metre further out and
 	// AssertTerrainAuthoringPlanContained refuses the whole plan.
-	ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_pxLandforms[0].m_fRadius, 95.0f, fEPSILON);
+	ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_pxLandforms[0].m_fRadius, 42.0f, fEPSILON);
 	ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_pxLandforms[0].m_xCentre.m_fX,
 		xRecipe.m_pxLandforms[0].m_fRadius, fEPSILON,
 		"the west ridge's foot must land exactly on the world's west edge");
 
+	// ★★ THE THREE SHELVES, AND THE CLAUSE THAT SAYS WHAT MAKES THEM SHELVES
+	// RATHER THAN HILLS. They are the LAST three rows so they cut the feet of the
+	// five ridges above wherever the two overlap; they target the recipe's own
+	// flatten height rather than a crest; and none of them is at strength 0.5 or
+	// more. That last one is a contract, not a taste: SetHeight applies
+	// min(1, falloff * strength * 2), so a strength >= 0.5 ASSIGNS the target
+	// inside r/2 and the town square comes out dead flat -- which is what
+	// ZM_DawnmereNpcGroundTruth_Test's spread clause (d) reds on, and which is
+	// also the wrong look for graded ground. The exact strengths are a tuning
+	// knob and are deliberately NOT pinned; saturation is what is pinned.
+	for (u_int u = 5u; u < xRecipe.m_uLandformCount; ++u)
+	{
+		ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_pxLandforms[u].m_fHeight,
+			xRecipe.m_fTargetHeight, fEPSILON,
+			"Dawnmere landform row %u is a SHELF and must target the recipe's own "
+			"flatten height, not a crest", u);
+		ZENITH_ASSERT_LT(xRecipe.m_pxLandforms[u].m_fStrength, 0.5f,
+			"Dawnmere landform row %u is a shelf at strength %.2f, which saturates "
+			"SetHeight's min(1, falloff * 2) and assigns the target outright -- the "
+			"town square goes dead flat and W5's six measured heights buy nothing",
+			u, xRecipe.m_pxLandforms[u].m_fStrength);
+	}
+	AssertPoint2(xRecipe.m_pxLandforms[5].m_xCentre, 120.0f, 100.0f);
+	// ★ THE TOWN SHELF'S RADIUS IS PINNED BECAUSE IT IS SIZED BY THE SIGHT CONE,
+	// not by the square: the roster's measured feet heights have to span LESS than
+	// fZM_SIGHT_MAX_VERTICAL, and at 80 they spanned 2.02 against a 2.0 band. See
+	// the shelf's own note in ZM_TerrainAuthoring.cpp.
+	ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_pxLandforms[5].m_fRadius, 100.0f, fEPSILON);
+	AssertPoint2(xRecipe.m_pxLandforms[6].m_xCentre, 92.0f, 100.0f);
+	AssertPoint2(xRecipe.m_pxLandforms[7].m_xCentre, 148.0f, 108.0f);
+	// ★ THE RIVAL'S SHELF IS ON HIS AUTHORED XZ, and that coupling is the point:
+	// he is a dynamic capsule and slides off anything that is not graded.
+	AssertPoint2(xRecipe.m_pxLandforms[8].m_xCentre,
+		fZM_DAWNMERE_VESPER_X, fZM_DAWNMERE_VESPER_Z);
+
 	ZENITH_ASSERT_EQ(xRecipe.m_uPathCount, 3u);
 	ZENITH_ASSERT_STREQ(xRecipe.m_pxPaths[0].m_szName, "Route");
-	ZENITH_ASSERT_EQ(xRecipe.m_pxPaths[0].m_uFlattenSampleCount, 49u);
-	ZENITH_ASSERT_EQ(xRecipe.m_pxPaths[1].m_uFlattenSampleCount, 22u);
-	ZENITH_ASSERT_EQ(xRecipe.m_pxPaths[2].m_uFlattenSampleCount, 22u);
-	ZENITH_ASSERT_EQ(xRecipe.m_pxPaths[0].m_uDirtSampleCount, 73u);
-	ZENITH_ASSERT_EQ(xRecipe.m_pxPaths[1].m_uDirtSampleCount, 30u);
-	ZENITH_ASSERT_EQ(xRecipe.m_pxPaths[2].m_uDirtSampleCount, 29u);
-	AssertPoint2(xRecipe.m_pxPaths[0].m_pxPoints[0], 280.0f, 608.0f);
-	AssertPoint2(xRecipe.m_pxPaths[0].m_pxPoints[3], 280.0f, 192.0f);
+		// ★ THE ROUTE'S FLATTEN RADIUS IS WHAT SETS THE HOUSE-TO-LAB DISTANCE, because
+	// the lane runs BETWEEN the two buildings (ZM-D-218): every metre of graded
+	// corridor is a metre they have to stand apart. Widening it without moving
+	// them narrows the verge the shells stand on.
+	ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_pxPaths[0].m_fFlattenRadius, 9.0f, fEPSILON);
+	ZENITH_ASSERT_EQ(xRecipe.m_pxPaths[0].m_uFlattenSampleCount, 28u);
+	ZENITH_ASSERT_EQ(xRecipe.m_pxPaths[1].m_uFlattenSampleCount, 9u);
+	ZENITH_ASSERT_EQ(xRecipe.m_pxPaths[2].m_uFlattenSampleCount, 11u);
+	ZENITH_ASSERT_EQ(xRecipe.m_pxPaths[0].m_uDirtSampleCount, 39u);
+	ZENITH_ASSERT_EQ(xRecipe.m_pxPaths[1].m_uDirtSampleCount, 14u);
+	ZENITH_ASSERT_EQ(xRecipe.m_pxPaths[2].m_uDirtSampleCount, 15u);
+	AssertPoint2(xRecipe.m_pxPaths[0].m_pxPoints[0], 120.0f, 208.0f);
+	AssertPoint2(xRecipe.m_pxPaths[0].m_pxPoints[3], 120.0f, 80.0f);
 
 	ZENITH_ASSERT_EQ(xRecipe.m_uPadCount, 4u);
-	AssertPoint2(xRecipe.m_pxPads[0].m_xCentre, 280.0f, 192.0f);
-	ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_pxPads[0].m_fFlattenRadius, 60.0f, fEPSILON);
+	AssertPoint2(xRecipe.m_pxPads[0].m_xCentre, 120.0f, 80.0f);
+	ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_pxPads[0].m_fFlattenRadius, 34.0f, fEPSILON);
 	// ZM-D-173: the Home pad moved +40 m in Z with the shell. Its radii, target
 	// height and pass count did NOT move -- pinning all four here is what stops a
 	// "just nudge the pad" edit from silently re-levelling the forecourt.
 	ZENITH_ASSERT_STREQ(xRecipe.m_pxPads[1].m_szName, "Home");
-	AssertPoint2(xRecipe.m_pxPads[1].m_xCentre, 152.0f, 176.0f);
-	ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_pxPads[1].m_fFlattenRadius, 36.0f, fEPSILON);
-	ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_pxPads[1].m_fDirtRadius, 26.0f, fEPSILON);
+	AssertPoint2(xRecipe.m_pxPads[1].m_xCentre, 92.0f, 104.0f);
+	ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_pxPads[1].m_fFlattenRadius, 24.0f, fEPSILON);
+	ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_pxPads[1].m_fDirtRadius, 18.0f, fEPSILON);
 	ZENITH_ASSERT_EQ(xRecipe.m_pxPads[1].m_uDirtPassCount, 4u);
-	ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_pxPads[3].m_fFlattenRadius, 30.0f, fEPSILON);
+	ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_pxPads[3].m_fFlattenRadius, 22.0f, fEPSILON);
 	ZENITH_ASSERT_EQ(xRecipe.m_pxPads[3].m_uDirtPassCount, 0u);
 
-	ZENITH_ASSERT_EQ(xRecipe.m_xErosion.m_uHydraulicDroplets, 60000u);
+	// ★ The droplet count scales with AREA, not with radius --
+	// 60000 * 65536/368640 = 10667 -- so this map is carved at the same DENSITY
+	// as the other two rather than 5.6x harder than them.
+	ZENITH_ASSERT_EQ(xRecipe.m_xErosion.m_uHydraulicDroplets, 10667u);
 	ZENITH_ASSERT_EQ(xRecipe.m_xErosion.m_uThermalIterations, 1u);
 	ZENITH_ASSERT_TRUE(xRecipe.m_xErosion.m_bRegionOnly);
-	AssertPoint2(xRecipe.m_xErosion.m_xCentre, 280.0f, 192.0f);
-	// 725 * 576/1024 = 407.8: the radius scales with the axis that shrank, so the
+	AssertPoint2(xRecipe.m_xErosion.m_xCentre, 120.0f, 100.0f);
+	// 725 * 256/1024 = 181.25: the radius scales with the axis that shrank, so the
 	// same PROPORTION of the map is eroded and "region-only" keeps its meaning.
-	ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_xErosion.m_fRadius, 400.0f, fEPSILON);
+	ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_xErosion.m_fRadius, 181.0f, fEPSILON);
 
 	ZENITH_ASSERT_EQ(xRecipe.m_uAutoSplatCount, 4u);
 	ZENITH_ASSERT_STREQ(xRecipe.m_pxAutoSplat[0].m_szName, "Meadow");
@@ -314,31 +363,36 @@ ZENITH_TEST(ZM_TerrainAuthoring, DawnmereRecipeIdentityAndBounds)
 	// ridges, and the two central ones are the town lawn and simply moved with the
 	// plaza.
 	ZENITH_ASSERT_EQ(xRecipe.m_uGrassDabCount, 8u);
-	AssertPoint2(xRecipe.m_pxGrassDabs[0].m_xCentre, 100.0f, 300.0f);
-	AssertPoint2(xRecipe.m_pxGrassDabs[5].m_xCentre, 400.0f, 90.0f);
+	AssertPoint2(xRecipe.m_pxGrassDabs[0].m_xCentre, 44.0f, 132.0f);
+	AssertPoint2(xRecipe.m_pxGrassDabs[5].m_xCentre, 168.0f, 40.0f);
 	// Central town-lawn dabs so grass surrounds the TownCenter spawn (paths/pads
 	// erase their paved footprints in the later grass-erase phase).
-	AssertPoint2(xRecipe.m_pxGrassDabs[6].m_xCentre, 280.0f, 150.0f);
-	AssertPoint2(xRecipe.m_pxGrassDabs[7].m_xCentre, 280.0f, 290.0f);
+	AssertPoint2(xRecipe.m_pxGrassDabs[6].m_xCentre, 120.0f, 44.0f);
+	AssertPoint2(xRecipe.m_pxGrassDabs[7].m_xCentre, 120.0f, 152.0f);
 	// Row 2, not row 1: the two flank ridges both carry 0.55 now, so pinning one
 	// of them would not distinguish the table from a uniform one. The knolls are
 	// the 0.70 rows.
 	ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_pxGrassDabs[2].m_fTargetDensity, 0.70f, fEPSILON);
-	ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_pxGrassDabs[6].m_fTargetDensity, 0.60f, fEPSILON);
+	// ★ 0.75, and it is sized by a TEST not by taste: three automated suites probe
+	// the four cardinals from the spawn for a tile at or above
+	// ZM_TallGrassSystem::fGRASS_DENSITY_THRESHOLD (0.5), and the dab's falloff has
+	// to clear that AFTER the Plaza pad's grass-erase has taken its bite. See the
+	// dab's own note in ZM_TerrainAuthoring.cpp.
+	ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_pxGrassDabs[6].m_fTargetDensity, 0.75f, fEPSILON);
 
 	ZENITH_ASSERT_EQ(xRecipe.m_uLandmarkCount, 10u);
 	ZENITH_ASSERT_STREQ(xRecipe.m_pxLandmarks[0].m_szName, "TownCenter");
-	AssertPoint3(xRecipe.m_pxLandmarks[0].m_xPosition, 280.0f, 24.0f, 160.0f);
+	AssertPoint3(xRecipe.m_pxLandmarks[0].m_xPosition, 120.0f, 24.0f, 60.0f);
 	// ZM-D-173: both Home landmarks moved with the relocated shell and its return
 	// spawn. Y stays 24 -- recipe metadata at the nominal target height, never a
 	// measured surface, which is why it does NOT track the placement table.
 	ZENITH_ASSERT_STREQ(xRecipe.m_pxLandmarks[2].m_szName, "Home");
-	AssertPoint3(xRecipe.m_pxLandmarks[2].m_xPosition, 152.0f, 24.0f, 176.0f);
+	AssertPoint3(xRecipe.m_pxLandmarks[2].m_xPosition, 92.0f, 24.0f, 104.0f);
 	ZENITH_ASSERT_STREQ(xRecipe.m_pxLandmarks[3].m_szName, "FromHome");
-	AssertPoint3(xRecipe.m_pxLandmarks[3].m_xPosition, 152.0f, 24.0f, 148.0f);
+	AssertPoint3(xRecipe.m_pxLandmarks[3].m_xPosition, 92.0f, 24.0f, 92.0f);
 	ZENITH_ASSERT_STREQ(xRecipe.m_pxLandmarks[6].m_szName, "FromRoute1");
-	AssertPoint3(xRecipe.m_pxLandmarks[6].m_xPosition, 280.0f, 24.0f, 544.0f);
-	AssertPoint3(xRecipe.m_pxLandmarks[9].m_xPosition, 230.0f, 24.0f, 228.0f);
+	AssertPoint3(xRecipe.m_pxLandmarks[6].m_xPosition, 120.0f, 24.0f, 144.0f);
+	AssertPoint3(xRecipe.m_pxLandmarks[9].m_xPosition, 140.0f, 24.0f, 116.0f);
 
 	ZENITH_ASSERT_EQ(xRecipe.m_uMaterialCount, 4u);
 	ZENITH_ASSERT_STREQ(xRecipe.m_pxMaterials[0].m_szName, "Meadow");
@@ -361,7 +415,7 @@ ZENITH_TEST(ZM_TerrainAuthoring, DawnmereRecipeIdentityAndBounds)
 		ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_pxMaterials[i].m_fMetallic, 0.0f, fEPSILON);
 	}
 
-	AssertPoint3(xRecipe.m_xPreviewCamera.m_xPosition, 280.0f, 52.0f, 100.0f);
+	AssertPoint3(xRecipe.m_xPreviewCamera.m_xPosition, 120.0f, 40.0f, 24.0f);
 	ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_xPreviewCamera.m_fPitch, -0.22f, fEPSILON);
 	ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_xPreviewCamera.m_fFovDegrees, 65.0f, fEPSILON);
 	ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_xPreviewCamera.m_fNearPlane, 0.1f, fEPSILON);
@@ -382,7 +436,7 @@ ZENITH_TEST(ZM_TerrainAuthoring, DawnmereRecipePlanIsDeterministicAndContained)
 	// and a fifth Dawnmere landform (the re-authored ridges frame a 576 x 640 m
 	// map from five directions where four filled a 1024 m square). Paths and pads
 	// were TRANSLATED, not re-shaped, so their sampled op counts are untouched.
-	ZENITH_ASSERT_EQ(xPlanA.GetSize(), 1026u);
+	ZENITH_ASSERT_EQ(xPlanA.GetSize(), 556u);
 	ZENITH_ASSERT_EQ(xPlanA.GetSize(), xPlanB.GetSize());
 	for (u_int i = 0; i < xPlanA.GetSize(); ++i)
 	{
@@ -467,12 +521,16 @@ ZENITH_TEST(ZM_TerrainAuthoring, DawnmereRecipePlanIsDeterministicAndContained)
 	// the set must be staged AFTER the reset (which would otherwise discard it)
 	// and BEFORE anything generated.
 	ZENITH_ASSERT_EQ(uSetIndex, 2u);
-	ZENITH_ASSERT_EQ(auPhaseCounts[ZM_TERRAIN_PHASE_LANDFORM], 5u);
-	ZENITH_ASSERT_EQ(auPhaseCounts[ZM_TERRAIN_PHASE_FLATTEN_PRE_EROSION], 97u);
-	ZENITH_ASSERT_EQ(auPhaseCounts[ZM_TERRAIN_PHASE_FLATTEN_POST_EROSION], 97u);
-	ZENITH_ASSERT_EQ(auPhaseCounts[ZM_TERRAIN_PHASE_DIRT], 672u);
+	// v8 (ZM-D-218): 9 landform dabs (five ridges + four shelves), 48 flatten
+	// samples along the three paths + 4 pad dabs = 52 per flatten pass, five
+	// dirt passes over 68 path samples + 12 pad dabs = 352, and the grass erase
+	// re-walks the paths at dirt spacing (68) plus one dab per pad (4) = 72.
+	ZENITH_ASSERT_EQ(auPhaseCounts[ZM_TERRAIN_PHASE_LANDFORM], 9u);
+	ZENITH_ASSERT_EQ(auPhaseCounts[ZM_TERRAIN_PHASE_FLATTEN_PRE_EROSION], 52u);
+	ZENITH_ASSERT_EQ(auPhaseCounts[ZM_TERRAIN_PHASE_FLATTEN_POST_EROSION], 52u);
+	ZENITH_ASSERT_EQ(auPhaseCounts[ZM_TERRAIN_PHASE_DIRT], 352u);
 	ZENITH_ASSERT_EQ(auPhaseCounts[ZM_TERRAIN_PHASE_GRASS_FILL], 8u);
-	ZENITH_ASSERT_EQ(auPhaseCounts[ZM_TERRAIN_PHASE_GRASS_ERASE], 136u);
+	ZENITH_ASSERT_EQ(auPhaseCounts[ZM_TERRAIN_PHASE_GRASS_ERASE], 72u);
 	ZENITH_ASSERT_TRUE(uErosionIndex > 2u + 4u);
 	ZENITH_ASSERT_EQ((u_int)xPlanA.Get(uLastDensityIndex + 1u).m_eType,
 		(u_int)ZM_TERRAIN_PLAN_TERMINAL_BAKE,
@@ -513,10 +571,10 @@ ZENITH_TEST(ZM_TerrainAuthoring, DawnmereManifestRequiresEveryOutput)
 		else ++uTextures;
 	}
 	ZENITH_ASSERT_EQ(xUnique.size(), static_cast<size_t>(uZM_DAWNMERE_REQUIRED_OUTPUT_COUNT));
-	// 9 x 10 chunks: 90 of each family, where a 16 x 16 grid gave 256.
-	ZENITH_ASSERT_EQ(uRender, 90u);
-	ZENITH_ASSERT_EQ(uRenderLow, 90u);
-	ZENITH_ASSERT_EQ(uPhysics, 90u);
+	// 4 x 4 chunks: 16 of each family, where 6 x 6 gave 36 and 16 x 16 gave 256.
+	ZENITH_ASSERT_EQ(uRender, 16u);
+	ZENITH_ASSERT_EQ(uRenderLow, 16u);
+	ZENITH_ASSERT_EQ(uPhysics, 16u);
 	// Three .ztxtr maps plus TerrainDims.zdata -- the manifest lands in this
 	// bucket because it is not a Render_/Render_LOW_/Physics_ chunk.
 	ZENITH_ASSERT_EQ(uTextures, 4u);

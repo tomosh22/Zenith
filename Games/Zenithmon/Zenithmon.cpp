@@ -78,6 +78,7 @@
 
 #ifdef ZENITH_TOOLS
 #include "Core/Zenith_CommandLine.h"
+#include "Editor/TerrainEditor/Zenith_TerrainEditor.h"         // Zenith_TerrainBrushTool::TreePaint (ZM-D-217 woodland)
 #include "Editor/Zenith_Editor.h"
 #include "Editor/Zenith_EditorAutomation.h"
 #include "EntityComponent/Components/Zenith_GraphComponent.h"   // the SC8 no-graph authoring pin
@@ -87,6 +88,7 @@
 #include "UI/Zenith_UIVirtualStick.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Zenithmon/Source/Data/ZM_WorldSpec.h"                 // build indices + spawn tags READ, never spelled (SC-E)
+#include "Zenithmon/Source/World/ZM_DawnmereDressing.h"         // the scenery layer + the town keep-out (ZM-D-217)
 #include "Zenithmon/Source/World/ZM_DawnmerePlacement.h"        // the shared authored coordinates (S7 item 3 SC8)
 #include "Zenithmon/Source/World/ZM_ProfLabPlacement.h"         // the shared ProfLab interior coordinates (S8 SC1)
 #include "Zenithmon/Source/World/ZM_Route1Placement.h"          // the shared Route 1 anchors (S8 item 2, R1-1/R1-2)
@@ -2511,8 +2513,9 @@ namespace
 	// the NPC's transform centre against a 2.9 m effective reach -- do NOT read 0.4
 	// as "the distance the capsule stops at". Well inside
 	// ZM_Interactable::fMAX_RADIUS (8.0), and far too small to let one NPC swallow a
-	// neighbour's press: the closest NPC PAIR in this town is 16.1 m apart, 5.5x the
-	// effective reach.
+	// neighbour's press: the closest NPC PAIR in this town is 13.4 m apart, 4.6x the
+	// effective reach (ZM-D-217 compacted the town; the RATIO is the property, and
+	// it moved from 5.5x on a core 1.8x wider).
 	constexpr float fZM_NPC_AUTHORED_RADIUS = 0.4f;
 
 	// The shared body of the stationary configure functions below. A PER-NPC function is
@@ -4078,7 +4081,7 @@ void Project_RegisterEditorAutomationSteps()
 		// authored centre height.
 		//
 		// ★ HEIGHT IS MEASURED, NOT ASSUMED (known-limit W5). Every NPC used to reuse
-		// the ONE feet height sampled at the town centre (512, 480), which made the
+		// the ONE feet height sampled at the town centre, which made the
 		// picker's +/-2 m band -- and the trainer cone's fZM_SIGHT_MAX_VERTICAL -- an
 		// inference from a single out-of-band measurement. Each of the six now carries
 		// its OWN feet height in Source/World/ZM_DawnmerePlacement.h's W5 block, and
@@ -4103,12 +4106,17 @@ void Project_RegisterEditorAutomationSteps()
 		// deserialization ctor, which never calls LoadCombinedPhysicsGeometry), so an
 		// authoring-time raycast would simply MISS.
 		//
-		// SEPARATION is deliberately enormous -- the closest PAIR is 16.1 m, against
+		// SEPARATION is deliberately generous -- the closest PAIR is 13.4 m, against
 		// a 2.9 m effective reach (2.5 global + 0.4 per-NPC). The picker resolves the
 		// NEAREST FACED candidate, so two NPCs within reach of each other would make
-		// "which NPC answered?" a function of sub-metre walk error; at 16 m the
+		// "which NPC answered?" a function of sub-metre walk error; at 13 m the
 		// answer cannot be ambiguous, and the walk-up test can assert the winner BY
 		// ENTITY ID. Exact distances are derived at the coordinates below.
+		//
+		// ★ ZM-D-217 SHRANK EVERY OFFSET WITH THE TOWN, and the figure that matters
+		// is the RATIO, not the metres: 13.4 m is 4.6x the reach where v6's 16.1 m
+		// was 5.5x, on a town core 1.8x wider. Nothing here is scaled by eye -- every
+		// separation below is re-derived against the v7 drive corridors.
 		//
 		// The VILLAGER is the walk-up target and sits straight +Z of the spawn on
 		// purpose: +Z is the one movement axis with existing evidence
@@ -4118,35 +4126,37 @@ void Project_RegisterEditorAutomationSteps()
 		// ★★ THE OTHER TWO MUST STAY OFF THE HOME DRIVE CORRIDOR. A solid STATIC
 		// AABB on it WEDGES A DIFFERENT, ALREADY-GREEN TEST:
 		// ZM_PlayerHomeRoundTrip_Test drives the player from the TownCenter spawn
-		// (512, 480) to the door staging waypoint with DriveTowardXZ, which has NO
+		// (192, 128) to the door staging waypoint with DriveTowardXZ, which has NO
 		// obstacle avoidance. An NPC box on that line stops the capsule head-on
 		// (the 1.8 m body is far above the 0.40 m step assist), the staging
 		// tolerance is never met, and that test dies at its frame cap with a
 		// timeout that names distance, not the NPC.
-		// ★ ZM-D-173 CHANGED THAT CORRIDOR'S SHAPE. It used to be pure -X along
-		// z = 480 (|dz| inside DriveTowardXZ's 0.08 dead zone, so only 'A' was
-		// held); with the Home relocated the staging waypoint is
-		// ZM_GetDawnmereHomeDoorStagingXZ() -- currently (384, 470) -- so the leg is
-		// a shallow diagonal that drops 10 m in Z across 128 m in X. Anything
-		// between z = 470 and z = 480 on that run is now in the way, which the two
-		// flank NPCs at z + 18 still clear by 18 m.
-		// So both flank NPCs are pushed to z + 18, keeping 18 m of clearance from
-		// the Home corridor while staying 14 m off the x = 512 spawn-to-villager
-		// corridor and well clear of the Home shell (x 375.5..392.5, z 476..489).
+		// ★ THE CORRIDOR IS A SHALLOW DIAGONAL, NOT A PURE -X RUN. It goes from
+		// (192, 128) to ZM_GetDawnmereHomeDoorStagingXZ() -- currently (128, 122) --
+		// so it drops 6 m in Z across 64 m in X. Both flank NPCs sit at z + 16 and
+		// clear it by 17.1 m (caretaker) and 17.1 m (clerk), measured as PERPENDICULAR
+		// distance to the leg rather than as a Z gap, which is what the diagonal
+		// makes necessary.
+		// ★★ AND SINCE ZM-D-217 THIS IS NO LONGER THE ONLY THING STANDING BETWEEN A
+		// STATIC BODY AND THAT CORRIDOR. Source/World/ZM_DawnmereDressing.h computes
+		// the same corridor as a KEEP-OUT primitive and
+		// Tests/ZM_Tests_DawnmereDressing.cpp walks every leg of it end to end. This
+		// paragraph is still the reasoning for the four NPCs (which the dressing does
+		// not place); the scenery is checked rather than reasoned about.
 		// A scene-placement change can regress a suite it never mentions -- check the
 		// existing traversal routes before moving anything in this block.
 		//
 		const Zenith_Maths::Vector3 xNpcScale = xPlayerScale;
 		const Zenith_Maths::Vector3 xVillagerCenter = ZM_DawnmereNpcAuthoredCenter(
 			ZM_DAWNMERE_NPC_VILLAGER, fPlayerCapsuleHalfExtent);
-		// z + 18 keeps both off the Home-traversal corridor, which since ZM-D-173
-		// runs from (512, 480) down to the door staging waypoint at (384, 470).
+		// z + 16 keeps both off the Home-traversal corridor, which runs from
+		// (192, 128) down to the door staging waypoint at (128, 122).
 		// Separations against the 2.9 m effective reach (2.5 global + 0.4 authored):
-		//   villager <-> clerk      = sqrt(14^2 + 8^2) = 16.1 m
-		//   villager <-> caretaker  = sqrt(14^2 + 8^2) = 16.1 m
-		//   clerk    <-> caretaker  = 28.0 m
-		//   spawn    <-> either     = sqrt(14^2 + 18^2) = 22.8 m
-		// The closest pair is 5.5x reach, so the nearest-faced-candidate picker can
+		//   villager <-> clerk      = sqrt(12^2 + 6^2) = 13.4 m
+		//   villager <-> caretaker  = sqrt(12^2 + 6^2) = 13.4 m
+		//   clerk    <-> caretaker  = 24.0 m
+		//   spawn    <-> either     = sqrt(12^2 + 16^2) = 20.0 m
+		// The closest pair is 4.6x reach, so the nearest-faced-candidate picker can
 		// never confuse two of them and the walk-up test can assert the winner BY
 		// ENTITY ID; and neither flank NPC is reachable from spawn, which keeps the
 		// test's out-of-range negative unambiguous.
@@ -4161,28 +4171,30 @@ void Project_RegisterEditorAutomationSteps()
 		ZM_QueueStationaryTalkerNpc(xAuto, "Npc_Caretaker",
 			xCaretakerCenter, xNpcScale, &ZM_ConfigureCaretakerNpc);
 		// S7 item 2 SC1: the story-gated warden. He stands on the authored HOME
-		// WALKWAY, not on the north road: (478, 498) is ~1.1 m off the Home path
-		// centreline and ~36.8 m from the nearest point of the Route polyline
-		// (ZM_TerrainAuthoring.cpp:36-49), so his lines are written as a lane warden
-		// rather than a road-blocker. The position itself is derived under exactly the
-		// constraints stated above, NOT eyeballed:
-		//   * z + 18 is the SAME clearance the two flank NPCs use, so the warden is
-		//     18 m off the Home traversal corridor (z 470..480 since ZM-D-173) that
-		//     ZM_PlayerHomeRoundTrip_Test drives blind along. Anything nearer would
-		//     re-open the wedging hazard the block above is written to prevent.
-		//   * x - 34 keeps it 34 m off the x = 512 spawn-to-villager corridor.
+		// WALKWAY, not on the north road: (166, 142) is ~3.7 m off the Home path
+		// centreline -- inside its 10 m flatten corridor, which is what makes him
+		// read as standing ON the lane -- and ~24.8 m from the nearest point of the
+		// Route polyline, so his lines are written as a lane warden rather than a
+		// road-blocker. The position itself is derived under exactly the constraints
+		// stated above, NOT eyeballed:
+		//   * PERPENDICULAR distance to the Home traversal corridor (192, 128) ->
+		//     (128, 122) is 16.4 m, comparable to the two flank NPCs' 17.1 m.
+		//     Anything nearer would re-open the wedging hazard the block above is
+		//     written to prevent -- and note this is a perpendicular measure, not a
+		//     Z gap: the v7 corridor is a diagonal.
+		//   * x - 26 keeps him 26 m off the x = 192 spawn-to-villager corridor.
 		//   * Separations from the existing roster, against the same 2.9 m effective
-		//     reach: caretaker (498, 498) = 20.0 m (the new closest pair, still 6.9x
-		//     reach and wider than the existing 16.1 m minimum, so the "closest pair"
-		//     figure quoted at fZM_NPC_AUTHORED_RADIUS is unchanged); villager
-		//     (512, 490) = sqrt(34^2 + 8^2) = 34.9 m; clerk (526, 498) = 48.0 m;
-		//     wanderer patrol (540, 476..484) = 63.6 m at its nearest endpoint;
-		//     TownCenter spawn = sqrt(34^2 + 18^2) = 38.5 m, so the warden is not
-		//     reachable from spawn and the existing out-of-range negative stays clean.
-		//   * The Home shell (x 375.5..392.5, z 476..489) lies SOUTH-WEST of the
-		//     warden, who stands at (478, 498): its east face is 85.5 m west and its
-		//     north face is 9 m south. That is ample clearance; re-check both axes
-		//     if either the facade footprint or the warden placement moves.
+		//     reach: caretaker (180, 144) = 14.1 m (still 4.9x reach, and wider than
+		//     the 13.4 m minimum quoted above, so the "closest pair" figure at
+		//     fZM_NPC_AUTHORED_RADIUS is unchanged); villager (192, 138) = 27.9 m;
+		//     clerk (204, 144) = 38.1 m; wanderer patrol (214, 124..132) = 50.0 m at
+		//     its nearest endpoint; TownCenter spawn = sqrt(26^2 + 14^2) = 29.5 m, so
+		//     the warden is not reachable from spawn and the existing out-of-range
+		//     negative stays clean.
+		//   * The Home shell (x 119.5..136.5, z 128..141) lies SOUTH-WEST of the
+		//     warden, who stands at (166, 142): its east face is 29.5 m west and its
+		//     north face is 1 m south. That is ample horizontal clearance; re-check
+		//     both axes if either the facade footprint or the warden placement moves.
 		// Height is his OWN measured feet plus the shared capsule half-extent, like
 		// every other NPC since known-limit W5 -- see the block above.
 		// ★ When a later stage authors a real Route 1, a warden who is meant to BLOCK
@@ -4195,10 +4207,9 @@ void Project_RegisterEditorAutomationSteps()
 		ZM_QueueStationaryTalkerNpc(xAuto, "Npc_Warden",
 			xRouteWardenCenter, xNpcScale, &ZM_ConfigureRouteWardenNpc);
 		// SC8: the fourth row is a deterministic two-point patrol. Both endpoints are
-		// 28 m east of the TownCenter spawn and outside the Home corridor's
-		// x<=512 run; the nearest stationary NPC (the clerk) remains >19 m away.
-		// Its resting centre would put this capsule ON the local surface, which is
-		// higher than the town centre; ONE EXTRA capsule half-extent of clearance
+		// 22 m east of the TownCenter spawn and clear of the Home corridor, which
+		// runs WEST from it; the nearest stationary NPC (the clerk) remains >20 m
+		// away. ONE EXTRA capsule half-extent of clearance
 		// authors it safely above that surface so gravity settles it from the front
 		// side. That special case is NAMED (ZM_DawnmereWandererSpawnY) rather than
 		// open-coded, because it is the one NPC whose authored Y is not its centre.
@@ -4452,6 +4463,63 @@ void Project_RegisterEditorAutomationSteps()
 			COLLISION_VOLUME_TYPE_AABB, RIGIDBODY_TYPE_STATIC);
 		xAuto.AddStep_AddComponent("ZM_WarpTrigger");
 		xAuto.AddStep_Custom(&ZM_ConfigureDawnmereNorthGateTrigger);
+
+		// ---- ZM-D-217: THE SCENERY LAYER -----------------------------------
+		//
+		// ★★ WHY DAWNMERE HAD NONE UNTIL NOW. Every entity above is a BLOCKOUT,
+		// a marker or a person; the map itself was terrain and grass and nothing
+		// else, over 368,640 m^2. The v7 recipe cuts that to 147,456 and pulls the
+		// buildings in, but a smaller empty field is still an empty field. This
+		// block is the other half of the fix: instanced woodland, rock, deadwood
+		// and bushes from the SHARED engine sets -- Zenith/Assets/Meshes/
+		// {ProceduralTree,Rocks,FallenTrees,Bushes}, regenerated by their
+		// generators in Tools/ on every tools boot, and the same sets RenderTest
+		// dresses its campus with. No Zenithmon-owned art is introduced.
+		//
+		// ★★ EVERY PIECE OF IT IS KEPT OFF THE TOWN BY GEOMETRY, NOT BY EYE.
+		// Boulders, shards, stumps, logs and tree TRUNKS all carry per-instance
+		// capsule colliders, and every automated traversal in this game drives
+		// the player with DriveTowardXZ, which has NO obstacle avoidance -- so a
+		// prop on a drive leg stops the capsule dead and the suite dies at its
+		// frame cap naming a DISTANCE, never the boulder. The Home block further
+		// up this file has carried that hazard as PROSE since S6; ZM_DawnmereDressing
+		// turns it into a computed keep-out (pads and path corridors read from the
+		// terrain recipe, anchors and markers from ZM_DawnmerePlacement.h, plus the
+		// seven blind drive legs, which exist only in test code and are the one
+		// thing that file spells) and Tests/ZM_Tests_DawnmereDressing.cpp asserts
+		// it headless.
+		//
+		// ★ THE TWO HALVES ARE AUTHORED BY DIFFERENT MECHANISMS ON PURPOSE.
+		// Trees go through the ENGINE's terrain-editor tree brush, because the
+		// trunk/leaves lockstep, the shared sway VAT phase and the trunk collider
+		// are already implemented and tested there -- Dawnmere's only genuine
+		// difference from RenderTest's tree rings is WHERE the discs are, and a
+		// second implementation would be a second thing to keep correct. The
+		// rocks/deadwood/bushes go through ZM_ScatterDawnmerePropsStep, because
+		// the brush has no keep-out and no notion of a laid-down log.
+		//
+		// ★ APPENDED HERE, AFTER EVERY MARKER AND SENSOR AND STRICTLY BEFORE THE
+		// PRE-SAVE GUARD (ZM-D-148 dense authoring-order file indices). The tree
+		// brush creates TerrainTrees_Trunk/_Leaves on its first dab, so those two
+		// entities land after the north gate rather than in the middle of the
+		// seam entities.
+		{
+			const int iTreeTool = static_cast<int>(Zenith_TerrainBrushTool::TreePaint);
+			xAuto.AddStep_TerrainSetTreeBrush(
+				iZM_DAWNMERE_TREES_PER_CLUMP,
+				fZM_DAWNMERE_TREE_SCALE_MIN, fZM_DAWNMERE_TREE_SCALE_MAX,
+				fZM_DAWNMERE_TREE_SPACING, fZM_DAWNMERE_TREE_MAX_SLOPE_DEG,
+				iZM_DAWNMERE_TREE_SEED);
+			for (u_int uClump = 0u; uClump < ZM_GetDawnmereTreeClumpCount(); ++uClump)
+			{
+				const ZM_DawnmereTreeClump& xClump = ZM_GetDawnmereTreeClump(uClump);
+				// fStrength 1.0 = full density for this dab; fToolValue 0 = paint
+				// (> 0.5 would ERASE, which would silently undo the previous dabs).
+				xAuto.AddStep_TerrainBrushStroke(iTreeTool,
+					xClump.m_fX, xClump.m_fZ, xClump.m_fRadius, 1.0f, 0.0f);
+			}
+			xAuto.AddStep_Custom(&ZM_ScatterDawnmerePropsStep);
+		}
 
 		// ★ IMMEDIATELY BEFORE THE SAVE, NOT ANYWHERE EARLIER. The guard serializes the
 		// rival's transform for real and compares the resulting bytes with

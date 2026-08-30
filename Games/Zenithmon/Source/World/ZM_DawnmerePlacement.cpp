@@ -63,17 +63,49 @@ namespace
 	// Deduced, a missing or extra row is a COMPILE error at the table itself.
 	const ZM_DawnmereNpcAnchor s_axDawnmereNpcAnchors[] =
 	{
+		// ★★ THE ROSTER WAS RE-DERIVED AT v8 (ZM-D-218), NOT RESCALED, AND THE
+		// REASON IS THE SAME ONE THAT MOVED VESPER. Compacting the town brought the
+		// plaza to within 45 m of both buildings, and the two BLIND DRIVE LEGS --
+		// spawn -> Home staging and spawn -> Lab staging -- now leave the spawn as
+		// steep diagonals rather than the shallow runs v7 had. Scaling v7's
+		// offsets put the clerk 1.58 m and the caretaker 0.36 m from those legs,
+		// i.e. static bodies standing ON corridors that DriveTowardXZ walks with no
+		// obstacle avoidance. That is precisely the wedge the block in Zenithmon.cpp
+		// has warned about since S6, and it is what a "just scale everything" pass
+		// would have shipped.
+		//
+		// The roster is therefore placed by BEARING from the spawn, avoiding the
+		// three directions the legs leave in (north-west to the Home, north-east to
+		// the Lab, due north up the lane and to the walk-up target). Every offset
+		// below is a multiple of 4 -- see ZM-D-186 for why a measured anchor has to
+		// sit on the physics lattice.
+		//
+		// The closest distinct-NPC PAIR is now 22.4 m against a 2.9 m effective
+		// reach (7.7x), where v7 held 13.4 m (4.6x) and v6 16.1 m (5.5x) -- so the
+		// smallest town this game has had also has the widest interact margins.
+		//
 		// entity name,          X,                                          Z,                                          feet Y
 		// townCentre.x, townCentre.z + 10 -- straight +Z of the spawn, the walk-up target.
 		{ "Npc_Villager",       fZM_DAWNMERE_TOWN_CENTER_X,          fZM_DAWNMERE_TOWN_CENTER_Z + 10.0f, fZM_DAWNMERE_FEET_Y_VILLAGER     },
-		// townCentre.x + 14, townCentre.z + 18 -- 18 m off the z=160 Home corridor.
-		{ "Npc_TradePostClerk", fZM_DAWNMERE_TOWN_CENTER_X + 14.0f,  fZM_DAWNMERE_TOWN_CENTER_Z + 18.0f, fZM_DAWNMERE_FEET_Y_CLERK        },
-		// townCentre.x - 14, townCentre.z + 18 -- the mirror of the clerk.
-		{ "Npc_Caretaker",      fZM_DAWNMERE_TOWN_CENTER_X - 14.0f,  fZM_DAWNMERE_TOWN_CENTER_Z + 18.0f, fZM_DAWNMERE_FEET_Y_CARETAKER    },
-		// townCentre.x - 34, townCentre.z + 18 -- on the Home walkway, off the road.
-		{ "Npc_Warden",         fZM_DAWNMERE_TOWN_CENTER_X - 34.0f,  fZM_DAWNMERE_TOWN_CENTER_Z + 18.0f, fZM_DAWNMERE_FEET_Y_WARDEN       },
-		// townCentre.x + 28, townCentre.z - 4 -- patrol endpoint 0, 28 m east of spawn.
-		{ "Npc_Wanderer",       fZM_DAWNMERE_TOWN_CENTER_X + 28.0f,  fZM_DAWNMERE_TOWN_CENTER_Z - 4.0f,  fZM_DAWNMERE_FEET_Y_WANDERER     },
+		// townCentre.x + 24, townCentre.z + 18 -- east-north-east, 9.0 m clear of
+		// the Lab drive leg.
+		{ "Npc_TradePostClerk", fZM_DAWNMERE_TOWN_CENTER_X + 24.0f,  fZM_DAWNMERE_TOWN_CENTER_Z + 18.0f, fZM_DAWNMERE_FEET_Y_CLERK        },
+		// townCentre.x - 24, townCentre.z + 18 -- the mirror of the clerk, 7.1 m
+		// clear of the Home drive leg. It is also the anchor Vesper's placement is
+		// derived from (twice this offset), so moving it moves him.
+		{ "Npc_Caretaker",      fZM_DAWNMERE_TOWN_CENTER_X - 24.0f,  fZM_DAWNMERE_TOWN_CENTER_Z + 18.0f, fZM_DAWNMERE_FEET_Y_CARETAKER    },
+		// townCentre.x - 20, townCentre.z - 4 -- the square's south-west corner.
+		// ★ HE IS NO LONGER "ON THE HOME WALKWAY", AND HE CANNOT BE. In the v8 town
+		// the Home WALKWAY and the Home blind DRIVE LEG converge to within 3 m of
+		// each other, so there is no strip that is on the lane and off the corridor;
+		// the v7 framing died with the compaction rather than with any decision.
+		// His lines in ZM_NpcData.cpp still read as a lane warden, which is the
+		// ZM-D-156 deviation already recorded: when a real Route 1 gate exists he
+		// belongs on that polyline and every figure here is re-derived from scratch.
+		{ "Npc_Warden",         fZM_DAWNMERE_TOWN_CENTER_X - 20.0f,  fZM_DAWNMERE_TOWN_CENTER_Z - 4.0f,  fZM_DAWNMERE_FEET_Y_WARDEN       },
+		// townCentre.x + 20, townCentre.z - 4 -- patrol endpoint 0, the warden's
+		// mirror on the square's south-east corner.
+		{ "Npc_Wanderer",       fZM_DAWNMERE_TOWN_CENTER_X + 20.0f,  fZM_DAWNMERE_TOWN_CENTER_Z - 4.0f,  fZM_DAWNMERE_FEET_Y_WANDERER     },
 		// The rival's XZ is DERIVED in this file's header; do not restate it here.
 		{ "Npc_RivalVesper",    fZM_DAWNMERE_VESPER_X,               fZM_DAWNMERE_VESPER_Z,              fZM_DAWNMERE_FEET_Y_RIVAL_VESPER },
 	};
@@ -83,15 +115,20 @@ namespace
 			== ZM_DAWNMERE_NPC_COUNT,
 		"the Dawnmere anchor table must have exactly one row per ZM_DAWNMERE_NPC_ID");
 
-	// The wanderer's two patrol endpoints: a north/south loop at x = townCentre + 28.
+	// The wanderer's two patrol endpoints: a north/south loop at x = townCentre + 20.
 	// Endpoint 0 IS the wanderer's spawn anchor, so it reuses that row's measured
 	// feet height rather than carrying a second editable copy of the same surface.
+	//
+	// ★ THE 8 m PATROL LENGTH DID NOT SHRINK WITH THE TOWN. It is a WALK, timed
+	// against the walker's speed and sampled by ZM_NpcWalker's arrival tolerance;
+	// halving it would change what the patrol tests measure rather than how far
+	// apart the town's landmarks are. Only its X offset from the spawn moved.
 	const ZM_DawnmereNpcAnchor s_axDawnmereWanderWaypoints[] =
 	{
-		// townCentre.x + 28, townCentre.z - 4 -- identical to the wanderer anchor.
-		{ "WanderWaypoint0", fZM_DAWNMERE_TOWN_CENTER_X + 28.0f, fZM_DAWNMERE_TOWN_CENTER_Z - 4.0f, fZM_DAWNMERE_FEET_Y_WANDERER   },
-		// townCentre.x + 28, townCentre.z + 4 -- 8 m north along the same line.
-		{ "WanderWaypoint1", fZM_DAWNMERE_TOWN_CENTER_X + 28.0f, fZM_DAWNMERE_TOWN_CENTER_Z + 4.0f, fZM_DAWNMERE_FEET_Y_WANDER_WP1 },
+		// townCentre.x + 20, townCentre.z - 4 -- identical to the wanderer anchor.
+		{ "WanderWaypoint0", fZM_DAWNMERE_TOWN_CENTER_X + 20.0f, fZM_DAWNMERE_TOWN_CENTER_Z - 4.0f, fZM_DAWNMERE_FEET_Y_WANDERER   },
+		// townCentre.x + 20, townCentre.z + 4 -- 8 m north along the same line.
+		{ "WanderWaypoint1", fZM_DAWNMERE_TOWN_CENTER_X + 20.0f, fZM_DAWNMERE_TOWN_CENTER_Z + 4.0f, fZM_DAWNMERE_FEET_Y_WANDER_WP1 },
 	};
 
 	// Handed back for an unregistered id or waypoint index. The alternative --
@@ -266,15 +303,32 @@ namespace
 	constexpr ZM_DawnmereNpcAnchor s_axDawnmereHomeSamples[] =
 	{
 		// name,                x,                              z,                              measured feet Y
-		{ "HomeShell_MinXMinZ", fZM_HOME_SHELL_MIN_X,           fZM_HOME_SHELL_MIN_Z,           24.03514f },
-		{ "HomeShell_MaxXMinZ", fZM_HOME_SHELL_MAX_X,           fZM_HOME_SHELL_MIN_Z,           23.99380f },
-		{ "HomeShell_MinXMaxZ", fZM_HOME_SHELL_MIN_X,           fZM_HOME_SHELL_MAX_Z,           23.87985f },
-		{ "HomeShell_MaxXMaxZ", fZM_HOME_SHELL_MAX_X,           fZM_HOME_SHELL_MAX_Z,           24.08647f },
-		{ "HomeDoorLeft",       fZM_DAWNMERE_HOME_DOOR_LEFT_X,  fZM_HOME_DOOR_SAMPLE_Z,         23.99215f },
-		{ "HomeDoorRight",      fZM_DAWNMERE_HOME_DOOR_RIGHT_X, fZM_HOME_DOOR_SAMPLE_Z,         23.93810f },
-		{ "HomeDoorTrigger",    fZM_DAWNMERE_HOME_X,            fZM_DAWNMERE_HOME_TRIGGER_Z,    24.06054f },
-		{ "FromHomeSpawn",      fZM_DAWNMERE_HOME_X,            fZM_DAWNMERE_FROM_HOME_SPAWN_Z, 24.34438f },
-		{ "HomeDoorStaging",    fZM_DAWNMERE_HOME_X,            fZM_DAWNMERE_HOME_DOOR_STAGING_Z, 24.25396f },
+		// ★★ RE-MEASURED 2026-08-30 (ZM-D-217) FROM
+		// ZM_DawnmereHomeGroundTruth_Test AGAINST THE v7 BAKE: hitTerrain=1,
+		// finalHit='DawnmereTerrain' on every row. The v7 recipe puts a SetHeight
+		// "Home shelf" under this site at strength 0.60 -- see the landform table in
+		// ZM_TerrainAuthoring.cpp, and the W5 block in this file's header for why a
+		// PAD could never have graded it and a shelf can.
+		//
+		// ★ THE SITE'S RELIEF IS 0.671 m ACROSS THE FOOTPRINT (corners 24.018 ..
+		// 24.690) AND 1.111 m ACROSS THE WHOLE COLUMN SET (the FromHome marker, 8 m
+		// out in front of the door, sits highest at 25.129 -- the forecourt climbs
+		// away from the building). The derived seating is min(corners) + 2.0 - 0.05
+		// = 25.968, so the roofline is 27.968; the entrance frame is a 2.5 m jamb
+		// under a 0.5 m lintel standing on max(doors) = 24.597, i.e. a 27.597 top.
+		// 0.372 m of clearance, and that subtraction is the number to re-check if
+		// this table is ever re-measured with more relief in it -- the Lab's
+		// equivalent has a UNIT (LabExterior_EnvelopeAndEntranceMatchProfLab-
+		// Contract) and the Home's does not.
+		{ "HomeShell_MinXMinZ", fZM_HOME_SHELL_MIN_X,           fZM_HOME_SHELL_MIN_Z,           23.86860f },
+		{ "HomeShell_MaxXMinZ", fZM_HOME_SHELL_MAX_X,           fZM_HOME_SHELL_MIN_Z,           24.00371f },
+		{ "HomeShell_MinXMaxZ", fZM_HOME_SHELL_MIN_X,           fZM_HOME_SHELL_MAX_Z,           23.77703f },
+		{ "HomeShell_MaxXMaxZ", fZM_HOME_SHELL_MAX_X,           fZM_HOME_SHELL_MAX_Z,           23.72489f },
+		{ "HomeDoorLeft",       fZM_DAWNMERE_HOME_DOOR_LEFT_X,  fZM_HOME_DOOR_SAMPLE_Z,         23.95036f },
+		{ "HomeDoorRight",      fZM_DAWNMERE_HOME_DOOR_RIGHT_X, fZM_HOME_DOOR_SAMPLE_Z,         23.97583f },
+		{ "HomeDoorTrigger",    fZM_DAWNMERE_HOME_X,            fZM_DAWNMERE_HOME_TRIGGER_Z,    23.96821f },
+		{ "FromHomeSpawn",      fZM_DAWNMERE_HOME_X,            fZM_DAWNMERE_FROM_HOME_SPAWN_Z, 23.99378f },
+		{ "HomeDoorStaging",    fZM_DAWNMERE_HOME_X,            fZM_DAWNMERE_HOME_DOOR_STAGING_Z, 23.98282f },
 		// The anchor row, so the oracle re-checks the town centre on the same run.
 		{ "TownCenter",         fZM_DAWNMERE_TOWN_CENTER_X,     fZM_DAWNMERE_TOWN_CENTER_Z,     fZM_DAWNMERE_TOWN_CENTER_FEET_Y },
 	};
@@ -523,18 +577,30 @@ namespace
 	constexpr ZM_DawnmereNpcAnchor s_axDawnmereLabSamples[] =
 	{
 		// name,                x,                             z,                            measured feet Y
-		{ "LabShell_MinXMinZ",  fZM_LAB_SHELL_MIN_X,           fZM_LAB_SHELL_MIN_Z,          25.09159f },
-		{ "LabShell_MaxXMinZ",  fZM_LAB_SHELL_MAX_X,           fZM_LAB_SHELL_MIN_Z,          25.58217f },
-		{ "LabShell_MinXMaxZ",  fZM_LAB_SHELL_MIN_X,           fZM_LAB_SHELL_MAX_Z,          24.19491f },
-		{ "LabShell_MaxXMaxZ",  fZM_LAB_SHELL_MAX_X,           fZM_LAB_SHELL_MAX_Z,          24.44405f },
-		{ "LabDoorLeft",        fZM_DAWNMERE_LAB_DOOR_LEFT_X,  fZM_LAB_DOOR_SAMPLE_Z,        25.01930f },
-		{ "LabDoorRight",       fZM_DAWNMERE_LAB_DOOR_RIGHT_X, fZM_LAB_DOOR_SAMPLE_Z,        25.21366f },
-		{ "LabDoorTrigger",     fZM_DAWNMERE_LAB_X,            fZM_DAWNMERE_LAB_TRIGGER_Z,   25.05533f },
-		{ "FromLabSpawn",       fZM_DAWNMERE_LAB_X,            fZM_DAWNMERE_FROM_LAB_SPAWN_Z, 25.36531f },
-		{ "LabDoorStaging",     fZM_DAWNMERE_LAB_X,            fZM_DAWNMERE_LAB_DOOR_STAGING_Z, 25.21712f },
+		// ★★ RE-MEASURED 2026-08-30 (ZM-D-217) FROM ZM_DawnmereLabGroundTruth_Test
+		// AGAINST THE v7 BAKE, for the reason spelled out on the Home table above.
+		//
+		// ★ THIS SITE CARRIES THE MAP'S LARGEST BUILDING RELIEF, and that is a
+		// property of where it sits rather than of the shelf under it: the east
+		// flank ridge's foot reaches into the pad from the +X side, so the two
+		// -Z corners read 24.515 / 24.791 while the +Z pair reads 24.040 / 24.244,
+		// and the forecourt climbs to 25.433 at the arrival marker. Relief across
+		// the footprint is 0.751 m; the roofline is min(corners) + 5.5 - 0.05 =
+		// 29.490 against a frame top of max(doors) + 3.5 = 28.275, i.e. 1.215 m of
+		// clearance. That is the clause fZM_DAWNMERE_LAB_SHELL_SCALE_Y's block in
+		// the header is about, and 5.5 is carrying it comfortably.
+		{ "LabShell_MinXMinZ",  fZM_LAB_SHELL_MIN_X,           fZM_LAB_SHELL_MIN_Z,          24.11337f },
+		{ "LabShell_MaxXMinZ",  fZM_LAB_SHELL_MAX_X,           fZM_LAB_SHELL_MIN_Z,          24.16703f },
+		{ "LabShell_MinXMaxZ",  fZM_LAB_SHELL_MIN_X,           fZM_LAB_SHELL_MAX_Z,          24.21393f },
+		{ "LabShell_MaxXMaxZ",  fZM_LAB_SHELL_MAX_X,           fZM_LAB_SHELL_MAX_Z,          24.53603f },
+		{ "LabDoorLeft",        fZM_DAWNMERE_LAB_DOOR_LEFT_X,  fZM_LAB_DOOR_SAMPLE_Z,        24.02766f },
+		{ "LabDoorRight",       fZM_DAWNMERE_LAB_DOOR_RIGHT_X, fZM_LAB_DOOR_SAMPLE_Z,        24.05154f },
+		{ "LabDoorTrigger",     fZM_DAWNMERE_LAB_X,            fZM_DAWNMERE_LAB_TRIGGER_Z,   24.03211f },
+		{ "FromLabSpawn",       fZM_DAWNMERE_LAB_X,            fZM_DAWNMERE_FROM_LAB_SPAWN_Z, 24.03527f },
+		{ "LabDoorStaging",     fZM_DAWNMERE_LAB_X,            fZM_DAWNMERE_LAB_DOOR_STAGING_Z, 24.03560f },
 		// The reserved pad's own centre, so the oracle states the site's reference
 		// height on the same run it measures everything derived from it.
-		{ "LabPadCenter",       fZM_DAWNMERE_LAB_X,            fZM_DAWNMERE_LAB_PAD_CENTER_Z, 24.07768f },
+		{ "LabPadCenter",       fZM_DAWNMERE_LAB_X,            fZM_DAWNMERE_LAB_PAD_CENTER_Z, 24.02228f },
 	};
 	// ==== END S8 SC-D MEASURED LAB GROUND ====
 
@@ -736,29 +802,48 @@ namespace
 	constexpr ZM_DawnmereNpcAnchor s_axDawnmereRouteSeamSamples[] =
 	{
 		// name,               x,                          z,                          measured feet Y
-		// RE-MEASURED 2026-08-27 from ZM_DawnmereRouteSeamGroundTruth_Test against a
-		// warm Dawnmere bake of the SHRUNKEN map: hitTerrain=1,
-		// finalHit='DawnmereTerrain', playerPresent=1 (the capsule was found and
-		// correctly IGNORED by the probe). Both rows moved because the terrain under
-		// them is new -- a 9x10 grid, the content translated onto it, and the hills
-		// re-authored for the smaller domain.
+		// ★★ RE-MEASURED 2026-08-30 (ZM-D-217) FROM
+		// ZM_DawnmereRouteSeamGroundTruth_Test AGAINST THE v7 BAKE: hitTerrain=1,
+		// finalHit='DawnmereTerrain', resolved=1 on both rows.
 		//
-		// ★★ THIS ROW USED TO BE THE ODD ONE OUT AND NOW IT IS TYPICAL, WHICH IS THE
-		// FINDING WORTH KEEPING. It reads 24.549 against a 24.0 target -- target +
-		// 0.549 -- because it lies 4.56 m from the "Route" path polyline against an
-		// 18 m flatten radius, and a FLATTEN dab drives ground TO the target. That
-		// was the ONLY Dawnmere column with that property before the shrink; every
-		// other one sat ~+2 m above target on hydraulic-erosion deposit over
-		// UNFLATTENED ground, and this row's near-target reading had to be explained.
+		// ★★ THESE TWO ARE THE ONLY DAWNMERE COLUMNS THAT DO **NOT** READ WITHIN A
+		// FEW TENTHS OF THE 24.0 TARGET, WHICH IS A FINDING RATHER THAN A TOLERANCE
+		// TO WIDEN -- the oracle's own failure text says so, and it is right. 22.325
+		// and 22.681 are 1.675 m and 1.319 m BELOW target, while all 20 columns in
+		// the Home, Lab and W5 tables sit within a metre of it.
 		//
-		// It no longer does. The shrink re-centred the erosion disc on the plaza and
-		// scaled its radius with the map, so the whole town is inside the eroded
-		// region and every Dawnmere column now reads within a few tenths of target
-		// (23.70 .. 25.58, two of them BELOW it). The flattened/unflattened split
-		// this comment was written to explain is not visible in Dawnmere's numbers
-		// any more -- but it is still the mechanism, and it is still why every
-		// Route1 and Thornacre arrival anchor reads near ITS target.
-		{ "FromRoute1Spawn",   fZM_DAWNMERE_FROM_ROUTE1_X, fZM_DAWNMERE_FROM_ROUTE1_Z, 24.54869f },
+		// The difference is not the corridor; it is that those 20 columns sit on a
+		// SetHeight SHELF (the v7 landform table) and these two do not. The town
+		// shelf's outer radius is 120 m about the plaza and these columns are 128 m
+		// and 140 m out, so they are on natural ground corrected only by the "Route"
+		// path's FLATTEN dabs -- and a flatten dab moves a texel
+		// `(target - h) * falloff * strength * 0.35`, which even eight overlapping
+		// dabs deep does not remove a 2 m deviation. See the W5 block in the header
+		// for the full measurement of that kernel.
+		//
+		// ★ THIS FALSIFIES A CLAIM THIS FILE AND THE NORTH-GATE BLOCK BOTH MADE:
+		// "the ground under this gate is graded lane inside a graded pad, which is
+		// the condition under which a flatten dab drives ground TO the recipe
+		// target". A flatten dab does not drive ground TO a target; it moves it a
+		// third of the way, once per dab. Both blocks are corrected.
+		//
+		// ★★ A FOURTH SHELF OVER THE CORRIDOR WAS BUILT, MEASURED AND REVERTED, and
+		// the reason is the useful part. It worked -- these two columns came up to
+		// 23.92 and 23.90 -- but the observation that motivated it was a capture of
+		// "the north walk" showing a player in a rocky ravine, and that frame was
+		// ROUTE 1, not Dawnmere: `ZM_SeamRoundTrip_Test` warps out of town on its
+		// second leg. The tell was the capture coming back PIXEL-IDENTICAL across two
+		// terrain edits and a forced re-bake. So the shelf was a real change with a
+		// false justification, and it was reverted rather than kept with the
+		// justification quietly rewritten.
+		//
+		// ★ WHAT THE PRE-SHELF STATE IS, ON ITS OWN MERITS: 1.7 m of descent over the
+		// 128 m from the plaza to the seam is a 1.3% grade, i.e. a road, and it is the
+		// one stretch of Dawnmere that is meant to read as LEAVING town rather than as
+		// more town. Shelving it flat would table off ~220 m of the map's north half
+		// for that. The per-column ground tables are exactly the mechanism that lets
+		// the seam entities sit correctly on a grade.
+		{ "FromRoute1Spawn",   fZM_DAWNMERE_FROM_ROUTE1_X, fZM_DAWNMERE_FROM_ROUTE1_Z, 23.72807f },
 		// FROZEN 2026-08-24 (ZM-65, closing ZM-D-203 §5 -- see the header) from
 		// ZM_DawnmereRouteSeamGroundTruth_Test against a warm Dawnmere bake:
 		// hitTerrain=1, finalHit='DawnmereTerrain', resolved=1, playerPresent=1
@@ -800,7 +885,15 @@ namespace
 		// 0.962 m and nothing in this repo currently accounts for the spread.
 		// ★ THEREFORE DO NOT GENERALISE 0.068 INTO "SEAM PAIRS ARE CLOSE" -- the
 		// rule stands, on measurement rather than on a mechanism.
-		{ "DawnmereNorthGate", fZM_DAWNMERE_NORTH_GATE_X, fZM_DAWNMERE_NORTH_GATE_Z, 24.46398f },
+		// ★ v7 (ZM-D-217): 22.68141, i.e. **0.356 m ABOVE** the arrival column 12 m
+		// south. The sign is the favourable one the ZM-65 block below predicts and
+		// the magnitude is 5x the v6 pair's 0.068 m -- which is what a real grade
+		// looks like once the ground is no longer accidentally level. It also puts
+		// this pair inside the 0.068 .. 0.962 m spread the other three regions' 12 m
+		// seam pairs already showed, so the "nothing accounts for the spread" note
+		// below now has four measurements rather than three and its point is
+		// unchanged.
+		{ "DawnmereNorthGate", fZM_DAWNMERE_NORTH_GATE_X, fZM_DAWNMERE_NORTH_GATE_Z, 24.54962f },
 	};
 	// ==== END R1-2 / ZM-65 MEASURED ROUTE SEAM GROUND ====
 

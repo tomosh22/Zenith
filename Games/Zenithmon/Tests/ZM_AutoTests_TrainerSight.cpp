@@ -90,6 +90,7 @@
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Zenith_CameraResolve.h"       // Zenith_GetMainCameraAcrossScenes -- the walk's live basis
 #include "Input/Zenith_InputSimulator.h"
+#include "Zenithmon/Tests/ZM_TestWalkDrive.h"   // the ONE walk driver -- read its header before trusting a straight line
 #include "Input/Zenith_KeyCodes.h"
 #include "Maths/Zenith_Maths.h"
 #include "ZenithECS/Zenith_Scene.h"
@@ -694,61 +695,26 @@ namespace
 		return std::sqrt(fDeltaX * fDeltaX + fDeltaZ * fDeltaZ);
 	}
 
-	// A LOCAL COPY of ZM_AutoTests_NpcTalk.cpp's CAMERA-RELATIVE DriveTowardXZ. It
-	// cannot be shared (the original lives in that file's anonymous namespace), and
-	// it MUST be the camera-relative version: player movement is camera-relative
-	// and ZM_FollowCamera is a LAGGING spring, so a world-space key chooser was
-	// MEASURED settling onto a stable 45-degree wrong heading. Copy THIS one.
+	// The shared, unit-tested walk driver. See
+	// Tests/ZM_TestWalkDrive.h -- it is CAMERA-RELATIVE and QUANTISED TO EIGHT
+	// DIRECTIONS, so the player walks a PURSUIT CURVE rather than the straight
+	// line, and anything this suite must approach ON A BEARING wants one of the
+	// driver's fixed points. This wrapper exists only to keep the local name and
+	// to mirror the held keys where this file reports them.
 	void DriveTowardXZ(
 		const Zenith_Maths::Vector3& xPosition,
 		const Zenith_Maths::Vector3& xTarget)
 	{
+		// ★ THE CLEAR STAYS HERE, AND DROPPING IT COST A BATCH. Consolidating the
+		// driver moved this call out on the assumption that callers cleared before
+		// driving; they do not -- every one of the eight originals cleared INSIDE,
+		// and without it last frame's keys stay held and the walk curves away.
+		// Six automated tests went red. The shared driver deliberately does not
+		// clear, because each caller releases a DIFFERENT key set.
 		ClearTSInput();
-		constexpr float fDEAD_ZONE = 0.08f;
-
-		Zenith_Maths::Vector3 xCameraForward(0.0f, 0.0f, 1.0f);
-		if (Zenith_CameraComponent* pxCamera = Zenith_GetMainCameraAcrossScenes())
-		{
-			pxCamera->GetFacingDir(xCameraForward);
-		}
-		Zenith_Maths::Vector3 xForward(xCameraForward.x, 0.0f, xCameraForward.z);
-		const float fForwardLengthSq = xForward.x * xForward.x + xForward.z * xForward.z;
-		if (fForwardLengthSq <= 0.000001f)
-		{
-			xForward = Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f);
-		}
-		else
-		{
-			xForward /= std::sqrt(fForwardLengthSq);
-		}
-		const Zenith_Maths::Vector3 xRight(xForward.z, 0.0f, -xForward.x);
-
-		const Zenith_Maths::Vector3 xToTarget(
-			xTarget.x - xPosition.x, 0.0f, xTarget.z - xPosition.z);
-		const float fForwardAmount = xToTarget.x * xForward.x + xToTarget.z * xForward.z;
-		const float fRightAmount   = xToTarget.x * xRight.x   + xToTarget.z * xRight.z;
-
-		if (fRightAmount < -fDEAD_ZONE)
-		{
-			Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_A);
-			g_abTSHeldKeys[1] = true;
-		}
-		else if (fRightAmount > fDEAD_ZONE)
-		{
-			Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_D);
-			g_abTSHeldKeys[3] = true;
-		}
-		if (fForwardAmount < -fDEAD_ZONE)
-		{
-			Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_S);
-			g_abTSHeldKeys[2] = true;
-		}
-		else if (fForwardAmount > fDEAD_ZONE)
-		{
-			Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_W);
-			g_abTSHeldKeys[0] = true;
-		}
-		Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_LEFT_SHIFT);
+		const ZM_WalkDriveKeys xKeys =
+			ZM_DriveWalkTowardXZ(xPosition, xTarget, /*bRun*/ true);
+		xKeys.CopyTo(g_abTSHeldKeys);
 	}
 
 	// The runtime-placed trainer's live component. Re-resolved every frame.

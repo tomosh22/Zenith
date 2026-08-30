@@ -23,95 +23,220 @@ namespace
 	constexpr char acMANIFEST_MAGIC[uMANIFEST_MAGIC_SIZE] = { 'Z', 'M', 'T', 'R' };
 	constexpr const char* szMANIFEST_NAME = "ZM_TerrainRecipe.manifest";
 
-	// ★ RE-AUTHORED FOR THE 576 x 640 m MAP, not translated. The old four hills
-	// were sized to fill a 1024 x 1024 world (radii 160-190, one of them
-	// explicitly "850 + 174 = 1024" to touch the east boundary); translating them
-	// would have put every centre outside the new grid. What they DID was frame
-	// the town on all four sides from ~350 m out, and that is what these
-	// reproduce at ~200 m out with radii scaled to match.
+	// ★ RE-AUTHORED AGAIN FOR THE 256 x 256 m MAP (ZM-D-218). v7 took this from
+	// 576x640 to 384x384 and COMPACTED the town for the first time; v8 halves the
+	// area again and goes after the one distance v7 left long -- the walk between
+	// the player's house and the professor's lab, which was still 135 m door to
+	// door because the two buildings sat on opposite sides of the plaza.
 	//
 	// ★★ A LANDFORM CANNOT HUG AN EDGE, AND THAT IS ENFORCED. Every brush dab is
 	// checked centre +/- radius against the recipe's own bounds
 	// (AssertTerrainAuthoringPlanContained), so a "flanking ridge centred ON the
-	// west edge" is not a thing a small map can have -- the first draft of this
-	// table put five of its six hills outside the world and would have asserted on
-	// the first bake. A hill's centre must be at least its radius in from each
-	// edge, which on a 576 m axis means a 95 m hill lives in X [95, 481].
+	// west edge" is not a thing a small map can have. A hill's centre must be at
+	// least its radius in from each edge, which on a 256 m axis means a 42 m hill
+	// lives in X [42, 214].
 	//
-	// The town core plus its pads occupy X 104..456 of 576 after the translate, so
-	// these sit AROUND that footprint with their inner slopes reaching into it.
-	// That is fine and is how the 1024 m original worked too: pads and paths
-	// flatten in a LATER phase, so wherever a ridge foot crosses the plaza, the
-	// Lab pad or the route corridor, the flatten wins and the town reads as
+	// The town core plus its pads now occupy X 62..178 of 256, so these sit AROUND
+	// that footprint with their inner slopes reaching into it. Pads and paths
+	// flatten in a LATER phase, so wherever a ridge foot crosses the plaza, a
+	// building site or the route corridor, the flatten wins and the town reads as
 	// built into the foot of the hills rather than perched on them.
+	//
+	// ★ THE RELIEF IS AGAIN NOT SCALED DOWN WITH THE RADII, for the reason v7's
+	// note gives: a ridge has to gain its height over a shorter run or it reads as
+	// a slope rather than as a skyline. 32-36 m crests over 38-42 m radii.
 	const ZM_TerrainLandformSpec s_axDawnmereLandforms[] =
 	{
-		{ { 95.0f, 300.0f }, 95.0f, 0.52f, 38.0f },     // west flank ridge
-		{ { 490.0f, 350.0f }, 85.0f, 0.52f, 42.0f },    // east flank ridge, behind the Lab
-		{ { 300.0f, 85.0f }, 85.0f, 0.45f, 34.0f },     // south backdrop behind the town
-		{ { 90.0f, 545.0f }, 90.0f, 0.48f, 36.0f },     // north-west, framing the route corridor
-		{ { 485.0f, 520.0f }, 90.0f, 0.48f, 38.0f },    // north-east, ditto
+		{ { 42.0f, 132.0f }, 42.0f, 0.52f, 34.0f },     // west flank ridge
+		{ { 214.0f, 146.0f }, 42.0f, 0.52f, 36.0f },    // east flank ridge, behind the Lab
+		{ { 132.0f, 38.0f }, 38.0f, 0.45f, 32.0f },     // south backdrop behind the town
+		{ { 40.0f, 218.0f }, 38.0f, 0.48f, 32.0f },     // north-west, framing the route corridor
+		{ { 216.0f, 214.0f }, 40.0f, 0.48f, 34.0f },    // north-east, ditto
+		// ★★ THE LAST THREE ROWS ARE SHELVES, NOT HILLS, and every one of them is
+		// below strength 0.5. The full argument is v7's (ZM-D-217) and is worth
+		// re-reading before touching them: a terrain PAD converges at most 58% of
+		// the way to its target because the FLATTEN kernel moves a texel
+		// `(target - h) * falloff * strength * 0.35` per dab and a pad contributes
+		// exactly two. SetHeight -- `min(1, falloff * strength * 2)` -- is the
+		// kernel that actually assigns, and a strength at or above 0.5 SATURATES
+		// it, which leaves the ground dead flat and reds
+		// ZM_DawnmereNpcGroundTruth_Test's spread clause. Do not level ground by
+		// widening a pad; add or widen a shelf.
+		//
+		// ★★ THE TOWN SHELF IS SIZED BY THE **SIGHT CONE**, NOT BY THE SQUARE, and
+		// its first v8 draft ((120, 90) r 80) was not and went red. The roster's
+		// measured feet heights spanned 2.02 m, and
+		// ZM_Interaction/DawnmereNpcFeetHeights_SpreadProvesTheyAreNotOneSharedValue
+		// requires that span to stay UNDER fZM_SIGHT_MAX_VERTICAL (2.0): an NPC
+		// whose ground is more than the trainer cone's vertical band away from
+		// another's is one the picker or the cone cannot reach. The two ends of the
+		// span were the outermost anchors -- the wanderer's south patrol endpoint
+		// and the rival, on opposite edges of the shelf's falloff, where the
+		// correction had decayed to about 30%.
+		//
+		// So the shelf reaches every ANCHOR at a similar falloff rather than just
+		// containing the plaza: re-centred on the town's real centroid (the square
+		// sits at z 56..80 and the two buildings at z 100..121) and widened to 100,
+		// which puts the rival at d/r 0.48 instead of 0.61. 100 is also the largest
+		// radius the map allows from this centre -- 100 + 100 = 200 and the north
+		// edge is at 256, but the SOUTH foot lands on z = 0 exactly.
+		//
+		// ★ IT STILL DOES NOT SATURATE. At strength 0.42 the set fraction is
+		// min(1, falloff * 0.84), which cannot reach 1 anywhere, so the ground keeps
+		// its roll and the same clause's LOWER bound (spread >= 0.05) holds too.
+		// That is the pair of bounds this shelf lives between: level enough for the
+		// vertical band, uneven enough to be terrain.
+		{ { 120.0f, 100.0f }, 100.0f, 0.42f, 24.0f },
+		// The Home shelf, about (92, 100): within 20 m of the shell's four corners
+		// (<= 15.5 m), the doorway sensor, the FromHome arrival marker and the
+		// drive staging waypoint. Slightly firmer than the square's, because a
+		// 17 x 13 m box is seated on the LOWEST of its four corners and every
+		// centimetre of corner relief is a centimetre the facade sinks into the
+		// ground on the other three.
+		{ { 92.0f, 100.0f }, 40.0f, 0.45f, 24.0f },
+		// The Lab shelf, about (148, 108): within 20 m of the shell corners
+		// (<= 16.7 m), both jambs, the sensor, the FromLab arrival marker and the
+		// reserved pad centre. Same strength as the Home's and for the same reason
+		// -- and additionally because this site's relief is what
+		// fZM_DAWNMERE_LAB_SHELL_SCALE_Y has to clear.
+		{ { 148.0f, 108.0f }, 40.0f, 0.45f, 24.0f },
+		// ★★ THE RIVAL GETS A SHELF FOR THE SAME REASON THE TWO BUILDINGS DO, AND
+		// THE REASON IS PHYSICS RATHER THAN LOOKS. He is the map's only authored
+		// DYNAMIC capsule that has to stay where it was put: everything derived
+		// about him in ZM_DawnmerePlacement.h -- the whiteout clearance, the
+		// corridor margins, the sight bearing -- is stated about his AUTHORED XZ.
+		// Land that capsule on unflattened ground and it slides.
+		//
+		// v8's first draft put him outside the Plaza pad (48.8 m out against a 34 m
+		// radius) where v6 and v7 had both kept him inside it, and
+		// ZM_RivalVesperAuthored_Test measured him 0.823 m off his authored XZ
+		// against a 0.350 m tolerance BEFORE he had been asked to walk.
+		//
+		// ★★ AND THAT DRIFT WAS **NOT** WHY HE WAS BLIND, WHICH IS THE PART WORTH
+		// WRITING DOWN. It is tempting to read the two failures as one -- a sliding
+		// capsule tumbles, a tumbled trainer faces the wrong way, a trainer facing
+		// the wrong way cannot see -- and that story is wrong at its second step.
+		// The same run reported `watchFacingMinDot=1.00000`: his facing never moved
+		// at all, because the walk-up installs a yaw lock. The blindness was a
+		// BEARING error in the approach, diagnosed separately and fixed by moving
+		// him (see ZM_DawnmerePlacement.h). Two real defects, sharing one test and
+		// one symptom line, are not evidence for each other.
+		//
+		// ★ SO THE SHELF IS HERE ON ITS OWN MERITS: ANY AUTHORED DYNAMIC BODY NEEDS
+		// GRADED GROUND UNDER IT, and a pad is not grading (see the shelf note
+		// above). 0.87 m of unasked-for displacement invalidates every clearance
+		// derived about his anchor whether or not he can also see. This is the third
+		// distinct thing ZM-D-184's family of defects has cost -- spawn clearance,
+		// substep bursts, and now the surface itself.
+		{ { 80.0f, 60.0f }, 28.0f, 0.45f, 24.0f },
 	};
 
-	// Paths, pads, landmarks and the preview camera below are the SAME authored
-	// layout translated by (-232, -320) -- every relative distance is preserved
-	// exactly, so the town reads as it always did; only its world origin moved.
+	// ★★ v8's ONE STRUCTURAL CHANGE: THE HOUSE AND THE LAB ARE NOW A STREET, NOT
+	// TWO ENDS OF A TOWN. v7 kept the shipped topology -- Home west of the plaza,
+	// Lab east of it, route north -- and only shortened the arms, which left the
+	// two buildings 135 m apart door to door because the plaza sat between them.
+	// v8 puts them SIDE BY SIDE on the north edge of the square, both still facing
+	// -Z, with the route lane running north between them:
 	//
-	// ★ BOTH OFFSETS ARE MULTIPLES OF 4, AND THAT IS THE REASON THEY ARE THOSE
-	// NUMBERS. The physics mesh is built at density divisor 4 (4 m quads) against
-	// a 1 m render mesh, so an anchor on a 4 m lattice is a SHARED VERTEX of both
-	// and samples exactly rather than by interpolation -- the property
-	// ZM_DawnmerePlacement.h's ZM-D-186 note relies on when it explains why the
-	// town centre did not move when the collision density changed under it. -230
-	// would have put every Dawnmere anchor mid-quad; -232 keeps 512/384/640 on
-	// 280/152/408. The margin this spends is two metres of empty edge.
+	//     leg                        v6        v7        v8      v8 / v6
+	//     Home door -> Lab door     257.4 m   135.0 m    56.1 m    0.22
+	//     spawn -> Home door        128.9 m    64.0 m    48.8 m    0.38
+	//     spawn -> Lab door         148.4 m    76.9 m    52.2 m    0.35
+	//     plaza -> route boundary   416.0 m   192.0 m   128.0 m    0.31
+	//
+	// ★ 56 m IS NEAR THE FLOOR FOR THIS TOPOLOGY, AND THE FLOOR IS ARITHMETIC:
+	// half the Home shell (8.5) + half the Lab shell (10.5) + the route lane's own
+	// graded width (2 x 9) + a walkable margin either side. The two shell widths
+	// are fixed by their INTERIORS (PlayerHome 16x12 plus walls, ProfLab 20x16
+	// plus walls) and cannot shrink. Going below ~50 m means moving the route lane
+	// off the axis between them, which is a different town rather than a smaller
+	// one.
+	//
+	// ★ EVERY ANCHOR IS STILL A MULTIPLE OF 4. The physics mesh is built at
+	// density divisor 4 against a 1 m render mesh, so an anchor on a 4 m lattice is
+	// a SHARED VERTEX of both and samples exactly rather than by interpolation --
+	// the property ZM_DawnmerePlacement.h's ZM-D-186 note depends on. 120 for the
+	// lane, 92 and 148 for the two building centrelines. Path MID-points are
+	// exempt: nothing measures them.
 	const ZM_TerrainPoint2 s_axDawnmereRoutePath[] =
 	{
-		{ 280.0f, 608.0f },
-		{ 268.0f, 440.0f },
-		{ 292.0f, 300.0f },
-		{ 280.0f, 192.0f },
+		{ 120.0f, 208.0f },
+		{ 114.0f, 170.0f },
+		{ 122.0f, 124.0f },
+		{ 120.0f, 80.0f },
 	};
 
+	// ★ THE TWO SPUR PATHS NOW END IN FRONT OF THEIR DOORS, WHICH IS WHAT MADE THE
+	// SHORT WALK POSSIBLE. Through v7 the Lab lane ran PAST the building to a pad
+	// centre BEHIND it, and the camera-clearance rule then forced the entrance
+	// plane a long way south of that pad -- which is why the Lab could never come
+	// close to the plaza. Ending the lane at the forecourt, exactly as the Home's
+	// always did, removes that coupling entirely. See
+	// LabDirtPath_ClearsTheShellByTheShippedCameraClamp, which was re-derived for
+	// the new topology rather than deleted.
 	const ZM_TerrainPoint2 s_axDawnmereHomePath[] =
 	{
-		{ 280.0f, 192.0f },
-		{ 222.0f, 166.0f },
-		{ 152.0f, 136.0f },
+		{ 120.0f, 80.0f },
+		{ 106.0f, 86.0f },
+		{ 92.0f, 88.0f },
 	};
 
 	const ZM_TerrainPoint2 s_axDawnmereLabPath[] =
 	{
-		{ 280.0f, 192.0f },
-		{ 342.0f, 206.0f },
-		{ 408.0f, 232.0f },
+		{ 120.0f, 80.0f },
+		{ 134.0f, 88.0f },
+		{ 148.0f, 96.0f },
 	};
 
+	// ★ THE ROUTE'S FLATTEN RADIUS IS WHAT SETS THE HOUSE-TO-LAB DISTANCE, because
+	// the lane runs between the two buildings: every metre of graded corridor is a
+	// metre they have to stand apart. 9 m of flatten around a 5 m painted lane
+	// leaves the Home shell 11.4 m clear and the Lab shell 6.6 m clear, which is
+	// walkable verge either side rather than a building on the road.
+	//
+	// The SPACINGS are finer than v7's in proportion to the map, and deliberately
+	// finer still than a pure scale: a path converges on its target only through
+	// OVERLAPPING dabs (see the shelf note above), so denser sampling is what makes
+	// a lane actually level. Sample counts are the plan builder's own
+	// ceilf(length / spacing) arithmetic, asserted at bake time; no leg sits on a
+	// ceil boundary (the closest is the Lab's 4.031).
 	const ZM_TerrainPathSpec s_axDawnmerePaths[] =
 	{
-		{ "Route", s_axDawnmereRoutePath, 4u, 18.0f, 9.0f, 49u, 10.0f, 6.0f, 73u },
-		{ "Home", s_axDawnmereHomePath, 3u, 13.0f, 7.0f, 22u, 7.0f, 5.0f, 30u },
-		{ "Lab", s_axDawnmereLabPath, 3u, 13.0f, 7.0f, 22u, 7.0f, 5.0f, 29u },
+		{ "Route", s_axDawnmereRoutePath, 4u, 9.0f, 5.0f, 28u, 5.0f, 3.5f, 39u },
+		{ "Home", s_axDawnmereHomePath, 3u, 8.0f, 4.0f, 9u, 5.0f, 2.5f, 14u },
+		{ "Lab", s_axDawnmereLabPath, 3u, 8.0f, 4.0f, 11u, 5.0f, 2.5f, 15u },
 	};
 
+	// ★ EACH PAD CONTAINS ITS BUILDING AND ITS FORECOURT, which is what stops a
+	// shrunken radius from leaving a shell corner on ungraded ground:
+	//   Home -- farthest shell corner (100.5, 113) is 15.5 m from (92, 104); r 24
+	//   Lab  -- farthest shell corner (158.5, 121) is 16.7 m from (148, 108); r 26
+	//
+	// ★★ AND THE LAB PAD IS NOW A NORMAL SIZE, WHICH IS THE OTHER HALF OF THE
+	// TOPOLOGY CHANGE. In v7 it had to be 48/40 -- by far the largest on the map --
+	// because ZM_Interaction/LabPlacement_SitsInsideTheReservedPadAndOnItsLandmark
+	// requires every one of SC-D's ten MEASURED columns to lie inside the pad's
+	// DIRT radius, and the pad centre was 36 m from the arrival marker with the
+	// building in between. Centred on the SITE instead of behind it, 26/20 covers
+	// all ten with 3.3 m to spare.
+	//
+	// ★ THE HOME PATH ENDPOINT IS THE FORECOURT, NOT THE PAD CENTRE, exactly as it
+	// has always been: the dirt path terminates at (92, 88) and its 8 m flatten
+	// radius reaches z = 96, while the pad reaches down to z = 80. The overlap is
+	// what paves one continuous walkway from the square into the forecourt instead
+	// of two graded discs with a lip between them. The Lab path now does the same.
 	const ZM_TerrainPadSpec s_axDawnmerePads[] =
 	{
-		{ "Plaza", { 280.0f, 192.0f }, 60.0f, 45.0f, 4u },
-		// ZM-D-173: the Home pad moved +40 m in Z with the shell it flattens
-		// ground for. The shell now occupies z 156..196 with its entrance on the
-		// -Z face, so a pad still centred at z=136 would flatten the forecourt and
-		// leave the building itself on unlevelled ground. Radius, target height and
-		// pass count are UNCHANGED -- only the centre moves.
-		//
-		// ★ THE PATH ENDPOINT DELIBERATELY DID NOT MOVE WITH IT. The Home dirt path
-		// still terminates at (152, 136); its flatten radius overlaps this pad, so
-		// the two together pave one continuous walkway from the plaza into the
-		// forecourt the camera now trails into.
-		{ "Home", { 152.0f, 176.0f }, 36.0f, 26.0f, 4u },
-		{ "Lab", { 408.0f, 232.0f }, 48.0f, 38.0f, 4u },
-		{ "RouteGate", { 280.0f, 576.0f }, 30.0f, 0.0f, 0u },
+		{ "Plaza", { 120.0f, 80.0f }, 34.0f, 24.0f, 4u },
+		{ "Home", { 92.0f, 104.0f }, 24.0f, 18.0f, 4u },
+		{ "Lab", { 148.0f, 108.0f }, 26.0f, 20.0f, 4u },
+		{ "RouteGate", { 120.0f, 176.0f }, 22.0f, 0.0f, 0u },
 	};
 
+	// UNCHANGED across v6 -> v7 -> v8. These are height/slope RULES rather than
+	// coordinates: the map shrank but the hills still crest at 32..36 m over a
+	// 24 m town, so Meadow's 10..50 band, Stone's 18-degree threshold and Heath's
+	// 28 m floor all still select the same surfaces they were written for.
 	const ZM_TerrainAutoSplatSpec s_axDawnmereAutoSplat[] =
 	{
 		{ "Meadow", 10.0f, 50.0f, 0.0f, 22.0f, 1.25f, 0.12f },
@@ -120,44 +245,57 @@ namespace
 		{ "Heath", 28.0f, 90.0f, 0.0f, 25.0f, 0.55f, 0.25f },
 	};
 
-	// RE-AUTHORED with the landforms: the peripheral dabs sat on the old hills at
-	// radii 80-110 across a 1024 m map, so they are re-placed on the new ridges at
-	// radii scaled to the 576 m one. The two CENTRAL dabs are the town lawn and
-	// are translated rather than re-placed -- their job is tied to the plaza, not
-	// to the terrain shape.
+	// RE-PLACED with the landforms, at radii scaled to the 256 m map. The two
+	// CENTRAL dabs are the town lawn and the route verge: their job is tied to the
+	// plaza and the north corridor rather than to the terrain shape. The
+	// Plaza/Home/Lab pads and all three paths erase their own paved footprints in
+	// the later grass-erase phase, leaving lawn between the walkways.
 	const ZM_TerrainGrassDabSpec s_axDawnmereGrassDabs[] =
 	{
-		{ { 100.0f, 300.0f }, 80.0f, 0.55f },    // west ridge
-		{ { 476.0f, 330.0f }, 80.0f, 0.55f },    // east ridge
-		{ { 95.0f, 530.0f }, 70.0f, 0.70f },     // north-west knoll
-		{ { 480.0f, 505.0f }, 70.0f, 0.70f },    // north-east knoll
-		{ { 150.0f, 75.0f }, 70.0f, 0.45f },     // south backdrop, west lobe
-		{ { 400.0f, 90.0f }, 70.0f, 0.45f },     // south backdrop, east lobe
-		// Central town lawn so grass surrounds the TownCenter spawn (280,160) and
-		// the returning-Home marker; the Plaza/Home pads and the paths erase their
-		// paved footprints in the later grass-erase phase, leaving lawn between
-		// the walkways. Without this the player stood in a grass-free hole and the
-		// exterior view showed only distant peripheral grass.
-		{ { 280.0f, 150.0f }, 110.0f, 0.60f },
-		{ { 280.0f, 290.0f }, 95.0f, 0.55f },
+		{ { 44.0f, 132.0f }, 38.0f, 0.55f },     // west ridge
+		{ { 212.0f, 144.0f }, 38.0f, 0.55f },    // east ridge
+		{ { 44.0f, 214.0f }, 34.0f, 0.70f },     // north-west knoll
+		{ { 212.0f, 210.0f }, 34.0f, 0.70f },    // north-east knoll
+		{ { 96.0f, 36.0f }, 34.0f, 0.45f },      // south backdrop, west lobe
+		{ { 168.0f, 40.0f }, 34.0f, 0.45f },     // south backdrop, east lobe
+		// ★★ THE TOWN LAWN SITS SOUTH OF THE SQUARE, NOT ON IT, AND THREE
+		// AUTOMATED TESTS DEPEND ON THAT. The Plaza pad's grass-ERASE dab clears
+		// its whole 34 m FLATTEN radius, so the ground the player spawns on has no
+		// tall grass by construction -- which is correct (a town square is not an
+		// encounter zone) but leaves ZM_TallGrassEncounter_Test,
+		// ZM_BattleEncounterLatch_Test and ZM_BattleMenuWhiteout_Test with nowhere
+		// to walk: each probes the FOUR CARDINALS from the spawn out to 24 m for a
+		// tile at or above ZM_TallGrassSystem::fGRASS_DENSITY_THRESHOLD (0.5), and
+		// all three failed with "no cardinal direction from the spawn reaches a
+		// grass tile" when this dab was centred on the square at (120, 72) r 50 --
+		// its falloff had decayed to ~0.28 by the time it cleared the erase.
+		//
+		// Centred at (120, 44) the strong part of the lawn lands just SOUTH of the
+		// pad rim, which is the one cardinal that clears the erase inside 24 m
+		// (the pad rim is 14 m south of the spawn and 54 m north of it). It is also
+		// the right ANSWER rather than a test fixture: grass begins where the town
+		// ends, and the town's south edge is where a player leaves it on foot.
+		{ { 120.0f, 44.0f }, 44.0f, 0.75f },
+		// The route verge, either side of the north corridor.
+		{ { 120.0f, 152.0f }, 44.0f, 0.55f },
 	};
 
 	const ZM_TerrainLandmarkSpec s_axDawnmereLandmarks[] =
 	{
-		{ "TownCenter", { 280.0f, 24.0f, 160.0f } },
-		{ "Plaza", { 280.0f, 24.0f, 192.0f } },
+		{ "TownCenter", { 120.0f, 24.0f, 60.0f } },
+		{ "Plaza", { 120.0f, 24.0f, 80.0f } },
 		// ZM-D-173: both moved with the relocated Home. "Home" tracks the shell's
-		// new centre; "FromHome" tracks the return spawn, which is now SOUTH of the
-		// -Z entrance rather than north of the old +Z one. Y stays 24 -- these are
-		// recipe METADATA at the nominal target height, not measured surfaces.
-		{ "Home", { 152.0f, 24.0f, 176.0f } },
-		{ "FromHome", { 152.0f, 24.0f, 148.0f } },
-		{ "Lab", { 408.0f, 24.0f, 232.0f } },
-		{ "FromLab", { 408.0f, 24.0f, 200.0f } },
-		{ "FromRoute1", { 280.0f, 24.0f, 544.0f } },
-		{ "RouteBoundary", { 280.0f, 24.0f, 608.0f } },
-		{ "ReservedRivalHome", { 128.0f, 24.0f, 240.0f } },
-		{ "PlazaLandmark", { 230.0f, 24.0f, 228.0f } },
+		// centre column; "FromHome" tracks the return spawn, which is SOUTH of the
+		// -Z entrance. Y stays 24 -- these are recipe METADATA at the nominal
+		// target height, not measured surfaces.
+		{ "Home", { 92.0f, 24.0f, 104.0f } },
+		{ "FromHome", { 92.0f, 24.0f, 92.0f } },
+		{ "Lab", { 148.0f, 24.0f, 108.0f } },
+		{ "FromLab", { 148.0f, 24.0f, 97.0f } },
+		{ "FromRoute1", { 120.0f, 24.0f, 144.0f } },
+		{ "RouteBoundary", { 120.0f, 24.0f, 208.0f } },
+		{ "ReservedRivalHome", { 64.0f, 24.0f, 128.0f } },
+		{ "PlazaLandmark", { 140.0f, 24.0f, 116.0f } },
 	};
 
 	// Meadow, Stone and Dirt are the TEXTURED slots: they sample the engine's
@@ -403,13 +541,21 @@ namespace
 			{
 				&ZM_GetWorldSpec(ZM_SCENE_DAWNMERE),
 				0x7BF32CA4u,
-				// 9x10 chunks of 64 m at 1 m spacing = 576 x 640 m. Was
-				// 16x16 (1024 x 1024) with the town using a third of it; the
-				// authored content translated by (-232, -320) and the landscape
-				// was re-authored to frame it at this scale.
-				{ 64.0f, 64u, 9u, 10u },
+				// 4x4 chunks of 64 m at 1 m spacing = 256 x 256 m. Was 6x6
+				// (384 x 384) at v7, 9x10 (576 x 640) at v6, and 16x16
+				// (1024 x 1024) before that -- so this map is now 1/16th of the
+				// AREA it shipped with. v8's structural change is the town
+				// STREET: see the layout note above the path tables.
+				{ 64.0f, 64u, 4u, 4u },
 				24.0f,
-				{ 0.046875f, 0.018f, 0.00125f, 5u, 2.0f, 0.5f, 0.10f },
+				// ★ ONLY THE FREQUENCY MOVES, and it moves because it is the one
+				// term measured in world units rather than in metres of height.
+				// It scales with the SHEET so the map always carries the same
+				// NUMBER of base undulations: 0.00125 at 576 m, 0.001875 at 384,
+				// and 0.001875 * 384/256 = 0.0028125 here. Base height
+				// (0.046875 * 512 = 24 m, the flatten target) and amplitude are
+				// heights and do not scale with the plan.
+				{ 0.046875f, 0.018f, 0.0028125f, 5u, 2.0f, 0.5f, 0.10f },
 				s_axDawnmereLandforms, CountOf(s_axDawnmereLandforms),
 				s_axDawnmerePaths, CountOf(s_axDawnmerePaths),
 				s_axDawnmerePads, CountOf(s_axDawnmerePads),
@@ -417,15 +563,21 @@ namespace
 				// recipes below follow the same rule: the old radius times the new
 				// width over the old 1024. It keeps each map eroded over the same
 				// PROPORTION of itself, which is what makes "region-only" mean the
-				// same thing at three different scales -- 725 unchanged on a 576 m
+				// same thing at three different scales -- 725 unchanged on a 256 m
 				// map would blanket the sheet and erase the distinction entirely.
-				// 725 * 576/1024 = 407.8.
-				{ 60000u, 1u, true, { 280.0f, 192.0f }, 400.0f },
+				// 725 * 256/1024 = 181.25.
+				//
+				// ★ THE DROPLET COUNT SCALES WITH AREA, NOT WITH RADIUS. 60000
+				// droplets over 576 x 640 m is 0.163 per m^2; the same DENSITY on
+				// 256 x 256 is 60000 * 65536/368640 = 10667. Holding 60000 would
+				// have carved this map 5.6x harder than the other two and made the
+				// erosion a per-map accident instead of a shared setting.
+				{ 10667u, 1u, true, { 120.0f, 100.0f }, 181.0f },
 				s_axDawnmereAutoSplat, CountOf(s_axDawnmereAutoSplat),
 				s_axDawnmereGrassDabs, CountOf(s_axDawnmereGrassDabs),
 				s_axDawnmereLandmarks, CountOf(s_axDawnmereLandmarks),
 				s_axDawnmereMaterials, CountOf(s_axDawnmereMaterials),
-				{ { 280.0f, 52.0f, 100.0f }, 0.0f, -0.22f, 65.0f, 0.1f, 2000.0f },
+				{ { 120.0f, 40.0f, 24.0f }, 0.0f, -0.22f, 65.0f, 0.1f, 2000.0f },
 			},
 			{
 				&ZM_GetWorldSpec(ZM_SCENE_THORNACRE),

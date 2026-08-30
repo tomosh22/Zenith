@@ -5,7 +5,7 @@
 // COMMITTED Dawnmere.zscen BYTES, not the compiled constants they came from.
 //
 // ★ WHY THIS FILE EXISTS, AND WHY NOTHING ALREADY HERE COULD DO ITS JOB.
-// Zenithmon commits its five .zscen files (ZM-D-148) and asserts that a tools
+// Zenithmon commits its SEVEN .zscen files (ZM-D-148/174/199) and asserts that a tools
 // boot leaves them unmodified in git status. That invariant has now broken TWICE,
 // and each time every existing guard stayed green:
 //

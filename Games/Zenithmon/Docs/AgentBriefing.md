@@ -48,15 +48,27 @@ Plus, always:
 - **Run Sharpmake / `zenith regen` in a git worktree.** Generated vcxprojs bake
   the cwd's absolute path.
 - **Commit baked assets.** Everything under `Assets/` that tools builds generate
-  is git-ignored, with SIX deliberate exceptions that ARE tracked (ZM-D-147/148):
-  `Assets/Navmesh/Dawnmere.znavmesh` and all five `Assets/Scenes/*.zscen`
-  (Battle, Dawnmere, FrontEnd, PlayerHome, ProfLab). Do not add a seventh
-  without a DecisionLog entry, and keep everything else ignored.
+  is git-ignored, with EIGHT deliberate exceptions that ARE tracked
+  (ZM-D-147/148/174/199): `Assets/Navmesh/Dawnmere.znavmesh` and all SEVEN
+  `Assets/Scenes/*.zscen` (Battle, Dawnmere, FrontEnd, PlayerHome, ProfLab,
+  Route1, Thornacre). Do not add a ninth without a DecisionLog entry, and keep
+  everything else ignored. **Verify rather than trusting this list**
+  (`git ls-files Games/Zenithmon/Assets`) -- it said "five" and "a seventh" for
+  the whole of R1-2, which added two of them.
 - **Run two MSBuilds concurrently.** mspdbsrv + output-dir locks force serial
   dispatch (this is about parallel *agents*/processes; a single build using
   `-maxCpuCount` is fine).
 - **Skip the test-first step.** Tests specified in [TestPlan.md](TestPlan.md)
   land WITH the system, in the same commit.
+- **Move anything on a map without reading
+  [MapLayoutPlaybook.md](MapLayoutPlaybook.md).** A layout change is a FIXED
+  POINT you iterate to -- edit, bake, re-measure 23 ground columns, paste,
+  rebuild, author twice -- not one edit. Skipping the re-measure leaves authored
+  bodies penetrating the surface, and the failure surfaces somewhere else
+  entirely, as a stalled walk or a timeout naming a distance.
+- **Run a game exe after a build you did not check the exit code of.** A failed
+  build leaves the PREVIOUS binary in place and it runs happily. This cost a full
+  diagnostic cycle when a near-identical result read as "the fix did nothing".
 
 ---
 
@@ -163,6 +175,7 @@ Plus, always:
 | [Shortfalls.md](Shortfalls.md) | living | honest gap audit vs the GDD; updated at stage gates. |
 | [Scope.md](Scope.md) | **binding scope gate** | the locked in/out list. |
 | [GameDesignDocument.md](GameDesignDocument.md) | reference | pillars, world/story, dex families, battle mechanics spec, progression. |
+| [MapLayoutPlaybook.md](MapLayoutPlaybook.md) | reference | **binding before any map layout change.** The order of operations, the "if you change X re-derive Y" table, and fifteen traps indexed by SYMPTOM -- every one already paid for once. |
 | [TestPlan.md](TestPlan.md) | reference | test tiers, naming, harness conventions, per-system test specs. |
 | [SaveFormat.md](SaveFormat.md) | reference | versioned save schema + migration policy (fleshed out at S7). |
 | [AssetManifest.md](AssetManifest.md) | reference | generated-asset catalogue + bake budgets + manifest-stamp scheme. |
@@ -562,11 +575,14 @@ pre-existing-red in ToolsEnabled configs).
 
 ### 5.3 First-run bake caveat
 
-**All five `Assets/Scenes/*.zscen` ARE checked in** (Battle, Dawnmere, FrontEnd,
-PlayerHome, ProfLab -- ZM-D-148), as is `Assets/Navmesh/Dawnmere.znavmesh`
+**All SEVEN `Assets/Scenes/*.zscen` ARE checked in** (Battle, Dawnmere,
+FrontEnd, PlayerHome, ProfLab -- ZM-D-148/174 -- plus Route1 and Thornacre,
+added by R1-2 step 2, ZM-D-199), as is `Assets/Navmesh/Dawnmere.znavmesh`
 (ZM-D-147). A fresh clone therefore already has every scene the game loads; the
 committed bytes are what it reads. (This section claimed the opposite until
-2026-08-01 -- verify with `git ls-files Games/Zenithmon/Assets`.)
+2026-08-01, and then said "five" for the whole of R1-2 -- **verify with
+`git ls-files Games/Zenithmon/Assets`** rather than trusting any prose count,
+including this one.)
 
 Everything ELSE under `Assets/` -- meshes, textures, anims, terrains, graphs --
 is git-ignored and authored on boot by `Project_RegisterEditorAutomationSteps`

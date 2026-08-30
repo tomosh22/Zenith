@@ -110,6 +110,7 @@
 #include "Flux/Flux_Screenshot.h"
 #include "EntityComponent/Zenith_CameraResolve.h"       // Zenith_GetMainCameraAcrossScenes -- the walk's live basis
 #include "Input/Zenith_InputSimulator.h"
+#include "Zenithmon/Tests/ZM_TestWalkDrive.h"   // the ONE walk driver -- read its header before trusting a straight line
 #include "Input/Zenith_KeyCodes.h"
 #include "Maths/Zenith_Maths.h"
 #include "UnitTests/Zenith_UnitTests.h"
@@ -137,6 +138,7 @@
 #include "Zenithmon/Source/Graph/ZM_GraphAuthoring.h"           // szZM_GRAPH_TRAINER_CHALLENGE_ASSET
 #include "Zenithmon/Source/Interaction/ZM_TrainerSightFsm.h"    // the latch + the observed state
 #include "Zenithmon/Source/Interaction/ZM_TrainerSightLogic.h"  // the SC3 cone, for the spawn-camp poll
+#include "Zenithmon/Source/Interaction/ZM_TrainerSightProbe.h"  // the occlusion filter, for the stall breakdown
 #include "Zenithmon/Source/Party/ZM_GameState.h"
 #include "Zenithmon/Source/Party/ZM_Monster.h"                  // ZM_BuildMonsterRecord
 #include "Zenithmon/Source/Party/ZM_Party.h"
@@ -787,61 +789,26 @@ namespace
 		return std::fabs(fDot);
 	}
 
-	// A LOCAL COPY of ZM_AutoTests_TrainerSight.cpp's CAMERA-RELATIVE DriveTowardXZ.
-	// It cannot be shared (the original lives in that file's anonymous namespace),
-	// and it MUST be the camera-relative version: player movement is camera-relative
-	// and ZM_FollowCamera is a LAGGING spring, so a world-space key chooser was
-	// MEASURED settling onto a stable 45-degree wrong heading. Copy THIS one.
+	// The shared, unit-tested walk driver. See
+	// Tests/ZM_TestWalkDrive.h -- it is CAMERA-RELATIVE and QUANTISED TO EIGHT
+	// DIRECTIONS, so the player walks a PURSUIT CURVE rather than the straight
+	// line, and anything this suite must approach ON A BEARING wants one of the
+	// driver's fixed points. This wrapper exists only to keep the local name and
+	// to mirror the held keys where this file reports them.
 	void DriveTowardXZ(
 		const Zenith_Maths::Vector3& xPosition,
 		const Zenith_Maths::Vector3& xTarget)
 	{
+		// ★ THE CLEAR STAYS HERE, AND DROPPING IT COST A BATCH. Consolidating the
+		// driver moved this call out on the assumption that callers cleared before
+		// driving; they do not -- every one of the eight originals cleared INSIDE,
+		// and without it last frame's keys stay held and the walk curves away.
+		// Six automated tests went red. The shared driver deliberately does not
+		// clear, because each caller releases a DIFFERENT key set.
 		ClearRVInput();
-		constexpr float fDEAD_ZONE = 0.08f;
-
-		Zenith_Maths::Vector3 xCameraForward(0.0f, 0.0f, 1.0f);
-		if (Zenith_CameraComponent* pxCamera = Zenith_GetMainCameraAcrossScenes())
-		{
-			pxCamera->GetFacingDir(xCameraForward);
-		}
-		Zenith_Maths::Vector3 xForward(xCameraForward.x, 0.0f, xCameraForward.z);
-		const float fForwardLengthSq = xForward.x * xForward.x + xForward.z * xForward.z;
-		if (fForwardLengthSq <= 0.000001f)
-		{
-			xForward = Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f);
-		}
-		else
-		{
-			xForward /= std::sqrt(fForwardLengthSq);
-		}
-		const Zenith_Maths::Vector3 xRight(xForward.z, 0.0f, -xForward.x);
-
-		const Zenith_Maths::Vector3 xToTarget(
-			xTarget.x - xPosition.x, 0.0f, xTarget.z - xPosition.z);
-		const float fForwardAmount = xToTarget.x * xForward.x + xToTarget.z * xForward.z;
-		const float fRightAmount   = xToTarget.x * xRight.x   + xToTarget.z * xRight.z;
-
-		if (fRightAmount < -fDEAD_ZONE)
-		{
-			Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_A);
-			g_abRVHeldKeys[1] = true;
-		}
-		else if (fRightAmount > fDEAD_ZONE)
-		{
-			Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_D);
-			g_abRVHeldKeys[3] = true;
-		}
-		if (fForwardAmount < -fDEAD_ZONE)
-		{
-			Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_S);
-			g_abRVHeldKeys[2] = true;
-		}
-		else if (fForwardAmount > fDEAD_ZONE)
-		{
-			Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_W);
-			g_abRVHeldKeys[0] = true;
-		}
-		Zenith_InputSimulator::SimulateKeyDown(ZENITH_KEY_LEFT_SHIFT);
+		const ZM_WalkDriveKeys xKeys =
+			ZM_DriveWalkTowardXZ(xPosition, xTarget, /*bRun*/ true);
+		xKeys.CopyTo(g_abRVHeldKeys);
 	}
 
 	// Resolves the ONE ZM_Interactable in the active scene whose npc row is the
@@ -1672,6 +1639,113 @@ namespace
 
 	// (5) APPROACH -- a CLOSED LOOP on the live position with a progress watchdog.
 	//     No SetPosition anywhere, so the player walks on Jolt velocity.
+	// ★★ THE FOUR FSM INPUTS, PRINTED ON EVERY FAILING EXIT OF THE APPROACH.
+	//
+	// A stalled walk-up says only "the player stopped closing"; it never says WHY
+	// the rival did not react, and the four things that decide that live inside
+	// ZM_Interactable::TickTrainerSight where no accessor reaches them. Every one
+	// of them, though, is a PURE function of state this test already holds -- so
+	// they are recomputed here rather than exposed, which keeps the component's
+	// surface unchanged and cannot drift from the shipped answer because it calls
+	// the same functions.
+	//
+	// The failure that forced this: correct placement, exact facing
+	// (facingAbsDot 1.00000), WATCHING, sight enabled, the player driven to 0.077 m,
+	// and no spot -- a state in which every clause the test already printed was
+	// green. Three separate hypotheses (props on the sight line, approach distance,
+	// unflattened ground under a dynamic capsule) were each expensive to falsify
+	// and none of them was it.
+	void RVLogSightGateBreakdown(const ZM_Interactable& xVesper,
+		const RVPlayerView& xPlayer)
+	{
+		Zenith_Maths::Vector3 xTrainerPos(0.0f);
+		Zenith_Maths::Quat xTrainerRot(1.0f, 0.0f, 0.0f, 0.0f);
+		const bool bPose = RVResolveVesperPose(xTrainerPos, xTrainerRot);
+
+		const bool bInSight = bPose && ZM_IsTargetInTrainerSightFromRotation(
+			xTrainerPos, xTrainerRot, xPlayer.m_xPosition, ZM_TrainerSightTuning{});
+		ZM_TrainerSightProbeResult xProbe;
+		if (bInSight)
+		{
+			xProbe = ZM_ProbeTrainerSightLine(xTrainerPos, g_xRVSecondEntityID,
+				xPlayer.m_xPosition, xPlayer.m_xEntityID);
+		}
+
+		const ZM_TrainerData& xRow = ZM_GetTrainerData(eRV_TRAINER);
+		ZM_GameState* pxGameState = nullptr;
+		const bool bHasGameState =
+			ZM_GameStateManager::TryGetGameState(pxGameState) && pxGameState != nullptr;
+		const bool bDefeatFlagSet =
+			bHasGameState && ZM_IsStoryFlagSet(*pxGameState, xRow.m_eDefeatFlag);
+		const bool bLatchSet = ZM_TrainerEngagementLatch::HasEngaged(eRV_TRAINER);
+		const bool bCanBattle = !bHasGameState || ZM_CanEnterBattle(*pxGameState);
+		const bool bMayEngage =
+			ZM_MayTrainerEngage(xRow, bDefeatFlagSet, bLatchSet, bCanBattle);
+		const bool bChannelBusy = ZM_BattleTransition::IsTransitionActive()
+			|| ZM_GameStateManager::IsWarpInProgress()
+			|| ZM_UI_MenuStack::IsMenuOpen();
+
+		// The cone's own arithmetic, spelled out. targetInSight is one bool over
+		// three thresholds, and "false" alone never says WHICH -- range, band or
+		// bearing. The dot is the one that has actually bitten.
+		Zenith_Maths::Vector3 xForward = ZM_ForwardFromRotation(xTrainerRot);
+		const Zenith_Maths::Vector3 xToPlayer(
+			xPlayer.m_xPosition.x - xTrainerPos.x, 0.0f,
+			xPlayer.m_xPosition.z - xTrainerPos.z);
+		const float fToLen = std::sqrt(
+			xToPlayer.x * xToPlayer.x + xToPlayer.z * xToPlayer.z);
+		const float fConeDot = fToLen > 0.0001f
+			? (xToPlayer.x * xForward.x + xToPlayer.z * xForward.z) / fToLen
+			: 1.0f;
+		Zenith_Maths::Vector3 xCameraForward(0.0f, 0.0f, 1.0f);
+		if (Zenith_CameraComponent* pxCamera = Zenith_GetMainCameraAcrossScenes())
+		{
+			pxCamera->GetFacingDir(xCameraForward);
+		}
+
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[ZM_RivalVesper] SIGHT GATE at the failing frame: poseResolved=%s "
+			"trainer=(%.3f, %.3f, %.3f) player=(%.3f, %.3f, %.3f) liveGap=%.3f "
+			"dY=%.3f | targetInSight=%s (the pure cone) sightLineClear=%s "
+			"physicsAvailable=%s blockerHit=%s blockerEntity=%u blockerDist=%.3f "
+			"| mayEngage=%s (hasGameState=%s defeatFlag=%s latch=%s canBattle=%s) "
+			"channelBusy=%s (transition=%s warp=%s menu=%s) "
+			"| approachPossible=%s state=%u "
+			// ★ THE CONE ARITHMETIC AND THE DRIVER'S BASIS, TOGETHER. DriveTowardXZ
+			// is CAMERA-RELATIVE and quantised to eight directions, so the player's
+			// path is a curve, not the straight line from the spawn -- and the rival's
+			// facing is derived from the STRAIGHT line. When those two disagree the
+			// player walks in outside the cone and nothing else in this log says so.
+			"| coneDot=%.5f (want >= %.5f) forward=(%.4f, %.4f) "
+			"cameraForward=(%.4f, %.4f) heldKeys W=%d A=%d S=%d D=%d",
+			bPose ? "true" : "false",
+			xTrainerPos.x, xTrainerPos.y, xTrainerPos.z,
+			xPlayer.m_xPosition.x, xPlayer.m_xPosition.y, xPlayer.m_xPosition.z,
+			PlanarDistance(xPlayer.m_xPosition, xTrainerPos),
+			xPlayer.m_xPosition.y - xTrainerPos.y,
+			bInSight ? "true" : "false",
+			xProbe.m_bClear ? "true" : "false",
+			xProbe.m_bPhysicsAvailable ? "true" : "false",
+			xProbe.m_bBlockerHit ? "true" : "false",
+			xProbe.m_xBlockerEntityID != INVALID_ENTITY_ID ? "true" : "false",
+			xProbe.m_fBlockerDistance,
+			bMayEngage ? "true" : "false",
+			bHasGameState ? "true" : "false",
+			bDefeatFlagSet ? "true" : "false",
+			bLatchSet ? "true" : "false",
+			bCanBattle ? "true" : "false",
+			bChannelBusy ? "true" : "false",
+			ZM_BattleTransition::IsTransitionActive() ? "true" : "false",
+			ZM_GameStateManager::IsWarpInProgress() ? "true" : "false",
+			ZM_UI_MenuStack::IsMenuOpen() ? "true" : "false",
+			xVesper.IsTrainerApproachPossible() ? "true" : "false",
+			(u_int)xVesper.GetTrainerSightState(),
+			fConeDot, fZM_SIGHT_MIN_FACING_DOT, xForward.x, xForward.z,
+			xCameraForward.x, xCameraForward.z,
+			(int)g_abRVHeldKeys[0], (int)g_abRVHeldKeys[1],
+			(int)g_abRVHeldKeys[2], (int)g_abRVHeldKeys[3]);
+	}
+
 	bool RVPhaseApproach()
 	{
 		const ZM_Interactable* pxVesper = ResolveVesperComponent();
@@ -1806,6 +1880,7 @@ namespace
 		}
 		else if (++g_iRVStallFrames > iRV_STALL_LIMIT_FRAMES)
 		{
+			RVLogSightGateBreakdown(*pxVesper, xPlayer);
 			FailRV("the walk-up STALLED -- the player stopped closing on the authored "
 				"rival (distances and held keys logged below). DriveTowardXZ has NO "
 				"obstacle avoidance, so a flank NPC drifting into the approach lane "
@@ -1815,6 +1890,7 @@ namespace
 
 		if (g_iRVPhaseFrames > iRV_APPROACH_DEADLINE)
 		{
+			RVLogSightGateBreakdown(*pxVesper, xPlayer);
 			FailRV("walking into the authored rival's cone never started a battle -- "
 				"either he is facing the wrong way (transpose atan2's arguments in "
 				"ZM_DawnmereVesperYaw and this is exactly what you get) or the raise "

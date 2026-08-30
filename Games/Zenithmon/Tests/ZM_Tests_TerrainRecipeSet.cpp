@@ -30,7 +30,7 @@ namespace
 	// Chunk counts and the file counts that follow from them. Each map used to be
 	// a 16-wide slice of a fixed 4096 m grid; they carry their own grids now and
 	// are sized to their content, so these numbers moved with the shrink:
-	//   Dawnmere   9 x 10 =  90 chunks -> 90*3 + 4 = 274 required outputs
+	//   Dawnmere   4 x  4 =  16 chunks -> 16*3 + 4 =  52 required outputs
 	//   Thornacre 13 x 15 = 195 chunks -> 195*3 + 4 = 589
 	//   Route 1   11 x 24 = 264 chunks -> 264*3 + 4 = 796
 	// (+4 = Height, Splatmap_RGBA, GrassDensity, TerrainDims.zdata; the family
@@ -38,7 +38,7 @@ namespace
 	const ZM_ExpectedTerrainRecipe s_axExpectedRecipes[] =
 	{
 		{ ZM_SCENE_DAWNMERE, ZM_SCENE_KIND_TOWN, 2u, "Dawnmere",
-			0x7BF32CA4u, 9, 10, 274u, 275u },
+			0x7BF32CA4u, 4, 4, 52u, 53u },
 		{ ZM_SCENE_THORNACRE, ZM_SCENE_KIND_TOWN, 3u, "Thornacre",
 			0x9D41BD83u, 13, 15, 589u, 590u },
 		{ ZM_SCENE_ROUTE1, ZM_SCENE_KIND_ROUTE, 20u, "Route1",
@@ -389,7 +389,7 @@ ZENITH_TEST(ZM_TerrainRecipeSet, RegistryHasExactlyThreeWorldSpecRecipesInFixedO
 	// chunks x 3 mesh files + Height/Splatmap_RGBA/GrassDensity + TerrainDims.zdata,
 	// on grids sized to each map's own content: 9x10, 13x15 and 11x24 where all
 	// three used to be a 16-wide slice of one fixed 4096 m terrain.
-	ZENITH_ASSERT_EQ(uZM_DAWNMERE_REQUIRED_OUTPUT_COUNT, 274u);
+	ZENITH_ASSERT_EQ(uZM_DAWNMERE_REQUIRED_OUTPUT_COUNT, 52u);
 	ZENITH_ASSERT_EQ(uZM_THORNACRE_REQUIRED_OUTPUT_COUNT, 589u);
 	ZENITH_ASSERT_EQ(uZM_ROUTE1_REQUIRED_OUTPUT_COUNT, 796u);
 
