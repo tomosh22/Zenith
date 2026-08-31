@@ -86,7 +86,7 @@
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Zenith_CameraResolve.h"
-// ZENITH_SCENE_EXT / ZENITH_TEXTURE_EXT / ZENITH_MESH_EXT, used by the asset guard
+// ZENITH_SCENE_EXT / ZENITH_TEXTURE_EXT / ZENITH_GEOMETRY_EXT, used by the asset guard
 // below. Included EXPLICITLY (as the sibling ZM_AutoTests_GameState.cpp does) --
 // they were previously reaching this TU only through SaveData/Zenith_SaveData.h's
 // transitive chain, which is nobody's contract to keep.
@@ -203,9 +203,9 @@ namespace
 			strRoot + "Terrain/Dawnmere/Height" ZENITH_TEXTURE_EXT,
 			strRoot + "Terrain/Dawnmere/Splatmap_RGBA" ZENITH_TEXTURE_EXT,
 			strRoot + "Terrain/Dawnmere/GrassDensity" ZENITH_TEXTURE_EXT,
-			strRoot + "Terrain/Dawnmere/Physics_0_0" ZENITH_MESH_EXT,
-			strRoot + "Terrain/Dawnmere/Render_LOW_0_0" ZENITH_MESH_EXT,
-			strRoot + "Terrain/Dawnmere/Render_0_0" ZENITH_MESH_EXT,
+			strRoot + "Terrain/Dawnmere/Physics_0_0" ZENITH_GEOMETRY_EXT,
+			strRoot + "Terrain/Dawnmere/Render_LOW_0_0" ZENITH_GEOMETRY_EXT,
+			strRoot + "Terrain/Dawnmere/Render_0_0" ZENITH_GEOMETRY_EXT,
 		};
 		for (const std::string& strPath : astrRequired)
 		{

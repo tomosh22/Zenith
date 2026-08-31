@@ -368,7 +368,7 @@ namespace
 			std::string(GAME_ASSETS_DIR) + "Terrain/" + szSet + "/";
 		return GIPCFilePresent(strDir + "Height" ZENITH_TEXTURE_EXT)
 			&& GIPCFilePresent(strDir + "Splatmap_RGBA" ZENITH_TEXTURE_EXT)
-			&& GIPCFilePresent(strDir + "Render_0_0" ZENITH_MESH_EXT);
+			&& GIPCFilePresent(strDir + "Render_0_0" ZENITH_GEOMETRY_EXT);
 	}
 
 	// Build/artifacts/zenithmon/visual_audit/grounditem_props, derived from

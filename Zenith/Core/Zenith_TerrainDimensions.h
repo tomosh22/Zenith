@@ -246,7 +246,7 @@ static_assert(Zenith_TerrainDimensions::Default().ChunkCount() ==
 //
 // A baked terrain set is a directory of chunk meshes whose bytes are
 // MEANINGLESS without the dimensions they were exported at: the same
-// Render_3_4.zmesh decodes to different world positions under a different
+// Render_3_4.zgeom decodes to different world positions under a different
 // quantisation box. The manifest is written beside the chunks so a set can be
 // recognised as stale rather than silently decoded wrong.
 //

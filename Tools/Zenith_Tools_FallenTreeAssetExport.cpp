@@ -58,6 +58,7 @@ void GenerateFallenTreeAssets()
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_MeshAsset.h"
+#include "Zenith_Tools_TextureExport.h"   // the ONE .ztxtr writer
 #include "AssetHandling/Zenith_ModelAsset.h"
 #include "Collections/Zenith_Vector.h"
 #include "DataStream/Zenith_DataStream.h"
@@ -536,19 +537,6 @@ struct BarkTextureParams
 	u_int                 m_uSeed          = 3301u;
 };
 
-void WriteBarkZtxtr(const std::string& strPath, int32_t iSize, TextureFormat eFormat,
-	const Zenith_Vector<u_int8>& xPixels)
-{
-	Zenith_DataStream xStream;
-	xStream << iSize;
-	xStream << iSize;
-	xStream << static_cast<int32_t>(1);
-	xStream << eFormat;
-	xStream << static_cast<u_int64>(xPixels.GetSize());
-	xStream.WriteData(xPixels.GetDataPointer(), xPixels.GetSize());
-	xStream.WriteToFile(strPath.c_str());
-}
-
 // The one height field every other map derives from. ANISOTROPIC: a high lattice
 // period across U (around the trunk) against a low one along V (up it), which is
 // what makes ridges rather than blobs -- and what the end caps reuse as rings.
@@ -626,8 +614,9 @@ void GenerateBarkTextureSet(const std::string& strDir, const BarkTextureParams& 
 			pucA[3] = 255;
 		}
 	}
-	WriteBarkZtxtr(strDir + "FallenTree_" + xParams.m_szName + "_Albedo" ZENITH_TEXTURE_EXT,
-		iCOLOUR_SIZE, TEXTURE_FORMAT_RGBA8_SRGB, xAlbedo);
+	Zenith_Tools_TextureExport::ExportFromDataWithFormat(
+		xAlbedo.GetDataPointer(), strDir + "FallenTree_" + xParams.m_szName + "_Albedo" ZENITH_TEXTURE_EXT, iCOLOUR_SIZE, iCOLOUR_SIZE, TEXTURE_FORMAT_RGBA8_SRGB,
+		xAlbedo.GetSize() / (static_cast<size_t>(iCOLOUR_SIZE) * iCOLOUR_SIZE));
 
 	// --- Normal (linear), wrapped central differences -------------------------
 	Zenith_Vector<u_int8> xNormal;
@@ -653,8 +642,9 @@ void GenerateBarkTextureSet(const std::string& strDir, const BarkTextureParams& 
 			pucN[3] = 255;
 		}
 	}
-	WriteBarkZtxtr(strDir + "FallenTree_" + xParams.m_szName + "_Normal" ZENITH_TEXTURE_EXT,
-		iCOLOUR_SIZE, TEXTURE_FORMAT_RGBA8_UNORM, xNormal);
+	Zenith_Tools_TextureExport::ExportFromDataWithFormat(
+		xNormal.GetDataPointer(), strDir + "FallenTree_" + xParams.m_szName + "_Normal" ZENITH_TEXTURE_EXT, iCOLOUR_SIZE, iCOLOUR_SIZE, TEXTURE_FORMAT_RGBA8_UNORM,
+		xNormal.GetSize() / (static_cast<size_t>(iCOLOUR_SIZE) * iCOLOUR_SIZE));
 
 	// --- RM + AO --------------------------------------------------------------
 	Zenith_Vector<u_int8> xRM;
@@ -688,10 +678,12 @@ void GenerateBarkTextureSet(const std::string& strDir, const BarkTextureParams& 
 			pucAO[3] = 255;
 		}
 	}
-	WriteBarkZtxtr(strDir + "FallenTree_" + xParams.m_szName + "_RM" ZENITH_TEXTURE_EXT,
-		iDATA_SIZE, TEXTURE_FORMAT_RGBA8_UNORM, xRM);
-	WriteBarkZtxtr(strDir + "FallenTree_" + xParams.m_szName + "_AO" ZENITH_TEXTURE_EXT,
-		iDATA_SIZE, TEXTURE_FORMAT_RGBA8_UNORM, xAO);
+	Zenith_Tools_TextureExport::ExportFromDataWithFormat(
+		xRM.GetDataPointer(), strDir + "FallenTree_" + xParams.m_szName + "_RM" ZENITH_TEXTURE_EXT, iDATA_SIZE, iDATA_SIZE, TEXTURE_FORMAT_RGBA8_UNORM,
+		xRM.GetSize() / (static_cast<size_t>(iDATA_SIZE) * iDATA_SIZE));
+	Zenith_Tools_TextureExport::ExportFromDataWithFormat(
+		xAO.GetDataPointer(), strDir + "FallenTree_" + xParams.m_szName + "_AO" ZENITH_TEXTURE_EXT, iDATA_SIZE, iDATA_SIZE, TEXTURE_FORMAT_RGBA8_UNORM,
+		xAO.GetSize() / (static_cast<size_t>(iDATA_SIZE) * iDATA_SIZE));
 }
 
 void GenerateBarkMaterial(const std::string& strDir, const char* szName)
@@ -867,7 +859,7 @@ void BuildFallenTreeVariantMesh(Zenith_MeshAsset& xMesh, const FallenTreeVariant
 }
 
 //=============================================================================
-// Export: .zasset (instanced-mesh component), .zmesh (static geometry), .zmodel.
+// Export: .zasset (instanced-mesh component), .zgeom (static geometry), .zmodel.
 //=============================================================================
 void ExportFallenTree(const std::string& strDir, const char* szName, Zenith_MeshAsset* pxMesh,
 	const char* szMaterialName)
@@ -879,7 +871,7 @@ void ExportFallenTree(const std::string& strDir, const char* szName, Zenith_Mesh
 	pxMesh->Export(strAssetPath.c_str());
 
 	Flux_MeshGeometry* pxGeometry = Zenith_Tools_CreateStaticFluxMeshGeometry(pxMesh);
-	pxGeometry->Export((strDir + szName + ZENITH_MESH_EXT).c_str());
+	pxGeometry->Export((strDir + szName + ZENITH_GEOMETRY_EXT).c_str());
 	delete pxGeometry;
 
 	auto xhModel = Zenith_AssetRegistry::Create<Zenith_ModelAsset>();

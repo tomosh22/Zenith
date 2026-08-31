@@ -536,9 +536,9 @@ namespace
 			GAME_ASSETS_DIR "Terrain/Dawnmere/Height" ZENITH_TEXTURE_EXT,
 			GAME_ASSETS_DIR "Terrain/Dawnmere/Splatmap_RGBA" ZENITH_TEXTURE_EXT,
 			GAME_ASSETS_DIR "Terrain/Dawnmere/GrassDensity" ZENITH_TEXTURE_EXT,
-			GAME_ASSETS_DIR "Terrain/Dawnmere/Physics_0_0" ZENITH_MESH_EXT,
-			GAME_ASSETS_DIR "Terrain/Dawnmere/Render_LOW_0_0" ZENITH_MESH_EXT,
-			GAME_ASSETS_DIR "Terrain/Dawnmere/Render_0_0" ZENITH_MESH_EXT,
+			GAME_ASSETS_DIR "Terrain/Dawnmere/Physics_0_0" ZENITH_GEOMETRY_EXT,
+			GAME_ASSETS_DIR "Terrain/Dawnmere/Render_LOW_0_0" ZENITH_GEOMETRY_EXT,
+			GAME_ASSETS_DIR "Terrain/Dawnmere/Render_0_0" ZENITH_GEOMETRY_EXT,
 		};
 		const u_int uCount = (u_int)(sizeof(aszRequired) / sizeof(aszRequired[0]));
 		for (u_int u = 0u; u < uCount; ++u)

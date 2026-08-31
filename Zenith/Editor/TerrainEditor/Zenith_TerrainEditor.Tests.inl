@@ -1,3 +1,5 @@
+#include "DataStream/Zenith_StreamEnvelope.h"   // Zenith_WriteStreamHeader — the .ztxtr envelope
+#include "AssetHandling/Zenith_AssetTypeIds.h"     // uZENITH_TEXTURE_* ids/schema
 //=============================================================================
 // Zenith_TerrainEditor unit tests (headless-safe: standalone sessions only —
 // no terrain entity resolves, so no hook / eviction / GPU path is reached).
@@ -533,19 +535,20 @@ namespace
 		}
 	};
 
-	// Byte-for-byte the layout WriteZtxtr emits for GrassType.ztxtr (i32 w,
-	// i32 h, i32 depth, TextureFormat, u64 size, pixels). The terrain maps
-	// predate the stream envelope, so the loader reads them through its legacy
-	// branch — a header here would take a different path than the bake's file.
+	// Byte-for-byte the layout WriteZtxtr emits for GrassType.ztxtr: envelope,
+	// i32 w, i32 h, i32 depth, TextureFormat, u32 mip count, u64 size, pixels.
+	// There is one .ztxtr layout and this must stay in step with the bake's.
 	void WriteGrassTypeZtxtr(const std::string& strPath, const Zenith_Vector<u_int8>& xTypes)
 	{
 		const size_t ulDataSize = static_cast<size_t>(Zenith_TerrainEditor::uGRASS_TYPE_SIZE) *
 			Zenith_TerrainEditor::uGRASS_TYPE_SIZE;
 		Zenith_DataStream xStream;
+		Zenith_WriteStreamHeader(xStream, uZENITH_TEXTURE_ASSET_TYPE_ID, uZENITH_TEXTURE_SCHEMA_V2);
 		xStream << static_cast<int32_t>(Zenith_TerrainEditor::uGRASS_TYPE_SIZE);
 		xStream << static_cast<int32_t>(Zenith_TerrainEditor::uGRASS_TYPE_SIZE);
 		xStream << static_cast<int32_t>(1);
 		xStream << TEXTURE_FORMAT_R8_UNORM;
+		xStream << static_cast<uint32_t>(1);   // this level only
 		xStream << ulDataSize;
 		xStream.WriteData(xTypes.GetDataPointer(), ulDataSize);
 		xStream.WriteToFile(strPath.c_str());

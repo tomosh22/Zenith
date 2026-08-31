@@ -132,12 +132,23 @@ These are initialized by `Zenith_AssetRegistry::InitializeGPUDependentAssets()`.
 | Texture | `.ztxtr` | GPU texture data and metadata |
 | Material | `.zmtrl` | Texture references and rendering properties |
 | Model | `.zmodel` | Container referencing meshes, skeleton, and materials |
-| Mesh | `.zmesh` | Geometry data with optional skinning weights |
+| Mesh | `.zmesh` | `Zenith_MeshAsset` — geometry with optional skinning weights |
+| Mesh geometry | `.zgeom` | `Flux_MeshGeometry` — a DIFFERENT format (its own element table, no version field): terrain chunks, the StickFigure, primitive and shared-prop geometry |
 | Skeleton | `.zskel` | Bone hierarchy and bind pose data |
 | Animation | `.zanim` | Keyframe animation clips |
 | Behaviour Graph | `.bgraph` | Designer-authored visual-scripting graph (see below) |
 
 ## Loader Contract (unified)
+
+> **★★ `.zmesh` AND `.zgeom` ARE TWO FORMATS, AND THAT IS WHY THEY ARE TWO
+> EXTENSIONS.** They shared `.zmesh` until 2026-08-31. `Zenith_MeshAsset` writes the
+> stream envelope; `Flux_MeshGeometry::Export` writes its own element table with no
+> version field at all. Nothing distinguished them but the loader you happened to
+> call, and the only reason that survived was the legacy "no envelope => assume the
+> other layout" branch — delete that and the collision becomes a hard error, which is
+> how it was found. **One extension, one format**: if you add a serialized type, give
+> it its own extension rather than reusing a neighbour's.
+
 
 Every file-backed asset type is loaded through **one of two templates** in
 `Zenith_AssetRegistry.cpp` — there is no longer a per-type `LoadXxxAsset` free
@@ -174,14 +185,19 @@ schema version is `AssetHandling/Zenith_AssetTypeIds.h` — no more per-asset
   header directly).
 - **Read**: a status-returning `ParseStream(stream)` does the envelope read
   (`Zenith_ReadStreamHeader`): wrong type-id → `INVALID_ARGUMENT`, newer envelope →
-  `VERSION_MISMATCH`, and a **legacy pre-envelope file** trips `BAD_MAGIC` — the read
-  is non-destructive, so the cursor rewinds to 0 and the old bare-version-word layout
-  is read exactly as before. `LoadFromFile` = `ReadFromFile` + `ParseStream`; the void
-  `ReadFromDataStream` virtual delegates to `ParseStream` (the file-load error contract
-  lives in `ParseStream`).
-- **Back-compat note**: a *new-format* payload has NO bare version word (the envelope's
-  schema field replaces it); a *legacy* file does, and `ParseStream` reads it after the
-  `BAD_MAGIC` rewind. Do not bump a `*_SCHEMA_CURRENT` without adding a legacy branch.
+  `VERSION_MISMATCH`, no envelope → `BAD_MAGIC`. `LoadFromFile` = `ReadFromFile` +
+  `ParseStream`; the void `ReadFromDataStream` virtual delegates to `ParseStream` (the
+  file-load error contract lives in `ParseStream`).
+- **★★ THE ENVELOPE IS MANDATORY AND THE SCHEMA MUST BE CURRENT.** There is no
+  back-compat branch anywhere in this layer, by ruling (2026-08-31). A stream with no
+  envelope is refused, and a payload whose schema is not `*_SCHEMA_CURRENT` is REFUSED
+  rather than logged-and-parsed-as-current — which is what the mesh, model and skeleton
+  readers used to do, and which reads one field order with another's.
+- **Why that costs nothing**: every asset file lives under the `**/Assets/**` gitignore
+  and is BAKE OUTPUT. A file in an older layout is a stale bake, and the fix is to
+  delete it and let the tools boot rewrite it — exactly what a fresh clone does
+  unconditionally. So **bumping a `*_SCHEMA_CURRENT` needs no legacy branch**; it needs
+  the stale files deleted.
 
 `Zenith_MaterialParams` (in `Zenith_MaterialParamTable.h`) owns the ~22-field v5
 parameter order **once** via its own `WriteToDataStream`/`ReadFromDataStream` (called

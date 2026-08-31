@@ -339,13 +339,29 @@ void Zenith_Tools_TextureExport::ExportFromFile(std::string strFilename, const c
 
 void Zenith_Tools_TextureExport::ExportFromData(const void* pData, const std::string& strFilename, int32_t iWidth, int32_t iHeight, TextureFormat eFormat)
 {
-	const size_t ulDataSize = iWidth * iHeight * 1 /*depth*/ * 4 /*bytes per pixel*/;
+	// ★★ THIS WROTE A HEADERLESS FILE, AND IT WAS THE LAST PRODUCER OF ONE. The
+	// bytes went out with no envelope at all -- straight to iWidth -- and the
+	// loader recognised them only through a "no magic => assume the old layout"
+	// branch. There is now exactly ONE .ztxtr layout: envelope, dimensions,
+	// format, mip count, total size, packed levels. This writes that layout with a
+	// single level, which is a legal chain of length one rather than a second
+	// format.
+	//
+	// ★ SINGLE-MIP IS A REAL REQUIREMENT, not a shortcut, which is why the format
+	// carries a COUNT rather than assuming a full chain. The MSDF font atlas must
+	// not have mips at all -- naive downsampling breaks the median reconstruction
+	// the text shader depends on (Zenith_FontAsset says so at the CreateFromData
+	// call) -- and the procedural test textures have no use for one either.
+	const size_t ulDataSize = static_cast<size_t>(iWidth) * static_cast<size_t>(iHeight)
+		* 1 /*depth*/ * 4 /*bytes per pixel*/;
 
 	Zenith_DataStream xStream;
+	Zenith_WriteStreamHeader(xStream, uZENITH_TEXTURE_ASSET_TYPE_ID, uZENITH_TEXTURE_SCHEMA_V2);
 	xStream << iWidth;
 	xStream << iHeight;
-	xStream << 1;
+	xStream << static_cast<int32_t>(1); // depth
 	xStream << eFormat;
+	xStream << static_cast<uint32_t>(1); // mip count -- this level only
 	xStream << ulDataSize;
 	xStream.WriteData(pData, ulDataSize);
 	xStream.WriteToFile(strFilename.c_str());
@@ -376,11 +392,15 @@ void Zenith_Tools_TextureExport::ExportFromDataWithFormat(const void* pData, con
 {
 	const size_t ulDataSize = static_cast<size_t>(iWidth) * iHeight * ulBytesPerPixel;
 
+	// Same single .ztxtr layout as every other writer: envelope, dimensions,
+	// format, level count, total size, packed levels — one level here.
 	Zenith_DataStream xStream;
+	Zenith_WriteStreamHeader(xStream, uZENITH_TEXTURE_ASSET_TYPE_ID, uZENITH_TEXTURE_SCHEMA_V2);
 	xStream << iWidth;
 	xStream << iHeight;
-	xStream << 1; // depth
+	xStream << static_cast<int32_t>(1); // depth
 	xStream << eFormat;
+	xStream << static_cast<uint32_t>(1); // this level only
 	xStream << ulDataSize;
 	xStream.WriteData(pData, ulDataSize);
 	xStream.WriteToFile(strFilename.c_str());

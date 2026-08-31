@@ -1036,7 +1036,7 @@ bool Zenith_TerrainComponent::DeleteExistingTerrainFilesForAssetSet(
 }
 
 // Private non-recursive core. Named sets also keep Height/Splatmap/GrassDensity
-// textures here, so only direct generated .zmesh files -- and the
+// textures here, so only direct generated .zgeom files -- and the
 // TerrainDims.zdata manifest that describes them -- are removed. Production
 // reaches this only through the canonical wrapper; the friend test seam may use
 // an arbitrary Build/artifacts sandbox.
@@ -1053,7 +1053,7 @@ bool Zenith_TerrainComponent::DeleteExistingTerrainFilesInDirectory(const std::s
 				// manifest left behind would claim a set that no longer exists,
 				// and would then REFUSE the re-bake that is about to replace it.
 				const bool bIsChunkMesh =
-					entry.path().extension().string() == ZENITH_MESH_EXT;
+					entry.path().extension().string() == ZENITH_GEOMETRY_EXT;
 				const bool bIsDimsManifest =
 					entry.path().filename().string() == Zenith_TerrainDimsManifestFormat::szFILENAME;
 				if (entry.is_regular_file() && (bIsChunkMesh || bIsDimsManifest))

@@ -111,8 +111,8 @@ void Zenith_MaterialAsset::WriteToDataStream(Zenith_DataStream& xStream) const
 
 Zenith_Status Zenith_MaterialAsset::ParseStream(Zenith_DataStream& xStream)
 {
-	// Shared envelope preamble: new files carry the header + schema; a legacy
-	// pre-envelope .zmtrl trips BAD_MAGIC and yields the bare leading version word.
+	// Shared envelope preamble. The envelope is mandatory and the schema must be
+	// the current one; there is no older layout this reader accepts.
 	uint32_t uVersion = 0;
 	const Zenith_Status xVerStatus = Zenith_ReadAssetStreamVersion(xStream, uZENITH_MATERIAL_ASSET_TYPE_ID, uVersion);
 	if (!xVerStatus.IsOk())
@@ -121,9 +121,10 @@ Zenith_Status Zenith_MaterialAsset::ParseStream(Zenith_DataStream& xStream)
 		return xVerStatus.Error();
 	}
 
-	if (uVersion > uZENITH_MATERIAL_SCHEMA_CURRENT)
+	if (uVersion != uZENITH_MATERIAL_SCHEMA_CURRENT)
 	{
-		Zenith_Error(LOG_CATEGORY_ASSET, "Unsupported material version %u (max: %u)",
+		Zenith_Error(LOG_CATEGORY_ASSET,
+			"Zenith_MaterialAsset: schema %u is not the current %u; re-bake this asset",
 			uVersion, uZENITH_MATERIAL_SCHEMA_CURRENT);
 		return Zenith_ErrorCode::VERSION_MISMATCH;
 	}
@@ -142,99 +143,32 @@ Zenith_Status Zenith_MaterialAsset::ParseStream(Zenith_DataStream& xStream)
 	// Material identity
 	xStream >> m_strName;
 
-	if (uVersion >= 5)
+	// ★★ ONE SCHEMA, NO MAPPING. This was `if (uVersion >= 5) { ... } else { ... }`
+	// with a v2-v4 reader in the else: a different field order, a
+	// bTransparent bool mapped onto the blend-mode enum, a five-entry
+	// aeLegacySlots table for the original texture slots, and a v2-v3 arm that
+	// only logged "please re-export". All of it is gone. ParseStream now
+	// accepts the CURRENT schema and nothing else -- every .zmtrl is bake
+	// output under the `**/Assets/**` gitignore, so an older one is a stale
+	// bake that the next tools boot rewrites, never a file to keep reading.
+	// Parameter block — field order owned by Zenith_MaterialParams.
+	m_xParams.ReadFromDataStream(xStream);
+
+	std::string strParentPath;
+	xStream >> strParentPath;
+	if (!strParentPath.empty())
 	{
-		// Parameter block — field order owned by Zenith_MaterialParams.
-		m_xParams.ReadFromDataStream(xStream);
-
-		std::string strParentPath;
-		xStream >> strParentPath;
-		if (!strParentPath.empty())
-		{
-			m_xParentMaterial.SetPath(Zenith_AssetRegistry::NormalizeAssetPath(strParentPath));
-		}
-		xStream >> m_uOverrideMask;
-
-		std::string strTexturePath;
-		for (u_int u = 0; u < MATERIAL_TEXTURE_SLOT_COUNT; u++)
-		{
-			xStream >> strTexturePath;
-			if (!strTexturePath.empty())
-			{
-				m_axTextures[u].SetPath(Zenith_AssetRegistry::NormalizeAssetPath(strTexturePath));
-			}
-		}
+		m_xParentMaterial.SetPath(Zenith_AssetRegistry::NormalizeAssetPath(strParentPath));
 	}
-	else
+	xStream >> m_uOverrideMask;
+
+	std::string strTexturePath;
+	for (u_int u = 0; u < MATERIAL_TEXTURE_SLOT_COUNT; u++)
 	{
-		// ---- Legacy v2-v4 layout ----
-		Zenith_Maths::Vector4 xBaseColor;
-		xStream >> xBaseColor.x;
-		xStream >> xBaseColor.y;
-		xStream >> xBaseColor.z;
-		xStream >> xBaseColor.w;
-		m_xParams.m_xBaseColor = xBaseColor;
-
-		xStream >> m_xParams.m_fMetallic;
-		xStream >> m_xParams.m_fRoughness;
-
-		xStream >> m_xParams.m_xEmissiveColor.x;
-		xStream >> m_xParams.m_xEmissiveColor.y;
-		xStream >> m_xParams.m_xEmissiveColor.z;
-		xStream >> m_xParams.m_fEmissiveIntensity;
-
-		// v4 semantics: the alpha-test discard was ALWAYS active, so legacy
-		// non-transparent materials map to Masked (not Opaque) to render
-		// identically through the new blend-mode paths.
-		bool bTransparent = false;
-		xStream >> bTransparent;
-		m_xParams.m_eBlendMode = bTransparent ? MATERIAL_BLEND_TRANSLUCENT : MATERIAL_BLEND_MASKED;
-		xStream >> m_xParams.m_fAlphaCutoff;
-
-		if (uVersion >= 3)
+		xStream >> strTexturePath;
+		if (!strTexturePath.empty())
 		{
-			xStream >> m_xParams.m_xUVTiling.x;
-			xStream >> m_xParams.m_xUVTiling.y;
-			xStream >> m_xParams.m_xUVOffset.x;
-			xStream >> m_xParams.m_xUVOffset.y;
-
-			xStream >> m_xParams.m_fOcclusionStrength;
-
-			xStream >> m_xParams.m_bTwoSided;
-			bool bUnlit = false;
-			xStream >> bUnlit;
-			m_xParams.m_eShadingModel = bUnlit ? MATERIAL_SHADING_UNLIT : MATERIAL_SHADING_DEFAULT_LIT;
-		}
-
-		// Texture references
-		if (uVersion >= 4)
-		{
-			// Version 4: direct paths for the original 5 slots.
-			static const MaterialTextureSlot aeLegacySlots[] =
-			{
-				MATERIAL_TEXTURE_BASE_COLOR,
-				MATERIAL_TEXTURE_NORMAL,
-				MATERIAL_TEXTURE_ROUGHNESS_METALLIC,
-				MATERIAL_TEXTURE_OCCLUSION,
-				MATERIAL_TEXTURE_EMISSIVE,
-			};
-
-			std::string strPath;
-			for (u_int u = 0; u < sizeof(aeLegacySlots) / sizeof(aeLegacySlots[0]); u++)
-			{
-				xStream >> strPath;
-				if (!strPath.empty())
-				{
-					m_axTextures[aeLegacySlots[u]].SetPath(Zenith_AssetRegistry::NormalizeAssetPath(strPath));
-				}
-			}
-		}
-		else if (uVersion >= 2)
-		{
-			// Version 2-3: GUID-based (old format) - no longer supported
-			// Old materials need to be re-exported
-			Zenith_Error(LOG_CATEGORY_ASSET, "Material %s uses old GUID format (v%u). Please re-export.",
-				m_strName.c_str(), uVersion);
+			m_axTextures[u].SetPath(Zenith_AssetRegistry::NormalizeAssetPath(strTexturePath));
 		}
 	}
 

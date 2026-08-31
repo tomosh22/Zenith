@@ -12,6 +12,8 @@
 #include "ZenithECS/Zenith_SceneData.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "Zenithmon/Components/ZM_PlayerController.h"   // the target is resolved BY COMPONENT
+#include "Zenithmon/Source/Gen/ZM_InteriorGen.h"        // ZM_GetInteriorRoomSpec -- the ceiling height
+#include "Zenithmon/Source/World/ZM_InteriorDressing.h" // the shell entity names this scene may wear
 
 #ifdef ZENITH_TOOLS
 #include "imgui.h"
@@ -43,7 +45,62 @@ void ZM_FollowCamera::OnStart()
 {
 	ResetRuntimeState();
 	CaptureAuthoredYaw();
+	ResolveCeiling();
 	ResolveTarget();
+}
+
+// Which room, if any, this camera's own scene is wearing -- and therefore how
+// high its ceiling is.
+//
+// ★ RESOLVED BY WALKING THIS SCENE FOR AN INTERIOR SHELL, not by asking which
+// scene this is. ZM_RoomForShellEntity is TOTAL over entity names and answers
+// ZM_INTERIOR_ROOM_COUNT for anything that is not a shell, so an outdoor scene
+// resolves to "no ceiling" by construction rather than by a list of scene names
+// somebody has to remember to extend. A future interior gets the fix for free the
+// moment it authors a shell, which is the same thing that gives it a ceiling to
+// begin with.
+//
+// ★ ONCE, AT OnStart. The shell is authored, so it exists the instant the scene
+// activates, and a room's height does not change while it is loaded.
+void ZM_FollowCamera::ResolveCeiling()
+{
+	m_fCeilingY = fNO_CEILING;
+
+	Zenith_SceneData* pxSceneData =
+		g_xEngine.Scenes().GetSceneDataForEntity(m_xParentEntity.GetEntityID());
+	if (pxSceneData == nullptr)
+	{
+		return;
+	}
+
+	for (u_int uRoom = 0u; uRoom < (u_int)ZM_INTERIOR_ROOM_COUNT; ++uRoom)
+	{
+		const ZM_INTERIOR_ROOM eRoom = (ZM_INTERIOR_ROOM)uRoom;
+		const char* szShell = (eRoom == ZM_INTERIOR_ROOM_PROF_LAB)
+			? szZM_PROFLAB_SHELL_ENTITY_NAME
+			: szZM_PLAYERHOME_SHELL_ENTITY_NAME;
+
+		const Zenith_Entity xShell = pxSceneData->FindEntityByName(szShell);
+		if (!xShell.IsValid())
+		{
+			continue;
+		}
+
+		// The room's own wall height, read from the generator's spec rather than
+		// re-spelled: the ceiling slab is built at exactly m_fWallHeight
+		// (ZM_IGBuildCeiling), so this is the plane the lens must stay under.
+		const float fWallHeight = ZM_GetInteriorRoomSpec(eRoom).m_fWallHeight;
+		if (std::isfinite(fWallHeight) && fWallHeight > 0.0f)
+		{
+			m_fCeilingY = fWallHeight;
+			Zenith_Log(LOG_CATEGORY_GAMEPLAY,
+				"[ZM_FollowCamera] interior '%s' -> ceiling %.2f m, lens capped at "
+				"%.2f m (outdoors it would sit %.2f m above the player)",
+				szShell, (double)m_fCeilingY,
+				(double)(m_fCeilingY - fCEILING_CLEARANCE), (double)fCAMERA_HEIGHT);
+		}
+		return;
+	}
 }
 
 void ZM_FollowCamera::OnLateUpdate(float fDeltaTime)
@@ -82,8 +139,13 @@ void ZM_FollowCamera::OnLateUpdate(float fDeltaTime)
 
 	const Zenith_Maths::Vector3 xPivot = xPlayerPosition
 		+ Zenith_Maths::Vector3(0.0f, fPIVOT_HEIGHT, 0.0f);
-	const Zenith_Maths::Vector3 xDesiredPosition =
-		ComputeDesiredPosition(xPlayerPosition, m_fAuthoredYaw);
+	// The outdoor boom, then the indoor cap. Outdoors the second call is the
+	// identity; indoors it is the difference between seeing the room and seeing
+	// the top of its ceiling slab. See ClampBoomBelowCeiling in the header.
+	const Zenith_Maths::Vector3 xDesiredPosition = ClampBoomBelowCeiling(
+		ComputeDesiredPosition(xPlayerPosition, m_fAuthoredYaw),
+		xPivot,
+		m_fCeilingY);
 
 	bool bSnap = !m_bSpringInitialised || !m_bHasPreviousTargetPosition;
 	if (!bSnap)
@@ -226,6 +288,53 @@ Zenith_Maths::Vector3 ZM_FollowCamera::ComputeDesiredPosition(
 	return xSafePlayerPosition
 		+ Zenith_Maths::Vector3(0.0f, fCAMERA_HEIGHT, 0.0f)
 		- xForward * fCAMERA_ARM_LENGTH;
+}
+
+Zenith_Maths::Vector3 ZM_FollowCamera::ClampBoomBelowCeiling(
+	const Zenith_Maths::Vector3& xDesired,
+	const Zenith_Maths::Vector3& xPivot,
+	float fCeilingY)
+{
+	if (!IsFiniteVector(xDesired) || !IsFiniteVector(xPivot)
+		|| !std::isfinite(fCeilingY))
+	{
+		return xDesired;
+	}
+
+	const float fCapY = fCeilingY - fCEILING_CLEARANCE;
+	if (xDesired.y <= fCapY)
+	{
+		return xDesired;   // outdoors (fNO_CEILING), or already under the slab
+	}
+
+	// ★ THE PIVOT IS THE FLOOR OF THIS CLAMP, NOT THE CAP. A player standing on a
+	// mezzanine, on a prop, or simply not in the room the shell describes can have
+	// a pivot ABOVE the cap; dropping the lens to the cap there would bury it in
+	// the floor and point the camera up at the player's feet. In that case the
+	// boom is left alone and the ordinary arm raycast -- which CAN see the walls --
+	// remains the only constraint.
+	if (xPivot.y >= fCapY)
+	{
+		return xDesired;
+	}
+
+	// ★★ THE WHOLE BOOM IS SHORTENED, NOT JUST FLATTENED. Capping only the height
+	// and keeping the horizontal offset does clear the ceiling, and it costs the
+	// shot its pitch: at PlayerHome's numbers the lens ends up 1.15 m above a pivot
+	// 5.5 m away, an 11-degree downward angle that fills the top third of the frame
+	// with ceiling and pushes the floor -- where the room and its furniture are --
+	// into the bottom. Sliding the lens ALONG the boom instead preserves the angle
+	// the camera was designed at and simply brings it closer, which is what a
+	// third-person boom does under any other constraint. It is also exactly what
+	// the arm raycast below already does when a wall is in the way, so indoors and
+	// against-a-wall behave the same way instead of two different ways.
+	const float fRise = xDesired.y - xPivot.y;
+	if (!(fRise > 1.0e-4f))
+	{
+		return xDesired;
+	}
+	const float fScale = (fCapY - xPivot.y) / fRise;
+	return xPivot + (xDesired - xPivot) * fScale;
 }
 
 Zenith_Maths::Vector3 ZM_FollowCamera::StepCriticalSpring(

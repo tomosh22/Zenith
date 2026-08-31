@@ -104,24 +104,67 @@ struct ZM_InteriorProp
 	float       m_fQuatY;
 };
 
-// cos(0)=1, sin(0)=0 | cos(45°)=sin(45°)=0.70710678 | cos(90°)=0, sin(90°)=1.
-// The 90° pair is exact; the 45° pair is the correctly-rounded float32 constant
-// and is identical in every configuration because it is a literal, not a call.
-inline constexpr float fZM_INTERIOR_YAW0_W   = 1.0f;
-inline constexpr float fZM_INTERIOR_YAW0_Y   = 0.0f;
-inline constexpr float fZM_INTERIOR_YAW90_W  = 0.0f;
-inline constexpr float fZM_INTERIOR_YAW90_Y  = 1.0f;
-inline constexpr float fZM_INTERIOR_YAW45_W  = 0.70710678f;
-inline constexpr float fZM_INTERIOR_YAW45_Y  = 0.70710678f;
+// ★★ THESE NAMED HALF THE ANGLE THEY APPLIED, AND EVERY ONE OF THEM WAS WRONG.
+// The block read:
+//
+//     cos(0)=1, sin(0)=0 | cos(45°)=sin(45°)=0.70710678 | cos(90°)=0, sin(90°)=1
+//     fZM_INTERIOR_YAW90_W = 0.0f;  fZM_INTERIOR_YAW90_Y = 1.0f;
+//     fZM_INTERIOR_YAW45_W = 0.70710678f;  fZM_INTERIOR_YAW45_Y = 0.70710678f;
+//
+// -- i.e. (w, y) = (cos a, sin a). A quaternion is (cos(a/2), axis * sin(a/2)),
+// so (0, 1) is a HALF TURN and (0.70710678, 0.70710678) is a QUARTER TURN. The
+// old "YAW90" was 180 degrees and the old "YAW45" was 90.
+//
+// ★ IT HID BEHIND A SECOND DEFECT, WHICH IS WHY IT SURVIVED. Every furniture row
+// below was authored with an AABB collider, and Zenith_ColliderComponent forces
+// an AABB body to identity -- the physics->transform sync then wrote that
+// identity back over the authored rotation, INTO THE SAVED SCENE BYTES (ZM-D-156,
+// already paid for once on rival Vesper). So NO interior prop was ever rotated at
+// all, and a constant that applied twice its stated angle could not be caught by
+// looking at the room. Both are fixed together because neither is visible alone:
+// the furniture is OBB now, and these names are the angles they apply.
+//
+// The half turn is exact; the quarter turn is the correctly-rounded float32
+// literal and is identical in every configuration because it is a literal, not a
+// call (ZM-D-183).
+inline constexpr float fZM_INTERIOR_YAW0_W    = 1.0f;
+inline constexpr float fZM_INTERIOR_YAW0_Y    = 0.0f;
+inline constexpr float fZM_INTERIOR_YAW90_W   = 0.70710678f;
+inline constexpr float fZM_INTERIOR_YAW90_Y   = 0.70710678f;
+inline constexpr float fZM_INTERIOR_YAW180_W  = 0.0f;
+inline constexpr float fZM_INTERIOR_YAW180_Y  = 1.0f;
+
+// ★ WHICH WAY A YAW TURNS A MODEL, stated once so a placement row does not have
+// to re-derive it. A rotation of a about +Y maps +X to (cos a, 0, -sin a), so
+// from a model whose front is +X: YAW0 faces +X, YAW90 faces -Z, YAW180 faces -X.
+// Every imported prop so far has its front on +X -- the chair's backrest occupies
+// the model's -X face and the shelf's back panel occupies its whole -X face --
+// which is what makes that the useful reference direction. It is a property of
+// the deliveries, not a rule the pipeline enforces, so MEASURE each new one.
 
 // PlayerHome: somebody's bedroom. Bed and shelf on the -X wall, table and chair
 // on the +X wall, a barrel in the far corner -- all outside the corridor.
 inline constexpr ZM_InteriorProp axZM_PLAYERHOME_PROPS[] =
 {
 	{ "HomeBed",     ZM_PROP_BED,     -5.60f, -3.60f, fZM_INTERIOR_YAW90_W, fZM_INTERIOR_YAW90_Y },
-	{ "HomeShelf",   ZM_PROP_SHELF,   -6.90f,  0.90f, fZM_INTERIOR_YAW90_W, fZM_INTERIOR_YAW90_Y },
+	// ★ THE SHELF'S BACK GOES AGAINST THE -X WALL, and this row said YAW90
+	// until the model was MEASURED. A shelf has a back, and the old value was
+	// chosen while this prop was a symmetric greybox box whose yaw no picture
+	// could contradict. The imported mesh is 0.264 x 0.998 x 0.486 m with a
+	// CONTINUOUS panel across its whole -X face -- 90% of the (Y, Z) footprint
+	// has material within 15 mm of the -X extreme, against 38% on +X, which is
+	// instead broken into open bays with the books and jars modelled into them.
+	// So the model's front is +X like every import before it, and YAW0 is what
+	// leaves it there: the back to the wall, the width along Z, the open front
+	// into the room. YAW90 would have stood it side-on, its open face down the
+	// room and 0.97 m of it protruding from the wall.
+	{ "HomeShelf",   ZM_PROP_SHELF,   -6.90f,  0.90f, fZM_INTERIOR_YAW0_W,  fZM_INTERIOR_YAW0_Y  },
 	{ "HomeTable",   ZM_PROP_TABLE,    5.40f, -2.40f, fZM_INTERIOR_YAW0_W,  fZM_INTERIOR_YAW0_Y  },
-	{ "HomeChair",   ZM_PROP_CHAIR,    5.40f, -0.90f, fZM_INTERIOR_YAW0_W,  fZM_INTERIOR_YAW0_Y  },
+	// ★ THE CHAIR FACES THE TABLE, and it is the first prop for which that
+	// sentence means anything. Every earlier one was a symmetric greybox box, so
+	// its yaw was unobservable and the two defects above went unnoticed. The chair
+	// model's front is +X, the table is at -Z from it, and YAW90 turns +X to -Z.
+	{ "HomeChair",   ZM_PROP_CHAIR,    5.40f, -0.90f, fZM_INTERIOR_YAW90_W, fZM_INTERIOR_YAW90_Y },
 	{ "HomeBarrel",  ZM_PROP_BARREL,   6.60f, -4.60f, fZM_INTERIOR_YAW0_W,  fZM_INTERIOR_YAW0_Y  },
 };
 
@@ -131,9 +174,15 @@ inline constexpr ZM_InteriorProp axZM_PROFLAB_PROPS[] =
 {
 	{ "LabCounterWest",  ZM_PROP_COUNTER, -8.20f, -3.00f, fZM_INTERIOR_YAW90_W, fZM_INTERIOR_YAW90_Y },
 	{ "LabCounterEast",  ZM_PROP_COUNTER,  8.20f, -3.00f, fZM_INTERIOR_YAW90_W, fZM_INTERIOR_YAW90_Y },
-	{ "LabShelf",        ZM_PROP_SHELF,   -8.60f,  2.60f, fZM_INTERIOR_YAW90_W, fZM_INTERIOR_YAW90_Y },
+	// Same -X wall, same reasoning as HomeShelf above -- YAW0 puts the measured
+	// back panel against it.
+	{ "LabShelf",        ZM_PROP_SHELF,   -8.60f,  2.60f, fZM_INTERIOR_YAW0_W,  fZM_INTERIOR_YAW0_Y  },
 	{ "LabTable",        ZM_PROP_TABLE,    3.80f, -6.20f, fZM_INTERIOR_YAW0_W,  fZM_INTERIOR_YAW0_Y  },
-	{ "LabChair",        ZM_PROP_CHAIR,    5.60f,  2.80f, fZM_INTERIOR_YAW0_W,  fZM_INTERIOR_YAW0_Y  },
+	// ★ THE LAB CHAIR STANDS AT NO TABLE -- LabTable is 9 m away -- so there is
+	// nothing for it to face and a facing still has to be chosen. It faces the
+	// room (-X, a half turn from the model's +X front) rather than the near wall,
+	// which is the least-wrong answer for a chair on open floor.
+	{ "LabChair",        ZM_PROP_CHAIR,    5.60f,  2.80f, fZM_INTERIOR_YAW180_W, fZM_INTERIOR_YAW180_Y },
 	{ "LabBarrel",       ZM_PROP_BARREL,   8.40f,  5.40f, fZM_INTERIOR_YAW0_W,  fZM_INTERIOR_YAW0_Y  },
 };
 
@@ -211,7 +260,18 @@ inline constexpr ZM_InteriorLight axZM_PLAYERHOME_LIGHTS[] =
 	// A warm ceiling pendant on the room's axis, and two lower fills so the long
 	// walls are not lit by one point (which reads as a spotlight in a cave).
 	{ "HomeLampCeiling", 0.00f, 2.70f,  0.00f,  950.0f, 14.0f, 1.00f, 0.78f, 0.52f },
-	{ "HomeLampBedside", -5.20f, 1.15f, -3.40f, 360.0f,  6.0f, 1.00f, 0.72f, 0.44f },
+	// ★ BESIDE THE BED, NOT INSIDE IT. This lamp shipped at (-5.20, 1.15, -3.40),
+	// which is horizontally WITHIN the bed's footprint and 0.39 m above its
+	// mattress -- a 360 lm point source at that range saturates whatever it is
+	// over. On the greybox bed that read as a bright patch on a dull box and
+	// nobody looked twice; against a real bed with a 2048^2 albedo it is a white
+	// blob where the bedding should be, and no amount of material work survives
+	// it. Moved out along +X to clear the bed's side (its +X face sits at
+	// x = -4.88 once ZM_PropFit has sized it) and down to nightstand height, which
+	// roughly quadruples the distance to the mattress and is also what a bedside
+	// lamp physically IS. Intensity, range and colour are UNTOUCHED -- those are
+	// ZM-D-176's warm-tungsten decision and this is a placement fix.
+	{ "HomeLampBedside", -4.20f, 1.05f, -3.90f, 360.0f,  6.0f, 1.00f, 0.72f, 0.44f },
 	{ "HomeLampTable",    5.20f, 1.35f, -1.60f, 330.0f,  6.0f, 1.00f, 0.74f, 0.46f },
 };
 

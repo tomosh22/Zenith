@@ -62,6 +62,7 @@ void GenerateBushAssets()
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_MeshAsset.h"
+#include "Zenith_Tools_TextureExport.h"   // the ONE .ztxtr writer
 #include "AssetHandling/Zenith_SkeletonAsset.h"
 #include "Collections/Zenith_Vector.h"
 #include "DataStream/Zenith_DataStream.h"
@@ -550,25 +551,13 @@ void GenerateBushFoliagePixels(Zenith_Vector<u_int8>& xPixels)
 	}
 }
 
-void WriteBushZtxtr(const std::string& strPath, int32_t iSize, TextureFormat eFormat,
-	const Zenith_Vector<u_int8>& xPixels)
-{
-	Zenith_DataStream xStream;
-	xStream << iSize;
-	xStream << iSize;
-	xStream << static_cast<int32_t>(1);
-	xStream << eFormat;
-	xStream << static_cast<u_int64>(xPixels.GetSize());
-	xStream.WriteData(xPixels.GetDataPointer(), xPixels.GetSize());
-	xStream.WriteToFile(strPath.c_str());
-}
-
 void GenerateBushFoliageTexture(const std::string& strDir)
 {
 	Zenith_Vector<u_int8> xPixels;
 	GenerateBushFoliagePixels(xPixels);
-	WriteBushZtxtr(strDir + "Bush_Foliage_Albedo" ZENITH_TEXTURE_EXT,
-		iBUSH_FOLIAGE_SIZE, TEXTURE_FORMAT_RGBA8_SRGB, xPixels);
+	Zenith_Tools_TextureExport::ExportFromDataWithFormat(
+		xPixels.GetDataPointer(), strDir + "Bush_Foliage_Albedo" ZENITH_TEXTURE_EXT, iBUSH_FOLIAGE_SIZE, iBUSH_FOLIAGE_SIZE, TEXTURE_FORMAT_RGBA8_SRGB,
+		xPixels.GetSize() / (static_cast<size_t>(iBUSH_FOLIAGE_SIZE) * iBUSH_FOLIAGE_SIZE));
 }
 
 void GenerateBushFoliageMaterial(const std::string& strDir)
@@ -589,7 +578,7 @@ void GenerateBushFoliageMaterial(const std::string& strDir)
 }
 
 //=============================================================================
-// Export one variant: skeleton + skinned mesh (.zasset / .zmesh) + sway VAT.
+// Export one variant: skeleton + skinned mesh (.zasset / .zgeom) + sway VAT.
 // No .zmodel on purpose — the instanced component is this set's consumer, and
 // a ModelComponent would render the bush frozen at bind pose; a game that
 // wants that can still LoadMesh the .zasset directly.
@@ -610,7 +599,7 @@ void ExportBushVariant(const std::string& strDir, const BushVariantSpec& xSpec)
 	// The SKINNED converter, not CreateStaticFluxMeshGeometry — the static one
 	// drops the bone lanes and the VAT bake would have nothing to deform.
 	Flux_MeshGeometry* pxGeometry = Zenith_Tools_CreateFluxMeshGeometry(pxMesh, pxSkel);
-	pxGeometry->Export((strDir + xSpec.m_szName + ZENITH_MESH_EXT).c_str());
+	pxGeometry->Export((strDir + xSpec.m_szName + ZENITH_GEOMETRY_EXT).c_str());
 
 	Flux_AnimationClip* pxSwayClip = CreateBushSwayClip(xBranches, xSpec);
 	Flux_AnimationTexture* pxVAT = new Flux_AnimationTexture();

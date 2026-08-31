@@ -12,7 +12,7 @@
 // WHY EVERY OCCLUDER HERE IS CREATED BY HAND, and this is BINDING on anyone
 // adding a case: TERRAIN IS NOT AN OCCLUDER ON CI. Zenith_ColliderComponent::
 // CreateTerrainShape returns nullptr when a terrain has no physics geometry, and
-// that geometry lives in Assets/Terrain/Dawnmere/Physics_*.zmesh, which is
+// that geometry lives in Assets/Terrain/Dawnmere/Physics_*.zgeom, which is
 // gitignored and NOT committed. An occlusion assertion made against terrain
 // would pass on a machine with a warm bake and be vacuous (or red) on a fresh
 // checkout. So every body below is an EXPLICITLY CREATED static AABB or dynamic

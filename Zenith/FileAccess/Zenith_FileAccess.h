@@ -1,7 +1,14 @@
 #pragma once
 
 #define ZENITH_TEXTURE_EXT		".ztxtr"
+// Zenith_MeshAsset: the typed asset -- stream envelope + schema, like every
+// other entry in this list.
 #define ZENITH_MESH_EXT			".zmesh"
+// Flux_MeshGeometry: a DIFFERENT format with its own element table and no
+// version field, read by a different loader. It shared .zmesh until the legacy
+// "no envelope => assume the other layout" branch was deleted and the collision
+// became visible: one extension had to mean one format.
+#define ZENITH_GEOMETRY_EXT		".zgeom"
 #define ZENITH_MESH_ASSET_EXT	".zasset"
 #define ZENITH_MATERIAL_EXT		".zmtrl"
 #define ZENITH_PREFAB_EXT		".zprfb"

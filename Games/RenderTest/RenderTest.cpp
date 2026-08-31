@@ -1,4 +1,6 @@
 #include "Zenith.h"
+#include "DataStream/Zenith_StreamEnvelope.h"   // Zenith_WriteStreamHeader — the .ztxtr envelope
+#include "AssetHandling/Zenith_AssetTypeIds.h"     // uZENITH_TEXTURE_* ids/schema
 #include "Core/Zenith_Engine.h"
 
 #include "AssetHandling/Zenith_AssetHandle.h"
@@ -1194,7 +1196,7 @@ static void InitializeRenderTestResources()
 // v7: NOT a terrain-shape change — the engine's physics chunks moved from a
 // density divisor of 8 (81 verts) to 4 (289 verts). Zenith_TerrainComponent
 // validates a loaded chunk against Zenith_TerrainChunkLayout, so every v6 bake's
-// Physics_*.zmesh is now rejected and the campus would load with NO collision.
+// Physics_*.zgeom is now rejected and the campus would load with NO collision.
 // v8: ALSO not a terrain-shape change — the exporter now emits a COMPLETE chunk
 // at the positive grid border. Chunks with x==63 or z==63 (127 of 4096) used to
 // bake with unwritten stitch vertices and (0,0,0) index triples, because
@@ -1236,7 +1238,7 @@ static bool RenderTest_TerrainAssetsNeedRegeneration()
 	}
 	const std::string strChunksDir = std::string(GAME_ASSETS_DIR) + "Terrain/";
 	return !std::filesystem::exists(std::string(GAME_ASSETS_DIR) + sk_szTerrainProcMarkerRel)
-		|| !std::filesystem::exists(strChunksDir + "Render_LOW_0_0" ZENITH_MESH_EXT)
+		|| !std::filesystem::exists(strChunksDir + "Render_LOW_0_0" ZENITH_GEOMETRY_EXT)
 		|| !std::filesystem::exists(std::string(GAME_ASSETS_DIR) + "Textures/Terrain/Splatmap_RGBA" ZENITH_TEXTURE_EXT);
 }
 
@@ -1413,11 +1415,15 @@ static void RenderTest_PackRoughnessMetallic(const std::string& strSourceDir)
 		xPacked[i * 4 + 3] = 255;
 	}
 
+	// ★ The .ztxtr envelope is part of the format -- this used to write the payload
+	// bare, which only loaded through a legacy "no magic" branch that is gone.
 	Zenith_DataStream xOut;
+	Zenith_WriteStreamHeader(xOut, uZENITH_TEXTURE_ASSET_TYPE_ID, uZENITH_TEXTURE_SCHEMA_V2);
 	xOut << iRWidth;
 	xOut << iRHeight;
 	xOut << static_cast<int32_t>(1);
 	xOut << static_cast<TextureFormat>(TEXTURE_FORMAT_RGBA8_UNORM);
+	xOut << static_cast<uint32_t>(1);   // this level only
 	xOut << static_cast<size_t>(xPacked.size());
 	xOut.WriteData(xPacked.data(), xPacked.size());
 	xOut.WriteToFile(strOutputPath.c_str());

@@ -26,7 +26,7 @@ namespace
 {
 	// ===== The on-disk chunk format IS the terrain shader's vertex input =====
 	//
-	// Zenith_TerrainChunkLayout (Core) describes the BYTES a baked Render_X_Y.zmesh
+	// Zenith_TerrainChunkLayout (Core) describes the BYTES a baked Render_X_Y.zgeom
 	// holds; Flux_Generated_Terrain::Terrain_ToGBuffer::kVertexLayout describes what
 	// the terrain VS fetches. Nothing in either file mentions the other, and the two
 	// are edited by different people for different reasons — an exporter change on one
@@ -957,8 +957,8 @@ Flux_TerrainStreamInResult Flux_TerrainStreamingManagerImpl::StreamInLOD(Flux_Te
 	uint32_t uChunkX, uChunkY;
 	ChunkIndexToCoords(uChunkIndex, uChunkX, uChunkY);
 
-	// Build mesh file path - HIGH LOD uses Render_X_Y.zmesh
-	std::string strChunkPath = xState.m_strTerrainAssetDirectory + "Render_" + std::to_string(uChunkX) + "_" + std::to_string(uChunkY) + ZENITH_MESH_EXT;
+	// Build mesh file path - HIGH LOD uses Render_X_Y.zgeom
+	std::string strChunkPath = xState.m_strTerrainAssetDirectory + "Render_" + std::to_string(uChunkX) + "_" + std::to_string(uChunkY) + ZENITH_GEOMETRY_EXT;
 
 	TerrainMeshSourceData xChunkMesh;
 	if (!TryLoadTerrainMeshSource(strChunkPath.c_str(), xState.m_uVertexStride,

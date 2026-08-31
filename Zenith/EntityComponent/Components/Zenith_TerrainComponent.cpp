@@ -1767,7 +1767,7 @@ void Zenith_TerrainComponent::LoadAndCombineLowLODChunks(uint32_t uTotalVerts, u
 	{
 		const DirectoryLoadContext& xLoadContext = *static_cast<const DirectoryLoadContext*>(pContext);
 		const std::string strPath = xLoadContext.m_strDirectory + "Render_LOW_" +
-			std::to_string(uX) + "_" + std::to_string(uY) + ZENITH_MESH_EXT;
+			std::to_string(uX) + "_" + std::to_string(uY) + ZENITH_GEOMETRY_EXT;
 		return TryLoadTerrainChunkSource(strPath, xLoadContext.m_xDims,
 			xLoadContext.m_xDims.ChunkVertexCount(Zenith_TerrainDimensionsLimits::uLOW_DENSITY_DIVISOR),
 			xLoadContext.m_xDims.ChunkIndexCount(Zenith_TerrainDimensionsLimits::uLOW_DENSITY_DIVISOR),
@@ -1781,7 +1781,7 @@ void Zenith_TerrainComponent::LoadAndCombineLowLODChunks(uint32_t uTotalVerts, u
 	{
 		Zenith_Error(LOG_CATEGORY_TERRAIN,
 			"Terrain LOW LOD chunk (0,0) failed validation (Render_LOW_0_0%s missing or invalid). Marking terrain geometry unusable; this terrain will not render and will not produce a physics body.",
-			ZENITH_MESH_EXT);
+			ZENITH_GEOMETRY_EXT);
 		return;
 	}
 	LogSparseLoadDiagnostics("LOW LOD", xDiagnostics);
@@ -1864,7 +1864,7 @@ void Zenith_TerrainComponent::LoadCombinedPhysicsGeometry()
 	{
 		const DirectoryLoadContext& xLoadContext = *static_cast<const DirectoryLoadContext*>(pContext);
 		const std::string strPath = xLoadContext.m_strDirectory + "Physics_" +
-			std::to_string(uX) + "_" + std::to_string(uY) + ZENITH_MESH_EXT;
+			std::to_string(uX) + "_" + std::to_string(uY) + ZENITH_GEOMETRY_EXT;
 		return TryLoadTerrainChunkSource(strPath, xLoadContext.m_xDims,
 			xLoadContext.m_xDims.ChunkVertexCount(Zenith_TerrainDimensionsLimits::uPHYSICS_DENSITY_DIVISOR),
 			xLoadContext.m_xDims.ChunkIndexCount(Zenith_TerrainDimensionsLimits::uPHYSICS_DENSITY_DIVISOR),
@@ -1877,7 +1877,7 @@ void Zenith_TerrainComponent::LoadCombinedPhysicsGeometry()
 	{
 		Zenith_Error(LOG_CATEGORY_TERRAIN,
 			"Terrain physics chunk (0,0) failed validation (Physics_0_0%s missing or invalid). Terrain will have no physics body.",
-			ZENITH_MESH_EXT);
+			ZENITH_GEOMETRY_EXT);
 		return;
 	}
 	LogSparseLoadDiagnostics("physics", xDiagnostics);

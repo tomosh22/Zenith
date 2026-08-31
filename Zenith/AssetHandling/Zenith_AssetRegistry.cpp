@@ -42,7 +42,7 @@ template<>
 struct Zenith_AssetLoadTraits<Zenith_TextureAsset>
 {
 	static constexpr bool kGuardProcedural = false;
-	static Zenith_Status DoLoad(Zenith_TextureAsset* pxAsset, const std::string& strPath) { return pxAsset->LoadFromFile(strPath, /*bCreateMips*/ true); }
+	static Zenith_Status DoLoad(Zenith_TextureAsset* pxAsset, const std::string& strPath) { return pxAsset->LoadFromFile(strPath); }
 };
 
 // Animation + MeshGeometry are created procedurally via Create<T>(), never loaded

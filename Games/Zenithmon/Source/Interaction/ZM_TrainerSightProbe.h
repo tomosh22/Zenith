@@ -26,7 +26,7 @@
 // TERRAIN CAVEAT, binding on every test: Dawnmere's greybox shell, door jambs,
 // lintel, NPC AABBs and the warp trigger are real static bodies EVERYWHERE
 // (they live in the committed Dawnmere.zscen). The TERRAIN collider is built
-// from gitignored, uncommitted Assets/Terrain/Dawnmere/Physics_*.zmesh, so on a
+// from gitignored, uncommitted Assets/Terrain/Dawnmere/Physics_*.zgeom, so on a
 // fresh CI checkout terrain occludes NOTHING. Never assert occlusion against
 // terrain -- assert it against an explicitly created box.
 //

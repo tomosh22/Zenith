@@ -7201,7 +7201,7 @@ void Zenith_UnitTests::TestStickFigureAssetExport(){
 #ifdef ZENITH_TOOLS
 	// Reload and verify Flux_MeshGeometry format
 	Flux_MeshGeometry xReloadedGeometry;
-	Flux_MeshGeometry::LoadFromFile((strOutputDir + "StickFigure" ZENITH_MESH_EXT).c_str(), xReloadedGeometry, 0, false);
+	Flux_MeshGeometry::LoadFromFile((strOutputDir + "StickFigure" ZENITH_GEOMETRY_EXT).c_str(), xReloadedGeometry, 0, false);
 	ZENITH_ASSERT_EQ(xReloadedGeometry.GetNumVerts(), pxReloadedMesh->GetNumVerts(), "Geometry/mesh vertex count mismatch");
 	ZENITH_ASSERT_EQ(xReloadedGeometry.GetNumIndices(), pxReloadedMesh->GetNumIndices(), "Geometry/mesh index count mismatch");
 	ZENITH_ASSERT_EQ(xReloadedGeometry.GetNumBones(), uExpectedBoneCount, "Reloaded geometry bone count mismatch");
@@ -15521,7 +15521,7 @@ void Zenith_UnitTests::TestTerrainEditorAssetSetResolvesLegacyAndNamedBakeDirect
 	const std::filesystem::path xFirstUseTarget = xFirstUseRoot / "FirstUseSet";
 	const std::filesystem::path xLeaseMutationOutside = xSandbox / "LeaseMutationOutside";
 	const std::filesystem::path xLeaseMutationSentinel =
-		xLeaseMutationOutside / "OutsideSentinel.zmesh";
+		xLeaseMutationOutside / "OutsideSentinel.zgeom";
 	std::filesystem::create_directories(xFirstUseGameRoot);
 	std::filesystem::create_directories(xLeaseMutationOutside);
 	ZENITH_ASSERT_TRUE(WriteTerrainTestMarker(xLeaseMutationSentinel),
@@ -15602,7 +15602,7 @@ void Zenith_UnitTests::TestTerrainEditorAssetSetResolvesLegacyAndNamedBakeDirect
 	const std::filesystem::path xAssetsJunctionTerrain = xAssetsJunction / "Terrain";
 	const std::filesystem::path xAssetsJunctionOutside = xSandbox / "AssetsJunctionOutside";
 	const std::filesystem::path xAssetsJunctionSentinel =
-		xAssetsJunctionOutside / "OutsideSentinel.zmesh";
+		xAssetsJunctionOutside / "OutsideSentinel.zgeom";
 	std::filesystem::create_directories(xAssetsJunctionGameRoot);
 	std::filesystem::create_directories(xAssetsJunctionOutside);
 	ZENITH_ASSERT_TRUE(WriteTerrainTestMarker(xAssetsJunctionSentinel),
@@ -15638,19 +15638,19 @@ void Zenith_UnitTests::TestTerrainEditorAssetSetResolvesLegacyAndNamedBakeDirect
 	std::filesystem::remove(xAssetsJunctionGameRoot);
 #endif
 
-	const std::filesystem::path xRenderMesh = xSandbox / "Render_0_0.zmesh";
-	const std::filesystem::path xPhysicsMesh = xSandbox / "Physics_0_0.zmesh";
+	const std::filesystem::path xRenderMesh = xSandbox / "Render_0_0.zgeom";
+	const std::filesystem::path xPhysicsMesh = xSandbox / "Physics_0_0.zgeom";
 	const std::filesystem::path xTexture = xSandbox / "Height.ztxtr";
 	const std::filesystem::path xNotes = xSandbox / "notes.txt";
-	const std::filesystem::path xNestedMesh = xNested / "Render_1_1.zmesh";
+	const std::filesystem::path xNestedMesh = xNested / "Render_1_1.zgeom";
 	ZENITH_ASSERT_TRUE(WriteTerrainTestMarker(xRenderMesh), "Cleanup sandbox render mesh must be created");
 	ZENITH_ASSERT_TRUE(WriteTerrainTestMarker(xPhysicsMesh), "Cleanup sandbox physics mesh must be created");
 	ZENITH_ASSERT_TRUE(WriteTerrainTestMarker(xTexture), "Cleanup sandbox texture must be created");
 	ZENITH_ASSERT_TRUE(WriteTerrainTestMarker(xNotes), "Cleanup sandbox sibling file must be created");
 	ZENITH_ASSERT_TRUE(WriteTerrainTestMarker(xNestedMesh), "Cleanup sandbox nested mesh must be created");
 	DeleteExistingTerrainFilesForTest(xSandbox.generic_string());
-	ZENITH_ASSERT_FALSE(std::filesystem::exists(xRenderMesh), "Cleanup must delete direct render .zmesh files");
-	ZENITH_ASSERT_FALSE(std::filesystem::exists(xPhysicsMesh), "Cleanup must delete direct physics .zmesh files");
+	ZENITH_ASSERT_FALSE(std::filesystem::exists(xRenderMesh), "Cleanup must delete direct render .zgeom files");
+	ZENITH_ASSERT_FALSE(std::filesystem::exists(xPhysicsMesh), "Cleanup must delete direct physics .zgeom files");
 	ZENITH_ASSERT_TRUE(std::filesystem::exists(xTexture), "Cleanup must preserve colocated terrain textures");
 	ZENITH_ASSERT_TRUE(std::filesystem::exists(xNotes), "Cleanup must preserve non-mesh sibling files");
 	ZENITH_ASSERT_TRUE(std::filesystem::exists(xNestedMesh), "Cleanup must be non-recursive and preserve nested sibling-set meshes");
@@ -15668,8 +15668,8 @@ void Zenith_UnitTests::TestTerrainEditorAssetSetResolvesLegacyAndNamedBakeDirect
 	std::filesystem::create_directories(xPreflightRoot);
 	std::filesystem::create_directories(xOutsideTarget);
 	std::filesystem::create_directories(xSiblingSet);
-	const std::filesystem::path xOutsideSentinel = xOutsideTarget / "OutsideSentinel.zmesh";
-	const std::filesystem::path xSiblingSentinel = xSiblingSet / "SiblingSentinel.zmesh";
+	const std::filesystem::path xOutsideSentinel = xOutsideTarget / "OutsideSentinel.zgeom";
+	const std::filesystem::path xSiblingSentinel = xSiblingSet / "SiblingSentinel.zgeom";
 	ZENITH_ASSERT_TRUE(WriteTerrainTestMarker(xOutsideSentinel), "Outside-target sentinel must be created before preflight");
 	ZENITH_ASSERT_TRUE(WriteTerrainTestMarker(xSiblingSentinel), "Sibling-set sentinel must be created before preflight");
 
@@ -15688,7 +15688,7 @@ void Zenith_UnitTests::TestTerrainEditorAssetSetResolvesLegacyAndNamedBakeDirect
 	const std::filesystem::path xLegacyTextures = xLegacyAssets / "Textures";
 	const std::filesystem::path xLegacyTextureTarget = xLegacyTextures / "Terrain";
 	const std::filesystem::path xLegacyOutside = xSandbox / "LegacyOutside";
-	const std::filesystem::path xLegacyOutsideSentinel = xLegacyOutside / "OutsideSentinel.zmesh";
+	const std::filesystem::path xLegacyOutsideSentinel = xLegacyOutside / "OutsideSentinel.zgeom";
 	std::filesystem::create_directories(xLegacyTextures);
 	std::filesystem::create_directories(xLegacyOutside);
 	ZENITH_ASSERT_TRUE(WriteTerrainTestMarker(xLegacyOutsideSentinel),
@@ -16045,7 +16045,7 @@ void Zenith_UnitTests::TestTerrainEditorChunkExportRectUsesInclusiveBounds()
 		("terrain_rect_preflight_" + std::to_string(ulUnique)));
 	const std::filesystem::path xTerrainRoot = xArtifacts.m_xDirectory / "Terrain";
 	const std::filesystem::path xSiblingDirectory = xTerrainRoot / "SiblingSet";
-	const std::filesystem::path xSiblingSentinel = xSiblingDirectory / "Preserve.zmesh";
+	const std::filesystem::path xSiblingSentinel = xSiblingDirectory / "Preserve.zgeom";
 	const std::filesystem::path xStagedTarget = xTerrainRoot / "RectPreflightTarget";
 	std::filesystem::create_directories(xSiblingDirectory);
 	ZENITH_ASSERT_TRUE(WriteTerrainTestMarker(xSiblingSentinel), "The invalid-preflight sibling sentinel must be created");
@@ -16167,7 +16167,7 @@ void Zenith_UnitTests::TestTerrainStreamingMissingHighLODSourceDoesNotEvictOrAll
 
 	// A present but incompatible source must take the same non-asserting,
 	// side-effect-free result path. This fixture is otherwise a complete HIGH
-	// terrain .zmesh in the exact Flux_MeshGeometry::Export field order. Its sole
+	// terrain .zgeom in the exact Flux_MeshGeometry::Export field order. Its sole
 	// defect is swapping the position/UV storage formats while preserving the
 	// canonical 20-byte total stride, so rejection is specifically layout
 	// validation rather than an EOF, count, payload, or index failure.
@@ -16215,7 +16215,7 @@ void Zenith_UnitTests::TestTerrainStreamingMissingHighLODSourceDoesNotEvictOrAll
 		xIncompatibleMesh << bAbsent;
 	}
 	const uint64_t ulCompleteFixtureSize = xIncompatibleMesh.GetCursor();
-	const std::filesystem::path xIncompatiblePath = xArtifacts.m_xDirectory / "Render_0_0.zmesh";
+	const std::filesystem::path xIncompatiblePath = xArtifacts.m_xDirectory / "Render_0_0.zgeom";
 	xIncompatibleMesh.WriteToFile(xIncompatiblePath.string().c_str());
 	ZENITH_ASSERT_TRUE(std::filesystem::exists(xIncompatiblePath), "The incompatible HIGH source fixture must exist on disk");
 	ZENITH_ASSERT_EQ(std::filesystem::file_size(xIncompatiblePath), ulCompleteFixtureSize, "The incompatible fixture must reach disk without truncation");
@@ -16456,7 +16456,7 @@ void Zenith_UnitTests::TestTerrainStreamingMissingHighLODSourceDoesNotEvictOrAll
 		xMesh.WriteToFile(xPath.string().c_str());
 	};
 
-	const std::filesystem::path xLowAnchorPath = xArtifacts.m_xDirectory / "Render_LOW_0_0.zmesh";
+	const std::filesystem::path xLowAnchorPath = xArtifacts.m_xDirectory / "Render_LOW_0_0.zgeom";
 	WriteCanonicalTerrainSource(xLowAnchorPath,
 		Zenith_TerrainChunkLayout::uLOW_CHUNK_VERTEX_COUNT,
 		Zenith_TerrainChunkLayout::uLOW_CHUNK_INDEX_COUNT, false, 0u);
@@ -16469,12 +16469,12 @@ void Zenith_UnitTests::TestTerrainStreamingMissingHighLODSourceDoesNotEvictOrAll
 		"The LOW authority must retain the exporter topology");
 	Flux_MeshGeometry xMissingLowAuthority;
 	ZENITH_ASSERT_FALSE(Zenith_TerrainComponent::TryLoadTerrainChunkSource(
-		(xArtifacts.m_xDirectory / "MissingAuthority" / "Render_LOW_0_0.zmesh").string(), Zenith_TerrainDimensions::Default(),
+		(xArtifacts.m_xDirectory / "MissingAuthority" / "Render_LOW_0_0.zgeom").string(), Zenith_TerrainDimensions::Default(),
 		Zenith_TerrainChunkLayout::uLOW_CHUNK_VERTEX_COUNT,
 		Zenith_TerrainChunkLayout::uLOW_CHUNK_INDEX_COUNT, false, xMissingLowAuthority),
 		"A missing LOW (0,0) authority must fail validation so runtime marks render geometry unusable");
 
-	const std::filesystem::path xPhysicsAnchorPath = xArtifacts.m_xDirectory / "Physics_0_0.zmesh";
+	const std::filesystem::path xPhysicsAnchorPath = xArtifacts.m_xDirectory / "Physics_0_0.zgeom";
 	WriteCanonicalTerrainSource(xPhysicsAnchorPath,
 		Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_VERTEX_COUNT,
 		Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_INDEX_COUNT, true, 0u);
@@ -16485,21 +16485,21 @@ void Zenith_UnitTests::TestTerrainStreamingMissingHighLODSourceDoesNotEvictOrAll
 		"A canonical physics (0,0) authority with normals must remain loadable without a GPU upload");
 	Flux_MeshGeometry xMissingPhysicsAuthority;
 	ZENITH_ASSERT_FALSE(Zenith_TerrainComponent::TryLoadTerrainChunkSource(
-		(xArtifacts.m_xDirectory / "MissingAuthority" / "Physics_0_0.zmesh").string(), Zenith_TerrainDimensions::Default(),
+		(xArtifacts.m_xDirectory / "MissingAuthority" / "Physics_0_0.zgeom").string(), Zenith_TerrainDimensions::Default(),
 		Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_VERTEX_COUNT,
 		Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_INDEX_COUNT, true, xMissingPhysicsAuthority),
 		"A missing physics (0,0) authority must fail validation so runtime produces no physics body");
 
 	Flux_MeshGeometry xMissingLow;
 	ZENITH_ASSERT_FALSE(Zenith_TerrainComponent::TryLoadTerrainChunkSource(
-		(xArtifacts.m_xDirectory / "Render_LOW_0_1.zmesh").string(), Zenith_TerrainDimensions::Default(),
+		(xArtifacts.m_xDirectory / "Render_LOW_0_1.zgeom").string(), Zenith_TerrainDimensions::Default(),
 		Zenith_TerrainChunkLayout::uLOW_CHUNK_VERTEX_COUNT,
 		Zenith_TerrainChunkLayout::uLOW_CHUNK_INDEX_COUNT, false, xMissingLow),
 		"A missing non-anchor LOW source must be rejected nonassertingly as zero geometry");
 	ZENITH_ASSERT_EQ(xMissingLow.GetNumVerts(), 0u,
 		"A missing non-anchor LOW source must not partially populate geometry");
 
-	const std::filesystem::path xCorruptPhysicsPath = xArtifacts.m_xDirectory / "Physics_0_1.zmesh";
+	const std::filesystem::path xCorruptPhysicsPath = xArtifacts.m_xDirectory / "Physics_0_1.zgeom";
 	Zenith_DataStream xTruncatedPhysics;
 	xTruncatedPhysics << uint32_t(Zenith_TerrainChunkLayout::uELEMENT_COUNT);
 	xTruncatedPhysics.WriteToFile(xCorruptPhysicsPath.string().c_str());
@@ -16511,7 +16511,7 @@ void Zenith_UnitTests::TestTerrainStreamingMissingHighLODSourceDoesNotEvictOrAll
 	ZENITH_ASSERT_EQ(xCorruptPhysics.GetNumVerts(), 0u,
 		"A corrupt non-anchor physics source must not partially populate geometry");
 
-	const std::filesystem::path xPhysicsWithoutNormalsPath = xArtifacts.m_xDirectory / "Physics_0_2.zmesh";
+	const std::filesystem::path xPhysicsWithoutNormalsPath = xArtifacts.m_xDirectory / "Physics_0_2.zgeom";
 	WriteCanonicalTerrainSource(xPhysicsWithoutNormalsPath,
 		Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_VERTEX_COUNT,
 		Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_INDEX_COUNT, false, 0u);
@@ -16522,7 +16522,7 @@ void Zenith_UnitTests::TestTerrainStreamingMissingHighLODSourceDoesNotEvictOrAll
 		"A physics source without the required normal stream must contribute no physics geometry");
 
 	const std::filesystem::path xAlternateDiagonalPath =
-		xArtifacts.m_xDirectory / "Render_LOW_AlternateDiagonal.zmesh";
+		xArtifacts.m_xDirectory / "Render_LOW_AlternateDiagonal.zgeom";
 	WriteCanonicalTerrainSource(xAlternateDiagonalPath,
 		Zenith_TerrainChunkLayout::uLOW_CHUNK_VERTEX_COUNT,
 		Zenith_TerrainChunkLayout::uLOW_CHUNK_INDEX_COUNT, false, 1u);
@@ -16533,7 +16533,7 @@ void Zenith_UnitTests::TestTerrainStreamingMissingHighLODSourceDoesNotEvictOrAll
 		"A regular grid using the non-exporter diagonal must fail exact terrain-topology validation");
 
 	const std::filesystem::path xReversedWindingPath =
-		xArtifacts.m_xDirectory / "Render_LOW_ReversedWinding.zmesh";
+		xArtifacts.m_xDirectory / "Render_LOW_ReversedWinding.zgeom";
 	WriteCanonicalTerrainSource(xReversedWindingPath,
 		Zenith_TerrainChunkLayout::uLOW_CHUNK_VERTEX_COUNT,
 		Zenith_TerrainChunkLayout::uLOW_CHUNK_INDEX_COUNT, false, 2u);
@@ -16544,7 +16544,7 @@ void Zenith_UnitTests::TestTerrainStreamingMissingHighLODSourceDoesNotEvictOrAll
 		"A single reversed terrain triangle must fail canonical winding validation");
 
 	const std::filesystem::path xNonFinitePath =
-		xArtifacts.m_xDirectory / "Render_LOW_NonFinite.zmesh";
+		xArtifacts.m_xDirectory / "Render_LOW_NonFinite.zgeom";
 	WriteCanonicalTerrainSource(xNonFinitePath,
 		Zenith_TerrainChunkLayout::uLOW_CHUNK_VERTEX_COUNT,
 		Zenith_TerrainChunkLayout::uLOW_CHUNK_INDEX_COUNT, false, 3u);
@@ -16555,7 +16555,7 @@ void Zenith_UnitTests::TestTerrainStreamingMissingHighLODSourceDoesNotEvictOrAll
 		"A non-finite terrain position must fail before geometry allocation");
 
 	const std::filesystem::path xDegenerateNormalPath =
-		xArtifacts.m_xDirectory / "Physics_DegenerateNormal.zmesh";
+		xArtifacts.m_xDirectory / "Physics_DegenerateNormal.zgeom";
 	WriteCanonicalTerrainSource(xDegenerateNormalPath,
 		Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_VERTEX_COUNT,
 		Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_INDEX_COUNT, true, 4u);
@@ -16589,7 +16589,7 @@ void Zenith_UnitTests::TestTerrainStreamingMissingHighLODSourceDoesNotEvictOrAll
 	for (const TerrainRejectionCase& xCase : axREJECTION_CASES)
 	{
 		const std::filesystem::path xCasePath = xArtifacts.m_xDirectory /
-			(std::string("Render_LOW_") + xCase.m_szName + ".zmesh");
+			(std::string("Render_LOW_") + xCase.m_szName + ".zgeom");
 		WriteCanonicalTerrainSource(xCasePath,
 			Zenith_TerrainChunkLayout::uLOW_CHUNK_VERTEX_COUNT,
 			Zenith_TerrainChunkLayout::uLOW_CHUNK_INDEX_COUNT, false, xCase.m_uMutation);
@@ -16605,7 +16605,7 @@ void Zenith_UnitTests::TestTerrainStreamingMissingHighLODSourceDoesNotEvictOrAll
 	}
 
 	// Exercise the production-shared sparse combination core with real bounded
-	// .zmesh snapshots. This pins anchor authority, compact offsets, missing
+	// .zgeom snapshots. This pins anchor authority, compact offsets, missing
 	// chunk cleanup, capped diagnostic sampling, and the original dense-grid
 	// behavior without registering another unit-test baseline entry.
 	const std::filesystem::path xSparseDirectory = xArtifacts.m_xDirectory / "SparseGrid";
@@ -16613,7 +16613,7 @@ void Zenith_UnitTests::TestTerrainStreamingMissingHighLODSourceDoesNotEvictOrAll
 	auto WriteLowChunk = [&](uint32_t uX, uint32_t uY)
 	{
 		WriteCanonicalTerrainSource(xSparseDirectory /
-			("Render_LOW_" + std::to_string(uX) + "_" + std::to_string(uY) + ".zmesh"),
+			("Render_LOW_" + std::to_string(uX) + "_" + std::to_string(uY) + ".zgeom"),
 			Zenith_TerrainChunkLayout::uLOW_CHUNK_VERTEX_COUNT,
 			Zenith_TerrainChunkLayout::uLOW_CHUNK_INDEX_COUNT, false, 0u);
 	};
@@ -16632,7 +16632,7 @@ void Zenith_UnitTests::TestTerrainStreamingMissingHighLODSourceDoesNotEvictOrAll
 		const SparseGridLoadContext& xContext =
 			*static_cast<const SparseGridLoadContext*>(pContext);
 		const std::filesystem::path xPath = xContext.m_xDirectory /
-			("Render_LOW_" + std::to_string(uX) + "_" + std::to_string(uY) + ".zmesh");
+			("Render_LOW_" + std::to_string(uX) + "_" + std::to_string(uY) + ".zgeom");
 		return Zenith_TerrainComponent::TryLoadTerrainChunkSource(xPath.string(), Zenith_TerrainDimensions::Default(),
 			Zenith_TerrainChunkLayout::uLOW_CHUNK_VERTEX_COUNT,
 			Zenith_TerrainChunkLayout::uLOW_CHUNK_INDEX_COUNT, false, xGeometryOut);
@@ -16746,7 +16746,7 @@ void Zenith_UnitTests::TestTerrainStreamingMissingHighLODSourceDoesNotEvictOrAll
 	{
 		WriteCanonicalTerrainSource(xSparsePhysicsDirectory /
 			("Physics_" + std::to_string(xCoords.first) + "_" +
-				std::to_string(xCoords.second) + ".zmesh"),
+				std::to_string(xCoords.second) + ".zgeom"),
 			Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_VERTEX_COUNT,
 			Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_INDEX_COUNT, true, 0u);
 	}
@@ -16757,7 +16757,7 @@ void Zenith_UnitTests::TestTerrainStreamingMissingHighLODSourceDoesNotEvictOrAll
 		const SparseGridLoadContext& xContext =
 			*static_cast<const SparseGridLoadContext*>(pContext);
 		const std::filesystem::path xPath = xContext.m_xDirectory /
-			("Physics_" + std::to_string(uX) + "_" + std::to_string(uY) + ".zmesh");
+			("Physics_" + std::to_string(uX) + "_" + std::to_string(uY) + ".zgeom");
 		return Zenith_TerrainComponent::TryLoadTerrainChunkSource(xPath.string(), Zenith_TerrainDimensions::Default(),
 			Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_VERTEX_COUNT,
 			Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_INDEX_COUNT, true, xGeometryOut);

@@ -141,9 +141,9 @@ namespace
 			strRoot + "Terrain/Dawnmere/Height" ZENITH_TEXTURE_EXT,
 			strRoot + "Terrain/Dawnmere/Splatmap_RGBA" ZENITH_TEXTURE_EXT,
 			strRoot + "Terrain/Dawnmere/GrassDensity" ZENITH_TEXTURE_EXT,
-			strRoot + "Terrain/Dawnmere/Physics_0_0" ZENITH_MESH_EXT,
-			strRoot + "Terrain/Dawnmere/Render_LOW_0_0" ZENITH_MESH_EXT,
-			strRoot + "Terrain/Dawnmere/Render_0_0" ZENITH_MESH_EXT,
+			strRoot + "Terrain/Dawnmere/Physics_0_0" ZENITH_GEOMETRY_EXT,
+			strRoot + "Terrain/Dawnmere/Render_LOW_0_0" ZENITH_GEOMETRY_EXT,
+			strRoot + "Terrain/Dawnmere/Render_0_0" ZENITH_GEOMETRY_EXT,
 		};
 
 		for (const std::string& strPath : astrRequired)
@@ -1578,12 +1578,12 @@ namespace
 			strRoot + "Scenes/Route1" ZENITH_SCENE_EXT,
 			strRoot + "Scenes/Thornacre" ZENITH_SCENE_EXT,
 			strRoot + "Terrain/Dawnmere/Height" ZENITH_TEXTURE_EXT,
-			strRoot + "Terrain/Dawnmere/Physics_0_0" ZENITH_MESH_EXT,
+			strRoot + "Terrain/Dawnmere/Physics_0_0" ZENITH_GEOMETRY_EXT,
 			strRoot + "Terrain/Route1/Height" ZENITH_TEXTURE_EXT,
 			strRoot + "Terrain/Route1/GrassDensity" ZENITH_TEXTURE_EXT,
-			strRoot + "Terrain/Route1/Physics_0_0" ZENITH_MESH_EXT,
+			strRoot + "Terrain/Route1/Physics_0_0" ZENITH_GEOMETRY_EXT,
 			strRoot + "Terrain/Thornacre/Height" ZENITH_TEXTURE_EXT,
-			strRoot + "Terrain/Thornacre/Physics_0_0" ZENITH_MESH_EXT,
+			strRoot + "Terrain/Thornacre/Physics_0_0" ZENITH_GEOMETRY_EXT,
 		};
 		for (const std::string& strPath : astrRequired)
 		{

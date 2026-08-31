@@ -61,6 +61,42 @@ public:
 		Zenith_Maths::Vector3& xVelocityInOut,
 		float fDeltaTime);
 	static float ClampArmDistance(float fDesiredDistance, bool bHit, float fHitDistance);
+
+	// ★★ THE INDOOR FIX. ComputeDesiredPosition puts the lens fCAMERA_HEIGHT above
+	// the player's transform unconditionally, which is right outdoors and wrong in
+	// every room this game has: PlayerHome's ceiling slab starts at 3.0 m and a
+	// player standing on its floor has a transform at ~0.9 m, so the desired lens
+	// sits at ~3.9 m -- most of a metre ABOVE the ceiling, looking down through it.
+	// The room is not visible at all, which is exactly what it looked like.
+	//
+	// ★ AND NO RAYCAST CAN FIND THAT CEILING. The arm is already swept for
+	// obstructions, and it sweeps right through this one: the interior shell is a
+	// VISUAL-ONLY entity (ZM_InteriorDressing.h -- the seven blockout blocks own
+	// all the collision and there is no ceiling block among them), so the slab the
+	// camera ends up above has no collider to hit. Adding one would change what the
+	// PLAYER can do to fix what the CAMERA sees.
+	//
+	// So the ceiling is a NUMBER the camera resolves once, at OnStart, from the
+	// room its own scene is wearing -- and this is the pure clamp that applies it.
+	// Returns xDesired unchanged when fCeilingY is fNO_CEILING (every outdoor
+	// scene), when the pivot is already above the ceiling (a player who is not in
+	// the room the shell describes), or when the desired lens already clears it.
+	// Otherwise the lens SLIDES ALONG THE BOOM until it sits at
+	// fCeilingY - fCEILING_CLEARANCE -- so the camera keeps the pitch it was
+	// designed at and simply comes closer, the same thing the arm raycast does
+	// when a wall is in the way. See the .cpp for why capping the height alone
+	// (which also clears the ceiling) is the wrong shape.
+	static Zenith_Maths::Vector3 ClampBoomBelowCeiling(
+		const Zenith_Maths::Vector3& xDesired,
+		const Zenith_Maths::Vector3& xPivot,
+		float fCeilingY);
+
+	// The interior ceiling height this camera resolved from its own scene, or
+	// fNO_CEILING outdoors. Exposed so a test can state which case it is exercising
+	// rather than inferring it from a pose.
+	float GetCeilingY() const { return m_fCeilingY; }
+	static constexpr float GetNoCeiling() { return fNO_CEILING; }
+	static constexpr float GetCeilingClearance() { return fCEILING_CLEARANCE; }
 	static ZM_FollowCameraPose BuildLookAtPose(
 		const Zenith_Maths::Vector3& xPosition,
 		const Zenith_Maths::Vector3& xPivot,
@@ -99,8 +135,22 @@ private:
 	static constexpr float fTELEPORT_SNAP_DISTANCE = 20.0f;
 	static constexpr float fMAX_ABS_PITCH = 1.55334306f; // pi/2 - 1 degree
 
+	// "This scene has no ceiling." A sentinel rather than an optional because the
+	// clamp is a pure static a test drives with plain floats. Any real ceiling is
+	// a room height in metres, so a large positive value can never collide with
+	// one, and it also makes the "already clears it" comparison do the right
+	// thing with no special case.
+	static constexpr float fNO_CEILING = 1.0e9f;
+
+	// How far below the ceiling the lens is parked. The near plane authored on
+	// every interior camera is 0.1 m, so this is comfortably more than enough to
+	// keep the slab out of the frustum's front face while staying high enough to
+	// look down at the room.
+	static constexpr float fCEILING_CLEARANCE = 0.35f;
+
 	void ResetRuntimeState();
 	void CaptureAuthoredYaw();
+	void ResolveCeiling();
 	Zenith_Entity ResolveTarget();
 
 	Zenith_Entity m_xParentEntity;
@@ -109,6 +159,11 @@ private:
 	Zenith_Maths::Vector3 m_xSpringVelocity = Zenith_Maths::Vector3(0.0f);
 	Zenith_Maths::Vector3 m_xPreviousTargetPosition = Zenith_Maths::Vector3(0.0f);
 	float m_fAuthoredYaw = 0.0f;
+	// Resolved at OnStart from the interior shell in this camera's own scene, and
+	// NOT serialized: it is a function of the room, and the room is already in the
+	// scene. Authoring it as well would put a second copy of the wall height in the
+	// committed bytes for nothing to reconcile it against.
+	float m_fCeilingY = fNO_CEILING;
 	float m_fCurrentArmDistance = 0.0f;
 	bool m_bAuthoredYawCaptured = false;
 	bool m_bSpringInitialised = false;

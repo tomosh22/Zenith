@@ -1,6 +1,7 @@
 #include "Zenith.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
+#include "AssetHandling/Zenith_MeshAsset.h"                        // ZM_ResolvePropFit measures a baked prop mesh
 #include "AssetHandling/Zenith_MeshGeometryAsset.h"
 #include "Core/Zenith_Engine.h"
 #include "Core/Zenith_GraphicsOptions.h"
@@ -67,6 +68,7 @@
 #include "Zenithmon/Source/World/ZM_HumanAssetPolicy.h"           // is the human bake loadable right now?
 #include "Zenithmon/Source/World/ZM_HumanBody.h"               // THE human body contract (size, capsule, visual scale)
 #include "Zenithmon/Source/World/ZM_PlayerHomePlacement.h"      // the PlayerHome shell + its ZM-D-176 warm tint
+#include "Zenithmon/Source/World/ZM_PropFit.h"                  // roster-size fit for a prop model of ANY authored scale
 // ★ UNCONDITIONAL, DELIBERATELY. Project_LoadInitialScene walks this table and is
 // compiled in NON-TOOLS builds too (the ZENITH_TOOLS #endif sits immediately
 // above it), so the one enumerable scene inventory cannot live in the tools block.
@@ -3436,6 +3438,89 @@ namespace
 			COLLISION_VOLUME_TYPE_AABB, RIGIDBODY_TYPE_STATIC);
 	}
 
+	// ---- The transform that makes a prop model its roster size ---------------
+	//
+	// Reads the prop's BAKED .zmesh off disk and measures it, then asks
+	// ZM_ComputePropFit for the uniform scale and ground lift that turn that
+	// measurement into the roster row's size, standing on y = 0.
+	//
+	// ★ HERMETIC: a Zenith_DataStream + ParseStream, never
+	// Zenith_AssetRegistry::Acquire. This runs while an authoring step list is
+	// being BUILT, and warming the registry with a mesh at that moment is how a
+	// scene's byte count starts depending on which assets happened to be resident
+	// when it was saved -- the failure ZM_BuildingFacade's header records at
+	// length (79,058 bytes on one boot, 82,152 on the next, same 40 entities).
+	// ZM_Tests_PropBake.cpp reads a baked .zmodel the same way and for the same
+	// reason.
+	//
+	// ★ TOTAL: no bake, an unreadable .zmesh or a garbage id all answer the
+	// IDENTITY transform -- which is precisely what the authoring emitted before
+	// this function existed. A clone with no asset bake must still author a
+	// complete, loadable scene; the prop simply renders nothing, which is the same
+	// degradation every other generated asset in this game has.
+	ZM_PropFit ZM_ResolvePropFit(ZM_PROP_ID eProp)
+	{
+		ZM_PropFit xFit;   // identity
+
+		if (static_cast<u_int>(eProp) >= static_cast<u_int>(ZM_PROP_COUNT))
+		{
+			return xFit;
+		}
+		(void)ZM_EnsurePropBaked(eProp);
+
+		char acMeshRef[512];
+		if (!ZM_PropAssetPath(eProp, ZM_PROP_ASSET_MESH, acMeshRef, sizeof(acMeshRef)))
+		{
+			return xFit;
+		}
+
+		const std::string strMeshFs =
+			Zenith_AssetRegistry::ResolvePath(std::string(acMeshRef));
+
+		Zenith_DataStream xStream;
+		xStream.ReadFromFile(strMeshFs.c_str());
+		if (!xStream.IsValid())
+		{
+			Zenith_Warning(LOG_CATEGORY_MESH,
+				"[Zenithmon] ZM_ResolvePropFit: '%s' is not readable, so '%s' is "
+				"authored at identity scale. On a clone with no bake this is expected",
+				strMeshFs.c_str(), ZM_GetPropName(eProp));
+			return xFit;
+		}
+
+		Zenith_MeshAsset xMesh;
+		if (!xMesh.ParseStream(xStream).IsOk() || xMesh.GetNumVerts() == 0u)
+		{
+			Zenith_Warning(LOG_CATEGORY_MESH,
+				"[Zenithmon] ZM_ResolvePropFit: '%s' did not parse as a mesh, so '%s' "
+				"is authored at identity scale", strMeshFs.c_str(), ZM_GetPropName(eProp));
+			return xFit;
+		}
+
+		const ZM_PropData& xData = ZM_GetPropData(eProp);
+		xFit = ZM_ComputePropFit(
+			xMesh.GetBoundsMin(), xMesh.GetBoundsMax(),
+			xData.m_fWidth, xData.m_fDepth, xData.m_fHeight);
+
+		// OBSERVED, not asserted. A hand-made model's fit is the one number a
+		// reviewer needs to see to tell "the asset is the wrong size" from "the
+		// authoring is wrong", and it costs one line per prop at author time.
+		const Zenith_Maths::Vector3 xFitted =
+			ZM_FittedPropSize(xMesh.GetBoundsMin(), xMesh.GetBoundsMax(), xFit);
+		Zenith_Log(LOG_CATEGORY_MESH,
+			"[Zenithmon] PROP FIT '%s': model %.4f x %.4f x %.4f m -> scale %.4f, "
+			"ground y %.4f -> %.4f x %.4f x %.4f m (roster %.2f x %.2f x %.2f)",
+			ZM_GetPropName(eProp),
+			(double)(xMesh.GetBoundsMax().x - xMesh.GetBoundsMin().x),
+			(double)(xMesh.GetBoundsMax().y - xMesh.GetBoundsMin().y),
+			(double)(xMesh.GetBoundsMax().z - xMesh.GetBoundsMin().z),
+			(double)xFit.m_fScale, (double)xFit.m_fGroundY,
+			(double)xFitted.x, (double)xFitted.y, (double)xFitted.z,
+			(double)xData.m_fWidth, (double)xData.m_fDepth, (double)xData.m_fHeight);
+
+		return xFit;
+	}
+
 	// ---- Everything that turns an interior blockout box into a room ----------
 	//
 	// One shell entity (the generated floor/wall/ceiling/trim model), the room's
@@ -3468,18 +3553,46 @@ namespace
 		xAuto.AddStep_SetTransformScale(1.0f, 1.0f, 1.0f);
 		xAuto.AddStep_AddComponent("ZM_InteriorShell");
 
-		// The furniture. SOLID: an AABB static body, sized to the prop's own mesh by
+		// The furniture. SOLID: an OBB static body, sized to the prop's own mesh by
 		// ZM_InteriorFurniture::OnStart once the model has loaded (the collider
 		// authored here is a placeholder cube until then -- see that component).
-		// AABB rather than OBB because these are axis-aligned box compositions and
-		// an AABB body is forced to identity rotation anyway.
+		//
+		// ★★ OBB, AND IT USED TO BE AABB "because these are axis-aligned box
+		// compositions and an AABB body is forced to identity rotation anyway".
+		// Both halves of that were true and together they were circular: the props
+		// were axis-aligned BECAUSE the AABB had been silently discarding their
+		// rotation the whole time. Zenith_ColliderComponent forces an AABB body to
+		// JPH::Quat::sIdentity(), and the physics->transform sync writes that
+		// identity back over the authored rotation, INTO THE SAVED SCENE BYTES --
+		// ZM-D-156, already paid for once on rival Vesper. So HomeBed, HomeShelf,
+		// LabShelf and both lab counters were authored with a quarter turn and
+		// stood square to the room; every pure unit stayed green because they read
+		// the compiled constants and the damage lived in the file.
+		//
+		// It was invisible while every prop was a symmetric greybox box, and
+		// AB-PROP-03 -- a chair, which has a FRONT -- is what made it visible.
+		// OBB is the same box shape and differs ONLY in applying the rotation.
 		const u_int uProps = ZM_GetInteriorPropCount(eRoom);
 		for (u_int p = 0u; p < uProps; ++p)
 		{
 			const ZM_InteriorProp& xProp = ZM_GetInteriorProp(eRoom, p);
+
+			// ★★ THE SIZE IS READ OFF THE MODEL, NEVER ASSUMED. A generated prop is
+			// emitted at its roster size and grounded at y = 0, so this resolves to
+			// scale 1 / y 0 and authors exactly what the loop authored before. A
+			// HAND-MADE model has neither property: Bed.glb arrives at 1.00 x 0.38 x
+			// 0.72 m centred on its own origin, and authored at identity it is a
+			// half-size bed sunk to its mattress in the floor. ZM_PropFit.h carries
+			// the argument for why the fix is here and not in the asset.
+			const ZM_PropFit xFit = ZM_ResolvePropFit(xProp.m_eProp);
+
 			xAuto.AddStep_CreateEntity(xProp.m_szEntityName);
 			xAuto.AddStep_SetEntityTransient(false);
-			xAuto.AddStep_SetTransformPosition(xProp.m_fX, 0.0f, xProp.m_fZ);
+			xAuto.AddStep_SetTransformPosition(xProp.m_fX, xFit.m_fGroundY, xProp.m_fZ);
+			// Explicit, and NOT skipped when it is 1: an unstated scale is a scale
+			// nobody can see is deliberate, and the collider ZM_InteriorFurniture
+			// rebuilds is mesh extents TIMES this number.
+			xAuto.AddStep_SetTransformScale(xFit.m_fScale, xFit.m_fScale, xFit.m_fScale);
 			// ★ A QUATERNION, VERBATIM -- NOT AddStep_SetTransformYaw. The yaw step
 			// runs glm::angleAxis, whose sin/cos differ by 1-2 ULP between MSVC
 			// Debug and Release codegen, so a committed scene authored through it
@@ -3489,7 +3602,7 @@ namespace
 				0.0f, xProp.m_fQuatY, 0.0f, xProp.m_fQuatW);
 			xAuto.AddStep_AddCollider();
 			xAuto.AddStep_AddColliderShape(
-				COLLISION_VOLUME_TYPE_AABB, RIGIDBODY_TYPE_STATIC);
+				COLLISION_VOLUME_TYPE_OBB, RIGIDBODY_TYPE_STATIC);
 			xAuto.AddStep_AddComponent("ZM_InteriorFurniture");
 		}
 

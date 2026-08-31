@@ -58,6 +58,7 @@ void GenerateProceduralRockAssets()
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_MeshAsset.h"
+#include "Zenith_Tools_TextureExport.h"   // the ONE .ztxtr writer
 #include "AssetHandling/Zenith_ModelAsset.h"
 #include "Collections/Zenith_Vector.h"
 #include "DataStream/Zenith_DataStream.h"
@@ -530,19 +531,6 @@ struct RockTextureParams
 	u_int                 m_uSeed          = 5501u;
 };
 
-void WriteRockZtxtr(const std::string& strPath, int32_t iSize, TextureFormat eFormat,
-	const Zenith_Vector<u_int8>& xPixels)
-{
-	Zenith_DataStream xStream;
-	xStream << iSize;
-	xStream << iSize;
-	xStream << static_cast<int32_t>(1);
-	xStream << eFormat;
-	xStream << static_cast<u_int64>(xPixels.GetSize());
-	xStream.WriteData(xPixels.GetDataPointer(), xPixels.GetSize());
-	xStream.WriteToFile(strPath.c_str());
-}
-
 // The single height field every other map derives from, sampled over [0,1)^2.
 float RockSurfaceHeight(const RockTextureParams& xParams, float fU, float fV, float& fCrackOut)
 {
@@ -634,8 +622,9 @@ void GenerateRockTextureSet(const std::string& strDir, const RockTextureParams& 
 			pucA[3] = 255;
 		}
 	}
-	WriteRockZtxtr(strDir + "Rock_" + xParams.m_szName + "_Albedo" ZENITH_TEXTURE_EXT,
-		iCOLOUR_SIZE, TEXTURE_FORMAT_RGBA8_SRGB, xAlbedo);
+	Zenith_Tools_TextureExport::ExportFromDataWithFormat(
+		xAlbedo.GetDataPointer(), strDir + "Rock_" + xParams.m_szName + "_Albedo" ZENITH_TEXTURE_EXT, iCOLOUR_SIZE, iCOLOUR_SIZE, TEXTURE_FORMAT_RGBA8_SRGB,
+		xAlbedo.GetSize() / (static_cast<size_t>(iCOLOUR_SIZE) * iCOLOUR_SIZE));
 
 	// --- Normal (linear): central differences on the WRAPPED height field -----
 	Zenith_Vector<u_int8> xNormal;
@@ -659,8 +648,9 @@ void GenerateRockTextureSet(const std::string& strDir, const RockTextureParams& 
 			pucN[3] = 255;
 		}
 	}
-	WriteRockZtxtr(strDir + "Rock_" + xParams.m_szName + "_Normal" ZENITH_TEXTURE_EXT,
-		iCOLOUR_SIZE, TEXTURE_FORMAT_RGBA8_UNORM, xNormal);
+	Zenith_Tools_TextureExport::ExportFromDataWithFormat(
+		xNormal.GetDataPointer(), strDir + "Rock_" + xParams.m_szName + "_Normal" ZENITH_TEXTURE_EXT, iCOLOUR_SIZE, iCOLOUR_SIZE, TEXTURE_FORMAT_RGBA8_UNORM,
+		xNormal.GetSize() / (static_cast<size_t>(iCOLOUR_SIZE) * iCOLOUR_SIZE));
 
 	// --- RM + AO (half res; neither carries detail the colour maps don't) -----
 	// RM is the glTF layout the engine samples: G = roughness, B = metallic.
@@ -698,10 +688,12 @@ void GenerateRockTextureSet(const std::string& strDir, const RockTextureParams& 
 			pucAO[3] = 255;
 		}
 	}
-	WriteRockZtxtr(strDir + "Rock_" + xParams.m_szName + "_RM" ZENITH_TEXTURE_EXT,
-		iDATA_SIZE, TEXTURE_FORMAT_RGBA8_UNORM, xRM);
-	WriteRockZtxtr(strDir + "Rock_" + xParams.m_szName + "_AO" ZENITH_TEXTURE_EXT,
-		iDATA_SIZE, TEXTURE_FORMAT_RGBA8_UNORM, xAO);
+	Zenith_Tools_TextureExport::ExportFromDataWithFormat(
+		xRM.GetDataPointer(), strDir + "Rock_" + xParams.m_szName + "_RM" ZENITH_TEXTURE_EXT, iDATA_SIZE, iDATA_SIZE, TEXTURE_FORMAT_RGBA8_UNORM,
+		xRM.GetSize() / (static_cast<size_t>(iDATA_SIZE) * iDATA_SIZE));
+	Zenith_Tools_TextureExport::ExportFromDataWithFormat(
+		xAO.GetDataPointer(), strDir + "Rock_" + xParams.m_szName + "_AO" ZENITH_TEXTURE_EXT, iDATA_SIZE, iDATA_SIZE, TEXTURE_FORMAT_RGBA8_UNORM,
+		xAO.GetSize() / (static_cast<size_t>(iDATA_SIZE) * iDATA_SIZE));
 }
 
 void GenerateRockMaterial(const std::string& strDir, const char* szName)
@@ -847,7 +839,7 @@ void BuildRockVariantMesh(Zenith_MeshAsset& xMesh, const RockVariantSpec& xSpec)
 }
 
 //=============================================================================
-// Export one stone: .zasset (what the instanced-mesh component loads), .zmesh
+// Export one stone: .zasset (what the instanced-mesh component loads), .zgeom
 // (static geometry) and .zmodel (what AddStep_LoadModel / a ModelComponent
 // reference).
 //=============================================================================
@@ -861,7 +853,7 @@ void ExportRock(const std::string& strDir, const char* szName, Zenith_MeshAsset*
 	pxMesh->Export(strAssetPath.c_str());
 
 	Flux_MeshGeometry* pxGeometry = Zenith_Tools_CreateStaticFluxMeshGeometry(pxMesh);
-	pxGeometry->Export((strDir + szName + ZENITH_MESH_EXT).c_str());
+	pxGeometry->Export((strDir + szName + ZENITH_GEOMETRY_EXT).c_str());
 	delete pxGeometry;
 
 	auto xhModel = Zenith_AssetRegistry::Create<Zenith_ModelAsset>();

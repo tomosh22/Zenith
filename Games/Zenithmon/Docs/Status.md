@@ -17,8 +17,349 @@ The S0-S7 narrative that used to fill the back half of this file moved VERBATIM 
 [History.md](History.md) on 2026-08-18, so this file can hold to the ~25-line budget
 its own template in `AgentBriefing.md` §2.3 specifies. Nothing was deleted.
 
-**★ LIVE PIN (UPDATED 2026-08-30):
-ZM boot `3554`; engine boot (Null Combat) `1748`; Null RenderTest `1839`; registry **70**.**
+**★ LIVE PIN (UPDATED 2026-08-31):
+ZM boot `3577`; engine boot (Null Combat) `1758`; Null RenderTest `1849`; registry **71**.**
+
+> **★ ALL THREE ROWS MOVE (2026-08-30), and that is the tell that this one touched
+> `Zenith/**`.** The `.glb` import path is ENGINE-side (`Tools/` compiles into
+> `zenith.lib` in every configuration), so its 7 units land in every game's boot
+> suite: Combat +7 and RenderTest +7 with no game code changed at all. The other
+> 13 are Zenithmon-only. Every number below is OBSERVED from its own
+> `Null_vs2022_Debug_Win64_True` run, never arithmetic on the previous one.
+>
+> **ZM +20 — the hand-made bed.** `Assets/Props/Bed/Bed.glb` (a gltfpack export,
+> `EXT_meshopt_compression` + `KHR_mesh_quantization`) replaces the generated bed
+> in PlayerHome. Three pieces, three suites:
+>
+> * `MeshoptDecode` (**7**, engine-side, `Tools/Zenith_Tools_MeshoptDecode.Tests.inl`)
+>   — **Assimp cannot open a gltfpack file at all**: it rejects the extension's
+>   fallback buffer with *"buffer with non-zero length missing the uri attribute"*
+>   before reading a vertex, so there was no degraded import to fall back on. The
+>   vertex/index codecs and both vertex filters are pinned BYTE-FOR-BYTE against
+>   upstream meshoptimizer's own output, because a plausible misreading of this
+>   format decodes most of a mesh correctly and then diverges. That is not
+>   hypothetical: the golden vectors caught an inverted sign in the OCTAHEDRAL
+>   fold — the one path the bed itself does not use — which would have corrupted
+>   half the shading of the next asset that did.
+> * `ZM_PropFit` (**6**, `Tests/ZM_Tests_PropFit.cpp`) — the authoring now MEASURES
+>   each prop's baked mesh and derives a uniform scale + ground lift from it, so a
+>   model of any authored size lands at its roster size standing on the floor. The
+>   bed arrives 1.00 x 0.38 x 0.72 m and origin-centred against a 2.0 x 1.2 x 0.7
+>   row; authored at identity it was a half-size bed sunk to its mattress.
+>   OBSERVED in-game: scale 2.0010, ground y 0.3806, **2.000 x 0.761 x 1.447 m**.
+> * `ZM_FollowCameraCeiling` (**7**, `Tests/ZM_Tests_FollowCameraCeiling.cpp`) —
+>   the boom put the lens ~3.9 m up in a room whose ceiling slab starts at 3.0 m,
+>   so the player could not see inside their own house. **No raycast could have
+>   found it**: the interior shell is visual-only, so the slab has no collider.
+>   The camera resolves the room's height from the shell entity in its own scene
+>   and slides the lens along the boom until it clears. OBSERVED live lens y
+>   **2.650 m** against a 3.00 m ceiling.
+>
+> OBSERVED `3574 ran / 3572 passed / 0 failed`, 2 skipped; Combat `1755`,
+> RenderTest `1846`.
+
+> **★★ ZM +0 (2026-08-31) -- the SECOND import, and the pins did NOT move.** A
+> reader expecting a bump should read this paragraph rather than assume a missed
+> one. `Assets/Props/Table/Table.glb` went through the pipeline built for the bed
+> with **no code change at all**: the importer found it, decoded it, and wrote the
+> bundle; `ZM_ComputePropFit` measured it and the authoring scaled it. OBSERVED
+> model **0.6382 x 0.5376 x 0.9995 m** -> scale **1.4007**, ground y **0.3765** ->
+> **0.8939 x 0.7530 x 1.4000 m**, in BOTH rooms that stand one (`HomeTable` and
+> `LabTable`), so `PlayerHome.zscen` and `ProfLab.zscen` both moved again.
+>
+> The unit count is unchanged because both test edits were REPLACEMENTS.
+> `ZM_PropFit/ImportedBedIsScaledAndStoodOnTheFloor` became
+> `ImportedAssetsAreScaledAndStoodOnTheFloor`, a table-driven unit over both
+> imports -- **and it had to, because the bed-shaped assertion was FALSE for the
+> table.** It read "the fitted WIDTH equals the roster width", which holds for the
+> bed and does not for the table: the table's longest MODEL axis is Z while its
+> longest ROSTER number is the 1.4 m width, so it fits on Z. The invariant that
+> holds for both, and for whatever lands next, is LONGEST TO LONGEST.
+>
+> `ZM_BedShowcase_Test` likewise became **`ZM_ImportedPropShowcase_Test`** (file
+> `Tests/ZM_AutoTests_ImportedPropShowcase.cpp`), driven by a subject roster
+> rather than one hard-coded prop: both imports stand in PlayerHome, so a second
+> test would have paid a second scene load and a second 600-frame room budget to
+> photograph a prop already in the first one's frame. Seven shots now
+> (player_view, player_view_unclamped, room_wide, and two per subject). Adding a
+> row to `axIPS_SUBJECTS` is the whole cost of the next asset. Registry stays
+> **71** -- a rename, not an addition.
+>
+> ★ **The table's dark top is the ASSET, not the pipeline, and that was MEASURED
+> rather than reasoned.** It renders as a dark-stained top on light timber legs
+> with a cool sheen, which looks at first like a metallic-map error: the table's
+> metallic channel is a uniform **0.29** where the bed's is 0.018. Forcing the
+> metallic factor to 0 changed nothing. Unbinding the roughness/metallic map
+> entirely turned the top from dark NAVY to dark BROWN -- so the darkness is the
+> albedo (a dark-stained top, which the UV atlas confirms) and the blue cast is
+> the glossy ~0.33 roughness picking up the cool interior IBL. Both correct.
+>
+> ★ **`HomeLampTable` looked like it was blowing out `HomeChair`** -- a white
+> block on the left of that day's `room_wide`. Left alone on the reasoning that
+> the lamp is legitimately beside its furniture and the affected prop was a
+> generated greybox, unlike `HomeLampBedside`, which sat INSIDE the bed's volume.
+> **That call held: AB-PROP-03 landed the same day and the blowout went with it**
+> -- it was a flat untextured box saturating, not a lamp too close. The same light
+> now reads as a warm rim along the chair's slats. Recorded because the wrong
+> lesson ("move the lamp") was one decision away.
+
+> **★ ZM +0 (2026-08-31, later) -- the THIRD import, and again no pin moved.**
+> `Assets/Props/Chair/Chair.glb` needed no code change and no new test: a row in
+> `axIPS_SUBJECTS` and a row in `ZM_PropFit`'s asset table. OBSERVED model
+> **0.6152 x 0.9980 x 0.5371 m** -> scale **1.0020**, ground y **0.5000** ->
+> **0.6164 x 1.0000 x 0.5382 m**, in both rooms that stand one (`HomeChair`,
+> `LabChair`).
+>
+> ★ **It fits on Y, and that completes a set worth keeping.** The bed fits on X,
+> the table on Z and the chair on Y -- so the three imports between them cover
+> every axis the "longest to longest" rule can pick. Any implementation that
+> hard-codes an axis now fails two of three; a single-asset test would have let
+> two through. `ZM_Tests_PropFit` says so where the table is declared.
+>
+> ★ **And it is the first delivery that was already the right size** -- scale
+> 1.0020, a near-identity. The fit handles that as the no-op it is, which is the
+> property that lets it run on every prop rather than only the mis-sized ones.
+>
+> OBSERVED `3574 ran / 3572 passed / 0 failed`, 2 skipped. Nine capture shots now
+> (three fixed + two per subject). Registry stays **71**.
+
+> **★★ ZM +0 (2026-08-31) -- NO INTERIOR PROP HAD EVER BEEN ROTATED, and a chair
+> is what made that visible.** Asked whether the chair was meant to sit 90 degrees
+> to the table, the answer turned out to be two stacked defects, neither of which
+> could be seen without the other:
+>
+> 1. **The AABB collider was eating every furniture rotation.**
+>    `Zenith_ColliderComponent` forces an AABB body to `JPH::Quat::sIdentity()`,
+>    and the physics->transform sync writes that identity back over the authored
+>    rotation **into the saved scene bytes** -- ZM-D-156, already paid for once on
+>    rival Vesper. `HomeBed`, `HomeShelf`, `LabShelf` and both lab counters were
+>    authored with a quarter turn and stood square to the room. MEASURED: the live
+>    `HomeBed` transform read `(w 1.00000, y 0.00000)` where the dressing table
+>    says `YAW90`. Fixed by authoring furniture as `COLLISION_VOLUME_TYPE_OBB` --
+>    the same box, differing only in applying the rotation.
+> 2. **The yaw constants named HALF the angle they applied.** The block defined
+>    `(w, y) = (cos a, sin a)`; a quaternion is `(cos(a/2), axis*sin(a/2))`, so the
+>    old `YAW90` was a HALF turn and the old `YAW45` was a QUARTER. Renamed to
+>    `YAW90` / `YAW180` with the arithmetic spelled out, and the old `YAW45` is
+>    gone rather than left as a third spelling of 90 degrees.
+>
+> ★ **Each hid the other.** A constant that applies twice its stated angle cannot
+> be caught by looking at a room whose props are never rotated at all; and a
+> discarded rotation cannot be caught while every prop is a symmetric greybox box
+> whose yaw is unobservable. AB-PROP-03 is the first prop with a FRONT.
+>
+> `HomeChair` now faces the table (`YAW90`, model +X -> world -Z, MEASURED as
+> `faces (0.000, 0.000, -1.000)`); `LabChair`, which stands at no table, faces the
+> room. `HomeBed` finally runs ALONG the -X wall as its own placement comment
+> always said it should -- world footprint `1.447 x 0.761 x 2.000` where it was
+> `2.000 x 0.761 x 1.447`.
+>
+> ★ **And the harness stopped ignoring rotation, which is why any of this is
+> visible.** It measured world SIZE and skipped the quaternion, so it would have
+> photographed a prop facing the wrong way and reported nothing but a correct
+> size. It now recovers the yaw FROM the quaternion -- not from the constant that
+> produced it, which is the only reason the naming defect showed up -- and logs
+> the rotated world footprint.
+>
+> OBSERVED `3574 ran / 3572 passed / 0 failed`, batch `71 passed / 0 failed`,
+> both scenes re-authored and republishing `IDENTICAL` on the next boot -- which
+> is itself the proof the rotation now ROUND-TRIPS instead of being written back
+> over. `PlayerHome.zscen` and `ProfLab.zscen` are re-authored (both
+> keep their entity count and byte count; two consecutive boots publish
+> `IDENTICAL`). `HomeLampBedside` moved out of the bed's own volume — it sat 0.39 m
+> above the mattress and saturated it — with intensity, range and colour untouched.
+
+> **★★★ ZM +3 / Combat +3 / RenderTest +3 (2026-08-31) -- THE TANGENT FRAMES OF
+> EVERY IMPORTED PROP WERE NaN, and removing the legacy asset readers that hid it.**
+> Asked whether the normals were correct, the mesh normals and the normal MAPS
+> both checked out; the TANGENTS did not. `Zenith_MeshAsset::GenerateTangents`
+> rejected a triangle whose UV determinant was below `1e-4` -- a UV *AREA*, so
+> really a cap on how finely a mesh may be unwrapped. On a 2048^2 atlas a
+> 30x30-texel triangle is already at that cutoff.
+>
+> MEASURED before the fix: the cutoff skipped **57-90%** of each imported prop's
+> triangles, and every vertex whose faces were all skipped kept a zero accumulated
+> tangent that `glm::normalize` turned into NaN -- Bed **2065**/3606,
+> Table **2666**/3515, Chair **1341**/3735, Shelf **5524**/7353. Predicted starved
+> counts matched the NaN counts to the vertex.
+>
+> ★ **IT RENDERED, WHICH IS WHY IT SURVIVED.** `Flux_PackVertices` sanitises a
+> non-finite direction to the semantic's canonical default, so those vertices
+> silently took the WORLD-CONSTANT tangent `(1,0,0)` and their normal map was
+> applied in a basis unrelated to the surface. Where the normal is near +/-X,
+> `cross(N,T)` collapses entirely -- **625** such vertices on the Table alone.
+> Nothing failed; the lighting was just wrong.
+>
+> ★ **GENERATED PROPS WERE NEVER AFFECTED**, which is why a latent bug of this size
+> survived: their box faces have huge UV triangles, so 0 of 24-60 tripped the
+> cutoff. The defect needed a finely-unwrapped mesh to appear, and the first one
+> arrived with AB-PROP-01.
+>
+> ★★ **AND THERE WAS A SECOND NaN SITE, IN A DIFFERENT PRODUCER.** A repo-wide sweep
+> of every renderable baked mesh found one more file carrying a NaN tangent -- a
+> DevilsPlayground Blacksmith mesh, 1 vertex of 710 -- and deleting it did NOT fix
+> it: it came back NaN with a perfectly finite normal. That mesh does not go through
+> `GenerateTangents` at all. `Zenith_Tools_MeshExport` copies
+> `aiProcess_CalcTangentSpace`'s output and called `glm::normalize` on it unchecked,
+> so a vertex Assimp could not solve became NaN on the way to disk.
+>
+> Both producers now go through **one** function, `Zenith_MeshAsset::MakeValidTangent`
+> -- unit, orthogonal to the normal, deterministic fallback -- because "what a valid
+> tangent is" was being answered twice and got a different answer each time. The
+> repo-wide scan is now **clean: no NaN tangents in any baked mesh on disk.**
+>
+> Fixed by rejecting only what the guard exists to reject -- a division that cannot
+> produce a finite direction -- plus a deterministic orthonormal FALLBACK for a
+> vertex with no usable parameterisation (still reached by 1 vertex of the Table
+> and 14 of the Shelf). AFTER: **0 NaN** across all four, tangents unit to 1.5e-7
+> and orthogonal to 3.3e-6, and agreeing with an INDEPENDENT equal-weight
+> reference to a median **0.012-0.091 degrees**. Five new units in
+> `Zenith_MeshAsset.Tests.inl`; the first fails on the old code.
+>
+> ★★ **THE NORMAL MAPS AND MESH NORMALS WERE ALREADY RIGHT**, and that is worth
+> recording because it is where the search would naturally have gone. All four
+> maps are 2048^2, centred (mean R/G 0.501/0.498), with **0.000%** of texels below
+> z=0 so the engine's `z = +sqrt(1-x^2-y^2)` loses nothing; BC5 export is faithful
+> (R/G correlate 0.85-0.96 against source on signal-carrying texels, cross-channel
+> ~0, no V-flip). Mesh normals are unit to 1.2e-7, outward, and agree with the
+> winding on 98-100% of triangles.
+>
+> ★ **AND THE UNIFORM `w = -1` HANDEDNESS IS NOT A BUG.** It reads like a global
+> green-channel inversion. glTF's V axis points DOWN the image, so the true +V
+> bitangent is `-cross(N,T)`, and an OpenGL-convention green channel needs exactly
+> `+cross(N,T)` -- which is what the engine bakes. Every generated prop shows the
+> same signature, which is the tell that it is the convention rather than the
+> imports.
+
+> **★★★ NO LEGACY ASSET READERS REMAIN (2026-08-31).** The investigation surfaced
+> that `.zmesh` was being read through a "no envelope => assume the old layout"
+> branch, and the whole family went with it:
+>
+> * `Zenith_ReadAssetStreamVersion` no longer falls back to a bare version word --
+>   the stream envelope is MANDATORY.
+> * Mesh, Model, Skeleton and Material REFUSE a non-current schema instead of
+>   logging and parsing the payload as if it were current.
+> * The material v2-v4 reader is gone (field order, the `bTransparent` bool mapped
+>   onto the blend enum, `aeLegacySlots`), with its two tests.
+> * Skeleton's `uVersion >= 2` branch and its now-vestigial version parameter.
+> * The texture loader's legacy single-mip payload, its `bV2` flag, and
+>   `LoadFromFile`'s `bCreateMips`.
+>
+> **Nothing is stranded by any of it**: every asset file is regenerable bake output
+> under the `**/Assets/**` gitignore, so an older layout is a stale bake. 123 stale
+> files were deleted and rewritten by the next tools boot.
+>
+> ★ **ELEVEN WRITERS EMITTED THE HEADERLESS LAYOUT**, four of them byte-identical
+> copies of each other (the Bush / FallenTree / Rock / Tree prop exporters), plus
+> the tools texture export, the terrain editor's maps, `Grid.ztxtr`'s inline
+> self-heal, RenderTest's packed RM, TilePuzzle's icon generator, CityBuilder's
+> icon AND heightmap writers, ScriptTest's 1x1 colour textures and Combat's.
+>
+> ★★ **THE LAST FIVE WERE ONLY FOUND BY BOOTING EVERY GAME, ONE AT A TIME.**
+> Compiling all seven proves nothing about whether their assets load, and each
+> unfixed writer silently RE-CREATED its stale file on its own next boot -- so a
+> repo scan came back clean, then dirty again after the next game ran. The check
+> that actually closes the loop is: fix every writer, boot all seven, THEN scan.
+> Done: **0 headerless `.ztxtr` after all seven have booted.** All now go through the envelope, and the
+> four duplicates were deleted in favour of the one exporter that owns the format.
+> The v2 layout gained a real level COUNT rather than requiring a full mip chain,
+> which is what let a single-mip texture stop needing a second format -- the MSDF
+> font atlas needs exactly that, since mips break its median reconstruction.
+
+> **★★★ `.zmesh` WAS TWO FORMATS. IT IS ONE NOW (2026-08-31).**
+> `Zenith_MeshAsset` (stream envelope + schema) and `Flux_MeshGeometry` (its own
+> element table, no version field) shared the extension, read by different loaders.
+> The legacy branch was the only thing making that survivable; deleting it turned
+> the collision into a visible error.
+>
+> `Zenith_MeshAsset` KEEPS `.zmesh`, alongside `.zmtrl` / `.zskel` / `.zmodel` /
+> `.ztxtr`. **`Flux_MeshGeometry` moved to `.zgeom`** -- terrain chunks
+> (`Render_*` / `Render_LOW_*` / `Physics_*`), the StickFigure, Combat's primitive
+> geometry and the shared prop sets. ~140 source sites moved.
+>
+> ★ **IT WAS A RENAME, NOT A RE-BAKE.** The bytes were already the right format;
+> only the extension was wrong. **14,498** files moved to `.zgeom` and **416**
+> stayed `.zmesh`, so no terrain was rebuilt. VERIFIED on disk afterwards: every
+> `.zmesh` carries the envelope with the mesh type id and every `.zgeom` carries
+> none.
+>
+> OBSERVED `3577 ran / 3575 passed / 0 failed`, 2 skipped; Combat `1758`,
+> RenderTest `1849` -- all three from their own `Null_` runs. **+5 new tangent
+> units, -2 deleted legacy-material units = +3 on every row**, which is the
+> signature of an engine change.
+
+> **★★ ZM +0 (2026-08-31, later still) -- the FOURTH import, AB-PROP-04 Shelf,
+> and the first prop whose FACING was measured rather than assumed.**
+> `Assets/Props/Shelf/Shelf.glb` needed no pipeline change and no new test: a row
+> in `axIPS_SUBJECTS`, a row in `ZM_PropFit`'s asset table, and a corrected yaw.
+> OBSERVED model **0.2637 x 0.9980 x 0.4863 m** -> scale **2.0039**, ground y
+> **1.0000** -> **0.5284 x 2.0000 x 0.9746 m**, in both rooms that stand one
+> (`HomeShelf`, `LabShelf`), so `PlayerHome.zscen` and `ProfLab.zscen` both moved.
+>
+> ★ **THE AUTHORED YAW WAS WRONG, AND ONLY A REAL MODEL COULD SHOW IT.** Both
+> shelves were authored `YAW90`, chosen when this prop was a symmetric greybox box
+> whose yaw no picture could contradict -- the same blind spot that hid the two
+> rotation defects the chair exposed. `YAW90` stands a bookshelf SIDE-ON to the
+> wall, open face down the room, 0.97 m of it protruding.
+>
+> The facing was MEASURED off the decoded mesh rather than inferred from the
+> commission prompt: rasterised into a (Y, Z) grid, **90.2%** of the footprint has
+> material within 15 mm of the **-X** extreme -- a continuous full-height,
+> full-width back panel -- against **38.0%** on +X, which is instead broken into
+> the open bays the books and jars are modelled into. So the front is +X, like
+> every import before it, and `YAW0` is what leaves it there. Both rooms are
+> `YAW0` now, and the harness recovers the angle from the LIVE quaternion
+> (`2*atan2(q.y, q.w)`), never from the constant that produced it: OBSERVED
+> `authored quat (w 1.00000, y 0.00000) = 0.0 deg yaw; model +X faces
+> (1.000, 0.000, 0.000)`.
+>
+> ★ **+X IS A PROPERTY OF FOUR DELIVERIES, NOT A RULE ANYTHING ENFORCES.** No
+> artist was told it and no gate checks it. `ZM_InteriorDressing.h` says so where
+> the convention is stated and `ArtBrief.md` 0.1 says it where a future commission
+> would be written. Measure the next one.
+>
+> ★ **EVERY TEXTURE IN THE FILE REACHES THE RENDERER, AND THERE ARE THREE.** The
+> `.glb` declares `baseColorTexture`, `normalTexture` and
+> `metallicRoughnessTexture`, all **2048^2**, and **no `occlusionTexture`** -- so
+> the 68-byte `Shelf_ao.ztxtr` is the importer's documented neutral-white 4x4, not
+> a dropped map, and it is 68 bytes for the bed, table and chair too. glTF packs
+> roughness in G and metallic in B and Flux's `SampleRoughnessMetallic` reads
+> exactly `.gb`, so the RM map is written with NO swizzle. OBSERVED means over
+> that image: **G (roughness) 0.4675, B (metallic) 0.1007** -- a mostly-dielectric
+> timber, unlike the table's uniform 0.29 metallic.
+>
+> ★★ **AND THE R CHANNEL -- WHERE glTF WOULD FOLD AN OCCLUSION MAP -- IS
+> UNIFORMLY 1.0.** That is the check worth recording, because "no
+> `occlusionTexture` declared" would NOT by itself prove none was delivered: the
+> ORM convention hides occlusion in the metallic-roughness image's red channel,
+> which the importer does not read. It is 1.0 everywhere, so there is no baked
+> occlusion anywhere in this file and the neutral white is exactly equivalent
+> (`lerp(1, ao, strength) = 1`). Checked because "4 texture(s)" in the import log
+> counts the placeholder and would read as a full set either way.
+>
+> ★ **IT IS THE LARGEST FIT CORRECTION SO FAR AND THE WORST PROPORTION MATCH.**
+> Scale 2.0039 against the chair's 1.0020, out of the same branch-free expression.
+> Fitted to its 2.0 m roster height it is 0.53 x 0.97 in plan where the row asks
+> for 1.2 x 0.4 -- left VISIBLE per `ZM_PropFit.h`'s uniform-scale ruling rather
+> than squashed, because a per-axis squash would shear the modelled-in books.
+>
+> ★ **AND `room_wide` STOPPED BEING A COVERAGE GUARANTEE**, which its comment
+> claimed ("the 65-degree lens covers both long walls"). MEASURED from that fixed
+> pose: bed 33.4 deg off-axis, table 36.4, chair 42.7, against a 48.6 deg
+> horizontal half-frame -- but the shelf, hard against the -X wall, sits at
+> **60.0 deg** and is 11 deg outside it. No axial pose fixes that (the room is
+> 15.5 m wide and 11.5 m deep; seeing x = -6.9 at z = +0.9 from the centre line
+> needs a ~114 deg lens) and the FOV is not touched, on that file's own terms: a
+> player standing in the doorway cannot see the shelf either. The comment now says
+> CONTEXT, and coverage stays with the two aimed shots each subject owns -- those
+> are the ones that assert a subject is actually in frame. Eleven capture shots
+> now (three fixed + two per subject).
+>
+> OBSERVED `3574 ran / 3572 passed / 0 failed`, 2 skipped; batch
+> `71 passed / 0 failed`; `doc_lint` all checks pass; all seven scenes republish
+> `IDENTICAL` on the next boot. **No pin moved** -- both test edits were table
+> rows. Registry stays **71**. (The same tree reports 3611 from the Vulkan boot,
+> the +37 gap `Tools/unit_baselines.json` already documents.)
 
 > **★ ZM +16 (2026-08-30), the Dawnmere BUILDING FACADE + INTERIOR overhaul and the game-wide PBR pass, Zenithmon-only.**
 > `ZM_BuildingGen` stopped emitting one box with a flat 256^2 picture on it and

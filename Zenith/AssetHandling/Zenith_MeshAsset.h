@@ -6,8 +6,10 @@
 #include "Flux/Flux_Buffers.h"
 
 // .zmesh schema version now lives in AssetHandling/Zenith_AssetTypeIds.h
-// (uZENITH_MESH_SCHEMA_CURRENT). Bumping it needs a legacy read branch keyed on
-// the old value; the envelope's BAD_MAGIC rewind covers pre-envelope files.
+// (uZENITH_MESH_SCHEMA_CURRENT). ParseStream accepts THAT VERSION AND NO OTHER --
+// there is no legacy read branch, because a .zmesh is regenerable bake output and
+// an older one is a stale bake. Bumping the schema means deleting stale files, not
+// adding a branch. (.zgeom is a DIFFERENT format -- see Zenith_FileAccess.h.)
 
 // Forward declarations
 class Zenith_SkeletonAsset;
@@ -152,6 +154,20 @@ public:
 	 * Generate tangents from UVs (if not provided)
 	 */
 	void GenerateTangents();
+
+	// ★★ WHAT A VALID TANGENT IS, OWNED ONCE. Returns a unit tangent orthogonal to
+	// xNormal: xRawTangent Gram-Schmidt'd against it when that yields a real
+	// direction, and a deterministic orthonormal fallback when it does not (a zero
+	// or non-finite input, or one parallel to the normal).
+	//
+	// ★ EVERY PRODUCER OF A TANGENT MUST GO THROUGH THIS. There are two --
+	// GenerateTangents (from UVs) and the Assimp mesh exporter (which copies
+	// aiProcess_CalcTangentSpace's output) -- and BOTH shipped NaN into baked files
+	// by calling glm::normalize on a degenerate vector. NaN is invisible
+	// downstream: Flux_PackVertices replaces it with the semantic's canonical
+	// default, so the mesh renders with a wrong tangent rather than failing.
+	static Zenith_Maths::Vector3 MakeValidTangent(
+		const Zenith_Maths::Vector3& xRawTangent, const Zenith_Maths::Vector3& xNormal);
 
 	/**
 	 * Clear all data

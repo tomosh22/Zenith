@@ -12,9 +12,9 @@
  * This function generates all LOD levels plus physics meshes for
  * the entire terrain grid. The resulting files follow the naming convention
  * required by Flux_TerrainStreamingManager:
- *   - Render_X_Y ZENITH_MESH_EXT      (HIGH detail, streamed dynamically)
- *   - Render_LOW_X_Y ZENITH_MESH_EXT  (LOW detail, always resident)
- *   - Physics_X_Y ZENITH_MESH_EXT     (Physics collision mesh)
+ *   - Render_X_Y ZENITH_GEOMETRY_EXT      (HIGH detail, streamed dynamically)
+ *   - Render_LOW_X_Y ZENITH_GEOMETRY_EXT  (LOW detail, always resident)
+ *   - Physics_X_Y ZENITH_GEOMETRY_EXT     (Physics collision mesh)
  *
  * where X and Y are chunk coordinates in the active grid xDims describes, which
  * may be smaller than the fixed 64x64 chunk capacity and need not be square.

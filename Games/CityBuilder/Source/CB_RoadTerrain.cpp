@@ -29,7 +29,7 @@ namespace
 		if (xRes.m_aeStates[uLOD] != Flux_TerrainLODResidencyState::RESIDENT) { return; }
 
 		std::string strPath = xState.m_strTerrainAssetDirectory + "Render_"
-		                    + (bLowPrefix ? "LOW_" : "") + std::to_string(uCX) + "_" + std::to_string(uCZ) + ZENITH_MESH_EXT;
+		                    + (bLowPrefix ? "LOW_" : "") + std::to_string(uCX) + "_" + std::to_string(uCZ) + ZENITH_GEOMETRY_EXT;
 		Flux_MeshGeometry xMesh;
 		Flux_MeshGeometry::LoadFromFile(strPath.c_str(), xMesh, 0, false);
 		const uint32_t uNum    = xMesh.GetNumVerts();
@@ -70,7 +70,7 @@ namespace
 		if (xRes.m_aeStates[uLOD] != Flux_TerrainLODResidencyState::RESIDENT) { return; }
 
 		std::string strPath = xState.m_strTerrainAssetDirectory + "Render_"
-		                    + (bLowPrefix ? "LOW_" : "") + std::to_string(uCX) + "_" + std::to_string(uCZ) + ZENITH_MESH_EXT;
+		                    + (bLowPrefix ? "LOW_" : "") + std::to_string(uCX) + "_" + std::to_string(uCZ) + ZENITH_GEOMETRY_EXT;
 		Flux_MeshGeometry xMesh;
 		Flux_MeshGeometry::LoadFromFile(strPath.c_str(), xMesh, 0, false);
 		const uint32_t uNum    = xMesh.GetNumVerts();

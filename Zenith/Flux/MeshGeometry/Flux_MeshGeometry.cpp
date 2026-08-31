@@ -638,11 +638,11 @@ void ExportAttribute(T* ptData, Zenith_DataStream& xStream, u_int uSize)
 }
 void Flux_MeshGeometry::Export(const char* szFilename)
 {
-	// The reflected mesh-pipeline table must never become a .zmesh file's element
+	// The reflected mesh-pipeline table must never become a .zgeom file's element
 	// table: the file format has no version field, its one stability guarantee is
 	// that table, and the reflected one moves whenever a shader annotation does.
 	Zenith_Assert(!Flux_LayoutIsReflectedMeshPipelineTable(m_xBufferLayout),
-		"Export: this geometry carries the reflected mesh-pipeline layout, which must never be serialized (the .zmesh element table is the file's only stability guarantee). Use ExportDerivedFloatLayout.");
+		"Export: this geometry carries the reflected mesh-pipeline layout, which must never be serialized (the .zgeom element table is the file's only stability guarantee). Use ExportDerivedFloatLayout.");
 	ExportWithLayout(m_xBufferLayout, m_pVertexData, szFilename);
 }
 
@@ -686,7 +686,7 @@ void Flux_MeshGeometry::GenerateLayoutAndVertexData()
 void Flux_MeshGeometry::BuildDerivedFloatLayoutAndVertexData(Flux_BufferLayout& xLayoutOut, u_int8*& pVertexDataOut) const
 {
 	// One row per FLOAT attribute this geometry can carry, in the order the
-	// SERIALIZED element table declares them — that order is the .zmesh file format
+	// SERIALIZED element table declares them — that order is the .zgeom file format
 	// (Export writes the element table verbatim), so it must not be
 	// rearranged. Presence is "the stream exists", and an element is declared only
 	// for a stream that does.
@@ -743,7 +743,7 @@ void Flux_MeshGeometry::BuildDerivedFloatLayoutAndVertexData(Flux_BufferLayout& 
 
 	// Offsets + stride are computed ONCE, here, from the element table that was just
 	// declared — and every writer below reads them back out of it, so the bytes and
-	// the table the .zmesh carries cannot disagree.
+	// the table the .zgeom carries cannot disagree.
 	xLayoutOut.CalculateOffsetsAndStrides();
 	const u_int uStride = xLayoutOut.GetStride();
 	for (u_int u = 0; u < uNumFloatElements; u++)

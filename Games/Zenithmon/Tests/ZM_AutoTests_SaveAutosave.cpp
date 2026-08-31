@@ -355,9 +355,9 @@ namespace
 			"Terrain/Dawnmere/Height" ZENITH_TEXTURE_EXT,
 			"Terrain/Dawnmere/Splatmap_RGBA" ZENITH_TEXTURE_EXT,
 			"Terrain/Dawnmere/GrassDensity" ZENITH_TEXTURE_EXT,
-			"Terrain/Dawnmere/Physics_0_0" ZENITH_MESH_EXT,
-			"Terrain/Dawnmere/Render_LOW_0_0" ZENITH_MESH_EXT,
-			"Terrain/Dawnmere/Render_0_0" ZENITH_MESH_EXT,
+			"Terrain/Dawnmere/Physics_0_0" ZENITH_GEOMETRY_EXT,
+			"Terrain/Dawnmere/Render_LOW_0_0" ZENITH_GEOMETRY_EXT,
+			"Terrain/Dawnmere/Render_0_0" ZENITH_GEOMETRY_EXT,
 		};
 		for (u_int u = 0u; u < (u_int)(sizeof(aszRelative) / sizeof(aszRelative[0])); ++u)
 		{

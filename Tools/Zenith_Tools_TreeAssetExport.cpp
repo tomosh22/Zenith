@@ -9,8 +9,8 @@
 //
 //   ENGINE_ASSETS_DIR/Meshes/ProceduralTree/
 //     Tree.zskel                 — branching skeleton (sway rig)
-//     Tree_Trunk.zasset/.zmesh   — opaque trunk+branches (tapered tubes)
-//     Tree_Leaves.zasset/.zmesh  — alpha-tested leaf cards (double-sided)
+//     Tree_Trunk.zasset/.zgeom   — opaque trunk+branches (tapered tubes)
+//     Tree_Leaves.zasset/.zgeom  — alpha-tested leaf cards (double-sided)
 //     Tree_Trunk_Sway.zanmt      — VAT for the trunk mesh
 //     Tree_Leaves_Sway.zanmt     — VAT for the leaves mesh
 //     Tree_Bark_Albedo.ztxtr     — procedural bark albedo  (RGBA8 sRGB)
@@ -18,8 +18,8 @@
 //     Tree_Leaves_Albedo.ztxtr   — leaf-cluster albedo + ALPHA MAP (RGBA8 sRGB)
 //     Tree_Bark.zmtrl            — opaque bark material
 //     Tree_Leaves.zmtrl          — alpha-tested leaf material (cutoff 0.45)
-//     Tree.zasset/.zmesh,
-//     Tree_Static.zmesh,
+//     Tree.zasset/.zgeom,
+//     Tree_Static.zgeom,
 //     Tree_Sway.zanmt, Tree_Sway.zanim, Tree.gltf
 //                                — combined-mesh outputs kept for existing
 //                                  consumers (Games/Exploration) + Blender.
@@ -44,6 +44,7 @@ void GenerateProceduralTreeAssets()
 
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_MeshAsset.h"
+#include "Zenith_Tools_TextureExport.h"   // the ONE .ztxtr writer
 #include "AssetHandling/Zenith_SkeletonAsset.h"
 #include "Collections/Zenith_Vector.h"
 #include "DataStream/Zenith_DataStream.h"
@@ -484,22 +485,6 @@ Flux_AnimationClip* CreateTreeSwayClipFromGraph(const Zenith_Vector<TreeBranch>&
 	return pxClip;
 }
 
-//=============================================================================
-// Procedural textures.
-//=============================================================================
-void WriteTreeZtxtr(const std::string& strPath, int32_t iSize, TextureFormat eFormat,
-                    const Zenith_Vector<u_int8>& xPixels)
-{
-	Zenith_DataStream xStream;
-	xStream << iSize;
-	xStream << iSize;
-	xStream << static_cast<int32_t>(1);
-	xStream << eFormat;
-	xStream << static_cast<u_int64>(xPixels.GetSize());
-	xStream.WriteData(xPixels.GetDataPointer(), xPixels.GetSize());
-	xStream.WriteToFile(strPath.c_str());
-}
-
 void GenerateBarkTextures(const std::string& strDir)
 {
 	constexpr int32_t iSIZE = 512;
@@ -563,8 +548,12 @@ void GenerateBarkTextures(const std::string& strDir)
 		}
 	}
 
-	WriteTreeZtxtr(strDir + "Tree_Bark_Albedo" ZENITH_TEXTURE_EXT, iSIZE, TEXTURE_FORMAT_RGBA8_SRGB, xAlbedo);
-	WriteTreeZtxtr(strDir + "Tree_Bark_Normal" ZENITH_TEXTURE_EXT, iSIZE, TEXTURE_FORMAT_RGBA8_UNORM, xNormal);
+	Zenith_Tools_TextureExport::ExportFromDataWithFormat(
+		xAlbedo.GetDataPointer(), strDir + "Tree_Bark_Albedo" ZENITH_TEXTURE_EXT, iSIZE, iSIZE, TEXTURE_FORMAT_RGBA8_SRGB,
+		xAlbedo.GetSize() / (static_cast<size_t>(iSIZE) * iSIZE));
+	Zenith_Tools_TextureExport::ExportFromDataWithFormat(
+		xNormal.GetDataPointer(), strDir + "Tree_Bark_Normal" ZENITH_TEXTURE_EXT, iSIZE, iSIZE, TEXTURE_FORMAT_RGBA8_UNORM,
+		xNormal.GetSize() / (static_cast<size_t>(iSIZE) * iSIZE));
 }
 
 void GenerateLeafClusterTexture(const std::string& strDir)
@@ -643,7 +632,9 @@ void GenerateLeafClusterTexture(const std::string& strDir)
 		}
 	}
 
-	WriteTreeZtxtr(strDir + "Tree_Leaves_Albedo" ZENITH_TEXTURE_EXT, iSIZE, TEXTURE_FORMAT_RGBA8_SRGB, xPixels);
+	Zenith_Tools_TextureExport::ExportFromDataWithFormat(
+		xPixels.GetDataPointer(), strDir + "Tree_Leaves_Albedo" ZENITH_TEXTURE_EXT, iSIZE, iSIZE, TEXTURE_FORMAT_RGBA8_SRGB,
+		xPixels.GetSize() / (static_cast<size_t>(iSIZE) * iSIZE));
 }
 
 //=============================================================================
@@ -721,7 +712,7 @@ void ExportTreeMeshSet(const std::string& strDir, const char* szBaseName,
 	pxMesh->Export(strAssetPath.c_str());
 
 	Flux_MeshGeometry* pxGeometry = Zenith_Tools_CreateFluxMeshGeometry(pxMesh, pxSkel);
-	const std::string strMeshPath = strDir + szBaseName + ZENITH_MESH_EXT;
+	const std::string strMeshPath = strDir + szBaseName + ZENITH_GEOMETRY_EXT;
 	pxGeometry->Export(strMeshPath.c_str());
 
 	Flux_AnimationTexture* pxVAT = new Flux_AnimationTexture();
@@ -783,7 +774,7 @@ void GenerateProceduralTreeAssets()
 	ExportTreeMeshSet(strOutputDir, "Tree", pxCombined, pxSkel, pxSwayClip);
 	{
 		Flux_MeshGeometry* pxStatic = Zenith_Tools_CreateStaticFluxMeshGeometry(pxCombined);
-		pxStatic->Export((strOutputDir + "Tree_Static" ZENITH_MESH_EXT).c_str());
+		pxStatic->Export((strOutputDir + "Tree_Static" ZENITH_GEOMETRY_EXT).c_str());
 		delete pxStatic;
 	}
 	pxSwayClip->Export(strOutputDir + "Tree_Sway" ZENITH_ANIMATION_EXT);

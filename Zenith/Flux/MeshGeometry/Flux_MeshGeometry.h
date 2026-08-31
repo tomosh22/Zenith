@@ -116,12 +116,12 @@ public:
 	// Serializes the geometry's CURRENT layout + interleaved bytes verbatim — the
 	// right call when those ARE the file format (the terrain exporter's chunk
 	// meshes carry the terrain table). Asserts if the live layout is the reflected
-	// mesh-pipeline table: the .zmesh format has no version field, so its one
+	// mesh-pipeline table: the .zgeom format has no version field, so its one
 	// stability guarantee is the element table, and a reflected table changes
 	// whenever a shader annotation does — that form must never reach disk. A
 	// geometry living on the packed form exports with ExportDerivedFloatLayout.
 	void Export(const char* szFilename);
-	// Serializes the DERIVED float32 form (the stable .zmesh shape) regardless of
+	// Serializes the DERIVED float32 form (the stable .zgeom shape) regardless of
 	// which form the live geometry carries, without touching the live layout,
 	// bytes, or GPU buffers — for callers that draw the packed mesh-pipeline form
 	// but persist the asset (Combat's tools-boot capsule/cube/cone stamps).
@@ -135,7 +135,7 @@ public:
 
 	friend class Zenith_ColliderComponent;
 	friend class Zenith_PhysicsMeshGenerator;
-	// Terrain's bounded .zmesh decoder constructs retained CPU geometry from
+	// Terrain's bounded .zgeom decoder constructs retained CPU geometry from
 	// one already-validated file snapshot. Friendship keeps the general mesh
 	// loader API unchanged while avoiding a second pathname open through its
 	// assertion-based DataStream path.
@@ -144,7 +144,7 @@ public:
 	// Interleave m_pVertexData, and declare the layout that describes it.
 	//
 	// DERIVED: one tight float32 element per attribute STREAM this geometry carries,
-	// in the fixed order the serialized .zmesh element table declares them. That table
+	// in the fixed order the serialized .zgeom element table declares them. That table
 	// IS the file format (Export writes it verbatim), and it is also the 20-byte
 	// position+UV shape the Quads / Text / Particles programs fetch from the shared
 	// unit quad — so this is the form for geometry that is serialized, consumed

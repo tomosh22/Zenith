@@ -6,7 +6,7 @@
 // ============================================================================
 // Zenith_MaterialAsset unit tests
 //
-// Cover the v5 serialization roundtrip, the legacy v4 -> v5 load mapping,
+// Cover the v5 serialization roundtrip,
 // the parent/override instance-resolution model (including stamp-based cache
 // invalidation and cycle rejection), and the param reflection table.
 //
@@ -17,39 +17,6 @@
 
 namespace
 {
-	// Serialize a legacy v4-format material byte stream, mirroring the exact
-	// field order the old Zenith_MaterialAsset::WriteToDataStream produced.
-	void WriteLegacyV4Material(Zenith_DataStream& xStream,
-		const char* szName,
-		const Zenith_Maths::Vector4& xBaseColor,
-		float fMetallic, float fRoughness,
-		const Zenith_Maths::Vector3& xEmissiveColor, float fEmissiveIntensity,
-		bool bTransparent, float fAlphaCutoff,
-		const Zenith_Maths::Vector2& xUVTiling, const Zenith_Maths::Vector2& xUVOffset,
-		float fOcclusionStrength, bool bTwoSided, bool bUnlit,
-		const char* szDiffusePath)
-	{
-		const uint32_t uVersion = 4;
-		xStream << uVersion;
-		xStream << std::string(szName);
-		xStream << xBaseColor.x; xStream << xBaseColor.y; xStream << xBaseColor.z; xStream << xBaseColor.w;
-		xStream << fMetallic;
-		xStream << fRoughness;
-		xStream << xEmissiveColor.x; xStream << xEmissiveColor.y; xStream << xEmissiveColor.z;
-		xStream << fEmissiveIntensity;
-		xStream << bTransparent;
-		xStream << fAlphaCutoff;
-		xStream << xUVTiling.x; xStream << xUVTiling.y;
-		xStream << xUVOffset.x; xStream << xUVOffset.y;
-		xStream << fOcclusionStrength;
-		xStream << bTwoSided;
-		xStream << bUnlit;
-		xStream << std::string(szDiffusePath);	// diffuse
-		xStream << std::string("");				// normal
-		xStream << std::string("");				// roughness/metallic
-		xStream << std::string("");				// occlusion
-		xStream << std::string("");				// emissive
-	}
 }
 
 //--------------------------------------------------------------------------
@@ -228,64 +195,6 @@ ZENITH_TEST(MaterialAsset, V5ParentAndOverrideMaskRoundtrip)
 	ZENITH_ASSERT_TRUE(xLoaded.HasParamOverride(MATERIAL_PARAM_ROUGHNESS), "Override mask roundtrip (roughness)");
 	ZENITH_ASSERT_TRUE(xLoaded.HasParamOverride(MATERIAL_PARAM_METALLIC), "Override mask roundtrip (metallic)");
 	ZENITH_ASSERT_FALSE(xLoaded.HasParamOverride(MATERIAL_PARAM_BASE_COLOR), "Unset override bits stay clear");
-}
-
-ZENITH_TEST(MaterialAsset, LegacyV4LoadMapping)
-{
-	// Non-transparent v4 material: must arrive as MASKED (v4 always alpha-
-	// tested), unlit flag must map to the shading model.
-	Zenith_DataStream xStream;
-	WriteLegacyV4Material(xStream, "LegacyMat",
-		Zenith_Maths::Vector4(0.5f, 0.6f, 0.7f, 1.0f),
-		0.25f, 0.65f,
-		Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f), 2.0f,
-		false /*transparent*/, 0.45f,
-		Zenith_Maths::Vector2(2.0f, 2.0f), Zenith_Maths::Vector2(0.5f, 0.5f),
-		0.9f, true /*twoSided*/, true /*unlit*/,
-		"game:Textures/legacy_diffuse.ztxtr");
-	xStream.SetCursor(0);
-
-	Zenith_MaterialAsset xLoaded;
-	xLoaded.ReadFromDataStream(xStream);
-
-	ZENITH_ASSERT_EQ(xLoaded.GetName(), std::string("LegacyMat"), "v4 name");
-	ZENITH_ASSERT_EQ(xLoaded.GetBlendMode(), MATERIAL_BLEND_MASKED,
-		"v4 non-transparent must map to Masked (alpha test was always on)");
-	ZENITH_ASSERT_EQ(xLoaded.GetShadingModel(), MATERIAL_SHADING_UNLIT, "v4 unlit flag maps to the shading model");
-	ZENITH_ASSERT_TRUE(xLoaded.IsTwoSided(), "v4 two-sided flag maps to the param");
-	ZENITH_ASSERT_EQ_FLOAT(xLoaded.GetMetallic(), 0.25f, 0.0001f, "v4 metallic preserved");
-	ZENITH_ASSERT_EQ_FLOAT(xLoaded.GetRoughness(), 0.65f, 0.0001f, "v4 roughness preserved");
-	ZENITH_ASSERT_EQ_FLOAT(xLoaded.GetAlphaCutoff(), 0.45f, 0.0001f, "v4 alpha cutoff preserved");
-	ZENITH_ASSERT_EQ_FLOAT(xLoaded.GetEmissiveIntensity(), 2.0f, 0.0001f, "v4 emissive intensity preserved (not defaulted)");
-	ZENITH_ASSERT_EQ(xLoaded.GetTexturePath(MATERIAL_TEXTURE_BASE_COLOR), std::string("game:Textures/legacy_diffuse.ztxtr"),
-		"v4 diffuse path maps to the BaseColor slot");
-
-	// New-in-v5 params must arrive at their defaults.
-	ZENITH_ASSERT_EQ_FLOAT(xLoaded.GetSpecular(), 0.5f, 0.0001f, "v4 load defaults specular to 0.5");
-	ZENITH_ASSERT_EQ_FLOAT(xLoaded.GetClearCoatStrength(), 0.0f, 0.0001f, "v4 load defaults clear coat off");
-	ZENITH_ASSERT_FALSE(xLoaded.HasParent(), "v4 materials have no parent");
-	ZENITH_ASSERT_EQ(xLoaded.GetOverrideMask(), 0ull, "v4 materials have no overrides");
-}
-
-ZENITH_TEST(MaterialAsset, LegacyV4TransparentMapsToTranslucent)
-{
-	Zenith_DataStream xStream;
-	WriteLegacyV4Material(xStream, "LegacyGlass",
-		Zenith_Maths::Vector4(1.0f, 1.0f, 1.0f, 0.5f),
-		0.0f, 0.1f,
-		Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f), 0.0f,
-		true /*transparent*/, 0.5f,
-		Zenith_Maths::Vector2(1.0f, 1.0f), Zenith_Maths::Vector2(0.0f, 0.0f),
-		1.0f, false, false,
-		"");
-	xStream.SetCursor(0);
-
-	Zenith_MaterialAsset xLoaded;
-	xLoaded.ReadFromDataStream(xStream);
-
-	ZENITH_ASSERT_EQ(xLoaded.GetBlendMode(), MATERIAL_BLEND_TRANSLUCENT,
-		"v4 transparent flag must map to Translucent");
-	ZENITH_ASSERT_TRUE(xLoaded.IsTransparent(), "Legacy IsTransparent shim tracks the blend mode");
 }
 
 //--------------------------------------------------------------------------

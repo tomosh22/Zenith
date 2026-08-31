@@ -174,7 +174,7 @@ Zenith_Status Zenith_ModelAsset::ParseStream(Zenith_DataStream& xStream)
 
 	if (uVersion != uZENITH_MODEL_SCHEMA_CURRENT)
 	{
-		Zenith_Log(LOG_CATEGORY_ASSET, "ERROR: Unsupported model asset version %u (expected %u). Please re-export the asset.", uVersion, uZENITH_MODEL_SCHEMA_CURRENT);
+		Zenith_Error(LOG_CATEGORY_ASSET, "Zenith_ModelAsset: schema %u is not the current %u; re-bake this asset", uVersion, uZENITH_MODEL_SCHEMA_CURRENT);
 		return Zenith_ErrorCode::VERSION_MISMATCH;
 	}
 

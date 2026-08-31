@@ -23,9 +23,26 @@ lands, and they are load-bearing rather than incidental:
   what the whole determinism test layer asserts. An imported asset is a binary
   that must be committed, versioned and diffed -- see `CIPolicy.md` for why CI
   currently never sees these files at all.
-* **There is no import pipeline.** `AssetManifest.md` says so and it is true:
-  the engine has `ZenithTools` exporters, but Zenithmon has no route from a DCC
-  file to a `.zmesh`/`.ztxtr`, and no place to put source art.
+* **~~There is no import pipeline.~~ THERE IS ONE NOW (2026-08-30, AB-PROP-01).**
+  This bullet read *"the engine has `ZenithTools` exporters, but Zenithmon has no
+  route from a DCC file to a `.zmesh`/`.ztxtr`, and no place to put source art"*,
+  and the first half of that stopped being true when the bed landed:
+  `Tools/Zenith_Tools_GlbImport` walks the assets tree for `.glb` at every tools
+  boot and writes the SAME per-model file set a generator writes, on the same
+  paths, so an imported model replaces a generated one with no call site changed.
+  Assimp could not be used and not marginally -- it rejects a gltfpack file
+  outright on `EXT_meshopt_compression`'s fallback buffer, before reading a
+  vertex -- so the decoder is ours, pinned byte-for-byte against upstream
+  meshoptimizer in `Tools/Zenith_Tools_MeshoptDecode.Tests.inl`. **The second
+  half is still true: there is no place to put source art**, which is what the
+  next bullet is now about.
+* **AND SOURCE ART LIVES IN A GITIGNORED DIRECTORY, DELIBERATELY.** Every
+  ticked row's `source:` is a `.glb` under `Games/Zenithmon/Assets/Props/`, inside
+  the `**/Assets/**` ignore. That is a standing ruling, not an oversight: the
+  binaries are not committed. **The consequence is mechanical and is stated here
+  so nobody rediscovers it from a red build** -- see the C8 note in section 0.2.
+  It applies to every future row too, so a new import inherits it rather than
+  re-deciding it.
 * **The generators are the fallback.** `ZM_GreyboxVisual`, `ZM_BuildingFacade`,
   `ZM_InteriorShell` and `ZM_InteriorFurniture` all degrade to "nothing renders"
   on a clone with no bake. A mixed library needs a rule for what happens when
@@ -72,6 +89,49 @@ and once the asset is in the game:
 * **A ticked row MUST carry a `source:` path**, and that path must exist.
 * **An unticked row must NOT carry one.** A half-delivered asset is unticked
   with its state in section 9, not ticked with a caveat.
+* **★ THE DIMENSIONS ARE THE INTENDED SIZE, NOT A DELIVERY REQUIREMENT.** They are
+  the roster's numbers (`Source/Data/ZM_PropData.cpp`), and the authoring no
+  longer assumes a model matches them: `ZM_PropFit.h` MEASURES the baked mesh and
+  derives a uniform scale plus a ground lift, so a model arrives at whatever scale
+  and origin its authoring tool chose and still lands at the roster footprint
+  standing on the floor. All four delivered assets arrived centred on their own
+  origin rather than standing on it -- AB-PROP-01 at **1.00 x 0.38 x 0.72 m**
+  against a 2.0 x 1.2 x 0.7 row, AB-PROP-02 at **0.64 x 0.54 x 1.00 m** against
+  1.4 x 0.9 x 0.9, AB-PROP-03 at **0.62 x 1.00 x 0.54 m** against 0.6 x 0.6 x 1.0
+  (a scale of 1.002, i.e. delivered almost exactly to size -- which the fit
+  handles as the near-identity it is), and AB-PROP-04 at **0.26 x 1.00 x 0.49 m**
+  against 1.2 x 0.4 x 2.0 (a scale of **2.004**, the largest correction yet, out
+  of the same branch-free expression that answers 1.002 for the chair) -- and none
+  needed a re-export. **So do not reject a delivery
+  over scale, and do not ask for one at a specific size** -- ask for the right
+  PROPORTIONS, which are the one thing a uniform scale cannot fix.
+* **★ NOR IS THE AXIS ORDER A REQUIREMENT.** The fit matches the model's LONGEST
+  axis to the row's LONGEST number, whichever axes those are -- and the delivered
+  assets between them cover all three: AB-PROP-01 fits on X, AB-PROP-02 on Z, and
+  AB-PROP-03 and AB-PROP-04 on Y. AB-PROP-02's long axis is Z where its row's long
+  number is the WIDTH, so it comes out 0.89 x 0.75 x 1.40 m: the right footprint,
+  turned a quarter. For a rectangular prop that is invisible; for one with a FRONT
+  it would not be, and the authored yaw in `ZM_InteriorDressing.h` is where that
+  gets corrected.
+
+  **★★ AB-PROP-04 IS WHERE THAT LAST SENTENCE STOPPED BEING HYPOTHETICAL.** A
+  shelf has a back, and its authored yaw had been chosen while this prop was a
+  symmetric greybox box -- so it was `YAW90`, which stands a real bookshelf
+  side-on to the wall with its open face down the room and 0.97 m of it
+  protruding. The model was MEASURED rather than assumed: 90% of its (Y, Z)
+  footprint has material within 15 mm of the **-X** extreme -- a continuous
+  full-height, full-width back panel -- against 38% on +X, which is instead broken
+  into the open bays the books are modelled into. So its front is +X like every
+  import before it, and `YAW0` is what leaves it there. **Measure the facing of
+  every prop that has one**: +X is a property of these four deliveries, not
+  something the pipeline enforces or an artist was ever told.
+
+  AB-PROP-04 is also the delivery whose PROPORTIONS diverge most from its row --
+  fitted to 2.0 m tall it is 0.53 x 0.97 in plan where the row asks for 1.2 x 0.4.
+  That is left VISIBLE rather than squashed onto three numbers, per `ZM_PropFit.h`'s
+  uniform-scale ruling, and it is the previous bullet's "ask for the right
+  PROPORTIONS" earning its place: proportions are the one thing a re-export would
+  have had to fix, and they are the one thing nobody asked for.
 
 ### 0.2 What a tick asserts -- three things, all of them checkable
 
@@ -94,6 +154,24 @@ only means the row is not lying about a file.
 That asymmetry is deliberate and is the same one `Status.md`'s LIVE PIN block
 lives with: a machine can reconcile a claim against an artefact, and cannot
 reconcile it against an intention.
+
+**★★ AND C8 RESOLVES `source:` AGAINST THE FILESYSTEM, WHICH MEANS IT ASSUMES
+THE SOURCE IS COMMITTED. NO TICKED ROW'S IS.** Every imported `.glb` lives under
+the `**/Assets/**` ignore by ruling (top of page, fourth bullet), so a ticked row
+is GREEN in any tree that has run the bake and RED on a fresh clone -- C8 reports
+*"is TICKED and names source '...', which does not exist"*, once per ticked row.
+Nothing is wrong when that happens and nothing needs fixing in the rows: **the
+check is measuring whether the file is present, and on a clone it legitimately is
+not.**
+
+This is written down rather than left to be rediscovered because the failure
+names the ROW, so the obvious reading is "somebody ticked this too early" --
+which is exactly what C8 exists to catch and exactly what has NOT happened here.
+The two ways to make it green everywhere are to force-add the binary (the way the
+seven `.zscen` files are force-added past the same ignore) or to add a tracked
+`Games/Zenithmon/Art/` root, which is what section 0.1's own row example assumes.
+Both are policy moves on the first bullet at the top of this page, not edits to
+this row.
 
 ### 0.3 Why there is no separate status file
 
@@ -173,10 +251,10 @@ m_fHeight`).
 
 ### 1.1 Interior furniture -- highest value, seen closest
 
-- [ ] `AB-PROP-01` **Bed** -- 2.0 x 1.2 x 0.7 m -- A single wooden bed with a stuffed mattress and a folded blanket, low headboard, slightly worn. Reads from above and from one side; the player never sees under it.
-- [ ] `AB-PROP-02` **Table** -- 1.4 x 0.9 x 0.9 m -- A plain four-legged kitchen table in stained timber, scuffed along one edge. Nothing on it; props are placed separately.
-- [ ] `AB-PROP-03` **Chair** -- 0.6 x 0.6 x 1.0 m -- A simple wooden chair with a slatted back, matching the table's timber.
-- [ ] `AB-PROP-04` **Shelf** -- 1.2 x 0.4 x 2.0 m -- A tall open bookshelf, four shelves, leaning very slightly. Books, jars and boxes modelled in as part of the mesh: it is set dressing, never interactive.
+- [x] `AB-PROP-01` **Bed** -- 2.0 x 1.2 x 0.7 m -- A single wooden bed with a stuffed mattress and a folded blanket, low headboard, slightly worn. Reads from above and from one side; the player never sees under it. -- source: `Games/Zenithmon/Assets/Props/Bed/Bed.glb`
+- [x] `AB-PROP-02` **Table** -- 1.4 x 0.9 x 0.9 m -- A plain four-legged kitchen table in stained timber, scuffed along one edge. Nothing on it; props are placed separately. -- source: `Games/Zenithmon/Assets/Props/Table/Table.glb`
+- [x] `AB-PROP-03` **Chair** -- 0.6 x 0.6 x 1.0 m -- A simple wooden chair with a slatted back, matching the table's timber. -- source: `Games/Zenithmon/Assets/Props/Chair/Chair.glb`
+- [x] `AB-PROP-04` **Shelf** -- 1.2 x 0.4 x 2.0 m -- A tall open bookshelf, four shelves, leaning very slightly. Books, jars and boxes modelled in as part of the mesh: it is set dressing, never interactive. -- source: `Games/Zenithmon/Assets/Props/Shelf/Shelf.glb`
 - [ ] `AB-PROP-05` **Counter** -- 2.2 x 0.7 x 1.0 m -- A laboratory bench: pale resin worktop, steel frame, a shallow lip at the back. Clinical rather than domestic; this is the ProfLab's furniture.
 - [ ] `AB-PROP-06` **Barrel** -- 0.7 x 0.7 x 1.0 m -- A banded wooden barrel, lid on, staves slightly uneven. Used as storage indoors and as scatter outdoors.
 
@@ -767,7 +845,17 @@ and they are the faces of the story.
 ## 9. In-flight notes
 
 Anything part-delivered, blocked or rejected goes here with its id, rather than
-being encoded as a ticked-with-a-caveat row (protocol 0.1). Empty is the correct
-state for this section today.
+being encoded as a ticked-with-a-caveat row (protocol 0.1).
 
 *(none)*
+
+★ `AB-PROP-01` HELD AN ENTRY HERE AND NO LONGER DOES. It was unticked-and-noted
+while the only thing standing between it and a tick was that its source is
+gitignored. That was ruled on -- the row is ticked and the binary stays
+uncommitted -- so the note had to GO rather than become a caveat sitting under a
+ticked row, which is exactly the encoding protocol 0.1 forbids. What survived the
+deletion went where it is actionable: the import pipeline's existence and the
+gitignored-source ruling are top-of-page bullets, the C8-on-a-clone consequence is
+in 0.2, and "delivered dimensions need not match the row" is in 0.1. `AB-PROP-02`
+was ticked the same day and never needed an entry, which is the shape a delivery
+should have.

@@ -1,4 +1,6 @@
 #include "Zenith.h"
+#include "DataStream/Zenith_StreamEnvelope.h"   // Zenith_WriteStreamHeader — the .ztxtr envelope
+#include "AssetHandling/Zenith_AssetTypeIds.h"     // uZENITH_TEXTURE_* ids/schema
 #include "Core/Zenith_Engine.h"
 
 // State lives on Flux_GraphicsImpl, reachable via g_xEngine.FluxGraphics().
@@ -164,11 +166,18 @@ void Flux_GraphicsImpl::Initialise()
 	const std::string strGridDiskPath = Zenith_AssetRegistry::ResolvePath(szGridAssetPath);
 	if (!std::filesystem::exists(strGridDiskPath))
 	{
+		// ★ THE ENVELOPE IS PART OF THE FORMAT. This wrote the payload with no
+		// header -- a second, hand-rolled copy of a layout the tools exporter also
+		// emitted -- and the loader only accepted it through a "no magic => assume
+		// the old layout" branch that no longer exists. One .ztxtr layout now:
+		// envelope, dimensions, format, level count, total size, packed levels.
 		Zenith_DataStream xStream;
+		Zenith_WriteStreamHeader(xStream, uZENITH_TEXTURE_ASSET_TYPE_ID, uZENITH_TEXTURE_SCHEMA_V2);
 		xStream << static_cast<int32_t>(64);
 		xStream << static_cast<int32_t>(64);
 		xStream << static_cast<int32_t>(1);
 		xStream << static_cast<TextureFormat>(TEXTURE_FORMAT_RGBA8_UNORM);
+		xStream << static_cast<uint32_t>(1);   // this level only
 		xStream << static_cast<size_t>(sizeof(aucGridTexData));
 		xStream.WriteData(aucGridTexData, sizeof(aucGridTexData));
 		xStream.WriteToFile(strGridDiskPath.c_str());

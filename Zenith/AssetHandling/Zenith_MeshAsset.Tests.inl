@@ -224,3 +224,175 @@ ZENITH_TEST(MeshAsset, WrongTypeIdRejected)
 	ZENITH_ASSERT_FALSE(xStatus.IsOk(), "mesh parse of a skeleton-typed stream must fail");
 	ZENITH_ASSERT_TRUE(xStatus.Error() == Zenith_ErrorCode::INVALID_ARGUMENT, "wrong type id -> INVALID_ARGUMENT");
 }
+
+// ============================================================================
+// GenerateTangents -- the tangent frame, and the two ways it used to produce NaN.
+//
+// ★★ WHY THESE EXIST. GenerateTangents rejected a triangle whose UV determinant
+// was below 1e-4. That number is a UV *AREA*, so it was really a limit on how
+// finely a mesh may be unwrapped: on a 2048^2 atlas a 30x30-texel triangle has
+// |det| ~ 2.1e-4 and was already at the cutoff. Every vertex whose incident
+// triangles were all rejected kept a zero accumulated tangent, and normalize()
+// turned it into NaN. MEASURED on Zenithmon's four imported .glb props, 36-75%
+// of their vertices shipped with NaN tangents.
+//
+// ★ AND IT WAS INVISIBLE, which is the reason to pin it with units rather than a
+// screenshot. Flux_PackVertices sanitises a non-finite direction to the
+// semantic's canonical default, so the mesh renders with a world-constant
+// tangent instead of rendering as an obvious NaN. Nothing failed; the lighting
+// was just wrong.
+// ============================================================================
+
+namespace
+{
+	// A quad on the XZ plane (normal +Y) whose UVs span fUVScale. Small values put
+	// the UV determinant far below the old cutoff, which is the whole point.
+	void MTBuildUVScaledQuad(Zenith_MeshAsset& xMesh, float fUVScale)
+	{
+		xMesh.Reset();
+		xMesh.Reserve(4, 6);
+		const Zenith_Maths::Vector3 xUp(0.0f, 1.0f, 0.0f);
+		xMesh.AddVertex(Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f), xUp, Zenith_Maths::Vector2(0.0f, 0.0f));
+		xMesh.AddVertex(Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f), xUp, Zenith_Maths::Vector2(fUVScale, 0.0f));
+		xMesh.AddVertex(Zenith_Maths::Vector3(1.0f, 0.0f, 1.0f), xUp, Zenith_Maths::Vector2(fUVScale, fUVScale));
+		xMesh.AddVertex(Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f), xUp, Zenith_Maths::Vector2(0.0f, fUVScale));
+		xMesh.AddTriangle(0, 1, 2);
+		xMesh.AddTriangle(0, 2, 3);
+	}
+
+	bool MTAllFinite(const Zenith_MeshAsset& xMesh)
+	{
+		for (uint32_t u = 0; u < xMesh.GetNumVerts(); ++u)
+		{
+			const Zenith_Maths::Vector3& xT = xMesh.m_xTangents.Get(u);
+			const Zenith_Maths::Vector3& xB = xMesh.m_xBitangents.Get(u);
+			if (!std::isfinite(xT.x) || !std::isfinite(xT.y) || !std::isfinite(xT.z)) return false;
+			if (!std::isfinite(xB.x) || !std::isfinite(xB.y) || !std::isfinite(xB.z)) return false;
+		}
+		return true;
+	}
+}
+
+// ★★ THE REGRESSION ITSELF. A 1e-3 UV span gives |det| = 1e-6 per triangle --
+// far below the old 1e-4 cutoff, and comfortably inside what a 2048^2 atlas
+// produces -- so every triangle was skipped and every tangent came out NaN. This
+// test FAILS on the old code and is the reason the cutoff moved.
+ZENITH_TEST(MeshAsset, GenerateTangents_SmallUVTrianglesAreNotDegenerate)
+{
+	Zenith_MeshAsset xMesh;
+	MTBuildUVScaledQuad(xMesh, 1.0e-3f);
+	xMesh.GenerateTangents();
+
+	ZENITH_ASSERT_TRUE(MTAllFinite(xMesh),
+		"a finely-unwrapped mesh must still get finite tangents (|det| = 1e-6 here, "
+		"which the old 1e-4 area cutoff discarded as degenerate)");
+
+	// UVs run +U along +X, so the tangent must too -- not merely be non-NaN.
+	for (uint32_t u = 0; u < xMesh.GetNumVerts(); ++u)
+	{
+		const Zenith_Maths::Vector3& xT = xMesh.m_xTangents.Get(u);
+		ZENITH_ASSERT_EQ_FLOAT(xT.x, 1.0f, 1.0e-4f,
+			"tangent must follow +U along +X regardless of how small the UV triangle is");
+	}
+}
+
+// The SCALE of the UVs must not change the frame at all -- only its direction is
+// meaningful. Spanning 1.0 and spanning 1e-4 describe the same surface.
+ZENITH_TEST(MeshAsset, GenerateTangents_FrameIsIndependentOfUVScale)
+{
+	Zenith_MeshAsset xCoarse, xFine;
+	MTBuildUVScaledQuad(xCoarse, 1.0f);
+	MTBuildUVScaledQuad(xFine,   1.0e-4f);
+	xCoarse.GenerateTangents();
+	xFine.GenerateTangents();
+
+	for (uint32_t u = 0; u < xCoarse.GetNumVerts(); ++u)
+	{
+		ZENITH_ASSERT_NEAR_VEC3(xFine.m_xTangents.Get(u), xCoarse.m_xTangents.Get(u), 1.0e-4f,
+			"tangent must not depend on UV scale");
+		ZENITH_ASSERT_NEAR_VEC3(xFine.m_xBitangents.Get(u), xCoarse.m_xBitangents.Get(u), 1.0e-4f,
+			"bitangent must not depend on UV scale");
+	}
+}
+
+// A genuinely UV-degenerate mesh (every vertex on one UV point) has no
+// parameterisation to derive a tangent from. It must still come back with a real
+// orthonormal frame rather than NaN -- 15 vertices across Zenithmon's shipped
+// imports land here even after the cutoff fix.
+ZENITH_TEST(MeshAsset, GenerateTangents_DegenerateUVsFallBackToAnOrthonormalFrame)
+{
+	Zenith_MeshAsset xMesh;
+	MTBuildUVScaledQuad(xMesh, 0.0f);   // all four UVs identical -> det == 0
+	xMesh.GenerateTangents();
+
+	ZENITH_ASSERT_TRUE(MTAllFinite(xMesh),
+		"degenerate UVs must yield a fallback frame, never NaN");
+
+	for (uint32_t u = 0; u < xMesh.GetNumVerts(); ++u)
+	{
+		const Zenith_Maths::Vector3& xT = xMesh.m_xTangents.Get(u);
+		const Zenith_Maths::Vector3& xN = xMesh.m_xNormals.Get(u);
+		ZENITH_ASSERT_EQ_FLOAT(glm::length(xT), 1.0f, 1.0e-5f, "fallback tangent must be unit length");
+		ZENITH_ASSERT_EQ_FLOAT(glm::dot(xT, xN), 0.0f, 1.0e-5f, "fallback tangent must be orthogonal to the normal");
+	}
+}
+
+// ★ THE FALLBACK MUST NOT COLLAPSE ON AN AXIS-ALIGNED NORMAL, which is exactly
+// where the packer's canonical default tangent (1,0,0) does: a wall facing +X
+// gets cross(N, T) == 0 and no basis at all. Swept over all six axes.
+ZENITH_TEST(MeshAsset, GenerateTangents_FallbackHoldsForEveryAxisAlignedNormal)
+{
+	const Zenith_Maths::Vector3 axNormals[6] = {
+		Zenith_Maths::Vector3( 1.0f, 0.0f, 0.0f), Zenith_Maths::Vector3(-1.0f, 0.0f, 0.0f),
+		Zenith_Maths::Vector3( 0.0f, 1.0f, 0.0f), Zenith_Maths::Vector3( 0.0f,-1.0f, 0.0f),
+		Zenith_Maths::Vector3( 0.0f, 0.0f, 1.0f), Zenith_Maths::Vector3( 0.0f, 0.0f,-1.0f),
+	};
+
+	for (const Zenith_Maths::Vector3& xN : axNormals)
+	{
+		Zenith_MeshAsset xMesh;
+		xMesh.Reset();
+		xMesh.Reserve(3, 3);
+		// Degenerate UVs, so the fallback is what produces the frame.
+		xMesh.AddVertex(Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f), xN, Zenith_Maths::Vector2(0.5f, 0.5f));
+		xMesh.AddVertex(Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f), xN, Zenith_Maths::Vector2(0.5f, 0.5f));
+		xMesh.AddVertex(Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f), xN, Zenith_Maths::Vector2(0.5f, 0.5f));
+		xMesh.AddTriangle(0, 1, 2);
+		xMesh.GenerateTangents();
+
+		ZENITH_ASSERT_TRUE(MTAllFinite(xMesh), "axis-aligned normal must still get a finite frame");
+		for (uint32_t u = 0; u < xMesh.GetNumVerts(); ++u)
+		{
+			const Zenith_Maths::Vector3& xT = xMesh.m_xTangents.Get(u);
+			const Zenith_Maths::Vector3& xB = xMesh.m_xBitangents.Get(u);
+			ZENITH_ASSERT_EQ_FLOAT(glm::length(xT), 1.0f, 1.0e-5f, "fallback tangent unit length");
+			// The bitangent is what a collapsed frame loses first: cross(N,T) of two
+			// parallel vectors is the zero vector, and every consumer normalizes it.
+			ZENITH_ASSERT_EQ_FLOAT(glm::length(xB), 1.0f, 1.0e-5f,
+				"cross(N,T) must be a real direction, not the collapsed zero vector");
+			ZENITH_ASSERT_EQ_FLOAT(glm::dot(xT, xN), 0.0f, 1.0e-5f, "fallback tangent orthogonal to normal");
+		}
+	}
+}
+
+// A mesh whose triangles all clear the OLD cutoff must bake exactly what it baked
+// before -- that is what makes this fix safe for the generated props, the terrain
+// and every other game's assets. Pinned against the closed-form answer for a quad
+// whose UVs run +U along +X and +V along +Z.
+ZENITH_TEST(MeshAsset, GenerateTangents_CoarseUVsAreUnchangedByTheFix)
+{
+	Zenith_MeshAsset xMesh;
+	MTBuildUVScaledQuad(xMesh, 1.0f);
+	xMesh.GenerateTangents();
+
+	for (uint32_t u = 0; u < xMesh.GetNumVerts(); ++u)
+	{
+		ZENITH_ASSERT_NEAR_VEC3(xMesh.m_xTangents.Get(u),
+			Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f), 1.0e-5f,
+			"a coarsely-unwrapped quad must keep the tangent it always had");
+		// B = cross(N, T) = cross(+Y, +X) = -Z, the engine's fixed handedness.
+		ZENITH_ASSERT_NEAR_VEC3(xMesh.m_xBitangents.Get(u),
+			Zenith_Maths::Vector3(0.0f, 0.0f, -1.0f), 1.0e-5f,
+			"bitangent stays cross(N, T)");
+	}
+}

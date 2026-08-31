@@ -18,7 +18,7 @@ class Flux_MeshGeometry;
  *
  * Usage:
  *   // Load from file
- *   Zenith_MeshGeometryAsset* pMesh = Zenith_AssetRegistry::Get<Zenith_MeshGeometryAsset>("game:Meshes/level.zmesh");
+ *   Zenith_MeshGeometryAsset* pMesh = Zenith_AssetRegistry::Get<Zenith_MeshGeometryAsset>("game:Meshes/level.zgeom");
  *   Flux_MeshGeometry* pGeom = pMesh->GetGeometry();
  *
  *   // Create primitive (cached by type; returns an owning handle)
@@ -143,7 +143,7 @@ private:
 
 	/**
 	 * Load geometry from file (private - use Zenith_AssetRegistry::Get)
-	 * @param strPath Path to mesh file (.zmesh)
+	 * @param strPath Path to mesh file (.zgeom)
 	 * @param uRetainAttributeBits Bitmask of attributes to retain in CPU memory
 	 * @param bUploadToGPU Whether to upload to GPU
 	 * @return SUCCESS, or an error code on failure

@@ -1,4 +1,6 @@
 #include "Zenith.h"
+#include "DataStream/Zenith_StreamEnvelope.h"   // Zenith_WriteStreamHeader — the .ztxtr envelope
+#include "AssetHandling/Zenith_AssetTypeIds.h"     // uZENITH_TEXTURE_* ids/schema
 #include "Core/Zenith_Engine.h"
 #include "Core/Zenith_GraphicsOptions.h"
 #include "Combat/Combat_Bindings.h"
@@ -82,7 +84,7 @@ void Combat::TryInitializeStickFigureModel()
 	if (!Resources().m_strStickFigureModelPath.empty())
 		return;
 
-	std::string strStickFigureMeshGeomPath = std::string(ENGINE_ASSETS_DIR) + "Meshes/StickFigure/StickFigure" ZENITH_MESH_EXT;
+	std::string strStickFigureMeshGeomPath = std::string(ENGINE_ASSETS_DIR) + "Meshes/StickFigure/StickFigure" ZENITH_GEOMETRY_EXT;
 	std::string strStickFigureMeshAssetPath = std::string(ENGINE_ASSETS_DIR) + "Meshes/StickFigure/StickFigure" ZENITH_MESH_ASSET_EXT;
 	std::string strStickFigureSkeletonPath = std::string(ENGINE_ASSETS_DIR) + "Meshes/StickFigure/StickFigure" ZENITH_SKELETON_EXT;
 
@@ -193,12 +195,17 @@ static TextureHandle ExportColoredTexture(const std::string& strPath, uint8_t uR
 	// Create texture data
 	uint8_t aucPixelData[] = { uR, uG, uB, 255 };
 
-	// Write to .ztxtr file format (same as Zenith_Tools_TextureExport::ExportFromData)
+	// Write to .ztxtr file format (same as Zenith_Tools_TextureExport::ExportFromData):
+	// envelope, dimensions, format, level count, size, payload. ★ The envelope used
+	// to be missing here and the loader only took it through a legacy "no magic =>
+	// old layout" branch that no longer exists.
 	Zenith_DataStream xStream;
+	Zenith_WriteStreamHeader(xStream, uZENITH_TEXTURE_ASSET_TYPE_ID, uZENITH_TEXTURE_SCHEMA_V2);
 	xStream << (int32_t)1;  // width
 	xStream << (int32_t)1;  // height
 	xStream << (int32_t)1;  // depth
 	xStream << (TextureFormat)TEXTURE_FORMAT_RGBA8_UNORM;
+	xStream << (uint32_t)1; // this level only
 	xStream << (size_t)4;   // data size (1x1x4 bytes)
 	xStream.WriteData(aucPixelData, 4);
 	xStream.WriteToFile(strPath.c_str());
@@ -241,9 +248,9 @@ static void InitializeCombatResources()
 	}
 #ifdef ZENITH_TOOLS
 	// ExportDerivedFloatLayout, not Export: this geometry lives on the packed
-	// mesh-pipeline form (it is drawn), but the .zmesh on disk must carry the
+	// mesh-pipeline form (it is drawn), but the .zgeom on disk must carry the
 	// stable derived float table — the file format has no version field.
-	std::string strCapsulePath = strMeshDir + "/Capsule" ZENITH_MESH_EXT;
+	std::string strCapsulePath = strMeshDir + "/Capsule" ZENITH_GEOMETRY_EXT;
 	Resources().m_pxCapsuleGeometry->ExportDerivedFloatLayout(strCapsulePath.c_str());
 	Resources().m_pxCapsuleGeometry->m_strSourcePath = strCapsulePath;
 #endif
@@ -252,7 +259,7 @@ static void InitializeCombatResources()
 	Resources().m_xCubeAsset = Zenith_MeshGeometryAsset::CreateUnitCube();
 	Resources().m_pxCubeGeometry = Resources().m_xCubeAsset.GetDirect()->GetGeometry();
 #ifdef ZENITH_TOOLS
-	std::string strCubePath = strMeshDir + "/Cube" ZENITH_MESH_EXT;
+	std::string strCubePath = strMeshDir + "/Cube" ZENITH_GEOMETRY_EXT;
 	Resources().m_pxCubeGeometry->ExportDerivedFloatLayout(strCubePath.c_str());
 	Resources().m_pxCubeGeometry->m_strSourcePath = strCubePath;
 #endif
@@ -268,7 +275,7 @@ static void InitializeCombatResources()
 		Resources().m_pxConeGeometry = pxConeAsset->GetGeometry();
 	}
 #ifdef ZENITH_TOOLS
-	std::string strConePath = strMeshDir + "/Cone" ZENITH_MESH_EXT;
+	std::string strConePath = strMeshDir + "/Cone" ZENITH_GEOMETRY_EXT;
 	Resources().m_pxConeGeometry->ExportDerivedFloatLayout(strConePath.c_str());
 	Resources().m_pxConeGeometry->m_strSourcePath = strConePath;
 #endif

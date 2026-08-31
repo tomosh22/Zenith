@@ -53,7 +53,9 @@ public:
 		bool m_bHasAssimpInverseBindPose = false;
 
 		void WriteToDataStream(Zenith_DataStream& xStream) const;
-		void ReadFromDataStream(Zenith_DataStream& xStream, uint32_t uVersion);
+		// No version parameter: ParseStream accepts only the current schema, so
+		// every field this reads is unconditionally present.
+		void ReadFromDataStream(Zenith_DataStream& xStream);
 	};
 
 	Zenith_SkeletonAsset() = default;

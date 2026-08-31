@@ -868,7 +868,7 @@ ZENITH_TEST(ZM_TerrainRecipeSet, OutputsAreUniqueSetContainedAndQueuePolicyIsPur
 					iX <= xRecipe.ExportRect().m_iMaxX; ++iX)
 				{
 					const std::string strExpected = strPrefix + aszMeshPrefixes[uPrefix] +
-						"_" + std::to_string(iX) + "_" + std::to_string(iY) + ".zmesh";
+						"_" + std::to_string(iX) + "_" + std::to_string(iY) + ".zgeom";
 					ZENITH_ASSERT_STREQ(xOutputsA.Get(uExpectedOutputIndex).c_str(),
 						strExpected.c_str(),
 						"recipe %u output order drifted at %u",

@@ -1,4 +1,6 @@
 #include "Zenith.h"
+#include "DataStream/Zenith_StreamEnvelope.h"   // Zenith_WriteStreamHeader — the .ztxtr envelope
+#include "AssetHandling/Zenith_AssetTypeIds.h"     // uZENITH_TEXTURE_* ids/schema
 #include "Core/Zenith_Engine.h"
 #include "Core/Zenith_GraphicsOptions.h"
 #include "Maths/Zenith_Maths.h"
@@ -92,11 +94,14 @@ namespace
 	{
 		uint8_t aucPixelData[] = { uR, uG, uB, 255 };
 
+		// ★ The .ztxtr envelope is part of the format -- one declared level.
 		Zenith_DataStream xStream;
+		Zenith_WriteStreamHeader(xStream, uZENITH_TEXTURE_ASSET_TYPE_ID, uZENITH_TEXTURE_SCHEMA_V2);
 		xStream << (int32_t)1;	// width
 		xStream << (int32_t)1;	// height
 		xStream << (int32_t)1;	// depth
 		xStream << (TextureFormat)TEXTURE_FORMAT_RGBA8_UNORM;
+		xStream << (uint32_t)1;	// this level only
 		xStream << (size_t)4;	// data size (1x1x4 bytes)
 		xStream.WriteData(aucPixelData, 4);
 		xStream.WriteToFile(szPath);

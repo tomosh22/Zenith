@@ -8,7 +8,7 @@
 // Zenith_TerrainChunkLayout
 //
 // THE on-disk contract for a baked terrain chunk: the element table a
-// Render_X_Y / Physics_X_Y .zmesh serializes, the packed vertex stride, the
+// Render_X_Y / Physics_X_Y .zgeom serializes, the packed vertex stride, the
 // byte offset of each element, the quantisation box the packed position and UV
 // are meaningless without, and the per-density vertex/index counts. Every
 // static_assert below freezes a value that baked assets on disk already depend

@@ -42,9 +42,8 @@ struct Zenith_MaterialResolved
  *   bit index for params and (32 + slot) for textures. Non-overridden values
  *   track the parent live. GetResolved() returns the flattened result with
  *   stamp-based caching (cheap when nothing changed).
- * - Serialized as .zmat version 5. Versions 3/4 load with legacy mapping
- *   (Transparent -> Translucent, otherwise Masked - v4 always alpha-tested;
- *   Unlit -> shading model).
+ * - Serialized as .zmat version 5, and ONLY version 5: an older schema is
+ *   refused rather than mapped, because every .zmtrl is regenerable bake output.
  *
  * Usage:
  *   MaterialHandle xMat = Zenith_AssetRegistry::Acquire<Zenith_MaterialAsset>("game:Materials/mat.zmat");

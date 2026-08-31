@@ -1,5 +1,8 @@
 #pragma once
 
+#include "DataStream/Zenith_StreamEnvelope.h"   // Zenith_WriteStreamHeader — the .ztxtr envelope
+#include "AssetHandling/Zenith_AssetTypeIds.h"     // uZENITH_TEXTURE_* ids/schema
+
 #include "DataStream/Zenith_DataStream.h"
 #include "FileAccess/Zenith_FileAccess.h"
 #include "Flux/Flux_Enums.h"
@@ -224,13 +227,18 @@ namespace TilePuzzle_SDF
 
 namespace TilePuzzle_AssetGen
 {
+	// ★ The .ztxtr envelope is part of the format. This wrote the payload bare, and
+	// the loader only accepted it through a legacy "no magic => old layout" branch
+	// that no longer exists. One level, declared as such.
 	static void WriteTexture(const uint32_t* puPixels, uint32_t uWidth, uint32_t uHeight, const char* szPath)
 	{
 		Zenith_DataStream xStream;
+		Zenith_WriteStreamHeader(xStream, uZENITH_TEXTURE_ASSET_TYPE_ID, uZENITH_TEXTURE_SCHEMA_V2);
 		xStream << static_cast<int32_t>(uWidth);
 		xStream << static_cast<int32_t>(uHeight);
 		xStream << static_cast<int32_t>(1);
 		xStream << TEXTURE_FORMAT_RGBA8_UNORM;
+		xStream << static_cast<uint32_t>(1);   // this level only
 		size_t ulDataSize = static_cast<size_t>(uWidth) * uHeight * sizeof(uint32_t);
 		xStream << ulDataSize;
 		xStream.WriteData(puPixels, ulDataSize);

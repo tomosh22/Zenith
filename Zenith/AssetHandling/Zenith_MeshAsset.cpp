@@ -6,6 +6,67 @@
 #include "DataStream/Zenith_StreamEnvelope.h"
 #include "Flux/MeshGeometry/Flux_MeshInstance.h"   // Flux_DeclareMeshVertexLayout + Flux_PackStaticMeshVertices
 
+#include <cmath>   // std::isfinite / std::sqrt -- the tangent-frame guards below
+
+//------------------------------------------------------------------------------
+// Tangent-frame helpers
+//------------------------------------------------------------------------------
+
+// Every component finite. A NaN fails every comparison, so this rejects NaN and
+// both infinities without naming them separately.
+static bool IsFiniteVec3(const Zenith_Maths::Vector3& xValue)
+{
+	return std::isfinite(xValue.x) && std::isfinite(xValue.y) && std::isfinite(xValue.z);
+}
+
+// SOME unit vector perpendicular to xNormal, for a vertex whose UVs cannot
+// supply one. Which one is arbitrary -- there is no correct answer, because the
+// parameterisation that would have chosen it is exactly what is missing -- but it
+// must be DETERMINISTIC and it must be orthonormal, so the frame downstream is a
+// real basis rather than a collapsed one.
+//
+// ★ CROSSING WITH THE SMALLEST COMPONENT'S AXIS is what makes it robust: crossing
+// with a fixed axis collapses whenever the normal is parallel to it, which is the
+// exact trap the canonical default tangent (1,0,0) falls into for a wall facing
+// +/-X. The chosen axis is always at least 54 degrees off the normal, so the
+// cross product can never be short.
+static Zenith_Maths::Vector3 OrthogonalToNormal(const Zenith_Maths::Vector3& xNormal)
+{
+	if (!IsFiniteVec3(xNormal) || glm::dot(xNormal, xNormal) < 1.0e-12f)
+	{
+		return Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f);
+	}
+
+	const float fAbsX = std::fabsf(xNormal.x);
+	const float fAbsY = std::fabsf(xNormal.y);
+	const float fAbsZ = std::fabsf(xNormal.z);
+
+	Zenith_Maths::Vector3 xAxis(0.0f, 0.0f, 1.0f);
+	if (fAbsX <= fAbsY && fAbsX <= fAbsZ)
+	{
+		xAxis = Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f);
+	}
+	else if (fAbsY <= fAbsZ)
+	{
+		xAxis = Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f);
+	}
+
+	return glm::normalize(glm::cross(xNormal, xAxis));
+}
+
+Zenith_Maths::Vector3 Zenith_MeshAsset::MakeValidTangent(
+	const Zenith_Maths::Vector3& xRawTangent, const Zenith_Maths::Vector3& xNormal)
+{
+	const Zenith_Maths::Vector3 xProjected =
+		xRawTangent - xNormal * glm::dot(xNormal, xRawTangent);
+	const float fLenSq = glm::dot(xProjected, xProjected);
+	if (IsFiniteVec3(xProjected) && fLenSq > 1.0e-24f)
+	{
+		return xProjected * (1.0f / std::sqrt(fLenSq));
+	}
+	return OrthogonalToNormal(xNormal);
+}
+
 //------------------------------------------------------------------------------
 // Helper Functions for Serialization
 //------------------------------------------------------------------------------
@@ -244,7 +305,14 @@ Zenith_Status Zenith_MeshAsset::ParseStream(Zenith_DataStream& xStream)
 
 	if (uVersion != uZENITH_MESH_SCHEMA_CURRENT)
 	{
-		Zenith_Log(LOG_CATEGORY_MESH, "Version mismatch: expected %u, got %u", uZENITH_MESH_SCHEMA_CURRENT, uVersion);
+		// ★ A MISMATCHED SCHEMA IS REFUSED, NOT LOGGED AND READ ANYWAY. This used
+		// to emit a line and then parse the payload as if it were current, which
+		// reads one layout with another's field order and yields plausible garbage.
+		// The file is regenerable bake output: delete it and the tools boot writes
+		// the current schema.
+		Zenith_Error(LOG_CATEGORY_MESH, "Zenith_MeshAsset: schema %u is not the current %u; re-bake this asset",
+			uVersion, uZENITH_MESH_SCHEMA_CURRENT);
+		return Zenith_ErrorCode::VERSION_MISMATCH;
 	}
 
 	// Counts
@@ -488,7 +556,40 @@ void Zenith_MeshAsset::GenerateTangents()
 		Zenith_Maths::Vector2 xDeltaUV2 = xUVC - xUVA;
 
 		float fDet = xDeltaUV1.x * xDeltaUV2.y - xDeltaUV2.x * xDeltaUV1.y;
-		if (std::fabsf(fDet) < 0.0001f)
+
+		// ★★ THIS CUTOFF WAS 0.0001f, AND IT IS A UV *AREA* RATHER THAN A
+		// DEGENERACY MEASURE. That made it a threshold on how finely a mesh is
+		// unwrapped: on a 2048^2 atlas a triangle covering a 30x30-texel patch has
+		// |det| ~ (30/2048)^2 = 2.1e-4, already at the cutoff, so most triangles of
+		// a densely-atlased mesh were discarded as "degenerate". Every vertex whose
+		// faces were ALL discarded kept a zero accumulated tangent, and the
+		// normalize() below turned that into NaN.
+		//
+		// MEASURED on Zenithmon's four imported .glb props, whose atlases are
+		// 2048^2: the old cutoff skipped 57-90% of triangles and left 36-75% of
+		// vertices with NaN tangents (Bed 2065/3606, Table 2666/3515,
+		// Chair 1341/3735, Shelf 5524/7353). It never fired on the procedurally
+		// generated meshes -- their box faces have huge UV triangles -- which is
+		// why it survived: the defect needed a finely-unwrapped mesh to appear.
+		//
+		// ★ IT DID NOT RENDER AS NAN, WHICH IS WHY NOBODY SAW IT.
+		// Flux_PackVertices sanitises a non-finite direction to the semantic's
+		// canonical default, so those vertices silently got the WORLD-CONSTANT
+		// tangent (1,0,0) and their normal map was applied in a basis unrelated to
+		// the surface -- and where the normal is near +/-X, cross(N,T) collapses
+		// entirely (625 such vertices on the Table).
+		//
+		// The guard now rejects only what it exists to reject: a division that
+		// cannot produce a finite direction. A UV-degenerate triangle contributes
+		// nothing, exactly as before; a merely SMALL one contributes normally.
+		//
+		// ★ CHOSEN SO THAT NO CURRENTLY-CORRECT MESH MOVES. For any mesh whose
+		// triangles all clear the old 1e-4 cutoff the arithmetic below is
+		// bit-identical to what it was, so the generated props, the terrain, the
+		// trees and every other game's assets bake exactly the bytes they baked
+		// before. The only contributions that change are the ones that used to be
+		// dropped -- which is precisely the broken case.
+		if (!(std::fabsf(fDet) > 0.0f))
 		{
 			continue;
 		}
@@ -496,6 +597,15 @@ void Zenith_MeshAsset::GenerateTangents()
 		float fInvDet = 1.0f / fDet;
 		Zenith_Maths::Vector3 xTangent = fInvDet * (xDeltaUV2.y * xEdge1 - xDeltaUV1.y * xEdge2);
 		Zenith_Maths::Vector3 xBitangent = fInvDet * (-xDeltaUV2.x * xEdge1 + xDeltaUV1.x * xEdge2);
+
+		// A near-zero determinant can still overflow 1/fDet to inf. Accumulating
+		// that would poison all three vertices of the triangle with inf/NaN, which
+		// is the failure this whole block exists to prevent -- so a contribution
+		// that is not finite is dropped rather than added.
+		if (!IsFiniteVec3(xTangent) || !IsFiniteVec3(xBitangent))
+		{
+			continue;
+		}
 
 		m_xTangents.Get(uA) += xTangent;
 		m_xTangents.Get(uB) += xTangent;
@@ -513,8 +623,18 @@ void Zenith_MeshAsset::GenerateTangents()
 		Zenith_Maths::Vector3& xBitangent = m_xBitangents.Get(u);
 		const Zenith_Maths::Vector3& xNormal = m_xNormals.Get(u);
 
-		// Gram-Schmidt orthogonalize
-		xTangent = glm::normalize(xTangent - xNormal * glm::dot(xNormal, xTangent));
+		// Gram-Schmidt orthogonalize.
+		//
+		// ★ THE FALLBACK IS NOT DECORATION. A vertex can legitimately end up with
+		// no usable accumulated tangent -- every incident triangle UV-degenerate,
+		// or an accumulation that cancels to zero, or one exactly parallel to the
+		// normal. glm::normalize of a zero vector divides by zero and yields NaN,
+		// and NaN in a vertex stream is invisible: the packer replaces it with the
+		// canonical default and the mesh renders wrong rather than not at all.
+		// MEASURED after the cutoff fix above, this still fires on 1 vertex of
+		// Zenithmon's Table and 14 of its Shelf, so it is reached by shipped
+		// assets and not a theoretical branch.
+		xTangent = MakeValidTangent(xTangent, xNormal);
 
 		// Compute bitangent from normal and tangent
 		xBitangent = glm::cross(xNormal, xTangent);

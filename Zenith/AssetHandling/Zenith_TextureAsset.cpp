@@ -70,10 +70,9 @@ void Zenith_TextureAsset::MarkAsBindless(bool bRepeatAddressing)
 }
 
 Zenith_Status Zenith_TextureAsset::ParseZtxtr(const std::string& strPath, Zenith_DataStream& xStream,
-	Flux_SurfaceInfo& xOutInfo, Zenith_Vector<uint8_t>& xOutBytes, bool& bOutIsV2)
+	Flux_SurfaceInfo& xOutInfo, Zenith_Vector<uint8_t>& xOutBytes)
 {
 	ZENITH_PROFILE_SCOPE("Texture Parse .ztxtr");
-	bOutIsV2 = false;
 
 	if (!xStream.IsValid())
 	{
@@ -81,19 +80,25 @@ Zenith_Status Zenith_TextureAsset::ParseZtxtr(const std::string& strPath, Zenith
 		return Zenith_ErrorCode::FILE_NOT_FOUND;
 	}
 
-	// Envelope-aware read with back-compat:
-	//   - v2 file  : header OK, m_uSchemaVersion >= 2 -> multi-mip chain payload.
-	//   - v1 file  : header OK, schema <= 1 -> legacy single-mip payload.
-	//   - legacy   : no envelope -> BAD_MAGIC; ReadStreamHeader is non-destructive
-	//                (restores cursor to 0) so the headerless single-mip layout reads.
-	//   - future   : newer envelope version -> hard fail (VERSION_MISMATCH).
+	// ★★ ONE LAYOUT: the envelope plus a packed mip chain. This used to accept
+	// three -- a v2 chain, a v1 single-mip payload behind the same envelope, and a
+	// headerless file read through ReadStreamHeader's cursor restore. Both older
+	// forms are gone, along with the single-mip payload reader below them. Every
+	// .ztxtr is bake output under the `**/Assets/**` gitignore, so an older one is
+	// a stale bake the next tools boot rewrites.
 	Zenith_Result<Zenith_StreamHeader> xHeaderResult = Zenith_ReadStreamHeader(xStream, uTEXTURE_ASSET_TYPE_ID);
-	if (!xHeaderResult.IsOk() && xHeaderResult.Error() != Zenith_ErrorCode::BAD_MAGIC)
+	if (!xHeaderResult.IsOk())
 	{
 		Zenith_Log(LOG_CATEGORY_ASSET, "Zenith_TextureAsset: Unsupported envelope in '%s'", strPath.c_str());
 		return xHeaderResult.Error();
 	}
-	const bool bV2 = xHeaderResult.IsOk() && xHeaderResult.Value().m_uSchemaVersion >= uTEXTURE_SCHEMA_VERSION_V2;
+	if (xHeaderResult.Value().m_uSchemaVersion != uTEXTURE_SCHEMA_VERSION_V2)
+	{
+		Zenith_Log(LOG_CATEGORY_ASSET,
+			"Zenith_TextureAsset: schema %u is not the current %u in '%s'; re-bake this asset",
+			xHeaderResult.Value().m_uSchemaVersion, uTEXTURE_SCHEMA_VERSION_V2, strPath.c_str());
+		return Zenith_ErrorCode::VERSION_MISMATCH;
+	}
 
 	int32_t iWidth = 0, iHeight = 0, iDepth = 0;
 	TextureFormat eFormat = TEXTURE_FORMAT_NONE;
@@ -118,69 +123,46 @@ Zenith_Status Zenith_TextureAsset::ParseZtxtr(const std::string& strPath, Zenith
 	xOutInfo.m_eFormat = eFormat;
 	xOutInfo.m_eTextureType = TEXTURE_TYPE_2D;
 
-	if (bV2)
+	uint32_t uNumMips = 0;
+	size_t ulTotalDataSize = 0;
+	xStream >> uNumMips;
+	xStream >> ulTotalDataSize;
+
+	// STRICT validation — tightly packed, no slack. The byte total must match the
+	// stored level count EXACTLY, and the count may not claim more levels than the
+	// dimensions can produce.
+	//
+	// ★ THE COUNT IS NOT REQUIRED TO BE A *FULL* CHAIN, and that is what lets one
+	// layout serve every texture. It used to demand uNumMips == uExpectedMips,
+	// which a single-mip texture cannot satisfy -- so single-mip files were written
+	// headerless instead and read back through a legacy branch. A chain of length
+	// one is a legal chain; the MSDF font atlas needs exactly that (mips break its
+	// median reconstruction). Claiming FEWER levels stays exact because
+	// CalculateTotalMipChainSize is computed from the stored count.
+	const uint32_t uExpectedMips = static_cast<uint32_t>(std::floor(std::log2((std::max)(iWidth, iHeight))) + 1);
+	const size_t ulExpectedTotal = CalculateTotalMipChainSize(eFormat, xOutInfo.m_uWidth, xOutInfo.m_uHeight, uNumMips);
+	if (uNumMips == 0 || uNumMips > uExpectedMips || ulTotalDataSize != ulExpectedTotal)
 	{
-		uint32_t uNumMips = 0;
-		size_t ulTotalDataSize = 0;
-		xStream >> uNumMips;
-		xStream >> ulTotalDataSize;
-
-		// STRICT validation — v2 is a new, tightly-packed format with no slack.
-		// The stored count and total must exactly match the shared layout contract.
-		const uint32_t uExpectedMips = static_cast<uint32_t>(std::floor(std::log2((std::max)(iWidth, iHeight))) + 1);
-		const size_t ulExpectedTotal = CalculateTotalMipChainSize(eFormat, xOutInfo.m_uWidth, xOutInfo.m_uHeight, uNumMips);
-		if (uNumMips == 0 || uNumMips != uExpectedMips || ulTotalDataSize != ulExpectedTotal)
-		{
-			Zenith_Log(LOG_CATEGORY_ASSET, "Zenith_TextureAsset: v2 mip-chain mismatch in '%s' (mips=%u expected=%u, size=%zu expected=%zu)",
-				strPath.c_str(), uNumMips, uExpectedMips, ulTotalDataSize, ulExpectedTotal);
-			return Zenith_ErrorCode::CORRUPT_DATA;
-		}
-		// Bounds-check BEFORE ReadData: ReadData only logs on overflow (no status
-		// return), so the loader must verify the stream actually holds the payload.
-		if (xStream.GetCapacity() - xStream.GetCursor() < ulTotalDataSize)
-		{
-			Zenith_Log(LOG_CATEGORY_ASSET, "Zenith_TextureAsset: v2 payload truncated in '%s' (need %zu, have %llu)",
-				strPath.c_str(), ulTotalDataSize, static_cast<unsigned long long>(xStream.GetCapacity() - xStream.GetCursor()));
-			return Zenith_ErrorCode::CORRUPT_DATA;
-		}
-
-		// v2 is 2D-only by contract: CalculateTotalMipChainSize (validated above)
-		// and the pre-baked upload's per-mip math treat depth as 1, so pin it here
-		// rather than trust a stored depth the rest of the v2 path would ignore.
-		xOutInfo.m_uDepth = 1;
-		xOutInfo.m_uNumMips = uNumMips;
-		xOutBytes.Resize(static_cast<u_int>(ulTotalDataSize));
-		xStream.ReadData(xOutBytes.GetDataPointer(), ulTotalDataSize);
-		bOutIsV2 = true;
-		return true;
+		Zenith_Log(LOG_CATEGORY_ASSET, "Zenith_TextureAsset: mip-chain mismatch in '%s' (mips=%u max=%u, size=%zu expected=%zu)",
+			strPath.c_str(), uNumMips, uExpectedMips, ulTotalDataSize, ulExpectedTotal);
+		return Zenith_ErrorCode::CORRUPT_DATA;
 	}
-
-	// Legacy / v1 single-mip payload (back-compat: matches the historical layout).
-	size_t ulDataSize = 0;
-	xStream >> ulDataSize;
-
-	const size_t ulExpectedDataSize = CalculateTextureDataSize(eFormat, iWidth, iHeight, iCorrectedDepth);
-	// Use the larger of file-stored size or expected size for safety (some legacy
-	// files stored 0 for the size but still carry pixel data).
-	const size_t ulAllocSize = std::max(ulDataSize, ulExpectedDataSize);
-	if (ulAllocSize == 0)
+	// Bounds-check BEFORE ReadData: ReadData only logs on overflow (no status
+	// return), so the loader must verify the stream actually holds the payload.
+	if (xStream.GetCapacity() - xStream.GetCursor() < ulTotalDataSize)
 	{
-		Zenith_Log(LOG_CATEGORY_ASSET, "Zenith_TextureAsset: Zero data size for texture '%s' (dims: %dx%dx%d)", strPath.c_str(), iWidth, iHeight, iDepth);
+		Zenith_Log(LOG_CATEGORY_ASSET, "Zenith_TextureAsset: v2 payload truncated in '%s' (need %zu, have %llu)",
+			strPath.c_str(), ulTotalDataSize, static_cast<unsigned long long>(xStream.GetCapacity() - xStream.GetCursor()));
 		return Zenith_ErrorCode::CORRUPT_DATA;
 	}
 
-	xOutInfo.m_uNumMips = 1;
-	xOutBytes.Resize(static_cast<u_int>(ulAllocSize), 0);  // zero-init in case the file has less than expected
-	const size_t ulReadSize = (ulDataSize > 0) ? ulDataSize : ulExpectedDataSize;
-	if (ulReadSize > 0)
-	{
-		if (xStream.GetCapacity() - xStream.GetCursor() < ulReadSize)
-		{
-			Zenith_Log(LOG_CATEGORY_ASSET, "Zenith_TextureAsset: legacy payload truncated in '%s'", strPath.c_str());
-			return Zenith_ErrorCode::CORRUPT_DATA;
-		}
-		xStream.ReadData(xOutBytes.GetDataPointer(), ulReadSize);
-	}
+	// v2 is 2D-only by contract: CalculateTotalMipChainSize (validated above)
+	// and the pre-baked upload's per-mip math treat depth as 1, so pin it here
+	// rather than trust a stored depth the rest of the v2 path would ignore.
+	xOutInfo.m_uDepth = 1;
+	xOutInfo.m_uNumMips = uNumMips;
+	xOutBytes.Resize(static_cast<u_int>(ulTotalDataSize));
+	xStream.ReadData(xOutBytes.GetDataPointer(), ulTotalDataSize);
 	return true;
 }
 
@@ -193,11 +175,10 @@ Zenith_Status Zenith_TextureAsset::LoadCPUData(const std::string& strPath, Flux_
 		Zenith_Log(LOG_CATEGORY_ASSET, "Zenith_TextureAsset::LoadCPUData: Failed to read file '%s'", strPath.c_str());
 		return Zenith_ErrorCode::FILE_NOT_FOUND;
 	}
-	bool bV2 = false;
-	return ParseZtxtr(strPath, xStream, xOutInfo, xOutBytes, bV2);
+	return ParseZtxtr(strPath, xStream, xOutInfo, xOutBytes);
 }
 
-Zenith_Status Zenith_TextureAsset::LoadFromFile(const std::string& strPath, bool bCreateMips)
+Zenith_Status Zenith_TextureAsset::LoadFromFile(const std::string& strPath)
 {
 	ZENITH_PROFILE_SCOPE("Texture Load + GPU Upload");
 	Zenith_DataStream xStream;
@@ -210,8 +191,7 @@ Zenith_Status Zenith_TextureAsset::LoadFromFile(const std::string& strPath, bool
 
 	Flux_SurfaceInfo xFileInfo;
 	Zenith_Vector<uint8_t> xBytes;
-	bool bV2 = false;
-	Zenith_Status xParseStatus = ParseZtxtr(strPath, xStream, xFileInfo, xBytes, bV2);
+	Zenith_Status xParseStatus = ParseZtxtr(strPath, xStream, xFileInfo, xBytes);
 	if (!xParseStatus.IsOk())
 	{
 		return xParseStatus;
@@ -223,25 +203,13 @@ Zenith_Status Zenith_TextureAsset::LoadFromFile(const std::string& strPath, bool
 	// Resolve how the GPU populates the mip chain, and the final mip count the
 	// IMAGE (and therefore the SRV) will have. This must be set before BOTH the
 	// upload and the SRV creation so the view exposes exactly the image's mips.
-	const bool bIsCompressed = IsCompressedFormat(m_xSurfaceInfo.m_eFormat);
-	TextureUploadMipMode eMipMode;
-	if (bV2)
-	{
-		// File already carries the full chain (m_uNumMips set by ParseZtxtr).
-		eMipMode = TEXTURE_MIPS_PREBAKED;
-	}
-	else if (bCreateMips && !bIsCompressed)
-	{
-		// Legacy uncompressed: allocate a chain and blit-generate at runtime.
-		eMipMode = TEXTURE_MIPS_GENERATE_RUNTIME;
-		m_xSurfaceInfo.m_uNumMips = static_cast<uint32_t>(std::floor(std::log2((std::max)(m_xSurfaceInfo.m_uWidth, m_xSurfaceInfo.m_uHeight))) + 1);
-	}
-	else
-	{
-		// Legacy compressed (or mips not requested): single mip, no fake chain.
-		eMipMode = TEXTURE_MIPS_NONE;
-		m_xSurfaceInfo.m_uNumMips = 1;
-	}
+	// ★ ALWAYS PREBAKED. The file carries exactly the levels it declares -- a full
+	// chain or a single one -- and ParseZtxtr has already validated that the bytes
+	// match that count, so the upload just consumes them. The runtime-generate and
+	// no-mips arms are gone along with LoadFromFile's bCreateMips parameter, which
+	// only ever chose between them. TEXTURE_MIPS_GENERATE_RUNTIME is still live for
+	// CreateFromData, which builds a texture with no file behind it.
+	const TextureUploadMipMode eMipMode = TEXTURE_MIPS_PREBAKED;
 
 	// Create GPU resources. Surface an invalid VRAM handle via the release-
 	// survivable check tier (WS8.3) for diagnosability, but DO NOT fail the load:
@@ -255,7 +223,7 @@ Zenith_Status Zenith_TextureAsset::LoadFromFile(const std::string& strPath, bool
 	m_xSRV = xVulkanMemory.CreateShaderResourceView(m_xVRAMHandle, m_xSurfaceInfo, 0, m_xSurfaceInfo.m_uNumMips);
 	m_bGPUResourcesAllocated = true;
 
-	// SUCCESS — payload is the legacy "true" bool carried by Zenith_Status.
+	// SUCCESS — Zenith_Status carries the "true" payload.
 	return true;
 }
 

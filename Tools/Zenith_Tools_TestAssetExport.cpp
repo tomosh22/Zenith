@@ -11,9 +11,9 @@
 //                                     bind positions are load-bearing for the
 //                                     RenderTest foot-IK capsule sizing and
 //                                     the engine skeleton unit tests)
-//     StickFigure.zasset/.zmesh     — smooth lofted human body (~1.7k verts,
+//     StickFigure.zasset/.zgeom     — smooth lofted human body (~1.7k verts,
 //                                     multi-bone blended skinning at joints)
-//     StickFigure_Static.zmesh      — unskinned copy
+//     StickFigure_Static.zgeom      — unskinned copy
 //     StickFigure_Albedo.ztxtr      — 1024^2 atlas: painted face (eyes, brows,
 //                                     lips, hair), T-shirt, trousers, boots
 //     StickFigure_Normal.ztxtr      — normals from a procedural height field
@@ -4089,14 +4089,14 @@ void GenerateStickFigureAssets()
 #ifdef ZENITH_TOOLS
 	// Export mesh in Flux_MeshGeometry format
 	Flux_MeshGeometry* pxFluxGeometry = Zenith_Tools_CreateFluxMeshGeometry(pxMesh, pxSkel);
-	std::string strMeshPath = strOutputDir + "StickFigure" ZENITH_MESH_EXT;
+	std::string strMeshPath = strOutputDir + "StickFigure" ZENITH_GEOMETRY_EXT;
 	pxFluxGeometry->Export(strMeshPath.c_str());
 	Zenith_Log(LOG_CATEGORY_ASSET, "  Exported mesh geometry to: %s", strMeshPath.c_str());
 	delete pxFluxGeometry;
 
 	// Export static mesh
 	Flux_MeshGeometry* pxStaticGeometry = Zenith_Tools_CreateStaticFluxMeshGeometry(pxMesh);
-	std::string strStaticMeshPath = strOutputDir + "StickFigure_Static" ZENITH_MESH_EXT;
+	std::string strStaticMeshPath = strOutputDir + "StickFigure_Static" ZENITH_GEOMETRY_EXT;
 	pxStaticGeometry->Export(strStaticMeshPath.c_str());
 	Zenith_Log(LOG_CATEGORY_ASSET, "  Exported static mesh geometry to: %s", strStaticMeshPath.c_str());
 	delete pxStaticGeometry;

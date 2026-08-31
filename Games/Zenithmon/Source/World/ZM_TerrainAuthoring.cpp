@@ -1595,7 +1595,7 @@ void ZM_EnumerateRequiredTerrainOutputs(const ZM_TerrainAuthoringRecipe& xRecipe
 			for (int iX = xRect.m_iMinX; iX <= xRect.m_iMaxX; ++iX)
 			{
 				const std::string strName = std::string(aszPrefixes[uPrefix]) + "_" +
-					std::to_string(iX) + "_" + std::to_string(iY) + ZENITH_MESH_EXT;
+					std::to_string(iX) + "_" + std::to_string(iY) + ZENITH_GEOMETRY_EXT;
 				xOutputsOut.PushBack((xDirectory / strName).generic_string());
 			}
 		}

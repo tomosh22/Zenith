@@ -1,4 +1,6 @@
 #include "Zenith.h"
+#include "DataStream/Zenith_StreamEnvelope.h"   // Zenith_WriteStreamHeader — the .ztxtr envelope
+#include "AssetHandling/Zenith_AssetTypeIds.h"     // uZENITH_TEXTURE_* ids/schema
 #include "Core/Zenith_Engine.h"
 
 #ifdef ZENITH_TOOLS
@@ -44,16 +46,24 @@ namespace
 		return (std::filesystem::path(Project_GetGameAssetsDirectory()) / "Terrain").string();
 	}
 
-	// .ztxtr writer matching Zenith_TextureAsset's loader layout:
-	// i32 width, i32 height, i32 depth, TextureFormat, u64 dataSize, pixels.
+	// .ztxtr writer matching Zenith_TextureAsset's loader layout: envelope, then
+	// i32 width, i32 height, i32 depth, TextureFormat, u32 mip count, u64 dataSize,
+	// pixels.
+	//
+	// ★ THE ENVELOPE USED TO BE ABSENT HERE. These terrain maps predated it and
+	// were read back through the loader's "no magic => old layout" branch. That
+	// branch is gone, so they are written in the one .ztxtr layout like everything
+	// else -- as a single-level chain, which is what a height/splat/grass map is.
 	void WriteZtxtr(const std::string& strPath, int32_t iWidth, int32_t iHeight,
 		TextureFormat eFormat, const void* pPixels, size_t ulDataSize)
 	{
 		Zenith_DataStream xStream;
+		Zenith_WriteStreamHeader(xStream, uZENITH_TEXTURE_ASSET_TYPE_ID, uZENITH_TEXTURE_SCHEMA_V2);
 		xStream << iWidth;
 		xStream << iHeight;
 		xStream << static_cast<int32_t>(1);
 		xStream << eFormat;
+		xStream << static_cast<uint32_t>(1);   // this level only
 		xStream << ulDataSize;
 		xStream.WriteData(pPixels, ulDataSize);
 		xStream.WriteToFile(strPath.c_str());

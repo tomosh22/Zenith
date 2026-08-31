@@ -2,7 +2,9 @@
 #define NOMINMAX
 #endif
 #include "Zenith.h"
+#include <cmath>   // std::isfinite / std::sqrt — the tangent-frame guards
 #include "Zenith_Tools_TextureExport.h"
+#include "Zenith_Tools_GlbImport.h"
 // Wave-13 PCH slim round 2: <filesystem> was demoted out of Zenith.h. This TU
 // uses std::filesystem (path manipulation + recursive_directory_iterator below)
 // and was relying on the transitive PCH include (neither the local headers nor
@@ -257,15 +259,14 @@ static void ExportAssimpMesh(
 		{
 			const aiVector3D& xTangentData = pxAssimpMesh->mTangents[i];
 			Zenith_Maths::Vector3 xLocalTangent(xTangentData.x, xTangentData.y, xTangentData.z);
-			if (bBakeTransform)
-			{
-				// Transform tangent by normal matrix
-				xTangent = glm::normalize(xNormalMatrix * xLocalTangent);
-			}
-			else
-			{
-				xTangent = glm::normalize(xLocalTangent);
-			}
+			// ★ THROUGH THE SHARED RULE, NOT glm::normalize. aiProcess_CalcTangentSpace
+			// hands back a degenerate tangent on a vertex it cannot solve, and
+			// normalizing that yields NaN -- which shipped in a baked Blacksmith mesh
+			// (1 vertex of 710) and was invisible because Flux_PackVertices swaps NaN
+			// for the canonical default. MakeValidTangent also orthogonalises against
+			// the normal, which is what the frame downstream assumes.
+			xTangent = Zenith_MeshAsset::MakeValidTangent(
+				bBakeTransform ? (xNormalMatrix * xLocalTangent) : xLocalTangent, xNormal);
 		}
 
 		if (bHasVertexColors)
@@ -287,15 +288,16 @@ static void ExportAssimpMesh(
 			{
 				const aiVector3D& xBitangentData = pxAssimpMesh->mBitangents[i];
 				Zenith_Maths::Vector3 xLocalBitangent(xBitangentData.x, xBitangentData.y, xBitangentData.z);
-				if (bBakeTransform)
-				{
-					// Transform bitangent by normal matrix
-					xBitangent = glm::normalize(xNormalMatrix * xLocalBitangent);
-				}
-				else
-				{
-					xBitangent = glm::normalize(xLocalBitangent);
-				}
+				const Zenith_Maths::Vector3 xRawBitangent =
+					bBakeTransform ? (xNormalMatrix * xLocalBitangent) : xLocalBitangent;
+				// Same reason as the tangent above: never normalize an unchecked
+				// vector into a baked file. A degenerate bitangent falls back to the
+				// tangent frame's own cross product, which is what the shader would
+				// rebuild from a +1 handedness anyway.
+				const float fLenSq = glm::dot(xRawBitangent, xRawBitangent);
+				xBitangent = (std::isfinite(fLenSq) && fLenSq > 1.0e-24f)
+					? (xRawBitangent * (1.0f / std::sqrt(fLenSq)))
+					: glm::cross(xMeshAsset.m_xNormals.Get(i), xMeshAsset.m_xTangents.Get(i));
 			}
 			xMeshAsset.m_xBitangents.PushBack(xBitangent);
 		}
@@ -909,6 +911,14 @@ static void ExportMeshesInDirectory(const std::string& strDirectory)
 		{
 			Export(strFilename, ".obj");
 		}
+
+		// ★ .glb IS DELIBERATELY ABSENT FROM THIS LIST. Binary glTF is handled by
+		// Zenith_Tools_GlbImport in ExportAllMeshes below, because the .glb files
+		// this pipeline actually receives carry EXT_meshopt_compression and Assimp
+		// refuses those outright -- it rejects the extension's fallback buffer as a
+		// "buffer with non-zero length missing the uri attribute" before reading a
+		// single vertex. Adding ".glb" here would route them to a guaranteed
+		// failure whose log line blames the file rather than the importer.
 	}
 }
 
@@ -916,4 +926,9 @@ void ExportAllMeshes()
 {
 	ExportMeshesInDirectory(GetGameAssetsDirectory());
 	ExportMeshesInDirectory(GetEngineAssetsDirectory());
+
+	// Binary glTF, via the dedicated importer. Runs AFTER the Assimp walk so that
+	// where a model somehow has both sources, the .glb bundle is what survives.
+	Zenith_Tools_GlbImport::ImportGlbsInDirectory(GetGameAssetsDirectory());
+	Zenith_Tools_GlbImport::ImportGlbsInDirectory(GetEngineAssetsDirectory());
 }

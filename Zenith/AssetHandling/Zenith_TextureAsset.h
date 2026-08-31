@@ -68,15 +68,15 @@ public:
 
 	/**
 	 * Load a .ztxtr's pixel data into a CPU buffer WITHOUT any GPU upload.
-	 * Shares the single .ztxtr parser with LoadFromFile (legacy/v1/v2 aware),
+	 * Shares the single .ztxtr parser with LoadFromFile,
 	 * so non-renderer consumers (e.g. the RenderTest roughness/metallic packer,
 	 * the terrain heightmap readers) must use this instead of hand-parsing the
 	 * file — there is exactly one .ztxtr parser engine-wide. Safe in tools /
 	 * headless (no device required).
 	 * @param strPath    Path to the .ztxtr file.
 	 * @param xOutInfo    Receives format/dims and m_uNumMips as stored in the file
-	 *                    (1 for legacy single-mip files, N for a v2 mip chain).
-	 * @param xOutBytes   Receives the stored bytes: mip 0 for legacy, or the full
+	 *                    (N, the length of the file's packed mip chain).
+	 * @param xOutBytes   Receives the stored bytes: the full
 	 *                    chain packed mip0..mipN-1 for v2 (mip M starts at the
 	 *                    prefix sum of CalculateMipDataSize for mips < M).
 	 * @return SUCCESS, or an error code (FILE_NOT_FOUND / CORRUPT_DATA / ...).
@@ -143,19 +143,17 @@ private:
 
 	/**
 	 * Load texture data from an image file (private - use Zenith_AssetRegistry::Get)
-	 * @param strPath Path to image file (PNG, JPG, etc.)
-	 * @param bCreateMips Generate mipmaps
+	 * @param strPath Path to the .ztxtr
 	 * @return SUCCESS, or an error code on failure
 	 */
-	Zenith_Status LoadFromFile(const std::string& strPath, bool bCreateMips = true);
+	Zenith_Status LoadFromFile(const std::string& strPath);
 
-	// The single .ztxtr parser. Reads the envelope (if any) + header, then either
-	// the legacy single-mip payload or the v2 multi-mip chain (strictly validated),
-	// into xOutBytes. Sets xOutInfo (format/dims/type/layers + m_uNumMips = mips
-	// actually present in the file) and bOutIsV2 (true => xOutBytes holds a packed
-	// chain). Used by both LoadFromFile (then GPU-uploads) and LoadCPUData.
+	// The single .ztxtr parser. Requires the stream envelope and the current
+	// schema, then reads the strictly-validated packed mip chain into xOutBytes and
+	// fills xOutInfo (format/dims/type/layers + m_uNumMips). Used by both
+	// LoadFromFile (which then GPU-uploads) and LoadCPUData.
 	static Zenith_Status ParseZtxtr(const std::string& strPath, Zenith_DataStream& xStream,
-		Flux_SurfaceInfo& xOutInfo, Zenith_Vector<uint8_t>& xOutBytes, bool& bOutIsV2);
+		Flux_SurfaceInfo& xOutInfo, Zenith_Vector<uint8_t>& xOutBytes);
 
 	bool m_bGPUResourcesAllocated = false;
 };

@@ -741,7 +741,7 @@ static void ExportChunkBatch(void* pData, u_int uInvocationIndex, u_int uNumInvo
 		x, z, uHeighestNewOffset + 1, xSubMesh.m_uNumVerts);
 
 	GenerateTerrainLayoutAndVertexData(xSubMesh, xDims);
-	xSubMesh.Export((pxData->strOutputDir + pxData->strName + std::string("_") + std::to_string(x) + std::string("_") + std::to_string(z) + std::string(ZENITH_MESH_EXT)).c_str());
+	xSubMesh.Export((pxData->strOutputDir + pxData->strName + std::string("_") + std::to_string(x) + std::string("_") + std::to_string(z) + std::string(ZENITH_GEOMETRY_EXT)).c_str());
 
 	Zenith_MemoryManagement::Deallocate(puRightEdgeIndices);
 	Zenith_MemoryManagement::Deallocate(puTopEdgeIndices);

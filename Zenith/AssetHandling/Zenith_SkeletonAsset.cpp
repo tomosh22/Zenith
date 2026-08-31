@@ -33,7 +33,7 @@ void Zenith_SkeletonAsset::Bone::WriteToDataStream(Zenith_DataStream& xStream) c
 	xStream << m_bHasAssimpInverseBindPose;
 }
 
-void Zenith_SkeletonAsset::Bone::ReadFromDataStream(Zenith_DataStream& xStream, uint32_t uVersion)
+void Zenith_SkeletonAsset::Bone::ReadFromDataStream(Zenith_DataStream& xStream)
 {
 	xStream >> m_strName;
 	xStream >> m_iParentIndex;
@@ -53,11 +53,10 @@ void Zenith_SkeletonAsset::Bone::ReadFromDataStream(Zenith_DataStream& xStream, 
 	xStream.ReadData(&m_xBindPoseModel[0][0], sizeof(Zenith_Maths::Matrix4));
 	xStream.ReadData(&m_xInverseBindPose[0][0], sizeof(Zenith_Maths::Matrix4));
 
-	// Read flag (added in version 2)
-	if (uVersion >= 2)
-	{
-		xStream >> m_bHasAssimpInverseBindPose;
-	}
+	// Unconditional: ParseStream refuses any schema but the current one, so this
+	// field is always present. It used to be guarded by `uVersion >= 2`, which
+	// only had meaning while an older schema could still reach this reader.
+	xStream >> m_bHasAssimpInverseBindPose;
 }
 
 //------------------------------------------------------------------------------
@@ -160,7 +159,13 @@ Zenith_Status Zenith_SkeletonAsset::ParseStream(Zenith_DataStream& xStream)
 
 	if (uVersion != uZENITH_SKELETON_SCHEMA_CURRENT)
 	{
-		Zenith_Log(LOG_CATEGORY_ANIMATION, "Version mismatch: expected %u, got %u", uZENITH_SKELETON_SCHEMA_CURRENT, uVersion);
+		// ★ REFUSED, NOT LOGGED AND READ ANYWAY. Parsing one schema's bytes with
+		// another's field order yields a plausible skeleton rather than an error.
+		// A .zskel is regenerable bake output: delete it and re-bake.
+		Zenith_Error(LOG_CATEGORY_ANIMATION,
+			"Zenith_SkeletonAsset: schema %u is not the current %u; re-bake this asset",
+			uVersion, uZENITH_SKELETON_SCHEMA_CURRENT);
+		return Zenith_ErrorCode::VERSION_MISMATCH;
 	}
 
 	// Bone count
@@ -171,7 +176,7 @@ Zenith_Status Zenith_SkeletonAsset::ParseStream(Zenith_DataStream& xStream)
 	for (uint32_t u = 0; u < uNumBones; u++)
 	{
 		Bone xBone;
-		xBone.ReadFromDataStream(xStream, uVersion);
+		xBone.ReadFromDataStream(xStream);
 
 		m_xBoneNameToIndex[xBone.m_strName] = u;
 		m_xBones.PushBack(std::move(xBone));

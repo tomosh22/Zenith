@@ -34,6 +34,10 @@ static const EditorFileTypeInfo s_axKnownFileTypes[] = {
 	{ ZENITH_TEXTURE_EXT,    "[TEX]", "Texture",   DRAGDROP_PAYLOAD_TEXTURE },
 	{ ZENITH_MATERIAL_EXT,   "[MAT]", "Material",  DRAGDROP_PAYLOAD_MATERIAL },
 	{ ZENITH_MESH_EXT,       "[MSH]", "Mesh",      DRAGDROP_PAYLOAD_MESH },
+	// Flux_MeshGeometry's own format -- terrain chunks and the shared prop sets.
+	// A different file type from .zmesh, so it is browsable as its own row rather
+	// than being invisible in the browser.
+	{ ZENITH_GEOMETRY_EXT,   "[GEO]", "Geometry",  DRAGDROP_PAYLOAD_MESH },
 	{ ZENITH_MODEL_EXT,      "[MDL]", "Model",     DRAGDROP_PAYLOAD_MODEL },
 	{ ZENITH_PREFAB_EXT,     "[PRE]", "Prefab",    DRAGDROP_PAYLOAD_PREFAB },
 	{ ZENITH_SCENE_EXT,      "[SCN]", "Scene",     DRAGDROP_PAYLOAD_FILE_GENERIC },

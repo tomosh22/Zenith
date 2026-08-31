@@ -1,4 +1,6 @@
 #include "Zenith.h"
+#include "DataStream/Zenith_StreamEnvelope.h"   // Zenith_WriteStreamHeader — the .ztxtr envelope
+#include "AssetHandling/Zenith_AssetTypeIds.h"     // uZENITH_TEXTURE_* ids/schema
 #include "Core/Zenith_Engine.h"
 
 #include "Core/Zenith_CommandLine.h"
@@ -136,11 +138,14 @@ namespace
 	// Write an iSize*iSize RGBA8 .ztxtr.
 	void CB_WriteRGBA8Texture(const std::string& strAbsPath, int iSize, const std::vector<uint8_t>& xData)
 	{
+		// ★ The .ztxtr envelope is part of the format -- one declared level.
 		Zenith_DataStream xStream;
+		Zenith_WriteStreamHeader(xStream, uZENITH_TEXTURE_ASSET_TYPE_ID, uZENITH_TEXTURE_SCHEMA_V2);
 		xStream << static_cast<int32_t>(iSize);
 		xStream << static_cast<int32_t>(iSize);
 		xStream << static_cast<int32_t>(1);
 		xStream << static_cast<TextureFormat>(TEXTURE_FORMAT_RGBA8_UNORM);
+		xStream << static_cast<uint32_t>(1);
 		xStream << static_cast<size_t>(xData.size());
 		xStream.WriteData(const_cast<uint8_t*>(xData.data()), xData.size());
 		xStream.WriteToFile(strAbsPath.c_str());
@@ -232,11 +237,15 @@ namespace
 					CB_TerrainGen::HillNorm(static_cast<float>(px), static_cast<float>(pz));
 			}
 		}
+		// ★ Same single .ztxtr layout as everything else -- the heightmap is read
+		// back through Zenith_TextureAsset::LoadCPUData like any other texture.
 		Zenith_DataStream xStream;
+		Zenith_WriteStreamHeader(xStream, uZENITH_TEXTURE_ASSET_TYPE_ID, uZENITH_TEXTURE_SCHEMA_V2);
 		xStream << static_cast<int32_t>(iSize);
 		xStream << static_cast<int32_t>(iSize);
 		xStream << static_cast<int32_t>(1);
 		xStream << static_cast<TextureFormat>(TEXTURE_FORMAT_R32_SFLOAT);
+		xStream << static_cast<uint32_t>(1);
 		xStream << static_cast<size_t>(xHeights.size() * sizeof(float));
 		xStream.WriteData(xHeights.data(), xHeights.size() * sizeof(float));
 		xStream.WriteToFile(strAbsPath.c_str());
@@ -280,7 +289,7 @@ static void CB_EnsureTerrainAssets()
 	// terrain-shape change: the engine's physics chunks moved from a density
 	// divisor of 8 (81 verts) to 4 (289 verts), and Zenith_TerrainComponent
 	// validates a loaded chunk against Zenith_TerrainChunkLayout — so every v4
-	// bake's Physics_*.zmesh is now rejected and the city would load with NO
+	// bake's Physics_*.zgeom is now rejected and the city would load with NO
 	// terrain collision.
 	// v6 is also not a shape change: the exporter now emits a COMPLETE chunk at
 	// the positive grid border (x==63 / z==63). Those 127 chunks previously baked

@@ -17,7 +17,7 @@
 //
 // Back-compat: Zenith_ReadStreamHeader does a NON-DESTRUCTIVE peek (saves and
 // restores the stream cursor on every return path, exactly like
-// ValidateSceneStream). A legacy headerless stream therefore returns BAD_MAGIC
+// ValidateSceneStream). A stream carrying no envelope therefore returns BAD_MAGIC
 // with the cursor untouched, letting the caller rewind and read the old
 // (version 0) layout. Kept dependency-light (Zenith_Result.h +
 // Zenith_DataStream.h only) so it can be included from typed-asset .cpp files
@@ -44,7 +44,7 @@ void Zenith_WriteStreamHeader(Zenith_DataStream& xStream, u_int uAssetTypeId, u_
 // Non-destructive header read. On success, returns the parsed header AND leaves
 // the cursor positioned immediately after the header (ready for the payload).
 // On BAD_MAGIC / VERSION_MISMATCH, restores the cursor to its entry offset so a
-// legacy headerless stream can be rewound and read by the old path.
+// rejected stream is handed back with its cursor exactly as it arrived.
 //   - BAD_MAGIC        : magic mismatch (or stream too small to hold a header)
 //   - VERSION_MISMATCH : envelope version newer than uSTREAM_ENVELOPE_VERSION_CURRENT
 //   - INVALID_ARGUMENT : asset-type-id mismatch against uExpectedTypeId
@@ -52,8 +52,10 @@ Zenith_Result<Zenith_StreamHeader> Zenith_ReadStreamHeader(Zenith_DataStream& xS
 
 // Resolve a typed-asset stream's schema version — the read preamble every typed
 // asset's ParseStream shares. Reads the shared envelope (validating uExpectedTypeId)
-// and yields its schema version; on a legacy pre-envelope stream (BAD_MAGIC, cursor
-// restored) reads the bare leading version word instead. Returns the envelope error
-// (INVALID_ARGUMENT on a type-id mismatch, VERSION_MISMATCH on a newer envelope) on a
-// genuine failure; the caller applies its own per-schema payload policy afterwards.
+// and yields its schema version. The envelope is MANDATORY -- a stream without one
+// is refused with BAD_MAGIC rather than being read as a bare version word, because
+// every asset file is regenerable bake output and an older layout is a stale bake,
+// not a file to support. Returns INVALID_ARGUMENT on a type-id mismatch and
+// VERSION_MISMATCH on a newer envelope; the caller applies its own per-schema
+// payload policy afterwards.
 Zenith_Status Zenith_ReadAssetStreamVersion(Zenith_DataStream& xStream, u_int uExpectedTypeId, uint32_t& uOutVersion);

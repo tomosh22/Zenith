@@ -11,14 +11,15 @@ void Zenith_WriteStreamHeader(Zenith_DataStream& xStream, u_int uAssetTypeId, u_
 
 Zenith_Result<Zenith_StreamHeader> Zenith_ReadStreamHeader(Zenith_DataStream& xStream, u_int uExpectedTypeId)
 {
-	// Non-destructive: every failure path restores the cursor to its entry
-	// offset so a legacy headerless stream can be rewound and read by the old
-	// path. Mirrors Zenith_SceneData::ValidateSceneStream. On success the cursor
-	// is intentionally left positioned just past the header, ready for the payload.
+	// Non-destructive: every failure path restores the cursor to its entry offset,
+	// so a rejected stream is left exactly as it was handed over and the caller's
+	// error handling cannot be confused by a half-consumed cursor. On success the
+	// cursor is intentionally left positioned just past the header, ready for the
+	// payload.
 	const uint64_t ulSavedCursor = xStream.GetCursor();
 
-	// A stream too small to contain a full header is treated as headerless
-	// (legacy). Report BAD_MAGIC so the caller rewinds and reads the old layout.
+	// A stream too small to hold a full header cannot carry one, which is the same
+	// answer as a mismatched magic: this is not an asset stream.
 	static constexpr uint64_t ulHEADER_SIZE = sizeof(u_int) * 4;
 	if (!xStream.IsValid() || (xStream.GetCapacity() - ulSavedCursor) < ulHEADER_SIZE)
 	{
@@ -34,7 +35,7 @@ Zenith_Result<Zenith_StreamHeader> Zenith_ReadStreamHeader(Zenith_DataStream& xS
 
 	if (xHeader.m_uMagic != uSTREAM_ENVELOPE_MAGIC)
 	{
-		// Not our envelope — almost certainly a legacy headerless payload.
+		// Not our envelope. Nothing else is accepted.
 		xStream.SetCursor(ulSavedCursor);
 		return Zenith_ErrorCode::BAD_MAGIC;
 	}
@@ -61,20 +62,23 @@ Zenith_Result<Zenith_StreamHeader> Zenith_ReadStreamHeader(Zenith_DataStream& xS
 
 Zenith_Status Zenith_ReadAssetStreamVersion(Zenith_DataStream& xStream, u_int uExpectedTypeId, uint32_t& uOutVersion)
 {
+	// ★★ THE ENVELOPE IS MANDATORY. This used to fall back to reading a bare
+	// leading version word when the magic did not match, so a pre-envelope file
+	// still loaded. That path is gone: a stream without the envelope is not an
+	// asset this engine reads, and BAD_MAGIC is returned to the caller like any
+	// other failure rather than being caught and worked around.
+	//
+	// ★ NOTHING IS STRANDED BY THIS, and that is why it can simply be deleted
+	// rather than migrated. Every asset file lives under the `**/Assets/**`
+	// gitignore and is BAKE OUTPUT: a file in an older layout is a stale bake, and
+	// the fix is to delete it and let the tools boot rewrite it — which is the
+	// same thing a fresh clone does unconditionally. There is no such file
+	// anywhere that is not reproducible from its source.
 	Zenith_Result<Zenith_StreamHeader> xHeader = Zenith_ReadStreamHeader(xStream, uExpectedTypeId);
-	if (!xHeader.IsOk() && xHeader.Error() != Zenith_ErrorCode::BAD_MAGIC)
+	if (!xHeader.IsOk())
 	{
-		return xHeader.Error();   // wrong type id / newer envelope — not a legacy file
+		return xHeader.Error();
 	}
-	if (xHeader.IsOk())
-	{
-		uOutVersion = xHeader.Value().m_uSchemaVersion;
-	}
-	else
-	{
-		// Legacy pre-envelope stream: the peek restored the cursor to 0, so the bare
-		// leading version word is still there.
-		xStream >> uOutVersion;
-	}
+	uOutVersion = xHeader.Value().m_uSchemaVersion;
 	return true;
 }
