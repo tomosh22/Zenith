@@ -75,6 +75,7 @@ enum class Zenith_EditorActionType
 	SET_LIGHT_INTENSITY,
 	SET_LIGHT_RANGE,
 	SET_LIGHT_COLOR,
+	SET_LIGHT_POSITION_OFFSET,
 
 	// Sun-authority field edits (geometry only; there is intentionally no
 	// colour/intensity action).
@@ -498,6 +499,17 @@ void AddStep_SetTransformRotationQuat(float fX, float fY, float fZ, float fW);
 void AddStep_SetLightIntensity(float fLumens);
 void AddStep_SetLightRange(float fMetres);
 void AddStep_SetLightColor(float fR, float fG, float fB);
+	// ★ THE OFFSET IS IN THE MODEL'S LOCAL SPACE, not world -- it is scaled and
+	// rotated by the entity's own transform before it is applied
+	// (Zenith_LightComponent::GetWorldPosition). That is what lets a light share
+	// an entity with a MODEL and sit at a named point ON it: a bulb inside a lamp
+	// post's lantern head, measured off the mesh once and still correct after the
+	// prop fit rescales the asset or the placement turns it.
+	//
+	// Setting it also ENABLES the offset -- an offset authored and left switched
+	// off is a light silently at its entity origin, which is the failure this
+	// verb exists to make impossible to author by halves.
+void AddStep_SetLightPositionOffset(float fX, float fY, float fZ);
 
 	// Sun component field edits. Apply after AddStep_AddComponent("Sun").
 void AddStep_SetSunDirection(float fX, float fY, float fZ);

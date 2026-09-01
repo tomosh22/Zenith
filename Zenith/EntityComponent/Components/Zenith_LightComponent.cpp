@@ -4,6 +4,13 @@
 #include "EntityComponent/Components/Zenith_SunComponent.h"
 #include "EntityComponent/Components/Zenith_AtmosphereComponent.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
+#ifdef ZENITH_TOOLS
+// The offset editor reads the sibling model's LOCAL bounds so an author can see
+// the box a bulb has to sit inside. Both edges are TOOLS-only and panel-only.
+#include "EntityComponent/Components/Zenith_ModelComponent.h"
+#include "Flux/MeshGeometry/Flux_MeshInstance.h"
+#include "Maths/Zenith_FrustumCulling.h"   // Zenith_AABB
+#endif
 #include "ZenithECS/Zenith_ComponentMeta.h"
 
 // Wave 3: EC-side render-gather (publishes neutral light data to the renderer so
@@ -27,7 +34,7 @@ void Zenith_LightComponent::RegisterProperties(Zenith_Vector<Zenith_PropertyDesc
 	ZENITH_REGISTER_COMPONENT_PROPERTY(Zenith_LightComponent, m_fSpotInnerAngle,   "SpotInnerAngle",   axProperties);
 	ZENITH_REGISTER_COMPONENT_PROPERTY(Zenith_LightComponent, m_fSpotOuterAngle,   "SpotOuterAngle",   axProperties);
 	ZENITH_REGISTER_COMPONENT_PROPERTY(Zenith_LightComponent, m_bCastShadows,      "CastShadows",      axProperties);
-	ZENITH_REGISTER_COMPONENT_PROPERTY(Zenith_LightComponent, m_xPositionOffset,   "PositionOffset",   axProperties);
+	ZENITH_REGISTER_COMPONENT_PROPERTY(Zenith_LightComponent, m_xLocalPositionOffset, "LocalPositionOffset", axProperties);
 	ZENITH_REGISTER_COMPONENT_PROPERTY(Zenith_LightComponent, m_xDirectionOffset,  "DirectionOffset",  axProperties);
 }
 
@@ -43,21 +50,63 @@ Zenith_LightComponent::Zenith_LightComponent(Zenith_Entity& xEntity)
 {
 }
 
+// ============================================================================
+// ★★★ THE OFFSET IS IN THE MODEL'S OWN SPACE, AND IT USED TO BE ADDED IN WORLD
+// SPACE. The old body was `xPos += m_xLocalPositionOffset` -- a plain world-space
+// add that ignored the entity's rotation and scale entirely. That is fine for
+// the only thing it had ever been used for, which is nothing: no game code set
+// it, so the defect could not show.
+//
+// It shows the moment a light shares an entity with a MODEL, which is what a
+// lamp post needs -- the bulb is a point inside the lantern head, and "inside
+// the lantern head" is a statement about the mesh, not about the world:
+//
+//   * ROTATION. Turn the lamp post a quarter turn and a world-space offset
+//     leaves the bulb where it was, now floating beside the post. Every
+//     interior prop's yaw is authored, and the outdoor table can carry one too.
+//   * SCALE, which is the one that bites even with no rotation at all.
+//     ZM_ComputePropFit scales an imported prop by whatever it takes to reach
+//     its roster size -- 3.0060 for this lamp post, from a model 0.998 m tall.
+//     A world-space offset would have to be typed POST-scale, so re-exporting
+//     the asset at a different size silently moves the bulb out of the lantern
+//     -- exactly the coupling ZM_PropFit.h exists to remove ("someone
+//     re-exports the bed at a different scale and nothing in the game needs
+//     editing").
+//
+// So the offset is transformed by the parent's rotation and scale, which makes
+// it a point ON THE MODEL: measured once off the mesh in the mesh's own units,
+// correct at every scale and every yaw thereafter.
+// ============================================================================
 Zenith_Maths::Vector3 Zenith_LightComponent::GetWorldPosition() const
 {
 	Zenith_Maths::Vector3 xPos(0.0f);
-	if (m_xParentEntity.IsValid())
+	if (!m_xParentEntity.IsValid())
 	{
-		if (Zenith_TransformComponent* pxTransform = m_xParentEntity.TryGetComponent<Zenith_TransformComponent>())
-		{
-			pxTransform->GetPosition(xPos);
-		}
+		return m_bUsePositionOffset ? m_xLocalPositionOffset : xPos;
 	}
-	if (m_bUsePositionOffset)
+
+	Zenith_TransformComponent* pxTransform =
+		m_xParentEntity.TryGetComponent<Zenith_TransformComponent>();
+	if (pxTransform == nullptr)
 	{
-		xPos += m_xPositionOffset;
+		return m_bUsePositionOffset ? m_xLocalPositionOffset : xPos;
 	}
-	return xPos;
+	pxTransform->GetPosition(xPos);
+
+	if (!m_bUsePositionOffset)
+	{
+		return xPos;
+	}
+
+	Zenith_Maths::Quat xRotation(1.0f, 0.0f, 0.0f, 0.0f);
+	Zenith_Maths::Vector3 xScale(1.0f);
+	pxTransform->GetRotation(xRotation);
+	pxTransform->GetScale(xScale);
+
+	// Scale first, then rotate, then translate -- the same order the transform
+	// itself composes, so the offset lands exactly where the equivalent point on
+	// the mesh does.
+	return xPos + (xRotation * (m_xLocalPositionOffset * xScale));
 }
 
 Zenith_Maths::Vector3 Zenith_LightComponent::GetWorldDirection() const
@@ -150,7 +199,7 @@ void Zenith_LightComponent::WriteToDataStream(Zenith_DataStream& xStream) const
 	xStream << m_fSpotOuterAngle;
 	xStream << m_bCastShadows;
 	xStream << m_bUsePositionOffset;
-	xStream << m_xPositionOffset;
+	xStream << m_xLocalPositionOffset;
 	xStream << m_bUseDirectionOffset;
 	xStream << m_xDirectionOffset;
 }
@@ -175,7 +224,7 @@ void Zenith_LightComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 		xStream >> m_fSpotOuterAngle;
 		xStream >> m_bCastShadows;
 		xStream >> m_bUsePositionOffset;
-		xStream >> m_xPositionOffset;
+		xStream >> m_xLocalPositionOffset;
 		xStream >> m_bUseDirectionOffset;
 		xStream >> m_xDirectionOffset;
 	}
@@ -295,16 +344,111 @@ void Zenith_LightComponent::RenderSpotParameters()
 	}
 }
 
+// ★★ THE OFFSET EDITOR IS FOR PLACING A BULB INSIDE A MESH, and that is a harder
+// job than a DragFloat3 alone supports. This panel used to be exactly that: three
+// numbers, in world space, with no indication of where the light actually ended
+// up or what range of values was even sensible. Putting a light inside a lamp
+// post's lantern head through it meant typing a number, building, looking, and
+// typing another.
+//
+// What it shows now, when the entity also owns a model:
+//   * the offset in the MODEL's own units, which is what GetWorldPosition now
+//     consumes -- so a value read off the mesh can be typed in directly and stays
+//     correct at every scale and yaw the prop is authored at;
+//   * the model's local bounds, so the author can see the box the bulb has to be
+//     inside rather than guessing at the magnitude;
+//   * the offset as a FRACTION of those bounds, which is how a lantern head is
+//     actually described ("87% of the way up the post");
+//   * the resolved WORLD position, which is what the renderer will use, and
+//     whether the offset currently lands inside the model's bounds at all --
+//     a light outside its own casing is the failure this panel exists to prevent;
+//   * a one-click CENTRE OF BOUNDS, the sane starting point to drag from.
 void Zenith_LightComponent::RenderTransformOffsets()
 {
 	ImGui::Checkbox("Use Position Offset", &m_bUsePositionOffset);
 	if (m_bUsePositionOffset)
 	{
-		float afPos[3] = { m_xPositionOffset.x, m_xPositionOffset.y, m_xPositionOffset.z };
-		if (ImGui::DragFloat3("Position Offset", afPos, 0.1f))
+		// The model this light shares an entity with, if any. A light on its OWN
+		// entity (which is how every interior lamp in Zenithmon is authored) has
+		// none, and the extra read-outs are simply omitted for it -- there is no
+		// mesh for an offset to be relative TO.
+		const Zenith_ModelComponent* pxModel = m_xParentEntity.IsValid()
+			? m_xParentEntity.TryGetComponent<Zenith_ModelComponent>()
+			: nullptr;
+		const Flux_MeshInstance* pxInstance =
+			(pxModel != nullptr && pxModel->GetNumMeshes() > 0u)
+				? pxModel->GetMeshInstance(0u)
+				: nullptr;
+
+		float afPos[3] = { m_xLocalPositionOffset.x, m_xLocalPositionOffset.y,
+			m_xLocalPositionOffset.z };
+		// 1 mm per pixel: a bulb inside a lantern is placed to the millimetre, and
+		// the old 0.1 step moved it 10 cm a pixel -- straight through the casing.
+		if (ImGui::DragFloat3("Local Position Offset", afPos, 0.001f, 0.0f, 0.0f, "%.4f"))
 		{
-			m_xPositionOffset = { afPos[0], afPos[1], afPos[2] };
+			m_xLocalPositionOffset = { afPos[0], afPos[1], afPos[2] };
 		}
+		if (ImGui::IsItemHovered())
+		{
+			ImGui::SetTooltip("In the MODEL's own units, before the entity's scale and\n"
+				"rotation. Measure it off the mesh once and it stays correct\n"
+				"if the asset is re-exported at another size.");
+		}
+
+		if (pxInstance != nullptr)
+		{
+			const Zenith_AABB& xLocal = pxInstance->GetLocalBounds();
+			const Zenith_Maths::Vector3 xSize = xLocal.m_xMax - xLocal.m_xMin;
+			const Zenith_Maths::Vector3 xCentre = (xLocal.m_xMin + xLocal.m_xMax) * 0.5f;
+
+			ImGui::TextDisabled("model bounds  (%.4f, %.4f, %.4f) .. (%.4f, %.4f, %.4f)",
+				xLocal.m_xMin.x, xLocal.m_xMin.y, xLocal.m_xMin.z,
+				xLocal.m_xMax.x, xLocal.m_xMax.y, xLocal.m_xMax.z);
+
+			// Where the offset sits inside those bounds, per axis, as a fraction.
+			// A denominator of zero is a flat axis; report the centre for it rather
+			// than a NaN the author has to interpret.
+			const auto Fraction = [](float fValue, float fMin, float fExtent) -> float
+			{
+				return (fExtent > 1.0e-6f) ? ((fValue - fMin) / fExtent) : 0.5f;
+			};
+			ImGui::TextDisabled("as a fraction  (%.3f, %.3f, %.3f) of those bounds",
+				Fraction(m_xLocalPositionOffset.x, xLocal.m_xMin.x, xSize.x),
+				Fraction(m_xLocalPositionOffset.y, xLocal.m_xMin.y, xSize.y),
+				Fraction(m_xLocalPositionOffset.z, xLocal.m_xMin.z, xSize.z));
+
+			const bool bInside =
+				m_xLocalPositionOffset.x >= xLocal.m_xMin.x && m_xLocalPositionOffset.x <= xLocal.m_xMax.x &&
+				m_xLocalPositionOffset.y >= xLocal.m_xMin.y && m_xLocalPositionOffset.y <= xLocal.m_xMax.y &&
+				m_xLocalPositionOffset.z >= xLocal.m_xMin.z && m_xLocalPositionOffset.z <= xLocal.m_xMax.z;
+			if (bInside)
+			{
+				ImGui::TextDisabled("inside the model's bounds");
+			}
+			else
+			{
+				// Not an error -- a porch light hanging off a wall is legitimately
+				// outside the wall's bounds -- but for a bulb it is the whole bug,
+				// so it is said out loud rather than left to be noticed in a render.
+				ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.2f, 1.0f),
+					"OUTSIDE the model's bounds");
+			}
+
+			if (ImGui::Button("Centre of bounds"))
+			{
+				m_xLocalPositionOffset = xCentre;
+			}
+			if (ImGui::IsItemHovered())
+			{
+				ImGui::SetTooltip("Start from the middle of the mesh and drag out.");
+			}
+		}
+
+		// What the renderer will actually use. The offset is the input; THIS is the
+		// thing that was previously impossible to see without a build.
+		const Zenith_Maths::Vector3 xWorld = GetWorldPosition();
+		ImGui::TextDisabled("world position  (%.4f, %.4f, %.4f)",
+			xWorld.x, xWorld.y, xWorld.z);
 	}
 
 	// Direction offset applies to spot/directional only (point lights are omnidirectional).
@@ -321,7 +465,8 @@ void Zenith_LightComponent::RenderTransformOffsets()
 	}
 	if (ImGui::IsItemHovered())
 	{
-		ImGui::SetTooltip("Direction is automatically normalized");
+		ImGui::SetTooltip("Absolute WORLD direction, unlike the position offset above,\n"
+			"and automatically normalized.");
 	}
 }
 #endif

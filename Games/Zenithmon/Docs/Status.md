@@ -1,6 +1,6 @@
 # Zenithmon Status
 
-**Last updated:** 2026-08-28
+**Last updated:** 2026-09-01
 
 **Board:** `ZM` on the agent board. **The work items live there** — epics, stories,
 tasks, bugs, blockers, sprints and releases — and [Board.md](Board.md) explains the
@@ -17,8 +17,8 @@ The S0-S7 narrative that used to fill the back half of this file moved VERBATIM 
 [History.md](History.md) on 2026-08-18, so this file can hold to the ~25-line budget
 its own template in `AgentBriefing.md` §2.3 specifies. Nothing was deleted.
 
-**★ LIVE PIN (UPDATED 2026-08-31):
-ZM boot `3577`; engine boot (Null Combat) `1758`; Null RenderTest `1849`; registry **71**.**
+**★ LIVE PIN (UPDATED 2026-09-01):
+ZM boot `3590`; engine boot (Null Combat) `1763`; Null RenderTest `1854`; registry **71**.**
 
 > **★ ALL THREE ROWS MOVE (2026-08-30), and that is the tell that this one touched
 > `Zenith/**`.** The `.glb` import path is ENGINE-side (`Tools/` compiles into
@@ -287,6 +287,543 @@ ZM boot `3577`; engine boot (Null Combat) `1758`; Null RenderTest `1849`; regist
 > RenderTest `1849` -- all three from their own `Null_` runs. **+5 new tangent
 > units, -2 deleted legacy-material units = +3 on every row**, which is the
 > signature of an engine change.
+
+> **★★★ ZM +4 (2026-09-01, later) -- EVERY GENERATED PROP IS NOW PLACED IN GAME,
+> which is a RULING and not a preference.** *"If the game generates an asset then
+> it should be placed in game, unless there is a glb asset to replace, in which
+> case the glb asset must be used."* Both halves are mechanical now.
+> `Dawnmere.zscen` goes **48 -> 76 entities**, 80686 -> 85199 bytes, the only
+> scene that moved. Pin **3586 -> 3590**, OBSERVED.
+>
+> ★★★ **TWELVE OF TWENTY-EIGHT ROSTER ROWS WERE RENDERED NOWHERE**, and nothing
+> said so -- the count had to be produced by grepping, and the first attempt at it
+> was wrong twice over (it called the six battle-dome dressing sets unused when
+> `ZM_BattleArena.cpp` places all six, and missed the three ground items). That is
+> the whole reason `Source/World/ZM_PropPlacement.h` exists: the answer is a
+> FUNCTION anything can call, and `ZM_Dressing/EveryGeneratedPropIsPlacedInGame`
+> refuses a row that answers NONE. OBSERVED: **28 props -- 6 interior, 13
+> Dawnmere, 6 battle arena, 3 ground item, 0 NOWHERE.**
+>
+> ★★ **THE COST OF THE OLD STATE WAS NOT COSMETIC.** A `.glb` dropped onto a row
+> nothing places replaces a model that still does not appear, so the import looks
+> finished and renders nowhere. AB-PROP-07 arrived exactly that way -- LampPost
+> had never been placed in any scene, so importing art for it was half a job and
+> the placement row was the other half. That is now impossible to repeat silently.
+>
+> ★★ **THE SECOND HALF HAS ITS OWN GUARD, and it had already failed once.**
+> `ZM_Gen/ImportedPropsUseTheirGlbAndNotTheGenerator` asserts that every prop with
+> a `.glb` beside it has an IMPORTED baked mesh. The threshold is derived, not
+> picked: measured across the roster, the largest GENERATED prop is **120**
+> vertices (fence and bridge sections -- box compositions) and the smallest
+> IMPORTED one is **3515** (the table), a 29x gap, so 1000 sits ~8x above every
+> generator and ~3.5x below every import. OBSERVED: 7 imported props, 3515-7353
+> verts, all using their `.glb`.
+>
+> ★★ **THE 28 COORDINATES WERE CHOSEN AGAINST A VALIDATED MODEL, not by eye and
+> not by build-and-see.** An offline replica of `ZM_DawnmereBodyAnchorClearance`
+> was checked FIRST against the eight barrel and lamp-post figures the engine had
+> already reported -- it reproduces all eight to **0.4 mm** -- and every row was
+> then picked to clear the margin before one was compiled. All 28 passed the
+> engine's own clause on the first run, worst 1.992 m against a 1.00 m margin.
+> **Validate the instrument on answers you already have, then use it.**
+>
+> ★ **WHAT WENT WHERE.** Notice board and two sign posts on the plaza's north
+> edge; two lantern posts up the route lane; a four-section timber fence west of
+> the home and a four-section dry-stone wall east of the lab; two small rocks, two
+> large and a boulder on the outskirts; two low and two high ledges on the rising
+> ground south of town; and two three-section crossings flanking the lane.
+>
+> ★★ **A FENCE'S SPACING IS ITS OWN ROSTER LENGTH, and that is now checked.**
+> `ZM_ComputePropFit` scales every delivery so its longest axis lands exactly on
+> the roster's longest number, so centres one roster-length apart abut whatever
+> mesh arrives -- OBSERVED, the generated fence comes in at scale 0.9238, i.e. the
+> generator's +/-4% jitter being corrected onto exactly 2.0 m.
+> `FenceRunSpacingMatchesTheRosterLength` refuses a stale spacing after a
+> re-roster, and it keys on WIDTH for a fence and DEPTH for a bridge because the
+> two families tile along different axes.
+>
+> ★ **THE ANCHOR RULE MOVED ONTO THE ROW.** The old clause asserted one rule for
+> the whole table -- "every outdoor prop stands against a building wall" -- true
+> of the four barrels it was written for and false of everything since. Inferring
+> it from `ZM_PROP_KIND` fails too: a lamp post flanks a doorway and a lantern
+> post lines a lane, and both are `ZM_PROP_KIND_LAMP`. Each row now states
+> `FREE` / `BUILDING_WALL` / `BUILDING_CORNER` and the unit checks THAT claim.
+> OBSERVED: 36 outdoor props, 4 against a wall, 4 past a corner, 28 free-standing.
+>
+> ★ **THE FOUR FROZEN YAW VALUES GOT ONE HOME** (`ZM_PropData.h`), because there
+> are two placement tables now and a frozen constant copied into the second is how
+> two tables start disagreeing.
+>
+> ★★ **THIS MAP HAS NO WATERCOURSE, AND THE TWO BRIDGE RUNS SAY SO** rather than
+> pretending otherwise. `ZM_GetDawnmereTerrainRecipe` has four pads, three paths
+> and no water feature, so those six sections are dry crossings over the low
+> ground either side of the lane -- honest as a culvert or a boardwalk, thin as a
+> "bridge". They are placed because the ruling says a generated asset is placed;
+> the right home is a stream, the day the terrain has one.
+>
+> ★ **The showcase gained a SECOND Dawnmere pose**, sharing the scene with the
+> first. A room row is a POSE, not a scene, so the plan now compares SCENES before
+> reloading -- the second wide costs nothing where a second load would have cost
+> the 600-frame room deadline again. It exists because the headless clauses prove
+> a prop is placed, clears the keep-out and is inside the terrain, and none of them
+> can tell whether it RENDERS or is half-sunk. OBSERVED: 19 distinct prop models
+> loaded, **zero** load failures.
+>
+> Gates: ZM **3590 ran / 0 failed**, `zenith test Zenithmon` **71 passed / 0
+> failed**, doc_lint green, `ZM_ImportedPropShowcase_Test` PASSED with **24
+> captures**, every scene republishes IDENTICAL on a second boot. Combat and
+> RenderTest are untouched: every new unit is Zenithmon-side.
+
+> **★★★ ZM +6 (2026-09-01) -- the SEVENTH import, AB-PROP-07 LampPost, and the
+> first prop whose ENTITY OWNS A LIGHT.** Four lamp posts flank Dawnmere's two
+> doorways, each with a point light AT ITS BULB rather than at its feet.
+> `Dawnmere.zscen` goes **44 -> 48 entities**, 79720 -> 80686 bytes, and is the
+> only scene that moved. Pin **3580 -> 3586**, OBSERVED.
+>
+> ★★★ **THE IMPORT HAD NEVER SURVIVED A SINGLE BOOT, AND THE SUITE WAS GREEN.**
+> `ZM_Gen/PropBake_StaticModelFilesLandAndNoRig` hard-coded `ZM_PROP_LAMP_POST`
+> and called `ZM_BakeProp` UNCONDITIONALLY -- an arbitrary representative, chosen
+> when every prop in the roster was generated. The `.glb` import runs earlier in
+> the same boot and writes the same paths, so between the import log line and the
+> unit tally the mesh went **6623 verts -> 72** and every texture **2.8 MB ->
+> 11 KB**, every boot, with nothing failing. The first measurement taken off that
+> file was of a greybox wearing an imported asset's name.
+>
+> ★ **THE FIX IS NOT "POINT IT AT ANOTHER PROP"**, which re-arms the trap for
+> whichever row is imported next. The test is about the GENERATOR, so its subject
+> must be a prop the generator owns -- which is a property of the TREE, not a
+> constant. It now resolves the first roster row with no `.glb` beside it
+> (OBSERVED: `FenceWood`) and SKIPS if every prop has been imported, because that
+> day baking one would destroy an asset. `ZM_EnsurePropBaked` was never the
+> culprit: it is warm-safe and does nothing when a bundle is present.
+>
+> ★★★ **THE LIGHT OFFSET WAS WORLD-SPACE, AND IS NOW MODEL-SPACE.**
+> `Zenith_LightComponent` already had a position offset;
+> `GetWorldPosition` added it with `xPos += m_xPositionOffset`, ignoring the
+> entity's rotation and scale entirely. NOTHING in any game used it, so the defect
+> could not show -- and it shows the instant a light shares an entity with a
+> MODEL, because "inside the lantern head" is a statement about the mesh:
+>
+> * **SCALE** is the one that bites with no rotation at all. `ZM_ComputePropFit`
+>   scales this post by **3.0059** (a model 0.998 m tall onto a 3.0 m roster row),
+>   so a world-space offset would have to be typed POST-scale and would silently
+>   move the bulb out of the lantern the day the asset is re-exported -- exactly
+>   the coupling `ZM_PropFit.h` exists to remove.
+> * **ROTATION**: every interior prop carries an authored yaw and the outdoor
+>   table can too; a world-space offset leaves the bulb behind when the post turns.
+>
+> It is `m_xLocalPositionOffset` now, applied as `pos + rot * (offset * scale)` --
+> the order the transform itself composes. The rename is deliberate: a silent
+> change of meaning under an unchanged name is the shape this repo keeps paying
+> for. Five new units pin it (unused offset moves nothing, scale, rotation, the
+> compose ORDER -- invisible whenever either factor is the identity -- and the
+> stream round trip). OBSERVED live: model offset `(0, 0.3771, 0)` x 3.0059 ->
+> world y **26.473** on an entity at 25.339, i.e. **2.634 m above the terrain**.
+>
+> ★★ **THE EDITOR CAN NOW PLACE A BULB WITHOUT A BUILD.** The offset panel was
+> three world-space numbers with no indication of where the light ended up or what
+> magnitude was sensible -- placing one inside a lantern meant typing a value,
+> building, looking, and typing another. It now shows, whenever the entity also
+> owns a model: the offset in the MODEL's units at **1 mm per drag pixel** (the old
+> step moved it 10 cm a pixel, straight through the casing), the model's LOCAL
+> BOUNDS, the offset as a FRACTION of them, the resolved WORLD position the
+> renderer will use, whether the point is **inside the mesh at all** (a light
+> outside its own casing is the whole bug, and it is said out loud rather than
+> left to be noticed in a render), and a one-click *Centre of bounds* to drag from.
+> A light on its OWN entity -- how every interior lamp in this game is authored --
+> has no model, and simply gets none of the extra read-outs.
+> `AddStep_SetLightPositionOffset` is the authoring verb, and it ENABLES the
+> offset as well as setting it: an offset authored and left switched off is a lamp
+> silently at its entity origin.
+>
+> ★★ **WHERE THE BULB IS BELONGS TO THE PROP, NOT THE PLACEMENT.**
+> `ZM_GetPropBulb` is keyed by `ZM_PROP_ID`: every lamp post in the world has its
+> bulb in the same place on the model, and where a post STANDS is the placement's
+> business. Putting the offset on a placement row would copy one measurement into
+> every row that used it, and the second copy is where they start disagreeing.
+> MEASURED off the decoded mesh -- the lantern head is the flare above a shaft of
+> radius ~0.017, widening to **0.0898 at y +0.399..+0.419** with a finial above,
+> and the bulb is the AREA-WEIGHTED centroid of the glass between the bracket
+> collar and the roof brim: **y = +0.3771, 87.8% of the model's height**. Area
+> weighted so a densely tessellated rim cannot drag the answer. X and Z are ZERO
+> rather than the centroid's own (+0.0025, +0.0037), which is a quarter-centimetre
+> of mesh asymmetry: a bulb belongs on the post's axis and adopting those would be
+> reading noise as intent.
+>
+> ★ **THE LANTERN POST IS DELIBERATELY NOT IN THAT TABLE.** It is a different
+> asset with a different head, still generated, and its bulb has never been
+> measured -- inheriting the lamp post's offset would put a light at a point on a
+> mesh nobody has looked at.
+>
+> ★★★ **EVERY LIGHT IN THE GAME WAS RE-TUNED, and the lamp post was only where
+> it was noticed.** The house was worse than the lamp: MEASURED as the largest
+> connected near-white blob in each subject's own capture, `bed_three_quarter`
+> carried a **114 px** halo at 2.96% of frame against the lamp post's 97 px.
+>
+> ★ **NOTHING WAS CLIPPING ANYWHERE** -- 0.00% of every frame above luminance 250,
+> peaks under it, so the tonemapper was holding and none of this was "blown out"
+> in the usual sense. Flux extracts bloom above a PRE-EXPOSURE HDR luminance of
+> **3.0** (`Flux_HDR.cpp`), which is ABSOLUTE and scene-referred: the auto-exposure
+> cannot rescue a light that pushes its surroundings past it. That is also why the
+> cut was nearly free on screen -- scaling a room's lights together moved the
+> room-wide frame's mean luminance 103.3 -> 98.2, i.e. not at all, because the
+> exposure simply adapts. "Dimmer means darker" does not apply and was not what
+> limited the tuning.
+>
+> ★ **THE TARGET CAME FROM THE SCENE.** ProfLab's tubes measured a **26 px** halo
+> before any of this and read as a lamp that glows slightly, so "slight" already
+> had a value in this game and everything was tuned onto it. OBSERVED, before ->
+> after:
+>
+> | capture | before | after |
+> |---|---|---|
+> | `bed_three_quarter` (PlayerHome) | 114 px / 2.96% | **0** |
+> | `bed_detail`, `table_detail`, `shelf_three_quarter`, `counter_west_detail` | 0-? | **0** |
+> | `room_wide_PlayerHome` | 78 px / 1.47% | **32.7 px / 0.24%** |
+> | `room_wide_ProfLab` | 26 px / 0.15% | **8.4 px / 0.02%** |
+> | `lamppost_three_quarter` | 66 px / 1.00% | **35.0 px / 0.28%** |
+> | `lamppost_detail` | 97 px / 2.13% | **63.3 px / 0.91%** |
+> | `room_wide_Dawnmere` | 39.5 px | **17.6 px** |
+>
+> Values: LampPost **1200 -> 60 lm**; PlayerHome ceiling **950 -> 130**, bedside
+> **360 -> 50**, table **330 -> 45**; ProfLab tubes **1150 -> 160**.
+>
+> ★★ **THE LEVER IS SUB-LINEAR, which is why this took four values and not one.**
+> The halo is a blurred source, so its RADIUS grows far slower than the intensity:
+> each ~3x cut bought only ~15 px of diameter on the lamp post (96.7 -> 79.9 ->
+> 63.3). A first guess of "reduce it a bit" (1200 -> 500) was worth almost
+> nothing, and only measuring a sweep showed that.
+>
+> ★★ **THE LAB WAS SCALED TOO, THOUGH IT WAS ALREADY IN RANGE.** Its tubes only
+> measured well because they hang at 3.2 m in a 20 x 16 m room; cutting the house
+> alone would have left the lab over **4x** brighter per unit floor area instead of
+> the designed **1.7x** (ZM-D-176) -- a deliberate relationship broken as a side
+> effect of fixing something else. A uniform scale also leaves
+> `ZM_InteriorTintPixels_Test`'s red/blue measurement untouched, since that is a
+> RATIO and the scale cancels.
+>
+> ★ **THE PHOTOMETRIC COST IS REAL AND ACCEPTED.** 130 lm is a nightlight, not a
+> ceiling pendant; 60 lm is a dim street lamp. The bloom threshold was raised
+> 1.0 -> 3.0 for the brighter SUN calibration and has never been re-derived for
+> point-source fixtures indoors. Honest figures belong here the day it is, and
+> they should go back up TOGETHER so the rooms keep their ratio.
+>
+> ★★ **AND THE LAMP POST'S REMAINING HALO IS NOT REMOVABLE BY THIS NUMBER.** The
+> bulb is INSIDE its own lantern -- the glass sits 0.1-0.27 m from a point source,
+> and `ComputePointAttenuation`'s `1/(4*pi*d^2)`, clamped only at
+> `MIN_LIGHT_DISTANCE` = 1 cm, puts those surfaces ~350x the source intensity
+> whatever it is. Driving the head itself under the threshold would need
+> single-digit MILLILUMENS. The real fix is an emissive lantern material plus a dim
+> spill light, or a light with a source RADIUS so the near field stops exploding --
+> both engine work, neither a number in a table.
+>
+> ★ **The lamps stand OFF the front corners, not against the walls**, and the X
+> values are what the keep-out leaves rather than what looks nice: a first draft
+> at +/-5.5 m off each building's axis was INSIDE the 6 m blind drive leg and the
+> 8 m arrival marker. Level with a frontage, a lamp has to be ~10 m off the axis
+> to clear both -- which happens to put it just past the building's corner, where
+> a street lamp belongs. OBSERVED clearances **3.927 m** (home) and **5.200 m**
+> (lab) against a 1.00 m margin. The placement unit had to grow with them:
+> "anchored to a building" means AGAINST a wall for furniture and PAST a corner
+> for a lamp, and the row's KIND selects which, because the ground in between is
+> the door approach.
+>
+> ★ **Their yaw is free by SYMMETRY, not by measurement** -- unlike the barrel's.
+> The lantern head is a flare of revolution about the post's axis (its radius
+> profile is a function of height alone) and the model carries no bracket or arm
+> to point.
+>
+> ★★ **ALL THREE PINS MOVE, and that is the tell that this one touched
+> `Zenith/**`.** The five light-offset units are ENGINE-side, so they land in
+> every game's boot suite: Combat **1758 -> 1763** and RenderTest **1849 -> 1854**
+> with no game code changed at all. The sixth is Zenithmon's bulb table. Every
+> number is OBSERVED from its own `Null_vs2022_Debug_Win64_True` run, never
+> arithmetic on another.
+>
+> Gates: ZM **3586 ran / 0 failed**, Combat **1763**, RenderTest **1854**, 0
+> failed each (`Tools/unit_baselines.json` bumped from those three runs),
+> `zenith test Zenithmon` **71 passed / 0 failed**, doc_lint green,
+> `ZM_ImportedPropShowcase_Test` PASSED with **23 captures**, and every scene
+> republishes IDENTICAL on a second boot.
+
+> **★★★ ZM +3 (2026-09-01, later still) -- THE FIRST ROSTER PROP PLACED
+> ANYWHERE OUTDOORS.** Four barrels now stand against Dawnmere's two building
+> walls. `Dawnmere.zscen` goes **40 -> 44 entities, 79066 -> 79720 bytes**, and it
+> is the only scene that moved. Zenithmon-only: pin **3577 -> 3580**, OBSERVED,
+> the three new units below.
+>
+> ★★ **HALF THE ROSTER IS PLACED IN NO SCENE AT ALL**, and Dawnmere's ~500 props
+> are not a counter-example: `ZM_DawnmereScatterGroup` instances the shared ENGINE
+> sets under `Zenith/Assets/Meshes/{Rocks,FallenTrees,Bushes}`, and its own
+> comment says "Nothing in this table is Zenithmon-owned art". So this is a new
+> mechanism, not a new row in an old one.
+>
+> ★★★ **THIS BLOCK FIRST SAID "22 OF THE 28" AND WAS WRONG TWICE OVER** -- it
+> listed the six biome dressing sets among the unused when `ZM_BattleArena.cpp`
+> places all six, and it missed the three ground items entirely. COUNTED properly,
+> by grepping every non-generator reference to each id:
+>
+> * **USED (16)** -- six interior furniture rows, LampPost and Barrel outdoors,
+>   six `DRESSING_*` (one per battle-dome biome, `ZM_BattleArena.cpp`), three
+>   `ITEM_*` (`ZM_GroundItem.cpp`).
+> * **PLACED NOWHERE (12)** -- FenceWood, FenceStone, SignPost, TownBoard,
+>   LanternPost, BridgePlank, BridgeStone, LedgeLow, LedgeHigh, RockSmall,
+>   RockLarge, Boulder.
+>
+> Every one of the twelve is an outdoor fixture or scatter piece -- exactly the
+> families this map gets from the shared engine sets instead. They cost nothing at
+> runtime (`ZM_BakeAllAssets` has no shipped caller, `ZM_EnsurePropBaked` is
+> warm-safe); two automated tests bake the whole roster, which is why all 28
+> folders sit on disk. **A .glb dropped onto one of them replaces a model nothing
+> renders**, which is why AB-PROP-07 needed a placement row and AB-PROP-05/06 did
+> not.
+>
+> ★★ **AUTHORED, NOT SCATTERED, AND THAT DECIDES THE KEEP-OUT.** The scatter draws
+> a position, tests it and keeps it -- right for things that GREW or FELL where
+> they are, wrong for a barrel, which a person puts upright against a wall. The
+> consequence is the interesting part: the hard keep-out is two halves ANDed, and
+> only ONE of them is a safety property.
+>
+> * **graded ground** (pads and paths at flatten radius) is a proxy for the
+>   judgement a randomly-drawn point cannot exercise. Applying it to a hand-placed
+>   prop would refuse **both building pads** -- precisely the ground a barrel
+>   belongs on, and nowhere else.
+> * **body anchors** (blind drive legs, NPC anchors, warp markers, the seam gate)
+>   is the safety one, and applies in full: `DriveTowardXZ` has no obstacle
+>   avoidance, so a collider on a blind leg wedges a traversal into its frame cap
+>   with a failure naming a DISTANCE rather than the blocker (playbook 3.4).
+>
+> The two were already separate functions internally; the second is now a public
+> entry point (`ZM_DawnmereBodyAnchorClearance`) with the argument on it. OBSERVED
+> clearances: **1.809 m** for the two home rows, **2.823 m** for the two lab rows,
+> against a 1.00 m margin -- and the margin is set above the barrel's FITTED
+> half-diagonal, not its roster row's, because the roster understates this model by
+> 27%.
+>
+> ★ **THE CORNERS ARE WHERE THE CLEARANCE AND THE FICTION AGREE.** Both buildings
+> are entered on their -Z face and both door approaches are blind legs with a 6 m
+> radius, so the middle of each frontage is spoken for -- and a barrel by the
+> corner of a house is where one would actually be anyway. Each CENTRE stands
+> 0.70 m off its wall, which puts the barrel's own surface 0.25 m off it. Ground
+> heights are SAMPLED at authoring time from the same standalone terrain-editor
+> session the scatter uses (23.9001 / 24.0069 / 24.0923 / 24.1010 m), so the
+> authored Y is a terrain height plus the fit's lift rather than a typed number.
+>
+> ★★ **AND THE SHOWCASE HARNESS STOPPED BEING INTERIOR-ONLY, because its own claim
+> had become false.** That file says "adding a row to axIPS_SUBJECTS is the whole
+> cost of a new asset"; the first subject standing on TERRAIN was the row that was
+> not. Three assumptions were interior-only and are now per-room flags or explicit
+> data:
+>
+> * **the clamp** -- an interior has walls to keep a lens inside; reading a room
+>   spec for Dawnmere folds every eye into a 15.5 x 11.5 m box on the town's
+>   ORIGIN, 100 m from the subject and still pointing at it.
+> * **the floor** -- indoors an authored prop's Y IS the fit's ground lift, and the
+>   fit clause asserts it. Outdoors that number is a sampled terrain height the
+>   test cannot re-derive, so the SCALE half still asserts and the implied ground
+>   is LOGGED (OBSERVED 23.9001, matching the authoring's own line exactly).
+> * **the wide pose** -- was three numbers, with eye X assumed 0 and eye Y computed
+>   from a ceiling. Six now. Both interior rows carry exactly what those
+>   expressions produced, so no interior framing moved.
+>
+> Subjects key on a room ROW INDEX rather than a `ZM_INTERIOR_ROOM`, because there
+> is no enumerator for "outside, in Dawnmere" and the row is what actually carries
+> the scene, the camera and the flags.
+>
+> ★ **A NEGATIVE AZIMUTH, AND THE REASON IS THAT NOTHING CLAMPS IT BACK.** The
+> outdoor subject is the home's WEST barrel, so its lens swings toward -X/+Z. Aim
+> it positive and the eye is INSIDE the house -- and outdoors the room clamp that
+> would have caught that indoors is off by construction, so the shot would be of
+> the inside of a wall with every assertion passing.
+>
+> ★ **ZM_InteriorFurniture NOW WEARS A NAME THAT DOES NOT DESCRIBE EVERY USER**, and
+> that is recorded as debt on the class rather than fixed here. Its job -- "wear the
+> prop your NAME resolves to, then re-size the collider to it" -- is as true of a
+> barrel against a house as of a bed in a bedroom, and each dressing header owns
+> the resolver for its OWN table (making the interior one walk the Dawnmere table
+> would make an interior room include a town), so only the composition is new.
+> Renaming the class changes the component-name string `PlayerHome.zscen` and
+> `ProfLab.zscen` serialize: a re-author of both plus matched meta AND editor
+> registry edits, where a component in one registry but not the other authors a
+> scene WITHOUT it, byte-stably, every gate green. Worth doing; not in the change
+> that first places a prop outdoors.
+>
+> Gates: ZM **3580 ran / 0 failed** (`Tools/unit_baselines.json` bumped from this
+> OBSERVED run), `zenith test Zenithmon` **71 passed / 0 failed** -- which is the
+> real proof the clearances hold, since eleven of those suites traverse Dawnmere --
+> doc_lint green, `ZM_ImportedPropShowcase_Test` PASSED with **21 captures**, and
+> every scene republishes IDENTICAL on a second boot, `Dawnmere.zscen` included.
+
+> **★★ ZM +0 (2026-09-01, later) -- the SIXTH import, AB-PROP-06 Barrel, and the
+> first prop measured to have NO FACING.** `Assets/Props/Barrel/Barrel.glb` was
+> already in the tree and already LIVE before this round began -- the import walks
+> the whole assets tree at every tools boot -- so `PlayerHome.zscen` had moved by
+> exactly HomeBarrel's scale and lift with nothing else touched. This round is the
+> verification that was missing, not the integration. OBSERVED model
+> **0.8921 x 0.9995 x 0.8931 m** -> scale **1.0005**, ground y **0.5000** ->
+> **0.8925 x 1.0000 x 0.8935 m**. It stands in BOTH rooms (`HomeBarrel`,
+> `LabBarrel`), and **`AB-PROP-01` through `AB-PROP-06` are now all ticked** --
+> section 7's "if exactly one thing were commissioned" answer, delivered in full.
+>
+> ★★ **A SCALE OF ~1 IS NOT "DELIVERED TO SIZE", AND THIS IS THE ASSET THAT PROVES
+> IT.** 1.0005 is the nearest the identity of the six -- nearer than the chair's
+> 1.0020 -- and the barrel is still **27% OVER its roster row in plan**: 0.892 x
+> 0.893 against 0.7 x 0.7. The fit promises the LONGEST axis and nothing else at
+> any scale. A single scale number read as a fit report gets this delivery exactly
+> backwards, which is why it earns a row in `ZM_PropFit`'s table despite adding
+> neither a new axis (Y, like the chair and shelf) nor a new magnitude.
+>
+> ★★ **"IT IS A BARREL, SO ITS YAW DOES NOT MATTER" IS A GUESS. IT WAS MEASURED.**
+> Both barrels share `YAW0`, which is the same shape as the shelf's and the
+> counters' shared constants -- and those were both WRONG, chosen while the prop
+> was a symmetric greybox. The only thing separating "free" from "nobody checked"
+> is evidence, so it was collected with the same effort a front would have been. A
+> stencilled brand, a bung on one stave or a hasp would each supply a facing that
+> no shape measurement can see, and each is the kind of detail a commissioned asset
+> arrives with unannounced. OBSERVED: the body is a **solid of revolution to within
+> 2.3%** peak deviation from a circle across all eight height bands; the base
+> colour carries only stave grain and iron hoops -- **15% spread over 36 azimuth
+> bins, dark ones SCATTERED** rather than clustered, no mark anywhere in the
+> 2048^2 map; the sole asymmetry is a lid plug **0.040 m off the axis**, 9% of the
+> barrel's radius, on a horizontal face. So the yaw is genuinely free, `YAW0` is
+> left, and `ZM_InteriorDressing.h` says so ON the row -- **do not "fix" it**, and
+> do not read the +X-front convention as applying to a model with no +X face.
+>
+> ★ **Tangents and textures on the same checks as the counter.** 0 non-finite T/N/B
+> of 4386, 0 zero-length, worst |dot(T, N)| = 0.0000. Three real maps at 2048^2,
+> no `occlusionTexture`, and its ORM R channel is a constant **255** -- nothing
+> dropped. Roughness (G) mean **0.885** and metallic (B) mean **0.023**: rough
+> dielectric timber, the opposite end of the range from the counter's 0.326 / 0.386
+> steel-framed bench, out of the same importer with no swizzle.
+>
+> ★ **THE LID IS ON, AND THAT WAS CHECKED RATHER THAN TAKEN FROM THE PROMPT.** The
+> row asks for "lid on" and the render shows an open-looking rim with a dark
+> interior, which is what an open barrel looks like too. A cross-section cannot
+> tell them apart -- collapsing an axis turns a RING into a filled band -- so the
+> highest surface was measured per radial ring instead: **r 0.09..0.32 tops out at
+> y +0.4305**, a closed head recessed **69 mm** below the rim, with the staves and
+> top hoop standing proud of it (r 0.32..0.41 reaching +0.476) and the plug at the
+> centre. The base is the control: every ring bottoms at -0.4509, a flat closed
+> disc. So the dark interior is the inside of a 69 mm chime, which is what
+> coopering looks like.
+>
+> ★ **AND THE BLUE IN THAT RECESS IS THE ROOM, NOT THE ASSET.** It reads as an
+> obvious defect on a warm-lit prop. MEASURED: pixels with B > R+4 are **0.27%**
+> of the barrel's three-quarter frame, all of them dark (mean RGB 30, 35, 46). The
+> control is the rest of the roster in the same room -- bed **0.82%**, chair
+> 0.72%, shelf 1.33%, table **4.38%**, the room wide 0.93% and the live player view
+> **10.98%** -- so the barrel has LESS of it than every other PlayerHome subject
+> but one. Deeply-occluded geometry falling back to the cool ambient where the warm
+> point lights cannot reach is a property of this room's lighting, and a saturated
+> hue in a small dark region reads far louder than its 0.27% deserves.
+>
+> ★ **Its two capture poses disagree on elevation more than any other subject's**
+> (24 and 14 degrees), and that is the subject rather than a style knob: a barrel's
+> LID is horizontal and reads only from above, its STAVES and HOOPS are vertical
+> and read only from the side. It is also captured in PlayerHome, where it costs
+> the run 264 frames and no extra scene load.
+>
+> ★ **Two stale claims on `ArtBrief.md` were fixed in passing**, both of which had
+> outlived six deliveries: section 8 still said *"It does not describe an import
+> pipeline, because none exists ... commissioning any row means building one
+> first"* (the top of the same page has said otherwise since AB-PROP-01), and
+> section 7 still recommended a commission that has since been completed in full.
+>
+> Gates: ZM `3577 ran / 0 failed` (unchanged), `zenith test Zenithmon` **71 passed
+> / 0 failed**, doc_lint green, `ZM_ImportedPropShowcase_Test` PASSED with **18
+> captures**, and all seven scenes republish IDENTICAL. `PlayerHome.zscen` and
+> `ProfLab.zscen` are the only assets that moved across both rounds.
+
+> **★★ ZM +0 (2026-09-01) -- the FIFTH import, AB-PROP-05 Counter, and the first
+> prop whose TWO PLACEMENTS NEEDED DIFFERENT YAWS.**
+> `Assets/Props/Counter/Counter.glb` needed no pipeline change and no new unit: a
+> row in `ZM_PropFit`'s asset table, two rows in `axIPS_SUBJECTS`, and two
+> corrected yaws. OBSERVED model **0.4321 x 0.6079 x 0.9995 m** -> scale
+> **2.2011** (the largest correction of the five), ground y **0.6690** ->
+> **0.9511 x 1.3381 x 2.2000 m**. `ZM_PROP_COUNTER` stands only in ProfLab, so
+> **`ProfLab.zscen` is the only scene this moved** -- 23 entities, 3542 bytes
+> before and after, because swapping one frozen quaternion for another is the
+> same number of bytes.
+>
+> ★ **ONE YAW PER ASSET STOPPED BEING ENOUGH.** Both benches said `YAW90`, chosen
+> while this prop was a symmetric greybox box -- the same blind spot the shelf's
+> yaw came out of, except that a shelf appears twice on the SAME wall and these
+> two do not. `LabCounterWest` is at x = -8.20 and `LabCounterEast` at x = +8.20,
+> against opposite walls, and a bench's back belongs to its own wall. `YAW90` is
+> additionally worse than "turned around": it puts the 2.2 m length on the X axis
+> and stands each bench END-ON to its wall, 2.2 m out into the room. They are
+> `YAW0` and `YAW180` now, and the harness recovers each angle from the LIVE
+> quaternion (`2*atan2(q.y, q.w)`) rather than from the constant that produced it:
+> OBSERVED west `quat (w 1.00000, y 0.00000) = 0.0 deg, model +X faces
+> (1.000, 0.000, 0.000)`, east `quat (w 0.00000, y 1.00000) = 180.0 deg, model +X
+> faces (-1.000, 0.000, 0.000)` -- both fronts into the room -- and world
+> footprint **0.951 x 1.338 x 2.200 m** on each, i.e. the length along Z, along
+> the wall.
+>
+> ★★ **THE SHELF'S FACING INSTRUMENT ANSWERS NOTHING HERE, AND THAT IS THE
+> TRANSFERABLE PART.** "Which extreme has a continuous panel against it" works on
+> a bookshelf because a bookshelf has a flat back; run it on this model and the
+> best of the six faces reaches **11%**, against the shelf's **90%**. A lab bench
+> is a cabinet with an overhanging top, not a panel. What settled it was the two
+> features the ArtBrief row's own prompt names: **232 of 5661 vertices sit ABOVE
+> the worktop plane**, confined to x in [-0.159, -0.125] of a model spanning
+> +/-0.216 -- the shallow lip, which is at the BACK -- and the worktop **overhangs
+> the cabinet body by 20 mm on +X and 0 mm on -X** -- a nosing, which is at the
+> FRONT. Both answer +X, so this delivery agrees with the four before it, but the
+> earlier method would have reported no facing at all. **Reproduce the previous
+> asset's published numbers before trusting a measurement tool on a new one**: the
+> first rasteriser written for this gave the shelf 6.7% where the commit says
+> 90.2%, and it was wrong (fixed sample count per triangle, so a large flat panel
+> under-fills), not the shelf.
+>
+> ★ **THE TANGENT FRAMES WERE CHECKED, NOT ASSUMED.** `MakeValidTangent` landed
+> with AB-PROP-04 and this is the first asset imported after it: OBSERVED over
+> `Counter.zmesh`, **0 non-finite tangents, normals or bitangents of 5661, 0
+> zero-length tangents, worst |dot(T, N)| = 0.0000**. The barrel reports the same.
+>
+> ★ **EVERY TEXTURE IN THE FILE REACHES THE RENDERER, AND THERE ARE THREE.** The
+> `.glb` declares `baseColorTexture`, `metallicRoughnessTexture` and
+> `normalTexture`, all **2048^2**, and **no `occlusionTexture`** -- and the
+> occlusion channel is not merely undeclared, it is **empty**: the R channel of
+> that PNG is a constant **255** across the whole map, one distinct value. So the
+> 68-byte `Counter_ao.ztxtr` is the importer's neutral-white 4x4 and nothing was
+> dropped. Roughness (G) and metallic (B) are real -- **127 and 176 distinct
+> values** -- which is the first import where metallic carries a steel frame
+> rather than one flat number, and the RM map is written with NO swizzle because
+> Flux's `SampleRoughnessMetallic` reads exactly `.gb`.
+>
+> ★★ **THE SHOWCASE HARNESS IS KEYED BY ROOM NOW.** Every subject through the
+> shelf stood in PlayerHome, so `ZM_AutoTests_ImportedPropShowcase` loaded that one
+> scene and resolved every roster row inside it; a `LabCounter` row added as-is
+> fails `IPSResolveRoom` and burns the 600-frame deadline without saying why. The
+> two rejected alternatives are worth naming: moving a bench into a bedroom changes
+> the GAME to suit the harness, and a second showcase file duplicates the phase
+> machine, capture, projection and verification -- leaving two places to add the
+> sixth asset to. **The first four subjects pay nothing**: rooms are captured in
+> order, PlayerHome finishes before ProfLab loads, and its framing is byte-for-byte
+> the same table it was. ProfLab takes a wide of its own (eye z = 6.60, derived:
+> both benches at x = +/-8.20 need `8.20 / (z + 3.00) < tan(48.6 deg)`, so
+> z > 4.22) and NOT the follow-camera pair, which is about the ceiling clamp rather
+> than any asset. **BOTH benches are photographed** -- the first time one prop
+> takes two rows -- because a single subject signs off exactly half of a claim
+> whose whole content is that the two differ.
+>
+> OBSERVED `ZM_ImportedPropShowcase_Test: PASSED (2114 frames)`, **16 captures**
+> in `Build/artifacts/zenithmon/visual_audit/`. Gates: ZM `3577 ran / 0 failed`
+> (unchanged -- a row in an existing table adds no unit), `zenith test Zenithmon`
+> **71 passed / 0 failed**, registry unchanged, and **all seven scenes republish
+> IDENTICAL** on a second boot. Combat and RenderTest are untouched: the whole diff
+> is inside `Games/Zenithmon/`.
+>
+> ★ **A `Barrel.glb` IS ALSO IN THE TREE AND IS ALREADY LIVE.** It is not part of
+> this round and `AB-PROP-06` is deliberately NOT ticked, but the import path walks
+> the whole assets tree at every tools boot, so it replaced the generated barrel on
+> its own: `PlayerHome.zscen` moved by exactly HomeBarrel's scale
+> (**1.00951 -> 1.00049**) and ground y (**0 -> 0.5**), and nothing else. That asset
+> imports soundly on the same checks as this one (0 non-finite tangents, three real
+> maps, constant-255 occlusion), so the change is a working replacement rather than
+> a breakage -- but **AB-PROP-06 still needs its own facing measurement, roster row
+> and captures before it can be ticked**.
 
 > **★★ ZM +0 (2026-08-31, later still) -- the FOURTH import, AB-PROP-04 Shelf,
 > and the first prop whose FACING was measured rather than assumed.**

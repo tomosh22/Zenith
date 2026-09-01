@@ -178,7 +178,34 @@ namespace
 	// ★ If a lighting re-tune ever moves a room outside this band, WIDEN THE BAND.
 	// Do not touch the margin above -- these bounds track lighting, that one does
 	// not.
-	constexpr float fPT_MIN_PLAUSIBLE_RED_OVER_BLUE = 0.70f;
+	//
+	// ★★★ 0.70 -> 0.62 ON 2026-09-01, AND THE WIDENING COST THIS CHECK MOST OF ITS
+	// POWER. That is recorded here rather than left to be discovered, because the
+	// number looks like a routine re-tune and is not.
+	//
+	// The game-wide light re-tune (roughly 7x down, to stop point sources blooming
+	// -- see ZM_InteriorDressing.h) took ProfLab's floor to **0.6853**, just under
+	// the old 0.70. Framing was CONFIRMED from the dumped TGA first, exactly as the
+	// failure message demands: the patch sits squarely on the lit lab floor at the
+	// foot of the doorway. So the re-tune was legitimate and the instruction above
+	// applies.
+	//
+	// ★★ BUT THE HOLE THIS BAND WAS ADDED TO CLOSE IS NOW BARELY CLOSED. Its
+	// stated job is catching a framing regression that puts a patch on OPEN SKY,
+	// whose strong blue would widen the gap and pass falsely. MEASURED off this
+	// same run: open sky reads **0.6024** and the lab floor **0.6853** -- 0.08
+	// apart, where they used to be separated by the whole band. A bound admitting
+	// the floor therefore sits within a rounding error of admitting the sky. What
+	// still works is the gross case (a black or failed patch, ~0); what no longer
+	// really works is the sky case it was named for.
+	//
+	// The cause is physical rather than a mistake: a dimmer, COOL-lit room's floor
+	// converges on the colour of the sky lighting it. Red/blue is simply a weak
+	// discriminator now, and no choice of bound fixes that. Restoring the check
+	// needs a signal that separates floor from sky on something other than hue --
+	// patch VARIANCE is the obvious one (a tiled floor has grout lines, sky is
+	// smooth) -- which is a redesign of this clause, not a constant.
+	constexpr float fPT_MIN_PLAUSIBLE_RED_OVER_BLUE = 0.62f;
 	constexpr float fPT_MAX_PLAUSIBLE_RED_OVER_BLUE = 3.00f;
 
 	enum PTRoom : u_int

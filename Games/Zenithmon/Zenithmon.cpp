@@ -8,6 +8,7 @@
 #include "DataStream/Zenith_DataStream.h"
 #include "EntityComponent/Components/Zenith_AnimatorComponent.h"   // the human locomotion animator
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"   // the explicit human body contract
+#include "EntityComponent/Components/Zenith_LightComponent.h"    // lamp posts own their own bulb
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_NavMeshComponent.h"
 #include "Flux/MeshAnimation/Flux_AnimationController.h"           // clips + layer + state machine
@@ -1230,14 +1231,33 @@ public:
 			return;
 		}
 
-		const ZM_PROP_ID eProp =
-			ZM_PropForInteriorPropEntity(m_xParentEntity.GetName().c_str());
+		// ★★ TWO TABLES, COMPOSED HERE. This component's job is "wear the prop your
+		// NAME resolves to, then re-size the collider to it", and that is as true of
+		// a barrel against a house in Dawnmere as of a bed in a bedroom. Each
+		// dressing header owns the resolver for its OWN table -- making the interior
+		// one walk the Dawnmere table would make an interior room include a town --
+		// so the composition happens at the one place that sees both.
+		//
+		// ★ THE NAME NO LONGER DESCRIBES EVERY USER, AND THAT IS A KNOWN DEBT
+		// rather than an oversight. Renaming the class would change the component
+		// NAME string that PlayerHome.zscen and ProfLab.zscen serialize, so it costs
+		// a re-author of both plus matched edits to the meta AND editor registries
+		// -- and a component present in one registry but not the other authors a
+		// scene WITHOUT it, byte-stably, with every gate green. Worth doing; not
+		// worth doing in the same change that first places a prop outdoors.
+		const char* szName = m_xParentEntity.GetName().c_str();
+		ZM_PROP_ID eProp = ZM_PropForInteriorPropEntity(szName);
+		if (eProp >= ZM_PROP_COUNT)
+		{
+			eProp = ZM_PropForDawnmerePropEntity(szName);
+		}
 		if (eProp >= ZM_PROP_COUNT)
 		{
 			Zenith_Error(LOG_CATEGORY_MESH,
 				"[ZM_InteriorFurniture] entity '%s' carries a furniture component but "
-				"maps to no prop (see Source/World/ZM_InteriorDressing.h) -- it will "
-				"stand in the room showing nothing", m_xParentEntity.GetName().c_str());
+				"maps to no prop (see ZM_InteriorDressing.h for the two rooms, "
+				"ZM_DawnmereDressing.h for the outdoor table) -- it will stand "
+				"showing nothing", szName);
 			return;
 		}
 
@@ -3621,6 +3641,134 @@ namespace
 		}
 	}
 
+	// ---- The authored outdoor props ---------------------------------------
+	//
+	// ★★ A CUSTOM STEP RATHER THAN AddStep_* CALLS, AND THE REASON IS THE GROUND.
+	// The interior dressing can queue plain AddStep_SetTransformPosition calls
+	// because an interior floor is the y = 0 plane. Outdoors the position depends
+	// on the TERRAIN, which no AddStep_ knows how to sample -- so this reads
+	// heights the same way ZM_ScatterDawnmerePropsStep does, from a standalone
+	// terrain-editor session, and writes the transforms itself.
+	//
+	// ★ IT RUNS IN THE SAME LATE BLOCK AS THE SCATTER, after every pad has been
+	// flattened and every path graded. Sampling earlier reads the raw heightmap
+	// and stands four barrels in the air over a levelled building pad.
+	void ZM_AuthorDawnmerePropsStep()
+	{
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetActiveSceneData();
+		if (pxSceneData == nullptr)
+		{
+			Zenith_Error(LOG_CATEGORY_MESH,
+				"[Zenithmon] Dawnmere props: no active scene");
+			return;
+		}
+
+		Zenith_TerrainEditor& xTerrainEditor = g_xEngine.TerrainEditor();
+		if (!xTerrainEditor.IsActive())
+		{
+			xTerrainEditor.OpenStandalone();
+		}
+
+		for (u_int u = 0u; u < ZM_GetDawnmerePropCount(); ++u)
+		{
+			const ZM_DawnmereProp& xProp = ZM_GetDawnmereProp(u);
+
+			// The SAME fit the interiors resolve, from the same measured mesh --
+			// there is no "is this indoors?" branch anywhere in ZM_PropFit.h and
+			// this is the second caller that proves it.
+			const ZM_PropFit xFit = ZM_ResolvePropFit(xProp.m_eProp);
+
+			// ★ THE GROUND, MEASURED. The lift stands the model on the plane its
+			// own min.y sits at; the terrain height is where that plane IS.
+			const float fGroundY = xTerrainEditor.SampleHeightWorld(xProp.m_fX, xProp.m_fZ);
+
+			Zenith_Entity xEntity = pxSceneData->FindEntityByName(xProp.m_szEntityName);
+			if (!xEntity.IsValid())
+			{
+				xEntity = g_xEngine.Scenes().CreateEntity(pxSceneData, xProp.m_szEntityName);
+				xEntity.SetTransient(false);
+			}
+
+			Zenith_TransformComponent& xTransform =
+				xEntity.GetComponent<Zenith_TransformComponent>();
+			xTransform.SetPosition(Zenith_Maths::Vector3(
+				xProp.m_fX, fGroundY + xFit.m_fGroundY, xProp.m_fZ));
+			xTransform.SetScale(Zenith_Maths::Vector3(
+				xFit.m_fScale, xFit.m_fScale, xFit.m_fScale));
+			// The frozen pair, verbatim -- never glm::angleAxis (ZM-D-183).
+			xTransform.SetRotation(Zenith_Maths::Quat(
+				xProp.m_fQuatW, 0.0f, xProp.m_fQuatY, 0.0f));
+
+			// SOLID, and OBB for the same reason the interior furniture is: an AABB
+			// body is forced to identity and the physics->transform sync writes that
+			// identity back over the authored rotation, into the SAVED bytes
+			// (ZM-D-156). Every row here is the identity today, so an AABB would
+			// have been invisible -- which is exactly how that defect survived four
+			// interior props.
+			if (xEntity.TryGetComponent<Zenith_ColliderComponent>() == nullptr)
+			{
+				Zenith_ColliderComponent& xCollider =
+					xEntity.AddComponent<Zenith_ColliderComponent>();
+				xCollider.AddCollider(COLLISION_VOLUME_TYPE_OBB, RIGIDBODY_TYPE_STATIC);
+			}
+			if (xEntity.TryGetComponent<ZM_InteriorFurniture>() == nullptr)
+			{
+				xEntity.AddComponent<ZM_InteriorFurniture>();
+			}
+
+			// ★★ A LIGHT ON THE SAME ENTITY AS THE MODEL, at the bulb. Every other
+			// light in this game is its own entity at an authored world position
+			// (ZM_InteriorDressing.h's lamps are all like that), which works while
+			// a light is a glow in a room that nothing owns. A lamp post OWNS its
+			// light: the two move, turn and scale together, and a second entity
+			// would have to be kept in step with the first by hand forever.
+			//
+			// ★ THE OFFSET IS THE PROP'S, NOT THE PLACEMENT'S. ZM_GetPropBulb
+			// carries where the bulb sits on the MODEL, measured off the mesh; the
+			// component scales and rotates it by this entity's transform
+			// (Zenith_LightComponent::GetWorldPosition), so one number is correct
+			// for every post at every yaw and survives the asset being re-exported
+			// at a different size.
+			const ZM_PropBulb& xBulb = ZM_GetPropBulb(xProp.m_eProp);
+			if (xBulb.m_bHasBulb)
+			{
+				Zenith_LightComponent* pxLight =
+					xEntity.TryGetComponent<Zenith_LightComponent>();
+				if (pxLight == nullptr)
+				{
+					pxLight = &xEntity.AddComponent<Zenith_LightComponent>();
+				}
+				pxLight->SetLightType(LIGHT_TYPE_POINT);
+				pxLight->SetIntensity(xBulb.m_fLumens);
+				pxLight->SetRange(xBulb.m_fRange);
+				pxLight->SetColor(
+					Zenith_Maths::Vector3(xBulb.m_fR, xBulb.m_fG, xBulb.m_fB));
+				pxLight->SetLocalPositionOffset(
+					Zenith_Maths::Vector3(xBulb.m_fX, xBulb.m_fY, xBulb.m_fZ));
+				// Enabling is not optional: an offset authored and left switched
+				// off is a lamp glowing from the pavement at its own entity origin.
+				pxLight->SetUsePositionOffset(true);
+
+				const Zenith_Maths::Vector3 xBulbWorld = pxLight->GetWorldPosition();
+				Zenith_Log(LOG_CATEGORY_MESH,
+					"[Zenithmon] DAWNMERE BULB '%s': model offset (%.4f, %.4f, %.4f) "
+					"x scale %.4f -> world (%.3f, %.3f, %.3f), %.0f lm over %.1f m",
+					xProp.m_szEntityName, (double)xBulb.m_fX, (double)xBulb.m_fY,
+					(double)xBulb.m_fZ, (double)xFit.m_fScale,
+					(double)xBulbWorld.x, (double)xBulbWorld.y, (double)xBulbWorld.z,
+					(double)xBulb.m_fLumens, (double)xBulb.m_fRange);
+			}
+
+			Zenith_Log(LOG_CATEGORY_MESH,
+				"[Zenithmon] DAWNMERE PROP '%s': %s at (%.2f, %.4f, %.2f), scale "
+				"%.4f, terrain y %.4f, body-anchor clearance %.3f m",
+				xProp.m_szEntityName, ZM_GetPropName(xProp.m_eProp),
+				(double)xProp.m_fX, (double)(fGroundY + xFit.m_fGroundY),
+				(double)xProp.m_fZ, (double)xFit.m_fScale, (double)fGroundY,
+				(double)ZM_DawnmereBodyAnchorClearance(xProp.m_fX, xProp.m_fZ, true));
+		}
+	}
+
 	// ---- The building a blockout is wearing ----------------------------------
 	//
 	// A visual-only entity: a ModelComponent loading the generated multi-surface
@@ -5196,6 +5344,9 @@ void Project_RegisterEditorAutomationSteps()
 					xClump.m_fX, xClump.m_fZ, xClump.m_fRadius, 1.0f, 0.0f);
 			}
 			xAuto.AddStep_Custom(&ZM_ScatterDawnmerePropsStep);
+			// ★ AFTER the scatter, so the authored barrels take file indices at the
+			// end of the block rather than displacing ~500 instanced transforms.
+			xAuto.AddStep_Custom(&ZM_AuthorDawnmerePropsStep);
 		}
 
 		// ★ IMMEDIATELY BEFORE THE SAVE, NOT ANYWHERE EARLIER. The guard serializes the

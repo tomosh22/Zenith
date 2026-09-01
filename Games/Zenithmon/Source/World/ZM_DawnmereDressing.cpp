@@ -380,15 +380,13 @@ u_int ZM_GetDawnmereScatterRequestedTotal()
 // ============================================================================
 namespace
 {
-	// The half of the keep-out that is almost identical in both variants: every
-	// point a body stands on or is warped onto. Neither a collider nor a card
-	// belongs on one of these.
-	//
-	// ★ THE ONE ASYMMETRY IS THE ARMED TRAINER'S SIGHT RANGE, and it is passed in
-	// rather than baked in because it is a COLLIDER property: only a prop with a
-	// physics body can break ZM_ProbeTrainerSightLine's ray. See the header for the
-	// failure that established it.
-	float ZM_DawnmereBodyAnchorClearance(float fX, float fZ, bool bIncludeTrainerSight)
+	// ★ ZM_DawnmereBodyAnchorClearance USED TO LIVE HERE, and it is now a public
+	// entry point at the bottom of this file -- the authored outdoor prop table
+	// needs this half of the keep-out WITHOUT the graded-ground half, because a
+	// hand-placed prop has already exercised the judgement that half stands in
+	// for. The header carries the argument.
+
+	float ZM_DawnmereBodyAnchorClearanceImpl(float fX, float fZ, bool bIncludeTrainerSight)
 	{
 		float fBest = 1.0e9f;
 
@@ -513,7 +511,7 @@ float ZM_DawnmereSoftKeepOutClearance(float fX, float fZ)
 	}
 	const float fGraded = ZM_DawnmereGradedGroundClearance(fX, fZ, /*bSoft*/ true);
 	const float fAnchors =
-		ZM_DawnmereBodyAnchorClearance(fX, fZ, /*bIncludeTrainerSight*/ false);
+		ZM_DawnmereBodyAnchorClearanceImpl(fX, fZ, /*bIncludeTrainerSight*/ false);
 	return fGraded < fAnchors ? fGraded : fAnchors;
 }
 
@@ -537,8 +535,22 @@ float ZM_DawnmereKeepOutClearance(float fX, float fZ)
 	float fBest = ZM_DawnmereGradedGroundClearance(fX, fZ, /*bSoft*/ false);
 
 	const float fAnchors =
-		ZM_DawnmereBodyAnchorClearance(fX, fZ, /*bIncludeTrainerSight*/ true);
+		ZM_DawnmereBodyAnchorClearanceImpl(fX, fZ, /*bIncludeTrainerSight*/ true);
 	return fBest < fAnchors ? fBest : fAnchors;
+}
+
+// The safety half on its own. See the header: an AUTHORED placement takes this
+// and not the graded-ground term, which would refuse both building pads.
+float ZM_DawnmereBodyAnchorClearance(float fX, float fZ, bool bIncludeTrainerSight)
+{
+	// Same total contract as the two composite entry points: a non-finite sample
+	// can never be a legal placement, and a large NEGATIVE distance is what makes
+	// every caller's `clearance > margin` test reject it with no second check.
+	if (!std::isfinite(fX) || !std::isfinite(fZ))
+	{
+		return -1.0e9f;
+	}
+	return ZM_DawnmereBodyAnchorClearanceImpl(fX, fZ, bIncludeTrainerSight);
 }
 
 bool ZM_IsInsideDawnmereKeepOut(float fX, float fZ, float fExtraMargin)

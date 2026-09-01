@@ -129,7 +129,94 @@ struct ZM_PropData
 	float           m_fHeight;
 };
 
+// ---- The four yaws a prop placement may take --------------------------------
+//
+// ★ HERE RATHER THAN IN A PLACEMENT TABLE, because there are TWO placement tables
+// now -- ZM_InteriorDressing.h for the rooms and ZM_DawnmereDressing.h for
+// outdoors -- and both need the same four values. A frozen constant copied into a
+// second table is how two tables start disagreeing.
+//
+// ★★ THESE NAMED HALF THE ANGLE THEY APPLIED, AND EVERY ONE OF THEM WAS WRONG.
+// The block read:
+//
+//     cos(0)=1, sin(0)=0 | cos(45°)=sin(45°)=0.70710678 | cos(90°)=0, sin(90°)=1
+//     fZM_INTERIOR_YAW90_W = 0.0f;  fZM_INTERIOR_YAW90_Y = 1.0f;
+//     fZM_INTERIOR_YAW45_W = 0.70710678f;  fZM_INTERIOR_YAW45_Y = 0.70710678f;
+//
+// -- i.e. (w, y) = (cos a, sin a). A quaternion is (cos(a/2), axis * sin(a/2)),
+// so (0, 1) is a HALF TURN and (0.70710678, 0.70710678) is a QUARTER TURN. The
+// old "YAW90" was 180 degrees and the old "YAW45" was 90.
+//
+// ★ IT HID BEHIND A SECOND DEFECT, WHICH IS WHY IT SURVIVED. Every furniture row
+// below was authored with an AABB collider, and Zenith_ColliderComponent forces
+// an AABB body to identity -- the physics->transform sync then wrote that
+// identity back over the authored rotation, INTO THE SAVED SCENE BYTES (ZM-D-156,
+// already paid for once on rival Vesper). So NO interior prop was ever rotated at
+// all, and a constant that applied twice its stated angle could not be caught by
+// looking at the room. Both are fixed together because neither is visible alone:
+// the furniture is OBB now, and these names are the angles they apply.
+//
+// The half turn is exact; the quarter turn is the correctly-rounded float32
+// literal and is identical in every configuration because it is a literal, not a
+// call (ZM-D-183).
+inline constexpr float fZM_INTERIOR_YAW0_W    = 1.0f;
+inline constexpr float fZM_INTERIOR_YAW0_Y    = 0.0f;
+inline constexpr float fZM_INTERIOR_YAW90_W   = 0.70710678f;
+inline constexpr float fZM_INTERIOR_YAW90_Y   = 0.70710678f;
+inline constexpr float fZM_INTERIOR_YAW180_W  = 0.0f;
+inline constexpr float fZM_INTERIOR_YAW180_Y  = 1.0f;
+
 // Table accessors (bounds-asserted). ZM_GetPropData indexes by ZM_PROP_ID.
 const ZM_PropData&	ZM_GetPropData(ZM_PROP_ID eId);
 u_int				ZM_GetPropCount();				// == ZM_PROP_COUNT
 const char*			ZM_GetPropName(ZM_PROP_ID eId);
+
+// ============================================================================
+// ★★★ WHERE A PROP'S BULB IS, for the props that emit light.
+//
+// A lamp post is the first prop whose entity must own a LIGHT as well as a
+// model, and the light has to be at the BULB -- inside the lantern head, not at
+// the entity origin down at the foot of the post. Getting that wrong is not
+// subtle: the lamp glows from the pavement and lights its own casing from below.
+//
+// ★★ IT IS KEYED BY PROP, NOT BY PLACEMENT, because that is what it is. Every
+// lamp post in the world has its bulb in the same place on the model; where the
+// post STANDS is the placement's business. Putting the offset on a placement row
+// would copy one measurement into every row that used it, and the second copy is
+// where they start disagreeing.
+//
+// ★★ AND IT IS IN THE MODEL'S OWN UNITS -- the same space
+// Zenith_LightComponent's local position offset consumes, which is scaled and
+// rotated by the entity transform before use. So the number below survives
+// ZM_ComputePropFit rescaling the asset (this post fits at 3.006) and survives
+// any authored yaw, which a world-space offset would not: it would have to be
+// re-typed post-scale and would break on the next re-export.
+//
+// ★ MEASURED OFF THE DECODED MESH, never read off the roster row. The lantern
+// head is the widening above the shaft: the radius profile runs ~0.017 up the
+// post and flares to 0.0898 at y +0.399..+0.419, with a finial above it. The
+// bulb is the AREA-WEIGHTED centroid of the glass housing between the bracket
+// collar and the roof brim (y +0.300..+0.440), which lands at y +0.3771 -- 87.8%
+// of the model's height, or 2.63 m up once fitted to the roster's 3.0 m post.
+// Area-weighted rather than a vertex mean so a densely tessellated rim cannot
+// drag the answer.
+// ============================================================================
+struct ZM_PropBulb
+{
+	bool  m_bHasBulb;
+	// In the MODEL's own units, from the model ORIGIN (these models are
+	// origin-centred, so a positive Y is above the middle of the post).
+	float m_fX;
+	float m_fY;
+	float m_fZ;
+	// Photometric, like every other light in this game: lumens, metres, linear RGB.
+	float m_fLumens;
+	float m_fRange;
+	float m_fR;
+	float m_fG;
+	float m_fB;
+};
+
+// TOTAL: every prop that is not a light source answers m_bHasBulb == false with
+// zeroes, so a caller may read the row unconditionally and branch on the flag.
+const ZM_PropBulb& ZM_GetPropBulb(ZM_PROP_ID eId);

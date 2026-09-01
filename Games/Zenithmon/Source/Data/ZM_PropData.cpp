@@ -112,6 +112,93 @@ namespace
 	};
 }
 
+namespace
+{
+	// ★ ONE ROW PER LIGHT-EMITTING PROP; everything else answers the inert row
+	// below. See ZM_PropBulb in the header for why this is keyed by PROP and why
+	// the offset is in the model's own units.
+	//
+	// ★★ THE LAMP POST'S NUMBER IS MEASURED, NOT CHOSEN. AB-PROP-07's lantern
+	// head is the flare above a shaft of radius ~0.017: the profile widens to
+	// 0.0898 at y +0.399..+0.419 with a finial above. The bulb is the
+	// AREA-WEIGHTED centroid of the glass between the bracket collar and the roof
+	// brim (y +0.300..+0.440) -- y = +0.3771, which is 87.8% of the model's height
+	// and 2.63 m up once the fit scales the post to its roster's 3.0 m.
+	//
+	// X and Z are ZERO rather than the centroid's own (+0.0025, +0.0037). Those
+	// are mesh asymmetry of a quarter of a centimetre, and a bulb belongs on the
+	// post's axis: adopting them would be reading noise as intent.
+	//
+	// ★★★ 60 lm, VIA 1200, 500 AND 175, AND THE MEASUREMENTS ARE THE USEFUL PART.
+	// 1200 is the honest photometric figure for a street lamp; the rest is what
+	// the current bloom calibration will actually carry.
+	//
+	// ★ NONE OF THEM WAS "BLOWN OUT" IN THE USUAL SENSE. At 1200 lm, 0.00% of the
+	// frame sat above luminance 250 and the peak stayed under it -- the tonemapper
+	// was holding throughout. The problem is that Flux extracts bloom above a
+	// PRE-EXPOSURE HDR luminance of 3.0 (Flux_HDR.cpp), an ABSOLUTE scene-referred
+	// figure the auto-exposure cannot rescue: a light either pushes its
+	// surroundings past it or it does not.
+	//
+	// ★★ AND THE LEVER IS SUB-LINEAR, WHICH IS WHY THIS TOOK FOUR VALUES AND NOT
+	// ONE. The halo is a blurred source, so its RADIUS grows far slower than the
+	// intensity -- each ~3x cut bought only ~15 px of diameter. MEASURED, as the
+	// largest connected near-white blob in the subject's own capture:
+	//
+	//     lumens   detail   three-quarter   town-wide
+	//       1200   96.7 px       66.2 px      39.5 px
+	//        500   ~90            ~58          ~33
+	//        175   79.9 px       49.4 px      26.4 px
+	//         60   63.3 px       35.0 px      17.6 px
+	//
+	// A first guess of "reduce it a bit" (1200 -> 500) was therefore worth almost
+	// nothing, and only the table shows that.
+	//
+	// ★ WHERE TO STOP CAME FROM THE SCENE, NOT FROM TASTE. ProfLab's ceiling tubes
+	// measured a 26 px halo before any of this and read as a lamp that glows
+	// slightly, so "slight" already had a value in this game. At 60 lm the post is
+	// inside it at every distance a player actually stands, and the lantern head --
+	// the part AB-PROP-07's commission describes -- reads as a shape again.
+	//
+	// ★★ THE REMAINING HALO IS NOT REMOVABLE BY THIS NUMBER. The bulb is INSIDE
+	// its own lantern: the glass sits 0.1-0.27 m from a point source, and
+	// ComputePointAttenuation's 1/(4*pi*d^2) (clamped only at MIN_LIGHT_DISTANCE =
+	// 1 cm) puts those surfaces ~350x the source intensity whatever it is. Driving
+	// the head itself under the threshold would need single-digit MILLILUMENS. A
+	// real fix is an emissive lantern material plus a dim spill light, or a light
+	// with a source RADIUS so the near field stops exploding -- neither exists yet,
+	// and both are engine work rather than a number in this table.
+	//
+	// The colour is the warm sodium cast a town lamp has, in LINEAR RGB like every
+	// other light in this game.
+	const ZM_PropBulb s_xLampPostBulb =
+	{
+		true, 0.0f, 0.3771f, 0.0f, 60.0f, 14.0f, 1.00f, 0.86f, 0.62f
+	};
+
+	const ZM_PropBulb s_xNoBulb =
+	{
+		false, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f
+	};
+}
+
+// TOTAL for every id, in range or not: only the rows that emit answer a bulb.
+const ZM_PropBulb& ZM_GetPropBulb(ZM_PROP_ID eId)
+{
+	switch (eId)
+	{
+	case ZM_PROP_LAMP_POST:
+		return s_xLampPostBulb;
+	default:
+		// ★ THE LANTERN POST (ZM_PROP_LANTERN_POST) IS DELIBERATELY NOT HERE. It
+		// is a different asset with a different head, still generated, and its
+		// bulb has never been measured -- inheriting the lamp post's offset would
+		// put a light at a point on a mesh nobody has looked at. Add a row when
+		// that asset is imported and measured, not before.
+		return s_xNoBulb;
+	}
+}
+
 const ZM_PropData& ZM_GetPropData(ZM_PROP_ID eId)
 {
 	Zenith_Assert(eId < ZM_PROP_COUNT, "ZM_GetPropData: prop id out of range (%u)", (u_int)eId);

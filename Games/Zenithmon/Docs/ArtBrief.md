@@ -94,15 +94,29 @@ and once the asset is in the game:
   longer assumes a model matches them: `ZM_PropFit.h` MEASURES the baked mesh and
   derives a uniform scale plus a ground lift, so a model arrives at whatever scale
   and origin its authoring tool chose and still lands at the roster footprint
-  standing on the floor. All four delivered assets arrived centred on their own
+  standing on the floor. All seven delivered assets arrived centred on their own
   origin rather than standing on it -- AB-PROP-01 at **1.00 x 0.38 x 0.72 m**
   against a 2.0 x 1.2 x 0.7 row, AB-PROP-02 at **0.64 x 0.54 x 1.00 m** against
   1.4 x 0.9 x 0.9, AB-PROP-03 at **0.62 x 1.00 x 0.54 m** against 0.6 x 0.6 x 1.0
   (a scale of 1.002, i.e. delivered almost exactly to size -- which the fit
-  handles as the near-identity it is), and AB-PROP-04 at **0.26 x 1.00 x 0.49 m**
-  against 1.2 x 0.4 x 2.0 (a scale of **2.004**, the largest correction yet, out
-  of the same branch-free expression that answers 1.002 for the chair) -- and none
-  needed a re-export. **So do not reject a delivery
+  handles as the near-identity it is), AB-PROP-04 at **0.26 x 1.00 x 0.49 m**
+  against 1.2 x 0.4 x 2.0 (a scale of 2.004, out of the same branch-free
+  expression that answers 1.002 for the chair), AB-PROP-05 at
+  **0.43 x 0.61 x 1.00 m** against 2.2 x 0.7 x 1.0 (a scale of **2.201**, the
+  largest correction yet), and AB-PROP-06 at **0.89 x 1.00 x 0.89 m** against
+  0.7 x 0.7 x 1.0 (a scale of **1.0005**, the SMALLEST correction yet and nearer
+  the identity than the chair's), and AB-PROP-07 at **0.17 x 1.00 x 0.16 m**
+  against 0.4 x 0.4 x 3.0 (a scale of **3.006**, the largest yet, and the first
+  delivery whose long axis is a HEIGHT rather than a length) -- and none needed a
+  re-export.
+
+  **★★ AND AB-PROP-06 IS WHY A SCALE NEAR 1 MUST NOT BE READ AS "DELIVERED TO
+  SIZE".** Its 1.0005 is the closest to the identity of the six, and it is still
+  **27% over its row in plan** -- 0.89 x 0.89 where the row asks 0.7 x 0.7. The
+  fit promises the LONGEST axis and nothing else, at every scale; the barrel is
+  simply a model whose height happened to match while its girth did not. A single
+  scale number is not a report on how well a delivery fits its row, and reading it
+  as one gets this delivery exactly backwards. **So do not reject a delivery
   over scale, and do not ask for one at a specific size** -- ask for the right
   PROPORTIONS, which are the one thing a uniform scale cannot fix.
 * **★ NOR IS THE AXIS ORDER A REQUIREMENT.** The fit matches the model's LONGEST
@@ -123,8 +137,54 @@ and once the asset is in the game:
   full-height, full-width back panel -- against 38% on +X, which is instead broken
   into the open bays the books are modelled into. So its front is +X like every
   import before it, and `YAW0` is what leaves it there. **Measure the facing of
-  every prop that has one**: +X is a property of these four deliveries, not
-  something the pipeline enforces or an artist was ever told.
+  every prop that has one**: +X is a property of the five deliveries that HAVE
+  a front, not something the pipeline enforces or an artist was ever told.
+
+  **★★ AND MEASURE IT WITH AN INSTRUMENT THAT SUITS THE ASSET, which AB-PROP-05
+  is the first to require.** The shelf's question -- "which extreme has a
+  continuous panel against it" -- is answerable because a bookshelf HAS a flat
+  back. A lab bench does not: run the same measurement over the counter and the
+  best-scoring face reaches 11%, against the shelf's 90%, so the instrument
+  reports "no facing" rather than the wrong one. What settled it was reading the
+  two features the row's own prompt asks for. 232 of the model's 5661 vertices sit
+  ABOVE the worktop plane, confined to x in [-0.159, -0.125] of a model spanning
+  +/-0.216 -- that is the shallow lip, and a lip is at the BACK. And the worktop
+  overhangs the cabinet body by 20 mm on +X and by 0 mm on -X -- that is a nosing,
+  and a nosing is at the FRONT. Both answer +X, so this delivery's front matches
+  the four before it, but nothing about the earlier method would have found that.
+
+  **★★ AND AB-PROP-06 IS THE OTHER ANSWER: NO FACING AT ALL, ESTABLISHED RATHER
+  THAN ASSUMED.** "It is a barrel, so its yaw does not matter" is almost certainly
+  true and is still a guess -- a stencilled brand, a bung on one stave or a hasp
+  would each give one silently, and each is exactly the kind of detail a
+  commissioned asset arrives with unannounced. So it was measured with the same
+  effort a front would have been: the body is a solid of revolution to within
+  **2.3%** peak deviation from a circle in all eight height bands, and the base
+  colour carries only stave grain and iron hoops -- 15% spread over 36 azimuth
+  bins with the dark ones SCATTERED rather than clustered, and no mark anywhere in
+  the 2048^2 map. The one asymmetry is a lid plug 0.040 m off the axis, 9% of the
+  barrel's radius, on a horizontal face.
+
+  **A free yaw is a RESULT, and it is worth writing down**, because the next
+  reader's instinct on seeing two barrels sharing a constant is that nobody
+  checked -- which is precisely what was true of the shelf and the counters, and
+  is not true here.
+
+  **★★ AB-PROP-07 ADDS A THIRD THING TO MEASURE: WHERE THE ASSET EMITS FROM.** A
+  lamp post is the first delivery whose entity owns a LIGHT as well as a model,
+  and a light in the wrong place on it is not a subtle fault -- the lamp glows
+  from the pavement and lights its own casing from below. So the bulb is measured
+  the same way a facing is, off the decoded mesh: the lantern head is the flare
+  above a shaft of radius ~0.017, widening to 0.0898 at y +0.399..+0.419 with a
+  finial above, and the bulb is the AREA-WEIGHTED centroid of the glass between
+  the bracket collar and the roof brim -- **y = +0.3771, 87.8% of the model's
+  height**, or 2.63 m up once fitted to the roster's 3.0 m post.
+
+  It is recorded in the MODEL's own units (`ZM_GetPropBulb`), not in metres, for
+  exactly the reason section 0.1 opens with: the fit rescales this asset by 3.006,
+  so a figure in world metres would have to be re-typed the day the asset is
+  re-exported at another size. **Commission a light-emitting prop with its
+  emitter modelled where it belongs, and the game will find it.**
 
   AB-PROP-04 is also the delivery whose PROPORTIONS diverge most from its row --
   fitted to 2.0 m tall it is 0.53 x 0.97 in plan where the row asks for 1.2 x 0.4.
@@ -132,6 +192,23 @@ and once the asset is in the game:
   uniform-scale ruling, and it is the previous bullet's "ask for the right
   PROPORTIONS" earning its place: proportions are the one thing a re-export would
   have had to fix, and they are the one thing nobody asked for.
+
+  **★★ AND AB-PROP-05 IS WHERE ONE YAW STOPPED BEING ENOUGH FOR ONE PROP.** Every
+  prop before it is placed twice with a single shared value, which was never a
+  decision: a symmetric greybox has no facing to get wrong, so both rows carried
+  whatever the first one did. The two counters stand against OPPOSITE walls --
+  `LabCounterWest` at x = -8.20 and `LabCounterEast` at x = +8.20 -- and a bench's
+  back belongs to its own wall, so they now differ: `YAW0` and `YAW180`. Both had
+  said `YAW90`, which does not merely turn a bench the wrong way round; it turns
+  its 2.2 m length onto the X axis and stands it END-ON to the wall, protruding
+  into the room. **A prop that appears more than once needs its yaw decided per
+  PLACEMENT, not per asset**, and that is invisible until the first delivery with
+  a front.
+
+  AB-PROP-05 is also the mirror of AB-PROP-04's proportion miss rather than a
+  repeat of it. Fitted to its 2.2 m length the counter is 0.95 deep and 1.34 tall
+  where the row asks 0.7 and 1.0, so BOTH short axes come out OVER; the shelf's
+  came out under. Left visible, per the same ruling.
 
 ### 0.2 What a tick asserts -- three things, all of them checkable
 
@@ -255,8 +332,8 @@ m_fHeight`).
 - [x] `AB-PROP-02` **Table** -- 1.4 x 0.9 x 0.9 m -- A plain four-legged kitchen table in stained timber, scuffed along one edge. Nothing on it; props are placed separately. -- source: `Games/Zenithmon/Assets/Props/Table/Table.glb`
 - [x] `AB-PROP-03` **Chair** -- 0.6 x 0.6 x 1.0 m -- A simple wooden chair with a slatted back, matching the table's timber. -- source: `Games/Zenithmon/Assets/Props/Chair/Chair.glb`
 - [x] `AB-PROP-04` **Shelf** -- 1.2 x 0.4 x 2.0 m -- A tall open bookshelf, four shelves, leaning very slightly. Books, jars and boxes modelled in as part of the mesh: it is set dressing, never interactive. -- source: `Games/Zenithmon/Assets/Props/Shelf/Shelf.glb`
-- [ ] `AB-PROP-05` **Counter** -- 2.2 x 0.7 x 1.0 m -- A laboratory bench: pale resin worktop, steel frame, a shallow lip at the back. Clinical rather than domestic; this is the ProfLab's furniture.
-- [ ] `AB-PROP-06` **Barrel** -- 0.7 x 0.7 x 1.0 m -- A banded wooden barrel, lid on, staves slightly uneven. Used as storage indoors and as scatter outdoors.
+- [x] `AB-PROP-05` **Counter** -- 2.2 x 0.7 x 1.0 m -- A laboratory bench: pale resin worktop, steel frame, a shallow lip at the back. Clinical rather than domestic; this is the ProfLab's furniture. -- source: `Games/Zenithmon/Assets/Props/Counter/Counter.glb`
+- [x] `AB-PROP-06` **Barrel** -- 0.7 x 0.7 x 1.0 m -- A banded wooden barrel, lid on, staves slightly uneven. Used as storage indoors and as scatter outdoors. -- source: `Games/Zenithmon/Assets/Props/Barrel/Barrel.glb`
 
 **★ THE FOOTPRINT IS A HARD CONSTRAINT, NOT A GUIDE.** Interior furniture carries
 an AABB static collider sized from its own mesh bounds
@@ -268,7 +345,7 @@ collider in a corridor the automated walk driver has no way around
 
 ### 1.2 Outdoor fixtures
 
-- [ ] `AB-PROP-07` **LampPost** -- 0.4 x 0.4 x 3.0 m -- A cast-iron street lamp with a glass lantern head, town-scale.
+- [x] `AB-PROP-07` **LampPost** -- 0.4 x 0.4 x 3.0 m -- A cast-iron street lamp with a glass lantern head, town-scale. -- source: `Games/Zenithmon/Assets/Props/LampPost/LampPost.glb`
 - [ ] `AB-PROP-08` **LanternPost** -- 0.4 x 0.4 x 2.4 m -- The shorter, warmer cousin of the lamp post; a hung lantern rather than a fixed head.
 - [ ] `AB-PROP-09` **FenceWood** -- A short run of rough post-and-rail timber fencing. Must tile end to end with no visible seam.
 - [ ] `AB-PROP-10` **FenceStone** -- A dry-stone wall section, same tiling requirement.
@@ -819,14 +896,17 @@ a cry are different assets made by different people, so they get different rows
 
 ## 7. If exactly one thing were commissioned
 
-**`AB-PROP-01` through `AB-PROP-06` -- the six interior furniture pieces.** The
-smallest commission here, seen closest and most often, in the two rooms the game
-opens in, and the one family where the generator's weakness is FORM alone: the
-material work around them is already done, so a hand-made bed drops into a room
-that already lights it correctly.
+**★ THIS SECTION'S ANSWER HAS BEEN DELIVERED IN FULL, AND IT IS LEFT HERE AS A
+RECORD OF THE CALL RATHER THAN REWRITTEN AS THOUGH IT WERE STILL OPEN.**
+`AB-PROP-01` through `AB-PROP-06` -- the six interior furniture pieces -- were the
+recommendation, and all six are now ticked. The reasoning was: the smallest
+commission on this page, seen closest and most often, in the two rooms the game
+opens in, and the one family where the generator's weakness is FORM alone, the
+material work around them being already done -- so a hand-made bed drops into a
+room that already lights it correctly. That held up.
 
-Second: the **named human cast**, `AB-HUM-01` to `AB-HUM-13`. Thirteen models,
-and they are the faces of the story.
+**So the answer is now the next one down: the named human cast**, `AB-HUM-01` to
+`AB-HUM-13`. Thirteen models, and they are the faces of the story.
 
 ---
 
@@ -834,8 +914,12 @@ and they are the faces of the story.
 
 * It does not schedule anything. Nothing here is in `Scope.md`, and a ticked row
   is a record that something happened, never a commitment that it will.
-* It does not describe an import pipeline, because none exists. Commissioning any
-  row means building one first, and that is a larger decision than the art.
+* It does not describe the import pipeline. There IS one now
+  (`Tools/Zenith_Tools_GlbImport`, second bullet at the top of this page), and
+  this bullet used to read *"because none exists ... commissioning any row means
+  building one first"* -- which was true when the page was written and was left
+  standing for six deliveries after it stopped being. `AssetManifest.md` owns the
+  file sets an import must produce; what a row needs is a `.glb`, not a decision.
 * It does not repeat the generated-asset catalogue. `AssetManifest.md` owns the
   file sets, counts, bake governance and determinism rules; this page is only
   about what a human would make instead.

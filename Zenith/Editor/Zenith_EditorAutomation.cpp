@@ -553,6 +553,7 @@ ZENITH_AUTHORING_DETERMINISM_END
 void Zenith_EditorAutomation::AddStep_SetLightIntensity(float fLumens)              { Push(Zenith_EditorAutomation::m_axActions, ActionType::SET_LIGHT_INTENSITY, fLumens); }
 void Zenith_EditorAutomation::AddStep_SetLightRange    (float fMetres)              { Push(Zenith_EditorAutomation::m_axActions, ActionType::SET_LIGHT_RANGE,     fMetres); }
 void Zenith_EditorAutomation::AddStep_SetLightColor    (float fR, float fG, float fB) { Push(Zenith_EditorAutomation::m_axActions, ActionType::SET_LIGHT_COLOR, fR, fG, fB); }
+void Zenith_EditorAutomation::AddStep_SetLightPositionOffset(float fX, float fY, float fZ) { Push(Zenith_EditorAutomation::m_axActions, ActionType::SET_LIGHT_POSITION_OFFSET, fX, fY, fZ); }
 
 // -- Sun --
 
@@ -2469,6 +2470,19 @@ static void ExecuteLightAction(const Zenith_EditorAction& xAction)
 			"SET_LIGHT_COLOR: selected entity has no LightComponent");
 		xEntity.GetComponent<Zenith_LightComponent>().SetColor(
 			Zenith_Maths::Vector3(xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2]));
+		break;
+	}
+
+	case Zenith_EditorActionType::SET_LIGHT_POSITION_OFFSET:
+	{
+		Zenith_Entity& xEntity = GetSelectedEntityChecked("SET_LIGHT_POSITION_OFFSET");
+		Zenith_Assert(xEntity.HasComponent<Zenith_LightComponent>(),
+			"SET_LIGHT_POSITION_OFFSET: selected entity has no LightComponent");
+		Zenith_LightComponent& xLight = xEntity.GetComponent<Zenith_LightComponent>();
+		xLight.SetLocalPositionOffset(
+			Zenith_Maths::Vector3(xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2]));
+		// Enabled here rather than left to a second verb: see the header.
+		xLight.SetUsePositionOffset(true);
 		break;
 	}
 

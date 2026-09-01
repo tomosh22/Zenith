@@ -98,11 +98,19 @@ public:
 	bool GetCastShadows() const { return m_bCastShadows; }
 	void SetCastShadows(bool bCast) { m_bCastShadows = bCast; }
 
-	// Position offset accessors (adds to transform position)
+	// ★★ THE OFFSET IS IN THE PARENT'S LOCAL (MODEL) SPACE, not world space -- it
+	// is transformed by the entity's rotation AND scale before being added, so it
+	// names a point ON THE MODEL rather than a displacement in the world. That is
+	// what lets a bulb sit inside a lamp post's lantern head and STAY there when
+	// the post is turned or when ZM_ComputePropFit rescales the asset. The names
+	// carry "Local" because the previous world-space behaviour was indistinguishable
+	// from this one for every caller that existed (there were none), and a silent
+	// change of meaning under an unchanged name is the shape this repo keeps paying
+	// for. GetWorldPosition() carries the argument.
 	bool GetUsePositionOffset() const { return m_bUsePositionOffset; }
 	void SetUsePositionOffset(bool bUse) { m_bUsePositionOffset = bUse; }
-	const Zenith_Maths::Vector3& GetPositionOffset() const { return m_xPositionOffset; }
-	void SetPositionOffset(const Zenith_Maths::Vector3& xOffset) { m_xPositionOffset = xOffset; }
+	const Zenith_Maths::Vector3& GetLocalPositionOffset() const { return m_xLocalPositionOffset; }
+	void SetLocalPositionOffset(const Zenith_Maths::Vector3& xOffset) { m_xLocalPositionOffset = xOffset; }
 
 	// Direction override accessors (when enabled, stores absolute world direction)
 	bool GetUseDirectionOffset() const { return m_bUseDirectionOffset; }
@@ -161,9 +169,10 @@ private:
 	// Reserved for future shadow mapping
 	ZENITH_PROPERTY(bool, m_bCastShadows, false)
 
-	// Position/direction offsets (added to transform component values)
+	// Position/direction offsets. The POSITION one is in the parent's local
+	// (model) space -- see GetWorldPosition; the DIRECTION one is absolute world.
 	bool m_bUsePositionOffset = false;
-	ZENITH_PROPERTY(Zenith_Maths::Vector3, m_xPositionOffset, Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f))
+	ZENITH_PROPERTY(Zenith_Maths::Vector3, m_xLocalPositionOffset, Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f))
 	bool m_bUseDirectionOffset = false;
 	ZENITH_PROPERTY(Zenith_Maths::Vector3, m_xDirectionOffset, Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f))
 };

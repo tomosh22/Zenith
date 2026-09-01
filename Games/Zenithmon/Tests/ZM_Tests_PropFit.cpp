@@ -114,6 +114,29 @@ ZENITH_TEST(ZM_PropFit, ImportedAssetsAreScaledAndStoodOnTheFloor)
 		{ ZM_PROP_SHELF,
 			PFVec(-0.131835938f, -0.499023438f, -0.243164063f),
 			PFVec( 0.131835938f,  0.499023438f,  0.243164063f) },
+		// ★ THE COUNTER IS THE SHELF'S MIRROR, and that is why it is worth a row
+		// rather than being "another Z fit like the table". Both are far from the
+		// identity -- 2.2011 against 2.0039 -- but they miss their roster
+		// proportions in OPPOSITE directions. Fitted to its 2.0 m height the shelf
+		// comes out 0.53 x 0.97 in plan where its row asks 1.2 x 0.4, so one short
+		// axis lands well UNDER; fitted to its 2.2 m length the counter comes out
+		// 0.951 deep and 1.338 tall where its row asks 0.7 and 1.0, so BOTH short
+		// axes land OVER. An implementation that clamped a fitted axis to its
+		// roster number, in either direction, would pass one of these and fail the
+		// other. Nothing below asserts a short axis, for exactly that reason.
+		{ ZM_PROP_COUNTER,
+			PFVec(-0.216064453f, -0.303955078f, -0.499755859f),
+			PFVec( 0.216064453f,  0.303955078f,  0.499755859f) },
+		// ★★ THE BARREL IS THE CASE WHERE A SCALE OF ~1 MEANS NOTHING. It fits on
+		// Y at 1.0005 -- nearer the identity than the chair's 1.0020, the closest
+		// of the six -- and is still 27% OVER its roster row in plan: 0.892 x 0.893
+		// against 0.7 x 0.7. "The scale came out about 1, so it was delivered to
+		// size" is therefore false, and it is the reading a single-number summary
+		// invites. The longest axis is the only one the fit promises; the other two
+		// report whatever the model's proportions say, at any scale.
+		{ ZM_PROP_BARREL,
+			PFVec(-0.446044922f, -0.499755859f, -0.446533203f),
+			PFVec( 0.446044922f,  0.499755859f,  0.446533203f) },
 	};
 
 	for (const ImportedAsset& xAsset : axAssets)

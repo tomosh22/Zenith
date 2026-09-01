@@ -38,7 +38,9 @@
 #include "Core/Zenith_TestFramework.h"
 #include "Maths/Zenith_Maths.h"
 #include "Zenithmon/Source/Interaction/ZM_TrainerSightLogic.h"   // fZM_SIGHT_MAX_DISTANCE
+#include "Zenithmon/Source/Data/ZM_PropData.h"            // the authored outdoor prop rows
 #include "Zenithmon/Source/World/ZM_DawnmereDressing.h"
+#include "Zenithmon/Source/World/ZM_PropPlacement.h"   // the ruling: every generated prop is placed
 #include "Zenithmon/Source/World/ZM_DawnmerePlacement.h"
 #include "Zenithmon/Source/World/ZM_TerrainAuthoring.h"
 
@@ -765,4 +767,387 @@ ZENITH_TEST(ZM_Dressing, Accessors_AreTotalForOutOfRangeIndices)
 		ZENITH_ASSERT_EQ_FLOAT(xLeg.m_fAZ, xLeg.m_fBZ, 0.0f,
 			"the out-of-range drive-leg sentinel is not degenerate");
 	}
+}
+
+// ★★ THE SAFETY CLAUSE FOR AUTHORED OUTDOOR PROPS, and it is deliberately NOT
+// the whole keep-out. A hand-placed prop is exempt from the graded-ground half
+// (pads and paths at flatten radius) because that half stands in for the
+// judgement a randomly-drawn point cannot exercise -- and applying it here would
+// refuse both building pads, i.e. the only ground a barrel belongs on. What it
+// is NOT exempt from is the reason the keep-out exists: DriveTowardXZ has no
+// obstacle avoidance (map playbook 3.4), so a collider on a blind leg wedges a
+// traversal into its frame cap with a failure naming a DISTANCE, not a blocker.
+//
+// ★ THE MARGIN IS THE PROP'S OWN FOOTPRINT, MEASURED, PLUS SLACK. It is checked
+// against the ROSTER row here rather than the baked mesh because this unit runs
+// with no assets -- but the roster UNDERSTATES the imported barrel (0.7 x 0.7 on
+// the row against 0.89 x 0.89 fitted, 27% over, because a uniform fit honours
+// the longest axis only). So the clause asserts against
+// fZM_DAWNMERE_AUTHORED_PROP_MARGIN, which is set above the fitted half-diagonal
+// rather than the roster's, and this comment is where that reasoning lives.
+ZENITH_TEST(ZM_Dressing, AuthoredProps_ClearEveryBodyAnchor)
+{
+	const u_int uCount = ZM_GetDawnmerePropCount();
+	ZENITH_ASSERT_GT(uCount, 0u, "the authored outdoor prop table is empty");
+
+	for (u_int u = 0u; u < uCount; ++u)
+	{
+		const ZM_DawnmereProp& xProp = ZM_GetDawnmereProp(u);
+
+		// TRUE: every row here carries a collider, so the armed trainer's sight
+		// radius applies -- only a physics body can break ZM_ProbeTrainerSightLine.
+		const float fClearance =
+			ZM_DawnmereBodyAnchorClearance(xProp.m_fX, xProp.m_fZ, /*sight*/ true);
+
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[ZM_Dressing] OBSERVED authored prop '%s' (%s) at (%.2f, %.2f): "
+			"body-anchor clearance %.3f m against a %.2f m margin",
+			xProp.m_szEntityName, ZM_GetPropName(xProp.m_eProp),
+			(double)xProp.m_fX, (double)xProp.m_fZ, (double)fClearance,
+			(double)fZM_DAWNMERE_AUTHORED_PROP_MARGIN);
+
+		ZENITH_ASSERT_GT(fClearance, fZM_DAWNMERE_AUTHORED_PROP_MARGIN,
+			"'%s' at (%.2f, %.2f) clears the nearest blind drive leg, NPC anchor, "
+			"warp marker or seam gate by only %.3f m. Anything with a collider that "
+			"close wedges a traversal test into its frame cap, and the failure names "
+			"a DISTANCE rather than this prop (map playbook 3.4)",
+			xProp.m_szEntityName, (double)xProp.m_fX, (double)xProp.m_fZ,
+			(double)fClearance);
+	}
+}
+
+// The rows are well-formed and distinct, in the same shape the tree clumps are
+// checked: a duplicated entity name is two props authored onto one entity, the
+// second silently winning, and a duplicated POSITION is two barrels in one place.
+ZENITH_TEST(ZM_Dressing, AuthoredProps_AreWellFormedAndDistinct)
+{
+	const u_int uCount = ZM_GetDawnmerePropCount();
+	for (u_int u = 0u; u < uCount; ++u)
+	{
+		const ZM_DawnmereProp& xProp = ZM_GetDawnmereProp(u);
+
+		ZENITH_ASSERT_NOT_NULL(xProp.m_szEntityName, "row %u has no entity name", u);
+		ZENITH_ASSERT_LT((u_int)xProp.m_eProp, (u_int)ZM_PROP_COUNT,
+			"'%s' names no prop in the roster", xProp.m_szEntityName);
+
+		// The name maps back, which is how ZM_InteriorFurniture resolves it at
+		// runtime. A typo is a prop that shows nothing in a scene that still loads.
+		ZENITH_ASSERT_EQ((u_int)ZM_PropForDawnmerePropEntity(xProp.m_szEntityName),
+			(u_int)xProp.m_eProp,
+			"'%s' does not resolve back to its own prop", xProp.m_szEntityName);
+
+		// A FROZEN UNIT quaternion, never computed -- a non-unit one would be
+		// normalised somewhere downstream and the committed scene bytes would then
+		// depend on where (ZM-D-183).
+		const float fLenSq = xProp.m_fQuatW * xProp.m_fQuatW
+			+ xProp.m_fQuatY * xProp.m_fQuatY;
+		ZENITH_ASSERT_EQ_FLOAT(fLenSq, 1.0f, 1.0e-6f,
+			"'%s' carries a non-unit frozen quaternion (w=%.8f y=%.8f)",
+			xProp.m_szEntityName, (double)xProp.m_fQuatW, (double)xProp.m_fQuatY);
+
+		for (u_int v = u + 1u; v < uCount; ++v)
+		{
+			const ZM_DawnmereProp& xOther = ZM_GetDawnmereProp(v);
+			ZENITH_ASSERT_TRUE(
+				strcmp(xProp.m_szEntityName, xOther.m_szEntityName) != 0,
+				"rows %u and %u share the entity name '%s'", u, v,
+				xProp.m_szEntityName);
+			const float fDX = xProp.m_fX - xOther.m_fX;
+			const float fDZ = xProp.m_fZ - xOther.m_fZ;
+			ZENITH_ASSERT_GT(std::sqrt(fDX * fDX + fDZ * fDZ), 1.0f,
+				"'%s' and '%s' stand within 1 m of each other",
+				xProp.m_szEntityName, xOther.m_szEntityName);
+		}
+	}
+}
+
+// ★ AND EACH ROW STANDS WHERE IT SAYS IT DOES. This clause used to assert one
+// rule for the whole table -- "every outdoor prop stands against a building
+// wall" -- which was true of the four barrels it was written for and false of
+// everything since. Inferring the rule from ZM_PROP_KIND does not work either: a
+// lamp post flanks a doorway and a lantern post lines a lane, and both are
+// ZM_PROP_KIND_LAMP. So the ROW states its claim and this checks that claim.
+//
+// ★★ FREE IS NOT AN ESCAPE HATCH, and it is worth being explicit about why. A
+// rock, a ledge and a bridge section are deliberately in open ground; their only
+// real constraint is the keep-out, which EVERY row is checked against by the
+// clause above regardless of anchor. What FREE buys is that a barrel cannot
+// quietly become free-standing -- changing the claim is an edit somebody reviews.
+ZENITH_TEST(ZM_Dressing, AuthoredPropsStandWhereTheirRowClaims)
+{
+	struct Building
+	{
+		const char* m_szWhich;
+		float m_fMinX;
+		float m_fMaxX;
+		float m_fFaceZ;   // the entrance face; a prop stands at z < this
+	};
+	const Building axBuildings[] =
+	{
+		{ "home", fZM_DAWNMERE_HOME_X - fZM_DAWNMERE_HOME_SHELL_SCALE_X * 0.5f,
+		          fZM_DAWNMERE_HOME_X + fZM_DAWNMERE_HOME_SHELL_SCALE_X * 0.5f,
+		          fZM_DAWNMERE_HOME_ENTRANCE_Z },
+		{ "lab",  fZM_DAWNMERE_LAB_X - fZM_DAWNMERE_LAB_SHELL_SCALE_X * 0.5f,
+		          fZM_DAWNMERE_LAB_X + fZM_DAWNMERE_LAB_SHELL_SCALE_X * 0.5f,
+		          fZM_DAWNMERE_LAB_ENTRANCE_Z },
+	};
+
+	constexpr float fWALL_STANDOFF_MAX    = 1.5f;
+	constexpr float fCORNER_FORWARD_MAX   = 8.0f;
+	constexpr float fCORNER_PAST_MAX      = 6.0f;
+
+	u_int uWall = 0u, uCorner = 0u, uFree = 0u;
+	for (u_int u = 0u; u < ZM_GetDawnmerePropCount(); ++u)
+	{
+		const ZM_DawnmereProp& xProp = ZM_GetDawnmereProp(u);
+		if (xProp.m_eAnchor == ZM_DAWNMERE_ANCHOR_FREE)
+		{
+			++uFree;
+			continue;
+		}
+
+		bool bHeld = false;
+		for (const Building& xB : axBuildings)
+		{
+			const float fForward = xB.m_fFaceZ - xProp.m_fZ;
+			if (!(fForward > 0.0f))
+			{
+				continue;   // behind the entrance face is inside the building
+			}
+			if (xProp.m_eAnchor == ZM_DAWNMERE_ANCHOR_BUILDING_WALL)
+			{
+				if (xProp.m_fX >= xB.m_fMinX && xProp.m_fX <= xB.m_fMaxX
+					&& fForward <= fWALL_STANDOFF_MAX)
+				{
+					bHeld = true;
+					++uWall;
+					Zenith_Log(LOG_CATEGORY_UNITTEST,
+						"[ZM_Dressing] OBSERVED '%s' stands %.2f m off the %s's "
+						"entrance face, inside its X footprint",
+						xProp.m_szEntityName, (double)fForward, xB.m_szWhich);
+					break;
+				}
+			}
+			else   // ZM_DAWNMERE_ANCHOR_BUILDING_CORNER
+			{
+				const float fPast = (xProp.m_fX < xB.m_fMinX)
+					? (xB.m_fMinX - xProp.m_fX) : (xProp.m_fX - xB.m_fMaxX);
+				if (fPast > 0.0f && fPast <= fCORNER_PAST_MAX
+					&& fForward <= fCORNER_FORWARD_MAX)
+				{
+					bHeld = true;
+					++uCorner;
+					Zenith_Log(LOG_CATEGORY_UNITTEST,
+						"[ZM_Dressing] OBSERVED '%s' stands %.2f m past the %s's "
+						"corner and %.2f m forward of its frontage",
+						xProp.m_szEntityName, (double)fPast, xB.m_szWhich,
+						(double)fForward);
+					break;
+				}
+			}
+		}
+
+		ZENITH_ASSERT_TRUE(bHeld,
+			"'%s' (%s) at (%.2f, %.2f) claims anchor %u and does not satisfy it. "
+			"BUILDING_WALL means inside a footprint in X and within %.1f m of that "
+			"building's entrance face; BUILDING_CORNER means just PAST a corner (up "
+			"to %.1f m) and within %.1f m of the frontage. Move it, or change the "
+			"row's claim to FREE if it is genuinely open-ground scenery.",
+			xProp.m_szEntityName, ZM_GetPropName(xProp.m_eProp),
+			(double)xProp.m_fX, (double)xProp.m_fZ, (u_int)xProp.m_eAnchor,
+			(double)fWALL_STANDOFF_MAX, (double)fCORNER_PAST_MAX,
+			(double)fCORNER_FORWARD_MAX);
+	}
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST,
+		"[ZM_Dressing] OBSERVED %u outdoor props: %u against a wall, %u past a "
+		"corner, %u free-standing", ZM_GetDawnmerePropCount(), uWall, uCorner, uFree);
+
+	// ★ ANTI-VACUITY: a table of all-FREE rows would skip every clause above.
+	ZENITH_ASSERT_GT(uWall, 0u, "no row claims BUILDING_WALL -- nothing was checked");
+	ZENITH_ASSERT_GT(uCorner, 0u, "no row claims BUILDING_CORNER -- nothing was checked");
+}
+
+// ★★ AND EVERY ROW IS INSIDE THE TERRAIN. Cheap, and it catches the one mistake a
+// clearance check cannot: a coordinate typed outside the map clears every anchor
+// by a mile and lands the prop off the edge of the world.
+ZENITH_TEST(ZM_Dressing, AuthoredPropsAreInsideTheTerrain)
+{
+	const ZM_TerrainAuthoringRecipe& xRecipe = ZM_GetDawnmereTerrainRecipe();
+	const float fMaxX = xRecipe.WorldMaxX();
+	const float fMaxZ = xRecipe.WorldMaxZ();
+	const float fEdge = fZM_DAWNMERE_DRESSING_EDGE_MARGIN;
+
+	for (u_int u = 0u; u < ZM_GetDawnmerePropCount(); ++u)
+	{
+		const ZM_DawnmereProp& xProp = ZM_GetDawnmereProp(u);
+		ZENITH_ASSERT_TRUE(
+			xProp.m_fX >= fEdge && xProp.m_fX <= fMaxX - fEdge
+			&& xProp.m_fZ >= fEdge && xProp.m_fZ <= fMaxZ - fEdge,
+			"'%s' at (%.2f, %.2f) is outside the %.0f x %.0f terrain's %.1f m edge "
+			"margin", xProp.m_szEntityName, (double)xProp.m_fX, (double)xProp.m_fZ,
+			(double)fMaxX, (double)fMaxZ, (double)fEdge);
+	}
+}
+
+// ★★ A LIGHT-EMITTING PROP'S BULB IS INSIDE ITS OWN MESH. The offset is in the
+// model's own units, so it is checkable against the roster's own dimensions with
+// no assets loaded: a bulb outside the model's extents is a lamp glowing from
+// somewhere that is not the lamp, which is the whole failure this table exists to
+// avoid and one that renders perfectly happily.
+ZENITH_TEST(ZM_Dressing, PropBulbsSitInsideTheirOwnModel)
+{
+	u_int uChecked = 0u;
+	for (u_int u = 0u; u < static_cast<u_int>(ZM_PROP_COUNT); ++u)
+	{
+		const ZM_PROP_ID eId = static_cast<ZM_PROP_ID>(u);
+		const ZM_PropBulb& xBulb = ZM_GetPropBulb(eId);
+		if (!xBulb.m_bHasBulb)
+		{
+			// The inert row really is inert: a caller that forgets the flag and
+			// applies the offset anyway must get the entity origin, not a light
+			// somewhere arbitrary.
+			ZENITH_ASSERT_EQ_FLOAT(xBulb.m_fX, 0.0f, 1.0e-6f, "prop %u", u);
+			ZENITH_ASSERT_EQ_FLOAT(xBulb.m_fY, 0.0f, 1.0e-6f, "prop %u", u);
+			ZENITH_ASSERT_EQ_FLOAT(xBulb.m_fZ, 0.0f, 1.0e-6f, "prop %u", u);
+			ZENITH_ASSERT_EQ_FLOAT(xBulb.m_fLumens, 0.0f, 1.0e-6f, "prop %u", u);
+			continue;
+		}
+		++uChecked;
+
+		// ★ AGAINST THE MODEL'S OWN HALF-EXTENTS, expressed as a FRACTION so the
+		// clause does not have to know the mesh. These models are origin-centred
+		// and normalised so their longest axis is ~1.0, which makes +/-0.5 the
+		// bound on every axis; the roster's metres are the FITTED size and are the
+		// wrong space entirely to compare an unfitted offset against.
+		constexpr float fMODEL_HALF_EXTENT = 0.5f;
+		ZENITH_ASSERT_LE(std::fabs(xBulb.m_fX), fMODEL_HALF_EXTENT,
+			"'%s' bulb X %.4f is outside the model", ZM_GetPropName(eId),
+			(double)xBulb.m_fX);
+		ZENITH_ASSERT_LE(std::fabs(xBulb.m_fY), fMODEL_HALF_EXTENT,
+			"'%s' bulb Y %.4f is outside the model", ZM_GetPropName(eId),
+			(double)xBulb.m_fY);
+		ZENITH_ASSERT_LE(std::fabs(xBulb.m_fZ), fMODEL_HALF_EXTENT,
+			"'%s' bulb Z %.4f is outside the model", ZM_GetPropName(eId),
+			(double)xBulb.m_fZ);
+
+		// A bulb with no light is a light-emitting prop that emits nothing, which
+		// is the same silent nothing as an unset offset.
+		ZENITH_ASSERT_GT(xBulb.m_fLumens, 0.0f,
+			"'%s' declares a bulb but emits 0 lumens", ZM_GetPropName(eId));
+		ZENITH_ASSERT_GT(xBulb.m_fRange, 0.0f,
+			"'%s' declares a bulb with no range", ZM_GetPropName(eId));
+
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[ZM_Dressing] OBSERVED '%s' bulb at model (%.4f, %.4f, %.4f) = %.1f%% "
+			"of its height, %.0f lm over %.1f m",
+			ZM_GetPropName(eId), (double)xBulb.m_fX, (double)xBulb.m_fY,
+			(double)xBulb.m_fZ,
+			(double)((xBulb.m_fY + fMODEL_HALF_EXTENT) * 100.0f),
+			(double)xBulb.m_fLumens, (double)xBulb.m_fRange);
+	}
+
+	// ★ ANTI-VACUITY. Every clause above is inside a branch that a table of all
+	// -inert rows skips entirely, so the suite would stay green if the lamp post's
+	// row were deleted.
+	ZENITH_ASSERT_GT(uChecked, 0u,
+		"no prop declares a bulb -- either the table lost a row or this test is "
+		"measuring nothing");
+}
+
+// ★★★ THE RULING, MECHANISED (2026-09-01): **if the game generates an asset then
+// it is placed in game.** Twelve of the roster's twenty-eight rows were being
+// generated, baked and rendered nowhere when this was written, and nothing said
+// so -- the count had to be produced by grepping, and the first attempt at it was
+// wrong twice over. A rule in prose in front of a check IS the defect; this is
+// the check.
+//
+// ★ IT COSTS SOMETHING, AND THAT IS THE POINT. Adding a roster row now means
+// deciding where the thing goes, in the same change. That is the whole content of
+// the ruling: an asset the generator emits and no scene shows is a bake nobody
+// sees, and it silently absorbs an imported `.glb` too -- AB-PROP-07 arrived
+// looking finished while being invisible, because ZM_PROP_LAMP_POST had never
+// been placed anywhere.
+ZENITH_TEST(ZM_Dressing, EveryGeneratedPropIsPlacedInGame)
+{
+	u_int auPerSite[5] = {};
+	for (u_int u = 0u; u < static_cast<u_int>(ZM_PROP_COUNT); ++u)
+	{
+		const ZM_PROP_ID eProp = static_cast<ZM_PROP_ID>(u);
+		const ZM_PROP_PLACEMENT_SITE eSite = ZM_WherePropIsPlaced(eProp);
+		auPerSite[static_cast<u_int>(eSite)]++;
+
+		ZENITH_ASSERT_NE(static_cast<u_int>(eSite),
+			static_cast<u_int>(ZM_PROP_PLACEMENT_NONE),
+			"'%s' is generated and baked but placed in NO scene. Every roster row "
+			"must be placed: add it to ZM_DawnmereDressing.h's outdoor table (or an "
+			"interior room), or remove the row. A prop nothing places is a bake "
+			"nobody sees -- and dropping a .glb onto it replaces a model that still "
+			"does not appear.", ZM_GetPropName(eProp));
+	}
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST,
+		"[ZM_Dressing] OBSERVED placement of %u roster props: %u interior, "
+		"%u Dawnmere, %u battle arena, %u ground item, %u NOWHERE",
+		static_cast<u_int>(ZM_PROP_COUNT),
+		auPerSite[ZM_PROP_PLACEMENT_INTERIOR], auPerSite[ZM_PROP_PLACEMENT_DAWNMERE],
+		auPerSite[ZM_PROP_PLACEMENT_BATTLE_ARENA],
+		auPerSite[ZM_PROP_PLACEMENT_GROUND_ITEM], auPerSite[ZM_PROP_PLACEMENT_NONE]);
+
+	// ★ ANTI-VACUITY. Every clause above passes trivially on an EMPTY roster, and
+	// would also pass if ZM_WherePropIsPlaced were rewritten to answer a constant.
+	// These pin that the two AUTHORED tables are really being consulted.
+	ZENITH_ASSERT_GT(auPerSite[ZM_PROP_PLACEMENT_INTERIOR], 0u,
+		"no prop resolves to an interior room -- the interior table is not being read");
+	ZENITH_ASSERT_GT(auPerSite[ZM_PROP_PLACEMENT_DAWNMERE], 0u,
+		"no prop resolves to the outdoor table -- it is not being read");
+	ZENITH_ASSERT_EQ((u_int)ZM_WherePropIsPlaced(ZM_PROP_COUNT),
+		(u_int)ZM_PROP_PLACEMENT_NONE, "an out-of-range id must answer NONE");
+}
+
+// ★★ A FENCE THAT DOES NOT TILE IS A FENCE WITH GAPS IN IT, and the spacing that
+// makes it tile is the prop's OWN roster length -- not a number typed beside it.
+// ZM_ComputePropFit scales every delivery so its longest axis lands exactly on
+// the roster's longest number, so consecutive centres one roster-length apart
+// abut whatever mesh arrives. Re-roster a fence at 2.5 m and this refuses the
+// stale 2.0 m spacing instead of shipping a fence with 0.5 m holes.
+ZENITH_TEST(ZM_Dressing, FenceRunSpacingMatchesTheRosterLength)
+{
+	u_int uRunsChecked = 0u;
+	const u_int uCount = ZM_GetDawnmerePropCount();
+	for (u_int u = 0u; u + 1u < uCount; ++u)
+	{
+		const ZM_DawnmereProp& xA = ZM_GetDawnmereProp(u);
+		const ZM_DawnmereProp& xB = ZM_GetDawnmereProp(u + 1u);
+		const ZM_PropData& xData = ZM_GetPropData(xA.m_eProp);
+		if (xA.m_eProp != xB.m_eProp)
+		{
+			continue;   // not a consecutive pair of the same tiling prop
+		}
+		if (xData.m_eKind != ZM_PROP_KIND_FENCE && xData.m_eKind != ZM_PROP_KIND_BRIDGE)
+		{
+			continue;   // only the two families whose prompts require tiling
+		}
+
+		// A fence tiles along its WIDTH and a bridge along its DEPTH, which is why
+		// the two families cannot share one spacing constant.
+		const bool bFence = (xData.m_eKind == ZM_PROP_KIND_FENCE);
+		const float fPitch = bFence ? xData.m_fWidth : xData.m_fDepth;
+		const float fDX = xB.m_fX - xA.m_fX;
+		const float fDZ = xB.m_fZ - xA.m_fZ;
+		const float fStep = std::sqrt(fDX * fDX + fDZ * fDZ);
+		++uRunsChecked;
+
+		ZENITH_ASSERT_EQ_FLOAT(fStep, fPitch, 1.0e-3f,
+			"'%s' and '%s' are %.3f m apart but '%s' tiles at %.3f m (its roster "
+			"%s). Consecutive sections must abut: a larger step leaves a gap, a "
+			"smaller one overlaps.",
+			xA.m_szEntityName, xB.m_szEntityName, (double)fStep,
+			ZM_GetPropName(xA.m_eProp), (double)fPitch,
+			bFence ? "WIDTH" : "DEPTH");
+	}
+
+	ZENITH_ASSERT_GT(uRunsChecked, 0u,
+		"no tiling run was checked -- either the runs were removed or this test is "
+		"measuring nothing");
 }
