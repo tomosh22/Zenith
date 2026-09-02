@@ -70,8 +70,16 @@ void Zenith_EditorAddLogMessage(const char* szMessage, int eLevel, Zenith_LogCat
 #include "Panels/Zenith_EditorPanel_RenderGraph.h"
 #include "Panels/Zenith_EditorPanel_TerrainEditor.h"
 #include "Panels/Zenith_EditorPanel_Toolbar.h"
+#include "Panels/Zenith_EditorPanel_StatusBar.h"
 #include "Panels/Zenith_EditorPanel_VariantEditor.h"
 #include "Panels/Zenith_EditorPanel_Viewport.h"
+
+#include "Zenith_EditorUI.h"
+#include "Zenith_EditorActions.h"
+#include "Zenith_EditorCommands.h"
+#include "Zenith_EditorPrefs.h"
+#include "Flux/Primitives/Flux_PrimitivesImpl.h"
+#include "Windows/Zenith_Windows_Window.h"
 
 #include "imgui.h"
 // DockBuilder API (code-built default dock layout) lives in the internal
@@ -159,133 +167,6 @@ EditorGizmoMode Zenith_Editor::GetGizmoMode() { return m_xEditorState.m_eGizmoMo
 void Zenith_Editor::SetGizmoMode(EditorGizmoMode eMode) { m_xEditorState.m_eGizmoMode = eMode; }
 Zenith_MaterialAsset* Zenith_Editor::GetSelectedMaterial() { return m_xEditorState.m_xMaterial.m_xSelectedMaterial.GetDirect(); }
 
-void Zenith_Editor::ApplyEditorTheme()
-{
-	ImGuiStyle& xStyle = ImGui::GetStyle();
-
-	// Layout
-	xStyle.WindowPadding = ImVec2(8.0f, 8.0f);
-	xStyle.FramePadding = ImVec2(5.0f, 4.0f);
-	xStyle.ItemSpacing = ImVec2(6.0f, 4.0f);
-	xStyle.ItemInnerSpacing = ImVec2(6.0f, 4.0f);
-	xStyle.IndentSpacing = 16.0f;
-	xStyle.ScrollbarSize = 13.0f;
-	xStyle.GrabMinSize = 9.0f;
-
-	// Rounding
-	xStyle.WindowRounding = 4.0f;
-	xStyle.ChildRounding = 4.0f;
-	xStyle.FrameRounding = 3.0f;
-	xStyle.PopupRounding = 4.0f;
-	xStyle.ScrollbarRounding = 9.0f;
-	xStyle.GrabRounding = 3.0f;
-	xStyle.TabRounding = 3.0f;
-
-	// Borders
-	xStyle.WindowBorderSize = 1.0f;
-	xStyle.ChildBorderSize = 1.0f;
-	xStyle.FrameBorderSize = 0.0f;
-	xStyle.PopupBorderSize = 1.0f;
-	xStyle.TabBorderSize = 0.0f;
-
-	// Colors — neutral grays matching Unity's dark theme, blue accent for interactive elements only
-	ImVec4* axColors = xStyle.Colors;
-
-	// Text
-	axColors[ImGuiCol_Text] = ImVec4(0.79f, 0.79f, 0.79f, 1.00f);
-	axColors[ImGuiCol_TextDisabled] = ImVec4(0.50f, 0.50f, 0.50f, 1.00f);
-
-	// Backgrounds
-	axColors[ImGuiCol_WindowBg] = ImVec4(0.22f, 0.22f, 0.22f, 1.00f);
-	axColors[ImGuiCol_ChildBg] = ImVec4(0.22f, 0.22f, 0.22f, 1.00f);
-	axColors[ImGuiCol_PopupBg] = ImVec4(0.18f, 0.18f, 0.18f, 0.96f);
-
-	// Borders
-	axColors[ImGuiCol_Border] = ImVec4(0.14f, 0.14f, 0.14f, 1.00f);
-	axColors[ImGuiCol_BorderShadow] = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
-
-	// Frames (input fields, checkboxes)
-	axColors[ImGuiCol_FrameBg] = ImVec4(0.16f, 0.16f, 0.16f, 1.00f);
-	axColors[ImGuiCol_FrameBgHovered] = ImVec4(0.20f, 0.20f, 0.20f, 1.00f);
-	axColors[ImGuiCol_FrameBgActive] = ImVec4(0.24f, 0.24f, 0.24f, 1.00f);
-
-	// Title bar
-	axColors[ImGuiCol_TitleBg] = ImVec4(0.16f, 0.16f, 0.16f, 1.00f);
-	axColors[ImGuiCol_TitleBgActive] = ImVec4(0.19f, 0.19f, 0.19f, 1.00f);
-	axColors[ImGuiCol_TitleBgCollapsed] = ImVec4(0.16f, 0.16f, 0.16f, 0.75f);
-
-	// Menu bar
-	axColors[ImGuiCol_MenuBarBg] = ImVec4(0.24f, 0.24f, 0.24f, 1.00f);
-
-	// Scrollbar
-	axColors[ImGuiCol_ScrollbarBg] = ImVec4(0.16f, 0.16f, 0.16f, 1.00f);
-	axColors[ImGuiCol_ScrollbarGrab] = ImVec4(0.31f, 0.31f, 0.31f, 1.00f);
-	axColors[ImGuiCol_ScrollbarGrabHovered] = ImVec4(0.37f, 0.37f, 0.37f, 1.00f);
-	axColors[ImGuiCol_ScrollbarGrabActive] = ImVec4(0.42f, 0.42f, 0.42f, 1.00f);
-
-	// Checkmark, slider — blue accent
-	axColors[ImGuiCol_CheckMark] = ImVec4(0.26f, 0.59f, 0.98f, 1.00f);
-	axColors[ImGuiCol_SliderGrab] = ImVec4(0.26f, 0.59f, 0.98f, 0.78f);
-	axColors[ImGuiCol_SliderGrabActive] = ImVec4(0.26f, 0.59f, 0.98f, 1.00f);
-
-	// Buttons
-	axColors[ImGuiCol_Button] = ImVec4(0.31f, 0.31f, 0.31f, 1.00f);
-	axColors[ImGuiCol_ButtonHovered] = ImVec4(0.38f, 0.38f, 0.38f, 1.00f);
-	axColors[ImGuiCol_ButtonActive] = ImVec4(0.44f, 0.44f, 0.44f, 1.00f);
-
-	// Headers (collapsing headers, tree nodes, selectables)
-	axColors[ImGuiCol_Header] = ImVec4(0.27f, 0.27f, 0.27f, 1.00f);
-	axColors[ImGuiCol_HeaderHovered] = ImVec4(0.17f, 0.36f, 0.53f, 1.00f);
-	axColors[ImGuiCol_HeaderActive] = ImVec4(0.17f, 0.36f, 0.53f, 1.00f);
-
-	// Separators
-	axColors[ImGuiCol_Separator] = ImVec4(0.14f, 0.14f, 0.14f, 1.00f);
-	axColors[ImGuiCol_SeparatorHovered] = ImVec4(0.26f, 0.59f, 0.98f, 0.78f);
-	axColors[ImGuiCol_SeparatorActive] = ImVec4(0.26f, 0.59f, 0.98f, 1.00f);
-
-	// Resize grip
-	axColors[ImGuiCol_ResizeGrip] = ImVec4(0.26f, 0.59f, 0.98f, 0.20f);
-	axColors[ImGuiCol_ResizeGripHovered] = ImVec4(0.26f, 0.59f, 0.98f, 0.67f);
-	axColors[ImGuiCol_ResizeGripActive] = ImVec4(0.26f, 0.59f, 0.98f, 0.95f);
-
-	// Tabs
-	axColors[ImGuiCol_Tab] = ImVec4(0.18f, 0.18f, 0.18f, 1.00f);
-	axColors[ImGuiCol_TabHovered] = ImVec4(0.27f, 0.27f, 0.27f, 1.00f);
-	axColors[ImGuiCol_TabSelected] = ImVec4(0.22f, 0.22f, 0.22f, 1.00f);
-	axColors[ImGuiCol_TabSelectedOverline] = ImVec4(0.26f, 0.59f, 0.98f, 1.00f);
-	axColors[ImGuiCol_TabDimmed] = ImVec4(0.16f, 0.16f, 0.16f, 1.00f);
-	axColors[ImGuiCol_TabDimmedSelected] = ImVec4(0.20f, 0.20f, 0.20f, 1.00f);
-	axColors[ImGuiCol_TabDimmedSelectedOverline] = ImVec4(0.26f, 0.59f, 0.98f, 0.50f);
-
-	// Docking
-	axColors[ImGuiCol_DockingPreview] = ImVec4(0.26f, 0.59f, 0.98f, 0.70f);
-	axColors[ImGuiCol_DockingEmptyBg] = ImVec4(0.14f, 0.14f, 0.14f, 1.00f);
-
-	// Table
-	axColors[ImGuiCol_TableHeaderBg] = ImVec4(0.19f, 0.19f, 0.19f, 1.00f);
-	axColors[ImGuiCol_TableBorderStrong] = ImVec4(0.14f, 0.14f, 0.14f, 1.00f);
-	axColors[ImGuiCol_TableBorderLight] = ImVec4(0.18f, 0.18f, 0.18f, 1.00f);
-	axColors[ImGuiCol_TableRowBg] = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
-	axColors[ImGuiCol_TableRowBgAlt] = ImVec4(1.00f, 1.00f, 1.00f, 0.03f);
-
-	// Drag-drop, nav
-	axColors[ImGuiCol_DragDropTarget] = ImVec4(0.26f, 0.59f, 0.98f, 0.90f);
-	axColors[ImGuiCol_NavHighlight] = ImVec4(0.26f, 0.59f, 0.98f, 1.00f);
-	axColors[ImGuiCol_NavWindowingHighlight] = ImVec4(1.00f, 1.00f, 1.00f, 0.70f);
-	axColors[ImGuiCol_NavWindowingDimBg] = ImVec4(0.80f, 0.80f, 0.80f, 0.20f);
-	axColors[ImGuiCol_ModalWindowDimBg] = ImVec4(0.20f, 0.20f, 0.20f, 0.35f);
-
-	// Convert all colors from sRGB to linear space
-	// The sRGB swapchain applies linear->sRGB conversion on write,
-	// so we need linear input values to get the correct perceptual output
-	for (int i = 0; i < ImGuiCol_COUNT; i++)
-	{
-		axColors[i].x = powf(axColors[i].x, 2.2f);
-		axColors[i].y = powf(axColors[i].y, 2.2f);
-		axColors[i].z = powf(axColors[i].z, 2.2f);
-	}
-}
-
 void Zenith_Editor::ConfigureImGuiIniPath()
 {
 	// D3D12 null backend: no ImGui context is ever created — nothing to do.
@@ -315,33 +196,15 @@ void Zenith_Editor::ConfigureImGuiIniPath()
 	// Zenith_SaveData's %APPDATA%/Zenith/<GameName>/). ImGui stores the
 	// IniFilename POINTER without copying — the buffer must outlive
 	// DestroyContext, hence the file-scope static.
-#ifdef ZENITH_WINDOWS
 	static char s_acImGuiIniPath[ZENITH_MAX_PATH_LENGTH] = {};
-
-	char acLocalAppData[ZENITH_MAX_PATH_LENGTH] = {};
-	const DWORD uLen = GetEnvironmentVariableA("LOCALAPPDATA", acLocalAppData, sizeof(acLocalAppData));
-	if (uLen == 0 || uLen >= sizeof(acLocalAppData))
+	const std::string strDir = Zenith_EditorPrefs::GetUserDataDirectory();
+	if (strDir.empty())
 	{
 		xIO.IniFilename = nullptr;
 		return;
 	}
-
-	char acDir[ZENITH_MAX_PATH_LENGTH] = {};
-	snprintf(acDir, sizeof(acDir), "%s/Zenith/%s", acLocalAppData, Project_GetName());
-	std::error_code xError;
-	std::filesystem::create_directories(acDir, xError);
-	if (xError)
-	{
-		Zenith_Warning(LOG_CATEGORY_EDITOR, "Failed to create ImGui ini dir '%s' (%s) — layout persistence disabled", acDir, xError.message().c_str());
-		xIO.IniFilename = nullptr;
-		return;
-	}
-
-	snprintf(s_acImGuiIniPath, sizeof(s_acImGuiIniPath), "%s/imgui.ini", acDir);
+	snprintf(s_acImGuiIniPath, sizeof(s_acImGuiIniPath), "%s/imgui.ini", strDir.c_str());
 	xIO.IniFilename = s_acImGuiIniPath;
-#else
-	xIO.IniFilename = nullptr;
-#endif
 }
 
 // Code-built default dock layout. Runs when no saved layout exists (fresh
@@ -367,24 +230,16 @@ static void BuildDefaultDockLayout(ImGuiID uDockspaceID, const ImGuiViewport* px
 	const ImGuiID uRightBottom = ImGui::DockBuilderSplitNode(uRight,  ImGuiDir_Down,  0.45f, nullptr, &uRight);
 	ImGuiID uBottom            = ImGui::DockBuilderSplitNode(uCentre, ImGuiDir_Down,  0.28f, nullptr, &uCentre);
 	const ImGuiID uBottomRight = ImGui::DockBuilderSplitNode(uBottom, ImGuiDir_Right, 0.30f, nullptr, &uBottom);
-	const ImGuiID uToolbar     = ImGui::DockBuilderSplitNode(uCentre, ImGuiDir_Up,    0.08f, nullptr, &uCentre);
 
-	// Toolbar reads as a strip, not a tabbed window; Viewport hides its tab
-	// bar (matches the layout the team has been using from the old DP ini).
-	if (ImGuiDockNode* pxToolbarNode = ImGui::DockBuilderGetNode(uToolbar))
-	{
-		pxToolbarNode->SetLocalFlags(
-			static_cast<ImGuiDockNodeFlags>(ImGuiDockNodeFlags_NoTabBar)
-			| static_cast<ImGuiDockNodeFlags>(ImGuiDockNodeFlags_NoDockingSplit)
-			| static_cast<ImGuiDockNodeFlags>(ImGuiDockNodeFlags_NoDockingOverMe));
-	}
+	// The toolbar is a fixed strip in the host window (Zenith_Editor::Render),
+	// never a dock node. The Viewport hides its tab bar so it reads as the
+	// scene, not as a document.
 	if (ImGuiDockNode* pxCentreNode = ImGui::DockBuilderGetNode(uCentre))
 	{
 		pxCentreNode->SetLocalFlags(ImGuiDockNodeFlags_HiddenTabBar);
 	}
 
 	ImGui::DockBuilderDockWindow(szEDITOR_WINDOW_HIERARCHY,       uLeft);
-	ImGui::DockBuilderDockWindow(szEDITOR_WINDOW_TOOLBAR,         uToolbar);
 	ImGui::DockBuilderDockWindow(szEDITOR_WINDOW_VIEWPORT,        uCentre);
 
 	// Right column: Properties group (Terrain Editor + Material Editor tab with
@@ -440,7 +295,19 @@ void Zenith_Editor::Initialise(Flux_PlatformAPI& xFluxBackend, Flux_GraphicsImpl
 	// NewFrame — ImGui reads io.IniFilename at first NewFrame.
 	ConfigureImGuiIniPath();
 
-	ApplyEditorTheme();
+	Zenith_EditorUI::ApplyTheme();
+
+	// User preferences: recent scenes, fly speed, snapping ... (defaults in
+	// automated / headless runs, where Load is a no-op).
+	m_xEditorState.m_xPrefs.Load();
+	m_xEditorState.m_xCamera.m_fMoveSpeed = m_xEditorState.m_xPrefs.m_fCameraMoveSpeed;
+
+	// An interactive editor session opens maximised, like every other editor.
+	// Automated runs and screenshot captures keep the requested window size so
+	// their frames stay reproducible.
+	m_xEditorState.m_bMaximiseRequested = !Zenith_IsNullRenderer()
+		&& !Zenith_CommandLine::IsAutomatedTestRun()
+		&& Zenith_CommandLine::GetScreenshotPath() == nullptr;
 
 	// Initialize content browser to game assets directory
 	m_xEditorState.m_xContentBrowser.m_strCurrentDirectory = Project_GetGameAssetsDirectory();
@@ -537,6 +404,10 @@ void Zenith_Editor::RenderImGuiFrame()
 
 void Zenith_Editor::Shutdown()
 {
+	m_xEditorState.m_xPrefs.m_fCameraMoveSpeed = m_xEditorState.m_xCamera.m_fMoveSpeed;
+	m_xEditorState.m_xPrefs.Save();
+	EndCameraGestures();
+
 	// Process all pending deletions immediately on shutdown
 	// At shutdown, we can safely assume all GPU work is done or will be waited for
 	for (auto& pending : m_xPendingDeletions)
@@ -646,15 +517,26 @@ bool Zenith_Editor::Update()
 	// Update bounding boxes for all entities (needed for selection)
 	g_xEngine.Selection().UpdateBoundingBoxes();
 
-	// Update editor camera controls (when not playing)
-	UpdateEditorCamera(1.0f / 60.0f);  // Assume 60fps for now, could use actual delta time
+	// Keyboard shortcuts run in every mode (Ctrl+P stops a playing scene; the
+	// gizmo/entity ones no-op while playing).
+	UpdateEditorInput();
+
+	// Update editor camera controls (when not playing), with the real frame dt.
+	UpdateEditorCamera(m_pxFrame != nullptr ? m_pxFrame->GetDt() : (1.0f / 60.0f));
 
 	if (m_xEditorState.m_eEditorMode == EditorMode::Playing)
 	{
 		return true;
 	}
 
-	UpdateEditorInput();
+	SyncGizmoSettings();
+
+	// A camera gesture (look / orbit / pan) owns the mouse: no gizmo, no picking.
+	if (IsCameraNavigating())
+	{
+		g_xEngine.Gizmos().ClearHover();
+		return true;
+	}
 
 	// Terrain editor gets first claim on viewport input: while a terrain
 	// editing session is armed over the viewport (or mid-stroke), gizmo
@@ -761,69 +643,227 @@ void Zenith_Editor::OpenTerrainEditor(Zenith_EntityID uTerrainEntity)
 	m_xEditorState.m_xPanels.m_bShowTerrainEditor = true;
 }
 
+namespace
+{
+	// ImGui owns the keyboard while a text field is focused: no shortcut may fire.
+	bool KeyboardIsFree()
+	{
+		return ImGui::GetCurrentContext() == nullptr || !ImGui::GetIO().WantTextInput;
+	}
+}
+
 void Zenith_Editor::UpdateEditorInput()
 {
-	// Handle gizmo mode keyboard shortcuts (when viewport is focused)
-	if (m_xEditorState.m_xViewport.m_bFocused)
+	if (!KeyboardIsFree())
 	{
-		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_W))
-		{
-			SetGizmoMode(EditorGizmoMode::Translate);
-			g_xEngine.Gizmos().SetGizmoMode(GizmoMode::Translate);
-		}
-		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_E))
-		{
-			SetGizmoMode(EditorGizmoMode::Rotate);
-			g_xEngine.Gizmos().SetGizmoMode(GizmoMode::Rotate);
-		}
-		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_R))
-		{
-			SetGizmoMode(EditorGizmoMode::Scale);
-			g_xEngine.Gizmos().SetGizmoMode(GizmoMode::Scale);
-		}
+		return;
+	}
+	Zenith_Input& xInput = g_xEngine.Input();
+	const bool bCtrl = xInput.IsKeyDown(ZENITH_KEY_LEFT_CONTROL) || xInput.IsKeyDown(ZENITH_KEY_RIGHT_CONTROL);
+	const bool bShift = xInput.IsKeyDown(ZENITH_KEY_LEFT_SHIFT) || xInput.IsKeyDown(ZENITH_KEY_RIGHT_SHIFT);
+	const bool bAlt = xInput.IsKeyDown(ZENITH_KEY_LEFT_ALT) || xInput.IsKeyDown(ZENITH_KEY_RIGHT_ALT);
+
+	HandleGlobalShortcuts(xInput, bCtrl, bShift);
+
+	if (m_xEditorState.m_eEditorMode == EditorMode::Playing)
+	{
+		return;   // W/E/R, Delete, F ... belong to the game while it runs
 	}
 
-	// Handle undo/redo keyboard shortcuts (Ctrl+Z / Ctrl+Y)
-	// Check for Ctrl key being held down
-	bool bCtrlDown = g_xEngine.Input().IsKeyDown(ZENITH_KEY_LEFT_CONTROL) ||
-	                 g_xEngine.Input().IsKeyDown(ZENITH_KEY_RIGHT_CONTROL);
-
-	if (bCtrlDown)
+	// Entity keys are scoped to the scene views (viewport + hierarchy), so a
+	// Delete pressed in the console or content browser never removes an entity.
+	if (m_xEditorState.m_xViewport.m_bFocused || m_xEditorState.m_xHierarchy.m_bFocused)
 	{
-		// Ctrl+Z: Undo
-		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_Z))
-		{
-			g_xEngine.UndoSystem().Undo();
-		}
+		HandleEntityShortcuts(xInput, bCtrl);
+	}
+	// Viewport-only keys (they collide with typing elsewhere)
+	if (m_xEditorState.m_xViewport.m_bFocused && !bCtrl && !bAlt && !m_xEditorState.m_xCamera.m_bLooking)
+	{
+		HandleViewportShortcuts(xInput);
+	}
+}
 
-		// Ctrl+Y: Redo
-		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_Y))
+// Chords that work from any panel: file, undo, play, F1.
+void Zenith_Editor::HandleGlobalShortcuts(Zenith_Input& xInput, bool bCtrl, bool bShift)
+{
+	if (xInput.WasKeyPressedThisFrame(ZENITH_KEY_F1))
+	{
+		m_xEditorState.m_xPanels.m_bShowShortcuts = !m_xEditorState.m_xPanels.m_bShowShortcuts;
+	}
+	if (!bCtrl)
+	{
+		return;
+	}
+	const bool bZ = xInput.WasKeyPressedThisFrame(ZENITH_KEY_Z);
+	if (bZ && !bShift)
+	{
+		g_xEngine.UndoSystem().Undo();
+	}
+	if (xInput.WasKeyPressedThisFrame(ZENITH_KEY_Y) || (bZ && bShift))
+	{
+		g_xEngine.UndoSystem().Redo();
+	}
+	if (xInput.WasKeyPressedThisFrame(ZENITH_KEY_S))
+	{
+		if (bShift)
 		{
-			g_xEngine.UndoSystem().Redo();
+			Zenith_EditorActions::SaveSceneAs();
 		}
+		else
+		{
+			Zenith_EditorActions::SaveScene();
+		}
+	}
+	if (xInput.WasKeyPressedThisFrame(ZENITH_KEY_O) && !bShift)
+	{
+		Zenith_EditorActions::OpenSceneDialog();
+	}
+	if (xInput.WasKeyPressedThisFrame(ZENITH_KEY_N))
+	{
+		if (bShift)
+		{
+			Zenith_EditorActions::CreateEntity(Zenith_EditorActions::CreateKind::Empty);
+		}
+		else
+		{
+			Zenith_EditorActions::NewScene();
+		}
+	}
+	if (xInput.WasKeyPressedThisFrame(ZENITH_KEY_P))
+	{
+		if (bShift)
+		{
+			Zenith_EditorActions::TogglePause();
+		}
+		else
+		{
+			Zenith_EditorActions::TogglePlay();
+		}
+	}
+}
+
+// Selection verbs: duplicate, select all, delete, deselect, focus.
+void Zenith_Editor::HandleEntityShortcuts(Zenith_Input& xInput, bool bCtrl)
+{
+	if (bCtrl && xInput.WasKeyPressedThisFrame(ZENITH_KEY_D))
+	{
+		Zenith_EditorActions::DuplicateSelection();
+	}
+	if (bCtrl && xInput.WasKeyPressedThisFrame(ZENITH_KEY_A))
+	{
+		Zenith_EditorActions::SelectAll();
+	}
+	if (xInput.WasKeyPressedThisFrame(ZENITH_KEY_DELETE))
+	{
+		Zenith_EditorActions::DeleteSelection();
+	}
+	if (!bCtrl && xInput.WasKeyPressedThisFrame(ZENITH_KEY_F))
+	{
+		Zenith_EditorActions::FocusSelection();
+	}
+	const bool bPopupOpen = ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel);
+	if (xInput.WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE) && HasSelection() && !bPopupOpen)
+	{
+		Zenith_EditorActions::DeselectAll();
+	}
+}
+
+// Gizmo mode and space keys.
+void Zenith_Editor::HandleViewportShortcuts(Zenith_Input& xInput)
+{
+	if (xInput.WasKeyPressedThisFrame(ZENITH_KEY_W))
+	{
+		SetGizmoMode(EditorGizmoMode::Translate);
+	}
+	if (xInput.WasKeyPressedThisFrame(ZENITH_KEY_E))
+	{
+		SetGizmoMode(EditorGizmoMode::Rotate);
+	}
+	if (xInput.WasKeyPressedThisFrame(ZENITH_KEY_R))
+	{
+		SetGizmoMode(EditorGizmoMode::Scale);
+	}
+	if (xInput.WasKeyPressedThisFrame(ZENITH_KEY_X))
+	{
+		m_xEditorState.m_xPrefs.m_bGizmoLocalSpace = !m_xEditorState.m_xPrefs.m_bGizmoLocalSpace;
+		m_xEditorState.m_xPrefs.Save();
+	}
+}
+
+void Zenith_Editor::SyncGizmoSettings()
+{
+	const Zenith_EditorPrefs& xPrefs = m_xEditorState.m_xPrefs;
+	Zenith_Input& xInput = g_xEngine.Input();
+	Flux_GizmoSnapSettings xSnap;
+	// The toolbar toggle, or Ctrl held for one drag.
+	xSnap.m_bEnabled = xPrefs.m_bSnapEnabled || xInput.IsKeyDown(ZENITH_KEY_LEFT_CONTROL) || xInput.IsKeyDown(ZENITH_KEY_RIGHT_CONTROL);
+	xSnap.m_fMoveStep = xPrefs.m_fSnapMove;
+	xSnap.m_fRotateStepDegrees = xPrefs.m_fSnapRotateDegrees;
+	xSnap.m_fScaleStep = xPrefs.m_fSnapScale;
+	g_xEngine.Gizmos().SetSnapSettings(xSnap);
+	g_xEngine.Gizmos().SetLocalSpace(xPrefs.m_bGizmoLocalSpace);
+}
+
+void Zenith_Editor::UpdateWindowTitle()
+{
+	std::string strTitle = Zenith_EditorActions::GetActiveSceneDisplayName();
+	if (Zenith_EditorActions::HasUnsavedChanges())
+	{
+		strTitle += "*";
+	}
+	strTitle += "  -  ";
+	strTitle += Project_GetName();
+	strTitle += "  -  Zenith Editor";
+	if (m_xEditorState.m_eEditorMode == EditorMode::Playing) strTitle += "  [Playing]";
+	else if (m_xEditorState.m_eEditorMode == EditorMode::Paused) strTitle += "  [Paused]";
+	if (strTitle != m_xEditorState.m_strWindowTitle)
+	{
+		m_xEditorState.m_strWindowTitle = strTitle;
+		Zenith_Window::GetInstance()->SetTitle(strTitle.c_str());
 	}
 }
 
 void Zenith_Editor::Render()
 {
-	// Create the main docking space
+	if (m_xEditorState.m_bMaximiseRequested)
+	{
+		m_xEditorState.m_bMaximiseRequested = false;
+		Zenith_Window::GetInstance()->Maximize();
+	}
+	UpdateWindowTitle();
+
+	const bool bPlayTint = (m_xEditorState.m_eEditorMode != EditorMode::Stopped);
+	if (bPlayTint)
+	{
+		Zenith_EditorUI::PushPlayModeTint();
+	}
+
+	// The host window: menu bar, then the toolbar strip, then the dockspace,
+	// then the status bar — the strips are part of the host so they can never be
+	// docked away, closed or clipped.
 	ImGuiViewport* viewport = ImGui::GetMainViewport();
 	ImGui::SetNextWindowPos(viewport->WorkPos);
 	ImGui::SetNextWindowSize(viewport->WorkSize);
 	ImGui::SetNextWindowViewport(viewport->ID);
-	
+
 	ImGuiWindowFlags window_flags = ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoDocking;
 	window_flags |= ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse;
 	window_flags |= ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove;
 	window_flags |= ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus;
-	window_flags |= ImGuiWindowFlags_NoBackground;
-	
+	window_flags |= ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
+
 	ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
 	ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
 	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-	
+
 	ImGui::Begin(szEDITOR_WINDOW_DOCKSPACE_HOST, nullptr, window_flags);
 	ImGui::PopStyleVar(3);
+
+	RenderMainMenuBar();
+
+	const float fToolbarHeight = Zenith_EditorPanelToolbar::GetHeight();
+	const float fStatusHeight = Zenith_EditorPanelStatusBar::GetHeight();
+	Zenith_EditorPanelToolbar::Render(*this, fToolbarHeight);
 
 	// Create dockspace. When no layout exists yet (fresh machine, ini load
 	// disabled for automated runs, or the user asked for a reset), build the
@@ -844,17 +884,16 @@ void Zenith_Editor::Render()
 	{
 		ImGui::SetWindowFocus(szEDITOR_WINDOW_CONTENT_BROWSER);
 	}
-	ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_PassthruCentralNode);
-	
-	RenderMainMenuBar();
+	ImGui::DockSpace(dockspace_id, ImVec2(0.0f, -fStatusHeight), ImGuiDockNodeFlags_PassthruCentralNode);
+
+	Zenith_EditorPanelStatusBar::Render(*this, fStatusHeight);
 	ImGui::End();
-	
+
 	// Render editor panels
-	RenderToolbar();
 	if (m_xEditorState.m_xPanels.m_bShowHierarchy) RenderHierarchyPanel();
 	if (m_xEditorState.m_xPanels.m_bShowProperties) RenderPropertiesPanel();
 	RenderViewport();
-	RenderContentBrowser();
+	if (m_xEditorState.m_xPanels.m_bShowContentBrowser) RenderContentBrowser();
 	if (m_xEditorState.m_xPanels.m_bShowConsole) RenderConsolePanel();
 	RenderMaterialEditorPanel();
 
@@ -870,43 +909,166 @@ void Zenith_Editor::Render()
 		Zenith_EditorPanelTerrainEditor::Render(*m_pxTerrainEditor, m_xEditorState.m_xPanels.m_bShowTerrainEditor);
 	}
 
-	// Animation state machine editor
-	// Zenith_AnimationStateMachineEditor::Render();  // TEMPORARILY DISABLED
+	RenderPrompts();
+	RenderShortcutsWindow();
 
 	// Render gizmos and overlays (after viewport so they appear on top)
 	RenderGizmos();
+
+	if (bPlayTint)
+	{
+		Zenith_EditorUI::PopPlayModeTint();
+	}
+}
+
+// The "Save changes?" modal. Opened by Zenith_EditorActions when an action
+// would drop unsaved work; the chosen answer re-enters that action.
+void Zenith_Editor::RenderPrompts()
+{
+	Zenith_EditorPromptState& xPrompt = m_xEditorState.m_xPrompt;
+	if (xPrompt.m_bOpenRequested)
+	{
+		ImGui::OpenPopup("Save changes?");
+		xPrompt.m_bOpenRequested = false;
+	}
+	ImGui::SetNextWindowSize(ImVec2(Zenith_EditorUI::Px(420.0f), 0.0f), ImGuiCond_Appearing);
+	if (!ImGui::BeginPopupModal("Save changes?", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings))
+	{
+		return;
+	}
+
+	const std::string strScene = Zenith_EditorActions::GetActiveSceneDisplayName();
+	ImGui::TextWrapped("The scene '%s' has unsaved changes.", strScene.c_str());
+	ImGui::TextDisabled("Your changes will be lost if you don't save them.");
+	ImGui::Spacing();
+	ImGui::Separator();
+	ImGui::Spacing();
+
+	const Zenith_EditorPromptState::Action eAction = xPrompt.m_eAction;
+	const std::string strPath = xPrompt.m_strPath;
+	auto Proceed = [this, eAction, strPath]()
+	{
+		// Consume the pending action, then re-run it: the dirty flag is now
+		// either cleared (saved) or deliberately ignored (discarded).
+		m_xEditorState.m_xPrompt.m_eAction = Zenith_EditorPromptState::Action::None;
+		switch (eAction)
+		{
+		case Zenith_EditorPromptState::Action::NewScene:  Zenith_EditorActions::NewScene(); break;
+		case Zenith_EditorPromptState::Action::OpenScene: Zenith_EditorActions::OpenScenePath(strPath); break;
+		case Zenith_EditorPromptState::Action::Exit:      Zenith_EditorActions::RequestExit(); break;
+		default: break;
+		}
+	};
+
+	const float fButton = Zenith_EditorUI::Px(110.0f);
+	if (ImGui::Button("Save", ImVec2(fButton, 0)))
+	{
+		ImGui::CloseCurrentPopup();
+		if (Zenith_EditorActions::SaveScene())
+		{
+			Proceed();
+		}
+	}
+	ImGui::SameLine();
+	if (ImGui::Button("Don't Save", ImVec2(fButton, 0)))
+	{
+		ImGui::CloseCurrentPopup();
+		// Discarding: drop the flags so the re-entered action does not re-prompt.
+		for (uint32_t i = 0; ; ++i)
+		{
+			Zenith_Scene xScene = g_xEngine.Scenes().GetSceneAt(i);
+			if (!xScene.IsValid()) break;
+			if (Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xScene))
+			{
+				Zenith_EditorSceneAccess::ClearDirty(pxSceneData);
+			}
+		}
+		Proceed();
+	}
+	ImGui::SameLine();
+	if (ImGui::Button("Cancel", ImVec2(fButton, 0)) || ImGui::IsKeyPressed(ImGuiKey_Escape))
+	{
+		m_xEditorState.m_xPrompt.m_eAction = Zenith_EditorPromptState::Action::None;
+		ImGui::CloseCurrentPopup();
+	}
+	ImGui::EndPopup();
+}
+
+void Zenith_Editor::RenderShortcutsWindow()
+{
+	bool& bShow = m_xEditorState.m_xPanels.m_bShowShortcuts;
+	if (!bShow)
+	{
+		return;
+	}
+	ImGui::SetNextWindowSize(ImVec2(Zenith_EditorUI::Px(520.0f), Zenith_EditorUI::Px(460.0f)), ImGuiCond_FirstUseEver);
+	if (!ImGui::Begin(szEDITOR_WINDOW_SHORTCUTS, &bShow))
+	{
+		ImGui::End();
+		return;
+	}
+	struct Row { const char* m_szKeys; const char* m_szAction; };
+	struct Group { const char* m_szTitle; const Row* m_pxRows; int m_iCount; };
+	static const Row axViewport[] =
+	{
+		{ "RMB drag", "Look around" }, { "RMB + WASD / Q E", "Fly (Shift: 3x, wheel: speed)" },
+		{ "Alt + LMB drag", "Orbit the selection" }, { "MMB drag", "Pan" }, { "Wheel", "Dolly" },
+		{ "F", "Focus the selection" }, { "LMB", "Select (Ctrl: toggle, Shift: add)" },
+	};
+	static const Row axGizmo[] =
+	{
+		{ "W / E / R", "Move / Rotate / Scale" }, { "X", "Local / world space" }, { "Ctrl (hold)", "Snap while dragging" },
+	};
+	static const Row axEntities[] =
+	{
+		{ "Delete", "Delete selection" }, { "Ctrl + D", "Duplicate selection" }, { "F2 / double-click", "Rename" },
+		{ "Ctrl + A", "Select all" }, { "Esc", "Deselect" }, { "Ctrl + Shift + N", "Create empty entity" },
+	};
+	static const Row axScene[] =
+	{
+		{ "Ctrl + N", "New scene" }, { "Ctrl + O", "Open scene" }, { "Ctrl + S", "Save scene" }, { "Ctrl + Shift + S", "Save scene as" },
+		{ "Ctrl + Z / Ctrl + Y", "Undo / Redo" }, { "Ctrl + P", "Play / Stop" }, { "Ctrl + Shift + P", "Pause / Resume" }, { "F1", "This window" },
+	};
+	const Group axGroups[] =
+	{
+		{ "Viewport", axViewport, IM_ARRAYSIZE(axViewport) }, { "Gizmo", axGizmo, IM_ARRAYSIZE(axGizmo) },
+		{ "Entities", axEntities, IM_ARRAYSIZE(axEntities) }, { "Scene", axScene, IM_ARRAYSIZE(axScene) },
+	};
+	for (const Group& xGroup : axGroups)
+	{
+		ImGui::SeparatorText(xGroup.m_szTitle);
+		if (ImGui::BeginTable(xGroup.m_szTitle, 2, ImGuiTableFlags_SizingStretchProp))
+		{
+			for (int i = 0; i < xGroup.m_iCount; ++i)
+			{
+				ImGui::TableNextRow();
+				ImGui::TableNextColumn();
+				ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(Zenith_EditorUI::Palette().m_uAccentHover), "%s", xGroup.m_pxRows[i].m_szKeys);
+				ImGui::TableNextColumn();
+				ImGui::TextUnformatted(xGroup.m_pxRows[i].m_szAction);
+			}
+			ImGui::EndTable();
+		}
+	}
+	ImGui::End();
 }
 
 // RenderMainMenuBar + per-menu helpers (RenderFileMenu / RenderEditMenu / RenderViewMenu)
 // live in Zenith_Editor_Menu.cpp.
 
-void Zenith_Editor::RenderToolbar()
-{
-	Zenith_EditorPanelToolbar::Render(m_xEditorState.m_eEditorMode, m_xEditorState.m_eGizmoMode);
-}
-
 void Zenith_Editor::RenderHierarchyPanel()
 {
-	Zenith_EditorPanelHierarchy::Render(m_xEditorState.m_xCamera.m_uGameCameraEntity);
+	Zenith_EditorPanelHierarchy::Render(m_xEditorState.m_xHierarchy, m_xEditorState.m_xCamera.m_uGameCameraEntity);
 }
 
 void Zenith_Editor::RenderPropertiesPanel()
 {
-	Zenith_EditorPanelProperties::Render(GetSelectedEntity(), m_xEditorState.m_xSelection.m_uPrimarySelectedEntityID);
+	Zenith_EditorPanelProperties::Render(m_xEditorState.m_xInspector, GetSelectedEntity(), GetSelectionCount());
 }
 
 void Zenith_Editor::RenderViewport()
 {
-	ViewportState xState = {
-		m_xEditorState.m_xViewport.m_xSize,
-		m_xEditorState.m_xViewport.m_xPosition,
-		m_xEditorState.m_xViewport.m_bHovered,
-		m_xEditorState.m_xViewport.m_bFocused,
-		m_xCachedGameTextureHandle,
-		m_xCachedImageViewHandle,
-		m_xPendingDeletions
-	};
-	Zenith_EditorPanelViewport::Render(xState);
+	Zenith_EditorPanelViewport::Render(*this);
 }
 
 void Zenith_Editor::HandleObjectPicking()
@@ -956,13 +1118,44 @@ void Zenith_Editor::HandleObjectPicking()
 	// Perform raycast to find entity under mouse - now returns EntityID
 	Zenith_EntityID uHitEntityID = g_xEngine.Selection().RaycastSelect(xRayOrigin, xRayDir);
 
+	Zenith_Input& xInput = g_xEngine.Input();
+	const bool bCtrl = xInput.IsKeyDown(ZENITH_KEY_LEFT_CONTROL) || xInput.IsKeyDown(ZENITH_KEY_RIGHT_CONTROL);
+	const bool bShift = xInput.IsKeyDown(ZENITH_KEY_LEFT_SHIFT) || xInput.IsKeyDown(ZENITH_KEY_RIGHT_SHIFT);
 	if (uHitEntityID != INVALID_ENTITY_ID)
 	{
-		SelectEntity(uHitEntityID);
+		if (bCtrl)       ToggleEntitySelection(uHitEntityID);
+		else if (bShift) SelectEntity(uHitEntityID, true);
+		else             SelectEntity(uHitEntityID);
+		m_xEditorState.m_xHierarchy.m_xScrollTo = uHitEntityID;
 	}
-	else
+	else if (!bCtrl && !bShift)
 	{
 		ClearSelection();
+	}
+}
+
+void Zenith_Editor::DrawSelectionBounds()
+{
+	if (!m_xEditorState.m_xPrefs.m_bShowSelectionBounds || m_xEditorState.m_eEditorMode == EditorMode::Playing)
+	{
+		return;
+	}
+	const Zenith_Maths::Vector3 xColour(0.98f, 0.62f, 0.18f);
+	for (const Zenith_EntityID& xID : m_xEditorState.m_xSelection.m_xSelectedEntityIDs)
+	{
+		Zenith_Entity xEntity = g_xEngine.Scenes().ResolveEntity(xID);
+		if (!xEntity.IsValid())
+		{
+			continue;
+		}
+		const BoundingBox xBox = g_xEngine.Selection().GetEntityBoundingBox(&xEntity);
+		if (xBox.m_xMin.x > xBox.m_xMax.x)
+		{
+			continue;
+		}
+		const Zenith_Maths::Vector3 xCentre = (xBox.m_xMin + xBox.m_xMax) * 0.5f;
+		const Zenith_Maths::Vector3 xHalf = glm::max((xBox.m_xMax - xBox.m_xMin) * 0.5f, Zenith_Maths::Vector3(0.05f));
+		g_xEngine.Primitives().AddWireframeCube(xCentre, xHalf, xColour);
 	}
 }
 
@@ -987,18 +1180,27 @@ void Zenith_Editor::RenderGizmos()
 		g_xEngine.Gizmos().SetGizmoMode(static_cast<GizmoMode>(m_xEditorState.m_eGizmoMode));
 	}
 
+	DrawSelectionBounds();
+
 	// Gizmos are now part of the render graph - no separate task submission needed
 }
 
 void Zenith_Editor::HandleGizmoInteraction()
 {
-	// Only handle gizmo interaction when viewport is hovered and entity selected
-	if (!m_xEditorState.m_xViewport.m_bHovered || !HasSelection())
+	Flux_GizmosImpl& xGizmos = g_xEngine.Gizmos();
+	// Only handle in Stopped or Paused mode, with something to manipulate
+	if (m_xEditorState.m_eEditorMode == EditorMode::Playing || !HasSelection())
+	{
+		xGizmos.ClearHover();
 		return;
-
-	// Only handle in Stopped or Paused mode
-	if (m_xEditorState.m_eEditorMode == EditorMode::Playing)
+	}
+	// A drag that started over the viewport keeps ownership until release even
+	// if the cursor leaves the panel; a new drag needs the viewport hovered.
+	if (!m_xEditorState.m_xViewport.m_bHovered && !xGizmos.IsInteracting())
+	{
+		xGizmos.ClearHover();
 		return;
+	}
 
 	// Get camera matrices for ray casting
 	Zenith_Maths::Matrix4 xViewMatrix, xProjMatrix;
@@ -1014,19 +1216,6 @@ void Zenith_Editor::HandleGizmoInteraction()
 		static_cast<float>(xGlobalMousePos.y - m_xEditorState.m_xViewport.m_xPosition.y)
 	};
 
-	// Debug: log the mouse position roughly once a second while interacting.
-	// Throttled off the engine frame index (FrameContext) rather than a local
-	// counter — one frame-index variable engine-wide.
-	if (g_xEngine.Gizmos().IsInteracting())
-	{
-		if (g_xEngine.Frame().GetFrameIndex() % 60 == 0)
-		{
-			Zenith_Log(LOG_CATEGORY_EDITOR, "Mouse: Global=(%.1f,%.1f), Viewport=(%.1f,%.1f)",
-				xGlobalMousePos.x, xGlobalMousePos.y,
-				xViewportMousePos.x, xViewportMousePos.y);
-		}
-	}
-
 	// Convert screen position to world-space ray
 	Zenith_Maths::Vector3 xRayDir = g_xEngine.Gizmo().ScreenToWorldRay(
 		xViewportMousePos,
@@ -1041,36 +1230,88 @@ void Zenith_Editor::HandleGizmoInteraction()
 	GetCameraPosition(xCameraPos);
 	Zenith_Maths::Vector3 xRayOrigin(xCameraPos.x, xCameraPos.y, xCameraPos.z);
 
-	// Handle mouse input for gizmo interaction
-	if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_MOUSE_BUTTON_LEFT))
+	Zenith_Input& xInput = g_xEngine.Input();
+	Zenith_EditorGizmoState& xDrag = m_xEditorState.m_xGizmo;
+
+	// Press: begin a drag if a handle is under the cursor
+	if (xInput.WasKeyPressedThisFrame(ZENITH_MOUSE_BUTTON_LEFT) && m_xEditorState.m_xViewport.m_bHovered)
 	{
-		Zenith_Log(LOG_CATEGORY_EDITOR, "Mouse left pressed - viewport hovered=%d, selected=%zu", m_xEditorState.m_xViewport.m_bHovered, m_xEditorState.m_xSelection.m_xSelectedEntityIDs.size());
-		g_xEngine.Gizmos().BeginInteraction(xRayOrigin, xRayDir);
-		Zenith_Log(LOG_CATEGORY_EDITOR, "After BeginInteraction: IsInteracting=%d", g_xEngine.Gizmos().IsInteracting());
+		xGizmos.BeginInteraction(xRayOrigin, xRayDir);
+		if (xGizmos.IsInteracting())
+		{
+			xDrag.m_bDragActive = true;
+			xDrag.m_xDragEntity = GetSelectedEntityID();
+		}
 	}
-	
-	// Update interaction while dragging (can happen same frame as BeginInteraction)
-	bool bIsKeyDown = g_xEngine.Input().IsKeyDown(ZENITH_MOUSE_BUTTON_LEFT);
-	bool bIsInteracting = g_xEngine.Gizmos().IsInteracting();
-	
-	if (bIsKeyDown || bIsInteracting)
+
+	// Drag: update every frame the button is held (same frame as the press too)
+	if (xInput.IsKeyDown(ZENITH_MOUSE_BUTTON_LEFT) && xGizmos.IsInteracting())
 	{
-		Zenith_Log(LOG_CATEGORY_EDITOR, "Check UpdateInteraction: IsKeyDown=%d, IsInteracting=%d", bIsKeyDown, bIsInteracting);
+		xGizmos.UpdateInteraction(xRayOrigin, xRayDir);
 	}
-	
-	if (bIsKeyDown && bIsInteracting)
+
+	// Release: end the drag and record it as ONE undo step
+	if (!xInput.IsKeyDown(ZENITH_MOUSE_BUTTON_LEFT) && xGizmos.IsInteracting())
 	{
-		Zenith_Log(LOG_CATEGORY_EDITOR, "Calling UpdateInteraction: ViewportMouse=(%.1f,%.1f)",
-			xViewportMousePos.x, xViewportMousePos.y);
-		g_xEngine.Gizmos().UpdateInteraction(xRayOrigin, xRayDir);
+		xGizmos.EndInteraction();
+		if (xDrag.m_bDragActive)
+		{
+			RecordGizmoDragUndo(xDrag.m_xDragEntity);
+		}
+		xDrag.m_bDragActive = false;
+		xDrag.m_xDragEntity = INVALID_ENTITY_ID;
 	}
-	
-	// End interaction when mouse released
-	if (!g_xEngine.Input().IsKeyDown(ZENITH_MOUSE_BUTTON_LEFT) && g_xEngine.Gizmos().IsInteracting())
+
+	HandleGizmoHover(xRayOrigin, xRayDir);
+}
+
+void Zenith_Editor::HandleGizmoHover(const Zenith_Maths::Vector3& xRayOrigin, const Zenith_Maths::Vector3& xRayDir)
+{
+	Flux_GizmosImpl& xGizmos = g_xEngine.Gizmos();
+	if (xGizmos.IsInteracting())
 	{
-		Zenith_Log(LOG_CATEGORY_EDITOR, "Ending interaction");
-		g_xEngine.Gizmos().EndInteraction();
+		return;
 	}
+	if (m_xEditorState.m_xViewport.m_bHovered)
+	{
+		xGizmos.UpdateHover(xRayOrigin, xRayDir);
+	}
+	else
+	{
+		xGizmos.ClearHover();
+	}
+}
+
+// (initial, final) transform of a finished gizmo drag -> one TransformEdit
+// command, recorded without re-executing (the entity is already there).
+void Zenith_Editor::RecordGizmoDragUndo(Zenith_EntityID xEntityID)
+{
+	Zenith_Entity xEntity = g_xEngine.Scenes().ResolveEntity(xEntityID);
+	if (!xEntity.IsValid())
+	{
+		return;
+	}
+	Zenith_TransformComponent* pxTransform = xEntity.TryGetComponent<Zenith_TransformComponent>();
+	if (pxTransform == nullptr)
+	{
+		return;
+	}
+	Zenith_Maths::Vector3 xNewPos, xNewScale;
+	Zenith_Maths::Quat xNewRot;
+	pxTransform->GetPosition(xNewPos);
+	pxTransform->GetRotation(xNewRot);
+	pxTransform->GetScale(xNewScale);
+
+	Flux_GizmosImpl& xGizmos = g_xEngine.Gizmos();
+	const Zenith_Maths::Vector3& xOldPos = xGizmos.GetInitialPosition();
+	const Zenith_Maths::Quat& xOldRot = xGizmos.GetInitialRotation();
+	const Zenith_Maths::Vector3& xOldScale = xGizmos.GetInitialScale();
+	if (xNewPos == xOldPos && xNewRot == xOldRot && xNewScale == xOldScale)
+	{
+		return;   // a click without movement
+	}
+	g_xEngine.UndoSystem().Record(new Zenith_UndoCommand_TransformEdit(xEntityID, xOldPos, xOldRot, xOldScale, xNewPos, xNewRot, xNewScale));
+	Zenith_EditorActions::MarkSceneDirtyForEntity(xEntityID);
 }
 
 
@@ -1101,7 +1342,6 @@ void Zenith_Editor::SelectEntity(Zenith_EntityID uEntityID, bool bAddToSelection
 	m_xEditorState.m_xSelection.m_uPrimarySelectedEntityID = uEntityID;
 	m_xEditorState.m_xSelection.m_uLastClickedEntityID = uEntityID;
 
-	Zenith_Log(LOG_CATEGORY_EDITOR, "Editor: Selected entity %u (total: %zu)", uEntityID, m_xEditorState.m_xSelection.m_xSelectedEntityIDs.size());
 
 	// Update Flux_Gizmos target entity (primary selection)
 	Zenith_Entity* pxEntity = GetSelectedEntity();
@@ -1109,6 +1349,7 @@ void Zenith_Editor::SelectEntity(Zenith_EntityID uEntityID, bool bAddToSelection
 	{
 		g_xEngine.Gizmos().SetTargetEntity(pxEntity);
 	}
+	RefreshCameraPivotFromSelection();
 }
 
 void Zenith_Editor::SelectRange(Zenith_EntityID uEndEntityID)
@@ -1197,6 +1438,7 @@ void Zenith_Editor::ToggleEntitySelection(Zenith_EntityID uEntityID)
 	// Update Flux_Gizmos target entity
 	Zenith_Entity* pxEntity = GetSelectedEntity();
 	g_xEngine.Gizmos().SetTargetEntity(pxEntity);
+	RefreshCameraPivotFromSelection();
 }
 
 void Zenith_Editor::ClearSelection()
@@ -1461,21 +1703,7 @@ void Zenith_Editor::UnloadActiveScene()
 
 void Zenith_Editor::RenderContentBrowser()
 {
-	ContentBrowserState xState = {
-		m_xEditorState.m_xContentBrowser.m_strCurrentDirectory,
-		m_xEditorState.m_xContentBrowser.m_xDirectoryContents,
-		m_xEditorState.m_xContentBrowser.m_xFilteredContents,
-		m_xEditorState.m_xContentBrowser.m_bDirectoryNeedsRefresh,
-		m_xEditorState.m_xContentBrowser.m_szSearchBuffer,
-		sizeof(m_xEditorState.m_xContentBrowser.m_szSearchBuffer),
-		m_xEditorState.m_xContentBrowser.m_iAssetTypeFilter,
-		m_xEditorState.m_xContentBrowser.m_iSelectedContentIndex,
-		m_xEditorState.m_xContentBrowser.m_fThumbnailSize,
-		m_xEditorState.m_xContentBrowser.m_axNavigationHistory,
-		m_xEditorState.m_xContentBrowser.m_iHistoryIndex,
-		m_xEditorState.m_xContentBrowser.m_eViewMode
-	};
-	Zenith_EditorPanelContentBrowser::Render(xState);
+	Zenith_EditorPanelContentBrowser::Render(m_xEditorState.m_xContentBrowser);
 }
 
 //------------------------------------------------------------------------------
@@ -1530,13 +1758,7 @@ void Zenith_Editor::ClearConsole()
 
 void Zenith_Editor::RenderConsolePanel()
 {
-	Zenith_EditorPanelConsole::Render(
-		m_xEditorState.m_xConsole.m_xLogs,
-		m_xEditorState.m_xConsole.m_bAutoScroll,
-		m_xEditorState.m_xConsole.m_bShowInfo,
-		m_xEditorState.m_xConsole.m_bShowWarnings,
-		m_xEditorState.m_xConsole.m_bShowErrors,
-		m_xEditorState.m_xConsole.m_xCategoryFilters);
+	Zenith_EditorPanelConsole::Render(m_xEditorState.m_xConsole);
 }
 
 //------------------------------------------------------------------------------

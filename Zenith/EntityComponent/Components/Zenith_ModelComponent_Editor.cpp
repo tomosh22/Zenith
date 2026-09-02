@@ -287,8 +287,6 @@ namespace
 //-----------------------------------------------------------------------------
 void Zenith_ModelComponent::RenderPropertiesPanel()
 {
-	if (!ImGui::CollapsingHeader("Model", ImGuiTreeNodeFlags_DefaultOpen))
-		return;
 
 	ImGui::Separator();
 	RenderModelStatusSection(*this);

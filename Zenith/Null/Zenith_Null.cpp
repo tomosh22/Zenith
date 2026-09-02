@@ -10,6 +10,7 @@
 #ifdef ZENITH_TOOLS
 #include "Core/Zenith_ImGuiBridgeHook.h"
 #include "Windows/Zenith_Windows_Window.h"
+#include "Core/Zenith_EditorFontHook.h"
 #include "imgui.h"
 #include "backends/imgui_impl_glfw.h"
 #include <atomic>
@@ -112,6 +113,11 @@ void Zenith_Null::InitialiseImGui()
 	ImGuiIO& xIO = ImGui::GetIO();
 	xIO.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 	xIO.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+
+	// The editor's font set must be registered BEFORE the legacy atlas build
+	// below: with no renderer backend the atlas is locked at the first NewFrame
+	// and a font added after GetTexDataAsRGBA32 would never be baked.
+	Zenith_EditorFonts_Load();
 
 	// InitForOther, not InitForVulkan: the platform backend is renderer-agnostic
 	// and this build has no renderer backend to name. The window is hidden (see

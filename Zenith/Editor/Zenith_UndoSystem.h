@@ -97,6 +97,12 @@ public:
 	// Clears redo stack (branching timeline)
 void Execute(Zenith_UndoCommand* pCommand);
 
+	// Add an ALREADY-APPLIED command to the undo stack without running Execute.
+	// For edits performed live (a gizmo drag, an inspector field): re-executing
+	// them would re-apply a state the entity is already in, which for component
+	// payload commands means a needless remove + rebuild. Clears the redo stack.
+void Record(Zenith_UndoCommand* pCommand);
+
 	// Undo last command (if available)
 	// Moves command from undo stack to redo stack
 void Undo();

@@ -18,8 +18,19 @@ The S0-S7 narrative that used to fill the back half of this file moved VERBATIM 
 its own template in `AgentBriefing.md` §2.3 specifies. Nothing was deleted.
 
 **★ LIVE PIN (UPDATED 2026-09-01):
-ZM boot `3590`; engine boot (Null Combat) `1763`; Null RenderTest `1854`; registry **71**.**
+ZM boot `3603`; engine boot (Null Combat) `1776`; Null RenderTest `1867`; registry **71**.**
 
+> **★ ALL THREE ROWS MOVE AGAIN (+13 each, 2026-09-01) — the editor delight pass.**
+> Thirteen ENGINE units landed with the editor overhaul (`Zenith/Editor/
+> Zenith_EditorCommands.Tests.inl`: entity-snapshot restore, undoable delete /
+> duplicate / rename / reparent / component add-remove, the inspector undo tracker,
+> `Record` + composite semantics, prefs round-trip + clamps, hierarchy / component
+> search, the viewport axis projection, gizmo snapping and local-space axes). No
+> Zenithmon code changed; every game boots the same engine suite, so the three rows
+> move together. Observed on each game's own `Null_vs2022_Debug_Win64_True` run:
+> ZM `3603 ran, 0 failed, 2 skipped`, Combat `1776 ran, 0 failed, 1 skipped`,
+> RenderTest `1867 ran, 0 failed, 1 skipped`. The skips are pre-existing.
+>
 > **★ ALL THREE ROWS MOVE (2026-08-30), and that is the tell that this one touched
 > `Zenith/**`.** The `.glb` import path is ENGINE-side (`Tools/` compiles into
 > `zenith.lib` in every configuration), so its 7 units land in every game's boot

@@ -41,6 +41,22 @@ public:
 
 	void GetSize(int32_t& iWidth, int32_t& iHeight) { glfwGetWindowSize(m_pxNativeWindow, &iWidth, &iHeight); }
 
+	// Editor chrome helpers. SetTitle is cheap but not free (a Win32 message), so
+	// callers should compare against their last value before calling it.
+	void SetTitle(const char* szTitle) { glfwSetWindowTitle(m_pxNativeWindow, szTitle); }
+	void Maximize() { glfwMaximizeWindow(m_pxNativeWindow); }
+
+	// OS content scale for the monitor the window is on (1.0 at 96 dpi, 1.5 at
+	// 144 dpi ...). GLFW makes the process per-monitor DPI aware, so the window
+	// and framebuffer are already in physical pixels; this is what UI layout
+	// multiplies by so a 15 px font is 15 px at 1x and 22 px at 150%.
+	float GetContentScale() const
+	{
+		float fX = 1.0f, fY = 1.0f;
+		glfwGetWindowContentScale(m_pxNativeWindow, &fX, &fY);
+		return fX > 0.0f ? fX : 1.0f;
+	}
+
 	void SetEventCallback(void(*pfnEventCallback)()) {
 		m_pfnEventCallback = pfnEventCallback;
 	}

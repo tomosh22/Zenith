@@ -243,7 +243,6 @@ void Zenith_LightComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 #ifdef ZENITH_TOOLS
 void Zenith_LightComponent::RenderPropertiesPanel()
 {
-	if (!ImGui::CollapsingHeader("Light", ImGuiTreeNodeFlags_DefaultOpen)) return;
 
 	const char* aszLightTypes[] = { "Point", "Spot", "Directional" };
 	int iLightType = static_cast<int>(m_eLightType);

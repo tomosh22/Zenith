@@ -490,7 +490,7 @@ void Zenith_ParticleEmitterComponent::ReadFromDataStream(Zenith_DataStream& xStr
 #ifdef ZENITH_TOOLS
 void Zenith_ParticleEmitterComponent::RenderPropertiesPanel()
 {
-	if (ImGui::CollapsingHeader("Particle Emitter", ImGuiTreeNodeFlags_DefaultOpen))
+	// Section header drawn by the Properties panel (Zenith_EditorPanel_Properties).
 	{
 		ImGui::Checkbox("Emitting", &m_bEmitting);
 

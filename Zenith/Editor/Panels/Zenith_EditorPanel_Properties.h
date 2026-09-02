@@ -4,24 +4,24 @@
 
 #include "ZenithECS/Zenith_Entity.h"
 
+struct Zenith_EditorInspectorState;
+
 //=============================================================================
-// Properties Panel
+// Properties (Inspector) Panel
 //
-// Displays and allows editing of the selected entity's properties:
-// - Entity name
-// - Component properties (via registry)
-// - Add component functionality
+// Shows the primary selected entity: a header (icon, name, enabled), one
+// framed section per component (owned by the panel — the components draw only
+// their bodies — with a remove button), and a searchable Add Component popup.
+// Every edit made here is undoable through Zenith_EditorInspectorUndoTracker.
 //=============================================================================
 
 namespace Zenith_EditorPanelProperties
 {
-	/**
-	 * Render the properties panel
-	 *
-	 * @param pxSelectedEntity Pointer to the selected entity (may be null)
-	 * @param uPrimarySelectedEntityID The ID of the primary selected entity
-	 */
-	void Render(Zenith_Entity* pxSelectedEntity, Zenith_EntityID uPrimarySelectedEntityID);
+	// pxSelectedEntity may be nullptr (nothing selected).
+	void Render(Zenith_EditorInspectorState& xState, Zenith_Entity* pxSelectedEntity, size_t uSelectionCount);
+
+	// PURE: the Add Component filter (case-insensitive substring; empty = all).
+	bool MatchesComponentSearch(const char* szDisplayName, const char* szQuery);
 }
 
 #endif // ZENITH_TOOLS

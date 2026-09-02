@@ -52,6 +52,30 @@ void Zenith_UndoSystem::Execute(Zenith_UndoCommand* pCommand)
 		m_xRedoStack.GetSize());
 }
 
+void Zenith_UndoSystem::Record(Zenith_UndoCommand* pCommand)
+{
+	if (!pCommand)
+	{
+		Zenith_Assert(false, "Null command passed to Record");
+		return;
+	}
+
+	m_xUndoStack.PushBack(pCommand);
+
+	for (u_int u = 0; u < m_xRedoStack.GetSize(); u++)
+	{
+		delete m_xRedoStack.Get(u);
+	}
+	m_xRedoStack.Clear();
+
+	EnforceStackLimit();
+
+	Zenith_Log(LOG_CATEGORY_EDITOR, "[UndoSystem] Recorded: %s (Undo stack: %u, Redo stack: %u)",
+		pCommand->GetDescription(),
+		m_xUndoStack.GetSize(),
+		m_xRedoStack.GetSize());
+}
+
 void Zenith_UndoSystem::Undo()
 {
 	if (!CanUndo())

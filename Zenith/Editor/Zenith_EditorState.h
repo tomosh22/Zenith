@@ -5,6 +5,8 @@
 #include "AssetHandling/Zenith_AssetHandle.h"  // MaterialHandle
 #include "ZenithECS/Zenith_SceneData.h"  // Zenith_EntityID (by value) + entity/component access (no longer transitive via the now-opaque Scene.h)
 #include "Collections/Zenith_Vector.h"
+#include "Editor/Zenith_EditorCommands.h"   // Zenith_EditorInspectorUndoTracker
+#include "Editor/Zenith_EditorPrefs.h"
 #include <string>
 #include <unordered_set>
 #include <bitset>
@@ -114,10 +116,13 @@ struct Zenith_EditorContentBrowserState
 	char m_szSearchBuffer[256] = "";
 	int m_iAssetTypeFilter = 0;      // 0 = All, then asset types
 	int m_iSelectedContentIndex = -1;
-	float m_fThumbnailSize = 80.0f;  // Range: 40-200 pixels
+	float m_fThumbnailSize = 88.0f;  // Range: 48-200 pixels (at 1x DPI)
 	Zenith_Vector<std::string> m_axNavigationHistory;
 	int m_iHistoryIndex = -1;
 	ContentBrowserViewMode m_eViewMode = ContentBrowserViewMode::Grid;
+	// Folder tree pane on the left (Unreal-style); width is user-resizable.
+	bool m_bShowFolderTree = true;
+	float m_fFolderTreeWidth = 190.0f;
 	static constexpr int MAX_HISTORY_SIZE = 50;
 };
 
@@ -131,6 +136,9 @@ struct Zenith_EditorConsoleState
 	bool m_bShowInfo = true;
 	bool m_bShowWarnings = true;
 	bool m_bShowErrors = true;
+	// Collapse consecutive identical messages into one row with a count.
+	bool m_bCollapse = false;
+	char m_szSearch[128] = "";
 	std::bitset<LOG_CATEGORY_COUNT> m_xCategoryFilters;
 
 	static constexpr size_t MAX_ENTRIES = 1000;
@@ -157,13 +165,97 @@ struct Zenith_EditorCameraState
 	float m_fNear = 1.0f;
 	float m_fFar = 2000.0f;
 
-	// Movement
+	// Movement. Look sensitivity is NOT mirrored here: it has one home in
+	// Zenith_EditorPrefs, because no gesture changes it live (the wheel changes
+	// the move speed, which is why that one IS mirrored).
 	float m_fMoveSpeed = 50.0f;
-	float m_fRotateSpeed = 0.1f;
+
+	// Navigation: the point orbit and dolly work around. Set by Focus (F) and
+	// refreshed from the selection; kept when nothing is selected.
+	Zenith_Maths::Vector3 m_xPivot = { 0, 0, 0 };
+	float m_fPivotDistance = 20.0f;
+
+	// Smooth focus flight (F). Interpolates m_xPosition from start to end over
+	// a short fixed duration.
+	bool m_bFocusAnimating = false;
+	float m_fFocusT = 0.0f;
+	Zenith_Maths::Vector3 m_xFocusStart = { 0, 0, 0 };
+	Zenith_Maths::Vector3 m_xFocusEnd = { 0, 0, 0 };
+
+	// Which navigation gesture is in flight (they are mutually exclusive).
+	bool m_bLooking = false;    // RMB held: mouse look + WASD fly
+	bool m_bOrbiting = false;   // Alt+LMB: orbit the pivot
+	bool m_bPanning = false;    // MMB: pan the view plane
+
+	// This frame's pointer delta, recorded where the input reference already
+	// exists so the viewport overlay can report it without reaching for the
+	// engine singleton. Diagnostic only — the look maths reads the input.
+	Zenith_Maths::Vector2_64 m_xLastMouseDelta = { 0.0, 0.0 };
 
 	// State
 	bool m_bInitialized = false;
 	Zenith_EntityID m_uGameCameraEntity = INVALID_ENTITY_ID;
+};
+
+//-----------------------------------------------------------------------------
+// Gizmo interaction bookkeeping (the drag itself lives in Flux_Gizmos).
+//-----------------------------------------------------------------------------
+struct Zenith_EditorGizmoState
+{
+	// A drag is in flight on this entity; on release its (initial -> final)
+	// transform becomes one undo command.
+	bool m_bDragActive = false;
+	Zenith_EntityID m_xDragEntity = INVALID_ENTITY_ID;
+};
+
+//-----------------------------------------------------------------------------
+// Hierarchy panel state
+//-----------------------------------------------------------------------------
+struct Zenith_EditorHierarchyState
+{
+	char m_szSearch[128] = "";
+	// Inline rename: the entity being renamed and the text buffer; the field
+	// grabs keyboard focus on the frame the rename starts.
+	Zenith_EntityID m_xRenaming = INVALID_ENTITY_ID;
+	char m_szRenameBuffer[256] = "";
+	bool m_bRenameFocusPending = false;
+	// Set by anything that selects an entity from outside the panel so the tree
+	// scrolls it into view once.
+	Zenith_EntityID m_xScrollTo = INVALID_ENTITY_ID;
+	// The panel (or a child of it) had keyboard focus last frame; entity
+	// shortcuts (Delete, Ctrl+D, F) are scoped to it and the viewport.
+	bool m_bFocused = false;
+};
+
+//-----------------------------------------------------------------------------
+// Properties (inspector) panel state
+//-----------------------------------------------------------------------------
+struct Zenith_EditorInspectorState
+{
+	Zenith_EditorInspectorUndoTracker m_xUndoTracker;
+	char m_szAddComponentSearch[64] = "";
+	// The entity name field edits a copy; the rename command is recorded when
+	// the field is deactivated after an edit.
+	Zenith_EntityID m_xNameEditEntity = INVALID_ENTITY_ID;
+	char m_szNameBuffer[256] = "";
+	std::string m_strNameBeforeEdit;
+};
+
+//-----------------------------------------------------------------------------
+// Modal prompt state ("Save changes?" before an action that would drop them).
+//-----------------------------------------------------------------------------
+struct Zenith_EditorPromptState
+{
+	enum class Action
+	{
+		None,
+		NewScene,
+		OpenScene,       // m_strPath holds the file
+		Exit,
+	};
+	Action m_eAction = Action::None;
+	std::string m_strPath;
+	bool m_bOpenRequested = false;
 };
 
 //-----------------------------------------------------------------------------
@@ -178,14 +270,16 @@ struct Zenith_EditorMaterialState
 };
 
 //-----------------------------------------------------------------------------
-// Panel Visibility (View menu toggles)
+// Panel Visibility (Window menu toggles)
 //-----------------------------------------------------------------------------
 struct Zenith_EditorPanelVisibility
 {
 	bool m_bShowHierarchy = true;
 	bool m_bShowProperties = true;
 	bool m_bShowConsole = true;
+	bool m_bShowContentBrowser = true;
 	bool m_bShowTerrainEditor = false;
+	bool m_bShowShortcuts = false;
 };
 
 //-----------------------------------------------------------------------------
@@ -206,12 +300,26 @@ struct Zenith_EditorState
 	Zenith_EditorContentBrowserState m_xContentBrowser;
 	Zenith_EditorConsoleState m_xConsole;
 	Zenith_EditorCameraState m_xCamera;
+	Zenith_EditorGizmoState m_xGizmo;
+	Zenith_EditorHierarchyState m_xHierarchy;
+	Zenith_EditorInspectorState m_xInspector;
+	Zenith_EditorPromptState m_xPrompt;
 	Zenith_EditorMaterialState m_xMaterial;
 	Zenith_EditorPanelVisibility m_xPanels;
 
-	// View > Reset Layout: consumed by the next Render(), which rebuilds the
+	// User preferences (recent scenes, camera speed, snapping ...). Loaded at
+	// Initialise, saved whenever one of them changes.
+	Zenith_EditorPrefs m_xPrefs;
+
+	// Window > Reset Layout: consumed by the next Render(), which rebuilds the
 	// code-defined default dock layout (also recaptures floating windows).
 	bool m_bResetDockLayout = false;
+
+	// The last title pushed to the OS window, so it is only re-set on change.
+	std::string m_strWindowTitle;
+
+	// Interactive runs open maximised once, like every other editor.
+	bool m_bMaximiseRequested = false;
 };
 
 #endif // ZENITH_TOOLS

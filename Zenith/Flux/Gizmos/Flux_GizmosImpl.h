@@ -73,6 +73,16 @@ enum class GizmoMode
 	Scale
 };
 
+// Increment snapping for gizmo drags. Applied while enabled (the editor turns it
+// on from the toolbar toggle or while Ctrl is held).
+struct Flux_GizmoSnapSettings
+{
+	bool  m_bEnabled           = false;
+	float m_fMoveStep          = 0.5f;   // world units
+	float m_fRotateStepDegrees = 15.0f;
+	float m_fScaleStep         = 0.1f;   // absolute scale increments
+};
+
 // WS11.A: per-frame draw packet resolved on the main thread during the Gizmos
 // pass Prepare (GatherGizmoPacket). The gizmo's editable transform is read from
 // the live ECS there, and the resulting matrix/scale/entity-pos plus the
@@ -124,8 +134,39 @@ public:
 	void EndInteraction();
 	bool IsInteracting() const { return m_bIsInteracting; }
 
+	// Hover feedback: raycasts the handles WITHOUT starting a drag and records the
+	// hit as the hovered component (drawn brighter). Call every frame the cursor is
+	// over the viewport and no drag is in flight; ClearHover when it leaves.
+	void UpdateHover(const Zenith_Maths::Vector3& rayOrigin, const Zenith_Maths::Vector3& rayDir);
+	void ClearHover() { m_eHoveredComponent = GizmoComponent::None; }
+
 	GizmoComponent GetHoveredComponent() const { return m_eHoveredComponent; }
 	GizmoComponent GetActiveComponent()  const { return m_eActiveComponent; }
+
+	// Local space: the handles follow the target's rotation and drags move along
+	// its local axes. World space (default): handles stay axis-aligned.
+	void SetLocalSpace(bool bLocal) { m_bLocalSpace = bLocal; }
+	bool IsLocalSpace() const { return m_bLocalSpace; }
+
+	void SetSnapSettings(const Flux_GizmoSnapSettings& xSnap) { m_xSnap = xSnap; }
+	const Flux_GizmoSnapSettings& GetSnapSettings() const { return m_xSnap; }
+
+	// The transform captured when the current (or last) drag began; the editor
+	// turns (initial, current) into an undo command when the drag ends.
+	const Zenith_Maths::Vector3&    GetInitialPosition() const { return m_xInitialEntityPosition; }
+	const Zenith_Maths::Quaternion& GetInitialRotation() const { return m_xInitialEntityRotation; }
+	const Zenith_Maths::Vector3&    GetInitialScale()    const { return m_xInitialEntityScale; }
+
+	// PURE: rounds fValue to the nearest multiple of fStep (fStep <= 0 returns fValue).
+	static float SnapValue(float fValue, float fStep);
+
+	// The world-space direction a component drags along, honouring local space.
+	// Rotate components return the rotation axis; ScaleXYZ/None return zero.
+	Zenith_Maths::Vector3 GetComponentAxis(GizmoComponent eComponent) const;
+
+	// Debug aid: draws the interaction-bound wireframe cubes around each axis.
+	// Off by default because they read as broken geometry in an ordinary session.
+	bool m_bDrawInteractionBounds = false;
 
 	friend class Zenith_UnitTests;
 
@@ -173,6 +214,8 @@ public:
 	Zenith_Maths::Quaternion m_xInitialEntityRotation = Zenith_Maths::Quaternion(1, 0, 0, 0);
 	Zenith_Maths::Vector3    m_xInitialEntityScale    = Zenith_Maths::Vector3(1, 1, 1);
 	float                    m_fGizmoScale            = 1.0f;
+	bool                     m_bLocalSpace            = false;
+	Flux_GizmoSnapSettings   m_xSnap;
 
 	// WS11.A: per-frame snapshot populated on the main thread in GatherGizmoPacket
 	// and consumed by the worker-thread record callback ExecuteGizmos.

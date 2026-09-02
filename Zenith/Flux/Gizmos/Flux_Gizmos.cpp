@@ -249,23 +249,31 @@ void Flux_GizmosImpl::GatherGizmoPacket(void*)
 	// ApplyTranslation / ApplyScale) reads m_fGizmoScale outside the packet.
 	m_fGizmoScale = fDistance / GIZMO_AUTO_SCALE_DISTANCE;
 
-#ifdef ZENITH_DEBUG
-	// Visualize gizmo interaction bounding boxes for debugging. Now issued on the
-	// main thread from Prepare (was previously a worker-thread shared-state write).
-	Flux_PrimitivesImpl& xPrimitives = g_xEngine.Primitives();
-	xPrimitives.AddWireframeCube(xEntityPos + Zenith_Maths::Vector3(1, 0, 0) * GIZMO_ARROW_LENGTH * 0.5f * m_fGizmoScale,
-		Zenith_Maths::Vector3(GIZMO_ARROW_LENGTH * m_fGizmoScale * 0.5f, GIZMO_INTERACTION_THRESHOLD * m_fGizmoScale, GIZMO_INTERACTION_THRESHOLD * m_fGizmoScale),
-		Zenith_Maths::Vector3(1, 0, 0));
-	xPrimitives.AddWireframeCube(xEntityPos + Zenith_Maths::Vector3(0, 1, 0) * GIZMO_ARROW_LENGTH * 0.5f * m_fGizmoScale,
-		Zenith_Maths::Vector3(GIZMO_INTERACTION_THRESHOLD * m_fGizmoScale, GIZMO_ARROW_LENGTH * m_fGizmoScale * 0.5f, GIZMO_INTERACTION_THRESHOLD * m_fGizmoScale),
-		Zenith_Maths::Vector3(0, 1, 0));
-	xPrimitives.AddWireframeCube(xEntityPos + Zenith_Maths::Vector3(0, 0, 1) * GIZMO_ARROW_LENGTH * 0.5f * m_fGizmoScale,
-		Zenith_Maths::Vector3(GIZMO_INTERACTION_THRESHOLD * m_fGizmoScale, GIZMO_INTERACTION_THRESHOLD * m_fGizmoScale, GIZMO_ARROW_LENGTH * m_fGizmoScale * 0.5f),
-		Zenith_Maths::Vector3(0, 0, 1));
-#endif
+	if (m_bDrawInteractionBounds)
+	{
+		// Visualize gizmo interaction bounding boxes for debugging (issued on the
+		// main thread from Prepare, where Flux_Primitives mutation is safe).
+		Flux_PrimitivesImpl& xPrimitives = g_xEngine.Primitives();
+		xPrimitives.AddWireframeCube(xEntityPos + Zenith_Maths::Vector3(1, 0, 0) * GIZMO_ARROW_LENGTH * 0.5f * m_fGizmoScale,
+			Zenith_Maths::Vector3(GIZMO_ARROW_LENGTH * m_fGizmoScale * 0.5f, GIZMO_INTERACTION_THRESHOLD * m_fGizmoScale, GIZMO_INTERACTION_THRESHOLD * m_fGizmoScale),
+			Zenith_Maths::Vector3(1, 0, 0));
+		xPrimitives.AddWireframeCube(xEntityPos + Zenith_Maths::Vector3(0, 1, 0) * GIZMO_ARROW_LENGTH * 0.5f * m_fGizmoScale,
+			Zenith_Maths::Vector3(GIZMO_INTERACTION_THRESHOLD * m_fGizmoScale, GIZMO_ARROW_LENGTH * m_fGizmoScale * 0.5f, GIZMO_INTERACTION_THRESHOLD * m_fGizmoScale),
+			Zenith_Maths::Vector3(0, 1, 0));
+		xPrimitives.AddWireframeCube(xEntityPos + Zenith_Maths::Vector3(0, 0, 1) * GIZMO_ARROW_LENGTH * 0.5f * m_fGizmoScale,
+			Zenith_Maths::Vector3(GIZMO_INTERACTION_THRESHOLD * m_fGizmoScale, GIZMO_INTERACTION_THRESHOLD * m_fGizmoScale, GIZMO_ARROW_LENGTH * m_fGizmoScale * 0.5f),
+			Zenith_Maths::Vector3(0, 0, 1));
+	}
 
-	// Build gizmo transform matrix
+	// Build gizmo transform matrix. In local space the handles follow the
+	// target's rotation, so drags along a handle move along a local axis.
 	Zenith_Maths::Matrix4 xGizmoMatrix = glm::translate(Zenith_Maths::Matrix4(1.0f), xEntityPos);
+	if (m_bLocalSpace)
+	{
+		Zenith_Maths::Quaternion xRotation;
+		g_xGizmoTransformAccess.m_pfnGetRotation(pxEntity, xRotation);
+		xGizmoMatrix = xGizmoMatrix * glm::mat4_cast(xRotation);
+	}
 	xGizmoMatrix = glm::scale(xGizmoMatrix, Zenith_Maths::Vector3(m_fGizmoScale));
 
 	// Snapshot everything the worker record callback needs.
@@ -430,6 +438,44 @@ void Flux_GizmosImpl::EndInteraction()
 {
 	m_bIsInteracting = false;
 	m_eActiveComponent = GizmoComponent::None;
+}
+
+void Flux_GizmosImpl::UpdateHover(const Zenith_Maths::Vector3& rayOrigin, const Zenith_Maths::Vector3& rayDir)
+{
+	if (m_bIsInteracting || !m_pxTargetEntity)
+	{
+		return;
+	}
+	float fDistance;
+	m_eHoveredComponent = RaycastGizmo(rayOrigin, rayDir, fDistance);
+}
+
+float Flux_GizmosImpl::SnapValue(float fValue, float fStep)
+{
+	if (fStep <= 0.0f)
+	{
+		return fValue;
+	}
+	return roundf(fValue / fStep) * fStep;
+}
+
+Zenith_Maths::Vector3 Flux_GizmosImpl::GetComponentAxis(GizmoComponent eComponent) const
+{
+	Zenith_Maths::Vector3 xAxis(0.0f);
+	switch (eComponent)
+	{
+		case GizmoComponent::TranslateX: case GizmoComponent::RotateX: case GizmoComponent::ScaleX: xAxis = Zenith_Maths::Vector3(1, 0, 0); break;
+		case GizmoComponent::TranslateY: case GizmoComponent::RotateY: case GizmoComponent::ScaleY: xAxis = Zenith_Maths::Vector3(0, 1, 0); break;
+		case GizmoComponent::TranslateZ: case GizmoComponent::RotateZ: case GizmoComponent::ScaleZ: xAxis = Zenith_Maths::Vector3(0, 0, 1); break;
+		default: return xAxis;
+	}
+	if (m_bLocalSpace)
+	{
+		// The drag frame is frozen at the rotation the drag began with: rotating
+		// the axis with the LIVE rotation would make a rotate drag chase itself.
+		xAxis = glm::normalize(m_xInitialEntityRotation * xAxis);
+	}
+	return xAxis;
 }
 
 // ==================== GEOMETRY GENERATION ====================
@@ -707,9 +753,19 @@ GizmoComponent Flux_GizmosImpl::RaycastGizmo(const Zenith_Maths::Vector3& rayOri
 	Zenith_Maths::Vector3 xGizmoPos;
 	g_xGizmoTransformAccess.m_pfnGetPosition(pxEntity, xGizmoPos);
 
-	// FIXED: Do all calculations in WORLD space
-	// Translate ray origin relative to gizmo center, but keep same units
+	// All tests run in the gizmo's own frame: world units, origin at the handle
+	// centre, and (in local space) rotated back by the target's rotation so the
+	// axis-aligned intersection helpers below see the rotated handles as straight.
 	Zenith_Maths::Vector3 relativeRayOrigin = rayOrigin - xGizmoPos;
+	Zenith_Maths::Vector3 xTestRayDir = rayDir;
+	if (m_bLocalSpace)
+	{
+		Zenith_Maths::Quaternion xRotation;
+		g_xGizmoTransformAccess.m_pfnGetRotation(pxEntity, xRotation);
+		const Zenith_Maths::Quaternion xInverse = glm::inverse(xRotation);
+		relativeRayOrigin = xInverse * relativeRayOrigin;
+		xTestRayDir = glm::normalize(xInverse * rayDir);
+	}
 
 	// Scale thresholds and lengths to world space
 	const float worldArrowLength = GIZMO_ARROW_LENGTH * m_fGizmoScale * GIZMO_INTERACTION_LENGTH_MULTIPLIER;
@@ -722,13 +778,13 @@ GizmoComponent Flux_GizmosImpl::RaycastGizmo(const Zenith_Maths::Vector3& rayOri
 
 	if (m_eMode == GizmoMode::Translate || m_eMode == GizmoMode::Scale)
 	{
-		IntersectTranslateOrScaleAxes(m_eMode, relativeRayOrigin, rayDir,
+		IntersectTranslateOrScaleAxes(m_eMode, relativeRayOrigin, xTestRayDir,
 			worldArrowLength, worldInteractionThreshold, worldCubeSize,
 			closestDistance, closestComponent);
 	}
 	else if (m_eMode == GizmoMode::Rotate)
 	{
-		IntersectRotateRings(relativeRayOrigin, rayDir,
+		IntersectRotateRings(relativeRayOrigin, xTestRayDir,
 			worldCircleRadius, worldInteractionThreshold,
 			closestDistance, closestComponent);
 	}
@@ -745,15 +801,10 @@ void Flux_GizmosImpl::ApplyTranslation(const Zenith_Maths::Vector3& rayOrigin, c
 	if (!pxEntity)
 		return;
 
-	// Get constraint axis
-	Zenith_Maths::Vector3 axis(0, 0, 0);
-	switch (m_eActiveComponent)
-	{
-		case GizmoComponent::TranslateX: axis = Zenith_Maths::Vector3(1, 0, 0); break;
-		case GizmoComponent::TranslateY: axis = Zenith_Maths::Vector3(0, 1, 0); break;
-		case GizmoComponent::TranslateZ: axis = Zenith_Maths::Vector3(0, 0, 1); break;
-		default: return;
-	}
+	// Constraint axis (world- or local-space, frozen at drag start)
+	const Zenith_Maths::Vector3 axis = GetComponentAxis(m_eActiveComponent);
+	if (glm::length(axis) < 0.5f)
+		return;
 
 	// Track offset from initial click and maintain it.
 	// Find the closest point on the constraint axis to BOTH the initial click and current ray;
@@ -770,8 +821,12 @@ void Flux_GizmosImpl::ApplyTranslation(const Zenith_Maths::Vector3& rayOrigin, c
 		return;
 	}
 
-	// Apply the movement
+	// Apply the movement (snapped to the move step while snapping is on)
 	float fDeltaT = fCurrentT - fInitialT;
+	if (m_xSnap.m_bEnabled)
+	{
+		fDeltaT = SnapValue(fDeltaT, m_xSnap.m_fMoveStep);
+	}
 	Zenith_Maths::Vector3 xNewPosition = m_xInitialEntityPosition + axis * fDeltaT;
 
 	g_xGizmoTransformAccess.m_pfnSetPosition(pxEntity, xNewPosition);
@@ -784,15 +839,10 @@ void Flux_GizmosImpl::ApplyRotation(const Zenith_Maths::Vector3& rayOrigin, cons
 		return;
 
 
-	// Get rotation axis
-	Zenith_Maths::Vector3 axis(0, 0, 0);
-	switch (m_eActiveComponent)
-	{
-		case GizmoComponent::RotateX: axis = Zenith_Maths::Vector3(1, 0, 0); break;
-		case GizmoComponent::RotateY: axis = Zenith_Maths::Vector3(0, 1, 0); break;
-		case GizmoComponent::RotateZ: axis = Zenith_Maths::Vector3(0, 0, 1); break;
-		default: return;
-	}
+	// Rotation axis (world- or local-space, frozen at drag start)
+	const Zenith_Maths::Vector3 axis = GetComponentAxis(m_eActiveComponent);
+	if (glm::length(axis) < 0.5f)
+		return;
 
 	// Calculate angle from initial interaction point to current ray
 	// Intersect ray with rotation plane
@@ -815,6 +865,10 @@ void Flux_GizmosImpl::ApplyRotation(const Zenith_Maths::Vector3& rayOrigin, cons
 	Zenith_Maths::Vector3 cross = glm::cross(initialVec, currentVec);
 	if (glm::dot(cross, axis) < 0.0f)
 		angle = -angle;
+	if (m_xSnap.m_bEnabled)
+	{
+		angle = SnapValue(angle, glm::radians(m_xSnap.m_fRotateStepDegrees));
+	}
 
 	// Apply rotation
 	Zenith_Maths::Quaternion deltaRotation = glm::angleAxis(angle, axis);
@@ -828,27 +882,18 @@ void Flux_GizmosImpl::ApplyScale(const Zenith_Maths::Vector3& rayOrigin, const Z
 	if (!pxEntity)
 		return;
 
-	// Get constraint axis
-	Zenith_Maths::Vector3 axis(0, 0, 0);
-	bool bUniformScale = false;
-
-	switch (m_eActiveComponent)
-	{
-		case GizmoComponent::ScaleX: axis = Zenith_Maths::Vector3(1, 0, 0); break;
-		case GizmoComponent::ScaleY: axis = Zenith_Maths::Vector3(0, 1, 0); break;
-		case GizmoComponent::ScaleZ: axis = Zenith_Maths::Vector3(0, 0, 1); break;
-		case GizmoComponent::ScaleXYZ:
-			axis = Zenith_Maths::Vector3(1, 1, 1);
-			bUniformScale = true;
-			break;
-		default: return;
-	}
-
-	// For uniform scale, use the camera view direction as the constraint axis
+	// Constraint axis: a handle's own axis, or (for the uniform centre cube)
+	// the camera view direction so dragging towards/away from the camera scales.
+	const bool bUniformScale = (m_eActiveComponent == GizmoComponent::ScaleXYZ);
+	Zenith_Maths::Vector3 axis = GetComponentAxis(m_eActiveComponent);
 	if (bUniformScale)
 	{
 		Zenith_Maths::Vector3 xCameraPos = g_xEngine.FluxGraphics().GetCameraPosition();
 		axis = glm::normalize(m_xInitialEntityPosition - xCameraPos);
+	}
+	else if (glm::length(axis) < 0.5f)
+	{
+		return;
 	}
 
 	// Project initial click onto axis
@@ -886,6 +931,15 @@ void Flux_GizmosImpl::ApplyScale(const Zenith_Maths::Vector3& rayOrigin, const Z
 			case GizmoComponent::ScaleZ: xNewScale.z *= fScaleFactor; break;
 			default: return;
 		}
+	}
+
+	if (m_xSnap.m_bEnabled)
+	{
+		// Snap the RESULT to scale increments (never below one increment).
+		const float fStep = m_xSnap.m_fScaleStep;
+		xNewScale.x = glm::max(SnapValue(xNewScale.x, fStep), fStep);
+		xNewScale.y = glm::max(SnapValue(xNewScale.y, fStep), fStep);
+		xNewScale.z = glm::max(SnapValue(xNewScale.z, fStep), fStep);
 	}
 
 	g_xGizmoTransformAccess.m_pfnSetScale(pxEntity, xNewScale);

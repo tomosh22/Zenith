@@ -22,6 +22,7 @@
 
 #ifdef ZENITH_WINDOWS
 #include "Zenith_Windows_Window.h"
+#include "Core/Zenith_EditorFontHook.h"
 #endif
 
 #ifdef ZENITH_TOOLS
@@ -2012,6 +2013,10 @@ void Zenith_Vulkan::InitialiseImGui()
 	ImGuiIO& xIO = ImGui::GetIO();
 	xIO.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 	xIO.ConfigFlags |= ImGuiConfigFlags_DockingEnable;      // Enable Docking
+
+	// The editor's font set goes into the atlas before the renderer backend is
+	// initialised (see Core/Zenith_EditorFontHook.h).
+	Zenith_EditorFonts_Load();
 
 #ifdef ZENITH_WINDOWS
 	GLFWwindow* pxWindow = Zenith_Window::GetInstance()->GetNativeWindow();

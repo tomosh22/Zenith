@@ -10,8 +10,12 @@
 //=============================================================================
 // Viewport Panel
 //
-// Displays the game render target and handles viewport state tracking.
+// Displays the game render target, tracks the viewport rect / hover / focus
+// for picking, and draws the editor overlays on top of the image: the mode
+// badge, the statistics block, the navigation hint and the axis widget.
 //=============================================================================
+
+class Zenith_Editor;
 
 // Pending ImGui texture deletion entry
 struct PendingImGuiTextureDeletion
@@ -20,26 +24,14 @@ struct PendingImGuiTextureDeletion
 	u_int uFramesUntilDeletion;
 };
 
-// Viewport state structure
-struct ViewportState
-{
-	Zenith_Maths::Vector2& m_xViewportSize;
-	Zenith_Maths::Vector2& m_xViewportPos;
-	bool& m_bViewportHovered;
-	bool& m_bViewportFocused;
-	Flux_ImGuiTextureHandle& m_xCachedGameTextureHandle;
-	Flux_ImageViewHandle& m_xCachedImageViewHandle;
-	Zenith_Vector<PendingImGuiTextureDeletion>& m_xPendingDeletions;
-};
-
 namespace Zenith_EditorPanelViewport
 {
-	/**
-	 * Render the viewport panel
-	 *
-	 * @param xState Reference to viewport state
-	 */
-	void Render(ViewportState& xState);
+	void Render(Zenith_Editor& xEditor);
+
+	// PURE: projects a world-space direction into the 2D screen direction the
+	// axis widget draws it along, using the view rotation only. Returns the
+	// view-space Z (depth) so the caller can draw far axes first.
+	float ProjectAxisForWidget(const Zenith_Maths::Matrix4& xViewMatrix, const Zenith_Maths::Vector3& xWorldAxis, Zenith_Maths::Vector2& xOutScreenDir);
 }
 
 #endif // ZENITH_TOOLS

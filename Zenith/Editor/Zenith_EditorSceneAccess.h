@@ -72,6 +72,23 @@ public:
 	{
 		pxData->Editor_MarkEntityStarted(xID);
 	}
+
+	// The unsaved-changes flag. Every undoable editor mutation marks the scene
+	// that owns the entity it touched; a save clears it.
+	static void MarkDirty(Zenith_SceneData* pxData)
+	{
+		pxData->MarkDirty();
+	}
+
+	static void ClearDirty(Zenith_SceneData* pxData)
+	{
+		pxData->ClearDirty();
+	}
+
+	static bool HasUnsavedChanges(const Zenith_SceneData* pxData)
+	{
+		return pxData->HasUnsavedChanges();
+	}
 };
 
 #endif // ZENITH_TOOLS

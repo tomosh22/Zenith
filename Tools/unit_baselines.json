@@ -16,12 +16,12 @@
 
   "baselines": {
     "$Zenithmon": "ZM boot units. Also narrated in Games/Zenithmon/Docs/Status.md, which stays the human-facing authority for WHY it moved; this file is what the gate reads.",
-    "Zenithmon": 3590,
+    "Zenithmon": 3603,
 
     "$Combat": "The engine boot pin. A backend-neutral ENGINE unit moves this AND every other game's number in the same commit, because they all boot the same engine suite.",
-    "Combat": 1763,
+    "Combat": 1776,
 
     "$RenderTest": "Every number in this file is OBSERVED from a real Null_ run, never arithmetic on the previous one -- a computed pin is how a suite that also LOST a test still ratchets green. Do NOT narrate individual bumps here: that note drifts at the next bump (it already did once). git log carries the derivation.",
-    "RenderTest": 1854
+    "RenderTest": 1867
   }
 }

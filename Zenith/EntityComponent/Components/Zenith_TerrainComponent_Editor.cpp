@@ -221,8 +221,6 @@ static void RenderTerrainStatusDisplay()
 //-----------------------------------------------------------------------------
 void Zenith_TerrainComponent::RenderPropertiesPanel()
 {
-	if (!ImGui::CollapsingHeader("Terrain Component", ImGuiTreeNodeFlags_DefaultOpen))
-		return;
 
 	const bool bTerrainInitialized = m_pxStreamingState->m_ulUnifiedVertexBufferSize > 0;
 

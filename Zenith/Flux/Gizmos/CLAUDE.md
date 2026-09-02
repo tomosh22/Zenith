@@ -30,7 +30,12 @@ Three geometry sets are generated up front, one per mode: translation (arrows on
 
 - Targeting / mode: `SetTargetEntity`, `SetGizmoMode`, `GetGizmoMode`, `GetGizmoTargetWithTransform`.
 - Interaction: `BeginInteraction`, `UpdateInteraction`, `EndInteraction`, `IsInteracting`, `RaycastGizmo` (identifies the hovered/active `GizmoComponent`), `ApplyTranslation`, `ApplyRotation`, `ApplyScale`.
+- Hover: `UpdateHover` raycasts without starting a drag and records the hit as the hovered component (drawn at half highlight); `ClearHover` when the cursor leaves the viewport. The editor calls it every hovered frame — before this existed the hover highlight was never updated.
+- Space: `SetLocalSpace` / `IsLocalSpace`. In local space the gizmo matrix carries the target's rotation, `RaycastGizmo` transforms the ray into the gizmo frame before the axis-aligned intersection helpers run, and `GetComponentAxis` returns the drag axis rotated by the rotation captured at drag start (frozen, so a rotate drag never chases itself).
+- Snapping: `SetSnapSettings(Flux_GizmoSnapSettings)` — translation deltas, rotation angles and resulting scales round to the configured increments while enabled; `SnapValue` is the pure rounding helper (tested).
+- Undo hand-off: `GetInitialPosition/Rotation/Scale` expose the TRS captured at `BeginInteraction`; the editor records one `TransformEdit` from (initial, live) when the drag ends.
 - Geometry: `GenerateTranslationGizmoGeometry`, `GenerateRotationGizmoGeometry`, `GenerateScaleGizmoGeometry`.
+- `m_bDrawInteractionBounds` (default false) draws the per-axis interaction-bound wireframe cubes; they used to draw in every Debug build and read as broken geometry.
 
 Interaction flow: raycast to identify the component under the cursor, track hovered/active state, then apply the delta back to the target entity's transform via `g_xGizmoTransformAccess`.
 

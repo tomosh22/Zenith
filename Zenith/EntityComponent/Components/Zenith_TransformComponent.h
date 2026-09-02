@@ -12,6 +12,7 @@ struct Zenith_PropertyDescriptor;
 
 #ifdef ZENITH_TOOLS
 #include "imgui.h"
+#include "Core/Zenith_ImGuiWidgets.h"
 #include "EntityComponent/Zenith_ComponentEditorRegistry.h"
 #endif
 
@@ -100,40 +101,36 @@ public:
 
 #ifdef ZENITH_TOOLS
 	//--------------------------------------------------------------------------
-	// Editor UI - Renders component properties in the Properties panel
+	// Editor UI - the Transform's rows in the Properties panel (the panel draws
+	// the section header). Undo is recorded by the panel's inspector tracker.
 	//--------------------------------------------------------------------------
 	void RenderPropertiesPanel()
 	{
-		if (ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen))
+		Zenith_Maths::Vector3 pos, scale;
+		Zenith_Maths::Quat rot;
+		GetPosition(pos);
+		GetRotation(rot);
+		GetScale(scale);
+
+		float position[3] = { pos.x, pos.y, pos.z };
+		if (Zenith_ImGuiWidgets::Vec3Field("Position", position, 0.1f, 0.0f, "%.3f"))
 		{
-			Zenith_Maths::Vector3 pos, scale;
-			Zenith_Maths::Quat rot;
-			GetPosition(pos);
-			GetRotation(rot);
-			GetScale(scale);
-			
-			// Position editing
-			float position[3] = { pos.x, pos.y, pos.z };
-			if (ImGui::DragFloat3("Position", position, 0.1f))
-			{
-				SetPosition({ position[0], position[1], position[2] });
-			}
-			
-			// Rotation editing - convert quaternion to Euler angles for UI
-			Zenith_Maths::Vector3 euler = glm::degrees(glm::eulerAngles(rot));
-			float rotation[3] = { euler.x, euler.y, euler.z };
-			if (ImGui::DragFloat3("Rotation", rotation, 1.0f))
-			{
-				Zenith_Maths::Vector3 newEuler = glm::radians(Zenith_Maths::Vector3(rotation[0], rotation[1], rotation[2]));
-				SetRotation(Zenith_Maths::Quat(newEuler));
-			}
-			
-			// Scale editing
-			float scaleValues[3] = { scale.x, scale.y, scale.z };
-			if (ImGui::DragFloat3("Scale", scaleValues, 0.1f))
-			{
-				SetScale({ scaleValues[0], scaleValues[1], scaleValues[2] });
-			}
+			SetPosition({ position[0], position[1], position[2] });
+		}
+
+		// Rotation is edited as Euler degrees (quaternion underneath).
+		Zenith_Maths::Vector3 euler = glm::degrees(glm::eulerAngles(rot));
+		float rotation[3] = { euler.x, euler.y, euler.z };
+		if (Zenith_ImGuiWidgets::Vec3Field("Rotation", rotation, 0.5f, 0.0f, "%.2f"))
+		{
+			Zenith_Maths::Vector3 newEuler = glm::radians(Zenith_Maths::Vector3(rotation[0], rotation[1], rotation[2]));
+			SetRotation(Zenith_Maths::Quat(newEuler));
+		}
+
+		float scaleValues[3] = { scale.x, scale.y, scale.z };
+		if (Zenith_ImGuiWidgets::Vec3Field("Scale", scaleValues, 0.05f, 1.0f, "%.3f"))
+		{
+			SetScale({ scaleValues[0], scaleValues[1], scaleValues[2] });
 		}
 	}
 

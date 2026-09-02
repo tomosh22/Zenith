@@ -100,10 +100,6 @@ void Zenith_SunComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 #ifdef ZENITH_TOOLS
 void Zenith_SunComponent::RenderPropertiesPanel()
 {
-	if (!ImGui::CollapsingHeader("Sun", ImGuiTreeNodeFlags_DefaultOpen))
-	{
-		return;
-	}
 
 	const char* aszModes[] = { "Direction Vector", "Time of Day" };
 	// A Sun always competes for the one environment authority (there is no

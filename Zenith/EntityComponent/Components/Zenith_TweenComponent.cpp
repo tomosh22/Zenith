@@ -289,7 +289,6 @@ void Zenith_TweenComponent::ScaleTo(Zenith_Entity& xEntity, const Zenith_Maths::
 #ifdef ZENITH_TOOLS
 void Zenith_TweenComponent::RenderPropertiesPanel()
 {
-	if (!ImGui::CollapsingHeader("Tween", ImGuiTreeNodeFlags_DefaultOpen)) return;
 
 	RenderActiveTweensSection();
 	ImGui::Separator();

@@ -196,7 +196,7 @@ void Zenith_CameraComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 #ifdef ZENITH_TOOLS
 void Zenith_CameraComponent::RenderPropertiesPanel()
 {
-	if (ImGui::CollapsingHeader("Camera", ImGuiTreeNodeFlags_DefaultOpen))
+	// Section header drawn by the Properties panel (Zenith_EditorPanel_Properties).
 	{
 		// Camera type selection
 		const char* szCameraTypes[] = { "Perspective", "Orthographic" };

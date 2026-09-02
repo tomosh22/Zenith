@@ -510,10 +510,6 @@ u_int Zenith_GraphComponent::ReloadSlotsForAsset(const char* szNormalizedPath)
 
 void Zenith_GraphComponent::RenderPropertiesPanel()
 {
-	if (!ImGui::CollapsingHeader("Graph Component", ImGuiTreeNodeFlags_DefaultOpen))
-	{
-		return;
-	}
 
 	if (m_iPendingRemoveIndex >= 0 && static_cast<u_int>(m_iPendingRemoveIndex) < m_axSlots.GetSize())
 	{

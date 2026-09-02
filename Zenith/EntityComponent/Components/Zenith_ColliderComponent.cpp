@@ -1319,8 +1319,6 @@ void Zenith_ColliderComponent::RenderConfiguredColliderUI()
 
 void Zenith_ColliderComponent::RenderPropertiesPanel()
 {
-	if (!ImGui::CollapsingHeader("Collider", ImGuiTreeNodeFlags_DefaultOpen))
-		return;
 
 	if (!m_pxRigidBody)
 		RenderAddColliderUI();

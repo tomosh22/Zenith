@@ -8,8 +8,12 @@ ImGui-based scene editor for creating, editing, and testing game content. Active
 
 ## Files
 
-- `Zenith_Editor.h/cpp` - Main controller, mode management
-- `Zenith_Editor_Menu.cpp` - Main menu bar rendering and callbacks
+- `Zenith_Editor.h/cpp` - Main controller, mode management, the dockspace host (menu bar + toolbar strip + dockspace + status bar), keyboard shortcuts, the "Save changes?" prompt and the Keyboard Shortcuts window
+- `Zenith_Editor_Menu.cpp` - Main menu bar (File / Edit / Entity / Window / Help); every item calls a `Zenith_EditorActions` verb
+- `Zenith_EditorActions.h/cpp` - **The verbs.** Create / delete / duplicate / rename / enable / reparent entities, add / remove components, new / open / save scenes (with the unsaved-changes prompt), play / pause / stop. Menus, shortcuts, toolbar buttons and panel context menus all call these, so one operation behaves identically from every entry point and undo + scene-dirtying live in exactly one place
+- `Zenith_EditorCommands.h/cpp` - The undo command layer: `Zenith_EditorEntitySnapshot` (a serialised entity subtree that can be destroyed and rebuilt), `Zenith_UndoCommand_EntityLifetime` (delete / create / duplicate), `Zenith_UndoCommand_EntityState` (rename / enable / reparent), `Zenith_UndoCommand_ComponentBytes` (add / remove / edit ONE component by serialised payload), `Zenith_UndoCommand_Composite` (a multi-selection as one step), and `Zenith_EditorInspectorUndoTracker` (turns any Properties-panel edit into a command). Tests in `Zenith_EditorCommands.Tests.inl`
+- `Zenith_EditorUI.h/cpp` - Look and feel: the embedded Roboto font (`Zenith_EditorFontData.generated.h`) at a DPI-aware base size, the theme + palette (sRGB values converted to linear for the sRGB swapchain), the play-mode tint, a vector icon set drawn straight into ImDrawLists, the styled widgets (icon buttons, search box, badges, the inspector component header), and the small helpers every panel shares rather than copying (`ContainsCaseInsensitive`, the `SmoothedFrameMs` frame-time filter)
+- `Zenith_EditorPrefs.h/cpp` - Per-user, per-game preferences (`%LOCALAPPDATA%/Zenith/<Game>/editor_prefs.txt`): recent scenes, fly speed, look sensitivity, snapping, gizmo space, overlay toggles. `Parse` / `Serialize` are pure and unit-tested; never read in automated or headless runs
 - `Zenith_Editor_SceneOps.cpp` - Scene load/save/new + deferred scene operations
 - `Zenith_EditorQuery.cpp` - Editor-side scene queries (entity/component lookup)
 - `Zenith_EditorSceneAccess.h` - Header-only friend-class wrapper exposing the editor-only `Zenith_SceneData` verbs (Save/LoadFromFile, RemoveEntity, SetMainCameraEntity, etc.) to editor code; `Zenith_Editor` is a namespace and cannot itself be `friend`ed, so this class is
@@ -53,7 +57,9 @@ ImGui-based scene editor for creating, editing, and testing game content. Active
 - `Zenith_ImGuiInputBridge.h/cpp` - Pumps `Zenith_InputSimulator` state into ImGui
   (TOOLS + INPUT_SIMULATOR builds) so automated tests drive editor UI deterministically.
 - `Zenith_Editor.Tests.inl` / `Zenith_EditorAutomation.Tests.inl` - Unit tests for the editor controller and the automation step queue (included into the unit-test TU)
-- `Panels/` - Panel implementations (Console, ContentBrowser, GraphEditor, Hierarchy, MaterialEditor, Memory, Properties, RenderGraph, TerrainEditor, Toolbar, VariantEditor, Viewport)
+- `Panels/` - Panel implementations (Console, ContentBrowser, GraphEditor, Hierarchy, MaterialEditor, Memory, Properties, RenderGraph, StatusBar, TerrainEditor, Toolbar, VariantEditor, Viewport). Toolbar and StatusBar are strips drawn inside the dockspace host window, not dockable windows
+- `../Core/Zenith_ImGuiWidgets.h/cpp` - Layer-0 ImGui widgets (`Vec3Field`, `PropertyLabel`) that component inspectors in EntityComponent may use without including `Editor/`
+- `../Core/Zenith_EditorFontHook.h` - `Zenith_EditorFonts_Load()`, called by the Vulkan and Null backends right after `ImGui::CreateContext` so the editor font is registered before either backend builds the atlas (the Null backend's legacy atlas is locked at the first NewFrame)
 
 ## Related Systems
 
@@ -196,46 +202,94 @@ ImGui docking branch provides central dock space with persistent layout. Panels 
 - Toggle individual panels on/off
 - Animation State Machine Editor (currently disabled)
 
-### Toolbar
+### Toolbar strip
 
-Horizontal button bar below menu:
-- **Play/Pause/Stop Buttons** - Mode control with icons
-- **Gizmo Mode Buttons** - Translate/Rotate/Scale (W/E/R shortcuts)
+One row directly under the menu bar, part of the dockspace host (it can never
+be docked away, closed, or clipped — it used to be a dock node whose 8% split
+hid its second and third rows at 720p):
+- **Undo / Redo** with the next description in the tooltip
+- **Move / Rotate / Scale** (W / E / R), **Local / World** space (X), **Snap**
+  toggle (right-click edits the increments; holding Ctrl snaps for one drag)
+- **Play / Pause / Stop** centred (Ctrl+P, Ctrl+Shift+P); the Play button turns
+  into a green-lit icon while running and the whole chrome takes a warm tint
+- **Active scene** combo (dirty scenes show `*`) and the registered-scene loader
+  on the right
+
+### Status bar
+
+The strip along the bottom of the host: the latest log line (icon per level;
+click reveals the Console) and, on the right, entity count, selection count,
+fps / frame ms and undo / redo depth.
 
 ### Hierarchy Panel
 
-Lists all scene entities with selection and manipulation:
-- Each entity shown as: `EntityName [ComponentCount]`
-- Falls back to `Entity_{ID}` if no name set
-- Click to select entity (Ctrl+click to toggle multi-selection, Shift+click for range selection)
-- Right-click context menu for deletion
-- "+ Create Entity" button at bottom
+Lists every loaded scene as a framed header (icon, name, `*` when dirty,
+entity-count badge) with its entity tree:
+- Rows show a component icon (camera / light / mesh / terrain / ...), the name
+  (dimmed when disabled) and an **eye toggle** on hover that enables / disables
+  the entity (undoable)
+- **Search** box filters the tree while keeping matching subtrees visible and
+  auto-expanded; matches name or component names (`MatchesSearch` is pure)
+- Click to select (Ctrl+click toggles, Shift+click ranges); the viewport scrolls
+  the tree to whatever it picks
+- **Double-click or F2** renames inline (undoable); Enter commits, Esc cancels
+- Right-click: Rename, Duplicate, Delete, Focus, Create Child ▸, Unparent,
+  Enable / Disable, Move To Scene ▸; the scene header offers Set Active, Save,
+  Save As, Unload, Create ▸, Pause
+- Drag a row onto another to reparent (undoable, cycles refused), onto a scene
+  header to move it there, onto the empty space at the bottom to unparent
+- The `+` button at the top creates Empty / Camera / Point / Spot / Directional
+  Light entities at the camera's placement point
 
 **Implementation Detail:**
 - Uses EntityID for selection (not raw pointers) to prevent dangling references
 - Selection persists across frames but clears on scene load
+- Entity keys (Delete, Ctrl+D, F, Esc, Ctrl+A) are scoped to the hierarchy and
+  the viewport, so a Delete pressed in the console never removes an entity
 
 ### Properties Panel
 
-Displays and edits components of selected entity:
-- **Entity Name Field** - Editable text input
-- **Component Sections** - One collapsible header per component
-- **Component Properties** - Rendered via ComponentRegistry callbacks
-- **Add Component Button** - Popup menu filtered to available component types
-- **Remove Component** - Per-component "X" button
+Displays and edits the primary selected entity:
+- **Header** - enabled checkbox, name field (rename is undoable), scene / id
+  line, Transient toggle, "1 of N selected" badge for multi-selections
+- **Component Sections** - one framed header per component, **drawn by the
+  panel** (`Zenith_EditorUI::ComponentHeader`: icon, name, right-edge remove
+  button). Component `RenderPropertiesPanel` bodies draw ONLY their rows — no
+  component calls `CollapsingHeader` for itself any more. The Transform uses
+  `Zenith_ImGuiWidgets::Vec3Field` (colour-tagged X/Y/Z fields; click a tag to
+  reset that axis)
+- **Add Component** - a searchable popup (type to filter, Enter adds the first
+  match); already-present components are listed disabled
+- **Every edit is undoable.** `Zenith_EditorInspectorUndoTracker` opens a
+  session on any click inside the panel (or Tab), snapshotting each component's
+  serialised bytes; when the UI goes idle again it diffs and records one
+  `ComponentBytes` command per changed component (the Transform diffs as
+  position / rotation / scale into a `TransformEdit`, so physics bodies follow
+  an undo the way they follow a gizmo drag). Component inspectors need no undo
+  code of their own. Component ADD / REMOVE go through `Zenith_EditorActions`
+  and cancel the tracker's session so they are not double-recorded
 
 **Registry Integration:**
 - Editor discovers components via ComponentRegistry at runtime
-- Property editors registered as callbacks: `void(*)(Zenith_Entity&)`
+- Property editors registered as callbacks: `void(*)(Zenith_Entity&)`; the
+  registry entry also carries `m_pfnRemoveComponent` for the remove button
 - Enables extensible editor without modifying Zenith_Editor.cpp
 
 ### Viewport Panel
 
 Renders game scene as ImGui texture with interaction handling:
-- **Display:** ImGui::Image with GBuffer color texture
+- **Display:** ImGui::Image with the final render target, edge to edge
+- **Overlays** (draw-list only, never ImGui items): a PLAYING / PAUSED badge,
+  a statistics block (fps / ms, gizmo mode + space + snap, camera position and
+  fly speed), a navigation hint that changes while looking, and an **axis
+  widget** (bottom-right) projecting world X/Y/Z through the view rotation
+  (`ProjectAxisForWidget` is pure). Window > Viewport toggles the stats, the
+  axes and the selection bounds; the toggles persist in the prefs
+- **Selection bounds:** every selected entity's AABB is drawn as an orange
+  wireframe through the Flux_Primitives debug channel
 - **Mouse Conversion:** Tracks viewport position/size for coordinate transformation
-- **Gizmo Rendering:** Submits Flux_Gizmos render task when entity selected
-- **Object Picking:** Left-click raycasts against scene entities
+- **Object Picking:** Left-click raycasts against scene entities; Ctrl toggles,
+  Shift adds, an empty click clears. A camera gesture (Alt+LMB orbit) never picks
 - **Resource Management:** Deferred descriptor set deletion (waits 3 frames)
 
 **Viewport-Relative Input:**
@@ -245,12 +299,22 @@ Renders game scene as ImGui texture with interaction handling:
 
 ### Content Browser
 
-File browser for asset discovery and drag-drop:
-- **Navigation:** Directory tree starting at GAME_ASSETS_DIR
-- **Sorting:** Directories first, then alphabetically by name
-- **Display:** Icons + filenames, double-click to enter directories
-- **Drag-Drop:** Supports Texture, Mesh, Material, Prefab payloads
-- **Filtering:** Shows all files with extensions (no filtering yet)
+Unreal-style asset browser:
+- **Folder tree** on the left (cached, rebuilt on Refresh; the current folder is
+  highlighted, its branch auto-expanded), with a draggable splitter; the tree
+  can be hidden from the top bar
+- **Top bar:** back / forward / up / refresh icons, breadcrumbs, search, type
+  filter, tile / detail view toggles and a tile-size slider (Ctrl+Scroll)
+- **Tiles:** rounded cards with a type-coloured plate + icon, a short type
+  badge (TEX / MAT / SCN ...), live thumbnails for textures, ellipsised names;
+  the detail view is a table with an icon column
+- **Double-click** opens scenes (through the unsaved-changes prompt),
+  materials (Material Editor) and behaviour graphs (Graph Editor)
+- **Drag-Drop:** Supports Texture, Mesh, Material, Prefab, Animation, Graph and
+  generic file payloads (the drag preview shows the type icon)
+- **Context menus:** Open / Open Additive (scenes), Duplicate, Delete, Export to
+  .ztxtr (png / jpg), Show in Explorer, Copy Path; empty space offers Create
+  Folder / Material, Show in Explorer, Refresh
 
 **Drag-Drop Payload:**
 - 32-character type identifier (ImGui limit)
@@ -260,11 +324,15 @@ File browser for asset discovery and drag-drop:
 ### Console Panel
 
 Displays engine log messages with filtering:
-- **Message Format:** `[HH:MM:SS] Message text`
-- **Color Coding:** Info (gray), Warning (yellow), Error (red)
-- **Filters:** Checkboxes for Info/Warnings/Errors visibility
-- **Controls:** Auto-scroll toggle, Clear button
+- **Rows:** level icon + time | category | message, in a clipped table
+- **Level toggles** carry live counts (Info N / Warnings N / Errors N)
+- **Filters:** category popup and a text search (`PassesFilters` is pure)
+- **Controls:** Clear, Collapse (consecutive identical messages fold into one
+  row with an `xN` badge), Auto-scroll; right-click or Ctrl+C copies a message
 - **Limit:** Max 1,000 entries (oldest discarded)
+- Window > "Clear Console On Play" clears it on every Play
+- `LevelIcon` / `LevelColour` are the ONE definition of how a log level looks;
+  the status bar draws its latest-message line with them
 
 **Log Redirection:**
 - Engine's Zenith_Log(), Zenith_Warning(), Zenith_Error() macros append to console
@@ -610,10 +678,17 @@ Located in `Flux/Gizmos/`, handles 3D rendering and interaction. See [Flux/Gizmo
 - **Scale:** Cube handles for per-axis + center uniform scaling
 
 **Keyboard Shortcuts:**
-- W - Translate mode
-- E - Rotate mode
-- R - Scale mode
+- W / E / R - Translate / Rotate / Scale mode; X - local / world space
 - Only active when viewport focused and not in Playing mode
+
+**Hover, space and snapping:** `Flux_GizmosImpl::UpdateHover` raycasts the
+handles every frame the viewport is hovered so the handle under the cursor
+draws brighter. `SetLocalSpace` rotates the handles (and the drag axes, frozen
+at the rotation the drag began with) with the entity. `SetSnapSettings`
+rounds translation deltas, rotation angles and resulting scales to the
+increments in the prefs; `SnapValue` is pure. The interaction-bound wireframe
+cubes that used to draw in every Debug build are behind
+`m_bDrawInteractionBounds` (Window > Viewport > Gizmo Hit Bounds).
 
 ### Interaction Flow
 
@@ -645,9 +720,12 @@ Gizmo system directly modifies TransformComponent:
 - **EndInteraction:** Finalizes transform, creates undo command
 
 **Undo Integration:**
-- Transform edits automatically create `Zenith_UndoCommand_TransformEdit`
+- When a drag ends, `Zenith_Editor::RecordGizmoDragUndo` compares the gizmo's
+  captured initial TRS with the live one and **records** (without re-executing)
+  a `Zenith_UndoCommand_TransformEdit`; a click without movement records nothing
 - Stores before/after position, rotation, scale
 - EntityID-based (safe across scene changes)
+- Every drag also marks the owning scene dirty
 
 ## Undo/Redo System
 
@@ -668,12 +746,28 @@ Base class `Zenith_UndoCommand` requires:
 - Undo: Restore "before" transform
 - Created automatically by gizmo interactions
 
+**EntityLifetime / EntityState / ComponentBytes / Composite** (`Zenith_EditorCommands.h`):
+- `Zenith_EditorEntitySnapshot` serialises an entity subtree (name, enabled,
+  transient, parent record index, component bytes via the meta registry) and
+  `Restore` rebuilds it with FRESH EntityIDs — slots are generation-counted,
+  so the old IDs never come back; the hierarchy is relinked from record
+  indices, the main-camera role is restored, and the result is selected
+- `EntityLifetime` is delete (Execute destroys, Undo rebuilds; the snapshot is
+  re-captured right before every destroy) or create / duplicate (the inverse)
+- `EntityState` writes name + enabled + parent; `ComponentBytes` puts one
+  component into a payload (empty = absent: everything but the Transform is
+  removed and rebuilt from the bytes, the Transform is read in place)
+- `Composite` runs children in order and undoes them in reverse, owning them;
+  multi-selection delete / duplicate are one step
+- `Zenith_UndoSystem::Record` pushes an ALREADY-APPLIED command without running
+  Execute (gizmo drags, inspector edits, live creates); `Execute` still runs the
+  command first (deletes, removes, renames)
+
 **TerrainEdit** (`Zenith_UndoCommand_TerrainEdit`, `TerrainEditor/Zenith_TerrainEditorUndo.h`):
 - Stores: the bounding texel rect of everything one brush stroke (or auto-splat run) touched on ONE map, with before/after byte copies
 - Execute/Undo: rewrite the after-/before-region via `Zenith_TerrainEditor::WriteMapRegion`, re-marking dirty chunks / GPU flags so the visuals follow
 - Created by terrain brush strokes and auto-splat operations; byte footprint reported to the editor's live-undo budget
 
-(The never-instantiated CreateEntity/DeleteEntity command stubs were deleted; entity deletion from the hierarchy panel is not undoable.)
 
 ### Stack Management
 
@@ -694,9 +788,23 @@ Base class `Zenith_UndoCommand` requires:
 
 ### Keyboard Shortcuts
 
-- **Ctrl+Z** - Undo last action
-- **Ctrl+Y** - Redo previously undone action
-- Menu items show next action description in tooltip
+Bound in `Zenith_Editor::UpdateEditorInput`, suppressed whenever ImGui has a
+text field focused (`io.WantTextInput`). It reads the modifiers once and hands
+the input system to three scoped handlers — `HandleGlobalShortcuts` (file,
+undo, play, F1: any panel), `HandleEntityShortcuts` (viewport or hierarchy
+focused, edit mode only) and `HandleViewportShortcuts` (viewport focused, no
+modifier, not mid-look) — so a Delete pressed in the console never removes an
+entity. F1 opens the Keyboard Shortcuts window, which lists them all.
+
+| Keys | Action |
+|---|---|
+| Ctrl+Z / Ctrl+Y (Ctrl+Shift+Z) | Undo / Redo (the Edit menu reads "Undo Move Entity") |
+| Ctrl+N / Ctrl+O / Ctrl+S / Ctrl+Shift+S | New / Open / Save / Save As (Save goes to the scene's own path; unsaved changes prompt first) |
+| Ctrl+P / Ctrl+Shift+P | Play-or-Stop / Pause-or-Resume |
+| Ctrl+Shift+N | Create empty entity |
+| Delete / Ctrl+D / Ctrl+A / Esc / F | Delete / Duplicate / Select all / Deselect / Focus (viewport or hierarchy focused) |
+| W / E / R / X | Gizmo mode / local space (viewport focused) |
+| F2, double-click | Rename in the hierarchy |
 
 ## Editor Camera System
 
@@ -717,26 +825,58 @@ Dual camera architecture supports editing and playtesting.
 
 ### Editor Camera Controls
 
-**Right-Click + Drag:**
-- Enables mouse look (cursor hidden)
-- Drag horizontally: Yaw rotation
-- Drag vertically: Pitch rotation
-- Release: Restore cursor, disable look
+Unity / Unreal conventions, one gesture at a time (`UpdateEditorCameraGestures`
+decides which owns the mouse; a gesture that started over the viewport keeps
+ownership until its button is released):
 
-**WASD Movement:**
-- Only active during right-click drag
-- W/S: Forward/backward along look direction (horizontal plane only)
-- A/D: Left/right strafe
-- Yaw-relative (not world-aligned)
+| Gesture | Effect |
+|---|---|
+| RMB hold | Mouse look; WASD fly along the LOOK direction, Q/E down/up, Shift 3x; the wheel scales the fly speed (persisted in the prefs) |
+| Alt + LMB drag | Orbit the pivot — the selection's bounds centre, or the last focus point |
+| MMB drag | Pan the view plane, scaled so the point under the cursor stays under it |
+| Wheel | Dolly towards the pivot (proportional to the pivot distance) |
+| F | Fly smoothly (0.28 s smoothstep) to frame the selection's bounds |
 
-**Q/E Vertical:**
-- Q: Move down (world -Y)
-- E: Move up (world +Y)
-- World-space (not camera-relative)
+**★★ THE EDITOR MUST NOT CAPTURE THE CURSOR TO LOOK.** Every camera gesture uses
+the ordinary OS-processed pointer delta in SCREEN PIXELS, the same thing the rest
+of the editor sees. Capturing (`GLFW_CURSOR_DISABLED`) drags
+`GLFW_RAW_MOUSE_MOTION` along with it, and that silently changes the UNIT
+`GetMouseDelta` reports: out go pixels — bounded by the desktop, damped by the
+pointer curve — and in come unbounded, unaccelerated device counts, roughly
+1/1600 inch each. The delight pass added the capture and it was a regression, not
+an improvement: the camera spun far too fast to steer, and a sweep meant to be
+horizontal drifted in pitch until it was staring at the sky, because nothing
+bounds a raw sweep and nothing damps the vertical component of a hand's arc. The
+capture and its raw-motion toggle were removed; `m_fLookSensitivity` is back to
+0.1 **deg/pixel**, the value the editor shipped with, and remains tunable in
+**Edit > Camera** because a preference is useful, not because the default was
+wrong. The cost of not capturing is the one the editor always had: a long sweep
+stops at the edge of the screen.
 
-**Shift Modifier:**
-- Hold Shift: 3× movement speed
-- Applies to all WASD/Q/E movement
+**A single frame can never spin the camera.** The per-frame delta is clamped
+(`fMAX_LOOK_PIXELS_PER_FRAME`) before it becomes an angle. Real pointer travel
+tops out at a few hundred pixels a frame, so the clamp only ever catches a
+NON-movement delta — a cursor warp, a cursor-mode switch, or a hitch that batched
+many packets into one frame. The movement path clamps dt for exactly the same
+reason.
+
+**Pitch is written in exactly ONE place** (`ApplyMouseLookDelta`), from one call
+site per frame, so pitch that moves during purely horizontal mouse movement is a
+non-zero delta Y arriving from the input layer — the camera code cannot
+manufacture axis cross-talk. Check the overlay's mouse numbers before looking for
+it in the maths.
+
+**The viewport stats overlay carries the camera's live truth**: the active
+gesture (LOOK / ORBIT / PAN / idle), yaw and pitch in degrees, and the raw
+per-frame mouse delta before clamping. Without those numbers "the camera goes the
+wrong way" cannot be told apart from "the pitch is pegged at its limit" — they
+look identical from the chair, and the person at the chair could not tell them
+apart when asked. Toggle it with Window > Viewport > Show Stats.
+
+Flying carries the pivot along; selecting an entity moves the pivot onto it
+(`RefreshCameraPivotFromSelection`). The frame dt is the real one (clamped to
+100 ms so a hitch cannot fling the camera). While a gesture owns the mouse the
+gizmo and picking are skipped for the frame.
 
 ### Camera State Persistence
 
@@ -878,6 +1018,35 @@ Gizmo mode keys (W/E/R) only active when:
 **Undo/Redo:**
 - Transform edits lightweight (just 3 vectors)
 - 100 command limit prevents unbounded memory growth
+
+## Look and feel
+
+- **Font:** Roboto Medium, embedded as a compressed byte array
+  (`Zenith_EditorFontData.generated.h`, regenerated with ImGui's
+  `binary_to_compressed_c`) so no clone ever falls back to the 13 px bitmap
+  font. Base size 15 px, scaled by the monitor's content scale
+  (`Zenith_Window::GetContentScale`, `style.FontScaleDpi`); every hard-coded
+  pixel size goes through `Zenith_EditorUI::Px`
+- **Theme:** `Zenith_EditorUI::ApplyTheme` — authored in sRGB, converted to
+  linear because the swapchain is sRGB; `Palette()` holds the packed colours
+  the panels draw with; `PushPlayModeTint` warms the chrome while playing
+- **Icons:** `Zenith_EditorUI::DrawIcon` draws every icon as vectors into a
+  draw list — crisp at any DPI, no icon font, no texture asset
+- **Window:** the title reads `Scene* - Game - Zenith Editor [Playing]`; an
+  interactive tools run opens maximised (automated runs and `--screenshot`
+  captures keep the requested size so frames stay reproducible)
+- **Prefs:** `%LOCALAPPDATA%/Zenith/<Game>/editor_prefs.txt` beside `imgui.ini`;
+  `Zenith_EditorPrefs::GetUserDataDirectory` is the one resolver for that folder
+
+**★ Draw-list decorations, not items.** Anything drawn ON a row or over the
+viewport (the enabled eye, the scene count badge, the mode badge, the axis
+widget) is drawn straight into the draw list and hit-tested by hand. Placing an
+ImGui item there with `SetCursorScreenPos` and then restoring the cursor trips
+`ErrorCheckUsingSetCursorPosToExtendParentBoundaries` (this build defines
+`IMGUI_DISABLE_OBSOLETE_FUNCTIONS`, which turns that misuse into an assert): a
+restored cursor sits one ItemSpacing past the window's max extent, and if no
+item follows before `End`, the assert fires — in a windowed run that is a
+modal CRT dialog nothing logs, so the process just hangs.
 
 ## Known Limitations
 

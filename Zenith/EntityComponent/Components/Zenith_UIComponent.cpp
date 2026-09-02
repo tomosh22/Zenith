@@ -190,7 +190,7 @@ void Zenith_UIComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 
 void Zenith_UIComponent::RenderPropertiesPanel()
 {
-    if (ImGui::CollapsingHeader("UI Component", ImGuiTreeNodeFlags_DefaultOpen))
+    // Section header drawn by the Properties panel (Zenith_EditorPanel_Properties).
     {
         // Push unique ID scope for UIComponent to avoid conflicts with Entity properties
         ImGui::PushID("UIComponent");

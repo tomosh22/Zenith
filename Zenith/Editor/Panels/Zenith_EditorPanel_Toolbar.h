@@ -5,39 +5,31 @@
 #include "Editor/Zenith_Editor.h"
 
 //=============================================================================
-// Toolbar Panel
+// Toolbar Strip
 //
-// Displays play/pause/stop controls and gizmo mode selection.
+// The single row under the menu bar: undo/redo, gizmo mode, gizmo space and
+// snapping on the left, transport (play / pause / stop) in the centre, scene
+// selectors on the right. Drawn inside the dockspace host window by
+// Zenith_Editor::Render, so it can never be docked away, closed or clipped.
 //=============================================================================
 
 namespace Zenith_EditorPanelToolbar
 {
-	/**
-	 * Render the toolbar panel
-	 *
-	 * @param eEditorMode Current editor mode (reference allows modification)
-	 * @param eGizmoMode Current gizmo mode (reference allows modification)
-	 */
-	void Render(EditorMode& eEditorMode, EditorGizmoMode& eGizmoMode);
+	// Height of the strip in pixels at the current DPI.
+	float GetHeight();
+
+	// Draws the strip in the current window at the cursor, fHeight tall.
+	void Render(Zenith_Editor& xEditor, float fHeight);
 
 	//-------------------------------------------------------------------------
-	// Private helpers - split from Render() by toolbar section
+	// Sections (split out so each owns one coherent group of controls)
 	//-------------------------------------------------------------------------
-
-	/** Row 1: Play/Pause and Stop buttons (centered). */
-	void RenderPlayModeButtons(EditorMode& eEditorMode, float fButtonWidth, float fButtonHeight, float fSpacing, float fWindowWidth);
-
-	/** Scene selector combo plus the "Load Scene" build-registry combo. */
-	void RenderSceneSelectors(EditorMode& eEditorMode);
-
-	/** Active scene dropdown (picks between currently loaded scenes). */
+	void RenderHistoryButtons();
+	void RenderGizmoButtons(Zenith_Editor& xEditor);
+	void RenderTransportButtons(Zenith_Editor& xEditor, float fStripWidth, float fHeight);
+	void RenderSceneSelectors(Zenith_Editor& xEditor, float fRightEdge, float fRowTop);
 	void RenderActiveSceneCombo();
-
-	/** Registered build-index scenes dropdown (triggers a deferred load). */
 	void RenderRegisteredScenesCombo();
-
-	/** Row 2: Translate/Rotate/Scale gizmo radio buttons (centered). */
-	void RenderGizmoModeRadios(EditorGizmoMode& eGizmoMode, float fSpacing, float fWindowWidth);
 }
 
 #endif // ZENITH_TOOLS

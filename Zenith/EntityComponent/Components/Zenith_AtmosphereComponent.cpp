@@ -216,10 +216,6 @@ void Zenith_RenderEnvironmentAuthorityBanner(const Zenith_Entity& xEntity, bool 
 
 void Zenith_AtmosphereComponent::RenderPropertiesPanel()
 {
-	if (!ImGui::CollapsingHeader("Atmosphere", ImGuiTreeNodeFlags_DefaultOpen))
-	{
-		return;
-	}
 
 	Zenith_RenderEnvironmentAuthorityBanner(m_xParentEntity, IsLocalBlendVolume());
 

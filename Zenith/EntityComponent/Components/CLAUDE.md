@@ -380,6 +380,12 @@ that predates this, which is why the feature is safe on by default. Pure helpers
    ```cpp
    void RenderPropertiesPanel();
    ```
+   Draw ONLY the component's rows. The Properties panel owns the framed
+   section header (icon, name, remove button) and records undo for every
+   edit made inside the body, so a panel must not call `CollapsingHeader`
+   for itself or touch the undo system. Rows that edit a Vector3 should use
+   `Zenith_ImGuiWidgets::Vec3Field` (Core; the colour-tagged X/Y/Z row the
+   Transform uses) rather than a bare `DragFloat3`.
 
 ### Registration
 

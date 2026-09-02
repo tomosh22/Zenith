@@ -17,8 +17,8 @@
 constexpr const char* szEDITOR_WINDOW_VIEWPORT         = "Viewport";
 constexpr const char* szEDITOR_WINDOW_HIERARCHY        = "Hierarchy";
 constexpr const char* szEDITOR_WINDOW_PROPERTIES       = "Properties";
-constexpr const char* szEDITOR_WINDOW_TOOLBAR          = "Toolbar";
 constexpr const char* szEDITOR_WINDOW_CONSOLE          = "Console";
+constexpr const char* szEDITOR_WINDOW_SHORTCUTS        = "Keyboard Shortcuts";
 constexpr const char* szEDITOR_WINDOW_CONTENT_BROWSER  = "Content Browser";
 constexpr const char* szEDITOR_WINDOW_MATERIAL_EDITOR  = "Material Editor";
 constexpr const char* szEDITOR_WINDOW_TERRAIN_EDITOR   = "Terrain Editor";

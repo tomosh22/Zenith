@@ -30,6 +30,7 @@ class FrameContext;
 class Zenith_DebugVariables;
 class Zenith_Profiling;
 class Zenith_TerrainEditor;
+class Zenith_Input;
 
 // Content browser view mode
 enum class ContentBrowserViewMode
@@ -57,7 +58,6 @@ struct ContentBrowserEntry
 struct EditorFileTypeInfo
 {
 	const char* m_szExtension;       // e.g., ".ztxtr"
-	const char* m_szIconText;        // e.g., "[TEX]"
 	const char* m_szDisplayName;     // e.g., "Texture"
 	const char* m_szDragDropType;    // e.g., DRAGDROP_PAYLOAD_TEXTURE
 };
@@ -198,7 +198,7 @@ public:
 	void SelectMaterial(Zenith_MaterialAsset* pMaterial);
 	void ClearMaterialSelection();
 	Zenith_MaterialAsset* GetSelectedMaterial();
-	// The Material Editor panel's show/hide flag (View menu toggle + window
+	// The Material Editor panel's show/hide flag (Window menu toggle + window
 	// close box). Exposed by reference so the panel can clear it on close.
 	bool& GetMaterialEditorShowFlag() { return m_xEditorState.m_xMaterial.m_bShowEditor; }
 
@@ -228,14 +228,26 @@ public:
 	void RenderMainMenuBar();
 	void RenderFileMenu();
 	void RenderEditMenu();
+	void RenderEntityMenu();
 	void RenderViewMenu();
-	void RenderToolbar();
+	void RenderHelpMenu();
 	void RenderHierarchyPanel();
 	void RenderPropertiesPanel();
 	void RenderViewport();
+	// The "Save changes?" modal and the Keyboard Shortcuts window.
+	void RenderPrompts();
+	void RenderShortcutsWindow();
 	void HandleObjectPicking();
 	void RenderGizmos();
 	void HandleGizmoInteraction();
+	// Hover highlight for the gizmo handles while no drag is in flight.
+	void HandleGizmoHover(const Zenith_Maths::Vector3& xRayOrigin, const Zenith_Maths::Vector3& xRayDir);
+	// Turns a finished gizmo drag into one undo step.
+	void RecordGizmoDragUndo(Zenith_EntityID xEntityID);
+	// The selected entities' bounds, drawn as wireframe boxes in the viewport.
+	void DrawSelectionBounds();
+	// Pushes gizmo space + snapping from the prefs (and a held Ctrl) each frame.
+	void SyncGizmoSettings();
 
 	bool ProcessDeferredSceneOperations();
 	bool HandlePendingSceneLoad();
@@ -256,7 +268,16 @@ public:
 	// Assumes m_bPendingSceneLoad has already been consumed by the caller.
 	void LoadPendingSceneIntoActiveScene(bool bWaitForGPU, const char* szLogPrefix);
 
+	// Keyboard shortcuts (gizmo modes, undo/redo, delete, duplicate, focus,
+	// save/open/new, play). Routed through Zenith_EditorActions; suppressed
+	// while ImGui has a text field focused.
 	void UpdateEditorInput();
+	void HandleGlobalShortcuts(Zenith_Input& xInput, bool bCtrl, bool bShift);
+	void HandleEntityShortcuts(Zenith_Input& xInput, bool bCtrl);
+	void HandleViewportShortcuts(Zenith_Input& xInput);
+
+	// Keeps the OS window title in step with the active scene / dirty state.
+	void UpdateWindowTitle();
 
 	// Content Browser
 	void RenderContentBrowser();
@@ -270,14 +291,18 @@ public:
 		const std::string& strCurrentPath,
 		void (*SetPathFunc)(Zenith_MaterialAsset*, const std::string&));
 
-	// Editor theme
-	void ApplyEditorTheme();
-
-	// Editor camera control
+	// Editor camera control (Zenith_EditorCamera.cpp)
 	void InitializeEditorCamera();
 	void UpdateEditorCamera(float fDt);
+	void UpdateEditorCameraGestures();
+	void ApplyMouseLookDelta();
 	void UpdateEditorCameraLook();
 	void UpdateEditorCameraMovement(float fDt);
+	void UpdateEditorCameraOrbit();
+	void UpdateEditorCameraPan();
+	void UpdateEditorCameraDolly(float fWheel);
+	void AdvanceCameraFocus(float fDt);
+	void EndCameraGestures();
 	void ApplyEditorCameraToScene();
 	void SwitchToEditorCamera();
 	void SwitchToGameCamera();
@@ -289,6 +314,18 @@ public:
 	float GetCameraFarPlane();
 	float GetCameraFOV();
 	float GetCameraAspectRatio();
+	// Smoothly flies the camera to frame a sphere / the selection's bounds.
+	void FocusCameraOn(const Zenith_Maths::Vector3& xCentre, float fRadius);
+	void FocusCameraOnSelection();
+	// Moves the orbit pivot onto the primary selection (when not navigating).
+	void RefreshCameraPivotFromSelection();
+	Zenith_Maths::Vector3 GetEditorCameraForward() const;
+	Zenith_Maths::Vector3 GetEditorCameraRight() const;
+	Zenith_Maths::Vector3 GetEditorCameraUp() const;
+	// Where a newly created entity is placed: the pivot, or ahead of the camera.
+	Zenith_Maths::Vector3 GetCameraPlacementPoint() const;
+	// True while a look / orbit / pan gesture owns the mouse.
+	bool IsCameraNavigating() const;
 
 	// ===== Data members =====
 

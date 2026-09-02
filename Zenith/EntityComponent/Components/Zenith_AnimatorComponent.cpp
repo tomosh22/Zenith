@@ -508,8 +508,6 @@ void Zenith_AnimatorComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 //-----------------------------------------------------------------------------
 void Zenith_AnimatorComponent::RenderPropertiesPanel()
 {
-	if (!ImGui::CollapsingHeader("Animator", ImGuiTreeNodeFlags_DefaultOpen))
-		return;
 
 	Flux_AnimationController& xController = Controller();
 

@@ -59,6 +59,10 @@ struct Zenith_ComponentEditorRegistryEntry
 	// Render function: calls RenderPropertiesPanel on the component if entity has it
 	// This avoids virtual functions by using type-erased function pointers
 	void(*m_pfnRenderPropertiesPanel)(Zenith_Entity&);
+
+	// Remove function: removes this component type from the entity (the
+	// inspector's per-component remove button). No-op if absent.
+	void(*m_pfnRemoveComponent)(Zenith_Entity&);
 };
 
 //==============================================================================
@@ -131,6 +135,14 @@ public:
 			}
 		};
 		
+		xEntry.m_pfnRemoveComponent = +[](Zenith_Entity& xEntity) -> void
+		{
+			if (xEntity.HasComponent<T>())
+			{
+				xEntity.RemoveComponent<T>();
+			}
+		};
+
 		m_xEntries.PushBack(xEntry);
 		
 		Zenith_Log(LOG_CATEGORY_ECS, "Registered component: %s (TypeID: %u)",
