@@ -13,8 +13,9 @@
 //     Rock_Slab.{zasset,zmesh,zmodel}      — flat fractured flagstone
 //     Rock_Shard.{zasset,zmesh,zmodel}     — upright angular standing stone
 //     Rock_Pebbles.{zasset,zmesh,zmodel}   — a cluster of six small stones
-//     Rock_Granite_{Albedo,Normal,RM,AO}.ztxtr
-//     Rock_Sandstone_{Albedo,Normal,RM,AO}.ztxtr
+//     Rock_Granite_{Albedo,Normal,RM,AO,Height}.ztxtr
+//     Rock_Sandstone_{Albedo,Normal,RM,AO,Height}.ztxtr
+//     Rock_Detail_{Albedo,Normal}.ztxtr   — shared mineral grit, tiled 6x
 //     Rock_Granite.zmtrl  /  Rock_Sandstone.zmtrl
 //
 // Three decisions carry most of the visual result, and each of them is the
@@ -73,6 +74,16 @@ void GenerateProceduralRockAssets()
 
 namespace
 {
+
+//=============================================================================
+// Export version. Every boot regenerates this set unconditionally, so this is
+// not a staleness gate — it is the number a log line (and a bug report) can
+// name when a capture and the current generator disagree. BUMP IT whenever the
+// emitted bytes change.
+//
+// 2: height map exported + POM enabled, shared mineral-grit detail pair.
+//=============================================================================
+constexpr u_int uROCK_ASSET_EXPORT_VERSION = 2u;
 
 //=============================================================================
 // Shape description. One row per stone type; everything else is shared.
@@ -574,6 +585,31 @@ void GenerateRockTextureSet(const std::string& strDir, const RockTextureParams& 
 		}
 	}
 
+	// --- Height (linear grey, BC1) -------------------------------------------
+	// The generator has always COMPUTED this field and thrown it away; exported,
+	// it is what lets the material's parallax occlusion step actually shift the
+	// UVs, so a crevice occludes the plate beside it at a grazing angle instead
+	// of being a painted line that slides across a flat facet.
+	//
+	// BC1 rather than a single-mip R8: POM samples the height minified along the
+	// whole ray, and a chain-less height map aliases into stair-stepping.
+	{
+		Zenith_Vector<u_int8> xHeightTex;
+		xHeightTex.Resize(iCOLOUR_SIZE * iCOLOUR_SIZE * 4, 0);
+		for (int32_t i = 0; i < iCOLOUR_SIZE * iCOLOUR_SIZE; i++)
+		{
+			const u_int8 ucH = static_cast<u_int8>(std::clamp(xHeight.Get(i), 0.0f, 1.0f) * 255.0f);
+			u_int8* pucH = &xHeightTex.Get(i * 4);
+			pucH[0] = ucH;
+			pucH[1] = ucH;
+			pucH[2] = ucH;
+			pucH[3] = 255;
+		}
+		Zenith_Tools_TextureExport::ExportFromDataCompressed(
+			xHeightTex.GetDataPointer(), strDir + "Rock_" + xParams.m_szName + "_Height" ZENITH_TEXTURE_EXT,
+			iCOLOUR_SIZE, iCOLOUR_SIZE, TextureCompressionMode::BC1, TextureColourSpace::Linear);
+	}
+
 	// --- Albedo (sRGB) -------------------------------------------------------
 	Zenith_Vector<u_int8> xAlbedo;
 	xAlbedo.Resize(iCOLOUR_SIZE * iCOLOUR_SIZE * 4, 0);
@@ -622,9 +658,10 @@ void GenerateRockTextureSet(const std::string& strDir, const RockTextureParams& 
 			pucA[3] = 255;
 		}
 	}
-	Zenith_Tools_TextureExport::ExportFromDataWithFormat(
-		xAlbedo.GetDataPointer(), strDir + "Rock_" + xParams.m_szName + "_Albedo" ZENITH_TEXTURE_EXT, iCOLOUR_SIZE, iCOLOUR_SIZE, TEXTURE_FORMAT_RGBA8_SRGB,
-		xAlbedo.GetSize() / (static_cast<size_t>(iCOLOUR_SIZE) * iCOLOUR_SIZE));
+	// Full offline mip chain (sRGB-filtered): a single-mip albedo shimmers into
+	// noise at the distance a rock is actually seen from.
+	Zenith_Tools_TextureExport::ExportFromDataV2Uncompressed(
+		xAlbedo.GetDataPointer(), strDir + "Rock_" + xParams.m_szName + "_Albedo" ZENITH_TEXTURE_EXT, iCOLOUR_SIZE, iCOLOUR_SIZE, TEXTURE_FORMAT_RGBA8_SRGB);
 
 	// --- Normal (linear): central differences on the WRAPPED height field -----
 	Zenith_Vector<u_int8> xNormal;
@@ -648,9 +685,10 @@ void GenerateRockTextureSet(const std::string& strDir, const RockTextureParams& 
 			pucN[3] = 255;
 		}
 	}
-	Zenith_Tools_TextureExport::ExportFromDataWithFormat(
-		xNormal.GetDataPointer(), strDir + "Rock_" + xParams.m_szName + "_Normal" ZENITH_TEXTURE_EXT, iCOLOUR_SIZE, iCOLOUR_SIZE, TEXTURE_FORMAT_RGBA8_UNORM,
-		xNormal.GetSize() / (static_cast<size_t>(iCOLOUR_SIZE) * iCOLOUR_SIZE));
+	// BC5 (R,G; the shader rebuilds Z) with a full mip chain, linear.
+	Zenith_Tools_TextureExport::ExportFromDataCompressed(
+		xNormal.GetDataPointer(), strDir + "Rock_" + xParams.m_szName + "_Normal" ZENITH_TEXTURE_EXT, iCOLOUR_SIZE, iCOLOUR_SIZE,
+		TextureCompressionMode::BC5, TextureColourSpace::Linear);
 
 	// --- RM + AO (half res; neither carries detail the colour maps don't) -----
 	// RM is the glTF layout the engine samples: G = roughness, B = metallic.
@@ -688,12 +726,130 @@ void GenerateRockTextureSet(const std::string& strDir, const RockTextureParams& 
 			pucAO[3] = 255;
 		}
 	}
-	Zenith_Tools_TextureExport::ExportFromDataWithFormat(
-		xRM.GetDataPointer(), strDir + "Rock_" + xParams.m_szName + "_RM" ZENITH_TEXTURE_EXT, iDATA_SIZE, iDATA_SIZE, TEXTURE_FORMAT_RGBA8_UNORM,
-		xRM.GetSize() / (static_cast<size_t>(iDATA_SIZE) * iDATA_SIZE));
-	Zenith_Tools_TextureExport::ExportFromDataWithFormat(
-		xAO.GetDataPointer(), strDir + "Rock_" + xParams.m_szName + "_AO" ZENITH_TEXTURE_EXT, iDATA_SIZE, iDATA_SIZE, TEXTURE_FORMAT_RGBA8_UNORM,
-		xAO.GetSize() / (static_cast<size_t>(iDATA_SIZE) * iDATA_SIZE));
+	// Linear data with full mip chains; uncompressed so the roughness/AO values
+	// survive exactly.
+	Zenith_Tools_TextureExport::ExportFromDataV2Uncompressed(
+		xRM.GetDataPointer(), strDir + "Rock_" + xParams.m_szName + "_RM" ZENITH_TEXTURE_EXT, iDATA_SIZE, iDATA_SIZE, TEXTURE_FORMAT_RGBA8_UNORM);
+	Zenith_Tools_TextureExport::ExportFromDataV2Uncompressed(
+		xAO.GetDataPointer(), strDir + "Rock_" + xParams.m_szName + "_AO" ZENITH_TEXTURE_EXT, iDATA_SIZE, iDATA_SIZE, TEXTURE_FORMAT_RGBA8_UNORM);
+}
+
+//=============================================================================
+// THE shared mineral-grit detail pair, generated once for the whole set.
+//
+// A 1024^2 map over a 1.3 m tile is ~1.3 mm per texel, which sounds fine until
+// a camera is half a metre from a boulder: the surface goes smooth exactly
+// where a real stone shows the most grain. The detail pair is tiled 6x on top
+// (SetDetailTiling below), so it re-introduces sub-millimetre grain at contact
+// range without a 4K base map, and it fades out with distance for free because
+// its own mips converge on mid-grey / flat.
+//
+// The albedo is centred on MID-GREY on purpose: the shader's detail combine is
+// the Unity convention, base * detail * 2, so 0.5 is the identity value and a
+// detail map centred anywhere else silently rescales every rock's brightness.
+//=============================================================================
+constexpr int32_t iROCK_DETAIL_SIZE = 512;
+constexpr u_int uROCK_DETAIL_SEED = 40961u;
+
+// THE detail height field. Split out from the writers so the units read the
+// same field the .ztxtr does rather than a re-derivation of it.
+float RockDetailGrit(float fU, float fV)
+{
+	// Tileable at every octave — the pair is tiled 6x over surfaces whose own
+	// UVs already tile, so a non-wrapping field would print a visible grid.
+	const float fCoarse = TileableFBM(fU, fV, 11, 3u, uROCK_DETAIL_SEED);
+	const float fFine = TileableValueNoise(fU, fV, 61, uROCK_DETAIL_SEED + 17u);
+	return std::clamp(fCoarse * 0.55f + fFine * 0.45f, 0.0f, 1.0f);
+}
+
+void BuildRockDetailField(Zenith_Vector<float>& xGrit)
+{
+	xGrit.Clear();
+	xGrit.Resize(iROCK_DETAIL_SIZE * iROCK_DETAIL_SIZE, 0.0f);
+	for (int32_t iY = 0; iY < iROCK_DETAIL_SIZE; iY++)
+	{
+		for (int32_t iX = 0; iX < iROCK_DETAIL_SIZE; iX++)
+		{
+			const float fU = static_cast<float>(iX) / iROCK_DETAIL_SIZE;
+			const float fV = static_cast<float>(iY) / iROCK_DETAIL_SIZE;
+			xGrit.Get(iY * iROCK_DETAIL_SIZE + iX) = RockDetailGrit(fU, fV);
+		}
+	}
+}
+
+void BuildRockDetailAlbedoPixels(const Zenith_Vector<float>& xGrit, Zenith_Vector<u_int8>& xOut)
+{
+	xOut.Clear();
+	xOut.Resize(iROCK_DETAIL_SIZE * iROCK_DETAIL_SIZE * 4, 0);
+	for (int32_t iY = 0; iY < iROCK_DETAIL_SIZE; iY++)
+	{
+		for (int32_t iX = 0; iX < iROCK_DETAIL_SIZE; iX++)
+		{
+			const int32_t iIdx = iY * iROCK_DETAIL_SIZE + iX;
+			// +/- 12% around MID-GREY. The shader's detail combine is the Unity
+			// convention, base * detail * 2, so 0.5 is the identity value: a map
+			// centred anywhere else rescales every rock's brightness, which reads
+			// as a lighting change rather than as a texture bug. Wider than +/-12%
+			// and tiling it 6x makes the stone read as dusty rather than grainy.
+			const float fValue = 0.5f + (xGrit.Get(iIdx) - 0.5f) * 0.24f;
+			// A per-texel hash sparkle: the crystal glint the base map is too
+			// coarse to hold at contact range.
+			const float fSparkle = Zenith_TerrainNoise::HashToFloat01(
+				Zenith_TerrainNoise::HashCoords(iX, iY, uROCK_DETAIL_SEED + 83u));
+			const float fLift = fSparkle > 0.972f ? 0.10f : 0.0f;
+			const u_int8 ucV = static_cast<u_int8>(std::clamp(fValue + fLift, 0.0f, 1.0f) * 255.0f);
+			u_int8* pucA = &xOut.Get(iIdx * 4);
+			pucA[0] = ucV;
+			pucA[1] = ucV;
+			pucA[2] = ucV;
+			pucA[3] = 255;
+		}
+	}
+}
+
+void BuildRockDetailNormalPixels(const Zenith_Vector<float>& xGrit, Zenith_Vector<u_int8>& xOut)
+{
+	xOut.Clear();
+	xOut.Resize(iROCK_DETAIL_SIZE * iROCK_DETAIL_SIZE * 4, 0);
+	for (int32_t iY = 0; iY < iROCK_DETAIL_SIZE; iY++)
+	{
+		for (int32_t iX = 0; iX < iROCK_DETAIL_SIZE; iX++)
+		{
+			// WRAPPED differences: this map tiles, unlike a foliage card.
+			const int32_t iXP = (iX + 1) % iROCK_DETAIL_SIZE;
+			const int32_t iXM = (iX + iROCK_DETAIL_SIZE - 1) % iROCK_DETAIL_SIZE;
+			const int32_t iYP = (iY + 1) % iROCK_DETAIL_SIZE;
+			const int32_t iYM = (iY + iROCK_DETAIL_SIZE - 1) % iROCK_DETAIL_SIZE;
+			const float fDX = (xGrit.Get(iY * iROCK_DETAIL_SIZE + iXP) -
+				xGrit.Get(iY * iROCK_DETAIL_SIZE + iXM)) * 2.2f;
+			const float fDY = (xGrit.Get(iYP * iROCK_DETAIL_SIZE + iX) -
+				xGrit.Get(iYM * iROCK_DETAIL_SIZE + iX)) * 2.2f;
+			const Zenith_Maths::Vector3 xN =
+				glm::normalize(Zenith_Maths::Vector3(-fDX, -fDY, 1.0f));
+			u_int8* pucN = &xOut.Get((iY * iROCK_DETAIL_SIZE + iX) * 4);
+			pucN[0] = static_cast<u_int8>((xN.x * 0.5f + 0.5f) * 255.0f);
+			pucN[1] = static_cast<u_int8>((xN.y * 0.5f + 0.5f) * 255.0f);
+			pucN[2] = static_cast<u_int8>((xN.z * 0.5f + 0.5f) * 255.0f);
+			pucN[3] = 255;
+		}
+	}
+}
+
+void GenerateRockDetailTextures(const std::string& strDir)
+{
+	Zenith_Vector<float> xGrit;
+	BuildRockDetailField(xGrit);
+
+	Zenith_Vector<u_int8> xPixels;
+	BuildRockDetailAlbedoPixels(xGrit, xPixels);
+	Zenith_Tools_TextureExport::ExportFromDataCompressed(
+		xPixels.GetDataPointer(), strDir + "Rock_Detail_Albedo" ZENITH_TEXTURE_EXT,
+		iROCK_DETAIL_SIZE, iROCK_DETAIL_SIZE, TextureCompressionMode::BC1, TextureColourSpace::SRGB);
+
+	BuildRockDetailNormalPixels(xGrit, xPixels);
+	Zenith_Tools_TextureExport::ExportFromDataCompressed(
+		xPixels.GetDataPointer(), strDir + "Rock_Detail_Normal" ZENITH_TEXTURE_EXT,
+		iROCK_DETAIL_SIZE, iROCK_DETAIL_SIZE, TextureCompressionMode::BC5, TextureColourSpace::Linear);
 }
 
 void GenerateRockMaterial(const std::string& strDir, const char* szName)
@@ -713,6 +869,22 @@ void GenerateRockMaterial(const std::string& strDir, const char* szName)
 	pxMaterial->SetMetallic(0.0f);
 	pxMaterial->SetOcclusionStrength(1.0f);
 	pxMaterial->SetNormalStrength(1.0f);
+	// POM is enabled by the PAIR — a bound height map AND a non-zero height
+	// scale. BuildMaterialDrawConstants tests both, so setting one alone is a
+	// silent no-op. 3 cm of relief over a ~1.3 m tile: enough for a crevice to
+	// occlude at a graze, small enough that the flat facet never gives itself
+	// away at the silhouette (POM cannot move a silhouette).
+	pxMaterial->SetTexture(MATERIAL_TEXTURE_HEIGHT, TextureHandle(strStem + "_Height" ZENITH_TEXTURE_EXT));
+	pxMaterial->SetHeightScale(0.03f);
+	// Shared mineral grit, tiled 6x over the base UVs, for the contact-range
+	// detail a 1024^2 base map cannot hold. Detail maps are enabled by the
+	// presence of either detail texture, and the unbound detail MASK samples as
+	// white, so the pair applies over the whole surface.
+	pxMaterial->SetTexture(MATERIAL_TEXTURE_DETAIL_ALBEDO,
+		TextureHandle("engine:Meshes/Rocks/Rock_Detail_Albedo" ZENITH_TEXTURE_EXT));
+	pxMaterial->SetTexture(MATERIAL_TEXTURE_DETAIL_NORMAL,
+		TextureHandle("engine:Meshes/Rocks/Rock_Detail_Normal" ZENITH_TEXTURE_EXT));
+	pxMaterial->SetDetailTiling(Zenith_Maths::Vector2(6.0f, 6.0f));
 	pxMaterial->SetBlendMode(MATERIAL_BLEND_OPAQUE);
 	pxMaterial->SaveToFile(strDir + "Rock_" + szName + ZENITH_MATERIAL_EXT);
 }
@@ -876,13 +1048,17 @@ void ExportRock(const std::string& strDir, const char* szName, Zenith_MeshAsset*
 void GenerateProceduralRockAssets()
 {
 	Zenith_Log(LOG_CATEGORY_ASSET,
-		"Generating shared Rock assets (4 stone meshes, granite + sandstone PBR sets)...");
+		"Generating shared Rock assets v%u (4 stone meshes, granite + sandstone PBR sets, POM height + shared detail pair)...",
+		uROCK_ASSET_EXPORT_VERSION);
 
 	const std::string strOutputDir = std::string(ENGINE_ASSETS_DIR) + "Meshes/Rocks/";
 	std::filesystem::create_directories(strOutputDir);
 
 	// --- Textures + materials first: the models below reference them by path. --
 	{
+		// The shared detail pair FIRST: both stone materials reference it by path.
+		GenerateRockDetailTextures(strOutputDir);
+
 		RockTextureParams xGranite;
 		xGranite.m_szName = "Granite";
 		xGranite.m_xCreviceColour = Zenith_Maths::Vector3(0.205f, 0.202f, 0.198f);

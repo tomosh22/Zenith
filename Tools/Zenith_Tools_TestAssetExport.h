@@ -38,6 +38,14 @@ extern void GenerateFallenTreeAssets();
 // Output: ENGINE_ASSETS_DIR/Meshes/Bushes/
 extern void GenerateBushAssets();
 
+// Generate the SHARED grass texture set + the authored grass type table
+// Creates: engine Vegetation/Grass_Blade_{Vein,Gloss} + Grass_Clump_Ramp
+// .ztxtr, plus game:Vegetation/GrassTypes.zdata (4 types binding them) guarded
+// by a GrassTypes.gen version marker so a hand-authored table is never
+// clobbered -- see the .cpp header.
+// Output: ENGINE_ASSETS_DIR/Vegetation/ + GAME_ASSETS_DIR/Vegetation/
+extern void GenerateGrassAssets();
+
 // Generate RenderTest game-specific assets (bullet sphere mesh + model)
 // Output: GAME_ASSETS_DIR/Meshes/Bullet_Sphere.{zasset,zmodel}
 extern void GenerateRenderTestAssets();

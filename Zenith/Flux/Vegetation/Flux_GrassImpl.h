@@ -38,6 +38,7 @@
 #include "Flux/Vegetation/Flux_GrassTypes.h"
 #include "Flux/Vegetation/Flux_GrassTypeTable.h"
 #include "Flux/InstancedMeshes/Flux_InstanceCulling.h"   // Flux_FrustumPlaneGPU (shared plane layout)
+#include "AssetHandling/Zenith_AssetHandle.h"             // TextureHandle pins for the type table's textures
 #include "Collections/Zenith_Vector.h"
 #include "Maths/Zenith_Maths.h"
 
@@ -227,9 +228,17 @@ public:
 	bool BuildFromMaps(const MapSet& xMaps, const BuildParams& xParams);
 
 	// ===== Types =====
-	// Re-uploads the GPU parameter block. Survives ClearSceneData.
+	// Copies + validates the table, then resolves every entry's texture PATHS to
+	// bindless slots (acquiring the texture assets and pinning them on this impl
+	// until the next SetTypeTable / ReleaseAssetReferences). Re-uploaded by the next
+	// gather. Survives ClearSceneData.
 	void SetTypeTable(const Flux_GrassTypeTable& xTable);
 	const Flux_GrassTypeTable& GetTypeTable() const { return m_xTypeTable; }
+
+	// Drop the type-table texture pins. Called from Flux_RendererImpl's pre-registry
+	// release window, NOT from Shutdown: the feature-walk Shutdown runs after
+	// Zenith_AssetRegistry is gone.
+	void ReleaseAssetReferences();
 
 	// ===== Tuning =====
 	// The debug variables bind these members BY REFERENCE, so nothing here is
@@ -372,11 +381,18 @@ private:
 	void  DestroyDisplacementMaps();
 
 	// Boot-time attempt at the game's authored .zdata type table. Absent or
-	// rejected leaves the seeded defaults in place — no game ships one today, so
-	// ABSENCE is the normal path and must not read as a failure. Pure CPU work
-	// (the table is projected to the GPU by the next gather like any other), so it
-	// runs identically in a Null_ build.
+	// rejected leaves the seeded defaults in place — a game without one is the
+	// normal path and must not read as a failure. Pure CPU work (the table is
+	// projected to the GPU by the next gather like any other), so it runs
+	// identically in a Null_ build.
 	void  LoadAuthoredTypeTable();
+
+	// The one Flux_GrassTypeTable::TextureResolver: acquires the texture asset at
+	// strPath, marks it bindless (REPEAT for vein/gloss, CLAMP for the ramp), pins
+	// the handle in m_axTypeTextureHandles and returns its slot. A texture that
+	// fails to load returns UNBOUND, so the fragment stage skips the sample.
+	static u_int ResolveTypeTexture(const std::string& strPath, FluxGrassTextureSlot eSlot, void* pUser);
+	void  ResolveTypeTextures();
 
 	// --- gather helpers (each is one step of GatherGrassFrame) ---
 	// The three Stage* helpers are PURE builders of a CPU-side block; a single
@@ -534,6 +550,9 @@ private:
 
 	// ===== Types =====
 	Flux_GrassTypeTable m_xTypeTable;
+	// Owning pins for every texture the live table resolved: the bindless slots
+	// in m_xTypeTable are only valid while the assets they index stay loaded.
+	Zenith_Vector<TextureHandle> m_axTypeTextureHandles;
 
 	// ===== Displacement movers + ping-pong state =====
 	Zenith_Vector<Mover> m_axMovers;

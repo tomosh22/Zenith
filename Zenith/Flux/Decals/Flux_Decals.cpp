@@ -208,9 +208,12 @@ void Flux_DecalsImpl::BuildPipelines()
 		Flux_PipelineSpecification xSpec;
 		xSpec.m_pxShader = &m_xApplyShader;
 
-		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_DIFFUSE]        = TEXTURE_FORMAT_RGBA8_UNORM;
-		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_NORMALSAMBIENT] = TEXTURE_FORMAT_R16G16B16A16_SFLOAT;
-		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_MATERIAL]       = TEXTURE_FORMAT_RGBA8_UNORM;
+		// The G-buffer's own constants, never literals: a pipeline whose
+		// attachment format disagrees with the target it draws into is a
+		// validation error at best (MRT0 is sRGB -- see MRT_FORMAT_DIFFUSE).
+		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_DIFFUSE]        = MRT_FORMAT_DIFFUSE;
+		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_NORMALSAMBIENT] = MRT_FORMAT_NORMALSAMBIENT;
+		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_MATERIAL]       = MRT_FORMAT_MATERIAL;
 		xSpec.m_uNumColourAttachments = 3;
 
 		xSpec.m_eDepthStencilFormat = TEXTURE_FORMAT_NONE;

@@ -585,9 +585,13 @@ private:
 	// caller falls back to the cold shape.
 	bool ApplyPropModel(Zenith_ModelComponent& xModel, ZM_PROP_ID eProp)
 	{
+		// ★ ZM_PropModelRef, NOT ZM_PropAssetPath(MODEL). The two differ for the
+		// ROCK kinds, which present the shared engine stones under
+		// engine:Meshes/Rocks rather than their own generated bundle -- which is
+		// one box. Resolving the bundle directly here would put that box back on
+		// screen with every unit still green (see ZM_PropGen.h).
 		char acModelRef[256];
-		if (!ZM_PropAssetPath(eProp, ZM_PROP_ASSET_MODEL, acModelRef,
-			static_cast<u_int>(sizeof(acModelRef))))
+		if (!ZM_PropModelRef(eProp, acModelRef, static_cast<u_int>(sizeof(acModelRef))))
 		{
 			return false;
 		}
@@ -1249,6 +1253,10 @@ public:
 		ZM_PROP_ID eProp = ZM_PropForInteriorPropEntity(szName);
 		if (eProp >= ZM_PROP_COUNT)
 		{
+			eProp = ZM_PropForInteriorFixtureEntity(szName);
+		}
+		if (eProp >= ZM_PROP_COUNT)
+		{
 			eProp = ZM_PropForDawnmerePropEntity(szName);
 		}
 		if (eProp >= ZM_PROP_COUNT)
@@ -1261,9 +1269,10 @@ public:
 			return;
 		}
 
+		// The presenter's ref, which is the ENGINE stone for a rock kind and the
+		// prop's own bundle for everything else (ZM_PropGen.h).
 		char acModelRef[512];
-		if (!ZM_PropAssetPath(eProp, ZM_PROP_ASSET_MODEL, acModelRef,
-			static_cast<u_int>(sizeof(acModelRef))))
+		if (!ZM_PropModelRef(eProp, acModelRef, static_cast<u_int>(sizeof(acModelRef))))
 		{
 			return;
 		}
@@ -3488,8 +3497,12 @@ namespace
 		}
 		(void)ZM_EnsurePropBaked(eProp);
 
+		// ★ THE MESH THAT WILL ACTUALLY RENDER, which for a ROCK kind is the shared
+		// engine stone rather than this prop's own bake. Measuring the bundle here
+		// while presenting the engine model would fit the stone to a cube's
+		// dimensions -- a wrong scale on every rock in the world.
 		char acMeshRef[512];
-		if (!ZM_PropAssetPath(eProp, ZM_PROP_ASSET_MESH, acMeshRef, sizeof(acMeshRef)))
+		if (!ZM_PropMeshRef(eProp, acMeshRef, sizeof(acMeshRef)))
 		{
 			return xFit;
 		}
@@ -3638,6 +3651,71 @@ namespace
 			xAuto.AddStep_SetLightIntensity(xLight.m_fLumens);
 			xAuto.AddStep_SetLightRange(xLight.m_fRange);
 			xAuto.AddStep_SetLightColor(xLight.m_fR, xLight.m_fG, xLight.m_fB);
+		}
+
+		// ---- The light FIXTURES ------------------------------------------------
+		//
+		// ★★ APPENDED, AFTER EVERY PRE-EXISTING ROW. The authoring ORDER in this
+		// function is a contract (ZM-D-148 dense authoring-order file indices):
+		// appending is free, reordering rewrites every committed scene byte from
+		// the first moved entity onward. So the fixtures go at the END, after the
+		// shell, the furniture and the lights, even though a reader would rather
+		// see each fixture beside its lamp.
+		//
+		// ★ VISUAL-ONLY: NO COLLIDER, and that is what lets the pendant hang on
+		// the room axis inside the entrance corridor. See ZM_InteriorDressing.h --
+		// the corridor rule is about the walk driver wedging on a COLLIDER, and
+		// these have none. It is also why they wear ZM_InteriorFurniture without
+		// its collider-rebuild doing anything: that component rebuilds a collider
+		// only when one is present.
+		const u_int uFixtures = ZM_GetInteriorFixtureCount(eRoom);
+		for (u_int f = 0u; f < uFixtures; ++f)
+		{
+			const ZM_InteriorFixture& xFixture = ZM_GetInteriorFixture(eRoom, f);
+
+			// The same fit every other prop gets. A fixture is built at EXACTLY its
+			// roster size (ZM_BuildPropMesh skips the jitter for the fixture kinds),
+			// so this resolves to scale 1 / lift 0 and the row's Y is the model's
+			// base -- which is what makes "pendant top flush with the ceiling" a
+			// number rather than a hope. It is still resolved rather than assumed,
+			// because a .glb dropped onto one of these rows must still be measured.
+			const ZM_PropFit xFit = ZM_ResolvePropFit(xFixture.m_eProp);
+
+			xAuto.AddStep_CreateEntity(xFixture.m_szEntityName);
+			xAuto.AddStep_SetEntityTransient(false);
+			xAuto.AddStep_SetTransformPosition(
+				xFixture.m_fX, xFixture.m_fY + xFit.m_fGroundY, xFixture.m_fZ);
+			xAuto.AddStep_SetTransformScale(xFit.m_fScale, xFit.m_fScale, xFit.m_fScale);
+			// A frozen quaternion, verbatim -- never AddStep_SetTransformYaw
+			// (ZM-D-183).
+			xAuto.AddStep_SetTransformRotationQuat(
+				0.0f, xFixture.m_fQuatY, 0.0f, xFixture.m_fQuatW);
+			xAuto.AddStep_AddComponent("ZM_InteriorFurniture");
+		}
+
+		// ---- The scene SUN -------------------------------------------------------
+		//
+		// ★★ AN INTERIOR WITH A SUN, WHICH SOUNDS WRONG AND IS THE WHOLE POINT.
+		// These rooms have real window openings now, and a window with nothing
+		// outside it is a hole onto the clear colour. The sun is what makes the
+		// opening MEAN something: it enters at 30 degrees through the -X windows,
+		// lands on the floor, and the cascaded shadow maps draw the frame and the
+		// glazing bars across it. Without a Zenith_SunComponent the scene has no
+		// directional light at all and CSM has nothing to cast.
+		//
+		// ★ THE DIRECTION IS THREE FROZEN LITERALS THAT ARE ALREADY UNIT LENGTH IN
+		// FLOAT (see ZM_GetInteriorSunDirection). SetDirection normalises what it
+		// is handed and the RESULT is what serialises, so a vector whose length is
+		// not exactly 1.0f would put a libm sqrt between the authored constant and
+		// the committed bytes -- the ZM-D-183 shape exactly.
+		{
+			const Zenith_Maths::Vector3 xSun = ZM_GetInteriorSunDirection(eRoom);
+			xAuto.AddStep_CreateEntity(
+				eRoom == ZM_INTERIOR_ROOM_PROF_LAB ? "ProfLabSun" : "PlayerHomeSun");
+			xAuto.AddStep_SetEntityTransient(false);
+			xAuto.AddStep_SetTransformPosition(0.0f, 0.0f, 0.0f);
+			xAuto.AddStep_AddComponent("Sun");
+			xAuto.AddStep_SetSunDirection(xSun.x, xSun.y, xSun.z);
 		}
 	}
 

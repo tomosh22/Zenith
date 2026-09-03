@@ -27,11 +27,21 @@ public:
 	void Shutdown();
 	void Reset();
 
-	// Mirrors the other casters' contract (cascade index; the all-cascade ShadowMatrices
-	// SSBO is in the persistent VIEW set, Phase 5.4). STUBBED — terrain does not currently
-	// cast (the call in Flux_Shadows.cpp ExecuteShadowCascade is commented out); kept
-	// signature-aligned so enabling it is a pure C++ change.
+	// Terrain shadow caster: one indirect draw per terrain out of cascade uCascade's
+	// cull slot (see Flux_TerrainShadowCull.h). Called by Flux_Shadows::ExecuteShadowCascade
+	// as the LAST caster in the cascade, after the caller has set the terrain's own
+	// dynamic depth bias (shared constant, GetShadowDepthBiasSlope()).
 	void RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, u_int uCascade);
+	// The terrain caster's slope-scaled depth-bias factor (Render/Shadows/Terrain
+	// Slope Bias). Read by ExecuteShadowCascade, which owns the dynamic bias state.
+	float GetShadowDepthBiasSlope() const;
+
+	// Render/Shadows/Terrain Casts Shadows, reachable in code as well as from the
+	// debug panel so a capture harness can A/B the feature. Off resolves the cull
+	// to zero cascade slots AND skips the draw, so it removes the work, not just
+	// the result (see Flux_TerrainShadowActiveCascades).
+	bool GetCastsShadows() const;
+	void SetCastsShadows(bool bCasts);
 
 	void SetupRenderGraph(Flux_RenderGraph& xGraph);
 

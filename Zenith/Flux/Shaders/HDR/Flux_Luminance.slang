@@ -53,14 +53,20 @@ void csMain(uint3 dispatchId : SV_DispatchThreadID, uint groupIndex : SV_GroupIn
 		float3 xColour = g_xPassSet.g_xHDRTex.SampleLevel(xUV, 0).rgb;
 
 		float fLuminance = RGBToLuminance(xColour);
-		if (fLuminance >= 0.001)
-		{
-			float fLogLum = clamp((log2(fLuminance) - g_xPassSet.LuminanceConstants.g_fMinLogLum) /
-								   g_xPassSet.LuminanceConstants.g_fLogLumRange, 0.0, 1.0);
-			uint  uBin    = min((uint)(fLogLum * 255.0), 255u);
-			uint  uOldVal;
-			InterlockedAdd(s_auLocalHistogram[uBin], 1u, uOldVal);
-		}
+		// Dark pixels land in bin 0 rather than being dropped: skipping them let a
+		// shadowed or night frame be metered by its few bright pixels alone, so
+		// the exposure locked dark and never opened up.
+		float fLogLum = clamp((log2(max(fLuminance, 1e-6)) - g_xPassSet.LuminanceConstants.g_fMinLogLum) /
+							   g_xPassSet.LuminanceConstants.g_fLogLumRange, 0.0, 1.0);
+		uint  uBin    = min((uint)(fLogLum * 255.0), 255u);
+		// Centre-weighted metering (a camera's default pattern): the middle of the
+		// frame counts three times, the mid-field twice, the edges once — so a
+		// sky-heavy horizon shot no longer underexposes the subject on the ground.
+		float2 xCentred = xUV - 0.5;
+		float  fRadius  = length(xCentred * float2(1.0, 0.75));
+		uint   uWeight  = (fRadius < 0.18) ? 3u : ((fRadius < 0.34) ? 2u : 1u);
+		uint   uOldVal;
+		InterlockedAdd(s_auLocalHistogram[uBin], uWeight, uOldVal);
 	}
 	GroupMemoryBarrierWithGroupSync();
 

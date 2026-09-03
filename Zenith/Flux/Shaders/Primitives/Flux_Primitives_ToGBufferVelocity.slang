@@ -89,7 +89,7 @@ GBufferVelocityOut fsMain(VsOut input)
 		: GBUFFER_SHADING_DEFAULT_LIT;
 
 	return MakeGBufferVelocity(
-		MakeGBuffer(xDiffuse, xNormal, 0.2, 0.8, 0.0, 0.5,
+		MakeGBuffer(xDiffuse, xNormal, 1.0, 0.8, 0.0, 0.5,
 			input.colour * fEmissiveIntensity, 0.0, 0.0, uShadingModel),
 		Flux_EncodeVelocityUV(input.clipCurNoJitter, input.clipPrevNoJitter));
 }

@@ -96,6 +96,13 @@
 # want fresh-clone `_False`/Null boots. Watch out for `git add -A` picking them
 # up unintentionally.
 #
+# .ztexdecl is re-included for the same reason (a text file, a few hundred
+# bytes, read with no GPU): it DECLARES what each source texture's bytes mean,
+# and the exporter refuses to export an undeclared one rather than guessing.
+# The guess it replaced silently re-encoded the terrain normal maps and cost
+# the game every terrain shadow. A declaration a fresh clone lacks is a
+# declaration somebody re-guesses, so it cannot live in the ignored tree.
+#
 # We ignore Assets *contents* (not the directory entries, so git can descend),
 # then re-include. NOTE the ordering contract: the later `unit_test_scene.zscen`
 # rule below still wins for the harness-written scene in the exe CWD, because
@@ -104,6 +111,7 @@
 !**/Assets/**/
 !**/*.znavmesh
 !**/*.zscen
+!**/*.ztexdecl
 
 # Accidental Windows NUL device redirections
 /nul

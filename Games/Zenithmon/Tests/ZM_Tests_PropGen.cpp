@@ -34,6 +34,24 @@
 //                                      that transform scales ACROSS A SWEPT MESH
 //                                      SEED, not at one draw; the three are
 //                                      pairwise distinct in mesh AND texture.
+//  10. PropGen_RockKindsResolveToTheSharedEngineStones -- the three ROCK rows
+//                                      present engine:Meshes/Rocks stones (their
+//                                      own composition is one box); every other
+//                                      row presents its own baked bundle, and a
+//                                      prop's model and mesh refs never come
+//                                      from different families.
+//  11. PropGen_UVIslandsAreDisjointAndEveryVertexLandsInOne -- the 2x2 role
+//                                      atlas: disjoint islands with real
+//                                      gutters, painter and mesher agreeing on
+//                                      the quadrants, and no vertex straddling
+//                                      a seam.
+//  12. PropGen_OnlyFixturesEmitAndOnlyOnTheirShade /
+//      PropGen_LightFixturesAreBuiltAtExactlyTheirRosterSize -- the four
+//                                      LIGHT_FIXTURE rows glow on the GLOW
+//                                      island and nowhere else, nothing else
+//                                      glows at all, and a fixture builds at
+//                                      exactly its roster size so the fit is
+//                                      the identity.
 //
 // ★ UNIT 9 ASSERTS STRUCTURE AND **MEASURES** APPEARANCE, and the split is
 // deliberate. ZM-67 is a `human-gate` ticket: whether two props are far enough
@@ -56,10 +74,15 @@
 // ZENITH_TOOLS, so it costs this leaf TU nothing but the compiled world table it
 // already links.
 #include "Zenithmon/Source/World/ZM_Route1Placement.h"
+// ZM_ComputePropFit -- the transform the AUTHORING applies. Unit 12 asserts the
+// four light fixtures come out of it as the IDENTITY, which is what lets a
+// fixture placement row state a model BASE rather than a guess.
+#include "Zenithmon/Source/World/ZM_PropFit.h"
 #include "Maths/Zenith_Maths.h"
 #include "Collections/Zenith_Vector.h"
 
-#include <cstring>   // strlen
+#include <cstdio>    // snprintf -- the engine rock ref scheme
+#include <cstring>   // strlen / strncmp
 #include <cmath>     // std::isfinite
 
 namespace
@@ -891,4 +914,340 @@ ZENITH_TEST(ZM_Gen, PropGen_GroundItemPickupRowsAreCentreAnchoredAndDistinct)
 				(double)PropColourDistance(xMeanA, xMeanB));
 		}
 	}
+}
+
+// ############################################################################
+// 10. The ROCK kinds present the shared ENGINE stones
+// ############################################################################
+
+// ★★ A ROCK WAS ONE BOX, AND NO TEXTURE MAKES A BOX A ROCK. The engine already
+// ships four sculpted stones under engine:Meshes/Rocks
+// (Tools/Zenith_Tools_RockAssetExport.cpp -- the same set RenderTest and
+// Dawnmere's scatter dress with), so the three ROCK roster rows present one of
+// those and ZM_PropFit scales it to the roster size like any other delivery.
+//
+// ★ THE CLAUSES ARE ABOUT THE RESOLVER, NOT ABOUT DISK. Whether the .zasset is
+// present is a bake question, and a clone with no engine bake would legitimately
+// have none; what must hold in EVERY configuration is that a rock row resolves
+// to an engine ref and every other row resolves to its own game: bundle. A rock
+// that silently fell back to its own bake would be a cube again, in a scene that
+// still loads, with every other clause in this file green.
+ZENITH_TEST(ZM_Gen, PropGen_RockKindsResolveToTheSharedEngineStones)
+{
+	u_int uRocks = 0u, uOwnBundle = 0u;
+	for (u_int u = 0u; u < (u_int)ZM_PROP_COUNT; ++u)
+	{
+		const ZM_PROP_ID eId = (ZM_PROP_ID)u;
+		const bool bRockKind = ZM_GetPropData(eId).m_eKind == ZM_PROP_KIND_ROCK;
+
+		char acModel[512], acMesh[512];
+		ZENITH_ASSERT_TRUE(ZM_PropModelRef(eId, acModel, sizeof(acModel)),
+			"'%s' model ref must fit", ZM_GetPropName(eId));
+		ZENITH_ASSERT_TRUE(ZM_PropMeshRef(eId, acMesh, sizeof(acMesh)),
+			"'%s' mesh ref must fit", ZM_GetPropName(eId));
+
+		// The two answers agree about WHICH family the prop comes from. A model
+		// from the engine set with a mesh from the game set would fit an engine
+		// stone to a cube's measurements.
+		const bool bModelIsEngine = strncmp(acModel, "engine:", 7) == 0;
+		const bool bMeshIsEngine  = strncmp(acMesh,  "engine:", 7) == 0;
+		ZENITH_ASSERT_EQ(bModelIsEngine ? 1u : 0u, bMeshIsEngine ? 1u : 0u,
+			"'%s' resolves its MODEL to '%s' and its MESH to '%s' -- one is the "
+			"engine set and the other is not, so ZM_ResolvePropFit would measure a "
+			"different asset from the one that renders",
+			ZM_GetPropName(eId), acModel, acMesh);
+
+		if (bRockKind)
+		{
+			++uRocks;
+			const char* szStem = ZM_PropEngineRockStem(eId);
+			ZENITH_ASSERT_NOT_NULL(szStem,
+				"'%s' is ZM_PROP_KIND_ROCK but names no engine stone, so it falls "
+				"back to its own generated bundle -- which is a single box",
+				ZM_GetPropName(eId));
+			ZENITH_ASSERT_TRUE(ZM_PropUsesEngineRock(eId),
+				"'%s' is a rock kind that does not report using an engine rock",
+				ZM_GetPropName(eId));
+			ZENITH_ASSERT_TRUE(bModelIsEngine,
+				"'%s' resolves to '%s', not an engine: ref -- it would render the "
+				"generator's cube", ZM_GetPropName(eId), acModel);
+			// The exact scheme the rock exporter writes, so a rename on either side
+			// reds here rather than at load time.
+			char acExpected[512];
+			snprintf(acExpected, sizeof(acExpected),
+				"engine:Meshes/Rocks/Rock_%s.zmodel", szStem);
+			ZENITH_ASSERT_STREQ(acModel, acExpected,
+				"'%s' resolves to a ref the rock exporter does not write",
+				ZM_GetPropName(eId));
+			Zenith_Log(LOG_CATEGORY_UNITTEST,
+				"[ZM_Gen] OBSERVED '%s' presents the shared engine stone '%s'",
+				ZM_GetPropName(eId), acModel);
+		}
+		else
+		{
+			++uOwnBundle;
+			ZENITH_ASSERT_FALSE(ZM_PropUsesEngineRock(eId),
+				"'%s' is not a rock kind but claims an engine rock",
+				ZM_GetPropName(eId));
+			ZENITH_ASSERT_FALSE(bModelIsEngine,
+				"'%s' resolves to the engine set ('%s') -- only the rock kinds "
+				"substitute", ZM_GetPropName(eId), acModel);
+			// It is its OWN bundle, at the documented scheme.
+			char acOwn[512];
+			ZENITH_ASSERT_TRUE(
+				ZM_PropAssetPath(eId, ZM_PROP_ASSET_MODEL, acOwn, sizeof(acOwn)),
+				"'%s' own model ref must fit", ZM_GetPropName(eId));
+			ZENITH_ASSERT_STREQ(acModel, acOwn,
+				"'%s' presents '%s' rather than its own baked bundle '%s'",
+				ZM_GetPropName(eId), acModel, acOwn);
+		}
+	}
+
+	// ANTI-VACUITY, both ways.
+	ZENITH_ASSERT_GE(uRocks, 3u,
+		"only %u rock-kind rows were found; the roster carries RockSmall, RockLarge "
+		"and Boulder, and this clause is what keeps them off the cube", uRocks);
+	ZENITH_ASSERT_GT(uOwnBundle, 0u,
+		"every roster row resolved to the engine set -- the substitution has "
+		"widened past the rock kinds");
+	// TOTAL on a garbage id.
+	ZENITH_ASSERT_NULL(ZM_PropEngineRockStem(ZM_PROP_COUNT),
+		"an out-of-range id must name no engine stone");
+}
+
+// ############################################################################
+// 11. The per-KIND UV islands
+// ############################################################################
+
+// ★★ EVERY FACE USED TO SAMPLE THE WHOLE [0,1] SQUARE -- a post, a rail, a sign
+// board and a lamp head all wore the same stretched square of grain, and the one
+// accent band landed across all of them at once. The texture is a 2x2 atlas of
+// ROLES now. These clauses pin the atlas itself (disjoint islands, real gutters,
+// painter and mesher agreeing on which quadrant is whose) and then that every
+// built mesh's UVs actually land inside a role island rather than straddling a
+// seam -- which is what catches a composition arm that forgot its role.
+ZENITH_TEST(ZM_Gen, PropGen_UVIslandsAreDisjointAndEveryVertexLandsInOne)
+{
+	// (a) THE ATLAS.
+	for (u_int a = 0u; a < (u_int)ZM_PROP_UV_ROLE_COUNT; ++a)
+	{
+		const ZM_PROP_UV_ROLE eA = (ZM_PROP_UV_ROLE)a;
+		const ZM_GenUVIsland xIsland = ZM_PropUVIsland(eA);
+		const ZM_GenUVIsland xPaint  = ZM_PropUVPaintRect(eA);
+
+		ZENITH_ASSERT_GT(xIsland.m_fU1, xIsland.m_fU0, "role %u island is inverted in U", a);
+		ZENITH_ASSERT_GT(xIsland.m_fV1, xIsland.m_fV0, "role %u island is inverted in V", a);
+		ZENITH_ASSERT_GE(xIsland.m_fU0, -1.0e-6f, "role %u island leaves [0,1] in U", a);
+		ZENITH_ASSERT_LE(xIsland.m_fU1, 1.0f + 1.0e-6f, "role %u island leaves [0,1] in U", a);
+		ZENITH_ASSERT_GE(xIsland.m_fV0, -1.0e-6f, "role %u island leaves [0,1] in V", a);
+		ZENITH_ASSERT_LE(xIsland.m_fV1, 1.0f + 1.0e-6f, "role %u island leaves [0,1] in V", a);
+
+		// The mesh island is strictly INSIDE its paint rect: that inset is the
+		// gutter, and without it a bilinear tap at an island edge reads the
+		// neighbouring role -- a lamp's shade sampling the housing's paint.
+		ZENITH_ASSERT_GT(xIsland.m_fU0, xPaint.m_fU0, "role %u has no gutter on its -U edge", a);
+		ZENITH_ASSERT_LT(xIsland.m_fU1, xPaint.m_fU1, "role %u has no gutter on its +U edge", a);
+		ZENITH_ASSERT_GT(xIsland.m_fV0, xPaint.m_fV0, "role %u has no gutter on its -V edge", a);
+		ZENITH_ASSERT_LT(xIsland.m_fV1, xPaint.m_fV1, "role %u has no gutter on its +V edge", a);
+
+		// The painter and the mesher agree about which quadrant is whose.
+		const float fMidU = 0.5f * (xIsland.m_fU0 + xIsland.m_fU1);
+		const float fMidV = 0.5f * (xIsland.m_fV0 + xIsland.m_fV1);
+		ZENITH_ASSERT_EQ((u_int)ZM_PropUVRoleAt(fMidU, fMidV), a,
+			"the centre of role %u's island (%.3f, %.3f) resolves to role %u -- the "
+			"mesh islands and the painter's quadrants disagree, so every part would "
+			"wear the wrong material", a, (double)fMidU, (double)fMidV,
+			(u_int)ZM_PropUVRoleAt(fMidU, fMidV));
+
+		for (u_int b = a + 1u; b < (u_int)ZM_PROP_UV_ROLE_COUNT; ++b)
+		{
+			const ZM_GenUVIsland xB = ZM_PropUVIsland((ZM_PROP_UV_ROLE)b);
+			const bool bDisjoint = xIsland.m_fU1 <= xB.m_fU0 || xB.m_fU1 <= xIsland.m_fU0
+				|| xIsland.m_fV1 <= xB.m_fV0 || xB.m_fV1 <= xIsland.m_fV0;
+			ZENITH_ASSERT_TRUE(bDisjoint,
+				"roles %u and %u overlap on the atlas -- one part's texture would "
+				"bleed into another's", a, b);
+		}
+	}
+
+	// (b) EVERY BUILT MESH lands inside SOME island.
+	//
+	// ★ THE MESH ALONE, not ZM_BuildProp. This clause is about UVs, and building
+	// the full bundle would paint a 512^2 albedo plus a height field and three
+	// derived maps for all 32 rows to look at a vertex attribute -- 16x the texel
+	// work the old 128^2 maps cost, on a unit that runs at every boot.
+	for (u_int u = 0u; u < (u_int)ZM_PROP_COUNT; ++u)
+	{
+		const ZM_PROP_ID eId = (ZM_PROP_ID)u;
+		ZM_GenMesh xMesh;
+		ZM_BuildPropMesh(ZM_ResolvePropRecipe(eId), xMesh);
+
+		for (u_int v = 0u; v < xMesh.GetNumVerts(); ++v)
+		{
+			const Zenith_Maths::Vector2& xUV = xMesh.m_xUVs.Get(v);
+			bool bInSome = false;
+			for (u_int a = 0u; a < (u_int)ZM_PROP_UV_ROLE_COUNT && !bInSome; ++a)
+			{
+				const ZM_GenUVIsland xI = ZM_PropUVIsland((ZM_PROP_UV_ROLE)a);
+				bInSome = xUV.x >= xI.m_fU0 - 1.0e-4f && xUV.x <= xI.m_fU1 + 1.0e-4f
+					&& xUV.y >= xI.m_fV0 - 1.0e-4f && xUV.y <= xI.m_fV1 + 1.0e-4f;
+			}
+			ZENITH_ASSERT_TRUE(bInSome,
+				"'%s' vertex %u has UV (%.4f, %.4f), which is in no role island -- it "
+				"samples across a seam or over the whole atlas, which is exactly the "
+				"every-face-wears-everything failure the islands replaced",
+				ZM_GetPropName(eId), v, (double)xUV.x, (double)xUV.y);
+		}
+	}
+
+	// (c) THE RESOLUTION. 128 could not carry four islands: each part would get a
+	//     64-texel square.
+	ZENITH_ASSERT_GE(uZM_PROP_ALBEDO_RESOLUTION, 512u,
+		"the prop albedo is %u^2. Split into four role islands that is %u texels "
+		"per part, and a fence post standing at arm's length goes soft",
+		uZM_PROP_ALBEDO_RESOLUTION, uZM_PROP_ALBEDO_RESOLUTION / 2u);
+}
+
+// ############################################################################
+// 12. The light fixtures and their emissive mask
+// ############################################################################
+
+// A fixture GLOWS on its shade and nowhere else, and nothing that is not a
+// fixture glows at all. The mask is what enforces it: the engine's default
+// emissive texture is WHITE, so a colour and an intensity with no mask would
+// light the whole fixture, body and flex included.
+ZENITH_TEST(ZM_Gen, PropGen_OnlyFixturesEmitAndOnlyOnTheirShade)
+{
+	u_int uFixtures = 0u;
+	for (u_int u = 0u; u < (u_int)ZM_PROP_COUNT; ++u)
+	{
+		const ZM_PROP_ID eId = (ZM_PROP_ID)u;
+		const bool bFixture = ZM_GetPropData(eId).m_eKind == ZM_PROP_KIND_LIGHT_FIXTURE;
+		const ZM_PropEmissive xEmissive = ZM_GetPropEmissive(eId);
+
+		// The mask and the mesh, not the whole bundle -- see unit 11(b) for why
+		// this file stopped calling ZM_BuildProp in a roster-wide loop.
+		const ZM_PropRecipe xRecipe = ZM_ResolvePropRecipe(eId);
+		const ZM_GenImage xMask = ZM_BuildPropEmissive(xRecipe);
+		ZENITH_ASSERT_FALSE(xMask.IsEmpty(),
+			"'%s' has no emissive map at all -- the bundle shape must be ONE shape "
+			"so the bake and the family manifest can enumerate it",
+			ZM_GetPropName(eId));
+
+		// Where the mask is bright, in role terms.
+		const u_int uRes = xMask.GetWidth();
+		u_int uLitInGlow = 0u, uLitOutsideGlow = 0u;
+		for (u_int uY = 0u; uY < uRes; ++uY)
+		{
+			for (u_int uX = 0u; uX < uRes; ++uX)
+			{
+				if (xMask.Get(uY, uX).x <= 0.5f) { continue; }
+				const float fU = ((float)uX + 0.5f) / (float)uRes;
+				const float fV = ((float)uY + 0.5f) / (float)uRes;
+				if (ZM_PropUVRoleAt(fU, fV) == ZM_PROP_UV_GLOW) { ++uLitInGlow; }
+				else                                            { ++uLitOutsideGlow; }
+			}
+		}
+
+		ZENITH_ASSERT_EQ(uLitOutsideGlow, 0u,
+			"'%s' has %u lit texels OUTSIDE the GLOW island -- whatever is meshed "
+			"into those roles (a lamp's body, a batten's housing) would glow as "
+			"brightly as its own shade", ZM_GetPropName(eId), uLitOutsideGlow);
+
+		if (bFixture)
+		{
+			++uFixtures;
+			ZENITH_ASSERT_GT(xEmissive.m_fIntensity, 1.0f,
+				"'%s' is a light fixture emitting at %.2f -- a lit shade is brighter "
+				"than any diffuse surface in the room, and below about 1 it just "
+				"reads as pale paint",
+				ZM_GetPropName(eId), (double)xEmissive.m_fIntensity);
+			ZENITH_ASSERT_GT(uLitInGlow, 0u,
+				"'%s' is a light fixture whose emissive mask is entirely black -- it "
+				"declares a glow and paints none, so the fixture is a dark object "
+				"hanging under a floating light", ZM_GetPropName(eId));
+
+			// The shade is really meshed into the GLOW island.
+			bool bAnyGlowVert = false;
+			const ZM_GenUVIsland xGlow = ZM_PropUVIsland(ZM_PROP_UV_GLOW);
+			ZM_GenMesh xFixtureMesh;
+			ZM_BuildPropMesh(xRecipe, xFixtureMesh);
+			for (u_int v = 0u; v < xFixtureMesh.GetNumVerts() && !bAnyGlowVert; ++v)
+			{
+				const Zenith_Maths::Vector2& xUV = xFixtureMesh.m_xUVs.Get(v);
+				bAnyGlowVert = xUV.x >= xGlow.m_fU0 - 1.0e-4f && xUV.x <= xGlow.m_fU1 + 1.0e-4f
+					&& xUV.y >= xGlow.m_fV0 - 1.0e-4f && xUV.y <= xGlow.m_fV1 + 1.0e-4f;
+			}
+			ZENITH_ASSERT_TRUE(bAnyGlowVert,
+				"'%s' paints a glow but no part of its mesh is in the GLOW island -- "
+				"the emissive lands on nothing", ZM_GetPropName(eId));
+
+			Zenith_Log(LOG_CATEGORY_UNITTEST,
+				"[ZM_Gen] OBSERVED '%s': %u lit texels, emissive (%.2f, %.2f, %.2f) x %.1f",
+				ZM_GetPropName(eId), uLitInGlow, (double)xEmissive.m_xColour.x,
+				(double)xEmissive.m_xColour.y, (double)xEmissive.m_xColour.z,
+				(double)xEmissive.m_fIntensity);
+		}
+		else
+		{
+			ZENITH_ASSERT_EQ_FLOAT(xEmissive.m_fIntensity, 0.0f, 1.0e-6f,
+				"'%s' is not a light fixture but emits at %.3f",
+				ZM_GetPropName(eId), (double)xEmissive.m_fIntensity);
+			ZENITH_ASSERT_EQ(uLitInGlow, 0u,
+				"'%s' is not a light fixture but its emissive mask has %u lit texels",
+				ZM_GetPropName(eId), uLitInGlow);
+		}
+	}
+
+	ZENITH_ASSERT_EQ(uFixtures, 4u,
+		"%u light-fixture rows were found; the roster carries a pendant, a bedside "
+		"lamp, a standard lamp and a lab batten -- one per DISTINCT light in the "
+		"two rooms", uFixtures);
+	// TOTAL out of range.
+	ZENITH_ASSERT_EQ_FLOAT(ZM_GetPropEmissive(ZM_PROP_COUNT).m_fIntensity, 0.0f, 1.0e-6f,
+		"an out-of-range id must answer an inert emissive row");
+}
+
+// ★ A FIXTURE IS BUILT AT EXACTLY ITS ROSTER SIZE, which is what lets its
+// placement row's Y be the model's base to the millimetre -- and that is what
+// makes "the pendant's rose ends flush with the ceiling" a number rather than a
+// hope. Every other kind is jittered +/-4% on purpose; these four are not.
+ZENITH_TEST(ZM_Gen, PropGen_LightFixturesAreBuiltAtExactlyTheirRosterSize)
+{
+	u_int uChecked = 0u;
+	for (u_int u = 0u; u < (u_int)ZM_PROP_COUNT; ++u)
+	{
+		const ZM_PROP_ID eId = (ZM_PROP_ID)u;
+		const ZM_PropData& xData = ZM_GetPropData(eId);
+		if (xData.m_eKind != ZM_PROP_KIND_LIGHT_FIXTURE) { continue; }
+		++uChecked;
+
+		// The mesh alone: this clause is about SIZE, and only four rows reach it.
+		ZM_GenMesh xMesh;
+		ZM_BuildPropMesh(ZM_ResolvePropRecipe(eId), xMesh);
+		const Zenith_Maths::Vector3 xMin = ZM_GenMeshBoundsMin(xMesh);
+		const Zenith_Maths::Vector3 xMax = ZM_GenMeshBoundsMax(xMesh);
+
+		// Grounded at zero, and exactly as tall as the row says.
+		ZENITH_ASSERT_EQ_FLOAT(xMin.y, 0.0f, 1.0e-4f,
+			"'%s' is not grounded at y=0 (min.y=%.5f) -- its placement row's Y is "
+			"the model BASE, so a lifted model hangs that far low",
+			ZM_GetPropName(eId), (double)xMin.y);
+		ZENITH_ASSERT_EQ_FLOAT(xMax.y - xMin.y, xData.m_fHeight, 1.0e-3f,
+			"'%s' builds %.4f m tall against a %.4f m roster row. A fixture must NOT "
+			"be jittered: the pendant is hung at (ceiling - height), and a 4 percent "
+			"error puts its rose through the ceiling or leaves a gap under it",
+			ZM_GetPropName(eId), (double)(xMax.y - xMin.y), (double)xData.m_fHeight);
+
+		// ...so the fit is the identity, which is what the authoring relies on.
+		const ZM_PropFit xFit = ZM_ComputePropFit(xMin, xMax,
+			xData.m_fWidth, xData.m_fDepth, xData.m_fHeight);
+		ZENITH_ASSERT_EQ_FLOAT(xFit.m_fScale, 1.0f, 1.0e-3f,
+			"'%s' does not fit at scale 1 (got %.5f)", ZM_GetPropName(eId),
+			(double)xFit.m_fScale);
+		ZENITH_ASSERT_EQ_FLOAT(xFit.m_fGroundY, 0.0f, 1.0e-4f,
+			"'%s' needs a ground lift of %.5f", ZM_GetPropName(eId),
+			(double)xFit.m_fGroundY);
+	}
+	ZENITH_ASSERT_EQ(uChecked, 4u, "only %u fixtures were checked", uChecked);
 }

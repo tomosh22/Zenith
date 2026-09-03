@@ -21,6 +21,8 @@ namespace
     bool        s_bSkipBootCapture  = false;
     const char* s_szUnitTestTimings = nullptr;
     bool        s_bExitAfterUnitTests = false;
+    u_int       s_uWindowWidth       = 0;
+    u_int       s_uWindowHeight      = 0;
     Zenith_IndirectCountMode s_eIndirectCountMode = Zenith_IndirectCountMode::Auto;
 
     // --boot-profile-dump with no "=path" writes here. A file-scope literal, not a
@@ -68,6 +70,16 @@ namespace
     void ApplyAssetsRoot(Flags& x, const char* sz)      { x.m_szAssetsRoot = sz; }
     void ApplyTestSaveRoot(Flags& x, const char* sz)    { x.m_szTestSaveRoot = sz; }
     void ApplyTestSaveRunId(Flags& x, const char* sz)   { x.m_szTestSaveRunId = sz; }
+    void ApplyWindowSize(Flags& x, const char* sz)
+    {
+        u_int uWidth = 0u;
+        u_int uHeight = 0u;
+        if (Zenith_CommandLine::ParseWindowSizeArg(sz, uWidth, uHeight))
+        {
+            x.m_uWindowWidth = uWidth;
+            x.m_uWindowHeight = uHeight;
+        }
+    }
 
     void ApplyBootProfileDump(Flags& x, const char* szArg)
     {
@@ -119,6 +131,7 @@ namespace
         { "--skip-boot-capture",     FlagArity::Bare,     &ApplySkipBootCapture    },
         { "--unit-test-timings",     FlagArity::Prefixed, &ApplyUnitTestTimings    },
         { "--exit-after-unit-tests", FlagArity::Bare,     &ApplyExitAfterUnitTests },
+        { "--window-size",           FlagArity::Value,    &ApplyWindowSize         },
         { "--indirect-count-mode",   FlagArity::Prefixed, &ApplyIndirectCountMode  },
     };
 
@@ -186,6 +199,8 @@ namespace Zenith_CommandLine
         s_bSkipBootCapture    = xFlags.m_bSkipBootCapture;
         s_szUnitTestTimings   = xFlags.m_szUnitTestTimings;
         s_bExitAfterUnitTests = xFlags.m_bExitAfterUnitTests;
+        s_uWindowWidth        = xFlags.m_uWindowWidth;
+        s_uWindowHeight       = xFlags.m_uWindowHeight;
         s_eIndirectCountMode  = xFlags.m_eIndirectCountMode;
 
         s_bParsed = true;
@@ -260,6 +275,31 @@ namespace Zenith_CommandLine
     {
         if (!s_bParsed) return false;
         return s_bExitAfterUnitTests;
+    }
+
+    bool ParseWindowSizeArg(const char* szValue, u_int& uWidthOut, u_int& uHeightOut)
+    {
+        if (szValue == nullptr) return false;
+        char* szEnd = nullptr;
+        const unsigned long ulWidth = std::strtoul(szValue, &szEnd, 10);
+        if (szEnd == szValue || szEnd == nullptr) return false;
+        if (*szEnd != 'x' && *szEnd != 'X' && *szEnd != '*') return false;
+        const char* szHeightStart = szEnd + 1;
+        const unsigned long ulHeight = std::strtoul(szHeightStart, &szEnd, 10);
+        if (szEnd == szHeightStart || *szEnd != '\0') return false;
+        constexpr unsigned long ulMAX_DIMENSION = 16384ul;
+        if (ulWidth == 0ul || ulHeight == 0ul || ulWidth > ulMAX_DIMENSION || ulHeight > ulMAX_DIMENSION) return false;
+        uWidthOut = static_cast<u_int>(ulWidth);
+        uHeightOut = static_cast<u_int>(ulHeight);
+        return true;
+    }
+
+    bool GetWindowSizeOverride(u_int& uWidthOut, u_int& uHeightOut)
+    {
+        if (!s_bParsed || s_uWindowWidth == 0u || s_uWindowHeight == 0u) return false;
+        uWidthOut = s_uWindowWidth;
+        uHeightOut = s_uWindowHeight;
+        return true;
     }
 
     Zenith_IndirectCountMode GetIndirectCountMode()

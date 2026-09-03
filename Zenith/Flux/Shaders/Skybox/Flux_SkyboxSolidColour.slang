@@ -36,9 +36,11 @@ struct GBufferOut
 GBufferOut fsMain(FullscreenVsOut i)
 {
 	GBufferOut o;
-	o.diffuse        = g_xPassSet.SkyboxOverrideConstants.g_xOverrideColour;
+	// HDR sky radiance rides the emissive target (see Flux_Atmosphere.slang).
+	float4 xSky      = g_xPassSet.SkyboxOverrideConstants.g_xOverrideColour;
+	o.diffuse        = float4(saturate(xSky.rgb), 1.0);
 	o.normalsAmbient = float4(0.0, 0.0, 0.0, 0.0);
 	o.material       = float4(0.0, 0.0, 0.0, 0.0);
-	o.emissive       = float4(0.0, 0.0, 0.0, 0.0);
+	o.emissive       = float4(xSky.rgb, 1.0);
 	return o;
 }

@@ -11,7 +11,9 @@ namespace
 	// backwards-compatible read path: an older/newer file is REJECTED and the
 	// caller keeps the defaults, because a half-read table produces plausible
 	// grass rather than a visible failure.
-	constexpr u_int uGRASS_TYPE_TABLE_VERSION = 1u;
+	// v2: each entry carries FLUX_GRASS_TEXTURE_SLOT_COUNT texture PATHS after its
+	// name, and the three bindless index fields are written as UNBOUND.
+	constexpr u_int uGRASS_TYPE_TABLE_VERSION = 2u;
 
 	// Bytes one Flux_GrassTypeParams occupies in the stream. Every serialized field
 	// is a 4-byte scalar (the colours go out component-wise), so this is a FIELD
@@ -393,9 +395,13 @@ void Flux_GrassTypeParams::WriteToDataStream(Zenith_DataStream& xStream) const
 	xStream << m_xTipColour.x;
 	xStream << m_xTipColour.y;
 	xStream << m_xTipColour.z;
-	xStream << m_uVeinTextureIndex;
-	xStream << m_uGlossTextureIndex;
-	xStream << m_uRampTextureIndex;
+	// The bindless slots are RUNTIME state: a descriptor index allocated this boot
+	// means nothing to the next one, and writing the live value would also make a
+	// table that was resolved then saved differ byte-for-byte from the same table
+	// authored fresh. The texture PATHS on the table are what the file carries.
+	xStream << uFLUX_GRASS_BINDLESS_UNBOUND;
+	xStream << uFLUX_GRASS_BINDLESS_UNBOUND;
+	xStream << uFLUX_GRASS_BINDLESS_UNBOUND;
 	xStream << m_fGlossRepeat;
 	xStream << m_fRoughnessBase;
 	xStream << m_fSpecular;
@@ -444,9 +450,14 @@ void Flux_GrassTypeParams::ReadFromDataStream(Zenith_DataStream& xStream)
 	xStream >> m_xTipColour.x;
 	xStream >> m_xTipColour.y;
 	xStream >> m_xTipColour.z;
+	// Consumed for layout, then discarded: whatever a file holds here, the slot is
+	// UNBOUND until Flux_GrassTypeTable::ResolveTextureIndices binds the paths.
 	xStream >> m_uVeinTextureIndex;
 	xStream >> m_uGlossTextureIndex;
 	xStream >> m_uRampTextureIndex;
+	m_uVeinTextureIndex = uFLUX_GRASS_BINDLESS_UNBOUND;
+	m_uGlossTextureIndex = uFLUX_GRASS_BINDLESS_UNBOUND;
+	m_uRampTextureIndex = uFLUX_GRASS_BINDLESS_UNBOUND;
 	xStream >> m_fGlossRepeat;
 	xStream >> m_fRoughnessBase;
 	xStream >> m_fSpecular;
@@ -473,6 +484,16 @@ Flux_GrassTypeTable::Flux_GrassTypeTable()
 void Flux_GrassTypeTable::SetDefaults()
 {
 	m_uCount = 4u;
+
+	// The built-ins bind no textures: a table reset to them must not keep a
+	// previous author's paths behind the new entries.
+	for (u_int u = 0; u < uFLUX_GRASS_MAX_TYPES; u++)
+	{
+		for (u_int uSlot = 0; uSlot < FLUX_GRASS_TEXTURE_SLOT_COUNT; uSlot++)
+		{
+			m_astrTexturePaths[u][uSlot].clear();
+		}
+	}
 
 	// 0 — Meadow. The type an unpainted (all-zero) type map selects everywhere, so
 	// it is deliberately the ordinary lawn: mid green base, yellow-green tip, and
@@ -602,6 +623,63 @@ void Flux_GrassTypeTable::SetName(u_int uIndex, const std::string& strName)
 	}
 }
 
+const std::string& Flux_GrassTypeTable::GetTexturePath(u_int uIndex, FluxGrassTextureSlot eSlot) const
+{
+	Zenith_Assert(uIndex < uFLUX_GRASS_MAX_TYPES, "Grass type index %u out of range (max %u)", uIndex, uFLUX_GRASS_MAX_TYPES);
+	Zenith_Assert(eSlot < FLUX_GRASS_TEXTURE_SLOT_COUNT, "Grass texture slot %d out of range", static_cast<int>(eSlot));
+	const u_int uSafeIndex = uIndex < uFLUX_GRASS_MAX_TYPES ? uIndex : 0u;
+	const u_int uSafeSlot = eSlot < FLUX_GRASS_TEXTURE_SLOT_COUNT ? static_cast<u_int>(eSlot) : 0u;
+	return m_astrTexturePaths[uSafeIndex][uSafeSlot];
+}
+
+void Flux_GrassTypeTable::SetTexturePath(u_int uIndex, FluxGrassTextureSlot eSlot, const std::string& strPath)
+{
+	Zenith_Assert(uIndex < uFLUX_GRASS_MAX_TYPES, "Grass type index %u out of range (max %u)", uIndex, uFLUX_GRASS_MAX_TYPES);
+	Zenith_Assert(eSlot < FLUX_GRASS_TEXTURE_SLOT_COUNT, "Grass texture slot %d out of range", static_cast<int>(eSlot));
+	if (uIndex < uFLUX_GRASS_MAX_TYPES && eSlot < FLUX_GRASS_TEXTURE_SLOT_COUNT)
+	{
+		m_astrTexturePaths[uIndex][eSlot] = strPath;
+	}
+}
+
+void Flux_GrassTypeTable::ResolveTextureIndices(TextureResolver pfnResolve, void* pUser)
+{
+	for (u_int u = 0; u < uFLUX_GRASS_MAX_TYPES; u++)
+	{
+		u_int* apuIndices[FLUX_GRASS_TEXTURE_SLOT_COUNT] = {
+			&m_axTypes[u].m_uVeinTextureIndex,
+			&m_axTypes[u].m_uGlossTextureIndex,
+			&m_axTypes[u].m_uRampTextureIndex,
+		};
+		for (u_int uSlot = 0; uSlot < FLUX_GRASS_TEXTURE_SLOT_COUNT; uSlot++)
+		{
+			const std::string& strPath = m_astrTexturePaths[u][uSlot];
+			// Slots past the live count are unreachable by the CS but still project
+			// into the GPU array (ToGPU pads with the last live entry), so they are
+			// walked too — an empty path clears them rather than leaving a stale slot.
+			if (u >= m_uCount || strPath.empty() || pfnResolve == nullptr)
+			{
+				*apuIndices[uSlot] = uFLUX_GRASS_BINDLESS_UNBOUND;
+				continue;
+			}
+			*apuIndices[uSlot] = pfnResolve(strPath, static_cast<FluxGrassTextureSlot>(uSlot), pUser);
+		}
+	}
+}
+
+u_int Flux_GrassTypeTable::CountBoundTextures() const
+{
+	u_int uBound = 0u;
+	for (u_int u = 0; u < m_uCount && u < uFLUX_GRASS_MAX_TYPES; u++)
+	{
+		const Flux_GrassTypeParams& xType = m_axTypes[u];
+		uBound += xType.m_uVeinTextureIndex != uFLUX_GRASS_BINDLESS_UNBOUND ? 1u : 0u;
+		uBound += xType.m_uGlossTextureIndex != uFLUX_GRASS_BINDLESS_UNBOUND ? 1u : 0u;
+		uBound += xType.m_uRampTextureIndex != uFLUX_GRASS_BINDLESS_UNBOUND ? 1u : 0u;
+	}
+	return uBound;
+}
+
 void Flux_GrassTypeTable::Validate()
 {
 	SetCount(m_uCount);
@@ -631,6 +709,10 @@ void Flux_GrassTypeTable::WriteToDataStream(Zenith_DataStream& xStream) const
 	for (u_int u = 0; u < m_uCount; u++)
 	{
 		xStream << m_astrNames[u];
+		for (u_int uSlot = 0; uSlot < FLUX_GRASS_TEXTURE_SLOT_COUNT; uSlot++)
+		{
+			xStream << m_astrTexturePaths[u][uSlot];
+		}
 		// Called explicitly rather than via <<: the params POD is trivially
 		// copyable, so the operator would take the raw-memcpy branch and leak
 		// its padding into the file.
@@ -677,25 +759,38 @@ bool Flux_GrassTypeTable::ReadFromDataStream(Zenith_DataStream& xStream)
 	// checks only log and return, so reading past the end would leave the table
 	// half-written rather than reverted. Walk the payload with the cursor (each
 	// entry is a 4-byte name length + its chars + the fixed params block), then
-	// rewind and read for real.
+	// rewind and read for real. An entry is 1 + FLUX_GRASS_TEXTURE_SLOT_COUNT
+	// length-prefixed strings (name, then the texture paths) and the params block.
 	const uint64_t ulPayloadStart = xStream.GetCursor();
 	bool bComplete = true;
-	for (u_int u = 0; u < uCount; u++)
+	for (u_int u = 0; u < uCount && bComplete; u++)
 	{
-		if (xStream.GetCursor() + sizeof(u_int) > ulStreamEnd)
+		for (u_int uString = 0; uString < 1u + FLUX_GRASS_TEXTURE_SLOT_COUNT; uString++)
+		{
+			if (xStream.GetCursor() + sizeof(u_int) > ulStreamEnd)
+			{
+				bComplete = false;
+				break;
+			}
+			u_int uLength = 0u;
+			xStream >> uLength;
+			if (xStream.GetCursor() + static_cast<uint64_t>(uLength) > ulStreamEnd)
+			{
+				bComplete = false;
+				break;
+			}
+			xStream.SkipBytes(uLength);
+		}
+		if (!bComplete)
+		{
+			break;
+		}
+		if (xStream.GetCursor() + ulGRASS_TYPE_PARAMS_BYTES > ulStreamEnd)
 		{
 			bComplete = false;
 			break;
 		}
-		u_int uNameLength = 0u;
-		xStream >> uNameLength;
-		const uint64_t ulEntryBytes = static_cast<uint64_t>(uNameLength) + ulGRASS_TYPE_PARAMS_BYTES;
-		if (xStream.GetCursor() + ulEntryBytes > ulStreamEnd)
-		{
-			bComplete = false;
-			break;
-		}
-		xStream.SkipBytes(static_cast<u_int>(ulEntryBytes));
+		xStream.SkipBytes(static_cast<u_int>(ulGRASS_TYPE_PARAMS_BYTES));
 	}
 	xStream.SetCursor(ulPayloadStart);
 
@@ -712,11 +807,19 @@ bool Flux_GrassTypeTable::ReadFromDataStream(Zenith_DataStream& xStream)
 	{
 		m_axTypes[u] = Flux_GrassTypeParams();
 		m_astrNames[u].clear();
+		for (u_int uSlot = 0; uSlot < FLUX_GRASS_TEXTURE_SLOT_COUNT; uSlot++)
+		{
+			m_astrTexturePaths[u][uSlot].clear();
+		}
 	}
 
 	for (u_int u = 0; u < uCount; u++)
 	{
 		xStream >> m_astrNames[u];
+		for (u_int uSlot = 0; uSlot < FLUX_GRASS_TEXTURE_SLOT_COUNT; uSlot++)
+		{
+			xStream >> m_astrTexturePaths[u][uSlot];
+		}
 		const uint64_t ulBeforeParams = xStream.GetCursor();
 		m_axTypes[u].ReadFromDataStream(xStream);
 		// Catches ulGRASS_TYPE_PARAMS_BYTES drifting away from the field list: the

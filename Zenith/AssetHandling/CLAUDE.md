@@ -309,15 +309,48 @@ action at all and stage 2 needs a code edit.
 
 `ExportAllTextures()` (`Tools/Zenith_Tools_TextureExport.cpp`) walks
 `GAME_ASSETS_DIR/Textures` and **all of `ENGINE_ASSETS_DIR`**, recursively, and writes
-a sibling `.ztxtr` for every `.png` / `.jpg` / `.jpeg` it finds -- **BC1**, auto-upgraded
-to **BC3** when the source has alpha, with an offline-baked mip chain (a v2 `.ztxtr`).
+a sibling `.ztxtr` for every `.png` / `.jpg` / `.jpeg` it finds, with an offline-baked
+mip chain (a v2 `.ztxtr`).
+
+> **★ WHAT A TEXTURE'S BYTES MEAN IS DECLARED, NEVER INFERRED.** Each walked root
+> that holds any source texture carries a **committed** `TextureUsage.ztexdecl` (a
+> root with none needs none, which is why only `Zenith/Assets/` has one today) --
+> one `<path> <USAGE>` line per source texture, `#` comments, path relative to the
+> file and matched case- and separator-insensitively (a Windows source tree is not
+> case-stable and the walk yields backslashes). `USAGE` is one of `BASE_COLOUR` (BC1 sRGB, auto-upgraded to BC3
+> when the source has alpha), `BASE_COLOUR_MASKED` (BC1_Alpha sRGB), `NORMAL_MAP`
+> (**BC5** linear -- two channels, Z rebuilt at sample time by
+> `Common/Material.slang`'s `UnpackNormalMapTS`), `LINEAR_DATA` (BC1 linear),
+> `UNCOMPRESSED_COLOUR` / `UNCOMPRESSED_DATA` (RGBA8). `ResolveUsage` is the ONE
+> mapping from a usage to a (compression, colour space) pair.
+>
+> **An undeclared texture is NOT exported.** The boot logs its name and the line to
+> add. A malformed line, an unknown token or a duplicate path fails the whole
+> manifest rather than being skipped, and a declared path with no file is reported as
+> a stale entry. There is deliberately no tolerant mode and no default.
+>
+> `.ztexdecl` is re-included by `.gitignore` alongside `.zscen` / `.znavmesh`, so the
+> declarations survive a fresh clone even though `**/Assets/**` is ignored. A
+> declaration a fresh clone lacks is a declaration somebody re-guesses.
+>
+> **This replaced two guesses, and the second one broke the game.** The walk used to
+> export everything BC1/linear; then a filename heuristic routed any basename
+> containing `normal` to BC5. The heuristic was RIGHT -- and silent. The terrain
+> normal maps duly became BC5 while the two terrain G-buffer shaders still decoded
+> three channels; BC5's blue reads 0, Z decoded to -1, the terrain's shading normal
+> pointed into the ground, `NdotL` went to zero and the deferred pass skipped the CSM
+> branch for **every terrain pixel in the game**. Nothing failed. The symptom arrived
+> days later as "the houses stopped casting shadows onto the ground", and the five
+> unit tests pinning the heuristic passed throughout. See
+> `Docs/design/Photorealism.md` §1.10.
 
 It runs at boot on **any** `ZENITH_TOOLS` build, from `Zenith/Core/Zenith_Engine.cpp`,
 before Flux comes up. There is no opt-in and **no freshness check** -- every image is
 re-exported on every boot; `--skip-tool-exports` turns the whole export phase off.
-So dropping new images into an asset directory and booting any tools exe is the whole
-of stage 1. There is also a debug-variable button, **Export -> Textures -> Export All
-Textures**.
+So dropping new images into an asset directory, **declaring them in that root's
+`TextureUsage.ztexdecl`**, and booting any tools exe is the whole of stage 1. Drop one
+in without declaring it and the boot tells you so by name and exports nothing for it.
+There is also a debug-variable button, **Export -> Textures -> Export All Textures**.
 
 The Content Browser's right-click **"Export to .ztxtr"** is a per-file alternative, but
 note it exports jpgs **Uncompressed** rather than BC1, so a set built that way will not
@@ -365,7 +398,7 @@ driven from a **hand-maintained list of set directories** in
 
 ## Generated shared assets (`Zenith/Assets/Meshes/`)
 
-Five asset sets are not imported from anywhere -- they are GENERATED, in full, on
+Six asset sets are not imported from anywhere -- they are GENERATED, in full, on
 every tools boot, by `GenerateTestAssets()` (`Tools/Zenith_Tools_TestAssetExport.cpp`,
 called from `Zenith_Engine` before Flux comes up). They live under `ENGINE_ASSETS_DIR`
 rather than a game's assets because more than one game consumes them.
@@ -373,13 +406,31 @@ rather than a game's assets because more than one game consumes them.
 | Set | Generator | Output |
 |---|---|---|
 | StickFigure | `Zenith_Tools_TestAssetExport.cpp` | 16-bone rig, lofted body, painted atlas, 13 clips |
-| ProceduralTree | `Zenith_Tools_TreeAssetExport.cpp` | branching trunk + leaf cards, bark/leaf textures, sway VATs |
+| ProceduralTree | `Zenith_Tools_TreeAssetExport.cpp` | branching trunk + leaf cards, bark PBR set (albedo/normal/RM/AO), leaf albedo+normal+AO, sway VATs |
 | **Rocks** | `Zenith_Tools_RockAssetExport.cpp` | 4 stone meshes + granite/sandstone PBR sets |
 | **FallenTrees** | `Zenith_Tools_FallenTreeAssetExport.cpp` | 4 deadwood meshes + bark/mossy-bark PBR sets |
-| **Bushes** | `Zenith_Tools_BushAssetExport.cpp` | 3 wind-animated foliage bushes (skeleton + sway VAT each) + masked foliage material |
+| **Bushes** | `Zenith_Tools_BushAssetExport.cpp` | 3 wind-animated foliage bushes (skeleton + sway VAT each) + masked two-sided subsurface foliage material (albedo/normal/AO) |
+| **Grass** | `Zenith_Tools_GrassAssetExport.cpp` | blade vein + gloss + clump-ramp textures (engine), and the 4-type `GrassTypes.zdata` that binds them (per GAME) |
 
 Every one of them is SEEDED: a re-boot rewrites the same bytes, so a generator that
-drifts shows up as churn rather than as a silent visual change. `--skip-tool-exports`
+drifts shows up as churn rather than as a silent visual change.
+
+**The grass set is the one exception to "rewritten in full", and deliberately.**
+Its textures are rewritten like everything else, but the `GrassTypes.zdata` it
+emits is also an AUTHORABLE file -- the terrain editor's *Save grass types*
+button writes the same path -- so that half is guarded by a
+`Vegetation/GrassTypes.gen` version marker: written when absent or when the
+marker is stale, and an existing table with **no** marker is treated as
+hand-authored and left alone. See `Flux/Vegetation/CLAUDE.md`.
+
+**Three of the sets carry parallax height maps** (`Rock_*_Height`,
+`FallenTree_*_Height`): POM is enabled by the PAIR -- a bound
+`MATERIAL_TEXTURE_HEIGHT` **and** a non-zero `SetHeightScale` -- so setting
+either alone is a silent no-op. The rock set also ships a shared
+`Rock_Detail_{Albedo,Normal}` pair tiled 6x on both stone materials; the detail
+albedo is centred on MID-GREY because the shader's combine is
+`base * detail * 2`, and a map centred elsewhere rescales every rock's
+brightness. `--skip-tool-exports`
 turns the whole phase off (and then needs one prior full tools run to have produced
 the files).
 

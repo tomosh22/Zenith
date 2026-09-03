@@ -51,7 +51,7 @@ ParameterBlock<PassParams> g_xPassSet;
 [shader("vertex")]
 FullscreenVsOut vsMain(uint vertexId : SV_VertexID) { return FullscreenVS(vertexId); }
 
-static const uint SAMPLE_COUNT = 64u;
+static const uint SAMPLE_COUNT = 256u;   // 64 could not resolve the virtual-ground horizon step (a hard discontinuity in the integrand); 6 faces x 32^2 texels makes 256 trivially cheap
 
 // Map (UV, face) → world-space cubemap direction. Engine convention
 // matches the GLSL original: +Y is "up", and faces follow the standard

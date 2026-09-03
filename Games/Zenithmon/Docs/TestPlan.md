@@ -733,6 +733,58 @@ pure/headless (the `.zmesh`/`.ztxtr` bake bridges are compiled out) unless marke
   batch (C5/C6) and runs only on a windowed `_True` build. This registers as a new
   P1 automated test on top of the six S3 left.
 
+- **The photo tour** (`Tests/ZM_AutoTests_PhotoTour.cpp`, `ZM_PhotoTour_Test`,
+  windowed, **manual-only**): the renderer's visual instrument, not a pass/fail
+  gate. It walks 15 fixed poses across three scenes -- 8 in Dawnmere, 3 in the
+  player's home, 4 in Aster's lab -- and dumps a swapchain TGA per pose with a
+  `.rect` sidecar naming the editor viewport, so a run is comparable to any other
+  run pose-for-pose. Quads, text, debug primitives and the editor overlays are
+  suppressed for the duration and restored in Teardown; poses are player-relative
+  where they need to be, and ground-relative ones resolve terrain height with a
+  deadline rather than hanging. `m_bManualOnly` + `m_bRequiresGraphics`, so it
+  never joins the batch.
+
+  Driven by `Tools/phototour_run.ps1` (`-Game Zenithmon|RenderTest -Tag <name>
+  [-Compare <tag>]`), which launches it windowed, crops via
+  `Tools/phototour_crop.py` and writes contact/compare sheets under
+  `Build/artifacts/zenithmon/phototour/<tag>/`. Exactly ONE known teardown fault is
+  forgiven, and only by its signature (`Worker N scratch buffer overflow`); any
+  other nonzero exit is reported with the log tail. Forgiving every nonzero exit
+  once `DONE` appeared was a fail-open -- `DONE` is logged before engine shutdown --
+  and it hid a real grass-handle lifetime bug. The runner also warns on any
+  `still held with N refs` line. A reused `-Tag` is CLEARED before the run and a
+  `-Compare` that does not pair every shot on both sides fails naming the unmatched
+  ones (`-AllowPartialCompare` opts out): the cropper enumerates every `.tga` in the
+  directory, so a stale capture both joins this run's contact sheet and SATISFIES
+  the disk check below -- a run that captured nothing could verify clean against its
+  predecessor's output. `Verify` `file_size`s every requested capture:
+  `Flux_Screenshot::RequestDump` only queues, so the shot counter proves the tour
+  ASKED for N captures, never that N landed.
+
+  ★ **The flip happens one frame AFTER the capture it follows, and that is
+  load-bearing.** `Zenith_AutomatedTestRunner::Tick()` runs BEFORE the frame's
+  render and the pending dump is consumed at EndFrame of the SAME frame, so a
+  render-state change made after `PTRequestDump` in one `Update` lands in the very
+  frame being captured. Flipping shadows straight after queuing the base shot put a
+  shadows-OFF frame in the base file and a shadows-ON frame in `__noshadow` -- the
+  pair was inverted. Hence the one-frame `AltFlip` / `AltRestore` phases; **do not
+  change render state below a `RequestDump` call.** Mean-diff magnitude is symmetric
+  and can never reveal this: verify against forced arms (`=1` and `=0`) instead.
+
+  **Two in-run A/B modes**, and they are in-RUN for a measured reason:
+  `--phototour-shadows=0|1|ab` (the whole shadow system) and
+  `--phototour-terrain-shadows=0|1|ab` (the terrain caster only). `ab` captures
+  each pose twice from the same pose, flipping only that feature, and writes
+  `<pose>__noshadow.tga` / `<pose>__noterrainshadow.tga` beside the base shot.
+  Two separate runs are NOT a controlled A/B: wind is driven from process start
+  with a variable boot frame count, and the run-to-run noise floor was measured at
+  0.9-1.3x the effect being measured. The in-run pair gives 2-7x.
+
+  ★ For "why is nothing shadowed", reach for `--ds-debug=8` FIRST -- it needs no
+  rebuild and answers in one run. See `Zenith/Flux/Shadows/CLAUDE.md` ->
+  *Diagnosing "X stopped casting a shadow"*. Building the A/B before checking the
+  debug views cost real time on ZM's terrain-shadow regression.
+
 #### ZM_Gen -- creature-animation generator (SHIPPED)
 
 `ZM_CreatureAnimGen` (SC1..SC6) authors 6 rotation-only clips per archetype

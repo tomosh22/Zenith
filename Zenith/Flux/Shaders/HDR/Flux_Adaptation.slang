@@ -37,6 +37,15 @@ ParameterBlock<PassParams> g_xPassSet;
 groupshared uint  s_auLocalHistogram[256];
 groupshared float s_afPartialSum[256];
 
+// ---- Highlight-protection tunables -------------------------------------
+// The fraction of pixels allowed ABOVE the protected level: the sun disc,
+// specular pinpricks and emissive sources are meant to clip, ordinary surfaces
+// are not. The headroom is where that near-maximum lands in exposed scene units;
+// AgX maps scene 6.0 to 0.905 display and 16.0 to 0.995 (measured against the
+// shipped curve), so 6.0 leaves the brightest real surface bright but off the clip.
+static const float fHIGHLIGHT_PERCENTILE = 0.99;
+static const float fHIGHLIGHT_HEADROOM   = 6.0;
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void csMain(uint3 dispatchId : SV_DispatchThreadID)
@@ -99,8 +108,34 @@ void csMain(uint3 dispatchId : SV_DispatchThreadID)
 	float fAvgLogLum    = (fWeightedSum / fValidCount) * g_xPassSet.AdaptationConstants.g_fLogLumRange + g_xPassSet.AdaptationConstants.g_fMinLogLum;
 	float fAvgLuminance = exp2(fAvgLogLum);
 
-	// Target exposure = key / average. Clamp to user range.
+	// Target exposure = key / average.
 	float fTargetExposure = g_xPassSet.AdaptationConstants.g_fTargetLuminance / max(fAvgLuminance, 0.001);
+
+	// ---- Highlight protection (expose to the right, do not clip) ------------
+	// Average-only metering has no idea how far the brightest real content sits
+	// above the average, so a scene holding a bright lambertian surface in full
+	// sun meters "correctly" and clips that surface to paper white. A
+	// photographer stops down instead. Derive a second exposure that places the
+	// NEAR-MAXIMUM scene luminance just under the tone curve's clipping point,
+	// and take the SMALLER of the two so this can only protect highlights, never
+	// brighten. Probing the near-maximum rather than the 95th percentile matters:
+	// the surface that clips is by definition in the top few per cent, so a
+	// mid-percentile probe protects nothing until it has dragged the whole
+	// mid-tone range down with it.
+	float fClipThreshold = fTotalCount * fHIGHLIGHT_PERCENTILE;
+	float fClipRunning   = 0.0;
+	uint  uClipBin       = uHighBin;
+	for (uint c = 0; c < 256; c++)
+	{
+		fClipRunning += (float)s_auLocalHistogram[c];
+		if (fClipRunning <= fClipThreshold) uClipBin = c;
+	}
+	float fClipLogLum    = (((float)uClipBin + 0.5) / 256.0) * g_xPassSet.AdaptationConstants.g_fLogLumRange
+						 + g_xPassSet.AdaptationConstants.g_fMinLogLum;
+	float fClipLuminance = exp2(fClipLogLum);
+	float fHighlightExposure = fHIGHLIGHT_HEADROOM / max(fClipLuminance, 0.001);
+	fTargetExposure = min(fTargetExposure, fHighlightExposure);
+
 	fTargetExposure       = clamp(fTargetExposure,
 								  g_xPassSet.AdaptationConstants.g_fMinExposure,
 								  g_xPassSet.AdaptationConstants.g_fMaxExposure);

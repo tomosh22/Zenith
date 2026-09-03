@@ -282,6 +282,18 @@ namespace Flux_Generated_Terrain
 		inline constexpr Flux_BindingHandle hvisibleCount{ 3u, 3u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
 		// kind: RWStructuredBuffer
 		inline constexpr Flux_BindingHandle hLODLevelBuffer{ 3u, 4u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
+		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hShadowCullBuffer{ 3u, 5u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		struct ShadowCullBuffer_CB
+		{
+			unsigned char m_afrustumPlanes[384]; // slang=Array offset=0 arrayCount=24 (no C++ mapping)
+			unsigned char m_aparams[16]; // slang=vector offset=384 arrayCount=4 (no C++ mapping)
+		};
+		static_assert(sizeof(ShadowCullBuffer_CB) == 400, "ShadowCullBuffer_CB size drifted from Slang reflection");
+		// kind: RWStructuredBuffer
+		inline constexpr Flux_BindingHandle hShadowIndirectCommandBuffer{ 3u, 6u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
+		// kind: RWStructuredBuffer
+		inline constexpr Flux_BindingHandle hShadowVisibleCount{ 3u, 7u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
 		// vertex inputs: none
 		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ nullptr, 0u, { 0u, 0u } };
 	}
@@ -317,6 +329,10 @@ namespace Flux_Generated_Terrain
 		inline constexpr Flux_BindingHandle hvisibleCount{ 3u, 0u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
 		// kind: RWStructuredBuffer
 		inline constexpr Flux_BindingHandle hindirectCommands{ 3u, 1u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
+		// kind: RWStructuredBuffer
+		inline constexpr Flux_BindingHandle hshadowVisibleCount{ 3u, 2u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
+		// kind: RWStructuredBuffer
+		inline constexpr Flux_BindingHandle hshadowIndirectCommands{ 3u, 3u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
 		// vertex inputs: none
 		inline constexpr Flux_VertexLayoutDesc kVertexLayout{ nullptr, 0u, { 0u, 0u } };
 	}

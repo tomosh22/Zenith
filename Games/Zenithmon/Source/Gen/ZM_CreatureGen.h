@@ -38,7 +38,7 @@
 //            procedural clip set), so existing v2 bakes are stale and must
 //            self-invalidate to pick up the animation refs.
 // 4: creatures gained the full four-map PBR set, shared by the shiny variant.
-constexpr u_int uZM_CREATUREGEN_VERSION      = 4u;
+constexpr u_int uZM_CREATUREGEN_VERSION      = 5u;
 
 // Flat dex/party/box icon resolution (AssetManifest 1.2). BC1 128x128.
 constexpr u_int uZM_CREATURE_ICON_RESOLUTION = 128u;

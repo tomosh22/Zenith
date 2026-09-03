@@ -37,13 +37,13 @@ static constexpr TextureFormat BLOOM_FORMAT = TEXTURE_FORMAT_R16G16B16A16_SFLOAT
 // Debug variables
 DEBUGVAR u_int dbg_uHDRDebugMode = HDR_DEBUG_NONE;
 DEBUGVAR float dbg_fHDRExposure = 1.0f;
-DEBUGVAR float dbg_fHDRBloomIntensity = 0.5f;
+DEBUGVAR float dbg_fHDRBloomIntensity = 0.012f;   // thresholdless, exposure-scaled veiling glare: ~6% of the local blurred luminance after the 5-mip chain sums
 // HDR (pre-exposure) luminance above which bloom is extracted. Raised 1.0 -> 3.0
 // for the brighter sun calibration: a near-white DIFFUSE surface (e.g. the grid-
 // textured platform) now reaches HDR ~2-3 under direct sun and was lens-blooming,
 // which is non-physical. 3.0 keeps bloom on genuine sources (sky ~7, sun disk,
 // emissive, hot speculars) while white diffuse surfaces stop glowing.
-DEBUGVAR float dbg_fHDRBloomThreshold = 3.0f;
+DEBUGVAR float dbg_fHDRBloomThreshold = 0.0f;   // physically based: every source scatters in the lens, not only those above an absolute pre-exposure luminance
 DEBUGVAR u_int dbg_uHDRToneMappingOperator = TONEMAPPING_AGX;
 DEBUGVAR bool dbg_bHDRShowHistogram = false;
 DEBUGVAR bool dbg_bHDRFreezeExposure = false;

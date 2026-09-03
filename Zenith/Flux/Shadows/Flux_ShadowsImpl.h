@@ -62,7 +62,7 @@ struct Flux_ShadowSamplingConfig
 	float m_fNormalOffsetTexels = 2.5f;   // world normal offset, in texels, at grazing angles
 	// (depth bias is fixed-function: vkCmdSetDepthBias on the caster pipelines)
 	float m_fPCFRadiusTexels    = 2.0f;    // base penumbra radius in texels
-	float m_fSunAngularRadius   = 0.018f;  // ~1° half-angle; drives PCSS softening
+	float m_fSunAngularRadius   = 0.00935f;  // the physical solar half-angle; drives PCSS softening
 	float m_fCascadeBlendFraction = 0.12f; // fraction of a cascade's far split used to cross-fade
 	u_int m_uPCFTapCount        = 16u;     // Vogel-disk taps for the filter kernel
 	u_int m_bPCSSEnabled        = 1u;      // contact-hardening blocker search
@@ -84,7 +84,7 @@ struct Flux_ShadowSamplingGPU
 	Zenith_Maths::Vector4 m_xCascadeWorldPerTexel  = Zenith_Maths::Vector4(0.01f);
 	Zenith_Maths::Vector4 m_xCascadeDepthRange     = Zenith_Maths::Vector4(1.f);
 	Zenith_Maths::Vector4 m_xParams0               = Zenith_Maths::Vector4(float(ZENITH_FLUX_CSM_RESOLUTION), 1.f / float(ZENITH_FLUX_CSM_RESOLUTION), 2.5f, 0.f); // res, rcpRes, normalOffsetTexels, (spare)
-	Zenith_Maths::Vector4 m_xParams1               = Zenith_Maths::Vector4(2.f, 0.013f, 0.12f, 16.f); // pcfRadiusTexels, sunAngularRadius, cascadeBlendFraction, tapCount
+	Zenith_Maths::Vector4 m_xParams1               = Zenith_Maths::Vector4(2.f, 0.00935f, 0.12f, 16.f); // pcfRadiusTexels, sunAngularRadius, cascadeBlendFraction, tapCount
 	Zenith_Maths::Vector4 m_xParams2               = Zenith_Maths::Vector4(1.f, float(FLUX_SHADOW_DEFAULT_SAMPLING_FLAGS), 0.6f, 0.f); // pcssEnabled, qualityFlags, roughnessThreshold, spare
 };
 // Must stay 6× float4 (96B) to match ShadowSamplingLayout in

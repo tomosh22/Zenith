@@ -10,7 +10,14 @@
 #include "AssetHandling/Zenith_AssetHandle.h"
 
 // ---- Core render-target format constants --------------------------------
-static constexpr TextureFormat MRT_FORMAT_DIFFUSE         = TEXTURE_FORMAT_RGBA8_UNORM;
+// MRT0 is sRGB: the G-buffer stores LINEAR albedo (sRGB textures decode on
+// sample), and 8-bit linear bands visibly in the darks. An sRGB attachment
+// encodes on write / decodes on read in hardware, so every consumer that
+// SAMPLES it (deferred shading, SSR, SSGI, the present debug view) sees linear
+// values, and blending into it (decals) is linear-correct. Nothing may create
+// a STORAGE (UAV) view of it -- Vulkan forbids sRGB storage images -- and
+// nothing reads its raw bytes.
+static constexpr TextureFormat MRT_FORMAT_DIFFUSE         = TEXTURE_FORMAT_RGBA8_SRGB;
 static constexpr TextureFormat MRT_FORMAT_NORMALSAMBIENT  = TEXTURE_FORMAT_R16G16B16A16_SFLOAT;
 static constexpr TextureFormat MRT_FORMAT_MATERIAL        = TEXTURE_FORMAT_RGBA8_UNORM;
 static constexpr TextureFormat MRT_FORMAT_EMISSIVE        = TEXTURE_FORMAT_R16G16B16A16_SFLOAT;	// HDR emissive (feeds bloom) + clear-coat roughness in A
@@ -258,7 +265,7 @@ public:
 	// previous-frame terms (staged into the slot-0 payload each frame).
 	bool                        m_bTAAJitterEnabled          = false;
 	u_int                       m_uTAAJitterPhase            = 0u;
-	u_int                       m_uTAAJitterPhaseCount       = 8u;
+	u_int                       m_uTAAJitterPhaseCount       = 16u;   // 8 Halton phases leave a visible residual pattern on a converged still; 16 is the shipping norm
 	Zenith_Maths::Matrix4       m_xPrevFrameViewProjNoJitter = Zenith_Maths::Matrix4(1.0f);
 	Zenith_Maths::Vector2       m_xPrevJitterUV              = Zenith_Maths::Vector2(0.0f);
 

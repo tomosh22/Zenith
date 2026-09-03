@@ -294,6 +294,41 @@ and `vkCreateShaderModule` REJECTS it unless `shaderInt16` is enabled — a devi
 feature this engine does not require. Use the 32-bit-integer-only conversions in
 that module instead.
 
+## Texture Decodes Have One Site Each
+
+**Never open-code the unpacking of a texture whose on-disk encoding is a policy
+decision made elsewhere.** The encoding is chosen by the exporter — for normal
+maps, per texture, in an asset root's `TextureUsage.ztexdecl` (see
+`Zenith/AssetHandling/CLAUDE.md`) — so a shader that spells the decode itself is
+a second copy of a contract it cannot see.
+
+| Decode | The one site |
+|---|---|
+| Tangent-space normal map | `Common/Material.slang`'s **`UnpackNormalMapTS`** (`SampleNormalMap` is the TBN-applying convenience over it) |
+| Vertex attribute dequant | `Common/VertexFormats.slang` (`Flux_DequantPosition`, the half/snorm/unorm helpers) — bit-for-bit `Flux/Flux_VertexCodec.h` |
+
+`NORMAL_MAP` textures are exported **BC5**: two channels, R+G, with
+`Z = sqrt(1 - x² - y²)` rebuilt at sample time. `UnpackNormalMapTS` does that, and
+is also correct for the RGBA8 default-normal fallback (its stored B is ignored).
+
+> **★ THIS RULE WAS BOUGHT.** The two terrain G-buffer shaders open-coded
+> `Sample(uv).xyz * 2.0 - 1.0`, which is right for a three-channel map and wrong
+> for BC5 — blue reads 0, so Z decodes to **−1** and the shading normal points
+> INTO the surface. When the exporter started writing BC5, `NdotL` went to zero on
+> every terrain pixel, the deferred pass skipped its whole CSM branch (it only
+> resolves a shadow when `NdotL > 0`), and the terrain stopped receiving shadows
+> game-wide. Nothing failed to compile, no test went red, and the symptom surfaced
+> days later as "the houses stopped casting shadows onto the ground". The terrain
+> shaders now share `UnpackNormalMapTS` — they cannot use `SampleNormalMap`
+> itself, because they blend four layer normals before applying the TBN, but the
+> part that has to agree with the exporter is shared. See
+> `Docs/design/Photorealism.md` §1.10.
+>
+> There is **no lint for this yet**: nothing stops the next shader open-coding a
+> normal sample. A FluxCompiler check rejecting a raw `Sample(...).xyz * 2.0 - 1.0`
+> outside `Common/Material.slang`, in the shape of the existing spine lint
+> (`Flux/Slang/Flux_SpineLint.h`), would close it.
+
 ## Vertex-Stage Buffer Reads
 
 Storage-buffer reads from a vertex shader require Vulkan

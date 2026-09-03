@@ -2541,6 +2541,15 @@ vk::Format Zenith_Vulkan::ConvertToVkFormat_Colour(TextureFormat eFormat) {
 		return vk::Format::eBc5UnormBlock;
 	case TEXTURE_FORMAT_BC7_RGBA_UNORM:
 		return vk::Format::eBc7UnormBlock;
+	// BC compressed sRGB formats -- same block payload, EOTF applied on fetch
+	case TEXTURE_FORMAT_BC1_RGB_SRGB:
+		return vk::Format::eBc1RgbSrgbBlock;
+	case TEXTURE_FORMAT_BC1_RGBA_SRGB:
+		return vk::Format::eBc1RgbaSrgbBlock;
+	case TEXTURE_FORMAT_BC3_RGBA_SRGB:
+		return vk::Format::eBc3SrgbBlock;
+	case TEXTURE_FORMAT_BC7_RGBA_SRGB:
+		return vk::Format::eBc7SrgbBlock;
 	default:
 		Zenith_Assert(false, "Invalid format");
 		return vk::Format::eUndefined;

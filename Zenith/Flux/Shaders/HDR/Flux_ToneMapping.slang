@@ -45,6 +45,12 @@ ParameterBlock<PassParams> g_xPassSet;
 [shader("vertex")]
 FullscreenVsOut vsMain(uint vertexId : SV_VertexID) { return FullscreenVS(vertexId); }
 
+// Lens-model strengths (see fsMain). Kept deliberately restrained: the goal is
+// "shot on a good prime lens", not a stylised filter.
+static const float LENS_CA_STRENGTH       = 0.0025;  // UV shift per unit radius^2 (~2 px at the corners of a 4K frame)
+static const float LENS_VIGNETTE_STRENGTH = 0.30;    // corner darkening fraction
+static const float LENS_GRAIN_STRENGTH    = 0.022;   // peak grain amplitude in linear display units
+
 // ACES Filmic Tone Mapping (Krzysztof Narkowicz approximation of RRT+ODT).
 float3 ACESFilmicToneMapping(float3 x)
 {
@@ -337,7 +343,18 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 	if (g_xPassSet.ToneMappingConstants.g_uDebugMode == 9u)
 		return float4(1.0, 0.0, 1.0, 1.0);
 
-	float3 xHDRColour = g_xPassSet.g_xHDRTex.Sample(input.uv).rgb;
+	// ---- Lens model -------------------------------------------------------
+	// A real lens is not a pinhole: lateral chromatic aberration smears the red
+	// and blue channels outward with the square of the field radius, and the
+	// image darkens toward the corners (natural cos^4 vignetting). Both are
+	// deliberately subtle — the reference is a good prime, not a phone camera.
+	float2 xCentred  = input.uv - 0.5;
+	float  fRadius2  = dot(xCentred, xCentred);           // 0 at centre, 0.5 at the corner
+	float2 xCAOffset = xCentred * fRadius2 * LENS_CA_STRENGTH;
+	float3 xHDRColour;
+	xHDRColour.r = g_xPassSet.g_xHDRTex.Sample(input.uv + xCAOffset).r;
+	xHDRColour.g = g_xPassSet.g_xHDRTex.Sample(input.uv).g;
+	xHDRColour.b = g_xPassSet.g_xHDRTex.Sample(input.uv - xCAOffset).b;
 	float3 xBloom     = g_xPassSet.g_xBloomTex.Sample(input.uv).rgb;
 
 	// Debug 10: raw HDR clamped — diagnoses when the HDR target is unexpectedly black.
@@ -349,7 +366,13 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 		? g_xPassSet.g_afExposureData[1]
 		: g_xPassSet.ToneMappingConstants.g_fExposure;
 	float3 xExposed = xHDRColour * fExposure;
-	xExposed += xBloom * g_xPassSet.ToneMappingConstants.g_fBloomIntensity;
+	// Bloom is scene-referred veiling glare: it is light, so it is exposed like
+	// light. (Adding it after exposure made its relative strength vary inversely
+	// with the exposure — a dark scene bloomed ten times less than a bright one.)
+	xExposed += xBloom * (g_xPassSet.ToneMappingConstants.g_fBloomIntensity * fExposure);
+	// Natural vignetting, applied to the exposed (still scene-linear) image.
+	float fVignette = 1.0 - LENS_VIGNETTE_STRENGTH * pow(saturate(fRadius2 * 2.0), 1.4);
+	xExposed *= fVignette;
 
 	if (g_xPassSet.ToneMappingConstants.g_uDebugMode > 0u)
 	{
@@ -408,6 +431,19 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 
 	// Scene anti-aliasing is handled by TAA (Flux/TAA) upstream of the HDR bloom/tonemap; the
 	// inline FXAA stopgap and its ToneAt helper were removed once TAA shipped as the default AA.
+
+	// Film/sensor grain: a fine, luminance-weighted (stronger in the mid-tones and
+	// shadows, absent in the highlights) noise floor. A photograph is never
+	// noise-free; a perfectly clean image is one of the strongest CG tells. The
+	// pattern is keyed on the pixel only (not the frame) so it cannot register as
+	// temporal instability in the TAA gates.
+	{
+		float  fLuma      = dot(xToneMapped, float3(0.2126, 0.7152, 0.0722));
+		float  fGrainHash = frac(sin(dot(input.position.xy, float2(12.9898, 78.233)) + 0.37) * 43758.5453);
+		float  fWeight    = (sqrt(saturate(fLuma)) + 0.02) * saturate(1.0 - fLuma);
+		xToneMapped      += (fGrainHash - 0.5) * (LENS_GRAIN_STRENGTH * fWeight);
+		xToneMapped       = max(xToneMapped, float3(0.0, 0.0, 0.0));
+	}
 
 	// Anti-banding dither in perceptual space, keyed on the pixel coordinate.
 	xToneMapped = ApplyOutputDither(xToneMapped, input.position.xy);

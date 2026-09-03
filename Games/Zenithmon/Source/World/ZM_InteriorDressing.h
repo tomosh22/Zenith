@@ -271,59 +271,68 @@ struct ZM_InteriorLight
 // apart in the SAME direction -- warm tungsten over the bedroom, cool fluorescent
 // over the lab -- so the red/blue ratio gap ZM_InteriorTintPixels_Test measures
 // comes from two reinforcing sources rather than one hue nudge doing all the work.
-// ★★★ EVERY INTENSITY BELOW WAS CUT TO ~14% ON 2026-09-01, AND THE REASON IS
-// BLOOM RATHER THAN BRIGHTNESS. Nothing was clipping -- MEASURED across nine
-// captures, 0.00% of every frame sat above luminance 250 -- so the tonemapper
-// was holding and these rooms were not "blown out" in the usual sense. What was
-// wrong is that Flux extracts bloom above a PRE-EXPOSURE HDR luminance of 3.0
-// (Flux_HDR.cpp), which is an ABSOLUTE scene-referred figure and therefore
-// independent of the auto-exposure: a light either pushes its surroundings past
-// it or it does not, and these did, by enough that the glow swallowed the
-// fixtures. The bedside lamp's halo was 114 px across in the bed's own capture,
-// 2.96% of the frame.
+// ★★★ THE HONEST PHOTOMETRIC VALUES ARE BACK, AND THIS IS THE PARAGRAPH THAT
+// SAID THEY WOULD BE. Every intensity here was cut to ~14% on 2026-09-01 --
+// 130 lm for a ceiling pendant, 160 lm tubes -- and the note that did it was
+// explicit that the cost was real and accepted "the day" the bloom calibration
+// was re-derived: *"The honest values belong here the day it is, and they should
+// go back up together so the two rooms keep the relationship below."* The
+// renderer stream is re-deriving that threshold now, so they are back:
 //
-// ★ THE TARGET IS PROFLAB'S OWN OLD NUMBER, not a taste call. Its tubes measured
-// a 26 px halo at 0.15% of frame in the same run and read as a lamp that glows
-// slightly -- so "slight" had a value already, and the others were re-tuned onto
-// it rather than onto an opinion.
+//   ~900 lm  domestic ceiling pendant   (a 60 W-equivalent lamp)
+//   ~250 lm  bedside and standard lamp  (a 25 W-equivalent lamp)
+//   ~1600 lm per lab batten             (a 4 ft fluorescent tube)
 //
-// ★★ THE LAB IS SCALED BY THE SAME FACTOR EVEN THOUGH IT WAS ALREADY IN RANGE,
-// and that is deliberate. Its four tubes are the brightest rig in the game BY
-// DESIGN (ZM-D-176: "a lab is lit evenly and brightly, which is a lighting
-// decision as much as a colour one"), and it only measured well because they hang
-// at 3.2 m in a 20 x 16 m room, far from anything. Cutting the house alone would
-// have left the lab ~4x brighter per unit floor area instead of ~1.7x, which
-// changes a designed relationship as a side effect of fixing a different problem.
-// Scaling both keeps the ratio and keeps ZM_InteriorTintPixels_Test's red/blue
-// measurement untouched, since that is a RATIO and a uniform scale cancels.
+// ★★ AND NOTHING HERE COMPENSATES FOR THE OLD BLOOM THRESHOLD. That is the
+// whole point: the cut existed because Flux extracted bloom above a PRE-EXPOSURE
+// HDR luminance of 3.0 (an ABSOLUTE scene-referred figure the auto-exposure
+// cannot rescue), and pre-compensating for a threshold that is being re-derived
+// would bake this stream's guess about another stream's number into a table that
+// outlives both. If a fixture still blooms too hard once that lands, the fix is
+// the threshold or the fixture's emissive, not a second retreat from photometry.
 //
-// ★★ AND THE CUT IS NEARLY FREE ON SCREEN, WHICH IS WHY IT COULD GO THIS FAR.
-// The auto-exposure adapts to whatever the room emits, so scaling every light in
-// a room TOGETHER does not darken the picture -- MEASURED, the room-wide frame's
-// mean luminance moved 103.3 -> 99.5 across the first 3x cut, i.e. not at all.
-// What a uniform cut DOES change is the ratio between a lamp and the surfaces
-// around it, which is precisely the bloom. So the usual "dimmer means darker"
-// intuition does not apply here and was not what limited the tuning.
+// ★★ THE HOUSE-TO-LAB RATIO MOVED FROM ~1.7x TO ~2.7x, AND THE FIRST DRAFT OF
+// THIS BLOCK CLAIMED IT DID NOT. It said both rooms were "scaled by the same
+// factor" back up and the relationship was therefore preserved. That is FALSE
+// and the arithmetic says so: the restore is 6.9x on the pendant, 5.0x and 5.6x
+// on the two lamps and 10.0x on the battens, because the honest figure for each
+// lamp is a property of THAT LAMP and not a multiple of what the bloom cut left.
+// Per unit floor area the two rooms went 1.17 -> 7.29 lm/m2 and 2.00 -> 20.0
+// lm/m2, i.e. 1.71x -> 2.74x.
 //
-// ★ THE PHOTOMETRIC COST IS REAL AND IS ACCEPTED. 130 lm is a nightlight, not a
-// ceiling pendant, and 160 lm tubes are nothing like a laboratory's. These are
-// the figures the CURRENT bloom calibration permits: the threshold (3.0
-// pre-exposure HDR) was raised from 1.0 for the brighter SUN, and nothing has
-// re-derived it for point-source fixtures indoors. The honest values belong here
-// the day it is, and they should go back up together so the two rooms keep the
-// relationship below.
+// ★ AND THE NEW NUMBER IS THE MORE FAITHFUL ONE, which is why the values stay
+// and this comment changed instead. 1.707x was never a designed figure: it was
+// the arithmetic of a UNIFORM cut applied on 2026-09-01, and a uniform cut
+// preserves whatever ratio it starts from whether or not that ratio means
+// anything. What ZM-D-176 actually ruled is qualitative -- "a lab is lit evenly
+// and brightly, which is a lighting decision as much as a colour one" -- and
+// real practice puts a bedroom at 50-100 lux against a laboratory's 300-500,
+// a ratio of 3x to 10x. 2.74x sits just inside that; 1.71x was under it.
 //
-// ★ THE TWO ROOMS KEEP THEIR ~1.7x RATIO, deliberately. Cutting only the house
-// would have left the lab over 4x brighter per unit floor area instead of 1.7x --
-// a designed relationship (ZM-D-176) broken as a side effect of fixing bloom.
-// Both were scaled by the same factor instead, which also leaves
-// ZM_InteriorTintPixels_Test's red/blue measurement untouched: it is a RATIO, and
-// a uniform scale cancels out of it.
+// So the invariant worth holding is the ORDERING and its rough size -- the lab
+// is clearly brighter per square metre, and not so much brighter that the
+// bedroom reads as unlit beside it -- which is what
+// ZM_Gen/InteriorLightsCarryPhotometricIntensities asserts. A test that pinned
+// 1.7x would be pinning the residue of an emergency cut.
+//
+// ★ IT ALSO LEAVES ZM_InteriorTintPixels_Test's MEASUREMENT ALONE, for the same
+// reason it always did: that test reads a red/blue RATIO per room and compares
+// the two, and a per-room scale cancels out of a chromaticity ratio.
+//
+// ★★ THE OTHER HALF OF THE FIX IS THAT THESE LIGHTS NOW HAVE FIXTURES. Every
+// one of them was a bare Zenith_LightComponent at a point in space -- a room
+// with lamplight and no lamp, which is most of why the interiors read as CG.
+// axZM_*_FIXTURES below gives each light a generated body and a glowing shade
+// (ZM_PROP_KIND_LIGHT_FIXTURE), and the shade's emissive colour is matched to
+// the light's own colour in ZM_GetPropEmissive -- so the thing that glows and
+// the light it throws agree. A fixture's geometry BRACKETS its light: the
+// pendant's shade drum spans the 2.70 m lamp, the batten's diffuser spans the
+// 3.20 m tube.
 inline constexpr ZM_InteriorLight axZM_PLAYERHOME_LIGHTS[] =
 {
 	// A warm ceiling pendant on the room's axis, and two lower fills so the long
 	// walls are not lit by one point (which reads as a spotlight in a cave).
-	{ "HomeLampCeiling", 0.00f, 2.70f,  0.00f,  130.0f, 14.0f, 1.00f, 0.78f, 0.52f },
+	{ "HomeLampCeiling", 0.00f, 2.70f,  0.00f,  900.0f, 14.0f, 1.00f, 0.78f, 0.52f },
 	// ★ BESIDE THE BED, NOT INSIDE IT. This lamp shipped at (-5.20, 1.15, -3.40),
 	// which is horizontally WITHIN the bed's footprint and 0.39 m above its
 	// mattress -- a 360 lm point source at that range saturates whatever it is
@@ -335,19 +344,152 @@ inline constexpr ZM_InteriorLight axZM_PLAYERHOME_LIGHTS[] =
 	// roughly quadruples the distance to the mattress and is also what a bedside
 	// lamp physically IS. Intensity, range and colour are UNTOUCHED -- those are
 	// ZM-D-176's warm-tungsten decision and this is a placement fix.
-	{ "HomeLampBedside", -4.20f, 1.05f, -3.90f,  50.0f,  6.0f, 1.00f, 0.72f, 0.44f },
-	{ "HomeLampTable",    5.20f, 1.35f, -1.60f,  45.0f,  6.0f, 1.00f, 0.74f, 0.46f },
+	{ "HomeLampBedside", -4.20f, 1.05f, -3.90f, 250.0f,  6.0f, 1.00f, 0.72f, 0.44f },
+	{ "HomeLampTable",    5.20f, 1.35f, -1.60f, 250.0f,  6.0f, 1.00f, 0.74f, 0.46f },
 };
 
 inline constexpr ZM_InteriorLight axZM_PROFLAB_LIGHTS[] =
 {
 	// Four cool tubes on a grid -- a lab is lit evenly and brightly, which is a
 	// lighting decision as much as a colour one.
-	{ "LabTubeNW", -5.00f, 3.20f, -4.00f,  160.0f, 13.0f, 0.72f, 0.84f, 1.00f },
-	{ "LabTubeNE",  5.00f, 3.20f, -4.00f,  160.0f, 13.0f, 0.72f, 0.84f, 1.00f },
-	{ "LabTubeSW", -5.00f, 3.20f,  4.00f,  160.0f, 13.0f, 0.72f, 0.84f, 1.00f },
-	{ "LabTubeSE",  5.00f, 3.20f,  4.00f,  160.0f, 13.0f, 0.72f, 0.84f, 1.00f },
+	{ "LabTubeNW", -5.00f, 3.20f, -4.00f, 1600.0f, 13.0f, 0.72f, 0.84f, 1.00f },
+	{ "LabTubeNE",  5.00f, 3.20f, -4.00f, 1600.0f, 13.0f, 0.72f, 0.84f, 1.00f },
+	{ "LabTubeSW", -5.00f, 3.20f,  4.00f, 1600.0f, 13.0f, 0.72f, 0.84f, 1.00f },
+	{ "LabTubeSE",  5.00f, 3.20f,  4.00f, 1600.0f, 13.0f, 0.72f, 0.84f, 1.00f },
 };
+
+// ---- The FIXTURES those lights live in ---------------------------------------
+//
+// ★★ ONE ROW PER LIGHT, AND THE PAIRING IS ASSERTED. A fixture whose shade does
+// not contain its lamp is the failure this table exists to avoid, and it renders
+// perfectly happily: a glowing shade beside a glow. ZM_Tests_InteriorGen walks
+// both tables together and checks that each light's Y falls inside its fixture's
+// GLOWING part, so moving a lamp without moving its shade reds.
+//
+// ★ THE Y IS THE FIXTURE'S BASE, because ZM_PropFit grounds a model at its own
+// min.y and these four are built at EXACTLY their roster size (no mesh jitter --
+// see ZM_BuildPropMesh), so scale is 1 and the authored Y is the base to the
+// millimetre. That is what lets a pendant end flush against the ceiling:
+//   PlayerHome ceiling 3.00 - pendant 0.34 = base 2.66, rose top exactly 3.00.
+//   ProfLab    ceiling 3.50 - batten  0.32 = base 3.18, rod top exactly 3.50.
+//
+// ★★ THE PENDANT SITS ON THE ROOM AXIS AT x = 0, INSIDE THE ENTRANCE CORRIDOR,
+// AND THAT IS SAFE FOR A REASON THE FURNITURE ROWS CANNOT USE. The corridor rule
+// (fZM_INTERIOR_CORRIDOR_HALF_WIDTH) exists because the walk driver has NO
+// obstacle avoidance and a COLLIDER on the line wedges it. Fixtures are authored
+// VISUAL-ONLY -- no ZM_ColliderComponent, ever -- and this one hangs at 2.66 m,
+// clear over a 1.8 m body. It also clears the indoor camera: ZM_FollowCamera
+// caps the lens at ceiling - 0.35 = 2.65 in PlayerHome, and the shade's lowest
+// geometry is at 2.66. Both clauses are asserted, because 10 mm is a margin
+// somebody will otherwise spend without noticing.
+struct ZM_InteriorFixture
+{
+	const char* m_szEntityName;
+	ZM_PROP_ID  m_eProp;
+	const char* m_szLightEntityName;   // the light this fixture houses
+	float       m_fX, m_fY, m_fZ;      // Y is the model's BASE
+	float       m_fQuatW, m_fQuatY;    // frozen, like every other authored rotation
+};
+
+inline constexpr ZM_InteriorFixture axZM_PLAYERHOME_FIXTURES[] =
+{
+	{ "HomeFixtureCeiling", ZM_PROP_PENDANT_LAMP, "HomeLampCeiling",
+		0.00f, 2.66f,  0.00f, fZM_INTERIOR_YAW0_W, fZM_INTERIOR_YAW0_Y },
+	// The nightstand lamp stands on the floor beside the bed, and its own
+	// nightstand is part of the model -- so this is the one fixture that is also
+	// furniture. Its shade spans 0.90..1.20 and the lamp is at 1.05.
+	{ "HomeFixtureBedside", ZM_PROP_BEDSIDE_LAMP, "HomeLampBedside",
+		-4.20f, 0.00f, -3.90f, fZM_INTERIOR_YAW0_W, fZM_INTERIOR_YAW0_Y },
+	// ★ A STANDARD LAMP, NOT A TABLE LAMP, and the light's own position is what
+	// decided that. "HomeLampTable" sits at y = 1.35, which is 0.45 m above the
+	// table's 0.90 m top and 0.8 m away from it in Z -- it never was a lamp ON the
+	// table. A floor-standing lamp beside it brackets 1.35 with a shade at
+	// 1.20..1.50 and leaves the light exactly where ZM-D-176 put it.
+	{ "HomeFixtureTable",   ZM_PROP_FLOOR_LAMP,   "HomeLampTable",
+		5.20f, 0.00f, -1.60f, fZM_INTERIOR_YAW0_W, fZM_INTERIOR_YAW0_Y },
+};
+
+inline constexpr ZM_InteriorFixture axZM_PROFLAB_FIXTURES[] =
+{
+	{ "LabFixtureNW", ZM_PROP_LAB_BATTEN, "LabTubeNW", -5.00f, 3.18f, -4.00f, fZM_INTERIOR_YAW0_W, fZM_INTERIOR_YAW0_Y },
+	{ "LabFixtureNE", ZM_PROP_LAB_BATTEN, "LabTubeNE",  5.00f, 3.18f, -4.00f, fZM_INTERIOR_YAW0_W, fZM_INTERIOR_YAW0_Y },
+	{ "LabFixtureSW", ZM_PROP_LAB_BATTEN, "LabTubeSW", -5.00f, 3.18f,  4.00f, fZM_INTERIOR_YAW0_W, fZM_INTERIOR_YAW0_Y },
+	{ "LabFixtureSE", ZM_PROP_LAB_BATTEN, "LabTubeSE",  5.00f, 3.18f,  4.00f, fZM_INTERIOR_YAW0_W, fZM_INTERIOR_YAW0_Y },
+};
+
+inline u_int ZM_GetInteriorFixtureCount(ZM_INTERIOR_ROOM eRoom)
+{
+	switch (eRoom)
+	{
+	case ZM_INTERIOR_ROOM_PLAYER_HOME:
+		return (u_int)(sizeof(axZM_PLAYERHOME_FIXTURES) / sizeof(axZM_PLAYERHOME_FIXTURES[0]));
+	case ZM_INTERIOR_ROOM_PROF_LAB:
+		return (u_int)(sizeof(axZM_PROFLAB_FIXTURES) / sizeof(axZM_PROFLAB_FIXTURES[0]));
+	default:
+		return 0u;
+	}
+}
+
+// TOTAL: an out-of-range room or index answers the first PlayerHome row.
+inline const ZM_InteriorFixture& ZM_GetInteriorFixture(ZM_INTERIOR_ROOM eRoom, u_int uIndex)
+{
+	const u_int uCount = ZM_GetInteriorFixtureCount(eRoom);
+	if (uCount == 0u || uIndex >= uCount)
+	{
+		return axZM_PLAYERHOME_FIXTURES[0];
+	}
+	return (eRoom == ZM_INTERIOR_ROOM_PROF_LAB)
+		? axZM_PROFLAB_FIXTURES[uIndex]
+		: axZM_PLAYERHOME_FIXTURES[uIndex];
+}
+
+// The GLOWING part of a fixture, as a height band above the model's base. This
+// is what "the shade brackets its lamp" is checked against, and it is stated
+// once here rather than re-derived from the mesh: the mesh is built from these
+// same numbers in ZM_BuildPropMesh's fixture arm.
+inline bool ZM_GetInteriorFixtureGlowBand(ZM_PROP_ID eProp, float& fLowOut, float& fHighOut)
+{
+	switch (eProp)
+	{
+	case ZM_PROP_PENDANT_LAMP: fLowOut = 0.00f; fHighOut = 0.22f; return true;   // the three drums
+	case ZM_PROP_BEDSIDE_LAMP: fLowOut = 0.90f; fHighOut = 1.20f; return true;   // the shade
+	case ZM_PROP_FLOOR_LAMP:   fLowOut = 1.20f; fHighOut = 1.50f; return true;   // the shade
+	case ZM_PROP_LAB_BATTEN:   fLowOut = 0.00f; fHighOut = 0.04f; return true;   // the diffuser
+	default: fLowOut = 0.0f; fHighOut = 0.0f; return false;
+	}
+}
+
+// Which prop a FIXTURE entity wears, by name.
+//
+// ★ ITS OWN RESOLVER RATHER THAN WIDENING ZM_PropForInteriorPropEntity, which is
+// the pattern this header already argues for on the Dawnmere side: each table
+// owns the resolver for ITS rows and the consumer that sees several composes
+// them (ZM_InteriorFurniture::OnStart). It also keeps the two tables' failure
+// modes apart -- a furniture row that stops resolving and a fixture row that
+// does are different defects with different fixes.
+//
+// TOTAL: any other name answers ZM_PROP_NONE.
+inline ZM_PROP_ID ZM_PropForInteriorFixtureEntity(const char* szEntityName)
+{
+	if (szEntityName == nullptr)
+	{
+		return ZM_PROP_NONE;
+	}
+	for (u_int r = 0u; r < (u_int)ZM_INTERIOR_ROOM_COUNT; ++r)
+	{
+		const ZM_INTERIOR_ROOM eRoom = (ZM_INTERIOR_ROOM)r;
+		const u_int uCount = ZM_GetInteriorFixtureCount(eRoom);
+		for (u_int i = 0u; i < uCount; ++i)
+		{
+			const ZM_InteriorFixture& xFixture = ZM_GetInteriorFixture(eRoom, i);
+			if (strcmp(szEntityName, xFixture.m_szEntityName) == 0)
+			{
+				return xFixture.m_eProp;
+			}
+		}
+	}
+	return ZM_PROP_NONE;
+}
 
 inline u_int ZM_GetInteriorLightCount(ZM_INTERIOR_ROOM eRoom)
 {

@@ -2,6 +2,7 @@
 #include "DataStream/Zenith_StreamEnvelope.h"   // Zenith_WriteStreamHeader — the .ztxtr envelope
 #include "AssetHandling/Zenith_AssetTypeIds.h"     // uZENITH_TEXTURE_* ids/schema
 #include "Core/Zenith_Engine.h"
+#include "../../Tools/Zenith_Tools_TextureExport.h"   // rm_packed goes through the ONE .ztxtr writer
 
 #include "AssetHandling/Zenith_AssetHandle.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
@@ -1341,7 +1342,9 @@ static std::vector<uint8_t> RenderTest_DecodeBC1Image(const uint8_t* pxBC1, int3
 // Pack a roughness texture and a metallic texture (both BC1_RGB grayscale) into
 // a single uncompressed RGBA8 texture where G = roughness and B = metallic —
 // the channels the terrain shader samples (`xRM.gb` in Flux_Terrain_ToGBuffer).
-// Output written to <strSourceDir>/rm_packed.ztxtr. Idempotent on file mtime.
+// Output written to <strSourceDir>/rm_packed.ztxtr with a full offline mip
+// chain (linear RGBA8_UNORM: it is data, the layout is exact). Idempotent on
+// file presence.
 static void RenderTest_PackRoughnessMetallic(const std::string& strSourceDir)
 {
 	const std::string strRoughnessPath = strSourceDir + "roughness" ZENITH_TEXTURE_EXT;
@@ -1415,21 +1418,15 @@ static void RenderTest_PackRoughnessMetallic(const std::string& strSourceDir)
 		xPacked[i * 4 + 3] = 255;
 	}
 
-	// ★ The .ztxtr envelope is part of the format -- this used to write the payload
-	// bare, which only loaded through a legacy "no magic" branch that is gone.
-	Zenith_DataStream xOut;
-	Zenith_WriteStreamHeader(xOut, uZENITH_TEXTURE_ASSET_TYPE_ID, uZENITH_TEXTURE_SCHEMA_V2);
-	xOut << iRWidth;
-	xOut << iRHeight;
-	xOut << static_cast<int32_t>(1);
-	xOut << static_cast<TextureFormat>(TEXTURE_FORMAT_RGBA8_UNORM);
-	xOut << static_cast<uint32_t>(1);   // this level only
-	xOut << static_cast<size_t>(xPacked.size());
-	xOut.WriteData(xPacked.data(), xPacked.size());
-	xOut.WriteToFile(strOutputPath.c_str());
+	// ★ The ONE .ztxtr writer, on the V2 mip-chain path: a hand-rolled single-level
+	// stream used to live here, which shipped the terrain's RM map with ONE mip
+	// and made every distant slope sparkle. RGBA8_UNORM keeps the .gb layout the
+	// terrain shader reads byte-exact; the writer box-filters it linearly.
+	Zenith_Tools_TextureExport::ExportFromDataV2Uncompressed(
+		xPacked.data(), strOutputPath, iRWidth, iRHeight, TEXTURE_FORMAT_RGBA8_UNORM);
 
 	Zenith_Log(LOG_CATEGORY_TERRAIN,
-		"[RenderTest] Packed roughness/metallic into %s (%dx%d, RGBA8, G=roughness, B=metallic)",
+		"[RenderTest] Packed roughness/metallic into %s (%dx%d, RGBA8, G=roughness, B=metallic, full mip chain)",
 		strOutputPath.c_str(), iRWidth, iRHeight);
 }
 

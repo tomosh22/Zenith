@@ -22,7 +22,18 @@
 import Common.Material;
 import Common.MaterialTable;        // Phase 4c: MaterialGPU record (bindless terrain layer textures)
 import Common.GBuffer;
+import Common.Noise;               // Flux_NoiseFBM: terrain macro variation
 import Common.MaterialSurface;      // MaterialSurface + ISurfaceModel seam + MakeGBuffer(MaterialSurface)
+
+
+// Terrain blends FOUR layer normals before building a world normal, so it cannot
+// use SampleNormalMap (which applies the TBN per sample). It shares the decode
+// itself -- Common/Material.slang's UnpackNormalMapTS -- which is the part that
+// has to agree with what the exporter wrote.
+float3 TerrainSampleLayerNormal(uint uTexIdx, float2 xUV)
+{
+	return UnpackNormalMapTS(GetBindlessTexture(uTexIdx).Sample(xUV));
+}
 
 // EVERY field is packed, and every one is declared as the type the fetch DELIVERS
 // (fetch hardware widens and converts); [VtxFmt] is what tells the layout generator
@@ -203,25 +214,25 @@ extension TerrainSplatSurface : ISurfaceModel
 		// here because we need to blend the per-material multipliers in
 		// after the splatmap weighting.
 		float4 xDiffuse0 = SampleDiffuseWithBaseColor(GetBindlessTexture(xMat0.g_xTexIdx0.x), xUV0, g_xPassSet.TerrainMaterialConstants.g_axBaseColors[0]);
-		float3 xNormalMap0 = GetBindlessTexture(xMat0.g_xTexIdx0.y).Sample(xUV0).xyz * 2.0 - 1.0;
+		float3 xNormalMap0 = TerrainSampleLayerNormal(xMat0.g_xTexIdx0.y, xUV0);
 		float2 xRM0       = GetBindlessTexture(xMat0.g_xTexIdx0.z).Sample(xUV0).gb;
 		float  fOcc0      = SampleOcclusion(GetBindlessTexture(xMat0.g_xTexIdx0.w), xUV0, g_xPassSet.TerrainMaterialConstants.g_axMaterialParams[0].z);
 		float3 xEm0       = SampleEmissiveRGB(GetBindlessTexture(xMat0.g_xTexIdx1.x), xUV0, g_xPassSet.TerrainMaterialConstants.g_axEmissiveParams[0].rgb, g_xPassSet.TerrainMaterialConstants.g_axEmissiveParams[0].w);
 
 		float4 xDiffuse1 = SampleDiffuseWithBaseColor(GetBindlessTexture(xMat1.g_xTexIdx0.x), xUV1, g_xPassSet.TerrainMaterialConstants.g_axBaseColors[1]);
-		float3 xNormalMap1 = GetBindlessTexture(xMat1.g_xTexIdx0.y).Sample(xUV1).xyz * 2.0 - 1.0;
+		float3 xNormalMap1 = TerrainSampleLayerNormal(xMat1.g_xTexIdx0.y, xUV1);
 		float2 xRM1       = GetBindlessTexture(xMat1.g_xTexIdx0.z).Sample(xUV1).gb;
 		float  fOcc1      = SampleOcclusion(GetBindlessTexture(xMat1.g_xTexIdx0.w), xUV1, g_xPassSet.TerrainMaterialConstants.g_axMaterialParams[1].z);
 		float3 xEm1       = SampleEmissiveRGB(GetBindlessTexture(xMat1.g_xTexIdx1.x), xUV1, g_xPassSet.TerrainMaterialConstants.g_axEmissiveParams[1].rgb, g_xPassSet.TerrainMaterialConstants.g_axEmissiveParams[1].w);
 
 		float4 xDiffuse2 = SampleDiffuseWithBaseColor(GetBindlessTexture(xMat2.g_xTexIdx0.x), xUV2, g_xPassSet.TerrainMaterialConstants.g_axBaseColors[2]);
-		float3 xNormalMap2 = GetBindlessTexture(xMat2.g_xTexIdx0.y).Sample(xUV2).xyz * 2.0 - 1.0;
+		float3 xNormalMap2 = TerrainSampleLayerNormal(xMat2.g_xTexIdx0.y, xUV2);
 		float2 xRM2       = GetBindlessTexture(xMat2.g_xTexIdx0.z).Sample(xUV2).gb;
 		float  fOcc2      = SampleOcclusion(GetBindlessTexture(xMat2.g_xTexIdx0.w), xUV2, g_xPassSet.TerrainMaterialConstants.g_axMaterialParams[2].z);
 		float3 xEm2       = SampleEmissiveRGB(GetBindlessTexture(xMat2.g_xTexIdx1.x), xUV2, g_xPassSet.TerrainMaterialConstants.g_axEmissiveParams[2].rgb, g_xPassSet.TerrainMaterialConstants.g_axEmissiveParams[2].w);
 
 		float4 xDiffuse3 = SampleDiffuseWithBaseColor(GetBindlessTexture(xMat3.g_xTexIdx0.x), xUV3, g_xPassSet.TerrainMaterialConstants.g_axBaseColors[3]);
-		float3 xNormalMap3 = GetBindlessTexture(xMat3.g_xTexIdx0.y).Sample(xUV3).xyz * 2.0 - 1.0;
+		float3 xNormalMap3 = TerrainSampleLayerNormal(xMat3.g_xTexIdx0.y, xUV3);
 		float2 xRM3       = GetBindlessTexture(xMat3.g_xTexIdx0.z).Sample(xUV3).gb;
 		float  fOcc3      = SampleOcclusion(GetBindlessTexture(xMat3.g_xTexIdx0.w), xUV3, g_xPassSet.TerrainMaterialConstants.g_axMaterialParams[3].z);
 		float3 xEm3       = SampleEmissiveRGB(GetBindlessTexture(xMat3.g_xTexIdx1.x), xUV3, g_xPassSet.TerrainMaterialConstants.g_axEmissiveParams[3].rgb, g_xPassSet.TerrainMaterialConstants.g_axEmissiveParams[3].w);
@@ -229,6 +240,15 @@ extension TerrainSplatSurface : ISurfaceModel
 		// Splatmap-weighted blend.
 		float4 xDiffuse = xDiffuse0 * xWeights.r + xDiffuse1 * xWeights.g
 						 + xDiffuse2 * xWeights.b + xDiffuse3 * xWeights.a;
+		// Macro variation: two octaves of low-frequency world-space value/hue drift
+		// (~90 m and ~21 m periods) break the 16 m photo-tile repeat that reads as
+		// "game terrain" from any distance. Multiplicative, mean-preserving.
+		{
+			float fMacroA = Flux_NoiseFBM(worldPos.x * 0.011, worldPos.z * 0.011, 7u, 4u, 2.0, 0.5);
+			float fMacroB = Flux_NoiseFBM(worldPos.x * 0.047 + 13.0, worldPos.z * 0.047 + 5.0, 11u, 3u, 2.0, 0.5);
+			float3 xMacroTint = lerp(float3(0.96, 1.00, 1.05), float3(1.05, 1.00, 0.93), fMacroA);
+			xDiffuse.rgb *= xMacroTint * lerp(0.82, 1.18, fMacroA) * lerp(0.93, 1.07, fMacroB);
+		}
 		float3 xNormalTangent = normalize(xNormalMap0 * xWeights.r + xNormalMap1 * xWeights.g
 										   + xNormalMap2 * xWeights.b + xNormalMap3 * xWeights.a);
 
@@ -254,6 +274,21 @@ extension TerrainSplatSurface : ISurfaceModel
 
 		float3x3 TBN          = BuildTBN(worldNormal, worldTangent, bitangentSign);
 		float3   xWorldNormal = normalize(mul(TBN, xNormalTangent));
+			// Dry ground is never glossy: the photo sets' roughness channel dips to ~0.3
+		// in places, and under a low sun those patches glint like wet glass across a
+		// whole hillside. Remap into the matte band real soil/rock/grass occupies.
+		fRoughness = lerp(0.55, 1.0, saturate(fRoughness));
+	// Geometric specular anti-aliasing (Kaplanyan/Tokuyoshi), as the uber
+		// material does: four blended normal maps are the worst case for sub-pixel
+		// normal variance, and the sparkle it caused on every sunlit slope was the
+		// most visible artefact in a still frame.
+		{
+			float3 dNdx = ddx(xWorldNormal);
+			float3 dNdy = ddy(xWorldNormal);
+			float  fVariance     = 0.25 * (dot(dNdx, dNdx) + dot(dNdy, dNdy));
+			float  fKernelRough2 = min(2.0 * fVariance, 0.18);
+			fRoughness = sqrt(saturate(fRoughness * fRoughness + fKernelRough2));
+		}
 
 		// Terrain is always default-lit, no clear coat; splat-weighted specular.
 		MaterialSurface s;

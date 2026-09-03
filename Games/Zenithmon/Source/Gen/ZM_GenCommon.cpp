@@ -638,16 +638,206 @@ namespace
 		if (bOutward) { ZM_PushTri(xMesh, uBase + 0u, uBase + 1u, uBase + 2u); }
 		else          { ZM_PushTri(xMesh, uBase + 0u, uBase + 2u, uBase + 1u); }
 	}
+
+	// Append one quad with PER-VERTEX normals and UVs, wound so that
+	// cross(C-A,B-A) of its first triangle points along xOutwardHint (the
+	// second triangle shares the quad's plane and follows). This is the chamfer
+	// emitter's workhorse: a bevel strip's four vertices carry two different
+	// normals (one per bordering face), so the hard-normal ZM_PushStaticFace
+	// cannot express it. Corners laid out {BL, BR, TL, TR}. NO bone buffers.
+	void ZM_PushStaticQuadSmooth(ZM_GenMesh& xMesh,
+		const Zenith_Maths::Vector3* axP, const Zenith_Maths::Vector3* axN,
+		const Zenith_Maths::Vector2* axUV, const Zenith_Maths::Vector3& xOutwardHint)
+	{
+		const u_int uBase = xMesh.GetNumVerts();
+		for (u_int u = 0; u < 4u; u++)
+		{
+			xMesh.m_xPositions.PushBack(axP[u]);
+			xMesh.m_xNormals.PushBack(axN[u]);
+			xMesh.m_xUVs.PushBack(axUV[u]);
+			xMesh.m_xColors.PushBack(Zenith_Maths::Vector4(1.0f, 1.0f, 1.0f, 1.0f));
+		}
+		// (0,2,1): A=p0, B=p2, C=p1 -> cross(p1-p0, p2-p0).
+		const Zenith_Maths::Vector3 xFace = glm::cross(axP[1] - axP[0], axP[2] - axP[0]);
+		if (glm::dot(xFace, xOutwardHint) >= 0.0f)
+		{
+			ZM_PushTri(xMesh, uBase + 0u, uBase + 2u, uBase + 1u);
+			ZM_PushTri(xMesh, uBase + 1u, uBase + 2u, uBase + 3u);
+		}
+		else
+		{
+			ZM_PushTri(xMesh, uBase + 0u, uBase + 1u, uBase + 2u);
+			ZM_PushTri(xMesh, uBase + 1u, uBase + 3u, uBase + 2u);
+		}
+	}
+
+	// The triangle counterpart: three vertices, three normals, wound along the hint.
+	void ZM_PushStaticTriSmooth(ZM_GenMesh& xMesh,
+		const Zenith_Maths::Vector3* axP, const Zenith_Maths::Vector3* axN,
+		const Zenith_Maths::Vector2* axUV, const Zenith_Maths::Vector3& xOutwardHint)
+	{
+		const u_int uBase = xMesh.GetNumVerts();
+		for (u_int u = 0; u < 3u; u++)
+		{
+			xMesh.m_xPositions.PushBack(axP[u]);
+			xMesh.m_xNormals.PushBack(axN[u]);
+			xMesh.m_xUVs.PushBack(axUV[u]);
+			xMesh.m_xColors.PushBack(Zenith_Maths::Vector4(1.0f, 1.0f, 1.0f, 1.0f));
+		}
+		// (0,1,2): A=p0, B=p1, C=p2 -> cross(p2-p0, p1-p0).
+		const Zenith_Maths::Vector3 xFace = glm::cross(axP[2] - axP[0], axP[1] - axP[0]);
+		if (glm::dot(xFace, xOutwardHint) >= 0.0f) { ZM_PushTri(xMesh, uBase + 0u, uBase + 1u, uBase + 2u); }
+		else                                        { ZM_PushTri(xMesh, uBase + 0u, uBase + 2u, uBase + 1u); }
+	}
+
+	// Island UV of a point on a box face whose normal is along axis uAxis (0=X,
+	// 1=Y, 2=Z) with sign bPositive, mapping the FULL box extents to [0,1] with
+	// the same per-face orientation the plain 24-vertex emission uses (so a
+	// chamfered box's island layout is the un-chamfered one with an inset face).
+	Zenith_Maths::Vector2 ZM_BoxFaceIslandUV(u_int uAxis, bool bPositive,
+		const Zenith_Maths::Vector3& xP, const Zenith_Maths::Vector3& xMin,
+		const Zenith_Maths::Vector3& xMax, const ZM_GenUVIsland& xIsland)
+	{
+		const Zenith_Maths::Vector3 xExt = xMax - xMin;
+		auto fNorm = [&](u_int a) -> float
+		{
+			return xExt[static_cast<int>(a)] > 1.0e-8f ? (xP[static_cast<int>(a)] - xMin[static_cast<int>(a)]) / xExt[static_cast<int>(a)] : 0.0f;
+		};
+		float fU = 0.0f, fV = 0.0f;
+		switch (uAxis)
+		{
+		case 0:  fU = bPositive ? 1.0f - fNorm(2) : fNorm(2); fV = fNorm(1); break;   // +X: u along -z; -X: u along +z
+		case 1:  fU = fNorm(0); fV = bPositive ? 1.0f - fNorm(2) : fNorm(2); break;   // +Y: v along -z; -Y: v along +z
+		default: fU = bPositive ? fNorm(0) : 1.0f - fNorm(0); fV = fNorm(1); break;   // +Z: u along +x; -Z: u along -x
+		}
+		return Zenith_Maths::Vector2(xIsland.U(fU), xIsland.V(fV));
+	}
+
+	Zenith_Maths::Vector3 ZM_AxisNormal(u_int uAxis, bool bPositive)
+	{
+		Zenith_Maths::Vector3 xN(0.0f);
+		xN[static_cast<int>(uAxis)] = bPositive ? 1.0f : -1.0f;
+		return xN;
+	}
+
+	// The chamfered box: six inset faces (hard), twelve bevel strips (smoothed)
+	// and eight corner triangles. See the header for why every arris is bevelled.
+	void ZM_AppendChamferedBox(ZM_GenMesh& xMesh, const Zenith_Maths::Vector3& xMin,
+		const Zenith_Maths::Vector3& xMax, const ZM_GenUVIsland& xIsland, float fC)
+	{
+		// Outer plane coordinate per axis+sign, and the inset one a chamfer in.
+		auto fOuter = [&](u_int a, bool bPos) -> float { return bPos ? xMax[static_cast<int>(a)] : xMin[static_cast<int>(a)]; };
+		auto fInset = [&](u_int a, bool bPos) -> float { return bPos ? xMax[static_cast<int>(a)] - fC : xMin[static_cast<int>(a)] + fC; };
+
+		// ---- six inset faces -----------------------------------------------
+		for (u_int a = 0u; a < 3u; ++a)
+		{
+			const u_int b = (a + 1u) % 3u, c = (a + 2u) % 3u;
+			for (u_int s = 0u; s < 2u; ++s)
+			{
+				const bool bPos = (s == 1u);
+				const Zenith_Maths::Vector3 xN = ZM_AxisNormal(a, bPos);
+				Zenith_Maths::Vector3 axP[4];
+				Zenith_Maths::Vector3 axN[4] = { xN, xN, xN, xN };
+				Zenith_Maths::Vector2 axUV[4];
+				const float afB[2] = { xMin[static_cast<int>(b)] + fC, xMax[static_cast<int>(b)] - fC };
+				const float afC[2] = { xMin[static_cast<int>(c)] + fC, xMax[static_cast<int>(c)] - fC };
+				// {BL, BR, TL, TR} over (b, c).
+				const u_int auBi[4] = { 0u, 1u, 0u, 1u };
+				const u_int auCi[4] = { 0u, 0u, 1u, 1u };
+				for (u_int k = 0u; k < 4u; ++k)
+				{
+					axP[static_cast<int>(k)][static_cast<int>(a)] = fOuter(a, bPos);
+					axP[static_cast<int>(k)][static_cast<int>(b)] = afB[auBi[static_cast<int>(k)]];
+					axP[static_cast<int>(k)][static_cast<int>(c)] = afC[auCi[static_cast<int>(k)]];
+					axUV[static_cast<int>(k)] = ZM_BoxFaceIslandUV(a, bPos, axP[static_cast<int>(k)], xMin, xMax, xIsland);
+				}
+				ZM_PushStaticQuadSmooth(xMesh, axP, axN, axUV, xN);
+			}
+		}
+
+		// ---- twelve bevel strips ------------------------------------------
+		// Edge between face (a, sa) and face (b, sb), running along axis c. The
+		// strip's two vertices on face a's side inherit face a's normal, the two on
+		// face b's side inherit face b's -- a fillet, not a facet. UVs continue face
+		// a's island mapping into the margin the inset left free.
+		for (u_int a = 0u; a < 3u; ++a)
+		{
+			for (u_int b = a + 1u; b < 3u; ++b)
+			{
+				const u_int c = 3u - a - b;
+				for (u_int sa = 0u; sa < 2u; ++sa)
+				{
+					for (u_int sb = 0u; sb < 2u; ++sb)
+					{
+						const bool bA = (sa == 1u), bB = (sb == 1u);
+						const Zenith_Maths::Vector3 xNA = ZM_AxisNormal(a, bA);
+						const Zenith_Maths::Vector3 xNB = ZM_AxisNormal(b, bB);
+						Zenith_Maths::Vector3 axP[4];
+						const Zenith_Maths::Vector3 axN[4] = { xNA, xNA, xNB, xNB };
+						Zenith_Maths::Vector2 axUV[4];
+						const float afC[2] = { xMin[static_cast<int>(c)] + fC, xMax[static_cast<int>(c)] - fC };
+						for (u_int k = 0u; k < 4u; ++k)
+						{
+							const bool bOnA = k < 2u;
+							axP[static_cast<int>(k)][static_cast<int>(a)] = bOnA ? fOuter(a, bA) : fInset(a, bA);
+							axP[static_cast<int>(k)][static_cast<int>(b)] = bOnA ? fInset(b, bB) : fOuter(b, bB);
+							axP[static_cast<int>(k)][static_cast<int>(c)] = afC[k & 1u];
+							axUV[static_cast<int>(k)] = ZM_BoxFaceIslandUV(a, bA, axP[static_cast<int>(k)], xMin, xMax, xIsland);
+						}
+						ZM_PushStaticQuadSmooth(xMesh, axP, axN, axUV, xNA + xNB);
+					}
+				}
+			}
+		}
+
+		// ---- eight corner triangles ---------------------------------------
+		for (u_int s = 0u; s < 8u; ++s)
+		{
+			const bool abPos[3] = { (s & 1u) != 0u, (s & 2u) != 0u, (s & 4u) != 0u };
+			Zenith_Maths::Vector3 axP[3], axN[3];
+			Zenith_Maths::Vector2 axUV[3];
+			Zenith_Maths::Vector3 xHint(0.0f);
+			for (u_int a = 0u; a < 3u; ++a)
+			{
+				// The vertex lying on face a: outer along a, inset along the others.
+				for (u_int k = 0u; k < 3u; ++k)
+				{
+					axP[static_cast<int>(a)][static_cast<int>(k)] = (k == a) ? fOuter(k, abPos[static_cast<int>(k)]) : fInset(k, abPos[static_cast<int>(k)]);
+				}
+				axN[static_cast<int>(a)] = ZM_AxisNormal(a, abPos[static_cast<int>(a)]);
+				xHint += axN[static_cast<int>(a)];
+				// All three projected through face X's mapping: three distinct 2D
+				// points, so the UV triangle is never degenerate.
+				axUV[static_cast<int>(a)] = ZM_BoxFaceIslandUV(0u, abPos[0], axP[static_cast<int>(a)], xMin, xMax, xIsland);
+			}
+			ZM_PushStaticTriSmooth(xMesh, axP, axN, axUV, xHint);
+		}
+	}
 }
 
 namespace ZM_StaticMesh
 {
 	u_int AppendBox(ZM_GenMesh& xMesh, const Zenith_Maths::Vector3& xMin,
-		const Zenith_Maths::Vector3& xMax, const ZM_GenUVIsland& xIsland)
+		const Zenith_Maths::Vector3& xMax, const ZM_GenUVIsland& xIsland, float fChamfer)
 	{
 		const u_int uFirst = xMesh.GetNumVerts();
 		const float x0 = xMin.x, y0 = xMin.y, z0 = xMin.z;
 		const float x1 = xMax.x, y1 = xMax.y, z1 = xMax.z;
+
+		// The chamfer is clamped to a quarter of the smallest extent -- a bevel can
+		// never be wider than the face it sits between -- and a box too thin to
+		// carry one (or a degenerate box) falls through to the plain emission.
+		const float fEx = x1 - x0, fEy = y1 - y0, fEz = z1 - z0;
+		float fMinExt = fEx < fEy ? fEx : fEy;
+		fMinExt = fMinExt < fEz ? fMinExt : fEz;
+		float fC = fChamfer;
+		if (fC > fMinExt * 0.25f) { fC = fMinExt * 0.25f; }
+		if (fC > 1.0e-5f)
+		{
+			ZM_AppendChamferedBox(xMesh, xMin, xMax, xIsland, fC);
+			return uFirst;
+		}
 
 		// Six faces, corner layout + winding copied from Zenith_MeshAsset::Generate-
 		// UnitCube (its (0,2,1)+(1,2,3) order is outward under cross(C-A,B-A)).
@@ -682,6 +872,61 @@ namespace ZM_StaticMesh
 			Zenith_Maths::Vector3(x0, y1, z0), Zenith_Maths::Vector3(x0, y1, z1),
 			Zenith_Maths::Vector3(-1.0f, 0.0f, 0.0f), xIsland);
 
+		return uFirst;
+	}
+
+	u_int AppendFace(ZM_GenMesh& xMesh,
+		const Zenith_Maths::Vector3& xBL, const Zenith_Maths::Vector3& xBR,
+		const Zenith_Maths::Vector3& xTL, const Zenith_Maths::Vector3& xTR,
+		const Zenith_Maths::Vector3& xNormal, const ZM_GenUVIsland& xIsland)
+	{
+		const u_int uFirst = xMesh.GetNumVerts();
+		const Zenith_Maths::Vector3 axP[4]  = { xBL, xBR, xTL, xTR };
+		const Zenith_Maths::Vector3 axN[4]  = { xNormal, xNormal, xNormal, xNormal };
+		const Zenith_Maths::Vector2 axUV[4] = {
+			Zenith_Maths::Vector2(xIsland.U(0.0f), xIsland.V(0.0f)),
+			Zenith_Maths::Vector2(xIsland.U(1.0f), xIsland.V(0.0f)),
+			Zenith_Maths::Vector2(xIsland.U(0.0f), xIsland.V(1.0f)),
+			Zenith_Maths::Vector2(xIsland.U(1.0f), xIsland.V(1.0f)) };
+		ZM_PushStaticQuadSmooth(xMesh, axP, axN, axUV, xNormal);
+		return uFirst;
+	}
+
+	u_int AppendTri(ZM_GenMesh& xMesh,
+		const Zenith_Maths::Vector3& xV0, const Zenith_Maths::Vector3& xV1,
+		const Zenith_Maths::Vector3& xV2, const Zenith_Maths::Vector3& xInside,
+		const ZM_GenUVIsland& xIsland)
+	{
+		const u_int uFirst = xMesh.GetNumVerts();
+		ZM_PushStaticTri(xMesh, xV0, xV1, xV2, xInside, xIsland);
+		return uFirst;
+	}
+
+	u_int AppendParallelepiped(ZM_GenMesh& xMesh, const Zenith_Maths::Vector3& xOrigin,
+		const Zenith_Maths::Vector3& xU, const Zenith_Maths::Vector3& xV,
+		const Zenith_Maths::Vector3& xW, const ZM_GenUVIsland& xIsland)
+	{
+		const u_int uFirst = xMesh.GetNumVerts();
+		const Zenith_Maths::Vector3 xCentre = xOrigin + (xU + xV + xW) * 0.5f;
+		const Zenith_Maths::Vector3 axE[3] = { xU, xV, xW };
+		// Face pair per spanning axis: the face at origin (s=0) and at origin+E (s=1),
+		// each a quad over the other two spanning vectors.
+		for (u_int a = 0u; a < 3u; ++a)
+		{
+			const Zenith_Maths::Vector3& xB = axE[(a + 1u) % 3u];
+			const Zenith_Maths::Vector3& xC = axE[(a + 2u) % 3u];
+			for (u_int s = 0u; s < 2u; ++s)
+			{
+				const Zenith_Maths::Vector3 xO = xOrigin + (s == 1u ? axE[a] : Zenith_Maths::Vector3(0.0f));
+				const Zenith_Maths::Vector3 xBL = xO, xBR = xO + xB, xTL = xO + xC, xTR = xO + xB + xC;
+				Zenith_Maths::Vector3 xN = glm::cross(xB, xC);
+				const float fL = glm::length(xN);
+				xN = (fL > 1.0e-12f) ? (xN / fL) : Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f);
+				const Zenith_Maths::Vector3 xFaceCentre = xO + (xB + xC) * 0.5f;
+				if (glm::dot(xN, xFaceCentre - xCentre) < 0.0f) { xN = -xN; }
+				AppendFace(xMesh, xBL, xBR, xTL, xTR, xN, xIsland);
+			}
+		}
 		return uFirst;
 	}
 
@@ -738,32 +983,52 @@ namespace ZM_StaticMesh
 
 	void ApplyWorldUVs(ZM_GenMesh& xMesh, u_int uFirstVert, float fTileMetres)
 	{
+		// ★ THE PLANE IS CHOSEN PER TRIANGLE FROM ITS GEOMETRIC NORMAL, NOT PER
+		// VERTEX FROM THE STORED ONE. A chamfer strip's four vertices carry TWO
+		// different normals (the fillet), so a per-vertex choice would project one
+		// end of the strip onto the XY plane and the other onto XZ, and the UV
+		// edge between them would be a 6 m smear across an 8 mm bevel. A triangle
+		// has exactly one plane, and no vertex here is shared between triangles of
+		// different planes (every emitter writes per-face vertices).
 		const float fInv = (fTileMetres > 1.0e-6f) ? (1.0f / fTileMetres) : 1.0f;
-		const u_int uEnd = xMesh.GetNumVerts();
-		for (u_int v = uFirstVert; v < uEnd; ++v)
+		const u_int uTris = xMesh.GetNumTris();
+		for (u_int t = 0u; t < uTris; ++t)
 		{
-			const Zenith_Maths::Vector3& xP = xMesh.m_xPositions.Get(v);
-			const Zenith_Maths::Vector3& xN = xMesh.m_xNormals.Get(v);
+			const u_int uA = xMesh.m_xIndices.Get(t * 3u + 0u);
+			const u_int uB = xMesh.m_xIndices.Get(t * 3u + 1u);
+			const u_int uC = xMesh.m_xIndices.Get(t * 3u + 2u);
+			if (uA < uFirstVert || uB < uFirstVert || uC < uFirstVert)
+			{
+				continue;   // belongs to geometry emitted before this call
+			}
+			const Zenith_Maths::Vector3& xPA = xMesh.m_xPositions.Get(uA);
+			const Zenith_Maths::Vector3& xPB = xMesh.m_xPositions.Get(uB);
+			const Zenith_Maths::Vector3& xPC = xMesh.m_xPositions.Get(uC);
+			const Zenith_Maths::Vector3 xN = glm::cross(xPC - xPA, xPB - xPA);
 			const float fAx = xN.x < 0.0f ? -xN.x : xN.x;
 			const float fAy = xN.y < 0.0f ? -xN.y : xN.y;
 			const float fAz = xN.z < 0.0f ? -xN.z : xN.z;
 
-			float fU, fV;
-			if (fAy >= fAx && fAy >= fAz)      { fU = xP.x; fV = xP.z; }   // horizontal face
-			else if (fAx >= fAz)               { fU = xP.z; fV = xP.y; }   // faces +/-X
-			else                               { fU = xP.x; fV = xP.y; }   // faces +/-Z
-
-			xMesh.m_xUVs.Get(v) = Zenith_Maths::Vector2(fU * fInv, fV * fInv);
+			const u_int auV[3] = { uA, uB, uC };
+			for (u_int k = 0u; k < 3u; ++k)
+			{
+				const Zenith_Maths::Vector3& xP = xMesh.m_xPositions.Get(auV[k]);
+				float fU, fV;
+				if (fAy >= fAx && fAy >= fAz)      { fU = xP.x; fV = xP.z; }   // horizontal face
+				else if (fAx >= fAz)               { fU = xP.z; fV = xP.y; }   // faces +/-X
+				else                               { fU = xP.x; fV = xP.y; }   // faces +/-Z
+				xMesh.m_xUVs.Get(auV[k]) = Zenith_Maths::Vector2(fU * fInv, fV * fInv);
+			}
 		}
 	}
 
 	u_int AppendWorldBox(ZM_GenMesh& xMesh, const Zenith_Maths::Vector3& xMin,
-		const Zenith_Maths::Vector3& xMax, float fTileMetres)
+		const Zenith_Maths::Vector3& xMax, float fTileMetres, float fChamfer)
 	{
 		// The island is a placeholder that never survives -- ApplyWorldUVs
 		// overwrites every UV the emitter just wrote.
 		const ZM_GenUVIsland xUnit = { 0.0f, 0.0f, 1.0f, 1.0f };
-		const u_int uFirst = AppendBox(xMesh, xMin, xMax, xUnit);
+		const u_int uFirst = AppendBox(xMesh, xMin, xMax, xUnit, fChamfer);
 		ApplyWorldUVs(xMesh, uFirst, fTileMetres);
 		return uFirst;
 	}

@@ -638,6 +638,12 @@ void Flux_RendererImpl::ReleaseAssetReferences()
 	xEngine.Text().ReleaseAssetReferences();
 	xEngine.Particles().ReleaseAssetReferences();
 	xEngine.Terrain().ReleaseAssetReferences();
+	// Grass pins its authored type table's textures (blade vein / gloss / clump
+	// ramp) in m_axTypeTextureHandles. Omitting it here did NOT go unnoticed
+	// quietly: the registry force-deleted all three at shutdown ("still held with
+	// 4 refs -- cycle or leaked handle") and m_pxGrass's handle destructors then
+	// Release()d into freed assets. Same class as the mesh caches below.
+	xEngine.Grass().ReleaseAssetReferences();
 	xEngine.Skybox().ReleaseAssetReferences();
 	xEngine.VolumeFog().ReleaseAssetReferences();
 #ifdef ZENITH_TOOLS

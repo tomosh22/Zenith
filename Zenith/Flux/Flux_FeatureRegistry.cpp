@@ -358,8 +358,15 @@ void Flux_FeatureRegistry::RegisterDefaultFeaturesInto(Flux_FeatureRegistry& xRe
 	// to precede DeferredShading, so the cascade constraint is the tighter one and it
 	// picks the slot. Pinned by FluxGrassImpl::GrassIsDeclaredBeforeShadows.
 	RegisterFeature<&Zenith_Engine::Grass>(xReg, "Grass", Flux_GrassShaders::apxALL);
-	RegisterFeature<&Zenith_Engine::Shadows>(xReg, "Shadows");
+	// Terrain is the THIRD cascade producer and sits here for the same reason. Every
+	// "Shadow Cascade N" pass declares a READ_INDIRECT_ARG of each terrain's shadow
+	// cull slot buffers (per-cascade indirect args + counts), whose ONLY writers are
+	// this feature's "Terrain Reset Count and Indirect Arguments" / "Terrain Culling
+	// Compute" passes. Terrain is also an opaque G-buffer writer, which only needs it
+	// before DeferredShading; the cascade constraint is the tighter one. Pinned by
+	// FluxTerrain::TerrainIsDeclaredBeforeShadows.
 	RegisterFeature<&Zenith_Engine::Terrain>(xReg, "Terrain", Flux_TerrainShaders::apxALL);
+	RegisterFeature<&Zenith_Engine::Shadows>(xReg, "Shadows");
 	RegisterFeature<&Zenith_Engine::Primitives>(xReg, "Primitives", Flux_PrimitivesShaders::apxALL);
 	// Stage 4: InstancedMeshes is now a shader-less registration front-end (the unified path
 	// draws instanced foliage). Registered with the no-shader overload so it owns no programs.

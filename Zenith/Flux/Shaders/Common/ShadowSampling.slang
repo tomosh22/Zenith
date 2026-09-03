@@ -228,7 +228,7 @@ public struct ShadowFilterPCSS : IShadowFilter
 			(this.fReceiverRoughness > this.fRoughnessThreshold);
 		bool bFarCascadeCheap =
 			((this.uQualityFlags & SHADOW_FLAG_CHEAP_FAR_CASCADES) != 0u) &&
-			(iCascade >= 2);
+			(iCascade >= 3);   // only the LAST cascade takes the cheap Gather tier: the 27 m filter-quality step of ">= 2" sat inside every frame
 		if (bRoughnessCheap || bFarCascadeCheap)
 		{
 			ShadowFilterSimple4Tap xSimpleFilter;

@@ -12,7 +12,10 @@
 //     Bush_Mound.{...}                 + Bush_Mound_Sway.zanmt    — low round mound
 //     Bush_Spindly.{...}               + Bush_Spindly_Sway.zanmt  — tall sparse upright
 //     Bush_Foliage_Albedo.ztxtr        — leaf-cluster albedo + ALPHA MASK (sRGB)
-//     Bush_Foliage.zmtrl               — MASKED foliage material (cutoff 0.45)
+//     Bush_Foliage_Normal.ztxtr        — per-leaf dome + midrib crease (BC5 linear)
+//     Bush_Foliage_AO.ztxtr            — stem-end + overlap occlusion (linear)
+//     Bush_Foliage.zmtrl               — MASKED (cutoff 0.45), TWO-SIDED,
+//                                        SUBSURFACE foliage material
 //
 // ★ ONE instance group per bush, not the tree's lockstep trunk+leaves pair.
 // An instance group is single-material, and the tree splits because its trunk
@@ -78,6 +81,16 @@ void GenerateBushAssets()
 
 namespace
 {
+
+//=============================================================================
+// Export version. Every boot regenerates this set unconditionally, so this is
+// not a staleness gate — it is the number a log line (and a bug report) can
+// name when a capture and the current generator disagree. BUMP IT whenever the
+// emitted bytes change.
+//
+// 2: foliage normal + AO maps, two-sided SUBSURFACE foliage material.
+//=============================================================================
+constexpr u_int uBUSH_ASSET_EXPORT_VERSION = 2u;
 
 //=============================================================================
 // Deterministic randomness — repeated boots must regenerate identical assets.
@@ -481,10 +494,42 @@ Flux_AnimationClip* CreateBushSwayClip(const Zenith_Vector<BushBranch>& xBranche
 //=============================================================================
 constexpr int32_t iBUSH_FOLIAGE_SIZE = 1024;
 
-void GenerateBushFoliagePixels(Zenith_Vector<u_int8>& xPixels)
+//=============================================================================
+// The foliage card, painted ONCE into every map it feeds.
+//
+// The albedo half is byte-for-byte what it always was (pinned by
+// BushAssets.FoliageAlbedoAlphaIsARealMask); the two new outputs are what stop
+// the card shading as a flat decal:
+//
+//   HEIGHT — each leaf a gentle DOME with a midrib CREASE, raised by its
+//   painter's-order layer so an overlapping leaf steps above the one behind.
+//   The normal map derived from it is what makes ONE card read as many
+//   separately-curved leaves under a moving light.
+//
+//   AO — occlusion toward each leaf's stem end and under overlaps, counted
+//   from how many leaves have already painted a texel.
+//
+// One pass, not two: a second pass with its own RNG draws would place
+// DIFFERENT leaves, and the normal map would describe foliage the albedo does
+// not have. GenerateBushFoliagePixels below is the albedo-only wrapper the
+// existing units call.
+//=============================================================================
+void GenerateBushFoliageMaps(Zenith_Vector<u_int8>& xPixels, Zenith_Vector<float>& xHeight,
+	Zenith_Vector<float>& xAO)
 {
 	xPixels.Clear();
 	xPixels.Resize(iBUSH_FOLIAGE_SIZE * iBUSH_FOLIAGE_SIZE * 4, 0);
+	xHeight.Clear();
+	xHeight.Resize(iBUSH_FOLIAGE_SIZE * iBUSH_FOLIAGE_SIZE, 0.0f);
+	// Unpainted texels are fully unoccluded: they are discarded by the alpha
+	// test, and a 0 there would drag the AO mip chain toward black.
+	xAO.Clear();
+	xAO.Resize(iBUSH_FOLIAGE_SIZE * iBUSH_FOLIAGE_SIZE, 1.0f);
+
+	// How many leaves have painted each texel — one is the top of the pile,
+	// more is a texel buried in foliage, which is where a shrub goes dark.
+	Zenith_Vector<u_int8> xCoverage;
+	xCoverage.Resize(iBUSH_FOLIAGE_SIZE * iBUSH_FOLIAGE_SIZE, 0u);
 
 	BushRng xRng(52201u);
 
@@ -510,6 +555,10 @@ void GenerateBushFoliagePixels(Zenith_Vector<u_int8>& xPixels)
 		const float fLB = (0.085f + fHueJit * 0.2f) * fBright;
 
 		const float fCA = cosf(fAngle), fSA = sinf(fAngle);
+		// Where this leaf's surface sits in the card's depth range. Front leaves
+		// build their dome on a higher base, so the step down to the leaf behind
+		// reads as a real edge in the normal map rather than a colour change.
+		const float fLeafBase = 0.16f + 0.60f * fLayerT;
 		const int32_t iRadius = static_cast<int32_t>(fLen * 0.62f) + 2;
 		const int32_t iCXi = static_cast<int32_t>(fCX);
 		const int32_t iCYi = static_cast<int32_t>(fCY);
@@ -540,13 +589,82 @@ void GenerateBushFoliagePixels(Zenith_Vector<u_int8>& xPixels)
 				const float fVein = fabsf(sinf(fAlong * 14.0f + fDist * 7.0f));
 				if (fVein > 0.94f) { fShade *= 0.88f; }                        // side veins
 
-				u_int8* pucP = &xPixels.Get((iY * iBUSH_FOLIAGE_SIZE + iX) * 4);
+				const int32_t iIdx = iY * iBUSH_FOLIAGE_SIZE + iX;
+				u_int8* pucP = &xPixels.Get(iIdx * 4);
 				pucP[0] = static_cast<u_int8>(std::clamp(fLR * fShade, 0.0f, 1.0f) * 255.0f);
 				pucP[1] = static_cast<u_int8>(std::clamp(fLG * fShade, 0.0f, 1.0f) * 255.0f);
 				pucP[2] = static_cast<u_int8>(std::clamp(fLB * fShade, 0.0f, 1.0f) * 255.0f);
 				const float fAlpha = SmoothStepB(1.0f, 0.90f, fDist / std::max(fEdge, 0.001f));
 				pucP[3] = std::max(pucP[3], static_cast<u_int8>(fAlpha * 255.0f));
+
+				// --- Height: dome across the leaf, creased along the midrib ---
+				const float fRel = fDist / std::max(fEdge, 0.001f);            // 0 spine .. 1 rim
+				const float fDome = sqrtf(std::max(0.0f, 1.0f - fRel * fRel)); // circular cross-section
+				const float fTaper = powf(sinf(fAlong * 3.14159f), 0.35f);     // flatter at stem and tip
+				// Without the crease a leaf reads as a pillow: a real one folds
+				// along its midrib, and the fold is what catches the sun.
+				const float fCrease = SmoothStepB(0.10f, 0.0f, fRel) * 0.28f;
+				xHeight.Get(iIdx) = std::clamp(
+					fLeafBase + (fDome * fTaper * 0.34f) - fCrease * fTaper, 0.0f, 1.0f);
+
+				// --- AO: stem-end crowding + how deep in the pile this texel is ---
+				const float fStemDark = (1.0f - SmoothStepB(0.0f, 0.32f, fAlong)) * 0.42f;
+				const u_int8 ucUnder = xCoverage.Get(iIdx);
+				const float fPileDark = std::min(static_cast<float>(ucUnder), 3.0f) * 0.09f;
+				const float fRimLift = SmoothStepB(0.70f, 1.0f, fRel) * 0.08f;
+				xAO.Get(iIdx) = std::clamp(1.0f - fStemDark - fPileDark + fRimLift, 0.05f, 1.0f);
+				if (ucUnder < 255u)
+				{
+					xCoverage.Get(iIdx) = static_cast<u_int8>(ucUnder + 1u);
+				}
 			}
+		}
+	}
+}
+
+// Albedo only — the shape the existing units drive. One body, so the pixels a
+// test reads are the pixels the .ztxtr gets.
+void GenerateBushFoliagePixels(Zenith_Vector<u_int8>& xPixels)
+{
+	Zenith_Vector<float> xHeight;
+	Zenith_Vector<float> xAO;
+	GenerateBushFoliageMaps(xPixels, xHeight, xAO);
+}
+
+//=============================================================================
+// Tangent-space normal map from the foliage height field, RGBA8 for the BC5
+// writer (which keeps R+G; the shader rebuilds Z).
+//
+// CLAMPED, not wrapped: the foliage card does NOT tile — its border is
+// transparent — so a wrapped central difference would invent a slope joining
+// two unrelated leaves across the seam.
+//
+// Shared with the units deliberately: a test that re-derived the encoding
+// would be checking its own arithmetic, not the shipped texels.
+//=============================================================================
+void EncodeBushNormalMap(const Zenith_Vector<float>& xHeight, Zenith_Vector<u_int8>& xOut)
+{
+	constexpr float fSLOPE_GAIN = 3.0f;
+	constexpr int32_t iSIZE = iBUSH_FOLIAGE_SIZE;
+	xOut.Clear();
+	xOut.Resize(iSIZE * iSIZE * 4, 0);
+	for (int32_t iY = 0; iY < iSIZE; iY++)
+	{
+		for (int32_t iX = 0; iX < iSIZE; iX++)
+		{
+			const int32_t iXP = std::min(iX + 1, iSIZE - 1);
+			const int32_t iXM = std::max(iX - 1, 0);
+			const int32_t iYP = std::min(iY + 1, iSIZE - 1);
+			const int32_t iYM = std::max(iY - 1, 0);
+			const float fDX = (xHeight.Get(iY * iSIZE + iXP) - xHeight.Get(iY * iSIZE + iXM)) * fSLOPE_GAIN;
+			const float fDY = (xHeight.Get(iYP * iSIZE + iX) - xHeight.Get(iYM * iSIZE + iX)) * fSLOPE_GAIN;
+			const Zenith_Maths::Vector3 xN =
+				glm::normalize(Zenith_Maths::Vector3(-fDX, -fDY, 1.0f));
+			u_int8* pucN = &xOut.Get((iY * iSIZE + iX) * 4);
+			pucN[0] = static_cast<u_int8>((xN.x * 0.5f + 0.5f) * 255.0f);
+			pucN[1] = static_cast<u_int8>((xN.y * 0.5f + 0.5f) * 255.0f);
+			pucN[2] = static_cast<u_int8>((xN.z * 0.5f + 0.5f) * 255.0f);
+			pucN[3] = 255;
 		}
 	}
 }
@@ -554,10 +672,41 @@ void GenerateBushFoliagePixels(Zenith_Vector<u_int8>& xPixels)
 void GenerateBushFoliageTexture(const std::string& strDir)
 {
 	Zenith_Vector<u_int8> xPixels;
-	GenerateBushFoliagePixels(xPixels);
-	Zenith_Tools_TextureExport::ExportFromDataWithFormat(
+	Zenith_Vector<float> xHeight;
+	Zenith_Vector<float> xAOField;
+	GenerateBushFoliageMaps(xPixels, xHeight, xAOField);
+
+	// --- Normal (BC5 linear) from the per-leaf domes -------------------------
+	Zenith_Vector<u_int8> xNormal;
+	EncodeBushNormalMap(xHeight, xNormal);
+	Zenith_Tools_TextureExport::ExportFromDataCompressed(
+		xNormal.GetDataPointer(), strDir + "Bush_Foliage_Normal" ZENITH_TEXTURE_EXT,
+		iBUSH_FOLIAGE_SIZE, iBUSH_FOLIAGE_SIZE,
+		TextureCompressionMode::BC5, TextureColourSpace::Linear);
+
+	// --- AO (linear grey, uncompressed so the values survive exactly) --------
+	Zenith_Vector<u_int8> xAO;
+	xAO.Resize(iBUSH_FOLIAGE_SIZE * iBUSH_FOLIAGE_SIZE * 4, 0);
+	for (int32_t i = 0; i < iBUSH_FOLIAGE_SIZE * iBUSH_FOLIAGE_SIZE; i++)
+	{
+		const u_int8 ucAO = static_cast<u_int8>(std::clamp(xAOField.Get(i), 0.0f, 1.0f) * 255.0f);
+		u_int8* pucAO = &xAO.Get(i * 4);
+		pucAO[0] = ucAO;
+		pucAO[1] = ucAO;
+		pucAO[2] = ucAO;
+		pucAO[3] = 255;
+	}
+	Zenith_Tools_TextureExport::ExportFromDataV2Uncompressed(
+		xAO.GetDataPointer(), strDir + "Bush_Foliage_AO" ZENITH_TEXTURE_EXT,
+		iBUSH_FOLIAGE_SIZE, iBUSH_FOLIAGE_SIZE, TEXTURE_FORMAT_RGBA8_UNORM);
+
+	// Full mip chain with COVERAGE-PRESERVING alpha at the foliage material's
+	// cutoff (SetAlphaCutoff(0.45f) below): a plain box filter averages the soft
+	// leaf edge below the cutoff every level and a distant bush evaporates.
+	// Uncompressed keeps the 8-bit mask edge exact.
+	Zenith_Tools_TextureExport::ExportFromDataV2Uncompressed(
 		xPixels.GetDataPointer(), strDir + "Bush_Foliage_Albedo" ZENITH_TEXTURE_EXT, iBUSH_FOLIAGE_SIZE, iBUSH_FOLIAGE_SIZE, TEXTURE_FORMAT_RGBA8_SRGB,
-		xPixels.GetSize() / (static_cast<size_t>(iBUSH_FOLIAGE_SIZE) * iBUSH_FOLIAGE_SIZE));
+		/*fAlphaCoverageCutoff*/ 0.45f);
 }
 
 void GenerateBushFoliageMaterial(const std::string& strDir)
@@ -566,8 +715,24 @@ void GenerateBushFoliageMaterial(const std::string& strDir)
 	Zenith_MaterialAsset* pxFoliage = xhFoliage.GetDirect();
 	pxFoliage->SetName("BushFoliage");
 	pxFoliage->SetDiffuseTexture(TextureHandle("engine:Meshes/Bushes/Bush_Foliage_Albedo" ZENITH_TEXTURE_EXT));
+	pxFoliage->SetNormalTexture(TextureHandle("engine:Meshes/Bushes/Bush_Foliage_Normal" ZENITH_TEXTURE_EXT));
+	pxFoliage->SetOcclusionTexture(TextureHandle("engine:Meshes/Bushes/Bush_Foliage_AO" ZENITH_TEXTURE_EXT));
 	pxFoliage->SetRoughness(0.80f);
 	pxFoliage->SetMetallic(0.0f);
+	pxFoliage->SetNormalStrength(1.0f);
+	pxFoliage->SetOcclusionStrength(1.0f);
+	// ★ TWO-SIDED at the MATERIAL, which is a different thing from the doubled
+	// windings the mesh emits. The geometry duplication makes a card VISIBLE
+	// from behind; TWO_SIDED_NORMAL_FLIP is what makes the back face SHADE as a
+	// leaf instead of as a surface lit from the wrong side. (The duplicated
+	// windings stay — BushAssets.EveryCardIsEmittedDoubleSided pins them —
+	// but they are now redundant geometry; see Flux/Vegetation/CLAUDE.md.)
+	pxFoliage->SetTwoSided(true);
+	// ★ Foliage TRANSMITS: the deferred pass's subsurface branch wraps the
+	// diffuse past the terminator and back-lights the graze, which is what a
+	// sunlit shrub actually does. Its constants are tuned for skin — the
+	// documented approximation until a FOLIAGE shading model exists.
+	pxFoliage->SetShadingModel(MATERIAL_SHADING_SUBSURFACE);
 	// ★ MASKED with a non-zero cutoff, or the alpha mask above is dead weight:
 	// BuildMaterialDrawConstants writes cutoff 0 for OPAQUE, the shader never
 	// discards, and every card renders as an opaque black square with a leaf
@@ -632,7 +797,8 @@ void ExportBushVariant(const std::string& strDir, const BushVariantSpec& xSpec)
 void GenerateBushAssets()
 {
 	Zenith_Log(LOG_CATEGORY_ASSET,
-		"Generating shared Bush assets (3 wind-animated foliage bushes, masked leaf material)...");
+		"Generating shared Bush assets v%u (3 wind-animated foliage bushes, masked two-sided subsurface leaf material)...",
+		uBUSH_ASSET_EXPORT_VERSION);
 
 	const std::string strOutputDir = std::string(ENGINE_ASSETS_DIR) + "Meshes/Bushes/";
 	std::filesystem::create_directories(strOutputDir);

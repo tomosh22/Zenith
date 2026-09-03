@@ -162,6 +162,10 @@ namespace
 	{
 		const ImVec2 xImageMax(xImageMin.x + xImageSize.x, xImageMin.y + xImageSize.y);
 		const Zenith_EditorPrefs& xPrefs = xEditor.m_xEditorState.m_xPrefs;
+		if (xEditor.m_xEditorState.m_bViewportOverlaysHidden)
+		{
+			return;
+		}
 
 		DrawModeBadge(xEditor, xImageMin, xImageSize.x);
 		if (xPrefs.m_bShowViewportStats)

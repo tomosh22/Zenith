@@ -13,23 +13,24 @@ GPU-driven terrain rendering with LOD streaming and frustum culling. Supports 4,
 - `Flux_TerrainConfig.h` - Central configuration: the fixed chunk-slot CAPACITY, the DEFAULT terrain's chunk/world size, LOD distances, buffer sizes. A terrain's own shape is `Zenith_TerrainDimensions` (`Core/Zenith_TerrainDimensions.h`) — see *Grid Layout*.
 - `Flux_Terrain.cpp` / `Flux_TerrainImpl.h` - Rendering coordination, compute culling dispatch (`Flux_TerrainImpl` class)
 - `Flux_TerrainStreamingManager.cpp` / `Flux_TerrainStreamingManagerImpl.h` - LOD streaming and buffer management (public API reached via `Zenith_TerrainComponent`; the impl header holds the implementation)
-- `Flux_TerrainGPUStructs.h` - GPU-side struct definitions (chunk data, per-LOD offsets/counts)
+- `Flux_TerrainGPUStructs.h` - GPU-side struct definitions (chunk data, per-LOD offsets/counts, the camera cull block, and `Zenith_TerrainShadowCullGPU` + `Flux_BuildTerrainShadowCullData` — the per-cascade cull block and its pure builder)
 - `Flux_TerrainPipelineSelect.h` - Pure `(velocity latch, wireframe) -> G-buffer pipeline variant` selector plus the attachment-count contract. `<cstdint>`-only (no Flux headers) so it is unit-testable in every configuration — same shape as `Flux_TerrainExportRect.h`. See *Debug wireframe* below.
 - `Flux_TerrainExportRect.h` - Inclusive chunk rectangle for authoring exports; transactional `TryCreate` (invalid bounds leave the caller's rect untouched). Consumed by the terrain editor bake, `Zenith_EditorAutomation`, `Tools/Zenith_Tools_TerrainExport.*` and `ZM_TerrainAuthoring.cpp`.
 - `Flux_TerrainVertexQuant.h` - The ONE place a baked terrain position/UV is quantised, and the only thing that knows where they sit in the packed vertex. Joins the on-disk contract (`Core/Zenith_TerrainChunkLayout.h`: which bytes, which box) to the bit layouts (`Flux/Flux_VertexCodec.h`). Used by the exporter, the editor sculpt hook, CityBuilder's carve + stream-in hook and the runtime chunk validator — five producers that would otherwise each carry their own copy of the box. `Flux_MakeTerrainPosQuant` takes the terrain's `Zenith_TerrainDimensions` and builds a **per-terrain, per-axis** box `{0,0,0}..{WorldSizeX, MAX_TERRAIN_HEIGHT, WorldSizeZ}` — a narrow terrain spends its snorm16 precision on the space it occupies. Per-TERRAIN is safe for exactly the reason per-CHUNK is not: every chunk of one terrain shares one box, so a stitch vertex duplicated into two neighbours still quantises to the same word.
+- `Flux_TerrainShadowCull.h` - Terrain shadow casting's PURE half: the per-cascade cull SLOT arithmetic (record base / indirect byte offset / count byte offset / allocation sizes) and the caster LOD policy (`Flux_TerrainShadowCasterLOD`). `<cstdint>`-only, same shape as the two headers above. See *Shadow casting* below.
 - `Flux_TerrainSourceGrid.h` - The exporter's source-sample grid as pure arithmetic (`SampleCountForCells` / `SampleCountPerEdge` / `SampleIndex` / `ChunkVertexCount` / `ChunkIndexCount`). `<cstdint>`-only, same shape as the two headers above. See *Every chunk closes on its neighbour* below.
-- `Flux_Terrain.Tests.inl` - Unit tests for the pipeline-variant selection, included at the bottom of `Flux_Terrain.cpp` (the module-owns-its-tests idiom)
+- `Flux_Terrain.Tests.inl` - Unit tests for the pipeline-variant selection, the vertex quantisation bridge, the indirect ABI arithmetic and the shadow-cast slots / LOD policy / cull block / graph shape / feature order, included at the bottom of `Flux_Terrain.cpp` (the module-owns-its-tests idiom)
 - `Flux_Terrain_Shaders.h` - Shader program declarations (`Flux_ShaderDecl` + `apxALL`)
 - Shaders in `Zenith/Flux/Shaders/Terrain/` (all `.slang`):
-  - `Flux_TerrainCulling.slang` - GPU compute shader for frustum culling
-  - `Flux_TerrainResetCounters.slang` - GPU compute shader that zeroes the visible-count atomics
+  - `Flux_TerrainCulling.slang` - GPU compute shader for frustum culling + LOD, for the camera AND every active shadow cascade in one dispatch (thread row `y`: 0 = camera, `1 + c` = cascade `c`)
+  - `Flux_TerrainResetCounters.slang` - GPU compute shader that zeroes the visible-count atomics and every indirect record — the camera's and every cascade slot's
   - `Flux_Terrain_ToGBufferVelocity.slang` - the 5-attachment TAA variant of the below: identical shading plus `SV_Target4` (pure camera-reprojection motion vector, since terrain verts are static world-space). A hand-maintained copy, not a shared include.
   - `Flux_Terrain_ToGBuffer.slang` - G-buffer (splatmap 4-material blend). The
     splat blend is expressed as `TerrainSplatSurface`, conformed to the shared
     `ISurfaceModel` seam (`Common/MaterialSurface.slang`) via `extension` — it
     produces a `MaterialSurface` and the G-buffer packing stays outside. See
     `Shaders/SHADER_STYLE.md` → *Interface / Extension Seams*.
-  - `Flux_Terrain_ToShadowmap.slang` - shadow-cascade depth
+  - `Flux_Terrain_ToShadowmap.slang` - shadow-cascade depth (depth-only; drawn indirect per cascade from that cascade's cull slot)
 
 > **The Water shader/pipeline the Terrain feature used to own was DELETED (2026-08-09,
 > compressed-vertex Phase 6).** `xWater`, `Flux_Water.slang`, `Generated/Water.h`, the
@@ -192,6 +193,83 @@ The frame sequence (the plan's zero-padded invariant):
 > to `VK_TRUE`. Native count and `multiDrawIndirect` are optional: fixed
 > multi-draw batches are used without count, and one-record indirect calls
 > are used when multi-draw is also absent. See `Zenith/Vulkan/CLAUDE.md`.
+
+### Shadow casting — per-cascade cull slots, one dispatch, no new pass
+
+Terrain casts into all four CSM cascades (since 2026-09-02). The design is the
+unified-mesh caster's, transposed onto the terrain's existing reset -> cull ->
+draw chain, and it adds **zero render-graph passes**:
+
+- **Slots.** Beside the camera's indirect/count pair every terrain owns a second
+  pair, Flux-owned: `m_xShadowIndirectDrawBuffer` (4 cascade-major slots x
+  `TOTAL_CHUNKS` 20-byte records = 327,680 B) and `m_xShadowVisibleCountBuffer`
+  (4 uints), plus `m_xShadowCullBuffer` (frame-indexed CB, graph-invisible like
+  the camera's frustum CB). Created in
+  `Flux_TerrainStreamingManagerImpl::RegisterTerrainBuffers` and destroyed in
+  `UnregisterTerrainBuffers`, which bracket the component's culling init/destroy;
+  every consumer gates on `m_bCullingResourcesInitialized &&
+  m_bShadowCullResourcesInitialized`. Slot arithmetic lives in
+  `Flux_TerrainShadowCull.h` (pure) and is spelled against
+  `uFLUX_TERRAIN_TOTAL_CHUNKS` on the Slang side; `Flux_Terrain.cpp` static_asserts
+  the slot count to `ZENITH_FLUX_NUM_CSMS` and the CB struct to the reflected CB.
+- **Reset.** The same 64-group dispatch clears the camera record `x` and then
+  strides the shadow buffer at the camera record count, so it clears one record
+  per slot too; thread 0 zeroes every count. Each slot therefore honours the same
+  zero-padded-to-max contract as the camera buffer, and an inactive cascade
+  (shadows off, or fewer staged) is an EMPTY slot.
+- **Cull.** `UpdateCullingAndLod` dispatches `(64, 1 + 4, 1)`. Row 0 is the camera
+  path, unchanged. Row `1 + c` early-outs if `c >= ShadowCullBuffer.params.x`
+  (active cascade count), otherwise AABB-tests the chunk against cascade `c`'s six
+  planes (`Zenith_TerrainShadowCullGPU`, built once per frame in
+  `Flux_TerrainImpl::PreRenderUpdate` from the view registry's cascade slots via
+  `Flux_BuildTerrainShadowCullData` — the same `Zenith_Frustum` extraction the
+  camera block uses, valid for ortho) and appends into slot `c` with
+  `InterlockedAdd(ShadowVisibleCount[c])`. **Shadow rows resolve the CAMERA-distance
+  LOD with the same hysteresis** (reading `LODLevelBuffer` but never writing it —
+  the decision is a fixed point of its own output, so racing the camera row's write
+  is benign) so the caster is the receiver's own surface. Cascades at/above
+  `params.y` (`Render/Shadows/Terrain LOW LOD From Cascade`, default 3) force the
+  always-resident LOW mesh — `Flux_TerrainShadowCasterLOD` is the CPU twin.
+- **Draw.** `Flux_TerrainImpl::RenderToShadowMap(cascade)` (called last in
+  `ExecuteShadowCascade`, after the caller set the dynamic depth bias to the shared
+  constant + `Render/Shadows/Terrain Slope Bias`): `SetPipeline(shadow)`,
+  `UseBindlessTextures(2)` for itself, then per terrain bind its own
+  `TerrainConstants` CB and `DrawIndexedIndirectCount(shadowArgs, shadowCounts,
+  TOTAL_CHUNKS, ZERO_PADDED_TO_MAX, Flux_TerrainShadowCullIndirectByteOffset(c),
+  Flux_TerrainShadowCullCountByteOffset(c), 20)`. The recorder preflights the
+  slot's `[offset, last record end]` against the buffer, which the arithmetic keeps
+  exactly in-bounds (pinned by `ShadowCullSlotsAreContiguousDisjointAndEndAtTheAllocation`).
+- **Graph.** The reset pass `WriteBuffer`s both slot buffers (WRITE_UAV), the cull
+  pass writes the args (WRITE_UAV) and the counts (READWRITE_UAV), and each
+  "Shadow Cascade N" pass `ReadBuffer`s both as READ_INDIRECT_ARG
+  (`Flux_ShadowsImpl::SetupRenderGraph`). Those reads become edges only because
+  **`Terrain` is registered BEFORE `Shadows`** in `RegisterDefaultFeatures`
+  (`FluxTerrain::TerrainIsDeclaredBeforeShadows`); the reset -> cull -> cascade
+  order and the compute-write -> indirect-arg barriers are pinned on a stack
+  graph by `ShadowCascadeReadsOfTheTerrainSlotsOrderAfterTheCullAndBarrier`.
+- **Toggle.** `Render/Shadows/Terrain Casts Shadows` (reachable in code as
+  `Flux_TerrainImpl::Get/SetCastsShadows`, so a capture harness can A/B it —
+  `--phototour-terrain-shadows=ab`). Off resolves the cull to **zero cascade
+  slots** *and* skips the draw, via the pure `Flux_TerrainShadowActiveCascades`,
+  so it removes the work rather than just the result. Pinned by
+  `FluxTerrain::TerrainShadowCastingTogglesOffTheCullNotJustTheDraw`.
+- **Not done here, deliberately:** a caster-only distance beyond the camera LOD's
+  1 km (chunks that far are LOW anyway), and any receiver-side change — the
+  G-buffer shaders and the sampling filter are untouched.
+
+> **★ THE TERRAIN'S OWN ABILITY TO *RECEIVE* A SHADOW LIVES IN ITS G-BUFFER
+> NORMAL, AND HAS BROKEN THERE.** The deferred pass only resolves a shadow when
+> `NdotL > 0`, so a bad terrain normal disables reception game-wide with nothing
+> failing. Both G-buffer shaders take their layer normals through
+> `TerrainSampleLayerNormal`, which calls `Common/Material.slang`'s shared
+> `UnpackNormalMapTS` — they cannot use `SampleNormalMap` itself because they blend
+> FOUR layer normals before applying the TBN, but the decode is shared on purpose.
+> They used to open-code `Sample(uv).xyz * 2.0 - 1.0`; once the exporter began
+> writing `NORMAL_MAP` textures as BC5 (blue = 0 → Z = −1) the terrain's shading
+> normal pointed underground and every terrain pixel stopped receiving shadows.
+> `--ds-debug=8` is how you see it (see `Flux/Shadows/CLAUDE.md` →
+> *Diagnosing "X stopped casting a shadow"*), and
+> `Docs/design/Photorealism.md` §1.10 is the full account.
 
 ### Frame Update Sequence
 

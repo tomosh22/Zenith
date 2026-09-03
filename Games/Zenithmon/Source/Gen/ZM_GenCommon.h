@@ -32,7 +32,9 @@
 // bakes self-invalidate (AssetManifest 7: "fix the generator, bump its version,
 // re-bake").
 // ---------------------------------------------------------------------------
-constexpr u_int uZM_GENCOMMON_VERSION = 1u;
+// 2: every ZM_StaticMesh box is chamfered by default (fZM_STATIC_BOX_CHAMFER)
+//    and ApplyWorldUVs projects per triangle. Every static family's bytes moved.
+constexpr u_int uZM_GENCOMMON_VERSION = 2u;
 
 // ---------------------------------------------------------------------------
 // Seed derivation -- stable IDs/names ONLY.
@@ -288,15 +290,66 @@ namespace ZM_MeshLoft
 // indices but DELIBERATELY push NO m_xBoneIndices/m_xBoneWeights (contrast
 // ZM_MeshLoft::EmitRing / the loft's ZM_PushLoftVertex, which always bind bone
 // buffers). The result satisfies ZM_ValidateGenMeshStatic, never the skinned one.
+// ★ EVERY BOX EDGE IS CHAMFERED BY DEFAULT, AND THE REASON IS A CAMERA. A
+// mathematically sharp arris reflects nothing: the two faces meet at a line of
+// zero width, so no highlight ever sits on the edge and the box reads as CG. A
+// real building's every corner, sill, board and stone has a millimetres-wide
+// worn or planed edge that catches the sun as a bright line, and that line is
+// most of what separates a photograph from a render. 8 mm is inside the 6-12 mm
+// band a plastered corner, a sawn board and a dressed stone all fall in.
+//
+// The chamfer is CLAMPED to a quarter of the box's smallest extent, so a 6 mm
+// pane of glass gets a 1.5 mm bevel rather than a bevel wider than itself, and a
+// degenerate box gets none. Pass 0 for a box whose edges are NOT real arrises --
+// a wall panel that abuts another panel of the same surface would otherwise
+// show a V-groove along a seam that does not exist in the material.
+constexpr float fZM_STATIC_BOX_CHAMFER = 0.008f;
+
 namespace ZM_StaticMesh
 {
-	// Axis-aligned box from xMin..xMax: 24 verts (per-face, hard normals) / 12 tris,
-	// outward winding (each triangle's cross(C-A,B-A) points along the face normal,
-	// matching Zenith_MeshAsset::GenerateUnitCube -- no corner welding/smoothing),
-	// analytic per-face normal, each face mapped into xIsland's [u0,v0,u1,v1] sub-
-	// rect. Writes NO bone indices/weights (static). Returns the first vertex index.
+	// Axis-aligned box from xMin..xMax, outward winding (each triangle's
+	// cross(C-A,B-A) points along its face normal, matching
+	// Zenith_MeshAsset::GenerateUnitCube), analytic per-face normal, each face
+	// mapped into xIsland's [u0,v0,u1,v1] sub-rect. Writes NO bone indices/weights
+	// (static). Returns the first vertex index.
+	//
+	// fChamfer > 0 (the default) bevels all twelve edges: the six faces are inset,
+	// twelve chamfer strips and eight corner triangles close the solid -- 96 verts /
+	// 44 tris. The strips carry SMOOTHED normals (each strip vertex inherits the
+	// normal of the face it borders, so the bevel shades as a fillet between two
+	// hard faces rather than as a third hard facet); the main faces stay hard. In
+	// island mode a strip continues its owning face's UV mapping into the island's
+	// margin. fChamfer == 0 emits the plain 24-vert / 12-tri box.
 	u_int AppendBox(ZM_GenMesh& xMesh, const Zenith_Maths::Vector3& xMin,
-		const Zenith_Maths::Vector3& xMax, const ZM_GenUVIsland& xIsland);
+		const Zenith_Maths::Vector3& xMax, const ZM_GenUVIsland& xIsland,
+		float fChamfer = fZM_STATIC_BOX_CHAMFER);
+
+	// One quad face: 4 verts (hard per-face normal xNormal), 2 tris, corners laid
+	// out {BL, BR, TL, TR} and mapped to the island's corners. The triangles are
+	// ORDERED so cross(C-A,B-A) points along xNormal, whatever order the corners
+	// come in -- so a caller composing a sloped surface (a roof course, a barge
+	// board) does not have to hand-derive the winding. NO bone buffers.
+	u_int AppendFace(ZM_GenMesh& xMesh,
+		const Zenith_Maths::Vector3& xBL, const Zenith_Maths::Vector3& xBR,
+		const Zenith_Maths::Vector3& xTL, const Zenith_Maths::Vector3& xTR,
+		const Zenith_Maths::Vector3& xNormal, const ZM_GenUVIsland& xIsland);
+
+	// One triangle face, wound so its stored normal faces AWAY from xInside (a
+	// point inside the solid). UVs: v0->BL, v1->BR, v2->top-centre of the island.
+	u_int AppendTri(ZM_GenMesh& xMesh,
+		const Zenith_Maths::Vector3& xV0, const Zenith_Maths::Vector3& xV1,
+		const Zenith_Maths::Vector3& xV2, const Zenith_Maths::Vector3& xInside,
+		const ZM_GenUVIsland& xIsland);
+
+	// An ORIENTED box: the parallelepiped spanned by xU, xV, xW from xOrigin
+	// (corners = origin + a*U + b*V + c*W, a,b,c in {0,1}). Six hard faces, each
+	// wound outward from the solid's centre. This is what a sloped barge board or
+	// a hip rafter is -- an axis-aligned box cannot follow a roof pitch. 24 verts /
+	// 12 tris, island-mapped per face; pair with ApplyWorldUVs for a tiling
+	// surface. Not chamfered (its edges are covered or too thin to matter).
+	u_int AppendParallelepiped(ZM_GenMesh& xMesh, const Zenith_Maths::Vector3& xOrigin,
+		const Zenith_Maths::Vector3& xU, const Zenith_Maths::Vector3& xV,
+		const Zenith_Maths::Vector3& xW, const ZM_GenUVIsland& xIsland);
 
 	// GABLE: ridge parallel to X (width). xEaveMin/xEaveMax = overhang-expanded roof
 	// footprint at eave level y=xEaveMin.y; ridge at y=eave+fRise, z=mid. 2 sloped pitch
@@ -328,18 +381,22 @@ namespace ZM_StaticMesh
 	// a tiling material and must NOT be validated with the [0,1]-clamped
 	// ZM_ValidateGenMeshStatic.
 
-	// Re-derive the UVs of every vertex from uFirstVert onward by world-space
-	// projection: the dominant axis of each vertex's normal picks the plane, and
-	// the other two world axes divide by fTileMetres. Faces sharing a plane agree
-	// at every shared edge, so a wall is continuous across the boxes making it up.
+	// Re-derive the UVs of every triangle from uFirstVert onward by world-space
+	// projection: the dominant axis of each TRIANGLE's geometric normal picks the
+	// plane, and the other two world axes divide by fTileMetres. Faces sharing a
+	// plane agree at every shared edge, so a wall is continuous across the boxes
+	// making it up. Per triangle rather than per vertex because a chamfer strip's
+	// vertices carry two different (smoothed) normals and must still share one
+	// plane; no emitter here shares a vertex between triangles of different planes.
 	void ApplyWorldUVs(ZM_GenMesh& xMesh, u_int uFirstVert, float fTileMetres);
 
 	// AppendBox followed by ApplyWorldUVs -- the pairing every architectural box
 	// wants. Emitting normally and RE-DERIVING the UVs is deliberate: it avoids
-	// owning a second copy of AppendBox's winding-correct 24-vertex emission that
-	// could drift from the first.
+	// owning a second copy of AppendBox's winding-correct emission that could
+	// drift from the first. fChamfer as AppendBox.
 	u_int AppendWorldBox(ZM_GenMesh& xMesh, const Zenith_Maths::Vector3& xMin,
-		const Zenith_Maths::Vector3& xMax, float fTileMetres);
+		const Zenith_Maths::Vector3& xMax, float fTileMetres,
+		float fChamfer = fZM_STATIC_BOX_CHAMFER);
 }
 
 // ---- Skeleton + finalisation ----------------------------------------------

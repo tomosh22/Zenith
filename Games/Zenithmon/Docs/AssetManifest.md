@@ -317,27 +317,42 @@ SCENE time (2-3 per building leaving door gaps), not baked. `ZM_BakeBuilding`
 
 Family total: **30 buildings x 4 = 120 files**.
 
-**Props (25 models).** `ZM_PropGen` (SHIPPED): 25 models -- fences, signs, lamps,
-bridges, ledge lips, cave rocks, interior furniture, and the ~6 battle-dome biome
+**Props (32 models).** `ZM_PropGen` (SHIPPED): 32 models -- fences, signs, lamps,
+bridges, ledge lips, cave rocks, interior furniture, the 6 battle-dome biome
 dressing sets (the battle scene is ONE scene; per-biome dressing is swapped at
-runtime from these baked sets). Like buildings, props carry SCENE-authored box
-colliders, not baked into the model. `ZM_BakeProp` (TOOLS-only) writes the 4
+runtime from these baked sets), the 3 ground-item presentations, and the 4
+interior LIGHT FIXTURES. Like buildings, props carry SCENE-authored box
+colliders, not baked into the model. `ZM_BakeProp` (TOOLS-only) writes the 8
 files under `game:Props/<Name>/`:
 
 | File | Count per prop | Format / notes |
 |---|---|---|
 | `<Name>.zmesh` | 1 | skeleton-less static mesh, single submesh (`HasSkinning()` == false) |
-| `<Name>_albedo.ztxtr` | 1 | base albedo, BC1 128x128 |
-| `<Name>.zmtrl` | 1 | matte dielectric, .zmtrl v5 -- albedo in BASE_COLOR |
+| `<Name>_albedo.ztxtr` | 1 | base albedo, BC1 512x512, a 2x2 atlas of UV ROLES (primary / secondary / accent / glow) |
+| `<Name>_normal.ztxtr` | 1 | BC5, from the per-palette height field |
+| `<Name>_rm.ztxtr` | 1 | linear BC1, G = roughness / B = metallic |
+| `<Name>_ao.ztxtr` | 1 | linear BC1, cavity occlusion |
+| `<Name>_emissive.ztxtr` | 1 | linear BC1 128x128 mask -- bright ONLY in the GLOW island, and black on every non-fixture |
+| `<Name>.zmtrl` | 1 | .zmtrl v5; a LIGHT_FIXTURE row also carries the emissive mask, its housed light's colour and an HDR intensity |
 | `<Name>.zmodel` | 1 | single-submesh mesh + one material, .zmodel v2 -- NO skeleton path, NO animation paths |
 
-Family total: **28 props x 4 = 112 files**.
+Family total: **32 props x 8 = 256 files**.
+
+**★ THE THREE ROCK ROWS PRESENT SOMEBODY ELSE'S MODEL.** `ZM_PROP_KIND_ROCK`'s
+own composition is a single box, so `RockSmall`, `RockLarge` and `Boulder`
+resolve through `ZM_PropModelRef` to the shared ENGINE stones under
+`engine:Meshes/Rocks` (written by `Tools/Zenith_Tools_RockAssetExport.cpp` -- the
+same set RenderTest and Dawnmere's scatter dress with), and `ZM_PropFit` scales
+one to the roster row like any other delivery. Their own bundles are still baked,
+because the family manifest enumerates every row; nothing loads them.
 
 **Determinism / version stamp.** Every output byte is a pure function of the
 roster id (section 6.2); the generator versions are `uZM_BUILDINGGEN_VERSION`
-(currently **1**) and `uZM_PROPGEN_VERSION` (currently **2**), golden-pinned -- a
+and `uZM_PROPGEN_VERSION`, golden-pinned -- a
 change to either generation algorithm bumps its version and forces a cold family
-re-bake. Locked by the `ZM_Gen` BuildingGen/PropGen units
+re-bake. **Read the current numbers off the two headers rather than from here:
+they moved twice in one day during the photorealism pass, and a version quoted
+in prose is a duplicate of a number that changes.** Locked by the `ZM_Gen` BuildingGen/PropGen units
 ([TestPlan.md](TestPlan.md) 5.4).
 
 ---

@@ -38,11 +38,22 @@
 // algorithm did change, which is what this number is for.
 // 3: props gained the full four-map PBR set (normal / roughness-metallic /
 // occlusion) beside the albedo, derived from a per-palette height field.
-constexpr u_int uZM_PROPGEN_VERSION          = 3u;
+// 4: albedo bakes stamped BC1_RGB_SRGB rather than UNORM (ZM_TextureSynth v3).
+// 5: per-KIND UV islands (every face used to sample the whole [0,1] texture, so
+// a post and a rail wore the same square of grain), 512^2 maps, chamfered /
+// tapered posts and real rail sections, the four LIGHT_FIXTURE kinds with an
+// emissive map, and the ROCK kinds presenting the shared engine rock models.
+constexpr u_int uZM_PROPGEN_VERSION          = 5u;
 
-// The placeholder albedo resolution SC4 fills with a flat palette colour + accent
-// band. Not golden.
-constexpr u_int uZM_PROP_ALBEDO_RESOLUTION   = 128u;
+// The albedo / height-derived map resolution. 512 on a prop that is at most a
+// few metres across is 170+ px/m on the largest face and 340+ on a half-width
+// island, which is what a player standing beside a fence post can resolve.
+constexpr u_int uZM_PROP_ALBEDO_RESOLUTION   = 512u;
+
+// The EMISSIVE mask resolution. It carries one bright island and black
+// everywhere else (see ZM_BuildPropEmissive), so it needs only enough texels for
+// the island gutter to be a real gutter under bilinear filtering.
+constexpr u_int uZM_PROP_EMISSIVE_RESOLUTION = 128u;
 
 // Props have no evolution, so the seed-derivation evo-stage slot is a fixed
 // constant (keeps ZM_GenDeriveSeed's signature shared with creatures/humans).
@@ -132,6 +143,86 @@ ZM_GenImage ZM_BuildPropHeight(const ZM_PropRecipe& xR);
 ZM_SynthPbrResponse ZM_PropPbrResponse(ZM_PROP_PALETTE ePalette);
 
 // ---------------------------------------------------------------------------
+// UV islands -- WHERE on the prop's texture each part of it samples.
+//
+// ★ EVERY FACE USED TO SAMPLE THE WHOLE [0,1] SQUARE. A fence post, a rail, a
+// sign board and a lamp head all wore the same square of grain, stretched to
+// whatever aspect the face had, and a single accent band across the top of the
+// image landed on every part at once. The texture is now a 2 x 2 atlas of
+// ROLES, and each kind's composition assigns a role to each part: the grain on
+// a rail runs along the rail, the sign's painted face is only on the board, and
+// -- the one that matters most -- a light fixture's SHADE is the ONLY thing in
+// the GLOW island, which is the only island the emissive map lights up.
+//
+// The MESH islands are inset from the quadrant they live in (a gutter), while
+// the PAINT rects cover the whole quadrant, so bilinear filtering at an island
+// edge reads more of the same role rather than its neighbour.
+// ---------------------------------------------------------------------------
+enum ZM_PROP_UV_ROLE : u_int
+{
+	ZM_PROP_UV_PRIMARY,     // the structural material: posts, bodies, walls
+	ZM_PROP_UV_SECONDARY,   // the same material seen differently: rails, tops, end grain
+	ZM_PROP_UV_ACCENT,      // the painted / fitted detail: sign faces, hoops, brass
+	ZM_PROP_UV_GLOW,        // a fixture's shade or diffuser -- emissive
+
+	ZM_PROP_UV_ROLE_COUNT
+};
+
+// The island a part is MESHED into (inset by the gutter). TOTAL: an unknown
+// role answers PRIMARY.
+ZM_GenUVIsland ZM_PropUVIsland(ZM_PROP_UV_ROLE eRole);
+// The quadrant a role is PAINTED over (no gutter). TOTAL as above.
+ZM_GenUVIsland ZM_PropUVPaintRect(ZM_PROP_UV_ROLE eRole);
+// Which role a normalized UV falls in, by quadrant. Used by the painters and
+// by the tests that check the emissive mask lands only where the shade is.
+ZM_PROP_UV_ROLE ZM_PropUVRoleAt(float fU, float fV);
+
+// ---------------------------------------------------------------------------
+// Emissive response -- non-zero ONLY for the LIGHT_FIXTURE kinds.
+//
+// The colour is the light the fixture houses (ZM_InteriorDressing.h's rows),
+// so the glowing shade and the light it throws agree; the intensity is HDR and
+// deliberately above the tonemapper's white, because a lit shade IS brighter
+// than any diffuse surface in the room and reading as one is the whole point.
+// ---------------------------------------------------------------------------
+struct ZM_PropEmissive
+{
+	Zenith_Maths::Vector3 m_xColour    = Zenith_Maths::Vector3(0.0f);
+	float                 m_fIntensity = 0.0f;   // HDR multiplier; 0 = inert
+};
+// TOTAL: every non-fixture id (and every out-of-range id) answers intensity 0.
+ZM_PropEmissive ZM_GetPropEmissive(ZM_PROP_ID eId);
+
+// The emissive MASK: bright in the GLOW island for a fixture, black everywhere
+// else (and everywhere on a non-fixture). PURE function of the recipe; draws no
+// RNG at all.
+ZM_GenImage ZM_BuildPropEmissive(const ZM_PropRecipe& xR);
+
+// ---------------------------------------------------------------------------
+// The MODEL a prop presents -- which is not always its own bake.
+//
+// ★ THE ROCK KINDS PRESENT THE SHARED ENGINE ROCKS. ZM_PROP_KIND_ROCK's
+// generated composition is literally one box, and no box texture makes a box a
+// rock. The engine already ships four sculpted stones under
+// engine:Meshes/Rocks (Tools/Zenith_Tools_RockAssetExport.cpp -- the same set
+// RenderTest and Dawnmere's scatter dress with), so a rock prop resolves to one
+// of those and ZM_PropFit scales it to the roster row like any other delivery.
+// The generated bundle is still baked (the family manifest enumerates every
+// row) but nothing loads it for these three ids.
+//
+// Every presenter goes through THESE two rather than ZM_PropAssetPath(MODEL /
+// MESH) directly, so the substitution has one home.
+// ---------------------------------------------------------------------------
+// The engine stone stem ("Boulder" / "Shard" / ...) for a rock kind; nullptr
+// for every other prop. TOTAL.
+const char* ZM_PropEngineRockStem(ZM_PROP_ID eId);
+inline bool ZM_PropUsesEngineRock(ZM_PROP_ID eId) { return ZM_PropEngineRockStem(eId) != nullptr; }
+// The .zmodel ref to LoadModel, and the mesh ref ZM_ResolvePropFit measures.
+// Same buffer contract as ZM_PropAssetPath: false on truncation.
+bool ZM_PropModelRef(ZM_PROP_ID eId, char* szOut, u_int uCap);
+bool ZM_PropMeshRef (ZM_PROP_ID eId, char* szOut, u_int uCap);
+
+// ---------------------------------------------------------------------------
 // ZM_Prop -- the full in-memory bundle SC4 produces (mesh + placeholder albedo).
 // The .zmtrl / .zmodel bundle bake is deferred to SC5.
 // ---------------------------------------------------------------------------
@@ -147,6 +238,9 @@ struct ZM_Prop
 	// (ZM_BuildPropHeight), so wood gets grain, stone gets pitting and metal a
 	// brushed direction.
 	ZM_SynthPbrSet m_xPbr;
+	// The emissive mask (ZM_BuildPropEmissive). Black for every kind but the
+	// four light fixtures; always present so the bundle shape is one shape.
+	ZM_GenImage    m_xEmissive;
 };
 
 // Build the complete bundle for a prop (resolve -> mesh -> texture), in that
@@ -174,7 +268,8 @@ u_int ZM_PropContentHash(const ZM_Prop& xProp);
 struct ZM_PropValidation
 {
 	ZM_GenStaticMeshValidation m_xMesh;
-	bool m_bTextureNonEmpty = false;
+	bool m_bTextureNonEmpty  = false;
+	bool m_bEmissiveNonEmpty = false;
 	bool m_bAllValid = false;
 };
 ZM_PropValidation ZM_ValidateProp(const ZM_Prop& xProp);
@@ -193,6 +288,7 @@ enum ZM_PROP_ASSET_KIND : u_int
 	ZM_PROP_ASSET_NORMAL,     // <Name>_normal.ztxtr   (BC5)
 	ZM_PROP_ASSET_ROUGH_METAL,// <Name>_rm.ztxtr
 	ZM_PROP_ASSET_OCCLUSION,  // <Name>_ao.ztxtr
+	ZM_PROP_ASSET_EMISSIVE,   // <Name>_emissive.ztxtr (linear mask; black off a fixture)
 	ZM_PROP_ASSET_MATERIAL,   // <Name>.zmtrl
 	ZM_PROP_ASSET_MODEL,      // <Name>.zmodel
 

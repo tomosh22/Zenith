@@ -320,6 +320,10 @@ struct Zenith_EditorState
 
 	// Interactive runs open maximised once, like every other editor.
 	bool m_bMaximiseRequested = false;
+	// Suppresses the viewport's draw-list overlays (mode badge, stats block,
+	// navigation hint, axis widget) so a capture harness photographs the scene
+	// alone. Set and restored by the photo-tour tests; never persisted.
+	bool m_bViewportOverlaysHidden = false;
 };
 
 #endif // ZENITH_TOOLS

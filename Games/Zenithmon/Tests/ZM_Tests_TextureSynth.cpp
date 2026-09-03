@@ -433,3 +433,174 @@ ZENITH_TEST(ZM_Gen, Tex_StripesAndSpotsDeterministic)
 	ZENITH_ASSERT_FALSE(xSpotsA.Equals(xSpotsSeed),
 		"a different spot seed must produce a different image");
 }
+
+// ---------------------------------------------------------------------------
+// ★ THE SHARED MICRO-DETAIL PAIR -- one tiling grain every architectural
+// material overlays 8-12 times per tile.
+//
+// A 512^2 map on a 3 m tile is 170 px/m: a texel every 6 mm, which is exactly
+// where a wall goes soft as a player walks up to it. The engine's detail slots
+// exist for that, and plaster grain, stone grit and weathered slate are close
+// enough at sub-centimetre scale that ONE pair serves them all.
+//
+// ★ THE TWO PROPERTIES THAT MAKE IT USABLE ARE BOTH INVISIBLE IF WRONG. It has
+// to be MEAN-NEUTRAL, because the shader overlays it as x2 around mid-grey and a
+// biased mean shifts the value of every surface in the game; and it has to WRAP,
+// because it repeats ten times per tile and a non-wrapping grain draws its own
+// grid on top of the one the base map already has.
+// ---------------------------------------------------------------------------
+ZENITH_TEST(ZM_Gen, Tex_MicroDetailIsNeutralAndWraps)
+{
+	// ★ 128, NOT 64, FOR THE SAME REASON THE PBR-SET UNIT USES IT:
+	// ZM_SynthNormalFromHeight scales its central differences by 2.2 * width /
+	// 1024, so the SAME field yields a weaker normal at a lower resolution and a
+	// 64-texel probe would be testing the encoding's noise floor rather than the
+	// grain.
+	constexpr u_int uRES = 128u;
+	const ZM_SynthDetailPair xA = ZM_SynthBuildMicroDetail(uRES, 1234u);
+	const ZM_SynthDetailPair xB = ZM_SynthBuildMicroDetail(uRES, 1234u);
+
+	ZENITH_ASSERT_TRUE(xA.NonEmpty(), "the micro-detail pair is missing a map");
+	ZENITH_ASSERT_TRUE(xA.Equals(xB),
+		"ZM_SynthBuildMicroDetail is not a pure function of (resolution, salt)");
+	ZENITH_ASSERT_EQ(xA.m_xAlbedo.GetWidth(), uRES, "the detail albedo is the wrong size");
+	ZENITH_ASSERT_EQ(xA.m_xNormal.GetWidth(), uRES, "the detail normal is the wrong size");
+	ZENITH_ASSERT_FALSE(ZM_SynthBuildMicroDetail(uRES, 999u).Equals(xA),
+		"two different salts produced the same grain, so the salt does nothing");
+
+	// MEAN-NEUTRAL: the x2 overlay must be identity on average.
+	double dSum = 0.0;
+	float fMin = 2.0f, fMax = -1.0f;
+	for (u_int y = 0u; y < uRES; ++y)
+	{
+		for (u_int x = 0u; x < uRES; ++x)
+		{
+			const float fT = xA.m_xAlbedo.Get(y, x).x;
+			dSum += fT;
+			if (fT < fMin) { fMin = fT; }
+			if (fT > fMax) { fMax = fT; }
+			// Grey, not coloured: a tinted detail albedo would push every surface
+			// it overlays toward its own hue.
+			ZENITH_ASSERT_EQ_FLOAT(xA.m_xAlbedo.Get(y, x).y, fT, 1.0e-6f,
+				"the detail albedo is not achromatic at (%u, %u)", y, x);
+			ZENITH_ASSERT_EQ_FLOAT(xA.m_xAlbedo.Get(y, x).z, fT, 1.0e-6f,
+				"the detail albedo is not achromatic at (%u, %u)", y, x);
+		}
+	}
+	const float fMean = (float)(dSum / (double)(uRES * uRES));
+	ZENITH_ASSERT_EQ_FLOAT(fMean, 0.5f, 0.02f,
+		"the detail albedo's mean is %.4f rather than 0.5 -- the x2 overlay is not "
+		"identity and every wall it touches changes value", fMean);
+	// ...and it is a RIPPLE, not a flat card: a constant 0.5 would satisfy the
+	// mean clause perfectly and do nothing at all.
+	ZENITH_ASSERT_GT(fMax - fMin, 0.01f,
+		"the detail albedo spans only %.5f -- it is a constant multiply", fMax - fMin);
+	// ...but a gentle one: a detail albedo with real contrast reads as dirt.
+	ZENITH_ASSERT_LT(fMax - fMin, 0.25f,
+		"the detail albedo spans %.4f, which will read as a pattern rather than as "
+		"grain", fMax - fMin);
+
+	// THE NORMAL IS NOT FLAT. A constant (0.5, 0.5, 1) binds, samples and renders
+	// exactly like no detail normal at all, so nothing downstream can tell.
+	u_int uNonFlat = 0u;
+	for (u_int y = 0u; y < uRES; ++y)
+	{
+		for (u_int x = 0u; x < uRES; ++x)
+		{
+			const Zenith_Maths::Vector4 xN = xA.m_xNormal.Get(y, x);
+			if (std::fabs(xN.x - 0.5f) > 0.004f || std::fabs(xN.y - 0.5f) > 0.004f)
+			{
+				++uNonFlat;
+			}
+		}
+	}
+	ZENITH_ASSERT_GT(uNonFlat, (uRES * uRES) / 4u,
+		"only %u of %u detail-normal texels differ from flat", uNonFlat, uRES * uRES);
+
+	// ★ IT WRAPS. The height field is periodic by construction, so the LAST column
+	// must be as close to the FIRST as any interior neighbour pair is -- if it is
+	// not, the tile edge is a discontinuity, and at ten repeats per tile that is
+	// a visible lattice.
+	const ZM_GenImage xHeight = ZM_SynthMicroDetailHeight(uRES, 1234u);
+	float fMaxInterior = 0.0f, fMaxSeam = 0.0f;
+	for (u_int y = 0u; y < uRES; ++y)
+	{
+		for (u_int x = 1u; x < uRES; ++x)
+		{
+			const float fD = std::fabs(xHeight.Get(y, x).x - xHeight.Get(y, x - 1u).x);
+			if (fD > fMaxInterior) { fMaxInterior = fD; }
+		}
+		const float fSeam = std::fabs(xHeight.Get(y, 0u).x - xHeight.Get(y, uRES - 1u).x);
+		if (fSeam > fMaxSeam) { fMaxSeam = fSeam; }
+	}
+	ZENITH_ASSERT_LE(fMaxSeam, fMaxInterior + 1.0e-4f,
+		"the detail grain's tile seam jumps by %.4f against an interior maximum of "
+		"%.4f -- the lattice does not wrap and the repeat will draw a grid",
+		fMaxSeam, fMaxInterior);
+
+	// A degenerate resolution is answered, not crashed (every entry point here is
+	// TOTAL).
+	ZENITH_ASSERT_FALSE(ZM_SynthBuildMicroDetail(1u, 7u).NonEmpty(),
+		"a 1-texel micro-detail request produced a map -- a period-1 lattice is "
+		"constant and there is nothing to build");
+}
+
+// ---------------------------------------------------------------------------
+// ★ THE NORMAL-FROM-HEIGHT BORDER RULE IS A CHOICE, AND BOTH ANSWERS ARE
+// NEEDED. An ATLAS has gutters and must CLAMP -- wrapping would fold the far
+// edge of an unrelated island into a limb's silhouette. A TILING surface must
+// WRAP, or every repeat carries a one-texel line of wrong slope, which at eight
+// repeats per metre is a visible grid on a wall.
+// ---------------------------------------------------------------------------
+ZENITH_TEST(ZM_Gen, Tex_NormalFromHeightWrapsWhenAsked)
+{
+	// ★ 128, AND THE NUMBER IS DERIVED RATHER THAN CHOSEN. The first version of
+	// this unit probed at 32 and asserted the wrapped border deviated from flat by
+	// more than 0.05 -- which NO correct implementation could ever satisfy.
+	// ZM_SynthNormalFromHeight scales its central differences by
+	// 2.2 * width / 1024, so at 32 the scale is 0.06875 and the largest possible
+	// encoded deviation across a 0.8 step is 0.5 * 0.8 * 0.06875 / |n| = 0.0275.
+	// The wrap was working; the constant was measuring the encoding's resolution
+	// dependence instead. At 128 the scale is 0.275 and the deviation MEASURES
+	// 0.107, so the 0.05 floor below now carries a 2x margin.
+	constexpr u_int uRES = 128u;
+	// A field with a real STEP across the wrap seam: high on the last columns, low
+	// on the first. Clamped, the border texel sees no gradient (it compares
+	// itself with itself); wrapped, it sees the full step.
+	ZM_GenImage xHeight(uRES, uRES);
+	for (u_int y = 0u; y < uRES; ++y)
+	{
+		for (u_int x = 0u; x < uRES; ++x)
+		{
+			const float fH = (x >= uRES - 4u) ? 0.9f : 0.1f;
+			xHeight.Set(y, x, Zenith_Maths::Vector4(fH, fH, fH, 1.0f));
+		}
+	}
+	const ZM_GenImage xClamped = ZM_SynthNormalFromHeight(xHeight, 1.0f, /*bWrap*/ false);
+	const ZM_GenImage xWrapped = ZM_SynthNormalFromHeight(xHeight, 1.0f, /*bWrap*/ true);
+
+	const float fClampX = xClamped.Get(uRES / 2u, 0u).x;
+	const float fWrapX  = xWrapped.Get(uRES / 2u, 0u).x;
+	ZENITH_ASSERT_EQ_FLOAT(fClampX, 0.5f, 0.02f,
+		"the CLAMPED rule found a gradient at column 0 (%.4f) -- it should compare "
+		"the border texel against itself", fClampX);
+	ZENITH_ASSERT_GT(std::fabs(fWrapX - 0.5f), 0.05f,
+		"the WRAPPED rule found no gradient at column 0 (%.4f) across a 0.8 step in "
+		"the column before it -- the seam is not being closed", fWrapX);
+
+	// Away from the border the two rules must agree exactly, or the flag is doing
+	// something other than choosing a neighbour.
+	for (u_int y = 1u; y < uRES - 1u; ++y)
+	{
+		for (u_int x = 1u; x < uRES - 1u; ++x)
+		{
+			ZENITH_ASSERT_EQ_FLOAT(xClamped.Get(y, x).x, xWrapped.Get(y, x).x, 0.0f,
+				"the wrap flag changed an INTERIOR texel at (%u, %u)", y, x);
+		}
+	}
+	// Default is CLAMPED: the atlas families (creatures, humans) call it with two
+	// arguments and must keep the bytes they had.
+	ZENITH_ASSERT_TRUE(ZM_SynthNormalFromHeight(xHeight, 1.0f).Equals(xClamped),
+		"the default border rule is no longer CLAMP, so every atlas family's normal "
+		"map just moved");
+}

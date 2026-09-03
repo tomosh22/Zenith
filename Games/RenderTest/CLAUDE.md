@@ -446,6 +446,72 @@ Games\RenderTest\RunTerrainIndirectPerformance.ps1 -Mode padded -CameraCase hori
   + stale-tail readback), plus the manual-only `TerrainIndirectPerformance`
   (`Tests/TerrainIndirectPerformance.cpp`) collector described above.
 
+## The photo tour (`RT_PhotoTour`) — the renderer's visual instrument
+
+`Tests/PhotoTour.cpp`, **manual-only + graphics-required**, so it never joins the
+batch. It is an INSTRUMENT, not a gate: 11 fixed poses over the campus (landscape,
+grove, material showcase, tennis court, terrain detail), one swapchain TGA each
+plus a `.rect` sidecar naming the editor viewport, so any run is comparable to any
+other run pose-for-pose. Quads, text, debug primitives and the editor overlays are
+suppressed for the duration and restored in Teardown; player-relative poses read
+the live transform.
+
+```powershell
+pwsh -NoProfile -File Tools\phototour_run.ps1 -Game RenderTest -Tag baseline
+pwsh -NoProfile -File Tools\phototour_run.ps1 -Game RenderTest -Tag after -Compare baseline
+```
+
+The runner launches it windowed, crops via `Tools/phototour_crop.py` and writes
+contact/compare sheets under `Build/artifacts/rendertest/phototour/<tag>/`.
+
+**Exit code:** exactly ONE known teardown fault is forgiven, and only when its
+signature (`Worker N scratch buffer overflow`) is in the log — it fires after the
+test reports PASSED and after every capture is on disk. Any other nonzero exit is
+reported with the log tail. It used to forgive *every* nonzero exit once `DONE`
+appeared, which is a fail-open: `DONE` is logged before engine shutdown, so it hid
+a real grass-handle lifetime bug for as long as it existed. The runner also warns
+on any `still held with N refs` line, and the crop step fails when it finds no
+readable captures.
+
+**A reused `-Tag` is cleared before the run**, and a `-Compare` that does not pair
+every shot on both sides fails, naming the unmatched ones (`-AllowPartialCompare`
+for a deliberate asymmetry, such as an `ab` run against a plain one). Both matter
+more than they look: the cropper enumerates every `.tga` in the directory, so a
+stale capture from an earlier run appears in the contact sheet as part of this one
+**and satisfies the on-disk verification below** — a run that captured nothing
+could verify clean against its predecessor's output. A comparison with zero pairs
+used to exit 0 having compared nothing at all.
+
+**The tour verifies its captures on DISK.** `Flux_Screenshot::RequestDump` only
+sets a pending flag that EndFrame consumes, so the shot counter proves the tour
+*asked* for N captures, never that N landed; `Verify` now `file_size`s every
+requested path and names any that are missing or empty.
+
+**`--phototour-terrain-shadows=0|1|ab` and `--phototour-shadows=0|1|ab`** are
+in-run A/B modes: `ab` captures each pose twice from the same pose with only that
+feature flipped, writing `<pose>__noterrainshadow.tga` / `<pose>__noshadow.tga`
+beside the base shot.
+
+> **★ THE FLIP HAPPENS ONE FRAME AFTER THE CAPTURE IT FOLLOWS, AND THAT IS
+> LOAD-BEARING.** `Zenith_AutomatedTestRunner::Tick()` runs BEFORE the frame's
+> render and the pending dump is consumed at EndFrame of the SAME frame, so a
+> render-state change made after `RTRequestDump` in one `Update` lands in the very
+> frame being captured. Flipping shadows straight after queuing the base shot put a
+> shadows-OFF frame in the base file and a shadows-ON frame in `__noshadow` — the
+> pair was inverted. Hence the one-frame `AltFlip` / `AltRestore` phases; **do not
+> change render state below a `RequestDump` call.** The mean-diff magnitude is
+> symmetric so it can never reveal this: verify against forced arms instead
+> (`--phototour-shadows=1` and `=0`), which is how it was caught and fixed. **Two separate runs are not a controlled A/B** — wind is
+driven from process start with a variable boot frame count, and the measured
+run-to-run noise floor was 0.9–1.3x the effect being measured, against 2–7x for
+the in-run pair. Zenithmon has the same instrument (`ZM_PhotoTour_Test`, 15 poses
+across three scenes; `Games/Zenithmon/Docs/TestPlan.md`).
+
+`Docs/design/Photorealism.md` is what the tour was built for, and §3 there is the
+verification recipe. **For "why is nothing shadowed", use `--ds-debug=8` first** —
+no rebuild, answers in one run (`Zenith/Flux/Shadows/CLAUDE.md` → *Diagnosing "X
+stopped casting a shadow"*).
+
 ## Controls (the action table)
 
 Every control is an ACTION registered in **`RenderTest_Bindings.h`** — the one
@@ -530,6 +596,46 @@ streamed HIGH and the residency assert was unsatisfiable. The fix applies the
 same `+fSHIFT (1792)` the sibling terrain tests use. NOTE: windowed RenderTest
 boot needs the engine `Zenith/Assets/` textures (Cubemap/Fonts/Water/Particles)
 present — if absent the skybox cubemap yields an "Invalid SRV" boot abort.
+
+## The court surface (`RenderTest_Tennis.cpp`)
+
+The court's four maps are baked offline from ONE set of pure `(u, v)` functions
+(`RT_MakeCourtLayout` / `RT_CourtPaintCoverage` / `RT_CourtWear` /
+`RT_CourtSurfaceHeight`), which is what makes a paint edge in the colour map the
+same paint edge in the normal, RM and AO maps by construction rather than by
+coincidence.
+
+| Map | Size | Format |
+|---|---|---|
+| `Tennis_Court` | 1024 x 2048 | RGBA8 **sRGB**, full mip chain, uncompressed |
+| `Tennis_Court_Normal` | 1024 x 2048 | **BC5** linear |
+| `Tennis_Court_RM` / `_AO` | 512 x 1024 | RGBA8 linear, uncompressed |
+
+Three things are load-bearing rather than taste:
+
+* **The painted lines are ANTIALIASED by analytic box coverage**, not by a
+  nearest-texel rect fill. At the old 384x832 a line was ~4 texels wide with a
+  hard edge, and a hard edge crawls under any camera motion -- nothing
+  downstream can put the missing coverage back (TAA sharpens it, the mip chain
+  smears it). `TennisCourt.PaintedLinesAreAntialiased` fails if the edge ever
+  goes back to two values.
+* **The base colour is sRGB now.** It used to export `RGBA8_UNORM`, which handed
+  the shader gamma-encoded values as if they were linear -- the reason the turf
+  sat too bright against the rest of the campus.
+* **Worn turf is PALER, not darker.** Grass dies where players stand (the two
+  baseline bands, and less so the service boxes); a dark scuff would read as a
+  shadow. `TennisCourt.WornTurfIsPalerThanHealthyTurf` pins the direction.
+
+The mow stripes are +/-6% value in ~1.5 m bands running along the court's length
+(so they alternate across U) -- the single strongest cue that a green surface is
+mown grass rather than green paint. `RT_MakeCourtDataTextures` gives the line
+paint a markedly lower roughness than the turf, which is the one material
+difference that makes lines read as paint ON grass.
+
+Tests: `RenderTest_TennisCourtTexture.Tests.inl`, included from the bottom of
+`RenderTest_Tennis.cpp` and deliberately OUTSIDE its `ZENITH_TOOLS` block -- the
+generators are pure CPU pixel functions, so the units run in every config, not
+only in the tools build that actually writes the `.ztxtr`.
 
 ## Tennis CLI
 

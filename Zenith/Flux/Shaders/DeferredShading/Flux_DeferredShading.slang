@@ -117,16 +117,20 @@ float3 ComputeIBLAmbient(float3 xNormal, float3 xViewDir, float3 xAlbedo,
 	float  fRoughnessForLUT = clamp(fRoughness, PBR_BRDF_LUT_MIN_ROUGHNESS, PBR_BRDF_LUT_MAX_ROUGHNESS);
 	float2 xBRDF = GetBRDFLUT().Sample(float2(NdotV, fRoughnessForLUT)).rg;
 
-	// SSR specular contribution (Fresnel applied here, not in SSR shader,
-	// so SSR + IBL share consistent Fresnel and energy is conserved).
+	// The split-sum specular weight, shared by the prefiltered cube AND the SSR
+	// colour so the two ends of the confidence lerp below are the same
+	// radiometric quantity (a plain Fresnel on the SSR side was ~35% brighter
+	// than the multiscatter-compensated IBL it replaced, and reflections
+	// visibly brightened wherever SSR confidence ramped).
+	float3 xSpecularWeight = MultiscatterBRDF(F0, NdotV, fRoughness, xBRDF);
+
 	float3 xSSRSpecular   = float3(0.0, 0.0, 0.0);
 	float  fSSRConfidence = 0.0;
 	if (g_xPassSet.DeferredShadingConstants.g_bSSREnabled != 0)
 	{
 		float4 xSSR     = g_xPassSet.g_xSSRTex.Sample(xUV);
 		fSSRConfidence  = xSSR.a;
-		float3 xSSRFres = FresnelSchlick(NdotV, F0);
-		xSSRSpecular    = xSSR.rgb * xSSRFres;
+		xSSRSpecular    = xSSR.rgb * xSpecularWeight;
 	}
 
 	// IBL disabled — fallback to simple ambient + SSR specular.
@@ -140,10 +144,17 @@ float3 ComputeIBLAmbient(float3 xNormal, float3 xViewDir, float3 xAlbedo,
 	// Degenerate normal guard — sky / unrendered pixels get zero ambient.
 	if (length(xNormal) < NORMAL_LENGTH_EPSILON) return float3(0.0, 0.0, 0.0);
 
-	// Energy-conserving split: kS via Fresnel, kD = 1 - kS, scale kD by
-	// (1 - metallic) since metals have no diffuse contribution.
-	float3 kS = F;
-	float3 kD = (1.0 - kS) * (1.0 - fMetallic);
+	// Energy-conserving split (Fdez-Aguera 2019): the diffuse lobe receives
+	// exactly the energy the single- AND multi-scatter specular lobes did not,
+	// so diffuse + specular sum to unity at every roughness/angle. The old
+	// (1 - F) form compensated the specular side only, leaving the two
+	// inconsistent at grazing angles on rough dielectrics.
+	float3 xFssEss = F0 * xBRDF.x + xBRDF.y;
+	float  fEss    = xBRDF.x + xBRDF.y;
+	float  fEms    = 1.0 - fEss;
+	float3 xFavg   = F0 + (1.0 - F0) / 21.0;
+	float3 xFms    = xFssEss * xFavg / (1.0 - fEms * xFavg);
+	float3 kD      = saturate(1.0 - xFssEss - xFms * fEms) * (1.0 - fMetallic);
 
 	float3 xDiffuseIBL = float3(0.0, 0.0, 0.0);
 	if (g_xPassSet.DeferredShadingConstants.g_bIBLDiffuseEnabled != 0)
@@ -172,7 +183,11 @@ float3 ComputeIBLAmbient(float3 xNormal, float3 xViewDir, float3 xAlbedo,
 		float3 xReflect = reflect(-xViewDir, xNormal);
 		float  fLOD     = fRoughness * (IBL_PREFILTER_MIP_COUNT - 1.0);
 		float3 xPrefiltered = GetPrefilteredMap().SampleLevel(xReflect, fLOD).rgb;
-		xSpecularIBL = xPrefiltered * MultiscatterBRDF(F0, NdotV, fRoughness, xBRDF);
+		// Horizon occlusion: a normal-mapped reflection vector that dips below the
+		// surface cannot see the sky; without this the underside of every bump
+		// picks up a bright sky rim.
+		float fHorizon = saturate(1.0 + 1.5 * dot(xReflect, xNormal));
+		xSpecularIBL = xPrefiltered * xSpecularWeight * (fHorizon * fHorizon);
 	}
 
 	// SSR ↔ IBL specular blend by SSR confidence.
@@ -215,6 +230,12 @@ float3 ComputeIBLAmbient(float3 xNormal, float3 xViewDir, float3 xAlbedo,
 
 static const float DEFERRED_EPSILON       = PBR_EPSILON;
 static const float DEFERRED_DENOM_EPSILON = PBR_EPSILON;
+// Physical solar angular radius (radians). One value for the shading lobe; the
+// shadow filter's PCSS penumbra and the atmosphere's disc share the same number.
+static const float SUN_DISC_ANGULAR_RADIUS = 0.00935;
+// Fraction of incident sun light a thin subsurface receiver (leaf, blade, ear)
+// transmits toward the far side. Leaves measure ~0.3-0.5 of their reflectance.
+static const float SUBSURFACE_TRANSMISSION = 0.6;
 
 void CookTorrance_Directional(inout float4 xFinalColor,
 								float4 xDiffuse,
@@ -237,13 +258,25 @@ void CookTorrance_Directional(inout float4 xFinalColor,
 	float NdotH = max(dot(xNormal, xHalfDir),  0.0);
 	float HdotV = max(dot(xHalfDir, xViewDir), 0.0);
 
-	if (NdotL <= DEFERRED_EPSILON) return;
+	// A sun-averted subsurface receiver still TRANSMITS (backlit leaf); every
+	// other surface is simply unlit from behind.
+	if (NdotL <= DEFERRED_EPSILON && uShadingModel != GBUFFER_SHADING_SUBSURFACE) return;
 
 	float roughness = max(fRough, PBR_MIN_ROUGHNESS);
 
 	float3 F0 = ComputeF0(xDiffuse.rgb, fMetal, fSpecularParam);
 
-	float  D = DistributionGGX(NdotH, roughness);
+	// The sun is a 0.53 degree DISC, not a delta direction. Widening the GGX
+	// lobe by the disc's angular radius and renormalising by (a/a')^2 (Karis
+	// 2013, sphere-light approximation) turns the sub-pixel 1e6 spike a mirror
+	// surface would otherwise produce into the soft solar highlight a camera
+	// records, and stops it flickering through TAA.
+	float fAlpha      = roughness * roughness;
+	float fAlphaPrime = saturate(fAlpha + SUN_DISC_ANGULAR_RADIUS);
+	float fSphereNorm = (fAlpha * fAlpha) / max(fAlphaPrime * fAlphaPrime, DEFERRED_EPSILON);
+	float fRoughPrime = sqrt(fAlphaPrime);
+
+	float  D = DistributionGGX(NdotH, fRoughPrime) * fSphereNorm;
 	float  G = GeometrySmith_Direct(NdotV, NdotL, roughness);
 	float3 F = FresnelSchlick(HdotV, F0);
 
@@ -270,13 +303,21 @@ void CookTorrance_Directional(inout float4 xFinalColor,
 	float3 radiance = xLight.m_xColour.rgb * xLight.m_xColour.a;
 	if (uShadingModel == GBUFFER_SHADING_SUBSURFACE)
 	{
-		// Cheap subsurface: the diffuse term wraps past the terminator and shifts
-		// warm where light grazes (red scatter under thin skin); specular keeps the
-		// hard NdotL. No extra G-buffer target. Default-lit path is untouched.
+		// Cheap subsurface: the diffuse term wraps past the terminator and the
+		// scattered light takes the SURFACE'S OWN hue (red under thin skin, green
+		// through a leaf or a grass blade) — the old hard-coded skin tint painted
+		// every backlit leaf pink. Specular keeps the hard NdotL. On top, a
+		// view-dependent transmission lobe: light entering the far side and
+		// exiting toward the camera, peaking when the sun is behind the surface
+		// (the glow of a backlit canopy). No extra G-buffer target.
 		const float fWrap = 0.5;
 		float  fWrapNdotL   = saturate((fRawNdotL + fWrap) / (1.0 + fWrap));
-		float3 xScatterTint = lerp(float3(0.80, 0.32, 0.24), float3(1.0, 1.0, 1.0), saturate(fRawNdotL * 1.4 + 0.30));
-		xFinalColor.rgb += (diffuse * fWrapNdotL * xScatterTint + specular * NdotL) * radiance;
+		float  fMaxChannel  = max(max(xDiffuse.r, xDiffuse.g), max(xDiffuse.b, 1e-3));
+		float3 xHueTint     = saturate(xDiffuse.rgb / fMaxChannel);
+		float3 xScatterTint = lerp(xHueTint * xHueTint, float3(1.0, 1.0, 1.0), saturate(fRawNdotL * 1.4 + 0.30));
+		float  fThrough     = pow(saturate(dot(-xViewDir, xLightDir)), 3.0) * saturate(-fRawNdotL * 0.5 + 0.5);
+		float3 xTransmit    = xDiffuse.rgb * xHueTint * (SUBSURFACE_TRANSMISSION * fThrough / PI);
+		xFinalColor.rgb += (diffuse * fWrapNdotL * xScatterTint + specular * NdotL + xTransmit) * radiance;
 	}
 	else
 	{
@@ -300,9 +341,12 @@ float ScreenSpaceContactShadow(float3 xViewPos, float3 xViewLightDir)
 	// denoise it). The big silhouette artifact is solved by the short range, so
 	// the jitter is no longer needed.
 	const int   iSteps   = 10;
-	const float fMaxDist = 0.10;   // ~10cm: immediate contact only
-	const float fThick   = 0.05;   // thin occluder window (don't grab the whole body)
-	const float fBias    = 0.025;  // skip very-close self-occlusion (acne + limb seams)
+	// Range scales with view distance: a fixed 10 cm is sub-pixel at 30 m (pure
+	// cost) and under-covers a boot at 1 m. Capped so the march never grows into
+	// a full-body silhouette shadow (that is the CSM's job).
+	const float fMaxDist = clamp(0.06 + xViewPos.z * 0.012, 0.08, 0.45);
+	const float fThick   = fMaxDist * 0.5;   // thin occluder window (don't grab the whole body)
+	const float fBias    = 0.025;            // skip very-close self-occlusion (acne + limb seams)
 
 	float fStepLen = fMaxDist / float(iSteps);
 	float3 xStepV  = xViewLightDir * fStepLen;
@@ -372,17 +416,18 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 	if (g_xPassSet.DeferredShadingConstants.g_uDebugMode == 3u)
 		return float4(xDiffuse.rgb, 1.0);
 
-	// Sky pixels skip lighting and pass through the G-buffer diffuse value
-	// (which the skybox pass wrote with emissive luminance encoded in
-	// material.b, but this shader doesn't pull that — sky just shows the
-	// stored diffuse).
-	if (fDepth == 1.0) return xDiffuse;
+	float4 xEmissiveCC    = g_xPassSet.g_xGBufferEmissiveTex.Sample(input.uv);
+
+	// Sky pixels skip lighting. The sky passes write their HDR radiance into the
+	// EMISSIVE target (the 8-bit diffuse target clipped the sun disc and the
+	// bright horizon to 1.0, so nothing in the sky could ever bloom or glare).
+	if (fDepth == 1.0) return float4(xEmissiveCC.rgb, 1.0);
 
 	float4 xMaterial      = g_xPassSet.g_xMaterialTex.Sample(input.uv);
 	float4 xNormalAmbient = g_xPassSet.g_xNormalsAmbientTex.Sample(input.uv);
-	float4 xEmissiveCC    = g_xPassSet.g_xGBufferEmissiveTex.Sample(input.uv);
 	float3 xNormal        = normalize(xNormalAmbient.xyz);
-	float  fAmbient       = xNormalAmbient.w;
+	float  fMaterialAO    = xNormalAmbient.w;   // the baked/material occlusion alone (micro-shadowing reads this)
+	float  fAmbient       = fMaterialAO;
 
 	// Fold screen-space AO into the baked ambient term so it darkens ONLY the
 	// ambient/IBL contribution (ComputeIBLAmbient below), never direct light.
@@ -476,7 +521,11 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 
 	// Only resolve the sun shadow on surfaces that actually face the sun; a
 	// surface with NdotL<=0 is self-shadowed (handled by the NdotL term below).
-	if (bViewShadows && fNdotL > 0.0)
+	// Subsurface receivers (grass, leaves, skin) are the exception: their
+	// TRANSMITTED light arrives through the sun-averted side, so the shadow has
+	// to be resolved there too or a blade in a tree's shadow still glows.
+	const bool bTransmits = (uShadingModel == GBUFFER_SHADING_SUBSURFACE);
+	if (bViewShadows && (fNdotL > 0.0 || bTransmits))
 	{
 		// Build this pass's shadow filter from its own ShadowSampling CB (Stage 6:
 		// the filter math lives in Common/ShadowSampling.slang; the cascade walk —
@@ -506,6 +555,16 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 			bInside = xFilter.EvaluateCascade(iCascade + 1, xWorldPos, xNormal, fNdotL, fShadow);
 
 		fShadowFactor = bInside ? fShadow : 1.0;
+
+		// Fade the sun shadow out over the last 15% of the shadowed range instead
+		// of snapping to lit at the far split — the moving terminator line where
+		// shadows simply stopped was visible on every long view.
+		{
+			float fFarSplit  = g_xPassSet.ShadowSampling.g_xCascadeSplitViewDepth[iNumCSMs - 1];
+			float fFadeStart = fFarSplit * 0.85;
+			float fFade      = saturate((fViewZ - fFadeStart) / max(fFarSplit - fFadeStart, 1e-3));
+			fShadowFactor    = lerp(fShadowFactor, 1.0, fFade);
+		}
 
 		// Cross-fade into the next cascade over a band near this cascade's far
 		// split so the resolution step is invisible.
@@ -537,15 +596,21 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 	if (g_xPassSet.DeferredShadingConstants.g_uDebugMode == 9u)  return float4(fShadowFactor.xxx, 1.0);
 	if (g_xPassSet.DeferredShadingConstants.g_uDebugMode == 11u) return float4(xIBLAmbient, 1.0);
 
+	// Micro-shadowing: the material's baked occlusion also blocks DIRECT light
+	// arriving at grazing angles (the bottom of a crevice never sees a low sun).
+	// Uses the material AO only — screen-space AO is an ambient-only term.
+	// (Form after Lagarde / de Rousiers' specular-occlusion remap, applied to N.L.)
+	float fMicroShadow = saturate(pow(fNdotL + fMaterialAO, 2.0) - 1.0 + fMaterialAO);
+
 	// Direct light contribution + shadow blend. Shadow attenuates ONLY
 	// the direct term — IBL ambient stays unchanged so shadowed pixels
 	// don't go fully black.
-	if (fNdotL > 0.0)
+	if (fNdotL > 0.0 || bTransmits)
 	{
 		if (xLight.m_xColour.a > LIGHT_INTENSITY_THRESHOLD)
 			CookTorrance_Directional(xColour, xDiffuse, xLight, xNormal, fMetallic, fRoughness, xViewDir,
 									  fSpecular, fClearCoat, fClearCoatRoughness, uShadingModel);
-		xColour.rgb = xIBLAmbient + (xColour.rgb - xIBLAmbient) * fShadowFactor;
+		xColour.rgb = xIBLAmbient + (xColour.rgb - xIBLAmbient) * (fShadowFactor * fMicroShadow);
 	}
 
 	// Clustered dynamic lights — point, spot, and any non-sun
@@ -579,9 +644,11 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 		}
 	}
 
-	// Emissive bypasses lighting and shadows entirely — full HDR colour
-	// (values above 1 survive into the HDR scene and drive bloom).
-	xColour.rgb += xEmissive;
+	// Emissive bypasses lighting and shadows — full HDR colour (values above 1
+	// survive into the HDR scene and drive bloom) — EXCEPT on subsurface
+	// receivers, whose "emissive" is sun light TRANSMITTED through the blade or
+	// leaf and therefore has to respect the sun's shadow like any other sunlight.
+	xColour.rgb += xEmissive * (bTransmits ? fShadowFactor : 1.0);
 	xColour.a    = 1.0;
 	return xColour;
 }

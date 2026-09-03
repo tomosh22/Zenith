@@ -36,6 +36,19 @@ constexpr u_int uFLUX_GRASS_MAX_TYPES = 16u;
 // lookup, so it is a sentinel and not a valid descriptor index.
 constexpr u_int uFLUX_GRASS_BINDLESS_UNBOUND = 0xFFFFFFFFu;
 
+// The three optional per-type textures the blade fragment stage samples, in the
+// order Flux_GrassShadeBlade reads them. A type binds each by asset PATH on the
+// table (serialized), and the renderer resolves the path to a bindless slot at
+// load — the slot number is a descriptor allocation that changes every boot, so
+// it never reaches the file.
+enum FluxGrassTextureSlot
+{
+	FLUX_GRASS_TEXTURE_VEIN = 0,   // blade albedo detail: u = across the blade, v = base -> tip. REPEAT
+	FLUX_GRASS_TEXTURE_GLOSS,      // 1D gloss streaks: u = height * GlossRepeat, R channel. REPEAT
+	FLUX_GRASS_TEXTURE_RAMP,       // 2D colour ramp: u = clump hash, v = base -> tip. CLAMP
+	FLUX_GRASS_TEXTURE_SLOT_COUNT
+};
+
 //=============================================================================
 // One authored grass type.
 //
@@ -80,6 +93,10 @@ struct Flux_GrassTypeParams
 	// authored value must not be quantized twice by a save/load round trip.
 	Zenith_Maths::Vector3 m_xBaseColour{ 0.15f, 0.28f, 0.09f };
 	Zenith_Maths::Vector3 m_xTipColour { 0.42f, 0.55f, 0.18f };
+	// RUNTIME state, not authored: filled by Flux_GrassTypeTable::ResolveTextureIndices
+	// from the per-entry texture PATHS the table carries. The writer always emits
+	// UNBOUND for these three and the reader always restores UNBOUND, because a
+	// descriptor slot number from a previous boot is meaningless in this one.
 	u_int m_uVeinTextureIndex       = uFLUX_GRASS_BINDLESS_UNBOUND;   // bindless slot, or UNBOUND
 	u_int m_uGlossTextureIndex      = uFLUX_GRASS_BINDLESS_UNBOUND;
 	u_int m_uRampTextureIndex       = uFLUX_GRASS_BINDLESS_UNBOUND;
@@ -166,6 +183,26 @@ public:
 	const std::string& GetName(u_int uIndex) const;
 	void SetName(u_int uIndex, const std::string& strName);
 
+	// Per-entry texture PATHS ("engine:Vegetation/Grass_Vein_Albedo.ztxtr"), one per
+	// FluxGrassTextureSlot. Empty = the slot stays UNBOUND. These are the authored
+	// truth the file carries; the bindless indices on the params are derived from
+	// them by ResolveTextureIndices below.
+	const std::string& GetTexturePath(u_int uIndex, FluxGrassTextureSlot eSlot) const;
+	void SetTexturePath(u_int uIndex, FluxGrassTextureSlot eSlot, const std::string& strPath);
+
+	// Maps every live entry's texture paths onto its three bindless indices.
+	// pfnResolve is called once per NON-EMPTY path and returns the slot to bind, or
+	// uFLUX_GRASS_BINDLESS_UNBOUND when it cannot; an empty path is never resolved
+	// and reads UNBOUND. The resolver is injected rather than reached for, so the
+	// mapping is testable without a device: Flux_GrassImpl supplies the one that
+	// acquires the texture asset and marks it bindless.
+	using TextureResolver = u_int (*)(const std::string& strPath, FluxGrassTextureSlot eSlot, void* pUser);
+	void ResolveTextureIndices(TextureResolver pfnResolve, void* pUser);
+
+	// How many (entry, slot) pairs across the live entries currently hold a bound
+	// (non-UNBOUND) index. Zero for any table straight off disk.
+	u_int CountBoundTextures() const;
+
 	// Validate() every live entry + the count.
 	void Validate();
 
@@ -191,5 +228,6 @@ private:
 
 	Flux_GrassTypeParams m_axTypes[uFLUX_GRASS_MAX_TYPES];
 	std::string          m_astrNames[uFLUX_GRASS_MAX_TYPES];
+	std::string          m_astrTexturePaths[uFLUX_GRASS_MAX_TYPES][FLUX_GRASS_TEXTURE_SLOT_COUNT];
 	u_int                m_uCount = 1u;
 };

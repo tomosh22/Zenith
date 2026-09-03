@@ -1096,9 +1096,10 @@ GlbImportResult ImportGlbFile(const std::string& strGlbPath)
 			}
 		}
 
-		//-- Texture writes. Colour keeps its stored sRGB encoding (BC1 has no sRGB
-		//   variant, so the engine's convention is encoded bytes sampled as UNORM);
-		//   every other map is data and must stay linear.
+		//-- Texture writes. The slot decides the colour space, exactly: base
+		//   colour and emissive are DISPLAYED colour and export as the sRGB BC
+		//   twin (the sampler decodes them to linear); normal, roughness/metallic
+		//   and occlusion are data and stay linear UNORM.
 		bool bWroteAlbedo = false;
 		bool bWroteNormal = false;
 		bool bWroteRm = false;
@@ -1109,7 +1110,7 @@ GlbImportResult ImportGlbFile(const std::string& strGlbPath)
 		{
 			Zenith_Tools_TextureExport::ExportFromDataCompressed(
 				xImage.m_xRGBA.data(), strAlbedoPath, xImage.m_iWidth, xImage.m_iHeight,
-				TextureCompressionMode::BC1);
+				TextureCompressionMode::BC1, TextureColourSpace::SRGB);
 			bWroteAlbedo = true;
 			++xResult.m_uNumTexturesWritten;
 		}
@@ -1119,7 +1120,7 @@ GlbImportResult ImportGlbFile(const std::string& strGlbPath)
 		{
 			Zenith_Tools_TextureExport::ExportFromDataCompressed(
 				xImage.m_xRGBA.data(), strNormalPath, xImage.m_iWidth, xImage.m_iHeight,
-				TextureCompressionMode::BC5);
+				TextureCompressionMode::BC5, TextureColourSpace::Linear);
 			bWroteNormal = true;
 			++xResult.m_uNumTexturesWritten;
 		}
@@ -1133,7 +1134,7 @@ GlbImportResult ImportGlbFile(const std::string& strGlbPath)
 		{
 			Zenith_Tools_TextureExport::ExportFromDataCompressed(
 				xImage.m_xRGBA.data(), strRmPath, xImage.m_iWidth, xImage.m_iHeight,
-				TextureCompressionMode::BC1);
+				TextureCompressionMode::BC1, TextureColourSpace::Linear);
 			bWroteRm = true;
 			++xResult.m_uNumTexturesWritten;
 		}
@@ -1143,7 +1144,7 @@ GlbImportResult ImportGlbFile(const std::string& strGlbPath)
 		{
 			Zenith_Tools_TextureExport::ExportFromDataCompressed(
 				xImage.m_xRGBA.data(), strAoPath, xImage.m_iWidth, xImage.m_iHeight,
-				TextureCompressionMode::BC1);
+				TextureCompressionMode::BC1, TextureColourSpace::Linear);
 			bWroteAo = true;
 			++xResult.m_uNumTexturesWritten;
 		}
@@ -1161,7 +1162,7 @@ GlbImportResult ImportGlbFile(const std::string& strGlbPath)
 			unsigned char auWhite[iNEUTRAL_AO_SIZE * iNEUTRAL_AO_SIZE * 4];
 			memset(auWhite, 0xFF, sizeof(auWhite));
 			Zenith_Tools_TextureExport::ExportFromDataCompressed(
-				auWhite, strAoPath, iNEUTRAL_AO_SIZE, iNEUTRAL_AO_SIZE, TextureCompressionMode::BC1);
+				auWhite, strAoPath, iNEUTRAL_AO_SIZE, iNEUTRAL_AO_SIZE, TextureCompressionMode::BC1, TextureColourSpace::Linear);
 			bWroteAo = true;
 			++xResult.m_uNumTexturesWritten;
 		}
@@ -1198,7 +1199,7 @@ GlbImportResult ImportGlbFile(const std::string& strGlbPath)
 					const std::string strEmissivePath = strBaseName + strSuffix + "_emissive.ztxtr";
 					Zenith_Tools_TextureExport::ExportFromDataCompressed(
 						xEmissiveImage.m_xRGBA.data(), strEmissivePath,
-						xEmissiveImage.m_iWidth, xEmissiveImage.m_iHeight, TextureCompressionMode::BC1);
+						xEmissiveImage.m_iWidth, xEmissiveImage.m_iHeight, TextureCompressionMode::BC1, TextureColourSpace::SRGB);
 					pxMaterialAsset->SetEmissiveTexture(TextureHandle(strEmissivePath));
 					++xResult.m_uNumTexturesWritten;
 				}

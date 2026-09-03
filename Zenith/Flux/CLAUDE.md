@@ -1,5 +1,16 @@
 # Flux Rendering System
 
+> **Changing how a frame LOOKS? Read [Docs/design/Photorealism.md](../../Docs/design/Photorealism.md) first.**
+> It is the calibration authority for the image: every exposure / bloom / cloud /
+> sun / shadow / fog constant that is not a physical quantity is recorded there
+> with the measurement that chose it, so a constant is re-derived from a fresh
+> capture rather than nudged. It also carries the two photo tours (the repeatable
+> way to LOOK at a change — see `Games/RenderTest/CLAUDE.md` and
+> `Games/Zenithmon/Docs/TestPlan.md`), the `--ds-debug=N` per-term views, the
+> reason a *pair of tour runs is not a controlled A/B*, and a defect log whose
+> entries are mostly "the value was calibrated against the nominal range instead
+> of the measured one".
+
 ## Render Pipeline at a Glance
 
 A typical frame compiles into roughly this topologically-sorted order. The render graph derives the order from each pass's declared Reads/Writes — this is **not** a hardcoded sequence and individual subsystems can be enabled/disabled without changing the rest. Click `Render/RenderGraph/Print Pass Order` in the debug variables panel to dump the live order at runtime.
@@ -13,13 +24,16 @@ A typical frame compiles into roughly this topologically-sorted order. The rende
 +-----------------------------------+  GPU-driven opaque setup (compute)
 | Unified Skinning                  |--> skins animated meshes into the shared arena
 | Unified Cull Reset -> Culling     |--> fills the per-(view,bucket) cull-output +
-+-----------------------------------+    indirect-arg buffers for EVERY view, camera
-              |                           and shadow cascade alike
+| Grass Reset -> Placement -> Fixup |    indirect-arg buffers for EVERY view, camera
+| Terrain Reset -> Culling          |    and shadow cascade alike (terrain: one slot
++-----------------------------------+    per cascade in a second indirect buffer)
+              |
               v
 +-----------------------------+    Cascaded Shadow Maps (4 cascades)
 | Shadow cascades             |--> writes shadow depth targets; draws INDIRECT from
-+-----------------------------+    the cull output above, which is why the cull must
-              |                     precede them (see the ordering note below)
++-----------------------------+    the cull outputs above (unified, grass, terrain),
+              |                     which is why the culls must precede them (see
+              |                     the ordering note below)
               v
 +-----------------------------------+  G-buffer build
 | Terrain                           |\
@@ -80,7 +94,10 @@ For the full graph lifecycle (Setup -> Compile -> Execute), barrier synthesis, t
 > indirect args the reset had just zeroed. `Flux_RenderGraph::ValidateProducerBeforeConsumer` now
 > guards it and must stay at zero violations. **`Grass` is registered before `Shadows` for exactly
 > the same reason** — cascades 0-1 draw its LO blade partition indirect, so they read the buffers
-> its reset/placement/fixup compute passes fill.
+> its reset/placement/fixup compute passes fill. **And so is `Terrain`** — every cascade draws
+> its slot of the terrain shadow cull output indirect (`Flux/Terrain/Flux_TerrainShadowCull.h`),
+> so it reads the buffers the terrain reset/culling passes fill. Pinned by
+> `FluxTerrain::TerrainIsDeclaredBeforeShadows`.
 
 > **Primitives sits in the G-buffer block, not with the overlays** — this diagram used to list it beside DeferredShading/Skybox/Fog/Particles. `Flux_PrimitivesImpl::SetupRenderGraph` declares its one pass ("Primitives GBuffer") as a `Writes` of all four core MRTs + the depth attachment, and "Apply Lighting" `Read`s exactly those, so the topological sort can only put Primitives **before** lighting. Primitive draws are therefore lit (or, on the gameplay channel, tagged unlit and passed through) by the deferred pass like any other opaque geometry — they are not composited on top of it.
 
@@ -109,7 +126,7 @@ Note: Materials and textures are now in `AssetHandling/` (see AssetHandling/CLAU
 - `MeshAnimation/` - Skeletal animation system (see MeshAnimation/CLAUDE.md). ECS entry point is `Zenith_AnimatorComponent`, not `Zenith_ModelComponent`.
 - `Terrain/` - Terrain rendering (see Terrain/CLAUDE.md)
 - `Shadows/` - Cascaded shadow maps
-- `DeferredShading/` - Deferred lighting
+- `DeferredShading/` - Deferred lighting. **This is also where the G-buffer/lighting debug views live**, and they need no rebuild: `--ds-debug=N` (or `Render/DeferredShading/DebugMode`) returns ONE term straight out of the lighting pass — `2` depth, `3` albedo, `4` metallic, `5` roughness, `6` AO, `7` world normal, `8` NdotL, `9` sun shadow factor, `10` shading model, `11` IBL ambient. Reach for these BEFORE building a capture A/B: they answer *why* a term is wrong, where a frame diff can only say *that* something changed. `Shadows/CLAUDE.md` → *Diagnosing "X stopped casting a shadow"* is the worked recipe (a bad G-buffer normal silently disables shadow RECEPTION, because the pass only resolves a shadow when `NdotL > 0`)
 - `SSAO/` - Screen-space ambient occlusion
 - `Fog/` - Volumetric fog system (see Fog/CLAUDE.md)
   - Four techniques: Simple, Froxel, Raymarch, God Rays

@@ -461,18 +461,29 @@ public float3 SkyViewUvToDir(float2 xUv)
 
 // Limb-darkened sun disk. Angular radius ~0.53 degrees. Returns the
 // emissive contribution at xRayDir; outside the disk, returns black.
-public float3 RenderSunDisk(float3 xRayDir, float3 xSunDir, float fSunIntensity)
+// fSunIrradiance is the top-of-atmosphere IRRADIANCE anchor (the same
+// fSUN_INTENSITY the scattering integrals use); the disc's RADIANCE is that
+// irradiance divided by the disc's solid angle, so the sun is ~1e4x brighter
+// than the sky it sits in and blooms/glares like a photographed sun instead
+// of reading as a flat white dot. The edge is anti-aliased over one pixel of
+// angular width (fwidth of the angle) rather than a hard step.
+public static const float SUN_ANGULAR_RADIUS = 0.00935;
+public static const float SUN_DISC_SOLID_ANGLE = PI * SUN_ANGULAR_RADIUS * SUN_ANGULAR_RADIUS;
+
+public float3 RenderSunDisk(float3 xRayDir, float3 xSunDir, float fSunIrradiance)
 {
-	const float fSunAngularRadius = 0.00935;
 	float fCosAngle = dot(xRayDir, xSunDir);
 	float fSunAngle = acos(clamp(fCosAngle, -1.0, 1.0));
-	if (fSunAngle < fSunAngularRadius)
+	float fEdgeWidth = max(fwidth(fSunAngle), 1e-5);
+	float fCoverage  = 1.0 - smoothstep(SUN_ANGULAR_RADIUS - fEdgeWidth, SUN_ANGULAR_RADIUS + fEdgeWidth, fSunAngle);
+	if (fCoverage <= 0.0)
 	{
-		float fLimbDarkening = 1.0 - 0.6 * (1.0 - sqrt(1.0 - pow(fSunAngle / fSunAngularRadius, 2.0)));
-		float v = fSunIntensity * fLimbDarkening;
-		return float3(v, v, v);
+		return float3(0.0, 0.0, 0.0);
 	}
-	return float3(0.0, 0.0, 0.0);
+	float fNormRadius    = saturate(fSunAngle / SUN_ANGULAR_RADIUS);
+	float fLimbDarkening = 1.0 - 0.6 * (1.0 - sqrt(saturate(1.0 - fNormRadius * fNormRadius)));
+	float v = (fSunIrradiance / SUN_DISC_SOLID_ANGLE) * fLimbDarkening * fCoverage;
+	return float3(v, v, v);
 }
 
 // ENVIRONMENT-CAPTURE entry point (the irradiance + prefilter convolutions).

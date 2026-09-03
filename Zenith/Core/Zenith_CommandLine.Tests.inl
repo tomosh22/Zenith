@@ -159,6 +159,46 @@ void Zenith_UnitTests::TestCommandLineParseEveryValueFlag()
 	ZENITH_ASSERT_TRUE(xFlags.m_szTestSaveRunId == szRunIdVal, "--test-save-run-id must capture the following argv entry");
 }
 
+ZENITH_TEST(CommandLine, ParseWindowSize) { Zenith_UnitTests::TestCommandLineParseWindowSize(); }
+void Zenith_UnitTests::TestCommandLineParseWindowSize()
+{
+	u_int uWidth = 0u;
+	u_int uHeight = 0u;
+	ZENITH_ASSERT_TRUE(Zenith_CommandLine::ParseWindowSizeArg("3840x2160", uWidth, uHeight), "WxH must parse");
+	ZENITH_ASSERT_EQ(uWidth, 3840u, "width is the number before the separator");
+	ZENITH_ASSERT_EQ(uHeight, 2160u, "height is the number after the separator");
+	ZENITH_ASSERT_TRUE(Zenith_CommandLine::ParseWindowSizeArg("1280X720", uWidth, uHeight), "an upper-case X separator must parse");
+	ZENITH_ASSERT_EQ(uWidth, 1280u, "upper-case X: width");
+	ZENITH_ASSERT_EQ(uHeight, 720u, "upper-case X: height");
+
+	// Malformed values must NOT set the override: a typo must fall back to the
+	// game's own window size rather than create a 0-wide swapchain.
+	uWidth = 7u; uHeight = 7u;
+	ZENITH_ASSERT_TRUE(!Zenith_CommandLine::ParseWindowSizeArg("1920", uWidth, uHeight), "a missing separator is rejected");
+	ZENITH_ASSERT_TRUE(!Zenith_CommandLine::ParseWindowSizeArg("0x720", uWidth, uHeight), "a zero width is rejected");
+	ZENITH_ASSERT_TRUE(!Zenith_CommandLine::ParseWindowSizeArg("1920x", uWidth, uHeight), "a missing height is rejected");
+	ZENITH_ASSERT_TRUE(!Zenith_CommandLine::ParseWindowSizeArg("1920x1080p", uWidth, uHeight), "trailing junk is rejected");
+	ZENITH_ASSERT_TRUE(!Zenith_CommandLine::ParseWindowSizeArg("99999x10", uWidth, uHeight), "an absurd dimension is rejected");
+	ZENITH_ASSERT_TRUE(!Zenith_CommandLine::ParseWindowSizeArg(nullptr, uWidth, uHeight), "null is rejected");
+	ZENITH_ASSERT_EQ(uWidth, 7u, "a rejected value leaves the outputs untouched");
+	ZENITH_ASSERT_EQ(uHeight, 7u, "a rejected value leaves the outputs untouched");
+
+	// Through the real table: the value flag consumes the next argv entry, and a
+	// malformed one leaves Flags at its no-override default.
+	char szExe[]      = "zenith.exe";
+	char szFlag[]     = "--window-size";
+	char szGood[]     = "2560x1440";
+	char* apszGood[]  = { szExe, szFlag, szGood };
+	const Zenith_CommandLine::Flags xGood = ParseArgvFixture(apszGood);
+	ZENITH_ASSERT_EQ(xGood.m_uWindowWidth, 2560u, "--window-size sets the width");
+	ZENITH_ASSERT_EQ(xGood.m_uWindowHeight, 1440u, "--window-size sets the height");
+	char szBad[]      = "wide";
+	char* apszBad[]   = { szExe, szFlag, szBad };
+	const Zenith_CommandLine::Flags xBad = ParseArgvFixture(apszBad);
+	ZENITH_ASSERT_EQ(xBad.m_uWindowWidth, 0u, "a malformed --window-size leaves no override");
+	ZENITH_ASSERT_EQ(xBad.m_uWindowHeight, 0u, "a malformed --window-size leaves no override");
+}
+
 ZENITH_TEST(CommandLine, ParsePrefixedFlags) { Zenith_UnitTests::TestCommandLineParsePrefixedFlags(); }
 void Zenith_UnitTests::TestCommandLineParsePrefixedFlags()
 {

@@ -1949,9 +1949,26 @@ namespace
 {
 	constexpr size_t uGrassTypeParamsBytes = 43u * 4u;
 
+	// memcmp over the whole record, with the three RUNTIME bindless slots
+	// normalised out of both sides first.
+	//
+	// The comparison stays a memcmp deliberately: it is the tripwire that catches a
+	// field being added to Flux_GrassTypeParams and not serialized. But a bindless
+	// slot is a descriptor allocation that changes every boot, so the table binds
+	// textures by PATH and ReadFromDataStream deliberately resets the indices to
+	// UNBOUND (see FluxGrassTextureSlot and Flux_GrassTypeTable::ReadFromDataStream
+	// -- "whatever a file holds here, the slot is UNBOUND until
+	// ResolveTextureIndices binds the paths"). Comparing them would assert that the
+	// file carries something it must not carry. The PATHS are what round-trips, and
+	// SerializeRoundTripsExactly checks those separately.
 	bool GrassTableTest_ParamsIdentical(const Flux_GrassTypeParams& xA, const Flux_GrassTypeParams& xB)
 	{
-		return memcmp(&xA, &xB, sizeof(Flux_GrassTypeParams)) == 0;
+		Flux_GrassTypeParams xNormA = xA;
+		Flux_GrassTypeParams xNormB = xB;
+		xNormA.m_uVeinTextureIndex  = xNormB.m_uVeinTextureIndex  = uFLUX_GRASS_BINDLESS_UNBOUND;
+		xNormA.m_uGlossTextureIndex = xNormB.m_uGlossTextureIndex = uFLUX_GRASS_BINDLESS_UNBOUND;
+		xNormA.m_uRampTextureIndex  = xNormB.m_uRampTextureIndex  = uFLUX_GRASS_BINDLESS_UNBOUND;
+		return memcmp(&xNormA, &xNormB, sizeof(Flux_GrassTypeParams)) == 0;
 	}
 
 	// Only the LIVE entries: ReadFromDataStream resets every slot and fills exactly
@@ -1983,6 +2000,10 @@ namespace
 		xTable.Get(0u).m_fHeightMax = 1.23f;
 		xTable.Get(1u).m_fSlopeMax = 0.42f;
 		xTable.Get(2u).m_xTipColour = Zenith_Maths::Vector3(0.71f, 0.19f, 0.33f);
+		// The PATH is the authored truth that must survive a round trip; the index
+		// beside it is a live bindless slot, set here precisely so the round-trip
+		// test can prove the file DISCARDS it rather than carrying it.
+		xTable.SetTexturePath(2u, FLUX_GRASS_TEXTURE_VEIN, "game:Vegetation/AuthoredVein.ztxtr");
 		xTable.Get(2u).m_uVeinTextureIndex = 12u;
 		xTable.Validate();
 		return xTable;
@@ -2139,8 +2160,15 @@ ZENITH_TEST(FluxGrassTypeTable, SerializeRoundTripsExactly)
 	ZENITH_ASSERT_STREQ(xLoaded.GetName(0u).c_str(), "AuthoredZero", "type names must round-trip");
 	ZENITH_ASSERT_STREQ(xLoaded.GetName(1u).c_str(), "Tall", "an unedited name must round-trip too");
 	ZENITH_ASSERT_STREQ(xLoaded.GetName(2u).c_str(), "AuthoredTwo", "type names must round-trip");
-	ZENITH_ASSERT_EQ(xLoaded.Get(2u).m_uVeinTextureIndex, 12u,
-		"a bindless slot is an integer and must not come back float-quantized");
+	// A texture binding round-trips as its PATH. The bindless slot beside it is a
+	// descriptor allocation that differs every boot, so the reader resets it and
+	// ResolveTextureIndices re-binds it from the path — a file that carried the
+	// integer would point the type at whatever texture occupied slot 12 next run.
+	ZENITH_ASSERT_STREQ(xLoaded.GetTexturePath(2u, FLUX_GRASS_TEXTURE_VEIN).c_str(),
+		"game:Vegetation/AuthoredVein.ztxtr",
+		"the texture PATH is the authored truth and must round-trip");
+	ZENITH_ASSERT_EQ(xLoaded.Get(2u).m_uVeinTextureIndex, uFLUX_GRASS_BINDLESS_UNBOUND,
+		"a bindless slot must come back UNBOUND — it is a runtime allocation, not authored data");
 
 	// The slots past the count are RESET, not left showing the previous (longer)
 	// table's tail: a shorter file must not leave stale types visible behind it.

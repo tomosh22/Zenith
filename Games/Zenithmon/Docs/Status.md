@@ -17,8 +17,59 @@ The S0-S7 narrative that used to fill the back half of this file moved VERBATIM 
 [History.md](History.md) on 2026-08-18, so this file can hold to the ~25-line budget
 its own template in `AgentBriefing.md` §2.3 specifies. Nothing was deleted.
 
-**★ LIVE PIN (UPDATED 2026-09-01):
-ZM boot `3603`; engine boot (Null Combat) `1776`; Null RenderTest `1867`; registry **71**.**
+**★ LIVE PIN (UPDATED 2026-09-03):
+ZM boot `3696`; engine boot (Null Combat) `1841`; Null RenderTest `1942`; registry **72**.**
+
+> **★ +1 SHARED (2026-09-03, second bump of the day) — TEXTURE USAGE IS DECLARED,
+> NOT INFERRED.** Zenithmon 3695 -> **3696**, Combat 1840 -> **1841**, RenderTest
+> 1941 -> **1942**, each OBSERVED from its own `Null_` run; registry unchanged at
+> 72 (no new automated test — `ZM_PhotoTour_Test` only gained a flag).
+>
+> Net +1 = **six new tests replacing five deleted ones**, in
+> `Tools/Zenith_Tools_TextureExport.Tests.inl`, which compiles into `zenith.lib`
+> for every game. The five deleted ones pinned a FILENAME HEURISTIC that chose a
+> texture's compression and colour space from its basename. **All five passed
+> throughout, on every case they covered, while the code they pinned broke the
+> game**: the heuristic correctly re-encoded the terrain normal maps as BC5, the
+> two terrain G-buffer shaders still decoded three channels, the terrain's shading
+> normal pointed underground, `NdotL` went to zero and **every terrain pixel in
+> Zenithmon stopped receiving shadows** — reported as "the Dawnmere houses stopped
+> casting shadows onto the ground". A test over a heuristic measures the heuristic,
+> not the system.
+>
+> The guess is deleted, not patched: usage is now DECLARED per texture in a
+> committed `TextureUsage.ztexdecl` per asset root, an undeclared texture is not
+> exported, and the six replacements pin the usage->format mapping, the token
+> round-trip, and that an unlisted path comes back "no". Full account:
+> `Docs/design/Photorealism.md` §1.10; contract:
+> `Zenith/AssetHandling/CLAUDE.md`.
+
+> **★ ALL THREE ROWS MOVE (+64 engine, 2026-09-03) — the photorealism program.**
+> Every number OBSERVED from that game's own `Null_vs2022_Debug_Win64_True` run.
+> The **+64 shared** rows are engine- and tools-side (texture colour space and the
+> BC sRGB formats, coverage-preserving and sRGB-correct mip chains, BC1
+> punch-through alpha, the terrain shadow-cull slot arithmetic and its on/off
+> toggle, HDR exposure, and
+> the generated leaf/bush/grass/rock/tennis asset suites, which compile into
+> `zenith.lib` for every game). Combat 1776 -> **1840** and RenderTest 1867 ->
+> **1941** (+74: the shared 64 plus 10 RenderTest-only tennis-court units).
+> Zenithmon 3603 -> **3695** (+92: the shared 64 plus 28 of its own — building
+> generator, interior generator, prop UV islands, texture synth).
+> Registry 71 -> **72**: `ZM_PhotoTour_Test` (manual-only, graphics-required).
+>
+> ★ **THE TWO GRASS-TABLE UNITS THAT WERE RED ARE FIXED.**
+> `FluxGrassTypeTable::SerializeRoundTripsExactly` and
+> `ReadRejectsGarbageAndLeavesTableUntouched` asserted that a bindless texture
+> SLOT round-trips through the file. It must not: `FluxGrassTextureSlot` says a
+> type binds by asset PATH and "the slot number is a descriptor allocation that
+> changes every boot, so it never reaches the file", and `ReadFromDataStream`
+> resets it for exactly that reason. A file carrying the integer would point a
+> type at whatever texture occupied that slot next run. The tests now assert the
+> PATH round-trips and the slot comes back UNBOUND; the entry comparison stays a
+> memcmp (so an unserialized new field still fails) with only those three
+> runtime fields normalised out. **All three games: 0 failed.**
+>
+> Full record of the rendering work: `Docs/design/Photorealism.md`.
 
 > **★ ALL THREE ROWS MOVE AGAIN (+13 each, 2026-09-01) — the editor delight pass.**
 > Thirteen ENGINE units landed with the editor overhaul (`Zenith/Editor/

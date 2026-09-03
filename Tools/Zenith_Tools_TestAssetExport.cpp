@@ -2296,8 +2296,9 @@ void GenerateStickFigureTextures(const std::string& strDir)
 
 	// Albedo (sRGB). The cavity term now lives in the dedicated AO map (slot 3)
 	// rather than being pre-multiplied into albedo — physically cleaner, lets the
-	// lighting carry occlusion. Uncompressed sRGB with an offline mip chain (there
-	// is no BC sRGB format in the pipeline, and 2048^2 RGBA8 is fine for one hero).
+	// lighting carry occlusion. Uncompressed sRGB with an offline mip chain
+	// (2048^2 RGBA8 is fine for one hero; the BC sRGB twins exist but the skin
+	// gradients are worth the bytes).
 	Zenith_Vector<u_int8> xAlbedo(iS * iS * 4);
 	for (int32_t i = 0; i < iS * iS; i++)
 	{
@@ -4209,6 +4210,7 @@ void GenerateTestAssets()
 	GenerateProceduralRockAssets();
 	GenerateFallenTreeAssets();
 	GenerateBushAssets();
+	GenerateGrassAssets();
 	GenerateRenderTestAssets();
 	Zenith_Log(LOG_CATEGORY_ASSET, "=== Test Asset Generation Complete ===");
 }

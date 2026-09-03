@@ -13,13 +13,19 @@
 constexpr float fHDR_EXPOSURE_KEY_ISO = 12.5f / (100.0f * 1.2f);
 
 // Histogram domain, derived from the radiometric anchor (see
-// AtmosphereConfig::fSUN_INTENSITY): the top bin 2^(min + range) must cover
-// the brightest non-emissive radiance the anchor implies — the sky itself,
-// bounded by the top-of-atmosphere intensity. -10 + 13 -> top 8 >= 7. (The
-// old range 12 topped out at 4.0 and clipped the sky into the last bin,
-// skewing the metered average.)
+// AtmosphereConfig::fSUN_INTENSITY): the top bin 2^(min + range) must cover the
+// brightest radiance in the scene.
+//
+// ★ THE BRIGHTEST THING IS NO LONGER THE SKY. The sun disc is now a physically
+// scaled RADIANCE — the anchor's irradiance divided by the solar solid angle,
+// ~2.5e4 against a sky of 1-7 — so a top bin of 8 put the sun, the sky and every
+// sunlit white surface in the SAME saturated bin. That does not just skew the
+// average: it makes every high percentile meaningless, so the highlight
+// protection in Flux_Adaptation could not tell a clipping surface from the sun.
+// -10 + 26 -> top 65536, which covers the disc with room to spare, at a still-
+// fine 0.10 stops per bin.
 constexpr float fHDR_HISTOGRAM_MIN_LOG_LUMINANCE = -10.0f;
-constexpr float fHDR_HISTOGRAM_LOG_LUMINANCE_RANGE = 13.0f;
+constexpr float fHDR_HISTOGRAM_LOG_LUMINANCE_RANGE = 26.0f;
 
 enum ToneMappingOperator : u_int
 {
@@ -144,8 +150,8 @@ public:
 	Flux_ReadWriteBuffer      m_xExposureBuffer;
 
 	float                     m_fExposure          = 1.0f;
-	float                     m_fBloomIntensity    = 0.5f;
-	float                     m_fBloomThreshold    = 1.0f;
+	float                     m_fBloomIntensity    = 0.012f;
+	float                     m_fBloomThreshold    = 0.0f;
 	ToneMappingOperator       m_eToneMappingOperator = TONEMAPPING_AGX;
 
 	float                     m_fCurrentExposure   = 1.0f;

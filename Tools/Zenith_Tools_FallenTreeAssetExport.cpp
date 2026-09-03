@@ -74,6 +74,16 @@ void GenerateFallenTreeAssets()
 namespace
 {
 
+//=============================================================================
+// Export version. Every boot regenerates this set unconditionally, so this is
+// not a staleness gate — it is the number a log line (and a bug report) can
+// name when a capture and the current generator disagree. BUMP IT whenever the
+// emitted bytes change.
+//
+// 2: bark height map exported + POM enabled on both deadwood materials.
+//=============================================================================
+constexpr u_int uFALLEN_TREE_ASSET_EXPORT_VERSION = 2u;
+
 using Zenith_TerrainNoise::TileableValueNoise;
 using Zenith_TerrainNoise::TileableFBM;
 using Zenith_TerrainNoise::TileableRidged;
@@ -575,6 +585,32 @@ void GenerateBarkTextureSet(const std::string& strDir, const BarkTextureParams& 
 		}
 	}
 
+	// --- Height (linear grey, BC1) -------------------------------------------
+	// The furrow depth this generator already computes, exported so the material
+	// can run parallax occlusion on it: a bark furrow that OCCLUDES the plate
+	// beside it at a grazing angle is the difference between a log you can read
+	// the depth of and a photograph of bark glued to a tube.
+	//
+	// BC1 with a full mip chain rather than a single-mip R8: POM samples the
+	// height minified along the whole ray, and a chain-less height map aliases
+	// into stair-stepping at exactly the distances a scattered log is seen from.
+	{
+		Zenith_Vector<u_int8> xHeightTex;
+		xHeightTex.Resize(iCOLOUR_SIZE * iCOLOUR_SIZE * 4, 0);
+		for (int32_t i = 0; i < iCOLOUR_SIZE * iCOLOUR_SIZE; i++)
+		{
+			const u_int8 ucH = static_cast<u_int8>(std::clamp(xHeight.Get(i), 0.0f, 1.0f) * 255.0f);
+			u_int8* pucH = &xHeightTex.Get(i * 4);
+			pucH[0] = ucH;
+			pucH[1] = ucH;
+			pucH[2] = ucH;
+			pucH[3] = 255;
+		}
+		Zenith_Tools_TextureExport::ExportFromDataCompressed(
+			xHeightTex.GetDataPointer(), strDir + "FallenTree_" + xParams.m_szName + "_Height" ZENITH_TEXTURE_EXT,
+			iCOLOUR_SIZE, iCOLOUR_SIZE, TextureCompressionMode::BC1, TextureColourSpace::Linear);
+	}
+
 	// --- Albedo (sRGB) -------------------------------------------------------
 	Zenith_Vector<u_int8> xAlbedo;
 	xAlbedo.Resize(iCOLOUR_SIZE * iCOLOUR_SIZE * 4, 0);
@@ -614,9 +650,10 @@ void GenerateBarkTextureSet(const std::string& strDir, const BarkTextureParams& 
 			pucA[3] = 255;
 		}
 	}
-	Zenith_Tools_TextureExport::ExportFromDataWithFormat(
-		xAlbedo.GetDataPointer(), strDir + "FallenTree_" + xParams.m_szName + "_Albedo" ZENITH_TEXTURE_EXT, iCOLOUR_SIZE, iCOLOUR_SIZE, TEXTURE_FORMAT_RGBA8_SRGB,
-		xAlbedo.GetSize() / (static_cast<size_t>(iCOLOUR_SIZE) * iCOLOUR_SIZE));
+	// Full offline mip chain (sRGB-filtered): a single-mip albedo shimmers into
+	// noise at the distance a log is actually seen from.
+	Zenith_Tools_TextureExport::ExportFromDataV2Uncompressed(
+		xAlbedo.GetDataPointer(), strDir + "FallenTree_" + xParams.m_szName + "_Albedo" ZENITH_TEXTURE_EXT, iCOLOUR_SIZE, iCOLOUR_SIZE, TEXTURE_FORMAT_RGBA8_SRGB);
 
 	// --- Normal (linear), wrapped central differences -------------------------
 	Zenith_Vector<u_int8> xNormal;
@@ -642,9 +679,10 @@ void GenerateBarkTextureSet(const std::string& strDir, const BarkTextureParams& 
 			pucN[3] = 255;
 		}
 	}
-	Zenith_Tools_TextureExport::ExportFromDataWithFormat(
-		xNormal.GetDataPointer(), strDir + "FallenTree_" + xParams.m_szName + "_Normal" ZENITH_TEXTURE_EXT, iCOLOUR_SIZE, iCOLOUR_SIZE, TEXTURE_FORMAT_RGBA8_UNORM,
-		xNormal.GetSize() / (static_cast<size_t>(iCOLOUR_SIZE) * iCOLOUR_SIZE));
+	// BC5 (R,G; the shader rebuilds Z) with a full mip chain, linear.
+	Zenith_Tools_TextureExport::ExportFromDataCompressed(
+		xNormal.GetDataPointer(), strDir + "FallenTree_" + xParams.m_szName + "_Normal" ZENITH_TEXTURE_EXT, iCOLOUR_SIZE, iCOLOUR_SIZE,
+		TextureCompressionMode::BC5, TextureColourSpace::Linear);
 
 	// --- RM + AO --------------------------------------------------------------
 	Zenith_Vector<u_int8> xRM;
@@ -678,12 +716,12 @@ void GenerateBarkTextureSet(const std::string& strDir, const BarkTextureParams& 
 			pucAO[3] = 255;
 		}
 	}
-	Zenith_Tools_TextureExport::ExportFromDataWithFormat(
-		xRM.GetDataPointer(), strDir + "FallenTree_" + xParams.m_szName + "_RM" ZENITH_TEXTURE_EXT, iDATA_SIZE, iDATA_SIZE, TEXTURE_FORMAT_RGBA8_UNORM,
-		xRM.GetSize() / (static_cast<size_t>(iDATA_SIZE) * iDATA_SIZE));
-	Zenith_Tools_TextureExport::ExportFromDataWithFormat(
-		xAO.GetDataPointer(), strDir + "FallenTree_" + xParams.m_szName + "_AO" ZENITH_TEXTURE_EXT, iDATA_SIZE, iDATA_SIZE, TEXTURE_FORMAT_RGBA8_UNORM,
-		xAO.GetSize() / (static_cast<size_t>(iDATA_SIZE) * iDATA_SIZE));
+	// Linear data with full mip chains; uncompressed so the roughness/AO values
+	// survive exactly.
+	Zenith_Tools_TextureExport::ExportFromDataV2Uncompressed(
+		xRM.GetDataPointer(), strDir + "FallenTree_" + xParams.m_szName + "_RM" ZENITH_TEXTURE_EXT, iDATA_SIZE, iDATA_SIZE, TEXTURE_FORMAT_RGBA8_UNORM);
+	Zenith_Tools_TextureExport::ExportFromDataV2Uncompressed(
+		xAO.GetDataPointer(), strDir + "FallenTree_" + xParams.m_szName + "_AO" ZENITH_TEXTURE_EXT, iDATA_SIZE, iDATA_SIZE, TEXTURE_FORMAT_RGBA8_UNORM);
 }
 
 void GenerateBarkMaterial(const std::string& strDir, const char* szName)
@@ -701,6 +739,12 @@ void GenerateBarkMaterial(const std::string& strDir, const char* szName)
 	pxMaterial->SetMetallic(0.0f);
 	pxMaterial->SetOcclusionStrength(1.0f);
 	pxMaterial->SetNormalStrength(1.0f);
+	// POM needs BOTH a bound height map and a non-zero height scale -- setting
+	// either alone is a silent no-op (BuildMaterialDrawConstants tests the pair).
+	// 3 cm over the bark tile is about the real depth of a furrow on a fallen
+	// trunk, and small enough that the missing silhouette relief never shows.
+	pxMaterial->SetTexture(MATERIAL_TEXTURE_HEIGHT, TextureHandle(strStem + "_Height" ZENITH_TEXTURE_EXT));
+	pxMaterial->SetHeightScale(0.03f);
 	pxMaterial->SetBlendMode(MATERIAL_BLEND_OPAQUE);
 	pxMaterial->SaveToFile(strDir + "FallenTree_" + szName + ZENITH_MATERIAL_EXT);
 }
@@ -895,7 +939,8 @@ void ExportFallenTree(const std::string& strDir, const char* szName, Zenith_Mesh
 void GenerateFallenTreeAssets()
 {
 	Zenith_Log(LOG_CATEGORY_ASSET,
-		"Generating shared FallenTree assets (4 deadwood meshes, bark + mossy-bark PBR sets)...");
+		"Generating shared FallenTree assets v%u (4 deadwood meshes, bark + mossy-bark PBR sets + POM height)...",
+		uFALLEN_TREE_ASSET_EXPORT_VERSION);
 
 	const std::string strOutputDir = std::string(ENGINE_ASSETS_DIR) + "Meshes/FallenTrees/";
 	std::filesystem::create_directories(strOutputDir);

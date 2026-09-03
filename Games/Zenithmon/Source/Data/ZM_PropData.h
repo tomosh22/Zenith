@@ -43,6 +43,21 @@ enum ZM_PROP_KIND : u_int
 	ZM_PROP_KIND_ITEM_PICKUP,   // a takeable item standing on a small plinth
 	ZM_PROP_KIND_ITEM_SPENT,    // the same plinth with the item GONE -- an empty tray
 
+	// ★ A LIGHT FIXTURE: the THING a Zenith_LightComponent is supposed to be
+	// coming out of. Every interior light used to be a bare point in space, so a
+	// room had lamplight and no lamp. A fixture is a body (metal, timber, ceramic)
+	// plus a SHADE or DIFFUSER that carries an EMISSIVE material matched to the
+	// light it houses -- the glow is on the shade, never on the body, which is why
+	// the fixture kinds are the one family that PAINTS an emissive map (see
+	// ZM_PropUVIsland: the shade faces map into the GLOW island, and only that
+	// island is bright in ZM_BuildPropEmissive).
+	//
+	// Grounded at y = 0 like every scenery kind. A pendant is authored at the
+	// CEILING by its placement row's own Y (ZM_InteriorDressing.h's fixture table
+	// carries one), not by a special anchor here: the mesh is still "base at 0,
+	// top at roster height", and the room decides where that base sits.
+	ZM_PROP_KIND_LIGHT_FIXTURE,
+
 	ZM_PROP_KIND_COUNT
 };
 
@@ -100,6 +115,12 @@ enum ZM_PROP_ID : u_int
 	// already taken it. One model per SILHOUETTE, never one per prop, so a fourth
 	// ground item costs a registry row and no art.
 	ZM_PROP_ITEM_PHIAL, ZM_PROP_ITEM_ORB, ZM_PROP_ITEM_TAKEN,
+
+	// 4 interior light fixtures -> 32 total. One per DISTINCT light in the two
+	// rooms (ZM_InteriorDressing.h): a ceiling pendant, a nightstand lamp, a
+	// standard (floor) lamp, and the lab's fluorescent batten. They are the
+	// visible half of a light that was, until now, a bare point in space.
+	ZM_PROP_PENDANT_LAMP, ZM_PROP_BEDSIDE_LAMP, ZM_PROP_FLOOR_LAMP, ZM_PROP_LAB_BATTEN,
 
 	ZM_PROP_COUNT,
 	ZM_PROP_NONE = ZM_PROP_COUNT   // "no prop" sentinel

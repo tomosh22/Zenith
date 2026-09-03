@@ -8,12 +8,12 @@
 // render view whose g_xView holds the sun ortho matrices; see
 // Flux/RenderViews/Flux_RenderViews.h). g_xShadowMatrices stays receivers-only.
 //
-// NOTE: terrain does NOT currently cast — Flux_TerrainImpl::RenderToShadowMap
-// is stubbed and the call in ExecuteShadowCascade is commented out. This
-// shader is deliberately kept on the live per-view convention (mirroring
-// Flux_UnifiedMesh_ToShadowmap) so that enabling casting becomes a pure C++
-// change, not a shader rewrite — and so it can never diverge into a stale
-// binding that a future implementer would copy-paste into a bind-fail.
+// Drawn by Flux_TerrainImpl::RenderToShadowMap: one DrawIndexedIndirectCount per
+// terrain per cascade, out of that cascade's slot of the terrain shadow cull
+// output (Flux_TerrainCulling.slang fills it; Flux_TerrainShadowCull.h is the
+// slot layout). Depth-only — the FS is empty; terrain has no alpha cutout.
+// Self-shadow acne is handled by the rasterizer's dynamic slope-scaled depth
+// bias (Render/Shadows/Terrain Slope Bias), never in a shader.
 // =====================================================================
 
 #include "Common/Bindings.slang"       // spine: GLOBAL/VIEW/BINDLESS at sets 0/1/2
@@ -33,10 +33,9 @@ struct VsIn
 
 // The caster needs the dequant box for the same reason it needs the layout: a snorm16
 // position is not a position without it. Same block, same members as the G-buffer
-// programs' — the whole point of keeping this shader live is that enabling terrain
-// casting stays a pure C++ change, and a caster that fetched the box from somewhere
-// else would shadow a different terrain than the one on screen. RenderToShadowMap is
-// still stubbed, so nothing binds set 3 yet; whoever enables it binds
+// programs' (Flux_Terrain.cpp static_asserts the three copies' layouts together): a
+// caster that fetched the box from somewhere else would shadow a different terrain
+// than the one on screen. RenderToShadowMap binds each terrain's own
 // m_xTerrainConstantsBuffer here exactly as ExecuteGBuffer does.
 struct TerrainConstantsLayout
 {

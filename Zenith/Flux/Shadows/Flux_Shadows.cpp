@@ -58,10 +58,10 @@ DEBUGVAR uint32_t dbg_uPCFTapCount     = 16u;
 // PCSS contact hardening: estimate penumbra from a blocker search so shadows
 // sharpen at contact and soften with distance. Sun half-angle drives the width.
 DEBUGVAR bool  dbg_bPCSSEnabled        = true;
-DEBUGVAR float dbg_fSunAngularRadius   = 0.013f;
+DEBUGVAR float dbg_fSunAngularRadius   = 0.00935f;   // the PHYSICAL solar half-angle; the shading lobe and the atmosphere disc use the same number
 // Phase-2 defaults take the cheaper paths; each switch independently restores
 // the former all-cascade PCSS/Vogel behaviour for runtime A/B.
-DEBUGVAR bool  dbg_bPCSSCascade0Only   = true;
+DEBUGVAR bool  dbg_bPCSSCascade0Only   = false;   // contact-hardening out to cascade 1 (~27 m): fixed-width penumbrae on long shadows were the visible tell
 DEBUGVAR bool  dbg_bCheapFarCascades   = true;
 // Phase-3 visual-budget switches retain current behaviour until signed off.
 // The roughness gate sends receivers ABOVE the threshold to the cheap Gather
@@ -227,8 +227,17 @@ static void ExecuteShadowCascade(Flux_CommandBuffer* pxCommandList, void* pUserD
 	// partition layout it protects.
 	xEngine.Grass().RenderToShadowMap(*pxCommandList, u);
 
-	// #TODO: Enable terrain shadow casting
-	// g_xEngine.Terrain().RenderToShadowMap(*pxCommandList, u);
+	// Terrain casters. One indirect draw per terrain of cascade u's SLOT of the terrain
+	// shadow cull output, which the terrain culling dispatch filled by testing every
+	// chunk against THIS cascade's light-space box (Flux_TerrainShadowCull.h). The
+	// cascade pass declares the slot buffers' READ_INDIRECT_ARG (SetupRenderGraph).
+	//
+	// Terrain gets its OWN slope factor: it is a huge low-slope receiver AND caster of
+	// itself, so its self-shadow acne budget is not the meshes'. Dynamic depth-bias
+	// state persists in the command list, which is why terrain records LAST here —
+	// a caster added after it must re-set the shared bias first.
+	pxCommandList->SetDepthBias(dbg_fShadowDepthBiasConstant, xEngine.Terrain().GetShadowDepthBiasSlope(), 0.f);
+	xEngine.Terrain().RenderToShadowMap(*pxCommandList, u);
 }
 
 void Flux_ShadowsImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
@@ -269,6 +278,17 @@ void Flux_ShadowsImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	Flux_GrassImpl& xGrass = xEngine.Grass();
 	const bool bGrassResources = xGrass.IsGPUReady();
 
+	// Terrain is the THIRD cascade producer, in the same shape. Every cascade draws
+	// indirect out of its own slot of each terrain's shadow cull output (filled by
+	// the terrain reset -> culling passes), so every cascade must READ those slot
+	// buffers — and "Terrain" is registered BEFORE "Shadows" for the same reason
+	// UnifiedMesh and Grass are (a reader links only to an earlier-declared writer).
+	// Gathered here exactly as Flux_TerrainImpl::SetupRenderGraph gathers: the
+	// registry walked at graph-build time is the current scene's terrain set, and
+	// the per-terrain flags gate on the buffers actually existing.
+	Zenith_Vector<Flux_TerrainRenderRecord> xTerrains;
+	if (g_pfnZenithTerrainGather) g_pfnZenithTerrainGather(xTerrains);
+
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
 		// CSM targets are depth textures — declared as per-layer DSV writes (mip 0,
@@ -306,6 +326,19 @@ void Flux_ShadowsImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 			xGraph.ReadBuffer(xPass, xGrass.GetVisibleIndexBuffer(), RESOURCE_ACCESS_READ_BUFFER_SRV);
 			xGraph.ReadBuffer(xPass, xGrass.GetBladePoolBuffer(),    RESOURCE_ACCESS_READ_BUFFER_SRV);
 			xGraph.ReadBuffer(xPass, xGrass.GetIndirectArgsBuffer(), RESOURCE_ACCESS_READ_INDIRECT_ARG);
+		}
+
+		// Every cascade has a terrain slot (unlike grass), so no cascade bound here.
+		// The buffers are whole-buffer graph resources; the per-cascade slot is a
+		// byte offset inside them at draw time, invisible to the graph — which is
+		// fine, the barrier it synthesises covers the whole buffer.
+		for (u_int t = 0; t < xTerrains.GetSize(); t++)
+		{
+			Flux_TerrainStreamingState* pxState = xTerrains.Get(t).m_pxState;
+			if (pxState == nullptr) continue;
+			if (!pxState->m_bCullingResourcesInitialized || !pxState->m_bShadowCullResourcesInitialized) continue;
+			xGraph.ReadBuffer(xPass, pxState->m_xShadowIndirectDrawBuffer.GetBuffer(), RESOURCE_ACCESS_READ_INDIRECT_ARG);
+			xGraph.ReadBuffer(xPass, pxState->m_xShadowVisibleCountBuffer.GetBuffer(), RESOURCE_ACCESS_READ_INDIRECT_ARG);
 		}
 	}
 }

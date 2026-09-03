@@ -132,6 +132,18 @@ void Zenith_Core::Zenith_Main()
 	// but we need window dimensions before that, so call it here too (idempotent)
 	Project_SetGraphicsOptions(Zenith_GraphicsOptions::Get());
 	Zenith_CommandLine::Parse(__argc, __argv);
+	{
+		// --window-size <W>x<H>: a capture harness's resolution wins over the
+		// game's default. Applied here, after the game's options and before the
+		// window exists, so the swapchain is created at the requested size.
+		u_int uWindowWidth = 0u;
+		u_int uWindowHeight = 0u;
+		if (Zenith_CommandLine::GetWindowSizeOverride(uWindowWidth, uWindowHeight))
+		{
+			Zenith_GraphicsOptions::Get().m_uWindowWidth = uWindowWidth;
+			Zenith_GraphicsOptions::Get().m_uWindowHeight = uWindowHeight;
+		}
+	}
 
 	xBootMarkers.Add("WindowCreateBegin", Zenith_Profiling_Detail::GetTimestamp());
 	Zenith_Window::Initialise("Zenith", Zenith_GraphicsOptions::Get().m_uWindowWidth, Zenith_GraphicsOptions::Get().m_uWindowHeight);

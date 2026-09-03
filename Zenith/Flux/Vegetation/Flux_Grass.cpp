@@ -648,9 +648,45 @@ void Flux_GrassImpl::SetTypeTable(const Flux_GrassTypeTable& xTable)
 {
 	m_xTypeTable = xTable;
 	m_xTypeTable.Validate();
+	ResolveTypeTextures();
 	// The GPU block is re-uploaded by the next gather (it uploads unconditionally —
 	// 2 KB a frame is far cheaper than tracking a dirty flag across frames in
 	// flight), so there is nothing device-side to do here.
+}
+
+u_int Flux_GrassImpl::ResolveTypeTexture(const std::string& strPath, FluxGrassTextureSlot eSlot, void* pUser)
+{
+	Flux_GrassImpl* pxImpl = static_cast<Flux_GrassImpl*>(pUser);
+	TextureHandle xHandle(strPath);
+	Zenith_TextureAsset* pxTexture = xHandle.Resolve();
+	if (pxTexture == nullptr)
+	{
+		Zenith_Warning(LOG_CATEGORY_RENDERER, "Flux_Grass: grass texture '%s' (slot %d) failed to load — the slot stays unbound",
+			strPath.c_str(), static_cast<int>(eSlot));
+		return uFLUX_GRASS_BINDLESS_UNBOUND;
+	}
+	// The gloss lookup runs past u = 1 (height * GlossRepeat) and the vein map is
+	// blade detail, so both REPEAT; the ramp is indexed by two [0,1] hashes and
+	// CLAMPs so a clump hash of exactly 1 cannot wrap to the first column. A
+	// texture is used in one role, so one sampler per slot is correct. An SRV that
+	// is not valid leaves the index at uFLUX_INVALID_BINDLESS_INDEX, which is the
+	// same bit pattern as UNBOUND — the shader short-circuits either way.
+	pxTexture->MarkAsBindless(/*bRepeatAddressing*/ eSlot != FLUX_GRASS_TEXTURE_RAMP);
+	pxImpl->m_axTypeTextureHandles.PushBack(xHandle);
+	return pxTexture->m_xSRV.m_uBindlessIndex;
+}
+
+void Flux_GrassImpl::ResolveTypeTextures()
+{
+	// The previous table's pins drop FIRST, so a re-applied table that no longer
+	// names a texture lets it unload rather than accumulating handles per Apply.
+	m_axTypeTextureHandles.Clear();
+	m_xTypeTable.ResolveTextureIndices(&Flux_GrassImpl::ResolveTypeTexture, this);
+}
+
+void Flux_GrassImpl::ReleaseAssetReferences()
+{
+	m_axTypeTextureHandles.Clear();
 }
 
 void Flux_GrassImpl::LoadAuthoredTypeTable()
@@ -683,10 +719,11 @@ void Flux_GrassImpl::LoadAuthoredTypeTable()
 	}
 
 	// SetTypeTable copies and validates, so a hand-edited file cannot push an
-	// out-of-range parameter into the placement CS.
+	// out-of-range parameter into the placement CS — and resolves the table's
+	// texture paths to bindless slots, which is the only route a file has to them.
 	SetTypeTable(pxAsset->GetTable());
-	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Grass: loaded %u authored grass types from '%s'",
-		m_xTypeTable.GetCount(), szZENITH_GRASS_TYPE_TABLE_ASSET_PATH);
+	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Grass: loaded %u authored grass types from '%s' (%u texture slots bound)",
+		m_xTypeTable.GetCount(), szZENITH_GRASS_TYPE_TABLE_ASSET_PATH, m_xTypeTable.CountBoundTextures());
 }
 
 //=============================================================================

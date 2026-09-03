@@ -81,6 +81,21 @@ inline ZM_PROP_PLACEMENT_SITE ZM_WherePropIsPlaced(ZM_PROP_ID eProp)
 				return ZM_PROP_PLACEMENT_INTERIOR;
 			}
 		}
+		// ★ THE LIGHT FIXTURES ARE AN INTERIOR PLACEMENT TOO. They are authored
+		// from their own table (axZM_*_FIXTURES) rather than the furniture one --
+		// they carry no collider and their Y is a model base, not a floor -- but
+		// "is this roster row placed in a scene" is the same question and has the
+		// same answer. Without this arm the four ZM_PROP_KIND_LIGHT_FIXTURE rows
+		// would answer NONE and ZM_Dressing/EveryGeneratedPropIsPlacedInGame would
+		// red on props that are in fact standing in both rooms.
+		const u_int uFixtures = ZM_GetInteriorFixtureCount(eRoom);
+		for (u_int i = 0u; i < uFixtures; ++i)
+		{
+			if (ZM_GetInteriorFixture(eRoom, i).m_eProp == eProp)
+			{
+				return ZM_PROP_PLACEMENT_INTERIOR;
+			}
+		}
 	}
 	for (u_int i = 0u; i < ZM_GetDawnmerePropCount(); ++i)
 	{

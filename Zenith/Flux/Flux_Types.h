@@ -225,6 +225,11 @@ private:
 // vehicle, which is a file format, not a pipeline input.)
 
 bool IsCompressedFormat(TextureFormat eFormat);
+// True for every format the sampler decodes through the sRGB EOTF on fetch
+// (RGBA8/BGRA8 _SRGB and the BC*_SRGB blocks). The exporter uses it to pick the
+// mip filter (decode -> average -> re-encode); the loader and the backends treat
+// the bytes identically to the UNORM twin.
+bool IsSRGBFormat(TextureFormat eFormat);
 uint32_t CompressedFormatBytesPerBlock(TextureFormat eFormat);
 size_t CalculateCompressedTextureSize(TextureFormat eFormat, uint32_t uWidth, uint32_t uHeight);
 uint32_t ColourFormatBitsPerPixel(TextureFormat eFormat);

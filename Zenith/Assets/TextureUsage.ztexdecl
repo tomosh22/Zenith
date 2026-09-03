@@ -1,0 +1,79 @@
+# Zenith engine texture usage declarations.
+#
+# WHAT THIS IS. Every source texture under this asset root, and what its bytes
+# MEAN. The exporter reads it to choose a compression format and a colour space;
+# a texture that is not listed here is NOT EXPORTED, and the tools boot names it.
+#
+# WHY IT EXISTS. This used to be inferred -- first "everything is BC1 linear",
+# then "a basename containing 'normal' is BC5". The second inference was RIGHT
+# about the bytes and still broke the game: the terrain normal maps duly became
+# BC5, the two terrain G-buffer shaders still decoded three channels, blue read
+# 0, the shading normal pointed into the ground, NdotL went to zero and the
+# terrain silently stopped receiving any shadow at all. Nothing failed. The
+# symptom arrived days later as "the houses stopped casting shadows onto the
+# ground". An inference cannot be reviewed, cannot be diffed, and cannot be
+# wrong out loud -- a declaration can be all three.
+#
+# THIS FILE IS COMMITTED even though `**/Assets/**` is gitignored: `.ztexdecl`
+# is re-included by .gitignore exactly as `.zscen` and `.znavmesh` are. A
+# declaration a fresh clone lacks is a declaration somebody re-guesses.
+#
+# FORMAT. One `<path> <USAGE>` per line; `#` comments; path is relative to this
+# file, forward-slashed, matched case-insensitively.
+#
+#   BASE_COLOUR          displayed colour        -> BC1 sRGB (BC3 if it has alpha)
+#   BASE_COLOUR_MASKED   + punch-through alpha   -> BC1_Alpha sRGB
+#   NORMAL_MAP           tangent-space normal    -> BC5 linear, Z rebuilt at sample time
+#   LINEAR_DATA          roughness/metal/AO/...  -> BC1 linear
+#   UNCOMPRESSED_COLOUR  atlas/LUT, displayed    -> RGBA8 sRGB
+#   UNCOMPRESSED_DATA    atlas/LUT, data         -> RGBA8 linear
+
+
+# --- Textures/Cubemap ---
+Textures/Cubemap/nx.png                                   BASE_COLOUR
+Textures/Cubemap/ny.png                                   BASE_COLOUR
+Textures/Cubemap/nz.png                                   BASE_COLOUR
+Textures/Cubemap/px.png                                   BASE_COLOUR
+Textures/Cubemap/py.png                                   BASE_COLOUR
+Textures/Cubemap/pz.png                                   BASE_COLOUR
+
+# --- Textures/Particles ---
+Textures/Particles/particleSwirl.png                      BASE_COLOUR
+
+# --- Textures/Terrain/Clay ---
+Textures/Terrain/Clay/diffuse.jpg                         BASE_COLOUR
+Textures/Terrain/Clay/normal.jpg                          NORMAL_MAP
+Textures/Terrain/Clay/ao.jpg                              LINEAR_DATA
+Textures/Terrain/Clay/gloss.jpg                           LINEAR_DATA
+Textures/Terrain/Clay/height.jpg                          LINEAR_DATA
+Textures/Terrain/Clay/metallic.jpg                        LINEAR_DATA
+Textures/Terrain/Clay/reflection.jpg                      LINEAR_DATA
+Textures/Terrain/Clay/roughness.jpg                       LINEAR_DATA
+
+# --- Textures/Terrain/Grass ---
+Textures/Terrain/Grass/diffuse.jpg                        BASE_COLOUR
+Textures/Terrain/Grass/normal.jpg                         NORMAL_MAP
+Textures/Terrain/Grass/ao.jpg                             LINEAR_DATA
+Textures/Terrain/Grass/gloss.jpg                          LINEAR_DATA
+Textures/Terrain/Grass/height.jpg                         LINEAR_DATA
+Textures/Terrain/Grass/metallic.jpg                       LINEAR_DATA
+Textures/Terrain/Grass/reflection.jpg                     LINEAR_DATA
+Textures/Terrain/Grass/roughness.jpg                      LINEAR_DATA
+
+# --- Textures/Terrain/Rock ---
+Textures/Terrain/Rock/diffuse.jpg                         BASE_COLOUR
+Textures/Terrain/Rock/normal.jpg                          NORMAL_MAP
+Textures/Terrain/Rock/ao.jpg                              LINEAR_DATA
+Textures/Terrain/Rock/gloss.jpg                           LINEAR_DATA
+Textures/Terrain/Rock/height.jpg                          LINEAR_DATA
+Textures/Terrain/Rock/metallic.jpg                        LINEAR_DATA
+Textures/Terrain/Rock/reflection.jpg                      LINEAR_DATA
+Textures/Terrain/Rock/roughness.jpg                       LINEAR_DATA
+
+# --- Textures/Terrain/Grass ---
+Textures/Terrain/Grass/grass_with_mud_and_stones_39_46.jpg  BASE_COLOUR
+
+# --- Textures/Water ---
+Textures/Water/displacement.png                           LINEAR_DATA
+Textures/Water/normal.jpg                                 NORMAL_MAP
+Textures/Water/roughness.jpg                              LINEAR_DATA

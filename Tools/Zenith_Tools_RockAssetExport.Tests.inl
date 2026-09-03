@@ -465,4 +465,100 @@ ZENITH_TEST(RockAssets, ClusterAppendsPlaceStonesWithoutSharingVertices)
 	ZENITH_ASSERT_GT(fMinX, 3.0f, "the offset stone was not translated");
 }
 
+//-----------------------------------------------------------------------------
+// The shared detail pair (STREAM D) and the exported height field.
+//-----------------------------------------------------------------------------
+
+ZENITH_TEST(RockAssets, DetailAlbedoIsCentredOnMidGrey)
+{
+	// THE clause for this map. The shader's detail combine is base * detail * 2,
+	// so 0.5 is the IDENTITY value: a detail albedo whose mean drifts to 0.45
+	// darkens every rock in the world by 10% and reads as a lighting
+	// regression, not as a texture bug. Nothing downstream can detect it.
+	Zenith_Vector<float> xGrit;
+	BuildRockDetailField(xGrit);
+	Zenith_Vector<u_int8> xAlbedo;
+	BuildRockDetailAlbedoPixels(xGrit, xAlbedo);
+
+	double dSum = 0.0;
+	const u_int uTexels = static_cast<u_int>(iROCK_DETAIL_SIZE * iROCK_DETAIL_SIZE);
+	for (u_int u = 0; u < uTexels; u++)
+	{
+		dSum += xAlbedo.Get(u * 4) / 255.0f;
+	}
+	const float fMean = static_cast<float>(dSum / uTexels);
+	ZENITH_ASSERT_EQ_FLOAT(fMean, 0.5f, 0.03f,
+		"the detail albedo is not centred on mid-grey -- tiling it over a rock will rescale "
+		"that rock's brightness");
+
+	// Grey, not tinted: a coloured detail map tints every surface it is applied
+	// to, and the pair is shared by granite AND sandstone.
+	for (u_int u = 0; u < uTexels; u += 977u)
+	{
+		ZENITH_ASSERT_EQ(xAlbedo.Get(u * 4 + 0), xAlbedo.Get(u * 4 + 1), "detail albedo is not neutral grey");
+		ZENITH_ASSERT_EQ(xAlbedo.Get(u * 4 + 1), xAlbedo.Get(u * 4 + 2), "detail albedo is not neutral grey");
+	}
+}
+
+ZENITH_TEST(RockAssets, DetailFieldTilesAcrossTheWrap)
+{
+	// The pair is tiled 6x over UVs that already tile, so a non-wrapping field
+	// prints a grid of seams across every stone -- and looks perfect in any
+	// screenshot that does not straddle one.
+	for (int i = 0; i < 64; i++)
+	{
+		const float fT = static_cast<float>(i) / 64.0f;
+		ZENITH_ASSERT_EQ_FLOAT(RockDetailGrit(0.0f, fT), RockDetailGrit(1.0f, fT), 1e-6f,
+			"the detail grit field does not wrap in u");
+		ZENITH_ASSERT_EQ_FLOAT(RockDetailGrit(fT, 0.0f), RockDetailGrit(fT, 1.0f), 1e-6f,
+			"the detail grit field does not wrap in v");
+	}
+}
+
+ZENITH_TEST(RockAssets, DetailNormalIsUnitLengthAndFacesOut)
+{
+	Zenith_Vector<float> xGrit;
+	BuildRockDetailField(xGrit);
+	Zenith_Vector<u_int8> xNormal;
+	BuildRockDetailNormalPixels(xGrit, xNormal);
+
+	double dSumZ = 0.0;
+	u_int uNonFlat = 0u;
+	const u_int uTexels = static_cast<u_int>(iROCK_DETAIL_SIZE * iROCK_DETAIL_SIZE);
+	for (u_int u = 0; u < uTexels; u++)
+	{
+		const float fX = xNormal.Get(u * 4 + 0) / 255.0f * 2.0f - 1.0f;
+		const float fY = xNormal.Get(u * 4 + 1) / 255.0f * 2.0f - 1.0f;
+		const float fZ = xNormal.Get(u * 4 + 2) / 255.0f * 2.0f - 1.0f;
+		const float fLen = sqrtf(fX * fX + fY * fY + fZ * fZ);
+		ZENITH_ASSERT_GT(fLen, 0.97f, "detail normal texel is far from unit length");
+		ZENITH_ASSERT_LT(fLen, 1.03f, "detail normal texel is far from unit length");
+		ZENITH_ASSERT_GT(fZ, 0.0f, "detail normal texel points INTO the surface");
+		dSumZ += fZ;
+		if (fX * fX + fY * fY > 0.02f) { uNonFlat++; }
+	}
+	const float fMeanZ = static_cast<float>(dSumZ / uTexels);
+	ZENITH_ASSERT_GT(fMeanZ, 0.85f, "the detail normal map is not predominantly +Z");
+	ZENITH_ASSERT_GT(uNonFlat, uTexels / 500u,
+		"the detail normal map is essentially flat -- it adds no contact-range grain");
+}
+
+ZENITH_TEST(RockAssets, DetailGenerationIsDeterministic)
+{
+	Zenith_Vector<float> xGritA, xGritB;
+	BuildRockDetailField(xGritA);
+	BuildRockDetailField(xGritB);
+	Zenith_Vector<u_int8> xA, xB;
+	BuildRockDetailAlbedoPixels(xGritA, xA);
+	BuildRockDetailAlbedoPixels(xGritB, xB);
+	for (u_int u = 0; u < xA.GetSize(); u++)
+	{
+		if (xA.Get(u) != xB.Get(u))
+		{
+			ZENITH_ASSERT_EQ(xA.Get(u), xB.Get(u), "the detail albedo is not a pure function of its seed");
+			break;
+		}
+	}
+}
+
 #endif // ZENITH_TESTING

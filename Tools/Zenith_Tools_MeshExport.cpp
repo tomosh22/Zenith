@@ -713,9 +713,15 @@ static void ExportMaterialTextures(const aiMaterial* pxMat, const aiScene* pxSce
 		// Per-slot compression: tangent-space normal maps use BC5 (two-channel
 		// R+G, Z reconstructed in-shader) — BC1 visibly mangles normals. All other
 		// slots (albedo / roughness / metallic / occlusion / emissive) use BC1.
+		// Per-slot COLOUR SPACE: the displayed-colour slots (diffuse, glTF base
+		// colour, both emissive ids) are sRGB and export as the sRGB BC twin;
+		// every other slot is data and stays linear.
 		const bool bIsNormalMap = (uType == aiTextureType_NORMALS) || (uType == aiTextureType_NORMAL_CAMERA);
+		const bool bIsColour = (uType == aiTextureType_DIFFUSE) || (uType == aiTextureType_BASE_COLOR)
+			|| (uType == aiTextureType_EMISSIVE) || (uType == aiTextureType_EMISSION_COLOR);
 		const TextureCompressionMode eCompression = bIsNormalMap ? TextureCompressionMode::BC5 : TextureCompressionMode::BC1;
-		Zenith_Tools_TextureExport::ExportFromDataCompressed(pData, strExportFile, iWidth, iHeight, eCompression);
+		const TextureColourSpace eColourSpace = bIsColour ? TextureColourSpace::SRGB : TextureColourSpace::Linear;
+		Zenith_Tools_TextureExport::ExportFromDataCompressed(pData, strExportFile, iWidth, iHeight, eCompression, eColourSpace);
 		stbi_image_free(pData);
 	}
 }

@@ -19,15 +19,23 @@ ZENITH_TEST(HDRExposure, KeyIsTheISOSaturationTarget)
 		"exposure key must be the ISO-derived saturation target, not a tuned value");
 }
 
-ZENITH_TEST(HDRExposure, HistogramTopBinCoversTheRadiometricAnchor)
+ZENITH_TEST(HDRExposure, HistogramTopBinCoversTheSunDiscRadiance)
 {
-	// The brightest non-emissive radiance in the frame is bounded by the sky,
-	// which is bounded by the top-of-atmosphere sun intensity (the engine's
-	// radiometric anchor). The histogram's top bin must reach it, else the sky
-	// clips into the last bin and skews the metered average — which is exactly
-	// what the old range-12 domain did (top 4.0 vs sky ~7).
+	// The brightest thing in the frame is the SUN DISC, not the sky. Its radiance
+	// is the anchor's irradiance divided by the solar solid angle (see
+	// Common/Atmosphere.slang RenderSunDisk), which is ~3600x the sky it sits in.
+	// The histogram's top bin must reach it: when it did not, the disc, the sky
+	// and every sunlit white surface shared one saturated bin, so no percentile
+	// above ~0.9 could distinguish them and the highlight protection in
+	// Flux_Adaptation could not see the surface it exists to protect.
+	const float fSunSolidAngle = 3.14159265f
+		* AtmosphereConfig::fSUN_ANGULAR_RADIUS * AtmosphereConfig::fSUN_ANGULAR_RADIUS;
+	const float fSunDiscRadiance = AtmosphereConfig::fSUN_INTENSITY / fSunSolidAngle;
 	const float fTopBinLuminance = exp2f(
 		fHDR_HISTOGRAM_MIN_LOG_LUMINANCE + fHDR_HISTOGRAM_LOG_LUMINANCE_RANGE);
+	ZENITH_ASSERT_GE(fTopBinLuminance, fSunDiscRadiance,
+		"histogram top bin must cover the sun disc radiance, not just the sky");
+	// ...and the sky, which is what the average metering actually reads.
 	ZENITH_ASSERT_GE(fTopBinLuminance, AtmosphereConfig::fSUN_INTENSITY,
 		"histogram top bin must cover the anchor (sky radiance bound)");
 }

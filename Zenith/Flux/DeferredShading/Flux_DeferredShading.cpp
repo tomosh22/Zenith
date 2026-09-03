@@ -134,7 +134,10 @@ static void ExecuteApplyLighting(Flux_CommandBuffer* pxCommandList, void*)
 	xBinder.BindSRV(DS::hg_xNormalsAmbientTex, xFluxGraphics.GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT, uViewSlot));
 	xBinder.BindSRV(DS::hg_xMaterialTex, xFluxGraphics.GetGBufferSRV(MRT_INDEX_MATERIAL, uViewSlot));
 	xBinder.BindSRV(DS::hg_xGBufferEmissiveTex, xFluxGraphics.GetGBufferSRV(MRT_INDEX_EMISSIVE, uViewSlot));
-	xBinder.BindSRV(DS::hg_xDepthTex, xFluxGraphics.GetDepthStencilSRV(uViewSlot));
+	// Point-sampled: the contact-shadow march compares reconstructed view Z against
+	// this depth, and a bilinear tap across a silhouette invents an intermediate
+	// depth that reads as a false occluder (contact-shadow fringes on every edge).
+	xBinder.BindSRV(DS::hg_xDepthTex, xFluxGraphics.GetDepthStencilSRV(uViewSlot), &xFluxGraphics.m_xPointSampler);
 
 	// CSM (g_xCSM) AND the all-cascade ShadowMatrices SSBO (g_xShadowMatrices) are now in
 	// the persistent VIEW set (Phase 5.4) — written once/frame in PreparePersistentSets /

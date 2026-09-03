@@ -30,6 +30,14 @@
 // Flux/Backend/Flux_IndirectDraw.h. These tests pin the terrain-specific
 // arithmetic that lives on top of that ABI.
 #include "Flux/Backend/Flux_IndirectDraw.h"
+// Terrain shadow casting: the pure slot arithmetic + caster LOD policy, the
+// per-cascade cull block builder, the feature table (declaration order) and the
+// render graph (a stack graph exercising the reset -> cull -> cascade shape).
+#include "Flux/Terrain/Flux_TerrainShadowCull.h"
+#include "Flux/Terrain/Flux_TerrainGPUStructs.h"
+#include "Flux/Flux_FeatureRegistry.h"
+#include "Flux/RenderGraph/Flux_RenderGraph.h"
+#include "Flux/Shadows/Flux_ShadowsImpl.h"
 
 #ifdef ZENITH_TESTING
 
@@ -716,6 +724,435 @@ ZENITH_TEST(FluxTerrain, TotalChunksPinnedToFourThousandNinetySix)
 	// re-derived in lockstep.
 	ZENITH_ASSERT_EQ(Flux_TerrainConfig::TOTAL_CHUNKS, 4096u,
 		"TOTAL_CHUNKS is the shipping 64x64 grid — change requires regenerating shaders and updating the reset dispatch count in lockstep");
+}
+
+//------------------------------------------------------------------------------
+// Terrain shadow casting — the pure parts.
+//
+// Terrain casts into the CSM cascades by giving each cascade its own SLOT of a
+// second indirect/count buffer pair, filled by the one terrain culling dispatch
+// (rows y = 1 + cascade) and drawn by each "Shadow Cascade N" pass with two byte
+// offsets. Everything the GPU side relies on is arithmetic the CPU can pin:
+//   - the slot layout (contiguous, disjoint, ends exactly at the allocation),
+//   - the caster LOD policy (camera-matched below the force threshold, LOW at/above),
+//   - the per-cascade cull block (planes == the shared frustum extraction, and an
+//     ortho box actually classifies a chunk AABB the way the shader will),
+//   - the render-graph shape (the cascade READ links to the EARLIER cull WRITE, and
+//     the barrier synthesised is compute-write -> indirect-arg-read),
+//   - the feature table order that makes that link exist at all.
+// HEADLESS-SAFE: constexpr arithmetic, glm on the stack, and a stack render graph
+// with buffer-only passes (no transients, no device).
+//------------------------------------------------------------------------------
+
+ZENITH_TEST(FluxTerrain, ShadowCullSlotCountIsTheCascadeCount)
+{
+	// One slot per cascade — the shader's TERRAIN_SHADOW_CULL_VIEWS row count, the
+	// pure header's view count and the CSM count are one number (also static_asserted
+	// in Flux_Terrain.cpp; pinned here so the value itself is visible).
+	ZENITH_ASSERT_EQ(uFLUX_TERRAIN_SHADOW_CULL_VIEWS, 4u, "four cascade slots");
+	ZENITH_ASSERT_EQ(uFLUX_TERRAIN_SHADOW_CULL_VIEWS, static_cast<uint32_t>(ZENITH_FLUX_NUM_CSMS),
+		"slot count must equal ZENITH_FLUX_NUM_CSMS");
+	ZENITH_ASSERT_EQ(uFLUX_TERRAIN_SHADOW_FORCE_LOW_NEVER, uFLUX_TERRAIN_SHADOW_CULL_VIEWS,
+		"'never force LOW' is spelled as the slot count so every cascade index compares below it");
+}
+
+ZENITH_TEST(FluxTerrain, ShadowCullSlotsAreContiguousDisjointAndEndAtTheAllocation)
+{
+	constexpr uint32_t uCAP    = Flux_TerrainConfig::TOTAL_CHUNKS;
+	constexpr uint32_t uSTRIDE = uFLUX_INDIRECT_DRAW_INDEXED_BYTE_STRIDE;
+	constexpr uint32_t uVIEWS  = uFLUX_TERRAIN_SHADOW_CULL_VIEWS;
+
+	// Slot 0 is the camera draw's shape exactly (offset 0) — the cascade draw IS the
+	// camera draw with two offsets, which is what lets the recorder's ZERO_PADDED_TO_MAX
+	// contract carry over unchanged.
+	ZENITH_ASSERT_EQ(Flux_TerrainShadowCullIndirectByteOffset(0u, uCAP, uSTRIDE), 0u, "cascade 0's slot starts at byte 0");
+	ZENITH_ASSERT_EQ(Flux_TerrainShadowCullCountByteOffset(0u), 0u, "cascade 0's count is the first uint");
+
+	// Each slot is a full chunk-capacity range and the next begins where it ends.
+	for (uint32_t c = 0; c < uVIEWS; ++c)
+	{
+		const uint32_t uBegin = Flux_TerrainShadowCullIndirectByteOffset(c, uCAP, uSTRIDE);
+		const uint32_t uEnd   = uBegin + uCAP * uSTRIDE;
+		ZENITH_ASSERT_EQ(uBegin, c * uCAP * uSTRIDE, "cascade %u slot begins at c * capacity * stride", c);
+		ZENITH_ASSERT_EQ(uBegin % 4u, 0u, "cascade %u indirect offset must be 4-byte aligned (VUID 02710)", c);
+		ZENITH_ASSERT_EQ(Flux_TerrainShadowCullCountByteOffset(c), c * 4u, "cascade %u count offset is c * sizeof(uint32)", c);
+		if (c + 1u < uVIEWS)
+		{
+			ZENITH_ASSERT_EQ(uEnd, Flux_TerrainShadowCullIndirectByteOffset(c + 1u, uCAP, uSTRIDE),
+				"cascade %u's slot must end exactly where cascade %u's begins (no gap, no overlap)", c, c + 1u);
+		}
+	}
+
+	// The LAST record of the LAST slot ends exactly at the allocation boundary — the
+	// recorder preflights [offset, offset + (max-1)*stride + 20] against the buffer
+	// size, so an off-by-one here fails closed (zero terrain shadow) at runtime.
+	const uint64_t ulAlloc = Flux_TerrainShadowCullIndirectBufferBytes(uVIEWS, uCAP, uSTRIDE);
+	const uint64_t ulLastRecordEnd =
+		static_cast<uint64_t>(Flux_TerrainShadowCullIndirectByteOffset(uVIEWS - 1u, uCAP, uSTRIDE)) +
+		static_cast<uint64_t>(uCAP - 1u) * uSTRIDE + uSTRIDE;
+	ZENITH_ASSERT_EQ(ulLastRecordEnd, ulAlloc, "the last cascade's last record must end at the allocation boundary");
+	ZENITH_ASSERT_EQ(ulAlloc, static_cast<uint64_t>(4u * 4096u * 20u), "4 slots x 4096 records x 20 bytes = 327680");
+	ZENITH_ASSERT_EQ(Flux_TerrainShadowCullCountBufferBytes(uVIEWS), static_cast<uint64_t>(uVIEWS * sizeof(uint32_t)),
+		"one uint32 per cascade");
+	ZENITH_ASSERT_EQ(Flux_TerrainShadowCullCountByteOffset(uVIEWS - 1u) + 4u,
+		static_cast<uint32_t>(Flux_TerrainShadowCullCountBufferBytes(uVIEWS)),
+		"the last cascade's count read [offset, +4) must fit the count buffer (VUID 02716)");
+}
+
+ZENITH_TEST(FluxTerrain, TerrainShadowCastingTogglesOffTheCullNotJustTheDraw)
+{
+	// The shipping state: shadows on, terrain casting on, every cascade active.
+	ZENITH_ASSERT_EQ(Flux_TerrainShadowActiveCascades(true, true, 4u), 4u,
+		"all four cascades are filled when both switches are on");
+
+	// EITHER switch off means ZERO slots. Zero is what makes this a real toggle:
+	// Flux_BuildTerrainShadowCullData zeroes every plane and writes 0 into the
+	// params, the cull rows early-out, the reset leaves every count at zero, and
+	// the per-cascade draws have nothing to issue. An early-out in the draw alone
+	// would still pay four cascades of chunk culling every frame.
+	ZENITH_ASSERT_EQ(Flux_TerrainShadowActiveCascades(false, true, 4u), 0u,
+		"shadows off casts nothing");
+	ZENITH_ASSERT_EQ(Flux_TerrainShadowActiveCascades(true, false, 4u), 0u,
+		"'Render/Shadows/Terrain Casts Shadows' off casts nothing");
+	ZENITH_ASSERT_EQ(Flux_TerrainShadowActiveCascades(false, false, 4u), 0u,
+		"both off casts nothing");
+
+	// A partially-activated cascade prefix is passed through, and the slot count is
+	// the ceiling — a view registry reporting more cascades than there are slots
+	// must not index past the allocation.
+	ZENITH_ASSERT_EQ(Flux_TerrainShadowActiveCascades(true, true, 0u), 0u, "no active cascade views, nothing to fill");
+	ZENITH_ASSERT_EQ(Flux_TerrainShadowActiveCascades(true, true, 2u), 2u, "a two-cascade prefix fills two slots");
+	ZENITH_ASSERT_EQ(Flux_TerrainShadowActiveCascades(true, true, 9u), uFLUX_TERRAIN_SHADOW_CULL_VIEWS,
+		"never more slots than the allocation holds");
+
+	// And the toggle must actually reach the GPU block: zero active cascades has to
+	// leave every plane zeroed and the param word zero, or the cull would keep
+	// culling against last frame's planes.
+	Zenith_TerrainShadowCullGPU xOff;
+	Zenith_Maths::Matrix4 axIdentity[uFLUX_TERRAIN_SHADOW_CULL_VIEWS];
+	for (u_int u = 0; u < uFLUX_TERRAIN_SHADOW_CULL_VIEWS; ++u) axIdentity[u] = Zenith_Maths::Matrix4(1.0f);
+	Flux_BuildTerrainShadowCullData(axIdentity,
+		Flux_TerrainShadowActiveCascades(true, false, 4u), 3u, xOff);
+	ZENITH_ASSERT_EQ(xOff.m_xParams.x, 0u, "the toggled-off block reports zero active cascades");
+	for (u_int u = 0; u < uFLUX_TERRAIN_SHADOW_CULL_VIEWS * 6u; ++u)
+	{
+		ZENITH_ASSERT_EQ_FLOAT(xOff.m_axFrustumPlanes[u].m_xNormalAndDistance.w, 0.0f, 0.0f,
+			"plane %u must be zeroed when terrain casting is off", u);
+	}
+}
+
+ZENITH_TEST(FluxTerrain, ShadowCasterLODIsCameraMatchedBelowTheForceThresholdAndLowAtOrAbove)
+{
+	constexpr uint32_t uHIGH = Flux_TerrainConfig::LOD_HIGH;
+	constexpr uint32_t uLOW  = Flux_TerrainConfig::LOD_LOW;
+
+	// Shipping default: force from cascade 3 — only the far cascade casts LOW.
+	for (uint32_t c = 0; c < 3u; ++c)
+	{
+		ZENITH_ASSERT_EQ(Flux_TerrainShadowCasterLOD(c, uHIGH, 3u, uLOW), uHIGH, "cascade %u casts the camera's HIGH", c);
+		ZENITH_ASSERT_EQ(Flux_TerrainShadowCasterLOD(c, uLOW,  3u, uLOW), uLOW,  "cascade %u casts the camera's LOW (far chunk)", c);
+	}
+	ZENITH_ASSERT_EQ(Flux_TerrainShadowCasterLOD(3u, uHIGH, 3u, uLOW), uLOW, "cascade 3 casts LOW even for a HIGH chunk");
+
+	// NEVER: every cascade camera-matched.
+	for (uint32_t c = 0; c < uFLUX_TERRAIN_SHADOW_CULL_VIEWS; ++c)
+	{
+		ZENITH_ASSERT_EQ(Flux_TerrainShadowCasterLOD(c, uHIGH, uFLUX_TERRAIN_SHADOW_FORCE_LOW_NEVER, uLOW), uHIGH,
+			"with the threshold at NEVER, cascade %u stays camera-matched", c);
+	}
+	// 0: every cascade LOW.
+	for (uint32_t c = 0; c < uFLUX_TERRAIN_SHADOW_CULL_VIEWS; ++c)
+	{
+		ZENITH_ASSERT_EQ(Flux_TerrainShadowCasterLOD(c, uHIGH, 0u, uLOW), uLOW,
+			"with the threshold at 0, cascade %u casts LOW", c);
+	}
+	// The policy never invents a third level.
+	ZENITH_ASSERT_TRUE(Flux_TerrainShadowCasterLOD(1u, uHIGH, 1u, uLOW) < Flux_TerrainConfig::LOD_COUNT, "result is a valid LOD index");
+}
+
+namespace
+{
+	// The shader's conservative AABB-vs-planes test (Akenine-Moller), run on the
+	// GPU-format planes exactly as Flux_TerrainCulling.slang runs it.
+	bool TerrainShadowTest_AABBPassesPlanes(const Zenith_FrustumPlaneGPU* paxPlanes, const Zenith_AABB& xAABB)
+	{
+		const Zenith_Maths::Vector3 xCenter  = xAABB.GetCenter();
+		const Zenith_Maths::Vector3 xExtents = xAABB.GetExtents();
+		for (int i = 0; i < 6; ++i)
+		{
+			const Zenith_Maths::Vector4& xP = paxPlanes[i].m_xNormalAndDistance;
+			const Zenith_Maths::Vector3 xN(xP.x, xP.y, xP.z);
+			const float fRadius   = glm::dot(xExtents, glm::abs(xN));
+			const float fDistance = glm::dot(xN, xCenter) + xP.w;
+			if (fDistance < -fRadius) return false;
+		}
+		return true;
+	}
+
+	// A cascade-shaped ortho light box: eye pushed back along -dir from the centre,
+	// [-R, R]^2 laterally, depth [0, fDepth]. Same helpers UpdateShadowMatrices uses.
+	Zenith_Maths::Matrix4 TerrainShadowTest_OrthoViewProj(const Zenith_Maths::Vector3& xCenter,
+		const Zenith_Maths::Vector3& xSunDir, float fRadius, float fBackDist, float fDepth)
+	{
+		const Zenith_Maths::Vector3 xEye  = xCenter - xSunDir * fBackDist;
+		const Zenith_Maths::Matrix4 xView = glm::lookAt(xEye, xCenter, Zenith_Maths::Vector3(0.f, 1.f, 0.f));
+		const Zenith_Maths::Matrix4 xProj = Zenith_Maths::OrthographicProjection(-fRadius, fRadius, -fRadius, fRadius, 0.f, fDepth);
+		return xProj * xView;
+	}
+}
+
+ZENITH_TEST(FluxTerrain, ShadowCullDataCarriesEachCascadesOwnFrustumAndClassifiesChunks)
+{
+	// Four distinct cascades: growing radii around centres marching away from the
+	// origin, all lit by the same low-ish sun.
+	const Zenith_Maths::Vector3 xSunDir = glm::normalize(Zenith_Maths::Vector3(0.6f, -0.5f, 0.4f));
+	Zenith_Maths::Matrix4 axViewProj[uFLUX_TERRAIN_SHADOW_CULL_VIEWS];
+	Zenith_Maths::Vector3 axCenter[uFLUX_TERRAIN_SHADOW_CULL_VIEWS];
+	float afRadius[uFLUX_TERRAIN_SHADOW_CULL_VIEWS];
+	for (uint32_t c = 0; c < uFLUX_TERRAIN_SHADOW_CULL_VIEWS; ++c)
+	{
+		afRadius[c] = 20.f * static_cast<float>(1u << c);              // 20, 40, 80, 160
+		axCenter[c] = Zenith_Maths::Vector3(1000.f + 300.f * c, 50.f, 1000.f);
+		axViewProj[c] = TerrainShadowTest_OrthoViewProj(axCenter[c], xSunDir, afRadius[c], 2.f * afRadius[c], 3.f * afRadius[c]);
+	}
+
+	Zenith_TerrainShadowCullGPU xData;
+	Flux_BuildTerrainShadowCullData(axViewProj, uFLUX_TERRAIN_SHADOW_CULL_VIEWS, 3u, xData);
+
+	ZENITH_ASSERT_EQ(xData.m_xParams.x, uFLUX_TERRAIN_SHADOW_CULL_VIEWS, "params.x = active cascade count");
+	ZENITH_ASSERT_EQ(xData.m_xParams.y, 3u, "params.y = force-LOW-from cascade");
+	ZENITH_ASSERT_EQ(xData.m_xParams.z, 0u, "params.z reserved");
+	ZENITH_ASSERT_EQ(xData.m_xParams.w, 0u, "params.w reserved");
+
+	for (uint32_t c = 0; c < uFLUX_TERRAIN_SHADOW_CULL_VIEWS; ++c)
+	{
+		// (1) Byte-for-byte the shared extraction, in the shared plane order, at the
+		//     cascade-major offset the shader indexes (c*6 + plane).
+		Zenith_Frustum xRef;
+		xRef.ExtractFromViewProjection(axViewProj[c]);
+		for (uint32_t p = 0; p < 6u; ++p)
+		{
+			const Zenith_Maths::Vector4& xGPU = xData.m_axFrustumPlanes[c * 6u + p].m_xNormalAndDistance;
+			ZENITH_ASSERT_NEAR_VEC3(Zenith_Maths::Vector3(xGPU.x, xGPU.y, xGPU.z), xRef.m_axPlanes[p].m_xNormal, 1e-6f,
+				"cascade %u plane %u normal must be Zenith_Frustum's", c, p);
+			ZENITH_ASSERT_EQ_FLOAT(xGPU.w, xRef.m_axPlanes[p].m_fDistance, 1e-4f,
+				"cascade %u plane %u distance must be Zenith_Frustum's", c, p);
+		}
+
+		// (2) The planes classify chunk AABBs the way the cascade needs: a 64m chunk
+		//     at the cascade centre is IN; one 20 radii sideways is OUT; one behind
+		//     the light eye (further back than the ortho near plane) is OUT.
+		const Zenith_FrustumPlaneGPU* paxPlanes = &xData.m_axFrustumPlanes[c * 6u];
+		const Zenith_Maths::Vector3 xHalf(32.f, 8.f, 32.f);
+		const Zenith_AABB xInside(axCenter[c] - xHalf, axCenter[c] + xHalf);
+		ZENITH_ASSERT_TRUE(TerrainShadowTest_AABBPassesPlanes(paxPlanes, xInside), "cascade %u: a chunk at the centre is inside its box", c);
+
+		// A lateral direction perpendicular to the sun.
+		const Zenith_Maths::Vector3 xSide = glm::normalize(glm::cross(xSunDir, Zenith_Maths::Vector3(0.f, 1.f, 0.f)));
+		const Zenith_Maths::Vector3 xFarSide = axCenter[c] + xSide * (20.f * afRadius[c]);
+		const Zenith_AABB xOutsideSide(xFarSide - xHalf, xFarSide + xHalf);
+		ZENITH_ASSERT_FALSE(TerrainShadowTest_AABBPassesPlanes(paxPlanes, xOutsideSide), "cascade %u: a chunk 20 radii sideways is culled", c);
+
+		const Zenith_Maths::Vector3 xBehindEye = axCenter[c] - xSunDir * (10.f * afRadius[c]);
+		const Zenith_AABB xOutsideBack(xBehindEye - xHalf, xBehindEye + xHalf);
+		ZENITH_ASSERT_FALSE(TerrainShadowTest_AABBPassesPlanes(paxPlanes, xOutsideBack), "cascade %u: a chunk behind the light eye is culled", c);
+
+		// (3) Cascades are DISTINCT: cascade c's centre chunk is not inside cascade 0's
+		//     box for c >= 2 (300m+ away, radius 20m) — a cascade-major indexing slip
+		//     that reused cascade 0's planes would show here.
+		if (c >= 2u)
+		{
+			ZENITH_ASSERT_FALSE(TerrainShadowTest_AABBPassesPlanes(&xData.m_axFrustumPlanes[0], xInside),
+				"cascade %u's centre chunk must NOT be inside cascade 0's box", c);
+		}
+	}
+}
+
+ZENITH_TEST(FluxTerrain, ShadowCullDataZeroesInactiveCascadesAndClampsTheCount)
+{
+	Zenith_Maths::Matrix4 axViewProj[uFLUX_TERRAIN_SHADOW_CULL_VIEWS];
+	for (uint32_t c = 0; c < uFLUX_TERRAIN_SHADOW_CULL_VIEWS; ++c)
+	{
+		axViewProj[c] = TerrainShadowTest_OrthoViewProj(Zenith_Maths::Vector3(0.f), glm::normalize(Zenith_Maths::Vector3(0.f, -1.f, 0.1f)), 10.f, 20.f, 30.f);
+	}
+
+	// Two active: cascades 2-3 are zero planes, count says 2.
+	{
+		Zenith_TerrainShadowCullGPU xData;
+		// Poison first so "zero" is an assertion about the builder, not about stack luck.
+		for (uint32_t u = 0; u < uFLUX_TERRAIN_SHADOW_CULL_VIEWS * 6u; ++u) xData.m_axFrustumPlanes[u].m_xNormalAndDistance = Zenith_Maths::Vector4(7.f);
+		Flux_BuildTerrainShadowCullData(axViewProj, 2u, uFLUX_TERRAIN_SHADOW_FORCE_LOW_NEVER, xData);
+		ZENITH_ASSERT_EQ(xData.m_xParams.x, 2u, "two active cascades");
+		for (uint32_t u = 2u * 6u; u < uFLUX_TERRAIN_SHADOW_CULL_VIEWS * 6u; ++u)
+		{
+			ZENITH_ASSERT_EQ_FLOAT(glm::length(xData.m_axFrustumPlanes[u].m_xNormalAndDistance), 0.f, 1e-6f,
+				"inactive cascade plane %u must be zeroed", u);
+		}
+		ZENITH_ASSERT_TRUE(glm::length(xData.m_axFrustumPlanes[0].m_xNormalAndDistance) > 0.f, "active cascade 0 has real planes");
+	}
+
+	// Zero active (shadows off / pre-first-frame seed): null matrices are legal and
+	// nothing is read; every plane zero, count zero.
+	{
+		Zenith_TerrainShadowCullGPU xData;
+		Flux_BuildTerrainShadowCullData(nullptr, 0u, 3u, xData);
+		ZENITH_ASSERT_EQ(xData.m_xParams.x, 0u, "zero active cascades");
+		ZENITH_ASSERT_EQ(xData.m_xParams.y, 3u, "force threshold still carried");
+		for (uint32_t u = 0; u < uFLUX_TERRAIN_SHADOW_CULL_VIEWS * 6u; ++u)
+		{
+			ZENITH_ASSERT_EQ_FLOAT(glm::length(xData.m_axFrustumPlanes[u].m_xNormalAndDistance), 0.f, 1e-6f, "plane %u zero", u);
+		}
+	}
+
+	// Over-count clamps to the slot count (the shader indexes rows by it).
+	{
+		Zenith_TerrainShadowCullGPU xData;
+		Flux_BuildTerrainShadowCullData(axViewProj, 99u, 3u, xData);
+		ZENITH_ASSERT_EQ(xData.m_xParams.x, uFLUX_TERRAIN_SHADOW_CULL_VIEWS, "active count clamps to the slot count");
+	}
+
+	// The GPU block is the reflected CB, byte for byte.
+	ZENITH_ASSERT_EQ(u_int(sizeof(Zenith_TerrainShadowCullGPU)), 400u, "24 float4 planes + one uint4 = 400 bytes");
+	{
+		Zenith_TerrainShadowCullGPU xLayout;
+		const u_int uParamsOffset = static_cast<u_int>(
+			reinterpret_cast<const char*>(&xLayout.m_xParams) - reinterpret_cast<const char*>(&xLayout));
+		ZENITH_ASSERT_EQ(uParamsOffset, 384u, "params follow the plane array with no padding");
+	}
+}
+
+ZENITH_TEST(FluxTerrain, TerrainIsDeclaredBeforeShadows)
+{
+	// The live feature table this build ships. The setup walk IS the render-graph
+	// declaration order, and every "Shadow Cascade N" pass READs the terrain shadow
+	// cull slot buffers whose only writers are the terrain reset/cull passes — so
+	// Terrain must be declared first or those reads form no edge (the exact defect
+	// UnifiedMesh and Grass already pin for themselves).
+	const Flux_FeatureRegistry& xReg = Flux_FeatureRegistry::Get();
+	const u_int uTerrain = xReg.FindSetupStepIndex("Terrain");
+	const u_int uShadows = xReg.FindSetupStepIndex("Shadows");
+
+	ZENITH_ASSERT_TRUE(uTerrain != UINT32_MAX, "setup step 'Terrain' must exist, or this ordering assertion is vacuous");
+	ZENITH_ASSERT_TRUE(uShadows != UINT32_MAX, "setup step 'Shadows' must exist, or this ordering assertion is vacuous");
+
+	ZENITH_ASSERT_TRUE(uTerrain < uShadows,
+		"'Terrain' must be declared BEFORE 'Shadows': each cascade READS a terrain's shadow indirect-args / count slot "
+		"buffers and a reader only links to an EARLIER-declared writer. The other way round no edge forms and the cascade "
+		"is free to draw from a slot the reset has not cleared or the cull has not filled (terrain %u, shadows %u)",
+		uTerrain, uShadows);
+}
+
+namespace
+{
+	void TerrainShadowTest_EmptyRecord(Flux_CommandBuffer*, void*) {}
+}
+
+ZENITH_TEST(FluxTerrain, ShadowCascadeReadsOfTheTerrainSlotsOrderAfterTheCullAndBarrier)
+{
+	// The exact declaration shape Flux_TerrainImpl::SetupRenderGraph + Flux_ShadowsImpl::
+	// SetupRenderGraph produce for one terrain, in the order RegisterDefaultFeatures
+	// walks them (Terrain before Shadows): reset WRITES both slot buffers, cull WRITES
+	// the args + READWRITES the counts, each cascade READs both as indirect args.
+	Flux_RenderGraph xGraph;
+
+	Flux_IndirectBuffer xShadowArgs;
+	xShadowArgs.GetBuffer().m_xVRAMHandle.SetValue(7001u);
+	xShadowArgs.GetBuffer().m_ulSize = Flux_TerrainShadowCullIndirectBufferBytes(
+		uFLUX_TERRAIN_SHADOW_CULL_VIEWS, Flux_TerrainConfig::TOTAL_CHUNKS, uFLUX_INDIRECT_DRAW_INDEXED_BYTE_STRIDE);
+	Flux_IndirectBuffer xShadowCounts;
+	xShadowCounts.GetBuffer().m_xVRAMHandle.SetValue(7002u);
+	xShadowCounts.GetBuffer().m_ulSize = Flux_TerrainShadowCullCountBufferBytes(uFLUX_TERRAIN_SHADOW_CULL_VIEWS);
+
+	const Flux_PassHandle xReset = xGraph.AddPass("Terrain Reset Count and Indirect Arguments", TerrainShadowTest_EmptyRecord);
+	xGraph.WriteBuffer(xReset, xShadowCounts.GetBuffer(), RESOURCE_ACCESS_WRITE_UAV);
+	xGraph.WriteBuffer(xReset, xShadowArgs.GetBuffer(),   RESOURCE_ACCESS_WRITE_UAV);
+
+	const Flux_PassHandle xCull = xGraph.AddPass("Terrain Culling Compute", TerrainShadowTest_EmptyRecord);
+	xGraph.WriteBuffer(xCull, xShadowArgs.GetBuffer(),   RESOURCE_ACCESS_WRITE_UAV);
+	xGraph.WriteBuffer(xCull, xShadowCounts.GetBuffer(), RESOURCE_ACCESS_READWRITE_UAV);
+
+	static const char* const aszCascade[uFLUX_TERRAIN_SHADOW_CULL_VIEWS] = { "Shadow Cascade 0", "Shadow Cascade 1", "Shadow Cascade 2", "Shadow Cascade 3" };
+	Flux_PassHandle axCascade[uFLUX_TERRAIN_SHADOW_CULL_VIEWS];
+	for (u_int c = 0; c < uFLUX_TERRAIN_SHADOW_CULL_VIEWS; ++c)
+	{
+		axCascade[c] = xGraph.AddPass(aszCascade[c], TerrainShadowTest_EmptyRecord);
+		xGraph.ReadBuffer(axCascade[c], xShadowArgs.GetBuffer(),   RESOURCE_ACCESS_READ_INDIRECT_ARG);
+		xGraph.ReadBuffer(axCascade[c], xShadowCounts.GetBuffer(), RESOURCE_ACCESS_READ_INDIRECT_ARG);
+	}
+
+	xGraph.MarkDirty();
+	ZENITH_ASSERT_TRUE(xGraph.Compile(), "a buffer-only reset -> cull -> 4 cascades graph must compile");
+
+	// (1) Every cascade read found an earlier-declared writer — the check that caught
+	//     the Shadows-before-UnifiedMesh regression stays at zero.
+	ZENITH_ASSERT_EQ(xGraph.GetProducerBeforeConsumerViolationCount(), 0u,
+		"with Terrain declared before the cascades, no cascade read may be left without a producer edge; got %u",
+		xGraph.GetProducerBeforeConsumerViolationCount());
+
+	// (2) Execution order: reset < cull < every cascade.
+	const Zenith_Vector<u_int>& xOrder = xGraph.GetExecutionOrder();
+	auto PositionOf = [&xOrder](u_int uPass) -> u_int
+	{
+		for (u_int i = 0; i < xOrder.GetSize(); ++i) { if (xOrder.Get(i) == uPass) return i; }
+		return UINT32_MAX;
+	};
+	const u_int uResetPos = PositionOf(xReset.m_uIndex);
+	const u_int uCullPos  = PositionOf(xCull.m_uIndex);
+	ZENITH_ASSERT_TRUE(uResetPos != UINT32_MAX && uCullPos != UINT32_MAX, "reset and cull must be scheduled");
+	ZENITH_ASSERT_TRUE(uResetPos < uCullPos, "the reset must run before the cull (reset %u, cull %u)", uResetPos, uCullPos);
+	for (u_int c = 0; c < uFLUX_TERRAIN_SHADOW_CULL_VIEWS; ++c)
+	{
+		const u_int uPos = PositionOf(axCascade[c].m_uIndex);
+		ZENITH_ASSERT_TRUE(uPos != UINT32_MAX, "cascade %u must be scheduled", c);
+		ZENITH_ASSERT_TRUE(uCullPos < uPos, "cascade %u must run after the cull (cull %u, cascade %u)", c, uCullPos, uPos);
+	}
+
+	// (3) The barrier the cascade needs is the one the graph synthesised: the FIRST
+	//     cascade to run gets compute-write -> indirect-arg-read on BOTH slot buffers
+	//     (later cascades are read-after-read and may collapse to nothing).
+	u_int uFirstCascadePos = UINT32_MAX; u_int uFirstCascade = 0;
+	for (u_int c = 0; c < uFLUX_TERRAIN_SHADOW_CULL_VIEWS; ++c)
+	{
+		const u_int uPos = PositionOf(axCascade[c].m_uIndex);
+		if (uPos < uFirstCascadePos) { uFirstCascadePos = uPos; uFirstCascade = c; }
+	}
+	const Flux_RenderGraph_Pass* pxFirst = xGraph.GetPasses().Get(axCascade[uFirstCascade].m_uIndex);
+	bool bArgsBarrier = false, bCountBarrier = false;
+	for (u_int u = 0; u < pxFirst->m_xPrologueBarriers.GetSize(); ++u)
+	{
+		const Flux_RenderGraph_Barrier& xB = pxFirst->m_xPrologueBarriers.Get(u);
+		if (xB.m_xResource.GetKind() != Flux_GraphResourceKind::Buffer) continue;
+		if (xB.m_eDstAccess != RESOURCE_ACCESS_READ_INDIRECT_ARG) continue;
+		if (xB.m_xResource.AsBuffer() == &xShadowArgs.GetBuffer())
+		{
+			bArgsBarrier = true;
+			ZENITH_ASSERT_EQ(xB.m_eSrcAccess, RESOURCE_ACCESS_WRITE_UAV, "slot args: source access must be the cull's UAV write");
+		}
+		if (xB.m_xResource.AsBuffer() == &xShadowCounts.GetBuffer())
+		{
+			bCountBarrier = true;
+			ZENITH_ASSERT_EQ(xB.m_eSrcAccess, RESOURCE_ACCESS_READWRITE_UAV, "slot counts: source access must be the cull's UAV read-modify-write");
+		}
+	}
+	ZENITH_ASSERT_TRUE(bArgsBarrier,  "the first cascade must carry a compute-write -> indirect-arg barrier on the slot args");
+	ZENITH_ASSERT_TRUE(bCountBarrier, "the first cascade must carry a compute-write -> indirect-arg barrier on the slot counts");
+
+	// (4) And the negative: the SAME reads declared BEFORE their writers (Shadows
+	//     registered first) is exactly what the ordering check reports — one
+	//     "Check failed" line is the check working, not a test failure.
+	{
+		Flux_RenderGraph xBad;
+		Flux_IndirectBuffer xArgs; xArgs.GetBuffer().m_xVRAMHandle.SetValue(7003u); xArgs.GetBuffer().m_ulSize = 256;
+		const Flux_PassHandle xCascadeFirst = xBad.AddPass("Shadow Cascade 0", TerrainShadowTest_EmptyRecord);
+		xBad.ReadBuffer(xCascadeFirst, xArgs.GetBuffer(), RESOURCE_ACCESS_READ_INDIRECT_ARG);
+		const Flux_PassHandle xCullLater = xBad.AddPass("Terrain Culling Compute", TerrainShadowTest_EmptyRecord);
+		xBad.WriteBuffer(xCullLater, xArgs.GetBuffer(), RESOURCE_ACCESS_WRITE_UAV);
+		xBad.MarkDirty();
+		xBad.Compile();
+		ZENITH_ASSERT_EQ(xBad.GetProducerBeforeConsumerViolationCount(), 1u,
+			"a cascade declared before the terrain cull MUST be reported — this is the shape the registration order prevents; got %u",
+			xBad.GetProducerBeforeConsumerViolationCount());
+	}
 }
 
 #endif // ZENITH_TESTING

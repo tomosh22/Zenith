@@ -222,6 +222,23 @@ struct Flux_TerrainStreamingState
 	Flux_IndirectBuffer         m_xVisibleCountBuffer;   // Atomic counter for visible chunks
 	Flux_ReadWriteBuffer        m_xLODLevelBuffer;       // LOD level for each chunk (visualization)
 
+	// ========== Shadow-cascade culling slots (Flux-owned; see Flux_TerrainShadowCull.h) ==========
+	// The camera buffers above are created by Zenith_TerrainComponent::
+	// InitializeCullingResources. These are created HERE, by the streaming
+	// manager, in RegisterTerrainBuffers and destroyed in UnregisterTerrainBuffers
+	// — the register/unregister pair brackets the component's culling init/destroy
+	// pair, so the shadow slots exist for the whole window in which the camera
+	// buffers can. Every consumer gates on BOTH flags: this one says the shadow
+	// buffers are allocated, m_bCullingResourcesInitialized says the chunk data
+	// the cull reads is. Sized from CAPACITY constants (TOTAL_CHUNKS x cascades),
+	// not from the terrain's grid, exactly like the camera argument buffer.
+	bool                        m_bShadowCullResourcesInitialized = false;
+	Flux_IndirectBuffer         m_xShadowIndirectDrawBuffer;   // [ZENITH_FLUX_NUM_CSMS][TOTAL_CHUNKS] 20-byte records, cascade-major
+	Flux_IndirectBuffer         m_xShadowVisibleCountBuffer;   // [ZENITH_FLUX_NUM_CSMS] uint32 atomics
+	// Per-cascade frustum planes + active count (Zenith_TerrainShadowCullGPU).
+	// Frame-indexed and graph-invisible, exactly like m_xFrustumPlanesBuffer.
+	Flux_DynamicConstantBuffer  m_xShadowCullBuffer;
+
 	void Initialize();
 	void Shutdown();
 };
@@ -301,6 +318,17 @@ public:
 	void UpdateChunkLODAllocations(Flux_TerrainStreamingState& xState);
 	void UploadFrustumPlanesForFrame(Flux_TerrainStreamingState& xState, const Zenith_Maths::Matrix4& xViewProjMatrix);
 	void UpdateCullingAndLod(Flux_TerrainStreamingState& xState, Flux_CommandBuffer& xCmdList);
+
+	// ========== Shadow-cascade culling slots ==========
+	// Allocate / free the per-cascade indirect + count buffers and the per-cascade
+	// frustum CB on one terrain's state (idempotent; called from Register /
+	// UnregisterTerrainBuffers). The indirect records are seeded all-zero so the
+	// padded-tail contract holds before the first reset pass runs.
+	void InitialiseShadowCullResources(Flux_TerrainStreamingState& xState);
+	void DestroyShadowCullResources(Flux_TerrainStreamingState& xState);
+	// Per-frame upload of the cascade frusta + active count into this frame's
+	// slot of m_xShadowCullBuffer (Prepare phase, like UploadFrustumPlanesForFrame).
+	void UploadShadowCullDataForFrame(Flux_TerrainStreamingState& xState, const Zenith_TerrainShadowCullGPU& xData);
 
 	// ========== Stats type alias ==========
 	using StreamingStats = Flux_TerrainStreamingStats;

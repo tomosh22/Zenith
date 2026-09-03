@@ -69,6 +69,18 @@ enum TextureFormat
 	TEXTURE_FORMAT_R16_UNORM,          // 16-bit unsigned normalized (heightmaps)
 	TEXTURE_FORMAT_R32_SFLOAT,         // 32-bit float
 	TEXTURE_FORMAT_R16G16_SFLOAT,      // 32-bit RG float (for BRDF LUT, etc.)
+	// BC compressed sRGB formats -- the colour twins of the UNORM blocks above.
+	// The bytes are identical BC payloads; the sampler applies the sRGB EOTF on
+	// fetch (VK_FORMAT_BC*_SRGB_BLOCK), so an albedo authored in sRGB is lit in
+	// linear without a shader decode. Data maps (normal/roughness/AO/height)
+	// stay on the UNORM twins. Appended AFTER the single-channel block rather
+	// than beside their UNORM twins because TextureFormat is a SERIALIZED tag
+	// (.ztxtr writes the raw enum value): inserting mid-enum would renumber
+	// R8/R16/R32/R16G16 and silently mis-read every heightmap / LUT on disk.
+	TEXTURE_FORMAT_BC1_RGB_SRGB,       // 4 bits/pixel, RGB, no alpha, sRGB-decoded on sample
+	TEXTURE_FORMAT_BC1_RGBA_SRGB,      // 4 bits/pixel, RGB + 1-bit punch-through alpha, sRGB-decoded
+	TEXTURE_FORMAT_BC3_RGBA_SRGB,      // 8 bits/pixel, RGB + smooth alpha, sRGB-decoded
+	TEXTURE_FORMAT_BC7_RGBA_SRGB,      // 8 bits/pixel, high quality RGBA, sRGB-decoded
 	TEXTURE_FORMAT_COLOUR_END,/////////////////////////
 
 	TEXTURE_FORMAT_DEPTH_STENCIL_BEGIN,////////////////

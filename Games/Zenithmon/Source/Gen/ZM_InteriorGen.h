@@ -3,8 +3,9 @@
 // ============================================================================
 // ZM_InteriorGen -- the procedural ROOM-SHELL generator: it turns a
 // ZM_INTERIOR_ROOM into a deterministic bundle of inward-facing surface meshes
-// (floor / wall / ceiling / trim), each with a full PBR map set, and (in tools
-// builds) bakes it under the ZM_InteriorAssetPath scheme.
+// (floor / wall / ceiling / trim / window / glass / sky / curtain / rug), each
+// with a full PBR map set, and (in tools builds) bakes it under the
+// ZM_InteriorAssetPath scheme.
 //
 // ★ WHY A SEPARATE GENERATOR FROM ZM_BuildingGen, WHEN THEY SHARE SO MUCH. The
 // shared parts ARE shared: the world-space tiling UV projection is
@@ -23,9 +24,26 @@
 // red. It is answered here by the rooms being made of DIFFERENT MATERIALS:
 // warm timber boards and cream plaster against cool resin tile and steel.
 //
+// ★★★ AND A ROOM IS NOT SIX SLABS. Version 2 is what makes these read as
+// photographed rooms rather than CG boxes, and every item is geometry or
+// baked data rather than a shader trick:
+//   * WINDOWS -- real holes in the side walls, with a reveal, a frame, glazing
+//     bars, a translucent pane and a bright emissive sky card behind it, so a
+//     window is a light SOURCE in the frame and the scene sun comes through it.
+//   * MOULDINGS -- a cornice at the ceiling, an architrave round the door and
+//     the windows, a stepped skirting, and (in the cottage) ceiling joists.
+//   * FLOORBOARDS AS GEOMETRY -- individual staggered boards with real gaps and
+//     millimetre lips, over a dark underlay the gaps show.
+//   * BAKED OCCLUSION AND WEAR -- a per-vertex colour (ZM_GenMesh::m_xColors,
+//     which the mesh shader multiplies into the albedo) darkening the inside
+//     corners and the floor/ceiling junctions, plus a traffic band from the
+//     door. Analytic, deterministic, no ray casting.
+//   * SOFT FURNISHINGS -- a curtain pair on a rail at every window and a rug.
+//
 // DETERMINISM: every output byte is a pure function of the room id. Randomness
 // reaches a builder ONLY through ZM_MakeInteriorRNG over the room's derived
 // per-domain seeds, and no builder draws per texel (see the ZM_Synth* header).
+// The board stagger and lips are integer hashes of (row, board), never a draw.
 //
 // GUARD MODEL (mirrors ZM_BuildingGen / ZM_HumanGen): the pure generation API
 // compiles in ALL configs so the in-memory unit gate exercises it headless. Only
@@ -37,7 +55,11 @@
 
 // Bumped whenever this module's generation algorithms change, so stale bakes
 // self-invalidate through ZM_BakeManifest.
-constexpr u_int uZM_INTERIORGEN_VERSION = 1u;
+// 2: albedo bakes stamped BC1_RGB_SRGB rather than UNORM (ZM_TextureSynth v3),
+//    and the tiling normal maps take the WRAPPING gradient rule.
+// 3: windows + sky cards, mouldings, floorboard geometry, baked vertex
+//    occlusion/wear, curtains and rugs; five new surface classes.
+constexpr u_int uZM_INTERIORGEN_VERSION = 3u;
 
 // Rooms have no evolution, so the seed-derivation evo-stage slot is fixed
 // (keeps ZM_GenDeriveSeed's signature shared with creatures/humans/buildings).
@@ -58,14 +80,20 @@ enum ZM_INTERIOR_ROOM : u_int
 // Surface classes -- the unit of material assignment, exactly as for buildings
 // and for the same two reasons: uniform texel density needs tiling UVs, which
 // need a per-surface tiling material; and a floor, a wall and a steel skirting
-// want different roughness and different normal strength.
+// want different roughness and different normal strength. APPEND-only: these
+// index the asset path scheme by NAME, but the model's submesh order is theirs.
 // ---------------------------------------------------------------------------
 enum ZM_INTERIOR_SURFACE : u_int
 {
-	ZM_INTERIOR_SURFACE_FLOOR,     // the slab the player walks on
-	ZM_INTERIOR_SURFACE_WALL,      // four walls + the lintel over the aperture
+	ZM_INTERIOR_SURFACE_FLOOR,     // the boards / tiles the player walks on
+	ZM_INTERIOR_SURFACE_WALL,      // four walls + the lintel, cut around the windows
 	ZM_INTERIOR_SURFACE_CEILING,   // the soffit overhead
-	ZM_INTERIOR_SURFACE_TRIM,      // skirting, door reveal, and the lab's bench rail
+	ZM_INTERIOR_SURFACE_TRIM,      // skirting, cornice, architraves, door reveal, joists
+	ZM_INTERIOR_SURFACE_WINDOW,    // window reveals, frames, glazing bars, sills, curtain rails
+	ZM_INTERIOR_SURFACE_GLASS,     // the panes -- TRANSLUCENT
+	ZM_INTERIOR_SURFACE_SKY,       // the sky card behind each pane -- EMISSIVE
+	ZM_INTERIOR_SURFACE_CURTAIN,   // the folded curtain panels
+	ZM_INTERIOR_SURFACE_RUG,       // the rug / mat on the floor
 
 	ZM_INTERIOR_SURFACE_COUNT
 };
@@ -122,6 +150,97 @@ ZM_InteriorRecipe ZM_ResolveInteriorRecipe(ZM_INTERIOR_ROOM eRoom);
 ZM_GenRNG         ZM_MakeInteriorRNG(const ZM_InteriorRecipe& xR, ZM_GEN_DOMAIN eDomain);
 
 // ---------------------------------------------------------------------------
+// Windows -- the openings in the two SIDE walls.
+//
+// ★ A WINDOW IS A HOLE, NOT A DECAL. The wall surface is emitted AROUND each
+// opening (ZM_InteriorMeshRayHits through the centre of one hits no wall
+// triangle -- asserted), and the opening is dressed from the room side outward:
+// reveal linings, the frame with its glazing bars, a sill board proud of the
+// wall, the pane, and behind the pane a SKY CARD -- a bright emissive slab
+// inside the wall thickness, so the window reads as the light source it is
+// before any lighting has happened. All of it lives INSIDE the wall's own
+// thickness (the blockout is 0.5 m; the reveal is 0.22 m deep), so nothing
+// reaches past the wall centreline the player stops against.
+//
+// The positions are chosen clear of the furniture rows in ZM_InteriorDressing.h
+// and clear of the entrance corridor; ZM_Tests_InteriorGen asserts both.
+// ---------------------------------------------------------------------------
+enum ZM_INTERIOR_WALL_SIDE : u_int
+{
+	ZM_INTERIOR_WALL_NEG_X,   // the -X side wall (the sun side in both rooms)
+	ZM_INTERIOR_WALL_POS_X,   // the +X side wall
+
+	ZM_INTERIOR_WALL_SIDE_COUNT
+};
+
+struct ZM_InteriorWindow
+{
+	ZM_INTERIOR_WALL_SIDE m_eWall;
+	float m_fCentreZ;   // along the wall
+	float m_fWidth;     // clear opening width
+	float m_fSillY;     // bottom of the clear opening
+	float m_fHeadY;     // top of the clear opening
+
+	float Z0() const { return m_fCentreZ - m_fWidth * 0.5f; }
+	float Z1() const { return m_fCentreZ + m_fWidth * 0.5f; }
+	// The wall's inner-face X and the direction INTO the wall from it.
+	float WallSign() const { return m_eWall == ZM_INTERIOR_WALL_NEG_X ? -1.0f : 1.0f; }
+};
+
+u_int                    ZM_GetInteriorWindowCount(ZM_INTERIOR_ROOM eRoom);
+// TOTAL: an out-of-range room or index answers PlayerHome's first window.
+const ZM_InteriorWindow& ZM_GetInteriorWindow(ZM_INTERIOR_ROOM eRoom, u_int uIndex);
+
+// The window dressing depths, from the wall's INNER FACE into the wall. Public
+// because the tests reason about what sits where; the builders read them too.
+constexpr float fZM_INTERIOR_WINDOW_REVEAL_DEPTH = 0.22f;   // reveal linings + sky card end here
+constexpr float fZM_INTERIOR_WINDOW_FRAME_DEPTH  = 0.10f;   // the frame's room-side face
+constexpr float fZM_INTERIOR_WINDOW_GLASS_DEPTH  = 0.125f;  // the pane, inside the frame
+constexpr float fZM_INTERIOR_WINDOW_FRAME_WIDTH  = 0.06f;
+constexpr float fZM_INTERIOR_WINDOW_BAR_WIDTH    = 0.03f;
+
+// Curtains: a rail above the head, and a folded panel either side of the
+// opening, hanging to just above the floor. The panel width is what the
+// corridor and furniture clauses reason about.
+constexpr float fZM_INTERIOR_CURTAIN_PANEL_WIDTH = 0.45f;
+constexpr float fZM_INTERIOR_CURTAIN_DEPTH       = 0.12f;   // how far the folds stand off the wall
+constexpr float fZM_INTERIOR_CURTAIN_HEM_Y       = 0.12f;   // the hem's height above the floor
+
+// ---------------------------------------------------------------------------
+// The rug -- one per room, on the floor, outside the entrance corridor.
+// ---------------------------------------------------------------------------
+struct ZM_InteriorRug
+{
+	float m_fCentreX, m_fCentreZ;
+	float m_fWidth,   m_fDepth;     // X and Z extents
+	float m_fThickness;
+};
+ZM_InteriorRug ZM_GetInteriorRug(ZM_INTERIOR_ROOM eRoom);
+
+// ---------------------------------------------------------------------------
+// The scene SUN for each interior -- aimed in through the -X windows.
+//
+// ★★ THE VECTOR IS THREE FROZEN LITERALS THAT ARE ALREADY EXACTLY UNIT LENGTH
+// IN FLOAT. Zenith_SunComponent::SetDirection normalises what it is given
+// (a sqrt and a divide), and the result is what the committed scene serialises.
+// 0.75^2 + 0.5^2 + 0.4330127^2 sums to EXACTLY 1.0f in IEEE single precision
+// (verified bit-for-bit, and asserted by ZM_Tests_InteriorGen), so the divide
+// is by 1.0f and the authored bytes are these literals verbatim -- the same
+// ZM-D-183 discipline the frozen quaternions follow. It is 30 degrees of
+// elevation exactly (y = -sin 30), travelling +X (in through a -X window) with
+// a +Z skew so the frame's shadow lands across the floor rather than square.
+// ---------------------------------------------------------------------------
+constexpr float fZM_INTERIOR_SUN_DIR_X =  0.75f;
+constexpr float fZM_INTERIOR_SUN_DIR_Y = -0.5f;
+constexpr float fZM_INTERIOR_SUN_DIR_Z =  0.4330127f;
+inline Zenith_Maths::Vector3 ZM_GetInteriorSunDirection(ZM_INTERIOR_ROOM /*eRoom*/)
+{
+	// Both rooms window their -X wall, so both take the same sun. The parameter
+	// is the seam a per-room sun would land on.
+	return Zenith_Maths::Vector3(fZM_INTERIOR_SUN_DIR_X, fZM_INTERIOR_SUN_DIR_Y, fZM_INTERIOR_SUN_DIR_Z);
+}
+
+// ---------------------------------------------------------------------------
 // Material response + palette, per (room, surface). This is the pair that makes
 // the two rooms read apart, so both are exposed and both are asserted.
 // ---------------------------------------------------------------------------
@@ -132,6 +251,13 @@ struct ZM_InteriorSurfaceLook
 	float m_fMetallic       = 0.0f;
 	float m_fNormalStrength = 1.0f;
 	float m_fOcclusion      = 1.0f;
+	// The sky card is the one emissive surface; everything else is 0 here.
+	Zenith_Maths::Vector3 m_xEmissiveColour = Zenith_Maths::Vector3(0.0f);
+	float m_fEmissiveIntensity = 0.0f;
+	// The glass is the one translucent surface: the material's base-colour alpha
+	// carries the opacity into the forward translucent pass.
+	bool  m_bTranslucent = false;
+	float m_fOpacity     = 1.0f;
 };
 ZM_InteriorSurfaceLook ZM_GetInteriorSurfaceLook(ZM_INTERIOR_ROOM eRoom,
 	ZM_INTERIOR_SURFACE eSurface);
@@ -146,8 +272,49 @@ ZM_InteriorSurfaceLook ZM_GetInteriorSurfaceLook(ZM_INTERIOR_ROOM eRoom,
 //
 // UVs are world-scaled and therefore leave [0,1]; validate with
 // ZM_ValidateInteriorSurfaceMesh, not the [0,1]-clamped static validator.
+// (The rug is the one object-mapped surface: its top face is [0,1].)
+//
+// The vertex colours carry the baked occlusion + wear (below) on every surface
+// but GLASS and SKY.
 void ZM_BuildInteriorSurfaceMesh(const ZM_InteriorRecipe& xR,
 	ZM_INTERIOR_SURFACE eSurface, ZM_GenMesh& xMesh);
+
+// ---- Baked large-scale occlusion and wear ----------------------------------
+//
+// ★ ANALYTIC, NOT CAST. The darkening a real room shows in its corners and
+// along its floor line is a smooth function of distance to the nearest two
+// planes, and that function is cheaper and more predictable than a ray cast. It
+// is written into the per-vertex colour, which the mesh shader multiplies into
+// the albedo whenever the colour's alpha is > 0 -- so the big surfaces are cut
+// into cells (fZM_INTERIOR_SHADING_CELL) to give the interpolation somewhere
+// to happen.
+constexpr float fZM_INTERIOR_SHADING_CELL     = 0.75f;   // max cell edge on walls/ceiling/lab floor
+constexpr float fZM_INTERIOR_OCCLUSION_RADIUS = 1.10f;   // how far a corner's darkening reaches
+constexpr float fZM_INTERIOR_OCCLUSION_DEPTH  = 0.55f;   // how dark a full corner gets (1 - this)
+constexpr float fZM_INTERIOR_WEAR_HALF_WIDTH  = 1.20f;   // the traffic band's half width
+constexpr float fZM_INTERIOR_WEAR_DEPTH       = 0.10f;   // how dark the band's centre gets
+
+// The occlusion multiplier, in (0,1]: 1 in the open, darkest in an inside
+// corner. Reads the two strongest of the four plane terms (the two X walls fold
+// into one distance, likewise Z; the floor; the ceiling), so a corner is darker
+// than a single wall and a third plane cannot drive it to black.
+//
+// ★★ TWO ENTRY POINTS, AND THE DIFFERENCE IS LOAD-BEARING. A point in SPACE
+// belongs to no surface, so every plane darkens it. A point ON a surface must
+// not be darkened by the plane it LIES IN -- otherwise the floor darkens the
+// whole floor -- and the only thing that says which plane that is, is the
+// vertex NORMAL. Deciding it from the DISTANCE instead (the shipped first cut)
+// silently excludes the plane a vertex MEETS as well: a wall vertex at the
+// floor line sits at y = 0, which reads as "the floor is my own plane", and
+// every wall vertex in both rooms came out at exactly 1.0.
+float ZM_InteriorVertexOcclusion(const ZM_InteriorRoomSpec& xSpec,
+	const Zenith_Maths::Vector3& xPos);
+float ZM_InteriorSurfaceVertexOcclusion(const ZM_InteriorRoomSpec& xSpec,
+	const Zenith_Maths::Vector3& xPos, const Zenith_Maths::Vector3& xNormal);
+// The traffic-wear multiplier at a FLOOR point, in (0,1]: darkest on the axis
+// between the door and the room centre, 1 off the band and past the centre.
+float ZM_InteriorTrafficWear(const ZM_InteriorRoomSpec& xSpec,
+	const Zenith_Maths::Vector3& xPos);
 
 // The height field the normal + AO maps are both derived from.
 ZM_GenImage ZM_BuildInteriorSurfaceHeight(const ZM_InteriorRecipe& xR,
@@ -182,6 +349,17 @@ bool  ZM_InteriorBuildEqual (const ZM_Interior& xA, const ZM_Interior& xB);
 u_int ZM_InteriorContentHash(const ZM_Interior& xInterior);
 
 // ---------------------------------------------------------------------------
+// Geometry queries the tests need. Pure.
+// ---------------------------------------------------------------------------
+
+// Does the ray (xOrigin + t * xDir, t > 0) hit any triangle of the mesh?
+// Moller-Trumbore, both-sided, no acceleration -- these meshes are tens of
+// thousands of triangles at most and the callers are unit tests. fTOut is the
+// nearest hit distance when it returns true.
+bool ZM_InteriorMeshRayHits(const ZM_GenMesh& xMesh, const Zenith_Maths::Vector3& xOrigin,
+	const Zenith_Maths::Vector3& xDir, float& fTOut);
+
+// ---------------------------------------------------------------------------
 // Validation. Same clause set as the building surface validator and for the
 // same reason -- tiling UVs legitimately leave [0,1] -- plus one clause the
 // exterior does not need: the surfaces must face INWARD.
@@ -192,6 +370,7 @@ struct ZM_InteriorSurfaceValidation
 	bool  m_bBoundsNonDegen      = false;
 	bool  m_bIndicesInRange      = false;
 	bool  m_bUVsFiniteAndBounded = false;
+	bool  m_bColoursUnitRange    = false;   // one colour per vertex, every channel in [0,1], alpha 1
 	bool  m_bNoSkeleton          = false;
 	bool  m_bNoSkinBuffers       = false;
 	bool  m_bAllValid            = false;

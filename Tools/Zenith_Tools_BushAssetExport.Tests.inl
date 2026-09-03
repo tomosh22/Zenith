@@ -386,4 +386,189 @@ ZENITH_TEST(BushAssets, GenerationIsDeterministicForAFixedSeed)
 	delete pxFirst;
 }
 
+//-----------------------------------------------------------------------------
+// The foliage card's new maps (STREAM D: normal + AO).
+//
+// Each of these covers a failure that renders as "fine, just flat":
+//   * a normal map whose Z is not dominant lights foliage from the side,
+//   * an all-white AO map is what an UNBOUND occlusion slot already does, so
+//     binding one would be pure cost and look identical,
+//   * a height field with no relief still produces a perfectly valid normal
+//     map, and every "is it a unit vector" check passes on it.
+//-----------------------------------------------------------------------------
+
+namespace
+{
+	// 1024^2 x three maps: built once and shared, like the mesh helpers above.
+	struct BushFoliageMaps
+	{
+		Zenith_Vector<u_int8> m_xPixels;
+		Zenith_Vector<float>  m_xHeight;
+		Zenith_Vector<float>  m_xAO;
+
+		BushFoliageMaps() { GenerateBushFoliageMaps(m_xPixels, m_xHeight, m_xAO); }
+	};
+
+	const BushFoliageMaps& BushFoliageMapsOnce()
+	{
+		static const BushFoliageMaps ls_xMaps;
+		return ls_xMaps;
+	}
+}
+
+ZENITH_TEST(BushAssets, FoliageHeightIsADomePerLeafNotAFlatCard)
+{
+	const BushFoliageMaps& xMaps = BushFoliageMapsOnce();
+	ZENITH_ASSERT_EQ(xMaps.m_xHeight.GetSize(),
+		static_cast<u_int>(iBUSH_FOLIAGE_SIZE * iBUSH_FOLIAGE_SIZE), "foliage height field size");
+
+	float fMin = 2.0f;
+	float fMax = -1.0f;
+	u_int uLeafTexels = 0u;
+	for (u_int u = 0; u < xMaps.m_xHeight.GetSize(); u++)
+	{
+		const float fH = xMaps.m_xHeight.Get(u);
+		ZENITH_ASSERT_GE(fH, 0.0f, "foliage height below 0");
+		ZENITH_ASSERT_LE(fH, 1.0f, "foliage height above 1");
+		if (xMaps.m_xPixels.Get(u * 4 + 3) > 0u)
+		{
+			uLeafTexels++;
+			fMin = std::min(fMin, fH);
+			fMax = std::max(fMax, fH);
+		}
+	}
+	ZENITH_ASSERT_GT(uLeafTexels, 0u, "the card painted no leaves at all");
+	ZENITH_ASSERT_GT(fMax - fMin, 0.30f,
+		"the foliage height field barely varies -- the per-leaf dome/layer relief is gone "
+		"and the normal map it feeds will be flat");
+}
+
+ZENITH_TEST(BushAssets, FoliageHeightHasAMidribCrease)
+{
+	// A creased leaf has interior local minima along a horizontal scan; a smooth
+	// dome does not. This is the difference between reading as a leaf and
+	// reading as a pillow, and nothing else in the suite would notice its loss.
+	const BushFoliageMaps& xMaps = BushFoliageMapsOnce();
+	u_int uInteriorDips = 0u;
+	for (int32_t iY = 1; iY < iBUSH_FOLIAGE_SIZE - 1; iY++)
+	{
+		for (int32_t iX = 1; iX < iBUSH_FOLIAGE_SIZE - 1; iX++)
+		{
+			const int32_t iIdx = iY * iBUSH_FOLIAGE_SIZE + iX;
+			if (xMaps.m_xPixels.Get(iIdx * 4 + 3) < 250u ||
+				xMaps.m_xPixels.Get((iIdx - 1) * 4 + 3) < 250u ||
+				xMaps.m_xPixels.Get((iIdx + 1) * 4 + 3) < 250u)
+			{
+				continue;
+			}
+			const float fH = xMaps.m_xHeight.Get(iIdx);
+			if (fH < xMaps.m_xHeight.Get(iIdx - 1) && fH < xMaps.m_xHeight.Get(iIdx + 1))
+			{
+				uInteriorDips++;
+			}
+		}
+	}
+	ZENITH_ASSERT_GT(uInteriorDips, 200u,
+		"no interior height minima -- the midrib crease is missing and each leaf is a pillow");
+}
+
+ZENITH_TEST(BushAssets, FoliageNormalMapIsUnitLengthAndFacesOut)
+{
+	// The ENCODED texels, through the same encoder the .ztxtr gets.
+	const BushFoliageMaps& xMaps = BushFoliageMapsOnce();
+	Zenith_Vector<u_int8> xNormal;
+	EncodeBushNormalMap(xMaps.m_xHeight, xNormal);
+	ZENITH_ASSERT_EQ(xNormal.GetSize(),
+		static_cast<u_int>(iBUSH_FOLIAGE_SIZE * iBUSH_FOLIAGE_SIZE * 4), "normal map size");
+
+	double dSumZ = 0.0;
+	u_int uNonFlat = 0u;
+	const u_int uTexels = static_cast<u_int>(iBUSH_FOLIAGE_SIZE * iBUSH_FOLIAGE_SIZE);
+	for (u_int u = 0; u < uTexels; u++)
+	{
+		const float fX = xNormal.Get(u * 4 + 0) / 255.0f * 2.0f - 1.0f;
+		const float fY = xNormal.Get(u * 4 + 1) / 255.0f * 2.0f - 1.0f;
+		const float fZ = xNormal.Get(u * 4 + 2) / 255.0f * 2.0f - 1.0f;
+		const float fLen = sqrtf(fX * fX + fY * fY + fZ * fZ);
+		ZENITH_ASSERT_GT(fLen, 0.97f, "normal texel is far from unit length");
+		ZENITH_ASSERT_LT(fLen, 1.03f, "normal texel is far from unit length");
+		ZENITH_ASSERT_GT(fZ, 0.0f, "normal texel points INTO the surface (Z <= 0)");
+		dSumZ += fZ;
+		if (fX * fX + fY * fY > 0.02f)
+		{
+			uNonFlat++;
+		}
+	}
+	const float fMeanZ = static_cast<float>(dSumZ / uTexels);
+	ZENITH_ASSERT_GT(fMeanZ, 0.85f, "the foliage normal map is not predominantly +Z");
+	ZENITH_ASSERT_GT(uNonFlat, uTexels / 200u,
+		"almost every normal texel is exactly +Z -- the map carries no leaf relief");
+}
+
+ZENITH_TEST(BushAssets, FoliageAOIsInRangeAndActuallyDarkens)
+{
+	const BushFoliageMaps& xMaps = BushFoliageMapsOnce();
+	double dSum = 0.0;
+	double dLeafSum = 0.0;
+	u_int uLeafTexels = 0u;
+	for (u_int u = 0; u < xMaps.m_xAO.GetSize(); u++)
+	{
+		const float fAO = xMaps.m_xAO.Get(u);
+		ZENITH_ASSERT_GE(fAO, 0.0f, "foliage AO below 0");
+		ZENITH_ASSERT_LE(fAO, 1.0f, "foliage AO above 1");
+		dSum += fAO;
+		if (xMaps.m_xPixels.Get(u * 4 + 3) >= 250u)
+		{
+			dLeafSum += fAO;
+			uLeafTexels++;
+		}
+	}
+	ZENITH_ASSERT_GT(uLeafTexels, 0u, "no solid leaf texels to measure AO over");
+	const float fLeafMean = static_cast<float>(dLeafSum / uLeafTexels);
+	ZENITH_ASSERT_LT(fLeafMean, 0.97f, "foliage AO is effectively white -- binding it changes nothing");
+	ZENITH_ASSERT_GT(fLeafMean, 0.40f, "foliage AO has collapsed toward black");
+	const float fMean = static_cast<float>(dSum / xMaps.m_xAO.GetSize());
+	ZENITH_ASSERT_GT(fMean, fLeafMean, "unpainted texels are not the most open ones");
+}
+
+ZENITH_TEST(BushAssets, FoliageAlbedoIsUnchangedByTheMapSplit)
+{
+	// GenerateBushFoliagePixels is now a wrapper over GenerateBushFoliageMaps.
+	// The two must agree EXACTLY: the albedo bytes are pinned by the mask test
+	// above, and a wrapper that drew from a different RNG position would move
+	// every one of them while every other assertion here still passed.
+	const BushFoliageMaps& xMaps = BushFoliageMapsOnce();
+	Zenith_Vector<u_int8> xWrapped;
+	GenerateBushFoliagePixels(xWrapped);
+	ZENITH_ASSERT_EQ(xWrapped.GetSize(), xMaps.m_xPixels.GetSize(), "albedo size differs");
+	for (u_int u = 0; u < xWrapped.GetSize(); u++)
+	{
+		if (xWrapped.Get(u) != xMaps.m_xPixels.Get(u))
+		{
+			ZENITH_ASSERT_EQ(xWrapped.Get(u), xMaps.m_xPixels.Get(u),
+				"the albedo-only wrapper does not reproduce the full generator's pixels");
+			break;
+		}
+	}
+}
+
+ZENITH_TEST(BushAssets, FoliageMapGenerationIsDeterministic)
+{
+	Zenith_Vector<u_int8> xPixelsA, xPixelsB;
+	Zenith_Vector<float> xHeightA, xHeightB, xAOA, xAOB;
+	GenerateBushFoliageMaps(xPixelsA, xHeightA, xAOA);
+	GenerateBushFoliageMaps(xPixelsB, xHeightB, xAOB);
+	for (u_int u = 0; u < xHeightA.GetSize(); u++)
+	{
+		if (xHeightA.Get(u) != xHeightB.Get(u) || xAOA.Get(u) != xAOB.Get(u))
+		{
+			ZENITH_ASSERT_EQ_FLOAT(xHeightA.Get(u), xHeightB.Get(u), 0.0f,
+				"foliage height is not a pure function of its seed");
+			ZENITH_ASSERT_EQ_FLOAT(xAOA.Get(u), xAOB.Get(u), 0.0f,
+				"foliage AO is not a pure function of its seed");
+			break;
+		}
+	}
+}
+
 #endif // ZENITH_TESTING

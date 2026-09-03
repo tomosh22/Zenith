@@ -54,7 +54,7 @@ class Flux_AnimationClip;
 //             ZM_HumanData variety axis owes the same bump.
 // 4: humans gained the full four-map PBR set beside the albedo, derived from the
 // albedo luma (see ZM_SynthHeightFromAlbedoLuma for why that is a heuristic).
-constexpr u_int uZM_HUMANGEN_VERSION = 4u;
+constexpr u_int uZM_HUMANGEN_VERSION = 5u;
 
 // The shared humanoid skeleton is EXACTLY these 16 bones (the frozen StickFigure
 // core names). ZM_AppendSharedHumanBones is the single canonical emit; both the

@@ -149,12 +149,18 @@ float4 fsMain(FullscreenVsOut input, float4 fragCoord : SV_Position) : SV_Target
 
 		for (int iStep = 1; iStep <= iSteps; iStep++)
 		{
+			// Every tap counts toward the denominator. An off-screen or sky tap is
+			// an UNOCCLUDED direction, not a missing one: dropping it from the count
+			// over-estimated occlusion by up to 4x on every silhouette against the
+			// sky and painted a dark AO vignette along the frame border.
+			iValidSamples++;
+
 			float2 xSampleUV = input.uv + xStepUV * (float)iStep;
 			if (xSampleUV.x < 0.0 || xSampleUV.x > 1.0 ||
 				xSampleUV.y < 0.0 || xSampleUV.y > 1.0) continue;
 
 			float fSampleDepth = g_xPassSet.g_xDepthTex.Sample(xSampleUV).x;
-			if (fSampleDepth >= 1.0) continue; // skip sky
+			if (fSampleDepth >= 1.0) continue; // sky: unoccluded
 
 			float3 xSamplePos = ViewPosFromDepthClosedForm(xSampleUV, fSampleDepth,
 				xRcpProjScale, xProjZToXY, xProjTranslationXY, xDepthCoefficients);
@@ -172,8 +178,6 @@ float4 fsMain(FullscreenVsOut input, float4 fragCoord : SV_Position) : SV_Target
 				fFalloff *= fFalloff;
 				fOcclusion += fNDot * fFalloff;
 			}
-
-			iValidSamples++;
 		}
 	}
 

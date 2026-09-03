@@ -2,8 +2,24 @@
 // Flux_TerrainCulling — Slang module.
 //
 // Subsystem: Terrain. GPU-driven terrain chunk culling + 2-level LOD
-// selection. One thread per chunk; AABB-vs-frustum test, distance-
-// based LOD pick, atomic compaction into the indirect-draw buffer.
+// selection, for the CAMERA and for every active SHADOW CASCADE in one
+// dispatch. Thread (x, y): x is the chunk slot, y the view row —
+//   y == 0            the camera: AABB-vs-camera-frustum, distance LOD with
+//                     hysteresis, atomic compaction into the camera indirect
+//                     buffer, LODLevelBuffer write.
+//   y == 1 + cascade  a shadow cascade: AABB-vs-that-cascade's light-space
+//                     ortho box, the SAME camera-resolved LOD (so the caster is
+//                     the receiver's geometry) unless the cascade is at/above the
+//                     force-LOW threshold, atomic compaction into that cascade's
+//                     SLOT of the shadow indirect buffer. Never touches
+//                     LODLevelBuffer — that is the camera's hysteresis state.
+//
+// The rows above the active cascade count early-out, so an inactive cascade's
+// slot keeps the all-zero state the reset pass wrote and its DrawIndexedIndirect-
+// Count draws nothing. The slot layout (cascade-major, one full chunk-capacity
+// range per cascade) is Flux_TerrainShadowCull.h's; the C++ static_asserts in
+// Flux_Terrain.cpp pin TERRAIN_SHADOW_CULL_VIEWS and uFLUX_TERRAIN_TOTAL_CHUNKS
+// to their C++ twins.
 //
 // LOD policy: HIGH (0) when distance² < 1e6 (~1 km), LOW (1) otherwise.
 // Sorting is intentionally omitted — modern GPU early-Z handles a few
@@ -11,8 +27,9 @@
 //
 // Spine include reserves sets 0/1/2 (GLOBAL/VIEW/BINDLESS) so this pass's own
 // resources land in PassParams at set 3. This compute pass carries its own
-// frustum/camera data in CameraBuffer (not the main VIEW set) but still includes
-// the spine so the persistent set layout stays uniform across shaders.
+// frustum/camera data in CameraBuffer / ShadowCullBuffer (not the VIEW set:
+// one dispatch serves five views) but still includes the spine so the
+// persistent set layout stays uniform across shaders.
 // =====================================================================
 
 #include "Common/Bindings.slang"
@@ -23,7 +40,11 @@
 #include "Terrain/Flux_TerrainIndirectCommon.slang"
 
 static const uint  TERRAIN_LOD_COUNT      = 2;
+static const uint  TERRAIN_LOD_LOW        = 1;
 static const float LOD_HIGH_MAX_DIST_SQ   = 1000000.0;
+// One shadow view row per cascade. Mirrors uFLUX_TERRAIN_SHADOW_CULL_VIEWS
+// (Flux_TerrainShadowCull.h) == ZENITH_FLUX_NUM_CSMS; pinned in Flux_Terrain.cpp.
+static const uint  TERRAIN_SHADOW_CULL_VIEWS = 4;
 
 struct LODData
 {
@@ -48,6 +69,15 @@ struct CameraBufferLayout
 	float4       cameraPosition;
 };
 
+// Mirrors Zenith_TerrainShadowCullGPU (Flux_TerrainGPUStructs.h). Cascade-major:
+// cascade c's planes are frustumPlanes[c*6 .. c*6+5], same order as the camera's,
+// extracted by the same CPU helper from the cascade's snapped ortho view-proj.
+struct ShadowCullBufferLayout
+{
+	FrustumPlane frustumPlanes[TERRAIN_SHADOW_CULL_VIEWS * 6];
+	uint4        params;   // x = active cascade count, y = force-LOW-LOD from this cascade index, zw = 0
+};
+
 struct PassParams
 {
 	StructuredBuffer<TerrainChunkData>            ChunkBuffer;
@@ -55,12 +85,30 @@ struct PassParams
 	RWStructuredBuffer<Flux_TerrainIndexedIndirectCommand> IndirectCommandBuffer;
 	RWStructuredBuffer<uint>                       visibleCount;
 	RWStructuredBuffer<uint>                       LODLevelBuffer;
+	// Shadow-cascade slots, appended AFTER the camera set so bindings 0-4 keep
+	// their numbers. ShadowIndirectCommandBuffer holds TERRAIN_SHADOW_CULL_VIEWS
+	// consecutive full-capacity slots; ShadowVisibleCount one uint per cascade.
+	ConstantBuffer<ShadowCullBufferLayout>         ShadowCullBuffer;
+	RWStructuredBuffer<Flux_TerrainIndexedIndirectCommand> ShadowIndirectCommandBuffer;
+	RWStructuredBuffer<uint>                       ShadowVisibleCount;
 };
 ParameterBlock<PassParams> g_xPassSet;
 
-// Conservative AABB-vs-frustum test (Akenine-Möller style). Tests
-// near/far first since distant terrain is the most-likely cull case.
-bool TestAABBFrustum(float3 aabbMin, float3 aabbMax)
+// Conservative AABB-vs-frustum test (Akenine-Möller style) against view row
+// `view`'s six planes: row 0 reads the camera block, row 1+c cascade c's slice
+// of the shadow block. Tests near/far first since distant terrain is the
+// most-likely cull case. Valid for the cascades' ORTHO boxes too — Gribb-
+// Hartmann extraction does not care about the projection kind.
+FrustumPlane LoadPlane(uint view, uint plane)
+{
+	if (view == 0u)
+	{
+		return g_xPassSet.CameraBuffer.frustumPlanes[plane];
+	}
+	return g_xPassSet.ShadowCullBuffer.frustumPlanes[(view - 1u) * 6u + plane];
+}
+
+bool TestAABBFrustum(uint view, float3 aabbMin, float3 aabbMax)
 {
 	float3 center  = (aabbMin + aabbMax) * 0.5;
 	float3 extents = (aabbMax - aabbMin) * 0.5;
@@ -68,7 +116,7 @@ bool TestAABBFrustum(float3 aabbMin, float3 aabbMax)
 	const int kPlaneOrder[6] = { 4, 5, 0, 1, 2, 3 };
 	for (int i = 0; i < 6; i++)
 	{
-		FrustumPlane p     = g_xPassSet.CameraBuffer.frustumPlanes[kPlaneOrder[i]];
+		FrustumPlane p     = LoadPlane(view, (uint)kPlaneOrder[i]);
 		float3 planeNormal = p.normalAndDistance.xyz;
 		float  planeDist   = p.normalAndDistance.w;
 		float  radius      = dot(extents, abs(planeNormal));
@@ -88,15 +136,23 @@ uint SelectLOD(float distanceSq)
 void csMain(uint3 dispatchId : SV_DispatchThreadID)
 {
 	uint chunkIndex = dispatchId.x;
+	uint view       = dispatchId.y;   // 0 = camera, 1 + c = shadow cascade c
 
 	uint chunkCount, stride;
 	g_xPassSet.ChunkBuffer.GetDimensions(chunkCount, stride);
 	if (chunkIndex >= chunkCount) return;
 
+	// Inactive cascade rows (shadows off, or fewer cascades staged) do nothing,
+	// leaving the slot at the reset pass's all-zero state.
+	if (view != 0u && (view - 1u) >= g_xPassSet.ShadowCullBuffer.params.x) return;
+
 	float4 aabbMin = g_xPassSet.ChunkBuffer[chunkIndex].aabbMin;
 	float4 aabbMax = g_xPassSet.ChunkBuffer[chunkIndex].aabbMax;
-	if (!TestAABBFrustum(aabbMin.xyz, aabbMax.xyz)) return;
+	if (!TestAABBFrustum(view, aabbMin.xyz, aabbMax.xyz)) return;
 
+	// LOD is a CAMERA-distance decision for every row: the shadow caster should be
+	// the same surface the G-buffer receiver is, or the receiver self-shadows
+	// wherever it dips below a coarser caster (acne no bias can fix).
 	float3 chunkCenter = (aabbMin.xyz + aabbMax.xyz) * 0.5;
 	float3 toCamera    = g_xPassSet.CameraBuffer.cameraPosition.xyz - chunkCenter;
 	float  distSq      = dot(toCamera, toCamera);
@@ -113,6 +169,13 @@ void csMain(uint3 dispatchId : SV_DispatchThreadID)
 	// narrower band is safe — the chunk is guaranteed to have valid HIGH
 	// geometry if priorLOD says it did. First-frame value is zero (HIGH)
 	// from the nullptr-initialised buffer; converges within one frame.
+	//
+	// The shadow rows read priorLOD too, racing the camera row's write of the
+	// new value. That race is benign BY CONSTRUCTION: this decision is a fixed
+	// point of its own output (feeding the freshly-written LOD back in as
+	// "prior" yields the same LOD for the same distance), so a shadow row
+	// observing either the old or the new value resolves the same actualLOD the
+	// camera row did. Only the camera row WRITES.
 	uint priorLOD     = g_xPassSet.LODLevelBuffer[chunkIndex];
 	uint requestedLOD = SelectLOD(distSq);
 	const float fHysteresisLow  = LOD_HIGH_MAX_DIST_SQ * 0.99;
@@ -136,12 +199,19 @@ void csMain(uint3 dispatchId : SV_DispatchThreadID)
 		selectedLOD = g_xPassSet.ChunkBuffer[chunkIndex].lods[actualLOD];
 	}
 
+	// Shadow rows at/above the force-LOW cascade cast the always-resident LOW
+	// mesh regardless of camera distance (Flux_TerrainShadowCasterLOD is the
+	// CPU twin of this branch). The far cascade is where a caster/receiver LOD
+	// mismatch is cheapest to hide and HIGH is most expensive to draw.
+	if (view != 0u && (view - 1u) >= g_xPassSet.ShadowCullBuffer.params.y)
+	{
+		actualLOD = TERRAIN_LOD_LOW;
+		selectedLOD = g_xPassSet.ChunkBuffer[chunkIndex].lods[actualLOD];
+	}
+
 	if (selectedLOD.indexCount == 0u) return; // both LODs empty → skip
 
-	uint outIndex;
-	InterlockedAdd(g_xPassSet.visibleCount[0], 1u, outIndex);
-
-	// Write the indirect draw + LOD level. firstInstance is the stable
+	// The indirect draw + (camera only) LOD level. firstInstance is the stable
 	// chunk id, so the vertex shader indexes LODLevelBuffer by chunk rather
 	// than by compacted draw slot. That keeps debug colour stable even when
 	// draw compaction order changes frame-to-frame.
@@ -151,7 +221,22 @@ void csMain(uint3 dispatchId : SV_DispatchThreadID)
 	cmd.firstIndex    = selectedLOD.firstIndex;
 	cmd.vertexOffset  = (int)selectedLOD.vertexOffset;
 	cmd.firstInstance = chunkIndex;
-	g_xPassSet.IndirectCommandBuffer[outIndex] = cmd;
 
-	g_xPassSet.LODLevelBuffer[chunkIndex] = actualLOD;
+	uint outIndex;
+	if (view == 0u)
+	{
+		InterlockedAdd(g_xPassSet.visibleCount[0], 1u, outIndex);
+		g_xPassSet.IndirectCommandBuffer[outIndex] = cmd;
+		g_xPassSet.LODLevelBuffer[chunkIndex] = actualLOD;
+	}
+	else
+	{
+		// Cascade c's slot is the c-th full chunk-capacity range of the shadow
+		// buffer (uFLUX_TERRAIN_TOTAL_CHUNKS records, pinned to TOTAL_CHUNKS in
+		// Flux_Terrain.cpp) — one contiguous range per cascade so each cascade
+		// pass draws with two byte offsets and nothing else changes.
+		uint cascade = view - 1u;
+		InterlockedAdd(g_xPassSet.ShadowVisibleCount[cascade], 1u, outIndex);
+		g_xPassSet.ShadowIndirectCommandBuffer[cascade * uFLUX_TERRAIN_TOTAL_CHUNKS + outIndex] = cmd;
+	}
 }

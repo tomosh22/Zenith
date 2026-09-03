@@ -34,14 +34,19 @@ static void InitialiseSampler(Zenith_Vulkan_Sampler& xSampler, vk::SamplerAddres
 	// (Zenith_Vulkan.cpp setSamplerAnisotropy(VK_TRUE)), but every sampler
 	// previously sampled trilinear-only, blurring + shimmering all textures at
 	// grazing angles -- a top-tier non-photoreal tell. 16x is universally
-	// supported on desktop Vulkan (maxSamplerAnisotropy >= 16). Mip-LOD bias is
-	// 0 (no sharpening): a negative bias samples higher-detail mips, which
-	// without TAA aliases fine albedo detail into crawling speckle (visible on
-	// the StickFigure skin). Reintroduce a small negative bias once TAA lands.
-	// eFilter/bAnisotropic let DATA textures opt into NEAREST/no-aniso reads (a
-	// VAT position texture must be sampled EXACTLY — see InitialisePointClamp).
+	// supported on desktop Vulkan (maxSamplerAnisotropy >= 16).
+	// Mip-LOD bias is -0.5 on the filtered samplers: TAA ships ON by default and
+	// resolves the sub-texel aliasing a sharper mip pick would otherwise show as
+	// crawling speckle, so the material samplers take back the half-mip of
+	// detail a box-filtered chain blurs away (the standard TAA sharpening bias;
+	// every offline .ztxtr mip chain is a box filter). The POINT sampler stays
+	// at 0: a nearest-filtered data read wants the exact level, not a sharper
+	// one. eFilter/bAnisotropic let DATA textures opt into NEAREST/no-aniso
+	// reads (a VAT position texture must be sampled EXACTLY — see
+	// InitialisePointClamp).
 	const vk::SamplerMipmapMode eMipMode = (eFilter == vk::Filter::eNearest)
 		? vk::SamplerMipmapMode::eNearest : vk::SamplerMipmapMode::eLinear;
+	const float fMipLodBias = (eFilter == vk::Filter::eNearest) ? 0.0f : -0.5f;
 	vk::SamplerCreateInfo xInfo = vk::SamplerCreateInfo()
 		.setMagFilter(eFilter)
 		.setMinFilter(eFilter)
@@ -55,7 +60,7 @@ static void InitialiseSampler(Zenith_Vulkan_Sampler& xSampler, vk::SamplerAddres
 		.setMipmapMode(eMipMode)
 		.setAnisotropyEnable(bAnisotropic ? VK_TRUE : VK_FALSE)
 		.setMaxAnisotropy(bAnisotropic ? 16.0f : 1.0f)
-		.setMipLodBias(0.0f)
+		.setMipLodBias(fMipLodBias)
 		.setMaxLod(FLT_MAX);
 
 	xSampler.m_xSampler = VkUnwrap(xDevice.createSampler(xInfo));

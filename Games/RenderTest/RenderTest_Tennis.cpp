@@ -17,6 +17,7 @@
 #endif
 #include "RenderTest/Components/RenderTest_GameplayState.h"
 
+#include <algorithm>
 #include <vector>
 #include <string>
 #include <cstring>
@@ -106,6 +107,9 @@ namespace
 	const std::string& TennisBallMaterialPath()  { static const std::string s = std::string(GAME_ASSETS_DIR) + "Materials/RenderTest/Tennis_Ball"  ZENITH_MATERIAL_EXT; return s; }
 
 	const std::string& TennisCourtTexturePath() { static const std::string s = std::string(GAME_ASSETS_DIR) + "Textures/RenderTest/Tennis_Court" ZENITH_TEXTURE_EXT; return s; }
+	const std::string& TennisCourtNormalPath()  { static const std::string s = std::string(GAME_ASSETS_DIR) + "Textures/RenderTest/Tennis_Court_Normal" ZENITH_TEXTURE_EXT; return s; }
+	const std::string& TennisCourtRMPath()      { static const std::string s = std::string(GAME_ASSETS_DIR) + "Textures/RenderTest/Tennis_Court_RM"     ZENITH_TEXTURE_EXT; return s; }
+	const std::string& TennisCourtAOPath()      { static const std::string s = std::string(GAME_ASSETS_DIR) + "Textures/RenderTest/Tennis_Court_AO"     ZENITH_TEXTURE_EXT; return s; }
 	const std::string& TennisNetTexturePath()   { static const std::string s = std::string(GAME_ASSETS_DIR) + "Textures/RenderTest/Tennis_Net"   ZENITH_TEXTURE_EXT; return s; }
 	const std::string& TennisBallTexturePath()  { static const std::string s = std::string(GAME_ASSETS_DIR) + "Textures/RenderTest/Tennis_Ball"  ZENITH_TEXTURE_EXT; return s; }
 
@@ -171,85 +175,428 @@ namespace
 
 	// --- Procedural textures (CPU pixel buffers) -----------------------------
 
-	// Court texture: green grass (with a little noise) + white painted lines.
-	// U maps to court width (X), V to court length (Z). The painted court is
-	// inset by the grass apron. Lines: doubles + singles sidelines, baselines,
-	// the two service lines, and the centre service line. Returns the RGBA8 pixel
-	// buffer (uW/uH set) so the caller can export it to disk.
+	//=========================================================================
+	// The court surface.
+	//
+	// U maps to court width (X), V to court length (Z); the painted court is
+	// inset by the grass apron. Everything below is a PURE function of (u, v),
+	// which is what lets the four maps be generated in four separate passes and
+	// still describe the same surface -- a paint edge in the colour map is the
+	// same paint edge in the normal, RM and AO maps by construction, not by
+	// coincidence.
+	//
+	// Three things separate this from the flat green-with-lines it replaces:
+	//
+	// 1. ANTIALIASED LINES. A line is filled by analytic BOX COVERAGE of the
+	//    texel against the line rect, not by a nearest-texel rect fill. At the
+	//    old 384x832 a court line was ~4 texels wide and its edge was a hard
+	//    step, which crawls under any camera motion and cannot be fixed
+	//    downstream -- TAA sharpens it, the mip chain smears it. Coverage
+	//    weighting is what makes the same line hold still.
+	//
+	// 2. MOW STRIPES. Real grass courts are cut in alternating directions and
+	//    the bands are the single strongest cue that a surface is mown grass
+	//    rather than green paint. +/-6% value, ~1.5 m bands running along the
+	//    court's length (so they alternate across U).
+	//
+	// 3. WEAR. Grass dies where players stand: behind the baselines and,
+	//    less so, in the service boxes. Worn grass is PALER and patchier, not
+	//    just darker, so the mask drives a straw tint as well as a value lift.
+	//=========================================================================
+	constexpr uint32_t uCOURT_TEX_W = 1024;
+	constexpr uint32_t uCOURT_TEX_H = 2048;
+	// Half the colour resolution: neither map carries detail the colour map
+	// does not, and RM/AO are the two the eye is least able to localise.
+	constexpr uint32_t uCOURT_DATA_W = 512;
+	constexpr uint32_t uCOURT_DATA_H = 1024;
+
+	// Normalised court geometry over the slab footprint. ONE definition, read
+	// by every map generator and by the units -- a second copy drifts the first
+	// time the apron changes.
+	struct RT_CourtLayout
+	{
+		float m_fApronU = 0.0f;
+		float m_fApronV = 0.0f;
+		float m_fLeftDoubles = 0.0f;
+		float m_fRightDoubles = 0.0f;
+		float m_fLeftSingles = 0.0f;
+		float m_fRightSingles = 0.0f;
+		float m_fNearBase = 0.0f;
+		float m_fFarBase = 0.0f;
+		float m_fNearService = 0.0f;
+		float m_fFarService = 0.0f;
+		float m_fLineHalfU = 0.0f;
+		float m_fLineHalfV = 0.0f;
+	};
+
+	RT_CourtLayout RT_MakeCourtLayout()
+	{
+		RT_CourtLayout x;
+		x.m_fApronU = fAPRON / (2.0f * fSLAB_HALF_WIDTH);
+		x.m_fApronV = fAPRON / (2.0f * fSLAB_HALF_LENGTH);
+		const float fSinglesInsetU = 1.37f / (2.0f * fSLAB_HALF_WIDTH);
+		const float fServiceV = fSERVICE_LINE_OFFSET / (2.0f * fSLAB_HALF_LENGTH);
+		// Line half-thickness in U/V (~5 cm physical, as before).
+		x.m_fLineHalfU = 0.06f / (2.0f * fSLAB_HALF_WIDTH);
+		x.m_fLineHalfV = 0.06f / (2.0f * fSLAB_HALF_LENGTH);
+		x.m_fLeftDoubles = x.m_fApronU;
+		x.m_fRightDoubles = 1.0f - x.m_fApronU;
+		x.m_fLeftSingles = x.m_fApronU + fSinglesInsetU;
+		x.m_fRightSingles = 1.0f - x.m_fApronU - fSinglesInsetU;
+		x.m_fNearBase = x.m_fApronV;
+		x.m_fFarBase = 1.0f - x.m_fApronV;
+		x.m_fNearService = 0.5f - fServiceV;
+		x.m_fFarService = 0.5f + fServiceV;
+		return x;
+	}
+
+	struct RT_CourtRect
+	{
+		float m_fU0, m_fV0, m_fU1, m_fV1;
+	};
+
+	// Every painted rect on the court, in one list. Coverage of the union is
+	// the max over the list: the rects only ever overlap where two lines cross,
+	// and a crossing is solid paint under either.
+	void RT_BuildCourtLineRects(const RT_CourtLayout& xL, std::vector<RT_CourtRect>& xOut)
+	{
+		const float fLwU = xL.m_fLineHalfU;
+		const float fLwV = xL.m_fLineHalfV;
+		xOut.clear();
+		// Sidelines (full court length).
+		xOut.push_back({ xL.m_fLeftDoubles - fLwU,  xL.m_fNearBase - fLwV, xL.m_fLeftDoubles + fLwU,  xL.m_fFarBase + fLwV });
+		xOut.push_back({ xL.m_fRightDoubles - fLwU, xL.m_fNearBase - fLwV, xL.m_fRightDoubles + fLwU, xL.m_fFarBase + fLwV });
+		xOut.push_back({ xL.m_fLeftSingles - fLwU,  xL.m_fNearBase - fLwV, xL.m_fLeftSingles + fLwU,  xL.m_fFarBase + fLwV });
+		xOut.push_back({ xL.m_fRightSingles - fLwU, xL.m_fNearBase - fLwV, xL.m_fRightSingles + fLwU, xL.m_fFarBase + fLwV });
+		// Baselines (full doubles width).
+		xOut.push_back({ xL.m_fLeftDoubles, xL.m_fNearBase - fLwV, xL.m_fRightDoubles, xL.m_fNearBase + fLwV });
+		xOut.push_back({ xL.m_fLeftDoubles, xL.m_fFarBase - fLwV,  xL.m_fRightDoubles, xL.m_fFarBase + fLwV });
+		// Service lines (singles width).
+		xOut.push_back({ xL.m_fLeftSingles, xL.m_fNearService - fLwV, xL.m_fRightSingles, xL.m_fNearService + fLwV });
+		xOut.push_back({ xL.m_fLeftSingles, xL.m_fFarService - fLwV,  xL.m_fRightSingles, xL.m_fFarService + fLwV });
+		// Centre service line (between the two service lines).
+		xOut.push_back({ 0.5f - fLwU, xL.m_fNearService, 0.5f + fLwU, xL.m_fFarService });
+		// Centre marks on the baselines.
+		xOut.push_back({ 0.5f - fLwU, xL.m_fNearBase, 0.5f + fLwU, xL.m_fNearBase + 6.0f * fLwV });
+		xOut.push_back({ 0.5f - fLwU, xL.m_fFarBase - 6.0f * fLwV, 0.5f + fLwU, xL.m_fFarBase });
+	}
+
+	// Fraction of ONE TEXEL covered by the rect. This is the antialiasing: a
+	// texel straddling a paint edge gets the exact area fraction, so the edge
+	// carries intermediate values instead of stepping between two constants.
+	float RT_RectTexelCoverage(const RT_CourtRect& xR,
+		float fTU0, float fTV0, float fTU1, float fTV1)
+	{
+		const float fOverlapU = std::max(0.0f, std::min(xR.m_fU1, fTU1) - std::max(xR.m_fU0, fTU0));
+		const float fOverlapV = std::max(0.0f, std::min(xR.m_fV1, fTV1) - std::max(xR.m_fV0, fTV0));
+		const float fTexelU = std::max(fTU1 - fTU0, 1e-9f);
+		const float fTexelV = std::max(fTV1 - fTV0, 1e-9f);
+		return (fOverlapU / fTexelU) * (fOverlapV / fTexelV);
+	}
+
+	// Paint coverage [0,1] of the texel (ix, iy) in a map of (uW x uH).
+	float RT_CourtPaintCoverage(const std::vector<RT_CourtRect>& xRects,
+		uint32_t uW, uint32_t uH, uint32_t x, uint32_t y)
+	{
+		const float fTU0 = static_cast<float>(x) / uW;
+		const float fTU1 = static_cast<float>(x + 1) / uW;
+		const float fTV0 = static_cast<float>(y) / uH;
+		const float fTV1 = static_cast<float>(y + 1) / uH;
+		float fCoverage = 0.0f;
+		for (const RT_CourtRect& xR : xRects)
+		{
+			fCoverage = std::max(fCoverage, RT_RectTexelCoverage(xR, fTU0, fTV0, fTU1, fTV1));
+		}
+		return std::min(fCoverage, 1.0f);
+	}
+
+	float RT_CourtHash01(uint32_t x, uint32_t y, uint32_t uSeed)
+	{
+		uint32_t uHash = (x * 374761393u + y * 668265263u + uSeed * 2246822519u);
+		uHash = (uHash ^ (uHash >> 13)) * 1274126177u;
+		uHash ^= uHash >> 16;
+		return static_cast<float>(uHash & 0x00FFFFFFu) * (1.0f / 16777216.0f);
+	}
+
+	float RT_CourtSmoothStep(float fEdge0, float fEdge1, float fX)
+	{
+		const float fT = glm::clamp((fX - fEdge0) / (fEdge1 - fEdge0), 0.0f, 1.0f);
+		return fT * fT * (3.0f - 2.0f * fT);
+	}
+
+	// Smooth value noise on a lattice of uCells x uCells over the whole map.
+	// Used for the wear patches and the tuft field -- a plain per-texel hash is
+	// grain, and grain alone never reads as clumped grass.
+	float RT_CourtValueNoise(float fU, float fV, uint32_t uCellsU, uint32_t uCellsV, uint32_t uSeed)
+	{
+		const float fX = fU * uCellsU;
+		const float fY = fV * uCellsV;
+		const uint32_t uX0 = static_cast<uint32_t>(fX);
+		const uint32_t uY0 = static_cast<uint32_t>(fY);
+		const float fTX = RT_CourtSmoothStep(0.0f, 1.0f, fX - static_cast<float>(uX0));
+		const float fTY = RT_CourtSmoothStep(0.0f, 1.0f, fY - static_cast<float>(uY0));
+		const float fV00 = RT_CourtHash01(uX0, uY0, uSeed);
+		const float fV10 = RT_CourtHash01(uX0 + 1u, uY0, uSeed);
+		const float fV01 = RT_CourtHash01(uX0, uY0 + 1u, uSeed);
+		const float fV11 = RT_CourtHash01(uX0 + 1u, uY0 + 1u, uSeed);
+		const float fTop = fV00 + (fV10 - fV00) * fTX;
+		const float fBottom = fV01 + (fV11 - fV01) * fTX;
+		return fTop + (fBottom - fTop) * fTY;
+	}
+
+	// The mow-stripe multiplier: +/-6% value in ~1.5 m bands running ALONG the
+	// court (so they alternate across U). A cosine rather than a square wave --
+	// a mower leaves a soft boundary, and a hard one would alias.
+	float RT_CourtMowStripe(float fU)
+	{
+		constexpr float fBAND_METRES = 1.5f;
+		const float fSlabWidth = 2.0f * fSLAB_HALF_WIDTH;
+		const float fBands = fSlabWidth / fBAND_METRES;
+		const float fPhase = std::cos(fU * fBands * 6.28318530718f);
+		return 1.0f + 0.06f * fPhase;
+	}
+
+	// How worn the turf is at (u, v): 1 = bare, patchy, pale. Heaviest in the
+	// two baseline bands where a player stands and pivots all match, lighter in
+	// the service boxes where they only run through.
+	float RT_CourtWear(const RT_CourtLayout& xL, float fU, float fV)
+	{
+		// Baseline bands: a metre or so either side of each baseline, and only
+		// across the width a player actually covers.
+		const float fBandV = 1.30f / (2.0f * fSLAB_HALF_LENGTH);
+		const float fNear = 1.0f - RT_CourtSmoothStep(0.0f, fBandV, std::fabs(fV - xL.m_fNearBase));
+		const float fFar = 1.0f - RT_CourtSmoothStep(0.0f, fBandV, std::fabs(fV - xL.m_fFarBase));
+		float fBaseline = std::max(fNear, fFar);
+		// Players stand between the singles lines, mostly near the centre.
+		const float fAcross = 1.0f - RT_CourtSmoothStep(0.18f, 0.46f, std::fabs(fU - 0.5f));
+		fBaseline *= fAcross;
+
+		// Service boxes: run through, not stood in -- a third of the wear.
+		float fService = 0.0f;
+		if (fV > xL.m_fNearService && fV < xL.m_fFarService &&
+			fU > xL.m_fLeftSingles && fU < xL.m_fRightSingles)
+		{
+			fService = 0.32f;
+		}
+
+		// Patchiness: wear is never a clean band. Two lattice scales so the
+		// patches have patches.
+		//
+		// ★ AVERAGING TWO OCTAVES CONCENTRATES THE RESULT ABOUT 0.5. Measured
+		// along a baseline, the raw blend spanned only 0.08 — which renders as a
+		// uniform painted band, the exact thing wear is here to avoid. The
+		// contrast curve re-spreads that concentrated middle over the full range
+		// before it scales the band.
+		// The FINER octave carries most of the weight: along a single baseline the
+		// coarse 14x26 lattice barely moves (measured spread 0.04 raw), and it is
+		// variation ALONG the line that stops the band reading as paint.
+		const float fPatchRaw = RT_CourtValueNoise(fU, fV, 14u, 26u, 771u) * 0.45f +
+			RT_CourtValueNoise(fU, fV, 47u, 88u, 913u) * 0.55f;
+		// Window measured, not assumed: a 0.26-wide window turns that 0.04 of raw
+		// spread into ~0.15 of wear, which is the difference between "patchy" and
+		// "a painted stripe".
+		const float fPatch = RT_CourtSmoothStep(0.38f, 0.64f, fPatchRaw);
+		const float fWear = std::max(fBaseline, fService) * (0.30f + 1.05f * fPatch);
+		return glm::clamp(fWear, 0.0f, 1.0f);
+	}
+
+	// The surface height the normal and AO maps are built from: fine grass
+	// tufts, flattened where the turf is worn, plus the slight relief of the
+	// paint itself sitting on top of the blades.
+	float RT_CourtSurfaceHeight(const RT_CourtLayout& xL, uint32_t uW, uint32_t uH,
+		uint32_t x, uint32_t y, const std::vector<RT_CourtRect>& xRects)
+	{
+		const float fU = (static_cast<float>(x) + 0.5f) / uW;
+		const float fV = (static_cast<float>(y) + 0.5f) / uH;
+		// Tufts at roughly 3 cm and 9 cm -- the two scales you actually see on
+		// mown turf from a standing camera.
+		//
+		// The lattice sizes are ABSOLUTE, not derived from the map resolution:
+		// the normal map is 1024x2048 and the RM/AO pair is half that, and a
+		// resolution-relative lattice would make them describe two DIFFERENT
+		// surfaces -- occlusion that does not sit in the hollows its own normal
+		// map carves.
+		//
+		// They are also deliberately COARSER than the texel grid: a lattice at
+		// 2 texels per cell sits on Nyquist, which aliases into a shimmering
+		// normal map rather than resolving as tufts.
+		constexpr uint32_t uTUFT_FINE_U = 256u;    // ~6.2 cm across a 15.97 m slab (4 texels/cell)
+		constexpr uint32_t uTUFT_FINE_V = 461u;    // ~6.2 cm across a 28.77 m slab
+		constexpr uint32_t uTUFT_COARSE_U = 85u;   // ~19 cm
+		constexpr uint32_t uTUFT_COARSE_V = 153u;
+		const float fTuftFine = RT_CourtValueNoise(fU, fV, uTUFT_FINE_U, uTUFT_FINE_V, 401u);
+		const float fTuftCoarse = RT_CourtValueNoise(fU, fV, uTUFT_COARSE_U, uTUFT_COARSE_V, 577u);
+		float fHeight = fTuftFine * 0.62f + fTuftCoarse * 0.38f;
+
+		// Worn turf is flatter: fewer blades, pressed down.
+		const float fWear = RT_CourtWear(xL, fU, fV);
+		fHeight *= 1.0f - 0.55f * fWear;
+
+		// Paint fills between the blades and sits slightly proud of them.
+		const float fPaint = RT_CourtPaintCoverage(xRects, uW, uH, x, y);
+		fHeight = fHeight * (1.0f - 0.72f * fPaint) + fPaint * 0.62f;
+		return glm::clamp(fHeight, 0.0f, 1.0f);
+	}
+
+	// Court base colour: mown, worn grass with antialiased painted lines.
+	// Returns the RGBA8 pixel buffer (uW/uH set) so the caller can export it.
 	std::vector<uint8_t> RT_MakeCourtTexture(uint32_t& uWOut, uint32_t& uHOut)
 	{
-		constexpr uint32_t uW = 384;
-		constexpr uint32_t uH = 832;   // ~ slabWidth : slabLength
-		std::vector<uint8_t> xPx(static_cast<size_t>(uW) * uH * 4);
+		constexpr uint32_t uW = uCOURT_TEX_W;
+		constexpr uint32_t uH = uCOURT_TEX_H;
+		const RT_CourtLayout xL = RT_MakeCourtLayout();
+		std::vector<RT_CourtRect> xRects;
+		RT_BuildCourtLineRects(xL, xRects);
 
-		// Grass base with subtle hash noise.
+		std::vector<uint8_t> xPx(static_cast<size_t>(uW) * uH * 4);
 		for (uint32_t y = 0; y < uH; y++)
 		{
+			const float fV = (static_cast<float>(y) + 0.5f) / uH;
 			for (uint32_t x = 0; x < uW; x++)
 			{
-				uint32_t uHash = (x * 374761393u + y * 668265263u);
-				uHash = (uHash ^ (uHash >> 13)) * 1274126177u;
-				const int iN = static_cast<int>((uHash >> 24) & 0x1F) - 16;   // [-16,15]
+				const float fU = (static_cast<float>(x) + 0.5f) / uW;
+
+				// Healthy turf -> worn straw.
+				const float fWear = RT_CourtWear(xL, fU, fV);
+				float fR = 0.149f + (0.454f - 0.149f) * fWear;
+				float fG = 0.431f + (0.443f - 0.431f) * fWear;
+				float fB = 0.180f + (0.243f - 0.180f) * fWear;
+
+				// Mow stripes, then per-texel grain (the old hash noise, kept:
+				// it is what stops flat turf reading as a solid fill).
+				const float fMow = RT_CourtMowStripe(fU);
+				const float fGrain = (RT_CourtHash01(x, y, 0u) - 0.5f) * 0.12f;
+				// Clump-scale colour variation, so the grain is not the only
+				// structure in the green.
+				const float fClump = (RT_CourtValueNoise(fU, fV, 60u, 110u, 233u) - 0.5f) * 0.10f;
+				fR = fR * fMow + fGrain * 0.5f + fClump * 0.5f;
+				fG = fG * fMow + fGrain + fClump;
+				fB = fB * fMow + fGrain * 0.5f + fClump * 0.4f;
+
+				// Paint, COVERAGE-WEIGHTED. Court paint is not pure white and it
+				// picks up the turf under it, so it gets its own faint grain.
+				const float fPaint = RT_CourtPaintCoverage(xRects, uW, uH, x, y);
+				if (fPaint > 0.0f)
+				{
+					const float fPaintGrain = (RT_CourtHash01(x, y, 91u) - 0.5f) * 0.05f;
+					const float fPaintV = 0.918f + fPaintGrain;
+					fR = fR + (fPaintV - fR) * fPaint;
+					fG = fG + (fPaintV - fG) * fPaint;
+					fB = fB + (fPaintV * 0.985f - fB) * fPaint;
+				}
+
 				uint8_t* p = &xPx[(static_cast<size_t>(y) * uW + x) * 4];
-				p[0] = static_cast<uint8_t>(glm::clamp(38 + iN / 2, 0, 255));
-				p[1] = static_cast<uint8_t>(glm::clamp(110 + iN, 0, 255));
-				p[2] = static_cast<uint8_t>(glm::clamp(46 + iN / 2, 0, 255));
+				p[0] = static_cast<uint8_t>(glm::clamp(fR, 0.0f, 1.0f) * 255.0f);
+				p[1] = static_cast<uint8_t>(glm::clamp(fG, 0.0f, 1.0f) * 255.0f);
+				p[2] = static_cast<uint8_t>(glm::clamp(fB, 0.0f, 1.0f) * 255.0f);
 				p[3] = 255;
 			}
 		}
 
-		auto FillRect = [&](float fU0, float fV0, float fU1, float fV1)
-		{
-			const int ix0 = glm::clamp(static_cast<int>(fU0 * uW), 0, static_cast<int>(uW) - 1);
-			const int ix1 = glm::clamp(static_cast<int>(fU1 * uW), 0, static_cast<int>(uW) - 1);
-			const int iy0 = glm::clamp(static_cast<int>(fV0 * uH), 0, static_cast<int>(uH) - 1);
-			const int iy1 = glm::clamp(static_cast<int>(fV1 * uH), 0, static_cast<int>(uH) - 1);
-			for (int y = iy0; y <= iy1; y++)
-				for (int x = ix0; x <= ix1; x++)
-				{
-					uint8_t* p = &xPx[(static_cast<size_t>(y) * uW + x) * 4];
-					p[0] = 235; p[1] = 235; p[2] = 235; p[3] = 255;
-				}
-		};
-
-		// Normalised court geometry over the slab footprint.
-		const float fApronU = fAPRON / (2.0f * fSLAB_HALF_WIDTH);
-		const float fApronV = fAPRON / (2.0f * fSLAB_HALF_LENGTH);
-		const float fSinglesInsetU = 1.37f / (2.0f * fSLAB_HALF_WIDTH);
-		const float fServiceV = fSERVICE_LINE_OFFSET / (2.0f * fSLAB_HALF_LENGTH);
-		// Line half-thickness in U/V (~5 cm physical).
-		const float fLwU = 0.06f / (2.0f * fSLAB_HALF_WIDTH);
-		const float fLwV = 0.06f / (2.0f * fSLAB_HALF_LENGTH);
-
-		const float fLeftDoubles  = fApronU;
-		const float fRightDoubles = 1.0f - fApronU;
-		const float fLeftSingles  = fApronU + fSinglesInsetU;
-		const float fRightSingles = 1.0f - fApronU - fSinglesInsetU;
-		const float fNearBase = fApronV;
-		const float fFarBase  = 1.0f - fApronV;
-		const float fNearService = 0.5f - fServiceV;
-		const float fFarService  = 0.5f + fServiceV;
-
-		// Sidelines (full court length).
-		FillRect(fLeftDoubles - fLwU,  fNearBase, fLeftDoubles + fLwU,  fFarBase);
-		FillRect(fRightDoubles - fLwU, fNearBase, fRightDoubles + fLwU, fFarBase);
-		FillRect(fLeftSingles - fLwU,  fNearBase, fLeftSingles + fLwU,  fFarBase);
-		FillRect(fRightSingles - fLwU, fNearBase, fRightSingles + fLwU, fFarBase);
-		// Baselines (full doubles width).
-		FillRect(fLeftDoubles, fNearBase - fLwV, fRightDoubles, fNearBase + fLwV);
-		FillRect(fLeftDoubles, fFarBase - fLwV,  fRightDoubles, fFarBase + fLwV);
-		// Service lines (singles width).
-		FillRect(fLeftSingles, fNearService - fLwV, fRightSingles, fNearService + fLwV);
-		FillRect(fLeftSingles, fFarService - fLwV,  fRightSingles, fFarService + fLwV);
-		// Centre service line (between the two service lines).
-		FillRect(0.5f - fLwU, fNearService, 0.5f + fLwU, fFarService);
-		// Centre marks on the baselines.
-		FillRect(0.5f - fLwU, fNearBase, 0.5f + fLwU, fNearBase + 6.0f * fLwV);
-		FillRect(0.5f - fLwU, fFarBase - 6.0f * fLwV, 0.5f + fLwU, fFarBase);
-
 		uWOut = uW;
 		uHOut = uH;
 		return xPx;
+	}
+
+	// Court normal map: fine grass tufts + the slight relief of the paint.
+	// RGBA8 for the BC5 writer (which keeps R+G; the shader rebuilds Z).
+	// CLAMPED differences -- the court texture is mapped 1:1 over the slab and
+	// does not tile, so a wrapped difference would join the two touchlines.
+	std::vector<uint8_t> RT_MakeCourtNormalTexture(uint32_t& uWOut, uint32_t& uHOut)
+	{
+		constexpr uint32_t uW = uCOURT_TEX_W;
+		constexpr uint32_t uH = uCOURT_TEX_H;
+		const RT_CourtLayout xL = RT_MakeCourtLayout();
+		std::vector<RT_CourtRect> xRects;
+		RT_BuildCourtLineRects(xL, xRects);
+
+		std::vector<float> xHeight(static_cast<size_t>(uW) * uH);
+		for (uint32_t y = 0; y < uH; y++)
+		{
+			for (uint32_t x = 0; x < uW; x++)
+			{
+				xHeight[static_cast<size_t>(y) * uW + x] =
+					RT_CourtSurfaceHeight(xL, uW, uH, x, y, xRects);
+			}
+		}
+
+		std::vector<uint8_t> xPx(static_cast<size_t>(uW) * uH * 4);
+		for (uint32_t y = 0; y < uH; y++)
+		{
+			for (uint32_t x = 0; x < uW; x++)
+			{
+				const uint32_t xp = std::min(x + 1u, uW - 1u);
+				const uint32_t xm = (x > 0u) ? (x - 1u) : 0u;
+				const uint32_t yp = std::min(y + 1u, uH - 1u);
+				const uint32_t ym = (y > 0u) ? (y - 1u) : 0u;
+				const float fDX = (xHeight[static_cast<size_t>(y) * uW + xp] -
+					xHeight[static_cast<size_t>(y) * uW + xm]) * 1.6f;
+				const float fDY = (xHeight[static_cast<size_t>(yp) * uW + x] -
+					xHeight[static_cast<size_t>(ym) * uW + x]) * 1.6f;
+				const Vector3 xN = glm::normalize(Vector3(-fDX, -fDY, 1.0f));
+				uint8_t* p = &xPx[(static_cast<size_t>(y) * uW + x) * 4];
+				p[0] = static_cast<uint8_t>((xN.x * 0.5f + 0.5f) * 255.0f);
+				p[1] = static_cast<uint8_t>((xN.y * 0.5f + 0.5f) * 255.0f);
+				p[2] = static_cast<uint8_t>((xN.z * 0.5f + 0.5f) * 255.0f);
+				p[3] = 255;
+			}
+		}
+		uWOut = uW;
+		uHOut = uH;
+		return xPx;
+	}
+
+	// Court RM (glTF layout: G = roughness, B = metallic) + AO, generated
+	// together because both are functions of the same paint/wear fields.
+	// Paint is a sealed, slightly polished film; turf is not. Getting that one
+	// difference right is most of what makes a wet-looking court read as grass
+	// with lines on it rather than as a painted board.
+	void RT_MakeCourtDataTextures(std::vector<uint8_t>& xRMOut, std::vector<uint8_t>& xAOOut,
+		uint32_t& uWOut, uint32_t& uHOut)
+	{
+		constexpr uint32_t uW = uCOURT_DATA_W;
+		constexpr uint32_t uH = uCOURT_DATA_H;
+		const RT_CourtLayout xL = RT_MakeCourtLayout();
+		std::vector<RT_CourtRect> xRects;
+		RT_BuildCourtLineRects(xL, xRects);
+
+		xRMOut.assign(static_cast<size_t>(uW) * uH * 4, 0);
+		xAOOut.assign(static_cast<size_t>(uW) * uH * 4, 0);
+		for (uint32_t y = 0; y < uH; y++)
+		{
+			const float fV = (static_cast<float>(y) + 0.5f) / uH;
+			for (uint32_t x = 0; x < uW; x++)
+			{
+				const float fU = (static_cast<float>(x) + 0.5f) / uW;
+				const float fPaint = RT_CourtPaintCoverage(xRects, uW, uH, x, y);
+				const float fWear = RT_CourtWear(xL, fU, fV);
+				const float fHeight = RT_CourtSurfaceHeight(xL, uW, uH, x, y, xRects);
+
+				// Turf is very rough and dry turf is rougher still; the paint
+				// film is markedly smoother than either.
+				const float fGrassRough = 0.93f + 0.04f * fWear;
+				const float fRough = glm::clamp(fGrassRough + (0.52f - fGrassRough) * fPaint, 0.05f, 1.0f);
+				uint8_t* pRM = &xRMOut[(static_cast<size_t>(y) * uW + x) * 4];
+				pRM[0] = 0;
+				pRM[1] = static_cast<uint8_t>(fRough * 255.0f);
+				pRM[2] = 0;   // grass and line paint are both dielectric
+				pRM[3] = 255;
+
+				// Occlusion between the blades: deepest in tall turf, released
+				// where the surface is worn flat or sealed under paint.
+				float fAO = 1.0f - (1.0f - fHeight) * 0.26f;
+				fAO += 0.05f * fWear;
+				fAO = fAO + (0.99f - fAO) * fPaint;
+				const uint8_t ucAO = static_cast<uint8_t>(glm::clamp(fAO, 0.0f, 1.0f) * 255.0f);
+				uint8_t* pAO = &xAOOut[(static_cast<size_t>(y) * uW + x) * 4];
+				pAO[0] = ucAO;
+				pAO[1] = ucAO;
+				pAO[2] = ucAO;
+				pAO[3] = 255;
+			}
+		}
+		uWOut = uW;
+		uHOut = uH;
 	}
 
 	// Net texture: a coarse mesh — dark cord on the grid lines (opaque), holes
@@ -525,9 +872,32 @@ void RenderTest_ExportTennisAssets(const char* szVtxColorMaterialPath)
 	// --- Textures (CPU pixel buffers -> .ztxtr; no GPU upload) ---
 	{
 		uint32_t uW = 0, uH = 0;
+		// sRGB with a full offline mip chain, uncompressed. sRGB because this is
+		// displayed colour (the old RGBA8_UNORM export handed the shader
+		// gamma-encoded values as if they were linear, which is why the turf sat
+		// too bright against everything else on the campus); uncompressed
+		// because BC1 blocks smear a 1-texel-wide antialiased paint edge back
+		// into the hard step the antialiasing exists to remove.
 		const std::vector<uint8_t> xCourtPx = RT_MakeCourtTexture(uW, uH);
-		Zenith_Tools_TextureExport::ExportFromData(xCourtPx.data(), TennisCourtTexturePath(),
-			static_cast<int32_t>(uW), static_cast<int32_t>(uH), TEXTURE_FORMAT_RGBA8_UNORM);
+		Zenith_Tools_TextureExport::ExportFromDataV2Uncompressed(xCourtPx.data(), TennisCourtTexturePath(),
+			static_cast<int32_t>(uW), static_cast<int32_t>(uH), TEXTURE_FORMAT_RGBA8_SRGB);
+
+		// Normal: BC5 (R+G; the shader rebuilds Z), linear, full mip chain.
+		uint32_t uNW = 0, uNH = 0;
+		const std::vector<uint8_t> xCourtNrm = RT_MakeCourtNormalTexture(uNW, uNH);
+		Zenith_Tools_TextureExport::ExportFromDataCompressed(xCourtNrm.data(), TennisCourtNormalPath(),
+			static_cast<int32_t>(uNW), static_cast<int32_t>(uNH),
+			TextureCompressionMode::BC5, TextureColourSpace::Linear);
+
+		// RM + AO: linear data, uncompressed so the roughness step at a paint
+		// edge survives exactly.
+		std::vector<uint8_t> xCourtRM, xCourtAO;
+		uint32_t uDW = 0, uDH = 0;
+		RT_MakeCourtDataTextures(xCourtRM, xCourtAO, uDW, uDH);
+		Zenith_Tools_TextureExport::ExportFromDataV2Uncompressed(xCourtRM.data(), TennisCourtRMPath(),
+			static_cast<int32_t>(uDW), static_cast<int32_t>(uDH), TEXTURE_FORMAT_RGBA8_UNORM);
+		Zenith_Tools_TextureExport::ExportFromDataV2Uncompressed(xCourtAO.data(), TennisCourtAOPath(),
+			static_cast<int32_t>(uDW), static_cast<int32_t>(uDH), TEXTURE_FORMAT_RGBA8_UNORM);
 
 		uint32_t uS = 0;
 		const std::vector<uint8_t> xNetPx = RT_MakeNetTexture(uS);
@@ -544,9 +914,18 @@ void RenderTest_ExportTennisAssets(const char* szVtxColorMaterialPath)
 	{
 		Zenith_MaterialAsset* pxCourtMat = RT_NewMaterial("Tennis_Court");
 		pxCourtMat->SetBaseColor(Vector4(1.0f, 1.0f, 1.0f, 1.0f));
-		pxCourtMat->SetRoughness(0.9f);
+		// With an RM map bound, roughness/metallic are MULTIPLIERS on the
+		// sampled channels rather than absolute values: 1.0 passes the map's
+		// per-texel paint-vs-turf roughness through untouched, and a literal
+		// 0.9 here would quietly scale it back down.
+		pxCourtMat->SetRoughness(1.0f);
 		pxCourtMat->SetMetallic(0.0f);
+		pxCourtMat->SetNormalStrength(1.0f);
+		pxCourtMat->SetOcclusionStrength(1.0f);
 		pxCourtMat->SetTexture(MATERIAL_TEXTURE_BASE_COLOR, TextureHandle(TennisCourtTexturePath()));
+		pxCourtMat->SetTexture(MATERIAL_TEXTURE_NORMAL, TextureHandle(TennisCourtNormalPath()));
+		pxCourtMat->SetTexture(MATERIAL_TEXTURE_ROUGHNESS_METALLIC, TextureHandle(TennisCourtRMPath()));
+		pxCourtMat->SetTexture(MATERIAL_TEXTURE_OCCLUSION, TextureHandle(TennisCourtAOPath()));
 		pxCourtMat->SaveToFile(TennisCourtMaterialPath());
 	}
 
@@ -605,6 +984,8 @@ void RenderTest_ExportTennisAssets(const char* szVtxColorMaterialPath)
 	}
 }
 #endif
+
+#include "RenderTest/RenderTest_TennisCourtTexture.Tests.inl"
 
 void RenderTest_TennisShutdown()
 {

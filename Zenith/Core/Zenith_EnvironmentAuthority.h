@@ -23,12 +23,14 @@
 // presentation brightness.
 // =====================================================================
 
-// The exact historical global sun-travel direction value. This is the fallback
-// used when no loaded scene authors a Zenith_SunComponent, so opt-out games
-// keep byte-identical lighting.
+// The default global sun-travel direction — the fallback used when no loaded
+// scene authors a Zenith_SunComponent. ~30 degrees of elevation (was ~46): a
+// lower sun gives every surface a lit and a shaded side, long readable shadows
+// and warmer transmitted colour, which is the single strongest photographic cue
+// an outdoor frame has. A scene that wants noon authors it.
 inline Zenith_Maths::Vector3 Zenith_GetDefaultSunDirection()
 {
-	return Zenith_Maths::Vector3(-0.4f, -0.7f, -0.55f);
+	return Zenith_Maths::Vector3(-0.55f, -0.50f, -0.67f);
 }
 
 // Physical atmosphere-model defaults. These mirror the runtime-tunable medium
@@ -40,7 +42,7 @@ inline Zenith_Maths::Vector3 Zenith_GetDefaultSunDirection()
 // default-construct without depending on Flux. They MUST track the
 // AtmosphereConfig / Atmosphere.slang values; the unit tests pin both ends.
 inline float Zenith_GetDefaultAtmosphereRayleighScale()      { return 1.0f; }
-inline float Zenith_GetDefaultAtmosphereMieScale()           { return 1.0f; }
+inline float Zenith_GetDefaultAtmosphereMieScale()           { return 4.0f; }   // 4x the textbook "very clear" aerosol load: a real horizon is pale and the sun wears an aureole; 1.0 read as a vacuum-clean navy sky
 inline float Zenith_GetDefaultAtmosphereMieG()               { return 0.76f; }
 // Exponential density scale heights, metres. Earth: molecular ~8 km, aerosol
 // ~1.2 km. Lowering the Mie scale height concentrates haze near the ground.

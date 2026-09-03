@@ -67,6 +67,12 @@ namespace Zenith_CommandLine
         bool        m_bSkipBootCapture    = false;
         const char* m_szUnitTestTimings   = nullptr;
         bool        m_bExitAfterUnitTests = false;
+        // --window-size <W>x<H>: overrides the game's Project_SetGraphicsOptions
+        // window dimensions before the window is created. 0/0 = no override.
+        // Exists so a capture harness can photograph at a chosen resolution
+        // without a per-game option; malformed values leave the override unset.
+        u_int       m_uWindowWidth        = 0;
+        u_int       m_uWindowHeight       = 0;
         // --indirect-count-mode=auto|native|padded|single (Phase 1 of the
         // terrain indirect-count compatibility plan). Stored as a small enum
         // so the parser owns the vocabulary — Core must not include or return
@@ -185,6 +191,13 @@ namespace Zenith_CommandLine
     // never mutates it. See Docs/design/TerrainIndirectCountFallback.md and the
     // Phase 1 CLI/parser tests in Core/Zenith_CommandLine.Tests.inl.
     Zenith_IndirectCountMode GetIndirectCountMode();
+
+    // `--window-size <W>x<H>`: true (and both outputs set) iff the flag was
+    // present and well-formed. Pure helper exposed for the unit tests: parses
+    // "WxH" (also accepts 'X' / '*' as the separator); rejects a missing
+    // separator, a zero dimension, or anything above 16384.
+    bool ParseWindowSizeArg(const char* szValue, u_int& uWidthOut, u_int& uHeightOut);
+    bool GetWindowSizeOverride(u_int& uWidthOut, u_int& uHeightOut);
 
     // Pure string -> enum resolver, exposed so the parsing contract is testable
     // WITHOUT re-running Parse (which would clobber the process-wide flag state

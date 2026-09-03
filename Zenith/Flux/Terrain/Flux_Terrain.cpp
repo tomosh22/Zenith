@@ -27,6 +27,10 @@
 // passes ZERO_PADDED_TO_MAX (the GPU reset pass + per-frame zero-tail invariant
 // makes a fixed indexed-indirect draw over the full range valid).
 #include "Flux/Backend/Flux_IndirectDraw.h"
+// Terrain shadow casting: the per-cascade slot arithmetic + caster LOD policy (pure,
+// Flux_TerrainShadowCull.h) and the render-view registry the cascade frusta come from.
+#include "Flux/Terrain/Flux_TerrainShadowCull.h"
+#include "Flux/RenderViews/Flux_RenderViews.h"
 
 // Phase 7h: subsystem state moved to Flux_TerrainImpl held by Zenith_Engine.
 
@@ -212,8 +216,41 @@ static_assert(Flux_TerrainConfig::TOTAL_CHUNKS == 4096u,
 	"any change to TOTAL_CHUNKS requires regenerating the terrain shaders (FluxCompiler) "
 	"and updating the reset dispatch group count in ExecuteResetCounters in lockstep");
 
+// ----------------------------------------------------------------------------
+// Shadow-cascade cull slot pins. The culling shader's TERRAIN_SHADOW_CULL_VIEWS
+// row count, the pure slot arithmetic's view count and the cascade count must be
+// one number, and the per-cascade CB the shader reads must be the struct the CPU
+// fills. The shader's slot stride is uFLUX_TERRAIN_TOTAL_CHUNKS, already pinned
+// to TOTAL_CHUNKS above.
+// ----------------------------------------------------------------------------
+static_assert(uFLUX_TERRAIN_SHADOW_CULL_VIEWS == ZENITH_FLUX_NUM_CSMS,
+	"one terrain shadow-cull slot per cascade: uFLUX_TERRAIN_SHADOW_CULL_VIEWS must equal ZENITH_FLUX_NUM_CSMS "
+	"(and TERRAIN_SHADOW_CULL_VIEWS in Flux_TerrainCulling.slang)");
+static_assert(sizeof(Zenith_TerrainShadowCullGPU) == sizeof(Flux_Generated_Terrain::TerrainCulling::ShadowCullBuffer_CB),
+	"Zenith_TerrainShadowCullGPU size != reflected ShadowCullBuffer CB size -- regenerate codegen or fix the struct");
+static_assert(sizeof(Zenith_CameraDataGPU) == sizeof(Flux_Generated_Terrain::TerrainCulling::CameraBuffer_CB),
+	"Zenith_CameraDataGPU size != reflected CameraBuffer CB size -- regenerate codegen or fix the struct");
+
 bool dbg_bWireframe = false;
 u_int dbg_uDebugMode = 0;  // Debug visualization mode (0=Off, 1=LOD, 2=Normals, 3=UVs, etc.)
+// Terrain shadow-caster knobs (registered under Render/Shadows beside the shared ones).
+//  - Slope bias: terrain is a huge low-slope receiver AND caster of itself, so its
+//    self-shadow acne budget is its own. Applied by ExecuteShadowCascade via
+//    SetDepthBias(shared constant, THIS slope) right before the terrain draw; the
+//    caster pipeline declares dynamic depth-bias state for exactly this. Defaults to
+//    the shared slope factor so enabling casting introduces one unknown, not two.
+//  - Force-LOW-from cascade: cascades at/above this index cast the always-resident LOW
+//    mesh instead of the camera-matched LOD (see Flux_TerrainShadowCasterLOD for why
+//    camera-matched is the default). 3 = only the far cascade; 4 = never.
+static float s_fTerrainShadowDepthBiasSlope   = 3.0f;
+static u_int s_uTerrainShadowForceLowFromCascade = 3u;
+// Terrain shadow casting, on/off at runtime. Every other shadow caster can be
+// A/B'd this way (grass has m_bGrassShadowsEnabled; the Render/Shadows tree
+// already carries booleans for contact shadows, PCSS and the cheap far tier),
+// and terrain was the odd one out: the only way to remove its shadow was to
+// disable the terrain itself, which removes the receiver too and so cannot
+// isolate what the casting is contributing.
+static bool  s_bTerrainCastsShadows = true;
 // Visibility culling is entirely GPU-side (Flux_TerrainCulling.slang reads the
 // frustum planes from the CB; there is no CPU visibility test left to bias or
 // bypass), so the old Visiblity Multiplier / Ignore Visibility Check knobs and
@@ -324,9 +361,11 @@ void Flux_TerrainImpl::BuildPipelines()
 		xShadowPipelineSpec.m_bDepthWriteEnabled = true;
 		xShadowPipelineSpec.m_eDepthCompareFunc = DEPTH_COMPARE_FUNC_LESSEQUAL;
 
-		// Fixed-function slope-scaled depth bias (set per-cascade via vkCmdSetDepthBias
-		// in Flux_Shadows::ExecuteShadowCascade). Dynamic so it is runtime-tunable.
-		// (Inert until terrain shadow casting is enabled — RenderToShadowMap is stubbed.)
+		// Fixed-function slope-scaled depth bias. DYNAMIC so it is runtime-tunable:
+		// Flux_Shadows::ExecuteShadowCascade sets it per cascade command list, and sets
+		// it AGAIN right before the terrain draw with the terrain's own slope factor
+		// (Render/Shadows/Terrain Slope Bias). The static values below are the
+		// pipeline's fallback and never reach the GPU while the dynamic state is on.
 		xShadowPipelineSpec.m_bDepthBias = true;
 		xShadowPipelineSpec.m_bDynamicDepthBias = true;
 		xShadowPipelineSpec.m_fDepthBiasConstant = 1.75f;
@@ -375,6 +414,12 @@ void Flux_TerrainImpl::Initialise()
 	g_xEngine.DebugVariables().AddFloat({ "Render", "Terrain", "UV Scale" }, s_fTerrainUVScale, 0., 10.);
 	g_xEngine.DebugVariables().AddBoolean({ "Render", "Terrain", "Wireframe" }, dbg_bWireframe);
 	g_xEngine.DebugVariables().AddUInt32({ "Render", "Terrain", "Debug Mode" }, dbg_uDebugMode, 0, 13);
+	// Beside the shared shadow knobs in Flux_Shadows.cpp, since that is where a
+	// person tuning acne will be looking. uFLUX_TERRAIN_SHADOW_FORCE_LOW_NEVER
+	// (== cascade count) is a legal setting meaning "every cascade camera-matched".
+	g_xEngine.DebugVariables().AddBoolean({ "Render", "Shadows", "Terrain Casts Shadows" }, s_bTerrainCastsShadows);
+	g_xEngine.DebugVariables().AddFloat ({ "Render", "Shadows", "Terrain Slope Bias" }, s_fTerrainShadowDepthBiasSlope, 0.f, 16.f);
+	g_xEngine.DebugVariables().AddUInt32({ "Render", "Shadows", "Terrain LOW LOD From Cascade" }, s_uTerrainShadowForceLowFromCascade, 0u, uFLUX_TERRAIN_SHADOW_FORCE_LOW_NEVER);
 #endif
 
 	// ========== Initialize Terrain Streaming Manager ==========
@@ -445,6 +490,15 @@ void Flux_TerrainImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 		// across the frame boundary — the same mechanism that already
 		// protects the count buffer).
 		xGraph.WriteBuffer(xResetPass, pxState->m_xIndirectDrawBuffer.GetBuffer(), RESOURCE_ACCESS_WRITE_UAV);
+		// The shadow-cascade slots are held to the same zero-padded contract, so the
+		// same reset dispatch clears every cascade's count + every record of every
+		// slot. Created in RegisterTerrainBuffers (Flux-owned), which precedes the
+		// component's culling init that the flag above gates on.
+		if (pxState->m_bShadowCullResourcesInitialized)
+		{
+			xGraph.WriteBuffer(xResetPass, pxState->m_xShadowVisibleCountBuffer.GetBuffer(), RESOURCE_ACCESS_WRITE_UAV);
+			xGraph.WriteBuffer(xResetPass, pxState->m_xShadowIndirectDrawBuffer.GetBuffer(), RESOURCE_ACCESS_WRITE_UAV);
+		}
 	}
 
 	// Pass 1: Terrain culling compute. PreRenderUpdate runs as a Prepare
@@ -479,6 +533,18 @@ void Flux_TerrainImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 		xGraph.WriteBuffer(xCullingPass, pxState->m_xIndirectDrawBuffer.GetBuffer(), RESOURCE_ACCESS_WRITE_UAV);
 		xGraph.WriteBuffer(xCullingPass, pxState->m_xVisibleCountBuffer.GetBuffer(), RESOURCE_ACCESS_READWRITE_UAV);
 		xGraph.WriteBuffer(xCullingPass, pxState->m_xLODLevelBuffer.GetBuffer(),     RESOURCE_ACCESS_READWRITE_UAV);
+		// Shadow-cascade slots, produced by the SAME dispatch (its extra thread rows):
+		// per-cascade count is an InterlockedAdd read-modify-write (READWRITE_UAV,
+		// same reasoning as visibleCount), the slot records are pure append stores.
+		// The consumers are the four "Shadow Cascade N" passes, which each declare a
+		// READ_INDIRECT_ARG of both buffers (Flux_Shadows::SetupRenderGraph) — and a
+		// reader links only to an EARLIER-declared writer, which is why "Terrain" is
+		// registered BEFORE "Shadows" in RegisterDefaultFeatures.
+		if (pxState->m_bShadowCullResourcesInitialized)
+		{
+			xGraph.WriteBuffer(xCullingPass, pxState->m_xShadowIndirectDrawBuffer.GetBuffer(), RESOURCE_ACCESS_WRITE_UAV);
+			xGraph.WriteBuffer(xCullingPass, pxState->m_xShadowVisibleCountBuffer.GetBuffer(), RESOURCE_ACCESS_READWRITE_UAV);
+		}
 	}
 
 	// Pass 2: Terrain GBuffer. The DependsOn(xCullingPass) edge documents
@@ -574,12 +640,41 @@ void Flux_TerrainImpl::PreRenderUpdate(void* /*pUserData*/)
 	// per-view GPU payload's m_xViewProjMat (that copy carries the sub-pixel jitter).
 	const Zenith_Maths::Matrix4& xViewProj = g_xEngine.FluxGraphics().m_xFrameConstants.m_xViewProjMat;
 	Flux_TerrainStreamingManagerImpl& xTerrainStreaming = g_xEngine.TerrainStreaming();
+
+	// The shadow-cascade cull inputs: each ACTIVE cascade's snapped ortho view-proj,
+	// read from the view registry the same way the unified cull reads it (the
+	// cascade slots are staged by UpdateShadowMatrices, hoisted to the main-thread
+	// seam before this Prepare runs). NoJitter == the cascade's own view-proj —
+	// cascades never jitter. Zero active cascades when shadows are off, so every
+	// slot stays at the reset's zero and the cascade draws are no-ops. The block is
+	// view-independent, so it is built once and uploaded to every terrain's CB.
+	Zenith_TerrainShadowCullGPU xShadowCull;
+	{
+		const Flux_RenderViewRegistry& xViews = g_xEngine.FluxGraphics().RenderViews();
+		Zenith_Maths::Matrix4 axCascadeViewProj[uFLUX_TERRAIN_SHADOW_CULL_VIEWS];
+		u_int uViewCascades = 0u;
+		for (u_int c = 0; c < uFLUX_TERRAIN_SHADOW_CULL_VIEWS; c++)
+		{
+			const u_int uSlot = kuFluxViewSlotShadowFirst + c;
+			if (!xViews.IsViewActive(uSlot)) break;   // the cascade slots activate as a contiguous prefix
+			axCascadeViewProj[c] = xViews.View(uSlot).m_xConstants.m_xViewProjMatNoJitter;
+			uViewCascades = c + 1u;
+		}
+		// Shadows off, or terrain casting toggled off, resolves to ZERO active
+		// cascades — which is what removes the cull work, not just the draw.
+		const u_int uActiveCascades = Flux_TerrainShadowActiveCascades(
+			Zenith_GraphicsOptions::Get().m_bShadowsEnabled, s_bTerrainCastsShadows, uViewCascades);
+		const u_int uForceLow = glm::min(s_uTerrainShadowForceLowFromCascade, uFLUX_TERRAIN_SHADOW_FORCE_LOW_NEVER);
+		Flux_BuildTerrainShadowCullData(axCascadeViewProj, uActiveCascades, uForceLow, xShadowCull);
+	}
+
 	for (u_int u = 0; u < m_xTerrainRenderRecords.GetSize(); u++)
 	{
 		Flux_TerrainStreamingState* pxState = m_xTerrainRenderRecords.Get(u).m_pxState;
 		xTerrainStreaming.UpdateStreamingForTerrain(pxState, xCameraPos);
 		xTerrainStreaming.UpdateChunkLODAllocations(*pxState);
 		xTerrainStreaming.UploadFrustumPlanesForFrame(*pxState, xViewProj);
+		xTerrainStreaming.UploadShadowCullDataForFrame(*pxState, xShadowCull);
 		// No MarkBufferHostWritten: frame-indexed buffers aren't graph-tracked
 		// (see Flux_FrameIndexedBufferBase contract).
 	}
@@ -622,6 +717,16 @@ static void ExecuteResetCounters(Flux_CommandBuffer* pxCmdList, void*)
 			&pxState->m_xVisibleCountBuffer.GetUAV());
 		xBinder.BindUAV_Buffer(Flux_Generated_Terrain::TerrainResetCounters::hindirectCommands,
 			&pxState->m_xIndirectDrawBuffer.GetUAV());
+		// Slots 2/3: the shadow-cascade counts + slot records, cleared by the same
+		// threads (each strides the shadow buffer at the camera record count). The
+		// shader declares them, so they are bound whenever this dispatch records;
+		// RegisterTerrainBuffers created them before the culling init gating this loop.
+		Zenith_Assert(pxState->m_bShadowCullResourcesInitialized,
+			"ExecuteResetCounters: shadow-cascade cull slots missing (RegisterTerrainBuffers creates them)");
+		xBinder.BindUAV_Buffer(Flux_Generated_Terrain::TerrainResetCounters::hshadowVisibleCount,
+			&pxState->m_xShadowVisibleCountBuffer.GetUAV());
+		xBinder.BindUAV_Buffer(Flux_Generated_Terrain::TerrainResetCounters::hshadowIndirectCommands,
+			&pxState->m_xShadowIndirectDrawBuffer.GetUAV());
 		// ceil(TOTAL_CHUNKS / 64) groups = 64 for the 4096-chunk shipping grid;
 		// covers every in-range record. The shader bounds-checks inside.
 		constexpr uint32_t uRESET_GROUP_COUNT_X = (Flux_TerrainConfig::TOTAL_CHUNKS + 63u) / 64u;
@@ -810,28 +915,98 @@ static void ExecuteGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 	}
 }
 
-// STUBBED — terrain does not cast (the call in Flux_Shadows::ExecuteShadowCascade is
-// commented out). When it is enabled, this body must call UseBindlessTextures(2) for
-// ITSELF, right after its SetPipeline and ABOVE any "nothing to draw" early-out —
-// never lean on the caster ahead of it. Flux_UnifiedMeshImpl::RenderToShadowMap
-// early-outs on zero buckets before its own bind, so on a scene with no unified
-// opaque casters the terrain draw would be the first user of set 2 in that cascade's
-// command buffer and would inherit nothing. The pre-draw validator in
-// Zenith_Vulkan_CommandBuffer (ShouldDemandBindlessBind) asserts on exactly that, so
-// the omission fails loudly instead of drawing correctly until a scene changes.
+// Terrain shadow caster — invoked from Flux_Shadows::ExecuteShadowCascade (worker
+// thread, inside cascade pass uCascade's record, AFTER the unified + grass casters).
+// One DrawIndexedIndirectCount per terrain out of cascade uCascade's SLOT of the
+// shadow indirect/count buffers the terrain culling dispatch filled earlier this
+// frame (Flux_TerrainShadowCull.h); the cascade pass declared READ_INDIRECT_ARG of
+// both, so the reset -> cull -> cascade barriers are the graph's.
 //
-// It must ALSO bind m_xTerrainConstantsBuffer at set 3 binding 0
-// (Terrain_ToShadowmap::hTerrainConstants): the caster's VS dequantises the packed
-// snorm16 position against the box in that CB, so without the bind it reads an
-// undefined descriptor and shadows a garbage terrain. The ZENITH_DEBUG pre-draw
-// validator catches the omission (sets 3+ are per-draw), Release does not.
-void Flux_TerrainImpl::RenderToShadowMap(Flux_CommandBuffer&, u_int)
+// Binding contract (the same one ExecuteGBuffer honours, minus materials):
+//  * UseBindlessTextures(2) for ITSELF, right after SetPipeline and ABOVE any
+//    "nothing to draw" early-out. The bind targets the CURRENT pipeline's layout, and
+//    Flux_UnifiedMeshImpl::RenderToShadowMap early-outs on zero buckets before its own
+//    bind, so on a scene with no unified opaque casters this draw is the first user of
+//    set 2 in the cascade's command buffer and inherits nothing. The pre-draw validator
+//    in Zenith_Vulkan_CommandBuffer (ShouldDemandBindlessBind) asserts on exactly that.
+//  * m_xTerrainConstantsBuffer at set 3 binding 0 (Terrain_ToShadowmap::hTerrainConstants),
+//    INSIDE the per-terrain loop: the caster's VS dequantises the packed snorm16 position
+//    against the box in that CB, and the box is per terrain.
+//  * The cascade's sun ortho comes from the pass's own VIEW set (g_xView); no per-draw
+//    cascade index. The depth bias is dynamic state the CALLER sets (shared constant,
+//    terrain's own slope) immediately before this call — see ExecuteShadowCascade.
+// Depth-only: the FS is empty (terrain has no alpha cutout), so this pass costs vertex
+// work only. Backend-neutral: every call below is a Flux_CommandBuffer no-op on Null/D3D12.
+void Flux_TerrainImpl::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, u_int uCascade)
 {
-	STUBBED
+	if (!Zenith_GraphicsOptions::Get().m_bTerrainEnabled || !s_bTerrainCastsShadows)
+	{
+		return;
+	}
+	Zenith_Assert(uCascade < uFLUX_TERRAIN_SHADOW_CULL_VIEWS,
+		"Flux_TerrainImpl::RenderToShadowMap: cascade %u has no cull slot (%u slots)", uCascade, uFLUX_TERRAIN_SHADOW_CULL_VIEWS);
+	if (uCascade >= uFLUX_TERRAIN_SHADOW_CULL_VIEWS)
+	{
+		return;
+	}
+
+	xCmdBuf.SetPipeline(&m_xTerrainShadowPipeline);
+	xCmdBuf.UseBindlessTextures(2);
+
+	Flux_ShaderBinder xBinder(xCmdBuf);
+	namespace TSM = Flux_Generated_Terrain::Terrain_ToShadowmap;
+
+	// The per-cascade slot's two byte offsets — the ONLY thing that differs from the
+	// camera draw in ExecuteGBuffer. Pure, unit-tested arithmetic.
+	const u_int uIndirectByteOffset = Flux_TerrainShadowCullIndirectByteOffset(
+		uCascade, Flux_TerrainConfig::TOTAL_CHUNKS, uFLUX_INDIRECT_DRAW_INDEXED_BYTE_STRIDE);
+	const u_int uCountByteOffset = Flux_TerrainShadowCullCountByteOffset(uCascade);
+
+	for (u_int u = 0; u < m_xTerrainRenderRecords.GetSize(); u++)
+	{
+		Flux_TerrainStreamingState* const pxState = m_xTerrainRenderRecords.Get(u).m_pxState;
+		if (pxState == nullptr) continue;
+		if (!pxState->m_xUnifiedVertexBuffer.GetBuffer().m_ulSize) continue;
+		// Same two gates the cull's declarations use: the chunk data + constants CB
+		// (component culling init) and the shadow slots (RegisterTerrainBuffers).
+		if (!pxState->m_bCullingResourcesInitialized || !pxState->m_bShadowCullResourcesInitialized) continue;
+
+		// This terrain's own dequantisation box.
+		xBinder.BindCBV(TSM::hTerrainConstants, &pxState->m_xTerrainConstantsBuffer.GetCBV());
+
+		xCmdBuf.SetVertexBuffer(pxState->m_xUnifiedVertexBuffer);
+		xCmdBuf.SetIndexBuffer(pxState->m_xUnifiedIndexBuffer);
+
+		// Cascade uCascade's slot: a full TOTAL_CHUNKS range whose live prefix the cull
+		// compacted and whose tail the reset pass keeps all-zero, so ZERO_PADDED_TO_MAX
+		// is as legal here as for the camera draw (and an inactive cascade's slot draws
+		// nothing). The recorder preflights [offset, last record end] against the
+		// buffer size, which the slot arithmetic keeps exactly in-bounds.
+		xCmdBuf.DrawIndexedIndirectCount(
+			&pxState->m_xShadowIndirectDrawBuffer,
+			&pxState->m_xShadowVisibleCountBuffer,
+			Flux_TerrainConfig::TOTAL_CHUNKS,
+			Flux_IndirectCountFallback::ZERO_PADDED_TO_MAX,
+			uIndirectByteOffset,
+			uCountByteOffset,
+			uFLUX_INDIRECT_DRAW_INDEXED_BYTE_STRIDE);
+	}
 }
 
+float Flux_TerrainImpl::GetShadowDepthBiasSlope() const
+{
+	return s_fTerrainShadowDepthBiasSlope;
+}
 
+bool Flux_TerrainImpl::GetCastsShadows() const
+{
+	return s_bTerrainCastsShadows;
+}
 
+void Flux_TerrainImpl::SetCastsShadows(bool bCasts)
+{
+	s_bTerrainCastsShadows = bCasts;
+}
 
 u_int& Flux_TerrainImpl::GetDebugMode()
 {

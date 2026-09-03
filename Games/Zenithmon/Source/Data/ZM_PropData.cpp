@@ -2,7 +2,7 @@
 #include "Zenithmon/Source/Data/ZM_PropData.h"
 
 // ============================================================================
-// ZM_PropData -- the 28-model prop roster table (structural roster). Rows are in
+// ZM_PropData -- the 32-model prop roster table (structural roster). Rows are in
 // ZM_PROP_ID order; s_axProps[i].m_eId == i is asserted by the tests. Dimensions
 // are metres of the box composition (small fixtures modest, bridges + dressing
 // sets larger); the fields drive the SC4 static box mesh + the placeholder albedo.
@@ -109,6 +109,33 @@ namespace
 		{ ZM_PROP_ITEM_PHIAL,   "ItemPhial",   ZM_PROP_KIND_ITEM_PICKUP, ZM_PROP_BIOME_NONE, ZM_PROP_PALETTE_FOLIAGE, 0.42f, 0.42f, 0.94f },
 		{ ZM_PROP_ITEM_ORB,     "ItemOrb",     ZM_PROP_KIND_ITEM_PICKUP, ZM_PROP_BIOME_NONE, ZM_PROP_PALETTE_PAINTED, 0.88f, 0.88f, 0.64f },
 		{ ZM_PROP_ITEM_TAKEN,   "ItemTaken",   ZM_PROP_KIND_ITEM_SPENT,  ZM_PROP_BIOME_NONE, ZM_PROP_PALETTE_STONE,   0.92f, 0.92f, 0.22f },
+
+		// --- 4 interior light fixtures --- METRES, grounded at y = 0 ---
+		//
+		// ★ THESE FOUR ARE BUILT AT EXACTLY THEIR ROSTER SIZE -- NO MESH JITTER
+		// (ZM_BuildPropMesh skips the +/-4% for ZM_PROP_KIND_LIGHT_FIXTURE), so
+		// ZM_ComputePropFit answers scale 1 / lift 0 and the placement row's Y is
+		// the model's base to the millimetre. A pendant has to end flush against
+		// the ceiling and house a light that sits at an AUTHORED height
+		// (ZM_InteriorDressing.h keeps the light where it was; the fixture is built
+		// around it), and a 4% jitter on a 0.34 m drop would hang the shade 14 mm
+		// through the ceiling slab on one draw and 14 mm short on the next.
+		//
+		// The HEIGHT column is the dimension the room reads:
+		//   PendantLamp 0.34 -- rose flush at the ceiling, shade bottom 0.34 below.
+		//     PlayerHome's ceiling is 3.0 m and its camera cap is 0.35 under it
+		//     (ZM_FollowCamera), so the shade bottom at 2.66 clears the lens.
+		//   BedsideLamp 1.20 -- a 0.62 m nightstand with the lamp on it; the
+		//     shade brackets the authored 1.05 m bedside light.
+		//   FloorLamp   1.55 -- a standard lamp; shade brackets the 1.35 m light.
+		//   LabBatten   0.32 -- diffuser at the bottom, housing above it, and two
+		//     drop rods to the ceiling: hung at 3.18 its top lands exactly on the
+		//     3.5 m lab soffit, so the fixture spans diffuser to ceiling and reads
+		//     as suspended rather than floating.
+		{ ZM_PROP_PENDANT_LAMP, "PendantLamp", ZM_PROP_KIND_LIGHT_FIXTURE, ZM_PROP_BIOME_NONE, ZM_PROP_PALETTE_PAINTED, 0.42f, 0.42f, 0.34f },
+		{ ZM_PROP_BEDSIDE_LAMP, "BedsideLamp", ZM_PROP_KIND_LIGHT_FIXTURE, ZM_PROP_BIOME_NONE, ZM_PROP_PALETTE_WOOD,    0.50f, 0.45f, 1.20f },
+		{ ZM_PROP_FLOOR_LAMP,   "FloorLamp",   ZM_PROP_KIND_LIGHT_FIXTURE, ZM_PROP_BIOME_NONE, ZM_PROP_PALETTE_METAL,   0.40f, 0.40f, 1.55f },
+		{ ZM_PROP_LAB_BATTEN,   "LabBatten",   ZM_PROP_KIND_LIGHT_FIXTURE, ZM_PROP_BIOME_NONE, ZM_PROP_PALETTE_METAL,   1.50f, 0.16f, 0.32f },
 	};
 }
 

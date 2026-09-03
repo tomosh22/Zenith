@@ -77,6 +77,6 @@ GBufferOut fsMain(VsOut input)
 	// Debug primitives retain the old matte, default-lit path (intensity zero).
 	// Production gameplay queues opt into unlit + HDR emissive output, keeping cues
 	// readable under overhead light and in shadow without bypassing depth testing.
-	return MakeGBuffer(xDiffuse, xNormal, 0.2, 0.8, 0.0, 0.5,
+	return MakeGBuffer(xDiffuse, xNormal, 1.0, 0.8, 0.0, 0.5,
 		input.colour * fEmissiveIntensity, 0.0, 0.0, uShadingModel);
 }

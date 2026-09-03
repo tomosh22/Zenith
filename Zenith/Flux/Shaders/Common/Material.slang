@@ -20,16 +20,28 @@ public float4 SampleDiffuseWithBaseColor(Sampler2D xTex, float2 xUV, float4 xBas
 	return xTex.Sample(xUV) * xBaseColor;
 }
 
-// Sample tangent-space normal map and transform to world-space using TBN.
-// Normal maps are BC5 (two-channel R+G), so only X,Y are stored; reconstruct
-// Z = sqrt(1 - x^2 - y^2). This is also correct for the RGBA8 default-normal
-// fallback (its stored B is simply ignored and rebuilt to ~1).
+// THE decode for every normal map in the engine. Normal maps are exported BC5
+// (two-channel R+G -- declared NORMAL_MAP in the asset root's TextureUsage.ztexdecl),
+// so only X,Y are stored and Z = sqrt(1 - x^2 - y^2) is rebuilt here. It is also
+// correct for the RGBA8 default-normal fallback (its stored B is ignored and
+// rebuilt to ~1).
+//
+// ★ EVERY SAMPLER OF A NORMAL MAP MUST COME THROUGH HERE. The two terrain
+// G-buffer shaders used to open-code `Sample(uv).xyz * 2 - 1`, which reads BC5's
+// blue as 0 and decodes Z to -1 -- the terrain's shading normal pointed into the
+// ground, NdotL went to zero, and the deferred pass skipped the CSM branch for
+// every terrain pixel in the game. Nothing failed; the terrain just stopped
+// receiving shadows. One decode site is the only version of this that stays true.
+public float3 UnpackNormalMapTS(float4 xSampled)
+{
+	float2 xXY = xSampled.xy * 2.0 - 1.0;
+	return float3(xXY, sqrt(saturate(1.0 - dot(xXY, xXY))));
+}
+
+// Sample a tangent-space normal map and transform it to world space via TBN.
 public float3 SampleNormalMap(Sampler2D xTex, float2 xUV, float3x3 xTBN)
 {
-	float2 xXY = xTex.Sample(xUV).xy * 2.0 - 1.0;
-	float fZ = sqrt(saturate(1.0 - dot(xXY, xXY)));
-	float3 xNormalTangent = float3(xXY, fZ);
-	return normalize(mul(xTBN, xNormalTangent));
+	return normalize(mul(xTBN, UnpackNormalMapTS(xTex.Sample(xUV))));
 }
 
 // Standard glTF roughness/metallic texture layout: G=roughness, B=metallic.

@@ -831,6 +831,7 @@ public:
 	static void TestCommandLineParseDefaults();
 	static void TestCommandLineParseEveryBareFlag();
 	static void TestCommandLineParseEveryValueFlag();
+	static void TestCommandLineParseWindowSize();
 	static void TestCommandLineParsePrefixedFlags();
 	static void TestCommandLineParseArgvEdgeCases();
 

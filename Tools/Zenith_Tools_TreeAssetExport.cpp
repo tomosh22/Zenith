@@ -14,10 +14,15 @@
 //     Tree_Trunk_Sway.zanmt      — VAT for the trunk mesh
 //     Tree_Leaves_Sway.zanmt     — VAT for the leaves mesh
 //     Tree_Bark_Albedo.ztxtr     — procedural bark albedo  (RGBA8 sRGB)
-//     Tree_Bark_Normal.ztxtr     — procedural bark normals (RGBA8 linear)
+//     Tree_Bark_Normal.ztxtr     — procedural bark normals (BC5 linear)
+//     Tree_Bark_RM.ztxtr         — roughness varying IN the furrows (linear)
+//     Tree_Bark_AO.ztxtr         — cavity occlusion from the furrow depth
 //     Tree_Leaves_Albedo.ztxtr   — leaf-cluster albedo + ALPHA MAP (RGBA8 sRGB)
-//     Tree_Bark.zmtrl            — opaque bark material
-//     Tree_Leaves.zmtrl          — alpha-tested leaf material (cutoff 0.45)
+//     Tree_Leaves_Normal.ztxtr   — per-leaf dome + midrib crease (BC5 linear)
+//     Tree_Leaves_AO.ztxtr       — stem-end + overlap occlusion (linear)
+//     Tree_Bark.zmtrl            — opaque bark material (albedo/normal/RM/AO)
+//     Tree_Leaves.zmtrl          — alpha-tested (cutoff 0.45), TWO-SIDED,
+//                                  SUBSURFACE leaf material
 //     Tree.zasset/.zgeom,
 //     Tree_Static.zgeom,
 //     Tree_Sway.zanmt, Tree_Sway.zanim, Tree.gltf
@@ -60,6 +65,16 @@ void GenerateProceduralTreeAssets()
 
 namespace
 {
+
+//=============================================================================
+// Export version. Every boot regenerates this set unconditionally, so this is
+// not a staleness gate — it is the number a log line (and a bug report) can
+// name when a capture and the current generator disagree. BUMP IT whenever the
+// emitted bytes change.
+//
+// 2: leaf normal + AO maps, two-sided SUBSURFACE leaf material, bark RM + AO.
+//=============================================================================
+constexpr u_int uTREE_ASSET_EXPORT_VERSION = 2u;
 
 //=============================================================================
 // Deterministic randomness — repeated boots must regenerate identical assets.
@@ -485,14 +500,42 @@ Flux_AnimationClip* CreateTreeSwayClipFromGraph(const Zenith_Vector<TreeBranch>&
 	return pxClip;
 }
 
+//=============================================================================
+// THE bark height field, shared by every map derived from it (albedo, normal,
+// RM, AO) and by the units. Extracted rather than duplicated: an RM pass with
+// its own copy of these expressions drifts the first time a frequency is tuned,
+// and the result is roughness that no longer lines up with the furrow it is
+// supposed to describe.
+//
+// fCrackOut is the deep-cut mask (1 = fully in a crack), handed back so the
+// colour, occlusion and roughness passes all darken/roughen the SAME texels.
+//=============================================================================
+float TreeBarkSurfaceHeight(float fU, float fV, float& fCrackOut)
+{
+	// Tileable-ish: sample noise on a wrapped domain. Ridges run ALONG the
+	// trunk, hence the high frequency across U and the stretched one along V.
+	const float fRidges = FBM2D(fU * 24.0f, fV * 4.0f, 4, 71u);
+	const float fFurrow = FBM2D(fU * 6.0f, fV * 1.5f, 3, 137u);
+	const float fGrain = ValueNoise2D(fU * 90.0f, fV * 90.0f, 211u);
+	float fH = fRidges * 0.62f + fFurrow * 0.3f + fGrain * 0.08f;
+	// Crack accents: deep cuts where the ridge noise dips.
+	fCrackOut = SmoothStepF(0.34f, 0.26f, fRidges);
+	fH -= fCrackOut * 0.35f;
+	return fH;
+}
+
 void GenerateBarkTextures(const std::string& strDir)
 {
 	constexpr int32_t iSIZE = 512;
 	Zenith_Vector<u_int8> xAlbedo(iSIZE * iSIZE * 4);
 	Zenith_Vector<u_int8> xNormal(iSIZE * iSIZE * 4);
 	Zenith_Vector<float> xHeight(iSIZE * iSIZE);
+	// The crack mask is KEPT rather than recomputed: the RM/AO pass below reads
+	// the same texel values the albedo did, so a furrow that darkens the colour
+	// cannot end up rough somewhere else.
+	Zenith_Vector<float> xCrack(iSIZE * iSIZE);
 	for (int32_t i = 0; i < iSIZE * iSIZE * 4; i++) { xAlbedo.PushBack(0); xNormal.PushBack(0); }
-	for (int32_t i = 0; i < iSIZE * iSIZE; i++) { xHeight.PushBack(0.0f); }
+	for (int32_t i = 0; i < iSIZE * iSIZE; i++) { xHeight.PushBack(0.0f); xCrack.PushBack(0.0f); }
 
 	// Height field: vertical bark ridges (high-frequency in X, stretched in Y)
 	// + large furrows + fine grain.
@@ -502,15 +545,9 @@ void GenerateBarkTextures(const std::string& strDir)
 		{
 			const float fU = static_cast<float>(iX) / iSIZE;
 			const float fV = static_cast<float>(iY) / iSIZE;
-			// Tileable-ish: sample noise on a wrapped domain.
-			const float fRidges = FBM2D(fU * 24.0f, fV * 4.0f, 4, 71u);
-			const float fFurrow = FBM2D(fU * 6.0f, fV * 1.5f, 3, 137u);
-			const float fGrain = ValueNoise2D(fU * 90.0f, fV * 90.0f, 211u);
-			float fH = fRidges * 0.62f + fFurrow * 0.3f + fGrain * 0.08f;
-			// Crack accents: deep cuts where the ridge noise dips.
-			const float fCrack = SmoothStepF(0.34f, 0.26f, fRidges);
-			fH -= fCrack * 0.35f;
-			xHeight.Get(iY * iSIZE + iX) = fH;
+			float fCrack = 0.0f;
+			xHeight.Get(iY * iSIZE + iX) = TreeBarkSurfaceHeight(fU, fV, fCrack);
+			xCrack.Get(iY * iSIZE + iX) = fCrack;
 		}
 	}
 
@@ -548,19 +585,111 @@ void GenerateBarkTextures(const std::string& strDir)
 		}
 	}
 
-	Zenith_Tools_TextureExport::ExportFromDataWithFormat(
-		xAlbedo.GetDataPointer(), strDir + "Tree_Bark_Albedo" ZENITH_TEXTURE_EXT, iSIZE, iSIZE, TEXTURE_FORMAT_RGBA8_SRGB,
-		xAlbedo.GetSize() / (static_cast<size_t>(iSIZE) * iSIZE));
-	Zenith_Tools_TextureExport::ExportFromDataWithFormat(
-		xNormal.GetDataPointer(), strDir + "Tree_Bark_Normal" ZENITH_TEXTURE_EXT, iSIZE, iSIZE, TEXTURE_FORMAT_RGBA8_UNORM,
-		xNormal.GetSize() / (static_cast<size_t>(iSIZE) * iSIZE));
+	// Full offline mip chains: sRGB-filtered albedo, BC5 linear normal (R,G; the
+	// shader rebuilds Z). A single-mip bark shimmers at the distance a canopy is
+	// actually seen from.
+	Zenith_Tools_TextureExport::ExportFromDataV2Uncompressed(
+		xAlbedo.GetDataPointer(), strDir + "Tree_Bark_Albedo" ZENITH_TEXTURE_EXT, iSIZE, iSIZE, TEXTURE_FORMAT_RGBA8_SRGB);
+	Zenith_Tools_TextureExport::ExportFromDataCompressed(
+		xNormal.GetDataPointer(), strDir + "Tree_Bark_Normal" ZENITH_TEXTURE_EXT, iSIZE, iSIZE,
+		TextureCompressionMode::BC5, TextureColourSpace::Linear);
 }
 
-void GenerateLeafClusterTexture(const std::string& strDir)
+//=============================================================================
+// Bark RM + AO, both derived from the SAME height/crack field the albedo and
+// normal came from (TreeBarkSurfaceHeight).
+//
+// Roughness varies IN the furrows: a bark plate is weathered and polished by
+// rain, the crack between plates is raw torn fibre. A single authored
+// roughness cannot express that, and a trunk lit by a low sun is exactly where
+// the difference shows.
+//=============================================================================
+void GenerateBarkDataTextures(const std::string& strDir)
 {
-	constexpr int32_t iSIZE = 1024;
-	Zenith_Vector<u_int8> xPixels(iSIZE * iSIZE * 4);
-	for (int32_t i = 0; i < iSIZE * iSIZE * 4; i++) { xPixels.PushBack(0); }
+	constexpr int32_t iSIZE = 512;
+	constexpr float fROUGH_RIDGE = 0.74f;    // plate face: weathered smooth-ish
+	constexpr float fROUGH_FURROW = 0.98f;   // torn fibre in the cut
+
+	Zenith_Vector<u_int8> xRM;
+	Zenith_Vector<u_int8> xAO;
+	xRM.Resize(iSIZE * iSIZE * 4, 0);
+	xAO.Resize(iSIZE * iSIZE * 4, 0);
+	for (int32_t iY = 0; iY < iSIZE; iY++)
+	{
+		for (int32_t iX = 0; iX < iSIZE; iX++)
+		{
+			const float fU = static_cast<float>(iX) / iSIZE;
+			const float fV = static_cast<float>(iY) / iSIZE;
+			float fCrack = 0.0f;
+			const float fH = std::clamp(TreeBarkSurfaceHeight(fU, fV, fCrack), 0.0f, 1.0f);
+
+			// glTF RM layout, which is what the engine samples: G = roughness,
+			// B = metallic. Wood is a dielectric, so B stays 0.
+			const float fRoughness = std::clamp(
+				fROUGH_FURROW + (fROUGH_RIDGE - fROUGH_FURROW) * fH, 0.05f, 1.0f);
+			u_int8* pucRM = &xRM.Get((iY * iSIZE + iX) * 4);
+			pucRM[0] = 0;
+			pucRM[1] = static_cast<u_int8>(fRoughness * 255.0f);
+			pucRM[2] = 0;
+			pucRM[3] = 255;
+
+			// Cavity occlusion straight off the furrow depth, deepened in cracks.
+			const float fAO = std::clamp((0.74f + 0.26f * fH) * (1.0f - 0.30f * fCrack), 0.0f, 1.0f);
+			const u_int8 ucAO = static_cast<u_int8>(fAO * 255.0f);
+			u_int8* pucAO = &xAO.Get((iY * iSIZE + iX) * 4);
+			pucAO[0] = ucAO;
+			pucAO[1] = ucAO;
+			pucAO[2] = ucAO;
+			pucAO[3] = 255;
+		}
+	}
+	// Linear data, uncompressed with full mip chains: BC1 would band the
+	// roughness ramp into visible plates.
+	Zenith_Tools_TextureExport::ExportFromDataV2Uncompressed(
+		xRM.GetDataPointer(), strDir + "Tree_Bark_RM" ZENITH_TEXTURE_EXT, iSIZE, iSIZE, TEXTURE_FORMAT_RGBA8_UNORM);
+	Zenith_Tools_TextureExport::ExportFromDataV2Uncompressed(
+		xAO.GetDataPointer(), strDir + "Tree_Bark_AO" ZENITH_TEXTURE_EXT, iSIZE, iSIZE, TEXTURE_FORMAT_RGBA8_UNORM);
+}
+
+constexpr int32_t iLEAF_CARD_SIZE = 1024;
+
+//=============================================================================
+// The leaf card, painted ONCE into every map it feeds.
+//
+// The albedo half is unchanged (its bytes are pinned by the tree export unit);
+// the two new outputs are what stop the card reading as a flat decal:
+//
+//   HEIGHT — each leaf is a gentle DOME with a midrib CREASE down its spine,
+//   raised by its painter's-order layer so an overlapping leaf steps above the
+//   one behind it. The normal map derived from this is what makes one card
+//   read as many separately-curved leaves under a moving light; a flat card
+//   shades as a single plane no matter how detailed its colour is.
+//
+//   AO — occlusion toward each leaf's STEM (where it meets the twig and its
+//   neighbours crowd it) and under overlaps, counted from how many leaves have
+//   already painted a texel. A back leaf is more occluded than a front one.
+//
+// Painting all three in one pass is not an optimisation: a second pass with
+// its own RNG draws would place DIFFERENT leaves, and the normal map would
+// describe foliage the albedo does not have.
+//=============================================================================
+void GenerateLeafClusterMaps(Zenith_Vector<u_int8>& xPixels, Zenith_Vector<float>& xHeight,
+	Zenith_Vector<float>& xAO)
+{
+	constexpr int32_t iSIZE = iLEAF_CARD_SIZE;
+	xPixels.Clear();
+	xHeight.Clear();
+	xAO.Clear();
+	xPixels.Resize(iSIZE * iSIZE * 4, 0);
+	xHeight.Resize(iSIZE * iSIZE, 0.0f);
+	// Unpainted texels are fully unoccluded: they are discarded by the alpha
+	// test, and a 0 there would pull the mip chain's AO down toward black.
+	xAO.Resize(iSIZE * iSIZE, 1.0f);
+
+	// How many leaves have painted each texel. One leaf = the top of the pile;
+	// more = a texel buried under foliage, which is where a canopy goes dark.
+	Zenith_Vector<u_int8> xCoverage;
+	xCoverage.Resize(iSIZE * iSIZE, 0u);
 
 	TreeRng xRng(40411u);
 
@@ -584,6 +713,11 @@ void GenerateLeafClusterTexture(const std::string& strDir)
 		const float fLB = 0.07f * fBright;
 
 		const float fCA = cosf(fAngle), fSA = sinf(fAngle);
+
+		// Where this leaf's surface sits in the card's depth range. Front leaves
+		// are nearer the viewer, so their dome is built on a higher base and the
+		// step down to the leaf behind reads as a real edge in the normal map.
+		const float fLeafBase = 0.16f + 0.60f * fLayerT;
 
 		// Rasterize the leaf's bounding area.
 		const int32_t iRadius = static_cast<int32_t>(fLen * 0.62f) + 2;
@@ -620,7 +754,8 @@ void GenerateLeafClusterTexture(const std::string& strDir)
 				const float fVein = fabsf(sinf(fAlong * 22.0f + fDist * 9.0f));
 				if (fVein > 0.93f) { fShade *= 0.84f; }
 
-				u_int8* pucP = &xPixels.Get((iY * iSIZE + iX) * 4);
+				const int32_t iIdx = iY * iSIZE + iX;
+				u_int8* pucP = &xPixels.Get(iIdx * 4);
 				// Front leaves overwrite back leaves (painter's order).
 				pucP[0] = static_cast<u_int8>(std::clamp(fLR * fShade, 0.0f, 1.0f) * 255.0f);
 				pucP[1] = static_cast<u_int8>(std::clamp(fLG * fShade, 0.0f, 1.0f) * 255.0f);
@@ -628,13 +763,108 @@ void GenerateLeafClusterTexture(const std::string& strDir)
 				// Alpha map: soft edge over the outer 8% of the leaf profile.
 				const float fAlpha = SmoothStepF(1.0f, 0.92f, fDist / std::max(fEdge, 0.001f));
 				pucP[3] = std::max(pucP[3], static_cast<u_int8>(fAlpha * 255.0f));
+
+				// --- Height: dome across the blade, creased along the midrib ---
+				const float fRel = fDist / std::max(fEdge, 0.001f);            // 0 spine .. 1 rim
+				const float fDome = sqrtf(std::max(0.0f, 1.0f - fRel * fRel)); // circular cross-section
+				const float fTaper = powf(sinf(fAlong * 3.14159f), 0.35f);     // flatter at stem and tip
+				// The crease is a V down the spine — a real leaf folds along its
+				// midrib, and without it the dome alone reads as a pillow.
+				const float fCrease = SmoothStepF(0.10f, 0.0f, fRel) * 0.30f;
+				xHeight.Get(iIdx) = std::clamp(
+					fLeafBase + (fDome * fTaper * 0.34f) - fCrease * fTaper, 0.0f, 1.0f);
+
+				// --- AO: stem-end crowding + how deep in the pile this texel is ---
+				const float fStemDark = (1.0f - SmoothStepF(0.0f, 0.32f, fAlong)) * 0.45f;
+				const u_int8 ucUnder = xCoverage.Get(iIdx);
+				const float fPileDark = std::min(static_cast<float>(ucUnder), 3.0f) * 0.09f;
+				// A rim catches light; the interior beside the midrib does not.
+				const float fRimLift = SmoothStepF(0.70f, 1.0f, fRel) * 0.08f;
+				xAO.Get(iIdx) = std::clamp(1.0f - fStemDark - fPileDark + fRimLift, 0.05f, 1.0f);
+				if (ucUnder < 255u)
+				{
+					xCoverage.Get(iIdx) = static_cast<u_int8>(ucUnder + 1u);
+				}
 			}
 		}
 	}
+}
 
-	Zenith_Tools_TextureExport::ExportFromDataWithFormat(
+//=============================================================================
+// Tangent-space normal map from the leaf height field, RGBA8 for the BC5
+// writer (which keeps R+G; the shader rebuilds Z).
+//
+// CLAMPED, not wrapped: the leaf card does NOT tile — its border is
+// transparent — so a wrapped central difference would invent a slope joining
+// two unrelated leaves across the seam. The rock/bark maps wrap for exactly
+// the opposite reason.
+//
+// Shared with the units, which is the point: a test that re-derived the
+// encoding would be checking its own arithmetic, not the shipped texels.
+//=============================================================================
+void EncodeLeafNormalMap(const Zenith_Vector<float>& xHeight, int32_t iSize,
+	Zenith_Vector<u_int8>& xOut)
+{
+	constexpr float fSLOPE_GAIN = 3.0f;
+	xOut.Clear();
+	xOut.Resize(iSize * iSize * 4, 0);
+	for (int32_t iY = 0; iY < iSize; iY++)
+	{
+		for (int32_t iX = 0; iX < iSize; iX++)
+		{
+			const int32_t iXP = std::min(iX + 1, iSize - 1);
+			const int32_t iXM = std::max(iX - 1, 0);
+			const int32_t iYP = std::min(iY + 1, iSize - 1);
+			const int32_t iYM = std::max(iY - 1, 0);
+			const float fDX = (xHeight.Get(iY * iSize + iXP) - xHeight.Get(iY * iSize + iXM)) * fSLOPE_GAIN;
+			const float fDY = (xHeight.Get(iYP * iSize + iX) - xHeight.Get(iYM * iSize + iX)) * fSLOPE_GAIN;
+			const Zenith_Maths::Vector3 xN =
+				glm::normalize(Zenith_Maths::Vector3(-fDX, -fDY, 1.0f));
+			u_int8* pucN = &xOut.Get((iY * iSize + iX) * 4);
+			pucN[0] = static_cast<u_int8>((xN.x * 0.5f + 0.5f) * 255.0f);
+			pucN[1] = static_cast<u_int8>((xN.y * 0.5f + 0.5f) * 255.0f);
+			pucN[2] = static_cast<u_int8>((xN.z * 0.5f + 0.5f) * 255.0f);
+			pucN[3] = 255;
+		}
+	}
+}
+
+void GenerateLeafClusterTexture(const std::string& strDir)
+{
+	constexpr int32_t iSIZE = iLEAF_CARD_SIZE;
+	Zenith_Vector<u_int8> xPixels;
+	Zenith_Vector<float> xHeight;
+	Zenith_Vector<float> xAOField;
+	GenerateLeafClusterMaps(xPixels, xHeight, xAOField);
+
+	Zenith_Vector<u_int8> xNormal;
+	EncodeLeafNormalMap(xHeight, iSIZE, xNormal);
+	Zenith_Tools_TextureExport::ExportFromDataCompressed(
+		xNormal.GetDataPointer(), strDir + "Tree_Leaves_Normal" ZENITH_TEXTURE_EXT, iSIZE, iSIZE,
+		TextureCompressionMode::BC5, TextureColourSpace::Linear);
+
+	// --- AO (linear grey, uncompressed so the values survive exactly) ---------
+	Zenith_Vector<u_int8> xAO;
+	xAO.Resize(iSIZE * iSIZE * 4, 0);
+	for (int32_t i = 0; i < iSIZE * iSIZE; i++)
+	{
+		const u_int8 ucAO = static_cast<u_int8>(std::clamp(xAOField.Get(i), 0.0f, 1.0f) * 255.0f);
+		u_int8* pucAO = &xAO.Get(i * 4);
+		pucAO[0] = ucAO;
+		pucAO[1] = ucAO;
+		pucAO[2] = ucAO;
+		pucAO[3] = 255;
+	}
+	Zenith_Tools_TextureExport::ExportFromDataV2Uncompressed(
+		xAO.GetDataPointer(), strDir + "Tree_Leaves_AO" ZENITH_TEXTURE_EXT, iSIZE, iSIZE, TEXTURE_FORMAT_RGBA8_UNORM);
+
+	// Full mip chain with COVERAGE-PRESERVING alpha at the leaf material's cutoff
+	// (SetAlphaCutoff(0.45f) in GenerateTreeMaterials): a plain box filter
+	// averages the soft leaf edge below the cutoff every level, and a distant
+	// tree thins to a bare trunk. Uncompressed keeps the 8-bit mask edge exact.
+	Zenith_Tools_TextureExport::ExportFromDataV2Uncompressed(
 		xPixels.GetDataPointer(), strDir + "Tree_Leaves_Albedo" ZENITH_TEXTURE_EXT, iSIZE, iSIZE, TEXTURE_FORMAT_RGBA8_SRGB,
-		xPixels.GetSize() / (static_cast<size_t>(iSIZE) * iSIZE));
+		/*fAlphaCoverageCutoff*/ 0.45f);
 }
 
 //=============================================================================
@@ -648,8 +878,14 @@ void GenerateTreeMaterials(const std::string& strDir)
 		pxBark->SetName("TreeBark");
 		pxBark->SetDiffuseTexture(TextureHandle("engine:Meshes/ProceduralTree/Tree_Bark_Albedo" ZENITH_TEXTURE_EXT));
 		pxBark->SetNormalTexture(TextureHandle("engine:Meshes/ProceduralTree/Tree_Bark_Normal" ZENITH_TEXTURE_EXT));
-		pxBark->SetRoughness(0.92f);
+		pxBark->SetRoughnessMetallicTexture(TextureHandle("engine:Meshes/ProceduralTree/Tree_Bark_RM" ZENITH_TEXTURE_EXT));
+		pxBark->SetOcclusionTexture(TextureHandle("engine:Meshes/ProceduralTree/Tree_Bark_AO" ZENITH_TEXTURE_EXT));
+		// With an RM map bound these are MULTIPLIERS on the sampled channels, not
+		// absolute values: 1.0 passes the map's per-furrow roughness through.
+		pxBark->SetRoughness(1.0f);
 		pxBark->SetMetallic(0.0f);
+		pxBark->SetOcclusionStrength(1.0f);
+		pxBark->SetNormalStrength(1.0f);
 		pxBark->SaveToFile(strDir + "Tree_Bark.zmtrl");
 	}
 	{
@@ -657,8 +893,24 @@ void GenerateTreeMaterials(const std::string& strDir)
 		Zenith_MaterialAsset* pxLeaves = xhLeaves.GetDirect();
 		pxLeaves->SetName("TreeLeaves");
 		pxLeaves->SetDiffuseTexture(TextureHandle("engine:Meshes/ProceduralTree/Tree_Leaves_Albedo" ZENITH_TEXTURE_EXT));
+		pxLeaves->SetNormalTexture(TextureHandle("engine:Meshes/ProceduralTree/Tree_Leaves_Normal" ZENITH_TEXTURE_EXT));
+		pxLeaves->SetOcclusionTexture(TextureHandle("engine:Meshes/ProceduralTree/Tree_Leaves_AO" ZENITH_TEXTURE_EXT));
 		pxLeaves->SetRoughness(0.78f);
 		pxLeaves->SetMetallic(0.0f);
+		pxLeaves->SetNormalStrength(1.0f);
+		pxLeaves->SetOcclusionStrength(1.0f);
+		// ★ A leaf card is seen from BOTH sides and the mesh emits one winding, so
+		// without this every card is half-invisible AND the lighting normal points
+		// away from the light on the far side. TWO_SIDED_NORMAL_FLIP is what makes
+		// a back face shade as a leaf rather than as a hole.
+		pxLeaves->SetTwoSided(true);
+		// ★ Foliage TRANSMITS. The deferred pass's subsurface branch wraps the
+		// diffuse past the terminator and back-lights the graze, which is what
+		// turns a canopy from a flat green cutout into leaves with a sunlit side
+		// and a glowing shaded side. (Its constants are tuned for skin — the
+		// documented approximation until a FOLIAGE shading model exists; see
+		// Flux/Vegetation/CLAUDE.md.)
+		pxLeaves->SetShadingModel(MATERIAL_SHADING_SUBSURFACE);
 		// Alpha-tested foliage: the leaf albedo's alpha channel is a real leaf-shape mask,
 		// so the material MUST be MASKED — only then does BuildMaterialDrawConstants feed a
 		// non-zero cutoff to the shader's discard (OPAQUE writes cutoff 0). Without this the
@@ -739,7 +991,9 @@ void ExportTreeMeshSet(const std::string& strDir, const char* szBaseName,
 //=============================================================================
 void GenerateProceduralTreeAssets()
 {
-	Zenith_Log(LOG_CATEGORY_ASSET, "Generating ProceduralTree assets (branching tree, bark+leaf textures, sway VATs)...");
+	Zenith_Log(LOG_CATEGORY_ASSET,
+		"Generating ProceduralTree assets v%u (branching tree, bark+leaf PBR sets, sway VATs)...",
+		uTREE_ASSET_EXPORT_VERSION);
 
 	const std::string strOutputDir = std::string(ENGINE_ASSETS_DIR) + "Meshes/ProceduralTree/";
 	std::filesystem::create_directories(strOutputDir);
@@ -762,6 +1016,7 @@ void GenerateProceduralTreeAssets()
 
 	// Textures + materials.
 	GenerateBarkTextures(strOutputDir);
+	GenerateBarkDataTextures(strOutputDir);
 	GenerateLeafClusterTexture(strOutputDir);
 	GenerateTreeMaterials(strOutputDir);
 
@@ -791,5 +1046,7 @@ void GenerateProceduralTreeAssets()
 
 	Zenith_Log(LOG_CATEGORY_ASSET, "ProceduralTree assets generated at: %s", strOutputDir.c_str());
 }
+
+#include "Zenith_Tools_TreeAssetExport.Tests.inl"
 
 #endif // ZENITH_TOOLS

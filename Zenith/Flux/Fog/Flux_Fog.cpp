@@ -47,7 +47,7 @@ u_int dbg_uVolFogDebugMode = 0;  // Debug visualization mode (non-static for ext
 static struct Flux_FogConstants
 {
 	Zenith_Maths::Vector3 m_xColour = { 0.5f, 0.6f, 0.7f };
-	float m_fFalloff = 0.000075f;
+	float m_fFalloff = 0.000025f;   // ground-level Mie EXTINCTION (1/m): the aerial-perspective haze density (~150 km visibility; 7.5e-5 was the old exponential-fog falloff)
 	// Henyey-Greenstein phase function asymmetry parameter
 	// g = 0.0: isotropic, g = 0.8: typical atmospheric haze, g = 0.95: Mie scattering
 	float m_fPhaseG = 0.8f;

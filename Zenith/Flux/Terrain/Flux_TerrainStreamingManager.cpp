@@ -12,6 +12,10 @@
 // compute commands; UploadFrustumPlanesForFrame extracts the camera frustum).
 #include "Flux/Flux_GraphicsImpl.h" // FluxGraphics().GetCameraPosition() in UploadFrustumPlanesForFrame
 #include "Maths/Zenith_FrustumCulling.h"
+// Shadow-cascade culling slots: the 20-byte indirect ABI + zero seed, and the pure
+// per-cascade slot arithmetic the allocation below is sized from.
+#include "Flux/Backend/Flux_IndirectDraw.h"
+#include "Flux/Terrain/Flux_TerrainShadowCull.h"
 #include <algorithm>
 #include <fstream>
 #include <limits>
@@ -571,6 +575,11 @@ void Flux_TerrainStreamingManagerImpl::RegisterTerrainBuffers(Flux_TerrainStream
 	}
 	xState.m_bAABBsCached = true;
 
+	// The shadow-cascade culling slots are Flux-owned and live for exactly the
+	// registered window (the component's culling init/destroy pair sits inside
+	// it). Idempotent, so the regenerate path's re-registration is a no-op here.
+	InitialiseShadowCullResources(xState);
+
 	// New terrain GPU buffers are about to feed into the render graph; the
 	// next graph compile must rebuild SetupRenderGraph so the per-component
 	// Read/Write declarations pick up this terrain's buffers.
@@ -615,6 +624,12 @@ void Flux_TerrainStreamingManagerImpl::UnregisterTerrainBuffers(Flux_TerrainStre
 			pxState->m_axChunkResidency[i].m_aeStates[uLOD] = Flux_TerrainLODResidencyState::NOT_LOADED;
 	pxState->m_bAABBsCached = false;
 	pxState->m_bRegistered = false; // (was: pxState->m_pxOwner = nullptr)
+
+	// Queue the shadow-cascade culling slots for deferred deletion alongside the
+	// component's own culling buffers (which DestroyCullingResources already
+	// released before this call). The graph rebuild requested below drops the
+	// cascade passes' reads of them.
+	DestroyShadowCullResources(*pxState);
 
 	// Terrain GPU buffers are about to be queued for deferred deletion; the
 	// next graph compile must drop their references from SetupRenderGraph.
@@ -1570,6 +1585,98 @@ void Flux_TerrainStreamingManagerImpl::UpdateCullingAndLod(Flux_TerrainStreaming
 	xBinder.BindUAV_Buffer(TC::hvisibleCount, &xState.m_xVisibleCountBuffer.GetUAV());
 	xBinder.BindUAV_Buffer(TC::hLODLevelBuffer, &xState.m_xLODLevelBuffer.GetUAV());
 
-	uint32_t uNumWorkgroups = (TOTAL_CHUNKS + 63) / 64;
-	xCmdList.Dispatch(uNumWorkgroups, 1, 1);
+	// Shadow-cascade slots. The SAME dispatch culls every chunk against the camera
+	// (thread row y == 0) and against each active cascade's light-space box (rows
+	// y == 1 + cascade), appending cascade survivors into that cascade's slot of
+	// these two buffers. The shader reads the active cascade count from the CB and
+	// early-outs the rows above it, so the row count is always the full slot count
+	// and an inactive cascade's slot simply keeps the zero the reset pass wrote.
+	// Bound unconditionally: the shader declares the resources, so an unbound slot
+	// would be a validation failure, and the buffers are created in
+	// RegisterTerrainBuffers -- before the culling init that gates this function.
+	Zenith_Assert(xState.m_bShadowCullResourcesInitialized,
+		"UpdateCullingAndLod: shadow-cascade cull slots were not allocated (RegisterTerrainBuffers creates them)");
+	xBinder.BindCBV(TC::hShadowCullBuffer, &xState.m_xShadowCullBuffer.GetCBV());
+	xBinder.BindUAV_Buffer(TC::hShadowIndirectCommandBuffer, &xState.m_xShadowIndirectDrawBuffer.GetUAV());
+	xBinder.BindUAV_Buffer(TC::hShadowVisibleCount, &xState.m_xShadowVisibleCountBuffer.GetUAV());
+
+	const uint32_t uNumWorkgroups = (TOTAL_CHUNKS + 63) / 64;
+	xCmdList.Dispatch(uNumWorkgroups, 1u + uFLUX_TERRAIN_SHADOW_CULL_VIEWS, 1);
+}
+
+// ============================================================================
+// Shadow-cascade culling slots (see Flux_TerrainShadowCull.h for the layout).
+// ============================================================================
+
+void Flux_TerrainStreamingManagerImpl::InitialiseShadowCullResources(Flux_TerrainStreamingState& xState)
+{
+	if (xState.m_bShadowCullResourcesInitialized)
+	{
+		return;
+	}
+
+	auto& xMemory = g_xEngine.FluxMemory();
+
+	// One 20-byte record per (cascade, chunk slot), cascade-major, seeded all-zero.
+	// The seed matters for the same reason the camera buffer's does: a padded
+	// fixed-range indirect draw over a slot is only legal while every record in
+	// it is a valid no-op, and the first reset pass has not run yet at the point
+	// the first cascade could draw.
+	const uint64_t ulIndirectBytes = Flux_TerrainShadowCullIndirectBufferBytes(
+		uFLUX_TERRAIN_SHADOW_CULL_VIEWS, TOTAL_CHUNKS, uFLUX_INDIRECT_DRAW_INDEXED_BYTE_STRIDE);
+	const uint32_t uRecordCount = uFLUX_TERRAIN_SHADOW_CULL_VIEWS * TOTAL_CHUNKS;
+	Flux_IndirectDrawIndexedCommand* pxZero = new Flux_IndirectDrawIndexedCommand[uRecordCount];
+	for (uint32_t u = 0; u < uRecordCount; ++u)
+	{
+		Flux_ZeroIndirectDrawIndexedCommand(pxZero[u]);
+	}
+	xMemory.InitialiseIndirectBuffer(static_cast<size_t>(ulIndirectBytes), xState.m_xShadowIndirectDrawBuffer);
+	xMemory.UploadBufferData(xState.m_xShadowIndirectDrawBuffer.GetBuffer().m_xVRAMHandle, pxZero, static_cast<size_t>(ulIndirectBytes));
+	delete[] pxZero;
+
+	// One uint32 atomic per cascade, seeded zero.
+	{
+		uint32_t auZero[uFLUX_TERRAIN_SHADOW_CULL_VIEWS] = {};
+		xMemory.InitialiseIndirectBuffer(
+			static_cast<size_t>(Flux_TerrainShadowCullCountBufferBytes(uFLUX_TERRAIN_SHADOW_CULL_VIEWS)),
+			xState.m_xShadowVisibleCountBuffer);
+		xMemory.UploadBufferData(xState.m_xShadowVisibleCountBuffer.GetBuffer().m_xVRAMHandle, auZero, sizeof(auZero));
+	}
+
+	// Per-cascade frusta + active count. Seeded with ZERO active cascades so a
+	// frame that culls before the first UploadShadowCullDataForFrame (or a build
+	// with shadows off) leaves every slot empty rather than culling against
+	// uninitialised planes.
+	{
+		Zenith_TerrainShadowCullGPU xSeed;
+		Flux_BuildTerrainShadowCullData(nullptr, 0u, uFLUX_TERRAIN_SHADOW_FORCE_LOW_NEVER, xSeed);
+		xMemory.InitialiseDynamicConstantBuffer(&xSeed, sizeof(xSeed), xState.m_xShadowCullBuffer);
+	}
+
+	xState.m_bShadowCullResourcesInitialized = true;
+}
+
+void Flux_TerrainStreamingManagerImpl::DestroyShadowCullResources(Flux_TerrainStreamingState& xState)
+{
+	if (!xState.m_bShadowCullResourcesInitialized)
+	{
+		return;
+	}
+	auto& xMemory = g_xEngine.FluxMemory();
+	xMemory.DestroyIndirectBuffer(xState.m_xShadowIndirectDrawBuffer);
+	xMemory.DestroyIndirectBuffer(xState.m_xShadowVisibleCountBuffer);
+	xMemory.DestroyDynamicConstantBuffer(xState.m_xShadowCullBuffer);
+	xState.m_bShadowCullResourcesInitialized = false;
+}
+
+void Flux_TerrainStreamingManagerImpl::UploadShadowCullDataForFrame(Flux_TerrainStreamingState& xState, const Zenith_TerrainShadowCullGPU& xData)
+{
+	if (!xState.m_bShadowCullResourcesInitialized)
+	{
+		return;
+	}
+	// Frame-indexed host-visible CB: this frame's slot only, same contract as
+	// UploadFrustumPlanesForFrame (see Flux_FrameIndexedBufferBase).
+	g_xEngine.FluxMemory().UploadBufferDataAtOffset(
+		xState.m_xShadowCullBuffer.GetBuffer().m_xVRAMHandle, &xData, sizeof(Zenith_TerrainShadowCullGPU), 0);
 }

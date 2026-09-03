@@ -90,10 +90,10 @@ public:
 
 	// Resolve/sharpen tuning (debug-var backed; defaults are the shipping values). CB-only —
 	// edited live, read into the pass constant buffers each frame, no graph rebuild.
-	float m_fBlendMinAlpha              = 0.1f;   // slow-pixel history weight floor (sharpest AA)
+	float m_fBlendMinAlpha              = 0.06f;  // slow-pixel history weight floor: ~16 frames of history on a still (0.1 left a visibly unconverged residual)
 	float m_fBlendMaxAlpha              = 0.5f;   // fast-pixel current-frame weight (least ghosting)
 	float m_fVelocityRejectionThreshold = 32.0f; // pixels of motion that ramps the blend to max
-	float m_fHistoryClampStrength       = 1.0f;  // gamma in the mean +/- gamma*sigma variance clip
+	float m_fHistoryClampStrength       = 1.25f; // gamma in the mean +/- gamma*sigma variance clip (1.0 clipped too much history on fine texture, trading stability for softness)
 	// How far OUTSIDE the neighbourhood's previous depth range a history sample may sit
 	// before it is rejected, relative to its depth. 0.05 is the shipped value and it is
 	// meant to be tight: the range itself absorbs jitter and surface slope, so this only

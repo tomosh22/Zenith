@@ -9,7 +9,21 @@ bool IsCompressedFormat(TextureFormat eFormat)
 		   eFormat == TEXTURE_FORMAT_BC1_RGBA_UNORM ||
 		   eFormat == TEXTURE_FORMAT_BC3_RGBA_UNORM ||
 		   eFormat == TEXTURE_FORMAT_BC5_RG_UNORM ||
-		   eFormat == TEXTURE_FORMAT_BC7_RGBA_UNORM;
+		   eFormat == TEXTURE_FORMAT_BC7_RGBA_UNORM ||
+		   eFormat == TEXTURE_FORMAT_BC1_RGB_SRGB ||
+		   eFormat == TEXTURE_FORMAT_BC1_RGBA_SRGB ||
+		   eFormat == TEXTURE_FORMAT_BC3_RGBA_SRGB ||
+		   eFormat == TEXTURE_FORMAT_BC7_RGBA_SRGB;
+}
+
+bool IsSRGBFormat(TextureFormat eFormat)
+{
+	return eFormat == TEXTURE_FORMAT_RGBA8_SRGB ||
+		   eFormat == TEXTURE_FORMAT_BGRA8_SRGB ||
+		   eFormat == TEXTURE_FORMAT_BC1_RGB_SRGB ||
+		   eFormat == TEXTURE_FORMAT_BC1_RGBA_SRGB ||
+		   eFormat == TEXTURE_FORMAT_BC3_RGBA_SRGB ||
+		   eFormat == TEXTURE_FORMAT_BC7_RGBA_SRGB;
 }
 
 // Returns bytes per 4x4 block for compressed formats
@@ -19,10 +33,14 @@ uint32_t CompressedFormatBytesPerBlock(TextureFormat eFormat)
 	{
 	case TEXTURE_FORMAT_BC1_RGB_UNORM:
 	case TEXTURE_FORMAT_BC1_RGBA_UNORM:
+	case TEXTURE_FORMAT_BC1_RGB_SRGB:
+	case TEXTURE_FORMAT_BC1_RGBA_SRGB:
 		return 8u;  // 8 bytes per 4x4 block
 	case TEXTURE_FORMAT_BC3_RGBA_UNORM:
 	case TEXTURE_FORMAT_BC5_RG_UNORM:
 	case TEXTURE_FORMAT_BC7_RGBA_UNORM:
+	case TEXTURE_FORMAT_BC3_RGBA_SRGB:
+	case TEXTURE_FORMAT_BC7_RGBA_SRGB:
 		return 16u; // 16 bytes per 4x4 block
 	default:
 		return 0u;
@@ -112,3 +130,5 @@ size_t CalculateTotalMipChainSize(TextureFormat eFormat, uint32_t uWidth, uint32
 	}
 	return ulTotal;
 }
+
+#include "Flux/Flux_Types.Tests.inl"

@@ -39,6 +39,18 @@ float4 fsMain(FullscreenVsOut i) : SV_Target
 {
 	float3 xColour = g_xPassSet.g_xHDRTex.Sample(i.uv).rgb;
 
+	// ★ CLAMP THE BLOOM SOURCE. The sun disc is a physically-scaled radiance
+	// (irradiance / solid angle, ~2.5e4 against a sky of ~1-7), so an unclamped
+	// thresholdless bloom spreads its energy over the whole frame and veils the
+	// image to white — the sun's own few hundred pixels dominate every mip.
+	// A real lens does glare from the sun, but bounded; clamping the CONTRIBUTION
+	// (not the scene) keeps the glare strong and local instead of global.
+	// Deliberately absolute, not exposure-relative: this bounds a physical
+	// radiometric outlier, and the composite already scales bloom by exposure.
+	const float fBLOOM_SOURCE_CLAMP = 24.0;
+	float fSourceLum = max(Luminance(xColour), 1e-6);
+	xColour *= min(1.0, fBLOOM_SOURCE_CLAMP / fSourceLum);
+
 	// Soft knee threshold: smooth transition from 0 to 1 contribution.
 	// fKneeWidth controls the range over which the transition occurs.
 	float fLuminance   = Luminance(xColour);

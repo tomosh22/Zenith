@@ -524,7 +524,8 @@ ZM_GenImage ZM_SynthHueRotate(const ZM_GenImage& xSrc, float fDegrees)
 // ===========================================================================
 // Normal from height
 // ===========================================================================
-ZM_GenImage ZM_SynthNormalFromHeight(const ZM_GenImage& xHeightSrc, float fStrength)
+ZM_GenImage ZM_SynthNormalFromHeight(const ZM_GenImage& xHeightSrc, float fStrength,
+	bool bWrap)
 {
 	const u_int uW = xHeightSrc.GetWidth();
 	const u_int uH = xHeightSrc.GetHeight();
@@ -537,12 +538,13 @@ ZM_GenImage ZM_SynthNormalFromHeight(const ZM_GenImage& xHeightSrc, float fStren
 	const float fScale = 2.2f * ((float)uW / 1024.0f) * fStrength;
 	for (u_int uY = 0u; uY < uH; uY++)
 	{
-		const u_int uYP = (uY + 1u < uH) ? uY + 1u : uH - 1u;   // clamp edges
-		const u_int uYM = (uY > 0u) ? uY - 1u : 0u;
+		// Neighbour rule: clamped for an atlas, wrapped for a tiling surface.
+		const u_int uYP = (uY + 1u < uH) ? uY + 1u : (bWrap ? 0u : uH - 1u);
+		const u_int uYM = (uY > 0u) ? uY - 1u : (bWrap ? uH - 1u : 0u);
 		for (u_int uX = 0u; uX < uW; uX++)
 		{
-			const u_int uXP = (uX + 1u < uW) ? uX + 1u : uW - 1u;
-			const u_int uXM = (uX > 0u) ? uX - 1u : 0u;
+			const u_int uXP = (uX + 1u < uW) ? uX + 1u : (bWrap ? 0u : uW - 1u);
+			const u_int uXM = (uX > 0u) ? uX - 1u : (bWrap ? uW - 1u : 0u);
 
 			const float fHXP = xHeightSrc.Get(uY, uXP).x;
 			const float fHXM = xHeightSrc.Get(uY, uXM).x;
@@ -654,14 +656,18 @@ bool ZM_SynthBakeAlbedoBC1(const ZM_GenImage& xImg, const char* szPath)
 	{
 		return false;
 	}
-	// BC1 has no sRGB variant, so bake the sRGB OETF into the bytes and sample as
-	// UNORM (matches the engine's compressed-colour convention).
+	// The synth image is LINEAR; the bytes are OETF-encoded (sRGB) because that is
+	// where 8 bits spend their precision, and the file is stamped BC1_RGB_SRGB so
+	// the SAMPLER decodes them back to linear. (A comment here used to claim "BC1
+	// has no sRGB variant" and sampled these bytes as UNORM -- VK_FORMAT_BC1_RGB_
+	// SRGB_BLOCK has always existed, and the UNORM read left every albedo ~2.2x
+	// too bright in the midtones.)
 	Zenith_Vector<u_int8> xBytes;
 	xImg.PackRGBA8(xBytes, /*bSRGBEncode*/ true);
 	EnsureParentDir(szPath);
 	Zenith_Tools_TextureExport::ExportFromDataCompressed(
 		xBytes.GetDataPointer(), std::string(szPath),
-		(int32_t)xImg.GetWidth(), (int32_t)xImg.GetHeight(), TextureCompressionMode::BC1);
+		(int32_t)xImg.GetWidth(), (int32_t)xImg.GetHeight(), TextureCompressionMode::BC1, TextureColourSpace::SRGB);
 	return true;
 }
 
@@ -815,13 +821,64 @@ bool ZM_SynthPbrSet::Equals(const ZM_SynthPbrSet& xOther) const
 {
 	return m_xNormal.Equals(xOther.m_xNormal)
 		&& m_xRoughnessMetallic.Equals(xOther.m_xRoughnessMetallic)
-		&& m_xOcclusion.Equals(xOther.m_xOcclusion);
+		&& m_xOcclusion.Equals(xOther.m_xOcclusion)
+		&& m_xEdgeWear.Equals(xOther.m_xEdgeWear);
 }
 
 bool ZM_SynthPbrSet::NonEmpty() const
 {
 	return !m_xNormal.IsEmpty() && !m_xRoughnessMetallic.IsEmpty()
-		&& !m_xOcclusion.IsEmpty();
+		&& !m_xOcclusion.IsEmpty() && !m_xEdgeWear.IsEmpty();
+}
+
+ZM_GenImage ZM_SynthEdgeWearFromHeight(const ZM_GenImage& xHeight)
+{
+	ZM_GenImage xOut;
+	if (xHeight.IsEmpty())
+	{
+		return xOut;
+	}
+	const u_int uW = xHeight.GetWidth();
+	const u_int uH = xHeight.GetHeight();
+	xOut = ZM_GenImage(uW, uH);
+
+	// The mean, so "proud" means above the surface's own average rather than
+	// above an absolute 0.5 that a dark-biased field would never reach.
+	float fSum = 0.0f;
+	for (u_int uY = 0u; uY < uH; ++uY)
+	{
+		for (u_int uX = 0u; uX < uW; ++uX)
+		{
+			fSum += xHeight.Get(uY, uX).x;
+		}
+	}
+	const float fMean = fSum / static_cast<float>(uW * uH);
+
+	// Gradient per texel scales with 1/resolution for the same content, so the
+	// difference is multiplied back by (width / 256): a 512^2 bake wears the same
+	// arris as a 256^2 one. fRef is the per-256-texel step that counts as fully
+	// sharp (a mortar joint cutting 0.27 deep over ~2 texels).
+	const float fResNorm = static_cast<float>(uW) / 256.0f;
+	constexpr float fRef = 0.10f;
+	for (u_int uY = 0u; uY < uH; ++uY)
+	{
+		const u_int uYP = (uY + 1u) % uH;
+		const u_int uYM = (uY + uH - 1u) % uH;
+		for (u_int uX = 0u; uX < uW; ++uX)
+		{
+			const u_int uXP = (uX + 1u) % uW;
+			const u_int uXM = (uX + uW - 1u) % uW;
+			const float fDX = (xHeight.Get(uY, uXP).x - xHeight.Get(uY, uXM).x) * 0.5f * fResNorm;
+			const float fDY = (xHeight.Get(uYP, uX).x - xHeight.Get(uYM, uX).x) * 0.5f * fResNorm;
+			const float fGrad = sqrtf(fDX * fDX + fDY * fDY);
+			const float fSharp = Clamp01(fGrad / fRef);
+			// Only the PROUD side of a step wears; the cavity side collects dirt.
+			const float fProud = Clamp01((xHeight.Get(uY, uX).x - fMean) / 0.08f + 0.35f);
+			const float fWear = fSharp * fProud;
+			xOut.Set(uY, uX, Vector4(fWear, fWear, fWear, 1.0f));
+		}
+	}
+	return xOut;
 }
 
 ZM_SynthPbrSet ZM_SynthBuildPbrSet(const ZM_GenImage& xHeight,
@@ -840,6 +897,8 @@ ZM_SynthPbrSet ZM_SynthBuildPbrSet(const ZM_GenImage& xHeight,
 	const u_int uH = xHeight.GetHeight();
 	xOut.m_xRoughnessMetallic = ZM_GenImage(uW, uH);
 	xOut.m_xOcclusion         = ZM_GenImage(uW, uH);
+	// Always built (it is part of the set), only APPLIED when the response asks.
+	xOut.m_xEdgeWear          = ZM_SynthEdgeWearFromHeight(xHeight);
 
 	for (u_int uY = 0u; uY < uH; ++uY)
 	{
@@ -853,18 +912,97 @@ ZM_SynthPbrSet ZM_SynthBuildPbrSet(const ZM_GenImage& xHeight,
 			const float fRough = Clamp01(xResponse.m_fRoughness
 				+ xResponse.m_fRoughnessJitter
 				+ (fCavity - 0.5f) * xResponse.m_fCavityRoughness);
-			xOut.m_xRoughnessMetallic.Set(uY, uX,
-				Vector4(0.0f, fRough, xResponse.m_fMetallic, 1.0f));
 
 			// ★ THE CONTACT DARKENING THE ENGINE'S SSAO CANNOT SEE. SSAO works on
 			// the depth buffer, where a 3 mm board gap or a mortar bed does not
 			// exist at all. This is the only occlusion those get.
-			const float fAO = Clamp01(1.0f - fCavity * xResponse.m_fCavityOcclusion);
+			float fAO = Clamp01(1.0f - fCavity * xResponse.m_fCavityOcclusion);
+
+			// Edge wear: a rubbed arris polishes (lower roughness) and, being the
+			// most exposed point on the surface, is never occluded.
+			float fRoughOut = fRough;
+			if (xResponse.m_fEdgeWearStrength > 0.0f)
+			{
+				const float fWear = Clamp01(xOut.m_xEdgeWear.Get(uY, uX).x * xResponse.m_fEdgeWearStrength);
+				fRoughOut = Clamp01(fRough - fWear * xResponse.m_fEdgeWearRoughness);
+				fAO = fAO + (1.0f - fAO) * fWear;
+			}
+			xOut.m_xRoughnessMetallic.Set(uY, uX,
+				Vector4(0.0f, fRoughOut, xResponse.m_fMetallic, 1.0f));
 			xOut.m_xOcclusion.Set(uY, uX, Vector4(fAO, fAO, fAO, 1.0f));
 		}
 	}
 
-	xOut.m_xNormal = ZM_SynthNormalFromHeight(xHeight, xResponse.m_fNormalStrength);
+	xOut.m_xNormal = ZM_SynthNormalFromHeight(xHeight, xResponse.m_fNormalStrength,
+		xResponse.m_bWrap);
+	return xOut;
+}
+
+// ===========================================================================
+// The shared micro-detail pair.
+// ===========================================================================
+bool ZM_SynthDetailPair::Equals(const ZM_SynthDetailPair& xOther) const
+{
+	return m_xAlbedo.Equals(xOther.m_xAlbedo) && m_xNormal.Equals(xOther.m_xNormal);
+}
+
+bool ZM_SynthDetailPair::NonEmpty() const
+{
+	return !m_xAlbedo.IsEmpty() && !m_xNormal.IsEmpty();
+}
+
+ZM_GenImage ZM_SynthMicroDetailHeight(u_int uRes, u_int uSalt)
+{
+	ZM_GenImage xOut;
+	if (uRes < 2u)
+	{
+		return xOut;
+	}
+	xOut = ZM_GenImage(uRes, uRes);
+	const float fInv = 1.0f / static_cast<float>(uRes);
+	for (u_int uY = 0u; uY < uRes; ++uY)
+	{
+		const float fV = (static_cast<float>(uY) + 0.5f) * fInv;
+		for (u_int uX = 0u; uX < uRes; ++uX)
+		{
+			const float fU = (static_cast<float>(uX) + 0.5f) * fInv;
+			// Three octaves of wrapping value noise -- the trowel-scale undulation
+			// of plaster -- plus a per-texel grit speckle for stone. Every term is
+			// a pure function of the texel coordinate and wraps at the tile edge.
+			float fH = 0.5f;
+			fH += (ZM_SynthValueNoise(fU, fV, 24u, uSalt)        - 0.5f) * 0.20f;
+			fH += (ZM_SynthValueNoise(fU, fV, 61u, uSalt + 17u)  - 0.5f) * 0.14f;
+			fH += (ZM_SynthValueNoise(fU, fV, 149u, uSalt + 41u) - 0.5f) * 0.10f;
+			fH += (ZM_SynthTexHash01(uX, uY, uSalt + 97u)        - 0.5f) * 0.05f;
+			const float fC = Clamp01(fH);
+			xOut.Set(uY, uX, Vector4(fC, fC, fC, 1.0f));
+		}
+	}
+	return xOut;
+}
+
+ZM_SynthDetailPair ZM_SynthBuildMicroDetail(u_int uRes, u_int uSalt)
+{
+	ZM_SynthDetailPair xOut;
+	const ZM_GenImage xHeight = ZM_SynthMicroDetailHeight(uRes, uSalt);
+	if (xHeight.IsEmpty())
+	{
+		return xOut;
+	}
+	// Albedo: LINEAR grey about 0.5 with a faint tonal ripple, so the shader's
+	// x2 overlay is identity on average and only breaks up the base colour.
+	xOut.m_xAlbedo = ZM_GenImage(uRes, uRes);
+	for (u_int uY = 0u; uY < uRes; ++uY)
+	{
+		for (u_int uX = 0u; uX < uRes; ++uX)
+		{
+			const float fT = Clamp01(0.5f + (xHeight.Get(uY, uX).x - 0.5f) * 0.12f);
+			xOut.m_xAlbedo.Set(uY, uX, Vector4(fT, fT, fT, 1.0f));
+		}
+	}
+	// Normal: gentle -- a detail normal at full strength reads as sandpaper on a
+	// wall -- and WRAPPED, because this repeats eight to twelve times per tile.
+	xOut.m_xNormal = ZM_SynthNormalFromHeight(xHeight, 0.55f, /*bWrap*/ true);
 	return xOut;
 }
 

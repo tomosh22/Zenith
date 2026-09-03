@@ -23,7 +23,7 @@
 
 // ZM_BakeManifest (a later box) stamps this; bump when synthesis changes.
 // v2 (SC5d): creature-albedo palette-saturation boost (punchier type colours).
-constexpr u_int uZM_TEXTURESYNTH_VERSION       = 2u;
+constexpr u_int uZM_TEXTURESYNTH_VERSION       = 3u;   // v3: albedo bakes stamped BC1_RGB_SRGB (sampler-decoded), not UNORM
 constexpr u_int uZM_CREATURE_ALBEDO_RESOLUTION = 512u;   // BC1 512x512 (AssetManifest 1.2)
 
 // ---------------------------------------------------------------------------
@@ -127,12 +127,19 @@ void ZM_SynthStampRectDecal(ZM_GenImage& xImg, float fU0, float fV0, float fU1, 
 // ---------------------------------------------------------------------------
 ZM_GenImage ZM_SynthHueRotate(const ZM_GenImage& xSrc, float fDegrees);
 
-// Normal map from a height field, for the (later) human/building generators.
+// Normal map from a height field, for the human/building generators.
 // Reads xHeightSrc's R channel as height; central differences,
 // n = normalize(-dX, -dY, 1), encodes (n*0.5+0.5) into RGB. Gradient scale
 // tracks resolution (2.2f * width / 1024.0f). Zero-length -> flat (0.5,0.5,1).
 // Returns an RGBA image ready for PackRGBA8(non-sRGB) + BC5 export.
-ZM_GenImage ZM_SynthNormalFromHeight(const ZM_GenImage& xHeightSrc, float fStrength);
+//
+// bWrap selects the neighbour rule at the image border: CLAMPED (an atlas with
+// gutters -- creatures, humans) or WRAPPED (a TILING surface -- buildings,
+// interiors, the shared micro-detail). A tiling map built with the clamped rule
+// carries a one-texel line of wrong slope along every repeat, which at eight
+// repeats per metre is a visible grid.
+ZM_GenImage ZM_SynthNormalFromHeight(const ZM_GenImage& xHeightSrc, float fStrength,
+	bool bWrap = false);
 
 // ---------------------------------------------------------------------------
 // Top-level creature albedo synthesis -- the ZM_CreatureGen entry. Fully a pure
@@ -239,6 +246,20 @@ struct ZM_SynthPbrResponse
 	float m_fRoughnessJitter = 0.0f;   // one per-asset offset, drawn by the caller
 	float m_fCavityRoughness = 0.16f;  // how much a cavity roughens (0 disables)
 	float m_fCavityOcclusion = 0.50f;  // how dark a full cavity gets
+	bool  m_bWrap            = false;  // tiling surface: wrap the gradient at the border
+
+	// ★ EDGE WEAR -- the second thing after cavities that weather does to a
+	// surface, and the one that reads as AGE rather than dirt. Anything proud and
+	// sharp -- an arris, the lip of a stone, the edge of a board -- gets rubbed,
+	// rained on and knocked; it loses its paint or its patina and polishes. The
+	// mask is derived from the height field's own gradient (steep AND high = a
+	// proud edge), so it lands exactly where the normal map says the edge is.
+	// m_fEdgeWearStrength scales the mask (0 disables it and leaves the RM/AO
+	// bytes untouched); m_fEdgeWearRoughness is how much a fully-worn texel
+	// smooths. The albedo response is the caller's -- lighten plaster, expose
+	// timber under paint -- because it differs per material.
+	float m_fEdgeWearStrength  = 0.0f;
+	float m_fEdgeWearRoughness = 0.20f;
 };
 
 struct ZM_SynthPbrSet
@@ -246,16 +267,51 @@ struct ZM_SynthPbrSet
 	ZM_GenImage m_xNormal;              // tangent-space, from the height gradient
 	ZM_GenImage m_xRoughnessMetallic;   // G = roughness, B = metallic (glTF packing)
 	ZM_GenImage m_xOcclusion;           // R = AO
+	ZM_GenImage m_xEdgeWear;            // R = edge-wear mask in [0,1] (1 = fully worn arris)
 
 	bool Equals(const ZM_SynthPbrSet& xOther) const;
 	bool NonEmpty() const;
 };
+
+// The edge-wear mask on its own: gradient magnitude (wrapping central
+// differences, normalised so the SAME content gives the same mask at any
+// resolution) gated by height-above-mean, so only the PROUD side of a step is
+// worn. A pure function of the height field; exposed so a unit can prove where
+// it lands.
+ZM_GenImage ZM_SynthEdgeWearFromHeight(const ZM_GenImage& xHeight);
 
 // Build all three from one height field. The result is the same size as the
 // input, and is a PURE function of (height, response) -- no RNG is drawn here;
 // the caller passes any jitter in through m_fRoughnessJitter.
 ZM_SynthPbrSet ZM_SynthBuildPbrSet(const ZM_GenImage& xHeight,
 	const ZM_SynthPbrResponse& xResponse);
+
+// ===========================================================================
+// THE SHARED MICRO-DETAIL PAIR -- one tiling grain that every architectural
+// material overlays at 8-12 repeats per tile.
+//
+// ★ WHY IT EXISTS. A 512^2 map on a 3 m tile is 170 px/m; a player standing at
+// a wall sees a texel every 6 mm and the surface goes soft. The engine's detail
+// slots (Flux_MaterialGPU: DETAIL_ALBEDO / DETAIL_NORMAL, x2 mid-grey overlay +
+// UDN normal blend) exist for exactly this, and the grain of plaster, stone grit
+// and weathered slate is close enough at that scale that ONE pair serves them
+// all. It is mean-neutral (the albedo averages 0.5 so the x2 overlay is identity
+// on average) and it WRAPS, or the detail tiling would draw its own grid.
+// ===========================================================================
+constexpr u_int uZM_SYNTH_MICRODETAIL_RESOLUTION = 512u;
+
+struct ZM_SynthDetailPair
+{
+	ZM_GenImage m_xAlbedo;   // linear grey around 0.5 -- bake with ZM_SynthBakeLinearBC1, NOT the sRGB path
+	ZM_GenImage m_xNormal;   // tangent-space, wrapped, BC5
+
+	bool Equals(const ZM_SynthDetailPair& xOther) const;
+	bool NonEmpty() const;
+};
+
+// The grain height field (exposed so its statistics can be asserted) and the pair.
+ZM_GenImage         ZM_SynthMicroDetailHeight(u_int uRes, u_int uSalt);
+ZM_SynthDetailPair  ZM_SynthBuildMicroDetail(u_int uRes, u_int uSalt);
 
 // A height field from an ALBEDO image's luminance, for the families whose
 // surface detail lives in their colour rather than in a separate pattern (skin,

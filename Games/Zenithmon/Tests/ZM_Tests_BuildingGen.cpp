@@ -48,6 +48,26 @@
 //                                           the PlayerHome and Lab models fit inside
 //                                           the Dawnmere shell blockouts that carry
 //                                           their colliders.
+//   16. StaticBoxEdgesAreChamfered      -- every ZM_StaticMesh box is bevelled, with
+//                                           smoothed strip normals and IDENTICAL bounds.
+//   17. BuildingGen_HeightIsBakedAndParallaxEnabled -- the height field is baked to its
+//                                           own slot and POM is really on (map AND scale).
+//   18. BuildingGen_WindowsAreRealOpenings -- a sight line through a window meets no
+//                                           masonry in the outer reveal; solid wall does.
+//   19. BuildingGen_DoorIsARecessedLeaf  -- leaf behind the wall plane, threshold, handle.
+//   20. BuildingGen_RoofIsCoursed        -- overlapping slate courses with a proud lip,
+//                                           a ridge run, barge boards and the eave fascia.
+//   21. BuildingGen_WeatheringIsAnchoredToWorldHeight -- splash-back, eave runoff and
+//                                           sill drips land on the rows they claim, in
+//                                           METRES, and reach the albedo.
+//   22. SynthEdgeWearLandsOnProudArrises -- the wear mask finds edges, only the proud
+//                                           side of them, and polishes what it finds.
+//   23. BuildingGen_MacroTintBreaksTheRepeat -- the tile is not two identical halves;
+//                                           both grime colours exist; the per-face cast
+//                                           is a vertex colour.
+//   24. BuildingGen_OnlyTheHomeGlowsFromInside -- warm emissive glass, on exactly one row.
+//   25. BuildingGen_CourseGaugeSurvivesTheTile -- the masonry lattice is derived from the
+//                                           tile, so a 3.5 m storey does not stretch it.
 // ============================================================================
 
 #include "Core/Zenith_TestFramework.h"
@@ -667,7 +687,7 @@ ZENITH_TEST(ZM_Gen, BuildingGen_WorldUVsAreUniformDensity)
 		for (u_int s = 0u; s < (u_int)ZM_BUILDING_SURFACE_COUNT; ++s)
 		{
 			const ZM_BUILDING_SURFACE eS = (ZM_BUILDING_SURFACE)s;
-			const float fTile = ZM_BuildingSurfaceTileMetres(eS);
+			const float fTile = ZM_BuildingSurfaceTileMetresFor(xR, eS);
 			ZM_GenMesh xMesh;
 			ZM_BuildBuildingSurfaceMesh(xR, eS, xMesh);
 
@@ -713,11 +733,17 @@ ZENITH_TEST(ZM_Gen, BuildingGen_WorldUVsAreUniformDensity)
 		const float fA = std::fabs(xWall.m_xUVs.Get(v).x);
 		if (fA > fMaxU) { fMaxU = fA; }
 	}
-	// PlayerHome is 16.5 m wide on a 2 m tile, so a world projection must reach
-	// past |u| = 4 (half-width 8.25 / 2). A [0,1] atlas mapping could not.
-	ZENITH_ASSERT_GT(fMaxU, 4.0f,
-		"the PlayerHome wall's largest |u| is %.2f -- a 16.5 m wall on a 2 m tile "
-		"cannot be world-projected and stay inside an atlas island", fMaxU);
+	// PlayerHome is 16.5 m wide, so a world projection must reach past
+	// |u| = halfWidth / tile. A [0,1] atlas mapping could not. Derived from the
+	// live tile rather than a literal, because the wall's tile is its own storey
+	// height and moves with the roster.
+	const float fHomeTile = ZM_BuildingSurfaceTileMetresFor(
+		ZM_ResolveBuildingRecipe(ZM_BUILDING_PLAYER_HOME), ZM_BUILDING_SURFACE_WALL);
+	const float fExpectU = (ZM_GetBuildingData(ZM_BUILDING_PLAYER_HOME).m_fWidth * 0.5f) / fHomeTile;
+	ZENITH_ASSERT_GT(fMaxU, fExpectU - fBG_EXACT,
+		"the PlayerHome wall's largest |u| is %.2f but a 16.5 m wall on a %.2f m tile "
+		"must reach %.2f -- it cannot be world-projected and stay inside an atlas "
+		"island", fMaxU, fHomeTile, fExpectU);
 }
 
 // ############################################################################
@@ -742,7 +768,7 @@ ZENITH_TEST(ZM_Gen, BuildingGen_WorldUVsAreUniformDensity)
 ZENITH_TEST(ZM_Gen, BuildingGen_NoFrontFaceIsCoplanarWithTheWall)
 {
 	// Tight: a real ledge is centimetres, a z-fight is micrometres. 1 mm sits far
-	// below the smallest deliberate offset (fZM_BUILDING_DOOR_LEAF_PROUD, 0.05)
+	// below the smallest deliberate offset (fZM_BUILDING_GLAZING_BAR_OUT, 0.02)
 	// and far above float noise on a 20 m building.
 	constexpr float fMIN_SEPARATION = 1.0e-3f;
 
@@ -1132,6 +1158,1085 @@ ZENITH_TEST(ZM_Gen, BuildingGen_DawnmereBuildingsFitTheirBlockouts)
 	}
 }
 
+
+// ############################################################################
+// ★ 16. EVERY BOX EDGE IS CHAMFERED (the shared ZM_StaticMesh appender)
+// ############################################################################
+
+// A mathematically sharp arris reflects nothing -- two faces meet at a line of
+// zero width, so no highlight ever sits on the edge and the box reads as CG.
+// Every static box the architectural families emit is bevelled now, which is a
+// change to a SHARED emitter, so it is asserted here on the emitter itself
+// rather than only through a building.
+//
+// ★ THE CLAUSE THAT MATTERS IS THE BOUNDS ONE. A bevel that shrank the box
+// would move every envelope contract in the game by 8 mm at once -- the blockout
+// fit, the interior envelope, the aperture width. The chamfer INSETS the faces
+// and leaves the outer planes populated, so the bounds are identical to the
+// un-chamfered box's, and that is what makes it safe to switch on underneath
+// five generator families at once.
+ZENITH_TEST(ZM_Gen, StaticBoxEdgesAreChamfered)
+{
+	const ZM_GenUVIsland xIsland = { 0.0f, 0.0f, 1.0f, 1.0f };
+	const Zenith_Maths::Vector3 xMin(-0.60f, 0.00f, -0.40f);
+	const Zenith_Maths::Vector3 xMax( 0.60f, 2.00f,  0.40f);
+
+	ZM_GenMesh xPlain;
+	(void)ZM_StaticMesh::AppendBox(xPlain, xMin, xMax, xIsland, 0.0f);
+	ZENITH_ASSERT_EQ(xPlain.GetNumVerts(), 24u,
+		"the un-chamfered box is no longer six hard quads");
+	ZENITH_ASSERT_EQ(xPlain.GetNumTris(), 12u, "the un-chamfered box is not 12 tris");
+
+	ZM_GenMesh xBevel;
+	(void)ZM_StaticMesh::AppendBox(xBevel, xMin, xMax, xIsland);
+	// Six inset faces (24) + twelve strips (48) + eight corner tris (24).
+	ZENITH_ASSERT_EQ(xBevel.GetNumVerts(), 96u,
+		"the chamfered box is not 6 faces + 12 strips + 8 corners");
+	ZENITH_ASSERT_EQ(xBevel.GetNumTris(), 44u,
+		"the chamfered box is not 12 + 24 + 8 triangles");
+
+	// ★ BOUNDS ARE IDENTICAL. The load-bearing clause: the six outer planes are
+	// still touched, so nothing that measures a generated box against a collider,
+	// an envelope or an aperture moved.
+	const Zenith_Maths::Vector3 xPMin = ZM_GenMeshBoundsMin(xPlain);
+	const Zenith_Maths::Vector3 xPMax = ZM_GenMeshBoundsMax(xPlain);
+	const Zenith_Maths::Vector3 xBMin = ZM_GenMeshBoundsMin(xBevel);
+	const Zenith_Maths::Vector3 xBMax = ZM_GenMeshBoundsMax(xBevel);
+	ZENITH_ASSERT_NEAR_VEC3(xBMin, xPMin, 1.0e-5f,
+		"chamfering moved the box's minimum corner");
+	ZENITH_ASSERT_NEAR_VEC3(xBMax, xPMax, 1.0e-5f,
+		"chamfering moved the box's maximum corner");
+
+	// Still a valid static mesh: outward winding, in-range indices, UVs inside
+	// the island, no bones. A bevel strip wound the wrong way renders as a black
+	// notch and nothing else in the suite could see it.
+	const ZM_GenStaticMeshValidation xV = ZM_ValidateGenMeshStatic(xBevel);
+	ZENITH_ASSERT_TRUE(xV.m_bWindingOutward,
+		"a chamfered box has an inward-wound triangle (first bad %u)", xV.m_uFirstBadTriangle);
+	ZENITH_ASSERT_TRUE(xV.m_bIndicesInRange, "a chamfered box has an out-of-range index");
+	ZENITH_ASSERT_TRUE(xV.m_bUVsFinite, "a chamfered box left the [0,1] island");
+	ZENITH_ASSERT_TRUE(xV.m_bBoundsNonDegen, "a chamfered box is flat on an axis");
+	ZENITH_ASSERT_TRUE(xV.m_bNoSkeleton && xV.m_bNoSkinBuffers,
+		"a chamfered box is no longer static");
+
+	// ★ THE STRIP NORMALS ARE SMOOTHED, NOT A THIRD FACET. A bevel carrying its
+	// own hard normal reads as a visible extra plane rather than as a worn edge
+	// catching the light, so every stored normal must still be one of the six
+	// axis normals -- each strip vertex inheriting the face it borders.
+	u_int uOnBevel = 0u;
+	for (u_int v = 0u; v < xBevel.GetNumVerts(); ++v)
+	{
+		const Zenith_Maths::Vector3& xP = xBevel.m_xPositions.Get(v);
+		const float afP[3]  = { xP.x, xP.y, xP.z };
+		const float afLo[3] = { xMin.x, xMin.y, xMin.z };
+		const float afHi[3] = { xMax.x, xMax.y, xMax.z };
+		u_int uInset = 0u;
+		for (u_int a = 0u; a < 3u; ++a)
+		{
+			const float fLo = std::fabs(afP[a] - afLo[a]);
+			const float fHi = std::fabs(afP[a] - afHi[a]);
+			const float fD  = fLo < fHi ? fLo : fHi;
+			if (std::fabs(fD - fZM_STATIC_BOX_CHAMFER) < 1.0e-5f) { ++uInset; }
+		}
+		if (uInset >= 2u) { ++uOnBevel; }
+
+		const Zenith_Maths::Vector3& xN = xBevel.m_xNormals.Get(v);
+		ZENITH_ASSERT_EQ_FLOAT(glm::length(xN), 1.0f, 1.0e-4f,
+			"chamfered-box vertex %u carries a non-unit normal", v);
+		const float fAx = std::fabs(xN.x), fAy = std::fabs(xN.y), fAz = std::fabs(xN.z);
+		const float fMaxComp = fAx > fAy ? (fAx > fAz ? fAx : fAz) : (fAy > fAz ? fAy : fAz);
+		ZENITH_ASSERT_EQ_FLOAT(fMaxComp, 1.0f, 1.0e-4f,
+			"chamfered-box vertex %u carries a facet normal rather than one of the two "
+			"faces its bevel bridges -- the chamfer will read as an extra plane", v);
+	}
+	ZENITH_ASSERT_GT(uOnBevel, 0u,
+		"no vertex sits on a bevel -- the chamfer emitted nothing and the vertex "
+		"count above is being satisfied some other way");
+
+	// ★ A BOX TOO THIN TO CARRY THE BEVEL GETS A SMALLER ONE, NOT AN INVERTED
+	// ONE. A 6 mm pane at an 8 mm chamfer would otherwise fold through itself.
+	ZM_GenMesh xThin;
+	(void)ZM_StaticMesh::AppendBox(xThin,
+		Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f),
+		Zenith_Maths::Vector3(1.0f, 1.0f, 0.006f), xIsland);
+	const ZM_GenStaticMeshValidation xTV = ZM_ValidateGenMeshStatic(xThin);
+	ZENITH_ASSERT_TRUE(xTV.m_bWindingOutward,
+		"a 6 mm-thick box folded through itself when chamfered (first bad tri %u)",
+		xTV.m_uFirstBadTriangle);
+	ZENITH_ASSERT_EQ_FLOAT(ZM_GenMeshBoundsMax(xThin).z, 0.006f, 1.0e-6f,
+		"a thin box's clamped chamfer moved its far face");
+
+	// A world-UV'd chamfered box keeps UNIFORM density: each strip is projected
+	// on the plane of the face it borders, never smeared across the switch --
+	// which is exactly what a per-VERTEX plane choice would do, because a strip's
+	// four vertices carry two different normals.
+	ZM_GenMesh xWorld;
+	(void)ZM_StaticMesh::AppendWorldBox(xWorld, xMin, xMax, 2.0f);
+	for (u_int t = 0u; t < xWorld.GetNumTris(); ++t)
+	{
+		const u_int uA = xWorld.m_xIndices.Get(t * 3u + 0u);
+		const u_int uB = xWorld.m_xIndices.Get(t * 3u + 1u);
+		const Zenith_Maths::Vector3 xDp = xWorld.m_xPositions.Get(uB) - xWorld.m_xPositions.Get(uA);
+		const Zenith_Maths::Vector2 xDuv = xWorld.m_xUVs.Get(uB) - xWorld.m_xUVs.Get(uA);
+		if (glm::length(xDp) < 1.0e-4f) { continue; }
+		ZENITH_ASSERT_LE(glm::length(xDuv), glm::length(xDp) / 2.0f + 1.0e-4f,
+			"chamfered-box triangle %u has a UV edge of %.5f over a %.5f m world edge "
+			"-- a bevel strip was projected across two different planes",
+			t, glm::length(xDuv), glm::length(xDp));
+	}
+}
+
+// ############################################################################
+// ★ 17. THE HEIGHT MAP IS BAKED, AND PARALLAX IS ACTUALLY ENABLED
+// ############################################################################
+
+// The generator computed a height field, differentiated it into a normal map and
+// THREW IT AWAY. A normal map cannot move a silhouette: mortar beds stayed
+// perfectly flat under every grazing camera, which is the strongest "this is a
+// texture, not a surface" cue a facade gives off.
+//
+// ★ POM IS TWO THINGS AND EITHER ALONE IS INERT. Flux enables it iff a height
+// texture is bound AND the height scale is > 0 (Flux_MaterialGPU's draw flags).
+// A bound map with scale 0 is a texture nobody samples; a scale with no map is a
+// number nobody reads. Both are silent, so both are asserted.
+ZENITH_TEST(ZM_Gen, BuildingGen_HeightIsBakedAndParallaxEnabled)
+{
+	char acRef[512];
+	ZENITH_ASSERT_TRUE(ZM_BuildingAssetPath(ZM_BUILDING_PLAYER_HOME,
+		ZM_BuildingSurfaceAssetKind(ZM_BUILDING_SURFACE_WALL, ZM_BUILDING_SLOT_HEIGHT),
+		acRef, sizeof(acRef)), "the PlayerHome wall height ref did not build");
+	ZENITH_ASSERT_STREQ(acRef, "game:Buildings/PlayerHome/PlayerHome_wall_height.ztxtr",
+		"the per-surface height-map ref scheme moved");
+
+	// Three representative rows rather than all thirty: a 512^2 four-map set per
+	// surface is ~1.6 M texels a building, and the roster-wide clauses that DO
+	// need every row (RosterTotality, BuildDeterminism) already pay that once.
+	const ZM_BUILDING_ID aeProbe[3] = {
+		ZM_BUILDING_PLAYER_HOME, ZM_BUILDING_LAB, ZM_BUILDING_HOUSE_COTTAGE_WARM };
+	for (u_int u = 0u; u < 3u; ++u)
+	{
+		const ZM_BUILDING_ID eId = aeProbe[u];
+		const ZM_BuildingRecipe xR = ZM_ResolveBuildingRecipe(eId);
+		for (u_int s = 0u; s < (u_int)ZM_BUILDING_SURFACE_COUNT; ++s)
+		{
+			const ZM_BUILDING_SURFACE eS = (ZM_BUILDING_SURFACE)s;
+			const ZM_BuildingTextureSet xT = ZM_BuildBuildingSurfaceTextures(xR, eS);
+			ZENITH_ASSERT_EQ(xT.m_xHeight.GetWidth(), ZM_BuildingSurfaceResolution(eS),
+				"%s/%s's height map is not the surface resolution",
+				ZM_GetBuildingName(eId), ZM_BuildingSurfaceName(eS));
+			// ★ AND IT IS THE SAME FIELD THE NORMAL MAP CAME FROM. Two fields that
+			// disagree about where the surface is is exactly the "dirt that does not
+			// line up with the relief" failure -- and with POM on it becomes
+			// geometry that does not line up with its own shading.
+			ZENITH_ASSERT_TRUE(xT.m_xHeight.Equals(ZM_BuildBuildingSurfaceHeight(xR, eS)),
+				"%s/%s bakes a height map that is not its own height field",
+				ZM_GetBuildingName(eId), ZM_BuildingSurfaceName(eS));
+		}
+	}
+
+	const ZM_BuildingSurfaceResponse xWall  = ZM_BuildingSurfaceMaterialResponse(ZM_BUILDING_SURFACE_WALL);
+	const ZM_BuildingSurfaceResponse xRoof  = ZM_BuildingSurfaceMaterialResponse(ZM_BUILDING_SURFACE_ROOF);
+	const ZM_BuildingSurfaceResponse xTrim  = ZM_BuildingSurfaceMaterialResponse(ZM_BUILDING_SURFACE_TRIM);
+	const ZM_BuildingSurfaceResponse xGlass = ZM_BuildingSurfaceMaterialResponse(ZM_BUILDING_SURFACE_GLASS);
+	ZENITH_ASSERT_GT(xWall.m_fHeightScale, 0.0f, "the wall's parallax is switched off");
+	ZENITH_ASSERT_GT(xRoof.m_fHeightScale, 0.0f, "the roof's parallax is switched off");
+	ZENITH_ASSERT_GT(xTrim.m_fHeightScale, 0.0f, "the trim's parallax is switched off");
+	ZENITH_ASSERT_EQ_FLOAT(xGlass.m_fHeightScale, 0.0f, 0.0f,
+		"glass is parallax-mapped -- a pane has no relief and the march would swim");
+	ZENITH_ASSERT_LE(xWall.m_fHeightScale, 0.02f, "the wall's height scale will swim");
+	ZENITH_ASSERT_LE(xRoof.m_fHeightScale, 0.02f, "the roof's height scale will swim");
+
+	ZENITH_ASSERT_GE(xWall.m_fDetailTiling, 8.0f,
+		"the wall's micro-detail repeats only %.1f times per tile -- at 170 px/m the "
+		"surface goes soft at arm's length without it", xWall.m_fDetailTiling);
+	ZENITH_ASSERT_LE(xWall.m_fDetailTiling, 12.0f, "the wall's micro-detail will alias");
+	ZENITH_ASSERT_GE(xRoof.m_fDetailTiling, 8.0f, "the roof carries no micro-detail");
+	ZENITH_ASSERT_EQ_FLOAT(xGlass.m_fDetailTiling, 0.0f, 0.0f,
+		"glass carries a grain overlay, which frosts it");
+
+	// The shared pair: ONE file for the whole family, reproducible, mean-neutral.
+	char acDetAlb[512], acDetNrm[512];
+	ZENITH_ASSERT_TRUE(ZM_BuildingSharedDetailPath(ZM_BUILDING_DETAIL_ALBEDO, acDetAlb, sizeof(acDetAlb)),
+		"the shared detail-albedo ref did not build");
+	ZENITH_ASSERT_STREQ(acDetAlb, "game:Buildings/Shared/MicroDetail_albedo.ztxtr",
+		"the shared detail-albedo ref scheme moved");
+	ZENITH_ASSERT_TRUE(ZM_BuildingSharedDetailPath(ZM_BUILDING_DETAIL_NORMAL, acDetNrm, sizeof(acDetNrm)),
+		"the shared detail-normal ref did not build");
+	ZENITH_ASSERT_FALSE(strcmp(acDetAlb, acDetNrm) == 0,
+		"the two detail maps resolve to one file");
+
+	const ZM_SynthDetailPair xPair = ZM_BuildBuildingMicroDetail();
+	ZENITH_ASSERT_TRUE(xPair.NonEmpty(), "the shared micro-detail pair is missing a map");
+	ZENITH_ASSERT_TRUE(xPair.Equals(ZM_BuildBuildingMicroDetail()),
+		"the shared micro-detail pair is not reproducible -- every building would "
+		"reference bytes that depend on which one happened to bake it");
+	double dSum = 0.0;
+	const u_int uDetRes = xPair.m_xAlbedo.GetWidth();
+	for (u_int y = 0u; y < uDetRes; ++y)
+	{
+		for (u_int x = 0u; x < uDetRes; ++x)
+		{
+			dSum += xPair.m_xAlbedo.Get(y, x).x;
+		}
+	}
+	const float fMean = (float)(dSum / (double)(uDetRes * uDetRes));
+	// x2 around mid-grey (the Unity convention the shader follows): a mean away
+	// from 0.5 tints every wall and roof in the game.
+	ZENITH_ASSERT_EQ_FLOAT(fMean, 0.5f, 0.02f,
+		"the detail albedo's mean is %.4f, not 0.5 -- the x2 overlay is not identity "
+		"and every surface it touches shifts in value", fMean);
+}
+
+// ############################################################################
+// ★★ 18. THE WINDOWS ARE REAL OPENINGS
+// ############################################################################
+
+// Version 3's wall was ONE SOLID BOX with the pane glued to its face -- which
+// reads as a decal from any angle but head-on: no jamb, no head, no shadow, no
+// depth. The facade slab is cut into panels around every opening now, the trim
+// lines the cut with a reveal, and the glass sits at the back of it.
+//
+// ★ THE POCKET IS DELIBERATELY CLOSED AT THE BACK. There is no interior behind
+// these walls (the interiors are separate scenes), so an opening is a POCKET a
+// reveal deep, backed by the core slab and a dark room card. The claim is
+// therefore not "a ray passes through the building" but "the outer part of the
+// facade carries no masonry across the opening" -- which is what makes the jamb
+// visible and the reveal foreshorten as a player walks past.
+ZENITH_TEST(ZM_Gen, BuildingGen_WindowsAreRealOpenings)
+{
+	// Segment/triangle intersection (Moller-Trumbore): what does a sight line
+	// through a window centre actually meet, and how far in?
+	struct Ray
+	{
+		static bool Hits(const Zenith_Maths::Vector3& xOrigin, const Zenith_Maths::Vector3& xDir,
+			const Zenith_Maths::Vector3& xA, const Zenith_Maths::Vector3& xB,
+			const Zenith_Maths::Vector3& xC, float& fTOut)
+		{
+			const Zenith_Maths::Vector3 xE1 = xB - xA;
+			const Zenith_Maths::Vector3 xE2 = xC - xA;
+			const Zenith_Maths::Vector3 xP = glm::cross(xDir, xE2);
+			const float fDet = glm::dot(xE1, xP);
+			if (std::fabs(fDet) < 1.0e-9f) { return false; }
+			const float fInv = 1.0f / fDet;
+			const Zenith_Maths::Vector3 xT = xOrigin - xA;
+			const float fU = glm::dot(xT, xP) * fInv;
+			if (fU < 0.0f || fU > 1.0f) { return false; }
+			const Zenith_Maths::Vector3 xQ = glm::cross(xT, xE1);
+			const float fV = glm::dot(xDir, xQ) * fInv;
+			if (fV < 0.0f || fU + fV > 1.0f) { return false; }
+			fTOut = glm::dot(xE2, xQ) * fInv;
+			return fTOut > 0.0f;
+		}
+	};
+
+	// How deep the opening must be clear: the outer part of the pocket, stopping
+	// short of the room card at the back of it.
+	const float fClearDepth = fZM_BUILDING_REVEAL_DEPTH
+		- fZM_BUILDING_ROOM_CARD_GAP - fZM_BUILDING_ROOM_CARD_THICK - 1.0e-3f;
+	ZENITH_ASSERT_GT(fClearDepth, 0.10f,
+		"the reveal is only %.3f m deep -- too shallow to read as an opening", fClearDepth);
+
+	u_int uOpeningsProbed = 0u;
+	for (u_int u = 0u; u < (u_int)ZM_BUILDING_COUNT; ++u)
+	{
+		const ZM_BUILDING_ID eId = (ZM_BUILDING_ID)u;
+		const ZM_BuildingRecipe xR = ZM_ResolveBuildingRecipe(eId);
+		const ZM_BuildingShellMetrics xM = ZM_ResolveBuildingShellMetrics(xR);
+
+		ZM_GenMesh xWall, xGlass;
+		ZM_BuildBuildingSurfaceMesh(xR, ZM_BUILDING_SURFACE_WALL, xWall);
+		ZM_BuildBuildingSurfaceMesh(xR, ZM_BUILDING_SURFACE_GLASS, xGlass);
+
+		// Probe the +Z facade -- the one with no door, so a column is missing only
+		// when the window grid itself did not fit.
+		for (u_int r = 0u; r < xM.m_uWindowRows; ++r)
+		{
+			for (u_int c = 0u; c < xM.m_uWindowCols; ++c)
+			{
+				const float fCx = xM.WindowCentreX(c);
+				const float fCy = xM.WindowSillY(r) + fZM_BUILDING_WINDOW_HEIGHT * 0.5f;
+
+				// Only probe where a pane was actually emitted, so this asks about
+				// openings that EXIST rather than about a grid that was refused.
+				bool bHasPane = false;
+				for (u_int v = 0u; v < xGlass.GetNumVerts() && !bHasPane; ++v)
+				{
+					const Zenith_Maths::Vector3& xP = xGlass.m_xPositions.Get(v);
+					bHasPane = xP.z > 0.0f
+						&& std::fabs(xP.x - fCx) < fZM_BUILDING_WINDOW_WIDTH
+						&& std::fabs(xP.y - fCy) < fZM_BUILDING_WINDOW_HEIGHT;
+				}
+				if (!bHasPane) { continue; }
+				++uOpeningsProbed;
+
+				const Zenith_Maths::Vector3 xOrigin(fCx, fCy, xM.m_fHalfD + 1.0f);
+				const Zenith_Maths::Vector3 xDir(0.0f, 0.0f, -1.0f);
+				for (u_int t = 0u; t < xWall.GetNumTris(); ++t)
+				{
+					const Zenith_Maths::Vector3& xA = xWall.m_xPositions.Get(xWall.m_xIndices.Get(t * 3u + 0u));
+					const Zenith_Maths::Vector3& xB = xWall.m_xPositions.Get(xWall.m_xIndices.Get(t * 3u + 1u));
+					const Zenith_Maths::Vector3& xC = xWall.m_xPositions.Get(xWall.m_xIndices.Get(t * 3u + 2u));
+					float fT = 0.0f;
+					if (!Ray::Hits(xOrigin, xDir, xA, xB, xC, fT)) { continue; }
+					const float fDepth = fT - 1.0f;   // behind the facade plane
+					ZENITH_ASSERT_FALSE(fDepth > -1.0e-3f && fDepth < fClearDepth,
+						"%s: a sight line through the window at (%.2f, %.2f) meets wall "
+						"triangle %u only %.4f m behind the facade plane. The opening is "
+						"not a hole -- the pane is glued to a solid box and the reveal "
+						"does not exist", ZM_GetBuildingName(eId), fCx, fCy, t, fDepth);
+				}
+			}
+		}
+
+		// ANTI-VACUITY: the SAME ray fired at solid masonry (on the axis, just
+		// under the eave, above every opening) must meet the facade AT the plane.
+		// Without this the loop above passes for a building with no wall at all.
+		{
+			const Zenith_Maths::Vector3 xOrigin(0.0f, xM.m_fWallTop - 0.10f, xM.m_fHalfD + 1.0f);
+			const Zenith_Maths::Vector3 xDir(0.0f, 0.0f, -1.0f);
+			bool bHitFacade = false;
+			for (u_int t = 0u; t < xWall.GetNumTris() && !bHitFacade; ++t)
+			{
+				const Zenith_Maths::Vector3& xA = xWall.m_xPositions.Get(xWall.m_xIndices.Get(t * 3u + 0u));
+				const Zenith_Maths::Vector3& xB = xWall.m_xPositions.Get(xWall.m_xIndices.Get(t * 3u + 1u));
+				const Zenith_Maths::Vector3& xC = xWall.m_xPositions.Get(xWall.m_xIndices.Get(t * 3u + 2u));
+				float fT = 0.0f;
+				if (Ray::Hits(xOrigin, xDir, xA, xB, xC, fT) && (fT - 1.0f) < 0.05f)
+				{
+					bHitFacade = true;
+				}
+			}
+			ZENITH_ASSERT_TRUE(bHitFacade,
+				"%s: a ray at solid masonry under the eave met no wall at the facade "
+				"plane, so the opening clause above proves nothing",
+				ZM_GetBuildingName(eId));
+		}
+	}
+	ZENITH_ASSERT_GT(uOpeningsProbed, 20u,
+		"only %u window openings were probed across the whole roster -- the grid is "
+		"being refused everywhere and this clause is nearly empty", uOpeningsProbed);
+
+	// ★ AND THE PANE IS SET BACK. A pane on the wall plane is the decal this whole
+	// change exists to remove. Measured on a building known to carry the full
+	// window treatment rather than the windowless single-pane fallback (which
+	// stands proud by design -- it has no pocket to sit in).
+	{
+		const ZM_BuildingRecipe xR = ZM_ResolveBuildingRecipe(ZM_BUILDING_PLAYER_HOME);
+		const ZM_BuildingShellMetrics xM = ZM_ResolveBuildingShellMetrics(xR);
+		ZM_GenMesh xGlass;
+		ZM_BuildBuildingSurfaceMesh(xR, ZM_BUILDING_SURFACE_GLASS, xGlass);
+		ZENITH_ASSERT_GT(xGlass.GetNumTris(), 12u,
+			"the PlayerHome fell back to the single windowless pane, so the setback "
+			"clause below would measure the wrong thing");
+		for (u_int v = 0u; v < xGlass.GetNumVerts(); ++v)
+		{
+			const Zenith_Maths::Vector3& xP = xGlass.m_xPositions.Get(v);
+			const float fDepth = (xP.z > 0.0f) ? (xM.m_fHalfD - xP.z) : (xP.z + xM.m_fHalfD);
+			ZENITH_ASSERT_GT(fDepth, 0.04f,
+				"the PlayerHome has a pane only %.4f m behind the facade plane -- it is "
+				"applied to the wall rather than set into a reveal", fDepth);
+		}
+	}
+}
+
+// ############################################################################
+// ★ 19. THE DOOR IS A RECESS, WITH A THRESHOLD AND A HANDLE
+// ############################################################################
+
+// Version 3 stood the leaf PROUD of a solid wall, because there was no opening
+// to recess into -- and a leaf spanning inward from the wall plane put its
+// outward face exactly coplanar with the masonry, which z-fought on both
+// Dawnmere buildings. The doorway is a pocket now, so the leaf can sit where a
+// door actually sits: at the back of the reveal, with the surround's ledge and
+// the pocket's jambs casting onto it.
+ZENITH_TEST(ZM_Gen, BuildingGen_DoorIsARecessedLeaf)
+{
+	const ZM_BUILDING_ID aeCases[3] = {
+		ZM_BUILDING_PLAYER_HOME, ZM_BUILDING_LAB, ZM_BUILDING_HOUSE_COTTAGE_WARM };
+	for (u_int i = 0u; i < 3u; ++i)
+	{
+		const ZM_BUILDING_ID eId = aeCases[i];
+		const ZM_BuildingRecipe xR = ZM_ResolveBuildingRecipe(eId);
+		const ZM_BuildingShellMetrics xM = ZM_ResolveBuildingShellMetrics(xR);
+		ZM_GenMesh xTrim;
+		ZM_BuildBuildingSurfaceMesh(xR, ZM_BUILDING_SURFACE_TRIM, xTrim);
+
+		const float fWallPlane = -xM.m_fHalfD;
+		const float fDoorHalf  = xM.m_fDoorWidth * 0.5f;
+
+		bool bLeaf      = false;
+		bool bThreshold = false;
+		bool bHandle    = false;
+		for (u_int v = 0u; v < xTrim.GetNumVerts(); ++v)
+		{
+			const Zenith_Maths::Vector3& xP = xTrim.m_xPositions.Get(v);
+			// Inside the doorway's width, and inside the pocket's depth band.
+			if (std::fabs(xP.x) > fDoorHalf + 1.0e-3f) { continue; }
+			if (xP.z <= fWallPlane || xP.z >= fWallPlane + fZM_BUILDING_REVEAL_DEPTH + 1.0e-3f)
+			{
+				continue;
+			}
+			if (xP.y > fZM_BUILDING_THRESHOLD_H + 0.20f && xP.y < xM.m_fDoorHeight - 0.10f)
+			{
+				bLeaf = true;
+			}
+			if (xP.y > 1.0e-4f && xP.y <= fZM_BUILDING_THRESHOLD_H + 1.0e-3f) { bThreshold = true; }
+			if (std::fabs(xP.y - fZM_BUILDING_HANDLE_Y) < fZM_BUILDING_HANDLE_LEN * 0.75f)
+			{
+				bHandle = true;
+			}
+		}
+		ZENITH_ASSERT_TRUE(bLeaf,
+			"%s emitted no door leaf inside its own doorway pocket", ZM_GetBuildingName(eId));
+		ZENITH_ASSERT_TRUE(bThreshold,
+			"%s has no threshold step -- the leaf stands on nothing and the pocket "
+			"floor is open to the plinth", ZM_GetBuildingName(eId));
+		ZENITH_ASSERT_TRUE(bHandle,
+			"%s has no door handle at hand height", ZM_GetBuildingName(eId));
+
+		// ★ RECESSED, NOT PROUD. Every leaf vertex sits BEHIND the masonry plane
+		// (which is also what keeps it out of the coplanar test's way). Measured as
+		// "no trim vertex within the door's width, above the threshold and below
+		// the head, is outboard of the wall plane by more than the surround".
+		for (u_int v = 0u; v < xTrim.GetNumVerts(); ++v)
+		{
+			const Zenith_Maths::Vector3& xP = xTrim.m_xPositions.Get(v);
+			if (std::fabs(xP.x) > fDoorHalf - fZM_BUILDING_REVEAL_LINING - 1.0e-3f) { continue; }
+			if (xP.y < fZM_BUILDING_THRESHOLD_H + 0.20f) { continue; }
+			if (xP.y > xM.m_fDoorHeight - 0.10f) { continue; }
+			// Inside the opening at hand height there is only the leaf and its
+			// handle; the handle stands proud of the leaf but must still be behind
+			// the wall plane, or a passer-by would clip it.
+			ZENITH_ASSERT_GT(xP.z, fWallPlane + 1.0e-3f,
+				"%s has door geometry at z=%.4f, on or outboard of the wall plane "
+				"%.4f -- the leaf is applied to the facade rather than set into an "
+				"opening, which is the z-fight this pocket exists to end",
+				ZM_GetBuildingName(eId), xP.z, fWallPlane);
+		}
+	}
+}
+
+// ############################################################################
+// ★ 20. THE ROOF IS COURSED SLATE, NOT TWO PLANES
+// ############################################################################
+
+// Two ruled planes have a straight silhouette and no shadow lines. Real slate is
+// rows, each lying on the one below with its lower edge proud, so a grazing sun
+// draws a line per course and the edge against the sky is stepped.
+ZENITH_TEST(ZM_Gen, BuildingGen_RoofIsCoursed)
+{
+	const ZM_BUILDING_ID aePitched[2] = { eBG_GABLE, eBG_HIP };
+	for (u_int i = 0u; i < 2u; ++i)
+	{
+		const ZM_BUILDING_ID eId = aePitched[i];
+		const ZM_BuildingRecipe xR = ZM_ResolveBuildingRecipe(eId);
+		const ZM_BuildingShellMetrics xM = ZM_ResolveBuildingShellMetrics(xR);
+		ZM_GenMesh xRoof;
+		ZM_BuildBuildingSurfaceMesh(xR, ZM_BUILDING_SURFACE_ROOF, xRoof);
+
+		// Two pitches plus two gable ends is 8 triangles. A coursed roof is many
+		// times that. The bound is the CLAIM ("this is not ruled planes") rather
+		// than a golden count, which would red on any proportion change.
+		ZENITH_ASSERT_GT(xRoof.GetNumTris(), 40u,
+			"%s's roof is only %u triangles -- it is still ruled planes, not courses",
+			ZM_GetBuildingName(eId), xRoof.GetNumTris());
+
+		// A ridge run sits ABOVE the apex the pitches meet at.
+		ZENITH_ASSERT_GT(ZM_GenMeshBoundsMax(xRoof).y, xM.m_fRidgeY + 1.0e-3f,
+			"%s has no ridge run above its apex (roof top %.4f, ridge %.4f)",
+			ZM_GetBuildingName(eId), ZM_GenMeshBoundsMax(xRoof).y, xM.m_fRidgeY);
+
+		// ★ THE COURSES ARE PROUD AND JITTERED. Every course is offset along its
+		// facet normal by a lip plus its own hash-derived jitter, so the eave row
+		// is not a single ruled height -- which is what stops the rows reading as
+		// machine-parallel.
+		float fMinEave = 1.0e9f, fMaxEave = -1.0e9f;
+		for (u_int v = 0u; v < xRoof.GetNumVerts(); ++v)
+		{
+			const Zenith_Maths::Vector3& xP = xRoof.m_xPositions.Get(v);
+			if (xP.y > xM.m_fWallTop - 0.05f && xP.y < xM.m_fWallTop + 0.05f)
+			{
+				if (xP.y < fMinEave) { fMinEave = xP.y; }
+				if (xP.y > fMaxEave) { fMaxEave = xP.y; }
+			}
+		}
+		ZENITH_ASSERT_GT(fMaxEave - fMinEave, fZM_BUILDING_ROOF_LIP * 0.5f,
+			"%s's eave course has no proud lip (height spread %.5f) -- there is no "
+			"step for a grazing sun to draw", ZM_GetBuildingName(eId), fMaxEave - fMinEave);
+
+		// Still a valid surface after all that (a coursed strip wound the wrong way
+		// is a black band across the roof).
+		const ZM_BuildingSurfaceValidation xV = ZM_ValidateBuildingSurfaceMesh(xRoof, 1.0e6f);
+		ZENITH_ASSERT_TRUE(xV.m_bWindingOutward,
+			"%s's coursed roof has an inward-wound triangle (first bad %u)",
+			ZM_GetBuildingName(eId), xV.m_uFirstBadTriangle);
+		ZENITH_ASSERT_TRUE(xV.m_bIndicesInRange,
+			"%s's coursed roof has an out-of-range index", ZM_GetBuildingName(eId));
+		ZENITH_ASSERT_TRUE(xV.m_bUVsFiniteAndBounded,
+			"%s's coursed roof has a non-finite UV", ZM_GetBuildingName(eId));
+	}
+
+	// Barge boards close the verge of a gable: trim out at the gable end, above
+	// the eave, which nothing else on the building emits there (the chimney sits
+	// inboard at 0.45 x half-width).
+	{
+		const ZM_BuildingRecipe xR = ZM_ResolveBuildingRecipe(eBG_GABLE);
+		const ZM_BuildingShellMetrics xM = ZM_ResolveBuildingShellMetrics(xR);
+		ZM_GenMesh xTrim;
+		ZM_BuildBuildingSurfaceMesh(xR, ZM_BUILDING_SURFACE_TRIM, xTrim);
+		u_int uVerge = 0u;
+		for (u_int v = 0u; v < xTrim.GetNumVerts(); ++v)
+		{
+			const Zenith_Maths::Vector3& xP = xTrim.m_xPositions.Get(v);
+			if (xP.y > xM.m_fWallTop + 0.05f && std::fabs(xP.x) > xM.m_fExW - 0.10f)
+			{
+				++uVerge;
+			}
+		}
+		ZENITH_ASSERT_GT(uVerge, 0u,
+			"a gabled roof has no barge board along its verge -- the slate course "
+			"ends are open to the sky");
+	}
+
+	// And the fascia still runs the whole eave, so the wall keeps its shadow line.
+	{
+		const ZM_BuildingRecipe xR = ZM_ResolveBuildingRecipe(eBG_HIP);
+		const ZM_BuildingShellMetrics xM = ZM_ResolveBuildingShellMetrics(xR);
+		ZM_GenMesh xTrim;
+		ZM_BuildBuildingSurfaceMesh(xR, ZM_BUILDING_SURFACE_TRIM, xTrim);
+		ZENITH_ASSERT_GE(ZM_GenMeshBoundsMax(xTrim).x, xM.m_fExW - 1.0e-3f,
+			"the eave fascia no longer reaches the overhang, so the wall gets no eave "
+			"shadow (%.3f vs %.3f)", ZM_GenMeshBoundsMax(xTrim).x, xM.m_fExW);
+	}
+}
+
+// ############################################################################
+// ★★ 21. THE WEATHERING READS AS GRAVITY AND TIME
+// ############################################################################
+
+// Version 3 weathered a wall with ONE term: cavity x a per-building constant.
+// That is dirt in the mortar and nothing else -- no splash-back off the ground,
+// no streaks under the sills, no runoff under the eave. And it was computed
+// against the TILE's own v, which repeated one and a half times up a storey, so
+// even a gradient would have anchored to nothing.
+//
+// ★ THE FIX IS THAT THE WALL'S TILE IS THE STOREY HEIGHT, so v IS
+// height-within-the-storey. These clauses assert the three terms land on the
+// rows they claim to, IN METRES -- the property that stops being true the moment
+// somebody "simplifies" the tile back to a round number.
+ZENITH_TEST(ZM_Gen, BuildingGen_WeatheringIsAnchoredToWorldHeight)
+{
+	const ZM_BuildingRecipe xR = ZM_ResolveBuildingRecipe(ZM_BUILDING_PLAYER_HOME);
+	const float fTile = ZM_BuildingSurfaceTileMetresFor(xR, ZM_BUILDING_SURFACE_WALL);
+	ZENITH_ASSERT_EQ_FLOAT(fTile, ZM_GetBuildingData(ZM_BUILDING_PLAYER_HOME).m_fStoreyHeight,
+		fBG_EXACT,
+		"the wall tile is %.3f m but the storey is %.3f m -- v is no longer "
+		"height-within-the-storey and every row below anchors to nothing",
+		fTile, ZM_GetBuildingData(ZM_BUILDING_PLAYER_HOME).m_fStoreyHeight);
+
+	const u_int uSalt = xR.m_uSyntheticSeed;
+	constexpr float fDRIPS = 4.0f;
+
+	// (a) SPLASH-BACK is monotone DECREASING with height above the plinth, and is
+	// gone one splash-height above it.
+	{
+		float fPrev = 2.0f;
+		constexpr u_int uSTEPS = 24u;
+		for (u_int i = 0u; i <= uSTEPS; ++i)
+		{
+			const float fY = fZM_BUILDING_PLINTH_HEIGHT
+				+ fZM_BUILDING_SPLASH_HEIGHT * (float)i / (float)uSTEPS;
+			const float fS = ZM_BuildingWallWeatherAt(0.5f, fY / fTile, fTile, uSalt, fDRIPS).m_fSplash;
+			ZENITH_ASSERT_LE(fS, fPrev + 1.0e-4f,
+				"splash-back rose with height at y=%.3f (%.4f after %.4f) -- rain does "
+				"not bounce upward", fY, fS, fPrev);
+			fPrev = fS;
+		}
+		ZENITH_ASSERT_GT(ZM_BuildingWallWeatherAt(0.5f,
+			fZM_BUILDING_PLINTH_HEIGHT / fTile, fTile, uSalt, fDRIPS).m_fSplash, 0.9f,
+			"there is no splash-back at the plinth top");
+		const float fAbove = ZM_BuildingWallWeatherAt(0.5f,
+			(fZM_BUILDING_PLINTH_HEIGHT + fZM_BUILDING_SPLASH_HEIGHT + 0.05f) / fTile,
+			fTile, uSalt, fDRIPS).m_fSplash;
+		ZENITH_ASSERT_LT(fAbove, 1.0e-3f,
+			"splash-back is still %.4f a full %.2f m above the plinth -- that is a "
+			"wash, not a splash line", fAbove, fZM_BUILDING_SPLASH_HEIGHT);
+	}
+
+	// (b) RUNOFF is the mirror image: nothing mid-wall, everything at the eave.
+	{
+		const float fMid = ZM_BuildingWallWeatherAt(0.5f, 0.5f, fTile, uSalt, fDRIPS).m_fRunoff;
+		const float fTop = ZM_BuildingWallWeatherAt(0.5f, 1.0f - 1.0e-4f, fTile, uSalt, fDRIPS).m_fRunoff;
+		ZENITH_ASSERT_LT(fMid, 1.0e-3f,
+			"there is eave runoff halfway down the wall (%.4f)", fMid);
+		ZENITH_ASSERT_GT(fTop, 0.9f,
+			"there is no runoff staining under the eave (%.4f)", fTop);
+	}
+
+	// (c) DRIPS hang UNDER the sill row and nowhere above it -- and there really
+	// are some, because a streak generator that produced nothing would satisfy
+	// "none above the sill" perfectly.
+	{
+		const float fSillUnder = fZM_BUILDING_WINDOW_SILL_Y - fZM_BUILDING_FRAME_THICK
+			- fZM_BUILDING_SILL_HEIGHT;
+		float fMaxBelow = 0.0f;
+		// ★ 256 SAMPLES ACROSS U, NOT 64. A drip stain is 2-4 cm wide, which on a
+		// 3 m tile is 0.007-0.013 in u -- a 64-sample sweep steps 0.016 at a time
+		// and can walk straight past every streak, measuring the gaps between them
+		// and calling the term dead. The bake itself samples u 512 times.
+		constexpr u_int uU = 256u;
+		for (u_int i = 0u; i < uU; ++i)
+		{
+			const float fU = ((float)i + 0.5f) / (float)uU;
+			for (u_int j = 1u; j < 8u; ++j)
+			{
+				const float fY = fSillUnder - fZM_BUILDING_DRIP_LENGTH * (float)j / 8.0f;
+				const float fD = ZM_BuildingWallWeatherAt(fU, fY / fTile, fTile, uSalt, fDRIPS).m_fDrip;
+				if (fD > fMaxBelow) { fMaxBelow = fD; }
+			}
+			ZENITH_ASSERT_EQ_FLOAT(ZM_BuildingWallWeatherAt(fU,
+				(fSillUnder + 0.10f) / fTile, fTile, uSalt, fDRIPS).m_fDrip, 0.0f, 0.0f,
+				"there is a drip streak 0.10 m ABOVE the sill underside at u=%.3f -- "
+				"water does not run up a wall", fU);
+		}
+		ZENITH_ASSERT_GT(fMaxBelow, 0.2f,
+			"the strongest drip streak under the whole sill row is %.4f -- the streaks "
+			"are invisible and the term is decoration", fMaxBelow);
+	}
+
+	// ★ AND THE TERMS REACH THE ALBEDO. Everything above is a pure function
+	// nobody is obliged to call; this is the clause that fails if the texture
+	// builder stops reading it.
+	{
+		const ZM_BuildingTextureSet xT = ZM_BuildBuildingSurfaceTextures(xR, ZM_BUILDING_SURFACE_WALL);
+		const u_int uRes = xT.m_xAlbedo.GetWidth();
+		struct Band
+		{
+			static float Mean(const ZM_GenImage& xImg, float fV0, float fV1)
+			{
+				const u_int uRes2 = xImg.GetHeight();
+				u_int uY0 = (u_int)(fV0 * (float)uRes2);
+				u_int uY1 = (u_int)(fV1 * (float)uRes2);
+				if (uY1 > uRes2) { uY1 = uRes2; }
+				double dSum = 0.0; u_int uN = 0u;
+				for (u_int y = uY0; y < uY1; ++y)
+				{
+					for (u_int x = 0u; x < xImg.GetWidth(); ++x)
+					{
+						const Zenith_Maths::Vector4 xC = xImg.Get(y, x);
+						dSum += 0.2126 * xC.x + 0.7152 * xC.y + 0.0722 * xC.z;
+						++uN;
+					}
+				}
+				return uN > 0u ? (float)(dSum / (double)uN) : 0.0f;
+			}
+		};
+		const float fSplashBand = Band::Mean(xT.m_xAlbedo, 0.0f,
+			(fZM_BUILDING_PLINTH_HEIGHT + 0.15f) / fTile);
+		const float fMidBand  = Band::Mean(xT.m_xAlbedo, 0.45f, 0.60f);
+		const float fEaveBand = Band::Mean(xT.m_xAlbedo,
+			1.0f - (fZM_BUILDING_RUNOFF_HEIGHT * 0.5f) / fTile, 1.0f);
+		ZENITH_ASSERT_LT(fSplashBand, fMidBand - 0.01f,
+			"the bottom of the wall (%.4f) is not darker than the middle (%.4f) -- the "
+			"splash-back never reached the albedo", fSplashBand, fMidBand);
+		ZENITH_ASSERT_LT(fEaveBand, fMidBand - 0.005f,
+			"the top of the wall (%.4f) is not darker than the middle (%.4f) -- the "
+			"eave runoff never reached the albedo", fEaveBand, fMidBand);
+		ZENITH_ASSERT_EQ(uRes, ZM_BuildingSurfaceResolution(ZM_BUILDING_SURFACE_WALL),
+			"the wall albedo is not the surface resolution");
+	}
+}
+
+// ############################################################################
+// ★ 22. EDGE WEAR LANDS ON PROUD ARRISES, AND POLISHES THEM
+// ############################################################################
+
+// The second thing weather does after filling cavities with dirt, and the one
+// that reads as AGE rather than as grime: anything proud and sharp gets rubbed,
+// loses its patina and polishes. The mask is derived from the height field's own
+// gradient, so it lands exactly where the normal map says the edge is -- which
+// is the whole reason it is not a second, independent noise field.
+ZENITH_TEST(ZM_Gen, SynthEdgeWearLandsOnProudArrises)
+{
+	constexpr u_int uRES = 64u;
+	// A single proud plateau: flat low, a sharp step up, flat high. The arris is
+	// the step; both flats must come out clean.
+	ZM_GenImage xHeight(uRES, uRES);
+	for (u_int y = 0u; y < uRES; ++y)
+	{
+		for (u_int x = 0u; x < uRES; ++x)
+		{
+			const float fH = (x >= uRES / 4u && x < uRES / 2u) ? 0.85f : 0.15f;
+			xHeight.Set(y, x, Zenith_Maths::Vector4(fH, fH, fH, 1.0f));
+		}
+	}
+	const ZM_GenImage xWear = ZM_SynthEdgeWearFromHeight(xHeight);
+	ZENITH_ASSERT_EQ(xWear.GetWidth(), uRES, "the wear mask is not the height field's size");
+	ZENITH_ASSERT_TRUE(ZM_SynthEdgeWearFromHeight(xHeight).Equals(xWear),
+		"ZM_SynthEdgeWearFromHeight is not a pure function of the height field");
+
+	const u_int uRow      = uRES / 2u;
+	const u_int uEdge     = uRES / 2u - 1u;   // the proud side of the upper step
+	const u_int uPlateau  = uRES / 4u + 6u;   // middle of the plateau
+	const u_int uGround   = 2u;               // middle of the low ground
+	const float fAtEdge    = xWear.Get(uRow, uEdge).x;
+	const float fOnPlateau = xWear.Get(uRow, uPlateau).x;
+	const float fOnGround  = xWear.Get(uRow, uGround).x;
+	ZENITH_ASSERT_GT(fAtEdge, 0.5f,
+		"the arris of a 0.7-high step wears only %.4f -- the mask is not finding "
+		"edges at all", fAtEdge);
+	ZENITH_ASSERT_LT(fOnPlateau, 0.05f,
+		"the middle of a flat plateau wears %.4f -- this is a height map, not an "
+		"edge mask", fOnPlateau);
+	ZENITH_ASSERT_LT(fOnGround, 0.05f, "flat low ground wears %.4f", fOnGround);
+
+	// ★ THE PROUD SIDE, NOT THE CAVITY SIDE. A cavity edge is exactly as sharp;
+	// what makes wear read as wear is that it only ever appears on the part that
+	// sticks out. The recessed side collects dirt instead.
+	const float fCavitySide = xWear.Get(uRow, uRES / 4u - 1u).x;
+	ZENITH_ASSERT_LT(fCavitySide, fAtEdge * 0.6f,
+		"the recessed side of the step wears %.4f against the proud side's %.4f -- "
+		"dirt collects there, it does not polish", fCavitySide, fAtEdge);
+
+	// It reaches the PBR set: a worn arris is SMOOTHER, a flat texel is untouched,
+	// and zero strength is byte-identical to no wear at all (or every family that
+	// does not ask for wear would silently re-bake).
+	ZM_SynthPbrResponse xResp;
+	xResp.m_fRoughness       = 0.85f;
+	xResp.m_fCavityRoughness = 0.0f;   // isolate the wear term
+	xResp.m_fCavityOcclusion = 0.5f;
+	const ZM_SynthPbrSet xNoWear = ZM_SynthBuildPbrSet(xHeight, xResp);
+	xResp.m_fEdgeWearStrength = 1.0f;
+	const ZM_SynthPbrSet xWorn = ZM_SynthBuildPbrSet(xHeight, xResp);
+	ZENITH_ASSERT_TRUE(xNoWear.NonEmpty() && xWorn.NonEmpty(), "a PBR set is incomplete");
+	ZENITH_ASSERT_LT(xWorn.m_xRoughnessMetallic.Get(uRow, uEdge).y,
+		xNoWear.m_xRoughnessMetallic.Get(uRow, uEdge).y - 0.05f,
+		"a fully worn arris is no smoother than an unworn one");
+	ZENITH_ASSERT_EQ_FLOAT(xWorn.m_xRoughnessMetallic.Get(uRow, uPlateau).y,
+		xNoWear.m_xRoughnessMetallic.Get(uRow, uPlateau).y, 1.0e-3f,
+		"switching edge wear on changed a FLAT texel, so it is not an edge term");
+	xResp.m_fEdgeWearStrength = 0.0f;
+	ZENITH_ASSERT_TRUE(ZM_SynthBuildPbrSet(xHeight, xResp).Equals(xNoWear),
+		"edge-wear strength 0 is not identical to no edge wear");
+}
+
+// ############################################################################
+// ★ 23. TWO WALLS OF ONE BUILDING ARE NOT THE SAME SQUARE
+// ############################################################################
+
+// A tiling texture repeats several times up a storey and across a facade.
+// Without a low-frequency term the eye finds the grid instantly -- it is the
+// most recognisable "this is a game texture" cue there is. The macro tint is a
+// period-2/3 drift in value and hue: too slow to read as a pattern, fast enough
+// that no two halves of the tile match.
+ZENITH_TEST(ZM_Gen, BuildingGen_MacroTintBreaksTheRepeat)
+{
+	// ★ MEASURED AS VERTICAL STRIPS, ACROSS A MIDDLE BAND. Strips in U cancel
+	// every height-anchored term exactly (splash-back, eave runoff and the sill
+	// drips are all functions of V alone at a given U, and the band excludes the
+	// drip rows outright), so what is left is the macro tint and the course
+	// lattice's own residue. Quarters rather than halves because a wrapping
+	// lattice's halves can be mirror images of each other.
+	const ZM_BUILDING_ID aeProbe[4] = {
+		ZM_BUILDING_HOUSE_COTTAGE_WARM, ZM_BUILDING_HOUSE_TOWNHOUSE_COOL,
+		ZM_BUILDING_PLAYER_HOME, ZM_BUILDING_GYM_3 };
+	u_int uVarying = 0u;
+	float fBestSpread = 0.0f;
+	// The first probe is also the subject of the per-face cast clause at the end.
+	const ZM_BuildingRecipe xR = ZM_ResolveBuildingRecipe(aeProbe[0]);
+	for (u_int b = 0u; b < 4u; ++b)
+	{
+		const ZM_BuildingRecipe xRb = ZM_ResolveBuildingRecipe(aeProbe[b]);
+		const ZM_BuildingTextureSet xTb =
+			ZM_BuildBuildingSurfaceTextures(xRb, ZM_BUILDING_SURFACE_WALL);
+		const u_int uRes2 = xTb.m_xAlbedo.GetWidth();
+		const u_int uQ = uRes2 / 4u;
+		float fLo = 2.0f, fHi = -1.0f;
+		for (u_int q = 0u; q < 4u; ++q)
+		{
+			double dSum = 0.0; u_int uN = 0u;
+			for (u_int y = uRes2 * 4u / 10u; y < uRes2 * 6u / 10u; ++y)
+			{
+				for (u_int x = q * uQ; x < (q + 1u) * uQ; ++x)
+				{
+					const Zenith_Maths::Vector4 xC = xTb.m_xAlbedo.Get(y, x);
+					dSum += 0.2126 * xC.x + 0.7152 * xC.y + 0.0722 * xC.z;
+					++uN;
+				}
+			}
+			const float fMeanQ = (float)(dSum / (double)uN);
+			if (fMeanQ < fLo) { fLo = fMeanQ; }
+			if (fMeanQ > fHi) { fHi = fMeanQ; }
+		}
+		const float fSpread = fHi - fLo;
+		if (fSpread > 0.003f) { ++uVarying; }
+		if (fSpread > fBestSpread) { fBestSpread = fSpread; }
+		// ...and never SO much that one tile reads as two materials.
+		ZENITH_ASSERT_LT(fSpread, 0.12f,
+			"%s's wall tile varies by %.4f across its width -- that is a patch, not a "
+			"drift", ZM_GetBuildingName(aeProbe[b]), fSpread);
+	}
+	ZENITH_ASSERT_GE(uVarying, 3u,
+		"only %u of 4 walls show any low-frequency variation across the tile (best "
+		"spread %.5f) -- the macro tint is not reaching the albedo and the repeat "
+		"will read as a grid", uVarying, fBestSpread);
+
+	// ★★ THE TWO GRIME COLOURS, AND WHY THE FIRST VERSION OF THIS CLAUSE WAS
+	// DEAD. It counted texels with luma <= 0.35 that were warm-biased or
+	// green-biased, and it found ZERO of each -- not because the grime was
+	// missing, but because BOTH constants were unreachable by construction:
+	//
+	//   * MEASURED luma over a whole CottageWarm wall tile: min 0.403, p1 0.414,
+	//     p10 0.452, median 0.570. Nothing is anywhere near 0.35, and nothing can
+	//     be: the base is luma 0.605, the darkest grime is luma 0.14, the mix is
+	//     at most (grime 0.80) x 0.55 = 0.44, so the floor is ~0.40. A threshold
+	//     calibrated against the NOMINAL [0,1] range measures nothing.
+	//   * "green > red" can NEVER hold on a warm wall. The base is (0.82, 0.56),
+	//     and even fully grimed it lands at (0.44, 0.35) -- red still leads.
+	//     Biological grime shows up as a RELATIVE shift toward green, never as an
+	//     absolute one.
+	//
+	// So the claim is made three ways, none of them an absolute colour threshold:
+	// the PALETTE must actually differ, the MIX FIELD must reach both ends, and
+	// the ALBEDO must carry the difference where the mix says it should.
+
+	// (1) The palette. Both numbers are measured off the shipped constants.
+	const Zenith_Maths::Vector3 xDust = ZM_BuildingGrimeColour(false);
+	const Zenith_Maths::Vector3 xBio  = ZM_BuildingGrimeColour(true);
+	const float fDustGR = xDust.y - xDust.x;
+	const float fBioGR  = xBio.y  - xBio.x;
+	const float fDustLuma = 0.2126f * xDust.x + 0.7152f * xDust.y + 0.0722f * xDust.z;
+	const float fBioLuma  = 0.2126f * xBio.x  + 0.7152f * xBio.y  + 0.0722f * xBio.z;
+	ZENITH_ASSERT_GT(fBioGR - fDustGR, 0.10f,
+		"the two grime colours differ by only %.4f in (G-R). They are mixed into a "
+		"base colour at 55%% of a grime factor that peaks near 0.8, so anything "
+		"under ~0.1 arrives as rounding: the shipped pair before this measured "
+		"0.070 here and came out 0.006 apart on the wall", fBioGR - fDustGR);
+	ZENITH_ASSERT_GT(fDustLuma - fBioLuma, 0.10f,
+		"biological grime (luma %.4f) is not meaningfully darker than dust (%.4f) "
+		"-- algae in a damp corner is nearly black", fBioLuma, fDustLuma);
+
+	// (2) The mix field SPANS enough of [0,1] on every roster building for both
+	// colours to be seen. This is the clause that would have caught the real
+	// defect: at the first version's +/-0.4 swing three rows -- CottageWarm,
+	// PlayerHome and GymIce, two of them the most-looked-at buildings in the game
+	// -- were confined to 0.40-0.92, 0.05-0.61 and 0.28-0.80, so one of their two
+	// grime colours was never seen. At +/-0.8 all thirty clear the bounds below.
+	//
+	// ★ THE BOUNDS ARE MEASURED, NOT ROUND. Full saturation is NOT asserted,
+	// because it is not achievable: the mix is clamp(share + noise), the share is
+	// drawn in [0.30, 0.70] and the period-4 lattice has only 16 nodes, so a row
+	// drawn at 0.58 needs a node below 0.075 to reach pure dust and three rows do
+	// not have one. MEASURED worst cases across the roster: lowest minimum 0.208
+	// (CottageWarm), highest maximum 0.910 (PlayerHome), narrowest span 0.792.
+	for (u_int u = 0u; u < (u_int)ZM_BUILDING_COUNT; ++u)
+	{
+		const ZM_BuildingRecipe xRb = ZM_ResolveBuildingRecipe((ZM_BUILDING_ID)u);
+		const float fShare = ZM_BuildingAlbedoDrawsFor(xRb).m_fBioShare;
+		float fLo = 2.0f, fHi = -1.0f;
+		for (u_int y = 0u; y < 64u; ++y)
+		{
+			for (u_int x = 0u; x < 64u; ++x)
+			{
+				const float fM = ZM_BuildingWallGrimeBioMixAt(
+					((float)x + 0.5f) / 64.0f, ((float)y + 0.5f) / 64.0f,
+					xRb.m_uSyntheticSeed, fShare);
+				ZENITH_ASSERT_TRUE(fM >= 0.0f && fM <= 1.0f,
+					"%s's grime mix left [0,1] (%.4f)", ZM_GetBuildingName((ZM_BUILDING_ID)u), fM);
+				if (fM < fLo) { fLo = fM; }
+				if (fM > fHi) { fHi = fM; }
+			}
+		}
+		ZENITH_ASSERT_LT(fLo, 0.35f,
+			"%s's wall never gets near warm dust (lowest mix %.4f on a share of %.3f) "
+			"-- one of its two grime colours is a sliver",
+			ZM_GetBuildingName((ZM_BUILDING_ID)u), fLo, fShare);
+		ZENITH_ASSERT_GT(fHi, 0.65f,
+			"%s's wall never gets near biological grime (highest mix %.4f on a share "
+			"of %.3f)", ZM_GetBuildingName((ZM_BUILDING_ID)u), fHi, fShare);
+		ZENITH_ASSERT_GT(fHi - fLo, 0.60f,
+			"%s's grime mix spans only %.4f of the range, so its wall carries one "
+			"blended colour rather than two",
+			ZM_GetBuildingName((ZM_BUILDING_ID)u), fHi - fLo);
+	}
+
+	// (3) The albedo CARRIES it. Measured on the roster row whose drawn share is
+	// nearest 0.5 -- found by scanning rather than hardcoded, because which row
+	// that is depends on the seed and would rot the first time the draw order
+	// moved. A balanced share is what makes both sample sets large enough for the
+	// mean to mean anything: on a row drawn at 0.32 the high-mix set is ~100
+	// texels and the confounds (mortar joints, the macro tint) swamp it.
+	ZM_BUILDING_ID eBalanced = ZM_BUILDING_HOUSE_COTTAGE_WARM;
+	float fBestShare = 0.0f, fBestDist = 2.0f;
+	for (u_int u = 0u; u < (u_int)ZM_BUILDING_COUNT; ++u)
+	{
+		const float fShare = ZM_BuildingAlbedoDrawsFor(
+			ZM_ResolveBuildingRecipe((ZM_BUILDING_ID)u)).m_fBioShare;
+		const float fDist = std::fabs(fShare - 0.5f);
+		if (fDist < fBestDist) { fBestDist = fDist; fBestShare = fShare; eBalanced = (ZM_BUILDING_ID)u; }
+	}
+	{
+		const ZM_BuildingRecipe xRb = ZM_ResolveBuildingRecipe(eBalanced);
+		const ZM_BuildingTextureSet xTb =
+			ZM_BuildBuildingSurfaceTextures(xRb, ZM_BUILDING_SURFACE_WALL);
+		const ZM_GenImage xHeightB = ZM_BuildBuildingSurfaceHeight(xRb, ZM_BUILDING_SURFACE_WALL);
+		const u_int uResB = xTb.m_xAlbedo.GetWidth();
+
+		// TWO filters, both necessary. The MEAN height splits unit faces from
+		// mortar joints: joints swing (G-R) by ~0.25 on a warm wall, three times
+		// what the grime does, so including them measures the lattice. And the
+		// SPLASH BAND (the plinth plus one splash height) is where the grime
+		// factor is near 1, so the colour is applied at full strength -- measured
+		// over the whole tile instead, most of the sample is clean wall and the
+		// signal drops from +0.034 to +0.014.
+		float fHeightSum = 0.0f;
+		for (u_int y = 0u; y < uResB; ++y)
+		{
+			for (u_int x = 0u; x < uResB; ++x) { fHeightSum += xHeightB.Get(y, x).x; }
+		}
+		const float fHeightMean = fHeightSum / (float)(uResB * uResB);
+
+		const float fTileB = ZM_BuildingSurfaceTileMetresFor(xRb, ZM_BUILDING_SURFACE_WALL);
+		const float fBandV = (fZM_BUILDING_PLINTH_HEIGHT + fZM_BUILDING_SPLASH_HEIGHT) / fTileB;
+
+		double dHi = 0.0, dLo = 0.0; u_int uHi = 0u, uLo = 0u;
+		for (u_int y = 0u; y < uResB; ++y)
+		{
+			const float fV = ((float)y + 0.5f) / (float)uResB;
+			if (fV > fBandV) { continue; }
+			for (u_int x = 0u; x < uResB; ++x)
+			{
+				const float fU = ((float)x + 0.5f) / (float)uResB;
+				if (xHeightB.Get(y, x).x <= fHeightMean) { continue; }   // a joint, not a face
+				const Zenith_Maths::Vector4 xC = xTb.m_xAlbedo.Get(y, x);
+				const float fGR = xC.y - xC.x;
+				const float fMix = ZM_BuildingWallGrimeBioMixAt(fU, fV,
+					xRb.m_uSyntheticSeed, fBestShare);
+				if (fMix > 0.66f)      { dHi += fGR; ++uHi; }
+				else if (fMix < 0.34f) { dLo += fGR; ++uLo; }
+			}
+		}
+		ZENITH_ASSERT_GT(uHi, 200u,
+			"%s's splash band has only %u biological-grime texels to average over",
+			ZM_GetBuildingName(eBalanced), uHi);
+		ZENITH_ASSERT_GT(uLo, 200u,
+			"%s's splash band has only %u dust-grime texels to average over",
+			ZM_GetBuildingName(eBalanced), uLo);
+		const float fDelta = (float)(dHi / (double)uHi) - (float)(dLo / (double)uLo);
+		// MEASURED +0.034 on the balanced row, +0.030..+0.042 across three
+		// different rows and two resolutions, so this floor carries a 2x margin.
+		// It was +0.006 before the palette was widened -- which is exactly what
+		// the dead clause this replaced could not see.
+		ZENITH_ASSERT_GT(fDelta, 0.015f,
+			"on %s (share %.3f) the biologically-grimed texels are only %.4f greener "
+			"than the dust-grimed ones -- the second grime colour is not reaching "
+			"the albedo, whatever the palette says",
+			ZM_GetBuildingName(eBalanced), fBestShare, fDelta);
+	}
+
+	// ★ AND THE PER-FACE CAST IS A VERTEX COLOUR, because ONE material serves
+	// every face: "cool green-black on the sun-averted faces, warm dust on the lit
+	// ones" cannot be a texel choice. The sun tracks the -Z/+X quarter in every
+	// Zenithmon outdoor scene, so +Z and -X are the averted pair.
+	ZM_GenMesh xWall;
+	ZM_BuildBuildingSurfaceMesh(xR, ZM_BUILDING_SURFACE_WALL, xWall);
+	ZENITH_ASSERT_EQ(xWall.m_xColors.GetSize(), xWall.GetNumVerts(),
+		"the wall mesh has no per-vertex colour buffer, so the per-face grime cast "
+		"cannot exist");
+	bool bNeutral = false, bCast = false;
+	for (u_int v = 0u; v < xWall.GetNumVerts(); ++v)
+	{
+		const Zenith_Maths::Vector3& xN = xWall.m_xNormals.Get(v);
+		const Zenith_Maths::Vector4& xC = xWall.m_xColors.Get(v);
+		if (xN.z < -0.5f && xC.x > 0.99f && xC.y > 0.99f && xC.z > 0.99f) { bNeutral = true; }
+		if (xN.z >  0.5f && xC.y > xC.x + 0.01f) { bCast = true; }
+	}
+	ZENITH_ASSERT_TRUE(bNeutral,
+		"the sun-facing (-Z) wall face carries a grime cast rather than the neutral "
+		"one the texture already contains");
+	ZENITH_ASSERT_TRUE(bCast,
+		"the sun-averted (+Z) wall face carries no cool cast, so both faces read as "
+		"having had the same weather");
+}
+
+// ############################################################################
+// ★ 24. THE HOME'S WINDOWS ARE LIT, AND ONLY THE HOME'S
+// ############################################################################
+ZENITH_TEST(ZM_Gen, BuildingGen_OnlyTheHomeGlowsFromInside)
+{
+	const ZM_BuildingGlassGlow xHome =
+		ZM_BuildingGlassGlowFor(ZM_ResolveBuildingRecipe(ZM_BUILDING_PLAYER_HOME));
+	ZENITH_ASSERT_GT(xHome.m_fIntensity, 0.0f,
+		"the player's own house is dark from outside -- nothing in the town reads as "
+		"lived in");
+	ZENITH_ASSERT_LT(xHome.m_fIntensity, 2.0f,
+		"the home's windows glow at %.2f, which is a shop front, not a lamp behind a "
+		"curtain", xHome.m_fIntensity);
+	ZENITH_ASSERT_GT(xHome.m_xColour.x, xHome.m_xColour.z + 0.2f,
+		"the home's window glow is not warm (%.2f, %.2f, %.2f) -- a domestic lamp is "
+		"not daylight", xHome.m_xColour.x, xHome.m_xColour.y, xHome.m_xColour.z);
+
+	u_int uGlowing = 0u;
+	for (u_int u = 0u; u < (u_int)ZM_BUILDING_COUNT; ++u)
+	{
+		if (ZM_BuildingGlassGlowFor(ZM_ResolveBuildingRecipe((ZM_BUILDING_ID)u)).m_fIntensity > 0.0f)
+		{
+			++uGlowing;
+		}
+	}
+	ZENITH_ASSERT_EQ(uGlowing, 1u,
+		"%u buildings glow from inside -- emissive glass is a story beat for one "
+		"house, not a material default", uGlowing);
+}
+
+// ############################################################################
+// ★ 25. THE MASONRY LATTICE IS SIZED FROM THE TILE, NOT PINNED TO A COUNT
+// ############################################################################
+
+// The wall tile is the storey height now, and storeys differ (PlayerHome 3.0,
+// ProfLab 3.5, and every free-standing row is jittered +/-3%). A FIXED course
+// count would therefore stretch: the Lab's "250 mm" courses would be 292 mm and
+// the two buildings standing 56 m apart would visibly disagree about what a
+// block is. The lattice is derived from the tile instead.
+ZENITH_TEST(ZM_Gen, BuildingGen_CourseGaugeSurvivesTheTile)
+{
+	// The gauge, in metres per course, across every building in the roster.
+	for (u_int u = 0u; u < (u_int)ZM_BUILDING_COUNT; ++u)
+	{
+		const ZM_BUILDING_ID eId = (ZM_BUILDING_ID)u;
+		const ZM_BuildingRecipe xR = ZM_ResolveBuildingRecipe(eId);
+		const float fTile = ZM_BuildingSurfaceTileMetresFor(xR, ZM_BUILDING_SURFACE_WALL);
+		const u_int uRows = ZM_BuildingWallCourseRows(fTile);
+		const u_int uCols = ZM_BuildingWallCourseCols(fTile);
+		ZENITH_ASSERT_GT(uRows, 1u, "%s's wall lattice has %u course rows -- a period-1 "
+			"lattice is CONSTANT and renders as a flat surface", ZM_GetBuildingName(eId), uRows);
+		ZENITH_ASSERT_GT(uCols, 1u, "%s's wall lattice has %u columns", ZM_GetBuildingName(eId), uCols);
+
+		const float fCourse = fTile / (float)uRows;
+		const float fUnit   = fTile / (float)uCols;
+		ZENITH_ASSERT_GT(fCourse, 0.20f,
+			"%s's courses are %.3f m -- too fine to read as masonry at 170 px/m",
+			ZM_GetBuildingName(eId), fCourse);
+		ZENITH_ASSERT_LT(fCourse, 0.32f,
+			"%s's courses are %.3f m -- the block gauge stretched with the storey",
+			ZM_GetBuildingName(eId), fCourse);
+		ZENITH_ASSERT_GT(fUnit, 0.40f, "%s's units are %.3f m wide",
+			ZM_GetBuildingName(eId), fUnit);
+		ZENITH_ASSERT_LT(fUnit, 0.62f, "%s's units are %.3f m wide",
+			ZM_GetBuildingName(eId), fUnit);
+	}
+
+	// ANTI-VACUITY: two buildings with DIFFERENT storeys must get different
+	// lattices, or the derivation is a constant wearing a formula.
+	const float fHome = ZM_BuildingSurfaceTileMetresFor(
+		ZM_ResolveBuildingRecipe(ZM_BUILDING_PLAYER_HOME), ZM_BUILDING_SURFACE_WALL);
+	const float fLab = ZM_BuildingSurfaceTileMetresFor(
+		ZM_ResolveBuildingRecipe(ZM_BUILDING_LAB), ZM_BUILDING_SURFACE_WALL);
+	ZENITH_ASSERT_NE(ZM_BuildingWallCourseRows(fHome), ZM_BuildingWallCourseRows(fLab),
+		"the 3.0 m Home and the 3.5 m Lab were given the same number of courses, so "
+		"the Lab's blocks are 17%% taller than the Home's");
+}
+
 // ############################################################################
 // ★★ ZM-D-176: THE TWO INTERIOR ROOMS DO NOT READ AS THE SAME ROOM
 // ############################################################################
@@ -1288,7 +2393,13 @@ ZENITH_TEST(ZM_Gen, InteriorShellsBuildAndFitTheirBlockouts)
 			const bool bBelowHead      = xP.y < xSpec.m_fApertureHeight - 1.0e-3f;
 			if (bOnEntranceWall && bBelowHead)
 			{
-				ZENITH_ASSERT_GE(std::fabs(xP.x), xSpec.m_fApertureHalfW - 1.0e-3f,
+				// ★ ONE CHAMFER OF SLACK, AND NO MORE. Every static box is bevelled
+				// now (fZM_STATIC_BOX_CHAMFER), so the panel flanking the aperture
+				// has its inset face exactly one chamfer inside the opening. That is
+				// 8 mm of geometry a 0.4 m-radius capsule cannot notice; anything
+				// beyond it is a panel genuinely across the doorway.
+				ZENITH_ASSERT_GE(std::fabs(xP.x),
+					xSpec.m_fApertureHalfW - fZM_STATIC_BOX_CHAMFER - 1.0e-3f,
 					"%s has wall geometry at x=%.3f, y=%.3f on the entrance wall -- "
 					"inside the +/-%.2f doorway the player walks through",
 					ZM_InteriorRoomName(eRoom), xP.x, xP.y, xSpec.m_fApertureHalfW);
