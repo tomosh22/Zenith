@@ -673,7 +673,9 @@ namespace
 		xTransform.GetScale(xScale);
 		xTransform.GetRotation(xRotation);
 
-		const Zenith_Maths::Vector3 xExpectedCentre = ZM_GetProfLabAsterCenter();
+		// His authored transform: the FEET. Compared directly against the loaded
+		// scene's position, which is the same vocabulary.
+		const Zenith_Maths::Vector3 xExpectedCentre = ZM_GetProfLabAsterFeet();
 		if (glm::length(xPosition - xExpectedCentre) > fPOSITION_EPSILON)
 		{
 			FailProfLabDetailed(
@@ -843,11 +845,17 @@ namespace
 		const float fExpectedHalfHeight = fZM_HUMAN_BODY_HALF_HEIGHT;
 		const float fPROBE_STANDOFF = 3.0f;   // open air on both probe axes in this room
 
+		// ★ THE PROBES AIM AT HIS BODY'S MIDDLE, NOT AT HIS TRANSFORM. His transform
+		// is his FEET and his collider rides half a body height above it
+		// (ZM_GreyboxVisual::InstallHumanBody's explicit shape offset), so a side ray
+		// cast at transform height would skim the floor slab -- which is exactly what
+		// it did: hit=1, entityMatch=0, distance 0.
+		const Zenith_Maths::Vector3 xBodyCentre = ZM_HumanBodyCentre(xExpectedCentre);
 		const Zenith_Physics::RaycastResult xSideHit = g_xEngine.Physics().Raycast(
-			xExpectedCentre - Zenith_Maths::Vector3(fPROBE_STANDOFF, 0.0f, 0.0f),
+			xBodyCentre - Zenith_Maths::Vector3(fPROBE_STANDOFF, 0.0f, 0.0f),
 			Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f), fPROBE_STANDOFF);
 		const Zenith_Physics::RaycastResult xCrownHit = g_xEngine.Physics().Raycast(
-			xExpectedCentre + Zenith_Maths::Vector3(0.0f, fPROBE_STANDOFF, 0.0f),
+			xBodyCentre + Zenith_Maths::Vector3(0.0f, fPROBE_STANDOFF, 0.0f),
 			Zenith_Maths::Vector3(0.0f, -1.0f, 0.0f), fPROBE_STANDOFF);
 		if (!xSideHit.m_bHit || xSideHit.m_xHitEntity != xAster.GetEntityID()
 			|| !xCrownHit.m_bHit || xCrownHit.m_xHitEntity != xAster.GetEntityID())
@@ -1212,7 +1220,7 @@ namespace
 
 		// ---- CLAUSE B: the player stands on the marker, at rest -----------
 		//
-		// Spawn MARKERS store FEET; bodies store CENTRES. CalculateSpawnCenter
+		// Spawn MARKERS store FEET; bodies store CENTRES. CalculateSpawnPosition
 		// is the only place in the game those two conventions meet, so it is
 		// the only thing this clause is allowed to compare against -- adding a
 		// half-extent here by hand would re-implement the very function under
@@ -1220,7 +1228,7 @@ namespace
 		Zenith_Maths::Vector3 xMarkerFeet(0.0f);
 		xSpawn.GetComponent<Zenith_TransformComponent>().GetPosition(xMarkerFeet);
 		const Zenith_Maths::Vector3 xExpectedCenter =
-			ZM_GameStateManager::CalculateSpawnCenter(xMarkerFeet);
+			ZM_GameStateManager::CalculateSpawnPosition(xMarkerFeet);
 		const Zenith_PhysicsBodyID xBody = xPlayer.m_pxCollider->GetBodyID();
 		const Zenith_Maths::Vector3 xBodyPosition =
 			g_xEngine.Physics().GetBodyPosition(xBody);
@@ -1470,7 +1478,7 @@ namespace
 
 			// (I2b) THE PLAYER'S AUTHORED SCALE. Its POSITION is deliberately
 			//       not compared here: the warp teleports the body to
-			//       CalculateSpawnCenter on arrival, which is clause B's
+			//       CalculateSpawnPosition on arrival, which is clause B's
 			//       property, so the authored centre is no longer observable.
 			//       The scale IS still committed bytes, and it is what the
 			//       header's doorway width, headroom and capsule half-extent

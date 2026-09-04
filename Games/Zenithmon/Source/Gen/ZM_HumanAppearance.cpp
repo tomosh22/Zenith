@@ -26,8 +26,8 @@ namespace
 
 	constexpr u_int uHUMAN_BONE_SPINE = 1u;
 	constexpr u_int uHUMAN_BONE_HEAD  = 3u;
-	static_assert(uHUMAN_BONE_HEAD < uZM_HUMAN_BONE_COUNT,
-		"appearance geometry must bind the frozen shared human skeleton");
+	static_assert(uHUMAN_BONE_HEAD < uZM_HUMAN_CORE_BONE_COUNT,
+		"appearance geometry must bind the shared StickFigure rig's core prefix");
 
 	struct ZM_HumanAtlasRect
 	{
@@ -511,7 +511,13 @@ namespace
 		for (u_int u = 0u; u < uNumRings; ++u)
 		{
 			ZM_LoftRing& xRing = pxRings[u];
-			xRing.m_fY = (xRing.m_fY + 1.0f) * fHeightScale;
+			// The authored rows are in the SHARED RIG's bind space, exactly like the
+			// body tables in ZM_HumanMesh.cpp, and the +1/-1 round trip is the same
+			// one: it scales height about the FEET without leaving rig space. A hat
+			// that stayed in the old feet-at-zero space would ride a metre above the
+			// head it belongs to -- which is precisely what the silhouette tests
+			// caught when only the body was moved.
+			xRing.m_fY = (xRing.m_fY + 1.0f) * fHeightScale - 1.0f;
 			xRing.m_uBoneA = uBone;
 			xRing.m_uBoneB = uBone;
 			xRing.m_fBlendB = 0.0f;

@@ -601,10 +601,11 @@ inline constexpr float ZM_Route1GroundFeetY(ZM_ROUTE1_GROUND_SAMPLE eSample)
 
 // ---- The two arrival markers -------------------------------------------------
 //
-// ★ A ZM_SpawnPoint's AUTHORED TRANSFORM IS THE FEET, NOT THE BODY CENTRE.
-// ZM_GameStateManager::CalculateSpawnCenter adds fZM_HUMAN_BODY_HALF_HEIGHT at warp
-// time, so authoring a body centre here would warp every arriving player half a
-// body high and drop them. Same vocabulary as fZM_PROFLAB_SPAWN_FEET_Y.
+// ★ A ZM_SpawnPoint's AUTHORED TRANSFORM IS THE FEET -- and so is the arriving
+// player's, so ZM_GameStateManager::CalculateSpawnPosition converts nothing. That
+// is the point of the feet origin: a marker and the body that lands on it are the
+// same number. Authoring a body centre here would drop every arriving player half a
+// body. Same vocabulary as fZM_PROFLAB_SPAWN_FEET_Y.
 //
 // ★ THERE IS NO LONGER A SINGLE SHARED fZM_ROUTE1_ARRIVAL_FEET_Y, AND THERE MUST
 // NOT BE ONE AGAIN. The two markers are 1312 m apart on eroded terrain; the moment
@@ -632,7 +633,7 @@ inline Zenith_Maths::Vector3 ZM_GetRoute1NorthArrivalFeet()
 }
 
 // The RESTING body centre a placed player occupies at the south marker: feet plus
-// one half height, exactly what CalculateSpawnCenter computes at warp time.
+// one half height, exactly what CalculateSpawnPosition computes at warp time.
 //
 // ★ THERE IS NO NORTH EQUIVALENT, DELIBERATELY. Nothing reads one -- the authored
 // player, the camera and the trainer facings are all measured against the SOUTH
@@ -641,9 +642,7 @@ inline Zenith_Maths::Vector3 ZM_GetRoute1NorthArrivalFeet()
 // in the same change as the code that reads it.
 inline Zenith_Maths::Vector3 ZM_GetRoute1SouthArrivalBodyCentre()
 {
-	Zenith_Maths::Vector3 xCentre = ZM_GetRoute1SouthArrivalFeet();
-	xCentre.y += fZM_HUMAN_BODY_HALF_HEIGHT;
-	return xCentre;
+	return ZM_HumanBodyCentre(ZM_GetRoute1SouthArrivalFeet());
 }
 
 // ---- The authored player -----------------------------------------------------
@@ -656,13 +655,15 @@ inline Zenith_Maths::Vector3 ZM_GetRoute1SouthArrivalBodyCentre()
 inline constexpr float fZM_ROUTE1_AUTHORED_PLAYER_CLEARANCE =
 	fZM_HUMAN_BODY_HALF_HEIGHT;
 
-// The value AddStep_SetTransformPosition takes in R1-2: the resting centre above,
-// plus that one clearance -- i.e. the south marker's feet plus TWO half heights.
-inline Zenith_Maths::Vector3 ZM_GetRoute1AuthoredPlayerCentre()
+// The value AddStep_SetTransformPosition takes in R1-2: the south marker's FEET
+// plus one clearance. It used to be the feet plus TWO half heights, because the
+// authored position was a body centre; the origin is the feet now, so the centre
+// term is gone and only the ZM-D-184 clearance remains.
+inline Zenith_Maths::Vector3 ZM_GetRoute1AuthoredPlayerFeet()
 {
-	Zenith_Maths::Vector3 xCentre = ZM_GetRoute1SouthArrivalBodyCentre();
-	xCentre.y += fZM_ROUTE1_AUTHORED_PLAYER_CLEARANCE;
-	return xCentre;
+	Zenith_Maths::Vector3 xFeet = ZM_GetRoute1SouthArrivalFeet();
+	xFeet.y += fZM_ROUTE1_AUTHORED_PLAYER_CLEARANCE;
+	return xFeet;
 }
 
 // ---- The camera --------------------------------------------------------------
@@ -1084,23 +1085,23 @@ inline Zenith_Maths::Vector3 ZM_GetRoute1TrainerFeet(ZM_ROUTE1_TRAINER_ID eStati
 
 // His RESTING body centre -- the sight cone's origin, and the point every distance
 // in the sight derivation above is measured from. Zenithmon's authored position for
-// a human is the body CENTRE, never the feet (ZM_HumanBody.h).
+// a human is the FEET (ZM_HumanBody.h); this is the derived centre a sight cone and
+// a camera pivot want, and ZM_HumanBodyCentre is the one conversion.
 inline Zenith_Maths::Vector3 ZM_GetRoute1TrainerCentre(ZM_ROUTE1_TRAINER_ID eStation)
 {
-	Zenith_Maths::Vector3 xCentre = ZM_GetRoute1TrainerFeet(eStation);
-	xCentre.y += fZM_HUMAN_BODY_HALF_HEIGHT;
-	return xCentre;
+	return ZM_HumanBodyCentre(ZM_GetRoute1TrainerFeet(eStation));
 }
 
-// ...and the value AddStep_SetTransformPosition takes in R1-2: that resting centre
+// ...and the value AddStep_SetTransformPosition takes in R1-2: the resting FEET
 // plus the ZM-D-184 spawn clearance, because these are DYNAMIC capsules and a
 // dynamic body authored at exact contact bursts substeps and falls through the
-// terrain. The sight geometry is derived at the RESTING centre above, not here --
-// the body settles onto it within a frame.
-inline Zenith_Maths::Vector3 ZM_GetRoute1TrainerAuthoredCentre(
+// terrain. The sight geometry is still derived at the resting CENTRE
+// (ZM_GetRoute1TrainerCentre) -- an eye is not at a foot -- and the body settles
+// onto its authored feet within a frame.
+inline Zenith_Maths::Vector3 ZM_GetRoute1TrainerAuthoredFeet(
 	ZM_ROUTE1_TRAINER_ID eStation)
 {
-	Zenith_Maths::Vector3 xCentre = ZM_GetRoute1TrainerCentre(eStation);
-	xCentre.y += fZM_ROUTE1_AUTHORED_PLAYER_CLEARANCE;
-	return xCentre;
+	Zenith_Maths::Vector3 xFeet = ZM_GetRoute1TrainerFeet(eStation);
+	xFeet.y += fZM_ROUTE1_AUTHORED_PLAYER_CLEARANCE;
+	return xFeet;
 }

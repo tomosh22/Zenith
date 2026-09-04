@@ -306,8 +306,11 @@ namespace
 	// the COMPILED contract (ZM_HumanBody.h), never the transform scale.
 	ZM_ProfLabBlockout ProfLabAsterBody()
 	{
+		// A ZM_ProfLabBlockout is CENTRE + size, and the authored position is the
+		// FEET, so this is the one conversion -- through the named helper, not an
+		// open-coded half height.
 		return ZM_ProfLabBlockout{
-			ZM_GetProfLabAsterCenter(),
+			ZM_HumanBodyCentre(ZM_GetProfLabAsterFeet()),
 			Zenith_Maths::Vector3(
 				fZM_HUMAN_BODY_FOOTPRINT,
 				fZM_HUMAN_BODY_HEIGHT,
@@ -488,19 +491,19 @@ ZENITH_TEST(ZM_WorldTraversal, ProfLab_DoorSpawnStandsOnTheFloorWithCameraCleara
 	const float fRadius = fZM_PROFLAB_PLAYER_RADIUS;
 
 	// (0) ★ THE AUTHORED HALF-EXTENT AND THE ARRIVAL HALF-EXTENT ARE ONE NUMBER.
-	//     ZM_GetProfLabPlayerCenter -- which the authoring writes into the scene --
+	//     ZM_GetProfLabPlayerFeet -- which the authoring writes into the scene --
 	//     reads fZM_PROFLAB_PLAYER_CAPSULE_HALF_EXTENT, while the automated arrival
 	//     clause compares the arrived body against
-	//     ZM_GameStateManager::CalculateSpawnCenter. Both now resolve to the body
+	//     ZM_GameStateManager::CalculateSpawnPosition. Both now resolve to the body
 	//     contract, and this clause is what keeps that true: reintroduce a local
 	//     literal on either side and the authored body would split from the point
 	//     the warp computes, with every other unit still green.
 	ZENITH_ASSERT_EQ_FLOAT(fZM_PROFLAB_PLAYER_CAPSULE_HALF_EXTENT,
 		ProfLabPlayerHalfExtent(), fPROFLAB_EXACT_EPSILON,
 		"the placement header states a %.5f m capsule half-extent but the body "
-		"contract says %.5f -- the authored Player body (ZM_GetProfLabPlayerCenter) "
+		"contract says %.5f -- the authored Player body (ZM_GetProfLabPlayerFeet) "
 		"would no longer land on the point the warp computes at arrival "
-		"(CalculateSpawnCenter)",
+		"(CalculateSpawnPosition)",
 		(double)fZM_PROFLAB_PLAYER_CAPSULE_HALF_EXTENT,
 		(double)ProfLabPlayerHalfExtent());
 
@@ -1135,7 +1138,7 @@ ZENITH_TEST(ZM_WorldTraversal, ProfLab_AsterStandsInsideTheArrivalFrustum)
 	//     aspect >= 1 can produce, so requiring his centre inside THAT is a claim
 	//     the mirror cannot invalidate.
 	const ProfLabFrustumSample xCentre =
-		ProfLabProject(xFrustum, ZM_GetProfLabAsterCenter());
+		ProfLabProject(xFrustum, ZM_GetProfLabAsterFeet());
 	ZENITH_ASSERT_LT(xCentre.m_fLateral,
 		xCentre.m_fSquareLimit - fPROFLAB_ASTER_FRUSTUM_MARGIN,
 		"Professor Aster's centre is %.4f m off the arrival camera's axis, which "
@@ -1152,7 +1155,7 @@ ZENITH_TEST(ZM_WorldTraversal, ProfLab_AsterStandsInsideTheArrivalFrustum)
 	//     clause above and this unit would be decoration.
 	const Zenith_Maths::Vector3 xRejected(
 		fPROFLAB_REJECTED_ASTER_X,
-		ZM_GetProfLabAsterCenter().y,
+		ZM_GetProfLabAsterFeet().y,
 		fPROFLAB_REJECTED_ASTER_Z);
 	const ProfLabFrustumSample xRejectedSample =
 		ProfLabProject(xFrustum, xRejected);
@@ -1178,7 +1181,7 @@ ZENITH_TEST(ZM_WorldTraversal, ProfLab_AsterStandsInsideTheArrivalFrustum)
 // not parked in the camera's arm.
 ZENITH_TEST(ZM_WorldTraversal, ProfLab_AsterStandsOutsideArrivalReachInsideTheShell)
 {
-	const Zenith_Maths::Vector3 xAster = ZM_GetProfLabAsterCenter();
+	const Zenith_Maths::Vector3 xAster = ZM_GetProfLabAsterFeet();
 	const Zenith_Maths::Vector3 xSpawnCentre = ProfLabSpawnCentre();
 
 	// (1) ★ RUN THE SHIPPED PICKER, DO NOT RE-DERIVE ITS RULE. A hand-written
@@ -1228,15 +1231,16 @@ ZENITH_TEST(ZM_WorldTraversal, ProfLab_AsterStandsOutsideArrivalReachInsideTheSh
 		"his effective reach, so the OUT_OF_RANGE above says nothing about how far "
 		"away he is authored", ZM_InteractRejectName(eWalkedUp));
 
-	// (2) HIS FEET ARE ON THE FLOOR. Authored positions in this game are body
-	//     CENTRES; half a body height below one is where his feet are, and that has
-	//     to be the floor's top face or he is sunk into the slab / hovering.
+	// (2) HIS FEET ARE ON THE FLOOR. Authored positions in this game ARE the feet,
+	//     so this is now a direct claim: the bottom of his body box is his authored
+	//     Y, and it has to be the floor's top face or he is sunk into the slab /
+	//     hovering.
 	const ZM_ProfLabBlockout xFloor = ZM_GetProfLabBlock(ZM_PROFLAB_BLOCK_FLOOR);
 	const ZM_ProfLabBlockout xBody = ProfLabAsterBody();
 	ZENITH_ASSERT_EQ_FLOAT(xBody.Min().y, xFloor.Max().y, fPROFLAB_PLANE_EPSILON,
 		"Professor Aster's feet are at y=%.5f but the floor's top face is %.5f -- "
-		"an authored human position is a body CENTRE (ZM_HumanBody.h), so this is "
-		"half a body height out somewhere",
+		"an authored human position IS its feet (ZM_HumanBody.h), so he is not "
+		"standing on the floor",
 		(double)xBody.Min().y, (double)xFloor.Max().y);
 
 	// (3) ...and his whole box is inside the shell's inner faces, not merely
@@ -1704,7 +1708,7 @@ ZENITH_TEST(ZM_WorldTraversal, ProfLab_AsterFacingIsTurnedTowardTheArrival)
 		"and the interact picker's cone would reject him outright",
 		(double)xForward.x, (double)xForward.z, (double)fForwardLengthSquared);
 
-	const Zenith_Maths::Vector3 xAster = ZM_GetProfLabAsterCenter();
+	const Zenith_Maths::Vector3 xAster = ZM_GetProfLabAsterFeet();
 	const Zenith_Maths::Vector3 xArrivalPivot = ZM_GetProfLabArrivalPivot();
 	const Zenith_Maths::Vector3 xSettledCamera =
 		ZM_GetProfLabSettledCameraPosition();
@@ -1890,7 +1894,7 @@ namespace
 ZENITH_TEST(ZM_WorldTraversal, ProfLab_ExitSensorClearsTheDiagonalWalkUpToTheProfessor)
 {
 	const Zenith_Maths::Vector3 xSpawnCentre = ProfLabSpawnCentre();
-	const Zenith_Maths::Vector3 xAster = ZM_GetProfLabAsterCenter();
+	const Zenith_Maths::Vector3 xAster = ZM_GetProfLabAsterFeet();
 
 	// (1) THE INPUT UNDER TEST EXISTS. If the professor stood on the walk-in
 	//     centreline, or no deeper than the arrival marker, the eight-way chooser

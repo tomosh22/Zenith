@@ -441,12 +441,14 @@ ZENITH_TEST(ZM_WorldTraversal, Thornacre_ArrivalSitsOnTheRecipeLandmarkTheTerrai
 	//     Vesper vanished). Not two -- a body dropped from a body-height up is a
 	//     visible fall on arrival. The gap is asserted as a DIFFERENCE of the two
 	//     accessors, so it follows any change to the ground plane.
-	const float fClearanceGap = ZM_GetThornacreAuthoredPlayerCentre().y
-		- ZM_GetThornacreSouthArrivalBodyCentre().y;
+	//     Measured against the resting FEET: the authored position is the feet, so
+	//     the air gap is a difference of two feet heights.
+	const float fClearanceGap = ZM_GetThornacreAuthoredPlayerFeet().y
+		- ZM_GetThornacreSouthArrivalFeet().y;
 	ZENITH_ASSERT_EQ_FLOAT(fClearanceGap, fZM_HUMAN_BODY_HALF_HEIGHT,
 		fTH_CLEARANCE_EPSILON,
-		"the authored Thornacre player starts %.5f m above its resting body "
-		"centre; the ZM-D-184 rule is exactly one body half-extent (%.5f). Zero "
+		"the authored Thornacre player starts %.5f m above its resting feet; "
+		"the ZM-D-184 rule is exactly one body half-extent (%.5f). Zero "
 		"is the substep-burst fall-through that lost Vesper; more is a visible "
 		"drop the moment the town loads",
 		(double)fClearanceGap, (double)fZM_HUMAN_BODY_HALF_HEIGHT);

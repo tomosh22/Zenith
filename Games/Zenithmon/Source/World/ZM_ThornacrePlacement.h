@@ -460,10 +460,10 @@ inline constexpr float ZM_ThornacreGroundFeetY(ZM_THORNACRE_GROUND_SAMPLE eSampl
 
 // ---- The arrival marker ------------------------------------------------------
 //
-// ★ A ZM_SpawnPoint's AUTHORED TRANSFORM IS THE FEET, NOT THE BODY CENTRE.
-// ZM_GameStateManager::CalculateSpawnCenter adds fZM_HUMAN_BODY_HALF_HEIGHT at
-// warp time, so authoring a body centre on a marker would warp every arriving
-// player half a body into the air.
+// ★ A ZM_SpawnPoint's AUTHORED TRANSFORM IS THE FEET -- and so is the arriving
+// player's, so ZM_GameStateManager::CalculateSpawnPosition converts nothing.
+// Authoring a body centre on a marker would warp every arriving player half a body
+// into the air.
 inline constexpr float fZM_THORNACRE_ARRIVAL_FEET_Y =
 	ZM_ThornacreGroundFeetY(ZM_THORNACRE_GROUND_SAMPLE_SOUTH_ARRIVAL);
 
@@ -480,9 +480,7 @@ inline Zenith_Maths::Vector3 ZM_GetThornacreSouthArrivalFeet()
 // Read by the gate-clearance and camera arithmetic below.
 inline Zenith_Maths::Vector3 ZM_GetThornacreSouthArrivalBodyCentre()
 {
-	Zenith_Maths::Vector3 xCentre = ZM_GetThornacreSouthArrivalFeet();
-	xCentre.y += fZM_HUMAN_BODY_HALF_HEIGHT;
-	return xCentre;
+	return ZM_HumanBodyCentre(ZM_GetThornacreSouthArrivalFeet());
 }
 
 // ---- The authored player -----------------------------------------------------
@@ -497,12 +495,13 @@ inline constexpr float fZM_THORNACRE_AUTHORED_PLAYER_CLEARANCE =
 	fZM_HUMAN_BODY_HALF_HEIGHT;
 
 // The value AddStep_SetTransformPosition takes for the Player entity: the resting
-// centre, lifted by one clearance.
-inline Zenith_Maths::Vector3 ZM_GetThornacreAuthoredPlayerCentre()
+// FEET, lifted by one clearance. The body-centre term the old spelling carried is
+// gone with the move to a feet origin.
+inline Zenith_Maths::Vector3 ZM_GetThornacreAuthoredPlayerFeet()
 {
-	Zenith_Maths::Vector3 xCentre = ZM_GetThornacreSouthArrivalBodyCentre();
-	xCentre.y += fZM_THORNACRE_AUTHORED_PLAYER_CLEARANCE;
-	return xCentre;
+	Zenith_Maths::Vector3 xFeet = ZM_GetThornacreSouthArrivalFeet();
+	xFeet.y += fZM_THORNACRE_AUTHORED_PLAYER_CLEARANCE;
+	return xFeet;
 }
 
 // ---- The camera --------------------------------------------------------------

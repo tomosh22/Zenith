@@ -1195,10 +1195,11 @@ Zenith_Status ZM_SaveSchema::Read(Zenith_DataStream& xInStream,
 	}
 	uint32_t uSchemaVersion = 0u;
 	if (!xReader.U32(uSchemaVersion)) { return Corrupt("Header", "schemaVersionTruncated"); }
-	// ★ THE VERSION GATE IS NO LONGER A FLAT REJECT (ZM-D-201). v2 reads as written;
-	// v1 is READ AS v1 and migrated forward below. Everything else -- including any
-	// version ABOVE current -- is still VERSION_MISMATCH: there is no
-	// forward-compatible read path and no minimum-supported floor machinery.
+	// ★ THE VERSION GATE IS NO LONGER A FLAT REJECT (ZM-D-201, ZM-D-223). v3 reads as
+	// written; v2 and v1 are READ AS THEMSELVES and migrated forward below.
+	// Everything else -- including any version ABOVE current -- is still
+	// VERSION_MISMATCH: there is no forward-compatible read path and no
+	// minimum-supported floor machinery.
 	//
 	// ModuleCountForSchemaVersion answers 0 for an unreadable version, so the
 	// supported-version test and the expected-count lookup are the SAME question
@@ -1209,8 +1210,9 @@ Zenith_Status ZM_SaveSchema::Read(Zenith_DataStream& xInStream,
 	if (uExpectedModuleCount == 0u)
 	{
 		Zenith_Error(LOG_CATEGORY_GAMEPLAY,
-			"[ZM Save] schema version %u is unsupported (current %u, migratable %u)",
-			uSchemaVersion, uSCHEMA_VERSION_CURRENT, uSCHEMA_VERSION_V1);
+			"[ZM Save] schema version %u is unsupported (current %u, migratable %u and %u)",
+			uSchemaVersion, uSCHEMA_VERSION_CURRENT,
+			uSCHEMA_VERSION_V2, uSCHEMA_VERSION_V1);
 		return Zenith_ErrorCode::VERSION_MISMATCH;
 	}
 	uint32_t uModuleCount = 0u;
@@ -1271,6 +1273,38 @@ Zenith_Status ZM_SaveSchema::Read(Zenith_DataStream& xInStream,
 	if (uSchemaVersion == uSCHEMA_VERSION_V1)
 	{
 		xCandidate.m_xCollectedGroundItems.Clear();
+	}
+
+	// ---- MIGRATION v1/v2 -> v3 (ZM-D-223) ---------------------------------------
+	//
+	// THE COORDINATE SPACE OF THE SAVED WORLD POSITION MOVED. v1 and v2 recorded the
+	// player's body CENTRE -- the comment at the capture site said so, and it was
+	// true, because the physics body position WAS the capsule centre. ZM-D-223 moved
+	// the human entity origin to the FEET and offset the capsule SHAPE instead, so
+	// the same call now returns the feet. Restoring a v2 save unmigrated therefore
+	// teleports the player exactly one body half-height into the air, every time,
+	// with the schema check passing and every field validating.
+	//
+	// ★ WHY THIS NEEDED A VERSION BUMP RATHER THAN A HEURISTIC. v2 and v3 payloads
+	// are byte-for-byte structurally identical -- same modules, same lengths, same
+	// field order. There is nothing in the data to infer the space from: a Y of 25.9
+	// is a legal centre AND a legal pair of feet. The version word is the only thing
+	// that can tell them apart, so it had to move even though no byte's LAYOUT did.
+	//
+	// ★ ONLY A **SET** RESUME POINT IS CONVERTED. An unset world position
+	// (uZM_WORLD_SCENE_UNSET) records no coordinate at all -- its position field is
+	// inert padding, and shifting it would invent a resume point half a body below
+	// the origin for every save that never made one. That is also what keeps the
+	// retired v1/v2 wire goldens, whose fixture never set a resume point, migrating
+	// to a byte-identical state.
+	if (SchemaVersionStoresBodyCentre(uSchemaVersion)
+		&& xCandidate.m_xWorldPosition.m_uSceneBuildIndex != uZM_WORLD_SCENE_UNSET)
+	{
+		// Index 1 is Y, converted by the FROZEN historical offset -- never by the live
+		// fZM_HUMAN_BODY_HALF_HEIGHT. The two are equal today and mean different
+		// things: see fHISTORICAL_BODY_HALF_HEIGHT's comment for why a retune of the
+		// character's height must not change how a save from 2026 decodes.
+		xCandidate.m_xWorldPosition.m_afPosition[1] -= fHISTORICAL_BODY_HALF_HEIGHT;
 	}
 
 	const char* szModule = nullptr;

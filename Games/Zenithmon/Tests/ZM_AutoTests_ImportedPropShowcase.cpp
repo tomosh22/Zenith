@@ -141,6 +141,7 @@
 #include "ZenithECS/Zenith_Scene.h"
 #include "ZenithECS/Zenith_SceneData.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
+#include "Zenithmon/Source/World/ZM_HumanBody.h"   // ZM_HumanBodyCentre -- the camera helpers take a CENTRE
 #include "Zenithmon/Components/ZM_FollowCamera.h"
 #include "Zenithmon/Source/Data/ZM_PropData.h"
 #include "Zenithmon/Source/Data/ZM_WorldSpec.h"
@@ -1489,10 +1490,15 @@ static bool Step_ZMImportedPropShowcase(int)
 		{
 			Zenith_Maths::Vector3 xPlayerPos(0.0f);
 			pxPlayerTransform->GetPosition(xPlayerPos);
-			g_xIPSPivot = xPlayerPos
-				+ Zenith_Maths::Vector3(0.0f, ZM_FollowCamera::GetPivotHeight(), 0.0f);
+			// ★ CONVERTED ONCE, AND FED TO BOTH -- the same shape ZM_FollowCamera::
+			// OnLateUpdate uses. The transform is the player's FEET; ComputePivot and
+			// ComputeDesiredPosition both measure from the body CENTRE. Passing the raw
+			// feet would frame this reference 0.9 m below the live camera it exists to
+			// be compared against, which is a reference that agrees with nothing.
+			const Zenith_Maths::Vector3 xPlayerBodyCentre = ZM_HumanBodyCentre(xPlayerPos);
+			g_xIPSPivot = ZM_FollowCamera::ComputePivot(xPlayerBodyCentre);
 			g_xIPSUnclampedEye = ZM_FollowCamera::ComputeDesiredPosition(
-				xPlayerPos, pxFollow->GetAuthoredYaw());
+				xPlayerBodyCentre, pxFollow->GetAuthoredYaw());
 		}
 
 		// The LIVE follow-camera height, read after the spring has settled. This

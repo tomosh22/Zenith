@@ -23,6 +23,49 @@ Save0-2 UI and root Save/Quit without changing one persistent byte. SC5
 Continue gate; SC6 (ZM-D-142, 2026-07-24) closed the milestone-autosave test
 obligation and completed item 2. **Nothing in this document is still owed.**
 
+## Schema v3 (ZM-D-223) -- the first SEMANTIC migration
+
+**v3 changes no byte of the wire format. It changes what a number MEANS.** v2 and
+v3 payloads are structurally identical: same magic, same twelve modules, same field
+order, same lengths, same total size. What moved is the COORDINATE SPACE of the
+stored world position.
+
+- **v1 and v2 recorded the player's body CENTRE.** `ZM_GameStateManager::
+  CaptureWorldPosition` stores `Zenith_Physics::GetBodyPosition(player)` verbatim,
+  and that call returned the capsule centre because the human entity origin WAS the
+  centre.
+- **v3 records the player's FEET.** ZM-D-223 moved the Zenithmon human entity origin
+  to the feet and offset the capsule SHAPE instead, so the same call now returns the
+  feet. The capture site did not change; its meaning did.
+
+**Why this needed a version bump for a format that did not change.** There is
+nothing in the data to infer the space from -- a stored Y of `25.95666` is a legal
+body centre AND a legal pair of feet. Read unmigrated, a v2 save loads cleanly,
+validates completely, and places the player exactly one body half-height in the air
+on every continue. The version word is the only thing that can distinguish the two,
+so it had to move even though no byte's LAYOUT did.
+
+**The migration.** For a v1 or v2 payload whose world position is SET, the reader
+subtracts `ZM_SaveSchema::fHISTORICAL_BODY_HALF_HEIGHT` from its Y before publishing.
+
+- ★ **Only a SET resume point is converted.** An unset position
+  (`uZM_WORLD_SCENE_UNSET`) records no coordinate -- its position field is inert
+  padding -- and shifting it would invent a resume point half a body below the
+  origin for every save that never made one. It is also what lets the retired v1 and
+  v2 goldens, whose fixture never set a resume point, migrate to a byte-identical
+  state.
+- ★★ **The offset is FROZEN, and is deliberately NOT
+  `fZM_HUMAN_BODY_HALF_HEIGHT`.** The two are the same number today and are not the
+  same fact. The gameplay constant is how tall a human is *now* -- a live tuning
+  value a designer may retune. `fHISTORICAL_BODY_HALF_HEIGHT` is a statement about
+  BYTES THAT ALREADY EXIST: the centre-to-feet distance the v1/v2 writers actually
+  used, fixed forever. Deriving the migration from the live constant would make every
+  save on every disk decode differently after a character-height change, on a code
+  path nobody touched, with the version still reading 2 and every field still
+  validating. `ZM_Save.HistoricalBodyHalfHeightIsFrozenIndependentlyOfGameplayTuning`
+  asserts a LITERAL `0.9` for that reason -- comparing it against the gameplay
+  constant would pass forever, including after exactly the change it guards against.
+
 ## Schema v2 (ZM-D-201) -- the first migration this codec has ever run
 
 **v2 is v1 plus save module 12, and nothing else.** Module 12 carries the
@@ -33,16 +76,19 @@ with it -- which is what
 `ZM_Save.GoldenV1_ModuleBytesSurviveVerbatimInsideTheV2Payload` measures rather
 than asserts in prose.
 
-- `Write` **always** emits v2.
-- `Read` accepts v2 and **migrates v1 forward**: it reads v1's eleven modules,
-  synthesizes an EMPTY collected set (a save written before ground items existed
-  cannot record having taken one) and publishes a v2-shaped `ZM_GameState`.
-  Every other version -- including anything above current -- is still
-  `VERSION_MISMATCH`. There is no forward-compatible read path and no
-  minimum-supported-floor machinery.
+- `Write` **always** emits v3 (this section describes the v1 -> v2 step; see
+  "Schema v3" above for the v2 -> v3 one).
+- `Read` accepts v3 and **migrates v2 and v1 forward**. From v1 it reads eleven
+  modules and synthesizes an EMPTY collected set (a save written before ground items
+  existed cannot record having taken one); from v1 AND v2 it converts a SET world
+  position from body-centre to feet space. Every other version -- including anything
+  above current -- is still `VERSION_MISMATCH`. There is no forward-compatible read
+  path and no minimum-supported-floor machinery.
 - **The module-count check is VERSION-AWARE, never relaxed.** A v1 payload must
-  declare exactly 11 and a v2 payload exactly 12; either one declaring the
-  other's count is `CORRUPT_DATA`. `ZM_SaveSchema::ModuleCountForSchemaVersion`
+  declare exactly 11, and a v2 or v3 payload exactly 12; a v1 blob declaring 12 or a
+  v2/v3 blob declaring 11 is `CORRUPT_DATA`. v2 and v3 legitimately share a count
+  (the semantic migration added no module), so the count alone cannot tell them
+  apart -- which is precisely why the version word carries the coordinate space. `ZM_SaveSchema::ModuleCountForSchemaVersion`
   is the single place both the supported-version test and the expected count come
   from, so the two cannot drift.
 - **The migration runs BEFORE validation and BEFORE the publish**, so `Read`'s
@@ -132,15 +178,15 @@ Inner header:
 | Field | type | Notes |
 |---|---|---|
 | `magic` | uint32 | `'ZMSV'` -- reads as `0x56534D5A` little-endian. Catches "not a Zenithmon save" before any field reads. |
-| `schemaVersion` | uint32 | 2 (written) or 1 (read and migrated forward). Every other value returns `VERSION_MISMATCH`; there is no invented v0 reader and no forward read. |
-| `moduleCount` | uint32 | Exactly 12 for v2, exactly 11 for v1. The two are not interchangeable -- see "Schema v2" above. |
+| `schemaVersion` | uint32 | 3 (written); 2 and 1 are read and migrated forward. Every other value returns `VERSION_MISMATCH`; there is no invented v0 reader and no forward read. |
+| `moduleCount` | uint32 | Exactly 12 for v3 and v2, exactly 11 for v1. v2 and v3 SHARE a count because v2 -> v3 is a semantic migration that added no module -- the version word is the only thing separating them (see "Schema v3"). The counts are otherwise not interchangeable. |
 
 Each module:
 
 | Field | type | Notes |
 |---|---|---|
 | `moduleId` | uint32 | Stable enum value from the table below; never reused. |
-| `moduleVersion` | uint32 | Exactly 1 for every module in both v1 and v2. Any other value returns `VERSION_MISMATCH`. |
+| `moduleVersion` | uint32 | Exactly 1 for every module in v1, v2 and v3. Any other value returns `VERSION_MISMATCH`. |
 | `byteLength` | uint32 | Payload bytes that follow. The reader MUST land exactly `byteLength` bytes after parsing; a mismatch is CORRUPT. |
 | payload | ... | Module fields, in the documented order. |
 
@@ -534,10 +580,15 @@ artifact is unchanged and always will be.)
 
 ## Migration policy
 
-- **There are two real schemas: v1 and v2.** The writer emits v2. The reader
-  accepts global v2, migrates global v1 forward, requires module version 1
+- **There are three real schemas: v1, v2 and v3.** The writer emits v3. The reader
+  accepts global v3, migrates global v2 and v1 forward, requires module version 1
   throughout, and rejects every other global/module version with
   `VERSION_MISMATCH`. There is still no fake v0 blob and no v0 reader.
+- **A schema change is not only a change of LAYOUT.** ZM-D-223 changed no byte and
+  still required a bump, because it changed what a stored field MEANS. The gate rule
+  below applies to both kinds: if a payload written before the change would decode
+  to the wrong state after it, the version moves and a canned blob proves the
+  conversion.
 - **Gate rule (binding, from the approved plan):** ANY schema change -- global
   or per-module, field added/removed/widened/reordered -- ships a version bump
   PLUS a canned-blob migration test in the SAME commit. No exceptions; this is
@@ -546,8 +597,22 @@ artifact is unchanged and always will be.)
 - **Canned blobs are compiled C byte arrays** in
   `Tests/ZM_Tests_SaveMigration.cpp` -- never disk assets, never regenerated
   from the codec, never described by a zero-fill or compression helper. One
-  literal per shipped version: the **824-byte v1 golden** and the **842-byte v2
-  golden**.
+  literal per shipped version, plus one per migration that needs a state the
+  existing fixtures cannot express: the **824-byte v1 golden**, the **842-byte v2
+  golden**, and the **842-byte v2 RESUME golden**.
+  - ★ **`auV2ResumeGolden` exists because `auV2Golden` cannot test ZM-D-223.** The
+    original v2 fixture never set a resume point, so its world-position module is all
+    zeroes -- it can prove the coordinate migration LEAVES AN UNSET POSITION ALONE,
+    and nothing else. A migration that converted the wrong axis, by the wrong amount,
+    or not at all would pass every clause that array can carry. The resume golden is
+    a v2 save taken while standing at Dawnmere's TownCenter, body centre
+    `(120, 25.95666, 60)`; migrating it must yield the marker's feet
+    (`25.05666`) back. It differs from `auV2Golden` in exactly 22 bytes, all inside
+    the world-position module.
+  - ★ **It is FROZEN like the others.** Building a fixture by running the current
+    writer and patching its version word would prove only that the reader agrees with
+    the writer -- true of any pair of broken halves -- and would silently follow the
+    writer to v4.
   - ★ **`auV1Golden` IS NEVER REGENERATED.** It is the only independent record
     of a wire format the writer can no longer produce; re-deriving it from the
     current codec would make the migration test self-referential -- it would then
@@ -616,16 +681,19 @@ artifact is unchanged and always will be.)
   bag/daycare/tower/world/options/ground-item field domains; raw move and
   world-float wire oracles; older/current/newer Dex-count policy; StoryFlags
   high-water output; and counted-options TLV compatibility/rejection. Its
-  fixtures are **v2** blobs; the retired v1 bytes live only in the migration
-  file. (**29** before ZM-D-201, which added the module-12 domain unit.)
-- `Tests/ZM_Tests_SaveMigration.cpp` contains **5** compatibility tests over two
-  independent literal arrays -- the **824-byte v1** and **842-byte v2** goldens:
-  v1's modules surviving verbatim inside a v2 payload (with the schema-version
-  tripwire that forces a bumper back into this file), the v1 canned-blob
-  migration and its forward round trip, the version/module-count pairing in both
-  directions with atomicity, and the v2 pair (canonical writer byte equality;
-  literal decode + field assertions + byte-identical re-encode). No fake v0
-  migration is represented. (**2** before ZM-D-201.)
+  fixtures are **current-version** blobs; the retired v1/v2 bytes live only in the
+  migration file. (**29** before ZM-D-201, which added the module-12 domain unit.)
+- `Tests/ZM_Tests_SaveMigration.cpp` contains **7** compatibility tests over three
+  independent literal arrays -- the **824-byte v1**, **842-byte v2** and **842-byte
+  v2 RESUME** goldens: v1's modules surviving verbatim inside a later payload (with
+  the schema-version tripwire that forces a bumper back into this file), the v1
+  canned-blob migration and its forward round trip, the version/module-count pairing
+  in both directions with atomicity, the v2 pair (canonical-writer equality -- which
+  now also PROVES v3 differs from its v2 golden in the version word and nothing else,
+  the premise the semantic migration rests on; plus literal decode, field assertions
+  and the unset-position no-op), the ZM-D-223 canned-blob coordinate migration, and
+  the frozen historical offset. No fake v0 migration is represented. (**2** before
+  ZM-D-201, **5** before ZM-D-223.)
 - `Tests/ZM_Tests_GroundItem.cpp` contains **14** pure `ZM_GroundItem` tests over
   the prop registry, the collected set and the pickup path -- including the two
   that make the "Add first, mark collected only on success" ordering a contract

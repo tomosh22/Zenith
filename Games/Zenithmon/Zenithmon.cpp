@@ -449,6 +449,13 @@ private:
 			fZM_HUMAN_BODY_FOOTPRINT * 0.5f / fZM_HUMAN_VISUAL_SCALE,
 			fZM_HUMAN_BODY_HALF_HEIGHT / fZM_HUMAN_VISUAL_SCALE,
 			fZM_HUMAN_BODY_FOOTPRINT * 0.5f / fZM_HUMAN_VISUAL_SCALE));
+		// CreateBox is centred on its own origin, and the entity origin is the FEET,
+		// so the block is lifted by its own half height or it would stand half
+		// underground. NOT fZM_HUMAN_MODEL_OFFSET_Y: that number places the shared
+		// RIG, and this branch is showing precisely because no rig loaded. Divided by
+		// the visual scale for the same reason the extents above are.
+		pxModel->SetModelSpaceOffset(Zenith_Maths::Vector3(
+			0.0f, fZM_HUMAN_BODY_HALF_HEIGHT / fZM_HUMAN_VISUAL_SCALE, 0.0f));
 		if (!BuildBlockMesh(ZM_GetHumanPaletteColour(eHumanId)))
 		{
 			return;
@@ -479,6 +486,15 @@ private:
 				"cold-start block", acModelRef);
 			return false;
 		}
+
+		// ★ PLACE THE RIG. The shared StickFigure skeleton is authored HIP-at-origin
+		// and this game's human entity origin is the FEET, so the model is lifted by
+		// the depth its feet hang below the rig origin. Model-space, so the entity's
+		// uniform fZM_HUMAN_VISUAL_SCALE converts loft units to metres for free.
+		// Re-asserted on every model load rather than once, because LoadModel is what
+		// establishes which convention the loaded asset is in.
+		xModel.SetModelSpaceOffset(
+			Zenith_Maths::Vector3(0.0f, fZM_HUMAN_MODEL_OFFSET_Y, 0.0f));
 
 		// The material handle belongs to the block paths; a model carries its own.
 		m_xMaterial = MaterialHandle();
@@ -695,6 +711,15 @@ private:
 		{
 			return;   // nothing configured to re-shape; the setters would only warn
 		}
+
+		// ★ THE SHAPE IS OFFSET, NOT THE BODY. The entity origin is the FEET and an
+		// inscribed volume is centred, so every human's shape rides half a body
+		// height up. Set BEFORE the dimensions so the single RebuildCollider the
+		// dimension setter performs already carries the offset -- both setters are
+		// idempotent, so the steady state costs nothing either way, but ordering it
+		// this way keeps a fresh body from being built twice.
+		pxCollider->SetExplicitShapeOffset(
+			Zenith_Maths::Vector3(0.0f, fZM_HUMAN_BODY_SHAPE_OFFSET_Y, 0.0f));
 
 		if (pxCollider->GetCollisionVolumeType() == COLLISION_VOLUME_TYPE_CAPSULE)
 		{
@@ -3161,14 +3186,13 @@ namespace
 	// yaw out of the SAVED BYTES while every boot unit stayed green. Keeping the
 	// change to ONE FLOAT PER EXISTING CALL SITE makes that whole class of defect
 	// unreachable by construction. Never grow a post-collider transform write here.
-	Zenith_Maths::Vector3 ZM_DawnmereNpcAuthoredCenter(
-		u_int uNpc, float fCapsuleHalfExtent)
+	// The authored transform for a STATIC Dawnmere NPC: its anchor's FEET, verbatim.
+	// The capsule half-extent is no longer read -- it was only ever there to convert
+	// the anchor's feet into a body centre, and the entity origin IS the feet now.
+	Zenith_Maths::Vector3 ZM_DawnmereNpcAuthoredFeet(u_int uNpc)
 	{
 		const ZM_DawnmereNpcAnchor& xAnchor = ZM_GetDawnmereNpcAnchor(uNpc);
-		return Zenith_Maths::Vector3(
-			xAnchor.m_fX,
-			ZM_DawnmereNpcCentreY(uNpc, fCapsuleHalfExtent),
-			xAnchor.m_fZ);
+		return Zenith_Maths::Vector3(xAnchor.m_fX, ZM_DawnmereNpcFeetY(uNpc), xAnchor.m_fZ);
 	}
 
 	void ZM_ConfigureWandererNpc()
@@ -3202,9 +3226,9 @@ namespace
 		ZM_WalkerWaypoints xWaypoints{};
 		xWaypoints.m_uCount = 2u;
 		xWaypoints.m_axPoints[0] = {
-			xWaypoint0.m_fX, xWaypoint0.m_fFeetY + fZM_HUMAN_BODY_HALF_HEIGHT, xWaypoint0.m_fZ };
+			xWaypoint0.m_fX, xWaypoint0.m_fFeetY, xWaypoint0.m_fZ };
 		xWaypoints.m_axPoints[1] = {
-			xWaypoint1.m_fX, xWaypoint1.m_fFeetY + fZM_HUMAN_BODY_HALF_HEIGHT, xWaypoint1.m_fZ };
+			xWaypoint1.m_fX, xWaypoint1.m_fFeetY, xWaypoint1.m_fZ };
 
 		const bool bNpcConfigured = ZM_ConfigureSelectedNpc(ZM_NPC_WANDERER);
 		const bool bPatrolConfigured =
@@ -4486,7 +4510,7 @@ void Project_RegisterEditorAutomationSteps()
 
 	xAuto.AddStep_CreateEntity("Player");
 	xAuto.AddStep_SetEntityTransient(false);
-	xAuto.AddStep_SetTransformPosition(0.0f, fZM_HUMAN_BODY_HALF_HEIGHT, 3.5f);
+	xAuto.AddStep_SetTransformPosition(0.0f, 0.0f, 3.5f);
 	xAuto.AddStep_SetTransformScale(
 		fZM_HUMAN_VISUAL_SCALE, fZM_HUMAN_VISUAL_SCALE, fZM_HUMAN_VISUAL_SCALE);
 	xAuto.AddStep_AddCollider();
@@ -4621,7 +4645,7 @@ void Project_RegisterEditorAutomationSteps()
 	ZM_QueueInteriorDressing(xAuto, ZM_INTERIOR_ROOM_PROF_LAB);
 
 	// The single arrival marker. Its transform is the marker's FEET: the warp adds
-	// the capsule half-extent at spawn time (ZM_GameStateManager::CalculateSpawnCenter),
+	// the capsule half-extent at spawn time (ZM_GameStateManager::CalculateSpawnPosition),
 	// so authoring a body centre here would put an arriving player half a body
 	// into the ceiling.
 	const Zenith_Maths::Vector3 xProfLabSpawnFeet = ZM_GetProfLabSpawnFeet();
@@ -4634,7 +4658,7 @@ void Project_RegisterEditorAutomationSteps()
 
 	// The authored player stands ON that marker. CAPSULE, not AABB or OBB: it is
 	// the one body here that moves.
-	const Zenith_Maths::Vector3 xProfLabPlayerCenter = ZM_GetProfLabPlayerCenter();
+	const Zenith_Maths::Vector3 xProfLabPlayerCenter = ZM_GetProfLabPlayerFeet();
 	xAuto.AddStep_CreateEntity(szZM_PROFLAB_PLAYER_ENTITY_NAME);
 	xAuto.AddStep_SetEntityTransient(false);
 	xAuto.AddStep_SetTransformPosition(
@@ -4673,7 +4697,7 @@ void Project_RegisterEditorAutomationSteps()
 	// ★ AND THE STEPS ARE STILL NOT RE-SPELLED HERE. One helper, one definition of
 	// "an authored stationary talker who faces somewhere", at the same human visual
 	// scale as every other person in this game.
-	const Zenith_Maths::Vector3 xProfLabAsterCenter = ZM_GetProfLabAsterCenter();
+	const Zenith_Maths::Vector3 xProfLabAsterCenter = ZM_GetProfLabAsterFeet();
 	ZM_QueueFacingStationaryTalkerNpc(xAuto, szZM_PROFLAB_ASTER_ENTITY_NAME,
 		xProfLabAsterCenter, g_xZMHumanVisualScale, ZM_ProfLabAsterFacing(),
 		&ZM_ConfigureProfAsterNpc);
@@ -4860,10 +4884,13 @@ void Project_RegisterEditorAutomationSteps()
 			fZM_DAWNMERE_TOWN_CENTER_FEET_Y,
 			fZM_DAWNMERE_TOWN_CENTER_Z);
 		const Zenith_Maths::Vector3 xPlayerScale = g_xZMHumanVisualScale;
-		const float fPlayerCapsuleHalfExtent = fZM_HUMAN_BODY_HALF_HEIGHT;
-		const Zenith_Maths::Vector3 xPlayerCenter =
-			xTownCenterFeet + Zenith_Maths::Vector3(
-				0.0f, fPlayerCapsuleHalfExtent, 0.0f);
+		// The authored player stands ON the town centre: the entity origin is the
+		// FEET, so the anchor is the authored transform with no conversion.
+		const Zenith_Maths::Vector3 xPlayerCenter = xTownCenterFeet;
+		// The ZM-D-184 air gap a DYNAMIC authored body spawns with. It is one capsule
+		// half-extent, and it is all that is left of what used to be two terms: the
+		// feet->centre conversion went away with the feet origin, this did not.
+		const float fZM_DAWNMERE_SPAWN_CLEARANCE = fZM_HUMAN_BODY_HALF_HEIGHT;
 
 		xAuto.AddStep_CreateScene("Dawnmere");
 		xAuto.AddStep_CreateEntity("DawnmereTerrain");
@@ -4976,7 +5003,7 @@ void Project_RegisterEditorAutomationSteps()
 		// ---- S7 item 2 SC1 added the story-gated warden)                    ----
 		//
 		// Bodies share the PLAYER'S scale, so an NPC's AABB half-height IS
-		// fPlayerCapsuleHalfExtent and every NPC centre sits at exactly the player's
+		// the shared body contract and every NPC stands at exactly the player's
 		// authored centre height.
 		//
 		// ★ HEIGHT IS MEASURED, NOT ASSUMED (known-limit W5). Every NPC used to reuse
@@ -5046,8 +5073,7 @@ void Project_RegisterEditorAutomationSteps()
 		// existing traversal routes before moving anything in this block.
 		//
 		const Zenith_Maths::Vector3 xNpcScale = xPlayerScale;
-		const Zenith_Maths::Vector3 xVillagerCenter = ZM_DawnmereNpcAuthoredCenter(
-			ZM_DAWNMERE_NPC_VILLAGER, fPlayerCapsuleHalfExtent);
+		const Zenith_Maths::Vector3 xVillagerCenter = ZM_DawnmereNpcAuthoredFeet(ZM_DAWNMERE_NPC_VILLAGER);
 		// z + 16 keeps both off the Home-traversal corridor, which runs from
 		// (192, 128) down to the door staging waypoint at (128, 122).
 		// Separations against the 2.9 m effective reach (2.5 global + 0.4 authored):
@@ -5059,10 +5085,8 @@ void Project_RegisterEditorAutomationSteps()
 		// never confuse two of them and the walk-up test can assert the winner BY
 		// ENTITY ID; and neither flank NPC is reachable from spawn, which keeps the
 		// test's out-of-range negative unambiguous.
-		const Zenith_Maths::Vector3 xClerkCenter = ZM_DawnmereNpcAuthoredCenter(
-			ZM_DAWNMERE_NPC_TRADE_POST_CLERK, fPlayerCapsuleHalfExtent);
-		const Zenith_Maths::Vector3 xCaretakerCenter = ZM_DawnmereNpcAuthoredCenter(
-			ZM_DAWNMERE_NPC_CARETAKER, fPlayerCapsuleHalfExtent);
+		const Zenith_Maths::Vector3 xClerkCenter = ZM_DawnmereNpcAuthoredFeet(ZM_DAWNMERE_NPC_TRADE_POST_CLERK);
+		const Zenith_Maths::Vector3 xCaretakerCenter = ZM_DawnmereNpcAuthoredFeet(ZM_DAWNMERE_NPC_CARETAKER);
 		ZM_QueueStationaryTalkerNpc(xAuto, "Npc_Villager",
 			xVillagerCenter, xNpcScale, &ZM_ConfigureVillagerNpc);
 		ZM_QueueStationaryTalkerNpc(xAuto, "Npc_TradePostClerk",
@@ -5101,8 +5125,7 @@ void Project_RegisterEditorAutomationSteps()
 		// re-derive every separation above from scratch -- none of these figures carry
 		// over, INCLUDING his feet height -- and rewrite his lines in ZM_NpcData.cpp
 		// to match the new ground.
-		const Zenith_Maths::Vector3 xRouteWardenCenter = ZM_DawnmereNpcAuthoredCenter(
-			ZM_DAWNMERE_NPC_WARDEN, fPlayerCapsuleHalfExtent);
+		const Zenith_Maths::Vector3 xRouteWardenCenter = ZM_DawnmereNpcAuthoredFeet(ZM_DAWNMERE_NPC_WARDEN);
 		ZM_QueueStationaryTalkerNpc(xAuto, "Npc_Warden",
 			xRouteWardenCenter, xNpcScale, &ZM_ConfigureRouteWardenNpc);
 		// SC8: the fourth row is a deterministic two-point patrol. Both endpoints are
@@ -5111,10 +5134,10 @@ void Project_RegisterEditorAutomationSteps()
 		// away. ONE EXTRA capsule half-extent of clearance
 		// authors it safely above that surface so gravity settles it from the front
 		// side. That special case is NAMED (ZM_DawnmereWandererSpawnY) rather than
-		// open-coded, because it is the one NPC whose authored Y is not its centre.
+		// open-coded, because it is the one NPC whose authored Y is not simply its feet.
 		const Zenith_Maths::Vector3 xWandererCenter(
 			ZM_GetDawnmereNpcAnchor(ZM_DAWNMERE_NPC_WANDERER).m_fX,
-			ZM_DawnmereWandererSpawnY(fPlayerCapsuleHalfExtent),
+			ZM_DawnmereWandererSpawnY(fZM_DAWNMERE_SPAWN_CLEARANCE),
 			ZM_GetDawnmereNpcAnchor(ZM_DAWNMERE_NPC_WANDERER).m_fZ);
 		ZM_QueueDawnmereWanderer(xAuto, xWandererCenter, xNpcScale);
 
@@ -5163,7 +5186,7 @@ void Project_RegisterEditorAutomationSteps()
 		// no geometric claim in that header changes.
 		const Zenith_Maths::Vector3 xRivalVesperCenter(
 			ZM_GetDawnmereNpcAnchor(ZM_DAWNMERE_NPC_RIVAL_VESPER).m_fX,
-			ZM_DawnmereTrainerSpawnY(fPlayerCapsuleHalfExtent),
+			ZM_DawnmereTrainerSpawnY(fZM_DAWNMERE_SPAWN_CLEARANCE),
 			ZM_GetDawnmereNpcAnchor(ZM_DAWNMERE_NPC_RIVAL_VESPER).m_fZ);
 		ZM_QueueDawnmereTrainerNpc(xAuto, "Npc_RivalVesper",
 			xRivalVesperCenter, xNpcScale, ZM_DawnmereVesperFacing(),
@@ -5250,7 +5273,7 @@ void Project_RegisterEditorAutomationSteps()
 
 		// The arrival marker. Its transform is the marker's FEET -- the MEASURED
 		// terrain surface at (fZM_DAWNMERE_LAB_X, fZM_DAWNMERE_FROM_LAB_SPAWN_Z) --
-		// because ZM_GameStateManager::CalculateSpawnCenter adds the capsule
+		// because ZM_GameStateManager::CalculateSpawnPosition adds the capsule
 		// half-extent at warp time. Authoring a body centre here would warp an
 		// arriving player in half a body above the ground. Step list mirrors the
 		// shipped FromHomeSpawn verbatim.
@@ -5306,7 +5329,7 @@ void Project_RegisterEditorAutomationSteps()
 		// ZM_ResolveInboundSpawnTag. Nothing here spells the tag.
 		//
 		// ★ THE TRANSFORM IS THE MARKER'S FEET, NEVER A BODY CENTRE.
-		// ZM_GameStateManager::CalculateSpawnCenter adds the capsule half-extent
+		// ZM_GameStateManager::CalculateSpawnPosition adds the capsule half-extent
 		// at warp time, so authoring a centre would drop every arriving player
 		// in from half a body up. The height is the MEASURED (512, 864) column
 		// frozen by R1-2 step 1, read through ZM_GetDawnmereFromRoute1SpawnFeet
@@ -5552,7 +5575,7 @@ void Project_RegisterEditorAutomationSteps()
 		// ZM_ResolveInboundSpawnTag above. Read it before touching either step.
 		//
 		// ★ THE TRANSFORM IS THE MARKER'S FEET, NEVER A BODY CENTRE.
-		// ZM_GameStateManager::CalculateSpawnCenter adds the capsule half-extent at
+		// ZM_GameStateManager::CalculateSpawnPosition adds the capsule half-extent at
 		// warp time, so authoring a centre here would drop every arriving player in
 		// from half a body up. Same vocabulary as the shipped FromLabSpawn.
 		//
@@ -5602,10 +5625,10 @@ void Project_RegisterEditorAutomationSteps()
 		// half-extent ABOVE its resting centre (ZM-D-184): a dynamic body authored
 		// at exact ground contact bursts physics substeps on its first frame and
 		// falls THROUGH the terrain -- that is how Vesper vanished. The clearance
-		// is baked into ZM_GetRoute1AuthoredPlayerCentre(), so it exists in one
+		// is baked into ZM_GetRoute1AuthoredPlayerFeet(), so it exists in one
 		// place rather than at every author site.
 		const Zenith_Maths::Vector3 xRoute1PlayerCentre =
-			ZM_GetRoute1AuthoredPlayerCentre();
+			ZM_GetRoute1AuthoredPlayerFeet();
 		xAuto.AddStep_CreateEntity(szZM_ROUTE1_PLAYER_ENTITY_NAME);
 		xAuto.AddStep_SetEntityTransient(false);
 		xAuto.AddStep_SetTransformPosition(
@@ -5839,7 +5862,7 @@ void Project_RegisterEditorAutomationSteps()
 		// likewise a DYNAMIC capsule authored one half-extent clear of the ground
 		// (ZM-D-184), with the clearance living inside the accessor.
 		const Zenith_Maths::Vector3 xThornacrePlayerCentre =
-			ZM_GetThornacreAuthoredPlayerCentre();
+			ZM_GetThornacreAuthoredPlayerFeet();
 		xAuto.AddStep_CreateEntity(szZM_THORNACRE_PLAYER_ENTITY_NAME);
 		xAuto.AddStep_SetEntityTransient(false);
 		xAuto.AddStep_SetTransformPosition(

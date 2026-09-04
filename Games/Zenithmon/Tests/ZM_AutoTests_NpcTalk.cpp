@@ -1190,10 +1190,10 @@ namespace
 		{
 		case (u_int)ZM_DAWNMERE_NPC_WANDERER:
 			return ZM_DawnmereWandererSpawnY(fHalfExtent)
-				- ZM_DawnmereNpcCentreY(ZM_DAWNMERE_NPC_WANDERER, fHalfExtent);
+				- ZM_DawnmereNpcFeetY(ZM_DAWNMERE_NPC_WANDERER);
 		case (u_int)ZM_DAWNMERE_NPC_RIVAL_VESPER:
 			return ZM_DawnmereTrainerSpawnY(fHalfExtent)
-				- ZM_DawnmereNpcCentreY(ZM_DAWNMERE_NPC_RIVAL_VESPER, fHalfExtent);
+				- ZM_DawnmereNpcFeetY(ZM_DAWNMERE_NPC_RIVAL_VESPER);
 		default:
 			return 0.0f;
 		}
@@ -1460,11 +1460,15 @@ namespace
 			const ZM_DawnmereNpcAnchor& xAnchor = ZM_GetDawnmereNpcAnchor(u);
 			const float fLoggedClearance =
 				GTAuthoredClearance(u, g_afGTHalfExtent[u]);
+			// ★ NO HALF-EXTENT TERM. An authored human position IS its feet, so the
+			// expected value is the measured ground plus the authored air gap. The
+			// half-extent used to be here because the authored value was a body
+			// CENTRE; leaving it in would demand every static NPC hover 0.9 m up.
 			const float fLoggedExpected =
-				g_afGTMeasuredFeetY[u] + g_afGTHalfExtent[u] + fLoggedClearance;
+				g_afGTMeasuredFeetY[u] + fLoggedClearance;
 			Zenith_Log(LOG_CATEGORY_UNITTEST,
 				"[ZM_DawnmereNpcGroundTruth] name=%s xz=(%.1f, %.1f) measured=%.5f "
-				"table=%.5f tableError=%.5f | authoredY=%.5f expectedCentre=%.5f "
+				"table=%.5f tableError=%.5f | authoredY=%.5f expectedFeet=%.5f "
 				"centreError=%.5f halfExtent=%.4f clearance=%.4f | resolved=%d "
 				"rayHit=%d resolveFrame=%d",
 				xAnchor.m_szEntityName, xAnchor.m_fX, xAnchor.m_fZ,
@@ -1557,8 +1561,7 @@ namespace
 			// it is strictly contained in this window, so it is gone rather than kept
 			// beside a stronger statement of the same fact.
 			const float fClearance = GTAuthoredClearance(u, g_afGTHalfExtent[u]);
-			const float fExpectedCentre =
-				g_afGTMeasuredFeetY[u] + g_afGTHalfExtent[u] + fClearance;
+			const float fExpectedCentre = g_afGTMeasuredFeetY[u] + fClearance;
 			const float fCentreError =
 				std::fabs(g_axGTAuthoredPosition[u].y - fExpectedCentre);
 			if (fCentreError > fGT_HEIGHT_TOLERANCE)
@@ -1566,7 +1569,7 @@ namespace
 				bPassed = false;
 				Zenith_Error(LOG_CATEGORY_UNITTEST,
 					"[ZM_DawnmereNpcGroundTruth] '%s': the COMMITTED transform Y %.5f is "
-					"%.5f m off terrain + halfExtent + clearance %.5f (halfExtent %.4f, "
+					"%.5f m off terrain + clearance %.5f (halfExtent %.4f, "
 					"clearance %.4f, tolerance %.3f) -- either Dawnmere has not been "
 					"re-authored since the W5 heights moved, or this body's authored "
 					"clearance changed and GTAuthoredClearance was not told. A committed "

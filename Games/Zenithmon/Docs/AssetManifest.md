@@ -206,19 +206,23 @@ byte-identical across every species of an archetype. They are part of the
 > authored Dawnmere NPCs and the player in all three scenes now wear these models,
 > animated Idle <-> Walk off commanded speed. Four things changed with it:
 >
-> * **The bind space is CENTRE-ANCHORED (generator v2).** v1 built feet-near-y=0;
->   Zenithmon's authored entity position is the body CENTRE, so the mesh moved to
->   meet it rather than the whole game moving to meet the mesh. It is a rigid
->   translation of the root bone (the only bone with parent -1) and every vertex,
->   so skinning and the rotation-only shared clips are mathematically untouched.
->   **The version bump is load-bearing**: every v1 bake on disk is feet-at-zero and
->   would render sunk into the floor.
+>   *(Historical, and REVERSED by generator v6 -- see the bind-space note in the
+>   per-model section above.)* **The bind space was CENTRE-ANCHORED at generator
+>   v2**: v1 built feet-near-y=0, and Zenithmon's authored entity position was then
+>   the body CENTRE, so the mesh moved to meet it. That was legal only while the
+>   skeleton was this game's to move with the vertices. v6 binds the SHARED
+>   StickFigure rig, so the loft stays in that rig's own bind space and the placement
+>   moved out of the generator entirely (`fZM_HUMAN_MODEL_OFFSET_Y`); the authored
+>   entity position is now the FEET (ZM-D-223).
 > * **Body metrics are MEASURED over the body vertex PREFIX.** `ZM_MeasureHumanBody`
 >   measures the six body loft parts only -- hair and attachments are excluded, so a
 >   hat cannot decide how tall its wearer is -- and it measures BEFORE the anchor, so
->   it can never be circular. `fZM_HUMAN_CANONICAL_BODY_HEIGHT` (2.604300) and
->   `fZM_HUMAN_MESH_CENTRE_Y` (1.307005) are pinned by a boot unit that re-derives
->   both from a freshly built mesh. They are MODEL-space units, not metres.
+>   it can never be circular. `fZM_HUMAN_CANONICAL_BODY_HEIGHT` (2.604300),
+>   `fZM_HUMAN_MESH_CENTRE_Y` and `fZM_HUMAN_MESH_FEET_Y` are pinned by a boot unit
+>   that re-derives all three from a freshly built mesh. They are MODEL-space units,
+>   not metres, and since v6 they are expressed in the SHARED RIG's space -- which is
+>   why the centre reads 0.307005 rather than v5's 1.307005, and why the feet are
+>   NEGATIVE (a standing body reaches about one unit below its hip).
 > * **`fZM_HUMAN_VISUAL_SCALE`** (`Source/World/ZM_HumanBody.h`) is the uniform
 >   authored transform scale that maps that ~2.6-unit body onto the game's 1.8 m
 >   body contract.
@@ -238,51 +242,81 @@ byte-identical across every species of an archetype. They are part of the
 - Roster (~35): player m/f, professor, mom, rival, 8 gym leaders, Elite 4 +
   champion, ~10 trainer classes, 6 townsfolk.
 
-**Human family file sets (SHIPPED -- 10 shared files + 4 per model).**
-`ZM_HumanGen` INVERTS the creature bundle: instead of a full per-model bundle,
-the whole roster shares ONE rig and ONE clip set, baked ONCE, and each model
-contributes only mesh + texture + material + model. `ZM_BakeHumanShared`
-(TOOLS-only) writes the shared set ONCE under `game:Humans/Shared/`; `ZM_BakeHuman`
-(TOOLS-only) writes the 4 per-model files under `game:Humans/<Name>/`. Per-model
-variation is mesh-loft + texture ONLY -- NO per-model skeleton, NO per-model
-clips (contrast creatures, which bake 15 files EACH, section 1.2).
+**Human family file sets (SHIPPED -- 7 per model, and NOTHING shared).**
+`ZM_HumanGen` v6 binds the **ENGINE-SHARED StickFigure rig** -- the same
+`engine:Meshes/StickFigure/StickFigure.zskel` RenderTest and Combat bind -- and
+plays clips out of that rig's shared library. This game therefore bakes **no rig
+and no animation at all**: `ZM_BakeHuman` (TOOLS-only) writes the 7 per-model
+files under `game:Humans/<Name>/`, and there is no `Humans/Shared/` folder.
+Per-model variation is mesh-loft + texture ONLY -- NO per-model skeleton, NO
+per-model clips (contrast creatures, which bake 15 files EACH, section 1.2).
 
-**Shared set (baked ONCE for the whole roster, under `game:Humans/Shared/`):**
+> **v5 and earlier baked a game-owned 16-bone `Human.zskel` plus nine
+> hand-authored `Human_*.zanim` under `game:Humans/Shared/`.** Both are gone. The
+> two rigs were never actually different where it counted: StickFigure's bones
+> 0..15 are `Root`..`RightFoot` with the identical names, parents and bind
+> translations Zenithmon emitted, and its bones 16..50 (jaw, eyes, toes, thirty
+> finger bones) are additions this game's loft simply does not weight. Zenithmon's
+> rig was a strict PREFIX of StickFigure's, so every skin index the generator
+> already wrote points at the correct StickFigure bone unchanged.
+> `HumanGen_RigMatchesStickFigure` opens the real `.zskel` and pins exactly that,
+> so a StickFigure reorder reds this game instead of silently re-skinning all 34
+> humans onto the wrong joints.
 
-| File | Count | Format / notes |
+**Shared set (ENGINE assets -- referenced, never baked by this game):**
+
+| Ref | Count | Format / notes |
 |---|---|---|
-| `Human.zskel` | 1 | the ONE shared 16-bone humanoid rig, single-rooted; every model binds it |
-| `Human_Idle.zanim` | 1 | Idle clip -- rotation-only, 24 ticks/sec, looping |
-| `Human_Walk.zanim` | 1 | Walk clip -- rotation-only, 24 ticks/sec, looping |
-| `Human_Run.zanim` | 1 | Run clip -- rotation-only, 24 ticks/sec, looping |
-| `Human_Talk.zanim` | 1 | Talk clip -- rotation-only, 24 ticks/sec, looping |
-| `Human_Wave.zanim` | 1 | Wave clip -- rotation-only, 24 ticks/sec, one-shot returns to identity |
-| `Human_Point.zanim` | 1 | Point clip -- rotation-only, 24 ticks/sec, one-shot returns to identity |
-| `Human_Cheer.zanim` | 1 | Cheer clip -- rotation-only, 24 ticks/sec, one-shot returns to identity |
-| `Human_Hurt.zanim` | 1 | Hurt clip -- rotation-only, 24 ticks/sec, one-shot returns to identity |
-| `Human_Faint.zanim` | 1 | Faint clip -- rotation-only, 24 ticks/sec, settles into and holds its final pose |
+| `engine:Meshes/StickFigure/StickFigure.zskel` | 1 | the 51-bone shared humanoid rig; Zenithmon weights only its 16-bone core prefix |
+| `engine:Meshes/StickFigure/StickFigure_Idle.zanim` | 1 | Idle -- the locomotion machine's rest state |
+| `engine:Meshes/StickFigure/StickFigure_Walk.zanim` | 1 | Walk -- the locomotion machine's moving state |
+| `engine:Meshes/StickFigure/StickFigure_Run.zanim` | 1 | Run |
+| `engine:Meshes/StickFigure/StickFigure_Hit.zanim` | 1 | plays Zenithmon's HURT role |
+| `engine:Meshes/StickFigure/StickFigure_Death.zanim` | 1 | plays Zenithmon's FAINT role |
 
-That is 1 `.zskel` + 9 `.zanim` = **10 shared files**, baked once for the entire
-roster (not per model).
+**Five clip ROLES, not nine.** v5 baked nine and wired exactly two: the
+locomotion state machine in `Zenithmon.cpp` uses Idle and Walk, and nothing
+anywhere played Talk, Wave, Point or Cheer. Those four had no StickFigure
+equivalent and were retired with the game-owned clip library rather than
+reimplemented against the new rig -- authoring animation nothing calls is dead
+content. Anything that later needs a wave authors it in the SHARED library
+(`Tools/Zenith_Tools_TestAssetExport.cpp`), where all three games get it.
 
-**Per-model set (under `game:Humans/<Name>/`, 4 files each):**
+**Per-model set (under `game:Humans/<Name>/`, 7 files each):**
 
 | File | Count per model | Format / notes |
 |---|---|---|
-| `<Name>.zmesh` | 1 | lofted skinned humanoid mesh, the 16 SHARED bones |
+| `<Name>.zmesh` | 1 | lofted skinned humanoid mesh in the SHARED RIG's bind space, weighted to its 16-bone core prefix |
 | `<Name>_albedo.ztxtr` | 1 | base albedo, BC1 256x256 |
+| `<Name>_normal.ztxtr` | 1 | BC5 normal, derived from the albedo luma |
+| `<Name>_rm.ztxtr` | 1 | roughness/metallic, BC1 linear |
+| `<Name>_ao.ztxtr` | 1 | occlusion, BC1 linear |
 | `<Name>.zmtrl` | 1 | matte dielectric material, .zmtrl v5 -- albedo in BASE_COLOR |
-| `<Name>.zmodel` | 1 | binds the shared `Human.zskel` by ref + self-lists all 9 shared `.zanim` in IDLE..FAINT order + one material -- NO per-model skeleton, NO per-model clips |
+| `<Name>.zmodel` | 1 | binds the ENGINE `StickFigure.zskel` by ref + self-lists the 5 shared `engine:` `.zanim` + one material -- NO per-model skeleton, NO per-model clips |
 
-**Family total.** 10 shared files (baked once) + (~34 models x 4 per-model
-files). Because the rig and clips are shared, the whole family is `10 + ~34 x 4`
-rather than `~34 x 15`. Every ref EMBEDDED in a baked `.zmodel` (the shared
-skeleton, the 9 shared clips, the per-model mesh/material) is a `game:` ref; only
-the write targets are filesystem paths.
+**BIND SPACE.** The mesh is left in StickFigure's own bind space (Root at y=0,
+the HIP; soles at `fZM_HUMAN_MESH_FEET_Y`), because a mesh may only be skinned
+against a skeleton expressed in its own bind space. v2..v5 centre-anchored the
+loft, which was legal only while the skeleton was this game's to move with it.
+Where the model then sits on a Zenithmon entity is a GAME statement, made once by
+`fZM_HUMAN_MODEL_OFFSET_Y` in `Source/World/ZM_HumanBody.h` and applied through
+`Zenith_ModelComponent::SetModelSpaceOffset` -- never baked back into the
+vertices, which would re-create the very rig/mesh desync the anchor caused.
+
+**Family total.** ~35 models x 7 per-model files = **245 files**, and nothing
+else -- the rig and clips are engine assets this game only refers to.
+
+**REFS SPAN TWO ROOTS, and that is new.** The refs embedded in a baked human
+`.zmodel` are no longer all `game:`: the skeleton and the five clips are
+`engine:` refs, while the mesh and material stay `game:`. Only the write targets
+are filesystem paths. `ZM_EnumerateFamilyFiles` therefore lists the per-model
+files ONLY -- a family's file list is what THIS GAME BAKES, and the bake stamp's
+file count is taken over it, so listing an engine asset would make the humans
+family's warmth depend on a file it does not produce and cannot repair.
 
 **Determinism / version stamp.** Every output byte is a pure function of the
 roster id (section 6.2); the generator version is `uZM_HUMANGEN_VERSION`
-(currently **1**), golden-pinned -- a change to the generation algorithm bumps it
+(currently **6**), golden-pinned -- a change to the generation algorithm bumps it
 and forces a cold family re-bake. Locked by the `ZM_Gen` HumanGen units
 ([TestPlan.md](TestPlan.md) 5.4).
 
@@ -750,7 +784,7 @@ terrain-family format now (`ZMTR`, v1, count 771 for each 256-chunk town and
 count 1,155 for the 384-chunk route in a 12-byte atomic marker; section 4.3).
 The creature generator already stamps its generation version via
 `uZM_CREATUREGEN_VERSION` (currently 3; section 1.2), the human family likewise
-stamps `uZM_HUMANGEN_VERSION` (currently 1; section 2), and the building and prop
+stamps `uZM_HUMANGEN_VERSION` (currently 6; section 2), and the building and prop
 families stamp `uZM_BUILDINGGEN_VERSION` (currently 1) and `uZM_PROPGEN_VERSION`
 (currently 2; section 3). The full per-family `ZM_BakeManifest` marker is now
 **SHIPPED (ZM-D-085)**: a per-family 12-byte `ZMBM` stamp (ASCII magic + u32-LE

@@ -686,11 +686,14 @@ ZENITH_TEST(ZM_Save, Header_BadMagicReturnsBadMagic)
 ZENITH_TEST(ZM_Save, Header_SchemaVersionMismatchReturnsVersionMismatch)
 {
 	const std::vector<uint8_t> xBytes = Encode(MakeWireFixture());
-	// 2 is the CURRENT version and 1 is the migratable one, so neither may appear
-	// here; 3 is the first unsupported version above current, and the codec still has
-	// no forward-compatible read path. The v1 acceptance and the version-aware module
-	// count are pinned in Tests/ZM_Tests_SaveMigration.cpp, where the v1 bytes live.
-	for (uint32_t uVersion : { 0u, 3u, 0xffffffffu })
+	// 3 is the CURRENT version and 2 and 1 are the migratable ones, so none of the
+	// three may appear here. The first unsupported version is CURRENT + 1, spelled as
+	// such rather than as a literal: it was 3 until ZM-D-223 bumped the schema, and a
+	// literal probe would then have been asserting that a SUPPORTED version is
+	// rejected. The v1/v2 acceptance and the version-aware module count are pinned in
+	// Tests/ZM_Tests_SaveMigration.cpp, where the retired bytes live.
+	for (uint32_t uVersion :
+		{ 0u, ZM_SaveSchema::uSCHEMA_VERSION_CURRENT + 1u, 0xffffffffu })
 	{
 		std::vector<uint8_t> xMutant = xBytes;
 		WriteU32(xMutant, 4u, uVersion);

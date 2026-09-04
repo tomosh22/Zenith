@@ -688,12 +688,14 @@ void ZM_Interactable::SubmitNameText(Zenith_TransformComponent* pxTransform)
 	// ★ THE BODY CONTRACT, NOT THE TRANSFORM SCALE. The scale describes how large
 	// the MODEL is drawn, which is a uniform factor with no relationship to how
 	// tall a person is; reading it here would drop the tag straight through the
-	// chest. Every human is fZM_HUMAN_BODY_HEIGHT tall, centred on its origin.
+	// chest. Every human is fZM_HUMAN_BODY_HEIGHT tall, STANDING ON its origin.
 	constexpr float fHEAD_MARGIN = 0.35f;
 	Zenith_Maths::Vector3 xPosition;
 	pxTransform->GetPosition(xPosition);
+	// The transform is the FEET, so the crown is a WHOLE body height up -- not a
+	// half. Getting this wrong parks the tag in the navel rather than over the head.
 	const Zenith_Maths::Vector3 xAnchor(xPosition.x,
-		xPosition.y + fZM_HUMAN_BODY_HALF_HEIGHT + fHEAD_MARGIN, xPosition.z);
+		xPosition.y + fZM_HUMAN_BODY_HEIGHT + fHEAD_MARGIN, xPosition.z);
 
 	const Zenith_Maths::Matrix4 xViewProj = g_xEngine.FluxGraphics().GetViewProjMatrix();
 	const Zenith_Maths::Vector4 xClip = xViewProj * Zenith_Maths::Vector4(xAnchor, 1.0f);
@@ -749,6 +751,9 @@ u_int ZM_Interactable::SubmitTrainerSpottedIndicator(
 	// the two were the same number, and would now park the "!" inside the ribcage.
 	// It also cannot be poisoned by a bad presentation scale, which is why the old
 	// non-finite fallback is gone rather than replaced.
+	// xTrainerCenter is a body CENTRE (see its derivation), so the top of the head
+	// is one HALF height above it. This one is unchanged by the feet-origin move
+	// precisely because it starts from a centre rather than from a transform.
 	const float fTop = xTrainerCenter.y + fZM_HUMAN_BODY_HALF_HEIGHT;
 	const Zenith_Maths::Vector3 xDotCenter(
 		xTrainerCenter.x, fTop + fZM_SPOTTED_DOT_OFFSET, xTrainerCenter.z);
@@ -872,9 +877,16 @@ void ZM_Interactable::TickTrainerSight(float fDeltaTime)
 			// The ray enters HERE and only here, AFTER the pure cone passed. There
 			// is no raycast budget anywhere in this engine, so cheap-gate-first IS
 			// the cost control.
+			// ★ EYE TO EYE, NOT FOOT TO FOOT. Both transforms are the FEET, and a ray
+			// cast between two points ON THE GROUND grazes the terrain for its whole
+			// length -- the occlusion probe then reports every trainer permanently
+			// blind, with the pure cone still passing and nothing else red. Both ends
+			// lift to the body centre, which is where the old body-centre transforms
+			// already put them and is the only height at which "can these two see
+			// each other" is a question about the world rather than about the floor.
 			const ZM_TrainerSightProbeResult xProbe = ZM_ProbeTrainerSightLine(
-				xTrainerPosition, m_xParentEntity.GetEntityID(),
-				xPlayerPosition, xPlayerID);
+				ZM_HumanBodyCentre(xTrainerPosition), m_xParentEntity.GetEntityID(),
+				ZM_HumanBodyCentre(xPlayerPosition), xPlayerID);
 			xInputs.m_bSightLineClear = xProbe.m_bClear;
 		}
 	}

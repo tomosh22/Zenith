@@ -6,6 +6,8 @@
 #include "Zenithmon/Source/Core/ZM_SaveSchema.h"
 #include "Zenithmon/Source/Party/ZM_GameState.h"
 #include "Zenithmon/Source/World/ZM_GroundItem.h"
+#include "Zenithmon/Source/Data/ZM_WorldSpec.h"     // ZM_GetWorldSpec -- a resume point that is genuinely SET
+#include "Zenithmon/Source/Save/ZM_ResumePoint.h"    // ZM_MakeWorldPosition
 
 #include <cstring>   // memcpy -- the mutable copies the framing units patch
 
@@ -275,6 +277,129 @@ namespace
 			| ((u_int)puBytes[uOffset + 3u] << 24u);
 	}
 
+	// The same, for a wire float. memcpy rather than a reinterpret_cast: the goldens
+	// are byte arrays with no alignment guarantee, and type-punning through a pointer
+	// cast is UB the optimiser is entitled to act on.
+	float ReadWireFloat(const uint8_t* puBytes, u_int uOffset)
+	{
+		float fValue = 0.0f;
+		memcpy(&fValue, puBytes + uOffset, sizeof(fValue));
+		return fValue;
+	}
+
+	// ---- The v2 RESUME golden -----------------------------------------------------
+	//
+	// ★★ A SECOND v2 LITERAL, AND IT EXISTS BECAUSE THE FIRST ONE CANNOT TEST THIS.
+	// auV2Golden's fixture never set a resume point, so its world-position module is
+	// all zeroes -- it can prove the ZM-D-223 coordinate migration LEAVES AN UNSET
+	// POSITION ALONE, and nothing else. A migration that converted the wrong axis, by
+	// the wrong amount, or not at all would pass every clause that array can carry.
+	//
+	// This one is a v2 save taken while STANDING somewhere: Dawnmere, spawn tag
+	// "TownCenter", body centre (120, 25.95666, 60), yaw 0. The Y is the real figure
+	// such a save held -- TownCenter's marker feet 25.05666 plus one body half-height
+	// -- so migrating it must yield exactly the marker back.
+	//
+	// ★ IT IS FROZEN, LIKE auV1Golden, AND FOR THE SAME REASON. SaveFormat.md's
+	// migration policy is binding: canned blobs are compiled C byte arrays, never
+	// regenerated from the codec. A fixture built by running the CURRENT writer and
+	// patching its version word would only prove "the reader agrees with the writer",
+	// which is true of any pair of broken halves -- and it would silently follow the
+	// writer to v4. These bytes are what a v2 save on someone's disk actually says,
+	// and they must never be re-derived.
+	static constexpr uint8_t auV2ResumeGolden[842] =
+	{
+		0x5Au, 0x4Du, 0x53u, 0x56u, 0x02u, 0x00u, 0x00u, 0x00u, 0x0Cu, 0x00u, 0x00u, 0x00u,
+		0x01u, 0x00u, 0x00u, 0x00u, 0x01u, 0x00u, 0x00u, 0x00u, 0x3Eu, 0x00u, 0x00u, 0x00u,
+		0x01u, 0x01u, 0x00u, 0x01u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x01u, 0x02u, 0x03u,
+		0x04u, 0x05u, 0x06u, 0x07u, 0x08u, 0x09u, 0x0Au, 0x0Bu, 0x00u, 0x00u, 0x02u, 0x00u,
+		0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+		0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x01u, 0x7Fu, 0x02u, 0x41u, 0x00u,
+		0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+		0x00u, 0x00u, 0x02u, 0x00u, 0x00u, 0x00u, 0x01u, 0x00u, 0x00u, 0x00u, 0xE2u, 0x01u,
+		0x00u, 0x00u, 0x10u, 0x1Eu, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+		0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+		0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+		0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+		0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+		0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+		0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+		0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+		0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+		0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+		0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+		0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+		0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+		0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+		0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+		0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+		0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+		0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+		0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+		0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+		0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+		0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+		0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+		0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+		0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+		0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+		0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+		0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+		0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+		0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+		0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+		0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+		0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+		0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+		0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+		0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+		0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+		0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+		0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+		0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+		0x00u, 0x00u, 0x00u, 0x00u, 0x03u, 0x00u, 0x00u, 0x00u, 0x01u, 0x00u, 0x00u, 0x00u,
+		0x28u, 0x00u, 0x00u, 0x00u, 0x98u, 0x00u, 0x01u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+		0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+		0x00u, 0x01u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+		0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x04u, 0x00u, 0x00u, 0x00u,
+		0x01u, 0x00u, 0x00u, 0x00u, 0x04u, 0x00u, 0x00u, 0x00u, 0x0Au, 0x00u, 0x00u, 0x02u,
+		0x05u, 0x00u, 0x00u, 0x00u, 0x01u, 0x00u, 0x00u, 0x00u, 0x01u, 0x00u, 0x00u, 0x00u,
+		0x81u, 0x06u, 0x00u, 0x00u, 0x00u, 0x01u, 0x00u, 0x00u, 0x00u, 0x06u, 0x00u, 0x00u,
+		0x00u, 0x01u, 0x00u, 0x00u, 0x00u, 0x02u, 0x00u, 0x07u, 0x00u, 0x00u, 0x00u, 0x01u,
+		0x00u, 0x00u, 0x00u, 0x04u, 0x00u, 0x00u, 0x00u, 0x78u, 0x56u, 0x34u, 0x12u, 0x08u,
+		0x00u, 0x00u, 0x00u, 0x01u, 0x00u, 0x00u, 0x00u, 0x06u, 0x00u, 0x00u, 0x00u, 0x00u,
+		0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x09u, 0x00u, 0x00u, 0x00u, 0x01u, 0x00u, 0x00u,
+		0x00u, 0x10u, 0x00u, 0x00u, 0x00u, 0x01u, 0x00u, 0x00u, 0x00u, 0x02u, 0x00u, 0x00u,
+		0x00u, 0x08u, 0x07u, 0x06u, 0x05u, 0x04u, 0x03u, 0x02u, 0x01u, 0x0Au, 0x00u, 0x00u,
+		0x00u, 0x01u, 0x00u, 0x00u, 0x00u, 0x34u, 0x00u, 0x00u, 0x00u, 0x02u, 0x00u, 0x00u,
+		0x00u, 0x54u, 0x6Fu, 0x77u, 0x6Eu, 0x43u, 0x65u, 0x6Eu, 0x74u, 0x65u, 0x72u, 0x00u,
+		0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+		0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0xF0u,
+		0x42u, 0x3Du, 0xA7u, 0xCFu, 0x41u, 0x00u, 0x00u, 0x70u, 0x42u, 0x00u, 0x00u, 0x00u,
+		0x00u, 0x0Bu, 0x00u, 0x00u, 0x00u, 0x01u, 0x00u, 0x00u, 0x00u, 0x07u, 0x00u, 0x00u,
+		0x00u, 0x01u, 0x00u, 0x01u, 0x00u, 0x01u, 0x00u, 0x02u, 0x0Cu, 0x00u, 0x00u, 0x00u,
+		0x01u, 0x00u, 0x00u, 0x00u, 0x06u, 0x00u, 0x00u, 0x00u, 0x02u, 0x00u, 0x00u, 0x00u,
+		0x02u, 0x00u,
+	};
+	static_assert(sizeof(auV2ResumeGolden) == 842u);
+
+	// Where the world position's three floats sit inside that literal, MEASURED from
+	// it rather than computed from the module layout: the test asserts the bytes at
+	// these offsets really are the centre triple, so a layout change reds here
+	// instead of silently moving what the migration is applied to.
+	static constexpr u_int uV2_RESUME_POS_X_OFFSET = 789u;
+	static constexpr u_int uV2_RESUME_POS_Y_OFFSET = 793u;
+	static constexpr u_int uV2_RESUME_POS_Z_OFFSET = 797u;
+
+	// A resume point that is genuinely SET, so the coordinate migration has something
+	// to convert. The Y is the one number under test; X and Z are carried through
+	// unchanged and are asserted as such, because a migration that shifted all three
+	// would be just as wrong and just as invisible to a Y-only check.
+	constexpr float fMIGRATION_PROBE_X = 120.0f;
+	constexpr float fMIGRATION_PROBE_CENTRE_Y = 25.95666f;
+	constexpr float fMIGRATION_PROBE_Z = 60.0f;
+
+
 	void WriteWireU32(uint8_t* puBytes, u_int uOffset, u_int uValue)
 	{
 		puBytes[uOffset] = (uint8_t)(uValue & 0xffu);
@@ -444,8 +569,10 @@ namespace
 ZENITH_TEST(ZM_Save, GoldenV1_ModuleBytesSurviveVerbatimInsideTheV2Payload)
 {
 	ZENITH_ASSERT_EQ(ZM_SaveSchema::uMAGIC, 0x56534D5Au);
-	ZENITH_ASSERT_EQ(ZM_SaveSchema::uSCHEMA_VERSION_CURRENT, 2u);
+	ZENITH_ASSERT_EQ(ZM_SaveSchema::uSCHEMA_VERSION_CURRENT, 3u);
+	ZENITH_ASSERT_EQ(ZM_SaveSchema::uSCHEMA_VERSION_V2, 2u);
 	ZENITH_ASSERT_EQ(ZM_SaveSchema::uSCHEMA_VERSION_V1, 1u);
+	ZENITH_ASSERT_EQ(ZM_SaveSchema::uMODULE_COUNT_V2, 12u);
 	ZENITH_ASSERT_EQ(ZM_SaveSchema::uMODULE_VERSION_CURRENT, 1u);
 	ZENITH_ASSERT_EQ(ZM_SaveSchema::uMODULE_COUNT, 12u);
 	ZENITH_ASSERT_EQ(ZM_SaveSchema::uMODULE_COUNT_V1, 11u);
@@ -494,8 +621,8 @@ ZENITH_TEST(ZM_Save, GoldenV1_ModuleBytesSurviveVerbatimInsideTheV2Payload)
 
 	// (1) The two words that MUST have moved -- and the writer must genuinely differ
 	// from the golden here, or the rest of this unit is comparing a blob to itself.
-	ZENITH_ASSERT_EQ(ReadWireU32(pActual, uWIRE_SCHEMA_VERSION_OFFSET), 2u,
-		"the writer did not emit schema version 2");
+	ZENITH_ASSERT_EQ(ReadWireU32(pActual, uWIRE_SCHEMA_VERSION_OFFSET), 3u,
+		"the writer did not emit schema version 3");
 	ZENITH_ASSERT_EQ(ReadWireU32(pActual, uWIRE_MODULE_COUNT_OFFSET), 12u,
 		"the writer did not emit twelve modules");
 
@@ -580,7 +707,15 @@ ZENITH_TEST(ZM_Save, MigrationV1ToV2_VersionAndModuleCountPairingIsEnforcedAtomi
 		ZM_SaveSchema::ModuleCountForSchemaVersion(ZM_SaveSchema::uSCHEMA_VERSION_CURRENT), 12u);
 	ZENITH_ASSERT_EQ(ZM_SaveSchema::ModuleCountForSchemaVersion(0u), 0u,
 		"version 0 must be unreadable -- there is no invented v0");
-	ZENITH_ASSERT_EQ(ZM_SaveSchema::ModuleCountForSchemaVersion(3u), 0u,
+	ZENITH_ASSERT_EQ(
+		ZM_SaveSchema::ModuleCountForSchemaVersion(ZM_SaveSchema::uSCHEMA_VERSION_V2), 12u,
+		"v2 is migratable and carries twelve modules -- it shares its count with v3, "
+		"because v2->v3 is a SEMANTIC migration and added no module");
+	// 4 rather than 3: the probe has to name a version ABOVE current, and current
+	// moved to 3. Spelled as CURRENT + 1 so the next bump cannot leave a probe
+	// silently asserting that a supported version is unsupported.
+	ZENITH_ASSERT_EQ(
+		ZM_SaveSchema::ModuleCountForSchemaVersion(ZM_SaveSchema::uSCHEMA_VERSION_CURRENT + 1u), 0u,
 		"a version above current must be unreadable -- there is no forward-compatible read");
 
 	// ONE scratch buffer, sized to the LARGER golden and re-filled per case, so the
@@ -603,7 +738,9 @@ ZENITH_TEST(ZM_Save, MigrationV1ToV2_VersionAndModuleCountPairingIsEnforcedAtomi
 
 	// (3) A version this codec has never shipped is VERSION_MISMATCH, and the version
 	// is decided before the count is even read.
-	for (const u_int uVersion : { 0u, 3u, 0xffffffffu })
+	// CURRENT + 1 rather than a literal: 3 is a supported version now.
+	for (const u_int uVersion :
+		{ 0u, ZM_SaveSchema::uSCHEMA_VERSION_CURRENT + 1u, 0xffffffffu })
 	{
 		memcpy(auMutant, auV1Golden, sizeof(auV1Golden));
 		WriteWireU32(auMutant, uWIRE_SCHEMA_VERSION_OFFSET, uVersion);
@@ -632,10 +769,35 @@ ZENITH_TEST(ZM_Save, GoldenV2_LiteralBytesMatchCanonicalWriter)
 
 	Zenith_DataStream xStream;
 	const Zenith_Status xStatus = ZM_SaveSchema::Write(xState, xStream);
-	ZENITH_ASSERT_TRUE(xStatus.IsOk(), "the canonical v2 writer rejected its valid fixture");
+	ZENITH_ASSERT_TRUE(xStatus.IsOk(), "the canonical writer rejected its valid fixture");
 	if (!xStatus.IsOk()) { return; }
 
-	AssertBytesMatch(xStream, auV2Golden, (u_int)sizeof(auV2Golden), "canonical v2 writer");
+	// ★★ v3 IS THE v2 GOLDEN WITH EXACTLY ONE WORD CHANGED, AND THIS IS WHERE THAT IS
+	// PROVED RATHER THAN ASSUMED. The v2->v3 migration exists precisely because the
+	// two payloads are structurally identical -- there is nothing in the data to
+	// infer the coordinate space from, so the version word had to carry it. If any
+	// OTHER byte moved, that premise is false and the migration is unsound: a v2 save
+	// would then be distinguishable, and this unit is the thing that would say so.
+	ZENITH_ASSERT_EQ(xStream.GetCursor(), (uint64_t)sizeof(auV2Golden),
+		"a v3 payload is not the same length as its v2 golden");
+	const uint8_t* pActual = static_cast<const uint8_t*>(xStream.GetData());
+	ZENITH_ASSERT_NOT_NULL(pActual, "the canonical writer produced no data");
+	if (pActual == nullptr || xStream.GetCursor() != (uint64_t)sizeof(auV2Golden))
+	{
+		return;
+	}
+	ZENITH_ASSERT_EQ(ReadWireU32(pActual, uWIRE_SCHEMA_VERSION_OFFSET), 3u,
+		"the writer did not emit schema version 3");
+	ZENITH_ASSERT_EQ(ReadWireU32(auV2Golden, uWIRE_SCHEMA_VERSION_OFFSET), 2u,
+		"the retired golden is no longer a v2 payload");
+	for (u_int uByte = 0u; uByte < (u_int)sizeof(auV2Golden); ++uByte)
+	{
+		const bool bInVersionWord = uByte >= uWIRE_SCHEMA_VERSION_OFFSET
+			&& uByte < uWIRE_SCHEMA_VERSION_OFFSET + 4u;
+		if (bInVersionWord) { continue; }
+		ZENITH_ASSERT_EQ((u_int)pActual[uByte], (u_int)auV2Golden[uByte],
+			"v3 differs from its v2 golden outside the version word, at byte %u", uByte);
+	}
 }
 
 ZENITH_TEST(ZM_Save, GoldenV2_LiteralBlobDecodesExpectedState)
@@ -664,9 +826,177 @@ ZENITH_TEST(ZM_Save, GoldenV2_LiteralBlobDecodesExpectedState)
 		xDecoded.m_xCollectedGroundItems.IsSet(ZM_GROUND_ITEM_ROUTE1_NORTH_SALVE),
 		"wire id 2 did not decode to the third registry row");
 
+	// ★ THE COORDINATE MIGRATION IS A NO-OP FOR THIS GOLDEN, ON PURPOSE. Its fixture
+	// never set a resume point, so its world position is inert padding and ZM-D-223
+	// must leave it exactly as found -- shifting an UNSET position would invent a
+	// resume point half a body below the origin for every save that never made one.
+	ZENITH_ASSERT_EQ(xDecoded.m_xWorldPosition.m_uSceneBuildIndex,
+		(uint32_t)uZM_WORLD_SCENE_UNSET,
+		"the golden's resume point is set -- this clause no longer tests the no-op");
+	for (u_int u = 0u; u < 3u; ++u)
+	{
+		ZENITH_ASSERT_EQ_FLOAT(xDecoded.m_xWorldPosition.m_afPosition[u], 0.0f, 0.0f,
+			"the v2->v3 migration moved an UNSET resume point (axis %u)", u);
+	}
+
+	// Re-encoding publishes v3, so the bytes come back as the golden with its version
+	// word advanced -- the same one-word relationship the canonical-writer unit pins.
 	Zenith_DataStream xReencoded;
 	const Zenith_Status xReencodeStatus = ZM_SaveSchema::Write(xDecoded, xReencoded);
 	ZENITH_ASSERT_TRUE(xReencodeStatus.IsOk(), "the decoded v2 state failed to re-encode");
 	if (!xReencodeStatus.IsOk()) { return; }
-	AssertBytesMatch(xReencoded, auV2Golden, (u_int)sizeof(auV2Golden), "decoded v2 re-encode");
+	const uint8_t* pReencoded = static_cast<const uint8_t*>(xReencoded.GetData());
+	ZENITH_ASSERT_NOT_NULL(pReencoded, "the re-encode produced no data");
+	if (pReencoded == nullptr) { return; }
+	ZENITH_ASSERT_EQ(ReadWireU32(pReencoded, uWIRE_SCHEMA_VERSION_OFFSET), 3u,
+		"a migrated v2 save must be re-encoded at the CURRENT version, not its own");
+	for (u_int uByte = uWIRE_INNER_HEADER_BYTES;
+		uByte < (u_int)sizeof(auV2Golden); ++uByte)
+	{
+		ZENITH_ASSERT_EQ((u_int)pReencoded[uByte], (u_int)auV2Golden[uByte],
+			"a migrated v2 save re-encoded with a changed module byte at %u", uByte);
+	}
+}
+
+// ============================================================================
+// ZM-D-223 -- a v2 save stores a body CENTRE; v3 stores FEET
+// ============================================================================
+
+// ★★ THE DEFECT THIS PINS, AND WHY NOTHING ELSE COULD SEE IT.
+// `ZM_GameStateManager::CaptureWorldPosition` stores `GetBodyPosition(player)`
+// verbatim -- and ZM-D-223 changed what that call MEANS. The human entity origin
+// moved from the body centre to the FEET (the capsule SHAPE carries the offset
+// now), so the same line that used to record a centre records feet, and every save
+// written before that change holds a coordinate half a body height too high.
+//
+// Nothing on the wire distinguishes the two. A v2 and a v3 payload have the same
+// magic, the same twelve modules, the same field order and the same lengths; a
+// stored Y of 25.95666 is a legal centre AND a legal pair of feet. Read
+// unmigrated, an old save loads cleanly, validates completely, and drops the player
+// into the air on every continue -- which is the shape of failure a schema version
+// exists to prevent, and the reason one had to move for a format that did not.
+//
+// ★ DRIVEN BY auV2ResumeGolden, A FROZEN LITERAL. SaveFormat.md's migration policy
+// is binding: a canned blob is a compiled byte array, never regenerated from the
+// codec. Running the current writer and patching its version word would prove only
+// that the reader agrees with the writer -- true of any pair of broken halves --
+// and would follow the writer to v4 without anyone noticing.
+ZENITH_TEST(ZM_Save, MigrationV2ToV3_BodyCentreWorldPositionBecomesFeet)
+{
+	// (0) THE LITERAL IS WHAT IT CLAIMS TO BE, read out of the bytes themselves.
+	ZENITH_ASSERT_EQ(ReadWireU32(auV2ResumeGolden, uWIRE_MAGIC_OFFSET), 0x56534D5Au,
+		"the resume golden's magic");
+	ZENITH_ASSERT_EQ(ReadWireU32(auV2ResumeGolden, uWIRE_SCHEMA_VERSION_OFFSET), 2u,
+		"the resume golden is no longer a v2 payload -- it must never be regenerated");
+	ZENITH_ASSERT_EQ(ReadWireU32(auV2ResumeGolden, uWIRE_MODULE_COUNT_OFFSET), 12u,
+		"the resume golden's module count");
+
+	// ...and its world position really is the body-centre triple this test converts,
+	// read from the frozen bytes rather than assumed from the module layout.
+	ZENITH_ASSERT_EQ_FLOAT(ReadWireFloat(auV2ResumeGolden, uV2_RESUME_POS_X_OFFSET),
+		fMIGRATION_PROBE_X, 1.0e-4f, "the resume golden's stored X moved");
+	ZENITH_ASSERT_EQ_FLOAT(ReadWireFloat(auV2ResumeGolden, uV2_RESUME_POS_Y_OFFSET),
+		fMIGRATION_PROBE_CENTRE_Y, 1.0e-4f,
+		"the resume golden's stored Y is not the body centre this test migrates");
+	ZENITH_ASSERT_EQ_FLOAT(ReadWireFloat(auV2ResumeGolden, uV2_RESUME_POS_Z_OFFSET),
+		fMIGRATION_PROBE_Z, 1.0e-4f, "the resume golden's stored Z moved");
+
+	// (1) THE CLAIM: decoding it converts that centre to feet.
+	Zenith_DataStream xInput(const_cast<uint8_t*>(auV2ResumeGolden),
+		sizeof(auV2ResumeGolden));
+	ZM_GameState xDecoded = MakeUntouchableDestination();
+	const Zenith_Status xStatus =
+		ZM_SaveSchema::Read(xInput, sizeof(auV2ResumeGolden), xDecoded);
+	ZENITH_ASSERT_TRUE(xStatus.IsOk(), "the v2 resume golden failed to decode");
+	if (!xStatus.IsOk()) { return; }
+	ZENITH_ASSERT_EQ(xInput.GetCursor(), (uint64_t)sizeof(auV2ResumeGolden),
+		"the decoder must consume the complete length-bounded payload");
+
+	// Lowered by EXACTLY the frozen historical offset, landing on the marker the save
+	// was taken standing on. An equality, so a shift by a DIFFERENT amount reds as
+	// loudly as no shift at all.
+	ZENITH_ASSERT_EQ_FLOAT(xDecoded.m_xWorldPosition.m_afPosition[1],
+		fMIGRATION_PROBE_CENTRE_Y - ZM_SaveSchema::fHISTORICAL_BODY_HALF_HEIGHT,
+		1.0e-4f, "a v2 save's body-centre Y was not converted to feet");
+
+	// ...and ONLY the Y. A migration that shifted all three axes would satisfy the
+	// clause above and quietly move every continue sideways.
+	ZENITH_ASSERT_EQ_FLOAT(xDecoded.m_xWorldPosition.m_afPosition[0],
+		fMIGRATION_PROBE_X, 1.0e-4f, "the migration moved X");
+	ZENITH_ASSERT_EQ_FLOAT(xDecoded.m_xWorldPosition.m_afPosition[2],
+		fMIGRATION_PROBE_Z, 1.0e-4f, "the migration moved Z");
+
+	// (2) Everything else about the payload is untouched -- this is a coordinate
+	// conversion, not a re-interpretation of the save.
+	ZENITH_ASSERT_EQ(xDecoded.m_xWorldPosition.m_uSceneBuildIndex,
+		ZM_GetWorldSpec(ZM_SCENE_DAWNMERE).m_uBuildIndex,
+		"the migration moved the resume scene");
+	ZENITH_ASSERT_EQ_FLOAT(xDecoded.m_xWorldPosition.m_fYaw, 0.0f, 1.0e-6f,
+		"the migration disturbed the resume yaw");
+	// Modules the migration does not own, spot-checked across the payload rather than
+	// through AssertGoldenDecodedState -- that helper asserts an UNSET world position,
+	// which is exactly the thing this fixture deliberately does not have.
+	ZENITH_ASSERT_EQ(xDecoded.m_uMoney, 0x12345678u,
+		"the migration disturbed a module it does not own (money)");
+	ZENITH_ASSERT_EQ(xDecoded.m_uBadgeMask, 0x81u,
+		"the migration disturbed a module it does not own (badges)");
+	ZENITH_ASSERT_EQ(xDecoded.m_xParty.Count(), 1u,
+		"the migration disturbed the party");
+	// FALSE, and that is the codec's rule rather than the fixture's: pending whiteout
+	// is transient and is forced off on every read, migrated or not. Asserted here so
+	// a migration that started publishing raw decoded state would be caught.
+	ZENITH_ASSERT_FALSE(xDecoded.m_bPendingWhiteout,
+		"pending whiteout is transient and must not survive a migrated read");
+	ZENITH_ASSERT_EQ(xDecoded.m_xCollectedGroundItems.Count(), 2u,
+		"the migration disturbed the collected-prop set");
+
+	// (3) A v3 payload is NOT touched. Without this, a migration that ran
+	// unconditionally would pass every clause above while corrupting every save the
+	// game writes from now on -- it would simply keep subtracting on each load.
+	Zenith_DataStream xCurrent;
+	ZENITH_ASSERT_TRUE(ZM_SaveSchema::Write(xDecoded, xCurrent).IsOk(),
+		"the migrated state failed to re-encode");
+	const uint64_t ulLength = xCurrent.GetCursor();
+	Zenith_DataStream xReread(
+		static_cast<uint8_t*>(const_cast<void*>(xCurrent.GetData())), ulLength);
+	ZM_GameState xRedecoded = MakeUntouchableDestination();
+	ZENITH_ASSERT_TRUE(ZM_SaveSchema::Read(xReread, ulLength, xRedecoded).IsOk(),
+		"the re-encoded v3 payload failed to decode");
+	ZENITH_ASSERT_EQ_FLOAT(xRedecoded.m_xWorldPosition.m_afPosition[1],
+		xDecoded.m_xWorldPosition.m_afPosition[1], 1.0e-6f,
+		"a v3 payload was migrated -- the conversion is not idempotent and a save "
+		"would sink half a body every time it was loaded and re-saved");
+}
+
+// ★ THE HISTORICAL OFFSET IS FROZEN, AND THIS UNIT IS WHAT KEEPS IT THAT WAY.
+//
+// It asserts a LITERAL 0.9, and deliberately does NOT compare against
+// fZM_HUMAN_BODY_HALF_HEIGHT. Comparing the two would pass forever -- including
+// after a character-height retune that had silently changed how every save on every
+// disk decodes -- because both sides would move together. That is the entire failure
+// this constant exists to prevent, so the test that guards it must not be able to
+// move with it either.
+//
+// If a retune ever makes this line LOOK wrong: it is not. The number is the
+// centre-to-feet distance the v1/v2 writers actually used, fixed at the moment those
+// bytes were written, and it must outlive any change to how tall a human is.
+ZENITH_TEST(ZM_Save, HistoricalBodyHalfHeightIsFrozenIndependentlyOfGameplayTuning)
+{
+	ZENITH_ASSERT_EQ_FLOAT(ZM_SaveSchema::fHISTORICAL_BODY_HALF_HEIGHT, 0.9f, 0.0f,
+		"the FROZEN v1/v2 centre-to-feet offset moved. It is a fact about bytes that "
+		"already exist, not a gameplay dimension -- if the character was retuned, "
+		"that is fZM_HUMAN_BODY_HALF_HEIGHT's business and this must not follow it");
+
+	// The versions it applies to, and the one it must not.
+	ZENITH_ASSERT_TRUE(
+		ZM_SaveSchema::SchemaVersionStoresBodyCentre(ZM_SaveSchema::uSCHEMA_VERSION_V1),
+		"v1 payloads store a body centre");
+	ZENITH_ASSERT_TRUE(
+		ZM_SaveSchema::SchemaVersionStoresBodyCentre(ZM_SaveSchema::uSCHEMA_VERSION_V2),
+		"v2 payloads store a body centre");
+	ZENITH_ASSERT_FALSE(
+		ZM_SaveSchema::SchemaVersionStoresBodyCentre(
+			ZM_SaveSchema::uSCHEMA_VERSION_CURRENT),
+		"the CURRENT version stores feet -- migrating it would sink every save that "
+		"is loaded and re-saved");
 }

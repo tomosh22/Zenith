@@ -16,6 +16,152 @@ Tuning-value changes go in git history, not here.
 ---
 
 ## 2026-08-24 -- ZM-D-208 -- USER RULINGS unblocking R1-5 (ZM-23): the appearance palette gains a slot, and the flagless-arm coverage moves to a by-ROW seam
+### ZM-D-223 — 2026-09-04
+
+**Decision:** Zenithmon's humans bind the **ENGINE-SHARED StickFigure rig** — the same
+`engine:Meshes/StickFigure/StickFigure.zskel` RenderTest and Combat bind — and play clips out of that
+rig's shared library. The game-owned 16-bone `Human.zskel`, its nine hand-authored `Human_*.zanim`,
+`ZM_HumanAnim.cpp`, `ZM_AppendSharedHumanBones` and `ZM_BakeHumanShared` are DELETED; there is no
+`game:Humans/Shared/` folder. In the same change, **a human's authored entity position moved from its
+body CENTRE to its FEET**. USER REQUEST: replace the per-game Human skeleton with the shared rig, with
+zero remnants; the origin move was a USER RULING taken with its cost stated (see *the fork* below).
+
+**★★ THE TWO RIGS WERE NEVER DIFFERENT WHERE IT COUNTED.** StickFigure's bones 0..15 are
+`Root`..`RightFoot` with the identical names, parents and bind translations Zenithmon emitted; its bones
+16..50 (jaw, eyes, toes, thirty finger bones) are additions this game's loft does not weight. Zenithmon's
+rig was a strict PREFIX of StickFigure's, so **every skin index the generator already wrote points at the
+correct StickFigure bone unchanged** — no re-skin, no bone remap, and the 34 per-model meshes needed no
+re-authoring. The plan this work came from assumed the opposite and budgeted a re-skin of all 34; reading
+the two bone tables against each other is what dissolved it. `HumanGen_RigMatchesStickFigure` opens the
+real `.zskel` and pins the prefix, so a StickFigure reorder reds this game rather than silently skinning
+every human to the wrong joints (proved by mutation before it was trusted).
+
+**★ THE MESH IS NO LONGER CENTRE-ANCHORED, AND IT CANNOT BE.** v2..v5 translated the loft so the body
+centre sat on the entity origin, moving Root with it. That was legal only while the skeleton was this
+game's to move. A mesh may only be skinned against a skeleton expressed in its OWN bind space, so v6
+leaves the loft where StickFigure authors it (Root at the HIP, soles at `fZM_HUMAN_MESH_FEET_Y`).
+`ZM_HumanAppearance`'s hair and attachment rows carry the SAME space conversion and had to move with it —
+they did not at first, and the two silhouette units caught the hats floating a metre above their wearers.
+
+**Where the model sits is a GAME statement.** `Zenith_ModelComponent` gains a runtime-only
+`SetModelSpaceOffset`, applied at the single render-gather seam, and Zenithmon states the reconciliation
+once as `fZM_HUMAN_MODEL_OFFSET_Y`. It is NOT serialized (no schema version, no scene bytes) and defaults
+to zero, so no other game can observe it. It is deliberately not baked back into the vertices, which
+would re-create the exact rig/mesh desync the anchor caused.
+
+**The fork, and why the biggest option was taken.** The offset had three possible homes: a runtime model
+offset (keep the centre origin), a game-owned re-anchored copy of the rig, or moving the game's origin.
+The user chose the origin move with the cost stated twice — including a correction that **the feet are not
+StickFigure's native origin either** (its Root is the HIP, ~1.0 unit up), so feet-origin needs the offset
+mechanism as well and is strictly the most work. It was taken anyway because a spawn marker, a navmesh
+point, a ground probe and a placement constant are all naturally about where someone STANDS, and every one
+of them previously had to add half a body height to talk to the transform. Those conversions are now
+DELETED rather than inverted; `ZM_HumanBodyCentre` is the one sanctioned way back out, for the two things
+that genuinely want a middle (a physics capsule and a camera pivot).
+
+**★★ THE ORIGIN MOVE IS INVISIBLE TO THE COMPILER, AND THAT IS WHAT MADE IT EXPENSIVE.** Every one of ~96
+sites still compiled with the old arithmetic. Four defects it caused, all found only by running the game:
+
+* **The player's own body kept the old convention.** `ZM_GreyboxVisual::InstallHumanBody` gives every
+  NON-player human the capsule shape offset and explicitly returns early for the player, leaving it to
+  `ZM_PlayerController::EnsureAndConfigureBody` — which was not updated. The player stood buried to the
+  waist: no ground contact, no walk-up, no collision with an NPC. **24 automated tests.**
+* **The trainer sight line ran along the floor.** `ZM_ProbeTrainerSightLine` was fed two transforms; both
+  are feet now, so the occlusion ray grazed the terrain for its whole length and every trainer was
+  permanently blind — with the PURE cone still passing, because it is planar and both bodies moved
+  together. Both ends lift to the body centre.
+* **The camera pivot dropped 0.9 m.** `fPIVOT_HEIGHT` is measured from the body centre; three camera units
+  re-spelled the derivation themselves and did not move with production. `ZM_FollowCamera::ComputePivot`
+  is now the ONE derivation both sides call.
+* **The bake manifest listed engine files.** The humans family enumerated the shared refs, which now
+  resolve under `engine:` — outside the root the manifest stamps. A family's file list is what THIS GAME
+  BAKES; it lists per-model files only.
+
+**Five clip ROLES, not nine.** v5 baked nine clips and wired exactly two — the locomotion machine uses Idle
+and Walk, and nothing anywhere played Talk, Wave, Point or Cheer. Those four had no StickFigure equivalent
+and were retired rather than reimplemented: authoring animation nothing calls is dead content, and it
+would have been the largest single piece of this migration. HURT and FAINT map onto StickFigure's `Hit`
+and `Death`. Anything that later needs a wave authors it in the SHARED library, where all three games get
+it.
+
+**★★ FOUR MORE FOUND BY REVIEW, AND THEY ARE A DIFFERENT CLASS.** The four above were
+found by RUNNING the game. These were found by READING the diff, and none of them would
+have been caught by any test that existed — three are silent, and two are merge-blocking:
+
+* **The model offset was dropped by BOTH of `Zenith_ModelComponent`'s move operations.**
+  Component pools relocate on growth, move-constructing every component, so a human that
+  had already loaded reverted to a zero offset and rendered half underground. It is
+  UNRECOVERABLE in normal running: the offset is re-established only on a model LOAD, and
+  `ZM_GreyboxVisual` early-returns while the model it loaded is still the one it wants.
+  `Zenith_ColliderComponent`'s explicit-dimension fields carry the identical obligation and
+  say so in their header — that warning was followed for the collider in this very change
+  and not for the model. Pinned by `ModelSpaceOffsetSurvivesPoolGrowth`, which drives real
+  growth and ASSERTS the relocation happened, so a run that never grew fails rather than
+  passing vacuously.
+* **Every existing SAVE still holds body-centre coordinates.** `CaptureWorldPosition`
+  stores `GetBodyPosition(player)` verbatim, and that call's MEANING changed under it. A v2
+  save read unmigrated puts the player half a body height in the air on every continue,
+  with the schema check passing and every field validating. Hence the v2 -> v3 bump and the
+  coordinate migration — see the schema header for why a version had to move for a format
+  that did not.
+* **The camera eye dropped while its pivot held.** `OnLateUpdate` converted the feet for
+  `ComputePivot` and passed the RAW feet to `ComputeDesiredPosition`, which adds
+  `fCAMERA_HEIGHT` to whatever it is given. Every camera in the game lost 0.9 m of height
+  AND changed pitch, because only one of the two moved. Both helpers take a body CENTRE
+  now, derived ONCE at the call site — an asymmetric pair is what made the mistake
+  available.
+* **`Zenith_AttachmentComponent` and the animator's IK world matrix bypassed the offset.**
+  Both composed from the bare entity transform while the bone matrices they combine with
+  are in the MODEL's space, so a held racket and an IK target would sit off the visible
+  model by exactly the offset. Both route through `BuildRenderMatrix` now, which is the
+  same composition the renderer uses.
+
+**★ AND FOUR MORE FROM A SECOND REVIEW PASS, THREE OF THEM ABOUT THE MIGRATION ITSELF.**
+The first review found the save problem; this one found that the FIX was not yet sound:
+
+* **The migration fixture was not historical.** It wrote a payload with the CURRENT
+  writer and patched its version word. `SaveFormat.md`'s migration policy is binding --
+  canned blobs are compiled byte arrays, *never regenerated from the codec* -- and a
+  fixture built that way proves only that the reader agrees with the writer, which is
+  true of any pair of broken halves. It would also have followed the writer to v4
+  silently. There is now a FROZEN 842-byte `auV2ResumeGolden`, authored once and never
+  re-derived: a v2 save taken standing at Dawnmere's TownCenter. It differs from
+  `auV2Golden` in exactly 22 bytes, all inside the world-position module -- which is
+  why the original v2 golden could never have tested this: its fixture never set a
+  resume point, so its position field is all zeroes.
+* **The migration used the LIVE body half-height.** `fZM_HUMAN_BODY_HALF_HEIGHT` is a
+  gameplay tuning value; the conversion is a statement about bytes that already exist.
+  Deriving one from the other means a character-height retune silently changes how
+  every save on every disk decodes, with the version still reading 2 and every field
+  still validating. `ZM_SaveSchema::fHISTORICAL_BODY_HALF_HEIGHT` is frozen at 0.9 and
+  its unit asserts a LITERAL -- comparing it against the gameplay constant would pass
+  through exactly the retune it guards against, because both sides would move.
+* **The reference-screenshot camera still passed raw feet.** The same defect as the
+  live camera, in the test that exists to be compared AGAINST the live camera.
+* **`SaveFormat.md` still described a v2-only codec**, and `ZM_GameStateManager.h`
+  still said bodies store centres while `AssetManifest.md` still called the bind space
+  centre-anchored and the generator v1.
+
+**Tests that lock it:** `HumanGen_RigMatchesStickFigure` (the real `.zskel`, mutation-proved),
+`HumanGen_BindSpaceIsRigSpace` (measured on the SHIPPED mesh, not on `ZM_MeasureHumanBody`'s own build, so
+a returning anchor pass cannot agree with itself), `HumanGen_ModelOffsetPlacesFeetOnOrigin` (the placement
+equation end to end, in metres), plus the rewritten `HumanGen_ClipMetadataGolden` /
+`HumanGen_ClipSetSharedAcrossRoster` / `HumanBake_*`. Six tests that asserted a rig this game no longer
+owns were DELETED rather than weakened.
+
+**Scope:** all seven `.zscen` re-authored (five changed; FrontEnd and Battle were already identical), each
+proved by two consecutive boots reporting `IDENTICAL`. ZM boot pin 3696 -> **3698** and engine pins
+Combat 1841 -> **1844** / RenderTest 1942 -> **1945**, all OBSERVED from `Null_` runs: the migration
+itself was net -3 (six tests removed, three added), and the review fixes added three ENGINE units —
+which move every game's row, because they all boot the same engine suite — plus one Zenithmon
+migration unit. All six other games compile; RenderTest's `RT_PlayerActions` and `RT_TennisMatchFlow`
+cover the two attachment/IK paths at zero offset. Automated registry 72,
+**72 passed / 0 failed**, matching the pre-change baseline exactly.
+
+**Reversibility:** high for the rig (repoint `szZM_HUMAN_SKELETON_REF` and restore the clip enum; the
+generator version bump makes stale bakes self-invalidate). Low for the origin move — it reaches committed
+scene bytes and ~96 call sites.
+
 ### ZM-D-222 — 2026-08-30
 
 **Decision:** `Docs/ArtBrief.md` gains a **tick-off protocol** — **402 checkbox rows** with stable ids, one per asset, in the same shape `Roadmap.md` uses — and `Tools/doc_lint.ps1` gains **check C8**, which reconciles those ticks against the filesystem. USER REQUEST: *"There needs to be a documentation protocol in place to tick off items as they are generated, similar to how Roadmap.md has checkboxes per task"*.

@@ -838,7 +838,7 @@ ZENITH_TEST(ZM_WorldTraversal, WarpTriggerLatchRequestsExactlyOnceAndResetsForNe
 // ★ RENAMED AT ZM-D-182 (was ...PlusScaledCapsuleHalfExtent...). The half extent is no
 // longer SCALED off the player's transform -- it is the compiled body contract -- and the
 // clause below now proves exactly that rather than merely restating it.
-ZENITH_TEST(ZM_WorldTraversal, PlacementUsesMarkerFeetPlusContractCapsuleHalfExtentAndZeroesMotion)
+ZENITH_TEST(ZM_WorldTraversal, PlacementUsesMarkerFeetVerbatimAndZeroesMotion)
 {
 	ZENITH_ASSERT_TRUE(ResetEmptyPhysicsWorld());
 	Zenith_SceneData* pxSceneData = GetActiveSceneData();
@@ -851,12 +851,15 @@ ZENITH_TEST(ZM_WorldTraversal, PlacementUsesMarkerFeetPlusContractCapsuleHalfExt
 	const Zenith_Maths::Vector3 xMarkerFeet(120.0f, 25.05666f, 60.0f);
 	const float fHalfExtent = fZM_HUMAN_BODY_HALF_HEIGHT;
 	const Zenith_Maths::Vector3 xSpawnCenter =
-		ZM_GameStateManager::CalculateSpawnCenter(xMarkerFeet);
+		ZM_GameStateManager::CalculateSpawnPosition(xMarkerFeet);
 	ZENITH_ASSERT_EQ_FLOAT(fHalfExtent, 0.9f, 0.00001f);
-	ZENITH_ASSERT_NEAR_VEC3(xSpawnCenter,
-		Zenith_Maths::Vector3(120.0f, 25.95666f, 60.0f), 0.00001f);
-	ZENITH_ASSERT_EQ_FLOAT(xSpawnCenter.y - fHalfExtent,
-		xMarkerFeet.y, 0.00001f);
+
+	// ★ A MARKER IS A SPAWN POSITION, UNCHANGED. Both are the FEET now, so the
+	// conversion this test was named for is the identity -- and asserting the
+	// identity is exactly the point: it is what stops a future edit quietly
+	// re-introducing a half-height that nothing downstream would compensate for.
+	ZENITH_ASSERT_NEAR_VEC3(xSpawnCenter, xMarkerFeet, 0.00001f);
+	ZENITH_ASSERT_EQ_FLOAT(xSpawnCenter.y, xMarkerFeet.y, 0.00001f);
 
 	// ★ THE CONVERSION IS SCALE-INDEPENDENT, AND THIS IS WHERE THAT IS PROVED.
 	// It used to be derived from the player's transform scale, so this clause was a
@@ -869,7 +872,7 @@ ZENITH_TEST(ZM_WorldTraversal, PlacementUsesMarkerFeetPlusContractCapsuleHalfExt
 	Zenith_Maths::Vector3 xAuthoredScale(0.0f);
 	xPlayerTransform.GetScale(xAuthoredScale);
 	xPlayerTransform.SetScale(Zenith_Maths::Vector3(4.0f, 0.25f, 4.0f));
-	ZENITH_ASSERT_NEAR_VEC3(ZM_GameStateManager::CalculateSpawnCenter(xMarkerFeet),
+	ZENITH_ASSERT_NEAR_VEC3(ZM_GameStateManager::CalculateSpawnPosition(xMarkerFeet),
 		xSpawnCenter, 0.0f);
 	xPlayerTransform.SetScale(xAuthoredScale);
 
@@ -1531,7 +1534,10 @@ ZENITH_TEST(ZM_WorldTraversal, PlacementAndCameraReadinessStayLockedBeforeFadeIn
 	ZENITH_ASSERT_EQ_FLOAT(xManager.GetFadeAlpha(), 1.0f, 0.0f);
 	ZENITH_ASSERT_FALSE(xTargetController.IsMovementEnabled());
 
-	const Zenith_Maths::Vector3 xExpectedCenter(10.0f, 2.9f, 3.0f);
+	// The marker's FEET, verbatim: a warp writes the body to the marker position
+	// with no half-height conversion (see CalculateSpawnPosition). It used to be
+	// 2.9 -- the same marker plus a body half height.
+	const Zenith_Maths::Vector3 xExpectedCenter(10.0f, 2.0f, 3.0f);
 	ZENITH_ASSERT_NEAR_VEC3(
 		g_xEngine.Physics().GetBodyPosition(xTargetBodyID),
 		xExpectedCenter, 0.00001f);

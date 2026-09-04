@@ -214,7 +214,7 @@ inline constexpr float fZM_GYM1_INNER_MAX_Z =
 // The same human body every scene installs. NOT re-spelled here and NOT derived
 // from a transform scale: both figures come straight from the ONE compiled body
 // contract, so the authoring and the arrival (ZM_GameStateManager::
-// CalculateSpawnCenter) cannot drift apart.
+// CalculateSpawnPosition) cannot drift apart.
 inline constexpr float fZM_GYM1_PLAYER_CAPSULE_HALF_EXTENT = fZM_HUMAN_BODY_HALF_HEIGHT;
 
 // The capsule's XZ half-width. EVERY clearance in this file -- and every cell the
@@ -223,9 +223,9 @@ inline constexpr float fZM_GYM1_PLAYER_CAPSULE_HALF_EXTENT = fZM_HUMAN_BODY_HALF
 inline constexpr float fZM_GYM1_PLAYER_RADIUS = fZM_HUMAN_BODY_CAPSULE_RADIUS;
 
 // ---- The arrival marker -----------------------------------------------------
-// A FEET anchor (ZM_GameStateManager::CalculateSpawnCenter adds the capsule
-// half-extent at warp time), standing just inside the +Z aperture on the shared X
-// centreline. The authored Player body sits ON this marker.
+// A FEET anchor, standing just inside the +Z aperture on the shared X centreline.
+// The authored Player body sits ON this marker -- and since the entity origin IS
+// the feet, that is now an identity rather than a conversion.
 //
 // ★ THE SIGN OF fZM_GYM1_SPAWN_Z IS LOAD-BEARING. The follow camera trails toward
 // -Z (see the camera block below), so the room body -- and therefore the maze --
@@ -672,7 +672,7 @@ inline bool ZM_Gym1PositionIsWalkable(float fX, float fZ, float fRadius, ZM_GYM1
 // ---- The derived placements the authoring writes ----------------------------
 
 // The arrival marker's FEET position. Callers that need a body CENTRE add the
-// capsule half-extent, exactly as ZM_GameStateManager::CalculateSpawnCenter does at
+// capsule half-extent, exactly as ZM_GameStateManager::CalculateSpawnPosition does at
 // warp time.
 inline Zenith_Maths::Vector3 ZM_GetGym1SpawnFeet()
 {
@@ -682,11 +682,11 @@ inline Zenith_Maths::Vector3 ZM_GetGym1SpawnFeet()
 
 // The authored Player body's CENTRE: the marker's feet plus the capsule half
 // extent, so the authored body and a warped-in body land on the same point.
-inline Zenith_Maths::Vector3 ZM_GetGym1PlayerCenter()
+inline Zenith_Maths::Vector3 ZM_GetGym1PlayerFeet()
 {
 	return Zenith_Maths::Vector3(
 		fZM_GYM1_SPAWN_X,
-		fZM_GYM1_SPAWN_FEET_Y + fZM_GYM1_PLAYER_CAPSULE_HALF_EXTENT,
+		fZM_GYM1_SPAWN_FEET_Y,
 		fZM_GYM1_SPAWN_Z);
 }
 
@@ -797,13 +797,14 @@ inline float ZM_GetGym1CameraSightClearanceOverFirstHedge()
 inline constexpr float fZM_GYM1_FENNA_X = 0.0f;
 inline constexpr float fZM_GYM1_FENNA_Z = -7.0f;
 
-// Her authored entity position: a body CENTRE, the same vocabulary every human in
-// this game is authored in (ZM_HumanBody.h), standing on the floor's top face.
-inline Zenith_Maths::Vector3 ZM_GetGym1FennaCenter()
+// Her authored entity position: the FEET, the same vocabulary every human in this
+// game is authored in (ZM_HumanBody.h), standing ON the floor's top face. That is
+// now literal rather than arithmetic -- she stands where the floor is.
+inline Zenith_Maths::Vector3 ZM_GetGym1FennaFeet()
 {
 	return Zenith_Maths::Vector3(
 		fZM_GYM1_FENNA_X,
-		fZM_GYM1_FLOOR_TOP_Y + fZM_HUMAN_BODY_HALF_HEIGHT,
+		fZM_GYM1_FLOOR_TOP_Y,
 		fZM_GYM1_FENNA_Z);
 }
 

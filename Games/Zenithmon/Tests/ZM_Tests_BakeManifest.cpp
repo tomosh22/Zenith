@@ -59,7 +59,6 @@ ZENITH_TEST(ZM_Gen, BakeManifest_EnumerationMatchesRoster)
 	ZENITH_ASSERT_EQ(xCreatures.GetSize(),
 		ZM_GetSpeciesCount() * static_cast<u_int>(ZM_CREATURE_ASSET_KIND_COUNT));
 	ZENITH_ASSERT_EQ(xHumans.GetSize(),
-		static_cast<u_int>(ZM_HUMAN_SHARED_ASSET_KIND_COUNT) +
 		static_cast<u_int>(ZM_HUMAN_COUNT) * static_cast<u_int>(ZM_HUMAN_ASSET_KIND_COUNT));
 	ZENITH_ASSERT_EQ(xBuildings.GetSize(),
 		static_cast<u_int>(ZM_BUILDING_COUNT) * static_cast<u_int>(ZM_BUILDING_ASSET_KIND_COUNT));

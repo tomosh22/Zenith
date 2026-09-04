@@ -54,20 +54,9 @@ namespace
 			static_cast<size_t>(xA.GetSize()) * sizeof(T)) == 0;
 	}
 
-	// The shared-skeleton bone indices, in ZM_AppendSharedHumanBones emit order.
-	// The mesh loft binds rings to these; the order is the frozen shared contract.
-	enum
-	{
-		HB_ROOT = 0, HB_SPINE, HB_NECK, HB_HEAD,
-		HB_LUARM, HB_LLARM, HB_LHAND,
-		HB_RUARM, HB_RLARM, HB_RHAND,
-		HB_LULEG, HB_LLLEG, HB_LFOOT,
-		HB_RULEG, HB_RLLEG, HB_RFOOT
-	};
-
-	// Per-build height factor -- applied about the grounded feet (y=0), so scaling
-	// height never lifts the feet off the floor. The skeleton remains fixed, hence
-	// the intentionally narrow 0.97..1.03 spread.
+	// Per-build height factor -- applied about the grounded feet, so scaling height
+	// never lifts the feet off the floor. The shared rig remains fixed, hence the
+	// intentionally narrow 0.97..1.03 spread.
 	float ZM_HumanBuildHeightScale(ZM_HUMAN_BUILD eBuild)
 	{
 		switch (eBuild)
@@ -99,8 +88,15 @@ namespace
 	}
 }
 
+
 // ============================================================================
-// Golden clip metadata (literal-pinned).
+// Clip naming -- the name in the SHARED StickFigure library. Both the .zanim file
+// suffix and the clip's own internal name, so the bake path and the runtime
+// state-machine lookup cannot disagree about what a clip is called.
+//
+// HURT and FAINT deliberately do NOT return "Hurt"/"Faint": those files do not
+// exist. They are Zenithmon ROLES played by StickFigure's Hit and Death, and the
+// name that must come back here is the one the shared library actually uses.
 // ============================================================================
 const char* ZM_HumanClipName(ZM_HUMAN_ANIM_CLIP eClip)
 {
@@ -109,53 +105,11 @@ const char* ZM_HumanClipName(ZM_HUMAN_ANIM_CLIP eClip)
 	case ZM_HUMAN_CLIP_IDLE:  return "Idle";
 	case ZM_HUMAN_CLIP_WALK:  return "Walk";
 	case ZM_HUMAN_CLIP_RUN:   return "Run";
-	case ZM_HUMAN_CLIP_TALK:  return "Talk";
-	case ZM_HUMAN_CLIP_WAVE:  return "Wave";
-	case ZM_HUMAN_CLIP_POINT: return "Point";
-	case ZM_HUMAN_CLIP_CHEER: return "Cheer";
-	case ZM_HUMAN_CLIP_HURT:  return "Hurt";
-	case ZM_HUMAN_CLIP_FAINT: return "Faint";
+	case ZM_HUMAN_CLIP_HURT:  return "Hit";
+	case ZM_HUMAN_CLIP_FAINT: return "Death";
 	default:
 		Zenith_Assert(false, "ZM_HumanClipName: bad clip %u", (u_int)eClip);
 		return "Idle";
-	}
-}
-
-float ZM_HumanClipDurationSeconds(ZM_HUMAN_ANIM_CLIP eClip)
-{
-	switch (eClip)
-	{
-	case ZM_HUMAN_CLIP_IDLE:  return 2.0f;
-	case ZM_HUMAN_CLIP_WALK:  return 1.0f;
-	case ZM_HUMAN_CLIP_RUN:   return 0.7f;
-	case ZM_HUMAN_CLIP_TALK:  return 1.6f;
-	case ZM_HUMAN_CLIP_WAVE:  return 1.0f;
-	case ZM_HUMAN_CLIP_POINT: return 0.8f;
-	case ZM_HUMAN_CLIP_CHEER: return 1.2f;
-	case ZM_HUMAN_CLIP_HURT:  return 0.4f;
-	case ZM_HUMAN_CLIP_FAINT: return 1.2f;
-	default:
-		Zenith_Assert(false, "ZM_HumanClipDurationSeconds: bad clip %u", (u_int)eClip);
-		return 1.0f;
-	}
-}
-
-bool ZM_HumanClipLooping(ZM_HUMAN_ANIM_CLIP eClip)
-{
-	switch (eClip)
-	{
-	case ZM_HUMAN_CLIP_IDLE:
-	case ZM_HUMAN_CLIP_WALK:
-	case ZM_HUMAN_CLIP_RUN:
-	case ZM_HUMAN_CLIP_TALK:  return true;
-	case ZM_HUMAN_CLIP_WAVE:
-	case ZM_HUMAN_CLIP_POINT:
-	case ZM_HUMAN_CLIP_CHEER:
-	case ZM_HUMAN_CLIP_HURT:
-	case ZM_HUMAN_CLIP_FAINT: return false;
-	default:
-		Zenith_Assert(false, "ZM_HumanClipLooping: bad clip %u", (u_int)eClip);
-		return false;
 	}
 }
 
@@ -191,43 +145,6 @@ ZM_HumanRecipe ZM_ResolveHumanRecipe(ZM_HUMAN_ID eId)
 	return xRecipe;
 }
 
-// ============================================================================
-// Shared skeleton -- THE canonical bone emit (16 bones, StickFigure core names,
-// identity bind-local rotation on EVERY bone, CENTRE-ANCHORED bind space).
-// ============================================================================
-void ZM_AppendSharedHumanBones(ZM_GenMesh& xMesh)
-{
-	const Zenith_Maths::Quat    xIdentity = glm::identity<Zenith_Maths::Quat>();
-	const Zenith_Maths::Vector3 xUnitScale(1.0f);
-
-	// v1 put Root at hip height y=1.0 with the leg chain descending to y=0. v2
-	// anchors the shared bind space on the canonical body's CENTRE, so Root drops
-	// by fZM_HUMAN_MESH_CENTRE_Y. It is the ONLY bone that moves: Root is the only
-	// bone with parent -1, so every other local translation is already relative to
-	// a parent that carries the shift (subtracting from all 16 would compound it
-	// down the hierarchy). The matching vertex translation is the post-pass at the
-	// end of ZM_BuildHumanMesh.
-	ZM_GenAddBone(xMesh, "Root",          -1,       Zenith_Maths::Vector3( 0.00f,  fZM_HUMAN_ROOT_BIND_Y, 0.0f), xIdentity, xUnitScale);   // 0
-	ZM_GenAddBone(xMesh, "Spine",         HB_ROOT,  Zenith_Maths::Vector3( 0.00f,  0.5f, 0.0f), xIdentity, xUnitScale);   // 1
-	ZM_GenAddBone(xMesh, "Neck",          HB_SPINE, Zenith_Maths::Vector3( 0.00f,  0.7f, 0.0f), xIdentity, xUnitScale);   // 2
-	ZM_GenAddBone(xMesh, "Head",          HB_NECK,  Zenith_Maths::Vector3( 0.00f,  0.2f, 0.0f), xIdentity, xUnitScale);   // 3
-
-	ZM_GenAddBone(xMesh, "LeftUpperArm",  HB_SPINE, Zenith_Maths::Vector3(-0.30f,  0.6f, 0.0f), xIdentity, xUnitScale);   // 4
-	ZM_GenAddBone(xMesh, "LeftLowerArm",  HB_LUARM, Zenith_Maths::Vector3( 0.00f, -0.4f, 0.0f), xIdentity, xUnitScale);   // 5
-	ZM_GenAddBone(xMesh, "LeftHand",      HB_LLARM, Zenith_Maths::Vector3( 0.00f, -0.3f, 0.0f), xIdentity, xUnitScale);   // 6
-
-	ZM_GenAddBone(xMesh, "RightUpperArm", HB_SPINE, Zenith_Maths::Vector3( 0.30f,  0.6f, 0.0f), xIdentity, xUnitScale);   // 7
-	ZM_GenAddBone(xMesh, "RightLowerArm", HB_RUARM, Zenith_Maths::Vector3( 0.00f, -0.4f, 0.0f), xIdentity, xUnitScale);   // 8
-	ZM_GenAddBone(xMesh, "RightHand",     HB_RLARM, Zenith_Maths::Vector3( 0.00f, -0.3f, 0.0f), xIdentity, xUnitScale);   // 9
-
-	ZM_GenAddBone(xMesh, "LeftUpperLeg",  HB_ROOT,  Zenith_Maths::Vector3(-0.15f,  0.0f, 0.0f), xIdentity, xUnitScale);   // 10
-	ZM_GenAddBone(xMesh, "LeftLowerLeg",  HB_LULEG, Zenith_Maths::Vector3( 0.00f, -0.5f, 0.0f), xIdentity, xUnitScale);   // 11
-	ZM_GenAddBone(xMesh, "LeftFoot",      HB_LLLEG, Zenith_Maths::Vector3( 0.00f, -0.5f, 0.0f), xIdentity, xUnitScale);   // 12
-
-	ZM_GenAddBone(xMesh, "RightUpperLeg", HB_ROOT,  Zenith_Maths::Vector3( 0.15f,  0.0f, 0.0f), xIdentity, xUnitScale);   // 13
-	ZM_GenAddBone(xMesh, "RightLowerLeg", HB_RULEG, Zenith_Maths::Vector3( 0.00f, -0.5f, 0.0f), xIdentity, xUnitScale);   // 14
-	ZM_GenAddBone(xMesh, "RightFoot",     HB_RLLEG, Zenith_Maths::Vector3( 0.00f, -0.5f, 0.0f), xIdentity, xUnitScale);   // 15
-}
 
 void ZM_BuildHuman(ZM_HUMAN_ID eId, ZM_Human& xOut)
 {
@@ -299,8 +216,8 @@ ZM_HumanValidation ZM_ValidateHuman(const ZM_Human& xHuman)
 {
 	ZM_HumanValidation xV;
 
-	// --- Mesh structure (bone cap == the shared-human bone count) ---
-	const ZM_GenMeshValidation xMesh = ZM_ValidateGenMesh(xHuman.m_xMesh, uZM_HUMAN_BONE_COUNT);
+	// --- Mesh structure (bone cap == the SHARED RIG's bone count) ---
+	const ZM_GenMeshValidation xMesh = ZM_ValidateGenMesh(xHuman.m_xMesh, uZM_STICKFIGURE_BONE_COUNT);
 	xV.m_bWindingOutward   = xMesh.m_bWindingOutward;
 	xV.m_bBoundsNonDegen   = xMesh.m_bBoundsNonDegen;
 	xV.m_bWeightsSumToOne  = xMesh.m_bWeightsSumToOne;
@@ -311,42 +228,41 @@ ZM_HumanValidation ZM_ValidateHuman(const ZM_Human& xHuman)
 	xV.m_bMeshValid = xV.m_bWindingOutward && xV.m_bBoundsNonDegen && xV.m_bWeightsSumToOne
 		&& xV.m_bWeightsAtMostTwo && xV.m_bBonesWithinCap;
 
-	// --- Skeleton topology (single root + parent-before-child) ---
-	const u_int uNumBones = xHuman.m_xMesh.GetNumBones();
-	u_int uRootCount = 0u;
-	bool  bOrder = (uNumBones > 0u);
-	for (u_int u = 0; u < uNumBones; ++u)
+	// --- Skin stays inside the core prefix ---
+	// The rig has uZM_STICKFIGURE_BONE_COUNT bones and the cap above only proves a
+	// weight is not off the END of it. This is the tighter, Zenithmon-specific
+	// claim: this game lofts no fingers, toes, jaw or eyes, so a weight landing on
+	// bones 16..50 is a loft bug, not a richer human -- it would attach body
+	// geometry to a finger. Checked over the SHIPPED buffers, not argued from the
+	// authored tables.
+	xV.m_bSkinIndicesInCorePrefix = true;
+	const u_int uSkinVerts = xHuman.m_xMesh.m_xBoneIndices.GetSize();
+	for (u_int u = 0; u < uSkinVerts; ++u)
 	{
-		const ZM_GenBone& xBone = xHuman.m_xMesh.m_xBones.Get(u);
-		if (xBone.m_iParent == -1)
+		const Zenith_Maths::UVector4 xIdx = xHuman.m_xMesh.m_xBoneIndices.Get(u);
+		const Zenith_Maths::Vector4  xWgt = xHuman.m_xMesh.m_xBoneWeights.Get(u);
+		const u_int auIdx[4] = { xIdx.x, xIdx.y, xIdx.z, xIdx.w };
+		const float afWgt[4] = { xWgt.x, xWgt.y, xWgt.z, xWgt.w };
+		for (u_int c = 0; c < 4u; ++c)
 		{
-			++uRootCount;
-		}
-		else if (!(xBone.m_iParent < static_cast<int>(u)))
-		{
-			bOrder = false;
-			if (xV.m_szFirstBad[0] == '\0')
+			// A zero-weight slot may legally hold any index; only WEIGHTED ones bind.
+			if (afWgt[c] > 0.0f && auIdx[c] >= uZM_HUMAN_CORE_BONE_COUNT)
 			{
-				size_t uLen = strlen(xBone.m_szName);
-				if (uLen >= static_cast<size_t>(uZM_GEN_BONE_NAME_MAX))
+				xV.m_bSkinIndicesInCorePrefix = false;
+				if (xV.m_uFirstOutOfPrefixVertex == 0xFFFFFFFFu)
 				{
-					uLen = static_cast<size_t>(uZM_GEN_BONE_NAME_MAX - 1u);
+					xV.m_uFirstOutOfPrefixVertex = u;
 				}
-				memcpy(xV.m_szFirstBad, xBone.m_szName, uLen);
-				xV.m_szFirstBad[uLen] = '\0';
 			}
 		}
 	}
-	xV.m_bHasSingleRoot          = (uRootCount == 1u);
-	xV.m_bParentsBeforeChildren  = bOrder;
-	xV.m_bBoneCountMatchesShared = (uNumBones == uZM_HUMAN_BONE_COUNT);
 
 	// --- Texture ---
 	xV.m_bAlbedoNonEmpty = !xHuman.m_xAlbedo.IsEmpty();
 
 	// --- Rollup ---
 	xV.m_bAllValid = xV.m_bMeshValid
-		&& xV.m_bHasSingleRoot && xV.m_bParentsBeforeChildren && xV.m_bBoneCountMatchesShared
+		&& xV.m_bSkinIndicesInCorePrefix
 		&& xV.m_bAlbedoNonEmpty;
 	return xV;
 }
@@ -384,17 +300,20 @@ bool ZM_HumanSharedAssetPath(ZM_HUMAN_SHARED_ASSET_KIND eKind, char* szOut, u_in
 	}
 	szOut[0] = '\0';
 
+	// "engine:", not "game:". These are the SHARED StickFigure assets that
+	// RenderTest and Combat bind; this game refers to them and bakes none of them.
 	int iN = -1;
 	if (eKind == ZM_HUMAN_SHARED_ASSET_SKELETON)
 	{
-		iN = snprintf(szOut, uCap, "game:Humans/Shared/Human.zskel");
+		iN = snprintf(szOut, uCap, "%s", szZM_HUMAN_SKELETON_REF);
 	}
 	else if (eKind >= ZM_HUMAN_SHARED_ASSET_ANIM_IDLE && eKind < ZM_HUMAN_SHARED_ASSET_KIND_COUNT)
 	{
-		// Clip suffix is contiguous with the clip enum (Idle..Faint).
+		// Clip suffix is contiguous with the clip enum.
 		const ZM_HUMAN_ANIM_CLIP eClip =
 			static_cast<ZM_HUMAN_ANIM_CLIP>(eKind - ZM_HUMAN_SHARED_ASSET_ANIM_IDLE);
-		iN = snprintf(szOut, uCap, "game:Humans/Shared/Human_%s.zanim", ZM_HumanClipName(eClip));
+		iN = snprintf(szOut, uCap, "engine:Meshes/StickFigure/StickFigure_%s.zanim",
+			ZM_HumanClipName(eClip));
 	}
 	else
 	{
@@ -405,10 +324,14 @@ bool ZM_HumanSharedAssetPath(ZM_HUMAN_SHARED_ASSET_KIND eKind, char* szOut, u_in
 }
 
 // ============================================================================
-// Disk bake (TOOLS ONLY) -- the shared rig + 9 clips baked ONCE, then each model's
-// mesh/albedo/.zmtrl/.zmodel binding the shared refs. Mirrors ZM_BakeCreature; the
-// two new ZM_GenCommon bridges (ZM_GenBakeSkeleton / ZM_GenBakeMeshWithShared-
-// Skeleton) keep the shared-rig-vs-per-model split explicit.
+// Disk bake (TOOLS ONLY) -- each model's mesh/albedo/.zmtrl/.zmodel, binding the
+// SHARED ENGINE rig and clip library by ref. Mirrors ZM_BakeCreature.
+//
+// * NOTHING SHARED IS WRITTEN. v5 baked a .zskel and nine .zanim files into
+// game:Humans/Shared/ before the models; v6 refers to
+// engine:Meshes/StickFigure/, which the engine already ships, so the shared half of
+// this bake is GONE rather than redirected. ZM_GenBakeSkeleton has no human caller
+// left; ZM_GenBakeMeshWithSharedSkeleton is the only bridge humans use.
 // ============================================================================
 #ifdef ZENITH_TOOLS
 
@@ -417,52 +340,13 @@ bool ZM_HumanSharedAssetPath(ZM_HUMAN_SHARED_ASSET_KIND eKind, char* szOut, u_in
 #include "AssetHandling/Zenith_MaterialAsset.h"   // Zenith_MaterialAsset, TextureHandle (BASE_COLOR = albedo)
 #include "AssetHandling/Zenith_ModelAsset.h"      // Zenith_ModelAsset (mesh+skeleton+material bundle)
 #include "AssetHandling/Zenith_AssetRegistry.h"   // Zenith_AssetRegistry::Create<> owning-handle + ResolvePath
-#include "Flux/MeshAnimation/Flux_AnimationClip.h"   // Flux_AnimationClip authoring + Export
 #include "Collections/Zenith_Vector.h"            // Zenith_Vector<std::string> material list
 #include "Zenithmon/Source/Gen/ZM_BakeManifest.h"    // per-family bake guard (check) + stamp (write)
 #include <filesystem>
 #include <string>
 
-// Bake the ONE shared rig + 9 clips (game:Humans/Shared/Human.zskel +
-// Human_<Clip>.zanim x9). The skeleton bake creates the Humans/Shared/ folder
-// FIRST (Flux_AnimationClip::Export creates NO directories), so the 9 clip Exports
-// that follow land in the already-created folder.
-bool ZM_BakeHumanShared()
-{
-	// The shared 16-bone rig -- the SAME canonical emit every model's mesh binds.
-	ZM_GenMesh xRig;
-	ZM_AppendSharedHumanBones(xRig);
-
-	char acSkelRef[512];
-	if (!ZM_HumanSharedAssetPath(ZM_HUMAN_SHARED_ASSET_SKELETON, acSkelRef, sizeof(acSkelRef)))
-	{
-		return false;
-	}
-	const std::string strSkelFs = Zenith_AssetRegistry::ResolvePath(std::string(acSkelRef));
-	bool bOk = ZM_GenBakeSkeleton(xRig, strSkelFs.c_str());   // create_directories(Humans/Shared/)
-
-	std::error_code xEc;
-	for (u_int c = 0; c < static_cast<u_int>(ZM_HUMAN_CLIP_COUNT); ++c)
-	{
-		Flux_AnimationClip xClip;
-		ZM_BuildHumanClip(static_cast<ZM_HUMAN_ANIM_CLIP>(c), xClip);
-
-		char acClipRef[512];
-		if (!ZM_HumanSharedAssetPath(
-				static_cast<ZM_HUMAN_SHARED_ASSET_KIND>(ZM_HUMAN_SHARED_ASSET_ANIM_IDLE + c),
-				acClipRef, sizeof(acClipRef)))
-		{
-			return false;
-		}
-		const std::string strClipFs = Zenith_AssetRegistry::ResolvePath(std::string(acClipRef));
-		xClip.Export(strClipFs);   // void; creates no directories (folder already made by skel bake)
-		bOk &= std::filesystem::exists(std::filesystem::path(strClipFs), xEc);
-	}
-	return bOk;
-}
-
 // Bake ONE model's mesh + placeholder albedo + .zmtrl + .zmodel. Binds the SHARED
-// .zskel + SHARED 9-clip set by ref; writes NO per-model skeleton. Mesh + albedo
+// ENGINE rig + clip set by ref; writes NO skeleton and NO animation at all. Mesh + albedo
 // bakes create the Humans/<Name>/ folder FIRST (SaveToFile + model Export create no
 // directories), so the material + model writes that follow land in it.
 bool ZM_BakeHuman(ZM_HUMAN_ID eId)
@@ -558,7 +442,7 @@ bool ZM_BakeAllHumans()
 	{
 		return true;   // warm: stamp current + all files present -> skip the family
 	}
-	bool bOk = ZM_BakeHumanShared();
+	bool bOk = true;   // no shared bake: the rig and clips are ENGINE assets
 	const u_int uCount = static_cast<u_int>(ZM_HUMAN_COUNT);
 	for (u_int u = 0; u < uCount; ++u)
 	{

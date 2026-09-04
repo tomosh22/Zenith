@@ -163,7 +163,7 @@ bool ZM_ShouldUseSavedTransform(ZM_RESUME_VALIDITY eValidity)
 }
 
 bool ZM_MakeWorldPosition(u_int uSceneBuildIndex, const char* szSpawnTag,
-	const Zenith_Maths::Vector3& xCentrePosition, float fYaw, ZM_WorldPosition& xOut)
+	const Zenith_Maths::Vector3& xFeetPosition, float fYaw, ZM_WorldPosition& xOut)
 {
 	// VALIDATE EVERYTHING FIRST. Nothing below may touch xOut until every input is
 	// known good -- the "false leaves the destination byte-identical" contract is
@@ -176,8 +176,8 @@ bool ZM_MakeWorldPosition(u_int uSceneBuildIndex, const char* szSpawnTag,
 			uZM_WORLD_SPAWN_TAG_CAPACITY - 1u);
 		return false;
 	}
-	if (!std::isfinite(xCentrePosition.x) || !std::isfinite(xCentrePosition.y)
-		|| !std::isfinite(xCentrePosition.z) || !std::isfinite(fYaw))
+	if (!std::isfinite(xFeetPosition.x) || !std::isfinite(xFeetPosition.y)
+		|| !std::isfinite(xFeetPosition.z) || !std::isfinite(fYaw))
 	{
 		Zenith_Error(LOG_CATEGORY_GAMEPLAY,
 			"[ZM ResumePoint] ZM_MakeWorldPosition: non-finite pose -- refusing to build a "
@@ -193,9 +193,9 @@ bool ZM_MakeWorldPosition(u_int uSceneBuildIndex, const char* szSpawnTag,
 	xBuilt.m_uSceneBuildIndex = uSceneBuildIndex;
 	const size_t ulTagLength = std::strlen(szSpawnTag);
 	std::memcpy(xBuilt.m_szSpawnTag, szSpawnTag, ulTagLength);
-	xBuilt.m_afPosition[0] = xCentrePosition.x;
-	xBuilt.m_afPosition[1] = xCentrePosition.y;
-	xBuilt.m_afPosition[2] = xCentrePosition.z;
+	xBuilt.m_afPosition[0] = xFeetPosition.x;
+	xBuilt.m_afPosition[1] = xFeetPosition.y;
+	xBuilt.m_afPosition[2] = xFeetPosition.z;
 	xBuilt.m_fYaw = fYaw;
 
 	xOut = xBuilt;

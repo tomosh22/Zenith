@@ -157,13 +157,13 @@ void ZM_EnumerateFamilyFiles(ZM_ASSET_FAMILY eFamily, Zenith_Vector<std::string>
 	}
 	case ZM_ASSET_FAMILY_HUMANS:
 	{
-		for (u_int k = 0; k < static_cast<u_int>(ZM_HUMAN_SHARED_ASSET_KIND_COUNT); ++k)
-		{
-			const bool bOk = ZM_HumanSharedAssetPath(
-				static_cast<ZM_HUMAN_SHARED_ASSET_KIND>(k), acRef, sizeof(acRef));
-			Zenith_Assert(bOk, "ZM_EnumerateFamilyFiles: human shared ref overflow (kind %u)", k);
-			xOut.PushBack(std::string(acRef));
-		}
+		// ★ NO SHARED FILES. A family's file list is what THIS GAME BAKES, and it is
+		// what the stamp's file count is taken over -- so listing the shared rig and
+		// clips here would make the humans family's warmth depend on engine assets it
+		// does not produce and cannot repair. They live under "engine:", outside the
+		// GAME_ASSETS_DIR root this manifest resolves against, so a stale entry also
+		// escapes the family root entirely (BakeManifest_EnumerationMatchesRoster is
+		// the unit that says so).
 		const u_int uCount = static_cast<u_int>(ZM_HUMAN_COUNT);
 		for (u_int u = 0; u < uCount; ++u)
 		{

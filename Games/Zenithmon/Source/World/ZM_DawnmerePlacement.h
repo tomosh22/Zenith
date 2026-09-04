@@ -942,7 +942,7 @@ inline constexpr float fZM_DAWNMERE_LAB_GROUND_UNMEASURED = -1000000.0f;
 //       ground plus half its height, so a mis-shared height would bury the
 //       sensor or float it above a walking capsule.
 //   SPAWN                   -- the FromLab arrival marker's FEET. This is the
-//       row a mis-paste hurts most: ZM_GameStateManager::CalculateSpawnCenter
+//       row a mis-paste hurts most: ZM_GameStateManager::CalculateSpawnPosition
 //       adds the capsule half-extent to it at warp time, so a wrong value warps
 //       the player in embedded in the ground or falling out of the air.
 //   STAGING                 -- the drive waypoint a traversal test aims at.
@@ -1001,7 +1001,7 @@ ZM_DawnmereBlockout ZM_GetDawnmereLabDoorTrigger();
 
 // The FromLab spawn marker's FEET position -- the measured terrain surface, not
 // a body centre. Callers that need a centre add a capsule half-extent, exactly as
-// ZM_GameStateManager::CalculateSpawnCenter does at warp time.
+// ZM_GameStateManager::CalculateSpawnPosition does at warp time.
 Zenith_Maths::Vector3 ZM_GetDawnmereFromLabSpawnFeet();
 
 // The lab route's two drive waypoints. Y is deliberately 0, for the same reason
@@ -1186,7 +1186,7 @@ inline constexpr const char* szZM_DAWNMERE_FROM_ROUTE1_SPAWN_ENTITY_NAME =
 
 // The FromRoute1 arrival marker's FEET position -- the MEASURED terrain surface
 // at (fZM_DAWNMERE_FROM_ROUTE1_X, fZM_DAWNMERE_FROM_ROUTE1_Z), never a body
-// centre. ZM_GameStateManager::CalculateSpawnCenter adds the capsule half-extent
+// centre. ZM_GameStateManager::CalculateSpawnPosition adds the capsule half-extent
 // at warp time, so authoring a centre here would drop every player arriving off
 // Route 1 in from half a body up. Same shape, and the same reasoning, as the
 // shipped ZM_GetDawnmereFromHomeSpawnFeet / ZM_GetDawnmereFromLabSpawnFeet.

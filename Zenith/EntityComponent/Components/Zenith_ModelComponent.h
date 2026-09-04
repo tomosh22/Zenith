@@ -113,6 +113,36 @@ public:
 	bool GetBoneModelMatrix(const std::string& strBoneName, Zenith_Maths::Matrix4& xOut) const;
 
 	//=========================================================================
+	// Model-space offset
+	//=========================================================================
+
+	/**
+	 * A translation applied to the model in MODEL SPACE -- i.e. before the parent
+	 * transform's scale and rotation, so it moves with the entity and scales with
+	 * it. It answers "where does this model's own origin sit relative to the
+	 * entity's origin", which is a question a .zmodel cannot answer for itself: a
+	 * rig authored hip-at-origin (Zenith/Assets/Meshes/StickFigure) and a game whose
+	 * entity origin is the feet disagree by a constant, and that constant belongs to
+	 * the GAME, not to the asset and not to the entity's gameplay position.
+	 *
+	 * ★ DELIBERATELY NOT SERIALIZED. It is re-established every time the model is
+	 * applied (the caller that chooses the .zmodel is the caller that knows the
+	 * convention), so it carries no schema version and cannot drift in scene bytes.
+	 * The default is zero, which is exactly the matrix every existing caller already
+	 * gets -- so no model that does not set it can observe this feature at all.
+	 */
+	void SetModelSpaceOffset(const Zenith_Maths::Vector3& xOffset) { m_xModelSpaceOffset = xOffset; }
+	const Zenith_Maths::Vector3& GetModelSpaceOffset() const { return m_xModelSpaceOffset; }
+
+	/**
+	 * The world matrix this component renders with: the parent transform's model
+	 * matrix, post-multiplied by the model-space offset. THE single place that
+	 * composition happens -- the render-gather, the editor and any test all ask
+	 * here rather than re-deriving it, so they can never disagree.
+	 */
+	void BuildRenderMatrix(Zenith_Maths::Matrix4& xOut) const;
+
+	//=========================================================================
 	// Serialization
 	//=========================================================================
 
@@ -165,5 +195,10 @@ private:
 	// Bumped on every geometry mutation (LoadModel / ClearModel / AddMeshEntry) so
 	// derived caches (Zenith_ColliderComponent's collision mesh) detect staleness.
 	uint32_t m_uGeometryRevision = 0;
+
+	// Model-space translation (see SetModelSpaceOffset). Runtime-only, defaults to
+	// the identity translation so an unset component composes exactly the matrix it
+	// composed before this member existed.
+	Zenith_Maths::Vector3 m_xModelSpaceOffset = Zenith_Maths::Vector3(0.0f);
 
 };

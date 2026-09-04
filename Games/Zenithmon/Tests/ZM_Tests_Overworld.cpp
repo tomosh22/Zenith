@@ -16,6 +16,7 @@
 #include "ZenithECS/Zenith_Scene.h"
 #include "ZenithECS/Zenith_SceneData.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
+#include "Zenithmon/Source/World/ZM_HumanBody.h"   // the body contract the fixture capsule wears
 #include "Zenithmon/Components/ZM_FollowCamera.h"
 #include "Zenithmon/Components/ZM_PlayerController.h"
 #include "Zenithmon/Tests/ZM_BindingsTestRig.h"
@@ -150,18 +151,31 @@ namespace
 		return xEntity;
 	}
 
+	// xFeetPosition is the entity origin, which for a Zenithmon human is its FEET.
+	//
+	// ★ IT INSTALLS THE SHAPE OFFSET, BECAUSE PRODUCTION DOES. ZM_GreyboxVisual::
+	// InstallHumanBody gives every human capsule an explicit half-body offset so the
+	// volume is centred while the transform stands on the ground; a fixture that
+	// skipped it would put the capsule half underground and then disagree with
+	// ZM_PlayerController's ground probe -- the controller would be tested against a
+	// body no human in the game actually has.
 	Zenith_Entity CreateCapsule(
 		Zenith_SceneData* pxSceneData,
 		const char* szName,
-		const Zenith_Maths::Vector3& xPosition)
+		const Zenith_Maths::Vector3& xFeetPosition)
 	{
 		Zenith_Entity xEntity = g_xEngine.Scenes().CreateEntity(pxSceneData, szName);
 		Zenith_TransformComponent& xTransform =
 			xEntity.GetComponent<Zenith_TransformComponent>();
-		xTransform.SetPosition(xPosition);
+		xTransform.SetPosition(xFeetPosition);
 		xTransform.SetScale({ 0.8f, 1.8f, 0.8f });
-		xEntity.AddComponent<Zenith_ColliderComponent>().AddCollider(
-			COLLISION_VOLUME_TYPE_CAPSULE, RIGIDBODY_TYPE_DYNAMIC);
+		Zenith_ColliderComponent& xCollider =
+			xEntity.AddComponent<Zenith_ColliderComponent>();
+		xCollider.AddCollider(COLLISION_VOLUME_TYPE_CAPSULE, RIGIDBODY_TYPE_DYNAMIC);
+		xCollider.SetExplicitShapeOffset(
+			Zenith_Maths::Vector3(0.0f, fZM_HUMAN_BODY_SHAPE_OFFSET_Y, 0.0f));
+		xCollider.SetExplicitCapsuleDimensions(
+			fZM_HUMAN_BODY_CAPSULE_RADIUS, fZM_HUMAN_BODY_CAPSULE_HALF_CYLINDER);
 		return xEntity;
 	}
 
@@ -501,7 +515,7 @@ ZENITH_TEST(ZM_OverworldPhysics, GenericCapsuleFallsGroundsAndStaysUpright)
 	CreateBox(xFixture.m_pxSceneData, "Floor", { 0.0f, -0.25f, 0.0f },
 		{ 8.0f, 0.5f, 8.0f }, RIGIDBODY_TYPE_STATIC);
 	Zenith_Entity xPlayer = CreateCapsule(
-		xFixture.m_pxSceneData, "Player", { 0.0f, 3.0f, 0.0f });
+		xFixture.m_pxSceneData, "Player", { 0.0f, 2.1f, 0.0f });
 	Zenith_ColliderComponent& xCollider =
 		xPlayer.GetComponent<Zenith_ColliderComponent>();
 	g_xEngine.Physics().LockRotation(xCollider.GetBodyID(), true, false, true);
@@ -514,8 +528,12 @@ ZENITH_TEST(ZM_OverworldPhysics, GenericCapsuleFallsGroundsAndStaysUpright)
 	ZENITH_ASSERT_EQ((u_int)xCollider.GetCollisionVolumeType(),
 		(u_int)COLLISION_VOLUME_TYPE_CAPSULE);
 	ZENITH_ASSERT_LT(xPosition.y, 3.0f, "gravity must move the capsule down");
-	ZENITH_ASSERT_EQ_FLOAT(xPosition.y, 0.9f, 0.08f,
-		"scale-derived capsule feet should settle on the floor");
+	// The transform is the FEET and the floor's top face is y=0, so a settled
+	// capsule reports ~0 rather than the half-height it used to. The SHAPE still sits
+	// half a body up (CreateCapsule installs the offset production installs), which
+	// is why it rests here instead of sinking.
+	ZENITH_ASSERT_EQ_FLOAT(xPosition.y, 0.0f, 0.08f,
+		"the capsule's feet should settle on the floor");
 	ZENITH_ASSERT_EQ_FLOAT(xRotation.x, 0.0f, 0.02f);
 	ZENITH_ASSERT_EQ_FLOAT(xRotation.z, 0.0f, 0.02f);
 }
@@ -530,7 +548,7 @@ ZENITH_TEST(ZM_OverworldPhysics, ControllerWalkRunReleaseDrivesRealBody)
 	CreateBox(xFixture.m_pxSceneData, "Floor", { 0.0f, -0.25f, 0.0f },
 		{ 20.0f, 0.5f, 20.0f }, RIGIDBODY_TYPE_STATIC);
 	Zenith_Entity xPlayer = CreateCapsule(
-		xFixture.m_pxSceneData, "Player", { 0.0f, 0.95f, 0.0f });
+		xFixture.m_pxSceneData, "Player", { 0.0f, 0.05f, 0.0f });
 	Zenith_AnimatorComponent& xAnimator =
 		xPlayer.AddComponent<Zenith_AnimatorComponent>();
 	xAnimator.CreateStateMachine("ZM_ControllerSpeed_Test")
@@ -672,7 +690,7 @@ ZENITH_TEST(ZM_OverworldPhysics, DynamicCapsuleIsBlockedByStaticWall)
 	if (!xFixture.m_bReady) { return; }
 
 	Zenith_Entity xPlayer = CreateCapsule(
-		xFixture.m_pxSceneData, "Player", { 0.0f, 0.0f, 0.0f });
+		xFixture.m_pxSceneData, "Player", { 0.0f, -0.9f, 0.0f });
 	CreateBox(xFixture.m_pxSceneData, "Wall", { 0.0f, 0.0f, 2.0f },
 		{ 4.0f, 4.0f, 0.5f }, RIGIDBODY_TYPE_STATIC);
 	Zenith_ColliderComponent& xCollider =
@@ -725,7 +743,7 @@ ZENITH_TEST(ZM_OverworldPhysics, JoltRampNormalsDriveSlopeClassification)
 	// walk speed (not speed*cos(slope)), Jolt must keep contact in both
 	// directions, and gravity/contact response must supply the height change.
 	Zenith_Entity xPlayer = CreateCapsule(
-		xFixture.m_pxSceneData, "RampPlayer", { -3.0f, 1.5f, 0.0f });
+		xFixture.m_pxSceneData, "RampPlayer", { -3.0f, 0.6f, 0.0f });
 	ZM_PlayerController& xController = xPlayer.AddComponent<ZM_PlayerController>();
 	Zenith_Entity xCamera = g_xEngine.Scenes().CreateEntity(
 		xFixture.m_pxSceneData, "RampCamera");
@@ -745,7 +763,7 @@ ZENITH_TEST(ZM_OverworldPhysics, JoltRampNormalsDriveSlopeClassification)
 		// BOTH sides: the simulator's level table AND the action layer's
 		// transition-fed shadow, or the second phase's key fights the first's.
 		ZM_BindingsTest::ResetSimulatedAndEngineInput();
-		g_xEngine.Physics().TeleportBody(xBody, { -3.0f, 1.5f, 0.0f });
+		g_xEngine.Physics().TeleportBody(xBody, { -3.0f, 0.6f, 0.0f });
 		for (u_int uFrame = 0u; uFrame < 90u; ++uFrame)
 		{
 			StepPhysics(1u);
@@ -861,7 +879,7 @@ ZENITH_TEST(ZM_OverworldPhysics, JoltStepQueriesAcceptLowAndRejectTallObstacle)
 		{ 1.2f, fStepHeight, 0.5f }, RIGIDBODY_TYPE_STATIC);
 
 	Zenith_Entity xPlayer = CreateCapsule(xFixture.m_pxSceneData, "StepPlayer",
-		{ 6.0f, xStartGround.m_xHitPoint.y + 0.95f, fPlayerStartZ });
+		{ 6.0f, xStartGround.m_xHitPoint.y + 0.05f, fPlayerStartZ });
 	ZM_PlayerController& xController = xPlayer.AddComponent<ZM_PlayerController>();
 	Zenith_Entity xCamera = g_xEngine.Scenes().CreateEntity(
 		xFixture.m_pxSceneData, "StepCamera");
@@ -998,18 +1016,24 @@ ZENITH_TEST(ZM_OverworldCamera, RealOccluderPushesInThenCameraRecoversOutward)
 	Zenith_Maths::Vector3 xFirstCameraPosition;
 	xCameraComponent.GetPosition(xFirstCameraPosition);
 	ZENITH_ASSERT_NEAR_VEC3(xFirstCameraPosition,
-		ZM_FollowCamera::ComputeDesiredPosition({ 0.0f, 0.0f, 0.0f }, 0.0f),
+		ZM_FollowCamera::ComputeDesiredPosition(
+			ZM_HumanBodyCentre(Zenith_Maths::Vector3(0.0f)), 0.0f),
 		fTEST_EPSILON,
 		"first valid target acquisition must snap to the desired pose");
 
+	// +0.9: the arm now leaves a pivot one body half-height higher (the transform is
+	// the FEET), so an occluder authored against the old pivot would sit under it.
 	Zenith_Entity xWall = CreateBox(xFixture.m_pxSceneData, "CameraWall",
-		{ 0.0f, 1.7f, -2.5f }, { 4.0f, 3.0f, 0.2f }, RIGIDBODY_TYPE_STATIC);
+		{ 0.0f, 2.6f, -2.5f }, { 4.0f, 3.0f, 0.2f }, RIGIDBODY_TYPE_STATIC);
 	xFollow.OnLateUpdate(fTEST_DT);
 
-	const Zenith_Maths::Vector3 xPivot(0.0f,
-		ZM_FollowCamera::GetPivotHeight(), 0.0f);
+	// Through the SAME derivation production uses. ComputePivot takes a body CENTRE,
+	// and the player in this fixture stands with its FEET at the origin.
+	const Zenith_Maths::Vector3 xPivot = ZM_FollowCamera::ComputePivot(
+		ZM_HumanBodyCentre(Zenith_Maths::Vector3(0.0f)));
 	const float fUnobstructedDistance = glm::length(
-		ZM_FollowCamera::ComputeDesiredPosition({ 0.0f, 0.0f, 0.0f }, 0.0f)
+		ZM_FollowCamera::ComputeDesiredPosition(
+			ZM_HumanBodyCentre(Zenith_Maths::Vector3(0.0f)), 0.0f)
 		- xPivot);
 	const float fConstrainedDistance = xFollow.GetCurrentArmDistance();
 	ZENITH_ASSERT_TRUE(xFollow.IsCollisionConstrained());
@@ -1055,7 +1079,7 @@ ZENITH_TEST(ZM_OverworldCamera, SensorVolumeDoesNotClampTheArm)
 
 	// Straddles the whole arm ray, exactly as a doorway trigger does.
 	Zenith_Entity xSensor = CreateBox(xFixture.m_pxSceneData, "DoorwaySensor",
-		{ 0.0f, 1.7f, -2.5f }, { 4.0f, 3.0f, 2.0f }, RIGIDBODY_TYPE_STATIC);
+		{ 0.0f, 2.6f, -2.5f }, { 4.0f, 3.0f, 2.0f }, RIGIDBODY_TYPE_STATIC);
 	xSensor.GetComponent<Zenith_ColliderComponent>().SetIsSensor(true);
 	StepPhysics(1u);
 
@@ -1068,10 +1092,13 @@ ZENITH_TEST(ZM_OverworldCamera, SensorVolumeDoesNotClampTheArm)
 	xFollow.OnStart();
 	xFollow.OnLateUpdate(fTEST_DT);
 
-	const Zenith_Maths::Vector3 xPivot(0.0f,
-		ZM_FollowCamera::GetPivotHeight(), 0.0f);
+	// Through the SAME derivation production uses. ComputePivot takes a body CENTRE,
+	// and the player in this fixture stands with its FEET at the origin.
+	const Zenith_Maths::Vector3 xPivot = ZM_FollowCamera::ComputePivot(
+		ZM_HumanBodyCentre(Zenith_Maths::Vector3(0.0f)));
 	const float fUnobstructedDistance = glm::length(
-		ZM_FollowCamera::ComputeDesiredPosition({ 0.0f, 0.0f, 0.0f }, 0.0f) - xPivot);
+		ZM_FollowCamera::ComputeDesiredPosition(
+			ZM_HumanBodyCentre(Zenith_Maths::Vector3(0.0f)), 0.0f) - xPivot);
 
 	ZENITH_ASSERT_FALSE(xFollow.IsCollisionConstrained(),
 		"a sensor volume must not report the camera as obstructed");
@@ -1097,10 +1124,13 @@ ZENITH_TEST(ZM_OverworldCamera, SolidOccluderStillClampsBesideASensor)
 	xPlayer.AddComponent<ZM_PlayerController>();
 	xPlayer.GetComponent<Zenith_TransformComponent>().SetPosition({ 0.0f, 0.0f, 0.0f });
 
-	const Zenith_Maths::Vector3 xPivot(0.0f,
-		ZM_FollowCamera::GetPivotHeight(), 0.0f);
+	// Through the SAME derivation production uses. ComputePivot takes a body CENTRE,
+	// and the player in this fixture stands with its FEET at the origin.
+	const Zenith_Maths::Vector3 xPivot = ZM_FollowCamera::ComputePivot(
+		ZM_HumanBodyCentre(Zenith_Maths::Vector3(0.0f)));
 	const Zenith_Maths::Vector3 xDesired =
-		ZM_FollowCamera::ComputeDesiredPosition({ 0.0f, 0.0f, 0.0f }, 0.0f);
+		ZM_FollowCamera::ComputeDesiredPosition(
+			ZM_HumanBodyCentre(Zenith_Maths::Vector3(0.0f)), 0.0f);
 	const float fDesiredArm = glm::length(xDesired - xPivot);
 	const Zenith_Maths::Vector3 xDirection = (xDesired - xPivot) / fDesiredArm;
 
@@ -1108,10 +1138,10 @@ ZENITH_TEST(ZM_OverworldCamera, SolidOccluderStillClampsBesideASensor)
 	// clamped arm of ~2.42 m; reading the wall gives ~4.06 m. The two are far
 	// enough apart that no tolerance can confuse them.
 	Zenith_Entity xSensor = CreateBox(xFixture.m_pxSceneData, "DoorwaySensor",
-		{ 0.0f, 1.7f, -2.5f }, { 4.0f, 3.0f, 0.2f }, RIGIDBODY_TYPE_STATIC);
+		{ 0.0f, 2.6f, -2.5f }, { 4.0f, 3.0f, 0.2f }, RIGIDBODY_TYPE_STATIC);
 	xSensor.GetComponent<Zenith_ColliderComponent>().SetIsSensor(true);
 	CreateBox(xFixture.m_pxSceneData, "SolidWall",
-		{ 0.0f, 2.3f, -4.0f }, { 4.0f, 3.0f, 0.2f }, RIGIDBODY_TYPE_STATIC);
+		{ 0.0f, 3.2f, -4.0f }, { 4.0f, 3.0f, 0.2f }, RIGIDBODY_TYPE_STATIC);
 	StepPhysics(1u);
 
 	Zenith_Entity xCamera = g_xEngine.Scenes().CreateEntity(

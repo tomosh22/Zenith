@@ -77,6 +77,15 @@ Zenith_ModelComponent::Zenith_ModelComponent(Zenith_ModelComponent&& xOther) noe
 	, m_xModel(std::move(xOther.m_xModel))
 	, m_strModelPath(std::move(xOther.m_strModelPath))
 	, m_uGeometryRevision(xOther.m_uGeometryRevision)
+	// ★ THE OFFSET MOVES WITH THE MODEL. Component pools RELOCATE their elements on
+	// Grow, move-constructing every component; a missed field here silently reverts
+	// the model to a zero offset. For a Zenithmon human that is half a body
+	// underground -- and it is UNRECOVERABLE in the normal way, because
+	// ZM_GreyboxVisual re-applies the offset only when it (re)loads a model, and it
+	// early-returns while the model it already loaded is still the one it wants.
+	// Zenith_ColliderComponent's explicit-dimension fields carry the same obligation
+	// for the same reason, and say so in as many words.
+	, m_xModelSpaceOffset(xOther.m_xModelSpaceOffset)
 {
 	// Nullify source pointers so its destructor doesn't delete our resources
 	xOther.m_pxModelInstance = nullptr;
@@ -97,6 +106,9 @@ Zenith_ModelComponent& Zenith_ModelComponent::operator=(Zenith_ModelComponent&& 
 		m_xModel = std::move(xOther.m_xModel);
 		m_strModelPath = std::move(xOther.m_strModelPath);
 		m_uGeometryRevision = xOther.m_uGeometryRevision;
+		// See the move constructor: a relocation must not reset the model's
+		// placement, and nothing downstream would re-establish it.
+		m_xModelSpaceOffset = xOther.m_xModelSpaceOffset;
 
 		// Nullify source pointers
 		xOther.m_pxModelInstance = nullptr;
@@ -311,6 +323,25 @@ bool Zenith_ModelComponent::GetBoneModelMatrix(const std::string& strBoneName, Z
 }
 
 //=============================================================================
+// Model-space offset
+//=============================================================================
+
+void Zenith_ModelComponent::BuildRenderMatrix(Zenith_Maths::Matrix4& xOut) const
+{
+	m_xParentEntity.GetComponent<Zenith_TransformComponent>().BuildModelMatrix(xOut);
+
+	// POST-multiplied, so the offset is expressed in the MODEL's own space: it is
+	// rotated and scaled by the entity exactly as the vertices it moves are. A
+	// pre-multiplied (world-space) offset would keep its length as the entity
+	// scaled and would not follow the entity's yaw -- neither of which describes
+	// "this rig's origin is not where my entity's origin is".
+	if (m_xModelSpaceOffset != Zenith_Maths::Vector3(0.0f))
+	{
+		xOut = glm::translate(xOut, m_xModelSpaceOffset);
+	}
+}
+
+//=============================================================================
 // Serialization
 //=============================================================================
 
@@ -444,7 +475,7 @@ static void Zenith_FillSceneSnapshotImpl(Zenith_Vector<Flux_RenderSceneItem>& xO
 		if (!pxModelInstance) return;
 
 		Zenith_Maths::Matrix4 xMatrix;
-		xModel.GetParentEntity().GetComponent<Zenith_TransformComponent>().BuildModelMatrix(xMatrix);
+		xModel.BuildRenderMatrix(xMatrix);
 
 		Flux_RenderSceneItem xItem;
 		xItem.m_pxModelInstance  = pxModelInstance;
@@ -460,3 +491,11 @@ static void Zenith_FillSceneSnapshotImpl(Zenith_Vector<Flux_RenderSceneItem>& xO
 }
 
 Zenith_SceneSnapshotFillFn g_pfnZenithSceneSnapshotFill = &Zenith_FillSceneSnapshotImpl;
+
+// Model-space offset units. Hosted in THIS TU because it is ALWAYS linked -- the
+// component registrar references this component -- so the ZENITH_TEST registrars
+// survive /OPT:REF in every config. Same reasoning as
+// Zenith_InstancedMeshComponent.cpp's host block.
+#ifdef ZENITH_TESTING
+#include "EntityComponent/Zenith_ModelComponent.Tests.inl"
+#endif

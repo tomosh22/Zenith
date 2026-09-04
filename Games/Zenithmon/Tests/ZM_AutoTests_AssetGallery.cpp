@@ -362,12 +362,13 @@ namespace
 	// One shared shape per family: resolve the family's MODEL ref -> create the
 	// entity -> place it at (X,y,rowZ) + uniform scale -> LoadModel. Props and
 	// buildings use their authored feet origin; creatures use their measured
-	// grounded/hover policy; humans are CENTRE-anchored and sit at half their
-	// display height. Skinned
+	// grounded/hover policy; humans are authored FEET-first like the props, and the
+	// gallery lifts their model with the same model-space offset the game uses
+	// (fZM_HUMAN_MODEL_OFFSET_Y) because the shared rig is hip-at-origin. Skinned
 	// (creature/human) and static (building/prop) both load via LoadModel; the
 	// skinned families render in their bind pose (no animator attached). Humans'
-	// .zmodel references the shared game:Humans/Shared/Human.zskel, which LoadModel
-	// resolves. The per-entry uniform scale normalises each model to the family's
+	// .zmodel references the SHARED ENGINE rig
+	// engine:Meshes/StickFigure/StickFigure.zskel, which LoadModel resolves. The per-entry uniform scale normalises each model to the family's
 	// target display height by dividing out its baked natural-size field.
 
 	void BuildAGCreature(Zenith_SceneData* pxSceneData, u_int uIndex)
@@ -418,19 +419,26 @@ namespace
 		Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
 		const float fX = (static_cast<float>(uIndex) - (static_cast<float>(uZM_AG_HUMANS) - 1.0f) * 0.5f)
 			* fZM_AG_HUMAN_PITCH;
-		// Humans are CENTRE-ANCHORED (ZM_HumanGen v2), so the entity origin is the
-		// body's middle, not its feet: a human placed at y=0 would stand half-sunk
-		// through the gallery floor. Lift by half the display height.
-		xTransform.SetPosition({ fX, fZM_AG_HUMAN_HEIGHT * 0.5f, fZM_AG_HUMAN_ROW_Z });
+		// Humans stand ON the gallery floor (ZM_HumanGen v6): the entity origin is
+		// the FEET, like the props and buildings in the rows beside them.
+		xTransform.SetPosition({ fX, 0.0f, fZM_AG_HUMAN_ROW_Z });
 
 		// MEASURED, not nominal. The old fZM_AG_HUMAN_NOMINAL_M * m_fHeightScale
 		// guessed at the loft's output; ZM_MeasureHumanBody reports what the loft
 		// actually built, over the body prefix (a hat must not shrink its wearer).
-		const float fNaturalHeight = ZM_MeasureHumanBody(eId).m_fHeight;
+		const ZM_HumanBodyMetrics xMetrics = ZM_MeasureHumanBody(eId);
+		const float fNaturalHeight = xMetrics.m_fHeight;
 		const float fScale = fZM_AG_HUMAN_HEIGHT / std::max(fNaturalHeight, fZM_AG_MIN_DENOM);
 		xTransform.SetScale({ fScale, fScale, fScale });
 
-		xEntity.AddComponent<Zenith_ModelComponent>().LoadModel(szRef);
+		Zenith_ModelComponent& xModel = xEntity.AddComponent<Zenith_ModelComponent>();
+		// ★ THE SHARED RIG IS HIP-AT-ORIGIN, so the model must be lifted by the depth
+		// its soles hang below that origin or every human in the gallery stands buried
+		// to the hip. Measured PER MODEL rather than reusing the game's canonical
+		// fZM_HUMAN_MODEL_OFFSET_Y, because the gallery re-scales each human to a
+		// common display height and the build variation is exactly what it is showing.
+		xModel.SetModelSpaceOffset(Zenith_Maths::Vector3(0.0f, -xMetrics.m_fMinY, 0.0f));
+		xModel.LoadModel(szRef);
 	}
 
 	// Fit an instance into BOTH a column-width budget and a height cap -- the MIN of

@@ -2,20 +2,30 @@
 
 // ============================================================================
 // ZM_HumanMesh -- the S4 SC2/SC3 per-model human mesh loft. The authored ring rows
-// are the StickFigure golden torso/head/arm/leg tables, translated +1Y so the loft
-// builds feet-near-zero; a v2 post-pass then rigidly CENTRE-ANCHORS the whole bind
-// space (see the block in ZM_HumanGen.h). BUILD girth and the fixed MESH-domain
-// draw stream vary radii only; the separate modest recipe height scales authored Y.
-// The shared 16-bone skeleton, Cx/Cz centres and bone indices never vary.
+// ARE the StickFigure golden torso/head/arm/leg tables, and generator v6 keeps the
+// loft in StickFigure's own bind space so the mesh can be skinned directly against
+// the shared engine rig. BUILD girth and the fixed MESH-domain draw stream vary
+// radii only; the separate modest recipe height scales authored Y about the feet.
+// The shared rig, Cx/Cz centres and bone indices never vary.
 // ============================================================================
 
 #include "Zenithmon/Source/Gen/ZM_HumanAppearance.h"
 
 namespace
 {
-	// Private mirror of ZM_AppendSharedHumanBones' frozen emit order. Keeping the
-	// mesh bind local to this TU makes every authored weight visibly target one of
-	// the exact 16 shared indices.
+	// Private mirror of the SHARED StickFigure rig's first sixteen bone indices --
+	// Root..RightFoot, in that rig's own emit order (Tools/Zenith_Tools_TestAssetExport.cpp
+	// declares the same sixteen as STICK_BONE_ROOT..STICK_BONE_RIGHT_FOOT). Keeping
+	// the mesh bind local to this TU makes every authored weight visibly target one
+	// of those exact indices.
+	//
+	// Zenithmon's body loft weights to the CORE SIXTEEN ONLY: it lofts no fingers,
+	// toes, jaw or eyes, so StickFigure's bones 16..50 simply carry no weight here.
+	// That is a strict subset, not a mismatch -- unweighted bones still animate, they
+	// just move no Zenithmon vertices. ZM_HumanRigMatchesStickFigure_Test loads the
+	// real .zskel and pins that these sixteen names still sit at these sixteen
+	// indices, so a StickFigure reorder reds this game rather than silently
+	// re-skinning every human onto the wrong bones.
 	enum : u_int
 	{
 		HB_ROOT = 0u, HB_SPINE, HB_NECK, HB_HEAD,
@@ -24,8 +34,10 @@ namespace
 		HB_LULEG, HB_LLLEG, HB_LFOOT,
 		HB_RULEG, HB_RLLEG, HB_RFOOT
 	};
-	static_assert(HB_RFOOT + 1u == uZM_HUMAN_BONE_COUNT,
-		"human mesh bone indices must match the frozen shared skeleton");
+	static_assert(HB_RFOOT + 1u == uZM_HUMAN_CORE_BONE_COUNT,
+		"human mesh bone indices must match the shared StickFigure rig's core prefix");
+	static_assert(uZM_HUMAN_CORE_BONE_COUNT <= uZM_STICKFIGURE_BONE_COUNT,
+		"the core prefix cannot be longer than the rig it is a prefix of");
 
 	constexpr u_int uZM_HUMAN_RING_SUBDIV = 4u;
 
@@ -60,16 +72,23 @@ namespace
 		return fValue;
 	}
 
-	// Convert authored StickFigure space (root at y=0, feet at y=-1) to the
-	// shared-human space (root at y=1, feet at y=0), then apply the recipe's
-	// intentionally modest grounded height. Cx/Cz and the skeleton never move.
+	// The authored rows ARE StickFigure's bind space (root at y=0, feet at y=-1),
+	// and that is the space the mesh stays in -- it is the space the shared
+	// StickFigure .zskel poses its bones in, and a mesh may only be skinned against
+	// a skeleton expressed in its own bind space.
+	//
+	// The recipe's intentionally modest height varies about the FEET, not the root,
+	// so a taller human grows upward from the floor rather than sinking. That is the
+	// +1 / -1 round trip below: lift to feet-at-zero, scale, drop back. At the
+	// canonical fHeightScale of 1.0 it is exactly the identity, so the canonical
+	// model's mesh IS StickFigure's authored space bit for bit. Cx/Cz never move.
 	void ZM_PrepareHumanRings(ZM_LoftRing* pxRings, u_int uNumRings,
 		float fHeightScale, float fRxScale, float fRzScale, float fSuperEllipse)
 	{
 		for (u_int u = 0u; u < uNumRings; ++u)
 		{
 			ZM_LoftRing& xRing = pxRings[u];
-			xRing.m_fY = (xRing.m_fY + 1.0f) * fHeightScale;
+			xRing.m_fY = (xRing.m_fY + 1.0f) * fHeightScale - 1.0f;
 			xRing.m_fRx *= fRxScale;
 			xRing.m_fRz *= fRzScale;
 			xRing.m_fSuperEllipse = fSuperEllipse;
@@ -196,13 +215,13 @@ namespace
 
 namespace
 {
-	// The PRE-ANCHOR build, shared by ZM_BuildHumanMesh and ZM_MeasureHumanBody so
-	// the metrics can never be measured against a different mesh than the one that
-	// ships. Returns the BODY VERTEX PREFIX: the vertex count captured immediately
-	// before ZM_AppendHumanAppearanceMesh, i.e. the six body loft parts and nothing
-	// else. Hair and attachments live past it, which is exactly why a hat cannot
-	// decide how tall a person is.
-	u_int ZM_BuildHumanMeshUnanchored(const ZM_HumanRecipe& xRecipe, ZM_GenMesh& xMesh)
+	// The rig-space build, shared by ZM_BuildHumanMesh and ZM_MeasureHumanBody so the
+	// metrics can never be measured against a different mesh than the one that ships.
+	// Returns the BODY VERTEX PREFIX: the vertex count captured immediately before
+	// ZM_AppendHumanAppearanceMesh, i.e. the six body loft parts and nothing else.
+	// Hair and attachments live past it, which is exactly why a hat cannot decide how
+	// tall a person is.
+	u_int ZM_BuildHumanMeshInRigSpace(const ZM_HumanRecipe& xRecipe, ZM_GenMesh& xMesh)
 	{
 		xMesh.Reset();
 
@@ -222,8 +241,10 @@ namespace
 		const float fTorsoSuper = ZM_HumanClampSuperEllipse(
 			ZM_HumanBuildSuperEllipse(xRecipe.m_eBuild) * fTorsoSuperJ);
 
-		ZM_AppendSharedHumanBones(xMesh);
-
+		// ★ NO BONES ARE EMITTED. The rig is the shared engine asset
+		// (engine:Meshes/StickFigure/StickFigure.zskel); this mesh only ever REFERS to
+		// it, by index, and ZM_GenBakeMeshWithSharedSkeleton writes that reference
+		// rather than a skeleton. ZM_GenMesh::m_xBones therefore stays empty.
 		ZM_AppendHumanTorso(xMesh, xRecipe.m_fHeightScale,
 			fBuildWidth * fTorsoRxJ, fBuildWidth * fTorsoRzJ, fTorsoSuper);
 		ZM_AppendHumanHeadNeck(xMesh, xRecipe.m_fHeightScale, fHeadBuild * fHeadSizeJ);
@@ -250,18 +271,17 @@ namespace
 // ============================================================================
 void ZM_BuildHumanMesh(const ZM_HumanRecipe& xRecipe, ZM_GenMesh& xMesh)
 {
-	ZM_BuildHumanMeshUnanchored(xRecipe, xMesh);
+	ZM_BuildHumanMeshInRigSpace(xRecipe, xMesh);
 
-	// v2 CENTRE ANCHOR. A rigid translation of every vertex by the SHARED constant
-	// -- never this model's own centre, which would desync the fixed rig from the
-	// mesh. It runs AFTER the appearance parts so hats and satchels ride along, and
-	// it is the vertex half of the anchor whose bone half is Root's bind position
-	// in ZM_AppendSharedHumanBones. Normals and tangents are translation-invariant.
-	const u_int uVerts = xMesh.GetNumVerts();
-	for (u_int u = 0u; u < uVerts; ++u)
-	{
-		xMesh.m_xPositions.Get(u).y -= fZM_HUMAN_MESH_CENTRE_Y;
-	}
+	// ★ NO ANCHOR PASS. Generator v6 leaves the mesh in the shared StickFigure rig's
+	// OWN bind space, because that is the only space it can legally be skinned in --
+	// the bones it weights to are that rig's bones, posed about that rig's pivots. A
+	// translation applied here (v2's centre anchor) moved the vertices WITHOUT
+	// moving the pivots, which is exactly the desync that made a game-owned copy of
+	// the skeleton necessary in the first place.
+	//
+	// Where the model then sits relative to a Zenithmon entity is a GAME statement,
+	// and it is made once, in metres, by fZM_HUMAN_MODEL_OFFSET_Y in ZM_HumanBody.h.
 
 	// EmitRing already wrote analytic loft normals; never regenerate them. This is
 	// the sole finalisation sequence and is intentionally byte-idempotent.
@@ -270,10 +290,14 @@ void ZM_BuildHumanMesh(const ZM_HumanRecipe& xRecipe, ZM_GenMesh& xMesh)
 }
 
 // ============================================================================
-// Body metrics -- measured over the PRE-ANCHOR body vertex prefix. Deliberately
-// NOT derived from the finished mesh: that mesh is already centred, so measuring
-// it would be circular, and it carries hair/attachment vertices that must not
-// define the body.
+// Body metrics -- measured over the body vertex prefix, in the shared rig's bind
+// space. Deliberately NOT derived from the finished mesh, which carries
+// hair/attachment vertices that must not define the body: a hat does not decide
+// how tall someone is.
+//
+// These are the numbers fZM_HUMAN_MODEL_OFFSET_Y is derived from, so they are
+// measured in the SAME space the model is placed in -- m_fMinY is literally "how
+// far below the rig's origin this body's feet reach".
 // ============================================================================
 ZM_HumanBodyMetrics ZM_MeasureHumanBody(ZM_HUMAN_ID eId)
 {
@@ -283,7 +307,7 @@ ZM_HumanBodyMetrics ZM_MeasureHumanBody(ZM_HUMAN_ID eId)
 ZM_HumanBodyMetrics ZM_MeasureHumanBody(const ZM_HumanRecipe& xRecipe)
 {
 	ZM_GenMesh xMesh;
-	const u_int uBodyVertexPrefix = ZM_BuildHumanMeshUnanchored(xRecipe, xMesh);
+	const u_int uBodyVertexPrefix = ZM_BuildHumanMeshInRigSpace(xRecipe, xMesh);
 
 	ZM_HumanBodyMetrics xMetrics;
 	if (uBodyVertexPrefix == 0u)

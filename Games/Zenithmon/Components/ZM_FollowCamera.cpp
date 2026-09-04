@@ -1,5 +1,6 @@
 #include "Zenith.h"
 
+#include "Zenithmon/Source/World/ZM_HumanBody.h"   // the body contract the pivot is measured from
 #include "Zenithmon/Components/ZM_FollowCamera.h"
 
 #include "Core/Zenith_Engine.h"
@@ -137,13 +138,21 @@ void ZM_FollowCamera::OnLateUpdate(float fDeltaTime)
 		return;
 	}
 
-	const Zenith_Maths::Vector3 xPivot = xPlayerPosition
-		+ Zenith_Maths::Vector3(0.0f, fPIVOT_HEIGHT, 0.0f);
+	// ★ DERIVED ONCE, AND FED TO BOTH. The transform is the player's FEET; both
+	// helpers below measure from the body CENTRE (fPIVOT_HEIGHT and fCAMERA_HEIGHT
+	// are both stated against it, and every authored camera constant in the
+	// placement headers was derived that way). Converting for one and not the other
+	// is the exact bug this line exists to make impossible: the pivot would hold
+	// while the eye dropped half a body, changing every camera's height AND its
+	// pitch, with no test on the arm LENGTH able to see it.
+	const Zenith_Maths::Vector3 xBodyCentre = ZM_HumanBodyCentre(xPlayerPosition);
+
+	const Zenith_Maths::Vector3 xPivot = ComputePivot(xBodyCentre);
 	// The outdoor boom, then the indoor cap. Outdoors the second call is the
 	// identity; indoors it is the difference between seeing the room and seeing
 	// the top of its ceiling slab. See ClampBoomBelowCeiling in the header.
 	const Zenith_Maths::Vector3 xDesiredPosition = ClampBoomBelowCeiling(
-		ComputeDesiredPosition(xPlayerPosition, m_fAuthoredYaw),
+		ComputeDesiredPosition(xBodyCentre, m_fAuthoredYaw),
 		xPivot,
 		m_fCeilingY);
 
@@ -275,6 +284,16 @@ void ZM_FollowCamera::RenderPropertiesPanel()
 		m_bCollisionConstrained ? "true" : "false");
 }
 #endif
+
+// Takes the body CENTRE, exactly as ComputeDesiredPosition does -- the two are a
+// pair and a caller must not have to remember that they disagree. A caller holding
+// a player TRANSFORM (which is the feet) converts with ZM_HumanBodyCentre first,
+// and OnLateUpdate does that once for both.
+Zenith_Maths::Vector3 ZM_FollowCamera::ComputePivot(
+	const Zenith_Maths::Vector3& xPlayerBodyCentre)
+{
+	return xPlayerBodyCentre + Zenith_Maths::Vector3(0.0f, fPIVOT_HEIGHT, 0.0f);
+}
 
 Zenith_Maths::Vector3 ZM_FollowCamera::ComputeDesiredPosition(
 	const Zenith_Maths::Vector3& xPlayerPosition, float fAuthoredYaw)

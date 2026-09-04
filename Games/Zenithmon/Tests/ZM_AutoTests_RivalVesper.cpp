@@ -4194,12 +4194,15 @@ namespace
 		Zenith_Maths::Vector3 xScale(1.0f);
 		pxSpawnTransform->GetPosition(xFeet);
 		pxPlayerTransform->GetScale(xScale);
-		// Independent oracle: do not call GameStateManager::CalculateSpawnCenter,
+		// Independent oracle: do not call GameStateManager::CalculateSpawnPosition,
 		// because that is the production function whose result the warp consumes.
 		// Following a bad production offset with the same helper would compare a
 		// wrong placement to itself and stay green.
-		const Zenith_Maths::Vector3 xExpected = xFeet
-			+ Zenith_Maths::Vector3(0.0f, fZM_HUMAN_BODY_HALF_HEIGHT, 0.0f);
+		// A marker IS a spawn position: both are the FEET, so the oracle is the
+		// marker verbatim. It used to add a body half-height, because an entity
+		// stored its centre. Still INDEPENDENT of CalculateSpawnPosition -- it
+		// restates the contract rather than calling the function under test.
+		const Zenith_Maths::Vector3 xExpected = xFeet;
 		g_fRVWTransformSpawnError = RVWDistance(xPlayer.m_xPosition, xExpected);
 		g_fRVWBodySpawnError = RVWDistance(
 			g_xEngine.Physics().GetBodyPosition(xPlayer.m_pxCollider->GetBodyID()),

@@ -837,7 +837,7 @@ ZENITH_TEST(ZM_WorldTraversal, Gym1_LeaderFacesTheArrivalAtIdentity)
 	const Zenith_Maths::Quat xIdentity(1.0f, 0.0f, 0.0f, 0.0f);
 	const Zenith_Maths::Vector3 xForward = ZM_ForwardFromRotation(xIdentity);
 
-	const Zenith_Maths::Vector3 xStation = ZM_GetGym1FennaCenter();
+	const Zenith_Maths::Vector3 xStation = ZM_GetGym1FennaFeet();
 	const Zenith_Maths::Vector3 xPivot   = ZM_GetGym1ArrivalPivot();
 
 	const float fToPlayerX = xPivot.x - xStation.x;

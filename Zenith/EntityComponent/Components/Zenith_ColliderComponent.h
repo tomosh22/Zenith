@@ -132,6 +132,21 @@ public:
 	void SetExplicitCapsuleDimensions(float fRadius, float fCylinderHalfHeight);
 	void SetExplicitBoxHalfExtents(const Zenith_Maths::Vector3& xHalfExtents);
 
+	//--------------------------------------------------------------------------
+	// Shift the SHAPE relative to the entity origin, without moving the body.
+	//
+	// For when the entity's origin is deliberately not the middle of its volume --
+	// a character whose transform is its FEET still wants the inscribed capsule
+	// centred half a body height up. Applied to every volume type, after the shape
+	// is built, by wrapping it in a Jolt RotatedTranslatedShape.
+	//
+	// The offset is in the entity's LOCAL space and is NOT scaled: it composes with
+	// the explicit dimension setters above, which are also absolute. Carries the
+	// same rebuild caveat as those two -- it replaces the shape, so whoever
+	// configured sensor/gravity/locked axes must re-apply that afterwards.
+	//--------------------------------------------------------------------------
+	void SetExplicitShapeOffset(const Zenith_Maths::Vector3& xLocalOffset);
+
 	// 2026-05-25: toggle the body between solid (default) and sensor.
 	// Sensor bodies still register overlap events but don't physically
 	// collide -- other bodies pass straight through. Used by DPDoor to
@@ -213,6 +228,11 @@ private:
 	// field silently reverts a body to scale-derived sizing on the next Grow.
 	Zenith_Maths::Vector3 m_xExplicitBoxHalfExtents = Zenith_Maths::Vector3(0.0f);
 	bool m_bUseExplicitBoxHalfExtents = false;
+	// Explicit SHAPE offset (SetExplicitShapeOffset). Wraps the built shape in a
+	// RotatedTranslatedShape so the volume sits off the entity origin. Same
+	// move-transfer obligation as the two blocks above, and for the same reason.
+	Zenith_Maths::Vector3 m_xExplicitShapeOffset = Zenith_Maths::Vector3(0.0f);
+	bool m_bUseExplicitShapeOffset = false;
 	bool m_bDebugDrawPhysicsMesh = false;
 	// See SetIncludeInNavMesh comment. Defaults to true so existing colliders
 	// (floors, walls, props) continue to contribute navmesh geometry without

@@ -456,9 +456,23 @@ void Zenith_AnimatorComponent::TryDiscoverSkeleton()
 
 void Zenith_AnimatorComponent::UpdateWorldMatrix()
 {
-	Zenith_TransformComponent& xTransform = m_xParentEntity.GetComponent<Zenith_TransformComponent>();
+	// ★ THE MODEL'S MATRIX WHEN THERE IS ONE. The controller hands this to the IK
+	// solver, which uses it to move world-space targets into the pose's space -- the
+	// same space the skinned model is drawn in. A Zenith_ModelComponent may carry a
+	// model-space offset (SetModelSpaceOffset), so the bare entity transform is the
+	// wrong frame by exactly that offset and a foot planted on a world-space target
+	// would be planted off the visible foot. Falls back to the transform when the
+	// entity has no model component, which is the pre-offset behaviour verbatim.
 	Zenith_Maths::Matrix4 xWorldMatrix;
-	xTransform.BuildModelMatrix(xWorldMatrix);
+	if (m_pxCachedModelComponent != nullptr)
+	{
+		m_pxCachedModelComponent->BuildRenderMatrix(xWorldMatrix);
+	}
+	else
+	{
+		m_xParentEntity.GetComponent<Zenith_TransformComponent>()
+			.BuildModelMatrix(xWorldMatrix);
+	}
 	Controller().SetWorldMatrix(xWorldMatrix);
 }
 

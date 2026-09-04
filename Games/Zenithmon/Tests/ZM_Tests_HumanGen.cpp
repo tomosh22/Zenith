@@ -9,10 +9,9 @@
 // disk, GPU, or tools-only reach:
 //   1. HumanGen_RosterTotality      -- every id yields a valid recipe + a
 //                                      buildable, ZM_ValidateHuman-passing bundle.
-//   2. HumanGen_SharedSkeletonWellFormed -- ZM_AppendSharedHumanBones emits the
-//                                      exact 16-bone shared rig (count, single
-//                                      root, parent<child, resolvable names,
-//                                      identity bind-local rotation).
+//   2. HumanGen_RigMatchesStickFigure -- the SHARED engine rig on disk still opens
+//                                      with the exact 16 core bones this game's
+//                                      loft weights, at the exact 16 indices.
 //   3. HumanGen_RecipePurity        -- ZM_ResolveHumanRecipe is pure; distinct
 //                                      ids carry distinct synthetic seeds.
 //   4. HumanGen_AssetPathScheme     -- golden per-model + shared refs + truncation.
@@ -76,7 +75,7 @@
 // The body contract, for the ONE cross-cutting clause below: that the generator's
 // MEASURED canonical body and the game's authored body box actually agree.
 #include "Zenithmon/Source/World/ZM_HumanBody.h"
-#include "Flux/MeshAnimation/Flux_AnimationClip.h"
+
 #include "Maths/Zenith_Maths.h"
 #include "Collections/Zenith_HashMap.h"
 #include "Collections/Zenith_Vector.h"
@@ -87,6 +86,13 @@
 #include <limits>    // quiet_NaN / infinity (the W4 fail-closed probes)
 #include <string>
 #include <utility>   // pair
+#include <filesystem>   // exists() for the shared-clip-library probe
+
+// The shared rig this game binds is read back from disk by
+// HumanGen_RigMatchesStickFigure -- the one test that checks the engine asset
+// rather than this game's own arithmetic.
+#include "AssetHandling/Zenith_SkeletonAsset.h"
+#include "AssetHandling/Zenith_AssetRegistry.h"
 
 namespace
 {
@@ -102,9 +108,10 @@ namespace
 	constexpr u_int uHUMAN_MIN_MATERIAL_COLOURS = 3u;
 	constexpr u_int64 ulHUMAN_DOMAIN_SEED_PERTURBATION = 0xA24BAED4963EE407ULL;
 
-	// The 16 shared-skeleton bone names, in the frozen ZM_AppendSharedHumanBones
-	// emit order (index i must resolve to bone i).
-	const char* g_aszSharedBones[uZM_HUMAN_BONE_COUNT] =
+	// The 16 CORE bone names of the shared StickFigure rig, in that rig's own emit
+	// order (index i must resolve to bone i). These are the only bones Zenithmon's
+	// loft weights; the rig carries 35 more past them.
+	const char* g_aszSharedBones[uZM_HUMAN_CORE_BONE_COUNT] =
 	{
 		"Root",          "Spine",         "Neck",     "Head",
 		"LeftUpperArm",  "LeftLowerArm",  "LeftHand",
@@ -113,25 +120,22 @@ namespace
 		"RightUpperLeg", "RightLowerLeg", "RightFoot"
 	};
 
+	// The clip ROLES this game binds, and the SHARED-LIBRARY name each resolves to.
+	// No duration and no looping flag: those are properties of StickFigure's files,
+	// which this game does not author and must not pin.
 	struct HumanClipGold
 	{
 		ZM_HUMAN_ANIM_CLIP m_eClip;
 		const char* m_szName;
-		float m_fDurationSeconds;
-		bool m_bLooping;
 	};
 
 	const HumanClipGold g_axHumanClipGold[ZM_HUMAN_CLIP_COUNT] =
 	{
-		{ ZM_HUMAN_CLIP_IDLE,  "Idle",  2.0f, true  },
-		{ ZM_HUMAN_CLIP_WALK,  "Walk",  1.0f, true  },
-		{ ZM_HUMAN_CLIP_RUN,   "Run",   0.7f, true  },
-		{ ZM_HUMAN_CLIP_TALK,  "Talk",  1.6f, true  },
-		{ ZM_HUMAN_CLIP_WAVE,  "Wave",  1.0f, false },
-		{ ZM_HUMAN_CLIP_POINT, "Point", 0.8f, false },
-		{ ZM_HUMAN_CLIP_CHEER, "Cheer", 1.2f, false },
-		{ ZM_HUMAN_CLIP_HURT,  "Hurt",  0.4f, false },
-		{ ZM_HUMAN_CLIP_FAINT, "Faint", 1.2f, false },
+		{ ZM_HUMAN_CLIP_IDLE,  "Idle"  },
+		{ ZM_HUMAN_CLIP_WALK,  "Walk"  },
+		{ ZM_HUMAN_CLIP_RUN,   "Run"   },
+		{ ZM_HUMAN_CLIP_HURT,  "Hit"   },
+		{ ZM_HUMAN_CLIP_FAINT, "Death" },
 	};
 
 	bool HumanQuatFiniteNormalized(const Zenith_Maths::Quat& xQ)
@@ -150,266 +154,6 @@ namespace
 	{
 		return fabsf(xA.w * xB.w + xA.x * xB.x
 			+ xA.y * xB.y + xA.z * xB.z);
-	}
-
-	bool HumanRotationKeysWellFormed(const Flux_BoneChannel& xChannel,
-		float fDurationTicks, u_int& uFirstBadKey)
-	{
-		uFirstBadKey = 0xFFFFFFFFu;
-		const Zenith_Vector<std::pair<Zenith_Maths::Quat, float>>& xKeys =
-			xChannel.GetRotationKeyframes();
-		if (!std::isfinite(fDurationTicks) || fDurationTicks <= 0.0f || xKeys.GetSize() < 2u)
-		{
-			uFirstBadKey = 0u;
-			return false;
-		}
-
-		float fPreviousTick = -1.0f;
-		for (u_int k = 0u; k < xKeys.GetSize(); ++k)
-		{
-			const float fTick = xKeys.Get(k).second;
-			const bool bTickValid = std::isfinite(fTick)
-				&& fTick >= 0.0f
-				&& fTick <= fDurationTicks
-				&& (k == 0u || fTick > fPreviousTick);
-			if (!bTickValid || !HumanQuatFiniteNormalized(xKeys.Get(k).first))
-			{
-				uFirstBadKey = k;
-				return false;
-			}
-			fPreviousTick = fTick;
-		}
-		return true;
-	}
-
-	bool HumanClipHasTemporalMotion(const Flux_AnimationClip& xClip)
-	{
-		const Zenith_HashMap<std::string, Flux_BoneChannel>& xChannels =
-			xClip.GetBoneChannels();
-		Zenith_HashMap<std::string, Flux_BoneChannel>::Iterator xIt(xChannels);
-		for (; !xIt.Done(); xIt.Next())
-		{
-			const Zenith_Vector<std::pair<Zenith_Maths::Quat, float>>& xKeys =
-				xIt.GetValue().GetRotationKeyframes();
-			if (xKeys.GetSize() < 2u || !HumanQuatFiniteNormalized(xKeys.GetFront().first))
-			{
-				continue;
-			}
-			const Zenith_Maths::Quat& xFirst = xKeys.GetFront().first;
-			for (u_int k = 1u; k < xKeys.GetSize(); ++k)
-			{
-				if (HumanQuatFiniteNormalized(xKeys.Get(k).first)
-					&& HumanQuatAbsDot(xFirst, xKeys.Get(k).first)
-						< fHUMAN_ANIM_ROT_MOTION_DOT)
-				{
-					return true;
-				}
-			}
-		}
-		return false;
-	}
-
-	bool HumanClipMotionEquivalentNormalized(const Flux_AnimationClip& xA,
-		const Flux_AnimationClip& xB)
-	{
-		const Zenith_Maths::Quat xIdentity = glm::identity<Zenith_Maths::Quat>();
-		const float fDurationA = xA.GetDurationInTicks();
-		const float fDurationB = xB.GetDurationInTicks();
-		if (!std::isfinite(fDurationA) || fDurationA <= 0.0f
-			|| !std::isfinite(fDurationB) || fDurationB <= 0.0f)
-		{
-			return true;
-		}
-
-		for (u_int b = 0u; b < uZM_HUMAN_BONE_COUNT; ++b)
-		{
-			const Flux_BoneChannel* pxA = xA.GetBoneChannel(g_aszSharedBones[b]);
-			const Flux_BoneChannel* pxB = xB.GetBoneChannel(g_aszSharedBones[b]);
-			if (pxA == nullptr && pxB == nullptr)
-			{
-				continue;
-			}
-			if (pxA == nullptr || pxB == nullptr)
-			{
-				const Flux_BoneChannel* pxPresent = pxA != nullptr ? pxA : pxB;
-				const Zenith_Vector<std::pair<Zenith_Maths::Quat, float>>& xPresentKeys =
-					pxPresent->GetRotationKeyframes();
-				for (u_int k = 0u; k < xPresentKeys.GetSize(); ++k)
-				{
-					if (!HumanQuatFiniteNormalized(xPresentKeys.Get(k).first))
-					{
-						return true;
-					}
-					if (HumanQuatAbsDot(xPresentKeys.Get(k).first, xIdentity)
-						< fHUMAN_ANIM_ROT_MOTION_DOT)
-					{
-						return false;
-					}
-				}
-				continue;
-			}
-
-			const Zenith_Vector<std::pair<Zenith_Maths::Quat, float>>& xKeysA =
-				pxA->GetRotationKeyframes();
-			const Zenith_Vector<std::pair<Zenith_Maths::Quat, float>>& xKeysB =
-				pxB->GetRotationKeyframes();
-			if ((xKeysA.GetSize() == 0u) != (xKeysB.GetSize() == 0u))
-			{
-				const Zenith_Vector<std::pair<Zenith_Maths::Quat, float>>& xPresentKeys =
-					xKeysA.GetSize() != 0u ? xKeysA : xKeysB;
-				for (u_int k = 0u; k < xPresentKeys.GetSize(); ++k)
-				{
-					if (!HumanQuatFiniteNormalized(xPresentKeys.Get(k).first))
-					{
-						return true;
-					}
-					if (HumanQuatAbsDot(xPresentKeys.Get(k).first, xIdentity)
-						< fHUMAN_ANIM_ROT_MOTION_DOT)
-					{
-						return false;
-					}
-				}
-				continue;
-			}
-			if (xKeysA.GetSize() == 0u)
-			{
-				continue;
-			}
-
-			for (u_int k = 0u; k < xKeysA.GetSize(); ++k)
-			{
-				const float fTick = xKeysA.Get(k).second;
-				if (!std::isfinite(fTick) || fTick < 0.0f || fTick > fDurationA)
-				{
-					return true;
-				}
-				const Zenith_Maths::Quat xOther = pxB->SampleRotation(
-					(fTick / fDurationA) * fDurationB);
-				if (HumanQuatFiniteNormalized(xKeysA.Get(k).first)
-					&& HumanQuatFiniteNormalized(xOther)
-					&& HumanQuatAbsDot(xKeysA.Get(k).first, xOther)
-						< fHUMAN_ANIM_ROT_MOTION_DOT)
-				{
-					return false;
-				}
-			}
-			for (u_int k = 0u; k < xKeysB.GetSize(); ++k)
-			{
-				const float fTick = xKeysB.Get(k).second;
-				if (!std::isfinite(fTick) || fTick < 0.0f || fTick > fDurationB)
-				{
-					return true;
-				}
-				const Zenith_Maths::Quat xOther = pxA->SampleRotation(
-					(fTick / fDurationB) * fDurationA);
-				if (HumanQuatFiniteNormalized(xKeysB.Get(k).first)
-					&& HumanQuatFiniteNormalized(xOther)
-					&& HumanQuatAbsDot(xKeysB.Get(k).first, xOther)
-						< fHUMAN_ANIM_ROT_MOTION_DOT)
-				{
-					return false;
-				}
-			}
-		}
-		return true;
-	}
-
-	template <u_int uCount>
-	bool HumanClipHasAllChannels(const Flux_AnimationClip& xClip,
-		const char* const (&aszRequired)[uCount], const char*& szMissing)
-	{
-		szMissing = nullptr;
-		for (u_int i = 0u; i < uCount; ++i)
-		{
-			if (!xClip.HasBoneChannel(aszRequired[i]))
-			{
-				szMissing = aszRequired[i];
-				return false;
-			}
-		}
-		return true;
-	}
-
-	bool HumanClipHasCompleteArmChain(const Flux_AnimationClip& xClip, bool bLeft)
-	{
-		const char* szUpper = bLeft ? "LeftUpperArm" : "RightUpperArm";
-		const char* szLower = bLeft ? "LeftLowerArm" : "RightLowerArm";
-		const char* szHand = bLeft ? "LeftHand" : "RightHand";
-		return xClip.HasBoneChannel(szUpper)
-			&& xClip.HasBoneChannel(szLower)
-			&& xClip.HasBoneChannel(szHand);
-	}
-
-	bool HumanClipHasSemanticChannels(ZM_HUMAN_ANIM_CLIP eClip,
-		const Flux_AnimationClip& xClip, const char*& szMissing)
-	{
-		switch (eClip)
-		{
-		case ZM_HUMAN_CLIP_IDLE:
-		{
-			const char* const aszRequired[] = { "Spine", "Neck", "Head" };
-			return HumanClipHasAllChannels(xClip, aszRequired, szMissing);
-		}
-		case ZM_HUMAN_CLIP_WALK:
-		case ZM_HUMAN_CLIP_RUN:
-		{
-			const char* const aszRequired[] =
-			{
-				"Spine", "Head", "LeftUpperArm", "RightUpperArm",
-				"LeftUpperLeg", "LeftLowerLeg", "LeftFoot",
-				"RightUpperLeg", "RightLowerLeg", "RightFoot"
-			};
-			return HumanClipHasAllChannels(xClip, aszRequired, szMissing);
-		}
-		case ZM_HUMAN_CLIP_TALK:
-		{
-			const char* const aszRequired[] = { "Spine", "Neck", "Head" };
-			if (!HumanClipHasAllChannels(xClip, aszRequired, szMissing))
-			{
-				return false;
-			}
-			if (!HumanClipHasCompleteArmChain(xClip, true)
-				&& !HumanClipHasCompleteArmChain(xClip, false))
-			{
-				szMissing = "either complete arm chain";
-				return false;
-			}
-			return true;
-		}
-		case ZM_HUMAN_CLIP_WAVE:
-		case ZM_HUMAN_CLIP_POINT:
-			if (!HumanClipHasCompleteArmChain(xClip, true)
-				&& !HumanClipHasCompleteArmChain(xClip, false))
-			{
-				szMissing = "either complete arm chain";
-				return false;
-			}
-			return true;
-		case ZM_HUMAN_CLIP_CHEER:
-		{
-			const char* const aszRequired[] =
-				{ "Spine", "LeftUpperArm", "LeftLowerArm", "RightUpperArm", "RightLowerArm" };
-			return HumanClipHasAllChannels(xClip, aszRequired, szMissing);
-		}
-		case ZM_HUMAN_CLIP_HURT:
-		{
-			const char* const aszRequired[] =
-				{ "Spine", "Neck", "Head", "LeftUpperArm", "RightUpperArm" };
-			return HumanClipHasAllChannels(xClip, aszRequired, szMissing);
-		}
-		case ZM_HUMAN_CLIP_FAINT:
-		{
-			const char* const aszRequired[] =
-			{
-				"Spine", "Neck", "Head", "LeftUpperLeg", "LeftLowerLeg",
-				"RightUpperLeg", "RightLowerLeg"
-			};
-			return HumanClipHasAllChannels(xClip, aszRequired, szMissing);
-		}
-		default:
-			szMissing = "known clip semantic contract";
-			return false;
-		}
 	}
 
 	// A quaternion is the identity bind-local rotation (w=1, x=y=z=0) within tol.
@@ -575,14 +319,6 @@ namespace
 	// deltas, and deltas of shifted floats do not round identically to deltas of
 	// unshifted ones, so anchoring afterwards would fail the byte-exact suffix
 	// comparisons for a reason that is not a defect.
-	void ApplyBindSpaceAnchor(ZM_GenMesh& xMesh)
-	{
-		for (u_int u = 0u; u < xMesh.GetNumVerts(); ++u)
-		{
-			xMesh.m_xPositions.Get(u).y -= fZM_HUMAN_MESH_CENTRE_Y;
-		}
-	}
-
 	bool MeshSafeForFinalization(const ZM_GenMesh& xMesh, u_int& uFirstBadIndex)
 	{
 		uFirstBadIndex = 0xFFFFFFFFu;
@@ -677,7 +413,7 @@ namespace
 			bool bRigidBoneMatched = iRequiredRigidBone < 0;
 			for (u_int c = 0u; c < 4u; ++c)
 			{
-				bValid &= xIndices[c] < uZM_HUMAN_BONE_COUNT;
+				bValid &= xIndices[c] < uZM_HUMAN_CORE_BONE_COUNT;
 				bValid &= xWeights[c] >= 0.0f && xWeights[c] <= 1.0f;
 				fWeightSum += xWeights[c];
 				if (xWeights[c] > fHUMAN_INFLUENCE_EPS)
@@ -953,8 +689,11 @@ ZENITH_TEST(ZM_Gen, HumanGen_RosterTotality)
 
 		ZENITH_ASSERT_GT(xHuman.m_xMesh.GetNumVerts(), 0u, "human %u mesh empty", id);
 		ZENITH_ASSERT_GT(xHuman.m_xMesh.GetNumTris(), 0u, "human %u has no triangles", id);
-		ZENITH_ASSERT_EQ(xHuman.m_xMesh.GetNumBones(), uZM_HUMAN_BONE_COUNT,
-			"human %u does not carry the shared 16-bone skeleton", id);
+		// The mesh carries NO rig: it refers to the shared StickFigure skeleton by
+		// index and ZM_GenBakeMeshWithSharedSkeleton writes that reference. An
+		// emitted bone here would be a second, divergent copy of an engine asset.
+		ZENITH_ASSERT_EQ(xHuman.m_xMesh.GetNumBones(), 0u,
+			"human %u must emit no bones of its own", id);
 
 		const ZM_HumanValidation xVal = ZM_ValidateHuman(xHuman);
 		ZENITH_ASSERT_TRUE(xVal.m_bAllValid, "human %u failed the ZM_ValidateHuman rollup", id);
@@ -964,63 +703,14 @@ ZENITH_TEST(ZM_Gen, HumanGen_RosterTotality)
 			"human %u weights do not sum to 1 (bad vert %u)", id, xVal.m_uFirstBadVertex);
 		ZENITH_ASSERT_TRUE(xVal.m_bWeightsAtMostTwo, "human %u has >2 influences", id);
 		ZENITH_ASSERT_TRUE(xVal.m_bBonesWithinCap, "human %u exceeds the shared bone cap", id);
-		ZENITH_ASSERT_TRUE(xVal.m_bBoneCountMatchesShared, "human %u bone count != 16", id);
-		ZENITH_ASSERT_TRUE(xVal.m_bHasSingleRoot, "human %u skeleton is not single-rooted", id);
-		ZENITH_ASSERT_TRUE(xVal.m_bParentsBeforeChildren, "human %u violates parent-before-child", id);
+		ZENITH_ASSERT_TRUE(xVal.m_bSkinIndicesInCorePrefix,
+			"human %u weights a bone outside the rig's core prefix (first bad vertex %u)",
+			id, xVal.m_uFirstOutOfPrefixVertex);
 		ZENITH_ASSERT_TRUE(xVal.m_bAlbedoNonEmpty, "human %u placeholder albedo is empty", id);
 
 		++uTested;
 	}
 	ZENITH_ASSERT_GT(uTested, 0u, "no humans exercised the roster-totality gate");
-}
-
-// ############################################################################
-// 2. Shared skeleton is well-formed (the frozen 16-bone rig)
-// ############################################################################
-
-// ZM_AppendSharedHumanBones emits EXACTLY the 16-bone shared rig: right count,
-// exactly one root (parent -1), every parent strictly precedes its child, each
-// expected name resolves to its emit index, and EVERY bone carries the identity
-// bind-local rotation (mandatory -- the rotation-only shared clips are absolute-
-// local, so a non-identity bind rotation would pose every model wrong).
-ZENITH_TEST(ZM_Gen, HumanGen_SharedSkeletonWellFormed)
-{
-	ZM_GenMesh xMesh;
-	ZM_AppendSharedHumanBones(xMesh);
-
-	ZENITH_ASSERT_EQ(xMesh.GetNumBones(), uZM_HUMAN_BONE_COUNT,
-		"shared skeleton must emit exactly 16 bones");
-
-	u_int uRootCount = 0u;
-	for (u_int u = 0; u < xMesh.GetNumBones(); ++u)
-	{
-		const ZM_GenBone& xBone = xMesh.m_xBones.Get(u);
-
-		// Single root + parent-before-child.
-		if (xBone.m_iParent == -1)
-		{
-			++uRootCount;
-		}
-		else
-		{
-			ZENITH_ASSERT_LT(xBone.m_iParent, (int)u,
-				"bone %u parent %d does not precede it (parent-before-child)", u, xBone.m_iParent);
-		}
-
-		// Identity bind-local rotation on EVERY bone.
-		ZENITH_ASSERT_TRUE(QuatIsIdentity(xBone.m_xLocalRot),
-			"bone %u (%s) bind-local rotation is not identity", u, xBone.m_szName);
-	}
-	ZENITH_ASSERT_EQ(uRootCount, 1u, "shared skeleton must have exactly one root");
-
-	// Every expected name resolves to its emit index (the index-keyed skin + name-
-	// keyed clip-transfer contract).
-	for (u_int b = 0; b < uZM_HUMAN_BONE_COUNT; ++b)
-	{
-		const int iFound = ZM_GenMeshFindBone(xMesh, g_aszSharedBones[b]);
-		ZENITH_ASSERT_EQ(iFound, (int)b,
-			"shared bone name '%s' must resolve to index %u", g_aszSharedBones[b], b);
-	}
 }
 
 // ############################################################################
@@ -1068,17 +758,18 @@ ZENITH_TEST(ZM_Gen, HumanGen_AssetPathScheme)
 	ZENITH_ASSERT_TRUE(
 		ZM_HumanSharedAssetPath(ZM_HUMAN_SHARED_ASSET_SKELETON, acRef, sizeof(acRef)),
 		"shared skeleton ref must fit");
-	ZENITH_ASSERT_STREQ(acRef, "game:Humans/Shared/Human.zskel", "shared skeleton ref scheme drifted");
+	ZENITH_ASSERT_STREQ(acRef, "engine:Meshes/StickFigure/StickFigure.zskel",
+		"shared skeleton ref scheme drifted");
 
 	ZENITH_ASSERT_TRUE(
 		ZM_HumanSharedAssetPath(ZM_HUMAN_SHARED_ASSET_ANIM_IDLE, acRef, sizeof(acRef)),
 		"shared idle-clip ref must fit");
-	ZENITH_ASSERT_STREQ(acRef, "game:Humans/Shared/Human_Idle.zanim", "shared idle-clip ref scheme drifted");
+	ZENITH_ASSERT_STREQ(acRef, "engine:Meshes/StickFigure/StickFigure_Idle.zanim", "shared idle-clip ref scheme drifted");
 
 	ZENITH_ASSERT_TRUE(
 		ZM_HumanSharedAssetPath(ZM_HUMAN_SHARED_ASSET_ANIM_FAINT, acRef, sizeof(acRef)),
 		"shared faint-clip ref must fit");
-	ZENITH_ASSERT_STREQ(acRef, "game:Humans/Shared/Human_Faint.zanim", "shared faint-clip ref scheme drifted");
+	ZENITH_ASSERT_STREQ(acRef, "engine:Meshes/StickFigure/StickFigure_Death.zanim", "shared faint-clip ref scheme drifted");
 
 	// --- Per-model refs for a known id (PlayerM) ---
 	ZENITH_ASSERT_TRUE(
@@ -1118,12 +809,16 @@ ZENITH_TEST(ZM_Gen, HumanGen_AssetPathScheme)
 // 5. The frozen 9-clip metadata (golden literals)
 // ############################################################################
 
-// Golden-locks the shared 9-clip set frozen at SC1: exact names, durations, loop
-// flags, shared paths, and the metadata SC4 stamps on each in-memory clip.
+// Golden-locks the clip ROLES this game binds: exact shared-library names and the
+// engine paths each resolves to. Durations and loop flags are deliberately absent
+// -- they belong to files this game does not author.
 ZENITH_TEST(ZM_Gen, HumanGen_ClipMetadataGolden)
 {
-	static_assert((u_int)ZM_HUMAN_CLIP_COUNT == 9u,
-		"the shared human clip enum must stay complete at nine entries");
+	// FIVE roles: Idle, Walk, Run, Hurt, Faint. It was nine; Talk, Wave, Point and
+	// Cheer were retired with the game-owned clip library rather than reimplemented,
+	// because nothing in the game ever played them.
+	static_assert((u_int)ZM_HUMAN_CLIP_COUNT == 5u,
+		"the human clip enum must stay complete at five roles");
 	// ★ WHAT THIS NUMBER IS MADE OF, so the next reader knows which additions are
 	// legitimate. The per-model kinds are: mesh, albedo, normal, roughness-metallic,
 	// occlusion, material, model. It was 4 until humans gained the full PBR map set
@@ -1142,8 +837,6 @@ ZENITH_TEST(ZM_Gen, HumanGen_ClipMetadataGolden)
 	static_assert((u_int)ZM_HUMAN_SHARED_ASSET_KIND_COUNT
 		== (u_int)ZM_HUMAN_SHARED_ASSET_ANIM_IDLE + (u_int)ZM_HUMAN_CLIP_COUNT,
 		"the shared asset enum must contain one path for every human clip");
-	static_assert(uZM_CREATURE_ANIM_TICKS_PER_SECOND == 24u,
-		"human clips reuse the pinned 24 ticks-per-second animation kit");
 
 	for (u_int c = 0; c < (u_int)ZM_HUMAN_CLIP_COUNT; ++c)
 	{
@@ -1152,10 +845,6 @@ ZENITH_TEST(ZM_Gen, HumanGen_ClipMetadataGolden)
 			"clip-golden row %u no longer matches the contiguous clip enum", c);
 		ZENITH_ASSERT_STREQ(ZM_HumanClipName(xG.m_eClip), xG.m_szName,
 			"clip %u name drifted", c);
-		ZENITH_ASSERT_EQ(ZM_HumanClipDurationSeconds(xG.m_eClip), xG.m_fDurationSeconds,
-			"clip %u duration drifted", c);
-		ZENITH_ASSERT_TRUE(ZM_HumanClipLooping(xG.m_eClip) == xG.m_bLooping,
-			"clip %u loop flag drifted", c);
 
 		char acPath[256];
 		const ZM_HUMAN_SHARED_ASSET_KIND eKind = (ZM_HUMAN_SHARED_ASSET_KIND)
@@ -1163,8 +852,12 @@ ZENITH_TEST(ZM_Gen, HumanGen_ClipMetadataGolden)
 		const bool bPathFits = ZM_HumanSharedAssetPath(eKind, acPath, sizeof(acPath));
 		ZENITH_ASSERT_TRUE(bPathFits, "shared path for clip %u must fit", c);
 		char acExpected[256];
+		// ★ "engine:", NOT "game:". This is the assertion that would have caught the
+		// migration silently half-done: a clip ref left under game: resolves to a
+		// path no bake writes any more, the model loads with no animation, and every
+		// structural test still passes because the MESH is fine.
 		const int iExpectedLength = snprintf(acExpected, sizeof(acExpected),
-			"game:Humans/Shared/Human_%s.zanim", xG.m_szName);
+			"engine:Meshes/StickFigure/StickFigure_%s.zanim", xG.m_szName);
 		const bool bExpectedFits = iExpectedLength >= 0
 			&& (u_int)iExpectedLength < (u_int)sizeof(acExpected);
 		ZENITH_ASSERT_TRUE(bExpectedFits, "golden shared path for clip %u must fit", c);
@@ -1173,17 +866,6 @@ ZENITH_TEST(ZM_Gen, HumanGen_ClipMetadataGolden)
 			ZENITH_ASSERT_STREQ(acPath, acExpected,
 				"clip %u no longer maps to its one shared path", c);
 		}
-
-		Flux_AnimationClip xBuilt;
-		ZM_BuildHumanClip(xG.m_eClip, xBuilt);
-		ZENITH_ASSERT_STREQ(xBuilt.GetName().c_str(), xG.m_szName,
-			"built clip %u name was not stamped from the golden metadata", c);
-		ZENITH_ASSERT_EQ(xBuilt.GetDuration(), xG.m_fDurationSeconds,
-			"built clip %u duration was not stamped from the golden metadata", c);
-		ZENITH_ASSERT_EQ(xBuilt.GetTicksPerSecond(), uZM_CREATURE_ANIM_TICKS_PER_SECOND,
-			"built clip %u ticks-per-second must be the shared 24-tps value", c);
-		ZENITH_ASSERT_TRUE(xBuilt.IsLooping() == xG.m_bLooping,
-			"built clip %u looping flag was not stamped from the golden metadata", c);
 
 		for (u_int other = c + 1u; other < (u_int)ZM_HUMAN_CLIP_COUNT; ++other)
 		{
@@ -1303,7 +985,7 @@ ZENITH_TEST(ZM_Gen, HumanGen_StructuralInvariants)
 			"human %u must carry one bone-index tuple per vertex", id);
 		ZENITH_ASSERT_TRUE(bBoneWeightsComplete,
 			"human %u must carry one bone-weight tuple per vertex", id);
-		ZENITH_ASSERT_EQ(xMesh.GetNumBones(), uZM_HUMAN_BONE_COUNT,
+		ZENITH_ASSERT_EQ(xMesh.GetNumBones(), 0u,
 			"human %u must carry exactly the shared 16 bones", id);
 
 		if (bHasVerts)
@@ -1314,7 +996,7 @@ ZENITH_TEST(ZM_Gen, HumanGen_StructuralInvariants)
 
 		if (bSafeForMeshAlgorithms)
 		{
-			const ZM_GenMeshValidation xVal = ZM_ValidateGenMesh(xMesh, uZM_HUMAN_BONE_COUNT);
+			const ZM_GenMeshValidation xVal = ZM_ValidateGenMesh(xMesh, uZM_STICKFIGURE_BONE_COUNT);
 			ZENITH_ASSERT_TRUE(xVal.m_bWindingOutward,
 				"human %u has inward winding (bad tri %u)", id, xVal.m_uFirstBadTriangle);
 			ZENITH_ASSERT_TRUE(xVal.m_bBoundsNonDegen, "human %u has degenerate bounds", id);
@@ -1361,7 +1043,7 @@ ZENITH_TEST(ZM_Gen, HumanGen_StructuralInvariants)
 				float fWeightSum = 0.0f;
 				for (u_int c = 0u; c < 4u; ++c)
 				{
-					ZENITH_ASSERT_LT(xIndices[c], uZM_HUMAN_BONE_COUNT,
+					ZENITH_ASSERT_LT(xIndices[c], uZM_HUMAN_CORE_BONE_COUNT,
 						"human %u vertex %u influence %u references bone %u", id, v, c, xIndices[c]);
 					ZENITH_ASSERT_TRUE(xWeights[c] >= 0.0f && xWeights[c] <= 1.0f,
 						"human %u vertex %u influence %u weight is outside [0,1]", id, v, c);
@@ -1391,64 +1073,6 @@ ZENITH_TEST(ZM_Gen, HumanGen_StructuralInvariants)
 	}
 	ZENITH_ASSERT_EQ(uTested, (u_int)ZM_HUMAN_COUNT,
 		"structural gate did not exercise the complete human roster");
-}
-
-// ############################################################################
-// 8. Every per-model skeleton is the canonical shared skeleton
-// ############################################################################
-
-ZENITH_TEST(ZM_Gen, HumanGen_PerModelBonesMatchShared)
-{
-	ZM_GenMesh xShared;
-	ZM_AppendSharedHumanBones(xShared);
-	ZENITH_ASSERT_EQ(xShared.GetNumBones(), uZM_HUMAN_BONE_COUNT,
-		"canonical shared skeleton must contain exactly 16 bones");
-
-	u_int uTested = 0u;
-	for (u_int id = 0u; id < (u_int)ZM_HUMAN_COUNT; ++id)
-	{
-		ZM_GenMesh xMesh;
-		ZM_BuildHumanMesh(ZM_ResolveHumanRecipe((ZM_HUMAN_ID)id), xMesh);
-		ZENITH_ASSERT_EQ(xMesh.GetNumBones(), uZM_HUMAN_BONE_COUNT,
-			"human %u bone count differs from the shared skeleton", id);
-
-		if (xMesh.GetNumBones() == uZM_HUMAN_BONE_COUNT
-			&& xShared.GetNumBones() == uZM_HUMAN_BONE_COUNT)
-		{
-			for (u_int b = 0u; b < uZM_HUMAN_BONE_COUNT; ++b)
-			{
-				const ZM_GenBone& xBone = xMesh.m_xBones.Get(b);
-				const ZM_GenBone& xReference = xShared.m_xBones.Get(b);
-				ZENITH_ASSERT_STREQ(xBone.m_szName, g_aszSharedBones[b],
-					"human %u bone %u name/order differs from the frozen rig", id, b);
-				ZENITH_ASSERT_STREQ(xBone.m_szName, xReference.m_szName,
-					"human %u bone %u name differs from the canonical emit", id, b);
-				ZENITH_ASSERT_EQ(ZM_GenMeshFindBone(xMesh, g_aszSharedBones[b]), (int)b,
-					"human %u shared bone '%s' does not resolve to index %u", id, g_aszSharedBones[b], b);
-				ZENITH_ASSERT_TRUE(BoneFieldsEqual(xBone, xReference),
-					"human %u bone %u bind-local data differs from the shared skeleton", id, b);
-			}
-		}
-
-		ZENITH_ASSERT_EQ(xMesh.m_xBoneIndices.GetSize(), xMesh.GetNumVerts(),
-			"human %u must carry one bone-index tuple per vertex", id);
-		if (xMesh.m_xBoneIndices.GetSize() == xMesh.GetNumVerts())
-		{
-			for (u_int v = 0u; v < xMesh.m_xBoneIndices.GetSize(); ++v)
-			{
-				const glm::uvec4& xIndices = xMesh.m_xBoneIndices.Get(v);
-				for (u_int c = 0u; c < 4u; ++c)
-				{
-					ZENITH_ASSERT_LT(xIndices[c], uZM_HUMAN_BONE_COUNT,
-						"human %u vertex %u influence %u references bone %u", id, v, c, xIndices[c]);
-				}
-			}
-		}
-
-		++uTested;
-	}
-	ZENITH_ASSERT_EQ(uTested, (u_int)ZM_HUMAN_COUNT,
-		"shared-skeleton gate did not exercise the complete human roster");
 }
 
 // ############################################################################
@@ -1849,10 +1473,12 @@ ZENITH_TEST(ZM_Gen, HumanGen_HairStyleSilhouettes)
 {
 	static_assert(uZM_HUMAN_HAIR_STYLE_COUNT == 6u,
 		"SC3 freezes exactly six human hair geometry styles");
-	ZM_GenMesh xShared;
-	ZM_AppendSharedHumanBones(xShared);
-	const int iHead = ZM_GenMeshFindBone(xShared, "Head");
-	ZENITH_ASSERT_GE(iHead, 0, "shared human rig must expose the Head bone");
+	// The core-prefix indices, straight from the shared rig's frozen order. There is
+	// no mesh-local bone array to search now -- ZM_HumanRigMatchesStickFigure is what
+	// proves these indices still name these bones in the real .zskel.
+	const int iHead = 3;
+	ZENITH_ASSERT_STREQ(g_aszSharedBones[iHead], "Head",
+		"core bone index %d is no longer Head", iHead);
 
 	ZM_GenMesh axHairOnly[uZM_HUMAN_HAIR_STYLE_COUNT];
 	ZM_GenMesh axFull[uZM_HUMAN_HAIR_STYLE_COUNT];
@@ -1864,7 +1490,6 @@ ZENITH_TEST(ZM_Gen, HumanGen_HairStyleSilhouettes)
 		xRecipe.m_eAttachment = ZM_HUMAN_ATTACHMENT_NONE;
 
 		ZM_GenMesh& xHairA = axHairOnly[style];
-		ZM_AppendSharedHumanBones(xHairA);
 		const u_int uHairFirstVert = xHairA.GetNumVerts();
 		ZM_AppendHumanHair(xRecipe, xHairA);
 		u_int uFirstBadIndex = 0xFFFFFFFFu;
@@ -1873,13 +1498,11 @@ ZENITH_TEST(ZM_Gen, HumanGen_HairStyleSilhouettes)
 			"hair style %u is unsafe to finalise (bad index slot %u)", style, uFirstBadIndex);
 		if (bSafeToFinalise)
 		{
-			ApplyBindSpaceAnchor(xHairA);
 			ZM_GenGenerateTangents(xHairA);
 			ZM_GenNormalizeSkinWeights(xHairA);
 		}
 
 		ZM_GenMesh xHairB;
-		ZM_AppendSharedHumanBones(xHairB);
 		ZM_AppendHumanHair(xRecipe, xHairB);
 		u_int uSecondBadIndex = 0xFFFFFFFFu;
 		const bool bSecondSafeToFinalise = MeshSafeForFinalization(xHairB, uSecondBadIndex);
@@ -1888,7 +1511,6 @@ ZENITH_TEST(ZM_Gen, HumanGen_HairStyleSilhouettes)
 			style, uSecondBadIndex);
 		if (bSecondSafeToFinalise)
 		{
-			ApplyBindSpaceAnchor(xHairB);
 			ZM_GenGenerateTangents(xHairB);
 			ZM_GenNormalizeSkinWeights(xHairB);
 		}
@@ -1899,10 +1521,8 @@ ZENITH_TEST(ZM_Gen, HumanGen_HairStyleSilhouettes)
 			"hair style %u appended no silhouette vertices", style);
 		ZENITH_ASSERT_GT(xHairA.GetNumTris(), 0u,
 			"hair style %u appended no complete triangles", style);
-		ZENITH_ASSERT_EQ(xHairA.GetNumBones(), uZM_HUMAN_BONE_COUNT,
-			"hair style %u changed the shared bone count", style);
-		ZENITH_ASSERT_TRUE(MeshBonesEqual(xHairA, xShared),
-			"hair style %u changed shared bone data", style);
+		ZENITH_ASSERT_EQ(xHairA.GetNumBones(), 0u,
+			"hair style %u must emit no bones of its own", style);
 		ZENITH_ASSERT_TRUE(BoundsFiniteAndSane(xHairA),
 			"hair style %u has non-finite, degenerate, or unreasonable bounds", style);
 
@@ -1913,7 +1533,7 @@ ZENITH_TEST(ZM_Gen, HumanGen_HairStyleSilhouettes)
 			style, uValidationBadIndex);
 		if (bSafeToValidate)
 		{
-			const ZM_GenMeshValidation xVal = ZM_ValidateGenMesh(xHairA, uZM_HUMAN_BONE_COUNT);
+			const ZM_GenMeshValidation xVal = ZM_ValidateGenMesh(xHairA, uZM_STICKFIGURE_BONE_COUNT);
 			ZENITH_ASSERT_TRUE(xVal.m_bWindingOutward,
 				"hair style %u has inward winding (bad tri %u)", style, xVal.m_uFirstBadTriangle);
 			ZENITH_ASSERT_TRUE(xVal.m_bBoundsNonDegen, "hair style %u has degenerate bounds", style);
@@ -1922,7 +1542,7 @@ ZENITH_TEST(ZM_Gen, HumanGen_HairStyleSilhouettes)
 			ZENITH_ASSERT_TRUE(xVal.m_bWeightsAtMostTwo,
 				"hair style %u exceeds the two-influence loft contract", style);
 			ZENITH_ASSERT_TRUE(xVal.m_bBonesWithinCap,
-				"hair style %u exceeds the shared 16-bone cap", style);
+				"hair style %u exceeds the shared rig bone cap", style);
 
 			u_int uFirstBadVertex = 0xFFFFFFFFu;
 			ZENITH_ASSERT_TRUE(VertexRangeValid(xHairA, uHairFirstVert, xHairA.GetNumVerts(),
@@ -1936,10 +1556,8 @@ ZENITH_TEST(ZM_Gen, HumanGen_HairStyleSilhouettes)
 		ZM_BuildHumanMesh(xRecipe, xFullAgain);
 		ZENITH_ASSERT_TRUE(ZM_HumanMeshEqual(axFull[style], xFullAgain),
 			"complete mesh for hair style %u is not deterministic", style);
-		ZENITH_ASSERT_EQ(axFull[style].GetNumBones(), uZM_HUMAN_BONE_COUNT,
-			"complete mesh for hair style %u changed the shared bone count", style);
-		ZENITH_ASSERT_TRUE(MeshBonesEqual(axFull[style], xShared),
-			"complete mesh for hair style %u changed shared bone data", style);
+		ZENITH_ASSERT_EQ(axFull[style].GetNumBones(), 0u,
+			"complete mesh for hair style %u must emit no bones of its own", style);
 
 		ZM_Human xHuman;
 		BuildHumanFromRecipe(xRecipe, xHuman);
@@ -2041,12 +1659,12 @@ ZENITH_TEST(ZM_Gen, HumanGen_AttachmentSilhouettes)
 {
 	static_assert(ZM_HUMAN_ATTACHMENT_COUNT == 6u,
 		"SC3 freezes NONE plus five human attachment silhouettes");
-	ZM_GenMesh xShared;
-	ZM_AppendSharedHumanBones(xShared);
-	const int iHead = ZM_GenMeshFindBone(xShared, "Head");
-	const int iSpine = ZM_GenMeshFindBone(xShared, "Spine");
-	ZENITH_ASSERT_GE(iHead, 0, "shared human rig must expose the Head bone");
-	ZENITH_ASSERT_GE(iSpine, 0, "shared human rig must expose the Spine bone");
+	const int iHead = 3;
+	const int iSpine = 1;
+	ZENITH_ASSERT_STREQ(g_aszSharedBones[iHead], "Head",
+		"core bone index %d is no longer Head", iHead);
+	ZENITH_ASSERT_STREQ(g_aszSharedBones[iSpine], "Spine",
+		"core bone index %d is no longer Spine", iSpine);
 	ZM_GenMesh axAttachmentOnly[ZM_HUMAN_ATTACHMENT_COUNT];
 	ZM_GenMesh axFull[ZM_HUMAN_ATTACHMENT_COUNT];
 	ZM_GenImage axAlbedo[ZM_HUMAN_ATTACHMENT_COUNT];
@@ -2077,7 +1695,6 @@ ZENITH_TEST(ZM_Gen, HumanGen_AttachmentSilhouettes)
 		}
 
 		ZM_GenMesh& xAttachmentA = axAttachmentOnly[attachment];
-		ZM_AppendSharedHumanBones(xAttachmentA);
 		const ZM_GenMesh xBeforeAppend = xAttachmentA;
 		const u_int uFirstAttachmentVert = xAttachmentA.GetNumVerts();
 		ZM_AppendHumanAttachment(xRecipe, xAttachmentA);
@@ -2098,13 +1715,11 @@ ZENITH_TEST(ZM_Gen, HumanGen_AttachmentSilhouettes)
 				attachment, uFirstBadIndex);
 			if (bSafeToFinalise)
 			{
-				ApplyBindSpaceAnchor(xAttachmentA);
 				ZM_GenGenerateTangents(xAttachmentA);
 				ZM_GenNormalizeSkinWeights(xAttachmentA);
 			}
 
 			ZM_GenMesh xAttachmentB;
-			ZM_AppendSharedHumanBones(xAttachmentB);
 			ZM_AppendHumanAttachment(xRecipe, xAttachmentB);
 			u_int uSecondBadIndex = 0xFFFFFFFFu;
 			const bool bSecondSafeToFinalise = MeshSafeForFinalization(xAttachmentB, uSecondBadIndex);
@@ -2113,7 +1728,6 @@ ZENITH_TEST(ZM_Gen, HumanGen_AttachmentSilhouettes)
 				attachment, uSecondBadIndex);
 			if (bSecondSafeToFinalise)
 			{
-				ApplyBindSpaceAnchor(xAttachmentB);
 				ZM_GenGenerateTangents(xAttachmentB);
 				ZM_GenNormalizeSkinWeights(xAttachmentB);
 			}
@@ -2124,10 +1738,8 @@ ZENITH_TEST(ZM_Gen, HumanGen_AttachmentSilhouettes)
 				"attachment %u appended no silhouette vertices", attachment);
 			ZENITH_ASSERT_GT(xAttachmentA.GetNumTris(), 0u,
 				"attachment %u appended no complete triangles", attachment);
-			ZENITH_ASSERT_EQ(xAttachmentA.GetNumBones(), uZM_HUMAN_BONE_COUNT,
-				"attachment %u changed the shared bone count", attachment);
-			ZENITH_ASSERT_TRUE(MeshBonesEqual(xAttachmentA, xShared),
-				"attachment %u changed shared bone data", attachment);
+			ZENITH_ASSERT_EQ(xAttachmentA.GetNumBones(), 0u,
+				"attachment %u must emit no bones of its own", attachment);
 			ZENITH_ASSERT_TRUE(BoundsFiniteAndSane(xAttachmentA),
 				"attachment %u has non-finite, degenerate, or unreasonable bounds", attachment);
 
@@ -2139,7 +1751,7 @@ ZENITH_TEST(ZM_Gen, HumanGen_AttachmentSilhouettes)
 			if (bSafeToValidate)
 			{
 				const ZM_GenMeshValidation xVal = ZM_ValidateGenMesh(
-					xAttachmentA, uZM_HUMAN_BONE_COUNT);
+					xAttachmentA, uZM_STICKFIGURE_BONE_COUNT);
 				ZENITH_ASSERT_TRUE(xVal.m_bWindingOutward,
 					"attachment %u has inward winding (bad tri %u)",
 					attachment, xVal.m_uFirstBadTriangle);
@@ -2170,10 +1782,8 @@ ZENITH_TEST(ZM_Gen, HumanGen_AttachmentSilhouettes)
 		ZM_BuildHumanMesh(xRecipe, xFullAgain);
 		ZENITH_ASSERT_TRUE(ZM_HumanMeshEqual(axFull[attachment], xFullAgain),
 			"complete mesh for attachment %u is not deterministic", attachment);
-		ZENITH_ASSERT_EQ(axFull[attachment].GetNumBones(), uZM_HUMAN_BONE_COUNT,
-			"complete mesh for attachment %u changed the shared bone count", attachment);
-		ZENITH_ASSERT_TRUE(MeshBonesEqual(axFull[attachment], xShared),
-			"complete mesh for attachment %u changed shared bone data", attachment);
+		ZENITH_ASSERT_EQ(axFull[attachment].GetNumBones(), 0u,
+			"complete mesh for attachment %u must emit no bones of its own", attachment);
 		ZENITH_ASSERT_TRUE(BoundsFiniteAndSane(axFull[attachment]),
 			"complete mesh for attachment %u has invalid bounds", attachment);
 		u_int uFullBadIndex = 0xFFFFFFFFu;
@@ -2184,7 +1794,7 @@ ZENITH_TEST(ZM_Gen, HumanGen_AttachmentSilhouettes)
 		if (bFullSafe)
 		{
 			const ZM_GenMeshValidation xFullVal = ZM_ValidateGenMesh(
-				axFull[attachment], uZM_HUMAN_BONE_COUNT);
+				axFull[attachment], uZM_STICKFIGURE_BONE_COUNT);
 			ZENITH_ASSERT_TRUE(xFullVal.m_bWindingOutward,
 				"complete mesh for attachment %u has inward winding", attachment);
 			ZENITH_ASSERT_TRUE(xFullVal.m_bBoundsNonDegen,
@@ -2335,294 +1945,65 @@ ZENITH_TEST(ZM_Gen, HumanGen_AttachmentSilhouettes)
 }
 
 // ############################################################################
-// 15. SC4 clip channels bind the one exact shared skeleton
-// ############################################################################
-
-// Every shared clip is non-empty, uses only exact names from the fixed 16-bone
-// rig, and authors rotation channels only. Absence of position/scale channels is
-// the load-bearing proof that the animation player preserves each model's shared
-// bind translation and scale. The semantic minimums describe motion roles, not
-// implementation details: exact channel counts and curve values remain free.
-ZENITH_TEST(ZM_Gen, HumanGen_ClipChannelsMatchSharedSkeleton)
-{
-	ZM_GenMesh xSharedSkeleton;
-	ZM_AppendSharedHumanBones(xSharedSkeleton);
-	ZENITH_ASSERT_EQ(xSharedSkeleton.GetNumBones(), uZM_HUMAN_BONE_COUNT,
-		"the SC4 channel gate requires the complete shared human skeleton");
-
-	for (u_int c = 0u; c < (u_int)ZM_HUMAN_CLIP_COUNT; ++c)
-	{
-		const ZM_HUMAN_ANIM_CLIP eClip = (ZM_HUMAN_ANIM_CLIP)c;
-		Flux_AnimationClip xClip;
-		ZM_BuildHumanClip(eClip, xClip);
-
-		const Zenith_HashMap<std::string, Flux_BoneChannel>& xChannels =
-			xClip.GetBoneChannels();
-		ZENITH_ASSERT_GT(xChannels.GetSize(), 0u,
-			"human clip %u has no authored bone channels", c);
-
-		const ZM_CreatureClipValidation xValidation = ZM_ValidateCreatureClip(
-			xClip, xSharedSkeleton, ZM_HumanClipLooping(eClip));
-		ZENITH_ASSERT_TRUE(xValidation.m_bAllValid,
-			"human clip %u failed the shared clip validator (first bad bone '%s')",
-			c, xValidation.m_szFirstBadBone);
-
-		const Flux_RootMotion& xRootMotion = xClip.GetRootMotion();
-		ZENITH_ASSERT_FALSE(xRootMotion.m_bEnabled,
-			"human clip %u must not enable root motion", c);
-		ZENITH_ASSERT_EQ(xRootMotion.m_xPositionDeltas.GetSize(), 0u,
-			"human clip %u must not author root-position deltas", c);
-		ZENITH_ASSERT_EQ(xRootMotion.m_xRotationDeltas.GetSize(), 0u,
-			"human clip %u must not author root-rotation deltas", c);
-		ZENITH_ASSERT_EQ(xClip.GetEvents().GetSize(), 0u,
-			"human clip %u must not acquire per-model animation events", c);
-		ZENITH_ASSERT_TRUE(xClip.GetSourcePath().empty(),
-			"fresh in-memory human clip %u must have no source path", c);
-
-		Zenith_HashMap<std::string, Flux_BoneChannel>::Iterator xIt(xChannels);
-		for (; !xIt.Done(); xIt.Next())
-		{
-			const Flux_BoneChannel& xChannel = xIt.GetValue();
-			const std::string& strBone = xChannel.GetBoneName();
-			const int iBone = ZM_GenMeshFindBone(xSharedSkeleton, strBone.c_str());
-			ZENITH_ASSERT_GE(iBone, 0,
-				"human clip %u channel '%s' is not an exact shared bone name",
-				c, strBone.c_str());
-			if (iBone >= 0 && (u_int)iBone < uZM_HUMAN_BONE_COUNT)
-			{
-				ZENITH_ASSERT_STREQ(strBone.c_str(), g_aszSharedBones[iBone],
-					"human clip %u channel '%s' resolved outside the canonical name order",
-					c, strBone.c_str());
-			}
-
-			ZENITH_ASSERT_TRUE(xChannel.HasRotationKeyframes(),
-				"human clip %u channel '%s' has no rotation keys", c, strBone.c_str());
-			ZENITH_ASSERT_FALSE(xChannel.HasPositionKeyframes(),
-				"human clip %u channel '%s' would overwrite bind translation",
-				c, strBone.c_str());
-			ZENITH_ASSERT_EQ(xChannel.GetPositionKeyframes().GetSize(), 0u,
-				"human clip %u channel '%s' carries hidden position keys",
-				c, strBone.c_str());
-			ZENITH_ASSERT_FALSE(xChannel.HasScaleKeyframes(),
-				"human clip %u channel '%s' would overwrite bind scale",
-				c, strBone.c_str());
-			ZENITH_ASSERT_EQ(xChannel.GetScaleKeyframes().GetSize(), 0u,
-				"human clip %u channel '%s' carries hidden scale keys",
-				c, strBone.c_str());
-		}
-
-		const char* szMissing = nullptr;
-		const bool bSemanticChannels = HumanClipHasSemanticChannels(eClip, xClip, szMissing);
-		ZENITH_ASSERT_TRUE(bSemanticChannels,
-			"human clip %u lacks semantic motion coverage: %s", c,
-			szMissing != nullptr ? szMissing : "unknown requirement");
-	}
-}
-
-// ############################################################################
-// 16. SC4 key timing, loop seams, and one-shot end policy
-// ############################################################################
-
-// Times are ticks, duration is seconds, and every channel explicitly spans the
-// complete clip. Loops close orientation at the seam. Wave/Point/Cheer/Hurt
-// recover to identity; Faint instead authors a final held downed pose.
-ZENITH_TEST(ZM_Gen, HumanGen_ClipTimingAndPlaybackPolicy)
-{
-	const Zenith_Maths::Quat xIdentity = glm::identity<Zenith_Maths::Quat>();
-
-	for (u_int c = 0u; c < (u_int)ZM_HUMAN_CLIP_COUNT; ++c)
-	{
-		const ZM_HUMAN_ANIM_CLIP eClip = (ZM_HUMAN_ANIM_CLIP)c;
-		Flux_AnimationClip xClip;
-		ZM_BuildHumanClip(eClip, xClip);
-
-		const float fDurationTicks = xClip.GetDurationInTicks();
-		const bool bDurationValid = std::isfinite(xClip.GetDuration())
-			&& xClip.GetDuration() > 0.0f
-			&& std::isfinite(fDurationTicks)
-			&& fDurationTicks > 0.0f;
-		ZENITH_ASSERT_TRUE(bDurationValid,
-			"human clip %u has no finite positive duration", c);
-		ZENITH_ASSERT_TRUE(xClip.IsLooping() == ZM_HumanClipLooping(eClip),
-			"human clip %u built looping policy differs from its metadata", c);
-
-		const Zenith_HashMap<std::string, Flux_BoneChannel>& xChannels =
-			xClip.GetBoneChannels();
-		ZENITH_ASSERT_GT(xChannels.GetSize(), 0u,
-			"human clip %u has no channels to exercise timing policy", c);
-		ZENITH_ASSERT_TRUE(HumanClipHasTemporalMotion(xClip),
-			"human clip %u contains no temporal rotation change", c);
-		if (!bDurationValid || xChannels.GetSize() == 0u)
-		{
-			continue;
-		}
-
-		u_int uFaintHeldDifferent = 0u;
-		Zenith_HashMap<std::string, Flux_BoneChannel>::Iterator xIt(xChannels);
-		for (; !xIt.Done(); xIt.Next())
-		{
-			const Flux_BoneChannel& xChannel = xIt.GetValue();
-			const char* szBone = xChannel.GetBoneName().c_str();
-			u_int uFirstBadKey = 0xFFFFFFFFu;
-			const bool bKeysWellFormed = HumanRotationKeysWellFormed(
-				xChannel, fDurationTicks, uFirstBadKey);
-			ZENITH_ASSERT_TRUE(bKeysWellFormed,
-				"human clip %u channel '%s' has an invalid/duplicate/out-of-range key %u",
-				c, szBone, uFirstBadKey);
-			if (!bKeysWellFormed)
-			{
-				continue;
-			}
-
-			const Zenith_Vector<std::pair<Zenith_Maths::Quat, float>>& xKeys =
-				xChannel.GetRotationKeyframes();
-			ZENITH_ASSERT_LE(fabsf(xKeys.GetFront().second), fHUMAN_ANIM_TICK_TOL,
-				"human clip %u channel '%s' has no first key at tick zero", c, szBone);
-			ZENITH_ASSERT_LE(fabsf(xKeys.GetBack().second - fDurationTicks),
-				fHUMAN_ANIM_TICK_TOL,
-				"human clip %u channel '%s' has no final key at duration", c, szBone);
-
-			const Zenith_Maths::Quat& xFirst = xKeys.GetFront().first;
-			const Zenith_Maths::Quat& xLast = xKeys.GetBack().first;
-			if (ZM_HumanClipLooping(eClip))
-			{
-				ZENITH_ASSERT_GE(HumanQuatAbsDot(xFirst, xLast),
-					fHUMAN_ANIM_ROT_CLOSE_DOT,
-					"looping human clip %u channel '%s' does not close at the seam",
-					c, szBone);
-				continue;
-			}
-
-			const Zenith_Maths::Quat xAtEnd = xChannel.SampleRotation(fDurationTicks);
-			const Zenith_Maths::Quat xPastEnd = xChannel.SampleRotation(fDurationTicks * 2.0f);
-			ZENITH_ASSERT_TRUE(HumanQuatFiniteNormalized(xAtEnd)
-				&& HumanQuatFiniteNormalized(xPastEnd),
-				"one-shot human clip %u channel '%s' end/past-end sample is invalid",
-				c, szBone);
-			ZENITH_ASSERT_GE(HumanQuatAbsDot(xAtEnd, xPastEnd),
-				fHUMAN_ANIM_ROT_CLOSE_DOT,
-				"one-shot human clip %u channel '%s' does not clamp past its end",
-				c, szBone);
-
-			if (eClip != ZM_HUMAN_CLIP_FAINT)
-			{
-				ZENITH_ASSERT_GE(HumanQuatAbsDot(xAtEnd, xIdentity),
-					fHUMAN_ANIM_ROT_CLOSE_DOT,
-					"one-shot human clip %u channel '%s' does not recover to identity",
-					c, szBone);
-				continue;
-			}
-
-			const u_int uPenultimateKey = xKeys.GetSize() - 2u;
-			const Zenith_Maths::Quat& xPenultimate = xKeys.Get(uPenultimateKey).first;
-			const float fPenultimateTick = xKeys.Get(uPenultimateKey).second;
-			ZENITH_ASSERT_LT(fPenultimateTick, fDurationTicks,
-				"Faint channel '%s' penultimate key must precede duration", szBone);
-			ZENITH_ASSERT_GE(HumanQuatAbsDot(xPenultimate, xLast),
-				fHUMAN_ANIM_ROT_CLOSE_DOT,
-				"Faint channel '%s' penultimate/final authored keys do not hold one pose",
-				szBone);
-
-			const Zenith_Maths::Quat xAtZero = xChannel.SampleRotation(0.0f);
-			ZENITH_ASSERT_TRUE(HumanQuatFiniteNormalized(xAtZero),
-				"Faint channel '%s' tick-zero sample is invalid", szBone);
-			if (HumanQuatAbsDot(xAtZero, xAtEnd) < fHUMAN_ANIM_ROT_MOTION_DOT)
-			{
-				++uFaintHeldDifferent;
-			}
-		}
-
-		if (eClip == ZM_HUMAN_CLIP_FAINT)
-		{
-			ZENITH_ASSERT_GT(uFaintHeldDifferent, 0u,
-				"Faint final held pose matches tick zero on every channel");
-		}
-	}
-}
-
-// ############################################################################
-// 17. SC4 byte determinism and implementation-independent motion sensitivity
-// ############################################################################
-
-// Equality/hash reuse the established serialized-clip helpers. Pairwise motion
-// comparison normalizes each clip's own duration and ignores metadata, so merely
-// changing Name/Duration cannot disguise two collapsed motion implementations.
-ZENITH_TEST(ZM_Gen, HumanGen_ClipDeterminismAndSensitivity)
-{
-	Flux_AnimationClip axClips[ZM_HUMAN_CLIP_COUNT];
-	u_int auHashes[ZM_HUMAN_CLIP_COUNT] = {};
-	for (u_int c = 0u; c < (u_int)ZM_HUMAN_CLIP_COUNT; ++c)
-	{
-		const ZM_HUMAN_ANIM_CLIP eClip = (ZM_HUMAN_ANIM_CLIP)c;
-		ZM_BuildHumanClip(eClip, axClips[c]);
-		Flux_AnimationClip xAgain;
-		ZM_BuildHumanClip(eClip, xAgain);
-
-		ZENITH_ASSERT_GT(axClips[c].GetBoneChannels().GetSize(), 0u,
-			"human clip %u determinism would be vacuous with no channels", c);
-		ZENITH_ASSERT_TRUE(ZM_CreatureClipBytesEqual(axClips[c], xAgain),
-			"human clip %u is not byte-identical on a repeat build", c);
-		auHashes[c] = ZM_CreatureClipContentHash(axClips[c]);
-		ZENITH_ASSERT_EQ(auHashes[c], ZM_CreatureClipContentHash(xAgain),
-			"human clip %u content hash changes on a repeat build", c);
-	}
-
-	for (u_int a = 0u; a < (u_int)ZM_HUMAN_CLIP_COUNT; ++a)
-	{
-		for (u_int b = a + 1u; b < (u_int)ZM_HUMAN_CLIP_COUNT; ++b)
-		{
-			ZENITH_ASSERT_FALSE(HumanClipMotionEquivalentNormalized(axClips[a], axClips[b]),
-				"human clips %u/%u collapse to the same normalized rotation motion", a, b);
-			ZENITH_ASSERT_NE(auHashes[a], auHashes[b],
-				"human clips %u/%u share a serialized content hash", a, b);
-		}
-	}
-}
-
-// ############################################################################
 // 18. SC4 clips are one shared, model-independent set across the whole roster
 // ############################################################################
 
-// Build the nine clips once, then validate that exact set against every model's
-// unchanged shared rig. Rebuilding after each model proves no ambient per-ID
-// state can perturb the no-ID clip builder.
+// Every model must bind the SAME shared clip set, by REF. v5 proved this by
+// rebuilding the clips and byte-comparing them, because this game authored them;
+// it does not any more, so the claim that survives is the one that can still go
+// wrong: that no per-model state leaks into which files a model points at.
+//
+// ★ WHAT THIS REPLACED, AND WHY THE WEAKER TEST IS THE HONEST ONE. The old version
+// also asserted every model carried the exact shared BONE DATA. That assertion is
+// now unwritable and, more importantly, meaningless: no model carries bone data,
+// and the rig they share is one engine file that this game cannot vary per model
+// even in principle. Asserting it would be asserting a tautology.
 ZENITH_TEST(ZM_Gen, HumanGen_ClipSetSharedAcrossRoster)
 {
-	ZM_GenMesh xSharedSkeleton;
-	ZM_AppendSharedHumanBones(xSharedSkeleton);
-	Flux_AnimationClip axSharedClips[ZM_HUMAN_CLIP_COUNT];
+	// The refs, resolved once. Every model must reproduce these exactly.
+	char aacShared[ZM_HUMAN_CLIP_COUNT][256];
 	for (u_int c = 0u; c < (u_int)ZM_HUMAN_CLIP_COUNT; ++c)
 	{
-		ZM_BuildHumanClip((ZM_HUMAN_ANIM_CLIP)c, axSharedClips[c]);
+		const ZM_HUMAN_SHARED_ASSET_KIND eKind = (ZM_HUMAN_SHARED_ASSET_KIND)
+			((u_int)ZM_HUMAN_SHARED_ASSET_ANIM_IDLE + c);
+		ZENITH_ASSERT_TRUE(
+			ZM_HumanSharedAssetPath(eKind, aacShared[c], (u_int)sizeof(aacShared[c])),
+			"shared clip ref %u must fit", c);
 	}
 
+	char acSkeleton[256];
+	ZENITH_ASSERT_TRUE(ZM_HumanSharedAssetPath(
+			ZM_HUMAN_SHARED_ASSET_SKELETON, acSkeleton, (u_int)sizeof(acSkeleton)),
+		"shared skeleton ref must fit");
+	ZENITH_ASSERT_STREQ(acSkeleton, szZM_HUMAN_SKELETON_REF,
+		"the shared skeleton ref must be the one spelled in ZM_HumanGen.h");
+
+	u_int uTested = 0u;
 	for (u_int id = 0u; id < (u_int)ZM_HUMAN_COUNT; ++id)
 	{
+		// Building a model must not perturb what the next one refers to -- the
+		// no-ambient-state claim, which IS still falsifiable.
 		const ZM_HumanRecipe xRecipe = ZM_ResolveHumanRecipe((ZM_HUMAN_ID)id);
 		ZM_GenMesh xModelMesh;
 		ZM_BuildHumanMesh(xRecipe, xModelMesh);
-		ZENITH_ASSERT_TRUE(MeshBonesEqual(xModelMesh, xSharedSkeleton),
-			"human %u no longer carries the exact shared skeleton", id);
+
+		ZENITH_ASSERT_EQ(xModelMesh.GetNumBones(), 0u,
+			"human %u must carry no rig of its own", id);
 
 		for (u_int c = 0u; c < (u_int)ZM_HUMAN_CLIP_COUNT; ++c)
 		{
-			const ZM_HUMAN_ANIM_CLIP eClip = (ZM_HUMAN_ANIM_CLIP)c;
-			const ZM_CreatureClipValidation xValidation = ZM_ValidateCreatureClip(
-				axSharedClips[c], xModelMesh, ZM_HumanClipLooping(eClip));
-			ZENITH_ASSERT_TRUE(xValidation.m_bAllValid,
-				"shared clip %u does not transfer to human %u (first bad bone '%s')",
-				c, id, xValidation.m_szFirstBadBone);
-
-			Flux_AnimationClip xAfterModelBuild;
-			ZM_BuildHumanClip(eClip, xAfterModelBuild);
-			ZENITH_ASSERT_TRUE(ZM_CreatureClipBytesEqual(
-				axSharedClips[c], xAfterModelBuild),
-				"shared clip %u bytes depend on preceding human %u generation", c, id);
-			ZENITH_ASSERT_EQ(ZM_CreatureClipContentHash(axSharedClips[c]),
-				ZM_CreatureClipContentHash(xAfterModelBuild),
-				"shared clip %u hash depends on preceding human %u generation", c, id);
+			char acAfter[256];
+			const ZM_HUMAN_SHARED_ASSET_KIND eKind = (ZM_HUMAN_SHARED_ASSET_KIND)
+				((u_int)ZM_HUMAN_SHARED_ASSET_ANIM_IDLE + c);
+			ZENITH_ASSERT_TRUE(
+				ZM_HumanSharedAssetPath(eKind, acAfter, (u_int)sizeof(acAfter)),
+				"shared clip ref %u must still fit after human %u", c, id);
+			ZENITH_ASSERT_STREQ(acAfter, aacShared[c],
+				"shared clip ref %u changed after generating human %u", c, id);
 		}
+		++uTested;
 	}
+	ZENITH_ASSERT_GT(uTested, 0u, "no humans exercised the shared-clip-set gate");
 }
 
 // ############################################################################
@@ -2976,9 +2357,25 @@ ZENITH_TEST(ZM_Gen, HumanGen_BodyMetricsPinned)
 		xMetrics.m_fHeight);
 	ZENITH_ASSERT_EQ_FLOAT(xMetrics.m_fCentreY, fZM_HUMAN_MESH_CENTRE_Y, 1.0e-4f,
 		"fZM_HUMAN_MESH_CENTRE_Y is stale: the canonical body centre now measures "
-		"%.6f. RE-DERIVE the constant from this number -- every human in the game "
-		"is anchored by it",
+		"%.6f. RE-DERIVE the constant from this number",
 		xMetrics.m_fCentreY);
+
+	// ★ THE FEET, PINNED IN THE RIG'S OWN SPACE. This is the number
+	// fZM_HUMAN_MODEL_OFFSET_Y is the negation of, so a loft change that moved the
+	// soles would otherwise put every human in the game underground with the centre
+	// and height constants above still passing.
+	ZENITH_ASSERT_EQ_FLOAT(xMetrics.m_fMinY, fZM_HUMAN_MESH_FEET_Y, 1.0e-4f,
+		"fZM_HUMAN_MESH_FEET_Y is stale: the canonical body's soles now reach %.6f "
+		"in rig space. RE-DERIVE the constant from this number -- it is what places "
+		"every human model on its entity",
+		xMetrics.m_fMinY);
+
+	// The rig's own origin must fall INSIDE the body, between the soles and the
+	// crown. It is the hip; a sign error anywhere above would move it outside.
+	ZENITH_ASSERT_TRUE(xMetrics.m_fMinY < 0.0f && xMetrics.m_fMaxY > 0.0f,
+		"the shared rig's origin (y=0) is not inside the canonical body "
+		"(soles %.6f, crown %.6f) -- the loft is no longer in rig space",
+		xMetrics.m_fMinY, xMetrics.m_fMaxY);
 
 	// A plausible body, so a wildly broken loft cannot quietly re-pin itself. The
 	// band is MODEL-space: the loft inherits the StickFigure golden ring tables and
@@ -3037,165 +2434,167 @@ ZENITH_TEST(ZM_Gen, HumanGen_BodyMetricsPinned)
 }
 
 // ############################################################################
-// 22. The shared bind space is CENTRE-ANCHORED, rig and mesh together
+// 24. The SHARED rig on disk still has the bones this game's skin refers to
 // ############################################################################
 
-// The v2 anchor is a RIGID translation of the shared bind space by
-// fZM_HUMAN_MESH_CENTRE_Y. This case proves all three halves of that claim
-// against the SHIPPED mesh (not arithmetic about it):
-//   * the canonical body's centre lands on the entity origin;
-//   * every other model lands where its own m_fHeightScale says it should, and
-//     accessories are allowed to stick out past the body box;
-//   * ONLY the root bone's translation moved -- checked by forward-kinematically
-//     resolving bones deep in two different chains and requiring each to be its
-//     v1 world height minus exactly the anchor.
-ZENITH_TEST(ZM_Gen, HumanGen_BindSpaceCentreAnchored)
+// ★ THE LOAD-BEARING PREMISE OF THE WHOLE STICKFIGURE MIGRATION, CHECKED AGAINST
+// THE REAL FILE.
+//
+// Zenithmon's loft weights vertices to bone INDICES 0..15 and bakes a .zmesh that
+// merely REFERS to engine:Meshes/StickFigure/StickFigure.zskel. Nothing in this
+// game reads that file, so nothing in this game would notice if StickFigure
+// reordered its bones, renamed one, or inserted a bone before RightFoot. Every
+// structural test would stay green and all 34 humans would silently skin to the
+// wrong joints -- an elbow driven by a knee.
+//
+// So this test opens the actual asset and pins the prefix. It is the one place the
+// two halves of the migration are made to meet.
+ZENITH_TEST(ZM_Gen, HumanGen_RigMatchesStickFigure)
 {
-	// --- Rig: only Root moved ------------------------------------------------
-	ZM_GenMesh xRig;
-	ZM_AppendSharedHumanBones(xRig);
-	ZENITH_ASSERT_EQ(xRig.GetNumBones(), uZM_HUMAN_BONE_COUNT,
-		"the shared rig is not the frozen 16 bones");
-
-	const ZM_GenBone& xRoot = xRig.m_xBones.Get(0u);
-	ZENITH_ASSERT_STREQ(xRoot.m_szName, "Root", "bone 0 is not the root");
-	ZENITH_ASSERT_EQ(xRoot.m_iParent, -1, "the root bone must have no parent");
-	ZENITH_ASSERT_EQ_FLOAT(xRoot.m_xLocalPos.y, fZM_HUMAN_ROOT_BIND_Y, 1.0e-5f,
-		"the root bind height is not the anchored one");
-	ZENITH_ASSERT_EQ_FLOAT(xRoot.m_xLocalPos.x, 0.0f, 1.0e-6f, "the anchor moved the root in X");
-	ZENITH_ASSERT_EQ_FLOAT(xRoot.m_xLocalPos.z, 0.0f, 1.0e-6f, "the anchor moved the root in Z");
-
-	// FK-resolve a bone's world bind height by walking parents to the root.
-	const auto WorldBindY = [&xRig](const char* szBone) -> float
+	const std::string strSkeleton =
+		Zenith_AssetRegistry::ResolvePath(std::string(szZM_HUMAN_SKELETON_REF));
+	Zenith_SkeletonAsset* pxRig =
+		Zenith_AssetRegistry::GetView<Zenith_SkeletonAsset>(strSkeleton);
+	if (pxRig == nullptr)
 	{
-		int iIndex = ZM_GenMeshFindBone(xRig, szBone);
-		float fY = 0.0f;
-		while (iIndex >= 0)
-		{
-			const ZM_GenBone& xBone = xRig.m_xBones.Get((u_int)iIndex);
-			fY += xBone.m_xLocalPos.y;
-			iIndex = xBone.m_iParent;
-		}
-		return fY;
-	};
-
-	// v1 world bind heights (the frozen parent-local table): both feet at 0, the
-	// head at 2.4. If the anchor had been subtracted from all 16 bones instead of
-	// the root alone it would have compounded down each chain, and these two --
-	// three and four joints deep -- would be wrong by different amounts.
-	struct ChainProbe { const char* m_szBone; float m_fV1WorldY; };
-	const ChainProbe axPROBES[] =
-	{
-		{ "LeftFoot",  0.0f },
-		{ "RightFoot", 0.0f },
-		{ "Head",      2.4f },
-		{ "LeftHand",  1.4f },   // Root 1.0 + Spine 0.5 + LUArm 0.6 - 0.4 - 0.3
-	};
-	for (const ChainProbe& xProbe : axPROBES)
-	{
-		ZENITH_ASSERT_EQ_FLOAT(WorldBindY(xProbe.m_szBone),
-			xProbe.m_fV1WorldY - fZM_HUMAN_MESH_CENTRE_Y, 1.0e-5f,
-			"bone '%s' did not move by exactly the anchor -- the translation must "
-			"touch the ROOT bone only, or it compounds down the hierarchy",
-			xProbe.m_szBone);
+		// The engine asset tree is not on disk (a cold clone with no export run).
+		// SKIP rather than fail: this asserts a property OF that file, and its
+		// absence is a build-environment fact, not a Zenithmon regression.
+		ZENITH_SKIP("shared StickFigure rig not present -- run the asset export");
 	}
 
-	// --- Mesh: every model's body lands where its height scale says ----------
-	u_int uModelsChecked = 0u;
-	for (u_int id = 0u; id < (u_int)ZM_HUMAN_COUNT; ++id)
+	ZENITH_ASSERT_EQ(pxRig->GetNumBones(), uZM_STICKFIGURE_BONE_COUNT,
+		"the shared rig has %u bones, not the %u uZM_STICKFIGURE_BONE_COUNT claims. "
+		"That constant is the skin-index cap every human is validated against",
+		pxRig->GetNumBones(), uZM_STICKFIGURE_BONE_COUNT);
+
+	// The prefix, name for name, at index for index.
+	for (u_int b = 0u; b < uZM_HUMAN_CORE_BONE_COUNT; ++b)
 	{
-		const ZM_HUMAN_ID eId = (ZM_HUMAN_ID)id;
-		const ZM_HumanRecipe      xRecipe  = ZM_ResolveHumanRecipe(eId);
-		const ZM_HumanBodyMetrics xMetrics = ZM_MeasureHumanBody(eId);
+		const Zenith_SkeletonAsset::Bone& xBone = pxRig->GetBone(b);
+		ZENITH_ASSERT_STREQ(xBone.m_strName.c_str(), g_aszSharedBones[b],
+			"shared rig bone %u is '%s', but this game's loft weights it as '%s'. "
+			"Every human is now skinned to the wrong joint",
+			b, xBone.m_strName.c_str(), g_aszSharedBones[b]);
 
-		ZM_GenMesh xMesh;
-		ZM_BuildHumanMesh(xRecipe, xMesh);
-		ZENITH_ASSERT_TRUE(xMetrics.m_uBodyVertexCount > 0u
-			&& xMetrics.m_uBodyVertexCount <= xMesh.GetNumVerts(),
-			"human %u body prefix %u does not index its own mesh (%u verts)",
-			id, xMetrics.m_uBodyVertexCount, xMesh.GetNumVerts());
-
-		// Measure the SHIPPED mesh's body prefix.
-		float fBodyMin = xMesh.m_xPositions.Get(0u).y;
-		float fBodyMax = fBodyMin;
-		for (u_int u = 1u; u < xMetrics.m_uBodyVertexCount; ++u)
-		{
-			const float fY = xMesh.m_xPositions.Get(u).y;
-			if (fY < fBodyMin) { fBodyMin = fY; }
-			if (fY > fBodyMax) { fBodyMax = fY; }
-		}
-		const float fBodyCentre = 0.5f * (fBodyMin + fBodyMax);
-
-		// The anchor is rigid: the shipped body is the measured body, shifted.
-		ZENITH_ASSERT_EQ_FLOAT(fBodyMax - fBodyMin, xMetrics.m_fHeight, 1.0e-4f,
-			"human %u body height changed across the anchor -- it is not a rigid "
-			"translation", id);
-		ZENITH_ASSERT_EQ_FLOAT(fBodyCentre, xMetrics.m_fCentreY - fZM_HUMAN_MESH_CENTRE_Y,
-			1.0e-4f, "human %u body centre is not its measured centre minus the anchor", id);
-
-		// The whole cast lofts about the same pre-anchor floor, so a model built at
-		// height scale h carries its centre to ~= canonicalCentre * h and the anchor
-		// leaves canonicalCentre * (h - 1). NOT "all 35 are centred" -- that is
-		// impossible with differing height scales, and claiming it would be a lie.
-		const float fExpectedCentre = fZM_HUMAN_MESH_CENTRE_Y * (xRecipe.m_fHeightScale - 1.0f);
-		ZENITH_ASSERT_EQ_FLOAT(fBodyCentre, fExpectedCentre, 0.05f,
-			"human %u ('%s', height scale %.3f) sits %.4f off the origin; its build "
-			"only justifies %.4f", id, ZM_GetHumanName(eId), xRecipe.m_fHeightScale,
-			fBodyCentre, fExpectedCentre);
-
-		// Accessories may extend past the body box -- they simply do not define it.
-		const Zenith_Maths::Vector3 xFullMin = ZM_GenMeshBoundsMin(xMesh);
-		const Zenith_Maths::Vector3 xFullMax = ZM_GenMeshBoundsMax(xMesh);
-		ZENITH_ASSERT_TRUE(xFullMin.y <= fBodyMin + 1.0e-4f && xFullMax.y >= fBodyMax - 1.0e-4f,
-			"human %u full bounds do not contain its own body box", id);
-
-		++uModelsChecked;
+		// And by NAME->index, so a duplicate name elsewhere in the rig cannot make
+		// the forward check pass while lookups resolve somewhere else.
+		ZENITH_ASSERT_EQ(pxRig->GetBoneIndex(g_aszSharedBones[b]), (int32_t)b,
+			"'%s' resolves to index %d, not %u", g_aszSharedBones[b],
+			pxRig->GetBoneIndex(g_aszSharedBones[b]), b);
 	}
-	ZENITH_ASSERT_EQ(uModelsChecked, (u_int)ZM_HUMAN_COUNT,
-		"the anchor sweep did not cover the whole roster");
 
-	// The canonical model IS the origin -- that is what makes the constant a centre.
-	ZM_GenMesh xCanonicalMesh;
-	ZM_BuildHumanMesh(ZM_ResolveHumanRecipe(eZM_HUMAN_CANONICAL_MODEL), xCanonicalMesh);
-	const ZM_HumanBodyMetrics xCanonMetrics = ZM_MeasureHumanBody(eZM_HUMAN_CANONICAL_MODEL);
-	float fMin = xCanonicalMesh.m_xPositions.Get(0u).y;
-	float fMax = fMin;
-	for (u_int u = 1u; u < xCanonMetrics.m_uBodyVertexCount; ++u)
+	// Root is the rig's origin, and the model offset is derived assuming it.
+	const Zenith_SkeletonAsset::Bone& xRoot = pxRig->GetBone(0u);
+	ZENITH_ASSERT_EQ(xRoot.m_iParentIndex, -1,
+		"the shared rig's bone 0 is not a root (parent %d)", xRoot.m_iParentIndex);
+	ZENITH_ASSERT_TRUE(fabsf(xRoot.m_xBindPosition.x) < 1.0e-5f
+		&& fabsf(xRoot.m_xBindPosition.y) < 1.0e-5f
+		&& fabsf(xRoot.m_xBindPosition.z) < 1.0e-5f,
+		"the shared rig's Root has moved to (%.6f, %.6f, %.6f). fZM_HUMAN_MODEL_OFFSET_Y "
+		"is measured from a Root at the origin",
+		xRoot.m_xBindPosition.x, xRoot.m_xBindPosition.y, xRoot.m_xBindPosition.z);
+
+	// The clips this game names must exist in that rig's library, by FILE.
+	for (u_int c = 0u; c < (u_int)ZM_HUMAN_CLIP_COUNT; ++c)
 	{
-		const float fY = xCanonicalMesh.m_xPositions.Get(u).y;
-		if (fY < fMin) { fMin = fY; }
-		if (fY > fMax) { fMax = fY; }
+		char acRef[256];
+		const ZM_HUMAN_SHARED_ASSET_KIND eKind = (ZM_HUMAN_SHARED_ASSET_KIND)
+			((u_int)ZM_HUMAN_SHARED_ASSET_ANIM_IDLE + c);
+		ZENITH_ASSERT_TRUE(ZM_HumanSharedAssetPath(eKind, acRef, (u_int)sizeof(acRef)),
+			"shared clip ref %u must fit", c);
+		const std::string strClip = Zenith_AssetRegistry::ResolvePath(std::string(acRef));
+		std::error_code xEc;
+		ZENITH_ASSERT_TRUE(std::filesystem::exists(std::filesystem::path(strClip), xEc),
+			"clip role %u maps to '%s', which does not exist in the shared library",
+			c, acRef);
 	}
-	ZENITH_ASSERT_EQ_FLOAT(0.5f * (fMin + fMax), 0.0f, 1.0e-4f,
-		"the canonical body is not centred on the entity origin");
+}
 
-	// At least one model must actually wear something that pokes out, or the
-	// "accessories may exceed the body box" clause above is vacuous.
-	bool bSawAccessoryOverhang = false;
-	for (u_int id = 0u; id < (u_int)ZM_HUMAN_COUNT && !bSawAccessoryOverhang; ++id)
+// ############################################################################
+// 25. The mesh is left in the shared rig's bind space, not anchored
+// ############################################################################
+
+// Replaces HumanGen_BindSpaceCentreAnchored, which pinned the OPPOSITE property.
+// v2..v5 translated the loft so the body centre sat on the origin; v6 must NOT,
+// because the pivots it would be skinned about live in the shared rig and did not
+// move with it. Stated as: the canonical body straddles y=0 at its hip.
+ZENITH_TEST(ZM_Gen, HumanGen_BindSpaceIsRigSpace)
+{
+	const ZM_HumanBodyMetrics xMetrics = ZM_MeasureHumanBody(eZM_HUMAN_CANONICAL_MODEL);
+
+	// The measured prefix and the SHIPPED mesh must agree -- the finalise pass adds
+	// and reorders no vertices, which is what lets the metrics describe the bake.
+	ZM_GenMesh xShipped;
+	ZM_BuildHumanMesh(ZM_ResolveHumanRecipe(eZM_HUMAN_CANONICAL_MODEL), xShipped);
+	ZENITH_ASSERT_GT(xShipped.GetNumVerts(), xMetrics.m_uBodyVertexCount - 1u,
+		"the shipped mesh is shorter than the body prefix it was measured over");
+
+	float fMinY = xShipped.m_xPositions.Get(0u).y;
+	float fMaxY = fMinY;
+	for (u_int u = 1u; u < xMetrics.m_uBodyVertexCount; ++u)
 	{
-		const ZM_HUMAN_ID eId = (ZM_HUMAN_ID)id;
-		const ZM_HumanBodyMetrics xM = ZM_MeasureHumanBody(eId);
-		ZM_GenMesh xMesh;
-		ZM_BuildHumanMesh(ZM_ResolveHumanRecipe(eId), xMesh);
-		if (xMesh.GetNumVerts() <= xM.m_uBodyVertexCount) { continue; }
-
-		float fBodyMax = xMesh.m_xPositions.Get(0u).y;
-		for (u_int u = 1u; u < xM.m_uBodyVertexCount; ++u)
-		{
-			const float fY = xMesh.m_xPositions.Get(u).y;
-			if (fY > fBodyMax) { fBodyMax = fY; }
-		}
-		for (u_int u = xM.m_uBodyVertexCount; u < xMesh.GetNumVerts(); ++u)
-		{
-			if (xMesh.m_xPositions.Get(u).y > fBodyMax + 1.0e-3f)
-			{
-				bSawAccessoryOverhang = true;
-				break;
-			}
-		}
+		const float fY = xShipped.m_xPositions.Get(u).y;
+		if (fY < fMinY) { fMinY = fY; }
+		if (fY > fMaxY) { fMaxY = fY; }
 	}
-	ZENITH_ASSERT_TRUE(bSawAccessoryOverhang,
-		"no model's accessories reach past its body box -- the body-prefix "
-		"measurement is not actually excluding anything");
+
+	// ★ MEASURED ON THE SHIPPED MESH, not on ZM_MeasureHumanBody's own build. If a
+	// stray anchor pass ever came back, ZM_MeasureHumanBody would move with it and
+	// agree with itself; only this comparison can see the difference.
+	ZENITH_ASSERT_EQ_FLOAT(fMinY, xMetrics.m_fMinY, 1.0e-4f,
+		"the shipped mesh's soles (%.6f) disagree with the measured body (%.6f) -- "
+		"something is translating the loft after it is measured",
+		fMinY, xMetrics.m_fMinY);
+	ZENITH_ASSERT_EQ_FLOAT(fMinY, fZM_HUMAN_MESH_FEET_Y, 1.0e-4f,
+		"the shipped canonical mesh's soles are at %.6f, not the rig-space "
+		"fZM_HUMAN_MESH_FEET_Y (%.6f)", fMinY, fZM_HUMAN_MESH_FEET_Y);
+	ZENITH_ASSERT_TRUE(fMaxY > 0.0f,
+		"the shipped canonical mesh's crown (%.6f) is below the rig origin", fMaxY);
+}
+
+// ############################################################################
+// 26. The model offset puts the canonical body's feet on the entity origin
+// ############################################################################
+
+// The placement equation, end to end and in METRES -- the arithmetic that decides
+// whether a human stands on the ground or sinks into it. Every term is re-derived
+// from a freshly built mesh, so it cannot be satisfied by two stale constants
+// agreeing with each other.
+ZENITH_TEST(ZM_Gen, HumanGen_ModelOffsetPlacesFeetOnOrigin)
+{
+	const ZM_HumanBodyMetrics xMetrics = ZM_MeasureHumanBody(eZM_HUMAN_CANONICAL_MODEL);
+
+	// Model space: soles + offset == the entity origin.
+	ZENITH_ASSERT_EQ_FLOAT(xMetrics.m_fMinY + fZM_HUMAN_MODEL_OFFSET_Y, 0.0f, 1.0e-4f,
+		"the canonical body's soles land at %.6f in model space after the offset, "
+		"not on the entity origin",
+		xMetrics.m_fMinY + fZM_HUMAN_MODEL_OFFSET_Y);
+
+	// World space: the entity origin is the FEET, so the crown must land exactly one
+	// body height above it once the visual scale is applied.
+	const float fCrownMetres =
+		(xMetrics.m_fMaxY + fZM_HUMAN_MODEL_OFFSET_Y) * fZM_HUMAN_VISUAL_SCALE;
+	ZENITH_ASSERT_EQ_FLOAT(fCrownMetres, fZM_HUMAN_BODY_HEIGHT, 1.0e-4f,
+		"a human standing at the origin has its crown at %.6f m, not the %.2f m the "
+		"body contract promises",
+		fCrownMetres, fZM_HUMAN_BODY_HEIGHT);
+
+	// And the physics twin: the capsule's centre must land on the body's centre.
+	const float fCentreMetres =
+		(xMetrics.m_fCentreY + fZM_HUMAN_MODEL_OFFSET_Y) * fZM_HUMAN_VISUAL_SCALE;
+	ZENITH_ASSERT_EQ_FLOAT(fCentreMetres, fZM_HUMAN_BODY_SHAPE_OFFSET_Y, 1.0e-4f,
+		"the drawn body's centre is %.6f m above the feet but the collider is "
+		"offset by %.6f m -- the capsule and the picture disagree",
+		fCentreMetres, fZM_HUMAN_BODY_SHAPE_OFFSET_Y);
+
+	// ZM_HumanBodyCentre is the one sanctioned way out of feet-space; prove it
+	// agrees with that offset rather than being a second, drifting spelling.
+	const Zenith_Maths::Vector3 xFeet(3.0f, 7.0f, -2.0f);
+	const Zenith_Maths::Vector3 xCentre = ZM_HumanBodyCentre(xFeet);
+	ZENITH_ASSERT_EQ_FLOAT(xCentre.y - xFeet.y, fZM_HUMAN_BODY_SHAPE_OFFSET_Y, 1.0e-6f,
+		"ZM_HumanBodyCentre lifts by %.6f m, the collider by %.6f m",
+		xCentre.y - xFeet.y, fZM_HUMAN_BODY_SHAPE_OFFSET_Y);
+	ZENITH_ASSERT_TRUE(xCentre.x == xFeet.x && xCentre.z == xFeet.z,
+		"ZM_HumanBodyCentre moved the body horizontally");
 }

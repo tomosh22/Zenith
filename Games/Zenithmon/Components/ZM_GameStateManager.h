@@ -142,15 +142,18 @@ public:
 	// The same answer from a free context. "" when there is no live manager.
 	static const char* GetActiveSceneArrivedSpawnTag();
 
-	// Capture the live active scene + the unique authoritative player's BODY CENTRE
-	// + its yaw + the arrived spawn tag into xStateInOut.m_xWorldPosition.
+	// Capture the live active scene + the unique authoritative player's FEET + its
+	// yaw + the arrived spawn tag into xStateInOut.m_xWorldPosition.
 	// TRANSACTIONAL: false with NO mutation when there is no unique bodied player,
 	// no resolvable active scene, no spawn tag to record, or ZM_MakeWorldPosition
 	// rejects the pose.
-	// The recorded position is the capsule CENTRE, matching what
-	// Zenith_Physics::GetBodyPosition returns and what the resume applies back --
-	// spawn MARKERS store feet and CalculateSpawnCenter is the only place the two
-	// conventions meet.
+	//
+	// ★ THE RECORDED POSITION IS THE FEET (ZM-D-223), matching what
+	// Zenith_Physics::GetBodyPosition returns now that the human entity origin IS the
+	// feet and the capsule SHAPE carries the offset -- and matching what spawn MARKERS
+	// store, so there is no conversion left anywhere on this path. It used to be the
+	// capsule centre; saves written then still hold one, and ZM_SaveSchema's v2 -> v3
+	// migration is what converts them.
 	static bool CaptureWorldPosition(ZM_GameState& xStateInOut);
 
 	// Begin a RESUME: validate the saved position, queue the warp to its scene/tag
@@ -170,10 +173,12 @@ public:
 	bool IsPlayerlessDestination() const { return m_bTargetIsPlayerless; }
 
 	static bool IsWarpDestinationValid(u_int uTargetBuildIndex, const char* szSpawnTag);
-	// Spawn MARKERS store FEET; bodies store CENTRES. This is the only place the
-	// two conventions meet, and it converts with the compiled body contract --
-	// NOT with the player's transform scale, which no longer describes the body.
-	static Zenith_Maths::Vector3 CalculateSpawnCenter(
+	// ★ THE IDENTITY, AND KEPT AS A FUNCTION DELIBERATELY. Spawn MARKERS store FEET
+	// and so does a body's transform (ZM-D-223), so there is nothing to convert --
+	// this used to add the capsule half-extent. It survives as the single named place
+	// that says "a marker IS a spawn position": deleting it would scatter that claim
+	// across every caller, where the next convention change could not find it.
+	static Zenith_Maths::Vector3 CalculateSpawnPosition(
 		const Zenith_Maths::Vector3& xMarkerFeetPosition);
 	// Deterministic, headless-safe fade policy. Invalid/nonpositive delta time
 	// leaves the clamped current alpha unchanged.

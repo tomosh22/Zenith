@@ -81,6 +81,8 @@ Zenith_ColliderComponent::Zenith_ColliderComponent(Zenith_ColliderComponent&& xO
 	, m_bUseExplicitCapsuleDimensions(xOther.m_bUseExplicitCapsuleDimensions)
 	, m_xExplicitBoxHalfExtents(xOther.m_xExplicitBoxHalfExtents)
 	, m_bUseExplicitBoxHalfExtents(xOther.m_bUseExplicitBoxHalfExtents)
+	, m_xExplicitShapeOffset(xOther.m_xExplicitShapeOffset)
+	, m_bUseExplicitShapeOffset(xOther.m_bUseExplicitShapeOffset)
 	, m_bDebugDrawPhysicsMesh(xOther.m_bDebugDrawPhysicsMesh)
 	, m_bIncludeInNavMesh(xOther.m_bIncludeInNavMesh)
 	, m_pxTerrainMeshData(xOther.m_pxTerrainMeshData)
@@ -127,6 +129,8 @@ Zenith_ColliderComponent& Zenith_ColliderComponent::operator=(Zenith_ColliderCom
 		m_bUseExplicitCapsuleDimensions = xOther.m_bUseExplicitCapsuleDimensions;
 		m_xExplicitBoxHalfExtents = xOther.m_xExplicitBoxHalfExtents;
 		m_bUseExplicitBoxHalfExtents = xOther.m_bUseExplicitBoxHalfExtents;
+		m_xExplicitShapeOffset = xOther.m_xExplicitShapeOffset;
+		m_bUseExplicitShapeOffset = xOther.m_bUseExplicitShapeOffset;
 		m_bDebugDrawPhysicsMesh = xOther.m_bDebugDrawPhysicsMesh;
 		m_bIncludeInNavMesh = xOther.m_bIncludeInNavMesh;
 		m_pxTerrainMeshData = xOther.m_pxTerrainMeshData;
@@ -772,6 +776,21 @@ void Zenith_ColliderComponent::AddCollider(CollisionVolumeType eVolumeType, Rigi
 		break;
 	}
 
+	// EXPLICIT SHAPE OFFSET, applied to whatever the switch produced. It answers
+	// "my entity's origin is not the middle of my body" -- e.g. a character whose
+	// transform is its FEET still wants an inscribed capsule centred half a body up.
+	// Applied HERE, after the switch, so it composes with every volume type rather
+	// than being re-implemented per shape (the box path's own mesh-bounds offset is
+	// computed inside CreateBoxShape and this simply wraps the result again).
+	// Defaults to zero, so a collider that never sets one builds the identical shape
+	// it built before this existed.
+	if (pxShape != nullptr && m_bUseExplicitShapeOffset)
+	{
+		const JPH::Vec3 xOffset(m_xExplicitShapeOffset.x, m_xExplicitShapeOffset.y,
+			m_xExplicitShapeOffset.z);
+		pxShape = new JPH::RotatedTranslatedShape(xOffset, JPH::Quat::sIdentity(), pxShape);
+	}
+
 	if (pxShape == nullptr)
 	{
 		// Terrain has an advertised "no physics geometry" path: when every
@@ -950,6 +969,42 @@ void Zenith_ColliderComponent::SetExplicitBoxHalfExtents(const Zenith_Maths::Vec
 
 	m_xExplicitBoxHalfExtents = xSafe;
 	m_bUseExplicitBoxHalfExtents = true;
+	RebuildCollider();
+}
+
+void Zenith_ColliderComponent::SetExplicitShapeOffset(const Zenith_Maths::Vector3& xLocalOffset)
+{
+	if (!std::isfinite(xLocalOffset.x) || !std::isfinite(xLocalOffset.y)
+		|| !std::isfinite(xLocalOffset.z))
+	{
+		Zenith_Warning(LOG_CATEGORY_PHYSICS,
+			"SetExplicitShapeOffset: refusing non-finite offset (%g, %g, %g)",
+			xLocalOffset.x, xLocalOffset.y, xLocalOffset.z);
+		return;
+	}
+
+	if (!HasValidBody())
+	{
+		Zenith_Warning(LOG_CATEGORY_PHYSICS,
+			"SetExplicitShapeOffset: no configured collider on this entity; "
+			"add one before offsetting its shape");
+		return;
+	}
+
+	// IDEMPOTENT. RebuildCollider destroys and recreates the Jolt body, dropping
+	// sensor/gravity/locked-axis configuration, so a caller that re-asserts the same
+	// offset every frame (which is exactly what a per-frame visual apply does) must
+	// not pay for it -- mirroring the two explicit-dimension setters above.
+	if (m_bUseExplicitShapeOffset
+		&& m_xExplicitShapeOffset.x == xLocalOffset.x
+		&& m_xExplicitShapeOffset.y == xLocalOffset.y
+		&& m_xExplicitShapeOffset.z == xLocalOffset.z)
+	{
+		return;
+	}
+
+	m_xExplicitShapeOffset = xLocalOffset;
+	m_bUseExplicitShapeOffset = true;
 	RebuildCollider();
 }
 

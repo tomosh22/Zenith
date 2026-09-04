@@ -292,7 +292,7 @@ namespace
 	}
 
 	// The body CENTRE, read straight from physics. Spawn MARKERS store FEET and
-	// ZM_GameStateManager::CalculateSpawnCenter adds the capsule half-extent, so
+	// ZM_GameStateManager::CalculateSpawnPosition adds the capsule half-extent, so
 	// capture, restore and every assertion in this file speak CENTRE throughout --
 	// mixing the two conventions is a silent 0.9 m error.
 	bool ReadPlayerPose(const PlayerView& xPlayer, Zenith_Maths::Vector3& xCentreOut,

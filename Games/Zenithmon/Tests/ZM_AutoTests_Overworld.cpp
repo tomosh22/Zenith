@@ -494,8 +494,9 @@ namespace
 			// told when the placement is fine and the expectation is stale.
 			if (std::fabs(xPlayer.m_xPosition.x - fZM_DAWNMERE_TOWN_CENTER_X) > 1.0f
 				|| std::fabs(xPlayer.m_xPosition.z - fZM_DAWNMERE_TOWN_CENTER_Z) > 1.0f
-				|| std::fabs(xPlayer.m_xPosition.y
-					- (fZM_DAWNMERE_TOWN_CENTER_FEET_Y + fZM_HUMAN_BODY_HALF_HEIGHT))
+				// The settled transform is the FEET, so it lands ON the town-centre
+				// ground height rather than a half body above it.
+				|| std::fabs(xPlayer.m_xPosition.y - fZM_DAWNMERE_TOWN_CENTER_FEET_Y)
 					> 1.5f)
 			{
 				FailDawnmere("Player did not settle near the authored TownCenter placement");

@@ -17,8 +17,74 @@ The S0-S7 narrative that used to fill the back half of this file moved VERBATIM 
 [History.md](History.md) on 2026-08-18, so this file can hold to the ~25-line budget
 its own template in `AgentBriefing.md` §2.3 specifies. Nothing was deleted.
 
-**★ LIVE PIN (UPDATED 2026-09-03):
-ZM boot `3696`; engine boot (Null Combat) `1841`; Null RenderTest `1942`; registry **72**.**
+**★ LIVE PIN (UPDATED 2026-09-04):
+ZM boot `3698`; engine boot (Null Combat) `1844`; Null RenderTest `1945`; registry **72**.**
+
+> **★ +1 ZM ONLY (2026-09-04, third bump of the day) — THE FROZEN SAVE-MIGRATION
+> OFFSET.** Zenithmon 3697 -> **3698**, OBSERVED from a `Null_` run; engine pins
+> UNMOVED (this one is game-side) and registry unchanged at 72.
+>
+> `HistoricalBodyHalfHeightIsFrozenIndependentlyOfGameplayTuning` asserts a LITERAL
+> `0.9` for `ZM_SaveSchema::fHISTORICAL_BODY_HALF_HEIGHT` and deliberately does NOT
+> compare it against `fZM_HUMAN_BODY_HALF_HEIGHT`. The two are equal today and are
+> different FACTS: one is how tall a human is now, the other is the centre-to-feet
+> distance the v1/v2 save writers actually used, fixed forever. A test comparing them
+> would pass through exactly the character retune it exists to catch, because both
+> sides would move together.
+>
+> The ZM-D-223 coordinate migration also moved onto a FROZEN canned blob
+> (`auV2ResumeGolden`, 842 bytes) per SaveFormat.md's binding policy — the previous
+> fixture aged a freshly written payload, which proves only that the reader agrees
+> with the writer.
+
+> **★ +4 ZM / +3 EVERY GAME (2026-09-04, second bump of the day) — THE REVIEW FIXES
+> FOR ZM-D-223.** Zenithmon 3693 -> **3697**, Combat 1841 -> **1844**, RenderTest
+> 1942 -> **1945**, each OBSERVED from its own `Null_` run; registry unchanged at 72.
+>
+> **+3 of it is ENGINE and therefore moves every game's row**, which is the whole
+> reason all three numbers change together: `Zenith_ModelComponent.Tests.inl` is new
+> and compiles into `zenith.lib`, so Combat and RenderTest boot it too. The fourth is
+> Zenithmon's own `MigrationV2ToV3_BodyCentreWorldPositionBecomesFeet`.
+>
+> **What the four pin, and why they were missing.** Review found the model-space
+> offset was dropped by BOTH of `Zenith_ModelComponent`'s move operations — and
+> component pools relocate on growth, so a human that had already loaded reverted to
+> a zero offset and rendered half underground, permanently: the offset is
+> re-established only on a model LOAD, and `ZM_GreyboxVisual` early-returns while the
+> model it loaded is still the one it wants. `ModelSpaceOffsetSurvivesPoolGrowth`
+> drives real pool growth and ASSERTS the relocation happened (a run that never grew
+> would otherwise pass having tested nothing); it was mutation-proved against the
+> unfixed move constructor.
+
+> **★ -3 ZENITHMON-ONLY (2026-09-04) — THE HUMAN RIG IS THE ENGINE'S NOW (ZM-D-223).**
+> Zenithmon 3696 -> **3693**, OBSERVED from a `Null_` run. Engine pins UNMOVED
+> (Combat 1841, RenderTest 1942) and registry unchanged at 72: the two engine
+> additions this needed — `Zenith_ModelComponent::SetModelSpaceOffset` and
+> `Zenith_ColliderComponent::SetExplicitShapeOffset` — carry no units of their own,
+> and no automated test was added or removed.
+>
+> Net -3 = **six tests deleted, three added**. The six asserted a rig this game no
+> longer owns: `HumanGen_SharedSkeletonWellFormed`,
+> `HumanGen_PerModelBonesMatchShared`, `HumanGen_ClipChannelsMatchSharedSkeleton`,
+> `HumanGen_ClipTimingAndPlaybackPolicy`, `HumanGen_ClipDeterminismAndSensitivity`
+> and `HumanGen_BindSpaceCentreAnchored` — the last of which pinned the OPPOSITE of
+> what now has to be true. They were deleted rather than weakened, because a test
+> that asserts a property of an engine asset from a game that never touches it can
+> only pass trivially: against v6's empty bone array, four of the six would have.
+>
+> The three added are the ones that can still fail:
+> `HumanGen_RigMatchesStickFigure` opens the real
+> `engine:Meshes/StickFigure/StickFigure.zskel` and pins that its first sixteen
+> bones are still the sixteen this game's loft weights, at those sixteen indices —
+> the load-bearing premise of the whole migration, and the one thing nothing else
+> in this game would notice breaking. `HumanGen_BindSpaceIsRigSpace` measures the
+> SHIPPED mesh rather than `ZM_MeasureHumanBody`'s own build, so a returning anchor
+> pass cannot move both sides and agree with itself.
+> `HumanGen_ModelOffsetPlacesFeetOnOrigin` states the placement equation end to end
+> in metres. All three were mutation-checked before being trusted.
+>
+> Human bakes are stale on every tree: `uZM_HUMANGEN_VERSION` 5 -> 6 invalidates
+> them, and `game:Humans/Shared/` is gone rather than rewritten.
 
 > **★ +1 SHARED (2026-09-03, second bump of the day) — TEXTURE USAGE IS DECLARED,
 > NOT INFERRED.** Zenithmon 3695 -> **3696**, Combat 1840 -> **1841**, RenderTest

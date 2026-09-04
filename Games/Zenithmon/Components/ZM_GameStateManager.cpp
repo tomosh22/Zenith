@@ -547,15 +547,23 @@ bool ZM_GameStateManager::CaptureWorldPosition(ZM_GameState& xStateInOut)
 	}
 
 	const Zenith_PhysicsBodyID xPlayerBodyID = pxPlayerCollider->GetBodyID();
-	// The body position IS the capsule CENTRE. It is stored as-is and applied back
-	// as-is; the feet convention exists only on spawn MARKERS.
-	const Zenith_Maths::Vector3 xCentre = xPhysics.GetBodyPosition(xPlayerBodyID);
+	// ★ THE BODY POSITION IS THE PLAYER'S FEET (ZM-D-223). It used to be the capsule
+	// CENTRE, and this comment used to say so; the entity origin moved to the feet
+	// and the capsule SHAPE is offset instead, so the same call now returns the feet.
+	// Stored as-is and applied back as-is -- the save, the spawn markers and the
+	// transform all speak one vocabulary now, which is what removed the conversions
+	// this file used to carry.
+	//
+	// A save WRITTEN before that move stores a centre, and nothing on the wire can
+	// tell the two apart: ZM_SaveSchema's v2->v3 migration is what converts it, and
+	// is the reason the schema version had to move for a format that did not.
+	const Zenith_Maths::Vector3 xFeet = xPhysics.GetBodyPosition(xPlayerBodyID);
 	const float fYaw = ZM_YawFromRotation(xPhysics.GetBodyRotation(xPlayerBodyID));
 
 	// Built into a LOCAL and published in one assignment, so a rejected pose leaves
 	// the caller's m_xWorldPosition byte-identical.
 	ZM_WorldPosition xCaptured;
-	if (!ZM_MakeWorldPosition(uBuildIndex, szArrivedTag, xCentre, fYaw, xCaptured))
+	if (!ZM_MakeWorldPosition(uBuildIndex, szArrivedTag, xFeet, fYaw, xCaptured))
 	{
 		return false;
 	}
@@ -640,11 +648,17 @@ bool ZM_GameStateManager::IsWarpDestinationValid(
 	return false;
 }
 
-Zenith_Maths::Vector3 ZM_GameStateManager::CalculateSpawnCenter(
+Zenith_Maths::Vector3 ZM_GameStateManager::CalculateSpawnPosition(
 	const Zenith_Maths::Vector3& xMarkerFeetPosition)
 {
-	return xMarkerFeetPosition
-		+ Zenith_Maths::Vector3(0.0f, fZM_HUMAN_BODY_HALF_HEIGHT, 0.0f);
+	// ★ THE IDENTITY, DELIBERATELY KEPT AS A FUNCTION. It used to add half a body
+	// height, because a spawn MARKER stored feet while an entity stored its centre;
+	// the entity stores its feet now, so the two vocabularies are one and there is
+	// nothing to convert. The function survives because it is the single named place
+	// that says so -- deleting it would scatter the claim "a marker IS a spawn
+	// position" across every caller, where the next convention change could not find
+	// it.
+	return xMarkerFeetPosition;
 }
 
 float ZM_GameStateManager::AdvanceFadeAlpha(
@@ -1106,7 +1120,7 @@ void ZM_GameStateManager::PollForSpawnAndPlacePlayer()
 	Zenith_Maths::Vector3 xMarkerFeetPosition;
 	pxSpawnTransform->GetPosition(xMarkerFeetPosition);
 	const Zenith_Maths::Vector3 xSpawnCenter =
-		CalculateSpawnCenter(xMarkerFeetPosition);
+		CalculateSpawnPosition(xMarkerFeetPosition);
 	const Zenith_PhysicsBodyID xPlayerBodyID = pxPlayerCollider->GetBodyID();
 	xPhysics.TeleportBody(xPlayerBodyID, xSpawnCenter);
 	xPhysics.SetLinearVelocity(xPlayerBodyID, Zenith_Maths::Vector3(0.0f));

@@ -191,16 +191,22 @@ float ZM_DawnmereTrainerSpawnY(float fCapsuleHalfExtent)
 {
 	// Same shape as the wanderer's below, and deliberately so -- see the header for
 	// the measurement that made the rival need it too (ZM-D-184).
+	//
+	// ★ FEET plus ONE clearance, not centre plus one. The authored entity position is
+	// the FEET now, so the half-extent that used to convert feet->centre is gone and
+	// the ONLY remaining term is the ZM-D-184 air gap. The body still spawns exactly
+	// one half-extent clear of the terrain, which is what that ruling asks for.
 	const float fSanitised = ZM_SanitiseCapsuleHalfExtent(fCapsuleHalfExtent);
-	return ZM_DawnmereNpcCentreY(ZM_DAWNMERE_NPC_RIVAL_VESPER, fSanitised) + fSanitised;
+	return ZM_DawnmereNpcFeetY(ZM_DAWNMERE_NPC_RIVAL_VESPER) + fSanitised;
 }
 
 float ZM_DawnmereWandererSpawnY(float fCapsuleHalfExtent)
 {
-	// ONE EXTRA half-extent above the resting centre. Spelled as centre + extra
-	// rather than feet + 2 * half so the "extra air" is visible as its own term.
+	// ONE half-extent of air above the FEET -- see ZM_DawnmereTrainerSpawnY for why
+	// the second term went away with the feet origin. The "extra air" is now the
+	// whole expression rather than one term of it, which is if anything clearer.
 	const float fSanitised = ZM_SanitiseCapsuleHalfExtent(fCapsuleHalfExtent);
-	return ZM_DawnmereNpcCentreY(ZM_DAWNMERE_NPC_WANDERER, fSanitised) + fSanitised;
+	return ZM_DawnmereNpcFeetY(ZM_DAWNMERE_NPC_WANDERER) + fSanitised;
 }
 
 u_int ZM_GetDawnmereWanderWaypointCount()

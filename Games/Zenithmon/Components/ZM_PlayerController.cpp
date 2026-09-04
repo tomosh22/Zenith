@@ -485,6 +485,24 @@ void ZM_PlayerController::EnsureAndConfigureBody()
 		return;
 	}
 
+	// ★ THE SHAPE OFFSET, ON BOTH BRANCHES. The player's entity origin is its FEET,
+	// so an inscribed capsule has to ride half a body height up or the player stands
+	// buried to the waist -- no ground contact, no walk-up, no collision with an NPC.
+	//
+	// It lives HERE rather than in either branch above because BOTH need it: the
+	// first-in AddCapsuleCollider path and the re-configure path alike. And it must
+	// come before the configuration block below for the reason the dimension setter
+	// gives -- it rebuilds the body, dropping sensor state, gravity and the locks,
+	// which the lines after this are what re-apply. It is idempotent, so the steady
+	// state costs nothing and the body ID stays stable across repeated OnStart.
+	//
+	// ZM_GreyboxVisual::InstallHumanBody does exactly this for every NON-player
+	// human and explicitly returns early for the player, leaving it to this
+	// function; forgetting it here left the player alone in the old convention while
+	// the whole world had moved to the new one.
+	pxCollider->SetExplicitShapeOffset(
+		Zenith_Maths::Vector3(0.0f, fZM_HUMAN_BODY_SHAPE_OFFSET_Y, 0.0f));
+
 	const Zenith_PhysicsBodyID xBodyID = pxCollider->GetBodyID();
 	pxCollider->SetIsSensor(false);
 	xPhysics.SetGravityEnabled(xBodyID, true);
@@ -540,9 +558,15 @@ bool ZM_PlayerController::ProbeGround(
 	Zenith_Maths::Vector3 xPosition;
 	m_xParentEntity.GetComponent<Zenith_TransformComponent>().GetPosition(xPosition);
 
+	// ★ THE PROBE STARTS AT THE BODY CENTRE, NOT AT THE TRANSFORM. The transform is
+	// the FEET now, and a ray cast downward FROM the feet starts on -- or a hair
+	// below -- the very surface it is trying to find, so it would miss the floor the
+	// player is standing on. Lifting to the centre reproduces exactly the ray this
+	// probe has always cast: same origin in world space, same length, same reach
+	// below the soles.
 	const Zenith_Physics::RaycastResult xGroundHit =
 		Zenith_PhysicsQuery::RaycastIgnoring(
-			xPosition,
+			ZM_HumanBodyCentre(xPosition),
 			Zenith_Maths::Vector3(0.0f, -1.0f, 0.0f),
 			fZM_HUMAN_BODY_HALF_HEIGHT + fGROUND_PROBE_EXTENSION,
 			m_xParentEntity.GetEntityID());

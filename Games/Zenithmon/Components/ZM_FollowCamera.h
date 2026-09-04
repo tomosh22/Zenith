@@ -104,6 +104,20 @@ public:
 		float fFallbackPitch);
 
 	static constexpr float GetPivotHeight() { return fPIVOT_HEIGHT; }
+
+	// THE pivot, in ONE place. Takes the player's body CENTRE -- the same input
+	// ComputeDesiredPosition takes, deliberately, so the pair cannot be fed two
+	// different conventions. A caller holding a player TRANSFORM (which is the FEET;
+	// see ZM_HumanBody.h) converts with ZM_HumanBodyCentre first.
+	//
+	// ★ IT EXISTS BECAUSE THE DUPLICATE BIT. fPIVOT_HEIGHT is measured from the body
+	// CENTRE, and three camera units re-spelled the derivation as
+	// "playerPosition + GetPivotHeight()". That was correct only while the transform
+	// WAS the centre; when the origin moved to the feet, production moved and the
+	// three copies did not. Both sides call this now, so the same mistake cannot be
+	// made twice.
+	static Zenith_Maths::Vector3 ComputePivot(
+		const Zenith_Maths::Vector3& xPlayerBodyCentre);
 	static constexpr float GetCameraHeight() { return fCAMERA_HEIGHT; }
 	static constexpr float GetArmLength() { return fCAMERA_ARM_LENGTH; }
 	static constexpr float GetSpringOmega() { return fSPRING_OMEGA; }

@@ -3,9 +3,24 @@
 // ============================================================================
 // ZM_HumanGen -- the S4 procedural HUMAN-asset generator: it turns a ZM_HUMAN_ID
 // into a deterministic human bundle (skinned mesh + a placeholder albedo) that
-// binds the ONE shared 16-bone skeleton and reuses the ONE shared 9-clip .zanim
-// set, and (in tools builds) bakes the shared rig + per-model bundle to disk
-// under the ZM_HumanAssetPath scheme (AssetManifest section 2).
+// binds the ENGINE-SHARED StickFigure skeleton and its clip library, and (in tools
+// builds) bakes the per-model bundle to disk under the ZM_HumanAssetPath scheme
+// (AssetManifest section 2).
+//
+// ★ THE RIG IS NOT THIS GAME'S. Generator v6 retired Zenithmon's own 16-bone
+// skeleton and its nine hand-authored clips outright. Humans bind
+// engine:Meshes/StickFigure/StickFigure.zskel -- the SAME file, byte for byte,
+// that RenderTest and Combat bind -- and play clips out of that rig's shared
+// library. Nothing game-side is baked for the rig or the clips any more: there is
+// no Humans/Shared/ folder, and ZM_BakeAllHumans writes per-model bundles only.
+//
+// That is possible because the two rigs were never actually different where it
+// counted: StickFigure's bones 0..15 are Root..RightFoot with the identical names,
+// parents and bind translations Zenithmon used to emit, and bones 16..50 (jaw,
+// eyes, toes, thirty finger bones) are additions Zenithmon's loft simply does not
+// weight. Zenithmon's rig was a strict PREFIX of StickFigure's, so every skin index
+// this generator already wrote points at the correct StickFigure bone unchanged.
+// ZM_HumanRigMatchesStickFigure_Test loads the real .zskel and pins exactly that.
 //
 // SIMPLER THAN ZM_CreatureGen (deliberately): there is exactly ONE body plan --
 // NO archetype dispatch, NO shiny, NO dex icon, NO per-model normal map (v1).
@@ -33,10 +48,6 @@
 #include "Zenithmon/Source/Gen/ZM_TextureSynth.h"    // ZM_GenImage (the placeholder albedo type)
 #include "Zenithmon/Source/Data/ZM_HumanData.h"      // ZM_HUMAN_ID + the variety-axis enums
 
-// Forward-declared so the frozen SC4 clip-builder decl needs no engine anim
-// header in this all-config seam (the body lands in SC4).
-class Flux_AnimationClip;
-
 // ZM_BakeManifest (a later box) stamps this per-family version; bump it whenever
 // this module's generation algorithms change so stale bakes self-invalidate
 // (AssetManifest 7: "fix the generator, bump its version, re-bake").
@@ -54,13 +65,31 @@ class Flux_AnimationClip;
 //             ZM_HumanData variety axis owes the same bump.
 // 4: humans gained the full four-map PBR set beside the albedo, derived from the
 // albedo luma (see ZM_SynthHeightFromAlbedoLuma for why that is a heuristic).
-constexpr u_int uZM_HUMANGEN_VERSION = 5u;
+//   v5 -> v6: THE RIG CHANGED. The mesh is no longer centre-anchored -- it is left
+//             in the shared StickFigure rig's own bind space, which moves every
+//             vertex of every human by a constant and repoints the .zmodel's
+//             skeleton and animation refs at engine: paths. Every v5 bundle on disk
+//             is both mis-placed and bound to a .zskel that no longer exists, so
+//             this bump is load-bearing.
+constexpr u_int uZM_HUMANGEN_VERSION = 6u;
 
-// The shared humanoid skeleton is EXACTLY these 16 bones (the frozen StickFigure
-// core names). ZM_AppendSharedHumanBones is the single canonical emit; both the
-// per-model mesh builder AND the shared-skeleton bake consume it, so every model
-// carries the identical bone count / names / index order.
-constexpr u_int uZM_HUMAN_BONE_COUNT = 16u;
+// The shared rig's asset ref -- the ONE skeleton every human in this game binds,
+// and the same file RenderTest and Combat bind. Spelled once, here.
+inline constexpr const char* szZM_HUMAN_SKELETON_REF =
+	"engine:Meshes/StickFigure/StickFigure.zskel";
+
+// How many bones that rig has in total. Zenithmon does not emit them -- this is the
+// SKIN INDEX CAP ZM_ValidateGenMesh is handed, i.e. the largest bone index a human
+// vertex may legally reference.
+constexpr u_int uZM_STICKFIGURE_BONE_COUNT = 51u;
+
+// The leading run of that rig Zenithmon's loft actually weights: Root, Spine, Neck,
+// Head, the two arm chains and the two leg chains, at indices 0..15. Bones 16..50
+// (jaw, eyes, toes, fingers) belong to StickFigure's richer rig and carry no
+// Zenithmon weight -- a strict subset, not a mismatch.
+constexpr u_int uZM_HUMAN_CORE_BONE_COUNT = 16u;
+static_assert(uZM_HUMAN_CORE_BONE_COUNT < uZM_STICKFIGURE_BONE_COUNT,
+	"the core prefix must be a proper prefix of the shared rig");
 
 // The placeholder albedo resolution SC1 fills with a flat skin-tone colour. SC3
 // replaces the body with the real synthesised texture; the value is not golden.
@@ -71,45 +100,43 @@ constexpr u_int uZM_HUMAN_ALBEDO_RESOLUTION = 256u;
 constexpr u_int uZM_HUMAN_SYNTHETIC_EVO_STAGE = 1u;
 
 // ---------------------------------------------------------------------------
-// The shared 9-clip set (FROZEN now; the curves land in SC4). Names / durations
-// / looping are golden literals. The Name doubles as the Flux clip name AND the
-// on-disk shared .zanim file suffix (Human_<Name>.zanim). Keyframe sample rate
-// REUSES uZM_CREATURE_ANIM_TICKS_PER_SECOND (24) -- no new tps constant.
-//   IDLE   "Idle"   2.0s  loop
-//   WALK   "Walk"   1.0s  loop
-//   RUN    "Run"    0.7s  loop
-//   TALK   "Talk"   1.6s  loop
-//   WAVE   "Wave"   1.0s  one-shot
-//   POINT  "Point"  0.8s  one-shot
-//   CHEER  "Cheer"  1.2s  one-shot
-//   HURT   "Hurt"   0.4s  one-shot
-//   FAINT  "Faint"  1.2s  one-shot
+// The clips a Zenithmon human binds. Every one is a file in the SHARED StickFigure
+// library -- this game authors no animation of its own, and the Name is both the
+// clip's own name inside the .zanim (what Flux_AnimationClipCollection::GetClip is
+// keyed on) and the on-disk suffix (StickFigure_<Name>.zanim).
+//
+// ★ THE SET IS WHAT THE GAME PLAYS, NOT AN ASPIRATION. v5 baked nine clips and
+// wired exactly two of them: the locomotion state machine in Zenithmon.cpp uses
+// Idle and Walk, and nothing anywhere played Talk, Wave, Point or Cheer. Those four
+// had no StickFigure equivalent and were dropped rather than reimplemented against
+// the new rig -- authoring animation nothing calls is dead content, and it would
+// have been the largest single piece of this migration. RUN is kept because it is
+// one file away from the speed-driven machine that already exists; HURT and FAINT
+// map onto StickFigure's Hit and Death, which are the same beats under the names
+// that rig gives them. Anything that later needs a wave authors it in the SHARED
+// library, where all three games get it.
 // ---------------------------------------------------------------------------
 enum ZM_HUMAN_ANIM_CLIP : u_int
 {
-	ZM_HUMAN_CLIP_IDLE,
-	ZM_HUMAN_CLIP_WALK,
-	ZM_HUMAN_CLIP_RUN,
-	ZM_HUMAN_CLIP_TALK,
-	ZM_HUMAN_CLIP_WAVE,
-	ZM_HUMAN_CLIP_POINT,
-	ZM_HUMAN_CLIP_CHEER,
-	ZM_HUMAN_CLIP_HURT,
-	ZM_HUMAN_CLIP_FAINT,
+	ZM_HUMAN_CLIP_IDLE,    // StickFigure_Idle.zanim
+	ZM_HUMAN_CLIP_WALK,    // StickFigure_Walk.zanim
+	ZM_HUMAN_CLIP_RUN,     // StickFigure_Run.zanim
+	ZM_HUMAN_CLIP_HURT,    // StickFigure_Hit.zanim
+	ZM_HUMAN_CLIP_FAINT,   // StickFigure_Death.zanim
 
 	ZM_HUMAN_CLIP_COUNT
 };
 
-// Golden metadata accessors (literal-pinned; no version read).
+// The clip's name in the shared library: both the .zanim file suffix and the name
+// the clip carries internally, which is what makes ONE accessor serve the bake path
+// and the runtime state-machine lookup without them being able to disagree.
+//
+// ★ NO DURATION OR LOOPING ACCESSOR. v5 pinned both as golden literals because it
+// AUTHORED the curves. It does not any more: how long StickFigure's Idle runs and
+// whether it loops are facts about a file this game does not own, and a literal
+// here would be a claim nothing checks and the shared library could silently
+// falsify. Ask the loaded Flux_AnimationClip.
 const char* ZM_HumanClipName(ZM_HUMAN_ANIM_CLIP eClip);
-float       ZM_HumanClipDurationSeconds(ZM_HUMAN_ANIM_CLIP eClip);
-bool        ZM_HumanClipLooping(ZM_HUMAN_ANIM_CLIP eClip);
-
-// Author the shared clip's rotation channels against the shared skeleton. FROZEN
-// declaration; the body is SC4 (declared-only in SC1 -- never called by the SC1
-// gate, so no link dependency). Byte-identical for every human (clips are a pure
-// function of the clip id, transferred by bone NAME).
-void ZM_BuildHumanClip(ZM_HUMAN_ANIM_CLIP eClip, Flux_AnimationClip& xOut);
 
 // ---------------------------------------------------------------------------
 // ZM_HumanRecipe -- the fully resolved per-human generation inputs. Pure data;
@@ -141,21 +168,22 @@ struct ZM_HumanRecipe
 ZM_HumanRecipe ZM_ResolveHumanRecipe(ZM_HUMAN_ID eId);
 
 // ---------------------------------------------------------------------------
-// CENTRE-ANCHORED BIND SPACE (generator v2) + BODY METRICS
+// RIG BIND SPACE (generator v6) + BODY METRICS
 //
-// v1 built every human with the feet near y=0. Zenithmon's authored entity
-// position is the CAPSULE CENTRE (feet + half the body height) and the whole game
-// speaks that vocabulary -- camera pivot, ground probe, sight-cone origin, walk-up
-// standoff, both head anchors, every spawn point, the camera-clearance table. So
-// the entity origin could not move to the feet; the MESH moves instead. The shared
-// bind space is rigidly translated DOWN by fZM_HUMAN_MESH_CENTRE_Y, which puts the
-// canonical body's centre on the entity origin and lets a human be authored with
-// the model on the entity itself.
+// v2..v5 built every human CENTRE-ANCHORED: the loft was translated down so the
+// body's centre sat on the entity origin, and the game-owned skeleton's Root bone
+// was translated with it. That worked only for as long as the skeleton was this
+// game's to move. It is not any more -- the rig is the shared StickFigure asset --
+// and a mesh may only be skinned against a skeleton expressed in its OWN bind
+// space: translating vertices without translating the pivots they rotate about is
+// precisely the desync the anchor existed to avoid.
 //
-// Because it is a RIGID translation of the root bone AND every vertex, skinning
-// and animation are mathematically untouched: the shared clips are rotation-only
-// with root motion disabled, and every other bone is parent-local (so subtracting
-// from all 16 would compound down the hierarchy -- only Root moves).
+// So v6 leaves the mesh where StickFigure authors it: Root at y=0 (the HIP), the
+// feet reaching fZM_HUMAN_MESH_FEET_Y below it. Where that model then sits relative
+// to a Zenithmon entity is a GAME statement and is made once, in
+// ZM_HumanBody.h's fZM_HUMAN_MODEL_OFFSET_Y, via Zenith_ModelComponent's
+// model-space offset. Skinning and animation are untouched by that offset because
+// it is applied to the finished model matrix, not to the bind pose.
 //
 // "BODY" means the six loft parts ZM_BuildHumanMesh emits BEFORE
 // ZM_AppendHumanAppearanceMesh -- torso, head/neck, two arms, two legs. Hair and
@@ -164,10 +192,11 @@ ZM_HumanRecipe ZM_ResolveHumanRecipe(ZM_HUMAN_ID eId);
 // the measurement is taken BEFORE the anchor translation, so it is never circular.
 // ---------------------------------------------------------------------------
 
-// THE one human whose body defines the shared bind space. It must be a single
-// shared constant: the skeleton is shared and FIXED while m_fHeightScale (0.97 ..
-// 1.03) scales vertices only, so a per-model centre would desync rig from mesh.
-// The residual is a few centimetres of deliberate build variety.
+// THE one human whose body defines the shared placement. It must be a single
+// shared constant: the rig is shared and FIXED while m_fHeightScale (0.97 ..
+// 1.03) scales vertices only, so a per-model measurement would place each human
+// differently against one rig. The residual is a few centimetres of deliberate
+// build variety.
 // HumanGen_BodyMetricsPinned pins that this row remains ZM_HUMAN_BUILD_AVERAGE
 // with m_fHeightScale == 1.0, and that its ZM_HUMAN_ATTACHMENT_CAP does not
 // participate (metrics use the body prefix only).
@@ -177,24 +206,34 @@ constexpr ZM_HUMAN_ID eZM_HUMAN_CANONICAL_MODEL = ZM_HUMAN_PLAYER_M;
 // HumanGen_BodyMetricsPinned, which re-derives them from a freshly built mesh --
 // a generator edit therefore reds the gate instead of silently mis-sizing every
 // human in the game.
-// MEASURED 2026-08-01 by HumanGen_BodyMetricsPinned on a clean Null_ build. These
-// are MODEL-space units, not metres: the loft inherits the StickFigure golden ring
+// MEASURED by HumanGen_BodyMetricsPinned on a clean Null_ build. These are
+// MODEL-space units, not metres: the loft inherits the StickFigure golden ring
 // tables, which build a ~2.6-unit-tall body. fZM_HUMAN_VISUAL_SCALE is what turns
 // that into the game's 1.8 m.
+//
+// ★ ALL THREE ARE IN THE SHARED RIG'S BIND SPACE, where the rig's own origin (the
+// HIP) is y=0. That is why the feet are NEGATIVE: a standing body reaches about one
+// unit below its hip. v5 spelled the centre as +1.307005 because it measured a
+// feet-at-zero space that no longer exists; the same body is 0.307005 above the hip.
 inline constexpr float fZM_HUMAN_CANONICAL_BODY_HEIGHT = 2.604300f;
-inline constexpr float fZM_HUMAN_MESH_CENTRE_Y         = 1.307005f;
+inline constexpr float fZM_HUMAN_MESH_CENTRE_Y         = 0.307005f;
+inline constexpr float fZM_HUMAN_MESH_FEET_Y           = -0.995145f;
 
-// Where the root bone sits once the bind space is anchored. Root is the ONLY bone
-// with parent -1, so its local translation is its world bind position; every other
-// bone is parent-local and follows for free.
-inline constexpr float fZM_HUMAN_ROOT_BIND_Y = 1.0f - fZM_HUMAN_MESH_CENTRE_Y;
+// The three are one statement measured three ways, so they owe each other this.
+static_assert(fZM_HUMAN_MESH_CENTRE_Y - fZM_HUMAN_MESH_FEET_Y
+		- 0.5f * fZM_HUMAN_CANONICAL_BODY_HEIGHT < 1.0e-5f
+	&& 0.5f * fZM_HUMAN_CANONICAL_BODY_HEIGHT
+		- (fZM_HUMAN_MESH_CENTRE_Y - fZM_HUMAN_MESH_FEET_Y) < 1.0e-5f,
+	"the body's centre must sit half its height above its feet");
 
 // (The uniform authored scale that maps a canonical body onto the game's body
 // box is fZM_HUMAN_VISUAL_SCALE, and it lives with the rest of the body contract
 // in Source/World/ZM_HumanBody.h -- how big a person is is a GAME statement, not
 // a generator one.)
 
-// The vertical extent of one human's BODY (see above), in PRE-ANCHOR bind space.
+// The vertical extent of one human's BODY (see above), in the shared rig's bind
+// space -- so m_fMinY reads directly as "how far below the rig's origin the feet
+// reach", which is what fZM_HUMAN_MODEL_OFFSET_Y is derived from.
 struct ZM_HumanBodyMetrics
 {
 	float m_fMinY    = 0.0f;
@@ -202,7 +241,7 @@ struct ZM_HumanBodyMetrics
 	float m_fHeight  = 0.0f;   // m_fMaxY - m_fMinY
 	float m_fCentreY = 0.0f;   // 0.5f * (m_fMinY + m_fMaxY)
 
-	// The body vertex PREFIX these numbers were taken over. The anchor adds and
+	// The body vertex PREFIX these numbers were taken over. Finalisation adds and
 	// removes no vertices and reorders nothing, so the SAME prefix indexes the body
 	// of the finished ZM_BuildHumanMesh output -- which is how a test measures the
 	// shipped mesh instead of trusting arithmetic about it.
@@ -227,26 +266,14 @@ inline ZM_GenRNG ZM_MakeGenRNG(const ZM_HumanRecipe& xRecipe, ZM_GEN_DOMAIN eDom
 }
 
 // ---------------------------------------------------------------------------
-// Shared skeleton -- THE canonical bone emit. Appends exactly uZM_HUMAN_BONE_COUNT
-// bones (Root, Spine, Neck, Head, the two arm chains, the two leg chains) into
-// xMesh, parent-before-child, with IDENTITY bind-local rotation on EVERY bone
-// (mandatory: the rotation-only shared clips are absolute-local, so a non-identity
-// bind rotation would pose every model wrong) and unit bind scale. The bind pose is
-// CENTRE-ANCHORED (v2): Root sits at fZM_HUMAN_ROOT_BIND_Y, which is the only bone
-// the anchor touches. Both the per-model mesh builder AND the shared .zskel bake
-// call this, so the rig and every mesh move together and can never drift.
-void ZM_AppendSharedHumanBones(ZM_GenMesh& xMesh);
-
-// ---------------------------------------------------------------------------
 // Per-output builders (pure functions of the recipe). Each is separately
 // unit-testable.
 // ---------------------------------------------------------------------------
 
-// Build the shared skeleton (ZM_AppendSharedHumanBones) then loft a simple valid
-// humanoid body (torso + head + two arms + two legs) skinned <=2 bones to the
-// shared indices, then the finalise order (tangents -> normalise skin). SC1 body
-// is intentionally MINIMAL -- enough that ZM_ValidateGenMesh passes; SC2 replaces
-// it with the real humanoid loft.
+// Loft the humanoid body (torso + head + two arms + two legs) skinned <=2 bones to
+// the shared rig core indices, then the finalise order (tangents -> normalise
+// skin). Emits NO bones: the rig is the shared engine asset, and the mesh only
+// refers to it by index.
 void ZM_BuildHumanMesh(const ZM_HumanRecipe& xRecipe, ZM_GenMesh& xMesh);
 
 // ---------------------------------------------------------------------------
@@ -291,33 +318,38 @@ u_int ZM_HumanContentHash(const ZM_Human& xHuman);
 // ---------------------------------------------------------------------------
 struct ZM_HumanValidation
 {
-	// Mesh structure (from ZM_ValidateGenMesh at uZM_HUMAN_BONE_COUNT).
+	// Mesh structure (from ZM_ValidateGenMesh at uZM_STICKFIGURE_BONE_COUNT).
 	bool  m_bMeshValid             = false;   // winding && bounds && weights && <=2 infl && cap
 	bool  m_bWindingOutward        = false;
 	bool  m_bBoundsNonDegen        = false;
 	bool  m_bWeightsSumToOne       = false;
 	bool  m_bWeightsAtMostTwo      = false;
 	bool  m_bBonesWithinCap        = false;
-	// Skeleton topology (the shared-rig invariants).
-	bool  m_bHasSingleRoot         = false;   // exactly one bone with parent -1
-	bool  m_bParentsBeforeChildren = false;   // every parent index < child index
-	bool  m_bBoneCountMatchesShared = false;  // GetNumBones() == uZM_HUMAN_BONE_COUNT
+	// * NO SKELETON-TOPOLOGY FLAGS. v5 carried m_bHasSingleRoot /
+	// m_bParentsBeforeChildren / m_bBoneCountMatchesShared because it EMITTED the
+	// rig and could get it wrong. It does not emit one now, so those would be
+	// assertions about an engine asset made by a game that never touches it -- and
+	// against v6's empty bone array they would have passed trivially, which is worse
+	// than absent. ZM_HumanRigMatchesStickFigure_Test checks the real file instead.
+	bool  m_bSkinIndicesInCorePrefix = false; // every weighted index < uZM_HUMAN_CORE_BONE_COUNT
 	// Texture.
 	bool  m_bAlbedoNonEmpty        = false;
 	// Rollup.
 	bool  m_bAllValid              = false;
 	u_int m_uFirstBadVertex        = 0xFFFFFFFFu;
 	u_int m_uFirstBadTriangle      = 0xFFFFFFFFu;
-	char  m_szFirstBad[uZM_GEN_BONE_NAME_MAX] = {};   // first parent-before-child violator (or empty)
+	u_int m_uFirstOutOfPrefixVertex = 0xFFFFFFFFu;   // first vertex weighting a non-core bone
 };
 ZM_HumanValidation ZM_ValidateHuman(const ZM_Human& xHuman);
 
 // ---------------------------------------------------------------------------
-// Asset-path scheme (AssetManifest section 2). Two schemes:
+// Asset-path scheme (AssetManifest section 2). Two schemes, and they now resolve
+// under DIFFERENT ROOTS:
 //   PER-MODEL:  game:Humans/<Name>/<Name>.zmesh / _albedo.ztxtr / .zmtrl / .zmodel
-//   SHARED:     game:Humans/Shared/Human.zskel + Human_<Clip>.zanim (Idle..Faint)
-// Both write the canonical "game:" ref and return false on buffer overflow
-// (truncation), mirroring ZM_CreatureAssetPath.
+//   SHARED:     engine:Meshes/StickFigure/StickFigure.zskel + StickFigure_<Clip>.zanim
+// The per-model half is baked by this game; the shared half is an ENGINE asset this
+// game only refers to. Both return false on buffer overflow (truncation),
+// mirroring ZM_CreatureAssetPath.
 // ---------------------------------------------------------------------------
 enum ZM_HUMAN_ASSET_KIND : u_int
 {
@@ -332,47 +364,51 @@ enum ZM_HUMAN_ASSET_KIND : u_int
 	ZM_HUMAN_ASSET_KIND_COUNT
 };
 
-// The shared rig + clip files (one set for ALL humans). The 9 clip kinds are kept
-// CONTIGUOUS and last so (ZM_HUMAN_SHARED_ASSET_KIND)(ZM_HUMAN_SHARED_ASSET_ANIM_IDLE
-// + eClip) maps each ZM_HUMAN_ANIM_CLIP to its shared asset kind; suffixes match
-// ZM_HumanClipName (Idle..Faint).
+// The shared rig + clip files (one set for ALL humans, and for all THREE games --
+// these resolve under "engine:", not "game:", and this generator bakes none of
+// them). The clip kinds are kept CONTIGUOUS and last so
+// (ZM_HUMAN_SHARED_ASSET_KIND)(ZM_HUMAN_SHARED_ASSET_ANIM_IDLE + eClip) maps each
+// ZM_HUMAN_ANIM_CLIP to its shared asset kind; suffixes match ZM_HumanClipName.
 enum ZM_HUMAN_SHARED_ASSET_KIND : u_int
 {
-	ZM_HUMAN_SHARED_ASSET_SKELETON,     // Human.zskel
-	ZM_HUMAN_SHARED_ASSET_ANIM_IDLE,    // Human_Idle.zanim
-	ZM_HUMAN_SHARED_ASSET_ANIM_WALK,    // Human_Walk.zanim
-	ZM_HUMAN_SHARED_ASSET_ANIM_RUN,     // Human_Run.zanim
-	ZM_HUMAN_SHARED_ASSET_ANIM_TALK,    // Human_Talk.zanim
-	ZM_HUMAN_SHARED_ASSET_ANIM_WAVE,    // Human_Wave.zanim
-	ZM_HUMAN_SHARED_ASSET_ANIM_POINT,   // Human_Point.zanim
-	ZM_HUMAN_SHARED_ASSET_ANIM_CHEER,   // Human_Cheer.zanim
-	ZM_HUMAN_SHARED_ASSET_ANIM_HURT,    // Human_Hurt.zanim
-	ZM_HUMAN_SHARED_ASSET_ANIM_FAINT,   // Human_Faint.zanim
+	ZM_HUMAN_SHARED_ASSET_SKELETON,     // StickFigure.zskel
+	ZM_HUMAN_SHARED_ASSET_ANIM_IDLE,    // StickFigure_Idle.zanim
+	ZM_HUMAN_SHARED_ASSET_ANIM_WALK,    // StickFigure_Walk.zanim
+	ZM_HUMAN_SHARED_ASSET_ANIM_RUN,     // StickFigure_Run.zanim
+	ZM_HUMAN_SHARED_ASSET_ANIM_HURT,    // StickFigure_Hit.zanim
+	ZM_HUMAN_SHARED_ASSET_ANIM_FAINT,   // StickFigure_Death.zanim
 
 	ZM_HUMAN_SHARED_ASSET_KIND_COUNT
 };
+static_assert(static_cast<u_int>(ZM_HUMAN_SHARED_ASSET_KIND_COUNT)
+		== static_cast<u_int>(ZM_HUMAN_SHARED_ASSET_ANIM_IDLE)
+			+ static_cast<u_int>(ZM_HUMAN_CLIP_COUNT),
+	"every clip must have exactly one shared asset kind, contiguous after the skeleton");
 
 // Write the canonical per-model "game:" asset ref for (human, kind) into szOut.
 // Returns false (leaving szOut best-effort NUL-terminated) if uCap is too small.
 bool ZM_HumanAssetPath(ZM_HUMAN_ID eId, ZM_HUMAN_ASSET_KIND eKind, char* szOut, u_int uCap);
 
-// Write the canonical shared-rig "game:" asset ref for eKind into szOut. Returns
+// Write the canonical shared-rig "engine:" asset ref for eKind into szOut. Returns
 // false (leaving szOut best-effort NUL-terminated) if uCap is too small.
 bool ZM_HumanSharedAssetPath(ZM_HUMAN_SHARED_ASSET_KIND eKind, char* szOut, u_int uCap);
 
 // ---------------------------------------------------------------------------
-// Disk bake (TOOLS ONLY) -- ZM_BakeHumanShared writes the shared .zskel + 9
-// .zanim files ONCE; ZM_BakeHuman writes one model's mesh/albedo/material/model
-// bundle; ZM_BakeAllHumans bakes the shared rig then every model. NOT exercised
-// by the in-memory ZM_Gen gate. Bodies land in SC5; non-tools no-ops keep _False
-// configs linking.
+// Disk bake (TOOLS ONLY) -- ZM_BakeHuman writes one model's
+// mesh/albedo/material/model bundle; ZM_BakeAllHumans bakes every model. NOT
+// exercised by the in-memory ZM_Gen gate. Non-tools no-ops keep _False configs
+// linking.
+//
+// * THERE IS NO SHARED BAKE ANY MORE. v5 had ZM_BakeHumanShared writing a .zskel
+// and nine .zanim files into game:Humans/Shared/; v6 binds the engine's StickFigure
+// rig and library instead, so there is nothing game-side to write and no
+// Humans/Shared/ folder at all. A bundle REFERS to those engine assets; it never
+// produces them.
 // ---------------------------------------------------------------------------
 #ifdef ZENITH_TOOLS
-bool ZM_BakeHumanShared();
 bool ZM_BakeHuman(ZM_HUMAN_ID eId);
 bool ZM_BakeAllHumans();
 #else
-inline bool ZM_BakeHumanShared()          { return false; }
 inline bool ZM_BakeHuman(ZM_HUMAN_ID)     { return false; }
 inline bool ZM_BakeAllHumans()            { return false; }
 #endif

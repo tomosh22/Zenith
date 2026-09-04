@@ -431,18 +431,20 @@ ZENITH_TEST(ZM_Interaction, DawnmereWandererSpawn_CarriesExactlyOneExtraHalfExte
 		ZM_DawnmereNpcCentreY(ZM_DAWNMERE_NPC_WANDERER, fW5_CAPSULE_HALF_EXTENT);
 	const float fSpawn = ZM_DawnmereWandererSpawnY(fW5_CAPSULE_HALF_EXTENT);
 
-	ZENITH_ASSERT_EQ_FLOAT(fSpawn - fCentre, fW5_CAPSULE_HALF_EXTENT, 1.0e-5f,
-		"the wanderer's spawn no longer clears its resting centre by EXACTLY one "
-		"capsule half-extent (spawn %.5f, centre %.5f)", fSpawn, fCentre);
-	ZENITH_ASSERT_EQ_FLOAT(fSpawn - fFeet, 2.0f * fW5_CAPSULE_HALF_EXTENT, 1.0e-5f,
-		"the wanderer's spawn is no longer its measured feet plus TWO half-extents");
+	// * MEASURED AGAINST THE RESTING FEET. The authored position is the feet now, so
+	// "one extra half-extent of air" is spawn minus FEET -- it used to be spawn minus
+	// two half-extents because the authored value carried a feet->centre conversion
+	// as well as the clearance. The PHYSICAL claim is unchanged: the soles start one
+	// half-extent above the ground.
+	ZENITH_ASSERT_EQ_FLOAT(fSpawn - fFeet, fW5_CAPSULE_HALF_EXTENT, 1.0e-5f,
+		"the wanderer's spawn no longer clears its resting feet by EXACTLY one "
+		"capsule half-extent (spawn %.5f, feet %.5f)", fSpawn, fFeet);
 
-	// STRICTLY greater, and it is not implied by the equalities above: a build in
-	// which the half-extent term vanished would satisfy "spawn - centre == half"
-	// only by also making half zero, and this clause is what says out loud that the
-	// air is real.
-	ZENITH_ASSERT_GT(fSpawn, fCentre,
-		"the wanderer is authored AT or BELOW its resting centre -- the capsule "
+	// STRICTLY greater, and it is not implied by the equality above: a build in which
+	// the half-extent term vanished would satisfy "spawn - feet == half" only by also
+	// making half zero, and this clause is what says out loud that the air is real.
+	ZENITH_ASSERT_GT(fSpawn, fFeet,
+		"the wanderer is authored AT or BELOW its resting feet -- the capsule "
 		"starts inside the terrain mesh and gravity cannot settle it from the front");
 	ZENITH_ASSERT_GT(fCentre, fFeet,
 		"the wanderer's resting centre is not above its own feet height");
@@ -758,13 +760,15 @@ ZENITH_TEST(ZM_Interaction, Vesper_FacingIsDerivedFromTheTownCentreBearing)
 ZENITH_TEST(ZM_Interaction, Vesper_SpawnsClearOfTheGroundNotOnIt)
 {
 	const float fHalfExtent = fZM_HUMAN_BODY_HALF_HEIGHT;
-	const float fRestingCentre =
-		ZM_DawnmereNpcCentreY(ZM_DAWNMERE_NPC_RIVAL_VESPER, fHalfExtent);
+	// The resting FEET: the authored position's own vocabulary, so the clearance
+	// below is air between the soles and the ground rather than an offset between
+	// two different conventions.
+	const float fRestingFeet = ZM_DawnmereNpcFeetY(ZM_DAWNMERE_NPC_RIVAL_VESPER);
 	const float fSpawn = ZM_DawnmereTrainerSpawnY(fHalfExtent);
 
-	// (1) He spawns ABOVE his resting centre by a real margin -- not on it.
-	ZENITH_ASSERT_GT(fSpawn, fRestingCentre,
-		"the authored rival spawns AT his resting centre again. A dynamic capsule "
+	// (1) He spawns ABOVE his resting feet by a real margin -- not on them.
+	ZENITH_ASSERT_GT(fSpawn, fRestingFeet,
+		"the authored rival spawns AT his resting feet again. A dynamic capsule "
 		"authored exactly on the surface falls through the world when a long frame "
 		"drains many physics substeps at once -- see ZM-D-184.");
 
@@ -772,15 +776,15 @@ ZENITH_TEST(ZM_Interaction, Vesper_SpawnsClearOfTheGroundNotOnIt)
 	// has always been given. Stated as an equality rather than "> 0" so a future
 	// edit that shaves it to a token few millimetres reds here rather than silently
 	// re-opening the defect.
-	ZENITH_ASSERT_EQ_FLOAT(fSpawn - fRestingCentre, fHalfExtent, 1.0e-4f,
+	ZENITH_ASSERT_EQ_FLOAT(fSpawn - fRestingFeet, fHalfExtent, 1.0e-4f,
 		"the rival's spawn clearance is no longer one capsule half-extent");
 
 	// (3) The two spawn helpers agree in SHAPE. If someone re-derives one of them,
 	// the other should move with it -- they exist for the same reason.
 	const float fWandererClearance =
 		ZM_DawnmereWandererSpawnY(fHalfExtent)
-		- ZM_DawnmereNpcCentreY(ZM_DAWNMERE_NPC_WANDERER, fHalfExtent);
-	ZENITH_ASSERT_EQ_FLOAT(fSpawn - fRestingCentre, fWandererClearance, 1.0e-4f,
+		- ZM_DawnmereNpcFeetY(ZM_DAWNMERE_NPC_WANDERER);
+	ZENITH_ASSERT_EQ_FLOAT(fSpawn - fRestingFeet, fWandererClearance, 1.0e-4f,
 		"the rival and the wanderer no longer get the same spawn clearance");
 
 	// (4) TOTALITY, in this file's house style: a degenerate half-extent must not
@@ -2496,7 +2500,7 @@ ZENITH_TEST(ZM_Interaction, FromRoute1SpawnFeet_AssemblesItsIngredientsWithoutTr
 	ZENITH_ASSERT_EQ_FLOAT(xFeet.y, fSeamFeetY, 0.0f,
 		"ZM_GetDawnmereFromRoute1SpawnFeet().y is %.5f, not the MEASURED route-seam "
 		"surface ZM_DawnmereRouteSeamSampleFeetY(FROM_ROUTE1) reports (%.5f). This is "
-		"a FEET position and ZM_GameStateManager::CalculateSpawnCenter adds the "
+		"a FEET position and ZM_GameStateManager::CalculateSpawnPosition adds the "
 		"capsule half-extent at warp time, so a Y that is anything else drops every "
 		"player arriving off Route 1 in from the wrong height.",
 		xFeet.y, fSeamFeetY);

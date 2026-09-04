@@ -717,7 +717,7 @@ ZENITH_TEST(ZM_WorldTraversal, Route1_ArrivalMarkersSitOnTheRecipeLandmarksTheTe
 	}
 
 	// (3) ★ ZM-D-184: THE AUTHORED PLAYER STARTS EXACTLY ONE HALF-EXTENT CLEAR.
-	//     ZM_GetRoute1AuthoredPlayerCentre had NO READER AT ALL before this clause,
+	//     ZM_GetRoute1AuthoredPlayerFeet had NO READER AT ALL before this clause,
 	//     so a Route-1-side spawn-clearance error would have shipped with every unit
 	//     in this file green -- the very hole the sibling Thornacre suite already
 	//     closes. Stated as a DIFFERENCE OF THE TWO ACCESSORS, exactly as Thornacre
@@ -731,11 +731,16 @@ ZENITH_TEST(ZM_WorldTraversal, Route1_ArrivalMarkersSitOnTheRecipeLandmarksTheTe
 	//     constant reading correctly. TWO half-extents is the opposite mistake: the
 	//     body is floated a full body height up and visibly falls the moment the
 	//     route loads.
-	const float fAuthoredPlayerClearance = ZM_GetRoute1AuthoredPlayerCentre().y
-		- ZM_GetRoute1SouthArrivalBodyCentre().y;
+	//     ★ MEASURED AGAINST THE RESTING FEET, NOT A CENTRE. The authored position is
+	//     the feet now, so the gap this rule is about -- air between the soles and the
+	//     ground -- is a difference of two FEET heights. Against a centre it would
+	//     read as zero and this clause would fail while the physical clearance was
+	//     exactly right.
+	const float fAuthoredPlayerClearance = ZM_GetRoute1AuthoredPlayerFeet().y
+		- ZM_GetRoute1SouthArrivalFeet().y;
 	ZENITH_ASSERT_EQ_FLOAT(fAuthoredPlayerClearance, fZM_HUMAN_BODY_HALF_HEIGHT,
 		fROUTE1_CLEARANCE_EPSILON,
-		"the authored Route 1 player starts %.5f m above its resting body centre; "
+		"the authored Route 1 player starts %.5f m above its resting feet; "
 		"the ZM-D-184 rule is exactly one body half-extent (%.5f). Zero is the "
 		"substep-burst fall-through that lost Vesper; two is a visible drop the "
 		"moment the route loads",
@@ -1325,7 +1330,7 @@ ZENITH_TEST(ZM_WorldTraversal, Route1_TrainerStationsCanActuallySeeAPlayerWalkin
 		const ZM_Route1TrainerStation xStation = ZM_GetRoute1TrainerStation(eStation);
 
 		// ★ THE SIGHT ORIGIN IS THE RESTING CENTRE, NOT THE AUTHORED ONE.
-		// ZM_GetRoute1TrainerAuthoredCentre carries the ZM-D-184 spawn clearance --
+		// ZM_GetRoute1TrainerAuthoredFeet carries the ZM-D-184 spawn clearance --
 		// a dynamic body authored at exact contact bursts physics substeps and falls
 		// through the terrain -- and the body settles out of that within a frame.
 		// The cone is a claim about where he STANDS.

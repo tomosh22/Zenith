@@ -102,18 +102,23 @@ bool ZM_IsResumeTransformUsable(const ZM_WorldPosition& xSaved);
 // does not merely make the wire image non-deterministic -- it makes the game
 // UNSAVEABLE.
 //
-// m_afPosition stores the capsule/body CENTRE (what
-// Zenith_TransformComponent::GetPosition and Zenith_Physics::GetBodyPosition
-// both return), NOT feet. Spawn MARKERS store feet and
-// ZM_GameStateManager::CalculateSpawnCenter adds the capsule half-extent (0.9 m
-// for the authored 1.8 m player). Mixing the two conventions is a silent 0.9 m
-// error that sinks or floats the player.
+// m_afPosition stores the player's FEET (ZM-D-223) -- what
+// Zenith_TransformComponent::GetPosition and Zenith_Physics::GetBodyPosition both
+// return now that the human entity origin IS the feet and the capsule SHAPE carries
+// the offset. Spawn MARKERS store feet too, so a resume point and a marker are one
+// vocabulary and ZM_GameStateManager::CalculateSpawnPosition converts nothing.
+//
+// ★ IT USED TO STORE THE BODY CENTRE, AND SAVES ON DISK STILL DO. That is the whole
+// of ZM_SaveSchema's v2 -> v3 migration: nothing on the wire distinguishes the two
+// spaces, so the version word carries it. Mixing the conventions is a silent 0.9 m
+// error that sinks or floats the player -- which is precisely what reading a v2
+// save unmigrated would do.
 //
 // The scene build index is NOT validated here: the caller owns which scene it is
 // standing in, and ZM_ValidateResume is the one place that decides whether an
 // index resolves.
 bool ZM_MakeWorldPosition(u_int uSceneBuildIndex, const char* szSpawnTag,
-	const Zenith_Maths::Vector3& xCentrePosition, float fYaw, ZM_WorldPosition& xOut);
+	const Zenith_Maths::Vector3& xFeetPosition, float fYaw, ZM_WorldPosition& xOut);
 
 // PURE. Yaw the SAME way ZM_PlayerController writes it and the SAME way Jolt's
 // EnforceUpright reads it back: atan2 of the quaternion-rotated +Z

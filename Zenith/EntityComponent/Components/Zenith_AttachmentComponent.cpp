@@ -56,10 +56,18 @@ void Zenith_AttachmentComponent::OnLateUpdate(float)
 		return;
 	}
 
-	// world = skeletonEntityWorld * boneModelTransform * mountOffset.
+	// world = skeletonEntityRENDERWorld * boneModelTransform * mountOffset.
 	// The offset is on the RIGHT (bone-local), so it tracks the bone's frame.
+	//
+	// ★ THE MODEL'S MATRIX, NOT THE TRANSFORM'S. A Zenith_ModelComponent may carry a
+	// model-space offset (SetModelSpaceOffset -- how a rig whose origin is not the
+	// entity's origin is placed), and the bone matrix above is in that model's space.
+	// Composing it with the bare entity transform would attach the racket to where
+	// the hand would be if the model were NOT offset, so the held object floats off
+	// the hand by exactly the offset. BuildRenderMatrix is the same composition the
+	// renderer uses, which is what makes the attachment agree with the picture.
 	Zenith_Maths::Matrix4 xSkelWorld;
-	pxSkelTransform->BuildModelMatrix(xSkelWorld);
+	pxSkelModel->BuildRenderMatrix(xSkelWorld);
 	const Zenith_Maths::Matrix4 xWorld = xSkelWorld * xBoneModel * m_xOffset;
 
 	Zenith_TransformComponent& xSelfT = *pxSelfT;
