@@ -58,9 +58,13 @@ namespace RenderTest_Tennis
 	// testbed at court scale.
 	constexpr float fBALL_RADIUS = 0.12f;
 
-	// StickFigure feet bind 1 m below the entity origin, so an entity placed at
-	// Y = fSURFACE_Y + 1 stands with its feet on the surface.
-	constexpr float fPLAYER_FEET_OFFSET = 1.0f;
+	// (fPLAYER_FEET_OFFSET lived here and was referenced NOWHERE -- it asserted
+	// "StickFigure feet bind 1 m below the entity origin", which the rig's
+	// re-proportioning made false. A constant nothing reads cannot be wrong in a
+	// way anything notices, which is the argument for deleting it rather than
+	// updating it. The live number is the capsule half-extent at
+	// RenderTest_PlayerComponent.h:1010, and it is the mesh's SOLE depth -- which
+	// the warp pins, so it did not move.)
 }
 
 // Tools-only: bake the tennis geometry as CPU Zenith_MeshAssets and export them

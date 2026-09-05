@@ -20,6 +20,11 @@ main()                                   Zenith/Windows/Zenith_Windows_Main.cpp
        │     ├─ Profiling
        │     ├─ TaskSystem               spawns worker threads
        │     ├─ AssetRegistry            phase 1: register loaders
+       │     ├─ Tool asset exports       (ZENITH_TOOLS only, --skip-tool-exports)
+       │     │                           meshes + .glb, textures, font atlas, then
+       │     │                           GenerateTestAssets: the humanoid rig and
+       │     │                           the artist-humanoid binder. PRE-FLUX --
+       │     │                           no device, no scene. See Tools/CLAUDE.md.
        │     ├─ Flux::EarlyInitialise    Vulkan device, before assets need GPU
        │     ├─ Physics
        │     ├─ SceneManager
@@ -56,7 +61,12 @@ After those five, you'll be ready for the harder ones in any order:
 [Flux renderer](../../Zenith/Flux/CLAUDE.md),
 [Vulkan backend](../../Zenith/Vulkan/CLAUDE.md),
 [AI](../../Zenith/AI/CLAUDE.md),
-[Editor](../../Zenith/Editor/CLAUDE.md).
+[Editor](../../Zenith/Editor/CLAUDE.md),
+[Tools / the asset bake](../../Tools/CLAUDE.md).
+
+Bringing art INTO the engine is its own subject:
+**[Humanoid Import](../HumanoidImport.md)** is the end-to-end reference for how an
+artist's `.glb` becomes a skinned character on the engine's one shared rig.
 
 ---
 
@@ -105,7 +115,7 @@ Two subsystems hide their implementation behind a public-facing facade. If you'r
 | `MoveEntityToScene`, persistent entities, slot ownership | `Zenith_SceneEntityOwnership` |
 | Per-frame lifecycle state container (read-side surface) | `Zenith_SceneLifecycleContext` |
 
-Boundary contracts and re-entrancy rules: see [EntityComponent/Internal/ARCHITECTURE.md](../../Zenith/EntityComponent/Internal/ARCHITECTURE.md).
+Boundary contracts and re-entrancy rules: see [EntityComponent/CLAUDE.md](../../Zenith/EntityComponent/CLAUDE.md).
 
 ### Flux renderer — every subsystem registers passes with the render graph
 

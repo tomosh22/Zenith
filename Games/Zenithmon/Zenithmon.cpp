@@ -2,6 +2,7 @@
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_MeshAsset.h"                        // ZM_ResolvePropFit measures a baked prop mesh
+#include "AssetHandling/Zenith_ModelAsset.h"                       // the human model's own bounds place it on its feet
 #include "AssetHandling/Zenith_MeshGeometryAsset.h"
 #include "Core/Zenith_Engine.h"
 #include "Core/Zenith_GraphicsOptions.h"
@@ -469,6 +470,28 @@ private:
 	bool ApplyHumanModel(Zenith_ModelComponent& xModel, ZM_HUMAN_ID eHumanId)
 	{
 		char acModelRef[256];
+
+		// ★ TRY THE ARTIST-AUTHORED MODEL FIRST, FOR THE ONE HUMAN THAT HAS ONE,
+		// and fall THROUGH rather than out when it does not resolve -- the same
+		// shape the block fallback below already uses. The imported bundle is
+		// gitignored art: a fresh clone, a runtime-only build or a failed bind all
+		// legitimately produce no file, and every one of them should quietly get
+		// the generated human rather than a warning and a grey box.
+		//
+		// A skeleton instance is the validity check, not the file's existence. A
+		// STATIC bundle would load perfectly well and animate nothing.
+		const char* szImported = ZM_HumanImportedModelRef(eHumanId);
+		if (szImported != nullptr)
+		{
+			xModel.LoadModel(std::string(szImported));
+			if (xModel.GetSkeletonInstance() != nullptr)
+			{
+				return FinishHumanModel(xModel, *xModel.GetSkeletonInstance());
+			}
+			Zenith_Log(LOG_CATEGORY_GAMEPLAY,
+				"[ZM_GreyboxVisual] no skinned '%s' on disk; using the generated human", szImported);
+		}
+
 		if (!ZM_HumanAssetPath(eHumanId, ZM_HUMAN_ASSET_MODEL, acModelRef,
 			static_cast<u_int>(sizeof(acModelRef))))
 		{
@@ -487,20 +510,45 @@ private:
 			return false;
 		}
 
+		return FinishHumanModel(xModel, *pxSkeleton);
+	}
+
+	// The half of ApplyHumanModel that does not care WHICH human mesh loaded.
+	bool FinishHumanModel(Zenith_ModelComponent& xModel, Flux_SkeletonInstance& xSkeleton)
+	{
 		// ★ PLACE THE RIG. The shared StickFigure skeleton is authored HIP-at-origin
 		// and this game's human entity origin is the FEET, so the model is lifted by
 		// the depth its feet hang below the rig origin. Model-space, so the entity's
 		// uniform fZM_HUMAN_VISUAL_SCALE converts loft units to metres for free.
 		// Re-asserted on every model load rather than once, because LoadModel is what
 		// establishes which convention the loaded asset is in.
-		xModel.SetModelSpaceOffset(
-			Zenith_Maths::Vector3(0.0f, fZM_HUMAN_MODEL_OFFSET_Y, 0.0f));
+		//
+		// ★ PER-MODEL, from the loaded mesh's OWN bounds. It used to be the single
+		// constant fZM_HUMAN_MODEL_OFFSET_Y, which is right for every generated
+		// human -- their measured min-Y IS fZM_HUMAN_MESH_FEET_Y, pinned by
+		// HumanGen_BodyMetricsPinned -- and wrong for an imported one, whose sole
+		// sits on the RIG's sole plane rather than on the loft's. Reading it back
+		// is behaviour-preserving for the 34 and correct for the one.
+		float fOffsetY = fZM_HUMAN_MODEL_OFFSET_Y;
+		if (const Zenith_ModelAsset* pxModelAsset =
+				Zenith_AssetRegistry::GetView<Zenith_ModelAsset>(xModel.GetModelPath()))
+		{
+			if (pxModelAsset->GetNumMeshes() > 0u)
+			{
+				if (const Zenith_MeshAsset* pxMesh = Zenith_AssetRegistry::GetView<Zenith_MeshAsset>(
+						pxModelAsset->GetMeshBinding(0u).GetMeshPath()))
+				{
+					fOffsetY = -pxMesh->GetBoundsMin().y;
+				}
+			}
+		}
+		xModel.SetModelSpaceOffset(Zenith_Maths::Vector3(0.0f, fOffsetY, 0.0f));
 
 		// The material handle belongs to the block paths; a model carries its own.
 		m_xMaterial = MaterialHandle();
 		m_xGeometry = MeshGeometryHandle();
 
-		EnsureHumanAnimator(*pxSkeleton);
+		EnsureHumanAnimator(xSkeleton);
 		return true;
 	}
 

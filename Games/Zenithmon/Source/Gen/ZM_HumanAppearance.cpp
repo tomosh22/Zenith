@@ -511,6 +511,27 @@ namespace
 		for (u_int u = 0u; u < uNumRings; ++u)
 		{
 			ZM_LoftRing& xRing = pxRings[u];
+			xRing.m_uBoneA = uBone;
+			xRing.m_uBoneB = uBone;
+			xRing.m_fBlendB = 0.0f;
+			xRing.m_fSuperEllipse = fSuperEllipse;
+		}
+
+		// ★ HATS AND HAIR TRAVEL WITH THE BODY. The appearance rows are authored
+		// against the same legacy geometry the body rows are, so they take the same
+		// re-proportioning -- warped BEFORE the stature scale, exactly as
+		// ZM_PrepareHumanRings does it. Bones are assigned first because the warp
+		// reads them to decide how much of the ARM chain a ring rides (none, for a
+		// hat, which is the answer we want and not one worth special-casing).
+		//
+		// The piecewise map EXTRAPOLATES past the crown rather than clamping, which
+		// is what stops a tall hat being flattened onto the scalp; the crown anchor
+		// is pinned, so that extrapolation is the identity.
+		ZM_WarpHumanRings(pxRings, uNumRings);
+
+		for (u_int u = 0u; u < uNumRings; ++u)
+		{
+			ZM_LoftRing& xRing = pxRings[u];
 			// The authored rows are in the SHARED RIG's bind space, exactly like the
 			// body tables in ZM_HumanMesh.cpp, and the +1/-1 round trip is the same
 			// one: it scales height about the FEET without leaving rig space. A hat
@@ -518,10 +539,6 @@ namespace
 			// head it belongs to -- which is precisely what the silhouette tests
 			// caught when only the body was moved.
 			xRing.m_fY = (xRing.m_fY + 1.0f) * fHeightScale - 1.0f;
-			xRing.m_uBoneA = uBone;
-			xRing.m_uBoneB = uBone;
-			xRing.m_fBlendB = 0.0f;
-			xRing.m_fSuperEllipse = fSuperEllipse;
 		}
 
 		ZM_MeshLoft::Part xPart;

@@ -10,6 +10,7 @@
 // ============================================================================
 
 #include "Zenithmon/Source/Gen/ZM_HumanAppearance.h"
+#include "AssetHandling/Zenith_HumanProportions.h"
 
 namespace
 {
@@ -82,9 +83,20 @@ namespace
 	// +1 / -1 round trip below: lift to feet-at-zero, scale, drop back. At the
 	// canonical fHeightScale of 1.0 it is exactly the identity, so the canonical
 	// model's mesh IS StickFigure's authored space bit for bit. Cx/Cz never move.
+	bool s_bZM_MeasuringCanonicalWarp = false;
+	bool s_bZM_CanonicalWarpReady = false;
+	Zenith_HumanWarp s_xZM_CanonicalWarp;
+
 	void ZM_PrepareHumanRings(ZM_LoftRing* pxRings, u_int uNumRings,
 		float fHeightScale, float fRxScale, float fRzScale, float fSuperEllipse)
 	{
+		// ★ RE-PROPORTION FIRST, IN CANONICAL SPACE, THEN SCALE THE STATURE. The
+		// warp is a statement about where this body's joints go relative to the
+		// shared rig; the height scale is a statement about how tall THIS person
+		// is. Doing them the other way round would give each of the 34 humans
+		// slightly different proportions instead of one set at 34 heights.
+		ZM_WarpHumanRings(pxRings, uNumRings);
+
 		for (u_int u = 0u; u < uNumRings; ++u)
 		{
 			ZM_LoftRing& xRing = pxRings[u];
@@ -167,8 +179,21 @@ namespace
 		ZM_LoftRing axRings[] =
 		{
 			// y      cx              cz       rx      rz      boneA    boneB    blend
-			{ 1.150f, fSide * 0.205f, -0.004f, 0.102f, 0.094f, HB_SPINE, uUpper, 0.15f },
-			{ 1.095f, fSide * 0.248f,  0.000f, 0.096f, 0.086f, HB_SPINE, uUpper, 0.50f },
+			// ★★ THE TWO SHOULDER RINGS SIT ON THE ARM COLUMN, NOT INBOARD OF IT, and
+			// the first is lifted far above the joint. Both follow from the rig being
+			// T-POSED: this table is still authored arms-down and is swung out by one
+			// RIGID rotation about the shoulder after the warp (see
+			// Zenith_HumanArmBindRotation), and that rotation turns height ABOVE the
+			// joint into distance INBOARD along the limb, and cx offset from the
+			// column into vertical droop. An arms-down deltoid reaches inboard and
+			// caps the shoulder from above; rotated, that lands it in the armpit with
+			// the top of the shoulder bare. y=1.250 buries the first ring ~15cm inside
+			// the torso, whose half-width here is about 0.235, so the tube passes
+			// through the torso surface instead of stopping short of it and leaving a
+			// gap. StickFigure buries its equivalent with a three-row plug; this arm
+			// has no such rows, so the burial is in the ring itself.
+			{ 1.250f, fSide * 0.300f, -0.004f, 0.102f, 0.094f, HB_SPINE, uUpper, 0.15f },
+			{ 1.095f, fSide * 0.300f,  0.000f, 0.096f, 0.086f, HB_SPINE, uUpper, 0.50f },
 			{ 1.020f, fSide * 0.290f,  0.000f, 0.080f, 0.072f, uUpper,   uUpper, 0.00f },
 			{ 0.920f, fSide * 0.300f,  0.000f, 0.066f, 0.061f, uUpper,   uUpper, 0.00f },
 			{ 0.790f, fSide * 0.300f,  0.000f, 0.053f, 0.050f, uUpper,   uUpper, 0.00f },
@@ -183,6 +208,45 @@ namespace
 		static_assert(uRINGS == 11u, "human arm must retain all 11 golden rings");
 		ZM_PrepareHumanRings(axRings, uRINGS, fHeightScale, fRadiusScale, fRadiusScale, 1.0f);
 		ZM_AppendHumanPart(xMesh, axRings, uRINGS, 28u, xIsland, true, true);
+	}
+
+	// ** SWING ONE ARM OUT INTO THE SHARED RIG'S T-POSE. Rigid, so it distorts
+	// nothing -- see Zenith_HumanArmBindRotation for why the rig is T-posed and why
+	// the procedural humans are the side that moved.
+	//
+	// * THE PIVOT IS THIS MESH'S OWN SHOULDER, NOT THE SKELETON'S. Stature is a
+	// Y-only scale applied to the rings, and the shared skeleton does not carry it,
+	// so a 1.1x human's mesh shoulder sits well above the bone. Turning the arm
+	// about the bone would tear it off the body; turning it about the mesh's own
+	// shoulder keeps the silhouette right and leaves the pre-existing mesh/rig
+	// stature mismatch exactly as it was.
+	//
+	// * THE NORMALS TURN WITH THE POSITIONS. StickFigure gets away without this
+	// because ComputeHumanSmoothNormals rebuilds every normal after its rotation;
+	// nothing rebuilds them here, so leaving them behind points every arm normal at
+	// where the arm used to be. ZM_ValidateGenMesh reports that as INWARD WINDING --
+	// its test is dot(cross(C-A,B-A), avg vertex normal) > 0 -- which is a true
+	// report of a real defect under a misleading name: the triangles are wound
+	// correctly and it is the normals that are wrong.
+	void ZM_TPoseHumanArm(ZM_GenMesh& xMesh, u_int uFirst, u_int uEnd,
+		float fSide, float fHeightScale)
+	{
+		const Zenith_Maths::Vector3 xCanonPivot = Zenith_HumanShoulderPivot(
+			Zenith_HumanProportionsRealistic(), fSide);
+		const Zenith_Maths::Vector3 xPivot(xCanonPivot.x,
+			(xCanonPivot.y + 1.0f) * fHeightScale - 1.0f, xCanonPivot.z);
+		const Zenith_Maths::Quat xRot = Zenith_HumanArmBindRotation(fSide);
+		const bool bHasNormals = xMesh.m_xNormals.GetSize() == xMesh.GetNumVerts();
+		for (u_int u = uFirst; u < uEnd; ++u)
+		{
+			Zenith_Maths::Vector3& xPos = xMesh.m_xPositions.Get(u);
+			xPos = xPivot + xRot * (xPos - xPivot);
+			if (bHasNormals)
+			{
+				Zenith_Maths::Vector3& xNormal = xMesh.m_xNormals.Get(u);
+				xNormal = xRot * xNormal;
+			}
+		}
 	}
 
 	void ZM_AppendHumanLeg(ZM_GenMesh& xMesh, float fSide, u_int uUpper,
@@ -248,10 +312,31 @@ namespace
 		ZM_AppendHumanTorso(xMesh, xRecipe.m_fHeightScale,
 			fBuildWidth * fTorsoRxJ, fBuildWidth * fTorsoRzJ, fTorsoSuper);
 		ZM_AppendHumanHeadNeck(xMesh, xRecipe.m_fHeightScale, fHeadBuild * fHeadSizeJ);
+		const u_int uArmLStart = xMesh.GetNumVerts();
 		ZM_AppendHumanArm(xMesh, -1.0f, HB_LUARM, HB_LLARM, HB_LHAND, xZM_HUMAN_UV_ARM_L,
 			xRecipe.m_fHeightScale, fLimbBuild * fArmGirthJ);
+		const u_int uArmLEnd = xMesh.GetNumVerts();
 		ZM_AppendHumanArm(xMesh,  1.0f, HB_RUARM, HB_RLARM, HB_RHAND, xZM_HUMAN_UV_ARM_R,
 			xRecipe.m_fHeightScale, fLimbBuild * fArmGirthJ);
+		const u_int uArmREnd = xMesh.GetNumVerts();
+
+		// ** THE T-POSE IS APPLIED HERE AND SKIPPED WHILE THE WARP IS BEING BUILT,
+		// and that exception is the whole reason this does not live inside
+		// ZM_AppendHumanArm where it started.
+		//
+		// ZM_CanonicalHumanWarp measures a canonical human to decide where every
+		// human's joints should move to, and it builds that reference mesh through
+		// THIS function with the warp switched off. It measures ARMS_DOWN, because
+		// arms-down is what the ring tables author. Rotating the arms during that
+		// pass hands an ARMS_DOWN landmark scan a T-posed body: the arm chain comes
+		// back meaningless, the warp built from it is wrong, and every human then
+		// ships with the wrong arm. It did -- the wrist landed 2.5 units out on a
+		// 2.6-unit body, and nothing but that one landmark assertion noticed.
+		if (!s_bZM_MeasuringCanonicalWarp)
+		{
+			ZM_TPoseHumanArm(xMesh, uArmLStart, uArmLEnd, -1.0f, xRecipe.m_fHeightScale);
+			ZM_TPoseHumanArm(xMesh, uArmLEnd, uArmREnd, 1.0f, xRecipe.m_fHeightScale);
+		}
 		ZM_AppendHumanLeg(xMesh, -1.0f, HB_LULEG, HB_LLLEG, HB_LFOOT, xZM_HUMAN_UV_LEG_L,
 			xRecipe.m_fHeightScale, fLimbBuild * fLegGirthJ);
 		ZM_AppendHumanLeg(xMesh,  1.0f, HB_RULEG, HB_RLLEG, HB_RFOOT, xZM_HUMAN_UV_LEG_R,
@@ -260,6 +345,82 @@ namespace
 		const u_int uBodyVertexPrefix = xMesh.GetNumVerts();
 		ZM_AppendHumanAppearanceMesh(xRecipe, xMesh);
 		return uBodyVertexPrefix;
+	}
+}
+
+// ============================================================================
+// The proportion warp (generator v7). See ZM_HumanGen.h for why this is a RING
+// warp rather than a vertex one.
+// ============================================================================
+namespace
+{
+	// ★ THE BOOTSTRAP, AND WHY IT NEEDS A FLAG. Measuring the warp means building
+	// the canonical mesh, and building any mesh asks for the warp -- so the first
+	// call re-enters. The flag makes that re-entry return an INVALID warp, which
+	// ZM_WarpHumanRings treats as "warp nothing", so the measurement runs against
+	// the authored geometry exactly once and everything after it is warped.
+	// Generation is single-threaded (nothing in Source/Gen touches the task
+	// system), which is what lets this be a plain bool.
+}
+
+const Zenith_HumanWarp& ZM_CanonicalHumanWarp()
+{
+	if (!s_bZM_CanonicalWarpReady && !s_bZM_MeasuringCanonicalWarp)
+	{
+		s_bZM_MeasuringCanonicalWarp = true;
+
+		ZM_GenMesh xCanonical;
+		const u_int uBodyPrefix =
+			ZM_BuildHumanMeshInRigSpace(ZM_ResolveHumanRecipe(eZM_HUMAN_CANONICAL_MODEL), xCanonical);
+
+		// ★ THE BODY PREFIX, NOT THE WHOLE MESH -- the same rule, and the same
+		// reason, as ZM_MeasureHumanBody: a hat does not decide how tall someone
+		// is. Measuring the finished mesh puts the CROWN anchor on the top of the
+		// canonical model's HAIR (1.678 rather than 1.609), which makes the body's
+		// own crown an interior point the warp is then free to move -- and it did,
+		// shortening every human by 3 mm and reddening all four of the pinned body
+		// metrics with a number nobody had changed on purpose.
+		Zenith_SkinDeformView xView;
+		xView.m_pxPositions = xCanonical.m_xPositions.GetDataPointer();
+		xView.m_pxNormals = xCanonical.m_xNormals.GetDataPointer();
+		xView.m_pxBoneIndices = xCanonical.m_xBoneIndices.GetDataPointer();
+		xView.m_pxBoneWeights = xCanonical.m_xBoneWeights.GetDataPointer();
+		xView.m_uNumVerts = uBodyPrefix;
+
+		Zenith_HumanLandmarks xLandmarks;
+		if (Zenith_MeasureHumanLandmarks(xView, ZENITH_HUMAN_POSE_ARMS_DOWN, xLandmarks))
+		{
+			Zenith_LogHumanLandmarks("Zenithmon canonical human (pre-warp)", xLandmarks);
+			if (!Zenith_MakeHumanWarp(xLandmarks, Zenith_HumanProportionsRealistic(), s_xZM_CanonicalWarp))
+			{
+				Zenith_Error(LOG_CATEGORY_ASSET,
+					"ZM_HumanMesh: could not build a proportion warp; shipping the legacy silhouette");
+			}
+		}
+		else
+		{
+			Zenith_Error(LOG_CATEGORY_ASSET,
+				"ZM_HumanMesh: landmark scan failed on the canonical human; shipping the legacy silhouette");
+		}
+
+		s_bZM_MeasuringCanonicalWarp = false;
+		s_bZM_CanonicalWarpReady = true;
+	}
+	return s_xZM_CanonicalWarp;
+}
+
+void ZM_WarpHumanRings(ZM_LoftRing* pxRings, u_int uNumRings)
+{
+	const Zenith_HumanWarp& xWarp = ZM_CanonicalHumanWarp();
+	if (!xWarp.IsValid()) { return; }
+
+	for (u_int u = 0u; u < uNumRings; ++u)
+	{
+		ZM_LoftRing& xRing = pxRings[u];
+		const float fArmWeight = xWarp.ArmWeight(
+			glm::uvec4(xRing.m_uBoneA, xRing.m_uBoneB, 0u, 0u),
+			glm::vec4(1.0f - xRing.m_fBlendB, xRing.m_fBlendB, 0.0f, 0.0f));
+		Zenith_SkinWarpRing(xRing.m_fY, xRing.m_fCx, fArmWeight, xWarp);
 	}
 }
 

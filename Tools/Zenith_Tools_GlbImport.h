@@ -2,6 +2,10 @@
 
 #include <string>
 
+#include "Collections/Zenith_Vector.h"
+
+class Zenith_MeshAsset;
+
 // ============================================================================
 // Zenith_Tools_GlbImport -- the .glb import path, for binary glTF that the
 // Assimp route cannot read.
@@ -57,6 +61,23 @@ namespace Zenith_Tools_GlbImport
 	// reason and leaves m_bSuccess false; a half-written bundle is never reported
 	// as a success.
 	GlbImportResult ImportGlbFile(const std::string& strGlbPath);
+
+	// ★ THE TWO HALVES, SEPARATELY, so there is still exactly ONE meshopt parser
+	// and ONE set of texture-channel conventions in the engine. A specialised
+	// exporter that has to MOVE the vertices -- rig one, re-bind it, re-proportion
+	// it -- cannot use ImportGlbFile, because that generates tangents and writes
+	// the bundle before the caller has touched anything. Splitting it is what
+	// keeps the alternative from being a second copy of the parser.
+	//
+	// LoadGlbMesh: parse + decode to memory with the node transform baked in.
+	// NO tangents, NO bounds, NOTHING written. Generate tangents yourself, after
+	// the vertices stop moving.
+	bool LoadGlbMesh(const std::string& strGlbPath, Zenith_MeshAsset& xMeshOut, GlbImportResult& xResultOut);
+
+	// ExportGlbMaterials: the textures and .zmtrl for one .glb, written beside
+	// strBaseName, appending each material's normalised ref to xRefsOut.
+	bool ExportGlbMaterials(const std::string& strGlbPath, const std::string& strBaseName,
+		Zenith_Vector<std::string>& xRefsOut, u_int& uTexturesOut);
 
 	// Import every .glb under a directory tree. Missing directory is not an error
 	// (the assets tree is gitignored, so CI can legitimately have none).

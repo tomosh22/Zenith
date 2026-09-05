@@ -455,3 +455,11 @@ bool ZM_BakeAllHumans()
 	return bOk;
 }
 #endif   // ZENITH_TOOLS
+
+// ---------------------------------------------------------------------------
+// The imported-model exception. See ZM_HumanGen.h.
+// ---------------------------------------------------------------------------
+const char* ZM_HumanImportedModelRef(ZM_HUMAN_ID eId)
+{
+	return (eId == ZM_HUMAN_PLAYER_M) ? "engine:Meshes/Humans/Male/Male.zmodel" : nullptr;
+}

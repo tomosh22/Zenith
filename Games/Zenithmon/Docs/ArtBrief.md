@@ -564,18 +564,32 @@ its own skeleton loses every animation it did not also commission.
 
 ## 3. Humans -- 35 models  *(P1 for the named cast, P3 for the rest)*
 
-**The gap.** Humans are a stick-figure loft on a 16-bone skeleton with nine
-shared clips, and since ZM-D-221 they carry a four-map PBR set derived from their
-albedo. They read as people-shaped; they do not read as PEOPLE. The named cast is
-what suffers: the professor, the rival and the eight gym leaders are the faces of
-the story and are currently distinguishable only by palette.
+**The gap.** Humans are a stick-figure loft on the shared **51-bone** StickFigure
+rig with **17** shared clips (stale here since `11c2e8e9`, which added the UE5-class
+jaw / eyes / toes / articulated fingers -- the loft still weights only the core
+sixteen, which is a strict subset, not a mismatch), and since ZM-D-221 they carry a
+four-map PBR set derived from their albedo. Generator v7 re-proportions that loft
+onto the rig's own joint planes. They read as people-shaped; they do not read as
+PEOPLE. The named cast is what suffers: the professor, the rival and the eight gym
+leaders are the faces of the story and are currently distinguishable only by
+palette.
+
+**The player already has a hand-made model.** `Zenith/Assets/Meshes/Humans/Male/`
+holds an artist-authored humanoid bound to the shared rig by
+`Zenith_Tools_HumanModelExport` at tools boot; `ZM_HumanImportedModelRef` returns it
+for `ZM_HUMAN_PLAYER_M` and nullptr for everyone else, so NPCs stay on the
+generated loft by construction. A commissioned human lands the same way: drop the
+`.glb` beside a committed `.zbind` and the binder measures it, fits a T-pose rig to
+its own proportions, solves weights and re-binds it onto the shipped arms-down rig.
+Nothing needs to be rigged by hand.
 
 Roster: `Source/Data/ZM_HumanData.cpp`.
 
 **Prompt (per named model):** *A stylised human character, [ROLE], readable at
 128 px in silhouette and distinguishable from the rest of the named cast by
-SHAPE rather than colour alone. Rigged to the shared 16-bone Zenithmon human
-skeleton and posed for the nine shared clips. A gym leader should read as their
+SHAPE rather than colour alone. Delivered as an UNRIGGED T-pose (the binder
+fits the rig); it inherits the shared 51-bone StickFigure skeleton and all 17
+shared clips. A gym leader should read as their
 element without wearing it as a costume.*
 
 ### 3.1 The named cast (P1)

@@ -2598,3 +2598,57 @@ ZENITH_TEST(ZM_Gen, HumanGen_ModelOffsetPlacesFeetOnOrigin)
 	ZENITH_ASSERT_TRUE(xCentre.x == xFeet.x && xCentre.z == xFeet.z,
 		"ZM_HumanBodyCentre moved the body horizontally");
 }
+
+// ---------------------------------------------------------------------------
+// Generator v7: the proportion warp reaching the RINGS.
+// ---------------------------------------------------------------------------
+
+ZENITH_TEST(ZM_Gen, HumanGen_WarpedLoftLandmarksLandOnTheRigsJointPlanes)
+{
+	// ★ THE TEST FOR "DID THE TABLE EDIT REACH THE GEOMETRY". Skipping the warp
+	// entirely leaves a mesh that passes every other check in this file -- correct
+	// bounds, correct weights, correct bone prefix -- and bends 5 cm away from the
+	// bones it bends around. Only re-measuring the finished loft notices.
+	//
+	// It also pins the two ENDPOINTS, which is what stops the re-proportioning
+	// from quietly restating every body-metric constant in the game.
+	ZM_GenMesh xMesh;
+	ZM_BuildHumanMesh(ZM_ResolveHumanRecipe(eZM_HUMAN_CANONICAL_MODEL), xMesh);
+
+	Zenith_SkinDeformView xView;
+	xView.m_pxPositions = xMesh.m_xPositions.GetDataPointer();
+	xView.m_pxNormals = xMesh.m_xNormals.GetDataPointer();
+	xView.m_pxBoneIndices = xMesh.m_xBoneIndices.GetDataPointer();
+	xView.m_pxBoneWeights = xMesh.m_xBoneWeights.GetDataPointer();
+	xView.m_uNumVerts = xMesh.GetNumVerts();
+
+	// * MEASURED AS A T-POSE, because that is what this mesh now is. The rings are
+	// still authored and warped arms-down -- every pass above the rotation seam in
+	// ZM_AppendHumanArm works in that space -- but what SHIPS has its arms out, so
+	// re-measuring the finished mesh has to ask the right question. In T_POSE the
+	// arm chain comes back as distances OUT along the lateral axis, not as heights.
+	Zenith_HumanLandmarks xAfter;
+	ZENITH_ASSERT_TRUE(Zenith_MeasureHumanLandmarks(xView, ZENITH_HUMAN_POSE_T_POSE, xAfter),
+		"the warped loft must still measure");
+	Zenith_LogHumanLandmarks("Zenithmon canonical human (POST-warp)", xAfter);
+
+	const Zenith_HumanProportions& xP = Zenith_HumanProportionsRealistic();
+	const float fTol = 0.06f;
+	ZENITH_ASSERT_EQ_FLOAT(xAfter.m_afBodyY[ZENITH_HUMAN_BODY_SHOULDER], xP.ShoulderY(), fTol,
+		"the loft's shoulder now sits on the RIG's shoulder plane");
+	// The elbow as lateral reach: the shoulder's own half-width plus the segment
+	// length that used to be read as a drop in Y. Same table, same lengths -- the
+	// rotation moved the arm without resizing it.
+	ZENITH_ASSERT_EQ_FLOAT(xAfter.m_afArmChain[ZENITH_HUMAN_ARM_ELBOW],
+		xP.ShoulderHalfX() + (xP.ShoulderY() - xP.ElbowY()), fTol,
+		"...and its elbow at the rig's elbow reach");
+
+	// ★ ZENITHMON HAS NO FEET AND NO HANDS, and the warp has to say so rather than
+	// invent them. Its legs taper to a point (no ankle seam to find) and its arm
+	// ends in a cap 3 mm below its wrist (no hand). A fingertip anchor there would
+	// map that 3 mm sliver onto the rig's whole 26 cm hand and draw it into a spike.
+	ZENITH_ASSERT_TRUE(!xAfter.m_abBodyFound[ZENITH_HUMAN_BODY_ANKLE],
+		"a leg that tapers to a point has no ankle, and the scan must not invent one");
+	ZENITH_ASSERT_TRUE(!xAfter.m_bArmHasHand,
+		"an arm that ends at the wrist has no hand, and the warp must drop that anchor");
+}

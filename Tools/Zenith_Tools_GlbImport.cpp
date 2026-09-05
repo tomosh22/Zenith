@@ -1,5 +1,6 @@
 #include "Zenith.h"
 #include "Zenith_Tools_GlbImport.h"
+#include "Zenith_Tools_HumanModelExport.h"
 #include "Zenith_Tools_MeshoptDecode.h"
 #include "Zenith_Tools_TextureExport.h"
 
@@ -810,20 +811,24 @@ namespace
 //-----------------------------------------------------------------------------
 // The import itself
 //-----------------------------------------------------------------------------
-GlbImportResult ImportGlbFile(const std::string& strGlbPath)
+// ★ PARSE AND DECODE TO MEMORY, AND NOTHING ELSE. No tangents, no bounds,
+// nothing written. A caller that MOVES vertices -- which is exactly what
+// Zenith_Tools_HumanSkinBind does, twice -- has to generate tangents after the
+// vertices stop moving, so generating them here would guarantee they are wrong
+// for that caller and silently right for everyone else. The node transform IS
+// baked in, because that is part of reading the file rather than of using it.
+bool LoadGlbMesh(const std::string& strGlbPath, Zenith_MeshAsset& xMesh, GlbImportResult& xResult)
 {
-	GlbImportResult xResult;
-
 	GlbDocument xDoc;
 	xDoc.m_strSourcePath = strGlbPath;
 	if (!ReadWholeFile(strGlbPath, xDoc.m_xFileBytes))
 	{
 		Zenith_Error(LOG_CATEGORY_TOOLS, "GLB_IMPORT: could not read %s", strGlbPath.c_str());
-		return xResult;
+		return false;
 	}
 	if (!ParseGlbContainer(xDoc) || !ResolveBufferViews(xDoc))
 	{
-		return xResult;
+		return false;
 	}
 
 	const std::filesystem::path xPath(strGlbPath);
@@ -835,12 +840,11 @@ GlbImportResult ImportGlbFile(const std::string& strGlbPath)
 	if (xPrimitives.empty())
 	{
 		Zenith_Error(LOG_CATEGORY_TOOLS, "GLB_IMPORT: %s contains no triangle primitives", strGlbPath.c_str());
-		return xResult;
+		return false;
 	}
 
 	const rapidjson::Value* pxMeshes = FindMember(xDoc.m_xJson, "meshes");
 
-	Zenith_MeshAsset xMesh;
 	u_int uMaterialSlots = 0;
 
 	for (const PrimitiveInstance& xInstance : xPrimitives)
@@ -862,7 +866,7 @@ GlbImportResult ImportGlbFile(const std::string& strGlbPath)
 		{
 			Zenith_Error(LOG_CATEGORY_TOOLS, "GLB_IMPORT: %s has a primitive with no readable POSITION",
 				strGlbPath.c_str());
-			return xResult;
+			return false;
 		}
 
 		u_int uNormalComponents = 0, uNormalCount = 0;
@@ -883,7 +887,7 @@ GlbImportResult ImportGlbFile(const std::string& strGlbPath)
 			{
 				Zenith_Error(LOG_CATEGORY_TOOLS, "GLB_IMPORT: %s has an unreadable index accessor",
 					strGlbPath.c_str());
-				return xResult;
+				return false;
 			}
 		}
 		else
@@ -898,7 +902,7 @@ GlbImportResult ImportGlbFile(const std::string& strGlbPath)
 		{
 			Zenith_Error(LOG_CATEGORY_TOOLS, "GLB_IMPORT: %s has an index count that is not a multiple of 3",
 				strGlbPath.c_str());
-			return xResult;
+			return false;
 		}
 
 		const u_int uVertexBase = xMesh.GetNumVerts();
@@ -948,7 +952,7 @@ GlbImportResult ImportGlbFile(const std::string& strGlbPath)
 			{
 				Zenith_Error(LOG_CATEGORY_TOOLS,
 					"GLB_IMPORT: %s has an index past the end of its own vertex array", strGlbPath.c_str());
-				return xResult;
+				return false;
 			}
 			xMesh.AddTriangle(
 				uVertexBase + xIndices[t + 0],
@@ -972,29 +976,83 @@ GlbImportResult ImportGlbFile(const std::string& strGlbPath)
 	if (xMesh.GetNumVerts() == 0 || xMesh.GetNumIndices() == 0)
 	{
 		Zenith_Error(LOG_CATEGORY_TOOLS, "GLB_IMPORT: %s produced an empty mesh", strGlbPath.c_str());
-		return xResult;
+		return false;
 	}
 
-	// ★ TANGENTS ARE ALWAYS REGENERATED. glTF may carry a TANGENT attribute, but
-	// gltfpack strips it whenever the normal map can be reconstructed from UVs,
-	// and a mesh with no tangents renders its normal map as noise. Deriving them
-	// from positions + UVs matches what the Assimp path asks for with
-	// aiProcess_CalcTangentSpace, so both importers agree.
-	xMesh.GenerateTangents();
-	xMesh.ComputeBounds();
-
-	const std::string strMeshPath = strBaseName + ".zmesh";
+	// ★★ THIS ENGINE WINDS THE OTHER WAY FROM glTF, and an import is INSIDE-OUT
+	// until that is fixed.
+	//
+	// Zenith's outward normal is cross(C-A, B-A) (Zenith_Tools_TestAssetExport.cpp
+	// :1284 states it, and the rock exporter re-winds its icosphere for exactly
+	// this reason); glTF, like OpenGL, uses the other handedness. Copying indices
+	// verbatim therefore leaves every triangle of a closed mesh facing inward.
+	//
+	// ★ THE SYMPTOM IS NOT "the shading looks odd". Normals come from the file and
+	// stay correct, so lighting is fine and nothing errors. Backface culling keeps
+	// the FAR surface, so you see through the model to its far side -- on a prop
+	// that is a subtle wrongness nobody names, and on a CHARACTER it reads as
+	// FACING BACKWARDS, with anything attached behind them drawing in front. That
+	// is what shipped here, and it survived a screenshot pass because the picture
+	// is of a plausible person looking the wrong way, not of anything broken.
+	//
+	// MEASURED, not assumed: the signed volume of a closed mesh states its winding
+	// directly, so a source that already winds the engine's way is left alone. The
+	// reference is the shipped StickFigure, whose sum is NEGATIVE under this
+	// formula.
 	{
-		std::error_code xEc;
-		std::filesystem::create_directories(xPath.parent_path(), xEc);
+		double dVolume = 0.0;
+		for (u_int i = 0u; i + 2u < xMesh.m_xIndices.GetSize(); i += 3u)
+		{
+			const Zenith_Maths::Vector3& a = xMesh.m_xPositions.Get(xMesh.m_xIndices.Get(i));
+			const Zenith_Maths::Vector3& b = xMesh.m_xPositions.Get(xMesh.m_xIndices.Get(i + 1u));
+			const Zenith_Maths::Vector3& c = xMesh.m_xPositions.Get(xMesh.m_xIndices.Get(i + 2u));
+			dVolume += glm::dot(a, glm::cross(b, c));
+		}
+		if (dVolume > 0.0)
+		{
+			for (u_int i = 0u; i + 2u < xMesh.m_xIndices.GetSize(); i += 3u)
+			{
+				const u_int uSwap = xMesh.m_xIndices.Get(i + 1u);
+				xMesh.m_xIndices.Get(i + 1u) = xMesh.m_xIndices.Get(i + 2u);
+				xMesh.m_xIndices.Get(i + 2u) = uSwap;
+			}
+			Zenith_Log(LOG_CATEGORY_TOOLS,
+				"GLB_IMPORT: %s winds the glTF way (signed volume %+.6f); re-wound to the engine's "
+				"cross(C-A, B-A) convention", strGlbPath.c_str(), dVolume / 6.0);
+		}
 	}
-	xMesh.Export(strMeshPath.c_str());
 
-	// ---- Materials ----------------------------------------------------------
+	xResult.m_uNumVerts = xMesh.GetNumVerts();
+	xResult.m_uNumIndices = xMesh.GetNumIndices();
+	xResult.m_uNumSubmeshes = xMesh.GetNumSubmeshes();
+	return true;
+}
+
+// The material/texture half of an import: every channel convention lives here
+// and NOWHERE ELSE, so a specialised exporter that builds its own geometry
+// still writes the same bundle the generic path would.
+bool ExportGlbMaterials(const std::string& strGlbPath, const std::string& strBaseName,
+	Zenith_Vector<std::string>& xRefsOut, u_int& uTexturesOut)
+{
+	GlbDocument xDoc;
+	xDoc.m_strSourcePath = strGlbPath;
+	if (!ReadWholeFile(strGlbPath, xDoc.m_xFileBytes) ||
+		!ParseGlbContainer(xDoc) || !ResolveBufferViews(xDoc))
+	{
+		return false;
+	}
+	const std::string strModelName = std::filesystem::path(strBaseName).filename().string();
+
+	u_int uMaterialSlots = 0;
+	for (const PrimitiveInstance& xInstance : GatherPrimitives(xDoc))
+	{
+		const u_int uSlot = (xInstance.m_iMaterial >= 0) ? static_cast<u_int>(xInstance.m_iMaterial) : 0u;
+		uMaterialSlots = (uSlot + 1u > uMaterialSlots) ? (uSlot + 1u) : uMaterialSlots;
+	}
+
 	const rapidjson::Value* pxMaterials = FindMember(xDoc.m_xJson, "materials");
 	const u_int uMaterialCount = (uMaterialSlots > 0u) ? uMaterialSlots : 1u;
 
-	Zenith_Vector<std::string> xMaterialRefs;
 
 	for (u_int m = 0; m < uMaterialCount; ++m)
 	{
@@ -1112,7 +1170,7 @@ GlbImportResult ImportGlbFile(const std::string& strGlbPath)
 				xImage.m_xRGBA.data(), strAlbedoPath, xImage.m_iWidth, xImage.m_iHeight,
 				TextureCompressionMode::BC1, TextureColourSpace::SRGB);
 			bWroteAlbedo = true;
-			++xResult.m_uNumTexturesWritten;
+			++uTexturesOut;
 		}
 
 		xImage = DecodedImage();
@@ -1122,7 +1180,7 @@ GlbImportResult ImportGlbFile(const std::string& strGlbPath)
 				xImage.m_xRGBA.data(), strNormalPath, xImage.m_iWidth, xImage.m_iHeight,
 				TextureCompressionMode::BC5, TextureColourSpace::Linear);
 			bWroteNormal = true;
-			++xResult.m_uNumTexturesWritten;
+			++uTexturesOut;
 		}
 
 		// ★ NO SWIZZLE. glTF packs roughness in G and metallic in B, and Flux's
@@ -1136,7 +1194,7 @@ GlbImportResult ImportGlbFile(const std::string& strGlbPath)
 				xImage.m_xRGBA.data(), strRmPath, xImage.m_iWidth, xImage.m_iHeight,
 				TextureCompressionMode::BC1, TextureColourSpace::Linear);
 			bWroteRm = true;
-			++xResult.m_uNumTexturesWritten;
+			++uTexturesOut;
 		}
 
 		xImage = DecodedImage();
@@ -1146,7 +1204,7 @@ GlbImportResult ImportGlbFile(const std::string& strGlbPath)
 				xImage.m_xRGBA.data(), strAoPath, xImage.m_iWidth, xImage.m_iHeight,
 				TextureCompressionMode::BC1, TextureColourSpace::Linear);
 			bWroteAo = true;
-			++xResult.m_uNumTexturesWritten;
+			++uTexturesOut;
 		}
 
 		if (!bWroteAo)
@@ -1164,7 +1222,7 @@ GlbImportResult ImportGlbFile(const std::string& strGlbPath)
 			Zenith_Tools_TextureExport::ExportFromDataCompressed(
 				auWhite, strAoPath, iNEUTRAL_AO_SIZE, iNEUTRAL_AO_SIZE, TextureCompressionMode::BC1, TextureColourSpace::Linear);
 			bWroteAo = true;
-			++xResult.m_uNumTexturesWritten;
+			++uTexturesOut;
 		}
 
 		//-- The .zmtrl
@@ -1201,7 +1259,7 @@ GlbImportResult ImportGlbFile(const std::string& strGlbPath)
 						xEmissiveImage.m_xRGBA.data(), strEmissivePath,
 						xEmissiveImage.m_iWidth, xEmissiveImage.m_iHeight, TextureCompressionMode::BC1, TextureColourSpace::SRGB);
 					pxMaterialAsset->SetEmissiveTexture(TextureHandle(strEmissivePath));
-					++xResult.m_uNumTexturesWritten;
+					++uTexturesOut;
 				}
 			}
 
@@ -1217,7 +1275,44 @@ GlbImportResult ImportGlbFile(const std::string& strGlbPath)
 			pxMaterialAsset->SaveToFile(strMaterialPath);
 		}
 
-		xMaterialRefs.PushBack(Zenith_AssetRegistry::NormalizeAssetPath(strMaterialPath));
+		xRefsOut.PushBack(Zenith_AssetRegistry::NormalizeAssetPath(strMaterialPath));
+	}
+
+	return true;
+}
+
+GlbImportResult ImportGlbFile(const std::string& strGlbPath)
+{
+	GlbImportResult xResult;
+	Zenith_MeshAsset xMesh;
+	if (!LoadGlbMesh(strGlbPath, xMesh, xResult))
+	{
+		return xResult;
+	}
+
+	const std::filesystem::path xPath(strGlbPath);
+	const std::string strBaseName = (xPath.parent_path() / xPath.stem()).string();
+	const std::string strModelName = xPath.stem().string();
+
+	// ★ TANGENTS ARE ALWAYS REGENERATED. glTF may carry a TANGENT attribute, but
+	// gltfpack strips it whenever the normal map can be reconstructed from UVs,
+	// and a mesh with no tangents renders its normal map as noise. Deriving them
+	// from positions + UVs matches what the Assimp path asks for with
+	// aiProcess_CalcTangentSpace, so both importers agree.
+	xMesh.GenerateTangents();
+	xMesh.ComputeBounds();
+
+	const std::string strMeshPath = strBaseName + ".zmesh";
+	{
+		std::error_code xEc;
+		std::filesystem::create_directories(xPath.parent_path(), xEc);
+	}
+	xMesh.Export(strMeshPath.c_str());
+
+	Zenith_Vector<std::string> xMaterialRefs;
+	if (!ExportGlbMaterials(strGlbPath, strBaseName, xMaterialRefs, xResult.m_uNumTexturesWritten))
+	{
+		return xResult;
 	}
 
 	// ---- The .zmodel --------------------------------------------------------
@@ -1284,6 +1379,19 @@ void ImportGlbsInDirectory(const std::string& strDirectory)
 		{
 			continue;
 		}
+
+		// ★ A HUMANOID BELONGS TO Zenith_Tools_HumanModelExport, and the routing is
+		// its to state. See IsHumanoidSourcePath for the double-import hazard this
+		// closes; it replaced a committed .zbind sidecar whose only surviving job
+		// was to say the same thing one file at a time.
+		if (Zenith_Tools_HumanModelExport::IsHumanoidSourcePath(xPath.string()))
+		{
+			Zenith_Log(LOG_CATEGORY_TOOLS,
+				"GLB_IMPORT: %s is a humanoid source - the human binder owns this model, skipping",
+				xPath.string().c_str());
+			continue;
+		}
+
 		(void)ImportGlbFile(xPath.string());
 	}
 }

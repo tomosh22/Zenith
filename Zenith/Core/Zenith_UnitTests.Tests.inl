@@ -11,6 +11,7 @@
 #include <thread>   // Phase 1 transform-cache worker-contract test spawns a non-main thread
 #include <type_traits>
 #include <utility>
+#include "AssetHandling/Zenith_HumanProportions.h"   // the rig fixture + every joint pin read from the shared table
 #include "Collections/Zenith_CircularQueue.h"
 #include "Collections/Zenith_HashSet.h"
 #include "Collections/Zenith_MemoryPool.h"
@@ -4376,46 +4377,43 @@ static constexpr uint32_t STICK_BONE_COUNT = 16;
 
 /**
  * Create a 16-bone humanoid stick figure skeleton (local fixture for the
- * engine animation/IK machinery tests — mirrors the production rig, which is
- * pinned never to change).
+ * engine animation/IK machinery tests).
+ *
+ * ★ IT READS THE SAME PROPORTIONS TABLE THE SHIPPED RIG DOES. It used to carry
+ * its own copy of the twenty bind literals, described as "the production rig,
+ * which is pinned never to change" — which stopped being true the moment the
+ * proportions became data. Two copies of a table is one copy plus one thing that
+ * silently disagrees with it, so this fixture derives from
+ * Zenith_HumanProportionsRealistic() and every pin below is re-derived from the
+ * same accessors rather than re-typed.
  */
 static Zenith_SkeletonAsset* CreateStickFigureSkeleton()
 {
 	Zenith_SkeletonAsset* pxSkel = new Zenith_SkeletonAsset();
+	const Zenith_HumanProportions& xP = Zenith_HumanProportionsRealistic();
 	const Zenith_Maths::Quat xIdentity = glm::identity<Zenith_Maths::Quat>();
 	const Zenith_Maths::Vector3 xUnitScale(1.0f);
 
-	// Root (at origin)
-	pxSkel->AddBone("Root", -1, Zenith_Maths::Vector3(0, 0, 0), xIdentity, xUnitScale);
+	pxSkel->AddBone("Root", -1, Zenith_Maths::Vector3(0, xP.HipY(), 0), xIdentity, xUnitScale);
+	pxSkel->AddBone("Spine", STICK_BONE_ROOT, Zenith_Maths::Vector3(0, xP.SpineY() - xP.HipY(), 0), xIdentity, xUnitScale);
+	pxSkel->AddBone("Neck", STICK_BONE_SPINE, Zenith_Maths::Vector3(0, xP.NeckY() - xP.SpineY(), 0), xIdentity, xUnitScale);
+	pxSkel->AddBone("Head", STICK_BONE_NECK, Zenith_Maths::Vector3(0, xP.HeadY() - xP.NeckY(), 0), xIdentity, xUnitScale);
 
-	// Spine (up from root)
-	pxSkel->AddBone("Spine", STICK_BONE_ROOT, Zenith_Maths::Vector3(0, 0.5f, 0), xIdentity, xUnitScale);
+	pxSkel->AddBone("LeftUpperArm", STICK_BONE_SPINE, Zenith_Maths::Vector3(-xP.ShoulderHalfX(), xP.ShoulderY() - xP.SpineY(), 0), xIdentity, xUnitScale);
+	pxSkel->AddBone("LeftLowerArm", STICK_BONE_LEFT_UPPER_ARM, Zenith_Maths::Vector3(0, xP.ElbowY() - xP.ShoulderY(), 0), xIdentity, xUnitScale);
+	pxSkel->AddBone("LeftHand", STICK_BONE_LEFT_LOWER_ARM, Zenith_Maths::Vector3(0, xP.WristY() - xP.ElbowY(), 0), xIdentity, xUnitScale);
 
-	// Neck (up from spine)
-	pxSkel->AddBone("Neck", STICK_BONE_SPINE, Zenith_Maths::Vector3(0, 0.7f, 0), xIdentity, xUnitScale);
+	pxSkel->AddBone("RightUpperArm", STICK_BONE_SPINE, Zenith_Maths::Vector3(xP.ShoulderHalfX(), xP.ShoulderY() - xP.SpineY(), 0), xIdentity, xUnitScale);
+	pxSkel->AddBone("RightLowerArm", STICK_BONE_RIGHT_UPPER_ARM, Zenith_Maths::Vector3(0, xP.ElbowY() - xP.ShoulderY(), 0), xIdentity, xUnitScale);
+	pxSkel->AddBone("RightHand", STICK_BONE_RIGHT_LOWER_ARM, Zenith_Maths::Vector3(0, xP.WristY() - xP.ElbowY(), 0), xIdentity, xUnitScale);
 
-	// Head (up from neck)
-	pxSkel->AddBone("Head", STICK_BONE_NECK, Zenith_Maths::Vector3(0, 0.2f, 0), xIdentity, xUnitScale);
+	pxSkel->AddBone("LeftUpperLeg", STICK_BONE_ROOT, Zenith_Maths::Vector3(-xP.HipHalfX(), 0, 0), xIdentity, xUnitScale);
+	pxSkel->AddBone("LeftLowerLeg", STICK_BONE_LEFT_UPPER_LEG, Zenith_Maths::Vector3(0, xP.KneeY() - xP.HipY(), 0), xIdentity, xUnitScale);
+	pxSkel->AddBone("LeftFoot", STICK_BONE_LEFT_LOWER_LEG, Zenith_Maths::Vector3(0, xP.AnkleY() - xP.KneeY(), 0), xIdentity, xUnitScale);
 
-	// Left arm chain
-	pxSkel->AddBone("LeftUpperArm", STICK_BONE_SPINE, Zenith_Maths::Vector3(-0.3f, 0.6f, 0), xIdentity, xUnitScale);
-	pxSkel->AddBone("LeftLowerArm", STICK_BONE_LEFT_UPPER_ARM, Zenith_Maths::Vector3(0, -0.4f, 0), xIdentity, xUnitScale);
-	pxSkel->AddBone("LeftHand", STICK_BONE_LEFT_LOWER_ARM, Zenith_Maths::Vector3(0, -0.3f, 0), xIdentity, xUnitScale);
-
-	// Right arm chain
-	pxSkel->AddBone("RightUpperArm", STICK_BONE_SPINE, Zenith_Maths::Vector3(0.3f, 0.6f, 0), xIdentity, xUnitScale);
-	pxSkel->AddBone("RightLowerArm", STICK_BONE_RIGHT_UPPER_ARM, Zenith_Maths::Vector3(0, -0.4f, 0), xIdentity, xUnitScale);
-	pxSkel->AddBone("RightHand", STICK_BONE_RIGHT_LOWER_ARM, Zenith_Maths::Vector3(0, -0.3f, 0), xIdentity, xUnitScale);
-
-	// Left leg chain
-	pxSkel->AddBone("LeftUpperLeg", STICK_BONE_ROOT, Zenith_Maths::Vector3(-0.15f, 0, 0), xIdentity, xUnitScale);
-	pxSkel->AddBone("LeftLowerLeg", STICK_BONE_LEFT_UPPER_LEG, Zenith_Maths::Vector3(0, -0.5f, 0), xIdentity, xUnitScale);
-	pxSkel->AddBone("LeftFoot", STICK_BONE_LEFT_LOWER_LEG, Zenith_Maths::Vector3(0, -0.5f, 0), xIdentity, xUnitScale);
-
-	// Right leg chain
-	pxSkel->AddBone("RightUpperLeg", STICK_BONE_ROOT, Zenith_Maths::Vector3(0.15f, 0, 0), xIdentity, xUnitScale);
-	pxSkel->AddBone("RightLowerLeg", STICK_BONE_RIGHT_UPPER_LEG, Zenith_Maths::Vector3(0, -0.5f, 0), xIdentity, xUnitScale);
-	pxSkel->AddBone("RightFoot", STICK_BONE_RIGHT_LOWER_LEG, Zenith_Maths::Vector3(0, -0.5f, 0), xIdentity, xUnitScale);
+	pxSkel->AddBone("RightUpperLeg", STICK_BONE_ROOT, Zenith_Maths::Vector3(xP.HipHalfX(), 0, 0), xIdentity, xUnitScale);
+	pxSkel->AddBone("RightLowerLeg", STICK_BONE_RIGHT_UPPER_LEG, Zenith_Maths::Vector3(0, xP.KneeY() - xP.HipY(), 0), xIdentity, xUnitScale);
+	pxSkel->AddBone("RightFoot", STICK_BONE_RIGHT_LOWER_LEG, Zenith_Maths::Vector3(0, xP.AnkleY() - xP.KneeY(), 0), xIdentity, xUnitScale);
 
 	pxSkel->ComputeBindPoseMatrices();
 	return pxSkel;
@@ -4688,16 +4686,19 @@ void Zenith_UnitTests::TestIKComputeBoneLengths()
 	Flux_SkeletonPose xPose;
 	InitPoseAtBindForSkeleton(xPose, *pxSkel);
 
-	// Stick-figure leg chain — bone offsets are (0,-0.5,0) and (0,-0.5,0), so
-	// segment lengths are exactly 0.5 each, total 1.0.
+	// The leg's two segments, RE-DERIVED from the proportions table. They were
+	// 0.5 and 0.5 for as long as the rig's ankle sat at 1.6% of a body's height;
+	// a real ankle is at 7.5%, so the shin is shorter and the numbers here have to
+	// come from the same place the rig's do.
 	{
+		const Zenith_HumanProportions& xP = Zenith_HumanProportionsRealistic();
 		Flux_IKChain xChain = MakeUnconstrainedLeftLegChain();
 		xChain.ResolveBoneIndices(*pxSkel);
 		xChain.ComputeBoneLengths(xPose);
 		ZENITH_ASSERT_EQ(xChain.m_xBoneLengths.GetSize(), 2, "3-bone chain should produce 2 lengths");
-		ZENITH_ASSERT_TRUE(FloatEquals(xChain.m_xBoneLengths.Get(0), 0.5f, 0.001f), "Upper-to-lower should be 0.5m");
-		ZENITH_ASSERT_TRUE(FloatEquals(xChain.m_xBoneLengths.Get(1), 0.5f, 0.001f), "Lower-to-foot should be 0.5m");
-		ZENITH_ASSERT_TRUE(FloatEquals(xChain.m_fTotalLength, 1.0f, 0.001f), "Total length should be 1.0m");
+		ZENITH_ASSERT_TRUE(FloatEquals(xChain.m_xBoneLengths.Get(0), xP.ThighLength(), 0.001f), "Upper-to-lower should be the thigh");
+		ZENITH_ASSERT_TRUE(FloatEquals(xChain.m_xBoneLengths.Get(1), xP.ShinLength(), 0.001f), "Lower-to-foot should be the shin");
+		ZENITH_ASSERT_TRUE(FloatEquals(xChain.m_fTotalLength, xP.LegLength(), 0.001f), "Total length should be the whole leg");
 	}
 
 	// Chain with one invalid index — that segment's length is 0
@@ -4846,8 +4847,10 @@ void Zenith_UnitTests::TestIKSolveUnreachableTarget()
 
 	const Zenith_Maths::Vector3 xFootAfter(xPose.GetModelSpaceMatrix(uFootIdx)[3]);
 	const float fDistFromRoot = glm::length(xFootAfter - xRoot);
-	// Total chain length is 1.0m. After unreachable-target stretch, foot should be ~1.0m from root.
-	ZENITH_ASSERT_TRUE(FloatEquals(fDistFromRoot, 1.0f, 0.05f), "Foot should be at total chain length from root");
+	// After an unreachable-target stretch the foot should sit at exactly the
+	// chain's own length from the root — which the proportions table owns.
+	ZENITH_ASSERT_TRUE(FloatEquals(fDistFromRoot, Zenith_HumanProportionsRealistic().LegLength(), 0.05f),
+		"Foot should be at total chain length from root");
 
 	delete pxSkel;
 }
@@ -5559,7 +5562,11 @@ void Zenith_UnitTests::TestIKOverManyFramesWalkingAndRotating()
 	const float fDt = 1.0f / 60.0f;
 	const float fWalkSpeed = 5.0f;        // m/s in player local +Z (forward)
 	const float fYawRate = 1.0f;          // rad/s
-	const float fGroundY = 9.0f;          // 1m below player root
+	// One LEG-LENGTH below the player root, not a round 1.0. A target further
+	// away than the chain can reach makes the solver saturate, and a saturated
+	// solver still looks like "the foot stopped tracking" to a drag test.
+	const float fGroundY = 10.0f - Zenith_HumanProportionsRealistic().LegLength()
+		- Zenith_HumanProportionsRealistic().AnkleHeightAboveSole();
 
 	// Build world matrix helper.
 	auto BuildWorld = [&]() -> Zenith_Maths::Matrix4 {
@@ -5609,9 +5616,12 @@ void Zenith_UnitTests::TestIKOverManyFramesWalkingAndRotating()
 		const Zenith_Maths::Vector3 xFootWorld(xFootW4);
 
 		// Simulated raycast: hits ground (Y=fGroundY) directly below foot.
-		// Target = hit + ankle.
+		// Target = hit + ankle. The ankle height is the rig's, not a literal —
+		// pairing a derived ground plane with a stale 0.05 puts the target 14 cm
+		// under the foot and reads as drag the solver never caused.
 		const Zenith_Maths::Vector3 xRayHit(xFootWorld.x, fGroundY, xFootWorld.z);
-		const Zenith_Maths::Vector3 xTargetWorld = xRayHit + Zenith_Maths::Vector3(0.0f, 0.05f, 0.0f);
+		const Zenith_Maths::Vector3 xTargetWorld = xRayHit +
+			Zenith_Maths::Vector3(0.0f, Zenith_HumanProportionsRealistic().AnkleHeightAboveSole(), 0.0f);
 
 		xTarget.m_xPosition = xTargetWorld;
 		bHasTarget = true;
@@ -5682,10 +5692,16 @@ void Zenith_UnitTests::TestIKFootBindMatchesCapsuleBottomForPlayerOnGround()
 
 	// RenderTest player capsule: half-cylinder 0.95 + radius 0.10 = 1.05m total half-extent.
 	const float fCapsuleHalfExtent = 0.95f + 0.10f;
-	const float fAnkleHeight = 0.05f;
+	const float fAnkleHeight = Zenith_HumanProportionsRealistic().AnkleHeightAboveSole();
 
 	// The exact alignment required for zero-fold standing pose.
-	const float fExpectedHalfExtent = fAnkleHeight - xFootBindModel.y;   // 0.05 - (-1.0) = 1.05
+	//
+	// ★ AND IT IS WHY THE CAPSULE DID NOT HAVE TO MOVE. Substituting the
+	// definitions, ankleHeight - footBindModel.y is (AnkleY - SoleY) - AnkleY,
+	// i.e. -SoleY: the required half-extent is the mesh's own sole depth and
+	// NOTHING ELSE. The warp pins the sole, so the 1.05 the capsule was tuned to
+	// stays correct through a re-proportioning that moved the foot bone 15 cm.
+	const float fExpectedHalfExtent = fAnkleHeight - xFootBindModel.y;
 
 	ZENITH_ASSERT_TRUE(FloatEquals(fCapsuleHalfExtent, fExpectedHalfExtent, 0.01f),
 		"Player capsule half-extent must equal (ankleHeight - footBindModel.y) so "
@@ -5782,7 +5798,7 @@ void Zenith_UnitTests::TestIKModelSpaceTargetAvoidsPhysicsLagDrag()
 
 	// Target at ground+ankle directly below foot (world space).
 	const float fGroundY = xPlayerPosAtTargetSet.y - 1.05f;   // matches RenderTest capsule
-	const float fAnkleHeight = 0.05f;
+	const float fAnkleHeight = Zenith_HumanProportionsRealistic().AnkleHeightAboveSole();
 	const Zenith_Maths::Vector3 xTargetWorld(xFootWorldAtTargetSet.x, fGroundY + fAnkleHeight, xFootWorldAtTargetSet.z);
 
 	// === Step 2 — WORLD-SPACE TARGET PATH (current/buggy behavior) ===
@@ -5995,7 +6011,12 @@ void Zenith_UnitTests::TestIKLocksFootXZAcrossFramesAtFullWeight()
 		fMinFootZAcrossFrames = std::min(fMinFootZAcrossFrames, xFootModelPostIK.z);
 
 		// Build target (already in model space — same path as production).
-		xTarget.m_xPosition = Zenith_Maths::Vector3(xFootModelPostIK.x, -1.0f, xFootModelPostIK.z);
+		// The floor this foot is pinned to IS the rig's ankle plane. -1.0 was that
+		// plane before the re-proportioning and is now 20 cm BELOW the foot, i.e.
+		// unreachable — which would make the solver saturate instead of lock, and
+		// a saturated solver still passes a "did Z stop moving" check.
+		xTarget.m_xPosition = Zenith_Maths::Vector3(xFootModelPostIK.x,
+			Zenith_HumanProportionsRealistic().AnkleY(), xFootModelPostIK.z);
 		bHasTarget = true;
 	}
 
@@ -6069,7 +6090,12 @@ void Zenith_UnitTests::TestIKLetsAnimationDriveFootXZAtZeroWeight()
 		fMaxFootZAcrossFrames = std::max(fMaxFootZAcrossFrames, xFootModelPostIK.z);
 		fMinFootZAcrossFrames = std::min(fMinFootZAcrossFrames, xFootModelPostIK.z);
 
-		xTarget.m_xPosition = Zenith_Maths::Vector3(xFootModelPostIK.x, -1.0f, xFootModelPostIK.z);
+		// The floor this foot is pinned to IS the rig's ankle plane. -1.0 was that
+		// plane before the re-proportioning and is now 20 cm BELOW the foot, i.e.
+		// unreachable — which would make the solver saturate instead of lock, and
+		// a saturated solver still passes a "did Z stop moving" check.
+		xTarget.m_xPosition = Zenith_Maths::Vector3(xFootModelPostIK.x,
+			Zenith_HumanProportionsRealistic().AnkleY(), xFootModelPostIK.z);
 		bHasTarget = true;
 	}
 
@@ -6135,16 +6161,20 @@ void Zenith_UnitTests::TestIKAsymmetricFeetAtSpawn()
 		xSolver.AddChain(xRight);
 	}
 
-	// Player at (256, 49.30, 256) — capsule rests on main platform, IKStep_Spawn
-	// cube is clearly outside the capsule X-range so it doesn't push the player up.
-	const Zenith_Maths::Vector3 xPlayerPos(256.0f, 49.30f, 256.0f);
-	const Zenith_Maths::Matrix4 xWorld = glm::translate(glm::mat4(1.0f), xPlayerPos);
-
 	// Left foot at X=255.85 over IKStep_Spawn (top 48.55).
 	// Right foot at X=256.15 over main platform (top 48.25).
+	const Zenith_HumanProportions& xP = Zenith_HumanProportionsRealistic();
 	const float fStepTopY = 48.55f;
 	const float fMainTopY = 48.25f;
-	const float fAnkleHeight = 0.05f;
+	const float fAnkleHeight = xP.AnkleHeightAboveSole();
+
+	// The player stands ON the main platform, so its root is one capsule
+	// half-extent above it — and that half-extent is the mesh's sole depth (see
+	// IKFootBindMatchesCapsuleBottomForPlayerOnGround). Deriving it is what keeps
+	// the RIGHT leg exactly straight and the LEFT one folded by the step's height,
+	// which is the whole geometry this test is about.
+	const Zenith_Maths::Vector3 xPlayerPos(256.0f, fMainTopY - xP.SoleY(), 256.0f);
+	const Zenith_Maths::Matrix4 xWorld = glm::translate(glm::mat4(1.0f), xPlayerPos);
 
 	const Zenith_Maths::Vector3 xLeftTargetWorld(255.85f, fStepTopY + fAnkleHeight, 256.0f);
 	const Zenith_Maths::Vector3 xRightTargetWorld(256.15f, fMainTopY + fAnkleHeight, 256.0f);
@@ -6204,17 +6234,21 @@ void Zenith_UnitTests::TestIKAsymmetricFeetAtSpawn()
 	ZENITH_ASSERT_TRUE(std::abs(xRightFootWorld.y - (fMainTopY + fAnkleHeight)) < 0.05f,
 		"Right foot should land near the main platform top + ankle height");
 
-	// Knee bend assertion: the left leg lifts the foot 30cm, so the chain folds
-	// from 1m straight to 0.7m hip-to-foot distance. The knee must protrude
-	// FORWARD (model +Z) by ~36cm — not sideways, not backward, not zero.
-	// This is what makes the leg visually look like a natural human knee bend
-	// rather than a stiff straight leg.
-	const float fExpectedKneeForward = 0.36f;     // sqrt(0.5² - 0.35²) ≈ 0.357
+	// Knee bend assertion, RE-DERIVED rather than re-typed. The step lifts the
+	// left foot by (step - main), folding the chain from its full length to that
+	// much less; with two equal segments of length L folded to a span d, the knee
+	// stands off the hip-foot line by sqrt(L^2 - (d/2)^2), and it must do so
+	// FORWARD (+Z) — not sideways, not backward, not zero. The old 0.36 was that
+	// same formula evaluated for a 0.5 m thigh, which the rig no longer has.
+	const float fFoldSpan = xP.LegLength() - (fStepTopY - fMainTopY);
+	const float fSegment = 0.5f * (xP.ThighLength() + xP.ShinLength());
+	const float fExpectedKneeForward = std::sqrt(
+		std::max(0.0f, fSegment * fSegment - 0.25f * fFoldSpan * fFoldSpan));
 	ZENITH_ASSERT_TRUE(xLeftKneeModel.z > 0.20f,
 		"Left knee should bend FORWARD (+Z in model space) by at least 20cm — anything less means the IK isn't producing a natural-looking bend");
 	ZENITH_ASSERT_TRUE(std::abs(xLeftKneeModel.z - fExpectedKneeForward) < 0.10f,
-		"Left knee Z should be close to the geometric expectation (~36cm forward)");
-	ZENITH_ASSERT_TRUE(std::abs(xLeftKneeModel.x - (-0.15f)) < 0.05f,
+		"Left knee Z should be close to the geometric expectation");
+	ZENITH_ASSERT_TRUE(std::abs(xLeftKneeModel.x - (-xP.HipHalfX())) < 0.05f,
 		"Left knee should stay aligned with the leg's X plane (no sideways bend)");
 
 	delete pxSkel;
@@ -6247,11 +6281,17 @@ void Zenith_UnitTests::TestStickFigureSkeletonCreation(){
 	ZENITH_ASSERT_EQ(pxSkel->GetBone(STICK_BONE_LEFT_HAND).m_iParentIndex, STICK_BONE_LEFT_LOWER_ARM, "LeftHand parent should be LeftLowerArm");
 
 	// Verify bind pose world positions
+	// The head is PINNED at 1.4 by the proportions table — that pin is what keeps
+	// the skull rigid under the warp — so it survives the re-proportioning as an
+	// absolute number. The foot does NOT: an ankle at 1.6% of a body's height was
+	// never a foot. Re-derived from the table rather than re-typed.
+	const Zenith_HumanProportions& xP = Zenith_HumanProportionsRealistic();
 	Zenith_Maths::Vector3 xHeadPos = Zenith_Maths::Vector3(pxSkel->GetBone(STICK_BONE_HEAD).m_xBindPoseModel[3]);
 	ZENITH_ASSERT_TRUE(Vec3Equals(xHeadPos, Zenith_Maths::Vector3(0, 1.4f, 0), 0.01f), "Head world position mismatch");
 
 	Zenith_Maths::Vector3 xLeftFootPos = Zenith_Maths::Vector3(pxSkel->GetBone(STICK_BONE_LEFT_FOOT).m_xBindPoseModel[3]);
-	ZENITH_ASSERT_TRUE(Vec3Equals(xLeftFootPos, Zenith_Maths::Vector3(-0.15f, -1.0f, 0), 0.01f), "LeftFoot world position mismatch");
+	ZENITH_ASSERT_TRUE(Vec3Equals(xLeftFootPos, Zenith_Maths::Vector3(-xP.HipHalfX(), xP.AnkleY(), 0), 0.01f),
+		"LeftFoot world position mismatch");
 
 
 	delete pxSkel;
@@ -6323,23 +6363,39 @@ void Zenith_UnitTests::TestStickFigureMeshJointAlignment()
 	Zenith_MeshAsset* pxMesh = Zenith_AssetRegistry::GetView<Zenith_MeshAsset>(strMeshAssetPath);
 	ZENITH_ASSERT_NOT_NULL(pxMesh, "Should be able to load the StickFigure mesh asset");
 
-	struct JointCheck { float fY; float fXSign; uint32_t uBoneA; uint32_t uBoneB; const char* szName; };
+	const std::string strSkelAssetPath = std::string(ENGINE_ASSETS_DIR) + "Meshes/StickFigure/StickFigure" ZENITH_SKELETON_EXT;
+	Zenith_SkeletonAsset* pxSkeleton = Zenith_AssetRegistry::GetView<Zenith_SkeletonAsset>(strSkelAssetPath);
+	ZENITH_ASSERT_NOT_NULL(pxSkeleton, "Should be able to load the StickFigure skeleton");
+
+	// ★★ THE JOINT IS WHERE ITS BONE IS. This selected candidate vertices by HEIGHT
+	// -- |y - ElbowY()| < 0.09 -- which was only ever valid while the arm hung
+	// straight down. The shared rig is T-POSED now (see
+	// Zenith_HumanArmBindRotation), so an elbow is a distance OUT along X at
+	// shoulder height and a height band lands on the ribcage. Reading the child
+	// bone's own model-space origin is correct in either pose and cannot go stale
+	// the next time one changes: that origin IS the joint it rotates about.
+	//
+	// (It also stops re-deriving the expected value from the proportions table by
+	// hand, which was the previous fix for the previous version of this problem.)
+	struct JointCheck { uint32_t uBoneA; uint32_t uBoneB; const char* szName; };
 	const JointCheck axChecks[] = {
-		{ 0.715f, -1.0f, STICK_BONE_LEFT_UPPER_ARM,  STICK_BONE_LEFT_LOWER_ARM,  "left elbow"  },
-		{ 0.715f,  1.0f, STICK_BONE_RIGHT_UPPER_ARM, STICK_BONE_RIGHT_LOWER_ARM, "right elbow" },
-		{ -0.480f, -1.0f, STICK_BONE_LEFT_UPPER_LEG,  STICK_BONE_LEFT_LOWER_LEG,  "left knee"  },
-		{ -0.480f,  1.0f, STICK_BONE_RIGHT_UPPER_LEG, STICK_BONE_RIGHT_LOWER_LEG, "right knee" },
-		{ 0.435f, -1.0f, STICK_BONE_LEFT_LOWER_ARM,  STICK_BONE_LEFT_HAND,       "left wrist"  },
-		{ 0.435f,  1.0f, STICK_BONE_RIGHT_LOWER_ARM, STICK_BONE_RIGHT_HAND,      "right wrist" },
+		{ STICK_BONE_LEFT_UPPER_ARM,  STICK_BONE_LEFT_LOWER_ARM,  "left elbow"  },
+		{ STICK_BONE_RIGHT_UPPER_ARM, STICK_BONE_RIGHT_LOWER_ARM, "right elbow" },
+		{ STICK_BONE_LEFT_UPPER_LEG,  STICK_BONE_LEFT_LOWER_LEG,  "left knee"  },
+		{ STICK_BONE_RIGHT_UPPER_LEG, STICK_BONE_RIGHT_LOWER_LEG, "right knee" },
+		{ STICK_BONE_LEFT_LOWER_ARM,  STICK_BONE_LEFT_HAND,       "left wrist"  },
+		{ STICK_BONE_RIGHT_LOWER_ARM, STICK_BONE_RIGHT_HAND,      "right wrist" },
 	};
 
 	for (const JointCheck& xChk : axChecks)
 	{
+		const Zenith_Maths::Vector3 xJointPos(
+			pxSkeleton->GetBone(xChk.uBoneB).m_xBindPoseModel[3]);
 		bool bFoundBlend = false;
 		for (uint32_t v = 0; v < pxMesh->GetNumVerts() && !bFoundBlend; v++)
 		{
 			const Zenith_Maths::Vector3& xPos = pxMesh->m_xPositions.Get(v);
-			if (std::abs(xPos.y - xChk.fY) > 0.05f || xPos.x * xChk.fXSign < 0.05f)
+			if (glm::length(xPos - xJointPos) > 0.14f)
 			{
 				continue;
 			}

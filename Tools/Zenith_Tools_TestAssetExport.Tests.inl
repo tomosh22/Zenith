@@ -196,8 +196,10 @@ void Zenith_UnitTests::TestStickFigureJumpClipBothLegsHaveKeyframes()
 ZENITH_TEST(StickFigureBody, BodyMeshInvariants) { Zenith_UnitTests::TestStickFigureBodyMeshInvariants(); }
 void Zenith_UnitTests::TestStickFigureBodyMeshInvariants()
 {
-	Zenith_SkeletonAsset* pxSkel = CreateStickFigureSkeleton();
-	Zenith_MeshAsset* pxMesh = CreateStickFigureMesh(pxSkel);
+	const Zenith_HumanProportions& xP = Zenith_HumanProportionsRealistic();
+	Zenith_HumanWarp xWarp;
+	Zenith_MeshAsset* pxMesh = CreateStickFigureMesh(xP, xWarp);
+	Zenith_SkeletonAsset* pxSkel = CreateStickFigureSkeleton(xP, xWarp);
 
 	// A lofted human body, not the old 128-vert cube figure.
 	ZENITH_ASSERT_TRUE(pxMesh->GetNumVerts() >= 1200, "Body mesh should have at least 1200 verts");
@@ -245,24 +247,42 @@ void Zenith_UnitTests::TestStickFigureBodySmoothSkinning()
 	// The point of the body overhaul: joints carry BLENDED weights between the
 	// adjacent bones so elbows/knees bend smoothly instead of tearing. Verify a
 	// genuinely blended vertex exists at each major joint.
-	Zenith_SkeletonAsset* pxSkel = CreateStickFigureSkeleton();
-	Zenith_MeshAsset* pxMesh = CreateStickFigureMesh(pxSkel);
+	const Zenith_HumanProportions& xP = Zenith_HumanProportionsRealistic();
+	Zenith_HumanWarp xWarp;
+	Zenith_MeshAsset* pxMesh = CreateStickFigureMesh(xP, xWarp);
+	Zenith_SkeletonAsset* pxSkel = CreateStickFigureSkeleton(xP, xWarp);
 
-	struct JointCheck { float fY; float fXSign; uint32_t uBoneA; uint32_t uBoneB; const char* szName; };
+	// ★ RE-DERIVED FROM THE TABLE, never re-typed. These used to be the literals
+	// 0.715 and -0.480, which were where the joints happened to be. The whole
+	// point of the warp is that a blended vertex now lands on the RIG's joint
+	// plane, so asking the table is both the correct check and one that survives
+	// the next proportion edit.
+	//
+	// ★★ THE JOINT IS FOUND BY ITS BONE'S POSITION, NOT BY A HEIGHT. This used to
+	// select candidate vertices with |y - ElbowY()| < 0.09, which only ever worked
+	// because the arm hung straight down: the rig is T-POSED now (see
+	// Zenith_HumanArmBindRotation) and an elbow is a distance OUT along X, at
+	// shoulder height, so a height band finds the ribcage instead. Reading the
+	// bone's own model-space position covers both poses and cannot go stale the
+	// next time one changes -- the bone IS where the joint is, by definition.
+	struct JointCheck { uint32_t uBoneA; uint32_t uBoneB; const char* szName; };
 	const JointCheck axJoints[] = {
-		{ 0.715f, -1.0f, 4 /*LUA*/, 5 /*LLA*/,  "left elbow"  },
-		{ 0.715f,  1.0f, 7 /*RUA*/, 8 /*RLA*/,  "right elbow" },
-		{ -0.480f, -1.0f, 10 /*LUL*/, 11 /*LLL*/, "left knee"  },
-		{ -0.480f,  1.0f, 13 /*RUL*/, 14 /*RLL*/, "right knee" },
+		{ 4 /*LUA*/, 5 /*LLA*/,  "left elbow"  },
+		{ 7 /*RUA*/, 8 /*RLA*/,  "right elbow" },
+		{ 10 /*LUL*/, 11 /*LLL*/, "left knee"  },
+		{ 13 /*RUL*/, 14 /*RLL*/, "right knee" },
 	};
 
 	for (const JointCheck& xJoint : axJoints)
 	{
+		// The child bone's own origin is the joint it rotates about.
+		const Zenith_Maths::Vector3 xJointPos(
+			pxSkel->GetBone(xJoint.uBoneB).m_xBindPoseModel[3]);
 		bool bFoundBlend = false;
 		for (uint32_t v = 0; v < pxMesh->GetNumVerts() && !bFoundBlend; v++)
 		{
 			const Zenith_Maths::Vector3& xPos = pxMesh->m_xPositions.Get(v);
-			if (std::abs(xPos.y - xJoint.fY) > 0.05f || xPos.x * xJoint.fXSign < 0.05f)
+			if (glm::length(xPos - xJointPos) > 0.14f)
 			{
 				continue;
 			}
@@ -318,4 +338,56 @@ ZENITH_TEST(ProceduralTree, LeafMaterialIsAlphaMasked)
 		"Leaf material must be MASKED so the alpha mask cuts the leaves out");
 	ZENITH_ASSERT_EQ_FLOAT(pxLeaves->GetAlphaCutoff(), 0.45f, 0.0001f,
 		"Leaf alpha cutoff must stay 0.45");
+}
+
+// ----- The proportion warp actually reaching the mesh -------------------------
+
+ZENITH_TEST(StickFigureBody, WarpedLoftLandmarksLandOnTheRigsJointPlanes)
+{
+	// ★ THE TEST FOR "DID THE TABLE EDIT REACH THE GEOMETRY". Every other check in
+	// this file would pass if the warp were skipped entirely -- the mesh would
+	// still be a valid, well-weighted, correctly-bounded human, just one whose
+	// knee is 8 cm from the knee bone it bends around. Re-measuring the FINISHED
+	// mesh and comparing against the rig's own planes is the only thing that
+	// notices, and it is the whole point of the change.
+	const Zenith_HumanProportions& xP = Zenith_HumanProportionsRealistic();
+	Zenith_HumanWarp xWarp;
+	Zenith_MeshAsset* pxMesh = CreateStickFigureMesh(xP, xWarp);
+	ZENITH_ASSERT_TRUE(xWarp.IsValid(), "the loft must have produced a usable warp");
+
+	// ★ MEASURED AS A T-POSE, because that is what it now is. The loft is authored
+	// arms-down and warped arms-down -- every pass above the rotation seam still
+	// works in that space -- but what SHIPS has its arms out, so re-measuring the
+	// finished mesh has to ask the right question. In T_POSE the arm chain is
+	// reported as distances OUT along the lateral axis rather than as heights.
+	Zenith_SkinDeformView xView = Zenith_MakeSkinDeformView(*pxMesh);
+	Zenith_HumanLandmarks xAfter;
+	ZENITH_ASSERT_TRUE(Zenith_MeasureHumanLandmarks(xView, ZENITH_HUMAN_POSE_T_POSE, xAfter),
+		"the warped loft must still measure");
+	Zenith_LogHumanLandmarks("StickFigure loft (POST-warp)", xAfter);
+
+	// One scan bin is height/128 = 0.020, so 2.5 bins is the resolution floor.
+	const float fTol = 0.05f;
+	ZENITH_ASSERT_EQ_FLOAT(xAfter.SoleY(), fZENITH_HUMAN_RIG_SOLE_Y, 1.0e-3f,
+		"the sole is PINNED: colliders and spawn lifts are tuned against it");
+	ZENITH_ASSERT_EQ_FLOAT(xAfter.Height(), fZENITH_HUMAN_RIG_HEIGHT, 1.0e-3f,
+		"and so is total height");
+
+	ZENITH_ASSERT_TRUE(xAfter.m_abBodyFound[ZENITH_HUMAN_BODY_ANKLE], "the warped loft still has an ankle seam");
+	ZENITH_ASSERT_EQ_FLOAT(xAfter.m_afBodyY[ZENITH_HUMAN_BODY_ANKLE], xP.AnkleY(), fTol,
+		"the loft's ankle seam now sits on the RIG's ankle plane");
+	ZENITH_ASSERT_EQ_FLOAT(xAfter.m_afBodyY[ZENITH_HUMAN_BODY_SHOULDER], xP.ShoulderY(), fTol,
+		"...and its shoulder on the rig's shoulder plane");
+	// The arm chain, as lateral reach: the shoulder's own half-width plus the
+	// segment length that used to be measured as a drop in Y. Same table, same
+	// lengths -- the rotation moved the arm without resizing it, and this is the
+	// assertion that says so about the shipped geometry rather than about the rig.
+	ZENITH_ASSERT_EQ_FLOAT(xAfter.m_afArmChain[ZENITH_HUMAN_ARM_ELBOW],
+		xP.ShoulderHalfX() + (xP.ShoulderY() - xP.ElbowY()), fTol,
+		"...its elbow at the rig's elbow reach");
+	ZENITH_ASSERT_EQ_FLOAT(xAfter.m_afArmChain[ZENITH_HUMAN_ARM_WRIST],
+		xP.ShoulderHalfX() + (xP.ShoulderY() - xP.WristY()), fTol,
+		"...and its wrist at the rig's wrist reach");
+
+	delete pxMesh;
 }

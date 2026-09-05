@@ -46,6 +46,7 @@
 
 #include "Zenithmon/Source/Gen/ZM_GenCommon.h"     // ZM_GenMesh, ZM_GEN_DOMAIN, ZM_GenRNG, ZM_GenDeriveSeed, bake bridge
 #include "Zenithmon/Source/Gen/ZM_TextureSynth.h"    // ZM_GenImage (the placeholder albedo type)
+#include "AssetHandling/Zenith_SkinDeform.h"
 #include "Zenithmon/Source/Data/ZM_HumanData.h"      // ZM_HUMAN_ID + the variety-axis enums
 
 // ZM_BakeManifest (a later box) stamps this per-family version; bump it whenever
@@ -71,7 +72,7 @@
 //             skeleton and animation refs at engine: paths. Every v5 bundle on disk
 //             is both mis-placed and bound to a .zskel that no longer exists, so
 //             this bump is load-bearing.
-constexpr u_int uZM_HUMANGEN_VERSION = 6u;
+constexpr u_int uZM_HUMANGEN_VERSION = 8u;
 
 // The shared rig's asset ref -- the ONE skeleton every human in this game binds,
 // and the same file RenderTest and Combat bind. Spelled once, here.
@@ -215,9 +216,20 @@ constexpr ZM_HUMAN_ID eZM_HUMAN_CANONICAL_MODEL = ZM_HUMAN_PLAYER_M;
 // HIP) is y=0. That is why the feet are NEGATIVE: a standing body reaches about one
 // unit below its hip. v5 spelled the centre as +1.307005 because it measured a
 // feet-at-zero space that no longer exists; the same body is 0.307005 above the hip.
-inline constexpr float fZM_HUMAN_CANONICAL_BODY_HEIGHT = 2.604300f;
-inline constexpr float fZM_HUMAN_MESH_CENTRE_Y         = 0.307005f;
-inline constexpr float fZM_HUMAN_MESH_FEET_Y           = -0.995145f;
+// v7 (the proportion warp) moved all three by about 3 mm, and the CAUSE is worth
+// recording because it looks like a bug and is not. The warp acts on RINGS, and a
+// loft's extreme vertices are not ring vertices -- they are the cap apexes the
+// loft generates a fixed distance beyond the last ring. Pinning the sole ANCHOR
+// therefore pins the plane the lowest RING sits on, and the cap below it rides
+// the 15% stretch the shin picked up when the knee moved onto the rig's knee
+// plane. In model units that is 0.003; at the game's 1.8 m body it is 2 mm, and
+// because VISUAL_SCALE and MODEL_OFFSET_Y are both DERIVED from these three, it
+// moves nothing in the game at all -- humans stay 1.80 m with their feet on the
+// floor. Re-derived from an observed Null_ build, as HumanGen_BodyMetricsPinned
+// instructs; the tolerance was not widened.
+inline constexpr float fZM_HUMAN_CANONICAL_BODY_HEIGHT = 2.601267f;
+inline constexpr float fZM_HUMAN_MESH_CENTRE_Y         = 0.308522f;
+inline constexpr float fZM_HUMAN_MESH_FEET_Y           = -0.992112f;
 
 // The three are one statement measured three ways, so they owe each other this.
 static_assert(fZM_HUMAN_MESH_CENTRE_Y - fZM_HUMAN_MESH_FEET_Y
@@ -275,6 +287,56 @@ inline ZM_GenRNG ZM_MakeGenRNG(const ZM_HumanRecipe& xRecipe, ZM_GEN_DOMAIN eDom
 // skin). Emits NO bones: the rig is the shared engine asset, and the mesh only
 // refers to it by index.
 void ZM_BuildHumanMesh(const ZM_HumanRecipe& xRecipe, ZM_GenMesh& xMesh);
+
+// ---------------------------------------------------------------------------
+// GENERATOR v7: THE LOFT IS RE-PROPORTIONED ONTO THE SHARED RIG'S JOINT PLANES.
+//
+// v6 got the mesh into StickFigure's bind SPACE, which is what made skinning to
+// the shared rig legal. It did not get the mesh's JOINTS onto that rig's joint
+// positions -- the authored golden rows put this loft's knee at -0.480 while the
+// rig's knee bone sat at -0.500, and a mesh that bends 2 cm away from the bone it
+// bends around is simply what everyone had been looking at.
+//
+// The rig's proportions are data now (Zenith/AssetHandling/Zenith_HumanProportions.h)
+// and they MOVED, so that 2 cm would have become 5 cm. v7 warps the loft's rings
+// onto the rig's planes instead.
+//
+// ★ RINGS, NOT VERTICES, and that is not an optimisation. ZM_BuildHumanMesh's
+// finalisation comment is explicit that EmitRing already wrote analytic loft
+// normals and they must never be regenerated. A vertex warp is non-uniform, so it
+// invalidates every one of them silently -- and rebuilding them would soften the
+// hard edges the generator deliberately keeps. Warping the RINGS instead lets the
+// analytic generator run on already-warped geometry, which is correct for free.
+// Zenith_SkinDeform's WarpRingAndVertexFormsAgree pins that this is the same map
+// StickFigure's vertex-level warp uses.
+//
+// ★ IN CANONICAL SPACE, BEFORE THE PER-HUMAN HEIGHT SCALE. All 34 humans then
+// share one set of proportions and differ only in stature, which is the whole
+// point of the recipe's m_fHeightScale.
+// ---------------------------------------------------------------------------
+
+// ★ THE ONE HUMAN WITH AN ARTIST-AUTHORED MODEL, and the reason this is a
+// FUNCTION rather than a constant. Every NPC stays on the generated loft -- 34
+// of them, each a different build, hair and outfit, which is exactly what the
+// generator is for -- and only the player has a hand-made mesh. Returning
+// nullptr for everyone else means "no imported model", so NPCs are excluded by
+// construction rather than by a call site remembering to ask.
+//
+// The bundle is written by Zenith_Tools_HumanModelExport at tools boot and is
+// gitignored art, so a fresh clone or a runtime-only build simply gets the
+// generated human. The caller VALIDATES rather than trusting the path.
+const char* ZM_HumanImportedModelRef(ZM_HUMAN_ID eId);
+
+// The map from this generator's authored ring space onto the shared rig's joint
+// planes. Measured ONCE, off the canonical human's own un-warped mesh, and cached
+// -- so it is a property of the authored tables rather than of any one recipe.
+// Comes back invalid (and warps nothing) while that first measurement is running.
+const Zenith_HumanWarp& ZM_CanonicalHumanWarp();
+
+// Apply it to a run of authored rings, in place. Each ring's arm weight comes from
+// its own (m_uBoneA, m_uBoneB, m_fBlendB), so the shoulder widens and the arm
+// re-proportions by riding the loft's existing deltoid blend -- no new tuning.
+void ZM_WarpHumanRings(ZM_LoftRing* pxRings, u_int uNumRings);
 
 // ---------------------------------------------------------------------------
 // ZM_Human -- the full in-memory bundle SC1 produces (mesh + placeholder albedo).

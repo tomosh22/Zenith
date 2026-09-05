@@ -55,6 +55,7 @@ Zenith/
 ├── UnitTests/         # Unit-test harness
 ├── Prefab/            # Prefab system (see Prefab/CLAUDE.md)
 ├── UI/                # UI framework (see UI/CLAUDE.md)
+├── Tools/             # The asset bake: importers + procedural exporters (see Tools/CLAUDE.md)
 └── FileAccess/        # File system abstraction (see FileAccess/CLAUDE.md)
 ```
 

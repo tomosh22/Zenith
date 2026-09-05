@@ -1052,6 +1052,46 @@ static void EnsureStickFigureModelExists()
 #endif
 
 	RenderTest::Resources().m_strStickFigureModelPath = strModelPath;
+
+	// ★ PREFER THE ARTIST-AUTHORED HUMAN WHEN IT IS THERE AND IT IS REAL.
+	//
+	// "Is there a file" is NOT the check. The binder writes its .zmodel LAST, as
+	// a commit marker, precisely so a half-built bundle is invisible -- but a
+	// STATIC bundle (which the generic .glb importer would write if the routing
+	// rule ever broke) is a complete, loadable, entirely unskinned
+	// model. Validating that the mesh actually HasSkinning is what tells those
+	// two apart, and it is the difference between a player that animates and one
+	// that stands frozen in its bind pose while every test stays green.
+	if (RenderTest_HasCommandLineFlag("--player-model=stickfigure"))
+	{
+		Zenith_Log(LOG_CATEGORY_MESH, "[RenderTest] --player-model=stickfigure: using the generated human");
+		return;
+	}
+
+	const std::string strMalePath = std::string(ENGINE_ASSETS_DIR) + "Meshes/Humans/Male/Male" ZENITH_MODEL_EXT;
+	if (!std::filesystem::exists(strMalePath))
+	{
+		return;
+	}
+	Zenith_ModelAsset* pxMale = Zenith_AssetRegistry::GetView<Zenith_ModelAsset>(strMalePath);
+	if (pxMale == nullptr || pxMale->GetSkeletonPath().empty() || pxMale->GetNumMeshes() == 0u)
+	{
+		Zenith_Warning(LOG_CATEGORY_MESH,
+			"[RenderTest] %s is present but is not a skinned model bundle - keeping the generated human",
+			strMalePath.c_str());
+		return;
+	}
+	Zenith_MeshAsset* pxMaleMesh = Zenith_AssetRegistry::GetView<Zenith_MeshAsset>(pxMale->GetMeshBinding(0u).GetMeshPath());
+	if (pxMaleMesh == nullptr || !pxMaleMesh->HasSkinning())
+	{
+		Zenith_Warning(LOG_CATEGORY_MESH,
+			"[RenderTest] %s has no skinning - keeping the generated human", strMalePath.c_str());
+		return;
+	}
+
+	RenderTest::Resources().m_strStickFigureModelPath = strMalePath;
+	Zenith_Log(LOG_CATEGORY_MESH, "[RenderTest] player/NPC model: %s (%u verts, skinned)",
+		strMalePath.c_str(), pxMaleMesh->GetNumVerts());
 }
 
 // Build a terrain material from one of the shared PBR ground sets at

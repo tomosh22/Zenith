@@ -42,12 +42,15 @@
 #include "AssetHandling/Zenith_MeshAsset.h"
 #include "AssetHandling/Zenith_ModelAsset.h"
 #include "AssetHandling/Zenith_SkeletonAsset.h"
+#include "AssetHandling/Zenith_HumanProportions.h"
+#include "AssetHandling/Zenith_SkinDeform.h"
 #include "DataStream/Zenith_DataStream.h"
 #include "Flux/MeshAnimation/Flux_AnimationClip.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "Flux/InstancedMeshes/Flux_AnimationTexture.h"
 #include "Zenith_Tools_GltfExport.h"
 #include "Zenith_Tools_TestAssetExport.h"
+#include "Zenith_Tools_HumanModelExport.h"
 #include "Zenith_Tools_TextureExport.h"   // v2 BC / offline-mip texture export
 #include <algorithm>
 #include <cmath>
@@ -117,57 +120,132 @@ static u_int HumanFingerBone(int iHand, int iDigit, int iPhalanx)
 }
 
 //------------------------------------------------------------------------------
-// Skeleton. The first 16 bones (indices 0-15, names unchanged) are a frozen
-// contract: RenderTest's capsule/foot-IK assume feet at Y=-1.0, the engine unit
-// tests pin head Y=1.4 and the parent hierarchy, and the 13 authored clips bind
-// to these names. UE5-class bones (jaw, eyes, toes, articulated fingers) are
-// APPENDED after them so all of that keeps working.
+// Skeleton.
+//
+// ★ THE FROZEN CONTRACT IS NAMES AND INDICES, NOT COORDINATES. It used to be
+// both -- this comment said "bind positions are load-bearing" -- and that was
+// true for as long as the proportions were literals nobody could re-derive.
+// They are data now (Zenith_HumanProportions), every mesh skinned to this rig is
+// re-proportioned onto the SAME table, and the four planes anything downstream
+// actually depends on (Root, Spine, Head, and the mesh's own sole and crown) are
+// PINNED inside it. What is still frozen is that these fifty-one bones keep
+// these fifty-one names at these fifty-one indices: the 17 authored clips bind
+// by name, Zenithmon's loft weights by index, and RenderTest's four IK chains
+// look up by name.
+//
+// UE5-class bones (jaw, eyes, toes, articulated fingers) are APPENDED after the
+// core sixteen, and their bind offsets are RE-EXPRESSED through the warp rather
+// than copied: they were authored as model-space deltas against geometry that
+// has now moved, so a toe bone left at its literal would float 14 cm above the
+// shoe it belongs to.
 //------------------------------------------------------------------------------
-static Zenith_SkeletonAsset* CreateStickFigureSkeleton()
+
+// Where the finger joints end up once the hand geometry has been warped. The
+// digits are the shared layout GetHumanHandDigits owns, pushed through the arm
+// chain at full arm weight -- which is exactly what the hand MESH's own vertices
+// get, so bones and geometry stay in the lockstep the sharing exists for.
+static void GetWarpedHumanHandDigits(float fSide, const Zenith_HumanWarp& xWarp, HumanDigitDef axOut[5])
+{
+	GetHumanHandDigits(fSide, axOut);
+	if (!xWarp.IsValid()) { return; }
+	for (int i = 0; i < 5; i++)
+	{
+		Zenith_SkinWarpRing(axOut[i].xRoot.y, axOut[i].xRoot.x, 1.0f, xWarp);
+		Zenith_SkinWarpRing(axOut[i].xTip.y,  axOut[i].xTip.x,  1.0f, xWarp);
+	}
+}
+
+static Zenith_Maths::Vector3 WarpHumanBonePoint(const Zenith_HumanWarp& xWarp,
+	const Zenith_Maths::Vector3& xLegacyModel, float fArmWeight)
+{
+	Zenith_Maths::Vector3 xOut = xLegacyModel;
+	if (xWarp.IsValid())
+	{
+		Zenith_SkinWarpRing(xOut.y, xOut.x, fArmWeight, xWarp);
+	}
+	return xOut;
+}
+
+static Zenith_SkeletonAsset* CreateStickFigureSkeleton(const Zenith_HumanProportions& xP,
+	const Zenith_HumanWarp& xWarp)
 {
 	Zenith_SkeletonAsset* pxSkel = new Zenith_SkeletonAsset();
 	const Zenith_Maths::Quat xIdentity = glm::identity<Zenith_Maths::Quat>();
 	const Zenith_Maths::Vector3 xUnitScale(1.0f);
 
-	// Root (at origin)
-	pxSkel->AddBone("Root", -1, Zenith_Maths::Vector3(0, 0, 0), xIdentity, xUnitScale);
+	// Root (the hip -- PINNED at y=0 because the clips write ABSOLUTE Root keys)
+	pxSkel->AddBone("Root", -1, Zenith_Maths::Vector3(0, xP.HipY(), 0), xIdentity, xUnitScale);
 
-	// Spine (up from root)
-	pxSkel->AddBone("Spine", STICK_BONE_ROOT, Zenith_Maths::Vector3(0, 0.5f, 0), xIdentity, xUnitScale);
+	// Spine (PINNED: Idle writes an ABSOLUTE Spine position)
+	pxSkel->AddBone("Spine", STICK_BONE_ROOT, Zenith_Maths::Vector3(0, xP.SpineY() - xP.HipY(), 0), xIdentity, xUnitScale);
 
-	// Neck (up from spine)
-	pxSkel->AddBone("Neck", STICK_BONE_SPINE, Zenith_Maths::Vector3(0, 0.7f, 0), xIdentity, xUnitScale);
+	// Neck, then Head (PINNED -- the skull's authored size rides on it)
+	pxSkel->AddBone("Neck", STICK_BONE_SPINE, Zenith_Maths::Vector3(0, xP.NeckY() - xP.SpineY(), 0), xIdentity, xUnitScale);
+	pxSkel->AddBone("Head", STICK_BONE_NECK, Zenith_Maths::Vector3(0, xP.HeadY() - xP.NeckY(), 0), xIdentity, xUnitScale);
 
-	// Head (up from neck)
-	pxSkel->AddBone("Head", STICK_BONE_NECK, Zenith_Maths::Vector3(0, 0.2f, 0), xIdentity, xUnitScale);
+	// Arm chains. The shoulder is the only HEIGHT in the arm; everything below it
+	// is a LENGTH down the limb, which is what makes the same table describe a
+	// T-posed import and an arms-down one.
+	//
+	// ★★ THE UPPER ARM CARRIES THE RIG'S ONLY NON-IDENTITY BIND ROTATION, and it
+	// is what makes this ONE skeleton serve every humanoid mesh in the engine --
+	// see Zenith_HumanArmBindRotation for the full reasoning. The chain BELOW it is
+	// byte-for-byte the arms-down rig it replaced: every child offset is still
+	// (0, -length, 0) in its parent's frame, because a model-space delta expressed
+	// in a frame that rotated with it comes back unchanged.
+	for (int iSide = 0; iSide < 2; iSide++)
+	{
+		const float fSide = (iSide == 0) ? -1.0f : 1.0f;
+		const char* szUpper = (iSide == 0) ? "LeftUpperArm" : "RightUpperArm";
+		const char* szLower = (iSide == 0) ? "LeftLowerArm" : "RightLowerArm";
+		const char* szHand  = (iSide == 0) ? "LeftHand" : "RightHand";
+		const uint32_t uUpper = pxSkel->AddBone(szUpper, STICK_BONE_SPINE,
+			Zenith_Maths::Vector3(fSide * xP.ShoulderHalfX(), xP.ShoulderY() - xP.SpineY(), 0),
+			Zenith_HumanArmBindRotation(fSide), xUnitScale);
+		const uint32_t uLower = pxSkel->AddBone(szLower, uUpper,
+			Zenith_Maths::Vector3(0, xP.ElbowY() - xP.ShoulderY(), 0), xIdentity, xUnitScale);
+		pxSkel->AddBone(szHand, uLower,
+			Zenith_Maths::Vector3(0, xP.WristY() - xP.ElbowY(), 0), xIdentity, xUnitScale);
+	}
 
-	// Left arm chain
-	pxSkel->AddBone("LeftUpperArm", STICK_BONE_SPINE, Zenith_Maths::Vector3(-0.3f, 0.6f, 0), xIdentity, xUnitScale);
-	pxSkel->AddBone("LeftLowerArm", STICK_BONE_LEFT_UPPER_ARM, Zenith_Maths::Vector3(0, -0.4f, 0), xIdentity, xUnitScale);
-	pxSkel->AddBone("LeftHand", STICK_BONE_LEFT_LOWER_ARM, Zenith_Maths::Vector3(0, -0.3f, 0), xIdentity, xUnitScale);
+	// Leg chains.
+	for (int iSide = 0; iSide < 2; iSide++)
+	{
+		const float fSide = (iSide == 0) ? -1.0f : 1.0f;
+		const char* szUpper = (iSide == 0) ? "LeftUpperLeg" : "RightUpperLeg";
+		const char* szLower = (iSide == 0) ? "LeftLowerLeg" : "RightLowerLeg";
+		const char* szFoot  = (iSide == 0) ? "LeftFoot" : "RightFoot";
+		const uint32_t uUpper = pxSkel->AddBone(szUpper, STICK_BONE_ROOT,
+			Zenith_Maths::Vector3(fSide * xP.HipHalfX(), 0, 0), xIdentity, xUnitScale);
+		const uint32_t uLower = pxSkel->AddBone(szLower, uUpper,
+			Zenith_Maths::Vector3(0, xP.KneeY() - xP.HipY(), 0), xIdentity, xUnitScale);
+		pxSkel->AddBone(szFoot, uLower,
+			Zenith_Maths::Vector3(0, xP.AnkleY() - xP.KneeY(), 0), xIdentity, xUnitScale);
+	}
 
-	// Right arm chain
-	pxSkel->AddBone("RightUpperArm", STICK_BONE_SPINE, Zenith_Maths::Vector3(0.3f, 0.6f, 0), xIdentity, xUnitScale);
-	pxSkel->AddBone("RightLowerArm", STICK_BONE_RIGHT_UPPER_ARM, Zenith_Maths::Vector3(0, -0.4f, 0), xIdentity, xUnitScale);
-	pxSkel->AddBone("RightHand", STICK_BONE_RIGHT_LOWER_ARM, Zenith_Maths::Vector3(0, -0.3f, 0), xIdentity, xUnitScale);
+	// --- UE5-class additions (indices 16+) ---
+	// Every one of these was authored as a model-space delta against the LEGACY
+	// geometry, so the position is warped and the offset re-derived against the
+	// parent's NEW model position -- the general R_parent^-1 * (child - parent),
+	// with identity rotations throughout this rig.
+	const Zenith_Maths::Vector3 xHeadModel(0.0f, xP.HeadY(), 0.0f);
+	const Zenith_Maths::Vector3 xJawModel = WarpHumanBonePoint(xWarp, Zenith_Maths::Vector3(0.0f, 1.350f, -0.020f), 0.0f);
+	const Zenith_Maths::Vector3 xLeftEyeModel = WarpHumanBonePoint(xWarp, Zenith_Maths::Vector3(-0.0391f, 1.392f, 0.068f), 0.0f);
+	const Zenith_Maths::Vector3 xRightEyeModel = WarpHumanBonePoint(xWarp, Zenith_Maths::Vector3(0.0391f, 1.392f, 0.068f), 0.0f);
+	pxSkel->AddBone("Jaw",      STICK_BONE_HEAD, xJawModel - xHeadModel, xIdentity, xUnitScale);
+	pxSkel->AddBone("LeftEye",  STICK_BONE_HEAD, xLeftEyeModel - xHeadModel, xIdentity, xUnitScale);   // X/Z track the widened, forward eyeball; Y tracks the head Y-squash (BuildHumanEyes + fHEAD_SQUASH_*)
+	pxSkel->AddBone("RightEye", STICK_BONE_HEAD, xRightEyeModel - xHeadModel, xIdentity, xUnitScale);
 
-	// Left leg chain
-	pxSkel->AddBone("LeftUpperLeg", STICK_BONE_ROOT, Zenith_Maths::Vector3(-0.15f, 0, 0), xIdentity, xUnitScale);
-	pxSkel->AddBone("LeftLowerLeg", STICK_BONE_LEFT_UPPER_LEG, Zenith_Maths::Vector3(0, -0.5f, 0), xIdentity, xUnitScale);
-	pxSkel->AddBone("LeftFoot", STICK_BONE_LEFT_LOWER_LEG, Zenith_Maths::Vector3(0, -0.5f, 0), xIdentity, xUnitScale);
-
-	// Right leg chain
-	pxSkel->AddBone("RightUpperLeg", STICK_BONE_ROOT, Zenith_Maths::Vector3(0.15f, 0, 0), xIdentity, xUnitScale);
-	pxSkel->AddBone("RightLowerLeg", STICK_BONE_RIGHT_UPPER_LEG, Zenith_Maths::Vector3(0, -0.5f, 0), xIdentity, xUnitScale);
-	pxSkel->AddBone("RightFoot", STICK_BONE_RIGHT_LOWER_LEG, Zenith_Maths::Vector3(0, -0.5f, 0), xIdentity, xUnitScale);
-
-	// --- UE5-class additions (indices 16+; the 16 core bones above are unchanged) ---
-	// Jaw + eyes hang off the head (world: head at (0,1.4,0)); toes off the feet.
-	pxSkel->AddBone("Jaw",      STICK_BONE_HEAD,       Zenith_Maths::Vector3(0.0f, -0.050f, -0.020f), xIdentity, xUnitScale);
-	pxSkel->AddBone("LeftEye",  STICK_BONE_HEAD,       Zenith_Maths::Vector3(-0.0391f, -0.008f, 0.068f), xIdentity, xUnitScale);   // X/Z track the widened, forward eyeball; Y tracks the head Y-squash (BuildHumanEyes + fHEAD_SQUASH_*)
-	pxSkel->AddBone("RightEye", STICK_BONE_HEAD,       Zenith_Maths::Vector3(0.0391f, -0.008f, 0.068f), xIdentity, xUnitScale);
-	pxSkel->AddBone("LeftToe",  STICK_BONE_LEFT_FOOT,  Zenith_Maths::Vector3(0.0f, -0.010f, 0.100f), xIdentity, xUnitScale);
-	pxSkel->AddBone("RightToe", STICK_BONE_RIGHT_FOOT, Zenith_Maths::Vector3(0.0f, -0.010f, 0.100f), xIdentity, xUnitScale);
+	for (int iSide = 0; iSide < 2; iSide++)
+	{
+		const float fSide = (iSide == 0) ? -1.0f : 1.0f;
+		const Zenith_Maths::Vector3 xFootModel(fSide * xP.HipHalfX(), xP.AnkleY(), 0.0f);
+		const Zenith_Maths::Vector3 xToeModel =
+			WarpHumanBonePoint(xWarp, Zenith_Maths::Vector3(fSide * 0.15f, -1.010f, 0.100f), 0.0f);
+		pxSkel->AddBone((iSide == 0) ? "LeftToe" : "RightToe",
+			(iSide == 0) ? STICK_BONE_LEFT_FOOT : STICK_BONE_RIGHT_FOOT,
+			xToeModel - xFootModel, xIdentity, xUnitScale);
+	}
 
 	// Articulated fingers: 5 digits x 3 phalanges per hand, chained off the hand.
 	const char* aszDigit[5] = { "Index", "Middle", "Ring", "Pinky", "Thumb" };
@@ -175,10 +253,10 @@ static Zenith_SkeletonAsset* CreateStickFigureSkeleton()
 	{
 		const float fSide = (iHand == 0) ? -1.0f : 1.0f;
 		const u_int uHandBone = (iHand == 0) ? STICK_BONE_LEFT_HAND : STICK_BONE_RIGHT_HAND;
-		const Zenith_Maths::Vector3 xHandWorld(fSide * 0.3f, 0.4f, 0.0f);   // hand bone bind-pose world position
+		const Zenith_Maths::Vector3 xHandWorld(fSide * xP.ShoulderHalfX(), xP.WristY(), 0.0f);   // hand bone bind-pose world position
 		const std::string strPrefix = (iHand == 0) ? "L_" : "R_";
 		HumanDigitDef axDigits[5];
-		GetHumanHandDigits(fSide, axDigits);
+		GetWarpedHumanHandDigits(fSide, xWarp, axDigits);
 		for (int d = 0; d < 5; d++)
 		{
 			const Zenith_Maths::Vector3& xR = axDigits[d].xRoot;
@@ -194,6 +272,8 @@ static Zenith_SkeletonAsset* CreateStickFigureSkeleton()
 	}
 
 	pxSkel->ComputeBindPoseMatrices();
+	Zenith_Assert(pxSkel->GetNumBones() == STICK_BONE_COUNT,
+		"StickFigure rig changed — the frozen contract is 51 bones with these names at these indices");
 	return pxSkel;
 }
 
@@ -741,10 +821,26 @@ void BuildHumanArm(Zenith_MeshAsset* pxMesh, float fSide, u_int uUpper, u_int uL
 {
 	const u_int S = STICK_BONE_SPINE;
 	// Shoulder pivot is at (side*0.3, 1.1); elbow at y 0.7; wrist at y 0.4.
+	//
+	// ★★ THIS TABLE IS STILL AUTHORED ARMS-DOWN, AND THAT IS DELIBERATE. The arm is
+	// swung out into the rig's T-pose by ONE RIGID ROTATION about the shoulder, in
+	// CreateStickFigureMesh, after the proportion warp -- so every pass above that
+	// seam (this loft, the sculpts, the warp itself, all of them keyed off absolute
+	// Y) keeps working on the geometry it was written for, and the T-pose costs
+	// exactly zero distortion. See Zenith_HumanArmBindRotation.
+	//
+	// ★ WHAT THAT ROTATION DOES TO A RING: distance ABOVE the shoulder becomes
+	// distance INBOARD along the limb, and a ring's cx offset from the arm column
+	// becomes a vertical droop. So the two deltoid rings sit ON the column (cx ==
+	// the arm's 0.300) rather than reaching inboard the way an arms-down deltoid
+	// did -- reaching inboard here would drop them into the armpit and leave the
+	// top of the shoulder bare. Their Y is UNCHANGED, because AddHumanLoft derives
+	// the V coordinate from ring spacing in Y: moving one slides the painted sleeve
+	// hem, elbow crease and watch down the arm island.
 	const HumanRing axRings[] = {
 		//   y       cx            cz      rx      rz      boneA  boneB  blend
-		{ 1.150f, fSide * 0.205f, -0.004f, 0.102f, 0.094f,  S,     uUpper, 0.15f },  // deltoid cap — sits over the shoulder, well inside the torso
-		{ 1.095f, fSide * 0.248f, 0.000f, 0.096f, 0.086f,  S,     uUpper, 0.50f },  // deltoid — bridges torso to arm (no gap)
+		{ 1.150f, fSide * 0.300f, -0.004f, 0.102f, 0.094f,  S,     uUpper, 0.15f },  // deltoid — 5cm INBOARD of the joint once rotated
+		{ 1.095f, fSide * 0.300f, 0.000f, 0.096f, 0.086f,  S,     uUpper, 0.50f },  // deltoid — level with the joint
 		{ 1.020f, fSide * 0.290f, 0.000f, 0.080f, 0.072f,  uUpper, uUpper, 0.0f },  // biceps peak
 		{ 0.920f, fSide * 0.300f, 0.000f, 0.066f, 0.061f,  uUpper, uUpper, 0.0f },  // mid upper arm
 		{ 0.790f, fSide * 0.300f, 0.000f, 0.053f, 0.050f,  uUpper, uUpper, 0.0f },  // above elbow
@@ -758,20 +854,24 @@ void BuildHumanArm(Zenith_MeshAsset* pxMesh, float fSide, u_int uUpper, u_int uL
 	constexpr u_int uSEGS = 28;
 	const uint32_t uFirst = AddHumanLoft(pxMesh, axRings, sizeof(axRings) / sizeof(axRings[0]), uSEGS, xIsland);
 
-	// Rounded deltoid dome replaces the old flat shoulder cap (which read as a flat
-	// epaulette). Two tapering rows are built ABOVE the arm loft's first ring and
-	// stitched down onto it, then a small top cap. The rows tilt strongly INBOARD so
-	// the dome's inner edge and apex stay buried inside the torso's shoulder yoke
-	// (limb seam rule) — the exposed OUTER surface rounds the shoulder ball over
-	// instead of capping it flat, and nothing pokes out into open air. The arm loft's
-	// own ring list is untouched, so its V spread (sleeve hem / elbow crease / watch)
-	// is byte-identical: no arm-island repaint needed. Rows pinned into the sleeve-
-	// cloth V band and skinned like the deltoid (mostly spine).
+	// ★ THE SHOULDER PLUG. Three tapering rows continue the arm loft INBOARD, and
+	// once the arm is rotated into the T-pose they run from 10cm to 20cm inside the
+	// shoulder joint -- deep inside the torso's shoulder yoke, whose half-width at
+	// this height is about 0.235. That burial is the whole job: an arm tube that
+	// stops at the torso surface leaves a visible seam ring, and one that stops
+	// short of it leaves a hole. Skinned mostly to the spine, like the deltoid,
+	// because they ARE torso.
+	//
+	// ★ THESE ROWS MAY MOVE IN Y FREELY and the deltoid rings above may not. The
+	// difference is that AddHumanLoft derives its V from ring spacing while this
+	// loop passes V EXPLICITLY below -- so the plug's texture band is pinned no
+	// matter where the geometry goes. That is what made re-purposing the old
+	// arms-down dome into an inboard plug a free change.
 	const HumanRing axDome[] = {
 		//   y       cx              cz      rx      rz      boneA  boneB  blend
-		{ 1.159f, fSide * 0.192f, -0.004f, 0.086f, 0.081f,  S, uUpper, 0.15f },
-		{ 1.165f, fSide * 0.172f, -0.004f, 0.062f, 0.058f,  S, uUpper, 0.15f },
-		{ 1.169f, fSide * 0.145f, -0.004f, 0.038f, 0.036f,  S, uUpper, 0.15f },
+		{ 1.200f, fSide * 0.300f, -0.004f, 0.086f, 0.081f,  S, uUpper, 0.15f },
+		{ 1.250f, fSide * 0.300f, -0.004f, 0.062f, 0.058f,  S, uUpper, 0.15f },
+		{ 1.300f, fSide * 0.300f, -0.004f, 0.038f, 0.036f,  S, uUpper, 0.15f },
 	};
 	uint32_t uDomePrev = uFirst;
 	for (u_int d = 0; d < sizeof(axDome) / sizeof(axDome[0]); d++)
@@ -781,7 +881,7 @@ void BuildHumanArm(Zenith_MeshAsset* pxMesh, float fSide, u_int uUpper, u_int uL
 		uDomePrev = uRow;
 	}
 	CapHumanRing(pxMesh, uDomePrev, uSEGS,
-		Zenith_Maths::Vector3(fSide * 0.110f, 1.172f, -0.004f), Zenith_Maths::Vector3(0, 1, 0),
+		Zenith_Maths::Vector3(fSide * 0.300f, 1.330f, -0.004f), Zenith_Maths::Vector3(0, 1, 0),
 		xIsland, 0.5f, 0.026f, S, uUpper, 0.15f, true);
 }
 
@@ -1290,6 +1390,21 @@ void SanitizeHumanTangents(Zenith_MeshAsset* pxMesh)
 // to de-stretch the head+neck AFTER all its geometry (loft, sculpt, hair, eyeballs)
 // is placed, so painted UVs, sculpted relief, hair and eyeballs shorten TOGETHER and
 // stay perfectly registered — no per-feature Y bookkeeping. Y only; X/Z untouched.
+// ★★ THE T-POSE, APPLIED. One rigid rotation of a contiguous vertex range about
+// the shoulder joint -- which is the entire cost of putting a procedural human
+// into the shared rig's rest pose, and it distorts NOTHING: a rotation preserves
+// every edge length and every angle exactly, which is precisely what deforming a
+// mesh through skin weights does not.
+void RotateVertsAboutPivot(Zenith_MeshAsset* pxMesh, uint32_t uStart, uint32_t uEnd,
+	const Zenith_Maths::Vector3& xPivot, const Zenith_Maths::Quat& xRot)
+{
+	for (uint32_t u = uStart; u < uEnd; u++)
+	{
+		Zenith_Maths::Vector3& xPos = pxMesh->m_xPositions.Get(u);
+		xPos = xPivot + xRot * (xPos - xPivot);
+	}
+}
+
 void SquashVertsY(Zenith_MeshAsset* pxMesh, uint32_t uStart, uint32_t uEnd, float fPivotY, float fScaleY)
 {
 	for (uint32_t u = uStart; u < uEnd; u++)
@@ -1309,10 +1424,9 @@ void SquashVertsY(Zenith_MeshAsset* pxMesh, uint32_t uStart, uint32_t uEnd, floa
 constexpr float fHEAD_SQUASH_PIVOT_Y = 1.18f;
 constexpr float fHEAD_SQUASH_SCALE_Y = 0.85f;
 
-static Zenith_MeshAsset* CreateStickFigureMesh(const Zenith_SkeletonAsset* pxSkeleton)
+static Zenith_MeshAsset* CreateStickFigureMesh(const Zenith_HumanProportions& xProportions,
+	Zenith_HumanWarp& xWarpOut)
 {
-	Zenith_Assert(pxSkeleton->GetNumBones() == STICK_BONE_COUNT, "StickFigure rig changed — body proportions are authored against the 16-core + UE5-additions layout");
-
 	Zenith_MeshAsset* pxMesh = new Zenith_MeshAsset();
 	// High-poly: ~10k verts after segment + Catmull-Rom ring subdivision. Reserve
 	// generously so the per-part lofts don't trigger repeated vector reallocations.
@@ -1322,10 +1436,18 @@ static Zenith_MeshAsset* CreateStickFigureMesh(const Zenith_SkeletonAsset* pxSke
 	const uint32_t uHeadNeckVertStart = pxMesh->GetNumVerts();
 	BuildHumanHeadNeck(pxMesh);
 	const uint32_t uHeadNeckVertEnd = pxMesh->GetNumVerts();
+	// The four arm/hand ranges are recorded so the T-pose rotation below can find
+	// them. Two per side, because the arm and the hand are built in separate passes
+	// and nothing between them may be swept along.
+	const uint32_t uArmLStart = pxMesh->GetNumVerts();
 	BuildHumanArm(pxMesh, -1.0f, STICK_BONE_LEFT_UPPER_ARM, STICK_BONE_LEFT_LOWER_ARM, STICK_BONE_LEFT_HAND, xUV_ARM_L);
+	const uint32_t uArmLEnd = pxMesh->GetNumVerts();
 	BuildHumanArm(pxMesh, 1.0f, STICK_BONE_RIGHT_UPPER_ARM, STICK_BONE_RIGHT_LOWER_ARM, STICK_BONE_RIGHT_HAND, xUV_ARM_R);
+	const uint32_t uArmREnd = pxMesh->GetNumVerts();
 	BuildHumanHand(pxMesh, -1.0f, STICK_BONE_LEFT_LOWER_ARM, STICK_BONE_LEFT_HAND, xUV_HAND_L);
+	const uint32_t uHandLEnd = pxMesh->GetNumVerts();
 	BuildHumanHand(pxMesh, 1.0f, STICK_BONE_RIGHT_LOWER_ARM, STICK_BONE_RIGHT_HAND, xUV_HAND_R);
+	const uint32_t uHandREnd = pxMesh->GetNumVerts();
 	BuildHumanLeg(pxMesh, -1.0f, STICK_BONE_LEFT_UPPER_LEG, STICK_BONE_LEFT_LOWER_LEG, STICK_BONE_LEFT_FOOT, xUV_LEG_L);
 	BuildHumanLeg(pxMesh, 1.0f, STICK_BONE_RIGHT_UPPER_LEG, STICK_BONE_RIGHT_LOWER_LEG, STICK_BONE_RIGHT_FOOT, xUV_LEG_R);
 	BuildHumanShoe(pxMesh, -1.0f, STICK_BONE_LEFT_FOOT, xUV_FOOT_L);
@@ -1347,6 +1469,59 @@ static Zenith_MeshAsset* CreateStickFigureMesh(const Zenith_SkeletonAsset* pxSke
 	SquashVertsY(pxMesh, uHeadNeckVertStart, uHeadNeckVertEnd, fHEAD_SQUASH_PIVOT_Y, fHEAD_SQUASH_SCALE_Y);
 	SquashVertsY(pxMesh, uHairVertStart, uHairVertEnd, fHEAD_SQUASH_PIVOT_Y, fHEAD_SQUASH_SCALE_Y);
 	SquashVertsY(pxMesh, uEyeVertStart, uEyeVertEnd, fHEAD_SQUASH_PIVOT_Y, fHEAD_SQUASH_SCALE_Y);
+
+	// ★ RE-PROPORTION HERE, and only here. Every loft and sculpt pass above is
+	// authored in LEGACY rig space against absolute Y gates ("the shoe starts at
+	// -0.92") and must stay there; every pass below rebuilds normals, which the
+	// non-uniform warp invalidates. This is the one seam where both are true.
+	//
+	// The anchors are this mesh's OWN measured landmarks -- the warp exists to put
+	// its knee on the rig's knee bone, and only the mesh can say where its knee is.
+	{
+		Zenith_SkinDeformView xView = Zenith_MakeSkinDeformView(*pxMesh);
+		Zenith_HumanLandmarks xLandmarks;
+		if (Zenith_MeasureHumanLandmarks(xView, ZENITH_HUMAN_POSE_ARMS_DOWN, xLandmarks))
+		{
+			Zenith_LogHumanLandmarks("StickFigure loft (pre-warp)", xLandmarks);
+			if (Zenith_MakeHumanWarp(xLandmarks, xProportions, xWarpOut))
+			{
+				Zenith_SkinWarpVertices(xView, xWarpOut);
+			}
+			else
+			{
+				Zenith_Error(LOG_CATEGORY_ASSET,
+					"StickFigure: could not build a proportion warp; shipping the legacy silhouette");
+			}
+		}
+		else
+		{
+			Zenith_Error(LOG_CATEGORY_ASSET, "StickFigure: landmark scan failed; shipping the legacy silhouette");
+		}
+	}
+
+	// ★★ SWING THE ARMS OUT INTO THE RIG'S T-POSE. This is the one seam where the
+	// mesh stops being the arms-down thing every pass above was authored against
+	// and becomes the thing the shared skeleton actually describes.
+	//
+	// ★ IT HAS TO BE HERE, between the warp and the normals. Before the warp and
+	// the warp's Y-keyed landmark scan would find both arms at shoulder height and
+	// call them torso; after the normals and every normal, tangent and baked AO
+	// would describe geometry that no longer exists.
+	//
+	// ★ AND IT PIVOTS ON THE BONE, not on the arm tube's centre. The rig puts the
+	// elbow at shoulder + (-L,0,0); the mesh's elbow only lands there too if both
+	// turn about the same point. Zenith_HumanShoulderPivot is that point, read from
+	// the same table CreateStickFigureSkeleton read.
+	{
+		const Zenith_Maths::Vector3 xPivotL = Zenith_HumanShoulderPivot(xProportions, -1.0f);
+		const Zenith_Maths::Vector3 xPivotR = Zenith_HumanShoulderPivot(xProportions,  1.0f);
+		const Zenith_Maths::Quat xRotL = Zenith_HumanArmBindRotation(-1.0f);
+		const Zenith_Maths::Quat xRotR = Zenith_HumanArmBindRotation( 1.0f);
+		RotateVertsAboutPivot(pxMesh, uArmLStart, uArmLEnd,  xPivotL, xRotL);
+		RotateVertsAboutPivot(pxMesh, uArmLEnd,   uArmREnd,  xPivotR, xRotR);
+		RotateVertsAboutPivot(pxMesh, uArmREnd,   uHandLEnd, xPivotL, xRotL);
+		RotateVertsAboutPivot(pxMesh, uHandLEnd,  uHandREnd, xPivotR, xRotR);
+	}
 
 	ComputeHumanSmoothNormals(pxMesh);
 	pxMesh->GenerateTangents();
@@ -2661,11 +2836,20 @@ static Flux_AnimationClip* CreateIdleAnimation()
 	constexpr u_int uKEYS = 25;
 
 	// Breathing: the whole upper body rides the Spine bone, so a small lift +
-	// pitch reads as a chest rise. Bind-local Spine position is (0, 0.5, 0).
-	HumanAddPosCurve(pxClip, "Spine", fTICKS, uKEYS, [](float fT)
+	// pitch reads as a chest rise.
+	//
+	// ★ THIS KEY IS ABSOLUTE, not additive -- it REPLACES the bind-local Spine
+	// position rather than offsetting it, which is why the proportions table pins
+	// Spine and why this reads the pin instead of repeating the 0.5. A literal
+	// here and a moved bone there would translate the whole upper body.
 	{
-		return Zenith_Maths::Vector3(0.0f, 0.5f + 0.007f * sinf(fT * fHUMAN_TWO_PI), 0.0f);
-	});
+		const float fSpineLocalY =
+			Zenith_HumanProportionsRealistic().SpineY() - Zenith_HumanProportionsRealistic().HipY();
+		HumanAddPosCurve(pxClip, "Spine", fTICKS, uKEYS, [fSpineLocalY](float fT)
+		{
+			return Zenith_Maths::Vector3(0.0f, fSpineLocalY + 0.007f * sinf(fT * fHUMAN_TWO_PI), 0.0f);
+		});
+	}
 	HumanAddRotCurve(pxClip, "Spine", fTICKS, uKEYS, [](float fT)
 	{
 		const float fP = fT * fHUMAN_TWO_PI;
@@ -4048,9 +4232,15 @@ void GenerateStickFigureAssets()
 {
 	Zenith_Log(LOG_CATEGORY_ASSET, "Generating StickFigure human assets (lofted body, painted atlas, gait clips)...");
 
-	// Create all assets
-	Zenith_SkeletonAsset* pxSkel = CreateStickFigureSkeleton();
-	Zenith_MeshAsset* pxMesh = CreateStickFigureMesh(pxSkel);
+	// ★ THE MESH IS BUILT FIRST, and that ordering is load-bearing. The warp can
+	// only be derived from the mesh's own measured landmarks, and the SKELETON
+	// needs it: its appended bones (jaw, eyes, toes, thirty finger joints) were
+	// authored as model-space deltas against the legacy geometry, so they have to
+	// travel through the same map the geometry did or they end up outside it.
+	const Zenith_HumanProportions& xProportions = Zenith_HumanProportionsRealistic();
+	Zenith_HumanWarp xWarp;
+	Zenith_MeshAsset* pxMesh = CreateStickFigureMesh(xProportions, xWarp);
+	Zenith_SkeletonAsset* pxSkel = CreateStickFigureSkeleton(xProportions, xWarp);
 	Flux_AnimationClip* pxIdleClip = CreateIdleAnimation();
 	Flux_AnimationClip* pxWalkClip = CreateWalkAnimation();
 	Flux_AnimationClip* pxRunClip = CreateRunAnimation();
@@ -4123,6 +4313,21 @@ void GenerateStickFigureAssets()
 	};
 	for (const ClipExport& xExport : axClips)
 	{
+		// ★★ EVERY CLIP MUST DRIVE BOTH UPPER ARMS, and this is now a contract
+		// rather than a coincidence. An imported humanoid ships with its OWN
+		// T-POSED bind pose (see Zenith_Tools_HumanModelExport) -- the mesh is
+		// never re-posed, which is what keeps its shoulders undeformed. A clip's
+		// channel REPLACES a bone's bind local rotation, so any bone a clip leaves
+		// out keeps its bind value; for a T-posed rig that means an arm left
+		// sticking straight out sideways for the whole clip.
+		//
+		// The two UpperArms are the only bones whose T-pose bind rotation is not
+		// identity, so they are the only ones this can bite.
+		Zenith_Assert(xExport.pxClip->HasBoneChannel("LeftUpperArm") &&
+			xExport.pxClip->HasBoneChannel("RightUpperArm"),
+			"clip '%s' does not animate both UpperArms -- a T-posed imported human would hold that arm out",
+			xExport.szSuffix);
+
 		const std::string strPath = strOutputDir + "StickFigure_" + xExport.szSuffix + ZENITH_ANIMATION_EXT;
 		xExport.pxClip->Export(strPath);
 		Zenith_Log(LOG_CATEGORY_ASSET, "  Exported %s animation to: %s", xExport.szSuffix, strPath.c_str());
@@ -4206,6 +4411,13 @@ void GenerateTestAssets()
 {
 	Zenith_Log(LOG_CATEGORY_ASSET, "=== Generating Test Assets ===");
 	GenerateStickFigureAssets();
+#ifdef ZENITH_TOOLS
+	// ★ IMMEDIATELY AFTER, AND THAT ORDER IS THE REASON THIS IS NOT IN THE GLB
+	// IMPORTER. The binder skins an artist's humanoid to StickFigure.zskel, and
+	// the line above is what writes it -- on a cold tree the rig does not exist
+	// when ImportGlbsInDirectory runs (Zenith_Engine.cpp:554 against :571).
+	Zenith_Tools_HumanModelExport::ExportBoundHumanModels();
+#endif
 	GenerateProceduralTreeAssets();
 	GenerateProceduralRockAssets();
 	GenerateFallenTreeAssets();

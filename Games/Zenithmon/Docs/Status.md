@@ -17,8 +17,15 @@ The S0-S7 narrative that used to fill the back half of this file moved VERBATIM 
 [History.md](History.md) on 2026-08-18, so this file can hold to the ~25-line budget
 its own template in `AgentBriefing.md` §2.3 specifies. Nothing was deleted.
 
-**★ LIVE PIN (UPDATED 2026-09-04):
-ZM boot `3698`; engine boot (Null Combat) `1844`; Null RenderTest `1945`; registry **72**.**
+**★ LIVE PIN (UPDATED 2026-09-05):
+ZM boot `3730`; engine boot (Null Combat) `1875`; Null RenderTest `1976`; registry **72**.**
+
+> All three OBSERVED from `Null_` runs after the humanoid rig became T-POSED and
+> the `.zbind` sidecar was removed (`Tools/unit_baselines.json` is the authority
+> and carries the same three numbers). The counts went DOWN, which is worth saying
+> out loud because a gate asserting `ran == baseline` reds either way: the rebind
+> path and its tests were deleted along with the `.zbind` parser's, and the
+> orientation tests that replaced them are fewer.
 
 > **★ +1 ZM ONLY (2026-09-04, third bump of the day) — THE FROZEN SAVE-MIGRATION
 > OFFSET.** Zenithmon 3697 -> **3698**, OBSERVED from a `Null_` run; engine pins

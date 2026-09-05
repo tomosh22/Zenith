@@ -1,4 +1,5 @@
 #pragma once
+#include "AssetHandling/Zenith_HumanProportions.h"   // k_fAnkleHeight is the RIG's, not a literal
 #include "Core/Zenith_Engine.h"
 
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
@@ -1091,7 +1092,19 @@ private:
 				return;
 			}
 
-			constexpr float k_fAnkleHeight = 0.05f;
+			// ★ HOW HIGH THE FOOT BONE SITS ABOVE THE SOLE, from the rig's own
+			// proportions table -- not the 0.05 this used to be. That literal was
+			// right when the rig's ankle sat at 1.6% of a body's height, which is
+			// not where an ankle is; a real shod one is at 7.5%, and the bone moved
+			// 15 cm when the rig was re-proportioned. A stale value here does not
+			// fail anything: it plants the foot 15 cm into the ground and the IK
+			// quietly folds the leg every frame to reach it, which reads as
+			// "the legs look bent" rather than as a wrong constant.
+			//
+			// It is derived rather than measured off the loaded model because it is
+			// a property of the RIG, and every human this game renders -- generated
+			// or imported -- is skinned to that one rig.
+			const float k_fAnkleHeight = Zenith_HumanProportionsRealistic().AnkleHeightAboveSole();
 			Zenith_Maths::Vector3 xTargetWorld = xHit.m_xHitPoint
 				+ Zenith_Maths::Vector3(0.0f, k_fAnkleHeight, 0.0f);
 			// Convert the world-space target to model space NOW, using the world
