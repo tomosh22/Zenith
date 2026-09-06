@@ -1,208 +1,12 @@
 #pragma once
 #include "Flux_BonePose.h"
 #include "Flux_BlendTree.h"
+#include "Flux_AnimationStateMachineDef.h"
 #include "Collections/Zenith_HashMap.h"
-#include <variant>
-
-// Callback typedefs for state lifecycle hooks (replaces std::function)
-using Flux_AnimStateCallback = void(*)(void* pUserData);
-using Flux_AnimStateUpdateCallback = void(*)(void* pUserData, float fDt);
 
 // Forward declarations
 class Flux_AnimationClipCollection;
 class Zenith_SkeletonAsset;
-class Flux_AnimationStateMachine;
-
-//=============================================================================
-// Flux_AnimationParameters
-// Container for animation parameters (floats, ints, bools, triggers)
-//=============================================================================
-class Flux_AnimationParameters
-{
-public:
-	enum class ParamType : uint8_t
-	{
-		Float,
-		Int,
-		Bool,
-		Trigger
-	};
-
-	struct Parameter
-	{
-		ParamType m_eType;
-		std::string m_strName;
-		union
-		{
-			float m_fValue;
-			int32_t m_iValue;
-			bool m_bValue;
-		};
-
-		Parameter() : m_eType(ParamType::Float), m_fValue(0.0f) {}
-	};
-
-	// Add parameters
-	void AddFloat(const std::string& strName, float fDefault = 0.0f);
-	void AddInt(const std::string& strName, int32_t iDefault = 0);
-	void AddBool(const std::string& strName, bool bDefault = false);
-	void AddTrigger(const std::string& strName);
-
-	// Setters
-	void SetFloat(const std::string& strName, float fValue);
-	void SetInt(const std::string& strName, int32_t iValue);
-	void SetBool(const std::string& strName, bool bValue);
-	void SetTrigger(const std::string& strName);
-
-	// Getters
-	float GetFloat(const std::string& strName) const;
-	int32_t GetInt(const std::string& strName) const;
-	bool GetBool(const std::string& strName) const;
-
-	// Check if trigger is set without consuming it
-	bool PeekTrigger(const std::string& strName) const;
-
-	// Trigger consumption (returns true if trigger was set, then resets it)
-	bool ConsumeTrigger(const std::string& strName);
-
-	// Check if parameter exists
-	bool HasParameter(const std::string& strName) const;
-	ParamType GetParameterType(const std::string& strName) const;
-
-	// Remove parameter
-	void RemoveParameter(const std::string& strName);
-
-	// Get all parameters
-	const Zenith_HashMap<std::string, Parameter>& GetParameters() const { return m_xParameters; }
-
-	// Reset all triggers (called at end of frame)
-	void ResetTriggers();
-
-	// Serialization
-	void WriteToDataStream(Zenith_DataStream& xStream) const;
-	void ReadFromDataStream(Zenith_DataStream& xStream);
-
-	// Shared serialization helpers for parameter union values
-	static void WriteParamValueToStream(Zenith_DataStream& xStream, ParamType eType, float fVal, int32_t iVal, bool bVal);
-	static void ReadParamValueFromStream(Zenith_DataStream& xStream, ParamType eType, float& fVal, int32_t& iVal, bool& bVal);
-
-private:
-	Zenith_HashMap<std::string, Parameter> m_xParameters;
-};
-
-//=============================================================================
-// Flux_TransitionCondition
-// Single condition that must be met for a transition to occur
-//=============================================================================
-struct Flux_TransitionCondition
-{
-	enum class CompareOp : uint8_t
-	{
-		Equal,
-		NotEqual,
-		Greater,
-		Less,
-		GreaterEqual,
-		LessEqual
-	};
-
-	std::string m_strParameterName;
-	CompareOp m_eCompareOp = CompareOp::Equal;
-	Flux_AnimationParameters::ParamType m_eParamType = Flux_AnimationParameters::ParamType::Float;
-
-	union
-	{
-		float m_fThreshold;
-		int32_t m_iThreshold;
-		bool m_bThreshold;
-	};
-
-	Flux_TransitionCondition() : m_fThreshold(0.0f) {}
-
-	// Evaluate this condition against parameter values
-	bool Evaluate(const Flux_AnimationParameters& xParams) const;
-
-	// Serialization
-	void WriteToDataStream(Zenith_DataStream& xStream) const;
-	void ReadFromDataStream(Zenith_DataStream& xStream);
-};
-
-//=============================================================================
-// Flux_StateTransition
-// Defines a transition between two states with conditions
-//=============================================================================
-struct Flux_StateTransition
-{
-	std::string m_strTargetStateName;
-	Zenith_Vector<Flux_TransitionCondition> m_xConditions;  // All must be true (AND logic)
-
-	float m_fTransitionDuration = 0.15f;   // Blend time in seconds
-	float m_fExitTime = -1.0f;             // Normalized time to exit (-1 = any time)
-	bool m_bHasExitTime = false;           // Require normalized time to reach exit time
-	bool m_bInterruptible = true;          // Can be interrupted by higher priority transitions
-	int32_t m_iPriority = 0;               // Higher = checked first
-
-	// Check if this transition can occur (consumes triggers only if all conditions pass)
-	bool CanTransition(Flux_AnimationParameters& xParams, float fCurrentNormalizedTime) const;
-
-	// Serialization
-	void WriteToDataStream(Zenith_DataStream& xStream) const;
-	void ReadFromDataStream(Zenith_DataStream& xStream);
-};
-
-//=============================================================================
-// Flux_AnimationState
-// Single state in the state machine with its blend tree and transitions
-//=============================================================================
-class Flux_AnimationState
-{
-public:
-	Flux_AnimationState() = default;
-	Flux_AnimationState(const std::string& strName);
-	~Flux_AnimationState();
-
-	// Accessors
-	const std::string& GetName() const { return m_strName; }
-	void SetName(const std::string& strName) { m_strName = strName; }
-
-	Flux_BlendTreeNode* GetBlendTree() const { return m_pxBlendTree; }
-	void SetBlendTree(Flux_BlendTreeNode* pxNode) { m_pxBlendTree = pxNode; }
-
-	// Transitions
-	void AddTransition(const Flux_StateTransition& xTransition);
-	void RemoveTransition(uint32_t uIndex);
-	const Zenith_Vector<Flux_StateTransition>& GetTransitions() const { return m_xTransitions; }
-	Zenith_Vector<Flux_StateTransition>& GetTransitions() { return m_xTransitions; }
-
-	// Find highest priority transition that can trigger (iMinPriority: skip transitions at or below this priority)
-	const Flux_StateTransition* CheckTransitions(Flux_AnimationParameters& xParams, int32_t iMinPriority = INT32_MIN) const;
-
-	// Sub-state machine (nested state machine within this state)
-	bool IsSubStateMachine() const { return m_pxSubStateMachine != nullptr; }
-	Flux_AnimationStateMachine* GetSubStateMachine() const { return m_pxSubStateMachine; }
-	Flux_AnimationStateMachine* CreateSubStateMachine(const std::string& strName);
-
-	// State callbacks (optional, for gameplay hooks)
-	Flux_AnimStateCallback m_pfnOnEnter = nullptr;
-	Flux_AnimStateCallback m_pfnOnExit = nullptr;
-	Flux_AnimStateUpdateCallback m_pfnOnUpdate = nullptr;
-	void* m_pCallbackUserData = nullptr;
-
-	// Editor position for visual state machine editor
-#ifdef ZENITH_TOOLS
-	Zenith_Maths::Vector2 m_xEditorPosition = Zenith_Maths::Vector2(0.0f);
-#endif
-
-	// Serialization
-	void WriteToDataStream(Zenith_DataStream& xStream) const;
-	void ReadFromDataStream(Zenith_DataStream& xStream);
-
-private:
-	std::string m_strName;
-	Flux_BlendTreeNode* m_pxBlendTree = nullptr;
-	Flux_AnimationStateMachine* m_pxSubStateMachine = nullptr;  // Owned, optional nested SM
-	Zenith_Vector<Flux_StateTransition> m_xTransitions;
-};
 
 //=============================================================================
 // Flux_AnimatorStateInfo
@@ -223,7 +27,30 @@ struct Flux_AnimatorStateInfo
 
 //=============================================================================
 // Flux_AnimationStateMachine
-// Complete animation state machine with states, transitions, and parameters
+//
+// ★ THE MUTABLE HALF. Everything AUTHORED — states, transitions, any-state
+// transitions, the default state, the parameter declarations — lives in a
+// Flux_AnimationStateMachineDef (Flux_AnimationStateMachineDef.h). What is left
+// here is one instance's playback: which state it is in, which transition is in
+// flight, and the two FLUX_MAX_BONES poses that transition blends between.
+//
+// ★ THE DEF IS OWNED BY VALUE, AND BuildFromDef COPIES (WU-6.1). A non-owning
+// pointer would let two instances of one def share the def's blend trees — and a
+// blend-tree leaf carries its own PLAYHEAD (Flux_BlendTreeNode_Clip::
+// m_fCurrentTimestamp). Two characters on "the same controller" would then share
+// one clock and step each other's clips: not a def/instance split at all, but
+// two instances wearing one instance's state. Copying is also what keeps the
+// IMPERATIVE authoring path — AddState / AddTransition / GetParameters().Add* —
+// working exactly as before: those forward into the owned def, which is how
+// every game and every existing test builds a state machine today.
+//
+// ★ PARAMETERS ARE THE CONTROLLER'S (D42). GetParameters() returns the shared
+// live set when one has been published (Flux_AnimationController owns exactly
+// one and publishes it to the top-level SM, every layer's SM and every sub-SM),
+// and the def's DECLARATION table otherwise. That is what makes a value set on
+// the animator visible to a condition inside a layer's sub-state machine — which
+// it was not: a controller with layers has a NULL m_pxStateMachine, so
+// Flux_AnimationController::SetFloat was a silent no-op for every layered game.
 //=============================================================================
 class Flux_AnimationStateMachine
 {
@@ -232,16 +59,58 @@ public:
 	Flux_AnimationStateMachine(const std::string& strName);
 	~Flux_AnimationStateMachine();
 
-	// State management
-	Flux_AnimationState* AddState(const std::string& strName);
+	// Owns runtime state + its def; copying one would double-own both.
+	Flux_AnimationStateMachine(const Flux_AnimationStateMachine&) = delete;
+	Flux_AnimationStateMachine& operator=(const Flux_AnimationStateMachine&) = delete;
+
+	//=========================================================================
+	// Definition
+	//=========================================================================
+
+	// Replace this machine's definition with a COPY of xDef and reset the
+	// runtime half (no current state, no transition in flight). A def names its
+	// clips rather than pointing at them, so pass the collection that owns them —
+	// or call ResolveClipReferences yourself afterwards — or every clip leaf will
+	// pose the bind pose.
+	void BuildFromDef(const Flux_AnimationStateMachineDef& xDef,
+		Flux_AnimationClipCollection* pxClipCollection = nullptr);
+
+	Flux_AnimationStateMachineDef& GetDef() { return m_xDef; }
+	const Flux_AnimationStateMachineDef& GetDef() const { return m_xDef; }
+
+	//=========================================================================
+	// Imperative authoring — forwards into the owned def
+	//=========================================================================
+
+	Flux_AnimationState* AddState(const std::string& strName) { return m_xDef.AddState(strName); }
 	void RemoveState(const std::string& strName);
-	Flux_AnimationState* GetState(const std::string& strName);
-	const Flux_AnimationState* GetState(const std::string& strName) const;
-	bool HasState(const std::string& strName) const;
+	Flux_AnimationState* GetState(const std::string& strName) { return m_xDef.GetState(strName); }
+	const Flux_AnimationState* GetState(const std::string& strName) const { return m_xDef.GetState(strName); }
+	bool HasState(const std::string& strName) const { return m_xDef.HasState(strName); }
 
 	// Default state (entry point)
-	void SetDefaultState(const std::string& strName);
-	const std::string& GetDefaultStateName() const { return m_strDefaultStateName; }
+	void SetDefaultState(const std::string& strName) { m_xDef.SetDefaultState(strName); }
+	const std::string& GetDefaultStateName() const { return m_xDef.GetDefaultStateName(); }
+
+	// Get all states for iteration
+	const Zenith_HashMap<std::string, Flux_AnimationState*>& GetStates() const { return m_xDef.GetStates(); }
+
+	// Name
+	const std::string& GetName() const { return m_xDef.GetName(); }
+	void SetName(const std::string& strName) { m_xDef.SetName(strName); }
+
+	// Any-State transitions (fire from any current state)
+	void AddAnyStateTransition(const Flux_StateTransition& xTransition) { m_xDef.AddAnyStateTransition(xTransition); }
+	void RemoveAnyStateTransition(uint32_t uIndex) { m_xDef.RemoveAnyStateTransition(uIndex); }
+	const Zenith_Vector<Flux_StateTransition>& GetAnyStateTransitions() const { return m_xDef.GetAnyStateTransitions(); }
+	Zenith_Vector<Flux_StateTransition>& GetAnyStateTransitions() { return m_xDef.GetAnyStateTransitions(); }
+
+	// Resolve clip references in blend trees (by name, through the collection)
+	void ResolveClipReferences(Flux_AnimationClipCollection* pxCollection) { m_xDef.ResolveClipReferences(pxCollection); }
+
+	//=========================================================================
+	// Runtime
+	//=========================================================================
 
 	// Current state
 	Flux_AnimationState* GetCurrentState() const { return m_pxCurrentState; }
@@ -250,11 +119,13 @@ public:
 	// Force state change (ignores transitions)
 	void SetState(const std::string& strStateName);
 
-	// Parameters (shared across all states)
-	// If shared parameters are set (by parent sub-SM), those are used instead of local
-	Flux_AnimationParameters& GetParameters() { return m_pxSharedParameters ? *m_pxSharedParameters : m_xParameters; }
-	const Flux_AnimationParameters& GetParameters() const { return m_pxSharedParameters ? *m_pxSharedParameters : m_xParameters; }
+	// Parameters. The published controller-wide set when there is one (D42), the
+	// def's declaration table otherwise — which is what a standalone state machine
+	// (a unit test, an editor scratch graph) reads and writes.
+	Flux_AnimationParameters& GetParameters() { return m_pxSharedParameters ? *m_pxSharedParameters : m_xDef.GetParameterDeclarations(); }
+	const Flux_AnimationParameters& GetParameters() const { return m_pxSharedParameters ? *m_pxSharedParameters : m_xDef.GetParameterDeclarations(); }
 	void SetSharedParameters(Flux_AnimationParameters* pxSharedParams) { m_pxSharedParameters = pxSharedParams; }
+	Flux_AnimationParameters* GetSharedParameters() const { return m_pxSharedParameters; }
 
 	// Update the state machine (call each frame)
 	// Returns the resulting skeleton pose
@@ -296,26 +167,7 @@ public:
 	// Force-crossfade to a named state, bypassing transition conditions (Unity's Animator.CrossFade)
 	void CrossFade(const std::string& strStateName, float fDuration = 0.15f);
 
-	// Get all states for iteration
-	const Zenith_HashMap<std::string, Flux_AnimationState*>& GetStates() const { return m_xStates; }
-
-	// Name
-	const std::string& GetName() const { return m_strName; }
-	void SetName(const std::string& strName) { m_strName = strName; }
-
-	// Any-State transitions (fire from any current state)
-	void AddAnyStateTransition(const Flux_StateTransition& xTransition);
-	void RemoveAnyStateTransition(uint32_t uIndex);
-	const Zenith_Vector<Flux_StateTransition>& GetAnyStateTransitions() const { return m_xAnyStateTransitions; }
-	Zenith_Vector<Flux_StateTransition>& GetAnyStateTransitions() { return m_xAnyStateTransitions; }
-
-	// Resolve clip references in blend trees
-	void ResolveClipReferences(Flux_AnimationClipCollection* pxCollection);
-
-	// Load from file
-	static Flux_AnimationStateMachine* LoadFromFile(const std::string& strPath);
-
-	// Serialization
+	// Serialization. The DEF is what is written; the runtime half is not data.
 	void WriteToDataStream(Zenith_DataStream& xStream) const;
 	void ReadFromDataStream(Zenith_DataStream& xStream);
 
@@ -325,16 +177,18 @@ private:
 	void CompleteTransition();
 	void EvaluateState(Flux_AnimationState* pxState, float fDt, Flux_SkeletonPose& xOutPose, const Zenith_SkeletonAsset& xSkeleton);
 
+	// Drop every pointer into the def and cancel any transition in flight. Called
+	// whenever the def underneath is replaced.
+	void ResetRuntime();
+
 	// WU-5A: one state's spans — its blend tree's, or its sub-state machine's.
 	static void CollectStateEventSpans(Flux_AnimationState* pxState, Zenith_Vector<Flux_ClipEventSpan>* pxOutSpans);
 
 	// Check any-state transitions (skips transitions targeting current state and below iMinPriority)
 	const Flux_StateTransition* CheckAnyStateTransitions(int32_t iMinPriority = INT32_MIN);
 
-	std::string m_strName;
-	Zenith_HashMap<std::string, Flux_AnimationState*> m_xStates;
-	std::string m_strDefaultStateName;
-	Zenith_Vector<Flux_StateTransition> m_xAnyStateTransitions;
+	// The AUTHORED half, owned. See the class comment for why it is a copy.
+	Flux_AnimationStateMachineDef m_xDef;
 
 	// Runtime state
 	Flux_AnimationState* m_pxCurrentState = nullptr;
@@ -342,8 +196,7 @@ private:
 	Flux_AnimationState* m_pxTransitionTargetState = nullptr;
 	bool m_bActiveTransitionInterruptible = true;  // Whether the current active transition can be interrupted
 	int32_t m_iActiveTransitionPriority = 0;       // Priority of the current active transition
-	Flux_AnimationParameters m_xParameters;
-	Flux_AnimationParameters* m_pxSharedParameters = nullptr;  // Non-owned, from parent SM
+	Flux_AnimationParameters* m_pxSharedParameters = nullptr;  // Non-owned: the controller's live set (D42)
 
 	// Poses
 	Flux_SkeletonPose m_xCurrentPose;

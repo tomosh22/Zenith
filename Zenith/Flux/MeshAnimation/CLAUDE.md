@@ -299,6 +299,60 @@ Skeletal meshes are skinned through the **unified GPU-driven mesh path** (`Flux/
 
 ## Animation State Machine
 
+### The def / instance split (WU-6.1)
+
+★ **THE STATE MACHINE USED TO BE BOTH HALVES ON ONE OBJECT.** `m_pxCurrentState`,
+`m_pxActiveTransition`, `m_xParameters` and **two `FLUX_MAX_BONES` poses** sat beside
+`m_xStates` behind a `// Runtime state` comment that marked the split without acting on
+it. Nothing could be shared from a registry, and the controller serialized the whole
+thing inline.
+
+| Type | Holds | File |
+|---|---|---|
+| `Flux_AnimationStateMachineDef` | states, transitions, conditions, any-state transitions, the default state, parameter **declarations + defaults**, each container state's nested def | `Flux_AnimationStateMachineDef.{h,cpp}` |
+| `Flux_AnimationStateMachine` | current state, active transition + its target, interruptible/priority, the shared-parameter pointer, the two poses | `Flux_AnimationStateMachine.{h,cpp}` |
+
+`Flux_AnimationParameters`, `Flux_TransitionCondition`, `Flux_StateTransition` and
+`Flux_AnimationState` moved into the def header with the def; every consumer reaches them
+through `Flux_AnimationStateMachine.h` exactly as before.
+
+- **The instance OWNS its def, by value**, and `BuildFromDef(const Def&, Flux_AnimationClipCollection* = nullptr)`
+  takes a **COPY**. ★ A non-owning pointer would let two instances of one def share the
+  def's blend trees — and a leaf carries its own PLAYHEAD
+  (`Flux_BlendTreeNode_Clip::m_fCurrentTimestamp`). Two characters "on the same
+  controller" would step each other's clips: not a def/instance split, but two instances
+  wearing one instance's state.
+- **The copy runs through the def's own serializer.** A blend tree is a polymorphic
+  hierarchy with no clone verb, and `Write`/`ReadFromDataStream` is the one faithful walk
+  of it that already exists and is already pinned by a test. A node field added later is
+  carried by the copy the day it is carried by the file. What does NOT survive: state
+  CALLBACKS (a function pointer is not authored data) and resolved clip POINTERS — which
+  is why `BuildFromDef` takes the collection.
+- **Imperative authoring is unchanged and is still the normal way to build one.**
+  `AddState` / `RemoveState` / `GetState` / `SetDefaultState` / `AddAnyStateTransition` /
+  `GetStates` / `GetName` / `ResolveClipReferences` on the machine all forward into the
+  owned def. Every game and every existing unit builds a machine this way.
+- `RemoveState` also drops the runtime pointers into the state it is about to free —
+  including as a **transition target**, which the pre-split version left dangling.
+- `ResolveClipReferences` now **recurses into sub-state machines**. It stopped at the top
+  level before, so every clip leaf inside a nested machine stayed unresolved after a load
+  and posed the bind pose forever — silently, because an unresolved leaf resets rather
+  than asserting.
+
+**Serialization is the def, and the byte layout did not move.** `Flux_AnimationStateMachine::WriteToDataStream`
+is `m_xDef.WriteToDataStream`, field-for-field what it always wrote (name, default state,
+parameters, states, any-state transitions). It is a **payload with no envelope**: WU-6.2
+embeds it in a `.zanimctrl` and owns the magic/schema word, and adding one here would mean
+two. The one on-disk change WU-6.1 makes is in the blend-space nodes — see D48 below.
+
+★ **A sub-state machine is still a nested INSTANCE inside the def**, not a nested def
+beside one. `Flux_AnimationState::CreateSubStateMachine` returns a drivable
+`Flux_AnimationStateMachine*` and every game and test authors through it, so the state
+holds the machine and the machine holds its own def; the split recurses correctly at each
+level, but the instance half of a child lives inside the parent's def rather than beside
+the parent's instance. That is the residual, and it is what a shared-def registry would
+have to move.
+
 ### Flux_AnimationStateMachine
 High-level animation control using a state-based model (Flux_AnimationStateMachine.h/cpp).
 
@@ -338,8 +392,96 @@ Runtime state introspection struct (Unity's `GetCurrentAnimatorStateInfo()`):
 - `m_bIsTransitioning` / `m_fTransitionProgress` - Transition state
 - `IsName(const char*)` - Name comparison
 
+### Parameters are the CONTROLLER's (D42)
+
+★ **`Flux_AnimationController::SetFloat` WAS A SILENT NO-OP FOR EVERY LAYERED GAME.** The
+shortcuts were `if (m_pxStateMachine) m_pxStateMachine->GetParameters().Set…`, and a
+controller built out of LAYERS has a null `m_pxStateMachine`. Zenithmon's humans are
+exactly that shape: `ZM_PlayerController::DriveAnimatorSpeed` sets `"Speed"` every frame
+through `Zenith_AnimatorComponent::SetFloat`, and the layer's Idle↔Walk transition never
+saw a thing. Nothing asserted; the character just never walked.
+
+The controller now owns **one** `Flux_AnimationParameters` and publishes it:
+
+- `Flux_AnimationController::GetParameters()` is the live set. `SetFloat` / `SetInt` /
+  `SetBool` / `SetTrigger` / `GetFloat` / `GetInt` / `GetBool` read and write it, and are
+  no longer inline in the header (they publish on demand).
+- `PublishSharedParameters()` seeds every attached machine's **declarations** into the
+  live set and then binds the set to the top-level machine and to every layer's machine
+  via `SetSharedParameters`. Sub-machines are bound as they always were, by
+  `Flux_AnimationStateMachine::SetState` / `StartTransition` passing `&GetParameters()` —
+  which now resolves to the controller's set.
+- **Seeding never overwrites a name already present.** Two layers commonly declare the
+  same `"Speed"`; re-seeding on the second would snap the live value back to a default
+  mid-play, which reads as a one-frame glitch and points at nothing.
+- `SeedParametersInto` **recurses through container states**, so a parameter declared only
+  inside a sub-machine still reaches the controller — otherwise a value set on the
+  animator could never satisfy a condition two levels down.
+- **Publication is LAZY**: the first `Update`, a `ReadFromDataStream`, or the first `Set*`
+  naming something the live set does not carry yet. Authoring happens after the controller
+  exists (add a layer → create its machine → declare its parameters → first frame), so a
+  publish at construction would seed nothing. The latch is cleared by `CreateStateMachine`,
+  the auto-creating `GetStateMachine`, `AddLayer` and `BuildStateMachineFromDef`.
+- The **move operations re-bind** (`RebindSharedParameters`, allocation-free so it is
+  `noexcept`-safe): every machine a move takes still points at the *source's* set, which
+  is about to be destroyed.
+
+`Flux_AnimationStateMachine::GetParameters()` returns the shared set when one is bound and
+the **def's declaration table** otherwise — so a standalone machine (a unit, an editor
+scratch graph) reads and writes its own declarations exactly as before, and only the
+declarations are serialized.
+
 ### Sub-State Machines
-States can contain nested state machines via `Flux_AnimationState::CreateSubStateMachine()`. Child state machines share the parent's parameters via `SetSharedParameters()`. Entry starts at the child's default state.
+States can contain nested state machines via `Flux_AnimationState::CreateSubStateMachine()`. Child state machines share the parent's parameters via `SetSharedParameters()` — which, under a controller, is that controller's one live set (D42 above). Entry starts at the child's default state.
+
+### ★ Named blend-parameter bindings (D48) — a REPAIR, not a feature
+
+**A blend space in a running game was frozen at its deserialized literal.**
+`Flux_BlendTreeNode::Evaluate` takes no parameter set, and
+`Flux_AnimationStateMachine::EvaluateState` called it with `(fDt, xOutPose, xSkeleton)` and
+nothing else — so no parameter value could ever reach a 1D or 2D blend space. The only
+thing that could move one was `SetParameter`, and **`SetParameter` had no caller outside
+the unit tests** (grep: `Core/Zenith_UnitTests.Tests.inl`, `Flux_BlendTree.Tests.inl`,
+`Flux_AnimationController.Tests.inl` — zero in `Games/**`). A blend space was
+unusable in a shipping game and the units all passed.
+
+The repair follows the file's own late-binding pattern — `m_strClipName` + `ResolveClip`,
+a NAME in the def resolved against the live world:
+
+- `Flux_BlendTreeNode_BlendSpace1D::m_strParameterName`, and
+  `Flux_BlendTreeNode_BlendSpace2D::m_strParameterNameX` / `…Y` (the two axes bind
+  **independently** — an X on `"Speed"` beside a Y left on its literal is the common
+  case). All **serialized**: the binding is authored data, the value it reads is not.
+- `Flux_BlendTreeNode::ResolveParameters(const Flux_AnimationParameters&)` is a virtual
+  walk. Composites forward it to **every** child, not only the ones about to be evaluated,
+  so a branch that becomes selected next frame already holds this frame's value.
+- `EvaluateState` calls it on the root of a state's tree immediately before `Evaluate`, so
+  the position tracks the named parameter **every frame**.
+- `SetParameter` survives as the manual override and is what an UNBOUND space uses. On a
+  bound space it is overwritten before the next pose — correct precedence (the authored
+  binding beats a poke from outside) but a trap if you expect the poke to stick.
+- A bound name that is **not declared** leaves the literal alone rather than reading
+  `GetFloat`'s 0.0. Snapping a walk/run blend to zero over a misspelling reads as "the run
+  animation stopped working"; a stuck literal at least plays what was authored, and the
+  binding is visible in the def.
+
+★ **THE ON-DISK NOTE.** These two/three strings are the only byte-layout change WU-6.1
+makes, and a state machine IS serialized into a scene —
+`Zenith_AnimatorComponent::WriteToDataStream` writes the whole controller, which writes the
+machine inline. It is safe **today** only because no committed `.zscen` can contain a blend
+space: nothing under `Games/**` constructs a `Flux_BlendTreeNode_BlendSpace1D/2D` at all
+(the only in-tree constructors are the three unit `.inl` files). Any future change to a
+blend-tree node's payload has the same reach and no version word to hide behind — WU-6.2's
+`.zanimctrl` envelope is where that gets fixed.
+
+### Deleted: the hand-rolled state-machine loader (D49)
+
+`Flux_AnimationController::LoadStateMachineFromFile` and
+`Flux_AnimationStateMachine::LoadFromFile` are **gone**, not migrated. They were a raw
+`std::ifstream` slurp into a `Zenith_DataStream` with no envelope, no magic, no schema, no
+writer counterpart and no defined extension — nothing could produce a file for them to
+read. Neither had a caller anywhere in the tree. `Flux_AnimationStateMachine.cpp` no longer
+includes `<fstream>`. The real path is `BuildFromDef` plus WU-6.2's asset.
 
 ### Animation Layers (Flux_AnimationLayer)
 Multiple independent state machines composing poses:
@@ -472,7 +614,15 @@ MeshAnimation/
   Flux_AnimationClip.h/cpp           - Animation keyframe storage
   Flux_AnimationController.h/cpp     - Playback control (owns clips, state machine, IK, layers)
   Flux_AnimationControllerStore.h/cpp- Heap-stable owning store of per-entity controllers (g_xEngine.AnimationControllers()); ECS entry point Zenith_AnimatorComponent forwards into it
-  Flux_AnimationStateMachine.h/cpp   - State machine (states, transitions, any-state, sub-SM)
+  Flux_AnimationStateMachineDef.h/cpp- The AUTHORED half (WU-6.1): Flux_AnimationParameters,
+                                       Flux_TransitionCondition, Flux_StateTransition,
+                                       Flux_AnimationState and Flux_AnimationStateMachineDef
+                                       (states / transitions / any-state / default state /
+                                       parameter DECLARATIONS + defaults / nested defs),
+                                       its serializer and its by-name clip resolution
+  Flux_AnimationStateMachine.h/cpp   - The INSTANCE half: current state, active transition,
+                                       shared-parameter pointer, the two poses; owns a def
+                                       by value and forwards the imperative builders into it
   Flux_AnimationLayer.h/cpp          - Animation layer (weight, blend mode, avatar mask)
   Flux_SkeletonInstance.h/cpp        - Runtime skeleton state
   Flux_BonePose.h/cpp                - Bone transform utilities (Blend, MaskedBlend, AdditiveBlend)
@@ -489,6 +639,11 @@ MeshAnimation/
                                        non-looping boundaries, reverse, seek, and the pure
                                        SpanContainsEventTime rules
   Flux_BlendTree.Tests.inl           - Unit tests for blend tree nodes (incl. span collection)
+  Flux_AnimationStateMachine.Tests.inl - Unit tests for WU-6.1: def-built vs imperatively-built
+                                       machines posing identically over 60 ticks, the D48 bound
+                                       and UNBOUND blend spaces, D42's controller parameter
+                                       reaching a sub-machine condition AND a layer's machine
+                                       (the Zenithmon no-op), and the def's stream round trip
 ```
 
 ## Constants

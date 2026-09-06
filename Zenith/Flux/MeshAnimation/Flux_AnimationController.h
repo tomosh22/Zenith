@@ -134,8 +134,41 @@ public:
 	// Create a new state machine (replaces existing)
 	Flux_AnimationStateMachine* CreateStateMachine(const std::string& strName = "Default");
 
-	// Load state machine from file
-	bool LoadStateMachineFromFile(const std::string& strPath);
+	// Build the top-level state machine from a definition (a COPY — see
+	// Flux_AnimationStateMachine::BuildFromDef). Clip references resolve through
+	// this controller's own collection.
+	Flux_AnimationStateMachine* BuildStateMachineFromDef(const Flux_AnimationStateMachineDef& xDef);
+
+	//=========================================================================
+	// Parameters — ONE live set per controller (D42)
+	//
+	// ★ THIS USED TO BE PER STATE MACHINE, AND FOR A LAYERED CONTROLLER THAT
+	// MEANT NOWHERE. SetFloat/SetBool/SetTrigger went through m_pxStateMachine,
+	// which is NULL whenever the animator is built out of layers — so
+	// Zenith_AnimatorComponent::SetFloat("Speed", …) was a silent no-op for every
+	// game whose graph lives on a layer. Zenithmon's humans are exactly that
+	// shape: ZM_PlayerController::DriveAnimatorSpeed sets "Speed" every frame and
+	// nothing on the far end ever saw it.
+	//
+	// Now the controller owns the set and PUBLISHES it: the top-level state
+	// machine, every layer's state machine and (through
+	// Flux_AnimationStateMachine::SetState) every sub-state machine read and write
+	// THIS object. Each def's DECLARATIONS are seeded into it — never overwriting
+	// a name already present, because two layers commonly declare the same
+	// "Speed" and the second seeding must not reset the value the first is
+	// running on.
+	//
+	// Publication is LAZY (first Update, or the first Set* naming something the
+	// live set does not carry yet) because authoring happens after the controller
+	// exists: a game adds a layer, creates its machine and declares its
+	// parameters, all before the first frame.
+	//=========================================================================
+	Flux_AnimationParameters& GetParameters() { return m_xParameters; }
+	const Flux_AnimationParameters& GetParameters() const { return m_xParameters; }
+
+	// Seed every attached machine's declarations into the live set and bind that
+	// set to all of them. Idempotent; safe to call at any point after authoring.
+	void PublishSharedParameters();
 
 	//=========================================================================
 	// IK Solver Access
@@ -255,7 +288,12 @@ public:
 	void SetUpdateMode(Flux_AnimationUpdateMode eMode) { m_eUpdateMode = eMode; }
 	Flux_AnimationUpdateMode GetUpdateMode() const { return m_eUpdateMode; }
 
-	// State machine parameter shortcuts
+	// Parameter shortcuts. These read and write the CONTROLLER's live set (D42),
+	// so they reach a layer's state machine and a sub-state machine alike — which
+	// the pre-WU-6.1 versions, routed through m_pxStateMachine, could not. A
+	// getter naming something no attached machine declares returns the type's
+	// default rather than publishing (it is const), which is the same answer the
+	// old code gave for an undeclared name.
 	void SetFloat(const std::string& strName, float fValue);
 	void SetInt(const std::string& strName, int32_t iValue);
 	void SetBool(const std::string& strName, bool bValue);
@@ -424,6 +462,16 @@ private:
 	// Apply m_xOutputPose to skeleton instance and upload to GPU
 	void ApplyOutputPoseToSkeleton();
 
+	// D42. Point every attached machine at m_xParameters WITHOUT seeding —
+	// allocation-free, which is what lets the noexcept move operations repair the
+	// shared pointers a move has just left aimed at the source's set.
+	void RebindSharedParameters() noexcept;
+
+	// D42. The live set must carry strName before a write to it can mean
+	// anything; if it does not, a declaration has appeared since the last publish
+	// (or none has happened yet), so publish now.
+	void EnsureParameterDeclared(const std::string& strName);
+
 	// The skeleton instance we're animating
 	Flux_SkeletonInstance* m_pxSkeletonInstance = nullptr;
 
@@ -439,6 +487,14 @@ private:
 	Zenith_Vector<AnimationHandle> m_xAnimationAssets;  // Keeps assets alive for borrowed clips
 	Flux_AnimationStateMachine* m_pxStateMachine = nullptr;
 	Flux_IKSolver* m_pxIKSolver = nullptr;
+
+	// D42: the ONE live parameter set. Every state machine this controller drives
+	// borrows a pointer to it (Flux_AnimationStateMachine::SetSharedParameters).
+	Flux_AnimationParameters m_xParameters;
+	// Cleared whenever the graph changes (a machine created, a layer added, a
+	// stream read) so the next Update re-seeds rather than running on a set that
+	// predates the declarations.
+	bool m_bParametersPublished = false;
 
 	// Current state
 	Flux_SkeletonPose m_xOutputPose;
@@ -488,44 +544,9 @@ private:
 //=============================================================================
 // Inline implementations
 //=============================================================================
-inline void Flux_AnimationController::SetFloat(const std::string& strName, float fValue)
-{
-	if (m_pxStateMachine)
-		m_pxStateMachine->GetParameters().SetFloat(strName, fValue);
-}
-
-inline void Flux_AnimationController::SetInt(const std::string& strName, int32_t iValue)
-{
-	if (m_pxStateMachine)
-		m_pxStateMachine->GetParameters().SetInt(strName, iValue);
-}
-
-inline void Flux_AnimationController::SetBool(const std::string& strName, bool bValue)
-{
-	if (m_pxStateMachine)
-		m_pxStateMachine->GetParameters().SetBool(strName, bValue);
-}
-
-inline void Flux_AnimationController::SetTrigger(const std::string& strName)
-{
-	if (m_pxStateMachine)
-		m_pxStateMachine->GetParameters().SetTrigger(strName);
-}
-
-inline float Flux_AnimationController::GetFloat(const std::string& strName) const
-{
-	return m_pxStateMachine ? m_pxStateMachine->GetParameters().GetFloat(strName) : 0.0f;
-}
-
-inline int32_t Flux_AnimationController::GetInt(const std::string& strName) const
-{
-	return m_pxStateMachine ? m_pxStateMachine->GetParameters().GetInt(strName) : 0;
-}
-
-inline bool Flux_AnimationController::GetBool(const std::string& strName) const
-{
-	return m_pxStateMachine ? m_pxStateMachine->GetParameters().GetBool(strName) : false;
-}
+// The parameter shortcuts are NOT inline here any more: they publish the shared
+// set on demand (D42), which needs the layer and state-machine bodies. See
+// Flux_AnimationController.cpp.
 
 inline void Flux_AnimationController::SetIKTarget(const std::string& strChainName,
 	const Zenith_Maths::Vector3& xPosition,

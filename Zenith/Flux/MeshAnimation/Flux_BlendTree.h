@@ -5,6 +5,12 @@
 // Forward declarations
 class Flux_AnimationClipCollection;
 class Zenith_SkeletonAsset;
+// D48: a blend space reads its position from the live parameter set by NAME. The
+// set is declared in Flux_AnimationStateMachineDef.h, which includes THIS header
+// (a state owns a blend tree), so the reference is forward-declared here and the
+// .cpp includes the definition — the same direction the clip collection above is
+// reached through.
+class Flux_AnimationParameters;
 
 struct Flux_WeightedIndex
 {
@@ -114,6 +120,25 @@ public:
 	// layer with events silenced (D36) needs so that re-enabling it does not
 	// fire a span the silenced frames accumulated.
 	virtual void CollectEventSpans(Zenith_Vector<Flux_ClipEventSpan>* pxOutSpans) { (void)pxOutSpans; }
+
+	//=========================================================================
+	// Named parameter bindings (D48)
+	//
+	// ★ A BLEND SPACE USED TO BE FROZEN AT ITS DESERIALIZED LITERAL. Nothing
+	// passed Flux_AnimationParameters into a tree — Evaluate takes none, and
+	// Flux_AnimationStateMachine::EvaluateState called it with only (dt, pose,
+	// skeleton) — so the ONLY thing that could move a blend position was
+	// SetParameter, which no game and no engine path ever called. This walk is
+	// the repair, and it follows the pattern the file already uses for clips:
+	// the def stores a NAME, and the name is resolved against the live set.
+	//
+	// Called once per evaluate, on the ROOT of a state's tree, immediately
+	// before Evaluate. Composites forward it to every child (not just the ones
+	// they are about to evaluate) so a branch that becomes selected later is
+	// already holding the current value rather than one frame of the old one.
+	// A node with no binding reads nothing and is left at its literal.
+	//=========================================================================
+	virtual void ResolveParameters(const Flux_AnimationParameters& xParams) { (void)xParams; }
 
 	// Factory method for creating nodes from type name
 	static Flux_BlendTreeNode* CreateFromTypeName(const std::string& strTypeName);
@@ -232,6 +257,7 @@ public:
 	void ReadFromDataStream(Zenith_DataStream& xStream) override;
 
 	void CollectEventSpans(Zenith_Vector<Flux_ClipEventSpan>* pxOutSpans) override;
+	void ResolveParameters(const Flux_AnimationParameters& xParams) override;
 
 	// Accessors
 	Flux_BlendTreeNode* GetChildA() const { return m_pxChildA; }
@@ -285,6 +311,10 @@ public:
 	// between two points gives both 0.5, and the earlier point wins.
 	void CollectEventSpans(Zenith_Vector<Flux_ClipEventSpan>* pxOutSpans) override;
 
+	// D48: read m_fParameter from the named controller parameter, then forward
+	// to every blend point's child.
+	void ResolveParameters(const Flux_AnimationParameters& xParams) override;
+
 	// Add/remove blend points
 	void AddBlendPoint(Flux_BlendTreeNode* pxNode, float fPosition);
 	void RemoveBlendPoint(u_int uIndex);
@@ -292,13 +322,27 @@ public:
 
 	// Accessors
 	float GetParameter() const { return m_fParameter; }
+
+	// ★ THE MANUAL OVERRIDE, AND ONLY WHEN NOTHING IS BOUND. A bound name is
+	// re-read on EVERY evaluate, so a SetParameter on a bound space is overwritten
+	// before the next pose — which is the correct precedence (the graph's own
+	// authored binding beats a poke from outside) but is a trap if you expect the
+	// poke to stick. Serialized, so an UNBOUND space still starts where it was
+	// authored.
 	void SetParameter(float fValue) { m_fParameter = fValue; }
+
+	// The controller parameter this space's position tracks. Empty = unbound.
+	// SERIALIZED — the binding is authored data, the value it reads is not.
+	const std::string& GetParameterName() const { return m_strParameterName; }
+	void SetParameterName(const std::string& strName) { m_strParameterName = strName; }
+	bool HasParameterBinding() const { return !m_strParameterName.empty(); }
 
 	const Zenith_Vector<BlendPoint>& GetBlendPoints() const { return m_xBlendPoints; }
 
 private:
 	Zenith_Vector<BlendPoint> m_xBlendPoints;
 	float m_fParameter = 0.0f;
+	std::string m_strParameterName;
 
 	// Temporary poses
 	Flux_SkeletonPose m_xPoseA;
@@ -335,6 +379,10 @@ public:
 
 	void CollectEventSpans(Zenith_Vector<Flux_ClipEventSpan>* pxOutSpans) override;
 
+	// D48: read each axis from its own named controller parameter (either may be
+	// bound independently), then forward to every blend point's child.
+	void ResolveParameters(const Flux_AnimationParameters& xParams) override;
+
 	// Add/remove blend points
 	void AddBlendPoint(Flux_BlendTreeNode* pxNode, const Zenith_Maths::Vector2& xPosition);
 	void RemoveBlendPoint(u_int uIndex);
@@ -344,7 +392,20 @@ public:
 
 	// Accessors
 	const Zenith_Maths::Vector2& GetParameter() const { return m_xParameter; }
+
+	// The manual override — see Flux_BlendTreeNode_BlendSpace1D::SetParameter for
+	// the precedence rule. A bound AXIS is re-read every evaluate; an unbound one
+	// keeps whatever was set here.
 	void SetParameter(const Zenith_Maths::Vector2& xValue) { m_xParameter = xValue; }
+
+	// The controller parameters this space's two axes track. Empty = unbound.
+	// Both are SERIALIZED.
+	const std::string& GetParameterNameX() const { return m_strParameterNameX; }
+	const std::string& GetParameterNameY() const { return m_strParameterNameY; }
+	void SetParameterNameX(const std::string& strName) { m_strParameterNameX = strName; }
+	void SetParameterNameY(const std::string& strName) { m_strParameterNameY = strName; }
+	bool HasParameterBinding() const { return !m_strParameterNameX.empty() || !m_strParameterNameY.empty(); }
+
 	const Zenith_Vector<BlendPoint>& GetBlendPoints() const { return m_xBlendPoints; }
 
 private:
@@ -360,6 +421,8 @@ private:
 	Zenith_Vector<BlendPoint> m_xBlendPoints;
 	Zenith_Vector<std::array<uint32_t, 3>> m_xTriangles;  // Delaunay triangulation
 	Zenith_Maths::Vector2 m_xParameter = Zenith_Maths::Vector2(0.0f);
+	std::string m_strParameterNameX;
+	std::string m_strParameterNameY;
 
 	// Temporary poses for blending
 	Zenith_Vector<Flux_SkeletonPose> m_xTempPoses;
@@ -396,6 +459,7 @@ public:
 	// weight therefore silences the additive branch's events, which matches what
 	// it does to the pose.
 	void CollectEventSpans(Zenith_Vector<Flux_ClipEventSpan>* pxOutSpans) override;
+	void ResolveParameters(const Flux_AnimationParameters& xParams) override;
 
 	// Accessors
 	Flux_BlendTreeNode* GetBaseNode() const { return m_pxBaseNode; }
@@ -446,6 +510,7 @@ public:
 	// its override branch's events, and an all-ones mask ties with the base, at
 	// which point D35's lowest-leaf-index rule picks the base.
 	void CollectEventSpans(Zenith_Vector<Flux_ClipEventSpan>* pxOutSpans) override;
+	void ResolveParameters(const Flux_AnimationParameters& xParams) override;
 
 	// Accessors
 	Flux_BlendTreeNode* GetBaseNode() const { return m_pxBaseNode; }
@@ -493,6 +558,7 @@ public:
 	// unselected branches are exactly the ones holding a span nothing has
 	// cleared, and only the selected one has a fresh pending span to report.
 	void CollectEventSpans(Zenith_Vector<Flux_ClipEventSpan>* pxOutSpans) override;
+	void ResolveParameters(const Flux_AnimationParameters& xParams) override;
 
 	// Add children
 	void AddChild(Flux_BlendTreeNode* pxChild);

@@ -35,6 +35,8 @@ Flux_AnimationController::Flux_AnimationController(Flux_AnimationController&& xO
 	, m_xAnimationAssets(std::move(xOther.m_xAnimationAssets))
 	, m_pxStateMachine(xOther.m_pxStateMachine)
 	, m_pxIKSolver(xOther.m_pxIKSolver)
+	, m_xParameters(std::move(xOther.m_xParameters))
+	, m_bParametersPublished(xOther.m_bParametersPublished)
 	, m_xOutputPose(std::move(xOther.m_xOutputPose))
 	, m_bPaused(xOther.m_bPaused)
 	, m_fPlaybackSpeed(xOther.m_fPlaybackSpeed)
@@ -69,6 +71,12 @@ Flux_AnimationController::Flux_AnimationController(Flux_AnimationController&& xO
 	xOther.m_pxSkeletonInstance = nullptr;
 	xOther.m_pfnEventCallback = nullptr;
 	xOther.m_pEventCallbackUserData = nullptr;
+
+	// ★ EVERY STATE MACHINE WE JUST TOOK STILL POINTS AT THE SOURCE'S PARAMETER
+	// SET (D42). SetSharedParameters stored &xOther.m_xParameters, which is now a
+	// moved-from object about to be destroyed. Re-binding is allocation-free, so
+	// it is safe inside a noexcept move.
+	RebindSharedParameters();
 }
 
 Flux_AnimationController& Flux_AnimationController::operator=(Flux_AnimationController&& xOther) noexcept
@@ -91,6 +99,8 @@ Flux_AnimationController& Flux_AnimationController::operator=(Flux_AnimationCont
 		m_xClipCollection = std::move(xOther.m_xClipCollection);
 		m_xAnimationAssets = std::move(xOther.m_xAnimationAssets);
 		m_xOutputPose = std::move(xOther.m_xOutputPose);
+		m_xParameters = std::move(xOther.m_xParameters);
+		m_bParametersPublished = xOther.m_bParametersPublished;
 		m_bPaused = xOther.m_bPaused;
 		m_fPlaybackSpeed = xOther.m_fPlaybackSpeed;
 		m_eUpdateMode = xOther.m_eUpdateMode;
@@ -130,6 +140,9 @@ Flux_AnimationController& Flux_AnimationController::operator=(Flux_AnimationCont
 		// See the move ctor: a moved-from controller drives nothing.
 		xOther.m_pDriveOwner = nullptr;
 		xOther.m_ulDriveFrameToken = ulNO_DRIVE_FRAME;
+
+		// D42: the machines we just took are pointed at the SOURCE's set.
+		RebindSharedParameters();
 	}
 	return *this;
 }
@@ -203,10 +216,102 @@ bool Flux_AnimationController::HasAnimationContent() const
 		m_xLayers.GetSize() > 0;
 }
 
+//=============================================================================
+// Parameters (D42) — see the header for why the controller owns the live set.
+//=============================================================================
+
+void Flux_AnimationController::RebindSharedParameters() noexcept
+{
+	// Bind only. No seeding, no allocation — this is what the noexcept move
+	// operations call to repair pointers aimed at the moved-from set.
+	if (m_pxStateMachine)
+		m_pxStateMachine->SetSharedParameters(&m_xParameters);
+
+	for (uint32_t i = 0; i < m_xLayers.GetSize(); ++i)
+	{
+		Flux_AnimationLayer* pxLayer = m_xLayers.Get(i);
+		// GetStateMachine() would CREATE one; a layer without a machine has
+		// nothing to bind and must not gain an empty one as a side effect of a
+		// bind sweep.
+		if (pxLayer && pxLayer->GetStateMachinePtr())
+			pxLayer->GetStateMachine().SetSharedParameters(&m_xParameters);
+	}
+}
+
+void Flux_AnimationController::PublishSharedParameters()
+{
+	// Seed FIRST, bind second. A machine bound before its own declarations were
+	// copied across would answer GetParameters() with a set that does not carry
+	// them, and a condition reading one would evaluate false for a frame.
+	if (m_pxStateMachine)
+		m_pxStateMachine->GetDef().SeedParametersInto(m_xParameters);
+
+	for (uint32_t i = 0; i < m_xLayers.GetSize(); ++i)
+	{
+		Flux_AnimationLayer* pxLayer = m_xLayers.Get(i);
+		if (pxLayer && pxLayer->GetStateMachinePtr())
+			pxLayer->GetStateMachine().GetDef().SeedParametersInto(m_xParameters);
+	}
+
+	RebindSharedParameters();
+	m_bParametersPublished = true;
+}
+
+void Flux_AnimationController::EnsureParameterDeclared(const std::string& strName)
+{
+	if (!m_bParametersPublished || !m_xParameters.HasParameter(strName))
+		PublishSharedParameters();
+}
+
+void Flux_AnimationController::SetFloat(const std::string& strName, float fValue)
+{
+	EnsureParameterDeclared(strName);
+	m_xParameters.SetFloat(strName, fValue);
+}
+
+void Flux_AnimationController::SetInt(const std::string& strName, int32_t iValue)
+{
+	EnsureParameterDeclared(strName);
+	m_xParameters.SetInt(strName, iValue);
+}
+
+void Flux_AnimationController::SetBool(const std::string& strName, bool bValue)
+{
+	EnsureParameterDeclared(strName);
+	m_xParameters.SetBool(strName, bValue);
+}
+
+void Flux_AnimationController::SetTrigger(const std::string& strName)
+{
+	EnsureParameterDeclared(strName);
+	m_xParameters.SetTrigger(strName);
+}
+
+float Flux_AnimationController::GetFloat(const std::string& strName) const
+{
+	return m_xParameters.GetFloat(strName);
+}
+
+int32_t Flux_AnimationController::GetInt(const std::string& strName) const
+{
+	return m_xParameters.GetInt(strName);
+}
+
+bool Flux_AnimationController::GetBool(const std::string& strName) const
+{
+	return m_xParameters.GetBool(strName);
+}
+
 void Flux_AnimationController::Update(float fDt)
 {
 	if (!m_pxSkeletonInstance || !m_xSkeletonAsset.GetDirect() || m_bPaused)
 		return;
+
+	// D42: authoring finishes before the first frame, so this is where the live
+	// set is built. Latched — a per-frame seed would walk every def's declaration
+	// table for nothing.
+	if (!m_bParametersPublished)
+		PublishSharedParameters();
 
 	// #TODO: Implement ANIMATION_UPDATE_FIXED and ANIMATION_UPDATE_UNSCALED when engine time scale support is added
 	// Currently only ANIMATION_UPDATE_NORMAL is functional
@@ -454,6 +559,7 @@ Flux_AnimationStateMachine& Flux_AnimationController::GetStateMachine()
 	if (!m_pxStateMachine)
 	{
 		m_pxStateMachine = new Flux_AnimationStateMachine("Default");
+		m_bParametersPublished = false;   // D42: a new graph, so re-seed
 	}
 	return *m_pxStateMachine;
 }
@@ -462,6 +568,16 @@ Flux_AnimationStateMachine* Flux_AnimationController::CreateStateMachine(const s
 {
 	delete m_pxStateMachine;
 	m_pxStateMachine = new Flux_AnimationStateMachine(strName);
+	m_bParametersPublished = false;
+	return m_pxStateMachine;
+}
+
+Flux_AnimationStateMachine* Flux_AnimationController::BuildStateMachineFromDef(const Flux_AnimationStateMachineDef& xDef)
+{
+	delete m_pxStateMachine;
+	m_pxStateMachine = new Flux_AnimationStateMachine();
+	m_pxStateMachine->BuildFromDef(xDef, &m_xClipCollection);
+	m_bParametersPublished = false;
 	return m_pxStateMachine;
 }
 
@@ -496,21 +612,6 @@ void Flux_AnimationController::CrossFade(const std::string& strStateName, float 
 		m_pxStateMachine->CrossFade(strStateName, fDuration);
 }
 
-bool Flux_AnimationController::LoadStateMachineFromFile(const std::string& strPath)
-{
-	Flux_AnimationStateMachine* pxNewSM = Flux_AnimationStateMachine::LoadFromFile(strPath);
-	if (pxNewSM)
-	{
-		delete m_pxStateMachine;
-		m_pxStateMachine = pxNewSM;
-
-		// Resolve clip references
-		m_pxStateMachine->ResolveClipReferences(&m_xClipCollection);
-		return true;
-	}
-	return false;
-}
-
 Flux_IKSolver& Flux_AnimationController::GetIKSolver()
 {
 	if (!m_pxIKSolver)
@@ -539,6 +640,9 @@ Flux_AnimationLayer* Flux_AnimationController::AddLayer(const std::string& strNa
 		pxLayer->InitializePose(m_pxSkeletonInstance->GetNumBones());
 	}
 	m_xLayers.PushBack(pxLayer);
+	// D42: the game is about to create this layer's machine and declare its
+	// parameters, so the live set is out of date from here.
+	m_bParametersPublished = false;
 	return pxLayer;
 }
 
@@ -977,6 +1081,12 @@ void Flux_AnimationController::ReadFromDataStream(Zenith_DataStream& xStream)
 			m_xLayers.Get(i)->InitializePose(uNumBones);
 		}
 	}
+
+	// D42: a whole new graph arrived, declarations and all. Publish NOW rather
+	// than waiting for the first Update — a caller that deserializes and then
+	// immediately reads GetParameters() should see the declared set, and the
+	// binding must exist before anything drives a machine by hand.
+	PublishSharedParameters();
 }
 
 #ifdef ZENITH_TESTING

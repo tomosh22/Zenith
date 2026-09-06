@@ -1,5 +1,6 @@
 #include "Zenith.h"
 #include "Flux_BlendTree.h"
+#include "Flux_AnimationStateMachineDef.h"   // D48: Flux_AnimationParameters
 #include <algorithm>
 
 //=============================================================================
@@ -272,6 +273,12 @@ void Flux_BlendTreeNode_Blend::CollectEventSpans(Zenith_Vector<Flux_ClipEventSpa
 	if (m_pxChildB) m_pxChildB->CollectEventSpans(pxOutSpans);
 }
 
+void Flux_BlendTreeNode_Blend::ResolveParameters(const Flux_AnimationParameters& xParams)
+{
+	if (m_pxChildA) m_pxChildA->ResolveParameters(xParams);
+	if (m_pxChildB) m_pxChildB->ResolveParameters(xParams);
+}
+
 float Flux_BlendTreeNode_Blend::GetNormalizedTime() const
 {
 	// Return weighted average of child times
@@ -421,6 +428,23 @@ void Flux_BlendTreeNode_BlendSpace1D::CollectEventSpans(Zenith_Vector<Flux_ClipE
 	}
 }
 
+void Flux_BlendTreeNode_BlendSpace1D::ResolveParameters(const Flux_AnimationParameters& xParams)
+{
+	// ★ A BOUND NAME THAT IS NOT DECLARED LEAVES THE LITERAL ALONE. GetFloat
+	// returns 0.0f for an unknown name, and silently snapping a walk/run blend to
+	// zero because a parameter was misspelled reads as "the run animation stopped
+	// working" — a stuck literal at least still plays what was authored, and the
+	// binding is visible in the def.
+	if (!m_strParameterName.empty() && xParams.HasParameter(m_strParameterName))
+		m_fParameter = xParams.GetFloat(m_strParameterName);
+
+	for (u_int u = 0; u < m_xBlendPoints.GetSize(); u++)
+	{
+		if (m_xBlendPoints.Get(u).m_pxNode)
+			m_xBlendPoints.Get(u).m_pxNode->ResolveParameters(xParams);
+	}
+}
+
 // Walk a blend-point list and return the nearest entry by some caller-supplied
 // distance metric (1D uses scalar abs-delta, 2D uses vector length). Returns
 // nullptr only when the list is empty.
@@ -463,6 +487,8 @@ void Flux_BlendTreeNode_BlendSpace1D::Reset()
 void Flux_BlendTreeNode_BlendSpace1D::WriteToDataStream(Zenith_DataStream& xStream) const
 {
 	xStream << m_fParameter;
+	// D48: the BINDING is authored data and rides beside the literal it overrides.
+	xStream << m_strParameterName;
 
 	uint32_t uNumPoints = static_cast<uint32_t>(m_xBlendPoints.GetSize());
 	xStream << uNumPoints;
@@ -478,6 +504,7 @@ void Flux_BlendTreeNode_BlendSpace1D::WriteToDataStream(Zenith_DataStream& xStre
 void Flux_BlendTreeNode_BlendSpace1D::ReadFromDataStream(Zenith_DataStream& xStream)
 {
 	xStream >> m_fParameter;
+	xStream >> m_strParameterName;
 
 	uint32_t uNumPoints = 0;
 	xStream >> uNumPoints;
@@ -712,6 +739,22 @@ void Flux_BlendTreeNode_BlendSpace2D::CollectEventSpans(Zenith_Vector<Flux_ClipE
 	}
 }
 
+void Flux_BlendTreeNode_BlendSpace2D::ResolveParameters(const Flux_AnimationParameters& xParams)
+{
+	// The two axes bind INDEPENDENTLY: a locomotion space commonly drives X from
+	// "Speed" and leaves Y (strafe) on its authored literal.
+	if (!m_strParameterNameX.empty() && xParams.HasParameter(m_strParameterNameX))
+		m_xParameter.x = xParams.GetFloat(m_strParameterNameX);
+	if (!m_strParameterNameY.empty() && xParams.HasParameter(m_strParameterNameY))
+		m_xParameter.y = xParams.GetFloat(m_strParameterNameY);
+
+	for (u_int u = 0; u < m_xBlendPoints.GetSize(); u++)
+	{
+		if (m_xBlendPoints.Get(u).m_pxNode)
+			m_xBlendPoints.Get(u).m_pxNode->ResolveParameters(xParams);
+	}
+}
+
 float Flux_BlendTreeNode_BlendSpace2D::GetNormalizedTime() const
 {
 	const BlendPoint* pxNearest = FindNearestBlendPoint(m_xBlendPoints,
@@ -732,6 +775,9 @@ void Flux_BlendTreeNode_BlendSpace2D::WriteToDataStream(Zenith_DataStream& xStre
 {
 	xStream << m_xParameter.x;
 	xStream << m_xParameter.y;
+	// D48: one binding per axis, beside the literals they override.
+	xStream << m_strParameterNameX;
+	xStream << m_strParameterNameY;
 
 	uint32_t uNumPoints = static_cast<uint32_t>(m_xBlendPoints.GetSize());
 	xStream << uNumPoints;
@@ -749,6 +795,8 @@ void Flux_BlendTreeNode_BlendSpace2D::ReadFromDataStream(Zenith_DataStream& xStr
 {
 	xStream >> m_xParameter.x;
 	xStream >> m_xParameter.y;
+	xStream >> m_strParameterNameX;
+	xStream >> m_strParameterNameY;
 
 	uint32_t uNumPoints = 0;
 	xStream >> uNumPoints;
@@ -797,6 +845,12 @@ void Flux_BlendTreeNode_Additive::CollectEventSpans(Zenith_Vector<Flux_ClipEvent
 {
 	if (m_pxBaseNode) m_pxBaseNode->CollectEventSpans(pxOutSpans);
 	if (m_pxAdditiveNode) m_pxAdditiveNode->CollectEventSpans(pxOutSpans);
+}
+
+void Flux_BlendTreeNode_Additive::ResolveParameters(const Flux_AnimationParameters& xParams)
+{
+	if (m_pxBaseNode) m_pxBaseNode->ResolveParameters(xParams);
+	if (m_pxAdditiveNode) m_pxAdditiveNode->ResolveParameters(xParams);
 }
 
 float Flux_BlendTreeNode_Additive::GetNormalizedTime() const
@@ -863,6 +917,12 @@ void Flux_BlendTreeNode_Masked::CollectEventSpans(Zenith_Vector<Flux_ClipEventSp
 {
 	if (m_pxBaseNode) m_pxBaseNode->CollectEventSpans(pxOutSpans);
 	if (m_pxOverrideNode) m_pxOverrideNode->CollectEventSpans(pxOutSpans);
+}
+
+void Flux_BlendTreeNode_Masked::ResolveParameters(const Flux_AnimationParameters& xParams)
+{
+	if (m_pxBaseNode) m_pxBaseNode->ResolveParameters(xParams);
+	if (m_pxOverrideNode) m_pxOverrideNode->ResolveParameters(xParams);
 }
 
 float Flux_BlendTreeNode_Masked::GetNormalizedTime() const
@@ -947,6 +1007,17 @@ void Flux_BlendTreeNode_Select::CollectEventSpans(Zenith_Vector<Flux_ClipEventSp
 	{
 		if (m_xChildren.Get(u))
 			m_xChildren.Get(u)->CollectEventSpans(pxOutSpans);
+	}
+}
+
+void Flux_BlendTreeNode_Select::ResolveParameters(const Flux_AnimationParameters& xParams)
+{
+	// Every child, not just the selected one — see the base declaration: a branch
+	// that becomes selected next frame must already be holding this frame's value.
+	for (u_int u = 0; u < m_xChildren.GetSize(); u++)
+	{
+		if (m_xChildren.Get(u))
+			m_xChildren.Get(u)->ResolveParameters(xParams);
 	}
 }
 
