@@ -103,15 +103,35 @@
 # the game every terrain shadow. A declaration a fresh clone lacks is a
 # declaration somebody re-guesses, so it cannot live in the ignored tree.
 #
+# `Assets/Authored/` is re-included WHOLESALE (D33), and it is the only rule
+# here scoped by DIRECTORY rather than by extension. Everything else under an
+# Assets tree is bake output that a tools boot regenerates from source; the
+# files under Authored/ are the one population that is HAND-EDITED -- animation
+# clips promoted to an authored override in the Animation Editor
+# (Zenith_AnimationDocument::PromoteToAuthoredOverride / SaveAs). The bake never
+# writes under Authored/, so nothing regenerates one: an authored clip a fresh
+# clone lacks is a clip that is simply gone.
+#
+# It is deliberately NOT `!**/*.zanim`. That extension is shared with 931
+# GENERATED clips (the count when this rule was added -- every StickFigure,
+# creature and tree animation the exporters emit), so an extension re-include
+# would un-ignore the entire bake, which is the exact trap the rest of this
+# block exists to avoid. Scoping to the directory also means the .zanimctrl and
+# .zanimmask files the editor will write alongside the clips are covered
+# already, with no further rule per extension.
+#
 # We ignore Assets *contents* (not the directory entries, so git can descend),
 # then re-include. NOTE the ordering contract: the later `unit_test_scene.zscen`
 # rule below still wins for the harness-written scene in the exe CWD, because
-# gitignore is last-match-wins.
+# gitignore is last-match-wins -- the Authored re-include sits INSIDE this block,
+# far above that rule, so it does not disturb it (and the harness scene is
+# written to the exe CWD, not under Authored/, so the two never overlap).
 **/Assets/**
 !**/Assets/**/
 !**/*.znavmesh
 !**/*.zscen
 !**/*.ztexdecl
+!**/Assets/Authored/**
 
 # Accidental Windows NUL device redirections
 /nul
