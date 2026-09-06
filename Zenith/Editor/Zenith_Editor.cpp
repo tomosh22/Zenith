@@ -35,6 +35,7 @@ void Zenith_EditorAddLogMessage(const char* szMessage, int eLevel, Zenith_LogCat
 #include "Zenith_UndoSystem.h"
 #include "Editor/Zenith_AnimationDocument.h"
 #include "Editor/Zenith_AnimTimelineMath.h"
+#include "Editor/Animation/Zenith_BoneSpace.h"
 #include "Zenith_EditorSceneAccess.h"
 #include "TerrainEditor/Zenith_TerrainEditor.h"
 #include "Flux/Gizmos/Flux_GizmosImpl.h"
@@ -339,6 +340,10 @@ void Zenith_Editor::Initialise(Flux_PlatformAPI& xFluxBackend, Flux_GraphicsImpl
 	// this /OPT:REF drops the TU and its unit tests with it.
 	static const bool ls_bAnimTimelineMathLinked = Zenith_AnimTimelineMath_ForceLink();
 	(void)ls_bAnimTimelineMathLinked;
+	// Same anchor for the bone-space maths TU (WU-4.2): pure functions with no
+	// consumer until the pose manipulator (WU-4.3) lands.
+	static const bool ls_bBoneSpaceLinked = Zenith_BoneSpace_ForceLink();
+	(void)ls_bBoneSpaceLinked;
 
 	// The dope sheet's preview session remembers a per-clip rig choice in the
 	// editor's own prefs. Wired from here because m_xEditorState is private to
