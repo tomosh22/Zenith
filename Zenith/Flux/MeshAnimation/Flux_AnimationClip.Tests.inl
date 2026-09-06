@@ -6,6 +6,7 @@
 #include "DataStream/Zenith_StreamEnvelope.h"
 
 #include <cstring>   // std::memcmp — the byte-identity determinism check
+#include <limits>    // WU-1.3: quiet_NaN / infinity — the D10 rejected key times
 
 // ============================================================================
 // Flux_RootMotion sample tests
@@ -832,4 +833,674 @@ ZENITH_TEST(AnimationTime, ChannelLastKeyTimeIsAMaximumNotTheBack)
 
 	ZENITH_ASSERT_EQ_FLOAT(xChannel.GetLastKeyTimeSeconds(), 1.7f, 1e-6f,
 		"the last key time must be the max across all three arrays, unsorted input included");
+}
+
+// ============================================================================
+// WU-1.3 — CHANNEL AND ROOT-MOTION MUTATORS (D9..D16).
+//
+// The clip used to be APPEND-ONLY: Add*Keyframe + SortKeyframes, three private
+// vectors, const-only getters, and `friend class Flux_AnimationClip` as the sole
+// escape hatch. Nothing could remove, retime or revalue a key. These pin the
+// verbs that changed that, and — as much as the happy paths — the REFUSALS,
+// because every one of the policy decisions here is a decision NOT to silently
+// repair something:
+//
+//   • not to clamp a bad time to zero (a clamped key is indistinguishable from an
+//     authored one),
+//   • not to merge two keys on a retime (the merge happens mid-drag, when a user
+//     is least able to see a key vanish),
+//   • not to normalize a zero quaternion (that is how a NaN reaches every pose),
+//   • not to leave an emptied channel in a clip (the two samplers disagree about
+//     what it means — see ClipRemovingTheLastKeyRemovesTheChannel).
+//
+// ★ EVERY TEST BELOW RE-CHECKS THE TANGENT LOCKSTEP after every mutation. The
+// reserved tangent arrays (D17) are parallel to the key arrays by index, so a
+// mutator that moves a key without its tangent does not lose data — it silently
+// RE-PAIRS every later key with the wrong tangent. Nothing that counts keys, and
+// nothing that samples (the tangents are not sampled yet), can see that.
+//
+// All pure CPU — in-memory channels and clips, no device, no registry, no file —
+// so every one runs under the Null backend and none is requiresGraphics.
+// ============================================================================
+
+namespace
+{
+	void MutAssertTangentsParallel(const Flux_BoneChannel& xChannel, const char* szWhere)
+	{
+		ZENITH_ASSERT_EQ(xChannel.GetPositionTangents().GetSize(), xChannel.GetPositionKeyframes().GetSize(),
+			"%s: position tangents must stay parallel to the position keys", szWhere);
+		ZENITH_ASSERT_EQ(xChannel.GetRotationTangents().GetSize(), xChannel.GetRotationKeyframes().GetSize(),
+			"%s: rotation tangents must stay parallel to the rotation keys", szWhere);
+		ZENITH_ASSERT_EQ(xChannel.GetScaleTangents().GetSize(), xChannel.GetScaleKeyframes().GetSize(),
+			"%s: scale tangents must stay parallel to the scale keys", szWhere);
+	}
+
+	// Position keys at 0 / 1 / 2 s (value.x == the time), one rotation key and one
+	// scale key, already sorted. Each POSITION tangent is stamped with a marker
+	// derived from its ORIGINAL key index — 100+i in, 200+i out — so a test can say
+	// WHICH tangent ended up where, rather than only that the arrays are the right
+	// length. A length check alone passes a mutator that shuffles tangents.
+	void MutBuildProbeChannel(Flux_BoneChannel& xChannel)
+	{
+		xChannel.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
+		xChannel.AddPositionKeyframe(1.0f, Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f));
+		xChannel.AddPositionKeyframe(2.0f, Zenith_Maths::Vector3(2.0f, 0.0f, 0.0f));
+		xChannel.AddRotationKeyframe(0.0f, Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f));
+		xChannel.AddScaleKeyframe   (0.0f, Zenith_Maths::Vector3(1.0f, 1.0f, 1.0f));
+		xChannel.SortKeyframes();
+
+		for (u_int u = 0; u < 3u; ++u)
+		{
+			Flux_KeyTangents xTangent;
+			xTangent.m_xInTangent  = Zenith_Maths::Vector3(100.0f + static_cast<float>(u), 0.0f, 0.0f);
+			xTangent.m_xOutTangent = Zenith_Maths::Vector3(200.0f + static_cast<float>(u), 0.0f, 0.0f);
+			xChannel.SetPositionTangent(u, xTangent);
+		}
+	}
+
+	// The stamp MutBuildProbeChannel wrote, read back from whichever slot it now
+	// occupies. 100 + original index, or 0 for a tangent the mutator created fresh.
+	float MutTangentMarker(const Flux_BoneChannel& xChannel, u_int uKeyIndex)
+	{
+		return xChannel.GetPositionTangents().Get(uKeyIndex).m_xInTangent.x;
+	}
+
+	// A track is sorted iff every adjacent pair is non-decreasing. Checked directly
+	// rather than by spot-testing two indices, because an insert that lands in the
+	// wrong place can still leave any single pair looking right.
+	bool MutPositionTrackIsSorted(const Flux_BoneChannel& xChannel)
+	{
+		for (u_int u = 1; u < xChannel.GetPositionKeyframes().GetSize(); ++u)
+		{
+			if (xChannel.GetPositionKeyframes().Get(u - 1u).second > xChannel.GetPositionKeyframes().Get(u).second)
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+}
+
+// ★ REPLACE, NOT A SECOND KEY. The incoming time is deliberately NOT bit-identical
+// to the stored 1.0 — it is one quarter of an epsilon away, which is the shape a
+// snap-to-frame, a UI round-trip or a serialization produces. An `==` compare (D9's
+// forbidden shape) would call the slot free and insert a second key a microsecond
+// from the first, which samples as a near-vertical step in the curve.
+ZENITH_TEST(AnimationMutation, ChannelInsertOnOccupiedTimeReplacesInPlace)
+{
+	Flux_BoneChannel xChannel;
+	MutBuildProbeChannel(xChannel);
+
+	const float fNearlyOne = 1.0f + (fANIM_TIME_EPSILON * 0.25f);
+	u_int uIndex = 0xFFFFFFFFu;
+	const bool bOk = xChannel.InsertKeyframeAt(FLUX_ANIM_TRACK_POSITION, fNearlyOne,
+		Zenith_Maths::Vector3(9.0f, 9.0f, 9.0f), &uIndex);
+
+	ZENITH_ASSERT_TRUE(bOk, "an insert onto an occupied time must succeed, as a replace");
+	ZENITH_ASSERT_EQ(uIndex, 1u, "the replaced key keeps its index SLOT — an undo record naming (bone, track, 1) still names it");
+	ZENITH_ASSERT_EQ(xChannel.GetKeyframeCount(FLUX_ANIM_TRACK_POSITION), 3u, "a replace must not add a key");
+	ZENITH_ASSERT_TRUE(RootMotionVec3Equals(xChannel.GetPositionKeyframes().Get(1).first, Zenith_Maths::Vector3(9.0f, 9.0f, 9.0f)),
+		"the occupied key's VALUE is replaced");
+
+	// The stored time is left exactly as authored. Rewriting it with fNearlyOne would
+	// nudge a snapped key by up to an epsilon on every re-drop — invisible per edit,
+	// cumulative across a session.
+	ZENITH_ASSERT_EQ_FLOAT(xChannel.GetPositionKeyframes().Get(1).second, 1.0f, 1e-9f,
+		"a replace must not nudge the key's authored time toward the incoming one");
+	ZENITH_ASSERT_EQ_FLOAT(MutTangentMarker(xChannel, 1u), 101.0f, 1e-6f,
+		"a replace keeps the EXISTING key's tangent — re-dropping a value must not discard curve authoring");
+	ZENITH_ASSERT_TRUE(MutPositionTrackIsSorted(xChannel), "the track stays sorted");
+	MutAssertTangentsParallel(xChannel, "insert-on-occupied");
+}
+
+ZENITH_TEST(AnimationMutation, ChannelInsertOnFreeTimeLandsSorted)
+{
+	Flux_BoneChannel xChannel;
+	MutBuildProbeChannel(xChannel);
+
+	// Interior: between the keys at 0 and 1.
+	u_int uIndex = 0xFFFFFFFFu;
+	ZENITH_ASSERT_TRUE(xChannel.InsertKeyframeAt(FLUX_ANIM_TRACK_POSITION, 0.5f, Zenith_Maths::Vector3(5.0f, 0.0f, 0.0f), &uIndex),
+		"an insert on a free time must succeed");
+	ZENITH_ASSERT_EQ(uIndex, 1u, "the new key lands at its SORTED position, not at the back");
+	ZENITH_ASSERT_EQ(xChannel.GetKeyframeCount(FLUX_ANIM_TRACK_POSITION), 4u, "the key count grows by one");
+	ZENITH_ASSERT_TRUE(MutPositionTrackIsSorted(xChannel), "the track is sorted with no SortKeyframes() call");
+	ZENITH_ASSERT_EQ_FLOAT(xChannel.GetPositionKeyframes().Get(1).second, 0.5f, 1e-6f, "the new key is at the requested time");
+
+	// The three original tangents shifted right with their own keys, and the new key
+	// got a FRESH zero tangent rather than inheriting its neighbour's.
+	ZENITH_ASSERT_EQ_FLOAT(MutTangentMarker(xChannel, 0u), 100.0f, 1e-6f, "the t=0 key keeps its tangent");
+	ZENITH_ASSERT_EQ_FLOAT(MutTangentMarker(xChannel, 1u), 0.0f,   1e-6f, "the inserted key gets a zero tangent");
+	ZENITH_ASSERT_EQ_FLOAT(MutTangentMarker(xChannel, 2u), 101.0f, 1e-6f, "the t=1 key's tangent moved WITH it");
+	ZENITH_ASSERT_EQ_FLOAT(MutTangentMarker(xChannel, 3u), 102.0f, 1e-6f, "the t=2 key's tangent moved WITH it");
+	MutAssertTangentsParallel(xChannel, "insert-interior");
+
+	// Past the end: the other boundary of the sorted-position search.
+	ZENITH_ASSERT_TRUE(xChannel.InsertKeyframeAt(FLUX_ANIM_TRACK_POSITION, 7.0f, Zenith_Maths::Vector3(7.0f, 0.0f, 0.0f), &uIndex),
+		"an insert past the last key must succeed");
+	ZENITH_ASSERT_EQ(uIndex, 4u, "a key later than every other lands at the back");
+	ZENITH_ASSERT_TRUE(MutPositionTrackIsSorted(xChannel), "the track stays sorted");
+
+	// And at the very front.
+	ZENITH_ASSERT_TRUE(xChannel.InsertKeyframeAt(FLUX_ANIM_TRACK_POSITION, 0.0f + fANIM_TIME_EPSILON * 4.0f, Zenith_Maths::Vector3(-1.0f, 0.0f, 0.0f), &uIndex),
+		"an insert just clear of the first key must succeed");
+	ZENITH_ASSERT_EQ(uIndex, 1u, "a time just past t=0 — outside the epsilon — is a NEW key, not a replace");
+	ZENITH_ASSERT_EQ(xChannel.GetKeyframeCount(FLUX_ANIM_TRACK_POSITION), 6u, "the key count grew again");
+	ZENITH_ASSERT_TRUE(MutPositionTrackIsSorted(xChannel), "the track stays sorted");
+	MutAssertTangentsParallel(xChannel, "insert-front-and-back");
+}
+
+// ★ NO SILENT MERGE (D11/D25). A drag that lands on an occupied frame is ordinary
+// user input, so this is a plain `false` and NOT an assert — the caller's job is to
+// reject the drag, not to have been prevented from attempting it. What must not
+// happen is either key changing.
+ZENITH_TEST(AnimationMutation, ChannelSetKeyframeTimeOntoOccupiedIsRefused)
+{
+	Flux_BoneChannel xChannel;
+	MutBuildProbeChannel(xChannel);
+
+	u_int uIndex = 0xFFFFFFFFu;
+	const bool bOk = xChannel.SetKeyframeTime(FLUX_ANIM_TRACK_POSITION, 0u,
+		2.0f - (fANIM_TIME_EPSILON * 0.5f), &uIndex);
+
+	ZENITH_ASSERT_FALSE(bOk, "retiming onto an occupied time must FAIL, not merge and not overwrite");
+	ZENITH_ASSERT_EQ(uIndex, 0xFFFFFFFFu, "a refused retime writes no out-index");
+	ZENITH_ASSERT_EQ(xChannel.GetKeyframeCount(FLUX_ANIM_TRACK_POSITION), 3u, "a refused retime destroys no key");
+
+	// BOTH keys — the dragged one and the one it landed on — are untouched, in time
+	// and in value. A merge would have left two keys and the right count.
+	ZENITH_ASSERT_EQ_FLOAT(xChannel.GetPositionKeyframes().Get(0).second, 0.0f, 1e-9f, "the dragged key keeps its time");
+	ZENITH_ASSERT_EQ_FLOAT(xChannel.GetPositionKeyframes().Get(2).second, 2.0f, 1e-9f, "the target key keeps its time");
+	ZENITH_ASSERT_TRUE(RootMotionVec3Equals(xChannel.GetPositionKeyframes().Get(0).first, Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f)),
+		"the dragged key keeps its value");
+	ZENITH_ASSERT_TRUE(RootMotionVec3Equals(xChannel.GetPositionKeyframes().Get(2).first, Zenith_Maths::Vector3(2.0f, 0.0f, 0.0f)),
+		"the target key keeps its value");
+	ZENITH_ASSERT_EQ_FLOAT(MutTangentMarker(xChannel, 0u), 100.0f, 1e-6f, "tangents are untouched by a refusal");
+	ZENITH_ASSERT_EQ_FLOAT(MutTangentMarker(xChannel, 2u), 102.0f, 1e-6f, "tangents are untouched by a refusal");
+	MutAssertTangentsParallel(xChannel, "set-time-refused");
+}
+
+ZENITH_TEST(AnimationMutation, ChannelSetKeyframeTimeResortsAndCarriesTangent)
+{
+	Flux_BoneChannel xChannel;
+	MutBuildProbeChannel(xChannel);
+
+	// Drag the FIRST key (t=0, value (0,0,0), tangent marker 100) past the second.
+	u_int uIndex = 0xFFFFFFFFu;
+	ZENITH_ASSERT_TRUE(xChannel.SetKeyframeTime(FLUX_ANIM_TRACK_POSITION, 0u, 1.5f, &uIndex),
+		"retiming to a free time must succeed");
+	ZENITH_ASSERT_EQ(uIndex, 1u, "the retimed key's NEW index comes back — the undo record has to be able to find it again");
+	ZENITH_ASSERT_EQ(xChannel.GetKeyframeCount(FLUX_ANIM_TRACK_POSITION), 3u, "a retime moves a key, it does not add or drop one");
+	ZENITH_ASSERT_TRUE(MutPositionTrackIsSorted(xChannel), "the track is re-sorted with no SortKeyframes() call");
+
+	ZENITH_ASSERT_EQ_FLOAT(xChannel.GetPositionKeyframes().Get(0).second, 1.0f, 1e-6f, "the untouched key is now first");
+	ZENITH_ASSERT_EQ_FLOAT(xChannel.GetPositionKeyframes().Get(1).second, 1.5f, 1e-6f, "the moved key sits at its new time");
+	ZENITH_ASSERT_TRUE(RootMotionVec3Equals(xChannel.GetPositionKeyframes().Get(1).first, Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f)),
+		"a retime moves the key's VALUE with it — only the time changes");
+
+	// ★ The payload of this test. The tangent must travel with its key, not stay at
+	// the index. Marker 100 belongs to the moved key and must now be at index 1.
+	ZENITH_ASSERT_EQ_FLOAT(MutTangentMarker(xChannel, 0u), 101.0f, 1e-6f, "the t=1 key's tangent is now first");
+	ZENITH_ASSERT_EQ_FLOAT(MutTangentMarker(xChannel, 1u), 100.0f, 1e-6f, "the MOVED key's tangent moved with it");
+	ZENITH_ASSERT_EQ_FLOAT(MutTangentMarker(xChannel, 2u), 102.0f, 1e-6f, "the t=2 key's tangent is unchanged");
+	MutAssertTangentsParallel(xChannel, "set-time-resort");
+}
+
+// D10: a key time must be FINITE and NON-NEGATIVE, and a bad one is REFUSED rather
+// than clamped. NaN is checked separately from +inf because `t < 0` catches neither
+// and `!(t >= 0)` catches only NaN — a validator written either of those two ways
+// alone lets one of them through.
+ZENITH_TEST(AnimationMutation, ChannelMutatorsRejectNonFiniteAndNegativeTimes)
+{
+	Flux_BoneChannel xChannel;
+	MutBuildProbeChannel(xChannel);
+
+	const float fNaN = std::numeric_limits<float>::quiet_NaN();
+	const float fInf = std::numeric_limits<float>::infinity();
+
+	{
+		Zenith_AssertCaptureScope xCapture;
+
+		ZENITH_ASSERT_FALSE(xChannel.InsertKeyframeAt(FLUX_ANIM_TRACK_POSITION, fNaN, Zenith_Maths::Vector3(1.0f)),
+			"a NaN insert time must be refused");
+		ZENITH_ASSERT_EQ(xCapture.GetHitCount(), 1u, "a NaN key time asserts exactly once");
+		xCapture.ResetHitCount();
+
+		ZENITH_ASSERT_FALSE(xChannel.InsertKeyframeAt(FLUX_ANIM_TRACK_POSITION, fInf, Zenith_Maths::Vector3(1.0f)),
+			"a +inf insert time must be refused");
+		ZENITH_ASSERT_EQ(xCapture.GetHitCount(), 1u, "an infinite key time asserts exactly once");
+		xCapture.ResetHitCount();
+
+		ZENITH_ASSERT_FALSE(xChannel.InsertKeyframeAt(FLUX_ANIM_TRACK_POSITION, -0.25f, Zenith_Maths::Vector3(1.0f)),
+			"a negative insert time must be refused, NOT clamped to zero");
+		ZENITH_ASSERT_EQ(xCapture.GetHitCount(), 1u, "a negative key time asserts exactly once");
+		xCapture.ResetHitCount();
+
+		ZENITH_ASSERT_FALSE(xChannel.SetKeyframeTime(FLUX_ANIM_TRACK_POSITION, 1u, fNaN), "a NaN retime must be refused");
+		ZENITH_ASSERT_EQ(xCapture.GetHitCount(), 1u, "a NaN retime asserts exactly once");
+		xCapture.ResetHitCount();
+
+		ZENITH_ASSERT_FALSE(xChannel.SetKeyframeTime(FLUX_ANIM_TRACK_POSITION, 1u, -fInf), "a -inf retime must be refused");
+		ZENITH_ASSERT_EQ(xCapture.GetHitCount(), 1u, "a -inf retime asserts exactly once");
+		xCapture.ResetHitCount();
+
+		ZENITH_ASSERT_FALSE(xChannel.SetKeyframeTime(FLUX_ANIM_TRACK_POSITION, 1u, -3.0f), "a negative retime must be refused");
+		ZENITH_ASSERT_EQ(xCapture.GetHitCount(), 1u, "a negative retime asserts exactly once");
+	}
+
+	// Nothing moved. Every refusal above is total — no partial edit, no clamped key.
+	ZENITH_ASSERT_EQ(xChannel.GetKeyframeCount(FLUX_ANIM_TRACK_POSITION), 3u, "a refused time changes no key count");
+	ZENITH_ASSERT_EQ_FLOAT(xChannel.GetPositionKeyframes().Get(0).second, 0.0f, 1e-9f, "no key was clamped to t=0");
+	ZENITH_ASSERT_EQ_FLOAT(xChannel.GetPositionKeyframes().Get(1).second, 1.0f, 1e-9f, "the targeted key keeps its time");
+	ZENITH_ASSERT_EQ_FLOAT(xChannel.GetPositionKeyframes().Get(2).second, 2.0f, 1e-9f, "no key moved");
+	MutAssertTangentsParallel(xChannel, "rejected-times");
+}
+
+ZENITH_TEST(AnimationMutation, ChannelRemoveKeyframeKeepsTangentsParallel)
+{
+	Flux_BoneChannel xChannel;
+	MutBuildProbeChannel(xChannel);
+
+	// Remove the MIDDLE key: the case that re-pairs every later key with the wrong
+	// tangent if the tangent array is not cut at the same index.
+	ZENITH_ASSERT_TRUE(xChannel.RemoveKeyframe(FLUX_ANIM_TRACK_POSITION, 1u), "removing an in-range key must succeed");
+	ZENITH_ASSERT_EQ(xChannel.GetKeyframeCount(FLUX_ANIM_TRACK_POSITION), 2u, "the key count drops by one");
+	ZENITH_ASSERT_EQ_FLOAT(xChannel.GetPositionKeyframes().Get(0).second, 0.0f, 1e-9f, "the earlier key is untouched");
+	ZENITH_ASSERT_EQ_FLOAT(xChannel.GetPositionKeyframes().Get(1).second, 2.0f, 1e-9f, "the later key closed up");
+	ZENITH_ASSERT_EQ_FLOAT(MutTangentMarker(xChannel, 0u), 100.0f, 1e-6f, "the earlier key keeps its own tangent");
+	ZENITH_ASSERT_EQ_FLOAT(MutTangentMarker(xChannel, 1u), 102.0f, 1e-6f,
+		"the later key keeps ITS OWN tangent — not the removed key's, which is what a key-only removal would leave");
+	MutAssertTangentsParallel(xChannel, "remove-middle");
+
+	{
+		Zenith_AssertCaptureScope xCapture;
+		ZENITH_ASSERT_FALSE(xChannel.RemoveKeyframe(FLUX_ANIM_TRACK_POSITION, 99u), "an out-of-range removal must be refused");
+		ZENITH_ASSERT_EQ(xCapture.GetHitCount(), 1u, "an out-of-range key index asserts exactly once");
+		xCapture.ResetHitCount();
+		ZENITH_ASSERT_FALSE(xChannel.RemoveKeyframe(FLUX_ANIM_TRACK_ROTATION, 1u), "one-past-the-end is out of range too");
+		ZENITH_ASSERT_EQ(xCapture.GetHitCount(), 1u, "one-past-the-end asserts exactly once");
+	}
+	ZENITH_ASSERT_EQ(xChannel.GetKeyframeCount(FLUX_ANIM_TRACK_POSITION), 2u, "a refused removal drops nothing");
+	MutAssertTangentsParallel(xChannel, "remove-refused");
+
+	// Emptying all three tracks is legal at CHANNEL level — the channel simply has no
+	// keys. It is only forbidden INSIDE A CLIP (D14), which the clip tests cover.
+	ZENITH_ASSERT_TRUE(xChannel.RemoveKeyframe(FLUX_ANIM_TRACK_POSITION, 0u), "removal succeeds");
+	ZENITH_ASSERT_TRUE(xChannel.RemoveKeyframe(FLUX_ANIM_TRACK_POSITION, 0u), "removal succeeds");
+	ZENITH_ASSERT_TRUE(xChannel.RemoveKeyframe(FLUX_ANIM_TRACK_ROTATION, 0u), "removal succeeds");
+	ZENITH_ASSERT_TRUE(xChannel.RemoveKeyframe(FLUX_ANIM_TRACK_SCALE,    0u), "removal succeeds");
+	ZENITH_ASSERT_TRUE(xChannel.IsEmpty(), "all three tracks are now empty");
+	MutAssertTangentsParallel(xChannel, "remove-all");
+}
+
+// D15, the accepted half: a rotation value is NORMALIZED on write, on both the
+// revalue and the insert path. A denormalized quaternion reaching the track would
+// scale every pose the slerp produces.
+ZENITH_TEST(AnimationMutation, ChannelRotationValueIsNormalizedOnWrite)
+{
+	Flux_BoneChannel xChannel;
+	MutBuildProbeChannel(xChannel);
+
+	const Zenith_Maths::Quat xUnit = glm::angleAxis(glm::radians(45.0f), Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
+	const Zenith_Maths::Quat xLong(xUnit.w * 3.0f, xUnit.x * 3.0f, xUnit.y * 3.0f, xUnit.z * 3.0f);
+
+	ZENITH_ASSERT_TRUE(xChannel.SetKeyframeValue(FLUX_ANIM_TRACK_ROTATION, 0u, xLong),
+		"a denormalized (but non-degenerate) quaternion is accepted");
+	ZENITH_ASSERT_EQ_FLOAT(glm::length(xChannel.GetRotationKeyframes().Get(0).first), 1.0f, 1e-5f,
+		"the stored rotation key is unit length");
+	ZENITH_ASSERT_TRUE(RootMotionQuatEquals(xChannel.GetRotationKeyframes().Get(0).first, xUnit, 1e-4f),
+		"normalizing must not change the ROTATION, only the length");
+
+	u_int uIndex = 0xFFFFFFFFu;
+	ZENITH_ASSERT_TRUE(xChannel.InsertKeyframeAt(FLUX_ANIM_TRACK_ROTATION, 1.0f, xLong, &uIndex),
+		"the insert path accepts it too");
+	ZENITH_ASSERT_EQ(uIndex, 1u, "the new rotation key lands after the t=0 one");
+	ZENITH_ASSERT_EQ_FLOAT(glm::length(xChannel.GetRotationKeyframes().Get(1).first), 1.0f, 1e-5f,
+		"the INSERTED rotation key is normalized as well — both write paths, not just one");
+	MutAssertTangentsParallel(xChannel, "rotation-normalize");
+}
+
+// D15, the refused half. glm::normalize of a zero-length quaternion is NaN, and one
+// NaN rotation key poisons every pose the clip can produce at every time, through
+// the slerp — so it is refused outright rather than "normalized".
+ZENITH_TEST(AnimationMutation, ChannelRotationRejectsAZeroQuaternion)
+{
+	Flux_BoneChannel xChannel;
+	MutBuildProbeChannel(xChannel);
+
+	const Zenith_Maths::Quat xZero(0.0f, 0.0f, 0.0f, 0.0f);
+	{
+		Zenith_AssertCaptureScope xCapture;
+		ZENITH_ASSERT_FALSE(xChannel.SetKeyframeValue(FLUX_ANIM_TRACK_ROTATION, 0u, xZero),
+			"a zero quaternion must be refused, not normalized into NaN");
+		ZENITH_ASSERT_EQ(xCapture.GetHitCount(), 1u, "a zero quaternion asserts exactly once");
+		xCapture.ResetHitCount();
+
+		ZENITH_ASSERT_FALSE(xChannel.InsertKeyframeAt(FLUX_ANIM_TRACK_ROTATION, 1.0f, xZero),
+			"the insert path refuses it too");
+		ZENITH_ASSERT_EQ(xCapture.GetHitCount(), 1u, "a zero quaternion asserts exactly once on insert");
+	}
+
+	ZENITH_ASSERT_EQ(xChannel.GetKeyframeCount(FLUX_ANIM_TRACK_ROTATION), 1u, "the refused insert added no key");
+	// The existing key is untouched, and is still a real rotation.
+	ZENITH_ASSERT_EQ_FLOAT(glm::length(xChannel.GetRotationKeyframes().Get(0).first), 1.0f, 1e-5f,
+		"the existing rotation key survives the refusal intact");
+	MutAssertTangentsParallel(xChannel, "zero-quaternion");
+}
+
+// The selector enum and the value overload have to AGREE. A Vector3 aimed at the
+// rotation track (or a Quat at position/scale) is a caller bug that no type check
+// can catch — the enum is a runtime value — so it is refused at runtime.
+ZENITH_TEST(AnimationMutation, ChannelTrackSelectorRefusesAMismatchedValueType)
+{
+	Flux_BoneChannel xChannel;
+	MutBuildProbeChannel(xChannel);
+
+	{
+		Zenith_AssertCaptureScope xCapture;
+		ZENITH_ASSERT_FALSE(xChannel.SetKeyframeValue(FLUX_ANIM_TRACK_ROTATION, 0u, Zenith_Maths::Vector3(1.0f)),
+			"a Vector3 aimed at the rotation track is refused");
+		ZENITH_ASSERT_EQ(xCapture.GetHitCount(), 1u, "the mismatch asserts exactly once");
+		xCapture.ResetHitCount();
+
+		ZENITH_ASSERT_FALSE(xChannel.SetKeyframeValue(FLUX_ANIM_TRACK_POSITION, 0u, Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f)),
+			"a Quat aimed at the position track is refused");
+		ZENITH_ASSERT_EQ(xCapture.GetHitCount(), 1u, "the mismatch asserts exactly once");
+		xCapture.ResetHitCount();
+
+		ZENITH_ASSERT_FALSE(xChannel.InsertKeyframeAt(FLUX_ANIM_TRACK_ROTATION, 0.5f, Zenith_Maths::Vector3(1.0f)),
+			"insert refuses a Vector3 on the rotation track");
+		ZENITH_ASSERT_EQ(xCapture.GetHitCount(), 1u, "the mismatch asserts exactly once");
+		xCapture.ResetHitCount();
+
+		ZENITH_ASSERT_FALSE(xChannel.InsertKeyframeAt(FLUX_ANIM_TRACK_SCALE, 0.5f, Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f)),
+			"insert refuses a Quat on the scale track");
+		ZENITH_ASSERT_EQ(xCapture.GetHitCount(), 1u, "the mismatch asserts exactly once");
+	}
+
+	ZENITH_ASSERT_EQ(xChannel.GetKeyframeCount(FLUX_ANIM_TRACK_POSITION), 3u, "no key was added or dropped");
+	ZENITH_ASSERT_EQ(xChannel.GetKeyframeCount(FLUX_ANIM_TRACK_ROTATION), 1u, "no key was added or dropped");
+	ZENITH_ASSERT_EQ(xChannel.GetKeyframeCount(FLUX_ANIM_TRACK_SCALE),    1u, "no key was added or dropped");
+	MutAssertTangentsParallel(xChannel, "track-mismatch");
+}
+
+// ★ D14, and the reason is that THE TWO SAMPLERS DISAGREE about an empty channel.
+// Flux_SkeletonPose::SampleFromClip guards each track with Has*Keyframes() and so
+// leaves the bind pose alone (Flux_BonePose.cpp:190-195, :259-264) — while the
+// direct channel API, Flux_BoneChannel::Sample*(), has no guard and hands back the
+// origin, the identity rotation and unit scale. One empty channel therefore means
+// "not animated" through one door and "authored at the origin" through the other,
+// with a legitimate key count of zero either way. The fix is to have only one
+// representation of "this bone is not animated": no channel.
+//
+// The tail of this test also pins the guard branch it relies on — that a channel is
+// only empty when ALL THREE tracks are, not when one is.
+ZENITH_TEST(AnimationMutation, ClipRemovingTheLastKeyRemovesTheChannel)
+{
+	Flux_AnimationClip xClip;
+	xClip.SetDuration(2.0f);
+
+	{
+		Flux_BoneChannel xSolo;
+		xSolo.AddPositionKeyframe(0.5f, Zenith_Maths::Vector3(1.0f, 2.0f, 3.0f));
+		xSolo.SortKeyframes();
+		xClip.AddBoneChannel("Solo", std::move(xSolo));
+	}
+	{
+		Flux_BoneChannel xPair;
+		xPair.AddPositionKeyframe(0.5f, Zenith_Maths::Vector3(0.0f));
+		xPair.AddRotationKeyframe(0.5f, Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f));
+		xPair.SortKeyframes();
+		xClip.AddBoneChannel("Pair", std::move(xPair));
+	}
+	ZENITH_ASSERT_EQ(xClip.GetBoneChannels().GetSize(), 2u, "both channels start present");
+
+	// A channel with keys on ANOTHER track survives — "empty" means all three.
+	ZENITH_ASSERT_TRUE(xClip.RemoveKeyframe("Pair", FLUX_ANIM_TRACK_POSITION, 0u), "the removal succeeds");
+	ZENITH_ASSERT_TRUE(xClip.HasBoneChannel("Pair"), "a channel still holding a rotation key must NOT be pruned");
+
+	ZENITH_ASSERT_TRUE(xClip.RemoveKeyframe("Pair", FLUX_ANIM_TRACK_ROTATION, 0u), "the removal succeeds");
+	ZENITH_ASSERT_FALSE(xClip.HasBoneChannel("Pair"), "the removal that empties a channel removes the CHANNEL (D14)");
+
+	ZENITH_ASSERT_TRUE(xClip.RemoveKeyframe("Solo", FLUX_ANIM_TRACK_POSITION, 0u), "the removal succeeds");
+	ZENITH_ASSERT_FALSE(xClip.HasBoneChannel("Solo"), "a single-key channel goes in one step");
+	ZENITH_ASSERT_EQ(xClip.GetBoneChannels().GetSize(), 0u, "the clip carries no empty channels");
+
+	// An unknown bone is a no-op refusal, not a crash and not a created channel.
+	ZENITH_ASSERT_FALSE(xClip.RemoveKeyframe("Ghost", FLUX_ANIM_TRACK_POSITION, 0u), "removing from an absent bone is refused");
+	ZENITH_ASSERT_FALSE(xClip.RemoveBoneChannel("Ghost"), "removing an absent channel is refused");
+	ZENITH_ASSERT_EQ(xClip.GetBoneChannels().GetSize(), 0u, "a refusal creates nothing");
+
+	// D12: none of that touched the authored duration.
+	ZENITH_ASSERT_EQ_FLOAT(xClip.GetDuration(), 2.0f, 1e-6f, "removals never recompute the duration");
+}
+
+// The other half of D14: the CHANNEL-level mutator cannot prune, because a channel
+// cannot reach the hash map that owns it. That is not an oversight — it is why
+// PruneEmptyChannel exists as a separate verb for the document layer to call after
+// an edit made through GetBoneChannelMutable.
+ZENITH_TEST(AnimationMutation, ClipPruneEmptyChannelIsTheDocumentsRoute)
+{
+	Flux_AnimationClip xClip;
+	xClip.SetDuration(1.0f);
+
+	Flux_BoneChannel& xNew = xClip.GetOrAddBoneChannel("Elbow");
+	ZENITH_ASSERT_TRUE(xNew.GetBoneName() == "Elbow", "GetOrAddBoneChannel stamps the bone name onto the channel");
+	ZENITH_ASSERT_TRUE(xClip.HasBoneChannel("Elbow"), "the created channel is in the clip");
+	ZENITH_ASSERT_TRUE(xNew.IsEmpty(), "a freshly created channel is empty — the state the caller must resolve");
+	xNew.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(0.0f));
+	xNew.SortKeyframes();
+
+	// A second call must return the SAME channel, not clobber it with a fresh one.
+	ZENITH_ASSERT_EQ(xClip.GetOrAddBoneChannel("Elbow").GetKeyframeCount(FLUX_ANIM_TRACK_POSITION), 1u,
+		"GetOrAddBoneChannel returns the EXISTING channel when the bone already has one");
+
+	ZENITH_ASSERT_FALSE(xClip.PruneEmptyChannel("Elbow"), "a non-empty channel is never pruned");
+	ZENITH_ASSERT_TRUE(xClip.HasBoneChannel("Elbow"), "and it is still there");
+
+	Flux_BoneChannel* pxMutable = xClip.GetBoneChannelMutable("Elbow");
+	ZENITH_ASSERT_NOT_NULL(pxMutable, "the mutable accessor resolves a present bone");
+	ZENITH_ASSERT_TRUE(pxMutable->RemoveKeyframe(FLUX_ANIM_TRACK_POSITION, 0u), "the channel-level removal succeeds");
+	ZENITH_ASSERT_TRUE(xClip.HasBoneChannel("Elbow"),
+		"the CHANNEL-level mutator does not prune — this is the bypass PruneEmptyChannel exists to close");
+
+	ZENITH_ASSERT_TRUE(xClip.PruneEmptyChannel("Elbow"), "the document's prune removes the now-empty channel");
+	ZENITH_ASSERT_FALSE(xClip.HasBoneChannel("Elbow"), "and it is gone");
+	ZENITH_ASSERT_FALSE(xClip.PruneEmptyChannel("Elbow"), "pruning an absent channel is an idempotent false");
+	ZENITH_ASSERT_NULL(xClip.GetBoneChannelMutable("Elbow"), "the mutable accessor returns nullptr for an absent bone");
+
+	// RemoveBoneChannel drops a NON-empty channel outright — the other verb.
+	Flux_BoneChannel& xWrist = xClip.GetOrAddBoneChannel("Wrist");
+	xWrist.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(0.0f));
+	xWrist.SortKeyframes();
+	ZENITH_ASSERT_TRUE(xClip.RemoveBoneChannel("Wrist"), "RemoveBoneChannel drops a channel that still has keys");
+	ZENITH_ASSERT_FALSE(xClip.HasBoneChannel("Wrist"), "and it is gone");
+
+	ZENITH_ASSERT_EQ_FLOAT(xClip.GetDuration(), 1.0f, 1e-6f, "channel mutation never recomputes the duration");
+}
+
+// D12 + D13 together: the duration is AUTHORED and no mutator recomputes it, and a
+// key past the duration is PERMITTED rather than vetoed or clamped. The overrun
+// stays REPORTABLE — Flux_ClipKeyTimesFitDuration still says so — which is what
+// lets the panel warn about it later instead of the mutator silently deciding.
+ZENITH_TEST(AnimationMutation, ClipMutatorsLeaveDurationAuthored)
+{
+	Flux_AnimationClip xClip;
+	xClip.SetDuration(2.0f);
+
+	Flux_BoneChannel& xChannel = xClip.GetOrAddBoneChannel("Root");
+	xChannel.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(0.0f));
+	xChannel.AddPositionKeyframe(1.0f, Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f));
+	xChannel.SortKeyframes();
+	ZENITH_ASSERT_TRUE(Flux_ClipKeyTimesFitDuration(xClip), "the clip starts inside its duration");
+
+	u_int uIndex = 0xFFFFFFFFu;
+	ZENITH_ASSERT_TRUE(xChannel.InsertKeyframeAt(FLUX_ANIM_TRACK_POSITION, 10.0f, Zenith_Maths::Vector3(10.0f, 0.0f, 0.0f), &uIndex),
+		"a key PAST the duration must be permitted (D13)");
+	ZENITH_ASSERT_EQ(uIndex, 2u, "it still lands at its sorted position");
+	ZENITH_ASSERT_EQ_FLOAT(xClip.GetDuration(), 2.0f, 1e-6f, "an insert must not stretch the duration (D12)");
+	ZENITH_ASSERT_FALSE(Flux_ClipKeyTimesFitDuration(xClip),
+		"the overrun stays visible to the key-times/duration helper — permitted is not hidden");
+	ZENITH_ASSERT_EQ_FLOAT(Flux_ClipLastKeyTimeSeconds(xClip), 10.0f, 1e-6f, "the helper names the offending time");
+
+	// The rest of the verbs, same expectation.
+	ZENITH_ASSERT_TRUE(xChannel.SetKeyframeTime(FLUX_ANIM_TRACK_POSITION, 2u, 20.0f), "retiming further past the end is permitted");
+	ZENITH_ASSERT_EQ_FLOAT(xClip.GetDuration(), 2.0f, 1e-6f, "a retime must not stretch the duration");
+	ZENITH_ASSERT_TRUE(xChannel.SetKeyframeValue(FLUX_ANIM_TRACK_POSITION, 0u, Zenith_Maths::Vector3(7.0f, 7.0f, 7.0f)), "revalue succeeds");
+	ZENITH_ASSERT_EQ_FLOAT(xClip.GetDuration(), 2.0f, 1e-6f, "a revalue must not touch the duration");
+	ZENITH_ASSERT_TRUE(xChannel.RemoveKeyframe(FLUX_ANIM_TRACK_POSITION, 0u), "removal succeeds");
+	ZENITH_ASSERT_EQ_FLOAT(xClip.GetDuration(), 2.0f, 1e-6f, "a removal must not SHRINK the duration either");
+	ZENITH_ASSERT_TRUE(xClip.RemoveKeyframe("Root", FLUX_ANIM_TRACK_POSITION, 0u), "the clip-level removal succeeds");
+	ZENITH_ASSERT_EQ_FLOAT(xClip.GetDuration(), 2.0f, 1e-6f, "and the clip-level entry point does not either");
+	MutAssertTangentsParallel(*xClip.GetBoneChannelMutable("Root"), "duration-battery");
+}
+
+// ============================================================================
+// Root motion (D16) — the SAME matrix, on Flux_RootMotion's two delta tracks.
+//
+// ★ ROOT MOTION HAS NO TANGENT ARRAYS, and this unit adds none: doing so would
+// move the .zanim layout, which is out of scope here. So the lockstep assertions
+// above have no counterpart here — the mutators share the channel's implementation
+// and pass no tangent array, which is why the policy cannot drift between the two.
+// ============================================================================
+
+ZENITH_TEST(AnimationMutation, RootMotionInsertAndRemoveMatchChannelPolicy)
+{
+	Flux_RootMotion xRM;
+	xRM.m_bEnabled = true;
+	xRM.m_xPositionDeltas.EmplaceBack(Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f), 0.0f);
+	xRM.m_xPositionDeltas.EmplaceBack(Zenith_Maths::Vector3(2.0f, 0.0f, 0.0f), 2.0f);
+
+	u_int uIndex = 0xFFFFFFFFu;
+	ZENITH_ASSERT_TRUE(xRM.InsertKeyframeAt(FLUX_ANIM_TRACK_POSITION, 1.0f, Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f), &uIndex),
+		"an insert on a free time succeeds");
+	ZENITH_ASSERT_EQ(uIndex, 1u, "the new delta lands at its sorted position");
+	ZENITH_ASSERT_EQ(xRM.GetKeyframeCount(FLUX_ANIM_TRACK_POSITION), 3u, "the key count grew by one");
+	ZENITH_ASSERT_EQ_FLOAT(xRM.m_xPositionDeltas.Get(1).second, 1.0f, 1e-6f, "sorted between the two originals");
+
+	// Replace-on-occupied, through the epsilon rather than an exact compare.
+	ZENITH_ASSERT_TRUE(xRM.InsertKeyframeAt(FLUX_ANIM_TRACK_POSITION, 1.0f + (fANIM_TIME_EPSILON * 0.5f),
+		Zenith_Maths::Vector3(5.0f, 0.0f, 0.0f), &uIndex), "an insert on an occupied time replaces");
+	ZENITH_ASSERT_EQ(uIndex, 1u, "the replaced delta keeps its slot");
+	ZENITH_ASSERT_EQ(xRM.GetKeyframeCount(FLUX_ANIM_TRACK_POSITION), 3u, "a replace must not add a key");
+	ZENITH_ASSERT_TRUE(RootMotionVec3Equals(xRM.m_xPositionDeltas.Get(1).first, Zenith_Maths::Vector3(5.0f, 0.0f, 0.0f)),
+		"the value was replaced");
+
+	// The SAMPLER — untouched by this unit — still reads the mutated track correctly,
+	// which is the property a mutator that left the track unsorted would break.
+	ZENITH_ASSERT_TRUE(RootMotionVec3Equals(xRM.SamplePositionDelta(1.0f), Zenith_Maths::Vector3(5.0f, 0.0f, 0.0f), 1e-4f),
+		"sampling at the mutated key's time returns the mutated value");
+
+	ZENITH_ASSERT_TRUE(xRM.RemoveKeyframe(FLUX_ANIM_TRACK_POSITION, 1u), "removal succeeds");
+	ZENITH_ASSERT_EQ(xRM.GetKeyframeCount(FLUX_ANIM_TRACK_POSITION), 2u, "the key count dropped by one");
+	ZENITH_ASSERT_EQ_FLOAT(xRM.m_xPositionDeltas.Get(1).second, 2.0f, 1e-6f, "the later delta closed up");
+
+	// The rotation delta track normalizes on write, exactly like a bone channel's.
+	const Zenith_Maths::Quat xUnit = glm::angleAxis(glm::radians(30.0f), Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
+	const Zenith_Maths::Quat xLong(xUnit.w * 4.0f, xUnit.x * 4.0f, xUnit.y * 4.0f, xUnit.z * 4.0f);
+	ZENITH_ASSERT_TRUE(xRM.InsertKeyframeAt(FLUX_ANIM_TRACK_ROTATION, 0.0f, xLong, &uIndex), "a rotation delta inserts");
+	ZENITH_ASSERT_EQ(uIndex, 0u, "the first rotation delta lands at index 0");
+	ZENITH_ASSERT_EQ_FLOAT(glm::length(xRM.m_xRotationDeltas.Get(0).first), 1.0f, 1e-5f,
+		"a root-motion rotation delta is normalized on write");
+}
+
+ZENITH_TEST(AnimationMutation, RootMotionSetKeyframeTimeMatchesChannelPolicy)
+{
+	Flux_RootMotion xRM;
+	xRM.m_bEnabled = true;
+	xRM.m_xPositionDeltas.EmplaceBack(Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f), 0.0f);
+	xRM.m_xPositionDeltas.EmplaceBack(Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f), 1.0f);
+	xRM.m_xPositionDeltas.EmplaceBack(Zenith_Maths::Vector3(2.0f, 0.0f, 0.0f), 2.0f);
+
+	// Onto an occupied time: refused, nothing changed. No merge here either.
+	u_int uIndex = 0xFFFFFFFFu;
+	ZENITH_ASSERT_FALSE(xRM.SetKeyframeTime(FLUX_ANIM_TRACK_POSITION, 0u, 1.0f, &uIndex),
+		"retiming a delta onto an occupied time is refused");
+	ZENITH_ASSERT_EQ(uIndex, 0xFFFFFFFFu, "a refused retime writes no out-index");
+	ZENITH_ASSERT_EQ(xRM.GetKeyframeCount(FLUX_ANIM_TRACK_POSITION), 3u, "nothing was merged away");
+	ZENITH_ASSERT_EQ_FLOAT(xRM.m_xPositionDeltas.Get(0).second, 0.0f, 1e-9f, "the dragged delta keeps its time");
+	ZENITH_ASSERT_EQ_FLOAT(xRM.m_xPositionDeltas.Get(1).second, 1.0f, 1e-9f, "the target delta keeps its time");
+
+	// Onto a free time: re-sorted, value carried.
+	ZENITH_ASSERT_TRUE(xRM.SetKeyframeTime(FLUX_ANIM_TRACK_POSITION, 0u, 1.5f, &uIndex), "retiming to a free time succeeds");
+	ZENITH_ASSERT_EQ(uIndex, 1u, "the moved delta's new index comes back");
+	ZENITH_ASSERT_EQ_FLOAT(xRM.m_xPositionDeltas.Get(0).second, 1.0f, 1e-6f, "the untouched delta is now first");
+	ZENITH_ASSERT_EQ_FLOAT(xRM.m_xPositionDeltas.Get(1).second, 1.5f, 1e-6f, "the moved delta sits at its new time");
+	ZENITH_ASSERT_TRUE(RootMotionVec3Equals(xRM.m_xPositionDeltas.Get(1).first, Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f)),
+		"the moved delta carried its VALUE with it");
+
+	ZENITH_ASSERT_TRUE(xRM.SetKeyframeValue(FLUX_ANIM_TRACK_POSITION, 1u, Zenith_Maths::Vector3(9.0f, 9.0f, 9.0f)),
+		"revaluing a delta succeeds");
+	ZENITH_ASSERT_TRUE(RootMotionVec3Equals(xRM.m_xPositionDeltas.Get(1).first, Zenith_Maths::Vector3(9.0f, 9.0f, 9.0f)),
+		"the value was written");
+	ZENITH_ASSERT_EQ_FLOAT(xRM.m_xPositionDeltas.Get(1).second, 1.5f, 1e-9f, "a revalue leaves the TIME alone");
+
+	float fTime = 0.0f;
+	ZENITH_ASSERT_TRUE(xRM.GetKeyframeTime(FLUX_ANIM_TRACK_POSITION, 1u, fTime), "GetKeyframeTime resolves an in-range index");
+	ZENITH_ASSERT_EQ_FLOAT(fTime, 1.5f, 1e-6f, "and reports the moved time");
+	ZENITH_ASSERT_FALSE(xRM.GetKeyframeTime(FLUX_ANIM_TRACK_POSITION, 99u, fTime), "and refuses an out-of-range one");
+	ZENITH_ASSERT_EQ(xRM.FindKeyframeAtTime(FLUX_ANIM_TRACK_POSITION, 1.5f + (fANIM_TIME_EPSILON * 0.5f)), 1u,
+		"FindKeyframeAtTime resolves through the epsilon");
+	ZENITH_ASSERT_EQ(xRM.FindKeyframeAtTime(FLUX_ANIM_TRACK_POSITION, 1.7f), 3u,
+		"and reports the key COUNT when the time is free");
+}
+
+ZENITH_TEST(AnimationMutation, RootMotionRejectsScaleTrackAndBadValues)
+{
+	Flux_RootMotion xRM;
+	xRM.m_bEnabled = true;
+	xRM.m_xPositionDeltas.EmplaceBack(Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f), 0.0f);
+	xRM.m_xRotationDeltas.EmplaceBack(Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f), 0.0f);
+
+	const float fNaN = std::numeric_limits<float>::quiet_NaN();
+	const float fInf = std::numeric_limits<float>::infinity();
+
+	{
+		Zenith_AssertCaptureScope xCapture;
+
+		// There is no third track, and asking for one is a caller bug rather than
+		// something to quietly map onto the position deltas.
+		ZENITH_ASSERT_EQ(xRM.GetKeyframeCount(FLUX_ANIM_TRACK_SCALE), 0u, "root motion has no scale track");
+		ZENITH_ASSERT_EQ(xCapture.GetHitCount(), 1u, "asking for a scale track asserts exactly once");
+		xCapture.ResetHitCount();
+
+		ZENITH_ASSERT_FALSE(xRM.RemoveKeyframe(FLUX_ANIM_TRACK_SCALE, 0u), "removing from the scale track is refused");
+		ZENITH_ASSERT_EQ(xCapture.GetHitCount(), 1u, "and asserts exactly once");
+		xCapture.ResetHitCount();
+
+		ZENITH_ASSERT_FALSE(xRM.InsertKeyframeAt(FLUX_ANIM_TRACK_SCALE, 1.0f, Zenith_Maths::Vector3(1.0f)),
+			"inserting into the scale track is refused");
+		ZENITH_ASSERT_EQ(xCapture.GetHitCount(), 1u, "and asserts exactly once");
+		xCapture.ResetHitCount();
+
+		ZENITH_ASSERT_FALSE(xRM.InsertKeyframeAt(FLUX_ANIM_TRACK_POSITION, fNaN, Zenith_Maths::Vector3(1.0f)),
+			"a NaN delta time is refused");
+		ZENITH_ASSERT_EQ(xCapture.GetHitCount(), 1u, "and asserts exactly once");
+		xCapture.ResetHitCount();
+
+		ZENITH_ASSERT_FALSE(xRM.InsertKeyframeAt(FLUX_ANIM_TRACK_POSITION, -fInf, Zenith_Maths::Vector3(1.0f)),
+			"a -inf delta time is refused");
+		ZENITH_ASSERT_EQ(xCapture.GetHitCount(), 1u, "and asserts exactly once");
+		xCapture.ResetHitCount();
+
+		ZENITH_ASSERT_FALSE(xRM.InsertKeyframeAt(FLUX_ANIM_TRACK_POSITION, -1.0f, Zenith_Maths::Vector3(1.0f)),
+			"a negative delta time is refused, NOT clamped");
+		ZENITH_ASSERT_EQ(xCapture.GetHitCount(), 1u, "and asserts exactly once");
+		xCapture.ResetHitCount();
+
+		const Zenith_Maths::Quat xZero(0.0f, 0.0f, 0.0f, 0.0f);
+		ZENITH_ASSERT_FALSE(xRM.InsertKeyframeAt(FLUX_ANIM_TRACK_ROTATION, 1.0f, xZero),
+			"a zero rotation delta is refused, not normalized into NaN");
+		ZENITH_ASSERT_EQ(xCapture.GetHitCount(), 1u, "and asserts exactly once");
+		xCapture.ResetHitCount();
+
+		ZENITH_ASSERT_FALSE(xRM.SetKeyframeValue(FLUX_ANIM_TRACK_ROTATION, 0u, xZero),
+			"revaluing a rotation delta to zero is refused too");
+		ZENITH_ASSERT_EQ(xCapture.GetHitCount(), 1u, "and asserts exactly once");
+	}
+
+	ZENITH_ASSERT_EQ(xRM.GetKeyframeCount(FLUX_ANIM_TRACK_POSITION), 1u, "no refusal added or dropped a position delta");
+	ZENITH_ASSERT_EQ(xRM.GetKeyframeCount(FLUX_ANIM_TRACK_ROTATION), 1u, "no refusal added or dropped a rotation delta");
+	ZENITH_ASSERT_EQ_FLOAT(glm::length(xRM.m_xRotationDeltas.Get(0).first), 1.0f, 1e-5f,
+		"the surviving rotation delta is still a real rotation");
 }

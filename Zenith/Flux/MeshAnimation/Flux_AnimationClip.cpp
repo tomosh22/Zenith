@@ -3,6 +3,8 @@
 #include "AssetHandling/Zenith_AssetTypeIds.h"
 #include "DataStream/Zenith_StreamEnvelope.h"
 
+#include <cmath>   // std::isfinite / std::abs — the D10 key-time validation
+
 #ifdef ZENITH_TOOLS
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
@@ -174,6 +176,261 @@ void Flux_AnimationClipMetadata::ReadFromDataStream(Zenith_DataStream& xStream)
 }
 
 //=============================================================================
+// WU-1.3 — THE SHARED KEYFRAME-MUTATION MACHINERY.
+//
+// Flux_BoneChannel and Flux_RootMotion hold the SAME shape of track: a
+// Zenith_Vector<std::pair<V, float>> of (value, time-in-seconds) keys. So every
+// policy decision — the epsilon compare (D9), the refusal of a non-finite or
+// negative time (D10), replace-on-occupied and no-merge-on-retime (D11/D25),
+// quaternion normalization (D15) — is implemented EXACTLY ONCE here, and both
+// types dispatch into it.
+//
+// The one real difference is the reserved tangent array (D17): a bone channel has
+// one per track, root motion has none. It is passed as a POINTER, nullable,
+// rather than being handled by two parallel code paths — precisely so the
+// lockstep cannot be forgotten on the side that HAS tangents, which is the whole
+// hazard these helpers exist to remove. Every mutating helper below touches the
+// key array and its tangent array in the same statement pair.
+//=============================================================================
+
+// D10: a key time must be FINITE and NON-NEGATIVE, and a bad one is REFUSED, not
+// clamped. A clamp turns an arithmetic slip in a caller into a key silently parked
+// at t=0 — a real key, at a real time, that nothing downstream can tell from an
+// authored one. Exactly ONE assert fires per rejected time so a unit can pin the
+// count rather than merely "at least one".
+static bool Flux_ValidateKeyTime(float fTimeSeconds, const char* szCaller)
+{
+	if (!std::isfinite(fTimeSeconds))
+	{
+		Zenith_Assert(false, "%s: key time %f is not finite — refused, nothing changed", szCaller, fTimeSeconds);
+		return false;
+	}
+	if (fTimeSeconds < 0.0f)
+	{
+		Zenith_Assert(false, "%s: key time %f is negative — refused, nothing changed", szCaller, fTimeSeconds);
+		return false;
+	}
+	return true;
+}
+
+// D15: a rotation key is normalized ON WRITE, and one too short to have a
+// direction is refused instead. The comparison is written as `!(len >= min)` so a
+// NaN length — a quaternion with a NaN component — falls into the refusal too;
+// `len < min` would let it through.
+static bool Flux_NormalizeRotationForWrite(const Zenith_Maths::Quat& xIn, Zenith_Maths::Quat& xOut, const char* szCaller)
+{
+	const float fLength = glm::length(xIn);
+	if (!(fLength >= fANIM_MIN_QUAT_LENGTH))
+	{
+		Zenith_Assert(false, "%s: rotation quaternion length is %f — refused, normalizing it would produce NaN", szCaller, fLength);
+		return false;
+	}
+	xOut = glm::normalize(xIn);
+	return true;
+}
+
+// The mutators keep a track sorted, but they cannot RECOVER one that arrived
+// unsorted: "where does this time belong" has no answer in an unordered array, and
+// guessing would scatter the keys further. A channel authored with Add*Keyframe
+// and never SortKeyframes()'d is that state, so say so loudly at the first
+// mutation rather than at the first wrong pose.
+template<typename V>
+static void Flux_AssertTrackSorted(const Zenith_Vector<std::pair<V, float>>& xKeys, const char* szCaller)
+{
+	for (u_int u = 1; u < xKeys.GetSize(); ++u)
+	{
+		Zenith_Assert(xKeys.Get(u - 1).second <= xKeys.Get(u).second,
+			"%s: track is not time-sorted (key %u is at %f, after %f) — call SortKeyframes() before mutating a hand-appended channel",
+			szCaller, u, xKeys.Get(u).second, xKeys.Get(u - 1).second);
+	}
+}
+
+// D9: "is there a key here" is an EPSILON question, never `==`. Returns the key
+// count when the time is free.
+template<typename V>
+static u_int Flux_TrackFindAtTime(const Zenith_Vector<std::pair<V, float>>& xKeys, float fTimeSeconds)
+{
+	for (u_int u = 0; u < xKeys.GetSize(); ++u)
+	{
+		if (std::abs(xKeys.Get(u).second - fTimeSeconds) <= fANIM_TIME_EPSILON)
+		{
+			return u;
+		}
+	}
+	return xKeys.GetSize();
+}
+
+// Where a key at fTimeSeconds belongs in a time-sorted track: before the first key
+// strictly later than it.
+template<typename V>
+static u_int Flux_TrackSortedInsertIndex(const Zenith_Vector<std::pair<V, float>>& xKeys, float fTimeSeconds)
+{
+	for (u_int u = 0; u < xKeys.GetSize(); ++u)
+	{
+		if (xKeys.Get(u).second > fTimeSeconds)
+		{
+			return u;
+		}
+	}
+	return xKeys.GetSize();
+}
+
+// Zenith_Vector has PushBack and an order-preserving Remove but no insert-at-index,
+// and a keyframe track is the one place order IS the data. Grow by one, shift the
+// tail right, write the slot.
+//
+// ★ xValue MUST NOT ALIAS xVec. PushBack may reallocate, which would leave a
+// reference into the old buffer dangling before the shift reads it. Every caller
+// here passes a freshly constructed local for exactly that reason.
+template<typename T>
+static void Flux_VectorInsertAt(Zenith_Vector<T>& xVec, u_int uIndex, const T& xValue)
+{
+	Zenith_Assert(uIndex <= xVec.GetSize(), "Flux_VectorInsertAt: index %u past the end (%u)", uIndex, xVec.GetSize());
+	xVec.PushBack(xValue);
+	for (u_int u = xVec.GetSize() - 1u; u > uIndex; --u)
+	{
+		xVec.Get(u) = xVec.Get(u - 1u);
+	}
+	xVec.Get(uIndex) = xValue;
+}
+
+template<typename V>
+static bool Flux_TrackRemove(Zenith_Vector<std::pair<V, float>>& xKeys,
+	Zenith_Vector<Flux_KeyTangents>* pxTangents, u_int uKeyIndex, const char* szCaller)
+{
+	if (uKeyIndex >= xKeys.GetSize())
+	{
+		Zenith_Assert(false, "%s: key index %u out of range (%u keys) — refused, nothing changed", szCaller, uKeyIndex, xKeys.GetSize());
+		return false;
+	}
+
+	xKeys.Remove(uKeyIndex);
+	if (pxTangents != nullptr)
+	{
+		// The two are kept equal by construction, so an inequality here is a bug in
+		// this file rather than in a caller — but dropping the key and keeping the
+		// tangent would silently re-pair EVERY LATER KEY with the wrong tangent, which
+		// nothing that only counts keys could see.
+		Zenith_Assert(uKeyIndex < pxTangents->GetSize(),
+			"%s: tangent array (%u) is shorter than its key array — the D17 lockstep is broken", szCaller, pxTangents->GetSize());
+		if (uKeyIndex < pxTangents->GetSize())
+		{
+			pxTangents->Remove(uKeyIndex);
+		}
+	}
+	return true;
+}
+
+template<typename V>
+static bool Flux_TrackInsertAtTime(Zenith_Vector<std::pair<V, float>>& xKeys,
+	Zenith_Vector<Flux_KeyTangents>* pxTangents,
+	float fTimeSeconds, const V& xValue, u_int* puOutKeyIndex, const char* szCaller)
+{
+	if (!Flux_ValidateKeyTime(fTimeSeconds, szCaller))
+	{
+		return false;
+	}
+	Flux_AssertTrackSorted(xKeys, szCaller);
+
+	// D11/D25: an OCCUPIED time is a REPLACE IN PLACE, not a second key and not a
+	// merge. The key keeps its index slot — so an undo record holding
+	// (bone, track, index) still names the same key afterwards — and keeps its
+	// tangent, so re-dropping a value onto a key does not silently discard curve
+	// authoring the user did on it.
+	const u_int uExisting = Flux_TrackFindAtTime(xKeys, fTimeSeconds);
+	if (uExisting < xKeys.GetSize())
+	{
+		xKeys.Get(uExisting).first = xValue;
+		// ★ The stored TIME is deliberately left alone. The two times are the same
+		// instant to within the epsilon; overwriting would nudge a key that a
+		// snap-to-frame had placed exactly on a boundary by up to fANIM_TIME_EPSILON on
+		// every re-drop, and a drift that small is invisible per edit and cumulative.
+		if (puOutKeyIndex != nullptr) { *puOutKeyIndex = uExisting; }
+		return true;
+	}
+
+	const u_int uInsertAt = Flux_TrackSortedInsertIndex(xKeys, fTimeSeconds);
+	Flux_VectorInsertAt(xKeys, uInsertAt, std::pair<V, float>(xValue, fTimeSeconds));
+	if (pxTangents != nullptr)
+	{
+		Flux_VectorInsertAt(*pxTangents, uInsertAt, Flux_KeyTangents());
+	}
+	if (puOutKeyIndex != nullptr) { *puOutKeyIndex = uInsertAt; }
+	return true;
+}
+
+template<typename V>
+static bool Flux_TrackSetTime(Zenith_Vector<std::pair<V, float>>& xKeys,
+	Zenith_Vector<Flux_KeyTangents>* pxTangents,
+	u_int uKeyIndex, float fNewTimeSeconds, u_int* puOutKeyIndex, const char* szCaller)
+{
+	if (uKeyIndex >= xKeys.GetSize())
+	{
+		Zenith_Assert(false, "%s: key index %u out of range (%u keys) — refused, nothing changed", szCaller, uKeyIndex, xKeys.GetSize());
+		return false;
+	}
+	if (!Flux_ValidateKeyTime(fNewTimeSeconds, szCaller))
+	{
+		return false;
+	}
+	Flux_AssertTrackSorted(xKeys, szCaller);
+
+	// D11: retiming ONTO an occupied time FAILS. It does not merge and it does not
+	// overwrite. This is NOT an assert — a drag that lands on an occupied frame is
+	// ordinary user input, and the caller's job is to reject the drag, not to have
+	// been prevented from attempting it.
+	for (u_int u = 0; u < xKeys.GetSize(); ++u)
+	{
+		if (u == uKeyIndex) { continue; }
+		if (std::abs(xKeys.Get(u).second - fNewTimeSeconds) <= fANIM_TIME_EPSILON)
+		{
+			return false;
+		}
+	}
+
+	// Copies first: both arrays are about to be reshuffled underneath these.
+	const std::pair<V, float> xMovedKey(xKeys.Get(uKeyIndex).first, fNewTimeSeconds);
+	Flux_KeyTangents xMovedTangent;
+	const bool bHasTangent = (pxTangents != nullptr) && (uKeyIndex < pxTangents->GetSize());
+	if (bHasTangent)
+	{
+		xMovedTangent = pxTangents->Get(uKeyIndex);
+	}
+	Zenith_Assert(pxTangents == nullptr || bHasTangent,
+		"%s: tangent array (%u) is shorter than its key array — the D17 lockstep is broken", szCaller, pxTangents != nullptr ? pxTangents->GetSize() : 0u);
+
+	xKeys.Remove(uKeyIndex);
+	if (bHasTangent)
+	{
+		pxTangents->Remove(uKeyIndex);
+	}
+
+	const u_int uInsertAt = Flux_TrackSortedInsertIndex(xKeys, fNewTimeSeconds);
+	Flux_VectorInsertAt(xKeys, uInsertAt, xMovedKey);
+	if (pxTangents != nullptr)
+	{
+		Flux_VectorInsertAt(*pxTangents, uInsertAt, xMovedTangent);
+	}
+	if (puOutKeyIndex != nullptr) { *puOutKeyIndex = uInsertAt; }
+	return true;
+}
+
+// A value replace touches neither the time nor the tangent, so no ordering work
+// and no lockstep work is needed — which is exactly why it takes no tangent array.
+template<typename V>
+static bool Flux_TrackSetValue(Zenith_Vector<std::pair<V, float>>& xKeys,
+	u_int uKeyIndex, const V& xValue, const char* szCaller)
+{
+	if (uKeyIndex >= xKeys.GetSize())
+	{
+		Zenith_Assert(false, "%s: key index %u out of range (%u keys) — refused, nothing changed", szCaller, uKeyIndex, xKeys.GetSize());
+		return false;
+	}
+	xKeys.Get(uKeyIndex).first = xValue;
+	return true;
+}
+
+//=============================================================================
 // Flux_RootMotion
 //=============================================================================
 
@@ -218,6 +475,132 @@ Zenith_Maths::Quat Flux_RootMotion::SampleRotationDelta(float fTime) const
 		Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f),
 		[](const Zenith_Maths::Quat& a, const Zenith_Maths::Quat& b, float t)
 		{ return glm::slerp(a, b, t); });
+}
+
+//-----------------------------------------------------------------------------
+// Flux_RootMotion keyframe mutation (D16).
+//
+// Same verbs, same selector, same policy as Flux_BoneChannel's — and the same
+// implementation, reached with a nullptr tangent array because root motion carries
+// none (see the header). FLUX_ANIM_TRACK_SCALE is refused rather than mapped onto
+// something plausible: a caller that asks a root-motion track for a scale key has
+// a bug, and silently returning the position track would hide it.
+//-----------------------------------------------------------------------------
+u_int Flux_RootMotion::GetKeyframeCount(Flux_AnimTrack eTrack) const
+{
+	switch (eTrack)
+	{
+	case FLUX_ANIM_TRACK_POSITION: return m_xPositionDeltas.GetSize();
+	case FLUX_ANIM_TRACK_ROTATION: return m_xRotationDeltas.GetSize();
+	case FLUX_ANIM_TRACK_SCALE:    break;
+	}
+	Zenith_Assert(false, "Flux_RootMotion::GetKeyframeCount: root motion has no scale track");
+	return 0u;
+}
+
+bool Flux_RootMotion::GetKeyframeTime(Flux_AnimTrack eTrack, u_int uKeyIndex, float& fOutTimeSeconds) const
+{
+	switch (eTrack)
+	{
+	case FLUX_ANIM_TRACK_POSITION:
+		if (uKeyIndex >= m_xPositionDeltas.GetSize()) { return false; }
+		fOutTimeSeconds = m_xPositionDeltas.Get(uKeyIndex).second;
+		return true;
+	case FLUX_ANIM_TRACK_ROTATION:
+		if (uKeyIndex >= m_xRotationDeltas.GetSize()) { return false; }
+		fOutTimeSeconds = m_xRotationDeltas.Get(uKeyIndex).second;
+		return true;
+	case FLUX_ANIM_TRACK_SCALE:
+		break;
+	}
+	Zenith_Assert(false, "Flux_RootMotion::GetKeyframeTime: root motion has no scale track");
+	return false;
+}
+
+u_int Flux_RootMotion::FindKeyframeAtTime(Flux_AnimTrack eTrack, float fTimeSeconds) const
+{
+	switch (eTrack)
+	{
+	case FLUX_ANIM_TRACK_POSITION: return Flux_TrackFindAtTime(m_xPositionDeltas, fTimeSeconds);
+	case FLUX_ANIM_TRACK_ROTATION: return Flux_TrackFindAtTime(m_xRotationDeltas, fTimeSeconds);
+	case FLUX_ANIM_TRACK_SCALE:    break;
+	}
+	Zenith_Assert(false, "Flux_RootMotion::FindKeyframeAtTime: root motion has no scale track");
+	return 0u;
+}
+
+bool Flux_RootMotion::RemoveKeyframe(Flux_AnimTrack eTrack, u_int uKeyIndex)
+{
+	switch (eTrack)
+	{
+	case FLUX_ANIM_TRACK_POSITION: return Flux_TrackRemove(m_xPositionDeltas, nullptr, uKeyIndex, "Flux_RootMotion::RemoveKeyframe(POSITION)");
+	case FLUX_ANIM_TRACK_ROTATION: return Flux_TrackRemove(m_xRotationDeltas, nullptr, uKeyIndex, "Flux_RootMotion::RemoveKeyframe(ROTATION)");
+	case FLUX_ANIM_TRACK_SCALE:    break;
+	}
+	Zenith_Assert(false, "Flux_RootMotion::RemoveKeyframe: root motion has no scale track");
+	return false;
+}
+
+bool Flux_RootMotion::SetKeyframeTime(Flux_AnimTrack eTrack, u_int uKeyIndex, float fNewTimeSeconds, u_int* puOutKeyIndex)
+{
+	switch (eTrack)
+	{
+	case FLUX_ANIM_TRACK_POSITION: return Flux_TrackSetTime(m_xPositionDeltas, nullptr, uKeyIndex, fNewTimeSeconds, puOutKeyIndex, "Flux_RootMotion::SetKeyframeTime(POSITION)");
+	case FLUX_ANIM_TRACK_ROTATION: return Flux_TrackSetTime(m_xRotationDeltas, nullptr, uKeyIndex, fNewTimeSeconds, puOutKeyIndex, "Flux_RootMotion::SetKeyframeTime(ROTATION)");
+	case FLUX_ANIM_TRACK_SCALE:    break;
+	}
+	Zenith_Assert(false, "Flux_RootMotion::SetKeyframeTime: root motion has no scale track");
+	return false;
+}
+
+bool Flux_RootMotion::SetKeyframeValue(Flux_AnimTrack eTrack, u_int uKeyIndex, const Zenith_Maths::Vector3& xValue)
+{
+	if (eTrack == FLUX_ANIM_TRACK_POSITION)
+	{
+		return Flux_TrackSetValue(m_xPositionDeltas, uKeyIndex, xValue, "Flux_RootMotion::SetKeyframeValue(POSITION)");
+	}
+	Zenith_Assert(false, "Flux_RootMotion::SetKeyframeValue: only FLUX_ANIM_TRACK_POSITION takes a Vector3 (rotation takes a Quat, and there is no scale track)");
+	return false;
+}
+
+bool Flux_RootMotion::SetKeyframeValue(Flux_AnimTrack eTrack, u_int uKeyIndex, const Zenith_Maths::Quat& xRotation)
+{
+	if (eTrack != FLUX_ANIM_TRACK_ROTATION)
+	{
+		Zenith_Assert(false, "Flux_RootMotion::SetKeyframeValue: only FLUX_ANIM_TRACK_ROTATION takes a Quat");
+		return false;
+	}
+	Zenith_Maths::Quat xNormalized;
+	if (!Flux_NormalizeRotationForWrite(xRotation, xNormalized, "Flux_RootMotion::SetKeyframeValue(ROTATION)"))
+	{
+		return false;
+	}
+	return Flux_TrackSetValue(m_xRotationDeltas, uKeyIndex, xNormalized, "Flux_RootMotion::SetKeyframeValue(ROTATION)");
+}
+
+bool Flux_RootMotion::InsertKeyframeAt(Flux_AnimTrack eTrack, float fTimeSeconds, const Zenith_Maths::Vector3& xValue, u_int* puOutKeyIndex)
+{
+	if (eTrack == FLUX_ANIM_TRACK_POSITION)
+	{
+		return Flux_TrackInsertAtTime(m_xPositionDeltas, nullptr, fTimeSeconds, xValue, puOutKeyIndex, "Flux_RootMotion::InsertKeyframeAt(POSITION)");
+	}
+	Zenith_Assert(false, "Flux_RootMotion::InsertKeyframeAt: only FLUX_ANIM_TRACK_POSITION takes a Vector3 (rotation takes a Quat, and there is no scale track)");
+	return false;
+}
+
+bool Flux_RootMotion::InsertKeyframeAt(Flux_AnimTrack eTrack, float fTimeSeconds, const Zenith_Maths::Quat& xRotation, u_int* puOutKeyIndex)
+{
+	if (eTrack != FLUX_ANIM_TRACK_ROTATION)
+	{
+		Zenith_Assert(false, "Flux_RootMotion::InsertKeyframeAt: only FLUX_ANIM_TRACK_ROTATION takes a Quat");
+		return false;
+	}
+	Zenith_Maths::Quat xNormalized;
+	if (!Flux_NormalizeRotationForWrite(xRotation, xNormalized, "Flux_RootMotion::InsertKeyframeAt(ROTATION)"))
+	{
+		return false;
+	}
+	return Flux_TrackInsertAtTime(m_xRotationDeltas, nullptr, fTimeSeconds, xNormalized, puOutKeyIndex, "Flux_RootMotion::InsertKeyframeAt(ROTATION)");
 }
 
 void Flux_RootMotion::WriteToDataStream(Zenith_DataStream& xStream) const
@@ -570,6 +953,138 @@ void Flux_BoneChannel::SortKeyframes()
 	Flux_SortKeysWithTangents(m_xScales,    m_xScaleTangents);
 }
 
+//-----------------------------------------------------------------------------
+// Flux_BoneChannel keyframe mutation (WU-1.3). Each verb is a three-way switch
+// that hands the matching key array AND its parallel tangent array to the shared
+// helper above — the two are named on the same line, every time, which is what
+// makes a missed lockstep visible in review rather than only in a pose.
+//-----------------------------------------------------------------------------
+u_int Flux_BoneChannel::GetKeyframeCount(Flux_AnimTrack eTrack) const
+{
+	switch (eTrack)
+	{
+	case FLUX_ANIM_TRACK_POSITION: return m_xPositions.GetSize();
+	case FLUX_ANIM_TRACK_ROTATION: return m_xRotations.GetSize();
+	case FLUX_ANIM_TRACK_SCALE:    return m_xScales.GetSize();
+	}
+	Zenith_Assert(false, "Flux_BoneChannel::GetKeyframeCount: unknown track %d", static_cast<int>(eTrack));
+	return 0u;
+}
+
+bool Flux_BoneChannel::GetKeyframeTime(Flux_AnimTrack eTrack, u_int uKeyIndex, float& fOutTimeSeconds) const
+{
+	switch (eTrack)
+	{
+	case FLUX_ANIM_TRACK_POSITION:
+		if (uKeyIndex >= m_xPositions.GetSize()) { return false; }
+		fOutTimeSeconds = m_xPositions.Get(uKeyIndex).second;
+		return true;
+	case FLUX_ANIM_TRACK_ROTATION:
+		if (uKeyIndex >= m_xRotations.GetSize()) { return false; }
+		fOutTimeSeconds = m_xRotations.Get(uKeyIndex).second;
+		return true;
+	case FLUX_ANIM_TRACK_SCALE:
+		if (uKeyIndex >= m_xScales.GetSize()) { return false; }
+		fOutTimeSeconds = m_xScales.Get(uKeyIndex).second;
+		return true;
+	}
+	Zenith_Assert(false, "Flux_BoneChannel::GetKeyframeTime: unknown track %d", static_cast<int>(eTrack));
+	return false;
+}
+
+u_int Flux_BoneChannel::FindKeyframeAtTime(Flux_AnimTrack eTrack, float fTimeSeconds) const
+{
+	switch (eTrack)
+	{
+	case FLUX_ANIM_TRACK_POSITION: return Flux_TrackFindAtTime(m_xPositions, fTimeSeconds);
+	case FLUX_ANIM_TRACK_ROTATION: return Flux_TrackFindAtTime(m_xRotations, fTimeSeconds);
+	case FLUX_ANIM_TRACK_SCALE:    return Flux_TrackFindAtTime(m_xScales,    fTimeSeconds);
+	}
+	Zenith_Assert(false, "Flux_BoneChannel::FindKeyframeAtTime: unknown track %d", static_cast<int>(eTrack));
+	return 0u;
+}
+
+bool Flux_BoneChannel::RemoveKeyframe(Flux_AnimTrack eTrack, u_int uKeyIndex)
+{
+	switch (eTrack)
+	{
+	case FLUX_ANIM_TRACK_POSITION: return Flux_TrackRemove(m_xPositions, &m_xPositionTangents, uKeyIndex, "Flux_BoneChannel::RemoveKeyframe(POSITION)");
+	case FLUX_ANIM_TRACK_ROTATION: return Flux_TrackRemove(m_xRotations, &m_xRotationTangents, uKeyIndex, "Flux_BoneChannel::RemoveKeyframe(ROTATION)");
+	case FLUX_ANIM_TRACK_SCALE:    return Flux_TrackRemove(m_xScales,    &m_xScaleTangents,    uKeyIndex, "Flux_BoneChannel::RemoveKeyframe(SCALE)");
+	}
+	Zenith_Assert(false, "Flux_BoneChannel::RemoveKeyframe: unknown track %d", static_cast<int>(eTrack));
+	return false;
+}
+
+bool Flux_BoneChannel::SetKeyframeTime(Flux_AnimTrack eTrack, u_int uKeyIndex, float fNewTimeSeconds, u_int* puOutKeyIndex)
+{
+	switch (eTrack)
+	{
+	case FLUX_ANIM_TRACK_POSITION: return Flux_TrackSetTime(m_xPositions, &m_xPositionTangents, uKeyIndex, fNewTimeSeconds, puOutKeyIndex, "Flux_BoneChannel::SetKeyframeTime(POSITION)");
+	case FLUX_ANIM_TRACK_ROTATION: return Flux_TrackSetTime(m_xRotations, &m_xRotationTangents, uKeyIndex, fNewTimeSeconds, puOutKeyIndex, "Flux_BoneChannel::SetKeyframeTime(ROTATION)");
+	case FLUX_ANIM_TRACK_SCALE:    return Flux_TrackSetTime(m_xScales,    &m_xScaleTangents,    uKeyIndex, fNewTimeSeconds, puOutKeyIndex, "Flux_BoneChannel::SetKeyframeTime(SCALE)");
+	}
+	Zenith_Assert(false, "Flux_BoneChannel::SetKeyframeTime: unknown track %d", static_cast<int>(eTrack));
+	return false;
+}
+
+bool Flux_BoneChannel::SetKeyframeValue(Flux_AnimTrack eTrack, u_int uKeyIndex, const Zenith_Maths::Vector3& xValue)
+{
+	switch (eTrack)
+	{
+	case FLUX_ANIM_TRACK_POSITION: return Flux_TrackSetValue(m_xPositions, uKeyIndex, xValue, "Flux_BoneChannel::SetKeyframeValue(POSITION)");
+	case FLUX_ANIM_TRACK_SCALE:    return Flux_TrackSetValue(m_xScales,    uKeyIndex, xValue, "Flux_BoneChannel::SetKeyframeValue(SCALE)");
+	case FLUX_ANIM_TRACK_ROTATION: break;
+	}
+	Zenith_Assert(false, "Flux_BoneChannel::SetKeyframeValue: FLUX_ANIM_TRACK_ROTATION takes a Zenith_Maths::Quat, not a Vector3");
+	return false;
+}
+
+bool Flux_BoneChannel::SetKeyframeValue(Flux_AnimTrack eTrack, u_int uKeyIndex, const Zenith_Maths::Quat& xRotation)
+{
+	if (eTrack != FLUX_ANIM_TRACK_ROTATION)
+	{
+		Zenith_Assert(false, "Flux_BoneChannel::SetKeyframeValue: only FLUX_ANIM_TRACK_ROTATION takes a Zenith_Maths::Quat");
+		return false;
+	}
+	// D15: normalize on write, refuse a quaternion with no direction. Done BEFORE the
+	// index check so a caller passing both a bad quaternion and a bad index gets the
+	// quaternion complaint — it is the one that would have produced NaN.
+	Zenith_Maths::Quat xNormalized;
+	if (!Flux_NormalizeRotationForWrite(xRotation, xNormalized, "Flux_BoneChannel::SetKeyframeValue(ROTATION)"))
+	{
+		return false;
+	}
+	return Flux_TrackSetValue(m_xRotations, uKeyIndex, xNormalized, "Flux_BoneChannel::SetKeyframeValue(ROTATION)");
+}
+
+bool Flux_BoneChannel::InsertKeyframeAt(Flux_AnimTrack eTrack, float fTimeSeconds, const Zenith_Maths::Vector3& xValue, u_int* puOutKeyIndex)
+{
+	switch (eTrack)
+	{
+	case FLUX_ANIM_TRACK_POSITION: return Flux_TrackInsertAtTime(m_xPositions, &m_xPositionTangents, fTimeSeconds, xValue, puOutKeyIndex, "Flux_BoneChannel::InsertKeyframeAt(POSITION)");
+	case FLUX_ANIM_TRACK_SCALE:    return Flux_TrackInsertAtTime(m_xScales,    &m_xScaleTangents,    fTimeSeconds, xValue, puOutKeyIndex, "Flux_BoneChannel::InsertKeyframeAt(SCALE)");
+	case FLUX_ANIM_TRACK_ROTATION: break;
+	}
+	Zenith_Assert(false, "Flux_BoneChannel::InsertKeyframeAt: FLUX_ANIM_TRACK_ROTATION takes a Zenith_Maths::Quat, not a Vector3");
+	return false;
+}
+
+bool Flux_BoneChannel::InsertKeyframeAt(Flux_AnimTrack eTrack, float fTimeSeconds, const Zenith_Maths::Quat& xRotation, u_int* puOutKeyIndex)
+{
+	if (eTrack != FLUX_ANIM_TRACK_ROTATION)
+	{
+		Zenith_Assert(false, "Flux_BoneChannel::InsertKeyframeAt: only FLUX_ANIM_TRACK_ROTATION takes a Zenith_Maths::Quat");
+		return false;
+	}
+	Zenith_Maths::Quat xNormalized;
+	if (!Flux_NormalizeRotationForWrite(xRotation, xNormalized, "Flux_BoneChannel::InsertKeyframeAt(ROTATION)"))
+	{
+		return false;
+	}
+	return Flux_TrackInsertAtTime(m_xRotations, &m_xRotationTangents, fTimeSeconds, xNormalized, puOutKeyIndex, "Flux_BoneChannel::InsertKeyframeAt(ROTATION)");
+}
+
 //=============================================================================
 // Flux_AnimationClip
 //=============================================================================
@@ -646,6 +1161,67 @@ void Flux_AnimationClip::AddBoneChannel(const std::string& strBoneName, Flux_Bon
 {
 	xChannel.SetBoneName(strBoneName);
 	m_xBoneChannels.Emplace(strBoneName, std::move(xChannel));
+}
+
+//-----------------------------------------------------------------------------
+// Channel mutation (WU-1.3). Nothing here reorders anything: channels are written
+// in BONE-NAME order by WriteToDataStream (D5), derived from the data itself, so
+// adding or removing one only has to leave the hash map coherent and determinism
+// follows automatically.
+//-----------------------------------------------------------------------------
+Flux_BoneChannel* Flux_AnimationClip::GetBoneChannelMutable(const std::string& strBoneName)
+{
+	return m_xBoneChannels.TryGet(strBoneName);
+}
+
+Flux_BoneChannel& Flux_AnimationClip::GetOrAddBoneChannel(const std::string& strBoneName)
+{
+	Flux_BoneChannel* pxExisting = m_xBoneChannels.TryGet(strBoneName);
+	if (pxExisting != nullptr)
+	{
+		return *pxExisting;
+	}
+
+	Flux_BoneChannel xChannel;
+	xChannel.SetBoneName(strBoneName);
+	return m_xBoneChannels.Emplace(strBoneName, std::move(xChannel));
+}
+
+bool Flux_AnimationClip::RemoveBoneChannel(const std::string& strBoneName)
+{
+	return m_xBoneChannels.Remove(strBoneName);
+}
+
+bool Flux_AnimationClip::PruneEmptyChannel(const std::string& strBoneName)
+{
+	const Flux_BoneChannel* pxChannel = m_xBoneChannels.TryGet(strBoneName);
+	if (pxChannel == nullptr)
+	{
+		return false;
+	}
+	if (!pxChannel->IsEmpty())
+	{
+		return false;
+	}
+	return m_xBoneChannels.Remove(strBoneName);
+}
+
+bool Flux_AnimationClip::RemoveKeyframe(const std::string& strBoneName, Flux_AnimTrack eTrack, u_int uKeyIndex)
+{
+	Flux_BoneChannel* pxChannel = m_xBoneChannels.TryGet(strBoneName);
+	if (pxChannel == nullptr)
+	{
+		return false;
+	}
+	if (!pxChannel->RemoveKeyframe(eTrack, uKeyIndex))
+	{
+		return false;
+	}
+
+	// D14: the removal that empties a channel removes the CHANNEL. pxChannel may be
+	// destroyed by this call, so nothing below may touch it.
+	PruneEmptyChannel(strBoneName);
+	return true;
 }
 
 void Flux_AnimationClip::WriteToDataStream(Zenith_DataStream& xStream) const

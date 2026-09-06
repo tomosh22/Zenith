@@ -58,6 +58,58 @@ void Flux_WriteKeyTangents(Zenith_DataStream& xStream, const Zenith_Vector<Flux_
 void Flux_ReadKeyTangents (Zenith_DataStream& xStream, Zenith_Vector<Flux_KeyTangents>& xTangents);
 
 //=============================================================================
+// ★ ONE TIME-COMPARISON TOLERANCE FOR EVERY KEYFRAME MUTATION (D9).
+//
+// In SECONDS, on the same clock as every key time and the clip duration. Two key
+// times within fANIM_TIME_EPSILON of each other ARE THE SAME TIME. Nothing below
+// ever compares two key times with `==`: a time that arrives from a pointer drag,
+// from a snap-to-frame and from a serialization round-trip is the same instant
+// expressed three ways, and only one of the three lands on the same bit pattern.
+//
+// 1e-5 s sits ~420x below the finest authorable frame grid (1/240 s ~= 4.2e-3 s),
+// so it can never merge two keys a user placed on adjacent frames; and ~10x ABOVE
+// the float spacing at a key time in a clip of realistic length (2^-20 ~= 9.5e-7 s
+// at t = 10 s), so it can never fail to recognise a key that has been through a
+// file. The lower margin is the tight one, and it is the one to re-derive if a
+// clip ever needs to be minutes long. This is the constant the dope sheet will share —
+// a UI that picked its own hit-test tolerance would disagree with the mutator
+// about whether a slot is occupied, which is the one disagreement that can
+// destroy a key.
+//=============================================================================
+constexpr float fANIM_TIME_EPSILON = 1.0e-5f;
+
+// The shortest quaternion a rotation mutator will accept (D15). A shorter one —
+// the zero quaternion above all — is REFUSED, not normalized: glm::normalize of a
+// zero-length quaternion is NaN, and one NaN rotation key poisons every pose the
+// clip can produce, at every time, through the slerp.
+constexpr float fANIM_MIN_QUAT_LENGTH = 1.0e-6f;
+
+//=============================================================================
+// Which of a channel's key arrays a mutation addresses.
+//
+// ★ ONE SELECTOR ENUM RATHER THAN THREE OVERLOAD FAMILIES, because the layer
+// above addresses a key as (bone, TRACK, keyIndex) and has to store that triple
+// in an undo record. Three families — RemovePositionKeyframe /
+// RemoveRotationKeyframe / RemoveScaleKeyframe — would push a switch over the
+// same three cases into every undo command, at every call site, once per verb.
+//
+// The VALUE, in contrast, is an overload: a position/scale key is a Vector3 and a
+// rotation key is a Quat, and those are different types with no conversion
+// between them, so the compiler picks. Passing a Vector3 with
+// FLUX_ANIM_TRACK_ROTATION (or a Quat with POSITION/SCALE) is refused at runtime
+// with an assert rather than silently reinterpreted.
+//
+// Flux_RootMotion takes the SAME enum (D16) and refuses FLUX_ANIM_TRACK_SCALE —
+// it has a position and a rotation delta track and no third one.
+//=============================================================================
+enum Flux_AnimTrack
+{
+	FLUX_ANIM_TRACK_POSITION,
+	FLUX_ANIM_TRACK_ROTATION,
+	FLUX_ANIM_TRACK_SCALE,
+};
+
+//=============================================================================
 // ★ KEY TIMES ARE SECONDS (D3). EVERY key time in this file — every
 // std::pair<V, float>'s .second, every Add*Keyframe argument, every Sample*()
 // argument — is a time in SECONDS on the same clock as
@@ -156,6 +208,73 @@ public:
 	// usable straight after authoring.
 	float GetLastKeyTimeSeconds() const;
 
+	//-------------------------------------------------------------------------
+	// Keyframe MUTATION (WU-1.3).
+	//
+	// Before these existed the clip was APPEND-ONLY — Add*Keyframe plus
+	// SortKeyframes, three private vectors and const-only getters — so nothing
+	// could remove, retime or revalue a key. An editor needs all three.
+	//
+	// Shared contract, and it holds for every entry point here and on
+	// Flux_RootMotion:
+	//
+	//  • Each returns TRUE only when the clip actually changed. A refusal changes
+	//    NOTHING — no clamp, no merge, no partial edit — so a caller may retry or
+	//    abandon the edit without first reading the state back.
+	//  • The reserved tangent array (D17) is kept exactly parallel: a removal drops
+	//    the matching tangent, an insert adds a zero one at the same index, a retime
+	//    carries the tangent with its key, and a value replace leaves it alone.
+	//  • The track is left TIME-SORTED. There is no SortKeyframes() to remember
+	//    afterwards, and the input is asserted to be sorted going in (a channel
+	//    built with Add*Keyframe and never sorted has no defined insert position).
+	//  • The clip DURATION is never touched (D12), and a key past the duration is
+	//    permitted (D13) — the panel warns about it, the mutator does not veto it.
+	//  • Write order stays deterministic for free (D5): channels are serialized in
+	//    bone-name order by Flux_AnimationClip::WriteToDataStream, so a mutation
+	//    only has to keep the hash map coherent, never an ordering.
+	//-------------------------------------------------------------------------
+
+	u_int GetKeyframeCount(Flux_AnimTrack eTrack) const;
+
+	// The time of one key, in seconds. False (and fOutTimeSeconds untouched) when
+	// the index is out of range.
+	bool GetKeyframeTime(Flux_AnimTrack eTrack, u_int uKeyIndex, float& fOutTimeSeconds) const;
+
+	// The index of the key AT fTimeSeconds — within fANIM_TIME_EPSILON, never an
+	// exact compare (D9) — or GetKeyframeCount(eTrack) when the time is free.
+	u_int FindKeyframeAtTime(Flux_AnimTrack eTrack, float fTimeSeconds) const;
+
+	// Out-of-range index: false + assert. NOTE this does NOT drop an emptied channel
+	// from its clip (a channel cannot reach the map that owns it) — that is D14, and
+	// it lives on Flux_AnimationClip::RemoveKeyframe / PruneEmptyChannel.
+	bool RemoveKeyframe(Flux_AnimTrack eTrack, u_int uKeyIndex);
+
+	// Retime one key. Refused (false, nothing changed) when another key already sits
+	// within fANIM_TIME_EPSILON of fNewTimeSeconds — NO SILENT MERGE (D11/D25), a
+	// merge destroys a key during a drag, which is exactly when a user is least able
+	// to notice. Otherwise the key and its tangent move together to their new sorted
+	// position, reported through puOutKeyIndex.
+	bool SetKeyframeTime(Flux_AnimTrack eTrack, u_int uKeyIndex, float fNewTimeSeconds, u_int* puOutKeyIndex = nullptr);
+
+	// Revalue one key in place; its time, its slot and its tangent are untouched.
+	bool SetKeyframeValue(Flux_AnimTrack eTrack, u_int uKeyIndex, const Zenith_Maths::Vector3& xValue);
+	// The rotation overload NORMALIZES on write and refuses a quaternion shorter
+	// than fANIM_MIN_QUAT_LENGTH (D15).
+	bool SetKeyframeValue(Flux_AnimTrack eTrack, u_int uKeyIndex, const Zenith_Maths::Quat& xRotation);
+
+	// On an OCCUPIED time (within epsilon) this REPLACES that key's value in place,
+	// keeping its index slot, its stored time and its tangent entry; on a free time
+	// it inserts at the sorted position with a zero tangent. Either way the
+	// resulting index comes back through puOutKeyIndex.
+	bool InsertKeyframeAt(Flux_AnimTrack eTrack, float fTimeSeconds, const Zenith_Maths::Vector3& xValue, u_int* puOutKeyIndex = nullptr);
+	bool InsertKeyframeAt(Flux_AnimTrack eTrack, float fTimeSeconds, const Zenith_Maths::Quat& xRotation, u_int* puOutKeyIndex = nullptr);
+
+	// No keys at all, on any of the three tracks — the state D14 says must not survive
+	// inside a clip. See Flux_AnimationClip::RemoveKeyframe for what an empty channel
+	// actually does to each of the two samplers; they do NOT agree, which is half the
+	// reason for getting rid of it.
+	bool IsEmpty() const { return !HasPositionKeyframes() && !HasRotationKeyframes() && !HasScaleKeyframes(); }
+
 private:
 	friend class Flux_AnimationClip;
 
@@ -243,6 +362,29 @@ struct Flux_RootMotion
 	Zenith_Maths::Vector3 SamplePositionDelta(float fTime) const;
 	Zenith_Maths::Quat SampleRotationDelta(float fTime) const;
 
+	//-------------------------------------------------------------------------
+	// Keyframe MUTATION (WU-1.3 / D16) — the SAME verbs, the SAME selector enum
+	// and the SAME policy as Flux_BoneChannel's, on the two delta tracks.
+	// FLUX_ANIM_TRACK_SCALE is refused (false + assert): there is no scale track.
+	//
+	// ★ ROOT MOTION CARRIES NO TANGENTS, and deliberately gains none here. Its two
+	// delta arrays are the same Zenith_Vector<std::pair<V, float>> shape a bone
+	// channel's are, but there is no parallel Flux_KeyTangents array beside them and
+	// none is added — adding one would move the .zanim layout, and this unit changes
+	// no on-disk bytes. The mutators share the bone channel's implementation and
+	// simply pass no tangent array, so the lockstep rule is vacuous here rather than
+	// re-implemented (and therefore cannot drift from it).
+	//-------------------------------------------------------------------------
+	u_int GetKeyframeCount(Flux_AnimTrack eTrack) const;
+	bool  GetKeyframeTime(Flux_AnimTrack eTrack, u_int uKeyIndex, float& fOutTimeSeconds) const;
+	u_int FindKeyframeAtTime(Flux_AnimTrack eTrack, float fTimeSeconds) const;
+	bool  RemoveKeyframe(Flux_AnimTrack eTrack, u_int uKeyIndex);
+	bool  SetKeyframeTime(Flux_AnimTrack eTrack, u_int uKeyIndex, float fNewTimeSeconds, u_int* puOutKeyIndex = nullptr);
+	bool  SetKeyframeValue(Flux_AnimTrack eTrack, u_int uKeyIndex, const Zenith_Maths::Vector3& xValue);
+	bool  SetKeyframeValue(Flux_AnimTrack eTrack, u_int uKeyIndex, const Zenith_Maths::Quat& xRotation);
+	bool  InsertKeyframeAt(Flux_AnimTrack eTrack, float fTimeSeconds, const Zenith_Maths::Vector3& xValue, u_int* puOutKeyIndex = nullptr);
+	bool  InsertKeyframeAt(Flux_AnimTrack eTrack, float fTimeSeconds, const Zenith_Maths::Quat& xRotation, u_int* puOutKeyIndex = nullptr);
+
 	void WriteToDataStream(Zenith_DataStream& xStream) const;
 	void ReadFromDataStream(Zenith_DataStream& xStream);
 };
@@ -296,6 +438,52 @@ public:
 
 	void AddBoneChannel(const std::string& strBoneName, Flux_BoneChannel&& xChannel);
 	void SetDuration(float fDurationSeconds) { m_xMetadata.m_fDuration = fDurationSeconds; }
+
+	//-------------------------------------------------------------------------
+	// Channel MUTATION (WU-1.3). The clip owns the bone-name -> channel map, so
+	// anything that changes WHICH channels exist has to happen here; the per-key
+	// verbs live on Flux_BoneChannel and are reached through the mutable accessor.
+	//-------------------------------------------------------------------------
+
+	// The channel for a bone, WRITABLE, or nullptr when the bone has none. This is
+	// how the document/undo layer reaches Flux_BoneChannel's mutators; before it
+	// existed the only non-const route into a channel was `friend class
+	// Flux_AnimationClip`, which no caller outside this class can use.
+	Flux_BoneChannel* GetBoneChannelMutable(const std::string& strBoneName);
+
+	// As above, creating an empty channel (with its bone name already set) when the
+	// bone has none. ★ The returned channel is EMPTY, which is the one state D14
+	// forbids inside a clip — so a caller that takes this reference and then fails
+	// to add a key has left the clip in that state. Add the key, or call
+	// PruneEmptyChannel on the way out of the edit.
+	Flux_BoneChannel& GetOrAddBoneChannel(const std::string& strBoneName);
+
+	// Drop a bone's channel outright. False when the bone had none.
+	bool RemoveBoneChannel(const std::string& strBoneName);
+
+	// ★ THE D14 ENTRY POINT. Removes one key and, when that leaves the channel with
+	// zero position AND zero rotation AND zero scale keys, removes the CHANNEL from
+	// the clip.
+	//
+	// ★ AN EMPTY CHANNEL IS NOT NEUTRAL, AND THE TWO SAMPLERS DISAGREE ABOUT IT.
+	// Flux_SkeletonPose::SampleFromClip guards each track with Has*Keyframes() and so
+	// leaves the bind pose untouched (Flux_BonePose.cpp) — but the DIRECT channel API,
+	// Flux_BoneChannel::Sample() / SamplePosition() / SampleRotation() / SampleScale(),
+	// has no such guard and returns the origin, the identity rotation and unit scale.
+	// So the same empty channel is invisible through one entry point and an authored
+	// origin pose through the other. Removing it is what makes "this bone is not
+	// animated" have exactly ONE representation — an absent channel — instead of two
+	// that behave differently.
+	//
+	// A caller that mutates through GetBoneChannelMutable() instead bypasses this
+	// (the channel cannot reach the map that owns it) and must call
+	// PruneEmptyChannel itself once the edit is finished.
+	bool RemoveKeyframe(const std::string& strBoneName, Flux_AnimTrack eTrack, u_int uKeyIndex);
+
+	// Remove the named channel IF it is empty. True only when it existed AND was
+	// empty AND has now been removed — so it is safe to call unconditionally after
+	// any edit, and says whether it did anything.
+	bool PruneEmptyChannel(const std::string& strBoneName);
 
 	// Records the grid this clip was imported from / authored on. It does NOT
 	// reinterpret any key time — see m_uTicksPerSecond. Calling it changes nothing a
