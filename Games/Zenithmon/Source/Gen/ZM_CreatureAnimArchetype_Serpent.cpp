@@ -84,7 +84,7 @@ namespace
 		float fSpineAmpBase, float fSpineAmpStep, float fTailAmpBase, float fTailAmpStep,
 		float fHeadAmp, bool bKeyRoot)
 	{
-		const float fTicks = ZM_AnimTicksForT01(1.0f, xOut.GetDuration());
+		const float fClipSeconds = ZM_AnimTimeForT01(1.0f, xOut.GetDuration());
 
 		// Spine vertebrae -- lateral RotZ sine, phase-lagged head->tail. neck (highest
 		// index) leads with zero lag; amplitude grows toward that free neck end.
@@ -93,14 +93,14 @@ namespace
 		{
 			const float fAmp   = fSpineAmpBase + fSpineAmpStep * static_cast<float>(i);
 			const float fPhase = fZM_SERP_PHASE_STEP * static_cast<float>(5u - i);
-			ZM_AnimAddRotCurve(xOut, szZM_SERP_SPINE[i], fTicks, uKeys, [fAmp, fPhase, fFreq](float fT)
+			ZM_AnimAddRotCurve(xOut, szZM_SERP_SPINE[i], fClipSeconds, uKeys, [fAmp, fPhase, fFreq](float fT)
 			{
 				return ZM_AnimRotZ(fAmp * sinf(fT * fZM_SERP_TWO_PI * fFreq + fPhase));
 			});
 		}
 
 		// Head: gentle lateral sway continuing the wave (near-zero lag) + a slow look drift.
-		ZM_AnimAddRotCurve(xOut, szZM_SERP_HEAD, fTicks, uKeys, [fHeadAmp, fFreq](float fT)
+		ZM_AnimAddRotCurve(xOut, szZM_SERP_HEAD, fClipSeconds, uKeys, [fHeadAmp, fFreq](float fT)
 		{
 			const float fP = fT * fZM_SERP_TWO_PI * fFreq;
 			return ZM_AnimRotCompose(ZM_AnimRotZ(fHeadAmp * sinf(fP)), ZM_AnimRotY(0.5f * fHeadAmp * sinf(fP + 0.5f)));
@@ -111,7 +111,7 @@ namespace
 		{
 			const float fAmp   = fTailAmpBase + fTailAmpStep * static_cast<float>(t);
 			const float fPhase = fZM_SERP_PHASE_STEP * static_cast<float>(6u + t);
-			ZM_AnimAddRotCurve(xOut, szZM_SERP_TAIL[t], fTicks, uKeys, [fAmp, fPhase, fFreq](float fT)
+			ZM_AnimAddRotCurve(xOut, szZM_SERP_TAIL[t], fClipSeconds, uKeys, [fAmp, fPhase, fFreq](float fT)
 			{
 				return ZM_AnimRotZ(fAmp * sinf(fT * fZM_SERP_TWO_PI * fFreq + fPhase));
 			});
@@ -144,11 +144,11 @@ namespace
 	{
 		const Zenith_Maths::Quat xId = ZM_SerpId();
 		const ZM_AnimRotKey ax[] = {
-			{ ZM_AnimTicksForT01(0.00f, fD), xId },
-			{ ZM_AnimTicksForT01(0.22f, fD), ZM_AnimRotX(fAnticip) },
-			{ ZM_AnimTicksForT01(0.50f, fD), ZM_AnimRotX(fStrike)  },
-			{ ZM_AnimTicksForT01(0.74f, fD), ZM_AnimRotX(fFollow)  },
-			{ ZM_AnimTicksForT01(1.00f, fD), xId },
+			{ ZM_AnimTimeForT01(0.00f, fD), xId },
+			{ ZM_AnimTimeForT01(0.22f, fD), ZM_AnimRotX(fAnticip) },
+			{ ZM_AnimTimeForT01(0.50f, fD), ZM_AnimRotX(fStrike)  },
+			{ ZM_AnimTimeForT01(0.74f, fD), ZM_AnimRotX(fFollow)  },
+			{ ZM_AnimTimeForT01(1.00f, fD), xId },
 		};
 		ZM_AnimAddRotKeys(xOut, szBone, ax, 5u);
 	}
@@ -160,11 +160,11 @@ namespace
 	{
 		const Zenith_Maths::Quat xId = ZM_SerpId();
 		const ZM_AnimRotKey ax[] = {
-			{ ZM_AnimTicksForT01(0.00f, fD), xId },
-			{ ZM_AnimTicksForT01(0.35f, fD), ZM_AnimRotX(fRear)  },
-			{ ZM_AnimTicksForT01(0.55f, fD), ZM_AnimRotX(fHold)  },
-			{ ZM_AnimTicksForT01(0.80f, fD), ZM_AnimRotX(fLunge) },
-			{ ZM_AnimTicksForT01(1.00f, fD), xId },
+			{ ZM_AnimTimeForT01(0.00f, fD), xId },
+			{ ZM_AnimTimeForT01(0.35f, fD), ZM_AnimRotX(fRear)  },
+			{ ZM_AnimTimeForT01(0.55f, fD), ZM_AnimRotX(fHold)  },
+			{ ZM_AnimTimeForT01(0.80f, fD), ZM_AnimRotX(fLunge) },
+			{ ZM_AnimTimeForT01(1.00f, fD), xId },
 		};
 		ZM_AnimAddRotKeys(xOut, szBone, ax, 5u);
 	}
@@ -175,10 +175,10 @@ namespace
 	{
 		const Zenith_Maths::Quat xId = ZM_SerpId();
 		const ZM_AnimRotKey ax[] = {
-			{ ZM_AnimTicksForT01(0.00f, fD), xId },
-			{ ZM_AnimTicksForT01(0.25f, fD), ZM_AnimRotZ(fJolt) },
-			{ ZM_AnimTicksForT01(0.55f, fD), ZM_AnimRotZ(fOver) },
-			{ ZM_AnimTicksForT01(1.00f, fD), xId },
+			{ ZM_AnimTimeForT01(0.00f, fD), xId },
+			{ ZM_AnimTimeForT01(0.25f, fD), ZM_AnimRotZ(fJolt) },
+			{ ZM_AnimTimeForT01(0.55f, fD), ZM_AnimRotZ(fOver) },
+			{ ZM_AnimTimeForT01(1.00f, fD), xId },
 		};
 		ZM_AnimAddRotKeys(xOut, szBone, ax, 4u);
 	}
@@ -219,19 +219,19 @@ namespace
 		// Brow horns flare outward as a threat display (opposite RotZ so both splay
 		// out), then settle. This horn-flare is the Special signature.
 		const ZM_AnimRotKey axHornL[] = {
-			{ ZM_AnimTicksForT01(0.00f, fD), xId },
-			{ ZM_AnimTicksForT01(0.35f, fD), ZM_AnimRotZ(28.0f) },
-			{ ZM_AnimTicksForT01(0.55f, fD), ZM_AnimRotZ(32.0f) },
-			{ ZM_AnimTicksForT01(0.80f, fD), ZM_AnimRotZ(10.0f) },
-			{ ZM_AnimTicksForT01(1.00f, fD), xId },
+			{ ZM_AnimTimeForT01(0.00f, fD), xId },
+			{ ZM_AnimTimeForT01(0.35f, fD), ZM_AnimRotZ(28.0f) },
+			{ ZM_AnimTimeForT01(0.55f, fD), ZM_AnimRotZ(32.0f) },
+			{ ZM_AnimTimeForT01(0.80f, fD), ZM_AnimRotZ(10.0f) },
+			{ ZM_AnimTimeForT01(1.00f, fD), xId },
 		};
 		ZM_AnimAddRotKeys(xOut, szZM_SERP_HORN[0], axHornL, 5u);
 		const ZM_AnimRotKey axHornR[] = {
-			{ ZM_AnimTicksForT01(0.00f, fD), xId },
-			{ ZM_AnimTicksForT01(0.35f, fD), ZM_AnimRotZ(-28.0f) },
-			{ ZM_AnimTicksForT01(0.55f, fD), ZM_AnimRotZ(-32.0f) },
-			{ ZM_AnimTicksForT01(0.80f, fD), ZM_AnimRotZ(-10.0f) },
-			{ ZM_AnimTicksForT01(1.00f, fD), xId },
+			{ ZM_AnimTimeForT01(0.00f, fD), xId },
+			{ ZM_AnimTimeForT01(0.35f, fD), ZM_AnimRotZ(-28.0f) },
+			{ ZM_AnimTimeForT01(0.55f, fD), ZM_AnimRotZ(-32.0f) },
+			{ ZM_AnimTimeForT01(0.80f, fD), ZM_AnimRotZ(-10.0f) },
+			{ ZM_AnimTimeForT01(1.00f, fD), xId },
 		};
 		ZM_AnimAddRotKeys(xOut, szZM_SERP_HORN[1], axHornR, 5u);
 	}
@@ -254,10 +254,10 @@ namespace
 
 		// Head snap: lateral jolt composed with a small backward pitch, then settle.
 		const ZM_AnimRotKey axHead[] = {
-			{ ZM_AnimTicksForT01(0.00f, fD), xId },
-			{ ZM_AnimTicksForT01(0.25f, fD), ZM_AnimRotCompose(ZM_AnimRotZ(-22.0f), ZM_AnimRotX(-8.0f)) },
-			{ ZM_AnimTicksForT01(0.55f, fD), ZM_AnimRotZ(6.0f) },
-			{ ZM_AnimTicksForT01(1.00f, fD), xId },
+			{ ZM_AnimTimeForT01(0.00f, fD), xId },
+			{ ZM_AnimTimeForT01(0.25f, fD), ZM_AnimRotCompose(ZM_AnimRotZ(-22.0f), ZM_AnimRotX(-8.0f)) },
+			{ ZM_AnimTimeForT01(0.55f, fD), ZM_AnimRotZ(6.0f) },
+			{ ZM_AnimTimeForT01(1.00f, fD), xId },
 		};
 		ZM_AnimAddRotKeys(xOut, szZM_SERP_HEAD, axHead, 4u);
 	}
@@ -274,10 +274,10 @@ namespace
 		const float fD = xOut.GetDuration();
 		const Zenith_Maths::Quat xId = ZM_SerpId();
 
-		const float fT0 = ZM_AnimTicksForT01(0.00f, fD);
-		const float fT1 = ZM_AnimTicksForT01(0.40f, fD);
-		const float fT2 = ZM_AnimTicksForT01(0.70f, fD);
-		const float fT3 = ZM_AnimTicksForT01(1.00f, fD);
+		const float fT0 = ZM_AnimTimeForT01(0.00f, fD);
+		const float fT1 = ZM_AnimTimeForT01(0.40f, fD);
+		const float fT2 = ZM_AnimTimeForT01(0.70f, fD);
+		const float fT3 = ZM_AnimTimeForT01(1.00f, fD);
 
 		// Whole spine chain folds + leans, monotonically; fold grows toward the neck.
 		for (u_int i = 0; i < 6u; ++i)

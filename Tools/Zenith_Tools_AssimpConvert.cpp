@@ -320,6 +320,12 @@ aiNode* ZenithToAssimp(const Zenith_SkeletonAsset* pxSkeleton)
 //=============================================================================
 // Bone Channel: ZenithToAssimp
 //=============================================================================
+// ★ KEY TIMES COME OUT OF HERE IN SECONDS, NOT TICKS. A Flux_BoneChannel stores
+// seconds (D3) and this converter copies them straight across; the CLIP-level
+// ZenithToAssimp below rescales every key by the clip's ticks-per-second, because
+// only it knows that rate. Calling this overload on its own therefore yields an
+// aiNodeAnim on a 1-tick-per-second grid — fine when the enclosing aiAnimation says
+// so, wrong if it says anything else.
 aiNodeAnim* ZenithToAssimp(const Flux_BoneChannel& xChannel, const std::string& strBoneName)
 {
 	aiNodeAnim* pxOut = new aiNodeAnim();
@@ -370,12 +376,47 @@ aiNodeAnim* ZenithToAssimp(const Flux_BoneChannel& xChannel, const std::string& 
 //=============================================================================
 // Animation: ZenithToAssimp
 //=============================================================================
+// Scale every key time on an aiNodeAnim from SECONDS onto the enclosing
+// aiAnimation's tick grid. Assimp's key times are ticks by definition, so this is
+// where a Zenith clip's seconds are put back on the source format's clock.
+static void AnimKeyTimesSecondsToTicks(aiNodeAnim* pxChannel, double dTicksPerSecond)
+{
+	if (pxChannel == nullptr)
+	{
+		return;
+	}
+	for (uint32_t i = 0; i < pxChannel->mNumPositionKeys; i++)
+	{
+		pxChannel->mPositionKeys[i].mTime *= dTicksPerSecond;
+	}
+	for (uint32_t i = 0; i < pxChannel->mNumRotationKeys; i++)
+	{
+		pxChannel->mRotationKeys[i].mTime *= dTicksPerSecond;
+	}
+	for (uint32_t i = 0; i < pxChannel->mNumScalingKeys; i++)
+	{
+		pxChannel->mScalingKeys[i].mTime *= dTicksPerSecond;
+	}
+}
+
 aiAnimation* ZenithToAssimp(const Flux_AnimationClip* pxClip)
 {
 	aiAnimation* pxOut = new aiAnimation();
 	pxOut->mName = aiString(pxClip->GetName().c_str());
-	pxOut->mDuration = pxClip->GetDurationInTicks();
-	pxOut->mTicksPerSecond = pxClip->GetTicksPerSecond();
+
+	// m_uTicksPerSecond is import provenance (D3): the grid the source file used. An
+	// export puts the clip back on it, which is the one place that field is still
+	// load-bearing. Guard the degenerate 0 rather than emitting an all-zero timeline.
+	const double dTicksPerSecond = (pxClip->GetTicksPerSecond() != 0u)
+		? static_cast<double>(pxClip->GetTicksPerSecond())
+		: 1.0;
+	pxOut->mTicksPerSecond = dTicksPerSecond;
+
+	// The clip's duration is SECONDS; aiAnimation::mDuration is ticks. This used to
+	// read GetDurationInTicks(), which did exactly this multiply inside the clip —
+	// and thereby gave the clip a second, tick-shaped notion of its own length that
+	// callers with nothing to do with Assimp reached for. The multiply belongs here.
+	pxOut->mDuration = static_cast<double>(pxClip->GetDuration()) * dTicksPerSecond;
 
 	const Zenith_HashMap<std::string, Flux_BoneChannel>& xChannels = pxClip->GetBoneChannels();
 	pxOut->mNumChannels = static_cast<uint32_t>(xChannels.GetSize());
@@ -387,7 +428,9 @@ aiAnimation* ZenithToAssimp(const Flux_AnimationClip* pxClip)
 		uint32_t uIdx = 0;
 		for (Zenith_HashMap<std::string, Flux_BoneChannel>::Iterator xIt(xChannels); !xIt.Done(); xIt.Next())
 		{
-			pxOut->mChannels[uIdx++] = ZenithToAssimp(xIt.GetValue(), xIt.GetKey());
+			aiNodeAnim* pxChannel = ZenithToAssimp(xIt.GetValue(), xIt.GetKey());
+			AnimKeyTimesSecondsToTicks(pxChannel, dTicksPerSecond);
+			pxOut->mChannels[uIdx++] = pxChannel;
 		}
 	}
 

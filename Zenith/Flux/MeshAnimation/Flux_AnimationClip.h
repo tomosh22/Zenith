@@ -58,6 +58,24 @@ void Flux_WriteKeyTangents(Zenith_DataStream& xStream, const Zenith_Vector<Flux_
 void Flux_ReadKeyTangents (Zenith_DataStream& xStream, Zenith_Vector<Flux_KeyTangents>& xTangents);
 
 //=============================================================================
+// ★ KEY TIMES ARE SECONDS (D3). EVERY key time in this file — every
+// std::pair<V, float>'s .second, every Add*Keyframe argument, every Sample*()
+// argument — is a time in SECONDS on the same clock as
+// Flux_AnimationClipMetadata::m_fDuration.
+//
+// They used to be TICKS: the channel stored aiVectorKey::mTime unconverted and
+// Flux_SkeletonPose::SampleFromClip multiplied the incoming wall-clock seconds by
+// the clip's ticks-per-second on the way in. That made a clip carry two clocks —
+// a duration in seconds beside keys in ticks — and every generator, test and
+// consumer had to remember which one it was holding. m_uTicksPerSecond survives
+// as IMPORT PROVENANCE only (below); nothing multiplies or divides by it while
+// sampling.
+//
+// Flux_AnimationEvent::m_fNormalizedTime is NOT part of this (D4) — an event time
+// is a [0,1] fraction of the clip and stays one.
+//=============================================================================
+
+//=============================================================================
 // Animation Event
 // Callback triggered at specific times during animation playback
 //=============================================================================
@@ -80,16 +98,20 @@ class Flux_BoneChannel
 public:
 	Flux_BoneChannel() = default;
 #ifdef ZENITH_TOOLS
-	Flux_BoneChannel(const aiNodeAnim* pxChannel);
+	// dSourceTicksPerSecond is the SOURCE file's tick rate (aiAnimation::mTicksPerSecond,
+	// already defaulted by the caller when the file said 0). Assimp key times are ticks;
+	// this constructor DIVIDES by it so what lands in the channel is seconds. It is a
+	// required argument rather than a default so an import path cannot forget it.
+	Flux_BoneChannel(const aiNodeAnim* pxChannel, double dSourceTicksPerSecond);
 #endif
 
-	// Sample the channel at a specific time, returns local bone transform
-	Zenith_Maths::Matrix4 Sample(float fTime) const;
+	// Sample the channel at a specific time IN SECONDS, returns local bone transform
+	Zenith_Maths::Matrix4 Sample(float fTimeSeconds) const;
 
-	// Sample individual components
-	Zenith_Maths::Vector3 SamplePosition(float fTime) const;
-	Zenith_Maths::Quat SampleRotation(float fTime) const;
-	Zenith_Maths::Vector3 SampleScale(float fTime) const;
+	// Sample individual components at a time IN SECONDS
+	Zenith_Maths::Vector3 SamplePosition(float fTimeSeconds) const;
+	Zenith_Maths::Quat SampleRotation(float fTimeSeconds) const;
+	Zenith_Maths::Vector3 SampleScale(float fTimeSeconds) const;
 
 	const std::string& GetBoneName() const { return m_strBoneName; }
 
@@ -121,19 +143,26 @@ public:
 	// Programmatic keyframe construction (for procedural animations/tests)
 	//-------------------------------------------------------------------------
 
+	// fTimeSeconds is SECONDS on the clip's own clock — the same clock
+	// Flux_AnimationClip::SetDuration takes. NOT frames, NOT ticks.
 	void SetBoneName(const std::string& strName) { m_strBoneName = strName; }
-	void AddPositionKeyframe(float fTimeTicks, const Zenith_Maths::Vector3& xPosition);
-	void AddRotationKeyframe(float fTimeTicks, const Zenith_Maths::Quat& xRotation);
-	void AddScaleKeyframe(float fTimeTicks, const Zenith_Maths::Vector3& xScale);
+	void AddPositionKeyframe(float fTimeSeconds, const Zenith_Maths::Vector3& xPosition);
+	void AddRotationKeyframe(float fTimeSeconds, const Zenith_Maths::Quat& xRotation);
+	void AddScaleKeyframe(float fTimeSeconds, const Zenith_Maths::Vector3& xScale);
 	void SortKeyframes();
+
+	// The LATEST authored key time across all three channels, in seconds, or 0 when
+	// the channel is empty. Keys need not be sorted — this takes the max, so it is
+	// usable straight after authoring.
+	float GetLastKeyTimeSeconds() const;
 
 private:
 	friend class Flux_AnimationClip;
 
 	// Find keyframe indices for interpolation
-	uint32_t GetPositionIndex(float fTime) const;
-	uint32_t GetRotationIndex(float fTime) const;
-	uint32_t GetScaleIndex(float fTime) const;
+	uint32_t GetPositionIndex(float fTimeSeconds) const;
+	uint32_t GetRotationIndex(float fTimeSeconds) const;
+	uint32_t GetScaleIndex(float fTimeSeconds) const;
 
 	// Calculate interpolation factor between keyframes
 	float GetScaleFactor(float fLastTime, float fNextTime, float fAnimTime) const;
@@ -158,15 +187,25 @@ struct Flux_AnimationClipMetadata
 {
 	std::string m_strName;           // "Run", "Walk", "Idle", etc.
 	float m_fDuration = 0.0f;        // Total duration in seconds
-	uint32_t m_uTicksPerSecond = 24; // Animation sample rate
+
+	// ★ IMPORT PROVENANCE ONLY (D3). The tick rate of the FILE this clip was imported
+	// from — what aiAnimation::mTicksPerSecond said, so a re-export to Assimp/glTF can
+	// put the key times back on the source's own grid. NOTHING SAMPLES THROUGH IT:
+	// key times are already seconds by the time they reach a channel, and
+	// Flux_SkeletonPose::SampleFromClip no longer multiplies by it. A procedurally
+	// generated clip may set it to whatever grid it authored on, or leave it at 24 —
+	// the pose it produces is identical either way, which is exactly the property the
+	// Null-backend units pin.
+	uint32_t m_uTicksPerSecond = 24;
+
 	bool m_bLooping = true;          // Does this clip loop?
 	float m_fBlendInTime = 0.15f;    // Default blend-in duration
 	float m_fBlendOutTime = 0.15f;   // Default blend-out duration
 
 	// D6: the frame rate the clip was AUTHORED at, in frames per second. This is
 	// editorial intent (what a key grid snaps to, what a re-bake should resample to)
-	// and is deliberately NOT m_uTicksPerSecond, which is the tick->second divisor the
-	// keyframe timestamps are already expressed in.
+	// and is deliberately NOT m_uTicksPerSecond, which is the SOURCE FILE's tick rate
+	// kept as import provenance (see above). Neither one is applied to a key time.
 	uint32_t m_uAuthoredFrameRate = 30;
 
 	// D7: the RIG this clip animates, and a model to preview it on. Both are asset
@@ -234,7 +273,14 @@ public:
 	void SetName(const std::string& strName) { m_xMetadata.m_strName = strName; }
 
 	float GetDuration() const { return m_xMetadata.m_fDuration; }
-	float GetDurationInTicks() const { return m_xMetadata.m_fDuration * m_xMetadata.m_uTicksPerSecond; }
+
+	// ★ THERE IS NO GetDurationInTicks(). It was a SECOND authority on the clip's
+	// length, expressed in the one unit no key time is in any more; every caller of
+	// it was sampling with a tick number. Sample with GetDuration() — seconds.
+	//
+	// The one legitimate consumer is a re-export to a tick-based file format, which
+	// wants `GetDuration() * GetTicksPerSecond()` written at the call site where the
+	// tick grid is visible (see Tools/Zenith_Tools_AssimpConvert.cpp).
 	uint32_t GetTicksPerSecond() const { return m_xMetadata.m_uTicksPerSecond; }
 	bool IsLooping() const { return m_xMetadata.m_bLooping; }
 	void SetLooping(bool bLooping) { m_xMetadata.m_bLooping = bLooping; }
@@ -250,6 +296,10 @@ public:
 
 	void AddBoneChannel(const std::string& strBoneName, Flux_BoneChannel&& xChannel);
 	void SetDuration(float fDurationSeconds) { m_xMetadata.m_fDuration = fDurationSeconds; }
+
+	// Records the grid this clip was imported from / authored on. It does NOT
+	// reinterpret any key time — see m_uTicksPerSecond. Calling it changes nothing a
+	// sampler can observe.
 	void SetTicksPerSecond(uint32_t uTicksPerSecond) { m_xMetadata.m_uTicksPerSecond = uTicksPerSecond; }
 
 	// Events
@@ -281,6 +331,29 @@ private:
 	Flux_RootMotion m_xRootMotion;
 	std::string m_strSourcePath;
 };
+
+//=============================================================================
+// Key-time / duration agreement (D3).
+//
+// Now that a key time and a duration are in the SAME unit, "the last key lands at
+// or before the end of the clip" is a checkable property — and it is exactly the
+// property a generator loses when it authors on one grid and states its length on
+// another. Before D3 the two were incomparable, which is why nothing checked it
+// and why a 24x error could sit in a generator with every unit green.
+//
+// Both are pure and allocation-free, so a generator may assert with them at bake
+// time and a headless unit may assert with them on the same clip.
+//=============================================================================
+
+// The latest key time in the clip, across every channel and all three key arrays,
+// in seconds. Zero for a clip with no keys.
+float Flux_ClipLastKeyTimeSeconds(const Flux_AnimationClip& xClip);
+
+// True when every authored key time lies in [-fEpsilonSeconds, duration + fEpsilonSeconds].
+// A clip with no channels is vacuously true; a clip with a non-positive duration is
+// FALSE when it carries any key past the epsilon, because that is the shape a
+// forgotten SetDuration leaves behind.
+bool Flux_ClipKeyTimesFitDuration(const Flux_AnimationClip& xClip, float fEpsilonSeconds = 1.0e-4f);
 
 //=============================================================================
 // Animation Clip Collection

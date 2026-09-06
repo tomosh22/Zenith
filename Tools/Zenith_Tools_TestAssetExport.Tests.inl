@@ -14,8 +14,11 @@
 // sampled values to pin spec-matching behavior. Each test owns the clip it
 // constructs and deletes it before returning.
 //
-// Note: Flux_BoneChannel::SampleRotation takes time in TICKS, not seconds.
-// All clips use 24 ticks/second.
+// Note: Flux_BoneChannel::SampleRotation takes time in SECONDS (D3) — the same
+// clock as Flux_AnimationClip::GetDuration. The clips are AUTHORED on a 24 fps
+// frame grid, so a test that wants "the pose at frame N" says
+// HumanFrameSeconds(N) rather than N. It used to say N, because the channel
+// stored ticks and the sampler multiplied wall-clock seconds by 24 on the way in.
 // ============================================================================
 
 namespace
@@ -61,16 +64,17 @@ void Zenith_UnitTests::TestStickFigureAimClipRightArmRotation()
 	const Flux_BoneChannel* pxCh = pxClip->GetBoneChannel("RightUpperArm");
 	ZENITH_ASSERT_TRUE(pxCh != nullptr, "Aim should have RightUpperArm channel");
 
-	// Sample at the end (12 ticks) — should be the aim hold pose.
+	// Sample at the end (authored frame 12 = 0.5 s, the clip duration) — should be
+	// the aim hold pose.
 	const Zenith_Maths::Quat xExpected = StickFigureAimHoldPose::RightUpperArm();
-	const Zenith_Maths::Quat xSample = pxCh->SampleRotation(12.0f);
+	const Zenith_Maths::Quat xSample = pxCh->SampleRotation(HumanFrameSeconds(12.0f));
 	ZENITH_ASSERT_TRUE(StickFigureQuatEquals(xSample, xExpected),
-		"Aim RightUpperArm at t=12 ticks should match aim hold pose");
+		"Aim RightUpperArm at the clip end should match aim hold pose");
 
-	// And at the start (t=0 ticks) — same pose, since it's a stable hold.
+	// And at the start (t=0 s) — same pose, since it's a stable hold.
 	const Zenith_Maths::Quat xStart = pxCh->SampleRotation(0.0f);
 	ZENITH_ASSERT_TRUE(StickFigureQuatEquals(xStart, xExpected),
-		"Aim RightUpperArm at t=0 ticks should also match aim hold pose (stable hold)");
+		"Aim RightUpperArm at t=0 should also match aim hold pose (stable hold)");
 	delete pxClip;
 }
 
@@ -114,13 +118,13 @@ void Zenith_UnitTests::TestStickFigureFireClipPeakRecoil()
 	const Flux_BoneChannel* pxCh = pxClip->GetBoneChannel("RightUpperArm");
 	ZENITH_ASSERT_TRUE(pxCh != nullptr, "Fire should have RightUpperArm channel");
 
-	// At peak (t=2 ticks) the right upper arm should have +15deg X-axis recoil
-	// stacked on top of the aim hold pose.
+	// At peak (authored frame 2 = 1/12 s) the right upper arm should have +15deg
+	// X-axis recoil stacked on top of the aim hold pose.
 	const Zenith_Maths::Quat xKick = glm::angleAxis(glm::radians(15.0f), Zenith_Maths::Vector3(1, 0, 0))
 	                                * StickFigureAimHoldPose::RightUpperArm();
-	const Zenith_Maths::Quat xSample = pxCh->SampleRotation(2.0f);
+	const Zenith_Maths::Quat xSample = pxCh->SampleRotation(HumanFrameSeconds(2.0f));
 	ZENITH_ASSERT_TRUE(StickFigureQuatEquals(xSample, xKick),
-		"Fire RightUpperArm at t=2 ticks should be aim pose + 15deg X recoil");
+		"Fire RightUpperArm at the recoil peak should be aim pose + 15deg X recoil");
 	delete pxClip;
 }
 

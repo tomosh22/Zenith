@@ -460,17 +460,25 @@ Zenith_MeshAsset* CreateTreeLeavesMesh(const Zenith_Vector<TreeBranch>& xGraph, 
 // Sway animation — layered-sine rotations about wind-perpendicular axes,
 // amplitude growing with branch depth, per-branch phase offsets. 4-second
 // loop with matching first/last keys.
+//
+// Key times are SECONDS (D3), on the same clock as SetDuration: 0..4, spread over
+// 17 keys (one every 0.25 s). They used to be ticks — 0..120 at 30/s — which read
+// as a 4-second clip whose last key was at t=120 s beside a duration of 4.
 //=============================================================================
+// ONE constant feeds both the duration and the key spread, so the two cannot drift.
+constexpr float fSWAY_TOTAL_SECONDS = 4.0f;
+
 Flux_AnimationClip* CreateTreeSwayClipFromGraph(const Zenith_Vector<TreeBranch>& xGraph)
 {
 	Flux_AnimationClip* pxClip = new Flux_AnimationClip();
 	pxClip->SetName("Sway");
-	pxClip->SetDuration(4.0f);
+	pxClip->SetDuration(fSWAY_TOTAL_SECONDS);
+	// Provenance only: the 30 fps grid this curve was authored on. Nothing samples
+	// through it (D3).
 	pxClip->SetTicksPerSecond(30);
 	pxClip->SetLooping(true);
 
-	constexpr u_int uKEYS = 17;            // every 7.5 ticks across 120 ticks
-	constexpr float fTOTAL_TICKS = 120.0f;
+	constexpr u_int uKEYS = 17;            // every 0.25 s across the 4 s loop
 
 	for (u_int uB = 0; uB < xGraph.GetSize(); uB++)
 	{
@@ -491,7 +499,7 @@ Flux_AnimationClip* CreateTreeSwayClipFromGraph(const Zenith_Vector<TreeBranch>&
 			const Zenith_Maths::Quat xRot =
 				glm::angleAxis(fAngle, Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f)) *
 				glm::angleAxis(fAngle * 0.4f, Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f));
-			xChannel.AddRotationKeyframe(fT * fTOTAL_TICKS, xRot);
+			xChannel.AddRotationKeyframe(fT * fSWAY_TOTAL_SECONDS, xRot);
 		}
 		xChannel.SortKeyframes();
 		pxClip->AddBoneChannel(xB.m_strBoneName, std::move(xChannel));

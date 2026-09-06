@@ -535,7 +535,7 @@ whole story:
   PARENT-LOCAL positions) -> cards skinned wholly to their branch bone (weight
   exactly 1 -- an unskinned vertex bakes frozen while its neighbours sway, which
   is very visible and has a dedicated unit) -> per-bone rotation clip with
-  keyframe times in **TICKS** (0..120, not 0..4 seconds) ->
+  keyframe times in **SECONDS** (0..4 s; ticks were retired by WU-1.2 of the Animation Editor plan) ->
   `Zenith_Tools_CreateFluxMeshGeometry` (the SKINNED converter --
   `CreateStaticFluxMeshGeometry` drops the bone lanes and the bake would have
   nothing to deform) -> `Flux_AnimationTexture::BakeFromAnimations`.

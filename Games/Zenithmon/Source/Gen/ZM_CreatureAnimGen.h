@@ -43,8 +43,14 @@
 // future disk-bake manifest self-invalidates stale clips.
 constexpr u_int uZM_CREATUREANIMGEN_VERSION = 1u;
 
-// Authored keyframe sample rate. Duration is stored in SECONDS but keyframe
-// times are in TICKS; tick = t01 * durationSeconds * ticksPerSecond. GOLDEN.
+// The grid these clips were AUTHORED on, stamped onto every generated clip as
+// Flux_AnimationClipMetadata::m_uTicksPerSecond. GOLDEN (a change is a re-bake).
+//
+// ★ NOTHING DIVIDES OR MULTIPLIES BY IT ANY MORE (D3). Duration AND keyframe times
+// are both SECONDS: time = t01 * durationSeconds, via ZM_AnimTimeForT01. This
+// constant used to be a real unit conversion on every key
+// (tick = t01 * durationSeconds * 24) with the sampler undoing it; it is now pure
+// provenance, kept because .zanim round-trips it and ZM_ValidateCreatureClip pins it.
 constexpr u_int uZM_CREATURE_ANIM_TICKS_PER_SECOND = 24u;
 
 // ---------------------------------------------------------------------------
@@ -121,6 +127,9 @@ u_int ZM_CreatureClipContentHash(const Flux_AnimationClip& xClip);
 // dead channel) is caught. m_bLoopClosesIfLooping is only meaningful (and only
 // computed) when bLooping; it is left true otherwise so m_bAllValid stays a plain
 // AND of the rest.
+//
+// m_bKeyTimesFitDuration (D3) is the unit gate: it is what would have caught a
+// builder still authoring key times on the 24-ticks-per-second grid.
 // ---------------------------------------------------------------------------
 struct ZM_CreatureClipValidation
 {
@@ -129,8 +138,9 @@ struct ZM_CreatureClipValidation
 	bool m_bAllChannelsHaveRotKeys = false; // every channel has rotation keyframes
 	bool m_bRotationsFinite       = false;  // every authored quat is finite AND ~unit-length
 	bool m_bDurationPositive      = false;  // duration (seconds) > 0
-	bool m_bTicksPerSecondPinned  = false;  // ticks-per-second == 24
-	bool m_bLoopClosesIfLooping   = false;  // (looping only) per channel rot(t=0) ~= rot(t=durationTicks)
+	bool m_bTicksPerSecondPinned  = false;  // authoring-grid provenance == 24
+	bool m_bKeyTimesFitDuration   = false;  // D3: every key time in [0, duration] seconds
+	bool m_bLoopClosesIfLooping   = false;  // (looping only) per channel rot(t=0) ~= rot(t=duration)
 	bool m_bAllValid              = false;   // AND of the above
 	char m_szFirstBadBone[uZM_GEN_BONE_NAME_MAX] = {};   // first channel name not in the skeleton
 };

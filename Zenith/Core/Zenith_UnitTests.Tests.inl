@@ -4086,16 +4086,16 @@ static Zenith_Maths::Vector3 ComputeBindPosePosition(
 	return xResult;
 }
 
-// Helper: Apply animation at specific time (in seconds) and compute skinning matrices
+// Helper: Apply animation at specific time (in seconds) and compute skinning matrices.
+// ★ NO UNIT CONVERSION (D3): a channel's key times are seconds, so the wall-clock
+// time goes straight in. This used to multiply by pxClip->GetTicksPerSecond(), and
+// so was a hand-rolled copy of the conversion Flux_SkeletonPose::SampleFromClip did.
 static void ApplyAnimationAtTime(
 	Flux_SkeletonInstance* pxSkelInst,
 	const Zenith_SkeletonAsset* pxSkelAsset,
 	const Flux_AnimationClip* pxClip,
 	float fTimeSeconds)
 {
-	// Convert time from seconds to ticks (keyframes are stored in ticks)
-	float fTimeInTicks = fTimeSeconds * pxClip->GetTicksPerSecond();
-
 	for (uint32_t i = 0; i < pxSkelAsset->GetNumBones(); i++)
 	{
 		const Zenith_SkeletonAsset::Bone& xBone = pxSkelAsset->GetBone(i);
@@ -4103,9 +4103,9 @@ static void ApplyAnimationAtTime(
 		if (pxChannel)
 		{
 			pxSkelInst->SetBoneLocalTransform(i,
-				pxChannel->SamplePosition(fTimeInTicks),
-				pxChannel->SampleRotation(fTimeInTicks),
-				pxChannel->SampleScale(fTimeInTicks));
+				pxChannel->SamplePosition(fTimeSeconds),
+				pxChannel->SampleRotation(fTimeSeconds),
+				pxChannel->SampleScale(fTimeSeconds));
 		}
 		else
 		{
@@ -4431,15 +4431,17 @@ static Flux_AnimationClip* CreateIdleAnimation()
 	Flux_AnimationClip* pxClip = new Flux_AnimationClip();
 	pxClip->SetName("Idle");
 	pxClip->SetDuration(2.0f);
+	// Provenance only: the grid this fixture was authored on (D3). Sampling ignores it.
 	pxClip->SetTicksPerSecond(24);
 	pxClip->SetLooping(true);
 
-	// Spine breathing motion
+	// Spine breathing motion. Key times are SECONDS across the 2 s duration; they
+	// used to be the same three instants expressed as ticks (0 / 24 / 48).
 	{
 		Flux_BoneChannel xChannel;
 		xChannel.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(0, 0.5f, 0));
-		xChannel.AddPositionKeyframe(24.0f, Zenith_Maths::Vector3(0, 0.52f, 0));
-		xChannel.AddPositionKeyframe(48.0f, Zenith_Maths::Vector3(0, 0.5f, 0));
+		xChannel.AddPositionKeyframe(1.0f, Zenith_Maths::Vector3(0, 0.52f, 0));
+		xChannel.AddPositionKeyframe(2.0f, Zenith_Maths::Vector3(0, 0.5f, 0));
 		xChannel.SortKeyframes();
 		pxClip->AddBoneChannel("Spine", std::move(xChannel));
 	}
@@ -4455,6 +4457,8 @@ static Flux_AnimationClip* CreateWalkAnimation()
 	Flux_AnimationClip* pxClip = new Flux_AnimationClip();
 	pxClip->SetName("Walk");
 	pxClip->SetDuration(1.0f);
+	// Provenance only (D3): key times below are SECONDS across the 1 s cycle
+	// (0 / 0.25 / 0.5 / 0.75 / 1.0), not the ticks (0 / 6 / 12 / 18 / 24) they were.
 	pxClip->SetTicksPerSecond(24);
 	pxClip->SetLooping(true);
 
@@ -4465,10 +4469,10 @@ static Flux_AnimationClip* CreateWalkAnimation()
 	{
 		Flux_BoneChannel xChannel;
 		xChannel.AddRotationKeyframe(0.0f, glm::angleAxis(glm::radians(30.0f), xXAxis));
-		xChannel.AddRotationKeyframe(6.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.AddRotationKeyframe(12.0f, glm::angleAxis(glm::radians(-30.0f), xXAxis));
-		xChannel.AddRotationKeyframe(18.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.AddRotationKeyframe(24.0f, glm::angleAxis(glm::radians(30.0f), xXAxis));
+		xChannel.AddRotationKeyframe(0.25f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(0.5f, glm::angleAxis(glm::radians(-30.0f), xXAxis));
+		xChannel.AddRotationKeyframe(0.75f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(1.0f, glm::angleAxis(glm::radians(30.0f), xXAxis));
 		xChannel.SortKeyframes();
 		pxClip->AddBoneChannel("LeftUpperLeg", std::move(xChannel));
 	}
@@ -4477,10 +4481,10 @@ static Flux_AnimationClip* CreateWalkAnimation()
 	{
 		Flux_BoneChannel xChannel;
 		xChannel.AddRotationKeyframe(0.0f, glm::angleAxis(glm::radians(-30.0f), xXAxis));
-		xChannel.AddRotationKeyframe(6.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.AddRotationKeyframe(12.0f, glm::angleAxis(glm::radians(30.0f), xXAxis));
-		xChannel.AddRotationKeyframe(18.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.AddRotationKeyframe(24.0f, glm::angleAxis(glm::radians(-30.0f), xXAxis));
+		xChannel.AddRotationKeyframe(0.25f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(0.5f, glm::angleAxis(glm::radians(30.0f), xXAxis));
+		xChannel.AddRotationKeyframe(0.75f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(1.0f, glm::angleAxis(glm::radians(-30.0f), xXAxis));
 		xChannel.SortKeyframes();
 		pxClip->AddBoneChannel("RightUpperLeg", std::move(xChannel));
 	}
@@ -4489,10 +4493,10 @@ static Flux_AnimationClip* CreateWalkAnimation()
 	{
 		Flux_BoneChannel xChannel;
 		xChannel.AddRotationKeyframe(0.0f, glm::angleAxis(glm::radians(-20.0f), xXAxis));
-		xChannel.AddRotationKeyframe(6.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.AddRotationKeyframe(12.0f, glm::angleAxis(glm::radians(20.0f), xXAxis));
-		xChannel.AddRotationKeyframe(18.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.AddRotationKeyframe(24.0f, glm::angleAxis(glm::radians(-20.0f), xXAxis));
+		xChannel.AddRotationKeyframe(0.25f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(0.5f, glm::angleAxis(glm::radians(20.0f), xXAxis));
+		xChannel.AddRotationKeyframe(0.75f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(1.0f, glm::angleAxis(glm::radians(-20.0f), xXAxis));
 		xChannel.SortKeyframes();
 		pxClip->AddBoneChannel("LeftUpperArm", std::move(xChannel));
 	}
@@ -4501,10 +4505,10 @@ static Flux_AnimationClip* CreateWalkAnimation()
 	{
 		Flux_BoneChannel xChannel;
 		xChannel.AddRotationKeyframe(0.0f, glm::angleAxis(glm::radians(20.0f), xXAxis));
-		xChannel.AddRotationKeyframe(6.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.AddRotationKeyframe(12.0f, glm::angleAxis(glm::radians(-20.0f), xXAxis));
-		xChannel.AddRotationKeyframe(18.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.AddRotationKeyframe(24.0f, glm::angleAxis(glm::radians(20.0f), xXAxis));
+		xChannel.AddRotationKeyframe(0.25f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(0.5f, glm::angleAxis(glm::radians(-20.0f), xXAxis));
+		xChannel.AddRotationKeyframe(0.75f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(1.0f, glm::angleAxis(glm::radians(20.0f), xXAxis));
 		xChannel.SortKeyframes();
 		pxClip->AddBoneChannel("RightUpperArm", std::move(xChannel));
 	}
@@ -4520,6 +4524,8 @@ static Flux_AnimationClip* CreateRunAnimation()
 	Flux_AnimationClip* pxClip = new Flux_AnimationClip();
 	pxClip->SetName("Run");
 	pxClip->SetDuration(0.5f);
+	// Provenance only (D3): key times below are SECONDS across the 0.5 s cycle
+	// (0 / 0.125 / 0.25 / 0.375 / 0.5), not the ticks (0 / 3 / 6 / 9 / 12) they were.
 	pxClip->SetTicksPerSecond(24);
 	pxClip->SetLooping(true);
 
@@ -4530,10 +4536,10 @@ static Flux_AnimationClip* CreateRunAnimation()
 	{
 		Flux_BoneChannel xChannel;
 		xChannel.AddRotationKeyframe(0.0f, glm::angleAxis(glm::radians(45.0f), xXAxis));
-		xChannel.AddRotationKeyframe(3.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.AddRotationKeyframe(6.0f, glm::angleAxis(glm::radians(-45.0f), xXAxis));
-		xChannel.AddRotationKeyframe(9.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.AddRotationKeyframe(12.0f, glm::angleAxis(glm::radians(45.0f), xXAxis));
+		xChannel.AddRotationKeyframe(0.125f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(0.25f, glm::angleAxis(glm::radians(-45.0f), xXAxis));
+		xChannel.AddRotationKeyframe(0.375f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(0.5f, glm::angleAxis(glm::radians(45.0f), xXAxis));
 		xChannel.SortKeyframes();
 		pxClip->AddBoneChannel("LeftUpperLeg", std::move(xChannel));
 	}
@@ -4542,10 +4548,10 @@ static Flux_AnimationClip* CreateRunAnimation()
 	{
 		Flux_BoneChannel xChannel;
 		xChannel.AddRotationKeyframe(0.0f, glm::angleAxis(glm::radians(-45.0f), xXAxis));
-		xChannel.AddRotationKeyframe(3.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.AddRotationKeyframe(6.0f, glm::angleAxis(glm::radians(45.0f), xXAxis));
-		xChannel.AddRotationKeyframe(9.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.AddRotationKeyframe(12.0f, glm::angleAxis(glm::radians(-45.0f), xXAxis));
+		xChannel.AddRotationKeyframe(0.125f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(0.25f, glm::angleAxis(glm::radians(45.0f), xXAxis));
+		xChannel.AddRotationKeyframe(0.375f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(0.5f, glm::angleAxis(glm::radians(-45.0f), xXAxis));
 		xChannel.SortKeyframes();
 		pxClip->AddBoneChannel("RightUpperLeg", std::move(xChannel));
 	}
@@ -4554,10 +4560,10 @@ static Flux_AnimationClip* CreateRunAnimation()
 	{
 		Flux_BoneChannel xChannel;
 		xChannel.AddRotationKeyframe(0.0f, glm::angleAxis(glm::radians(-35.0f), xXAxis));
-		xChannel.AddRotationKeyframe(3.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.AddRotationKeyframe(6.0f, glm::angleAxis(glm::radians(35.0f), xXAxis));
-		xChannel.AddRotationKeyframe(9.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.AddRotationKeyframe(12.0f, glm::angleAxis(glm::radians(-35.0f), xXAxis));
+		xChannel.AddRotationKeyframe(0.125f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(0.25f, glm::angleAxis(glm::radians(35.0f), xXAxis));
+		xChannel.AddRotationKeyframe(0.375f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(0.5f, glm::angleAxis(glm::radians(-35.0f), xXAxis));
 		xChannel.SortKeyframes();
 		pxClip->AddBoneChannel("LeftUpperArm", std::move(xChannel));
 	}
@@ -4566,10 +4572,10 @@ static Flux_AnimationClip* CreateRunAnimation()
 	{
 		Flux_BoneChannel xChannel;
 		xChannel.AddRotationKeyframe(0.0f, glm::angleAxis(glm::radians(35.0f), xXAxis));
-		xChannel.AddRotationKeyframe(3.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.AddRotationKeyframe(6.0f, glm::angleAxis(glm::radians(-35.0f), xXAxis));
-		xChannel.AddRotationKeyframe(9.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.AddRotationKeyframe(12.0f, glm::angleAxis(glm::radians(35.0f), xXAxis));
+		xChannel.AddRotationKeyframe(0.125f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(0.25f, glm::angleAxis(glm::radians(-35.0f), xXAxis));
+		xChannel.AddRotationKeyframe(0.375f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(0.5f, glm::angleAxis(glm::radians(35.0f), xXAxis));
 		xChannel.SortKeyframes();
 		pxClip->AddBoneChannel("RightUpperArm", std::move(xChannel));
 	}
@@ -6428,16 +6434,20 @@ void Zenith_UnitTests::TestStickFigureIdleAnimation(){
 	const Flux_BoneChannel* pxSpineChannel = pxClip->GetBoneChannel("Spine");
 	ZENITH_ASSERT_NOT_NULL(pxSpineChannel, "Spine channel should exist");
 
-	// t=0: position should be (0, 0.5, 0)
+	// ★ SAMPLED IN SECONDS (D3). The three instants are unchanged — 0 s, 1 s and
+	// 0.5 s of a 2 s clip — but they are now spelled the way the clock reads
+	// instead of as the tick counts 0 / 24 / 12 the channel used to hold.
+	//
+	// t=0 s: position should be (0, 0.5, 0)
 	Zenith_Maths::Vector3 xPos0 = pxSpineChannel->SamplePosition(0.0f);
 	ZENITH_ASSERT_TRUE(Vec3Equals(xPos0, Zenith_Maths::Vector3(0, 0.5f, 0), 0.01f), "Spine position at t=0 mismatch");
 
-	// t=24 ticks (1 second): position should be (0, 0.52, 0)
-	Zenith_Maths::Vector3 xPos1 = pxSpineChannel->SamplePosition(24.0f);
+	// t=1 s (the middle key): position should be (0, 0.52, 0)
+	Zenith_Maths::Vector3 xPos1 = pxSpineChannel->SamplePosition(1.0f);
 	ZENITH_ASSERT_TRUE(Vec3Equals(xPos1, Zenith_Maths::Vector3(0, 0.52f, 0), 0.01f), "Spine position at t=1s mismatch");
 
-	// t=12 ticks (0.5 seconds): position should be interpolated to (0, 0.51, 0)
-	Zenith_Maths::Vector3 xPos05 = pxSpineChannel->SamplePosition(12.0f);
+	// t=0.5 s: halfway into the first segment, interpolated to (0, 0.51, 0)
+	Zenith_Maths::Vector3 xPos05 = pxSpineChannel->SamplePosition(0.5f);
 	ZENITH_ASSERT_TRUE(Vec3Equals(xPos05, Zenith_Maths::Vector3(0, 0.51f, 0), 0.01f), "Spine position at t=0.5s mismatch");
 
 
@@ -6822,11 +6832,13 @@ void Zenith_UnitTests::TestStickFigureIKWithAnimation(){
 	Flux_IKChain xLeftLeg = Flux_IKSolver::CreateLegChain("LeftLeg", "LeftUpperLeg", "LeftLowerLeg", "LeftFoot");
 	xSolver.AddChain(xLeftLeg);
 
-	// Sample walk animation at mid-stride
+	// Sample walk animation at mid-stride. SampleFromClip takes WALL-CLOCK SECONDS
+	// and the 1 s Walk cycle's midpoint is 0.5 s; this used to pre-multiply by
+	// GetTicksPerSecond() because the sampler then divided the work the other way.
 	Flux_SkeletonPose xAnimPose;
 	xAnimPose.Initialize(STICK_BONE_COUNT);
-	float fMidStride = 0.5f * pxWalkClip->GetTicksPerSecond(); // 12 ticks
-	xAnimPose.SampleFromClip(*pxWalkClip, fMidStride, *pxSkel);
+	const float fMidStrideSeconds = 0.5f * pxWalkClip->GetDuration();
+	xAnimPose.SampleFromClip(*pxWalkClip, fMidStrideSeconds, *pxSkel);
 
 
 	// Set IK target
@@ -14691,7 +14703,10 @@ void Zenith_UnitTests::TestTransitionCompletionFramePose(){
 	Flux_AnimationClip* pxClipA = new Flux_AnimationClip();
 	pxClipA->SetName("ClipA");
 	pxClipA->SetDuration(1.0f);
-	pxClipA->SetTicksPerSecond(1);
+	// (These two clips used to call SetTicksPerSecond(1) so that "ticks" and seconds
+	// were numerically the same and the key times below could be read as seconds.
+	// Key times ARE seconds now (D3), so the workaround is gone rather than left
+	// looking like a meaningful setting.)
 	pxClipA->SetLooping(true);
 	{
 		Flux_BoneChannel xChan;
@@ -14706,7 +14721,6 @@ void Zenith_UnitTests::TestTransitionCompletionFramePose(){
 	Flux_AnimationClip* pxClipB = new Flux_AnimationClip();
 	pxClipB->SetName("ClipB");
 	pxClipB->SetDuration(1.0f);
-	pxClipB->SetTicksPerSecond(1);
 	pxClipB->SetLooping(true);
 	{
 		Flux_BoneChannel xChan;

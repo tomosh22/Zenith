@@ -22,6 +22,8 @@
 //   (6) meaningfully-different clips are actually distinct (no motion collision)
 //   (7) looping clips (Idle / Walk) wrap cleanly; one-shots do not loop
 //   (8) Faint clamps past the end (KO pose holds, no extrapolation)
+//  (11) D3: every key time is SECONDS on the clip's own clock -- no key past the
+//       duration, and a looping clip's last key ON it -- KeyTimesAreSeconds
 //
 // PURE / HEADLESS: no disk, no GPU, no ZENITH_TOOLS reach (the .zanim bake is
 // compiled out). Clips draw from NO RNG; a clip is a closed-form function of
@@ -51,7 +53,12 @@ namespace
 	constexpr float fUNIT_TOL   = 1.0e-3f;   // |len^2 - 1| tolerance for "unit-length"
 	constexpr float fDOT_CLOSE  = 0.999f;    // |dot| >= this => same orientation (double-cover aware)
 	constexpr float fDOT_DIFFER = 0.99f;     // |dot| <= this => clearly different orientation
-	constexpr float fTICK_TOL   = 0.05f;     // keyframe-tick tolerance (ticks are ~integers)
+
+	// Keyframe-TIME tolerance, in SECONDS (D3). This used to be 0.05 TICKS, on the
+	// reasoning that authored ticks are near-integers; the same instant is now a
+	// second, so the tolerance is scaled by the 24-per-second grid to keep it the
+	// same physical slack rather than silently becoming 24x looser.
+	constexpr float fTIME_TOL   = 0.05f / static_cast<float>(uZM_CREATURE_ANIM_TICKS_PER_SECOND);
 
 	// Golden per-clip metadata (the version-bump contract; mirrors the header's
 	// LOCKED table). Any change here is a deliberate .zanim re-bake.
@@ -426,7 +433,9 @@ ZENITH_TEST(ZM_Gen, CreatureAnimGen_LoopingClipsWrapCleanly)
 			ZM_BuildCreatureClip(eArch, eClip, xClip);
 
 			ZENITH_ASSERT_TRUE(xClip.IsLooping(), "archetype %u clip %u must be looping", (u_int)eArch, (u_int)eClip);
-			const float fDurTicks = xClip.GetDurationInTicks();
+			// SECONDS (D3): the clip's own duration IS the last key's time now, with no
+			// ticks-per-second multiply between them.
+			const float fDurSeconds = xClip.GetDuration();
 
 			const Zenith_HashMap<std::string, Flux_BoneChannel>& xChannels = xClip.GetBoneChannels();
 			ZENITH_ASSERT_GT(xChannels.GetSize(), 0u, "archetype %u looping clip %u has no channels", (u_int)eArch, (u_int)eClip);
@@ -440,15 +449,15 @@ ZENITH_TEST(ZM_Gen, CreatureAnimGen_LoopingClipsWrapCleanly)
 				ZENITH_ASSERT_GE(xKeys.GetSize(), 2u,
 					"archetype %u looping clip %u channel '%s' needs >= 2 keys to close", (u_int)eArch, (u_int)eClip, szBone);
 
-				// SortKeyframes puts the earliest tick first and the latest last.
-				const float fFirstTick = xKeys.GetFront().second;
-				const float fLastTick  = xKeys.GetBack().second;
-				ZENITH_ASSERT_LE(fabsf(fFirstTick - 0.0f), fTICK_TOL,
+				// SortKeyframes puts the earliest time first and the latest last.
+				const float fFirstSeconds = xKeys.GetFront().second;
+				const float fLastSeconds  = xKeys.GetBack().second;
+				ZENITH_ASSERT_LE(fabsf(fFirstSeconds - 0.0f), fTIME_TOL,
 					"archetype %u looping clip %u channel '%s' has no key at t=0", (u_int)eArch, (u_int)eClip, szBone);
-				ZENITH_ASSERT_LE(fabsf(fLastTick - fDurTicks), fTICK_TOL,
-					"archetype %u looping clip %u channel '%s' has no key at t=durationTicks", (u_int)eArch, (u_int)eClip, szBone);
+				ZENITH_ASSERT_LE(fabsf(fLastSeconds - fDurSeconds), fTIME_TOL,
+					"archetype %u looping clip %u channel '%s' has no key at t=duration seconds", (u_int)eArch, (u_int)eClip, szBone);
 
-				// Loop closes: rot(t=0) ~= rot(t=durationTicks) per channel (|dot| ~ 1).
+				// Loop closes: rot(t=0) ~= rot(t=duration) per channel (|dot| ~ 1).
 				const Zenith_Maths::Quat& xR0 = xKeys.GetFront().first;
 				const Zenith_Maths::Quat& xRN = xKeys.GetBack().first;
 				ZENITH_ASSERT_GE(QuatAbsDot(xR0, xRN), fDOT_CLOSE,
@@ -487,7 +496,7 @@ ZENITH_TEST(ZM_Gen, CreatureAnimGen_FaintSettlesAndClamps)
 		ZM_BuildCreatureClip(eArch, ZM_ANIM_CLIP_FAINT, xClip);
 		ZENITH_ASSERT_FALSE(xClip.IsLooping(), "archetype %u Faint must be a one-shot (non-looping)", (u_int)eArch);
 
-		const float fDurTicks = xClip.GetDurationInTicks();
+		const float fDurSeconds = xClip.GetDuration();   // SECONDS (D3)
 		const Zenith_HashMap<std::string, Flux_BoneChannel>& xChannels = xClip.GetBoneChannels();
 		ZENITH_ASSERT_GT(xChannels.GetSize(), 0u, "archetype %u Faint has no channels", (u_int)eArch);
 
@@ -503,9 +512,9 @@ ZENITH_TEST(ZM_Gen, CreatureAnimGen_FaintSettlesAndClamps)
 			const char* szBone = xChannel.GetBoneName().c_str();
 
 			const Zenith_Maths::Quat xAt0   = xChannel.SampleRotation(0.0f);
-			const Zenith_Maths::Quat xAtMid = xChannel.SampleRotation(fDurTicks * 0.5f);
-			const Zenith_Maths::Quat xAtEnd = xChannel.SampleRotation(fDurTicks);
-			const Zenith_Maths::Quat xPast  = xChannel.SampleRotation(fDurTicks * 2.0f);
+			const Zenith_Maths::Quat xAtMid = xChannel.SampleRotation(fDurSeconds * 0.5f);
+			const Zenith_Maths::Quat xAtEnd = xChannel.SampleRotation(fDurSeconds);
+			const Zenith_Maths::Quat xPast  = xChannel.SampleRotation(fDurSeconds * 2.0f);
 
 			ZENITH_ASSERT_TRUE(QuatFinite(xAt0) && QuatFinite(xAtMid) && QuatFinite(xAtEnd) && QuatFinite(xPast),
 				"archetype %u Faint channel '%s' samples must all be finite", (u_int)eArch, szBone);
@@ -553,7 +562,7 @@ ZENITH_TEST(ZM_Gen, CreatureAnimGen_OneShotClipsEndNeutral)
 			Flux_AnimationClip xClip;
 			ZM_BuildCreatureClip(eArch, eClip, xClip);
 
-			const float fDurTicks = xClip.GetDurationInTicks();
+			const float fDurSeconds = xClip.GetDuration();   // SECONDS (D3)
 			const Zenith_HashMap<std::string, Flux_BoneChannel>& xChannels = xClip.GetBoneChannels();
 			ZENITH_ASSERT_GT(xChannels.GetSize(), 0u, "archetype %u action clip %u has no channels", (u_int)eArch, (u_int)eClip);
 
@@ -563,7 +572,7 @@ ZENITH_TEST(ZM_Gen, CreatureAnimGen_OneShotClipsEndNeutral)
 			{
 				const Flux_BoneChannel& xChannel = xIt.GetValue();
 				const char* szBone = xChannel.GetBoneName().c_str();
-				const Zenith_Maths::Quat xEnd = xChannel.SampleRotation(fDurTicks);
+				const Zenith_Maths::Quat xEnd = xChannel.SampleRotation(fDurSeconds);
 				ZENITH_ASSERT_TRUE(QuatFinite(xEnd),
 					"archetype %u action clip %u channel '%s' end sample not finite", (u_int)eArch, (u_int)eClip, szBone);
 				ZENITH_ASSERT_GE(QuatAbsDot(xEnd, xIdentity), fDOT_CLOSE,
@@ -582,7 +591,7 @@ ZENITH_TEST(ZM_Gen, CreatureAnimGen_OneShotClipsEndNeutral)
 			Flux_AnimationClip xFaint;
 			ZM_BuildCreatureClip(eArch, ZM_ANIM_CLIP_FAINT, xFaint);
 
-			const float fDurTicks = xFaint.GetDurationInTicks();
+			const float fDurSeconds = xFaint.GetDuration();   // SECONDS (D3)
 			const Zenith_HashMap<std::string, Flux_BoneChannel>& xChannels = xFaint.GetBoneChannels();
 			ZENITH_ASSERT_GT(xChannels.GetSize(), 0u, "archetype %u Faint has no channels", (u_int)eArch);
 
@@ -592,7 +601,7 @@ ZENITH_TEST(ZM_Gen, CreatureAnimGen_OneShotClipsEndNeutral)
 			for (; !xIt.Done(); xIt.Next())
 			{
 				const Flux_BoneChannel& xChannel = xIt.GetValue();
-				const Zenith_Maths::Quat xEnd = xChannel.SampleRotation(fDurTicks);
+				const Zenith_Maths::Quat xEnd = xChannel.SampleRotation(fDurSeconds);
 				if (QuatAbsDot(xEnd, xIdentity) <= fDOT_DIFFER) { ++uCollapsed; }
 				++uExamined;
 			}
@@ -624,4 +633,65 @@ ZENITH_TEST(ZM_Gen, CreatureAnimGen_AllArchetypesHaveAnimBuilder)
 		ZENITH_ASSERT_TRUE(pxFn != nullptr,
 			"archetype %u has no wired anim builder (dispatch is not total)", a);
 	}
+}
+
+// ############################################################################
+// (11) D3 UNIT GATE: keyframe times are SECONDS on the clip's own clock.
+//
+// ★ THIS IS THE ONE CHECK A TICK-GRID RELAPSE CANNOT PASS. Every other gate in
+// this file is unit-blind: a builder that went back to authoring
+// t01 * duration * 24 would still produce finite unit quaternions, still bind
+// every channel to a real bone, still be byte-identical across species, still be
+// deterministic, still close its loop (first key == last key by VALUE) and still
+// clamp past the end. The clip would simply be 24x too long, and nothing here
+// would say so -- which is exactly the state the tree was in before D3, with a
+// ticks-per-second multiply in Flux_SkeletonPose::SampleFromClip papering over it.
+//
+// Two assertions, because either alone is weak:
+//   * NO key past the duration -- catches the 24x relapse on any clip;
+//   * a LOOPING clip's last key lands ON the duration -- catches the opposite
+//     slip (a conversion applied twice, leaving every key at 1/24 of its time),
+//     which "no key past the end" would happily accept.
+// ############################################################################
+
+ZENITH_TEST(ZM_Gen, CreatureAnimGen_KeyTimesAreSeconds)
+{
+	ZM_ARCHETYPE aeArch[ZM_ARCHETYPE_COUNT];
+	const u_int uArch = WiredAnimArchetypes(aeArch, (u_int)ZM_ARCHETYPE_COUNT);
+	ZENITH_ASSERT_GT(uArch, 0u, "no wired anim archetypes (harness would be vacuous)");
+
+	u_int uChecked = 0u;
+	for (u_int ia = 0; ia < uArch; ++ia)
+	{
+		const ZM_ARCHETYPE eArch = aeArch[ia];
+		for (u_int c = 0; c < (u_int)ZM_ANIM_CLIP_COUNT; ++c)
+		{
+			const ZM_ANIM_CLIP eClip = (ZM_ANIM_CLIP)c;
+			Flux_AnimationClip xClip;
+			ZM_BuildCreatureClip(eArch, eClip, xClip);
+			++uChecked;
+
+			const float fDurSeconds = xClip.GetDuration();
+			ZENITH_ASSERT_GT(fDurSeconds, 0.0f,
+				"archetype %u clip %u has a non-positive duration", (u_int)eArch, c);
+
+			// No key past the end. Reported with the offending time so a 24x relapse
+			// names itself rather than showing up as a bare false.
+			const float fLastSeconds = Flux_ClipLastKeyTimeSeconds(xClip);
+			ZENITH_ASSERT_TRUE(Flux_ClipKeyTimesFitDuration(xClip, fTIME_TOL),
+				"archetype %u clip %u: last key at %.4f s but duration is %.4f s -- key times are not seconds (a tick grid would put it at %.4f)",
+				(u_int)eArch, c, fLastSeconds, fDurSeconds,
+				fDurSeconds * static_cast<float>(uZM_CREATURE_ANIM_TICKS_PER_SECOND));
+
+			// A looping clip authors key0 AND keyN inclusively, so its last key IS the
+			// duration. That is the half a range check cannot see.
+			if (ZM_CreatureClipLooping(eClip))
+			{
+				ZENITH_ASSERT_LE(fabsf(fLastSeconds - fDurSeconds), fTIME_TOL,
+					"archetype %u looping clip %u: last key at %.4f s, duration %.4f s -- the key spread does not reach the clip end",
+					(u_int)eArch, c, fLastSeconds, fDurSeconds);
+			}
+		}
+	}
+	ZENITH_ASSERT_GT(uChecked, 0u, "no clips exercised the key-time unit gate");
 }

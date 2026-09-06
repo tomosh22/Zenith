@@ -1,6 +1,7 @@
 #include "UnitTests/Zenith_UnitTests.h"
 #include "UnitTests/Zenith_AssertCapture.h"   // the refused-envelope / refused-schema reads assert on purpose
 #include "Flux/MeshAnimation/Flux_AnimationClip.h"
+#include "Flux/MeshAnimation/Flux_BonePose.h"  // WU-1.2: the SAMPLER, which is where the tick multiply lived
 #include "AssetHandling/Zenith_AssetTypeIds.h"
 #include "DataStream/Zenith_StreamEnvelope.h"
 
@@ -331,16 +332,19 @@ namespace
 		xClip.SetDuration(2.0f);
 		xClip.SetTicksPerSecond(24);
 
+		// Key times are SECONDS inside the 2 s duration (D3). They used to be 0/10/20
+		// — tick counts beside a 2-second clip, which is the two-clocks shape D3
+		// removed; the byte layout is identical either way.
 		Flux_BoneChannel xHip;
-		xHip.AddPositionKeyframe(0.0f,  Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
-		xHip.AddPositionKeyframe(10.0f, Zenith_Maths::Vector3(0.0f, 1.5f, 0.0f));
-		xHip.AddRotationKeyframe(0.0f,  Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f));
-		xHip.AddScaleKeyframe   (0.0f,  Zenith_Maths::Vector3(1.0f, 1.0f, 1.0f));
+		xHip.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
+		xHip.AddPositionKeyframe(1.0f, Zenith_Maths::Vector3(0.0f, 1.5f, 0.0f));
+		xHip.AddRotationKeyframe(0.0f, Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f));
+		xHip.AddScaleKeyframe   (0.0f, Zenith_Maths::Vector3(1.0f, 1.0f, 1.0f));
 		xClip.AddBoneChannel("Hip", std::move(xHip));
 
 		Flux_BoneChannel xKnee;
-		xKnee.AddRotationKeyframe(0.0f,  glm::angleAxis(glm::radians(10.0f), Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f)));
-		xKnee.AddRotationKeyframe(20.0f, glm::angleAxis(glm::radians(40.0f), Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f)));
+		xKnee.AddRotationKeyframe(0.0f, glm::angleAxis(glm::radians(10.0f), Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f)));
+		xKnee.AddRotationKeyframe(2.0f, glm::angleAxis(glm::radians(40.0f), Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f)));
 		xClip.AddBoneChannel("Knee", std::move(xKnee));
 
 		Flux_AnimationEvent xEvent;
@@ -625,4 +629,207 @@ ZENITH_TEST(AnimationSerialization, ClipBytesAreIndependentOfInsertionOrder)
 			static_cast<size_t>(axStreams[0].GetCursor()));
 		ZENITH_ASSERT_EQ(iDiff, 0, "two insertion orders of the same clip must serialize BYTE-IDENTICALLY");
 	}
+}
+
+// ============================================================================
+// WU-1.2 — KEY TIMES ARE SECONDS (D3).
+//
+// The change these pin is invisible to every structural check: a clip whose key
+// times are still on a tick grid has the same channel count, the same bone names,
+// the same quaternions, the same byte length and the same serialized order. What
+// moves is WHERE IN TIME each pose lands — by a factor of the clip's
+// ticks-per-second, which for the whole StickFigure set is 24x.
+//
+// All pure CPU: an in-memory clip, an in-memory 1-bone skeleton, no device, no
+// registry, no file. None is requiresGraphics, so all of them actually run under
+// the Null backend rather than being skipped-as-passed.
+// ============================================================================
+
+namespace
+{
+	// A one-bone skeleton at the origin — the least a Flux_SkeletonPose needs in
+	// order to resolve a channel by bone name. Caller owns it.
+	Zenith_SkeletonAsset* ClipMakeOneBoneSkeleton(const char* szBoneName)
+	{
+		Zenith_SkeletonAsset* pxSkeleton = new Zenith_SkeletonAsset();
+		pxSkeleton->AddBone(szBoneName, -1,
+			Zenith_Maths::Vector3(0.0f),
+			Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f),
+			Zenith_Maths::Vector3(1.0f));
+		pxSkeleton->ComputeBindPoseMatrices();
+		return pxSkeleton;
+	}
+
+	// A single-channel clip whose position track runs (0,0,0) -> (10,0,0) over
+	// fDurationSeconds, with one interior key at the midpoint. uTicksPerSecond is
+	// stamped as provenance and must not affect anything.
+	void ClipBuildRampClip(Flux_AnimationClip& xClip, const char* szBoneName,
+		float fDurationSeconds, uint32_t uTicksPerSecond)
+	{
+		xClip.SetName("Ramp");
+		xClip.SetDuration(fDurationSeconds);
+		xClip.SetTicksPerSecond(uTicksPerSecond);
+
+		Flux_BoneChannel xChannel;
+		xChannel.AddPositionKeyframe(0.0f,                    Zenith_Maths::Vector3(0.0f,  0.0f, 0.0f));
+		xChannel.AddPositionKeyframe(fDurationSeconds * 0.5f, Zenith_Maths::Vector3(5.0f,  0.0f, 0.0f));
+		xChannel.AddPositionKeyframe(fDurationSeconds,        Zenith_Maths::Vector3(10.0f, 0.0f, 0.0f));
+		xChannel.SortKeyframes();
+		xClip.AddBoneChannel(szBoneName, std::move(xChannel));
+	}
+}
+
+// ★ THE ACCEPTANCE CHECK FOR "THE SAMPLER NO LONGER MULTIPLIES BY TICKS-PER-SECOND".
+// A clip declaring 1000 ticks per second with a key at t=1.0 s must return THAT key
+// at fTime=1.0. Under the old sampler this asked the channel for t=1000, which
+// clamped to the last keyframe — so the pose was wrong by the whole clip.
+//
+// 1000 is chosen deliberately over 24: a 24x error is a plausible-looking pose on a
+// looping clip, while 1000x can only be the clamp.
+ZENITH_TEST(AnimationTime, SamplerIgnoresTicksPerSecond)
+{
+	Zenith_SkeletonAsset* pxSkeleton = ClipMakeOneBoneSkeleton("Root");
+
+	Flux_AnimationClip xClip;
+	ClipBuildRampClip(xClip, "Root", 2.0f, 1000u);
+
+	Flux_SkeletonPose xPose;
+	xPose.Initialize(1u);
+	xPose.SampleFromClip(xClip, 1.0f, *pxSkeleton);
+
+	// t=1.0 s is the clip's midpoint key: exactly (5,0,0).
+	ZENITH_ASSERT_TRUE(RootMotionVec3Equals(xPose.GetLocalPose(0u).m_xPosition, Zenith_Maths::Vector3(5.0f, 0.0f, 0.0f), 1e-4f),
+		"a clip with 1000 ticks-per-second must still sample its t=1.0s key at fTime=1.0 — got (%f, %f, %f)",
+		xPose.GetLocalPose(0u).m_xPosition.x, xPose.GetLocalPose(0u).m_xPosition.y, xPose.GetLocalPose(0u).m_xPosition.z);
+
+	// And the field is INERT, not merely harmless at one value: the same clip with
+	// the default 24 must produce the identical pose at the identical wall-clock time.
+	Flux_AnimationClip xClip24;
+	ClipBuildRampClip(xClip24, "Root", 2.0f, 24u);
+	Flux_SkeletonPose xPose24;
+	xPose24.Initialize(1u);
+	xPose24.SampleFromClip(xClip24, 1.0f, *pxSkeleton);
+	ZENITH_ASSERT_TRUE(RootMotionVec3Equals(xPose.GetLocalPose(0u).m_xPosition, xPose24.GetLocalPose(0u).m_xPosition, 1e-6f),
+		"ticks-per-second must be provenance only — two clips differing ONLY in it must pose identically");
+
+	delete pxSkeleton;
+}
+
+// ★ THE IMPORT-vs-AUTHORED EQUIVALENCE. One clip built the way the Assimp import
+// now builds one (source key times are ticks on a 24-per-second grid, DIVIDED by
+// that grid on the way in) and one authored directly in seconds must be
+// indistinguishable at every matched wall-clock time.
+//
+// This is written as a SWEEP rather than a spot check on purpose: a single sample
+// at a keyframe passes even when the two clips disagree everywhere between keys,
+// which is exactly the shape a half-applied conversion has.
+ZENITH_TEST(AnimationTime, TickImportedClipMatchesSecondsAuthoredClip)
+{
+	constexpr float fSOURCE_TICKS_PER_SECOND = 24.0f;
+
+	// The source file's key times, in TICKS, and the values at them.
+	const float afSourceTicks[4]              = { 0.0f, 6.0f, 18.0f, 24.0f };
+	const Zenith_Maths::Vector3 axValues[4] =
+	{
+		Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f),
+		Zenith_Maths::Vector3(1.0f, 2.0f, 0.0f),
+		Zenith_Maths::Vector3(-3.0f, 0.5f, 4.0f),
+		Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f),
+	};
+
+	// (a) The import path: divide each source tick by the source's tick rate. This is
+	// literally what Flux_BoneChannel(const aiNodeAnim*, double) now does per key.
+	Flux_BoneChannel xImported;
+	for (u_int u = 0; u < 4u; ++u)
+	{
+		xImported.AddPositionKeyframe(afSourceTicks[u] / fSOURCE_TICKS_PER_SECOND, axValues[u]);
+	}
+	xImported.SortKeyframes();
+
+	// (b) The generator path: the same instants stated in seconds.
+	const float afSeconds[4] = { 0.0f, 0.25f, 0.75f, 1.0f };
+	Flux_BoneChannel xAuthored;
+	for (u_int u = 0; u < 4u; ++u)
+	{
+		xAuthored.AddPositionKeyframe(afSeconds[u], axValues[u]);
+	}
+	xAuthored.SortKeyframes();
+
+	// Sweep the whole 1-second span plus a little past the end (the clamp branch).
+	constexpr u_int uSAMPLES = 41u;
+	for (u_int u = 0; u < uSAMPLES; ++u)
+	{
+		const float fTimeSeconds = 1.2f * static_cast<float>(u) / static_cast<float>(uSAMPLES - 1u);
+		const Zenith_Maths::Vector3 xA = xImported.SamplePosition(fTimeSeconds);
+		const Zenith_Maths::Vector3 xB = xAuthored.SamplePosition(fTimeSeconds);
+		ZENITH_ASSERT_TRUE(RootMotionVec3Equals(xA, xB, 1e-5f),
+			"import-converted and seconds-authored clips diverge at t=%f s: (%f,%f,%f) vs (%f,%f,%f)",
+			fTimeSeconds, xA.x, xA.y, xA.z, xB.x, xB.y, xB.z);
+	}
+}
+
+// The key-time/duration agreement helper itself. Worth its own test because it is
+// the check ZM_ValidateCreatureClip (and any future generator) leans on, and a
+// vacuously-true predicate would make every one of those green for free.
+ZENITH_TEST(AnimationTime, ClipKeyTimesFitDurationCatchesATickGrid)
+{
+	// (a) A well-formed seconds clip: last key exactly on the duration.
+	{
+		Flux_AnimationClip xClip;
+		ClipBuildRampClip(xClip, "Root", 2.0f, 24u);
+		ZENITH_ASSERT_TRUE(Flux_ClipKeyTimesFitDuration(xClip), "a seconds-authored clip must fit its duration");
+		ZENITH_ASSERT_EQ_FLOAT(Flux_ClipLastKeyTimeSeconds(xClip), 2.0f, 1e-6f, "last key time is the duration");
+	}
+
+	// (b) The SAME clip with its key times left on the 24-per-second tick grid —
+	// the exact relapse this WU is about. Every other property is unchanged.
+	{
+		Flux_AnimationClip xClip;
+		xClip.SetDuration(2.0f);
+		xClip.SetTicksPerSecond(24);
+		Flux_BoneChannel xChannel;
+		xChannel.AddPositionKeyframe(0.0f,  Zenith_Maths::Vector3(0.0f));
+		xChannel.AddPositionKeyframe(24.0f, Zenith_Maths::Vector3(5.0f, 0.0f, 0.0f));
+		xChannel.AddPositionKeyframe(48.0f, Zenith_Maths::Vector3(10.0f, 0.0f, 0.0f));
+		xClip.AddBoneChannel("Root", std::move(xChannel));
+		ZENITH_ASSERT_FALSE(Flux_ClipKeyTimesFitDuration(xClip),
+			"a clip whose keys are still ticks must NOT fit a 2-second duration");
+		ZENITH_ASSERT_EQ_FLOAT(Flux_ClipLastKeyTimeSeconds(xClip), 48.0f, 1e-6f,
+			"the helper reports the offending time so the failure names itself");
+	}
+
+	// (c) A NEGATIVE key time — what a sign slip in a conversion produces, and what a
+	// last-key-only check would wave through.
+	{
+		Flux_AnimationClip xClip;
+		xClip.SetDuration(1.0f);
+		Flux_BoneChannel xChannel;
+		xChannel.AddPositionKeyframe(-0.5f, Zenith_Maths::Vector3(0.0f));
+		xChannel.AddPositionKeyframe(1.0f,  Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f));
+		xClip.AddBoneChannel("Root", std::move(xChannel));
+		ZENITH_ASSERT_FALSE(Flux_ClipKeyTimesFitDuration(xClip), "a negative key time must be refused");
+	}
+
+	// (d) An empty clip is vacuously fine, and reports zero rather than garbage.
+	{
+		Flux_AnimationClip xClip;
+		xClip.SetDuration(1.0f);
+		ZENITH_ASSERT_TRUE(Flux_ClipKeyTimesFitDuration(xClip), "a clip with no channels is vacuously in range");
+		ZENITH_ASSERT_EQ_FLOAT(Flux_ClipLastKeyTimeSeconds(xClip), 0.0f, 1e-6f, "no keys means no last key time");
+	}
+}
+
+// GetLastKeyTimeSeconds takes the MAXIMUM across the three arrays and does not
+// assume sorted input — a generator calls it before SortKeyframes, and a
+// back-of-array read would then report an interior key and hide an overrun.
+ZENITH_TEST(AnimationTime, ChannelLastKeyTimeIsAMaximumNotTheBack)
+{
+	Flux_BoneChannel xChannel;
+	xChannel.AddPositionKeyframe(0.9f, Zenith_Maths::Vector3(0.0f));
+	xChannel.AddPositionKeyframe(0.1f, Zenith_Maths::Vector3(0.0f));   // deliberately out of order
+	xChannel.AddRotationKeyframe(0.4f, Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f));
+	xChannel.AddScaleKeyframe   (1.7f, Zenith_Maths::Vector3(1.0f));   // the real latest, on a THIRD array
+
+	ZENITH_ASSERT_EQ_FLOAT(xChannel.GetLastKeyTimeSeconds(), 1.7f, 1e-6f,
+		"the last key time must be the max across all three arrays, unsorted input included");
 }

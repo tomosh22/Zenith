@@ -223,7 +223,7 @@ ZM_CreatureClipValidation ZM_ValidateCreatureClip(const Flux_AnimationClip& xCli
 		}
 
 		// Loop closure (looping clips only): first-key rotation ~= last-key rotation.
-		// Keys are sorted, so front is t=0 and back is t=durationTicks.
+		// Keys are sorted, so front is t=0 s and back is t=duration s.
 		if (bLooping && xKeys.GetSize() > 0u)
 		{
 			if (!ZM_QuatApproxSameRotation(xKeys.GetFront().first, xKeys.GetBack().first, fZM_ANIM_LOOP_EPS))
@@ -238,6 +238,13 @@ ZM_CreatureClipValidation ZM_ValidateCreatureClip(const Flux_AnimationClip& xCli
 	xV.m_bRotationsFinite        = bFinite;
 	xV.m_bDurationPositive       = (xClip.GetDuration() > 0.0f);
 	xV.m_bTicksPerSecondPinned   = (xClip.GetTicksPerSecond() == uZM_CREATURE_ANIM_TICKS_PER_SECOND);
+
+	// D3: key times and duration are the SAME unit now, so "the keys fit inside the
+	// clip" is finally a question that can be asked. It is the check that catches a
+	// builder authoring on the old tick grid — every one of its keys would land 24x
+	// past the end, while every OTHER flag in this struct stayed true.
+	xV.m_bKeyTimesFitDuration    = Flux_ClipKeyTimesFitDuration(xClip);
+
 	xV.m_bLoopClosesIfLooping    = bLooping ? bLoopCloses : true;   // meaningful only when looping
 
 	xV.m_bAllValid = xV.m_bHasChannels
@@ -246,6 +253,7 @@ ZM_CreatureClipValidation ZM_ValidateCreatureClip(const Flux_AnimationClip& xCli
 		&& xV.m_bRotationsFinite
 		&& xV.m_bDurationPositive
 		&& xV.m_bTicksPerSecondPinned
+		&& xV.m_bKeyTimesFitDuration
 		&& xV.m_bLoopClosesIfLooping;
 	return xV;
 }

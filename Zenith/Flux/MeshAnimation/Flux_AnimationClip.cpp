@@ -238,9 +238,23 @@ void Flux_RootMotion::ReadFromDataStream(Zenith_DataStream& xStream)
 // Flux_BoneChannel
 //=============================================================================
 #ifdef ZENITH_TOOLS
-Flux_BoneChannel::Flux_BoneChannel(const aiNodeAnim* pxChannel)
+Flux_BoneChannel::Flux_BoneChannel(const aiNodeAnim* pxChannel, double dSourceTicksPerSecond)
 {
 	m_strBoneName = pxChannel->mNodeName.data;
+
+	// ★ THE IMPORT IS WHERE TICKS BECOME SECONDS (D3). aiVectorKey::mTime is a tick
+	// count on the source file's own grid; the channel stores seconds. Dividing here
+	// — once, at the only place a tick ever enters the engine — is what lets every
+	// generator, sampler and test downstream hold one unit.
+	//
+	// A zero or negative rate would silently produce infinities, so it is refused and
+	// treated as 1 (key times pass through unscaled) rather than guessed at. The
+	// caller has already applied the "the file said 0, use 24" default; a rate that is
+	// still bad here means the aiAnimation itself is malformed.
+	Zenith_Assert(dSourceTicksPerSecond > 0.0,
+		"Flux_BoneChannel('%s'): source ticks-per-second is %f — key times cannot be converted to seconds",
+		m_strBoneName.c_str(), dSourceTicksPerSecond);
+	const double dToSeconds = (dSourceTicksPerSecond > 0.0) ? (1.0 / dSourceTicksPerSecond) : 1.0;
 
 	// Load position keyframes
 	m_xPositions.Reserve(pxChannel->mNumPositionKeys);
@@ -249,7 +263,7 @@ Flux_BoneChannel::Flux_BoneChannel(const aiNodeAnim* pxChannel)
 		const aiVectorKey& xKey = pxChannel->mPositionKeys[i];
 		m_xPositions.EmplaceBack(
 			Zenith_Maths::Vector3(xKey.mValue.x, xKey.mValue.y, xKey.mValue.z),
-			static_cast<float>(xKey.mTime)
+			static_cast<float>(xKey.mTime * dToSeconds)
 		);
 	}
 
@@ -261,7 +275,7 @@ Flux_BoneChannel::Flux_BoneChannel(const aiNodeAnim* pxChannel)
 		// Assimp uses WXYZ order for quaternions
 		m_xRotations.EmplaceBack(
 			Zenith_Maths::Quat(xKey.mValue.w, xKey.mValue.x, xKey.mValue.y, xKey.mValue.z),
-			static_cast<float>(xKey.mTime)
+			static_cast<float>(xKey.mTime * dToSeconds)
 		);
 	}
 
@@ -272,7 +286,7 @@ Flux_BoneChannel::Flux_BoneChannel(const aiNodeAnim* pxChannel)
 		const aiVectorKey& xKey = pxChannel->mScalingKeys[i];
 		m_xScales.EmplaceBack(
 			Zenith_Maths::Vector3(xKey.mValue.x, xKey.mValue.y, xKey.mValue.z),
-			static_cast<float>(xKey.mTime)
+			static_cast<float>(xKey.mTime * dToSeconds)
 		);
 	}
 
@@ -293,31 +307,31 @@ Flux_BoneChannel::Flux_BoneChannel(const aiNodeAnim* pxChannel)
 // so that corrupted the last baked frame, making instanced trees lurch for one frame
 // at every loop wrap. (Sample*() handle the size 0/1 cases before calling these, so
 // size>=2 here and size-1>=1.)
-uint32_t Flux_BoneChannel::GetPositionIndex(float fTime) const
+uint32_t Flux_BoneChannel::GetPositionIndex(float fTimeSeconds) const
 {
 	for (u_int i = 0; i < m_xPositions.GetSize() - 1; ++i)
 	{
-		if (fTime < m_xPositions.Get(i + 1).second)
+		if (fTimeSeconds < m_xPositions.Get(i + 1).second)
 			return i;
 	}
 	return m_xPositions.GetSize() - 1;
 }
 
-uint32_t Flux_BoneChannel::GetRotationIndex(float fTime) const
+uint32_t Flux_BoneChannel::GetRotationIndex(float fTimeSeconds) const
 {
 	for (u_int i = 0; i < m_xRotations.GetSize() - 1; ++i)
 	{
-		if (fTime < m_xRotations.Get(i + 1).second)
+		if (fTimeSeconds < m_xRotations.Get(i + 1).second)
 			return i;
 	}
 	return m_xRotations.GetSize() - 1;
 }
 
-uint32_t Flux_BoneChannel::GetScaleIndex(float fTime) const
+uint32_t Flux_BoneChannel::GetScaleIndex(float fTimeSeconds) const
 {
 	for (u_int i = 0; i < m_xScales.GetSize() - 1; ++i)
 	{
-		if (fTime < m_xScales.Get(i + 1).second)
+		if (fTimeSeconds < m_xScales.Get(i + 1).second)
 			return i;
 	}
 	return m_xScales.GetSize() - 1;
@@ -332,7 +346,7 @@ float Flux_BoneChannel::GetScaleFactor(float fLastTime, float fNextTime, float f
 	return fMidWayLength / fFramesDiff;
 }
 
-Zenith_Maths::Vector3 Flux_BoneChannel::SamplePosition(float fTime) const
+Zenith_Maths::Vector3 Flux_BoneChannel::SamplePosition(float fTimeSeconds) const
 {
 	if (m_xPositions.GetSize() == 0)
 		return Zenith_Maths::Vector3(0.0f);
@@ -340,7 +354,7 @@ Zenith_Maths::Vector3 Flux_BoneChannel::SamplePosition(float fTime) const
 	if (m_xPositions.GetSize() == 1)
 		return m_xPositions.Get(0).first;
 
-	uint32_t p0Index = GetPositionIndex(fTime);
+	uint32_t p0Index = GetPositionIndex(fTimeSeconds);
 	uint32_t p1Index = p0Index + 1;
 
 	if (p1Index >= m_xPositions.GetSize())
@@ -349,13 +363,13 @@ Zenith_Maths::Vector3 Flux_BoneChannel::SamplePosition(float fTime) const
 	float fScaleFactor = GetScaleFactor(
 		m_xPositions.Get(p0Index).second,
 		m_xPositions.Get(p1Index).second,
-		fTime
+		fTimeSeconds
 	);
 
 	return glm::mix(m_xPositions.Get(p0Index).first, m_xPositions.Get(p1Index).first, fScaleFactor);
 }
 
-Zenith_Maths::Quat Flux_BoneChannel::SampleRotation(float fTime) const
+Zenith_Maths::Quat Flux_BoneChannel::SampleRotation(float fTimeSeconds) const
 {
 	if (m_xRotations.GetSize() == 0)
 		return Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f);
@@ -363,7 +377,7 @@ Zenith_Maths::Quat Flux_BoneChannel::SampleRotation(float fTime) const
 	if (m_xRotations.GetSize() == 1)
 		return glm::normalize(m_xRotations.Get(0).first);
 
-	uint32_t p0Index = GetRotationIndex(fTime);
+	uint32_t p0Index = GetRotationIndex(fTimeSeconds);
 	uint32_t p1Index = p0Index + 1;
 
 	if (p1Index >= m_xRotations.GetSize())
@@ -372,7 +386,7 @@ Zenith_Maths::Quat Flux_BoneChannel::SampleRotation(float fTime) const
 	float fScaleFactor = GetScaleFactor(
 		m_xRotations.Get(p0Index).second,
 		m_xRotations.Get(p1Index).second,
-		fTime
+		fTimeSeconds
 	);
 
 	Zenith_Maths::Quat xResult = glm::slerp(
@@ -384,7 +398,7 @@ Zenith_Maths::Quat Flux_BoneChannel::SampleRotation(float fTime) const
 	return glm::normalize(xResult);
 }
 
-Zenith_Maths::Vector3 Flux_BoneChannel::SampleScale(float fTime) const
+Zenith_Maths::Vector3 Flux_BoneChannel::SampleScale(float fTimeSeconds) const
 {
 	if (m_xScales.GetSize() == 0)
 		return Zenith_Maths::Vector3(1.0f);
@@ -392,7 +406,7 @@ Zenith_Maths::Vector3 Flux_BoneChannel::SampleScale(float fTime) const
 	if (m_xScales.GetSize() == 1)
 		return m_xScales.Get(0).first;
 
-	uint32_t p0Index = GetScaleIndex(fTime);
+	uint32_t p0Index = GetScaleIndex(fTimeSeconds);
 	uint32_t p1Index = p0Index + 1;
 
 	if (p1Index >= m_xScales.GetSize())
@@ -401,17 +415,17 @@ Zenith_Maths::Vector3 Flux_BoneChannel::SampleScale(float fTime) const
 	float fScaleFactor = GetScaleFactor(
 		m_xScales.Get(p0Index).second,
 		m_xScales.Get(p1Index).second,
-		fTime
+		fTimeSeconds
 	);
 
 	return glm::mix(m_xScales.Get(p0Index).first, m_xScales.Get(p1Index).first, fScaleFactor);
 }
 
-Zenith_Maths::Matrix4 Flux_BoneChannel::Sample(float fTime) const
+Zenith_Maths::Matrix4 Flux_BoneChannel::Sample(float fTimeSeconds) const
 {
-	Zenith_Maths::Vector3 xPosition = SamplePosition(fTime);
-	Zenith_Maths::Quat xRotation = SampleRotation(fTime);
-	Zenith_Maths::Vector3 xScale = SampleScale(fTime);
+	Zenith_Maths::Vector3 xPosition = SamplePosition(fTimeSeconds);
+	Zenith_Maths::Quat xRotation = SampleRotation(fTimeSeconds);
+	Zenith_Maths::Vector3 xScale = SampleScale(fTimeSeconds);
 
 	Zenith_Maths::Matrix4 xTranslation = glm::translate(glm::mat4(1.0f), xPosition);
 	Zenith_Maths::Matrix4 xRotationMat = glm::toMat4(xRotation);
@@ -455,22 +469,34 @@ void Flux_BoneChannel::ReadFromDataStream(Zenith_DataStream& xStream)
 	m_xScaleTangents.Resize(m_xScales.GetSize(), Flux_KeyTangents());
 }
 
-void Flux_BoneChannel::AddPositionKeyframe(float fTimeTicks, const Zenith_Maths::Vector3& xPosition)
+void Flux_BoneChannel::AddPositionKeyframe(float fTimeSeconds, const Zenith_Maths::Vector3& xPosition)
 {
-	m_xPositions.EmplaceBack(xPosition, fTimeTicks);
+	m_xPositions.EmplaceBack(xPosition, fTimeSeconds);
 	m_xPositionTangents.PushBack(Flux_KeyTangents());
 }
 
-void Flux_BoneChannel::AddRotationKeyframe(float fTimeTicks, const Zenith_Maths::Quat& xRotation)
+void Flux_BoneChannel::AddRotationKeyframe(float fTimeSeconds, const Zenith_Maths::Quat& xRotation)
 {
-	m_xRotations.EmplaceBack(xRotation, fTimeTicks);
+	m_xRotations.EmplaceBack(xRotation, fTimeSeconds);
 	m_xRotationTangents.PushBack(Flux_KeyTangents());
 }
 
-void Flux_BoneChannel::AddScaleKeyframe(float fTimeTicks, const Zenith_Maths::Vector3& xScale)
+void Flux_BoneChannel::AddScaleKeyframe(float fTimeSeconds, const Zenith_Maths::Vector3& xScale)
 {
-	m_xScales.EmplaceBack(xScale, fTimeTicks);
+	m_xScales.EmplaceBack(xScale, fTimeSeconds);
 	m_xScaleTangents.PushBack(Flux_KeyTangents());
+}
+
+float Flux_BoneChannel::GetLastKeyTimeSeconds() const
+{
+	// MAX, not "the back of each array": a channel is legitimately inspected before
+	// SortKeyframes has run (that is precisely when a generator wants to check its
+	// own work), and a back-of-array read would then report an interior key.
+	float fLast = 0.0f;
+	for (const auto& xKey : m_xPositions) { if (xKey.second > fLast) { fLast = xKey.second; } }
+	for (const auto& xKey : m_xRotations) { if (xKey.second > fLast) { fLast = xKey.second; } }
+	for (const auto& xKey : m_xScales)    { if (xKey.second > fLast) { fLast = xKey.second; } }
+	return fLast;
 }
 
 void Flux_BoneChannel::SetPositionTangent(u_int uKeyIndex, const Flux_KeyTangents& xTangents)
@@ -552,12 +578,19 @@ void Flux_AnimationClip::LoadFromAssimp(const aiAnimation* pxAnimation, const ai
 {
 	// Extract metadata
 	m_xMetadata.m_strName = pxAnimation->mName.data;
-	m_xMetadata.m_fDuration = static_cast<float>(pxAnimation->mDuration / pxAnimation->mTicksPerSecond);
 	m_xMetadata.m_uTicksPerSecond = static_cast<uint32_t>(pxAnimation->mTicksPerSecond);
 
 	// If ticks per second is 0, default to 24
 	if (m_xMetadata.m_uTicksPerSecond == 0)
 		m_xMetadata.m_uTicksPerSecond = 24;
+
+	// ★ ONE divisor, resolved BEFORE it is used, and used for BOTH the duration and
+	// every key time — otherwise the clip's length and its keys land on different
+	// clocks, which is the defect D3 removes. It used to divide the duration by the
+	// RAW mTicksPerSecond on the line above the zero-default, so a file declaring 0
+	// produced an infinite duration and the default never reached it.
+	const double dSourceTicksPerSecond = static_cast<double>(m_xMetadata.m_uTicksPerSecond);
+	m_xMetadata.m_fDuration = static_cast<float>(pxAnimation->mDuration / dSourceTicksPerSecond);
 
 	// Load bone channels
 	m_xBoneChannels.Clear();
@@ -565,7 +598,7 @@ void Flux_AnimationClip::LoadFromAssimp(const aiAnimation* pxAnimation, const ai
 	{
 		const aiNodeAnim* pxChannel = pxAnimation->mChannels[i];
 		std::string strBoneName = pxChannel->mNodeName.data;
-		m_xBoneChannels.Emplace(strBoneName, Flux_BoneChannel(pxChannel));
+		m_xBoneChannels.Emplace(strBoneName, Flux_BoneChannel(pxChannel, dSourceTicksPerSecond));
 	}
 }
 #endif // ZENITH_TOOLS
@@ -732,6 +765,50 @@ void Flux_AnimationClip::ReadFromDataStream(Zenith_DataStream& xStream)
 
 	// Root motion
 	m_xRootMotion.ReadFromDataStream(xStream);
+}
+
+//=============================================================================
+// Key-time / duration agreement (D3). See the header for why this is only a
+// checkable property now that both sides are seconds.
+//=============================================================================
+float Flux_ClipLastKeyTimeSeconds(const Flux_AnimationClip& xClip)
+{
+	float fLast = 0.0f;
+	for (Zenith_HashMap<std::string, Flux_BoneChannel>::Iterator xIt(xClip.GetBoneChannels()); !xIt.Done(); xIt.Next())
+	{
+		const float fChannelLast = xIt.GetValue().GetLastKeyTimeSeconds();
+		if (fChannelLast > fLast)
+		{
+			fLast = fChannelLast;
+		}
+	}
+	return fLast;
+}
+
+bool Flux_ClipKeyTimesFitDuration(const Flux_AnimationClip& xClip, float fEpsilonSeconds)
+{
+	for (Zenith_HashMap<std::string, Flux_BoneChannel>::Iterator xIt(xClip.GetBoneChannels()); !xIt.Done(); xIt.Next())
+	{
+		const Flux_BoneChannel& xChannel = xIt.GetValue();
+
+		// A NEGATIVE key time is checked too. It cannot arise from an honest authoring
+		// pass, but it is exactly what a "divide the tick literal" conversion produces
+		// from a sign slip, and it would otherwise sail past a last-key-only check.
+		auto CheckKeys = [fEpsilonSeconds, &xClip](const auto& xKeys) -> bool
+		{
+			for (const auto& xKey : xKeys)
+			{
+				if (xKey.second < -fEpsilonSeconds) { return false; }
+				if (xKey.second > xClip.GetDuration() + fEpsilonSeconds) { return false; }
+			}
+			return true;
+		};
+
+		if (!CheckKeys(xChannel.GetPositionKeyframes())) { return false; }
+		if (!CheckKeys(xChannel.GetRotationKeyframes())) { return false; }
+		if (!CheckKeys(xChannel.GetScaleKeyframes()))    { return false; }
+	}
+	return true;
 }
 
 //=============================================================================

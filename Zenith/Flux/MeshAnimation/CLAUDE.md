@@ -14,7 +14,7 @@ Stores animation keyframe data loaded from `.zanim` files.
 - Rotation keyframes (Quaternion + time)
 - Scale keyframes (Vector3 + time)
 
-**Sampling:** `SamplePosition/Rotation/Scale(float fTime)` interpolates between keyframes. Uses linear interpolation for position/scale, spherical linear interpolation (slerp) for rotation.
+**Sampling:** `SamplePosition/Rotation/Scale(float fTimeSeconds)` — key times are SECONDS on the same clock as `m_fDuration` (`m_uTicksPerSecond` is import provenance only) — interpolates between keyframes. Uses linear interpolation for position/scale, spherical linear interpolation (slerp) for rotation.
 
 **Loading:** `LoadFromAssimp()` (tools-only) imports from Assimp's `aiAnimation` structure. Binary `.zanim` files are loaded through the asset system via `Zenith_AnimationAsset::LoadFromFile()` (AssetHandling/Zenith_AnimationAsset.cpp), which calls `Flux_AnimationClip::ReadFromDataStream()` for deserialization.
 

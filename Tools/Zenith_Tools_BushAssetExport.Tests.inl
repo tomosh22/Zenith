@@ -182,11 +182,13 @@ ZENITH_TEST(BushAssets, SwayClipDrivesEveryBranchAndClosesItsLoop)
 			const auto& xKeys = pxChannel->GetRotationKeyframes();
 			ZENITH_ASSERT_GE(xKeys.GetSize(), 2u, "a sway channel has no keyframes");
 			ZENITH_ASSERT_EQ_FLOAT(xKeys.Get(0).second, 0.0f, 1e-4f,
-				"the first keyframe is not at tick 0");
-			// Keyframe times are TICKS: 4 s at 30 ticks/s spans 0..120. A clip
-			// authored in seconds would end at tick 4 -- 3% of its duration.
-			ZENITH_ASSERT_EQ_FLOAT(xKeys.Get(xKeys.GetSize() - 1).second, 120.0f, 1e-3f,
-				"the last keyframe is not at tick 120 -- were the key times authored in seconds?");
+				"the first keyframe is not at t=0");
+			// Keyframe times are SECONDS (D3), on the clip's own clock: the last key
+			// lands at the duration, 4.0. This assertion used to demand 120 -- the
+			// tick count for the same instant at 30 ticks/s -- and it is the check
+			// that would catch the conversion being half-applied in either direction.
+			ZENITH_ASSERT_EQ_FLOAT(xKeys.Get(xKeys.GetSize() - 1).second, pxClip->GetDuration(), 1e-3f,
+				"the last keyframe is not at the clip duration -- were the key times left in ticks?");
 			const Zenith_Maths::Quat xFirst = xKeys.Get(0).first;
 			const Zenith_Maths::Quat xLast = xKeys.Get(xKeys.GetSize() - 1).first;
 			ZENITH_ASSERT_GT(std::abs(glm::dot(xFirst, xLast)), 0.999999f,

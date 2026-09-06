@@ -2,7 +2,7 @@
 
 // ============================================================================
 // ZM_CreatureAnimCommon -- shared procedural-clip kit implementation. See the
-// header for the unit-duality + rotation-only contract. ZM_AnimAddRotCurve is a
+// header for the one-unit (seconds, D3) + rotation-only contract. ZM_AnimAddRotCurve is a
 // header-inline template (it takes a captureless/small-capture callable); only
 // the non-template atoms live here.
 // ============================================================================
@@ -46,7 +46,7 @@ void ZM_AnimAddRotKeys(Flux_AnimationClip& xClip, const char* szBone,
 	Flux_BoneChannel xChannel;
 	for (u_int u = 0; u < uCount; ++u)
 	{
-		xChannel.AddRotationKeyframe(pxKeys[u].m_fTick, pxKeys[u].m_xRot);
+		xChannel.AddRotationKeyframe(pxKeys[u].m_fTimeSeconds, pxKeys[u].m_xRot);
 	}
 	xChannel.SortKeyframes();
 	xClip.AddBoneChannel(szBone, std::move(xChannel));

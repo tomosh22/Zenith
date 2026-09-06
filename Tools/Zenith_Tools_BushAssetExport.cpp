@@ -445,20 +445,26 @@ Zenith_MeshAsset* CreateBushFoliageMesh(const Zenith_Vector<BushBranch>& xBranch
 // ripple, per-branch phase and amplitude, about wind-perpendicular axes (the
 // same axes the tree uses, so one wind direction reads across the whole map).
 // 4-second loop; the first and last keys land on the same value because both
-// sines complete whole cycles. Keyframe times are in TICKS (30/s), not
-// seconds — 0..120, not 0..4.
+// sines complete whole cycles.
+//
+// Keyframe times are SECONDS (D3) — 0..4, on the same clock as SetDuration. They
+// used to be ticks at 30/s (0..120), which is what the old comment here said out
+// loud and what the sampler's ticks-per-second multiply existed to undo.
 //=============================================================================
+// ONE constant feeds both the duration and the key spread, so the two cannot drift.
+constexpr float fBUSH_SWAY_TOTAL_SECONDS = 4.0f;
+
 Flux_AnimationClip* CreateBushSwayClip(const Zenith_Vector<BushBranch>& xBranches,
 	const BushVariantSpec& xSpec)
 {
 	Flux_AnimationClip* pxClip = new Flux_AnimationClip();
 	pxClip->SetName("Sway");
-	pxClip->SetDuration(4.0f);
+	pxClip->SetDuration(fBUSH_SWAY_TOTAL_SECONDS);
+	// Provenance only: the 30 fps grid this curve was authored on (D3).
 	pxClip->SetTicksPerSecond(30);
 	pxClip->SetLooping(true);
 
 	constexpr u_int uKEYS = 17;
-	constexpr float fTOTAL_TICKS = 120.0f;
 
 	for (u_int uBranch = 0; uBranch < xBranches.GetSize(); uBranch++)
 	{
@@ -477,7 +483,7 @@ Flux_AnimationClip* CreateBushSwayClip(const Zenith_Vector<BushBranch>& xBranche
 			const Zenith_Maths::Quat xRot =
 				glm::angleAxis(fAngle, Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f)) *
 				glm::angleAxis(fAngle * 0.4f, Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f));
-			xChannel.AddRotationKeyframe(fT * fTOTAL_TICKS, xRot);
+			xChannel.AddRotationKeyframe(fT * fBUSH_SWAY_TOTAL_SECONDS, xRot);
 		}
 		xChannel.SortKeyframes();
 		pxClip->AddBoneChannel(xBranch.m_strBoneName, std::move(xChannel));

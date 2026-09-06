@@ -42,4 +42,4 @@ inline constexpr u_int uZENITH_SKELETON_SCHEMA_CURRENT = 2;
 inline constexpr u_int uZENITH_MODEL_SCHEMA_CURRENT    = 2;
 // .zanim had NO version word at all before it adopted the envelope, so its schema
 // starts at 1 — the first layout that is self-describing on the wire.
-inline constexpr u_int uZENITH_ANIMATION_SCHEMA_CURRENT = 1;
+inline constexpr u_int uZENITH_ANIMATION_SCHEMA_CURRENT = 2;  // 2: key times are SECONDS (were ticks); byte layout unchanged

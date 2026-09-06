@@ -2651,45 +2651,64 @@ Zenith_Maths::Quat HumanRotX(float fDeg) { return glm::angleAxis(glm::radians(fD
 Zenith_Maths::Quat HumanRotY(float fDeg) { return glm::angleAxis(glm::radians(fDeg), Zenith_Maths::Vector3(0, 1, 0)); }
 Zenith_Maths::Quat HumanRotZ(float fDeg) { return glm::angleAxis(glm::radians(fDeg), Zenith_Maths::Vector3(0, 0, 1)); }
 
-// Sample a continuous curve into a bone rotation channel.
+//------------------------------------------------------------------------------
+// ★ THE KEY GRID, AND THE ONE PLACE IT IS DIVIDED OUT.
+//
+// A Flux_BoneChannel key time is SECONDS (D3) — the same clock as
+// Flux_AnimationClip::SetDuration. These action clips are AUTHORED as a frame
+// index on a 24 fps grid, because that is how the poses were timed and how they
+// read (`{ 3.8f, … }` is "frame 3.8 of 12"), so the frame->second division happens
+// exactly once, in HumanAddRotKeys / HumanAddPosKeys below.
+//
+// Do NOT add a second conversion at a call site. Every literal in a HumanRotKey /
+// HumanPosKey array is a FRAME; every argument to HumanAddRotCurve /
+// HumanAddPosCurve is a duration in SECONDS.
+//------------------------------------------------------------------------------
+constexpr float fHUMAN_ANIM_FPS = 24.0f;
+
+constexpr float HumanFrameSeconds(float fFrame) { return fFrame / fHUMAN_ANIM_FPS; }
+
+// Sample a continuous curve into a bone rotation channel. fTotalSeconds is the
+// clip's duration in SECONDS — key u lands at (u/(N-1)) * fTotalSeconds.
 // TFn: Zenith_Maths::Quat(float fT01).
 template <typename TFn>
-void HumanAddRotCurve(Flux_AnimationClip* pxClip, const char* szBone, float fTotalTicks, u_int uKeys, TFn&& xFn)
+void HumanAddRotCurve(Flux_AnimationClip* pxClip, const char* szBone, float fTotalSeconds, u_int uKeys, TFn&& xFn)
 {
 	Flux_BoneChannel xChannel;
 	for (u_int u = 0; u < uKeys; u++)
 	{
 		const float fT = static_cast<float>(u) / static_cast<float>(uKeys - 1);
-		xChannel.AddRotationKeyframe(fT * fTotalTicks, xFn(fT));
+		xChannel.AddRotationKeyframe(fT * fTotalSeconds, xFn(fT));
 	}
 	xChannel.SortKeyframes();
 	pxClip->AddBoneChannel(szBone, std::move(xChannel));
 }
 
-// TFn: Zenith_Maths::Vector3(float fT01).
+// TFn: Zenith_Maths::Vector3(float fT01). fTotalSeconds as above.
 template <typename TFn>
-void HumanAddPosCurve(Flux_AnimationClip* pxClip, const char* szBone, float fTotalTicks, u_int uKeys, TFn&& xFn)
+void HumanAddPosCurve(Flux_AnimationClip* pxClip, const char* szBone, float fTotalSeconds, u_int uKeys, TFn&& xFn)
 {
 	Flux_BoneChannel xChannel;
 	for (u_int u = 0; u < uKeys; u++)
 	{
 		const float fT = static_cast<float>(u) / static_cast<float>(uKeys - 1);
-		xChannel.AddPositionKeyframe(fT * fTotalTicks, xFn(fT));
+		xChannel.AddPositionKeyframe(fT * fTotalSeconds, xFn(fT));
 	}
 	xChannel.SortKeyframes();
 	pxClip->AddBoneChannel(szBone, std::move(xChannel));
 }
 
-// Explicit key-pose channels for the action clips.
-struct HumanRotKey { float fTick; Zenith_Maths::Quat xRot; };
-struct HumanPosKey { float fTick; Zenith_Maths::Vector3 xPos; };
+// Explicit key-pose channels for the action clips. fFrame is a FRAME INDEX on the
+// 24 fps authoring grid, converted to seconds on the way into the channel.
+struct HumanRotKey { float fFrame; Zenith_Maths::Quat xRot; };
+struct HumanPosKey { float fFrame; Zenith_Maths::Vector3 xPos; };
 
 void HumanAddRotKeys(Flux_AnimationClip* pxClip, const char* szBone, const HumanRotKey* pxKeys, u_int uCount)
 {
 	Flux_BoneChannel xChannel;
 	for (u_int u = 0; u < uCount; u++)
 	{
-		xChannel.AddRotationKeyframe(pxKeys[u].fTick, pxKeys[u].xRot);
+		xChannel.AddRotationKeyframe(HumanFrameSeconds(pxKeys[u].fFrame), pxKeys[u].xRot);
 	}
 	xChannel.SortKeyframes();
 	pxClip->AddBoneChannel(szBone, std::move(xChannel));
@@ -2700,7 +2719,7 @@ void HumanAddPosKeys(Flux_AnimationClip* pxClip, const char* szBone, const Human
 	Flux_BoneChannel xChannel;
 	for (u_int u = 0; u < uCount; u++)
 	{
-		xChannel.AddPositionKeyframe(pxKeys[u].fTick, pxKeys[u].xPos);
+		xChannel.AddPositionKeyframe(HumanFrameSeconds(pxKeys[u].fFrame), pxKeys[u].xPos);
 	}
 	xChannel.SortKeyframes();
 	pxClip->AddBoneChannel(szBone, std::move(xChannel));
@@ -2722,7 +2741,7 @@ float HumanGaitBump(float fPhase01, float fCentre01, float fWidth01)
 
 // Shared full-body walk/run cycle. fStride scales the leg/arm amplitudes,
 // fLean the forward lean, fBob the pelvis bob.
-void HumanBuildGaitClip(Flux_AnimationClip* pxClip, float fTicks,
+void HumanBuildGaitClip(Flux_AnimationClip* pxClip, float fDurationSeconds,
                         float fHipFwd, float fHipBack, float fKneeStance, float fKneeSwing,
                         float fArmSwing, float fElbowBase, float fElbowPump,
                         float fLean, float fBob, float fYaw)
@@ -2737,7 +2756,7 @@ void HumanBuildGaitClip(Flux_AnimationClip* pxClip, float fTicks,
 		const char* szLower = (uSide == 0) ? "LeftLowerLeg" : "RightLowerLeg";
 		const char* szFoot = (uSide == 0) ? "LeftFoot" : "RightFoot";
 
-		HumanAddRotCurve(pxClip, szUpper, fTicks, uKEYS, [=](float fT)
+		HumanAddRotCurve(pxClip, szUpper, fDurationSeconds, uKEYS, [=](float fT)
 		{
 			const float fP = fT + fPhase;
 			// cos = +1 at heel strike: swing forward (-X) at phase 0.
@@ -2745,7 +2764,7 @@ void HumanBuildGaitClip(Flux_AnimationClip* pxClip, float fTicks,
 			const float fAmp = 0.5f * (fHipBack + fHipFwd);
 			return HumanRotX(fMid - fAmp * cosf(fP * fHUMAN_TWO_PI));
 		});
-		HumanAddRotCurve(pxClip, szLower, fTicks, uKEYS, [=](float fT)
+		HumanAddRotCurve(pxClip, szLower, fDurationSeconds, uKEYS, [=](float fT)
 		{
 			const float fP = fT + fPhase;
 			const float fFlex = 4.0f
@@ -2753,7 +2772,7 @@ void HumanBuildGaitClip(Flux_AnimationClip* pxClip, float fTicks,
 				+ fKneeSwing * HumanGaitBump(fP, 0.72f, 0.20f);
 			return HumanRotX(fFlex);
 		});
-		HumanAddRotCurve(pxClip, szFoot, fTicks, uKEYS, [=](float fT)
+		HumanAddRotCurve(pxClip, szFoot, fDurationSeconds, uKEYS, [=](float fT)
 		{
 			const float fP = fT + fPhase;
 			const float fAngle = -7.0f * HumanGaitBump(fP, 0.02f, 0.10f)     // heel-strike dorsiflex
@@ -2771,12 +2790,12 @@ void HumanBuildGaitClip(Flux_AnimationClip* pxClip, float fTicks,
 		const char* szLower = (uSide == 0) ? "LeftLowerArm" : "RightLowerArm";
 		const float fOut = (uSide == 0) ? -3.5f : 3.5f;    // arms hang slightly out
 
-		HumanAddRotCurve(pxClip, szUpper, fTicks, uKEYS, [=](float fT)
+		HumanAddRotCurve(pxClip, szUpper, fDurationSeconds, uKEYS, [=](float fT)
 		{
 			const float fSwing = -2.0f + fSign * fArmSwing * cosf(fT * fHUMAN_TWO_PI);
 			return HumanRotX(fSwing) * HumanRotZ(fOut);
 		});
-		HumanAddRotCurve(pxClip, szLower, fTicks, uKEYS, [=](float fT)
+		HumanAddRotCurve(pxClip, szLower, fDurationSeconds, uKEYS, [=](float fT)
 		{
 			// More elbow bend while the arm swings forward.
 			const float fFwd = 0.5f * (1.0f - fSign * cosf(fT * fHUMAN_TWO_PI));
@@ -2786,7 +2805,7 @@ void HumanBuildGaitClip(Flux_AnimationClip* pxClip, float fTicks,
 
 	// Pelvis: vertical bob (2 per cycle), lateral sway toward the stance leg,
 	// counter-rotating yaw.
-	HumanAddPosCurve(pxClip, "Root", fTicks, uKEYS, [=](float fT)
+	HumanAddPosCurve(pxClip, "Root", fDurationSeconds, uKEYS, [=](float fT)
 	{
 		const float fP = fT * fHUMAN_TWO_PI;
 		return Zenith_Maths::Vector3(
@@ -2794,24 +2813,24 @@ void HumanBuildGaitClip(Flux_AnimationClip* pxClip, float fTicks,
 			-0.4f * fBob + fBob * cosf(2.0f * fP + 0.35f),
 			0.0f);
 	});
-	HumanAddRotCurve(pxClip, "Root", fTicks, uKEYS, [=](float fT)
+	HumanAddRotCurve(pxClip, "Root", fDurationSeconds, uKEYS, [=](float fT)
 	{
 		const float fP = fT * fHUMAN_TWO_PI;
 		return HumanRotY(fYaw * cosf(fP)) * HumanRotZ(1.6f * sinf(fP));
 	});
 
 	// Spine counters the pelvis and leans into the motion; the head stabilizes.
-	HumanAddRotCurve(pxClip, "Spine", fTicks, uKEYS, [=](float fT)
+	HumanAddRotCurve(pxClip, "Spine", fDurationSeconds, uKEYS, [=](float fT)
 	{
 		const float fP = fT * fHUMAN_TWO_PI;
 		return HumanRotX(fLean) * HumanRotY(-1.4f * fYaw * cosf(fP)) * HumanRotZ(-1.2f * sinf(fP));
 	});
-	HumanAddRotCurve(pxClip, "Head", fTicks, uKEYS, [=](float fT)
+	HumanAddRotCurve(pxClip, "Head", fDurationSeconds, uKEYS, [=](float fT)
 	{
 		const float fP = fT * fHUMAN_TWO_PI;
 		return HumanRotX(-fLean * 0.55f + 0.8f * cosf(2.0f * fP)) * HumanRotY(0.45f * fYaw * cosf(fP));
 	});
-	HumanAddRotCurve(pxClip, "Neck", fTicks, uKEYS, [=](float fT)
+	HumanAddRotCurve(pxClip, "Neck", fDurationSeconds, uKEYS, [=](float fT)
 	{
 		const float fP = fT * fHUMAN_TWO_PI;
 		return HumanRotX(-fLean * 0.25f + 0.4f * cosf(2.0f * fP + 0.5f));
@@ -2832,7 +2851,8 @@ static Flux_AnimationClip* CreateIdleAnimation()
 	pxClip->SetTicksPerSecond(24);
 	pxClip->SetLooping(true);
 
-	constexpr float fTICKS = 48.0f;
+	// 2.0 s of key spread, matching SetDuration above (was 48 ticks @ 24/s).
+	constexpr float fDURATION_SECONDS = 2.0f;
 	constexpr u_int uKEYS = 25;
 
 	// Breathing: the whole upper body rides the Spine bone, so a small lift +
@@ -2845,24 +2865,24 @@ static Flux_AnimationClip* CreateIdleAnimation()
 	{
 		const float fSpineLocalY =
 			Zenith_HumanProportionsRealistic().SpineY() - Zenith_HumanProportionsRealistic().HipY();
-		HumanAddPosCurve(pxClip, "Spine", fTICKS, uKEYS, [fSpineLocalY](float fT)
+		HumanAddPosCurve(pxClip, "Spine", fDURATION_SECONDS, uKEYS, [fSpineLocalY](float fT)
 		{
 			return Zenith_Maths::Vector3(0.0f, fSpineLocalY + 0.007f * sinf(fT * fHUMAN_TWO_PI), 0.0f);
 		});
 	}
-	HumanAddRotCurve(pxClip, "Spine", fTICKS, uKEYS, [](float fT)
+	HumanAddRotCurve(pxClip, "Spine", fDURATION_SECONDS, uKEYS, [](float fT)
 	{
 		const float fP = fT * fHUMAN_TWO_PI;
 		return HumanRotX(1.1f * sinf(fP + 0.3f)) * HumanRotZ(0.5f * sinf(fP));
 	});
 
 	// Slow weight shift on the pelvis.
-	HumanAddPosCurve(pxClip, "Root", fTICKS, uKEYS, [](float fT)
+	HumanAddPosCurve(pxClip, "Root", fDURATION_SECONDS, uKEYS, [](float fT)
 	{
 		const float fP = fT * fHUMAN_TWO_PI;
 		return Zenith_Maths::Vector3(0.009f * sinf(fP), -0.004f + 0.004f * cosf(fP), 0.0f);
 	});
-	HumanAddRotCurve(pxClip, "Root", fTICKS, uKEYS, [](float fT)
+	HumanAddRotCurve(pxClip, "Root", fDURATION_SECONDS, uKEYS, [](float fT)
 	{
 		return HumanRotZ(0.9f * sinf(fT * fHUMAN_TWO_PI));
 	});
@@ -2874,18 +2894,18 @@ static Flux_AnimationClip* CreateIdleAnimation()
 		const float fPhase = (uSide == 0) ? 0.9f : 2.1f;
 		const char* szUpper = (uSide == 0) ? "LeftUpperArm" : "RightUpperArm";
 		const char* szLower = (uSide == 0) ? "LeftLowerArm" : "RightLowerArm";
-		HumanAddRotCurve(pxClip, szUpper, fTICKS, uKEYS, [=](float fT)
+		HumanAddRotCurve(pxClip, szUpper, fDURATION_SECONDS, uKEYS, [=](float fT)
 		{
 			return HumanRotX(1.6f * sinf(fT * fHUMAN_TWO_PI + fPhase)) * HumanRotZ(fOut);
 		});
-		HumanAddRotCurve(pxClip, szLower, fTICKS, uKEYS, [=](float fT)
+		HumanAddRotCurve(pxClip, szLower, fDURATION_SECONDS, uKEYS, [=](float fT)
 		{
 			return HumanRotX(-8.0f - 1.5f * sinf(fT * fHUMAN_TWO_PI + fPhase));
 		});
 	}
 
 	// Head: slow attentive drift.
-	HumanAddRotCurve(pxClip, "Head", fTICKS, uKEYS, [](float fT)
+	HumanAddRotCurve(pxClip, "Head", fDURATION_SECONDS, uKEYS, [](float fT)
 	{
 		const float fP = fT * fHUMAN_TWO_PI;
 		return HumanRotY(2.4f * sinf(fP)) * HumanRotX(-1.0f + 0.9f * sinf(fP + 0.7f));
@@ -2902,7 +2922,8 @@ static Flux_AnimationClip* CreateWalkAnimation()
 	pxClip->SetTicksPerSecond(24);
 	pxClip->SetLooping(true);
 
-	HumanBuildGaitClip(pxClip, 24.0f,
+	// 1.0 s — the clip's own duration, in seconds (was 24 ticks @ 24/s).
+	HumanBuildGaitClip(pxClip, 1.0f,
 		/*hipFwd*/ 28.0f, /*hipBack*/ 18.0f,
 		/*kneeStance*/ 13.0f, /*kneeSwing*/ 52.0f,
 		/*armSwing*/ 21.0f, /*elbowBase*/ 16.0f, /*elbowPump*/ 13.0f,
@@ -2919,7 +2940,8 @@ static Flux_AnimationClip* CreateRunAnimation()
 	pxClip->SetTicksPerSecond(24);
 	pxClip->SetLooping(true);
 
-	HumanBuildGaitClip(pxClip, 12.0f,
+	// 0.5 s — the clip's own duration, in seconds (was 12 ticks @ 24/s).
+	HumanBuildGaitClip(pxClip, 0.5f,
 		/*hipFwd*/ 50.0f, /*hipBack*/ 26.0f,
 		/*kneeStance*/ 22.0f, /*kneeSwing*/ 82.0f,
 		/*armSwing*/ 34.0f, /*elbowBase*/ 62.0f, /*elbowPump*/ 18.0f,
@@ -3542,15 +3564,18 @@ static Flux_AnimationClip* CreateAimAnimation()
 	// (AimClipRightArmRotation samples both), and 3 must match 0 because
 	// SampleRotation's end-of-clip fallback EXTRAPOLATES the first segment —
 	// slerp(key0, key1, (12-0)/(3-0)) — so any 0->3 delta would be amplified
-	// 4x at the t=12 boundary sample. The +-sway lives at ticks 6 and 9.
+	// 4x at the frame-12 boundary sample. The +-sway lives at frames 6 and 9.
+	//
+	// Frame indices on the 24 fps grid, divided into seconds by HumanFrameSeconds:
+	// frame 12 is the clip's 0.5 s end (D3 — a channel stores seconds).
 	auto AddHold = [&](const char* szBone, const Zenith_Maths::Quat& xPose, float fSwayDeg)
 	{
 		Flux_BoneChannel xChannel;
-		xChannel.AddRotationKeyframe(0.0f, xPose);
-		xChannel.AddRotationKeyframe(3.0f, xPose);
-		xChannel.AddRotationKeyframe(6.0f, HumanRotX(fSwayDeg) * xPose);
-		xChannel.AddRotationKeyframe(9.0f, HumanRotX(-fSwayDeg) * xPose);
-		xChannel.AddRotationKeyframe(12.0f, xPose);
+		xChannel.AddRotationKeyframe(HumanFrameSeconds(0.0f),  xPose);
+		xChannel.AddRotationKeyframe(HumanFrameSeconds(3.0f),  xPose);
+		xChannel.AddRotationKeyframe(HumanFrameSeconds(6.0f),  HumanRotX(fSwayDeg) * xPose);
+		xChannel.AddRotationKeyframe(HumanFrameSeconds(9.0f),  HumanRotX(-fSwayDeg) * xPose);
+		xChannel.AddRotationKeyframe(HumanFrameSeconds(12.0f), xPose);
 		xChannel.SortKeyframes();
 		pxClip->AddBoneChannel(szBone, std::move(xChannel));
 	};
@@ -3576,17 +3601,21 @@ static Flux_AnimationClip* CreateFireAnimation()
 	const Zenith_Maths::Vector3 xXAxis(1, 0, 0);
 
 	// Recoil deltas applied on top of the aim hold pose, so arms stay raised.
-	// The t=2 peak (RightUpperArm = +15 deg X on the hold pose) is pinned by
-	// FireClipPeakRecoil; the t=3.5 key adds a small settle overshoot.
+	// The frame-2 peak (RightUpperArm = +15 deg X on the hold pose) is pinned by
+	// FireClipPeakRecoil; the frame-3.5 key adds a small settle overshoot.
+	//
+	// Frame indices on the 24 fps grid; HumanFrameSeconds divides them into the
+	// seconds a channel stores (D3). Frame 5 is 0.208 s — slightly past the 0.20 s
+	// duration, which is the clip's own pre-existing rounding, not a unit slip.
 	auto AddRecoil = [&](const char* szBone, const Zenith_Maths::Quat& xRest, float fKickDeg)
 	{
 		const Zenith_Maths::Quat xKick = glm::angleAxis(glm::radians(fKickDeg), xXAxis) * xRest;
 		const Zenith_Maths::Quat xSettle = glm::angleAxis(glm::radians(-fKickDeg * 0.18f), xXAxis) * xRest;
 		Flux_BoneChannel xChannel;
-		xChannel.AddRotationKeyframe(0.0f, xRest);
-		xChannel.AddRotationKeyframe(2.0f, xKick);
-		xChannel.AddRotationKeyframe(3.5f, xSettle);
-		xChannel.AddRotationKeyframe(5.0f, xRest);
+		xChannel.AddRotationKeyframe(HumanFrameSeconds(0.0f), xRest);
+		xChannel.AddRotationKeyframe(HumanFrameSeconds(2.0f), xKick);
+		xChannel.AddRotationKeyframe(HumanFrameSeconds(3.5f), xSettle);
+		xChannel.AddRotationKeyframe(HumanFrameSeconds(5.0f), xRest);
 		xChannel.SortKeyframes();
 		pxClip->AddBoneChannel(szBone, std::move(xChannel));
 	};
@@ -4117,11 +4146,12 @@ static Flux_AnimationClip* CreateReadyStanceAnimation()
 	pxClip->SetTicksPerSecond(24);
 	pxClip->SetLooping(true);
 
-	constexpr float fTICKS = 36.0f;
+	// 1.5 s of key spread, matching SetDuration above (was 36 ticks @ 24/s).
+	constexpr float fDURATION_SECONDS = 1.5f;
 	constexpr u_int uKEYS = 25;
 
 	// Pelvis: low crouch with a two-per-cycle split-step bounce + small sway.
-	HumanAddPosCurve(pxClip, "Root", fTICKS, uKEYS, [](float fT)
+	HumanAddPosCurve(pxClip, "Root", fDURATION_SECONDS, uKEYS, [](float fT)
 	{
 		const float fP = fT * fHUMAN_TWO_PI;
 		return Zenith_Maths::Vector3(0.012f * sinf(fP), -0.05f + 0.025f * cosf(2.0f * fP), 0.0f);
@@ -4133,22 +4163,22 @@ static Flux_AnimationClip* CreateReadyStanceAnimation()
 		const char* szUpper = (uSide == 0) ? "LeftUpperLeg" : "RightUpperLeg";
 		const char* szLower = (uSide == 0) ? "LeftLowerLeg" : "RightLowerLeg";
 		const char* szFoot  = (uSide == 0) ? "LeftFoot" : "RightFoot";
-		HumanAddRotCurve(pxClip, szUpper, fTICKS, uKEYS, [](float fT)
+		HumanAddRotCurve(pxClip, szUpper, fDURATION_SECONDS, uKEYS, [](float fT)
 		{
 			return HumanRotX(-6.0f + 2.0f * cosf(2.0f * fT * fHUMAN_TWO_PI));
 		});
-		HumanAddRotCurve(pxClip, szLower, fTICKS, uKEYS, [](float fT)
+		HumanAddRotCurve(pxClip, szLower, fDURATION_SECONDS, uKEYS, [](float fT)
 		{
 			return HumanRotX(30.0f + 5.0f * cosf(2.0f * fT * fHUMAN_TWO_PI));
 		});
-		HumanAddRotCurve(pxClip, szFoot, fTICKS, uKEYS, [](float fT)
+		HumanAddRotCurve(pxClip, szFoot, fDURATION_SECONDS, uKEYS, [](float fT)
 		{
 			return HumanRotX(8.0f + 2.0f * cosf(2.0f * fT * fHUMAN_TWO_PI));
 		});
 	}
 
 	// Forward lean with a small lateral rock.
-	HumanAddRotCurve(pxClip, "Spine", fTICKS, uKEYS, [](float fT)
+	HumanAddRotCurve(pxClip, "Spine", fDURATION_SECONDS, uKEYS, [](float fT)
 	{
 		return HumanRotX(12.0f) * HumanRotZ(1.5f * sinf(fT * fHUMAN_TWO_PI));
 	});
@@ -4160,18 +4190,18 @@ static Flux_AnimationClip* CreateReadyStanceAnimation()
 		const float fIn = (uSide == 0) ? 12.0f : -12.0f;   // bring both arms toward centre
 		const char* szUpper = (uSide == 0) ? "LeftUpperArm" : "RightUpperArm";
 		const char* szLower = (uSide == 0) ? "LeftLowerArm" : "RightLowerArm";
-		HumanAddRotCurve(pxClip, szUpper, fTICKS, uKEYS, [=](float fT)
+		HumanAddRotCurve(pxClip, szUpper, fDURATION_SECONDS, uKEYS, [=](float fT)
 		{
 			return HumanRotX(-40.0f + 2.5f * cosf(2.0f * fT * fHUMAN_TWO_PI)) * HumanRotZ(fIn);
 		});
-		HumanAddRotCurve(pxClip, szLower, fTICKS, uKEYS, [](float fT)
+		HumanAddRotCurve(pxClip, szLower, fDURATION_SECONDS, uKEYS, [](float fT)
 		{
 			return HumanRotX(-55.0f + 3.0f * cosf(2.0f * fT * fHUMAN_TWO_PI));
 		});
 	}
 
 	// Head: attentive, watching the ball.
-	HumanAddRotCurve(pxClip, "Head", fTICKS, uKEYS, [](float fT)
+	HumanAddRotCurve(pxClip, "Head", fDURATION_SECONDS, uKEYS, [](float fT)
 	{
 		return HumanRotX(-4.0f) * HumanRotY(1.5f * sinf(fT * fHUMAN_TWO_PI));
 	});

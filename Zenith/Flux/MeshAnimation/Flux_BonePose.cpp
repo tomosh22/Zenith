@@ -164,8 +164,13 @@ void Flux_SkeletonPose::SampleFromClip(const Flux_AnimationClip& xClip,
 	float fTime,
 	const Flux_MeshGeometry& xGeometry)
 {
-	// Convert time to ticks
-	float fTimeInTicks = fTime * xClip.GetTicksPerSecond();
+	// ★ NO UNIT CONVERSION HERE, AND THAT IS THE POINT (D3). fTime is wall-clock
+	// seconds and a channel's key times are seconds, so the sampler hands one
+	// straight to the other. This used to be
+	//     float fTimeInTicks = fTime * xClip.GetTicksPerSecond();
+	// which made a clip's playback depend on a metadata field that no generator had
+	// to keep honest — a clip authored in seconds with the default 24 played 24x
+	// fast, and nothing in the type system said so.
 
 	// Sample each bone channel
 	for (Zenith_HashMap<std::string, Flux_BoneChannel>::Iterator xIt(xClip.GetBoneChannels()); !xIt.Done(); xIt.Next())
@@ -183,11 +188,11 @@ void Flux_SkeletonPose::SampleFromClip(const Flux_AnimationClip& xClip,
 				// Only update components that have keyframes in the animation
 				// This preserves bind pose values for components not animated
 				if (xChannel.HasPositionKeyframes())
-					m_axLocalPoses[uBoneIndex].m_xPosition = xChannel.SamplePosition(fTimeInTicks);
+					m_axLocalPoses[uBoneIndex].m_xPosition = xChannel.SamplePosition(fTime);
 				if (xChannel.HasRotationKeyframes())
-					m_axLocalPoses[uBoneIndex].m_xRotation = xChannel.SampleRotation(fTimeInTicks);
+					m_axLocalPoses[uBoneIndex].m_xRotation = xChannel.SampleRotation(fTime);
 				if (xChannel.HasScaleKeyframes())
-					m_axLocalPoses[uBoneIndex].m_xScale = xChannel.SampleScale(fTimeInTicks);
+					m_axLocalPoses[uBoneIndex].m_xScale = xChannel.SampleScale(fTime);
 			}
 		}
 	}
@@ -197,8 +202,8 @@ void Flux_SkeletonPose::SampleFromClip(const Flux_AnimationClip& xClip,
 	float fTime,
 	const Zenith_SkeletonAsset& xSkeleton)
 {
-	// Convert time to ticks
-	float fTimeInTicks = fTime * xClip.GetTicksPerSecond();
+	// ★ fTime is SECONDS and so are the channel key times — see the overload above
+	// for why there is no ticks-per-second multiply here any more (D3).
 
 	// Debug: Log bone name matching once
 	static bool s_bLoggedBoneNames = false;
@@ -252,11 +257,11 @@ void Flux_SkeletonPose::SampleFromClip(const Flux_AnimationClip& xClip,
 				// Only update components that have keyframes in the animation
 				// This preserves bind pose values for components not animated
 				if (xChannel.HasPositionKeyframes())
-					m_axLocalPoses[uBoneIndex].m_xPosition = xChannel.SamplePosition(fTimeInTicks);
+					m_axLocalPoses[uBoneIndex].m_xPosition = xChannel.SamplePosition(fTime);
 				if (xChannel.HasRotationKeyframes())
-					m_axLocalPoses[uBoneIndex].m_xRotation = xChannel.SampleRotation(fTimeInTicks);
+					m_axLocalPoses[uBoneIndex].m_xRotation = xChannel.SampleRotation(fTime);
 				if (xChannel.HasScaleKeyframes())
-					m_axLocalPoses[uBoneIndex].m_xScale = xChannel.SampleScale(fTimeInTicks);
+					m_axLocalPoses[uBoneIndex].m_xScale = xChannel.SampleScale(fTime);
 			}
 		}
 	}

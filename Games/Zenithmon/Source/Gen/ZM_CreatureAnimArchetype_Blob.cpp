@@ -77,23 +77,23 @@ namespace
 	// -------------------------------------------------------------------------
 	void ZM_BlobBuildIdle(Flux_AnimationClip& xOut)
 	{
-		const float fTicks = ZM_AnimTicksForT01(1.0f, xOut.GetDuration());
+		const float fClipSeconds = ZM_AnimTimeForT01(1.0f, xOut.GetDuration());
 		const u_int uKeys  = uZM_BLOB_IDLE_KEYS;
 
 		// Mid node: gentle lateral sway + slow breathe.
-		ZM_AnimAddRotCurve(xOut, szZM_BLOB_SPINE[1], fTicks, uKeys, [](float fT)
+		ZM_AnimAddRotCurve(xOut, szZM_BLOB_SPINE[1], fClipSeconds, uKeys, [](float fT)
 		{
 			const float fP = fT * fZM_BLOB_TWO_PI;
 			return ZM_AnimRotCompose(ZM_AnimRotZ(2.5f * sinf(fP)), ZM_AnimRotX(1.5f * sinf(fP + 0.5f)));
 		});
 		// Crown node: a touch more sway, counter-phase to the mid so the dome jiggles.
-		ZM_AnimAddRotCurve(xOut, szZM_BLOB_SPINE[2], fTicks, uKeys, [](float fT)
+		ZM_AnimAddRotCurve(xOut, szZM_BLOB_SPINE[2], fClipSeconds, uKeys, [](float fT)
 		{
 			const float fP = fT * fZM_BLOB_TWO_PI;
 			return ZM_AnimRotCompose(ZM_AnimRotZ(-3.5f * sinf(fP)), ZM_AnimRotX(2.0f * sinf(fP + 0.9f)));
 		});
 		// Crown nub: slow lazy sway.
-		ZM_AnimAddRotCurve(xOut, szZM_BLOB_NUB, fTicks, uKeys, [](float fT)
+		ZM_AnimAddRotCurve(xOut, szZM_BLOB_NUB, fClipSeconds, uKeys, [](float fT)
 		{
 			const float fP = fT * fZM_BLOB_TWO_PI;
 			return ZM_AnimRotCompose(ZM_AnimRotY(4.0f * sinf(fP)), ZM_AnimRotX(2.5f * sinf(fP + 0.3f)));
@@ -110,13 +110,13 @@ namespace
 	// -------------------------------------------------------------------------
 	void ZM_BlobBuildWalk(Flux_AnimationClip& xOut)
 	{
-		const float fTicks = ZM_AnimTicksForT01(1.0f, xOut.GetDuration());
+		const float fClipSeconds = ZM_AnimTimeForT01(1.0f, xOut.GetDuration());
 		const u_int uKeys  = uZM_BLOB_WALK_KEYS;
 
 		for (u_int i = 0; i < 3u; ++i)
 		{
 			const float fAmp = fZM_BLOB_WALK_FLEX_BASE + fZM_BLOB_WALK_FLEX_STEP * static_cast<float>(i);
-			ZM_AnimAddRotCurve(xOut, szZM_BLOB_SPINE[i], fTicks, uKeys, [fAmp](float fT)
+			ZM_AnimAddRotCurve(xOut, szZM_BLOB_SPINE[i], fClipSeconds, uKeys, [fAmp](float fT)
 			{
 				// Raised-cosine compression pulse (two hops/cycle); pulse(0)==pulse(1)==0.
 				const float fPulse = 0.5f - 0.5f * cosf(fT * fZM_BLOB_TWO_PI * 2.0f);
@@ -125,7 +125,7 @@ namespace
 		}
 
 		// Nub bobs counter to the body hop (RotX, two per cycle).
-		ZM_AnimAddRotCurve(xOut, szZM_BLOB_NUB, fTicks, uKeys, [](float fT)
+		ZM_AnimAddRotCurve(xOut, szZM_BLOB_NUB, fClipSeconds, uKeys, [](float fT)
 		{
 			return ZM_AnimRotX(-fZM_BLOB_WALK_NUB_AMP * sinf(fT * fZM_BLOB_TWO_PI * 2.0f));
 		});
@@ -143,29 +143,29 @@ namespace
 		const Zenith_Maths::Quat xId = ZM_BlobId();
 
 		const ZM_AnimRotKey axSpine1[] = {
-			{ ZM_AnimTicksForT01(0.00f, fD), xId },
-			{ ZM_AnimTicksForT01(0.20f, fD), ZM_AnimRotX(-8.0f)  },
-			{ ZM_AnimTicksForT01(0.50f, fD), ZM_AnimRotX(20.0f)  },
-			{ ZM_AnimTicksForT01(0.72f, fD), ZM_AnimRotX(9.0f)   },
-			{ ZM_AnimTicksForT01(1.00f, fD), xId },
+			{ ZM_AnimTimeForT01(0.00f, fD), xId },
+			{ ZM_AnimTimeForT01(0.20f, fD), ZM_AnimRotX(-8.0f)  },
+			{ ZM_AnimTimeForT01(0.50f, fD), ZM_AnimRotX(20.0f)  },
+			{ ZM_AnimTimeForT01(0.72f, fD), ZM_AnimRotX(9.0f)   },
+			{ ZM_AnimTimeForT01(1.00f, fD), xId },
 		};
 		ZM_AnimAddRotKeys(xOut, szZM_BLOB_SPINE[1], axSpine1, 5u);
 
 		const ZM_AnimRotKey axSpine2[] = {
-			{ ZM_AnimTicksForT01(0.00f, fD), xId },
-			{ ZM_AnimTicksForT01(0.20f, fD), ZM_AnimRotX(-11.0f) },
-			{ ZM_AnimTicksForT01(0.50f, fD), ZM_AnimRotX(26.0f)  },
-			{ ZM_AnimTicksForT01(0.72f, fD), ZM_AnimRotX(12.0f)  },
-			{ ZM_AnimTicksForT01(1.00f, fD), xId },
+			{ ZM_AnimTimeForT01(0.00f, fD), xId },
+			{ ZM_AnimTimeForT01(0.20f, fD), ZM_AnimRotX(-11.0f) },
+			{ ZM_AnimTimeForT01(0.50f, fD), ZM_AnimRotX(26.0f)  },
+			{ ZM_AnimTimeForT01(0.72f, fD), ZM_AnimRotX(12.0f)  },
+			{ ZM_AnimTimeForT01(1.00f, fD), xId },
 		};
 		ZM_AnimAddRotKeys(xOut, szZM_BLOB_SPINE[2], axSpine2, 5u);
 
 		const ZM_AnimRotKey axNub[] = {
-			{ ZM_AnimTicksForT01(0.00f, fD), xId },
-			{ ZM_AnimTicksForT01(0.20f, fD), ZM_AnimRotX(-10.0f) },
-			{ ZM_AnimTicksForT01(0.50f, fD), ZM_AnimRotX(30.0f)  },   // Nub jabs forward
-			{ ZM_AnimTicksForT01(0.72f, fD), ZM_AnimRotX(12.0f)  },
-			{ ZM_AnimTicksForT01(1.00f, fD), xId },
+			{ ZM_AnimTimeForT01(0.00f, fD), xId },
+			{ ZM_AnimTimeForT01(0.20f, fD), ZM_AnimRotX(-10.0f) },
+			{ ZM_AnimTimeForT01(0.50f, fD), ZM_AnimRotX(30.0f)  },   // Nub jabs forward
+			{ ZM_AnimTimeForT01(0.72f, fD), ZM_AnimRotX(12.0f)  },
+			{ ZM_AnimTimeForT01(1.00f, fD), xId },
 		};
 		ZM_AnimAddRotKeys(xOut, szZM_BLOB_NUB, axNub, 5u);
 	}
@@ -188,22 +188,22 @@ namespace
 		for (u_int i = 0; i < 3u; ++i)
 		{
 			const ZM_AnimRotKey ax[] = {
-				{ ZM_AnimTicksForT01(0.00f, fD), xId },
-				{ ZM_AnimTicksForT01(0.35f, fD), ZM_AnimRotX(afRear[i])    },
-				{ ZM_AnimTicksForT01(0.55f, fD), ZM_AnimRotX(afHold[i])    },
-				{ ZM_AnimTicksForT01(0.80f, fD), ZM_AnimRotX(afRelease[i]) },
-				{ ZM_AnimTicksForT01(1.00f, fD), xId },
+				{ ZM_AnimTimeForT01(0.00f, fD), xId },
+				{ ZM_AnimTimeForT01(0.35f, fD), ZM_AnimRotX(afRear[i])    },
+				{ ZM_AnimTimeForT01(0.55f, fD), ZM_AnimRotX(afHold[i])    },
+				{ ZM_AnimTimeForT01(0.80f, fD), ZM_AnimRotX(afRelease[i]) },
+				{ ZM_AnimTimeForT01(1.00f, fD), xId },
 			};
 			ZM_AnimAddRotKeys(xOut, szZM_BLOB_SPINE[i], ax, 5u);
 		}
 
 		// Nub whips back with the coil then snaps forward, then settles.
 		const ZM_AnimRotKey axNub[] = {
-			{ ZM_AnimTicksForT01(0.00f, fD), xId },
-			{ ZM_AnimTicksForT01(0.35f, fD), ZM_AnimRotX(-26.0f) },
-			{ ZM_AnimTicksForT01(0.55f, fD), ZM_AnimRotX(-28.0f) },
-			{ ZM_AnimTicksForT01(0.80f, fD), ZM_AnimRotX(16.0f)  },
-			{ ZM_AnimTicksForT01(1.00f, fD), xId },
+			{ ZM_AnimTimeForT01(0.00f, fD), xId },
+			{ ZM_AnimTimeForT01(0.35f, fD), ZM_AnimRotX(-26.0f) },
+			{ ZM_AnimTimeForT01(0.55f, fD), ZM_AnimRotX(-28.0f) },
+			{ ZM_AnimTimeForT01(0.80f, fD), ZM_AnimRotX(16.0f)  },
+			{ ZM_AnimTimeForT01(1.00f, fD), xId },
 		};
 		ZM_AnimAddRotKeys(xOut, szZM_BLOB_NUB, axNub, 5u);
 	}
@@ -224,20 +224,20 @@ namespace
 		for (u_int i = 0; i < 2u; ++i)
 		{
 			const ZM_AnimRotKey ax[] = {
-				{ ZM_AnimTicksForT01(0.00f, fD), xId },
-				{ ZM_AnimTicksForT01(0.25f, fD), ZM_AnimRotZ(afJolt[i]) },
-				{ ZM_AnimTicksForT01(0.55f, fD), ZM_AnimRotZ(afOver[i]) },
-				{ ZM_AnimTicksForT01(1.00f, fD), xId },
+				{ ZM_AnimTimeForT01(0.00f, fD), xId },
+				{ ZM_AnimTimeForT01(0.25f, fD), ZM_AnimRotZ(afJolt[i]) },
+				{ ZM_AnimTimeForT01(0.55f, fD), ZM_AnimRotZ(afOver[i]) },
+				{ ZM_AnimTimeForT01(1.00f, fD), xId },
 			};
 			ZM_AnimAddRotKeys(xOut, szZM_BLOB_SPINE[i + 1u], ax, 4u);
 		}
 
 		// Nub flicks laterally with the wobble, then settles.
 		const ZM_AnimRotKey axNub[] = {
-			{ ZM_AnimTicksForT01(0.00f, fD), xId },
-			{ ZM_AnimTicksForT01(0.25f, fD), ZM_AnimRotZ(-20.0f) },
-			{ ZM_AnimTicksForT01(0.55f, fD), ZM_AnimRotZ(8.0f)   },
-			{ ZM_AnimTicksForT01(1.00f, fD), xId },
+			{ ZM_AnimTimeForT01(0.00f, fD), xId },
+			{ ZM_AnimTimeForT01(0.25f, fD), ZM_AnimRotZ(-20.0f) },
+			{ ZM_AnimTimeForT01(0.55f, fD), ZM_AnimRotZ(8.0f)   },
+			{ ZM_AnimTimeForT01(1.00f, fD), xId },
 		};
 		ZM_AnimAddRotKeys(xOut, szZM_BLOB_NUB, axNub, 4u);
 	}
@@ -253,10 +253,10 @@ namespace
 		const float fD = xOut.GetDuration();
 		const Zenith_Maths::Quat xId = ZM_BlobId();
 
-		const float fT0 = ZM_AnimTicksForT01(0.00f, fD);
-		const float fT1 = ZM_AnimTicksForT01(0.40f, fD);
-		const float fT2 = ZM_AnimTicksForT01(0.70f, fD);
-		const float fT3 = ZM_AnimTicksForT01(1.00f, fD);
+		const float fT0 = ZM_AnimTimeForT01(0.00f, fD);
+		const float fT1 = ZM_AnimTimeForT01(0.40f, fD);
+		const float fT2 = ZM_AnimTimeForT01(0.70f, fD);
+		const float fT3 = ZM_AnimTimeForT01(1.00f, fD);
 
 		// Body flattens forward-down, monotonically; fold grows toward the crown.
 		const float afFold[3] = { 20.0f, 30.0f, 42.0f };   // Spine00, Spine01, Spine02
