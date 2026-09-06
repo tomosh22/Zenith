@@ -136,6 +136,13 @@ Flux_AnimationController& Flux_AnimationController::operator=(Flux_AnimationCont
 
 void Flux_AnimationController::Initialize(Flux_SkeletonInstance* pxSkeleton)
 {
+	// ★ CLEARED FIRST AND UNCONDITIONALLY — see the header. Initialize(nullptr) is
+	// the DETACH, and it used to drop only the instance pointer while the skeleton
+	// handle kept its AddRef'd cached pointer forever. Behaviour-neutral on an
+	// attach: Set() releases the old reference before taking the new one, so this
+	// only changes the nullptr case.
+	m_xSkeletonAsset.Clear();
+
 	m_pxSkeletonInstance = pxSkeleton;
 
 	if (m_pxSkeletonInstance)
@@ -159,6 +166,25 @@ void Flux_AnimationController::Initialize(Flux_SkeletonInstance* pxSkeleton)
 
 		Zenith_Log(LOG_CATEGORY_ANIMATION, "[AnimationController] Initialized with skeleton instance (%u bones)", uNumBones);
 	}
+}
+
+void Flux_AnimationController::ReleaseAssetReferences()
+{
+	// The three go together — see the header. Order is deliberate: the BORROWED
+	// pointers go before the handles that pin them, so there is no instant, however
+	// brief, at which the collection names a clip nothing is keeping alive.
+	m_xClipCollection.Clear();
+
+	// Zenith_Vector::Clear destroys each element, and ~Zenith_AssetHandle releases —
+	// but the explicit Clear() states the intent at the one place a reader looks for
+	// it, and leaves nothing depending on how the container tears an element down.
+	for (u_int u = 0; u < m_xAnimationAssets.GetSize(); ++u)
+	{
+		m_xAnimationAssets.Get(u).Clear();
+	}
+	m_xAnimationAssets.Clear();
+
+	m_xSkeletonAsset.Clear();
 }
 
 uint32_t Flux_AnimationController::GetNumBones() const

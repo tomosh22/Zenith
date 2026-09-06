@@ -294,9 +294,22 @@ public:
 	Zenith_EditorPanel_Animation(const Zenith_EditorPanel_Animation&) = delete;
 	Zenith_EditorPanel_Animation& operator=(const Zenith_EditorPanel_Animation&) = delete;
 
-	// The editor's single panel. A function-local static rather than a file-scope
-	// object so nothing can reach the state except through the object, and so a
-	// unit can build its OWN panel on the stack and drive it in isolation.
+	// The editor's single panel.
+	//
+	// ★ IT IS OWNED BY Zenith_Editor, NOT BY A FUNCTION-LOCAL STATIC, AND THAT IS A
+	// LIFETIME FIX RATHER THAN A STYLE ONE. A static's destructor runs at ATEXIT —
+	// long after Zenith_AssetRegistry::Shutdown has force-deleted every asset — so
+	// any owning handle the panel's session or document still held was Released into
+	// freed memory. Zenith_Editor::Shutdown already called Shutdown() below to close
+	// the clip while the registry was alive, but that only covered what CloseClip
+	// reaches; anything the panel acquired outside it (the preview controller's
+	// skeleton handle was the live case) still died at exit. There is no atexit
+	// window now: the object is new'd in Zenith_Editor::Initialise and deleted in
+	// Zenith_Editor::Shutdown, both inside the registry's lifetime.
+	//
+	// Instance() is unchanged for every call site — it resolves the editor-owned
+	// object — and a unit can still build its OWN panel on the stack and drive it in
+	// isolation. Calling it before Initialise or after Shutdown asserts.
 	static Zenith_EditorPanel_Animation& Instance();
 
 	//-------------------------------------------------------------------------
@@ -314,10 +327,11 @@ public:
 	void Render(float fDtSeconds);
 
 	// Drops the document and the session while the asset registry is still up.
-	// Called from Zenith_Editor::Shutdown, which runs BEFORE
-	// Zenith_AssetRegistry::Shutdown — a panel that waited for its own static
-	// destructor would be releasing owning asset handles into a registry that had
-	// already force-deleted them.
+	// Called from Zenith_Editor::Shutdown immediately before it DELETES this object,
+	// and both run BEFORE Zenith_AssetRegistry::Shutdown. Keeping the two adjacent is
+	// the point: Shutdown() is the explicit release of what CloseClip reaches, and
+	// the delete is what guarantees everything else goes with it — the panel used to
+	// survive to atexit and release its remaining handles into a dead registry.
 	void Shutdown();
 
 	bool& ShowFlag() { return m_bShow; }

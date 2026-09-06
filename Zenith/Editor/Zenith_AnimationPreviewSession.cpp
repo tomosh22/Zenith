@@ -193,7 +193,14 @@ void Zenith_AnimationPreviewSession::Close()
 	Flux_PreviewSlotArbiter::Release(this);
 
 	m_xController.Stop();
-	m_xController.GetClipCollection().Clear();
+	// ★ NOT GetClipCollection().Clear() ANY MORE. That emptied the borrowed clip
+	// pointers and left every asset handle the controller had taken — the skeleton
+	// one in particular — held for the rest of the session object's life. A session
+	// owned by a panel that outlives Zenith_AssetRegistry::Shutdown then released
+	// those handles into a registry that had already force-deleted the assets, which
+	// is a write into freed memory that only ASSERTS when the freed word happens to
+	// read zero. ReleaseAssetReferences drops the handles and the collection as one.
+	m_xController.ReleaseAssetReferences();
 	ReleaseRig();
 
 	m_xClip = Flux_AnimationClip();

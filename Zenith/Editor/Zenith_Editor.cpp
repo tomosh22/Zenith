@@ -345,10 +345,19 @@ void Zenith_Editor::Initialise(Flux_PlatformAPI& xFluxBackend, Flux_GraphicsImpl
 	static const bool ls_bBoneSpaceLinked = Zenith_BoneSpace_ForceLink();
 	(void)ls_bBoneSpaceLinked;
 
+	// ★ THE DOPE SHEET IS CREATED HERE AND DESTROYED IN Shutdown, INSIDE THE ASSET
+	// REGISTRY'S LIFETIME. It used to be a function-local static in
+	// Zenith_EditorPanel_Animation::Instance(), which put its destructor at atexit —
+	// after Zenith_AssetRegistry::Shutdown had force-deleted every asset — so the
+	// preview controller's skeleton handle Released into freed memory. Nothing else
+	// about the panel changed: Instance() resolves this object.
+	Zenith_Assert(m_pxAnimationPanel == nullptr, "Zenith_Editor::Initialise ran twice");
+	m_pxAnimationPanel = new Zenith_EditorPanel_Animation();
+
 	// The dope sheet's preview session remembers a per-clip rig choice in the
 	// editor's own prefs. Wired from here because m_xEditorState is private to
 	// this class — the panel is handed the store rather than reaching for it.
-	Zenith_EditorPanel_Animation::Instance().Session().SetPreferenceStore(&m_xEditorState.m_xPrefs);
+	m_pxAnimationPanel->Session().SetPreferenceStore(&m_xEditorState.m_xPrefs);
 
 	// Initialize editor subsystems
 	g_xEngine.Selection().Initialise();
@@ -461,10 +470,17 @@ void Zenith_Editor::Shutdown()
 	}
 
 	// ★ The dope sheet owns an animation document and a preview session, and both
-	// hold OWNING asset handles. This runs before Zenith_AssetRegistry::Shutdown
-	// force-deletes the assets; a panel that waited for its own static destructor
-	// would be releasing handles into a registry that no longer had them.
-	Zenith_EditorPanel_Animation::Instance().Shutdown();
+	// hold OWNING asset handles. Both the close AND the delete run here, before
+	// Zenith_AssetRegistry::Shutdown force-deletes the assets — a panel that waited
+	// for a static destructor would be releasing handles at atexit into a registry
+	// that no longer had them, which is a write into freed memory that asserts only
+	// when the freed word happens to read zero.
+	if (m_pxAnimationPanel != nullptr)
+	{
+		m_pxAnimationPanel->Shutdown();
+		delete m_pxAnimationPanel;
+		m_pxAnimationPanel = nullptr;
+	}
 
 	// Reset editor camera state
 	m_xEditorState.m_xCamera.m_bInitialized = false;

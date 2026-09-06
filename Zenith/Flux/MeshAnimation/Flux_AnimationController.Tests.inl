@@ -1,6 +1,9 @@
 #include "Core/Zenith_TestFramework.h"
 #include "Flux/MeshAnimation/Flux_AnimationController.h"
 #include "Flux/MeshAnimation/Flux_SkeletonInstance.h"
+#include "AssetHandling/Zenith_AnimationAsset.h"
+#include "AssetHandling/Zenith_AssetRegistry.h"
+#include "AssetHandling/Zenith_SkeletonAsset.h"
 
 // ============================================================================
 // WU-5A — RUNTIME EVENT DELIVERY (D34 - D40)
@@ -579,3 +582,79 @@ ZENITH_TEST(Animation, WU5A_SeekEmitsNothingUnlessAsked)
 	delete pxClip;
 }
 #endif
+
+//=============================================================================
+// (8) ASSET REFERENCES — Initialize(nullptr) detaches, and
+//     ReleaseAssetReferences drops the lot.
+//
+// ★ WHAT THIS EXISTS TO CATCH, AND WHY IT WAS INVISIBLE. Initialize() used to
+// Set() the skeleton handle INSIDE its `if (pxSkeleton)` branch, so
+// Initialize(nullptr) left an AddRef'd cached pointer behind with nothing
+// anywhere to clear it — the handle only died in ~Flux_AnimationController.
+// For the editor's preview session, owned by a panel that reached ATEXIT, that
+// destructor ran after Zenith_AssetRegistry::Shutdown had force-deleted the
+// asset, so Release() wrote into freed memory: an assert when the freed word
+// happened to read zero, silent corruption when it did not.
+//
+// Every assertion below is RELATIVE to a measured baseline rather than to an
+// absolute count — the rig's own Flux_SkeletonInstance holds a reference of its
+// own, and pinning the absolute number would be pinning that instead.
+//=============================================================================
+ZENITH_TEST(Animation, ControllerReleasesEveryAssetReferenceItHolds)
+{
+	WU5A_Rig xRig;
+	Zenith_SkeletonAsset* pxSkeletonAsset = xRig.m_pxSkeleton;
+	const uint32_t uSkeletonBaseline = pxSkeletonAsset->GetRefCount();
+
+	// A registry-resident clip asset, so AddClipFromFile has something to resolve
+	// and to pin. Procedural rather than a temp .zanim on disk: the reference
+	// counting is the subject, and a file would add a parse and an I/O failure mode
+	// that say nothing about it.
+	const std::string strClipAssetPath = "procedural://anim_controller_release_probe";
+	{
+		AnimationHandle xClipAsset = Zenith_AssetRegistry::Create<Zenith_AnimationAsset>(strClipAssetPath);
+		Zenith_AnimationAsset* pxClipAsset = xClipAsset.GetDirect();
+		ZENITH_ASSERT_TRUE(pxClipAsset != nullptr, "the registry created the procedural animation asset");
+		pxClipAsset->SetClip(WU5A_MakeClip("Held", 1.0f, true));   // the asset takes ownership
+		const uint32_t uClipBaseline = pxClipAsset->GetRefCount();
+
+		Flux_AnimationController xController;
+
+		//---------------------------------------------------------------------
+		// Initialize(nullptr) is a DETACH, not a forget.
+		//---------------------------------------------------------------------
+		xController.Initialize(xRig.m_pxInstance);
+		ZENITH_ASSERT_EQ(pxSkeletonAsset->GetRefCount(), uSkeletonBaseline + 1u,
+			"attaching pins the skeleton asset so UnloadUnused cannot free the bone data mid-frame");
+
+		xController.Initialize(nullptr);
+		ZENITH_ASSERT_FALSE(xController.IsInitialized(), "Initialize(nullptr) detached the instance");
+		ZENITH_ASSERT_EQ(pxSkeletonAsset->GetRefCount(), uSkeletonBaseline,
+			"★ and gave the skeleton reference back — this is the leak that reached atexit");
+
+		//---------------------------------------------------------------------
+		// ReleaseAssetReferences drops the animation handles AND the borrowed
+		// pointers they were pinning, as ONE invariant.
+		//---------------------------------------------------------------------
+		xController.Initialize(xRig.m_pxInstance);
+		Flux_AnimationClip* pxBorrowed = xController.AddClipFromFile(strClipAssetPath);
+		ZENITH_ASSERT_TRUE(pxBorrowed != nullptr, "the clip resolved out of the registry");
+		ZENITH_ASSERT_EQ(pxClipAsset->GetRefCount(), uClipBaseline + 1u,
+			"AddClipFromFile pinned the ASSET behind the clip pointer it borrowed");
+		ZENITH_ASSERT_EQ(xController.GetClipCollection().GetClipCount(), 1u,
+			"and the collection borrowed it");
+
+		xController.ReleaseAssetReferences();
+		ZENITH_ASSERT_EQ(pxClipAsset->GetRefCount(), uClipBaseline,
+			"ReleaseAssetReferences handed the animation reference back");
+		ZENITH_ASSERT_EQ(xController.GetClipCollection().GetClipCount(), 0u,
+			"★ and emptied the collection WITH it — a borrowed pointer must never outlive its pin");
+		ZENITH_ASSERT_EQ(pxSkeletonAsset->GetRefCount(), uSkeletonBaseline,
+			"the skeleton reference went in the same call");
+	}
+
+	// The handle above is out of scope, so the asset is unreferenced; remove it by
+	// name rather than through UnloadUnused, which would also sweep every other
+	// zero-ref asset the boot happens to have left in the registry.
+	Zenith_AssetRegistry::ForceUnload(strClipAssetPath);
+}

@@ -48,8 +48,32 @@ public:
 	Flux_AnimationController(Flux_AnimationController&& xOther) noexcept;
 	Flux_AnimationController& operator=(Flux_AnimationController&& xOther) noexcept;
 
-	// Initialize with a skeleton instance
+	// Initialize with a skeleton instance.
+	//
+	// ★ Initialize(nullptr) DETACHES — it does not merely forget the pointer. The
+	// skeleton-asset handle is cleared FIRST and unconditionally, so a caller that
+	// says "stop animating this instance" has also given the asset reference back.
+	// It used to be Set() INSIDE the `if (pxSkeleton)` branch, which left the
+	// controller holding an AddRef'd cached pointer with nothing anywhere to clear
+	// it: the handle then died in ~Flux_AnimationController, at whatever point that
+	// happened to be — for an object outliving Zenith_AssetRegistry::Shutdown, that
+	// is a Release() into freed memory.
 	void Initialize(Flux_SkeletonInstance* pxSkeleton);
+
+	// ★ DROP EVERY ASSET REFERENCE THIS CONTROLLER HOLDS, WHILE THE REGISTRY IS
+	// STILL ALIVE. The skeleton handle, every handle in m_xAnimationAssets and the
+	// clip collection go together, because they are ONE invariant: a handle in that
+	// vector is what keeps the asset behind a BORROWED clip pointer in the
+	// collection alive, so releasing one without emptying the other leaves the
+	// collection holding pointers into assets nothing pins.
+	//
+	// This is a TEARDOWN verb, not a reset: the controller keeps its skeleton
+	// INSTANCE pointer (Update no-ops without the asset), its state machine and its
+	// layers, and anything that resolved a clip reference through the collection is
+	// left pointing at a clip the registry may now free. Call it when the owner is
+	// closing, and call it from anything that can outlive the registry — a
+	// controller torn down at atexit has no registry left to release into.
+	void ReleaseAssetReferences();
 
 	// Check if initialized
 	bool IsInitialized() const { return m_pxSkeletonInstance != nullptr; }
@@ -404,10 +428,13 @@ private:
 	Flux_SkeletonInstance* m_pxSkeletonInstance = nullptr;
 
 	// Skeleton asset handle for bone hierarchy info — keeps the asset alive while
-	// this controller exists so UnloadUnused can't free the bone data mid-frame.
+	// this controller is ATTACHED so UnloadUnused can't free the bone data
+	// mid-frame. Dropped by Initialize(nullptr) and by ReleaseAssetReferences().
 	SkeletonHandle m_xSkeletonAsset;
 
-	// Animation data
+	// Animation data. m_xAnimationAssets pins the assets behind the BORROWED clip
+	// pointers in m_xClipCollection — the two move together, see
+	// ReleaseAssetReferences().
 	Flux_AnimationClipCollection m_xClipCollection;
 	Zenith_Vector<AnimationHandle> m_xAnimationAssets;  // Keeps assets alive for borrowed clips
 	Flux_AnimationStateMachine* m_pxStateMachine = nullptr;

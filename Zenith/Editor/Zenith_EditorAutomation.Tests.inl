@@ -3577,6 +3577,19 @@ ZENITH_TEST(Automation, AnimAuthoringStepsDriveTheDopeSheet)
 	xAuto.ExecuteNextStep();	// close
 	ZENITH_ASSERT_FALSE(xPanel.IsOpen(), "AnimCloseClip closed the document");
 
+	// ★ A LEAKED ASSET REFERENCE FAILS HERE, ON EVERY RUN. Closing drops the
+	// document's owning handle and the session's, so UnloadUnused must be able to
+	// free the probe. Without this the only symptom of a retained reference was at
+	// ATEXIT — the fixture's ForceUnload below deletes the asset whatever its
+	// refcount is, so the leftover handle was left dangling and its destructor wrote
+	// into freed memory, asserting "Release called on asset with 0 ref count" only
+	// when that word happened to read zero (roughly one run in eight) and corrupting
+	// the heap silently otherwise. A refcount assertion at the point of the leak is
+	// the difference between a named failure and an intermittent one.
+	Zenith_AssetRegistry::UnloadUnused();
+	ZENITH_ASSERT_FALSE(Zenith_AssetRegistry::IsLoaded(strPath),
+		"nothing still holds a reference to the clip asset after AnimCloseClip");
+
 	// ★ CloseClip does NOT hide the window, and AnimOpenClip deliberately shows
 	// it — so this unit drives the EDITOR'S single panel into a visible state and
 	// has to put it back. Left set, every game would boot with the dope sheet
@@ -3772,6 +3785,22 @@ ZENITH_TEST(Automation, AnimPoseAuthoringStepsDriveTheDopeSheet)
 
 	xAuto.ExecuteNextStep();	// close
 	ZENITH_ASSERT_FALSE(xPanel.IsOpen(), "AnimCloseClip closed the document");
+
+	// ★ THE RIGGED PROBE IS WHERE THE LEAK ACTUALLY WAS. The preview session's
+	// Flux_AnimationController cached the SKELETON asset behind an AddRef'd handle
+	// and nothing ever cleared it — ReleaseRig detaches with Initialize(nullptr),
+	// which used to drop only the instance pointer. The fixture's ForceUnload below
+	// then deleted the skeleton regardless of refcount (so not even a "still held"
+	// warning fired), leaving the controller's handle dangling until ~Session at
+	// atexit Released into freed memory. Asserting the registry is EMPTY of all
+	// three is what turns that one-run-in-eight assert into a deterministic failure.
+	Zenith_AssetRegistry::UnloadUnused();
+	ZENITH_ASSERT_FALSE(Zenith_AssetRegistry::IsLoaded(strClipPath),
+		"nothing still holds a reference to the clip asset");
+	ZENITH_ASSERT_FALSE(Zenith_AssetRegistry::IsLoaded(strSkeletonPath),
+		"★ nor to the SKELETON — the reference the preview controller used to keep for ever");
+	ZENITH_ASSERT_FALSE(Zenith_AssetRegistry::IsLoaded(strMeshPath),
+		"nor to the preview mesh");
 
 	// AnimOpenClip SHOWS the editor's single panel and CloseClip does not hide
 	// it, so this unit has to put it back — left set, every game would boot with

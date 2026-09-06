@@ -31,6 +31,7 @@ class Zenith_DebugVariables;
 class Zenith_Profiling;
 class Zenith_TerrainEditor;
 class Zenith_Input;
+class Zenith_EditorPanel_Animation;
 
 // Content browser view mode
 enum class ContentBrowserViewMode
@@ -129,6 +130,24 @@ public:
 	// profiling window -> ImGui::Render(). Called from the main loop's
 	// render-work block; only reachable windowed in tools builds.
 	void RenderImGuiFrame();
+
+	//--------------------------------------------------------------------------
+	// The animation dope sheet.
+	//
+	// ★ THE EDITOR OWNS IT SO THAT IT CANNOT REACH ATEXIT. It was a function-local
+	// static inside Zenith_EditorPanel_Animation::Instance(), and a static's
+	// destructor runs after Zenith_AssetRegistry::Shutdown has force-deleted every
+	// asset — so any owning handle the panel's preview session still held was
+	// Released into freed memory. The panel is new'd in Initialise and Shutdown()+
+	// delete'd in Shutdown, both strictly inside the registry's lifetime.
+	//
+	// The accessor returns a POINTER, not a reference, because "the editor is not
+	// between Initialise and Shutdown" is a real state that
+	// Zenith_EditorPanel_Animation::Instance() has to be able to assert on rather
+	// than dereference. It is also why this returns the incomplete type by pointer:
+	// nothing here needs the panel definition.
+	//--------------------------------------------------------------------------
+	Zenith_EditorPanel_Animation* TryGetAnimationPanel() const { return m_pxAnimationPanel; }
 
 	// Editor state
 	EditorMode GetEditorMode();
@@ -349,6 +368,10 @@ public:
 	Zenith_DebugVariables* m_pxDebugVariables = nullptr;
 	Zenith_Profiling*      m_pxProfiling      = nullptr;
 	Zenith_TerrainEditor*  m_pxTerrainEditor  = nullptr;
+
+	// OWNED. Allocated by Initialise, Shutdown()+deleted by Shutdown — see
+	// TryGetAnimationPanel above for why it is not a static.
+	Zenith_EditorPanel_Animation* m_pxAnimationPanel = nullptr;
 
 	// Counts down after a default-dock-layout build; on hitting 0 the
 	// intended front tabs are re-selected (late-created windows steal tab
