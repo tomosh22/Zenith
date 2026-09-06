@@ -21,6 +21,10 @@ enum Flux_AnimationUpdateMode : uint8_t
 // Forward declarations
 class Flux_SkeletonInstance;
 class Zenith_SkeletonAsset;
+// WU-6.2. Forward-declared rather than included: the def header includes this
+// one's neighbours (Flux_AnimationLayer.h -> Flux_AnimationStateMachine.h), and
+// only Flux_AnimationController.cpp needs the complete type.
+class Flux_AnimatorControllerDef;
 
 //=============================================================================
 // Flux_AnimationEventCallback
@@ -138,6 +142,46 @@ public:
 	// Flux_AnimationStateMachine::BuildFromDef). Clip references resolve through
 	// this controller's own collection.
 	Flux_AnimationStateMachine* BuildStateMachineFromDef(const Flux_AnimationStateMachineDef& xDef);
+
+	//=========================================================================
+	// Whole-controller build / export (WU-6.2, .zanimctrl)
+	//
+	// ★ A STATE-MACHINE DEF ALONE CANNOT DESCRIBE A CONTROLLER. This object has
+	// an OPTIONAL top-level machine and N LAYERS, each owning its own machine,
+	// and every layered game reaches its graph through a layer with
+	// m_pxStateMachine null. Flux_AnimatorControllerDef is the whole of it: the
+	// clip paths, the optional top-level def, and per layer an id, a name, a
+	// weight, a blend mode, an emit-events flag, a bone-mask ASSET PATH and an
+	// embedded def.
+	//=========================================================================
+
+	// Replace EVERYTHING this controller holds that the def describes: the clip
+	// collection is added to (by AddClipFromFile, so the asset handles are taken
+	// here), the top-level state machine is rebuilt or dropped, and every layer is
+	// destroyed and rebuilt from the def's list.
+	//
+	// pxSkeletonForMasks resolves each layer's .zanimmask from BONE NAMES to bone
+	// indices. It may be null ONLY when no layer names a mask.
+	//
+	// ★ A DANGLING REFERENCE FAILS LOUDLY. A mask path that does not resolve, a
+	// mask that needs a skeleton when none was passed, or a clip path that does
+	// not load returns FALSE with a Zenith_Error naming the path. The build still
+	// completes as far as it can — a half-built controller is easier to inspect
+	// than an empty one — so the return value is the only thing that says the
+	// result is incomplete. Do not ignore it.
+	bool BuildFromControllerDef(const Flux_AnimatorControllerDef& xDef,
+		const Zenith_SkeletonAsset* pxSkeletonForMasks);
+
+	// The inverse, and what an editor Save calls. Writes this controller's clip
+	// paths, top-level machine and layers into xOutDef (which is CLEARED first).
+	//
+	// ★ A LAYER'S BONE-MASK PATH CANNOT BE RECOVERED FROM THE RUNTIME LAYER, and
+	// this reports that rather than papering over it: Flux_AnimationLayer holds a
+	// resolved, index-based Flux_BoneMask and no path, so an export of a
+	// controller built any way other than by BuildFromControllerDef writes an
+	// EMPTY mask path for a masked layer and returns FALSE. Round-tripping a def
+	// through Build -> Export preserves the paths, because Build keeps them.
+	bool ExportControllerDef(Flux_AnimatorControllerDef& xOutDef) const;
 
 	//=========================================================================
 	// Parameters — ONE live set per controller (D42)

@@ -7,6 +7,8 @@
 #include "AssetHandling/Zenith_SkeletonAsset.h"
 #include "AssetHandling/Zenith_ModelAsset.h"
 #include "AssetHandling/Zenith_AnimationAsset.h"
+#include "AssetHandling/Zenith_AnimatorControllerAsset.h"
+#include "AssetHandling/Zenith_BoneMaskAsset.h"
 #include "AssetHandling/Zenith_MeshGeometryAsset.h"
 #include "AssetHandling/Zenith_FontAsset.h"
 #include "AssetHandling/Zenith_BehaviourGraphAsset.h"
@@ -277,6 +279,16 @@ void Zenith_AssetRegistry::Initialize()
 	s_pxInstance->RegisterLoader(Zenith_TypeIndex::Of<Zenith_AnimationAsset>(), &LoadAssetGeneric<Zenith_AnimationAsset>);
 	s_pxInstance->RegisterLoader(Zenith_TypeIndex::Of<Zenith_MeshGeometryAsset>(), &LoadAssetGeneric<Zenith_MeshGeometryAsset>);
 	s_pxInstance->RegisterLoader(Zenith_TypeIndex::Of<Zenith_FontAsset>(), &LoadAssetGeneric<Zenith_FontAsset>);
+	// WU-6.2: .zanimctrl / .zanimmask are ENVELOPE-TYPED like .zanim, NOT .zdata
+	// serializables. Their payloads already lead with a Zenith_StreamEnvelope
+	// (type ids 7 and 8), so routing them through RegisterAssetType<T> would put a
+	// second header — ZDATA magic + a null-terminated type name — in front of the
+	// first. They declare no ZENITH_ASSET_TYPE_NAME, which is what makes that
+	// mechanical: Save() refuses an asset whose GetTypeName() is null, and each
+	// asset's own Export() is the writer. These two lines are also what anchor
+	// those TUs against /OPT:REF, so neither needs a _ForceLink().
+	s_pxInstance->RegisterLoader(Zenith_TypeIndex::Of<Zenith_AnimatorControllerAsset>(), &LoadAssetGeneric<Zenith_AnimatorControllerAsset>);
+	s_pxInstance->RegisterLoader(Zenith_TypeIndex::Of<Zenith_BoneMaskAsset>(), &LoadAssetGeneric<Zenith_BoneMaskAsset>);
 
 	// Behaviour Graph assets (.bgraph). RegisterAssetType wires BOTH the
 	// serializable-type factory and the typed loader - the static-init

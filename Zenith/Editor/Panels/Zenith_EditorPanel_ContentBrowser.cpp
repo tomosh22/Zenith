@@ -12,6 +12,8 @@
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
+#include "AssetHandling/Zenith_AnimatorControllerAsset.h"   // WU-6.2 double-click probe
+#include "AssetHandling/Zenith_BoneMaskAsset.h"             // WU-6.2 double-click probe
 #include "FileAccess/Zenith_FileAccess.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "Flux/Flux_ImGuiIntegration.h"
@@ -38,6 +40,14 @@ static const EditorFileTypeInfo s_axKnownFileTypes[] = {
 	{ ZENITH_PREFAB_EXT,     "Prefab",    DRAGDROP_PAYLOAD_PREFAB },
 	{ ZENITH_SCENE_EXT,      "Scene",     DRAGDROP_PAYLOAD_FILE_GENERIC },
 	{ ZENITH_ANIMATION_EXT,  "Animation", DRAGDROP_PAYLOAD_ANIMATION },
+	// WU-6.2. Both carry DRAGDROP_PAYLOAD_FILE_GENERIC rather than an id of their
+	// own: the DRAGDROP_PAYLOAD_* identifiers live in Core/Zenith_DragDropPayloads.h
+	// (they are shared with non-editor code), nothing accepts a controller or mask
+	// drop yet, and a generic file payload is exactly what .zscen already uses for
+	// the same reason. Give them dedicated ids when a drop TARGET exists — an ImGui
+	// payload type is capped at 32 characters.
+	{ ZENITH_ANIMCTRL_EXT,   "Animator Controller", DRAGDROP_PAYLOAD_FILE_GENERIC },
+	{ ZENITH_ANIMMASK_EXT,   "Bone Mask",           DRAGDROP_PAYLOAD_FILE_GENERIC },
 	{ ZENITH_BGRAPH_EXT,     "Graph",     DRAGDROP_PAYLOAD_GRAPH_ASSET },
 };
 
@@ -742,6 +752,45 @@ void HandleEntryDoubleClickOpen(const ContentBrowserEntry& xEntry)
 	else if (xEntry.m_strExtension == ZENITH_BGRAPH_EXT)
 	{
 		Zenith_GraphEditorPanel::OpenAsset(Zenith_AssetRegistry::NormalizeAssetPath(xEntry.m_strFullPath).c_str());
+	}
+	else if (xEntry.m_strExtension == ZENITH_ANIMCTRL_EXT)
+	{
+		// ★ THERE IS NO ANIMATOR-CONTROLLER PANEL YET — WU-6.5 builds it. The entry
+		// is already SELECTED by the click that preceded this double-click, so the
+		// useful thing left to do is prove the file parses and say what is in it.
+		// Loading it here is not busywork: a .zanimctrl that fails its envelope
+		// check is otherwise invisible until something plays it.
+		const std::string strAssetPath = Zenith_AssetRegistry::NormalizeAssetPath(xEntry.m_strFullPath);
+		const Zenith_AnimatorControllerAsset* pxController =
+			Zenith_AssetRegistry::GetView<Zenith_AnimatorControllerAsset>(strAssetPath);
+		if (pxController != nullptr)
+		{
+			Zenith_Log(LOG_CATEGORY_ANIMATION,
+				"[ContentBrowser] %s: %u clip(s), %u layer(s), top-level state machine: %s. (No editor panel yet — WU-6.5.)",
+				strAssetPath.c_str(),
+				pxController->GetDef().GetClipPaths().GetSize(),
+				pxController->GetDef().GetLayerCount(),
+				pxController->GetDef().HasStateMachineDef() ? "yes" : "no");
+		}
+		else
+		{
+			Zenith_Error(LOG_CATEGORY_ANIMATION, "[ContentBrowser] %s did not load as a " ZENITH_ANIMCTRL_EXT, strAssetPath.c_str());
+		}
+	}
+	else if (xEntry.m_strExtension == ZENITH_ANIMMASK_EXT)
+	{
+		const std::string strAssetPath = Zenith_AssetRegistry::NormalizeAssetPath(xEntry.m_strFullPath);
+		const Zenith_BoneMaskAsset* pxMask = Zenith_AssetRegistry::GetView<Zenith_BoneMaskAsset>(strAssetPath);
+		if (pxMask != nullptr)
+		{
+			Zenith_Log(LOG_CATEGORY_ANIMATION,
+				"[ContentBrowser] %s: %u bone weight(s), HasAvatarMask=%s. (No editor panel yet — WU-6.5.)",
+				strAssetPath.c_str(), pxMask->GetEntryCount(), pxMask->HasAvatarMask() ? "yes" : "no");
+		}
+		else
+		{
+			Zenith_Error(LOG_CATEGORY_ANIMATION, "[ContentBrowser] %s did not load as a " ZENITH_ANIMMASK_EXT, strAssetPath.c_str());
+		}
 	}
 }
 

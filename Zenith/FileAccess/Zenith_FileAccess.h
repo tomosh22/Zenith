@@ -18,6 +18,14 @@
 #define ZENITH_SKELETON_EXT		".zskel"
 #define ZENITH_MODEL_EXT		".zmodel"
 #define ZENITH_ANIMATION_EXT	".zanim"
+// Flux_AnimatorControllerDef: the whole animator graph (optional top-level state
+// machine + N layers, each with its own embedded state machine). Envelope type id
+// 7, schema 1. A .zanim is ONE clip; a .zanimctrl is what plays them.
+#define ZENITH_ANIMCTRL_EXT		".zanimctrl"
+// Zenith_BoneMaskAsset: per-bone weights BY NAME. Skeleton-scoped and shared by
+// every controller on that rig, which is why it is its own file rather than being
+// embedded in the .zanimctrl beside the state machines. Envelope type id 8.
+#define ZENITH_ANIMMASK_EXT		".zanimmask"
 #define ZENITH_SAVE_EXT			".zsave"
 #define ZENITH_META_EXT			".zmeta"
 #define ZENITH_NAVMESH_EXT		".znavmesh"

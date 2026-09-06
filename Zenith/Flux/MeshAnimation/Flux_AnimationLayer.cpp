@@ -17,11 +17,13 @@ Flux_AnimationLayer::~Flux_AnimationLayer()
 
 Flux_AnimationLayer::Flux_AnimationLayer(Flux_AnimationLayer&& xOther) noexcept
 	: m_strName(std::move(xOther.m_strName))
+	, m_uLayerId(xOther.m_uLayerId)
 	, m_fWeight(xOther.m_fWeight)
 	, m_eBlendMode(xOther.m_eBlendMode)
 	, m_bHasAvatarMask(xOther.m_bHasAvatarMask)
 	, m_bEmitEvents(xOther.m_bEmitEvents)
 	, m_xAvatarMask(std::move(xOther.m_xAvatarMask))
+	, m_strBoneMaskAssetPath(std::move(xOther.m_strBoneMaskAssetPath))
 	, m_pxStateMachine(xOther.m_pxStateMachine)
 	, m_xOutputPose(std::move(xOther.m_xOutputPose))
 {
@@ -35,11 +37,13 @@ Flux_AnimationLayer& Flux_AnimationLayer::operator=(Flux_AnimationLayer&& xOther
 		delete m_pxStateMachine;
 
 		m_strName = std::move(xOther.m_strName);
+		m_uLayerId = xOther.m_uLayerId;
 		m_fWeight = xOther.m_fWeight;
 		m_eBlendMode = xOther.m_eBlendMode;
 		m_bHasAvatarMask = xOther.m_bHasAvatarMask;
 		m_bEmitEvents = xOther.m_bEmitEvents;
 		m_xAvatarMask = std::move(xOther.m_xAvatarMask);
+		m_strBoneMaskAssetPath = std::move(xOther.m_strBoneMaskAssetPath);
 		m_pxStateMachine = xOther.m_pxStateMachine;
 		m_xOutputPose = std::move(xOther.m_xOutputPose);
 
@@ -89,6 +93,11 @@ void Flux_AnimationLayer::InitializePose(uint32_t uNumBones)
 
 void Flux_AnimationLayer::WriteToDataStream(Zenith_DataStream& xStream) const
 {
+	// ★ m_uLayerId AND m_bEmitEvents ARE ABSENT ON PURPOSE. This payload is
+	// written inline into a .zscen by Zenith_AnimatorComponent (through
+	// Flux_AnimationController::WriteToDataStream) and committed scene files carry
+	// these bytes, with no version word in front of them. The layer id lives in
+	// the .zanimctrl instead; see Flux_AnimationLayer::GetLayerId.
 	xStream << m_strName;
 	xStream << m_fWeight;
 	xStream << static_cast<uint8_t>(m_eBlendMode);

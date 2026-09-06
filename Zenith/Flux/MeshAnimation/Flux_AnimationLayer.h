@@ -35,6 +35,28 @@ public:
 	const std::string& GetName() const { return m_strName; }
 	void SetName(const std::string& strName) { m_strName = strName; }
 
+	//=========================================================================
+	// Stable layer id (WU-6.2)
+	//
+	// ★ AN INDEX IS NOT AN IDENTITY. Inserting or removing a layer renumbers
+	// every layer above it, so anything that remembers "layer 2" — WU-6.3's
+	// addressing, an editor selection, a saved override — silently starts
+	// naming a different layer. The id is assigned by
+	// Flux_AnimatorControllerDef::AddLayer from a monotonic counter that is
+	// itself serialized, and BuildFromControllerDef copies it onto the runtime
+	// layer so the two halves agree.
+	//
+	// ★ IT IS DELIBERATELY *NOT* IN Write/ReadToDataStream. Those two functions
+	// are reached from Flux_AnimationController's serializer, which
+	// Zenith_AnimatorComponent writes INLINE into a .zscen — and committed scene
+	// files carry those bytes today. Adding a field here would move that layout
+	// with no version word to hide behind. A layer that came from a scene
+	// therefore carries id 0 until something builds it from a def; the .zanimctrl
+	// is where the id is persisted.
+	//=========================================================================
+	u_int GetLayerId() const { return m_uLayerId; }
+	void SetLayerId(u_int uLayerId) { m_uLayerId = uLayerId; }
+
 	// Weight (0 = no effect, 1 = full effect)
 	float GetWeight() const { return m_fWeight; }
 	void SetWeight(float fWeight) { m_fWeight = glm::clamp(fWeight, 0.0f, 1.0f); }
@@ -47,6 +69,19 @@ public:
 	const Flux_BoneMask& GetAvatarMask() const { return m_xAvatarMask; }
 	void SetAvatarMask(const Flux_BoneMask& xMask) { m_xAvatarMask = xMask; m_bHasAvatarMask = true; }
 	bool HasAvatarMask() const { return m_bHasAvatarMask; }
+
+	// ★ THE .zanimmask THIS MASK CAME FROM (WU-6.2), AND IT IS NOT RECOVERABLE
+	// FROM THE MASK ITSELF. Flux_BoneMask is a flat, resolved, index-based weight
+	// array — it does not know which skeleton produced the indices, let alone
+	// which file. Without the path beside it, Flux_AnimationController::
+	// ExportControllerDef would write an empty mask reference for every masked
+	// layer and quietly turn a save into a mask deletion.
+	//
+	// Set by BuildFromControllerDef; also settable by hand for imperative
+	// authoring. Like the layer id, it is NOT serialized — this class's stream
+	// payload reaches committed .zscen bytes.
+	const std::string& GetBoneMaskAssetPath() const { return m_strBoneMaskAssetPath; }
+	void SetBoneMaskAssetPath(const std::string& strPath) { m_strBoneMaskAssetPath = strPath; }
 
 	// State machine (each layer has its own)
 	Flux_AnimationStateMachine& GetStateMachine();
@@ -92,6 +127,9 @@ public:
 
 private:
 	std::string m_strName;
+	// WU-6.2. NOT serialized — see GetLayerId above; the .zscen byte layout may
+	// not move.
+	u_int m_uLayerId = 0;
 	float m_fWeight = 1.0f;
 	Flux_LayerBlendMode m_eBlendMode = LAYER_BLEND_OVERRIDE;
 	bool m_bHasAvatarMask = false;
@@ -99,6 +137,8 @@ private:
 	// layer silent sets it after building the layer, beside SetBlendMode.
 	bool m_bEmitEvents = true;
 	Flux_BoneMask m_xAvatarMask;
+	// WU-6.2. NOT serialized, same reason as m_uLayerId.
+	std::string m_strBoneMaskAssetPath;
 	Flux_AnimationStateMachine* m_pxStateMachine = nullptr;  // Owned
 	Flux_SkeletonPose m_xOutputPose;
 };

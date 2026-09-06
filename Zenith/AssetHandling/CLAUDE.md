@@ -136,6 +136,8 @@ These are initialized by `Zenith_AssetRegistry::InitializeGPUDependentAssets()`.
 | Mesh geometry | `.zgeom` | `Flux_MeshGeometry` — a DIFFERENT format (its own element table, no version field): terrain chunks, the StickFigure, primitive and shared-prop geometry |
 | Skeleton | `.zskel` | Bone hierarchy and bind pose data |
 | Animation | `.zanim` | `Flux_AnimationClip` — keyframe animation clips. Stream-envelope type id 6, schema 2; key times are SECONDS |
+| Animator controller | `.zanimctrl` | `Flux_AnimatorControllerDef` — the WHOLE animator: clip paths, an optional embedded top-level state machine, and the layer list (each layer embeds its own). Envelope type id 7, schema 1 |
+| Bone mask | `.zanimmask` | `Zenith_BoneMaskAsset` — per-bone weights BY NAME, skeleton-scoped. Envelope type id 8, schema 1 |
 | Behaviour Graph | `.bgraph` | Designer-authored visual-scripting graph (see below) |
 
 ## Loader Contract (unified)
@@ -289,6 +291,51 @@ load path).
   frames. Both rules are `Flux_AnimationClip`'s — see `Flux/MeshAnimation/CLAUDE.md`.
 - Only the binary `.zanim` reloads. A source-format (Assimp) path is refused: re-importing
   a `.glb` is an import, not a reload, and cannot round-trip the clip's authored metadata.
+
+## Animator Controller + Bone Mask Assets (WU-6.2)
+
+`.zanimctrl` (`Zenith_AnimatorControllerAsset` wrapping one
+`Flux_AnimatorControllerDef`) and `.zanimmask` (`Zenith_BoneMaskAsset`) are the two
+asset types that make an animator persistable. Full design:
+`Flux/MeshAnimation/CLAUDE.md` → *The animator controller asset*.
+
+★ **THEY ARE ENVELOPE-TYPED, NOT `.zdata`, AND THAT IS A CHOICE THE TWO
+MECHANISMS FORCE.** The generic serializable-asset path writes its OWN header
+ahead of `WriteToDataStream` — `ZDATA` magic, a version word and a
+null-terminated type name (`LoadSerializableAsset`) — so an asset that also
+carries a `Zenith_StreamEnvelope` would ship a file with two headers, two magics
+and two schema words, and a reader could disagree with a writer about which one
+is authoritative. These two carry the shared envelope (**type ids 7 and 8, both
+schema 1**, in `Zenith_AssetTypeIds.h`) exactly as `.zanim` does, and therefore:
+
+- they declare **no `ZENITH_ASSET_TYPE_NAME`** and are **not** registered with
+  `ZENITH_REGISTER_ASSET_TYPE`. That is what makes the choice mechanical rather
+  than a convention: `Zenith_AssetRegistry::Save` refuses an asset whose
+  `GetTypeName()` is null, so the `.zdata` writer cannot be reached by accident;
+- each asset owns its writer — `Zenith_AnimatorControllerAsset::Export` /
+  `Zenith_BoneMaskAsset::Export`;
+- they register as **member-contract types** in `Zenith_AssetRegistry::Initialize()`
+  (`RegisterLoader(..., &LoadAssetGeneric<T>)`), beside `Zenith_AnimationAsset`
+  rather than beside `Zenith_BehaviourGraphAsset`. Those two lines also reference
+  each TU, which is what anchors it against `/OPT:REF` — **neither type needs a
+  `_ForceLink()`**, unlike the `.zdata` pair whose only reference is a file-scope
+  static registrar.
+
+`Zenith_BoneMaskAsset` stores `{name, weight}` pairs and resolves them onto a
+specific rig with `ResolveTo(const Zenith_SkeletonAsset&, Flux_BoneMask&)`.
+
+★ **AN UNRESOLVABLE BONE NAME RETURNS FALSE AND IS LOGGED BY NAME**, never
+silently dropped: a mask quietly losing a bone is a layer that quietly starts (or
+stops) overriding it, and an OVERRIDE layer with no mask replaces the *whole*
+skeleton — so a lost mask makes a layer do more, not less. Every resolvable entry
+is still applied, so a caller may continue with a partial mask; it cannot do so
+unknowingly.
+
+★ **`m_bHasAvatarMask` IS SERIALIZED RATHER THAN INFERRED (D47).**
+`Flux_AnimationLayer::ReadFromDataStream` decides "this layer has a mask" by
+scanning for `any weight > 0`, so an all-zero mask — a meaningful one — comes back
+as NO MASK. The flag defaults to true (a `.zanimmask` that exists *is* a mask) and
+round-trips in both states.
 
 ## Behaviour Graph Assets (Zenith_BehaviourGraphAsset)
 
@@ -724,6 +771,8 @@ AssetHandling/
   Zenith_SkeletonAsset.h/cpp  - Skeleton hierarchy and bind pose
   Zenith_ModelAsset.h/cpp     - Model container (meshes + skeleton + materials)
   Zenith_AnimationAsset.h/cpp - Animation clips
+  Zenith_AnimatorControllerAsset.h/cpp - .zanimctrl: one Flux_AnimatorControllerDef (WU-6.2)
+  Zenith_BoneMaskAsset.h/cpp      - .zanimmask: per-bone weights BY NAME + ResolveTo (WU-6.2)
   Zenith_BehaviourGraphAsset.h/cpp - Behaviour Graph asset (wraps a serialized Zenith_GraphDefinition; .bgraph)
   Zenith_GrassTypeTableAsset.h/cpp - Authored grass type table (wraps a Flux_GrassTypeTable; .zdata)
   Zenith_MeshGeometryAsset.h/cpp  - Wrapper for Flux_MeshGeometry

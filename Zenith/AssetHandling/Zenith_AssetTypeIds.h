@@ -32,6 +32,8 @@ inline constexpr u_int uZENITH_MESH_ASSET_TYPE_ID     = 3;
 inline constexpr u_int uZENITH_SKELETON_ASSET_TYPE_ID = 4;
 inline constexpr u_int uZENITH_MODEL_ASSET_TYPE_ID    = 5;
 inline constexpr u_int uZENITH_ANIMATION_ASSET_TYPE_ID = 6;  // .zanim (Flux_AnimationClip)
+inline constexpr u_int uZENITH_ANIMCTRL_ASSET_TYPE_ID  = 7;  // .zanimctrl (Flux_AnimatorControllerDef)
+inline constexpr u_int uZENITH_ANIMMASK_ASSET_TYPE_ID  = 8;  // .zanimmask (Zenith_BoneMaskAsset)
 
 // Current on-disk payload schema versions (carried verbatim from each asset's
 // historical version constant, so no schema bump / no byte-layout change).
@@ -43,3 +45,14 @@ inline constexpr u_int uZENITH_MODEL_SCHEMA_CURRENT    = 2;
 // .zanim had NO version word at all before it adopted the envelope, so its schema
 // starts at 1 — the first layout that is self-describing on the wire.
 inline constexpr u_int uZENITH_ANIMATION_SCHEMA_CURRENT = 2;  // 2: key times are SECONDS (were ticks); byte layout unchanged
+
+// WU-6.2. Both formats are self-describing from their FIRST byte — neither ever
+// existed without an envelope — so both schemas start at 1.
+//
+// .zanimctrl is the whole controller: an optional EMBEDDED top-level state-machine
+// def plus N layers, each owning its own EMBEDDED def. The SMs embed (D46) because
+// their states name THIS controller's clips and parameters; a bone MASK does not,
+// because a mask is SKELETON-scoped and shared by every controller on that rig, so
+// a layer carries a mask ASSET PATH and .zanimmask is its own type.
+inline constexpr u_int uZENITH_ANIMCTRL_SCHEMA_CURRENT = 1;
+inline constexpr u_int uZENITH_ANIMMASK_SCHEMA_CURRENT = 1;

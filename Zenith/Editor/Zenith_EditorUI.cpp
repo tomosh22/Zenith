@@ -693,6 +693,13 @@ Zenith_EditorAssetTypeStyle GetAssetTypeStyle(const char* szExtension, bool bIsD
 		{ ZENITH_PREFAB_EXT,    xP.m_uTypePrefab,    "PFB",  Zenith_EditorIcon::Prefab },
 		{ ZENITH_SCENE_EXT,     xP.m_uTypeScene,     "SCN",  Zenith_EditorIcon::Scene },
 		{ ZENITH_ANIMATION_EXT, xP.m_uTypeAnimation, "ANIM", Zenith_EditorIcon::Animation },
+		// WU-6.2. Both share the Animation palette colour and icon — they belong to
+		// the same family and the SHORT LABEL is what tells them apart in a tile.
+		// ★ ".zanimctrl" AND ".zanim" ARE BOTH MATCHED BY strcmp, NOT BY PREFIX, so
+		// the order of these rows is not load-bearing; a prefix match would have
+		// made ".zanimctrl" resolve as an ANIM badge from the row above.
+		{ ZENITH_ANIMCTRL_EXT,  xP.m_uTypeAnimation, "ACTL", Zenith_EditorIcon::Animation },
+		{ ZENITH_ANIMMASK_EXT,  xP.m_uTypeAnimation, "MASK", Zenith_EditorIcon::Animation },
 		{ ZENITH_BGRAPH_EXT,    xP.m_uTypeGraph,     "BGR",  Zenith_EditorIcon::Graph },
 	};
 	for (const Row& xRow : axRows)

@@ -12,6 +12,10 @@
 #include "Flux/MeshAnimation/Flux_AnimationControllerStore.h"
 #include "Flux/MeshAnimation/Flux_SkeletonInstance.h"
 #include "Flux/Flux_ModelInstance.h"
+// WU-6.2: LoadControllerAsset acquires a .zanimctrl and hands its def to the
+// controller. Another allow-listed .cpp -> AssetHandling edge.
+#include "AssetHandling/Zenith_AnimatorControllerAsset.h"
+#include "AssetHandling/Zenith_AssetRegistry.h"
 
 //=============================================================================
 // Store-backed controller access
@@ -324,6 +328,44 @@ Flux_AnimationClip* Zenith_AnimatorComponent::AddClipFromFile(const std::string&
 Flux_AnimationClip* Zenith_AnimatorComponent::GetClip(const std::string& strName)
 {
 	return Controller().GetClip(strName);
+}
+
+//=============================================================================
+// Animator Controller Asset (.zanimctrl, WU-6.2)
+//=============================================================================
+
+bool Zenith_AnimatorComponent::LoadControllerAsset(const std::string& strPath)
+{
+	Zenith_AnimatorControllerAsset* pxAsset = Zenith_AssetRegistry::GetView<Zenith_AnimatorControllerAsset>(strPath);
+	if (pxAsset == nullptr)
+	{
+		Zenith_Error(LOG_CATEGORY_ANIMATION,
+			"[AnimatorComponent] entity %u: failed to load animator controller asset '%s'",
+			m_xParentEntity.GetEntityID().m_uIndex, strPath.c_str());
+		return false;
+	}
+
+	// A layer's bone mask resolves BY NAME against the rig this entity is actually
+	// animating, so the skeleton has to be in hand before the build. Discovery is
+	// lazy by design (a ModelComponent may load its model after OnStart), so nudge
+	// it here rather than reporting "no skeleton" for an entity that has simply not
+	// been updated yet.
+	TryDiscoverSkeleton();
+
+	const Zenith_SkeletonAsset* pxSkeleton = nullptr;
+	if (m_pxCachedModelComponent != nullptr && m_pxCachedModelComponent->HasSkeleton())
+	{
+		Flux_SkeletonInstance* pxSkeletonInstance = m_pxCachedModelComponent->GetSkeletonInstance();
+		if (pxSkeletonInstance != nullptr)
+		{
+			pxSkeleton = pxSkeletonInstance->GetSourceSkeleton();
+		}
+	}
+
+	// A null skeleton is only a failure if the def actually names a mask, and
+	// BuildFromControllerDef is where that is known — it reports the layer and the
+	// path rather than being pre-empted by a guess here.
+	return Controller().BuildFromControllerDef(pxAsset->GetDef(), pxSkeleton);
 }
 
 //=============================================================================

@@ -483,6 +483,84 @@ writer counterpart and no defined extension — nothing could produce a file for
 read. Neither had a caller anywhere in the tree. `Flux_AnimationStateMachine.cpp` no longer
 includes `<fstream>`. The real path is `BuildFromDef` plus WU-6.2's asset.
 
+### The animator controller asset (WU-6.2) — `.zanimctrl` and `.zanimmask`
+
+★ **THERE WAS NO TOP-LEVEL CONTROLLER ASSET, AND WU-6.1's STATE-MACHINE DEF COULD
+NOT BECOME ONE.** A `Flux_AnimationController` has an OPTIONAL top-level state
+machine *and* N layers, each owning its own — and every layered game reaches its
+graph THROUGH a layer, with `m_pxStateMachine` null (D42's Zenithmon no-op is the
+same shape). Persisting one `Flux_AnimationStateMachineDef` therefore persists, at
+best, the half nobody runs.
+
+| Type | Holds | File |
+|---|---|---|
+| `Flux_AnimatorControllerDef` | name, clip PATHS, an optional **embedded** top-level `Flux_AnimationStateMachineDef`, the layer list, the monotonic layer-id counter | `Flux_AnimatorControllerDef.{h,cpp}` |
+| `Flux_AnimatorControllerLayerDef` | stable id, name, weight, blend mode, `m_bEmitEvents`, a bone-mask ASSET PATH, an **embedded** SM def | same file |
+| `Zenith_BoneMaskAsset` | `{bone name, weight}` pairs + an explicit `m_bHasAvatarMask` | `AssetHandling/Zenith_BoneMaskAsset.{h,cpp}` |
+
+★ **THE STATE MACHINES EMBED AND THE MASKS DO NOT (D46).** A state machine's
+states name *this* controller's clips (by name, through its clip collection) and
+its parameters, so a shared SM def would be meaningless outside the controller
+that owns it. A mask names BONES, so it is **skeleton**-scoped and shared verbatim
+by every controller on that rig; embedding it would give one rig as many
+independent copies of "upper body" as it has controllers, and no way to fix them
+all at once. Hence one path string per layer, and `.zanimmask` as its own type.
+
+**The clip list is part of the def.** Clip references inside a state machine are
+by NAME and resolve through `Flux_AnimationClipCollection`, so a def naming no
+files would rebuild into a controller whose every leaf posed the bind pose —
+silently, because an unresolved leaf resets rather than asserting.
+`GetClipPaths()` is the `AddClipFromFile` list.
+
+**The envelope lives on the controller def** (`Zenith_WriteStreamHeader`, type id
+**7**, schema **1**), which is exactly why `Flux_AnimationStateMachineDef`'s
+serializer is payload-only: a `.zanimctrl` has one magic word and one schema word,
+not three. `ParseStream` mirrors `Flux_AnimationClip::ParseStream` line for line —
+no envelope → `BAD_MAGIC`, another type id → `INVALID_ARGUMENT`, any non-current
+schema → `VERSION_MISMATCH`, each refusal asserting exactly once and leaving the
+def CLEARED.
+
+**Runtime API on `Flux_AnimationController`:**
+
+- `bool BuildFromControllerDef(const Flux_AnimatorControllerDef&, const Zenith_SkeletonAsset* pxSkeletonForMasks)`
+  — clips FIRST (the machines resolve through the collection, so the order is
+  load-bearing), then the top-level machine, then every layer rebuilt wholesale.
+  ★ **A dangling reference FAILS LOUDLY**: a mask path that does not resolve, a
+  masked def built with no skeleton, or a clip that does not load returns FALSE
+  with a `Zenith_Error` naming the path. The build still completes as far as it
+  can, so the return value is the ONLY thing that says the result is incomplete.
+- `bool ExportControllerDef(Flux_AnimatorControllerDef&) const` — the inverse, and
+  what an editor Save will call.
+- `Zenith_AnimatorComponent::LoadControllerAsset(path)` acquires the asset and
+  calls the former, resolving masks against the rig its `ModelComponent` animates.
+
+★ **THE PATH IS NOT SERIALIZED INTO A SCENE, DELIBERATELY.**
+`Zenith_AnimatorComponent::WriteToDataStream` writes the whole controller INLINE
+and committed `.zscen` files carry those bytes today; persisting a controller-asset
+REFERENCE instead moves that layout and is a separate decision. `LoadControllerAsset`
+is a runtime verb.
+
+★ **THREE THINGS THE `.zanimctrl` CARRIES THAT A `.zscen` DOES NOT**, because
+`Flux_AnimationLayer::WriteToDataStream` reaches committed scene bytes and may not
+move: the layer **id**, `m_bEmitEvents` (D41 changed no schema, so a controller
+restored from a scene comes back with every silenced overlay emitting again) and
+the **bone-mask asset path**. The runtime layer gained `GetLayerId` /
+`SetLayerId` and `GetBoneMaskAssetPath` / `SetBoneMaskAssetPath` as
+NON-serialized fields for exactly this.
+
+★ **A LAYER'S INDEX IS NOT ITS IDENTITY**, which is what the id is for: inserting
+or removing a layer renumbers every one above it, so anything remembering "layer 2"
+silently starts naming a different layer. `AddLayer` mints from a monotonic counter
+that is **itself serialized**, and a removed layer's id is never handed out again.
+`AssignLayerId` (not the layer's own `SetLayerId`) is what an export uses, because
+re-stating ids chosen elsewhere must also move the counter past them.
+
+★ **`Flux_BoneMask` IS RESOLVED AND INDEX-BASED, SO IT CANNOT BE EXPORTED.** It
+holds a flat weight array and no provenance — not the skeleton, not the file. That
+is why the layer stores the mask PATH beside it; without it, `ExportControllerDef`
+would write an empty reference for every masked layer and turn a save into a mask
+deletion. A controller masked by hand exports UNMASKED and returns false saying so.
+
 ### Animation Layers (Flux_AnimationLayer)
 Multiple independent state machines composing poses:
 - Each layer has its own `Flux_AnimationStateMachine`, weight, and blend mode
@@ -623,7 +701,13 @@ MeshAnimation/
   Flux_AnimationStateMachine.h/cpp   - The INSTANCE half: current state, active transition,
                                        shared-parameter pointer, the two poses; owns a def
                                        by value and forwards the imperative builders into it
-  Flux_AnimationLayer.h/cpp          - Animation layer (weight, blend mode, avatar mask)
+  Flux_AnimatorControllerDef.h/cpp   - WU-6.2: the .zanimctrl payload — clip paths, an
+                                       optional embedded top-level SM def, the layer list
+                                       (id / name / weight / blend mode / emit flag / bone-mask
+                                       asset path / embedded SM def) and the shared envelope
+                                       (type id 7, schema 1)
+  Flux_AnimationLayer.h/cpp          - Animation layer (weight, blend mode, avatar mask;
+                                       plus WU-6.2's NON-serialized layer id + mask asset path)
   Flux_SkeletonInstance.h/cpp        - Runtime skeleton state
   Flux_BonePose.h/cpp                - Bone transform utilities (Blend, MaskedBlend, AdditiveBlend)
   Flux_BlendTree.h/cpp               - Animation blending (Clip, 1D, 2D, Masked nodes)
@@ -639,6 +723,9 @@ MeshAnimation/
                                        non-looping boundaries, reverse, seek, and the pure
                                        SpanContainsEventTime rules
   Flux_BlendTree.Tests.inl           - Unit tests for blend tree nodes (incl. span collection)
+  Flux_AnimatorControllerDef.Tests.inl - Unit tests for WU-6.2's def: the envelope round trip
+                                       (top-level machine AND layers), the three refusal modes,
+                                       stable/never-reused layer ids, and CopyFrom's deep copy
   Flux_AnimationStateMachine.Tests.inl - Unit tests for WU-6.1: def-built vs imperatively-built
                                        machines posing identically over 60 ticks, the D48 bound
                                        and UNBOUND blend spaces, D42's controller parameter

@@ -2,7 +2,9 @@
 #include "Core/Zenith_Engine.h"
 #include "Flux_AnimationController.h"
 #include "Flux/MeshAnimation/Flux_SkeletonInstance.h"
+#include "Flux/MeshAnimation/Flux_AnimatorControllerDef.h"   // WU-6.2: the .zanimctrl payload
 #include "AssetHandling/Zenith_AnimationAsset.h"
+#include "AssetHandling/Zenith_BoneMaskAsset.h"               // WU-6.2: a layer's .zanimmask reference
 
 #ifdef ZENITH_TOOLS
 #include "Flux/Primitives/Flux_PrimitivesImpl.h"
@@ -579,6 +581,200 @@ Flux_AnimationStateMachine* Flux_AnimationController::BuildStateMachineFromDef(c
 	m_pxStateMachine->BuildFromDef(xDef, &m_xClipCollection);
 	m_bParametersPublished = false;
 	return m_pxStateMachine;
+}
+
+//=============================================================================
+// Whole-controller build / export (WU-6.2)
+//=============================================================================
+bool Flux_AnimationController::BuildFromControllerDef(const Flux_AnimatorControllerDef& xDef,
+	const Zenith_SkeletonAsset* pxSkeletonForMasks)
+{
+	bool bComplete = true;
+
+	// (1) CLIPS FIRST, AND THAT ORDER IS LOAD-BEARING. Every state machine below
+	// resolves its clip references by NAME through m_xClipCollection, so a machine
+	// built before its clips are in the collection resolves nothing and poses the
+	// bind pose forever — silently, because an unresolved leaf resets rather than
+	// asserting.
+	const Zenith_Vector<std::string>& xClipPaths = xDef.GetClipPaths();
+	for (u_int u = 0; u < xClipPaths.GetSize(); ++u)
+	{
+		const std::string& strClipPath = xClipPaths.Get(u);
+		if (strClipPath.empty())
+		{
+			continue;
+		}
+
+		// Resolved here rather than inside AddClipFromFile so a missing clip is a
+		// named error instead of that function's bare assert.
+		Zenith_AnimationAsset* pxAnimAsset = Zenith_AssetRegistry::GetView<Zenith_AnimationAsset>(strClipPath);
+		if (pxAnimAsset == nullptr || pxAnimAsset->GetClip() == nullptr)
+		{
+			Zenith_Error(LOG_CATEGORY_ANIMATION,
+				"[AnimatorController] def '%s' names clip '%s', which did not load — every state referencing it will pose the bind pose",
+				xDef.GetName().c_str(), strClipPath.c_str());
+			bComplete = false;
+			continue;
+		}
+		AddClipFromFile(strClipPath);
+	}
+
+	// (2) Layers are rebuilt wholesale — the def describes the WHOLE controller,
+	// so anything already here is stale.
+	for (u_int u = 0; u < m_xLayers.GetSize(); ++u)
+	{
+		delete m_xLayers.Get(u);
+	}
+	m_xLayers.Clear();
+
+	// (3) Top-level state machine. A def with none means a purely layered
+	// controller, and dropping the machine is part of describing that.
+	if (xDef.GetStateMachineDef() != nullptr)
+	{
+		BuildStateMachineFromDef(*xDef.GetStateMachineDef());
+	}
+	else
+	{
+		delete m_pxStateMachine;
+		m_pxStateMachine = nullptr;
+	}
+
+	// (4) Layers.
+	for (u_int u = 0; u < xDef.GetLayerCount(); ++u)
+	{
+		const Flux_AnimatorControllerLayerDef* pxLayerDef = xDef.GetLayer(u);
+		if (pxLayerDef == nullptr)
+		{
+			continue;
+		}
+
+		Flux_AnimationLayer* pxLayer = AddLayer(pxLayerDef->GetName());
+		pxLayer->SetLayerId(pxLayerDef->GetLayerId());
+		pxLayer->SetWeight(pxLayerDef->GetWeight());
+		pxLayer->SetBlendMode(pxLayerDef->GetBlendMode());
+		pxLayer->SetEmitEvents(pxLayerDef->GetEmitEvents());
+		pxLayer->SetBoneMaskAssetPath(pxLayerDef->GetBoneMaskAssetPath());
+
+		const std::string& strMaskPath = pxLayerDef->GetBoneMaskAssetPath();
+		if (!strMaskPath.empty())
+		{
+			if (pxSkeletonForMasks == nullptr)
+			{
+				// ★ NOT A SILENT SKIP. An unmasked override layer replaces the WHOLE
+				// skeleton, so losing a mask does not make the layer do less — it makes
+				// it do far more, which reads as "the legs stopped animating".
+				Zenith_Error(LOG_CATEGORY_ANIMATION,
+					"[AnimatorController] layer '%s' names bone mask '%s' but BuildFromControllerDef was given no skeleton to resolve it against",
+					pxLayerDef->GetName().c_str(), strMaskPath.c_str());
+				bComplete = false;
+			}
+			else
+			{
+				Zenith_BoneMaskAsset* pxMaskAsset = Zenith_AssetRegistry::GetView<Zenith_BoneMaskAsset>(strMaskPath);
+				if (pxMaskAsset == nullptr)
+				{
+					Zenith_Error(LOG_CATEGORY_ANIMATION,
+						"[AnimatorController] layer '%s' names bone mask '%s', which did not load",
+						pxLayerDef->GetName().c_str(), strMaskPath.c_str());
+					bComplete = false;
+				}
+				else
+				{
+					Flux_BoneMask xResolved;
+					// ResolveTo reports each unresolvable bone NAME itself; a partial
+					// resolve still installs what it could.
+					if (!pxMaskAsset->ResolveTo(*pxSkeletonForMasks, xResolved))
+					{
+						bComplete = false;
+					}
+					if (pxMaskAsset->HasAvatarMask())
+					{
+						pxLayer->SetAvatarMask(xResolved);
+					}
+				}
+			}
+		}
+
+		Flux_AnimationStateMachine* pxMachine = pxLayer->CreateStateMachine(pxLayerDef->GetName());
+		pxMachine->BuildFromDef(pxLayerDef->GetStateMachineDef(), &m_xClipCollection);
+	}
+
+	// D42: a whole new graph, declarations and all.
+	m_bParametersPublished = false;
+	PublishSharedParameters();
+
+	return bComplete;
+}
+
+bool Flux_AnimationController::ExportControllerDef(Flux_AnimatorControllerDef& xOutDef) const
+{
+	xOutDef.Clear();
+
+	bool bComplete = true;
+
+	// ★ CLIP PATHS COME FROM THE ASSETS, NOT FROM THE HANDLES AND NOT FROM THE
+	// CLIP COLLECTION. The collection holds borrowed clip POINTERS keyed by clip
+	// NAME, and a clip's name is not its file path. The handles are no better:
+	// AddClipFromFile populates each one with Set(pxAsset), and
+	// Zenith_AssetHandle::Set deliberately CLEARS the path (it is the procedural
+	// entry point), so every handle in m_xAnimationAssets reports "". The asset
+	// itself is the only thing that still knows where it came from.
+	for (u_int u = 0; u < m_xAnimationAssets.GetSize(); ++u)
+	{
+		const Zenith_AnimationAsset* pxAsset = m_xAnimationAssets.Get(u).GetDirect();
+		const std::string strPath = (pxAsset != nullptr) ? pxAsset->GetPath() : std::string();
+		if (strPath.empty())
+		{
+			// A procedural clip has no file to name, so a def cannot reproduce it.
+			Zenith_Error(LOG_CATEGORY_ANIMATION,
+				"[AnimatorController] ExportControllerDef: a clip in this controller has no asset path (procedural) and cannot be written to a "
+				ZENITH_ANIMCTRL_EXT);
+			bComplete = false;
+			continue;
+		}
+		xOutDef.AddClipPath(strPath);
+	}
+
+	if (m_pxStateMachine != nullptr)
+	{
+		xOutDef.GetOrCreateStateMachineDef().CopyFrom(m_pxStateMachine->GetDef());
+	}
+
+	for (u_int u = 0; u < m_xLayers.GetSize(); ++u)
+	{
+		const Flux_AnimationLayer* pxLayer = m_xLayers.Get(u);
+		Flux_AnimatorControllerLayerDef* pxLayerDef = xOutDef.AddLayer(pxLayer->GetName());
+		// The id the RUNTIME layer carries wins over the fresh one AddLayer just
+		// handed out — an export must not renumber the layers it is describing.
+		// AssignLayerId, not SetLayerId, so the def's counter moves past it too.
+		xOutDef.AssignLayerId(*pxLayerDef, pxLayer->GetLayerId());
+		pxLayerDef->SetWeight(pxLayer->GetWeight());
+		pxLayerDef->SetBlendMode(pxLayer->GetBlendMode());
+		pxLayerDef->SetEmitEvents(pxLayer->GetEmitEvents());
+		pxLayerDef->SetBoneMaskAssetPath(pxLayer->GetBoneMaskAssetPath());
+
+		// ★ A MASK WITH NO PATH IS UNWRITEABLE, AND SAYING SO IS THE WHOLE VALUE OF
+		// THIS BRANCH. Flux_BoneMask is resolved and index-based; there is nothing
+		// in it to turn back into a .zanimmask. A controller masked by hand (rather
+		// than built from a def) therefore exports a mask-less layer, and the caller
+		// is told rather than discovering it when the save silently unmasks.
+		if (pxLayer->HasAvatarMask() && pxLayer->GetBoneMaskAssetPath().empty())
+		{
+			Zenith_Error(LOG_CATEGORY_ANIMATION,
+				"[AnimatorController] ExportControllerDef: layer '%s' has an avatar mask but no " ZENITH_ANIMMASK_EXT
+				" path — the mask cannot be written and this layer exports UNMASKED",
+				pxLayer->GetName().c_str());
+			bComplete = false;
+		}
+
+		const Flux_AnimationStateMachine* pxMachine = pxLayer->GetStateMachinePtr();
+		if (pxMachine != nullptr)
+		{
+			pxLayerDef->GetStateMachineDef().CopyFrom(pxMachine->GetDef());
+		}
+	}
+
+	return bComplete;
 }
 
 Flux_AnimatorStateInfo Flux_AnimationController::GetCurrentAnimatorStateInfo() const

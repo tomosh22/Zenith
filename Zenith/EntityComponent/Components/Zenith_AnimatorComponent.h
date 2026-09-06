@@ -126,6 +126,25 @@ public:
 	Flux_AnimationClip* AddClipFromFile(const std::string& strPath);
 	Flux_AnimationClip* GetClip(const std::string& strName);
 
+	// ========== Animator Controller Asset (.zanimctrl, WU-6.2) ==========
+	//
+	// Acquire the .zanimctrl at strPath and rebuild this entity's controller from
+	// it: clips, the optional top-level state machine, and every layer (id, name,
+	// weight, blend mode, emit-events flag, bone mask and its own state machine).
+	// Bone masks resolve against the rig this entity's ModelComponent is animating.
+	//
+	// ★ RUNTIME ONLY — THE PATH IS NOT SERIALIZED. This component writes the whole
+	// controller INLINE into a .zscen (see WriteToDataStream), and committed scene
+	// files carry those bytes; persisting a controller-asset REFERENCE instead is a
+	// change to that layout and a separate decision, deliberately not taken here.
+	// A scene therefore still restores its controller from the inline bytes, and a
+	// game that wants an asset-driven animator calls this after load.
+	//
+	// Returns false on a controller that could not be fully built — see
+	// Flux_AnimationController::BuildFromControllerDef; every cause is logged with
+	// the offending path.
+	bool LoadControllerAsset(const std::string& strPath);
+
 	// ========== State Machine ==========
 	Flux_AnimationStateMachine& GetStateMachine();
 	Flux_AnimationStateMachine* CreateStateMachine(const std::string& strName = "Default");
