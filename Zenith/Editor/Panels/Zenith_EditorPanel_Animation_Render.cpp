@@ -629,7 +629,14 @@ void Zenith_EditorPanel_Animation::RenderPreviewPane()
 	// ---- live image ---------------------------------------------------------
 	m_xSession.UpdatePreviewView();
 
-	if (!m_bPreviewImageRegistered)
+	// ★ THE ACCESSOR IS THE TRY- ONE, and that is not belt and braces. The pane is
+	// now drawn on a rig that resolves headlessly (the overlay and the pick ray
+	// need the pane's geometry, not a texture), so this line is reached in runs
+	// that have no Flux at all — a boot-time unit batch among them. Registration
+	// is left unattempted rather than recorded as done, so a later frame with a
+	// live renderer still picks the image up.
+	Flux_GraphicsImpl* pxGraphics = g_xEngine.TryGetFluxGraphics();
+	if (!m_bPreviewImageRegistered && pxGraphics != nullptr)
 	{
 		// The persistent preview LDR the per-view tonemap writes — NOT a
 		// transient, so the registration stays valid across graph rebuilds. On a
@@ -637,42 +644,189 @@ void Zenith_EditorPanel_Animation::RenderPreviewPane()
 		// an invalid handle, which is why the draw below is gated rather than
 		// asserted.
 		const Flux_ImGuiTextureHandle xHandle = Flux_ImGuiIntegration::RegisterTexture(
-			g_xEngine.FluxGraphics().GetPreviewLDR().SRV(), g_xEngine.FluxGraphics().m_xClampSampler);
+			pxGraphics->GetPreviewLDR().SRV(), pxGraphics->m_xClampSampler);
 		m_ulPreviewImageHandle = xHandle.AsUInt64();
 		m_bPreviewImageRegistered = true;
 	}
 
-	if (m_ulPreviewImageHandle == 0u)
+	// ★ THE SAME RECTANGLE IS OCCUPIED WHETHER OR NOT THERE IS AN IMAGE TO PUT IN
+	// IT. Bone picking and the bone overlay are pure CPU maths over the session's
+	// orbit camera — they need the pane's geometry, not a texture — and on a
+	// backend with no device the registration above hands back an invalid handle.
+	// Drawing nothing there would make every unit that exercises picking
+	// requiresGraphics, i.e. skipped-as-passed headless, i.e. rotting.
+	if (m_ulPreviewImageHandle != 0u)
 	{
-		ImGui::TextDisabled("(no preview image on this backend)");
-		return;
+		Flux_ImGuiTextureHandle xHandle;
+		xHandle.SetValue(m_ulPreviewImageHandle);
+		ImGui::Image((ImTextureID)Flux_ImGuiIntegration::GetImTextureID(xHandle),
+			Vec(fPreviewSize, fPreviewSize));
+	}
+	else
+	{
+		ImGui::Dummy(Vec(fPreviewSize, fPreviewSize));
+		ImGui::GetWindowDrawList()->AddRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax(),
+			xPalette.m_uTextDim);
 	}
 
-	Flux_ImGuiTextureHandle xHandle;
-	xHandle.SetValue(m_ulPreviewImageHandle);
-	ImGui::Image((ImTextureID)Flux_ImGuiIntegration::GetImTextureID(xHandle),
-		Vec(fPreviewSize, fPreviewSize));
+	const ImVec2 xImageMin = ImGui::GetItemRectMin();
+	const ImVec2 xImageMax = ImGui::GetItemRectMax();
+	m_xPreviewImageRect.m_fMinX = xImageMin.x;
+	m_xPreviewImageRect.m_fMinY = xImageMin.y;
+	m_xPreviewImageRect.m_fMaxX = xImageMax.x;
+	m_xPreviewImageRect.m_fMaxY = xImageMax.y;
+	m_bPreviewImageRectValid = true;
 
-	if (ImGui::IsItemHovered())
-	{
-		const ImGuiIO& xIO = ImGui::GetIO();
-		if (xIO.MouseWheel != 0.0f)
-		{
-			m_xSession.ZoomCamera(xIO.MouseWheel * 0.2f);
-		}
-		if (ImGui::IsMouseDragging(ImGuiMouseButton_Left, 0.0f))
-		{
-			m_xSession.OrbitCamera(-xIO.MouseDelta.x * 0.01f, -xIO.MouseDelta.y * 0.01f);
-		}
-	}
+	HandlePreviewPaneInput(ImGui::IsItemHovered());
+	DrawBoneOverlay(ImGui::GetWindowDrawList());
 
 	ImGui::SameLine();
 	ImGui::BeginGroup();
 	ImGui::TextDisabled("Rig: %s", m_xSession.GetSkeletonPath().c_str());
 	ImGui::TextDisabled("Mesh: %s%s", m_xSession.GetPreviewModelPath().c_str(),
 		m_xSession.IsPreviewMeshBareMeshAsset() ? "  (bare mesh)" : "");
-	ImGui::TextDisabled("(drag = orbit, wheel = zoom)");
+	ImGui::TextDisabled("(drag = orbit, wheel = zoom, click = select bone)");
+	if (m_ulPreviewImageHandle == 0u)
+	{
+		ImGui::TextDisabled("(no preview image on this backend)");
+	}
+	if (m_xSession.HasBoneSelection())
+	{
+		ImGui::Text("Bone %u selected", m_xSession.GetSelectedBoneIndex());
+	}
+	if (m_xSession.HasUnkeyedPose())
+	{
+		// ★ THE ONE THING A USER CAN SILENTLY LOSE. With auto-key off, a released
+		// drag writes no key and no undo entry, and the next seek re-evaluates from
+		// the clip and destroys it. Saying so is the whole of §4.4's requirement.
+		ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4(xPalette.m_uWarning));
+		ImGui::TextWrapped("UNKEYED POSE — seeking discards it. Set Key to keep it.");
+		ImGui::PopStyleColor();
+	}
 	ImGui::EndGroup();
+}
+
+//=============================================================================
+// Preview pane input + the bone overlay.
+//
+// ★ THE ONLY PLACE AN ABSOLUTE MOUSE POSITION BECOMES A PREVIEW PIXEL. Every
+// Action_* below takes the image-relative coordinate, so nothing else has to
+// know where the pane landed — which is also what lets a unit aim at a joint it
+// projected itself, with no frame geometry in its own arithmetic.
+//=============================================================================
+
+void Zenith_EditorPanel_Animation::HandlePreviewPaneInput(bool bImageHovered)
+{
+	if (!bImageHovered)
+	{
+		// Hover is a per-frame paint hint; a cursor that left the image must not
+		// leave a bone lit behind it.
+		m_xSession.SetHoveredBoneIndex(kuINVALID_BONE_SELECTION);
+		return;
+	}
+
+	const ImGuiIO& xIO = ImGui::GetIO();
+	if (xIO.MouseWheel != 0.0f)
+	{
+		m_xSession.ZoomCamera(xIO.MouseWheel * 0.2f);
+	}
+
+	if (ImGui::IsMouseDragging(ImGuiMouseButton_Left, 0.0f))
+	{
+		// An orbit is a camera gesture, not a pick: hit-testing mid-drag would
+		// light a different bone on every frame of it.
+		m_xSession.OrbitCamera(-xIO.MouseDelta.x * 0.01f, -xIO.MouseDelta.y * 0.01f);
+		m_xSession.SetHoveredBoneIndex(kuINVALID_BONE_SELECTION);
+		return;
+	}
+
+	const float fLocalX = xIO.MousePos.x - m_xPreviewImageRect.m_fMinX;
+	const float fLocalY = xIO.MousePos.y - m_xPreviewImageRect.m_fMinY;
+
+	Zenith_Maths::Vector3 xOrigin(0.0f);
+	Zenith_Maths::Vector3 xDir(0.0f);
+	u_int uHovered = kuINVALID_BONE_SELECTION;
+	if (BuildPreviewRay(fLocalX, fLocalY, xOrigin, xDir))
+	{
+		if (!m_xSession.PickBone(xOrigin, xDir, uHovered))
+		{
+			uHovered = kuINVALID_BONE_SELECTION;
+		}
+	}
+	m_xSession.SetHoveredBoneIndex(uHovered);
+
+	if (ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+	{
+		// Straight into the action, adding nothing of its own — the handler
+		// translates input, the action decides what happens. A miss changes
+		// nothing (see Action_PickBoneAtPreviewPixel).
+		Action_PickBoneAtPreviewPixel(fLocalX, fLocalY);
+	}
+}
+
+void Zenith_EditorPanel_Animation::DrawBoneOverlay(ImDrawList* pxDraw)
+{
+	if (pxDraw == nullptr || !m_bPreviewImageRectValid)
+	{
+		return;
+	}
+
+	const u_int uSelected = m_xSession.GetSelectedBoneIndex();
+	const u_int uHovered = m_xSession.GetHoveredBoneIndex();
+	if (uSelected == kuINVALID_BONE_SELECTION && uHovered == kuINVALID_BONE_SELECTION)
+	{
+		return;
+	}
+
+	const Zenith_EditorPalette& xPalette = Zenith_EditorUI::Palette();
+	const Zenith_BonePickSet& xSet = m_xSession.GetBonePickSet();
+
+	// ★ DRAWN FROM THE PICK SET, NOT FROM A SECOND WALK OF THE SKELETON. What the
+	// user sees highlighted is then, by construction, exactly what a click there
+	// would select — a separate derivation is how a highlight ends up one bone
+	// away from the thing it is advertising.
+	pxDraw->PushClipRect(Vec(m_xPreviewImageRect.m_fMinX, m_xPreviewImageRect.m_fMinY),
+		Vec(m_xPreviewImageRect.m_fMaxX, m_xPreviewImageRect.m_fMaxY), true);
+
+	for (u_int u = 0; u < xSet.m_xShapes.GetSize(); ++u)
+	{
+		const Zenith_BonePickShape& xShape = xSet.m_xShapes.Get(u);
+		const bool bIsSelected = (xShape.m_uBoneIndex == uSelected);
+		const bool bIsHovered = (xShape.m_uBoneIndex == uHovered);
+		if (!bIsSelected && !bIsHovered)
+		{
+			continue;
+		}
+
+		float fAx = 0.0f;
+		float fAy = 0.0f;
+		float fBx = 0.0f;
+		float fBy = 0.0f;
+		if (!ProjectPreviewWorldPoint(xShape.m_xA, fAx, fAy) ||
+			!ProjectPreviewWorldPoint(xShape.m_xB, fBx, fBy))
+		{
+			// Behind the camera: there is no pixel, and drawing one anyway would
+			// smear a line across the pane from a mirrored coordinate.
+			continue;
+		}
+
+		const float fOriginX = m_xPreviewImageRect.m_fMinX;
+		const float fOriginY = m_xPreviewImageRect.m_fMinY;
+		const ImU32 uColour = bIsSelected ? xPalette.m_uAccent : xPalette.m_uTextDim;
+		const float fThickness = Zenith_EditorUI::Px(bIsSelected ? 2.5f : 1.5f);
+
+		if (!xShape.m_bIsJointOnly)
+		{
+			pxDraw->AddLine(Vec(fOriginX + fAx, fOriginY + fAy), Vec(fOriginX + fBx, fOriginY + fBy),
+				uColour, fThickness);
+		}
+		// The circle marks the joint the bone's rotation PIVOTS about — its own
+		// joint, which is m_xA for a capsule and the single point for a sphere.
+		pxDraw->AddCircle(Vec(fOriginX + fAx, fOriginY + fAy),
+			Zenith_EditorUI::Px(bIsSelected ? 5.0f : 3.5f), uColour, 0, fThickness);
+	}
+
+	pxDraw->PopClipRect();
 }
 
 //=============================================================================

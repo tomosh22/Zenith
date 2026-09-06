@@ -180,6 +180,11 @@ bool Zenith_AnimationPreviewSession::RefreshClipFrom(const Flux_AnimationClip& x
 
 	// Keep the play head where the user left it, folded into the new duration.
 	m_xController.SeekDirectPlay(fTime);
+
+	// The pose was re-evaluated, so the shapes moved — but the SELECTION did not:
+	// a clip refresh changes the clip's content, never the rig it animates, so
+	// every bone index still means the same bone.
+	MarkPickSetDirty();
 	return true;
 }
 
@@ -199,6 +204,27 @@ void Zenith_AnimationPreviewSession::Close()
 	m_bOpen = false;
 	m_bPlaying = false;
 	m_eRigStatus = ZENITH_ANIMPREVIEW_RIG_NOT_OPEN;
+
+	// ★ A BONE SELECTION IS SCOPED TO THE RIG IT INDEXES, and Close drops the rig.
+	// Leaving an index behind would have the next clip opened in this session
+	// start with a bone "selected" that means whatever sits at that index in a
+	// skeleton the user has never seen.
+	//
+	// The AUTO-KEY flag deliberately survives: it is a tool mode the user set on
+	// the panel, not a property of the clip that happened to be open.
+	ResetBoneAuthoringState();
+	m_uSelectionRigBoneCount = 0u;
+	MarkPickSetDirty();
+}
+
+void Zenith_AnimationPreviewSession::ResetBoneAuthoringState()
+{
+	m_uSelectedBoneIndex = kuINVALID_BONE_SELECTION;
+	m_uHoveredBoneIndex = kuINVALID_BONE_SELECTION;
+	m_bBoneDragActive = false;
+	m_bUnkeyedPose = false;
+	m_uDragBoneIndex = kuINVALID_BONE_SELECTION;
+	m_xDragInitialRotation = Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f);
 }
 
 //-----------------------------------------------------------------------------
@@ -221,9 +247,42 @@ void Zenith_AnimationPreviewSession::ReleaseRig()
 	m_xSkeleton.Clear();
 	m_xPreviewMesh.Clear();
 	m_xPreviewModel.Clear();
+
+	// The pick shapes describe an instance that no longer exists.
+	MarkPickSetDirty();
 }
 
+//-----------------------------------------------------------------------------
+// A rig that changed SHAPE invalidates every bone index anybody is holding.
+//
+// ★ THE TEST IS THE BONE COUNT, and it is deliberately not "did the instance
+// pointer move". ResolveRigInternal deletes and re-creates the instance on every
+// call — including the one a SetRigOverride to the SAME rig makes — so a pointer
+// comparison would drop the selection on a no-op re-resolve. A count that stays
+// the same is not proof that the skeleton is the same one, but it is the cheap
+// half of the check, and the expensive half (comparing bone names) buys nothing
+// while a session only ever re-resolves to a rig a human just named.
+//
+// ★ THE WRAPPER EXISTS BECAUSE THE RESOLVE HAS SIX EARLY RETURNS. Putting the
+// comparison at the bottom of the body would skip it on every failure path —
+// which is exactly the path a rig swap that does not load takes.
+//-----------------------------------------------------------------------------
 void Zenith_AnimationPreviewSession::ResolveRig()
+{
+	const u_int uPreviousBoneCount = m_uSelectionRigBoneCount;
+
+	ResolveRigInternal();
+
+	const u_int uNewBoneCount = GetBoneCount();
+	if (uNewBoneCount != uPreviousBoneCount)
+	{
+		ResetBoneAuthoringState();
+	}
+	m_uSelectionRigBoneCount = uNewBoneCount;
+	MarkPickSetDirty();
+}
+
+void Zenith_AnimationPreviewSession::ResolveRigInternal()
 {
 	ReleaseRig();
 	m_bPreviewIsBareMesh = false;
@@ -373,10 +432,19 @@ void Zenith_AnimationPreviewSession::Tick(float fDt)
 	{
 		return;
 	}
+	// ★ A DRAG SUSPENDS EVALUATION. The clip and the drag are two writers of the
+	// same bone rotations, and a per-frame evaluate between two mouse moves would
+	// stomp the drag — the bone would twitch back to the clip's pose on every
+	// frame the user was not moving fast enough.
+	if (m_bBoneDragActive)
+	{
+		return;
+	}
 	// No drive guard here: this controller is the session's OWN (D30) and nothing
 	// else can reach it. The guard exists for the entity controller the animator
 	// inspector shares.
 	m_xController.Update(fDt);
+	MarkPickSetDirty();
 }
 
 bool Zenith_AnimationPreviewSession::Seek(float fTimeSeconds)
@@ -385,7 +453,21 @@ bool Zenith_AnimationPreviewSession::Seek(float fTimeSeconds)
 	{
 		return false;
 	}
-	return m_xController.SeekDirectPlay(fTimeSeconds);
+	if (!m_xController.SeekDirectPlay(fTimeSeconds))
+	{
+		return false;
+	}
+
+	// ★ SEEKING IS THE EXPLICIT DISCARD OF AN UNKEYED POSE (§4.4). The controller
+	// has just re-evaluated every bone from the clip, so whatever the drag left
+	// behind is gone — the flag has to go with it or the panel would keep warning
+	// about a pose that no longer exists.
+	//
+	// ★ THE SELECTION SURVIVES. It names a BONE, not a moment; a scrub is not a
+	// reason to stop pointing at the elbow.
+	m_bUnkeyedPose = false;
+	MarkPickSetDirty();
+	return true;
 }
 
 float Zenith_AnimationPreviewSession::GetNormalizedTime() const
@@ -396,6 +478,139 @@ float Zenith_AnimationPreviewSession::GetNormalizedTime() const
 		return 0.0f;
 	}
 	return m_xController.GetDirectPlayTime() / fDuration;
+}
+
+//-----------------------------------------------------------------------------
+// Pose authoring (Phase 4) — bone selection, derived pose, pick geometry, drag
+//-----------------------------------------------------------------------------
+
+u_int Zenith_AnimationPreviewSession::GetBoneCount() const
+{
+	return (m_pxSkeletonInstance != nullptr) ? static_cast<u_int>(m_pxSkeletonInstance->GetNumBones()) : 0u;
+}
+
+void Zenith_AnimationPreviewSession::SelectBone(u_int uBoneIndex)
+{
+	// An out-of-range index CLEARS rather than being stored. Storing it would
+	// give HasBoneSelection() a true that every consumer then has to re-validate,
+	// and the first one that forgot would index a bone that is not there.
+	m_uSelectedBoneIndex = (uBoneIndex < GetBoneCount()) ? uBoneIndex : kuINVALID_BONE_SELECTION;
+}
+
+void Zenith_AnimationPreviewSession::SetSessionModelMatrix(const Zenith_Maths::Matrix4& xModel)
+{
+	m_xSessionModelMatrix = xModel;
+	// The pick shapes are stored in WORLD space, so the model matrix is baked
+	// into every one of them; moving it invalidates the lot.
+	MarkPickSetDirty();
+}
+
+void Zenith_AnimationPreviewSession::RefreshDerivedPose()
+{
+	if (m_pxSkeletonInstance != nullptr)
+	{
+		m_pxSkeletonInstance->ComputeSkinningMatrices();
+	}
+	MarkPickSetDirty();
+}
+
+const Zenith_BonePickSet& Zenith_AnimationPreviewSession::GetBonePickSet() const
+{
+	if (!m_bPickSetDirty)
+	{
+		return m_xPickSet;
+	}
+
+	m_xPickSet.m_xShapes.Clear();
+	m_xPickSet.m_fSkeletonExtent = 0.0f;
+
+	const Zenith_SkeletonAsset* pxAsset =
+		(m_pxSkeletonInstance != nullptr) ? m_pxSkeletonInstance->GetSourceSkeleton() : nullptr;
+	if (m_pxSkeletonInstance != nullptr && pxAsset != nullptr)
+	{
+		Zenith_BuildBonePickSet(*m_pxSkeletonInstance, *pxAsset, m_xSessionModelMatrix, m_xPickSet);
+	}
+
+	m_bPickSetDirty = false;
+	++m_uPickSetBuildCount;
+	return m_xPickSet;
+}
+
+bool Zenith_AnimationPreviewSession::PickBone(const Zenith_Maths::Vector3& xRayOrigin,
+	const Zenith_Maths::Vector3& xRayDir, u_int& uOutBone) const
+{
+	const Zenith_BonePickSet& xSet = GetBonePickSet();
+	// Distance is discarded here on purpose: a caller picking a bone wants the
+	// bone. Zenith_RaycastBonePickSet leaves BOTH outputs untouched on a miss, so
+	// the local is never read uninitialised.
+	float fDistance = 0.0f;
+	return Zenith_RaycastBonePickSet(xSet, xRayOrigin, xRayDir, uOutBone, fDistance);
+}
+
+Zenith_Maths::Quat Zenith_AnimationPreviewSession::GetBoneLocalRotation(u_int uBoneIndex) const
+{
+	if (m_pxSkeletonInstance == nullptr || uBoneIndex >= GetBoneCount())
+	{
+		return Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f);
+	}
+	return m_pxSkeletonInstance->GetBoneLocalRotation(uBoneIndex);
+}
+
+bool Zenith_AnimationPreviewSession::BeginBoneDrag(u_int uBoneIndex)
+{
+	if (m_pxSkeletonInstance == nullptr || uBoneIndex >= GetBoneCount())
+	{
+		return false;
+	}
+	if (m_bBoneDragActive)
+	{
+		// A drag already in flight is REFUSED rather than retargeted: the second
+		// caller's mouse-up would end the first caller's transaction, and the
+		// latched initial rotation would belong to neither bone.
+		return false;
+	}
+
+	m_bBoneDragActive = true;
+	m_uDragBoneIndex = uBoneIndex;
+	m_xDragInitialRotation = m_pxSkeletonInstance->GetBoneLocalRotation(uBoneIndex);
+	return true;
+}
+
+bool Zenith_AnimationPreviewSession::UpdateBoneDrag(const Zenith_Maths::Quat& xNewBoneLocalRotation)
+{
+	if (!m_bBoneDragActive || m_pxSkeletonInstance == nullptr)
+	{
+		return false;
+	}
+	if (m_uDragBoneIndex >= GetBoneCount())
+	{
+		return false;
+	}
+
+	// SetBoneLocalTransform takes all three components and there is no
+	// rotation-only overload, so position and scale are read back unchanged.
+	m_pxSkeletonInstance->SetBoneLocalTransform(m_uDragBoneIndex,
+		m_pxSkeletonInstance->GetBoneLocalPosition(m_uDragBoneIndex),
+		xNewBoneLocalRotation,
+		m_pxSkeletonInstance->GetBoneLocalScale(m_uDragBoneIndex));
+
+	// ★ THE §3.2 PRECONDITION, HONOURED AT THE ONE PLACE A LIVE POSE IS WRITTEN.
+	// Without this the pick shapes and any overlay would trail the bone by one
+	// drag frame, which reads as lag rather than as a missing call.
+	RefreshDerivedPose();
+
+	m_bUnkeyedPose = true;
+	return true;
+}
+
+void Zenith_AnimationPreviewSession::EndBoneDrag()
+{
+	// ★ THE POSE STAYS WHERE THE DRAG LEFT IT. Nothing is written to the document
+	// here and nothing is pushed on an undo stack — that is WU-4.3's Set Key, and
+	// with auto-key off it may never happen, which is exactly what HasUnkeyedPose
+	// is for.
+	m_bBoneDragActive = false;
+	m_uDragBoneIndex = kuINVALID_BONE_SELECTION;
 }
 
 //-----------------------------------------------------------------------------

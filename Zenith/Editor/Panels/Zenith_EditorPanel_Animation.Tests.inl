@@ -1626,3 +1626,144 @@ ZENITH_TEST(AnimPanel, ScrubEmitsEventsOnlyWhenTheToggleIsOn)
 	// make Ctrl+Z change what the play head does.
 	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), 1u, "only the ADD is on the undo stack");
 }
+
+//==============================================================================
+// POSE AUTHORING (WU-4.1). Still headless, still not requiresGraphics: the
+// preview pane occupies the same rectangle whether or not the backend can hand
+// it a texture, and everything below is CPU maths over that rectangle.
+//==============================================================================
+
+//==============================================================================
+// (A) Action_SelectBone / Action_ClearBoneSelection round-trip.
+//
+// No frame is needed: neither action reads ImGui state, which is the whole
+// contract the Action_* surface exists to keep.
+//==============================================================================
+ZENITH_TEST(AnimPanel, BoneSelectionActionsRoundTrip)
+{
+	AnimPanelFixture xFixture("zenith_animpanel_boneselect");
+	AnimPanelWriteRiggedProbe(xFixture);
+
+	Zenith_EditorPanel_Animation xPanel;
+	ZENITH_ASSERT_TRUE(xPanel.OpenClip(xFixture.m_strPath), "the rigged probe opens");
+	ZENITH_ASSERT_FALSE(xPanel.Session().NeedsRigSelection(),
+		"whose rig resolved (else there is no bone to select and every assertion below is vacuous)");
+	ZENITH_ASSERT_EQ(xPanel.Session().GetBoneCount(), 2u, "Hip -> Spine");
+
+	ZENITH_ASSERT_FALSE(xPanel.Action_ClearBoneSelection(), "clearing nothing reports that it did nothing");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_SelectBone(1u), "selecting a bone that exists takes");
+	ZENITH_ASSERT_TRUE(xPanel.Session().HasBoneSelection(), "and the session holds it");
+	ZENITH_ASSERT_EQ(xPanel.Session().GetSelectedBoneIndex(), 1u, "at the index asked for");
+
+	ZENITH_ASSERT_FALSE(xPanel.Action_SelectBone(7u), "an index the rig does not have is refused");
+	ZENITH_ASSERT_FALSE(xPanel.Session().HasBoneSelection(),
+		"and clears rather than leaving an index nothing can resolve");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_SelectBone(0u), "the root selects too");
+	ZENITH_ASSERT_TRUE(xPanel.Action_ClearBoneSelection(), "clearing a live selection reports the change");
+	ZENITH_ASSERT_FALSE(xPanel.Action_ClearBoneSelection(), "and is idempotent afterwards");
+
+	// ★ THE WHOLE PHASE-4 SURFACE IS DECLARED, AND THE PARTS 4.3/4.4 OWN REFUSE.
+	// A stub that returned true would let a caller wired up early report success
+	// having written no key at all.
+	Zenith_Vector<u_int> axBones;
+	axBones.PushBack(0u);
+	ZENITH_ASSERT_FALSE(xPanel.Action_SetKeyForBones(axBones, true, false), "Set Key is WU-4.3's to fill");
+	ZENITH_ASSERT_FALSE(xPanel.Action_SetKeyForSelectedBone(), "and so is its selected-bone twin");
+	ZENITH_ASSERT_FALSE(xPanel.Action_SetAutoKey(true), "and auto-key");
+	ZENITH_ASSERT_FALSE(xPanel.Action_GetAutoKey(), "which therefore still reads off");
+	ZENITH_ASSERT_FALSE(xPanel.Action_RotateSelectedBoneWorld(Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f)),
+		"the drag primitive is WU-4.3's");
+	ZENITH_ASSERT_FALSE(xPanel.Action_BakeIKForSelectedChain(Zenith_Maths::Vector3(0.0f)),
+		"and the IK bake is WU-4.4's");
+}
+
+//==============================================================================
+// (B) A click on the preview image selects the bone under it.
+//
+// ★ THE TARGET PIXEL IS COMPUTED, NOT GUESSED: the test asks the pick set where
+// the bone IS in world space, projects that through the preview camera, and
+// clicks the answer. Projection and un-projection are separate code paths — one
+// multiplies the view-projection forward, the other inverts it through
+// Zenith_Gizmo::ScreenToWorldRay — so the round trip is a real assertion rather
+// than a value compared against a re-computation of itself.
+//==============================================================================
+ZENITH_TEST(AnimPanel, ClickingThePreviewImageSelectsTheBoneUnderIt)
+{
+	AnimPanelFixture xFixture("zenith_animpanel_bonepick");
+	AnimPanelWriteRiggedProbe(xFixture);
+
+	Zenith_EditorPanel_Animation xPanel;
+	ZENITH_ASSERT_TRUE(xPanel.OpenClip(xFixture.m_strPath), "the rigged probe opens");
+	ZENITH_ASSERT_FALSE(xPanel.Session().NeedsRigSelection(), "and its rig resolved");
+
+	xPanel.RequestWindowPlacement(40.0f, 40.0f, 900.0f, 600.0f);
+	AnimPanelRenderFrames(xPanel, 2u);
+
+	// The diagnostics first, as everywhere else on this panel: a bare false from
+	// the pick has four causes and only one of them is "the ray missed".
+	ZENITH_ASSERT_TRUE(xPanel.WasSheetDrawnLastFrame(), "the window drew its body");
+	Zenith_AnimPanelRect xImage;
+	ZENITH_ASSERT_TRUE(xPanel.GetPreviewImageRect(xImage),
+		"the preview pane occupied a rectangle (it does so on EVERY backend — see the header)");
+	ZENITH_ASSERT_GT(xImage.Width(), 0.0f, "with real width to express a pixel against");
+
+	Zenith_Maths::Matrix4 xView(1.0f);
+	Zenith_Maths::Matrix4 xProj(1.0f);
+	ZENITH_ASSERT_TRUE(xPanel.GetPreviewViewProj(xView, xProj), "and the preview camera is available");
+
+	// Where is the Hip bone, really? Ask the same geometry a click will hit.
+	const Zenith_BonePickSet& xSet = xPanel.Session().GetBonePickSet();
+	ZENITH_ASSERT_GT(xSet.m_xShapes.GetSize(), 0u, "the rig produced pick geometry");
+
+	const Zenith_BonePickShape* pxHip = nullptr;
+	const Zenith_BonePickShape* pxSpineJoint = nullptr;
+	for (u_int u = 0; u < xSet.m_xShapes.GetSize(); ++u)
+	{
+		const Zenith_BonePickShape& xShape = xSet.m_xShapes.Get(u);
+		if (!xShape.m_bIsJointOnly && xShape.m_uBoneIndex == 0u) { pxHip = &xShape; }
+		if (xShape.m_bIsJointOnly && xShape.m_uBoneIndex == 1u) { pxSpineJoint = &xShape; }
+	}
+	ZENITH_ASSERT_NOT_NULL(pxHip, "the ROOT owns the capsule running up to Spine");
+	ZENITH_ASSERT_NOT_NULL(pxSpineJoint, "and the leaf owns a joint sphere");
+	if (pxHip == nullptr || pxSpineJoint == nullptr)
+	{
+		return;
+	}
+
+	// ---- the capsule's midpoint selects its OWNER ---------------------------
+	const Zenith_Maths::Vector3 xMidpoint = (pxHip->m_xA + pxHip->m_xB) * 0.5f;
+	float fPixelX = 0.0f;
+	float fPixelY = 0.0f;
+	ZENITH_ASSERT_TRUE(xPanel.ProjectPreviewWorldPoint(xMidpoint, fPixelX, fPixelY),
+		"the middle of that capsule is in front of the preview camera");
+	ZENITH_ASSERT_GE(fPixelX, 0.0f, "and projects inside the image");
+	ZENITH_ASSERT_LE(fPixelX, xImage.Width(), "and projects inside the image");
+	ZENITH_ASSERT_GE(fPixelY, 0.0f, "and projects inside the image");
+	ZENITH_ASSERT_LE(fPixelY, xImage.Height(), "and projects inside the image");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_PickBoneAtPreviewPixel(fPixelX, fPixelY),
+		"clicking that pixel hits a bone");
+	ZENITH_ASSERT_EQ(xPanel.Session().GetSelectedBoneIndex(), 0u,
+		"and selects the bone whose ROTATION swings that segment — the parent, not the child");
+
+	// ---- the leaf's joint selects the leaf ----------------------------------
+	ZENITH_ASSERT_TRUE(xPanel.ProjectPreviewWorldPoint(pxSpineJoint->m_xB, fPixelX, fPixelY),
+		"the leaf joint projects too");
+	ZENITH_ASSERT_TRUE(xPanel.Action_PickBoneAtPreviewPixel(fPixelX, fPixelY), "and is clickable");
+	ZENITH_ASSERT_EQ(xPanel.Session().GetSelectedBoneIndex(), 1u,
+		"★ resolving to the LEAF, not to the parent capsule whose end cap it sits inside");
+
+	// ---- a click on empty space misses, and changes nothing -----------------
+	ZENITH_ASSERT_FALSE(xPanel.Action_PickBoneAtPreviewPixel(2.0f, 2.0f),
+		"a click in the far corner of the pane hits nothing");
+	ZENITH_ASSERT_EQ(xPanel.Session().GetSelectedBoneIndex(), 1u,
+		"and a miss is NOT a deselect — that is Action_ClearBoneSelection's job");
+
+	// A pick before anything has been rendered has no image size to work from,
+	// and says so rather than inventing one.
+	Zenith_EditorPanel_Animation xUnrendered;
+	ZENITH_ASSERT_FALSE(xUnrendered.Action_PickBoneAtPreviewPixel(10.0f, 10.0f),
+		"a panel that has never drawn cannot resolve a preview pixel");
+}

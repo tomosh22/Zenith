@@ -571,6 +571,114 @@ public:
 	bool Action_SetEmitEventsOnScrub(bool bEmit);
 	bool GetEmitEventsOnScrub() const;
 
+	//=========================================================================
+	// POSE AUTHORING (Phase 4).
+	//
+	// ★ THE WHOLE Action_* SURFACE IS DECLARED HERE BY WU-4.1, INCLUDING THE
+	// PARTS IT DOES NOT IMPLEMENT. WU-4.3 (drag, Set Key, auto-key) and WU-4.4
+	// (IK bake) then FILL BODIES in their own TUs rather than adding
+	// declarations to this header — which is what turns what would have been a
+	// three-way write conflict on one file into a one-way dependency, and gives
+	// both of them a stable compile target from the moment this lands. Every
+	// stub below returns false and says which unit owns it.
+	//
+	// ★ THE BONE MANIPULATOR IS AN ImGui DRAW-LIST OVERLAY, NOT Flux_Gizmos, and
+	// that is a feasibility correction rather than a style choice.
+	// Flux_GizmosImpl is entity-typed all the way down (Zenith_Entity*
+	// target, every interaction site resolving through it) AND it declares one
+	// pass writing the FINAL render target with no per-view selection — so it
+	// renders with the MAIN camera's constants over the main viewport, while the
+	// preview session renders into the shared preview view slot. Making it
+	// per-view is a render-graph change no Phase-4 unit owns.
+	//=========================================================================
+
+	// Select by INDEX. False when there is no session, or when the index does
+	// not resolve against the current rig — the session clears rather than
+	// storing an index nothing can look up.
+	bool Action_SelectBone(u_int uBoneIndex);
+	// True iff there WAS a bone selection to clear.
+	bool Action_ClearBoneSelection();
+
+	// Select whatever bone sits under a pixel of the preview image.
+	//
+	// ★ THE PIXEL IS RELATIVE TO THE PREVIEW IMAGE'S TOP-LEFT, not to the
+	// screen and not to the window. That is the space ProjectPreviewWorldPoint
+	// answers in and the space BuildPreviewRay consumes, so a caller that has a
+	// world position can aim at it without knowing where the panel happens to
+	// be; the mouse handler converts once, at the one place it has the
+	// absolute position. Requires a rendered frame (the image's SIZE comes from
+	// the recorded rect) and an open session with a resolved rig.
+	//
+	// False on a miss, and a miss changes NOTHING — clicking empty space beside
+	// a bone does not deselect it, the same way the sheet's empty-space click
+	// is a separate gesture from a key click.
+	bool Action_PickBoneAtPreviewPixel(float fPixelX, float fPixelY);
+
+	// THE key-writing verb (design note §5.4). Every caller — the Set Key
+	// button, auto-key on drag release, and the IK bake — goes through this one
+	// function, so a key written three different ways is byte-identical.
+	//
+	// bRotation writes the rotation track; bTranslationForRoot additionally
+	// writes translation, and ONLY for a bone with no parent. Scale is not
+	// authorable in Phase 4. That asymmetry is not tidiness:
+	// Flux_SkeletonPose::SampleFromClip writes a component only if that channel
+	// HAS keyframes, so adding the first key to a channel changes that bone's
+	// behaviour across the ENTIRE clip — from "follows bind pose" to "follows a
+	// single constant". Writing tracks the user did not author would alter
+	// frames they never touched.
+	bool Action_SetKeyForBones(const Zenith_Vector<u_int>& xBoneIndices, bool bRotation, bool bTranslationForRoot);
+	bool Action_SetKeyForSelectedBone();
+
+	bool Action_SetAutoKey(bool bEnabled);
+	bool Action_GetAutoKey() const;
+
+	// The drag primitive: apply a WORLD-space rotation delta to the selected
+	// bone's LOCAL rotation. The conjugation into the parent's frame is
+	// WU-4.2's Zenith_BoneSpace; this is the verb that calls it.
+	bool Action_RotateSelectedBoneWorld(const Zenith_Maths::Quat& xWorldDelta);
+
+	// Solve a transient chain from the selected bone and its two ancestors to a
+	// model-space target, then bake the result down to keys through
+	// Action_SetKeyForBones — the SAME function a hand drag uses, so one Ctrl+Z
+	// undoes the whole IK gesture and the clip contains nothing IK-specific.
+	bool Action_BakeIKForSelectedChain(const Zenith_Maths::Vector3& xTargetModelSpace);
+
+	//------------------------------------------------------------------------
+	// The preview camera, as pure maths.
+	//
+	// Both of these are exact inverses of each other through DIFFERENT code:
+	// the projection multiplies forward, the ray inverts through
+	// Zenith_Gizmo::ScreenToWorldRay. That is what makes a
+	// project-then-pick round trip a real assertion rather than a guard
+	// comparing a value against a re-computation of itself.
+	//------------------------------------------------------------------------
+
+	// The preview view/projection for the session's CURRENT orbit state, built
+	// by the same pure builders the material preview stages the slot with. No
+	// frame needed. False when the session is not open.
+	bool GetPreviewViewProj(Zenith_Maths::Matrix4& xOutView, Zenith_Maths::Matrix4& xOutProj) const;
+
+	// A world point -> a pixel RELATIVE to the preview image's top-left.
+	// False when the point is behind the camera, or without a rendered frame.
+	bool ProjectPreviewWorldPoint(const Zenith_Maths::Vector3& xWorld, float& fOutPixelX, float& fOutPixelY) const;
+
+	// A pixel relative to the preview image -> a world ray. The origin is the
+	// orbit camera position; the direction comes from
+	// Zenith_Gizmo::ScreenToWorldRay against the preview view/proj.
+	bool BuildPreviewRay(float fPixelX, float fPixelY,
+		Zenith_Maths::Vector3& xOutOrigin, Zenith_Maths::Vector3& xOutDir) const;
+
+	// The preview image's rect in ABSOLUTE screen coordinates, subject to the
+	// same off-screen gate as every other rect on this panel.
+	//
+	// ★ IT IS RECORDED WHETHER OR NOT THERE IS AN IMAGE TO SHOW. On a backend
+	// with no device the ImGui registration hands back an invalid handle and the
+	// pane draws a same-sized placeholder instead — because bone picking and the
+	// overlay are pure CPU maths that must be exercisable headless, and a rect
+	// that only exists on a graphics driver would force every unit that touches
+	// them to be requiresGraphics (i.e. skipped-as-passed, i.e. rotting).
+	bool GetPreviewImageRect(Zenith_AnimPanelRect& xOut) const;
+
 	//------------------------------------------------------------------------
 	// Operation diagnostics — UNGATED, for the same reason the rect
 	// diagnostics are: a bare `false` from an action has several causes, and a
@@ -789,6 +897,14 @@ private:
 	void RenderEventContextMenu();
 	void RenderBanners();
 	void RenderPreviewPane();
+	// Hover + click over the preview image, translated into Action_* calls. The
+	// ONLY place an absolute mouse position is turned into an image-relative
+	// pixel, so nothing else has to know where the pane landed.
+	void HandlePreviewPaneInput(bool bImageHovered);
+	// The selected / hovered bone, projected through the preview camera and
+	// painted over the image: a line along the bone's capsule and a circle at the
+	// joint it moves. Draw-list only — it is a decoration, not an item.
+	void DrawBoneOverlay(ImDrawList* pxDraw);
 	void RenderSheet();
 	void HandleViewInput(const SheetLayout& xLayout, bool bCanvasHovered);
 	void ApplyPendingScrolls(const SheetLayout& xLayout);
@@ -827,10 +943,14 @@ private:
 	Zenith_AnimPanelRect m_xPlayheadRect;
 	Zenith_AnimPanelRect m_xTrackAreaRect;
 	Zenith_AnimPanelRect m_xCanvasRect;
+	// Where the preview image (or its same-sized placeholder) was drawn this
+	// frame — the origin and scale every preview pixel is expressed against.
+	Zenith_AnimPanelRect m_xPreviewImageRect;
 	bool m_bRulerRectValid = false;
 	bool m_bPlayheadRectValid = false;
 	bool m_bTrackAreaRectValid = false;
 	bool m_bCanvasRectValid = false;
+	bool m_bPreviewImageRectValid = false;
 
 	// ★ The display bound CAPTURED WHEN THE RECTS ABOVE WERE RECORDED. Zeroed by
 	// ClearFrameRects with them, so a frame the panel did not draw refuses every

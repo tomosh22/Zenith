@@ -579,3 +579,264 @@ ZENITH_TEST(AnimationPreview, SeekAdvancesTheEventBookkeepingMark)
 
 	xSession.Controller().ClearEventCallback();
 }
+
+//------------------------------------------------------------------------------
+// Pose authoring (WU-4.1) — bone selection, pick geometry, the live drag.
+//
+// Still CPU-only and still headless: the pick set is built from the skeleton
+// instance's model-space cache and raycast on the CPU, and the drag writes
+// through Flux_SkeletonInstance, which owns no device resources.
+//------------------------------------------------------------------------------
+
+namespace
+{
+	// The capsule bone uOwner owns, whichever child it runs to. Null when the
+	// bone owns none (a leaf, or a bone whose children sit on top of it).
+	const Zenith_BonePickShape* AnimPreview_FindCapsule(const Zenith_BonePickSet& xSet, u_int uOwner)
+	{
+		for (u_int u = 0; u < xSet.m_xShapes.GetSize(); ++u)
+		{
+			const Zenith_BonePickShape& xShape = xSet.m_xShapes.Get(u);
+			if (!xShape.m_bIsJointOnly && xShape.m_uBoneIndex == uOwner)
+			{
+				return &xShape;
+			}
+		}
+		return nullptr;
+	}
+}
+
+//------------------------------------------------------------------------------
+// (7) A bone selection outlives a scrub and a clip refresh, and dies with the
+// rig.
+//
+// ★ THE TWO HALVES ARE DIFFERENT FACTS, NOT ONE. A selection names a BONE, and a
+// scrub or a clip edit changes WHEN and WHAT, never the rig — so it must survive
+// both. A rig change replaces the very thing the index indexes, so the same
+// number would silently mean a different bone, and it must not.
+//------------------------------------------------------------------------------
+ZENITH_TEST(AnimationPreview, BoneSelectionSurvivesASeekAndAClipRefreshButNotARigChange)
+{
+	AnimPreviewFixture xFixture("zenith_animpreview_boneselect");
+
+	Zenith_AnimationPreviewSession xSession("Select");
+	const Flux_AnimationClip xClip = xFixture.MakeClip("Walk", 2.0f, true);
+	ZENITH_ASSERT_TRUE(xSession.Open(xClip, "game:Anims/Walk.zanim") == ZENITH_ANIMPREVIEW_OPEN_OK,
+		"the session opens with its recorded rig");
+	xSession.Pause();
+
+	ZENITH_ASSERT_EQ(xSession.GetBoneCount(), 3u, "Root -> Spine -> Head");
+	ZENITH_ASSERT_FALSE(xSession.HasBoneSelection(), "a freshly opened session has nothing selected");
+	ZENITH_ASSERT_EQ(xSession.GetSelectedBoneIndex(), kuINVALID_BONE_SELECTION, "and reports the sentinel");
+
+	xSession.SelectBone(1u);
+	ZENITH_ASSERT_TRUE(xSession.HasBoneSelection(), "selecting by index takes");
+	ZENITH_ASSERT_EQ(xSession.GetSelectedBoneIndex(), 1u, "and names the bone asked for");
+
+	// ★ OUT OF RANGE CLEARS RATHER THAN STORING. An index that will never resolve
+	// would give HasBoneSelection() a true that every consumer has to re-validate,
+	// and the first one that forgot would index a bone that is not there.
+	xSession.SelectBone(99u);
+	ZENITH_ASSERT_FALSE(xSession.HasBoneSelection(), "an out-of-range index CLEARS the selection");
+
+	xSession.SelectBone(2u);
+	ZENITH_ASSERT_TRUE(xSession.Seek(1.0f), "scrub to the middle");
+	ZENITH_ASSERT_EQ(xSession.GetSelectedBoneIndex(), 2u, "a scrub does not deselect — it changes WHEN, not WHAT");
+
+	ZENITH_ASSERT_TRUE(xSession.RefreshClipFrom(xFixture.MakeClip("Walk", 2.0f, true)),
+		"the document pushes an edited clip across");
+	ZENITH_ASSERT_EQ(xSession.GetSelectedBoneIndex(), 2u, "and a clip refresh does not deselect either");
+
+	// Hover is independent of selection and unfiltered — it is a paint hint the
+	// frame owner resets.
+	xSession.SetHoveredBoneIndex(1u);
+	ZENITH_ASSERT_TRUE(xSession.HasBoneHover(), "hover is set");
+	ZENITH_ASSERT_EQ(xSession.GetHoveredBoneIndex(), 1u, "at the bone asked for");
+	ZENITH_ASSERT_EQ(xSession.GetSelectedBoneIndex(), 2u, "without disturbing the selection");
+	xSession.SetHoveredBoneIndex(kuINVALID_BONE_SELECTION);
+	ZENITH_ASSERT_FALSE(xSession.HasBoneHover(), "and cleared with the sentinel");
+
+	xSession.Close();
+	ZENITH_ASSERT_FALSE(xSession.HasBoneSelection(), "Close drops the selection with the rig");
+	ZENITH_ASSERT_EQ(xSession.GetBoneCount(), 0u, "because there is no rig left to index");
+
+	// ★ AND SO DOES A RIG CHANGE. An empty skeleton path is a rig change that
+	// needs no second asset on disk: the resolve refuses before it ever reaches
+	// the registry, the bone count goes 3 -> 0, and index 1 now means nothing.
+	ZENITH_ASSERT_TRUE(xSession.Open(xClip, "game:Anims/Walk.zanim") == ZENITH_ANIMPREVIEW_OPEN_OK,
+		"reopen over the same clip");
+	xSession.Pause();
+	xSession.SelectBone(1u);
+	ZENITH_ASSERT_TRUE(xSession.HasBoneSelection(), "with a bone selected again");
+
+	ZENITH_ASSERT_FALSE(xSession.SetRigOverride("", ""), "an empty rig does not resolve");
+	ZENITH_ASSERT_FALSE(xSession.HasBoneSelection(),
+		"and the selection goes with the rig it indexed, rather than pointing into a skeleton that is gone");
+}
+
+//------------------------------------------------------------------------------
+// (8) Selecting a bone BY INDEX and BY PICK RAY resolve to the same bone.
+//
+// The ray is aimed at the midpoint of the capsule the pick set says bone 1 owns,
+// so the test does not hard-code a joint position the clip is free to animate.
+//------------------------------------------------------------------------------
+ZENITH_TEST(AnimationPreview, SelectingByIndexAndByPickRayResolveToTheSameBone)
+{
+	AnimPreviewFixture xFixture("zenith_animpreview_bonepick");
+
+	Zenith_AnimationPreviewSession xSession("Pick");
+	const Flux_AnimationClip xClip = xFixture.MakeClip("Walk", 2.0f, true);
+	ZENITH_ASSERT_TRUE(xSession.Open(xClip, "game:Anims/Walk.zanim") == ZENITH_ANIMPREVIEW_OPEN_OK, "session opens");
+	xSession.Pause();
+
+	// Seek somewhere the clip has actually separated the joints, then bring model
+	// space current before anything reads a model matrix (§3.2).
+	ZENITH_ASSERT_TRUE(xSession.Seek(1.0f), "scrub to the middle of the clip");
+	xSession.RefreshDerivedPose();
+
+	const Zenith_BonePickSet& xSet = xSession.GetBonePickSet();
+	ZENITH_ASSERT_GT(xSet.m_xShapes.GetSize(), 0u, "the rig produced pick geometry");
+	ZENITH_ASSERT_GT(xSet.m_fSkeletonExtent, 0.0f, "with a non-degenerate extent to scale radii from");
+
+	const Zenith_BonePickShape* pxSpine = AnimPreview_FindCapsule(xSet, 1u);
+	ZENITH_ASSERT_NOT_NULL(pxSpine, "Spine owns the capsule running to Head");
+	if (pxSpine == nullptr)
+	{
+		return;
+	}
+
+	const Zenith_Maths::Vector3 xMidpoint = (pxSpine->m_xA + pxSpine->m_xB) * 0.5f;
+	const Zenith_Maths::Vector3 xRayDir(-1.0f, 0.0f, 0.0f);
+	const Zenith_Maths::Vector3 xRayOrigin = xMidpoint - xRayDir * 5.0f;
+
+	u_int uPicked = kuINVALID_BONE_SELECTION;
+	ZENITH_ASSERT_TRUE(xSession.PickBone(xRayOrigin, xRayDir, uPicked),
+		"a ray through the middle of that capsule hits it");
+	ZENITH_ASSERT_EQ(uPicked, 1u, "and reports the bone the capsule belongs to");
+
+	xSession.SelectBone(uPicked);
+	const u_int uByRay = xSession.GetSelectedBoneIndex();
+	xSession.ClearBoneSelection();
+	xSession.SelectBone(1u);
+	ZENITH_ASSERT_EQ(uByRay, xSession.GetSelectedBoneIndex(),
+		"picking by ray and selecting by index land on the same bone");
+
+	// A miss changes neither the output nor the selection.
+	u_int uUntouched = 0x1234u;
+	ZENITH_ASSERT_FALSE(xSession.PickBone(
+		xMidpoint + Zenith_Maths::Vector3(5.0f, 50.0f, 0.0f), xRayDir, uUntouched),
+		"a ray far above the rig misses");
+	ZENITH_ASSERT_EQ(uUntouched, 0x1234u, "and leaves the caller's index alone");
+}
+
+//------------------------------------------------------------------------------
+// (9) ★ THE PICK SET IS REBUILT WHEN THE POSE MOVES, AND NOT OTHERWISE.
+//
+// This is the checkable form of the design note's §3.2 precondition. The set is
+// derived from a CACHE that only ComputeSkinningMatrices fills, so the session
+// has to know when that cache moved — and a build count is the only way a unit
+// can tell "the pick used fresh geometry" from "the pick used last frame's and
+// happened to give the same answer".
+//------------------------------------------------------------------------------
+ZENITH_TEST(AnimationPreview, ThePickSetIsRebuiltOnlyWhenThePoseMoves)
+{
+	AnimPreviewFixture xFixture("zenith_animpreview_pickcache");
+
+	Zenith_AnimationPreviewSession xSession("Cache");
+	const Flux_AnimationClip xClip = xFixture.MakeClip("Walk", 2.0f, true);
+	ZENITH_ASSERT_TRUE(xSession.Open(xClip, "game:Anims/Walk.zanim") == ZENITH_ANIMPREVIEW_OPEN_OK, "session opens");
+	xSession.Pause();
+
+	xSession.GetBonePickSet();
+	const u_int uAfterFirst = xSession.GetPickSetBuildCount();
+	ZENITH_ASSERT_GT(uAfterFirst, 0u, "the first ask builds it");
+
+	xSession.GetBonePickSet();
+	xSession.GetBonePickSet();
+	ZENITH_ASSERT_EQ(xSession.GetPickSetBuildCount(), uAfterFirst,
+		"asking again with nothing changed costs nothing — the rebuild is lazy, not per call");
+
+	ZENITH_ASSERT_TRUE(xSession.Seek(0.5f), "scrub");
+	u_int uBone = kuINVALID_BONE_SELECTION;
+	xSession.PickBone(Zenith_Maths::Vector3(5.0f, 0.25f, 0.0f), Zenith_Maths::Vector3(-1.0f, 0.0f, 0.0f), uBone);
+	ZENITH_ASSERT_EQ(xSession.GetPickSetBuildCount(), uAfterFirst + 1u,
+		"★ a pick after a seek rebuilds — otherwise it would be aiming at where the bones USED to be");
+
+	const u_int uAfterSeek = xSession.GetPickSetBuildCount();
+	xSession.RefreshDerivedPose();
+	xSession.GetBonePickSet();
+	ZENITH_ASSERT_EQ(xSession.GetPickSetBuildCount(), uAfterSeek + 1u,
+		"and an explicit RefreshDerivedPose invalidates it too");
+
+	// The session model matrix is baked into every shape, so moving it is as much
+	// a change as moving a bone.
+	const u_int uAfterRefresh = xSession.GetPickSetBuildCount();
+	xSession.SetSessionModelMatrix(Zenith_Maths::Matrix4(1.0f));
+	xSession.GetBonePickSet();
+	ZENITH_ASSERT_EQ(xSession.GetPickSetBuildCount(), uAfterRefresh + 1u,
+		"the session model matrix is folded into the shapes, so setting it invalidates them");
+}
+
+//------------------------------------------------------------------------------
+// (10) A bone drag latches, suspends evaluation, and leaves the pose UNKEYED.
+//
+// ★ THE SUSPENSION IS THE LOAD-BEARING HALF. The clip and the drag are two
+// writers of the same bone rotations; without it, a Tick between two mouse moves
+// re-evaluates from the clip and the bone twitches back — which reads as jitter
+// rather than as two drivers.
+//------------------------------------------------------------------------------
+ZENITH_TEST(AnimationPreview, ABoneDragSuspendsEvaluationAndLeavesThePoseUnkeyed)
+{
+	AnimPreviewFixture xFixture("zenith_animpreview_bonedrag");
+
+	Zenith_AnimationPreviewSession xSession("Drag");
+	const Flux_AnimationClip xClip = xFixture.MakeClip("Walk", 2.0f, true);
+	ZENITH_ASSERT_TRUE(xSession.Open(xClip, "game:Anims/Walk.zanim") == ZENITH_ANIMPREVIEW_OPEN_OK, "session opens");
+	ZENITH_ASSERT_TRUE(xSession.Seek(0.0f), "start at t = 0");
+
+	ZENITH_ASSERT_FALSE(xSession.IsBoneDragActive(), "nothing is being dragged yet");
+	ZENITH_ASSERT_FALSE(xSession.HasUnkeyedPose(), "and the live pose is whatever the clip says");
+	ZENITH_ASSERT_FALSE(xSession.GetAutoKey(), "auto-key is OFF by default — a drag that silently wrote keys "
+		"would be an edit nobody asked for");
+
+	ZENITH_ASSERT_FALSE(xSession.BeginBoneDrag(99u), "an out-of-range bone cannot be dragged");
+	ZENITH_ASSERT_TRUE(xSession.BeginBoneDrag(1u), "Spine can");
+	ZENITH_ASSERT_FALSE(xSession.BeginBoneDrag(2u),
+		"and a second drag is REFUSED rather than retargeted — one mouse-up cannot end two transactions");
+	ZENITH_ASSERT_EQ(xSession.GetDragBoneIndex(), 1u, "the drag is on the bone it started on");
+
+	const Zenith_Maths::Quat xInitial = xSession.GetDragInitialRotation();
+	const Zenith_Maths::Quat xTarget = glm::angleAxis(glm::radians(30.0f), Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f));
+	ZENITH_ASSERT_TRUE(xSession.UpdateBoneDrag(xTarget), "the drag writes the live pose");
+	ZENITH_ASSERT_TRUE(xSession.HasUnkeyedPose(), "★ and says so — this is the pose a later seek will destroy");
+
+	const Zenith_Maths::Quat xLive = xSession.GetBoneLocalRotation(1u);
+	ZENITH_ASSERT_GT(fabsf(glm::dot(xLive, xTarget)), 0.9999f, "the instance is holding the dragged rotation");
+	ZENITH_ASSERT_LT(fabsf(glm::dot(xInitial, xTarget)), 0.9999f,
+		"and the latched initial rotation is genuinely a different one, so the comparison above means something");
+
+	// ★ EVALUATION IS SUSPENDED.
+	const float fTimeAtDragStart = xSession.GetTime();
+	xSession.Play();
+	xSession.Tick(0.5f);
+	ZENITH_ASSERT_EQ_FLOAT(xSession.GetTime(), fTimeAtDragStart, 1.0e-4f,
+		"a tick during a drag advances nothing — the clip would otherwise stomp the drag");
+	const Zenith_Maths::Quat xStillLive = xSession.GetBoneLocalRotation(1u);
+	ZENITH_ASSERT_GT(fabsf(glm::dot(xStillLive, xTarget)), 0.9999f, "and the dragged rotation is still there");
+
+	xSession.EndBoneDrag();
+	ZENITH_ASSERT_FALSE(xSession.IsBoneDragActive(), "the drag is over");
+	ZENITH_ASSERT_TRUE(xSession.HasUnkeyedPose(),
+		"the pose SURVIVES the release, unkeyed — with auto-key off nothing wrote it to the document");
+
+	xSession.Tick(0.25f);
+	ZENITH_ASSERT_GT(xSession.GetTime(), fTimeAtDragStart, "and evaluation resumes");
+
+	// ★ SEEKING IS THE EXPLICIT DISCARD (§4.4).
+	ZENITH_ASSERT_TRUE(xSession.Seek(0.0f), "scrub");
+	ZENITH_ASSERT_FALSE(xSession.HasUnkeyedPose(),
+		"which re-evaluates every bone from the clip, so the unkeyed pose is gone and the flag with it");
+
+	xSession.SetAutoKey(true);
+	ZENITH_ASSERT_TRUE(xSession.GetAutoKey(), "auto-key is session state, ready for WU-4.3 to act on");
+}

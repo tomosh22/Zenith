@@ -2,6 +2,7 @@
 
 #ifdef ZENITH_TOOLS
 
+#include "Editor/Animation/Zenith_BonePickGeometry.h"
 #include "Flux/MeshAnimation/Flux_AnimationController.h"
 #include "Flux/RenderViews/Flux_PreviewSlotArbiter.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
@@ -57,6 +58,14 @@ enum Zenith_AnimPreviewRigStatus : u_int
 	ZENITH_ANIMPREVIEW_RIG_NO_MODEL_PATH,
 	ZENITH_ANIMPREVIEW_RIG_MODEL_UNRESOLVED,
 };
+
+//-----------------------------------------------------------------------------
+// "No bone is selected." A sentinel rather than a separate bool because every
+// consumer already has to handle "the index does not resolve" — a rig change can
+// invalidate a perfectly valid-looking index — and a bool beside it would give
+// the same fact two representations that can disagree.
+//-----------------------------------------------------------------------------
+inline constexpr u_int kuINVALID_BONE_SELECTION = 0xFFFFFFFFu;
 
 enum Zenith_AnimPreviewOpenResult : u_int
 {
@@ -181,6 +190,137 @@ public:
 	Flux_SkeletonInstance* GetSkeletonInstance() const { return m_pxSkeletonInstance; }
 	const Flux_AnimationClip& GetClip() const { return m_xClip; }
 
+	// How many bones the resolved rig has, or 0. What SelectBone range-checks
+	// against, and what a caller iterating bones asks first.
+	u_int GetBoneCount() const;
+
+	//-------------------------------------------------------------------------
+	// POSE AUTHORING (Phase 4).
+	//
+	// ★ BONE SELECTION LIVES HERE, NOT IN Zenith_SelectionSystem, and that is a
+	// decision rather than an omission. A bone index is not an entity: it has no
+	// generation counter, it is meaningless without the skeleton it indexes, and
+	// the skeleton instance is owned by THIS object. Widening the entity
+	// selection system to carry one would cost four unrelated edits
+	// (Zenith_EntityID returns, an EntityID-keyed AABB cache, a
+	// Zenith_ModelComponent* precise phase, an unordered_set of ids in the
+	// editor state) and buy nothing.
+	//
+	// ★ IT IS DELIBERATELY NOT UNDOABLE, matching entity selection, which is
+	// also not. It is therefore not on the document and not in any command.
+	//-------------------------------------------------------------------------
+
+	// An out-of-range index CLEARS the selection rather than storing something
+	// that will never resolve.
+	void SelectBone(u_int uBoneIndex);
+	void ClearBoneSelection() { m_uSelectedBoneIndex = kuINVALID_BONE_SELECTION; }
+	u_int GetSelectedBoneIndex() const { return m_uSelectedBoneIndex; }
+	bool HasBoneSelection() const { return m_uSelectedBoneIndex != kuINVALID_BONE_SELECTION; }
+
+	// Hover is a per-frame paint hint, so it is set unfiltered and reset by
+	// whoever owns the frame — no range check, no side effects.
+	void SetHoveredBoneIndex(u_int uBoneIndex) { m_uHoveredBoneIndex = uBoneIndex; }
+	u_int GetHoveredBoneIndex() const { return m_uHoveredBoneIndex; }
+	bool HasBoneHover() const { return m_uHoveredBoneIndex != kuINVALID_BONE_SELECTION; }
+
+	// Model space -> world space for the pick geometry and every space
+	// conversion above it.
+	//
+	// ★ IDENTITY FOR THE WHOLE OF PHASE 4, and the accessor exists anyway. The
+	// preview camera orbits the ORIGIN (Flux_PreviewOrbitCameraPos), so a
+	// non-identity value buys nothing today and adds a term to every conversion
+	// — but every helper still takes it explicitly, so the general case is
+	// testable and the day a session places its subject somewhere else nothing
+	// has to be re-derived.
+	const Zenith_Maths::Matrix4& GetSessionModelMatrix() const { return m_xSessionModelMatrix; }
+	void SetSessionModelMatrix(const Zenith_Maths::Matrix4& xModel);
+
+	// ★ THE PRECONDITION NOBODY CAN SEE (design note §3.2).
+	// Flux_SkeletonInstance::GetBoneModelTransform returns a CACHE written only by
+	// ComputeSkinningMatrices; SetBoneLocalTransform neither updates nor
+	// invalidates it. So a live pose write followed immediately by a model-space
+	// read returns the PREVIOUS geometry — pick shapes one write stale, an
+	// overlay one write behind the bone — with no assert and no symptom other
+	// than lag. This is the one call that brings model space current, and the
+	// rule is: every pose write is followed by RefreshDerivedPose() before
+	// anything reads a model matrix.
+	//
+	// Tick() and Seek() do NOT need it — Flux_AnimationController::
+	// ApplyOutputPoseToSkeleton already ends in ComputeSkinningMatrices, and both
+	// of them route through it. The hazard is the DIRECT writes (the drag).
+	void RefreshDerivedPose();
+
+	// The bone hit volumes for the CURRENT pose, in world space. Rebuilt lazily
+	// the first time it is asked for after the pose (or the session model matrix)
+	// moved, so a frame that neither picks nor draws an overlay pays nothing.
+	const Zenith_BonePickSet& GetBonePickSet() const;
+
+	// Nearest bone along the ray. False (and uOutBone untouched) on a miss.
+	bool PickBone(const Zenith_Maths::Vector3& xRayOrigin, const Zenith_Maths::Vector3& xRayDir,
+		u_int& uOutBone) const;
+
+	// Diagnostic — how many times the pick set has actually been rebuilt.
+	//
+	// ★ UNGATED, and for the same reason the panel's rect diagnostics are: "the
+	// pick missed" has several causes, and a unit that can only see the bool
+	// cannot tell "the ray was wrong" from "the geometry was never refreshed
+	// after the pose moved". This is what makes the §3.2 precondition a checkable
+	// property rather than a paragraph.
+	u_int GetPickSetBuildCount() const { return m_uPickSetBuildCount; }
+
+	//-------------------------------------------------------------------------
+	// The LIVE DRAG pose (design note §4.2). WU-4.1 lands the state; WU-4.3 puts
+	// the manipulator on top of it.
+	//
+	// ★ TWO LAYERS, AND ONLY ONE OF THEM IS UNDOABLE. The live pose — these bone
+	// rotations — is written every drag frame, is never undoable and is never
+	// serialized. The KEYS, on the document, are written ONCE on release and are
+	// both. Nothing is pushed on the undo stack during a drag and nothing is
+	// written to the document during one.
+	//
+	// ★ WHILE A DRAG IS IN FLIGHT THE SESSION MUST NOT RE-EVALUATE FROM THE CLIP,
+	// or a per-frame evaluate would stomp the drag between two mouse moves.
+	// BeginBoneDrag latches the bone's local rotation and suspends Tick();
+	// EndBoneDrag resumes it.
+	//-------------------------------------------------------------------------
+
+	// False for an unresolved rig or an out-of-range bone; a drag already in
+	// flight is refused rather than silently retargeted.
+	bool BeginBoneDrag(u_int uBoneIndex);
+
+	// Write the dragged bone's new LOCAL rotation and bring model space current.
+	// Position and scale are read back unchanged — Flux_SkeletonInstance's setter
+	// takes all three and there is no rotation-only overload.
+	bool UpdateBoneDrag(const Zenith_Maths::Quat& xNewBoneLocalRotation);
+
+	// Ends the drag. The pose STAYS where the drag left it (that is the point of
+	// HasUnkeyedPose below); resuming evaluation is what a later seek or tick
+	// then discards.
+	void EndBoneDrag();
+
+	bool IsBoneDragActive() const { return m_bBoneDragActive; }
+	u_int GetDragBoneIndex() const { return m_uDragBoneIndex; }
+	const Zenith_Maths::Quat& GetDragInitialRotation() const { return m_xDragInitialRotation; }
+	Zenith_Maths::Quat GetBoneLocalRotation(u_int uBoneIndex) const;
+
+	// TRUE when the live pose has been dragged away from what the clip evaluates
+	// to and no key has been written.
+	//
+	// ★ THE PANEL MUST SHOW THIS. With auto-key off, a released drag writes no
+	// key and creates no undo entry, and the next seek re-evaluates from the clip
+	// and destroys it. That is the one thing a user can silently lose, so it is
+	// not allowed to be silent. Making the drag itself undoable was rejected: an
+	// undo entry restoring a pose the document never contained is a lie about
+	// what was saved.
+	bool HasUnkeyedPose() const { return m_bUnkeyedPose; }
+	// Called by whoever writes the keys (WU-4.3), once the pose IS in the clip.
+	void ClearUnkeyedPose() { m_bUnkeyedPose = false; }
+
+	// Auto-key is a per-EDITING-SESSION preference, not clip content, so it lives
+	// here rather than on the document. WU-4.3's Action_SetAutoKey drives it.
+	void SetAutoKey(bool bEnabled) { m_bAutoKey = bEnabled; }
+	bool GetAutoKey() const { return m_bAutoKey; }
+
 	//-------------------------------------------------------------------------
 	// Preview slot (D32). The panel asks these three and draws a placeholder
 	// naming the owner when it does not have the slot; the placeholder UI itself
@@ -210,13 +350,25 @@ public:
 private:
 	// Resolve m_strSkeletonPath / m_strPreviewModelPath into asset pins, rebuild
 	// the skeleton instance and re-arm the direct-play node. Sets m_eRigStatus.
+	// The wrapper also drops the bone selection when the rig changed shape; the
+	// Internal half is the resolve itself, which has six early returns and so
+	// cannot carry that check at the bottom of its own body.
 	void ResolveRig();
+	void ResolveRigInternal();
 	void ReleaseRig();
 	// Put the working clip into the controller's collection and start direct play.
 	void ArmDirectPlay();
 	// The remembered choice for m_strClipAssetPath, if any.
 	bool TryLoadRememberedRig(std::string& strOutSkeleton, std::string& strOutModel) const;
 	void RememberRig() const;
+
+	// The pose (or the session model matrix) moved: the pick set is no longer a
+	// description of where the bones are. Cheap and unconditional — the rebuild
+	// itself is what is deferred.
+	void MarkPickSetDirty() { m_bPickSetDirty = true; }
+	// Drop the selection, the hover and any drag. Called on Close and whenever
+	// the rig changes shape underneath them.
+	void ResetBoneAuthoringState();
 
 	std::string m_strDisplayName;
 	std::string m_strClipAssetPath;
@@ -242,6 +394,33 @@ private:
 	bool m_bOpen = false;
 	bool m_bPlaying = true;
 	bool m_bPreviewIsBareMesh = false;
+
+	//-------------------------------------------------------------------------
+	// Pose authoring (Phase 4).
+	//-------------------------------------------------------------------------
+	u_int m_uSelectedBoneIndex = kuINVALID_BONE_SELECTION;
+	u_int m_uHoveredBoneIndex = kuINVALID_BONE_SELECTION;
+	Zenith_Maths::Matrix4 m_xSessionModelMatrix = Zenith_Maths::Matrix4(1.0f);
+
+	// ★ THE BONE COUNT THE SELECTION WAS MADE AGAINST. A rig swap can hand back
+	// an instance with a different skeleton in which the same index means a
+	// different bone — so the selection is dropped when this moves, rather than
+	// silently retargeting to whatever bone now sits at that index.
+	u_int m_uSelectionRigBoneCount = 0u;
+
+	bool m_bBoneDragActive = false;
+	bool m_bUnkeyedPose = false;
+	bool m_bAutoKey = false;
+	u_int m_uDragBoneIndex = kuINVALID_BONE_SELECTION;
+	Zenith_Maths::Quat m_xDragInitialRotation = Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f);
+
+	// ★ MUTABLE, because PickBone and GetBonePickSet are const and rebuild
+	// lazily. The alternative is a non-const PickBone, which would make every
+	// const reader of the session (an overlay, a unit assertion) take a mutable
+	// reference to ask a read-only question.
+	mutable Zenith_BonePickSet m_xPickSet;
+	mutable bool m_bPickSetDirty = true;
+	mutable u_int m_uPickSetBuildCount = 0u;
 
 	// Orbit state, seeded to the material preview's defaults so the two editors
 	// frame their subject the same way.

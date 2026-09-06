@@ -4,7 +4,7 @@
 
 namespace Zenith_Maths::Intersections
 {
-	static bool RayIntersectsCircle(const Zenith_Maths::Vector3& xRayOrigin, const Zenith_Maths::Vector3& xRayDir,
+	inline bool RayIntersectsCircle(const Zenith_Maths::Vector3& xRayOrigin, const Zenith_Maths::Vector3& xRayDir,
 		const Zenith_Maths::Vector3& xNormal, const float fRadius, const float fThreshold, float& fOutDistance)
 	{
 		// Ray-plane intersection
@@ -29,7 +29,7 @@ namespace Zenith_Maths::Intersections
 		return false;
 	}
 
-	static bool RayIntersectsAABB(const Zenith_Maths::Vector3& xRayOrigin, const Zenith_Maths::Vector3& xRayDir,
+	inline bool RayIntersectsAABB(const Zenith_Maths::Vector3& xRayOrigin, const Zenith_Maths::Vector3& xRayDir,
 		const Zenith_Maths::Vector3& xAABBCenter, float fAABBSize, float& fOutDistance)
 	{
 		const float fHalf = fAABBSize * 0.5f;
@@ -60,7 +60,51 @@ namespace Zenith_Maths::Intersections
 		return true;
 	}
 
-	static bool RayIntersectsCylinder(const Zenith_Maths::Vector3& xRayOrigin, const Zenith_Maths::Vector3& xRayDir,
+	// Ray against a sphere CENTRED ON THE ORIGIN, matching every other helper in
+	// this header: the shape sits at the origin and the caller pre-translates the
+	// ray (pass xRayOrigin - centre). Returns the NEAREST non-negative hit, so a
+	// ray whose origin is INSIDE the sphere reports the exit point rather than
+	// missing — which is what a picking ray that starts inside a joint's ball
+	// has to do if the joint is to stay selectable from close up.
+	inline bool RayIntersectsSphere(const Zenith_Maths::Vector3& xRayOrigin, const Zenith_Maths::Vector3& xRayDir,
+		float fRadius, float& fOutDistance)
+	{
+		// |o + t*d|^2 = r^2  ->  (d.d) t^2 + 2(o.d) t + (o.o - r^2) = 0
+		const float fA = glm::dot(xRayDir, xRayDir);
+		if (fA < 1.0e-12f)
+		{
+			// A zero-length direction is not a ray; it has no distance to report.
+			return false;
+		}
+
+		const float fB = 2.0f * glm::dot(xRayOrigin, xRayDir);
+		const float fC = glm::dot(xRayOrigin, xRayOrigin) - fRadius * fRadius;
+
+		const float fDiscriminant = fB * fB - 4.0f * fA * fC;
+		if (fDiscriminant < 0.0f)
+		{
+			return false;
+		}
+
+		const float fSqrtDisc = sqrtf(fDiscriminant);
+		const float fInv2A = 1.0f / (2.0f * fA);
+
+		float fT = (-fB - fSqrtDisc) * fInv2A;
+		if (fT < 0.0f)
+		{
+			fT = (-fB + fSqrtDisc) * fInv2A;
+		}
+		if (fT < 0.0f)
+		{
+			// Both roots are behind the ray.
+			return false;
+		}
+
+		fOutDistance = fT;
+		return true;
+	}
+
+	inline bool RayIntersectsCylinder(const Zenith_Maths::Vector3& xRayOrigin, const Zenith_Maths::Vector3& xRayDir,
 		const Zenith_Maths::Vector3& xAxis, float fCylinderRadius, float fCylinderLength, float& fOutDistance)
 	{
 		// Ray-cylinder intersection (finite cylinder along axis from origin)

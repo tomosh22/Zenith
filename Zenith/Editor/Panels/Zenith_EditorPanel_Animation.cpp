@@ -3,7 +3,10 @@
 #ifdef ZENITH_TOOLS
 
 #include "Editor/Panels/Zenith_EditorPanel_Animation.h"
+#include "Editor/Zenith_Gizmo.h"
 #include "Core/Zenith_EditorWindowNames.h"
+#include "Flux/Flux_ViewConstants.h"
+#include "Flux/RenderViews/Flux_MaterialPreviewController.h"   // the pure orbit / view-constants builders
 
 #include "imgui.h"
 
@@ -556,6 +559,7 @@ void Zenith_EditorPanel_Animation::ClearFrameRects()
 	m_bPlayheadRectValid = false;
 	m_bTrackAreaRectValid = false;
 	m_bCanvasRectValid = false;
+	m_bPreviewImageRectValid = false;
 
 	// The display bound goes with them: a frame that recorded nothing must not
 	// leave a bound behind that the next query would judge a stale rect against.
@@ -658,6 +662,214 @@ bool Zenith_EditorPanel_Animation::GetRulerRect(Zenith_AnimPanelRect& xOut) cons
 bool Zenith_EditorPanel_Animation::GetTrackAreaRect(Zenith_AnimPanelRect& xOut) const
 {
 	return m_bTrackAreaRectValid ? PublishRect(&m_xTrackAreaRect, xOut) : false;
+}
+
+bool Zenith_EditorPanel_Animation::GetPreviewImageRect(Zenith_AnimPanelRect& xOut) const
+{
+	return m_bPreviewImageRectValid ? PublishRect(&m_xPreviewImageRect, xOut) : false;
+}
+
+//=============================================================================
+// POSE AUTHORING (Phase 4) — the preview camera as pure maths, bone selection,
+// and the declarations WU-4.3 / WU-4.4 fill.
+//=============================================================================
+
+bool Zenith_EditorPanel_Animation::GetPreviewViewProj(
+	Zenith_Maths::Matrix4& xOutView, Zenith_Maths::Matrix4& xOutProj) const
+{
+	if (!m_xSession.IsOpen())
+	{
+		return false;
+	}
+
+	float fYaw = 0.0f;
+	float fPitch = 0.0f;
+	float fDistance = 0.0f;
+	m_xSession.GetCameraOrbit(fYaw, fPitch, fDistance);
+
+	// ★ THE SAME PURE BUILDER THE SESSION STAGES THE SLOT WITH. Deriving a second
+	// view matrix here would make "where the panel thinks the bone is" and "where
+	// the renderer drew it" two numbers that agree only until one of them is
+	// touched — and the disagreement would present as picking being slightly off,
+	// which is indistinguishable from a bad hit radius.
+	Flux_ViewConstants xConstants;
+	Flux_PreviewBuildViewConstants(fYaw, fPitch, fDistance, xConstants);
+	xOutView = xConstants.m_xViewMat;
+	xOutProj = xConstants.m_xProjMat;
+	return true;
+}
+
+bool Zenith_EditorPanel_Animation::ProjectPreviewWorldPoint(
+	const Zenith_Maths::Vector3& xWorld, float& fOutPixelX, float& fOutPixelY) const
+{
+	Zenith_Maths::Matrix4 xView(1.0f);
+	Zenith_Maths::Matrix4 xProj(1.0f);
+	if (!GetPreviewViewProj(xView, xProj) || !m_bPreviewImageRectValid)
+	{
+		return false;
+	}
+
+	const float fWidth = m_xPreviewImageRect.Width();
+	const float fHeight = m_xPreviewImageRect.Height();
+	if (fWidth <= 0.0f || fHeight <= 0.0f)
+	{
+		return false;
+	}
+
+	const Zenith_Maths::Vector4 xClip = (xProj * xView) * Zenith_Maths::Vector4(xWorld, 1.0f);
+	if (xClip.w <= 1.0e-6f)
+	{
+		// Behind the camera (or on the plane): there is no pixel, and returning
+		// one anyway would be a mirrored coordinate somewhere on screen.
+		return false;
+	}
+
+	// ★ THE EXACT INVERSE OF Zenith_Gizmo::ScreenToWorldRay's NDC STEP, Y
+	// INCLUDED. That function deliberately does NOT flip Y — the preview's
+	// projection already carries the Vulkan flip — so neither does this. Adding a
+	// flip on one side only is how a pick lands on the mirror image of the bone
+	// the user aimed at, which looks like an off-by-a-bone selection bug.
+	fOutPixelX = (xClip.x / xClip.w * 0.5f + 0.5f) * fWidth;
+	fOutPixelY = (xClip.y / xClip.w * 0.5f + 0.5f) * fHeight;
+	return true;
+}
+
+bool Zenith_EditorPanel_Animation::BuildPreviewRay(float fPixelX, float fPixelY,
+	Zenith_Maths::Vector3& xOutOrigin, Zenith_Maths::Vector3& xOutDir) const
+{
+	Zenith_Maths::Matrix4 xView(1.0f);
+	Zenith_Maths::Matrix4 xProj(1.0f);
+	if (!GetPreviewViewProj(xView, xProj) || !m_bPreviewImageRectValid)
+	{
+		return false;
+	}
+
+	const float fWidth = m_xPreviewImageRect.Width();
+	const float fHeight = m_xPreviewImageRect.Height();
+	if (fWidth <= 0.0f || fHeight <= 0.0f)
+	{
+		return false;
+	}
+
+	// Stateless helper; the object exists only because ScreenToWorldRay is a
+	// member function.
+	Zenith_Gizmo xGizmo;
+	xOutDir = xGizmo.ScreenToWorldRay(
+		Zenith_Maths::Vector2(fPixelX, fPixelY),
+		Zenith_Maths::Vector2(0.0f, 0.0f),
+		Zenith_Maths::Vector2(fWidth, fHeight),
+		xView, xProj);
+
+	float fYaw = 0.0f;
+	float fPitch = 0.0f;
+	float fDistance = 0.0f;
+	m_xSession.GetCameraOrbit(fYaw, fPitch, fDistance);
+	xOutOrigin = Flux_PreviewOrbitCameraPos(fYaw, fPitch, fDistance);
+	return true;
+}
+
+//-----------------------------------------------------------------------------
+// Bone selection — WU-4.1's own three verbs.
+//-----------------------------------------------------------------------------
+
+bool Zenith_EditorPanel_Animation::Action_SelectBone(u_int uBoneIndex)
+{
+	if (!m_xSession.IsOpen())
+	{
+		return false;
+	}
+	m_xSession.SelectBone(uBoneIndex);
+	// The session clears rather than storing an index that does not resolve, so
+	// this is also the range check's answer.
+	return m_xSession.HasBoneSelection();
+}
+
+bool Zenith_EditorPanel_Animation::Action_ClearBoneSelection()
+{
+	if (!m_xSession.HasBoneSelection())
+	{
+		return false;
+	}
+	m_xSession.ClearBoneSelection();
+	return true;
+}
+
+bool Zenith_EditorPanel_Animation::Action_PickBoneAtPreviewPixel(float fPixelX, float fPixelY)
+{
+	Zenith_Maths::Vector3 xOrigin(0.0f);
+	Zenith_Maths::Vector3 xDir(0.0f);
+	if (!BuildPreviewRay(fPixelX, fPixelY, xOrigin, xDir))
+	{
+		return false;
+	}
+
+	u_int uBone = kuINVALID_BONE_SELECTION;
+	if (!m_xSession.PickBone(xOrigin, xDir, uBone))
+	{
+		// ★ A MISS CHANGES NOTHING. Clicking the empty space beside a bone is not
+		// a request to deselect it — that is Action_ClearBoneSelection, which the
+		// caller can decide to make.
+		return false;
+	}
+
+	m_xSession.SelectBone(uBone);
+	return m_xSession.HasBoneSelection();
+}
+
+//-----------------------------------------------------------------------------
+// Declared here, filled elsewhere. Each one returns false and names its owner,
+// so a caller wired up early gets a refusal rather than a silent success.
+//-----------------------------------------------------------------------------
+
+bool Zenith_EditorPanel_Animation::Action_SetKeyForBones(
+	const Zenith_Vector<u_int>& xBoneIndices, bool bRotation, bool bTranslationForRoot)
+{
+	// WU-4.3 — the ONE key-writing path (design note §5.4).
+	(void)xBoneIndices;
+	(void)bRotation;
+	(void)bTranslationForRoot;
+	return false;
+}
+
+bool Zenith_EditorPanel_Animation::Action_SetKeyForSelectedBone()
+{
+	// WU-4.3 — the toolbar button / S, over Action_SetKeyForBones.
+	return false;
+}
+
+bool Zenith_EditorPanel_Animation::Action_SetAutoKey(bool bEnabled)
+{
+	// WU-4.3 — drives Zenith_AnimationPreviewSession::SetAutoKey, which already
+	// exists; the ACTION is 4.3's because auto-key only means anything once
+	// something writes a key on drag release.
+	(void)bEnabled;
+	return false;
+}
+
+bool Zenith_EditorPanel_Animation::Action_GetAutoKey() const
+{
+	// WU-4.3. Reports false until then, which is also the session's default, so
+	// nothing reads a state the panel is not yet honouring.
+	return false;
+}
+
+bool Zenith_EditorPanel_Animation::Action_RotateSelectedBoneWorld(const Zenith_Maths::Quat& xWorldDelta)
+{
+	// WU-4.3 — the drag primitive. Conjugates the world delta into the bone's
+	// PARENT frame (WU-4.2's Zenith_BoneSpace) before applying it, because q_i is
+	// expressed in that frame; applying a world delta directly is the plausible
+	// wrong answer that is exactly right only at an identity parent.
+	(void)xWorldDelta;
+	return false;
+}
+
+bool Zenith_EditorPanel_Animation::Action_BakeIKForSelectedChain(const Zenith_Maths::Vector3& xTargetModelSpace)
+{
+	// WU-4.4 — solves a TRANSIENT chain on a SCRATCH pose (never the controller's
+	// own, which would run IK twice on the same pose) and bakes the result down
+	// through Action_SetKeyForBones.
+	(void)xTargetModelSpace;
+	return false;
 }
 
 //=============================================================================
