@@ -1,8 +1,16 @@
 # Animation Pose Authoring — WU-4.0 design spike
 
-**Status:** design only. No code was written for this note.
+**Status:** design spike, since IMPLEMENTED. Phases 1–4 shipped as WU-4.1 (`36e1c4c4`),
+WU-4.2 (`3acce596`), WU-4.3 (`f69e4c1d`) and WU-4.4 (`da697fce`). This note was written
+before any of that code existed; it is left in place with its original structure and
+voice, and every place the shipped code disagrees with it is marked with a
+**"Corrected after implementation (2026-09-06):"** lead-in rather than silently
+rewritten — including the one place (§2, bone-capsule ownership) where the original
+reasoning was backwards rather than merely superseded by a later decision.
 **Scope:** the six questions Phase 4 (pose authoring) splits across WU-4.1 … WU-4.4.
-**Audience:** the four implementer briefs, and whoever reviews their diffs.
+**Audience:** the four implementer briefs, and whoever reviews their diffs — now also
+whoever is reading this after the fact to understand why the shipped code looks the way
+it does.
 
 Every path below is relative to the repo root `C:\dev\Zenith`. **Engine source lives
 under `Zenith/`** — `Zenith/Flux/Gizmos/`, `Zenith/Editor/`, `Zenith/Maths/`. (The
@@ -19,10 +27,11 @@ not exist.)
 | Authoring writes bone-local rotations | **TRUE** | `Flux_SkeletonPose::SampleFromClip` writes `m_axLocalPoses[i].m_xRotation` (`Zenith/Flux/MeshAnimation/Flux_BonePose.cpp:257`); the controller copies those into the instance with `SetBoneLocalTransform` (`Flux_AnimationController.cpp:346`). |
 | `kuFluxViewSlotPreview == 5` | **TRUE** | `1u + kuFluxViewNumShadowSlots`, `kuFluxViewNumShadowSlots = 4u` — `Zenith/Flux/RenderViews/Flux_RenderViews.h:45,48`. |
 | The controller invokes `Solve` inside `ApplyOutputPoseToSkeleton`, and the header warns game code off | **TRUE** | `Zenith/Flux/MeshAnimation/Flux_AnimationController.cpp:334-340`; warning at `Flux_InverseKinematics.h:170-176`. |
-| Phase-3 gives key times in **SECONDS** | **CONTRADICTED by the tree.** See §5.2. | `Flux_BoneChannel::AddPositionKeyframe(float fTimeTicks, …)` (`Flux_AnimationClip.h:89-91`) and `SampleFromClip` multiplies seconds by ticks-per-second before sampling (`Flux_BonePose.cpp:168`, `:201`). Channel storage is **ticks**. |
-| `Zenith_AnimationDocument`, `Zenith_AnimationPreviewSession`, `Zenith_EditorPanel_Animation`, `Flux_BoneChannel::InsertKeyframeAt` / `RemoveKeyframe` / `SetKeyframeTime` / `SetKeyframeValue`, `m_uAuthoredFrameRate`, `fANIM_TIME_EPSILON` | **NOT PRESENT anywhere in the checkout** (searched `Zenith/**` and all `.claude/worktrees/**`). Every signature below that touches them is written against the WU-4.0 brief's description, not against code I could read. | — |
+| Phase-3 gives key times in **SECONDS** | **CONTRADICTED by the tree at design time.** See §5.2. **Corrected after implementation (2026-09-06): the tree was fixed before Phase 4 needed it — key times ARE seconds everywhere now, and the Phase-3 premise this row disputed turned out to be correct once the fix landed.** | `Flux_BoneChannel::AddPositionKeyframe(float fTimeTicks, …)` (`Flux_AnimationClip.h:89-91`) and `SampleFromClip` multiplies seconds by ticks-per-second before sampling (`Flux_BonePose.cpp:168`, `:201`) — this was the state of the tree when the row was written. Channel storage is now **seconds**; see `Zenith/Flux/MeshAnimation/CLAUDE.md` ("KEY TIMES ARE SECONDS … D3") and §5.2. |
+| `Zenith_AnimationDocument`, `Zenith_AnimationPreviewSession`, `Zenith_EditorPanel_Animation`, `Flux_BoneChannel::InsertKeyframeAt` / `RemoveKeyframe` / `SetKeyframeTime` / `SetKeyframeValue`, `m_uAuthoredFrameRate`, `fANIM_TIME_EPSILON` | **Corrected after implementation (2026-09-06): ALL PRESENT NOW.** At the time this note was written none of these existed; Phases 1–4 (WU-4.1 `36e1c4c4`, WU-4.2 `3acce596`, WU-4.3 `f69e4c1d`, WU-4.4 `da697fce`) landed every one of them. | `Zenith_AnimationDocument.h`, `Zenith_AnimationPreviewSession.h` (`Zenith/Editor/`, **not** `Editor/Animation/` — see §7), `Zenith/Editor/Panels/Zenith_EditorPanel_Animation.h`, `Zenith/Flux/MeshAnimation/Flux_AnimationClip.h` (the four `Flux_BoneChannel` mutators), `Flux_AnimationClipMetadata::m_uAuthoredFrameRate` (`Flux_AnimationClip.h:120`, D6), `fANIM_TIME_EPSILON` (`Flux_AnimationClip.h`, D9) |
 
-Two further findings that change what Phase 4 can build, detailed in §7:
+Two further findings that change what Phase 4 can build, detailed in §8 (both ADOPTED
+as re-plan corrections, confirmed shipped):
 
 - **The Gizmos pass cannot draw into the preview view.** `Flux_GizmosImpl::SetupRenderGraph`
   declares one pass writing `GetFinalRenderTarget()` with no `.View(slot)`
@@ -108,33 +117,56 @@ rotation pivot and a per-bone delta decomposition, and would fork both §3 and �
 
 ## 2. Bone hit geometry
 
-### Decision
+**Corrected after implementation (2026-09-06): the ownership rule below is the
+OPPOSITE of what shipped, and the shipped rule is the correct one.** The mistake was
+made at design time and caught by WU-4.1's own header comment
+(`Zenith/Editor/Animation/Zenith_BonePickGeometry.h:14-46`), which spells out the
+derivation and calls this note wrong by name. What follows is corrected to match
+`Zenith_BonePickGeometry.{h,cpp}`; the original wording is kept struck through in
+spirit (see the block quote) because the reasoning error is worth keeping visible
+rather than silently rewritten.
 
-Pick against **one capsule per non-root bone (parent joint → this bone's joint), plus a
-joint sphere only where a capsule cannot serve** — i.e. for leaf bones and for bones
-whose capsule is degenerate. That combination has no overlap ambiguity: every point in
-space is inside at most one shape belonging to any given bone, and a leaf tip is still
-pickable.
+### Decision (as shipped)
 
-**★ The capsule from `parent(i)` to `i` belongs to bone `i`, not to the parent.** This is
-the single thing four subagents are most likely to get opposite ways round, so it is
-stated as a rule: bone `i`'s local rotation `q_i` is applied at the parent joint and
-moves the joint at `M_i` (`Flux_SkeletonInstance.cpp:317`), so the drawn segment between
-those two joints is exactly the geometry `q_i` moves. Dragging the forearm therefore
-edits the forearm bone, whose local rotation is the elbow angle.
+Pick against **one capsule per (bone, child) pair, owned by the PARENT**, plus a joint
+sphere for a leaf (no children — it owns no capsule) and for any bone whose every
+capsule was degenerate. A bone with three children owns three capsules, all three
+swinging together under that bone's own rotation. The root owns real capsules to its
+children like any other bone — it is not a special case that "gets no shape".
 
-### Types and entry points
+**★ The capsule from joint `i` to joint `child(i)` belongs to bone `i` — the PARENT
+whose rotation moves it — not to the child.** The original text in this note said the
+opposite ("the capsule from `parent(i)` to `i` belongs to bone `i`"), and the error is
+invisible to every geometric check because it never moves a vertex — it only mislabels
+which bone a click resolves to. The proof is in the composition, not an opinion:
+
+`Flux_SkeletonInstance::ComposeTransformMatrix` (`Flux_SkeletonInstance.cpp:231-241`)
+builds `L_i = T(p_i) · R(q_i) · S(s_i)`, and `ComputeSkinningMatrices` (`:296-318`) sets
+`M_i = M_parent · L_i`. The translation column of a product `A · (T(p) · R · S)` is
+`A · (p, 1)`, because `R · S` contributes no translation — so
+`translation(M_i) = M_parent · p_i`, with **no `q_i` in it**. Bone `i`'s own joint
+therefore does **not** move when `q_i` changes; the joints **below** it do. The segment
+a user sees swing when they rotate bone `i` is the one from joint `i` to joint
+`child(i)`, so that is the segment that has to select bone `i`. Under the rule this note
+originally stated, clicking the segment that visibly swings would select the *child* —
+every drag would rotate the wrong joint, and it would still look entirely plausible in a
+screenshot. Dragging the forearm edits the forearm bone (the elbow angle) precisely
+because the forearm *owns* the capsule from the elbow to the wrist, not the other way
+round.
+
+### Types and entry points (as shipped)
 
 ```cpp
-// Zenith/Editor/Animation/Zenith_BonePickGeometry.h            (NEW — WU-4.1)
+// Zenith/Editor/Animation/Zenith_BonePickGeometry.h            (WU-4.1)
 
 struct Zenith_BonePickShape
 {
-	u_int                 m_uBoneIndex   = 0u;
-	Zenith_Maths::Vector3 m_xA           = Zenith_Maths::Vector3(0.0f);  // parent joint (== m_xB when joint-only)
-	Zenith_Maths::Vector3 m_xB           = Zenith_Maths::Vector3(0.0f);  // this bone's joint
-	float                 m_fRadius      = 0.0f;
-	bool                  m_bIsJointOnly = false;
+	u_int                 m_uBoneIndex      = 0u;  // the bone this shape SELECTS
+	Zenith_Maths::Vector3 m_xA              = Zenith_Maths::Vector3(0.0f);  // the owning bone's OWN joint
+	Zenith_Maths::Vector3 m_xB              = Zenith_Maths::Vector3(0.0f);  // the CHILD joint the capsule runs to
+	float                 m_fRadius         = 0.0f;
+	bool                  m_bIsJointOnly    = false;
+	u_int                 m_uChildBoneIndex = 0u;   // which child, for a bone owning several shapes
 };
 
 struct Zenith_BonePickSet
@@ -145,12 +177,15 @@ struct Zenith_BonePickSet
 
 // Rebuilds xOut from the instance's CURRENT model-space transforms, pre-multiplied by
 // xSessionModel so every shape is in WORLD space and the picking ray needs no transform.
-// PRECONDITION: xSkeleton.ComputeSkinningMatrices() has run since the last pose write.
+// xSkeletonAsset is taken EXPLICITLY (parent indices live on the asset, not the
+// instance), and PRECONDITION: xSkeleton.ComputeSkinningMatrices() has run since the
+// last pose write.
 void Zenith_BuildBonePickSet(const Flux_SkeletonInstance& xSkeleton,
+	const Zenith_SkeletonAsset& xSkeletonAsset,
 	const Zenith_Maths::Matrix4& xSessionModel,
 	Zenith_BonePickSet& xOut);
 
-// Nearest positive-t hit. Returns false and leaves both outputs untouched on a miss.
+// Nearest non-negative hit. Returns false and leaves both outputs untouched on a miss.
 bool Zenith_RaycastBonePickSet(const Zenith_BonePickSet& xSet,
 	const Zenith_Maths::Vector3& xRayOrigin,
 	const Zenith_Maths::Vector3& xRayDir,
@@ -158,28 +193,8 @@ bool Zenith_RaycastBonePickSet(const Zenith_BonePickSet& xSet,
 	float& fOutDistance);
 ```
 
-### How it is built from the skeleton
-
-Exact calls, in order:
-
-1. `const u_int uNumBones = xSkeleton.GetNumBones();` — `Flux_SkeletonInstance.h:108`.
-2. `const Zenith_SkeletonAsset* pxAsset = xSkeleton.GetSourceSkeleton();` — `Flux_SkeletonInstance.h:103`. Bail (empty set) if null.
-3. Joint position for bone `i`:
-   `Zenith_Maths::Vector3(xSessionModel * xSkeleton.GetBoneModelTransform(i)[3])`
-   — `GetBoneModelTransform` is `Flux_SkeletonInstance.h:119`, returning the cache filled
-   by `ComputeSkinningMatrices` at `Flux_SkeletonInstance.cpp:317`.
-4. Parent index: `pxAsset->GetBone(i).m_iParentIndex`, sentinel
-   `Zenith_SkeletonAsset::INVALID_BONE_INDEX` (`Zenith/AssetHandling/Zenith_SkeletonAsset.h:31,40,99`).
-5. Child counts: **one pre-pass** incrementing a `Zenith_Vector<u_int>` sized `uNumBones`
-   from each bone's parent index. **Do not call `Zenith_SkeletonAsset::GetChildBones`
-   per bone** (`Zenith_SkeletonAsset.h:123`) — it returns a fresh `Zenith_Vector` by value,
-   i.e. one allocation per bone per rebuild, on a per-frame path.
-6. Emit a capsule for every `i` with a valid parent and `length(B - A) >= kfBONE_PICK_MIN_SEGMENT`.
-7. Emit a joint sphere at `B` for every `i` whose child count is 0, and for every `i`
-   whose capsule was suppressed at step 6.
-
 Radii, all derived from `m_fSkeletonExtent` so the same code works on a 1.8 m humanoid
-and a 0.2 m prop rig:
+and a 0.2 m prop rig — these matched the design intent exactly:
 
 ```cpp
 inline constexpr float kfBONE_PICK_RADIUS_FRACTION   = 0.12f;   // of the segment length
@@ -188,8 +203,24 @@ inline constexpr float kfBONE_PICK_JOINT_EXTENT      = 0.020f;  // of the skelet
 inline constexpr float kfBONE_PICK_MIN_SEGMENT       = 1.0e-4f;
 ```
 
-`fRadius = max(kfBONE_PICK_RADIUS_FRACTION * fSegmentLength, kfBONE_PICK_MIN_RADIUS_EXTENT * m_fSkeletonExtent)`;
-joint radius = `kfBONE_PICK_JOINT_EXTENT * m_fSkeletonExtent`.
+### The tie-break (corrected — a bounded joint-priority rule, not a flat 1e-4 tie)
+
+The design brief's "on a tie within `1e-4`, prefer the capsule" undersold what a leaf
+needs. A leaf owns no capsule — its only shape is a small joint sphere sitting at the far
+END of its parent's capsule — so whenever the parent bone is long relative to its own
+radius, the leaf's sphere is entirely NESTED inside the parent's rounded cap, and a plain
+nearest-wins rule would report the parent for every ray that could ever reach the leaf.
+The tip would be permanently unselectable on some rigs and not others, purely as a
+function of how the radius happened to work out — not a 1e-4-wide float artefact at all.
+
+The shipped rule (`kfBONE_PICK_JOINT_PRIORITY_RADII = 2.0f`,
+`Zenith_BonePickGeometry.h:111-137`): **a joint sphere outranks a capsule it is sitting
+inside**, but only while it is within `kfBONE_PICK_JOINT_PRIORITY_RADII` × (that
+capsule's own radius) of the capsule's own hit — i.e. while it genuinely is inside the
+geometry in front of it. A fingertip tucked behind a torso sits far further back than
+that margin, and the torso in front of it wins, as it should. Among shapes of the SAME
+class, nearest wins, with a `1e-4` tie going to the incumbent — that part of the original
+text was correct, just incomplete without the cross-class rule above it.
 
 ### The ray test
 
@@ -204,32 +235,28 @@ hit = RayIntersectsCylinder(xRayOrigin - A, xRayDir, n, r, len, t)
 ```
 
 and, when that misses, two sphere tests at `A` and at `B` for the hemispherical caps.
-Take the smallest positive `t` across all shapes. On a tie within `1e-4`, prefer the
-**capsule** (a joint sphere only exists where no capsule covers the point, so a tie is a
-float artefact, not a genuine ambiguity).
 
-**`Zenith_Maths::Intersections` has no ray-sphere test.** It has Circle (`:7`), AABB
-(`:32`) and Cylinder (`:63`) only. The one at
-`Zenith/Flux/Skybox/Flux_AtmosphereTransmittance.h:45` is origin-centred and
-atmosphere-specific. **WU-4.1 adds `RayIntersectsSphere` to
-`Zenith/Maths/Zenith_Maths_Intersections.h`**, origin-anchored to match its neighbours:
+**`Zenith_Maths::Intersections` had no ray-sphere test at design time and now does.**
+WU-4.1 added `RayIntersectsSphere` to `Zenith/Maths/Zenith_Maths_Intersections.h`
+(confirmed present, `:69-...`), origin-anchored to match its neighbours, and — one
+detail the design brief did not specify — it reports the **nearest non-negative** hit,
+so a ray whose origin starts inside the sphere reports the exit point rather than
+missing: a picking ray that begins inside a joint's own ball must still be able to
+select it. It is an ordinary `inline` free function in the header, not a `static`
+member of a class:
 
 ```cpp
-static bool RayIntersectsSphere(const Zenith_Maths::Vector3& xRayOrigin,
+inline bool RayIntersectsSphere(const Zenith_Maths::Vector3& xRayOrigin,
 	const Zenith_Maths::Vector3& xRayDir, float fRadius, float& fOutDistance);
 ```
-
-That is a shared-file edit and it is **WU-4.1's alone**; no other unit may touch that header.
 
 ### CPU-only and headless
 
 Nothing here reaches the GPU. `Flux_SkeletonInstance` holds no device resources at all —
 its `Destroy()` clears an asset handle and a bone count and nothing else
-(`Flux_SkeletonInstance.cpp:127-131`), and the comment at `Flux_SkeletonInstance.h:136-138`
-records that the legacy bone buffer was retired. A test therefore builds a skeleton in
-code with `Zenith_SkeletonAsset::AddBone` + `ComputeBindPoseMatrices`
-(`Zenith_SkeletonAsset.h:133,150`), calls `Flux_SkeletonInstance::CreateFromAsset`
-(`:38`), `ComputeSkinningMatrices()`, then fires rays. No device, no view, no window.
+(`Flux_SkeletonInstance.cpp:127-131`) — and a test builds a skeleton in code, calls
+`Flux_SkeletonInstance::CreateFromAsset`, `ComputeSkinningMatrices()`, then fires rays.
+No device, no view, no window.
 
 ---
 
@@ -273,10 +300,25 @@ Hence `Zenith_AnimationPreviewSession::RefreshDerivedPose()` (§1), which is a s
 to `m_pxSkeletonInstance->ComputeSkinningMatrices()`, and the rule: **every pose write is
 followed by `RefreshDerivedPose()` before anything reads a model matrix.**
 
+**Corrected after implementation (2026-09-06): a SEEK does not need this call — only a
+DIRECT pose write does, and the shipped session says so explicitly.**
+`Zenith_AnimationPreviewSession::Tick()` and `Seek()` route through
+`Flux_AnimationController::SeekDirectPlay`, which ends in
+`ApplyOutputPoseToSkeleton()` → `ComputeSkinningMatrices()` — so the cache is already
+current by the time either returns, and calling `RefreshDerivedPose()` again after one
+would be a redundant, harmless recompute of the whole skeleton, not a correctness fix.
+The header is explicit about the distinction
+(`Zenith_AnimationPreviewSession.h:248-250`): *"Tick() and Seek() do NOT need it … The
+hazard is the DIRECT writes (the drag)."* The rule as shipped is narrower than the
+paragraph above implies: `RefreshDerivedPose()` exists for, and is required after, the
+one write path that bypasses the controller — `Flux_SkeletonInstance::SetBoneLocalTransform`
+called directly, which is exactly what the drag path (`UpdateBoneDrag`, §4.2) and the IK
+bake (§6) do. `UpdateBoneDrag` calls it every drag frame for precisely that reason.
+
 ### 3.3 The conversions
 
 ```cpp
-// Zenith/Editor/Animation/Zenith_BoneSpace.h                  (NEW — WU-4.2)
+// Zenith/Editor/Animation/Zenith_BoneSpace.h                  (WU-4.2)
 // Pure free functions. No ImGui, no Flux, no ECS. Headlessly unit-tested.
 
 namespace Zenith_BoneSpace
@@ -309,6 +351,14 @@ namespace Zenith_BoneSpace
 }
 ```
 
+**Confirmed against the shipped header, verbatim.** `Zenith/Editor/Animation/Zenith_BoneSpace.h`
+(WU-4.2, `3acce596`) declares these seven functions with these exact signatures — the
+design brief's guesses here were right. One implementation note the brief did not
+anticipate: `ApplyWorldDeltaToBoneLocal`'s result is deliberately **not** re-normalised,
+because a drag latches the bone's rotation once at `BeginBoneDrag` and applies one fresh
+delta to that latched value every frame rather than accumulating output back into input,
+so there is no drift to correct for.
+
 ### 3.4 Why the conjugation, derived
 
 The manipulator produces a world-space delta `dQ_w` about a world axis through the
@@ -332,16 +382,30 @@ so `dQ_local = conj(qP) · dQ_w · qP` and `q_i' = dQ_local · q_i`. For a root 
 would.**
 
 The world pivot for the ring is `BoneWorldPosition(W, skeleton, i)`, i.e. the
-translation column of `W · M_i` — the joint the bone's rotation *moves*, not the joint it
-*rotates about*. Both are defensible; use `M_i` because it is where the user sees the
-handle, and pin it with a test.
+translation column of `W · M_i`.
 
-**Non-uniform bone scale is a known limit.** `L_i`'s 3×3 is `R·S`
-(`Flux_SkeletonInstance.cpp:236-240`), so a quaternion recovered from `P` is only the
-true rotation when the accumulated scale is uniform and positive. `Zenith_Maths::DecomposeTRS`
-is documented for exactly that class of matrix (`Zenith/Maths/Zenith_Maths.h:86-95`) and
-normalises the result. Bind scales are 1 in every rig in the tree. WU-4.2 should assert
-uniformity rather than silently produce a sheared frame.
+**Corrected after implementation (2026-09-06): that parenthetical had it backwards.**
+This note originally called `M_i`'s translation "the joint the bone's rotation *moves*,
+not the joint it *rotates about*" and picked it anyway on convenience grounds ("both are
+defensible… it is where the user sees the handle"). §2's derivation makes the actual
+relationship explicit: with `L_i = T(p) · R(q) · S`, `translation(M_i) = M_parent(i) · p`,
+which does **not depend on `q_i`** — it is the FIXED POINT of bone `i`'s own rotation,
+i.e. exactly the joint the bone turns *about*. (The joints `q_i` moves belong to its
+*children* — see §2.) So the shipped comment in `Zenith_BoneSpace.h:90-95` states the
+correct reason for the same choice: `M_i`'s translation is used for the ring pivot
+**because** it is the fixed point the rotation happens around, which is also where the
+user's cursor naturally lands, not as a convenience trade-off between two equally
+defensible options. The decision (use `M_i`) stands; the justification in this note was
+wrong and is corrected here rather than silently rewritten.
+
+**Non-uniform bone scale.** `L_i`'s 3×3 is `R·S` (`Flux_SkeletonInstance.cpp:236-240`),
+so a quaternion recovered from `P` is only the true rotation when the accumulated scale
+is uniform and positive. `Zenith_Maths::DecomposeTRS` is documented for exactly that
+class of matrix (`Zenith/Maths/Zenith_Maths.h:86-95`) and normalises the result. Bind
+scales are 1 in every rig in the tree. **Confirmed as shipped:**
+`Zenith_BoneSpace::ParentWorldRotation` asserts uniformity and handedness on the
+extracted scale rather than assuming it, exactly as this note recommended (§9 item 5,
+resolved).
 
 ---
 
@@ -397,66 +461,48 @@ all three and there is no rotation-only overload — then calls `RefreshDerivedP
 
 ### 4.3 The command
 
-```cpp
-// Zenith/Editor/Animation/Zenith_AnimationPoseCommands.h      (NEW — WU-4.3)
+**Corrected after implementation (2026-09-06): no `Zenith_UndoCommand_AnimPoseKeys` was
+built, and none was needed.** This section designed a bespoke undo command carrying its
+own document pointer, its own lifetime obligation and its own track-kind enum. WU-3.3
+had already solved the identical problem for the dope sheet's own multi-key operations
+by the time WU-4.3 landed (`Zenith_AnimationDocument::BeginCompound` /
+`EndCompound`, §4 of `Zenith/Editor/CLAUDE.md`), and pose authoring reuses it verbatim
+rather than inventing a parallel mechanism:
 
-enum Zenith_AnimTrackKind : u_int
-{
-	ZENITH_ANIM_TRACK_ROTATION = 0,
-	ZENITH_ANIM_TRACK_TRANSLATION,
-	ZENITH_ANIM_TRACK_SCALE,
-};
+- **The document's own verbs are the writer.** `Zenith_AnimationDocument::InsertKey`
+  (rotation or vector overload) and `SetKeyValue` are what `Action_SetKeyForBones`
+  calls — the same stable-id, mark-dirty, push-undo verbs every other document mutation
+  goes through (§0's premise table). There is no separate `Zenith_AnimKeyValue` /
+  `Zenith_AnimTrackKind` pair in the pose-authoring code: the document already has
+  `Zenith_AnimKeyValue` (`Zenith_AnimationDocument.h:97-105`, a `Vector3` + `Quat` +
+  `m_bIsRotation` tag) and the existing `Flux_AnimTrack` enum
+  (`FLUX_ANIM_TRACK_POSITION` / `_ROTATION` / `_SCALE`,
+  `Flux/MeshAnimation/Flux_AnimationClip.h`) — there is no `Zenith_AnimTrackKind`
+  anywhere in the tree.
+- **The grouping primitive is `BeginCompound()` / `EndCompound()`.** One drag, one Set
+  Key press, or one IK bake brackets however many `InsertKey`/`SetKeyValue` calls it
+  makes inside one compound, and `EndCompound(szDescription)` pushes it as a single
+  `Zenith_AnimCommand_Compound` (`Zenith/Editor/Zenith_EditorAnimCommands.h:233-246`) —
+  or, with `bKeep = false`, unwinds everything it collected when a mutation refuses
+  partway through, so a rejected multi-bone write never reaches the stack half-applied.
+  `Zenith_AnimCommand_Compound` is built by the document itself, not by a caller: while
+  a compound is open, every command the ordinary verbs would have `Record`ed is
+  *adopted* into it instead, so a bone-drag call site calls the same public verbs it
+  always would and does not know it is being grouped.
+- **The lifetime obligation this note flagged is resolved, and resolved the way this
+  note hoped it would be (§9 item 3).** `Zenith_AnimationDocument` owns its **own**
+  undo stack (`Zenith_UndoSystem m_xUndoSystem`, a member, not the shared editor one),
+  and every command it pushes holds a raw `Zenith_AnimationDocument*` back at that same
+  object. `Close()` refuses while dirty and otherwise clears the stack
+  (`Zenith_AnimationDocument.h:178-182`), and the destructor clears it unconditionally
+  (`Zenith_AnimationDocument.cpp:250-...`) — so there is no window in which a live
+  command outlives its target, and no separate Phase-3 contract needed writing: the
+  document *is* the thing that owns open/close, and it already owned its own undo
+  lifetime before pose authoring needed one.
 
-struct Zenith_AnimKeyValue
-{
-	Zenith_AnimTrackKind  m_eKind     = ZENITH_ANIM_TRACK_ROTATION;
-	Zenith_Maths::Quat    m_xRotation = Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f);
-	Zenith_Maths::Vector3 m_xVector   = Zenith_Maths::Vector3(0.0f);
-};
-
-// ONE drag, or ONE Set Key press, or ONE IK bake = ONE command, however many tracks
-// it moved. Addresses (document, trackId, keyId) per D24/D29 — NOT an EntityID.
-class Zenith_UndoCommand_AnimPoseKeys : public Zenith_UndoCommand
-{
-public:
-	struct TrackKey
-	{
-		u_int               m_uTrackId       = 0u;
-		float               m_fTimeSeconds   = 0.0f;
-		Zenith_AnimKeyValue m_xOldValue;
-		Zenith_AnimKeyValue m_xNewValue;
-		bool                m_bExistedBefore = false;   // false => Undo REMOVES the key
-		u_int               m_uKeyId         = 0u;      // stable, non-serialized (D24/D29)
-	};
-
-	Zenith_UndoCommand_AnimPoseKeys(Zenith_AnimationDocument* pxDocument, const char* szDescription);
-
-	void AddTrackKey(const TrackKey& xKey);
-	u_int GetTrackKeyCount() const { return m_xKeys.GetSize(); }
-
-	void Execute() override;                       // redo: re-apply every m_xNewValue
-	void Undo() override;                          // restore m_xOldValue, or RemoveKeyframe when !m_bExistedBefore
-	const char* GetDescription() const override { return m_strDescription.c_str(); }
-
-private:
-	Zenith_AnimationDocument* m_pxDocument = nullptr;
-	Zenith_Vector<TrackKey>   m_xKeys;
-	std::string               m_strDescription;
-};
-```
-
-It is `Record`ed, never `Execute`d, on creation — `Zenith_UndoSystem::Record` exists for
-exactly this ("add an ALREADY-APPLIED command to the undo stack without running
-Execute", `Zenith/Editor/Zenith_UndoSystem.h:100-104`).
-
-**★ Lifetime obligation this creates.** The command holds a raw
-`Zenith_AnimationDocument*`. Every existing command resolves its target dynamically from
-an `Zenith_EntityID` precisely so a stale handle cannot be dereferenced
-(`Zenith_UndoSystem.h:33-42`). A document pointer has no such protection, so **closing a
-document must clear both undo stacks** (`Zenith_UndoSystem::Clear()`, `:124`), exactly as
-a scene load does. That contract belongs to whoever owns document open/close — a Phase-3
-deliverable — and it is not visible from inside Phase 4. **Flag it into the Phase-3
-brief; if it is not there, Phase 4 must add it and say so.**
+None of this needed a `Record()` call the way the brief's bespoke command did — the
+existing verbs already `Record` (or get adopted into a compound) as part of what they
+do, which is the whole point of reusing them rather than parallelling them.
 
 ### 4.4 What a discarded drag looks like
 
@@ -467,6 +513,15 @@ silent: `HasUnkeyedPose()` must be surfaced in the panel (a badge next to the ti
 field), and seeking while it is true must be an explicit, visible discard. Making the
 drag itself undoable was rejected — an undo stack entry that restores a pose the document
 never contained is a lie about what was saved.
+
+**Confirmed as shipped, plus one gesture this note did not specify.**
+`Zenith_EditorPanel_Animation::Action_EndBoneDrag` writes the key only when auto-key is
+on AND the drag actually moved (`IsBonePoseDragActive`/`GetPoseDragAngleRadians`
+distinguish "never grabbed" from "grabbed and produced nothing", matching the
+diagnostics pattern the rest of the panel uses). The design brief did not call out a
+cancel path; the shipped one is `Action_CancelBoneDrag()` — Escape puts the bone back
+where the drag found it and ends the drag, and because nothing reached the document
+during the drag there is nothing to undo.
 
 ---
 
@@ -496,6 +551,15 @@ scale keys "for consistency" alongside a rotation edit would therefore alter fra
 user never touched, in a way that only shows up on playback. Write the channel the user
 authored, and nothing else.
 
+**Confirmed as shipped, with the root-translation path as its own verb rather than a
+flag.** `Zenith_EditorPanel_Animation::Action_SetKeyForBones(xBoneIndices, bRotation,
+bTranslationForRoot)` carries `bTranslationForRoot` as a parameter, but the panel's
+public surface for an author to actually reach it is a **separate** function,
+`Action_SetKeyTranslationForRoot()` — refused unless the selected bone is a root — so
+writing a translation key is a decision an author makes explicitly rather than a flag
+that rides along with an ordinary rotation edit. Scale is not authorable anywhere in the
+Phase-4 surface, exactly as designed.
+
 ### 5.2 At what time — and the unit hazard
 
 ```
@@ -507,71 +571,86 @@ once. Snapping is **unconditional**, not a toggle: unsnapped keys land at arbitr
 times, which makes the dope sheet's frame columns lie and makes D11's collision
 behaviour unpredictable.
 
-**★ THE CHANNEL STORES TICKS, NOT SECONDS.** `Flux_BoneChannel::AddPositionKeyframe(float
-fTimeTicks, …)` / `AddRotationKeyframe` / `AddScaleKeyframe` (`Flux_AnimationClip.h:89-91`),
-and both `SampleFromClip` overloads convert on the way in —
-`float fTimeInTicks = fTime * xClip.GetTicksPerSecond();` (`Flux_BonePose.cpp:168`, `:201`).
-`Zenith/AssetHandling/CLAUDE.md` records the same for the bush export: *"per-bone rotation
-clip with keyframe times in **TICKS** (0..120, not 0..4 seconds)"*.
+**Corrected after implementation (2026-09-06): the tree this note found had already been
+fixed by the time Phase 4 needed it, and the "should not exist" recommendation below was
+overtaken by a distinction this note did not consider.** `Zenith/Flux/MeshAnimation/CLAUDE.md`
+now states plainly: *"KEY TIMES ARE SECONDS, ON THE SAME CLOCK AS `m_fDuration` (D3)"* —
+every `Add*Keyframe` / `InsertKeyframeAt` argument and every `Sample*()` argument is
+seconds, and neither of `Flux_BonePose.cpp`'s two `SampleFromClip` overloads converts at
+all any more. The tick-based storage this note found (`fTimeInTicks = fTime *
+xClip.GetTicksPerSecond()`) was the *old* behaviour and has been replaced; there is no
+`Zenith_AnimSecondsToChannelTime` / `Zenith_AnimChannelTimeToSeconds` pair anywhere in
+the tree because pose authoring needs no conversion — `Zenith_AnimationDocument::InsertKey`
+/ `SetKeyTime` / the panel's Set Key path all take and store seconds directly, the same
+unit the playhead and the dope-sheet ruler already used.
 
-The WU-4.0 brief says the Phase-3 mutators take **seconds**. Both cannot describe the same
-storage. Whichever way Phase 3 lands it, Phase 4 must convert in **exactly one place**:
+**`m_uAuthoredFrameRate` DOES exist, and it is not the duplicated pin this note warned
+against — it is a second number with a genuinely different job from `m_uTicksPerSecond`.**
+`Flux_AnimationClipMetadata` carries both, and they answer different questions:
 
-```cpp
-// Zenith/Editor/Animation/Zenith_AnimationPoseCommands.h
-// The ONE seconds <-> ticks conversion on the authoring path. If Phase 3's mutators
-// really take seconds these are the identity and this comment is the proof it was
-// checked; if they take ticks, this is where the factor lives. Do not scatter it.
-inline float Zenith_AnimSecondsToChannelTime(float fSeconds, u_int uTicksPerSecond);
-inline float Zenith_AnimChannelTimeToSeconds(float fChannelTime, u_int uTicksPerSecond);
-```
+| Field | Meaning |
+|---|---|
+| `m_uTicksPerSecond` | **import provenance only** — the tick rate of the file the clip was imported from. Never applied to a key time (the old conversion this note quoted is gone) |
+| `m_uAuthoredFrameRate` (D6) | **editorial intent** — the fps the clip was authored at: what the key grid snaps to (§5.2's `fSnappedSeconds` formula uses exactly this), and what a re-bake should resample to |
 
-**And `m_uAuthoredFrameRate` should not exist.** `Flux_AnimationClipMetadata` already
-carries `uint32_t m_uTicksPerSecond = 24` (`Flux_AnimationClip.h:120`) with
-`GetTicksPerSecond()` / `SetTicksPerSecond()` (`:174,189`), and it is the number
-`SampleFromClip` divides by. A second frame-rate field on the document is the same
-duplicated-pin failure the build system spent a refactor removing: two numbers, one
-authority, and a silent factor-of-N when they disagree. **Recommendation: the authored
-frame rate IS `m_uTicksPerSecond`.**
+So the recommendation this note made — "the authored frame rate IS `m_uTicksPerSecond`"
+— would have been wrong to adopt: a clip imported at 30 ticks/second that an author
+wants to key on a 24 fps grid needs both numbers, distinctly, at once. §9 items 1 and 2
+are resolved by this split, not by collapsing one field into the other.
 
 ### 5.3 Duplicate times
 
 D11 applies: `InsertKeyframeAt` on an occupied time **replaces** the key, preserving its
-identity. So Set Key at an already-keyed frame is a value edit —
-`m_bExistedBefore = true`, `m_xOldValue` = the previous value, and Undo restores the value
-rather than removing the key.
+identity. So Set Key at an already-keyed frame is a value edit rather than a
+remove-and-reinsert, and Undo restores the previous value rather than removing the key.
+
+**Corrected after implementation (2026-09-06):** this is the document's existing D11
+contract (`Zenith_AnimationDocument::InsertKey`, §0 of `Zenith/Editor/CLAUDE.md`'s
+`Zenith_AnimationDocument` entry), not fields on a bespoke command — there is no
+`m_bExistedBefore` / `m_xOldValue` pair in the pose-authoring code (see §4.3's
+correction). The behaviour described is otherwise accurate: `InsertKey` on an occupied
+time is a value edit under the hood.
 
 **`SetKeyframeTime` must never appear on this path.** By D11 it *fails*, returning false,
 when the destination is occupied. It is the dope sheet's key-drag verb. Pose authoring
 only ever inserts-or-replaces at the playhead, where failing is not an acceptable outcome
 and silently doing nothing is worse.
 
-Two keys are "the same time" when `fabsf(a - b) <= fANIM_TIME_EPSILON` (`1e-5f`). Note
-that after §5.2's snapping the comparison is against a grid, so the epsilon only absorbs
-float error in `roundf(x * r) / r`, not genuine near-misses.
+Two keys are "the same time" when `fabsf(a - b) <= fANIM_TIME_EPSILON` (`1e-5f`,
+confirmed present — §0). Note that after §5.2's snapping the comparison is against a
+grid, so the epsilon only absorbs float error in `roundf(x * r) / r`, not genuine
+near-misses.
 
 ### 5.4 One writing path
 
+**Corrected after implementation (2026-09-06):** the real signatures live on
+`Zenith_EditorPanel_Animation` (not `static`, and not carrying a `Zenith_AnimTrackKind`
+that does not exist — see §4.3):
+
 ```cpp
-// Zenith/Editor/Panels/Zenith_EditorPanel_Animation.h         (Phase-3 class, ADDITIONS)
+// Zenith/Editor/Panels/Zenith_EditorPanel_Animation.h
 
-	// THE key-writing verb. Every caller — the Set Key button, auto-key on drag release,
-	// and the IK bake (§6) — goes through this one function, so a key written three
-	// different ways is byte-identical. Returns false when there is no document, no
-	// session, no selection, or nothing to write.
-	static bool Action_SetKeyForBones(const Zenith_Vector<u_int>& xBoneIndices,
-		Zenith_AnimTrackKind eKind,
-		const char* szUndoDescription);
+	// THE key-writing verb (design note §5.4). Every caller — the Set Key button,
+	// auto-key on drag release, and the IK bake — goes through this one function.
+	// bRotation writes the rotation track; bTranslationForRoot additionally writes
+	// translation, and ONLY for a bone with no parent. Scale is not authorable.
+	bool Action_SetKeyForBones(const Zenith_Vector<u_int>& xBoneIndices, bool bRotation, bool bTranslationForRoot);
+	bool Action_SetKeyForSelectedBone();
 
-	static bool Action_SetKeyForSelectedBone();          // the toolbar button / S
-	static bool Action_SetAutoKey(bool bEnabled);
-	static bool Action_GetAutoKey();
+	// Its own verb rather than a flag on the one above (design note §5.1's correction).
+	bool Action_SetKeyTranslationForRoot();
+
+	bool Action_SetAutoKey(bool bEnabled);
+	bool Action_GetAutoKey() const;
 ```
 
 Auto-key state lives on the **session** (`bool m_bAutoKey = false;`), not on the document
-— it is a per-editing-session preference, not clip content. On `EndBoneDrag`, if
-`m_bAutoKey` and the accumulated delta is non-trivial, the panel calls
-`Action_SetKeyForBones({dragBone}, ZENITH_ANIM_TRACK_ROTATION, "Pose Bone")`.
+— it is a per-editing-session preference, not clip content, confirmed as designed
+(`Zenith_AnimationPreviewSession::SetAutoKey` / `GetAutoKey`). On `Action_EndBoneDrag`, if
+auto-key is on and the drag actually moved, the panel writes the key through
+`Action_SetKeyForBones` inside the same compound the drag itself opened, so the key and
+the drag's document-side bookkeeping land as **one** undo step created **on release** —
+not two, and not one pushed per drag frame (§4.1's rule holds unchanged).
 
 Auto-key writes **one key, at the playhead**. Rejected: Maya-style bracketing, which
 inserts an extra key at the previous keyed time to "hold" the earlier pose. It silently
@@ -581,32 +660,62 @@ first-key rule, a bracketing key on an empty channel changes the whole clip twic
 ### 5.5 Automation
 
 Mirroring the graph verbs (`Editor/CLAUDE.md`, *Graph Authoring via Editor Automation*),
-each atomic action gets a step so a pose can be authored at boot and diffed:
+each atomic action gets a step so a pose can be authored at boot and diffed.
+
+**Corrected after implementation (2026-09-06): the real block is five steps, not five
+different ones than guessed, and free functions rather than statics.** As shipped
+(`Zenith/Editor/Zenith_EditorAutomation.h`, the `ANIM_POSE_*` enum block):
 
 ```cpp
 // Zenith/Editor/Zenith_EditorAutomation.h
-	static void AddStep_AnimSelectBone(u_int uBoneIndex);
-	static void AddStep_AnimRotateBoneLocal(u_int uBoneIndex, float fX, float fY, float fZ, float fW);
-	static void AddStep_AnimSetKey();
-	static void AddStep_AnimSetAutoKey(bool bEnabled);
-	static void AddStep_AnimBakeIK(const char* szChainName);
+void AddStep_AnimSelectBone(int iBoneIndex);
+// (fAxisX, fAxisY, fAxisZ) must be a CARDINAL axis — (1,0,0)/(0,1,0)/(0,0,1) — and the
+// angle is in DEGREES, converted with Zenith_Maths::AuthoringRadians (see below).
+void AddStep_AnimRotateSelectedBoneWorld(float fAxisX, float fAxisY, float fAxisZ, float fAngleDegrees);
+void AddStep_AnimSetKeyForSelectedBone();
+void AddStep_AnimSetAutoKey(bool bEnabled);
+// An ASSERTION step, not a mutator: (fX, fY, fZ, fW) in SERIALIZED order.
+void AddStep_AnimExpectBoneLocalRotation(int iBoneIndex, float fX, float fY, float fZ, float fW, float fTolerance);
 ```
 
-**★ These land in a CONTIGUOUS enum block** and every block in
-`Zenith_EditorAutomation` carries a "must stay CONTIGUOUS" comment naming its first and
-last member, because `ExecuteAction` routes by `>=` / `<=` range comparison and an action
-inserted mid-block silently routes to the wrong sub-executor (`Editor/CLAUDE.md`, *The
-split dispatcher: twelve contiguous ranges*). The youngest block is additionally pinned
-by a `static_assert` on its width plus a unit test on each member's position. Follow that
+Two differences from what this note guessed, both load-bearing:
+
+- There is **no `AddStep_AnimRotateBoneLocal(quat)`.** The shipped rotate step takes an
+  axis + degrees, not a raw quaternion, and — unlike the dope-sheet's own
+  `AddStep_AnimRotateBoneLocal` this note imagined — **the axis is refused unless it is
+  exactly cardinal**. That is the FP-determinism rule from `Editor/CLAUDE.md`'s
+  *AUTHORED ROTATIONS THAT LAND IN A COMMITTED SCENE*, applied here for the first time to
+  a bone rather than an entity transform: `glm::angleAxis` is a header inline whose
+  floating-point model is fixed at its own definition point, so a Debug and a Release
+  tools build can disagree in the last bit or two on a non-cardinal axis, and an authored
+  pose that reached a tracked `.zanim` would ping-pong in `git status` forever under
+  every tolerance-based guard. `Zenith_Maths::AuthoringRotationX/Y/Z` are the pinned,
+  non-inline replacements, and they only cover the three cardinal axes — so the executor
+  refuses anything else rather than silently computing it the other way.
+- **There is no `AddStep_AnimBakeIK`.** WU-4.4 shipped `Action_BakeIKForSelectedChain`
+  (§6) but no automation step wraps it and no target-selection widget aims it yet — see
+  §6's correction and §7's "as built" table. A pose can be authored and asserted at boot
+  through the five steps above; an IK bake cannot, today, be driven the same way.
+
+**★ These land in a CONTIGUOUS enum block** — confirmed, `ANIM_POSE_SELECT_BONE` ..
+`ANIM_POSE_EXPECT_BONE_LOCAL_ROTATION`, five wide, pinned by
+`static_assert(... == 4, "the ANIM_POSE block must stay CONTIGUOUS and five wide")` —
+and every block in `Zenith_EditorAutomation` carries a "must stay CONTIGUOUS" comment
+naming its first and last member, because `ExecuteAction` routes by `>=` / `<=` range
+comparison and an action inserted mid-block silently routes to the wrong sub-executor
+(`Editor/CLAUDE.md`, *The split dispatcher: twelve contiguous ranges*). Follow that
 pattern exactly; it is not optional.
 
-**Authored rotations that reach a committed asset must not use glm.** If a pose authored
-by these steps is ever saved into a tracked `.zanim`, the quaternion must come from the
-`Zenith_Maths::Authoring*` helpers or be passed verbatim
-(`Zenith/Maths/Zenith_Maths.h:53-84`; `Editor/CLAUDE.md`, *AUTHORED ROTATIONS THAT LAND IN
-A COMMITTED SCENE*). `AddStep_AnimRotateBoneLocal` takes `(x, y, z, w)` in **serialized
-order** — deliberately not `glm::quat`'s `(w, x, y, z)` — and performs no arithmetic, for
-the same reason `AddStep_SetTransformRotationQuat` does.
+**Authored rotations that reach a committed asset must not use glm — confirmed, and
+solved differently from how this note guessed.** This note originally assumed the
+rotate step would take a raw quaternion and pass it through verbatim (the
+`AddStep_SetTransformRotationQuat` pattern). The shipped rotate step instead takes an
+axis + angle and computes the rotation itself via the pinned `Zenith_Maths::Authoring*`
+helpers, so the "pass verbatim" escape hatch was not needed here — the cardinal-axis
+restriction described above is what keeps it deterministic instead. The
+`(fX, fY, fZ, fW)` serialized-order convention this note describes for a verbatim
+pass-through survives only on the READ side, in the assertion step
+`AddStep_AnimExpectBoneLocalRotation`.
 
 ---
 
@@ -640,174 +749,168 @@ pose is solved twice, and nothing about the runtime IK path changes.
 
 ### 6.2 Signature
 
+**Corrected after implementation (2026-09-06): the shipped surface is index-based, not
+`Flux_IKChain`-by-value, and it is two functions plus a chain builder, not one.** The
+`std::pair<u_int, Quat>` output this note guessed does not exist either — the output is
+a plain `Zenith_Vector<Quat>` addressed positionally against the request's own index
+list. As built (`Zenith/Editor/Animation/Zenith_AnimationPoseIK.h`, WU-4.4):
+
 ```cpp
-// Zenith/Editor/Animation/Zenith_AnimationPoseIK.h            (NEW — WU-4.4)
+// Zenith/Editor/Animation/Zenith_AnimationPoseIK.h            (WU-4.4)
 
 namespace Zenith_AnimationPoseIK
 {
+	inline constexpr u_int kuIK_DEFAULT_CHAIN_LENGTH = 3u;   // §6.4 — a scope choice, not a solver limit
+	inline constexpr u_int kuIK_MIN_CHAIN_LENGTH = 2u;
+	inline constexpr u_int kuIK_DEFAULT_MAX_ITERATIONS = 10u;
+	inline constexpr float kfIK_DEFAULT_TOLERANCE = 0.001f;
+	inline constexpr float kfIK_MIN_CHAIN_LENGTH_METRES = 1.0e-5f;
+	// Aliased to the channel's OWN threshold (fANIM_MIN_QUAT_LENGTH), not copied —
+	// so this module can never hand out a rotation the writer would then refuse.
+	inline constexpr float kfIK_MIN_QUAT_LENGTH = fANIM_MIN_QUAT_LENGTH;
+
 	struct SolveRequest
 	{
-		const Zenith_SkeletonAsset* m_pxSkeleton = nullptr;
-		Flux_IKChain                m_xChain;                 // BY VALUE — the helper resolves + measures it
-		Zenith_Maths::Vector3       m_xTargetModelSpace = Zenith_Maths::Vector3(0.0f);
-		float                       m_fWeight = 1.0f;
+		// Root -> effector, BONE INDICES (not a Flux_IKChain by value — every caller
+		// already has an index, and a name round-trip is exactly where a rig with two
+		// identically-named bones would silently retarget the solve).
+		Zenith_Vector<u_int> m_auChainBoneIndices;
+		Zenith_Maths::Vector3 m_xTargetModelSpace = Zenith_Maths::Vector3(0.0f);
+		Zenith_Maths::Vector3 m_xPoleDirectionModelSpace = Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f);
+		bool m_bUsePoleDirection = false;
+		Zenith_Vector<Flux_JointConstraint> m_axJointConstraints;   // empty == unconstrained
+		u_int m_uMaxIterations = kuIK_DEFAULT_MAX_ITERATIONS;
+		float m_fTolerance = kfIK_DEFAULT_TOLERANCE;
+		float m_fWeight = 1.0f;
 	};
 
-	// Seeds a scratch pose from the instance's CURRENT local TRS, resolves + measures the
-	// chain, composes model space, solves ONE chain, recomposes, and writes back the
-	// solved BONE-LOCAL rotations, one pair per chain bone, in chain order.
-	// Returns false and writes nothing when the skeleton is null, the chain has fewer
-	// than two bones, or any bone name fails to resolve.
+	// The chain Action_BakeIKForSelectedChain uses: the effector and up to
+	// (uMaxChainLength - 1) of its ancestors, ROOT FIRST. Refused when the effector
+	// does not resolve, uMaxChainLength < kuIK_MIN_CHAIN_LENGTH, or the effector IS a root.
+	bool BuildChainFromEffector(const Zenith_SkeletonAsset& xSkeleton,
+		u_int uEffectorBoneIndex, u_int uMaxChainLength,
+		Zenith_Vector<u_int>& auOutChainBoneIndices);
+
+	// Seeds a scratch pose from the instance's CURRENT local TRS, resolves + measures a
+	// TRANSIENT Flux_IKChain built from the request's indices, composes model space,
+	// solves ONE chain, recomposes, and writes back the solved BONE-LOCAL rotations, one
+	// per chain bone, IN CHAIN ORDER (entry i belongs to m_auChainBoneIndices[i]).
 	// PURE with respect to engine state: touches no controller, no live scene, no GPU.
-	bool SolveChainToLocalRotations(const Flux_SkeletonInstance& xSkeleton,
+	bool SolveChainToLocalRotations(const Flux_SkeletonInstance& xInstance,
+		const Zenith_SkeletonAsset& xSkeleton,
 		const SolveRequest& xRequest,
-		Zenith_Vector<std::pair<u_int, Zenith_Maths::Quat>>& xOutBoneLocalRotations);
+		Zenith_Vector<Zenith_Maths::Quat>& axOutLocalRotations);
+
+	// The FALLBACK bake path (§6.3) — writes one rotation key per chain bone directly
+	// through the document, as one compound. Exists because WU-4.3's
+	// Action_SetKeyForBones lands separately; a panel with 4.3 landed never reaches it.
+	bool BakeChain(Zenith_AnimationDocument& xDocument, const Zenith_SkeletonAsset& xSkeleton,
+		const Zenith_Vector<u_int>& auChainBoneIndices,
+		const Zenith_Vector<Zenith_Maths::Quat>& axLocalRotations,
+		float fTimeSeconds, u_int uFrameRate);
 }
 ```
 
-Body, in order — every call named so no subagent has to guess:
+Body, in order (`Zenith_AnimationPoseIK.cpp`) — the shipped function validates every
+precondition explicitly before doing any work, which the design note did not spell out
+as its own step:
 
-1. `Flux_SkeletonPose xScratch; xScratch.Initialize(xSkeleton.GetNumBones());`
-   (`Flux_BonePose.h:84`)
-2. For each bone `i`: `xScratch.GetLocalPose(i)` (`:90`) ← `GetBoneLocalPosition/Rotation/Scale(i)`
-   (`Flux_SkeletonInstance.h:70,75,80`).
-3. `xRequest.m_xChain.ResolveBoneIndices(*xRequest.m_pxSkeleton);` (`Flux_InverseKinematics.h:93`)
-4. `xScratch.ComputeModelSpaceMatricesFromSkeleton(*xRequest.m_pxSkeleton);` (`Flux_BonePose.h:125`)
-5. `xRequest.m_xChain.ComputeBoneLengths(xScratch);` (`Flux_InverseKinematics.h:96`)
-6. Build a `Flux_IKTarget` with `m_xPosition = m_xTargetModelSpace`, `m_fWeight`,
-   `m_bEnabled = true`, `m_bIsModelSpace = true`, `m_bUseRotation = false`
-   (`Flux_InverseKinematics.h:14-29`).
-7. `Flux_IKSolver xSolver; xSolver.SolveChain(xScratch, xRequest.m_xChain, xTarget, *xRequest.m_pxSkeleton);`
-8. `xScratch.ComputeModelSpaceMatricesFromSkeleton(...)` again — mirroring the
-   controller's pre/post recompute (`Flux_AnimationController.cpp:337-339`), whose comment
-   explains that the post-solve recompute is what keeps model matrices consistent for
-   *"downstream CPU readers (debug draw, gizmos, animation tools)"*. That is us.
-9. Emit `(boneIndex, xScratch.GetLocalPose(boneIndex).m_xRotation)` for each chain bone.
+0. **Validate everything the solver would otherwise consume silently** — `Flux_IKSolver::
+   SolveChain` has no error channel, so a bad chain length, an out-of-range or
+   duplicate index, a non-finite target/weight/tolerance, a zero iteration count, or a
+   mismatched constraint-list length are all refused here, before any state is touched.
+1. `Flux_SkeletonPose xScratch; xScratch.Initialize(uUsableBones);` — the STACK-LOCAL
+   scratch pose, sized to `min(instance bone count, asset bone count, FLUX_MAX_BONES)`.
+2. Seed it from the **instance's current local TRS** (`GetBoneLocalPosition/Rotation/Scale`),
+   validating every seeded bone is finite/usable before the solve ever runs — a broken
+   input pose is refused rather than laundered into a NaN key.
+3. Build the **transient** `Flux_IKChain` from bone NAMES resolved off the request's
+   indices, then call `ResolveBoneIndices` and **check the round trip**: the indices
+   that come back must equal the ones that went in, which is what catches a rig
+   carrying two identically-named bones.
+4. `ComputeModelSpaceMatricesFromSkeleton`, then (5) `ComputeBoneLengths` — order
+   forced, since the length measurement reads model-space translations the compose
+   just produced.
+6. Build the `Flux_IKTarget`: `m_bIsModelSpace = true` (there is no world matrix in this
+   API at all), `m_bUseRotation = false` — an unrequested end-effector twist is a pose
+   change the author did not ask for and could not see the cause of.
+7. `Flux_IKSolver xSolver; xSolver.SolveChain(xScratch, xChain, xTarget, xSkeleton);` —
+   our solver, our pose, never the controller's.
+8. Recompose model space again, mirroring the controller's own pre/post recompute
+   (`Flux_AnimationController.cpp`), whose comment explains the post-solve recompute is
+   what keeps model matrices consistent for downstream CPU readers.
+9. Extract each chain bone's solved local rotation, validate every one, and only THEN
+   copy them all into the caller's output vector — nothing reaches the caller until
+   every rotation in the chain has passed.
 
 ### 6.3 The bake
 
-The returned pairs go straight through `Action_SetKeyForBones(boneIndices,
-ZENITH_ANIM_TRACK_ROTATION, "IK Pose")` from §5.4 — **the same function a hand drag
-uses**. So one `Zenith_UndoCommand_AnimPoseKeys` covers the whole chain, one Ctrl+Z undoes
-the whole IK gesture, and the clip contains nothing IK-specific. That is what "baked down
-to keys" has to mean: after the fact, an IK-posed frame is indistinguishable from a
-hand-posed one, and nothing in the `.zanim` needs a solver to play back.
+`Zenith_EditorPanel_Animation::Action_BakeIKForSelectedChain` calls
+`Action_SetKeyForBones(auChainBones, /*bRotation*/true, /*bTranslationForRoot*/false)` —
+**the same function a hand drag uses** (§5.4, itself built on the document's `InsertKey`
+/ `BeginCompound` / `EndCompound`, not a bespoke command — see §4.3's correction). So one
+compound covers the whole chain, one Ctrl+Z undoes the whole IK gesture, and the clip
+contains nothing IK-specific. That is what "baked down to keys" has to mean: after the
+fact, an IK-posed frame is indistinguishable from a hand-posed one, and nothing in the
+`.zanim` needs a solver to play back. Only when that call refuses (because WU-4.3 has
+not landed in the running binary) does the panel fall back to `Zenith_AnimationPoseIK::
+BakeChain`, which writes through the identical document verbs directly.
 
-The live pose is applied the same way as a drag — `UpdateBoneDrag`-style writes through
-`SetBoneLocalTransform` plus `RefreshDerivedPose()` — so the IK path also honours §4.4:
-solve without auto-key, and the pose is visible but unkeyed until Set Key.
+The live pose is applied the same way as a drag — direct `SetBoneLocalTransform` writes
+plus `RefreshDerivedPose()` — so the IK path also honours §4.4: solve without auto-key,
+and the pose is visible but unkeyed until Set Key.
+
+**★ Confirmed and worth flagging: there is no target-selection widget yet.** WU-4.4
+shipped the whole verb chain — `BuildChainFromEffector` → `SolveChainToLocalRotations` →
+`Action_SetKeyForBones`/`BakeChain` — and `Action_BakeIKForSelectedChain` is fully
+callable and unit-tested end to end, but nothing in the preview pane lets a user AIM it:
+the `.cpp`'s own header comment says so — *"There is deliberately NO IK section drawn in
+the preview pane here … The verb is complete and callable; the widget that aims it is a
+follow-up."* §5.5 confirms there is no automation step for it either.
 
 ### 6.4 Chain scope for Phase 4
 
-A **transient three-bone chain built from the selected bone and its two ancestors**, via
-`Flux_IKSolver::CreateArmChain` / `CreateLegChain` (`Flux_InverseKinematics.h:192-200`)
-when the names match those helpers' expectations, otherwise assembled directly into
-`Flux_IKChain::m_xBoneNames`. **No chain-authoring UI, no chain serialization, no
-constraints, no pole vector.** `Flux_JointConstraint` (`:35`) and `m_xPoleVector` (`:81`)
-are left at their defaults; wiring them needs a UI to author them, which is a later
-phase. The three-bone limit is a scope choice, not a solver limit — FABRIK handles any
-length.
+**Corrected after implementation (2026-09-06):** the shipped chain builder
+(`BuildChainFromEffector`) walks straight up the asset's own parent pointers from the
+selected bone and stops at `kuIK_DEFAULT_CHAIN_LENGTH` (3) bones or a root, whichever
+comes first, then reverses the walk to root-first order. It does **not** call
+`Flux_IKSolver::CreateArmChain` / `CreateLegChain` — neither is referenced anywhere
+under `Zenith/Editor/` — because the by-name matching those helpers do is exactly the
+kind of round trip §6.2 point 3 exists to avoid. **No chain-authoring UI, no chain
+serialization, no constraints, no pole vector** — confirmed: `SolveRequest`'s
+`m_axJointConstraints` and `m_bUsePoleDirection`/`m_xPoleDirectionModelSpace` exist on
+the struct (so the solver-level plumbing is there) but nothing in the editor populates
+them yet. The three-bone limit is a scope choice, not a solver limit — FABRIK handles
+any length, and `kuIK_DEFAULT_CHAIN_LENGTH` is a parameter of `BuildChainFromEffector`,
+not a constant baked into the solve.
 
 ---
 
-## 7. Fill-ins for WU-4.1 … WU-4.4
+## 7. As built (WU-4.1 … WU-4.4)
 
-Read §8 first — the split below is the **post-re-plan** one.
+**Corrected after implementation (2026-09-06): this section was a forward-looking
+fill-in plan; it is replaced here with what actually shipped**, since the plan's file
+list, "Implements" lines and split rationale are what §2–§6's corrections above found
+wrong in several places (`Zenith_AnimationPoseCommands.*` and
+`Zenith_UndoCommand_AnimPoseKeys` were never built; the automation verbs and the IK
+request shape both differ from what was planned). One location correction that applies
+across the whole table: **the session lives at `Zenith/Editor/Zenith_AnimationPreviewSession.{h,cpp}`**,
+not under `Editor/Animation/` as this note assumed throughout — only the newer,
+pose-authoring-specific files landed in `Editor/Animation/`.
 
-### WU-4.1 — selectable bone target, hit geometry, and the shared surface
+| Unit | Commit | Files | What it landed |
+|---|---|---|---|
+| WU-4.1 | `36e1c4c4` | `Zenith/Editor/Animation/Zenith_BonePickGeometry.{h,cpp,Tests.inl}`; additions to `Zenith/Editor/Zenith_AnimationPreviewSession.{h,cpp}` (selection, hover, `RefreshDerivedPose`, the pick-set cache, the drag primitives §4.2 depends on); the full `Action_*` declaration surface on `Zenith/Editor/Panels/Zenith_EditorPanel_Animation.h` (stub bodies for what 4.3/4.4 fill); `RayIntersectsSphere` added to `Zenith/Maths/Zenith_Maths_Intersections.h` (inline free function, not a class member) | Selectable bone target + hit geometry (§2, with the ownership rule corrected from this note's original — see §2) |
+| WU-4.2 | `3acce596` | `Zenith/Editor/Animation/Zenith_BoneSpace.{h,cpp,Tests.inl}` | The seven space-conversion functions (§3.3) — signatures matched the design brief exactly |
+| WU-4.3 | `f69e4c1d` | `Zenith/Editor/Panels/Zenith_EditorPanel_Animation_Pose.cpp` (manipulator + drag + Set Key/auto-key bodies); the five-step `ANIM_POSE_*` block in `Zenith/Editor/Zenith_EditorAutomation.{h,cpp}` (§5.5) | The manipulator, drag transactions, Set Key and auto-key — reusing the document's OWN `BeginCompound`/`EndCompound` + `Zenith_AnimCommand_Compound` (`Zenith_EditorAnimCommands.h`) rather than the bespoke `Zenith_UndoCommand_AnimPoseKeys` this note designed (§4.3) |
+| WU-4.4 | `da697fce` | `Zenith/Editor/Animation/Zenith_AnimationPoseIK.{h,cpp,Tests.inl}`; `Zenith/Editor/Panels/Zenith_EditorPanel_Animation_IK.cpp` | IK-assisted posing baked to keys (§6) — an index-based `SolveRequest` + a separate `BuildChainFromEffector`, not the `Flux_IKChain`-by-value shape this note designed; `Action_BakeIKForSelectedChain` is complete and unit-tested but has **no target-selection widget and no automation step** yet |
 
-**Creates**
-- `Zenith/Editor/Animation/Zenith_BonePickGeometry.h`
-- `Zenith/Editor/Animation/Zenith_BonePickGeometry.cpp`
-- `Zenith/Editor/Animation/Zenith_BonePickGeometry.Tests.inl`
-
-**Owns (sole writer for all of Phase 4)**
-- `Zenith/Editor/Animation/Zenith_AnimationPreviewSession.{h,cpp}` — lands the **complete**
-  member and method set from §1 and §4.2 in one go, including the drag methods WU-4.3 will
-  use.
-- `Zenith/Editor/Panels/Zenith_EditorPanel_Animation.{h,cpp}` — declares **all** `Action_*`
-  from §5.4 and §8, with bodies that `return false`, so 4.3 and 4.4 fill bodies rather than
-  add declarations.
-- `Zenith/Maths/Zenith_Maths_Intersections.h` — adds `RayIntersectsSphere` only.
-
-**Implements**
-- `Zenith_BuildBonePickSet`, `Zenith_RaycastBonePickSet`, `Zenith_BonePickShape`,
-  `Zenith_BonePickSet`, the four `kf…` constants, `kuINVALID_BONE_SELECTION`.
-- `SelectBone` / `ClearBoneSelection` / `GetSelectedBoneIndex` / `HasBoneSelection` /
-  `SetHoveredBoneIndex` / `GetHoveredBoneIndex` / `GetSessionModelMatrix` /
-  `SetSessionModelMatrix` / `RefreshDerivedPose` / `GetSkeletonInstance`.
-- `RayIntersectsSphere`.
-
-**Must pin with tests** — the capsule belongs to the child bone (§2); a leaf bone is
-pickable; a degenerate bone falls back to its joint sphere; the nearest hit wins; a miss
-leaves both outputs untouched; the pick set is stale until `ComputeSkinningMatrices` runs
-(§3.2).
-
-### WU-4.2 — space conversions (pure maths, no UI)
-
-**Creates**
-- `Zenith/Editor/Animation/Zenith_BoneSpace.h`
-- `Zenith/Editor/Animation/Zenith_BoneSpace.cpp`
-- `Zenith/Editor/Animation/Zenith_BoneSpace.Tests.inl`
-
-**Owns** — those three files only. Touches nothing else.
-
-**Implements** — the seven functions in §3.3, verbatim.
-
-**Must pin with tests** — a root-bone world delta reproduces the entity-gizmo result
-(`newRotation = delta * initial`, `Flux_Gizmos.cpp:875`); a delta applied to a rotated
-parent produces the conjugated local delta; `ParentModelMatrix` is identity for a root;
-`W` non-identity composes correctly; the inverse bind pose is **not** referenced anywhere
-in the file.
-
-### WU-4.3 — manipulator, drag transactions, Set Key, auto-key
-
-**Creates**
-- `Zenith/Editor/Animation/Zenith_AnimationPoseCommands.h`
-- `Zenith/Editor/Animation/Zenith_AnimationPoseCommands.cpp`
-- `Zenith/Editor/Animation/Zenith_AnimationPoseCommands.Tests.inl`
-- `Zenith/Editor/Panels/Zenith_EditorPanel_Animation_Pose.cpp` — the manipulator + drag +
-  key bodies, in their own TU behind WU-4.1's declarations.
-
-**Fills** — `Action_SetKeyForBones`, `Action_SetKeyForSelectedBone`, `Action_SetAutoKey`,
-`Action_GetAutoKey`, plus the hover/pick/drag frame handler.
-
-**Also edits** — `Zenith/Editor/Zenith_EditorAutomation.{h,cpp}` for the five
-`AddStep_Anim*` verbs and their contiguous enum block (§5.5). This is the one place
-WU-4.3 touches a file outside its own set; it is a contiguous append, and the
-`static_assert` + block-position unit test are part of the deliverable.
-
-**Implements** — `Zenith_AnimTrackKind`, `Zenith_AnimKeyValue`,
-`Zenith_UndoCommand_AnimPoseKeys` (+ `TrackKey`), `Zenith_AnimSecondsToChannelTime` /
-`Zenith_AnimChannelTimeToSeconds`, the ImGui-draw-list rotation ring (§8.1).
-
-**Must pin with tests** — one drag = one command however many frames it spanned; a drag
-with no movement records nothing; Set Key on an empty channel inserts and Undo removes;
-Set Key on an occupied time replaces and Undo restores the value, keeping the key id
-(D11); the key time is snapped to the frame grid; the seconds↔ticks conversion is
-exercised in both directions.
-
-### WU-4.4 — IK-assisted posing, baked to keys
-
-**Creates**
-- `Zenith/Editor/Animation/Zenith_AnimationPoseIK.h`
-- `Zenith/Editor/Animation/Zenith_AnimationPoseIK.cpp`
-- `Zenith/Editor/Animation/Zenith_AnimationPoseIK.Tests.inl`
-- `Zenith/Editor/Panels/Zenith_EditorPanel_Animation_IK.cpp`
-
-**Fills** — `Action_BakeIKForSelectedChain` (declared by WU-4.1).
-
-**Implements** — `Zenith_AnimationPoseIK::SolveRequest`,
-`Zenith_AnimationPoseIK::SolveChainToLocalRotations`, the nine-step body in §6.2.
-
-**Depends on** WU-4.3's `Action_SetKeyForBones` being *declared* (it is, by WU-4.1) and
-ideally *implemented*. If 4.3 has not landed, 4.4 still compiles and its own tests still
-pass; only the end-to-end bake needs 4.3.
-
-**Must pin with tests** — an unreachable target clamps to the chain's total length rather
-than diverging; a solved chain's local rotations reproduce the solved model-space joint
-positions when recomposed; the controller's `GetOutputPose()` is byte-unchanged across a
-solve; a chain with an unresolvable bone name returns false and writes nothing.
+None of the file-list or "sole writer" plumbing this section used to carry (which file
+each unit "Owns", the shared-write-conflict avoidance) is worth keeping once the work is
+done — it was planning detail for coordinating four parallel subagents, not a fact about
+the shipped system. What is worth keeping is the same "must pin with tests" intent this
+section had; the actual coverage lives in each unit's own `.Tests.inl` (named above)
+rather than being re-derived here.
 
 ---
 
@@ -816,7 +919,9 @@ solve; a chain with an unresolvable bone name returns false and writes nothing.
 Two things in the four-way split do not survive contact with the tree. Neither is a
 scoping failure of the work; both are ownership/feasibility corrections.
 
-### 8.1 WU-4.2's "gizmo drive" is not deliverable as written
+**Both corrections below are ADOPTED, confirmed by the shipped code (2026-09-06).**
+
+### 8.1 WU-4.2's "gizmo drive" is not deliverable as written — ADOPTED
 
 `Flux_GizmosImpl` cannot manipulate a bone in the preview view, for two independent
 reasons:
@@ -857,7 +962,15 @@ into WU-4.3**, and **WU-4.2 becomes pure space maths with no UI at all** — thr
 seven functions, fully unit-testable, zero shared-file contention. That is the natural cut
 and it makes 4.2 the easiest of the four rather than the most entangled.
 
-### 8.2 Three units would otherwise write the same two files
+**Confirmed as shipped.** `Zenith_EditorPanel_Animation.h`'s own header says it in the
+same words this correction predicted: *"IT IS AN ImGui DRAW-LIST OVERLAY ON THE PREVIEW
+IMAGE, NOT Flux_Gizmos … Flux_GizmosImpl is entity-typed all the way down AND declares
+one pass writing the FINAL render target with no per-view selection."* The rings, the
+hit-test and the drag all live in `Zenith_EditorPanel_Animation_Pose.cpp` (WU-4.3), and
+`Zenith_BoneSpace` (WU-4.2) is exactly the three files / seven functions / no-UI shape
+this correction called for (§3.3, §7).
+
+### 8.2 Three units would otherwise write the same two files — ADOPTED
 
 As briefed, `Zenith_AnimationPreviewSession.{h,cpp}` is written by 4.1 (selection), 4.2
 (refresh) and 4.3 (drag state); `Zenith_EditorPanel_Animation.{h,cpp}` is written by all
@@ -874,24 +987,58 @@ neither file. That turns a four-way write conflict into a one-way dependency and
 **Sequencing this implies:** 4.1 first and alone; then 4.2, 4.3, 4.4 in parallel; 4.4's
 end-to-end bake needs 4.3's `Action_SetKeyForBones` body but not its landing.
 
+**Confirmed as shipped.** `Zenith_EditorPanel_Animation.h` carries the complete
+`Action_*` surface — including the pose-authoring block — declared in one place with a
+comment naming exactly this reasoning: *"THE WHOLE Action_* SURFACE IS DECLARED HERE BY
+WU-4.1, INCLUDING THE PARTS IT DOES NOT IMPLEMENT … which is what turns what would have
+been a three-way write conflict on one file into a one-way dependency."* WU-4.3's body
+lives in `Zenith_EditorPanel_Animation_Pose.cpp` and WU-4.4's in
+`Zenith_EditorPanel_Animation_IK.cpp`, each filling declared stubs rather than adding
+declarations — and the IK unit's own commentary confirms the "compiles without 4.3"
+half of the sequencing worked as planned: `Action_BakeIKForSelectedChain` calls
+`Action_SetKeyForBones` and falls back to `Zenith_AnimationPoseIK::BakeChain` when that
+call refuses, keyed on the RETURN VALUE rather than a build flag, precisely so the
+fallback is safe whether or not 4.3 has landed in the binary being built.
+
 ---
 
-## 9. Open questions the briefs must carry
+## 9. Open questions the briefs must carry — resolutions (2026-09-06)
 
-1. **Seconds or ticks?** (§5.2) The brief and the tree disagree. Phase 3 must state which,
-   and WU-4.3's conversion helpers must be the only place it is expressed.
-2. **`m_uAuthoredFrameRate` vs `m_uTicksPerSecond`.** (§5.2) Two frame-rate numbers on one
-   clip is a duplicated pin. Recommend one.
-3. **Who clears the undo stack when a document closes?** (§4.3) The pose commands hold a
-   raw document pointer — the first commands in the editor that hold a raw target. Unowned
-   as far as Phase 4 can see.
-4. **The preview view slot has an incumbent.** (§0) `Flux_MaterialPreviewController` drives
-   `kuFluxViewSlotPreview` from its own liveness window
-   (`Flux_MaterialPreviewController.h:144,156-161`). With the Material Editor and the
-   Animation Editor both open, both stage the same slot's constants and both submit
-   external items to it. Nothing in Phase 4 arbitrates this. Whether it presents as a
-   flicker, a wrong camera, or a wrong mesh depends on `Update()` ordering — and it will
-   look like an animation bug.
-5. **Non-uniform bone scale.** (§3.4) `DecomposeTRS` is documented for shear-free,
-   positive-scale matrices. Every rig in the tree has unit bind scale. Assert rather than
-   assume.
+1. **Seconds or ticks?** — **RESOLVED: seconds, everywhere, unconditionally.**
+   `Zenith/Flux/MeshAnimation/CLAUDE.md`: *"KEY TIMES ARE SECONDS, ON THE SAME CLOCK AS
+   `m_fDuration` (D3)."* The tick-based storage this note found when it was written has
+   been replaced; neither `SampleFromClip` overload converts any more, and pose
+   authoring needed no seconds↔ticks conversion helper of its own because there is
+   nothing left to convert (§5.2's correction).
+2. **`m_uAuthoredFrameRate` vs `m_uTicksPerSecond`.** — **RESOLVED, but not by
+   recommending one:** both exist, and they mean different things.
+   `m_uTicksPerSecond` is import provenance (the source file's tick rate, applied to
+   nothing); `m_uAuthoredFrameRate` (D6) is editorial intent — the fps the pose-authoring
+   grid snaps to. This note's original recommendation ("the authored frame rate IS
+   `m_uTicksPerSecond`") would have been the wrong call; see §5.2's correction for why
+   the two numbers need to stay distinct.
+3. **Who clears the undo stack when a document closes?** — **RESOLVED: the document
+   itself, and it always did.** There is no bespoke pose-authoring command holding a raw
+   document pointer (§4.3's correction) — `Zenith_AnimationDocument` owns its own
+   `Zenith_UndoSystem` as a member, every command it pushes already points back at that
+   same object, `Close()` clears it (refusing first while dirty) and the destructor
+   clears it unconditionally. No separate Phase-3 contract needed to be written down;
+   the ownership this question worried about not existing had already been decided by
+   the time Phase 4 needed it.
+4. **The preview view slot has an incumbent.** — **RESOLVED: `Flux_PreviewSlotArbiter`**
+   (`Zenith/Flux/RenderViews/Flux_PreviewSlotArbiter.h`), a last-opened-wins arbiter
+   living in `Flux/RenderViews` (not `Editor/`, because Flux may not include Editor and
+   both claimants — `Flux_MaterialPreviewController` and
+   `Zenith_AnimationPreviewSession` — sit on opposite sides of that boundary). It is
+   owner-agnostic (a `void*` identity plus a display name, never dereferenced), claims on
+   a transition rather than per frame (so a re-claim-every-visible-frame panel could
+   never be dispossessed), and a dispossessed claimant is told WHO holds the slot so its
+   panel can offer a reclaim. `Flux_MaterialPreviewController` participates with the same
+   `Claim`/`Release`/`HasSlot` calls the animation session uses
+   (`Flux_MaterialPreviewController.h:174,179,189-192`) — confirming both sides of the
+   arbitration this note asked for actually exist, not just the animation side.
+5. **Non-uniform bone scale.** — **RESOLVED: assert, as recommended.**
+   `Zenith_BoneSpace::ParentWorldRotation` asserts uniform, positive-determinant scale on
+   the extracted matrix rather than assuming it (confirmed in the shipped header's own
+   comment, §3.4's correction) — a sheared parent frame is refused loudly rather than
+   producing a delta that is subtly wrong in a way no gate could see.
