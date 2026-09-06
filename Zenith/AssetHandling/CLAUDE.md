@@ -135,7 +135,7 @@ These are initialized by `Zenith_AssetRegistry::InitializeGPUDependentAssets()`.
 | Mesh | `.zmesh` | `Zenith_MeshAsset` — geometry with optional skinning weights |
 | Mesh geometry | `.zgeom` | `Flux_MeshGeometry` — a DIFFERENT format (its own element table, no version field): terrain chunks, the StickFigure, primitive and shared-prop geometry |
 | Skeleton | `.zskel` | Bone hierarchy and bind pose data |
-| Animation | `.zanim` | Keyframe animation clips |
+| Animation | `.zanim` | `Flux_AnimationClip` — keyframe animation clips. Stream-envelope type id 6, schema 2; key times are SECONDS |
 | Behaviour Graph | `.bgraph` | Designer-authored visual-scripting graph (see below) |
 
 ## Loader Contract (unified)
@@ -173,11 +173,19 @@ it after `delete` would read freed memory).
 
 ## Typed-Asset Serialization (Stream Envelope)
 
-Texture, Material, Mesh, Skeleton and Model prefix their DataStream payload with the
-shared `Zenith_StreamEnvelope` header (`magic + envelope version + asset-type-id +
-schema version`). The **single source of truth** for every asset-type-id and current
-schema version is `AssetHandling/Zenith_AssetTypeIds.h` — no more per-asset
+Texture, Material, Mesh, Skeleton, Model **and Animation** prefix their DataStream
+payload with the shared `Zenith_StreamEnvelope` header (`magic + envelope version +
+asset-type-id + schema version`). The **single source of truth** for every asset-type-id
+and current schema version is `AssetHandling/Zenith_AssetTypeIds.h` — no more per-asset
 `#define ZENITH_*_VERSION`.
+
+`.zanim` is the most recent adopter: **type id 6
+(`uZENITH_ANIMATION_ASSET_TYPE_ID`), schema 2 (`uZENITH_ANIMATION_SCHEMA_CURRENT`)**. It
+had no version word at all before, so its schema starts at 1 — the first layout that is
+self-describing on the wire — and **schema 2 reinterpreted the key-time floats as
+SECONDS where schema 1 meant ticks, with no field moving**. The write half is
+`Flux_AnimationClip::WriteToDataStream`, which `Export()` calls, so both `.zanim` write
+paths carry the header. See `Flux/MeshAnimation/CLAUDE.md`.
 
 - **Write**: `WriteToDataStream` calls `Zenith_WriteStreamHeader(stream, <typeId>,
   <schemaCurrent>)` first, then the payload. Tools exporters that call `Export()`
@@ -198,6 +206,24 @@ schema version is `AssetHandling/Zenith_AssetTypeIds.h` — no more per-asset
   delete it and let the tools boot rewrite it — exactly what a fresh clone does
   unconditionally. So **bumping a `*_SCHEMA_CURRENT` needs no legacy branch**; it needs
   the stale files deleted.
+- **★ `Assets/Authored/**` IS THE ONE EXCEPTION TO "DELETE IT AND RE-BAKE".** That
+  directory is re-included WHOLESALE by `.gitignore` (scoped by DIRECTORY, not by
+  extension) and marked `**/Assets/Authored/** binary -filter` in `.gitattributes` — the
+  `-filter` is load-bearing, because `*.zanim filter=lfs` above it would otherwise commit
+  an authored clip as an LFS pointer. These files are **committed, hand-edited in the
+  Animation Editor and written by no generator**, so deleting one does not regenerate it;
+  it destroys it. They are carried across a schema bump instead, by the tools boot phase
+  `Zenith_Tools_MigrateAuthoredClipsAtBoot()` (`Tools/Zenith_Tools_AnimMigrate.cpp`, see
+  `Tools/CLAUDE.md`), which is the ONE sanctioned reader of an older `.zanim` layout and
+  reaches it only through `Flux_AnimationClip::ParsePayload(stream, schema)` — a function
+  whose non-current branch is compiled out entirely outside `ZENITH_TOOLS`. **The runtime
+  reader is unchanged and must stay so.** A clip gets there via
+  `Zenith_AnimationDocument::PromoteToAuthoredOverride`, which keeps the source's root
+  prefix and inserts `Authored/` directly under it, preserving the subdirectory
+  (`engine:Meshes/StickFigure/Walk.zanim` → `engine:Authored/Meshes/StickFigure/Walk.zanim`)
+  — flattening to a leaf name would have two generated sets that both call a clip "Walk"
+  silently overwrite each other. The source file is not touched: the bake keeps owning and
+  rewriting it, and the override is what the editor and the game then read.
 
 `Zenith_MaterialParams` (in `Zenith_MaterialParamTable.h`) owns the ~22-field v5
 parameter order **once** via its own `WriteToDataStream`/`ReadFromDataStream` (called
@@ -231,6 +257,38 @@ build mirrors. The forwarder is a no-op when the renderer is unavailable
 (`g_xEngine.HasFluxGraphics()` false, or `Flux_MaterialTable::IsInitialised()` false),
 so a late destructor during shutdown teardown is safe. Net effect: the table's live
 index count is **bounded across scene reloads** instead of growing forever.
+
+## Animation Assets (Zenith_AnimationAsset)
+
+`Zenith_AnimationAsset.{h,cpp}` wraps one owned `Flux_AnimationClip` (`.zanim`). It is a
+member-contract type, so it loads through `LoadAssetGeneric<T>`, and its
+`Zenith_AssetLoadTraits` sets `kGuardProcedural` (a `procedural://` path is rejected as a
+load path).
+
+- **`LoadFromFile` returns a real status now.** The `.zanim` branch used to
+  `return true` unconditionally — `Flux_AnimationClip::ReadFromDataStream` was `void` —
+  so a corrupt or stale file produced an assert, an EMPTY clip **and** a successfully
+  loaded asset holding it: three signals, none of which reached the caller. It now
+  returns whatever `Flux_AnimationClip::ParseStream` reported, and the registry deletes
+  the asset instead of caching an empty one.
+- **`ReloadFromDisk()` / `ReloadFromDisk(path)` re-read the file INTO the clip this asset
+  already owns.** There was no reload path at all: `LoadFromFile` is private and one-shot,
+  so the only way to see an edited `.zanim` was `ForceUnload` (which ignores refcounts)
+  plus a fresh acquire — and that yields a **different** `Flux_AnimationClip` address,
+  while controllers borrow the clip POINTER and state machines resolve their clip
+  references through that collection. `GetClip()` returns the same pointer across a
+  reload, and that pointer observes the new content.
+- **Transactional.** The file is parsed into a **stack-local** staging clip and the live
+  clip is only touched on success, via `Flux_AnimationClip::ReplaceContentsFrom` — so a
+  refused envelope, a stale schema, a missing or truncated file returns `false` with the
+  live clip byte-for-byte on its previous contents, and the path can neither allocate a
+  second clip nor leak one. The single shared implementation is the private
+  `LoadZanimIntoLiveClip`.
+- **The clip NAME may not change across a reload**, and **synchronisation is the
+  caller's**: the swap is a plain non-atomic write, to be done on the main thread between
+  frames. Both rules are `Flux_AnimationClip`'s — see `Flux/MeshAnimation/CLAUDE.md`.
+- Only the binary `.zanim` reloads. A source-format (Assimp) path is refused: re-importing
+  a `.glb` is an import, not a reload, and cannot round-trip the clip's authored metadata.
 
 ## Behaviour Graph Assets (Zenith_BehaviourGraphAsset)
 
@@ -295,7 +353,11 @@ Animations are extracted from `aiAnimation` structures:
 
 **Bone Channels:** Each animated bone has separate keyframe arrays for position, rotation, and scale. Keyframes store time and value.
 
-**Animation Duration:** Stored in seconds, computed from the maximum keyframe time.
+**Key times are SECONDS, and the conversion happens at IMPORT.** Assimp's key times are ticks; the tools-only `Flux_BoneChannel(const aiNodeAnim*, double dSourceTicksPerSecond)` constructor divides by the source file's rate (already defaulted by the caller when the file declared 0), and the divisor is a required argument so an import path cannot forget it. `m_uTicksPerSecond` is kept only as import provenance.
+
+**Animation Duration:** Stored in seconds, computed from the maximum keyframe time — the same clock as the key times, so `Flux_ClipKeyTimesFitDuration` is a checkable property of the result.
+
+**Rig identity:** `ExtractAnimations` (`Tools/Zenith_Tools_MeshExport.cpp`) stamps each exported clip's `m_uAuthoredFrameRate` (the source's own tick rate — the grid the artist keyed on), `m_strSkeletonPath` (the `.zskel` this same import writes, empty when the scene carried no bones), `m_strPreviewModelPath` (the `.zmodel` it writes) and `m_bGenerated = true`. The two paths go through `NormalizeAssetPath`, because a bare ref would round-trip through the stream unchanged and resolve to nothing.
 
 **Node Hierarchy Preservation:** Animation keyframes are relative to scene graph parents, matching how bones store their local TRS values.
 
@@ -405,7 +467,7 @@ rather than a game's assets because more than one game consumes them.
 
 | Set | Generator | Output |
 |---|---|---|
-| StickFigure | `Zenith_Tools_TestAssetExport.cpp` | 16-bone rig, lofted body, painted atlas, 13 clips |
+| StickFigure | `Zenith_Tools_TestAssetExport.cpp` | the shared 51-bone T-posed humanoid rig, lofted body, painted atlas, 17 clips (key times in SECONDS; each clip names its rig and is flagged `m_bGenerated`) |
 | ProceduralTree | `Zenith_Tools_TreeAssetExport.cpp` | branching trunk + leaf cards, bark PBR set (albedo/normal/RM/AO), leaf albedo+normal+AO, sway VATs |
 | **Rocks** | `Zenith_Tools_RockAssetExport.cpp` | 4 stone meshes + granite/sandstone PBR sets |
 | **FallenTrees** | `Zenith_Tools_FallenTreeAssetExport.cpp` | 4 deadwood meshes + bark/mossy-bark PBR sets |

@@ -14,9 +14,194 @@ Stores animation keyframe data loaded from `.zanim` files.
 - Rotation keyframes (Quaternion + time)
 - Scale keyframes (Vector3 + time)
 
-**Sampling:** `SamplePosition/Rotation/Scale(float fTimeSeconds)` — key times are SECONDS on the same clock as `m_fDuration` (`m_uTicksPerSecond` is import provenance only) — interpolates between keyframes. Uses linear interpolation for position/scale, spherical linear interpolation (slerp) for rotation.
+> **★ KEY TIMES ARE SECONDS, ON THE SAME CLOCK AS `m_fDuration` (D3).** Every
+> `std::pair<V,float>::second` in a channel, every `Add*Keyframe` / `InsertKeyframeAt`
+> argument and every `Sample*()` argument is a time in seconds
+> (`Flux_AnimationClip.h`). They used to be TICKS — the channel stored
+> `aiVectorKey::mTime` unconverted and `Flux_SkeletonPose::SampleFromClip` multiplied
+> the incoming wall-clock seconds by the clip's ticks-per-second on the way in, so a
+> clip carried two clocks and every generator, test and consumer had to remember which
+> one it was holding. **`Flux_BonePose.cpp`'s two `SampleFromClip` overloads no longer
+> convert at all**: `fTime` goes straight to the channel.
+>
+> `m_uTicksPerSecond` survives as **import provenance only** — the tick rate of the
+> FILE the clip came from, so a re-export to a tick-based format can put the times back
+> on the source's grid. Nothing samples through it. The tools-only
+> `Flux_BoneChannel(const aiNodeAnim*, double dSourceTicksPerSecond)` constructor is
+> where the division happens, and the divisor is a required argument so an import path
+> cannot forget it.
+>
+> **There is no `GetDurationInTicks()`.** It was a second authority on the clip's
+> length, expressed in the one unit nothing is in any more, and every caller of it was
+> sampling with a tick number. Sample with `GetDuration()`. The one legitimate consumer
+> is a re-export to a tick-based file format, which writes
+> `GetDuration() * GetTicksPerSecond()` at the call site where the grid is visible
+> (`Tools/Zenith_Tools_AssimpConvert.cpp`).
+>
+> `Flux_AnimationEvent::m_fNormalizedTime` is NOT part of this (D4) — an event time is
+> a `[0,1]` fraction of the clip and stays one.
 
-**Loading:** `LoadFromAssimp()` (tools-only) imports from Assimp's `aiAnimation` structure. Binary `.zanim` files are loaded through the asset system via `Zenith_AnimationAsset::LoadFromFile()` (AssetHandling/Zenith_AnimationAsset.cpp), which calls `Flux_AnimationClip::ReadFromDataStream()` for deserialization.
+**Sampling:** `SamplePosition/Rotation/Scale(float fTimeSeconds)` interpolates between keyframes. Uses linear interpolation for position/scale, spherical linear interpolation (slerp) for rotation. Two free helpers make "the last key lands at or before the end of the clip" checkable now that both are in the same unit, and are pure/allocation-free so a generator and a headless unit can assert with the same call: `Flux_ClipLastKeyTimeSeconds(clip)` and `Flux_ClipKeyTimesFitDuration(clip, epsilon)`.
+
+**Loading:** `LoadFromAssimp()` (tools-only) imports from Assimp's `aiAnimation` structure. Binary `.zanim` files are loaded through the asset system via `Zenith_AnimationAsset::LoadFromFile()` (AssetHandling/Zenith_AnimationAsset.cpp), which now returns a `Zenith_Status` taken straight from `Flux_AnimationClip::ParseStream()` — a refused file no longer reports a successful load holding an empty clip.
+
+#### Clip metadata (`Flux_AnimationClipMetadata`)
+
+Beyond `m_strName` / `m_fDuration` / `m_bLooping` / `m_fBlendInTime` / `m_fBlendOutTime`:
+
+| field | means |
+|---|---|
+| `m_uTicksPerSecond` | **import provenance** — the SOURCE FILE's tick rate. Never applied to a key time. Default 24 |
+| `m_uAuthoredFrameRate` (D6) | **editorial intent** — the fps the clip was authored at: what a key grid snaps to, what a re-bake should resample to. Deliberately NOT `m_uTicksPerSecond`. Also never applied to a key time |
+| `m_strSkeletonPath` (D7) | the RIG this clip animates, as an asset path |
+| `m_strPreviewModelPath` (D7) | a model to preview it on, as an asset path |
+| `m_bGenerated` (D8) | true when a generator produced the clip. A generated clip is rewritten in full on every tools boot, so this is what tells a consumer that editing it in place is pointless — it is what the Animation Editor's open path refuses on, offering promotion to an authored override instead |
+
+★ **THE RIG IS NEVER INFERRED FROM BONE NAMES, and `m_strSourcePath` IS NOT THE RIG.**
+The source path is the `.glb`/FBX the clip was imported from — a provenance breadcrumb
+that is empty for every procedurally generated clip — so overloading it as the skeleton
+reference would leave a generated clip unable to name its own rig and would silently
+retarget an imported one onto its source file. Both new paths are normalized through
+`Zenith_AssetRegistry::NormalizeAssetPath` on the way in and out of the stream, exactly
+like `m_strSourcePath`, so an absolute authoring-machine path never reaches the file.
+
+#### `.zanim` on the wire
+
+- **The shared envelope (D1).** `WriteToDataStream` leads with
+  `Zenith_WriteStreamHeader(stream, uZENITH_ANIMATION_ASSET_TYPE_ID,
+  uZENITH_ANIMATION_SCHEMA_CURRENT)` — **type id 6, schema 2**, both declared in
+  `AssetHandling/Zenith_AssetTypeIds.h`. `Export()` is `WriteToDataStream` +
+  `WriteToFile`, so it inherits the header for free. Schema 1 was the first
+  self-describing layout; schema **2 reinterpreted the key-time floats as SECONDS with
+  no field moving**.
+- **`ParseStream(stream)` is the load contract** and returns a status: no envelope (or
+  a stream too short for one) → `BAD_MAGIC`; another asset's type id →
+  `INVALID_ARGUMENT`; a newer envelope, or any schema that is not
+  `uZENITH_ANIMATION_SCHEMA_CURRENT` → `VERSION_MISMATCH`. Every refusal asserts
+  EXACTLY once and leaves the clip EMPTY (`ResetToEmpty`), never half-parsed. The void
+  `ReadFromDataStream` remains only for `Zenith_DataStream`'s `<<`/`>>` dispatch.
+- **`ParsePayload(stream, uSchemaVersion)` is the migrator's split point.** It reads the
+  body from a cursor already past the envelope and validates nothing about the header.
+  Its acceptance test is `1 <= schema <= current` under `ZENITH_TOOLS` and
+  `== current` outside it, so the "no legacy branch in the runtime reader" ruling is
+  enforced by the compiler rather than by convention. The one caller allowed to pass a
+  non-current schema is the authored-clip migrator (`Tools/Zenith_Tools_AnimMigrate.cpp`
+  — see `Tools/CLAUDE.md`).
+- **★ CHANNELS ARE SERIALIZED IN BONE-NAME ORDER (D5), not hash order.** Walking
+  `m_xBoneChannels` directly put them on disk in `Zenith_HashMap` bucket order, so the
+  same clip built by two different insertion sequences serialized to different bytes for
+  identical animation data. `WriteToDataStream` sorts a pointer array by bone name
+  first. That was free while every `.zanim` was gitignored bake output; it stops being
+  free the day one is committed, which `Assets/Authored/` now does.
+- **The reserved per-key tangent block (D17).** Each channel carries a
+  `Zenith_Vector<Flux_KeyTangents>` parallel to each of its three key arrays — same
+  size, zero by default, kept in lockstep by every add/insert/remove/retime path — and
+  it is **serialized and round-tripped but NOT sampled**: `Sample*()` is still pure
+  lerp/slerp. It exists now so the on-disk layout does not have to move again when
+  curve-interpolated sampling lands. ★ **A ROTATION TANGENT IS AN ANGULAR VELOCITY**, a
+  `Vector3` in axis × radians-per-second form — the same shape as a position or scale
+  tangent's units-per-second — because the natural derivative of a slerped rotation
+  curve is a body-frame angular velocity. Quaternion Bezier control points would be four
+  components meaningful only relative to their own segment's endpoints, and could
+  neither be blended nor retimed. `Flux_RootMotion` carries **no** tangents and
+  deliberately gains none.
+
+#### Keyframe mutation (D9–D16)
+
+The clip used to be **append-only** — `Add*Keyframe` plus `SortKeyframes`, three private
+vectors and const-only getters — so nothing could remove, retime or revalue a key. The
+mutators live on `Flux_BoneChannel`, are reached from outside through
+`Flux_AnimationClip::GetBoneChannelMutable()` / `GetOrAddBoneChannel()`, and address a
+key as **(track, key index)** through one selector enum:
+
+```cpp
+enum Flux_AnimTrack { FLUX_ANIM_TRACK_POSITION, FLUX_ANIM_TRACK_ROTATION, FLUX_ANIM_TRACK_SCALE };
+```
+
+★ **ONE SELECTOR ENUM RATHER THAN THREE OVERLOAD FAMILIES**, because the layer above
+addresses a key as (bone, TRACK, keyIndex) and has to store that triple in an undo
+record; three families would push the same switch into every undo command at every call
+site. The VALUE, in contrast, IS an overload — a `Vector3` for position/scale, a `Quat`
+for rotation — and a mismatched pair is refused at runtime with an assert rather than
+reinterpreted.
+
+`constexpr float fANIM_TIME_EPSILON = 1.0e-5f` is **the one time-comparison tolerance**
+(D9): two key times within it ARE the same time, and nothing compares two key times with
+`==`. It sits ~420× below the finest authorable frame grid (1/240 s) so it cannot merge
+two keys on adjacent frames, and ~10× above float spacing at a realistic clip time
+(2⁻²⁰ ≈ 9.5e-7 s at t = 10 s) so it cannot fail to recognise a key that has been through
+a file. A dope sheet that picked its own hit-test tolerance would disagree with the
+mutator about whether a slot is occupied, which is the one disagreement that can destroy
+a key.
+
+The policy, as implemented, and it holds for every entry point:
+
+- **A refusal changes NOTHING** — no clamp, no merge, no partial edit — and each verb
+  returns `true` only when the clip actually changed.
+- **Times must be FINITE and NON-NEGATIVE (D10)**, or the call is refused with exactly
+  one assert. A clamp would turn a caller's arithmetic slip into a real key at a real
+  time that nothing downstream could tell from an authored one.
+- **`InsertKeyframeAt` on an OCCUPIED time REPLACES that key's value in place (D11)**,
+  keeping its index slot, its stored time and its tangent entry; on a free time it
+  inserts at the sorted position with a zero tangent. Either way the resulting index
+  comes back through `puOutKeyIndex`.
+- **`SetKeyframeTime` onto an occupied time is REFUSED (D11/D25) — no silent merge.** A
+  merge destroys a key during a drag, which is exactly when a user is least able to
+  notice. On a free time the key and its tangent move together to their new sorted
+  position.
+- **Rotation values are NORMALIZED on write, and a quaternion shorter than
+  `fANIM_MIN_QUAT_LENGTH` (1e-6) is REFUSED, not normalized (D15)** — `glm::normalize`
+  of a zero-length quaternion is NaN, and one NaN rotation key poisons every pose the
+  clip can produce at every time, through the slerp.
+- **The clip DURATION is never touched (D12)** — it is authored, not recomputed — and
+  **a key past the duration is legal (D13)**: the panel warns, the mutator does not veto.
+- **The track is left TIME-SORTED**; there is no `SortKeyframes()` to remember
+  afterwards, and the input is asserted sorted going in.
+- **D14: an empty channel must not survive inside a clip.** The clip-level
+  `RemoveKeyframe(bone, track, index)` removes the key and, when that leaves zero
+  position AND zero rotation AND zero scale keys, removes the CHANNEL, via
+  `PruneEmptyChannel(bone)`. ★ **AN EMPTY CHANNEL IS NOT NEUTRAL AND THE TWO SAMPLERS
+  DISAGREE ABOUT IT**: `Flux_SkeletonPose::SampleFromClip` guards each track with
+  `Has*Keyframes()` and leaves the bind pose alone, while the direct channel API
+  (`Flux_BoneChannel::Sample*`) has no such guard and returns origin / identity / unit
+  scale. Removing it gives "this bone is not animated" exactly one representation. A
+  caller that mutates through `GetBoneChannelMutable()` bypasses the pruning (a channel
+  cannot reach the map that owns it) and must call `PruneEmptyChannel` itself.
+- **`Flux_RootMotion` takes the SAME enum and the SAME verbs on its two delta tracks
+  (D16)**, minus scale: `FLUX_ANIM_TRACK_SCALE` is refused (false + assert). It shares
+  the bone channel's implementation and simply passes no tangent array, so the lockstep
+  rule is vacuous there rather than re-implemented.
+
+#### `ReplaceContentsFrom` — a reload must not move the clip (D26/D27/D28)
+
+A controller borrows the clip **pointer** (`Flux_AnimationClipCollection::AddClipReference`)
+and a state machine resolves its clip references through that collection by name
+(`Flux_AnimationStateMachine::ResolveClipReferences`). `ForceUnload` plus a fresh acquire
+hands back a DIFFERENT address, so every borrowed pointer and every resolved blend-tree
+node is left pointing at freed memory. `ReplaceContentsFrom(source)` copies the source's
+contents INTO this object instead, as a **whole-object copy assignment** rather than a
+field list — a member added to the class later is carried automatically instead of being
+silently left behind. (That is also why the copy operations are `= default`ed
+explicitly: an implicit copy assignment on a class with a user-declared destructor is
+deprecated in C++20.)
+
+★ **THE NAME IS IMMUTABLE ACROSS A REPLACE (D28).** The collection is name-keyed,
+`AddClip` on a name collision DELETES the clip already there, and `ResolveClipReferences`
+resolves through the same map — so a rename underneath a live clip corrupts two lookups
+at once and neither reports it. A source whose name differs is refused (assert + false,
+destination untouched); the one exception is a destination with no name yet, which is a
+freshly constructed clip being populated, not a rename. Renaming is Save As.
+
+★ **IT IS NOT A SYNCHRONISATION POINT AND DOES NOT CREATE ONE (D27).** It is a plain
+non-atomic write over live data; the caller must guarantee no animation update is in
+flight (the editor calls it from the main thread, between frames). Load and validate into
+a TEMPORARY clip first — `Zenith_AnimationAsset::ReloadFromDisk` is the worked example,
+staging into a stack-local clip so a file that fails to parse never reaches a live one.
+
+Relatedly, `Flux_AnimationClipCollection::AddClip` / `AddClipReference` **assert on an
+empty clip name**: an unnamed clip keys on `""`, two of them evict each other from
+`m_xClipsByName` while both stay in `m_xClips`, and the ordered list and the map end up
+disagreeing with a freed pointer in one of them.
 
 ### Flux_SkeletonInstance
 Runtime skeleton state for a single animated entity.
@@ -41,6 +226,18 @@ Manages animation playback for an entity.
 **Update:** Each frame advances time and samples the animation clip to update skeleton instance bone transforms.
 
 **Blending:** Supports crossfading between animations via weighted bone transform blending.
+
+**Direct-play SCRUBBING:** there was previously no way to ask for *the pose at a time* — every entry point ADVANCED a clock (`Update(dt)` steps, `PlayClip` restarts at zero), and the only time SETTER in the whole system was `Flux_BlendTreeNode_Clip::SetCurrentTimestamp` on the private, tools-only direct-play node. So:
+
+- `HasDirectPlayClip()` — a direct-play clip is armed (`PlayClip` has run, `Stop` has not).
+- `GetDirectPlayTime()` — that node's clip time in SECONDS, 0 when nothing is armed.
+- `SeekDirectPlay(fTimeSeconds)` — evaluate the direct-play clip AT that time and apply it to the skeleton instance **without advancing any clock**. The pose is identical to one a tick reaching the same time would leave (both seed the bind pose and sample through the same helper, `SampleDirectPlayPoseAtCurrentTime`); a seek ignores playback speed, the paused flag and any in-flight crossfade, because a scrub is not a transition. It deliberately does NOT go through `UpdateWithSkeletonInstance`, which hands the frame to the LAYER path the moment any layer exists and would disable the preview it is trying to scrub.
+- `WrapClipTime(clip, t)` — **PURE**: wrapped when the clip loops, clamped when it does not, returned unchanged for a clip with no duration. `SeekDirectPlay` folds through it, so a caller may pass a raw slider value.
+- `SetEmitEventsOnSeek(bool)` / `GetEmitEventsOnSeek()` and `GetLastEventCheckTime()` — see *Event delivery* below.
+
+★ **THE DECLARATIONS ARE NOT TOOLS-GATED even though direct play still is.** A caller in a non-tools build compiles and gets a documented `false`/`0.0f` rather than needing its own `#ifdef` around every call — there is no direct-play node to seek without `ZENITH_TOOLS`, and that is the whole of the behaviour.
+
+**Per-frame DRIVE GUARD — one driver per controller per frame:** `TryBeginFrameDrive(pDriver, ulFrameToken)` / `ClearFrameDrive(pDriver)`, with `GetFrameDriveOwner()` / `GetFrameDriveToken()` and the sentinel `ulNO_DRIVE_FRAME`. The animator inspector ticks the entity's controller itself while the editor is Stopped (nothing else does — `Scene::Update` is not running), so a second panel that also ticked it would **double-tick**: the clip runs at 2× with both panels open and 1× with one, which reads as "the preview speed is wrong" rather than as two drivers, and no assert anywhere fires. The token is the caller's frame identity (`g_xEngine.Frame().GetFrameIndex()` for editor code); the FIRST claim in a given frame wins and every later one in that same frame is refused, **including a repeat by the same driver** — a second tick is a second tick whoever asks for it. Only the current owner may release. The pointer is identity only and is never dereferenced.
 
 **Ownership (Wave-19):** A `Flux_AnimationController` is no longer a by-value member of `Zenith_AnimatorComponent`. It is owned by `Flux_AnimationControllerStore` (below) and the ECS component is a thin forwarding handle into it.
 
@@ -149,6 +346,7 @@ Multiple independent state machines composing poses:
 - **Additive** (`LAYER_BLEND_ADDITIVE`): Adds on top of lower layers
 - Layer 0 is the base; additional layers compose on top
 - Managed by `Flux_AnimationController::AddLayer()`, `GetLayer()`, `SetLayerWeight()`
+- `SetEmitEvents(bool)` silences **one layer's** animation events (see *Animation Event Delivery*). Not serialized
 
 ### Update Modes (Flux_AnimationUpdateMode)
 - `ANIMATION_UPDATE_NORMAL` - Uses scaled deltaTime
@@ -161,6 +359,109 @@ State lifecycle hooks use function pointers + void* userdata (NOT std::function)
 using Flux_AnimStateCallback = void(*)(void* pUserData);
 using Flux_AnimStateUpdateCallback = void(*)(void* pUserData, float fDt);
 ```
+
+## Animation Event Delivery
+
+★ **EVENTS USED TO FIRE ON EXACTLY ONE PATH, AND IT WAS THE EDITOR'S.**
+`Flux_AnimationController::ProcessEvents` had a single call site, inside
+`#ifdef ZENITH_TOOLS` and gated on the tools-only direct-play node — and inside the
+function the clip was ALSO only ever sourced from that node. In a shipping build the
+whole mechanism returned immediately; even in a tools build, nothing a state machine or
+a layer played could fire an event. A game that authored footsteps into a `.zanim` and
+hooked `SetEventCallback` got silence, with no diagnostic anywhere. **`ProcessEvents` is
+gone.** Delivery now runs on the state-machine and layer paths in EVERY build, and
+direct play is one more source into the same dispatcher rather than the only one.
+
+**The unit of report is a leaf, not a controller.** ★ ONE CONTROLLER-LEVEL TIME CANNOT
+SEE A BLEND TREE'S LEAVES: a 1D blend space between a 0.9 s walk and a 1.4 s run has two
+playheads at two normalized times advancing at two rates, so "which events did the
+playhead cross this frame" has no single answer above the leaf. Each evaluated leaf
+reports its own crossing as a `Flux_ClipEventSpan` (`Flux_BlendTree.h`):
+
+| field | meaning |
+|---|---|
+| `m_pxClip` | the clip whose events are being scanned |
+| `m_fPrevNormalizedTime` / `m_fCurrNormalizedTime` | the step, as `[0,1]` fractions of the clip — matching `Flux_AnimationEvent::m_fNormalizedTime` |
+| `m_fWeight` | the blend weight this leaf carried in its layer for this evaluate |
+| `m_bForward` | the SIGN OF THE STEP, kept explicitly because the times alone cannot tell a reverse step from a wrap |
+| `m_bWrapped` | the step crossed the loop point. Set from the RAW advanced time (`prev + dt*rate >= duration`), **not** from `curr < prev` — a step longer than the clip lands back ABOVE prev and would otherwise read as no wrap |
+| `m_bLooping` / `m_bReachedEnd` | a non-looping clip hit its duration on this step, so the top end closes |
+
+**The collection walk.** `CollectEventSpans(Zenith_Vector<Flux_ClipEventSpan>*)` runs
+leaf → blend tree → state machine → layer → controller, once per `Update`, AFTER the
+pose has been evaluated:
+
+- `Flux_BlendTreeNode::CollectEventSpans` is virtual and ★ **WALKS EVERY CHILD, EVEN THE
+  ONES THIS FRAME DID NOT EVALUATE** — because a leaf holds its pending span until
+  something collects it, and **collecting is what clears it**. A blend space whose
+  parameter moved off a point, or a `Select` whose index changed, would otherwise keep
+  handing out the span from the last frame that DID evaluate it, once per frame, forever.
+- `pxOutSpans` **may be NULL**, and that is a real mode rather than a defensive check:
+  "walk and clear, discard the result".
+- Each leaf's weight comes from `SetEvalWeight`, set by a composite on each child
+  immediately before calling that child's `Evaluate`, so by the leaf it is the product of
+  every fraction down the path. It is deliberately not recomputed by a second walk — that
+  would be a guard comparing a value against a re-computation of itself.
+- `Flux_AnimationController::DispatchClipEvents` mirrors `UpdateWithSkeletonInstance`
+  exactly — layers, then the editor's direct-play preview, then the state machine —
+  because anything else would dispatch events from a path that did not produce this
+  frame's pose. It is **not** tools-gated, and it runs every frame whether or not a
+  callback is installed (collecting is what clears).
+
+**Who emits, when more than one clip is crossing an event at once:**
+
+- **Within one layer (D35)** — the leaf with the HIGHEST blend weight; ties go to the
+  LOWEST leaf index, which is collection order (depth-first, children in declaration
+  order). The comparison is strictly greater so the first of an equal pair keeps the win,
+  and the running best starts at zero so a **zero-weight leaf can never emit**.
+- **Across layers (D36)** — every layer arbitrates and emits **independently**, and that
+  is the correct default rather than a simplification: a masked upper/lower split is two
+  animations on one skeleton, and the legs' footsteps and the arms' swing beats are both
+  real. `Flux_AnimationLayer::SetEmitEvents(false)` silences one layer; a silenced layer
+  is still WALKED with a null sink, so re-enabling it cannot fire a span the silenced
+  frames left pending. It is deliberately NOT derived from the layer's WEIGHT — a weight
+  is animated, so tying events to it would make a footstep fire or not depending on where
+  in a fade the frame landed. **A controller with no layers is one layer** for this.
+- **Across a crossfade (D37)** — the side at weight **>= 0.5** emits, a dead-even 0.5
+  going to the **TARGET**; the other side is still walked with a null sink so its span is
+  cleared rather than saved up to fire the moment the weights cross. A self-transition has
+  one state on both sides and one set of leaves, so the silent side is only cleared when
+  it is a *different* state. ★ **TODAY THE OUTGOING SIDE HAS NOTHING TO GIVE**:
+  `UpdateTransition` evaluates only the TARGET state and the source contributes a pose
+  SNAPSHOT frozen at `StartTransition`, so its blend tree does not advance and produces no
+  span at all. The `>= 0.5` branch is written both ways round anyway, because the rule is
+  about which side MAY emit and the day the source starts advancing is not the day to
+  rediscover that.
+
+**Which events, over one step (D38/D39/D40).** `SpanContainsEventTime(span, t)` is the
+PUBLIC, pure predicate — the tests pin it directly:
+
+- `!m_bForward` → **false, always**. Reverse emits nothing (D39) and is an early return,
+  not an assert: `SetPlaybackSpeed` accepts negatives and shipping content uses them. The
+  leaf's previous time still MOVES, so the next forward frame scans from where the
+  playhead actually is instead of replaying the skipped span as a burst.
+- `m_bWrapped` → `[prev, 1) U [0, curr)`, as one OR, so a step longer than the clip fires
+  each event ONCE rather than twice.
+- `m_bReachedEnd` → `[prev, curr]`, the one CLOSED top end. A non-looping clip stops AT
+  1.0 and never steps past it, so a half-open span could never contain an event authored
+  there — and it fires exactly once.
+- otherwise → `[prev, curr)`.
+- ★ **AN EVENT AT NORMALIZED 1.0 ON A LOOPING CLIP IS AN EVENT AT 0.0 OF THE NEXT LOOP**,
+  folded with `fmod` before any of the above (so a time authored past 1.0 folds too).
+  Without the fold, a clip with a beat on its last frame fires it either never (half-open
+  at the top) or twice.
+- **A seek emits nothing unless asked (D40)** but still MOVES the bookkeeping mark.
+  Leaving the mark behind would make the next forward tick process the whole span from the
+  old mark and fire a burst the playhead skipped. `SetEmitEventsOnSeek(true)` opts in; a
+  BACKWARD scrub still emits nothing even then, same rule as reverse playback.
+  `Flux_BlendTreeNode_Clip::SetCurrentTimestamp` follows the same rule at leaf level — the
+  previous timestamp follows the new one and any pending span is dropped.
+
+`m_fLastEventCheckTime` (read via `GetLastEventCheckTime()`) is the **direct-play mark
+only**: the state-machine and layer paths have no single controller-level playhead to
+mark — a blend tree's leaves each run their own clock — so their bookkeeping lives per
+leaf in `Flux_BlendTreeNode_Clip::GetPreviousTimestamp()`. None of the per-frame event
+bookkeeping is serialized (D41: this changed no schema).
 
 ## File Structure
 
@@ -175,8 +476,17 @@ MeshAnimation/
   Flux_BonePose.h/cpp                - Bone transform utilities (Blend, MaskedBlend, AdditiveBlend)
   Flux_BlendTree.h/cpp               - Animation blending (Clip, 1D, 2D, Masked nodes)
   Flux_InverseKinematics.h/cpp       - IK solving (FABRIK)
-  Flux_AnimationClip.Tests.inl       - Unit tests for animation clip storage/sampling
-  Flux_BlendTree.Tests.inl           - Unit tests for blend tree nodes
+  Flux_AnimationClip.Tests.inl       - Unit tests for clip storage/sampling, in five categories:
+                                       Animation (root motion + end-of-clip clamping),
+                                       AnimationSerialization (the envelope, the new metadata
+                                       fields, the tangent block, bone-name write order),
+                                       AnimationTime (key times are SECONDS),
+                                       AnimationMutation (D9..D16), AnimationReload (D26/D28)
+  Flux_AnimationController.Tests.inl - Unit tests for event DELIVERY (WU-5A / D34..D40):
+                                       arbitration, layers, crossfade sides, loop and
+                                       non-looping boundaries, reverse, seek, and the pure
+                                       SpanContainsEventTime rules
+  Flux_BlendTree.Tests.inl           - Unit tests for blend tree nodes (incl. span collection)
 ```
 
 ## Constants

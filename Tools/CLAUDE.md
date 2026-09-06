@@ -25,6 +25,9 @@ Zenith_Engine::InitialiseAssets()
   ExportAllTextures()        Zenith_Tools_TextureExport
   ExportDefaultFontAtlas()   Zenith_Tools_FontExport
   GenerateTestAssets()       Zenith_Tools_TestAssetExport
+      Zenith_Tools_MigrateAuthoredClipsAtBoot()
+                                         <-- FIRST. Carries committed Assets/Authored/*.zanim
+                                             forward to the current schema before anything reads one
       GenerateStickFigureAssets()        <-- writes the ONE humanoid rig + 17 clips
       ExportBoundHumanModels()           <-- binds artist humanoids to it
       GenerateProceduralTreeAssets()
@@ -60,6 +63,7 @@ both sources, the `.glb` bundle is what survives.
 | `Zenith_Tools_FontExport` | `ExportDefaultFontAtlas()` — MSDF atlas from a TTF |
 | `Zenith_Tools_TerrainExport` | heightmap → terrain chunk geometry |
 | `Zenith_Tools_TestAssetExport` | the humanoid rig, 17 clips, StickFigure's body, RenderTest's assets |
+| `Zenith_Tools_AnimMigrate` | emits nothing — the authored-`.zanim` schema migration phase (below). The ONE sanctioned reader of an older `.zanim` layout |
 | `Zenith_Tools_HumanSkinBind` | orientation, normalise, sanity, fit check, weight solve |
 | `Zenith_Tools_HumanModelExport` | the human binder's call site, routing and publication |
 | `Zenith_Tools_TreeAssetExport` `…RockAssetExport` `…BushAssetExport` `…FallenTreeAssetExport` `…GrassAssetExport` | procedural prop/foliage sets: mesh, textures, material |
@@ -95,7 +99,94 @@ so it survives a fresh clone even though the art it names does not. Parsing is
 **strict** — an unknown key, a missing version or an unknown version fails the
 file. A tolerant parser turns a typo into a silently different asset.
 
+**Every clip a bake writes NAMES ITS RIG, and says it was generated (WU-1.4).** A
+`.zanim` whose `m_strSkeletonPath` is empty loads, plays and previews against nothing,
+and the rig is never inferred from bone names — so each producer stamps
+`Flux_AnimationClipMetadata`'s `m_strSkeletonPath`, `m_strPreviewModelPath` (where it has
+one), `m_uAuthoredFrameRate` and `m_bGenerated = true` at the point the clip is built:
+`HumanNewClip` for the 17 StickFigure clips (asserted again at export in
+`GenerateStickFigureAssets`), `ZM_ApplyCreatureClipRigIdentity` for Zenithmon's species
+clips, `Zenith_Tools_TreeAssetExport` / `Zenith_Tools_BushAssetExport` for the sway
+clips, and `ExtractAnimations` (`Zenith_Tools_MeshExport.cpp`) for imported ones. For an
+import, "generated" means **rewritten by the bake** — the walk re-runs every tools boot
+and overwrites each `<base>_<name>.zanim` from the source, so editing one in place is
+pointless — not "procedural"; its rig is the `.zskel` the same import writes (empty when
+the scene carried no bones) and its preview model the `.zmodel` it writes, both put
+through `Zenith_AssetRegistry::NormalizeAssetPath` so no absolute authoring-machine path
+reaches the file.
+
 **No device, no scene.** See the top of this file.
+
+---
+
+## The authored-clip migration phase (`Zenith_Tools_AnimMigrate`)
+
+`Zenith_Tools_MigrateAuthoredClipsAtBoot()` is called **first** inside
+`GenerateTestAssets()`, before any generator runs — authored overrides must be at the
+current schema before anything reads one.
+
+★ **IT EXISTS FOR THE ONE POPULATION THAT IS NOT BAKE OUTPUT.** The ruling in
+`DataStream/Zenith_StreamEnvelope.cpp` is that every asset file is regenerable, so a file
+in an older layout is a stale bake whose fix is `del` plus a boot. That holds for all ~931
+generated clips and always will. It stops holding for the clips under `Assets/Authored/`,
+which `.gitignore` re-includes WHOLESALE, `.gitattributes` marks `binary -filter` (so they
+are committed as real bytes, not LFS pointers), and no generator writes: they are
+hand-edited in the Animation Editor and promoted there by
+`Zenith_AnimationDocument::PromoteToAuthoredOverride`. Delete one and it is simply gone.
+A schema bump that costs a generated clip nothing would destroy an authored one; this
+phase is what carries them across instead.
+
+**What it does, per file** (`Zenith_Tools_AnimMigrate.cpp`):
+
+1. **Envelope triage first**, before a byte of payload is touched — `Zenith_ReadStreamHeader`
+   against `uZENITH_ANIMATION_ASSET_TYPE_ID`. Not an animation envelope → refused. Schema
+   already current → **a NO-OP, not an error, and not a rewrite**: the file is not opened
+   for writing at all, which matters because these files are committed and a boot that
+   re-serialized them would put the whole tree in `git status` every run. Schema NEWER
+   than this build → refused, never downgraded.
+2. **Read the body at its own schema** through `Flux_AnimationClip::ParsePayload(stream,
+   schema)` — the one call in the engine allowed to do that, and only because this TU is
+   `ZENITH_TOOLS`. The runtime reader (`ParseStream`) is untouched and still refuses
+   anything that is not current. It then checks that the payload consumed **exactly** the
+   file length, because `Zenith_DataStream` refuses an over-long read rather than
+   crashing, so a truncated file otherwise parses into a plausible clip with zero-filled
+   tails and no return value to say so.
+3. **A step CHAIN, one version at a time.** `1 -> 2` divides every key time by the clip's
+   ticks-per-second (bone channels and root-motion deltas alike; the duration was already
+   seconds, and an event's normalized time never was a time). Adding schema 3 means adding
+   one case, not a bespoke `1 -> 3` path that only the newest bump exercises. The times
+   are **divided, not multiplied by a reciprocal** — `1/24` is not representable, so the
+   reciprocal form rounds twice — and the channel is rebuilt by appending in source index
+   order rather than retimed through the public mutators, whose no-merge policy (right for
+   a pointer drag) would refuse a dense track's bulk conversion. The reserved tangent block
+   is carried across verbatim.
+4. **Staged write, runtime re-parse, then rename.** The clip is serialized to a sibling
+   `.migrate.tmp`, re-read with `ParseStream` at the current schema — ★ **the verify is the
+   point, not the temp file**: a staged rename alone only guarantees the replacement is
+   whole, while re-parsing the bytes actually written through the exact code the game will
+   use is what guarantees they are a `.zanim` at the current schema — and only then renamed
+   over the original.
+5. **Every refusal is LOUD and leaves the file byte-identical**: an assert plus a
+   `[AnimMigrate] REFUSED` error line, and the per-walk `Zenith_Tools_AnimMigrateReport`
+   asserts `scanned == migrated + skippedCurrent + failed` so a silently dropped file is
+   impossible to miss.
+
+**Two roots, reached differently, and that is not an inconsistency.**
+`PromoteToAuthoredOverride` keeps the SOURCE's root prefix and inserts `Authored/` directly
+under it, so an engine clip lands in `Zenith/Assets/Authored/…` and a game clip in
+`Games/<Game>/Assets/Authored/…`. The engine root comes from `ENGINE_ASSETS_DIR`, a define
+on the engine library this file compiles into. **`GAME_ASSETS_DIR` is a per-GAME project
+define and does not exist here** — every sibling exporter that appears to use it says so in
+prose, in a comment — so the game root is resolved at RUNTIME via
+`Zenith_AssetRegistry::ResolvePath("game:Authored")`, which is already populated by the time
+this phase runs. An unset game directory does **not** resolve to an empty string: `ResolvePath`
+returns the bare suffix, so the un-set case is detected by the resolution having done nothing
+at all, and gets its own log line rather than walking a stray `Authored` next to the exe.
+
+A missing root is SUCCESS with an all-zero report — which is the normal state today, and the
+same rule `ImportGlbsInDirectory` follows. It does **not** go through
+`Zenith_AssetRegistry`: loading a clip through the registry during a boot phase would cache a
+pre-migration asset that every later consumer would then resolve to.
 
 ---
 
