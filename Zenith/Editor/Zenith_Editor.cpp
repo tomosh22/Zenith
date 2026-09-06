@@ -33,6 +33,7 @@ void Zenith_EditorAddLogMessage(const char* szMessage, int eLevel, Zenith_LogCat
 #include "Zenith_SelectionSystem.h"
 #include "Zenith_Gizmo.h"
 #include "Zenith_UndoSystem.h"
+#include "Editor/Zenith_AnimationDocument.h"
 #include "Zenith_EditorSceneAccess.h"
 #include "TerrainEditor/Zenith_TerrainEditor.h"
 #include "Flux/Gizmos/Flux_GizmosImpl.h"
@@ -319,6 +320,13 @@ void Zenith_Editor::Initialise(Flux_PlatformAPI& xFluxBackend, Flux_GraphicsImpl
 	m_xEditorState.m_eGizmoMode = EditorGizmoMode::Translate;
 
 	// Material system is now managed by Zenith_AssetRegistry
+
+	// Anchors the animation-document TU and, through it, the animation undo-command
+	// TU against /OPT:REF - see Zenith_AnimationDocument_ForceLink. Nothing calls
+	// either for real until the dope-sheet panel lands (WU-3.2), at which point
+	// this line becomes redundant and harmless.
+	static const bool ls_bAnimDocLinked = Zenith_AnimationDocument_ForceLink();
+	(void)ls_bAnimDocLinked;
 
 	// Initialize editor subsystems
 	g_xEngine.Selection().Initialise();
