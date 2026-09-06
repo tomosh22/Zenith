@@ -826,14 +826,10 @@ bool Zenith_EditorPanel_Animation::Action_PickBoneAtPreviewPixel(float fPixelX, 
 // refusal rather than a silent success.
 //-----------------------------------------------------------------------------
 
-bool Zenith_EditorPanel_Animation::Action_BakeIKForSelectedChain(const Zenith_Maths::Vector3& xTargetModelSpace)
-{
-	// WU-4.4 — solves a TRANSIENT chain on a SCRATCH pose (never the controller's
-	// own, which would run IK twice on the same pose) and bakes the result down
-	// through Action_SetKeyForBones.
-	(void)xTargetModelSpace;
-	return false;
-}
+// Action_BakeIKForSelectedChain is FILLED in its own TU:
+// Zenith_EditorPanel_Animation_IK.cpp (WU-4.4). It solves a TRANSIENT chain on a
+// SCRATCH pose (never the controller's own, which would run IK twice on the same
+// pose) and bakes the result down through Action_SetKeyForBones.
 
 //=============================================================================
 // Events (WU-5B) — the inspector target and the emitted-event strip.
