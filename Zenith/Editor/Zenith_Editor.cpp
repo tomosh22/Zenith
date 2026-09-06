@@ -34,6 +34,7 @@ void Zenith_EditorAddLogMessage(const char* szMessage, int eLevel, Zenith_LogCat
 #include "Zenith_Gizmo.h"
 #include "Zenith_UndoSystem.h"
 #include "Editor/Zenith_AnimationDocument.h"
+#include "Editor/Zenith_AnimTimelineMath.h"
 #include "Zenith_EditorSceneAccess.h"
 #include "TerrainEditor/Zenith_TerrainEditor.h"
 #include "Flux/Gizmos/Flux_GizmosImpl.h"
@@ -327,6 +328,12 @@ void Zenith_Editor::Initialise(Flux_PlatformAPI& xFluxBackend, Flux_GraphicsImpl
 	// this line becomes redundant and harmless.
 	static const bool ls_bAnimDocLinked = Zenith_AnimationDocument_ForceLink();
 	(void)ls_bAnimDocLinked;
+
+	// Same anchor, same reason, for the timeline coordinate maths (WU-3.1): pure
+	// free functions with no caller until the dope-sheet panel lands, so without
+	// this /OPT:REF drops the TU and its unit tests with it.
+	static const bool ls_bAnimTimelineMathLinked = Zenith_AnimTimelineMath_ForceLink();
+	(void)ls_bAnimTimelineMathLinked;
 
 	// Initialize editor subsystems
 	g_xEngine.Selection().Initialise();
