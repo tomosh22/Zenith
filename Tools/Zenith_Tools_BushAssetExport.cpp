@@ -454,15 +454,42 @@ Zenith_MeshAsset* CreateBushFoliageMesh(const Zenith_Vector<BushBranch>& xBranch
 // ONE constant feeds both the duration and the key spread, so the two cannot drift.
 constexpr float fBUSH_SWAY_TOTAL_SECONDS = 4.0f;
 
+// ★ THE KEY SPREAD IS A 4 fps GRID, NOT THE 30 THE TICK RATE SAYS. 17 keys
+// inclusive across 4 s puts a key every 0.25 s, and 0.25 s is frame 7.5 at 30 fps —
+// not a frame at all. m_uAuthoredFrameRate (D6) is EDITORIAL INTENT, the grid a key
+// snaps to, so it is the 4 the spread actually implies; m_uTicksPerSecond stays 30
+// as provenance, and 30 is separately the rate the VAT RESAMPLES this curve at
+// (ExportBushVariant). Same three-numbers-three-meanings note as the tree's.
+constexpr uint32_t uBUSH_SWAY_AUTHORED_FPS = 4;
+
 Flux_AnimationClip* CreateBushSwayClip(const Zenith_Vector<BushBranch>& xBranches,
 	const BushVariantSpec& xSpec)
 {
 	Flux_AnimationClip* pxClip = new Flux_AnimationClip();
 	pxClip->SetName("Sway");
 	pxClip->SetDuration(fBUSH_SWAY_TOTAL_SECONDS);
-	// Provenance only: the 30 fps grid this curve was authored on (D3).
+	// Provenance only: the 30 fps rate this curve is resampled against (D3). See
+	// uBUSH_SWAY_AUTHORED_FPS above for why it is NOT the authoring grid.
 	pxClip->SetTicksPerSecond(30);
 	pxClip->SetLooping(true);
+
+	// ★ THE CLIP MUST NAME ITS RIG (D7/D8), AND IT IS PER-VARIANT. Each bush variant
+	// bakes its OWN skeleton (Meshes/Bushes/<Name>.zskel) with its own branch bones,
+	// so unlike the humanoid set there is no one shared rig to point at — a clip that
+	// named the wrong variant's rig would bind every channel by name to a skeleton
+	// with a different branch count and animate a subset of it, silently.
+	//
+	// engine:-prefixed, because Zenith_AssetRegistry::NormalizeAssetPath leaves a bare
+	// relative path exactly as it found it. (Note the mesh's own SetSkeletonPath below
+	// still passes a bare relative ref; that predates this and is not changed here.)
+	//
+	// This set writes NO .zmodel on purpose (see ExportBushVariant), so the preview
+	// reference is the skinned .zasset — the only renderable artifact it produces.
+	Flux_AnimationClipMetadata& xMetadata = pxClip->GetMetadata();
+	xMetadata.m_uAuthoredFrameRate  = uBUSH_SWAY_AUTHORED_FPS;
+	xMetadata.m_strSkeletonPath     = std::string("engine:Meshes/Bushes/") + xSpec.m_szName + ZENITH_SKELETON_EXT;
+	xMetadata.m_strPreviewModelPath = std::string("engine:Meshes/Bushes/") + xSpec.m_szName + ZENITH_MESH_ASSET_EXT;
+	xMetadata.m_bGenerated          = true;
 
 	constexpr u_int uKEYS = 17;
 

@@ -728,10 +728,25 @@ static void ExportMaterialTextures(const aiMaterial* pxMat, const aiScene* pxSce
 
 //------------------------------------------------------------------------------
 // Extract and export animations from scene
+//
+// ★ AN IMPORTED CLIP STILL NAMES ITS RIG (D7), AND IS STILL m_bGenerated (D8).
+// "Generated" here means REWRITTEN BY THE BAKE — this walk re-runs on every tools
+// boot and overwrites each <base>_<name>.zanim from the source file, so editing one
+// in place is pointless — NOT "procedural". The clip's skeleton is the .zskel THIS
+// SAME import writes for the model (strSkeletonPath, empty when the scene carried
+// no bones), and its preview model is the .zmodel it writes (strModelPath).
+//
+// Both arrive as ABSOLUTE filesystem paths, which is exactly the input
+// Zenith_AssetRegistry::NormalizeAssetPath is for: it converts an absolute path
+// under either asset root into its game:/engine: prefixed form. A ref that came out
+// bare would round-trip through the stream unchanged and resolve to nothing.
 //------------------------------------------------------------------------------
 static void ExtractAnimations(
 	const aiScene* pxScene,
-	const std::string& strBaseName)
+	const std::string& strBaseName,
+	const std::string& strSkeletonPath,
+	const std::string& strModelPath,
+	bool bHasSkeleton)
 {
 	if (pxScene->mNumAnimations == 0)
 	{
@@ -748,6 +763,18 @@ static void ExtractAnimations(
 		// Create animation clip
 		Flux_AnimationClip xClip;
 		xClip.LoadFromAssimp(pxAnim, pxScene->mRootNode);
+
+		Flux_AnimationClipMetadata& xMetadata = xClip.GetMetadata();
+		// The source file's own tick rate IS the grid an artist keyed on, and
+		// LoadFromAssimp has already resolved it (defaulting a declared 0 to 24), so
+		// it is the honest authored frame rate for an import. m_uTicksPerSecond keeps
+		// the same number as provenance; neither is applied to a key time (D3).
+		xMetadata.m_uAuthoredFrameRate  = xClip.GetTicksPerSecond();
+		xMetadata.m_strSkeletonPath     = bHasSkeleton
+			? Zenith_AssetRegistry::NormalizeAssetPath(strSkeletonPath)
+			: std::string();
+		xMetadata.m_strPreviewModelPath = Zenith_AssetRegistry::NormalizeAssetPath(strModelPath);
+		xMetadata.m_bGenerated          = true;
 
 		// Generate output filename
 		std::string strAnimName = pxAnim->mName.C_Str();
@@ -826,6 +853,10 @@ static void Export(const std::string& strFilename, const std::string& strExtensi
 	// ProcessNode will use it for skinned meshes)
 	std::string strSkeletonPath = strBaseName + ZENITH_SKELETON_EXT;
 
+	// Hoisted above ExtractAnimations: every clip this scene carries records it as
+	// the model to preview against, and the clips are written before the .zmodel is.
+	const std::string strModelPath = strBaseName + ZENITH_MODEL_EXT;
+
 	// Export meshes FIRST - this populates xBoneNameToIndex and xBoneNameToInvBindPose
 	// with the adjusted inverse bind poses that account for baked mesh transforms
 	std::vector<MeshExportInfo> xExportedMeshes;
@@ -842,8 +873,9 @@ static void Export(const std::string& strFilename, const std::string& strExtensi
 		ExtractSkeleton(pxScene, strSkeletonPath, xBoneNameToIndex, xBoneNameToInvBindPose);
 	}
 
-	// Export animations
-	ExtractAnimations(pxScene, strBaseName);
+	// Export animations. Runs AFTER the skeleton so bHasSkeleton is settled — a clip
+	// must not claim a .zskel this import never wrote.
+	ExtractAnimations(pxScene, strBaseName, strSkeletonPath, strModelPath, bHasSkeleton);
 
 	// Create and export model asset
 	Zenith_ModelAsset xModelAsset;
@@ -863,8 +895,7 @@ static void Export(const std::string& strFilename, const std::string& strExtensi
 		xModelAsset.AddMeshByPath(xMeshInfo.m_strMeshPath, xMaterialPaths);
 	}
 
-	// Export model asset
-	std::string strModelPath = strBaseName + ZENITH_MODEL_EXT;
+	// Export model asset (path computed above, beside the skeleton's)
 	xModelAsset.Export(strModelPath.c_str());
 
 	Zenith_Log(LOG_CATEGORY_TOOLS, "MODEL_EXPORT: Successfully exported %s (Meshes: %zu, Skeleton: %s)",

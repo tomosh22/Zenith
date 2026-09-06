@@ -15,6 +15,14 @@
 // the archetype. ZM_BuildCreatureClip therefore yields BYTE-IDENTICAL clip bytes
 // for every species of an archetype -- "author once per archetype".
 //
+// ★ THE BAKED .zanim IS NOT byte-identical across species, and that is deliberate.
+// Since D7 a clip records the RIG it animates, and a creature's rig is its own
+// per-species <Name>.zskel -- so the identity is stamped by a SECOND call
+// (ZM_ApplyCreatureClipRigIdentity) after the pure builder has authored the motion.
+// The purity claim above is about the MOTION, which is what "author once" buys;
+// read it as f(archetype, clip) -> curves, then f(species) -> which rig they are
+// for.
+//
 // ROTATION-ONLY (v1, load-bearing): the sampler REPLACES a bone's bind-local TRS
 // with a channel (it is NOT a delta). Bind-local ROTATION is identity for every
 // creature bone regardless of size class, so an absolute local rotation is
@@ -110,8 +118,42 @@ ZM_ArchetypeAnimFn ZM_GetArchetypeAnimBuilder(ZM_ARCHETYPE eArchetype);
 // Pure driver: set the golden metadata on xOut then dispatch the archetype
 // builder to append the rotation channels. Byte-identical for every species of
 // an archetype. Asserts eClip in range and a non-null builder.
+//
+// It stamps m_bGenerated (D8) and m_uAuthoredFrameRate (D6) -- both archetype-
+// independent constants, so the cross-species byte identity above survives them.
+// It does NOT stamp the skeleton or preview-model reference; see below.
 // ---------------------------------------------------------------------------
 void ZM_BuildCreatureClip(ZM_ARCHETYPE eArchetype, ZM_ANIM_CLIP eClip, Flux_AnimationClip& xOut);
+
+// ---------------------------------------------------------------------------
+// ★ THE RIG REFERENCE IS PER-SPECIES, AND THAT IS WHY IT IS A SECOND CALL.
+//
+// D7 wants every .zanim to name the rig it animates. A creature's rig is its OWN
+// <Name>.zskel -- ZM_CreatureGen bakes one per species, because bind-local
+// POSITION varies with size class -- so the reference cannot come from
+// ZM_BuildCreatureClip, which is handed an ARCHETYPE and by design knows nothing
+// about which of its species it is building for.
+//
+// Folding the species into that signature would ALSO destroy the one property the
+// whole generator exists for: a clip is pure f(archetype, clip), byte-identical
+// across every species of a body plan (CreatureAnimGen_SameArchetypeByteIdentical).
+// A per-species string in the metadata makes the BYTES differ by species, which is
+// correct for a baked file and wrong for the curve authoring the test pins. So the
+// two stay separate: the pure builder authors the MOTION, and this stamps the
+// IDENTITY of the thing the motion is for.
+//
+// ZM_ApplyCreatureClipRigIdentity writes m_strSkeletonPath (the species'
+// <Name>.zskel) and m_strPreviewModelPath (its <Name>.zmodel), both as the
+// canonical "game:" refs ZM_CreatureAssetPath produces -- NOT bare relative paths,
+// which Zenith_AssetRegistry::NormalizeAssetPath would leave alone and which
+// resolve to nothing.
+//
+// ZM_BuildCreatureClipForSpecies is the two together, and is what the disk bake
+// uses. Both are pure and all-config (no disk, no GPU), so the headless unit gate
+// exercises exactly what the bake writes.
+// ---------------------------------------------------------------------------
+void ZM_ApplyCreatureClipRigIdentity(ZM_SPECIES_ID eId, Flux_AnimationClip& xOut);
+void ZM_BuildCreatureClipForSpecies(ZM_SPECIES_ID eId, ZM_ANIM_CLIP eClip, Flux_AnimationClip& xOut);
 
 // ---------------------------------------------------------------------------
 // Determinism helpers (the same-inputs byte-identity gate machinery). Both fold
@@ -141,6 +183,14 @@ struct ZM_CreatureClipValidation
 	bool m_bTicksPerSecondPinned  = false;  // authoring-grid provenance == 24
 	bool m_bKeyTimesFitDuration   = false;  // D3: every key time in [0, duration] seconds
 	bool m_bLoopClosesIfLooping   = false;  // (looping only) per channel rot(t=0) ~= rot(t=duration)
+	// D7/D8. A clip that names no rig bakes, loads, plays and previews against
+	// nothing, and every other flag in this struct stays true while it does -- the
+	// motion is fine, it is just not attached to anything. Only NON-EMPTY is checked:
+	// this call is handed a clip and a skeleton MESH, never a species, so it cannot
+	// know WHICH ref is the right one (that is ZM_ApplyCreatureClipRigIdentity's job
+	// and ZM_Tests_CreatureAnimGen's SpeciesClipsNameTheirOwnRig).
+	bool m_bSkeletonPathSet       = false;  // D7: m_strSkeletonPath is non-empty
+	bool m_bGeneratedFlagSet      = false;  // D8: m_bGenerated is true
 	bool m_bAllValid              = false;   // AND of the above
 	char m_szFirstBadBone[uZM_GEN_BONE_NAME_MAX] = {};   // first channel name not in the skeleton
 };

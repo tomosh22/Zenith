@@ -126,10 +126,50 @@ void ZM_BuildCreatureClip(ZM_ARCHETYPE eArchetype, ZM_ANIM_CLIP eClip, Flux_Anim
 	xOut.SetDuration(ZM_CreatureClipDurationSeconds(eClip));
 	xOut.SetLooping(ZM_CreatureClipLooping(eClip));
 
+	// D6 / D8. Both are constants, so the cross-species byte identity this function
+	// exists to guarantee is untouched by them. The rig reference is NOT set here --
+	// it is per-species and would break exactly that property; see
+	// ZM_ApplyCreatureClipRigIdentity.
+	Flux_AnimationClipMetadata& xMetadata = xOut.GetMetadata();
+	xMetadata.m_uAuthoredFrameRate = uZM_CREATURE_ANIM_TICKS_PER_SECOND;
+	xMetadata.m_bGenerated         = true;
+
 	if (pxFn != nullptr)
 	{
 		pxFn(eClip, xOut);
 	}
+}
+
+// ============================================================================
+// Per-species rig identity (D7). See the header for why this is not folded into
+// ZM_BuildCreatureClip.
+// ============================================================================
+void ZM_ApplyCreatureClipRigIdentity(ZM_SPECIES_ID eId, Flux_AnimationClip& xOut)
+{
+	Flux_AnimationClipMetadata& xMetadata = xOut.GetMetadata();
+
+	// ZM_CreatureAssetPath is the SINGLE source of truth for a species' file layout
+	// and emits the canonical "game:" ref, so nothing here spells a path. A ref that
+	// overflowed the buffer is left EMPTY rather than truncated: a truncated ref
+	// resolves to a plausible-looking neighbouring file, an empty one is caught by
+	// ZM_ValidateCreatureClip's m_bSkeletonPathSet.
+	char acSkeletonRef[512];
+	if (ZM_CreatureAssetPath(eId, ZM_CREATURE_ASSET_SKELETON, acSkeletonRef, sizeof(acSkeletonRef)))
+	{
+		xMetadata.m_strSkeletonPath = acSkeletonRef;
+	}
+
+	char acModelRef[512];
+	if (ZM_CreatureAssetPath(eId, ZM_CREATURE_ASSET_MODEL, acModelRef, sizeof(acModelRef)))
+	{
+		xMetadata.m_strPreviewModelPath = acModelRef;
+	}
+}
+
+void ZM_BuildCreatureClipForSpecies(ZM_SPECIES_ID eId, ZM_ANIM_CLIP eClip, Flux_AnimationClip& xOut)
+{
+	ZM_BuildCreatureClip(ZM_GetSpeciesData(eId).m_eArchetype, eClip, xOut);
+	ZM_ApplyCreatureClipRigIdentity(eId, xOut);
 }
 
 // ============================================================================
@@ -247,6 +287,12 @@ ZM_CreatureClipValidation ZM_ValidateCreatureClip(const Flux_AnimationClip& xCli
 
 	xV.m_bLoopClosesIfLooping    = bLooping ? bLoopCloses : true;   // meaningful only when looping
 
+	// D7 / D8: the clip says what rig it is for, and that the bake owns it. Both are
+	// invisible to every other flag above -- a clip with perfect motion and an empty
+	// skeleton ref previews as nothing at all.
+	xV.m_bSkeletonPathSet        = !xClip.GetMetadata().m_strSkeletonPath.empty();
+	xV.m_bGeneratedFlagSet       = xClip.GetMetadata().m_bGenerated;
+
 	xV.m_bAllValid = xV.m_bHasChannels
 		&& xV.m_bAllChannelsBindToBone
 		&& xV.m_bAllChannelsHaveRotKeys
@@ -254,7 +300,9 @@ ZM_CreatureClipValidation ZM_ValidateCreatureClip(const Flux_AnimationClip& xCli
 		&& xV.m_bDurationPositive
 		&& xV.m_bTicksPerSecondPinned
 		&& xV.m_bKeyTimesFitDuration
-		&& xV.m_bLoopClosesIfLooping;
+		&& xV.m_bLoopClosesIfLooping
+		&& xV.m_bSkeletonPathSet
+		&& xV.m_bGeneratedFlagSet;
 	return xV;
 }
 
@@ -288,7 +336,10 @@ bool ZM_BakeCreatureClips(ZM_SPECIES_ID eId)
 		const ZM_ANIM_CLIP eClip = (ZM_ANIM_CLIP)c;
 
 		Flux_AnimationClip xClip;
-		ZM_BuildCreatureClip(eArch, eClip, xClip);
+		// ...ForSpecies: the motion is f(archetype, clip), but the BAKED file names
+		// this species' own .zskel / .zmodel (D7). A clip baked through the pure
+		// builder alone would ship naming no rig at all.
+		ZM_BuildCreatureClipForSpecies(eId, eClip, xClip);
 
 		// ZM_CreatureAssetPath is the SINGLE source of truth for the per-clip filename
 		// (the "game:" ref); resolve it to the absolute FS path whose folder the mesh

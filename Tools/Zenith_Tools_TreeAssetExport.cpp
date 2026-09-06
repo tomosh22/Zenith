@@ -468,15 +468,42 @@ Zenith_MeshAsset* CreateTreeLeavesMesh(const Zenith_Vector<TreeBranch>& xGraph, 
 // ONE constant feeds both the duration and the key spread, so the two cannot drift.
 constexpr float fSWAY_TOTAL_SECONDS = 4.0f;
 
+// ★ THE KEY SPREAD IS A 4 fps GRID, NOT THE 30 THE TICK RATE SAYS. 17 keys
+// inclusive across 4 s puts a key every 0.25 s, and 0.25 s is frame 7.5 at 30 fps
+// — not a frame at all. m_uAuthoredFrameRate (D6) is EDITORIAL INTENT, the grid a
+// key snaps to, so it is the 4 that the spread actually implies; m_uTicksPerSecond
+// stays 30 as import/re-export provenance, and 30 is separately the rate the VAT
+// RESAMPLES this curve at (ExportTreeMeshSet). Three numbers, three meanings; the
+// comment that used to sit on SetTicksPerSecond claimed 30 was "the grid this curve
+// was authored on", which the spread contradicts.
+constexpr uint32_t uSWAY_AUTHORED_FPS = 4;
+
+// The tree set writes no .zmodel — the terrain brush and the instanced component
+// consume the .zasset/.zgeom pair directly — so the clip's preview reference is the
+// skinned MESH asset, which is the only renderable artifact this bake produces.
+constexpr const char* szTREE_SKELETON_REF   = "engine:Meshes/ProceduralTree/Tree" ZENITH_SKELETON_EXT;
+constexpr const char* szTREE_PREVIEW_REF    = "engine:Meshes/ProceduralTree/Tree" ZENITH_MESH_ASSET_EXT;
+
 Flux_AnimationClip* CreateTreeSwayClipFromGraph(const Zenith_Vector<TreeBranch>& xGraph)
 {
 	Flux_AnimationClip* pxClip = new Flux_AnimationClip();
 	pxClip->SetName("Sway");
 	pxClip->SetDuration(fSWAY_TOTAL_SECONDS);
-	// Provenance only: the 30 fps grid this curve was authored on. Nothing samples
-	// through it (D3).
+	// Provenance only: the 30 fps rate this curve is re-exported and resampled
+	// against. Nothing samples through it (D3). See uSWAY_AUTHORED_FPS above for
+	// why it is NOT the authoring grid.
 	pxClip->SetTicksPerSecond(30);
 	pxClip->SetLooping(true);
+
+	// ★ THE .zanim MUST NAME ITS RIG (D7/D8). engine:-prefixed, because
+	// Zenith_AssetRegistry::NormalizeAssetPath leaves a bare relative path exactly as
+	// it found it and a ref that resolves to nothing is indistinguishable from a
+	// correct one until something tries to load it.
+	Flux_AnimationClipMetadata& xMetadata = pxClip->GetMetadata();
+	xMetadata.m_uAuthoredFrameRate  = uSWAY_AUTHORED_FPS;
+	xMetadata.m_strSkeletonPath     = szTREE_SKELETON_REF;
+	xMetadata.m_strPreviewModelPath = szTREE_PREVIEW_REF;
+	xMetadata.m_bGenerated          = true;
 
 	constexpr u_int uKEYS = 17;            // every 0.25 s across the 4 s loop
 

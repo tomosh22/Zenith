@@ -16,6 +16,10 @@
 //       authored quat is finite and ~unit-length      -- ChannelsMatchSkeleton
 //   (2) the whole ZM_ValidateCreatureClip contract holds -- ValidationPasses
 //   (3) golden clip metadata (names / durations / looping / ticks-per-second)
+//  (3b) D7/D8 rig identity: a species' clip names that species' OWN .zskel /
+//       .zmodel and is flagged m_bGenerated -- SpeciesClipsNameTheirOwnRig; and the
+//       identity differs across two species of one archetype while the MOTION does
+//       not                                    -- RigIdentityDiffersWhileMotionDoesNot
 //   (4) clips are PURE f(archetype, clip): byte-identical across two species of
 //       one archetype                                  -- SameArchetypeByteIdentical
 //   (5) same-inputs determinism (repeat build byte-identical)
@@ -236,13 +240,16 @@ ZENITH_TEST(ZM_Gen, CreatureAnimGen_ValidationPasses)
 
 		ZM_GenMesh xMesh;
 		ZM_BuildCreatureMesh(ZM_ResolveCreatureRecipe(eId), xMesh);
-		const ZM_ARCHETYPE eArch = ZM_GetSpeciesData(eId).m_eArchetype;
 
 		for (u_int c = 0; c < (u_int)ZM_ANIM_CLIP_COUNT; ++c)
 		{
 			const ZM_ANIM_CLIP eClip = (ZM_ANIM_CLIP)c;
 			Flux_AnimationClip xClip;
-			ZM_BuildCreatureClip(eArch, eClip, xClip);
+			// ...ForSpecies, because the validation contract now includes D7's
+			// "the clip names a rig" and only the species knows which .zskel that is.
+			// This is also what the disk bake calls, so the gate validates the shape
+			// that actually reaches a file rather than an intermediate one.
+			ZM_BuildCreatureClipForSpecies(eId, eClip, xClip);
 
 			const ZM_CreatureClipValidation xVal =
 				ZM_ValidateCreatureClip(xClip, xMesh, ZM_CreatureClipLooping(eClip));
@@ -289,6 +296,129 @@ ZENITH_TEST(ZM_Gen, CreatureAnimGen_ClipMetadataGolden)
 		ZENITH_ASSERT_EQ(xClip.IsLooping(), xG.m_bLooping,
 			"clip %u built-clip looping != golden", c);
 	}
+}
+
+// ############################################################################
+// (3b) D7 / D8: a SPECIES' clip names that species' OWN rig, and says the bake
+//      owns it.
+//
+// ★ "NON-EMPTY" WOULD BE THE WRONG ASSERTION HERE, and it is the one
+// ZM_ValidateCreatureClip is stuck with (it is handed a clip and a skeleton MESH,
+// never a species). The failure this catches is not an empty ref -- it is EVERY
+// species carrying the SAME ref, which is precisely what folding the stamp into
+// the archetype-pure builder would produce. Every channel would still bind by
+// name, every clip would still validate, and 150 creatures would preview against
+// one arbitrary skeleton. So this asserts the exact per-species string from
+// ZM_CreatureAssetPath and, below, that two species of ONE archetype disagree.
+//
+// The CONTRAST also protects the purity gate in (4) from the opposite mistake: the
+// motion must still be identical across those two species while the identity
+// differs.
+// ############################################################################
+
+ZENITH_TEST(ZM_Gen, CreatureAnimGen_SpeciesClipsNameTheirOwnRig)
+{
+	u_int uTested = 0u;
+	for (u_int id = 0; id < (u_int)ZM_SPECIES_COUNT; ++id)
+	{
+		const ZM_SPECIES_ID eId = (ZM_SPECIES_ID)id;
+		if (!HasAnimBuilder(eId)) { continue; }
+		++uTested;
+
+		// ★ THE REFS ARE BUILT OUTSIDE THE ASSERT. ZENITH_ASSERT_TRUE compiles to
+		// ((void)0) when ZENITH_TESTING is off, so a call placed inside it stops
+		// happening -- harmless here, but the habit is how a "test" quietly becomes a
+		// no-op that still reads as coverage.
+		char acSkeletonRef[512] = {};
+		char acModelRef[512]    = {};
+		const bool bSkeletonRefFits = ZM_CreatureAssetPath(eId, ZM_CREATURE_ASSET_SKELETON, acSkeletonRef, sizeof(acSkeletonRef));
+		const bool bModelRefFits    = ZM_CreatureAssetPath(eId, ZM_CREATURE_ASSET_MODEL, acModelRef, sizeof(acModelRef));
+		ZENITH_ASSERT_TRUE(bSkeletonRefFits, "species %u skeleton ref overflowed its buffer", id);
+		ZENITH_ASSERT_TRUE(bModelRefFits, "species %u model ref overflowed its buffer", id);
+
+		for (u_int c = 0; c < (u_int)ZM_ANIM_CLIP_COUNT; ++c)
+		{
+			const ZM_ANIM_CLIP eClip = (ZM_ANIM_CLIP)c;
+			Flux_AnimationClip xClip;
+			ZM_BuildCreatureClipForSpecies(eId, eClip, xClip);
+			const Flux_AnimationClipMetadata& xMeta = xClip.GetMetadata();
+
+			ZENITH_ASSERT_STREQ(xMeta.m_strSkeletonPath.c_str(), acSkeletonRef,
+				"species %u clip %u does not name that species' own .zskel", id, c);
+			ZENITH_ASSERT_STREQ(xMeta.m_strPreviewModelPath.c_str(), acModelRef,
+				"species %u clip %u does not name that species' own .zmodel", id, c);
+			ZENITH_ASSERT_TRUE(xMeta.m_bGenerated,
+				"species %u clip %u is rewritten in full by every bake but does not say so (D8)", id, c);
+			ZENITH_ASSERT_EQ(xMeta.m_uAuthoredFrameRate, uZM_CREATURE_ANIM_TICKS_PER_SECOND,
+				"species %u clip %u authored frame rate is not the generator's own grid", id, c);
+		}
+	}
+	ZENITH_ASSERT_GT(uTested, 0u, "no anim-buildable species exercised the rig-identity gate");
+}
+
+ZENITH_TEST(ZM_Gen, CreatureAnimGen_RigIdentityDiffersWhileMotionDoesNot)
+{
+	// The pair of properties that only make sense together: two species of ONE body
+	// plan get the SAME curves and DIFFERENT rig references. Assert both on the same
+	// two clips, so neither can be satisfied by collapsing into the other.
+	ZM_ARCHETYPE aeArch[ZM_ARCHETYPE_COUNT];
+	const u_int uArch = WiredAnimArchetypes(aeArch, (u_int)ZM_ARCHETYPE_COUNT);
+	ZENITH_ASSERT_GT(uArch, 0u, "no wired anim archetypes (harness would be vacuous)");
+
+	u_int uTestedArch = 0u;
+	for (u_int ia = 0; ia < uArch; ++ia)
+	{
+		ZM_SPECIES_ID eA = (ZM_SPECIES_ID)0;   // placeholders; only read when uFound == 2
+		ZM_SPECIES_ID eB = (ZM_SPECIES_ID)0;
+		if (FindTwoSpeciesOfArchetype(aeArch[ia], eA, eB) < 2u) { continue; }
+		++uTestedArch;
+
+		Flux_AnimationClip xSpeciesClipA;
+		Flux_AnimationClip xSpeciesClipB;
+		ZM_BuildCreatureClipForSpecies(eA, ZM_ANIM_CLIP_IDLE, xSpeciesClipA);
+		ZM_BuildCreatureClipForSpecies(eB, ZM_ANIM_CLIP_IDLE, xSpeciesClipB);
+
+		ZENITH_ASSERT_FALSE(xSpeciesClipA.GetMetadata().m_strSkeletonPath ==
+		                    xSpeciesClipB.GetMetadata().m_strSkeletonPath,
+			"two species of archetype %u share a skeleton ref -- the stamp is not per-species",
+			(u_int)aeArch[ia]);
+
+		// ...and the MOTION is still identical. Compare the curves directly rather
+		// than the serialized bytes, which now legitimately differ by the two strings.
+		const Zenith_HashMap<std::string, Flux_BoneChannel>& xChannelsA = xSpeciesClipA.GetBoneChannels();
+		const Zenith_HashMap<std::string, Flux_BoneChannel>& xChannelsB = xSpeciesClipB.GetBoneChannels();
+		ZENITH_ASSERT_EQ(xChannelsA.GetSize(), xChannelsB.GetSize(),
+			"archetype %u: two species disagree on channel count", (u_int)aeArch[ia]);
+
+		Zenith_HashMap<std::string, Flux_BoneChannel>::Iterator xIt(xChannelsA);
+		for (; !xIt.Done(); xIt.Next())
+		{
+			const Flux_BoneChannel& xChannelA = xIt.GetValue();
+			const Flux_BoneChannel* pxChannelB = xSpeciesClipB.GetBoneChannel(xChannelA.GetBoneName());
+			ZENITH_ASSERT_TRUE(pxChannelB != nullptr,
+				"archetype %u: channel '%s' is missing from the second species",
+				(u_int)aeArch[ia], xChannelA.GetBoneName().c_str());
+			if (pxChannelB == nullptr) { continue; }
+
+			const Zenith_Vector<std::pair<Zenith_Maths::Quat, float>>& xKeysA = xChannelA.GetRotationKeyframes();
+			const Zenith_Vector<std::pair<Zenith_Maths::Quat, float>>& xKeysB = pxChannelB->GetRotationKeyframes();
+			ZENITH_ASSERT_EQ(xKeysA.GetSize(), xKeysB.GetSize(),
+				"archetype %u channel '%s': key counts differ across species",
+				(u_int)aeArch[ia], xChannelA.GetBoneName().c_str());
+			for (u_int k = 0; k < xKeysA.GetSize() && k < xKeysB.GetSize(); ++k)
+			{
+				ZENITH_ASSERT_LE(fabsf(xKeysA.Get(k).second - xKeysB.Get(k).second), fTIME_TOL,
+					"archetype %u channel '%s' key %u: time differs across species",
+					(u_int)aeArch[ia], xChannelA.GetBoneName().c_str(), k);
+				ZENITH_ASSERT_GE(QuatAbsDot(xKeysA.Get(k).first, xKeysB.Get(k).first), fDOT_CLOSE,
+					"archetype %u channel '%s' key %u: rotation differs across species -- the "
+					"motion is no longer pure f(archetype, clip)",
+					(u_int)aeArch[ia], xChannelA.GetBoneName().c_str(), k);
+			}
+		}
+	}
+	ZENITH_ASSERT_GT(uTestedArch, 0u,
+		"no wired archetype had two distinct species to compare (harness would be vacuous)");
 }
 
 // ############################################################################

@@ -7,7 +7,7 @@ extern void GenerateTestAssets();
 // Generate StickFigure human test assets
 // Creates: skeleton (16-bone rig, unchanged layout), smooth lofted body mesh,
 // mesh geometry, static mesh, painted texture atlas (albedo/normal/RM),
-// body material, model bundle, and 13 animations
+// body material, model bundle, and 17 animations
 // Output: ENGINE_ASSETS_DIR/Meshes/StickFigure/
 extern void GenerateStickFigureAssets();
 

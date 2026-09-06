@@ -199,6 +199,59 @@ ZENITH_TEST(BushAssets, SwayClipDrivesEveryBranchAndClosesItsLoop)
 	}
 }
 
+ZENITH_TEST(BushAssets, SwayClipCarriesItsOwnVariantsRigIdentity)
+{
+	// D7 / D8. A .zanim (or, here, an in-memory clip on its way into a VAT) whose
+	// m_strSkeletonPath is empty bakes, loads and previews against nothing, and no
+	// other assertion in this file would notice -- the VAT bake is handed the
+	// skeleton explicitly, so it succeeds regardless of what the clip's metadata
+	// says about which rig it belongs to.
+	//
+	// ★ PER-VARIANT, NOT SHARED. Each bush bakes its own skeleton with its own
+	// branch count, so the interesting failure is not "empty" but "the other
+	// variant's" -- which would bind a subset of the channels by name and animate a
+	// partial bush. Asserting the exact per-variant string is what separates those.
+	//
+	// ★ AND THE engine: PREFIX IS PART OF IT. NormalizeAssetPath leaves a bare
+	// RELATIVE path exactly as it found it, so "Meshes/Bushes/Broad.zskel" would pass
+	// a non-empty check, round-trip unchanged, and resolve to nothing.
+	for (int iVariant = 0; iVariant < iBUSH_SHAPES; iVariant++)
+	{
+		const BushVariantSpec xSpec = BushVariantAt(iVariant);
+		Zenith_Vector<BushBranch> xBranches;
+		Zenith_Vector<BushCard> xCards;
+		Bush_BuildVariant(xBranches, xCards, iVariant);
+		Flux_AnimationClip* pxClip = CreateBushSwayClip(xBranches, xSpec);
+		const Flux_AnimationClipMetadata& xMetadata = pxClip->GetMetadata();
+
+		const std::string strExpectedSkeleton =
+			std::string("engine:Meshes/Bushes/") + xSpec.m_szName + ZENITH_SKELETON_EXT;
+		const std::string strExpectedPreview =
+			std::string("engine:Meshes/Bushes/") + xSpec.m_szName + ZENITH_MESH_ASSET_EXT;
+
+		ZENITH_ASSERT_STREQ(xMetadata.m_strSkeletonPath.c_str(), strExpectedSkeleton.c_str(),
+			"the sway clip does not name THIS variant's own rig, engine:-prefixed");
+		ZENITH_ASSERT_STREQ(xMetadata.m_strPreviewModelPath.c_str(), strExpectedPreview.c_str(),
+			"the sway clip names nothing to preview it on");
+		ZENITH_ASSERT_TRUE(xMetadata.m_bGenerated,
+			"the sway clip is rewritten in full by every tools boot but does not say so (D8)");
+		// D6: the key spread is one key every 0.25 s, which is a 4 fps grid. 30 is the
+		// VAT's resample rate and the clip's tick provenance, and is deliberately NOT
+		// this number -- 0.25 s is frame 7.5 at 30 fps, so 30 is a grid these keys do
+		// not land on.
+		ZENITH_ASSERT_EQ(xMetadata.m_uAuthoredFrameRate, 4u,
+			"the authored grid must be the one the keys actually land on");
+
+		// D3: and the keys fit inside the duration they are spread over. Unlike the
+		// StickFigure Fire clip there is no exemption here -- the spread is computed
+		// from fBUSH_SWAY_TOTAL_SECONDS itself, so the last key IS the duration.
+		ZENITH_ASSERT_TRUE(Flux_ClipKeyTimesFitDuration(*pxClip),
+			"a sway key lands past the clip duration");
+
+		delete pxClip;
+	}
+}
+
 ZENITH_TEST(BushAssets, TheVATBakesRealFramesForEveryVariant)
 {
 	// End-to-end through the production chain: skinned geometry -> bake. A

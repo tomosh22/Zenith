@@ -1,4 +1,5 @@
 #include "UnitTests/Zenith_UnitTests.h"
+#include "Core/Zenith_TestFramework.h"
 #include "Flux/MeshAnimation/Flux_AnimationClip.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
@@ -342,6 +343,133 @@ ZENITH_TEST(ProceduralTree, LeafMaterialIsAlphaMasked)
 		"Leaf material must be MASKED so the alpha mask cuts the leaves out");
 	ZENITH_ASSERT_EQ_FLOAT(pxLeaves->GetAlphaCutoff(), 0.45f, 0.0001f,
 		"Leaf alpha cutoff must stay 0.45");
+}
+
+// ----- Rig identity + key-time/duration agreement, across ALL SEVENTEEN clips ----
+//
+// ★ THE POPULATION IS THE POINT. Every other clip test in this file names ONE
+// factory, so a clip added later inherits no coverage at all -- which is exactly
+// how the four tennis clips arrived without the file header's "13 clips" moving.
+// These two iterate the whole export set, so a new factory is covered the moment
+// it is listed and an omitted listing is the only way to escape them.
+
+namespace
+{
+	typedef Flux_AnimationClip* (*StickFigureClipFactoryFn)();
+
+	struct StickFigureClipFactory
+	{
+		StickFigureClipFactoryFn m_pfnCreate;
+		const char*              m_szName;
+	};
+
+	// Exactly the set GenerateStickFigureAssets exports (its axClips table), in the
+	// same order. SEVENTEEN.
+	const StickFigureClipFactory axSTICKFIGURE_CLIP_FACTORIES[] =
+	{
+		{ &CreateIdleAnimation,        "Idle"        },
+		{ &CreateWalkAnimation,        "Walk"        },
+		{ &CreateRunAnimation,         "Run"         },
+		{ &CreateAttack1Animation,     "Attack1"     },
+		{ &CreateAttack2Animation,     "Attack2"     },
+		{ &CreateAttack3Animation,     "Attack3"     },
+		{ &CreateDodgeAnimation,       "Dodge"       },
+		{ &CreateHitAnimation,         "Hit"         },
+		{ &CreateDeathAnimation,       "Death"       },
+		{ &CreateAimAnimation,         "Aim"         },
+		{ &CreateFireAnimation,        "Fire"        },
+		{ &CreateReloadAnimation,      "Reload"      },
+		{ &CreateJumpAnimation,        "Jump"        },
+		{ &CreateServeAnimation,       "Serve"       },
+		{ &CreateForehandAnimation,    "Forehand"    },
+		{ &CreateBackhandAnimation,    "Backhand"    },
+		{ &CreateReadyStanceAnimation, "ReadyStance" },
+	};
+
+	constexpr u_int uSTICKFIGURE_CLIP_COUNT =
+		static_cast<u_int>(sizeof(axSTICKFIGURE_CLIP_FACTORIES) / sizeof(axSTICKFIGURE_CLIP_FACTORIES[0]));
+}
+
+ZENITH_TEST(StickFigureProcAnim, EveryClipCarriesTheSharedRigIdentity)
+{
+	// D7 / D8. A .zanim whose m_strSkeletonPath is empty loads, plays and reports
+	// no error -- the animator simply has nothing to retarget onto and the preview
+	// has nothing to draw. Nothing downstream distinguishes that from a clip that
+	// happens to drive no visible bone, so the metadata is where it has to be
+	// caught.
+	//
+	// ★ AND THE PREFIX IS PART OF THE ASSERTION, not decoration.
+	// Zenith_AssetRegistry::NormalizeAssetPath leaves a bare RELATIVE path exactly
+	// as it found it, so "Meshes/StickFigure/StickFigure.zskel" would satisfy a
+	// "non-empty" check, round-trip through the stream unchanged, and resolve to
+	// nothing (Docs/HumanoidImport.md invariant 6).
+	ZENITH_ASSERT_EQ(uSTICKFIGURE_CLIP_COUNT, 17u,
+		"the StickFigure clip set is seventeen -- update the export table and this list together");
+
+	for (u_int u = 0; u < uSTICKFIGURE_CLIP_COUNT; u++)
+	{
+		const StickFigureClipFactory& xFactory = axSTICKFIGURE_CLIP_FACTORIES[u];
+		Flux_AnimationClip* pxClip = xFactory.m_pfnCreate();
+		const Flux_AnimationClipMetadata& xMetadata = pxClip->GetMetadata();
+
+		ZENITH_ASSERT_STREQ(pxClip->GetName().c_str(), xFactory.m_szName,
+			"clip %u is not the one this table says it is", u);
+		ZENITH_ASSERT_STREQ(xMetadata.m_strSkeletonPath.c_str(),
+			"engine:Meshes/StickFigure/StickFigure.zskel",
+			"clip '%s' does not name the ONE shared humanoid rig, engine:-prefixed", xFactory.m_szName);
+		ZENITH_ASSERT_STREQ(xMetadata.m_strPreviewModelPath.c_str(),
+			"engine:Meshes/StickFigure/StickFigure.zmodel",
+			"clip '%s' names no model to preview it on", xFactory.m_szName);
+		ZENITH_ASSERT_TRUE(xMetadata.m_bGenerated,
+			"clip '%s' is rewritten in full by every tools boot but does not say so (D8)", xFactory.m_szName);
+		ZENITH_ASSERT_EQ(xMetadata.m_uAuthoredFrameRate, 24u,
+			"clip '%s' authored frame rate must be the 24 fps grid HumanFrameSeconds divides by", xFactory.m_szName);
+
+		delete pxClip;
+	}
+}
+
+ZENITH_TEST(StickFigureProcAnim, EveryClipsKeysFitInsideItsDuration)
+{
+	// D3 made "the last key lands at or before the end" a checkable property, and
+	// this is the check. A generator that authored on one grid and stated its
+	// length on another produces a clip that samples correctly for its first
+	// fraction and then holds its last pose -- visible as a freeze, invisible to
+	// every value-based assertion in this file.
+	//
+	// ★ FIRE IS EXEMPT, DELIBERATELY, AND THE NUMBERS ARE HERE SO THE EXEMPTION CAN
+	// BE FALSIFIED. CreateFireAnimation's recoil channels carry a settle key at
+	// authored frame 5, which is 5/24 = 0.208333 s, against a stated duration of
+	// 0.20 s -- 8.3 ms past the end. Decision D13 permits a key past the duration
+	// (the mutators do not veto one; a panel warns), and the duration itself is
+	// PINNED at 0.20f by FireClipMetadata above, so moving the duration to 0.2083 s
+	// to close the gap would red that test instead. The exemption is the smaller
+	// lie of the two, and it is one clip.
+	for (u_int u = 0; u < uSTICKFIGURE_CLIP_COUNT; u++)
+	{
+		const StickFigureClipFactory& xFactory = axSTICKFIGURE_CLIP_FACTORIES[u];
+		Flux_AnimationClip* pxClip = xFactory.m_pfnCreate();
+
+		const bool bIsFire = (std::string(xFactory.m_szName) == "Fire");
+		if (bIsFire)
+		{
+			// Pin the exemption's own numbers, so it stops being true the moment Fire
+			// is retimed -- an exemption nothing measures is an exemption that outlives
+			// its reason.
+			ZENITH_ASSERT_EQ_FLOAT(pxClip->GetDuration(), 0.20f, 1e-4f,
+				"Fire's duration moved; re-derive the D13 exemption below it");
+			ZENITH_ASSERT_EQ_FLOAT(Flux_ClipLastKeyTimeSeconds(*pxClip), 5.0f / 24.0f, 1e-4f,
+				"Fire's last key is no longer authored frame 5 -- the D13 exemption may be unnecessary now");
+		}
+		else
+		{
+			ZENITH_ASSERT_TRUE(Flux_ClipKeyTimesFitDuration(*pxClip),
+				"clip '%s' carries a key past its %.4f s duration (last key at %.4f s)",
+				xFactory.m_szName, pxClip->GetDuration(), Flux_ClipLastKeyTimeSeconds(*pxClip));
+		}
+
+		delete pxClip;
+	}
 }
 
 // ----- The proportion warp actually reaching the mesh -------------------------

@@ -24,11 +24,20 @@
 //     StickFigure.zmodel            — mesh + skeleton + material bundle (the
 //                                     games' create-if-missing fallbacks are
 //                                     superseded by this canonical export)
-//     StickFigure_<Anim>.zanim      — 13 clips (Idle/Walk/Run/Attack1-3/Dodge/
-//                                     Hit/Death/Aim/Fire/Reload/Jump), authored
+//     StickFigure_<Anim>.zanim      — 17 clips (Idle/Walk/Run/Attack1-3/Dodge/
+//                                     Hit/Death/Aim/Fire/Reload/Jump/Serve/
+//                                     Forehand/Backhand/ReadyStance), authored
 //                                     from gait curves + eased key poses.
 //                                     Names/durations/looping are pinned by
 //                                     unit tests and the Combat hit windows.
+//                                     (This said "13" until 2026-09-06: the four
+//                                     tennis clips were added without the count
+//                                     moving, and Docs/HumanoidImport.md has said
+//                                     seventeen the whole time.)
+//                                     Every one names the shared rig and the
+//                                     StickFigure model in its metadata (D7) and
+//                                     is flagged m_bGenerated (D8) — see
+//                                     HumanNewClip below.
 //     StickFigure.gltf              — Blender round-trip export
 //
 // Everything is deterministic — repeated boots regenerate byte-identical
@@ -2668,6 +2677,51 @@ constexpr float fHUMAN_ANIM_FPS = 24.0f;
 
 constexpr float HumanFrameSeconds(float fFrame) { return fFrame / fHUMAN_ANIM_FPS; }
 
+//------------------------------------------------------------------------------
+// ★ RIG IDENTITY IS SET BY THE FACTORY, NOT BY THE EXPORT LOOP (D7 / D8).
+//
+// All seventeen clips animate the SAME rig — there is exactly one humanoid
+// skeleton in this engine (Docs/HumanoidImport.md §1) — so stamping the reference
+// once in GenerateStickFigureAssets' export table would look like the tidier
+// place. It is set HERE instead, because a factory is also what the unit suite
+// calls: a clip that only acquires its skeleton reference on the way to disk is a
+// clip no headless test can check, and "this .zanim names its rig" is exactly the
+// property whose loss degrades a preview into a silent bind-pose mannequin.
+//
+// ★ THE engine: PREFIX IS LOAD-BEARING. Zenith_AssetRegistry::NormalizeAssetPath
+// converts an ABSOLUTE path into a prefixed one and leaves a bare RELATIVE path
+// exactly as it found it, so a ref spelled "Meshes/StickFigure/StickFigure.zskel"
+// serializes cleanly, loads cleanly, and resolves to nothing
+// (Docs/HumanoidImport.md invariant 6 — the defect that shipped once already).
+//------------------------------------------------------------------------------
+constexpr const char* szSTICKFIGURE_SKELETON_REF = "engine:Meshes/StickFigure/StickFigure" ZENITH_SKELETON_EXT;
+constexpr const char* szSTICKFIGURE_MODEL_REF    = "engine:Meshes/StickFigure/StickFigure" ZENITH_MODEL_EXT;
+
+// Construct a StickFigure clip with its name, length, loop flag AND rig identity
+// already set. fDurationSeconds is SECONDS (D3); the authoring grid is the same
+// fHUMAN_ANIM_FPS every key literal below is a frame index on, so the clip's
+// authored frame rate and its frame->second divisor cannot drift apart.
+Flux_AnimationClip* HumanNewClip(const char* szName, float fDurationSeconds, bool bLooping)
+{
+	Flux_AnimationClip* pxClip = new Flux_AnimationClip();
+	pxClip->SetName(szName);
+	pxClip->SetDuration(fDurationSeconds);
+	// IMPORT PROVENANCE ONLY (D3) — nothing samples through it. Kept equal to the
+	// authoring grid so a re-export to a tick-based format puts the keys back where
+	// they were.
+	pxClip->SetTicksPerSecond(static_cast<uint32_t>(fHUMAN_ANIM_FPS));
+	pxClip->SetLooping(bLooping);
+
+	Flux_AnimationClipMetadata& xMetadata = pxClip->GetMetadata();
+	xMetadata.m_uAuthoredFrameRate  = static_cast<uint32_t>(fHUMAN_ANIM_FPS);   // D6 — 24
+	xMetadata.m_strSkeletonPath     = szSTICKFIGURE_SKELETON_REF;               // D7
+	xMetadata.m_strPreviewModelPath = szSTICKFIGURE_MODEL_REF;                  // D7
+	// D8 — the bake rewrites all seventeen in full on every tools boot, so editing
+	// one in place is pointless and a consumer is entitled to know that.
+	xMetadata.m_bGenerated          = true;
+	return pxClip;
+}
+
 // Sample a continuous curve into a bone rotation channel. fTotalSeconds is the
 // clip's duration in SECONDS — key u lands at (u/(N-1)) * fTotalSeconds.
 // TFn: Zenith_Maths::Quat(float fT01).
@@ -2845,11 +2899,7 @@ void HumanBuildGaitClip(Flux_AnimationClip* pxClip, float fDurationSeconds,
 
 static Flux_AnimationClip* CreateIdleAnimation()
 {
-	Flux_AnimationClip* pxClip = new Flux_AnimationClip();
-	pxClip->SetName("Idle");
-	pxClip->SetDuration(2.0f);
-	pxClip->SetTicksPerSecond(24);
-	pxClip->SetLooping(true);
+	Flux_AnimationClip* pxClip = HumanNewClip("Idle", 2.0f, /*bLooping=*/true);
 
 	// 2.0 s of key spread, matching SetDuration above (was 48 ticks @ 24/s).
 	constexpr float fDURATION_SECONDS = 2.0f;
@@ -2916,11 +2966,7 @@ static Flux_AnimationClip* CreateIdleAnimation()
 
 static Flux_AnimationClip* CreateWalkAnimation()
 {
-	Flux_AnimationClip* pxClip = new Flux_AnimationClip();
-	pxClip->SetName("Walk");
-	pxClip->SetDuration(1.0f);
-	pxClip->SetTicksPerSecond(24);
-	pxClip->SetLooping(true);
+	Flux_AnimationClip* pxClip = HumanNewClip("Walk", 1.0f, /*bLooping=*/true);
 
 	// 1.0 s — the clip's own duration, in seconds (was 24 ticks @ 24/s).
 	HumanBuildGaitClip(pxClip, 1.0f,
@@ -2934,11 +2980,7 @@ static Flux_AnimationClip* CreateWalkAnimation()
 
 static Flux_AnimationClip* CreateRunAnimation()
 {
-	Flux_AnimationClip* pxClip = new Flux_AnimationClip();
-	pxClip->SetName("Run");
-	pxClip->SetDuration(0.5f);
-	pxClip->SetTicksPerSecond(24);
-	pxClip->SetLooping(true);
+	Flux_AnimationClip* pxClip = HumanNewClip("Run", 0.5f, /*bLooping=*/true);
 
 	// 0.5 s — the clip's own duration, in seconds (was 12 ticks @ 24/s).
 	HumanBuildGaitClip(pxClip, 0.5f,
@@ -2960,11 +3002,7 @@ static Flux_AnimationClip* CreateRunAnimation()
 static Flux_AnimationClip* CreateAttack1Animation()
 {
 	// Right straight jab: chamber, drive off the hips, snap back.
-	Flux_AnimationClip* pxClip = new Flux_AnimationClip();
-	pxClip->SetName("Attack1");
-	pxClip->SetDuration(0.4f);
-	pxClip->SetTicksPerSecond(24);
-	pxClip->SetLooping(false);
+	Flux_AnimationClip* pxClip = HumanNewClip("Attack1", 0.4f, /*bLooping=*/false);
 
 	const Zenith_Maths::Quat xId = glm::identity<Zenith_Maths::Quat>();
 
@@ -3045,11 +3083,7 @@ static Flux_AnimationClip* CreateAttack1Animation()
 static Flux_AnimationClip* CreateAttack2Animation()
 {
 	// Left hook: weight transfer, arcing swing across the body.
-	Flux_AnimationClip* pxClip = new Flux_AnimationClip();
-	pxClip->SetName("Attack2");
-	pxClip->SetDuration(0.4f);
-	pxClip->SetTicksPerSecond(24);
-	pxClip->SetLooping(false);
+	Flux_AnimationClip* pxClip = HumanNewClip("Attack2", 0.4f, /*bLooping=*/false);
 
 	const Zenith_Maths::Quat xId = glm::identity<Zenith_Maths::Quat>();
 
@@ -3130,11 +3164,7 @@ static Flux_AnimationClip* CreateAttack3Animation()
 {
 	// Two-handed overhead smash with a forward hop. Ends with the same small
 	// forward displacement the old clip established (Root z 0.1).
-	Flux_AnimationClip* pxClip = new Flux_AnimationClip();
-	pxClip->SetName("Attack3");
-	pxClip->SetDuration(0.5f);
-	pxClip->SetTicksPerSecond(24);
-	pxClip->SetLooping(false);
+	Flux_AnimationClip* pxClip = HumanNewClip("Attack3", 0.5f, /*bLooping=*/false);
 
 	const Zenith_Maths::Quat xId = glm::identity<Zenith_Maths::Quat>();
 
@@ -3229,11 +3259,7 @@ static Flux_AnimationClip* CreateDodgeAnimation()
 {
 	// Side-step dodge to the right: crouching push, lean into the motion,
 	// trailing leg crossing behind. Ends displaced (Root x 0.8, legacy contract).
-	Flux_AnimationClip* pxClip = new Flux_AnimationClip();
-	pxClip->SetName("Dodge");
-	pxClip->SetDuration(0.5f);
-	pxClip->SetTicksPerSecond(24);
-	pxClip->SetLooping(false);
+	Flux_AnimationClip* pxClip = HumanNewClip("Dodge", 0.5f, /*bLooping=*/false);
 
 	const Zenith_Maths::Quat xId = glm::identity<Zenith_Maths::Quat>();
 
@@ -3331,11 +3357,7 @@ static Flux_AnimationClip* CreateHitAnimation()
 {
 	// Impact from the front: head snaps, shoulders twist, a stagger step back
 	// with a partial recovery (the old clip's Root ends at -0.2; kept).
-	Flux_AnimationClip* pxClip = new Flux_AnimationClip();
-	pxClip->SetName("Hit");
-	pxClip->SetDuration(0.3f);
-	pxClip->SetTicksPerSecond(24);
-	pxClip->SetLooping(false);
+	Flux_AnimationClip* pxClip = HumanNewClip("Hit", 0.3f, /*bLooping=*/false);
 
 	const Zenith_Maths::Quat xId = glm::identity<Zenith_Maths::Quat>();
 
@@ -3414,11 +3436,7 @@ static Flux_AnimationClip* CreateDeathAnimation()
 	// Backward collapse in stages: impact recoil, knees buckle, fold to the
 	// ground, settle limp. Slight left/right asymmetry keeps it organic.
 	// Root descends to -1.0 (pelvis at ground level — legacy contract).
-	Flux_AnimationClip* pxClip = new Flux_AnimationClip();
-	pxClip->SetName("Death");
-	pxClip->SetDuration(1.0f);
-	pxClip->SetTicksPerSecond(24);
-	pxClip->SetLooping(false);
+	Flux_AnimationClip* pxClip = HumanNewClip("Death", 1.0f, /*bLooping=*/false);
 
 	const Zenith_Maths::Quat xId = glm::identity<Zenith_Maths::Quat>();
 
@@ -3553,11 +3571,7 @@ namespace StickFigureAimHoldPose
 
 static Flux_AnimationClip* CreateAimAnimation()
 {
-	Flux_AnimationClip* pxClip = new Flux_AnimationClip();
-	pxClip->SetName("Aim");
-	pxClip->SetDuration(0.5f);
-	pxClip->SetTicksPerSecond(24);
-	pxClip->SetLooping(true);
+	Flux_AnimationClip* pxClip = HumanNewClip("Aim", 0.5f, /*bLooping=*/true);
 
 	// Stable hold with a breathing waver on the mid keys. Keys 0, 3 and 12 are
 	// the EXACT hold pose: 0/12 pin the loop + the Fire/Reload transitions
@@ -3592,11 +3606,7 @@ static Flux_AnimationClip* CreateAimAnimation()
 
 static Flux_AnimationClip* CreateFireAnimation()
 {
-	Flux_AnimationClip* pxClip = new Flux_AnimationClip();
-	pxClip->SetName("Fire");
-	pxClip->SetDuration(0.20f);
-	pxClip->SetTicksPerSecond(24);
-	pxClip->SetLooping(false);
+	Flux_AnimationClip* pxClip = HumanNewClip("Fire", 0.20f, /*bLooping=*/false);
 
 	const Zenith_Maths::Vector3 xXAxis(1, 0, 0);
 
@@ -3632,11 +3642,7 @@ static Flux_AnimationClip* CreateFireAnimation()
 
 static Flux_AnimationClip* CreateReloadAnimation()
 {
-	Flux_AnimationClip* pxClip = new Flux_AnimationClip();
-	pxClip->SetName("Reload");
-	pxClip->SetDuration(1.5f);
-	pxClip->SetTicksPerSecond(24);
-	pxClip->SetLooping(false);
+	Flux_AnimationClip* pxClip = HumanNewClip("Reload", 1.5f, /*bLooping=*/false);
 
 	const Zenith_Maths::Quat xLeftUpperRest  = StickFigureAimHoldPose::LeftUpperArm();
 	const Zenith_Maths::Quat xLeftLowerRest  = StickFigureAimHoldPose::LeftLowerArm();
@@ -3724,11 +3730,7 @@ static Flux_AnimationClip* CreateJumpAnimation()
 	// Crouch -> explosive extension -> mid-air tuck -> landing absorb ->
 	// recover. Spine's final key is identity (pinned by
 	// JumpClipReturnsToIdentityAtEnd).
-	Flux_AnimationClip* pxClip = new Flux_AnimationClip();
-	pxClip->SetName("Jump");
-	pxClip->SetDuration(0.8f);
-	pxClip->SetTicksPerSecond(24);
-	pxClip->SetLooping(false);
+	Flux_AnimationClip* pxClip = HumanNewClip("Jump", 0.8f, /*bLooping=*/false);
 
 	const Zenith_Maths::Quat xId = glm::identity<Zenith_Maths::Quat>();
 
@@ -3835,11 +3837,7 @@ static Flux_AnimationClip* CreateServeAnimation()
 	// Overhead serve: knees load, left arm tosses, right arm cocks into the
 	// "trophy" behind the head, then drives up through an overhead contact and
 	// pronates down across the body. Modelled on the Attack3 smash, one-handed.
-	Flux_AnimationClip* pxClip = new Flux_AnimationClip();
-	pxClip->SetName("Serve");
-	pxClip->SetDuration(1.25f);          // 30 ticks @ 24 TPS
-	pxClip->SetTicksPerSecond(24);
-	pxClip->SetLooping(false);
+	Flux_AnimationClip* pxClip = HumanNewClip("Serve", 1.25f, /*bLooping=*/false);   // 30 frames @ 24 fps
 
 	const Zenith_Maths::Quat xId = glm::identity<Zenith_Maths::Quat>();
 
@@ -3951,11 +3949,7 @@ static Flux_AnimationClip* CreateForehandAnimation()
 	// Forehand drive: torso coils away (right shoulder back), then uncoils
 	// through a contact in front, racket arm sweeping right-to-left up over the
 	// left shoulder. The spine rotation carries the whole arm horizontally.
-	Flux_AnimationClip* pxClip = new Flux_AnimationClip();
-	pxClip->SetName("Forehand");
-	pxClip->SetDuration(0.75f);          // 18 ticks @ 24 TPS
-	pxClip->SetTicksPerSecond(24);
-	pxClip->SetLooping(false);
+	Flux_AnimationClip* pxClip = HumanNewClip("Forehand", 0.75f, /*bLooping=*/false);   // 18 frames @ 24 fps
 
 	const Zenith_Maths::Quat xId = glm::identity<Zenith_Maths::Quat>();
 
@@ -4046,11 +4040,7 @@ static Flux_AnimationClip* CreateBackhandAnimation()
 	// Two-handed backhand: torso coils the other way (right shoulder forward),
 	// both arms take the racket back across to the left, then sweep out to the
 	// right through contact.
-	Flux_AnimationClip* pxClip = new Flux_AnimationClip();
-	pxClip->SetName("Backhand");
-	pxClip->SetDuration(0.75f);          // 18 ticks @ 24 TPS
-	pxClip->SetTicksPerSecond(24);
-	pxClip->SetLooping(false);
+	Flux_AnimationClip* pxClip = HumanNewClip("Backhand", 0.75f, /*bLooping=*/false);   // 18 frames @ 24 fps
 
 	const Zenith_Maths::Quat xId = glm::identity<Zenith_Maths::Quat>();
 
@@ -4140,11 +4130,7 @@ static Flux_AnimationClip* CreateReadyStanceAnimation()
 	// Looping tennis ready stance: knees bent, slight forward lean, both arms
 	// held forward and inward (racket out front in both hands), with a gentle
 	// split-step bounce. Continuous sin/cos curves so key 0 == key N.
-	Flux_AnimationClip* pxClip = new Flux_AnimationClip();
-	pxClip->SetName("ReadyStance");
-	pxClip->SetDuration(1.5f);           // 36 ticks @ 24 TPS
-	pxClip->SetTicksPerSecond(24);
-	pxClip->SetLooping(true);
+	Flux_AnimationClip* pxClip = HumanNewClip("ReadyStance", 1.5f, /*bLooping=*/true);   // 36 frames @ 24 fps
 
 	// 1.5 s of key spread, matching SetDuration above (was 36 ticks @ 24/s).
 	constexpr float fDURATION_SECONDS = 1.5f;
@@ -4357,6 +4343,15 @@ void GenerateStickFigureAssets()
 			xExport.pxClip->HasBoneChannel("RightUpperArm"),
 			"clip '%s' does not animate both UpperArms -- a T-posed imported human would hold that arm out",
 			xExport.szSuffix);
+
+		// ★ AND EVERY CLIP MUST NAME ITS RIG (D7/D8). HumanNewClip sets this, so the
+		// only way to fail here is to have built a clip some other way -- which is
+		// precisely the mistake worth catching at bake time, because a .zanim with an
+		// empty m_strSkeletonPath loads, plays and previews against nothing while
+		// every other check in this loop stays green.
+		Zenith_Assert(xExport.pxClip->GetMetadata().m_strSkeletonPath == szSTICKFIGURE_SKELETON_REF &&
+			xExport.pxClip->GetMetadata().m_bGenerated,
+			"clip '%s' was not built through HumanNewClip -- it names no rig", xExport.szSuffix);
 
 		const std::string strPath = strOutputDir + "StickFigure_" + xExport.szSuffix + ZENITH_ANIMATION_EXT;
 		xExport.pxClip->Export(strPath);
