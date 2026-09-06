@@ -55,12 +55,20 @@ Flux_BlendTreeNode* Flux_BlendTreeNode::ReadChildNode(Zenith_DataStream& xStream
 }
 
 void Flux_BlendTreeNode::EvaluateChildOrReset(Flux_BlendTreeNode* pxChild, float fDt,
-	Flux_SkeletonPose& xPose, const Zenith_SkeletonAsset& xSkeleton)
+	Flux_SkeletonPose& xPose, const Zenith_SkeletonAsset& xSkeleton,
+	float fChildEvalWeight)
 {
 	if (pxChild)
+	{
+		// WU-5A (D34): the child's contribution to its layer, set BEFORE the
+		// evaluate so a leaf reached through it records the right weight.
+		pxChild->SetEvalWeight(fChildEvalWeight);
 		pxChild->Evaluate(fDt, xPose, xSkeleton);
+	}
 	else
+	{
 		xPose.Reset();
+	}
 }
 
 //=============================================================================
@@ -81,19 +89,25 @@ void Flux_BlendTreeNode_Clip::Evaluate(float fDt,
 {
 	if (!m_pxClip)
 	{
-		// No clip, output identity pose
+		// No clip, output identity pose. Nothing crossed anything, so there is
+		// no span to report either.
+		m_bSpanPending = false;
 		xOutPose.Reset();
 		return;
 	}
 
+	const float fDuration = m_pxClip->GetDuration();
+	const bool bLooping = m_pxClip->IsLooping();
+	const float fStep = fDt * m_fPlaybackRate;
+	const float fBeforeTimestamp = m_fCurrentTimestamp;
+
 	// Advance time
-	m_fCurrentTimestamp += fDt * m_fPlaybackRate;
+	m_fCurrentTimestamp += fStep;
 
 	// Handle looping
-	float fDuration = m_pxClip->GetDuration();
 	if (fDuration > 0.0f)
 	{
-		if (m_pxClip->IsLooping())
+		if (bLooping)
 		{
 			m_fCurrentTimestamp = fmod(m_fCurrentTimestamp, fDuration);
 			if (m_fCurrentTimestamp < 0.0f)
@@ -105,6 +119,26 @@ void Flux_BlendTreeNode_Clip::Evaluate(float fDt,
 		}
 	}
 
+	//-------------------------------------------------------------------------
+	// WU-5A (D34/D38/D39): record the crossing this step made.
+	//
+	// ★ THE MARK MOVES WHATEVER THE STEP WAS. A reverse or zero step records a
+	// span that emits nothing, rather than recording no span at all — leaving
+	// m_fPreviousTimestamp behind is what would make the next forward frame scan
+	// from the old mark and fire the whole skipped stretch at once (D39).
+	//
+	// ★ THE WRAP IS READ OFF THE RAW ADVANCED TIME, NOT OFF `curr < prev`. A
+	// step longer than the clip wraps and still lands ABOVE prev, which `curr <
+	// prev` reads as "no wrap" and silently drops that loop's events.
+	//-------------------------------------------------------------------------
+	m_fPreviousTimestamp = fBeforeTimestamp;
+	m_bLastStepForward = fStep > 0.0f;
+	m_bLastStepWrapped = bLooping && m_bLastStepForward && fDuration > 0.0f
+		&& (fBeforeTimestamp + fStep) >= fDuration;
+	m_bLastStepReachedEnd = !bLooping && m_bLastStepForward && fDuration > 0.0f
+		&& m_fCurrentTimestamp >= fDuration && fBeforeTimestamp < fDuration;
+	m_bSpanPending = true;
+
 	// Initialize output pose with bind pose values from skeleton
 	// This ensures bones WITHOUT animation channels keep their bind pose
 	// SampleFromClip will only update components that have keyframes
@@ -112,6 +146,36 @@ void Flux_BlendTreeNode_Clip::Evaluate(float fDt,
 
 	// Sample the clip - only components with keyframes will be overwritten
 	xOutPose.SampleFromClip(*m_pxClip, m_fCurrentTimestamp, xSkeleton);
+}
+
+void Flux_BlendTreeNode_Clip::CollectEventSpans(Zenith_Vector<Flux_ClipEventSpan>* pxOutSpans)
+{
+	// Clearing happens whether or not anyone wanted the span — see the base
+	// class declaration: a pending span that survives a collect is one that
+	// fires again next frame, and the frame after that.
+	if (!m_bSpanPending)
+		return;
+	m_bSpanPending = false;
+
+	if (!pxOutSpans || !m_pxClip)
+		return;
+
+	const float fDuration = m_pxClip->GetDuration();
+	if (fDuration <= 0.0f)
+		return;  // no range, so no normalized time and nothing an event can sit at
+
+	const float fInvDuration = 1.0f / fDuration;
+
+	Flux_ClipEventSpan xSpan;
+	xSpan.m_pxClip = m_pxClip;
+	xSpan.m_fPrevNormalizedTime = m_fPreviousTimestamp * fInvDuration;
+	xSpan.m_fCurrNormalizedTime = m_fCurrentTimestamp * fInvDuration;
+	xSpan.m_fWeight = m_fEvalWeight;
+	xSpan.m_bForward = m_bLastStepForward;
+	xSpan.m_bWrapped = m_bLastStepWrapped;
+	xSpan.m_bLooping = m_pxClip->IsLooping();
+	xSpan.m_bReachedEnd = m_bLastStepReachedEnd;
+	pxOutSpans->PushBack(xSpan);
 }
 
 float Flux_BlendTreeNode_Clip::GetNormalizedTime() const
@@ -125,6 +189,14 @@ float Flux_BlendTreeNode_Clip::GetNormalizedTime() const
 void Flux_BlendTreeNode_Clip::Reset()
 {
 	m_fCurrentTimestamp = 0.0f;
+	// WU-5A: a restart is not a crossing. Carrying the old mark (or an
+	// uncollected span) into a state that has just been entered would fire the
+	// tail of the PREVIOUS visit's playthrough on the new visit's first frame.
+	m_fPreviousTimestamp = 0.0f;
+	m_bSpanPending = false;
+	m_bLastStepForward = false;
+	m_bLastStepWrapped = false;
+	m_bLastStepReachedEnd = false;
 }
 
 bool Flux_BlendTreeNode_Clip::IsFinished() const
@@ -153,7 +225,14 @@ void Flux_BlendTreeNode_Clip::ReadFromDataStream(Zenith_DataStream& xStream)
 {
 	xStream >> m_strClipName;
 	xStream >> m_fPlaybackRate;
+	// D41: no schema change — the event bookkeeping is per-frame playback state
+	// and is reset alongside the timestamp, never read from or written to disk.
 	m_fCurrentTimestamp = 0.0f;
+	m_fPreviousTimestamp = 0.0f;
+	m_bSpanPending = false;
+	m_bLastStepForward = false;
+	m_bLastStepWrapped = false;
+	m_bLastStepReachedEnd = false;
 }
 
 //=============================================================================
@@ -178,12 +257,19 @@ void Flux_BlendTreeNode_Blend::Evaluate(float fDt,
 	Flux_SkeletonPose& xOutPose,
 	const Zenith_SkeletonAsset& xSkeleton)
 {
-	// Evaluate both children
-	EvaluateChildOrReset(m_pxChildA, fDt, m_xPoseA, xSkeleton);
-	EvaluateChildOrReset(m_pxChildB, fDt, m_xPoseB, xSkeleton);
+	// Evaluate both children. The blend is convex, so the two child weights are
+	// this node's own contribution split by m_fBlendWeight (D34/D35).
+	EvaluateChildOrReset(m_pxChildA, fDt, m_xPoseA, xSkeleton, m_fEvalWeight * (1.0f - m_fBlendWeight));
+	EvaluateChildOrReset(m_pxChildB, fDt, m_xPoseB, xSkeleton, m_fEvalWeight * m_fBlendWeight);
 
 	// Blend results
 	Flux_SkeletonPose::Blend(xOutPose, m_xPoseA, m_xPoseB, m_fBlendWeight);
+}
+
+void Flux_BlendTreeNode_Blend::CollectEventSpans(Zenith_Vector<Flux_ClipEventSpan>* pxOutSpans)
+{
+	if (m_pxChildA) m_pxChildA->CollectEventSpans(pxOutSpans);
+	if (m_pxChildB) m_pxChildB->CollectEventSpans(pxOutSpans);
 }
 
 float Flux_BlendTreeNode_Blend::GetNormalizedTime() const
@@ -267,7 +353,10 @@ void Flux_BlendTreeNode_BlendSpace1D::Evaluate(float fDt,
 	if (m_xBlendPoints.GetSize() == 1)
 	{
 		if (m_xBlendPoints.Get(0).m_pxNode)
+		{
+			m_xBlendPoints.Get(0).m_pxNode->SetEvalWeight(m_fEvalWeight);
 			m_xBlendPoints.Get(0).m_pxNode->Evaluate(fDt, xOutPose, xSkeleton);
+		}
 		return;
 	}
 
@@ -290,27 +379,46 @@ void Flux_BlendTreeNode_BlendSpace1D::Evaluate(float fDt,
 	if (m_fParameter <= m_xBlendPoints.Get(0).m_fPosition)
 	{
 		if (m_xBlendPoints.Get(0).m_pxNode)
+		{
+			m_xBlendPoints.Get(0).m_pxNode->SetEvalWeight(m_fEvalWeight);
 			m_xBlendPoints.Get(0).m_pxNode->Evaluate(fDt, xOutPose, xSkeleton);
+		}
 		return;
 	}
 
 	if (m_fParameter >= m_xBlendPoints.Get(m_xBlendPoints.GetSize() - 1).m_fPosition)
 	{
-		if (m_xBlendPoints.Get(m_xBlendPoints.GetSize() - 1).m_pxNode)
-			m_xBlendPoints.Get(m_xBlendPoints.GetSize() - 1).m_pxNode->Evaluate(fDt, xOutPose, xSkeleton);
+		Flux_BlendTreeNode* pxLast = m_xBlendPoints.Get(m_xBlendPoints.GetSize() - 1).m_pxNode;
+		if (pxLast)
+		{
+			pxLast->SetEvalWeight(m_fEvalWeight);
+			pxLast->Evaluate(fDt, xOutPose, xSkeleton);
+		}
 		return;
 	}
-
-	// Evaluate both points
-	EvaluateChildOrReset(m_xBlendPoints.Get(uLowerIdx).m_pxNode, fDt, m_xPoseA, xSkeleton);
-	EvaluateChildOrReset(m_xBlendPoints.Get(uUpperIdx).m_pxNode, fDt, m_xPoseB, xSkeleton);
 
 	// Calculate blend factor
 	float fRange = m_xBlendPoints.Get(uUpperIdx).m_fPosition - m_xBlendPoints.Get(uLowerIdx).m_fPosition;
 	float fBlend = (fRange > 0.0f) ?
 		(m_fParameter - m_xBlendPoints.Get(uLowerIdx).m_fPosition) / fRange : 0.0f;
 
+	// Evaluate both points. fBlend is computed BEFORE the evaluates now because
+	// each child needs its own share of this node's weight (D34/D35) — a
+	// parameter exactly midway gives both 0.5, and D35's lowest-index tiebreak
+	// then picks uLowerIdx.
+	EvaluateChildOrReset(m_xBlendPoints.Get(uLowerIdx).m_pxNode, fDt, m_xPoseA, xSkeleton, m_fEvalWeight * (1.0f - fBlend));
+	EvaluateChildOrReset(m_xBlendPoints.Get(uUpperIdx).m_pxNode, fDt, m_xPoseB, xSkeleton, m_fEvalWeight * fBlend);
+
 	Flux_SkeletonPose::Blend(xOutPose, m_xPoseA, m_xPoseB, fBlend);
+}
+
+void Flux_BlendTreeNode_BlendSpace1D::CollectEventSpans(Zenith_Vector<Flux_ClipEventSpan>* pxOutSpans)
+{
+	for (u_int u = 0; u < m_xBlendPoints.GetSize(); u++)
+	{
+		if (m_xBlendPoints.Get(u).m_pxNode)
+			m_xBlendPoints.Get(u).m_pxNode->CollectEventSpans(pxOutSpans);
+	}
 }
 
 // Walk a blend-point list and return the nearest entry by some caller-supplied
@@ -529,7 +637,10 @@ void Flux_BlendTreeNode_BlendSpace2D::Evaluate(float fDt,
 	if (m_xBlendPoints.GetSize() == 1)
 	{
 		if (m_xBlendPoints.Get(0).m_pxNode)
+		{
+			m_xBlendPoints.Get(0).m_pxNode->SetEvalWeight(m_fEvalWeight);
 			m_xBlendPoints.Get(0).m_pxNode->Evaluate(fDt, xOutPose, xSkeleton);
+		}
 		return;
 	}
 
@@ -543,10 +654,11 @@ void Flux_BlendTreeNode_BlendSpace2D::Evaluate(float fDt,
 		while (m_xTempPoses.GetSize() < 3)
 			m_xTempPoses.PushBack(Flux_SkeletonPose());
 
-		// Evaluate the three vertices
-		EvaluateChildOrReset(m_xBlendPoints.Get(idx0).m_pxNode, fDt, m_xTempPoses.Get(0), xSkeleton);
-		EvaluateChildOrReset(m_xBlendPoints.Get(idx1).m_pxNode, fDt, m_xTempPoses.Get(1), xSkeleton);
-		EvaluateChildOrReset(m_xBlendPoints.Get(idx2).m_pxNode, fDt, m_xTempPoses.Get(2), xSkeleton);
+		// Evaluate the three vertices — barycentric weights ARE the children's
+		// shares of this node's contribution (D34).
+		EvaluateChildOrReset(m_xBlendPoints.Get(idx0).m_pxNode, fDt, m_xTempPoses.Get(0), xSkeleton, m_fEvalWeight * w0);
+		EvaluateChildOrReset(m_xBlendPoints.Get(idx1).m_pxNode, fDt, m_xTempPoses.Get(1), xSkeleton, m_fEvalWeight * w1);
+		EvaluateChildOrReset(m_xBlendPoints.Get(idx2).m_pxNode, fDt, m_xTempPoses.Get(2), xSkeleton, m_fEvalWeight * w2);
 
 		// Blend with barycentric weights
 		Flux_SkeletonPose xTemp;
@@ -568,11 +680,13 @@ void Flux_BlendTreeNode_BlendSpace2D::Evaluate(float fDt,
 		while (m_xTempPoses.GetSize() < xWeights.GetSize())
 			m_xTempPoses.PushBack(Flux_SkeletonPose());
 
-		// Evaluate all weighted points
+		// Evaluate all weighted points (inverse-distance weights, already
+		// normalized, so they are the children's shares directly).
 		for (u_int i = 0; i < xWeights.GetSize(); ++i)
 		{
 			uint32_t uIdx = xWeights.Get(i).m_uIndex;
-			EvaluateChildOrReset(m_xBlendPoints.Get(uIdx).m_pxNode, fDt, m_xTempPoses.Get(i), xSkeleton);
+			EvaluateChildOrReset(m_xBlendPoints.Get(uIdx).m_pxNode, fDt, m_xTempPoses.Get(i), xSkeleton,
+				m_fEvalWeight * xWeights.Get(i).m_fWeight);
 		}
 
 		// Blend based on weights
@@ -586,6 +700,15 @@ void Flux_BlendTreeNode_BlendSpace2D::Evaluate(float fDt,
 			Flux_SkeletonPose::Blend(xOutPose, xOutPose, m_xTempPoses.Get(i), fBlend);
 			fAccumWeight += fNewWeight;
 		}
+	}
+}
+
+void Flux_BlendTreeNode_BlendSpace2D::CollectEventSpans(Zenith_Vector<Flux_ClipEventSpan>* pxOutSpans)
+{
+	for (u_int u = 0; u < m_xBlendPoints.GetSize(); u++)
+	{
+		if (m_xBlendPoints.Get(u).m_pxNode)
+			m_xBlendPoints.Get(u).m_pxNode->CollectEventSpans(pxOutSpans);
 	}
 }
 
@@ -665,9 +788,15 @@ void Flux_BlendTreeNode_Additive::Evaluate(float fDt,
 	Flux_SkeletonPose& xOutPose,
 	const Zenith_SkeletonAsset& xSkeleton)
 {
-	EvaluateChildOrReset(m_pxBaseNode, fDt, m_xBasePose, xSkeleton);
-	EvaluateChildOrReset(m_pxAdditiveNode, fDt, m_xAdditivePose, xSkeleton);
+	EvaluateChildOrReset(m_pxBaseNode, fDt, m_xBasePose, xSkeleton, m_fEvalWeight);
+	EvaluateChildOrReset(m_pxAdditiveNode, fDt, m_xAdditivePose, xSkeleton, m_fEvalWeight * m_fAdditiveWeight);
 	Flux_SkeletonPose::AdditiveBlend(xOutPose, m_xBasePose, m_xAdditivePose, m_fAdditiveWeight);
+}
+
+void Flux_BlendTreeNode_Additive::CollectEventSpans(Zenith_Vector<Flux_ClipEventSpan>* pxOutSpans)
+{
+	if (m_pxBaseNode) m_pxBaseNode->CollectEventSpans(pxOutSpans);
+	if (m_pxAdditiveNode) m_pxAdditiveNode->CollectEventSpans(pxOutSpans);
 }
 
 float Flux_BlendTreeNode_Additive::GetNormalizedTime() const
@@ -717,9 +846,23 @@ void Flux_BlendTreeNode_Masked::Evaluate(float fDt,
 	Flux_SkeletonPose& xOutPose,
 	const Zenith_SkeletonAsset& xSkeleton)
 {
-	EvaluateChildOrReset(m_pxBaseNode, fDt, m_xBasePose, xSkeleton);
-	EvaluateChildOrReset(m_pxOverrideNode, fDt, m_xOverridePose, xSkeleton);
-	Flux_SkeletonPose::MaskedBlend(xOutPose, m_xBasePose, m_xOverridePose, m_xBoneMask.GetWeights());
+	// The override branch's share is the mask's LARGEST per-bone entry — the most
+	// of it that reaches the pose anywhere. A mask that is zero everywhere gives
+	// it weight zero, which is what stops a fully masked-out branch emitting.
+	const Zenith_Vector<float>& xMaskWeights = m_xBoneMask.GetWeights();
+	float fMaxMaskWeight = 0.0f;
+	for (u_int u = 0; u < xMaskWeights.GetSize(); u++)
+		fMaxMaskWeight = glm::max(fMaxMaskWeight, xMaskWeights.Get(u));
+
+	EvaluateChildOrReset(m_pxBaseNode, fDt, m_xBasePose, xSkeleton, m_fEvalWeight);
+	EvaluateChildOrReset(m_pxOverrideNode, fDt, m_xOverridePose, xSkeleton, m_fEvalWeight * fMaxMaskWeight);
+	Flux_SkeletonPose::MaskedBlend(xOutPose, m_xBasePose, m_xOverridePose, xMaskWeights);
+}
+
+void Flux_BlendTreeNode_Masked::CollectEventSpans(Zenith_Vector<Flux_ClipEventSpan>* pxOutSpans)
+{
+	if (m_pxBaseNode) m_pxBaseNode->CollectEventSpans(pxOutSpans);
+	if (m_pxOverrideNode) m_pxOverrideNode->CollectEventSpans(pxOutSpans);
 }
 
 float Flux_BlendTreeNode_Masked::GetNormalizedTime() const
@@ -795,7 +938,16 @@ void Flux_BlendTreeNode_Select::Evaluate(float fDt,
 	Flux_SkeletonPose& xOutPose,
 	const Zenith_SkeletonAsset& xSkeleton)
 {
-	EvaluateChildOrReset(GetSelectedChild(), fDt, xOutPose, xSkeleton);
+	EvaluateChildOrReset(GetSelectedChild(), fDt, xOutPose, xSkeleton, m_fEvalWeight);
+}
+
+void Flux_BlendTreeNode_Select::CollectEventSpans(Zenith_Vector<Flux_ClipEventSpan>* pxOutSpans)
+{
+	for (u_int u = 0; u < m_xChildren.GetSize(); u++)
+	{
+		if (m_xChildren.Get(u))
+			m_xChildren.Get(u)->CollectEventSpans(pxOutSpans);
+	}
 }
 
 float Flux_BlendTreeNode_Select::GetNormalizedTime() const

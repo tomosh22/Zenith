@@ -20,6 +20,7 @@ Flux_AnimationLayer::Flux_AnimationLayer(Flux_AnimationLayer&& xOther) noexcept
 	, m_fWeight(xOther.m_fWeight)
 	, m_eBlendMode(xOther.m_eBlendMode)
 	, m_bHasAvatarMask(xOther.m_bHasAvatarMask)
+	, m_bEmitEvents(xOther.m_bEmitEvents)
 	, m_xAvatarMask(std::move(xOther.m_xAvatarMask))
 	, m_pxStateMachine(xOther.m_pxStateMachine)
 	, m_xOutputPose(std::move(xOther.m_xOutputPose))
@@ -37,6 +38,7 @@ Flux_AnimationLayer& Flux_AnimationLayer::operator=(Flux_AnimationLayer&& xOther
 		m_fWeight = xOther.m_fWeight;
 		m_eBlendMode = xOther.m_eBlendMode;
 		m_bHasAvatarMask = xOther.m_bHasAvatarMask;
+		m_bEmitEvents = xOther.m_bEmitEvents;
 		m_xAvatarMask = std::move(xOther.m_xAvatarMask);
 		m_pxStateMachine = xOther.m_pxStateMachine;
 		m_xOutputPose = std::move(xOther.m_xOutputPose);
@@ -68,6 +70,16 @@ void Flux_AnimationLayer::Update(float fDt, const Zenith_SkeletonAsset& xSkeleto
 		return;
 
 	m_pxStateMachine->Update(fDt, m_xOutputPose, xSkeleton);
+}
+
+void Flux_AnimationLayer::CollectEventSpans(Zenith_Vector<Flux_ClipEventSpan>* pxOutSpans)
+{
+	if (!m_pxStateMachine)
+		return;
+
+	// D36: a silenced layer still walks, with the sink dropped. See the header —
+	// skipping the walk would bank a span for the frame the flag goes back on.
+	m_pxStateMachine->CollectEventSpans(m_bEmitEvents ? pxOutSpans : nullptr);
 }
 
 void Flux_AnimationLayer::InitializePose(uint32_t uNumBones)

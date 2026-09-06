@@ -29,6 +29,15 @@ namespace
 	};
 
 	bool BlendSpaceFloatEquals(float a, float b, float fTol = 1e-5f) { return std::abs(a - b) < fTol; }
+
+	// WU-5A: the smallest clip a leaf can advance through — a duration and a
+	// looping flag are all Flux_BlendTreeNode_Clip reads to build a span.
+	void WU5A_InitSpanClip(Flux_AnimationClip& xClip, const char* szName, float fDurationSeconds, bool bLooping)
+	{
+		xClip.SetName(szName);
+		xClip.SetDuration(fDurationSeconds);
+		xClip.SetLooping(bLooping);
+	}
 }
 
 ZENITH_TEST(Animation, BlendSpace1DEmptyReturnsZero) { Zenith_UnitTests::TestBlendSpace1DEmptyReturnsZero(); }
@@ -128,4 +137,146 @@ void Zenith_UnitTests::TestBlendSpace2DSelectsNearestByEuclideanDistance()
 	xBS.SetParameter(Zenith_Maths::Vector2(1.0f, 9.0f));
 	ZENITH_ASSERT_TRUE(BlendSpaceFloatEquals(xBS.GetNormalizedTime(), 0.90f),
 		"Parameter (1,9) must select (0,10) point — closest by Euclidean distance");
+}
+
+// ============================================================================
+// WU-5A — per-leaf event spans (D34/D35/D38)
+//
+// These pin the LEAF side of event delivery: what a clip node records about the
+// step it just took, and how a composite splits its own contribution between
+// children. Who is allowed to FIRE those spans is the controller's, and is
+// pinned in Flux_AnimationController.Tests.inl.
+// ============================================================================
+
+ZENITH_TEST(Animation, ClipLeafReportsItsCrossingSpan)
+{
+	Flux_AnimationClip xClip;
+	WU5A_InitSpanClip(xClip, "Span", 2.0f, true);
+
+	Flux_BlendTreeNode_Clip xNode(&xClip, 1.0f);
+	Flux_SkeletonPose xPose;
+	Zenith_SkeletonAsset xSkeleton;
+
+	xNode.SetEvalWeight(1.0f);
+	xNode.Evaluate(0.5f, xPose, xSkeleton);
+
+	Zenith_Vector<Flux_ClipEventSpan> xSpans;
+	xNode.CollectEventSpans(&xSpans);
+
+	ZENITH_ASSERT_EQ(xSpans.GetSize(), 1u, "one evaluated leaf reports one span");
+	if (xSpans.GetSize() == 1)
+	{
+		ZENITH_ASSERT_TRUE(xSpans.Get(0).m_pxClip == &xClip, "and it names its own clip");
+		ZENITH_ASSERT_EQ_FLOAT(xSpans.Get(0).m_fPrevNormalizedTime, 0.0f, 1e-5f, "the span starts where the playhead was");
+		ZENITH_ASSERT_EQ_FLOAT(xSpans.Get(0).m_fCurrNormalizedTime, 0.25f, 1e-5f, "0.5s of a 2s clip is normalized 0.25");
+		ZENITH_ASSERT_EQ_FLOAT(xSpans.Get(0).m_fWeight, 1.0f, 1e-5f, "a root leaf carries the whole weight");
+		ZENITH_ASSERT_TRUE(xSpans.Get(0).m_bForward, "a positive step is forward");
+		ZENITH_ASSERT_FALSE(xSpans.Get(0).m_bWrapped, "a quarter of the clip does not reach the loop point");
+	}
+	ZENITH_ASSERT_EQ_FLOAT(xNode.GetPreviousTimestamp(), 0.0f, 1e-5f, "the leaf's own mark is where the span started");
+
+	// ★ COLLECTING IS WHAT CLEARS IT. A span handed out twice is an event fired
+	// twice, and then every frame after that.
+	xSpans.Clear();
+	xNode.CollectEventSpans(&xSpans);
+	ZENITH_ASSERT_EQ(xSpans.GetSize(), 0u, "a collected span is not handed out a second time");
+}
+
+ZENITH_TEST(Animation, ClipLeafWrapIsReadFromTheRawAdvancedTime)
+{
+	// ★ THE HAZARD THIS PINS: a step LONGER than the clip wraps and still lands
+	// ABOVE where it started, so `curr < prev` reads it as no wrap and the whole
+	// loop's worth of events is dropped. The flag comes off prev + step >= duration.
+	Flux_AnimationClip xClip;
+	WU5A_InitSpanClip(xClip, "Wrap", 1.0f, true);
+
+	Flux_BlendTreeNode_Clip xNode(&xClip, 1.0f);
+	Flux_SkeletonPose xPose;
+	Zenith_SkeletonAsset xSkeleton;
+
+	xNode.SetEvalWeight(1.0f);
+	xNode.Evaluate(1.5f, xPose, xSkeleton);
+
+	Zenith_Vector<Flux_ClipEventSpan> xSpans;
+	xNode.CollectEventSpans(&xSpans);
+
+	ZENITH_ASSERT_EQ(xSpans.GetSize(), 1u, "one span");
+	if (xSpans.GetSize() == 1)
+	{
+		ZENITH_ASSERT_EQ_FLOAT(xSpans.Get(0).m_fCurrNormalizedTime, 0.5f, 1e-5f, "1.5s of a 1s looping clip lands at 0.5");
+		ZENITH_ASSERT_GT(xSpans.Get(0).m_fCurrNormalizedTime, xSpans.Get(0).m_fPrevNormalizedTime,
+			"and it lands ABOVE where it started, which is exactly why curr < prev cannot be the test");
+		ZENITH_ASSERT_TRUE(xSpans.Get(0).m_bWrapped, "the step crossed the loop point and says so");
+	}
+}
+
+ZENITH_TEST(Animation, BlendNodeSplitsWeightBetweenItsChildren)
+{
+	Flux_AnimationClip xClipA;
+	Flux_AnimationClip xClipB;
+	WU5A_InitSpanClip(xClipA, "A", 1.0f, true);
+	WU5A_InitSpanClip(xClipB, "B", 1.0f, true);
+
+	Flux_SkeletonPose xPose;
+	Zenith_SkeletonAsset xSkeleton;
+	Zenith_Vector<Flux_ClipEventSpan> xSpans;
+
+	{
+		Flux_BlendTreeNode_Blend xBlend(new Flux_BlendTreeNode_Clip(&xClipA),
+			new Flux_BlendTreeNode_Clip(&xClipB), 0.25f);
+		xBlend.SetEvalWeight(1.0f);
+		xBlend.Evaluate(0.1f, xPose, xSkeleton);
+		xBlend.CollectEventSpans(&xSpans);
+
+		ZENITH_ASSERT_EQ(xSpans.GetSize(), 2u, "a Blend evaluates both children, so both report");
+		if (xSpans.GetSize() == 2)
+		{
+			ZENITH_ASSERT_EQ_FLOAT(xSpans.Get(0).m_fWeight, 0.75f, 1e-5f, "child A carries 1 - blend weight");
+			ZENITH_ASSERT_EQ_FLOAT(xSpans.Get(1).m_fWeight, 0.25f, 1e-5f, "child B carries the blend weight");
+			ZENITH_ASSERT_TRUE(xSpans.Get(0).m_pxClip == &xClipA, "and A is reported FIRST — collection order is leaf index");
+		}
+	}
+}
+
+ZENITH_TEST(Animation, SelectNodeReportsOnlyTheBranchItEvaluated)
+{
+	Flux_AnimationClip xClipA;
+	Flux_AnimationClip xClipB;
+	WU5A_InitSpanClip(xClipA, "A", 1.0f, true);
+	WU5A_InitSpanClip(xClipB, "B", 1.0f, true);
+
+	Flux_SkeletonPose xPose;
+	Zenith_SkeletonAsset xSkeleton;
+	Zenith_Vector<Flux_ClipEventSpan> xSpans;
+
+	{
+		Flux_BlendTreeNode_Select xSelect;
+		xSelect.AddChild(new Flux_BlendTreeNode_Clip(&xClipA));
+		xSelect.AddChild(new Flux_BlendTreeNode_Clip(&xClipB));
+
+		xSelect.SetEvalWeight(1.0f);
+		xSelect.Evaluate(0.25f, xPose, xSkeleton);
+		xSelect.CollectEventSpans(&xSpans);
+		ZENITH_ASSERT_EQ(xSpans.GetSize(), 1u, "only the selected branch was evaluated, so only it reports");
+		if (xSpans.GetSize() == 1)
+		{
+			ZENITH_ASSERT_TRUE(xSpans.Get(0).m_pxClip == &xClipA, "and it is branch 0");
+		}
+
+		// ★ THE BRANCH THAT STOPS BEING EVALUATED MUST STOP REPORTING. It still
+		// holds the timestamps from its last evaluate; if collection did not walk
+		// (and clear) it, it would hand out that same span once per frame forever.
+		xSelect.SetSelectedIndex(1);
+		for (u_int u = 0; u < 2; ++u)
+		{
+			xSpans.Clear();
+			xSelect.Evaluate(0.25f, xPose, xSkeleton);
+			xSelect.CollectEventSpans(&xSpans);
+			ZENITH_ASSERT_EQ(xSpans.GetSize(), 1u, "exactly one branch reports after the switch");
+			if (xSpans.GetSize() == 1)
+			{
+				ZENITH_ASSERT_TRUE(xSpans.Get(0).m_pxClip == &xClipB, "and it is the newly selected one");
+			}
+		}
+	}
 }

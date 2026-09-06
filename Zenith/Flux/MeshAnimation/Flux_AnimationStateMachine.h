@@ -265,6 +265,31 @@ public:
 	// Check if currently in a transition
 	bool IsTransitioning() const { return m_pxActiveTransition != nullptr; }
 
+	//=========================================================================
+	// Event-span collection (WU-5A / D34, D37)
+	//
+	// Hand over the clip-event spans this state machine's evaluated leaves
+	// produced during the last Update, then CLEAR them. Call once per Update,
+	// after it — see Flux_BlendTreeNode::CollectEventSpans for why a span that
+	// is never collected is a span that fires again next frame.
+	//
+	// ★ DURING A CROSSFADE EXACTLY ONE SIDE IS COLLECTED (D37): the one at
+	// weight >= 0.5, ties (exactly 0.5) to the TARGET. Both states' clips are
+	// audible in the pose at once, but a footstep is not a pose — firing both
+	// sides' events across a transition double-fires every one of them.
+	//
+	// ★ AND TODAY THE OUTGOING SIDE HAS NOTHING TO GIVE. UpdateTransition
+	// evaluates only the TARGET state; the source contributes a pose SNAPSHOT
+	// frozen at StartTransition, so its blend tree does not advance and produces
+	// no span at all. The >= 0.5 branch is still written both ways round rather
+	// than short-circuited, because the rule is about which side MAY emit, and
+	// the day the source starts advancing is not the day to rediscover that.
+	//
+	// pxOutSpans may be NULL: "walk and clear, discard" — what a silenced layer
+	// needs (D36).
+	//=========================================================================
+	void CollectEventSpans(Zenith_Vector<Flux_ClipEventSpan>* pxOutSpans);
+
 	// State info query (Unity's GetCurrentAnimatorStateInfo)
 	Flux_AnimatorStateInfo GetCurrentStateInfo() const;
 
@@ -299,6 +324,9 @@ private:
 	void UpdateTransition(float fDt, const Zenith_SkeletonAsset& xSkeleton);
 	void CompleteTransition();
 	void EvaluateState(Flux_AnimationState* pxState, float fDt, Flux_SkeletonPose& xOutPose, const Zenith_SkeletonAsset& xSkeleton);
+
+	// WU-5A: one state's spans — its blend tree's, or its sub-state machine's.
+	static void CollectStateEventSpans(Flux_AnimationState* pxState, Zenith_Vector<Flux_ClipEventSpan>* pxOutSpans);
 
 	// Check any-state transitions (skips transitions targeting current state and below iMinPriority)
 	const Flux_StateTransition* CheckAnyStateTransitions(int32_t iMinPriority = INT32_MIN);

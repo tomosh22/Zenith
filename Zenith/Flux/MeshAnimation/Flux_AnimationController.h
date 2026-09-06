@@ -274,7 +274,35 @@ public:
 	bool HasLayers() const { return m_xLayers.GetSize() > 0; }
 
 	//=========================================================================
-	// Events
+	// Events (WU-5A)
+	//
+	// ★ EVENTS USED TO FIRE ON EXACTLY ONE PATH, AND IT WAS THE EDITOR'S.
+	// ProcessEvents had a single call site, inside #ifdef ZENITH_TOOLS and
+	// gated on the tools-only direct-play node; inside the function the clip was
+	// ALSO only ever sourced from that node. So in a shipping build the whole
+	// mechanism returned immediately, and even in a tools build nothing a state
+	// machine or a layer played could ever fire an event. A game that authored
+	// footsteps into a .zanim and hooked SetEventCallback got silence, with no
+	// diagnostic anywhere — the callback was installed, the clip carried the
+	// events, and the code that would have matched them was unreachable.
+	//
+	// Delivery now runs on the state-machine and layer paths in EVERY build
+	// (D34). Direct play is one more source into the same dispatcher rather
+	// than the only one.
+	//
+	// WHO EMITS, when more than one clip is crossing an event at once:
+	//  • Within one layer — the leaf with the HIGHEST blend weight, ties to the
+	//    LOWEST leaf index; a zero-weight leaf never emits (D35).
+	//  • Across layers — every layer independently, silenced per layer with
+	//    Flux_AnimationLayer::SetEmitEvents (D36). A controller with no layers
+	//    is one layer for this purpose.
+	//  • Across a crossfade — the side at weight >= 0.5, ties to the TARGET
+	//    (D37).
+	//
+	// WHICH events, over one step: the half-open normalized span [prev, curr),
+	// with a wrap spelled [prev, 1) U [0, curr) and one closed end for a
+	// non-looping clip that stops at 1.0 (D38). Reverse playback emits nothing
+	// and still moves the mark (D39); so does a scrub (D40).
 	//=========================================================================
 
 	// Set event callback
@@ -282,6 +310,26 @@ public:
 
 	// Clear event callback
 	void ClearEventCallback();
+
+	// PURE (D38). Does fEventNormalizedTime fall inside xSpan's crossing?
+	//
+	//  • !m_bForward            -> false, always. Reverse emits nothing (D39).
+	//  • m_bWrapped             -> [prev, 1) U [0, curr). The two ranges are one
+	//                              OR, so a step longer than the clip (which can
+	//                              land above prev AND wrap) fires each event
+	//                              ONCE, not twice.
+	//  • m_bReachedEnd          -> [prev, curr], the one CLOSED top end. A
+	//                              non-looping clip stops AT 1.0 and never steps
+	//                              past it, so a half-open span could never
+	//                              contain an event authored there.
+	//  • otherwise              -> [prev, curr).
+	//
+	// ★ AN EVENT AT NORMALIZED 1.0 ON A LOOPING CLIP IS AN EVENT AT 0.0 OF THE
+	// NEXT LOOP (D38), and is folded to 0.0 before any of the above. 1.0 and 0.0
+	// are the same instant on a loop; without the fold, a clip authored with a
+	// beat on the last frame fires it either never (half-open at the top) or
+	// twice (once as 1.0, once as 0.0 the following frame).
+	static bool SpanContainsEventTime(const Flux_ClipEventSpan& xSpan, float fEventNormalizedTime);
 
 	//=========================================================================
 	// World Transform
@@ -308,8 +356,27 @@ public:
 	void ReadFromDataStream(Zenith_DataStream& xStream);
 
 private:
-	// Process animation events for the current frame
-	void ProcessEvents(float fPrevTime, float fCurrentTime);
+	// WU-5A (D34). Collect this frame's clip-event spans and fire the winners.
+	// ★ NOT TOOLS-GATED, and that is the whole point of the unit: this runs on
+	// the layer and state-machine paths in a shipping build. Called once per
+	// Update, AFTER the pose has been evaluated — collecting is also what clears
+	// each leaf's pending span, so it must happen every frame whether or not a
+	// callback is installed.
+	void DispatchClipEvents();
+
+	// D35 arbitration over one layer's collected spans, then emission.
+	void DispatchCollectedSpans();
+
+	// Fire one span's events through m_pfnEventCallback.
+	void EmitSpanEvents(const Flux_ClipEventSpan& xSpan);
+
+#ifdef ZENITH_TOOLS
+	// The direct-play preview keeps its span at CONTROLLER level rather than on
+	// the node, because UpdateDirectPlayPose does not go through the node's
+	// Evaluate (it drives the timestamp by hand) and because a scrub has to be
+	// able to move the mark without a step having happened at all (D40).
+	void EmitDirectPlaySpan(float fPrevNormalizedTime, float fCurrNormalizedTime, bool bForward);
+#endif
 
 	// Update path for skeleton instance
 	void UpdateWithSkeletonInstance(float fDt);
@@ -371,7 +438,16 @@ private:
 	// Event callback
 	Flux_AnimationEventCallback m_pfnEventCallback = nullptr;
 	void* m_pEventCallbackUserData = nullptr;
+	// ★ THE DIRECT-PLAY MARK ONLY. The state-machine and layer paths have no
+	// single controller-level playhead to mark — a blend tree's leaves each run
+	// their own clock — so their bookkeeping lives per leaf
+	// (Flux_BlendTreeNode_Clip::GetPreviousTimestamp). This is what a scrub moves
+	// (D40) and what the editor's preview session reads back.
 	float m_fLastEventCheckTime = 0.0f;
+
+	// Reused per-layer collection buffer — cleared, never reallocated, so the
+	// per-frame walk costs no allocation.
+	Zenith_Vector<Flux_ClipEventSpan> m_xEventSpanScratch;
 
 	// WU-2.4: scrub event policy hook (D40) — see SetEmitEventsOnSeek.
 	bool m_bEmitEventsOnSeek = false;

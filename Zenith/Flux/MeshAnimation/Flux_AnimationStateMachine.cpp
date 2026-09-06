@@ -860,12 +860,63 @@ void Flux_AnimationStateMachine::EvaluateState(Flux_AnimationState* pxState, flo
 	}
 	else if (pxState->GetBlendTree())
 	{
+		// WU-5A (D34): the ROOT of a state's tree carries the whole of the
+		// state's contribution; every fraction below it is applied by the
+		// composites on the way down.
+		pxState->GetBlendTree()->SetEvalWeight(1.0f);
 		pxState->GetBlendTree()->Evaluate(fDt, xOutPose, xSkeleton);
 	}
 	else
 	{
 		xOutPose.Reset();
 	}
+}
+
+//=============================================================================
+// Event-span collection (WU-5A) — see the header for D37.
+//=============================================================================
+
+void Flux_AnimationStateMachine::CollectStateEventSpans(Flux_AnimationState* pxState,
+	Zenith_Vector<Flux_ClipEventSpan>* pxOutSpans)
+{
+	if (!pxState)
+		return;
+
+	if (pxState->IsSubStateMachine())
+	{
+		Flux_AnimationStateMachine* pxSubSM = pxState->GetSubStateMachine();
+		if (pxSubSM)
+			pxSubSM->CollectEventSpans(pxOutSpans);
+		return;
+	}
+
+	if (pxState->GetBlendTree())
+		pxState->GetBlendTree()->CollectEventSpans(pxOutSpans);
+}
+
+void Flux_AnimationStateMachine::CollectEventSpans(Zenith_Vector<Flux_ClipEventSpan>* pxOutSpans)
+{
+	if (m_pxActiveTransition && m_pxTransitionTargetState)
+	{
+		// D37: only the side at weight >= 0.5 may emit; a dead-even 0.5 goes to
+		// the TARGET. The other side is still WALKED, with a null sink, so a
+		// span it produced this frame is cleared rather than saved up to fire
+		// the moment the weights cross.
+		const float fTargetWeight = m_pxActiveTransition->GetBlendWeight();
+		Flux_AnimationState* pxEmitter = fTargetWeight >= 0.5f ? m_pxTransitionTargetState : m_pxCurrentState;
+		Flux_AnimationState* pxSilent = fTargetWeight >= 0.5f ? m_pxCurrentState : m_pxTransitionTargetState;
+
+		// ★ CLEAR THE SILENT SIDE FIRST, AND ONLY IF IT IS A DIFFERENT STATE. A
+		// self-transition has one state on both sides and ONE set of leaves;
+		// clearing it as "the loser" would drop the very span we are about to
+		// ask it for.
+		if (pxSilent != pxEmitter)
+			CollectStateEventSpans(pxSilent, nullptr);
+		CollectStateEventSpans(pxEmitter, pxOutSpans);
+		return;
+	}
+
+	CollectStateEventSpans(m_pxCurrentState, pxOutSpans);
 }
 
 void Flux_AnimationStateMachine::CompleteTransition()

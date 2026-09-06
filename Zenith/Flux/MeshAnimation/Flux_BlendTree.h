@@ -13,6 +13,48 @@ struct Flux_WeightedIndex
 };
 
 //=============================================================================
+// Flux_ClipEventSpan (WU-5A / D34)
+//
+// ★ ONE CONTROLLER-LEVEL TIME CANNOT SEE A BLEND TREE'S LEAVES. Every clip leaf
+// in a tree runs its own clock — a 1D blend space between a 0.9 s walk and a
+// 1.4 s run has two playheads at two normalized times, advancing at two rates —
+// so "which events did the playhead cross this frame" has no single answer above
+// the leaf. Each evaluated leaf therefore reports ITS OWN crossing, and the
+// layer above decides which report is allowed to fire (D35/D36/D37).
+//
+// Times here are NORMALIZED [0,1] fractions of the clip, matching
+// Flux_AnimationEvent::m_fNormalizedTime (D4). The span is HALF-OPEN
+// [prev, curr) with two named exceptions, both flagged rather than inferred:
+//
+//  • m_bWrapped — the step crossed the loop point, so the span is
+//    [prev, 1) U [0, curr). It is set from the RAW advanced time
+//    (prev + dt*rate >= duration), NOT from `curr < prev`, because a step longer
+//    than the clip lands back ABOVE prev and would otherwise read as no wrap.
+//  • m_bReachedEnd — a NON-looping clip hit its duration on this step, so the
+//    top end closes: [prev, curr] rather than [prev, curr). Without this an
+//    event authored at exactly 1.0 could never fire on a clip that stops there.
+//
+// m_bForward is the SIGN OF THE STEP, kept explicitly because the times alone
+// cannot tell a reverse step from a wrap. A non-forward span emits NOTHING
+// (D39) — and the leaf's previous time still moved, so the next forward frame
+// scans from where the playhead actually is instead of replaying the skipped
+// span as a burst.
+//=============================================================================
+struct Flux_ClipEventSpan
+{
+	const Flux_AnimationClip* m_pxClip = nullptr;
+	float m_fPrevNormalizedTime = 0.0f;
+	float m_fCurrNormalizedTime = 0.0f;
+	// The blend weight this leaf carried in its layer for this evaluate. Zero
+	// means the leaf contributed nothing to the pose and may never emit (D35).
+	float m_fWeight = 0.0f;
+	bool m_bForward = false;
+	bool m_bWrapped = false;
+	bool m_bLooping = false;
+	bool m_bReachedEnd = false;
+};
+
+//=============================================================================
 // Flux_BlendTreeNode
 // Base class for all blend tree nodes
 //=============================================================================
@@ -42,6 +84,37 @@ public:
 	virtual void WriteToDataStream(Zenith_DataStream& xStream) const = 0;
 	virtual void ReadFromDataStream(Zenith_DataStream& xStream) = 0;
 
+	//=========================================================================
+	// Event-span reporting (WU-5A / D34)
+	//=========================================================================
+
+	// The weight this node's PARENT handed it for the evaluate about to run (or
+	// the one that just ran). A composite sets it on each child immediately
+	// before calling that child's Evaluate, so by the time a leaf is reached the
+	// value is the product of every fraction down the path — which is exactly
+	// the leaf's contribution to its layer's pose. The ROOT of a tree is given
+	// 1.0 by whoever evaluates it.
+	//
+	// It is deliberately NOT recomputed by a second walk. Re-deriving a blend
+	// space's selection outside Evaluate would be a guard comparing a value
+	// against a re-computation of itself — it would agree with the evaluate that
+	// produced it right up until one of the two changed.
+	void SetEvalWeight(float fWeight) { m_fEvalWeight = fWeight; }
+	float GetEvalWeight() const { return m_fEvalWeight; }
+
+	// ★ WALK EVERY CHILD, EVEN THE ONES THIS FRAME DID NOT EVALUATE, and pass
+	// pxOutSpans straight down. A leaf holds its pending span until something
+	// collects it, and COLLECTING IS WHAT CLEARS IT: a blend space whose
+	// parameter moved off a point, or a Select whose index changed, would
+	// otherwise keep handing out the span from the last frame that DID evaluate
+	// it, once per frame, forever.
+	//
+	// pxOutSpans may be NULL, and that is a real mode rather than a defensive
+	// check — it means "walk and clear, discard the result", which is what a
+	// layer with events silenced (D36) needs so that re-enabling it does not
+	// fire a span the silenced frames accumulated.
+	virtual void CollectEventSpans(Zenith_Vector<Flux_ClipEventSpan>* pxOutSpans) { (void)pxOutSpans; }
+
 	// Factory method for creating nodes from type name
 	static Flux_BlendTreeNode* CreateFromTypeName(const std::string& strTypeName);
 
@@ -49,9 +122,16 @@ public:
 	static void WriteChildNode(Zenith_DataStream& xStream, const Flux_BlendTreeNode* pxChild);
 	static Flux_BlendTreeNode* ReadChildNode(Zenith_DataStream& xStream);
 
-	// Shared evaluation helper — evaluates child or resets pose if null
+	// Shared evaluation helper — evaluates child or resets pose if null.
+	// fChildEvalWeight is the ABSOLUTE weight the child carries in its layer
+	// (the caller has already multiplied in its own); it defaults to 1.0 for the
+	// callers that hand a child the whole of their own contribution.
 	static void EvaluateChildOrReset(Flux_BlendTreeNode* pxChild, float fDt,
-		Flux_SkeletonPose& xPose, const Zenith_SkeletonAsset& xSkeleton);
+		Flux_SkeletonPose& xPose, const Zenith_SkeletonAsset& xSkeleton,
+		float fChildEvalWeight = 1.0f);
+
+protected:
+	float m_fEvalWeight = 1.0f;
 };
 
 //=============================================================================
@@ -77,6 +157,9 @@ public:
 	void WriteToDataStream(Zenith_DataStream& xStream) const override;
 	void ReadFromDataStream(Zenith_DataStream& xStream) override;
 
+	// WU-5A: hand over (and clear) the span this leaf's last Evaluate produced.
+	void CollectEventSpans(Zenith_Vector<Flux_ClipEventSpan>* pxOutSpans) override;
+
 	// Accessors
 	Flux_AnimationClip* GetClip() const { return m_pxClip; }
 	void SetClip(Flux_AnimationClip* pxClip) { m_pxClip = pxClip; }
@@ -85,7 +168,21 @@ public:
 	void SetPlaybackRate(float fRate) { m_fPlaybackRate = fRate; }
 
 	float GetCurrentTimestamp() const { return m_fCurrentTimestamp; }
-	void SetCurrentTimestamp(float fTime) { m_fCurrentTimestamp = fTime; }
+
+	// ★ A SET IS A SCRUB, AND IT MOVES THE MARK WITH IT (D40). The previous
+	// timestamp follows the new one and any pending span is dropped: leaving the
+	// mark behind would make the next Evaluate report [old mark, new time) and
+	// fire every event the playhead was DROPPED past, which is the burst D40
+	// exists to prevent.
+	void SetCurrentTimestamp(float fTime)
+	{
+		m_fCurrentTimestamp = fTime;
+		m_fPreviousTimestamp = fTime;
+		m_bSpanPending = false;
+	}
+
+	// The clip time this leaf was at BEFORE its last Evaluate, in seconds.
+	float GetPreviousTimestamp() const { return m_fPreviousTimestamp; }
 
 	// For resolving clip reference after deserialization
 	void SetClipName(const std::string& strName) { m_strClipName = strName; }
@@ -97,6 +194,15 @@ private:
 	std::string m_strClipName;  // For serialization
 	float m_fPlaybackRate = 1.0f;
 	float m_fCurrentTimestamp = 0.0f;
+
+	// WU-5A event bookkeeping (D34/D38/D39). None of it is serialized — it
+	// describes one frame of playback, not the authored tree (D41: no schema
+	// change).
+	float m_fPreviousTimestamp = 0.0f;
+	bool m_bSpanPending = false;
+	bool m_bLastStepForward = false;
+	bool m_bLastStepWrapped = false;
+	bool m_bLastStepReachedEnd = false;
 };
 
 //=============================================================================
@@ -124,6 +230,8 @@ public:
 
 	void WriteToDataStream(Zenith_DataStream& xStream) const override;
 	void ReadFromDataStream(Zenith_DataStream& xStream) override;
+
+	void CollectEventSpans(Zenith_Vector<Flux_ClipEventSpan>* pxOutSpans) override;
 
 	// Accessors
 	Flux_BlendTreeNode* GetChildA() const { return m_pxChildA; }
@@ -172,6 +280,11 @@ public:
 	void WriteToDataStream(Zenith_DataStream& xStream) const override;
 	void ReadFromDataStream(Zenith_DataStream& xStream) override;
 
+	// ★ WALKED IN BLEND-POINT INDEX ORDER, which is what makes D35's "ties go to
+	// the LOWEST leaf index" mean something stable: a parameter sitting exactly
+	// between two points gives both 0.5, and the earlier point wins.
+	void CollectEventSpans(Zenith_Vector<Flux_ClipEventSpan>* pxOutSpans) override;
+
 	// Add/remove blend points
 	void AddBlendPoint(Flux_BlendTreeNode* pxNode, float fPosition);
 	void RemoveBlendPoint(u_int uIndex);
@@ -219,6 +332,8 @@ public:
 
 	void WriteToDataStream(Zenith_DataStream& xStream) const override;
 	void ReadFromDataStream(Zenith_DataStream& xStream) override;
+
+	void CollectEventSpans(Zenith_Vector<Flux_ClipEventSpan>* pxOutSpans) override;
 
 	// Add/remove blend points
 	void AddBlendPoint(Flux_BlendTreeNode* pxNode, const Zenith_Maths::Vector2& xPosition);
@@ -275,6 +390,13 @@ public:
 	void WriteToDataStream(Zenith_DataStream& xStream) const override;
 	void ReadFromDataStream(Zenith_DataStream& xStream) override;
 
+	// An additive node is NOT a convex blend, so there is no pair of weights
+	// summing to one to hand down: the base carries this node's whole weight and
+	// the additive layer carries it scaled by m_fAdditiveWeight. A zero additive
+	// weight therefore silences the additive branch's events, which matches what
+	// it does to the pose.
+	void CollectEventSpans(Zenith_Vector<Flux_ClipEventSpan>* pxOutSpans) override;
+
 	// Accessors
 	Flux_BlendTreeNode* GetBaseNode() const { return m_pxBaseNode; }
 	Flux_BlendTreeNode* GetAdditiveNode() const { return m_pxAdditiveNode; }
@@ -318,6 +440,13 @@ public:
 	void WriteToDataStream(Zenith_DataStream& xStream) const override;
 	void ReadFromDataStream(Zenith_DataStream& xStream) override;
 
+	// A per-bone mask is not a scalar weight, so the override branch is given
+	// this node's weight scaled by the mask's LARGEST per-bone entry — the most
+	// this branch reaches on any bone. A mask that is zero everywhere silences
+	// its override branch's events, and an all-ones mask ties with the base, at
+	// which point D35's lowest-leaf-index rule picks the base.
+	void CollectEventSpans(Zenith_Vector<Flux_ClipEventSpan>* pxOutSpans) override;
+
 	// Accessors
 	Flux_BlendTreeNode* GetBaseNode() const { return m_pxBaseNode; }
 	Flux_BlendTreeNode* GetOverrideNode() const { return m_pxOverrideNode; }
@@ -359,6 +488,11 @@ public:
 
 	void WriteToDataStream(Zenith_DataStream& xStream) const override;
 	void ReadFromDataStream(Zenith_DataStream& xStream) override;
+
+	// Walks EVERY child, not just the selected one — see the base class: the
+	// unselected branches are exactly the ones holding a span nothing has
+	// cleared, and only the selected one has a fresh pending span to report.
+	void CollectEventSpans(Zenith_Vector<Flux_ClipEventSpan>* pxOutSpans) override;
 
 	// Add children
 	void AddChild(Flux_BlendTreeNode* pxChild);

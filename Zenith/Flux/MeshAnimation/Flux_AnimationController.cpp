@@ -190,16 +190,10 @@ void Flux_AnimationController::Update(float fDt)
 
 	UpdateWithSkeletonInstance(fDt);
 
-#ifdef ZENITH_TOOLS
-	// Process animation events (only for direct clip playback - state machine uses state callbacks)
-	if (m_pxDirectPlayNode)
-	{
-		float fPrevTime = m_fLastEventCheckTime;
-		float fCurrentTime = m_pxDirectPlayNode->GetNormalizedTime();
-		ProcessEvents(fPrevTime, fCurrentTime);
-		m_fLastEventCheckTime = fCurrentTime;
-	}
-#endif
+	// WU-5A (D34): event delivery, on EVERY path and in EVERY build. This used
+	// to be an #ifdef ZENITH_TOOLS block gated on the direct-play node — see the
+	// Events section of the header for what that meant for shipping games.
+	DispatchClipEvents();
 }
 
 // Multi-layer path: tick all layers, then compose layer 1+ on top of layer 0
@@ -570,6 +564,11 @@ void Flux_AnimationController::PlayClip(const std::string& strClipName, float fB
 
 	delete m_pxDirectPlayNode;
 	m_pxDirectPlayNode = pxNewNode;
+
+	// WU-5A: the new node starts at time zero, so the mark has to as well. A
+	// mark left at the old clip's playhead would either swallow every event
+	// before it or, on a lower value, fire the whole opening stretch at once.
+	m_fLastEventCheckTime = 0.0f;
 }
 #endif
 
@@ -583,6 +582,7 @@ void Flux_AnimationController::Stop()
 	m_pxDirectTransition = nullptr;
 #endif
 
+	m_fLastEventCheckTime = 0.0f;
 	m_xOutputPose.Reset();
 }
 
@@ -628,7 +628,12 @@ bool Flux_AnimationController::SeekDirectPlay(float fTimeSeconds)
 	const float fNormalized = m_pxDirectPlayNode->GetNormalizedTime();
 	if (m_bEmitEventsOnSeek)
 	{
-		ProcessEvents(m_fLastEventCheckTime, fNormalized);
+		// A scrub has no playback direction of its own, so "forward" is simply
+		// whether the playhead moved forward across the clip. A BACKWARD scrub
+		// emits nothing even with the flag on — same rule as reverse playback
+		// (D39), and firing a clip's events in reverse order is not something
+		// any listener is written for.
+		EmitDirectPlaySpan(m_fLastEventCheckTime, fNormalized, fNormalized >= m_fLastEventCheckTime);
 	}
 	m_fLastEventCheckTime = fNormalized;
 	return true;
@@ -673,44 +678,139 @@ void Flux_AnimationController::ClearEventCallback()
 	m_pEventCallbackUserData = nullptr;
 }
 
-void Flux_AnimationController::ProcessEvents(float fPrevTime, float fCurrentTime)
+//=============================================================================
+// Event delivery (WU-5A) — see the Events section of the header for D34-D40.
+//=============================================================================
+
+bool Flux_AnimationController::SpanContainsEventTime(const Flux_ClipEventSpan& xSpan, float fEventNormalizedTime)
 {
-	if (!m_pfnEventCallback)
+	// D39. Reverse is a no-event EARLY RETURN, not an assert: SetPlaybackSpeed
+	// accepts negatives and shipping content uses them, so clamping or
+	// asserting here would change behaviour a game already relies on.
+	if (!xSpan.m_bForward)
+		return false;
+
+	float fEvent = fEventNormalizedTime;
+
+	// D38: 1.0 IS 0.0 of the next loop, on a looping clip. fmod, not a subtract,
+	// so a time authored past 1.0 folds too instead of landing somewhere the
+	// span can never reach.
+	if (xSpan.m_bLooping && fEvent >= 1.0f)
+		fEvent = fmod(fEvent, 1.0f);
+
+	const float fPrev = xSpan.m_fPrevNormalizedTime;
+	const float fCurr = xSpan.m_fCurrNormalizedTime;
+
+	if (xSpan.m_bWrapped)
+		return fEvent >= fPrev || fEvent < fCurr;   // [prev, 1) U [0, curr)
+
+	if (xSpan.m_bReachedEnd)
+		return fEvent >= fPrev && fEvent <= fCurr;  // [prev, curr] — the one closed end
+
+	return fEvent >= fPrev && fEvent < fCurr;       // [prev, curr)
+}
+
+void Flux_AnimationController::EmitSpanEvents(const Flux_ClipEventSpan& xSpan)
+{
+	if (!m_pfnEventCallback || !xSpan.m_pxClip)
 		return;
 
-	// Get current clip for event checking
-	Flux_AnimationClip* pxClip = nullptr;
+	const Zenith_Vector<Flux_AnimationEvent>& xEvents = xSpan.m_pxClip->GetEvents();
+	for (u_int u = 0; u < xEvents.GetSize(); ++u)
+	{
+		const Flux_AnimationEvent& xEvent = xEvents.Get(u);
+		if (SpanContainsEventTime(xSpan, xEvent.m_fNormalizedTime))
+			m_pfnEventCallback(m_pEventCallbackUserData, xEvent.m_strEventName, xEvent.m_xData);
+	}
+}
+
+void Flux_AnimationController::DispatchCollectedSpans()
+{
+	// D35: ONE emitter per layer — the highest blend weight wins, and a tie goes
+	// to the LOWEST leaf index, which is collection order (depth-first, children
+	// in declaration order). The comparison is STRICTLY greater so the first of
+	// an equal pair keeps the win, and fBest starts at zero so a zero-weight
+	// leaf can never take it.
+	//
+	// A blend weight does not change during one evaluate, so "highest weight at
+	// the crossing instant" reduces to one winner for the whole frame.
+	u_int uWinner = m_xEventSpanScratch.GetSize();
+	float fBestWeight = 0.0f;
+	for (u_int u = 0; u < m_xEventSpanScratch.GetSize(); ++u)
+	{
+		const float fWeight = m_xEventSpanScratch.Get(u).m_fWeight;
+		if (fWeight > fBestWeight)
+		{
+			fBestWeight = fWeight;
+			uWinner = u;
+		}
+	}
+
+	if (uWinner < m_xEventSpanScratch.GetSize())
+		EmitSpanEvents(m_xEventSpanScratch.Get(uWinner));
+}
+
+#ifdef ZENITH_TOOLS
+void Flux_AnimationController::EmitDirectPlaySpan(float fPrevNormalizedTime, float fCurrNormalizedTime, bool bForward)
+{
+	Flux_AnimationClip* pxClip = m_pxDirectPlayNode ? m_pxDirectPlayNode->GetClip() : nullptr;
+	if (!pxClip || pxClip->GetDuration() <= 0.0f)
+		return;
+
+	Flux_ClipEventSpan xSpan;
+	xSpan.m_pxClip = pxClip;
+	xSpan.m_fPrevNormalizedTime = fPrevNormalizedTime;
+	xSpan.m_fCurrNormalizedTime = fCurrNormalizedTime;
+	xSpan.m_fWeight = 1.0f;      // a direct-play preview is the only thing playing
+	xSpan.m_bForward = bForward;
+	xSpan.m_bLooping = pxClip->IsLooping();
+	// The direct-play mark is normalized and already wrapped by WrapClipTime, so
+	// unlike a blend-tree leaf there is no raw advanced time to read the wrap
+	// off; curr < prev on a looping clip IS the wrap here.
+	xSpan.m_bWrapped = xSpan.m_bLooping && bForward && fCurrNormalizedTime < fPrevNormalizedTime;
+	xSpan.m_bReachedEnd = !xSpan.m_bLooping && bForward
+		&& fCurrNormalizedTime >= 1.0f && fPrevNormalizedTime < 1.0f;
+
+	EmitSpanEvents(xSpan);
+}
+#endif
+
+void Flux_AnimationController::DispatchClipEvents()
+{
+	// The order MIRRORS UpdateWithSkeletonInstance exactly — layers, then the
+	// editor's direct-play preview, then the state machine. Anything else would
+	// dispatch events from a path that did not produce this frame's pose.
+	if (m_xLayers.GetSize() > 0)
+	{
+		// D36: each layer arbitrates and emits on its own.
+		for (uint32_t i = 0; i < m_xLayers.GetSize(); ++i)
+		{
+			m_xEventSpanScratch.Clear();
+			m_xLayers.Get(i)->CollectEventSpans(&m_xEventSpanScratch);
+			DispatchCollectedSpans();
+		}
+		return;
+	}
+
 #ifdef ZENITH_TOOLS
 	if (m_pxDirectPlayNode)
 	{
-		pxClip = m_pxDirectPlayNode->GetClip();
+		const float fPrev = m_fLastEventCheckTime;
+		const float fCurr = m_pxDirectPlayNode->GetNormalizedTime();
+		EmitDirectPlaySpan(fPrev, fCurr,
+			(m_fPlaybackSpeed * m_pxDirectPlayNode->GetPlaybackRate()) > 0.0f);
+		// D39: the mark advances whichever way the playhead went.
+		m_fLastEventCheckTime = fCurr;
+		return;
 	}
 #endif
 
-	if (!pxClip)
-		return;
-
-	const auto& xEvents = pxClip->GetEvents();
-	for (const auto& xEvent : xEvents)
+	if (m_pxStateMachine)
 	{
-		// Check if event time is between prev and current
-		bool bTriggered = false;
-
-		if (fCurrentTime >= fPrevTime)
-		{
-			// Normal playback
-			bTriggered = (xEvent.m_fNormalizedTime > fPrevTime && xEvent.m_fNormalizedTime <= fCurrentTime);
-		}
-		else
-		{
-			// Looped - check both ranges
-			bTriggered = (xEvent.m_fNormalizedTime > fPrevTime) || (xEvent.m_fNormalizedTime <= fCurrentTime);
-		}
-
-		if (bTriggered)
-		{
-			m_pfnEventCallback(m_pEventCallbackUserData, xEvent.m_strEventName, xEvent.m_xData);
-		}
+		// A controller with no layers is ONE layer for arbitration (D36).
+		m_xEventSpanScratch.Clear();
+		m_pxStateMachine->CollectEventSpans(&m_xEventSpanScratch);
+		DispatchCollectedSpans();
 	}
 }
 
@@ -852,3 +952,7 @@ void Flux_AnimationController::ReadFromDataStream(Zenith_DataStream& xStream)
 		}
 	}
 }
+
+#ifdef ZENITH_TESTING
+#include "Flux/MeshAnimation/Flux_AnimationController.Tests.inl"
+#endif

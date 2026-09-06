@@ -59,6 +59,30 @@ public:
 	// Update this layer's state machine
 	void Update(float fDt, const Zenith_SkeletonAsset& xSkeleton);
 
+	//=========================================================================
+	// Animation events (WU-5A / D36)
+	//
+	// ★ EVERY LAYER EMITS INDEPENDENTLY, and that is the correct default rather
+	// than a simplification. A masked upper/lower split is TWO animations
+	// playing at once on one skeleton — the legs' footsteps and the arms'
+	// weapon-swing beats are both real, and nothing above can tell which of the
+	// two a listener meant. Arbitration (D35) is WITHIN a layer, never across.
+	//
+	// This flag is the explicit way to silence ONE layer — a cosmetic overlay,
+	// or a second copy of the locomotion clip used only for its pose. It is
+	// deliberately NOT derived from the layer's WEIGHT: a layer's weight is
+	// animated (that is what fading a layer in IS), so tying events to it would
+	// make a footstep fire or not depending on where in the fade the frame
+	// landed.
+	//=========================================================================
+	void SetEmitEvents(bool bEmit) { m_bEmitEvents = bEmit; }
+	bool GetEmitEvents() const { return m_bEmitEvents; }
+
+	// Hand over (and clear) this layer's clip-event spans. A silenced layer is
+	// still WALKED — with a null sink — so re-enabling it cannot fire a span the
+	// silenced frames left pending.
+	void CollectEventSpans(Zenith_Vector<Flux_ClipEventSpan>* pxOutSpans);
+
 	// Initialize pose storage
 	void InitializePose(uint32_t uNumBones);
 
@@ -71,6 +95,9 @@ private:
 	float m_fWeight = 1.0f;
 	Flux_LayerBlendMode m_eBlendMode = LAYER_BLEND_OVERRIDE;
 	bool m_bHasAvatarMask = false;
+	// WU-5A (D36). NOT serialized — D41 changes no schema; a game that wants a
+	// layer silent sets it after building the layer, beside SetBlendMode.
+	bool m_bEmitEvents = true;
 	Flux_BoneMask m_xAvatarMask;
 	Flux_AnimationStateMachine* m_pxStateMachine = nullptr;  // Owned
 	Flux_SkeletonPose m_xOutputPose;
