@@ -22,6 +22,7 @@
 #include "Editor/TerrainEditor/Zenith_TerrainEditor.h"
 #include "Editor/Panels/Zenith_EditorPanel_GraphEditor.h"
 #include "Editor/Panels/Zenith_EditorPanel_MaterialEditor.h"
+#include "Editor/Panels/Zenith_EditorPanel_Animation.h"
 #include "Flux/Flux_ModelInstance.h"
 #include "UI/Zenith_UI.h"
 #include "Flux/Particles/Flux_ParticleEmitterConfig.h"
@@ -39,6 +40,7 @@
 #include "Core/Zenith_CommandLine.h"
 #include "Profiling/Zenith_Profiling.h"
 #include <algorithm>
+#include <cmath>
 #include <filesystem>
 
 bool Zenith_EditorAutomation::IsRunning()  { return Zenith_EditorAutomation::m_bRunning; }
@@ -765,6 +767,76 @@ void Zenith_EditorAutomation::AddStep_GrassTypesSetParamColor(int iType, const c
 	m_axActions.PushBack(xAction);
 }
 
+// ---- Animation dope-sheet authoring steps (WU-3.4) ----
+// The payload contract, in one place so the executor reads it from one place
+// too: szArg1 is the BONE NAME (empty = root motion) or the asset path,
+// aiArgs[0] the Flux_AnimTrack, aiArgs[1] the KEY INDEX (resolved to a stable
+// id at execution — see the header), aiArgs[2] the Zenith_AnimSelectMode, and
+// afArgs the seconds / pixels the verb takes.
+
+void Zenith_EditorAutomation::AddStep_AnimOpenClip (const char* szAssetPath) { Push(Zenith_EditorAutomation::m_axActions, ActionType::ANIM_OPEN_CLIP, szAssetPath); }
+void Zenith_EditorAutomation::AddStep_AnimCloseClip()                        { Push(Zenith_EditorAutomation::m_axActions, ActionType::ANIM_CLOSE_CLIP); }
+void Zenith_EditorAutomation::AddStep_AnimDeleteSelection()                  { Push(Zenith_EditorAutomation::m_axActions, ActionType::ANIM_DELETE_SELECTION); }
+void Zenith_EditorAutomation::AddStep_AnimDuplicateSelection()               { Push(Zenith_EditorAutomation::m_axActions, ActionType::ANIM_DUPLICATE_SELECTION); }
+void Zenith_EditorAutomation::AddStep_AnimCopySelection()                    { Push(Zenith_EditorAutomation::m_axActions, ActionType::ANIM_COPY_SELECTION); }
+void Zenith_EditorAutomation::AddStep_AnimUndo()                             { Push(Zenith_EditorAutomation::m_axActions, ActionType::ANIM_UNDO); }
+void Zenith_EditorAutomation::AddStep_AnimRedo()                             { Push(Zenith_EditorAutomation::m_axActions, ActionType::ANIM_REDO); }
+void Zenith_EditorAutomation::AddStep_AnimScrub      (float fTimeSeconds)     { Push(Zenith_EditorAutomation::m_axActions, ActionType::ANIM_SCRUB, fTimeSeconds); }
+void Zenith_EditorAutomation::AddStep_AnimSetDuration(float fDurationSeconds) { Push(Zenith_EditorAutomation::m_axActions, ActionType::ANIM_SET_DURATION, fDurationSeconds); }
+void Zenith_EditorAutomation::AddStep_AnimRippleRetime(float fFromSeconds, float fDeltaSeconds) { Push(Zenith_EditorAutomation::m_axActions, ActionType::ANIM_RIPPLE_RETIME, fFromSeconds, fDeltaSeconds); }
+void Zenith_EditorAutomation::AddStep_AnimPasteToBone(const char* szBone, float fTimeOffsetSeconds) { Push(Zenith_EditorAutomation::m_axActions, ActionType::ANIM_PASTE_TO_BONE, szBone, fTimeOffsetSeconds); }
+
+void Zenith_EditorAutomation::AddStep_AnimSelectKey(const char* szBone, int iTrack, int iKeyIndex, int iSelectMode)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::ANIM_SELECT_KEY;
+	xAction.m_szArg1 = SafeStr(szBone);
+	xAction.m_aiArgs[0] = iTrack;
+	xAction.m_aiArgs[1] = iKeyIndex;
+	xAction.m_aiArgs[2] = iSelectMode;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimBoxSelect(float fX0, float fY0, float fX1, float fY1, int iSelectMode)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::ANIM_BOX_SELECT;
+	xAction.m_afArgs[0] = fX0; xAction.m_afArgs[1] = fY0;
+	xAction.m_afArgs[2] = fX1; xAction.m_afArgs[3] = fY1;
+	xAction.m_aiArgs[2] = iSelectMode;	// aiArgs[2] carries the mode on EVERY select verb
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimMoveSelection(float fDeltaSeconds, bool bSnap)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::ANIM_MOVE_SELECTION;
+	xAction.m_afArgs[0] = fDeltaSeconds;
+	xAction.m_bArg = bSnap;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimExpectKeyTime(const char* szBone, int iTrack, int iKeyIndex,
+	float fExpectedSeconds, float fToleranceSeconds)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::ANIM_EXPECT_KEY_TIME;
+	xAction.m_szArg1 = SafeStr(szBone);
+	xAction.m_aiArgs[0] = iTrack;
+	xAction.m_aiArgs[1] = iKeyIndex;
+	xAction.m_afArgs[0] = fExpectedSeconds;
+	xAction.m_afArgs[1] = fToleranceSeconds;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimExpectSelectedCount(int iExpectedCount)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::ANIM_EXPECT_SELECTED_COUNT;
+	xAction.m_aiArgs[0] = iExpectedCount;
+	m_axActions.PushBack(xAction);
+}
+
 void Zenith_EditorAutomation::AddStep_GraphSelectNode(const char* szTypeName, int iOccurrence)
 {
 	Zenith_EditorAction xAction = {};
@@ -1420,6 +1492,16 @@ namespace
 	void GrassTypeActionChecked(bool bOk, const char* szAction, const char* szArg)
 	{
 		Zenith_Assert(bOk, "EditorAutomation grass-type step %s('%s') failed", szAction, szArg ? szArg : "");
+		(void)bOk; (void)szAction; (void)szArg;
+	}
+
+	// Animation dope-sheet steps (WU-3.4), same contract again: a bone the clip
+	// has no channel for, a key index past the end of a track, a move a D11
+	// collision refused — every one of those is an authoring mistake, and the
+	// panel reports all of them as a bare `false` that nothing downstream reads.
+	void AnimActionChecked(bool bOk, const char* szAction, const char* szArg)
+	{
+		Zenith_Assert(bOk, "EditorAutomation animation step %s('%s') failed", szAction, szArg ? szArg : "");
 		(void)bOk; (void)szAction; (void)szArg;
 	}
 
@@ -2563,6 +2645,157 @@ static void ExecuteGraphAuthoringAction(const Zenith_EditorAction& xAction)
 	}
 }
 
+//=============================================================================
+// Animation dope-sheet authoring actions (ANIM_OPEN_CLIP .. ANIM_EXPECT_
+// SELECTED_COUNT). Every case ends in one of Zenith_EditorPanel_Animation's
+// Action_* twins — the SAME call the panel's mouse handler makes — so a recipe
+// and a human's gesture run one code path, and nothing here reaches past the
+// panel into the document except to READ.
+//=============================================================================
+namespace
+{
+	// The (bone, track) an ANIM step names. An empty bone means ROOT MOTION:
+	// there is no bone to type there, and dropping the case would leave the two
+	// root-motion rows unreachable from a recipe.
+	Zenith_AnimTrackId AnimTrackFromAction(const Zenith_EditorAction& xAction)
+	{
+		const Flux_AnimTrack eTrack = static_cast<Flux_AnimTrack>(xAction.m_aiArgs[0]);
+		if (xAction.m_szArg1.empty())
+		{
+			return Zenith_AnimTrackId::RootMotion(eTrack);
+		}
+		return Zenith_AnimTrackId::Bone(xAction.m_szArg1, eTrack);
+	}
+
+	// ★ INDEX -> STABLE ID, AT EXECUTION TIME. See the header: a recipe can only
+	// name "the second key on this track", and the panel only accepts an id.
+	// Resolving here — against the track as it stands at THIS step, not as it
+	// stood when the queue was built — is what makes a retime earlier in the
+	// recipe leave the later steps still naming what a reader would expect.
+	u_int AnimResolveKeyId(const Zenith_AnimationDocument& xDocument,
+		const Zenith_AnimTrackId& xTrack, int iKeyIndex)
+	{
+		if (iKeyIndex < 0)
+		{
+			return uINVALID_ANIM_KEY_ID;
+		}
+		return xDocument.GetKeyIdAtIndex(xTrack, static_cast<u_int>(iKeyIndex));
+	}
+}
+
+static void ExecuteAnimationAction(const Zenith_EditorAction& xAction)
+{
+	Zenith_EditorPanel_Animation& xPanel = Zenith_EditorPanel_Animation::Instance();
+	const Zenith_AnimSelectMode eMode = static_cast<Zenith_AnimSelectMode>(xAction.m_aiArgs[2]);
+
+	switch (xAction.m_eType)
+	{
+	case Zenith_EditorActionType::ANIM_OPEN_CLIP:
+		// The window first, then the clip: OpenClip's own refusals (a GENERATED
+		// clip, a path that does not resolve) are visible on the sheet, and a
+		// hidden panel would report them to nobody.
+		xPanel.ShowFlag() = true;
+		AnimActionChecked(xPanel.OpenClip(xAction.m_szArg1), "AnimOpenClip", xAction.m_szArg1.c_str());
+		break;
+
+	case Zenith_EditorActionType::ANIM_CLOSE_CLIP:
+		xPanel.CloseClip();
+		break;
+
+	case Zenith_EditorActionType::ANIM_SELECT_KEY:
+	{
+		const Zenith_AnimTrackId xTrack = AnimTrackFromAction(xAction);
+		const u_int uKeyId = AnimResolveKeyId(xPanel.Document(), xTrack, xAction.m_aiArgs[1]);
+		AnimActionChecked(uKeyId != uINVALID_ANIM_KEY_ID && xPanel.Action_SelectKey(xTrack, uKeyId, eMode),
+			"AnimSelectKey", xAction.m_szArg1.c_str());
+		break;
+	}
+
+	case Zenith_EditorActionType::ANIM_BOX_SELECT:
+		AnimActionChecked(xPanel.Action_BoxSelect(xAction.m_afArgs[0], xAction.m_afArgs[1],
+			xAction.m_afArgs[2], xAction.m_afArgs[3], eMode), "AnimBoxSelect", nullptr);
+		break;
+
+	case Zenith_EditorActionType::ANIM_MOVE_SELECTION:
+		AnimActionChecked(xPanel.Action_MoveSelection(xAction.m_afArgs[0], xAction.m_bArg),
+			"AnimMoveSelection", nullptr);
+		break;
+
+	case Zenith_EditorActionType::ANIM_DELETE_SELECTION:
+		AnimActionChecked(xPanel.Action_DeleteSelection(), "AnimDeleteSelection", nullptr);
+		break;
+
+	case Zenith_EditorActionType::ANIM_DUPLICATE_SELECTION:
+		AnimActionChecked(xPanel.Action_DuplicateSelection(), "AnimDuplicateSelection", nullptr);
+		break;
+
+	case Zenith_EditorActionType::ANIM_COPY_SELECTION:
+		AnimActionChecked(xPanel.Action_CopySelection(), "AnimCopySelection", nullptr);
+		break;
+
+	case Zenith_EditorActionType::ANIM_PASTE_TO_BONE:
+		AnimActionChecked(xPanel.Action_PasteToBone(xAction.m_szArg1, xAction.m_afArgs[0]),
+			"AnimPasteToBone", xAction.m_szArg1.c_str());
+		break;
+
+	case Zenith_EditorActionType::ANIM_RIPPLE_RETIME:
+		AnimActionChecked(xPanel.Action_RippleRetime(xAction.m_afArgs[0], xAction.m_afArgs[1]),
+			"AnimRippleRetime", nullptr);
+		break;
+
+	case Zenith_EditorActionType::ANIM_SCRUB:
+		AnimActionChecked(xPanel.Action_Scrub(xAction.m_afArgs[0]), "AnimScrub", nullptr);
+		break;
+
+	case Zenith_EditorActionType::ANIM_SET_DURATION:
+		AnimActionChecked(xPanel.Action_SetDuration(xAction.m_afArgs[0]), "AnimSetDuration", nullptr);
+		break;
+
+	case Zenith_EditorActionType::ANIM_UNDO:
+		AnimActionChecked(xPanel.Action_Undo(), "AnimUndo", nullptr);
+		break;
+
+	case Zenith_EditorActionType::ANIM_REDO:
+		AnimActionChecked(xPanel.Action_Redo(), "AnimRedo", nullptr);
+		break;
+
+	case Zenith_EditorActionType::ANIM_EXPECT_KEY_TIME:
+	{
+		const Zenith_AnimTrackId xTrack = AnimTrackFromAction(xAction);
+		const u_int uKeyId = AnimResolveKeyId(xPanel.Document(), xTrack, xAction.m_aiArgs[1]);
+		float fTime = 0.0f;
+		const bool bResolved = uKeyId != uINVALID_ANIM_KEY_ID
+			&& xPanel.Document().GetKeyTime(xTrack, uKeyId, fTime);
+		// Two asserts rather than one: "there is no such key" and "the key is at
+		// the wrong time" are different mistakes, and a single combined message
+		// would print a meaningless 0.0 for the first.
+		AnimActionChecked(bResolved, "AnimExpectKeyTime (no such key)", xAction.m_szArg1.c_str());
+		if (bResolved)
+		{
+			Zenith_Assert(std::fabs(fTime - xAction.m_afArgs[0]) <= xAction.m_afArgs[1],
+				"EditorAutomation AnimExpectKeyTime('%s' track %d key %d): expected %.6f s, found %.6f s (tolerance %.6f)",
+				xAction.m_szArg1.c_str(), xAction.m_aiArgs[0], xAction.m_aiArgs[1],
+				xAction.m_afArgs[0], fTime, xAction.m_afArgs[1]);
+		}
+		break;
+	}
+
+	case Zenith_EditorActionType::ANIM_EXPECT_SELECTED_COUNT:
+	{
+		const u_int uActual = xPanel.GetSelectedKeyCount();
+		Zenith_Assert(uActual == static_cast<u_int>(xAction.m_aiArgs[0]),
+			"EditorAutomation AnimExpectSelectedCount: expected %d selected keys, found %u",
+			xAction.m_aiArgs[0], uActual);
+		(void)uActual;
+		break;
+	}
+
+	default:
+		Zenith_Assert(false, "Non-animation action routed to ExecuteAnimationAction");
+		break;
+	}
+}
+
 // Particle field edits (SET_PARTICLE_CONFIG .. SET_PARTICLE_EMITTING).
 static void ExecuteParticleAction(const Zenith_EditorAction& xAction)
 {
@@ -2918,6 +3151,17 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 		xAction.m_eType <= Zenith_EditorActionType::INSTANTIATE_PREFAB)
 	{
 		ExecutePrefabAction(xAction);
+		return;
+	}
+
+	// Animation dope-sheet authoring (WU-3.4). The upper bound is the block's
+	// LAST member and the header static_asserts the block's width against it, so
+	// a verb appended without moving this line fails the build rather than
+	// falling through to the generic switch's assert at boot.
+	if (xAction.m_eType >= Zenith_EditorActionType::ANIM_OPEN_CLIP &&
+		xAction.m_eType <= Zenith_EditorActionType::ANIM_EXPECT_SELECTED_COUNT)
+	{
+		ExecuteAnimationAction(xAction);
 		return;
 	}
 

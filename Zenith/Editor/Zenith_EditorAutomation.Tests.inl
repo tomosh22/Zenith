@@ -15,6 +15,13 @@
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "EntityComponent/Components/Zenith_GraphComponent.h"
 #include "Editor/Panels/Zenith_EditorPanel_GraphEditor.h"
+// WU-3.4's animation steps: the panel they drive, the clip type their fixture
+// writes, and the preview-slot arbiter opening a clip claims (reset at both
+// ends of the unit, exactly as Zenith_EditorPanel_Animation.Tests.inl does —
+// a unit that left the process-level slot claimed would hand its claim on).
+#include "Editor/Panels/Zenith_EditorPanel_Animation.h"
+#include "Flux/MeshAnimation/Flux_AnimationClip.h"
+#include "Flux/RenderViews/Flux_PreviewSlotArbiter.h"
 #include "AssetHandling/Zenith_BehaviourGraphAsset.h"
 #include "Scripting/Zenith_BehaviourGraph.h"
 #include "UI/Zenith_UIElement.h"
@@ -3338,6 +3345,211 @@ ZENITH_TEST(Automation, GrassTypesEnumBlockIsContiguous)
 	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::CREATE_PREFAB_FROM_SELECTED) -
 		static_cast<int>(Zenith_EditorActionType::GRASS_TYPES_SAVE), 1,
 		"the prefab block must start immediately after the grass-type range ends");
+}
+
+//=============================================================================
+// Animation dope-sheet authoring steps (WU-3.4)
+//
+// The third of the three layers over the dope sheet: WU-3.1's pure timeline
+// maths and WU-3.3's Action_* twins are unit-tested where they live, and these
+// pin the AUTOMATION surface on top of them — that a queued step reaches the
+// panel at all, that it carries the arguments it was given, and that an
+// INDEX-addressed step resolves to the STABLE ID the panel actually takes.
+//=============================================================================
+
+ZENITH_TEST(Automation, AnimEnumBlockIsContiguous)
+{
+	// Same argument as the grass-type block above: ExecuteAction compares an
+	// action against this block's FIRST and LAST member and never enumerates
+	// what is between them. The header static_asserts the WIDTH; this pins each
+	// member's POSITION, so a reorder that preserves the width fails here naming
+	// the member that moved rather than at boot inside a neighbour's `default:`.
+	const int iFirst = static_cast<int>(Zenith_EditorActionType::ANIM_OPEN_CLIP);
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_SELECT_KEY) - iFirst, 1,
+		"ANIM_SELECT_KEY must be the second member of the block");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_BOX_SELECT) - iFirst, 2,
+		"ANIM_BOX_SELECT must be the third member of the block");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_MOVE_SELECTION) - iFirst, 3,
+		"ANIM_MOVE_SELECTION must be the fourth member of the block");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_CLOSE_CLIP) - iFirst, 13,
+		"ANIM_CLOSE_CLIP must be the fourteenth member of the block");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_EXPECT_SELECTED_COUNT) - iFirst, 15,
+		"ANIM_EXPECT_SELECTED_COUNT must END the block — the router compares against it");
+
+	// ... and the block must not have grown into either neighbour. It was
+	// APPENDED after the prefab range precisely so that nothing already pinned
+	// had to move (see the header), and SET_NAVMESH_ASSET — a standalone verb
+	// that must keep reaching ExecuteAction's own switch — begins right after it.
+	ZENITH_ASSERT_EQ(iFirst - static_cast<int>(Zenith_EditorActionType::INSTANTIATE_PREFAB), 1,
+		"the ANIM block must start immediately after the prefab range ends");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::SET_NAVMESH_ASSET) -
+		static_cast<int>(Zenith_EditorActionType::ANIM_EXPECT_SELECTED_COUNT), 1,
+		"SET_NAVMESH_ASSET must sit immediately after the ANIM range — inside it, the "
+		"router would hand it to ExecuteAnimationAction's default: assert");
+}
+
+ZENITH_TEST(Automation, AnimStepsPackTheirPayloads)
+{
+	// The queue is drained MUCH later than it is built, so every argument has to
+	// survive as an owned copy in the action struct. This asserts the packing
+	// contract the executor reads back — the two halves are written from the same
+	// comment block in the .cpp, and this is what stops them drifting.
+	Zenith_EditorAutomation& xAuto = g_xEngine.EditorAutomation();
+	xAuto.Reset();
+
+	xAuto.AddStep_AnimOpenClip("game:Animations/Probe.zanim");
+	xAuto.AddStep_AnimSelectKey("Hip", FLUX_ANIM_TRACK_ROTATION, 2, ZENITH_ANIMSELECT_ADD);
+	xAuto.AddStep_AnimBoxSelect(10.0f, 20.0f, 30.0f, 40.0f, ZENITH_ANIMSELECT_TOGGLE);
+	xAuto.AddStep_AnimMoveSelection(0.25f, true);
+	xAuto.AddStep_AnimPasteToBone("Spine", 0.5f);
+	xAuto.AddStep_AnimExpectKeyTime("Hip", FLUX_ANIM_TRACK_SCALE, 3, 1.25f, 0.002f);
+	xAuto.AddStep_AnimExpectSelectedCount(4);
+
+	ZENITH_ASSERT_EQ(xAuto.m_axActions.GetSize(), 7u, "seven steps queued");
+
+	const Zenith_EditorAction& xOpen = xAuto.m_axActions.Get(0);
+	ZENITH_ASSERT_TRUE(xOpen.m_eType == Zenith_EditorActionType::ANIM_OPEN_CLIP, "step 0 is ANIM_OPEN_CLIP");
+	ZENITH_ASSERT_STREQ(xOpen.m_szArg1.c_str(), "game:Animations/Probe.zanim",
+		"the asset path is OWNED by the action, not aliased");
+
+	const Zenith_EditorAction& xSelect = xAuto.m_axActions.Get(1);
+	ZENITH_ASSERT_TRUE(xSelect.m_eType == Zenith_EditorActionType::ANIM_SELECT_KEY, "step 1 is ANIM_SELECT_KEY");
+	ZENITH_ASSERT_STREQ(xSelect.m_szArg1.c_str(), "Hip", "szArg1 carries the bone name");
+	ZENITH_ASSERT_EQ(xSelect.m_aiArgs[0], static_cast<int>(FLUX_ANIM_TRACK_ROTATION), "aiArgs[0] carries the track");
+	ZENITH_ASSERT_EQ(xSelect.m_aiArgs[1], 2, "aiArgs[1] carries the KEY INDEX (resolved to an id at execution)");
+	ZENITH_ASSERT_EQ(xSelect.m_aiArgs[2], static_cast<int>(ZENITH_ANIMSELECT_ADD), "aiArgs[2] carries the select mode");
+
+	const Zenith_EditorAction& xBox = xAuto.m_axActions.Get(2);
+	ZENITH_ASSERT_EQ_FLOAT(xBox.m_afArgs[0], 10.0f, 1.0e-5f, "afArgs[0..3] carry the screen rectangle");
+	ZENITH_ASSERT_EQ_FLOAT(xBox.m_afArgs[3], 40.0f, 1.0e-5f, "afArgs[0..3] carry the screen rectangle");
+	ZENITH_ASSERT_EQ(xBox.m_aiArgs[2], static_cast<int>(ZENITH_ANIMSELECT_TOGGLE),
+		"the select mode rides aiArgs[2] on EVERY select verb, box included");
+
+	const Zenith_EditorAction& xMove = xAuto.m_axActions.Get(3);
+	ZENITH_ASSERT_EQ_FLOAT(xMove.m_afArgs[0], 0.25f, 1.0e-5f, "afArgs[0] carries the delta in SECONDS");
+	ZENITH_ASSERT_TRUE(xMove.m_bArg, "bArg carries the snap flag");
+
+	const Zenith_EditorAction& xPaste = xAuto.m_axActions.Get(4);
+	ZENITH_ASSERT_STREQ(xPaste.m_szArg1.c_str(), "Spine", "the paste TARGET bone is owned too");
+	ZENITH_ASSERT_EQ_FLOAT(xPaste.m_afArgs[0], 0.5f, 1.0e-5f, "afArgs[0] carries the paste offset");
+
+	const Zenith_EditorAction& xExpectTime = xAuto.m_axActions.Get(5);
+	ZENITH_ASSERT_EQ(xExpectTime.m_aiArgs[1], 3, "the assertion step addresses by index like the mutating ones");
+	ZENITH_ASSERT_EQ_FLOAT(xExpectTime.m_afArgs[0], 1.25f, 1.0e-5f, "afArgs[0] is the EXPECTED time");
+	ZENITH_ASSERT_EQ_FLOAT(xExpectTime.m_afArgs[1], 0.002f, 1.0e-6f, "afArgs[1] is the TOLERANCE");
+
+	ZENITH_ASSERT_EQ(xAuto.m_axActions.Get(6).m_aiArgs[0], 4, "the expected selection count rides aiArgs[0]");
+
+	xAuto.Reset();
+}
+
+namespace
+{
+	// One bone, three position keys at 0 / 1 / 2 s, duration 2 s, 30 fps grid —
+	// the same shape Zenith_EditorPanel_Animation.Tests.inl's probe uses, so a
+	// failure here can be compared against the panel's own units directly.
+	void AutomationWriteAnimProbe(const std::string& strPath)
+	{
+		Flux_AnimationClip xClip;
+		xClip.SetName("AutomationAnimProbe");
+		xClip.SetDuration(2.0f);
+		xClip.GetMetadata().m_bGenerated = false;
+		xClip.GetMetadata().m_uAuthoredFrameRate = 30u;
+
+		Flux_BoneChannel xHip;
+		xHip.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
+		xHip.AddPositionKeyframe(1.0f, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
+		xHip.AddPositionKeyframe(2.0f, Zenith_Maths::Vector3(0.0f, 2.0f, 0.0f));
+		xHip.SortKeyframes();
+		xClip.AddBoneChannel("Hip", std::move(xHip));
+
+		xClip.Export(strPath);
+	}
+}
+
+ZENITH_TEST(Automation, AnimAuthoringStepsDriveTheDopeSheet)
+{
+	// ★ THE ONE THAT PROVES THE ROUTE EXISTS. Everything else about these verbs
+	// is checkable by reading the queue; this is the only unit that shows a
+	// QUEUED step reaching Zenith_EditorPanel_Animation and moving a key — the
+	// enum value, the router range, the executor case and the panel call all in
+	// one line of evidence. No ImGui frame is needed: every Action_* used here is
+	// pure document work (the rect-dependent ones, box select in particular, need
+	// a rendered frame and are covered by the RenderTest live test instead).
+	Flux_PreviewSlotArbiter::ResetForTesting();
+
+	std::error_code xError;
+	std::filesystem::path xRoot = std::filesystem::temp_directory_path(xError);
+	if (xError)
+	{
+		xRoot = ".";
+	}
+	const std::filesystem::path xDirectory = xRoot / "zenith_automation_anim";
+	std::filesystem::remove_all(xDirectory, xError);
+	std::filesystem::create_directories(xDirectory, xError);
+	const std::string strPath = (xDirectory / "steps.zanim").generic_string();
+	AutomationWriteAnimProbe(strPath);
+
+	Zenith_EditorAutomation& xAuto = g_xEngine.EditorAutomation();
+	Zenith_EditorPanel_Animation& xPanel = Zenith_EditorPanel_Animation::Instance();
+	xAuto.Reset();
+
+	xAuto.AddStep_AnimOpenClip(strPath.c_str());
+	xAuto.AddStep_AnimSelectKey("Hip", FLUX_ANIM_TRACK_POSITION, 1, ZENITH_ANIMSELECT_REPLACE);
+	xAuto.AddStep_AnimExpectSelectedCount(1);
+	xAuto.AddStep_AnimMoveSelection(0.5f, true);
+	xAuto.AddStep_AnimExpectKeyTime("Hip", FLUX_ANIM_TRACK_POSITION, 1, 1.5f, 0.001f);
+	xAuto.AddStep_AnimUndo();
+	xAuto.AddStep_AnimExpectKeyTime("Hip", FLUX_ANIM_TRACK_POSITION, 1, 1.0f, 0.001f);
+	xAuto.AddStep_AnimCloseClip();
+	xAuto.Begin();
+
+	const Zenith_AnimTrackId xTrack = Zenith_AnimTrackId::Bone("Hip", FLUX_ANIM_TRACK_POSITION);
+
+	xAuto.ExecuteNextStep();	// open
+	ZENITH_ASSERT_TRUE(xPanel.IsOpen(), "AnimOpenClip opened the probe into the dope sheet");
+	ZENITH_ASSERT_TRUE(xPanel.IsShown(), "AnimOpenClip SHOWS the window — a hidden sheet records no rects");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetKeyCount(xTrack), 3u, "the probe's three Hip position keys are there");
+
+	// Captured BEFORE the move, because this is the whole point of the index
+	// indirection: the step names index 1 and the executor must turn that into
+	// THIS id, which then survives the move and the undo.
+	const u_int uMiddleKeyId = xPanel.Document().GetKeyIdAtIndex(xTrack, 1u);
+	ZENITH_ASSERT_NE(uMiddleKeyId, uINVALID_ANIM_KEY_ID, "the middle key has a stable id");
+
+	xAuto.ExecuteNextStep();	// select key by INDEX
+	ZENITH_ASSERT_EQ(xPanel.GetSelectedKeyCount(), 1u, "the select step selected exactly one key");
+	ZENITH_ASSERT_TRUE(xPanel.IsKeySelected(xTrack, uMiddleKeyId),
+		"index 1 resolved to the STABLE ID of the middle key, which is what the panel takes");
+
+	xAuto.ExecuteNextStep();	// expect-selected-count
+	ZENITH_ASSERT_EQ(xPanel.GetSelectedKeyCount(), 1u, "an assertion step mutates nothing");
+
+	xAuto.ExecuteNextStep();	// move +0.5 s, snapped
+	float fTime = 0.0f;
+	ZENITH_ASSERT_TRUE(xPanel.Document().GetKeyTime(xTrack, uMiddleKeyId, fTime), "the moved key still resolves");
+	ZENITH_ASSERT_EQ_FLOAT(fTime, 1.5f, 0.001f, "AnimMoveSelection moved the selected key by half a second");
+
+	xAuto.ExecuteNextStep();	// expect-key-time (1.5)
+	xAuto.ExecuteNextStep();	// undo
+	ZENITH_ASSERT_TRUE(xPanel.Document().GetKeyTime(xTrack, uMiddleKeyId, fTime),
+		"the undo re-inserted the key under its ORIGINAL id");
+	ZENITH_ASSERT_EQ_FLOAT(fTime, 1.0f, 0.001f, "AnimUndo put the key back where it started");
+
+	xAuto.ExecuteNextStep();	// expect-key-time (1.0)
+	xAuto.ExecuteNextStep();	// close
+	ZENITH_ASSERT_FALSE(xPanel.IsOpen(), "AnimCloseClip closed the document");
+
+	// ★ CloseClip does NOT hide the window, and AnimOpenClip deliberately shows
+	// it — so this unit drives the EDITOR'S single panel into a visible state and
+	// has to put it back. Left set, every game would boot with the dope sheet
+	// open over its viewport, caused by a unit test.
+	xPanel.ShowFlag() = false;
+
+	xAuto.Reset();
+	Zenith_AssetRegistry::ForceUnload(strPath);
+	std::filesystem::remove_all(xDirectory, xError);
+	Flux_PreviewSlotArbiter::ResetForTesting();
 }
 
 #endif // ZENITH_TOOLS

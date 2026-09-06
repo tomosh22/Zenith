@@ -288,6 +288,37 @@ enum class Zenith_EditorActionType
 	ADD_PREFAB_VARIANT_OVERRIDE_VEC3,
 	INSTANTIATE_PREFAB,
 
+	// Animation dope-sheet authoring (WU-3.4). Each verb performs EXACTLY the
+	// operation one of Zenith_EditorPanel_Animation's Action_* twins performs —
+	// the same call the panel's own mouse handler ends in — so an authored
+	// recipe and a human's gesture cannot diverge. The two EXPECT_* verbs are
+	// ASSERTIONS rather than mutations: they are what makes a recipe fail at the
+	// step that is wrong instead of somewhere downstream.
+	//
+	// ★ THIS BLOCK IS APPENDED AFTER THE PREFAB RANGE ON PURPOSE. Placing it
+	// between GRASS_TYPES_SAVE and CREATE_PREFAB_FROM_SELECTED would have moved
+	// the prefab block, whose START is pinned by
+	// `Automation, GrassTypesEnumBlockIsContiguous`; appending here moves
+	// nothing that anything else measures. NOTE: this block must stay
+	// CONTIGUOUS (ExecuteAction routes the whole range to ExecuteAnimationAction
+	// by a pair of comparisons against its first and last member).
+	ANIM_OPEN_CLIP,
+	ANIM_SELECT_KEY,
+	ANIM_BOX_SELECT,
+	ANIM_MOVE_SELECTION,
+	ANIM_DELETE_SELECTION,
+	ANIM_DUPLICATE_SELECTION,
+	ANIM_COPY_SELECTION,
+	ANIM_PASTE_TO_BONE,
+	ANIM_RIPPLE_RETIME,
+	ANIM_SCRUB,
+	ANIM_SET_DURATION,
+	ANIM_UNDO,
+	ANIM_REDO,
+	ANIM_CLOSE_CLIP,
+	ANIM_EXPECT_KEY_TIME,
+	ANIM_EXPECT_SELECTED_COUNT,	// END of the contiguous ANIM range (see ANIM_OPEN_CLIP)
+
 	// NavMesh. Deliberately NOT appended to the Terrain block above, which is
 	// routed by a range comparison: a standalone action sits outside every
 	// range and reaches ExecuteAction's own switch, which is what a
@@ -323,6 +354,14 @@ static_assert(static_cast<int>(Zenith_EditorActionType::GRASS_TYPES_SAVE) -
 static_assert(static_cast<int>(Zenith_EditorActionType::TERRAIN_EDITOR_SET_DIMENSIONS) -
 	static_cast<int>(Zenith_EditorActionType::TERRAIN_EDITOR_SET_ASSET_SET) == 12,
 	"the TERRAIN_EDITOR block must stay CONTIGUOUS and thirteen wide — ExecuteAction routes it by range");
+// And the same pin for the ANIM block (WU-3.4), whose LAST member is the upper
+// bound ExecuteAction's range test compares against: an ANIM verb appended after
+// ANIM_EXPECT_SELECTED_COUNT without moving that comparison would never be
+// routed at all — it would reach the generic executor and assert at runtime
+// instead of failing the build here.
+static_assert(static_cast<int>(Zenith_EditorActionType::ANIM_EXPECT_SELECTED_COUNT) -
+	static_cast<int>(Zenith_EditorActionType::ANIM_OPEN_CLIP) == 15,
+	"the ANIM block must stay CONTIGUOUS and sixteen wide — ExecuteAction routes it by range");
 
 //-----------------------------------------------------------------------------
 // Action Data
@@ -895,6 +934,68 @@ void AddStep_InstantiatePrefab(const char* szPrefabPath, const char* szEntityNam
 		float fPosX = 0.0f, float fPosY = 0.0f, float fPosZ = 0.0f,
 		float fRotW = 1.0f, float fRotX = 0.0f, float fRotY = 0.0f, float fRotZ = 0.0f,
 		float fScaleX = 1.0f, float fScaleY = 1.0f, float fScaleZ = 1.0f);
+
+	//--------------------------------------------------------------------------
+	// Animation dope-sheet step helpers (WU-3.4).
+	//
+	// Each verb routes to the matching Zenith_EditorPanel_Animation::Action_*
+	// through a CHECKED wrapper that asserts on `false`, exactly as the graph and
+	// material families do — an authoring typo (a bone the clip has no channel
+	// for, a key index past the end of a track, a move refused by a collision)
+	// fires at BOOT, on the step that is wrong, instead of leaving a clip that is
+	// quietly not what the recipe said.
+	//
+	// ★ THE STEPS ADDRESS A KEY BY INDEX; THE EXECUTOR RESOLVES THE STABLE ID.
+	// A recipe is written against a clip a human can see, where "the second key
+	// on Hip's rotation track" is the only address that can be typed — but the
+	// panel and the document address keys by a STABLE ID (D24), because a retime
+	// REORDERS a track and an index would start naming a different key mid-recipe.
+	// So iKeyIndex is resolved through Zenith_AnimationDocument::GetKeyIdAtIndex
+	// at EXECUTION time, against the track as it stands at that step, and the id
+	// is what reaches the action. An index that no longer resolves asserts.
+	//
+	// iTrack is a Flux_AnimTrack (0 = Translation, 1 = Rotation, 2 = Scale) and
+	// iSelectMode a Zenith_AnimSelectMode (0 = REPLACE, 1 = TOGGLE, 2 = ADD),
+	// passed as ints so this header needs neither the clip nor the panel header.
+	// A NULL or EMPTY szBone addresses the ROOT MOTION track of that kind (which
+	// has no scale channel — D16 — so track 2 there is refused).
+	//
+	// A typical authoring sequence:
+	//   AnimOpenClip("game:Animations/Sway.zanim") ->
+	//   AnimSelectKey("Hip", 0, 1, 0) -> AnimMoveSelection(0.25f, true) ->
+	//   AnimExpectKeyTime("Hip", 0, 1, 1.25f, 0.001f) -> AnimCloseClip().
+	//--------------------------------------------------------------------------
+
+	// Opens szAssetPath into the editor's single dope sheet, SHOWING the window
+	// (the panel is hidden by default, and a hidden panel draws nothing and
+	// records no rects — so every later step, and every human looking at the
+	// run, would be working blind).
+void AddStep_AnimOpenClip(const char* szAssetPath);
+void AddStep_AnimCloseClip();	// forced close; unsaved edits are discarded
+
+void AddStep_AnimSelectKey(const char* szBone, int iTrack, int iKeyIndex, int iSelectMode);
+	// Absolute SCREEN coordinates, the space the panel records its rects in —
+	// so this hit-tests exactly what was painted, and needs a rendered frame.
+void AddStep_AnimBoxSelect(float fX0, float fY0, float fX1, float fY1, int iSelectMode);
+
+void AddStep_AnimMoveSelection(float fDeltaSeconds, bool bSnap);
+void AddStep_AnimDeleteSelection();
+void AddStep_AnimDuplicateSelection();
+void AddStep_AnimCopySelection();
+void AddStep_AnimPasteToBone(const char* szBone, float fTimeOffsetSeconds);
+void AddStep_AnimRippleRetime(float fFromSeconds, float fDeltaSeconds);
+void AddStep_AnimScrub(float fTimeSeconds);
+void AddStep_AnimSetDuration(float fDurationSeconds);
+void AddStep_AnimUndo();
+void AddStep_AnimRedo();
+
+	// ---- assertion steps -----------------------------------------------------
+	// These mutate NOTHING. They exist because every step above reports only a
+	// bool, and a recipe that authored the wrong thing successfully is exactly
+	// the failure the checked wrapper cannot catch.
+void AddStep_AnimExpectKeyTime(const char* szBone, int iTrack, int iKeyIndex,
+	float fExpectedSeconds, float fToleranceSeconds);
+void AddStep_AnimExpectSelectedCount(int iExpectedCount);
 
 	//--------------------------------------------------------------------------
 	// Scene Loading Step Helpers
