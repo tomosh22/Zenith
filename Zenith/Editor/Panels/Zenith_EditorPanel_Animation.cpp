@@ -118,6 +118,15 @@ void Zenith_EditorPanel_Animation::OnDocumentOpened()
 	m_xSession.Pause();
 	m_xSession.Seek(0.0f);
 
+	// ★ THE PANEL LISTENS TO THE SESSION'S OWN CONTROLLER (D30). Registered here,
+	// after Open has armed direct play, so the emitted strip reports what the
+	// RUNTIME dispatcher fired rather than a re-derivation of which events the
+	// playhead crossed — a second opinion would agree with D35-D40 exactly until
+	// one of them changed. `this` is stable: the session is a member of the panel,
+	// so the callback cannot outlive its user data.
+	m_xSession.Controller().SetEventCallback(&Zenith_EditorPanel_Animation::OnPreviewEventEmitted, this);
+	ClearEmittedEvents();
+
 	m_xCollapsedGroups.Clear();
 	// ★ THE SELECTION AND THE CLIPBOARD DO NOT SURVIVE AN OPEN. A key id is a
 	// session identity issued by THIS document, and Open() retires every one it
@@ -129,6 +138,12 @@ void Zenith_EditorPanel_Animation::OnDocumentOpened()
 	m_strPasteTargetBone.clear();
 	m_uCollisionFlashFrames = 0;
 	m_uCollisionFlashKeyId = uINVALID_ANIM_KEY_ID;
+
+	m_bDraggingEvents = false;
+	m_fEventDragDeltaNormalized = 0.0f;
+	m_bEventContextMenuRequested = false;
+	m_uInspectorBufferEventId = uINVALID_ANIM_KEY_ID;
+	m_bEventInspectorEditing = false;
 
 	m_fRowScrollPixels = 0.0f;
 	m_bPendingTimeScroll = false;
@@ -158,6 +173,12 @@ void Zenith_EditorPanel_Animation::OnDocumentOpened()
 
 void Zenith_EditorPanel_Animation::CloseClip()
 {
+	// Dropped BEFORE the session is closed, so nothing can be dispatched into a
+	// panel that is halfway through tearing its state down. The pointer could not
+	// dangle either way (the session is a member), but a strip that grew an entry
+	// during a close would be reporting a clip nobody has open.
+	m_xSession.Controller().ClearEventCallback();
+
 	m_xSession.Close();
 	m_xDocument.CloseDiscardingChanges();
 
@@ -192,6 +213,13 @@ void Zenith_EditorPanel_Animation::CloseClip()
 	m_bScrubbing = false;
 	m_bDraggingDuration = false;
 	m_fDragDeltaSeconds = 0.0f;
+
+	m_bDraggingEvents = false;
+	m_fEventDragDeltaNormalized = 0.0f;
+	m_bEventContextMenuRequested = false;
+	m_uInspectorBufferEventId = uINVALID_ANIM_KEY_ID;
+	m_bEventInspectorEditing = false;
+	ClearEmittedEvents();
 }
 
 Zenith_AnimDocCloseResult Zenith_EditorPanel_Animation::RequestCloseClip()
@@ -630,6 +658,64 @@ bool Zenith_EditorPanel_Animation::GetRulerRect(Zenith_AnimPanelRect& xOut) cons
 bool Zenith_EditorPanel_Animation::GetTrackAreaRect(Zenith_AnimPanelRect& xOut) const
 {
 	return m_bTrackAreaRectValid ? PublishRect(&m_xTrackAreaRect, xOut) : false;
+}
+
+//=============================================================================
+// Events (WU-5B) — the inspector target and the emitted-event strip.
+//=============================================================================
+
+u_int Zenith_EditorPanel_Animation::GetInspectorEventId() const
+{
+	u_int uEventId = uINVALID_ANIM_KEY_ID;
+	return ResolvePrimarySelectedEvent(uEventId) ? uEventId : uINVALID_ANIM_KEY_ID;
+}
+
+void Zenith_EditorPanel_Animation::OnPreviewEventEmitted(void* pUserData, const std::string& strEventName,
+	const Zenith_Maths::Vector4& xData)
+{
+	// The payload is deliberately not kept: the strip answers "did that fire?"
+	// beside a moving playhead, and four floats per row would push the names —
+	// the only part a reader is scanning for — off the end of the toolbar.
+	(void)xData;
+	Zenith_EditorPanel_Animation* pxPanel = static_cast<Zenith_EditorPanel_Animation*>(pUserData);
+	if (pxPanel == nullptr)
+	{
+		return;
+	}
+	pxPanel->PushEmittedEventName(strEventName);
+}
+
+void Zenith_EditorPanel_Animation::PushEmittedEventName(const std::string& strName)
+{
+	// ★ THE TOTAL IS COUNTED BEFORE THE RING IS TRIMMED. A scrub across a dense
+	// clip can fire more events than the strip holds, and a test that could only
+	// see the survivors would report "3 fired" for a burst of eleven.
+	++m_uEmittedEventTotal;
+
+	m_astrEmittedEvents.PushBack(strName);
+	while (m_astrEmittedEvents.GetSize() > uANIM_EMITTED_EVENT_HISTORY)
+	{
+		m_astrEmittedEvents.Remove(0u);
+	}
+}
+
+bool Zenith_EditorPanel_Animation::GetEmittedEventNameAt(u_int uIndex, std::string& strOut) const
+{
+	// Index 0 is the MOST RECENT — the vector's tail. A reader scanning the strip
+	// wants the newest first, and reversing here keeps the push path a plain
+	// append.
+	if (uIndex >= m_astrEmittedEvents.GetSize())
+	{
+		return false;
+	}
+	strOut = m_astrEmittedEvents.Get(m_astrEmittedEvents.GetSize() - 1u - uIndex);
+	return true;
+}
+
+void Zenith_EditorPanel_Animation::ClearEmittedEvents()
+{
+	m_astrEmittedEvents.Clear();
+	m_uEmittedEventTotal = 0u;
 }
 
 #ifdef ZENITH_TESTING

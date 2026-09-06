@@ -1,5 +1,6 @@
 //------------------------------------------------------------------------------
-// Zenith_EditorPanel_Animation unit tests (WU-3.2 rendering + WU-3.3 operations).
+// Zenith_EditorPanel_Animation unit tests (WU-3.2 rendering + WU-3.3 operations
+// + WU-5B events).
 // Included at the bottom of Zenith_EditorPanel_Animation.cpp.
 //
 // ★ THESE DRIVE A REAL ImGui FRAME, HEADLESS, AND NONE OF THEM IS
@@ -1206,4 +1207,422 @@ ZENITH_TEST(AnimPanel, ScrubMovesTheSessionClockWithoutEmittingEvents)
 	// The document is a scrub away from nothing: seeking is a VIEW change.
 	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), 0u, "and a scrub is not an edit");
 	ZENITH_ASSERT_FALSE(xPanel.Document().IsDirty(), "nor does it dirty the clip");
+}
+
+//==============================================================================
+//                            WU-5B — THE EVENTS ROW
+//
+// ★ EVERY TIME BELOW IS A [0,1] FRACTION (D4), AND THAT IS THE ONE THING THESE
+// UNITS EXIST TO PIN. An event is not on the seconds clock the keys are on, so
+// the sheet maps it through fNormalized * duration at DRAW time and the stored
+// value never moves. The failure that shape invites is silent in both
+// directions: rescale the value on a duration change and every event drifts a
+// second time; forget the multiply and the flag lands at the wrong pixel while
+// the file is perfectly correct. (24) renders frames either side of a duration
+// change and checks BOTH halves at once.
+//
+// ★ EVENTS MAY COINCIDE. Keys may not (D11 — a second key on one time would
+// overwrite the first's value), and copying that refusal across would make a
+// double footstep unauthorable. (21) is that difference, stated.
+//==============================================================================
+
+//==============================================================================
+// (19) Add: one undo step, the new event becomes the selection, and the
+// refusals that keep a gesture from producing something invisible.
+//==============================================================================
+ZENITH_TEST(AnimPanel, AddEventSelectsTheNewEventAndUndoesAsOneStep)
+{
+	AnimPanelFixture xFixture("zenith_animpanel_addevent");
+	AnimPanelWriteProbe(xFixture.m_strPath, /*bGenerated*/ false);
+
+	Zenith_EditorPanel_Animation xPanel;
+	ZENITH_ASSERT_TRUE(xPanel.OpenClip(xFixture.m_strPath), "the probe clip opens");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetEventCount(), 0u, "the probe authored no events");
+
+	// ---- the refusals --------------------------------------------------------
+	ZENITH_ASSERT_FALSE(xPanel.Action_AddEvent(-0.1f, "Early"), "a negative normalized time is refused");
+	// ★ AN EMPTY NAME IS REFUSED. The flag would draw unlabelled and the runtime
+	// dispatcher would hand every listener an empty string, so the event exists
+	// and matches nothing — a silent no-op carrying an undo entry.
+	ZENITH_ASSERT_FALSE(xPanel.Action_AddEvent(0.25f, ""), "an unnamed event is refused");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), 0u, "and neither refusal pushed anything");
+
+	// ---- the real one --------------------------------------------------------
+	ZENITH_ASSERT_TRUE(xPanel.Action_AddEvent(0.25f, Zenith_EditorPanel_Animation::DefaultEventName()),
+		"the add lands");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetEventCount(), 1u, "one event on the clip");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), 1u, "as ONE undo step");
+
+	// ★ THE NEW EVENT IS THE SELECTION, which is what points the inspector strip
+	// at it: the gesture straight after "add" is "name it", and leaving the
+	// previous selection in place would put the user's typing into another event.
+	ZENITH_ASSERT_EQ(xPanel.GetSelectedEventCount(), 1u, "and it is selected");
+	const u_int uEventId = xPanel.GetSelectedEventIdAt(0u);
+	ZENITH_ASSERT_NE(uEventId, uINVALID_ANIM_KEY_ID, "with an id the selection can name");
+	ZENITH_ASSERT_EQ(xPanel.GetInspectorEventId(), uEventId, "and the inspector strip targets exactly it");
+
+	Flux_AnimationEvent xEvent;
+	ZENITH_ASSERT_TRUE(xPanel.Document().GetEvent(uEventId, xEvent), "the event resolves by id");
+	ZENITH_ASSERT_EQ_FLOAT(xEvent.m_fNormalizedTime, 0.25f, 0.0f, "at the NORMALIZED time asked for, not a second");
+	ZENITH_ASSERT_STREQ(xEvent.m_strEventName.c_str(), Zenith_EditorPanel_Animation::DefaultEventName(),
+		"under the default name a gesture gives it");
+
+	// ---- undo / redo ---------------------------------------------------------
+	ZENITH_ASSERT_TRUE(xPanel.Action_Undo(), "one undo removes it");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetEventCount(), 0u, "leaving no events");
+	ZENITH_ASSERT_FALSE(xPanel.Document().GetEvent(uEventId, xEvent), "and the id stops resolving");
+	ZENITH_ASSERT_EQ(xPanel.GetSelectedEventCount(), 1u,
+		"while the SELECTION still names it — the same rule the key delete follows, so the redo hands it back");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_Redo(), "the redo puts it back");
+	ZENITH_ASSERT_TRUE(xPanel.Document().GetEvent(uEventId, xEvent), "under its ORIGINAL id");
+	ZENITH_ASSERT_TRUE(xPanel.IsEventSelected(uEventId), "so the selection resolves again");
+	ZENITH_ASSERT_EQ(xPanel.GetInspectorEventId(), uEventId, "and the inspector is pointing at it once more");
+
+	// ---- past the end is ALLOWED, and counted (D13) --------------------------
+	// Refusing it would silently discard what the author asked for; the panel says
+	// so instead, exactly as it does for a key past the duration.
+	ZENITH_ASSERT_TRUE(xPanel.Action_AddEvent(1.5f, "Late"), "an event past the clip's end is allowed");
+	xPanel.RequestWindowPlacement(40.0f, 40.0f, 900.0f, 600.0f);
+	AnimPanelRenderFrames(xPanel, 1u);
+	ZENITH_ASSERT_EQ(xPanel.GetEventsPastDurationCount(), 1u,
+		"and is COUNTED as past the end — >1.0, not >duration: an event is a fraction, not a second");
+}
+
+//==============================================================================
+// (20) A move snaps to the frame grid AT THE CURRENT DURATION, and its undo
+// restores the stored fraction bit-for-bit.
+//
+// ★ THE SNAP HAS TO HAPPEN IN SECONDS. The frame grid is the clip's authored
+// frame rate; there is no "nearest frame" in [0,1] without a duration to divide
+// by. So the action converts out, snaps, and converts back — and this is the
+// assertion that catches anyone snapping the fraction directly, which would
+// quantise to 1/30 of the WHOLE CLIP and be wrong by a factor of the duration.
+//==============================================================================
+ZENITH_TEST(AnimPanel, MovingAnEventSnapsToTheFrameGridAndUndoesExactly)
+{
+	AnimPanelFixture xFixture("zenith_animpanel_moveevent");
+	AnimPanelWriteProbe(xFixture.m_strPath, /*bGenerated*/ false);
+
+	Zenith_EditorPanel_Animation xPanel;
+	ZENITH_ASSERT_TRUE(xPanel.OpenClip(xFixture.m_strPath), "the probe clip opens");
+	ZENITH_ASSERT_EQ(xPanel.GetFrameRate(), 30u, "authored at 30 fps");
+	ZENITH_ASSERT_EQ_FLOAT(xPanel.Document().GetDuration(), 2.0f, 0.0f, "over 2 s");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_AddEvent(0.25f, "Beat"), "an event at a quarter of the clip");
+	const u_int uEventId = xPanel.GetSelectedEventIdAt(0u);
+
+	ZENITH_ASSERT_FALSE(xPanel.Action_MoveSelectedEvents(0.0f, /*bSnap*/ false),
+		"a zero move is refused rather than pushing an undo entry that reverses nothing");
+
+	// 0.25 normalized is 0.5 s. +0.02 normalized is +0.04 s, landing on 0.54 s —
+	// 16.2 frames — which snaps DOWN to frame 16 and comes back as 16/30 s
+	// expressed as a fraction of 2 s.
+	ZENITH_ASSERT_TRUE(xPanel.Action_MoveSelectedEvents(0.02f, /*bSnap*/ true), "the move lands");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), 2u, "the add and the move: one step each");
+
+	Flux_AnimationEvent xEvent;
+	ZENITH_ASSERT_TRUE(xPanel.Document().GetEvent(uEventId, xEvent), "the event still resolves by id");
+	const float fFrame16 = Zenith_AnimTimelineFrameToTime(16u, 30u);
+	ZENITH_ASSERT_EQ_FLOAT(xEvent.m_fNormalizedTime * 2.0f, fFrame16, 1.0e-5f,
+		"its time IN SECONDS sits on the frame grid — the snap went through the duration, not around it");
+	ZENITH_ASSERT_TRUE(xPanel.IsEventSelected(uEventId), "and the selection survived the edit");
+
+	// ---- exact restore -------------------------------------------------------
+	ZENITH_ASSERT_TRUE(xPanel.Action_Undo(), "one undo reverses the whole move");
+	ZENITH_ASSERT_TRUE(xPanel.Document().GetEvent(uEventId, xEvent), "the event resolves under its original id");
+	ZENITH_ASSERT_EQ_FLOAT(xEvent.m_fNormalizedTime, 0.25f, 0.0f, "back EXACTLY where it was, not merely close");
+	ZENITH_ASSERT_TRUE(xPanel.IsEventSelected(uEventId), "with the selection intact");
+
+	// A drag that would take an event before the start of the clip is refused
+	// whole rather than clamped: clamping a multi-event drag piles the leaders
+	// onto zero and silently rewrites their spacing.
+	ZENITH_ASSERT_FALSE(xPanel.Action_MoveSelectedEvents(-1.0f, /*bSnap*/ false),
+		"a move below zero is refused");
+	ZENITH_ASSERT_TRUE(xPanel.Document().GetEvent(uEventId, xEvent), "and the event is untouched");
+	ZENITH_ASSERT_EQ_FLOAT(xEvent.m_fNormalizedTime, 0.25f, 0.0f, "at its original fraction");
+}
+
+//==============================================================================
+// (21) TWO EVENTS MAY SHARE ONE NORMALIZED TIME, and a drag onto an occupied
+// one is allowed.
+//
+// This is the deliberate difference from keys. D11 refuses a key drop onto an
+// occupied time because Flux_BoneChannel would REPLACE the value in place (D25)
+// and the operation would report success having produced fewer keys than it was
+// asked for. An event list appends and sorts; two footsteps on one frame are two
+// events and Flux_AnimationController::EmitSpanEvents fires both. Copying the
+// key refusal across would make that unauthorable, so no event action carries a
+// collision pre-check — and nothing here may flash.
+//==============================================================================
+ZENITH_TEST(AnimPanel, TwoEventsMayShareOneNormalizedTime)
+{
+	AnimPanelFixture xFixture("zenith_animpanel_coincident");
+	AnimPanelWriteProbe(xFixture.m_strPath, /*bGenerated*/ false);
+
+	Zenith_EditorPanel_Animation xPanel;
+	ZENITH_ASSERT_TRUE(xPanel.OpenClip(xFixture.m_strPath), "the probe clip opens");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_AddEvent(0.25f, "Left"), "one event at 0.25");
+	const u_int uLeftId = xPanel.GetSelectedEventIdAt(0u);
+	ZENITH_ASSERT_TRUE(xPanel.Action_AddEvent(0.5f, "Right"), "another at 0.5");
+	const u_int uRightId = xPanel.GetSelectedEventIdAt(0u);
+	ZENITH_ASSERT_NE(uLeftId, uRightId, "two distinct ids");
+
+	// Drag the first straight onto the second. Unsnapped, so the target is exactly
+	// 0.5 and there is no rounding to hide behind.
+	ZENITH_ASSERT_TRUE(xPanel.Action_SelectEvent(uLeftId, ZENITH_ANIMSELECT_REPLACE), "pick the first");
+	ZENITH_ASSERT_TRUE(xPanel.Action_MoveSelectedEvents(0.25f, /*bSnap*/ false),
+		"and dropping it on top of the other is ALLOWED — events are not keys");
+
+	ZENITH_ASSERT_EQ(xPanel.Document().GetEventCount(), 2u, "both events still exist");
+	ZENITH_ASSERT_EQ(xPanel.GetCollisionFlashFramesRemaining(), 0u,
+		"and nothing flashed — there was no refusal to make visible");
+
+	Flux_AnimationEvent xLeft;
+	Flux_AnimationEvent xRight;
+	ZENITH_ASSERT_TRUE(xPanel.Document().GetEvent(uLeftId, xLeft), "the moved one still resolves under its id");
+	ZENITH_ASSERT_TRUE(xPanel.Document().GetEvent(uRightId, xRight), "and so does the one it landed on");
+	ZENITH_ASSERT_EQ_FLOAT(xLeft.m_fNormalizedTime, 0.5f, 1.0e-6f, "both sit at the same normalized time");
+	ZENITH_ASSERT_EQ_FLOAT(xRight.m_fNormalizedTime, 0.5f, 1.0e-6f, "both sit at the same normalized time");
+	ZENITH_ASSERT_STREQ(xLeft.m_strEventName.c_str(), "Left", "and neither absorbed the other");
+	ZENITH_ASSERT_STREQ(xRight.m_strEventName.c_str(), "Right", "and neither absorbed the other");
+}
+
+//==============================================================================
+// (22) Delete covers EVENTS as well as keys, in ONE step, and the undo hands
+// the selection back with them.
+//==============================================================================
+ZENITH_TEST(AnimPanel, DeleteSelectionRemovesEventsAndItsUndoRestoresTheSelection)
+{
+	AnimPanelFixture xFixture("zenith_animpanel_deleteevent");
+	AnimPanelWriteProbe(xFixture.m_strPath, /*bGenerated*/ false);
+
+	Zenith_EditorPanel_Animation xPanel;
+	ZENITH_ASSERT_TRUE(xPanel.OpenClip(xFixture.m_strPath), "the probe clip opens");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_AddEvent(0.25f, "Left"), "two events");
+	const u_int uLeftId = xPanel.GetSelectedEventIdAt(0u);
+	ZENITH_ASSERT_TRUE(xPanel.Action_AddEvent(0.75f, "Right"), "two events");
+	const u_int uRightId = xPanel.GetSelectedEventIdAt(0u);
+	ZENITH_ASSERT_TRUE(xPanel.Action_SelectEvent(uLeftId, ZENITH_ANIMSELECT_ADD), "both picked");
+	ZENITH_ASSERT_EQ(xPanel.GetSelectedEventCount(), 2u, "both picked");
+
+	// A key on the same sheet, selected alongside, so this also pins that ONE
+	// Delete covers both lists rather than whichever one it looks at first.
+	const Zenith_AnimTrackId xTrack = AnimPanelHipPosition();
+	const u_int uKey2 = AnimPanelKeyIdAtTime(xPanel.Document(), xTrack, 2.0f);
+	ZENITH_ASSERT_TRUE(xPanel.Action_SelectKey(xTrack, uKey2, ZENITH_ANIMSELECT_ADD), "and a keyframe too");
+
+	const u_int uStackBefore = xPanel.Document().GetUndoStackSize();
+	ZENITH_ASSERT_TRUE(xPanel.Action_DeleteSelection(), "the delete lands");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetEventCount(), 0u, "both events are gone");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetKeyCount(xTrack), 2u, "and so is the key");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), uStackBefore + 1u,
+		"two events and a key removed in ONE undo step");
+
+	// ★ THE SELECTION IS NOT PRUNED, exactly as for keys: the undo restores each
+	// event under its ORIGINAL id, so the ids still listed here resolve again.
+	ZENITH_ASSERT_EQ(xPanel.GetSelectedEventCount(), 2u, "the selection still names both events");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_Undo(), "one undo brings everything back");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetEventCount(), 2u, "both events again");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetKeyCount(xTrack), 3u, "and the key");
+
+	Flux_AnimationEvent xEvent;
+	ZENITH_ASSERT_TRUE(xPanel.Document().GetEvent(uLeftId, xEvent), "the first resolves under its ORIGINAL id");
+	ZENITH_ASSERT_EQ_FLOAT(xEvent.m_fNormalizedTime, 0.25f, 0.0f, "at exactly its original fraction");
+	ZENITH_ASSERT_TRUE(xPanel.Document().GetEvent(uRightId, xEvent), "so does the second");
+	ZENITH_ASSERT_EQ_FLOAT(xEvent.m_fNormalizedTime, 0.75f, 0.0f, "at exactly its original fraction");
+
+	ZENITH_ASSERT_TRUE(xPanel.IsEventSelected(uLeftId), "and the selection came back WITH them");
+	ZENITH_ASSERT_TRUE(xPanel.IsEventSelected(uRightId), "and the selection came back WITH them");
+	ZENITH_ASSERT_TRUE(xPanel.IsKeySelected(xTrack, uKey2), "the key's selection too");
+}
+
+//==============================================================================
+// (23) Rename and payload are ONE EventEdit command EACH, and a field left
+// alone commits nothing.
+//
+// The "nothing" half is the load-bearing one. The strip commits on
+// edit-complete, so a click into the name box and straight back out fires the
+// same code path an edit does — and without the equality refusal that would
+// push an undo entry whose Ctrl+Z visibly does nothing, once per click.
+//==============================================================================
+ZENITH_TEST(AnimPanel, RenamingAnEventAndEditingItsPayloadAreOneUndoStepEach)
+{
+	AnimPanelFixture xFixture("zenith_animpanel_eventedit");
+	AnimPanelWriteProbe(xFixture.m_strPath, /*bGenerated*/ false);
+
+	Zenith_EditorPanel_Animation xPanel;
+	ZENITH_ASSERT_TRUE(xPanel.OpenClip(xFixture.m_strPath), "the probe clip opens");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_AddEvent(0.25f, Zenith_EditorPanel_Animation::DefaultEventName()),
+		"an event to edit");
+	const u_int uEventId = xPanel.GetSelectedEventIdAt(0u);
+
+	// ---- the refusals --------------------------------------------------------
+	ZENITH_ASSERT_FALSE(xPanel.Action_RenameEvent(999999u, "Nope"), "an id the document never issued is refused");
+	ZENITH_ASSERT_FALSE(xPanel.Action_RenameEvent(uEventId, ""), "and so is an empty name");
+	ZENITH_ASSERT_FALSE(xPanel.Action_RenameEvent(uEventId, Zenith_EditorPanel_Animation::DefaultEventName()),
+		"renaming to the name it already has is not an edit");
+	ZENITH_ASSERT_FALSE(xPanel.Action_SetEventPayload(999999u, Zenith_Maths::Vector4(1.0f, 0.0f, 0.0f, 0.0f)),
+		"the payload refuses an unknown id too");
+	ZENITH_ASSERT_FALSE(xPanel.Action_SetEventPayload(uEventId, Zenith_Maths::Vector4(0.0f, 0.0f, 0.0f, 0.0f)),
+		"and a payload the event already carries");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), 1u, "so only the ADD is on the stack");
+
+	// ---- the real edits ------------------------------------------------------
+	ZENITH_ASSERT_TRUE(xPanel.Action_RenameEvent(uEventId, "FootstepLeft"), "the rename lands");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), 2u,
+		"as ONE command for the completed edit, not one per keystroke");
+	ZENITH_ASSERT_TRUE(xPanel.Action_SetEventPayload(uEventId, Zenith_Maths::Vector4(1.0f, 2.0f, 3.0f, 4.0f)),
+		"the payload edit lands");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), 3u, "as one more");
+
+	Flux_AnimationEvent xEvent;
+	ZENITH_ASSERT_TRUE(xPanel.Document().GetEvent(uEventId, xEvent), "the event resolves");
+	ZENITH_ASSERT_STREQ(xEvent.m_strEventName.c_str(), "FootstepLeft", "with the new name");
+	ZENITH_ASSERT_EQ_FLOAT(xEvent.m_xData.x, 1.0f, 0.0f, "and all four payload components");
+	ZENITH_ASSERT_EQ_FLOAT(xEvent.m_xData.y, 2.0f, 0.0f, "and all four payload components");
+	ZENITH_ASSERT_EQ_FLOAT(xEvent.m_xData.z, 3.0f, 0.0f, "and all four payload components");
+	ZENITH_ASSERT_EQ_FLOAT(xEvent.m_xData.w, 4.0f, 0.0f, "and all four payload components");
+	ZENITH_ASSERT_EQ_FLOAT(xEvent.m_fNormalizedTime, 0.25f, 0.0f, "neither edit moved it");
+
+	// ---- and each undoes on its own -----------------------------------------
+	ZENITH_ASSERT_TRUE(xPanel.Action_Undo(), "one undo reverses the payload");
+	ZENITH_ASSERT_TRUE(xPanel.Document().GetEvent(uEventId, xEvent), "the event still resolves");
+	ZENITH_ASSERT_EQ_FLOAT(xEvent.m_xData.x, 0.0f, 0.0f, "the payload is back");
+	ZENITH_ASSERT_EQ_FLOAT(xEvent.m_xData.w, 0.0f, 0.0f, "the payload is back");
+	ZENITH_ASSERT_STREQ(xEvent.m_strEventName.c_str(), "FootstepLeft", "and the name is untouched by it");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_Undo(), "the next undo reverses the rename");
+	ZENITH_ASSERT_TRUE(xPanel.Document().GetEvent(uEventId, xEvent), "the event still resolves");
+	ZENITH_ASSERT_STREQ(xEvent.m_strEventName.c_str(), Zenith_EditorPanel_Animation::DefaultEventName(),
+		"back to the name it was added with");
+	ZENITH_ASSERT_TRUE(xPanel.IsEventSelected(uEventId), "and the selection survived both");
+	ZENITH_ASSERT_EQ(xPanel.GetInspectorEventId(), uEventId, "so the strip is still pointing at it");
+}
+
+//==============================================================================
+// (24) D4, BOTH HALVES AT ONCE: a duration change MOVES THE ROW POSITION and
+// LEAVES THE STORED VALUE ALONE.
+//
+// ★ THE RECT IS RENDERED EITHER SIDE, and the expectation is recomputed from
+// the pure mapping rather than from the first measurement, so the two failure
+// modes this guards against are separated on the line that fails: an
+// implementation that "adjusts" the fraction when the duration moves fails the
+// stored-value assertion, and one that forgot the * duration in the row's draw
+// fails the pixel one.
+//==============================================================================
+ZENITH_TEST(AnimPanel, ChangingTheDurationMovesTheEventRowAndNotTheStoredValue)
+{
+	AnimPanelFixture xFixture("zenith_animpanel_eventduration");
+	AnimPanelWriteProbe(xFixture.m_strPath, /*bGenerated*/ false);
+
+	Zenith_EditorPanel_Animation xPanel;
+	ZENITH_ASSERT_TRUE(xPanel.OpenClip(xFixture.m_strPath), "the probe clip opens");
+	ZENITH_ASSERT_EQ_FLOAT(xPanel.Document().GetDuration(), 2.0f, 0.0f, "at 2 s");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_AddEvent(0.25f, "Beat"), "an event a quarter of the way in");
+	const u_int uEventId = xPanel.GetSelectedEventIdAt(0u);
+
+	xPanel.RequestWindowPlacement(40.0f, 40.0f, 900.0f, 600.0f);
+	AnimPanelRenderFrames(xPanel, 2u);
+
+	ZENITH_ASSERT_TRUE(xPanel.WasSheetDrawnLastFrame(), "the sheet pass ran");
+	ZENITH_ASSERT_GT(xPanel.GetLastTrackWidth(), 0.0f, "with a key lane to draw into");
+
+	Zenith_AnimPanelRect xBefore;
+	ZENITH_ASSERT_TRUE(xPanel.GetEventRect(uEventId, xBefore), "the event flag is on screen and recorded");
+	ZENITH_ASSERT_EQ_FLOAT(xBefore.Centre().x, Zenith_AnimTimelineTimeToPixel(xPanel.View(), 0.25f * 2.0f), 1.0f,
+		"its centre x IS TimeToPixel(view, fNormalized * duration) — the panel derives no mapping of its own");
+
+	// ---- double the clip -----------------------------------------------------
+	ZENITH_ASSERT_TRUE(xPanel.Action_SetDuration(4.0f), "the duration doubles");
+	AnimPanelRenderFrames(xPanel, 2u);
+	ZENITH_ASSERT_EQ_FLOAT(xPanel.Document().GetDuration(), 4.0f, 0.0f, "the clip is 4 s now");
+
+	Flux_AnimationEvent xEvent;
+	ZENITH_ASSERT_TRUE(xPanel.Document().GetEvent(uEventId, xEvent), "the event resolves under the same id");
+	// ★ THE STORED VALUE DID NOT MOVE. It is already expressed relative to
+	// whatever the duration becomes, so rescaling it here would move the event a
+	// second time — the exact reason Action_RippleRetime leaves events out too.
+	ZENITH_ASSERT_EQ_FLOAT(xEvent.m_fNormalizedTime, 0.25f, 0.0f,
+		"and its stored fraction is BIT-FOR-BIT what it was — a duration change is not an event edit");
+
+	Zenith_AnimPanelRect xAfter;
+	ZENITH_ASSERT_TRUE(xPanel.GetEventRect(uEventId, xAfter), "the flag is still on screen");
+	ZENITH_ASSERT_EQ_FLOAT(xAfter.Centre().x, Zenith_AnimTimelineTimeToPixel(xPanel.View(), 0.25f * 4.0f), 1.0f,
+		"and now sits where the SAME fraction of the NEW duration maps to");
+	ZENITH_ASSERT_GT(xAfter.Centre().x, xBefore.Centre().x + 1.0f,
+		"which is somewhere else entirely (else this test would pass on a panel that ignored the duration)");
+}
+
+//==============================================================================
+// (25) D40 — a scrub emits nothing until the toggle says otherwise, and what
+// the strip shows is what the RUNTIME dispatcher fired.
+//
+// ★ THE COUNT COMES THROUGH THE Flux_AnimationEventCallback, not from the panel
+// re-deriving which events the playhead crossed. A second opinion would agree
+// with D35-D40 exactly until one of them changed, and the strip would then show
+// events no listener received — which is the failure WU-5A was written to end.
+//
+// Needs a REAL rig: Seek is inert until one resolves, so the fixture writes a
+// two-bone skeleton and a one-triangle mesh. Both are device-free and nothing
+// here renders a frame.
+//==============================================================================
+ZENITH_TEST(AnimPanel, ScrubEmitsEventsOnlyWhenTheToggleIsOn)
+{
+	AnimPanelFixture xFixture("zenith_animpanel_scrubemit");
+	AnimPanelWriteRiggedProbe(xFixture);
+
+	Zenith_EditorPanel_Animation xPanel;
+	ZENITH_ASSERT_TRUE(xPanel.OpenClip(xFixture.m_strPath), "the rigged probe opens");
+	ZENITH_ASSERT_FALSE(xPanel.Session().NeedsRigSelection(), "whose rig resolved (else every scrub below is inert)");
+	ZENITH_ASSERT_FALSE(xPanel.GetEmitEventsOnScrub(), "and the toggle is OFF by default (D40)");
+	ZENITH_ASSERT_EQ(xPanel.GetTotalEmittedEventCount(), 0u, "with nothing emitted yet");
+
+	// The event lands in the DOCUMENT; the session holds its own deep copy (D30),
+	// so it has to be pushed across before the preview can fire it. The panel does
+	// this from Render via NotifyDocumentEdited; here it is done directly, which
+	// keeps this unit off the preview pane entirely.
+	ZENITH_ASSERT_TRUE(xPanel.Action_AddEvent(0.5f, "Beat"), "an event at the middle of the clip");
+	ZENITH_ASSERT_TRUE(xPanel.Session().RefreshClipFrom(xPanel.Document().GetClip()),
+		"and the session re-copies the clip");
+	ZENITH_ASSERT_EQ(xPanel.Session().GetClip().GetEvents().GetSize(), 1u, "so the preview's copy carries it");
+
+	// ---- toggle OFF: a scrub across the event fires nothing -------------------
+	ZENITH_ASSERT_TRUE(xPanel.Action_Scrub(1.5f), "a scrub straight past the event lands");
+	ZENITH_ASSERT_EQ_FLOAT(xPanel.Session().GetTime(), 1.5f, 1.0e-3f, "and the clock moved");
+	ZENITH_ASSERT_EQ(xPanel.GetTotalEmittedEventCount(), 0u,
+		"but NOTHING fired — dragging across a clip must not replay every footstep in it");
+	ZENITH_ASSERT_EQ(xPanel.GetEmittedEventCount(), 0u, "so the strip is empty");
+
+	// The mark still MOVED (D40), which is what stops the next forward step from
+	// replaying the whole skipped span as one burst; scrub back so the span below
+	// starts before the event.
+	ZENITH_ASSERT_TRUE(xPanel.Action_Scrub(0.0f), "back to the start");
+	ZENITH_ASSERT_EQ(xPanel.GetTotalEmittedEventCount(), 0u, "a backward scrub emits nothing either");
+
+	// ---- toggle ON ------------------------------------------------------------
+	ZENITH_ASSERT_TRUE(xPanel.Action_SetEmitEventsOnScrub(true), "the toggle flips");
+	ZENITH_ASSERT_TRUE(xPanel.GetEmitEventsOnScrub(), "and reads back on");
+	ZENITH_ASSERT_TRUE(xPanel.Session().Controller().GetEmitEventsOnSeek(),
+		"on the SESSION'S OWN controller, which is the one the preview seeks");
+	ZENITH_ASSERT_FALSE(xPanel.Action_SetEmitEventsOnScrub(true), "setting it to what it already is does nothing");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_Scrub(1.5f), "the same scrub again");
+	ZENITH_ASSERT_EQ(xPanel.GetTotalEmittedEventCount(), 1u, "fires the event in the scrubbed span, exactly once");
+	ZENITH_ASSERT_EQ(xPanel.GetEmittedEventCount(), 1u, "and the strip has one entry");
+
+	std::string strMostRecent;
+	ZENITH_ASSERT_TRUE(xPanel.GetEmittedEventNameAt(0u, strMostRecent), "index 0 is the most recent");
+	ZENITH_ASSERT_STREQ(strMostRecent.c_str(), "Beat", "and it names the event that fired");
+	ZENITH_ASSERT_FALSE(xPanel.GetEmittedEventNameAt(1u, strMostRecent), "there is no second entry");
+
+	// ★ EMITTING IS NOT EDITING. The toggle writes nothing to the document and the
+	// scrub writes nothing either; putting either on the clip's undo stack would
+	// make Ctrl+Z change what the play head does.
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), 1u, "only the ADD is on the undo stack");
 }

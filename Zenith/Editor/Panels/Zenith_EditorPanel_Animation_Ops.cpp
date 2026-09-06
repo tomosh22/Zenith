@@ -120,6 +120,7 @@ void Zenith_EditorPanel_Animation::ApplyKeySelectMode(const Zenith_AnimTrackId& 
 		// a Delete removes something nobody could see was still picked.
 		m_axSelectedKeys.Clear();
 		m_auSelectedEventIds.Clear();
+		m_uPrimaryEventId = uINVALID_ANIM_KEY_ID;
 	}
 
 	const u_int uExisting = FindSelectedKeyIndex(xTrack, uKeyId);
@@ -156,6 +157,7 @@ void Zenith_EditorPanel_Animation::ApplyEventSelectMode(u_int uEventId, Zenith_A
 		m_axSelectedKeys.Clear();
 		m_auSelectedEventIds.Clear();
 		m_uPrimaryKeyId = uINVALID_ANIM_KEY_ID;
+		m_uPrimaryEventId = uINVALID_ANIM_KEY_ID;
 	}
 
 	const u_int uExisting = FindSelectedEventIndex(uEventId);
@@ -164,10 +166,45 @@ void Zenith_EditorPanel_Animation::ApplyEventSelectMode(u_int uEventId, Zenith_A
 		if (eMode == ZENITH_ANIMSELECT_TOGGLE)
 		{
 			m_auSelectedEventIds.Remove(uExisting);
+			if (m_uPrimaryEventId == uEventId)
+			{
+				m_uPrimaryEventId = uINVALID_ANIM_KEY_ID;
+			}
+			return;
 		}
+		// Re-selecting one that is already in makes it the PRIMARY — the snap of
+		// the drag about to start has to be computed against the event under the
+		// cursor, not against whichever one happened to be picked first.
+		m_uPrimaryEventId = uEventId;
 		return;
 	}
 	m_auSelectedEventIds.PushBack(uEventId);
+	m_uPrimaryEventId = uEventId;
+}
+
+bool Zenith_EditorPanel_Animation::ResolvePrimarySelectedEvent(u_int& uOutEventId) const
+{
+	Flux_AnimationEvent xEvent;
+	if (m_uPrimaryEventId != uINVALID_ANIM_KEY_ID
+	 && FindSelectedEventIndex(m_uPrimaryEventId) != uINVALID_ANIM_SHEET_ROW
+	 && m_xDocument.GetEvent(m_uPrimaryEventId, xEvent))
+	{
+		uOutEventId = m_uPrimaryEventId;
+		return true;
+	}
+	// ★ THE FALLBACK SKIPS IDS THAT NO LONGER RESOLVE. A delete leaves its ids in
+	// the selection on purpose (the undo brings them back), so the first entry is
+	// routinely a stale one — and an inspector strip pointed at a stale id would
+	// silently edit nothing while looking perfectly alive.
+	for (u_int u = 0; u < m_auSelectedEventIds.GetSize(); ++u)
+	{
+		if (m_xDocument.GetEvent(m_auSelectedEventIds.Get(u), xEvent))
+		{
+			uOutEventId = m_auSelectedEventIds.Get(u);
+			return true;
+		}
+	}
+	return false;
 }
 
 bool Zenith_EditorPanel_Animation::ResolvePrimarySelectedKey(Zenith_AnimTrackId& xOutTrack, u_int& uOutKeyId) const
@@ -229,6 +266,7 @@ bool Zenith_EditorPanel_Animation::Action_ClearSelection()
 	m_axSelectedKeys.Clear();
 	m_auSelectedEventIds.Clear();
 	m_uPrimaryKeyId = uINVALID_ANIM_KEY_ID;
+	m_uPrimaryEventId = uINVALID_ANIM_KEY_ID;
 	return bHadSomething;
 }
 
@@ -963,6 +1001,243 @@ bool Zenith_EditorPanel_Animation::Action_Redo()
 	m_xDocument.Redo();
 	NotifyDocumentEdited();
 	return true;
+}
+
+//=============================================================================
+// EVENTS (WU-5B)
+//
+// ★ NOT ONE OF THESE PRE-CHECKS A COLLISION, and that is the difference from
+// every key operation above rather than an omission. D11 forbids two keys on
+// one time because the second insert would REPLACE the first's value (D25) and
+// the operation would report success having produced fewer keys than it was
+// asked for. An event list has no such constraint — Flux_AnimationClip::AddEvent
+// appends and sorts, two events at one normalized time are two events, and both
+// are dispatched by Flux_AnimationController::EmitSpanEvents. Two footsteps on
+// the same frame is a thing an animator means.
+//
+// ★ EVERY TIME HERE IS NORMALIZED (D4). The one place seconds appear is the
+// SNAP, which has to happen on the seconds clock because the frame grid is the
+// clip's authored frame rate — and it is converted straight back.
+//=============================================================================
+
+const char* Zenith_EditorPanel_Animation::DefaultEventName()
+{
+	return "Event";
+}
+
+bool Zenith_EditorPanel_Animation::Action_AddEvent(float fNormalizedTime, const std::string& strName)
+{
+	if (!m_xDocument.IsOpen() || !AnimOpsIsFinite(fNormalizedTime) || fNormalizedTime < 0.0f)
+	{
+		return false;
+	}
+	// ★ AN EMPTY NAME IS REFUSED. The row would draw a flag with no label and the
+	// runtime dispatcher would hand listeners an empty string, so the event exists
+	// and matches nothing — a silent no-op wearing an undo entry. Every gesture
+	// that creates one passes DefaultEventName().
+	if (strName.empty())
+	{
+		return false;
+	}
+
+	const u_int uEventId = m_xDocument.AddEvent(strName, fNormalizedTime, Zenith_Maths::Vector4(0.0f, 0.0f, 0.0f, 0.0f));
+	if (uEventId == uINVALID_ANIM_KEY_ID)
+	{
+		return false;
+	}
+
+	// ★ THE NEW EVENT BECOMES THE SELECTION, for the same reason a duplicate's
+	// copies do: the gesture straight after "add an event" is "name it", and the
+	// inspector strip edits whatever is selected. Leaving the previous selection
+	// in place would put the user's typing into a different event.
+	ApplyEventSelectMode(uEventId, ZENITH_ANIMSELECT_REPLACE);
+
+	NotifyDocumentEdited();
+	return true;
+}
+
+float Zenith_EditorPanel_Animation::EffectiveEventDragDelta(float fRawDeltaNormalized, bool bSnap) const
+{
+	if (!bSnap || !AnimOpsIsFinite(fRawDeltaNormalized))
+	{
+		return fRawDeltaNormalized;
+	}
+	const float fDuration = m_xDocument.IsOpen() ? m_xDocument.GetDuration() : 0.0f;
+	const u_int uFrameRate = GetFrameRate();
+	// ★ NO DURATION MEANS NO FRAME GRID IN NORMALIZED SPACE. "The nearest frame"
+	// is a fact about the seconds clock; without a duration to divide by there is
+	// no way to express it as a fraction, and inventing one would land the event
+	// somewhere the clip's own authoring rate does not describe.
+	if (fDuration <= 0.0f || uFrameRate == 0u)
+	{
+		return fRawDeltaNormalized;
+	}
+
+	u_int uPrimaryEventId = uINVALID_ANIM_KEY_ID;
+	Flux_AnimationEvent xPrimary;
+	if (!ResolvePrimarySelectedEvent(uPrimaryEventId) || !m_xDocument.GetEvent(uPrimaryEventId, xPrimary))
+	{
+		return fRawDeltaNormalized;
+	}
+
+	// ★ ONE SNAP, FOR THE WHOLE SELECTION — the same rule EffectiveDragDelta
+	// applies to keys, and for the same reason: snapping each event to its own
+	// nearest frame quantises the SPACING between them as well as their
+	// positions, silently editing something the user was not dragging.
+	const float fTargetSeconds = (xPrimary.m_fNormalizedTime + fRawDeltaNormalized) * fDuration;
+	const float fSnappedSeconds = Zenith_AnimTimelineSnapToFrame(fTargetSeconds, uFrameRate);
+	return (fSnappedSeconds / fDuration) - xPrimary.m_fNormalizedTime;
+}
+
+bool Zenith_EditorPanel_Animation::Action_MoveSelectedEvents(float fDeltaNormalized, bool bSnap)
+{
+	if (!m_xDocument.IsOpen() || m_auSelectedEventIds.GetSize() == 0 || !AnimOpsIsFinite(fDeltaNormalized))
+	{
+		return false;
+	}
+
+	const float fDelta = EffectiveEventDragDelta(fDeltaNormalized, bSnap);
+	if (!AnimOpsIsFinite(fDelta))
+	{
+		return false;
+	}
+
+	// ---- resolve every current time BEFORE anything moves --------------------
+	// A stale id is SKIPPED rather than refused, unlike the key move: a key move
+	// refuses because a partial move changes the spacing the user was preserving,
+	// and every key in the set moves by the same delta so a missing one is a real
+	// inconsistency. An event selection legitimately holds ids a delete has taken
+	// away and an undo has not brought back yet, and there is no spacing contract
+	// between events to break.
+	Zenith_Vector<u_int> auMoving;
+	Zenith_Vector<float> afTargets;
+	auMoving.Reserve(m_auSelectedEventIds.GetSize());
+	afTargets.Reserve(m_auSelectedEventIds.GetSize());
+	for (u_int u = 0; u < m_auSelectedEventIds.GetSize(); ++u)
+	{
+		const u_int uEventId = m_auSelectedEventIds.Get(u);
+		Flux_AnimationEvent xEvent;
+		if (!m_xDocument.GetEvent(uEventId, xEvent))
+		{
+			continue;
+		}
+		const float fTarget = xEvent.m_fNormalizedTime + fDelta;
+		if (fTarget < 0.0f)
+		{
+			// A clip starts at 0. Clamping the strays instead would collapse a
+			// multi-event drag onto 0 and change their relative spacing — the one
+			// thing a multi-event drag must not do, exactly as for keys.
+			return false;
+		}
+		auMoving.PushBack(uEventId);
+		afTargets.PushBack(fTarget);
+	}
+	if (auMoving.GetSize() == 0)
+	{
+		return false;
+	}
+
+	// A move smaller than the clip's own epsilon is not a move: applying it would
+	// push an undo entry whose Ctrl+Z visibly does nothing. Measured in SECONDS,
+	// because fANIM_TIME_EPSILON is a seconds tolerance and a normalized epsilon
+	// would mean something different on every clip.
+	const float fDuration = m_xDocument.GetDuration();
+	const float fDeltaSeconds = fDuration > 0.0f ? fDelta * fDuration : fDelta;
+	if (std::fabs(fDeltaSeconds) <= fANIM_TIME_EPSILON)
+	{
+		return false;
+	}
+
+	if (!m_xDocument.BeginCompound())
+	{
+		return false;
+	}
+	for (u_int u = 0; u < auMoving.GetSize(); ++u)
+	{
+		// ★ NO ORDERING RULE, unlike MoveKeySetByDelta. That function applies a
+		// forward move in descending time so no key lands on a slot its neighbour
+		// has not vacated; SetEventTime has no occupancy test to trip over, so
+		// every order produces the same list.
+		m_xDocument.SetEventTime(auMoving.Get(u), afTargets.Get(u));
+	}
+	if (!m_xDocument.EndCompound("Move Animation Events", /*bKeep*/ true))
+	{
+		return false;
+	}
+
+	NotifyDocumentEdited();
+	return true;
+}
+
+bool Zenith_EditorPanel_Animation::Action_RenameEvent(u_int uEventId, const std::string& strName)
+{
+	Flux_AnimationEvent xEvent;
+	if (!m_xDocument.IsOpen() || strName.empty() || !m_xDocument.GetEvent(uEventId, xEvent))
+	{
+		return false;
+	}
+	if (xEvent.m_strEventName == strName)
+	{
+		// A field that was focused and left alone. Pushing here would put a no-op
+		// stop on the undo stack for every click into the name box.
+		return false;
+	}
+	if (!m_xDocument.SetEventName(uEventId, strName))
+	{
+		return false;
+	}
+	NotifyDocumentEdited();
+	return true;
+}
+
+bool Zenith_EditorPanel_Animation::Action_SetEventPayload(u_int uEventId, const Zenith_Maths::Vector4& xPayload)
+{
+	Flux_AnimationEvent xEvent;
+	if (!m_xDocument.IsOpen() || !m_xDocument.GetEvent(uEventId, xEvent))
+	{
+		return false;
+	}
+	if (!AnimOpsIsFinite(xPayload.x) || !AnimOpsIsFinite(xPayload.y)
+	 || !AnimOpsIsFinite(xPayload.z) || !AnimOpsIsFinite(xPayload.w))
+	{
+		// A NaN here reaches the .zanim and then every listener that reads the
+		// payload; refuse rather than launder it.
+		return false;
+	}
+	if (xEvent.m_xData.x == xPayload.x && xEvent.m_xData.y == xPayload.y
+	 && xEvent.m_xData.z == xPayload.z && xEvent.m_xData.w == xPayload.w)
+	{
+		return false;
+	}
+	if (!m_xDocument.SetEventPayload(uEventId, xPayload))
+	{
+		return false;
+	}
+	NotifyDocumentEdited();
+	return true;
+}
+
+bool Zenith_EditorPanel_Animation::Action_SetEmitEventsOnScrub(bool bEmit)
+{
+	if (!m_xSession.IsOpen())
+	{
+		return false;
+	}
+	if (m_xSession.Controller().GetEmitEventsOnSeek() == bEmit)
+	{
+		return false;
+	}
+	// ★ NOT AN EDIT. It writes nothing to the document, dirties nothing and
+	// pushes no undo — it is a property of how the PREVIEW behaves, exactly like
+	// the session's own loop toggle, and putting it on the clip's undo stack
+	// would make Ctrl+Z change what the playhead does.
+	m_xSession.Controller().SetEmitEventsOnSeek(bEmit);
+	return true;
+}
+
+bool Zenith_EditorPanel_Animation::GetEmitEventsOnScrub() const
+{
+	return m_xSession.Controller().GetEmitEventsOnSeek();
 }
 
 #endif // ZENITH_TOOLS

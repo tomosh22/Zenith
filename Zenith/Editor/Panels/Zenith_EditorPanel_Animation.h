@@ -17,7 +17,7 @@
 struct ImDrawList;
 
 //=============================================================================
-// Zenith_EditorPanel_Animation (WU-3.2 / WU-3.3) — the DOPE SHEET.
+// Zenith_EditorPanel_Animation (WU-3.2 / WU-3.3 / WU-5B) — the DOPE SHEET.
 //
 // One dockable window over ONE Zenith_AnimationDocument and ONE
 // Zenith_AnimationPreviewSession: a ruler, a row per bone track (T/R/S), the
@@ -26,7 +26,9 @@ struct ImDrawList;
 // the OPERATIONS — see the "OPERATIONS" block below, and its three rules: every
 // gesture has a bool-returning Action_* twin that reads no ImGui state, every
 // mutation goes through a document verb, and a multi-key operation is ONE undo
-// step (Zenith_AnimationDocument::BeginCompound).
+// step (Zenith_AnimationDocument::BeginCompound). WU-5B made the events row
+// EDITABLE — add, drag, delete, rename, payload — plus D40's scrub-emission
+// toggle and a strip of what the runtime dispatcher actually fired.
 //
 // The class is spread over THREE TUs, split by what a reader wants separately:
 //   Zenith_EditorPanel_Animation.cpp        — lifecycle, rows, the hit rects
@@ -151,6 +153,11 @@ struct Zenith_AnimClipboardKey
 // panel is handed a dt it may legitimately be passed as 0 (the editor's Paused
 // mode), and a flash measured in seconds would then never expire.
 constexpr u_int uANIM_COLLISION_FLASH_FRAMES = 20u;
+
+// How many recently-EMITTED event names the strip keeps. Small on purpose: it
+// is a "did that fire?" readout beside a scrubbing playhead, not a log — the
+// log is the running total (GetTotalEmittedEventCount).
+constexpr u_int uANIM_EMITTED_EVENT_HISTORY = 8u;
 
 struct Zenith_AnimSheetRow
 {
@@ -485,6 +492,86 @@ public:
 	bool Action_Redo();
 
 	//------------------------------------------------------------------------
+	// EVENTS (WU-5B).
+	//
+	// ★ AN EVENT TIME IS A [0,1] FRACTION OF THE CLIP, NEVER SECONDS (D4), and
+	// every action below speaks that unit — including the DELTA one, which is a
+	// delta in normalized units and not in seconds. The sheet's x axis is
+	// seconds, so the row maps a stored value through
+	// Zenith_AnimTimelineTimeToPixel(view, fNormalized * duration); the multiply
+	// is the whole of the conversion and it lives in the renderer, next to the
+	// only thing that needs it.
+	//
+	// ★ A DURATION CHANGE MOVES THE ROW POSITION AND NOT THE STORED VALUE, and
+	// that is the point of D4 rather than a side effect of it. Nothing here (and
+	// nothing in Action_SetDuration) rescales an event when the duration moves:
+	// the value is already expressed relative to whatever the duration becomes,
+	// so "adjusting" it would move the event twice. The units assert exactly
+	// that — same stored fraction, new pixel.
+	//
+	// ★ EVENTS MAY COINCIDE; KEYS MAY NOT. D11's no-silent-merge rule exists
+	// because a track cannot hold two keys at one time — the second insert would
+	// overwrite the first's value and the operation would report success having
+	// produced fewer keys than it was asked for. An event list has no such
+	// constraint: two footsteps authored on the same frame are two events and
+	// both fire. So NO action below carries a collision pre-check, none of them
+	// raises the collision flash, and a drag that lands one event exactly on
+	// another is allowed.
+	//------------------------------------------------------------------------
+
+	// What an event created by a GESTURE is called until it is renamed. A
+	// function rather than a bare constant so the toolbar, the double-click
+	// handler and the units cannot disagree about it — and it is needed because
+	// Action_AddEvent REFUSES an empty name: an unnamed event is invisible on
+	// the row and matches no listener at runtime, so it is a silent no-op
+	// wearing an undo entry.
+	static const char* DefaultEventName();
+
+	// Add one event at fNormalizedTime, as ONE undo step.
+	//
+	// The new event REPLACES the selection, so the inspector strip is already
+	// pointing at it and the obvious next gesture — type a name — needs no
+	// second click. Its id is then GetSelectedEventIdAt(0).
+	//
+	// Refused for a closed document, a non-finite or negative time, and an empty
+	// name. A time PAST 1.0 is allowed and is counted by
+	// GetEventsPastDurationCount() (D13) — the same treatment a key past the
+	// duration gets, for the same reason: refusing it would silently discard
+	// what the user asked for.
+	bool Action_AddEvent(float fNormalizedTime, const std::string& strName);
+
+	// Move every selected EVENT by the same NORMALIZED delta, as ONE undo step.
+	//
+	// ★ THE DELTA IS NORMALIZED, AND THE SNAP IS NOT. bSnap snaps the PRIMARY
+	// event's target to the frame grid IN SECONDS — at the CURRENT duration —
+	// and converts the snapped result back to a normalized delta that every
+	// selected event then shares. That ordering is forced: the frame grid is a
+	// property of the seconds clock (the clip's authored frame rate), and there
+	// is no such thing as "the nearest frame" in [0,1] without a duration to
+	// divide by. The primary is the most recently selected event.
+	//
+	// Refused for an empty event selection, a non-finite delta, an effective
+	// delta of zero, and any target below zero. NOT refused for a target that
+	// coincides with another event — see the block comment above.
+	bool Action_MoveSelectedEvents(float fDeltaNormalized, bool bSnap);
+
+	// The inspector strip's two edits. Each is ONE Zenith_AnimCommand_EventEdit,
+	// pushed on EDIT-COMPLETE by the handler rather than per keystroke — a
+	// per-character command would make Ctrl+Z walk backwards through a name one
+	// letter at a time. Both refuse a value the event already has, so a field
+	// that was focused and left alone pushes nothing.
+	bool Action_RenameEvent(u_int uEventId, const std::string& strName);
+	bool Action_SetEventPayload(u_int uEventId, const Zenith_Maths::Vector4& xPayload);
+
+	// D40's toggle, on the SESSION'S OWN controller. Default OFF: a scrub across
+	// a clip would otherwise replay every footstep in it, which is why
+	// Flux_AnimationController::SeekDirectPlay moves the bookkeeping mark
+	// without firing by default. Turning it on is how an author HEARS the beat
+	// they are placing. Not an edit — it dirties nothing and pushes no undo.
+	bool Action_SetEmitEventsOnScrub(bool bEmit);
+	bool GetEmitEventsOnScrub() const;
+
+	//------------------------------------------------------------------------
 	// Operation diagnostics — UNGATED, for the same reason the rect
 	// diagnostics are: a bare `false` from an action has several causes, and a
 	// test that can only see the bool reports "it did not work".
@@ -507,6 +594,34 @@ public:
 	bool IsBoxSelecting() const { return m_bBoxSelecting; }
 	bool IsScrubbing() const { return m_bScrubbing; }
 	bool IsDraggingDuration() const { return m_bDraggingDuration; }
+	bool IsDraggingEvents() const { return m_bDraggingEvents; }
+	// In NORMALIZED units, like everything else about an event.
+	float GetEventDragDeltaNormalized() const { return m_fEventDragDeltaNormalized; }
+
+	// The event the inspector strip edits — the most recently selected one that
+	// still RESOLVES, falling back to the first selected event.
+	// uINVALID_ANIM_KEY_ID when no event is picked, which is what makes the
+	// strip disappear rather than edit something arbitrary.
+	u_int GetInspectorEventId() const;
+
+	//-------------------------------------------------------------------------
+	// The emitted-event strip.
+	//
+	// ★ THE PANEL REGISTERS A Flux_AnimationEventCallback ON THE SESSION'S OWN
+	// CONTROLLER (D30 — the session never borrows an entity's), so what lands
+	// here is what the RUNTIME dispatcher actually fired, not a re-derivation of
+	// which events the playhead crossed. A second opinion computed in the panel
+	// would agree with the runtime right up until one of D35-D40 changed, and
+	// the strip would then confidently show events nothing received.
+	//
+	// Index 0 is the MOST RECENT. Only the last uANIM_EMITTED_EVENT_HISTORY are
+	// kept, which is why the running total is exposed separately: a test that
+	// scrubs a burst wants the count, not the survivors.
+	//-------------------------------------------------------------------------
+	u_int GetEmittedEventCount() const { return m_astrEmittedEvents.GetSize(); }
+	bool GetEmittedEventNameAt(u_int uIndex, std::string& strOut) const;
+	u_int GetTotalEmittedEventCount() const { return m_uEmittedEventTotal; }
+	void ClearEmittedEvents();
 
 	//-------------------------------------------------------------------------
 	// External modification (read-only display).
@@ -571,6 +686,19 @@ private:
 	void OnDocumentOpened();
 	void SyncSessionWithDocument();
 
+	// ★ THE ONE Flux_AnimationEventCallback THE PANEL INSTALLS, with `this` as
+	// the user data. A free function pointer rather than anything richer because
+	// that is what the controller's typedef IS (no std::function in engine
+	// code), and static so its address is stable for the life of the process.
+	static void OnPreviewEventEmitted(void* pUserData, const std::string& strEventName,
+		const Zenith_Maths::Vector4& xData);
+	void PushEmittedEventName(const std::string& strName);
+
+	// Re-read the inspector's fixed buffers from the document when the event
+	// they point at CHANGES — never while it is the same one, or a keystroke
+	// would be overwritten by the value it has not been committed to yet.
+	void SyncEventInspectorBuffers();
+
 	// The off-screen gate every accessor above runs through.
 	bool PublishRect(const Zenith_AnimPanelRect* pxRect, Zenith_AnimPanelRect& xOut) const;
 	bool RowRectFor(const Zenith_AnimTrackId& xTrack, bool bTrackLaneOnly, Zenith_AnimPanelRect& xOut) const;
@@ -607,6 +735,14 @@ private:
 	void ApplyEventSelectMode(u_int uEventId, Zenith_AnimSelectMode eMode);
 	// The key a snap is computed against — see Action_MoveSelection.
 	bool ResolvePrimarySelectedKey(Zenith_AnimTrackId& xOutTrack, u_int& uOutKeyId) const;
+	// The event twin of it, and what GetInspectorEventId answers with.
+	bool ResolvePrimarySelectedEvent(u_int& uOutEventId) const;
+	// A raw normalized drag delta turned into the one the drop will apply: the
+	// primary event's target snapped to the frame grid IN SECONDS at the current
+	// duration, expressed back as a NORMALIZED delta. ★ ONE DEFINITION, shared
+	// by Action_MoveSelectedEvents and by the drag ghost — a second copy in the
+	// renderer is how a preview shows a position the drop does not produce.
+	float EffectiveEventDragDelta(float fRawDeltaNormalized, bool bSnap) const;
 	// A raw pixel-derived delta turned into the one the move will actually
 	// apply: the primary key's target snapped to the frame grid, expressed back
 	// as a delta. ★ ONE DEFINITION, shared by Action_MoveSelection and by the
@@ -632,9 +768,25 @@ private:
 	// The key whose recorded rect contains (fX, fY), if any.
 	bool FindKeyAtScreenPos(float fX, float fY, Zenith_AnimTrackId& xOutTrack, u_int& uOutKeyId) const;
 	bool FindEventAtScreenPos(float fX, float fY, u_int& uOutEventId) const;
+	// Is (fX, fY) inside the EVENTS row's key lane? What a double-click-to-add
+	// hit-tests against, through the published row rect so it cannot fire on a
+	// row the off-screen gate refuses to hand out.
+	bool IsInEventsRowLane(float fX, float fY) const;
 
 	// Render helpers — all in Zenith_EditorPanel_Animation_Render.cpp.
 	void RenderToolbar();
+	// The second toolbar line: Add Event, the D40 scrub toggle, and the strip of
+	// recently emitted names. Its own line because the first one is already
+	// wider than a 900 px window and a SameLine past the edge is a control
+	// nobody can reach.
+	void RenderEventToolbar();
+	// The selected event's name and Vector4 payload. Drawn only when one is
+	// selected, so an unselected sheet keeps every pixel of its height.
+	void RenderEventInspector();
+	// The right-click menu over an event marker. Raised by HandleSheetInput
+	// setting a flag rather than opened from inside it, because the sheet is one
+	// InvisibleButton and a popup has to be opened from the window scope.
+	void RenderEventContextMenu();
 	void RenderBanners();
 	void RenderPreviewPane();
 	void RenderSheet();
@@ -765,6 +917,10 @@ private:
 	Zenith_AnimTrackId m_xPrimaryKeyTrack;
 	u_int m_uPrimaryKeyId = uINVALID_ANIM_KEY_ID;
 
+	// The event twin of the pair above: what an event drag snaps around, and
+	// what the inspector strip edits.
+	u_int m_uPrimaryEventId = uINVALID_ANIM_KEY_ID;
+
 	// Cross-bone paste buffer. Times are relative to the earliest key copied.
 	Zenith_Vector<Zenith_AnimClipboardKey> m_axClipboard;
 	std::string m_strPasteTargetBone;
@@ -798,6 +954,38 @@ private:
 	u_int m_uCollisionFlashFrames = 0;
 	Zenith_AnimTrackId m_xCollisionFlashTrack;
 	u_int m_uCollisionFlashKeyId = uINVALID_ANIM_KEY_ID;
+
+	//-------------------------------------------------------------------------
+	// Events (WU-5B).
+	//
+	// The drag is the SAME "preview, then commit" shape as the key drag and the
+	// duration handle: the delta lives here, is drawn as a ghost flag, and ONE
+	// Action_MoveSelectedEvents runs on release. Mutating per frame would push a
+	// command per frame of the drag.
+	//-------------------------------------------------------------------------
+	bool m_bDraggingEvents = false;
+	float m_fEventDragStartMouseX = 0.0f;
+	float m_fEventDragDeltaNormalized = 0.0f;
+	// Set by the right-click handler, consumed by RenderEventContextMenu.
+	bool m_bEventContextMenuRequested = false;
+
+	// The inspector strip's edit buffers. Fixed, because ImGui::InputText wants
+	// one; re-read only when m_uInspectorBufferEventId stops matching the event
+	// being edited (see SyncEventInspectorBuffers).
+	u_int m_uInspectorBufferEventId = uINVALID_ANIM_KEY_ID;
+	char m_acEventNameBuffer[128] = {};
+	float m_afEventPayloadBuffer[4] = {};
+	// ★ WAS EITHER FIELD BEING EDITED AS OF LAST FRAME. The buffers are re-read
+	// from the document every frame EXCEPT while one of them is active, which is
+	// what makes an UNDO of a rename show up in the box — an "only on target
+	// change" refresh would leave the strip displaying a name the clip no longer
+	// has, with nothing to hint that Ctrl+Z had worked.
+	bool m_bEventInspectorEditing = false;
+
+	// The emitted-event strip. Most recent LAST in the vector; the accessor
+	// reverses, because "the last thing that fired" is index 0 to a reader.
+	Zenith_Vector<std::string> m_astrEmittedEvents;
+	u_int m_uEmittedEventTotal = 0;
 };
 
 #endif // ZENITH_TOOLS

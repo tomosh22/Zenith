@@ -107,6 +107,9 @@ void Zenith_EditorPanel_Animation::Render(float fDtSeconds)
 		m_bScrubbing = false;
 		m_bDraggingDuration = false;
 		m_fDragDeltaSeconds = 0.0f;
+		m_bDraggingEvents = false;
+		m_fEventDragDeltaNormalized = 0.0f;
+		m_bEventContextMenuRequested = false;
 		return;
 	}
 
@@ -154,10 +157,16 @@ void Zenith_EditorPanel_Animation::Render(float fDtSeconds)
 	m_bWasFocused = bFocused;
 
 	RenderToolbar();
+	RenderEventToolbar();
 	RenderBanners();
 	RenderPreviewPane();
+	RenderEventInspector();
 	ImGui::Separator();
 	RenderSheet();
+	// AFTER the sheet: HandleSheetInput runs at the end of RenderSheet and is
+	// what raises the request, so opening the popup here catches it in the same
+	// frame the right-click happened rather than one late.
+	RenderEventContextMenu();
 
 	// Shortcuts are scoped to THIS window's focus, the way the editor scopes its
 	// entity keys to the viewport and the hierarchy: a Delete pressed in the
@@ -274,6 +283,197 @@ void Zenith_EditorPanel_Animation::RenderToolbar()
 		ImGui::SameLine();
 		Zenith_EditorUI::Badge("CHANGED ON DISK", xPalette.m_uError, xPalette.m_uTextBright);
 	}
+}
+
+//=============================================================================
+// The EVENT toolbar (WU-5B) — its own line, and that is not a style choice.
+// The first toolbar row already runs wider than a 900 px window; a SameLine
+// past the right edge produces a control nobody can click and nothing warns.
+//=============================================================================
+
+void Zenith_EditorPanel_Animation::RenderEventToolbar()
+{
+	if (!m_xDocument.IsOpen())
+	{
+		return;
+	}
+
+	const Zenith_EditorPalette& xPalette = Zenith_EditorUI::Palette();
+	const float fDuration = m_xDocument.GetDuration();
+	const float fPlayheadSeconds = m_xSession.IsOpen() ? m_xSession.GetTime() : 0.0f;
+	const float fPlayheadNormalized = fDuration > 0.0f ? fPlayheadSeconds / fDuration : 0.0f;
+
+	if (ImGui::Button("Add Event"))
+	{
+		// ★ AT THE PLAYHEAD, which is the one time the user can SEE. A keyboard or
+		// toolbar gesture has no cursor position of its own, so anything else would
+		// place the event somewhere the author did not choose. D4: the stored value
+		// is the FRACTION, so the playhead's seconds are divided by the duration
+		// here and never the other way round.
+		Action_AddEvent(fPlayheadNormalized, DefaultEventName());
+	}
+	if (ImGui::IsItemHovered())
+	{
+		ImGui::SetTooltip("Add an animation event at the play head (double-click the Events row to place one anywhere)");
+	}
+
+	ImGui::SameLine();
+	bool bEmitOnScrub = GetEmitEventsOnScrub();
+	if (ImGui::Checkbox("Emit events while scrubbing", &bEmitOnScrub))
+	{
+		Action_SetEmitEventsOnScrub(bEmitOnScrub);
+	}
+	if (ImGui::IsItemHovered())
+	{
+		ImGui::SetTooltip("Off by default (D40): a seek moves the event bookkeeping mark WITHOUT firing what the play head skipped, so dragging across a clip does not replay every footstep in it.");
+	}
+
+	// ---- what actually fired ------------------------------------------------
+	ImGui::SameLine();
+	if (m_astrEmittedEvents.GetSize() == 0u)
+	{
+		ImGui::TextDisabled("| no events emitted yet");
+		return;
+	}
+
+	ImGui::TextDisabled("| fired (%u):", m_uEmittedEventTotal);
+	for (u_int u = 0; u < m_astrEmittedEvents.GetSize(); ++u)
+	{
+		std::string strName;
+		if (!GetEmittedEventNameAt(u, strName))
+		{
+			continue;
+		}
+		ImGui::SameLine();
+		// The most recent one is bright and the rest fade back, so a glance at the
+		// strip during playback answers "what just fired" rather than "what has
+		// fired at some point".
+		ImGui::PushStyleColor(ImGuiCol_Text,
+			ImGui::ColorConvertU32ToFloat4(u == 0u ? xPalette.m_uTextBright : xPalette.m_uTextDim));
+		ImGui::TextUnformatted(strName.c_str());
+		ImGui::PopStyleColor();
+	}
+}
+
+//=============================================================================
+// The EVENT inspector strip — name and Vector4 payload for the selected event.
+//
+// ★ ONE COMMAND PER COMPLETED EDIT, NOT PER KEYSTROKE. Both fields commit on
+// IsItemDeactivatedAfterEdit, so typing "FootstepLeft" is one undo step and not
+// twelve — and a field that was focused and left alone commits nothing at all,
+// because both actions refuse a value the event already has.
+//=============================================================================
+
+void Zenith_EditorPanel_Animation::SyncEventInspectorBuffers()
+{
+	const u_int uEventId = GetInspectorEventId();
+	if (uEventId == m_uInspectorBufferEventId && m_bEventInspectorEditing)
+	{
+		// ★ NEVER RE-READ WHILE A FIELD IS BEING TYPED INTO. The buffers hold what
+		// the user has entered but not yet committed; re-filling them from the
+		// document would undo each keystroke before the edit-complete that would
+		// have made it real. Every other frame DOES re-read, which is what makes
+		// an undo of a rename visible in the box.
+		return;
+	}
+
+	m_uInspectorBufferEventId = uEventId;
+	m_acEventNameBuffer[0] = '\0';
+	m_afEventPayloadBuffer[0] = 0.0f;
+	m_afEventPayloadBuffer[1] = 0.0f;
+	m_afEventPayloadBuffer[2] = 0.0f;
+	m_afEventPayloadBuffer[3] = 0.0f;
+
+	Flux_AnimationEvent xEvent;
+	if (uEventId == uINVALID_ANIM_KEY_ID || !m_xDocument.GetEvent(uEventId, xEvent))
+	{
+		return;
+	}
+	snprintf(m_acEventNameBuffer, sizeof(m_acEventNameBuffer), "%s", xEvent.m_strEventName.c_str());
+	m_afEventPayloadBuffer[0] = xEvent.m_xData.x;
+	m_afEventPayloadBuffer[1] = xEvent.m_xData.y;
+	m_afEventPayloadBuffer[2] = xEvent.m_xData.z;
+	m_afEventPayloadBuffer[3] = xEvent.m_xData.w;
+}
+
+void Zenith_EditorPanel_Animation::RenderEventInspector()
+{
+	SyncEventInspectorBuffers();
+
+	const u_int uEventId = m_uInspectorBufferEventId;
+	Flux_AnimationEvent xEvent;
+	if (!m_xDocument.IsOpen() || uEventId == uINVALID_ANIM_KEY_ID || !m_xDocument.GetEvent(uEventId, xEvent))
+	{
+		// Nothing selected draws NOTHING, not a disabled strip: the sheet below is
+		// sized from the remaining space, and a permanent strip would cost two rows
+		// of dope sheet on every frame nobody is editing an event.
+		m_bEventInspectorEditing = false;
+		return;
+	}
+
+	const Zenith_EditorPalette& xPalette = Zenith_EditorUI::Palette();
+	const float fDuration = m_xDocument.GetDuration();
+
+	ImGui::Separator();
+
+	ImGui::SetNextItemWidth(Zenith_EditorUI::Px(220.0f));
+	ImGui::InputText("Event", m_acEventNameBuffer, sizeof(m_acEventNameBuffer));
+	const bool bNameActive = ImGui::IsItemActive();
+	if (ImGui::IsItemDeactivatedAfterEdit())
+	{
+		Action_RenameEvent(uEventId, std::string(m_acEventNameBuffer));
+	}
+
+	ImGui::SameLine();
+	ImGui::SetNextItemWidth(Zenith_EditorUI::Px(320.0f));
+	ImGui::InputFloat4("Payload", m_afEventPayloadBuffer);
+	const bool bPayloadActive = ImGui::IsItemActive();
+	if (ImGui::IsItemDeactivatedAfterEdit())
+	{
+		Action_SetEventPayload(uEventId, Zenith_Maths::Vector4(
+			m_afEventPayloadBuffer[0], m_afEventPayloadBuffer[1],
+			m_afEventPayloadBuffer[2], m_afEventPayloadBuffer[3]));
+	}
+
+	m_bEventInspectorEditing = bNameActive || bPayloadActive;
+
+	ImGui::SameLine();
+	// BOTH numbers, because the stored one is the fraction (D4) and the useful one
+	// is the second — showing only the fraction makes every event look like it is
+	// at "0.25" of nothing in particular.
+	ImGui::TextDisabled("t = %.4f  (%.3f s)", xEvent.m_fNormalizedTime, xEvent.m_fNormalizedTime * fDuration);
+
+	if (xEvent.m_fNormalizedTime > 1.0f + fANIM_TIME_EPSILON)
+	{
+		ImGui::SameLine();
+		Zenith_EditorUI::Badge("PAST END", xPalette.m_uWarning, xPalette.m_uTextBright);
+	}
+}
+
+void Zenith_EditorPanel_Animation::RenderEventContextMenu()
+{
+	static const char* const szEVENT_CONTEXT_POPUP = "##AnimEventContext";
+
+	if (m_bEventContextMenuRequested)
+	{
+		m_bEventContextMenuRequested = false;
+		ImGui::OpenPopup(szEVENT_CONTEXT_POPUP);
+	}
+
+	if (!ImGui::BeginPopup(szEVENT_CONTEXT_POPUP))
+	{
+		return;
+	}
+
+	const u_int uSelected = m_auSelectedEventIds.GetSize();
+	if (ImGui::MenuItem(uSelected > 1u ? "Delete Events" : "Delete Event"))
+	{
+		// The same action the Delete key runs: it removes every selected KEY and
+		// every selected EVENT as one undo step, and leaves the selection alone so
+		// the undo hands it back with them.
+		Action_DeleteSelection();
+	}
+	ImGui::EndPopup();
 }
 
 //=============================================================================
@@ -993,6 +1193,12 @@ void Zenith_EditorPanel_Animation::DrawEventsForRow(ImDrawList* pxDraw, const Sh
 	const float fCentreY = fRowTop + xLayout.m_fRowHeight * 0.5f;
 	const float fHalf = Zenith_EditorUI::Px(fSHEET_EVENT_HALF_1X);
 	const float fDuration = m_xDocument.GetDuration();
+	ImFont* pxFont = ImGui::GetFont();
+	const float fFontSize = ImGui::GetFontSize();
+	// The name is clipped to the KEY LANE, so a long one cannot spill back over
+	// the label gutter or out past the canvas.
+	const ImVec4 xLaneClip(xLayout.m_fTrackLeft, fRowTop,
+		xLayout.m_fTrackLeft + xLayout.m_fTrackWidth, fRowTop + xLayout.m_fRowHeight);
 
 	const u_int uEventCount = m_xDocument.GetEventCount();
 	for (u_int u = 0; u < uEventCount; ++u)
@@ -1032,6 +1238,44 @@ void Zenith_EditorPanel_Animation::DrawEventsForRow(ImDrawList* pxDraw, const Sh
 		pxDraw->AddConvexPolyFilled(axPoints, 3, uFill);
 		pxDraw->AddPolyline(axPoints, 3, bSelected ? xPalette.m_uTextBright : xPalette.m_uBorder,
 			ImDrawFlags_Closed, bSelected ? 2.0f : 1.0f);
+
+		// ★ THE NAME IS DRAWN, AND IT IS THE WHOLE REASON AN EVENT IS NOT A KEY.
+		// A row of unlabelled flags says an event exists and nothing about which;
+		// the name is what a listener matches on, so it is the one field an author
+		// has to be able to read without clicking.
+		pxDraw->AddText(pxFont, fFontSize,
+			Vec(fCentreX + fHalf + Zenith_EditorUI::Px(3.0f), fRowTop + Zenith_EditorUI::Px(2.0f)),
+			bSelected ? xPalette.m_uTextBright : xPalette.m_uText,
+			xEvent.m_strEventName.c_str(), nullptr, 0.0f, &xLaneClip);
+
+		// The drag GHOST — where the flag would land, with the flag still where it
+		// is. Nothing is mutated until the button comes up, and the offset is
+		// EffectiveEventDragDelta, the same function the drop applies, so the
+		// preview cannot promise a position the drop will not deliver.
+		if (m_bDraggingEvents && bSelected)
+		{
+			const float fGhostX = Zenith_AnimTimelineTimeToPixel(m_xView,
+				(xEvent.m_fNormalizedTime + m_fEventDragDeltaNormalized) * fDuration);
+			if (IsFiniteFloat(fGhostX))
+			{
+				const ImVec2 axGhost[3] =
+				{
+					Vec(fGhostX - fHalf, fCentreY - fHalf),
+					Vec(fGhostX + fHalf, fCentreY),
+					Vec(fGhostX - fHalf, fCentreY + fHalf),
+				};
+				pxDraw->AddPolyline(axGhost, 3, xPalette.m_uTextBright, ImDrawFlags_Closed, 1.5f);
+			}
+		}
+
+		// D13's per-item half, the same glyph a key past the duration gets. An
+		// event past 1.0 is never sampled and is otherwise silent.
+		if (bPastDuration)
+		{
+			Zenith_EditorUI::DrawIcon(pxDraw, Zenith_EditorIcon::Warning,
+				Vec(fCentreX, fCentreY - fHalf - Zenith_EditorUI::Px(4.0f)),
+				Zenith_EditorUI::Px(9.0f), xPalette.m_uWarning);
+		}
 
 		Zenith_AnimPanelRect xRect;
 		xRect.m_fMinX = fCentreX - fHalf;
@@ -1202,6 +1446,23 @@ bool Zenith_EditorPanel_Animation::FindEventAtScreenPos(float fX, float fY, u_in
 	return false;
 }
 
+bool Zenith_EditorPanel_Animation::IsInEventsRowLane(float fX, float fY) const
+{
+	if (m_uEventsRowIndex == uINVALID_ANIM_SHEET_ROW)
+	{
+		return false;
+	}
+	Zenith_AnimPanelRect xLane;
+	// ★ THROUGH THE PUBLISHED ACCESSOR, like every other hit test here: a row the
+	// off-screen gate refuses is a row no gesture may land on, so "double-click to
+	// add" cannot place an event on a row nobody can see.
+	if (!GetRowTrackRectByIndex(m_uEventsRowIndex, xLane))
+	{
+		return false;
+	}
+	return fX >= xLane.m_fMinX && fX <= xLane.m_fMaxX && fY >= xLane.m_fMinY && fY <= xLane.m_fMaxY;
+}
+
 void Zenith_EditorPanel_Animation::HandleSheetInput(const SheetLayout& xLayout, bool bCanvasHovered)
 {
 	if (!m_xDocument.IsOpen() || xLayout.m_fTrackWidth <= 0.0f)
@@ -1278,6 +1539,28 @@ void Zenith_EditorPanel_Animation::HandleSheetInput(const SheetLayout& xLayout, 
 		return;
 	}
 
+	// ---- event drag ---------------------------------------------------------
+	if (m_bDraggingEvents)
+	{
+		// ★ THE MOUSE DELTA IS SECONDS AND THE STORED VALUE IS A FRACTION (D4), so
+		// the division by the duration happens HERE, once, on the way in — and the
+		// action never sees a second. A duration of zero has no fraction to
+		// express a pixel as, so the drag is inert rather than a division by zero.
+		const float fRawSeconds = Zenith_AnimTimelinePixelsToSeconds(m_xView, fMouseX - m_fEventDragStartMouseX);
+		const float fDocDuration = m_xDocument.GetDuration();
+		const float fRawNormalized = fDocDuration > 0.0f ? fRawSeconds / fDocDuration : 0.0f;
+		m_fEventDragDeltaNormalized = EffectiveEventDragDelta(fRawNormalized, !xIO.KeyShift);
+		if (bReleased || !bDown)
+		{
+			m_bDraggingEvents = false;
+			// The RAW delta is handed over, so the snap has one owner — exactly as
+			// the key drag does.
+			Action_MoveSelectedEvents(fRawNormalized, !xIO.KeyShift);
+			m_fEventDragDeltaNormalized = 0.0f;
+		}
+		return;
+	}
+
 	// ---- rubber band --------------------------------------------------------
 	if (m_bBoxSelecting)
 	{
@@ -1308,6 +1591,30 @@ void Zenith_EditorPanel_Animation::HandleSheetInput(const SheetLayout& xLayout, 
 	}
 
 	// ---- nothing in flight: can a new gesture start? ------------------------
+
+	// RIGHT-click first, and it only ever means one thing on this sheet: the
+	// event context menu. It is tested before the left-button gate because the
+	// two buttons are independent and a right-click must not have to wait for one.
+	if (bCanvasHovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right))
+	{
+		u_int uContextEventId = uINVALID_ANIM_KEY_ID;
+		if (FindEventAtScreenPos(fMouseX, fMouseY, uContextEventId))
+		{
+			// A right-click on something NOT already picked selects it; one on a
+			// member of a multi-event selection leaves the selection alone, so
+			// "delete these five" does not collapse to "delete this one".
+			if (!IsEventSelected(uContextEventId))
+			{
+				Action_SelectEvent(uContextEventId, ZENITH_ANIMSELECT_REPLACE);
+			}
+			// The popup is OPENED from the window scope (RenderEventContextMenu),
+			// not from here: the whole sheet is one InvisibleButton and this
+			// function runs after it has been submitted.
+			m_bEventContextMenuRequested = true;
+		}
+		return;
+	}
+
 	if (!bCanvasHovered || !ImGui::IsMouseClicked(ImGuiMouseButton_Left))
 	{
 		return;
@@ -1315,6 +1622,34 @@ void Zenith_EditorPanel_Animation::HandleSheetInput(const SheetLayout& xLayout, 
 	if (fMouseX < xLayout.m_fTrackLeft || fMouseX > fTrackRight)
 	{
 		// The label gutter. DrawRows owns that column's collapse hit-test.
+		return;
+	}
+
+	// ---- double-click the events row to ADD one there -----------------------
+	// ★ TESTED BEFORE EVERYTHING ELSE BELOW, because IsMouseClicked is ALSO true
+	// on the second press of a double-click: reaching the marker hit-test first
+	// would turn a double-click into a select-and-drag and the event would never
+	// be created.
+	if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && IsInEventsRowLane(fMouseX, fMouseY))
+	{
+		u_int uUnderCursorId = uINVALID_ANIM_KEY_ID;
+		if (!FindEventAtScreenPos(fMouseX, fMouseY, uUnderCursorId))
+		{
+			float fSeconds = Zenith_AnimTimelinePixelToTime(m_xView, fMouseX);
+			if (!xIO.KeyShift)
+			{
+				fSeconds = Zenith_AnimTimelineSnapToFrame(fSeconds, uFrameRate);
+			}
+			if (fSeconds < 0.0f) { fSeconds = 0.0f; }
+			const float fDocDuration = m_xDocument.GetDuration();
+			// D4 again: what is stored is the FRACTION. A clip with no duration has
+			// no fraction to place one at, so the gesture is refused rather than
+			// dividing by zero and writing a NaN into the .zanim.
+			if (fDocDuration > 0.0f && IsFiniteFloat(fSeconds))
+			{
+				Action_AddEvent(fSeconds / fDocDuration, DefaultEventName());
+			}
+		}
 		return;
 	}
 
@@ -1375,7 +1710,26 @@ void Zenith_EditorPanel_Animation::HandleSheetInput(const SheetLayout& xLayout, 
 	u_int uHitEventId = uINVALID_ANIM_KEY_ID;
 	if (FindEventAtScreenPos(fMouseX, fMouseY, uHitEventId))
 	{
-		Action_SelectEvent(uHitEventId, SelectModeFromModifiers());
+		const Zenith_AnimSelectMode eEventMode = SelectModeFromModifiers();
+		// Same rule as a key: clicking an already-selected event with no modifier
+		// KEEPS the selection and only re-primaries it. Re-running REPLACE there
+		// would collapse a multi-event selection to one on the mouse DOWN of the
+		// drag that was meant to move all of them.
+		if (eEventMode != ZENITH_ANIMSELECT_REPLACE || !IsEventSelected(uHitEventId))
+		{
+			Action_SelectEvent(uHitEventId, eEventMode);
+		}
+		else
+		{
+			Action_SelectEvent(uHitEventId, ZENITH_ANIMSELECT_ADD);
+		}
+
+		if (IsEventSelected(uHitEventId))
+		{
+			m_bDraggingEvents = true;
+			m_fEventDragStartMouseX = fMouseX;
+			m_fEventDragDeltaNormalized = 0.0f;
+		}
 		return;
 	}
 
