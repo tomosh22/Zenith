@@ -3,6 +3,7 @@
 #ifdef ZENITH_TOOLS
 
 #include "Collections/Zenith_Vector.h"
+#include "Collections/Zenith_HashMap.h"
 #include <string>
 
 //=============================================================================
@@ -23,11 +24,33 @@
 constexpr float fMIN_LOOK_SENSITIVITY = 0.002f;
 constexpr float fMAX_LOOK_SENSITIVITY = 0.500f;
 
+//-----------------------------------------------------------------------------
+// The rig a user picked to preview ONE animation clip on (WU-2.4 / D31).
+//
+// A .zanim records its own skeleton and preview model, but a generated or
+// hand-authored clip may record neither, or may record a path that no longer
+// resolves — and then the animation preview cannot show anything until somebody
+// says which rig to use. Asking again on every open would be the wrong answer to
+// a question whose answer never changes, so the choice is remembered PER CLIP.
+//-----------------------------------------------------------------------------
+struct Zenith_EditorPrefs_AnimRigChoice
+{
+	std::string m_strSkeletonPath;
+	std::string m_strPreviewModelPath;
+};
+
 struct Zenith_EditorPrefs
 {
 	static constexpr u_int uMAX_RECENT_SCENES = 8;
 
 	Zenith_Vector<std::string> m_axRecentScenes;   // most recent FIRST
+
+	// Clip asset path -> the rig chosen for it. THE FIRST PER-ASSET MAP IN HERE:
+	// every other preference is one named scalar with a row in the static field
+	// table, and a map cannot be a row in that table (it is keyed by data, not by
+	// a member pointer), so it is serialized as a REPEATED KEY the way
+	// m_axRecentScenes is — one `anim_rig=<clip>|<skeleton>|<model>` line each.
+	Zenith_HashMap<std::string, Zenith_EditorPrefs_AnimRigChoice> m_xAnimRigChoices;
 	float m_fCameraMoveSpeed = 50.0f;
 	// Degrees of yaw/pitch per PIXEL of pointer movement. The editor does not
 	// capture the cursor to look, so this is the OS-processed pointer delta,
@@ -53,6 +76,15 @@ struct Zenith_EditorPrefs
 	// Moves strPath to the front (deduplicated, capped at uMAX_RECENT_SCENES).
 	void AddRecentScene(const std::string& strPath);
 	void RemoveRecentScene(const std::string& strPath);
+
+	// Per-clip animation-preview rig choice. An empty clip path is ignored (a
+	// clip with no file has nothing to key on); an empty skeleton AND model pair
+	// REMOVES the entry rather than storing a choice that resolves to nothing.
+	void SetAnimRigChoice(const std::string& strClipAssetPath,
+		const std::string& strSkeletonPath, const std::string& strPreviewModelPath);
+	bool TryGetAnimRigChoice(const std::string& strClipAssetPath, Zenith_EditorPrefs_AnimRigChoice& xOut) const;
+	void RemoveAnimRigChoice(const std::string& strClipAssetPath);
+	u_int GetAnimRigChoiceCount() const { return m_xAnimRigChoices.GetSize(); }
 
 	// Text form. Parse resets to defaults first, then applies every recognised
 	// line; unknown keys and malformed lines are ignored.

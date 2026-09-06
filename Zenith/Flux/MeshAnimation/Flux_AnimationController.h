@@ -139,6 +139,86 @@ public:
 	// Stop animation
 	void Stop();
 
+	//=========================================================================
+	// Direct-play SCRUBBING (WU-2.4)
+	//
+	// ★ THERE WAS NO WAY TO ASK FOR THE POSE AT A TIME. Every entry point into
+	// this class ADVANCED a clock: Update(dt) steps, PlayClip restarts at zero,
+	// and the only time SETTER in the whole animation system is
+	// Flux_BlendTreeNode_Clip::SetCurrentTimestamp — reachable only through the
+	// private, tools-only m_pxDirectPlayNode, which has no accessor. An animation
+	// editor's play head is not an increment, so scrubbing was unimplementable
+	// from outside.
+	//
+	// ★ THE DECLARATIONS ARE NOT TOOLS-GATED even though direct play itself still
+	// is: a caller in a non-tools build compiles and gets a documented `false`,
+	// rather than needing its own #ifdef around every call. There is no direct-play
+	// node to seek without ZENITH_TOOLS, so that is the whole of the behaviour.
+	//
+	// ★ SEEK DOES NOT GO THROUGH UpdateWithSkeletonInstance, and that is
+	// deliberate. That dispatcher hands the frame to the LAYER path the moment any
+	// layer exists, which disables the direct-play preview (and the top-level state
+	// machine with it). A scrub names the thing being scrubbed, so it drives the
+	// direct-play node directly and works on a layered controller too.
+	//=========================================================================
+
+	// True when a direct-play clip is armed (PlayClip has run, Stop has not).
+	bool HasDirectPlayClip() const;
+
+	// The direct-play node's clip time in SECONDS, or 0 when nothing is armed.
+	float GetDirectPlayTime() const;
+
+	// Evaluate the direct-play clip AT fTimeSeconds and apply the result to this
+	// controller's skeleton instance, WITHOUT advancing any clock. The resulting
+	// pose is identical to the one a tick that reached the same time would leave
+	// (both seed the bind pose and sample the clip through the same helper); the
+	// difference is that a seek ignores playback speed, the paused flag and any
+	// in-flight crossfade — a scrub is not a transition.
+	//
+	// fTimeSeconds is wrapped or clamped by WrapClipTime, so a caller may pass a
+	// raw slider value. False when nothing is armed or no skeleton is initialized.
+	bool SeekDirectPlay(float fTimeSeconds);
+
+	// ★ A SEEK EMITS NO EVENTS BY DEFAULT but still MOVES THE BOOKKEEPING MARK
+	// (D40). Leaving the mark where it was would make the next forward tick
+	// process the whole span from the old mark to the new time and fire a BURST of
+	// events the playhead skipped over. Event DELIVERY policy is WU-5A's; this
+	// flag is the hook it will honour, and nothing sets it true today.
+	void SetEmitEventsOnSeek(bool bEmit) { m_bEmitEventsOnSeek = bEmit; }
+	bool GetEmitEventsOnSeek() const { return m_bEmitEventsOnSeek; }
+	// The NORMALIZED clip time the last event scan reached. Exposed so a scrub can
+	// be shown to have moved it.
+	float GetLastEventCheckTime() const { return m_fLastEventCheckTime; }
+
+	// PURE. Fold a raw clip time into the clip's own range: wrapped when the clip
+	// loops, clamped when it does not, and returned unchanged for a clip with no
+	// duration (there is no range to fold into).
+	static float WrapClipTime(const Flux_AnimationClip& xClip, float fTimeSeconds);
+
+	//=========================================================================
+	// Per-frame DRIVE GUARD (WU-2.4)
+	//
+	// ★ ONE DRIVER PER CONTROLLER PER FRAME. The animator inspector ticks the
+	// entity's controller itself while the editor is Stopped (nothing else does —
+	// Scene::Update is not running). A second panel that also ticked it would
+	// double-tick: the clip would run at 2x with both panels open and at 1x with
+	// one, which reads as "the preview speed is wrong" rather than as two drivers,
+	// and no assert anywhere would fire.
+	//
+	// The token is the caller's frame identity — g_xEngine.Frame().GetFrameIndex()
+	// for editor code. The FIRST claim in a given frame wins and every later one
+	// in that same frame is refused, INCLUDING a repeat by the same driver: a
+	// second tick is a second tick regardless of who asks for it.
+	//=========================================================================
+	static constexpr u_int64 ulNO_DRIVE_FRAME = ~0ull;
+
+	bool TryBeginFrameDrive(const void* pDriver, u_int64 ulFrameToken);
+	const void* GetFrameDriveOwner() const { return m_pDriveOwner; }
+	u_int64 GetFrameDriveToken() const { return m_ulDriveFrameToken; }
+	// Hand the frame back early (a panel that claimed and then decided not to
+	// tick). Only the current owner may release.
+	void ClearFrameDrive(const void* pDriver);
+
 	// Pause/Resume
 	void SetPaused(bool bPaused) { m_bPaused = bPaused; }
 	bool IsPaused() const { return m_bPaused; }
@@ -243,6 +323,11 @@ private:
 	void EvaluateAndComposeLayers(float fDt);
 #ifdef ZENITH_TOOLS
 	void UpdateDirectPlayPose(float fDt);
+	// Seed the output pose from the bind pose and sample the direct-play clip at
+	// the node's CURRENT timestamp. Shared by the tick and by SeekDirectPlay so
+	// the two cannot produce different poses for the same time — which is exactly
+	// what a scrub-vs-play comparison would otherwise be measuring.
+	void SampleDirectPlayPoseAtCurrentTime();
 #endif
 
 	// Apply m_xOutputPose to skeleton instance and upload to GPU
@@ -287,6 +372,14 @@ private:
 	Flux_AnimationEventCallback m_pfnEventCallback = nullptr;
 	void* m_pEventCallbackUserData = nullptr;
 	float m_fLastEventCheckTime = 0.0f;
+
+	// WU-2.4: scrub event policy hook (D40) — see SetEmitEventsOnSeek.
+	bool m_bEmitEventsOnSeek = false;
+
+	// WU-2.4: per-frame drive guard — see TryBeginFrameDrive. Non-owning identity
+	// only; never dereferenced.
+	const void* m_pDriveOwner = nullptr;
+	u_int64 m_ulDriveFrameToken = ulNO_DRIVE_FRAME;
 };
 
 //=============================================================================

@@ -50,7 +50,15 @@ Flux_AnimationController::Flux_AnimationController(Flux_AnimationController&& xO
 	, m_pfnEventCallback(xOther.m_pfnEventCallback)
 	, m_pEventCallbackUserData(xOther.m_pEventCallbackUserData)
 	, m_fLastEventCheckTime(xOther.m_fLastEventCheckTime)
+	, m_bEmitEventsOnSeek(xOther.m_bEmitEventsOnSeek)
+	, m_pDriveOwner(xOther.m_pDriveOwner)
+	, m_ulDriveFrameToken(xOther.m_ulDriveFrameToken)
 {
+	// The moved-from controller drives nothing: leaving the claim behind would let
+	// a caller that still holds the old object read itself as this frame's driver.
+	xOther.m_pDriveOwner = nullptr;
+	xOther.m_ulDriveFrameToken = ulNO_DRIVE_FRAME;
+
 	// Null out moved-from object's owned pointers to prevent double-delete
 	xOther.m_pxStateMachine = nullptr;
 	xOther.m_pxIKSolver = nullptr;
@@ -90,6 +98,9 @@ Flux_AnimationController& Flux_AnimationController::operator=(Flux_AnimationCont
 		m_pfnEventCallback = xOther.m_pfnEventCallback;
 		m_pEventCallbackUserData = xOther.m_pEventCallbackUserData;
 		m_fLastEventCheckTime = xOther.m_fLastEventCheckTime;
+		m_bEmitEventsOnSeek = xOther.m_bEmitEventsOnSeek;
+		m_pDriveOwner = xOther.m_pDriveOwner;
+		m_ulDriveFrameToken = xOther.m_ulDriveFrameToken;
 
 		// Transfer owned pointers
 		m_pxStateMachine = xOther.m_pxStateMachine;
@@ -116,6 +127,9 @@ Flux_AnimationController& Flux_AnimationController::operator=(Flux_AnimationCont
 		xOther.m_pxSkeletonInstance = nullptr;
 		xOther.m_pfnEventCallback = nullptr;
 		xOther.m_pEventCallbackUserData = nullptr;
+		// See the move ctor: a moved-from controller drives nothing.
+		xOther.m_pDriveOwner = nullptr;
+		xOther.m_ulDriveFrameToken = ulNO_DRIVE_FRAME;
 	}
 	return *this;
 }
@@ -236,36 +250,37 @@ void Flux_AnimationController::EvaluateAndComposeLayers(float fDt)
 	}
 }
 
+// PURE. See the header: wrapped when the clip loops, clamped when it does not,
+// and returned UNCHANGED for a clip with no duration — the pre-WU-2.4 tick did
+// exactly that, and a zero-duration clip has no range to fold into.
+float Flux_AnimationController::WrapClipTime(const Flux_AnimationClip& xClip, float fTimeSeconds)
+{
+	const float fDuration = xClip.GetDuration();
+	if (fDuration <= 0.0f)
+		return fTimeSeconds;
+
+	if (xClip.IsLooping())
+	{
+		float fWrapped = fmod(fTimeSeconds, fDuration);
+		if (fWrapped < 0.0f) fWrapped += fDuration;
+		return fWrapped;
+	}
+	return glm::clamp(fTimeSeconds, 0.0f, fDuration);
+}
+
 #ifdef ZENITH_TOOLS
-// Editor-only direct-clip preview path: advance playback time (with looping or
-// clamping), seed the output pose with bind pose values (so untouched bones
-// keep bind pose rather than identity), sample the clip on top, and apply any
-// active crossfade snapshot.
-void Flux_AnimationController::UpdateDirectPlayPose(float fDt)
+// Seed the output pose with bind pose values (so bones without a channel in this
+// clip keep bind pose rather than identity), then sample the clip on top at the
+// node's CURRENT timestamp.
+//
+// ★ SHARED BY THE TICK AND THE SEEK. Two copies of this would let "the pose at
+// time t" mean two different things depending on how you got there, which is the
+// one property a scrub has to preserve.
+void Flux_AnimationController::SampleDirectPlayPoseAtCurrentTime()
 {
 	Flux_AnimationClip* pxClip = m_pxDirectPlayNode->GetClip();
 	if (!pxClip) return;
 
-	float fCurrentTime = m_pxDirectPlayNode->GetCurrentTimestamp();
-	fCurrentTime += fDt * m_pxDirectPlayNode->GetPlaybackRate();
-
-	const float fDuration = pxClip->GetDuration();
-	if (fDuration > 0.0f)
-	{
-		if (pxClip->IsLooping())
-		{
-			fCurrentTime = fmod(fCurrentTime, fDuration);
-			if (fCurrentTime < 0.0f) fCurrentTime += fDuration;
-		}
-		else
-		{
-			fCurrentTime = glm::clamp(fCurrentTime, 0.0f, fDuration);
-		}
-	}
-	m_pxDirectPlayNode->SetCurrentTimestamp(fCurrentTime);
-
-	// Seed output pose with bind pose values. Bones without animation channels
-	// in this clip keep bind pose rather than identity.
 	const uint32_t uNumBones = m_pxSkeletonInstance->GetNumBones();
 	for (uint32_t i = 0; i < uNumBones && i < FLUX_MAX_BONES; ++i)
 	{
@@ -276,7 +291,22 @@ void Flux_AnimationController::UpdateDirectPlayPose(float fDt)
 		xPose.m_xScale = xBone.m_xBindScale;
 	}
 
-	m_xOutputPose.SampleFromClip(*pxClip, fCurrentTime, *m_xSkeletonAsset.GetDirect());
+	m_xOutputPose.SampleFromClip(*pxClip, m_pxDirectPlayNode->GetCurrentTimestamp(), *m_xSkeletonAsset.GetDirect());
+}
+
+// Editor-only direct-clip preview path: advance playback time (with looping or
+// clamping), sample the pose at the new time, and apply any active crossfade
+// snapshot.
+void Flux_AnimationController::UpdateDirectPlayPose(float fDt)
+{
+	Flux_AnimationClip* pxClip = m_pxDirectPlayNode->GetClip();
+	if (!pxClip) return;
+
+	const float fCurrentTime = WrapClipTime(*pxClip,
+		m_pxDirectPlayNode->GetCurrentTimestamp() + fDt * m_pxDirectPlayNode->GetPlaybackRate());
+	m_pxDirectPlayNode->SetCurrentTimestamp(fCurrentTime);
+
+	SampleDirectPlayPoseAtCurrentTime();
 
 	// Optional crossfade between direct clips — blends from the snapshot pose.
 	if (m_pxDirectTransition)
@@ -554,6 +584,81 @@ void Flux_AnimationController::Stop()
 #endif
 
 	m_xOutputPose.Reset();
+}
+
+//=============================================================================
+// Direct-play scrubbing (WU-2.4) — see the header for why this exists.
+//=============================================================================
+
+bool Flux_AnimationController::HasDirectPlayClip() const
+{
+#ifdef ZENITH_TOOLS
+	return m_pxDirectPlayNode != nullptr && m_pxDirectPlayNode->GetClip() != nullptr;
+#else
+	return false;
+#endif
+}
+
+float Flux_AnimationController::GetDirectPlayTime() const
+{
+#ifdef ZENITH_TOOLS
+	return m_pxDirectPlayNode ? m_pxDirectPlayNode->GetCurrentTimestamp() : 0.0f;
+#else
+	return 0.0f;
+#endif
+}
+
+bool Flux_AnimationController::SeekDirectPlay(float fTimeSeconds)
+{
+#ifdef ZENITH_TOOLS
+	if (!m_pxDirectPlayNode || !m_pxSkeletonInstance || !m_xSkeletonAsset.GetDirect())
+		return false;
+
+	Flux_AnimationClip* pxClip = m_pxDirectPlayNode->GetClip();
+	if (!pxClip)
+		return false;
+
+	m_pxDirectPlayNode->SetCurrentTimestamp(WrapClipTime(*pxClip, fTimeSeconds));
+	SampleDirectPlayPoseAtCurrentTime();
+	ApplyOutputPoseToSkeleton();
+
+	// D40: the mark MOVES even when nothing is emitted. See SetEmitEventsOnSeek —
+	// leaving it behind makes the next forward tick replay the whole skipped span
+	// as one burst.
+	const float fNormalized = m_pxDirectPlayNode->GetNormalizedTime();
+	if (m_bEmitEventsOnSeek)
+	{
+		ProcessEvents(m_fLastEventCheckTime, fNormalized);
+	}
+	m_fLastEventCheckTime = fNormalized;
+	return true;
+#else
+	(void)fTimeSeconds;
+	return false;
+#endif
+}
+
+bool Flux_AnimationController::TryBeginFrameDrive(const void* pDriver, u_int64 ulFrameToken)
+{
+	// A claim already made in THIS frame refuses every later one, the same
+	// driver's included — a second tick is a second tick whoever asks for it.
+	if (m_pDriveOwner != nullptr && m_ulDriveFrameToken == ulFrameToken)
+		return false;
+
+	m_pDriveOwner = pDriver;
+	m_ulDriveFrameToken = ulFrameToken;
+	return true;
+}
+
+void Flux_AnimationController::ClearFrameDrive(const void* pDriver)
+{
+	// Only the current owner may release: a dispossessed caller tidying up must
+	// not hand the frame back to a driver that never had it.
+	if (m_pDriveOwner == pDriver)
+	{
+		m_pDriveOwner = nullptr;
+		m_ulDriveFrameToken = ulNO_DRIVE_FRAME;
+	}
 }
 
 void Flux_AnimationController::SetEventCallback(Flux_AnimationEventCallback pfnCallback, void* pUserData)

@@ -52,6 +52,11 @@ void Flux_MaterialPreviewController::ReleaseAssetReferences()
 	m_bMeshesCreated = false;
 	m_xMaterial.Clear();
 	m_bActive = false;
+	// Drop the slot with the liveness flag: a torn-down controller must not stay
+	// on record as the preview's owner, or an animation preview reclaiming would
+	// report a name belonging to something that no longer exists.
+	Flux_PreviewSlotArbiter::Release(this);
+	m_bForcedTestViewWasActive = false;
 }
 
 void Flux_MaterialPreviewController::Shutdown()
@@ -142,6 +147,10 @@ void Flux_MaterialPreviewController::Update()
 	if (m_bActive && ++m_uFramesSinceLiveness > kuLIVENESS_GRACE_FRAMES)
 	{
 		m_bActive = false;
+		// The liveness window is the OTHER way the panel goes away (SetActive(false)
+		// is the explicit one), so the slot has to be released down this path too —
+		// otherwise a closed material editor holds the preview for ever.
+		Flux_PreviewSlotArbiter::Release(this);
 	}
 	bool bActive = m_bActive;
 
@@ -163,17 +172,52 @@ void Flux_MaterialPreviewController::Update()
 		if (s_iCLIOverride == 1) { bForcedTestView = true; }
 	}
 #endif
+	// The diagnostic forces the view active without a panel, so it never reaches
+	// SetActive — it claims and releases on its own edges instead (see the member).
+	if (bForcedTestView && !m_bForcedTestViewWasActive)
+	{
+		Flux_PreviewSlotArbiter::Claim(this, "Material Preview (debug)");
+	}
+	else if (!bForcedTestView && m_bForcedTestViewWasActive && !m_bActive)
+	{
+		Flux_PreviewSlotArbiter::Release(this);
+	}
+	m_bForcedTestViewWasActive = bForcedTestView;
 	bActive |= bForcedTestView;
+
+	// ★ ARBITRATION (Flux_PreviewSlotArbiter). There is ONE preview view slot and
+	// two editors that want it, so an open-but-DISPOSSESSED material preview must
+	// neither activate the view nor stage its constants: both claimants write the
+	// same Flux_ViewConstants, and without this the last one to run each frame won
+	// and the two previews fought at frame rate. m_bActive is untouched — the panel
+	// is still open, it just does not own the slot, which is what makes the
+	// placeholder-plus-reclaim UI possible.
+	bActive = bActive && Flux_PreviewSlotArbiter::HasSlot(this);
 
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
 	Flux_RenderViewRegistry& xViews = xGraphics.RenderViews();
-	if (xViews.SetViewActive(kuFluxViewSlotPreview, bActive))
+	if (!bActive)
+	{
+		// ★ DEACTIVATE ONLY WHEN NOBODY OWNS THE SLOT. If an animation preview holds
+		// it, it is staging into the very same view this frame; tearing it down from
+		// here would flicker the other editor's preview black. Same rule the session
+		// side follows (Zenith_AnimationPreviewSession::UpdatePreviewView).
+		if (Flux_PreviewSlotArbiter::GetOwner() == nullptr)
+		{
+			if (xViews.SetViewActive(kuFluxViewSlotPreview, false))
+			{
+				g_xEngine.FluxRenderer().RequestGraphRebuild();
+			}
+		}
+		return;
+	}
+
+	if (xViews.SetViewActive(kuFluxViewSlotPreview, true))
 	{
 		// The active view set changed: per-view transients + passes must be
 		// (de)declared, so the next frame recompiles the graph from scratch.
 		g_xEngine.FluxRenderer().RequestGraphRebuild();
 	}
-	if (!bActive) { return; }
 
 	// Stage the preview view's constants from the orbit state: camera via the
 	// pure builder, then the per-view sun (colour (1,1,1,3) like the old

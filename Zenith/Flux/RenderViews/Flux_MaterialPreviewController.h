@@ -8,6 +8,7 @@
 
 #include "Flux/Flux_ViewConstants.h"
 #include "Flux/RenderViews/Flux_RenderViews.h"
+#include "Flux/RenderViews/Flux_PreviewSlotArbiter.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
 #include "Maths/Zenith_Maths.h"
 
@@ -117,7 +118,11 @@ public:
 	static constexpr u_int uPREVIEW_SIZE = kuFLUX_PREVIEW_VIEW_SIZE;
 
 	Flux_MaterialPreviewController() = default;
-	~Flux_MaterialPreviewController() = default;
+	// Releases the preview slot if this controller still holds it. A destroyed
+	// owner left on record would have the arbiter reporting a name for something
+	// that no longer exists; the arbiter never dereferences the identity, but the
+	// dispossessed panel's placeholder would name a ghost.
+	~Flux_MaterialPreviewController() { Flux_PreviewSlotArbiter::Release(this); }
 
 	Flux_MaterialPreviewController(const Flux_MaterialPreviewController&) = delete;
 	Flux_MaterialPreviewController& operator=(const Flux_MaterialPreviewController&) = delete;
@@ -153,12 +158,38 @@ public:
 	// stays TRUE for the whole time the panel is open (the DP automation asserts
 	// this), and the view (+ its 41 per-view passes / ~32MB of transients) is
 	// torn down shortly after the panel closes. SetActive(false) is immediate.
+	//
+	// ★ THE PREVIEW SLOT IS CLAIMED ON THE TRANSITION INTO ACTIVE, NOT PER FRAME
+	// (Flux_PreviewSlotArbiter, last-opened-wins). This is called EVERY frame the
+	// panel is visible, so claiming unconditionally would make the material editor
+	// impossible to dispossess: it would silently steal the slot back on the next
+	// frame and last-opened-wins would degrade to last-drawn-wins. Only the rising
+	// edge — the panel opening, or reopening after the grace period expired —
+	// claims. m_bActive is NOT touched by the arbitration: IsActive() still means
+	// "the panel is open", which is what the DP automation asserts.
 	void SetActive(bool bActive)
 	{
+		if (bActive)
+		{
+			if (!m_bActive) { Flux_PreviewSlotArbiter::Claim(this, "Material Editor"); }
+			m_uFramesSinceLiveness = 0u;
+		}
+		else if (m_bActive)
+		{
+			Flux_PreviewSlotArbiter::Release(this);
+		}
 		m_bActive = bActive;
-		if (bActive) { m_uFramesSinceLiveness = 0u; }
 	}
 	bool IsActive() const { return m_bActive; }
+
+	// Does this controller currently own the shared preview view slot? FALSE while
+	// an animation preview holds it, in which case Update() neither activates nor
+	// stages the view. Distinct from IsActive(): a panel can be open (active) and
+	// dispossessed at the same time — that pair is exactly the placeholder state.
+	bool HasPreviewSlot() const { return Flux_PreviewSlotArbiter::HasSlot(this); }
+	const std::string& GetPreviewSlotOwnerName() const { return Flux_PreviewSlotArbiter::GetOwnerName(); }
+	// Take the slot back (the panel's reclaim button), dispossessing the owner.
+	void ReclaimPreviewSlot() { Flux_PreviewSlotArbiter::Claim(this, "Material Editor"); }
 
 	void SetMaterial(Zenith_MaterialAsset* pxMaterial);
 	Zenith_MaterialAsset* GetMaterial() { return m_xMaterial.GetDirect() ? m_xMaterial.GetDirect() : m_xMaterial.Resolve(); }
@@ -200,6 +231,12 @@ private:
 	// Frames since the last SetActive(true) refresh (see SetActive).
 	u_int m_uFramesSinceLiveness = 0u;
 	static constexpr u_int kuLIVENESS_GRACE_FRAMES = 8u;
+
+	// Rising/falling-edge tracking for the --preview-test-view diagnostic, which
+	// forces the view active WITHOUT a panel and therefore without a SetActive
+	// call. It needs the same edge-triggered claim (see SetActive): claiming every
+	// frame it is on would make the diagnostic un-dispossessable.
+	bool m_bForcedTestViewWasActive = false;
 
 	MaterialHandle m_xMaterial;
 	MaterialPreviewMesh m_eMesh = MATERIAL_PREVIEW_MESH_SPHERE;

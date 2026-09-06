@@ -103,6 +103,88 @@ namespace
 	{
 		return !Zenith_IsNullRenderer() && !Zenith_CommandLine::IsAutomatedTestRun();
 	}
+
+	//-------------------------------------------------------------------------
+	// The per-asset map's line format: `anim_rig=<clip>|<skeleton>|<model>`.
+	//
+	// A field separator rather than three keyed lines because the three values
+	// are ONE record: three separate lines could interleave with another record's
+	// after a hand edit and there would be no way to tell. '|' is the separator
+	// because no asset path contains one — a value that does is REFUSED on the way
+	// in (below) rather than being written back out split in a different place.
+	//-------------------------------------------------------------------------
+	constexpr char cANIM_RIG_FIELD_SEPARATOR = '|';
+
+	bool SplitAnimRigLine(const std::string& strValue,
+		std::string& strOutClip, std::string& strOutSkeleton, std::string& strOutModel)
+	{
+		const size_t uFirst = strValue.find(cANIM_RIG_FIELD_SEPARATOR);
+		if (uFirst == std::string::npos)
+		{
+			return false;
+		}
+		const size_t uSecond = strValue.find(cANIM_RIG_FIELD_SEPARATOR, uFirst + 1);
+		if (uSecond == std::string::npos)
+		{
+			return false;
+		}
+		// A third separator means the record is not what this writer produced.
+		if (strValue.find(cANIM_RIG_FIELD_SEPARATOR, uSecond + 1) != std::string::npos)
+		{
+			return false;
+		}
+		strOutClip = strValue.substr(0, uFirst);
+		strOutSkeleton = strValue.substr(uFirst + 1, uSecond - uFirst - 1);
+		strOutModel = strValue.substr(uSecond + 1);
+		return !strOutClip.empty();
+	}
+}
+
+void Zenith_EditorPrefs::SetAnimRigChoice(const std::string& strClipAssetPath,
+	const std::string& strSkeletonPath, const std::string& strPreviewModelPath)
+{
+	if (strClipAssetPath.empty())
+	{
+		return;
+	}
+	if (strSkeletonPath.empty() && strPreviewModelPath.empty())
+	{
+		RemoveAnimRigChoice(strClipAssetPath);
+		return;
+	}
+	// A path carrying the field separator could not be read back as the record it
+	// was written from, so it is refused here rather than corrupting the file.
+	if (strClipAssetPath.find(cANIM_RIG_FIELD_SEPARATOR) != std::string::npos ||
+		strSkeletonPath.find(cANIM_RIG_FIELD_SEPARATOR) != std::string::npos ||
+		strPreviewModelPath.find(cANIM_RIG_FIELD_SEPARATOR) != std::string::npos)
+	{
+		Zenith_Warning(LOG_CATEGORY_EDITOR,
+			"Editor prefs: refusing an animation rig choice containing '%c' (clip '%s')",
+			cANIM_RIG_FIELD_SEPARATOR, strClipAssetPath.c_str());
+		return;
+	}
+
+	Zenith_EditorPrefs_AnimRigChoice xChoice;
+	xChoice.m_strSkeletonPath = strSkeletonPath;
+	xChoice.m_strPreviewModelPath = strPreviewModelPath;
+	m_xAnimRigChoices.Insert(strClipAssetPath, xChoice);
+}
+
+bool Zenith_EditorPrefs::TryGetAnimRigChoice(const std::string& strClipAssetPath,
+	Zenith_EditorPrefs_AnimRigChoice& xOut) const
+{
+	const Zenith_EditorPrefs_AnimRigChoice* pxChoice = m_xAnimRigChoices.TryGet(strClipAssetPath);
+	if (pxChoice == nullptr)
+	{
+		return false;
+	}
+	xOut = *pxChoice;
+	return true;
+}
+
+void Zenith_EditorPrefs::RemoveAnimRigChoice(const std::string& strClipAssetPath)
+{
+	m_xAnimRigChoices.Remove(strClipAssetPath);
 }
 
 void Zenith_EditorPrefs::AddRecentScene(const std::string& strPath)
@@ -152,6 +234,17 @@ std::string Zenith_EditorPrefs::Serialize() const
 	{
 		AppendLine(strOut, "recent", m_axRecentScenes.Get(u));
 	}
+	for (Zenith_HashMap<std::string, Zenith_EditorPrefs_AnimRigChoice>::Iterator xIt(m_xAnimRigChoices);
+		!xIt.Done(); xIt.Next())
+	{
+		const Zenith_EditorPrefs_AnimRigChoice& xChoice = xIt.GetValue();
+		std::string strRecord = xIt.GetKey();
+		strRecord += cANIM_RIG_FIELD_SEPARATOR;
+		strRecord += xChoice.m_strSkeletonPath;
+		strRecord += cANIM_RIG_FIELD_SEPARATOR;
+		strRecord += xChoice.m_strPreviewModelPath;
+		AppendLine(strOut, "anim_rig", strRecord);
+	}
 	for (const FloatField& xField : axFLOAT_FIELDS)
 	{
 		AppendLine(strOut, xField.m_szKey, FloatToString(this->*xField.m_pfMember));
@@ -188,6 +281,18 @@ void Zenith_EditorPrefs::Parse(const std::string& strText)
 		if (strKey == "recent")
 		{
 			axRecent.PushBack(strValue);
+			continue;
+		}
+		if (strKey == "anim_rig")
+		{
+			// A malformed record is DROPPED, matching this parser's standing rule
+			// for a line it cannot read: a rig choice is a convenience, and half a
+			// record would name a rig nobody chose.
+			std::string strClip, strSkeleton, strModel;
+			if (SplitAnimRigLine(strValue, strClip, strSkeleton, strModel))
+			{
+				SetAnimRigChoice(strClip, strSkeleton, strModel);
+			}
 			continue;
 		}
 		ApplyKeyValue(strKey, strValue);
@@ -303,5 +408,9 @@ void Zenith_EditorPrefs::Save() const
 	const std::string strText = Serialize();
 	Zenith_FileAccess::WriteFile(strPath.c_str(), strText.data(), strText.size());
 }
+
+#ifdef ZENITH_TESTING
+#include "Editor/Zenith_EditorPrefs.Tests.inl"
+#endif
 
 #endif // ZENITH_TOOLS

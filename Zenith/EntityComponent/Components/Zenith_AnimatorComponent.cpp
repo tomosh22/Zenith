@@ -516,12 +516,23 @@ void Zenith_AnimatorComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 // (included above) -> Flux_AnimationClip.h, so no direct Flux clip include is
 // needed for the editor clip list below.
 
+// ★ DECLARED, NOT INCLUDED. Zenith_AnimationPreviewSession lives in Editor/,
+// which sits ABOVE EntityComponent — including its header would be a layering
+// violation, and the anchor needs no type. A plain declaration is all /OPT:REF
+// looks at: the reference below keeps the session's .obj (and the ZENITH_TEST
+// registrars at the bottom of it) in the link.
+bool Zenith_AnimationPreviewSession_ForceLink();
+
 //-----------------------------------------------------------------------------
 // RenderPropertiesPanel - Main editor UI. Delegates to per-section helpers so
 // each section stays focused on its own concern.
 //-----------------------------------------------------------------------------
 void Zenith_AnimatorComponent::RenderPropertiesPanel()
 {
+	// Anchors the animation-preview-session TU against /OPT:REF — see the
+	// declaration above and Zenith_AnimationPreviewSession_ForceLink.
+	static const bool ls_bAnimPreviewLinked = Zenith_AnimationPreviewSession_ForceLink();
+	(void)ls_bAnimPreviewLinked;
 
 	Flux_AnimationController& xController = Controller();
 
@@ -533,7 +544,18 @@ void Zenith_AnimatorComponent::RenderPropertiesPanel()
 	}
 
 	// Tick animation from editor when game logic isn't running (Stopped/Paused mode)
-	if (!g_xEditorQuery.m_pfnIsEditorPlaying() && xController.IsInitialized())
+	//
+	// ★ AT MOST ONE DRIVER PER FRAME (WU-2.4). This inspector is the only thing
+	// that advances an entity's controller while the editor is Stopped, so a second
+	// panel that also ticked it would DOUBLE-TICK: the clip would run at 2x with
+	// both panels open and at 1x with one, which reads as "the preview speed is
+	// wrong" rather than as two drivers, and nothing would assert. The claim is
+	// keyed on the engine frame index, so the first caller in a frame drives and
+	// every later one in that frame skips its tick and draws the resulting pose.
+	// (An animation-preview panel does NOT contend here — Zenith_AnimationPreviewSession
+	// owns a private controller per D30 — but any future second inspector would.)
+	if (!g_xEditorQuery.m_pfnIsEditorPlaying() && xController.IsInitialized() &&
+		xController.TryBeginFrameDrive(this, g_xEngine.Frame().GetFrameIndex()))
 	{
 		UpdateWorldMatrix();
 		xController.Update(g_xEngine.Frame().GetDt());
