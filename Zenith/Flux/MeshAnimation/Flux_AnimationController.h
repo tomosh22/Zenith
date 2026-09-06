@@ -361,14 +361,51 @@ public:
 
 	//=========================================================================
 	// Animation Layers
+	//
+	// ★ HOLD A LAYER ID, NOT A Flux_AnimationLayer* (WU-6.3 / D43, and this
+	// WITHDRAWS a documented guarantee — D44). The store's heap stability still
+	// means the CONTROLLER pointer a component caches never moves; it never said
+	// anything about the layers INSIDE the controller, and two ordinary verbs
+	// destroy every one of them: BuildFromControllerDef rebuilds the layer list
+	// wholesale from a def, and ReadFromDataStream deletes and re-reads it. A
+	// game that cached the pointer its AddLayer returned was reading freed memory
+	// from the next controller-asset load or scene deserialize onwards, and
+	// nothing on either path could tell it so.
+	//
+	// The id is the handle: unique within this controller and monotonic for its
+	// whole lifetime, so a layer destroyed and rebuilt from the same def keeps
+	// its number while its INDEX moves, and an id belonging to a layer that is
+	// simply gone resolves to nullptr instead of to whatever now sits at that
+	// index. Resolve per use — GetLayerById is a short linear walk of a list that
+	// is two or three entries long in every game in the tree.
 	//=========================================================================
 
-	// Add a new layer (returns pointer for configuration)
+	// Add a new layer (returns pointer for immediate configuration — do not
+	// store it). The layer is minted a fresh id from this controller's monotonic
+	// counter; the counter is never rewound, so an id a destroyed layer held is
+	// never handed out again.
 	Flux_AnimationLayer* AddLayer(const std::string& strName);
 
-	// Get layer by index (0 = base layer)
+	// Get layer by index (0 = base layer). An index is a POSITION IN THE BLEND
+	// ORDER, which is what composition needs and what identity is not.
 	Flux_AnimationLayer* GetLayer(uint32_t uIndex);
 	const Flux_AnimationLayer* GetLayer(uint32_t uIndex) const;
+
+	// By stable id — the addressing gameplay uses. Null when no layer carries it
+	// (including for uFLUX_INVALID_LAYER_ID, which nothing is ever minted).
+	Flux_AnimationLayer* GetLayerById(u_int uLayerId);
+	const Flux_AnimationLayer* GetLayerById(u_int uLayerId) const;
+
+	// By name, in blend order — the FIRST match wins. Null when nothing matches.
+	// Names are not unique (nothing rejects two "Aim" layers), which is exactly
+	// why the id and not the name is the identity; this is for authoring code
+	// that knows what it built, and for looking an id up once after a rebuild.
+	Flux_AnimationLayer* GetLayerByName(const std::string& strName);
+	const Flux_AnimationLayer* GetLayerByName(const std::string& strName) const;
+
+	// The id the next AddLayer will mint. Monotonic; never rewound by a removal,
+	// a rebuild or a deserialize. NOT serialized (see Flux_AnimationLayer).
+	u_int GetNextLayerId() const { return m_uNextLayerId; }
 
 	// Get number of layers
 	uint32_t GetLayerCount() const { return m_xLayers.GetSize(); }
@@ -516,6 +553,14 @@ private:
 	// (or none has happened yet), so publish now.
 	void EnsureParameterDeclared(const std::string& strName);
 
+	// WU-6.3. Take an id chosen elsewhere (a def's, on a BuildFromControllerDef)
+	// onto a layer this controller has just minted one for, and move the counter
+	// PAST it — the mirror of Flux_AnimatorControllerDef::AssignLayerId, and for
+	// the same reason: a bare SetLayerId would leave the counter behind the ids
+	// now in the list and the next AddLayer would mint a duplicate. An id of
+	// uFLUX_INVALID_LAYER_ID means "the def has none", and the minted one stands.
+	void AdoptLayerId(Flux_AnimationLayer& xLayer, u_int uLayerId);
+
 	// The skeleton instance we're animating
 	Flux_SkeletonInstance* m_pxSkeletonInstance = nullptr;
 
@@ -557,6 +602,12 @@ private:
 
 	// Animation layers (empty = use single state machine path, non-empty = multi-layer composition)
 	Zenith_Vector<Flux_AnimationLayer*> m_xLayers;
+	// WU-6.3. The monotonic layer-id counter. Moves forward only — a rebuild that
+	// destroys every layer does NOT rewind it, which is what makes a stale id
+	// resolve to nullptr instead of to a different layer that inherited its
+	// number. Not serialized; ids are stable within one controller's lifetime,
+	// and a .zanimctrl round trip carries the def's ids instead (adopted here).
+	u_int m_uNextLayerId = 0;
 
 	// Cached temporary pose for layer blending (avoids per-frame stack allocation of ~23KB poses)
 	Flux_SkeletonPose m_xTempBlendPose;

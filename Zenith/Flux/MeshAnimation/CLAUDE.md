@@ -255,7 +255,9 @@ Heap-stable owning store of one `Flux_AnimationController` per entity (`Flux_Ani
 - `Destroy(Zenith_EntityID)` — **idempotent** (no-op when absent); returns whether it removed one.
 - `GetCount()` — live controller count (test/diagnostic).
 
-**Why heap-stable matters:** the component caches a `Flux_AnimationController*` for the hot path, and games cache `Flux_AnimationLayer*` / `Flux_AnimationStateMachine*` into the controller's sub-objects. Because the controller is keyed by the **stable** `EntityID` slot and never relocates, those pointers survive a component-pool relocation and a cross-scene `MoveEntityToScene`.
+**Why heap-stable matters:** the component caches a `Flux_AnimationController*` for the hot path. Because the controller is keyed by the **stable** `EntityID` slot and never relocates, that pointer survives a component-pool relocation (swap-and-pop / `Grow`) and a cross-scene `MoveEntityToScene`. Pinned by the `Animator` suite in `Core/Zenith_UnitTests.Tests.inl`.
+
+★ **AND IT SAYS NOTHING ABOUT WHAT IS INSIDE THE CONTROLLER (WU-6.3 / D44).** This paragraph used to read "…and games cache `Flux_AnimationLayer*` / `Flux_AnimationStateMachine*` into the controller's sub-objects… those pointers survive", which does not follow and was never true. Heap stability is a property of the store's ALLOCATION, and two ordinary controller verbs delete every layer it owns: `BuildFromControllerDef` rebuilds the layer list wholesale from a def, and `ReadFromDataStream` deletes and re-reads it. A game holding the pointer its `AddLayer` returned is reading freed memory from the first `.zanimctrl` load or scene deserialize onward — silently, because a freed layer usually still looks like one. **Hold the layer ID and call `GetLayerById` per use** (below). A state machine reached THROUGH a layer has the same lifetime as that layer and the same rule; the controller's own top-level `m_pxStateMachine` is a separate object with the controller's lifetime, replaced only by `CreateStateMachine` / `BuildStateMachineFromDef` / a stream read.
 
 **Lifetime:** allocated in `Zenith_Engine::Initialise` (alongside the mesh subsystems) and deleted in `Zenith_Engine::Shutdown`. Controllers hold no GPU resources (the unified compute-skinning path reads their CPU skinning matrices), so there is no device-lifetime ordering constraint.
 
@@ -550,10 +552,12 @@ NON-serialized fields for exactly this.
 
 ★ **A LAYER'S INDEX IS NOT ITS IDENTITY**, which is what the id is for: inserting
 or removing a layer renumbers every one above it, so anything remembering "layer 2"
-silently starts naming a different layer. `AddLayer` mints from a monotonic counter
-that is **itself serialized**, and a removed layer's id is never handed out again.
-`AssignLayerId` (not the layer's own `SetLayerId`) is what an export uses, because
-re-stating ids chosen elsewhere must also move the counter past them.
+silently starts naming a different layer. `Flux_AnimatorControllerDef::AddLayer`
+mints from a monotonic counter that is **itself serialized**, and a removed layer's
+id is never handed out again. `AssignLayerId` (not the layer's own `SetLayerId`) is
+what an export uses, because re-stating ids chosen elsewhere must also move the
+counter past them. WU-6.3 gives the RUNTIME controller the same counter — see
+*Stable layer IDs* below.
 
 ★ **`Flux_BoneMask` IS RESOLVED AND INDEX-BASED, SO IT CANNOT BE EXPORTED.** It
 holds a flat weight array and no provenance — not the skeleton, not the file. That
@@ -569,6 +573,55 @@ Multiple independent state machines composing poses:
 - Layer 0 is the base; additional layers compose on top
 - Managed by `Flux_AnimationController::AddLayer()`, `GetLayer()`, `SetLayerWeight()`
 - `SetEmitEvents(bool)` silences **one layer's** animation events (see *Animation Event Delivery*). Not serialized
+
+### Stable layer IDs — the handle gameplay holds (WU-6.3, D43/D44)
+
+★ **DO NOT CACHE A `Flux_AnimationLayer*` ACROSS FRAMES. HOLD ITS ID.** This
+REPLACES a guarantee this document used to give (see *Why heap-stable matters*):
+`BuildFromControllerDef` and `ReadFromDataStream` each delete every layer the
+controller owns and build a new list, so a pointer taken from `AddLayer` or
+`GetLayer` is valid only until the next controller-asset load or scene
+deserialize — and nothing on either path can tell a holder. The failure is a
+use-after-free with no assert in front of it.
+
+| Verb | Answers |
+|---|---|
+| `AddLayer(name)` | a new layer, carrying a FRESHLY MINTED id. Use the returned pointer to configure it and drop it |
+| `GetLayerById(u_int)` | the layer with that id, or **nullptr** — including for `uFLUX_INVALID_LAYER_ID`, which nothing is ever minted |
+| `GetLayerByName(const std::string&)` | the FIRST layer with that name in blend order, or nullptr. Names are not unique; this is the one-time lookup that gets you an id |
+| `GetLayer(uIndex)` | a POSITION IN THE BLEND ORDER — what composition needs, and what identity is not |
+| `GetNextLayerId()` | the id the next `AddLayer` will mint |
+
+The id is **unique within one controller and monotonic for its whole lifetime**:
+
+- **Every creation path mints**, not just `BuildFromControllerDef` — `AddLayer`
+  (which is how every game in the tree authors) and each layer
+  `ReadFromDataStream` rebuilds. Before this, the runtime field existed but only
+  the def-build path ever wrote it, so an imperatively-built controller's layers
+  all carried the same value and nothing could tell them apart.
+- **`BuildFromControllerDef` ADOPTS the def's id** and moves the counter past it
+  (`AdoptLayerId`, the mirror of `Flux_AnimatorControllerDef::AssignLayerId`, and
+  for the same reason: a bare `SetLayerId` would leave the counter behind the ids
+  now in the list and the next `AddLayer` would mint a duplicate). So an id
+  survives a `.zanimctrl` round trip, and a rebuild that REORDERS layers moves the
+  index while the id stays put.
+- **The counter is never rewound** — not by a rebuild that destroys every layer,
+  not by a deserialize. That is what makes a stale id resolve to nullptr instead of
+  to a different layer that inherited its number, which is the index bug with extra
+  steps.
+- **A scene-restored layer's id is FRESH, not the one the save was taken with.**
+  The id is deliberately absent from `Flux_AnimationLayer::WriteToDataStream`
+  (committed `.zscen` files carry that layout with no version word), so the ids are
+  stable within a run and nothing may persist one. Resolve by NAME once after
+  building or loading a graph, then hold the id.
+
+Worked consumer: `Games/RenderTest/Components/RenderTest_PlayerComponent.h` stores
+`m_uBaseLayerId` / `m_uAimLayerId` (sentinel `uFLUX_INVALID_LAYER_ID`) and resolves
+through `ResolveBaseLayer()` / `ResolveAimLayer()` at each use — the null guards its
+call sites already needed for the pre-`OnStart` case cover a vanished layer too.
+Pinned by the four `WU6_3_*` units in `Flux_AnimationController.Tests.inl` and by
+`Animator.LayerIdAddressesTheSameLayerAcrossACrossSceneMove` in
+`Core/Zenith_UnitTests.Tests.inl`.
 
 ### Update Modes (Flux_AnimationUpdateMode)
 - `ANIMATION_UPDATE_NORMAL` - Uses scaled deltaTime
@@ -721,7 +774,11 @@ MeshAnimation/
   Flux_AnimationController.Tests.inl - Unit tests for event DELIVERY (WU-5A / D34..D40):
                                        arbitration, layers, crossfade sides, loop and
                                        non-looping boundaries, reverse, seek, and the pure
-                                       SpanContainsEventTime rules
+                                       SpanContainsEventTime rules; plus WU-6.3's four
+                                       WU6_3_* stable-layer-id units (minting + monotonicity,
+                                       an id surviving a def rebuild that REORDERS layers,
+                                       GetLayerByName hit/miss/first-wins, and ids minted
+                                       for layers restored from a stream)
   Flux_BlendTree.Tests.inl           - Unit tests for blend tree nodes (incl. span collection)
   Flux_AnimatorControllerDef.Tests.inl - Unit tests for WU-6.2's def: the envelope round trip
                                        (top-level machine AND layers), the three refusal modes,

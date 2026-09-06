@@ -49,6 +49,10 @@ Flux_AnimationController::Flux_AnimationController(Flux_AnimationController&& xO
 #endif
 	, m_xWorldMatrix(xOther.m_xWorldMatrix)
 	, m_xLayers(std::move(xOther.m_xLayers))
+	// The counter travels WITH the layers: it describes the ids already handed
+	// out to the list we have just taken, so restarting it at 0 here would mint a
+	// duplicate on the very next AddLayer.
+	, m_uNextLayerId(xOther.m_uNextLayerId)
 	, m_xTempBlendPose(std::move(xOther.m_xTempBlendPose))
 	, m_xScaledMaskWeights(std::move(xOther.m_xScaledMaskWeights))
 	, m_pfnEventCallback(xOther.m_pfnEventCallback)
@@ -126,6 +130,8 @@ Flux_AnimationController& Flux_AnimationController::operator=(Flux_AnimationCont
 		for (uint32_t i = 0; i < m_xLayers.GetSize(); ++i)
 			delete m_xLayers.Get(i);
 		m_xLayers = std::move(xOther.m_xLayers);
+		// See the move ctor: the counter belongs to the layer list, not to the object.
+		m_uNextLayerId = xOther.m_uNextLayerId;
 		m_xTempBlendPose = std::move(xOther.m_xTempBlendPose);
 		m_xScaledMaskWeights = std::move(xOther.m_xScaledMaskWeights);
 
@@ -649,7 +655,11 @@ bool Flux_AnimationController::BuildFromControllerDef(const Flux_AnimatorControl
 		}
 
 		Flux_AnimationLayer* pxLayer = AddLayer(pxLayerDef->GetName());
-		pxLayer->SetLayerId(pxLayerDef->GetLayerId());
+		// ★ THE DEF'S ID WINS, AND THE COUNTER FOLLOWS IT (WU-6.3). AddLayer has
+		// just minted one; adopting the def's without moving the counter past it
+		// is how the NEXT AddLayer mints a number a rebuilt layer already holds,
+		// at which point GetLayerById answers with whichever comes first.
+		AdoptLayerId(*pxLayer, pxLayerDef->GetLayerId());
 		pxLayer->SetWeight(pxLayerDef->GetWeight());
 		pxLayer->SetBlendMode(pxLayerDef->GetBlendMode());
 		pxLayer->SetEmitEvents(pxLayerDef->GetEmitEvents());
@@ -831,6 +841,11 @@ Flux_IKSolver* Flux_AnimationController::CreateIKSolver()
 Flux_AnimationLayer* Flux_AnimationController::AddLayer(const std::string& strName)
 {
 	Flux_AnimationLayer* pxLayer = new Flux_AnimationLayer(strName);
+	// WU-6.3 (D43): EVERY creation path mints, not just BuildFromControllerDef.
+	// An imperatively-authored controller — which is every game in the tree —
+	// would otherwise hand out a list of layers all carrying the same
+	// uFLUX_INVALID_LAYER_ID, and GetLayerById could not tell them apart.
+	pxLayer->SetLayerId(m_uNextLayerId++);
 	if (m_pxSkeletonInstance)
 	{
 		pxLayer->InitializePose(m_pxSkeletonInstance->GetNumBones());
@@ -840,6 +855,23 @@ Flux_AnimationLayer* Flux_AnimationController::AddLayer(const std::string& strNa
 	// parameters, so the live set is out of date from here.
 	m_bParametersPublished = false;
 	return pxLayer;
+}
+
+void Flux_AnimationController::AdoptLayerId(Flux_AnimationLayer& xLayer, u_int uLayerId)
+{
+	if (uLayerId == uFLUX_INVALID_LAYER_ID)
+	{
+		// The source carries no id (a def written before ids existed, or one
+		// authored by hand). The minted one stands rather than being replaced
+		// with the sentinel, because a layer a controller owns always has an id.
+		return;
+	}
+
+	xLayer.SetLayerId(uLayerId);
+	if (uLayerId >= m_uNextLayerId)
+	{
+		m_uNextLayerId = uLayerId + 1u;
+	}
 }
 
 Flux_AnimationLayer* Flux_AnimationController::GetLayer(uint32_t uIndex)
@@ -853,6 +885,58 @@ const Flux_AnimationLayer* Flux_AnimationController::GetLayer(uint32_t uIndex) c
 {
 	if (uIndex < m_xLayers.GetSize())
 		return m_xLayers.Get(uIndex);
+	return nullptr;
+}
+
+Flux_AnimationLayer* Flux_AnimationController::GetLayerById(u_int uLayerId)
+{
+	// Const-correct twin below; the walk is duplicated rather than const_cast'd
+	// through, which is three lines either way.
+	if (uLayerId == uFLUX_INVALID_LAYER_ID)
+		return nullptr;
+
+	for (u_int u = 0; u < m_xLayers.GetSize(); ++u)
+	{
+		Flux_AnimationLayer* pxLayer = m_xLayers.Get(u);
+		if (pxLayer != nullptr && pxLayer->GetLayerId() == uLayerId)
+			return pxLayer;
+	}
+	return nullptr;
+}
+
+const Flux_AnimationLayer* Flux_AnimationController::GetLayerById(u_int uLayerId) const
+{
+	if (uLayerId == uFLUX_INVALID_LAYER_ID)
+		return nullptr;
+
+	for (u_int u = 0; u < m_xLayers.GetSize(); ++u)
+	{
+		const Flux_AnimationLayer* pxLayer = m_xLayers.Get(u);
+		if (pxLayer != nullptr && pxLayer->GetLayerId() == uLayerId)
+			return pxLayer;
+	}
+	return nullptr;
+}
+
+Flux_AnimationLayer* Flux_AnimationController::GetLayerByName(const std::string& strName)
+{
+	for (u_int u = 0; u < m_xLayers.GetSize(); ++u)
+	{
+		Flux_AnimationLayer* pxLayer = m_xLayers.Get(u);
+		if (pxLayer != nullptr && pxLayer->GetName() == strName)
+			return pxLayer;
+	}
+	return nullptr;
+}
+
+const Flux_AnimationLayer* Flux_AnimationController::GetLayerByName(const std::string& strName) const
+{
+	for (u_int u = 0; u < m_xLayers.GetSize(); ++u)
+	{
+		const Flux_AnimationLayer* pxLayer = m_xLayers.Get(u);
+		if (pxLayer != nullptr && pxLayer->GetName() == strName)
+			return pxLayer;
+	}
 	return nullptr;
 }
 
@@ -1264,6 +1348,12 @@ void Flux_AnimationController::ReadFromDataStream(Zenith_DataStream& xStream)
 	{
 		Flux_AnimationLayer* pxLayer = new Flux_AnimationLayer();
 		pxLayer->ReadFromDataStream(xStream);
+		// WU-6.3: the id is NOT in the scene bytes (that layout may not move), so
+		// mint one here rather than leaving every restored layer holding the
+		// sentinel. The numbers differ from the ones the save was taken with —
+		// which is why a game resolves its id ONCE after building or loading a
+		// graph, and never persists one.
+		pxLayer->SetLayerId(m_uNextLayerId++);
 		m_xLayers.PushBack(pxLayer);
 	}
 

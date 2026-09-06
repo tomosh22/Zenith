@@ -1,9 +1,11 @@
 #include "Core/Zenith_TestFramework.h"
 #include "Flux/MeshAnimation/Flux_AnimationController.h"
+#include "Flux/MeshAnimation/Flux_AnimatorControllerDef.h"   // WU-6.3: the def-rebuild reorder
 #include "Flux/MeshAnimation/Flux_SkeletonInstance.h"
 #include "AssetHandling/Zenith_AnimationAsset.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "AssetHandling/Zenith_SkeletonAsset.h"
+#include "DataStream/Zenith_DataStream.h"                    // WU-6.3: the .zscen-shaped round trip
 
 // ============================================================================
 // WU-5A — RUNTIME EVENT DELIVERY (D34 - D40)
@@ -657,4 +659,220 @@ ZENITH_TEST(Animation, ControllerReleasesEveryAssetReferenceItHolds)
 	// name rather than through UnloadUnused, which would also sweep every other
 	// zero-ref asset the boot happens to have left in the registry.
 	Zenith_AssetRegistry::ForceUnload(strClipAssetPath);
+}
+
+//=============================================================================
+// WU-6.3 (D43/D44) — STABLE LAYER IDS, AND THE POINTER GUARANTEE THEY REPLACE
+//
+// ★ WHAT THESE EXIST TO CATCH. `Flux/MeshAnimation/CLAUDE.md` and
+// `EntityComponent/Components/CLAUDE.md` both used to promise that a game could
+// cache a `Flux_AnimationLayer*` and keep it, on the reasoning that
+// Flux_AnimationControllerStore heap-allocates the CONTROLLER so nothing inside
+// it ever moves. The controller half is true and is still pinned by the
+// `Animator` suite in Core/Zenith_UnitTests.Tests.inl. The layer half never
+// was: BuildFromControllerDef deletes every layer and rebuilds the list from a
+// def, and ReadFromDataStream deletes every layer and re-reads it — so a cached
+// pointer is dangling from the first controller-asset load or scene deserialize
+// onward, on a path where nothing asserts and the freed memory usually still
+// looks like a layer.
+//
+// The replacement guarantee, which is what these four pin: an id is unique
+// within a controller, monotonic for its whole lifetime, survives a rebuild
+// that changes the layer ORDER, is never re-issued to a different layer, and
+// resolves to nullptr rather than to a stranger once its layer is gone.
+//=============================================================================
+
+ZENITH_TEST(Animation, WU6_3_ImperativeLayerIdsAreDistinctAndMonotonic)
+{
+	Flux_AnimationController xController;
+
+	// ★ IMPERATIVE AUTHORING MINTS TOO, and that is the whole of this clause.
+	// The id was introduced by WU-6.2 for the DEF, and BuildFromControllerDef
+	// was the only thing that ever wrote one onto a runtime layer — so every
+	// controller built the way every game in the tree builds one (AddLayer, by
+	// hand) had a list of layers all carrying the same value.
+	Flux_AnimationLayer* pxBase = xController.AddLayer("Base");
+	Flux_AnimationLayer* pxAim = xController.AddLayer("Aim");
+	ZENITH_ASSERT_NOT_NULL(pxBase, "AddLayer returned the base layer");
+	ZENITH_ASSERT_NOT_NULL(pxAim, "AddLayer returned the aim layer");
+	if (pxBase == nullptr || pxAim == nullptr) { return; }
+
+	const u_int uBaseId = pxBase->GetLayerId();
+	const u_int uAimId = pxAim->GetLayerId();
+
+	ZENITH_ASSERT_NE(uBaseId, uFLUX_INVALID_LAYER_ID, "an owned layer always carries a minted id");
+	ZENITH_ASSERT_NE(uAimId, uFLUX_INVALID_LAYER_ID, "an owned layer always carries a minted id");
+	ZENITH_ASSERT_NE(uBaseId, uAimId, "two layers of one controller must not share an id");
+	ZENITH_ASSERT_GT(uAimId, uBaseId, "ids are monotonic in creation order");
+	ZENITH_ASSERT_EQ(xController.GetNextLayerId(), uAimId + 1u, "the counter sits past the last id handed out");
+
+	ZENITH_ASSERT_EQ(xController.GetLayerById(uBaseId), pxBase, "the base id resolves the base layer");
+	ZENITH_ASSERT_EQ(xController.GetLayerById(uAimId), pxAim, "the aim id resolves the aim layer");
+	ZENITH_ASSERT_NULL(xController.GetLayerById(uFLUX_INVALID_LAYER_ID),
+		"the sentinel is not an address — an unresolved caller must get nullptr, not layer 0");
+	ZENITH_ASSERT_NULL(xController.GetLayerById(uAimId + 1000u), "an id nothing carries resolves to nullptr");
+
+	//-------------------------------------------------------------------------
+	// A rebuild DESTROYS every layer, and the counter does not rewind.
+	//
+	// ★ THIS IS THE CLAUSE THAT MAKES A STALE ID SAFE. If the counter restarted,
+	// the next layer created would inherit a number some caller is still holding
+	// and GetLayerById would hand it a DIFFERENT layer — the exact failure the
+	// index-based addressing had, reintroduced with extra steps.
+	//-------------------------------------------------------------------------
+	Flux_AnimatorControllerDef xEmptyDef;
+	const bool bCleared = xController.BuildFromControllerDef(xEmptyDef, nullptr);
+	ZENITH_ASSERT_TRUE(bCleared, "an empty def describes an empty controller completely");
+	ZENITH_ASSERT_EQ(xController.GetLayerCount(), 0u, "the rebuild dropped every layer");
+	ZENITH_ASSERT_NULL(xController.GetLayerById(uBaseId), "a destroyed layer's id resolves to nothing");
+
+	Flux_AnimationLayer* pxFresh = xController.AddLayer("Fresh");
+	ZENITH_ASSERT_NOT_NULL(pxFresh, "AddLayer returned the new layer");
+	if (pxFresh == nullptr) { return; }
+	ZENITH_ASSERT_NE(pxFresh->GetLayerId(), uBaseId, "a destroyed layer's id is never re-issued");
+	ZENITH_ASSERT_NE(pxFresh->GetLayerId(), uAimId, "a destroyed layer's id is never re-issued");
+	ZENITH_ASSERT_GT(pxFresh->GetLayerId(), uAimId, "the counter only ever moves forward");
+}
+
+ZENITH_TEST(Animation, WU6_3_LayerIdSurvivesADefRebuildThatReordersLayers)
+{
+	Flux_AnimationController xController;
+
+	Flux_AnimationLayer* pxBase = xController.AddLayer("Base");
+	Flux_AnimationLayer* pxAim = xController.AddLayer("Aim");
+	ZENITH_ASSERT_NOT_NULL(pxBase, "AddLayer returned the base layer");
+	ZENITH_ASSERT_NOT_NULL(pxAim, "AddLayer returned the aim layer");
+	if (pxBase == nullptr || pxAim == nullptr) { return; }
+	pxBase->CreateStateMachine("BaseSM");
+	pxAim->CreateStateMachine("AimSM");
+
+	const u_int uBaseId = pxBase->GetLayerId();
+	const u_int uAimId = pxAim->GetLayerId();
+
+	// Export re-states the RUNTIME ids rather than renumbering (through
+	// Flux_AnimatorControllerDef::AssignLayerId, so the def's counter follows).
+	Flux_AnimatorControllerDef xDef;
+	const bool bExported = xController.ExportControllerDef(xDef);
+	ZENITH_ASSERT_TRUE(bExported, "a controller with no clips and no hand-set mask exports completely");
+	ZENITH_ASSERT_EQ(xDef.GetLayerCount(), 2u, "both layers reached the def");
+	ZENITH_ASSERT_NOT_NULL(xDef.FindLayerById(uBaseId), "the export re-stated the base layer's id");
+	ZENITH_ASSERT_NOT_NULL(xDef.FindLayerById(uAimId), "the export re-stated the aim layer's id");
+
+	// Reorder the def: drop Base off the front and re-state it at the BACK,
+	// keeping its id — what an editor drag, or an authored layer inserted below
+	// an existing one, produces.
+	xDef.RemoveLayer(0u);
+	Flux_AnimatorControllerLayerDef* pxMovedBase = xDef.AddLayer("Base");
+	ZENITH_ASSERT_NOT_NULL(pxMovedBase, "the def accepted the re-added base layer");
+	if (pxMovedBase == nullptr) { return; }
+	xDef.AssignLayerId(*pxMovedBase, uBaseId);
+
+	const bool bRebuilt = xController.BuildFromControllerDef(xDef, nullptr);
+	ZENITH_ASSERT_TRUE(bRebuilt, "the reordered def rebuilt completely");
+	ZENITH_ASSERT_EQ(xController.GetLayerCount(), 2u, "the rebuild produced both layers");
+
+	// ★ THE INDEX MOVED. Every pointer the AddLayer calls above returned is
+	// freed by now — this is the guarantee WU-6.3 withdraws, and the reason the
+	// assertions below go through the id instead of through a cached pointer.
+	const Flux_AnimationLayer* pxIndexZero = xController.GetLayer(0u);
+	ZENITH_ASSERT_NOT_NULL(pxIndexZero, "layer 0 exists after the rebuild");
+	if (pxIndexZero == nullptr) { return; }
+	ZENITH_ASSERT_STREQ(pxIndexZero->GetName().c_str(), "Aim", "the reorder put the aim layer at index 0");
+
+	// ★ THE ID DID NOT.
+	const Flux_AnimationLayer* pxBaseAfter = xController.GetLayerById(uBaseId);
+	ZENITH_ASSERT_NOT_NULL(pxBaseAfter, "the base layer's id still resolves after the reorder");
+	if (pxBaseAfter == nullptr) { return; }
+	ZENITH_ASSERT_STREQ(pxBaseAfter->GetName().c_str(), "Base",
+		"the id addressed the SAME layer, not whatever now sits at its old index");
+
+	const Flux_AnimationLayer* pxAimAfter = xController.GetLayerById(uAimId);
+	ZENITH_ASSERT_NOT_NULL(pxAimAfter, "the aim layer's id still resolves after the reorder");
+	if (pxAimAfter == nullptr) { return; }
+	ZENITH_ASSERT_STREQ(pxAimAfter->GetName().c_str(), "Aim", "and it is still the aim layer");
+
+	// The rebuild adopted the def's ids rather than the ones its own AddLayer
+	// minted on the way through, so the counter must sit past BOTH — otherwise
+	// the next AddLayer duplicates one of them.
+	ZENITH_ASSERT_GT(xController.GetNextLayerId(), uBaseId, "the counter moved past the adopted base id");
+	ZENITH_ASSERT_GT(xController.GetNextLayerId(), uAimId, "the counter moved past the adopted aim id");
+	Flux_AnimationLayer* pxThird = xController.AddLayer("Face");
+	ZENITH_ASSERT_NOT_NULL(pxThird, "AddLayer returned the third layer");
+	if (pxThird == nullptr) { return; }
+	ZENITH_ASSERT_NE(pxThird->GetLayerId(), uBaseId, "a layer added after a rebuild cannot collide with an adopted id");
+	ZENITH_ASSERT_NE(pxThird->GetLayerId(), uAimId, "a layer added after a rebuild cannot collide with an adopted id");
+}
+
+ZENITH_TEST(Animation, WU6_3_GetLayerByNameFindsALayerAndNullsOnAMiss)
+{
+	Flux_AnimationController xController;
+
+	Flux_AnimationLayer* pxBase = xController.AddLayer("Base");
+	Flux_AnimationLayer* pxAim = xController.AddLayer("Aim");
+	ZENITH_ASSERT_NOT_NULL(pxBase, "AddLayer returned the base layer");
+	ZENITH_ASSERT_NOT_NULL(pxAim, "AddLayer returned the aim layer");
+	if (pxBase == nullptr || pxAim == nullptr) { return; }
+
+	ZENITH_ASSERT_EQ(xController.GetLayerByName("Base"), pxBase, "the base layer is found by name");
+	ZENITH_ASSERT_EQ(xController.GetLayerByName("Aim"), pxAim, "the aim layer is found by name");
+	ZENITH_ASSERT_NULL(xController.GetLayerByName("NoSuchLayer"), "a name nothing carries resolves to nullptr");
+	ZENITH_ASSERT_NULL(xController.GetLayerByName(""), "an empty name is a miss, not a wildcard");
+
+	// Name -> id is how a game that has just built (or just loaded) its graph
+	// gets the handle it will hold; it is deliberately a ONE-TIME lookup.
+	const Flux_AnimationLayer* pxByName = xController.GetLayerByName("Aim");
+	ZENITH_ASSERT_NOT_NULL(pxByName, "the aim layer is found by name");
+	if (pxByName == nullptr) { return; }
+	ZENITH_ASSERT_EQ(xController.GetLayerById(pxByName->GetLayerId()), pxAim,
+		"the id read off a by-name lookup addresses the same layer");
+
+	// ★ A NAME IS NOT AN IDENTITY — nothing rejects a duplicate, and the FIRST
+	// in blend order wins. This is exactly why the id exists, and pinning the
+	// tie-break stops a caller reading the ambiguity as a bug in the lookup.
+	Flux_AnimationLayer* pxSecondAim = xController.AddLayer("Aim");
+	ZENITH_ASSERT_NOT_NULL(pxSecondAim, "AddLayer returned the duplicate-named layer");
+	if (pxSecondAim == nullptr) { return; }
+	ZENITH_ASSERT_EQ(xController.GetLayerByName("Aim"), pxAim, "the FIRST match in blend order wins");
+	ZENITH_ASSERT_NE(pxSecondAim->GetLayerId(), pxAim->GetLayerId(), "...and the two are still told apart by id");
+}
+
+ZENITH_TEST(Animation, WU6_3_LayersRestoredFromAStreamAreAddressableById)
+{
+	// ★ THE ID IS NOT IN THE SCENE BYTES, AND MAY NOT BE — Flux_AnimationLayer's
+	// payload is written INLINE into a .zscen and committed scene files carry it
+	// with no version word. So the deserializing controller MINTS: the numbers
+	// differ from the save's, and what must hold is that they are present,
+	// distinct and resolvable. A game therefore re-reads its ids after a load
+	// (by name) and never persists one.
+	Flux_AnimationController xSource;
+	Flux_AnimationLayer* pxSourceBase = xSource.AddLayer("Base");
+	Flux_AnimationLayer* pxSourceAim = xSource.AddLayer("Aim");
+	ZENITH_ASSERT_NOT_NULL(pxSourceBase, "AddLayer returned the base layer");
+	ZENITH_ASSERT_NOT_NULL(pxSourceAim, "AddLayer returned the aim layer");
+	if (pxSourceBase == nullptr || pxSourceAim == nullptr) { return; }
+	pxSourceAim->SetWeight(0.25f);
+
+	Zenith_DataStream xStream(1);
+	xSource.WriteToDataStream(xStream);
+
+	xStream.SetCursor(0);
+	Flux_AnimationController xLoaded;
+	xLoaded.ReadFromDataStream(xStream);
+
+	ZENITH_ASSERT_EQ(xLoaded.GetLayerCount(), 2u, "both layers came back");
+
+	const Flux_AnimationLayer* pxLoadedBase = xLoaded.GetLayerByName("Base");
+	const Flux_AnimationLayer* pxLoadedAim = xLoaded.GetLayerByName("Aim");
+	ZENITH_ASSERT_NOT_NULL(pxLoadedBase, "the base layer came back");
+	ZENITH_ASSERT_NOT_NULL(pxLoadedAim, "the aim layer came back");
+	if (pxLoadedBase == nullptr || pxLoadedAim == nullptr) { return; }
+
+	const u_int uLoadedBaseId = pxLoadedBase->GetLayerId();
+	const u_int uLoadedAimId = pxLoadedAim->GetLayerId();
+	ZENITH_ASSERT_NE(uLoadedBaseId, uFLUX_INVALID_LAYER_ID, "a restored layer is minted an id, not left unowned");
+	ZENITH_ASSERT_NE(uLoadedAimId, uFLUX_INVALID_LAYER_ID, "a restored layer is minted an id, not left unowned");
+	ZENITH_ASSERT_NE(uLoadedBaseId, uLoadedAimId, "two restored layers must not share an id");
+	ZENITH_ASSERT_EQ(xLoaded.GetLayerById(uLoadedAimId), pxLoadedAim, "the restored aim id addresses the aim layer");
+	ZENITH_ASSERT_EQ_FLOAT(pxLoadedAim->GetWeight(), 0.25f, 0.001f,
+		"and it is the layer that carried the weight, not merely one with the right name");
 }

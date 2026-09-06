@@ -184,9 +184,9 @@ public:
 		else if (m_fFireCooldown <= 0.0f && m_uAmmoInClip > 0)
 		{
 			m_fForceAimTimer = 0.4f;  // hold ADS through the fire animation
-			if (m_pxAimLayer)
+			if (Flux_AnimationLayer* pxAimLayer = ResolveAimLayer())
 			{
-				m_pxAimLayer->GetStateMachine().GetParameters().SetTrigger("FireTrigger");
+				pxAimLayer->GetStateMachine().GetParameters().SetTrigger("FireTrigger");
 			}
 			Shoot();
 			m_uAmmoInClip--;
@@ -221,8 +221,8 @@ public:
 		// to OnStart because OnAwake fires before the AnimatorComponent is
 		// guaranteed to be present on first scene build (it's added by automation).
 		m_pxAnimator = nullptr;
-		m_pxBaseLayer = nullptr;
-		m_pxAimLayer = nullptr;
+		m_uBaseLayerId = uFLUX_INVALID_LAYER_ID;
+		m_uAimLayerId = uFLUX_INVALID_LAYER_ID;
 		m_pxMuzzleEmitter = nullptr;
 		m_pxAmmoText = nullptr;
 		m_fAimLayerWeight = 0.0f;
@@ -398,9 +398,9 @@ public:
 			Zenith_Maths::Vector3 xVelocity = g_xEngine.Physics().GetLinearVelocity(xCollider.GetBodyID());
 			xVelocity.y = m_fJumpVelocity;
 			g_xEngine.Physics().SetLinearVelocity(xCollider.GetBodyID(), xVelocity);
-			if (m_pxBaseLayer)
+			if (Flux_AnimationLayer* pxBaseLayer = ResolveBaseLayer())
 			{
-				m_pxBaseLayer->GetStateMachine().GetParameters().SetTrigger("JumpTrigger");
+				pxBaseLayer->GetStateMachine().GetParameters().SetTrigger("JumpTrigger");
 			}
 		}
 
@@ -448,12 +448,12 @@ public:
 		const float fWeightLerp = glm::clamp(fDt * 6.66f, 0.0f, 1.0f);
 		m_fAimLayerWeight = glm::mix(m_fAimLayerWeight, fTargetWeight, fWeightLerp);
 
-		if (m_pxAimLayer)
+		if (Flux_AnimationLayer* pxAimLayer = ResolveAimLayer())
 		{
 			// Set IsAiming on the aim-layer state machine (NOT via the animator
 			// shortcut, which targets the bypassed controller-level SM).
-			m_pxAimLayer->GetStateMachine().GetParameters().SetBool("IsAiming", bAiming);
-			m_pxAimLayer->SetWeight(m_fAimLayerWeight);
+			pxAimLayer->GetStateMachine().GetParameters().SetBool("IsAiming", bAiming);
+			pxAimLayer->SetWeight(m_fAimLayerWeight);
 		}
 
 		// --- Player rotation target ---
@@ -484,9 +484,11 @@ public:
 		// once layers exist; route through the layer. Photo mode (capture
 		// harnesses / HumanShowcase) freezes these writes — the showcase owns
 		// the parameters and CrossFades the state machine itself.
-		if (m_pxBaseLayer && !RenderTest_GameplayState::s_bPhotoModeActive)
+		Flux_AnimationLayer* pxBaseLayer =
+			RenderTest_GameplayState::s_bPhotoModeActive ? nullptr : ResolveBaseLayer();
+		if (pxBaseLayer)
 		{
-			Flux_AnimationParameters& xParams = m_pxBaseLayer->GetStateMachine().GetParameters();
+			Flux_AnimationParameters& xParams = pxBaseLayer->GetStateMachine().GetParameters();
 			xParams.SetFloat("Speed", fSpeed);
 			xParams.SetBool("IsSprinting", bSprinting);
 			xParams.SetBool("IsGrounded", IsGrounded());
@@ -582,6 +584,22 @@ private:
 		xTransform.SetRotation(glm::normalize(xNewRot));
 	}
 
+	// --- Layer resolution (WU-6.3) -------------------------------------------
+	// Resolve the layer FROM ITS ID, at every use. Null before OnStart has built
+	// the animator, null if the controller has since been rebuilt from a
+	// .zanimctrl or a scene without these layers — both of which every call site
+	// already guards for, because they all had to guard for the pre-OnStart case
+	// anyway. See the m_uBaseLayerId comment for why the pointers went away.
+	Flux_AnimationLayer* ResolveLayer(u_int uLayerId) const
+	{
+		if (m_pxAnimator == nullptr || uLayerId == uFLUX_INVALID_LAYER_ID)
+			return nullptr;
+		return m_pxAnimator->GetController().GetLayerById(uLayerId);
+	}
+
+	Flux_AnimationLayer* ResolveBaseLayer() const { return ResolveLayer(m_uBaseLayerId); }
+	Flux_AnimationLayer* ResolveAimLayer() const { return ResolveLayer(m_uAimLayerId); }
+
 	// Constructs the layered animator on the player's animator component.
 	// Layer 0 (BaseLayer): full-body locomotion + jump + hit.
 	// Layer 1 (AimLayer): upper-body aim/fire/reload, masked to torso+arms+head.
@@ -639,12 +657,15 @@ private:
 		}
 
 		// --- Layer 0: BaseLayer (locomotion + jump + hit, full body) ---
-		m_pxBaseLayer = xController.AddLayer("BaseLayer");
-		m_pxBaseLayer->SetWeight(1.0f);
-		m_pxBaseLayer->SetBlendMode(LAYER_BLEND_OVERRIDE);
+		// The pointer AddLayer returns is used HERE, while authoring, and dropped
+		// at the end of this function; only its id is kept (WU-6.3).
+		Flux_AnimationLayer* pxBaseLayer = xController.AddLayer("BaseLayer");
+		m_uBaseLayerId = pxBaseLayer->GetLayerId();
+		pxBaseLayer->SetWeight(1.0f);
+		pxBaseLayer->SetBlendMode(LAYER_BLEND_OVERRIDE);
 		// No avatar mask -> base layer drives every bone.
 
-		Flux_AnimationStateMachine* pxBaseSM = m_pxBaseLayer->CreateStateMachine("RenderTestBase");
+		Flux_AnimationStateMachine* pxBaseSM = pxBaseLayer->CreateStateMachine("RenderTestBase");
 		Flux_AnimationClipCollection& xClips = xController.GetClipCollection();
 
 		pxBaseSM->GetParameters().AddFloat("Speed", 0.0f);
@@ -703,12 +724,13 @@ private:
 		pxBaseSM->ResolveClipReferences(&xClips);
 
 		// --- Layer 1: AimLayer (upper-body override) ---
-		m_pxAimLayer = xController.AddLayer("AimLayer");
-		m_pxAimLayer->SetWeight(0.0f);
-		m_pxAimLayer->SetBlendMode(LAYER_BLEND_OVERRIDE);
-		m_pxAimLayer->SetAvatarMask(xMask);
+		Flux_AnimationLayer* pxAimLayer = xController.AddLayer("AimLayer");
+		m_uAimLayerId = pxAimLayer->GetLayerId();
+		pxAimLayer->SetWeight(0.0f);
+		pxAimLayer->SetBlendMode(LAYER_BLEND_OVERRIDE);
+		pxAimLayer->SetAvatarMask(xMask);
 
-		Flux_AnimationStateMachine* pxAimSM = m_pxAimLayer->CreateStateMachine("RenderTestAim");
+		Flux_AnimationStateMachine* pxAimSM = pxAimLayer->CreateStateMachine("RenderTestAim");
 
 		pxAimSM->GetParameters().AddBool("IsAiming", false);
 		pxAimSM->GetParameters().AddTrigger("FireTrigger");
@@ -991,9 +1013,9 @@ private:
 		if (m_fReloadTimer > 0.0f)
 			return;  // already reloading
 		m_fReloadTimer = k_fReloadDuration;
-		if (m_pxAimLayer)
+		if (Flux_AnimationLayer* pxAimLayer = ResolveAimLayer())
 		{
-			m_pxAimLayer->GetStateMachine().GetParameters().SetTrigger("ReloadTrigger");
+			pxAimLayer->GetStateMachine().GetParameters().SetTrigger("ReloadTrigger");
 		}
 	}
 
@@ -1589,8 +1611,16 @@ private:
 	Zenith_Entity m_xParentEntity;
 
 	Zenith_AnimatorComponent*         m_pxAnimator = nullptr;
-	Flux_AnimationLayer*              m_pxBaseLayer = nullptr;
-	Flux_AnimationLayer*              m_pxAimLayer = nullptr;
+	// ★ LAYER IDS, NOT Flux_AnimationLayer* (WU-6.3 / D43). These used to be two
+	// cached pointers, on the strength of a documented guarantee that has been
+	// withdrawn: Flux_AnimationControllerStore heap-allocates the CONTROLLER, so
+	// that pointer never moves — but the layers INSIDE it are deleted and rebuilt
+	// wholesale by Flux_AnimationController::BuildFromControllerDef and by
+	// ReadFromDataStream, and neither can tell a holder. An id survives both (or
+	// resolves to nullptr, which the guards below already handle), so it is what
+	// is stored and ResolveBaseLayer/ResolveAimLayer is what is called per use.
+	u_int                             m_uBaseLayerId = uFLUX_INVALID_LAYER_ID;
+	u_int                             m_uAimLayerId = uFLUX_INVALID_LAYER_ID;
 	Zenith_ParticleEmitterComponent*  m_pxMuzzleEmitter = nullptr;
 	Zenith_UI::Zenith_UIText*         m_pxAmmoText = nullptr;
 

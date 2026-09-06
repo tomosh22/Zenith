@@ -96,8 +96,11 @@ void Flux_AnimationLayer::WriteToDataStream(Zenith_DataStream& xStream) const
 	// ★ m_uLayerId AND m_bEmitEvents ARE ABSENT ON PURPOSE. This payload is
 	// written inline into a .zscen by Zenith_AnimatorComponent (through
 	// Flux_AnimationController::WriteToDataStream) and committed scene files carry
-	// these bytes, with no version word in front of them. The layer id lives in
-	// the .zanimctrl instead; see Flux_AnimationLayer::GetLayerId.
+	// these bytes, with no version word in front of them. The id a layer restored
+	// from a scene carries is therefore MINTED FRESH by the controller reading it
+	// (Flux_AnimationController::ReadFromDataStream) — unique and stable for that
+	// run, but not the number the save was taken with. The .zanimctrl is the only
+	// place an id survives a round trip; see Flux_AnimationLayer::GetLayerId.
 	xStream << m_strName;
 	xStream << m_fWeight;
 	xStream << static_cast<uint8_t>(m_eBlendMode);

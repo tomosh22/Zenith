@@ -17203,6 +17203,19 @@ void Zenith_UnitTests::TestTerrainUnresolvableAssetSetIsRefused(){
 // double dtor/OnDestroy never double-frees; (3) a real pool swap-and-pop
 // relocation and a cross-scene move keep the cached pointer valid and the
 // controller count stable.
+//
+// ★ WHAT THIS SUITE GUARANTEES AND WHAT IT DOES NOT (WU-6.3 / D44). Heap
+// stability is a claim about the CONTROLLER pointer, and only that. Both
+// CLAUDE.mds used to extend it to game code caching a Flux_AnimationLayer* into
+// the controller's sub-objects, which was never true and is now withdrawn:
+// Flux_AnimationController::BuildFromControllerDef deletes and rebuilds every
+// layer from a def, and ReadFromDataStream deletes and re-reads them, so a
+// cached layer pointer dangles from the first controller-asset load or scene
+// deserialize onward. A layer is addressed by its STABLE ID
+// (Flux_AnimationController::GetLayerById), resolved per use — pinned across a
+// def rebuild that reorders layers by the WU6_3_* units in
+// Flux/MeshAnimation/Flux_AnimationController.Tests.inl, and across the
+// cross-scene move by the last test in this suite.
 //=============================================================================
 
 // Move CTOR: the moved-to component must hold the SAME cached controller
@@ -17443,6 +17456,64 @@ void Zenith_UnitTests::TestAnimatorControllerStoreValidatesGeneration(){
 	ZENITH_ASSERT_EQ(xStore.GetCount(), uCountBefore, "no net controller leak");
 
 	g_xEngine.Scenes().UnloadScene(xScene);
+}
+
+// WU-6.3 (D43/D44): what a game may hold across a MoveEntityToScene.
+//
+// ★ THIS TEST REPLACES A GUARANTEE, IT DOES NOT ADD ONE. The heap-stable store
+// let both CLAUDE.mds promise that a cached Flux_AnimationLayer* survived a
+// cross-scene move. It does survive THIS move — nothing here rebuilds the layer
+// list — but the promise was unconditional, and BuildFromControllerDef and
+// ReadFromDataStream each delete every layer, so a game that believed it was
+// reading freed memory the first time its controller was rebuilt. The supported
+// handle is the layer ID: the controller pointer is still stable (asserted
+// below, as before), and the ID resolves the SAME layer through it afterwards.
+//
+// Deliberately keyed on the layer's NAME rather than on the pointer the AddLayer
+// calls returned — a pointer comparison here would pass for the wrong reason on
+// the day a rebuild is added to the move path, which is the failure this whole
+// change is about.
+ZENITH_TEST(Animator, LayerIdAddressesTheSameLayerAcrossACrossSceneMove)
+{
+	Zenith_Scene xSceneA = g_xEngine.Scenes().LoadScene("AnimatorLayerIdSceneA", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
+	Zenith_Scene xSceneB = g_xEngine.Scenes().LoadScene("AnimatorLayerIdSceneB", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
+	Zenith_SceneData* pxSceneDataA = g_xEngine.Scenes().GetSceneData(xSceneA);
+
+	Zenith_Entity xEntity = g_xEngine.Scenes().CreateEntity(pxSceneDataA, "AnimatorLayerIdEntity");
+	Zenith_AnimatorComponent& xAnim = xEntity.AddComponent<Zenith_AnimatorComponent>();
+
+	Flux_AnimationController* pxController = &xAnim.GetController();
+	Flux_AnimationLayer* pxBase = pxController->AddLayer("Base");
+	Flux_AnimationLayer* pxAim = pxController->AddLayer("Aim");
+	ZENITH_ASSERT_NOT_NULL(pxBase, "AddLayer returned the base layer");
+	ZENITH_ASSERT_NOT_NULL(pxAim, "AddLayer returned the aim layer");
+	if (pxBase == nullptr || pxAim == nullptr) { return; }
+
+	const u_int uBaseId = pxBase->GetLayerId();
+	const u_int uAimId = pxAim->GetLayerId();
+	ZENITH_ASSERT_NE(uBaseId, uAimId, "the two layers were minted distinct ids");
+
+	xEntity.MoveToScene(xSceneB);
+	ZENITH_ASSERT_TRUE(xEntity.GetScene() == xSceneB, "cross-scene move of the animator entity must succeed");
+	ZENITH_ASSERT_TRUE(xEntity.HasComponent<Zenith_AnimatorComponent>(), "the animator travelled with the entity");
+
+	Zenith_AnimatorComponent& xAnimAfter = xEntity.GetComponent<Zenith_AnimatorComponent>();
+	Flux_AnimationController& xControllerAfter = xAnimAfter.GetController();
+	ZENITH_ASSERT_EQ(&xControllerAfter, pxController,
+		"the CONTROLLER pointer is still heap-stable across the move (the guarantee that survives)");
+
+	const Flux_AnimationLayer* pxBaseAfter = xControllerAfter.GetLayerById(uBaseId);
+	const Flux_AnimationLayer* pxAimAfter = xControllerAfter.GetLayerById(uAimId);
+	ZENITH_ASSERT_NOT_NULL(pxBaseAfter, "the base layer's id must still resolve after the move");
+	ZENITH_ASSERT_NOT_NULL(pxAimAfter, "the aim layer's id must still resolve after the move");
+	if (pxBaseAfter == nullptr || pxAimAfter == nullptr) { return; }
+	ZENITH_ASSERT_EQ(pxBaseAfter->GetName(), "Base", "the base id addressed the base layer, not its neighbour");
+	ZENITH_ASSERT_EQ(pxAimAfter->GetName(), "Aim", "the aim id addressed the aim layer, not its neighbour");
+	ZENITH_ASSERT_NULL(xControllerAfter.GetLayerById(uFLUX_INVALID_LAYER_ID),
+		"and the sentinel still resolves to nothing rather than to layer 0");
+
+	g_xEngine.Scenes().UnloadScene(xSceneA);
+	g_xEngine.Scenes().UnloadScene(xSceneB);
 }
 
 // Per-component streaming state isolation. Two Flux_TerrainStreamingState

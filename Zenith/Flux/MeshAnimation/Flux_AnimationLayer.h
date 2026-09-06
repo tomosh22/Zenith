@@ -13,6 +13,18 @@ enum Flux_LayerBlendMode : uint8_t
 };
 
 //=============================================================================
+// The id no layer ever carries (WU-6.3 / D43).
+//
+// ★ ZERO IS A REAL LAYER ID, so it cannot double as "none". Ids are minted from
+// a counter that starts at 0, so the very first layer of every controller holds
+// 0 — a caller that used 0 as its "not resolved yet" sentinel would address the
+// base layer every time it had nothing. This is what a game stores in place of
+// the Flux_AnimationLayer* it used to cache, and what Flux_AnimationController::
+// GetLayerById refuses outright.
+//=============================================================================
+inline constexpr u_int uFLUX_INVALID_LAYER_ID = ~0u;
+
+//=============================================================================
 // Flux_AnimationLayer
 // A single animation layer with its own state machine, weight, and bone mask
 // Layers allow multiple independent state machines to compose a final pose
@@ -36,23 +48,32 @@ public:
 	void SetName(const std::string& strName) { m_strName = strName; }
 
 	//=========================================================================
-	// Stable layer id (WU-6.2)
+	// Stable layer id (WU-6.2, made AUTHORITATIVE by WU-6.3 / D43)
 	//
 	// ★ AN INDEX IS NOT AN IDENTITY. Inserting or removing a layer renumbers
-	// every layer above it, so anything that remembers "layer 2" — WU-6.3's
-	// addressing, an editor selection, a saved override — silently starts
-	// naming a different layer. The id is assigned by
-	// Flux_AnimatorControllerDef::AddLayer from a monotonic counter that is
-	// itself serialized, and BuildFromControllerDef copies it onto the runtime
-	// layer so the two halves agree.
+	// every layer above it, so anything that remembers "layer 2" — an editor
+	// selection, a saved override, a game holding onto its aim layer — silently
+	// starts naming a different layer. THE ID IS THE HANDLE: hold it, and call
+	// Flux_AnimationController::GetLayerById per use.
+	//
+	// ★ THE OWNING CONTROLLER MINTS IT, NOT THIS CLASS. Every layer reachable
+	// through a Flux_AnimationController carries an id that is unique within
+	// that controller and monotonic for its whole lifetime — minted by AddLayer,
+	// minted again for every layer a ReadFromDataStream rebuilds, and ADOPTED
+	// (counter moved past it) from the def by BuildFromControllerDef. SetLayerId
+	// is the raw setter those paths use; calling it by hand on a layer a
+	// controller owns is how two layers end up sharing an id, and GetLayerById
+	// then answers with whichever comes first. A default-constructed, unowned
+	// layer holds uFLUX_INVALID_LAYER_ID — "no controller has minted this".
 	//
 	// ★ IT IS DELIBERATELY *NOT* IN Write/ReadToDataStream. Those two functions
 	// are reached from Flux_AnimationController's serializer, which
 	// Zenith_AnimatorComponent writes INLINE into a .zscen — and committed scene
 	// files carry those bytes today. Adding a field here would move that layout
-	// with no version word to hide behind. A layer that came from a scene
-	// therefore carries id 0 until something builds it from a def; the .zanimctrl
-	// is where the id is persisted.
+	// with no version word to hide behind. A layer restored from a scene is
+	// therefore given a FRESH id by the controller reading it (the ids are
+	// unique and stable for that run, just not the same numbers the save had);
+	// the .zanimctrl is where an id survives a round trip.
 	//=========================================================================
 	u_int GetLayerId() const { return m_uLayerId; }
 	void SetLayerId(u_int uLayerId) { m_uLayerId = uLayerId; }
@@ -127,9 +148,10 @@ public:
 
 private:
 	std::string m_strName;
-	// WU-6.2. NOT serialized — see GetLayerId above; the .zscen byte layout may
-	// not move.
-	u_int m_uLayerId = 0;
+	// WU-6.2/6.3. NOT serialized — see GetLayerId above; the .zscen byte layout
+	// may not move. Defaults to "unminted" rather than 0, because 0 is the id the
+	// first layer of every controller legitimately holds.
+	u_int m_uLayerId = uFLUX_INVALID_LAYER_ID;
 	float m_fWeight = 1.0f;
 	Flux_LayerBlendMode m_eBlendMode = LAYER_BLEND_OVERRIDE;
 	bool m_bHasAvatarMask = false;
