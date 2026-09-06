@@ -1504,3 +1504,270 @@ ZENITH_TEST(AnimationMutation, RootMotionRejectsScaleTrackAndBadValues)
 	ZENITH_ASSERT_EQ_FLOAT(glm::length(xRM.m_xRotationDeltas.Get(0).first), 1.0f, 1e-5f,
 		"the surviving rotation delta is still a real rotation");
 }
+
+// ============================================================================
+// WU-2.1 — in-place content replacement (D26), the name-immutability rule (D28)
+// and the status-returning parse.
+//
+// Pure CPU: everything below builds clips in memory and serializes to a
+// Zenith_DataStream. No device, no file, no registry — so none of these is
+// requiresGraphics and all of them run under the Null backend.
+// ============================================================================
+
+namespace
+{
+	// The one value every replace test watches. Sampling a channel is what a
+	// controller actually does with a clip, so a test that only compared key COUNTS
+	// could pass on a clip whose keys had not moved at all.
+	float ClipSampleHipHeight(const Flux_AnimationClip& xClip, float fTimeSeconds)
+	{
+		const Flux_BoneChannel* pxHip = xClip.GetBoneChannel("Hip");
+		if (pxHip == nullptr)
+		{
+			return -1.0f;
+		}
+		return pxHip->SamplePosition(fTimeSeconds).y;
+	}
+
+	// The same shape as ClipBuildTwoBoneClip, but with the Hip's height and a few
+	// metadata fields under the caller's control so a "before" and an "after" clip
+	// are distinguishable by SAMPLING, not just by counting.
+	void ClipBuildProbe(Flux_AnimationClip& xClip, const char* szName, float fHipHeight)
+	{
+		xClip.SetName(szName);
+		xClip.SetDuration(2.0f);
+
+		Flux_BoneChannel xHip;
+		xHip.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(0.0f, fHipHeight, 0.0f));
+		xHip.AddPositionKeyframe(2.0f, Zenith_Maths::Vector3(0.0f, fHipHeight, 0.0f));
+		xClip.AddBoneChannel("Hip", std::move(xHip));
+	}
+}
+
+ZENITH_TEST(AnimationReload, ReplaceContentsFromCarriesEverythingInPlace)
+{
+	// The destination starts life with DIFFERENT content under the same name, and a
+	// bone channel the source does not have. A replace that merged rather than
+	// replaced would leave the stale channel behind.
+	Flux_AnimationClip xLive;
+	ClipBuildProbe(xLive, "Walk", 1.0f);
+	Flux_BoneChannel xStale;
+	xStale.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(9.0f, 9.0f, 9.0f));
+	xLive.AddBoneChannel("StaleBone", std::move(xStale));
+	xLive.GetMetadata().m_uAuthoredFrameRate = 24;
+	xLive.SetSourcePath("game:Meshes/Old.glb");
+
+	Flux_AnimationClip xSource;
+	ClipBuildProbe(xSource, "Walk", 4.0f);
+	xSource.SetDuration(3.5f);
+	xSource.SetLooping(false);
+	xSource.SetTicksPerSecond(60);
+	xSource.GetMetadata().m_uAuthoredFrameRate = 60;
+	xSource.GetMetadata().m_strSkeletonPath = "engine:Meshes/StickFigure/StickFigure.zskel";
+	xSource.GetMetadata().m_strPreviewModelPath = "engine:Meshes/StickFigure/StickFigure.zmodel";
+	xSource.GetMetadata().m_bGenerated = true;
+	xSource.SetSourcePath("game:Meshes/New.glb");
+	Flux_AnimationEvent xEvent;
+	xEvent.m_fNormalizedTime = 0.25f;
+	xEvent.m_strEventName = "FootstepRight";
+	xSource.AddEvent(xEvent);
+	xSource.GetRootMotion().m_bEnabled = true;
+	xSource.GetRootMotion().m_xPositionDeltas.EmplaceBack(Zenith_Maths::Vector3(0.0f, 0.0f, 2.0f), 1.0f);
+
+	// The address a borrower would be holding.
+	const Flux_AnimationClip* pxAddressBefore = &xLive;
+
+	ZENITH_ASSERT_TRUE(xLive.ReplaceContentsFrom(xSource), "a same-named replace is accepted");
+	ZENITH_ASSERT_TRUE(&xLive == pxAddressBefore, "the clip OBJECT does not move — that is the whole point");
+
+	ZENITH_ASSERT_EQ_FLOAT(ClipSampleHipHeight(xLive, 1.0f), 4.0f, 1e-5f, "the live clip samples the SOURCE's keys");
+	ZENITH_ASSERT_FALSE(xLive.HasBoneChannel("StaleBone"), "a channel the source lacks is REMOVED, not merged");
+	ZENITH_ASSERT_EQ(xLive.GetBoneChannels().GetSize(), 1u, "channel map is the source's, exactly");
+	ZENITH_ASSERT_EQ_FLOAT(xLive.GetDuration(), 3.5f, 1e-6f, "duration carries");
+	ZENITH_ASSERT_FALSE(xLive.IsLooping(), "looping carries");
+	ZENITH_ASSERT_EQ(xLive.GetTicksPerSecond(), 60u, "ticks-per-second carries");
+	ZENITH_ASSERT_EQ(xLive.GetMetadata().m_uAuthoredFrameRate, 60u, "authored frame rate carries");
+	ZENITH_ASSERT_TRUE(xLive.GetMetadata().m_strSkeletonPath == "engine:Meshes/StickFigure/StickFigure.zskel", "skeleton path carries");
+	ZENITH_ASSERT_TRUE(xLive.GetMetadata().m_strPreviewModelPath == "engine:Meshes/StickFigure/StickFigure.zmodel", "preview model path carries");
+	ZENITH_ASSERT_TRUE(xLive.GetMetadata().m_bGenerated, "generated flag carries");
+	ZENITH_ASSERT_TRUE(xLive.GetSourcePath() == "game:Meshes/New.glb", "source path carries");
+	ZENITH_ASSERT_EQ(xLive.GetEvents().GetSize(), 1u, "events carry");
+	ZENITH_ASSERT_TRUE(xLive.GetRootMotion().m_bEnabled, "root motion enable carries");
+	ZENITH_ASSERT_EQ(xLive.GetRootMotion().m_xPositionDeltas.GetSize(), 1u, "root motion deltas carry");
+
+	// The source is untouched — this is a copy, and a caller may keep using its
+	// staging clip afterwards (Zenith_AnimationAsset's does not, but nothing here
+	// should silently gut it either).
+	ZENITH_ASSERT_TRUE(xSource.GetName() == "Walk", "the SOURCE is left intact");
+	ZENITH_ASSERT_EQ(xSource.GetBoneChannels().GetSize(), 1u, "the SOURCE keeps its channels");
+}
+
+ZENITH_TEST(AnimationReload, ReplaceContentsFromRefusesARename)
+{
+	// D28. The collection is name-keyed and AddClip on a collision DELETES the clip
+	// already registered under that name, so a rename underneath a live clip breaks
+	// both the collection lookup and every state-machine reference resolved through
+	// it — silently, because neither side re-checks.
+	Flux_AnimationClip xLive;
+	ClipBuildProbe(xLive, "Walk", 1.0f);
+
+	Flux_AnimationClip xRenamed;
+	ClipBuildProbe(xRenamed, "Run", 7.0f);
+	xRenamed.SetDuration(9.0f);
+
+	{
+		Zenith_AssertCaptureScope xCapture;
+		ZENITH_ASSERT_FALSE(xLive.ReplaceContentsFrom(xRenamed), "a rename is refused");
+		ZENITH_ASSERT_EQ(xCapture.GetHitCount(), 1u, "and asserts exactly once");
+	}
+
+	// A refusal changes NOTHING — not the name, not the keys, not the duration.
+	ZENITH_ASSERT_TRUE(xLive.GetName() == "Walk", "the live clip keeps its name");
+	ZENITH_ASSERT_EQ_FLOAT(ClipSampleHipHeight(xLive, 1.0f), 1.0f, 1e-5f, "the live clip keeps its keys");
+	ZENITH_ASSERT_EQ_FLOAT(xLive.GetDuration(), 2.0f, 1e-6f, "the live clip keeps its duration");
+}
+
+ZENITH_TEST(AnimationReload, ReplaceContentsFromPopulatesAnUnnamedClip)
+{
+	// The one exception to D28: a freshly constructed clip has no name to protect, so
+	// the FIRST populate is not a rename. This is the path Zenith_AnimationAsset takes
+	// on an initial load, and it must not assert.
+	Flux_AnimationClip xFresh;
+	ZENITH_ASSERT_TRUE(xFresh.GetName().empty(), "a default-constructed clip is unnamed");
+
+	Flux_AnimationClip xSource;
+	ClipBuildProbe(xSource, "Idle", 2.0f);
+
+	{
+		Zenith_AssertCaptureScope xCapture;
+		ZENITH_ASSERT_TRUE(xFresh.ReplaceContentsFrom(xSource), "populating an unnamed clip is accepted");
+		ZENITH_ASSERT_EQ(xCapture.GetHitCount(), 0u, "and asserts NOT AT ALL — this is not a rename");
+	}
+	ZENITH_ASSERT_TRUE(xFresh.GetName() == "Idle", "the fresh clip adopts the source's name");
+	ZENITH_ASSERT_EQ_FLOAT(ClipSampleHipHeight(xFresh, 1.0f), 2.0f, 1e-5f, "and the source's keys");
+
+	// Self-replace is a no-op success rather than self-assignment through every
+	// owned container.
+	ZENITH_ASSERT_TRUE(xSource.ReplaceContentsFrom(xSource), "self-replace succeeds");
+	ZENITH_ASSERT_EQ(xSource.GetBoneChannels().GetSize(), 1u, "and does not destroy the clip");
+}
+
+ZENITH_TEST(AnimationReload, ClipParseStreamReportsRefusalsAsAStatus)
+{
+	// ★ THE READER REPORTS FAILURE. Before WU-2.1 the only signals a refused .zanim
+	// produced were an assert and an empty clip; the return type was void, so every
+	// caller carried on as if the load had worked.
+	Flux_AnimationClip xClip;
+	ClipBuildTwoBoneClip(xClip);
+
+	// A good stream parses OK.
+	{
+		Zenith_DataStream xGood;
+		xClip.WriteToDataStream(xGood);
+		xGood.SetCursor(0);
+		Flux_AnimationClip xLoaded;
+		ZENITH_ASSERT_TRUE(xLoaded.ParseStream(xGood).IsOk(), "ParseStream accepts its own output");
+		ZENITH_ASSERT_EQ(xLoaded.GetBoneChannels().GetSize(), 2u, "and populates the clip");
+	}
+
+	// A future schema is VERSION_MISMATCH, not a plausible clip.
+	{
+		Zenith_DataStream xFuture;
+		xClip.WriteToDataStream(xFuture);
+		ClipPokeU32(xFuture, ulCLIP_HEADER_SCHEMA_OFFSET, uZENITH_ANIMATION_SCHEMA_CURRENT + 1u);
+		xFuture.SetCursor(0);
+
+		Flux_AnimationClip xLoaded;
+		Zenith_AssertCaptureScope xCapture;
+		const Zenith_Status xStatus = xLoaded.ParseStream(xFuture);
+		ZENITH_ASSERT_FALSE(xStatus.IsOk(), "a future schema is refused with a STATUS");
+		ZENITH_ASSERT_EQ(xStatus.Error(), Zenith_ErrorCode::VERSION_MISMATCH, "and the status names the reason");
+		ZENITH_ASSERT_EQ(xCapture.GetHitCount(), 1u, "and still asserts exactly once");
+	}
+
+	// A headerless stream is BAD_MAGIC (D2: there is no legacy branch).
+	{
+		Zenith_DataStream xHeaderless;
+		xClip.WriteToDataStream(xHeaderless);
+		ClipPokeU32(xHeaderless, ulCLIP_HEADER_MAGIC_OFFSET, uSTREAM_ENVELOPE_MAGIC ^ 0xFFu);
+		xHeaderless.SetCursor(0);
+
+		Flux_AnimationClip xLoaded;
+		Zenith_AssertCaptureScope xCapture;
+		const Zenith_Status xStatus = xLoaded.ParseStream(xHeaderless);
+		ZENITH_ASSERT_FALSE(xStatus.IsOk(), "a missing envelope is refused with a STATUS");
+		ZENITH_ASSERT_EQ(xStatus.Error(), Zenith_ErrorCode::BAD_MAGIC, "and the status names the reason");
+		ZENITH_ASSERT_EQ(xCapture.GetHitCount(), 1u, "and still asserts exactly once");
+		ZENITH_ASSERT_EQ(xLoaded.GetBoneChannels().GetSize(), 0u, "a refused parse leaves an EMPTY clip");
+	}
+
+	// A stream too short to hold an envelope at all — the truncation case.
+	//
+	// ★ It has to WRAP a fixed 4-byte buffer, not be an owned stream with four bytes
+	// written into it. Zenith_ReadStreamHeader measures against GetCapacity(), and an
+	// owned write stream's capacity is its 1024-byte allocation rather than the bytes
+	// written — so an owned "truncated" stream would sail past the size check and read
+	// three words of uninitialised heap, giving a different error code per build tier.
+	{
+		u_int uMagicOnly = uSTREAM_ENVELOPE_MAGIC;
+		Zenith_DataStream xTruncated(&uMagicOnly, sizeof(uMagicOnly));
+
+		Flux_AnimationClip xLoaded;
+		Zenith_AssertCaptureScope xCapture;
+		const Zenith_Status xStatus = xLoaded.ParseStream(xTruncated);
+		ZENITH_ASSERT_FALSE(xStatus.IsOk(), "a truncated stream is refused with a STATUS");
+		ZENITH_ASSERT_EQ(xStatus.Error(), Zenith_ErrorCode::BAD_MAGIC, "too short to hold an envelope is 'not a .zanim'");
+		ZENITH_ASSERT_EQ(xCapture.GetHitCount(), 1u, "and asserts exactly once");
+	}
+
+	// Another asset type's envelope is INVALID_ARGUMENT — a .zskel is not a .zanim.
+	{
+		Zenith_DataStream xWrongType;
+		Zenith_WriteStreamHeader(xWrongType, uZENITH_SKELETON_ASSET_TYPE_ID, uZENITH_SKELETON_SCHEMA_CURRENT);
+		const uint32_t uZeroBones = 0;
+		xWrongType << uZeroBones;
+		xWrongType.SetCursor(0);
+
+		Flux_AnimationClip xLoaded;
+		Zenith_AssertCaptureScope xCapture;
+		const Zenith_Status xStatus = xLoaded.ParseStream(xWrongType);
+		ZENITH_ASSERT_FALSE(xStatus.IsOk(), "another asset's envelope is refused with a STATUS");
+		ZENITH_ASSERT_EQ(xStatus.Error(), Zenith_ErrorCode::INVALID_ARGUMENT, "and the status names the reason");
+		ZENITH_ASSERT_EQ(xCapture.GetHitCount(), 1u, "and asserts exactly once");
+	}
+}
+
+ZENITH_TEST(AnimationReload, CollectionRefusesAnUnnamedClip)
+{
+	// An unnamed clip keys on "": two of them evict each other from m_xClipsByName
+	// while both stay in m_xClips, so the map and the ordered list stop agreeing and
+	// one of them ends up holding a freed pointer. The collection now says so.
+	//
+	// Declared BEFORE the collection so the borrowed clip outlives it.
+	Flux_AnimationClip xBorrowedUnnamed;
+	Flux_AnimationClipCollection xCollection;
+
+	Flux_AnimationClip* pxUnnamed = new Flux_AnimationClip();
+	{
+		Zenith_AssertCaptureScope xCapture;
+		xCollection.AddClip(pxUnnamed);
+		ZENITH_ASSERT_EQ(xCapture.GetHitCount(), 1u, "AddClip asserts on an unnamed clip");
+	}
+
+	{
+		Zenith_AssertCaptureScope xCapture;
+		xCollection.AddClipReference(&xBorrowedUnnamed);
+		ZENITH_ASSERT_EQ(xCapture.GetHitCount(), 1u, "AddClipReference asserts on an unnamed clip too");
+	}
+
+	// A NAMED clip is added without complaint — the assert is about the empty key,
+	// not about adding clips.
+	Flux_AnimationClip* pxNamed = new Flux_AnimationClip();
+	pxNamed->SetName("Idle");
+	{
+		Zenith_AssertCaptureScope xCapture;
+		xCollection.AddClip(pxNamed);
+		ZENITH_ASSERT_EQ(xCapture.GetHitCount(), 0u, "a named clip is added silently");
+	}
+	ZENITH_ASSERT_TRUE(xCollection.GetClip("Idle") == pxNamed, "and resolves by name");
+}

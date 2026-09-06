@@ -1224,6 +1224,43 @@ bool Flux_AnimationClip::RemoveKeyframe(const std::string& strBoneName, Flux_Ani
 	return true;
 }
 
+//-----------------------------------------------------------------------------
+// In-place content replacement (WU-2.1 / D26). See the header for why a reload
+// must not move the clip, and for the name-immutability rule (D28).
+//-----------------------------------------------------------------------------
+bool Flux_AnimationClip::ReplaceContentsFrom(const Flux_AnimationClip& xSource)
+{
+	if (this == &xSource)
+	{
+		// Replacing a clip with itself is a no-op, not an error. Doing it through the
+		// copy assignment below would be self-assignment on every owned container.
+		return true;
+	}
+
+	// D28. A clip that has never been named is being POPULATED, not renamed — that is
+	// the freshly-constructed-destination case and it is allowed. Anything else keeps
+	// the name it already has, or the replace does not happen at all.
+	const bool bDestinationIsUnnamed = GetName().empty();
+	if (!bDestinationIsUnnamed && xSource.GetName() != GetName())
+	{
+		Zenith_Assert(false,
+			"Flux_AnimationClip::ReplaceContentsFrom: refusing to rename '%s' to '%s'. "
+			"The clip collection is name-keyed and resolves state-machine references through "
+			"the same map, so a rename underneath a live clip corrupts both lookups silently. "
+			"Renaming is Save As.",
+			GetName().c_str(), xSource.GetName().c_str());
+		return false;
+	}
+
+	// ★ ONE whole-object copy, not a field list. Every member this class owns —
+	// metadata, bone channels, events, root motion, source path — is replaced, and a
+	// member added later is carried automatically rather than being forgotten here.
+	// (Flux_AnimationClip owns no raw pointers and no handles, so the implicit copy
+	// assignment is a deep copy of exactly the clip's contents.)
+	*this = xSource;
+	return true;
+}
+
 void Flux_AnimationClip::WriteToDataStream(Zenith_DataStream& xStream) const
 {
 	// D1: the shared stream envelope leads every typed asset payload. Flux_AnimationClip
@@ -1287,26 +1324,31 @@ void Flux_AnimationClip::ResetToEmpty()
 	m_strSourcePath.clear();
 }
 
-void Flux_AnimationClip::ReadFromDataStream(Zenith_DataStream& xStream)
+Zenith_Status Flux_AnimationClip::ParseStream(Zenith_DataStream& xStream)
 {
 	// D1/D2: the envelope is MANDATORY and the schema must be EXACTLY current. There
 	// is no headerless branch and no "read it as current anyway" branch — a .zanim is
 	// bake output, so an older or unrecognised layout is a stale bake to be deleted
 	// and rewritten, not a file to guess at. Zenith_ReadStreamHeader restores the
 	// cursor on every failure path, so a refused stream is handed back untouched.
+	//
+	// ★ EVERY REFUSAL RETURNS ITS ERROR CODE AS WELL AS ASSERTING. The assert is the
+	// developer-time signal; the status is what Zenith_AnimationAsset::LoadFromFile
+	// and ReloadFromDisk turn into a `false`, so a refused .zanim can no longer be
+	// reported as a successful load. Exactly ONE assert fires per refusal.
 	Zenith_Result<Zenith_StreamHeader> xHeader = Zenith_ReadStreamHeader(xStream, uZENITH_ANIMATION_ASSET_TYPE_ID);
 	if (!xHeader.IsOk())
 	{
-		Zenith_Assert(false, "Flux_AnimationClip::ReadFromDataStream: stream carries no valid .zanim envelope");
+		Zenith_Assert(false, "Flux_AnimationClip::ParseStream: stream carries no valid .zanim envelope");
 		ResetToEmpty();
-		return;
+		return xHeader.Error();
 	}
 	if (xHeader.Value().m_uSchemaVersion != uZENITH_ANIMATION_SCHEMA_CURRENT)
 	{
-		Zenith_Assert(false, "Flux_AnimationClip::ReadFromDataStream: .zanim schema %u is not the current %u — stale bake, delete it and re-run the tools boot",
+		Zenith_Assert(false, "Flux_AnimationClip::ParseStream: .zanim schema %u is not the current %u — stale bake, delete it and re-run the tools boot",
 			xHeader.Value().m_uSchemaVersion, uZENITH_ANIMATION_SCHEMA_CURRENT);
 		ResetToEmpty();
-		return;
+		return Zenith_ErrorCode::VERSION_MISMATCH;
 	}
 
 	// Metadata
@@ -1341,6 +1383,16 @@ void Flux_AnimationClip::ReadFromDataStream(Zenith_DataStream& xStream)
 
 	// Root motion
 	m_xRootMotion.ReadFromDataStream(xStream);
+
+	return true;
+}
+
+void Flux_AnimationClip::ReadFromDataStream(Zenith_DataStream& xStream)
+{
+	// The void entry point exists for Zenith_DataStream's <</>> dispatch, which
+	// discards a return value. The load ERROR CONTRACT lives in ParseStream — see the
+	// header. Anything that cares whether the bytes were a .zanim calls that instead.
+	(void)ParseStream(xStream);
 }
 
 //=============================================================================
@@ -1433,6 +1485,12 @@ void Flux_AnimationClipCollection::AddClip(Flux_AnimationClip* pxClip)
 
 	const std::string& strName = pxClip->GetName();
 
+	// ★ An unnamed clip keys on "". Two of them evict each other from m_xClipsByName
+	// (the RemoveClip below DELETES the owned one already there) while both remain in
+	// m_xClips, so the ordered list ends up holding a freed pointer the map no longer
+	// mentions. See the header.
+	Zenith_Assert(!strName.empty(), "Flux_AnimationClipCollection::AddClip: a clip must be named before it is added — this collection is name-keyed");
+
 	// Remove existing clip with same name
 	if (HasClip(strName))
 		RemoveClip(strName);
@@ -1447,6 +1505,11 @@ void Flux_AnimationClipCollection::AddClipReference(Flux_AnimationClip* pxClip)
 		return;
 
 	const std::string& strName = pxClip->GetName();
+
+	// Same name-key rule as AddClip — and it bites harder here, because a borrowed
+	// clip is the one a controller holds a raw pointer to and a state machine resolves
+	// by name through this map.
+	Zenith_Assert(!strName.empty(), "Flux_AnimationClipCollection::AddClipReference: a clip must be named before it is referenced — this collection is name-keyed");
 
 	// Remove existing clip with same name
 	if (HasClip(strName))
@@ -1577,7 +1640,20 @@ void Flux_AnimationClipCollection::ReadFromDataStream(Zenith_DataStream& xStream
 	for (uint32_t i = 0; i < uNumClips; ++i)
 	{
 		Flux_AnimationClip* pxClip = new Flux_AnimationClip();
-		pxClip->ReadFromDataStream(xStream);
+
+		// ★ STOP AT THE FIRST REFUSED CLIP, do not keep reading. ParseStream leaves a
+		// refused clip EMPTY — and therefore UNNAMED — so handing it to AddClip would
+		// key it on "" and trip the name assert on top of the parse assert. Worse, the
+		// cursor is wherever the refusal left it, so every clip after this one would be
+		// read out of a stream that is no longer aligned to a clip boundary.
+		if (!pxClip->ParseStream(xStream).IsOk())
+		{
+			delete pxClip;
+			Zenith_Error(LOG_CATEGORY_ANIMATION,
+				"[AnimationClipCollection] Clip %u of %u was refused; abandoning the rest of the stream", i, uNumClips);
+			return;
+		}
+
 		AddClip(pxClip);
 	}
 }

@@ -1,5 +1,6 @@
 #pragma once
 #include "AssetHandling/Zenith_AssetRegistry.h"
+#include "Core/Zenith_Result.h"        // Zenith_Status — the status-returning ParseStream
 #include "Maths/Zenith_Maths.h"
 #include "DataStream/Zenith_DataStream.h"
 #include "Collections/Zenith_HashMap.h"
@@ -399,6 +400,16 @@ public:
 	Flux_AnimationClip() = default;
 	~Flux_AnimationClip() = default;
 
+	// ★ COPYABLE BY DESIGN, AND DECLARED SO EXPLICITLY. ReplaceContentsFrom (below)
+	// is a whole-object copy assignment — that is what makes it impossible to forget
+	// a member — so the copy operations are part of this class's contract rather than
+	// an accident. They are spelled out because an IMPLICITLY defined copy assignment
+	// on a class with a user-declared destructor is deprecated in C++20, and a clang
+	// build with that warning enabled would fail on it; an explicitly defaulted one is
+	// not. The clip owns no raw pointers and no handles, so the default is a deep copy.
+	Flux_AnimationClip(const Flux_AnimationClip&) = default;
+	Flux_AnimationClip& operator=(const Flux_AnimationClip&) = default;
+
 #ifdef ZENITH_TOOLS
 	// Load from Assimp animation data (use Zenith_AnimationAsset for file loading)
 	void LoadFromAssimp(const aiAnimation* pxAnimation, const aiNode* pxRootNode);
@@ -503,8 +514,65 @@ public:
 	const std::string& GetSourcePath() const { return m_strSourcePath; }
 	void SetSourcePath(const std::string& strPath) { m_strSourcePath = Zenith_AssetRegistry::NormalizeAssetPath(strPath); }
 
+	//-------------------------------------------------------------------------
+	// IN-PLACE CONTENT REPLACEMENT (WU-2.1 / D26).
+	//
+	// ★ A RELOAD MUST NOT MOVE THE CLIP. A controller borrows the clip POINTER
+	// (Flux_AnimationClipCollection::AddClipReference) and a state machine resolves
+	// its clip references THROUGH that collection by name
+	// (Flux_AnimationStateMachine::ResolveClipReferences). Freeing the clip and
+	// acquiring a new one — which is all `ForceUnload` + a fresh acquire can do —
+	// hands back a DIFFERENT address, so every borrowed pointer and every resolved
+	// blend-tree node is left pointing at freed memory. This copies xSource's
+	// contents INTO this object instead, so the address a controller holds keeps
+	// working and starts observing the new content on the very next sample.
+	//
+	// Everything the clip owns moves: metadata (name, duration, ticks-per-second,
+	// looping, blend times, authored frame rate, skeleton/preview paths, generated
+	// flag), the bone-channel map, the event list, the root motion block and the
+	// source path. It is implemented as a whole-object copy assignment rather than a
+	// field list ON PURPOSE — a member added to this class later is part of the
+	// replace automatically instead of being silently left behind.
+	//
+	// ★ THE NAME IS IMMUTABLE ACROSS A REPLACE (D28). The collection is name-keyed,
+	// AddClip on a name collision DELETES the clip that was already there, and
+	// ResolveClipReferences resolves through the same map — so a rename underneath a
+	// live clip corrupts two lookups at once and neither one reports it. A source
+	// whose name differs is REFUSED: it asserts and returns false, and this clip is
+	// left EXACTLY as it was. The one exception is a destination with no name yet —
+	// a freshly constructed clip being populated is not a rename. Renaming a clip is
+	// Save As, and is a different operation.
+	//
+	// ★ THIS IS NOT A SYNCHRONISATION POINT AND DOES NOT CREATE ONE (D27). It is a
+	// plain non-atomic write over live data: the CALLER must guarantee no animation
+	// update is in flight against this clip (the editor calls it from the main
+	// thread, between frames). Load and validate into a TEMPORARY clip first and
+	// only then call this — Zenith_AnimationAsset::ReloadFromDisk is the worked
+	// example — so a file that fails to parse never reaches a live clip at all.
+	bool ReplaceContentsFrom(const Flux_AnimationClip& xSource);
+
 	// Serialization
 	void WriteToDataStream(Zenith_DataStream& xStream) const;
+
+	// ★ THE READER REPORTS FAILURE, AND THIS IS THE ENTRY POINT THAT SAYS SO.
+	// ParseStream is the status-returning parse — the same shape the sibling asset
+	// Zenith_SkeletonAsset uses — and it is what any load path must call if it wants
+	// to know whether the bytes were a .zanim at all:
+	//   • no envelope (or a stream too short to hold one) -> BAD_MAGIC
+	//   • an envelope carrying another asset's type id    -> INVALID_ARGUMENT
+	//   • a newer envelope, or any schema that is not
+	//     uZENITH_ANIMATION_SCHEMA_CURRENT                -> VERSION_MISMATCH
+	// Every refusal also asserts EXACTLY ONCE and leaves this clip EMPTY
+	// (ResetToEmpty), never half-parsed.
+	//
+	// It used to be that ReadFromDataStream was `void` and Zenith_AnimationAsset::
+	// LoadFromFile returned true unconditionally, so a refused .zanim produced an
+	// assert, an empty clip AND a "successful" asset load — three signals, none of
+	// which reached the caller.
+	//
+	// The void ReadFromDataStream below is kept only for Zenith_DataStream's <</>>
+	// dispatch (operator>> discards the return value); it is NOT the load contract.
+	Zenith_Status ParseStream(Zenith_DataStream& xStream);
 	void ReadFromDataStream(Zenith_DataStream& xStream);
 
 private:
@@ -561,7 +629,15 @@ public:
 	Flux_AnimationClipCollection(Flux_AnimationClipCollection&& xOther) noexcept;
 	Flux_AnimationClipCollection& operator=(Flux_AnimationClipCollection&& xOther) noexcept;
 
-	// Add/remove clips
+	// Add/remove clips.
+	//
+	// ★ BOTH REQUIRE A NON-EMPTY CLIP NAME, and assert on one that is empty. This
+	// collection is keyed by name, so an unnamed clip keys on "" — two of them evict
+	// each other from m_xClipsByName (AddClip DELETES the one already there) while
+	// BOTH stay in m_xClips, leaving the ordered list and the map disagreeing about
+	// what the collection contains and a freed pointer in one of them. There is no
+	// useful lookup for an unnamed clip either: GetClip("") is not something a state
+	// machine or a blend tree ever asks for. Name the clip before adding it.
 	void AddClip(Flux_AnimationClip* pxClip);  // Takes ownership
 	void AddClipReference(Flux_AnimationClip* pxClip);  // Non-owning reference
 	void RemoveClip(const std::string& strName);
