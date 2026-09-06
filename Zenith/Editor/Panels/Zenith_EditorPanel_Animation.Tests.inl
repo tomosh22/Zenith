@@ -29,6 +29,12 @@
 #include "AssetHandling/Zenith_SkeletonAsset.h"
 #include "AssetHandling/Zenith_MeshAsset.h"
 #include "Flux/RenderViews/Flux_PreviewSlotArbiter.h"
+// WU-4.3's manipulator units read the joint the rings are centred on straight
+// from WU-4.2's conversions, and compare the panel's answer against it — two
+// derivations through different code, which is what makes the round trip a real
+// assertion rather than a value checked against a re-computation of itself.
+#include "Editor/Animation/Zenith_BoneSpace.h"
+#include "Flux/MeshAnimation/Flux_SkeletonInstance.h"
 
 #include <filesystem>
 
@@ -1664,19 +1670,36 @@ ZENITH_TEST(AnimPanel, BoneSelectionActionsRoundTrip)
 	ZENITH_ASSERT_TRUE(xPanel.Action_ClearBoneSelection(), "clearing a live selection reports the change");
 	ZENITH_ASSERT_FALSE(xPanel.Action_ClearBoneSelection(), "and is idempotent afterwards");
 
-	// ★ THE WHOLE PHASE-4 SURFACE IS DECLARED, AND THE PARTS 4.3/4.4 OWN REFUSE.
+	// ★ THE WHOLE PHASE-4 SURFACE IS DECLARED, AND WHAT IS STILL A STUB SAYS SO.
 	// A stub that returned true would let a caller wired up early report success
-	// having written no key at all.
-	Zenith_Vector<u_int> axBones;
-	axBones.PushBack(0u);
-	ZENITH_ASSERT_FALSE(xPanel.Action_SetKeyForBones(axBones, true, false), "Set Key is WU-4.3's to fill");
-	ZENITH_ASSERT_FALSE(xPanel.Action_SetKeyForSelectedBone(), "and so is its selected-bone twin");
-	ZENITH_ASSERT_FALSE(xPanel.Action_SetAutoKey(true), "and auto-key");
-	ZENITH_ASSERT_FALSE(xPanel.Action_GetAutoKey(), "which therefore still reads off");
+	// having written no key at all. WU-4.3 has since filled Set Key, auto-key,
+	// the angle snap, the rotate primitive and the pointer drag — those have
+	// their own units below, and what this pins here is the SELECTION-less
+	// refusal each of them makes, because the selection was just cleared.
+	Zenith_Vector<u_int> axNoBones;
+	ZENITH_ASSERT_FALSE(xPanel.Action_SetKeyForBones(axNoBones, true, false),
+		"Set Key with no bones writes nothing rather than pushing an empty undo step");
+	ZENITH_ASSERT_FALSE(xPanel.Action_SetKeyForSelectedBone(), "and its twin needs a SELECTED bone");
+	ZENITH_ASSERT_FALSE(xPanel.Action_SetKeyTranslationForRoot(), "as does the root-translation verb");
 	ZENITH_ASSERT_FALSE(xPanel.Action_RotateSelectedBoneWorld(Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f)),
-		"the drag primitive is WU-4.3's");
+		"and so does the rotate primitive");
 	ZENITH_ASSERT_FALSE(xPanel.Action_BakeIKForSelectedChain(Zenith_Maths::Vector3(0.0f)),
-		"and the IK bake is WU-4.4's");
+		"the IK bake is WU-4.4's to fill and still refuses");
+
+	// The two toggles report whether the value CHANGED, matching
+	// Action_SetEmitEventsOnScrub — a toggle set to what it already is pushes
+	// nothing and reports nothing.
+	ZENITH_ASSERT_FALSE(xPanel.Action_GetAutoKey(), "auto-key is OFF by default");
+	ZENITH_ASSERT_TRUE(xPanel.Action_SetAutoKey(true), "turning it on is a change");
+	ZENITH_ASSERT_TRUE(xPanel.Action_GetAutoKey(), "and it reads back on");
+	ZENITH_ASSERT_FALSE(xPanel.Action_SetAutoKey(true), "setting it to what it already is reports nothing");
+	ZENITH_ASSERT_TRUE(xPanel.Action_SetAutoKey(false), "and off again is a change");
+	ZENITH_ASSERT_FALSE(xPanel.Action_GetPoseAngleSnap(), "the angle snap is OFF by default too");
+	ZENITH_ASSERT_TRUE(xPanel.Action_SetPoseAngleSnap(true), "and behaves the same way");
+	ZENITH_ASSERT_FALSE(xPanel.Action_SetPoseAngleSnap(true), "setting it to what it already is reports nothing");
+
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), 0u,
+		"★ and not one of the refusals above touched the clip");
 }
 
 //==============================================================================
@@ -1766,4 +1789,480 @@ ZENITH_TEST(AnimPanel, ClickingThePreviewImageSelectsTheBoneUnderIt)
 	Zenith_EditorPanel_Animation xUnrendered;
 	ZENITH_ASSERT_FALSE(xUnrendered.Action_PickBoneAtPreviewPixel(10.0f, 10.0f),
 		"a panel that has never drawn cannot resolve a preview pixel");
+}
+
+//==============================================================================
+// POSE AUTHORING (WU-4.3) — the manipulator, the drag transaction, Set Key and
+// auto-key. Still headless and still not requiresGraphics, for the reason the
+// WU-4.1 block above is: the preview pane occupies the same rectangle whether or
+// not the backend can hand it a texture, and the manipulator is CPU maths over
+// that rectangle.
+//==============================================================================
+
+namespace
+{
+	// Spine's rotation track: EMPTY in the rigged probe (only Hip's POSITION is
+	// animated), which is what makes it the first-key case §5.1 is about.
+	Zenith_AnimTrackId AnimPanelSpineRotation()
+	{
+		return Zenith_AnimTrackId::Bone("Spine", FLUX_ANIM_TRACK_ROTATION);
+	}
+
+	// A synthetic ring: a circle sampled exactly the way GetPoseRingSet samples
+	// one, so the pure hit test can be exercised with no camera, no rig and no
+	// frame — which is the whole point of the geometry being free functions.
+	void AnimPanelMakeCircleRing(Zenith_AnimPoseRing& xRing, float fCentreX, float fCentreY, float fRadius)
+	{
+		for (u_int u = 0; u <= uANIM_POSE_RING_SEGMENTS; ++u)
+		{
+			const u_int uStep = u % uANIM_POSE_RING_SEGMENTS;
+			const float fTheta = 6.28318530717958f * static_cast<float>(uStep)
+				/ static_cast<float>(uANIM_POSE_RING_SEGMENTS);
+			xRing.m_axPoints[u] = Zenith_Maths::Vector2(
+				fCentreX + fRadius * std::cos(fTheta), fCentreY + fRadius * std::sin(fTheta));
+		}
+		xRing.m_bValid = true;
+	}
+
+	// |dot| of two quaternions: 1 when they are the same rotation (q and -q
+	// included), which is the only comparison that means anything here.
+	float AnimPanelQuatAlignment(const Zenith_Maths::Quat& xA, const Zenith_Maths::Quat& xB)
+	{
+		return std::fabs(xA.x * xB.x + xA.y * xB.y + xA.z * xB.z + xA.w * xB.w);
+	}
+
+	// Press on ring uAxis at parameter point uFrom and walk the cursor to uTo,
+	// ONE Action_UpdateBoneDragToPixel per step. That is the thing being pinned:
+	// however many steps a gesture spans, the release produces one undo entry.
+	//
+	// Leaves the drag OPEN — the caller decides whether it ends or is cancelled.
+	//
+	// ★ THE RING THE PRESS ACTUALLY GRABS IS NOT ASSERTED ANYWHERE. Three
+	// projected rings genuinely cross, and which one is nearest a shared pixel is
+	// a property of the camera rather than of the code under test; the point
+	// walked is exactly ON ring uAxis, so the grab always succeeds and the traced
+	// path always sweeps a real angle whichever ring answered.
+	bool AnimPanelRingDrag(Zenith_EditorPanel_Animation& xPanel, u_int uAxis, u_int uFrom, u_int uTo)
+	{
+		Zenith_AnimPoseRingSet xRings;
+		if (!xPanel.GetPoseRingSet(xRings) || !xRings.m_axRings[uAxis].m_bValid)
+		{
+			return false;
+		}
+		// Captured ONCE and reused: the selected bone's own joint is the FIXED
+		// POINT of the rotation being authored, so the rings do not move under
+		// the cursor while it is dragging them.
+		const Zenith_AnimPoseRing xRing = xRings.m_axRings[uAxis];
+		if (!xPanel.Action_BeginBoneDragAtPixel(xRing.m_axPoints[uFrom].x, xRing.m_axPoints[uFrom].y))
+		{
+			return false;
+		}
+		for (u_int u = uFrom + 1u; u <= uTo; ++u)
+		{
+			if (!xPanel.Action_UpdateBoneDragToPixel(xRing.m_axPoints[u].x, xRing.m_axPoints[u].y))
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+
+	// The press half only — a gesture that grabs a ring and lets go without ever
+	// moving.
+	bool AnimPanelRingPressOnly(Zenith_EditorPanel_Animation& xPanel, u_int uAxis, u_int uPoint)
+	{
+		Zenith_AnimPoseRingSet xRings;
+		if (!xPanel.GetPoseRingSet(xRings) || !xRings.m_axRings[uAxis].m_bValid)
+		{
+			return false;
+		}
+		const Zenith_Maths::Vector2 xPoint = xRings.m_axRings[uAxis].m_axPoints[uPoint];
+		return xPanel.Action_BeginBoneDragAtPixel(xPoint.x, xPoint.y);
+	}
+}
+
+//==============================================================================
+// (C) The ring geometry, with no panel at all.
+//
+// ★ THE THREE THINGS BELOW ARE EXACTLY THE THREE THAT ARE EASY TO GET SILENTLY
+// WRONG: which way round a basis is wound (a sign error turns every drag
+// backwards), what a pivot-relative pixel delta means as an angle, and which of
+// several overlapping rings a click grabbed. None of them needs a camera, a rig
+// or a frame, which is why the manipulator's maths is free functions.
+//==============================================================================
+ZENITH_TEST(AnimPanel, PoseRingGeometryIsPure)
+{
+	// ---- cross(u, v) == the axis, for all three ------------------------------
+	// This is the contract that makes the ring PARAMETER the right-handed
+	// rotation angle about the axis, which is in turn what lets a drag recover
+	// its screen sign by measuring one step of it.
+	for (u_int uAxis = 0; uAxis < 3u; ++uAxis)
+	{
+		Zenith_Maths::Vector3 xU(0.0f);
+		Zenith_Maths::Vector3 xV(0.0f);
+		Zenith_AnimPoseRingBasis(uAxis, xU, xV);
+		const Zenith_Maths::Vector3 xCross = Zenith_Maths::Cross(xU, xV);
+		ZENITH_ASSERT_NEAR_VEC3(xCross, Zenith_AnimPoseRingAxis(uAxis), 1.0e-6f,
+			"cross(u, v) must BE the ring's axis, or the parameter runs backwards");
+		ZENITH_ASSERT_EQ_FLOAT(Zenith_Maths::Dot(xU, xV), 0.0f, 1.0e-6f, "and the basis is orthogonal");
+	}
+
+	// ---- a pivot-relative pixel delta IS the angle ---------------------------
+	const Zenith_Maths::Vector2 xPivot(100.0f, 100.0f);
+	const float fHALF_PI = 1.57079632679f;
+	ZENITH_ASSERT_EQ_FLOAT(Zenith_AnimPoseSignedScreenAngle(xPivot,
+		Zenith_Maths::Vector2(140.0f, 100.0f), Zenith_Maths::Vector2(100.0f, 140.0f)), fHALF_PI, 1.0e-5f,
+		"+x to +y is a quarter turn one way");
+	ZENITH_ASSERT_EQ_FLOAT(Zenith_AnimPoseSignedScreenAngle(xPivot,
+		Zenith_Maths::Vector2(100.0f, 140.0f), Zenith_Maths::Vector2(140.0f, 100.0f)), -fHALF_PI, 1.0e-5f,
+		"and a quarter turn the other way when the arms are swapped");
+	ZENITH_ASSERT_EQ_FLOAT(Zenith_AnimPoseSignedScreenAngle(xPivot,
+		Zenith_Maths::Vector2(140.0f, 100.0f), Zenith_Maths::Vector2(140.0f, 100.0f)), 0.0f, 1.0e-6f,
+		"a cursor that did not move sweeps nothing");
+	ZENITH_ASSERT_EQ_FLOAT(std::fabs(Zenith_AnimPoseSignedScreenAngle(xPivot,
+		Zenith_Maths::Vector2(140.0f, 100.0f), Zenith_Maths::Vector2(60.0f, 100.0f))), 3.14159265f, 1.0e-5f,
+		"and a half turn is pi, whichever branch atan2 lands on");
+	// The distance from the pivot must NOT matter — a drag that reached further
+	// out is the same rotation, not a bigger one.
+	ZENITH_ASSERT_EQ_FLOAT(Zenith_AnimPoseSignedScreenAngle(xPivot,
+		Zenith_Maths::Vector2(101.0f, 100.0f), Zenith_Maths::Vector2(100.0f, 900.0f)), fHALF_PI, 1.0e-4f,
+		"the angle is scale-free in the radius");
+	// ★ A CURSOR ON THE PIVOT HAS NO DIRECTION, and normalising it would produce
+	// a NaN that then reaches a bone rotation and a saved .zanim.
+	ZENITH_ASSERT_EQ_FLOAT(Zenith_AnimPoseSignedScreenAngle(xPivot, xPivot,
+		Zenith_Maths::Vector2(140.0f, 100.0f)), 0.0f, 1.0e-6f, "a degenerate arm sweeps nothing, not NaN");
+
+	// ---- the NEAREST ring wins ----------------------------------------------
+	// Three concentric circles, so "nearest" is a number the test controls
+	// exactly rather than an accident of a projection.
+	Zenith_AnimPoseRingSet xRings;
+	xRings.m_xPivotPixel = xPivot;
+	AnimPanelMakeCircleRing(xRings.m_axRings[0], 100.0f, 100.0f, 50.0f);
+	AnimPanelMakeCircleRing(xRings.m_axRings[1], 100.0f, 100.0f, 80.0f);
+	AnimPanelMakeCircleRing(xRings.m_axRings[2], 100.0f, 100.0f, 120.0f);
+
+	u_int uAxis = 0xABCDu;
+	ZENITH_ASSERT_TRUE(Zenith_AnimPosePickRing(xRings, 100.0f, 152.0f, 8.0f, uAxis), "2 px off the inner ring hits");
+	ZENITH_ASSERT_EQ(uAxis, 0u, "and picks the INNER one, 2 px away, not the middle one 28 px away");
+	ZENITH_ASSERT_TRUE(Zenith_AnimPosePickRing(xRings, 100.0f, 182.0f, 8.0f, uAxis), "2 px off the middle ring hits");
+	ZENITH_ASSERT_EQ(uAxis, 1u, "and picks the middle one");
+
+	uAxis = 0xABCDu;
+	ZENITH_ASSERT_FALSE(Zenith_AnimPosePickRing(xRings, 100.0f, 100.0f, 8.0f, uAxis),
+		"the centre is 50 px from the nearest ring, which is a miss");
+	ZENITH_ASSERT_EQ(uAxis, 0xABCDu,
+		"★ and a miss leaves the output UNTOUCHED — a caller that ignored the bool would "
+		"otherwise read a plausible 0 meaning 'the X ring'");
+
+	// An INVALID ring is never picked: half of it is behind the camera and the
+	// missing arc is exactly where a mirrored coordinate would land.
+	xRings.m_axRings[0].m_bValid = false;
+	ZENITH_ASSERT_FALSE(Zenith_AnimPosePickRing(xRings, 100.0f, 152.0f, 8.0f, uAxis),
+		"a ring that failed to project is not hit-testable, however near the cursor is");
+	ZENITH_ASSERT_GT(Zenith_AnimPoseDistanceToRing(xRings.m_axRings[0], 100.0f, 152.0f), 1.0e6f,
+		"and reports an unreachable distance rather than a small one");
+}
+
+//==============================================================================
+// (D) The rings are projected around the selected bone's OWN joint — the FIXED
+// POINT of the rotation they author.
+//
+// ★ THAT IS THE HALF OF §3 A READER IS MOST LIKELY TO GET BACKWARDS. With
+// L_i = T(p) * R(q) * S, the translation of M_i is M_parent(i) * p, which does
+// not contain q_i at all: rotating the bone moves its CHILDREN's joints and
+// leaves its own exactly where it was. So the assertion is not "the pivot is
+// somewhere sensible" but "the pivot does not move when the bone turns", which
+// is checkable to the pixel.
+//==============================================================================
+ZENITH_TEST(AnimPanel, PoseRingsAreCentredOnTheJointTheBoneTurnsAbout)
+{
+	AnimPanelFixture xFixture("zenith_animpanel_posering");
+	AnimPanelWriteRiggedProbe(xFixture);
+
+	Zenith_EditorPanel_Animation xPanel;
+	ZENITH_ASSERT_TRUE(xPanel.OpenClip(xFixture.m_strPath), "the rigged probe opens");
+	ZENITH_ASSERT_FALSE(xPanel.Session().NeedsRigSelection(), "and its rig resolved");
+
+	Zenith_AnimPoseRingSet xRings;
+	ZENITH_ASSERT_TRUE(xPanel.Action_SelectBone(1u), "select the leaf bone");
+	ZENITH_ASSERT_FALSE(xPanel.GetPoseRingSet(xRings),
+		"★ but there are no rings before a frame has been DRAWN: the projection needs the "
+		"preview image's SIZE, and a panel that invented one would hand out a pixel nothing "
+		"can be clicked at — the same failing-closed contract every rect accessor keeps");
+
+	xPanel.RequestWindowPlacement(40.0f, 40.0f, 900.0f, 600.0f);
+	AnimPanelRenderFrames(xPanel, 2u);
+	ZENITH_ASSERT_TRUE(xPanel.WasSheetDrawnLastFrame(), "the window drew its body");
+	ZENITH_ASSERT_TRUE(xPanel.GetPoseRingSet(xRings), "and now there are rings");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_ClearBoneSelection(), "drop the selection");
+	Zenith_AnimPoseRingSet xUnselected;
+	ZENITH_ASSERT_FALSE(xPanel.GetPoseRingSet(xUnselected), "and they go: there is nothing to manipulate");
+	ZENITH_ASSERT_TRUE(xPanel.Action_SelectBone(1u), "select it again");
+	ZENITH_ASSERT_TRUE(xPanel.GetPoseRingSet(xRings), "and they come back");
+
+	const Flux_SkeletonInstance* pxInstance = xPanel.Session().GetSkeletonInstance();
+	ZENITH_ASSERT_NOT_NULL(pxInstance, "the session owns a skeleton instance");
+	if (pxInstance == nullptr)
+	{
+		return;
+	}
+
+	const Zenith_Maths::Vector3 xJoint = Zenith_BoneSpace::BoneWorldPosition(
+		xPanel.Session().GetSessionModelMatrix(), *pxInstance, 1u);
+	float fJointX = 0.0f;
+	float fJointY = 0.0f;
+	ZENITH_ASSERT_TRUE(xPanel.ProjectPreviewWorldPoint(xJoint, fJointX, fJointY), "which projects");
+	ZENITH_ASSERT_EQ_FLOAT(xRings.m_xPivotPixel.x, fJointX, 1.0e-3f, "the ring centre IS that joint");
+	ZENITH_ASSERT_EQ_FLOAT(xRings.m_xPivotPixel.y, fJointY, 1.0e-3f, "the ring centre IS that joint");
+
+	for (u_int uAxis = 0; uAxis < 3u; ++uAxis)
+	{
+		ZENITH_ASSERT_TRUE(xRings.m_axRings[uAxis].m_bValid,
+			"every ring projected — none of them straddles the near plane at this orbit");
+		// Closed by construction, so the hit test walks every segment without a
+		// wrap-around case and cannot fall through a hairline gap.
+		ZENITH_ASSERT_EQ_FLOAT(xRings.m_axRings[uAxis].m_axPoints[uANIM_POSE_RING_SEGMENTS].x,
+			xRings.m_axRings[uAxis].m_axPoints[0].x, 0.0f, "the polyline closes EXACTLY");
+		ZENITH_ASSERT_EQ_FLOAT(xRings.m_axRings[uAxis].m_axPoints[uANIM_POSE_RING_SEGMENTS].y,
+			xRings.m_axRings[uAxis].m_axPoints[0].y, 0.0f, "the polyline closes EXACTLY");
+		// A ring with no radius on screen would make every pick ambiguous and
+		// every drag a divide by nothing.
+		const float fDx = xRings.m_axRings[uAxis].m_axPoints[0].x - xRings.m_xPivotPixel.x;
+		const float fDy = xRings.m_axRings[uAxis].m_axPoints[0].y - xRings.m_xPivotPixel.y;
+		ZENITH_ASSERT_GT(std::sqrt(fDx * fDx + fDy * fDy), 4.0f,
+			"and is big enough on screen to grab (the radius is camera-relative, not rig-relative)");
+	}
+
+	// ★ THE ASSERTION THIS TEST EXISTS FOR.
+	ZENITH_ASSERT_TRUE(xPanel.Action_RotateSelectedBoneWorld(
+		Zenith_Maths::AngleAxis(0.5f, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f))), "turn the bone");
+	Zenith_AnimPoseRingSet xAfter;
+	ZENITH_ASSERT_TRUE(xPanel.GetPoseRingSet(xAfter), "the rings are still there");
+	ZENITH_ASSERT_EQ_FLOAT(xAfter.m_xPivotPixel.x, fJointX, 1.0e-3f,
+		"and the pivot has not moved: the bone turns ABOUT its own joint, it does not move it");
+	ZENITH_ASSERT_EQ_FLOAT(xAfter.m_xPivotPixel.y, fJointY, 1.0e-3f,
+		"and the pivot has not moved: the bone turns ABOUT its own joint, it does not move it");
+}
+
+//==============================================================================
+// (E) Set Key — insert, replace, and what each one's undo does.
+//==============================================================================
+ZENITH_TEST(AnimPanel, SetKeyInsertsThenReplacesAndUndoRestoresEach)
+{
+	AnimPanelFixture xFixture("zenith_animpanel_setkey");
+	AnimPanelWriteRiggedProbe(xFixture);
+
+	Zenith_EditorPanel_Animation xPanel;
+	ZENITH_ASSERT_TRUE(xPanel.OpenClip(xFixture.m_strPath), "the rigged probe opens");
+	ZENITH_ASSERT_FALSE(xPanel.Session().NeedsRigSelection(), "and its rig resolved");
+	ZENITH_ASSERT_EQ(xPanel.GetFrameRate(), 30u, "on a 30 fps grid");
+
+	const Zenith_AnimTrackId xTrack = AnimPanelSpineRotation();
+	ZENITH_ASSERT_EQ(xPanel.Document().GetKeyCount(xTrack), 0u,
+		"Spine's rotation channel starts EMPTY — only Hip's POSITION is animated");
+	ZENITH_ASSERT_TRUE(xPanel.Action_SelectBone(1u), "select Spine");
+
+	// ★ THE PLAY HEAD IS PARKED OFF THE GRID ON PURPOSE. 0.5111 s at 30 fps is
+	// frame 15.333, and the key has to land on frame 15 (0.5 s exactly) — an
+	// unsnapped key would make the sheet's frame columns lie and would make
+	// D11's occupancy test fire or not on float noise.
+	ZENITH_ASSERT_TRUE(xPanel.Action_Scrub(0.5111f), "park the play head between two frames");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_SetKeyForSelectedBone(), "Set Key on an empty channel takes");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetKeyCount(xTrack), 1u, "and creates the channel with one key in it");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), 1u, "as ONE undo step");
+
+	const u_int uKeyId = xPanel.Document().GetKeyIdAtIndex(xTrack, 0u);
+	ZENITH_ASSERT_NE(uKeyId, uINVALID_ANIM_KEY_ID, "with a stable id");
+	float fKeyTime = -1.0f;
+	ZENITH_ASSERT_TRUE(xPanel.Document().GetKeyTime(xTrack, uKeyId, fKeyTime), "the key resolves");
+	ZENITH_ASSERT_EQ_FLOAT(fKeyTime, 0.5f, 1.0e-5f, "★ snapped to frame 15, not left at 0.5111");
+	ZENITH_ASSERT_EQ_FLOAT(fKeyTime, Zenith_AnimTimelineFrameToTime(15u, 30u), 0.0f,
+		"and BIT-IDENTICAL to the frame time it names, which is what the shared snap guarantees");
+
+	Zenith_AnimKeyValue xFirst;
+	ZENITH_ASSERT_TRUE(xPanel.Document().GetKeyValue(xTrack, uKeyId, xFirst), "and carries a value");
+	ZENITH_ASSERT_TRUE(xFirst.m_bIsRotation, "tagged ROTATION, which is what the track holds");
+	ZENITH_ASSERT_EQ_FLOAT(xFirst.m_xQuat.w, 1.0f, 1.0e-4f, "the bind identity — nothing has been posed yet");
+
+	// ---- an OCCUPIED time is a value edit that KEEPS the id (D11 / D25) -------
+	ZENITH_ASSERT_TRUE(xPanel.Action_RotateSelectedBoneWorld(
+		Zenith_Maths::AngleAxis(0.6f, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f))), "pose the bone");
+	ZENITH_ASSERT_TRUE(xPanel.Action_SetKeyForSelectedBone(), "Set Key again, on the same frame");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetKeyCount(xTrack), 1u,
+		"★ still ONE key — an occupied slot is a value edit, not a second key");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetKeyIdAtIndex(xTrack, 0u), uKeyId,
+		"★ under the SAME id, which is what the dope sheet's selection is holding");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), 2u, "and one more undo step");
+
+	Zenith_AnimKeyValue xSecond;
+	ZENITH_ASSERT_TRUE(xPanel.Document().GetKeyValue(xTrack, uKeyId, xSecond), "the replaced value reads back");
+	ZENITH_ASSERT_GT(std::fabs(xSecond.m_xQuat.y), 0.05f, "and is the posed rotation, not the identity");
+
+	// ---- undo restores the VALUE, then removes the key ----------------------
+	ZENITH_ASSERT_TRUE(xPanel.Action_Undo(), "undo the replace");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetKeyCount(xTrack), 1u,
+		"★ which restores a VALUE rather than deleting a key the user never created");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetKeyIdAtIndex(xTrack, 0u), uKeyId, "still the same id");
+	Zenith_AnimKeyValue xRestored;
+	ZENITH_ASSERT_TRUE(xPanel.Document().GetKeyValue(xTrack, uKeyId, xRestored), "and reads back");
+	ZENITH_ASSERT_EQ_FLOAT(xRestored.m_xQuat.y, xFirst.m_xQuat.y, 1.0e-6f, "as the value it had before");
+	ZENITH_ASSERT_EQ_FLOAT(xRestored.m_xQuat.w, xFirst.m_xQuat.w, 1.0e-6f, "as the value it had before");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_Undo(), "undo the insert");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetKeyCount(xTrack), 0u, "which DOES remove it");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), 0u, "and the stack is back where it started");
+
+	// ---- what a translation key is, and is not ------------------------------
+	// Spine has a parent, so the root-translation verb refuses it outright rather
+	// than silently downgrading to a rotation-only key.
+	ZENITH_ASSERT_FALSE(xPanel.Action_SetKeyTranslationForRoot(),
+		"a translation key on a LIMB is refused — root motion is the only place one belongs");
+	ZENITH_ASSERT_TRUE(xPanel.Action_SelectBone(0u), "select the ROOT");
+	ZENITH_ASSERT_TRUE(xPanel.Action_SetKeyTranslationForRoot(), "where it is allowed");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetKeyCount(Zenith_AnimTrackId::Bone("Hip", FLUX_ANIM_TRACK_ROTATION)), 1u,
+		"writing rotation");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), 1u,
+		"★ and BOTH tracks are ONE undo step, not two");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetKeyCount(Zenith_AnimTrackId::Bone("Hip", FLUX_ANIM_TRACK_SCALE)), 0u,
+		"★ and SCALE is never written: the first key on a channel changes that bone across the WHOLE clip");
+}
+
+//==============================================================================
+// (F) Auto-key decides whether a released drag writes anything at all.
+//==============================================================================
+ZENITH_TEST(AnimPanel, AutoKeyDecidesWhetherAReleasedDragWritesAKey)
+{
+	AnimPanelFixture xFixture("zenith_animpanel_autokey");
+	AnimPanelWriteRiggedProbe(xFixture);
+
+	Zenith_EditorPanel_Animation xPanel;
+	ZENITH_ASSERT_TRUE(xPanel.OpenClip(xFixture.m_strPath), "the rigged probe opens");
+	ZENITH_ASSERT_FALSE(xPanel.Session().NeedsRigSelection(), "and its rig resolved");
+	xPanel.RequestWindowPlacement(40.0f, 40.0f, 900.0f, 600.0f);
+	AnimPanelRenderFrames(xPanel, 2u);
+	ZENITH_ASSERT_TRUE(xPanel.WasSheetDrawnLastFrame(), "the window drew its body");
+	ZENITH_ASSERT_TRUE(xPanel.Action_SelectBone(1u), "select Spine");
+
+	const Zenith_AnimTrackId xTrack = AnimPanelSpineRotation();
+
+	// ---- OFF (the default) ---------------------------------------------------
+	ZENITH_ASSERT_FALSE(xPanel.Action_GetAutoKey(), "auto-key is off by default");
+	ZENITH_ASSERT_TRUE(AnimPanelRingDrag(xPanel, 1u, 6u, 18u), "a quarter turn round the Y ring");
+	ZENITH_ASSERT_TRUE(xPanel.Action_EndBoneDrag(), "released");
+
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), 0u, "auto-key OFF pushes NO undo entry");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetKeyCount(xTrack), 0u, "and writes NO key");
+	ZENITH_ASSERT_TRUE(xPanel.Session().HasUnkeyedPose(),
+		"★ the pose is live-but-unkeyed, and the pane must SAY so — it is the one thing a user can silently lose");
+
+	// A SEEK is the explicit discard: the controller re-evaluates every bone from
+	// the clip, so whatever the drag left behind is gone and the badge goes too.
+	ZENITH_ASSERT_TRUE(xPanel.Action_Scrub(0.25f), "scrub away");
+	ZENITH_ASSERT_FALSE(xPanel.Session().HasUnkeyedPose(), "which discards it, visibly");
+
+	// ---- ON ------------------------------------------------------------------
+	ZENITH_ASSERT_TRUE(xPanel.Action_SetAutoKey(true), "turn auto-key on");
+	ZENITH_ASSERT_TRUE(AnimPanelRingDrag(xPanel, 1u, 6u, 18u), "the same quarter turn");
+	ZENITH_ASSERT_TRUE(xPanel.Action_EndBoneDrag(), "released");
+
+	ZENITH_ASSERT_EQ(xPanel.Document().GetKeyCount(xTrack), 1u, "writes exactly one key");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), 1u, "as exactly one undo step");
+	ZENITH_ASSERT_FALSE(xPanel.Session().HasUnkeyedPose(), "and the badge goes: the pose IS in the clip now");
+}
+
+//==============================================================================
+// (G) One drag is one undo step, however many frames it spanned — and a drag
+// that never moved records nothing.
+//==============================================================================
+ZENITH_TEST(AnimPanel, OneBoneDragIsOneUndoStepAndAnEmptyOneRecordsNothing)
+{
+	AnimPanelFixture xFixture("zenith_animpanel_posedrag");
+	AnimPanelWriteRiggedProbe(xFixture);
+
+	Zenith_EditorPanel_Animation xPanel;
+	ZENITH_ASSERT_TRUE(xPanel.OpenClip(xFixture.m_strPath), "the rigged probe opens");
+	ZENITH_ASSERT_FALSE(xPanel.Session().NeedsRigSelection(), "and its rig resolved");
+	xPanel.RequestWindowPlacement(40.0f, 40.0f, 900.0f, 600.0f);
+	AnimPanelRenderFrames(xPanel, 2u);
+	ZENITH_ASSERT_TRUE(xPanel.WasSheetDrawnLastFrame(), "the window drew its body");
+
+	ZENITH_ASSERT_FALSE(xPanel.Action_BeginBoneDragAtPixel(10.0f, 10.0f),
+		"nothing to grab with no bone selected");
+	ZENITH_ASSERT_TRUE(xPanel.Action_SelectBone(1u), "select Spine");
+	ZENITH_ASSERT_TRUE(xPanel.Action_SetAutoKey(true), "with auto-key on, so the release has something to record");
+
+	const Zenith_AnimTrackId xTrack = AnimPanelSpineRotation();
+
+	// ★ TWELVE Update CALLS — twelve FRAMES of a real drag. The thing being
+	// pinned is that the count does not reach the undo stack.
+	ZENITH_ASSERT_TRUE(AnimPanelRingDrag(xPanel, 1u, 6u, 18u), "the ring was grabbed and walked");
+	ZENITH_ASSERT_TRUE(xPanel.IsBonePoseDragActive(), "the drag is in flight");
+	ZENITH_ASSERT_NE(xPanel.GetPoseDragAxis(), uINVALID_ANIM_POSE_RING, "on a ring it can name");
+	ZENITH_ASSERT_GT(std::fabs(xPanel.GetPoseDragAngleRadians()), 0.05f, "having swept a real angle");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), 0u,
+		"★ and NOTHING has reached the document yet — the live pose is not an undo entry");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_EndBoneDrag(), "release");
+	ZENITH_ASSERT_FALSE(xPanel.IsBonePoseDragActive(), "which ends it");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), 1u,
+		"★ ONE undo entry for the whole gesture, not one per frame of it");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetKeyCount(xTrack), 1u, "and one key");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_Undo(), "one Ctrl+Z takes the whole drag back");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetKeyCount(xTrack), 0u, "leaving the channel as it was");
+	const u_int uDepth = xPanel.Document().GetUndoStackSize();
+
+	// ---- a press and release that never moved -------------------------------
+	ZENITH_ASSERT_TRUE(AnimPanelRingPressOnly(xPanel, 1u, 6u), "grab a ring");
+	ZENITH_ASSERT_TRUE(xPanel.IsBonePoseDragActive(), "the drag starts");
+	ZENITH_ASSERT_TRUE(xPanel.Action_EndBoneDrag(), "and is released without moving");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), uDepth,
+		"★ a click that never moved records NOTHING, auto-key or no auto-key");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetKeyCount(xTrack), 0u, "and writes no key");
+	ZENITH_ASSERT_FALSE(xPanel.Session().HasUnkeyedPose(),
+		"and leaves no unkeyed-pose badge behind either, because it changed no pose");
+
+	ZENITH_ASSERT_FALSE(xPanel.Action_EndBoneDrag(), "ending a drag that is not in flight reports nothing");
+	ZENITH_ASSERT_FALSE(xPanel.Action_UpdateBoneDragToPixel(1.0f, 1.0f), "and neither does updating one");
+}
+
+//==============================================================================
+// (H) Escape cancels a drag and puts the bone back where it found it.
+//==============================================================================
+ZENITH_TEST(AnimPanel, CancellingABoneDragRestoresTheRotationItStartedFrom)
+{
+	AnimPanelFixture xFixture("zenith_animpanel_posecancel");
+	AnimPanelWriteRiggedProbe(xFixture);
+
+	Zenith_EditorPanel_Animation xPanel;
+	ZENITH_ASSERT_TRUE(xPanel.OpenClip(xFixture.m_strPath), "the rigged probe opens");
+	ZENITH_ASSERT_FALSE(xPanel.Session().NeedsRigSelection(), "and its rig resolved");
+	xPanel.RequestWindowPlacement(40.0f, 40.0f, 900.0f, 600.0f);
+	AnimPanelRenderFrames(xPanel, 2u);
+	ZENITH_ASSERT_TRUE(xPanel.WasSheetDrawnLastFrame(), "the window drew its body");
+	ZENITH_ASSERT_TRUE(xPanel.Action_SelectBone(1u), "select Spine");
+	ZENITH_ASSERT_TRUE(xPanel.Action_SetAutoKey(true), "auto-key ON, so a COMMIT would be visible");
+
+	const Zenith_Maths::Quat xBefore = xPanel.Session().GetBoneLocalRotation(1u);
+
+	ZENITH_ASSERT_TRUE(AnimPanelRingDrag(xPanel, 1u, 6u, 18u), "drag the ring");
+	const Zenith_Maths::Quat xDuring = xPanel.Session().GetBoneLocalRotation(1u);
+	ZENITH_ASSERT_LT(AnimPanelQuatAlignment(xBefore, xDuring), 0.999f,
+		"the drag genuinely moved the bone (else the restore below asserts nothing)");
+	ZENITH_ASSERT_TRUE(xPanel.Session().HasUnkeyedPose(), "and left a live pose");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_CancelBoneDrag(), "Escape");
+	ZENITH_ASSERT_FALSE(xPanel.IsBonePoseDragActive(), "ends the drag");
+
+	const Zenith_Maths::Quat xAfter = xPanel.Session().GetBoneLocalRotation(1u);
+	ZENITH_ASSERT_EQ_FLOAT(AnimPanelQuatAlignment(xBefore, xAfter), 1.0f, 1.0e-5f,
+		"★ and puts the bone back at the rotation BeginBoneDrag latched");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), 0u,
+		"★ writing NOTHING even with auto-key on: a cancel is not a release");
+	ZENITH_ASSERT_FALSE(xPanel.Session().HasUnkeyedPose(),
+		"and the badge goes with it — the pose is back to what the clip evaluates to");
+
+	ZENITH_ASSERT_FALSE(xPanel.Action_CancelBoneDrag(), "and it is idempotent afterwards");
 }

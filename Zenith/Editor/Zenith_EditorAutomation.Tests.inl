@@ -22,6 +22,10 @@
 #include "Editor/Panels/Zenith_EditorPanel_Animation.h"
 #include "Flux/MeshAnimation/Flux_AnimationClip.h"
 #include "Flux/RenderViews/Flux_PreviewSlotArbiter.h"
+// WU-4.3's pose steps additionally need a resolvable RIG: the pose verbs address
+// a BONE, so a clip with no skeleton has nothing for them to select.
+#include "AssetHandling/Zenith_SkeletonAsset.h"
+#include "AssetHandling/Zenith_MeshAsset.h"
 #include "AssetHandling/Zenith_BehaviourGraphAsset.h"
 #include "Scripting/Zenith_BehaviourGraph.h"
 #include "UI/Zenith_UIElement.h"
@@ -3378,14 +3382,47 @@ ZENITH_TEST(Automation, AnimEnumBlockIsContiguous)
 
 	// ... and the block must not have grown into either neighbour. It was
 	// APPENDED after the prefab range precisely so that nothing already pinned
-	// had to move (see the header), and SET_NAVMESH_ASSET — a standalone verb
-	// that must keep reaching ExecuteAction's own switch — begins right after it.
+	// had to move (see the header), and the ANIM_POSE block (WU-4.3) — its own
+	// contiguous range with its own sub-executor — begins right after it.
 	ZENITH_ASSERT_EQ(iFirst - static_cast<int>(Zenith_EditorActionType::INSTANTIATE_PREFAB), 1,
 		"the ANIM block must start immediately after the prefab range ends");
-	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::SET_NAVMESH_ASSET) -
+	// ★ THIS LINE USED TO NAME SET_NAVMESH_ASSET, and it moved with WU-4.3 rather
+	// than being deleted: what it pins is that the ANIM range ENDS where the
+	// router thinks it does, and the successor being a second animation block
+	// instead of the navmesh verb does not weaken that. SET_NAVMESH_ASSET's own
+	// "must stay outside every range" is pinned by AnimPoseEnumBlockIsContiguous
+	// below, which is where its neighbour now is.
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_POSE_SELECT_BONE) -
 		static_cast<int>(Zenith_EditorActionType::ANIM_EXPECT_SELECTED_COUNT), 1,
-		"SET_NAVMESH_ASSET must sit immediately after the ANIM range — inside it, the "
-		"router would hand it to ExecuteAnimationAction's default: assert");
+		"the ANIM_POSE block must start immediately after the ANIM range ends — inside it, "
+		"the router would hand a pose verb to ExecuteAnimationAction's default: assert");
+}
+
+ZENITH_TEST(Automation, AnimPoseEnumBlockIsContiguous)
+{
+	// The youngest block, pinned the way every block before it is: the header
+	// static_asserts the WIDTH, and this pins each member's POSITION so a reorder
+	// that preserves the width fails here naming the member that moved.
+	const int iFirst = static_cast<int>(Zenith_EditorActionType::ANIM_POSE_SELECT_BONE);
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_POSE_ROTATE_SELECTED_BONE_WORLD) - iFirst, 1,
+		"ANIM_POSE_ROTATE_SELECTED_BONE_WORLD must be the second member of the block");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_POSE_SET_KEY_FOR_SELECTED_BONE) - iFirst, 2,
+		"ANIM_POSE_SET_KEY_FOR_SELECTED_BONE must be the third member of the block");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_POSE_SET_AUTO_KEY) - iFirst, 3,
+		"ANIM_POSE_SET_AUTO_KEY must be the fourth member of the block");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_POSE_EXPECT_BONE_LOCAL_ROTATION) - iFirst, 4,
+		"ANIM_POSE_EXPECT_BONE_LOCAL_ROTATION must END the block — the router compares against it");
+
+	// Both boundaries, from this side. SET_NAVMESH_ASSET is a STANDALONE verb
+	// that has to keep reaching ExecuteAction's own switch: swallowed into this
+	// range it would land in ExecuteAnimationPoseAction's `default:` assert at
+	// boot, which is a run-time failure for a compile-time mistake.
+	ZENITH_ASSERT_EQ(iFirst - static_cast<int>(Zenith_EditorActionType::ANIM_EXPECT_SELECTED_COUNT), 1,
+		"the ANIM_POSE block must start immediately after the ANIM range ends");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::SET_NAVMESH_ASSET) -
+		static_cast<int>(Zenith_EditorActionType::ANIM_POSE_EXPECT_BONE_LOCAL_ROTATION), 1,
+		"SET_NAVMESH_ASSET must sit immediately after the ANIM_POSE range — inside it, the "
+		"router would hand it to ExecuteAnimationPoseAction's default: assert");
 }
 
 ZENITH_TEST(Automation, AnimStepsPackTheirPayloads)
@@ -3548,6 +3585,203 @@ ZENITH_TEST(Automation, AnimAuthoringStepsDriveTheDopeSheet)
 
 	xAuto.Reset();
 	Zenith_AssetRegistry::ForceUnload(strPath);
+	std::filesystem::remove_all(xDirectory, xError);
+	Flux_PreviewSlotArbiter::ResetForTesting();
+}
+
+//=============================================================================
+// Animation POSE authoring steps (WU-4.3)
+//=============================================================================
+
+namespace
+{
+	// A clip whose metadata names a REAL rig, so the pose verbs have a bone to
+	// select. Two bones (Hip -> Spine, 0.5 m apart) and a three-vertex mesh that
+	// exists only to be a resolvable preview PATH — the same shape
+	// Zenith_EditorPanel_Animation.Tests.inl's rigged probe uses, and device-free
+	// for the same reason (GenerateUnitCube would end in EnsureGPUBuffers).
+	//
+	// ★ ONLY HIP'S POSITION IS ANIMATED, deliberately. Spine's ROTATION channel
+	// is therefore empty, which is what makes the recipe below exercise §5.1's
+	// first-key case: writing it CREATES the channel.
+	void AutomationWriteRiggedAnimProbe(const std::string& strClipPath,
+		const std::string& strSkeletonPath, const std::string& strMeshPath)
+	{
+		{
+			Zenith_SkeletonAsset xSkeleton;
+			const Zenith_Maths::Quat xIdentity(1.0f, 0.0f, 0.0f, 0.0f);
+			const Zenith_Maths::Vector3 xUnitScale(1.0f);
+			xSkeleton.AddBone("Hip", -1, Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f), xIdentity, xUnitScale);
+			xSkeleton.AddBone("Spine", 0, Zenith_Maths::Vector3(0.0f, 0.5f, 0.0f), xIdentity, xUnitScale);
+			xSkeleton.ComputeBindPoseMatrices();
+			xSkeleton.Export(strSkeletonPath.c_str());
+		}
+		{
+			Zenith_MeshAsset xMesh;
+			xMesh.Reserve(3, 3);
+			xMesh.AddVertex(Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f), Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f), Zenith_Maths::Vector2(0.0f, 0.0f));
+			xMesh.AddVertex(Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f), Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f), Zenith_Maths::Vector2(1.0f, 0.0f));
+			xMesh.AddVertex(Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f), Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f), Zenith_Maths::Vector2(0.0f, 1.0f));
+			xMesh.AddTriangle(0u, 1u, 2u);
+			xMesh.AddSubmesh(0u, 3u, 0u);
+			xMesh.ComputeBounds();
+			xMesh.Export(strMeshPath.c_str());
+		}
+
+		Flux_AnimationClip xClip;
+		xClip.SetName("AutomationPoseProbe");
+		xClip.SetDuration(2.0f);
+		xClip.SetLooping(false);
+		xClip.GetMetadata().m_bGenerated = false;
+		xClip.GetMetadata().m_uAuthoredFrameRate = 30u;
+		xClip.GetMetadata().m_strSkeletonPath = strSkeletonPath;
+		xClip.GetMetadata().m_strPreviewModelPath = strMeshPath;
+
+		Flux_BoneChannel xHip;
+		xHip.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
+		xHip.AddPositionKeyframe(2.0f, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
+		xHip.SortKeyframes();
+		xClip.AddBoneChannel("Hip", std::move(xHip));
+
+		xClip.Export(strClipPath);
+	}
+}
+
+ZENITH_TEST(Automation, AnimPoseStepsPackTheirPayloads)
+{
+	// The queue is drained much later than it is built, so the packing contract
+	// the executor reads back is asserted here — the two halves are written from
+	// the same comment block in the .cpp and this is what stops them drifting.
+	Zenith_EditorAutomation& xAuto = g_xEngine.EditorAutomation();
+	xAuto.Reset();
+
+	xAuto.AddStep_AnimSelectBone(1);
+	xAuto.AddStep_AnimRotateSelectedBoneWorld(0.0f, 1.0f, 0.0f, 30.0f);
+	xAuto.AddStep_AnimSetAutoKey(true);
+	xAuto.AddStep_AnimSetKeyForSelectedBone();
+	xAuto.AddStep_AnimExpectBoneLocalRotation(1, 0.25f, 0.5f, 0.75f, 1.0f, 0.002f);
+
+	ZENITH_ASSERT_EQ(xAuto.m_axActions.GetSize(), 5u, "five pose steps queued");
+
+	const Zenith_EditorAction& xSelect = xAuto.m_axActions.Get(0);
+	ZENITH_ASSERT_TRUE(xSelect.m_eType == Zenith_EditorActionType::ANIM_POSE_SELECT_BONE,
+		"step 0 is ANIM_POSE_SELECT_BONE");
+	ZENITH_ASSERT_EQ(xSelect.m_aiArgs[0], 1, "aiArgs[0] carries the BONE INDEX (not a name — see the .cpp)");
+
+	const Zenith_EditorAction& xRotate = xAuto.m_axActions.Get(1);
+	ZENITH_ASSERT_EQ_FLOAT(xRotate.m_afArgs[0], 0.0f, 1.0e-6f, "afArgs[0..2] carry the axis");
+	ZENITH_ASSERT_EQ_FLOAT(xRotate.m_afArgs[1], 1.0f, 1.0e-6f, "afArgs[0..2] carry the axis");
+	ZENITH_ASSERT_EQ_FLOAT(xRotate.m_afArgs[2], 0.0f, 1.0e-6f, "afArgs[0..2] carry the axis");
+	ZENITH_ASSERT_EQ_FLOAT(xRotate.m_afArgs[3], 30.0f, 1.0e-5f, "afArgs[3] carries the angle in DEGREES");
+
+	ZENITH_ASSERT_TRUE(xAuto.m_axActions.Get(2).m_bArg, "bArg carries the auto-key flag");
+	ZENITH_ASSERT_TRUE(xAuto.m_axActions.Get(3).m_eType == Zenith_EditorActionType::ANIM_POSE_SET_KEY_FOR_SELECTED_BONE,
+		"step 3 is ANIM_POSE_SET_KEY_FOR_SELECTED_BONE");
+
+	const Zenith_EditorAction& xExpect = xAuto.m_axActions.Get(4);
+	ZENITH_ASSERT_EQ(xExpect.m_aiArgs[0], 1, "the assertion step addresses a bone by index too");
+	ZENITH_ASSERT_EQ_FLOAT(xExpect.m_afArgs[0], 0.25f, 1.0e-6f, "afArgs[0..3] are the quaternion in SERIALIZED (x,y,z,w) order");
+	ZENITH_ASSERT_EQ_FLOAT(xExpect.m_afArgs[3], 1.0f, 1.0e-6f, "afArgs[0..3] are the quaternion in SERIALIZED (x,y,z,w) order");
+	ZENITH_ASSERT_EQ_FLOAT(xExpect.m_afArgs[4], 0.002f, 1.0e-7f, "afArgs[4] is the TOLERANCE");
+
+	xAuto.Reset();
+}
+
+ZENITH_TEST(Automation, AnimPoseAuthoringStepsDriveTheDopeSheet)
+{
+	// ★ THE ONE THAT PROVES THE POSE ROUTE EXISTS, end to end: the enum value,
+	// the second router range, ExecuteAnimationPoseAction's case, the panel's
+	// Action_* and the document's channel, in one line of evidence. No ImGui
+	// frame is needed — none of the verbs on this path reads a rect (the pointer
+	// drag does, and is covered by the panel's own units).
+	Flux_PreviewSlotArbiter::ResetForTesting();
+
+	std::error_code xError;
+	std::filesystem::path xRoot = std::filesystem::temp_directory_path(xError);
+	if (xError)
+	{
+		xRoot = ".";
+	}
+	const std::filesystem::path xDirectory = xRoot / "zenith_automation_animpose";
+	std::filesystem::remove_all(xDirectory, xError);
+	std::filesystem::create_directories(xDirectory, xError);
+	const std::string strClipPath = (xDirectory / "pose.zanim").generic_string();
+	const std::string strSkeletonPath = (xDirectory / "pose.zskel").generic_string();
+	const std::string strMeshPath = (xDirectory / "pose.zasset").generic_string();
+	AutomationWriteRiggedAnimProbe(strClipPath, strSkeletonPath, strMeshPath);
+
+	Zenith_EditorAutomation& xAuto = g_xEngine.EditorAutomation();
+	Zenith_EditorPanel_Animation& xPanel = Zenith_EditorPanel_Animation::Instance();
+	xAuto.Reset();
+
+	// A 30 degree turn about world Y. Spine's PARENT is the root Hip, whose world
+	// rotation is identity, and Spine's own local rotation starts at the bind
+	// identity — so the conjugation collapses and the expected local rotation is
+	// the delta itself: (x, y, z, w) = (0, sin 15, 0, cos 15).
+	const float fSIN_15 = 0.25881904510252074f;
+	const float fCOS_15 = 0.96592582628906831f;
+
+	xAuto.AddStep_AnimOpenClip(strClipPath.c_str());
+	xAuto.AddStep_AnimSelectBone(1);
+	xAuto.AddStep_AnimRotateSelectedBoneWorld(0.0f, 1.0f, 0.0f, 30.0f);
+	xAuto.AddStep_AnimExpectBoneLocalRotation(1, 0.0f, fSIN_15, 0.0f, fCOS_15, 1.0e-4f);
+	xAuto.AddStep_AnimSetKeyForSelectedBone();
+	xAuto.AddStep_AnimCloseClip();
+	xAuto.Begin();
+
+	const Zenith_AnimTrackId xSpineRotation = Zenith_AnimTrackId::Bone("Spine", FLUX_ANIM_TRACK_ROTATION);
+
+	xAuto.ExecuteNextStep();	// open
+	ZENITH_ASSERT_TRUE(xPanel.IsOpen(), "AnimOpenClip opened the rigged probe");
+	ZENITH_ASSERT_FALSE(xPanel.Session().NeedsRigSelection(),
+		"whose rig resolved — else there is no bone to pose and every assertion below is vacuous");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetKeyCount(xSpineRotation), 0u,
+		"and Spine's rotation channel starts EMPTY, so the key below is a first-key case (§5.1)");
+
+	xAuto.ExecuteNextStep();	// select bone 1
+	ZENITH_ASSERT_TRUE(xPanel.Session().HasBoneSelection(), "AnimSelectBone selected a bone");
+	ZENITH_ASSERT_EQ(xPanel.Session().GetSelectedBoneIndex(), 1u, "the one the step named");
+
+	xAuto.ExecuteNextStep();	// rotate about world Y
+	ZENITH_ASSERT_TRUE(xPanel.Session().HasUnkeyedPose(),
+		"★ the rotation is a LIVE POSE and nothing else yet — it is not in the clip and the panel says so");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), 0u,
+		"★ and a live pose is NOT undoable: an undo entry restoring a pose the document never held would be a lie");
+
+	xAuto.ExecuteNextStep();	// expect-bone-local-rotation (the assertion step)
+	ZENITH_ASSERT_TRUE(xPanel.Session().HasUnkeyedPose(), "an assertion step mutates nothing");
+
+	xAuto.ExecuteNextStep();	// set key
+	ZENITH_ASSERT_EQ(xPanel.Document().GetKeyCount(xSpineRotation), 1u,
+		"AnimSetKeyForSelectedBone created the channel and put ONE key in it");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), 1u, "as ONE undo step");
+	ZENITH_ASSERT_FALSE(xPanel.Session().HasUnkeyedPose(), "and the pose is in the clip now, so the badge goes");
+
+	// The key landed at the play head, snapped to the 30 fps grid — which is 0
+	// here, because opening a clip parks the play head at 0.
+	float fKeyTime = 1.0f;
+	ZENITH_ASSERT_TRUE(xPanel.Document().GetKeyTime(xSpineRotation,
+		xPanel.Document().GetKeyIdAtIndex(xSpineRotation, 0u), fKeyTime), "the key resolves");
+	ZENITH_ASSERT_EQ_FLOAT(fKeyTime, 0.0f, 1.0e-5f, "at the play head, on the frame grid");
+
+	Zenith_AnimKeyValue xValue;
+	ZENITH_ASSERT_TRUE(xPanel.Document().GetKeyValue(xSpineRotation,
+		xPanel.Document().GetKeyIdAtIndex(xSpineRotation, 0u), xValue), "and carries a value");
+	ZENITH_ASSERT_TRUE(xValue.m_bIsRotation, "tagged as a ROTATION, which is what the track holds");
+	ZENITH_ASSERT_EQ_FLOAT(xValue.m_xQuat.y, fSIN_15, 1.0e-4f, "the LIVE POSE is what was keyed, not the clip's old value");
+
+	xAuto.ExecuteNextStep();	// close
+	ZENITH_ASSERT_FALSE(xPanel.IsOpen(), "AnimCloseClip closed the document");
+
+	// AnimOpenClip SHOWS the editor's single panel and CloseClip does not hide
+	// it, so this unit has to put it back — left set, every game would boot with
+	// the dope sheet open over its viewport, caused by a unit test.
+	xPanel.ShowFlag() = false;
+
+	xAuto.Reset();
+	Zenith_AssetRegistry::ForceUnload(strClipPath);
+	Zenith_AssetRegistry::ForceUnload(strSkeletonPath);
+	Zenith_AssetRegistry::ForceUnload(strMeshPath);
 	std::filesystem::remove_all(xDirectory, xError);
 	Flux_PreviewSlotArbiter::ResetForTesting();
 }

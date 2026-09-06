@@ -173,6 +173,113 @@ struct Zenith_AnimSheetRow
 };
 
 //=============================================================================
+// THE BONE MANIPULATOR (WU-4.3) — the geometry, as PURE FUNCTIONS.
+//
+// ★ IT IS AN ImGui DRAW-LIST OVERLAY ON THE PREVIEW IMAGE, NOT Flux_Gizmos, and
+// that is a feasibility correction rather than a style choice (design note
+// §8.1): Flux_GizmosImpl is entity-typed all the way down AND declares one pass
+// writing the FINAL render target with no per-view selection, so it renders with
+// the MAIN camera's constants over the main viewport while the preview session
+// renders into the shared preview view slot.
+//
+// ★ EVERYTHING BELOW IS FREE FUNCTIONS OVER PIXELS, so the part that is easy to
+// get silently wrong — which ring the cursor grabbed, which way round a drag
+// turns — is catchable by a headless unit with no frame, no camera and no rig.
+// The panel supplies the projection (GetPoseRingSet) and nothing else.
+//
+// ★ THE RING PARAMETER IS THE RIGHT-HANDED ROTATION ANGLE, BY CONSTRUCTION.
+// Zenith_AnimPoseRingBasis returns (u, v) with cross(u, v) == axis, and a point
+// at parameter theta is pivot + r * (cos(theta) * u + sin(theta) * v) — so
+// walking the polyline forward IS turning positively about the axis. That is
+// what lets the drag recover its screen SIGN by measuring the projected step
+// from point[0] to point[1] instead of reasoning about handedness, the Vulkan
+// Y flip and which side of the pivot the camera is on. Two of those three have
+// already been got wrong once in this panel's own projection helper.
+//=============================================================================
+
+// How many segments a rotation ring is projected, drawn and hit-tested with.
+// 48 is 7.5 degrees per segment: at the ~40 px radius the screen-relative sizing
+// below produces, the chord error is well under a pixel, so the polyline the hit
+// test measures against and the circle the user sees are the same curve.
+constexpr u_int uANIM_POSE_RING_SEGMENTS = 48u;
+
+// "No ring." Same shape and same reason as kuINVALID_BONE_SELECTION: every
+// consumer already has to handle "the index does not resolve", and a bool beside
+// it would give one fact two representations that can disagree.
+constexpr u_int uINVALID_ANIM_POSE_RING = 0xFFFFFFFFu;
+
+// How near, in PREVIEW-IMAGE pixels, the cursor has to be to a ring's projected
+// polyline to grab it. Deliberately NOT DPI-scaled: it is compared against
+// coordinates expressed in the same image-pixel space on both sides, and a
+// scaled tolerance would make a unit's result depend on the display it ran on.
+constexpr float fANIM_POSE_RING_GRAB_PIXELS = 8.0f;
+
+// The ring radius as a fraction of the pivot's DISTANCE FROM THE CAMERA, which
+// makes the handle a roughly constant size on screen — the same camera-relative
+// sizing the entity gizmo uses. A fraction of the SKELETON's extent was the
+// obvious alternative and is wrong: a 0.5 m two-bone rig would then draw a ring
+// a handful of pixels across while a 1.8 m humanoid drew one off the edge of the
+// pane, and the grab tolerance above would mean something different for each.
+constexpr float fANIM_POSE_RING_SCREEN_FRACTION = 0.18f;
+
+// The increment the drag angle rounds to while the panel's angle-snap toggle is
+// on, through Flux_GizmosImpl::SnapValue — the SAME pure rounding the entity
+// gizmo snaps with, so a snapped bone and a snapped entity agree.
+constexpr float fANIM_POSE_SNAP_DEGREES = 15.0f;
+
+//-----------------------------------------------------------------------------
+// One ring, projected into preview-image pixels. Closed: the last point repeats
+// the first, so the hit test walks uANIM_POSE_RING_SEGMENTS segments without a
+// wrap-around special case.
+//
+// m_bValid is false when ANY of its points fell behind the camera. A partially
+// projected ring is worse than none: the missing arc is exactly where a mirrored
+// coordinate would land, and hit-testing against it would grab a ring that is
+// not under the cursor.
+//-----------------------------------------------------------------------------
+struct Zenith_AnimPoseRing
+{
+	bool m_bValid = false;
+	Zenith_Maths::Vector2 m_axPoints[uANIM_POSE_RING_SEGMENTS + 1];
+};
+
+struct Zenith_AnimPoseRingSet
+{
+	// The bone's world pivot, projected. In preview-image pixels like the rings.
+	Zenith_Maths::Vector2 m_xPivotPixel = Zenith_Maths::Vector2(0.0f);
+	// World X / Y / Z. WORLD rather than the parent's frame, for Phase 4: the
+	// preview camera orbits the origin and the session model matrix is identity,
+	// so a world ring is the frame the user is actually looking at. A local-space
+	// mode is one call to Zenith_AnimPoseRingBasis away and needs no other change.
+	Zenith_AnimPoseRing m_axRings[3];
+};
+
+// The WORLD axis a ring index names: 0 = X, 1 = Y, 2 = Z. X for anything else.
+Zenith_Maths::Vector3 Zenith_AnimPoseRingAxis(u_int uAxis);
+
+// The right-handed basis the ring is generated in — cross(u, v) == the axis.
+void Zenith_AnimPoseRingBasis(u_int uAxis, Zenith_Maths::Vector3& xOutU, Zenith_Maths::Vector3& xOutV);
+
+// The SIGNED angle in radians from (xFrom - xPivot) to (xTo - xPivot), in
+// (-pi, pi]. Zero when either arm is degenerate, which is the right answer for
+// a cursor sitting exactly on the pivot: there is no direction to measure.
+//
+// ★ THE SIGN IS IN WHATEVER HANDEDNESS THE PIXELS ARE IN, and this function
+// does not care. The panel resolves that once per drag by measuring a step it
+// already knows the world sign of (see the block comment above).
+float Zenith_AnimPoseSignedScreenAngle(const Zenith_Maths::Vector2& xPivot,
+	const Zenith_Maths::Vector2& xFrom, const Zenith_Maths::Vector2& xTo);
+
+// Shortest distance in pixels from (fX, fY) to a ring's projected polyline. A
+// huge value for an invalid ring, so a caller may compare blind.
+float Zenith_AnimPoseDistanceToRing(const Zenith_AnimPoseRing& xRing, float fX, float fY);
+
+// The NEAREST valid ring within fTolerancePixels. False — and uOutAxis
+// UNTOUCHED — when nothing is near enough, matching Zenith_RaycastBonePickSet.
+bool Zenith_AnimPosePickRing(const Zenith_AnimPoseRingSet& xRings, float fX, float fY,
+	float fTolerancePixels, u_int& uOutAxis);
+
+//=============================================================================
 // The panel.
 //=============================================================================
 class Zenith_EditorPanel_Animation
@@ -629,13 +736,69 @@ public:
 	bool Action_SetKeyForBones(const Zenith_Vector<u_int>& xBoneIndices, bool bRotation, bool bTranslationForRoot);
 	bool Action_SetKeyForSelectedBone();
 
+	// Rotation AND translation for the selected bone, refused unless it is a
+	// ROOT. Its own verb rather than a flag on the one above because writing a
+	// translation is a decision the author makes explicitly (design note §5.1) —
+	// the first key on a channel changes that bone across the whole clip.
+	bool Action_SetKeyTranslationForRoot();
+
+	// True iff the value CHANGED, matching Action_SetEmitEventsOnScrub: setting
+	// a toggle to what it already is pushes nothing and reports nothing.
 	bool Action_SetAutoKey(bool bEnabled);
 	bool Action_GetAutoKey() const;
+
+	// Rounds a drag's accumulated angle to fANIM_POSE_SNAP_DEGREES while on.
+	// Panel state, not session state: it is a property of the MANIPULATOR (which
+	// lives here) rather than of the preview, unlike auto-key, which the session
+	// owns because the IK bake and a future second panel both read it.
+	bool Action_SetPoseAngleSnap(bool bEnabled);
+	bool Action_GetPoseAngleSnap() const;
 
 	// The drag primitive: apply a WORLD-space rotation delta to the selected
 	// bone's LOCAL rotation. The conjugation into the parent's frame is
 	// WU-4.2's Zenith_BoneSpace; this is the verb that calls it.
+	//
+	// A ONE-SHOT, applied to the bone's CURRENT rotation and committed
+	// immediately — what the automation verb and a keyboard nudge want. It goes
+	// through the session's Begin/Update/EndBoneDrag bracket anyway, because
+	// those are what suspend clip evaluation, bring model space current (§3.2)
+	// and raise the unkeyed-pose flag; a second write path would honour none of
+	// the three. Refused while a POINTER drag is live, which owns the same bone.
 	bool Action_RotateSelectedBoneWorld(const Zenith_Maths::Quat& xWorldDelta);
+
+	//------------------------------------------------------------------------
+	// The pointer drag, in preview-image pixels (§4.3 / §4.4).
+	//
+	// ★ ONE DRAG IS ONE UNDO STEP, however many frames it spanned, and the
+	// intermediate frames are not on the stack at all. Nothing is written to
+	// the document between Begin and End: the live pose is the session's, is
+	// never undoable and is never serialized, and the KEY — if auto-key is on
+	// and the drag actually moved — is written ONCE on release through
+	// Action_SetKeyForBones, inside one compound. This is
+	// Zenith_Editor::RecordGizmoDragUndo's shape, including its "a click that
+	// never moved records nothing".
+	//
+	// ★ WITH AUTO-KEY OFF A RELEASE WRITES NOTHING AND THAT IS NOT SILENT. The
+	// pose is live-but-unkeyed (Session().HasUnkeyedPose()), the preview pane
+	// says so, and the next Seek re-evaluates from the clip and discards it.
+	// Making the drag itself undoable was rejected: an undo entry restoring a
+	// pose the document never contained is a lie about what was saved.
+	//------------------------------------------------------------------------
+
+	// Grab the nearest ring under the pixel and latch the bone's rotation.
+	// False when no ring is within fANIM_POSE_RING_GRAB_PIXELS, when no bone is
+	// selected, without a rendered frame, or when a drag is already in flight.
+	bool Action_BeginBoneDragAtPixel(float fPixelX, float fPixelY);
+	// Accumulate the pivot-relative screen angle and rewrite the live pose from
+	// the LATCHED initial rotation. False when no drag is in flight.
+	bool Action_UpdateBoneDragToPixel(float fPixelX, float fPixelY);
+	// End it, writing the key when auto-key is on AND the drag moved. True iff a
+	// drag was in flight; whether a key was written is visible on the undo stack
+	// and in Session().HasUnkeyedPose(), which is where a test should look.
+	bool Action_EndBoneDrag();
+	// Escape: put the bone back where the drag found it and end it. Nothing
+	// reaches the document, so there is nothing to undo.
+	bool Action_CancelBoneDrag();
 
 	// Solve a transient chain from the selected bone and its two ancestors to a
 	// model-space target, then bake the result down to keys through
@@ -678,6 +841,26 @@ public:
 	// that only exists on a graphics driver would force every unit that touches
 	// them to be requiresGraphics (i.e. skipped-as-passed, i.e. rotting).
 	bool GetPreviewImageRect(Zenith_AnimPanelRect& xOut) const;
+
+	// The three rotation rings for the SELECTED bone, projected into
+	// preview-image pixels. False without a session, a bone selection, a
+	// rendered frame or a pivot in front of the camera.
+	//
+	// ★ COMPUTED ON DEMAND RATHER THAN CACHED BY THE DRAW. The overlay, the hit
+	// test and a unit all ask this one function, so "where the ring was painted"
+	// and "where a click lands on it" cannot be two derivations that drift — the
+	// same mistake the bone overlay avoids by drawing straight from the pick set.
+	bool GetPoseRingSet(Zenith_AnimPoseRingSet& xOut) const;
+
+	// Live manipulator state, so a test can tell "the ring was never grabbed"
+	// apart from "the drag ran and produced no rotation".
+	bool IsBonePoseDragActive() const { return m_bPoseDragActive; }
+	u_int GetPoseDragAxis() const { return m_bPoseDragActive ? m_uPoseDragAxis : uINVALID_ANIM_POSE_RING; }
+	// The ACCUMULATED, UNSNAPPED angle in radians. The applied one is this
+	// rounded by Action_GetPoseAngleSnap; both are worth seeing separately when a
+	// snapped drag looks like it did nothing.
+	float GetPoseDragAngleRadians() const { return m_fPoseDragAngleRadians; }
+	u_int GetPoseHoverRingAxis() const { return m_uPoseHoverAxis; }
 
 	//------------------------------------------------------------------------
 	// Operation diagnostics — UNGATED, for the same reason the rect
@@ -905,6 +1088,25 @@ private:
 	// painted over the image: a line along the bone's capsule and a circle at the
 	// joint it moves. Draw-list only — it is a decoration, not an item.
 	void DrawBoneOverlay(ImDrawList* pxDraw);
+
+	//-------------------------------------------------------------------------
+	// The bone manipulator — Zenith_EditorPanel_Animation_Pose.cpp. The drawing
+	// half is a DECORATION like everything else painted over the pane.
+	//-------------------------------------------------------------------------
+
+	// Returns TRUE when the manipulator owns this frame's gesture, which is what
+	// keeps a press on a ring from also re-picking a bone or orbiting the camera.
+	bool HandlePoseManipulatorInput(bool bImageHovered);
+	void DrawPoseManipulator(ImDrawList* pxDraw);
+	// Set Key / Auto-key / Angle snap. Its own toolbar LINE, for the reason
+	// RenderEventToolbar has one: the first row already runs wider than a 900 px
+	// window and a SameLine past the edge is a control nobody can reach.
+	void RenderPoseToolbar();
+	// Turn m_fPoseDragAngleRadians (snapped or not) into the live pose. ★ ALWAYS
+	// FROM THE LATCHED INITIAL ROTATION, never from the previous frame's output:
+	// one delta applied to a fixed value cannot drift, and feeding the output
+	// back in would accumulate both the float error and the snap's rounding.
+	void ApplyPoseDragAngle();
 	void RenderSheet();
 	void HandleViewInput(const SheetLayout& xLayout, bool bCanvasHovered);
 	void ApplyPendingScrolls(const SheetLayout& xLayout);
@@ -1106,6 +1308,39 @@ private:
 	// reverses, because "the last thing that fired" is index 0 to a reader.
 	Zenith_Vector<std::string> m_astrEmittedEvents;
 	u_int m_uEmittedEventTotal = 0;
+
+	//-------------------------------------------------------------------------
+	// The bone manipulator (WU-4.3).
+	//
+	// ★ THE SAME "PREVIEW, THEN COMMIT" SHAPE as the key drag, the duration
+	// handle and the event drag — with the one difference that what is previewed
+	// here is a LIVE POSE on the session rather than a ghost drawn beside the
+	// real thing. It is still true that nothing reaches the document until the
+	// button comes up.
+	//-------------------------------------------------------------------------
+	bool m_bPoseDragActive = false;
+	u_int m_uPoseDragAxis = 0u;
+	// ★ +1 or -1, RESOLVED ONCE AT DRAG START and frozen for the gesture, the way
+	// the entity gizmo freezes its drag axis. It maps "the direction the cursor
+	// went round the pivot on screen" onto "the sign of the world rotation", and
+	// it is MEASURED (from the projected step between ring points 0 and 1) rather
+	// than derived — a derivation would have to be right about the projection's
+	// handedness, the Vulkan Y flip and which side of the pivot the camera is on.
+	float m_fPoseDragScreenSign = 1.0f;
+	Zenith_Maths::Vector2 m_xPoseDragPivotPixel = Zenith_Maths::Vector2(0.0f);
+	Zenith_Maths::Vector2 m_xPoseDragLastPixel = Zenith_Maths::Vector2(0.0f);
+	// Accumulated per frame from small steps rather than measured from the press
+	// pixel, so a drag past half a turn keeps going instead of folding back
+	// through the atan2 branch cut.
+	float m_fPoseDragAngleRadians = 0.0f;
+	bool m_bPoseDragMoved = false;
+	// ★ WAS THE POSE ALREADY UNKEYED WHEN THIS DRAG STARTED. A cancel (and a
+	// drag that never moved) must put the badge back the way it found it: the
+	// session raises the flag on every live write, so clearing it unconditionally
+	// would hide an EARLIER unkeyed edit that is still in the pose.
+	bool m_bPoseWasUnkeyedAtDragStart = false;
+	u_int m_uPoseHoverAxis = uINVALID_ANIM_POSE_RING;
+	bool m_bPoseAngleSnap = false;
 };
 
 #endif // ZENITH_TOOLS

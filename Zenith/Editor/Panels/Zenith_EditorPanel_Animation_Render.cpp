@@ -158,6 +158,9 @@ void Zenith_EditorPanel_Animation::Render(float fDtSeconds)
 
 	RenderToolbar();
 	RenderEventToolbar();
+	// WU-4.3's line — Set Key / Auto-key / Angle snap. Drawn in
+	// Zenith_EditorPanel_Animation_Pose.cpp, beside the manipulator it drives.
+	RenderPoseToolbar();
 	RenderBanners();
 	RenderPreviewPane();
 	RenderEventInspector();
@@ -677,8 +680,19 @@ void Zenith_EditorPanel_Animation::RenderPreviewPane()
 	m_xPreviewImageRect.m_fMaxY = xImageMax.y;
 	m_bPreviewImageRectValid = true;
 
-	HandlePreviewPaneInput(ImGui::IsItemHovered());
+	// ★ THE MANIPULATOR GETS THE GESTURE FIRST, and only what it declines reaches
+	// the pick / orbit handler. A press on a rotation ring that also re-selected
+	// whatever bone the ray passed through and started an orbit is the classic
+	// "the gizmo moves the camera" bug, and the two handlers cannot both own a
+	// mouse-down. (WU-4.3, Zenith_EditorPanel_Animation_Pose.cpp.)
+	const bool bPreviewImageHovered = ImGui::IsItemHovered();
+	if (!HandlePoseManipulatorInput(bPreviewImageHovered))
+	{
+		HandlePreviewPaneInput(bPreviewImageHovered);
+	}
 	DrawBoneOverlay(ImGui::GetWindowDrawList());
+	// Over the bone lines, so a ring is never hidden by the segment it turns.
+	DrawPoseManipulator(ImGui::GetWindowDrawList());
 
 	ImGui::SameLine();
 	ImGui::BeginGroup();
@@ -1911,6 +1925,14 @@ void Zenith_EditorPanel_Animation::HandleSheetKeyboard()
 	if (ImGui::IsKeyPressed(ImGuiKey_Delete, false))
 	{
 		Action_DeleteSelection();
+	}
+
+	// K — Set Key for the selected bone (WU-4.3). Unmodified, like Delete, and
+	// scoped to this window's focus for the same reason: a K typed in the console
+	// must not write a keyframe.
+	if (!xIO.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_K, false))
+	{
+		Action_SetKeyForSelectedBone();
 	}
 
 	if (!xIO.KeyCtrl)

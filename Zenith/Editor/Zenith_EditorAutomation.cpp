@@ -837,6 +837,64 @@ void Zenith_EditorAutomation::AddStep_AnimExpectSelectedCount(int iExpectedCount
 	m_axActions.PushBack(xAction);
 }
 
+// ---- Animation POSE authoring steps (WU-4.3) ----
+// The payload contract for the ANIM_POSE block, in one place so the executor
+// reads it from one place too: aiArgs[0] is the BONE INDEX, afArgs[0..2] the
+// rotation AXIS, afArgs[3] the angle in DEGREES, afArgs[0..3] the expected
+// quaternion in SERIALIZED (x, y, z, w) order on the assertion step with
+// afArgs[4] its tolerance, and bArg the auto-key flag.
+//
+// ★ A BONE INDEX, NOT A NAME, and that is the opposite choice from the key
+// verbs above (which take a bone NAME and a key INDEX). A key index is unstable
+// because a retime reorders a track; a bone index is not — the skeleton's bone
+// order is fixed by the asset, it is what Zenith_AnimationPreviewSession's
+// selection and pick set both speak, and a rig swap that changes it drops the
+// selection outright rather than retargeting it.
+
+void Zenith_EditorAutomation::AddStep_AnimSetKeyForSelectedBone() { Push(Zenith_EditorAutomation::m_axActions, ActionType::ANIM_POSE_SET_KEY_FOR_SELECTED_BONE); }
+
+void Zenith_EditorAutomation::AddStep_AnimSelectBone(int iBoneIndex)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::ANIM_POSE_SELECT_BONE;
+	xAction.m_aiArgs[0] = iBoneIndex;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimRotateSelectedBoneWorld(float fAxisX, float fAxisY, float fAxisZ,
+	float fAngleDegrees)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::ANIM_POSE_ROTATE_SELECTED_BONE_WORLD;
+	xAction.m_afArgs[0] = fAxisX;
+	xAction.m_afArgs[1] = fAxisY;
+	xAction.m_afArgs[2] = fAxisZ;
+	xAction.m_afArgs[3] = fAngleDegrees;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimSetAutoKey(bool bEnabled)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::ANIM_POSE_SET_AUTO_KEY;
+	xAction.m_bArg = bEnabled;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimExpectBoneLocalRotation(int iBoneIndex, float fX, float fY, float fZ,
+	float fW, float fTolerance)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::ANIM_POSE_EXPECT_BONE_LOCAL_ROTATION;
+	xAction.m_aiArgs[0] = iBoneIndex;
+	xAction.m_afArgs[0] = fX;
+	xAction.m_afArgs[1] = fY;
+	xAction.m_afArgs[2] = fZ;
+	xAction.m_afArgs[3] = fW;
+	xAction.m_afArgs[4] = fTolerance;
+	m_axActions.PushBack(xAction);
+}
+
 void Zenith_EditorAutomation::AddStep_GraphSelectNode(const char* szTypeName, int iOccurrence)
 {
 	Zenith_EditorAction xAction = {};
@@ -2796,6 +2854,107 @@ static void ExecuteAnimationAction(const Zenith_EditorAction& xAction)
 	}
 }
 
+//-----------------------------------------------------------------------------
+// Animation POSE authoring (WU-4.3): ANIM_POSE_SELECT_BONE ..
+// ANIM_POSE_EXPECT_BONE_LOCAL_ROTATION.
+//-----------------------------------------------------------------------------
+static void ExecuteAnimationPoseAction(const Zenith_EditorAction& xAction)
+{
+	Zenith_EditorPanel_Animation& xPanel = Zenith_EditorPanel_Animation::Instance();
+
+	switch (xAction.m_eType)
+	{
+	case Zenith_EditorActionType::ANIM_POSE_SELECT_BONE:
+		AnimActionChecked(xPanel.Action_SelectBone(static_cast<u_int>(xAction.m_aiArgs[0])),
+			"AnimSelectBone", nullptr);
+		break;
+
+	case Zenith_EditorActionType::ANIM_POSE_ROTATE_SELECTED_BONE_WORLD:
+	{
+		// ★ NO glm ON THIS PATH. A pose authored at boot is SERIALIZED, and
+		// glm::angleAxis is a header inline whose floating-point model comes from
+		// its own definition point — the Debug and Release tools builds then
+		// disagree in the last bit or two and the tracked .zanim ping-pongs in
+		// `git status` forever, invisibly to every tolerance-based guard (see
+		// Editor/CLAUDE.md and ZM-D-183). Zenith_Maths::AuthoringRotation{X,Y,Z}
+		// are single non-inline definitions under the pinned model, and they
+		// cover exactly the three cardinal axes — so a non-cardinal axis is
+		// refused here rather than quietly computed the unpinned way.
+		const float fRadians = Zenith_Maths::AuthoringRadians(xAction.m_afArgs[3]);
+		const bool bAxisX = (xAction.m_afArgs[0] == 1.0f) && (xAction.m_afArgs[1] == 0.0f) && (xAction.m_afArgs[2] == 0.0f);
+		const bool bAxisY = (xAction.m_afArgs[0] == 0.0f) && (xAction.m_afArgs[1] == 1.0f) && (xAction.m_afArgs[2] == 0.0f);
+		const bool bAxisZ = (xAction.m_afArgs[0] == 0.0f) && (xAction.m_afArgs[1] == 0.0f) && (xAction.m_afArgs[2] == 1.0f);
+		Zenith_Assert(bAxisX || bAxisY || bAxisZ,
+			"EditorAutomation AnimRotateSelectedBoneWorld: the axis must be cardinal (1,0,0)/(0,1,0)/(0,0,1), got (%.3f, %.3f, %.3f) - see the header",
+			xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2]);
+
+		Zenith_Maths::Quat xDelta(1.0f, 0.0f, 0.0f, 0.0f);
+		if (bAxisX)      { xDelta = Zenith_Maths::AuthoringRotationX(fRadians); }
+		else if (bAxisY) { xDelta = Zenith_Maths::AuthoringRotationY(fRadians); }
+		else if (bAxisZ) { xDelta = Zenith_Maths::AuthoringRotationZ(fRadians); }
+
+		AnimActionChecked((bAxisX || bAxisY || bAxisZ) && xPanel.Action_RotateSelectedBoneWorld(xDelta),
+			"AnimRotateSelectedBoneWorld", nullptr);
+		break;
+	}
+
+	case Zenith_EditorActionType::ANIM_POSE_SET_KEY_FOR_SELECTED_BONE:
+		AnimActionChecked(xPanel.Action_SetKeyForSelectedBone(), "AnimSetKeyForSelectedBone", nullptr);
+		break;
+
+	case Zenith_EditorActionType::ANIM_POSE_SET_AUTO_KEY:
+		// NOT AnimActionChecked: the action reports whether the value CHANGED, and
+		// setting auto-key to what it already is asks for the state the recipe
+		// wanted and gets it. Asserting on `false` here would fail a recipe that
+		// merely stated its assumption twice.
+		xPanel.Action_SetAutoKey(xAction.m_bArg);
+		Zenith_Assert(xPanel.Action_GetAutoKey() == xAction.m_bArg,
+			"EditorAutomation AnimSetAutoKey: auto-key did not take");
+		break;
+
+	case Zenith_EditorActionType::ANIM_POSE_EXPECT_BONE_LOCAL_ROTATION:
+	{
+		const u_int uBone = static_cast<u_int>(xAction.m_aiArgs[0]);
+		// Two asserts rather than one, for the same reason AnimExpectKeyTime has
+		// two: "the rig has no such bone" and "the bone is at the wrong rotation"
+		// are different mistakes and a combined message would print an identity
+		// quaternion for the first.
+		const bool bResolved = xPanel.Session().IsOpen() && uBone < xPanel.Session().GetBoneCount();
+		AnimActionChecked(bResolved, "AnimExpectBoneLocalRotation (no such bone)", nullptr);
+		if (bResolved)
+		{
+			const Zenith_Maths::Quat xActual = xPanel.Session().GetBoneLocalRotation(uBone);
+			const float fTolerance = xAction.m_afArgs[4];
+			// ★ COMPARED AS (x, y, z, w) AND AS ITS NEGATION. q and -q are the SAME
+			// rotation, and every quaternion product is free to return either — a
+			// component-wise compare that did not allow the sign flip would fail on
+			// a pose that is exactly right.
+			const float fDx = xActual.x - xAction.m_afArgs[0];
+			const float fDy = xActual.y - xAction.m_afArgs[1];
+			const float fDz = xActual.z - xAction.m_afArgs[2];
+			const float fDw = xActual.w - xAction.m_afArgs[3];
+			const float fSx = xActual.x + xAction.m_afArgs[0];
+			const float fSy = xActual.y + xAction.m_afArgs[1];
+			const float fSz = xActual.z + xAction.m_afArgs[2];
+			const float fSw = xActual.w + xAction.m_afArgs[3];
+			const bool bSame = std::fabs(fDx) <= fTolerance && std::fabs(fDy) <= fTolerance
+				&& std::fabs(fDz) <= fTolerance && std::fabs(fDw) <= fTolerance;
+			const bool bNegated = std::fabs(fSx) <= fTolerance && std::fabs(fSy) <= fTolerance
+				&& std::fabs(fSz) <= fTolerance && std::fabs(fSw) <= fTolerance;
+			Zenith_Assert(bSame || bNegated,
+				"EditorAutomation AnimExpectBoneLocalRotation(bone %u): expected (%.6f, %.6f, %.6f, %.6f), found (%.6f, %.6f, %.6f, %.6f) (tolerance %.6f)",
+				uBone, xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2], xAction.m_afArgs[3],
+				xActual.x, xActual.y, xActual.z, xActual.w, fTolerance);
+		}
+		break;
+	}
+
+	default:
+		Zenith_Assert(false, "Non-pose action routed to ExecuteAnimationPoseAction");
+		break;
+	}
+}
+
 // Particle field edits (SET_PARTICLE_CONFIG .. SET_PARTICLE_EMITTING).
 static void ExecuteParticleAction(const Zenith_EditorAction& xAction)
 {
@@ -3162,6 +3321,17 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 		xAction.m_eType <= Zenith_EditorActionType::ANIM_EXPECT_SELECTED_COUNT)
 	{
 		ExecuteAnimationAction(xAction);
+		return;
+	}
+
+	// Animation POSE authoring (WU-4.3). A SECOND range immediately after the one
+	// above rather than four more members of it: appending into that block would
+	// move ANIM_EXPECT_SELECTED_COUNT, which is the bound the line above and the
+	// header's static_assert both compare against.
+	if (xAction.m_eType >= Zenith_EditorActionType::ANIM_POSE_SELECT_BONE &&
+		xAction.m_eType <= Zenith_EditorActionType::ANIM_POSE_EXPECT_BONE_LOCAL_ROTATION)
+	{
+		ExecuteAnimationPoseAction(xAction);
 		return;
 	}
 

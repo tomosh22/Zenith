@@ -319,6 +319,22 @@ enum class Zenith_EditorActionType
 	ANIM_EXPECT_KEY_TIME,
 	ANIM_EXPECT_SELECTED_COUNT,	// END of the contiguous ANIM range (see ANIM_OPEN_CLIP)
 
+	// Animation POSE authoring (WU-4.3). Its own block rather than four more
+	// members of the one above, because appending into that block would move
+	// ANIM_EXPECT_SELECTED_COUNT — which is the upper bound BOTH the router's
+	// range test and the header's static_assert compare against, and which the
+	// `Automation, AnimEnumBlockIsContiguous` unit pins by position. A second
+	// contiguous block costs one more range test and moves nothing.
+	//
+	// NOTE: this block must stay CONTIGUOUS (ExecuteAction routes the whole
+	// range to ExecuteAnimationPoseAction by a pair of comparisons against its
+	// first and last member).
+	ANIM_POSE_SELECT_BONE,
+	ANIM_POSE_ROTATE_SELECTED_BONE_WORLD,
+	ANIM_POSE_SET_KEY_FOR_SELECTED_BONE,
+	ANIM_POSE_SET_AUTO_KEY,
+	ANIM_POSE_EXPECT_BONE_LOCAL_ROTATION,	// END of the contiguous ANIM_POSE range (see ANIM_POSE_SELECT_BONE)
+
 	// NavMesh. Deliberately NOT appended to the Terrain block above, which is
 	// routed by a range comparison: a standalone action sits outside every
 	// range and reaches ExecuteAction's own switch, which is what a
@@ -362,6 +378,14 @@ static_assert(static_cast<int>(Zenith_EditorActionType::TERRAIN_EDITOR_SET_DIMEN
 static_assert(static_cast<int>(Zenith_EditorActionType::ANIM_EXPECT_SELECTED_COUNT) -
 	static_cast<int>(Zenith_EditorActionType::ANIM_OPEN_CLIP) == 15,
 	"the ANIM block must stay CONTIGUOUS and sixteen wide — ExecuteAction routes it by range");
+// And the same pin for the ANIM_POSE block (WU-4.3), which sits immediately
+// after it and is routed by its own pair of comparisons. This is the WIDTH; the
+// `Automation, AnimPoseEnumBlockIsContiguous` unit pins each member's POSITION,
+// so a reorder that preserves the width fails there naming the member that moved
+// rather than at boot inside ExecuteAnimationAction's `default:` assert.
+static_assert(static_cast<int>(Zenith_EditorActionType::ANIM_POSE_EXPECT_BONE_LOCAL_ROTATION) -
+	static_cast<int>(Zenith_EditorActionType::ANIM_POSE_SELECT_BONE) == 4,
+	"the ANIM_POSE block must stay CONTIGUOUS and five wide — ExecuteAction routes it by range");
 
 //-----------------------------------------------------------------------------
 // Action Data
@@ -996,6 +1020,43 @@ void AddStep_AnimRedo();
 void AddStep_AnimExpectKeyTime(const char* szBone, int iTrack, int iKeyIndex,
 	float fExpectedSeconds, float fToleranceSeconds);
 void AddStep_AnimExpectSelectedCount(int iExpectedCount);
+
+	//--------------------------------------------------------------------------
+	// Animation POSE authoring (WU-4.3), the ANIM_POSE_* block.
+	//
+	// The same shape as the dope-sheet verbs above and for the same reasons: one
+	// step per atomic Zenith_EditorPanel_Animation Action_*, each routed through
+	// the checked wrapper so an authoring typo (a bone index the rig does not
+	// have, a rotate with nothing selected) fires at BOOT on the step that is
+	// wrong rather than leaving a pose that is quietly not what the recipe said.
+	//
+	// A typical sequence:
+	//   AnimOpenClip -> AnimSelectBone(1) -> AnimRotateSelectedBoneWorld(0,1,0, 30)
+	//   -> AnimSetKeyForSelectedBone() -> AnimExpectBoneLocalRotation(1, x,y,z,w, 1e-4)
+	//
+	// ★ THE ROTATION AXIS MUST BE CARDINAL, and that is an FP-determinism rule
+	// rather than a scope limit (Editor/CLAUDE.md, *AUTHORED ROTATIONS THAT LAND
+	// IN A COMMITTED SCENE*). A pose authored at boot is SERIALIZED, and
+	// glm::angleAxis is a header inline that takes its floating-point model from
+	// its own definition point — so a Debug and a Release tools build disagree in
+	// the last bit or two and the tracked .zanim ping-pongs in `git status`
+	// forever, under every tolerance-based guard. Zenith_Maths::AuthoringRotationX
+	// / Y / Z are single non-inline definitions compiled under the pinned model
+	// and cover exactly the three cardinal axes, so a non-cardinal axis is
+	// REFUSED by the executor rather than silently computed the other way.
+	//--------------------------------------------------------------------------
+void AddStep_AnimSelectBone(int iBoneIndex);
+	// (fAxisX, fAxisY, fAxisZ) must be one of (1,0,0) / (0,1,0) / (0,0,1) — see
+	// above. The angle is in DEGREES, converted with Zenith_Maths::AuthoringRadians.
+void AddStep_AnimRotateSelectedBoneWorld(float fAxisX, float fAxisY, float fAxisZ, float fAngleDegrees);
+void AddStep_AnimSetKeyForSelectedBone();
+void AddStep_AnimSetAutoKey(bool bEnabled);
+	// An ASSERTION step. (fX, fY, fZ, fW) are in SERIALIZED order, deliberately
+	// not glm::quat's (w, x, y, z) constructor order, matching
+	// AddStep_SetTransformRotationQuat — so a caller freezing a value read out of
+	// a file types it in the order the file has it.
+void AddStep_AnimExpectBoneLocalRotation(int iBoneIndex, float fX, float fY, float fZ, float fW,
+	float fTolerance);
 
 	//--------------------------------------------------------------------------
 	// Scene Loading Step Helpers

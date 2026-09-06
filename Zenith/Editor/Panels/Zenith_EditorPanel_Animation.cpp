@@ -817,51 +817,14 @@ bool Zenith_EditorPanel_Animation::Action_PickBoneAtPreviewPixel(float fPixelX, 
 }
 
 //-----------------------------------------------------------------------------
-// Declared here, filled elsewhere. Each one returns false and names its owner,
-// so a caller wired up early gets a refusal rather than a silent success.
+// Declared here, filled elsewhere.
+//
+// WU-4.3's half — Set Key, auto-key, the angle snap, the one-shot rotate and
+// the whole pointer drag — now lives in Zenith_EditorPanel_Animation_Pose.cpp,
+// beside the manipulator that drives it. What is left here is WU-4.4's, and it
+// still returns false and names its owner so a caller wired up early gets a
+// refusal rather than a silent success.
 //-----------------------------------------------------------------------------
-
-bool Zenith_EditorPanel_Animation::Action_SetKeyForBones(
-	const Zenith_Vector<u_int>& xBoneIndices, bool bRotation, bool bTranslationForRoot)
-{
-	// WU-4.3 — the ONE key-writing path (design note §5.4).
-	(void)xBoneIndices;
-	(void)bRotation;
-	(void)bTranslationForRoot;
-	return false;
-}
-
-bool Zenith_EditorPanel_Animation::Action_SetKeyForSelectedBone()
-{
-	// WU-4.3 — the toolbar button / S, over Action_SetKeyForBones.
-	return false;
-}
-
-bool Zenith_EditorPanel_Animation::Action_SetAutoKey(bool bEnabled)
-{
-	// WU-4.3 — drives Zenith_AnimationPreviewSession::SetAutoKey, which already
-	// exists; the ACTION is 4.3's because auto-key only means anything once
-	// something writes a key on drag release.
-	(void)bEnabled;
-	return false;
-}
-
-bool Zenith_EditorPanel_Animation::Action_GetAutoKey() const
-{
-	// WU-4.3. Reports false until then, which is also the session's default, so
-	// nothing reads a state the panel is not yet honouring.
-	return false;
-}
-
-bool Zenith_EditorPanel_Animation::Action_RotateSelectedBoneWorld(const Zenith_Maths::Quat& xWorldDelta)
-{
-	// WU-4.3 — the drag primitive. Conjugates the world delta into the bone's
-	// PARENT frame (WU-4.2's Zenith_BoneSpace) before applying it, because q_i is
-	// expressed in that frame; applying a world delta directly is the plausible
-	// wrong answer that is exactly right only at an identity parent.
-	(void)xWorldDelta;
-	return false;
-}
 
 bool Zenith_EditorPanel_Animation::Action_BakeIKForSelectedChain(const Zenith_Maths::Vector3& xTargetModelSpace)
 {
