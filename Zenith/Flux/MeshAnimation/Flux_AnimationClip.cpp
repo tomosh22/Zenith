@@ -1,5 +1,7 @@
 #include "Zenith.h"
 #include "Flux_AnimationClip.h"
+#include "AssetHandling/Zenith_AssetTypeIds.h"
+#include "DataStream/Zenith_StreamEnvelope.h"
 
 #ifdef ZENITH_TOOLS
 #include <assimp/Importer.hpp>
@@ -73,6 +75,45 @@ void Flux_ReadQuatKeys(Zenith_DataStream& xStream, Zenith_Vector<std::pair<Zenit
 }
 
 //=============================================================================
+// Reserved per-key tangent block (D17). Same count+loop shape as the keyframe
+// helpers above: uint32 count, then per entry the in-tangent xyz then the
+// out-tangent xyz. A rotation channel's entries are ANGULAR velocities
+// (axis * rad/s), which is why one Vector3 pair serves all three channel types.
+//=============================================================================
+void Flux_WriteKeyTangents(Zenith_DataStream& xStream, const Zenith_Vector<Flux_KeyTangents>& xTangents)
+{
+	xStream << static_cast<uint32_t>(xTangents.GetSize());
+	for (const Flux_KeyTangents& xTangent : xTangents)
+	{
+		xStream << xTangent.m_xInTangent.x;
+		xStream << xTangent.m_xInTangent.y;
+		xStream << xTangent.m_xInTangent.z;
+		xStream << xTangent.m_xOutTangent.x;
+		xStream << xTangent.m_xOutTangent.y;
+		xStream << xTangent.m_xOutTangent.z;
+	}
+}
+
+void Flux_ReadKeyTangents(Zenith_DataStream& xStream, Zenith_Vector<Flux_KeyTangents>& xTangents)
+{
+	uint32_t uCount = 0;
+	xStream >> uCount;
+	xTangents.Clear();
+	xTangents.Reserve(uCount);
+	for (u_int i = 0; i < uCount; ++i)
+	{
+		Flux_KeyTangents xTangent;
+		xStream >> xTangent.m_xInTangent.x;
+		xStream >> xTangent.m_xInTangent.y;
+		xStream >> xTangent.m_xInTangent.z;
+		xStream >> xTangent.m_xOutTangent.x;
+		xStream >> xTangent.m_xOutTangent.y;
+		xStream >> xTangent.m_xOutTangent.z;
+		xTangents.PushBack(xTangent);
+	}
+}
+
+//=============================================================================
 // Flux_AnimationEvent
 //=============================================================================
 void Flux_AnimationEvent::WriteToDataStream(Zenith_DataStream& xStream) const
@@ -106,6 +147,13 @@ void Flux_AnimationClipMetadata::WriteToDataStream(Zenith_DataStream& xStream) c
 	xStream << m_bLooping;
 	xStream << m_fBlendInTime;
 	xStream << m_fBlendOutTime;
+
+	xStream << m_uAuthoredFrameRate;
+	// Normalized on the way out, exactly like Flux_AnimationClip::m_strSourcePath, so
+	// an absolute authoring-machine path never reaches the file.
+	xStream << Zenith_AssetRegistry::NormalizeAssetPath(m_strSkeletonPath);
+	xStream << Zenith_AssetRegistry::NormalizeAssetPath(m_strPreviewModelPath);
+	xStream << m_bGenerated;
 }
 
 void Flux_AnimationClipMetadata::ReadFromDataStream(Zenith_DataStream& xStream)
@@ -116,6 +164,13 @@ void Flux_AnimationClipMetadata::ReadFromDataStream(Zenith_DataStream& xStream)
 	xStream >> m_bLooping;
 	xStream >> m_fBlendInTime;
 	xStream >> m_fBlendOutTime;
+
+	xStream >> m_uAuthoredFrameRate;
+	xStream >> m_strSkeletonPath;
+	m_strSkeletonPath = Zenith_AssetRegistry::NormalizeAssetPath(m_strSkeletonPath);
+	xStream >> m_strPreviewModelPath;
+	m_strPreviewModelPath = Zenith_AssetRegistry::NormalizeAssetPath(m_strPreviewModelPath);
+	xStream >> m_bGenerated;
 }
 
 //=============================================================================
@@ -220,6 +275,12 @@ Flux_BoneChannel::Flux_BoneChannel(const aiNodeAnim* pxChannel)
 			static_cast<float>(xKey.mTime)
 		);
 	}
+
+	// Assimp carries no tangents, so the reserved block comes in at its zero default
+	// — but it must still be the same length as the keys it parallels.
+	m_xPositionTangents.Resize(m_xPositions.GetSize(), Flux_KeyTangents());
+	m_xRotationTangents.Resize(m_xRotations.GetSize(), Flux_KeyTangents());
+	m_xScaleTangents.Resize(m_xScales.GetSize(), Flux_KeyTangents());
 }
 #endif // ZENITH_TOOLS
 
@@ -365,6 +426,11 @@ void Flux_BoneChannel::WriteToDataStream(Zenith_DataStream& xStream) const
 	Flux_WriteVec3Keys(xStream, m_xPositions);
 	Flux_WriteQuatKeys(xStream, m_xRotations);
 	Flux_WriteVec3Keys(xStream, m_xScales);
+	// Reserved tangent block (D17) — trails the keys so a reader that already knows
+	// the key counts can check the parallel arrays against them.
+	Flux_WriteKeyTangents(xStream, m_xPositionTangents);
+	Flux_WriteKeyTangents(xStream, m_xRotationTangents);
+	Flux_WriteKeyTangents(xStream, m_xScaleTangents);
 }
 
 void Flux_BoneChannel::ReadFromDataStream(Zenith_DataStream& xStream)
@@ -373,29 +439,109 @@ void Flux_BoneChannel::ReadFromDataStream(Zenith_DataStream& xStream)
 	Flux_ReadVec3Keys(xStream, m_xPositions);
 	Flux_ReadQuatKeys(xStream, m_xRotations);
 	Flux_ReadVec3Keys(xStream, m_xScales);
+	Flux_ReadKeyTangents(xStream, m_xPositionTangents);
+	Flux_ReadKeyTangents(xStream, m_xRotationTangents);
+	Flux_ReadKeyTangents(xStream, m_xScaleTangents);
+
+	// The writer can only ever emit matched lengths, so a mismatch here is a corrupt
+	// or mis-cut stream. Say so, then restore the invariant rather than leaving the
+	// channel with arrays that index differently.
+	Zenith_Assert(m_xPositionTangents.GetSize() == m_xPositions.GetSize()
+		&& m_xRotationTangents.GetSize() == m_xRotations.GetSize()
+		&& m_xScaleTangents.GetSize() == m_xScales.GetSize(),
+		"Flux_BoneChannel '%s': reserved tangent block does not parallel the keyframes", m_strBoneName.c_str());
+	m_xPositionTangents.Resize(m_xPositions.GetSize(), Flux_KeyTangents());
+	m_xRotationTangents.Resize(m_xRotations.GetSize(), Flux_KeyTangents());
+	m_xScaleTangents.Resize(m_xScales.GetSize(), Flux_KeyTangents());
 }
 
 void Flux_BoneChannel::AddPositionKeyframe(float fTimeTicks, const Zenith_Maths::Vector3& xPosition)
 {
 	m_xPositions.EmplaceBack(xPosition, fTimeTicks);
+	m_xPositionTangents.PushBack(Flux_KeyTangents());
 }
 
 void Flux_BoneChannel::AddRotationKeyframe(float fTimeTicks, const Zenith_Maths::Quat& xRotation)
 {
 	m_xRotations.EmplaceBack(xRotation, fTimeTicks);
+	m_xRotationTangents.PushBack(Flux_KeyTangents());
 }
 
 void Flux_BoneChannel::AddScaleKeyframe(float fTimeTicks, const Zenith_Maths::Vector3& xScale)
 {
 	m_xScales.EmplaceBack(xScale, fTimeTicks);
+	m_xScaleTangents.PushBack(Flux_KeyTangents());
+}
+
+void Flux_BoneChannel::SetPositionTangent(u_int uKeyIndex, const Flux_KeyTangents& xTangents)
+{
+	Zenith_Assert(uKeyIndex < m_xPositionTangents.GetSize(), "SetPositionTangent: key index %u out of range (%u keys)", uKeyIndex, m_xPositionTangents.GetSize());
+	if (uKeyIndex < m_xPositionTangents.GetSize())
+		m_xPositionTangents.Get(uKeyIndex) = xTangents;
+}
+
+void Flux_BoneChannel::SetRotationTangent(u_int uKeyIndex, const Flux_KeyTangents& xTangents)
+{
+	Zenith_Assert(uKeyIndex < m_xRotationTangents.GetSize(), "SetRotationTangent: key index %u out of range (%u keys)", uKeyIndex, m_xRotationTangents.GetSize());
+	if (uKeyIndex < m_xRotationTangents.GetSize())
+		m_xRotationTangents.Get(uKeyIndex) = xTangents;
+}
+
+void Flux_BoneChannel::SetScaleTangent(u_int uKeyIndex, const Flux_KeyTangents& xTangents)
+{
+	Zenith_Assert(uKeyIndex < m_xScaleTangents.GetSize(), "SetScaleTangent: key index %u out of range (%u keys)", uKeyIndex, m_xScaleTangents.GetSize());
+	if (uKeyIndex < m_xScaleTangents.GetSize())
+		m_xScaleTangents.Get(uKeyIndex) = xTangents;
+}
+
+// Sorting a keyframe array on its own would silently un-pair it from the reserved
+// tangent array that parallels it, so the two are permuted together. The sort is
+// STABLE: two keys sharing a timestamp keep their authored order, which is what
+// keeps a re-serialized clip byte-identical (D5) rather than dependent on
+// std::sort's introsort pivot choices.
+template<typename V>
+static void Flux_SortKeysWithTangents(Zenith_Vector<std::pair<V, float>>& xKeys, Zenith_Vector<Flux_KeyTangents>& xTangents)
+{
+	const u_int uCount = xKeys.GetSize();
+	if (xTangents.GetSize() != uCount)
+	{
+		xTangents.Resize(uCount, Flux_KeyTangents());
+	}
+	if (uCount < 2)
+	{
+		return;
+	}
+
+	Zenith_Vector<u_int> auOrder;
+	auOrder.Reserve(uCount);
+	for (u_int u = 0; u < uCount; ++u)
+	{
+		auOrder.PushBack(u);
+	}
+	std::stable_sort(auOrder.begin(), auOrder.end(),
+		[&xKeys](u_int uA, u_int uB) { return xKeys.Get(uA).second < xKeys.Get(uB).second; });
+
+	Zenith_Vector<std::pair<V, float>> xSortedKeys;
+	Zenith_Vector<Flux_KeyTangents> xSortedTangents;
+	xSortedKeys.Reserve(uCount);
+	xSortedTangents.Reserve(uCount);
+	for (u_int u = 0; u < uCount; ++u)
+	{
+		xSortedKeys.PushBack(xKeys.Get(auOrder.Get(u)));
+		xSortedTangents.PushBack(xTangents.Get(auOrder.Get(u)));
+	}
+	for (u_int u = 0; u < uCount; ++u)
+	{
+		xKeys.Get(u) = xSortedKeys.Get(u);
+		xTangents.Get(u) = xSortedTangents.Get(u);
+	}
 }
 
 void Flux_BoneChannel::SortKeyframes()
 {
-	auto sortByTime = [](const auto& a, const auto& b) { return a.second < b.second; };
-	std::sort(m_xPositions.begin(), m_xPositions.end(), sortByTime);
-	std::sort(m_xRotations.begin(), m_xRotations.end(), sortByTime);
-	std::sort(m_xScales.begin(), m_xScales.end(), sortByTime);
+	Flux_SortKeysWithTangents(m_xPositions, m_xPositionTangents);
+	Flux_SortKeysWithTangents(m_xRotations, m_xRotationTangents);
+	Flux_SortKeysWithTangents(m_xScales,    m_xScaleTangents);
 }
 
 //=============================================================================
@@ -424,6 +570,10 @@ void Flux_AnimationClip::LoadFromAssimp(const aiAnimation* pxAnimation, const ai
 }
 #endif // ZENITH_TOOLS
 
+// D19: Export is PUBLIC and NOT tools-gated — a procedural generator running in a
+// runtime build writes .zanim through it. It is WriteToDataStream + WriteToFile and
+// nothing else, so it inherits the stream envelope from WriteToDataStream; there is
+// no second write path that could emit a headerless file.
 void Flux_AnimationClip::Export(const std::string& strPath) const
 {
 	Zenith_DataStream xStream;
@@ -467,18 +617,42 @@ void Flux_AnimationClip::AddBoneChannel(const std::string& strBoneName, Flux_Bon
 
 void Flux_AnimationClip::WriteToDataStream(Zenith_DataStream& xStream) const
 {
+	// D1: the shared stream envelope leads every typed asset payload. Flux_AnimationClip
+	// is the write half of BOTH .zanim paths — Export() is WriteToDataStream +
+	// WriteToFile — so putting it here is what gives Export the envelope.
+	Zenith_WriteStreamHeader(xStream, uZENITH_ANIMATION_ASSET_TYPE_ID, uZENITH_ANIMATION_SCHEMA_CURRENT);
+
 	// Metadata
 	m_xMetadata.WriteToDataStream(xStream);
 
 	// Source path
 	xStream << Zenith_AssetRegistry::NormalizeAssetPath(m_strSourcePath);
 
-	// Bone channels
-	uint32_t uNumChannels = static_cast<uint32_t>(m_xBoneChannels.GetSize());
-	xStream << uNumChannels;
+	// ★ D5: CHANNELS GO OUT IN BONE-NAME ORDER, NOT HASH ORDER.
+	// Walking m_xBoneChannels directly put the channels on disk in Zenith_HashMap
+	// bucket order, so the same clip built by two different insertion sequences — or
+	// by a build whose hashing or capacity growth differs — serialized to different
+	// bytes for identical animation data. Every .zanim is gitignored bake output
+	// today, which is the only reason that has cost nothing so far; the day one is
+	// committed it becomes churn on every re-bake. This is the same defect .zscen had
+	// with process-global slot indices, and it gets the same fix: impose a total order
+	// the data itself defines.
+	Zenith_Vector<const Flux_BoneChannel*> apxOrderedChannels;
+	apxOrderedChannels.Reserve(m_xBoneChannels.GetSize());
 	for (Zenith_HashMap<std::string, Flux_BoneChannel>::Iterator xIt(m_xBoneChannels); !xIt.Done(); xIt.Next())
 	{
-		xIt.GetValue().WriteToDataStream(xStream);
+		apxOrderedChannels.PushBack(&xIt.GetValue());
+	}
+	std::sort(apxOrderedChannels.begin(), apxOrderedChannels.end(),
+		[](const Flux_BoneChannel* pxA, const Flux_BoneChannel* pxB)
+		{ return pxA->GetBoneName() < pxB->GetBoneName(); });
+
+	// Bone channels
+	uint32_t uNumChannels = static_cast<uint32_t>(apxOrderedChannels.GetSize());
+	xStream << uNumChannels;
+	for (const Flux_BoneChannel* pxChannel : apxOrderedChannels)
+	{
+		pxChannel->WriteToDataStream(xStream);
 	}
 
 	// Events
@@ -493,8 +667,39 @@ void Flux_AnimationClip::WriteToDataStream(Zenith_DataStream& xStream) const
 	m_xRootMotion.WriteToDataStream(xStream);
 }
 
+void Flux_AnimationClip::ResetToEmpty()
+{
+	m_xMetadata = Flux_AnimationClipMetadata();
+	m_xBoneChannels.Clear();
+	m_xEvents.Clear();
+	m_xRootMotion.m_bEnabled = false;
+	m_xRootMotion.m_xPositionDeltas.Clear();
+	m_xRootMotion.m_xRotationDeltas.Clear();
+	m_strSourcePath.clear();
+}
+
 void Flux_AnimationClip::ReadFromDataStream(Zenith_DataStream& xStream)
 {
+	// D1/D2: the envelope is MANDATORY and the schema must be EXACTLY current. There
+	// is no headerless branch and no "read it as current anyway" branch — a .zanim is
+	// bake output, so an older or unrecognised layout is a stale bake to be deleted
+	// and rewritten, not a file to guess at. Zenith_ReadStreamHeader restores the
+	// cursor on every failure path, so a refused stream is handed back untouched.
+	Zenith_Result<Zenith_StreamHeader> xHeader = Zenith_ReadStreamHeader(xStream, uZENITH_ANIMATION_ASSET_TYPE_ID);
+	if (!xHeader.IsOk())
+	{
+		Zenith_Assert(false, "Flux_AnimationClip::ReadFromDataStream: stream carries no valid .zanim envelope");
+		ResetToEmpty();
+		return;
+	}
+	if (xHeader.Value().m_uSchemaVersion != uZENITH_ANIMATION_SCHEMA_CURRENT)
+	{
+		Zenith_Assert(false, "Flux_AnimationClip::ReadFromDataStream: .zanim schema %u is not the current %u — stale bake, delete it and re-run the tools boot",
+			xHeader.Value().m_uSchemaVersion, uZENITH_ANIMATION_SCHEMA_CURRENT);
+		ResetToEmpty();
+		return;
+	}
+
 	// Metadata
 	m_xMetadata.ReadFromDataStream(xStream);
 

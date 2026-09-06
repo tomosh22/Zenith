@@ -33,6 +33,31 @@ void Flux_WriteQuatKeys(Zenith_DataStream& xStream, const Zenith_Vector<std::pai
 void Flux_ReadQuatKeys (Zenith_DataStream& xStream, Zenith_Vector<std::pair<Zenith_Maths::Quat, float>>& xKeys);
 
 //=============================================================================
+// Per-key in/out tangents — RESERVED (decision D17).
+//
+// These are SERIALIZED and round-tripped now so the on-disk layout does not have
+// to move again when curve-interpolated sampling lands; NOTHING SAMPLES THEM YET.
+// Every channel carries one entry per keyframe, kept in lockstep by the channel's
+// Add*Keyframe / SortKeyframes / read paths, and defaulting to zero (which is the
+// "no tangent authored" value a linear sampler would ignore anyway).
+//
+// ★ A ROTATION TANGENT IS AN ANGULAR VELOCITY, NOT A QUATERNION CONTROL POINT.
+// It is a Vector3 in axis * radians-per-second form — the same shape as a position
+// or scale tangent's units-per-second — because the natural derivative of a slerped
+// rotation curve is a body-frame angular velocity. Storing quaternion Bezier control
+// points instead would be four components that only mean anything relative to their
+// own segment's endpoints, and could not be blended or retimed.
+//=============================================================================
+struct Flux_KeyTangents
+{
+	Zenith_Maths::Vector3 m_xInTangent  = Zenith_Maths::Vector3(0.0f);
+	Zenith_Maths::Vector3 m_xOutTangent = Zenith_Maths::Vector3(0.0f);
+};
+
+void Flux_WriteKeyTangents(Zenith_DataStream& xStream, const Zenith_Vector<Flux_KeyTangents>& xTangents);
+void Flux_ReadKeyTangents (Zenith_DataStream& xStream, Zenith_Vector<Flux_KeyTangents>& xTangents);
+
+//=============================================================================
 // Animation Event
 // Callback triggered at specific times during animation playback
 //=============================================================================
@@ -78,6 +103,17 @@ public:
 	const Zenith_Vector<std::pair<Zenith_Maths::Quat, float>>& GetRotationKeyframes() const { return m_xRotations; }
 	const Zenith_Vector<std::pair<Zenith_Maths::Vector3, float>>& GetScaleKeyframes() const { return m_xScales; }
 
+	// RESERVED tangent block (D17). One entry per keyframe of the matching channel,
+	// zero by default. Serialized and round-tripped; NOT sampled — Sample*() is still
+	// pure lerp/slerp.
+	const Zenith_Vector<Flux_KeyTangents>& GetPositionTangents() const { return m_xPositionTangents; }
+	const Zenith_Vector<Flux_KeyTangents>& GetRotationTangents() const { return m_xRotationTangents; }
+	const Zenith_Vector<Flux_KeyTangents>& GetScaleTangents()    const { return m_xScaleTangents; }
+
+	void SetPositionTangent(u_int uKeyIndex, const Flux_KeyTangents& xTangents);
+	void SetRotationTangent(u_int uKeyIndex, const Flux_KeyTangents& xTangents);
+	void SetScaleTangent   (u_int uKeyIndex, const Flux_KeyTangents& xTangents);
+
 	void WriteToDataStream(Zenith_DataStream& xStream) const;
 	void ReadFromDataStream(Zenith_DataStream& xStream);
 
@@ -108,6 +144,11 @@ private:
 	Zenith_Vector<std::pair<Zenith_Maths::Vector3, float>> m_xPositions;
 	Zenith_Vector<std::pair<Zenith_Maths::Quat, float>> m_xRotations;
 	Zenith_Vector<std::pair<Zenith_Maths::Vector3, float>> m_xScales;
+
+	// RESERVED (D17) — parallel to the three keyframe arrays above, same size.
+	Zenith_Vector<Flux_KeyTangents> m_xPositionTangents;
+	Zenith_Vector<Flux_KeyTangents> m_xRotationTangents;  // ANGULAR velocity (axis * rad/s)
+	Zenith_Vector<Flux_KeyTangents> m_xScaleTangents;
 };
 
 //=============================================================================
@@ -121,6 +162,29 @@ struct Flux_AnimationClipMetadata
 	bool m_bLooping = true;          // Does this clip loop?
 	float m_fBlendInTime = 0.15f;    // Default blend-in duration
 	float m_fBlendOutTime = 0.15f;   // Default blend-out duration
+
+	// D6: the frame rate the clip was AUTHORED at, in frames per second. This is
+	// editorial intent (what a key grid snaps to, what a re-bake should resample to)
+	// and is deliberately NOT m_uTicksPerSecond, which is the tick->second divisor the
+	// keyframe timestamps are already expressed in.
+	uint32_t m_uAuthoredFrameRate = 30;
+
+	// D7: the RIG this clip animates, and a model to preview it on. Both are asset
+	// paths normalized through Zenith_AssetRegistry::NormalizeAssetPath on the way in
+	// and out of the stream, exactly like Flux_AnimationClip::m_strSourcePath.
+	//
+	// ★ m_strSourcePath IS NOT THE RIG. It is the .glb / FBX the clip was IMPORTED
+	// from — a provenance breadcrumb that is empty for every procedurally generated
+	// clip — so overloading it as the skeleton reference would make a generated clip
+	// unable to name its own rig and would silently retarget an imported one onto its
+	// source file. These are separate fields on purpose.
+	std::string m_strSkeletonPath;
+	std::string m_strPreviewModelPath;
+
+	// D8: true when the clip was produced by a generator rather than imported from an
+	// authored source file. A generated clip is rewritten in full on every tools boot,
+	// so this is what tells a consumer that editing it in place is pointless.
+	bool m_bGenerated = false;
 
 	void WriteToDataStream(Zenith_DataStream& xStream) const;
 	void ReadFromDataStream(Zenith_DataStream& xStream);
@@ -206,6 +270,11 @@ public:
 	void ReadFromDataStream(Zenith_DataStream& xStream);
 
 private:
+	// A refused read (no envelope / not the current schema) must not leave a
+	// half-parsed clip behind — the caller gets an EMPTY clip, the same contract the
+	// navmesh reader has.
+	void ResetToEmpty();
+
 	Flux_AnimationClipMetadata m_xMetadata;
 	Zenith_HashMap<std::string, Flux_BoneChannel> m_xBoneChannels;
 	Zenith_Vector<Flux_AnimationEvent> m_xEvents;

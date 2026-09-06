@@ -8,15 +8,19 @@
 // envelope identity (Zenith_StreamEnvelope's uAssetTypeId) and the current
 // on-disk payload schema version of each typed binary asset.
 //
-// Every typed binary asset (.ztxtr / .zmtrl / .zmesh / .zskel / .zmodel) prefixes
-// its DataStream payload with a Zenith_StreamHeader (magic + envelope version +
-// THIS asset-type-id + THIS schema version). The reader validates the id (a
-// mismatch is a wrong-type file) and takes the schema from the header. Legacy
-// pre-envelope (headerless) files still load: Zenith_ReadStreamHeader returns
-// BAD_MAGIC and restores the cursor so the old bare-version-word layout reads.
+// Every typed binary asset (.ztxtr / .zmtrl / .zmesh / .zskel / .zmodel / .zanim)
+// prefixes its DataStream payload with a Zenith_StreamHeader (magic + envelope
+// version + THIS asset-type-id + THIS schema version). The reader validates the id
+// (a mismatch is a wrong-type file) and takes the schema from the header.
 //
-// Bumping a *_SCHEMA_CURRENT means the payload layout changed — add a legacy read
-// branch keyed on the older schema value; never repurpose an existing id.
+// THE ENVELOPE IS MANDATORY AND THERE IS NO LEGACY BRANCH (ruling 2026-08-31, see
+// Zenith_StreamEnvelope.cpp): a stream carrying no envelope is REFUSED, and so is a
+// payload whose schema is not this file's *_SCHEMA_CURRENT. Every asset file is
+// regenerable bake output, so an older layout is a stale bake — delete it and let
+// the tools boot rewrite it.
+//
+// Bumping a *_SCHEMA_CURRENT means the payload layout changed; never repurpose an
+// existing id.
 // The generic .zdata path (serializable data assets) is SEPARATE: it has its own
 // ZDATA magic + string type name and does NOT use these ids.
 // ============================================================================
@@ -27,6 +31,7 @@ inline constexpr u_int uZENITH_MATERIAL_ASSET_TYPE_ID = 2;
 inline constexpr u_int uZENITH_MESH_ASSET_TYPE_ID     = 3;
 inline constexpr u_int uZENITH_SKELETON_ASSET_TYPE_ID = 4;
 inline constexpr u_int uZENITH_MODEL_ASSET_TYPE_ID    = 5;
+inline constexpr u_int uZENITH_ANIMATION_ASSET_TYPE_ID = 6;  // .zanim (Flux_AnimationClip)
 
 // Current on-disk payload schema versions (carried verbatim from each asset's
 // historical version constant, so no schema bump / no byte-layout change).
@@ -35,3 +40,6 @@ inline constexpr u_int uZENITH_MATERIAL_SCHEMA_CURRENT = 5;
 inline constexpr u_int uZENITH_MESH_SCHEMA_CURRENT     = 1;
 inline constexpr u_int uZENITH_SKELETON_SCHEMA_CURRENT = 2;
 inline constexpr u_int uZENITH_MODEL_SCHEMA_CURRENT    = 2;
+// .zanim had NO version word at all before it adopted the envelope, so its schema
+// starts at 1 — the first layout that is self-describing on the wire.
+inline constexpr u_int uZENITH_ANIMATION_SCHEMA_CURRENT = 1;

@@ -1,5 +1,10 @@
 #include "UnitTests/Zenith_UnitTests.h"
+#include "UnitTests/Zenith_AssertCapture.h"   // the refused-envelope / refused-schema reads assert on purpose
 #include "Flux/MeshAnimation/Flux_AnimationClip.h"
+#include "AssetHandling/Zenith_AssetTypeIds.h"
+#include "DataStream/Zenith_StreamEnvelope.h"
+
+#include <cstring>   // std::memcmp — the byte-identity determinism check
 
 // ============================================================================
 // Flux_RootMotion sample tests
@@ -295,4 +300,329 @@ ZENITH_TEST(AnimationSerialization, QuatKeysRoundTripAndByteLength)
 	Flux_ReadQuatKeys(xStream, xOut);
 	ZENITH_ASSERT_EQ(xOut.GetSize(), 1u, "round-trip restores 1 key");
 	ZENITH_ASSERT_TRUE(xOut.Get(0).first.w == 1.0f && xOut.Get(0).second == 0.25f, "quat key round-trips exactly");
+}
+
+// ============================================================================
+// WU-1.1 — .zanim stream envelope (D1/D2), the new metadata fields (D6/D7/D8),
+// the reserved per-key tangent block (D17) and deterministic channel order (D5).
+//
+// All pure CPU: a clip is built in memory, serialized to a Zenith_DataStream and
+// read back. No device, no asset registry entry, no file — so every one of these
+// runs unchanged under the Null backend and none is requiresGraphics.
+// ============================================================================
+
+namespace
+{
+	// Byte offsets into a Zenith_StreamHeader, which is four u_ints written in
+	// declaration order by Zenith_WriteStreamHeader.
+	constexpr uint64_t ulCLIP_HEADER_MAGIC_OFFSET  = 0;
+	constexpr uint64_t ulCLIP_HEADER_SCHEMA_OFFSET = 3 * sizeof(u_int);
+
+	void ClipPokeU32(Zenith_DataStream& xStream, uint64_t ulByteOffset, u_int uValue)
+	{
+		std::memcpy(static_cast<uint8_t*>(xStream.GetData()) + ulByteOffset, &uValue, sizeof(u_int));
+	}
+
+	// A small but non-degenerate clip: two bones, all three channel types, an event
+	// and root motion, so every serialized block is exercised by a round-trip.
+	void ClipBuildTwoBoneClip(Flux_AnimationClip& xClip)
+	{
+		xClip.SetName("WU11_Probe");
+		xClip.SetDuration(2.0f);
+		xClip.SetTicksPerSecond(24);
+
+		Flux_BoneChannel xHip;
+		xHip.AddPositionKeyframe(0.0f,  Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
+		xHip.AddPositionKeyframe(10.0f, Zenith_Maths::Vector3(0.0f, 1.5f, 0.0f));
+		xHip.AddRotationKeyframe(0.0f,  Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f));
+		xHip.AddScaleKeyframe   (0.0f,  Zenith_Maths::Vector3(1.0f, 1.0f, 1.0f));
+		xClip.AddBoneChannel("Hip", std::move(xHip));
+
+		Flux_BoneChannel xKnee;
+		xKnee.AddRotationKeyframe(0.0f,  glm::angleAxis(glm::radians(10.0f), Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f)));
+		xKnee.AddRotationKeyframe(20.0f, glm::angleAxis(glm::radians(40.0f), Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f)));
+		xClip.AddBoneChannel("Knee", std::move(xKnee));
+
+		Flux_AnimationEvent xEvent;
+		xEvent.m_fNormalizedTime = 0.5f;
+		xEvent.m_strEventName = "FootstepLeft";
+		xEvent.m_xData = Zenith_Maths::Vector4(1.0f, 2.0f, 3.0f, 4.0f);
+		xClip.AddEvent(xEvent);
+
+		xClip.GetRootMotion().m_bEnabled = true;
+		xClip.GetRootMotion().m_xPositionDeltas.EmplaceBack(Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f), 0.0f);
+		xClip.GetRootMotion().m_xPositionDeltas.EmplaceBack(Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f), 1.0f);
+	}
+}
+
+ZENITH_TEST(AnimationSerialization, ClipStreamEnvelopeRoundtrip)
+{
+	Flux_AnimationClip xClip;
+	ClipBuildTwoBoneClip(xClip);
+
+	Zenith_DataStream xStream;
+	xClip.WriteToDataStream(xStream);
+
+	// The envelope must be the FIRST thing on the wire, carrying this asset's id and
+	// the current schema — not the skeleton's id, not a bare version word.
+	xStream.SetCursor(0);
+	Zenith_Result<Zenith_StreamHeader> xHdr = Zenith_ReadStreamHeader(xStream, uZENITH_ANIMATION_ASSET_TYPE_ID);
+	ZENITH_ASSERT_TRUE(xHdr.IsOk(), "clip write must emit the shared stream envelope");
+	if (xHdr.IsOk())
+	{
+		ZENITH_ASSERT_EQ(xHdr.Value().m_uAssetTypeId, uZENITH_ANIMATION_ASSET_TYPE_ID, "animation envelope type id");
+		ZENITH_ASSERT_EQ(xHdr.Value().m_uSchemaVersion, uZENITH_ANIMATION_SCHEMA_CURRENT, "animation envelope schema");
+	}
+
+	// A wrong expected type-id is a wrong-type file, and must be refused.
+	xStream.SetCursor(0);
+	ZENITH_ASSERT_FALSE(Zenith_ReadStreamHeader(xStream, uZENITH_SKELETON_ASSET_TYPE_ID).IsOk(),
+		"a .zanim envelope must not validate as a .zskel");
+
+	xStream.SetCursor(0);
+	Flux_AnimationClip xLoaded;
+	xLoaded.ReadFromDataStream(xStream);
+	ZENITH_ASSERT_TRUE(xLoaded.GetName() == "WU11_Probe", "clip name round-trips");
+	ZENITH_ASSERT_EQ_FLOAT(xLoaded.GetDuration(), 2.0f, 1e-6f, "duration round-trips");
+	ZENITH_ASSERT_EQ(xLoaded.GetBoneChannels().GetSize(), 2u, "both bone channels round-trip");
+	ZENITH_ASSERT_TRUE(xLoaded.HasBoneChannel("Hip") && xLoaded.HasBoneChannel("Knee"), "bone names round-trip");
+	ZENITH_ASSERT_EQ(xLoaded.GetEvents().GetSize(), 1u, "the event round-trips");
+	ZENITH_ASSERT_TRUE(xLoaded.GetRootMotion().m_bEnabled, "root motion enable flag round-trips");
+	ZENITH_ASSERT_EQ(xLoaded.GetRootMotion().m_xPositionDeltas.GetSize(), 2u, "root motion deltas round-trip");
+	const Flux_BoneChannel* pxHip = xLoaded.GetBoneChannel("Hip");
+	ZENITH_ASSERT_TRUE(pxHip != nullptr, "Hip channel resolves after the round-trip");
+	if (pxHip != nullptr)
+	{
+		ZENITH_ASSERT_EQ(pxHip->GetPositionKeyframes().GetSize(), 2u, "Hip position keys round-trip");
+	}
+}
+
+ZENITH_TEST(AnimationSerialization, ClipRefusesAFutureSchemaVersion)
+{
+	Flux_AnimationClip xClip;
+	ClipBuildTwoBoneClip(xClip);
+
+	Zenith_DataStream xStream;
+	xClip.WriteToDataStream(xStream);
+
+	// Poke the schema word one past current. The envelope itself is still well formed,
+	// so this is exactly the "a newer tool wrote this file" case — it must be REFUSED,
+	// not parsed as if it were the current layout (which would read one field order
+	// with another's).
+	ClipPokeU32(xStream, ulCLIP_HEADER_SCHEMA_OFFSET, uZENITH_ANIMATION_SCHEMA_CURRENT + 1u);
+	xStream.SetCursor(0);
+
+	Flux_AnimationClip xLoaded;
+	{
+		Zenith_AssertCaptureScope xCapture;
+		xLoaded.ReadFromDataStream(xStream);
+		ZENITH_ASSERT_EQ(xCapture.GetHitCount(), 1u, "a future schema must assert exactly once");
+	}
+	ZENITH_ASSERT_EQ(xLoaded.GetBoneChannels().GetSize(), 0u, "a refused load leaves an EMPTY clip");
+	ZENITH_ASSERT_EQ(xLoaded.GetEvents().GetSize(), 0u, "a refused load leaves an EMPTY clip");
+	ZENITH_ASSERT_TRUE(xLoaded.GetName().empty(), "a refused load leaves an EMPTY clip");
+}
+
+ZENITH_TEST(AnimationSerialization, ClipRefusesAHeaderlessStream)
+{
+	Flux_AnimationClip xClip;
+	ClipBuildTwoBoneClip(xClip);
+
+	Zenith_DataStream xStream;
+	xClip.WriteToDataStream(xStream);
+
+	// Break the magic. There is deliberately NO legacy branch (D2), so a stream that
+	// does not open with the envelope is not a .zanim at all.
+	ClipPokeU32(xStream, ulCLIP_HEADER_MAGIC_OFFSET, uSTREAM_ENVELOPE_MAGIC ^ 0xFFu);
+	xStream.SetCursor(0);
+
+	Flux_AnimationClip xLoaded;
+	{
+		Zenith_AssertCaptureScope xCapture;
+		xLoaded.ReadFromDataStream(xStream);
+		ZENITH_ASSERT_EQ(xCapture.GetHitCount(), 1u, "a missing envelope must assert exactly once");
+	}
+	ZENITH_ASSERT_EQ(xLoaded.GetBoneChannels().GetSize(), 0u, "a refused load leaves an EMPTY clip");
+}
+
+ZENITH_TEST(AnimationSerialization, ClipMetadataNewFieldsRoundTrip)
+{
+	Flux_AnimationClip xClip;
+	ClipBuildTwoBoneClip(xClip);
+
+	// Defaults first — D6 says 30, D8 says false, D7's paths start empty.
+	Flux_AnimationClipMetadata xDefaults;
+	ZENITH_ASSERT_EQ(xDefaults.m_uAuthoredFrameRate, 30u, "authored frame rate defaults to 30");
+	ZENITH_ASSERT_FALSE(xDefaults.m_bGenerated, "a clip is not 'generated' unless it says so");
+	ZENITH_ASSERT_TRUE(xDefaults.m_strSkeletonPath.empty(), "skeleton path defaults empty");
+	ZENITH_ASSERT_TRUE(xDefaults.m_strPreviewModelPath.empty(), "preview model path defaults empty");
+
+	xClip.GetMetadata().m_uAuthoredFrameRate = 60;
+	xClip.GetMetadata().m_strSkeletonPath = "engine:Meshes/StickFigure/StickFigure.zskel";
+	xClip.GetMetadata().m_strPreviewModelPath = "engine:Meshes/StickFigure/StickFigure.zmodel";
+	xClip.GetMetadata().m_bGenerated = true;
+	// The source path is the IMPORT source, and stays distinct from the rig.
+	xClip.SetSourcePath("game:Meshes/Humans/Male.glb");
+
+	Zenith_DataStream xStream;
+	xClip.WriteToDataStream(xStream);
+	xStream.SetCursor(0);
+
+	Flux_AnimationClip xLoaded;
+	xLoaded.ReadFromDataStream(xStream);
+	ZENITH_ASSERT_EQ(xLoaded.GetMetadata().m_uAuthoredFrameRate, 60u, "authored frame rate round-trips");
+	ZENITH_ASSERT_TRUE(xLoaded.GetMetadata().m_strSkeletonPath == "engine:Meshes/StickFigure/StickFigure.zskel",
+		"skeleton path round-trips");
+	ZENITH_ASSERT_TRUE(xLoaded.GetMetadata().m_strPreviewModelPath == "engine:Meshes/StickFigure/StickFigure.zmodel",
+		"preview model path round-trips");
+	ZENITH_ASSERT_TRUE(xLoaded.GetMetadata().m_bGenerated, "generated flag round-trips");
+	ZENITH_ASSERT_TRUE(xLoaded.GetSourcePath() == "game:Meshes/Humans/Male.glb",
+		"source path is the import source and survives independently of the rig reference");
+	// The pre-existing fields must still round-trip beside the new ones — an appended
+	// block that shifted an existing read would show up here.
+	ZENITH_ASSERT_EQ(xLoaded.GetTicksPerSecond(), 24u, "ticks-per-second is unchanged by the authored frame rate");
+	ZENITH_ASSERT_TRUE(xLoaded.IsLooping(), "looping round-trips");
+}
+
+ZENITH_TEST(AnimationSerialization, ClipKeyTangentBlockRoundTrips)
+{
+	Flux_AnimationClip xClip;
+
+	Flux_BoneChannel xChannel;
+	xChannel.AddPositionKeyframe(0.0f,  Zenith_Maths::Vector3(0.0f));
+	xChannel.AddPositionKeyframe(10.0f, Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f));
+	xChannel.AddRotationKeyframe(0.0f,  Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f));
+	xChannel.AddScaleKeyframe   (0.0f,  Zenith_Maths::Vector3(1.0f, 1.0f, 1.0f));
+
+	// A tangent array is created in lockstep with its keys, at the zero default.
+	ZENITH_ASSERT_EQ(xChannel.GetPositionTangents().GetSize(), 2u, "one tangent entry per position key");
+	ZENITH_ASSERT_EQ(xChannel.GetRotationTangents().GetSize(), 1u, "one tangent entry per rotation key");
+	ZENITH_ASSERT_EQ(xChannel.GetScaleTangents().GetSize(), 1u, "one tangent entry per scale key");
+	ZENITH_ASSERT_EQ_FLOAT(xChannel.GetPositionTangents().Get(0).m_xInTangent.x, 0.0f, 1e-6f, "tangents default to zero");
+
+	Flux_KeyTangents xPosTangent;
+	xPosTangent.m_xInTangent  = Zenith_Maths::Vector3(0.25f, 0.5f, 0.75f);
+	xPosTangent.m_xOutTangent = Zenith_Maths::Vector3(-1.0f, -2.0f, -3.0f);
+	xChannel.SetPositionTangent(1u, xPosTangent);
+
+	// A ROTATION tangent is an angular velocity (axis * rad/s), not a quaternion
+	// control point — three components, and it lives in the same Flux_KeyTangents.
+	Flux_KeyTangents xRotTangent;
+	xRotTangent.m_xInTangent  = Zenith_Maths::Vector3(0.0f, 1.5f, 0.0f);
+	xRotTangent.m_xOutTangent = Zenith_Maths::Vector3(0.0f, -1.5f, 0.0f);
+	xChannel.SetRotationTangent(0u, xRotTangent);
+
+	xClip.AddBoneChannel("Spine", std::move(xChannel));
+
+	Zenith_DataStream xStream;
+	xClip.WriteToDataStream(xStream);
+	xStream.SetCursor(0);
+
+	Flux_AnimationClip xLoaded;
+	xLoaded.ReadFromDataStream(xStream);
+	const Flux_BoneChannel* pxLoaded = xLoaded.GetBoneChannel("Spine");
+	ZENITH_ASSERT_TRUE(pxLoaded != nullptr, "Spine channel resolves after the round-trip");
+	if (pxLoaded == nullptr)
+	{
+		return;
+	}
+	ZENITH_ASSERT_EQ(pxLoaded->GetPositionTangents().GetSize(), 2u, "position tangent block round-trips its length");
+	ZENITH_ASSERT_EQ_FLOAT(pxLoaded->GetPositionTangents().Get(1).m_xInTangent.y,  0.5f,  1e-6f, "position in-tangent round-trips");
+	ZENITH_ASSERT_EQ_FLOAT(pxLoaded->GetPositionTangents().Get(1).m_xOutTangent.z, -3.0f, 1e-6f, "position out-tangent round-trips");
+	ZENITH_ASSERT_EQ_FLOAT(pxLoaded->GetPositionTangents().Get(0).m_xInTangent.x,  0.0f,  1e-6f, "an unset tangent round-trips as zero");
+	ZENITH_ASSERT_EQ_FLOAT(pxLoaded->GetRotationTangents().Get(0).m_xInTangent.y,  1.5f,  1e-6f, "rotation angular-velocity in-tangent round-trips");
+	ZENITH_ASSERT_EQ_FLOAT(pxLoaded->GetRotationTangents().Get(0).m_xOutTangent.y, -1.5f, 1e-6f, "rotation angular-velocity out-tangent round-trips");
+	ZENITH_ASSERT_EQ(pxLoaded->GetScaleTangents().GetSize(), 1u, "scale tangent block round-trips its length");
+
+	// Reserved means reserved: sampling is untouched by the tangents above.
+	ZENITH_ASSERT_TRUE(RootMotionVec3Equals(pxLoaded->SamplePosition(5.0f), Zenith_Maths::Vector3(0.5f, 0.0f, 0.0f)),
+		"sampling is still linear — the tangent block is reserved, not consumed");
+}
+
+// ★ The determinism pair. Channels used to be written by walking the
+// Zenith_HashMap, so the on-disk order was bucket order and a clip assembled by a
+// different insertion sequence could serialize to different bytes for identical
+// animation data. Two checks, because either alone is weak: the byte comparison
+// alone can pass by luck when no two names happen to collide, and the ordering
+// check alone does not prove the whole payload is stable.
+ZENITH_TEST(AnimationSerialization, ClipChannelsAreWrittenInBoneNameOrder)
+{
+	Flux_AnimationClip xClip;
+	// Deliberately inserted in reverse-alphabetical order.
+	const char* aszInsertionOrder[4] = { "Zeta", "Mid", "Beta", "Alpha" };
+	for (u_int u = 0; u < 4u; ++u)
+	{
+		Flux_BoneChannel xChannel;
+		xChannel.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(static_cast<float>(u), 0.0f, 0.0f));
+		xClip.AddBoneChannel(aszInsertionOrder[u], std::move(xChannel));
+	}
+
+	Zenith_DataStream xStream;
+	xClip.WriteToDataStream(xStream);
+	xStream.SetCursor(0);
+
+	// Walk the payload by hand so the ON-DISK order is what is inspected — reading it
+	// back into a clip would put the channels straight into a hash map again and lose
+	// exactly the property under test.
+	Zenith_Result<Zenith_StreamHeader> xHdr = Zenith_ReadStreamHeader(xStream, uZENITH_ANIMATION_ASSET_TYPE_ID);
+	ZENITH_ASSERT_TRUE(xHdr.IsOk(), "envelope reads back");
+	Flux_AnimationClipMetadata xMeta;
+	xMeta.ReadFromDataStream(xStream);
+	std::string strSourcePath;
+	xStream >> strSourcePath;
+	uint32_t uNumChannels = 0;
+	xStream >> uNumChannels;
+	ZENITH_ASSERT_EQ(uNumChannels, 4u, "all four channels are written");
+
+	const char* aszExpectedOnDisk[4] = { "Alpha", "Beta", "Mid", "Zeta" };
+	for (u_int u = 0; u < uNumChannels && u < 4u; ++u)
+	{
+		Flux_BoneChannel xChannel;
+		xChannel.ReadFromDataStream(xStream);
+		ZENITH_ASSERT_TRUE(xChannel.GetBoneName() == aszExpectedOnDisk[u],
+			"channel %u on disk must be '%s', got '%s'", u, aszExpectedOnDisk[u], xChannel.GetBoneName().c_str());
+	}
+}
+
+ZENITH_TEST(AnimationSerialization, ClipBytesAreIndependentOfInsertionOrder)
+{
+	const char* aszForward[4] = { "Alpha", "Beta", "Mid", "Zeta" };
+	const char* aszReverse[4] = { "Zeta", "Mid", "Beta", "Alpha" };
+
+	Zenith_DataStream axStreams[2];
+	for (u_int uPass = 0; uPass < 2u; ++uPass)
+	{
+		const char* const* aszOrder = (uPass == 0) ? aszForward : aszReverse;
+
+		Flux_AnimationClip xClip;
+		xClip.SetName("OrderProbe");
+		xClip.SetDuration(1.0f);
+		xClip.GetMetadata().m_uAuthoredFrameRate = 30;
+		for (u_int u = 0; u < 4u; ++u)
+		{
+			const char* szName = aszOrder[u];
+			// ★ Every keyframe value is derived from the bone NAME, never from the
+			// insertion index — otherwise the two passes would carry genuinely
+			// different per-bone data and the byte comparison would be testing that
+			// instead of the ordering.
+			const float fSeed = static_cast<float>(szName[0]);
+
+			Flux_BoneChannel xChannel;
+			xChannel.AddPositionKeyframe(0.0f,  Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
+			xChannel.AddPositionKeyframe(10.0f, Zenith_Maths::Vector3(fSeed, fSeed * 0.5f, 0.0f));
+			xChannel.AddRotationKeyframe(0.0f,  Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f));
+			xClip.AddBoneChannel(szName, std::move(xChannel));
+		}
+
+		xClip.WriteToDataStream(axStreams[uPass]);
+	}
+
+	ZENITH_ASSERT_EQ(axStreams[0].GetCursor(), axStreams[1].GetCursor(),
+		"two insertion orders of the same clip must serialize to the same LENGTH");
+	if (axStreams[0].GetCursor() == axStreams[1].GetCursor())
+	{
+		const int iDiff = std::memcmp(axStreams[0].GetData(), axStreams[1].GetData(),
+			static_cast<size_t>(axStreams[0].GetCursor()));
+		ZENITH_ASSERT_EQ(iDiff, 0, "two insertion orders of the same clip must serialize BYTE-IDENTICALLY");
+	}
 }
