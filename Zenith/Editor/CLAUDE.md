@@ -62,7 +62,7 @@ ImGui-based scene editor for creating, editing, and testing game content. Active
   (TOOLS + INPUT_SIMULATOR builds) so automated tests drive editor UI deterministically.
 - `Zenith_Editor.Tests.inl` / `Zenith_EditorAutomation.Tests.inl` - Unit tests for the editor controller and the automation step queue (included into the unit-test TU)
 - `Panels/` - Panel implementations (Animation, Console, ContentBrowser, GraphEditor, Hierarchy, MaterialEditor, Memory, Properties, RenderGraph, StatusBar, TerrainEditor, Toolbar, VariantEditor, Viewport). Toolbar and StatusBar are strips drawn inside the dockspace host window, not dockable windows
-- `Panels/Zenith_EditorPanel_Animation.h/cpp` (+ `_Render.cpp`) - The animation DOPE SHEET over one `Zenith_AnimationDocument` and one `Zenith_AnimationPreviewSession`. A CLASS, not a pile of file statics (see "Animation Dope Sheet Panel" below); the `_Render` TU holds the drawing half. Tests in `Zenith_EditorPanel_Animation.Tests.inl`
+- `Panels/Zenith_EditorPanel_Animation.h/cpp` (+ `_Render.cpp`, `_Ops.cpp`) - The animation DOPE SHEET over one `Zenith_AnimationDocument` and one `Zenith_AnimationPreviewSession`. A CLASS, not a pile of file statics (see "Animation Dope Sheet Panel" below); the `_Render` TU holds the drawing half. Tests in `Zenith_EditorPanel_Animation.Tests.inl`
 - `../Core/Zenith_ImGuiWidgets.h/cpp` - Layer-0 ImGui widgets (`Vec3Field`, `PropertyLabel`) that component inspectors in EntityComponent may use without including `Editor/`
 - `../Core/Zenith_EditorFontHook.h` - `Zenith_EditorFonts_Load()`, called by the Vulkan and Null backends right after `ImGui::CreateContext` so the editor font is registered before either backend builds the atlas (the Null backend's legacy atlas is locked at the first NewFrame)
 
@@ -384,8 +384,16 @@ and clock):
   enumerator, so the panel offers "Promote to authored override" rather than a
   bare failure.
 
-**WU-3.2 renders and hit-tests only.** Mutation, selection and drag are WU-3.3
-and address the panel through the rect accessors.
+**Operations live in `_Ops.cpp` and every one has a bool-returning `Action_*` twin**
+(`Action_SelectKey/SelectEvent/BoxSelect/ClearSelection/MoveSelection/DeleteSelection/`
+`DuplicateSelection/CopySelection/PasteToBone/RippleRetime/Scrub/SetDuration/Undo/Redo`).
+The mouse and keyboard handlers in `_Render.cpp` only translate input into those; the
+actions never read ImGui state, which is what lets automation drive them without
+synthesising input. Every mutation goes through `Zenith_AnimationDocument`'s verbs (stable
+IDs, never indices); a multi-key operation is ONE undo step via the document's
+`BeginCompound()`/`EndCompound()` bracket and `Zenith_AnimCommand_Compound`, and any
+operation whose target time collides with an existing key (D11) is refused whole, flashes
+the blocking key, and changes nothing.
 
 **★ IT IS A CLASS, AND THAT IS THE ONE THING IT DOES NOT COPY FROM THE GRAPH
 EDITOR.** That panel keeps its whole state in a single file-scope aggregate,

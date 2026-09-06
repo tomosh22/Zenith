@@ -12,7 +12,12 @@
 //     would grow the stack it is being replayed from, and the growth would only
 //     show up after a few Ctrl+Y);
 //   • closing the document DELETES every command it pushed, which is the thing
-//     that makes the commands' raw Zenith_AnimationDocument* safe to hold.
+//     that makes the commands' raw Zenith_AnimationDocument* safe to hold;
+//   • a COMPOUND is one undo step and undoes its children in REVERSE (WU-3.3) —
+//     Zenith_UndoSystem has no grouping of its own, so this is where "a drag
+//     over eleven keys is one Ctrl+Z" is actually pinned;
+//   • an empty group pushes nothing and a rolled-back one reverses what landed,
+//     so the stack never records a step the user did not get.
 //
 // CPU-only and headless under the Null backend; no device, no UI, nothing
 // requiresGraphics.
@@ -257,4 +262,120 @@ ZENITH_TEST(AnimCommands, EachPushedCommandCarriesADescription)
 
 	ZENITH_ASSERT_NE(xDoc.AddEvent("Beat", 0.25f, Zenith_Maths::Vector4(0.0f, 0.0f, 0.0f, 0.0f)), uINVALID_ANIM_KEY_ID, "an event add");
 	ZENITH_ASSERT_STREQ(xDoc.UndoSystem().GetUndoDescription(), "Add Animation Event", "the event add names itself");
+}
+
+//==============================================================================
+// (5) A COMPOUND IS ONE UNDO STEP, and it undoes its children in REVERSE.
+//
+// ★ THE REVERSE ORDER IS THE WHOLE TEST. Zenith_UndoSystem has no grouping at
+// all, so a dope-sheet drag over three keys would otherwise push three commands
+// and take three Ctrl+Z presses to reverse, stopping at two states the user
+// never saw. The retimes below are applied in DESCENDING time order precisely
+// so no key ever lands on a slot its neighbour has not vacated yet (D11 refuses
+// that) — and undoing them in the order they were APPLIED would put the last
+// one back first, on top of a key still sitting there. The mutator would refuse,
+// the undo would half-work, and nothing would say so.
+//==============================================================================
+ZENITH_TEST(AnimCommands, ACompoundIsOneUndoStepAndUndoesItsChildrenInReverse)
+{
+	AnimCmdFixture xFixture("zenith_animcmd_compound");
+
+	Zenith_AnimationDocument xDoc;
+	ZENITH_ASSERT_TRUE(xDoc.Open(xFixture.m_strPath) == ZENITH_ANIMDOC_OPEN_OK, "the probe opens");
+
+	const Zenith_AnimTrackId xTrack = AnimCmdHipTrack();
+	const u_int uIdA = xDoc.GetKeyIdAtIndex(xTrack, 0);   // t = 0.0
+	const u_int uIdB = xDoc.GetKeyIdAtIndex(xTrack, 1);   // t = 1.0
+	const u_int uIdC = xDoc.GetKeyIdAtIndex(xTrack, 2);   // t = 2.0
+
+	ZENITH_ASSERT_FALSE(xDoc.IsCompoundOpen(), "nothing is grouping to begin with");
+	ZENITH_ASSERT_TRUE(xDoc.BeginCompound(), "a group opens");
+	ZENITH_ASSERT_TRUE(xDoc.IsCompoundOpen(), "and reports itself open");
+
+	// Descending, so each key moves into a slot that is already free.
+	ZENITH_ASSERT_TRUE(xDoc.SetKeyTime(xTrack, uIdC, 2.5f), "C moves first");
+	ZENITH_ASSERT_TRUE(xDoc.SetKeyTime(xTrack, uIdB, 1.5f), "then B");
+	ZENITH_ASSERT_TRUE(xDoc.SetKeyTime(xTrack, uIdA, 0.5f), "then A");
+
+	// ★ NOTHING HAS REACHED THE STACK YET. The verbs pushed three commands and
+	// all three were adopted by the open group.
+	ZENITH_ASSERT_EQ(xDoc.GetUndoStackSize(), 0u, "an open group holds its children back from the stack");
+
+	ZENITH_ASSERT_TRUE(xDoc.EndCompound("Retime Block"), "the group closes and is pushed");
+	ZENITH_ASSERT_FALSE(xDoc.IsCompoundOpen(), "and is no longer open");
+	ZENITH_ASSERT_EQ(xDoc.GetUndoStackSize(), 1u, "three edits are ONE undo step");
+	ZENITH_ASSERT_STREQ(xDoc.UndoSystem().GetUndoDescription(), "Retime Block", "named at close, when its contents are known");
+
+	float fTime = 0.0f;
+	ZENITH_ASSERT_TRUE(xDoc.GetKeyTime(xTrack, uIdA, fTime), "A resolves after the group");
+	ZENITH_ASSERT_EQ_FLOAT(fTime, 0.5f, 1e-6f, "at its moved time");
+	ZENITH_ASSERT_TRUE(xDoc.GetKeyTime(xTrack, uIdC, fTime), "C resolves");
+	ZENITH_ASSERT_EQ_FLOAT(fTime, 2.5f, 1e-6f, "at its moved time");
+
+	// ---- ONE undo puts all three back ---------------------------------------
+	xDoc.Undo();
+	ZENITH_ASSERT_EQ(xDoc.GetUndoStackSize(), 0u, "one press drained the stack");
+	ZENITH_ASSERT_EQ(xDoc.GetRedoStackSize(), 1u, "into one redo entry");
+
+	ZENITH_ASSERT_TRUE(xDoc.GetKeyTime(xTrack, uIdA, fTime), "A resolves after the undo");
+	ZENITH_ASSERT_EQ_FLOAT(fTime, 0.0f, 0.0f, "back EXACTLY where it started");
+	ZENITH_ASSERT_TRUE(xDoc.GetKeyTime(xTrack, uIdB, fTime), "B resolves");
+	ZENITH_ASSERT_EQ_FLOAT(fTime, 1.0f, 0.0f, "back EXACTLY where it started");
+	ZENITH_ASSERT_TRUE(xDoc.GetKeyTime(xTrack, uIdC, fTime), "C resolves");
+	ZENITH_ASSERT_EQ_FLOAT(fTime, 2.0f, 0.0f, "back EXACTLY where it started");
+	ZENITH_ASSERT_EQ(xDoc.GetKeyIndexForId(xTrack, uIdA), 0u, "and in their original order");
+	ZENITH_ASSERT_EQ(xDoc.GetKeyIndexForId(xTrack, uIdC), 2u, "and in their original order");
+
+	// ---- and ONE redo re-applies all three ----------------------------------
+	xDoc.Redo();
+	ZENITH_ASSERT_EQ(xDoc.GetUndoStackSize(), 1u, "the redo moves the ONE command back, not three");
+	ZENITH_ASSERT_EQ(xDoc.GetRedoStackSize(), 0u, "with nothing left to redo");
+	ZENITH_ASSERT_TRUE(xDoc.GetKeyTime(xTrack, uIdB, fTime), "B resolves after the redo");
+	ZENITH_ASSERT_EQ_FLOAT(fTime, 1.5f, 1e-6f, "at its moved time again");
+}
+
+//==============================================================================
+// (6) An EMPTY group pushes nothing; a ROLLED-BACK one reverses what landed.
+//
+// Both halves protect the same thing — the undo stack never records a step the
+// user did not get. An empty group would be a Ctrl+Z that visibly does nothing
+// (indistinguishable from a broken undo), and a half-applied multi-key operation
+// that refused partway would be a state nobody asked for, recorded as if they
+// had.
+//==============================================================================
+ZENITH_TEST(AnimCommands, AnEmptyCompoundPushesNothingAndARollbackReversesWhatLanded)
+{
+	AnimCmdFixture xFixture("zenith_animcmd_compound_rollback");
+
+	Zenith_AnimationDocument xDoc;
+	ZENITH_ASSERT_TRUE(xDoc.Open(xFixture.m_strPath) == ZENITH_ANIMDOC_OPEN_OK, "the probe opens");
+
+	const Zenith_AnimTrackId xTrack = AnimCmdHipTrack();
+	const u_int uIdA = xDoc.GetKeyIdAtIndex(xTrack, 0);
+
+	// ---- empty ---------------------------------------------------------------
+	ZENITH_ASSERT_TRUE(xDoc.BeginCompound(), "a group opens");
+	ZENITH_ASSERT_FALSE(xDoc.EndCompound("Nothing Happened"), "closing an empty one pushes NOTHING");
+	ZENITH_ASSERT_EQ(xDoc.GetUndoStackSize(), 0u, "so the stack is untouched");
+	ZENITH_ASSERT_FALSE(xDoc.CanUndo(), "and there is nothing to press Ctrl+Z through");
+
+	// ---- rollback ------------------------------------------------------------
+	ZENITH_ASSERT_TRUE(xDoc.BeginCompound(), "a second group opens");
+	ZENITH_ASSERT_TRUE(xDoc.SetDuration(5.0f), "one edit lands inside it");
+	ZENITH_ASSERT_TRUE(xDoc.RemoveKey(xTrack, uIdA), "and another");
+	ZENITH_ASSERT_EQ(xDoc.GetKeyCount(xTrack), 2u, "which the working copy really felt");
+
+	ZENITH_ASSERT_FALSE(xDoc.EndCompound("Refused Operation", /*bKeep*/ false),
+		"a rolled-back group reports that it pushed nothing");
+	ZENITH_ASSERT_EQ(xDoc.GetUndoStackSize(), 0u, "and reaches the stack not at all");
+
+	ZENITH_ASSERT_EQ(xDoc.GetKeyCount(xTrack), 3u, "the removed key is back");
+	ZENITH_ASSERT_EQ(xDoc.GetKeyIndexForId(xTrack, uIdA), 0u, "under its ORIGINAL id, at its original index");
+	ZENITH_ASSERT_EQ_FLOAT(xDoc.GetDuration(), 2.0f, 0.0f, "and the duration is exactly back");
+
+	// ★ THE DOCUMENT IS STILL DIRTY, and that is deliberate rather than an
+	// oversight: the verbs marked it on the way in, and re-deriving "is the
+	// content still identical to the file" from a command trail would be a second
+	// authority on a question the content hash already answers exactly.
+	ZENITH_ASSERT_TRUE(xDoc.IsDirty(), "a rollback restores the CONTENT, not the dirty flag");
 }

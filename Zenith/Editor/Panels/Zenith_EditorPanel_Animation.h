@@ -17,13 +17,22 @@
 struct ImDrawList;
 
 //=============================================================================
-// Zenith_EditorPanel_Animation (WU-3.2) — the DOPE SHEET.
+// Zenith_EditorPanel_Animation (WU-3.2 / WU-3.3) — the DOPE SHEET.
 //
 // One dockable window over ONE Zenith_AnimationDocument and ONE
 // Zenith_AnimationPreviewSession: a ruler, a row per bone track (T/R/S), the
 // two root-motion tracks, an events row, a playhead, and the shared preview
-// image. WU-3.2 RENDERS AND HIT-TESTS ONLY — every mutation, selection and
-// drag is WU-3.3, which addresses the panel through the rect accessors below.
+// image. WU-3.2 built the drawing and the hit rects; WU-3.3 added SELECTION and
+// the OPERATIONS — see the "OPERATIONS" block below, and its three rules: every
+// gesture has a bool-returning Action_* twin that reads no ImGui state, every
+// mutation goes through a document verb, and a multi-key operation is ONE undo
+// step (Zenith_AnimationDocument::BeginCompound).
+//
+// The class is spread over THREE TUs, split by what a reader wants separately:
+//   Zenith_EditorPanel_Animation.cpp        — lifecycle, rows, the hit rects
+//   Zenith_EditorPanel_Animation_Render.cpp — the drawing, and input TRANSLATION
+//   Zenith_EditorPanel_Animation_Ops.cpp    — selection and the operations,
+//                                             with not one line of ImGui in it
 //
 // ★ IT IS A CLASS, NOT A PILE OF FILE STATICS, AND THAT IS THE ONE THING IT
 // DOES NOT COPY FROM THE GRAPH EDITOR. That panel keeps its whole state in a
@@ -88,6 +97,60 @@ enum Zenith_AnimSheetRowKind : u_int
 };
 
 constexpr u_int uINVALID_ANIM_SHEET_ROW = 0xFFFFFFFFu;
+
+//-----------------------------------------------------------------------------
+// How a select gesture combines with what is already selected. Three values
+// rather than two bools, because "toggle" and "add" are different answers to
+// the same click and a pair of flags would allow the meaningless fourth.
+//-----------------------------------------------------------------------------
+enum Zenith_AnimSelectMode : u_int
+{
+	// A plain click: this and nothing else.
+	ZENITH_ANIMSELECT_REPLACE,
+	// Ctrl-click: in if it was out, out if it was in.
+	ZENITH_ANIMSELECT_TOGGLE,
+	// Shift-click: in, and leave everything else in.
+	ZENITH_ANIMSELECT_ADD,
+};
+
+//-----------------------------------------------------------------------------
+// One selected key.
+//
+// ★ (TRACK, STABLE ID) AND NEVER AN INDEX (D24). A retime REORDERS a track, so
+// an index-based selection starts naming a different key mid-drag with nothing
+// to observe; and a selection has to survive an undo, which re-inserts a key
+// under its ORIGINAL id precisely so that this keeps resolving.
+//-----------------------------------------------------------------------------
+struct Zenith_AnimSelectedKey
+{
+	Zenith_AnimTrackId m_xTrack;
+	u_int m_uKeyId = uINVALID_ANIM_KEY_ID;
+};
+
+//-----------------------------------------------------------------------------
+// One key on the panel's clipboard.
+//
+// ★ IT STORES A TRACK KIND, NOT A TRACK. The whole point of the copy buffer is
+// cross-bone paste: what survives the trip is "this was a rotation key, this far
+// into the copied span, with this value", and the BONE is supplied by whoever
+// pastes. Times are RELATIVE to the earliest key in the copy, so a paste offset
+// is a plain addition and the internal spacing is preserved exactly.
+//-----------------------------------------------------------------------------
+struct Zenith_AnimClipboardKey
+{
+	Flux_AnimTrack m_eTrack = FLUX_ANIM_TRACK_POSITION;
+	// Root-motion keys paste back onto ROOT MOTION whatever bone is named — the
+	// bone is meaningless for them, and dropping them would make a paste silently
+	// lose part of what was copied.
+	bool m_bRootMotion = false;
+	float m_fRelativeTimeSeconds = 0.0f;
+	Zenith_AnimKeyValue m_xValue;
+};
+
+// How long a refused drop stays lit. Frames rather than seconds because the
+// panel is handed a dt it may legitimately be passed as 0 (the editor's Paused
+// mode), and a flash measured in seconds would then never expire.
+constexpr u_int uANIM_COLLISION_FLASH_FRAMES = 20u;
 
 struct Zenith_AnimSheetRow
 {
@@ -280,6 +343,171 @@ public:
 	// The full key lane across every row — the region the time mapping covers.
 	bool GetTrackAreaRect(Zenith_AnimPanelRect& xOut) const;
 
+	//=========================================================================
+	// OPERATIONS (WU-3.3).
+	//
+	// ★ EVERY GESTURE HAS A BOOL-RETURNING ATOMIC TWIN, exactly as the graph
+	// editor's Action_* verbs do, and for the same reason that panel learned:
+	// a test (and WU-3.4's authoring steps) must be able to perform an operation
+	// WITHOUT synthesising input. Driving a dope sheet through simulated clicks
+	// means every failure arrives as "the key did not move", with the click, the
+	// input bridge, the hit-rect and the operation all suspects and none of them
+	// named. The mouse handlers in the _Render TU translate input into exactly
+	// these calls and add nothing of their own.
+	//
+	// ★ AN ACTION NEVER READS ImGui STATE. Not the mouse, not the modifiers, not
+	// the focus — a select MODE is a parameter, a drag DELTA is a parameter. That
+	// is what makes them callable from a unit that has no frame open, and it is
+	// what keeps "what the gesture means" in the handler where a reader looks for
+	// it rather than spread across both.
+	//
+	// ★ EVERY ONE OF THEM GOES THROUGH THE DOCUMENT'S VERBS. Nothing here
+	// touches Flux_AnimationClip, and nothing here addresses a key by index
+	// (D24): the document is the only writer of the working clip because every
+	// mutation has to re-map the stable ids, mark dirty and push undo in the same
+	// breath, and a caller that reached past it would skip all three.
+	//
+	// ★ A MULTI-KEY OPERATION IS ONE UNDO STEP. Each of the mutating actions
+	// below brackets its work in Zenith_AnimationDocument::BeginCompound /
+	// EndCompound, so a drag over eleven keys is one Ctrl+Z and not eleven —
+	// and a refusal partway through rolls the whole thing back rather than
+	// leaving a half-applied edit on the stack.
+	//=========================================================================
+
+	//------------------------------------------------------------------------
+	// Selection. Pure panel state: none of these touches the document.
+	//------------------------------------------------------------------------
+
+	// False for a key that does not resolve in the document — selecting a key
+	// that is not there would put an id in the selection that no undo can bring
+	// back, which is the one case the stable ids cannot rescue.
+	bool Action_SelectKey(const Zenith_AnimTrackId& xTrack, u_int uKeyId, Zenith_AnimSelectMode eMode);
+	bool Action_SelectEvent(u_int uEventId, Zenith_AnimSelectMode eMode);
+
+	// Everything whose RECORDED rect intersects the rectangle, in absolute
+	// screen coordinates — so it hit-tests exactly what was painted, including
+	// the off-screen gate. Requires a rendered frame; false when nothing was
+	// recorded or the document is closed. The rectangle may be given in either
+	// winding (a rubber band dragged up-left is normalised here).
+	bool Action_BoxSelect(float fX0, float fY0, float fX1, float fY1,
+		Zenith_AnimSelectMode eMode = ZENITH_ANIMSELECT_REPLACE);
+
+	// True iff there WAS a selection to clear.
+	bool Action_ClearSelection();
+
+	u_int GetSelectedKeyCount() const { return m_axSelectedKeys.GetSize(); }
+	bool GetSelectedKeyAt(u_int uIndex, Zenith_AnimTrackId& xOutTrack, u_int& uOutKeyId) const;
+	bool IsKeySelected(const Zenith_AnimTrackId& xTrack, u_int uKeyId) const;
+	u_int GetSelectedEventCount() const { return m_auSelectedEventIds.GetSize(); }
+	u_int GetSelectedEventIdAt(u_int uIndex) const;
+	bool IsEventSelected(u_int uEventId) const;
+
+	//------------------------------------------------------------------------
+	// Mutation.
+	//------------------------------------------------------------------------
+
+	// Move every selected KEY by the same delta.
+	//
+	// ★ THE SNAP IS APPLIED TO THE PRIMARY KEY AND THE RESULT BECOMES THE
+	// DELTA FOR ALL OF THEM. Snapping each key independently would collapse a
+	// selection whose members sit off-grid onto the same frames and silently
+	// change their relative spacing — the one thing a multi-key drag must not
+	// do. The primary is the key most recently selected (or the one a drag
+	// started on); the first selected key when that is no longer in the set.
+	//
+	// ★ REFUSED WHOLE ON ANY COLLISION (D11). If any target time is already
+	// held by a key that is not itself part of the move, NOTHING moves, false
+	// comes back, and GetCollisionFlashFramesRemaining() lights up so the
+	// refusal is visible on the sheet rather than only in a return value. Keys
+	// are moved in descending time order for a forward delta (ascending for a
+	// backward one) so no key ever passes through a slot its neighbour has not
+	// vacated yet.
+	//
+	// Also refused: an empty selection, a target time below zero, and an
+	// effective delta of zero (which would push an undo entry that reverses
+	// nothing).
+	bool Action_MoveSelection(float fDeltaSeconds, bool bSnap);
+
+	// Remove every selected key AND every selected event, as one step.
+	// ★ THE SELECTION IS NOT CLEARED. The undo re-inserts each key under its
+	// ORIGINAL id, so the ids held here resolve again afterwards and the user
+	// gets their selection back with their keys — which is the entire reason
+	// the document allocates stable ids in the first place.
+	bool Action_DeleteSelection();
+
+	// Copy the selected keys, then re-insert them one frame past the LAST key
+	// of the selection, preserving every value and the internal spacing.
+	//
+	// The brief allowed either "t + one frame" or "at the playhead"; this is
+	// the first, generalised so a multi-key selection cannot collide with
+	// itself: for a single key the offset IS one frame, and for a block it is
+	// (last - first) + one frame, which lands the copy immediately after the
+	// original. Refused when the clip has no frame grid (there is then no "one
+	// frame" to offset by) and refused whole on any collision.
+	//
+	// The DUPLICATES become the selection, so the obvious next gesture — drag
+	// them somewhere — works without a second click.
+	bool Action_DuplicateSelection();
+
+	// Put the selected keys on the panel's clipboard as (track kind, relative
+	// time, value). False for an empty selection.
+	bool Action_CopySelection();
+
+	// Paste the clipboard onto strBoneName, with every relative time shifted by
+	// fTimeOffset. Kinds are matched T->T, R->R, S->S; a track the bone has no
+	// keys on — or a bone the clip has no channel for at all — is CREATED by
+	// the document's own insert verb. Refused whole on any collision, and on a
+	// negative target time. The pasted keys become the selection.
+	bool Action_PasteToBone(const std::string& strBoneName, float fTimeOffset);
+
+	// Move every key at or after fFromTime, on EVERY track, by fDelta.
+	//
+	// ★ EVENTS DO NOT MOVE (D4). An event time is a [0,1] FRACTION of the clip,
+	// not a point on the seconds clock, so it is already expressed relative to
+	// whatever the duration becomes — "shifting it proportionally" would move it
+	// twice. The clip's DURATION is not touched either; that is a separate,
+	// separately undoable decision.
+	//
+	// Refused whole on any collision with a key that is not itself moving, and
+	// on any target time below zero.
+	bool Action_RippleRetime(float fFromTime, float fDelta);
+
+	// Seek the preview session. Clamped into [0, duration]. Emits NO animation
+	// events — that is Zenith_AnimationPreviewSession::Seek's own contract, not
+	// something added here. False when the session cannot be scrubbed (no rig).
+	bool Action_Scrub(float fTimeSeconds);
+
+	// The clip's duration, through the document (one undoable step). Refused
+	// for a negative or non-finite value, and for one the clip already has.
+	bool Action_SetDuration(float fDurationSeconds);
+
+	bool Action_Undo();
+	bool Action_Redo();
+
+	//------------------------------------------------------------------------
+	// Operation diagnostics — UNGATED, for the same reason the rect
+	// diagnostics are: a bare `false` from an action has several causes, and a
+	// test that can only see the bool reports "it did not work".
+	//------------------------------------------------------------------------
+
+	// Non-zero while a refused drop is lit. Counts down one per rendered frame.
+	u_int GetCollisionFlashFramesRemaining() const { return m_uCollisionFlashFrames; }
+	// WHICH key the refusal collided with, while the flash is lit.
+	bool GetCollisionFlashKey(Zenith_AnimTrackId& xOutTrack, u_int& uOutKeyId) const;
+
+	u_int GetClipboardKeyCount() const { return m_axClipboard.GetSize(); }
+	// The bone whose row was last clicked — what Ctrl+V pastes onto. Empty until
+	// something on a bone row has been touched.
+	const std::string& GetPasteTargetBone() const { return m_strPasteTargetBone; }
+
+	// Live drag state, so a test can tell "the drag never started" apart from
+	// "the drag started and the drop was refused".
+	bool IsDraggingKeys() const { return m_bDraggingKeys; }
+	float GetDragDeltaSeconds() const { return m_fDragDeltaSeconds; }
+	bool IsBoxSelecting() const { return m_bBoxSelecting; }
+	bool IsScrubbing() const { return m_bScrubbing; }
+	bool IsDraggingDuration() const { return m_bDraggingDuration; }
+
 	//-------------------------------------------------------------------------
 	// External modification (read-only display).
 	//
@@ -347,6 +575,64 @@ private:
 	bool PublishRect(const Zenith_AnimPanelRect* pxRect, Zenith_AnimPanelRect& xOut) const;
 	bool RowRectFor(const Zenith_AnimTrackId& xTrack, bool bTrackLaneOnly, Zenith_AnimPanelRect& xOut) const;
 
+	//-------------------------------------------------------------------------
+	// Operation helpers — all in Zenith_EditorPanel_Animation_Ops.cpp.
+	//-------------------------------------------------------------------------
+
+	// One move of a set of (track, key) pairs by one delta, bracketed as ONE
+	// undo step. Shared verbatim by Action_MoveSelection and
+	// Action_RippleRetime, which differ only in how they choose the set: a
+	// second copy of the collision pre-check and the ordering rule is exactly
+	// how two paths that must agree stop agreeing.
+	bool MoveKeySetByDelta(const Zenith_Vector<Zenith_AnimSelectedKey>& axKeys, float fDeltaSeconds,
+		const char* szDescription);
+
+	// Would fTargetTime land on a key that is NOT in axMoving? Records the
+	// blocker in the flash state and returns true when it would.
+	bool WouldCollide(const Zenith_AnimTrackId& xTrack, float fTargetTime,
+		const Zenith_Vector<Zenith_AnimSelectedKey>& axMoving);
+
+	// Insert a set of (track, time, value) triples as ONE undo step, refusing
+	// the lot on any collision. Shared by duplicate and paste.
+	bool InsertKeySetAsOneStep(const Zenith_Vector<Zenith_AnimTrackId>& axTracks,
+		const Zenith_Vector<float>& afTimes, const Zenith_Vector<Zenith_AnimKeyValue>& axValues,
+		const char* szDescription);
+
+	static bool IsSameSelectedKey(const Zenith_AnimSelectedKey& xA, const Zenith_AnimTrackId& xTrack, u_int uKeyId);
+	u_int FindSelectedKeyIndex(const Zenith_AnimTrackId& xTrack, u_int uKeyId) const;
+	u_int FindSelectedEventIndex(u_int uEventId) const;
+	// The shared body of every select gesture: REPLACE clears first, TOGGLE
+	// removes an entry that is already there, ADD is idempotent.
+	void ApplyKeySelectMode(const Zenith_AnimTrackId& xTrack, u_int uKeyId, Zenith_AnimSelectMode eMode);
+	void ApplyEventSelectMode(u_int uEventId, Zenith_AnimSelectMode eMode);
+	// The key a snap is computed against — see Action_MoveSelection.
+	bool ResolvePrimarySelectedKey(Zenith_AnimTrackId& xOutTrack, u_int& uOutKeyId) const;
+	// A raw pixel-derived delta turned into the one the move will actually
+	// apply: the primary key's target snapped to the frame grid, expressed back
+	// as a delta. ★ ONE DEFINITION, shared by Action_MoveSelection and by the
+	// drag GHOST — a second copy in the renderer is how a preview ends up
+	// showing a position the drop does not produce.
+	float EffectiveDragDelta(float fRawDeltaSeconds, bool bSnap) const;
+	void RaiseCollisionFlash(const Zenith_AnimTrackId& xTrack, u_int uKeyId);
+	// Every (track, key) in the DOCUMENT — every bone's three tracks plus root
+	// motion's two, straight from GetBoneNamesSorted.
+	//
+	// ★ NOT FROM THE ROW MODEL. A collapsed group has no rows, so a ripple built
+	// on m_axRows would silently skip every key of every collapsed bone and
+	// desynchronise the clip against a view state that is meant to be cosmetic.
+	void CollectAllKeys(Zenith_Vector<Zenith_AnimSelectedKey>& axOut) const;
+
+	//-------------------------------------------------------------------------
+	// Input translation — Zenith_EditorPanel_Animation_Render.cpp. These are
+	// the ONLY functions that read ImGui state; each one ends in an Action_*.
+	//-------------------------------------------------------------------------
+	void HandleSheetInput(const SheetLayout& xLayout, bool bCanvasHovered);
+	void HandleSheetKeyboard();
+	static Zenith_AnimSelectMode SelectModeFromModifiers();
+	// The key whose recorded rect contains (fX, fY), if any.
+	bool FindKeyAtScreenPos(float fX, float fY, Zenith_AnimTrackId& xOutTrack, u_int& uOutKeyId) const;
+	bool FindEventAtScreenPos(float fX, float fY, u_int& uOutEventId) const;
+
 	// Render helpers — all in Zenith_EditorPanel_Animation_Render.cpp.
 	void RenderToolbar();
 	void RenderBanners();
@@ -360,6 +646,10 @@ private:
 	void DrawKeysForRow(ImDrawList* pxDraw, const SheetLayout& xLayout, u_int uRowIndex, float fRowTop);
 	void DrawEventsForRow(ImDrawList* pxDraw, const SheetLayout& xLayout, float fRowTop);
 	void DrawPlayhead(ImDrawList* pxDraw, const SheetLayout& xLayout);
+	// The rubber band and the duration handle — decorations, drawn last so they
+	// sit over the rows. (The drag GHOST is drawn by DrawKeysForRow, beside the
+	// real diamond, because that is the one place a key's row centre is known.)
+	void DrawSelectionOverlays(ImDrawList* pxDraw, const SheetLayout& xLayout);
 
 	float TotalRowsHeight(const SheetLayout& xLayout) const;
 	float VisibleRowsHeight(const SheetLayout& xLayout) const;
@@ -450,6 +740,64 @@ private:
 	bool m_bPreviewImageRegistered = false;
 
 	u_int m_uRenderedFrames = 0;
+
+	//-------------------------------------------------------------------------
+	// Selection (WU-3.3).
+	//
+	// ★ PLAIN VECTORS WITH A LINEAR SEARCH, DELIBERATELY. A hash would want a
+	// key built from a bone NAME plus a track plus an id, which is a string
+	// concatenation per lookup — more allocation than the scan it replaces for
+	// every selection a dope sheet actually holds. The order is also load-
+	// bearing: the vector's tail is the most recently selected key, which is the
+	// PRIMARY a snap is computed against.
+	//
+	// ★ NOTHING PRUNES A STALE ID, AND THAT IS THE POINT. A delete removes the
+	// keys but leaves their ids here, so the undo — which re-inserts each key
+	// under its ORIGINAL id — hands the user back their selection along with
+	// their keys. An id that never comes back simply stops resolving, and every
+	// consumer already treats that as "not there".
+	//-------------------------------------------------------------------------
+	Zenith_Vector<Zenith_AnimSelectedKey> m_axSelectedKeys;
+	Zenith_Vector<u_int> m_auSelectedEventIds;
+
+	// The key a multi-key snap is computed against: the last one selected, or
+	// the one a drag started on. Falls back to the first selected key.
+	Zenith_AnimTrackId m_xPrimaryKeyTrack;
+	u_int m_uPrimaryKeyId = uINVALID_ANIM_KEY_ID;
+
+	// Cross-bone paste buffer. Times are relative to the earliest key copied.
+	Zenith_Vector<Zenith_AnimClipboardKey> m_axClipboard;
+	std::string m_strPasteTargetBone;
+
+	//-------------------------------------------------------------------------
+	// Live gestures. ★ A DRAG MUTATES NOTHING UNTIL IT IS RELEASED: the delta
+	// is drawn as a ghost diamond and applied — as one undo step — on mouse up.
+	// Mutating per frame would push one command per frame of the drag and make
+	// the intermediate positions, which the user was only passing through, into
+	// undo stops.
+	//-------------------------------------------------------------------------
+	bool m_bDraggingKeys = false;
+	float m_fDragStartMouseX = 0.0f;
+	float m_fDragDeltaSeconds = 0.0f;
+
+	bool m_bBoxSelecting = false;
+	float m_fBoxStartX = 0.0f;
+	float m_fBoxStartY = 0.0f;
+	float m_fBoxEndX = 0.0f;
+	float m_fBoxEndY = 0.0f;
+
+	bool m_bScrubbing = false;
+	// ★ THE DURATION HANDLE IS THE SAME "PREVIEW, THEN COMMIT" SHAPE as the key
+	// drag: the dragged value lives here and is drawn as a ghost line, and ONE
+	// Action_SetDuration runs on release. Writing it through the document every
+	// frame would push a Duration command per frame of the drag.
+	bool m_bDraggingDuration = false;
+	float m_fDurationDragSeconds = 0.0f;
+
+	// D11's visible half — a refused drop lights the key that blocked it.
+	u_int m_uCollisionFlashFrames = 0;
+	Zenith_AnimTrackId m_xCollisionFlashTrack;
+	u_int m_uCollisionFlashKeyId = uINVALID_ANIM_KEY_ID;
 };
 
 #endif // ZENITH_TOOLS

@@ -11,6 +11,11 @@
 #include "Maths/Zenith_Maths.h"
 #include <string>
 
+// Defined in Editor/Zenith_EditorAnimCommands.h. Forward-declared rather than
+// included: that header includes THIS one, and the document only needs to hold
+// a pointer to an open group (see BeginCompound).
+class Zenith_AnimCommand_Compound;
+
 //=============================================================================
 // Zenith_AnimationDocument (WU-2.2) — the editable WORKING COPY of one .zanim,
 // and the ONLY writer of it.
@@ -237,6 +242,48 @@ public:
 	u_int GetRedoStackSize() { return m_xUndoSystem.GetRedoStackSize(); }
 
 	//-------------------------------------------------------------------------
+	// MANY EDITS, ONE UNDO STEP (WU-3.3).
+	//
+	// ★ Zenith_UndoSystem HAS NO GROUPING — it is a flat LIFO with no
+	// transaction of any kind — so the boundary has to live here, where the
+	// commands are pushed. Between BeginCompound() and EndCompound() every
+	// command the verbs above would have Recorded is ADOPTED by one
+	// Zenith_AnimCommand_Compound instead, and that single command is what
+	// reaches the stack. A dope-sheet drag over eleven keys is therefore ONE
+	// Ctrl+Z, not eleven, and the ten intermediate states the user never saw are
+	// never stops on the way back.
+	//
+	// ★ THE CALLER STILL USES THE ORDINARY VERBS. Nothing about InsertKey /
+	// SetKeyTime / RemoveKey changes inside a group: they validate, mutate, mark
+	// dirty and push exactly as before. That is deliberate — an operation that
+	// had to call a second, group-aware API would be a second mutation path, and
+	// the whole point of this class is that there is one.
+	//
+	// Nesting is refused (asserted): a group inside a group would make "one undo
+	// step" mean two different things depending on who called first.
+	bool BeginCompound();
+
+	// Closes the group.
+	//
+	//   bKeep == true  — push it as one command IF it collected anything. An
+	//                    EMPTY group is deleted and NOTHING is pushed, so an
+	//                    operation that turned out to be a no-op leaves no undo
+	//                    entry to press Ctrl+Z through.
+	//   bKeep == false — UNDO everything it collected (in reverse) and discard
+	//                    it. What a multi-key operation calls when a mutation
+	//                    refuses halfway: the partial application never reaches
+	//                    the stack and never reaches the user.
+	//
+	// Returns true iff a command was pushed. NOTE that a rollback leaves the
+	// document DIRTY even though the content is back where it started — the
+	// verbs marked it, and re-deriving "is this file still identical" from a
+	// command trail would be a second authority on a question the content hash
+	// already answers.
+	bool EndCompound(const char* szDescription, bool bKeep = true);
+
+	bool IsCompoundOpen() const { return m_pxOpenCompound != nullptr; }
+
+	//-------------------------------------------------------------------------
 	// Track / key inspection (what a dope sheet draws from)
 	//-------------------------------------------------------------------------
 
@@ -353,6 +400,10 @@ private:
 	friend class Zenith_AnimCommand_EventAdd;
 	friend class Zenith_AnimCommand_EventRemove;
 	friend class Zenith_AnimCommand_EventEdit;
+	// ★ Zenith_AnimCommand_Compound is deliberately NOT in this list. It performs
+	// no edit of its own — it is a bracket around the commands above — so it needs
+	// none of the primitives, and adding it would widen the private surface for
+	// nothing.
 
 	// uForcedKeyId != uINVALID_ANIM_KEY_ID re-uses that id (the undo of a
 	// remove); otherwise a fresh one is allocated.
@@ -429,6 +480,11 @@ private:
 	Zenith_HashMap<u_int, u_int> m_xEventIndexById;
 
 	Zenith_UndoSystem m_xUndoSystem;
+
+	// The group currently collecting pushed commands, or null. Owned while open;
+	// ownership passes to m_xUndoSystem (or to a delete) at EndCompound, and
+	// ResetToClosed discards an abandoned one rather than leaking it.
+	Zenith_AnimCommand_Compound* m_pxOpenCompound = nullptr;
 
 	// ★ NOT reset by Open / Save As / Discard. An id retired by one of those
 	// must never come back inside the same document object, or a selection that

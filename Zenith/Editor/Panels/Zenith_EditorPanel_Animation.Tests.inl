@@ -1,5 +1,5 @@
 //------------------------------------------------------------------------------
-// Zenith_EditorPanel_Animation unit tests (WU-3.2).
+// Zenith_EditorPanel_Animation unit tests (WU-3.2 rendering + WU-3.3 operations).
 // Included at the bottom of Zenith_EditorPanel_Animation.cpp.
 //
 // ★ THESE DRIVE A REAL ImGui FRAME, HEADLESS, AND NONE OF THEM IS
@@ -25,6 +25,8 @@
 #include "Core/Zenith_TestFramework.h"
 #include "UnitTests/Zenith_UnitTests.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
+#include "AssetHandling/Zenith_SkeletonAsset.h"
+#include "AssetHandling/Zenith_MeshAsset.h"
 #include "Flux/RenderViews/Flux_PreviewSlotArbiter.h"
 
 #include <filesystem>
@@ -125,6 +127,10 @@ namespace
 	{
 		std::filesystem::path m_xDirectory;
 		std::string m_strPath;
+		// Only written by AnimPanelWriteRiggedProbe. ForceUnload on a path that was
+		// never loaded is a no-op, so they are torn down unconditionally.
+		std::string m_strSkeletonPath;
+		std::string m_strMeshPath;
 
 		explicit AnimPanelFixture(const char* szLeafDirectory)
 		{
@@ -140,11 +146,15 @@ namespace
 			std::filesystem::remove_all(m_xDirectory, xError);
 			std::filesystem::create_directories(m_xDirectory, xError);
 			m_strPath = (m_xDirectory / "sheet.zanim").generic_string();
+			m_strSkeletonPath = (m_xDirectory / "sheet.zskel").generic_string();
+			m_strMeshPath = (m_xDirectory / "sheet.zasset").generic_string();
 		}
 
 		~AnimPanelFixture()
 		{
 			Zenith_AssetRegistry::ForceUnload(m_strPath);
+			Zenith_AssetRegistry::ForceUnload(m_strSkeletonPath);
+			Zenith_AssetRegistry::ForceUnload(m_strMeshPath);
 			std::error_code xError;
 			std::filesystem::remove_all(m_xDirectory, xError);
 			Flux_PreviewSlotArbiter::ResetForTesting();
@@ -199,9 +209,105 @@ namespace
 		xClip.Export(strPath);
 	}
 
+	// Hip (position keys at 0 / 1 / 2, y = 0 / 1 / 2) plus Spine, which has ONE
+	// position key and no rotation or scale keys at all. What a cross-bone paste
+	// needs: a source with something to copy and a target that is animated but
+	// not on every track.
+	void AnimPanelWriteTwoBoneProbe(const std::string& strPath)
+	{
+		Flux_AnimationClip xClip;
+		xClip.SetName("TwoBoneProbe");
+		xClip.SetDuration(2.0f);
+		xClip.GetMetadata().m_bGenerated = false;
+		xClip.GetMetadata().m_uAuthoredFrameRate = 30u;
+
+		Flux_BoneChannel xHip;
+		xHip.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
+		xHip.AddPositionKeyframe(1.0f, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
+		xHip.AddPositionKeyframe(2.0f, Zenith_Maths::Vector3(0.0f, 2.0f, 0.0f));
+		xHip.SortKeyframes();
+		xClip.AddBoneChannel("Hip", std::move(xHip));
+
+		Flux_BoneChannel xSpine;
+		xSpine.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(0.0f, 5.0f, 0.0f));
+		xSpine.SortKeyframes();
+		xClip.AddBoneChannel("Spine", std::move(xSpine));
+
+		xClip.Export(strPath);
+	}
+
+	// A probe whose metadata records a REAL rig, so the preview session resolves
+	// and Seek actually does something. Both assets are tiny, hand-built and
+	// device-free — the mesh exists only to be a resolvable preview PATH, which is
+	// why it is not GenerateUnitCube (that helper ends in EnsureGPUBuffers).
+	void AnimPanelWriteRiggedProbe(const AnimPanelFixture& xFixture)
+	{
+		{
+			Zenith_SkeletonAsset xSkeleton;
+			const Zenith_Maths::Quat xIdentity(1.0f, 0.0f, 0.0f, 0.0f);
+			const Zenith_Maths::Vector3 xUnitScale(1.0f);
+			xSkeleton.AddBone("Hip", -1, Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f), xIdentity, xUnitScale);
+			xSkeleton.AddBone("Spine", 0, Zenith_Maths::Vector3(0.0f, 0.5f, 0.0f), xIdentity, xUnitScale);
+			xSkeleton.ComputeBindPoseMatrices();
+			xSkeleton.Export(xFixture.m_strSkeletonPath.c_str());
+		}
+		{
+			Zenith_MeshAsset xMesh;
+			xMesh.Reserve(3, 3);
+			xMesh.AddVertex(Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f), Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f), Zenith_Maths::Vector2(0.0f, 0.0f));
+			xMesh.AddVertex(Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f), Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f), Zenith_Maths::Vector2(1.0f, 0.0f));
+			xMesh.AddVertex(Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f), Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f), Zenith_Maths::Vector2(0.0f, 1.0f));
+			xMesh.AddTriangle(0u, 1u, 2u);
+			xMesh.AddSubmesh(0u, 3u, 0u);
+			xMesh.ComputeBounds();
+			xMesh.Export(xFixture.m_strMeshPath.c_str());
+		}
+
+		Flux_AnimationClip xClip;
+		xClip.SetName("RiggedProbe");
+		xClip.SetDuration(2.0f);
+		// ★ NOT LOOPING, and that is load-bearing for the scrub test rather than a
+		// preference. Flux_AnimationController::WrapClipTime WRAPS for a looping
+		// clip and CLAMPS for one that does not loop, so a seek to exactly the
+		// duration would fold back to 0 on a looping clip — and "the clamp works"
+		// and "the clamp wrapped all the way round" would be indistinguishable.
+		xClip.SetLooping(false);
+		xClip.GetMetadata().m_uAuthoredFrameRate = 30u;
+		xClip.GetMetadata().m_strSkeletonPath = xFixture.m_strSkeletonPath;
+		xClip.GetMetadata().m_strPreviewModelPath = xFixture.m_strMeshPath;
+
+		Flux_BoneChannel xHip;
+		xHip.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
+		xHip.AddPositionKeyframe(2.0f, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
+		xHip.SortKeyframes();
+		xClip.AddBoneChannel("Hip", std::move(xHip));
+
+		xClip.Export(xFixture.m_strPath);
+	}
+
 	Zenith_AnimTrackId AnimPanelHipPosition()
 	{
 		return Zenith_AnimTrackId::Bone("Hip", FLUX_ANIM_TRACK_POSITION);
+	}
+
+	Zenith_AnimTrackId AnimPanelSpinePosition()
+	{
+		return Zenith_AnimTrackId::Bone("Spine", FLUX_ANIM_TRACK_POSITION);
+	}
+
+	// Every key time on a track, in index order — what a bit-exact restore is
+	// compared against.
+	void AnimPanelSnapshotTimes(const Zenith_AnimationDocument& xDoc, const Zenith_AnimTrackId& xTrack,
+		Zenith_Vector<float>& afOut)
+	{
+		afOut.Clear();
+		const u_int uCount = xDoc.GetKeyCount(xTrack);
+		for (u_int u = 0; u < uCount; ++u)
+		{
+			float fTime = 0.0f;
+			xDoc.GetKeyTime(xTrack, xDoc.GetKeyIdAtIndex(xTrack, u), fTime);
+			afOut.PushBack(fTime);
+		}
 	}
 
 	// The id of the Hip position key sitting at fTimeSeconds, or 0.
@@ -533,4 +639,571 @@ ZENITH_TEST(AnimPanel, AnUndrawnPanelReportsNoRects)
 	ZENITH_ASSERT_FALSE(xPanel.GetRulerRect(xRect), "nor a ruler");
 	ZENITH_ASSERT_FALSE(xPanel.GetPlayheadRect(xRect), "nor a play head");
 	ZENITH_ASSERT_TRUE(xPanel.IsOpen(), "but the document is untouched — hiding a window is not closing a clip");
+}
+
+//==============================================================================
+//                        WU-3.3 — OPERATIONS AND UNDO
+//
+// ★ EVERY ONE OF THESE DRIVES AN Action_* DIRECTLY, NOT A SYNTHESISED CLICK.
+// That is the point of the actions existing: a failure here names the OPERATION,
+// where a failure through simulated input could equally be the click, the input
+// bridge, the hit-rect or the operation, and reports only "the key did not
+// move". The two tests that DO need screen coordinates (box select) go through
+// the published rect accessors, which is the same path a click takes.
+//
+// ★ THE RECURRING ASSERTION IS "THE SELECTION SURVIVES". Stable ids exist so
+// that an edit — and its undo — hand the user back the keys they had picked;
+// every mutating test below re-checks its ids after the undo, because a
+// selection quietly emptied by an edit is invisible until the NEXT operation
+// does less than it was asked to.
+//==============================================================================
+
+//==============================================================================
+// (8) The three select modes, and the refusal of an id the document never
+// issued.
+//==============================================================================
+ZENITH_TEST(AnimPanel, SelectModesReplaceAddAndToggleComposeAsClicksDo)
+{
+	AnimPanelFixture xFixture("zenith_animpanel_selectmodes");
+	AnimPanelWriteProbe(xFixture.m_strPath, /*bGenerated*/ false);
+
+	Zenith_EditorPanel_Animation xPanel;
+	ZENITH_ASSERT_TRUE(xPanel.OpenClip(xFixture.m_strPath), "the probe clip opens");
+
+	const Zenith_AnimTrackId xTrack = AnimPanelHipPosition();
+	const u_int uKey0 = AnimPanelKeyIdAtTime(xPanel.Document(), xTrack, 0.0f);
+	const u_int uKey1 = AnimPanelKeyIdAtTime(xPanel.Document(), xTrack, 1.0f);
+	const u_int uKey2 = AnimPanelKeyIdAtTime(xPanel.Document(), xTrack, 2.0f);
+	ZENITH_ASSERT_NE(uKey0, uINVALID_ANIM_KEY_ID, "the probe's three keys resolve");
+	ZENITH_ASSERT_NE(uKey1, uINVALID_ANIM_KEY_ID, "the probe's three keys resolve");
+	ZENITH_ASSERT_NE(uKey2, uINVALID_ANIM_KEY_ID, "the probe's three keys resolve");
+
+	ZENITH_ASSERT_EQ(xPanel.GetSelectedKeyCount(), 0u, "nothing is selected to begin with");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_SelectKey(xTrack, uKey0, ZENITH_ANIMSELECT_REPLACE), "a plain click selects");
+	ZENITH_ASSERT_EQ(xPanel.GetSelectedKeyCount(), 1u, "exactly one key");
+	ZENITH_ASSERT_TRUE(xPanel.IsKeySelected(xTrack, uKey0), "and it is the one clicked");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_SelectKey(xTrack, uKey1, ZENITH_ANIMSELECT_ADD), "shift-click adds");
+	ZENITH_ASSERT_EQ(xPanel.GetSelectedKeyCount(), 2u, "without dropping the first");
+	ZENITH_ASSERT_TRUE(xPanel.Action_SelectKey(xTrack, uKey1, ZENITH_ANIMSELECT_ADD), "adding twice is idempotent");
+	ZENITH_ASSERT_EQ(xPanel.GetSelectedKeyCount(), 2u, "and does not duplicate the entry");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_SelectKey(xTrack, uKey0, ZENITH_ANIMSELECT_TOGGLE), "ctrl-click toggles");
+	ZENITH_ASSERT_EQ(xPanel.GetSelectedKeyCount(), 1u, "one back out");
+	ZENITH_ASSERT_FALSE(xPanel.IsKeySelected(xTrack, uKey0), "the toggled one");
+	ZENITH_ASSERT_TRUE(xPanel.IsKeySelected(xTrack, uKey1), "and only that one");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_SelectKey(xTrack, uKey2, ZENITH_ANIMSELECT_REPLACE), "a plain click again");
+	ZENITH_ASSERT_EQ(xPanel.GetSelectedKeyCount(), 1u, "replaces everything");
+	ZENITH_ASSERT_TRUE(xPanel.IsKeySelected(xTrack, uKey2), "with the clicked key");
+
+	// ★ AN ID THE DOCUMENT NEVER ISSUED IS REFUSED. Stable ids only rescue a
+	// selection for ids that exist; an invented one would sit in the list forever
+	// and silently shrink every operation's effective selection by one.
+	ZENITH_ASSERT_FALSE(xPanel.Action_SelectKey(xTrack, 999999u, ZENITH_ANIMSELECT_ADD),
+		"selecting a key that does not resolve is refused");
+	ZENITH_ASSERT_EQ(xPanel.GetSelectedKeyCount(), 1u, "and changes nothing");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_ClearSelection(), "clearing a non-empty selection reports that it did something");
+	ZENITH_ASSERT_EQ(xPanel.GetSelectedKeyCount(), 0u, "and empties it");
+	ZENITH_ASSERT_FALSE(xPanel.Action_ClearSelection(), "clearing an empty one reports that there was nothing to do");
+}
+
+//==============================================================================
+// (9) Box select works through the RENDERED rects, and picks exactly what the
+// band covers.
+//
+// It is deliberately driven from GetKeyRect rather than from computed
+// coordinates: the band has to agree with what a click would hit, and both go
+// through the same off-screen gate. A rubber band that selected keys the gate
+// refuses to publish would be the graph editor's virtual-palette defect turned
+// sideways — the count would look right and the keys would be somewhere nobody
+// is looking.
+//==============================================================================
+ZENITH_TEST(AnimPanel, BoxSelectThroughRenderedRectsPicksExactlyTheKeysInside)
+{
+	AnimPanelFixture xFixture("zenith_animpanel_boxselect");
+	AnimPanelWriteProbe(xFixture.m_strPath, /*bGenerated*/ false);
+
+	Zenith_EditorPanel_Animation xPanel;
+	ZENITH_ASSERT_TRUE(xPanel.OpenClip(xFixture.m_strPath), "the probe clip opens");
+
+	const Zenith_AnimTrackId xTrack = AnimPanelHipPosition();
+	const u_int uKey0 = AnimPanelKeyIdAtTime(xPanel.Document(), xTrack, 0.0f);
+	const u_int uKey1 = AnimPanelKeyIdAtTime(xPanel.Document(), xTrack, 1.0f);
+	const u_int uKey2 = AnimPanelKeyIdAtTime(xPanel.Document(), xTrack, 2.0f);
+
+	xPanel.RequestWindowPlacement(40.0f, 40.0f, 900.0f, 600.0f);
+	AnimPanelRenderFrames(xPanel, 2u);
+
+	ZENITH_ASSERT_TRUE(xPanel.WasSheetDrawnLastFrame(), "the sheet pass ran");
+	ZENITH_ASSERT_GT(xPanel.GetLastTrackWidth(), 0.0f, "with a key lane to draw into");
+
+	Zenith_AnimPanelRect xRect0;
+	Zenith_AnimPanelRect xRect1;
+	Zenith_AnimPanelRect xRect2;
+	Zenith_AnimPanelRect xRow;
+	ZENITH_ASSERT_TRUE(xPanel.GetKeyRect(xTrack, uKey0, xRect0), "the key at t=0 is on screen");
+	ZENITH_ASSERT_TRUE(xPanel.GetKeyRect(xTrack, uKey1, xRect1), "the key at t=1 is on screen");
+	ZENITH_ASSERT_TRUE(xPanel.GetKeyRect(xTrack, uKey2, xRect2), "the key at t=2 is on screen");
+	ZENITH_ASSERT_TRUE(xPanel.GetRowTrackRect(xTrack, xRow), "and so is their row's key lane");
+	ZENITH_ASSERT_GT(xRect2.m_fMinX, xRect1.m_fMaxX + 1.0f,
+		"the third key is clear of the band below (else this test proves nothing)");
+
+	// A band across the first two keys only.
+	ZENITH_ASSERT_TRUE(xPanel.Action_BoxSelect(xRect0.m_fMinX - 1.0f, xRow.m_fMinY,
+		xRect1.m_fMaxX + 1.0f, xRow.m_fMaxY), "the band caught something");
+	ZENITH_ASSERT_EQ(xPanel.GetSelectedKeyCount(), 2u, "exactly the two keys inside it");
+	ZENITH_ASSERT_TRUE(xPanel.IsKeySelected(xTrack, uKey0), "the first");
+	ZENITH_ASSERT_TRUE(xPanel.IsKeySelected(xTrack, uKey1), "the second");
+	ZENITH_ASSERT_FALSE(xPanel.IsKeySelected(xTrack, uKey2), "and NOT the one outside it");
+
+	// Dragged the other way round — a band is a rectangle, not an ordered pair.
+	ZENITH_ASSERT_TRUE(xPanel.Action_BoxSelect(xRect2.m_fMaxX + 1.0f, xRow.m_fMaxY,
+		xRect2.m_fMinX - 1.0f, xRow.m_fMinY), "an up-left band is normalised, not empty");
+	ZENITH_ASSERT_EQ(xPanel.GetSelectedKeyCount(), 1u, "and REPLACE dropped the previous two");
+	ZENITH_ASSERT_TRUE(xPanel.IsKeySelected(xTrack, uKey2), "leaving the one it covered");
+
+	// A band over nothing, in ADD mode, leaves the selection alone.
+	ZENITH_ASSERT_FALSE(xPanel.Action_BoxSelect(xRow.m_fMinX, xRow.m_fMinY - 400.0f,
+		xRow.m_fMaxX, xRow.m_fMinY - 380.0f, ZENITH_ANIMSELECT_ADD), "a band over nothing catches nothing");
+	ZENITH_ASSERT_EQ(xPanel.GetSelectedKeyCount(), 1u, "and does not disturb what was picked");
+}
+
+//==============================================================================
+// (10) A multi-key move snaps ONCE, lands both keys, and is ONE undo step.
+//
+// The stack-size assertion is the load-bearing one. Without the compound this
+// would push a command per key, and the only symptom would be a Ctrl+Z that put
+// half a drag back — a state the user was only passing through.
+//==============================================================================
+ZENITH_TEST(AnimPanel, MoveSelectionSnapsOnceAndUndoesAsExactlyOneStep)
+{
+	AnimPanelFixture xFixture("zenith_animpanel_move");
+	AnimPanelWriteProbe(xFixture.m_strPath, /*bGenerated*/ false);
+
+	Zenith_EditorPanel_Animation xPanel;
+	ZENITH_ASSERT_TRUE(xPanel.OpenClip(xFixture.m_strPath), "the probe clip opens");
+	ZENITH_ASSERT_EQ(xPanel.GetFrameRate(), 30u, "the probe is authored at 30 fps, so a frame is 1/30 s");
+
+	const Zenith_AnimTrackId xTrack = AnimPanelHipPosition();
+	const u_int uKey0 = AnimPanelKeyIdAtTime(xPanel.Document(), xTrack, 0.0f);
+	const u_int uKey1 = AnimPanelKeyIdAtTime(xPanel.Document(), xTrack, 1.0f);
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_SelectKey(xTrack, uKey0, ZENITH_ANIMSELECT_REPLACE), "pick the first key");
+	ZENITH_ASSERT_TRUE(xPanel.Action_SelectKey(xTrack, uKey1, ZENITH_ANIMSELECT_ADD), "and add the second");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), 0u, "selecting is not an edit");
+
+	// 0.02 s at 30 fps is 0.6 of a frame, so the snap rounds the PRIMARY (the most
+	// recently selected key, t = 1) up to frame 31 and both keys move by that same
+	// 1/30 - the spacing between them is untouched.
+	ZENITH_ASSERT_TRUE(xPanel.Action_MoveSelection(0.02f, /*bSnap*/ true), "the move lands");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), 1u,
+		"TWO keys moved in ONE undo step — the whole reason the compound exists");
+
+	const float fOneFrame = Zenith_AnimTimelineFrameToTime(1u, 30u);
+	float fTime = 0.0f;
+	ZENITH_ASSERT_TRUE(xPanel.Document().GetKeyTime(xTrack, uKey1, fTime), "the primary resolves");
+	ZENITH_ASSERT_EQ_FLOAT(fTime, 1.0f + fOneFrame, 1.0e-4f, "and sits on the frame grid");
+	ZENITH_ASSERT_TRUE(xPanel.Document().GetKeyTime(xTrack, uKey0, fTime), "the other resolves");
+	ZENITH_ASSERT_EQ_FLOAT(fTime, fOneFrame, 1.0e-4f, "and moved by the SAME delta, not to its own nearest frame");
+
+	ZENITH_ASSERT_TRUE(xPanel.IsKeySelected(xTrack, uKey0), "the selection survived the edit");
+	ZENITH_ASSERT_TRUE(xPanel.IsKeySelected(xTrack, uKey1), "the selection survived the edit");
+
+	// ---- one press puts both back -------------------------------------------
+	ZENITH_ASSERT_TRUE(xPanel.Action_Undo(), "one undo");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), 0u, "drains the stack");
+
+	ZENITH_ASSERT_TRUE(xPanel.Document().GetKeyTime(xTrack, uKey0, fTime), "the first key still resolves by id");
+	ZENITH_ASSERT_EQ_FLOAT(fTime, 0.0f, 0.0f, "back EXACTLY where it was");
+	ZENITH_ASSERT_TRUE(xPanel.Document().GetKeyTime(xTrack, uKey1, fTime), "so does the second");
+	ZENITH_ASSERT_EQ_FLOAT(fTime, 1.0f, 0.0f, "back EXACTLY where it was");
+	ZENITH_ASSERT_TRUE(xPanel.IsKeySelected(xTrack, uKey0), "and both are STILL selected afterwards");
+	ZENITH_ASSERT_TRUE(xPanel.IsKeySelected(xTrack, uKey1), "and both are STILL selected afterwards");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_Redo(), "and the redo re-applies the whole group");
+	ZENITH_ASSERT_TRUE(xPanel.Document().GetKeyTime(xTrack, uKey1, fTime), "the primary resolves again");
+	ZENITH_ASSERT_EQ_FLOAT(fTime, 1.0f + fOneFrame, 1.0e-4f, "at the moved time");
+}
+
+//==============================================================================
+// (11) D11 — a drop onto an OCCUPIED time fails VISIBLY and destroys nothing.
+//
+// Three things have to be true at once and each one is a different failure if it
+// is not: the action refuses, the refusal is visible on the sheet (a return
+// value is not a UI), and nothing whatsoever moved — including the undo stack,
+// because an entry that reverses nothing is worse than no entry.
+//==============================================================================
+ZENITH_TEST(AnimPanel, MovingAKeyOntoAnOccupiedTimeFailsVisiblyAndDestroysNothing)
+{
+	AnimPanelFixture xFixture("zenith_animpanel_collision");
+	AnimPanelWriteProbe(xFixture.m_strPath, /*bGenerated*/ false);
+
+	Zenith_EditorPanel_Animation xPanel;
+	ZENITH_ASSERT_TRUE(xPanel.OpenClip(xFixture.m_strPath), "the probe clip opens");
+
+	const Zenith_AnimTrackId xTrack = AnimPanelHipPosition();
+	const u_int uKey0 = AnimPanelKeyIdAtTime(xPanel.Document(), xTrack, 0.0f);
+	const u_int uKey1 = AnimPanelKeyIdAtTime(xPanel.Document(), xTrack, 1.0f);
+
+	Zenith_Vector<float> afBefore;
+	AnimPanelSnapshotTimes(xPanel.Document(), xTrack, afBefore);
+	ZENITH_ASSERT_EQ(afBefore.GetSize(), 3u, "three key times recorded before the attempt");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_SelectKey(xTrack, uKey0, ZENITH_ANIMSELECT_REPLACE), "pick the key at t=0");
+	ZENITH_ASSERT_EQ(xPanel.GetCollisionFlashFramesRemaining(), 0u, "nothing is flashing yet");
+
+	// Straight onto the key at t = 1.
+	ZENITH_ASSERT_FALSE(xPanel.Action_MoveSelection(1.0f, /*bSnap*/ false), "the drop is REFUSED");
+
+	ZENITH_ASSERT_GT(xPanel.GetCollisionFlashFramesRemaining(), 0u,
+		"and it is VISIBLE — a bare false is not something a user can see");
+	Zenith_AnimTrackId xFlashTrack;
+	u_int uFlashKeyId = uINVALID_ANIM_KEY_ID;
+	ZENITH_ASSERT_TRUE(xPanel.GetCollisionFlashKey(xFlashTrack, uFlashKeyId), "the flash names a key");
+	ZENITH_ASSERT_EQ(uFlashKeyId, uKey1, "the one that was in the way, not the one being dragged");
+	ZENITH_ASSERT_TRUE(xFlashTrack == xTrack, "on its own track");
+
+	// ---- and NOTHING moved ---------------------------------------------------
+	Zenith_Vector<float> afAfter;
+	AnimPanelSnapshotTimes(xPanel.Document(), xTrack, afAfter);
+	ZENITH_ASSERT_EQ(afAfter.GetSize(), afBefore.GetSize(), "the key count is unchanged");
+	for (u_int u = 0; u < afBefore.GetSize(); ++u)
+	{
+		ZENITH_ASSERT_EQ_FLOAT(afAfter.Get(u), afBefore.Get(u), 0.0f, "every key time is bit-for-bit unchanged");
+	}
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), 0u,
+		"and the undo stack did NOT grow — a refusal is not an edit");
+	ZENITH_ASSERT_TRUE(xPanel.IsKeySelected(xTrack, uKey0), "the selection is left exactly as it was");
+
+	// The flash is a FRAME counter, so a rendered frame burns one.
+	const u_int uLit = xPanel.GetCollisionFlashFramesRemaining();
+	xPanel.RequestWindowPlacement(40.0f, 40.0f, 900.0f, 600.0f);
+	AnimPanelRenderFrames(xPanel, 1u);
+	ZENITH_ASSERT_EQ(xPanel.GetCollisionFlashFramesRemaining(), uLit - 1u, "one frame, one tick of the flash");
+}
+
+//==============================================================================
+// (12) Delete is one step, and the UNDO gives the selection back with the keys.
+//
+// ★ THE SELECTION IS NOT PRUNED BY THE DELETE, deliberately. If it were, the
+// undo would restore the keys and the user would be left with nothing picked —
+// and the stable ids the document goes to such lengths to preserve would have
+// bought precisely nothing.
+//==============================================================================
+ZENITH_TEST(AnimPanel, DeleteSelectionIsOneStepAndItsUndoRestoresTheSelection)
+{
+	AnimPanelFixture xFixture("zenith_animpanel_delete");
+	AnimPanelWriteProbe(xFixture.m_strPath, /*bGenerated*/ false);
+
+	Zenith_EditorPanel_Animation xPanel;
+	ZENITH_ASSERT_TRUE(xPanel.OpenClip(xFixture.m_strPath), "the probe clip opens");
+
+	const Zenith_AnimTrackId xTrack = AnimPanelHipPosition();
+	const u_int uKey1 = AnimPanelKeyIdAtTime(xPanel.Document(), xTrack, 1.0f);
+	const u_int uKey2 = AnimPanelKeyIdAtTime(xPanel.Document(), xTrack, 2.0f);
+
+	ZENITH_ASSERT_FALSE(xPanel.Action_DeleteSelection(), "deleting nothing is refused rather than logged as an edit");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_SelectKey(xTrack, uKey1, ZENITH_ANIMSELECT_REPLACE), "pick two keys");
+	ZENITH_ASSERT_TRUE(xPanel.Action_SelectKey(xTrack, uKey2, ZENITH_ANIMSELECT_ADD), "pick two keys");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_DeleteSelection(), "the delete lands");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetKeyCount(xTrack), 1u, "leaving one key on the track");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), 1u, "two removals, ONE undo step");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetKeyIndexForId(xTrack, uKey1), uINVALID_ANIM_KEY_INDEX,
+		"and the deleted ids stop resolving");
+
+	// The ids are STILL in the selection, naming keys that do not currently exist.
+	ZENITH_ASSERT_EQ(xPanel.GetSelectedKeyCount(), 2u, "the selection still names them");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_Undo(), "one undo brings both back");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetKeyCount(xTrack), 3u, "all three keys are on the track again");
+
+	float fTime = 0.0f;
+	ZENITH_ASSERT_TRUE(xPanel.Document().GetKeyTime(xTrack, uKey1, fTime), "the first resolves under its ORIGINAL id");
+	ZENITH_ASSERT_EQ_FLOAT(fTime, 1.0f, 0.0f, "at exactly its original time");
+	ZENITH_ASSERT_TRUE(xPanel.Document().GetKeyTime(xTrack, uKey2, fTime), "so does the second");
+	ZENITH_ASSERT_EQ_FLOAT(fTime, 2.0f, 0.0f, "at exactly its original time");
+
+	ZENITH_ASSERT_TRUE(xPanel.IsKeySelected(xTrack, uKey1), "and the selection came back WITH them");
+	ZENITH_ASSERT_TRUE(xPanel.IsKeySelected(xTrack, uKey2), "and the selection came back WITH them");
+}
+
+//==============================================================================
+// (13) Duplicate produces NEW ids carrying the SAME values, and selects them.
+//==============================================================================
+ZENITH_TEST(AnimPanel, DuplicateSelectionProducesNewIdsCarryingTheSameValues)
+{
+	AnimPanelFixture xFixture("zenith_animpanel_duplicate");
+	AnimPanelWriteProbe(xFixture.m_strPath, /*bGenerated*/ false);
+
+	Zenith_EditorPanel_Animation xPanel;
+	ZENITH_ASSERT_TRUE(xPanel.OpenClip(xFixture.m_strPath), "the probe clip opens");
+
+	const Zenith_AnimTrackId xTrack = AnimPanelHipPosition();
+	const u_int uKey1 = AnimPanelKeyIdAtTime(xPanel.Document(), xTrack, 1.0f);
+	ZENITH_ASSERT_TRUE(xPanel.Action_SelectKey(xTrack, uKey1, ZENITH_ANIMSELECT_REPLACE), "pick the key at t=1");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_DuplicateSelection(), "the duplicate lands");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetKeyCount(xTrack), 4u, "a fourth key exists");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), 1u, "as one undo step");
+
+	// ★ THE COPY IS SELECTED, NOT THE ORIGINAL. The gesture after a duplicate is
+	// almost always "now drag it", and with the two sitting one frame apart,
+	// dragging the wrong one is the version of that mistake nobody notices.
+	ZENITH_ASSERT_EQ(xPanel.GetSelectedKeyCount(), 1u, "exactly the copy is selected");
+	ZENITH_ASSERT_FALSE(xPanel.IsKeySelected(xTrack, uKey1), "and the original is not");
+
+	Zenith_AnimTrackId xCopyTrack;
+	u_int uCopyId = uINVALID_ANIM_KEY_ID;
+	ZENITH_ASSERT_TRUE(xPanel.GetSelectedKeyAt(0u, xCopyTrack, uCopyId), "the copy is reachable through the selection");
+	ZENITH_ASSERT_NE(uCopyId, uKey1, "and carries a FRESH id — a duplicate is a new key, not an alias");
+	ZENITH_ASSERT_TRUE(xCopyTrack == xTrack, "on the same track");
+
+	const float fOneFrame = Zenith_AnimTimelineFrameToTime(1u, 30u);
+	float fTime = 0.0f;
+	ZENITH_ASSERT_TRUE(xPanel.Document().GetKeyTime(xTrack, uCopyId, fTime), "the copy resolves");
+	ZENITH_ASSERT_EQ_FLOAT(fTime, 1.0f + fOneFrame, 1.0e-4f, "one frame past the key it was copied from");
+
+	Zenith_AnimKeyValue xOriginal;
+	Zenith_AnimKeyValue xCopy;
+	ZENITH_ASSERT_TRUE(xPanel.Document().GetKeyValue(xTrack, uKey1, xOriginal), "the original's value reads back");
+	ZENITH_ASSERT_TRUE(xPanel.Document().GetKeyValue(xTrack, uCopyId, xCopy), "and so does the copy's");
+	ZENITH_ASSERT_EQ_FLOAT(xCopy.m_xVector.y, xOriginal.m_xVector.y, 0.0f, "with the value carried across exactly");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_Undo(), "and the undo removes it again");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetKeyCount(xTrack), 3u, "back to three keys");
+}
+
+//==============================================================================
+// (14) Cross-bone paste: kinds are matched, and a bone with no channel gets one.
+//
+// The second half is the one worth having. A channel is DELETED when its last
+// key goes (D14) and a bone the clip never animated has none at all, so "paste
+// onto that bone" has to go through the document's insert verb — which creates
+// it — rather than looking for a track that is not there and quietly doing
+// nothing.
+//==============================================================================
+ZENITH_TEST(AnimPanel, CrossBonePasteMatchesKindsAndCreatesAMissingChannel)
+{
+	AnimPanelFixture xFixture("zenith_animpanel_paste");
+	AnimPanelWriteTwoBoneProbe(xFixture.m_strPath);
+
+	Zenith_EditorPanel_Animation xPanel;
+	ZENITH_ASSERT_TRUE(xPanel.OpenClip(xFixture.m_strPath), "the two-bone probe opens");
+
+	const Zenith_AnimTrackId xHip = AnimPanelHipPosition();
+	const Zenith_AnimTrackId xSpine = AnimPanelSpinePosition();
+	ZENITH_ASSERT_EQ(xPanel.Document().GetKeyCount(xSpine), 1u, "Spine starts with one position key");
+
+	const u_int uHip0 = AnimPanelKeyIdAtTime(xPanel.Document(), xHip, 0.0f);
+	const u_int uHip1 = AnimPanelKeyIdAtTime(xPanel.Document(), xHip, 1.0f);
+
+	ZENITH_ASSERT_FALSE(xPanel.Action_CopySelection(), "copying an empty selection is refused");
+	ZENITH_ASSERT_TRUE(xPanel.Action_SelectKey(xHip, uHip0, ZENITH_ANIMSELECT_REPLACE), "pick two of Hip's keys");
+	ZENITH_ASSERT_TRUE(xPanel.Action_SelectKey(xHip, uHip1, ZENITH_ANIMSELECT_ADD), "pick two of Hip's keys");
+	ZENITH_ASSERT_TRUE(xPanel.Action_CopySelection(), "the copy lands");
+	ZENITH_ASSERT_EQ(xPanel.GetClipboardKeyCount(), 2u, "two keys on the clipboard");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), 0u, "and a copy is not an edit");
+
+	// ---- onto a bone that HAS the channel -----------------------------------
+	ZENITH_ASSERT_TRUE(xPanel.Action_PasteToBone("Spine", 0.5f), "the paste lands");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetKeyCount(xSpine), 3u, "Spine gained both keys");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), 1u, "as ONE undo step");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetKeyCount(xHip), 3u, "and the source is untouched");
+
+	// The relative spacing survived the trip: 0 and 1 became 0.5 and 1.5.
+	const u_int uPasted0 = AnimPanelKeyIdAtTime(xPanel.Document(), xSpine, 0.5f);
+	const u_int uPasted1 = AnimPanelKeyIdAtTime(xPanel.Document(), xSpine, 1.5f);
+	ZENITH_ASSERT_NE(uPasted0, uINVALID_ANIM_KEY_ID, "the first copy landed at the offset");
+	ZENITH_ASSERT_NE(uPasted1, uINVALID_ANIM_KEY_ID, "and the second kept its spacing from it");
+	ZENITH_ASSERT_NE(uPasted0, uHip0, "the pasted keys carry FRESH ids");
+	ZENITH_ASSERT_NE(uPasted1, uHip1, "the pasted keys carry FRESH ids");
+
+	Zenith_AnimKeyValue xValue;
+	ZENITH_ASSERT_TRUE(xPanel.Document().GetKeyValue(xSpine, uPasted1, xValue), "the second copy's value reads back");
+	ZENITH_ASSERT_EQ_FLOAT(xValue.m_xVector.y, 1.0f, 0.0f, "carrying Hip's value, not Spine's");
+
+	ZENITH_ASSERT_EQ(xPanel.GetSelectedKeyCount(), 2u, "the pasted keys become the selection");
+	ZENITH_ASSERT_TRUE(xPanel.IsKeySelected(xSpine, uPasted0), "on the bone they were pasted onto");
+
+	// ---- onto a bone with NO channel at all ---------------------------------
+	const Zenith_AnimTrackId xTail = Zenith_AnimTrackId::Bone("Tail", FLUX_ANIM_TRACK_POSITION);
+	ZENITH_ASSERT_FALSE(xPanel.Document().TrackExists(xTail), "the clip has no Tail channel to begin with");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_PasteToBone("Tail", 0.0f), "pasting onto it still lands");
+	ZENITH_ASSERT_TRUE(xPanel.Document().TrackExists(xTail), "and the document's own verb CREATED the channel");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetKeyCount(xTail), 2u, "with both keys on it");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_Undo(), "the undo reverses the whole paste");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetKeyCount(xTail), 0u, "leaving nothing on Tail");
+}
+
+//==============================================================================
+// (15) A ripple retime undone restores EVERY key time exactly, and events do
+// not move with it (D4).
+//==============================================================================
+ZENITH_TEST(AnimPanel, RippleRetimeUndoneRestoresEveryKeyTimeExactly)
+{
+	AnimPanelFixture xFixture("zenith_animpanel_ripple");
+	AnimPanelWriteProbe(xFixture.m_strPath, /*bGenerated*/ false);
+
+	Zenith_EditorPanel_Animation xPanel;
+	ZENITH_ASSERT_TRUE(xPanel.OpenClip(xFixture.m_strPath), "the probe clip opens");
+
+	const Zenith_AnimTrackId xTrack = AnimPanelHipPosition();
+	const u_int uEventId = xPanel.Document().AddEvent("Beat", 0.25f, Zenith_Maths::Vector4(0.0f, 0.0f, 0.0f, 0.0f));
+	ZENITH_ASSERT_NE(uEventId, uINVALID_ANIM_KEY_ID, "an event to watch stay put");
+
+	Zenith_Vector<float> afBefore;
+	AnimPanelSnapshotTimes(xPanel.Document(), xTrack, afBefore);
+	ZENITH_ASSERT_EQ(afBefore.GetSize(), 3u, "three key times recorded");
+
+	const u_int uStackBefore = xPanel.Document().GetUndoStackSize();
+
+	// Everything at or after t = 1 slides half a second later; the key at t = 0
+	// does not move, which is what makes this a ripple rather than a shift.
+	ZENITH_ASSERT_TRUE(xPanel.Action_RippleRetime(1.0f, 0.5f), "the ripple lands");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), uStackBefore + 1u, "as ONE undo step");
+
+	float fTime = 0.0f;
+	ZENITH_ASSERT_TRUE(xPanel.Document().GetKeyTime(xTrack, xPanel.Document().GetKeyIdAtIndex(xTrack, 0u), fTime),
+		"the first key resolves");
+	ZENITH_ASSERT_EQ_FLOAT(fTime, 0.0f, 0.0f, "and did NOT move — it is before the ripple point");
+	ZENITH_ASSERT_TRUE(xPanel.Document().GetKeyTime(xTrack, xPanel.Document().GetKeyIdAtIndex(xTrack, 2u), fTime),
+		"the last key resolves");
+	ZENITH_ASSERT_EQ_FLOAT(fTime, 2.5f, 1.0e-5f, "and slid by the delta");
+
+	// ★ D4. An event's time is a [0,1] FRACTION of the clip, not a point on the
+	// seconds clock the keys are on, so it is already relative to the duration —
+	// sliding it "proportionally" alongside the keys would move it twice.
+	Flux_AnimationEvent xEvent;
+	ZENITH_ASSERT_TRUE(xPanel.Document().GetEvent(uEventId, xEvent), "the event resolves");
+	ZENITH_ASSERT_EQ_FLOAT(xEvent.m_fNormalizedTime, 0.25f, 0.0f, "and a ripple did not touch it");
+
+	// ---- exact restore -------------------------------------------------------
+	ZENITH_ASSERT_TRUE(xPanel.Action_Undo(), "one undo reverses the whole ripple");
+	Zenith_Vector<float> afAfter;
+	AnimPanelSnapshotTimes(xPanel.Document(), xTrack, afAfter);
+	ZENITH_ASSERT_EQ(afAfter.GetSize(), afBefore.GetSize(), "with the same number of keys");
+	for (u_int u = 0; u < afBefore.GetSize(); ++u)
+	{
+		ZENITH_ASSERT_EQ_FLOAT(afAfter.Get(u), afBefore.Get(u), 0.0f,
+			"and every key time restored BIT-FOR-BIT, not merely close");
+	}
+}
+
+//==============================================================================
+// (16) A ripple that would collide refuses whole, and a ripple with nothing to
+// move is not an edit.
+//==============================================================================
+ZENITH_TEST(AnimPanel, ARippleThatWouldCollideRefusesAndChangesNothing)
+{
+	AnimPanelFixture xFixture("zenith_animpanel_ripple_collide");
+	AnimPanelWriteProbe(xFixture.m_strPath, /*bGenerated*/ false);
+
+	Zenith_EditorPanel_Animation xPanel;
+	ZENITH_ASSERT_TRUE(xPanel.OpenClip(xFixture.m_strPath), "the probe clip opens");
+
+	const Zenith_AnimTrackId xTrack = AnimPanelHipPosition();
+	Zenith_Vector<float> afBefore;
+	AnimPanelSnapshotTimes(xPanel.Document(), xTrack, afBefore);
+
+	// Slide everything at or after t = 1 BACK by one second: the key at t = 1
+	// would land on the key at t = 0, which is not part of the move.
+	ZENITH_ASSERT_FALSE(xPanel.Action_RippleRetime(1.0f, -1.0f), "the ripple is REFUSED");
+	ZENITH_ASSERT_GT(xPanel.GetCollisionFlashFramesRemaining(), 0u, "and says so on the sheet");
+
+	Zenith_Vector<float> afAfter;
+	AnimPanelSnapshotTimes(xPanel.Document(), xTrack, afAfter);
+	ZENITH_ASSERT_EQ(afAfter.GetSize(), afBefore.GetSize(), "nothing was removed");
+	for (u_int u = 0; u < afBefore.GetSize(); ++u)
+	{
+		ZENITH_ASSERT_EQ_FLOAT(afAfter.Get(u), afBefore.Get(u), 0.0f, "and nothing moved");
+	}
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), 0u, "the undo stack is untouched");
+
+	// Nothing at or after t = 9 s, so there is no edit to make and no empty undo
+	// entry to leave behind.
+	ZENITH_ASSERT_FALSE(xPanel.Action_RippleRetime(9.0f, 0.5f), "a ripple past the last key is not an edit");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), 0u, "and pushes nothing");
+}
+
+//==============================================================================
+// (17) The duration handle's action, and undo / redo through the panel.
+//==============================================================================
+ZENITH_TEST(AnimPanel, SetDurationIsUndoableAndRefusesNonEdits)
+{
+	AnimPanelFixture xFixture("zenith_animpanel_duration");
+	AnimPanelWriteProbe(xFixture.m_strPath, /*bGenerated*/ false);
+
+	Zenith_EditorPanel_Animation xPanel;
+	ZENITH_ASSERT_TRUE(xPanel.OpenClip(xFixture.m_strPath), "the probe clip opens");
+	ZENITH_ASSERT_EQ_FLOAT(xPanel.Document().GetDuration(), 2.0f, 0.0f, "at its authored duration");
+
+	ZENITH_ASSERT_FALSE(xPanel.Action_Undo(), "there is nothing to undo yet");
+	ZENITH_ASSERT_FALSE(xPanel.Action_Redo(), "nor to redo");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_SetDuration(3.0f), "the handle's drop lands");
+	ZENITH_ASSERT_EQ_FLOAT(xPanel.Document().GetDuration(), 3.0f, 0.0f, "moving the duration");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), 1u, "as one step");
+
+	// ★ A NO-OP IS REFUSED. A drag that ends where it began would otherwise leave
+	// an undo entry whose Ctrl+Z visibly does nothing, which reads as broken.
+	ZENITH_ASSERT_FALSE(xPanel.Action_SetDuration(3.0f), "setting it to what it already is is not an edit");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), 1u, "and pushes nothing");
+
+	ZENITH_ASSERT_FALSE(xPanel.Action_SetDuration(-1.0f), "a negative duration is refused");
+	ZENITH_ASSERT_EQ_FLOAT(xPanel.Document().GetDuration(), 3.0f, 0.0f, "leaving the duration alone");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_Undo(), "the undo runs");
+	ZENITH_ASSERT_EQ_FLOAT(xPanel.Document().GetDuration(), 2.0f, 0.0f, "restoring the authored duration exactly");
+	ZENITH_ASSERT_TRUE(xPanel.Action_Redo(), "and the redo runs");
+	ZENITH_ASSERT_EQ_FLOAT(xPanel.Document().GetDuration(), 3.0f, 0.0f, "re-applying it exactly");
+}
+
+//==============================================================================
+// (18) Scrubbing moves the session's clock, clamps to the clip, and emits no
+// events.
+//
+// This is the one operation that needs a REAL rig, because Seek is inert until
+// one resolves — so the fixture writes a two-bone skeleton and a one-triangle
+// mesh. Both are device-free: the mesh exists only to be a resolvable preview
+// PATH, which is why it is hand-built rather than GenerateUnitCube (that helper
+// ends in EnsureGPUBuffers). Nothing here renders a frame.
+//==============================================================================
+ZENITH_TEST(AnimPanel, ScrubMovesTheSessionClockWithoutEmittingEvents)
+{
+	AnimPanelFixture xFixture("zenith_animpanel_scrub");
+	AnimPanelWriteRiggedProbe(xFixture);
+
+	Zenith_EditorPanel_Animation xPanel;
+	ZENITH_ASSERT_TRUE(xPanel.OpenClip(xFixture.m_strPath), "the rigged probe opens");
+	ZENITH_ASSERT_TRUE(xPanel.Session().IsOpen(), "with a preview session");
+	ZENITH_ASSERT_FALSE(xPanel.Session().NeedsRigSelection(), "whose rig resolved (else the scrub is inert)");
+	ZENITH_ASSERT_EQ_FLOAT(xPanel.Session().GetTime(), 0.0f, 1.0e-5f, "a freshly opened clip sits at t=0");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_Scrub(0.75f), "the scrub lands");
+	ZENITH_ASSERT_EQ_FLOAT(xPanel.Session().GetTime(), 0.75f, 1.0e-3f, "and the session's clock moved");
+
+	// ★ A SCRUB EMITS NOTHING. Flux_AnimationController advances the event
+	// bookkeeping mark on a seek WITHOUT firing what the playhead skipped (D40) —
+	// dragging across a clip must not replay every footstep in it. The flag below
+	// is the hook that would change that, and nothing sets it.
+	ZENITH_ASSERT_FALSE(xPanel.Session().Controller().GetEmitEventsOnSeek(),
+		"the seek path is the non-emitting one");
+
+	// Clamped into the clip rather than refused: a drag runs off the end of the
+	// ruler constantly, and refusing there would make the playhead stick.
+	ZENITH_ASSERT_TRUE(xPanel.Action_Scrub(99.0f), "a scrub past the end still lands");
+	ZENITH_ASSERT_EQ_FLOAT(xPanel.Session().GetTime(), 2.0f, 1.0e-3f, "clamped to the clip's duration");
+	ZENITH_ASSERT_TRUE(xPanel.Action_Scrub(-5.0f), "and so does one before the start");
+	ZENITH_ASSERT_EQ_FLOAT(xPanel.Session().GetTime(), 0.0f, 1.0e-3f, "clamped to zero");
+
+	// The document is a scrub away from nothing: seeking is a VIEW change.
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), 0u, "and a scrub is not an edit");
+	ZENITH_ASSERT_FALSE(xPanel.Document().IsDirty(), "nor does it dirty the clip");
 }

@@ -4,6 +4,7 @@
 
 #include "Editor/Zenith_UndoSystem.h"
 #include "Editor/Zenith_AnimationDocument.h"
+#include "Collections/Zenith_Vector.h"
 #include "Flux/MeshAnimation/Flux_AnimationClip.h"
 #include <string>
 
@@ -202,6 +203,51 @@ private:
 	u_int m_uEventId;
 	Flux_AnimationEvent m_xOld;
 	Flux_AnimationEvent m_xNew;
+};
+
+//-----------------------------------------------------------------------------
+// MANY EDITS, ONE UNDO STEP (WU-3.3).
+//
+// ★ WHY THIS EXISTS AT ALL: Zenith_UndoSystem HAS NO GROUPING. It is a flat
+// LIFO of Zenith_UndoCommand* with Execute / Record / Undo / Redo and nothing
+// resembling a transaction — so a dope-sheet drag that moved eleven keys would
+// push eleven commands and take eleven Ctrl+Z presses to reverse, with the ten
+// intermediate states being ones the user never saw. This is the whole of the
+// mechanism: a command that OWNS other commands.
+//
+// ★ THE ORDER IS FORWARD ON EXECUTE AND REVERSE ON UNDO, and that is not
+// cosmetic. A multi-key retime is applied in an order chosen so no intermediate
+// state collides (D11 refuses a key landing on an occupied time), and the exact
+// inverse of that order is the only order whose intermediate states are equally
+// collision-free. Undoing the children in the order they were applied would put
+// the first key back on top of the second one, the mutator would refuse, and
+// the undo would silently half-work.
+//
+// ★ IT IS BUILT BY THE DOCUMENT, NOT BY A CALLER. Zenith_AnimationDocument::
+// BeginCompound / EndCompound open and close one of these; while it is open,
+// every command the document's ordinary verbs push is ADOPTED here instead of
+// reaching the undo stack. That is what keeps the collection rule in one place:
+// an operation calls the same public verbs it always did and does not know it
+// is being grouped.
+//-----------------------------------------------------------------------------
+class Zenith_AnimCommand_Compound : public Zenith_AnimCommandBase
+{
+public:
+	Zenith_AnimCommand_Compound(Zenith_AnimationDocument* pxDocument, const char* szDescription);
+	// Deletes every child it owns — the compound is the sole owner from Adopt on.
+	~Zenith_AnimCommand_Compound() override;
+
+	// Takes ownership. A null child is ignored rather than stored.
+	void Adopt(Zenith_UndoCommand* pxChild);
+	u_int GetChildCount() const { return m_apxChildren.GetSize(); }
+	// EndCompound names the group once it knows what it collected.
+	void SetDescription(const char* szDescription);
+
+	void Execute() override;
+	void Undo() override;
+
+private:
+	Zenith_Vector<Zenith_UndoCommand*> m_apxChildren;
 };
 
 // Force-link anchor: Zenith_AnimationDocument_ForceLink calls this, so ONE call

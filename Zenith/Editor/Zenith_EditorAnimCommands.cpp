@@ -286,6 +286,66 @@ void Zenith_AnimCommand_EventEdit::Undo()
 	m_pxDocument->MarkDirty();
 }
 
+//------------------------------------------------------------------------------
+// Compound — the ONLY command here that does not call an Apply* primitive,
+// because it has no edit of its own: it is a bracket around other commands.
+//------------------------------------------------------------------------------
+
+Zenith_AnimCommand_Compound::Zenith_AnimCommand_Compound(Zenith_AnimationDocument* pxDocument, const char* szDescription)
+	: Zenith_AnimCommandBase(pxDocument, szDescription != nullptr ? szDescription : "Animation Edit")
+{
+}
+
+Zenith_AnimCommand_Compound::~Zenith_AnimCommand_Compound()
+{
+	for (u_int u = 0; u < m_apxChildren.GetSize(); ++u)
+	{
+		delete m_apxChildren.Get(u);
+	}
+	m_apxChildren.Clear();
+}
+
+void Zenith_AnimCommand_Compound::Adopt(Zenith_UndoCommand* pxChild)
+{
+	if (pxChild == nullptr)
+	{
+		return;
+	}
+	m_apxChildren.PushBack(pxChild);
+}
+
+void Zenith_AnimCommand_Compound::SetDescription(const char* szDescription)
+{
+	if (szDescription == nullptr || szDescription[0] == '\0')
+	{
+		return;
+	}
+	m_strDescription = szDescription;
+}
+
+void Zenith_AnimCommand_Compound::Execute()
+{
+	// FORWARD. A redo has to reproduce the order the operation originally chose,
+	// which is the order that kept every intermediate state collision-free.
+	for (u_int u = 0; u < m_apxChildren.GetSize(); ++u)
+	{
+		m_apxChildren.Get(u)->Execute();
+	}
+}
+
+void Zenith_AnimCommand_Compound::Undo()
+{
+	// ★ REVERSE, and this is the load-bearing half. Undoing a multi-key retime in
+	// application order puts the first key back on top of the second one; D11
+	// refuses that, the mutator returns false, and the undo half-works with
+	// nothing raised. The exact inverse order is the only one whose intermediate
+	// states are as collision-free as the forward pass's were.
+	for (u_int u = m_apxChildren.GetSize(); u-- > 0;)
+	{
+		m_apxChildren.Get(u)->Undo();
+	}
+}
+
 #ifdef ZENITH_TESTING
 #include "Editor/Zenith_EditorAnimCommands.Tests.inl"
 #endif

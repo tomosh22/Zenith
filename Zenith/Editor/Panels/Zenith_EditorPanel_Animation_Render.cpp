@@ -43,6 +43,13 @@ namespace
 	constexpr float fSHEET_EVENT_HALF_1X    = 5.0f;
 	constexpr float fSHEET_PLAYHEAD_HALF_1X = 1.5f;
 	constexpr float fSHEET_PREVIEW_SIZE_1X  = 192.0f;
+	// How near the clip-end line counts as grabbing the duration handle.
+	constexpr float fSHEET_DURATION_GRAB_1X = 5.0f;
+	// A press-and-release inside this many pixels is a CLICK, not a rubber band.
+	// Without it every click on empty space would run a zero-area box select,
+	// which selects nothing and so looks identical — until a click that drifted
+	// one pixel while the button was down silently became a band.
+	constexpr float fSHEET_CLICK_SLOP_1X = 3.0f;
 
 	// A ruler cannot be allowed to iterate unboundedly however degenerate the
 	// view is: ChooseTicks guarantees a strictly positive step, and this is the
@@ -82,8 +89,24 @@ void Zenith_EditorPanel_Animation::Render(float fDtSeconds)
 	// coordinates — that is a click into a window nobody can see.
 	ClearFrameRects();
 
+	// D11's flash is measured in FRAMES, not seconds: the caller may legitimately
+	// pass dt 0 (the editor's Paused mode passes exactly that), and a flash on a
+	// wall clock would then never expire.
+	if (m_uCollisionFlashFrames > 0u)
+	{
+		--m_uCollisionFlashFrames;
+	}
+
 	if (!m_bShow)
 	{
+		// ★ A GESTURE CANNOT SURVIVE THE PANEL BEING HIDDEN. The mouse-up that
+		// would have ended it is delivered to whatever is on screen now, so a drag
+		// left in flight here would apply itself to a later, unrelated release.
+		m_bDraggingKeys = false;
+		m_bBoxSelecting = false;
+		m_bScrubbing = false;
+		m_bDraggingDuration = false;
+		m_fDragDeltaSeconds = 0.0f;
 		return;
 	}
 
@@ -135,6 +158,14 @@ void Zenith_EditorPanel_Animation::Render(float fDtSeconds)
 	RenderPreviewPane();
 	ImGui::Separator();
 	RenderSheet();
+
+	// Shortcuts are scoped to THIS window's focus, the way the editor scopes its
+	// entity keys to the viewport and the hierarchy: a Delete pressed in the
+	// console must never remove a keyframe.
+	if (bFocused)
+	{
+		HandleSheetKeyboard();
+	}
 
 	++m_uRenderedFrames;
 	ImGui::End();
@@ -521,6 +552,7 @@ void Zenith_EditorPanel_Animation::RenderSheet()
 	DrawRuler(pxDraw, xLayout);
 	DrawRows(pxDraw, xLayout, bCanvasHovered);
 	DrawPlayhead(pxDraw, xLayout);
+	DrawSelectionOverlays(pxDraw, xLayout);
 
 	pxDraw->PopClipRect();
 
@@ -538,6 +570,14 @@ void Zenith_EditorPanel_Animation::RenderSheet()
 		m_xTrackAreaRect.m_fMaxY = xLayout.m_fCanvasBottom;
 		m_bTrackAreaRectValid = true;
 	}
+
+	// ★ INPUT IS TRANSLATED LAST, AFTER THE RECTS EXIST. Every gesture below
+	// hit-tests against what was painted THIS frame, through the same accessors
+	// a caller uses — so a click can never land on a key the off-screen gate
+	// would have refused to hand out a coordinate for. The cost is that a
+	// mutation made here is not visible until the next frame's draw, which is
+	// exactly the deferral the collapse toggle above already lives with.
+	HandleSheetInput(xLayout, bCanvasHovered);
 }
 
 void Zenith_EditorPanel_Animation::HandleViewInput(const SheetLayout& xLayout, bool bCanvasHovered)
@@ -879,7 +919,16 @@ void Zenith_EditorPanel_Animation::DrawKeysForRow(ImDrawList* pxDraw, const Shee
 		}
 
 		const bool bPastDuration = m_xKeysPastDuration.Contains(MakeKeyRectKey(uRowIndex, uKeyId));
-		const ImU32 uFill = bPastDuration ? xPalette.m_uWarning : xPalette.m_uAccent;
+		const bool bSelected = IsKeySelected(xRow.m_xTrack, uKeyId);
+		// D11's visible half: the key that REFUSED a drop is lit until the flash
+		// runs out, so a drag that springs back reads as a refusal rather than as
+		// the panel not working.
+		const bool bBlocked = m_uCollisionFlashFrames > 0u
+			&& m_uCollisionFlashKeyId == uKeyId && m_xCollisionFlashTrack == xRow.m_xTrack;
+
+		ImU32 uFill = bPastDuration ? xPalette.m_uWarning : xPalette.m_uAccent;
+		if (bSelected) { uFill = xPalette.m_uSelection; }
+		if (bBlocked) { uFill = xPalette.m_uError; }
 
 		// A diamond, the dope-sheet convention.
 		const ImVec2 axPoints[4] =
@@ -890,7 +939,29 @@ void Zenith_EditorPanel_Animation::DrawKeysForRow(ImDrawList* pxDraw, const Shee
 			Vec(fCentreX - fHalf, fCentreY),
 		};
 		pxDraw->AddConvexPolyFilled(axPoints, 4, uFill);
-		pxDraw->AddPolyline(axPoints, 4, xPalette.m_uBorder, ImDrawFlags_Closed, 1.0f);
+		pxDraw->AddPolyline(axPoints, 4, bSelected ? xPalette.m_uTextBright : xPalette.m_uBorder,
+			ImDrawFlags_Closed, bSelected ? 2.0f : 1.0f);
+
+		// ★ THE DRAG GHOST — WHERE THE KEY WOULD LAND, WITH THE KEY STILL WHERE IT
+		// IS. Nothing is mutated until the button comes up (see m_bDraggingKeys),
+		// so the preview has to be drawn rather than read back out of the document;
+		// and it uses EffectiveDragDelta, the SAME function the drop applies, so a
+		// preview cannot show a position the drop does not produce.
+		if (m_bDraggingKeys && bSelected)
+		{
+			const float fGhostX = Zenith_AnimTimelineTimeToPixel(m_xView, fTime + m_fDragDeltaSeconds);
+			if (IsFiniteFloat(fGhostX))
+			{
+				const ImVec2 axGhost[4] =
+				{
+					Vec(fGhostX, fCentreY - fHalf),
+					Vec(fGhostX + fHalf, fCentreY),
+					Vec(fGhostX, fCentreY + fHalf),
+					Vec(fGhostX - fHalf, fCentreY),
+				};
+				pxDraw->AddPolyline(axGhost, 4, xPalette.m_uTextBright, ImDrawFlags_Closed, 1.5f);
+			}
+		}
 
 		if (bPastDuration)
 		{
@@ -947,7 +1018,9 @@ void Zenith_EditorPanel_Animation::DrawEventsForRow(ImDrawList* pxDraw, const Sh
 		}
 
 		const bool bPastDuration = xEvent.m_fNormalizedTime > 1.0f + fANIM_TIME_EPSILON;
-		const ImU32 uFill = bPastDuration ? xPalette.m_uWarning : xPalette.m_uTypeAnimation;
+		const bool bSelected = IsEventSelected(uEventId);
+		ImU32 uFill = bPastDuration ? xPalette.m_uWarning : xPalette.m_uTypeAnimation;
+		if (bSelected) { uFill = xPalette.m_uSelection; }
 
 		// A flag, so an event never reads as a key.
 		const ImVec2 axPoints[3] =
@@ -957,7 +1030,8 @@ void Zenith_EditorPanel_Animation::DrawEventsForRow(ImDrawList* pxDraw, const Sh
 			Vec(fCentreX - fHalf, fCentreY + fHalf),
 		};
 		pxDraw->AddConvexPolyFilled(axPoints, 3, uFill);
-		pxDraw->AddPolyline(axPoints, 3, xPalette.m_uBorder, ImDrawFlags_Closed, 1.0f);
+		pxDraw->AddPolyline(axPoints, 3, bSelected ? xPalette.m_uTextBright : xPalette.m_uBorder,
+			ImDrawFlags_Closed, bSelected ? 2.0f : 1.0f);
 
 		Zenith_AnimPanelRect xRect;
 		xRect.m_fMinX = fCentreX - fHalf;
@@ -999,6 +1073,367 @@ void Zenith_EditorPanel_Animation::DrawPlayhead(ImDrawList* pxDraw, const SheetL
 	m_xPlayheadRect.m_fMaxX = fPixel + Zenith_EditorUI::Px(4.0f);
 	m_xPlayheadRect.m_fMaxY = xLayout.m_fCanvasBottom;
 	m_bPlayheadRectValid = true;
+}
+
+void Zenith_EditorPanel_Animation::DrawSelectionOverlays(ImDrawList* pxDraw, const SheetLayout& xLayout)
+{
+	if (xLayout.m_fTrackWidth <= 0.0f)
+	{
+		return;
+	}
+	const Zenith_EditorPalette& xPalette = Zenith_EditorUI::Palette();
+
+	// ---- the rubber band ----------------------------------------------------
+	if (m_bBoxSelecting)
+	{
+		const float fMinX = m_fBoxStartX < m_fBoxEndX ? m_fBoxStartX : m_fBoxEndX;
+		const float fMaxX = m_fBoxStartX < m_fBoxEndX ? m_fBoxEndX : m_fBoxStartX;
+		const float fMinY = m_fBoxStartY < m_fBoxEndY ? m_fBoxStartY : m_fBoxEndY;
+		const float fMaxY = m_fBoxStartY < m_fBoxEndY ? m_fBoxEndY : m_fBoxStartY;
+		if (IsFiniteFloat(fMinX) && IsFiniteFloat(fMinY) && IsFiniteFloat(fMaxX) && IsFiniteFloat(fMaxY))
+		{
+			pxDraw->AddRectFilled(Vec(fMinX, fMinY), Vec(fMaxX, fMaxY), IM_COL32(90, 140, 220, 48));
+			pxDraw->AddRect(Vec(fMinX, fMinY), Vec(fMaxX, fMaxY), xPalette.m_uSelection);
+		}
+	}
+
+	// ---- the duration handle ------------------------------------------------
+	if (!m_xDocument.IsOpen())
+	{
+		return;
+	}
+	// While it is being dragged the LIVE value is the dragged one — nothing has
+	// been written to the document yet (see m_bDraggingDuration).
+	const float fShownDuration = m_bDraggingDuration ? m_fDurationDragSeconds : m_xDocument.GetDuration();
+	const float fEndPixel = Zenith_AnimTimelineTimeToPixel(m_xView, fShownDuration);
+	const float fTrackRight = xLayout.m_fTrackLeft + xLayout.m_fTrackWidth;
+	if (!IsFiniteFloat(fEndPixel) || fEndPixel < xLayout.m_fTrackLeft || fEndPixel > fTrackRight)
+	{
+		return;
+	}
+
+	const float fGrab = Zenith_EditorUI::Px(fSHEET_DURATION_GRAB_1X);
+	pxDraw->AddRectFilled(Vec(fEndPixel - fGrab, xLayout.m_fCanvasTop),
+		Vec(fEndPixel + fGrab, xLayout.m_fRowsTop),
+		m_bDraggingDuration ? xPalette.m_uAccentHover : xPalette.m_uAccentDim);
+	if (m_bDraggingDuration)
+	{
+		// The ghost line, so the drop position is visible before it is committed.
+		pxDraw->AddLine(Vec(fEndPixel, xLayout.m_fCanvasTop), Vec(fEndPixel, xLayout.m_fCanvasBottom),
+			xPalette.m_uAccentHover, 2.0f);
+	}
+}
+
+//=============================================================================
+// INPUT TRANSLATION.
+//
+// ★ THE ONLY FUNCTIONS IN THE PANEL THAT READ ImGui STATE, and each one ends in
+// an Action_* call that reads none. That split is the whole reason WU-3.4 can
+// drive the sheet without synthesising a click: "what the gesture means" lives
+// here, in one readable place, and "what the operation does" lives in the _Ops
+// TU where a unit can call it directly. A handler that did its own document
+// work would be a second mutation path that no test exercises.
+//=============================================================================
+
+Zenith_AnimSelectMode Zenith_EditorPanel_Animation::SelectModeFromModifiers()
+{
+	const ImGuiIO& xIO = ImGui::GetIO();
+	if (xIO.KeyCtrl)
+	{
+		return ZENITH_ANIMSELECT_TOGGLE;
+	}
+	if (xIO.KeyShift)
+	{
+		return ZENITH_ANIMSELECT_ADD;
+	}
+	return ZENITH_ANIMSELECT_REPLACE;
+}
+
+bool Zenith_EditorPanel_Animation::FindKeyAtScreenPos(float fX, float fY,
+	Zenith_AnimTrackId& xOutTrack, u_int& uOutKeyId) const
+{
+	for (u_int uRow = 0; uRow < m_axRows.GetSize(); ++uRow)
+	{
+		const Zenith_AnimSheetRow& xRow = m_axRows.Get(uRow);
+		if (!xRow.m_bHasTrack)
+		{
+			continue;
+		}
+		const u_int uKeyCount = m_xDocument.GetKeyCount(xRow.m_xTrack);
+		for (u_int u = 0; u < uKeyCount; ++u)
+		{
+			const u_int uKeyId = m_xDocument.GetKeyIdAtIndex(xRow.m_xTrack, u);
+			Zenith_AnimPanelRect xRect;
+			// ★ THROUGH THE PUBLISHED ACCESSOR, so a key the off-screen gate refuses
+			// is a key no click can pick — the click and the coordinate handed to a
+			// test agree by construction.
+			if (!GetKeyRect(xRow.m_xTrack, uKeyId, xRect))
+			{
+				continue;
+			}
+			if (fX >= xRect.m_fMinX && fX <= xRect.m_fMaxX && fY >= xRect.m_fMinY && fY <= xRect.m_fMaxY)
+			{
+				xOutTrack = xRow.m_xTrack;
+				uOutKeyId = uKeyId;
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+bool Zenith_EditorPanel_Animation::FindEventAtScreenPos(float fX, float fY, u_int& uOutEventId) const
+{
+	const u_int uEventCount = m_xDocument.GetEventCount();
+	for (u_int u = 0; u < uEventCount; ++u)
+	{
+		const u_int uEventId = m_xDocument.GetEventIdAtIndex(u);
+		Zenith_AnimPanelRect xRect;
+		if (!GetEventRect(uEventId, xRect))
+		{
+			continue;
+		}
+		if (fX >= xRect.m_fMinX && fX <= xRect.m_fMaxX && fY >= xRect.m_fMinY && fY <= xRect.m_fMaxY)
+		{
+			uOutEventId = uEventId;
+			return true;
+		}
+	}
+	return false;
+}
+
+void Zenith_EditorPanel_Animation::HandleSheetInput(const SheetLayout& xLayout, bool bCanvasHovered)
+{
+	if (!m_xDocument.IsOpen() || xLayout.m_fTrackWidth <= 0.0f)
+	{
+		return;
+	}
+
+	const ImGuiIO& xIO = ImGui::GetIO();
+	const float fMouseX = xIO.MousePos.x;
+	const float fMouseY = xIO.MousePos.y;
+	const bool bDown = ImGui::IsMouseDown(ImGuiMouseButton_Left);
+	const bool bReleased = ImGui::IsMouseReleased(ImGuiMouseButton_Left);
+	const float fTrackRight = xLayout.m_fTrackLeft + xLayout.m_fTrackWidth;
+	const u_int uFrameRate = GetFrameRate();
+
+	// ★ AN IN-FLIGHT GESTURE IS SERVICED FIRST AND WITHOUT A HOVER TEST. The
+	// cursor routinely leaves the canvas mid-drag (that is what dragging a key
+	// past the right edge IS), and a gesture that stopped tracking there would
+	// freeze at the boundary and then apply a stale delta on release.
+
+	// ---- duration handle ----------------------------------------------------
+	if (m_bDraggingDuration)
+	{
+		float fTime = Zenith_AnimTimelinePixelToTime(m_xView, fMouseX);
+		if (!xIO.KeyShift)
+		{
+			fTime = Zenith_AnimTimelineSnapToFrame(fTime, uFrameRate);
+		}
+		if (fTime < 0.0f) { fTime = 0.0f; }
+		if (IsFiniteFloat(fTime))
+		{
+			m_fDurationDragSeconds = fTime;
+		}
+		if (bReleased || !bDown)
+		{
+			m_bDraggingDuration = false;
+			// ONE command for the whole drag — see the member comment.
+			Action_SetDuration(m_fDurationDragSeconds);
+		}
+		return;
+	}
+
+	// ---- playhead scrub -----------------------------------------------------
+	if (m_bScrubbing)
+	{
+		float fTime = Zenith_AnimTimelinePixelToTime(m_xView, fMouseX);
+		if (!xIO.KeyShift)
+		{
+			fTime = Zenith_AnimTimelineSnapToFrame(fTime, uFrameRate);
+		}
+		Action_Scrub(fTime);
+		if (bReleased || !bDown)
+		{
+			m_bScrubbing = false;
+		}
+		return;
+	}
+
+	// ---- key drag -----------------------------------------------------------
+	if (m_bDraggingKeys)
+	{
+		const float fRawDelta = Zenith_AnimTimelinePixelsToSeconds(m_xView, fMouseX - m_fDragStartMouseX);
+		// Snapped unless Shift is held, and computed by the SAME function the drop
+		// applies, so the ghost cannot promise a position the drop will not deliver.
+		m_fDragDeltaSeconds = EffectiveDragDelta(fRawDelta, !xIO.KeyShift);
+		if (bReleased || !bDown)
+		{
+			m_bDraggingKeys = false;
+			// ★ THE MUTATION HAPPENS EXACTLY HERE, ONCE, on the way up — and it is
+			// the RAW delta that is handed over, so the snap has one owner.
+			Action_MoveSelection(fRawDelta, !xIO.KeyShift);
+			m_fDragDeltaSeconds = 0.0f;
+		}
+		return;
+	}
+
+	// ---- rubber band --------------------------------------------------------
+	if (m_bBoxSelecting)
+	{
+		m_fBoxEndX = fMouseX;
+		m_fBoxEndY = fMouseY;
+		if (bReleased || !bDown)
+		{
+			m_bBoxSelecting = false;
+			const float fSlop = Zenith_EditorUI::Px(fSHEET_CLICK_SLOP_1X);
+			const bool bIsClick = std::fabs(m_fBoxEndX - m_fBoxStartX) <= fSlop
+			                   && std::fabs(m_fBoxEndY - m_fBoxStartY) <= fSlop;
+			if (bIsClick)
+			{
+				// A click on empty space is "deselect", but only when no modifier
+				// says otherwise — a Ctrl-click that missed must not throw away the
+				// selection the user was adding to.
+				if (SelectModeFromModifiers() == ZENITH_ANIMSELECT_REPLACE)
+				{
+					Action_ClearSelection();
+				}
+			}
+			else
+			{
+				Action_BoxSelect(m_fBoxStartX, m_fBoxStartY, m_fBoxEndX, m_fBoxEndY, SelectModeFromModifiers());
+			}
+		}
+		return;
+	}
+
+	// ---- nothing in flight: can a new gesture start? ------------------------
+	if (!bCanvasHovered || !ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+	{
+		return;
+	}
+	if (fMouseX < xLayout.m_fTrackLeft || fMouseX > fTrackRight)
+	{
+		// The label gutter. DrawRows owns that column's collapse hit-test.
+		return;
+	}
+
+	const bool bInRuler = fMouseY >= xLayout.m_fCanvasTop && fMouseY <= xLayout.m_fRowsTop;
+
+	// The duration handle wins over the scrub: it is drawn ON the ruler and the
+	// two bands overlap, so the more specific target has to be tested first.
+	const float fDurationPixel = Zenith_AnimTimelineTimeToPixel(m_xView, m_xDocument.GetDuration());
+	if (bInRuler && IsFiniteFloat(fDurationPixel)
+	 && std::fabs(fMouseX - fDurationPixel) <= Zenith_EditorUI::Px(fSHEET_DURATION_GRAB_1X))
+	{
+		m_bDraggingDuration = true;
+		m_fDurationDragSeconds = m_xDocument.GetDuration();
+		return;
+	}
+
+	if (bInRuler)
+	{
+		m_bScrubbing = true;
+		float fTime = Zenith_AnimTimelinePixelToTime(m_xView, fMouseX);
+		if (!xIO.KeyShift)
+		{
+			fTime = Zenith_AnimTimelineSnapToFrame(fTime, uFrameRate);
+		}
+		Action_Scrub(fTime);
+		return;
+	}
+
+	Zenith_AnimTrackId xHitTrack;
+	u_int uHitKeyId = uINVALID_ANIM_KEY_ID;
+	if (FindKeyAtScreenPos(fMouseX, fMouseY, xHitTrack, uHitKeyId))
+	{
+		const Zenith_AnimSelectMode eMode = SelectModeFromModifiers();
+		// ★ CLICKING AN ALREADY-SELECTED KEY WITH NO MODIFIER KEEPS THE SELECTION.
+		// Re-running REPLACE there would collapse a multi-key selection to one key
+		// on the mouse DOWN of the drag that was meant to move all of them — the
+		// gesture would look like it worked and move a single key.
+		if (eMode != ZENITH_ANIMSELECT_REPLACE || !IsKeySelected(xHitTrack, uHitKeyId))
+		{
+			Action_SelectKey(xHitTrack, uHitKeyId, eMode);
+		}
+		else
+		{
+			// Still make the clicked key the primary, so the snap is computed
+			// against the one under the cursor.
+			Action_SelectKey(xHitTrack, uHitKeyId, ZENITH_ANIMSELECT_ADD);
+		}
+
+		if (IsKeySelected(xHitTrack, uHitKeyId))
+		{
+			m_bDraggingKeys = true;
+			m_fDragStartMouseX = fMouseX;
+			m_fDragDeltaSeconds = 0.0f;
+		}
+		return;
+	}
+
+	u_int uHitEventId = uINVALID_ANIM_KEY_ID;
+	if (FindEventAtScreenPos(fMouseX, fMouseY, uHitEventId))
+	{
+		Action_SelectEvent(uHitEventId, SelectModeFromModifiers());
+		return;
+	}
+
+	m_bBoxSelecting = true;
+	m_fBoxStartX = fMouseX;
+	m_fBoxStartY = fMouseY;
+	m_fBoxEndX = fMouseX;
+	m_fBoxEndY = fMouseY;
+}
+
+void Zenith_EditorPanel_Animation::HandleSheetKeyboard()
+{
+	if (!m_xDocument.IsOpen())
+	{
+		return;
+	}
+	const ImGuiIO& xIO = ImGui::GetIO();
+	// The toolbar's path / skeleton / mesh fields are ordinary InputTexts, and a
+	// Ctrl+C typed into one of them belongs to the text, not to the sheet.
+	if (xIO.WantTextInput)
+	{
+		return;
+	}
+
+	if (ImGui::IsKeyPressed(ImGuiKey_Delete, false))
+	{
+		Action_DeleteSelection();
+	}
+
+	if (!xIO.KeyCtrl)
+	{
+		return;
+	}
+
+	if (ImGui::IsKeyPressed(ImGuiKey_Z, false))
+	{
+		if (xIO.KeyShift) { Action_Redo(); } else { Action_Undo(); }
+	}
+	if (ImGui::IsKeyPressed(ImGuiKey_Y, false))
+	{
+		Action_Redo();
+	}
+	if (ImGui::IsKeyPressed(ImGuiKey_C, false))
+	{
+		Action_CopySelection();
+	}
+	if (ImGui::IsKeyPressed(ImGuiKey_V, false))
+	{
+		// ★ THE PLAYHEAD IS THE PASTE ORIGIN, and the last-touched bone is the
+		// target. Both are things the user can SEE, which is the requirement for a
+		// keyboard gesture that has no cursor position of its own.
+		const float fOffset = m_xSession.IsOpen() ? m_xSession.GetTime() : 0.0f;
+		Action_PasteToBone(m_strPasteTargetBone, fOffset);
+	}
+	if (ImGui::IsKeyPressed(ImGuiKey_D, false))
+	{
+		Action_DuplicateSelection();
+	}
 }
 
 #endif // ZENITH_TOOLS

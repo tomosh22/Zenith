@@ -249,6 +249,10 @@ Zenith_AnimKeyValue Zenith_AnimKeyValue::FromQuat(const Zenith_Maths::Quat& xRot
 
 Zenith_AnimationDocument::~Zenith_AnimationDocument()
 {
+	// Same reasoning as ResetToClosed: an abandoned group owns commands, and they
+	// go with it.
+	delete m_pxOpenCompound;
+	m_pxOpenCompound = nullptr;
 	// ★ THE ONE LINE THAT MAKES THE COMMANDS' RAW DOCUMENT POINTER SAFE. Every
 	// command this document pushed lives in this stack and nowhere else, and
 	// Clear() deletes them all — so no command can survive the document it
@@ -258,6 +262,16 @@ Zenith_AnimationDocument::~Zenith_AnimationDocument()
 
 void Zenith_AnimationDocument::ResetToClosed()
 {
+	// An abandoned group is DISCARDED, not pushed. Reaching here with one open
+	// means an operation returned without closing its own bracket, which is a
+	// defect in that operation — but leaking the group (and every command it
+	// adopted) on top of it would turn a logic bug into a memory one.
+	if (m_pxOpenCompound != nullptr)
+	{
+		Zenith_Assert(false, "Zenith_AnimationDocument: the document was reset with a compound still open");
+		delete m_pxOpenCompound;
+		m_pxOpenCompound = nullptr;
+	}
 	m_xUndoSystem.Clear();
 	m_xWorkingClip = Flux_AnimationClip();
 	m_xAsset.Clear();
@@ -649,14 +663,83 @@ void Zenith_AnimationDocument::PushCommand(Zenith_UndoCommand* pxCommand)
 	{
 		return;
 	}
+	// ★ A GROUP INTERCEPTS THE PUSH, and this one branch is the whole of the
+	// grouping mechanism as far as the verbs are concerned: they call PushCommand
+	// exactly as they always did and never learn whether they were inside one.
+	if (m_pxOpenCompound != nullptr)
+	{
+		m_pxOpenCompound->Adopt(pxCommand);
+		return;
+	}
 	// Record, not Execute: the document has ALREADY performed the edit (it had
 	// to — it needs the mutator's reported index to re-map the ids). Execute()
 	// therefore only ever runs on a redo.
 	m_xUndoSystem.Record(pxCommand);
 }
 
+bool Zenith_AnimationDocument::BeginCompound()
+{
+	if (!m_bOpen)
+	{
+		return false;
+	}
+	if (m_pxOpenCompound != nullptr)
+	{
+		// Refused rather than counted. A nested group would make "one undo step"
+		// depend on which caller opened first, and every operation here is a leaf.
+		Zenith_Assert(false, "Zenith_AnimationDocument::BeginCompound: a compound is already open");
+		return false;
+	}
+	m_pxOpenCompound = new Zenith_AnimCommand_Compound(this, "Animation Edit");
+	return true;
+}
+
+bool Zenith_AnimationDocument::EndCompound(const char* szDescription, bool bKeep)
+{
+	if (m_pxOpenCompound == nullptr)
+	{
+		Zenith_Assert(false, "Zenith_AnimationDocument::EndCompound: no compound is open");
+		return false;
+	}
+
+	// ★ CLEARED FIRST. Undo() below re-enters the commands, and any of them
+	// reaching PushCommand while this pointer still pointed at the group being
+	// discarded would adopt into a doomed object.
+	Zenith_AnimCommand_Compound* pxCompound = m_pxOpenCompound;
+	m_pxOpenCompound = nullptr;
+
+	if (!bKeep)
+	{
+		// A refusal partway through a multi-key operation: everything already
+		// applied is reversed, in reverse order, and the group is thrown away.
+		pxCompound->Undo();
+		delete pxCompound;
+		return false;
+	}
+
+	if (pxCompound->GetChildCount() == 0)
+	{
+		// An operation that turned out to change nothing must not leave an undo
+		// entry that reverses nothing — a Ctrl+Z that visibly does nothing is
+		// indistinguishable from a broken undo.
+		delete pxCompound;
+		return false;
+	}
+
+	pxCompound->SetDescription(szDescription);
+	m_xUndoSystem.Record(pxCompound);
+	return true;
+}
+
 void Zenith_AnimationDocument::Undo()
 {
+	if (m_pxOpenCompound != nullptr)
+	{
+		// Undoing INTO a half-built group would pop a command the group has not
+		// finished collecting around.
+		Zenith_Assert(false, "Zenith_AnimationDocument::Undo: refused while a compound is open");
+		return;
+	}
 	if (!m_xUndoSystem.CanUndo())
 	{
 		return;
@@ -668,6 +751,11 @@ void Zenith_AnimationDocument::Undo()
 
 void Zenith_AnimationDocument::Redo()
 {
+	if (m_pxOpenCompound != nullptr)
+	{
+		Zenith_Assert(false, "Zenith_AnimationDocument::Redo: refused while a compound is open");
+		return;
+	}
 	if (!m_xUndoSystem.CanRedo())
 	{
 		return;

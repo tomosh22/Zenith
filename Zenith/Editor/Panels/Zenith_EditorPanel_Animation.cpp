@@ -119,6 +119,17 @@ void Zenith_EditorPanel_Animation::OnDocumentOpened()
 	m_xSession.Seek(0.0f);
 
 	m_xCollapsedGroups.Clear();
+	// ★ THE SELECTION AND THE CLIPBOARD DO NOT SURVIVE AN OPEN. A key id is a
+	// session identity issued by THIS document, and Open() retires every one it
+	// had issued — carrying them across would leave a selection resolving to keys
+	// in a clip nobody is looking at, or (worse) not resolving at all while every
+	// operation quietly shrank by one.
+	Action_ClearSelection();
+	m_axClipboard.Clear();
+	m_strPasteTargetBone.clear();
+	m_uCollisionFlashFrames = 0;
+	m_uCollisionFlashKeyId = uINVALID_ANIM_KEY_ID;
+
 	m_fRowScrollPixels = 0.0f;
 	m_bPendingTimeScroll = false;
 	m_bPendingRowScroll = false;
@@ -168,6 +179,19 @@ void Zenith_EditorPanel_Animation::CloseClip()
 	m_bPendingTimeScroll = false;
 	m_bPendingRowScroll = false;
 	m_bPendingFrameAll = false;
+
+	// Every id the selection and the clipboard hold was issued by the document
+	// that has just been thrown away.
+	Action_ClearSelection();
+	m_axClipboard.Clear();
+	m_strPasteTargetBone.clear();
+	m_uCollisionFlashFrames = 0;
+	m_uCollisionFlashKeyId = uINVALID_ANIM_KEY_ID;
+	m_bDraggingKeys = false;
+	m_bBoxSelecting = false;
+	m_bScrubbing = false;
+	m_bDraggingDuration = false;
+	m_fDragDeltaSeconds = 0.0f;
 }
 
 Zenith_AnimDocCloseResult Zenith_EditorPanel_Animation::RequestCloseClip()
