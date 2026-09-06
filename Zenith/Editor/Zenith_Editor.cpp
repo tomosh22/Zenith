@@ -62,6 +62,7 @@ void Zenith_EditorAddLogMessage(const char* szMessage, int eLevel, Zenith_LogCat
 #include "Flux/MeshAnimation/Flux_AnimationClip.h"
 
 // Extracted panel implementations
+#include "Panels/Zenith_EditorPanel_Animation.h"
 #include "Panels/Zenith_EditorPanel_Console.h"
 #include "Panels/Zenith_EditorPanel_ContentBrowser.h"
 #include "Panels/Zenith_EditorPanel_Hierarchy.h"
@@ -255,7 +256,11 @@ static void BuildDefaultDockLayout(ImGuiID uDockspaceID, const ImGuiViewport* px
 	ImGui::DockBuilderDockWindow(szEDITOR_WINDOW_RENDER_GRAPH,    uRightBottom);
 	ImGui::DockBuilderDockWindow(szEDITOR_WINDOW_ZENITH_TOOLS,    uRightBottom);
 
-	// Bottom strip: browser group (Content Browser fronts), Console right.
+	// Bottom strip: browser group (Content Browser fronts), Console right. The
+	// dope sheet lives HERE rather than in the tall right column — a timeline
+	// wants horizontal room above all else, and the bottom strip is the widest
+	// node in the layout.
+	ImGui::DockBuilderDockWindow(szEDITOR_WINDOW_ANIMATION_EDITOR, uBottom);
 	ImGui::DockBuilderDockWindow(szEDITOR_WINDOW_VARIANT_EDITOR,  uBottom);
 	ImGui::DockBuilderDockWindow(szEDITOR_WINDOW_MEMORY_PROFILER, uBottom);
 	ImGui::DockBuilderDockWindow(szEDITOR_WINDOW_PROFILING,       uBottom);
@@ -334,6 +339,11 @@ void Zenith_Editor::Initialise(Flux_PlatformAPI& xFluxBackend, Flux_GraphicsImpl
 	// this /OPT:REF drops the TU and its unit tests with it.
 	static const bool ls_bAnimTimelineMathLinked = Zenith_AnimTimelineMath_ForceLink();
 	(void)ls_bAnimTimelineMathLinked;
+
+	// The dope sheet's preview session remembers a per-clip rig choice in the
+	// editor's own prefs. Wired from here because m_xEditorState is private to
+	// this class — the panel is handed the store rather than reaching for it.
+	Zenith_EditorPanel_Animation::Instance().Session().SetPreferenceStore(&m_xEditorState.m_xPrefs);
 
 	// Initialize editor subsystems
 	g_xEngine.Selection().Initialise();
@@ -444,6 +454,12 @@ void Zenith_Editor::Shutdown()
 	{
 		m_pxTerrainEditor->Close();
 	}
+
+	// ★ The dope sheet owns an animation document and a preview session, and both
+	// hold OWNING asset handles. This runs before Zenith_AssetRegistry::Shutdown
+	// force-deletes the assets; a panel that waited for its own static destructor
+	// would be releasing handles into a registry that no longer had them.
+	Zenith_EditorPanel_Animation::Instance().Shutdown();
 
 	// Reset editor camera state
 	m_xEditorState.m_xCamera.m_bInitialized = false;
@@ -919,6 +935,15 @@ void Zenith_Editor::Render()
 	Zenith_EditorPanelRenderGraph::Render();
 	Zenith_EditorPanelVariantEditor::Render();
 	Zenith_GraphEditorPanel::Render();
+	// The dt the dope sheet's preview advances by. ZERO while the editor is
+	// Paused, the same rule the animator inspector follows — the panel takes it
+	// as an argument rather than reading the mode, so a unit can drive it with a
+	// dt of its own choosing.
+	// (m_pxFrame, not g_xEngine.Frame() — the injected frame dep keeps this TU off
+	// the engine-singleton ratchet, per Zenith_Engine::InitialiseEditor.)
+	const bool bEditorPaused = (m_xEditorState.m_eEditorMode == EditorMode::Paused);
+	const float fAnimDt = (bEditorPaused || m_pxFrame == nullptr) ? 0.0f : m_pxFrame->GetDt();
+	Zenith_EditorPanel_Animation::Instance().Render(fAnimDt);
 	if (m_pxTerrainEditor != nullptr)
 	{
 		Zenith_EditorPanelTerrainEditor::Render(*m_pxTerrainEditor, m_xEditorState.m_xPanels.m_bShowTerrainEditor);

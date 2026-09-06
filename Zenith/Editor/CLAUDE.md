@@ -13,6 +13,10 @@ ImGui-based scene editor for creating, editing, and testing game content. Active
 - `Zenith_EditorActions.h/cpp` - **The verbs.** Create / delete / duplicate / rename / enable / reparent entities, add / remove components, new / open / save scenes (with the unsaved-changes prompt), play / pause / stop. Menus, shortcuts, toolbar buttons and panel context menus all call these, so one operation behaves identically from every entry point and undo + scene-dirtying live in exactly one place
 - `Zenith_EditorCommands.h/cpp` - The undo command layer: `Zenith_EditorEntitySnapshot` (a serialised entity subtree that can be destroyed and rebuilt), `Zenith_UndoCommand_EntityLifetime` (delete / create / duplicate), `Zenith_UndoCommand_EntityState` (rename / enable / reparent), `Zenith_UndoCommand_ComponentBytes` (add / remove / edit ONE component by serialised payload), `Zenith_UndoCommand_Composite` (a multi-selection as one step), and `Zenith_EditorInspectorUndoTracker` (turns any Properties-panel edit into a command). Tests in `Zenith_EditorCommands.Tests.inl`
 - `Zenith_EditorUI.h/cpp` - Look and feel: the embedded Roboto font (`Zenith_EditorFontData.generated.h`) at a DPI-aware base size, the theme + palette (sRGB values converted to linear for the sRGB swapchain), the play-mode tint, a vector icon set drawn straight into ImDrawLists, the styled widgets (icon buttons, search box, badges, the inspector component header), and the small helpers every panel shares rather than copying (`ContainsCaseInsensitive`, the `SmoothedFrameMs` frame-time filter)
+- `Zenith_AnimationDocument.h/cpp` - The editable WORKING COPY of one `.zanim`, and its only writer: a deep copy of the asset's clip, a STABLE per-key/per-event id (an index is not an identity — retiming reorders the track), every mutation as one undoable verb, a content-hash check for external modification, and D21's refusal to edit a GENERATED clip in place plus the `PromoteToAuthoredOverride` escape hatch. Tests in `Zenith_AnimationDocument.Tests.inl`
+- `Zenith_EditorAnimCommands.h/cpp` - The document's OWN undo stack (not the shared editor one — a scene load clears that, and an animation edit has nothing to do with a scene): key insert / remove / retime / value, duration, and the three event commands. Tests in `Zenith_EditorAnimCommands.Tests.inl`
+- `Zenith_AnimationPreviewSession.h/cpp` - One panel's live preview of one clip: its OWN controller, skeleton instance and clock (D30 — never an entity's, which would double-tick it), a deep copy of the clip, per-clip rig resolution + remembered override (D31), and the shared preview view slot through `Flux_PreviewSlotArbiter` (D32). Tests in `Zenith_AnimationPreviewSession.Tests.inl`
+- `Zenith_AnimTimelineMath.h/cpp` - The PURE seconds<->pixels mapping the dope sheet, its ruler and its events row all share: zoom clamps, the inverse, delta conversions, visibility, frame snapping, zoom-about-a-pixel, view clamping, fit-to-window and the ruler tick ladder. Not one line of UI, so every timeline defect is catchable headless. Tests in `Zenith_AnimTimelineMath.Tests.inl`
 - `Zenith_EditorPrefs.h/cpp` - Per-user, per-game preferences (`%LOCALAPPDATA%/Zenith/<Game>/editor_prefs.txt`): recent scenes, fly speed, look sensitivity, snapping, gizmo space, overlay toggles. `Parse` / `Serialize` are pure and unit-tested; never read in automated or headless runs
 - `Zenith_Editor_SceneOps.cpp` - Scene load/save/new + deferred scene operations
 - `Zenith_EditorQuery.cpp` - Editor-side scene queries (entity/component lookup)
@@ -57,7 +61,8 @@ ImGui-based scene editor for creating, editing, and testing game content. Active
 - `Zenith_ImGuiInputBridge.h/cpp` - Pumps `Zenith_InputSimulator` state into ImGui
   (TOOLS + INPUT_SIMULATOR builds) so automated tests drive editor UI deterministically.
 - `Zenith_Editor.Tests.inl` / `Zenith_EditorAutomation.Tests.inl` - Unit tests for the editor controller and the automation step queue (included into the unit-test TU)
-- `Panels/` - Panel implementations (Console, ContentBrowser, GraphEditor, Hierarchy, MaterialEditor, Memory, Properties, RenderGraph, StatusBar, TerrainEditor, Toolbar, VariantEditor, Viewport). Toolbar and StatusBar are strips drawn inside the dockspace host window, not dockable windows
+- `Panels/` - Panel implementations (Animation, Console, ContentBrowser, GraphEditor, Hierarchy, MaterialEditor, Memory, Properties, RenderGraph, StatusBar, TerrainEditor, Toolbar, VariantEditor, Viewport). Toolbar and StatusBar are strips drawn inside the dockspace host window, not dockable windows
+- `Panels/Zenith_EditorPanel_Animation.h/cpp` (+ `_Render.cpp`) - The animation DOPE SHEET over one `Zenith_AnimationDocument` and one `Zenith_AnimationPreviewSession`. A CLASS, not a pile of file statics (see "Animation Dope Sheet Panel" below); the `_Render` TU holds the drawing half. Tests in `Zenith_EditorPanel_Animation.Tests.inl`
 - `../Core/Zenith_ImGuiWidgets.h/cpp` - Layer-0 ImGui widgets (`Vec3Field`, `PropertyLabel`) that component inspectors in EntityComponent may use without including `Editor/`
 - `../Core/Zenith_EditorFontHook.h` - `Zenith_EditorFonts_Load()`, called by the Vulkan and Null backends right after `ImGui::CreateContext` so the editor font is registered before either backend builds the atlas (the Null backend's legacy atlas is locked at the first NewFrame)
 
@@ -347,6 +352,89 @@ Create and edit materials with texture assignment:
 - **Assignment:** Drag-drop from Content Browser to slot
 - **Preview:** Texture thumbnail in each slot
 - **Reload Button:** Live refresh without restarting editor
+
+### Animation Dope Sheet Panel (`Panels/Zenith_EditorPanel_Animation`)
+
+The keyframe editor for `.zanim` clips. One window over ONE
+`Zenith_AnimationDocument` (the working copy, and the only writer of the file)
+and ONE `Zenith_AnimationPreviewSession` (its own controller, skeleton instance
+and clock):
+
+- **Rows** — a collapsible header per bone, in the same total order
+  `GetBoneNamesSorted` and the file itself use (D5), with **three** sub-rows
+  (Translation / Rotation / Scale) underneath. All three are always present:
+  a channel is DELETED when its last key goes (D14), and a row that vanished
+  with it would leave nowhere to put a key back. Then a **Root Motion** group
+  with exactly **two** rows — there is no scale delta (D16) — and an **Events**
+  row last.
+- **Ruler + playhead** — subdivisions from `Zenith_AnimTimelineChooseTicks`
+  (frames first, then a seconds ladder); the playhead tracks the preview
+  session's clock and carries a grab handle in the ruler.
+- **Toolbar** — asset path entry (drop a `.zanim` on it), Open / Close,
+  play-pause, a seconds and a frame readout, Zoom To Fit, the live px/s, and
+  the two read-only state badges: `UNSAVED` and `CHANGED ON DISK`.
+- **Preview pane** — the shared preview image, or the **dispossessed
+  placeholder** naming whoever holds the slot plus a Reclaim button, or the
+  **rig prompt** when `NeedsRigSelection()`.
+- **Keys past the duration (D13)** — shrinking a duration does not move a key,
+  so a clip can legally hold keys nothing will ever sample. Each one gets a
+  warning glyph, the region past the end is shaded, and a banner counts them.
+  `GetKeysPastDurationCount()` / `IsKeyPastDuration()` are what a unit reads.
+- **Promotion (D21)** — a GENERATED clip is refused, and the refusal is its own
+  enumerator, so the panel offers "Promote to authored override" rather than a
+  bare failure.
+
+**WU-3.2 renders and hit-tests only.** Mutation, selection and drag are WU-3.3
+and address the panel through the rect accessors.
+
+**★ IT IS A CLASS, AND THAT IS THE ONE THING IT DOES NOT COPY FROM THE GRAPH
+EDITOR.** That panel keeps its whole state in a single file-scope aggregate,
+which is exactly why it can hold ONE asset open and has no undo at all: neither
+is a decision anybody made, they are both consequences of the storage.
+Everything here — document, session, view, row list, every rect map, the show
+flag — is a member of `Zenith_EditorPanel_Animation`, so a second dope sheet is
+a second object rather than a rewrite. `Instance()` is the editor's single one,
+and a unit builds its own on the stack.
+
+**★ EVERY POSITION ACCESSOR RETURNS FALSE FOR SOMETHING OFF SCREEN**, which is
+the half of the graph editor's hard-won contract that IS worth copying (see
+that panel's section below for what it cost to learn). `GetKeyRect`,
+`GetRowRect` / `GetRowTrackRect`, `GetEventRect`, `GetEventsRowRect`,
+`GetPlayheadRect`, `GetRulerRect` and `GetTrackAreaRect` all record only what
+was painted inside the canvas this frame and hand out nothing whose centre is
+outside the display. `ScrollTimeIntoView` and `ScrollRowIntoView` are the
+required precursors and, like `ScrollPaletteEntryIntoView`, are applied by the
+NEXT `Render` — give them a frame. `RequestWindowPlacement` pins the geometry
+so a saved `imgui.ini` cannot move a measurement.
+
+**★ "The display" is the bound CAPTURED WHEN THE RECT WAS RECORDED**, not
+`ImGui::GetIO().DisplaySize` re-read at query time. A rect is a fact about a
+frame and has to be judged against that frame's display. Reading it live works
+in the editor (queries happen mid-frame) and is wrong everywhere else: ImGui
+initialises `DisplaySize` to **(-1, -1)** and only a backend `NewFrame` fills it
+in, so any query made outside a frame — which is every unit assertion, since a
+test's frame must be closed before its result can be inspected — compared each
+centre against -1 and refused it. Five units reported "nothing was published"
+while the panel was drawing perfectly; the expected x they printed was computed
+from the panel's own live view, which proved the layout right and the gate
+wrong. `WasSheetDrawnLastFrame` / `GetLastTrackWidth` /
+`GetRecordedDisplayWidth` exist to tell that failure apart from the three other
+things a flat `false` can mean, and the units assert them *before* the rects.
+
+**★ The sheet is ONE `InvisibleButton` and a draw list.** Row backgrounds,
+labels, ticks, keys, events and the playhead are all painted at absolute screen
+coordinates — see "draw-list decorations, not items" below for why placing
+items there hangs a windowed build with a modal CRT dialog nothing logs.
+
+**★ No coordinate maths lives in the panel.** Every seconds↔pixels conversion
+goes through `Zenith_AnimTimelineMath`; a key's centre x *is*
+`Zenith_AnimTimelineTimeToPixel(View(), t)`, and a unit asserts exactly that, so
+the panel cannot grow a second copy of the mapping that drifts from the first.
+
+**The window title is the bare constant** `szEDITOR_WINDOW_ANIMATION_EDITOR`.
+`DockBuilderDockWindow` matches by name and `ImHashStr` hashes the whole string,
+so a title decorated with a dirty marker or the clip name would dock nothing and
+the window would silently float. Both are shown in the toolbar instead.
 
 ### Behaviour Graph Editor Panel (`Panels/Zenith_EditorPanel_GraphEditor`)
 

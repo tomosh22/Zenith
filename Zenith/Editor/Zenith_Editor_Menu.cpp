@@ -9,7 +9,9 @@
 #include "Zenith_UndoSystem.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "Flux/Gizmos/Flux_GizmosImpl.h"
+#include "Core/Zenith_EditorWindowNames.h"
 
+#include "Panels/Zenith_EditorPanel_Animation.h"
 #include "Panels/Zenith_EditorPanel_Memory.h"
 #include "Panels/Zenith_EditorPanel_RenderGraph.h"
 #include "Panels/Zenith_EditorPanel_VariantEditor.h"
@@ -248,6 +250,11 @@ void Zenith_Editor::RenderViewMenu()
 	ImGui::MenuItem("Content Browser", nullptr, &xPanels.m_bShowContentBrowser);
 	ImGui::MenuItem("Material Editor", nullptr, &m_xEditorState.m_xMaterial.m_bShowEditor);
 	ImGui::MenuItem("Terrain Editor", nullptr, &xPanels.m_bShowTerrainEditor);
+	// The dope sheet's visibility lives on the panel object, not in
+	// Zenith_EditorPanelVisibility — the panel owns every other piece of its own
+	// state (document, session, view, rects) and a flag kept somewhere else is
+	// the seam a second dope sheet would have to unpick first.
+	ImGui::MenuItem(szEDITOR_WINDOW_ANIMATION_EDITOR, nullptr, &Zenith_EditorPanel_Animation::Instance().ShowFlag());
 
 #if ZENITH_MEMORY_TRACKING_FULL
 	if (ImGui::MenuItem("Memory Profiler", nullptr, Zenith_EditorPanelMemory::IsVisible()))

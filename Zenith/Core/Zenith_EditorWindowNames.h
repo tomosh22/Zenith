@@ -23,6 +23,11 @@ constexpr const char* szEDITOR_WINDOW_CONTENT_BROWSER  = "Content Browser";
 constexpr const char* szEDITOR_WINDOW_MATERIAL_EDITOR  = "Material Editor";
 constexpr const char* szEDITOR_WINDOW_TERRAIN_EDITOR   = "Terrain Editor";
 constexpr const char* szEDITOR_WINDOW_GRAPH_EDITOR     = "Graph Editor";
+// The animation dope sheet. ★ The title carries NO dirty marker and no clip
+// name: DockBuilderDockWindow hashes the whole string, so a decorated title
+// would dock nothing and the window would silently float. The panel shows both
+// in its toolbar instead.
+constexpr const char* szEDITOR_WINDOW_ANIMATION_EDITOR = "Animation Editor";
 constexpr const char* szEDITOR_WINDOW_MEMORY_PROFILER  = "Memory Profiler";
 constexpr const char* szEDITOR_WINDOW_RENDER_GRAPH     = "Render Graph";
 constexpr const char* szEDITOR_WINDOW_VARIANT_EDITOR   = "Variant Editor";
