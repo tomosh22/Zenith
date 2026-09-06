@@ -573,6 +573,35 @@ public:
 	// The void ReadFromDataStream below is kept only for Zenith_DataStream's <</>>
 	// dispatch (operator>> discards the return value); it is NOT the load contract.
 	Zenith_Status ParseStream(Zenith_DataStream& xStream);
+
+	//-------------------------------------------------------------------------
+	// ★ THE PAYLOAD READER, AND IT EXISTS SPLIT OUT FOR EXACTLY ONE CALLER
+	// BESIDES ParseStream: THE AUTHORED-CLIP MIGRATOR (WU-2.5 / D22 / D23,
+	// Tools/Zenith_Tools_AnimMigrate.cpp).
+	//
+	// Reads the clip BODY — metadata, source path, channels, events, root motion
+	// — from a cursor already positioned immediately after the envelope. It does
+	// NOT read, validate or write a header; ParseStream owns that.
+	//
+	// ★ THE RUNTIME NEVER CALLS THIS WITH A NON-CURRENT SCHEMA, AND IN A
+	// NON-TOOLS BUILD IT CANNOT: the acceptance test below narrows to
+	// `== uZENITH_ANIMATION_SCHEMA_CURRENT` outside ZENITH_TOOLS, so the D2
+	// ruling ("the envelope is mandatory and the schema must be current, there is
+	// no legacy branch in the runtime reader") is enforced by the compiler and
+	// not by convention. ParseStream is unchanged: read header -> refuse anything
+	// that is not the current schema -> ParsePayload(current).
+	//
+	// Schemas 1 and 2 share a byte layout EXACTLY — schema 2 reinterpreted the
+	// key-time floats as SECONDS where schema 1 meant TICKS, and no field moved —
+	// so there is one body reader here and the unit conversion is a migrator STEP,
+	// not a branch in this function. The schema argument exists so that a future
+	// layout change has somewhere to branch that only tools-called code reaches.
+	//
+	// Every refusal asserts exactly once and leaves this clip EMPTY, the same
+	// contract ParseStream has.
+	//-------------------------------------------------------------------------
+	Zenith_Status ParsePayload(Zenith_DataStream& xStream, u_int uSchemaVersion);
+
 	void ReadFromDataStream(Zenith_DataStream& xStream);
 
 private:

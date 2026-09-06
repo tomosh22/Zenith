@@ -61,6 +61,7 @@
 #include "Zenith_Tools_TestAssetExport.h"
 #include "Zenith_Tools_HumanModelExport.h"
 #include "Zenith_Tools_TextureExport.h"   // v2 BC / offline-mip texture export
+#include "Zenith_Tools_AnimMigrate.h"
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
@@ -4435,6 +4436,7 @@ void GenerateRenderTestAssets()
 void GenerateTestAssets()
 {
 	Zenith_Log(LOG_CATEGORY_ASSET, "=== Generating Test Assets ===");
+	Zenith_Tools_MigrateAuthoredClipsAtBoot();   // authored overrides must be current before anything reads them (WU-2.5)
 	GenerateStickFigureAssets();
 #ifdef ZENITH_TOOLS
 	// ★ IMMEDIATELY AFTER, AND THAT ORDER IS THE REASON THIS IS NOT IN THE GLB

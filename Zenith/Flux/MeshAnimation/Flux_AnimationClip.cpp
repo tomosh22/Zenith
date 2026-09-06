@@ -1351,6 +1351,35 @@ Zenith_Status Flux_AnimationClip::ParseStream(Zenith_DataStream& xStream)
 		return Zenith_ErrorCode::VERSION_MISMATCH;
 	}
 
+	// The header is consumed; the cursor sits on the payload. ParseStream passes
+	// the CURRENT schema literally rather than the header's word — the check above
+	// has already established they are equal, and writing the constant here is what
+	// makes it visible that the runtime reader has exactly one payload layout.
+	return ParsePayload(xStream, uZENITH_ANIMATION_SCHEMA_CURRENT);
+}
+
+Zenith_Status Flux_AnimationClip::ParsePayload(Zenith_DataStream& xStream, u_int uSchemaVersion)
+{
+	// See the header for why this split exists and who is allowed to pass a
+	// non-current schema.
+#ifdef ZENITH_TOOLS
+	// Schemas 1 and 2 have IDENTICAL byte layouts (schema 2 reinterpreted the key
+	// times as seconds; no field moved), so both are readable here and the
+	// ticks-to-seconds conversion is the migrator's step, not a branch below.
+	const bool bReadableSchema = (uSchemaVersion >= 1u) && (uSchemaVersion <= uZENITH_ANIMATION_SCHEMA_CURRENT);
+#else
+	// ★ THE RUNTIME HAS EXACTLY ONE LAYOUT (D2). A non-tools build cannot read a
+	// stale bake even by accident, because there is no code path here that would.
+	const bool bReadableSchema = (uSchemaVersion == uZENITH_ANIMATION_SCHEMA_CURRENT);
+#endif
+	if (!bReadableSchema)
+	{
+		Zenith_Assert(false, "Flux_AnimationClip::ParsePayload: schema %u has no payload reader in this build (current is %u)",
+			uSchemaVersion, uZENITH_ANIMATION_SCHEMA_CURRENT);
+		ResetToEmpty();
+		return Zenith_ErrorCode::VERSION_MISMATCH;
+	}
+
 	// Metadata
 	m_xMetadata.ReadFromDataStream(xStream);
 
