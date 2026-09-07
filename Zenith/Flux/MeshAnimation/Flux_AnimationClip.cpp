@@ -77,7 +77,7 @@ void Flux_ReadQuatKeys(Zenith_DataStream& xStream, Zenith_Vector<std::pair<Zenit
 }
 
 //=============================================================================
-// Reserved per-key tangent block (D17). Same count+loop shape as the keyframe
+// Per-key tangent block (D17). Same count+loop shape as the keyframe
 // helpers above: uint32 count, then per entry the in-tangent xyz then the
 // out-tangent xyz. A rotation channel's entries are ANGULAR velocities
 // (axis * rad/s), which is why one Vector3 pair serves all three channel types.
@@ -185,7 +185,7 @@ void Flux_AnimationClipMetadata::ReadFromDataStream(Zenith_DataStream& xStream)
 // quaternion normalization (D15) — is implemented EXACTLY ONCE here, and both
 // types dispatch into it.
 //
-// The one real difference is the reserved tangent array (D17): a bone channel has
+// The one real difference is the tangent array (D17): a bone channel has
 // one per track, root motion has none. It is passed as a POINTER, nullable,
 // rather than being handled by two parallel code paths — precisely so the
 // lockstep cannot be forgotten on the side that HAS tangents, which is the whole
@@ -673,7 +673,7 @@ Flux_BoneChannel::Flux_BoneChannel(const aiNodeAnim* pxChannel, double dSourceTi
 		);
 	}
 
-	// Assimp carries no tangents, so the reserved block comes in at its zero default
+	// Assimp carries no tangents, so the block comes in at its zero default
 	// — but it must still be the same length as the keys it parallels.
 	m_xPositionTangents.Resize(m_xPositions.GetSize(), Flux_KeyTangents());
 	m_xRotationTangents.Resize(m_xRotations.GetSize(), Flux_KeyTangents());
@@ -729,6 +729,172 @@ float Flux_BoneChannel::GetScaleFactor(float fLastTime, float fNextTime, float f
 	return fMidWayLength / fFramesDiff;
 }
 
+//=============================================================================
+// WU-8.1 — the tangent-aware segment evaluators.
+//
+// Everything here is a free function on values: no member state, no allocation,
+// no virtual dispatch, nothing that can be reached except through a Sample*()
+// call. See "HOW A SEGMENT IS INTERPOLATED" in Flux_AnimationClip.h for the two
+// formulas and for why the rotation one is the cumulative-Bezier form.
+//
+// ★ THE UNSET-TANGENT FAST PATH IS NOT AN OPTIMISATION, IT IS THE COMPATIBILITY
+// GUARANTEE. Every generated clip and every clip Assimp imported carries zero in
+// every slot, so the first branch of each evaluator is the branch the whole tree
+// takes — and it runs the pre-WU-8.1 expression verbatim, which is what makes the
+// re-bake byte-identical rather than merely close enough.
+//=============================================================================
+namespace
+{
+	// Below this, a rotation vector's direction is noise: the axis is
+	// length-normalized to build the quaternion, so a shorter one would divide by a
+	// value that is mostly rounding error. 1e-8 rad is ~5.7e-7 degrees, which is
+	// far below anything a float quaternion can represent as a distinct rotation.
+	constexpr float fANIM_MIN_ROTATION_VECTOR = 1.0e-8f;
+
+	// (h00, h10, h01, h11) at u, sharing u^2 / u^3. All four are always wanted at
+	// once, so evaluating them separately would recompute the powers four times.
+	struct Flux_HermiteBasis
+	{
+		float m_fH00 = 0.0f;
+		float m_fH10 = 0.0f;
+		float m_fH01 = 0.0f;
+		float m_fH11 = 0.0f;
+	};
+
+	Flux_HermiteBasis Flux_EvaluateHermiteBasis(float fU)
+	{
+		const float fU2 = fU * fU;
+		const float fU3 = fU2 * fU;
+		Flux_HermiteBasis xBasis;
+		xBasis.m_fH00 =  2.0f * fU3 - 3.0f * fU2 + 1.0f;
+		xBasis.m_fH10 =         fU3 - 2.0f * fU2 + fU;
+		xBasis.m_fH01 = -2.0f * fU3 + 3.0f * fU2;
+		xBasis.m_fH11 =         fU3 -        fU2;
+		return xBasis;
+	}
+
+	// A rotation VECTOR (axis * radians) to a unit quaternion. Identity as the
+	// magnitude goes to zero, which is the correct limit and also what a segment
+	// bounded by two identical rotations produces.
+	Zenith_Maths::Quat Flux_QuatFromRotationVector(const Zenith_Maths::Vector3& xRotationVector)
+	{
+		const float fAngle = glm::length(xRotationVector);
+		if (fAngle < fANIM_MIN_ROTATION_VECTOR)
+		{
+			return Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f);
+		}
+		return glm::angleAxis(fAngle, xRotationVector / fAngle);
+	}
+
+	// The inverse: a unit quaternion to its axis * radians vector, ALWAYS the short
+	// way round. q and -q are the same rotation but only one of the two has a
+	// non-negative scalar part, and taking the other would report an angle past pi —
+	// a tangent pointing the long way round the sphere, which is the classic way a
+	// quaternion curve acquires a spin nobody authored.
+	Zenith_Maths::Vector3 Flux_RotationVectorFromQuat(const Zenith_Maths::Quat& xQuat)
+	{
+		const Zenith_Maths::Quat xShortest = (xQuat.w < 0.0f) ? -xQuat : xQuat;
+		const Zenith_Maths::Vector3 xImaginary(xShortest.x, xShortest.y, xShortest.z);
+		const float fSinHalfAngle = glm::length(xImaginary);
+		if (fSinHalfAngle < fANIM_MIN_ROTATION_VECTOR)
+		{
+			return Zenith_Maths::Vector3(0.0f);
+		}
+		// atan2 rather than 2*acos(w): acos loses every bit of precision it has as w
+		// approaches 1, which is exactly the small-angle case a key-to-key delta is.
+		const float fAngle = 2.0f * std::atan2(fSinHalfAngle, xShortest.w);
+		return xImaginary * (fAngle / fSinHalfAngle);
+	}
+
+	Zenith_Maths::Vector3 Flux_SampleHermiteVec3(
+		const Zenith_Maths::Vector3& xP0, const Zenith_Maths::Vector3& xP1,
+		const Flux_KeyTangents& xTangent0, const Flux_KeyTangents& xTangent1,
+		float fSegmentDuration, float fU)
+	{
+		if (Flux_TangentIsUnset(xTangent0.m_xOutTangent) && Flux_TangentIsUnset(xTangent1.m_xInTangent))
+		{
+			return glm::mix(xP0, xP1, fU);
+		}
+
+		// Two keys sharing a time: GetScaleFactor has already answered u = 0, and
+		// there is no slope to divide out. Hold the first key, exactly as the lerp
+		// above would have.
+		if (fSegmentDuration <= 0.0f)
+		{
+			return xP0;
+		}
+
+		const Zenith_Maths::Vector3 xSlope = (xP1 - xP0) / fSegmentDuration;
+		const Zenith_Maths::Vector3 xM0 = Flux_TangentIsUnset(xTangent0.m_xOutTangent) ? xSlope : xTangent0.m_xOutTangent;
+		const Zenith_Maths::Vector3 xM1 = Flux_TangentIsUnset(xTangent1.m_xInTangent)  ? xSlope : xTangent1.m_xInTangent;
+
+		const Flux_HermiteBasis xBasis = Flux_EvaluateHermiteBasis(fU);
+		return xBasis.m_fH00 * xP0
+		     + xBasis.m_fH01 * xP1
+		     + (xBasis.m_fH10 * fSegmentDuration) * xM0
+		     + (xBasis.m_fH11 * fSegmentDuration) * xM1;
+	}
+
+	Zenith_Maths::Quat Flux_SampleHermiteQuat(
+		const Zenith_Maths::Quat& xQ0, const Zenith_Maths::Quat& xQ1,
+		const Flux_KeyTangents& xTangent0, const Flux_KeyTangents& xTangent1,
+		float fSegmentDuration, float fU)
+	{
+		if (Flux_TangentIsUnset(xTangent0.m_xOutTangent) && Flux_TangentIsUnset(xTangent1.m_xInTangent))
+		{
+			return glm::normalize(glm::slerp(xQ0, xQ1, fU));
+		}
+
+		if (fSegmentDuration <= 0.0f)
+		{
+			return glm::normalize(xQ0);
+		}
+
+		// The keys are normalized on every mutation path (D15), but AddRotationKeyframe
+		// is not a mutator and takes what it is given, and the inverse below is only a
+		// conjugate for a unit quaternion. Normalizing here costs one square root on a
+		// path that already does three trig calls.
+		const Zenith_Maths::Quat xStart = glm::normalize(xQ0);
+		// The same shortest-arc flip glm::slerp makes internally. Without it the two
+		// branches of this function would disagree about which way round the segment
+		// goes, and the disagreement would appear only for pairs more than 180 apart.
+		const Zenith_Maths::Quat xEnd = (glm::dot(xStart, xQ1) < 0.0f) ? -glm::normalize(xQ1) : glm::normalize(xQ1);
+
+		const Zenith_Maths::Quat xRelative = glm::inverse(xStart) * xEnd;
+		const Zenith_Maths::Vector3 xSegmentRotation = Flux_RotationVectorFromQuat(xRelative);
+
+		// Slerp's own body-frame angular velocity: constant over the segment, and the
+		// value an unset tangent stands in for.
+		const Zenith_Maths::Vector3 xSlerpVelocity = xSegmentRotation / fSegmentDuration;
+		const Zenith_Maths::Vector3 xW0 = Flux_TangentIsUnset(xTangent0.m_xOutTangent) ? xSlerpVelocity : xTangent0.m_xOutTangent;
+		const Zenith_Maths::Vector3 xW1 = Flux_TangentIsUnset(xTangent1.m_xInTangent)  ? xSlerpVelocity : xTangent1.m_xInTangent;
+
+		// The three cumulative-Bezier control deltas. v1 and v3 are a third of the
+		// endpoint rotation-per-segment because the cumulative basis has slope 3 at
+		// each end; v2 is whatever rotation is left over, which is what forces
+		// q(1) == q1 exactly however the two tangents were authored.
+		const float fThirdOfSegment = fSegmentDuration / 3.0f;
+		const Zenith_Maths::Vector3 xV1 = xW0 * fThirdOfSegment;
+		const Zenith_Maths::Vector3 xV3 = xW1 * fThirdOfSegment;
+		const Zenith_Maths::Quat xE1 = Flux_QuatFromRotationVector(xV1);
+		const Zenith_Maths::Quat xE3 = Flux_QuatFromRotationVector(xV3);
+		const Zenith_Maths::Vector3 xV2 = Flux_RotationVectorFromQuat(glm::inverse(xE1) * xRelative * glm::inverse(xE3));
+
+		const float fOneMinusU = 1.0f - fU;
+		const float fU2 = fU * fU;
+		const float fU3 = fU2 * fU;
+		const float fB1 = 1.0f - fOneMinusU * fOneMinusU * fOneMinusU;
+		const float fB2 = 3.0f * fU2 - 2.0f * fU3;
+		const float fB3 = fU3;
+
+		const Zenith_Maths::Quat xResult = xStart
+			* Flux_QuatFromRotationVector(xV1 * fB1)
+			* Flux_QuatFromRotationVector(xV2 * fB2)
+			* Flux_QuatFromRotationVector(xV3 * fB3);
+		return glm::normalize(xResult);
+	}
+}
+
 Zenith_Maths::Vector3 Flux_BoneChannel::SamplePosition(float fTimeSeconds) const
 {
 	if (m_xPositions.GetSize() == 0)
@@ -743,13 +909,14 @@ Zenith_Maths::Vector3 Flux_BoneChannel::SamplePosition(float fTimeSeconds) const
 	if (p1Index >= m_xPositions.GetSize())
 		return m_xPositions.Get(p0Index).first;
 
-	float fScaleFactor = GetScaleFactor(
-		m_xPositions.Get(p0Index).second,
-		m_xPositions.Get(p1Index).second,
-		fTimeSeconds
-	);
+	const float fT0 = m_xPositions.Get(p0Index).second;
+	const float fT1 = m_xPositions.Get(p1Index).second;
+	const float fScaleFactor = GetScaleFactor(fT0, fT1, fTimeSeconds);
 
-	return glm::mix(m_xPositions.Get(p0Index).first, m_xPositions.Get(p1Index).first, fScaleFactor);
+	return Flux_SampleHermiteVec3(
+		m_xPositions.Get(p0Index).first, m_xPositions.Get(p1Index).first,
+		m_xPositionTangents.Get(p0Index), m_xPositionTangents.Get(p1Index),
+		fT1 - fT0, fScaleFactor);
 }
 
 Zenith_Maths::Quat Flux_BoneChannel::SampleRotation(float fTimeSeconds) const
@@ -766,19 +933,14 @@ Zenith_Maths::Quat Flux_BoneChannel::SampleRotation(float fTimeSeconds) const
 	if (p1Index >= m_xRotations.GetSize())
 		return glm::normalize(m_xRotations.Get(p0Index).first);
 
-	float fScaleFactor = GetScaleFactor(
-		m_xRotations.Get(p0Index).second,
-		m_xRotations.Get(p1Index).second,
-		fTimeSeconds
-	);
+	const float fT0 = m_xRotations.Get(p0Index).second;
+	const float fT1 = m_xRotations.Get(p1Index).second;
+	const float fScaleFactor = GetScaleFactor(fT0, fT1, fTimeSeconds);
 
-	Zenith_Maths::Quat xResult = glm::slerp(
-		m_xRotations.Get(p0Index).first,
-		m_xRotations.Get(p1Index).first,
-		fScaleFactor
-	);
-
-	return glm::normalize(xResult);
+	return Flux_SampleHermiteQuat(
+		m_xRotations.Get(p0Index).first, m_xRotations.Get(p1Index).first,
+		m_xRotationTangents.Get(p0Index), m_xRotationTangents.Get(p1Index),
+		fT1 - fT0, fScaleFactor);
 }
 
 Zenith_Maths::Vector3 Flux_BoneChannel::SampleScale(float fTimeSeconds) const
@@ -795,13 +957,14 @@ Zenith_Maths::Vector3 Flux_BoneChannel::SampleScale(float fTimeSeconds) const
 	if (p1Index >= m_xScales.GetSize())
 		return m_xScales.Get(p0Index).first;
 
-	float fScaleFactor = GetScaleFactor(
-		m_xScales.Get(p0Index).second,
-		m_xScales.Get(p1Index).second,
-		fTimeSeconds
-	);
+	const float fT0 = m_xScales.Get(p0Index).second;
+	const float fT1 = m_xScales.Get(p1Index).second;
+	const float fScaleFactor = GetScaleFactor(fT0, fT1, fTimeSeconds);
 
-	return glm::mix(m_xScales.Get(p0Index).first, m_xScales.Get(p1Index).first, fScaleFactor);
+	return Flux_SampleHermiteVec3(
+		m_xScales.Get(p0Index).first, m_xScales.Get(p1Index).first,
+		m_xScaleTangents.Get(p0Index), m_xScaleTangents.Get(p1Index),
+		fT1 - fT0, fScaleFactor);
 }
 
 Zenith_Maths::Matrix4 Flux_BoneChannel::Sample(float fTimeSeconds) const
@@ -823,7 +986,7 @@ void Flux_BoneChannel::WriteToDataStream(Zenith_DataStream& xStream) const
 	Flux_WriteVec3Keys(xStream, m_xPositions);
 	Flux_WriteQuatKeys(xStream, m_xRotations);
 	Flux_WriteVec3Keys(xStream, m_xScales);
-	// Reserved tangent block (D17) — trails the keys so a reader that already knows
+	// Tangent block (D17) — trails the keys so a reader that already knows
 	// the key counts can check the parallel arrays against them.
 	Flux_WriteKeyTangents(xStream, m_xPositionTangents);
 	Flux_WriteKeyTangents(xStream, m_xRotationTangents);
@@ -846,7 +1009,7 @@ void Flux_BoneChannel::ReadFromDataStream(Zenith_DataStream& xStream)
 	Zenith_Assert(m_xPositionTangents.GetSize() == m_xPositions.GetSize()
 		&& m_xRotationTangents.GetSize() == m_xRotations.GetSize()
 		&& m_xScaleTangents.GetSize() == m_xScales.GetSize(),
-		"Flux_BoneChannel '%s': reserved tangent block does not parallel the keyframes", m_strBoneName.c_str());
+		"Flux_BoneChannel '%s': tangent block does not parallel the keyframes", m_strBoneName.c_str());
 	m_xPositionTangents.Resize(m_xPositions.GetSize(), Flux_KeyTangents());
 	m_xRotationTangents.Resize(m_xRotations.GetSize(), Flux_KeyTangents());
 	m_xScaleTangents.Resize(m_xScales.GetSize(), Flux_KeyTangents());
@@ -903,8 +1066,141 @@ void Flux_BoneChannel::SetScaleTangent(u_int uKeyIndex, const Flux_KeyTangents& 
 		m_xScaleTangents.Get(uKeyIndex) = xTangents;
 }
 
-// Sorting a keyframe array on its own would silently un-pair it from the reserved
-// tangent array that parallels it, so the two are permuted together. The sort is
+//=============================================================================
+// WU-8.1 — the two tangent PRESETS. Pure over the key arrays; the only thing they
+// write is a tangent, and they write it through the setters above so the
+// range-check and the "one write path" property are not duplicated.
+//=============================================================================
+namespace
+{
+	// The Catmull-Rom centred slope at key uIndex, ONE-SIDED at either end (the
+	// neighbour index is clamped onto the key itself, so an endpoint measures the
+	// single segment it bounds). Zero when the span is non-positive — a track of one
+	// key, or two keys sharing a time — because zero is the LINEAR tangent and
+	// "there is no slope to measure" is exactly the case linear is the right answer
+	// to. NOT an epsilon compare: this divides by the span, and a span at or below
+	// zero is the only value that cannot be divided by.
+	Zenith_Maths::Vector3 Flux_AutoTangentVec3(const Zenith_Vector<std::pair<Zenith_Maths::Vector3, float>>& xKeys, u_int uIndex)
+	{
+		const u_int uCount = xKeys.GetSize();
+		if (uCount < 2u)
+		{
+			return Zenith_Maths::Vector3(0.0f);
+		}
+		const u_int uPrev = (uIndex == 0u) ? 0u : (uIndex - 1u);
+		const u_int uNext = ((uIndex + 1u) >= uCount) ? (uCount - 1u) : (uIndex + 1u);
+		const float fSpan = xKeys.Get(uNext).second - xKeys.Get(uPrev).second;
+		if (fSpan <= 0.0f)
+		{
+			return Zenith_Maths::Vector3(0.0f);
+		}
+		return (xKeys.Get(uNext).first - xKeys.Get(uPrev).first) / fSpan;
+	}
+
+	// The same construction for rotation, in angular velocity. Two things it does
+	// that the Vector3 version has no analogue for:
+	//
+	//  • SHORTEST ARC between the two neighbours, or a pair straddling the 180-degree
+	//    seam measures a velocity going the long way round — which the sampler would
+	//    then faithfully reproduce as an unauthored extra spin.
+	//  • The relative rotation q_prev^-1 * q_next is expressed in the PREVIOUS key's
+	//    body frame, and the sampler reads key uIndex's tangent in key uIndex's OWN
+	//    frame, so the result is rotated across by q_uIndex^-1 * q_prev. On a sweep
+	//    about a fixed body axis the two frames differ by a rotation ABOUT that axis
+	//    and the change is nil, which is why a uniform sweep still yields a constant
+	//    angular velocity; on a sweep that changes axis it is the difference between
+	//    a tangent that means what the sampler thinks it means and one that does not.
+	Zenith_Maths::Vector3 Flux_AutoTangentQuat(const Zenith_Vector<std::pair<Zenith_Maths::Quat, float>>& xKeys, u_int uIndex)
+	{
+		const u_int uCount = xKeys.GetSize();
+		if (uCount < 2u)
+		{
+			return Zenith_Maths::Vector3(0.0f);
+		}
+		const u_int uPrev = (uIndex == 0u) ? 0u : (uIndex - 1u);
+		const u_int uNext = ((uIndex + 1u) >= uCount) ? (uCount - 1u) : (uIndex + 1u);
+		const float fSpan = xKeys.Get(uNext).second - xKeys.Get(uPrev).second;
+		if (fSpan <= 0.0f)
+		{
+			return Zenith_Maths::Vector3(0.0f);
+		}
+
+		const Zenith_Maths::Quat xPrev = glm::normalize(xKeys.Get(uPrev).first);
+		Zenith_Maths::Quat xNext = glm::normalize(xKeys.Get(uNext).first);
+		if (glm::dot(xPrev, xNext) < 0.0f)
+		{
+			xNext = -xNext;
+		}
+
+		const Zenith_Maths::Vector3 xInPrevFrame =
+			Flux_RotationVectorFromQuat(glm::inverse(xPrev) * xNext) / fSpan;
+
+		const Zenith_Maths::Quat xThis = glm::normalize(xKeys.Get(uIndex).first);
+		return (glm::inverse(xThis) * xPrev) * xInPrevFrame;
+	}
+}
+
+void Flux_BoneChannel::ComputeAutoTangents(Flux_AnimTrack eTrack)
+{
+	switch (eTrack)
+	{
+	case FLUX_ANIM_TRACK_POSITION:
+		for (u_int u = 0; u < m_xPositions.GetSize(); ++u)
+		{
+			Flux_KeyTangents xTangent;
+			xTangent.m_xInTangent = Flux_AutoTangentVec3(m_xPositions, u);
+			xTangent.m_xOutTangent = xTangent.m_xInTangent;
+			SetPositionTangent(u, xTangent);
+		}
+		break;
+
+	case FLUX_ANIM_TRACK_ROTATION:
+		for (u_int u = 0; u < m_xRotations.GetSize(); ++u)
+		{
+			Flux_KeyTangents xTangent;
+			xTangent.m_xInTangent = Flux_AutoTangentQuat(m_xRotations, u);
+			xTangent.m_xOutTangent = xTangent.m_xInTangent;
+			SetRotationTangent(u, xTangent);
+		}
+		break;
+
+	case FLUX_ANIM_TRACK_SCALE:
+		for (u_int u = 0; u < m_xScales.GetSize(); ++u)
+		{
+			Flux_KeyTangents xTangent;
+			xTangent.m_xInTangent = Flux_AutoTangentVec3(m_xScales, u);
+			xTangent.m_xOutTangent = xTangent.m_xInTangent;
+			SetScaleTangent(u, xTangent);
+		}
+		break;
+	}
+}
+
+void Flux_BoneChannel::ComputeFlatTangents(Flux_AnimTrack eTrack)
+{
+	// ★ ZERO, WHICH THE SAMPLER READS AS LINEAR — not as a flat handle. See the
+	// Flux_TangentIsUnset block in the header before naming a UI control after this.
+	const Flux_KeyTangents xZero;
+
+	switch (eTrack)
+	{
+	case FLUX_ANIM_TRACK_POSITION:
+		for (u_int u = 0; u < m_xPositions.GetSize(); ++u) { SetPositionTangent(u, xZero); }
+		break;
+
+	case FLUX_ANIM_TRACK_ROTATION:
+		for (u_int u = 0; u < m_xRotations.GetSize(); ++u) { SetRotationTangent(u, xZero); }
+		break;
+
+	case FLUX_ANIM_TRACK_SCALE:
+		for (u_int u = 0; u < m_xScales.GetSize(); ++u) { SetScaleTangent(u, xZero); }
+		break;
+	}
+}
+
+// Sorting a keyframe array on its own would silently un-pair it from the tangent
+// array that parallels it, so the two are permuted together. (Since WU-8.1 that
+// un-pairing would also silently change the POSE, not only the stored numbers.) The sort is
 // STABLE: two keys sharing a timestamp keep their authored order, which is what
 // keeps a re-serialized clip byte-identical (D5) rather than dependent on
 // std::sort's introsort pivot choices.

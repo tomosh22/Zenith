@@ -34,13 +34,16 @@ void Flux_WriteQuatKeys(Zenith_DataStream& xStream, const Zenith_Vector<std::pai
 void Flux_ReadQuatKeys (Zenith_DataStream& xStream, Zenith_Vector<std::pair<Zenith_Maths::Quat, float>>& xKeys);
 
 //=============================================================================
-// Per-key in/out tangents — RESERVED (decision D17).
+// Per-key in/out tangents (decision D17), SAMPLED since WU-8.1.
 //
-// These are SERIALIZED and round-tripped now so the on-disk layout does not have
-// to move again when curve-interpolated sampling lands; NOTHING SAMPLES THEM YET.
-// Every channel carries one entry per keyframe, kept in lockstep by the channel's
-// Add*Keyframe / SortKeyframes / read paths, and defaulting to zero (which is the
-// "no tangent authored" value a linear sampler would ignore anyway).
+// Every channel carries one entry per keyframe of each of its three tracks — same
+// size, zero by default, kept in lockstep by the channel's Add*Keyframe /
+// SortKeyframes / mutation / read paths. They were serialized and round-tripped
+// from D17 onward specifically so the on-disk layout would not have to move when
+// curve-interpolated sampling landed. It did not: Sample*() now interpolates
+// through them and THE WIRE FORMAT IS UNCHANGED — still schema 2, still the same
+// bytes, because in/out per key and "a rotation tangent is an angular velocity"
+// were the meanings D17 reserved.
 //
 // ★ A ROTATION TANGENT IS AN ANGULAR VELOCITY, NOT A QUATERNION CONTROL POINT.
 // It is a Vector3 in axis * radians-per-second form — the same shape as a position
@@ -48,6 +51,12 @@ void Flux_ReadQuatKeys (Zenith_DataStream& xStream, Zenith_Vector<std::pair<Zeni
 // rotation curve is a body-frame angular velocity. Storing quaternion Bezier control
 // points instead would be four components that only mean anything relative to their
 // own segment's endpoints, and could not be blended or retimed.
+//
+// ★ AN ANGULAR VELOCITY IS IN ITS OWN KEY'S BODY FRAME. Key k's OUT tangent is
+// expressed in the frame key k's own rotation defines, and key k+1's IN tangent in
+// key k+1's — which is exactly what the sampler's endpoint-derivative identities
+// produce (see "HOW A SEGMENT IS INTERPOLATED" below), and what lets an authored
+// tangent survive an edit to the OTHER end of its segment.
 //=============================================================================
 struct Flux_KeyTangents
 {
@@ -57,6 +66,43 @@ struct Flux_KeyTangents
 
 void Flux_WriteKeyTangents(Zenith_DataStream& xStream, const Zenith_Vector<Flux_KeyTangents>& xTangents);
 void Flux_ReadKeyTangents (Zenith_DataStream& xStream, Zenith_Vector<Flux_KeyTangents>& xTangents);
+
+//=============================================================================
+// ★ AN UNSET (EXACTLY ZERO) TANGENT IS THE **LINEAR** TANGENT, NOT A FLAT ONE,
+// AND THAT IS THE WHOLE REASON THIS BLOCK COULD BE TURNED ON WITHOUT MOVING A
+// SINGLE CLIP IN THE TREE.
+//
+// The classical cubic-Hermite reading of a zero derivative is a FLAT (horizontal)
+// tangent, which turns a straight segment into a smoothstep. Every generated clip
+// in the tree, and every clip Assimp ever imported, carries zero in every tangent
+// slot — so that reading would have silently re-timed every animation in the
+// repository into an ease-in/ease-out: a change no unit, no byte comparison and no
+// bake hash could see, because none of the DATA would have moved.
+//
+// So an unset tangent means "this end of this segment has no authored derivative",
+// and the sampler substitutes the segment's own LINEAR slope there (for rotation,
+// slerp's own constant angular velocity). A segment whose two bounding tangents are
+// BOTH unset is evaluated by the pre-WU-8.1 code path verbatim — glm::mix /
+// glm::slerp, with no Hermite arithmetic executed at all — so it is bit-identical
+// rather than merely close, and that is also the branch every clip in the tree
+// takes on every sample today.
+//
+// ★ THE TRADE, STATED OUT LOUD: a genuinely FLAT tangent (zero derivative — the
+// "ease" handle) is NOT authorable, because the zero vector is spoken for.
+// Flux_BoneChannel::ComputeFlatTangents writes zeroes and therefore produces LINEAR
+// segments, which is today's behaviour and is what WU-8.1 specifies "flat" mode to
+// mean. Telling flat from linear needs a per-key tangent MODE, and a mode is a
+// field that is not on the wire — a schema move, deliberately not made here.
+//
+// The comparison is EXACT on purpose. The value being tested is a
+// default-constructed sentinel that round-trips through a .zanim as exact zero
+// bits, not a measurement, so there is no tolerance to choose — and any tolerance
+// would swallow a deliberately tiny authored tangent instead.
+//=============================================================================
+inline bool Flux_TangentIsUnset(const Zenith_Maths::Vector3& xTangent)
+{
+	return xTangent.x == 0.0f && xTangent.y == 0.0f && xTangent.z == 0.0f;
+}
 
 //=============================================================================
 // ★ ONE TIME-COMPARISON TOLERANCE FOR EVERY KEYFRAME MUTATION (D9).
@@ -143,6 +189,62 @@ struct Flux_AnimationEvent
 };
 
 //=============================================================================
+// HOW A SEGMENT IS INTERPOLATED (WU-8.1).
+//
+// Both formulas below reduce EXACTLY to the pre-tangent lerp / slerp when the two
+// tangents bounding the segment are unset, and both are evaluated in place: no
+// allocation, no virtual dispatch, no per-sample state. Shared setup for the
+// segment between keys k and k+1:
+//
+//   dt = t_{k+1} - t_k        the segment duration, in seconds (dt <= 0 -> key k)
+//   u  = (t - t_k) / dt       the normalized position inside it, in [0,1]
+//   m0 = OUT tangent of key k     (unset -> the segment's own slope, see above)
+//   m1 = IN  tangent of key k+1   (unset -> the same)
+//
+// POSITION and SCALE — cubic Hermite, tangents in UNITS PER SECOND:
+//
+//   P(u) = h00(u)*P0 + h10(u)*dt*m0 + h01(u)*P1 + h11(u)*dt*m1
+//   h00 = 2u^3-3u^2+1   h10 = u^3-2u^2+u   h01 = -2u^3+3u^2   h11 = u^3-u^2
+//
+//   The dt factors are what make a tangent a VELOCITY rather than a per-segment
+//   handle length: RETIME a key and the curve through it keeps the same physical
+//   slope instead of silently changing shape. With m0 = m1 = s = (P1-P0)/dt the
+//   four terms collapse algebraically to (1-u)*P0 + u*P1 — that identity is what
+//   the "unset means linear" rule is built on.
+//
+// ROTATION — a cumulative-Bezier quaternion Hermite (Kim/Kim/Shin 1995), tangents
+// in BODY-FRAME ANGULAR VELOCITY (axis * rad/s), each in its own key's frame:
+//
+//   qEnd = dot(q0,q1) < 0 ? -q1 : q1     shortest arc, the flip glm::slerp makes
+//   r    = q0^-1 * qEnd                  the segment's relative rotation
+//   v    = RotVec(r)                     ...as an axis*angle vector
+//   w0, w1                               the two angular velocities
+//                                        (unset -> v/dt, which IS slerp's own)
+//   v1 = dt*w0/3                         v3 = dt*w1/3
+//   v2 = RotVec( E(v1)^-1 * r * E(v3)^-1 )
+//   q(u) = q0 * E(v1*B1(u)) * E(v2*B2(u)) * E(v3*B3(u))
+//   B1 = 1-(1-u)^3   B2 = 3u^2-2u^3   B3 = u^3     (cumulative Bernstein basis)
+//   E(x)      = angleAxis(|x|, x/|x|), identity as |x| -> 0
+//   RotVec(q) = 2*atan2(|q.xyz|, q.w) * normalize(q.xyz), shortest arc
+//
+//   ★ WHY THE CUMULATIVE FORM AND NOT "SLERP PLUS A CORRECTION". This one is
+//   EXACT AT BOTH ENDS, which is the only property that makes C1 across a key mean
+//   anything:
+//     • q(0) = q0 and q(1) = q1 by construction (every B is 0 at u=0, 1 at u=1);
+//     • B1'(0) = 3 with B2'(0) = B3'(0) = 0, so the body-frame angular velocity at
+//       u=0 is exactly 3*v1/dt = w0; symmetrically B3'(1) = 3 with B1'(1) =
+//       B2'(1) = 0, so it is exactly w1 at u=1. A single-chart log-space Hermite
+//       (q0 * E(hermite(u))) is exact at u=0 ONLY — the differential of the
+//       exponential map is the identity at the origin and not at v — so its
+//       end-of-segment velocity is wrong by O(|v|). That error is invisible in any
+//       single pose and shows up as a hitch at every keyframe of a long segment.
+//     • w0 = w1 = v/dt makes v1 = v2 = v3 = v/3, all about one axis, so they
+//       commute and add; B1+B2+B3 = 3u, so q(u) = q0 * E(u*v) — slerp, exactly.
+//       (The sampler short-circuits to glm::slerp in that case anyway; the
+//       identity is what makes the two agree rather than merely nearly agree.)
+//=============================================================================
+
+//=============================================================================
 // Bone Channel
 // Keyframe data for a single bone in an animation clip
 //=============================================================================
@@ -161,7 +263,19 @@ public:
 	// Sample the channel at a specific time IN SECONDS, returns local bone transform
 	Zenith_Maths::Matrix4 Sample(float fTimeSeconds) const;
 
-	// Sample individual components at a time IN SECONDS
+	// Sample individual components at a time IN SECONDS.
+	//
+	// Curve-interpolated through the per-key tangents since WU-8.1 — cubic Hermite
+	// for position/scale, a cumulative-Bezier quaternion Hermite for rotation; see
+	// "HOW A SEGMENT IS INTERPOLATED" above for both formulas. A segment bounded by
+	// two UNSET tangents runs the pre-WU-8.1 glm::mix / glm::slerp code verbatim, so
+	// a clip that authored none (which is every generated and every imported clip)
+	// samples bit-identically to before and pays one Vector3 zero-compare for it.
+	//
+	// The empty / single-key / at-or-past-the-last-key behaviour is unchanged: the
+	// origin, identity and unit scale for an empty track (see D14 on why an empty
+	// channel must not survive inside a clip), the sole key's value for a single-key
+	// track, and a CLAMP to the last key past the end — never an extrapolation.
 	Zenith_Maths::Vector3 SamplePosition(float fTimeSeconds) const;
 	Zenith_Maths::Quat SampleRotation(float fTimeSeconds) const;
 	Zenith_Maths::Vector3 SampleScale(float fTimeSeconds) const;
@@ -178,9 +292,10 @@ public:
 	const Zenith_Vector<std::pair<Zenith_Maths::Quat, float>>& GetRotationKeyframes() const { return m_xRotations; }
 	const Zenith_Vector<std::pair<Zenith_Maths::Vector3, float>>& GetScaleKeyframes() const { return m_xScales; }
 
-	// RESERVED tangent block (D17). One entry per keyframe of the matching channel,
-	// zero by default. Serialized and round-tripped; NOT sampled — Sample*() is still
-	// pure lerp/slerp.
+	// The tangent block (D17). One entry per keyframe of the matching track, zero by
+	// default, serialized and round-tripped, and SAMPLED since WU-8.1. A rotation
+	// tangent is an angular velocity; an exactly-zero tangent is the LINEAR one —
+	// see Flux_KeyTangents and Flux_TangentIsUnset above.
 	const Zenith_Vector<Flux_KeyTangents>& GetPositionTangents() const { return m_xPositionTangents; }
 	const Zenith_Vector<Flux_KeyTangents>& GetRotationTangents() const { return m_xRotationTangents; }
 	const Zenith_Vector<Flux_KeyTangents>& GetScaleTangents()    const { return m_xScaleTangents; }
@@ -188,6 +303,41 @@ public:
 	void SetPositionTangent(u_int uKeyIndex, const Flux_KeyTangents& xTangents);
 	void SetRotationTangent(u_int uKeyIndex, const Flux_KeyTangents& xTangents);
 	void SetScaleTangent   (u_int uKeyIndex, const Flux_KeyTangents& xTangents);
+
+	//-------------------------------------------------------------------------
+	// Tangent PRESETS (WU-8.1). Two pure, allocation-free whole-track rewrites,
+	// both of which go through the Set*Tangent setters above so there is exactly
+	// one write path into the parallel arrays.
+	//
+	// ★ A TANGENT MODE IS AN EDITOR CONCEPT AND IS NOT STORED. The clip carries
+	// numbers, never "this key is auto" — a mode is not on the wire (D17 reserved
+	// two vectors per key and nothing else) and putting one there is a schema move.
+	// So a curve editor owns the mode, and calls one of these to REALISE it as
+	// numbers; re-applying after a key moves is the editor's job, because the clip
+	// cannot know whether a stored tangent was authored by hand or computed.
+	//
+	// ComputeAutoTangents — Catmull-Rom style. For an interior key k, in = out =
+	// the centred slope (v_{k+1} - v_{k-1}) / (t_{k+1} - t_{k-1}); the two endpoint
+	// keys get the one-sided slope of the single segment they bound. A track with
+	// fewer than two keys, and any key whose neighbour span is non-positive, gets
+	// zero — which is the LINEAR tangent, the honest answer when there is no slope
+	// to measure.
+	//
+	// For ROTATION the same construction in angular-velocity terms: the rotation
+	// vector of q_{k-1}^-1 * q_{k+1} over (t_{k+1} - t_{k-1}), then rotated into key
+	// k's OWN body frame by q_k^-1 * q_{k-1} — because that is the frame the
+	// sampler reads a tangent in, and the raw relative rotation comes out in the
+	// EARLIER key's frame. On a sweep about a fixed body axis the two frames agree
+	// and the result is a constant angular velocity, which is the property the units
+	// pin.
+	//
+	// ComputeFlatTangents — zero on every key of the track. ★ THAT IS *LINEAR*, NOT
+	// a flat/eased handle: read the Flux_TangentIsUnset block above before wiring a
+	// UI label to it. It is exactly "put this track back the way every clip in the
+	// tree already is".
+	//-------------------------------------------------------------------------
+	void ComputeAutoTangents(Flux_AnimTrack eTrack);
+	void ComputeFlatTangents(Flux_AnimTrack eTrack);
 
 	void WriteToDataStream(Zenith_DataStream& xStream) const;
 	void ReadFromDataStream(Zenith_DataStream& xStream);
@@ -222,7 +372,7 @@ public:
 	//  • Each returns TRUE only when the clip actually changed. A refusal changes
 	//    NOTHING — no clamp, no merge, no partial edit — so a caller may retry or
 	//    abandon the edit without first reading the state back.
-	//  • The reserved tangent array (D17) is kept exactly parallel: a removal drops
+	//  • The tangent array (D17) is kept exactly parallel: a removal drops
 	//    the matching tangent, an insert adds a zero one at the same index, a retime
 	//    carries the tangent with its key, and a value replace leaves it alone.
 	//  • The track is left TIME-SORTED. There is no SortKeyframes() to remember
@@ -375,6 +525,14 @@ struct Flux_RootMotion
 	// no on-disk bytes. The mutators share the bone channel's implementation and
 	// simply pass no tangent array, so the lockstep rule is vacuous here rather than
 	// re-implemented (and therefore cannot drift from it).
+	//
+	// ★ AND SO ROOT MOTION IS STILL SAMPLED LINEARLY, deliberately, after WU-8.1
+	// turned the bone channel's tangents on. SamplePositionDelta /
+	// SampleRotationDelta are unchanged lerp / slerp because there is no tangent
+	// array here to read. A root-motion delta is integrated by gameplay into a
+	// world transform, so a curve through it would need the same treatment on the
+	// consumer side; giving it tangents is a wire change (WU-1.3 declined it for
+	// that reason) and a separate decision.
 	//-------------------------------------------------------------------------
 	u_int GetKeyframeCount(Flux_AnimTrack eTrack) const;
 	bool  GetKeyframeTime(Flux_AnimTrack eTrack, u_int uKeyIndex, float& fOutTimeSeconds) const;

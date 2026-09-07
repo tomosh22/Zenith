@@ -23,6 +23,9 @@
 #include "UnitTests/Zenith_UnitTests.h"
 #include "UnitTests/Zenith_AssertCapture.h"   // the length-mismatch refusal asserts on purpose
 
+#include <cmath>     // std::abs — WU-8.1's pose comparisons
+#include <utility>   // std::move — the clip takes its channel by rvalue
+
 namespace
 {
 	// Root -> Spine -> Arm, added in that order, so Spine is index 1.
@@ -318,4 +321,112 @@ ZENITH_TEST(BoneMask, AnAllZeroMaskCannotBeToldFromNoMaskByItsWeights)
 	// stuck at false.
 	xExplicitlyEmpty.SetBoneWeight(1u, 0.001f);
 	ZENITH_ASSERT_TRUE(xExplicitlyEmpty.HasAnyNonZeroWeight(), "any non-zero weight is enough");
+}
+
+//==============================================================================
+// WU-8.1 — TANGENT SAMPLING, SEEN FROM THE POSE PATH.
+//
+// ★ Flux_SkeletonPose::SampleFromClip NEEDED NO CHANGE, AND THAT IS A CLAIM WORTH
+// A TEST RATHER THAN A COMMENT. It calls Flux_BoneChannel::Sample*() per bone
+// behind the Has*Keyframes() guards and does nothing else with the values, so a
+// tangent authored on a channel reaches a bone's local pose for free — or it does
+// not, if some layer between the two flattened it. The two units below are the
+// difference: one fixes what the pose path produces for the zero-tangent clips the
+// whole tree is made of, the other proves an authored tangent actually arrives.
+//
+// In-memory skeleton, in-memory clip, no device and no file: not requiresGraphics.
+//==============================================================================
+
+namespace
+{
+	bool PoseVec3Equals(const Zenith_Maths::Vector3& xA, const Zenith_Maths::Vector3& xB, float fTol = 1e-5f)
+	{
+		return std::abs(xA.x - xB.x) < fTol
+			&& std::abs(xA.y - xB.y) < fTol
+			&& std::abs(xA.z - xB.z) < fTol;
+	}
+
+	// Root -> Spine -> Arm (Spine is index 1), with ONE animated bone: Spine, on a
+	// single position segment from the origin to (4,0,0) over two seconds. Nothing
+	// animates Root or Arm, so their bind poses are the control.
+	void PoseBuildSpineOnlyClip(Flux_AnimationClip& xClip)
+	{
+		xClip.SetName("TangentProbe");
+		xClip.SetDuration(2.0f);
+
+		Flux_BoneChannel xChannel;
+		xChannel.SetBoneName("Spine");
+		xChannel.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
+		xChannel.AddPositionKeyframe(2.0f, Zenith_Maths::Vector3(4.0f, 0.0f, 0.0f));
+		xChannel.SortKeyframes();
+		xClip.AddBoneChannel("Spine", std::move(xChannel));
+	}
+}
+
+ZENITH_TEST(SkeletonPose, SampleFromClipIsUnchangedForAClipWithNoTangents)
+{
+	Zenith_SkeletonAsset xRig;
+	BonePoseBuildRigInOrder(xRig);
+
+	Flux_AnimationClip xClip;
+	PoseBuildSpineOnlyClip(xClip);
+
+	Flux_SkeletonPose xPose;
+	xPose.InitFromBindPose(xRig);
+	xPose.SampleFromClip(xClip, 1.0f, xRig);
+
+	// Halfway along a two-key segment with no authored tangent: still the lerp.
+	ZENITH_ASSERT_TRUE(PoseVec3Equals(xPose.GetLocalPose(1u).m_xPosition, Zenith_Maths::Vector3(2.0f, 0.0f, 0.0f)),
+		"a zero-tangent clip poses exactly where it always did");
+
+	// The Has*Keyframes() guards are untouched: a bone the clip does not animate,
+	// and a TRACK the channel does not carry, both keep the bind pose.
+	ZENITH_ASSERT_TRUE(PoseVec3Equals(xPose.GetLocalPose(2u).m_xPosition, Zenith_Maths::Vector3(0.5f, 0.0f, 0.0f)),
+		"Arm has no channel and keeps its bind position");
+	ZENITH_ASSERT_TRUE(PoseVec3Equals(xPose.GetLocalPose(1u).m_xScale, Zenith_Maths::Vector3(1.0f, 1.0f, 1.0f)),
+		"Spine has no SCALE keys, so its bind scale survives");
+}
+
+ZENITH_TEST(SkeletonPose, SampleFromClipCarriesAChannelTangentIntoThePose)
+{
+	Zenith_SkeletonAsset xRig;
+	BonePoseBuildRigInOrder(xRig);
+
+	Flux_AnimationClip xClip;
+	PoseBuildSpineOnlyClip(xClip);
+
+	// The same hand-computed segment as Flux_AnimationClip.Tests.inl's Hermite unit:
+	// dt = 2, u = 0.5, m0 = (0,6,0), m1 = (0,-6,0) => (2, 3, 0), against a lerp of
+	// (2, 0, 0). Authored through GetBoneChannelMutable, which is the route the
+	// editor's document layer uses.
+	Flux_BoneChannel* pxChannel = xClip.GetBoneChannelMutable("Spine");
+	ZENITH_ASSERT_NOT_NULL(pxChannel, "the Spine channel is reachable for mutation");
+	if (pxChannel == nullptr)
+	{
+		return;
+	}
+
+	Flux_KeyTangents xStart;
+	xStart.m_xOutTangent = Zenith_Maths::Vector3(0.0f, 6.0f, 0.0f);
+	pxChannel->SetPositionTangent(0u, xStart);
+
+	Flux_KeyTangents xEnd;
+	xEnd.m_xInTangent = Zenith_Maths::Vector3(0.0f, -6.0f, 0.0f);
+	pxChannel->SetPositionTangent(1u, xEnd);
+
+	Flux_SkeletonPose xPose;
+	xPose.InitFromBindPose(xRig);
+	xPose.SampleFromClip(xClip, 1.0f, xRig);
+
+	ZENITH_ASSERT_TRUE(PoseVec3Equals(xPose.GetLocalPose(1u).m_xPosition, Zenith_Maths::Vector3(2.0f, 3.0f, 0.0f)),
+		"the authored tangent reaches the bone's LOCAL POSE, not only the channel");
+
+	// And the keys themselves are still where they were authored — a tangent bends
+	// the curve between keys and must never move one.
+	xPose.SampleFromClip(xClip, 0.0f, xRig);
+	ZENITH_ASSERT_TRUE(PoseVec3Equals(xPose.GetLocalPose(1u).m_xPosition, Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f)),
+		"the pose at the first key time is still the first key");
+	xPose.SampleFromClip(xClip, 2.0f, xRig);
+	ZENITH_ASSERT_TRUE(PoseVec3Equals(xPose.GetLocalPose(1u).m_xPosition, Zenith_Maths::Vector3(4.0f, 0.0f, 0.0f)),
+		"and at the last key time it is the last key");
 }

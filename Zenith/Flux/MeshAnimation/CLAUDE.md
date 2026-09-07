@@ -41,7 +41,74 @@ Stores animation keyframe data loaded from `.zanim` files.
 > `Flux_AnimationEvent::m_fNormalizedTime` is NOT part of this (D4) — an event time is
 > a `[0,1]` fraction of the clip and stays one.
 
-**Sampling:** `SamplePosition/Rotation/Scale(float fTimeSeconds)` interpolates between keyframes. Uses linear interpolation for position/scale, spherical linear interpolation (slerp) for rotation. Two free helpers make "the last key lands at or before the end of the clip" checkable now that both are in the same unit, and are pure/allocation-free so a generator and a headless unit can assert with the same call: `Flux_ClipLastKeyTimeSeconds(clip)` and `Flux_ClipKeyTimesFitDuration(clip, epsilon)`.
+**Sampling:** `SamplePosition/Rotation/Scale(float fTimeSeconds)` interpolates between keyframes — **curve-interpolated through the per-key tangents since WU-8.1**; see *Tangent sampling* below for the two formulas and for the one decision the whole change rests on. Two free helpers make "the last key lands at or before the end of the clip" checkable now that both are in the same unit, and are pure/allocation-free so a generator and a headless unit can assert with the same call: `Flux_ClipLastKeyTimeSeconds(clip)` and `Flux_ClipKeyTimesFitDuration(clip, epsilon)`.
+
+#### Tangent sampling (WU-8.1) — a strict superset, and why it is one
+
+★ **AN UNSET (EXACTLY ZERO) TANGENT IS THE *LINEAR* TANGENT, NOT A FLAT ONE.**
+That single reading is what let curve interpolation land without moving a byte or a
+pose. Every generated clip in the tree and every clip Assimp imported carries zero
+in every tangent slot, and the classical Hermite reading of a zero derivative is a
+FLAT handle — which turns a straight segment into a smoothstep. Taking it would have
+silently re-timed every animation in the repository into an ease-in/ease-out, with
+no data moving and therefore nothing for a unit, a byte comparison or a bake hash to
+catch.
+
+So an unset tangent means "this end of this segment has no authored derivative" and
+the sampler substitutes the segment's own linear slope there (for rotation, slerp's
+own constant angular velocity). A segment bounded by **two** unset tangents runs the
+pre-WU-8.1 expression verbatim — `glm::mix` / `glm::slerp`, no Hermite arithmetic
+executed at all — so it is bit-identical rather than close, and that is the branch
+every clip in the tree takes today. `Flux_TangentIsUnset` is the named predicate and
+is an EXACT compare on purpose: it tests a default-constructed sentinel that
+round-trips as exact zero bits, not a measurement.
+
+★ **THE TRADE:** a genuinely flat tangent (zero derivative — the "ease" handle) is
+NOT authorable, because the zero vector is spoken for. `ComputeFlatTangents` writes
+zeroes and therefore produces LINEAR segments, which is what WU-8.1 specifies "flat"
+mode to mean; telling flat from linear needs a per-key tangent MODE, which is a field
+that is not on the wire and therefore a schema move. **Do not label a UI control
+"flat" without reading this paragraph.**
+
+| Track | Formula |
+|---|---|
+| position, scale | cubic Hermite, tangents in **units/second**: `P(u) = h00*P0 + h10*dt*m0 + h01*P1 + h11*dt*m1`. The `dt` factors are what make a tangent a VELOCITY rather than a handle length — retime a key and the curve keeps its physical slope. `m0 = m1 = (P1-P0)/dt` collapses the four terms to `(1-u)P0 + u P1`, and that identity is what "unset means linear" is built on |
+| rotation | a **cumulative-Bezier quaternion Hermite** (Kim/Kim/Shin 1995) over the three control deltas `v1 = dt*w0/3`, `v3 = dt*w1/3`, `v2 = RotVec(E(v1)^-1 * q0^-1*q1 * E(v3)^-1)`, blended by the cumulative Bernstein basis `B1 = 1-(1-u)^3`, `B2 = 3u^2-2u^3`, `B3 = u^3`. Tangents are **body-frame angular velocities**, each in its OWN key's frame |
+
+★ **THE ROTATION FORM IS THE CUMULATIVE ONE BECAUSE IT IS EXACT AT *BOTH* ENDS.**
+`B1'(0) = 3` with `B2'(0) = B3'(0) = 0` makes the angular velocity at `u=0` exactly
+`w0`, and symmetrically `B3'(1) = 3` makes it exactly `w1` — so C1 across a key is a
+property of the construction, not of the segment being short. A single-chart log-space
+Hermite (`q0 * E(hermite(u))`) is exact at `u=0` only: the differential of the
+exponential map is the identity at the origin and not at `v`, so its end-of-segment
+velocity is wrong by O(|v|) — invisible in any one pose, a hitch at every keyframe in
+motion. And `w0 = w1 = v/dt` makes `v1 = v2 = v3 = v/3` about one axis, which commute
+and sum against `B1+B2+B3 = 3u`, giving `q0 * E(u*v)` — slerp, exactly.
+
+**Tangent MODES are an editor concept and are not stored.** The clip holds numbers.
+Two pure whole-track presets realise a mode as numbers, both writing through the
+`Set*Tangent` setters so there is one write path into the parallel arrays:
+
+- `Flux_BoneChannel::ComputeAutoTangents(Flux_AnimTrack)` — Catmull-Rom: in = out =
+  the centred slope `(v_{k+1}-v_{k-1})/(t_{k+1}-t_{k-1})`, one-sided at the two
+  endpoint keys, zero where there is no span to divide by. For rotation, the same in
+  angular-velocity terms, **rotated into key k's own body frame** by
+  `q_k^-1 * q_{k-1}` — the raw relative rotation comes out in the EARLIER key's frame,
+  and the sampler reads a tangent in its own key's.
+- `Flux_BoneChannel::ComputeFlatTangents(Flux_AnimTrack)` — zeroes. See the trade above.
+
+**`Flux_RootMotion` is still sampled LINEARLY**, deliberately. It carries no tangent
+array (D17 declined to give it one, because that moves the `.zanim` layout), so
+`SamplePositionDelta` / `SampleRotationDelta` are unchanged lerp/slerp.
+**`Flux_SkeletonPose::SampleFromClip` needed no change either** — both overloads call
+the channel samplers behind their `Has*Keyframes()` guards and do nothing else with
+the values, so a tangent reaches a bone's local pose for free. That is a claim, so it
+is pinned by two units in `Flux_BonePose.Tests.inl` rather than left as a comment.
+
+**No schema bump.** The block D17 reserved is exactly what curve sampling needed —
+in/out per key, angular velocity for rotation — so the wire format did not move and
+`uZENITH_ANIMATION_SCHEMA_CURRENT` is still **2**. A re-bake of the generated clips is
+byte-identical, because none of them authors a tangent.
 
 **Loading:** `LoadFromAssimp()` (tools-only) imports from Assimp's `aiAnimation` structure. Binary `.zanim` files are loaded through the asset system via `Zenith_AnimationAsset::LoadFromFile()` (AssetHandling/Zenith_AnimationAsset.cpp), which now returns a `Zenith_Status` taken straight from `Flux_AnimationClip::ParseStream()` — a refused file no longer reports a successful load holding an empty clip.
 
@@ -93,12 +160,13 @@ like `m_strSourcePath`, so an absolute authoring-machine path never reaches the 
   identical animation data. `WriteToDataStream` sorts a pointer array by bone name
   first. That was free while every `.zanim` was gitignored bake output; it stops being
   free the day one is committed, which `Assets/Authored/` now does.
-- **The reserved per-key tangent block (D17).** Each channel carries a
+- **The per-key tangent block (D17), SAMPLED since WU-8.1.** Each channel carries a
   `Zenith_Vector<Flux_KeyTangents>` parallel to each of its three key arrays — same
-  size, zero by default, kept in lockstep by every add/insert/remove/retime path — and
-  it is **serialized and round-tripped but NOT sampled**: `Sample*()` is still pure
-  lerp/slerp. It exists now so the on-disk layout does not have to move again when
-  curve-interpolated sampling lands. ★ **A ROTATION TANGENT IS AN ANGULAR VELOCITY**, a
+  size, zero by default, kept in lockstep by every add/insert/remove/retime path. It
+  was **serialized and round-tripped but NOT sampled** from D17 until WU-8.1, purely
+  so the on-disk layout would not have to move when curve-interpolated sampling
+  landed — **and it did not: the schema is still 2 and no field moved** (see *Tangent
+  sampling* above). ★ **A ROTATION TANGENT IS AN ANGULAR VELOCITY**, a
   `Vector3` in axis × radians-per-second form — the same shape as a position or scale
   tangent's units-per-second — because the natural derivative of a slerped rotation
   curve is a body-frame angular velocity. Quaternion Bezier control points would be four
@@ -961,15 +1029,24 @@ MeshAnimation/
                                        full-weight list, the whole-refusal on a name/weight length
                                        mismatch, an unresolvable name being LISTED, the stored-count
                                        bound on every accessor, and D47's "an all-zero mask cannot
-                                       be told from no mask by its weights"
+                                       be told from no mask by its weights"; plus WU-8.1's two
+                                       SkeletonPose units - a zero-tangent clip poses exactly where
+                                       it always did, and an authored tangent reaches a bone's LOCAL
+                                       POSE through an unchanged SampleFromClip
   Flux_BlendTree.h/cpp               - Animation blending (Clip, 1D, 2D, Masked nodes)
   Flux_InverseKinematics.h/cpp       - IK solving (FABRIK)
-  Flux_AnimationClip.Tests.inl       - Unit tests for clip storage/sampling, in five categories:
+  Flux_AnimationClip.Tests.inl       - Unit tests for clip storage/sampling, in six categories:
                                        Animation (root motion + end-of-clip clamping),
                                        AnimationSerialization (the envelope, the new metadata
                                        fields, the tangent block, bone-name write order),
                                        AnimationTime (key times are SECONDS),
-                                       AnimationMutation (D9..D16), AnimationReload (D26/D28)
+                                       AnimationMutation (D9..D16), AnimationReload (D26/D28),
+                                       AnimationTangents (WU-8.1: the zero-tangent no-regression
+                                       property against a longhand lerp/slerp oracle, the
+                                       hand-computed Hermite term, "an unset tangent is the
+                                       SEGMENT SLOPE not a flat one", measured C1 across a key
+                                       with a mismatched control, and the two Compute*Tangents
+                                       presets)
   Flux_AnimationController.Tests.inl - Unit tests for event DELIVERY (WU-5A / D34..D40):
                                        arbitration, layers, crossfade sides, loop and
                                        non-looping boundaries, reverse, seek, and the pure

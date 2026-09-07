@@ -7,6 +7,7 @@
 
 #include <cstring>   // std::memcmp — the byte-identity determinism check
 #include <limits>    // WU-1.3: quiet_NaN / infinity — the D10 rejected key times
+#include <cmath>     // WU-8.1: std::atan2 / std::abs — the measured angular velocity
 
 // ============================================================================
 // Flux_RootMotion sample tests
@@ -539,9 +540,22 @@ ZENITH_TEST(AnimationSerialization, ClipKeyTangentBlockRoundTrips)
 	ZENITH_ASSERT_EQ_FLOAT(pxLoaded->GetRotationTangents().Get(0).m_xOutTangent.y, -1.5f, 1e-6f, "rotation angular-velocity out-tangent round-trips");
 	ZENITH_ASSERT_EQ(pxLoaded->GetScaleTangents().GetSize(), 1u, "scale tangent block round-trips its length");
 
-	// Reserved means reserved: sampling is untouched by the tangents above.
-	ZENITH_ASSERT_TRUE(RootMotionVec3Equals(pxLoaded->SamplePosition(5.0f), Zenith_Maths::Vector3(0.5f, 0.0f, 0.0f)),
-		"sampling is still linear — the tangent block is reserved, not consumed");
+	// ★ THIS ASSERTION USED TO READ "sampling is still linear — the tangent block is
+	// reserved, not consumed", and WU-8.1 is exactly the change that makes that false:
+	// the segment [0,10] is bounded by an unset out-tangent at key 0 and the authored
+	// in-tangent (0.25, 0.5, 0.75) at key 1, so it is now a Hermite whose key-0 end
+	// falls back to the segment slope. Hand-computed at u = 0.5, dt = 10:
+	//   h00=h01=0.5, h10=0.125, h11=-0.125
+	//   m0 = slope = (0.1,0,0), m1 = (0.25,0.5,0.75)
+	//   P = 0.5*(1,0,0) + 0.125*10*(0.1,0,0) - 0.125*10*(0.25,0.5,0.75)
+	//     = (0.5,0,0) + (0.125,0,0) - (0.3125,0.625,0.9375)
+	//     = (0.3125, -0.625, -0.9375)
+	// The point of keeping it here is that a TANGENT THAT SURVIVED A FILE now changes
+	// the pose — the round trip and the sampler are pinned against each other, not
+	// only against themselves.
+	ZENITH_ASSERT_TRUE(RootMotionVec3Equals(pxLoaded->SamplePosition(5.0f),
+			Zenith_Maths::Vector3(0.3125f, -0.625f, -0.9375f), 1e-5f),
+		"a round-tripped tangent is what the sampler reads (WU-8.1)");
 }
 
 // ★ The determinism pair. Channels used to be written by walking the
@@ -854,10 +868,14 @@ ZENITH_TEST(AnimationTime, ChannelLastKeyTimeIsAMaximumNotTheBack)
 //     what it means — see ClipRemovingTheLastKeyRemovesTheChannel).
 //
 // ★ EVERY TEST BELOW RE-CHECKS THE TANGENT LOCKSTEP after every mutation. The
-// reserved tangent arrays (D17) are parallel to the key arrays by index, so a
-// mutator that moves a key without its tangent does not lose data — it silently
-// RE-PAIRS every later key with the wrong tangent. Nothing that counts keys, and
-// nothing that samples (the tangents are not sampled yet), can see that.
+// tangent arrays (D17) are parallel to the key arrays by index, so a mutator that
+// moves a key without its tangent does not lose data — it silently RE-PAIRS every
+// later key with the wrong tangent. Nothing that counts keys can see that, and
+// until WU-8.1 nothing that SAMPLED could either, because the tangents were not
+// read. They are now, so a re-pairing has become a visibly wrong pose as well as
+// wrong data — which raises the stakes on these assertions and changes none of
+// them. The stamped markers (100+i in, 200+i out) are what says WHICH tangent
+// ended up where; a length check alone passes a mutator that shuffles them.
 //
 // All pure CPU — in-memory channels and clips, no device, no registry, no file —
 // so every one runs under the Null backend and none is requiresGraphics.
@@ -1770,4 +1788,372 @@ ZENITH_TEST(AnimationReload, CollectionRefusesAnUnnamedClip)
 		ZENITH_ASSERT_EQ(xCapture.GetHitCount(), 0u, "a named clip is added silently");
 	}
 	ZENITH_ASSERT_TRUE(xCollection.GetClip("Idle") == pxNamed, "and resolves by name");
+}
+
+// ============================================================================
+// WU-8.1 — TANGENT SAMPLING.
+//
+// The headline property, and the only one that protects the 931 generated clips
+// plus every imported one: a clip whose tangents are all zero samples EXACTLY as
+// it did before curve interpolation existed. Everything else here is about the
+// one decision that buys that property — AN UNSET TANGENT IS THE SEGMENT'S OWN
+// LINEAR SLOPE, NOT A FLAT HANDLE — and about the two identities that make it
+// true (m = s collapses Hermite to a lerp; w = v/dt collapses the cumulative
+// quaternion Bezier to a slerp).
+//
+// The reference below is written out longhand rather than calling the sampler
+// with the tangents zeroed: a check against the code under test agrees with it
+// however wrong they both are. All pure CPU, no device, no file — none of it is
+// requiresGraphics.
+// ============================================================================
+
+namespace
+{
+	// An INDEPENDENT bracket-and-lerp. Deliberately not sharing Flux_BoneChannel's
+	// GetPositionIndex/GetScaleFactor: this is the oracle, and an oracle that calls
+	// the thing it is judging proves only that the thing is self-consistent.
+	Zenith_Maths::Vector3 TanRefLerpVec3(const Zenith_Vector<std::pair<Zenith_Maths::Vector3, float>>& xKeys, float fT)
+	{
+		const u_int uCount = xKeys.GetSize();
+		if (uCount == 0u) { return Zenith_Maths::Vector3(0.0f); }
+		if (uCount == 1u) { return xKeys.Get(0).first; }
+		if (fT >= xKeys.Get(uCount - 1u).second) { return xKeys.Get(uCount - 1u).first; }
+
+		u_int uSegment = 0u;
+		for (u_int u = 0; u + 1u < uCount; ++u)
+		{
+			if (fT < xKeys.Get(u + 1u).second) { uSegment = u; break; }
+		}
+		const float fT0 = xKeys.Get(uSegment).second;
+		const float fT1 = xKeys.Get(uSegment + 1u).second;
+		const float fU = (fT1 > fT0) ? ((fT - fT0) / (fT1 - fT0)) : 0.0f;
+		return xKeys.Get(uSegment).first * (1.0f - fU) + xKeys.Get(uSegment + 1u).first * fU;
+	}
+
+	Zenith_Maths::Quat TanRefSlerpQuat(const Zenith_Vector<std::pair<Zenith_Maths::Quat, float>>& xKeys, float fT)
+	{
+		const u_int uCount = xKeys.GetSize();
+		if (uCount == 0u) { return Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f); }
+		if (uCount == 1u) { return glm::normalize(xKeys.Get(0).first); }
+		if (fT >= xKeys.Get(uCount - 1u).second) { return glm::normalize(xKeys.Get(uCount - 1u).first); }
+
+		u_int uSegment = 0u;
+		for (u_int u = 0; u + 1u < uCount; ++u)
+		{
+			if (fT < xKeys.Get(u + 1u).second) { uSegment = u; break; }
+		}
+		const float fT0 = xKeys.Get(uSegment).second;
+		const float fT1 = xKeys.Get(uSegment + 1u).second;
+		const float fU = (fT1 > fT0) ? ((fT - fT0) / (fT1 - fT0)) : 0.0f;
+		return glm::normalize(glm::slerp(xKeys.Get(uSegment).first, xKeys.Get(uSegment + 1u).first, fU));
+	}
+
+	// A quaternion's axis*radians vector, shortest arc. Used to turn a pair of
+	// sampled rotations into a measured angular velocity, which is the only way to
+	// see a C1 break — comparing the ROTATIONS either side of a key cannot, because
+	// they agree there by construction whatever the derivative does.
+	Zenith_Maths::Vector3 TanRotationVector(const Zenith_Maths::Quat& xQuat)
+	{
+		const Zenith_Maths::Quat xQ = (xQuat.w < 0.0f) ? -xQuat : xQuat;
+		const Zenith_Maths::Vector3 xImaginary(xQ.x, xQ.y, xQ.z);
+		const float fSinHalf = glm::length(xImaginary);
+		if (fSinHalf < 1.0e-9f) { return Zenith_Maths::Vector3(0.0f); }
+		return xImaginary * ((2.0f * std::atan2(fSinHalf, xQ.w)) / fSinHalf);
+	}
+
+	// The body-frame angular velocity the channel actually produces between two
+	// sample times, by finite difference.
+	Zenith_Maths::Vector3 TanMeasureAngularVelocity(const Flux_BoneChannel& xChannel, float fFrom, float fTo)
+	{
+		const Zenith_Maths::Quat xA = xChannel.SampleRotation(fFrom);
+		const Zenith_Maths::Quat xB = xChannel.SampleRotation(fTo);
+		return TanRotationVector(glm::inverse(xA) * xB) / (fTo - fFrom);
+	}
+}
+
+// ★ (1) THE NO-REGRESSION PROPERTY. Fifty sample times, three tracks, against a
+// longhand lerp/slerp oracle. The tolerances in the brief are 1e-6 / 1e-5, but the
+// unset-tangent branch runs the pre-WU-8.1 expression VERBATIM, so what this
+// actually pins is bit-equality — a Hermite that merely happened to land within
+// 1e-6 would be a different sampler, and a re-bake of every .zanim would stop
+// being byte-identical.
+ZENITH_TEST(AnimationTangents, ZeroTangentsSampleExactlyLikeTheLerpSlerpReference)
+{
+	Flux_BoneChannel xChannel;
+	xChannel.AddPositionKeyframe(0.0f,  Zenith_Maths::Vector3( 0.0f,  0.0f,  0.0f));
+	xChannel.AddPositionKeyframe(1.0f,  Zenith_Maths::Vector3( 2.0f, -1.0f,  0.5f));
+	xChannel.AddPositionKeyframe(2.5f,  Zenith_Maths::Vector3(-1.0f,  3.0f,  2.0f));
+	xChannel.AddPositionKeyframe(4.0f,  Zenith_Maths::Vector3( 5.0f,  0.0f, -2.0f));
+
+	xChannel.AddRotationKeyframe(0.0f, glm::angleAxis(glm::radians(  0.0f), Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f)));
+	xChannel.AddRotationKeyframe(1.0f, glm::angleAxis(glm::radians( 40.0f), Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f)));
+	xChannel.AddRotationKeyframe(2.5f, glm::angleAxis(glm::radians( 70.0f), glm::normalize(Zenith_Maths::Vector3(1.0f, 1.0f, 0.0f))));
+	xChannel.AddRotationKeyframe(4.0f, glm::angleAxis(glm::radians(150.0f), glm::normalize(Zenith_Maths::Vector3(0.0f, 1.0f, 1.0f))));
+
+	xChannel.AddScaleKeyframe(0.0f, Zenith_Maths::Vector3(1.0f, 1.0f, 1.0f));
+	xChannel.AddScaleKeyframe(2.0f, Zenith_Maths::Vector3(2.0f, 0.5f, 1.5f));
+	xChannel.AddScaleKeyframe(4.0f, Zenith_Maths::Vector3(0.75f, 1.25f, 1.0f));
+	xChannel.SortKeyframes();
+
+	// The premise, checked rather than assumed: every tangent really is at its zero
+	// default. Without this the loop below could be comparing two curved samplers.
+	for (u_int u = 0; u < xChannel.GetPositionTangents().GetSize(); ++u)
+	{
+		ZENITH_ASSERT_TRUE(Flux_TangentIsUnset(xChannel.GetPositionTangents().Get(u).m_xInTangent)
+			&& Flux_TangentIsUnset(xChannel.GetPositionTangents().Get(u).m_xOutTangent),
+			"the probe channel authored no position tangent at key %u", u);
+	}
+
+	// 50 times spanning the whole clip AND past its end, so the clamp branch is in
+	// the comparison too.
+	for (u_int u = 0; u < 50u; ++u)
+	{
+		const float fTime = (static_cast<float>(u) / 49.0f) * 4.5f;
+
+		ZENITH_ASSERT_TRUE(RootMotionVec3Equals(xChannel.SamplePosition(fTime), TanRefLerpVec3(xChannel.GetPositionKeyframes(), fTime), 1e-6f),
+			"position at t=%f must match the lerp reference", fTime);
+		ZENITH_ASSERT_TRUE(RootMotionVec3Equals(xChannel.SampleScale(fTime), TanRefLerpVec3(xChannel.GetScaleKeyframes(), fTime), 1e-6f),
+			"scale at t=%f must match the lerp reference", fTime);
+
+		const Zenith_Maths::Quat xSampled = xChannel.SampleRotation(fTime);
+		const Zenith_Maths::Quat xReference = TanRefSlerpQuat(xChannel.GetRotationKeyframes(), fTime);
+		ZENITH_ASSERT_TRUE(std::abs(xSampled.w - xReference.w) < 1e-5f
+			&& std::abs(xSampled.x - xReference.x) < 1e-5f
+			&& std::abs(xSampled.y - xReference.y) < 1e-5f
+			&& std::abs(xSampled.z - xReference.z) < 1e-5f,
+			"rotation at t=%f must match the slerp reference COMPONENTWISE (not merely as a rotation)", fTime);
+	}
+}
+
+// ★ (2) THE HERMITE TERM, HAND-COMPUTED. dt = 2, u = 0.5 =>
+//   h00 = h01 = 0.5, h10 = 0.125, h11 = -0.125
+//   P = 0.5*(0,0,0) + 0.5*(4,0,0) + 0.125*2*(0,6,0) - 0.125*2*(0,-6,0)
+//     = (2,0,0) + (0,1.5,0) + (0,1.5,0) = (2,3,0)
+// The lerp answer is (2,0,0), so the whole of the (0,3,0) difference IS the term
+// under test. A test that only asserted "not equal to the lerp" would pass for any
+// arithmetic at all.
+ZENITH_TEST(AnimationTangents, PositionTangentsBendTheSegmentByTheHermiteTerm)
+{
+	Flux_BoneChannel xChannel;
+	xChannel.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
+	xChannel.AddPositionKeyframe(2.0f, Zenith_Maths::Vector3(4.0f, 0.0f, 0.0f));
+	xChannel.SortKeyframes();
+
+	Flux_KeyTangents xStart;
+	xStart.m_xOutTangent = Zenith_Maths::Vector3(0.0f, 6.0f, 0.0f);
+	xChannel.SetPositionTangent(0u, xStart);
+
+	Flux_KeyTangents xEnd;
+	xEnd.m_xInTangent = Zenith_Maths::Vector3(0.0f, -6.0f, 0.0f);
+	xChannel.SetPositionTangent(1u, xEnd);
+
+	ZENITH_ASSERT_TRUE(RootMotionVec3Equals(xChannel.SamplePosition(1.0f), Zenith_Maths::Vector3(2.0f, 3.0f, 0.0f), 1e-5f),
+		"the segment midpoint is the hand-computed Hermite value, not the lerp");
+
+	// h00(0) = 1 and every other basis term is 0 there, so the curve still starts
+	// exactly on its key — through the HERMITE branch, not through a special case.
+	ZENITH_ASSERT_TRUE(RootMotionVec3Equals(xChannel.SamplePosition(0.0f), Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f), 1e-6f),
+		"a tangent must not move the key it belongs to");
+
+	// And it arrives on the far key: h01(1) = 1 with h00/h10/h11 all 0 there. Sampled
+	// just inside the segment because AT t = 2 the sampler takes its clamp branch and
+	// returns the key outright, which would be true however wrong the curve was.
+	ZENITH_ASSERT_TRUE(RootMotionVec3Equals(xChannel.SamplePosition(1.9999f), Zenith_Maths::Vector3(4.0f, 0.0f, 0.0f), 2e-3f),
+		"the curve converges onto the far key from INSIDE the segment");
+
+	// The scale track is the same code with a different array; one check that it is
+	// wired at all, since a copy-paste that sampled positions would pass everything
+	// above.
+	xChannel.AddScaleKeyframe(0.0f, Zenith_Maths::Vector3(1.0f, 1.0f, 1.0f));
+	xChannel.AddScaleKeyframe(2.0f, Zenith_Maths::Vector3(1.0f, 1.0f, 1.0f));
+	xChannel.SortKeyframes();
+	Flux_KeyTangents xScaleStart;
+	xScaleStart.m_xOutTangent = Zenith_Maths::Vector3(4.0f, 0.0f, 0.0f);
+	xChannel.SetScaleTangent(0u, xScaleStart);
+	// P0 = P1 = 1, m0 = 4, m1 = slope = 0 => x = 0.125*2*4 = 1.0 above the flat line.
+	ZENITH_ASSERT_TRUE(RootMotionVec3Equals(xChannel.SampleScale(1.0f), Zenith_Maths::Vector3(2.0f, 1.0f, 1.0f), 1e-5f),
+		"the scale track reads its own tangents");
+}
+
+// ★ (3) THE DECISION THAT MAKES THE WHOLE UNIT SAFE, ISOLATED. An unset tangent is
+// the SEGMENT SLOPE, not zero — so a segment with ONE authored end is a Hermite
+// whose other end still runs straight, rather than a smoothstep. Hand-computed at
+// dt = 2, u = 0.5, m0 = (0,6,0), m1 = slope = (2,0,0):
+//   P = (2,0,0) + 0.125*2*(0,6,0) - 0.125*2*(2,0,0) = (1.5, 1.5, 0)
+// Had the sampler read the unset end as a FLAT zero, this would be (2, 1.5, 0) —
+// the same y, a different x. That is the shape of the bug this test exists for:
+// visible only on the axis the tangent did NOT touch.
+ZENITH_TEST(AnimationTangents, AnUnsetTangentIsTheSegmentSlopeNotAFlatOne)
+{
+	Flux_BoneChannel xChannel;
+	xChannel.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
+	xChannel.AddPositionKeyframe(2.0f, Zenith_Maths::Vector3(4.0f, 0.0f, 0.0f));
+	xChannel.SortKeyframes();
+
+	Flux_KeyTangents xStart;
+	xStart.m_xOutTangent = Zenith_Maths::Vector3(0.0f, 6.0f, 0.0f);
+	xChannel.SetPositionTangent(0u, xStart);
+
+	ZENITH_ASSERT_TRUE(RootMotionVec3Equals(xChannel.SamplePosition(1.0f), Zenith_Maths::Vector3(1.5f, 1.5f, 0.0f), 1e-5f),
+		"the unset end contributes the segment slope, so x stays linear-ish rather than easing");
+
+	ZENITH_ASSERT_TRUE(Flux_TangentIsUnset(Zenith_Maths::Vector3(0.0f)),
+		"the exactly-zero vector is what 'unset' means");
+	ZENITH_ASSERT_FALSE(Flux_TangentIsUnset(Zenith_Maths::Vector3(0.0f, 1.0e-20f, 0.0f)),
+		"and the test is EXACT — a deliberately tiny authored tangent is still authored");
+}
+
+// ★ (4) C1 ACROSS A KEY, MEASURED. Everything is about +Y so the cumulative-Bezier
+// form degenerates to a scalar Hermite and the numbers are readable. The middle key
+// carries in == out == 2 rad/s while the two segments' own slerp velocities are
+// 60 deg/s = 1.047 rad/s, so the authored value is well clear of the fallback and a
+// sampler that ignored the tangent would read 1.047 on both sides and still look
+// "continuous" — which is why the second half of this test breaks the match and
+// checks that the measurement can SEE a break.
+ZENITH_TEST(AnimationTangents, RotationVelocityIsContinuousAcrossAKeyWithMatchedTangents)
+{
+	const Zenith_Maths::Vector3 xAxisY(0.0f, 1.0f, 0.0f);
+	Flux_BoneChannel xChannel;
+	xChannel.AddRotationKeyframe(0.0f, glm::angleAxis(glm::radians(  0.0f), xAxisY));
+	xChannel.AddRotationKeyframe(1.0f, glm::angleAxis(glm::radians( 60.0f), xAxisY));
+	xChannel.AddRotationKeyframe(2.0f, glm::angleAxis(glm::radians(120.0f), xAxisY));
+	xChannel.SortKeyframes();
+
+	const float fH = 2.0e-3f;   // small enough that the O(h) truncation is ~1e-2 rad/s,
+	                            // large enough that the float noise in the difference of
+	                            // two O(1) quaternions stays four orders below it.
+
+	// Zero tangents first: the curve IS slerp, so both sides read the segments' own
+	// 60 deg/s. This is the control — it fixes what the measurement reads when
+	// nothing is authored.
+	{
+		const Zenith_Maths::Vector3 xLeft  = TanMeasureAngularVelocity(xChannel, 1.0f - fH, 1.0f);
+		const Zenith_Maths::Vector3 xRight = TanMeasureAngularVelocity(xChannel, 1.0f, 1.0f + fH);
+		ZENITH_ASSERT_EQ_FLOAT(xLeft.y,  glm::radians(60.0f), 1e-2f, "slerp's own velocity, left of the key");
+		ZENITH_ASSERT_EQ_FLOAT(xRight.y, glm::radians(60.0f), 1e-2f, "and the same to the right of it");
+	}
+
+	Flux_KeyTangents xMatched;
+	xMatched.m_xInTangent  = Zenith_Maths::Vector3(0.0f, 2.0f, 0.0f);
+	xMatched.m_xOutTangent = Zenith_Maths::Vector3(0.0f, 2.0f, 0.0f);
+	xChannel.SetRotationTangent(1u, xMatched);
+
+	{
+		const Zenith_Maths::Vector3 xLeft  = TanMeasureAngularVelocity(xChannel, 1.0f - fH, 1.0f);
+		const Zenith_Maths::Vector3 xRight = TanMeasureAngularVelocity(xChannel, 1.0f, 1.0f + fH);
+		ZENITH_ASSERT_EQ_FLOAT(xLeft.y,  2.0f, 3e-2f, "the segment ARRIVES at the authored angular velocity");
+		ZENITH_ASSERT_EQ_FLOAT(xRight.y, 2.0f, 3e-2f, "and LEAVES at it — which is what the cumulative form buys");
+		ZENITH_ASSERT_TRUE(std::abs(xLeft.y - xRight.y) < 3e-2f,
+			"matched in/out tangents make the velocity continuous across the key (C1)");
+		// Nothing off-axis appeared: a frame mix-up in the construction would show
+		// here long before it showed in the magnitude.
+		ZENITH_ASSERT_TRUE(std::abs(xRight.x) < 1e-3f && std::abs(xRight.z) < 1e-3f,
+			"a rotation about Y stays about Y");
+	}
+
+	// ★ THE CONTROL FOR THE CONTROL: break the match and the same measurement must
+	// report a large discontinuity. Without this, a sampler that ignored rotation
+	// tangents entirely would pass every assertion above except the two magnitudes.
+	Flux_KeyTangents xMismatched;
+	xMismatched.m_xInTangent  = Zenith_Maths::Vector3(0.0f,  2.0f, 0.0f);
+	xMismatched.m_xOutTangent = Zenith_Maths::Vector3(0.0f, -1.0f, 0.0f);
+	xChannel.SetRotationTangent(1u, xMismatched);
+	{
+		const Zenith_Maths::Vector3 xLeft  = TanMeasureAngularVelocity(xChannel, 1.0f - fH, 1.0f);
+		const Zenith_Maths::Vector3 xRight = TanMeasureAngularVelocity(xChannel, 1.0f, 1.0f + fH);
+		ZENITH_ASSERT_TRUE((xLeft.y - xRight.y) > 2.5f,
+			"mismatched in/out tangents are a REAL corner, and the measurement sees it");
+	}
+}
+
+// ★ (5) ComputeAutoTangents ON COLLINEAR KEYS, AND THE IDENTITY IT LANDS ON.
+// Three keys on a straight line at 2 units/s: every centred slope is 2, and because
+// m0 = m1 = the segment slope collapses cubic Hermite to a lerp, the curve does not
+// move even though every tangent is now non-zero. That second half is the check
+// that matters — it is what says the Hermite basis was implemented correctly rather
+// than merely that a subtraction was.
+ZENITH_TEST(AnimationTangents, AutoTangentsAreTheNeighbourSlopeAndStillSampleLinear)
+{
+	Flux_BoneChannel xChannel;
+	xChannel.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
+	xChannel.AddPositionKeyframe(1.0f, Zenith_Maths::Vector3(2.0f, 0.0f, 0.0f));
+	xChannel.AddPositionKeyframe(2.0f, Zenith_Maths::Vector3(4.0f, 0.0f, 0.0f));
+	xChannel.SortKeyframes();
+
+	xChannel.ComputeAutoTangents(FLUX_ANIM_TRACK_POSITION);
+
+	ZENITH_ASSERT_EQ(xChannel.GetPositionTangents().GetSize(), 3u, "auto tangents stay in lockstep with the keys");
+	for (u_int u = 0; u < 3u; ++u)
+	{
+		const Flux_KeyTangents& xTangent = xChannel.GetPositionTangents().Get(u);
+		ZENITH_ASSERT_TRUE(RootMotionVec3Equals(xTangent.m_xInTangent, Zenith_Maths::Vector3(2.0f, 0.0f, 0.0f), 1e-5f),
+			"key %u's IN tangent is the slope (one-sided at the ends, centred in the middle)", u);
+		ZENITH_ASSERT_TRUE(RootMotionVec3Equals(xTangent.m_xOutTangent, Zenith_Maths::Vector3(2.0f, 0.0f, 0.0f), 1e-5f),
+			"key %u's OUT tangent is the same", u);
+	}
+
+	ZENITH_ASSERT_TRUE(RootMotionVec3Equals(xChannel.SamplePosition(0.25f), Zenith_Maths::Vector3(0.5f, 0.0f, 0.0f), 1e-5f),
+		"m0 = m1 = the segment slope collapses the Hermite to the lerp");
+	ZENITH_ASSERT_TRUE(RootMotionVec3Equals(xChannel.SamplePosition(1.75f), Zenith_Maths::Vector3(3.5f, 0.0f, 0.0f), 1e-5f),
+		"...on the second segment too");
+
+	// ComputeFlatTangents puts the track back to zeroes, i.e. back to LINEAR — which
+	// on collinear keys is indistinguishable in the pose, so the tangents themselves
+	// are what has to be asserted.
+	xChannel.ComputeFlatTangents(FLUX_ANIM_TRACK_POSITION);
+	for (u_int u = 0; u < 3u; ++u)
+	{
+		ZENITH_ASSERT_TRUE(Flux_TangentIsUnset(xChannel.GetPositionTangents().Get(u).m_xInTangent)
+			&& Flux_TangentIsUnset(xChannel.GetPositionTangents().Get(u).m_xOutTangent),
+			"ComputeFlatTangents zeroes key %u", u);
+	}
+	ZENITH_ASSERT_TRUE(RootMotionVec3Equals(xChannel.SamplePosition(0.25f), Zenith_Maths::Vector3(0.5f, 0.0f, 0.0f), 1e-6f),
+		"and the pose is untouched, because zero already meant linear");
+
+	// A track with nothing to measure gets zero rather than a division by a zero span.
+	Flux_BoneChannel xSingle;
+	xSingle.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(7.0f, 0.0f, 0.0f));
+	xSingle.ComputeAutoTangents(FLUX_ANIM_TRACK_POSITION);
+	ZENITH_ASSERT_TRUE(Flux_TangentIsUnset(xSingle.GetPositionTangents().Get(0).m_xOutTangent),
+		"a one-key track has no slope to measure, and says so with a zero");
+}
+
+// ★ (6) THE ROTATION HALF OF THE SAME THING. A uniform 30 deg/s sweep about one
+// body axis must produce ONE angular velocity at every key — including the two
+// endpoints, which are measured one-sided over half the span of the interior ones,
+// so a missing division would show up as a factor of two here and nowhere else.
+ZENITH_TEST(AnimationTangents, AutoRotationTangentsAreAConstantAngularVelocityOnAUniformSweep)
+{
+	const Zenith_Maths::Vector3 xAxisY(0.0f, 1.0f, 0.0f);
+	Flux_BoneChannel xChannel;
+	for (u_int u = 0; u < 4u; ++u)
+	{
+		xChannel.AddRotationKeyframe(static_cast<float>(u),
+			glm::angleAxis(glm::radians(30.0f * static_cast<float>(u)), xAxisY));
+	}
+	xChannel.SortKeyframes();
+
+	xChannel.ComputeAutoTangents(FLUX_ANIM_TRACK_ROTATION);
+
+	const float fExpected = glm::radians(30.0f);   // 30 deg per second, about +Y
+	ZENITH_ASSERT_EQ(xChannel.GetRotationTangents().GetSize(), 4u, "one tangent per rotation key");
+	for (u_int u = 0; u < 4u; ++u)
+	{
+		const Flux_KeyTangents& xTangent = xChannel.GetRotationTangents().Get(u);
+		ZENITH_ASSERT_TRUE(RootMotionVec3Equals(xTangent.m_xInTangent, Zenith_Maths::Vector3(0.0f, fExpected, 0.0f), 1e-4f),
+			"key %u's angular velocity is the sweep rate, not the sweep angle", u);
+		ZENITH_ASSERT_TRUE(RootMotionVec3Equals(xTangent.m_xOutTangent, Zenith_Maths::Vector3(0.0f, fExpected, 0.0f), 1e-4f),
+			"and key %u's IN and OUT match, as an auto key's must", u);
+	}
+
+	// w0 = w1 = v/dt is slerp's own velocity, so the identity says the curve did not
+	// move: sampling mid-segment must still be the 15-degree point.
+	const Zenith_Maths::Quat xMid = xChannel.SampleRotation(0.5f);
+	const Zenith_Maths::Quat xExpectedMid = glm::angleAxis(glm::radians(15.0f), xAxisY);
+	ZENITH_ASSERT_TRUE(RootMotionQuatEquals(xMid, xExpectedMid, 1e-4f),
+		"w = v/dt collapses the cumulative Bezier back onto the slerp");
+
+	xChannel.ComputeFlatTangents(FLUX_ANIM_TRACK_ROTATION);
+	ZENITH_ASSERT_TRUE(Flux_TangentIsUnset(xChannel.GetRotationTangents().Get(2u).m_xOutTangent),
+		"ComputeFlatTangents zeroes the rotation track too");
 }
