@@ -433,6 +433,65 @@ void Flux_BoneMask::SetFromBoneNames(const Zenith_Vector<std::string>& xBoneName
 	}
 }
 
+bool Flux_BoneMask::SetFromBoneNames(const Zenith_SkeletonAsset& xSkeleton,
+	const Zenith_Vector<std::string>& xBoneNames,
+	const Zenith_Vector<float>& xWeights,
+	Zenith_Vector<std::string>* pxOutUnresolvedNames)
+{
+	if (pxOutUnresolvedNames != nullptr)
+	{
+		pxOutUnresolvedNames->Clear();
+	}
+
+	// ★ A RESOLVE ALWAYS PRODUCES A COMPLETE MASK. m_xWeights may be shorter than
+	// FLUX_MAX_BONES when this object came out of a stream, and a resolve that
+	// wrote into the short array would silently drop every bone past its end.
+	// Re-filling first is also what makes "resolve into a mask I already used"
+	// mean the same thing as "resolve into a fresh one".
+	m_xWeights.Clear();
+	m_xWeights.Reserve(FLUX_MAX_BONES);
+	for (uint32_t i = 0; i < FLUX_MAX_BONES; ++i)
+	{
+		m_xWeights.PushBack(0.0f);
+	}
+
+	// EMPTY weights means 1.0 for each named bone (the mesh-geometry overload's
+	// contract). Any other length mismatch is a caller bug and is refused WHOLE:
+	// resolving the agreeing prefix would attach real weights to the wrong bones.
+	const bool bImplicitFullWeight = (xWeights.GetSize() == 0);
+	if (!bImplicitFullWeight && xWeights.GetSize() != xBoneNames.GetSize())
+	{
+		Zenith_Assert(false,
+			"Flux_BoneMask::SetFromBoneNames: %u names against %u weights — pass one weight per name, or none at all",
+			xBoneNames.GetSize(), xWeights.GetSize());
+		return false;
+	}
+
+	bool bAllResolved = true;
+	for (u_int u = 0; u < xBoneNames.GetSize(); ++u)
+	{
+		const std::string& strName = xBoneNames.Get(u);
+		const int32_t iBoneIndex = xSkeleton.GetBoneIndex(strName);
+		if (iBoneIndex == Zenith_SkeletonAsset::INVALID_BONE_INDEX)
+		{
+			// ★ REPORTED, NOT DROPPED SILENTLY. An OVERRIDE layer with no mask
+			// replaces the WHOLE skeleton, so a mask that quietly loses a bone
+			// makes its layer do MORE rather than less.
+			bAllResolved = false;
+			if (pxOutUnresolvedNames != nullptr)
+			{
+				pxOutUnresolvedNames->PushBack(strName);
+			}
+			continue;
+		}
+
+		const float fWeight = bImplicitFullWeight ? 1.0f : xWeights.Get(u);
+		SetBoneWeight(static_cast<uint32_t>(iBoneIndex), fWeight);
+	}
+
+	return bAllResolved;
+}
+
 void Flux_BoneMask::SetBoneWeight(uint32_t uBoneIndex, float fWeight)
 {
 	if (uBoneIndex < m_xWeights.GetSize())
@@ -443,11 +502,28 @@ void Flux_BoneMask::SetBoneWeight(uint32_t uBoneIndex, float fWeight)
 
 float Flux_BoneMask::GetBoneWeight(uint32_t uBoneIndex) const
 {
+	// ★ AGAINST THE STORED COUNT, NOT FLUX_MAX_BONES. A mask read back from a
+	// stream that carried fewer weights is SHORTER than a constructed one, and
+	// "this mask does not describe that bone" is answered 0 rather than by
+	// reading past the end. Flux_SkeletonPose::MaskedBlend already substitutes
+	// exactly this value for an index past the array, so the two agree.
 	if (uBoneIndex < m_xWeights.GetSize())
 	{
 		return m_xWeights.Get(uBoneIndex);
 	}
 	return 0.0f;
+}
+
+bool Flux_BoneMask::HasAnyNonZeroWeight() const
+{
+	for (u_int u = 0; u < m_xWeights.GetSize(); ++u)
+	{
+		if (m_xWeights.Get(u) > 0.0f)
+		{
+			return true;
+		}
+	}
+	return false;
 }
 
 Flux_BoneMask Flux_BoneMask::CreateUpperBodyMask(const Flux_MeshGeometry& xGeometry,
@@ -541,15 +617,33 @@ void Flux_BoneMask::WriteToDataStream(Zenith_DataStream& xStream) const
 
 void Flux_BoneMask::ReadFromDataStream(Zenith_DataStream& xStream)
 {
+	// ★ THE BYTE LAYOUT IS FROZEN. This payload is written by
+	// Flux_AnimationLayer::WriteToDataStream, which Flux_AnimationController
+	// writes inline and Zenith_AnimatorComponent writes into a .zscen — and
+	// committed scene files carry those bytes today, with no version word to
+	// branch on. Count, then that many floats; nothing may be added here.
 	uint32_t uNumWeights = 0;
 	xStream >> uNumWeights;
 	m_xWeights.Clear();
-	m_xWeights.Reserve(uNumWeights);
+
+	// A mask can never legitimately carry more than one weight per bone, and a
+	// count read out of a corrupt stream would otherwise size an allocation from
+	// it. EVERY declared float is still CONSUMED so the cursor lands where the
+	// writer's did — a short read here would misparse the rest of the layer.
+	const uint32_t uKeepCount = std::min(uNumWeights, (uint32_t)FLUX_MAX_BONES);
+	Zenith_Assert(uNumWeights <= FLUX_MAX_BONES,
+		"Flux_BoneMask::ReadFromDataStream: %u weights exceeds FLUX_MAX_BONES (%u) - possible corruption",
+		uNumWeights, (uint32_t)FLUX_MAX_BONES);
+
+	m_xWeights.Reserve(uKeepCount);
 	for (uint32_t i = 0; i < uNumWeights; ++i)
 	{
 		float fWeight = 0.0f;
 		xStream >> fWeight;
-		m_xWeights.PushBack(fWeight);
+		if (i < uKeepCount)
+		{
+			m_xWeights.PushBack(fWeight);
+		}
 	}
 }
 
@@ -607,3 +701,7 @@ void Flux_CrossFadeTransition::Blend(Flux_SkeletonPose& xOut, const Flux_Skeleto
 	float fBlendWeight = GetBlendWeight();
 	Flux_SkeletonPose::Blend(xOut, m_xFromPose, xTarget, fBlendWeight);
 }
+
+#ifdef ZENITH_TESTING
+#include "Flux/MeshAnimation/Flux_BonePose.Tests.inl"
+#endif

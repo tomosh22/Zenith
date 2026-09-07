@@ -9,6 +9,9 @@
 #include "Core/Zenith_EditorWindowNames.h"
 #include "Flux/Flux_ViewConstants.h"
 #include "Flux/RenderViews/Flux_MaterialPreviewController.h"   // the pure orbit / view-constants builders
+// WU-7.1: the mask section lists the SESSION'S rig, which is reached through the
+// skeleton instance. Flux_AnimationController.h only forward-declares it.
+#include "Flux/MeshAnimation/Flux_SkeletonInstance.h"
 
 #include "imgui.h"
 
@@ -47,6 +50,15 @@ Zenith_EditorPanel_Animation& Zenith_EditorPanel_Animation::Instance()
 Zenith_EditorPanel_Animation::Zenith_EditorPanel_Animation()
 	: m_xSession(std::string(szEDITOR_WINDOW_ANIMATION_EDITOR))
 {
+	// ★ THE FORCE-LINK ANCHOR FOR WU-7.1's MASK DOCUMENT, called here rather
+	// than from Zenith_Editor::Initialise (where its two siblings are) because
+	// this panel is the only thing that owns one. Holding the document by value
+	// is already a hard reference; the explicit call is the repo's idiom and does
+	// not depend on that staying true. Without it the document's .obj can be
+	// dropped by /OPT:REF, taking its ZENITH_TEST registrars with it — the unit
+	// count moves by zero and nothing goes red to say so.
+	const bool bMaskDocumentLinked = Zenith_BoneMaskDocument_ForceLink();
+	(void)bMaskDocumentLinked;
 }
 
 Zenith_EditorPanel_Animation::~Zenith_EditorPanel_Animation()
@@ -59,6 +71,12 @@ Zenith_EditorPanel_Animation::~Zenith_EditorPanel_Animation()
 void Zenith_EditorPanel_Animation::Shutdown()
 {
 	CloseClip();
+	// ★ THE MASK DOCUMENT IS DROPPED HERE TOO, and separately from CloseClip: it
+	// is not part of the clip's lifetime (closing a clip leaves an open mask
+	// alone, deliberately — a mask outlives the animation you happened to be
+	// looking at when you opened it) but it MUST be dropped while the asset
+	// registry is alive, which is the whole reason Shutdown exists.
+	m_xMaskDocument.CloseDiscardingChanges();
 }
 
 //=============================================================================
@@ -576,6 +594,47 @@ void Zenith_EditorPanel_Animation::ClearFrameRects()
 	m_fRecordedDisplayWidth = 0.0f;
 	m_fRecordedDisplayHeight = 0.0f;
 	m_fLastTrackWidth = 0.0f;
+
+	// WU-7.1's mask-section draw diagnostics, cleared for exactly the reason the
+	// rects are: a hidden, collapsed or unselected-tab panel must report "the
+	// control was not drawn" rather than what it drew last time it was visible.
+	// The notice is cleared with them — an explanation left behind would be
+	// explaining a frame that did not happen.
+	m_bMaskSectionDrawn = false;
+	m_bMaskAssignmentDrawn = false;
+	m_uMaskBoneRowsDrawn = 0;
+	m_strMaskNotice.clear();
+}
+
+void Zenith_EditorPanel_Animation::GetMaskRigBoneNames(Zenith_Vector<std::string>& axOut) const
+{
+	axOut.Clear();
+
+	// ★ THE SESSION'S RIG, NOT THE CLIP'S METADATA PATH. The session is what
+	// actually RESOLVED a skeleton (through the clip's metadata, or through a
+	// remembered per-clip override the human chose, D31), and the resolved one is
+	// the rig the preview is posing — which is the rig a user painting a mask is
+	// looking at.
+	const Flux_SkeletonInstance* pxInstance = m_xSession.GetSkeletonInstance();
+	if (pxInstance == nullptr)
+	{
+		return;
+	}
+	const Zenith_SkeletonAsset* pxSkeleton = pxInstance->GetSourceSkeleton();
+	if (pxSkeleton == nullptr)
+	{
+		return;
+	}
+
+	const uint32_t uNumBones = pxSkeleton->GetNumBones();
+	axOut.Reserve(uNumBones);
+	for (uint32_t u = 0; u < uNumBones; ++u)
+	{
+		// SKELETON ORDER, which is parents-before-children — so the list reads as
+		// the hierarchy does and "select subtree" on a row acts on the rows below
+		// it, not on an arbitrary scatter.
+		axOut.PushBack(pxSkeleton->GetBone(u).m_strName);
+	}
 }
 
 bool Zenith_EditorPanel_Animation::PublishRect(const Zenith_AnimPanelRect* pxRect, Zenith_AnimPanelRect& xOut) const

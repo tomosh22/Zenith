@@ -3,9 +3,14 @@
 #ifdef ZENITH_TOOLS
 
 #include "Editor/Panels/Zenith_EditorPanel_Animation.h"
+// WU-7.1: Action_MaskSetSubtree resolves the hierarchy through the SESSION'S
+// rig, which is reached via the skeleton instance. Flux_AnimationController.h
+// only forward-declares it.
+#include "Flux/MeshAnimation/Flux_SkeletonInstance.h"
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <string>
 
 //=============================================================================
@@ -1238,6 +1243,152 @@ bool Zenith_EditorPanel_Animation::Action_SetEmitEventsOnScrub(bool bEmit)
 bool Zenith_EditorPanel_Animation::GetEmitEventsOnScrub() const
 {
 	return m_xSession.Controller().GetEmitEventsOnSeek();
+}
+
+//=============================================================================
+// BONE MASKS (WU-7.1)
+//
+// ★ EVERY ONE OF THESE GOES THROUGH Zenith_BoneMaskDocument, for the reason the
+// key actions go through Zenith_AnimationDocument: the document is the only
+// writer of the working copy, and it is the only thing that marks dirty and
+// pushes undo in the same breath as the edit.
+//
+// ★ AND THEY ARE ASSIGNMENTS, so a bool of TRUE means "the value you asked for
+// is in place" and not "something changed" — the animator-controller panel's
+// rule, adopted verbatim so an authoring recipe that re-states a weight does not
+// trip the automation's checked wrapper at boot. The invariant to assert on is
+// the undo-stack DEPTH; a no-op is not an edit and contributes zero steps.
+//=============================================================================
+
+bool Zenith_EditorPanel_Animation::Action_MaskOpen(const std::string& strAssetPath)
+{
+	if (strAssetPath.empty())
+	{
+		return false;
+	}
+	// The section first, then the asset: a refusal is shown in the section, and a
+	// collapsed one would report it to nobody. Same ordering, same reason, as
+	// ANIM_SM_OPEN showing the window before calling OpenAsset.
+	m_bShowMaskSection = true;
+	if (m_xMaskDocument.Open(strAssetPath) != ZENITH_BONEMASKDOC_OPEN_OK)
+	{
+		return false;
+	}
+	snprintf(m_acMaskPathBuffer, sizeof(m_acMaskPathBuffer), "%s", m_xMaskDocument.GetAssetPath().c_str());
+	return true;
+}
+
+bool Zenith_EditorPanel_Animation::Action_MaskOpenFresh(const std::string& strAssetPath)
+{
+	if (strAssetPath.empty())
+	{
+		return false;
+	}
+	m_bShowMaskSection = true;
+	if (m_xMaskDocument.OpenFresh(strAssetPath) != ZENITH_BONEMASKDOC_OPEN_OK)
+	{
+		return false;
+	}
+	snprintf(m_acMaskPathBuffer, sizeof(m_acMaskPathBuffer), "%s", m_xMaskDocument.GetAssetPath().c_str());
+	return true;
+}
+
+bool Zenith_EditorPanel_Animation::Action_MaskSetWeight(const std::string& strBoneName, float fWeight)
+{
+	if (!m_xMaskDocument.IsOpen() || strBoneName.empty() || !AnimOpsIsFinite(fWeight))
+	{
+		return false;
+	}
+	return m_xMaskDocument.SetBoneWeight(strBoneName, fWeight);
+}
+
+bool Zenith_EditorPanel_Animation::Action_MaskSetSubtree(const std::string& strBoneName, float fWeight)
+{
+	if (!m_xMaskDocument.IsOpen() || strBoneName.empty() || !AnimOpsIsFinite(fWeight))
+	{
+		return false;
+	}
+
+	// ★ THE RIG COMES FROM THE SESSION AT THE CALL SITE, NOT FROM THE DOCUMENT.
+	// A mask is skeleton-SCOPED but not skeleton-BOUND — the same file is meant
+	// to be opened against whichever rig the dope sheet is previewing — so a
+	// hierarchy cached at Open would answer with the PREVIOUS rig's parents after
+	// the preview changed, and a subtree paint would quietly cover the wrong
+	// bones.
+	const Flux_SkeletonInstance* pxInstance = m_xSession.GetSkeletonInstance();
+	const Zenith_SkeletonAsset* pxSkeleton = pxInstance != nullptr ? pxInstance->GetSourceSkeleton() : nullptr;
+	if (pxSkeleton == nullptr)
+	{
+		// The same state the section shows its rig prompt for. Refusing here rather
+		// than falling back to a single-bone set is deliberate: "select subtree"
+		// that silently painted one bone would look like the hierarchy was flat.
+		return false;
+	}
+
+	return m_xMaskDocument.SetSubtreeWeight(*pxSkeleton, strBoneName, fWeight);
+}
+
+bool Zenith_EditorPanel_Animation::Action_MaskSetHasAvatar(bool bHasAvatarMask)
+{
+	if (!m_xMaskDocument.IsOpen())
+	{
+		return false;
+	}
+	return m_xMaskDocument.SetHasAvatarMask(bHasAvatarMask);
+}
+
+bool Zenith_EditorPanel_Animation::Action_MaskSave()
+{
+	if (!m_xMaskDocument.IsOpen())
+	{
+		return false;
+	}
+	// ★ THE CONFLICT RESULT IS A REFUSAL HERE, not a silent overwrite. The
+	// document has a SaveOverwritingExternal for the "yes, discard theirs" answer
+	// and the section is where that question gets asked; an action that quietly
+	// took the second branch would make a save destroy somebody else's edit with
+	// no prompt and no diagnostic.
+	return m_xMaskDocument.Save() == ZENITH_BONEMASKDOC_SAVE_OK;
+}
+
+bool Zenith_EditorPanel_Animation::Action_MaskClose()
+{
+	if (!m_xMaskDocument.IsOpen())
+	{
+		return false;
+	}
+	// FORCED, matching CloseClip: the panel raises its own Save/Discard prompt
+	// from the document's IsDirty(), and this is the verb that answers "discard".
+	m_xMaskDocument.CloseDiscardingChanges();
+	m_acMaskPathBuffer[0] = '\0';
+	// ★ THE SECTION GOES WITH IT, so the sheet gets its height back. The section
+	// draws NOTHING while hidden (RenderMaskSection), and every item above the
+	// sheet comes out of the sheet's own height — leaving an empty section behind
+	// after a close would cost the dope sheet its last row for no content at all.
+	// This is also what keeps the toolbar's "Masks" checkbox agreeing with what is
+	// on screen: the open verbs raise the flag, this one clears it.
+	m_bShowMaskSection = false;
+	return true;
+}
+
+bool Zenith_EditorPanel_Animation::Action_MaskUndo()
+{
+	if (!m_xMaskDocument.IsOpen() || m_xMaskDocument.IsCompoundOpen() || !m_xMaskDocument.CanUndo())
+	{
+		return false;
+	}
+	m_xMaskDocument.Undo();
+	return true;
+}
+
+bool Zenith_EditorPanel_Animation::Action_MaskRedo()
+{
+	if (!m_xMaskDocument.IsOpen() || m_xMaskDocument.IsCompoundOpen() || !m_xMaskDocument.CanRedo())
+	{
+		return false;
+	}
+	m_xMaskDocument.Redo();
+	return true;
 }
 
 #endif // ZENITH_TOOLS

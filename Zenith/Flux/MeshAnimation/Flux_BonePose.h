@@ -171,6 +171,20 @@ private:
 //=============================================================================
 // Flux_BoneMask
 // Defines which bones are affected by certain operations (e.g., upper body mask)
+//
+// ★ IT IS A RESOLVED, INDEX-BASED WEIGHT ARRAY AND CARRIES NO PROVENANCE. It
+// does not know which skeleton produced the indices, let alone which file — so
+// it is never the thing that gets authored or persisted. `.zanimmask`
+// (Zenith_BoneMaskAsset) holds the weights BY BONE NAME and resolves them onto
+// one specific rig; this is the resolution's OUTPUT.
+//
+// ★ THE CONSTRUCTOR FILLS FLUX_MAX_BONES ZEROES, BUT ReadFromDataStream SIZES
+// TO WHATEVER COUNT THE STREAM CARRIED — which may be FEWER. Every accessor
+// below is therefore bounds-checked against the STORED count rather than
+// against FLUX_MAX_BONES, and a query past it answers 0 (which is also the
+// answer Flux_SkeletonPose::MaskedBlend already substitutes for a short mask).
+// Reading past the end would be reading another object's bytes for a bone the
+// mask simply does not describe.
 //=============================================================================
 class Flux_BoneMask
 {
@@ -181,11 +195,72 @@ public:
 	void SetFromBoneNames(const Zenith_Vector<std::string>& xBoneNames,
 		const Flux_MeshGeometry& xGeometry);
 
+	//=========================================================================
+	// WU-7.1 — the SKELETON-ASSET overload.
+	//
+	// ★ THE WHOLE RUNTIME RESOLVES AGAINST A Zenith_SkeletonAsset AND THIS CLASS
+	// DID NOT. Flux_SkeletonPose::SampleFromClip (the overload the controller,
+	// the layers and every state machine reach), Flux_SkeletonInstance and
+	// Zenith_BoneMaskAsset::ResolveTo all key on
+	// Zenith_SkeletonAsset::m_xBoneNameToIndex, while the overload above keys on
+	// Flux_MeshGeometry::m_xBoneNameToIdAndOffset — a DIFFERENT map, filled by a
+	// different importer path, and one the editor never has in hand at all. A
+	// mask authored against the geometry's numbering and applied to a pose posed
+	// against the skeleton's is a mask on the wrong bones, with nothing to
+	// observe but an animation that looks wrong.
+	//
+	// ★ NAMES ARE THE ONLY THING THAT TRAVELS BETWEEN TWO RIGS. Two skeletons
+	// carrying the same bone NAMES in a different ORDER resolve the same mask to
+	// different INDICES and to the same per-bone meaning, which is precisely why
+	// the asset stores names.
+	//
+	// xWeights is either the SAME LENGTH as xBoneNames — one weight per name — or
+	// EMPTY, which means "weight 1.0 for every named bone" and matches the
+	// mesh-geometry overload's behaviour. A length mismatch is refused whole
+	// (assert + false, the mask left fully zeroed) rather than resolved for the
+	// prefix the two agree on: a weight silently attached to the wrong bone is
+	// worse than no mask.
+	//
+	// Every weight not named is left at 0, so the result is a complete mask
+	// whatever subset was passed. Returns TRUE only when EVERY name resolved; a
+	// name the rig does not carry is appended to pxOutUnresolvedNames (when one
+	// is supplied) and its weight is DROPPED. The reporting is a list rather than
+	// a log line because this layer has no idea which asset the names came from —
+	// Zenith_BoneMaskAsset::ResolveTo does, and is what names them.
+	//=========================================================================
+	bool SetFromBoneNames(const Zenith_SkeletonAsset& xSkeleton,
+		const Zenith_Vector<std::string>& xBoneNames,
+		const Zenith_Vector<float>& xWeights,
+		Zenith_Vector<std::string>* pxOutUnresolvedNames = nullptr);
+
 	// Set weight for specific bone
 	void SetBoneWeight(uint32_t uBoneIndex, float fWeight);
 
-	// Get weight for specific bone
+	// Get weight for specific bone. 0.0f for an index past the STORED count —
+	// see the class note; never an out-of-range read.
 	float GetBoneWeight(uint32_t uBoneIndex) const;
+
+	// How many weights this mask actually stores. FLUX_MAX_BONES for a freshly
+	// constructed or freshly resolved one; whatever a stream carried after a
+	// ReadFromDataStream.
+	u_int GetWeightCount() const { return m_xWeights.GetSize(); }
+
+	// Does any bone carry a non-zero weight?
+	//
+	// ★ THIS IS THE DERIVATION D47 IS ABOUT, NAMED. Flux_AnimationLayer::
+	// ReadFromDataStream hand-inlines exactly this scan to decide "this layer has
+	// an avatar mask" — so an ALL-ZERO MASK, which is a perfectly meaningful one
+	// ("this layer overrides nothing yet"), comes back from a scene as NO MASK,
+	// and an OVERRIDE layer with no mask replaces the WHOLE skeleton. Losing a
+	// mask makes a layer do MORE, not less.
+	//
+	// It stays a derivation there because that stream payload reaches committed
+	// .zscen bytes and may not gain a field. The `.zanimmask` asset carries the
+	// flag EXPLICITLY instead, and Flux_AnimationController::BuildFromControllerDef
+	// gates SetAvatarMask on the asset's flag rather than on this predicate. This
+	// accessor exists so the scan is nameable and testable rather than only ever
+	// appearing as an anonymous loop.
+	bool HasAnyNonZeroWeight() const;
 
 	// Get all weights for use in MaskedBlend
 	const Zenith_Vector<float>& GetWeights() const { return m_xWeights; }

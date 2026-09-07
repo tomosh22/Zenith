@@ -997,6 +997,58 @@ void Zenith_EditorAutomation::AddStep_AnimSmExpectStateCount(int iExpectedCount)
 	m_axActions.PushBack(xAction);
 }
 
+// ---- BONE MASK steps (WU-7.1) ----
+// The payload contract for the ANIM_MASK block, in one place so the executor
+// reads it from one place too:
+//   szArg1    — the asset path, or the BONE NAME, depending on the verb
+//   afArgs[0] — the weight, or the expected weight
+//   afArgs[1] — the tolerance (the EXPECT verb only)
+//   bArg      — the has-avatar-mask flag
+
+void Zenith_EditorAutomation::AddStep_AnimMaskOpen(const char* szAssetPath)      { Push(Zenith_EditorAutomation::m_axActions, ActionType::ANIM_MASK_OPEN, szAssetPath); }
+void Zenith_EditorAutomation::AddStep_AnimMaskOpenFresh(const char* szAssetPath) { Push(Zenith_EditorAutomation::m_axActions, ActionType::ANIM_MASK_OPEN_FRESH, szAssetPath); }
+void Zenith_EditorAutomation::AddStep_AnimMaskClose()                            { Push(Zenith_EditorAutomation::m_axActions, ActionType::ANIM_MASK_CLOSE); }
+void Zenith_EditorAutomation::AddStep_AnimMaskUndo()                             { Push(Zenith_EditorAutomation::m_axActions, ActionType::ANIM_MASK_UNDO); }
+void Zenith_EditorAutomation::AddStep_AnimMaskRedo()                             { Push(Zenith_EditorAutomation::m_axActions, ActionType::ANIM_MASK_REDO); }
+void Zenith_EditorAutomation::AddStep_AnimMaskSave()                             { Push(Zenith_EditorAutomation::m_axActions, ActionType::ANIM_MASK_SAVE); }
+
+void Zenith_EditorAutomation::AddStep_AnimMaskSetWeight(const char* szBoneName, float fWeight)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::ANIM_MASK_SET_WEIGHT;
+	xAction.m_szArg1 = SafeStr(szBoneName);
+	xAction.m_afArgs[0] = fWeight;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimMaskSetSubtree(const char* szBoneName, float fWeight)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::ANIM_MASK_SET_SUBTREE;
+	xAction.m_szArg1 = SafeStr(szBoneName);
+	xAction.m_afArgs[0] = fWeight;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimMaskSetHasAvatar(bool bHasAvatarMask)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::ANIM_MASK_SET_HAS_AVATAR;
+	xAction.m_bArg = bHasAvatarMask;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimMaskExpectWeight(const char* szBoneName, float fExpectedWeight,
+	float fTolerance)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::ANIM_MASK_EXPECT_WEIGHT;
+	xAction.m_szArg1 = SafeStr(szBoneName);
+	xAction.m_afArgs[0] = fExpectedWeight;
+	xAction.m_afArgs[1] = fTolerance;
+	m_axActions.PushBack(xAction);
+}
+
 void Zenith_EditorAutomation::AddStep_AnimSetAutoKey(bool bEnabled)
 {
 	Zenith_EditorAction xAction = {};
@@ -3252,6 +3304,93 @@ static void ExecuteAnimStateMachineAction(const Zenith_EditorAction& xAction)
 	}
 }
 
+//-----------------------------------------------------------------------------
+// BONE MASK authoring (WU-7.1): ANIM_MASK_OPEN .. ANIM_MASK_EXPECT_WEIGHT.
+// Every case ends in one of Zenith_EditorPanel_Animation's Action_Mask* twins —
+// the SAME call the "Bone Masks" section's own slider handler makes — so a
+// recipe and a human's gesture run one code path, and nothing here reaches past
+// the panel into the document except to READ.
+//-----------------------------------------------------------------------------
+namespace
+{
+	// The same contract as AnimActionChecked and AnimSmActionChecked, with its
+	// own message so a failing recipe names the family it came from.
+	void AnimMaskActionChecked(bool bOk, const char* szAction, const char* szArg)
+	{
+		Zenith_Assert(bOk, "EditorAutomation bone-mask step %s('%s') failed", szAction, szArg ? szArg : "");
+		(void)bOk; (void)szAction; (void)szArg;
+	}
+}
+
+static void ExecuteAnimMaskAction(const Zenith_EditorAction& xAction)
+{
+	Zenith_EditorPanel_Animation& xPanel = Zenith_EditorPanel_Animation::Instance();
+
+	switch (xAction.m_eType)
+	{
+	case Zenith_EditorActionType::ANIM_MASK_OPEN:
+		AnimMaskActionChecked(xPanel.Action_MaskOpen(xAction.m_szArg1), "AnimMaskOpen", xAction.m_szArg1.c_str());
+		break;
+
+	case Zenith_EditorActionType::ANIM_MASK_OPEN_FRESH:
+		AnimMaskActionChecked(xPanel.Action_MaskOpenFresh(xAction.m_szArg1),
+			"AnimMaskOpenFresh", xAction.m_szArg1.c_str());
+		break;
+
+	case Zenith_EditorActionType::ANIM_MASK_CLOSE:
+		// ★ NOT CHECKED. Closing when nothing is open is a legitimate thing for a
+		// recipe to do defensively at the top of a block, and Action_MaskClose
+		// reports false for it — asserting there would fail a boot over a
+		// no-op. Every other verb in this family has a real failure to report.
+		xPanel.Action_MaskClose();
+		break;
+
+	case Zenith_EditorActionType::ANIM_MASK_SET_WEIGHT:
+		AnimMaskActionChecked(xPanel.Action_MaskSetWeight(xAction.m_szArg1, xAction.m_afArgs[0]),
+			"AnimMaskSetWeight", xAction.m_szArg1.c_str());
+		break;
+
+	case Zenith_EditorActionType::ANIM_MASK_SET_SUBTREE:
+		// The likely failure here is "no rig previewed", which is why the message
+		// carries the bone name: the recipe's own AnimOpenClip is the fix.
+		AnimMaskActionChecked(xPanel.Action_MaskSetSubtree(xAction.m_szArg1, xAction.m_afArgs[0]),
+			"AnimMaskSetSubtree", xAction.m_szArg1.c_str());
+		break;
+
+	case Zenith_EditorActionType::ANIM_MASK_SET_HAS_AVATAR:
+		AnimMaskActionChecked(xPanel.Action_MaskSetHasAvatar(xAction.m_bArg), "AnimMaskSetHasAvatar", nullptr);
+		break;
+
+	case Zenith_EditorActionType::ANIM_MASK_UNDO:
+		AnimMaskActionChecked(xPanel.Action_MaskUndo(), "AnimMaskUndo", nullptr);
+		break;
+
+	case Zenith_EditorActionType::ANIM_MASK_REDO:
+		AnimMaskActionChecked(xPanel.Action_MaskRedo(), "AnimMaskRedo", nullptr);
+		break;
+
+	case Zenith_EditorActionType::ANIM_MASK_SAVE:
+		AnimMaskActionChecked(xPanel.Action_MaskSave(), "AnimMaskSave",
+			xPanel.MaskDocument().GetAssetPath().c_str());
+		break;
+
+	case Zenith_EditorActionType::ANIM_MASK_EXPECT_WEIGHT:
+	{
+		const float fActual = xPanel.MaskDocument().GetBoneWeight(xAction.m_szArg1);
+		const float fTolerance = xAction.m_afArgs[1] > 0.0f ? xAction.m_afArgs[1] : 1.0e-4f;
+		Zenith_Assert(std::fabs(fActual - xAction.m_afArgs[0]) <= fTolerance,
+			"EditorAutomation AnimMaskExpectWeight: bone '%s' expected %f, found %f",
+			xAction.m_szArg1.c_str(), xAction.m_afArgs[0], fActual);
+		(void)fActual; (void)fTolerance;
+		break;
+	}
+
+	default:
+		Zenith_Assert(false, "Non-bone-mask action routed to ExecuteAnimMaskAction");
+		break;
+	}
+}
+
 // Particle field edits (SET_PARTICLE_CONFIG .. SET_PARTICLE_EMITTING).
 static void ExecuteParticleAction(const Zenith_EditorAction& xAction)
 {
@@ -3640,6 +3779,16 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 		xAction.m_eType <= Zenith_EditorActionType::ANIM_SM_EXPECT_DEFAULT_STATE)
 	{
 		ExecuteAnimStateMachineAction(xAction);
+		return;
+	}
+
+	// Bone-mask authoring (WU-7.1). A FOURTH animation range, for the reason the
+	// third exists: appending into the block above would move the bound both that
+	// line and the header's static_assert compare against.
+	if (xAction.m_eType >= Zenith_EditorActionType::ANIM_MASK_OPEN &&
+		xAction.m_eType <= Zenith_EditorActionType::ANIM_MASK_EXPECT_WEIGHT)
+	{
+		ExecuteAnimMaskAction(xAction);
 		return;
 	}
 

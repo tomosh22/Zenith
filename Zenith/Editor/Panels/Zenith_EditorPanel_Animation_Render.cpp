@@ -7,6 +7,7 @@
 #include "Editor/Zenith_EditorUI.h"
 #include "Core/Zenith_EditorWindowNames.h"
 #include "Core/Zenith_DragDropPayloads.h"
+#include "FileAccess/Zenith_FileAccess.h"   // ZENITH_ANIMMASK_EXT, in the section's prompt
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_ImGuiIntegration.h"
 
@@ -164,6 +165,12 @@ void Zenith_EditorPanel_Animation::Render(float fDtSeconds)
 	RenderBanners();
 	RenderPreviewPane();
 	RenderEventInspector();
+	// WU-7.1's "Bone Masks" section. Drawn ABOVE the separator with the other
+	// cursor-laid-out items and never below it: everything past that line is the
+	// draw-list sheet, and an ImGui item placed inside that region trips
+	// ErrorCheckUsingSetCursorPosToExtendParentBoundaries (a modal CRT dialog
+	// nothing logs — see the header).
+	RenderMaskSection();
 	ImGui::Separator();
 	RenderSheet();
 	// AFTER the sheet: HandleSheetInput runs at the end of RenderSheet and is
@@ -223,6 +230,24 @@ void Zenith_EditorPanel_Animation::RenderToolbar()
 	if (ImGui::Button("Close"))
 	{
 		RequestCloseClip();
+	}
+
+	// ★ THE BONE-MASK SECTION'S TOGGLE, ON THIS ROW AND ABOVE THE no-clip EARLY
+	// RETURN BELOW. On this row because the section itself now draws NOTHING when
+	// it is off (see RenderMaskSection) and would otherwise be unreachable — and a
+	// toggle needs no line of its own, which is the whole point of the rule it is
+	// serving. Above the early return because a mask can legitimately be opened
+	// with no clip loaded; the section will simply show its no-rig prompt.
+	ImGui::SameLine();
+	bool bShowMasks = m_bShowMaskSection;
+	if (ImGui::Checkbox("Masks", &bShowMasks))
+	{
+		m_bShowMaskSection = bShowMasks;
+	}
+	if (ImGui::IsItemHovered())
+	{
+		ImGui::SetTooltip("Show the Bone Masks section (.zanimmask authoring). Off by default: while it is off it "
+			"draws no items and takes no height, so the dope sheet below keeps the full window.");
 	}
 
 	if (!m_xDocument.IsOpen())
@@ -355,6 +380,203 @@ void Zenith_EditorPanel_Animation::RenderEventToolbar()
 			ImGui::ColorConvertU32ToFloat4(u == 0u ? xPalette.m_uTextBright : xPalette.m_uTextDim));
 		ImGui::TextUnformatted(strName.c_str());
 		ImGui::PopStyleColor();
+	}
+}
+
+//=============================================================================
+// The BONE MASK sub-panel (WU-7.1).
+//
+// ★ A COLLAPSIBLE SECTION INSIDE THE DOPE SHEET, NOT A WINDOW OF ITS OWN,
+// because the RIG is here. A mask is authored against a specific skeleton's bone
+// NAMES, and the only place the editor already holds a resolved, previewed rig
+// is this panel's Zenith_AnimationPreviewSession — with its metadata resolution,
+// its remembered per-clip override (D31) and its prompt. A standalone window
+// would have to grow all three.
+//
+// ★ IT IS ORDINARY ImGui ITEMS, NOT DRAW-LIST DECORATIONS, and that is the
+// opposite of the sheet below it. The sheet is one InvisibleButton painted at
+// absolute coordinates because placing items there trips
+// ErrorCheckUsingSetCursorPosToExtendParentBoundaries; this section is laid out
+// by the cursor like the toolbars, so sliders and checkboxes are exactly what it
+// should be made of. It records no rects.
+//
+// ★ EVERY GESTURE ENDS IN AN Action_Mask* CALL and this function decides
+// nothing. What it DOES own is the three diagnostics — was the section drawn,
+// was the ASSIGNMENT control drawn, and what is it explaining — because those
+// are facts about a frame and only the drawing knows them.
+//
+// ★★ NOTHING SHOWN DRAWS NOTHING — NOT EVEN A COLLAPSED HEADER. This is the
+// panel's standing rule (Editor/CLAUDE.md), the same one RenderPoseToolbar and
+// RenderEventInspector follow, and it is load-bearing rather than tidy:
+// RenderSheet takes `ImGui::GetContentRegionAvail()`, so EVERY item emitted
+// above it comes straight out of the sheet's height, and the EVENTS ROW IS THE
+// LAST ROW OF THE SHEET. This section shipped as a collapsed CollapsingHeader —
+// one row, always present, ~24 px — and that alone pushed the events row below
+// the canvas bottom in the 900x600 test window:
+// `AnimPanel::ChangingTheDurationMovesTheEventRowAndNotTheStoredValue` went red
+// on all three Null_ exes with GetEventRect false BEFORE and AFTER the duration
+// change, which reads as "the event row is broken" and was in fact "the sheet
+// lost 24 px". A collapsed header is not free, and the off-screen gate turns
+// the cost into a flat `false` a long way from its cause.
+//
+// So the gate is FIRST and returns before a single item is submitted. The
+// toggle lives on the existing toolbar row (RenderToolbar), which costs no
+// height at all.
+//=============================================================================
+
+void Zenith_EditorPanel_Animation::RenderMaskSection()
+{
+	// ★ ZERO ITEMS, ZERO HEIGHT. See the block above.
+	//
+	// The `|| IsOpen()` is a SAFETY NET, not a second mode: every panel route
+	// into the document (Action_MaskOpen / Action_MaskOpenFresh) raises the flag
+	// and Action_MaskClose clears it, so in any reachable state the two agree and
+	// the toolbar checkbox never disagrees with what is on screen. What it buys
+	// is that a mask opened by some future path that forgot the flag can never be
+	// INVISIBLE while it is open — which for a document that can be dirty is the
+	// failure worth spending a branch on.
+	if (!m_bShowMaskSection && !m_xMaskDocument.IsOpen())
+	{
+		return;
+	}
+	m_bMaskSectionDrawn = true;
+
+	ImGui::Separator();
+	ImGui::TextUnformatted("Bone Masks");
+
+	// ---- the path field + lifecycle buttons ---------------------------------
+	ImGui::SetNextItemWidth(Zenith_EditorUI::Px(320.0f));
+	const bool bPathCommitted = ImGui::InputText("##AnimMaskPath", m_acMaskPathBuffer, sizeof(m_acMaskPathBuffer),
+		ImGuiInputTextFlags_EnterReturnsTrue);
+
+	ImGui::SameLine();
+	if (ImGui::Button("Open##Mask") || bPathCommitted)
+	{
+		Action_MaskOpen(std::string(m_acMaskPathBuffer));
+	}
+	ImGui::SameLine();
+	if (ImGui::Button("New##Mask"))
+	{
+		Action_MaskOpenFresh(std::string(m_acMaskPathBuffer));
+	}
+
+	if (!m_xMaskDocument.IsOpen())
+	{
+		// Named rather than left blank, because "nothing is drawn" has four causes
+		// on this panel and a test that can only see a bool reports the wrong one.
+		m_strMaskNotice = "no " ZENITH_ANIMMASK_EXT " open — type a path and press Open, or New";
+		ImGui::TextDisabled("%s", m_strMaskNotice.c_str());
+		return;
+	}
+
+	ImGui::SameLine();
+	if (ImGui::Button("Save##Mask"))
+	{
+		Action_MaskSave();
+	}
+	ImGui::SameLine();
+	if (ImGui::Button("Close##Mask"))
+	{
+		Action_MaskClose();
+		return;
+	}
+	if (m_xMaskDocument.IsDirty())
+	{
+		ImGui::SameLine();
+		ImGui::TextDisabled("| UNSAVED");
+	}
+
+	// ---- D47's explicit flag -------------------------------------------------
+	bool bHasAvatarMask = m_xMaskDocument.HasAvatarMask();
+	if (ImGui::Checkbox("Has avatar mask", &bHasAvatarMask))
+	{
+		Action_MaskSetHasAvatar(bHasAvatarMask);
+	}
+	if (ImGui::IsItemHovered())
+	{
+		ImGui::SetTooltip("Written to the file rather than derived from the weights (D47). An ALL-ZERO mask is a "
+			"meaningful mask — 'this layer overrides nothing yet' — and a layer that came back unmasked would "
+			"override the WHOLE skeleton instead.");
+	}
+
+	// ---- the assignment control, and the additive-layer refusal --------------
+	//
+	// ★ THE RULE IS ASKED, NOT RE-DERIVED. Zenith_BoneMaskDocument::LayerAcceptsMask
+	// is the one place "does this blend mode use a mask" is answered, so WU-7.2's
+	// layer list and this section cannot disagree.
+	if (Zenith_BoneMaskDocument::LayerAcceptsMask(m_eMaskTargetBlendMode))
+	{
+		m_bMaskAssignmentDrawn = true;
+		ImGui::SameLine();
+		// The assignment itself belongs to WU-7.2, which owns the layer list; what
+		// is offered here is the control and the state it depends on.
+		ImGui::TextDisabled("| target layer: Override");
+	}
+	else
+	{
+		// ★ NOT GREYED OUT AND NOT ABSENT — REFUSED, WITH THE REASON. An additive
+		// layer never reaches MaskedBlend at all, so a user who authored a whole
+		// mask and assigned it here would see literally no change and have nothing
+		// to grep for.
+		m_bMaskAssignmentDrawn = false;
+		m_strMaskNotice = Zenith_BoneMaskDocument::AdditiveLayerMaskNotice();
+		ImGui::TextDisabled("%s", m_strMaskNotice.c_str());
+	}
+
+	// ---- the per-bone list ---------------------------------------------------
+	Zenith_Vector<std::string> axBoneNames;
+	GetMaskRigBoneNames(axBoneNames);
+	if (axBoneNames.GetSize() == 0u)
+	{
+		// ★ A PROMPT, NOT AN EMPTY LIST. A mask names bones, and without a rig
+		// there is nothing to name — offering a blank list would read as "this rig
+		// has no bones" rather than as "there is no rig".
+		static const char* szNO_RIG = "no rig previewed — open a clip whose skeleton resolves, or pick one above";
+		// ★ IT DOES NOT OVERWRITE THE ADDITIVE-LAYER NOTICE. Both conditions can
+		// hold at once, and only one of them is about a CONTROL THAT WAS NOT DRAWN;
+		// a diagnostic that reported "no rig" for an additive target would send a
+		// reader looking for a skeleton when the answer is the blend mode.
+		if (m_strMaskNotice.empty())
+		{
+			m_strMaskNotice = szNO_RIG;
+		}
+		ImGui::TextDisabled("%s", szNO_RIG);
+		return;
+	}
+
+	ImGui::SetNextItemWidth(Zenith_EditorUI::Px(90.0f));
+	ImGui::SliderFloat("Subtree value", &m_fMaskSubtreeWeight, 0.0f, 1.0f, "%.2f");
+	if (ImGui::IsItemHovered())
+	{
+		ImGui::SetTooltip("What a row's 'Subtree' button sets that bone AND every descendant of it to, as ONE undo step.");
+	}
+
+	for (u_int u = 0; u < axBoneNames.GetSize(); ++u)
+	{
+		const std::string& strBoneName = axBoneNames.Get(u);
+		ImGui::PushID(static_cast<int>(u));
+
+		float fWeight = m_xMaskDocument.GetBoneWeight(strBoneName);
+		ImGui::SetNextItemWidth(Zenith_EditorUI::Px(180.0f));
+		ImGui::SliderFloat(strBoneName.c_str(), &fWeight, 0.0f, 1.0f, "%.2f");
+		// ★ ON EDIT-COMPLETE, NOT PER FRAME OF THE DRAG. A slider reports a new
+		// value every frame it is held; writing each one would push one undo command
+		// per frame and make Ctrl+Z crawl back through positions the user was only
+		// passing through. This is the same "preview, then commit" shape the key
+		// drag, the duration handle and the event drag all use.
+		if (ImGui::IsItemDeactivatedAfterEdit())
+		{
+			Action_MaskSetWeight(strBoneName, fWeight);
+		}
+
+		ImGui::SameLine();
+		if (ImGui::Button("Subtree"))
+		{
+			Action_MaskSetSubtree(strBoneName, m_fMaskSubtreeWeight);
+		}
+
+		++m_uMaskBoneRowsDrawn;
+		ImGui::PopID();
 	}
 }
 

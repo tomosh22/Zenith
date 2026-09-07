@@ -93,29 +93,53 @@ void Zenith_BoneMaskAsset::RemoveBone(const std::string& strBoneName)
 //=============================================================================
 // Resolution
 //=============================================================================
+void Zenith_BoneMaskAsset::CopyFrom(const Zenith_BoneMaskAsset& xOther)
+{
+	// ★ THE AUTHORED CONTENT ONLY — never the Zenith_Asset half. The base carries
+	// the registry PATH and the REFCOUNT, and copying either would give two
+	// objects one identity: an editor working copy that claimed to be the cached
+	// asset, or a refcount the registry never handed out. This is the same split
+	// Flux_AnimatorControllerDef::CopyFrom makes, and it is what lets an editor
+	// document hold a Zenith_BoneMaskAsset by value as a deep working copy.
+	m_xEntries.Clear();
+	m_xEntries.Reserve(xOther.m_xEntries.GetSize());
+	for (u_int u = 0; u < xOther.m_xEntries.GetSize(); ++u)
+	{
+		m_xEntries.PushBack(xOther.m_xEntries.Get(u));
+	}
+	m_bHasAvatarMask = xOther.m_bHasAvatarMask;
+}
+
 bool Zenith_BoneMaskAsset::ResolveTo(const Zenith_SkeletonAsset& xSkeleton, Flux_BoneMask& xOutMask) const
 {
-	// A freshly constructed Flux_BoneMask is FLUX_MAX_BONES zeroes; assigning one
-	// here is what makes "resolve into a mask I already used" mean the same thing
-	// as "resolve into a fresh one".
-	xOutMask = Flux_BoneMask();
-
-	bool bAllResolved = true;
+	// ★ THE NAME->INDEX WALK LIVES ON Flux_BoneMask, NOT HERE (WU-7.1). It used
+	// to be a loop in this function against Zenith_SkeletonAsset::GetBoneIndex,
+	// beside a SECOND resolve inside Flux_BoneMask that went through
+	// Flux_MeshGeometry's entirely different bone map — two answers to "which
+	// index is this bone", one of them the one the whole runtime pose path
+	// actually uses. There is one now, and this is a caller of it.
+	Zenith_Vector<std::string> xNames;
+	Zenith_Vector<float> xWeights;
+	xNames.Reserve(m_xEntries.GetSize());
+	xWeights.Reserve(m_xEntries.GetSize());
 	for (u_int u = 0; u < m_xEntries.GetSize(); ++u)
 	{
-		const Zenith_BoneMaskEntry& xEntry = m_xEntries.Get(u);
-		const int32_t iBoneIndex = xSkeleton.GetBoneIndex(xEntry.m_strBoneName);
-		if (iBoneIndex == Zenith_SkeletonAsset::INVALID_BONE_INDEX)
-		{
-			// ★ NAMED, NOT COUNTED. "3 bones did not resolve" is not actionable;
-			// the name is, because it is either a typo or the wrong rig.
-			Zenith_Error(LOG_CATEGORY_ANIMATION,
-				"[BoneMask] '%s' names bone '%s', which the skeleton does not carry — that bone's weight is DROPPED",
-				GetPath().c_str(), xEntry.m_strBoneName.c_str());
-			bAllResolved = false;
-			continue;
-		}
-		xOutMask.SetBoneWeight(static_cast<uint32_t>(iBoneIndex), xEntry.m_fWeight);
+		xNames.PushBack(m_xEntries.Get(u).m_strBoneName);
+		xWeights.PushBack(m_xEntries.Get(u).m_fWeight);
+	}
+
+	Zenith_Vector<std::string> xUnresolved;
+	const bool bAllResolved = xOutMask.SetFromBoneNames(xSkeleton, xNames, xWeights, &xUnresolved);
+
+	// ★ NAMED, NOT COUNTED. "3 bones did not resolve" is not actionable; the name
+	// is, because it is either a typo or the wrong rig. Flux_BoneMask collects
+	// them rather than logging: it does not know which asset they came from, and
+	// the asset PATH is most of what makes the message useful.
+	for (u_int u = 0; u < xUnresolved.GetSize(); ++u)
+	{
+		Zenith_Error(LOG_CATEGORY_ANIMATION,
+			"[BoneMask] '%s' names bone '%s', which the skeleton does not carry — that bone's weight is DROPPED",
+			GetPath().c_str(), xUnresolved.Get(u).c_str());
 	}
 
 	return bAllResolved;

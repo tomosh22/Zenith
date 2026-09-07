@@ -565,6 +565,75 @@ is why the layer stores the mask PATH beside it; without it, `ExportControllerDe
 would write an empty reference for every masked layer and turn a save into a mask
 deletion. A controller masked by hand exports UNMASKED and returns false saying so.
 
+### Resolving a mask (WU-7.1) — one name→index walk, three things to know
+
+★ **THERE USED TO BE TWO NAME→INDEX RESOLUTIONS AND THEY KEYED ON DIFFERENT
+MAPS.** `Flux_BoneMask::SetFromBoneNames` took a **`Flux_MeshGeometry`** and
+looked names up in `m_xBoneNameToIdAndOffset`, while the entire runtime pose path
+— `Flux_SkeletonPose::SampleFromClip`'s live overload, `Flux_SkeletonInstance`,
+the controller, every layer — resolves against
+`Zenith_SkeletonAsset::m_xBoneNameToIndex`. A mask numbered by one and applied to
+a pose numbered by the other is a mask on the wrong bones, with nothing to
+observe but an animation that looks wrong. There is now a **skeleton-asset
+overload**:
+
+```cpp
+bool Flux_BoneMask::SetFromBoneNames(const Zenith_SkeletonAsset& xSkeleton,
+    const Zenith_Vector<std::string>& xBoneNames,
+    const Zenith_Vector<float>& xWeights,
+    Zenith_Vector<std::string>* pxOutUnresolvedNames = nullptr);
+```
+
+`Zenith_BoneMaskAsset::ResolveTo` is a **caller** of it plus the error reporting
+(Flux cannot know which asset the names came from, and the PATH is most of what
+makes the message useful). An empty `xWeights` means 1.0 per named bone, matching
+the mesh-geometry overload; any other length mismatch is refused WHOLE, because a
+weight silently attached to the wrong bone is worse than no mask. The resolve
+always re-fills the array to `FLUX_MAX_BONES` first, so resolving into a mask that
+came out of a stream produces a COMPLETE one.
+
+★ **A NAME IS THE ONLY THING THAT TRAVELS BETWEEN TWO RIGS**, which is the whole
+reason `.zanimmask` stores names. Two skeletons carrying the same bone names in a
+different ORDER resolve one authored mask to different INDICES and to the same
+per-bone meaning. Pinned by
+`BoneMask.OneMaskResolvesByNameOnTwoRigsWithDifferentBoneOrder`, which builds two
+in-memory skeletons with permuted bone order and compares per NAME.
+
+★ **THE CONSTRUCTOR AND THE STREAM READER DISAGREE ABOUT THE LENGTH.**
+`Flux_BoneMask()` fills `FLUX_MAX_BONES` zeroes; `ReadFromDataStream` sizes to
+whatever count the stream carried, which may be FEWER. Every accessor is
+bounds-checked against the **stored** count — `GetBoneWeight` past it answers 0,
+which is also what `Flux_SkeletonPose::MaskedBlend` already substitutes for a
+short mask, so the two agree. `GetWeightCount()` is the stored count and
+`HasAnyNonZeroWeight()` is the derivation below.
+
+★ **AN ALL-ZERO SCENE-INLINE MASK STILL READS AS "NO MASK", AND THAT IS FROZEN.**
+`Flux_AnimationLayer::ReadFromDataStream` decides "this layer has a mask" by
+scanning for any non-zero weight — so an explicitly all-zero mask, which is a
+meaningful one ("this layer overrides nothing yet"), comes back UNMASKED, and an
+OVERRIDE layer with no mask replaces the WHOLE skeleton. **`m_bHasAvatarMask` is
+NOT on the wire and may not be added**: that payload is written by
+`Flux_AnimationLayer::WriteToDataStream`, which `Flux_AnimationController` writes
+inline and `Zenith_AnimatorComponent` writes into a `.zscen` — committed scene
+files carry those bytes with no version word to branch on.
+
+**The `.zanimmask` route is the one that carries the flag, and the runtime already
+honours it**: `BuildFromControllerDef` calls `SetAvatarMask` only when
+`Zenith_BoneMaskAsset::HasAvatarMask()` is true, so an all-zero mask from an asset
+produces a MASKED layer and an asset with the flag off produces an unmasked one
+whatever its weights are. Pinned end-to-end by
+`BoneMaskAsset.AnAllZeroMaskFromAnAssetStillMasksTheLayerBuiltFromIt`, in both
+directions.
+
+★ **AN ADDITIVE LAYER IGNORES ITS MASK ENTIRELY.** The layer composition tests
+`LAYER_BLEND_ADDITIVE` FIRST and goes to `Flux_SkeletonPose::AdditiveBlend`, whose
+signature has no mask in it; only the OVERRIDE branch reaches `MaskedBlend`. Every
+layer has an `m_xAvatarMask` field regardless, so the field list does not say so —
+which is exactly how a UI ends up offering a control that does nothing. The
+editor's one statement of the rule is
+`Zenith_BoneMaskDocument::LayerAcceptsMask(blendMode)` (see `Editor/CLAUDE.md` →
+*The Bone Mask sub-panel*).
+
 ### Animation Layers (Flux_AnimationLayer)
 Multiple independent state machines composing poses:
 - Each layer has its own `Flux_AnimationStateMachine`, weight, and blend mode
@@ -886,6 +955,13 @@ MeshAnimation/
                                        plus WU-6.2's NON-serialized layer id + mask asset path)
   Flux_SkeletonInstance.h/cpp        - Runtime skeleton state
   Flux_BonePose.h/cpp                - Bone transform utilities (Blend, MaskedBlend, AdditiveBlend)
+                                       and Flux_BoneMask (the RESOLVED, index-based weight array)
+  Flux_BonePose.Tests.inl            - Unit tests for Flux_BoneMask (WU-7.1): one mask resolved by
+                                       NAME onto two rigs with permuted bone order, the implicit
+                                       full-weight list, the whole-refusal on a name/weight length
+                                       mismatch, an unresolvable name being LISTED, the stored-count
+                                       bound on every accessor, and D47's "an all-zero mask cannot
+                                       be told from no mask by its weights"
   Flux_BlendTree.h/cpp               - Animation blending (Clip, 1D, 2D, Masked nodes)
   Flux_InverseKinematics.h/cpp       - IK solving (FABRIK)
   Flux_AnimationClip.Tests.inl       - Unit tests for clip storage/sampling, in five categories:

@@ -377,6 +377,40 @@ enum class Zenith_EditorActionType
 	ANIM_SM_EXPECT_STATE_COUNT,
 	ANIM_SM_EXPECT_DEFAULT_STATE,	// END of the contiguous ANIM_SM range (see ANIM_SM_OPEN)
 
+	// BONE MASK authoring (WU-7.1). A FOURTH animation block, appended for the
+	// reason the second and third exist: adding a verb INSIDE the block above
+	// would move ANIM_SM_EXPECT_DEFAULT_STATE, which is the upper bound BOTH the
+	// router's range test and the header's static_assert compare against, and
+	// which `Automation, AnimSmEnumBlockIsContiguous` pins by position. A new
+	// contiguous block costs one more range test and moves nothing.
+	//
+	// Each verb performs EXACTLY what one of Zenith_EditorPanel_Animation's
+	// Action_Mask* twins performs — the same call the "Bone Masks" section's own
+	// slider handler ends in — so an authored recipe and a human's gesture cannot
+	// diverge. ANIM_MASK_EXPECT_WEIGHT is an ASSERTION rather than a mutation: it
+	// is what makes a recipe fail at the step that is wrong instead of somewhere
+	// downstream.
+	//
+	// ★ THE SUBTREE VERB NEEDS A PREVIEWED RIG, and that is not a quirk of the
+	// automation. A mask names BONES and a SUBTREE needs a HIERARCHY, which only
+	// the dope sheet's session skeleton supplies — so a recipe does an
+	// AnimOpenClip on a clip whose rig resolves BEFORE any AnimMaskSetSubtree,
+	// and the checked wrapper asserts on that step if it did not.
+	//
+	// NOTE: this block must stay CONTIGUOUS (ExecuteAction routes the whole range
+	// to ExecuteAnimMaskAction by a pair of comparisons against its first and
+	// last member).
+	ANIM_MASK_OPEN,
+	ANIM_MASK_OPEN_FRESH,
+	ANIM_MASK_CLOSE,
+	ANIM_MASK_SET_WEIGHT,
+	ANIM_MASK_SET_SUBTREE,
+	ANIM_MASK_SET_HAS_AVATAR,
+	ANIM_MASK_UNDO,
+	ANIM_MASK_REDO,
+	ANIM_MASK_SAVE,
+	ANIM_MASK_EXPECT_WEIGHT,	// END of the contiguous ANIM_MASK range (see ANIM_MASK_OPEN)
+
 	// NavMesh. Deliberately NOT appended to the Terrain block above, which is
 	// routed by a range comparison: a standalone action sits outside every
 	// range and reaches ExecuteAction's own switch, which is what a
@@ -428,13 +462,20 @@ static_assert(static_cast<int>(Zenith_EditorActionType::ANIM_EXPECT_SELECTED_COU
 static_assert(static_cast<int>(Zenith_EditorActionType::ANIM_POSE_EXPECT_BONE_LOCAL_ROTATION) -
 	static_cast<int>(Zenith_EditorActionType::ANIM_POSE_SELECT_BONE) == 4,
 	"the ANIM_POSE block must stay CONTIGUOUS and five wide — ExecuteAction routes it by range");
-// And the same pin for the ANIM_SM block (WU-6.5), the third animation range and
-// the youngest block in the enum. Width here; the
-// `Automation, AnimSmEnumBlockIsContiguous` unit pins each member's POSITION and
-// both boundaries.
+// And the same pin for the ANIM_SM block (WU-6.5), the third animation range.
+// Width here; the `Automation, AnimSmEnumBlockIsContiguous` unit pins each
+// member's POSITION and both boundaries.
 static_assert(static_cast<int>(Zenith_EditorActionType::ANIM_SM_EXPECT_DEFAULT_STATE) -
 	static_cast<int>(Zenith_EditorActionType::ANIM_SM_OPEN) == 24,
 	"the ANIM_SM block must stay CONTIGUOUS and twenty-five wide — ExecuteAction routes it by range");
+// And the same pin for the ANIM_MASK block (WU-7.1), the FOURTH animation range
+// and now the youngest block in the enum. Width here; the
+// `Automation, AnimMaskEnumBlockIsContiguous` unit pins each member's POSITION
+// and both boundaries — including SET_NAVMESH_ASSET's "must stay outside every
+// range", whose neighbour this block has become.
+static_assert(static_cast<int>(Zenith_EditorActionType::ANIM_MASK_EXPECT_WEIGHT) -
+	static_cast<int>(Zenith_EditorActionType::ANIM_MASK_OPEN) == 9,
+	"the ANIM_MASK block must stay CONTIGUOUS and ten wide — ExecuteAction routes it by range");
 
 //-----------------------------------------------------------------------------
 // Action Data
@@ -1202,6 +1243,62 @@ void AddStep_AnimSmApply();
 	// ---- assertion steps -----------------------------------------------------
 void AddStep_AnimSmExpectStateCount(int iExpectedCount);
 void AddStep_AnimSmExpectDefaultState(const char* szStateName);
+
+	//--------------------------------------------------------------------------
+	// BONE MASK authoring (WU-7.1), the ANIM_MASK_* block.
+	//
+	// One step per atomic Zenith_EditorPanel_Animation Action_Mask*, each routed
+	// through a checked wrapper that asserts on `false` — an authoring typo (a
+	// bone the rig does not carry, a subtree step before a rig is previewed, a
+	// save onto a file something else changed) fires at BOOT on the step that is
+	// wrong, rather than leaving a mask that is quietly not what the recipe said.
+	//
+	// ★ A BONE IS ADDRESSED BY NAME, ALWAYS, because that is what a `.zanimmask`
+	// STORES (D47/D46). An index would be an index into whichever rig happened to
+	// be previewed, and the whole point of the format is that the same mask means
+	// the same thing on two rigs that number their bones differently.
+	//
+	// ★ THE SUBTREE STEP NEEDS A PREVIEWED RIG. A hierarchy comes from the dope
+	// sheet's session skeleton and from nowhere else, so a recipe opens a clip
+	// whose rig resolves first. Per-bone weights need no rig at all — they are
+	// names.
+	//
+	// A typical authoring sequence:
+	//   AnimOpenClip("engine:Meshes/StickFigure/Walk.zanim") ->
+	//   AnimMaskOpenFresh("game:Anim/UpperBody.zanimmask") ->
+	//   AnimMaskSetSubtree("Spine", 1.0f) -> AnimMaskSetWeight("Head", 0.5f) ->
+	//   AnimMaskExpectWeight("Head", 0.5f, 1e-4f) -> AnimMaskSave().
+	//--------------------------------------------------------------------------
+
+	// Open an EXISTING .zanimmask, SHOWING the section (a collapsed one reports
+	// its refusals to nobody).
+void AddStep_AnimMaskOpen(const char* szAssetPath);
+	// Open an EMPTY mask TARGETED at that path — the regenerate-from-scratch
+	// entry point, and deliberately NOT a fallback inside AnimMaskOpen: "the file
+	// was not there" and "the path was typed wrong" are the same observation, and
+	// a silent fresh start on a typo authors a whole mask into a path nothing
+	// reads.
+void AddStep_AnimMaskOpenFresh(const char* szAssetPath);
+void AddStep_AnimMaskClose();	// forced close; unsaved mask edits are discarded
+
+	// fWeight is CLAMPED to [0,1] by the document. An ASSIGNMENT: re-stating a
+	// weight a bone already carries SUCCEEDS and pushes no undo entry.
+void AddStep_AnimMaskSetWeight(const char* szBoneName, float fWeight);
+	// szBoneName AND every DESCENDANT of it, as ONE undo step. Needs a previewed
+	// rig — see above.
+void AddStep_AnimMaskSetSubtree(const char* szBoneName, float fWeight);
+	// D47's explicit flag. TRUE by default on a fresh mask: a .zanimmask that
+	// exists IS a mask, whatever its weights sum to.
+void AddStep_AnimMaskSetHasAvatar(bool bHasAvatarMask);
+
+void AddStep_AnimMaskUndo();
+void AddStep_AnimMaskRedo();
+void AddStep_AnimMaskSave();
+
+	// ---- assertion step ------------------------------------------------------
+	// A bone the mask does not name weighs 0, which is the same answer a resolved
+	// Flux_BoneMask gives — so this asserts the WEIGHT and never "is there a row".
+void AddStep_AnimMaskExpectWeight(const char* szBoneName, float fExpectedWeight, float fTolerance);
 
 	//--------------------------------------------------------------------------
 	// Scene Loading Step Helpers

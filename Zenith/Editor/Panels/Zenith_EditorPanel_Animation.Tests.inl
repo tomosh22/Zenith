@@ -138,6 +138,9 @@ namespace
 		// never loaded is a no-op, so they are torn down unconditionally.
 		std::string m_strSkeletonPath;
 		std::string m_strMeshPath;
+		// WU-7.1's mask sub-panel. Same rule: written only by the tests that want
+		// one, torn down unconditionally.
+		std::string m_strMaskPath;
 
 		explicit AnimPanelFixture(const char* szLeafDirectory)
 		{
@@ -155,6 +158,7 @@ namespace
 			m_strPath = (m_xDirectory / "sheet.zanim").generic_string();
 			m_strSkeletonPath = (m_xDirectory / "sheet.zskel").generic_string();
 			m_strMeshPath = (m_xDirectory / "sheet.zasset").generic_string();
+			m_strMaskPath = (m_xDirectory / "sheet.zanimmask").generic_string();
 		}
 
 		~AnimPanelFixture()
@@ -162,6 +166,7 @@ namespace
 			Zenith_AssetRegistry::ForceUnload(m_strPath);
 			Zenith_AssetRegistry::ForceUnload(m_strSkeletonPath);
 			Zenith_AssetRegistry::ForceUnload(m_strMeshPath);
+			Zenith_AssetRegistry::ForceUnload(m_strMaskPath);
 			std::error_code xError;
 			std::filesystem::remove_all(m_xDirectory, xError);
 			Flux_PreviewSlotArbiter::ResetForTesting();
@@ -2265,4 +2270,294 @@ ZENITH_TEST(AnimPanel, CancellingABoneDragRestoresTheRotationItStartedFrom)
 		"and the badge goes with it — the pose is back to what the clip evaluates to");
 
 	ZENITH_ASSERT_FALSE(xPanel.Action_CancelBoneDrag(), "and it is idempotent afterwards");
+}
+
+//==============================================================================
+// BONE MASKS (WU-7.1) — the "Bone Masks" sub-panel.
+//==============================================================================
+
+//==============================================================================
+// (M1) THE ACCEPTANCE CASE — the sub-panel does not offer a mask control on an
+//      ADDITIVE layer, and SAYS SO.
+//
+// ★ WHY THIS NEEDS A RENDERED FRAME AND NOT JUST THE PURE PREDICATE. The rule
+// itself is one line and is pinned in Zenith_BoneMaskDocument.Tests.inl; what
+// can silently be wrong is the panel FORGETTING TO ASK IT — the control would be
+// drawn, the user would author and assign a mask, and Flux_AnimationController
+// would go straight to AdditiveBlend with every gate green. So this drives the
+// real ImGui frame and reads the draw diagnostic.
+//==============================================================================
+ZENITH_TEST(AnimPanel, TheMaskSectionOffersNoMaskControlOnAnAdditiveLayer)
+{
+	AnimPanelFixture xFixture("zenith_animpanel_maskadditive");
+	AnimPanelWriteRiggedProbe(xFixture);
+
+	Zenith_EditorPanel_Animation xPanel;
+	ZENITH_ASSERT_TRUE(xPanel.OpenClip(xFixture.m_strPath), "the rigged probe opens");
+	ZENITH_ASSERT_FALSE(xPanel.Session().NeedsRigSelection(),
+		"and its rig resolved (else the section would show its no-rig prompt and this would prove nothing)");
+
+	xPanel.RequestWindowPlacement(40.0f, 40.0f, 900.0f, 600.0f);
+
+	//--------------------------------------------------------------------------
+	// ★★ OFF BY DEFAULT MEANS ZERO ITEMS AND ZERO HEIGHT, AND THAT IS A
+	// REGRESSION GUARD, NOT A WARM-UP.
+	//
+	// This section shipped as a COLLAPSED CollapsingHeader — one row, always
+	// present, ~24 px. RenderSheet is sized from GetContentRegionAvail(), so that
+	// row came straight out of the sheet's height, and the EVENTS ROW IS THE LAST
+	// ROW OF THE SHEET: it dropped below the canvas bottom and
+	// `ChangingTheDurationMovesTheEventRowAndNotTheStoredValue` went red on all
+	// three Null_ exes with GetEventRect false on BOTH sides of the edit. That
+	// reads as "the events row is broken" and is nowhere near its cause, which is
+	// exactly what the off-screen gate does to a height regression.
+	//
+	// ★ THE ORACLE IS THE TRACK AREA'S HEIGHT, NOT WHETHER A PARTICULAR ROW FITS,
+	// and that distinction cost this guard a red run of its own. The first version
+	// asserted GetEventsRowRect() here — and it was false, for a reason that has
+	// nothing to do with the mask section: THIS test uses the RIGGED probe, whose
+	// session resolves a rig, so RenderPreviewPane takes its live-image branch and
+	// occupies fSHEET_PREVIEW_SIZE_1X (192 px) plus WU-4.3's pose-toolbar line,
+	// where the rig-LESS probe the duration test uses takes the rig-PROMPT branch
+	// (a wrapped line, two InputTexts and a button). Same window, same eight rows,
+	// ~100 px less canvas — so the events row is off the bottom before the mask
+	// section is even considered.
+	//
+	// GetTrackAreaRect() spans m_fCanvasTop..m_fCanvasBottom: it is the height the
+	// sheet was GIVEN, which is precisely the invariant ("the sheet did not lose
+	// height") and is indifferent to how many rows happen to fit in it.
+	//--------------------------------------------------------------------------
+	ZENITH_ASSERT_FALSE(xPanel.IsMaskSectionShown(), "the section is OFF by default");
+	AnimPanelRenderFrames(xPanel, 2u);
+	ZENITH_ASSERT_TRUE(xPanel.WasSheetDrawnLastFrame(),
+		"the sheet pass ran (else every assertion below is about a frame that never happened)");
+	ZENITH_ASSERT_FALSE(xPanel.WasMaskSectionDrawnLastFrame(),
+		"★ and the mask section drew NOTHING — not a collapsed header, not a label");
+	ZENITH_ASSERT_EQ(xPanel.GetMaskBoneRowCount(), 0u, "no bone rows either");
+
+	Zenith_AnimPanelRect xTrackAreaHidden;
+	ZENITH_ASSERT_TRUE(xPanel.GetTrackAreaRect(xTrackAreaHidden),
+		"the sheet's canvas was recorded (else the height below is not a measurement)");
+	const float fTrackHeightHidden = xTrackAreaHidden.Height();
+	ZENITH_ASSERT_GT(fTrackHeightHidden, 0.0f, "and it has height to lose");
+
+	// ---- now show it: OVERRIDE, so the control IS drawn ----------------------
+	ZENITH_ASSERT_TRUE(xPanel.Action_MaskOpenFresh(xFixture.m_strMaskPath), "a fresh mask opens into the section");
+	ZENITH_ASSERT_TRUE(xPanel.IsMaskSectionShown(), "which shows the section");
+
+	xPanel.SetMaskTargetLayerBlendMode(LAYER_BLEND_OVERRIDE);
+	AnimPanelRenderFrames(xPanel, 2u);
+
+	// The diagnostics first, as everywhere on this panel: "not drawn" has several
+	// causes and the bool alone names none of them.
+	ZENITH_ASSERT_TRUE(xPanel.WasMaskSectionDrawnLastFrame(),
+		"the section body drew (else: the section is toggled off and everything below is vacuous)");
+	ZENITH_ASSERT_TRUE(xPanel.WasMaskAssignmentDrawnLastFrame(),
+		"an override layer gets the assignment control");
+	ZENITH_ASSERT_GT(xPanel.GetMaskBoneRowCount(), 0u, "and one weight row per bone of the session's rig");
+
+	// ★ THE ORACLE IS NOT BLIND. A before/after equality that never moves in
+	// between proves nothing — it would pass just as well if GetTrackAreaRect
+	// returned a constant. The section really does cost the sheet height while it
+	// is shown, and that is what makes the restore below an assertion.
+	//
+	// ★ AN UNRECORDED TRACK RECT IN THE SHOWN STATE IS HEIGHT ZERO, NOT A
+	// FAILURE, and that is the third time this guard has had to learn the same
+	// lesson: on the RIGGED probe the sheet is already competing with a 192 px
+	// preview and the pose toolbar, so adding the section's rows can leave it no
+	// canvas at all — at which point the accessor answers false, either because
+	// nothing was recorded or because the off-screen gate refused what was. Both
+	// mean "the sheet got nothing", which is the strongest possible form of the
+	// property being measured; requiring the rect to exist would fail the test on
+	// the very outcome it is asserting. That the panel still RENDERED is already
+	// proven above by WasMaskSectionDrawnLastFrame(), which is set inside the
+	// window body.
+	Zenith_AnimPanelRect xTrackAreaShown;
+	const float fTrackHeightShown = xPanel.GetTrackAreaRect(xTrackAreaShown) ? xTrackAreaShown.Height() : 0.0f;
+	ZENITH_ASSERT_LT(fTrackHeightShown, fTrackHeightHidden,
+		"★ a SHOWN section really does take height out of the sheet — which is why an always-drawn "
+		"one was a defect and why the restore below means something");
+
+	// ---- ADDITIVE: it is NOT --------------------------------------------------
+	xPanel.SetMaskTargetLayerBlendMode(LAYER_BLEND_ADDITIVE);
+	AnimPanelRenderFrames(xPanel, 1u);
+
+	ZENITH_ASSERT_TRUE(xPanel.WasMaskSectionDrawnLastFrame(), "the section is still drawn");
+	ZENITH_ASSERT_FALSE(xPanel.WasMaskAssignmentDrawnLastFrame(),
+		"★ but the assignment control is NOT — an additive layer ignores its mask entirely");
+	// ★ AND THE DIAGNOSTIC SAYS WHY. "Unavailable" would send a reader looking for
+	// a missing rig or an unopened file; the blend mode is the answer.
+	ZENITH_ASSERT_STREQ(xPanel.GetMaskNotice(), Zenith_BoneMaskDocument::AdditiveLayerMaskNotice(),
+		"and the panel's diagnostic names the reason");
+	// The rest of the section keeps working — the mask is still editable, it just
+	// cannot be assigned to THIS layer.
+	ZENITH_ASSERT_GT(xPanel.GetMaskBoneRowCount(), 0u, "the weight rows are still listed");
+
+	// Back to override, to show the refusal is the blend mode and not a latch.
+	xPanel.SetMaskTargetLayerBlendMode(LAYER_BLEND_OVERRIDE);
+	AnimPanelRenderFrames(xPanel, 1u);
+	ZENITH_ASSERT_TRUE(xPanel.WasMaskAssignmentDrawnLastFrame(), "and it comes back");
+
+	// ★ AND CLOSING THE MASK GIVES THE HEIGHT BACK — EXACTLY. The section goes
+	// with the document, so the toolbar checkbox and what is on screen cannot
+	// disagree, and the sheet returns to the full window rather than keeping a row
+	// for an empty section. This is the assertion the whole guard is for: not "a
+	// particular row is visible" (which depends on the probe's rig and its preview
+	// pane) but "the sheet got its canvas back".
+	ZENITH_ASSERT_TRUE(xPanel.Action_MaskClose(), "close the mask");
+	ZENITH_ASSERT_FALSE(xPanel.IsMaskSectionShown(), "the section goes with it");
+	AnimPanelRenderFrames(xPanel, 1u);
+	ZENITH_ASSERT_FALSE(xPanel.WasMaskSectionDrawnLastFrame(), "and draws nothing again");
+
+	Zenith_AnimPanelRect xTrackAreaRestored;
+	ZENITH_ASSERT_TRUE(xPanel.GetTrackAreaRect(xTrackAreaRestored), "the canvas was recorded again");
+	ZENITH_ASSERT_EQ_FLOAT(xTrackAreaRestored.Height(), fTrackHeightHidden, 0.5f,
+		"★ and the sheet is back to the height it had before the section was ever shown — "
+		"a hidden section costs it NOTHING");
+
+	xPanel.Shutdown();
+}
+
+//==============================================================================
+// (M2) Mask edits are one undo step each; a SUBTREE paint is one compound.
+//
+// ★ THROUGH THE PANEL'S Action_* TWINS, not the document's verbs directly —
+// which is the layer WU-7.2 and the ANIM_MASK_* automation steps both call, and
+// the layer where "the panel forgot to pass the session's rig to the subtree
+// walk" would show up.
+//==============================================================================
+ZENITH_TEST(AnimPanel, MaskWeightEditsAreOneStepEachAndASubtreePaintIsOneCompound)
+{
+	AnimPanelFixture xFixture("zenith_animpanel_maskundo");
+	AnimPanelWriteRiggedProbe(xFixture);
+
+	Zenith_EditorPanel_Animation xPanel;
+	ZENITH_ASSERT_TRUE(xPanel.OpenClip(xFixture.m_strPath), "the rigged probe opens");
+	ZENITH_ASSERT_FALSE(xPanel.Session().NeedsRigSelection(), "and its rig resolved");
+	ZENITH_ASSERT_EQ(xPanel.Session().GetBoneCount(), 2u, "Hip -> Spine");
+	ZENITH_ASSERT_TRUE(xPanel.Action_MaskOpenFresh(xFixture.m_strMaskPath), "a fresh mask opens");
+
+	ZENITH_ASSERT_EQ(xPanel.MaskDocument().GetUndoStackSize(), 0u, "with an empty stack");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_MaskSetWeight("Spine", 1.0f), "one weight edit");
+	ZENITH_ASSERT_EQ(xPanel.MaskDocument().GetUndoStackSize(), 1u, "is one step");
+	ZENITH_ASSERT_TRUE(xPanel.Action_MaskSetWeight("Spine", 1.0f), "re-stating it is SATISFIED, not refused");
+	ZENITH_ASSERT_EQ(xPanel.MaskDocument().GetUndoStackSize(), 1u, "and pushes nothing");
+
+	// ★ THE MASK'S UNDO STACK IS NOT THE CLIP'S. A Ctrl+Z in the sheet must not
+	// take back a slider drag in the mask list — they are two documents and two
+	// files, and folding them would make one gesture undo the other's work.
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), 0u, "the CLIP document is untouched by a mask edit");
+
+	// ---- the subtree paint ----------------------------------------------------
+	ZENITH_ASSERT_TRUE(xPanel.Action_MaskSetSubtree("Hip", 0.5f), "paint Hip and everything under it");
+	ZENITH_ASSERT_EQ(xPanel.MaskDocument().GetUndoStackSize(), 2u,
+		"★ TWO BONES, ONE MORE STEP — the whole paint is one compound");
+	ZENITH_ASSERT_EQ_FLOAT(xPanel.MaskDocument().GetBoneWeight("Hip"), 0.5f, 1e-5f, "the root of the subtree");
+	ZENITH_ASSERT_EQ_FLOAT(xPanel.MaskDocument().GetBoneWeight("Spine"), 0.5f, 1e-5f, "and its child");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_MaskUndo(), "one undo");
+	ZENITH_ASSERT_FALSE(xPanel.MaskDocument().HasBone("Hip"), "takes the whole paint back");
+	ZENITH_ASSERT_EQ_FLOAT(xPanel.MaskDocument().GetBoneWeight("Spine"), 1.0f, 1e-5f,
+		"leaving the earlier, separate edit exactly where it was");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_MaskRedo(), "and redo puts it back");
+	ZENITH_ASSERT_EQ_FLOAT(xPanel.MaskDocument().GetBoneWeight("Hip"), 0.5f, 1e-5f, "in one gesture");
+
+	// D47's flag, through the panel.
+	ZENITH_ASSERT_TRUE(xPanel.MaskDocument().HasAvatarMask(), "a fresh mask IS a mask");
+	ZENITH_ASSERT_TRUE(xPanel.Action_MaskSetHasAvatar(false), "and the flag is editable");
+	ZENITH_ASSERT_FALSE(xPanel.MaskDocument().HasAvatarMask(), "and took");
+
+	// Save, close, reopen — the round trip through the panel's own verbs.
+	ZENITH_ASSERT_TRUE(xPanel.Action_MaskSave(), "the mask saves");
+	ZENITH_ASSERT_FALSE(xPanel.MaskDocument().IsDirty(), "and the document is clean");
+	ZENITH_ASSERT_TRUE(xPanel.Action_MaskClose(), "and closes");
+	ZENITH_ASSERT_FALSE(xPanel.MaskDocument().IsOpen(), "leaving nothing open");
+	ZENITH_ASSERT_FALSE(xPanel.Action_MaskClose(), "and the close is idempotent");
+
+	Zenith_AssetRegistry::ForceUnload(xFixture.m_strMaskPath);
+	ZENITH_ASSERT_TRUE(xPanel.Action_MaskOpen(xFixture.m_strMaskPath), "the saved mask reopens");
+	ZENITH_ASSERT_EQ_FLOAT(xPanel.MaskDocument().GetBoneWeight("Hip"), 0.5f, 1e-5f, "with its weights");
+	ZENITH_ASSERT_FALSE(xPanel.MaskDocument().HasAvatarMask(), "and its flag");
+
+	xPanel.Shutdown();
+}
+
+//==============================================================================
+// (M3) The section LISTS THE SESSION'S RIG, and PROMPTS when there is not one.
+//
+// ★ THE PROMPT IS NOT AN EMPTY LIST. A mask names bones; with no rig there is
+// nothing to name, and a blank list would read as "this rig has no bones". The
+// same distinction the subtree verb makes by refusing rather than painting one
+// bone.
+//==============================================================================
+ZENITH_TEST(AnimPanel, TheMaskSectionListsTheSessionRigAndPromptsWithoutOne)
+{
+	// ---- the UNRIGGED probe: a clip whose metadata names no skeleton ----------
+	{
+		AnimPanelFixture xFixture("zenith_animpanel_masknorig");
+		AnimPanelWriteProbe(xFixture.m_strPath, /*bGenerated*/ false);
+
+		Zenith_EditorPanel_Animation xPanel;
+		ZENITH_ASSERT_TRUE(xPanel.OpenClip(xFixture.m_strPath), "the unrigged probe opens");
+		ZENITH_ASSERT_TRUE(xPanel.Session().NeedsRigSelection(), "and asks for a rig");
+		ZENITH_ASSERT_TRUE(xPanel.Action_MaskOpenFresh(xFixture.m_strMaskPath), "a fresh mask opens anyway");
+
+		Zenith_Vector<std::string> axNames;
+		xPanel.GetMaskRigBoneNames(axNames);
+		ZENITH_ASSERT_EQ(axNames.GetSize(), 0u, "there is no rig to list");
+
+		xPanel.RequestWindowPlacement(40.0f, 40.0f, 900.0f, 600.0f);
+		AnimPanelRenderFrames(xPanel, 2u);
+
+		ZENITH_ASSERT_TRUE(xPanel.WasMaskSectionDrawnLastFrame(), "the section drew");
+		ZENITH_ASSERT_EQ(xPanel.GetMaskBoneRowCount(), 0u, "with no bone rows");
+		ZENITH_ASSERT_GT(static_cast<u_int>(std::string(xPanel.GetMaskNotice()).size()), 0u,
+			"and a PROMPT rather than silence");
+
+		// ★ AND THE SUBTREE VERB REFUSES rather than falling back to one bone,
+		// which would look like the hierarchy was flat.
+		ZENITH_ASSERT_FALSE(xPanel.Action_MaskSetSubtree("Hip", 1.0f), "no rig, no subtree");
+		ZENITH_ASSERT_EQ(xPanel.MaskDocument().GetUndoStackSize(), 0u, "and nothing was pushed");
+
+		xPanel.Shutdown();
+	}
+
+	// ---- the RIGGED probe: the list is the skeleton, in skeleton order --------
+	{
+		AnimPanelFixture xFixture("zenith_animpanel_maskrig");
+		AnimPanelWriteRiggedProbe(xFixture);
+
+		Zenith_EditorPanel_Animation xPanel;
+		ZENITH_ASSERT_TRUE(xPanel.OpenClip(xFixture.m_strPath), "the rigged probe opens");
+		ZENITH_ASSERT_FALSE(xPanel.Session().NeedsRigSelection(), "and its rig resolved");
+
+		Zenith_Vector<std::string> axNames;
+		xPanel.GetMaskRigBoneNames(axNames);
+		ZENITH_ASSERT_EQ(axNames.GetSize(), 2u, "both bones are listed");
+		if (axNames.GetSize() == 2u)
+		{
+			// SKELETON ORDER — parents before children, so a row's "Subtree" button
+			// acts on the rows below it rather than on an arbitrary scatter.
+			ZENITH_ASSERT_STREQ(axNames.Get(0).c_str(), "Hip", "the root first");
+			ZENITH_ASSERT_STREQ(axNames.Get(1).c_str(), "Spine", "then its child");
+		}
+
+		ZENITH_ASSERT_TRUE(xPanel.Action_MaskOpenFresh(xFixture.m_strMaskPath), "a fresh mask opens");
+		xPanel.RequestWindowPlacement(40.0f, 40.0f, 900.0f, 600.0f);
+		AnimPanelRenderFrames(xPanel, 2u);
+		ZENITH_ASSERT_EQ(xPanel.GetMaskBoneRowCount(), 2u, "and the section draws one row per bone");
+
+		// ★ A FRAME THE PANEL DID NOT DRAW REPORTS NOT-DRAWN, not last frame's
+		// answer — the same contract every rect accessor here carries, and the one
+		// that turns "the control is missing" into a fact about a specific frame.
+		xPanel.ShowFlag() = false;
+		AnimPanelRenderFrames(xPanel, 1u);
+		ZENITH_ASSERT_FALSE(xPanel.WasMaskSectionDrawnLastFrame(), "a hidden panel drew no section");
+		ZENITH_ASSERT_EQ(xPanel.GetMaskBoneRowCount(), 0u, "and reports no rows");
+		ZENITH_ASSERT_STREQ(xPanel.GetMaskNotice(), "", "and no stale explanation");
+
+		xPanel.Shutdown();
+	}
 }

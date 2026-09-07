@@ -3421,8 +3421,10 @@ ZENITH_TEST(Automation, AnimPoseEnumBlockIsContiguous)
 	// once before. What it pins is that the ANIM_POSE range ENDS where the router
 	// thinks it does; the successor being a third animation block instead of the
 	// navmesh verb does not weaken that. SET_NAVMESH_ASSET's own "must stay
-	// outside every range" is pinned by AnimSmEnumBlockIsContiguous below, which
-	// is where its neighbour now is.
+	// outside every range" is pinned by AnimMaskEnumBlockIsContiguous, which is
+	// where its neighbour now is (it was AnimSmEnumBlockIsContiguous until WU-7.1
+	// appended a fourth animation block — this line has now been re-pointed
+	// twice, which is the mechanism working).
 	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_SM_OPEN) -
 		static_cast<int>(Zenith_EditorActionType::ANIM_POSE_EXPECT_BONE_LOCAL_ROTATION), 1,
 		"the ANIM_SM block must start immediately after the ANIM_POSE range ends — inside it, the "
@@ -3449,16 +3451,105 @@ ZENITH_TEST(Automation, AnimSmEnumBlockIsContiguous)
 	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_SM_EXPECT_DEFAULT_STATE) - iFirst, 24,
 		"ANIM_SM_EXPECT_DEFAULT_STATE must END the block — the router compares against it");
 
-	// Both boundaries. SET_NAVMESH_ASSET is a STANDALONE verb that has to keep
-	// reaching ExecuteAction's own switch: swallowed into this range it would
-	// land in ExecuteAnimStateMachineAction's `default:` assert at boot, which is
-	// a run-time failure for a compile-time mistake.
+	// Both boundaries, from this side.
 	ZENITH_ASSERT_EQ(iFirst - static_cast<int>(Zenith_EditorActionType::ANIM_POSE_EXPECT_BONE_LOCAL_ROTATION), 1,
 		"the ANIM_SM block must start immediately after the ANIM_POSE range ends");
-	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::SET_NAVMESH_ASSET) -
+	// ★ THIS LINE USED TO NAME SET_NAVMESH_ASSET, and it MOVED with WU-7.1 rather
+	// than being deleted — exactly as it moved off SET_NAVMESH_ASSET's neighbour
+	// twice before (WU-4.3, then WU-6.5). What it pins is that the ANIM_SM range
+	// ENDS where the router thinks it does; the successor being a fourth animation
+	// block instead of the navmesh verb does not weaken that. SET_NAVMESH_ASSET's
+	// own "must stay outside every range" is pinned by
+	// AnimMaskEnumBlockIsContiguous below, which is where its neighbour now is.
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_MASK_OPEN) -
 		static_cast<int>(Zenith_EditorActionType::ANIM_SM_EXPECT_DEFAULT_STATE), 1,
-		"SET_NAVMESH_ASSET must sit immediately after the ANIM_SM range — inside it, the "
-		"router would hand it to ExecuteAnimStateMachineAction's default: assert");
+		"the ANIM_MASK block must start immediately after the ANIM_SM range ends — inside it, the "
+		"router would hand a bone-mask verb to ExecuteAnimStateMachineAction's default: assert");
+}
+
+ZENITH_TEST(Automation, AnimMaskEnumBlockIsContiguous)
+{
+	// The youngest block (WU-7.1), pinned the way every block before it is: the
+	// header static_asserts the WIDTH, and this pins each member's POSITION so a
+	// reorder that preserves the width fails here naming the member that moved
+	// rather than at boot inside a neighbour's `default:` assert.
+	const int iFirst = static_cast<int>(Zenith_EditorActionType::ANIM_MASK_OPEN);
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_MASK_OPEN_FRESH) - iFirst, 1,
+		"ANIM_MASK_OPEN_FRESH must be the second member of the block");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_MASK_CLOSE) - iFirst, 2,
+		"ANIM_MASK_CLOSE must be the third member of the block");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_MASK_SET_WEIGHT) - iFirst, 3,
+		"ANIM_MASK_SET_WEIGHT must be the fourth member of the block");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_MASK_SET_SUBTREE) - iFirst, 4,
+		"ANIM_MASK_SET_SUBTREE must be the fifth member of the block");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_MASK_SET_HAS_AVATAR) - iFirst, 5,
+		"ANIM_MASK_SET_HAS_AVATAR must be the sixth member of the block");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_MASK_UNDO) - iFirst, 6,
+		"ANIM_MASK_UNDO must be the seventh member of the block");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_MASK_REDO) - iFirst, 7,
+		"ANIM_MASK_REDO must be the eighth member of the block");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_MASK_SAVE) - iFirst, 8,
+		"ANIM_MASK_SAVE must be the ninth member of the block");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_MASK_EXPECT_WEIGHT) - iFirst, 9,
+		"ANIM_MASK_EXPECT_WEIGHT must END the block — the router compares against it");
+
+	// Both boundaries. SET_NAVMESH_ASSET is a STANDALONE verb that has to keep
+	// reaching ExecuteAction's own switch: swallowed into this range it would land
+	// in ExecuteAnimMaskAction's `default:` assert at boot, which is a run-time
+	// failure for a compile-time mistake.
+	ZENITH_ASSERT_EQ(iFirst - static_cast<int>(Zenith_EditorActionType::ANIM_SM_EXPECT_DEFAULT_STATE), 1,
+		"the ANIM_MASK block must start immediately after the ANIM_SM range ends");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::SET_NAVMESH_ASSET) -
+		static_cast<int>(Zenith_EditorActionType::ANIM_MASK_EXPECT_WEIGHT), 1,
+		"SET_NAVMESH_ASSET must sit immediately after the ANIM_MASK range — inside it, the "
+		"router would hand it to ExecuteAnimMaskAction's default: assert");
+}
+
+ZENITH_TEST(Automation, AnimMaskStepsPackTheirPayloads)
+{
+	// The queue is drained MUCH later than it is built, so every argument has to
+	// survive as an OWNED copy in the action struct — a caller may legitimately
+	// pass a pointer into a stack buffer built in a loop. This asserts the packing
+	// contract the executor reads back; the two halves are written from the same
+	// comment block in the .cpp, and this is what stops them drifting.
+	Zenith_EditorAutomation& xAuto = g_xEngine.EditorAutomation();
+	xAuto.Reset();
+
+	xAuto.AddStep_AnimMaskOpenFresh("game:Anim/UpperBody.zanimmask");
+	xAuto.AddStep_AnimMaskSetWeight("Spine", 0.75f);
+	xAuto.AddStep_AnimMaskSetSubtree("Spine", 1.0f);
+	xAuto.AddStep_AnimMaskSetHasAvatar(false);
+	xAuto.AddStep_AnimMaskExpectWeight("Head", 0.5f, 1.0e-3f);
+	xAuto.AddStep_AnimMaskSave();
+
+	ZENITH_ASSERT_EQ(xAuto.m_axActions.GetSize(), 6u, "six steps queued");
+
+	const Zenith_EditorAction& xOpen = xAuto.m_axActions.Get(0);
+	ZENITH_ASSERT_TRUE(xOpen.m_eType == Zenith_EditorActionType::ANIM_MASK_OPEN_FRESH, "step 0 is ANIM_MASK_OPEN_FRESH");
+	ZENITH_ASSERT_STREQ(xOpen.m_szArg1.c_str(), "game:Anim/UpperBody.zanimmask",
+		"the asset path is OWNED by the action, not aliased");
+
+	const Zenith_EditorAction& xWeight = xAuto.m_axActions.Get(1);
+	ZENITH_ASSERT_STREQ(xWeight.m_szArg1.c_str(), "Spine", "szArg1 is the BONE NAME — never an index (D46)");
+	ZENITH_ASSERT_EQ_FLOAT(xWeight.m_afArgs[0], 0.75f, 1e-6f, "afArgs[0] is the weight");
+
+	const Zenith_EditorAction& xSubtree = xAuto.m_axActions.Get(2);
+	ZENITH_ASSERT_TRUE(xSubtree.m_eType == Zenith_EditorActionType::ANIM_MASK_SET_SUBTREE, "step 2 is the subtree verb");
+	ZENITH_ASSERT_STREQ(xSubtree.m_szArg1.c_str(), "Spine", "addressed by name too");
+	ZENITH_ASSERT_EQ_FLOAT(xSubtree.m_afArgs[0], 1.0f, 1e-6f, "with its own weight");
+
+	const Zenith_EditorAction& xFlag = xAuto.m_axActions.Get(3);
+	ZENITH_ASSERT_FALSE(xFlag.m_bArg, "bArg carries D47's has-avatar-mask flag");
+
+	const Zenith_EditorAction& xExpect = xAuto.m_axActions.Get(4);
+	ZENITH_ASSERT_STREQ(xExpect.m_szArg1.c_str(), "Head", "the assertion step names its bone");
+	ZENITH_ASSERT_EQ_FLOAT(xExpect.m_afArgs[0], 0.5f, 1e-6f, "afArgs[0] is the expected weight");
+	ZENITH_ASSERT_EQ_FLOAT(xExpect.m_afArgs[1], 1.0e-3f, 1e-9f, "and afArgs[1] its tolerance");
+
+	const Zenith_EditorAction& xSave = xAuto.m_axActions.Get(5);
+	ZENITH_ASSERT_TRUE(xSave.m_eType == Zenith_EditorActionType::ANIM_MASK_SAVE, "step 5 is ANIM_MASK_SAVE");
+
+	xAuto.Reset();
 }
 
 ZENITH_TEST(Automation, AnimSmStepsPackTheirPayloads)

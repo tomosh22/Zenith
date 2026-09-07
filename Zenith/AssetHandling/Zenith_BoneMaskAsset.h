@@ -71,6 +71,13 @@ public:
 	const Zenith_Vector<Zenith_BoneMaskEntry>& GetEntries() const { return m_xEntries; }
 	u_int GetEntryCount() const { return m_xEntries.GetSize(); }
 
+	// Deep-copy the AUTHORED CONTENT — the entries and the flag, and deliberately
+	// NOT the Zenith_Asset half (the registry path and the refcount). WU-7.1's
+	// Zenith_BoneMaskDocument holds one of these by value as its working copy and
+	// this is how it is filled from, and flushed back onto, the live asset;
+	// copying the base would give two objects one registry identity.
+	void CopyFrom(const Zenith_BoneMaskAsset& xOther);
+
 	// D47. TRUE by default: a .zanimmask that exists IS a mask, whatever its
 	// weights sum to. Serialized rather than inferred.
 	bool HasAvatarMask() const { return m_bHasAvatarMask; }
@@ -82,6 +89,13 @@ public:
 
 	// Names -> indices against xSkeleton, writing into xOutMask (which starts
 	// fully zeroed, so a bone this mask does not name gets weight 0).
+	//
+	// ★ THE WALK ITSELF LIVES ON Flux_BoneMask (WU-7.1) — the skeleton-asset
+	// overload of SetFromBoneNames — and this function is a caller of it plus the
+	// error reporting, which needs the asset PATH that Flux cannot see. There is
+	// exactly one name->index resolution in the system now; there used to be two,
+	// and the other one keyed on Flux_MeshGeometry's bone map rather than on the
+	// skeleton the runtime poses against.
 	//
 	// ★ AN UNRESOLVABLE NAME IS REPORTED, NOT DROPPED. Returns FALSE and logs each
 	// offending name with Zenith_Error. A mask silently losing a bone is a layer

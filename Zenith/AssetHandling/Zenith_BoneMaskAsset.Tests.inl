@@ -14,6 +14,12 @@
 
 #include "UnitTests/Zenith_UnitTests.h"
 #include "UnitTests/Zenith_AssertCapture.h"   // the refused-file paths assert on purpose
+// WU-7.1: the all-zero-mask acceptance case drives the REAL build path, because
+// "the asset says it is a mask" only means something once a layer has been built
+// from a controller def that names it.
+#include "Flux/MeshAnimation/Flux_AnimationController.h"
+#include "Flux/MeshAnimation/Flux_AnimatorControllerDef.h"
+#include "Flux/MeshAnimation/Flux_AnimationLayer.h"
 
 #include <cstring>      // std::memcpy — poking the envelope's schema word
 #include <filesystem>
@@ -280,4 +286,117 @@ ZENITH_TEST(BoneMaskAsset, ARefusedFileIsNotASuccessfulLoad)
 	{
 		ZENITH_ASSERT_EQ_FLOAT(pxLoaded->GetBoneWeight("Spine"), 1.0f, 1e-5f, "with its content");
 	}
+}
+
+//==============================================================================
+// (5) WU-7.1 — D47 CARRIED ALL THE WAY TO A LIVE LAYER.
+//
+// ★ TEST (2) ABOVE PROVES THE FILE ROUND-TRIPS THE FLAG, WHICH IS NOT THE SAME
+// CLAIM. What matters is whether the layer a controller builds from a def that
+// NAMES this mask ends up masked — and an OVERRIDE layer that comes back
+// unmasked replaces the WHOLE skeleton, so getting this wrong makes a layer do
+// more rather than less. Flux_AnimationController::BuildFromControllerDef gates
+// SetAvatarMask on the ASSET'S flag rather than on the resolved weights; this
+// is what pins that, in both directions.
+//==============================================================================
+ZENITH_TEST(BoneMaskAsset, AnAllZeroMaskFromAnAssetStillMasksTheLayerBuiltFromIt)
+{
+	BoneMaskFixture xFixture("zenith_bonemask_layerflag");
+
+	Zenith_SkeletonAsset xSkeleton;
+	BoneMaskBuildRig(xSkeleton);
+
+	// An explicitly all-zero mask: "this layer overrides nothing yet", which is a
+	// real authoring state and not an empty file.
+	{
+		Zenith_BoneMaskAsset xAuthored;
+		xAuthored.SetBoneWeight("Spine", 0.0f);
+		xAuthored.SetBoneWeight("Arm", 0.0f);
+		ZENITH_ASSERT_TRUE(xAuthored.Export(xFixture.m_strPath), "write the all-zero mask");
+	}
+
+	// The smallest def that can carry a mask reference: one layer, no clips, no
+	// top-level machine. BuildFromControllerDef acquires the mask through the
+	// registry, so this is the real path and not a hand-call to ResolveTo.
+	Flux_AnimatorControllerDef xDef;
+	xDef.SetName("MaskFlagProbe");
+	Flux_AnimatorControllerLayerDef* pxLayerDef = xDef.AddLayer("Overlay");
+	pxLayerDef->SetBlendMode(LAYER_BLEND_OVERRIDE);
+	pxLayerDef->SetBoneMaskAssetPath(xFixture.m_strPath);
+
+	{
+		Flux_AnimationController xController;
+		ZENITH_ASSERT_TRUE(xController.BuildFromControllerDef(xDef, &xSkeleton),
+			"a mask that resolves cleanly makes the build complete");
+		ZENITH_ASSERT_EQ(xController.GetLayerCount(), 1u, "the layer was built");
+		if (xController.GetLayerCount() == 1u)
+		{
+			const Flux_AnimationLayer* pxLayer = xController.GetLayer(0);
+			// ★ THE ASSERTION THAT MATTERS. Derived from the weights this would be
+			// FALSE — every weight is zero.
+			ZENITH_ASSERT_TRUE(pxLayer->HasAvatarMask(),
+				"the layer is masked because the ASSET says it is, not because a weight is non-zero");
+			ZENITH_ASSERT_FALSE(pxLayer->GetAvatarMask().HasAnyNonZeroWeight(),
+				"and the resolved mask really is all-zero — the flag is not standing in for content");
+			ZENITH_ASSERT_EQ_FLOAT(pxLayer->GetAvatarMask().GetBoneWeight(1u), 0.0f, 1e-5f,
+				"Spine resolved, at weight zero");
+		}
+		xController.ReleaseAssetReferences();
+	}
+
+	// ...and the flag OFF leaves the layer unmasked, so it is the flag being read
+	// rather than the mask always being applied.
+	Zenith_AssetRegistry::ForceUnload(xFixture.m_strPath);
+	{
+		Zenith_BoneMaskAsset xAuthored;
+		xAuthored.SetBoneWeight("Spine", 1.0f);
+		xAuthored.SetHasAvatarMask(false);
+		ZENITH_ASSERT_TRUE(xAuthored.Export(xFixture.m_strPath), "rewrite it with the flag off");
+	}
+
+	{
+		Flux_AnimationController xController;
+		ZENITH_ASSERT_TRUE(xController.BuildFromControllerDef(xDef, &xSkeleton),
+			"the build is still complete — 'not a mask' is not a failure");
+		if (xController.GetLayerCount() == 1u)
+		{
+			ZENITH_ASSERT_FALSE(xController.GetLayer(0)->HasAvatarMask(),
+				"an asset whose flag is off leaves the layer unmasked, non-zero weights and all");
+			// The PATH is still recorded, so an ExportControllerDef does not turn the
+			// flag-off state into a mask DELETION.
+			ZENITH_ASSERT_TRUE(xController.GetLayer(0)->GetBoneMaskAssetPath() == xFixture.m_strPath,
+				"and the reference survives, so a save does not drop it");
+		}
+		xController.ReleaseAssetReferences();
+	}
+}
+
+//==============================================================================
+// (6) WU-7.1 — CopyFrom deep-copies the CONTENT and not the asset identity.
+//
+// This is what Zenith_BoneMaskDocument's working copy is made of, so "the
+// document edited the live asset by accident" is the failure it prevents.
+//==============================================================================
+ZENITH_TEST(BoneMaskAsset, CopyFromTakesTheContentAndNotTheRegistryIdentity)
+{
+	Zenith_BoneMaskAsset xSource;
+	xSource.SetBoneWeight("Spine", 1.0f);
+	xSource.SetBoneWeight("Arm", 0.5f);
+	xSource.SetHasAvatarMask(false);
+
+	Zenith_BoneMaskAsset xCopy;
+	xCopy.SetBoneWeight("Stale", 1.0f);   // something to be overwritten
+	xCopy.CopyFrom(xSource);
+
+	ZENITH_ASSERT_EQ(xCopy.GetEntryCount(), 2u, "the copy holds exactly the source's entries");
+	ZENITH_ASSERT_FALSE(xCopy.HasBone("Stale"), "and none of its own");
+	ZENITH_ASSERT_EQ_FLOAT(xCopy.GetBoneWeight("Arm"), 0.5f, 1e-5f, "with their weights");
+	ZENITH_ASSERT_FALSE(xCopy.HasAvatarMask(), "and the flag");
+
+	// ★ DEEP, not aliased: editing the copy must not reach the source, which is
+	// the entire point of a working copy.
+	xCopy.SetBoneWeight("Arm", 0.125f);
+	xCopy.SetHasAvatarMask(true);
+	ZENITH_ASSERT_EQ_FLOAT(xSource.GetBoneWeight("Arm"), 0.5f, 1e-5f, "the source is untouched");
+	ZENITH_ASSERT_FALSE(xSource.HasAvatarMask(), "flag included");
 }

@@ -18,6 +18,7 @@ ImGui-based scene editor for creating, editing, and testing game content. Active
 - `Zenith_EditorAnimCtrlCommands.h/cpp` - That document's OWN undo stack (not the shared editor one, and not the clip document's): state add / remove / rename, default state, state clip, node position, a whole-transition-LIST snapshot, a whole-parameter-TABLE snapshot, the clip-path list, and the compound. Tests in `Zenith_EditorAnimCtrlCommands.Tests.inl`
 - `Zenith_EditorAnimCommands.h/cpp` - The document's OWN undo stack (not the shared editor one — a scene load clears that, and an animation edit has nothing to do with a scene): key insert / remove / retime / value, duration, and the three event commands. Tests in `Zenith_EditorAnimCommands.Tests.inl`
 - `Zenith_AnimationPreviewSession.h/cpp` - One panel's live preview of one clip: its OWN controller, skeleton instance and clock (D30 — never an entity's, which would double-tick it), a deep copy of the clip, per-clip rig resolution + remembered override (D31), and the shared preview view slot through `Flux_PreviewSlotArbiter` (D32). Tests in `Zenith_AnimationPreviewSession.Tests.inl`
+- `Zenith_BoneMaskDocument.h/cpp` - The editable WORKING COPY of one `.zanimmask`, and its only writer: a deep copy of the asset's `{bone name, weight}` entries plus D47's explicit flag, its OWN undo stack (three small command classes live in the same file), a content-hash check for external modification, and the one place the additive-layer rule is written down (`LayerAcceptsMask`). Tests in `Zenith_BoneMaskDocument.Tests.inl`
 - `Zenith_AnimTimelineMath.h/cpp` - The PURE seconds<->pixels mapping the dope sheet, its ruler and its events row all share: zoom clamps, the inverse, delta conversions, visibility, frame snapping, zoom-about-a-pixel, view clamping, fit-to-window and the ruler tick ladder. Not one line of UI, so every timeline defect is catchable headless. Tests in `Zenith_AnimTimelineMath.Tests.inl`
 - `Zenith_EditorPrefs.h/cpp` - Per-user, per-game preferences (`%LOCALAPPDATA%/Zenith/<Game>/editor_prefs.txt`): recent scenes, fly speed, look sensitivity, snapping, gizmo space, overlay toggles. `Parse` / `Serialize` are pure and unit-tested; never read in automated or headless runs
 - `Zenith_Editor_SceneOps.cpp` - Scene load/save/new + deferred scene operations
@@ -377,9 +378,10 @@ and clock):
 - **Ruler + playhead** — subdivisions from `Zenith_AnimTimelineChooseTicks`
   (frames first, then a seconds ladder); the playhead tracks the preview
   session's clock and carries a grab handle in the ruler.
-- **Toolbar** — asset path entry (drop a `.zanim` on it), Open / Close,
-  play-pause, a seconds and a frame readout, Zoom To Fit, the live px/s, and
-  the two read-only state badges: `UNSAVED` and `CHANGED ON DISK`.
+- **Toolbar** — asset path entry (drop a `.zanim` on it), Open / Close, a
+  **Masks** checkbox (WU-7.1's section, off by default), play-pause, a seconds
+  and a frame readout, Zoom To Fit, the live px/s, and the two read-only state
+  badges: `UNSAVED` and `CHANGED ON DISK`.
 - **Preview pane** — the shared preview image, or the **dispossessed
   placeholder** naming whoever holds the slot plus a Reclaim button, or the
   **rig prompt** when `NeedsRigSelection()`.
@@ -441,6 +443,45 @@ labels, ticks, keys, events and the playhead are all painted at absolute screen
 coordinates — see "draw-list decorations, not items" below for why placing
 items there hangs a windowed build with a modal CRT dialog nothing logs.
 
+**★★ NOTHING SHOWN DRAWS NOTHING — NOT A DISABLED STRIP, NOT A COLLAPSED
+HEADER. `RenderSheet` is sized from `ImGui::GetContentRegionAvail()`, so every
+item emitted above it comes straight out of the sheet's height — and the EVENTS
+ROW IS THE SHEET'S LAST ROW.** Each optional block above the sheet
+(`RenderEventToolbar`, `RenderEventInspector`, `RenderPoseToolbar`,
+`RenderMaskSection`) therefore returns **before submitting a single item** when
+it has nothing to show, and each one's toggle lives on a toolbar row that
+already exists rather than on a line of its own.
+
+This is not tidiness. WU-7.1 shipped the Bone Masks section as an always-present
+*collapsed* `CollapsingHeader` — one row, ~24 px — and that alone pushed the
+events row below the canvas bottom in the 900×600 unit window:
+`AnimPanel::ChangingTheDurationMovesTheEventRowAndNotTheStoredValue` went red on
+all three `Null_` exes with `GetEventRect` false **before and after** the edit,
+which reads as "the events row is broken" and is nowhere near its cause. The
+off-screen gate is what makes a height regression arrive as a flat `false` a long
+way from the pixels that caused it, so the height has to be defended at the
+source. `WasMaskSectionDrawnLastFrame()` and its siblings exist so a unit can
+assert the *absence* directly instead of inferring it.
+
+**★ AND THE UNIT THAT GUARDS IT MEASURES `GetTrackAreaRect().Height()`, NOT
+"is row X still visible".** That rect spans the whole canvas, so it *is* "the
+height the sheet was given" and is indifferent to how many rows fit inside it.
+Asserting on a row instead couples the guard to the FIXTURE: a clip whose rig
+RESOLVES puts `RenderPreviewPane` on its live-image branch — a 192 px square
+(`fSHEET_PREVIEW_SIZE_1X`, occupied whether or not a texture exists) plus WU-4.3's
+pose-toolbar line — while a rig-less clip takes the rig-PROMPT branch (a wrapped
+line, two `InputText`s and a button). That is ~100 px of difference between two
+probes in the same window with the same row count, and it is enough to put the
+events row off the bottom on its own. WU-7.1's first guard asserted
+`GetEventsRowRect` on a *rigged* probe and went red for exactly that reason,
+having nothing to do with the section it was guarding. Pair the height equality
+with a sensitivity check (the height must genuinely SHRINK while the block is
+shown), or the equality would hold just as well against a constant.
+
+(The rule was written in `RenderEventInspector`'s body from WU-5B onwards and was
+followed by WU-4.3's pose toolbar; it was not written down here until WU-7.1
+rediscovered it the expensive way — twice.)
+
 **★ No coordinate maths lives in the panel.** Every seconds↔pixels conversion
 goes through `Zenith_AnimTimelineMath`; a key's centre x *is*
 `Zenith_AnimTimelineTimeToPixel(View(), t)`, and a unit asserts exactly that, so
@@ -450,6 +491,85 @@ the panel cannot grow a second copy of the mapping that drifts from the first.
 `DockBuilderDockWindow` matches by name and `ImHashStr` hashes the whole string,
 so a title decorated with a dirty marker or the clip name would dock nothing and
 the window would silently float. Both are shown in the toolbar instead.
+
+### The Bone Mask sub-panel (WU-7.1)
+
+A **"Bone Masks"** section inside the Animation Editor, over its own
+`Zenith_BoneMaskDocument` — a second, independent working copy with its **own
+undo stack**. A mask edit and a keyframe edit are not one editing session: Ctrl+Z
+in the sheet must not take back a slider drag in the mask list, and the two
+documents save different files.
+
+**★ IT IS OFF BY DEFAULT AND DRAWS NOTHING WHILE IT IS OFF** — zero items, zero
+height, per the rule above, which this section is the reason for. The toggle is a
+**"Masks" checkbox on the toolbar's existing first row** (beside Open / Close, and
+above that row's no-clip early return, so a mask can be opened with no clip
+loaded). `Action_MaskOpen` / `Action_MaskOpenFresh` raise the flag and
+`Action_MaskClose` clears it, so the checkbox and what is on screen cannot
+disagree; `RenderMaskSection` additionally draws whenever a mask document is open,
+as a safety net so an open — possibly dirty — document can never be invisible.
+
+**★ IT LIVES INSIDE THE DOPE SHEET BECAUSE THE RIG DOES.** A `.zanimmask` stores
+weights **by bone NAME** (D46/D47) and only becomes indices when it meets a
+specific `Zenith_SkeletonAsset`. The only place the editor already holds a
+resolved, previewed rig is this panel's `Zenith_AnimationPreviewSession`, with
+its metadata resolution, its remembered per-clip override (D31) and its prompt.
+A standalone mask window would have to grow all three. The section lists one
+weight slider per bone of **the session's rig, in skeleton order**
+(`GetMaskRigBoneNames`), and shows a **prompt** rather than an empty list when
+there is no rig — a blank list reads as "this rig has no bones".
+
+**★ IT REFUSES TO OFFER A MASK CONTROL ON AN ADDITIVE LAYER, AND SAYS WHY.**
+`Flux_AnimationController`'s layer loop tests `LAYER_BLEND_ADDITIVE` **first** and
+goes straight to `Flux_SkeletonPose::AdditiveBlend`, whose signature has no mask
+in it; only the OVERRIDE branch reaches `MaskedBlend`. So an additive layer
+ignores its mask **entirely**, and a UI that offered the control would let
+somebody author a whole mask, save it, assign it and observe nothing — every gate
+green, nothing to grep for. `Zenith_BoneMaskDocument::LayerAcceptsMask(blendMode)`
+is the ONE place that rule is written (WU-7.2's layer list asks the same
+function), `AdditiveLayerMaskNotice()` is the one wording of the refusal, and
+`WasMaskAssignmentDrawnLastFrame()` / `GetMaskNotice()` are what a unit reads.
+
+**Actions** — `Action_MaskOpen` / `MaskOpenFresh` / `MaskSetWeight` /
+`MaskSetSubtree` / `MaskSetHasAvatar` / `MaskSave` / `MaskClose` / `MaskUndo` /
+`MaskRedo`, the same three rules the sheet's actions follow (bool-returning,
+reading no ImGui state, every mutation through a document verb). The
+`AddStep_AnimMask*` automation family calls exactly these twins.
+
+**★ THEY ARE ASSIGNMENTS, so TRUE means "the value you asked for is in place"**
+— the animator-controller panel's rule adopted verbatim, and for its reason: a
+recipe that paints a subtree and then re-states one of its bones is completely
+ordinary, and under a "false means nothing changed" reading it would trip the
+automation's checked wrapper at boot on a step that did exactly what it was
+asked. **The invariant to assert on is the undo-stack DEPTH**; a no-op is not an
+edit and contributes zero steps. `RemoveBone` is the exception and is a REMOVAL,
+so a miss is a genuine refusal.
+
+**★ "Select subtree" takes the RIG AS A PARAMETER and is ONE compound.** A mask
+is skeleton-*scoped* but not skeleton-*bound* — the same file is meant to be
+opened against whichever rig the dope sheet is previewing — so a hierarchy cached
+at Open would answer with the previous rig's parents after the preview changed.
+The walk is a single forward pass, which rests on the skeleton invariant
+`Flux_SkeletonPose::ComputeModelSpaceMatricesFromSkeleton` already asserts
+(parents precede children). Painting an arm chain is **one** Ctrl+Z, not one per
+bone.
+
+**★ AN ENTRY AT 0.0 AND NO ENTRY ARE THE SAME NUMBER AND DIFFERENT FILES.**
+`GetBoneWeight` answers 0 for both, and only one of them writes a row. So the
+undo of the FIRST weight ever painted onto a bone **removes** the row rather than
+writing a zero — otherwise every experimentally-touched bone stays in the
+`.zanimmask` forever as an explicit "masked out" nobody meant. `RemoveBone` is
+how a row is actually dropped; `SetBoneWeight(name, 0)` deliberately keeps it,
+because an authored zero is a decision (D47).
+
+Weight sliders commit on **edit-complete**, not per frame of the drag — the same
+"preview, then commit" shape as the key drag, the duration handle and the event
+drag, and for the same reason: a command per frame makes Ctrl+Z crawl back
+through positions the user was only passing through.
+
+**Not wired:** double-clicking a `.zanimmask` in the Content Browser still only
+selects and logs it (WU-6.2 left it there). The section's path field + **Open**
+is the route today.
 
 ### Behaviour Graph Editor Panel (`Panels/Zenith_EditorPanel_GraphEditor`)
 
@@ -828,16 +948,18 @@ assert: `Automation, GrassTypesEnumBlockIsContiguous`,
 `… AnimEnumBlockIsContiguous`, `… AnimPoseEnumBlockIsContiguous` and
 `… AnimSmEnumBlockIsContiguous`.
 
-**Three ANIMATION ranges sit at the end of the enum, and they are three rather
+**FOUR ANIMATION ranges sit at the end of the enum, and they are four rather
 than one for a mechanical reason.** `ANIM_*` (WU-3.4, the dope sheet), `ANIM_POSE_*`
-(WU-4.3, the bone manipulator) and `ANIM_SM_*` (WU-6.5, the animator-controller
-state machine) each route to their own sub-executor, and each new family was
+(WU-4.3, the bone manipulator), `ANIM_SM_*` (WU-6.5, the animator-controller
+state machine) and `ANIM_MASK_*` (WU-7.1, the bone-mask sub-panel) each route to
+their own sub-executor, and each new family was
 APPENDED as its own block rather than added to the one before it — because
 appending into an existing block moves its LAST member, which is the upper bound
 both the router's range test and the header's `static_assert` compare against and
-which that block's unit pins by position. `SET_NAVMESH_ASSET` follows all three
-and must stay outside every range; `AnimSmEnumBlockIsContiguous` is where that is
-now pinned.
+which that block's unit pins by position. `SET_NAVMESH_ASSET` follows all four
+and must stay outside every range; `AnimMaskEnumBlockIsContiguous` is where that is
+now pinned — the assertion has been re-pointed twice (off `ANIM_POSE`'s unit, then
+off `ANIM_SM`'s) rather than deleted, which is the mechanism working.
 
 ## Selection System
 

@@ -5,6 +5,7 @@
 #include "Editor/Zenith_AnimationDocument.h"
 #include "Editor/Zenith_AnimationPreviewSession.h"
 #include "Editor/Zenith_AnimTimelineMath.h"
+#include "Editor/Zenith_BoneMaskDocument.h"   // WU-7.1's "Bone Masks" sub-panel
 #include "Collections/Zenith_Vector.h"
 #include "Collections/Zenith_HashMap.h"
 #include "Collections/Zenith_HashSet.h"
@@ -876,6 +877,109 @@ public:
 	float GetPoseDragAngleRadians() const { return m_fPoseDragAngleRadians; }
 	u_int GetPoseHoverRingAxis() const { return m_uPoseHoverAxis; }
 
+	//=========================================================================
+	// BONE MASKS (WU-7.1) — the ".zanimmask" sub-panel.
+	//
+	// ★ IT LIVES INSIDE THE DOPE SHEET BECAUSE THE RIG DOES. A mask is authored
+	// against a specific skeleton's bone NAMES, and the only place the editor
+	// already has a resolved, previewed rig in hand is this panel's
+	// Zenith_AnimationPreviewSession. A standalone mask window would have to
+	// grow its own rig resolution, its own preference store and its own prompt,
+	// all of which exist here and are already unit-tested.
+	//
+	// ★ THE DOCUMENT IS A SECOND, INDEPENDENT ONE with its OWN undo stack. A
+	// mask edit and a keyframe edit are not one editing session — Ctrl+Z in the
+	// sheet must not take back a slider drag in the mask list, and the two
+	// documents save different files.
+	//
+	// ★ AND THE SUB-PANEL REFUSES TO OFFER AN ASSIGNMENT CONTROL FOR AN ADDITIVE
+	// LAYER. An additive layer ignores its mask entirely (see
+	// Zenith_BoneMaskDocument::LayerAcceptsMask), so drawing one would let a user
+	// author a mask, save it, assign it, and observe nothing — with every gate
+	// green. The layer LIST is WU-7.2's; what this panel holds is which blend
+	// mode the mask would be assigned INTO, so the refusal is expressible now.
+	//=========================================================================
+
+	Zenith_BoneMaskDocument& MaskDocument() { return m_xMaskDocument; }
+	const Zenith_BoneMaskDocument& MaskDocument() const { return m_xMaskDocument; }
+
+	// ★★ OFF BY DEFAULT, AND WHILE IT IS OFF THE SECTION DRAWS NOTHING — not a
+	// collapsed header, not a label, not one item. That is this panel's standing
+	// rule (Editor/CLAUDE.md) and it is load-bearing: RenderSheet is sized from
+	// ImGui::GetContentRegionAvail(), so every item emitted above it comes out of
+	// the sheet's height, and the EVENTS ROW IS THE LAST ROW OF THE SHEET. A
+	// single always-present collapsed header (~24 px) was enough to push the
+	// events row below the canvas bottom in a 900x600 window and turn
+	// ChangingTheDurationMovesTheEventRowAndNotTheStoredValue red with
+	// GetEventRect false on BOTH sides of the edit — a failure that reads as "the
+	// events row is broken" and is nowhere near its cause.
+	//
+	// The toggle is a checkbox on the toolbar's EXISTING first row, which costs
+	// no height. Action_MaskOpen / Action_MaskOpenFresh raise it and
+	// Action_MaskClose clears it, so it always agrees with what is on screen.
+	bool& ShowMaskSectionFlag() { return m_bShowMaskSection; }
+	bool IsMaskSectionShown() const { return m_bShowMaskSection; }
+
+	// Which layer a mask assignment from this sub-panel would target. WU-7.2
+	// owns the layer list and will drive this from the selected row; until then
+	// it is panel state with an OVERRIDE default, because that is the blend mode
+	// a mask means something to.
+	void SetMaskTargetLayerBlendMode(Flux_LayerBlendMode eBlendMode) { m_eMaskTargetBlendMode = eBlendMode; }
+	Flux_LayerBlendMode GetMaskTargetLayerBlendMode() const { return m_eMaskTargetBlendMode; }
+
+	//------------------------------------------------------------------------
+	// The Action_* twins. Same three rules as every other action on this panel:
+	// bool-returning, reading no ImGui state, and going through a DOCUMENT verb.
+	//------------------------------------------------------------------------
+
+	// Opens strAssetPath into the mask document and SHOWS the section, so a
+	// refusal is visible rather than reported to a collapsed header.
+	bool Action_MaskOpen(const std::string& strAssetPath);
+	// The regenerate-from-scratch entry point, the twin of the controller
+	// panel's OpenAssetFresh and separate for the same reason.
+	bool Action_MaskOpenFresh(const std::string& strAssetPath);
+	// One bone's weight, clamped to [0,1] by the document. ASSIGNMENT: true when
+	// the weight is what you asked for, whether or not this call changed it.
+	bool Action_MaskSetWeight(const std::string& strBoneName, float fWeight);
+	// strBoneName and every DESCENDANT of it, as ONE undo step. Resolved against
+	// the SESSION'S rig — false when there is no rig, which is the same state
+	// the sub-panel shows its prompt for.
+	bool Action_MaskSetSubtree(const std::string& strBoneName, float fWeight);
+	bool Action_MaskSetHasAvatar(bool bHasAvatarMask);
+	bool Action_MaskSave();
+	// FORCED close: unsaved mask edits are discarded, matching CloseClip.
+	bool Action_MaskClose();
+	bool Action_MaskUndo();
+	bool Action_MaskRedo();
+
+	//------------------------------------------------------------------------
+	// Mask sub-panel diagnostics — UNGATED, for the reason every other
+	// diagnostic here is. "The control was not drawn" and "the control was drawn
+	// and did nothing" are different failures and a bool cannot tell them apart.
+	//------------------------------------------------------------------------
+
+	// Did the "Bone Masks" section draw at all last frame? False when the panel
+	// is hidden, when the section is toggled off (which is its DEFAULT, and
+	// means it emitted zero items and consumed zero height), or when the window
+	// was not drawn.
+	bool WasMaskSectionDrawnLastFrame() const { return m_bMaskSectionDrawn; }
+	// Was the ASSIGNMENT control drawn? This is the one the additive-layer rule
+	// gates: false, with GetMaskNotice() explaining, for an additive target.
+	bool WasMaskAssignmentDrawnLastFrame() const { return m_bMaskAssignmentDrawn; }
+	// How many per-bone weight rows the section listed. Zero means there was no
+	// rig to list, which the section says out loud rather than drawing an empty
+	// list.
+	u_int GetMaskBoneRowCount() const { return m_uMaskBoneRowsDrawn; }
+	// Whatever the section is currently explaining: the additive-layer notice,
+	// the no-rig prompt, the no-document prompt, or empty when it is just
+	// listing bones. Never null.
+	const char* GetMaskNotice() const { return m_strMaskNotice.c_str(); }
+
+	// The bones the sub-panel would list, from the SESSION's rig, in skeleton
+	// order. Empty without a resolved rig. Exposed so a unit (and WU-7.2) reads
+	// the same list the section draws rather than rebuilding it.
+	void GetMaskRigBoneNames(Zenith_Vector<std::string>& axOut) const;
+
 	//------------------------------------------------------------------------
 	// Operation diagnostics — UNGATED, for the same reason the rect
 	// diagnostics are: a bare `false` from an action has several causes, and a
@@ -1093,6 +1197,15 @@ private:
 	// InvisibleButton and a popup has to be opened from the window scope.
 	void RenderEventContextMenu();
 	void RenderBanners();
+	// WU-7.1's "Bone Masks" section: the path field, Open / Save / Close, the D47
+	// checkbox, and one weight slider per bone of the session's rig. Ordinary
+	// ImGui items laid out by the cursor, like the toolbars and unlike the sheet
+	// — it is not a draw-list decoration and records no rects.
+	//
+	// ★ RETURNS BEFORE SUBMITTING ANYTHING when the section is off, which is the
+	// default. See ShowMaskSectionFlag: every item above RenderSheet is height
+	// the sheet does not get, and the events row is the sheet's last row.
+	void RenderMaskSection();
 	void RenderPreviewPane();
 	// Hover + click over the preview image, translated into Action_* calls. The
 	// ONLY place an absolute mouse position is turned into an image-relative
@@ -1143,6 +1256,29 @@ private:
 	Zenith_AnimationDocument m_xDocument;
 	Zenith_AnimationPreviewSession m_xSession;
 	Zenith_AnimTimelineView m_xView;
+
+	//-------------------------------------------------------------------------
+	// The bone-mask sub-panel (WU-7.1). Its own document, its own undo stack,
+	// its own dirty state — see the public block for why it is not folded into
+	// the clip document.
+	//-------------------------------------------------------------------------
+	Zenith_BoneMaskDocument m_xMaskDocument;
+	// ★ FALSE IS THE DEFAULT AND IT MEANS "DRAW NOTHING", not "draw collapsed" —
+	// see ShowMaskSectionFlag above for the 24 px that cost a red test.
+	bool m_bShowMaskSection = false;
+	Flux_LayerBlendMode m_eMaskTargetBlendMode = LAYER_BLEND_OVERRIDE;
+	// The section's path field. Fixed, because ImGui::InputText wants one.
+	char m_acMaskPathBuffer[512] = {};
+	// The subtree paint's target value, so "select subtree" is one click at the
+	// value the toolbar shows rather than a second dialog.
+	float m_fMaskSubtreeWeight = 1.0f;
+	// Per-frame draw diagnostics, cleared by ClearFrameRects with everything
+	// else so a frame the panel did not draw reports NOT DRAWN rather than last
+	// frame's answer.
+	bool m_bMaskSectionDrawn = false;
+	bool m_bMaskAssignmentDrawn = false;
+	u_int m_uMaskBoneRowsDrawn = 0;
+	std::string m_strMaskNotice;
 
 	Zenith_Vector<Zenith_AnimSheetRow> m_axRows;
 	Zenith_HashMap<std::string, u_int> m_xRowIndexByTrackKey;
