@@ -64,6 +64,7 @@ void Zenith_EditorAddLogMessage(const char* szMessage, int eLevel, Zenith_LogCat
 
 // Extracted panel implementations
 #include "Panels/Zenith_EditorPanel_Animation.h"
+#include "Panels/Zenith_EditorPanel_AnimStateMachine.h"
 #include "Panels/Zenith_EditorPanel_Console.h"
 #include "Panels/Zenith_EditorPanel_ContentBrowser.h"
 #include "Panels/Zenith_EditorPanel_Hierarchy.h"
@@ -354,6 +355,19 @@ void Zenith_Editor::Initialise(Flux_PlatformAPI& xFluxBackend, Flux_GraphicsImpl
 	Zenith_Assert(m_pxAnimationPanel == nullptr, "Zenith_Editor::Initialise ran twice");
 	m_pxAnimationPanel = new Zenith_EditorPanel_Animation();
 
+	// Anchors the animator-controller document TU and, through it, its undo-command
+	// TU against /OPT:REF — the same reason (and the same idiom) as the two calls
+	// above. The state-machine panel references both for real, so this is belt to
+	// their braces and keeps their units in the gate if the panel is ever trimmed.
+	static const bool ls_bAnimCtrlDocLinked = Zenith_AnimControllerDocument_ForceLink();
+	(void)ls_bAnimCtrlDocLinked;
+
+	// ★ THE STATE-MACHINE GRAPH IS CREATED HERE AND DESTROYED IN Shutdown, INSIDE
+	// THE ASSET REGISTRY'S LIFETIME — the dope sheet's rule, for the same cause:
+	// its preview controller holds one owning AnimationHandle per clip.
+	Zenith_Assert(m_pxAnimStateMachinePanel == nullptr, "Zenith_Editor::Initialise ran twice");
+	m_pxAnimStateMachinePanel = new Zenith_EditorPanel_AnimStateMachine();
+
 	// The dope sheet's preview session remembers a per-clip rig choice in the
 	// editor's own prefs. Wired from here because m_xEditorState is private to
 	// this class — the panel is handed the store rather than reaching for it.
@@ -480,6 +494,16 @@ void Zenith_Editor::Shutdown()
 		m_pxAnimationPanel->Shutdown();
 		delete m_pxAnimationPanel;
 		m_pxAnimationPanel = nullptr;
+	}
+
+	// Same rule, same window: the state-machine graph's preview controller pins
+	// one animation asset per clip its def names, and those handles must go back
+	// before Zenith_AssetRegistry::Shutdown force-deletes what they point at.
+	if (m_pxAnimStateMachinePanel != nullptr)
+	{
+		m_pxAnimStateMachinePanel->Shutdown();
+		delete m_pxAnimStateMachinePanel;
+		m_pxAnimStateMachinePanel = nullptr;
 	}
 
 	// Reset editor camera state
@@ -965,6 +989,10 @@ void Zenith_Editor::Render()
 	const bool bEditorPaused = (m_xEditorState.m_eEditorMode == EditorMode::Paused);
 	const float fAnimDt = (bEditorPaused || m_pxFrame == nullptr) ? 0.0f : m_pxFrame->GetDt();
 	Zenith_EditorPanel_Animation::Instance().Render(fAnimDt);
+	// The state-machine graph takes the SAME dt, and for the same reason: its
+	// preview ticks a live state machine, which must freeze while the editor is
+	// Paused exactly as the dope sheet's clip preview does.
+	Zenith_EditorPanel_AnimStateMachine::Instance().Render(fAnimDt);
 	if (m_pxTerrainEditor != nullptr)
 	{
 		Zenith_EditorPanelTerrainEditor::Render(*m_pxTerrainEditor, m_xEditorState.m_xPanels.m_bShowTerrainEditor);

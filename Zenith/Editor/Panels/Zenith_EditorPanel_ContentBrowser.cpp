@@ -7,12 +7,13 @@
 
 #include "Zenith_EditorPanel_ContentBrowser.h"
 #include "Zenith_EditorPanel_GraphEditor.h"
+#include "Zenith_EditorPanel_AnimStateMachine.h"
 #include "Editor/Zenith_EditorActions.h"
 #include "Editor/Zenith_EditorUI.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
-#include "AssetHandling/Zenith_AnimatorControllerAsset.h"   // WU-6.2 double-click probe
+#include "AssetHandling/Zenith_AnimatorControllerAsset.h"   // .zanimctrl type badge + WU-6.5 open
 #include "AssetHandling/Zenith_BoneMaskAsset.h"             // WU-6.2 double-click probe
 #include "FileAccess/Zenith_FileAccess.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
@@ -755,26 +756,16 @@ void HandleEntryDoubleClickOpen(const ContentBrowserEntry& xEntry)
 	}
 	else if (xEntry.m_strExtension == ZENITH_ANIMCTRL_EXT)
 	{
-		// ★ THERE IS NO ANIMATOR-CONTROLLER PANEL YET — WU-6.5 builds it. The entry
-		// is already SELECTED by the click that preceded this double-click, so the
-		// useful thing left to do is prove the file parses and say what is in it.
-		// Loading it here is not busywork: a .zanimctrl that fails its envelope
+		// WU-6.5: the state-machine graph now owns this file type. OpenAsset
+		// reports its own refusal (and shows the window either way, because every
+		// refusal has a UI answer), so this branch does not second-guess it — but
+		// it does log a failure, because a .zanimctrl that fails its envelope
 		// check is otherwise invisible until something plays it.
 		const std::string strAssetPath = Zenith_AssetRegistry::NormalizeAssetPath(xEntry.m_strFullPath);
-		const Zenith_AnimatorControllerAsset* pxController =
-			Zenith_AssetRegistry::GetView<Zenith_AnimatorControllerAsset>(strAssetPath);
-		if (pxController != nullptr)
+		if (!Zenith_EditorPanel_AnimStateMachine::Instance().OpenAsset(strAssetPath))
 		{
-			Zenith_Log(LOG_CATEGORY_ANIMATION,
-				"[ContentBrowser] %s: %u clip(s), %u layer(s), top-level state machine: %s. (No editor panel yet — WU-6.5.)",
-				strAssetPath.c_str(),
-				pxController->GetDef().GetClipPaths().GetSize(),
-				pxController->GetDef().GetLayerCount(),
-				pxController->GetDef().HasStateMachineDef() ? "yes" : "no");
-		}
-		else
-		{
-			Zenith_Error(LOG_CATEGORY_ANIMATION, "[ContentBrowser] %s did not load as a " ZENITH_ANIMCTRL_EXT, strAssetPath.c_str());
+			Zenith_Error(LOG_CATEGORY_ANIMATION, "[ContentBrowser] %s did not open as a " ZENITH_ANIMCTRL_EXT,
+				strAssetPath.c_str());
 		}
 	}
 	else if (xEntry.m_strExtension == ZENITH_ANIMMASK_EXT)

@@ -12,6 +12,7 @@
 #include "Core/Zenith_EditorWindowNames.h"
 
 #include "Panels/Zenith_EditorPanel_Animation.h"
+#include "Panels/Zenith_EditorPanel_AnimStateMachine.h"
 #include "Panels/Zenith_EditorPanel_Memory.h"
 #include "Panels/Zenith_EditorPanel_RenderGraph.h"
 #include "Panels/Zenith_EditorPanel_VariantEditor.h"
@@ -255,6 +256,10 @@ void Zenith_Editor::RenderViewMenu()
 	// state (document, session, view, rects) and a flag kept somewhere else is
 	// the seam a second dope sheet would have to unpick first.
 	ImGui::MenuItem(szEDITOR_WINDOW_ANIMATION_EDITOR, nullptr, &Zenith_EditorPanel_Animation::Instance().ShowFlag());
+	// Same storage rule as the dope sheet: the flag lives on the panel object, not
+	// in Zenith_EditorPanelVisibility.
+	ImGui::MenuItem(szEDITOR_WINDOW_ANIM_STATE_MACHINE, nullptr,
+		&Zenith_EditorPanel_AnimStateMachine::Instance().ShowFlag());
 
 #if ZENITH_MEMORY_TRACKING_FULL
 	if (ImGui::MenuItem("Memory Profiler", nullptr, Zenith_EditorPanelMemory::IsVisible()))

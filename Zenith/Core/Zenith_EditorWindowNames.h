@@ -28,6 +28,10 @@ constexpr const char* szEDITOR_WINDOW_GRAPH_EDITOR     = "Graph Editor";
 // would dock nothing and the window would silently float. The panel shows both
 // in its toolbar instead.
 constexpr const char* szEDITOR_WINDOW_ANIMATION_EDITOR = "Animation Editor";
+// The animator-controller state-machine graph (WU-6.5). ★ Same rule as the dope
+// sheet above: the title carries NO dirty marker and no asset name, because
+// DockBuilderDockWindow hashes the whole string. Both are in the toolbar.
+constexpr const char* szEDITOR_WINDOW_ANIM_STATE_MACHINE = "Animator State Machine";
 constexpr const char* szEDITOR_WINDOW_MEMORY_PROFILER  = "Memory Profiler";
 constexpr const char* szEDITOR_WINDOW_RENDER_GRAPH     = "Render Graph";
 constexpr const char* szEDITOR_WINDOW_VARIANT_EDITOR   = "Variant Editor";

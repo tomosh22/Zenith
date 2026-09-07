@@ -335,6 +335,48 @@ enum class Zenith_EditorActionType
 	ANIM_POSE_SET_AUTO_KEY,
 	ANIM_POSE_EXPECT_BONE_LOCAL_ROTATION,	// END of the contiguous ANIM_POSE range (see ANIM_POSE_SELECT_BONE)
 
+	// Animator-controller STATE MACHINE authoring (WU-6.5). A THIRD animation
+	// block rather than more members of either above, for the reason the second
+	// one exists: appending into ANIM_POSE would move
+	// ANIM_POSE_EXPECT_BONE_LOCAL_ROTATION, which is the upper bound BOTH the
+	// router's range test and the header's static_assert compare against, and
+	// which `Automation, AnimPoseEnumBlockIsContiguous` pins by position.
+	//
+	// Each verb performs EXACTLY what one of Zenith_EditorPanel_AnimStateMachine's
+	// Action_* twins performs — the same call the panel's own mouse handler ends
+	// in — so an authored recipe and a human's gesture cannot diverge. The two
+	// EXPECT_* verbs are ASSERTIONS rather than mutations: they are what makes a
+	// recipe fail at the step that is wrong instead of somewhere downstream.
+	//
+	// NOTE: this block must stay CONTIGUOUS (ExecuteAction routes the whole range
+	// to ExecuteAnimStateMachineAction by a pair of comparisons against its first
+	// and last member).
+	ANIM_SM_OPEN,
+	ANIM_SM_OPEN_FRESH,
+	ANIM_SM_CLOSE,
+	ANIM_SM_SELECT_LAYER,
+	ANIM_SM_ADD_CLIP_PATH,
+	ANIM_SM_ADD_STATE,
+	ANIM_SM_REMOVE_STATE,
+	ANIM_SM_RENAME_STATE,
+	ANIM_SM_SET_DEFAULT_STATE,
+	ANIM_SM_SET_STATE_CLIP,
+	ANIM_SM_ADD_TRANSITION,
+	ANIM_SM_REMOVE_TRANSITION,
+	ANIM_SM_SET_TRANSITION_DURATION,
+	ANIM_SM_SET_TRANSITION_EXIT_TIME,
+	ANIM_SM_SET_TRANSITION_INTERRUPTIBLE,
+	ANIM_SM_ADD_CONDITION,
+	ANIM_SM_REMOVE_CONDITION,
+	ANIM_SM_ADD_PARAMETER,
+	ANIM_SM_REMOVE_PARAMETER,
+	ANIM_SM_UNDO,
+	ANIM_SM_REDO,
+	ANIM_SM_SAVE,
+	ANIM_SM_APPLY,
+	ANIM_SM_EXPECT_STATE_COUNT,
+	ANIM_SM_EXPECT_DEFAULT_STATE,	// END of the contiguous ANIM_SM range (see ANIM_SM_OPEN)
+
 	// NavMesh. Deliberately NOT appended to the Terrain block above, which is
 	// routed by a range comparison: a standalone action sits outside every
 	// range and reaches ExecuteAction's own switch, which is what a
@@ -386,6 +428,13 @@ static_assert(static_cast<int>(Zenith_EditorActionType::ANIM_EXPECT_SELECTED_COU
 static_assert(static_cast<int>(Zenith_EditorActionType::ANIM_POSE_EXPECT_BONE_LOCAL_ROTATION) -
 	static_cast<int>(Zenith_EditorActionType::ANIM_POSE_SELECT_BONE) == 4,
 	"the ANIM_POSE block must stay CONTIGUOUS and five wide — ExecuteAction routes it by range");
+// And the same pin for the ANIM_SM block (WU-6.5), the third animation range and
+// the youngest block in the enum. Width here; the
+// `Automation, AnimSmEnumBlockIsContiguous` unit pins each member's POSITION and
+// both boundaries.
+static_assert(static_cast<int>(Zenith_EditorActionType::ANIM_SM_EXPECT_DEFAULT_STATE) -
+	static_cast<int>(Zenith_EditorActionType::ANIM_SM_OPEN) == 24,
+	"the ANIM_SM block must stay CONTIGUOUS and twenty-five wide — ExecuteAction routes it by range");
 
 //-----------------------------------------------------------------------------
 // Action Data
@@ -1057,6 +1106,102 @@ void AddStep_AnimSetAutoKey(bool bEnabled);
 	// a file types it in the order the file has it.
 void AddStep_AnimExpectBoneLocalRotation(int iBoneIndex, float fX, float fY, float fZ, float fW,
 	float fTolerance);
+
+	//--------------------------------------------------------------------------
+	// Animator-controller STATE MACHINE authoring (WU-6.5), the ANIM_SM_* block.
+	//
+	// One step per atomic Zenith_EditorPanel_AnimStateMachine Action_*, each
+	// routed through a checked wrapper that asserts on `false` — an authoring
+	// typo (a state name the machine does not have, a transition index past the
+	// end, a condition naming an undeclared parameter) fires at BOOT on the step
+	// that is wrong, rather than leaving a controller that is quietly not what
+	// the recipe said.
+	//
+	// ★ A STATE IS ADDRESSED BY NAME AND A TRANSITION BY INDEX, which is the
+	// opposite pairing to the dope-sheet verbs (bone NAME + key INDEX) and is not
+	// an inconsistency. A state name IS the machine's key — it is what a
+	// transition targets and what survives a delete-and-undo — while a transition
+	// has no identity at all: it is a struct in a vector, and its index is the
+	// only thing anyone can type. Everything that renumbers those indices (an
+	// add, a remove) is a step of its own, so a recipe's indices are readable in
+	// source order.
+	//
+	// ★ AN EMPTY szFromState ADDRESSES THE MACHINE'S ANY-STATE LIST, on every
+	// transition verb. Dropping that case would leave any-state transitions
+	// unreachable from a recipe, and they are the ones a "hit reaction" graph is
+	// built out of.
+	//
+	// A typical authoring sequence:
+	//   AnimSmOpenFresh("game:Anim/Player.zanimctrl") ->
+	//   AnimSmAddClipPath("game:Anim/Idle.zanim") -> AnimSmAddClipPath(".../Walk.zanim") ->
+	//   AnimSmAddParameter("Speed", 0, 0.0f) ->
+	//   AnimSmAddState("Idle") -> AnimSmAddState("Walk") ->
+	//   AnimSmSetStateClip("Idle", "Idle") -> AnimSmSetStateClip("Walk", "Walk") ->
+	//   AnimSmSetDefaultState("Idle") -> AnimSmAddTransition("Idle", "Walk") ->
+	//   AnimSmAddCondition("Idle", 0, "Speed", 2 /* Greater */, 0.1f) -> AnimSmSave().
+	//--------------------------------------------------------------------------
+
+	// Open an EXISTING .zanimctrl, SHOWING the window (a hidden panel draws
+	// nothing and records no rects, so every later step would be working blind).
+void AddStep_AnimSmOpen(const char* szAssetPath);
+	// Open an EMPTY controller TARGETED at that path — the regenerate-from-
+	// scratch entry point, the twin of AddStep_GraphOpenFresh. Deliberately NOT a
+	// fallback inside AnimSmOpen: "the file was not there" and "the path was
+	// typed wrong" are the same observation, and a silent fresh start on a typo
+	// authors a whole controller into a path nothing reads.
+void AddStep_AnimSmOpenFresh(const char* szAssetPath);
+void AddStep_AnimSmClose();	// forced close; unsaved edits are discarded
+
+	// iLayerId < 0 selects the def's TOP-LEVEL machine; otherwise it is a stable
+	// LAYER ID (never an index — inserting a layer renumbers every index above
+	// it, and WU-6.3 exists because of exactly that).
+void AddStep_AnimSmSelectLayer(int iLayerId);
+
+void AddStep_AnimSmAddClipPath(const char* szClipAssetPath);
+
+void AddStep_AnimSmAddState(const char* szStateName);
+void AddStep_AnimSmRemoveState(const char* szStateName);
+void AddStep_AnimSmRenameState(const char* szOldName, const char* szNewName);
+void AddStep_AnimSmSetDefaultState(const char* szStateName);
+	// szClipName is the CLIP's NAME (what Flux_AnimationClipCollection keys on),
+	// not its file path. An EMPTY name clears the state's tree.
+void AddStep_AnimSmSetStateClip(const char* szStateName, const char* szClipName);
+
+void AddStep_AnimSmAddTransition(const char* szFromState, const char* szToState);
+void AddStep_AnimSmRemoveTransition(const char* szFromState, int iIndex);
+void AddStep_AnimSmSetTransitionDuration(const char* szFromState, int iIndex, float fSeconds);
+	// fNormalizedExitTime is a [0,1] fraction of the SOURCE state's clip, and is
+	// ignored when bHasExitTime is false — the pair is one decision, because
+	// m_fExitTime is only read when m_bHasExitTime.
+void AddStep_AnimSmSetTransitionExitTime(const char* szFromState, int iIndex,
+	bool bHasExitTime, float fNormalizedExitTime);
+void AddStep_AnimSmSetTransitionInterruptible(const char* szFromState, int iIndex, bool bInterruptible);
+	// iCompareOp is a Flux_TransitionCondition::CompareOp (0 Equal, 1 NotEqual,
+	// 2 Greater, 3 Less, 4 GreaterEqual, 5 LessEqual), passed as an int so this
+	// header needs neither the state-machine nor the panel header. The
+	// condition's PARAMETER TYPE is taken from the DECLARATION, so the parameter
+	// must already exist.
+void AddStep_AnimSmAddCondition(const char* szFromState, int iIndex,
+	const char* szParameterName, int iCompareOp, float fThreshold);
+void AddStep_AnimSmRemoveCondition(const char* szFromState, int iIndex, int iConditionIndex);
+
+	// iType is a Flux_AnimationParameters::ParamType (0 Float, 1 Int, 2 Bool,
+	// 3 Trigger). fDefault is read as the declared type's default.
+void AddStep_AnimSmAddParameter(const char* szName, int iType, float fDefault);
+void AddStep_AnimSmRemoveParameter(const char* szName);
+
+void AddStep_AnimSmUndo();
+void AddStep_AnimSmRedo();
+void AddStep_AnimSmSave();
+	// Hands the working def to the preview controller through
+	// ReloadFromControllerDef (D45), so the current state, the matched parameter
+	// values and the layer weights survive the edit. Builds the preview when
+	// there is not one yet.
+void AddStep_AnimSmApply();
+
+	// ---- assertion steps -----------------------------------------------------
+void AddStep_AnimSmExpectStateCount(int iExpectedCount);
+void AddStep_AnimSmExpectDefaultState(const char* szStateName);
 
 	//--------------------------------------------------------------------------
 	// Scene Loading Step Helpers

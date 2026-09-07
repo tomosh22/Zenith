@@ -3413,16 +3413,106 @@ ZENITH_TEST(Automation, AnimPoseEnumBlockIsContiguous)
 	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_POSE_EXPECT_BONE_LOCAL_ROTATION) - iFirst, 4,
 		"ANIM_POSE_EXPECT_BONE_LOCAL_ROTATION must END the block — the router compares against it");
 
-	// Both boundaries, from this side. SET_NAVMESH_ASSET is a STANDALONE verb
-	// that has to keep reaching ExecuteAction's own switch: swallowed into this
-	// range it would land in ExecuteAnimationPoseAction's `default:` assert at
-	// boot, which is a run-time failure for a compile-time mistake.
+	// Both boundaries, from this side.
 	ZENITH_ASSERT_EQ(iFirst - static_cast<int>(Zenith_EditorActionType::ANIM_EXPECT_SELECTED_COUNT), 1,
 		"the ANIM_POSE block must start immediately after the ANIM range ends");
-	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::SET_NAVMESH_ASSET) -
+	// ★ THIS LINE USED TO NAME SET_NAVMESH_ASSET, and it moved with WU-6.5 rather
+	// than being deleted — exactly as it moved off SET_NAVMESH_ASSET's neighbour
+	// once before. What it pins is that the ANIM_POSE range ENDS where the router
+	// thinks it does; the successor being a third animation block instead of the
+	// navmesh verb does not weaken that. SET_NAVMESH_ASSET's own "must stay
+	// outside every range" is pinned by AnimSmEnumBlockIsContiguous below, which
+	// is where its neighbour now is.
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_SM_OPEN) -
 		static_cast<int>(Zenith_EditorActionType::ANIM_POSE_EXPECT_BONE_LOCAL_ROTATION), 1,
-		"SET_NAVMESH_ASSET must sit immediately after the ANIM_POSE range — inside it, the "
-		"router would hand it to ExecuteAnimationPoseAction's default: assert");
+		"the ANIM_SM block must start immediately after the ANIM_POSE range ends — inside it, the "
+		"router would hand a state-machine verb to ExecuteAnimationPoseAction's default: assert");
+}
+
+ZENITH_TEST(Automation, AnimSmEnumBlockIsContiguous)
+{
+	// The youngest block (WU-6.5), pinned the way every block before it is: the
+	// header static_asserts the WIDTH, and this pins each member's POSITION so a
+	// reorder that preserves the width fails here naming the member that moved
+	// rather than at boot inside a neighbour's `default:` assert.
+	const int iFirst = static_cast<int>(Zenith_EditorActionType::ANIM_SM_OPEN);
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_SM_OPEN_FRESH) - iFirst, 1,
+		"ANIM_SM_OPEN_FRESH must be the second member of the block");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_SM_CLOSE) - iFirst, 2,
+		"ANIM_SM_CLOSE must be the third member of the block");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_SM_ADD_STATE) - iFirst, 5,
+		"ANIM_SM_ADD_STATE must be the sixth member of the block");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_SM_ADD_CONDITION) - iFirst, 15,
+		"ANIM_SM_ADD_CONDITION must be the sixteenth member of the block");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_SM_APPLY) - iFirst, 22,
+		"ANIM_SM_APPLY must be the twenty-third member of the block");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_SM_EXPECT_DEFAULT_STATE) - iFirst, 24,
+		"ANIM_SM_EXPECT_DEFAULT_STATE must END the block — the router compares against it");
+
+	// Both boundaries. SET_NAVMESH_ASSET is a STANDALONE verb that has to keep
+	// reaching ExecuteAction's own switch: swallowed into this range it would
+	// land in ExecuteAnimStateMachineAction's `default:` assert at boot, which is
+	// a run-time failure for a compile-time mistake.
+	ZENITH_ASSERT_EQ(iFirst - static_cast<int>(Zenith_EditorActionType::ANIM_POSE_EXPECT_BONE_LOCAL_ROTATION), 1,
+		"the ANIM_SM block must start immediately after the ANIM_POSE range ends");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::SET_NAVMESH_ASSET) -
+		static_cast<int>(Zenith_EditorActionType::ANIM_SM_EXPECT_DEFAULT_STATE), 1,
+		"SET_NAVMESH_ASSET must sit immediately after the ANIM_SM range — inside it, the "
+		"router would hand it to ExecuteAnimStateMachineAction's default: assert");
+}
+
+ZENITH_TEST(Automation, AnimSmStepsPackTheirPayloads)
+{
+	// The queue is drained MUCH later than it is built, so every argument has to
+	// survive as an OWNED copy in the action struct — a caller may legitimately
+	// pass a pointer into a stack buffer built in a loop. This asserts the
+	// packing contract the executor reads back; the two halves are written from
+	// the same comment block in the .cpp, and this is what stops them drifting.
+	Zenith_EditorAutomation& xAuto = g_xEngine.EditorAutomation();
+	xAuto.Reset();
+
+	xAuto.AddStep_AnimSmOpenFresh("game:Anim/Probe.zanimctrl");
+	xAuto.AddStep_AnimSmAddParameter("Speed", 0 /* Float */, 0.25f);
+	xAuto.AddStep_AnimSmSetStateClip("Idle", "IdleClip");
+	xAuto.AddStep_AnimSmAddTransition("Idle", "Walk");
+	xAuto.AddStep_AnimSmAddCondition("Idle", 3, "Speed", 2 /* Greater */, 0.1f);
+	xAuto.AddStep_AnimSmSetTransitionExitTime("Idle", 1, true, 0.8f);
+	xAuto.AddStep_AnimSmSelectLayer(-1);
+	xAuto.AddStep_AnimSmExpectStateCount(2);
+
+	ZENITH_ASSERT_EQ(xAuto.m_axActions.GetSize(), 8u, "eight steps queued");
+
+	const Zenith_EditorAction& xOpen = xAuto.m_axActions.Get(0);
+	ZENITH_ASSERT_TRUE(xOpen.m_eType == Zenith_EditorActionType::ANIM_SM_OPEN_FRESH, "step 0 is ANIM_SM_OPEN_FRESH");
+	ZENITH_ASSERT_STREQ(xOpen.m_szArg1.c_str(), "game:Anim/Probe.zanimctrl",
+		"the asset path is OWNED by the action, not aliased");
+
+	const Zenith_EditorAction& xParam = xAuto.m_axActions.Get(1);
+	ZENITH_ASSERT_EQ(xParam.m_aiArgs[0], 0, "the parameter TYPE rides aiArgs[0]");
+	ZENITH_ASSERT_EQ_FLOAT(xParam.m_afArgs[0], 0.25f, 1e-6f, "the parameter DEFAULT rides afArgs[0]");
+
+	const Zenith_EditorAction& xClip = xAuto.m_axActions.Get(2);
+	ZENITH_ASSERT_STREQ(xClip.m_szArg1.c_str(), "Idle", "szArg1 is the state name");
+	ZENITH_ASSERT_STREQ(xClip.m_szArg2.c_str(), "IdleClip", "szArg2 is the clip NAME, not a path");
+
+	const Zenith_EditorAction& xTrans = xAuto.m_axActions.Get(3);
+	ZENITH_ASSERT_STREQ(xTrans.m_szArg2.c_str(), "Walk", "szArg2 is the transition TARGET");
+
+	const Zenith_EditorAction& xCond = xAuto.m_axActions.Get(4);
+	ZENITH_ASSERT_EQ(xCond.m_aiArgs[0], 3, "aiArgs[0] is the transition index");
+	ZENITH_ASSERT_EQ(xCond.m_aiArgs[1], 2, "aiArgs[1] is the compare op");
+	ZENITH_ASSERT_STREQ(xCond.m_szArg2.c_str(), "Speed", "szArg2 is the condition's parameter");
+	ZENITH_ASSERT_EQ_FLOAT(xCond.m_afArgs[0], 0.1f, 1e-6f, "afArgs[0] is the threshold");
+
+	const Zenith_EditorAction& xExit = xAuto.m_axActions.Get(5);
+	ZENITH_ASSERT_TRUE(xExit.m_bArg, "bArg carries has-exit-time");
+	ZENITH_ASSERT_EQ_FLOAT(xExit.m_afArgs[0], 0.8f, 1e-6f, "afArgs[0] carries the normalized exit time");
+
+	const Zenith_EditorAction& xLayer = xAuto.m_axActions.Get(6);
+	ZENITH_ASSERT_EQ(xLayer.m_aiArgs[0], -1,
+		"a NEGATIVE layer id is how a recipe names the TOP-LEVEL machine, which has no id to type");
+
+	xAuto.Reset();
 }
 
 ZENITH_TEST(Automation, AnimStepsPackTheirPayloads)

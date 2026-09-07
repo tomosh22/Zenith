@@ -14,6 +14,8 @@ ImGui-based scene editor for creating, editing, and testing game content. Active
 - `Zenith_EditorCommands.h/cpp` - The undo command layer: `Zenith_EditorEntitySnapshot` (a serialised entity subtree that can be destroyed and rebuilt), `Zenith_UndoCommand_EntityLifetime` (delete / create / duplicate), `Zenith_UndoCommand_EntityState` (rename / enable / reparent), `Zenith_UndoCommand_ComponentBytes` (add / remove / edit ONE component by serialised payload), `Zenith_UndoCommand_Composite` (a multi-selection as one step), and `Zenith_EditorInspectorUndoTracker` (turns any Properties-panel edit into a command). Tests in `Zenith_EditorCommands.Tests.inl`
 - `Zenith_EditorUI.h/cpp` - Look and feel: the embedded Roboto font (`Zenith_EditorFontData.generated.h`) at a DPI-aware base size, the theme + palette (sRGB values converted to linear for the sRGB swapchain), the play-mode tint, a vector icon set drawn straight into ImDrawLists, the styled widgets (icon buttons, search box, badges, the inspector component header), and the small helpers every panel shares rather than copying (`ContainsCaseInsensitive`, the `SmoothedFrameMs` frame-time filter)
 - `Zenith_AnimationDocument.h/cpp` - The editable WORKING COPY of one `.zanim`, and its only writer: a deep copy of the asset's clip, a STABLE per-key/per-event id (an index is not an identity — retiming reorders the track), every mutation as one undoable verb, a content-hash check for external modification, and D21's refusal to edit a GENERATED clip in place plus the `PromoteToAuthoredOverride` escape hatch. Tests in `Zenith_AnimationDocument.Tests.inl`
+- `Zenith_AnimControllerDocument.h/cpp` - The editable WORKING COPY of one `.zanimctrl`, and its only writer: a deep copy of the asset's `Flux_AnimatorControllerDef`, a machine SELECTOR (the top-level machine or a stable LAYER ID — never a layer index), every mutation as one undoable verb, a content-hash check for external modification, and the two things the def's own API does not do (a removed state's INBOUND transitions, a renamed state's referrers). Tests in `Zenith_AnimControllerDocument.Tests.inl`
+- `Zenith_EditorAnimCtrlCommands.h/cpp` - That document's OWN undo stack (not the shared editor one, and not the clip document's): state add / remove / rename, default state, state clip, node position, a whole-transition-LIST snapshot, a whole-parameter-TABLE snapshot, the clip-path list, and the compound. Tests in `Zenith_EditorAnimCtrlCommands.Tests.inl`
 - `Zenith_EditorAnimCommands.h/cpp` - The document's OWN undo stack (not the shared editor one — a scene load clears that, and an animation edit has nothing to do with a scene): key insert / remove / retime / value, duration, and the three event commands. Tests in `Zenith_EditorAnimCommands.Tests.inl`
 - `Zenith_AnimationPreviewSession.h/cpp` - One panel's live preview of one clip: its OWN controller, skeleton instance and clock (D30 — never an entity's, which would double-tick it), a deep copy of the clip, per-clip rig resolution + remembered override (D31), and the shared preview view slot through `Flux_PreviewSlotArbiter` (D32). Tests in `Zenith_AnimationPreviewSession.Tests.inl`
 - `Zenith_AnimTimelineMath.h/cpp` - The PURE seconds<->pixels mapping the dope sheet, its ruler and its events row all share: zoom clamps, the inverse, delta conversions, visibility, frame snapping, zoom-about-a-pixel, view clamping, fit-to-window and the ruler tick ladder. Not one line of UI, so every timeline defect is catchable headless. Tests in `Zenith_AnimTimelineMath.Tests.inl`
@@ -63,6 +65,7 @@ ImGui-based scene editor for creating, editing, and testing game content. Active
 - `Zenith_Editor.Tests.inl` / `Zenith_EditorAutomation.Tests.inl` - Unit tests for the editor controller and the automation step queue (included into the unit-test TU)
 - `Panels/` - Panel implementations (Animation, Console, ContentBrowser, GraphEditor, Hierarchy, MaterialEditor, Memory, Properties, RenderGraph, StatusBar, TerrainEditor, Toolbar, VariantEditor, Viewport). Toolbar and StatusBar are strips drawn inside the dockspace host window, not dockable windows
 - `Panels/Zenith_EditorPanel_Animation.h/cpp` (+ `_Render.cpp`, `_Ops.cpp`) - The animation DOPE SHEET over one `Zenith_AnimationDocument` and one `Zenith_AnimationPreviewSession`. A CLASS, not a pile of file statics (see "Animation Dope Sheet Panel" below); the `_Render` TU holds the drawing half. Tests in `Zenith_EditorPanel_Animation.Tests.inl`
+- `Panels/Zenith_EditorPanel_AnimStateMachine.h/cpp` (+ `_Ops.cpp`, `_Render.cpp`) - The animator-controller STATE-MACHINE GRAPH over one `Zenith_AnimControllerDocument` (see "Animator State Machine Panel" below). A CLASS with undo, like the dope sheet and unlike the graph editor. Tests in `Zenith_EditorPanel_AnimStateMachine.Tests.inl`
 - `../Core/Zenith_ImGuiWidgets.h/cpp` - Layer-0 ImGui widgets (`Vec3Field`, `PropertyLabel`) that component inspectors in EntityComponent may use without including `Editor/`
 - `../Core/Zenith_EditorFontHook.h` - `Zenith_EditorFonts_Load()`, called by the Vulkan and Null backends right after `ImGui::CreateContext` so the editor font is registered before either backend builds the atlas (the Null backend's legacy atlas is locked at the first NewFrame)
 
@@ -205,7 +208,10 @@ ImGui docking branch provides central dock space with persistent layout. Panels 
 
 **View Menu:**
 - Toggle individual panels on/off
-- Animation State Machine Editor (currently disabled)
+- Animation Editor (the dope sheet) and Animator State Machine — both flags live
+  on their panel objects, not in `Zenith_EditorPanelVisibility`, because each
+  panel owns every other piece of its own state and a flag kept somewhere else is
+  the seam a second instance would have to unpick first
 
 ### Toolbar strip
 
@@ -314,7 +320,8 @@ Unreal-style asset browser:
   badge (TEX / MAT / SCN ...), live thumbnails for textures, ellipsised names;
   the detail view is a table with an icon column
 - **Double-click** opens scenes (through the unsaved-changes prompt),
-  materials (Material Editor) and behaviour graphs (Graph Editor)
+  materials (Material Editor), behaviour graphs (Graph Editor) and
+  `.zanimctrl` animator controllers (Animator State Machine)
 - **Drag-Drop:** Supports Texture, Mesh, Material, Prefab, Animation, Graph and
   generic file payloads (the drag preview shows the type icon)
 - **Context menus:** Open / Open Additive (scenes), Duplicate, Delete, Export to
@@ -510,6 +517,131 @@ simulated input deterministic. This is what lets automated tests drive the
 editor with real clicks/keys — flagship proofs: `Test_GraphEditorLiveAuthoring`
 and `Test_GraphEditorScreenshotTour` (DP suite, windowed).
 
+### Animator State Machine Panel (`Panels/Zenith_EditorPanel_AnimStateMachine`)
+
+The node graph for `.zanimctrl` animator controllers (the runtime is
+`Flux/MeshAnimation/` — see its CLAUDE.md → *The animator controller asset* and
+*Hot reload*). One window over ONE `Zenith_AnimControllerDocument`:
+
+- **A machine PICKER, not a layer list.** A `Flux_AnimatorControllerDef` holds an
+  optional top-level machine AND N layers, each owning its own, and every layered
+  game reaches its graph through a layer. The dropdown chooses which machine the
+  canvas shows; the layer LIST and its weights are WU-7.2. The selector is a
+  stable **layer ID**, never an index — inserting a layer renumbers every index
+  above it (WU-6.3), and `uANIMCTRL_TOP_LEVEL_MACHINE` is the def's own machine.
+- **Canvas** — states as boxes, transitions as lines with a clickable midpoint
+  marker carrying the condition count. Drag a node to move it (one undo step, and
+  a click that never moved records nothing); **Ctrl+drag** from one node onto
+  another adds a transition; right-click a node for Set As Default / Delete.
+- **Side panel** — the parameter DECLARATIONS (add / remove, with the LIVE value
+  beside each one while a preview is running) and the def's clip-path list.
+- **Inspector** — the selected state (its clip, from the def's own clip list) or
+  the selected transition (duration, exit time, interruptible, and its condition
+  list).
+
+**★ NODE POSITIONS ARE AUTHORED DATA AND NEED NO SIDE-CAR.**
+`Flux_AnimationState::m_xEditorPosition` is already a *serialized* field of the
+`.zanimctrl` (it has been since before this panel existed, with a zero placeholder
+written in non-tools builds), so a laid-out graph survives a round trip with no
+`Zenith_EditorPrefs` entry and no second file to keep in step — and a node drag is
+therefore an undoable EDIT that dirties the document. A state the def places at
+exactly **(0, 0)** is treated as *never placed* and gets a slot in an automatic
+grid the panel computes; that grid is **not written back**, because doing so on
+OPEN would dirty a document nobody edited and rewrite a tracked asset for a
+cosmetic reason. `Action_SetStatePosition` nudges a drop at the origin off it, so
+one value cannot mean two things.
+
+**★ A STATE'S TREE IS A SINGLE CLIP LEAF HERE, AND ANYTHING ELSE IS REFUSED BY
+NAME.** `GetStateTreeKind` answers EMPTY / SINGLE_CLIP / COMPLEX, and a COMPLEX
+state (a blend space, a composite, a container with a sub-machine) shows
+`BlendTreeRefusalText()` — *"edited in the blend-tree editor (WU-7.3)"* — on its
+node and in the inspector. Assigning a clip to one would delete the whole
+sub-graph and report success.
+
+**★ LIVE HIGHLIGHTING RUNS ON A PANEL-OWNED PREVIEW CONTROLLER, NOT ON THE
+SELECTED ENTITY'S, AND THAT IS A PREMISE CORRECTION.** The obvious design is
+"highlight when the selection holds a `Zenith_AnimatorComponent` built from THIS
+asset path" — but **there is no path to compare**:
+`Zenith_AnimatorComponent::LoadControllerAsset` acquires the asset, calls
+`BuildFromControllerDef` and records nothing, and the controller keeps clip
+handles but no controller-asset reference. Matching on anything else available (a
+layer count, a state name) would ring a *different* character's graph and look
+right. So the panel builds its own controller from the working def and ticks it.
+
+**★ THE PREVIEW TICKS THE MACHINE, NOT THE CONTROLLER, AND NEEDS NO RIG.**
+`Flux_AnimationController::Update` returns on its first line without a
+`Flux_SkeletonInstance`, so the panel drives the selected machine's own `Update`
+against a **zero-bone `Zenith_SkeletonAsset`** it owns. Transition evaluation,
+exit times, trigger consumption and every blend-tree playhead advance exactly as
+they do in a game; only the POSE is empty, which a state-machine graph does not
+draw. That is what makes the highlight — and its unit — work headless with no
+skeleton asset on disk.
+
+**★ APPLY IS A RELOAD, NOT A REBUILD (D45).** It hands the working def to
+`Flux_AnimationController::ReloadFromControllerDef`, which carries the current
+state (by NAME), the normalized time (with its state), matched parameter values
+(by name AND type) and the layer weights (by layer ID) across the edit.
+`BuildFromControllerDef` is a demolition and would snap the graph to its default
+state at frame 0 — which is precisely what makes editing while playing useless.
+There is no direct-play preview here to re-arm; that is the dope sheet's, and it
+owns its own.
+
+**Operations live in `_Ops.cpp` and every one has a bool-returning `Action_*`
+twin** (`Action_SelectLayerMachine` / `AddState` / `RemoveState` / `RenameState` /
+`SetDefaultState` / `SetStateClip` / `SetStatePosition` / `AddTransition` /
+`RemoveTransition` / `SetTransitionDuration` / `SetTransitionExitTime` /
+`SetTransitionInterruptible` / `AddCondition` / `RemoveCondition` /
+`AddParameter` / `RemoveParameter` / `AddClipPath` / `RemoveClipPath` / `Undo` /
+`Redo` / `Save` / `Apply`, plus the preview verbs). The mouse handlers in
+`_Render.cpp` only translate input into those; the actions never read ImGui state.
+Every mutation goes through a `Zenith_AnimControllerDocument` verb, and the
+`AddStep_AnimSm*` automation family calls exactly the same twins.
+
+**★ AN ASSIGNMENT VERB RETURNS TRUE WHEN THE VALUE IS ALREADY IN PLACE; A
+CREATION RETURNS FALSE ON A DUPLICATE.** `SetDefaultState`, `SetStateClip`,
+`SetStatePosition` and the three `SetTransition*` verbs answer *"is the value what
+you asked for"* — asking for the value they already hold is the caller's intent
+SATISFIED, so they return true and push no undo entry. `AddState`,
+`Add/RemoveTransition`, `Add/RemoveCondition`, `Add/RemoveParameter` and
+`Add/RemoveClipPath` answer *"did I create/remove one"*, so a duplicate or a miss
+is a real refusal.
+
+This cost a red test and is worth stating rather than rediscovering.
+`Flux_AnimationStateMachineDef::AddState` makes the FIRST state of a machine its
+default, so the most natural authoring order in existence — `AddState("Idle")`,
+`AddState("Walk")`, `SetDefaultState("Idle")` — asks for a value that is already
+in place *every single time*. With the old "false means nothing changed" reading
+that asserted at boot under `AnimSmActionChecked` and read in a unit as "the entry
+point could not be set". **"One edit, one undo step" is unaffected and is the
+invariant to assert on**: a no-op is not an edit, so it contributes zero steps —
+the stack depth is the contract, the bool is not.
+
+It is a deliberate divergence from the dope sheet's `Action_SetAutoKey`, which
+reports "the value CHANGED" and therefore needs `ANIM_POSE_SET_AUTO_KEY` excluded
+from its checked wrapper by hand. Making the assignment family report
+satisfaction instead means `AnimSmActionChecked` covers **every** `ANIM_SM_*`
+verb with no exception list for a later verb to be forgotten from.
+
+**★ AN EMPTY from-state ADDRESSES THE MACHINE'S ANY-STATE LIST** on every
+transition verb and every automation step. Note the residual: those transitions
+are *editable* but are **not drawn on the canvas** — the edge pass walks states
+only — so an any-state graph authored here is currently inspected through the
+transition inspector rather than seen.
+
+**Hit rects and the off-screen contract** are the dope sheet's, verbatim, and for
+the same reason: `GetStateNodeRect` / `GetTransitionMidpointRect` /
+`GetCanvasRect` hand out only what was painted inside the canvas this frame, and
+judge it against the display bound **captured when the rect was recorded** rather
+than `ImGui::GetIO().DisplaySize` re-read at query time (which is (-1, -1) outside
+a frame, i.e. for every unit assertion). `WasCanvasDrawnLastFrame`,
+`GetRecordedDisplayWidth/Height`, `GetRenderedFrameCount` and `GetDrawnNodeCount`
+are what tell the four causes of a flat `false` apart.
+
+**The window title is the bare constant** `szEDITOR_WINDOW_ANIM_STATE_MACHINE` —
+same rule, same reason as the dope sheet: `DockBuilderDockWindow` hashes the whole
+string, so a decorated title would dock nothing. The dirty and
+changed-on-disk badges are in the toolbar.
+
 ### Every backend authors the same scene, and every publish is audited
 
 `Zenith_Editor::SaveActiveScene` — the one verb `AddStep_SaveScene` routes to, and
@@ -688,10 +820,24 @@ against its block's first and last member, so:
   payload contract every step's `AddStep_*` packs into.
 
 So every block carries a "must stay CONTIGUOUS" comment naming its first and last
-member. The youngest block (`GRASS_TYPES`) is additionally pinned twice — a
-`static_assert` on its width in `Zenith_EditorAutomation.h` and the
-`Automation, GrassTypesEnumBlockIsContiguous` unit test on each member's position
-plus both neighbouring boundaries.
+member. **Every block added since is pinned twice** — a `static_assert` on its
+WIDTH in `Zenith_EditorAutomation.h`, and a unit test on each member's POSITION
+plus both neighbouring boundaries, so a reorder that preserves the width fails
+naming the member that moved instead of at boot inside a neighbour's `default:`
+assert: `Automation, GrassTypesEnumBlockIsContiguous`,
+`… AnimEnumBlockIsContiguous`, `… AnimPoseEnumBlockIsContiguous` and
+`… AnimSmEnumBlockIsContiguous`.
+
+**Three ANIMATION ranges sit at the end of the enum, and they are three rather
+than one for a mechanical reason.** `ANIM_*` (WU-3.4, the dope sheet), `ANIM_POSE_*`
+(WU-4.3, the bone manipulator) and `ANIM_SM_*` (WU-6.5, the animator-controller
+state machine) each route to their own sub-executor, and each new family was
+APPENDED as its own block rather than added to the one before it — because
+appending into an existing block moves its LAST member, which is the upper bound
+both the router's range test and the header's `static_assert` compare against and
+which that block's unit pins by position. `SET_NAVMESH_ASSET` follows all three
+and must stay outside every range; `AnimSmEnumBlockIsContiguous` is where that is
+now pinned.
 
 ## Selection System
 

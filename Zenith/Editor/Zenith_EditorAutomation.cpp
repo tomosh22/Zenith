@@ -23,6 +23,7 @@
 #include "Editor/Panels/Zenith_EditorPanel_GraphEditor.h"
 #include "Editor/Panels/Zenith_EditorPanel_MaterialEditor.h"
 #include "Editor/Panels/Zenith_EditorPanel_Animation.h"
+#include "Editor/Panels/Zenith_EditorPanel_AnimStateMachine.h"
 #include "Flux/Flux_ModelInstance.h"
 #include "UI/Zenith_UI.h"
 #include "Flux/Particles/Flux_ParticleEmitterConfig.h"
@@ -870,6 +871,129 @@ void Zenith_EditorAutomation::AddStep_AnimRotateSelectedBoneWorld(float fAxisX, 
 	xAction.m_afArgs[1] = fAxisY;
 	xAction.m_afArgs[2] = fAxisZ;
 	xAction.m_afArgs[3] = fAngleDegrees;
+	m_axActions.PushBack(xAction);
+}
+
+// ---- Animator-controller STATE MACHINE steps (WU-6.5) ----
+// The payload contract for the ANIM_SM block, in one place so the executor reads
+// it from one place too:
+//   szArg1  — the asset path, the STATE NAME (empty = the any-state list) or the
+//             parameter name, depending on the verb
+//   szArg2  — the second name: a transition TARGET, a new state name, a clip
+//             name, or the condition's parameter name
+//   aiArgs[0] — the transition INDEX, the layer id, the parameter TYPE or the
+//               expected state count
+//   aiArgs[1] — the condition index
+//   afArgs[0] — the seconds / normalized exit time / threshold / default value
+//   bArg      — the boolean flag (has-exit-time, interruptible)
+
+void Zenith_EditorAutomation::AddStep_AnimSmOpen(const char* szAssetPath)      { Push(Zenith_EditorAutomation::m_axActions, ActionType::ANIM_SM_OPEN, szAssetPath); }
+void Zenith_EditorAutomation::AddStep_AnimSmOpenFresh(const char* szAssetPath) { Push(Zenith_EditorAutomation::m_axActions, ActionType::ANIM_SM_OPEN_FRESH, szAssetPath); }
+void Zenith_EditorAutomation::AddStep_AnimSmClose()                            { Push(Zenith_EditorAutomation::m_axActions, ActionType::ANIM_SM_CLOSE); }
+void Zenith_EditorAutomation::AddStep_AnimSmUndo()                             { Push(Zenith_EditorAutomation::m_axActions, ActionType::ANIM_SM_UNDO); }
+void Zenith_EditorAutomation::AddStep_AnimSmRedo()                             { Push(Zenith_EditorAutomation::m_axActions, ActionType::ANIM_SM_REDO); }
+void Zenith_EditorAutomation::AddStep_AnimSmSave()                             { Push(Zenith_EditorAutomation::m_axActions, ActionType::ANIM_SM_SAVE); }
+void Zenith_EditorAutomation::AddStep_AnimSmApply()                            { Push(Zenith_EditorAutomation::m_axActions, ActionType::ANIM_SM_APPLY); }
+
+void Zenith_EditorAutomation::AddStep_AnimSmAddClipPath(const char* szClipAssetPath) { Push(Zenith_EditorAutomation::m_axActions, ActionType::ANIM_SM_ADD_CLIP_PATH, szClipAssetPath); }
+void Zenith_EditorAutomation::AddStep_AnimSmAddState(const char* szStateName)        { Push(Zenith_EditorAutomation::m_axActions, ActionType::ANIM_SM_ADD_STATE, szStateName); }
+void Zenith_EditorAutomation::AddStep_AnimSmRemoveState(const char* szStateName)     { Push(Zenith_EditorAutomation::m_axActions, ActionType::ANIM_SM_REMOVE_STATE, szStateName); }
+void Zenith_EditorAutomation::AddStep_AnimSmSetDefaultState(const char* szStateName) { Push(Zenith_EditorAutomation::m_axActions, ActionType::ANIM_SM_SET_DEFAULT_STATE, szStateName); }
+void Zenith_EditorAutomation::AddStep_AnimSmRemoveParameter(const char* szName)      { Push(Zenith_EditorAutomation::m_axActions, ActionType::ANIM_SM_REMOVE_PARAMETER, szName); }
+void Zenith_EditorAutomation::AddStep_AnimSmExpectDefaultState(const char* szStateName) { Push(Zenith_EditorAutomation::m_axActions, ActionType::ANIM_SM_EXPECT_DEFAULT_STATE, szStateName); }
+
+void Zenith_EditorAutomation::AddStep_AnimSmRenameState(const char* szOldName, const char* szNewName)   { Push(Zenith_EditorAutomation::m_axActions, ActionType::ANIM_SM_RENAME_STATE, szOldName, szNewName); }
+void Zenith_EditorAutomation::AddStep_AnimSmSetStateClip(const char* szStateName, const char* szClipName) { Push(Zenith_EditorAutomation::m_axActions, ActionType::ANIM_SM_SET_STATE_CLIP, szStateName, szClipName); }
+void Zenith_EditorAutomation::AddStep_AnimSmAddTransition(const char* szFromState, const char* szToState) { Push(Zenith_EditorAutomation::m_axActions, ActionType::ANIM_SM_ADD_TRANSITION, szFromState, szToState); }
+
+void Zenith_EditorAutomation::AddStep_AnimSmSelectLayer(int iLayerId)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::ANIM_SM_SELECT_LAYER;
+	xAction.m_aiArgs[0] = iLayerId;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimSmRemoveTransition(const char* szFromState, int iIndex)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::ANIM_SM_REMOVE_TRANSITION;
+	xAction.m_szArg1 = SafeStr(szFromState);
+	xAction.m_aiArgs[0] = iIndex;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimSmSetTransitionDuration(const char* szFromState, int iIndex, float fSeconds)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::ANIM_SM_SET_TRANSITION_DURATION;
+	xAction.m_szArg1 = SafeStr(szFromState);
+	xAction.m_aiArgs[0] = iIndex;
+	xAction.m_afArgs[0] = fSeconds;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimSmSetTransitionExitTime(const char* szFromState, int iIndex,
+	bool bHasExitTime, float fNormalizedExitTime)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::ANIM_SM_SET_TRANSITION_EXIT_TIME;
+	xAction.m_szArg1 = SafeStr(szFromState);
+	xAction.m_aiArgs[0] = iIndex;
+	xAction.m_afArgs[0] = fNormalizedExitTime;
+	xAction.m_bArg = bHasExitTime;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimSmSetTransitionInterruptible(const char* szFromState, int iIndex,
+	bool bInterruptible)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::ANIM_SM_SET_TRANSITION_INTERRUPTIBLE;
+	xAction.m_szArg1 = SafeStr(szFromState);
+	xAction.m_aiArgs[0] = iIndex;
+	xAction.m_bArg = bInterruptible;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimSmAddCondition(const char* szFromState, int iIndex,
+	const char* szParameterName, int iCompareOp, float fThreshold)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::ANIM_SM_ADD_CONDITION;
+	xAction.m_szArg1 = SafeStr(szFromState);
+	xAction.m_szArg2 = SafeStr(szParameterName);
+	xAction.m_aiArgs[0] = iIndex;
+	xAction.m_aiArgs[1] = iCompareOp;
+	xAction.m_afArgs[0] = fThreshold;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimSmRemoveCondition(const char* szFromState, int iIndex, int iConditionIndex)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::ANIM_SM_REMOVE_CONDITION;
+	xAction.m_szArg1 = SafeStr(szFromState);
+	xAction.m_aiArgs[0] = iIndex;
+	xAction.m_aiArgs[1] = iConditionIndex;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimSmAddParameter(const char* szName, int iType, float fDefault)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::ANIM_SM_ADD_PARAMETER;
+	xAction.m_szArg1 = SafeStr(szName);
+	xAction.m_aiArgs[0] = iType;
+	xAction.m_afArgs[0] = fDefault;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimSmExpectStateCount(int iExpectedCount)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::ANIM_SM_EXPECT_STATE_COUNT;
+	xAction.m_aiArgs[0] = iExpectedCount;
 	m_axActions.PushBack(xAction);
 }
 
@@ -2955,6 +3079,179 @@ static void ExecuteAnimationPoseAction(const Zenith_EditorAction& xAction)
 	}
 }
 
+//-----------------------------------------------------------------------------
+// Animator-controller STATE MACHINE authoring (WU-6.5): ANIM_SM_OPEN ..
+// ANIM_SM_EXPECT_DEFAULT_STATE. Every case ends in one of
+// Zenith_EditorPanel_AnimStateMachine's Action_* twins — the SAME call the
+// panel's mouse handler makes — so a recipe and a human's gesture run one code
+// path, and nothing here reaches past the panel into the document except to
+// READ.
+//-----------------------------------------------------------------------------
+namespace
+{
+	// A machine selector out of the step's int: negative means the def's
+	// TOP-LEVEL machine, which has no layer id to type.
+	u_int AnimSmMachineIdFromAction(const Zenith_EditorAction& xAction)
+	{
+		return xAction.m_aiArgs[0] < 0
+			? uANIMCTRL_TOP_LEVEL_MACHINE
+			: static_cast<u_int>(xAction.m_aiArgs[0]);
+	}
+
+	// The same contract as AnimActionChecked, with its own message so a failing
+	// recipe names the family it came from.
+	void AnimSmActionChecked(bool bOk, const char* szAction, const char* szArg)
+	{
+		Zenith_Assert(bOk, "EditorAutomation animator-controller step %s('%s') failed", szAction, szArg ? szArg : "");
+		(void)bOk; (void)szAction; (void)szArg;
+	}
+}
+
+static void ExecuteAnimStateMachineAction(const Zenith_EditorAction& xAction)
+{
+	Zenith_EditorPanel_AnimStateMachine& xPanel = Zenith_EditorPanel_AnimStateMachine::Instance();
+	const u_int uIndex = static_cast<u_int>(xAction.m_aiArgs[0] < 0 ? 0 : xAction.m_aiArgs[0]);
+
+	switch (xAction.m_eType)
+	{
+	case Zenith_EditorActionType::ANIM_SM_OPEN:
+		// The window first, then the asset: OpenAsset's refusals are visible on
+		// the panel, and a hidden panel would report them to nobody.
+		xPanel.ShowFlag() = true;
+		AnimSmActionChecked(xPanel.OpenAsset(xAction.m_szArg1), "AnimSmOpen", xAction.m_szArg1.c_str());
+		break;
+
+	case Zenith_EditorActionType::ANIM_SM_OPEN_FRESH:
+		xPanel.ShowFlag() = true;
+		AnimSmActionChecked(xPanel.OpenAssetFresh(xAction.m_szArg1), "AnimSmOpenFresh", xAction.m_szArg1.c_str());
+		break;
+
+	case Zenith_EditorActionType::ANIM_SM_CLOSE:
+		xPanel.CloseAsset();
+		break;
+
+	case Zenith_EditorActionType::ANIM_SM_SELECT_LAYER:
+		AnimSmActionChecked(xPanel.Action_SelectLayerMachine(AnimSmMachineIdFromAction(xAction)),
+			"AnimSmSelectLayer", nullptr);
+		break;
+
+	case Zenith_EditorActionType::ANIM_SM_ADD_CLIP_PATH:
+		AnimSmActionChecked(xPanel.Action_AddClipPath(xAction.m_szArg1), "AnimSmAddClipPath", xAction.m_szArg1.c_str());
+		break;
+
+	case Zenith_EditorActionType::ANIM_SM_ADD_STATE:
+		AnimSmActionChecked(xPanel.Action_AddState(xAction.m_szArg1), "AnimSmAddState", xAction.m_szArg1.c_str());
+		break;
+
+	case Zenith_EditorActionType::ANIM_SM_REMOVE_STATE:
+		AnimSmActionChecked(xPanel.Action_RemoveState(xAction.m_szArg1), "AnimSmRemoveState", xAction.m_szArg1.c_str());
+		break;
+
+	case Zenith_EditorActionType::ANIM_SM_RENAME_STATE:
+		AnimSmActionChecked(xPanel.Action_RenameState(xAction.m_szArg1, xAction.m_szArg2),
+			"AnimSmRenameState", xAction.m_szArg1.c_str());
+		break;
+
+	case Zenith_EditorActionType::ANIM_SM_SET_DEFAULT_STATE:
+		AnimSmActionChecked(xPanel.Action_SetDefaultState(xAction.m_szArg1),
+			"AnimSmSetDefaultState", xAction.m_szArg1.c_str());
+		break;
+
+	case Zenith_EditorActionType::ANIM_SM_SET_STATE_CLIP:
+		AnimSmActionChecked(xPanel.Action_SetStateClip(xAction.m_szArg1, xAction.m_szArg2),
+			"AnimSmSetStateClip", xAction.m_szArg1.c_str());
+		break;
+
+	case Zenith_EditorActionType::ANIM_SM_ADD_TRANSITION:
+		AnimSmActionChecked(xPanel.Action_AddTransition(xAction.m_szArg1, xAction.m_szArg2),
+			"AnimSmAddTransition", xAction.m_szArg1.c_str());
+		break;
+
+	case Zenith_EditorActionType::ANIM_SM_REMOVE_TRANSITION:
+		AnimSmActionChecked(xPanel.Action_RemoveTransition(xAction.m_szArg1, uIndex),
+			"AnimSmRemoveTransition", xAction.m_szArg1.c_str());
+		break;
+
+	case Zenith_EditorActionType::ANIM_SM_SET_TRANSITION_DURATION:
+		AnimSmActionChecked(xPanel.Action_SetTransitionDuration(xAction.m_szArg1, uIndex, xAction.m_afArgs[0]),
+			"AnimSmSetTransitionDuration", xAction.m_szArg1.c_str());
+		break;
+
+	case Zenith_EditorActionType::ANIM_SM_SET_TRANSITION_EXIT_TIME:
+		AnimSmActionChecked(xPanel.Action_SetTransitionExitTime(xAction.m_szArg1, uIndex,
+			xAction.m_bArg, xAction.m_afArgs[0]), "AnimSmSetTransitionExitTime", xAction.m_szArg1.c_str());
+		break;
+
+	case Zenith_EditorActionType::ANIM_SM_SET_TRANSITION_INTERRUPTIBLE:
+		AnimSmActionChecked(xPanel.Action_SetTransitionInterruptible(xAction.m_szArg1, uIndex, xAction.m_bArg),
+			"AnimSmSetTransitionInterruptible", xAction.m_szArg1.c_str());
+		break;
+
+	case Zenith_EditorActionType::ANIM_SM_ADD_CONDITION:
+		AnimSmActionChecked(xPanel.Action_AddCondition(xAction.m_szArg1, uIndex, xAction.m_szArg2,
+			static_cast<Flux_TransitionCondition::CompareOp>(xAction.m_aiArgs[1]), xAction.m_afArgs[0]),
+			"AnimSmAddCondition", xAction.m_szArg2.c_str());
+		break;
+
+	case Zenith_EditorActionType::ANIM_SM_REMOVE_CONDITION:
+		AnimSmActionChecked(xPanel.Action_RemoveCondition(xAction.m_szArg1, uIndex,
+			static_cast<u_int>(xAction.m_aiArgs[1] < 0 ? 0 : xAction.m_aiArgs[1])),
+			"AnimSmRemoveCondition", xAction.m_szArg1.c_str());
+		break;
+
+	case Zenith_EditorActionType::ANIM_SM_ADD_PARAMETER:
+		AnimSmActionChecked(xPanel.Action_AddParameter(xAction.m_szArg1,
+			static_cast<Flux_AnimationParameters::ParamType>(xAction.m_aiArgs[0]), xAction.m_afArgs[0]),
+			"AnimSmAddParameter", xAction.m_szArg1.c_str());
+		break;
+
+	case Zenith_EditorActionType::ANIM_SM_REMOVE_PARAMETER:
+		AnimSmActionChecked(xPanel.Action_RemoveParameter(xAction.m_szArg1),
+			"AnimSmRemoveParameter", xAction.m_szArg1.c_str());
+		break;
+
+	case Zenith_EditorActionType::ANIM_SM_UNDO:
+		AnimSmActionChecked(xPanel.Action_Undo(), "AnimSmUndo", nullptr);
+		break;
+
+	case Zenith_EditorActionType::ANIM_SM_REDO:
+		AnimSmActionChecked(xPanel.Action_Redo(), "AnimSmRedo", nullptr);
+		break;
+
+	case Zenith_EditorActionType::ANIM_SM_SAVE:
+		AnimSmActionChecked(xPanel.Action_Save(), "AnimSmSave", xPanel.Document().GetAssetPath().c_str());
+		break;
+
+	case Zenith_EditorActionType::ANIM_SM_APPLY:
+		AnimSmActionChecked(xPanel.Action_Apply(), "AnimSmApply", nullptr);
+		break;
+
+	case Zenith_EditorActionType::ANIM_SM_EXPECT_STATE_COUNT:
+	{
+		const u_int uActual = xPanel.Document().GetStateCount();
+		Zenith_Assert(uActual == static_cast<u_int>(xAction.m_aiArgs[0]),
+			"EditorAutomation AnimSmExpectStateCount: expected %d states, found %u",
+			xAction.m_aiArgs[0], uActual);
+		(void)uActual;
+		break;
+	}
+
+	case Zenith_EditorActionType::ANIM_SM_EXPECT_DEFAULT_STATE:
+	{
+		const std::string& strActual = xPanel.Document().GetDefaultStateName();
+		Zenith_Assert(strActual == xAction.m_szArg1,
+			"EditorAutomation AnimSmExpectDefaultState: expected '%s', found '%s'",
+			xAction.m_szArg1.c_str(), strActual.c_str());
+		(void)strActual;
+		break;
+	}
+
+	default:
+		Zenith_Assert(false, "Non-state-machine action routed to ExecuteAnimStateMachineAction");
+		break;
+	}
+}
+
 // Particle field edits (SET_PARTICLE_CONFIG .. SET_PARTICLE_EMITTING).
 static void ExecuteParticleAction(const Zenith_EditorAction& xAction)
 {
@@ -3332,6 +3629,17 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 		xAction.m_eType <= Zenith_EditorActionType::ANIM_POSE_EXPECT_BONE_LOCAL_ROTATION)
 	{
 		ExecuteAnimationPoseAction(xAction);
+		return;
+	}
+
+	// Animator-controller STATE MACHINE authoring (WU-6.5). A THIRD animation
+	// range, for the reason the second one exists: appending into the block above
+	// would move the bound both that line and the header's static_assert compare
+	// against.
+	if (xAction.m_eType >= Zenith_EditorActionType::ANIM_SM_OPEN &&
+		xAction.m_eType <= Zenith_EditorActionType::ANIM_SM_EXPECT_DEFAULT_STATE)
+	{
+		ExecuteAnimStateMachineAction(xAction);
 		return;
 	}
 

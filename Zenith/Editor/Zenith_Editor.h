@@ -32,6 +32,7 @@ class Zenith_Profiling;
 class Zenith_TerrainEditor;
 class Zenith_Input;
 class Zenith_EditorPanel_Animation;
+class Zenith_EditorPanel_AnimStateMachine;
 
 // Content browser view mode
 enum class ContentBrowserViewMode
@@ -148,6 +149,17 @@ public:
 	// nothing here needs the panel definition.
 	//--------------------------------------------------------------------------
 	Zenith_EditorPanel_Animation* TryGetAnimationPanel() const { return m_pxAnimationPanel; }
+
+	//--------------------------------------------------------------------------
+	// The animator-controller state-machine graph (WU-6.5).
+	//
+	// ★ OWNED HERE FOR THE SAME REASON THE DOPE SHEET IS. Its preview controller
+	// holds one owning AnimationHandle per clip the def names; a function-local
+	// static's destructor runs at ATEXIT, after Zenith_AssetRegistry::Shutdown
+	// has force-deleted every asset, so each of those handles would Release into
+	// freed memory. New'd in Initialise, Shutdown()+delete'd in Shutdown.
+	//--------------------------------------------------------------------------
+	Zenith_EditorPanel_AnimStateMachine* TryGetAnimStateMachinePanel() const { return m_pxAnimStateMachinePanel; }
 
 	// Editor state
 	EditorMode GetEditorMode();
@@ -372,6 +384,9 @@ public:
 	// OWNED. Allocated by Initialise, Shutdown()+deleted by Shutdown — see
 	// TryGetAnimationPanel above for why it is not a static.
 	Zenith_EditorPanel_Animation* m_pxAnimationPanel = nullptr;
+
+	// OWNED, same lifetime rule — see TryGetAnimStateMachinePanel above.
+	Zenith_EditorPanel_AnimStateMachine* m_pxAnimStateMachinePanel = nullptr;
 
 	// Counts down after a default-dock-layout build; on hitting 0 the
 	// intended front tabs are re-selected (late-created windows steal tab
