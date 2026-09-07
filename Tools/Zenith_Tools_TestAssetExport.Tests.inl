@@ -1,29 +1,40 @@
 #include "UnitTests/Zenith_UnitTests.h"
 #include "Core/Zenith_TestFramework.h"
 #include "Flux/MeshAnimation/Flux_AnimationClip.h"
+#include "AssetHandling/Zenith_AnimationAsset.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
 
-#include <filesystem>   // the authored-seed fixture writes into a temp directory
-#include <fstream>      // ...and compares the bytes it left behind
-#include <iterator>
+#include <cmath>
 
 // ============================================================================
-// StickFigure procedural-clip tests
+// StickFigure asset tests.
 //
-// The four Create*Animation() factories above this include site (Aim, Fire,
-// Reload, Jump) build the upper-body shooter clips authored at runtime and
-// exported to .zanim files alongside the original Idle/Walk/Run set.
+// ★★ THE SEVENTEEN CLIPS ARE READ FROM DISK, NOT BUILT (WU-9.1 stage 2).
+// There are no Create*Animation factories any more: the clips are AUTHORED data
+// under `engine:Authored/Meshes/StickFigure/`, committed, hand-edited in the
+// Animation Editor and written by no generator. So every clip assertion below
+// loads the FILE through the asset registry — which is both the only thing left
+// to check and a strictly better thing to check, because the file is what the
+// three games actually bind.
 //
-// These tests verify metadata, bone-channel presence, and a few representative
-// sampled values to pin spec-matching behavior. Each test owns the clip it
-// constructs and deletes it before returning.
+// ★ THESE UNITS ARE NOW THE HOME OF THE BAKE-TIME GATES. GenerateStickFigureAssets'
+// export loop used to assert, on every clip it wrote, that it drove both
+// UpperArms and named the shared rig. That loop is gone with the generators. The
+// same two properties are asserted here over the tracked files, plus the ones the
+// loop never checked: that each file PARSES at the current schema, that its keys
+// fit its stated duration, and that the set's names, durations and loop flags are
+// the ones the Combat hit windows and the tennis testbed were built around.
+//
+// ★ A FAILURE HERE MEANS A FILE IS WRONG, AND THE FIX IS AN EDIT OR A REVERT,
+// never a re-bake: nothing regenerates these. `zagent`-style advice does not
+// apply — `del` plus a boot DESTROYS an authored clip (D21).
+//
+// Headless: a clip is pure CPU data and the registry resolves an engine: path
+// without a device. None of these is requiresGraphics.
 //
 // Note: Flux_BoneChannel::SampleRotation takes time in SECONDS (D3) — the same
-// clock as Flux_AnimationClip::GetDuration. The clips are AUTHORED on a 24 fps
-// frame grid, so a test that wants "the pose at frame N" says
-// HumanFrameSeconds(N) rather than N. It used to say N, because the channel
-// stored ticks and the sampler multiplied wall-clock seconds by 24 on the way in.
+// clock as Flux_AnimationClip::GetDuration.
 // ============================================================================
 
 namespace
@@ -34,170 +45,467 @@ namespace
 		float fDot = std::abs(a.w * b.w + a.x * b.x + a.y * b.y + a.z * b.z);
 		return std::abs(fDot - 1.0f) < fTol;
 	}
+
+	// The 24 fps grid every one of these clips was authored on, and still declares
+	// in its own m_uAuthoredFrameRate (D6, asserted below). A test that wants "the
+	// pose at frame N" says StickFigureFrameSeconds(N) — a channel stores SECONDS.
+	constexpr float fSTICKFIGURE_AUTHORED_FPS = 24.0f;
+
+	constexpr float StickFigureFrameSeconds(float fFrame) { return fFrame / fSTICKFIGURE_AUTHORED_FPS; }
+
+	//--------------------------------------------------------------------------
+	// Load one authored clip THROUGH THE ASSET REGISTRY, by the same asset path a
+	// game binds — `engine:Authored/Meshes/StickFigure/StickFigure_<Name>.zanim`,
+	// built by the shipped helpers rather than spelled out, so a test cannot pass
+	// against a path no consumer uses.
+	//
+	// nullptr when the file is missing or refused. Zenith_AnimationAsset::
+	// LoadFromFile returns the parse status and the registry DELETES the asset on
+	// failure rather than caching an empty one, so a non-null return here really
+	// does mean "parsed at the current schema".
+	//--------------------------------------------------------------------------
+	const Flux_AnimationClip* StickFigureAuthoredClip(const char* szClipName)
+	{
+		const std::string strAssetPath =
+			Zenith_Tools_StickFigureAuthoredPath(Zenith_Tools_StickFigureClipFileName(szClipName).c_str());
+		const Zenith_AnimationAsset* pxAsset =
+			Zenith_AssetRegistry::GetView<Zenith_AnimationAsset>(strAssetPath);
+		return (pxAsset != nullptr) ? pxAsset->GetClip() : nullptr;
+	}
+
+	//--------------------------------------------------------------------------
+	// ★ THE TIMINGS ARE A CONTRACT WITH THE GAMES, so they are pinned by name.
+	//
+	// A duration here is not decoration: Combat's hit windows are a fraction of
+	// the attack clip's length (30-70% normalized), RenderTest's shooter blends
+	// Aim/Fire/Reload against each other, and the tennis state machine's swing
+	// timing is the Serve/Forehand/Backhand lengths. Retiming a clip in the editor
+	// is allowed — this table then moves WITH it, deliberately, in the same commit,
+	// so "the animation got longer" can never be an invisible gameplay change.
+	//
+	// The numbers are the ones the seventeen files were authored with (the WU-9.1
+	// stage-1 seeding, commit 2d772cd5); the NAME comes from
+	// azZENITH_STICKFIGURE_CLIP_NAMES rather than being retyped, and the two are
+	// asserted to agree so this table cannot silently address a different clip.
+	//--------------------------------------------------------------------------
+	struct StickFigureClipTiming
+	{
+		const char* m_szName;
+		float       m_fDurationSeconds;
+		bool        m_bLooping;
+	};
+
+	const StickFigureClipTiming axSTICKFIGURE_CLIP_TIMINGS[uZENITH_STICKFIGURE_CLIP_COUNT] =
+	{
+		{ "Idle",        2.00f, true  },
+		{ "Walk",        1.00f, true  },
+		{ "Run",         0.50f, true  },
+		{ "Attack1",     0.40f, false },
+		{ "Attack2",     0.40f, false },
+		{ "Attack3",     0.50f, false },
+		{ "Dodge",       0.50f, false },
+		{ "Hit",         0.30f, false },
+		{ "Death",       1.00f, false },
+		{ "Aim",         0.50f, true  },
+		{ "Fire",        0.20f, false },
+		{ "Reload",      1.50f, false },
+		{ "Jump",        0.80f, false },
+		{ "Serve",       1.25f, false },
+		{ "Forehand",    0.75f, false },
+		{ "Backhand",    0.75f, false },
+		{ "ReadyStance", 1.50f, true  },
+	};
 }
 
-// ----- Aim ------------------------------------------------------------------
+// ----- The whole set, off disk ------------------------------------------------
 
-ZENITH_TEST(StickFigureProcAnim, AimClipMetadata) { Zenith_UnitTests::TestStickFigureAimClipMetadata(); }
-void Zenith_UnitTests::TestStickFigureAimClipMetadata()
+ZENITH_TEST(StickFigureAuthored, EveryAuthoredClipLoadsAndCarriesTheRigContract)
 {
-	Flux_AnimationClip* pxClip = CreateAimAnimation();
-	ZENITH_ASSERT_TRUE(pxClip->GetName() == "Aim", "Aim clip name should be 'Aim'");
-	ZENITH_ASSERT_TRUE(pxClip->IsLooping(), "Aim clip should be looping");
-	ZENITH_ASSERT_TRUE(std::abs(pxClip->GetDuration() - 0.5f) < 1e-4f, "Aim clip duration should be 0.5s");
-	ZENITH_ASSERT_TRUE(pxClip->GetTicksPerSecond() == 24, "Aim clip should be 24 fps");
-	delete pxClip;
+	// ★ THE REPLACEMENT FOR THE EXPORTER'S GATE. Everything
+	// GenerateStickFigureAssets used to assert as it wrote a clip, asserted here
+	// against the file instead — plus the two things it could not check, because
+	// it held the clip in memory and never read it back: that the bytes on disk
+	// PARSE at the current schema, and that the flag says AUTHORED.
+	//
+	// ★ AND THE PREFIX IS PART OF THE ASSERTION, not decoration.
+	// Zenith_AssetRegistry::NormalizeAssetPath leaves a bare RELATIVE path exactly
+	// as it found it, so "Meshes/StickFigure/StickFigure.zskel" would satisfy a
+	// "non-empty" check, round-trip through the stream unchanged, and resolve to
+	// nothing (Docs/HumanoidImport.md invariant 6).
+	ZENITH_ASSERT_EQ(uZENITH_STICKFIGURE_CLIP_COUNT, 17u,
+		"the StickFigure clip set is seventeen files");
+
+	for (u_int u = 0; u < uZENITH_STICKFIGURE_CLIP_COUNT; u++)
+	{
+		const char* szName = azZENITH_STICKFIGURE_CLIP_NAMES[u];
+		const Flux_AnimationClip* pxClip = StickFigureAuthoredClip(szName);
+
+		// A null here is a MISSING OR CORRUPT COMMITTED FILE. It is not fixable by
+		// a re-bake and the message says so, because the reflex is wrong.
+		ZENITH_ASSERT_NOT_NULL(pxClip,
+			"authored clip '%s' did not load from %s -- these files are COMMITTED and no bake writes them; "
+			"restore it from git rather than re-baking",
+			szName, Zenith_Tools_StickFigureAuthoredPath(
+				Zenith_Tools_StickFigureClipFileName(szName).c_str()).c_str());
+		if (pxClip == nullptr)
+		{
+			continue;
+		}
+
+		const Flux_AnimationClipMetadata& xMeta = pxClip->GetMetadata();
+
+		ZENITH_ASSERT_STREQ(pxClip->GetName().c_str(), szName,
+			"the clip in file %u is not the one its name says it is", u);
+		ZENITH_ASSERT_FALSE(xMeta.m_bGenerated,
+			"clip '%s' is AUTHORED and must not claim to be regenerated on every boot (D8) -- "
+			"a consumer reads that flag as 'editing this file is pointless'", szName);
+		ZENITH_ASSERT_STREQ(xMeta.m_strSkeletonPath.c_str(),
+			"engine:Meshes/StickFigure/StickFigure.zskel",
+			"clip '%s' does not name the ONE shared humanoid rig, engine:-prefixed", szName);
+		ZENITH_ASSERT_TRUE(!xMeta.m_strPreviewModelPath.empty(),
+			"clip '%s' names no model to preview it on (D7)", szName);
+		ZENITH_ASSERT_EQ(xMeta.m_uAuthoredFrameRate, 24u,
+			"clip '%s' authored frame rate must be the 24 fps grid it was keyed on (D6)", szName);
+
+		// ★★ EVERY CLIP DRIVES BOTH UPPER ARMS. Also asserted on its own below;
+		// it is here as well because this test is the exporter gate's replacement
+		// and that gate is exactly what it was.
+		ZENITH_ASSERT_TRUE(pxClip->HasBoneChannel("LeftUpperArm") && pxClip->HasBoneChannel("RightUpperArm"),
+			"clip '%s' does not animate both UpperArms -- a T-posed human would hold that arm out", szName);
+
+		// ★ FIRE IS EXEMPT, DELIBERATELY, AND THE NUMBERS ARE HERE SO THE EXEMPTION
+		// CAN BE FALSIFIED. Fire's recoil channels carry a settle key at authored
+		// frame 5 = 5/24 = 0.208333 s against a stated duration of 0.20 s — 8.3 ms
+		// past the end. Decision D13 permits a key past the duration (the mutators
+		// do not veto one; a panel warns), and the duration itself is pinned at
+		// 0.20 s by the timing table, so moving the duration to close the gap would
+		// red that instead. The exemption is the smaller lie of the two, and it is
+		// one clip.
+		if (std::string(szName) == "Fire")
+		{
+			ZENITH_ASSERT_EQ_FLOAT(Flux_ClipLastKeyTimeSeconds(*pxClip), 5.0f / 24.0f, 1e-4f,
+				"Fire's last key is no longer authored frame 5 -- the D13 exemption may be unnecessary now");
+		}
+		else
+		{
+			ZENITH_ASSERT_TRUE(Flux_ClipKeyTimesFitDuration(*pxClip),
+				"clip '%s' carries a key past its %.4f s duration (last key at %.4f s)",
+				szName, pxClip->GetDuration(), Flux_ClipLastKeyTimeSeconds(*pxClip));
+		}
+	}
 }
 
-ZENITH_TEST(StickFigureProcAnim, AimClipBoneChannelsExist) { Zenith_UnitTests::TestStickFigureAimClipBoneChannelsExist(); }
-void Zenith_UnitTests::TestStickFigureAimClipBoneChannelsExist()
+ZENITH_TEST(StickFigureAuthored, EveryClipDrivesBothUpperArms)
 {
-	Flux_AnimationClip* pxClip = CreateAimAnimation();
-	ZENITH_ASSERT_TRUE(pxClip->HasBoneChannel("RightUpperArm"), "Aim missing RightUpperArm channel");
-	ZENITH_ASSERT_TRUE(pxClip->HasBoneChannel("RightLowerArm"), "Aim missing RightLowerArm channel");
-	ZENITH_ASSERT_TRUE(pxClip->HasBoneChannel("LeftUpperArm"),  "Aim missing LeftUpperArm channel");
-	ZENITH_ASSERT_TRUE(pxClip->HasBoneChannel("LeftLowerArm"),  "Aim missing LeftLowerArm channel");
-	ZENITH_ASSERT_TRUE(pxClip->HasBoneChannel("Spine"),         "Aim missing Spine channel");
-	ZENITH_ASSERT_TRUE(pxClip->HasBoneChannel("Head"),          "Aim missing Head channel");
-	delete pxClip;
+	// ★★ THE ONE RIG DEPENDENCY, AND ITS OWN TEST SO A FAILURE NAMES IT.
+	// A bone a clip omits keeps its BIND local transform, and the two UpperArms
+	// are the only bones whose T-pose bind rotation is not identity
+	// (Zenith_HumanArmBindRotation) — so a clip that omits one leaves that arm
+	// sticking straight out sideways for its whole duration, on StickFigure, on
+	// Zenithmon's humans and on every imported artist humanoid alike.
+	//
+	// This used to be a Zenith_Assert inside GenerateStickFigureAssets' export
+	// loop, i.e. a check on data that had just been built in memory. It is a check
+	// on the FILE now, which is the only form that can catch the way these clips
+	// actually change: somebody editing one in the Animation Editor and deleting a
+	// channel.
+	for (u_int u = 0; u < uZENITH_STICKFIGURE_CLIP_COUNT; u++)
+	{
+		const char* szName = azZENITH_STICKFIGURE_CLIP_NAMES[u];
+		const Flux_AnimationClip* pxClip = StickFigureAuthoredClip(szName);
+		ZENITH_ASSERT_NOT_NULL(pxClip, "authored clip '%s' must load", szName);
+		if (pxClip == nullptr)
+		{
+			continue;
+		}
+
+		ZENITH_ASSERT_TRUE(pxClip->HasBoneChannel("LeftUpperArm"),
+			"clip '%s' does not animate LeftUpperArm -- a T-posed human would hold that arm out", szName);
+		ZENITH_ASSERT_TRUE(pxClip->HasBoneChannel("RightUpperArm"),
+			"clip '%s' does not animate RightUpperArm -- a T-posed human would hold that arm out", szName);
+	}
 }
 
-ZENITH_TEST(StickFigureProcAnim, AimClipRightArmRotation) { Zenith_UnitTests::TestStickFigureAimClipRightArmRotation(); }
-void Zenith_UnitTests::TestStickFigureAimClipRightArmRotation()
+ZENITH_TEST(StickFigureAuthored, TheSetsNamesDurationsAndLoopFlagsAreUnchanged)
 {
-	Flux_AnimationClip* pxClip = CreateAimAnimation();
-	const Flux_BoneChannel* pxCh = pxClip->GetBoneChannel("RightUpperArm");
-	ZENITH_ASSERT_TRUE(pxCh != nullptr, "Aim should have RightUpperArm channel");
+	// ★ A RETIME IS A GAMEPLAY CHANGE, and this is what makes it visible. Combat's
+	// hit windows are a fraction of an attack clip's length, the shooter blends
+	// Aim/Fire/Reload against one another, and the tennis swing timing IS the
+	// Serve/Forehand/Backhand durations. Nothing else in the tree would notice a
+	// clip getting 30% longer in an editor session.
+	for (u_int u = 0; u < uZENITH_STICKFIGURE_CLIP_COUNT; u++)
+	{
+		const StickFigureClipTiming& xTiming = axSTICKFIGURE_CLIP_TIMINGS[u];
 
-	// Sample at the end (authored frame 12 = 0.5 s, the clip duration) — should be
-	// the aim hold pose.
-	const Zenith_Maths::Quat xExpected = StickFigureAimHoldPose::RightUpperArm();
-	const Zenith_Maths::Quat xSample = pxCh->SampleRotation(HumanFrameSeconds(12.0f));
-	ZENITH_ASSERT_TRUE(StickFigureQuatEquals(xSample, xExpected),
-		"Aim RightUpperArm at the clip end should match aim hold pose");
+		// One list of names, not two: this table only adds the timing columns.
+		ZENITH_ASSERT_STREQ(xTiming.m_szName, azZENITH_STICKFIGURE_CLIP_NAMES[u],
+			"the timing table and the clip-name table disagree at index %u", u);
 
-	// And at the start (t=0 s) — same pose, since it's a stable hold.
-	const Zenith_Maths::Quat xStart = pxCh->SampleRotation(0.0f);
-	ZENITH_ASSERT_TRUE(StickFigureQuatEquals(xStart, xExpected),
-		"Aim RightUpperArm at t=0 should also match aim hold pose (stable hold)");
-	delete pxClip;
+		const Flux_AnimationClip* pxClip = StickFigureAuthoredClip(xTiming.m_szName);
+		ZENITH_ASSERT_NOT_NULL(pxClip, "authored clip '%s' must load", xTiming.m_szName);
+		if (pxClip == nullptr)
+		{
+			continue;
+		}
+
+		ZENITH_ASSERT_EQ_FLOAT(pxClip->GetDuration(), xTiming.m_fDurationSeconds, 1e-4f,
+			"clip '%s' has been retimed -- update this table in the same commit if that was intended",
+			xTiming.m_szName);
+		ZENITH_ASSERT_TRUE(pxClip->IsLooping() == xTiming.m_bLooping,
+			"clip '%s' loop flag changed -- a looping action clip (or a one-shot idle) is a state-machine bug",
+			xTiming.m_szName);
+		ZENITH_ASSERT_EQ(pxClip->GetTicksPerSecond(), 24u,
+			"clip '%s' import provenance moved off the 24 fps grid", xTiming.m_szName);
+	}
 }
 
-// ----- Fire -----------------------------------------------------------------
-
-ZENITH_TEST(StickFigureProcAnim, FireClipMetadata) { Zenith_UnitTests::TestStickFigureFireClipMetadata(); }
-void Zenith_UnitTests::TestStickFigureFireClipMetadata()
+ZENITH_TEST(StickFigureAuthored, TheAuthoredPathKeepsTheRootPrefixAndTheSubdirectory)
 {
-	Flux_AnimationClip* pxClip = CreateFireAnimation();
-	ZENITH_ASSERT_TRUE(pxClip->GetName() == "Fire", "Fire clip name should be 'Fire'");
-	ZENITH_ASSERT_TRUE(!pxClip->IsLooping(), "Fire clip should NOT be looping");
-	ZENITH_ASSERT_TRUE(std::abs(pxClip->GetDuration() - 0.20f) < 1e-4f, "Fire clip duration should be 0.20s");
-	ZENITH_ASSERT_TRUE(pxClip->GetTicksPerSecond() == 24, "Fire clip should be 24 fps");
-	delete pxClip;
+	// ★ THE PREFIX AND THE SUBDIRECTORY ARE BOTH PART OF THE ASSERTION.
+	// NormalizeAssetPath leaves a bare RELATIVE path exactly as it found it, so a
+	// ref without "engine:" would serialize cleanly, load cleanly and resolve to
+	// nothing; and flattening "Meshes/StickFigure/" away would put every set's
+	// "Walk" on one path, so the next promoted clip would silently overwrite this
+	// one. Same rule as Zenith_AnimationDocument::BuildAuthoredAssetPath, matched
+	// here rather than called — Tools may not include Editor.
+
+	// One row spelled out in full, with nothing constructed, so at least one
+	// expectation cannot drift with the helper it is checking.
+	ZENITH_ASSERT_STREQ(Zenith_Tools_StickFigureClipFileName("Idle").c_str(),
+		"StickFigure_Idle.zanim", "the clip file naming moved");
+	ZENITH_ASSERT_STREQ(Zenith_Tools_StickFigureAuthoredPath("StickFigure_Idle.zanim").c_str(),
+		"engine:Authored/Meshes/StickFigure/StickFigure_Idle.zanim",
+		"the authored path for the Idle clip moved");
+
+	for (u_int u = 0; u < uZENITH_STICKFIGURE_CLIP_COUNT; u++)
+	{
+		const char* szName = azZENITH_STICKFIGURE_CLIP_NAMES[u];
+
+		const std::string strFileName = Zenith_Tools_StickFigureClipFileName(szName);
+		const std::string strExpectedFileName = std::string("StickFigure_") + szName + ".zanim";
+		ZENITH_ASSERT_STREQ(strFileName.c_str(), strExpectedFileName.c_str(),
+			"clip '%s' does not use the set's own file naming", szName);
+
+		const std::string strExpectedPath = "engine:Authored/Meshes/StickFigure/" + strFileName;
+		ZENITH_ASSERT_STREQ(Zenith_Tools_StickFigureAuthoredPath(strFileName.c_str()).c_str(),
+			strExpectedPath.c_str(),
+			"clip '%s' does not map into engine:Authored/Meshes/StickFigure/", szName);
+	}
+
+	// And the DIRECTORY the exporter reads back from is the same location the
+	// asset path describes — an asset path nothing reads would resolve to a file
+	// nobody notices is missing.
+	const std::string strDir = Zenith_Tools_StickFigureAuthoredDir();
+	ZENITH_ASSERT_TRUE(strDir.ends_with("Authored/Meshes/StickFigure/"),
+		"the authored directory '%s' is not the location engine:Authored/Meshes/StickFigure/ resolves to",
+		strDir.c_str());
 }
 
-ZENITH_TEST(StickFigureProcAnim, FireClipReturnsToAimPoseAtEnd) { Zenith_UnitTests::TestStickFigureFireClipReturnsToAimPoseAtEnd(); }
-void Zenith_UnitTests::TestStickFigureFireClipReturnsToAimPoseAtEnd()
-{
-	Flux_AnimationClip* pxClip = CreateFireAnimation();
-	const Flux_BoneChannel* pxCh = pxClip->GetBoneChannel("RightUpperArm");
-	ZENITH_ASSERT_TRUE(pxCh != nullptr, "Fire should have RightUpperArm channel");
+// ----- Aim / Fire / Reload: the shooter set's continuity -----------------------
+//
+// ★ THESE THREE MUST AGREE WITH EACH OTHER, and that agreement is now checked
+// BETWEEN THE FILES rather than against a constant. The clips used to share a
+// `StickFigureAimHoldPose` helper in the generator, and the tests compared each
+// clip's end keys against it; with the generator deleted, re-typing those six
+// quaternions into this file would invent a second authority for a pose that now
+// exists only in the .zanim files. So Aim's own pose is the reference, read off
+// the file, and Fire and Reload are asserted to return to it. A pose edit that
+// moves all three together is legal and stays green — which is correct, because
+// what matters is that the transitions do not snap.
 
-	// At end of clip the recoil should have settled back to the aim hold pose
-	// so the transition to Aim is seamless. Read the last authored keyframe
-	// directly — Flux_BoneChannel::SampleRotation has an off-by-one quirk at
-	// end-of-clip that returns the first keyframe instead of the last.
+ZENITH_TEST(StickFigureAuthored, AimHoldsASteadyUpperBodyPose)
+{
+	const Flux_AnimationClip* pxAim = StickFigureAuthoredClip("Aim");
+	ZENITH_ASSERT_NOT_NULL(pxAim, "the Aim clip must load");
+	if (pxAim == nullptr)
+	{
+		return;
+	}
+
+	// The shooter's upper body is what this clip is for.
+	ZENITH_ASSERT_TRUE(pxAim->HasBoneChannel("RightUpperArm"), "Aim missing RightUpperArm channel");
+	ZENITH_ASSERT_TRUE(pxAim->HasBoneChannel("RightLowerArm"), "Aim missing RightLowerArm channel");
+	ZENITH_ASSERT_TRUE(pxAim->HasBoneChannel("LeftUpperArm"),  "Aim missing LeftUpperArm channel");
+	ZENITH_ASSERT_TRUE(pxAim->HasBoneChannel("LeftLowerArm"),  "Aim missing LeftLowerArm channel");
+	ZENITH_ASSERT_TRUE(pxAim->HasBoneChannel("Spine"),         "Aim missing Spine channel");
+	ZENITH_ASSERT_TRUE(pxAim->HasBoneChannel("Head"),          "Aim missing Head channel");
+
+	// It LOOPS, and the loop must not pop: the pose at the start and at the
+	// authored end (frame 12 = 0.5 s) are the same. A breathing waver lives on the
+	// mid keys and is deliberately not pinned.
+	const Flux_BoneChannel* pxCh = pxAim->GetBoneChannel("RightUpperArm");
+	ZENITH_ASSERT_NOT_NULL(pxCh, "Aim should have a RightUpperArm channel");
+	if (pxCh == nullptr)
+	{
+		return;
+	}
+	ZENITH_ASSERT_TRUE(StickFigureQuatEquals(pxCh->SampleRotation(0.0f),
+		pxCh->SampleRotation(StickFigureFrameSeconds(12.0f))),
+		"Aim's RightUpperArm does not return to its start pose at the end of the loop");
+}
+
+ZENITH_TEST(StickFigureAuthored, FireAndReloadReturnToAimsHoldPose)
+{
+	// ★ A SNAP IS THE FAILURE THIS CATCHES, and no screenshot pass would: the
+	// arms simply jump to a different pose for one blend when the state machine
+	// goes Fire -> Aim or Reload -> Aim. Read the last authored key directly —
+	// SampleRotation's end-of-clip behaviour is a clamp, so a boundary sample is
+	// the wrong instrument for "what does this clip END on".
+	const Flux_AnimationClip* pxAim = StickFigureAuthoredClip("Aim");
+	const Flux_AnimationClip* pxFire = StickFigureAuthoredClip("Fire");
+	const Flux_AnimationClip* pxReload = StickFigureAuthoredClip("Reload");
+	ZENITH_ASSERT_NOT_NULL(pxAim, "the Aim clip must load");
+	ZENITH_ASSERT_NOT_NULL(pxFire, "the Fire clip must load");
+	ZENITH_ASSERT_NOT_NULL(pxReload, "the Reload clip must load");
+	if (pxAim == nullptr || pxFire == nullptr || pxReload == nullptr)
+	{
+		return;
+	}
+
+	struct ContinuityCheck { const Flux_AnimationClip* m_pxClip; const char* m_szClip; const char* m_szBone; };
+	const ContinuityCheck axChecks[] = {
+		{ pxFire,   "Fire",   "RightUpperArm" },
+		{ pxFire,   "Fire",   "LeftUpperArm"  },
+		{ pxReload, "Reload", "LeftUpperArm"  },
+		{ pxReload, "Reload", "RightUpperArm" },
+	};
+
+	for (const ContinuityCheck& xCheck : axChecks)
+	{
+		const Flux_BoneChannel* pxAimCh = pxAim->GetBoneChannel(xCheck.m_szBone);
+		const Flux_BoneChannel* pxCh = xCheck.m_pxClip->GetBoneChannel(xCheck.m_szBone);
+		ZENITH_ASSERT_NOT_NULL(pxAimCh, "Aim should have a %s channel", xCheck.m_szBone);
+		ZENITH_ASSERT_NOT_NULL(pxCh, "%s should have a %s channel", xCheck.m_szClip, xCheck.m_szBone);
+		if (pxAimCh == nullptr || pxCh == nullptr)
+		{
+			continue;
+		}
+
+		const auto& axRotations = pxCh->GetRotationKeyframes();
+		ZENITH_ASSERT_TRUE(axRotations.GetSize() != 0,
+			"%s %s should have rotation keyframes", xCheck.m_szClip, xCheck.m_szBone);
+		if (axRotations.GetSize() == 0)
+		{
+			continue;
+		}
+
+		// Aim's hold pose, taken from Aim itself at t = 0.
+		const Zenith_Maths::Quat xHold = pxAimCh->SampleRotation(0.0f);
+		ZENITH_ASSERT_TRUE(StickFigureQuatEquals(axRotations.GetBack().first, xHold),
+			"%s's last %s key is not Aim's hold pose -- the transition back to Aim will snap",
+			xCheck.m_szClip, xCheck.m_szBone);
+
+		// ...and it must START there too, or the transition INTO it snaps instead.
+		ZENITH_ASSERT_TRUE(StickFigureQuatEquals(axRotations.Get(0).first, xHold),
+			"%s's first %s key is not Aim's hold pose -- the transition into it will snap",
+			xCheck.m_szClip, xCheck.m_szBone);
+	}
+}
+
+ZENITH_TEST(StickFigureAuthored, FiresRecoilPeaksAt15DegreesAboveTheAimPose)
+{
+	// The recoil is authored as a delta ON the aim hold pose: at frame 2 the right
+	// upper arm is the hold pose plus 15 degrees about X. Expressed as the RELATIVE
+	// rotation between the two clips, so it needs no copy of either pose.
+	const Flux_AnimationClip* pxAim = StickFigureAuthoredClip("Aim");
+	const Flux_AnimationClip* pxFire = StickFigureAuthoredClip("Fire");
+	ZENITH_ASSERT_NOT_NULL(pxAim, "the Aim clip must load");
+	ZENITH_ASSERT_NOT_NULL(pxFire, "the Fire clip must load");
+	if (pxAim == nullptr || pxFire == nullptr)
+	{
+		return;
+	}
+
+	const Flux_BoneChannel* pxAimCh = pxAim->GetBoneChannel("RightUpperArm");
+	const Flux_BoneChannel* pxFireCh = pxFire->GetBoneChannel("RightUpperArm");
+	ZENITH_ASSERT_NOT_NULL(pxAimCh, "Aim should have a RightUpperArm channel");
+	ZENITH_ASSERT_NOT_NULL(pxFireCh, "Fire should have a RightUpperArm channel");
+	if (pxAimCh == nullptr || pxFireCh == nullptr)
+	{
+		return;
+	}
+
+	const Zenith_Maths::Quat xHold = pxAimCh->SampleRotation(0.0f);
+	const Zenith_Maths::Quat xPeak = pxFireCh->SampleRotation(StickFigureFrameSeconds(2.0f));
+
+	// xPeak = kick * xHold, so kick = xPeak * inverse(xHold).
+	Zenith_Maths::Quat xKick = glm::normalize(xPeak * glm::inverse(xHold));
+	if (xKick.w < 0.0f)
+	{
+		// Shortest arc: q and -q are the same rotation, but glm::angle would report
+		// the long way round (> 180 degrees) for the negated one.
+		xKick = Zenith_Maths::Quat(-xKick.w, -xKick.x, -xKick.y, -xKick.z);
+	}
+
+	const float fAngleDeg = glm::degrees(glm::angle(xKick));
+	ZENITH_ASSERT_EQ_FLOAT(fAngleDeg, 15.0f, 0.5f,
+		"Fire's recoil peak is %.2f degrees off the aim pose, not 15", fAngleDeg);
+
+	// The axis carries the SIGN: +X is the muzzle rising. A -X kick of the same
+	// size would pass an absolute-value check and point the weapon at the floor.
+	const Zenith_Maths::Vector3 xAxis = glm::axis(xKick);
+	ZENITH_ASSERT_EQ_FLOAT(xAxis.x, 1.0f, 0.02f,
+		"Fire's recoil should kick about +X (the muzzle rising), not (%.2f, %.2f, %.2f)",
+		xAxis.x, xAxis.y, xAxis.z);
+}
+
+ZENITH_TEST(StickFigureAuthored, ReloadKeepsItsEightKeyMagazineCycle)
+{
+	// Eight keys: rest, drop off the grip, reach to the belt, mag in hand, up to
+	// the mag-well, seat it, slap the release, back on the grip. The COUNT is the
+	// cheapest description of "the reload still reads as a reload"; dropping one
+	// of the middle keys is what turns it into a vague wave.
+	const Flux_AnimationClip* pxReload = StickFigureAuthoredClip("Reload");
+	ZENITH_ASSERT_NOT_NULL(pxReload, "the Reload clip must load");
+	if (pxReload == nullptr)
+	{
+		return;
+	}
+
+	const Flux_BoneChannel* pxCh = pxReload->GetBoneChannel("LeftUpperArm");
+	ZENITH_ASSERT_NOT_NULL(pxCh, "Reload should have a LeftUpperArm channel");
+	if (pxCh == nullptr)
+	{
+		return;
+	}
+	ZENITH_ASSERT_EQ(pxCh->GetRotationKeyframes().GetSize(), 8u,
+		"Reload's LeftUpperArm should keep its 8 rotation keys "
+		"(rest, drop, reach, grab, lift, seat, slap, rest)");
+}
+
+// ----- Jump -------------------------------------------------------------------
+
+ZENITH_TEST(StickFigureAuthored, JumpDrivesBothLegsAndRecoversToIdentity)
+{
+	const Flux_AnimationClip* pxJump = StickFigureAuthoredClip("Jump");
+	ZENITH_ASSERT_NOT_NULL(pxJump, "the Jump clip must load");
+	if (pxJump == nullptr)
+	{
+		return;
+	}
+
+	ZENITH_ASSERT_TRUE(pxJump->HasBoneChannel("LeftUpperLeg"),  "Jump missing LeftUpperLeg channel");
+	ZENITH_ASSERT_TRUE(pxJump->HasBoneChannel("RightUpperLeg"), "Jump missing RightUpperLeg channel");
+	ZENITH_ASSERT_TRUE(pxJump->HasBoneChannel("LeftLowerLeg"),  "Jump missing LeftLowerLeg channel");
+	ZENITH_ASSERT_TRUE(pxJump->HasBoneChannel("RightLowerLeg"), "Jump missing RightLowerLeg channel");
+
+	// The spine's LAST key is identity: the jump ends standing, so the blend back
+	// to Idle/Walk has nothing to undo. Read the authored key rather than sampling
+	// at the boundary (see FireAndReloadReturnToAimsHoldPose).
+	const Flux_BoneChannel* pxCh = pxJump->GetBoneChannel("Spine");
+	ZENITH_ASSERT_NOT_NULL(pxCh, "Jump should have a Spine channel");
+	if (pxCh == nullptr)
+	{
+		return;
+	}
 	const auto& axRotations = pxCh->GetRotationKeyframes();
-	ZENITH_ASSERT_TRUE(axRotations.GetSize() != 0, "Fire RightUpperArm should have keyframes");
-	const Zenith_Maths::Quat xExpected = StickFigureAimHoldPose::RightUpperArm();
-	const Zenith_Maths::Quat xLast = axRotations.GetBack().first;
-	ZENITH_ASSERT_TRUE(StickFigureQuatEquals(xLast, xExpected),
-		"Fire RightUpperArm last keyframe should be aim hold pose");
-	delete pxClip;
-}
-
-ZENITH_TEST(StickFigureProcAnim, FireClipPeakRecoil) { Zenith_UnitTests::TestStickFigureFireClipPeakRecoil(); }
-void Zenith_UnitTests::TestStickFigureFireClipPeakRecoil()
-{
-	Flux_AnimationClip* pxClip = CreateFireAnimation();
-	const Flux_BoneChannel* pxCh = pxClip->GetBoneChannel("RightUpperArm");
-	ZENITH_ASSERT_TRUE(pxCh != nullptr, "Fire should have RightUpperArm channel");
-
-	// At peak (authored frame 2 = 1/12 s) the right upper arm should have +15deg
-	// X-axis recoil stacked on top of the aim hold pose.
-	const Zenith_Maths::Quat xKick = glm::angleAxis(glm::radians(15.0f), Zenith_Maths::Vector3(1, 0, 0))
-	                                * StickFigureAimHoldPose::RightUpperArm();
-	const Zenith_Maths::Quat xSample = pxCh->SampleRotation(HumanFrameSeconds(2.0f));
-	ZENITH_ASSERT_TRUE(StickFigureQuatEquals(xSample, xKick),
-		"Fire RightUpperArm at the recoil peak should be aim pose + 15deg X recoil");
-	delete pxClip;
-}
-
-// ----- Reload ---------------------------------------------------------------
-
-ZENITH_TEST(StickFigureProcAnim, ReloadClipMetadata) { Zenith_UnitTests::TestStickFigureReloadClipMetadata(); }
-void Zenith_UnitTests::TestStickFigureReloadClipMetadata()
-{
-	Flux_AnimationClip* pxClip = CreateReloadAnimation();
-	ZENITH_ASSERT_TRUE(pxClip->GetName() == "Reload", "Reload clip name should be 'Reload'");
-	ZENITH_ASSERT_TRUE(!pxClip->IsLooping(), "Reload clip should NOT be looping");
-	ZENITH_ASSERT_TRUE(std::abs(pxClip->GetDuration() - 1.5f) < 1e-4f, "Reload clip duration should be 1.5s");
-	ZENITH_ASSERT_TRUE(pxClip->GetTicksPerSecond() == 24, "Reload clip should be 24 fps");
-	delete pxClip;
-}
-
-ZENITH_TEST(StickFigureProcAnim, ReloadClipFiveKeyframesOnLeftArm) { Zenith_UnitTests::TestStickFigureReloadClipFiveKeyframesOnLeftArm(); }
-void Zenith_UnitTests::TestStickFigureReloadClipFiveKeyframesOnLeftArm()
-{
-	Flux_AnimationClip* pxClip = CreateReloadAnimation();
-	const Flux_BoneChannel* pxCh = pxClip->GetBoneChannel("LeftUpperArm");
-	ZENITH_ASSERT_TRUE(pxCh != nullptr, "Reload should have LeftUpperArm channel");
-	ZENITH_ASSERT_TRUE(pxCh->GetRotationKeyframes().GetSize() == 8,
-		"Reload LeftUpperArm should have 8 rotation keyframes (rest, drop, reach, grab, lift, seat, slap, rest)");
-	delete pxClip;
-}
-
-ZENITH_TEST(StickFigureProcAnim, ReloadClipReturnsToAimPoseAtEnd) { Zenith_UnitTests::TestStickFigureReloadClipReturnsToAimPoseAtEnd(); }
-void Zenith_UnitTests::TestStickFigureReloadClipReturnsToAimPoseAtEnd()
-{
-	Flux_AnimationClip* pxClip = CreateReloadAnimation();
-	const Flux_BoneChannel* pxCh = pxClip->GetBoneChannel("LeftUpperArm");
-	ZENITH_ASSERT_TRUE(pxCh != nullptr, "Reload should have LeftUpperArm channel");
-
-	// Last keyframe should match aim hold pose so the transition back to Aim
-	// is seamless. Read the authored last keyframe directly (see Fire test for
-	// why we don't sample at the boundary).
-	const auto& axRotations = pxCh->GetRotationKeyframes();
-	ZENITH_ASSERT_TRUE(axRotations.GetSize() != 0, "Reload LeftUpperArm should have keyframes");
-	const Zenith_Maths::Quat xExpected = StickFigureAimHoldPose::LeftUpperArm();
-	const Zenith_Maths::Quat xLast = axRotations.GetBack().first;
-	ZENITH_ASSERT_TRUE(StickFigureQuatEquals(xLast, xExpected),
-		"Reload LeftUpperArm last keyframe should be aim hold pose");
-	delete pxClip;
-}
-
-// ----- Jump -----------------------------------------------------------------
-
-ZENITH_TEST(StickFigureProcAnim, JumpClipMetadata) { Zenith_UnitTests::TestStickFigureJumpClipMetadata(); }
-void Zenith_UnitTests::TestStickFigureJumpClipMetadata()
-{
-	Flux_AnimationClip* pxClip = CreateJumpAnimation();
-	ZENITH_ASSERT_TRUE(pxClip->GetName() == "Jump", "Jump clip name should be 'Jump'");
-	ZENITH_ASSERT_TRUE(!pxClip->IsLooping(), "Jump clip should NOT be looping");
-	ZENITH_ASSERT_TRUE(std::abs(pxClip->GetDuration() - 0.8f) < 1e-4f, "Jump clip duration should be 0.8s");
-	ZENITH_ASSERT_TRUE(pxClip->GetTicksPerSecond() == 24, "Jump clip should be 24 fps");
-	delete pxClip;
-}
-
-ZENITH_TEST(StickFigureProcAnim, JumpClipBothLegsHaveKeyframes) { Zenith_UnitTests::TestStickFigureJumpClipBothLegsHaveKeyframes(); }
-void Zenith_UnitTests::TestStickFigureJumpClipBothLegsHaveKeyframes()
-{
-	Flux_AnimationClip* pxClip = CreateJumpAnimation();
-	ZENITH_ASSERT_TRUE(pxClip->HasBoneChannel("LeftUpperLeg"),  "Jump missing LeftUpperLeg channel");
-	ZENITH_ASSERT_TRUE(pxClip->HasBoneChannel("RightUpperLeg"), "Jump missing RightUpperLeg channel");
-	ZENITH_ASSERT_TRUE(pxClip->HasBoneChannel("LeftLowerLeg"),  "Jump missing LeftLowerLeg channel");
-	ZENITH_ASSERT_TRUE(pxClip->HasBoneChannel("RightLowerLeg"), "Jump missing RightLowerLeg channel");
-	delete pxClip;
+	ZENITH_ASSERT_TRUE(axRotations.GetSize() != 0, "Jump's Spine should have rotation keyframes");
+	if (axRotations.GetSize() == 0)
+	{
+		return;
+	}
+	ZENITH_ASSERT_TRUE(StickFigureQuatEquals(axRotations.GetBack().first, glm::identity<Zenith_Maths::Quat>()),
+		"Jump's last Spine key should be identity -- the landing recovers to standing");
 }
 
 // ----- Human body mesh -------------------------------------------------------
@@ -311,25 +619,6 @@ void Zenith_UnitTests::TestStickFigureBodySmoothSkinning()
 	delete pxSkel;
 }
 
-ZENITH_TEST(StickFigureProcAnim, JumpClipReturnsToIdentityAtEnd) { Zenith_UnitTests::TestStickFigureJumpClipReturnsToIdentityAtEnd(); }
-void Zenith_UnitTests::TestStickFigureJumpClipReturnsToIdentityAtEnd()
-{
-	Flux_AnimationClip* pxClip = CreateJumpAnimation();
-	const Flux_BoneChannel* pxCh = pxClip->GetBoneChannel("Spine");
-	ZENITH_ASSERT_TRUE(pxCh != nullptr, "Jump should have Spine channel");
-
-	// Last keyframe should be identity (recovered after the jump). Read the
-	// authored last keyframe directly (see Fire test for why we don't sample
-	// at the boundary).
-	const auto& axRotations = pxCh->GetRotationKeyframes();
-	ZENITH_ASSERT_TRUE(axRotations.GetSize() != 0, "Jump Spine should have keyframes");
-	const Zenith_Maths::Quat xIdentity = glm::identity<Zenith_Maths::Quat>();
-	const Zenith_Maths::Quat xLast = axRotations.GetBack().first;
-	ZENITH_ASSERT_TRUE(StickFigureQuatEquals(xLast, xIdentity),
-		"Jump Spine last keyframe should be identity");
-	delete pxClip;
-}
-
 // ----- ProceduralTree leaf material regression -------------------------------
 // The leaf albedo's alpha channel is a real leaf-shape mask, so the GENERATED leaf
 // material MUST be MASKED (GenerateTreeMaterials). A regression to OPAQUE makes the
@@ -347,102 +636,6 @@ ZENITH_TEST(ProceduralTree, LeafMaterialIsAlphaMasked)
 		"Leaf material must be MASKED so the alpha mask cuts the leaves out");
 	ZENITH_ASSERT_EQ_FLOAT(pxLeaves->GetAlphaCutoff(), 0.45f, 0.0001f,
 		"Leaf alpha cutoff must stay 0.45");
-}
-
-// ----- Rig identity + key-time/duration agreement, across ALL SEVENTEEN clips ----
-//
-// ★ THE POPULATION IS THE POINT. Every other clip test in this file names ONE
-// factory, so a clip added later inherits no coverage at all -- which is exactly
-// how the four tennis clips arrived without the file header's "13 clips" moving.
-// These two iterate the whole export set, so a new factory is covered the moment
-// it is listed and an omitted listing is the only way to escape them.
-//
-// ★ THE TABLE THEY WALK — axSTICKFIGURE_CLIP_FACTORIES / uSTICKFIGURE_CLIP_COUNT
-// — LIVES IN THE .cpp ABOVE THIS INCLUDE, not here. It used to be declared in
-// this file, which meant the production seeding phase and the units could walk
-// two different lists; one table is the whole point of the assertion that the
-// count is seventeen.
-
-ZENITH_TEST(StickFigureProcAnim, EveryClipCarriesTheSharedRigIdentity)
-{
-	// D7 / D8. A .zanim whose m_strSkeletonPath is empty loads, plays and reports
-	// no error -- the animator simply has nothing to retarget onto and the preview
-	// has nothing to draw. Nothing downstream distinguishes that from a clip that
-	// happens to drive no visible bone, so the metadata is where it has to be
-	// caught.
-	//
-	// ★ AND THE PREFIX IS PART OF THE ASSERTION, not decoration.
-	// Zenith_AssetRegistry::NormalizeAssetPath leaves a bare RELATIVE path exactly
-	// as it found it, so "Meshes/StickFigure/StickFigure.zskel" would satisfy a
-	// "non-empty" check, round-trip through the stream unchanged, and resolve to
-	// nothing (Docs/HumanoidImport.md invariant 6).
-	ZENITH_ASSERT_EQ(uSTICKFIGURE_CLIP_COUNT, 17u,
-		"the StickFigure clip set is seventeen -- update the export table and this list together");
-
-	for (u_int u = 0; u < uSTICKFIGURE_CLIP_COUNT; u++)
-	{
-		const StickFigureClipFactory& xFactory = axSTICKFIGURE_CLIP_FACTORIES[u];
-		Flux_AnimationClip* pxClip = xFactory.m_pfnCreate();
-		const Flux_AnimationClipMetadata& xMetadata = pxClip->GetMetadata();
-
-		ZENITH_ASSERT_STREQ(pxClip->GetName().c_str(), xFactory.m_szName,
-			"clip %u is not the one this table says it is", u);
-		ZENITH_ASSERT_STREQ(xMetadata.m_strSkeletonPath.c_str(),
-			"engine:Meshes/StickFigure/StickFigure.zskel",
-			"clip '%s' does not name the ONE shared humanoid rig, engine:-prefixed", xFactory.m_szName);
-		ZENITH_ASSERT_STREQ(xMetadata.m_strPreviewModelPath.c_str(),
-			"engine:Meshes/StickFigure/StickFigure.zmodel",
-			"clip '%s' names no model to preview it on", xFactory.m_szName);
-		ZENITH_ASSERT_TRUE(xMetadata.m_bGenerated,
-			"clip '%s' is rewritten in full by every tools boot but does not say so (D8)", xFactory.m_szName);
-		ZENITH_ASSERT_EQ(xMetadata.m_uAuthoredFrameRate, 24u,
-			"clip '%s' authored frame rate must be the 24 fps grid HumanFrameSeconds divides by", xFactory.m_szName);
-
-		delete pxClip;
-	}
-}
-
-ZENITH_TEST(StickFigureProcAnim, EveryClipsKeysFitInsideItsDuration)
-{
-	// D3 made "the last key lands at or before the end" a checkable property, and
-	// this is the check. A generator that authored on one grid and stated its
-	// length on another produces a clip that samples correctly for its first
-	// fraction and then holds its last pose -- visible as a freeze, invisible to
-	// every value-based assertion in this file.
-	//
-	// ★ FIRE IS EXEMPT, DELIBERATELY, AND THE NUMBERS ARE HERE SO THE EXEMPTION CAN
-	// BE FALSIFIED. CreateFireAnimation's recoil channels carry a settle key at
-	// authored frame 5, which is 5/24 = 0.208333 s, against a stated duration of
-	// 0.20 s -- 8.3 ms past the end. Decision D13 permits a key past the duration
-	// (the mutators do not veto one; a panel warns), and the duration itself is
-	// PINNED at 0.20f by FireClipMetadata above, so moving the duration to 0.2083 s
-	// to close the gap would red that test instead. The exemption is the smaller
-	// lie of the two, and it is one clip.
-	for (u_int u = 0; u < uSTICKFIGURE_CLIP_COUNT; u++)
-	{
-		const StickFigureClipFactory& xFactory = axSTICKFIGURE_CLIP_FACTORIES[u];
-		Flux_AnimationClip* pxClip = xFactory.m_pfnCreate();
-
-		const bool bIsFire = (std::string(xFactory.m_szName) == "Fire");
-		if (bIsFire)
-		{
-			// Pin the exemption's own numbers, so it stops being true the moment Fire
-			// is retimed -- an exemption nothing measures is an exemption that outlives
-			// its reason.
-			ZENITH_ASSERT_EQ_FLOAT(pxClip->GetDuration(), 0.20f, 1e-4f,
-				"Fire's duration moved; re-derive the D13 exemption below it");
-			ZENITH_ASSERT_EQ_FLOAT(Flux_ClipLastKeyTimeSeconds(*pxClip), 5.0f / 24.0f, 1e-4f,
-				"Fire's last key is no longer authored frame 5 -- the D13 exemption may be unnecessary now");
-		}
-		else
-		{
-			ZENITH_ASSERT_TRUE(Flux_ClipKeyTimesFitDuration(*pxClip),
-				"clip '%s' carries a key past its %.4f s duration (last key at %.4f s)",
-				xFactory.m_szName, pxClip->GetDuration(), Flux_ClipLastKeyTimeSeconds(*pxClip));
-		}
-
-		delete pxClip;
-	}
 }
 
 // ----- The proportion warp actually reaching the mesh -------------------------
@@ -495,358 +688,4 @@ ZENITH_TEST(StickFigureBody, WarpedLoftLandmarksLandOnTheRigsJointPlanes)
 		"...and its wrist at the rig's wrist reach");
 
 	delete pxMesh;
-}
-
-// ============================================================================
-// The AUTHORED TWINS of the seventeen clips (WU-9.1 stage 1).
-//
-// ★ WHAT THESE FOUR ARE FOR. Stage 2 deletes the generators and re-points every
-// consumer at the committed files under Assets/Authored/. Once that happens
-// nothing in the tree can re-derive what the clips were, so the properties that
-// have to survive the deletion are the ones worth pinning NOW, while both halves
-// still exist and can be compared to each other:
-//
-//   1. the twin IS the original (it samples identically, everywhere);
-//   2. every clip drives both UpperArms -- today the export loop's bake-time
-//      assert, tomorrow a property of seventeen committed files;
-//   3. the authored path keeps the root prefix AND the subdirectory;
-//   4. seeding never touches a file that is already there (D21).
-//
-// All four are pure CPU work under the Null backend: a clip is data, the seeding
-// unit writes into a private directory under the OS temp dir and removes it
-// again, and nothing here touches a device, a scene or the asset registry. None
-// is requiresGraphics.
-// ============================================================================
-
-namespace
-{
-	// 20 matched times spanning [0, duration].
-	constexpr u_int uSTICKFIGURE_AUTHORED_SAMPLE_COUNT = 20u;
-
-	// ★ THE COMPARISON IS OF POSES, NOT OF FIELDS. A field-by-field walk would
-	// pass on two clips whose keys agree and whose SAMPLING does not (a tangent
-	// array out of lockstep, a channel left unsorted), and the pose is what a
-	// skeleton actually receives. The whole local matrix is compared as well as
-	// the three tracks separately, so a failure says which one moved.
-	bool StickFigureAuthoredPosesMatch(const Flux_AnimationClip& xGenerated,
-		const Flux_AnimationClip& xAuthored, std::string& strOutWhy)
-	{
-		if (xGenerated.GetBoneChannels().GetSize() != xAuthored.GetBoneChannels().GetSize())
-		{
-			strOutWhy = "the twin carries a different number of bone channels";
-			return false;
-		}
-
-		const float fDuration = xGenerated.GetDuration();
-		for (Zenith_HashMap<std::string, Flux_BoneChannel>::Iterator xIt(xGenerated.GetBoneChannels());
-			!xIt.Done(); xIt.Next())
-		{
-			const std::string strBone = xIt.GetKey();
-			const Flux_BoneChannel* pxTwin = xAuthored.GetBoneChannel(strBone);
-			if (pxTwin == nullptr)
-			{
-				strOutWhy = "the twin has no channel for bone '" + strBone + "'";
-				return false;
-			}
-			const Flux_BoneChannel& xChannel = xIt.GetValue();
-
-			for (u_int u = 0; u < uSTICKFIGURE_AUTHORED_SAMPLE_COUNT; u++)
-			{
-				const float fTime = fDuration
-					* (static_cast<float>(u) / static_cast<float>(uSTICKFIGURE_AUTHORED_SAMPLE_COUNT - 1u));
-
-				if (glm::length(xChannel.SamplePosition(fTime) - pxTwin->SamplePosition(fTime)) > 1e-5f)
-				{
-					strOutWhy = "position diverges on bone '" + strBone + "'";
-					return false;
-				}
-				if (glm::length(xChannel.SampleScale(fTime) - pxTwin->SampleScale(fTime)) > 1e-5f)
-				{
-					strOutWhy = "scale diverges on bone '" + strBone + "'";
-					return false;
-				}
-				// A quaternion and its negation are the same rotation, so compare |dot|.
-				const float fDot = glm::dot(xChannel.SampleRotation(fTime), pxTwin->SampleRotation(fTime));
-				if (std::abs(std::abs(fDot) - 1.0f) > 1e-5f)
-				{
-					strOutWhy = "rotation diverges on bone '" + strBone + "'";
-					return false;
-				}
-
-				const Zenith_Maths::Matrix4 xLocalA = xChannel.Sample(fTime);
-				const Zenith_Maths::Matrix4 xLocalB = pxTwin->Sample(fTime);
-				for (int iCol = 0; iCol < 4; iCol++)
-				{
-					for (int iRow = 0; iRow < 4; iRow++)
-					{
-						if (std::abs(xLocalA[iCol][iRow] - xLocalB[iCol][iRow]) > 1e-5f)
-						{
-							strOutWhy = "the local pose matrix diverges on bone '" + strBone + "'";
-							return false;
-						}
-					}
-				}
-			}
-		}
-
-		return true;
-	}
-
-	//--------------------------------------------------------------------------
-	// Fixture — a private directory under the OS temp dir, removed on the way
-	// out. ★ THE SEEDING UNIT MUST NOT REACH THE REAL TREE: those files are
-	// COMMITTED, and a unit that wrote one would put the checkout in `git status`
-	// and (worse) look identical to a pass whether or not the skip logic works.
-	//--------------------------------------------------------------------------
-	struct StickFigureAuthoredTempDir
-	{
-		std::filesystem::path m_xRoot;
-
-		explicit StickFigureAuthoredTempDir(const char* szLeafDirectory)
-		{
-			std::error_code xError;
-			std::filesystem::path xBase = std::filesystem::temp_directory_path(xError);
-			if (xError)
-			{
-				xBase = ".";
-			}
-			m_xRoot = xBase / szLeafDirectory;
-			std::filesystem::remove_all(m_xRoot, xError);
-		}
-
-		~StickFigureAuthoredTempDir()
-		{
-			std::error_code xError;
-			std::filesystem::remove_all(m_xRoot, xError);
-		}
-
-		StickFigureAuthoredTempDir(const StickFigureAuthoredTempDir&) = delete;
-		StickFigureAuthoredTempDir& operator=(const StickFigureAuthoredTempDir&) = delete;
-
-		// With a trailing separator — what the seeding function concatenates onto.
-		// The directory is deliberately NOT created here: the pass has to create it.
-		std::string Dir() const { return m_xRoot.generic_string() + "/"; }
-	};
-
-	std::string StickFigureAuthoredReadBytes(const std::string& strPath)
-	{
-		std::ifstream xFile(strPath, std::ios::binary);
-		if (!xFile)
-		{
-			return std::string();
-		}
-		return std::string(std::istreambuf_iterator<char>(xFile), std::istreambuf_iterator<char>());
-	}
-
-	bool StickFigureAuthoredParseFile(const std::string& strPath, Flux_AnimationClip& xOut)
-	{
-		Zenith_DataStream xStream;
-		xStream.ReadFromFile(strPath.c_str());
-		if (!xStream.IsValid())
-		{
-			return false;
-		}
-		return xOut.ParseStream(xStream).IsOk();
-	}
-}
-
-ZENITH_TEST(StickFigureAuthored, EveryAuthoredTwinSamplesIdenticallyToItsGeneratedOriginal)
-{
-	// ★ THE TWIN IS THE SAME ANIMATION, AND m_bGenerated IS THE ONLY DIFFERENCE.
-	// That claim is the whole justification for seeding Assets/Authored/ from a
-	// generator: if the twin were even slightly a different clip, stage 2's
-	// re-pointing would silently change how every human in three games moves,
-	// with no gate able to see it (the files are new, so there is nothing to diff
-	// against). Sampled rather than compared field by field — see the helper.
-	ZENITH_ASSERT_EQ(uSTICKFIGURE_CLIP_COUNT, 17u,
-		"the StickFigure clip set is seventeen -- update the export table and the factory table together");
-
-	for (u_int u = 0; u < uSTICKFIGURE_CLIP_COUNT; u++)
-	{
-		const StickFigureClipFactory& xFactory = axSTICKFIGURE_CLIP_FACTORIES[u];
-
-		Flux_AnimationClip* pxGenerated = xFactory.m_pfnCreate();
-		Flux_AnimationClip* pxAuthored  = xFactory.m_pfnCreate();
-
-		// Exactly what the seeding phase does to a clip, and nothing else.
-		pxAuthored->GetMetadata().m_bGenerated = false;
-
-		std::string strWhy;
-		ZENITH_ASSERT_TRUE(StickFigureAuthoredPosesMatch(*pxGenerated, *pxAuthored, strWhy),
-			"clip '%s': the authored twin does not pose like its generated original -- %s",
-			xFactory.m_szName, strWhy.c_str());
-
-		// The rest of the metadata travels untouched: a twin that lost its rig
-		// reference would preview against nothing, and one whose name moved could
-		// not be resolved through a clip collection at all.
-		const Flux_AnimationClipMetadata& xGen = pxGenerated->GetMetadata();
-		const Flux_AnimationClipMetadata& xAuth = pxAuthored->GetMetadata();
-		ZENITH_ASSERT_STREQ(xAuth.m_strName.c_str(), xGen.m_strName.c_str(),
-			"clip '%s': the twin's name moved", xFactory.m_szName);
-		ZENITH_ASSERT_EQ_FLOAT(xAuth.m_fDuration, xGen.m_fDuration, 1e-6f,
-			"clip '%s': the twin's duration moved", xFactory.m_szName);
-		ZENITH_ASSERT_STREQ(xAuth.m_strSkeletonPath.c_str(), xGen.m_strSkeletonPath.c_str(),
-			"clip '%s': the twin names a different rig", xFactory.m_szName);
-		ZENITH_ASSERT_STREQ(xAuth.m_strPreviewModelPath.c_str(), xGen.m_strPreviewModelPath.c_str(),
-			"clip '%s': the twin names a different preview model", xFactory.m_szName);
-		ZENITH_ASSERT_EQ(xAuth.m_uAuthoredFrameRate, xGen.m_uAuthoredFrameRate,
-			"clip '%s': the twin's authored frame rate moved", xFactory.m_szName);
-		ZENITH_ASSERT_EQ(xAuth.m_uTicksPerSecond, xGen.m_uTicksPerSecond,
-			"clip '%s': the twin's import provenance moved", xFactory.m_szName);
-		ZENITH_ASSERT_TRUE(xAuth.m_bLooping == xGen.m_bLooping,
-			"clip '%s': the twin's loop flag moved", xFactory.m_szName);
-		ZENITH_ASSERT_EQ(pxAuthored->GetEvents().GetSize(), pxGenerated->GetEvents().GetSize(),
-			"clip '%s': the twin carries a different number of events", xFactory.m_szName);
-
-		ZENITH_ASSERT_TRUE(xGen.m_bGenerated, "clip '%s': the original must still say it is generated (D8)",
-			xFactory.m_szName);
-		ZENITH_ASSERT_FALSE(xAuth.m_bGenerated, "clip '%s': the twin must NOT say it is generated (D8)",
-			xFactory.m_szName);
-
-		delete pxAuthored;
-		delete pxGenerated;
-	}
-}
-
-ZENITH_TEST(StickFigureAuthored, EveryClipDrivesBothUpperArms)
-{
-	// ★★ THE ONE RIG DEPENDENCY, AS A UNIT RATHER THAN AS A BAKE-TIME ASSERT.
-	// A bone a clip omits keeps its BIND local transform, and the two UpperArms
-	// are the only bones whose T-pose bind rotation is not identity
-	// (Zenith_HumanArmBindRotation) -- so a clip that omits one leaves that arm
-	// sticking straight out sideways for its whole duration, on StickFigure, on
-	// Zenithmon's humans and on every imported artist humanoid alike.
-	//
-	// GenerateStickFigureAssets asserts this in its export loop, which is a
-	// TOOLS-BUILD BOOT: it fires only where the bake runs, and stage 2 deletes
-	// that loop. Here it is a headless unit over the same seventeen clips, so the
-	// invariant survives the generators' deletion and can be re-pointed at the
-	// committed files without losing coverage in between.
-	ZENITH_ASSERT_EQ(uSTICKFIGURE_CLIP_COUNT, 17u,
-		"the StickFigure clip set is seventeen -- update the export table and the factory table together");
-
-	for (u_int u = 0; u < uSTICKFIGURE_CLIP_COUNT; u++)
-	{
-		const StickFigureClipFactory& xFactory = axSTICKFIGURE_CLIP_FACTORIES[u];
-		Flux_AnimationClip* pxClip = xFactory.m_pfnCreate();
-
-		// The bone names are the exporter gate's, spelled the same way.
-		ZENITH_ASSERT_TRUE(pxClip->HasBoneChannel("LeftUpperArm"),
-			"clip '%s' does not animate LeftUpperArm -- a T-posed human would hold that arm out",
-			xFactory.m_szName);
-		ZENITH_ASSERT_TRUE(pxClip->HasBoneChannel("RightUpperArm"),
-			"clip '%s' does not animate RightUpperArm -- a T-posed human would hold that arm out",
-			xFactory.m_szName);
-
-		delete pxClip;
-	}
-}
-
-ZENITH_TEST(StickFigureAuthored, TheAuthoredPathKeepsTheRootPrefixAndTheSubdirectory)
-{
-	// ★ THE PREFIX AND THE SUBDIRECTORY ARE BOTH PART OF THE ASSERTION.
-	// NormalizeAssetPath leaves a bare RELATIVE path exactly as it found it, so a
-	// ref without "engine:" would serialize cleanly, load cleanly and resolve to
-	// nothing; and flattening "Meshes/StickFigure/" away would put every set's
-	// "Walk" on one path, so the next generated set to be promoted would silently
-	// overwrite this one. Same rule as
-	// Zenith_AnimationDocument::BuildAuthoredAssetPath, matched here rather than
-	// called -- Tools may not include Editor.
-
-	// One row spelled out in full, with nothing constructed, so at least one
-	// expectation cannot drift with the helper it is checking.
-	ZENITH_ASSERT_STREQ(Zenith_Tools_StickFigureClipFileName("Idle").c_str(),
-		"StickFigure_Idle.zanim", "the bake's clip file naming moved");
-	ZENITH_ASSERT_STREQ(Zenith_Tools_StickFigureAuthoredPath("StickFigure_Idle.zanim").c_str(),
-		"engine:Authored/Meshes/StickFigure/StickFigure_Idle.zanim",
-		"the authored path for the Idle clip moved");
-
-	for (u_int u = 0; u < uSTICKFIGURE_CLIP_COUNT; u++)
-	{
-		const StickFigureClipFactory& xFactory = axSTICKFIGURE_CLIP_FACTORIES[u];
-
-		const std::string strFileName = Zenith_Tools_StickFigureClipFileName(xFactory.m_szName);
-		const std::string strExpectedFileName = std::string("StickFigure_") + xFactory.m_szName + ".zanim";
-		ZENITH_ASSERT_STREQ(strFileName.c_str(), strExpectedFileName.c_str(),
-			"clip '%s' does not use the bake's own file naming", xFactory.m_szName);
-
-		const std::string strExpectedPath = "engine:Authored/Meshes/StickFigure/" + strFileName;
-		ZENITH_ASSERT_STREQ(Zenith_Tools_StickFigureAuthoredPath(strFileName.c_str()).c_str(),
-			strExpectedPath.c_str(),
-			"clip '%s' does not map into engine:Authored/Meshes/StickFigure/", xFactory.m_szName);
-	}
-
-	// And the DIRECTORY the boot writes into is the same location the asset path
-	// describes -- an asset path nothing writes to would resolve to a file that
-	// never appears.
-	const std::string strDir = Zenith_Tools_StickFigureAuthoredDir();
-	ZENITH_ASSERT_TRUE(strDir.ends_with("Authored/Meshes/StickFigure/"),
-		"the seeding directory '%s' is not the location engine:Authored/Meshes/StickFigure/ resolves to",
-		strDir.c_str());
-}
-
-ZENITH_TEST(StickFigureAuthored, SeedingWritesOnceAndThenNeverTouchesTheDirectoryAgain)
-{
-	// ★ D21, AS THE PROPERTY THAT MAKES THIS PHASE SAFE TO SHIP. The bake never
-	// overwrites authored data; this one-shot seeding is the sanctioned exception
-	// and it is idempotent. The second pass is where that is decided, so the test
-	// HAND-EDITS one of the seeded files first: a pass that merely wrote the same
-	// bytes again would be indistinguishable from a skip by any check that only
-	// counted files, and would destroy an edit in the real tree.
-	StickFigureAuthoredTempDir xTemp("zenith_stickfigure_authored_seed");
-	const std::string strDir = xTemp.Dir();
-
-	const Zenith_Tools_StickFigureAuthoredSeedReport xFirst =
-		Zenith_Tools_ExportStickFigureAuthoredClips(strDir);
-
-	ZENITH_ASSERT_TRUE(xFirst.CountsAddUp(), "the first pass dropped a clip without saying so");
-	ZENITH_ASSERT_EQ(xFirst.m_uConsidered, uSTICKFIGURE_CLIP_COUNT, "all seventeen clips are considered");
-	ZENITH_ASSERT_EQ(xFirst.m_uWritten, uSTICKFIGURE_CLIP_COUNT, "an empty directory is seeded in full");
-	ZENITH_ASSERT_EQ(xFirst.m_uSkippedExisting, 0u, "nothing was already there");
-	ZENITH_ASSERT_EQ(xFirst.m_uFailed, 0u, "and nothing failed");
-
-	for (u_int u = 0; u < uSTICKFIGURE_CLIP_COUNT; u++)
-	{
-		const std::string strPath = strDir
-			+ Zenith_Tools_StickFigureClipFileName(axSTICKFIGURE_CLIP_FACTORIES[u].m_szName);
-		ZENITH_ASSERT_TRUE(std::filesystem::exists(strPath), "'%s' should have been written", strPath.c_str());
-	}
-
-	// What landed is a real .zanim at the CURRENT schema, read back through the
-	// runtime reader — the same verification the authored-clip migrator does, and
-	// for the same reason: these files are committed, so a truncated one would be
-	// committed too.
-	const std::string strIdlePath = strDir + Zenith_Tools_StickFigureClipFileName("Idle");
-	Flux_AnimationClip xSeeded;
-	ZENITH_ASSERT_TRUE(StickFigureAuthoredParseFile(strIdlePath, xSeeded),
-		"the seeded file must parse through the RUNTIME reader");
-	ZENITH_ASSERT_STREQ(xSeeded.GetName().c_str(), "Idle", "and be the clip it claims to be");
-	ZENITH_ASSERT_FALSE(xSeeded.GetMetadata().m_bGenerated,
-		"an authored clip does not claim to be regenerated on every boot (D8)");
-	ZENITH_ASSERT_STREQ(xSeeded.GetMetadata().m_strSkeletonPath.c_str(),
-		"engine:Meshes/StickFigure/StickFigure.zskel", "and still names the one shared rig");
-
-	// The hand edit: a different duration, written back over the seeded file.
-	Flux_AnimationClip xEdited = xSeeded;
-	xEdited.SetDuration(xSeeded.GetDuration() + 1.0f);
-	xEdited.Export(strIdlePath);
-	const std::string strEditedBytes = StickFigureAuthoredReadBytes(strIdlePath);
-	ZENITH_ASSERT_TRUE(!strEditedBytes.empty(), "the hand edit landed on disk");
-
-	const Zenith_Tools_StickFigureAuthoredSeedReport xSecond =
-		Zenith_Tools_ExportStickFigureAuthoredClips(strDir);
-
-	ZENITH_ASSERT_TRUE(xSecond.CountsAddUp(), "the second pass dropped a clip without saying so");
-	ZENITH_ASSERT_EQ(xSecond.m_uConsidered, uSTICKFIGURE_CLIP_COUNT, "all seventeen are still considered");
-	ZENITH_ASSERT_EQ(xSecond.m_uWritten, 0u, "a second pass over a full directory writes NOTHING");
-	ZENITH_ASSERT_EQ(xSecond.m_uSkippedExisting, uSTICKFIGURE_CLIP_COUNT, "every clip is skipped as already authored");
-	ZENITH_ASSERT_EQ(xSecond.m_uFailed, 0u, "and nothing failed");
-
-	ZENITH_ASSERT_TRUE(StickFigureAuthoredReadBytes(strIdlePath) == strEditedBytes,
-		"the hand edit survives the bake, byte for byte (D21)");
-
-	Flux_AnimationClip xAfter;
-	ZENITH_ASSERT_TRUE(StickFigureAuthoredParseFile(strIdlePath, xAfter), "and the edited file still parses");
-	ZENITH_ASSERT_EQ_FLOAT(xAfter.GetDuration(), xSeeded.GetDuration() + 1.0f, 1e-6f,
-		"with the edit in it, not the generator's value");
 }

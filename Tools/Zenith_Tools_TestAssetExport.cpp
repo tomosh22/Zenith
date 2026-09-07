@@ -24,35 +24,31 @@
 //     StickFigure.zmodel            — mesh + skeleton + material bundle (the
 //                                     games' create-if-missing fallbacks are
 //                                     superseded by this canonical export)
-//     StickFigure_<Anim>.zanim      — 17 clips (Idle/Walk/Run/Attack1-3/Dodge/
-//                                     Hit/Death/Aim/Fire/Reload/Jump/Serve/
-//                                     Forehand/Backhand/ReadyStance), authored
-//                                     from gait curves + eased key poses.
-//                                     Names/durations/looping are pinned by
-//                                     unit tests and the Combat hit windows.
-//                                     (This said "13" until 2026-09-06: the four
-//                                     tennis clips were added without the count
-//                                     moving, and Docs/HumanoidImport.md has said
-//                                     seventeen the whole time.)
-//                                     Every one names the shared rig and the
-//                                     StickFigure model in its metadata (D7) and
-//                                     is flagged m_bGenerated (D8) — see
-//                                     HumanNewClip below.
-//     StickFigure.gltf              — Blender round-trip export
+//     StickFigure.gltf              — Blender round-trip export, MESH + RIG ONLY.
+//                                     ★ It must carry NO animations: the mesh
+//                                     import walk re-imports it every boot and
+//                                     would write a generated .zanim per clip
+//                                     back into this directory (see the export
+//                                     call site).
 //
-//   ENGINE_ASSETS_DIR/Authored/Meshes/StickFigure/
-//     StickFigure_<Anim>.zanim      — the AUTHORED TWIN of each of those 17
-//                                     clips: the same data with m_bGenerated
-//                                     cleared, seeded ONCE and never overwritten
-//                                     (D21). Unlike everything above it, these
-//                                     are COMMITTED and hand-editable — see
-//                                     Zenith_Tools_ExportStickFigureAuthoredClips
-//                                     below and Tools/CLAUDE.md.
+// ★★ AND NO .zanim AT ALL (WU-9.1, 2026-09-07). The seventeen clips
+// (Idle/Walk/Run/Attack1-3/Dodge/Hit/Death/Aim/Fire/Reload/Jump/Serve/Forehand/
+// Backhand/ReadyStance) are AUTHORED data:
 //
-// Everything is deterministic — repeated boots regenerate byte-identical
-// assets. The Aim/Fire/Reload clips share StickFigureAimHoldPose so state
-// transitions between them never snap (pinned by Zenith_Tools_TestAssetExport
-// .Tests.inl).
+//   ENGINE_ASSETS_DIR/Authored/Meshes/StickFigure/StickFigure_<Anim>.zanim
+//     — COMMITTED, hand-edited in the Animation Editor, written by NOTHING.
+//       Not gitignored (the `Assets/Authored/**` re-include), not regenerable,
+//       and not this file's to overwrite (D21). Names, durations and loop flags
+//       are pinned by the Combat hit windows, the tennis testbed and the units
+//       in Zenith_Tools_TestAssetExport.Tests.inl, which read the FILES.
+//
+// The generators that used to write them — HumanNewClip, seventeen
+// Create*Animation factories, the gait-curve helpers and the aim hold pose —
+// were deleted with this change; see the block above GenerateUnitSphereMeshAsset
+// for where each of their invariants went.
+//
+// Everything this file still emits is deterministic: repeated boots regenerate
+// byte-identical assets.
 //=============================================================================
 
 #include "AssetHandling/Zenith_AssetRegistry.h"
@@ -2644,1566 +2640,32 @@ void ExportStickFigureModel(const std::string& strDir, const std::string& strSke
 #endif // ZENITH_TOOLS
 
 //==============================================================================
-// Animation authoring
+// ★★ THE SEVENTEEN CLIP GENERATORS USED TO LIVE HERE, AND THEY ARE GONE
+// (WU-9.1 stage 2, 2026-09-07).
 //
-// Conventions for this rig (forward = +Z, bind pose = arms at the sides):
-//   UpperLeg  -X swings the leg forward, +X back
-//   LowerLeg  +X is knee flexion (heel toward the seat)
-//   Foot      +X is plantarflexion (toes down), -X dorsiflexion
-//   UpperArm  -X swings the arm forward; +-Z abducts away from the body
-//   LowerArm  -X is elbow flexion (forearm raises forward)
-//   Spine     +X leans forward, +-Y twists, +Z tips the shoulders left
-//   Root      position channel translates the pelvis (model space)
+// `HumanNewClip`, `HumanRotX/Y/Z`, `HumanFrameSeconds`, `HumanAddRotCurve` /
+// `HumanAddPosCurve` / `HumanAddRotKeys` / `HumanAddPosKeys`, `HumanGaitBump`,
+// `HumanBuildGaitClip`, `StickFigureAimHoldPose` and the seventeen
+// `Create*Animation` factories were ~1560 lines of procedural authoring whose
+// entire output is now COMMITTED DATA under
+// `Zenith/Assets/Authored/Meshes/StickFigure/StickFigure_<Name>.zanim`. They were
+// deleted, not `#if 0`'d and not left unreferenced: two producers of one file is
+// how an authored edit gets silently overwritten, and this repository does not
+// keep legacy paths (D21, and the standing no-legacy rule).
 //
-// Looping clips (Idle/Walk/Run/Aim) are SAMPLED from continuous gait curves at
-// 25 keys so the slerp playback follows the curve closely; the curves are
-// built from sin/cos of the cycle phase so key 0 == key N and the loop never
-// pops. Action clips are key-posed with anticipation/strike/recovery timing.
-// Channels REPLACE the bind-pose local TRS (engine sampler contract), so
-// rotation keys are absolute local rotations and Root/Spine position keys are
-// based on their bind-local positions ((0,0,0) and (0,0.5,0)).
+// ★ WHERE THE KNOWLEDGE WENT, so this is a move rather than a loss:
+//   • the rig's sign conventions (which axis swings a limb forward) are in
+//     `Docs/HumanoidImport.md` and are a property of the RIG, not of a generator;
+//   • "every clip drives both UpperArms", "every clip names the shared rig",
+//     "every key time fits the duration" and the clip set's names, durations and
+//     loop flags are UNITS over the tracked files —
+//     `Zenith_Tools_TestAssetExport.Tests.inl`, category `StickFigureAuthored`;
+//   • the 24 fps authoring grid is `m_uAuthoredFrameRate` in each file (D6), and
+//     is asserted there too.
+//
+// EDITING A CLIP IS NOW AN EDITOR ACTION, and the file it writes is the artefact.
+// Nothing in this exporter may write one back.
 //==============================================================================
-namespace
-{
-
-Zenith_Maths::Quat HumanRotX(float fDeg) { return glm::angleAxis(glm::radians(fDeg), Zenith_Maths::Vector3(1, 0, 0)); }
-Zenith_Maths::Quat HumanRotY(float fDeg) { return glm::angleAxis(glm::radians(fDeg), Zenith_Maths::Vector3(0, 1, 0)); }
-Zenith_Maths::Quat HumanRotZ(float fDeg) { return glm::angleAxis(glm::radians(fDeg), Zenith_Maths::Vector3(0, 0, 1)); }
-
-//------------------------------------------------------------------------------
-// ★ THE KEY GRID, AND THE ONE PLACE IT IS DIVIDED OUT.
-//
-// A Flux_BoneChannel key time is SECONDS (D3) — the same clock as
-// Flux_AnimationClip::SetDuration. These action clips are AUTHORED as a frame
-// index on a 24 fps grid, because that is how the poses were timed and how they
-// read (`{ 3.8f, … }` is "frame 3.8 of 12"), so the frame->second division happens
-// exactly once, in HumanAddRotKeys / HumanAddPosKeys below.
-//
-// Do NOT add a second conversion at a call site. Every literal in a HumanRotKey /
-// HumanPosKey array is a FRAME; every argument to HumanAddRotCurve /
-// HumanAddPosCurve is a duration in SECONDS.
-//------------------------------------------------------------------------------
-constexpr float fHUMAN_ANIM_FPS = 24.0f;
-
-constexpr float HumanFrameSeconds(float fFrame) { return fFrame / fHUMAN_ANIM_FPS; }
-
-//------------------------------------------------------------------------------
-// ★ RIG IDENTITY IS SET BY THE FACTORY, NOT BY THE EXPORT LOOP (D7 / D8).
-//
-// All seventeen clips animate the SAME rig — there is exactly one humanoid
-// skeleton in this engine (Docs/HumanoidImport.md §1) — so stamping the reference
-// once in GenerateStickFigureAssets' export table would look like the tidier
-// place. It is set HERE instead, because a factory is also what the unit suite
-// calls: a clip that only acquires its skeleton reference on the way to disk is a
-// clip no headless test can check, and "this .zanim names its rig" is exactly the
-// property whose loss degrades a preview into a silent bind-pose mannequin.
-//
-// ★ THE engine: PREFIX IS LOAD-BEARING. Zenith_AssetRegistry::NormalizeAssetPath
-// converts an ABSOLUTE path into a prefixed one and leaves a bare RELATIVE path
-// exactly as it found it, so a ref spelled "Meshes/StickFigure/StickFigure.zskel"
-// serializes cleanly, loads cleanly, and resolves to nothing
-// (Docs/HumanoidImport.md invariant 6 — the defect that shipped once already).
-//------------------------------------------------------------------------------
-constexpr const char* szSTICKFIGURE_SKELETON_REF = "engine:Meshes/StickFigure/StickFigure" ZENITH_SKELETON_EXT;
-constexpr const char* szSTICKFIGURE_MODEL_REF    = "engine:Meshes/StickFigure/StickFigure" ZENITH_MODEL_EXT;
-
-// Construct a StickFigure clip with its name, length, loop flag AND rig identity
-// already set. fDurationSeconds is SECONDS (D3); the authoring grid is the same
-// fHUMAN_ANIM_FPS every key literal below is a frame index on, so the clip's
-// authored frame rate and its frame->second divisor cannot drift apart.
-Flux_AnimationClip* HumanNewClip(const char* szName, float fDurationSeconds, bool bLooping)
-{
-	Flux_AnimationClip* pxClip = new Flux_AnimationClip();
-	pxClip->SetName(szName);
-	pxClip->SetDuration(fDurationSeconds);
-	// IMPORT PROVENANCE ONLY (D3) — nothing samples through it. Kept equal to the
-	// authoring grid so a re-export to a tick-based format puts the keys back where
-	// they were.
-	pxClip->SetTicksPerSecond(static_cast<uint32_t>(fHUMAN_ANIM_FPS));
-	pxClip->SetLooping(bLooping);
-
-	Flux_AnimationClipMetadata& xMetadata = pxClip->GetMetadata();
-	xMetadata.m_uAuthoredFrameRate  = static_cast<uint32_t>(fHUMAN_ANIM_FPS);   // D6 — 24
-	xMetadata.m_strSkeletonPath     = szSTICKFIGURE_SKELETON_REF;               // D7
-	xMetadata.m_strPreviewModelPath = szSTICKFIGURE_MODEL_REF;                  // D7
-	// D8 — the bake rewrites all seventeen in full on every tools boot, so editing
-	// one in place is pointless and a consumer is entitled to know that.
-	xMetadata.m_bGenerated          = true;
-	return pxClip;
-}
-
-// Sample a continuous curve into a bone rotation channel. fTotalSeconds is the
-// clip's duration in SECONDS — key u lands at (u/(N-1)) * fTotalSeconds.
-// TFn: Zenith_Maths::Quat(float fT01).
-template <typename TFn>
-void HumanAddRotCurve(Flux_AnimationClip* pxClip, const char* szBone, float fTotalSeconds, u_int uKeys, TFn&& xFn)
-{
-	Flux_BoneChannel xChannel;
-	for (u_int u = 0; u < uKeys; u++)
-	{
-		const float fT = static_cast<float>(u) / static_cast<float>(uKeys - 1);
-		xChannel.AddRotationKeyframe(fT * fTotalSeconds, xFn(fT));
-	}
-	xChannel.SortKeyframes();
-	pxClip->AddBoneChannel(szBone, std::move(xChannel));
-}
-
-// TFn: Zenith_Maths::Vector3(float fT01). fTotalSeconds as above.
-template <typename TFn>
-void HumanAddPosCurve(Flux_AnimationClip* pxClip, const char* szBone, float fTotalSeconds, u_int uKeys, TFn&& xFn)
-{
-	Flux_BoneChannel xChannel;
-	for (u_int u = 0; u < uKeys; u++)
-	{
-		const float fT = static_cast<float>(u) / static_cast<float>(uKeys - 1);
-		xChannel.AddPositionKeyframe(fT * fTotalSeconds, xFn(fT));
-	}
-	xChannel.SortKeyframes();
-	pxClip->AddBoneChannel(szBone, std::move(xChannel));
-}
-
-// Explicit key-pose channels for the action clips. fFrame is a FRAME INDEX on the
-// 24 fps authoring grid, converted to seconds on the way into the channel.
-struct HumanRotKey { float fFrame; Zenith_Maths::Quat xRot; };
-struct HumanPosKey { float fFrame; Zenith_Maths::Vector3 xPos; };
-
-void HumanAddRotKeys(Flux_AnimationClip* pxClip, const char* szBone, const HumanRotKey* pxKeys, u_int uCount)
-{
-	Flux_BoneChannel xChannel;
-	for (u_int u = 0; u < uCount; u++)
-	{
-		xChannel.AddRotationKeyframe(HumanFrameSeconds(pxKeys[u].fFrame), pxKeys[u].xRot);
-	}
-	xChannel.SortKeyframes();
-	pxClip->AddBoneChannel(szBone, std::move(xChannel));
-}
-
-void HumanAddPosKeys(Flux_AnimationClip* pxClip, const char* szBone, const HumanPosKey* pxKeys, u_int uCount)
-{
-	Flux_BoneChannel xChannel;
-	for (u_int u = 0; u < uCount; u++)
-	{
-		xChannel.AddPositionKeyframe(HumanFrameSeconds(pxKeys[u].fFrame), pxKeys[u].xPos);
-	}
-	xChannel.SortKeyframes();
-	pxClip->AddBoneChannel(szBone, std::move(xChannel));
-}
-
-// Periodic raised-cosine bump centred at fCentre01 with half-width fWidth01
-// (both in cycle fractions). Used for the knee/ankle gait events.
-float HumanGaitBump(float fPhase01, float fCentre01, float fWidth01)
-{
-	float fD = fPhase01 - fCentre01;
-	fD -= std::floor(fD + 0.5f);   // wrap to [-0.5, 0.5)
-	const float fX = fD / fWidth01;
-	if (fabsf(fX) >= 1.0f)
-	{
-		return 0.0f;
-	}
-	return 0.5f + 0.5f * cosf(fX * fHUMAN_PI);
-}
-
-// Shared full-body walk/run cycle. fStride scales the leg/arm amplitudes,
-// fLean the forward lean, fBob the pelvis bob.
-void HumanBuildGaitClip(Flux_AnimationClip* pxClip, float fDurationSeconds,
-                        float fHipFwd, float fHipBack, float fKneeStance, float fKneeSwing,
-                        float fArmSwing, float fElbowBase, float fElbowPump,
-                        float fLean, float fBob, float fYaw)
-{
-	constexpr u_int uKEYS = 25;
-
-	// Legs: left leg phase 0 (heel strike when the leg is forward), right +0.5.
-	for (u_int uSide = 0; uSide < 2; uSide++)
-	{
-		const float fPhase = (uSide == 0) ? 0.0f : 0.5f;
-		const char* szUpper = (uSide == 0) ? "LeftUpperLeg" : "RightUpperLeg";
-		const char* szLower = (uSide == 0) ? "LeftLowerLeg" : "RightLowerLeg";
-		const char* szFoot = (uSide == 0) ? "LeftFoot" : "RightFoot";
-
-		HumanAddRotCurve(pxClip, szUpper, fDurationSeconds, uKEYS, [=](float fT)
-		{
-			const float fP = fT + fPhase;
-			// cos = +1 at heel strike: swing forward (-X) at phase 0.
-			const float fMid = 0.5f * (fHipBack - fHipFwd);
-			const float fAmp = 0.5f * (fHipBack + fHipFwd);
-			return HumanRotX(fMid - fAmp * cosf(fP * fHUMAN_TWO_PI));
-		});
-		HumanAddRotCurve(pxClip, szLower, fDurationSeconds, uKEYS, [=](float fT)
-		{
-			const float fP = fT + fPhase;
-			const float fFlex = 4.0f
-				+ fKneeStance * HumanGaitBump(fP, 0.16f, 0.14f)
-				+ fKneeSwing * HumanGaitBump(fP, 0.72f, 0.20f);
-			return HumanRotX(fFlex);
-		});
-		HumanAddRotCurve(pxClip, szFoot, fDurationSeconds, uKEYS, [=](float fT)
-		{
-			const float fP = fT + fPhase;
-			const float fAngle = -7.0f * HumanGaitBump(fP, 0.02f, 0.10f)     // heel-strike dorsiflex
-				+ 14.0f * HumanGaitBump(fP, 0.52f, 0.14f)                    // toe-off push
-				- 6.0f * HumanGaitBump(fP, 0.80f, 0.14f);                    // swing clearance
-			return HumanRotX(fAngle);
-		});
-	}
-
-	// Arms: contralateral (left arm forward with the right leg).
-	for (u_int uSide = 0; uSide < 2; uSide++)
-	{
-		const float fSign = (uSide == 0) ? 1.0f : -1.0f;   // phase flip via cos sign
-		const char* szUpper = (uSide == 0) ? "LeftUpperArm" : "RightUpperArm";
-		const char* szLower = (uSide == 0) ? "LeftLowerArm" : "RightLowerArm";
-		const float fOut = (uSide == 0) ? -3.5f : 3.5f;    // arms hang slightly out
-
-		HumanAddRotCurve(pxClip, szUpper, fDurationSeconds, uKEYS, [=](float fT)
-		{
-			const float fSwing = -2.0f + fSign * fArmSwing * cosf(fT * fHUMAN_TWO_PI);
-			return HumanRotX(fSwing) * HumanRotZ(fOut);
-		});
-		HumanAddRotCurve(pxClip, szLower, fDurationSeconds, uKEYS, [=](float fT)
-		{
-			// More elbow bend while the arm swings forward.
-			const float fFwd = 0.5f * (1.0f - fSign * cosf(fT * fHUMAN_TWO_PI));
-			return HumanRotX(-fElbowBase - fElbowPump * fFwd);
-		});
-	}
-
-	// Pelvis: vertical bob (2 per cycle), lateral sway toward the stance leg,
-	// counter-rotating yaw.
-	HumanAddPosCurve(pxClip, "Root", fDurationSeconds, uKEYS, [=](float fT)
-	{
-		const float fP = fT * fHUMAN_TWO_PI;
-		return Zenith_Maths::Vector3(
-			-0.012f * sinf(fP),
-			-0.4f * fBob + fBob * cosf(2.0f * fP + 0.35f),
-			0.0f);
-	});
-	HumanAddRotCurve(pxClip, "Root", fDurationSeconds, uKEYS, [=](float fT)
-	{
-		const float fP = fT * fHUMAN_TWO_PI;
-		return HumanRotY(fYaw * cosf(fP)) * HumanRotZ(1.6f * sinf(fP));
-	});
-
-	// Spine counters the pelvis and leans into the motion; the head stabilizes.
-	HumanAddRotCurve(pxClip, "Spine", fDurationSeconds, uKEYS, [=](float fT)
-	{
-		const float fP = fT * fHUMAN_TWO_PI;
-		return HumanRotX(fLean) * HumanRotY(-1.4f * fYaw * cosf(fP)) * HumanRotZ(-1.2f * sinf(fP));
-	});
-	HumanAddRotCurve(pxClip, "Head", fDurationSeconds, uKEYS, [=](float fT)
-	{
-		const float fP = fT * fHUMAN_TWO_PI;
-		return HumanRotX(-fLean * 0.55f + 0.8f * cosf(2.0f * fP)) * HumanRotY(0.45f * fYaw * cosf(fP));
-	});
-	HumanAddRotCurve(pxClip, "Neck", fDurationSeconds, uKEYS, [=](float fT)
-	{
-		const float fP = fT * fHUMAN_TWO_PI;
-		return HumanRotX(-fLean * 0.25f + 0.4f * cosf(2.0f * fP + 0.5f));
-	});
-}
-
-} // namespace
-
-//------------------------------------------------------------------------------
-// Looping locomotion clips.
-//------------------------------------------------------------------------------
-
-static Flux_AnimationClip* CreateIdleAnimation()
-{
-	Flux_AnimationClip* pxClip = HumanNewClip("Idle", 2.0f, /*bLooping=*/true);
-
-	// 2.0 s of key spread, matching SetDuration above (was 48 ticks @ 24/s).
-	constexpr float fDURATION_SECONDS = 2.0f;
-	constexpr u_int uKEYS = 25;
-
-	// Breathing: the whole upper body rides the Spine bone, so a small lift +
-	// pitch reads as a chest rise.
-	//
-	// ★ THIS KEY IS ABSOLUTE, not additive -- it REPLACES the bind-local Spine
-	// position rather than offsetting it, which is why the proportions table pins
-	// Spine and why this reads the pin instead of repeating the 0.5. A literal
-	// here and a moved bone there would translate the whole upper body.
-	{
-		const float fSpineLocalY =
-			Zenith_HumanProportionsRealistic().SpineY() - Zenith_HumanProportionsRealistic().HipY();
-		HumanAddPosCurve(pxClip, "Spine", fDURATION_SECONDS, uKEYS, [fSpineLocalY](float fT)
-		{
-			return Zenith_Maths::Vector3(0.0f, fSpineLocalY + 0.007f * sinf(fT * fHUMAN_TWO_PI), 0.0f);
-		});
-	}
-	HumanAddRotCurve(pxClip, "Spine", fDURATION_SECONDS, uKEYS, [](float fT)
-	{
-		const float fP = fT * fHUMAN_TWO_PI;
-		return HumanRotX(1.1f * sinf(fP + 0.3f)) * HumanRotZ(0.5f * sinf(fP));
-	});
-
-	// Slow weight shift on the pelvis.
-	HumanAddPosCurve(pxClip, "Root", fDURATION_SECONDS, uKEYS, [](float fT)
-	{
-		const float fP = fT * fHUMAN_TWO_PI;
-		return Zenith_Maths::Vector3(0.009f * sinf(fP), -0.004f + 0.004f * cosf(fP), 0.0f);
-	});
-	HumanAddRotCurve(pxClip, "Root", fDURATION_SECONDS, uKEYS, [](float fT)
-	{
-		return HumanRotZ(0.9f * sinf(fT * fHUMAN_TWO_PI));
-	});
-
-	// Relaxed arms: slight outward hang, elbows soft, gentle drift.
-	for (u_int uSide = 0; uSide < 2; uSide++)
-	{
-		const float fOut = (uSide == 0) ? -4.0f : 4.0f;
-		const float fPhase = (uSide == 0) ? 0.9f : 2.1f;
-		const char* szUpper = (uSide == 0) ? "LeftUpperArm" : "RightUpperArm";
-		const char* szLower = (uSide == 0) ? "LeftLowerArm" : "RightLowerArm";
-		HumanAddRotCurve(pxClip, szUpper, fDURATION_SECONDS, uKEYS, [=](float fT)
-		{
-			return HumanRotX(1.6f * sinf(fT * fHUMAN_TWO_PI + fPhase)) * HumanRotZ(fOut);
-		});
-		HumanAddRotCurve(pxClip, szLower, fDURATION_SECONDS, uKEYS, [=](float fT)
-		{
-			return HumanRotX(-8.0f - 1.5f * sinf(fT * fHUMAN_TWO_PI + fPhase));
-		});
-	}
-
-	// Head: slow attentive drift.
-	HumanAddRotCurve(pxClip, "Head", fDURATION_SECONDS, uKEYS, [](float fT)
-	{
-		const float fP = fT * fHUMAN_TWO_PI;
-		return HumanRotY(2.4f * sinf(fP)) * HumanRotX(-1.0f + 0.9f * sinf(fP + 0.7f));
-	});
-
-	return pxClip;
-}
-
-static Flux_AnimationClip* CreateWalkAnimation()
-{
-	Flux_AnimationClip* pxClip = HumanNewClip("Walk", 1.0f, /*bLooping=*/true);
-
-	// 1.0 s — the clip's own duration, in seconds (was 24 ticks @ 24/s).
-	HumanBuildGaitClip(pxClip, 1.0f,
-		/*hipFwd*/ 28.0f, /*hipBack*/ 18.0f,
-		/*kneeStance*/ 13.0f, /*kneeSwing*/ 52.0f,
-		/*armSwing*/ 21.0f, /*elbowBase*/ 16.0f, /*elbowPump*/ 13.0f,
-		/*lean*/ 3.5f, /*bob*/ 0.018f, /*yaw*/ 4.5f);
-
-	return pxClip;
-}
-
-static Flux_AnimationClip* CreateRunAnimation()
-{
-	Flux_AnimationClip* pxClip = HumanNewClip("Run", 0.5f, /*bLooping=*/true);
-
-	// 0.5 s — the clip's own duration, in seconds (was 12 ticks @ 24/s).
-	HumanBuildGaitClip(pxClip, 0.5f,
-		/*hipFwd*/ 50.0f, /*hipBack*/ 26.0f,
-		/*kneeStance*/ 22.0f, /*kneeSwing*/ 82.0f,
-		/*armSwing*/ 34.0f, /*elbowBase*/ 62.0f, /*elbowPump*/ 18.0f,
-		/*lean*/ 11.0f, /*bob*/ 0.034f, /*yaw*/ 7.5f);
-
-	return pxClip;
-}
-
-//------------------------------------------------------------------------------
-// Combat action clips. Authored with anticipation -> strike -> follow-through
-// -> recovery key timing; all channels return to identity so the Combat state
-// machine blends cleanly back to Idle/Walk. Durations are pinned by the
-// Combat hit windows (30-70% normalized time).
-//------------------------------------------------------------------------------
-
-static Flux_AnimationClip* CreateAttack1Animation()
-{
-	// Right straight jab: chamber, drive off the hips, snap back.
-	Flux_AnimationClip* pxClip = HumanNewClip("Attack1", 0.4f, /*bLooping=*/false);
-
-	const Zenith_Maths::Quat xId = glm::identity<Zenith_Maths::Quat>();
-
-	{
-		const HumanRotKey ax[] = {
-			{ 0.0f, xId },
-			{ 1.5f, HumanRotX(16.0f) * HumanRotY(8.0f) },               // chamber back
-			{ 3.8f, HumanRotX(-86.0f) * HumanRotY(-10.0f) },            // full extension
-			{ 5.2f, HumanRotX(-70.0f) },                                // follow-through
-			{ 7.5f, HumanRotX(-18.0f) },
-			{ 9.5f, xId },
-		};
-		HumanAddRotKeys(pxClip, "RightUpperArm", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-	{
-		const HumanRotKey ax[] = {
-			{ 0.0f, HumanRotX(-12.0f) },
-			{ 1.5f, HumanRotX(-78.0f) },                                // cocked
-			{ 3.8f, HumanRotX(-4.0f) },                                 // arm straight at impact
-			{ 5.2f, HumanRotX(-14.0f) },
-			{ 7.5f, HumanRotX(-32.0f) },
-			{ 9.5f, xId },
-		};
-		HumanAddRotKeys(pxClip, "RightLowerArm", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-	{
-		// Left arm stays up in guard through the punch.
-		const HumanRotKey ax[] = {
-			{ 0.0f, xId },
-			{ 1.5f, HumanRotX(-36.0f) },
-			{ 6.0f, HumanRotX(-32.0f) },
-			{ 9.5f, xId },
-		};
-		HumanAddRotKeys(pxClip, "LeftUpperArm", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-	{
-		const HumanRotKey ax[] = {
-			{ 0.0f, HumanRotX(-10.0f) },
-			{ 1.5f, HumanRotX(-85.0f) },
-			{ 6.0f, HumanRotX(-80.0f) },
-			{ 9.5f, xId },
-		};
-		HumanAddRotKeys(pxClip, "LeftLowerArm", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-	{
-		// Hips/shoulders drive the punch: wind up, rotate through, recover.
-		const HumanRotKey ax[] = {
-			{ 0.0f, xId },
-			{ 1.5f, HumanRotY(10.0f) * HumanRotX(2.0f) },               // wind up (right shoulder back)
-			{ 3.8f, HumanRotY(-16.0f) * HumanRotX(11.0f) },             // rotate into the punch
-			{ 6.5f, HumanRotY(-8.0f) * HumanRotX(6.0f) },
-			{ 9.5f, xId },
-		};
-		HumanAddRotKeys(pxClip, "Spine", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-	{
-		const HumanRotKey ax[] = {
-			{ 0.0f, xId },
-			{ 3.8f, HumanRotX(-4.0f) * HumanRotY(4.0f) },               // chin tucked, eyes on target
-			{ 9.5f, xId },
-		};
-		HumanAddRotKeys(pxClip, "Head", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-	{
-		// Small forward lunge + dip.
-		const HumanPosKey ax[] = {
-			{ 0.0f, { 0.0f, 0.0f, 0.0f } },
-			{ 3.8f, { 0.0f, -0.035f, 0.05f } },
-			{ 7.0f, { 0.0f, -0.015f, 0.02f } },
-			{ 9.5f, { 0.0f, 0.0f, 0.0f } },
-		};
-		HumanAddPosKeys(pxClip, "Root", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-
-	return pxClip;
-}
-
-static Flux_AnimationClip* CreateAttack2Animation()
-{
-	// Left hook: weight transfer, arcing swing across the body.
-	Flux_AnimationClip* pxClip = HumanNewClip("Attack2", 0.4f, /*bLooping=*/false);
-
-	const Zenith_Maths::Quat xId = glm::identity<Zenith_Maths::Quat>();
-
-	{
-		const HumanRotKey ax[] = {
-			{ 0.0f, xId },
-			{ 1.8f, HumanRotX(14.0f) * HumanRotY(-14.0f) * HumanRotZ(-12.0f) },   // wind back + out
-			{ 4.2f, HumanRotX(-72.0f) * HumanRotY(38.0f) },                       // hook arcs across
-			{ 5.6f, HumanRotX(-58.0f) * HumanRotY(46.0f) },                       // follow-through
-			{ 7.8f, HumanRotX(-16.0f) * HumanRotY(12.0f) },
-			{ 9.5f, xId },
-		};
-		HumanAddRotKeys(pxClip, "LeftUpperArm", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-	{
-		const HumanRotKey ax[] = {
-			{ 0.0f, HumanRotX(-10.0f) },
-			{ 1.8f, HumanRotX(-64.0f) },
-			{ 4.2f, HumanRotX(-78.0f) },                                          // elbow stays bent through a hook
-			{ 7.8f, HumanRotX(-26.0f) },
-			{ 9.5f, xId },
-		};
-		HumanAddRotKeys(pxClip, "LeftLowerArm", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-	{
-		// Right guard.
-		const HumanRotKey ax[] = {
-			{ 0.0f, xId },
-			{ 1.8f, HumanRotX(-34.0f) },
-			{ 6.0f, HumanRotX(-30.0f) },
-			{ 9.5f, xId },
-		};
-		HumanAddRotKeys(pxClip, "RightUpperArm", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-	{
-		const HumanRotKey ax[] = {
-			{ 0.0f, HumanRotX(-10.0f) },
-			{ 1.8f, HumanRotX(-82.0f) },
-			{ 6.0f, HumanRotX(-76.0f) },
-			{ 9.5f, xId },
-		};
-		HumanAddRotKeys(pxClip, "RightLowerArm", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-	{
-		const HumanRotKey ax[] = {
-			{ 0.0f, xId },
-			{ 1.8f, HumanRotY(-12.0f) * HumanRotZ(-3.0f) },                       // coil away
-			{ 4.2f, HumanRotY(20.0f) * HumanRotX(7.0f) * HumanRotZ(4.0f) },       // whip through
-			{ 6.5f, HumanRotY(11.0f) * HumanRotX(4.0f) },
-			{ 9.5f, xId },
-		};
-		HumanAddRotKeys(pxClip, "Spine", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-	{
-		const HumanRotKey ax[] = {
-			{ 0.0f, xId },
-			{ 4.2f, HumanRotY(-9.0f) * HumanRotX(-3.0f) },
-			{ 9.5f, xId },
-		};
-		HumanAddRotKeys(pxClip, "Head", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-	{
-		// Weight transfers onto the lead (right) foot through the hook.
-		const HumanPosKey ax[] = {
-			{ 0.0f, { 0.0f, 0.0f, 0.0f } },
-			{ 1.8f, { -0.025f, -0.02f, 0.0f } },
-			{ 4.2f, { 0.035f, -0.04f, 0.03f } },
-			{ 7.5f, { 0.015f, -0.015f, 0.01f } },
-			{ 9.5f, { 0.0f, 0.0f, 0.0f } },
-		};
-		HumanAddPosKeys(pxClip, "Root", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-
-	return pxClip;
-}
-
-static Flux_AnimationClip* CreateAttack3Animation()
-{
-	// Two-handed overhead smash with a forward hop. Ends with the same small
-	// forward displacement the old clip established (Root z 0.1).
-	Flux_AnimationClip* pxClip = HumanNewClip("Attack3", 0.5f, /*bLooping=*/false);
-
-	const Zenith_Maths::Quat xId = glm::identity<Zenith_Maths::Quat>();
-
-	for (u_int uSide = 0; uSide < 2; uSide++)
-	{
-		const char* szUpper = (uSide == 0) ? "LeftUpperArm" : "RightUpperArm";
-		const char* szLower = (uSide == 0) ? "LeftLowerArm" : "RightLowerArm";
-		const float fOut = (uSide == 0) ? -10.0f : 10.0f;
-		{
-			const HumanRotKey ax[] = {
-				{ 0.0f, xId },
-				{ 2.0f, HumanRotX(-60.0f) * HumanRotZ(fOut * 0.5f) },
-				{ 4.5f, HumanRotX(-152.0f) * HumanRotZ(fOut) },        // arms overhead
-				{ 6.0f, HumanRotX(-148.0f) * HumanRotZ(fOut) },        // hang at the top
-				{ 7.8f, HumanRotX(38.0f) },                            // slammed down past the hips
-				{ 9.5f, HumanRotX(22.0f) },
-				{ 12.0f, xId },
-			};
-			HumanAddRotKeys(pxClip, szUpper, ax, sizeof(ax) / sizeof(ax[0]));
-		}
-		{
-			const HumanRotKey ax[] = {
-				{ 0.0f, HumanRotX(-8.0f) },
-				{ 4.5f, HumanRotX(-42.0f) },                           // elbows soften overhead
-				{ 7.8f, HumanRotX(-6.0f) },                            // straight through the strike
-				{ 12.0f, xId },
-			};
-			HumanAddRotKeys(pxClip, szLower, ax, sizeof(ax) / sizeof(ax[0]));
-		}
-	}
-	{
-		const HumanRotKey ax[] = {
-			{ 0.0f, xId },
-			{ 4.5f, HumanRotX(-20.0f) },                               // arch back under the raise
-			{ 7.8f, HumanRotX(34.0f) },                                // crunch into the slam
-			{ 10.0f, HumanRotX(12.0f) },
-			{ 12.0f, xId },
-		};
-		HumanAddRotKeys(pxClip, "Spine", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-	{
-		const HumanRotKey ax[] = {
-			{ 0.0f, xId },
-			{ 4.5f, HumanRotX(-14.0f) },
-			{ 7.8f, HumanRotX(10.0f) },
-			{ 12.0f, xId },
-		};
-		HumanAddRotKeys(pxClip, "Head", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-	// Legs load the hop and absorb the landing.
-	for (u_int uSide = 0; uSide < 2; uSide++)
-	{
-		const char* szUpper = (uSide == 0) ? "LeftUpperLeg" : "RightUpperLeg";
-		const char* szLower = (uSide == 0) ? "LeftLowerLeg" : "RightLowerLeg";
-		{
-			const HumanRotKey ax[] = {
-				{ 0.0f, xId },
-				{ 3.0f, HumanRotX(14.0f) },
-				{ 7.8f, HumanRotX(-22.0f) },
-				{ 9.5f, HumanRotX(20.0f) },
-				{ 12.0f, xId },
-			};
-			HumanAddRotKeys(pxClip, szUpper, ax, sizeof(ax) / sizeof(ax[0]));
-		}
-		{
-			const HumanRotKey ax[] = {
-				{ 0.0f, xId },
-				{ 3.0f, HumanRotX(24.0f) },
-				{ 7.8f, HumanRotX(8.0f) },
-				{ 9.5f, HumanRotX(34.0f) },
-				{ 12.0f, xId },
-			};
-			HumanAddRotKeys(pxClip, szLower, ax, sizeof(ax) / sizeof(ax[0]));
-		}
-	}
-	{
-		const HumanPosKey ax[] = {
-			{ 0.0f, { 0.0f, 0.0f, 0.0f } },
-			{ 3.0f, { 0.0f, -0.05f, 0.0f } },                          // load
-			{ 6.0f, { 0.0f, 0.09f, 0.10f } },                          // hop up + forward
-			{ 7.8f, { 0.0f, -0.09f, 0.14f } },                         // drive down with the strike
-			{ 10.0f, { 0.0f, -0.03f, 0.11f } },
-			{ 12.0f, { 0.0f, 0.0f, 0.10f } },                          // ends a step forward (legacy contract)
-		};
-		HumanAddPosKeys(pxClip, "Root", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-
-	return pxClip;
-}
-
-static Flux_AnimationClip* CreateDodgeAnimation()
-{
-	// Side-step dodge to the right: crouching push, lean into the motion,
-	// trailing leg crossing behind. Ends displaced (Root x 0.8, legacy contract).
-	Flux_AnimationClip* pxClip = HumanNewClip("Dodge", 0.5f, /*bLooping=*/false);
-
-	const Zenith_Maths::Quat xId = glm::identity<Zenith_Maths::Quat>();
-
-	{
-		const HumanPosKey ax[] = {
-			{ 0.0f, { 0.0f, 0.0f, 0.0f } },
-			{ 2.5f, { 0.12f, -0.10f, 0.0f } },                         // load sideways
-			{ 5.5f, { 0.52f, -0.20f, 0.0f } },                         // push
-			{ 9.0f, { 0.78f, -0.06f, 0.0f } },
-			{ 12.0f, { 0.80f, 0.0f, 0.0f } },
-		};
-		HumanAddPosKeys(pxClip, "Root", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-	{
-		// Lean INTO the dodge (top of the spine toward +X).
-		const HumanRotKey ax[] = {
-			{ 0.0f, xId },
-			{ 3.5f, HumanRotZ(-16.0f) * HumanRotX(8.0f) },
-			{ 7.0f, HumanRotZ(-10.0f) },
-			{ 12.0f, xId },
-		};
-		HumanAddRotKeys(pxClip, "Spine", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-	{
-		// Head stays level on the horizon.
-		const HumanRotKey ax[] = {
-			{ 0.0f, xId },
-			{ 3.5f, HumanRotZ(10.0f) },
-			{ 7.0f, HumanRotZ(6.0f) },
-			{ 12.0f, xId },
-		};
-		HumanAddRotKeys(pxClip, "Head", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-	{
-		// Right leg steps out toward the dodge.
-		const HumanRotKey ax[] = {
-			{ 0.0f, xId },
-			{ 3.0f, HumanRotZ(20.0f) * HumanRotX(-10.0f) },
-			{ 6.5f, HumanRotZ(12.0f) },
-			{ 12.0f, xId },
-		};
-		HumanAddRotKeys(pxClip, "RightUpperLeg", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-	{
-		const HumanRotKey ax[] = {
-			{ 0.0f, xId },
-			{ 3.0f, HumanRotX(28.0f) },
-			{ 6.5f, HumanRotX(12.0f) },
-			{ 12.0f, xId },
-		};
-		HumanAddRotKeys(pxClip, "RightLowerLeg", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-	{
-		// Left leg pushes off then trails behind.
-		const HumanRotKey ax[] = {
-			{ 0.0f, xId },
-			{ 3.0f, HumanRotZ(14.0f) },
-			{ 6.5f, HumanRotZ(24.0f) * HumanRotX(6.0f) },
-			{ 12.0f, xId },
-		};
-		HumanAddRotKeys(pxClip, "LeftUpperLeg", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-	{
-		const HumanRotKey ax[] = {
-			{ 0.0f, xId },
-			{ 6.5f, HumanRotX(36.0f) },
-			{ 12.0f, xId },
-		};
-		HumanAddRotKeys(pxClip, "LeftLowerLeg", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-	// Arms counterbalance away from the motion.
-	{
-		const HumanRotKey ax[] = {
-			{ 0.0f, xId },
-			{ 4.0f, HumanRotX(-26.0f) * HumanRotZ(-22.0f) },
-			{ 8.0f, HumanRotX(-12.0f) * HumanRotZ(-8.0f) },
-			{ 12.0f, xId },
-		};
-		HumanAddRotKeys(pxClip, "LeftUpperArm", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-	{
-		const HumanRotKey ax[] = {
-			{ 0.0f, xId },
-			{ 4.0f, HumanRotX(-20.0f) * HumanRotZ(14.0f) },
-			{ 8.0f, HumanRotX(-8.0f) },
-			{ 12.0f, xId },
-		};
-		HumanAddRotKeys(pxClip, "RightUpperArm", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-
-	return pxClip;
-}
-
-static Flux_AnimationClip* CreateHitAnimation()
-{
-	// Impact from the front: head snaps, shoulders twist, a stagger step back
-	// with a partial recovery (the old clip's Root ends at -0.2; kept).
-	Flux_AnimationClip* pxClip = HumanNewClip("Hit", 0.3f, /*bLooping=*/false);
-
-	const Zenith_Maths::Quat xId = glm::identity<Zenith_Maths::Quat>();
-
-	{
-		const HumanPosKey ax[] = {
-			{ 0.0f, { 0.0f, 0.0f, 0.0f } },
-			{ 2.5f, { 0.015f, -0.03f, -0.16f } },
-			{ 5.0f, { 0.0f, -0.05f, -0.22f } },
-			{ 7.0f, { 0.0f, -0.03f, -0.20f } },
-		};
-		HumanAddPosKeys(pxClip, "Root", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-	{
-		const HumanRotKey ax[] = {
-			{ 0.0f, xId },
-			{ 1.2f, HumanRotX(-26.0f) * HumanRotY(7.0f) },             // whiplash back
-			{ 4.0f, HumanRotX(-10.0f) },
-			{ 7.0f, HumanRotX(-4.0f) },
-		};
-		HumanAddRotKeys(pxClip, "Head", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-	{
-		const HumanRotKey ax[] = {
-			{ 0.0f, xId },
-			{ 2.0f, HumanRotX(-18.0f) * HumanRotY(9.0f) },             // shoulders ride the impact
-			{ 5.0f, HumanRotX(-8.0f) },
-			{ 7.0f, HumanRotX(-3.0f) },
-		};
-		HumanAddRotKeys(pxClip, "Spine", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-	{
-		// Right leg staggers back to catch the weight.
-		const HumanRotKey ax[] = {
-			{ 0.0f, xId },
-			{ 3.0f, HumanRotX(16.0f) },
-			{ 7.0f, HumanRotX(8.0f) },
-		};
-		HumanAddRotKeys(pxClip, "RightUpperLeg", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-	{
-		const HumanRotKey ax[] = {
-			{ 0.0f, xId },
-			{ 3.0f, HumanRotX(20.0f) },
-			{ 7.0f, HumanRotX(10.0f) },
-		};
-		HumanAddRotKeys(pxClip, "RightLowerLeg", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-	// Arms flinch up.
-	for (u_int uSide = 0; uSide < 2; uSide++)
-	{
-		const char* szUpper = (uSide == 0) ? "LeftUpperArm" : "RightUpperArm";
-		const char* szLower = (uSide == 0) ? "LeftLowerArm" : "RightLowerArm";
-		{
-			const HumanRotKey ax[] = {
-				{ 0.0f, xId },
-				{ 2.0f, HumanRotX(-30.0f) },
-				{ 7.0f, HumanRotX(-8.0f) },
-			};
-			HumanAddRotKeys(pxClip, szUpper, ax, sizeof(ax) / sizeof(ax[0]));
-		}
-		{
-			const HumanRotKey ax[] = {
-				{ 0.0f, xId },
-				{ 2.0f, HumanRotX(-55.0f) },
-				{ 7.0f, HumanRotX(-14.0f) },
-			};
-			HumanAddRotKeys(pxClip, szLower, ax, sizeof(ax) / sizeof(ax[0]));
-		}
-	}
-
-	return pxClip;
-}
-
-static Flux_AnimationClip* CreateDeathAnimation()
-{
-	// Backward collapse in stages: impact recoil, knees buckle, fold to the
-	// ground, settle limp. Slight left/right asymmetry keeps it organic.
-	// Root descends to -1.0 (pelvis at ground level — legacy contract).
-	Flux_AnimationClip* pxClip = HumanNewClip("Death", 1.0f, /*bLooping=*/false);
-
-	const Zenith_Maths::Quat xId = glm::identity<Zenith_Maths::Quat>();
-
-	{
-		const HumanPosKey ax[] = {
-			{ 0.0f, { 0.0f, 0.0f, 0.0f } },
-			{ 4.0f, { 0.0f, -0.06f, -0.06f } },                        // recoil
-			{ 9.0f, { 0.02f, -0.34f, -0.16f } },                       // knees give way
-			{ 15.0f, { 0.03f, -0.74f, -0.30f } },                      // falling
-			{ 20.0f, { 0.03f, -1.0f, -0.40f } },                       // down
-			{ 24.0f, { 0.03f, -1.0f, -0.40f } },                       // still
-		};
-		HumanAddPosKeys(pxClip, "Root", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-	{
-		const HumanRotKey ax[] = {
-			{ 0.0f, xId },
-			{ 4.0f, HumanRotX(-16.0f) },
-			{ 9.0f, HumanRotX(-44.0f) * HumanRotY(6.0f) },
-			{ 15.0f, HumanRotX(-72.0f) * HumanRotY(8.0f) },
-			{ 20.0f, HumanRotX(-88.0f) * HumanRotY(8.0f) },            // flat on the back
-			{ 24.0f, HumanRotX(-88.0f) * HumanRotY(8.0f) },
-		};
-		HumanAddRotKeys(pxClip, "Spine", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-	{
-		const HumanRotKey ax[] = {
-			{ 0.0f, xId },
-			{ 3.0f, HumanRotX(-30.0f) },                               // head whips back first
-			{ 10.0f, HumanRotX(-12.0f) },
-			{ 16.0f, HumanRotX(14.0f) },                               // lolls forward as the back hits
-			{ 21.0f, HumanRotX(6.0f) * HumanRotY(10.0f) },             // settles to the side
-			{ 24.0f, HumanRotX(6.0f) * HumanRotY(10.0f) },
-		};
-		HumanAddRotKeys(pxClip, "Head", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-	// Legs: knees buckle, then slide out as the body lands.
-	for (u_int uSide = 0; uSide < 2; uSide++)
-	{
-		const char* szUpper = (uSide == 0) ? "LeftUpperLeg" : "RightUpperLeg";
-		const char* szLower = (uSide == 0) ? "LeftLowerLeg" : "RightLowerLeg";
-		const float fAsym = (uSide == 0) ? 1.0f : 1.18f;
-		{
-			const HumanRotKey ax[] = {
-				{ 0.0f, xId },
-				{ 9.0f, HumanRotX(28.0f * fAsym) },                    // thighs fold under
-				{ 15.0f, HumanRotX(2.0f) },
-				{ 20.0f, HumanRotX(-12.0f * fAsym) * HumanRotZ((uSide == 0) ? -7.0f : 9.0f) },   // sprawled
-				{ 24.0f, HumanRotX(-12.0f * fAsym) * HumanRotZ((uSide == 0) ? -7.0f : 9.0f) },
-			};
-			HumanAddRotKeys(pxClip, szUpper, ax, sizeof(ax) / sizeof(ax[0]));
-		}
-		{
-			const HumanRotKey ax[] = {
-				{ 0.0f, xId },
-				{ 9.0f, HumanRotX(60.0f * fAsym) },
-				{ 15.0f, HumanRotX(46.0f) },
-				{ 20.0f, HumanRotX(24.0f * fAsym) },
-				{ 24.0f, HumanRotX(24.0f * fAsym) },
-			};
-			HumanAddRotKeys(pxClip, szLower, ax, sizeof(ax) / sizeof(ax[0]));
-		}
-	}
-	// Arms: flail on the way down, land spread, settle.
-	for (u_int uSide = 0; uSide < 2; uSide++)
-	{
-		const char* szUpper = (uSide == 0) ? "LeftUpperArm" : "RightUpperArm";
-		const char* szLower = (uSide == 0) ? "LeftLowerArm" : "RightLowerArm";
-		const float fOut = (uSide == 0) ? -1.0f : 1.0f;
-		const float fAsym = (uSide == 0) ? 1.0f : 1.25f;
-		{
-			const HumanRotKey ax[] = {
-				{ 0.0f, xId },
-				{ 5.0f, HumanRotX(-34.0f * fAsym) * HumanRotZ(fOut * 14.0f) },    // thrown up by the impact
-				{ 12.0f, HumanRotX(-12.0f) * HumanRotZ(fOut * 38.0f) },
-				{ 19.0f, HumanRotZ(fOut * 56.0f * fAsym) },                       // spread on the ground
-				{ 24.0f, HumanRotZ(fOut * 56.0f * fAsym) },
-			};
-			HumanAddRotKeys(pxClip, szUpper, ax, sizeof(ax) / sizeof(ax[0]));
-		}
-		{
-			const HumanRotKey ax[] = {
-				{ 0.0f, xId },
-				{ 5.0f, HumanRotX(-48.0f) },
-				{ 12.0f, HumanRotX(-20.0f) },
-				{ 19.0f, HumanRotX(-8.0f * fAsym) },
-				{ 24.0f, HumanRotX(-8.0f * fAsym) },
-			};
-			HumanAddRotKeys(pxClip, szLower, ax, sizeof(ax) / sizeof(ax[0]));
-		}
-	}
-
-	return pxClip;
-}
-
-//------------------------------------------------------------------------------
-// Aim Hold Pose
-//
-// Shared upper-body rest pose used by the Aim, Fire, and Reload clips. Each
-// clip's start/end keyframes match this pose so transitions between them
-// don't snap arms back to identity. (Values pinned by the .Tests.inl suite.)
-//------------------------------------------------------------------------------
-namespace StickFigureAimHoldPose
-{
-	inline Zenith_Maths::Quat RightUpperArm()
-	{
-		return glm::angleAxis(glm::radians(-75.0f), Zenith_Maths::Vector3(1, 0, 0))
-		     * glm::angleAxis(glm::radians( 20.0f), Zenith_Maths::Vector3(0, 1, 0));
-	}
-	inline Zenith_Maths::Quat RightLowerArm()
-	{
-		return glm::angleAxis(glm::radians(-45.0f), Zenith_Maths::Vector3(1, 0, 0));
-	}
-	inline Zenith_Maths::Quat LeftUpperArm()
-	{
-		return glm::angleAxis(glm::radians(-65.0f), Zenith_Maths::Vector3(1, 0, 0))
-		     * glm::angleAxis(glm::radians(-25.0f), Zenith_Maths::Vector3(0, 1, 0));
-	}
-	inline Zenith_Maths::Quat LeftLowerArm()
-	{
-		return glm::angleAxis(glm::radians(-50.0f), Zenith_Maths::Vector3(1, 0, 0));
-	}
-	inline Zenith_Maths::Quat Spine()
-	{
-		return glm::angleAxis(glm::radians(-10.0f), Zenith_Maths::Vector3(1, 0, 0));
-	}
-	inline Zenith_Maths::Quat Head()
-	{
-		return glm::angleAxis(glm::radians(-5.0f), Zenith_Maths::Vector3(1, 0, 0));
-	}
-}
-
-static Flux_AnimationClip* CreateAimAnimation()
-{
-	Flux_AnimationClip* pxClip = HumanNewClip("Aim", 0.5f, /*bLooping=*/true);
-
-	// Stable hold with a breathing waver on the mid keys. Keys 0, 3 and 12 are
-	// the EXACT hold pose: 0/12 pin the loop + the Fire/Reload transitions
-	// (AimClipRightArmRotation samples both), and 3 must match 0 because
-	// SampleRotation's end-of-clip fallback EXTRAPOLATES the first segment —
-	// slerp(key0, key1, (12-0)/(3-0)) — so any 0->3 delta would be amplified
-	// 4x at the frame-12 boundary sample. The +-sway lives at frames 6 and 9.
-	//
-	// Frame indices on the 24 fps grid, divided into seconds by HumanFrameSeconds:
-	// frame 12 is the clip's 0.5 s end (D3 — a channel stores seconds).
-	auto AddHold = [&](const char* szBone, const Zenith_Maths::Quat& xPose, float fSwayDeg)
-	{
-		Flux_BoneChannel xChannel;
-		xChannel.AddRotationKeyframe(HumanFrameSeconds(0.0f),  xPose);
-		xChannel.AddRotationKeyframe(HumanFrameSeconds(3.0f),  xPose);
-		xChannel.AddRotationKeyframe(HumanFrameSeconds(6.0f),  HumanRotX(fSwayDeg) * xPose);
-		xChannel.AddRotationKeyframe(HumanFrameSeconds(9.0f),  HumanRotX(-fSwayDeg) * xPose);
-		xChannel.AddRotationKeyframe(HumanFrameSeconds(12.0f), xPose);
-		xChannel.SortKeyframes();
-		pxClip->AddBoneChannel(szBone, std::move(xChannel));
-	};
-
-	AddHold("RightUpperArm", StickFigureAimHoldPose::RightUpperArm(), 0.7f);
-	AddHold("RightLowerArm", StickFigureAimHoldPose::RightLowerArm(), 0.5f);
-	AddHold("LeftUpperArm",  StickFigureAimHoldPose::LeftUpperArm(),  0.7f);
-	AddHold("LeftLowerArm",  StickFigureAimHoldPose::LeftLowerArm(),  0.5f);
-	AddHold("Spine",         StickFigureAimHoldPose::Spine(),         0.4f);
-	AddHold("Head",          StickFigureAimHoldPose::Head(),          0.3f);
-
-	return pxClip;
-}
-
-static Flux_AnimationClip* CreateFireAnimation()
-{
-	Flux_AnimationClip* pxClip = HumanNewClip("Fire", 0.20f, /*bLooping=*/false);
-
-	const Zenith_Maths::Vector3 xXAxis(1, 0, 0);
-
-	// Recoil deltas applied on top of the aim hold pose, so arms stay raised.
-	// The frame-2 peak (RightUpperArm = +15 deg X on the hold pose) is pinned by
-	// FireClipPeakRecoil; the frame-3.5 key adds a small settle overshoot.
-	//
-	// Frame indices on the 24 fps grid; HumanFrameSeconds divides them into the
-	// seconds a channel stores (D3). Frame 5 is 0.208 s — slightly past the 0.20 s
-	// duration, which is the clip's own pre-existing rounding, not a unit slip.
-	auto AddRecoil = [&](const char* szBone, const Zenith_Maths::Quat& xRest, float fKickDeg)
-	{
-		const Zenith_Maths::Quat xKick = glm::angleAxis(glm::radians(fKickDeg), xXAxis) * xRest;
-		const Zenith_Maths::Quat xSettle = glm::angleAxis(glm::radians(-fKickDeg * 0.18f), xXAxis) * xRest;
-		Flux_BoneChannel xChannel;
-		xChannel.AddRotationKeyframe(HumanFrameSeconds(0.0f), xRest);
-		xChannel.AddRotationKeyframe(HumanFrameSeconds(2.0f), xKick);
-		xChannel.AddRotationKeyframe(HumanFrameSeconds(3.5f), xSettle);
-		xChannel.AddRotationKeyframe(HumanFrameSeconds(5.0f), xRest);
-		xChannel.SortKeyframes();
-		pxClip->AddBoneChannel(szBone, std::move(xChannel));
-	};
-
-	AddRecoil("RightUpperArm", StickFigureAimHoldPose::RightUpperArm(), 15.0f);
-	AddRecoil("RightLowerArm", StickFigureAimHoldPose::RightLowerArm(), -10.0f);
-	AddRecoil("LeftUpperArm",  StickFigureAimHoldPose::LeftUpperArm(),  6.0f);
-	AddRecoil("LeftLowerArm",  StickFigureAimHoldPose::LeftLowerArm(),  -4.0f);
-	AddRecoil("Spine",         StickFigureAimHoldPose::Spine(),         3.0f);
-	AddRecoil("Head",          StickFigureAimHoldPose::Head(),          2.0f);
-
-	return pxClip;
-}
-
-static Flux_AnimationClip* CreateReloadAnimation()
-{
-	Flux_AnimationClip* pxClip = HumanNewClip("Reload", 1.5f, /*bLooping=*/false);
-
-	const Zenith_Maths::Quat xLeftUpperRest  = StickFigureAimHoldPose::LeftUpperArm();
-	const Zenith_Maths::Quat xLeftLowerRest  = StickFigureAimHoldPose::LeftLowerArm();
-	const Zenith_Maths::Quat xRightUpperRest = StickFigureAimHoldPose::RightUpperArm();
-	const Zenith_Maths::Quat xRightLowerRest = StickFigureAimHoldPose::RightLowerArm();
-	const Zenith_Maths::Quat xSpineRest      = StickFigureAimHoldPose::Spine();
-	const Zenith_Maths::Quat xHeadRest       = StickFigureAimHoldPose::Head();
-
-	// Left hand: drop off the foregrip toward the belt (POSITIVE X deltas — the
-	// rest pose is already raised at -65X, so dropping means rotating back),
-	// grab the magazine, bring it up to the mag-well, seat it with a push,
-	// slap the release, return. 8 keyframes (pinned by
-	// ReloadClipKeyframesOnLeftArm).
-	{
-		const HumanRotKey ax[] = {
-			{ 0.0f,  xLeftUpperRest },
-			{ 5.0f,  HumanRotX(52.0f) * xLeftUpperRest },                        // drop off the grip
-			{ 12.0f, HumanRotX(44.0f) * HumanRotY(34.0f) * xLeftUpperRest },     // reach to the belt
-			{ 17.0f, HumanRotX(40.0f) * HumanRotY(22.0f) * xLeftUpperRest },     // mag in hand
-			{ 23.0f, HumanRotX(6.0f) * xLeftUpperRest },                         // up to the mag-well
-			{ 26.0f, HumanRotX(14.0f) * xLeftUpperRest },                        // seat it
-			{ 29.0f, HumanRotX(2.0f) * xLeftUpperRest },                         // slap the release
-			{ 36.0f, xLeftUpperRest },                                           // back on the grip
-		};
-		HumanAddRotKeys(pxClip, "LeftUpperArm", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-	{
-		const HumanRotKey ax[] = {
-			{ 0.0f,  xLeftLowerRest },
-			{ 5.0f,  HumanRotX(28.0f) * xLeftLowerRest },                        // forearm extends as the arm drops
-			{ 12.0f, HumanRotX(14.0f) * xLeftLowerRest },
-			{ 17.0f, HumanRotX(-6.0f) * xLeftLowerRest },
-			{ 23.0f, HumanRotX(-22.0f) * xLeftLowerRest },                       // curls up with the magazine
-			{ 26.0f, HumanRotX(-14.0f) * xLeftLowerRest },
-			{ 29.0f, HumanRotX(-26.0f) * xLeftLowerRest },
-			{ 36.0f, xLeftLowerRest },
-		};
-		HumanAddRotKeys(pxClip, "LeftLowerArm", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-	// Right arm tips the weapon up and in toward the body for the mag change.
-	{
-		const HumanRotKey ax[] = {
-			{ 0.0f,  xRightUpperRest },
-			{ 6.0f,  HumanRotX(-12.0f) * HumanRotY(-8.0f) * xRightUpperRest },
-			{ 20.0f, HumanRotX(-16.0f) * HumanRotY(-10.0f) * xRightUpperRest },
-			{ 28.0f, HumanRotX(-10.0f) * xRightUpperRest },
-			{ 36.0f, xRightUpperRest },
-		};
-		HumanAddRotKeys(pxClip, "RightUpperArm", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-	{
-		const HumanRotKey ax[] = {
-			{ 0.0f,  xRightLowerRest },
-			{ 6.0f,  HumanRotX(-14.0f) * xRightLowerRest },
-			{ 20.0f, HumanRotX(-18.0f) * xRightLowerRest },
-			{ 36.0f, xRightLowerRest },
-		};
-		HumanAddRotKeys(pxClip, "RightLowerArm", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-	// Eyes drop to the weapon; shoulders hunch slightly over the work.
-	{
-		const HumanRotKey ax[] = {
-			{ 0.0f,  xHeadRest },
-			{ 8.0f,  HumanRotX(-11.0f) * xHeadRest },
-			{ 27.0f, HumanRotX(-11.0f) * xHeadRest },
-			{ 36.0f, xHeadRest },
-		};
-		HumanAddRotKeys(pxClip, "Head", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-	{
-		const HumanRotKey ax[] = {
-			{ 0.0f,  xSpineRest },
-			{ 10.0f, HumanRotX(-4.0f) * xSpineRest },
-			{ 26.0f, HumanRotX(-4.0f) * xSpineRest },
-			{ 36.0f, xSpineRest },
-		};
-		HumanAddRotKeys(pxClip, "Spine", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-
-	return pxClip;
-}
-
-static Flux_AnimationClip* CreateJumpAnimation()
-{
-	// Crouch -> explosive extension -> mid-air tuck -> landing absorb ->
-	// recover. Spine's final key is identity (pinned by
-	// JumpClipReturnsToIdentityAtEnd).
-	Flux_AnimationClip* pxClip = HumanNewClip("Jump", 0.8f, /*bLooping=*/false);
-
-	const Zenith_Maths::Quat xId = glm::identity<Zenith_Maths::Quat>();
-
-	{
-		const HumanRotKey ax[] = {
-			{ 0.0f,  xId },
-			{ 4.0f,  HumanRotX(18.0f) },                               // crouch hunch
-			{ 8.0f,  HumanRotX(-7.0f) },                               // extended, chest open
-			{ 12.0f, HumanRotX(6.0f) },                                // tucked
-			{ 16.0f, HumanRotX(9.0f) },                                // landing absorb
-			{ 19.0f, xId },
-		};
-		HumanAddRotKeys(pxClip, "Spine", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-	{
-		const HumanRotKey ax[] = {
-			{ 0.0f,  xId },
-			{ 4.0f,  HumanRotX(-9.0f) },                               // eyes stay up in the crouch
-			{ 12.0f, HumanRotX(4.0f) },
-			{ 19.0f, xId },
-		};
-		HumanAddRotKeys(pxClip, "Head", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-	for (u_int uSide = 0; uSide < 2; uSide++)
-	{
-		const char* szUpperLeg = (uSide == 0) ? "LeftUpperLeg" : "RightUpperLeg";
-		const char* szLowerLeg = (uSide == 0) ? "LeftLowerLeg" : "RightLowerLeg";
-		const char* szFoot = (uSide == 0) ? "LeftFoot" : "RightFoot";
-		const char* szUpperArm = (uSide == 0) ? "LeftUpperArm" : "RightUpperArm";
-		const char* szLowerArm = (uSide == 0) ? "LeftLowerArm" : "RightLowerArm";
-		{
-			const HumanRotKey ax[] = {
-				{ 0.0f,  xId },
-				{ 4.0f,  HumanRotX(34.0f) },                           // crouch load
-				{ 8.0f,  HumanRotX(-12.0f) },                          // full hip extension at takeoff
-				{ 12.0f, HumanRotX(-44.0f) },                          // knees driven up in the tuck
-				{ 16.0f, HumanRotX(26.0f) },                           // landing absorb
-				{ 19.0f, xId },
-			};
-			HumanAddRotKeys(pxClip, szUpperLeg, ax, sizeof(ax) / sizeof(ax[0]));
-		}
-		{
-			const HumanRotKey ax[] = {
-				{ 0.0f,  xId },
-				{ 4.0f,  HumanRotX(50.0f) },
-				{ 8.0f,  HumanRotX(4.0f) },
-				{ 12.0f, HumanRotX(86.0f) },                           // heels tucked
-				{ 16.0f, HumanRotX(42.0f) },
-				{ 19.0f, xId },
-			};
-			HumanAddRotKeys(pxClip, szLowerLeg, ax, sizeof(ax) / sizeof(ax[0]));
-		}
-		{
-			const HumanRotKey ax[] = {
-				{ 0.0f,  xId },
-				{ 4.0f,  HumanRotX(-8.0f) },                           // dorsiflex in the crouch
-				{ 8.0f,  HumanRotX(22.0f) },                           // toes point at push-off
-				{ 12.0f, HumanRotX(-10.0f) },                          // toes up for the landing
-				{ 16.0f, HumanRotX(6.0f) },
-				{ 19.0f, xId },
-			};
-			HumanAddRotKeys(pxClip, szFoot, ax, sizeof(ax) / sizeof(ax[0]));
-		}
-		{
-			const float fOut = (uSide == 0) ? -8.0f : 8.0f;
-			const HumanRotKey ax[] = {
-				{ 0.0f,  xId },
-				{ 4.0f,  HumanRotX(24.0f) },                           // arms swing back in the crouch
-				{ 8.0f,  HumanRotX(-58.0f) * HumanRotZ(fOut) },        // thrown up for momentum
-				{ 12.0f, HumanRotX(-30.0f) * HumanRotZ(fOut) },
-				{ 16.0f, HumanRotX(14.0f) },                           // forward for balance on landing
-				{ 19.0f, xId },
-			};
-			HumanAddRotKeys(pxClip, szUpperArm, ax, sizeof(ax) / sizeof(ax[0]));
-		}
-		{
-			const HumanRotKey ax[] = {
-				{ 0.0f,  xId },
-				{ 4.0f,  HumanRotX(-18.0f) },
-				{ 8.0f,  HumanRotX(-34.0f) },
-				{ 12.0f, HumanRotX(-16.0f) },
-				{ 19.0f, xId },
-			};
-			HumanAddRotKeys(pxClip, szLowerArm, ax, sizeof(ax) / sizeof(ax[0]));
-		}
-	}
-
-	return pxClip;
-}
-
-//------------------------------------------------------------------------------
-// Tennis stroke clips (RenderTest tennis testbed).
-//
-// Right-handed player; the racket is attached to RightHand by the engine
-// attachment system. Authored anticipation -> contact -> follow-through; every
-// channel returns to identity so the tennis state machine blends cleanly back to
-// ReadyStance. The arm-IK pass in the tennis player component refines the racket
-// hand onto the ball during the contact window, so these clips supply the
-// readable swing shape rather than a frame-perfect contact point.
-//------------------------------------------------------------------------------
-
-static Flux_AnimationClip* CreateServeAnimation()
-{
-	// Overhead serve: knees load, left arm tosses, right arm cocks into the
-	// "trophy" behind the head, then drives up through an overhead contact and
-	// pronates down across the body. Modelled on the Attack3 smash, one-handed.
-	Flux_AnimationClip* pxClip = HumanNewClip("Serve", 1.25f, /*bLooping=*/false);   // 30 frames @ 24 fps
-
-	const Zenith_Maths::Quat xId = glm::identity<Zenith_Maths::Quat>();
-
-	{
-		// Racket arm: down -> trophy behind head -> reach to contact -> pronate down.
-		const HumanRotKey ax[] = {
-			{ 0.0f,  xId },
-			{ 6.0f,  HumanRotX(-45.0f) },                          // start the take-back up
-			{ 12.0f, HumanRotX(-140.0f) * HumanRotZ(18.0f) },      // trophy (elbow cocked behind head)
-			{ 16.0f, HumanRotX(-165.0f) },                         // reach up to contact
-			{ 19.0f, HumanRotX(-95.0f) },                          // pronate forward through the ball
-			{ 23.0f, HumanRotX(40.0f) },                           // follow-through down across the body
-			{ 30.0f, xId },
-		};
-		HumanAddRotKeys(pxClip, "RightUpperArm", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-	{
-		const HumanRotKey ax[] = {
-			{ 0.0f,  HumanRotX(-10.0f) },
-			{ 12.0f, HumanRotX(-90.0f) },                          // elbow cocked in the trophy
-			{ 16.0f, HumanRotX(-15.0f) },                          // snaps straight at contact
-			{ 19.0f, HumanRotX(-5.0f) },
-			{ 23.0f, HumanRotX(-35.0f) },
-			{ 30.0f, xId },
-		};
-		HumanAddRotKeys(pxClip, "RightLowerArm", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-	{
-		// Toss arm: raises straight up to the toss apex, then lowers.
-		const HumanRotKey ax[] = {
-			{ 0.0f,  xId },
-			{ 8.0f,  HumanRotX(-120.0f) * HumanRotZ(-10.0f) },     // raise to release the toss
-			{ 14.0f, HumanRotX(-150.0f) },                         // toss apex, arm pointing up
-			{ 20.0f, HumanRotX(-40.0f) },                          // lower out of the way
-			{ 30.0f, xId },
-		};
-		HumanAddRotKeys(pxClip, "LeftUpperArm", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-	{
-		const HumanRotKey ax[] = {
-			{ 0.0f,  HumanRotX(-10.0f) },
-			{ 8.0f,  HumanRotX(-18.0f) },                          // near-straight for the toss
-			{ 14.0f, HumanRotX(-8.0f) },
-			{ 30.0f, xId },
-		};
-		HumanAddRotKeys(pxClip, "LeftLowerArm", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-	{
-		// Spine arches back into the trophy, crunches forward through contact.
-		const HumanRotKey ax[] = {
-			{ 0.0f,  xId },
-			{ 10.0f, HumanRotX(-12.0f) },                          // arch back under the toss
-			{ 16.0f, HumanRotX(14.0f) },                           // crunch forward at contact
-			{ 22.0f, HumanRotX(6.0f) },
-			{ 30.0f, xId },
-		};
-		HumanAddRotKeys(pxClip, "Spine", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-	{
-		const HumanRotKey ax[] = {
-			{ 0.0f,  xId },
-			{ 12.0f, HumanRotX(-16.0f) },                          // eyes up on the toss
-			{ 16.0f, HumanRotX(-8.0f) },
-			{ 30.0f, xId },
-		};
-		HumanAddRotKeys(pxClip, "Head", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-	// Legs load the crouch then drive up at contact.
-	for (u_int uSide = 0; uSide < 2; uSide++)
-	{
-		const char* szUpper = (uSide == 0) ? "LeftUpperLeg" : "RightUpperLeg";
-		const char* szLower = (uSide == 0) ? "LeftLowerLeg" : "RightLowerLeg";
-		{
-			const HumanRotKey ax[] = {
-				{ 0.0f,  xId },
-				{ 10.0f, HumanRotX(10.0f) },
-				{ 16.0f, HumanRotX(-8.0f) },                       // hip extension drive
-				{ 30.0f, xId },
-			};
-			HumanAddRotKeys(pxClip, szUpper, ax, sizeof(ax) / sizeof(ax[0]));
-		}
-		{
-			const HumanRotKey ax[] = {
-				{ 0.0f,  xId },
-				{ 10.0f, HumanRotX(30.0f) },                       // load crouch
-				{ 16.0f, HumanRotX(4.0f) },                        // extend up into contact
-				{ 20.0f, HumanRotX(20.0f) },                       // land
-				{ 30.0f, xId },
-			};
-			HumanAddRotKeys(pxClip, szLower, ax, sizeof(ax) / sizeof(ax[0]));
-		}
-	}
-	{
-		const HumanPosKey ax[] = {
-			{ 0.0f,  { 0.0f, 0.0f, 0.0f } },
-			{ 10.0f, { 0.0f, -0.06f, -0.02f } },                  // load down/back
-			{ 16.0f, { 0.0f, 0.05f, 0.04f } },                    // rise onto toes into contact
-			{ 22.0f, { 0.0f, -0.02f, 0.05f } },
-			{ 30.0f, { 0.0f, 0.0f, 0.0f } },
-		};
-		HumanAddPosKeys(pxClip, "Root", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-
-	return pxClip;
-}
-
-static Flux_AnimationClip* CreateForehandAnimation()
-{
-	// Forehand drive: torso coils away (right shoulder back), then uncoils
-	// through a contact in front, racket arm sweeping right-to-left up over the
-	// left shoulder. The spine rotation carries the whole arm horizontally.
-	Flux_AnimationClip* pxClip = HumanNewClip("Forehand", 0.75f, /*bLooping=*/false);   // 18 frames @ 24 fps
-
-	const Zenith_Maths::Quat xId = glm::identity<Zenith_Maths::Quat>();
-
-	{
-		const HumanRotKey ax[] = {
-			{ 0.0f,  xId },
-			{ 4.0f,  HumanRotY(28.0f) },                          // coil: right shoulder back
-			{ 10.0f, HumanRotY(-30.0f) * HumanRotX(6.0f) },       // uncoil through contact, lean in
-			{ 14.0f, HumanRotY(-18.0f) },
-			{ 18.0f, xId },
-		};
-		HumanAddRotKeys(pxClip, "Spine", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-	{
-		// Racket arm: take-back out to the right, sweep across to a high finish.
-		const HumanRotKey ax[] = {
-			{ 0.0f,  xId },
-			{ 4.0f,  HumanRotX(-50.0f) * HumanRotZ(20.0f) },      // take-back (arm out/back to the right)
-			{ 10.0f, HumanRotX(-85.0f) },                         // contact in front
-			{ 13.0f, HumanRotX(-100.0f) * HumanRotZ(-12.0f) },    // follow-through up over the left shoulder
-			{ 18.0f, xId },
-		};
-		HumanAddRotKeys(pxClip, "RightUpperArm", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-	{
-		const HumanRotKey ax[] = {
-			{ 0.0f,  HumanRotX(-12.0f) },
-			{ 4.0f,  HumanRotX(-55.0f) },                         // cocked on the take-back
-			{ 10.0f, HumanRotX(-12.0f) },                         // extends at contact
-			{ 13.0f, HumanRotX(-30.0f) },
-			{ 18.0f, xId },
-		};
-		HumanAddRotKeys(pxClip, "RightLowerArm", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-	{
-		// Off arm balances out to the left.
-		const HumanRotKey ax[] = {
-			{ 0.0f,  xId },
-			{ 4.0f,  HumanRotX(-30.0f) * HumanRotZ(-20.0f) },
-			{ 10.0f, HumanRotX(-10.0f) * HumanRotZ(-25.0f) },
-			{ 18.0f, xId },
-		};
-		HumanAddRotKeys(pxClip, "LeftUpperArm", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-	{
-		const HumanRotKey ax[] = {
-			{ 0.0f,  HumanRotX(-10.0f) },
-			{ 4.0f,  HumanRotX(-40.0f) },
-			{ 18.0f, xId },
-		};
-		HumanAddRotKeys(pxClip, "LeftLowerArm", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-	{
-		const HumanRotKey ax[] = {
-			{ 0.0f,  xId },
-			{ 10.0f, HumanRotY(-8.0f) },                          // eyes follow across
-			{ 18.0f, xId },
-		};
-		HumanAddRotKeys(pxClip, "Head", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-	// Light knee load through the stroke.
-	for (u_int uSide = 0; uSide < 2; uSide++)
-	{
-		const char* szLower = (uSide == 0) ? "LeftLowerLeg" : "RightLowerLeg";
-		const HumanRotKey ax[] = {
-			{ 0.0f,  xId },
-			{ 4.0f,  HumanRotX(18.0f) },
-			{ 10.0f, HumanRotX(8.0f) },
-			{ 18.0f, xId },
-		};
-		HumanAddRotKeys(pxClip, szLower, ax, sizeof(ax) / sizeof(ax[0]));
-	}
-	{
-		const HumanPosKey ax[] = {
-			{ 0.0f,  { 0.0f, 0.0f, 0.0f } },
-			{ 4.0f,  { 0.03f, -0.02f, -0.02f } },                 // load onto the right foot
-			{ 10.0f, { -0.02f, -0.01f, 0.04f } },                 // drive forward/through
-			{ 18.0f, { 0.0f, 0.0f, 0.0f } },
-		};
-		HumanAddPosKeys(pxClip, "Root", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-
-	return pxClip;
-}
-
-static Flux_AnimationClip* CreateBackhandAnimation()
-{
-	// Two-handed backhand: torso coils the other way (right shoulder forward),
-	// both arms take the racket back across to the left, then sweep out to the
-	// right through contact.
-	Flux_AnimationClip* pxClip = HumanNewClip("Backhand", 0.75f, /*bLooping=*/false);   // 18 frames @ 24 fps
-
-	const Zenith_Maths::Quat xId = glm::identity<Zenith_Maths::Quat>();
-
-	{
-		const HumanRotKey ax[] = {
-			{ 0.0f,  xId },
-			{ 4.0f,  HumanRotY(-26.0f) },                         // coil: right shoulder forward
-			{ 10.0f, HumanRotY(26.0f) * HumanRotX(6.0f) },        // uncoil out to the right
-			{ 14.0f, HumanRotY(16.0f) },
-			{ 18.0f, xId },
-		};
-		HumanAddRotKeys(pxClip, "Spine", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-	{
-		// Racket arm: taken back across to the left, sweeps out to the right.
-		const HumanRotKey ax[] = {
-			{ 0.0f,  xId },
-			{ 4.0f,  HumanRotX(-80.0f) * HumanRotZ(-18.0f) },     // take-back across to the left
-			{ 10.0f, HumanRotX(-70.0f) * HumanRotZ(15.0f) },      // contact out in front-right
-			{ 13.0f, HumanRotX(-75.0f) * HumanRotZ(25.0f) },      // follow-through to the right
-			{ 18.0f, xId },
-		};
-		HumanAddRotKeys(pxClip, "RightUpperArm", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-	{
-		const HumanRotKey ax[] = {
-			{ 0.0f,  HumanRotX(-12.0f) },
-			{ 4.0f,  HumanRotX(-45.0f) },
-			{ 10.0f, HumanRotX(-15.0f) },                         // extends through contact
-			{ 18.0f, xId },
-		};
-		HumanAddRotKeys(pxClip, "RightLowerArm", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-	{
-		// Off hand stays on the racket and mirrors the swing.
-		const HumanRotKey ax[] = {
-			{ 0.0f,  xId },
-			{ 4.0f,  HumanRotX(-70.0f) * HumanRotZ(-22.0f) },
-			{ 10.0f, HumanRotX(-60.0f) * HumanRotZ(10.0f) },
-			{ 18.0f, xId },
-		};
-		HumanAddRotKeys(pxClip, "LeftUpperArm", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-	{
-		const HumanRotKey ax[] = {
-			{ 0.0f,  HumanRotX(-10.0f) },
-			{ 4.0f,  HumanRotX(-50.0f) },
-			{ 10.0f, HumanRotX(-20.0f) },
-			{ 18.0f, xId },
-		};
-		HumanAddRotKeys(pxClip, "LeftLowerArm", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-	{
-		const HumanRotKey ax[] = {
-			{ 0.0f,  xId },
-			{ 10.0f, HumanRotY(8.0f) },
-			{ 18.0f, xId },
-		};
-		HumanAddRotKeys(pxClip, "Head", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-	for (u_int uSide = 0; uSide < 2; uSide++)
-	{
-		const char* szLower = (uSide == 0) ? "LeftLowerLeg" : "RightLowerLeg";
-		const HumanRotKey ax[] = {
-			{ 0.0f,  xId },
-			{ 4.0f,  HumanRotX(18.0f) },
-			{ 10.0f, HumanRotX(8.0f) },
-			{ 18.0f, xId },
-		};
-		HumanAddRotKeys(pxClip, szLower, ax, sizeof(ax) / sizeof(ax[0]));
-	}
-	{
-		const HumanPosKey ax[] = {
-			{ 0.0f,  { 0.0f, 0.0f, 0.0f } },
-			{ 4.0f,  { -0.03f, -0.02f, -0.02f } },                // load onto the left foot
-			{ 10.0f, { 0.03f, -0.01f, 0.04f } },                  // drive forward/through to the right
-			{ 18.0f, { 0.0f, 0.0f, 0.0f } },
-		};
-		HumanAddPosKeys(pxClip, "Root", ax, sizeof(ax) / sizeof(ax[0]));
-	}
-
-	return pxClip;
-}
-
-static Flux_AnimationClip* CreateReadyStanceAnimation()
-{
-	// Looping tennis ready stance: knees bent, slight forward lean, both arms
-	// held forward and inward (racket out front in both hands), with a gentle
-	// split-step bounce. Continuous sin/cos curves so key 0 == key N.
-	Flux_AnimationClip* pxClip = HumanNewClip("ReadyStance", 1.5f, /*bLooping=*/true);   // 36 frames @ 24 fps
-
-	// 1.5 s of key spread, matching SetDuration above (was 36 ticks @ 24/s).
-	constexpr float fDURATION_SECONDS = 1.5f;
-	constexpr u_int uKEYS = 25;
-
-	// Pelvis: low crouch with a two-per-cycle split-step bounce + small sway.
-	HumanAddPosCurve(pxClip, "Root", fDURATION_SECONDS, uKEYS, [](float fT)
-	{
-		const float fP = fT * fHUMAN_TWO_PI;
-		return Zenith_Maths::Vector3(0.012f * sinf(fP), -0.05f + 0.025f * cosf(2.0f * fP), 0.0f);
-	});
-
-	// Bent knees with a small bob; balls-of-feet stance.
-	for (u_int uSide = 0; uSide < 2; uSide++)
-	{
-		const char* szUpper = (uSide == 0) ? "LeftUpperLeg" : "RightUpperLeg";
-		const char* szLower = (uSide == 0) ? "LeftLowerLeg" : "RightLowerLeg";
-		const char* szFoot  = (uSide == 0) ? "LeftFoot" : "RightFoot";
-		HumanAddRotCurve(pxClip, szUpper, fDURATION_SECONDS, uKEYS, [](float fT)
-		{
-			return HumanRotX(-6.0f + 2.0f * cosf(2.0f * fT * fHUMAN_TWO_PI));
-		});
-		HumanAddRotCurve(pxClip, szLower, fDURATION_SECONDS, uKEYS, [](float fT)
-		{
-			return HumanRotX(30.0f + 5.0f * cosf(2.0f * fT * fHUMAN_TWO_PI));
-		});
-		HumanAddRotCurve(pxClip, szFoot, fDURATION_SECONDS, uKEYS, [](float fT)
-		{
-			return HumanRotX(8.0f + 2.0f * cosf(2.0f * fT * fHUMAN_TWO_PI));
-		});
-	}
-
-	// Forward lean with a small lateral rock.
-	HumanAddRotCurve(pxClip, "Spine", fDURATION_SECONDS, uKEYS, [](float fT)
-	{
-		return HumanRotX(12.0f) * HumanRotZ(1.5f * sinf(fT * fHUMAN_TWO_PI));
-	});
-
-	// Both arms forward and inward so the hands meet on the racket out front,
-	// with a light ready-bounce on the elbows.
-	for (u_int uSide = 0; uSide < 2; uSide++)
-	{
-		const float fIn = (uSide == 0) ? 12.0f : -12.0f;   // bring both arms toward centre
-		const char* szUpper = (uSide == 0) ? "LeftUpperArm" : "RightUpperArm";
-		const char* szLower = (uSide == 0) ? "LeftLowerArm" : "RightLowerArm";
-		HumanAddRotCurve(pxClip, szUpper, fDURATION_SECONDS, uKEYS, [=](float fT)
-		{
-			return HumanRotX(-40.0f + 2.5f * cosf(2.0f * fT * fHUMAN_TWO_PI)) * HumanRotZ(fIn);
-		});
-		HumanAddRotCurve(pxClip, szLower, fDURATION_SECONDS, uKEYS, [](float fT)
-		{
-			return HumanRotX(-55.0f + 3.0f * cosf(2.0f * fT * fHUMAN_TWO_PI));
-		});
-	}
-
-	// Head: attentive, watching the ball.
-	HumanAddRotCurve(pxClip, "Head", fDURATION_SECONDS, uKEYS, [](float fT)
-	{
-		return HumanRotX(-4.0f) * HumanRotY(1.5f * sinf(fT * fHUMAN_TWO_PI));
-	});
-
-	return pxClip;
-}
 
 //------------------------------------------------------------------------------
 // Bullet sphere mesh
@@ -4251,58 +2713,44 @@ static void GenerateUnitSphereMeshAsset(Zenith_MeshAsset& xMeshOut, uint32_t uSe
 }
 
 //------------------------------------------------------------------------------
-// ★ THE SEVENTEEN CLIP FACTORIES, AS DATA, IN ONE PLACE.
+// ★ THE SEVENTEEN CLIPS ARE NAMES NOW, NOT FACTORIES (WU-9.1 stage 2).
 //
-// GenerateStickFigureAssets constructs its clips as seventeen named locals
-// because it also hands them to the glTF export and deletes them by name. This
-// table is the same set reached by FUNCTION, which is what the authored-twin
-// seeding below and the unit suite both need: a caller that wants a fresh clip
-// per name, without owning the export loop's bookkeeping.
+// This used to be a table of seventeen Create*Animation function pointers, and
+// before that seventeen named locals inside GenerateStickFigureAssets. Both are
+// gone with the generators: the clips are AUTHORED files under
+// Assets/Authored/Meshes/StickFigure/, and what a consumer needs from this file
+// is the NAME LIST -- which files the set is -- so it can build a path.
 //
-// ★ IT IS DEFINED HERE, ONCE, RATHER THAN IN THE .Tests.inl THAT USED TO CARRY
-// ITS OWN COPY. Two tables meant a clip could be added to one and not the other,
-// which is exactly how the four tennis clips arrived without the file header's
-// "13 clips" moving. The count is asserted against 17 by the unit suite, so the
-// export table and this one are pinned together.
+// The list is published through the header rather than kept private so that
+// "the StickFigure set is these seventeen" is stated ONCE. Its walker today is
+// the unit suite, which checks every tracked file against it; this exporter
+// itself no longer touches a clip at all.
 //------------------------------------------------------------------------------
+const char* const azZENITH_STICKFIGURE_CLIP_NAMES[uZENITH_STICKFIGURE_CLIP_COUNT] =
+{
+	"Idle",
+	"Walk",
+	"Run",
+	"Attack1",
+	"Attack2",
+	"Attack3",
+	"Dodge",
+	"Hit",
+	"Death",
+	"Aim",
+	"Fire",
+	"Reload",
+	"Jump",
+	"Serve",
+	"Forehand",
+	"Backhand",
+	"ReadyStance",
+};
+
 namespace
 {
-	typedef Flux_AnimationClip* (*StickFigureClipFactoryFn)();
-
-	struct StickFigureClipFactory
-	{
-		StickFigureClipFactoryFn m_pfnCreate;
-		const char*              m_szName;
-	};
-
-	// Exactly the set GenerateStickFigureAssets exports (its axClips table), in
-	// the same order. SEVENTEEN.
-	const StickFigureClipFactory axSTICKFIGURE_CLIP_FACTORIES[] =
-	{
-		{ &CreateIdleAnimation,        "Idle"        },
-		{ &CreateWalkAnimation,        "Walk"        },
-		{ &CreateRunAnimation,         "Run"         },
-		{ &CreateAttack1Animation,     "Attack1"     },
-		{ &CreateAttack2Animation,     "Attack2"     },
-		{ &CreateAttack3Animation,     "Attack3"     },
-		{ &CreateDodgeAnimation,       "Dodge"       },
-		{ &CreateHitAnimation,         "Hit"         },
-		{ &CreateDeathAnimation,       "Death"       },
-		{ &CreateAimAnimation,         "Aim"         },
-		{ &CreateFireAnimation,        "Fire"        },
-		{ &CreateReloadAnimation,      "Reload"      },
-		{ &CreateJumpAnimation,        "Jump"        },
-		{ &CreateServeAnimation,       "Serve"       },
-		{ &CreateForehandAnimation,    "Forehand"    },
-		{ &CreateBackhandAnimation,    "Backhand"    },
-		{ &CreateReadyStanceAnimation, "ReadyStance" },
-	};
-
-	constexpr u_int uSTICKFIGURE_CLIP_COUNT =
-		static_cast<u_int>(sizeof(axSTICKFIGURE_CLIP_FACTORIES) / sizeof(axSTICKFIGURE_CLIP_FACTORIES[0]));
-
 	// The relative path, under either the "engine:" prefix or ENGINE_ASSETS_DIR,
-	// that the authored twins live at. Written ONCE so the asset path and the
+	// that the authored clips live at. Written ONCE so the asset path and the
 	// filesystem directory below cannot describe two different places.
 	constexpr const char* szSTICKFIGURE_AUTHORED_RELATIVE_DIR = "Authored/Meshes/StickFigure/";
 }
@@ -4343,95 +2791,65 @@ std::string Zenith_Tools_StickFigureAuthoredDir()
 	return std::string(ENGINE_ASSETS_DIR) + szSTICKFIGURE_AUTHORED_RELATIVE_DIR;
 }
 
-Zenith_Tools_StickFigureAuthoredSeedReport Zenith_Tools_ExportStickFigureAuthoredClips(const std::string& strAuthoredDir)
+//------------------------------------------------------------------------------
+// ★★ DELETE ANY .zanim SITTING IN THE BAKE DIRECTORY. EVERY BOOT.
+//
+// Nothing writes a clip to `Meshes/StickFigure/` any more, so a file there is a
+// SHADOW of an authored one: the same clip name, at the path every consumer used
+// to read, carrying `m_bGenerated = true`. It is worse than a stale bake, because
+// it looks exactly like the file this exporter used to own and it silently
+// competes with the tracked original.
+//
+// ★ THIS IS NOT PARANOIA, IT IS THE DEFECT THAT ACTUALLY HAPPENED. The clips are
+// embedded in nothing now, but they WERE briefly re-embedded in StickFigure.gltf
+// for the Blender round trip -- and `ExportAllMeshes()` runs BEFORE this phase and
+// imports every `.gltf` under `Meshes/`, so `Zenith_Tools_MeshExport::
+// ExtractAnimations` extracted all seventeen straight back out and wrote them to
+// the OLD paths as generated clips. A boot that deleted them put them back. The
+// glTF no longer carries animations, which stops new ones appearing; this sweep is
+// what clears the ones an older `.gltf` on disk still produces on the FIRST boot
+// after the change, and it runs after that import phase, so one boot self-heals.
+//
+// Nothing here is destructive of anything irreplaceable: this directory is
+// gitignored bake output, and the real clips live under `Assets/Authored/`.
+// `Core.StickFigureAssetExport` asserts the directory is clip-free after boot.
+//------------------------------------------------------------------------------
+static void SweepGeneratedStickFigureClips(const std::string& strBakeDir)
 {
-	Zenith_Tools_StickFigureAuthoredSeedReport xReport;
-
-	std::error_code xCreateError;
-	std::filesystem::create_directories(strAuthoredDir, xCreateError);
-	if (xCreateError)
+	// Collect first, remove second: removing entries while a directory_iterator is
+	// walking them is not something to rely on.
+	Zenith_Vector<std::string> xStrays;
+	std::error_code xWalkError;
+	for (std::filesystem::directory_iterator xIt(strBakeDir, xWalkError), xEnd;
+		!xWalkError && xIt != xEnd; xIt.increment(xWalkError))
 	{
-		// Nothing was CONSIDERED, so the counts still add up. A directory that
-		// cannot be created is loud and total: seeding half a set into a place
-		// the next boot cannot reach is worse than seeding none of it.
-		Zenith_Error(LOG_CATEGORY_ASSET, "[AuthoredSeed] could not create '%s': %s",
-			strAuthoredDir.c_str(), xCreateError.message().c_str());
-		return xReport;
+		if (xIt->path().extension() == ZENITH_ANIMATION_EXT)
+		{
+			xStrays.PushBack(xIt->path().string());
+		}
 	}
 
-	for (u_int u = 0; u < uSTICKFIGURE_CLIP_COUNT; u++)
+	for (u_int u = 0; u < xStrays.GetSize(); u++)
 	{
-		const StickFigureClipFactory& xFactory = axSTICKFIGURE_CLIP_FACTORIES[u];
-		xReport.m_uConsidered++;
-
-		const std::string strDiskPath = strAuthoredDir + Zenith_Tools_StickFigureClipFileName(xFactory.m_szName);
-
-		// ★ D21: THE BAKE NEVER OVERWRITES AUTHORED DATA. "Does the file exist"
-		// is the wrong question for a BAKE OUTPUT (Tools/CLAUDE.md -- validate
-		// the property you need, not the presence of a file), and it is exactly
-		// the right one here: the file is not this phase's output to validate, it
-		// is somebody's hand edit to leave alone. A twin that fails to parse is
-		// still a twin nobody asked this code to replace.
-		std::error_code xExistsError;
-		if (std::filesystem::exists(strDiskPath, xExistsError))
+		std::error_code xRemoveError;
+		std::filesystem::remove(xStrays.Get(u), xRemoveError);
+		if (xRemoveError)
 		{
-			xReport.m_uSkippedExisting++;
-			continue;
-		}
-
-		Flux_AnimationClip* pxClip = xFactory.m_pfnCreate();
-
-		// ★★ THE SAME T-POSE CONTRACT THE GENERATED EXPORT ASSERTS, ASSERTED
-		// AGAIN ON THE WAY INTO Assets/Authored/. A bone a clip omits keeps its
-		// bind local rotation, and the two UpperArms are the only ones whose
-		// T-pose bind rotation is not identity -- so an omission leaves that arm
-		// sticking straight out for the clip's whole duration. These files are
-		// COMMITTED, so an omission here would be committed with them.
-		Zenith_Assert(pxClip->HasBoneChannel("LeftUpperArm") && pxClip->HasBoneChannel("RightUpperArm"),
-			"clip '%s' does not animate both UpperArms -- a T-posed imported human would hold that arm out",
-			xFactory.m_szName);
-
-		// ★ THE ONE FIELD THAT DIFFERS FROM THE GENERATED TWIN, AND IT IS THE
-		// WHOLE POINT (D8). m_bGenerated says "a generator rewrites this file in
-		// full on every tools boot, so editing it in place is pointless" -- which
-		// is true of the file under Meshes/ and false of this one. It is also
-		// what the Animation Editor's open path refuses on.
-		pxClip->GetMetadata().m_bGenerated = false;
-
-		pxClip->Export(strDiskPath);
-		delete pxClip;
-
-		std::error_code xWroteError;
-		if (std::filesystem::exists(strDiskPath, xWroteError))
-		{
-			xReport.m_uWritten++;
-			Zenith_Log(LOG_CATEGORY_ASSET, "  [AuthoredSeed] wrote %s", strDiskPath.c_str());
+			Zenith_Error(LOG_CATEGORY_ASSET, "  [StickFigure] could not remove shadow clip %s: %s",
+				xStrays.Get(u).c_str(), xRemoveError.message().c_str());
 		}
 		else
 		{
-			// Export() is void, so the only evidence that the bytes landed is the
-			// file itself. Reporting a write that did not happen would leave the
-			// next boot to seed it silently and this one claiming it had.
-			xReport.m_uFailed++;
-			Zenith_Error(LOG_CATEGORY_ASSET, "[AuthoredSeed] '%s' was not written", strDiskPath.c_str());
+			Zenith_Warning(LOG_CATEGORY_ASSET,
+				"  [StickFigure] removed a GENERATED clip shadowing the authored one: %s",
+				xStrays.Get(u).c_str());
 		}
 	}
-
-	Zenith_Assert(xReport.CountsAddUp(),
-		"[AuthoredSeed] %u considered but %u written + %u skipped + %u failed -- a clip was dropped",
-		xReport.m_uConsidered, xReport.m_uWritten, xReport.m_uSkippedExisting, xReport.m_uFailed);
-
-	Zenith_Log(LOG_CATEGORY_ASSET,
-		"[AuthoredSeed] StickFigure authored twins: %u considered, %u written, %u already authored, %u failed (%s)",
-		xReport.m_uConsidered, xReport.m_uWritten, xReport.m_uSkippedExisting, xReport.m_uFailed,
-		strAuthoredDir.c_str());
-
-	return xReport;
 }
 
 void GenerateStickFigureAssets()
 {
-	Zenith_Log(LOG_CATEGORY_ASSET, "Generating StickFigure human assets (lofted body, painted atlas, gait clips)...");
+	Zenith_Log(LOG_CATEGORY_ASSET, "Generating StickFigure human assets (rig, lofted body, painted atlas, model)...");
 
 	// ★ THE MESH IS BUILT FIRST, and that ordering is load-bearing. The warp can
 	// only be derived from the mesh's own measured landmarks, and the SKELETON
@@ -4442,27 +2860,13 @@ void GenerateStickFigureAssets()
 	Zenith_HumanWarp xWarp;
 	Zenith_MeshAsset* pxMesh = CreateStickFigureMesh(xProportions, xWarp);
 	Zenith_SkeletonAsset* pxSkel = CreateStickFigureSkeleton(xProportions, xWarp);
-	Flux_AnimationClip* pxIdleClip = CreateIdleAnimation();
-	Flux_AnimationClip* pxWalkClip = CreateWalkAnimation();
-	Flux_AnimationClip* pxRunClip = CreateRunAnimation();
-	Flux_AnimationClip* pxAttack1Clip = CreateAttack1Animation();
-	Flux_AnimationClip* pxAttack2Clip = CreateAttack2Animation();
-	Flux_AnimationClip* pxAttack3Clip = CreateAttack3Animation();
-	Flux_AnimationClip* pxDodgeClip = CreateDodgeAnimation();
-	Flux_AnimationClip* pxHitClip = CreateHitAnimation();
-	Flux_AnimationClip* pxDeathClip = CreateDeathAnimation();
-	Flux_AnimationClip* pxAimClip = CreateAimAnimation();
-	Flux_AnimationClip* pxFireClip = CreateFireAnimation();
-	Flux_AnimationClip* pxReloadClip = CreateReloadAnimation();
-	Flux_AnimationClip* pxJumpClip = CreateJumpAnimation();
-	Flux_AnimationClip* pxServeClip = CreateServeAnimation();
-	Flux_AnimationClip* pxForehandClip = CreateForehandAnimation();
-	Flux_AnimationClip* pxBackhandClip = CreateBackhandAnimation();
-	Flux_AnimationClip* pxReadyStanceClip = CreateReadyStanceAnimation();
 
 	// Create output directory
 	std::string strOutputDir = std::string(ENGINE_ASSETS_DIR) + "Meshes/StickFigure/";
 	std::filesystem::create_directories(strOutputDir);
+
+	// No clip belongs in this directory any more -- see the sweep's own comment.
+	SweepGeneratedStickFigureClips(strOutputDir);
 
 	// Export skeleton
 	std::string strSkelPath = strOutputDir + "StickFigure" ZENITH_SKELETON_EXT;
@@ -4501,92 +2905,56 @@ void GenerateStickFigureAssets()
 	Zenith_Log(LOG_CATEGORY_ASSET, "  Exported body material + model to: %s", strOutputDir.c_str());
 #endif
 
-	// Export animations
-	struct ClipExport { Flux_AnimationClip* pxClip; const char* szSuffix; };
-	const ClipExport axClips[] = {
-		{ pxIdleClip, "Idle" }, { pxWalkClip, "Walk" }, { pxRunClip, "Run" },
-		{ pxAttack1Clip, "Attack1" }, { pxAttack2Clip, "Attack2" }, { pxAttack3Clip, "Attack3" },
-		{ pxDodgeClip, "Dodge" }, { pxHitClip, "Hit" }, { pxDeathClip, "Death" },
-		{ pxAimClip, "Aim" }, { pxFireClip, "Fire" }, { pxReloadClip, "Reload" },
-		{ pxJumpClip, "Jump" },
-		{ pxServeClip, "Serve" }, { pxForehandClip, "Forehand" },
-		{ pxBackhandClip, "Backhand" }, { pxReadyStanceClip, "ReadyStance" },
-	};
-	for (const ClipExport& xExport : axClips)
+	// ★★ THIS EXPORTER WRITES NO CLIPS ANY MORE (WU-9.1). All seventeen are
+	// AUTHORED data now: committed under Assets/Authored/Meshes/StickFigure/,
+	// hand-edited in the Animation Editor, and written by nothing. What used to be
+	// here -- HumanNewClip, the seventeen Create*Animation factories, the export
+	// loop and its two bake-time gates -- is DELETED rather than left dormant,
+	// because a second producer of a file the editor owns is exactly how an
+	// authored edit gets silently overwritten (D21).
+	//
+	// ★ THE GATE THAT LOOP CARRIED DID NOT GO WITH IT. "Every clip drives both
+	// UpperArms" (a bone a clip omits keeps its bind local transform, and those two
+	// are the only non-identity ones, so an omission leaves that arm sticking
+	// straight out for the whole clip) and "every clip names the shared rig" are
+	// now UNITS over the tracked files -- Zenith_Tools_TestAssetExport.Tests.inl,
+	// category StickFigureAuthored. That is a wider net than the bake-time assert
+	// was: it reads what is ON DISK, so it catches a bad HAND EDIT, which is the
+	// only way these files change now. (Those units live in this TU, so they run
+	// in a _True configuration -- the same one this exporter runs in.)
+
+	// Export to glTF format for editing in Blender: MESH AND RIG ONLY.
+	//
+	// ★★ NO ANIMATIONS IN THIS FILE, AND THAT IS A HARD REQUIREMENT RATHER THAN A
+	// SIMPLIFICATION. `ExportAllMeshes()` runs BEFORE this phase and imports every
+	// `.gltf` under `Meshes/` through Assimp, and
+	// `Zenith_Tools_MeshExport::ExtractAnimations` writes one
+	// `<base>_<clipname>.zanim` per animation the scene carries -- with
+	// `m_bGenerated = true`, at `Meshes/StickFigure/StickFigure_<Name>.zanim`,
+	// which is exactly where the clips used to live.
+	//
+	// So embedding the authored clips here re-created all seventeen GENERATED
+	// twins on the next boot: a generator by another name, shadowing the tracked
+	// files at the paths every consumer used to read, and it survived deleting
+	// them by hand. WU-9.1 stage 2 briefly did this and it was caught by a boot
+	// that deleted the clips and found them back. Do not re-add them.
+	//
+	// Nothing consumes animation out of this file -- it is a Blender round-trip
+	// deliverable for the MESH and the RIG. A clip's home is its `.zanim` under
+	// `Assets/Authored/`, which Blender imports directly if somebody needs one.
 	{
-		// ★★ EVERY CLIP MUST DRIVE BOTH UPPER ARMS, and this is now a contract
-		// rather than a coincidence. An imported humanoid ships with its OWN
-		// T-POSED bind pose (see Zenith_Tools_HumanModelExport) -- the mesh is
-		// never re-posed, which is what keeps its shoulders undeformed. A clip's
-		// channel REPLACES a bone's bind local rotation, so any bone a clip leaves
-		// out keeps its bind value; for a T-posed rig that means an arm left
-		// sticking straight out sideways for the whole clip.
-		//
-		// The two UpperArms are the only bones whose T-pose bind rotation is not
-		// identity, so they are the only ones this can bite.
-		Zenith_Assert(xExport.pxClip->HasBoneChannel("LeftUpperArm") &&
-			xExport.pxClip->HasBoneChannel("RightUpperArm"),
-			"clip '%s' does not animate both UpperArms -- a T-posed imported human would hold that arm out",
-			xExport.szSuffix);
+		// Empty by contract. std::vector because that is
+		// Zenith_Tools_GltfExport::ExportToGltf's parameter type.
+		const std::vector<const Flux_AnimationClip*> axNoGltfClips;
 
-		// ★ AND EVERY CLIP MUST NAME ITS RIG (D7/D8). HumanNewClip sets this, so the
-		// only way to fail here is to have built a clip some other way -- which is
-		// precisely the mistake worth catching at bake time, because a .zanim with an
-		// empty m_strSkeletonPath loads, plays and previews against nothing while
-		// every other check in this loop stays green.
-		Zenith_Assert(xExport.pxClip->GetMetadata().m_strSkeletonPath == szSTICKFIGURE_SKELETON_REF &&
-			xExport.pxClip->GetMetadata().m_bGenerated,
-			"clip '%s' was not built through HumanNewClip -- it names no rig", xExport.szSuffix);
-
-		const std::string strPath = strOutputDir + "StickFigure_" + xExport.szSuffix + ZENITH_ANIMATION_EXT;
-		xExport.pxClip->Export(strPath);
-		Zenith_Log(LOG_CATEGORY_ASSET, "  Exported %s animation to: %s", xExport.szSuffix, strPath.c_str());
-	}
-
-	// Export to glTF format for editing in Blender
-	{
-		std::vector<const Flux_AnimationClip*> axGltfClips = {
-			pxIdleClip, pxWalkClip, pxRunClip, pxAttack1Clip, pxAttack2Clip,
-			pxAttack3Clip, pxDodgeClip, pxHitClip, pxDeathClip,
-			pxAimClip, pxFireClip, pxReloadClip, pxJumpClip,
-			pxServeClip, pxForehandClip, pxBackhandClip, pxReadyStanceClip
-		};
 		std::string strGltfPath = strOutputDir + "StickFigure.gltf";
-		if (Zenith_Tools_GltfExport::ExportToGltf(strGltfPath.c_str(), pxMesh, pxSkel, axGltfClips))
+		if (Zenith_Tools_GltfExport::ExportToGltf(strGltfPath.c_str(), pxMesh, pxSkel, axNoGltfClips))
 		{
-			Zenith_Log(LOG_CATEGORY_ASSET, "  Exported glTF to: %s", strGltfPath.c_str());
+			Zenith_Log(LOG_CATEGORY_ASSET, "  Exported glTF (mesh + rig, no clips) to: %s", strGltfPath.c_str());
 		}
 	}
 
-	// ★ AND THE AUTHORED TWINS, SEEDED ONCE (WU-9.1). AFTER the generated export
-	// and its T-pose gate, deliberately: the files above are this bake's output
-	// and are rewritten every boot, while the ones below are written exactly once
-	// and are committed from then on. The pass is idempotent -- every later boot
-	// finds all seventeen present and writes nothing (D21).
-	//
-	// It re-creates its own clips from the factory table rather than reusing the
-	// locals above, so it cannot leave a cleared m_bGenerated behind on a clip the
-	// glTF export or a later reader still holds.
-	Zenith_Tools_ExportStickFigureAuthoredClips(Zenith_Tools_StickFigureAuthoredDir());
-
 	// Cleanup
-	delete pxReadyStanceClip;
-	delete pxBackhandClip;
-	delete pxForehandClip;
-	delete pxServeClip;
-	delete pxJumpClip;
-	delete pxReloadClip;
-	delete pxFireClip;
-	delete pxAimClip;
-	delete pxDeathClip;
-	delete pxHitClip;
-	delete pxDodgeClip;
-	delete pxAttack3Clip;
-	delete pxAttack2Clip;
-	delete pxAttack1Clip;
-	delete pxRunClip;
-	delete pxWalkClip;
-	delete pxIdleClip;
 	delete pxMesh;
 	delete pxSkel;
 

@@ -108,17 +108,22 @@
 # Assets tree is bake output that a tools boot regenerates from source; the
 # files under Authored/ are the one population that is HAND-EDITED -- animation
 # clips promoted to an authored override in the Animation Editor
-# (Zenith_AnimationDocument::PromoteToAuthoredOverride / SaveAs). The bake never
-# writes under Authored/, so nothing regenerates one: an authored clip a fresh
-# clone lacks is a clip that is simply gone.
+# (Zenith_AnimationDocument::PromoteToAuthoredOverride / SaveAs), plus the
+# seventeen StickFigure clips, whose generators were DELETED when they moved
+# here (engine WU-9.1, 2026-09-07). NO BAKE WRITES UNDER Authored/: nothing
+# regenerates one of these, so an authored clip a fresh clone lacks is a clip
+# that is simply gone.
 #
-# It is deliberately NOT `!**/*.zanim`. That extension is shared with 931
-# GENERATED clips (the count when this rule was added -- every StickFigure,
-# creature and tree animation the exporters emit), so an extension re-include
-# would un-ignore the entire bake, which is the exact trap the rest of this
-# block exists to avoid. Scoping to the directory also means the .zanimctrl and
-# .zanimmask files the editor will write alongside the clips are covered
-# already, with no further rule per extension.
+# (The seeding pass that first created those seventeen files ran ONCE, refused
+# to touch any path that already held a file, and was deleted with the
+# generators. There is no code left that writes into this directory.)
+#
+# It is deliberately NOT `!**/*.zanim`. That extension is shared with hundreds of
+# GENERATED clips -- every creature and tree animation the exporters emit -- so an
+# extension re-include would un-ignore the whole bake, which is the exact trap the
+# rest of this block exists to avoid. Scoping to the directory also means the
+# .zanimctrl and .zanimmask files the editor will write alongside the clips are
+# covered already, with no further rule per extension.
 #
 # We ignore Assets *contents* (not the directory entries, so git can descend),
 # then re-include. NOTE the ordering contract: the later `unit_test_scene.zscen`

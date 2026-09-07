@@ -196,7 +196,9 @@ namespace
 			if (pxAnimator != nullptr && pxSM)
 			{
 				Zenith_AnimatorComponent& xAnimator = *pxAnimator;
-				const std::string strDir = std::string(ENGINE_ASSETS_DIR) + "Meshes/StickFigure/";
+				// ★ The clips are AUTHORED data (WU-9.1), beside the rig rather than
+				// with it: engine:Authored/Meshes/StickFigure/.
+				const std::string strDir = std::string(ENGINE_ASSETS_DIR) + "Authored/Meshes/StickFigure/";
 
 				struct ShowState { const char* szState; const char* szFile; };
 				const ShowState axStates[] = {

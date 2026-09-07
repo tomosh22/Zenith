@@ -267,20 +267,38 @@ per-model clips (contrast creatures, which bake 15 files EACH, section 1.2).
 
 | Ref | Count | Format / notes |
 |---|---|---|
-| `engine:Meshes/StickFigure/StickFigure.zskel` | 1 | the 51-bone shared humanoid rig; Zenithmon weights only its 16-bone core prefix |
-| `engine:Meshes/StickFigure/StickFigure_Idle.zanim` | 1 | Idle -- the locomotion machine's rest state |
-| `engine:Meshes/StickFigure/StickFigure_Walk.zanim` | 1 | Walk -- the locomotion machine's moving state |
-| `engine:Meshes/StickFigure/StickFigure_Run.zanim` | 1 | Run |
-| `engine:Meshes/StickFigure/StickFigure_Hit.zanim` | 1 | plays Zenithmon's HURT role |
-| `engine:Meshes/StickFigure/StickFigure_Death.zanim` | 1 | plays Zenithmon's FAINT role |
+| `engine:Meshes/StickFigure/StickFigure.zskel` | 1 | the 51-bone shared humanoid rig; Zenithmon weights only its 16-bone core prefix. **BAKE OUTPUT** -- regenerated every tools boot, gitignored |
+| `engine:Authored/Meshes/StickFigure/StickFigure_Idle.zanim` | 1 | Idle -- the locomotion machine's rest state |
+| `engine:Authored/Meshes/StickFigure/StickFigure_Walk.zanim` | 1 | Walk -- the locomotion machine's moving state |
+| `engine:Authored/Meshes/StickFigure/StickFigure_Run.zanim` | 1 | Run |
+| `engine:Authored/Meshes/StickFigure/StickFigure_Hit.zanim` | 1 | plays Zenithmon's HURT role |
+| `engine:Authored/Meshes/StickFigure/StickFigure_Death.zanim` | 1 | plays Zenithmon's FAINT role |
+
+> **★ THE RIG AND THE CLIPS SIT UNDER DIFFERENT ROOTS, AND THE DIFFERENCE IS
+> LIFECYCLE, NOT TIDINESS (engine WU-9.1, 2026-09-07).** The `.zskel` is bake
+> output: a tools boot rewrites it, `.gitignore` excludes it, and deleting it
+> costs a boot. The five clips are **AUTHORED** -- committed under
+> `Zenith/Assets/Authored/`, hand-edited in the Animation Editor, and written by
+> **no generator at all** since the seventeen StickFigure clip factories were
+> deleted. Deleting one does not regenerate it; it destroys it (engine decision
+> D21), and a schema bump carries them forward via
+> `Zenith_Tools_MigrateAuthoredClipsAtBoot()` instead of a re-bake.
+>
+> These refs are **baked into every human `.zmodel`**, so the move needed
+> `uZM_HUMANGEN_VERSION` bumped (8 -> 9): the bake stamp is
+> `(magic, version, file COUNT)` and repointing a ref changes each model's bytes
+> without changing the count, so a warm tree would otherwise serve v8 models whose
+> five clip paths resolve to nothing -- every human silently in bind pose, with no
+> error and no missing file to notice.
 
 **Five clip ROLES, not nine.** v5 baked nine and wired exactly two: the
 locomotion state machine in `Zenithmon.cpp` uses Idle and Walk, and nothing
 anywhere played Talk, Wave, Point or Cheer. Those four had no StickFigure
 equivalent and were retired with the game-owned clip library rather than
 reimplemented against the new rig -- authoring animation nothing calls is dead
-content. Anything that later needs a wave authors it in the SHARED library
-(`Tools/Zenith_Tools_TestAssetExport.cpp`), where all three games get it.
+content. Anything that later needs a wave AUTHORS IT IN THE ANIMATION EDITOR and
+promotes it into `Zenith/Assets/Authored/Meshes/StickFigure/`, where all three
+games get it -- there is no generator to add a clip to any more.
 
 **Per-model set (under `game:Humans/<Name>/`, 7 files each):**
 
@@ -316,8 +334,10 @@ family's warmth depend on a file it does not produce and cannot repair.
 
 **Determinism / version stamp.** Every output byte is a pure function of the
 roster id (section 6.2); the generator version is `uZM_HUMANGEN_VERSION`
-(currently **6**), golden-pinned -- a change to the generation algorithm bumps it
-and forces a cold family re-bake. Locked by the `ZM_Gen` HumanGen units
+(currently **9** -- `Source/Gen/ZM_HumanGen.h` is the ONE place it is written;
+this line has been stale before, so read it there rather than here), golden-pinned
+-- a change to the generation algorithm, or to any ref baked into the bundle,
+bumps it and forces a cold family re-bake. Locked by the `ZM_Gen` HumanGen units
 ([TestPlan.md](TestPlan.md) 5.4).
 
 ---
@@ -784,7 +804,7 @@ terrain-family format now (`ZMTR`, v1, count 771 for each 256-chunk town and
 count 1,155 for the 384-chunk route in a 12-byte atomic marker; section 4.3).
 The creature generator already stamps its generation version via
 `uZM_CREATUREGEN_VERSION` (currently 3; section 1.2), the human family likewise
-stamps `uZM_HUMANGEN_VERSION` (currently 6; section 2), and the building and prop
+stamps `uZM_HUMANGEN_VERSION` (9 at the time of writing; section 2), and the building and prop
 families stamp `uZM_BUILDINGGEN_VERSION` (currently 1) and `uZM_PROPGEN_VERSION`
 (currently 2; section 3). The full per-family `ZM_BakeManifest` marker is now
 **SHIPPED (ZM-D-085)**: a per-family 12-byte `ZMBM` stamp (ASCII magic + u32-LE

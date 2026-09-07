@@ -72,7 +72,17 @@
 //             skeleton and animation refs at engine: paths. Every v5 bundle on disk
 //             is both mis-placed and bound to a .zskel that no longer exists, so
 //             this bump is load-bearing.
-constexpr u_int uZM_HUMANGEN_VERSION = 8u;
+//   v8 -> v9: THE CLIP REFS MOVED to engine:Authored/Meshes/StickFigure/ (WU-9.1).
+//             The seventeen StickFigure clips are AUTHORED data now -- committed,
+//             hand-edited, written by no bake -- and the old Meshes/StickFigure/
+//             *.zanim files are GONE. ★ THIS BUMP IS THE WHOLE FIX, for the reason
+//             the v2 -> v3 note spells out: the bake stamp is (magic, version, file
+//             COUNT), never a content hash, and repointing a ref changes each
+//             .zmodel's BYTES while leaving the file count identical. Without the
+//             bump a warm tree keeps serving v8 models whose five animation paths
+//             resolve to nothing -- every human silently stuck in bind pose, with
+//             no error and no missing file to notice.
+constexpr u_int uZM_HUMANGEN_VERSION = 9u;
 
 // The shared rig's asset ref -- the ONE skeleton every human in this game binds,
 // and the same file RenderTest and Combat bind. Spelled once, here.
@@ -408,10 +418,16 @@ ZM_HumanValidation ZM_ValidateHuman(const ZM_Human& xHuman);
 // Asset-path scheme (AssetManifest section 2). Two schemes, and they now resolve
 // under DIFFERENT ROOTS:
 //   PER-MODEL:  game:Humans/<Name>/<Name>.zmesh / _albedo.ztxtr / .zmtrl / .zmodel
-//   SHARED:     engine:Meshes/StickFigure/StickFigure.zskel + StickFigure_<Clip>.zanim
+//   SHARED RIG: engine:Meshes/StickFigure/StickFigure.zskel
+//   SHARED CLIPS: engine:Authored/Meshes/StickFigure/StickFigure_<Clip>.zanim
 // The per-model half is baked by this game; the shared half is an ENGINE asset this
 // game only refers to. Both return false on buffer overflow (truncation),
 // mirroring ZM_CreatureAssetPath.
+//
+// ★ THE RIG AND THE CLIPS ARE IN DIFFERENT DIRECTORIES, AND THAT IS NOT UNTIDINESS
+// (WU-9.1). The .zskel is BAKE OUTPUT — regenerated every tools boot, gitignored.
+// The clips are AUTHORED — committed under Assets/Authored/, hand-edited in the
+// Animation Editor, written by nothing. Two lifecycles, so two roots.
 // ---------------------------------------------------------------------------
 enum ZM_HUMAN_ASSET_KIND : u_int
 {

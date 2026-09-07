@@ -28,7 +28,8 @@ Zenith_Engine::InitialiseAssets()
       Zenith_Tools_MigrateAuthoredClipsAtBoot()
                                          <-- FIRST. Carries committed Assets/Authored/*.zanim
                                              forward to the current schema before anything reads one
-      GenerateStickFigureAssets()        <-- writes the ONE humanoid rig + 17 clips
+      GenerateStickFigureAssets()        <-- writes the ONE humanoid rig + body + model.
+                                             NO CLIPS: the 17 are authored data (below)
       ExportBoundHumanModels()           <-- binds artist humanoids to it
       GenerateProceduralTreeAssets()
       GenerateProceduralRockAssets()
@@ -48,6 +49,14 @@ blaming a missing rig.
 ★ **The `.glb` walk runs AFTER the Assimp walk** so that where a model somehow has
 both sources, the `.glb` bundle is what survives.
 
+★ **`ExportMeshesInDirectory` IMPORTS EVERY `.gltf` A LATER PHASE WROTE, ON THE NEXT
+BOOT.** The walk does not know or care that `Meshes/StickFigure/StickFigure.gltf` is
+this bake's own output: it imports it like any other source, and `ExtractAnimations`
+turns every animation the file carries into a generated `.zanim` beside it. That is a
+FEEDBACK LOOP between two phases one screen apart in this list, and it already caused
+one defect — see the StickFigure clip section below. **Do not put anything in an
+exported `.gltf` that you do not want re-imported as an asset.**
+
 ---
 
 ## What each file does
@@ -62,7 +71,7 @@ both sources, the `.glb` bundle is what survives.
 | `Zenith_Tools_TextureExport` | `ExportAllTextures()`, driven by a committed `TextureUsage.ztexdecl` |
 | `Zenith_Tools_FontExport` | `ExportDefaultFontAtlas()` — MSDF atlas from a TTF |
 | `Zenith_Tools_TerrainExport` | heightmap → terrain chunk geometry |
-| `Zenith_Tools_TestAssetExport` | the humanoid rig, 17 clips, StickFigure's body, RenderTest's assets |
+| `Zenith_Tools_TestAssetExport` | the humanoid rig, StickFigure's body/atlas/model, RenderTest's assets. **No clips** — it writes none, reads none, and SWEEPS any `.zanim` out of `Meshes/StickFigure/` |
 | `Zenith_Tools_AnimMigrate` | emits nothing — the authored-`.zanim` schema migration phase (below). The ONE sanctioned reader of an older `.zanim` layout |
 | `Zenith_Tools_HumanSkinBind` | orientation, normalise, sanity, fit check, weight solve |
 | `Zenith_Tools_HumanModelExport` | the human binder's call site, routing and publication |
@@ -104,10 +113,12 @@ file. A tolerant parser turns a typo into a silently different asset.
 and the rig is never inferred from bone names — so each producer stamps
 `Flux_AnimationClipMetadata`'s `m_strSkeletonPath`, `m_strPreviewModelPath` (where it has
 one), `m_uAuthoredFrameRate` and `m_bGenerated = true` at the point the clip is built:
-`HumanNewClip` for the 17 StickFigure clips (asserted again at export in
-`GenerateStickFigureAssets`), `ZM_ApplyCreatureClipRigIdentity` for Zenithmon's species
+`ZM_ApplyCreatureClipRigIdentity` for Zenithmon's species
 clips, `Zenith_Tools_TreeAssetExport` / `Zenith_Tools_BushAssetExport` for the sway
-clips, and `ExtractAnimations` (`Zenith_Tools_MeshExport.cpp`) for imported ones. For an
+clips, and `ExtractAnimations` (`Zenith_Tools_MeshExport.cpp`) for imported ones.
+(The 17 StickFigure clips were on that list until WU-9.1. They are AUTHORED now —
+`m_bGenerated` is FALSE in every one of them, deliberately, and their rig identity is
+checked by a unit over the committed files rather than by a bake-time assert.) For an
 import, "generated" means **rewritten by the bake** — the walk re-runs every tools boot
 and overwrites each `<base>_<name>.zanim` from the source, so editing one in place is
 pointless — not "procedural"; its rig is the `.zskel` the same import writes (empty when
@@ -188,23 +199,52 @@ same rule `ImportGlbsInDirectory` follows. It does **not** go through
 `Zenith_AssetRegistry`: loading a clip through the registry during a boot phase would cache a
 pre-migration asset that every later consumer would then resolve to.
 
-★ **THE ONE THING THAT WRITES INTO `Assets/Authored/` IS `Zenith_Tools_ExportStickFigureAuthoredClips()`,
-AND IT ONLY EVER SEEDS A FILE THAT IS NOT THERE.** It runs at the end of
-`GenerateStickFigureAssets()`, after the generated export and its T-pose gate, and writes the
-AUTHORED TWIN of each of the seventeen StickFigure clips —
-`engine:Authored/Meshes/StickFigure/StickFigure_<Name>.zanim`, resolved through
-`ENGINE_ASSETS_DIR` the same way the migrator resolves the engine root — as the generated clip
-with `m_bGenerated` CLEARED and nothing else changed. Decision D21 (the bake never overwrites
-authored data) is not weakened by it: a path that already holds a file is SKIPPED, whatever is
-in it, so the phase is idempotent and every boot after the first writes nothing at all. That
-skip is the sanctioned exception's whole safety property, so it is pinned by a unit that
-hand-edits a seeded file and re-runs the pass into a temp directory
-(`Zenith_Tools_TestAssetExport.Tests.inl`, `StickFigureAuthored` — which also pins that the twin
-samples identically to its original, that every clip drives both `UpperArm`s, and that the
-authored path keeps the root prefix and the subdirectory). The seeded files land at the current
-schema, so the migration phase above — which runs BEFORE the seeding, at the top of
-`GenerateTestAssets()` — has nothing to do with them until a later schema bump, which is exactly
-the population it exists for.
+★ **NOTHING IN `Tools/` WRITES INTO `Assets/Authored/` ANY MORE, AND THE SEVENTEEN
+StickFigure CLIPS ARE THE REASON THAT MATTERS (WU-9.1, 2026-09-07).** They live at
+`engine:Authored/Meshes/StickFigure/StickFigure_<Name>.zanim`, committed, and the
+generators that used to produce them — `HumanNewClip`, seventeen `Create*Animation`
+factories, the gait-curve kit, the aim hold pose, the export loop and its two bake-time
+gates, ~1560 lines — were **deleted**, not disabled. A second producer of a file the
+editor owns is precisely how an authored edit gets silently overwritten (D21), and the
+population under `Authored/` is the one where "delete it and re-bake" does not apply.
+A one-shot seeding pass created those files, refused every path that already held one,
+and went with the generators.
+
+What replaced the two bake-time asserts is a set of units over the FILES —
+`Zenith_Tools_TestAssetExport.Tests.inl`, category `StickFigureAuthored`: every clip
+loads through the registry and parses at the current schema, carries
+`m_bGenerated == false`, names the one shared rig `engine:`-prefixed and a preview
+model, keeps its key times inside its duration (Fire exempt, D13), **drives both
+`UpperArm`s** — the T-pose dependency below — and still has the name, duration and loop
+flag the games' timings were built around. That is a wider net than the assert was: it
+reads what is on disk, so it catches a bad hand edit, which is now the only way these
+files change.
+
+★★ **AND `StickFigure.gltf` MUST CARRY NO ANIMATIONS, WHICH IS THE SUBTLEST PART OF
+THIS WHOLE UNIT.** `GenerateStickFigureAssets()` exports that glTF for Blender
+round-tripping, and stage 2 first shipped with the seventeen authored clips read back
+into it so the bundle stayed complete. That re-created every generated clip:
+**`ExportAllMeshes()` runs several phases EARLIER in the same boot and imports every
+`.gltf` under `Meshes/`**, so `Zenith_Tools_MeshExport::ExtractAnimations` pulled all
+seventeen straight back out and wrote them to
+`Meshes/StickFigure/StickFigure_<Name>.zanim` with `m_bGenerated = true` — a generator
+by another name, shadowing the tracked files at the exact paths every consumer used to
+read. Deleting them by hand did not help: the next boot put them back, because the
+`.gltf` on disk still held them. **The glTF is a MESH + RIG deliverable; the clip list
+passed to `ExportToGltf` is empty by contract.**
+
+Two mechanisms keep it that way, because the first boot after the fix still imports a
+STALE `.gltf` that has animations in it:
+
+* `GenerateStickFigureAssets()` **deletes every `.zanim` it finds in
+  `Meshes/StickFigure/`** at the top of the phase (`SweepGeneratedStickFigureClips`).
+  It runs after the import walk, so one boot self-heals a tree that already had the
+  shadows — and the directory is gitignored bake output, so nothing irreplaceable is
+  ever removed. Each removal is a WARNING line naming the file.
+* `Core.StickFigureAssetExport` asserts, after boot, that the directory holds **no
+  `.zanim` at all** — walked, not probed by name, so a clip arriving under any name is
+  caught. Every other clip unit reads the AUTHORED path and stayed green throughout the
+  incident, which is exactly why this one is phrased as an absence.
 
 ---
 
@@ -220,6 +260,12 @@ the population it exists for.
 humanoid skeleton in the engine. StickFigure, Zenithmon's NPCs, Combat, RenderTest
 and every imported artist humanoid reference it byte for byte, and all 17
 `StickFigure_*.zanim` clips drive all of them.
+
+★ **THE CLIPS ARE NOT BESIDE THE RIG.** The `.zskel` is bake output under
+`Meshes/StickFigure/`; the clips are AUTHORED, committed files under
+`Assets/Authored/Meshes/StickFigure/` (WU-9.1). Two lifecycles, two roots — a clip
+path left pointing at the old location loads NOTHING, and the character stands in its
+bind pose with no error reported.
 
 `Zenith_SkeletonAsset` owns the inverse-bind matrices, so **one skeleton means one
 rest pose**: every mesh bound to it must be *modelled* in that pose. Artist
@@ -250,8 +296,14 @@ inverse-bind matrices.
 ★ **THE ONE DEPENDENCY: EVERY CLIP MUST ANIMATE BOTH `UpperArm`s.** A bone a clip
 omits keeps its bind local transform, and those two are the only non-identity
 ones — so an omission leaves that arm sticking straight out for the clip's whole
-duration. `GenerateStickFigureAssets` asserts it at bake time. **Adding a clip
-means adding both channels.**
+duration. **Adding OR EDITING a clip means both channels are present.**
+
+It used to be a `Zenith_Assert` in `GenerateStickFigureAssets`' export loop, on a clip
+that had just been built in memory. That loop is gone with the generators (WU-9.1), and
+the check is a unit over the committed files instead —
+`StickFigureAuthored.EveryClipDrivesBothUpperArms`. That is the form that can catch the
+way these clips actually change now: somebody deleting a channel in the Animation
+Editor.
 
 ### The procedural humans are still authored arms-down
 

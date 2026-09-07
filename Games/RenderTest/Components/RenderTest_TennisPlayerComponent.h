@@ -446,7 +446,11 @@ private:
 	{
 		Flux_AnimationController& xCtl = m_pxAnimator->GetController();
 
-		static const std::string s_strDir = std::string(ENGINE_ASSETS_DIR) + "Meshes/StickFigure/";
+		// ★ Assets/Authored/, not Assets/Meshes/ (WU-9.1): the clips are authored
+		// data now — committed, hand-edited, written by no bake — while the rig and
+		// the body stay under Meshes/StickFigure/. A stale path here loads nothing
+		// and the player stands in its bind pose with no error.
+		static const std::string s_strDir = std::string(ENGINE_ASSETS_DIR) + "Authored/Meshes/StickFigure/";
 		xCtl.AddClipFromFile(s_strDir + "StickFigure_ReadyStance" ZENITH_ANIMATION_EXT);
 		xCtl.AddClipFromFile(s_strDir + "StickFigure_Serve"       ZENITH_ANIMATION_EXT);
 		xCtl.AddClipFromFile(s_strDir + "StickFigure_Forehand"    ZENITH_ANIMATION_EXT);

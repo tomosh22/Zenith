@@ -764,12 +764,17 @@ ZENITH_TEST(ZM_Gen, HumanGen_AssetPathScheme)
 	ZENITH_ASSERT_TRUE(
 		ZM_HumanSharedAssetPath(ZM_HUMAN_SHARED_ASSET_ANIM_IDLE, acRef, sizeof(acRef)),
 		"shared idle-clip ref must fit");
-	ZENITH_ASSERT_STREQ(acRef, "engine:Meshes/StickFigure/StickFigure_Idle.zanim", "shared idle-clip ref scheme drifted");
+	// ★ THE CLIPS LIVE UNDER Authored/, THE RIG DOES NOT (WU-9.1). The .zskel above
+	// is bake output; the clips are committed, hand-edited files that no bake
+	// writes. Two roots, deliberately, and this is the pin that says so.
+	ZENITH_ASSERT_STREQ(acRef, "engine:Authored/Meshes/StickFigure/StickFigure_Idle.zanim",
+		"shared idle-clip ref scheme drifted");
 
 	ZENITH_ASSERT_TRUE(
 		ZM_HumanSharedAssetPath(ZM_HUMAN_SHARED_ASSET_ANIM_FAINT, acRef, sizeof(acRef)),
 		"shared faint-clip ref must fit");
-	ZENITH_ASSERT_STREQ(acRef, "engine:Meshes/StickFigure/StickFigure_Death.zanim", "shared faint-clip ref scheme drifted");
+	ZENITH_ASSERT_STREQ(acRef, "engine:Authored/Meshes/StickFigure/StickFigure_Death.zanim",
+		"shared faint-clip ref scheme drifted");
 
 	// --- Per-model refs for a known id (PlayerM) ---
 	ZENITH_ASSERT_TRUE(
@@ -852,12 +857,14 @@ ZENITH_TEST(ZM_Gen, HumanGen_ClipMetadataGolden)
 		const bool bPathFits = ZM_HumanSharedAssetPath(eKind, acPath, sizeof(acPath));
 		ZENITH_ASSERT_TRUE(bPathFits, "shared path for clip %u must fit", c);
 		char acExpected[256];
-		// ★ "engine:", NOT "game:". This is the assertion that would have caught the
-		// migration silently half-done: a clip ref left under game: resolves to a
-		// path no bake writes any more, the model loads with no animation, and every
-		// structural test still passes because the MESH is fine.
+		// ★ "engine:Authored/", NOT "game:" AND NOT "engine:Meshes/". This is the
+		// assertion that would have caught the migration silently half-done: a clip
+		// ref left under either of the old roots resolves to a path nothing writes
+		// any more, the model loads with NO ANIMATION, and every structural test
+		// still passes because the MESH is fine. It has now caught that shape twice
+		// -- game: -> engine: (v6), and engine:Meshes/ -> engine:Authored/ (WU-9.1).
 		const int iExpectedLength = snprintf(acExpected, sizeof(acExpected),
-			"engine:Meshes/StickFigure/StickFigure_%s.zanim", xG.m_szName);
+			"engine:Authored/Meshes/StickFigure/StickFigure_%s.zanim", xG.m_szName);
 		const bool bExpectedFits = iExpectedLength >= 0
 			&& (u_int)iExpectedLength < (u_int)sizeof(acExpected);
 		ZENITH_ASSERT_TRUE(bExpectedFits, "golden shared path for clip %u must fit", c);

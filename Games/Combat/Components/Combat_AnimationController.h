@@ -304,8 +304,15 @@ private:
 		if (!m_pxAnimator)
 			return;
 
-		// Load stick figure animation clips
-		static const char* s_strAssetDir = ENGINE_ASSETS_DIR "Meshes/StickFigure/";
+		// Load stick figure animation clips.
+		//
+		// ★ THE CLIPS ARE AUTHORED DATA, UNDER Assets/Authored/ (WU-9.1). They are
+		// committed, hand-edited in the Animation Editor and written by no bake, so
+		// this directory is NOT the one the rig and the body come out of
+		// (Meshes/StickFigure/) -- it is the one beside it that git tracks. A path
+		// left pointing at the old location loads NOTHING and the character stands
+		// in its bind pose with no error.
+		static const char* s_strAssetDir = ENGINE_ASSETS_DIR "Authored/Meshes/StickFigure/";
 
 		Flux_AnimationController& xController = m_pxAnimator->GetController();
 		xController.AddClipFromFile(std::string(s_strAssetDir) + "StickFigure_Idle" ZENITH_ANIMATION_EXT);

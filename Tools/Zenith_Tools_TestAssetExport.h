@@ -7,79 +7,61 @@
 extern void GenerateTestAssets();
 
 // Generate StickFigure human test assets
-// Creates: skeleton (16-bone rig, unchanged layout), smooth lofted body mesh,
-// mesh geometry, static mesh, painted texture atlas (albedo/normal/RM),
-// body material, model bundle, and 17 animations
+// Creates: skeleton (51-bone T-posed rig), smooth lofted body mesh, mesh
+// geometry, static mesh, painted texture atlas (albedo/normal/RM/AO/height),
+// body + eye materials, the model bundle, and the Blender round-trip .gltf
+// (MESH + RIG ONLY -- it must carry no animations, see the .cpp).
 // Output: ENGINE_ASSETS_DIR/Meshes/StickFigure/
+//
+// ★ IT WRITES NO CLIPS, AND DELETES ANY IT FINDS IN THAT DIRECTORY. The
+// seventeen StickFigure animations are AUTHORED data (WU-9.1): committed under
+// Assets/Authored/Meshes/StickFigure/, hand-edited in the Animation Editor, and
+// produced by nothing here. A .zanim under Meshes/StickFigure/ is a generated
+// SHADOW of a tracked file, so the exporter sweeps the directory clear of them
+// on every boot. See the clip-name table below.
 extern void GenerateStickFigureAssets();
 
 //=============================================================================
-// SEEDING THE AUTHORED TWINS OF THE 17 StickFigure CLIPS (WU-9.1 stage 1).
+// THE SEVENTEEN AUTHORED StickFigure CLIPS (WU-9.1).
 //
-// ★ THIS IS THE ONE SANCTIONED WRITE INTO `Assets/Authored/`, AND IT IS
-// ONE-SHOT. Decision D21 says the bake never overwrites authored data: those
-// files are committed, hand-edited in the Animation Editor and written by no
-// generator, so a bake that rewrote one would destroy an edit with no way to
-// get it back (see Tools/CLAUDE.md and Zenith/AssetHandling/CLAUDE.md). The
-// exception granted here is SEEDING A FILE THAT DOES NOT EXIST: the twin is
-// written only when nothing is on that path, which makes the phase idempotent
-// -- the second boot, and every boot after it, writes nothing at all.
+// ★ THESE FILES ARE AUTHORED, NOT BAKED, AND THAT IS THE WHOLE POINT. They live
+// under `Zenith/Assets/Authored/Meshes/StickFigure/`, which `.gitignore`
+// re-includes wholesale and `.gitattributes` marks `binary -filter`, so they are
+// COMMITTED as real bytes. No generator writes one: deleting one does not
+// regenerate it, it destroys it (D21). A schema bump carries them forward
+// through `Zenith_Tools_MigrateAuthoredClipsAtBoot()` instead of a re-bake.
 //
-// The twin is the generated clip with `m_bGenerated` CLEARED and NOTHING ELSE
-// changed: same name, same rig and preview-model refs, same authored frame
-// rate, same channels, same keys, same events. It is the same animation, said
-// to be authored rather than regenerated.
+// What lives here is the NAME LIST -- which files the set is -- published so that
+// "the StickFigure set is these seventeen" is stated ONCE. The unit suite walks
+// it to check every tracked file; the exporter reads no clip at all.
 //=============================================================================
 
-//-----------------------------------------------------------------------------
-// What one seeding pass did. Every field is a COUNT OF CLIPS and they always
-// satisfy m_uConsidered == m_uWritten + m_uSkippedExisting + m_uFailed
-// (CountsAddUp) -- a clip that was neither written, nor already there, nor
-// refused would be one the pass silently dropped, which is the failure mode
-// this struct exists to make impossible to miss. The same shape, and the same
-// reasoning, as Zenith_Tools_AnimMigrateReport.
-//-----------------------------------------------------------------------------
-struct Zenith_Tools_StickFigureAuthoredSeedReport
-{
-	u_int m_uConsidered = 0u;
-	u_int m_uWritten = 0u;
-	u_int m_uSkippedExisting = 0u;
-	u_int m_uFailed = 0u;
+constexpr u_int uZENITH_STICKFIGURE_CLIP_COUNT = 17u;
 
-	bool CountsAddUp() const
-	{
-		return m_uConsidered == (m_uWritten + m_uSkippedExisting + m_uFailed);
-	}
-};
+// Clip names WITHOUT the "StickFigure_" prefix or the extension -- "Idle",
+// "Walk", ... -- in the order the set has always been listed. Each name is both
+// the clip's own m_strName and the middle of its file name.
+extern const char* const azZENITH_STICKFIGURE_CLIP_NAMES[uZENITH_STICKFIGURE_CLIP_COUNT];
 
-// PURE. The bake's own file name for one clip: "Idle" -> "StickFigure_Idle.zanim".
-// This is the naming GenerateStickFigureAssets' export loop uses, so the authored
-// twin and the generated original share a leaf name by construction.
+// PURE. The file name for one clip: "Idle" -> "StickFigure_Idle.zanim".
 extern std::string Zenith_Tools_StickFigureClipFileName(const char* szClipName);
 
-// PURE. The authored twin's ASSET PATH for one clip FILE NAME:
+// PURE. The authored ASSET PATH for one clip FILE NAME:
 //   "StickFigure_Idle.zanim" -> "engine:Authored/Meshes/StickFigure/StickFigure_Idle.zanim"
 //
 // ★ THE RULE IS Zenith_AnimationDocument::BuildAuthoredAssetPath's, and it is
 // matched rather than called -- Tools may not include Editor. The source's ROOT
 // PREFIX is kept and "Authored/" is inserted directly under it, preserving the
-// SUBDIRECTORY: two generated sets routinely both hold a clip called "Walk", and
-// a flattened leaf name would have one silently overwrite the other.
+// SUBDIRECTORY: two asset sets routinely both hold a clip called "Walk", and a
+// flattened leaf name would have one silently overwrite the other.
 extern std::string Zenith_Tools_StickFigureAuthoredPath(const char* szClipFileName);
 
-// The on-disk directory the boot seeds into -- ENGINE_ASSETS_DIR + the same
+// The on-disk directory those files live in -- ENGINE_ASSETS_DIR + the same
 // relative path Zenith_Tools_StickFigureAuthoredPath spells after "engine:", so
 // the two describe one location. ENGINE_ASSETS_DIR is a define on the engine
 // library this file compiles into; the game root (GAME_ASSETS_DIR) does not
 // exist here, and no StickFigure clip lives under one.
 extern std::string Zenith_Tools_StickFigureAuthoredDir();
-
-// Write the authored twin of each of the 17 StickFigure clips into
-// strAuthoredDir, SKIPPING every one that is already there. The directory is
-// created if it is missing. strAuthoredDir is a parameter rather than a
-// constant so a unit can seed a temp directory instead of the tracked asset
-// tree; the boot phase passes Zenith_Tools_StickFigureAuthoredDir().
-extern Zenith_Tools_StickFigureAuthoredSeedReport Zenith_Tools_ExportStickFigureAuthoredClips(const std::string& strAuthoredDir);
 
 // Generate ProceduralTree test assets
 // Creates: skeleton, mesh, mesh geometry, static mesh, VAT, sway animation

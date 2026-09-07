@@ -7228,16 +7228,68 @@ void Zenith_UnitTests::TestStickFigureAssetExport(){
 	std::string strOutputDir = std::string(ENGINE_ASSETS_DIR) + "Meshes/StickFigure/";
 	std::string strSkelPath = strOutputDir + "StickFigure" ZENITH_SKELETON_EXT;
 	std::string strMeshAssetPath = strOutputDir + "StickFigure" ZENITH_MESH_ASSET_EXT;
-	std::string strIdlePath = strOutputDir + "StickFigure_Idle" ZENITH_ANIMATION_EXT;
-	std::string strWalkPath = strOutputDir + "StickFigure_Walk" ZENITH_ANIMATION_EXT;
-	std::string strRunPath = strOutputDir + "StickFigure_Run" ZENITH_ANIMATION_EXT;
+
+	// ★ THE CLIPS ARE NOT BAKE OUTPUT AND DO NOT LIVE WITH THE RIG (WU-9.1).
+	// They are AUTHORED files under Assets/Authored/Meshes/StickFigure/ — COMMITTED,
+	// hand-edited in the Animation Editor, written by no exporter. So unlike the
+	// skeleton and the mesh beside them, these three exist on a FRESH CLONE with no
+	// tools boot at all, and a failure here means a missing or corrupt tracked file
+	// rather than a bake that did not run.
+	std::string strAuthoredDir = std::string(ENGINE_ASSETS_DIR) + "Authored/Meshes/StickFigure/";
+	std::string strIdlePath = strAuthoredDir + "StickFigure_Idle" ZENITH_ANIMATION_EXT;
+	std::string strWalkPath = strAuthoredDir + "StickFigure_Walk" ZENITH_ANIMATION_EXT;
+	std::string strRunPath = strAuthoredDir + "StickFigure_Run" ZENITH_ANIMATION_EXT;
 
 	// Verify files exist
 	ZENITH_ASSERT_TRUE(std::filesystem::exists(strSkelPath), "Skeleton file should exist");
 	ZENITH_ASSERT_TRUE(std::filesystem::exists(strMeshAssetPath), "Mesh asset file should exist");
-	ZENITH_ASSERT_TRUE(std::filesystem::exists(strIdlePath), "Idle animation file should exist");
-	ZENITH_ASSERT_TRUE(std::filesystem::exists(strWalkPath), "Walk animation file should exist");
-	ZENITH_ASSERT_TRUE(std::filesystem::exists(strRunPath), "Run animation file should exist");
+	ZENITH_ASSERT_TRUE(std::filesystem::exists(strIdlePath),
+		"Authored Idle animation should exist at %s (it is committed -- restore it from git, a re-bake will not write it)",
+		strIdlePath.c_str());
+	ZENITH_ASSERT_TRUE(std::filesystem::exists(strWalkPath),
+		"Authored Walk animation should exist at %s (committed, not baked)", strWalkPath.c_str());
+	ZENITH_ASSERT_TRUE(std::filesystem::exists(strRunPath),
+		"Authored Run animation should exist at %s (committed, not baked)", strRunPath.c_str());
+
+	// ★★ AND THE BAKE DIRECTORY MUST CONTAIN NO CLIP AT ALL.
+	//
+	// The mirror image of the three asserts above, and the one that catches the
+	// failure they cannot: a GENERATED clip at the old path SHADOWS the authored
+	// file. Same leaf name, the location every consumer read until WU-9.1,
+	// m_bGenerated = true — so a stale caller keeps working, silently, against a
+	// file nobody edits, and the authored one is dead weight.
+	//
+	// ★ THIS HAS ALREADY HAPPENED ONCE, WHICH IS WHY IT IS ASSERTED RATHER THAN
+	// ASSUMED. With the generators deleted, the StickFigure glTF export still
+	// embedded the seventeen clips; ExportAllMeshes() re-imports every .gltf under
+	// Meshes/ earlier in the same boot, and ExtractAnimations wrote all seventeen
+	// back out as generated .zanim files. Deleting them by hand did not help — the
+	// next boot recreated them. No unit noticed, because every clip test reads the
+	// AUTHORED path and those files were fine.
+	//
+	// The directory is walked rather than the seventeen names probed, so a clip
+	// arriving under any name at all is caught.
+	{
+		u_int uStrayClips = 0;
+		std::string strFirstStray;
+		std::error_code xWalkError;
+		for (std::filesystem::directory_iterator xIt(strOutputDir, xWalkError), xEnd;
+			!xWalkError && xIt != xEnd; xIt.increment(xWalkError))
+		{
+			if (xIt->path().extension() == ZENITH_ANIMATION_EXT)
+			{
+				if (uStrayClips == 0)
+				{
+					strFirstStray = xIt->path().string();
+				}
+				uStrayClips++;
+			}
+		}
+		ZENITH_ASSERT_EQ(uStrayClips, 0u,
+			"the bake wrote %u .zanim into %s (first: %s) -- nothing may produce a clip there any more; "
+			"they SHADOW the authored files under Assets/Authored/Meshes/StickFigure/",
+			uStrayClips, strOutputDir.c_str(), strFirstStray.c_str());
+	}
 
 #ifdef ZENITH_TOOLS
 	// The texture atlas, body material and model bundle are tools-build

@@ -312,7 +312,14 @@ bool ZM_HumanSharedAssetPath(ZM_HUMAN_SHARED_ASSET_KIND eKind, char* szOut, u_in
 		// Clip suffix is contiguous with the clip enum.
 		const ZM_HUMAN_ANIM_CLIP eClip =
 			static_cast<ZM_HUMAN_ANIM_CLIP>(eKind - ZM_HUMAN_SHARED_ASSET_ANIM_IDLE);
-		iN = snprintf(szOut, uCap, "engine:Meshes/StickFigure/StickFigure_%s.zanim",
+		// ★ "Authored/", and it is not the same directory as the .zskel above.
+		// The seventeen StickFigure clips are AUTHORED data since WU-9.1 --
+		// committed under Zenith/Assets/Authored/Meshes/StickFigure/, hand-edited
+		// in the Animation Editor, written by no bake -- while the rig they drive
+		// is still bake output under Meshes/StickFigure/. This ref is BAKED INTO
+		// every human .zmodel, so moving it needs uZM_HUMANGEN_VERSION bumped or a
+		// warm asset tree keeps serving models that point at files nothing writes.
+		iN = snprintf(szOut, uCap, "engine:Authored/Meshes/StickFigure/StickFigure_%s.zanim",
 			ZM_HumanClipName(eClip));
 	}
 	else

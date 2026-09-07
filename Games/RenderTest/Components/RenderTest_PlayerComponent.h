@@ -611,7 +611,14 @@ private:
 		Flux_AnimationController& xController = m_pxAnimator->GetController();
 
 		// --- Load all clips into the controller's clip collection ---
-		static const std::string s_strAssetDir = std::string(ENGINE_ASSETS_DIR) + "Meshes/StickFigure/";
+		//
+		// ★ FROM Assets/Authored/, NOT Assets/Meshes/ (WU-9.1). The seventeen
+		// StickFigure clips are authored data now: committed, hand-edited in the
+		// Animation Editor, written by no bake. The rig and the body still come out
+		// of Meshes/StickFigure/ — these two directories are siblings on purpose,
+		// and a clip path left pointing at the old one loads nothing while the
+		// character stands in its bind pose with no error reported.
+		static const std::string s_strAssetDir = std::string(ENGINE_ASSETS_DIR) + "Authored/Meshes/StickFigure/";
 		xController.AddClipFromFile(s_strAssetDir + "StickFigure_Idle"   ZENITH_ANIMATION_EXT);
 		xController.AddClipFromFile(s_strAssetDir + "StickFigure_Walk"   ZENITH_ANIMATION_EXT);
 		xController.AddClipFromFile(s_strAssetDir + "StickFigure_Run"    ZENITH_ANIMATION_EXT);
