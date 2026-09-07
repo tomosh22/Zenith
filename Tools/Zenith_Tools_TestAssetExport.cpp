@@ -40,6 +40,15 @@
 //                                     HumanNewClip below.
 //     StickFigure.gltf              — Blender round-trip export
 //
+//   ENGINE_ASSETS_DIR/Authored/Meshes/StickFigure/
+//     StickFigure_<Anim>.zanim      — the AUTHORED TWIN of each of those 17
+//                                     clips: the same data with m_bGenerated
+//                                     cleared, seeded ONCE and never overwritten
+//                                     (D21). Unlike everything above it, these
+//                                     are COMMITTED and hand-editable — see
+//                                     Zenith_Tools_ExportStickFigureAuthoredClips
+//                                     below and Tools/CLAUDE.md.
+//
 // Everything is deterministic — repeated boots regenerate byte-identical
 // assets. The Aim/Fire/Reload clips share StickFigureAimHoldPose so state
 // transitions between them never snap (pinned by Zenith_Tools_TestAssetExport
@@ -4242,8 +4251,183 @@ static void GenerateUnitSphereMeshAsset(Zenith_MeshAsset& xMeshOut, uint32_t uSe
 }
 
 //------------------------------------------------------------------------------
+// ★ THE SEVENTEEN CLIP FACTORIES, AS DATA, IN ONE PLACE.
+//
+// GenerateStickFigureAssets constructs its clips as seventeen named locals
+// because it also hands them to the glTF export and deletes them by name. This
+// table is the same set reached by FUNCTION, which is what the authored-twin
+// seeding below and the unit suite both need: a caller that wants a fresh clip
+// per name, without owning the export loop's bookkeeping.
+//
+// ★ IT IS DEFINED HERE, ONCE, RATHER THAN IN THE .Tests.inl THAT USED TO CARRY
+// ITS OWN COPY. Two tables meant a clip could be added to one and not the other,
+// which is exactly how the four tennis clips arrived without the file header's
+// "13 clips" moving. The count is asserted against 17 by the unit suite, so the
+// export table and this one are pinned together.
+//------------------------------------------------------------------------------
+namespace
+{
+	typedef Flux_AnimationClip* (*StickFigureClipFactoryFn)();
+
+	struct StickFigureClipFactory
+	{
+		StickFigureClipFactoryFn m_pfnCreate;
+		const char*              m_szName;
+	};
+
+	// Exactly the set GenerateStickFigureAssets exports (its axClips table), in
+	// the same order. SEVENTEEN.
+	const StickFigureClipFactory axSTICKFIGURE_CLIP_FACTORIES[] =
+	{
+		{ &CreateIdleAnimation,        "Idle"        },
+		{ &CreateWalkAnimation,        "Walk"        },
+		{ &CreateRunAnimation,         "Run"         },
+		{ &CreateAttack1Animation,     "Attack1"     },
+		{ &CreateAttack2Animation,     "Attack2"     },
+		{ &CreateAttack3Animation,     "Attack3"     },
+		{ &CreateDodgeAnimation,       "Dodge"       },
+		{ &CreateHitAnimation,         "Hit"         },
+		{ &CreateDeathAnimation,       "Death"       },
+		{ &CreateAimAnimation,         "Aim"         },
+		{ &CreateFireAnimation,        "Fire"        },
+		{ &CreateReloadAnimation,      "Reload"      },
+		{ &CreateJumpAnimation,        "Jump"        },
+		{ &CreateServeAnimation,       "Serve"       },
+		{ &CreateForehandAnimation,    "Forehand"    },
+		{ &CreateBackhandAnimation,    "Backhand"    },
+		{ &CreateReadyStanceAnimation, "ReadyStance" },
+	};
+
+	constexpr u_int uSTICKFIGURE_CLIP_COUNT =
+		static_cast<u_int>(sizeof(axSTICKFIGURE_CLIP_FACTORIES) / sizeof(axSTICKFIGURE_CLIP_FACTORIES[0]));
+
+	// The relative path, under either the "engine:" prefix or ENGINE_ASSETS_DIR,
+	// that the authored twins live at. Written ONCE so the asset path and the
+	// filesystem directory below cannot describe two different places.
+	constexpr const char* szSTICKFIGURE_AUTHORED_RELATIVE_DIR = "Authored/Meshes/StickFigure/";
+}
+
+//------------------------------------------------------------------------------
 // Public Asset Generation Functions
 //------------------------------------------------------------------------------
+
+std::string Zenith_Tools_StickFigureClipFileName(const char* szClipName)
+{
+	Zenith_Assert(szClipName != nullptr, "Zenith_Tools_StickFigureClipFileName: null clip name");
+	if (szClipName == nullptr)
+	{
+		return std::string();
+	}
+	return std::string("StickFigure_") + szClipName + ZENITH_ANIMATION_EXT;
+}
+
+std::string Zenith_Tools_StickFigureAuthoredPath(const char* szClipFileName)
+{
+	Zenith_Assert(szClipFileName != nullptr, "Zenith_Tools_StickFigureAuthoredPath: null file name");
+	if (szClipFileName == nullptr)
+	{
+		return std::string();
+	}
+	// ★ THE "engine:" PREFIX IS LOAD-BEARING, for the same reason the clips'
+	// skeleton ref carries one: NormalizeAssetPath leaves a bare RELATIVE path
+	// exactly as it found it, so an unprefixed ref serializes cleanly, loads
+	// cleanly and resolves to nothing.
+	return std::string("engine:") + szSTICKFIGURE_AUTHORED_RELATIVE_DIR + szClipFileName;
+}
+
+std::string Zenith_Tools_StickFigureAuthoredDir()
+{
+	// ENGINE_ASSETS_DIR already ends in a separator (every exporter in this file
+	// concatenates onto it directly), and the relative fragment is shared with
+	// the asset path above, so the two name the same directory by construction.
+	return std::string(ENGINE_ASSETS_DIR) + szSTICKFIGURE_AUTHORED_RELATIVE_DIR;
+}
+
+Zenith_Tools_StickFigureAuthoredSeedReport Zenith_Tools_ExportStickFigureAuthoredClips(const std::string& strAuthoredDir)
+{
+	Zenith_Tools_StickFigureAuthoredSeedReport xReport;
+
+	std::error_code xCreateError;
+	std::filesystem::create_directories(strAuthoredDir, xCreateError);
+	if (xCreateError)
+	{
+		// Nothing was CONSIDERED, so the counts still add up. A directory that
+		// cannot be created is loud and total: seeding half a set into a place
+		// the next boot cannot reach is worse than seeding none of it.
+		Zenith_Error(LOG_CATEGORY_ASSET, "[AuthoredSeed] could not create '%s': %s",
+			strAuthoredDir.c_str(), xCreateError.message().c_str());
+		return xReport;
+	}
+
+	for (u_int u = 0; u < uSTICKFIGURE_CLIP_COUNT; u++)
+	{
+		const StickFigureClipFactory& xFactory = axSTICKFIGURE_CLIP_FACTORIES[u];
+		xReport.m_uConsidered++;
+
+		const std::string strDiskPath = strAuthoredDir + Zenith_Tools_StickFigureClipFileName(xFactory.m_szName);
+
+		// ★ D21: THE BAKE NEVER OVERWRITES AUTHORED DATA. "Does the file exist"
+		// is the wrong question for a BAKE OUTPUT (Tools/CLAUDE.md -- validate
+		// the property you need, not the presence of a file), and it is exactly
+		// the right one here: the file is not this phase's output to validate, it
+		// is somebody's hand edit to leave alone. A twin that fails to parse is
+		// still a twin nobody asked this code to replace.
+		std::error_code xExistsError;
+		if (std::filesystem::exists(strDiskPath, xExistsError))
+		{
+			xReport.m_uSkippedExisting++;
+			continue;
+		}
+
+		Flux_AnimationClip* pxClip = xFactory.m_pfnCreate();
+
+		// ★★ THE SAME T-POSE CONTRACT THE GENERATED EXPORT ASSERTS, ASSERTED
+		// AGAIN ON THE WAY INTO Assets/Authored/. A bone a clip omits keeps its
+		// bind local rotation, and the two UpperArms are the only ones whose
+		// T-pose bind rotation is not identity -- so an omission leaves that arm
+		// sticking straight out for the clip's whole duration. These files are
+		// COMMITTED, so an omission here would be committed with them.
+		Zenith_Assert(pxClip->HasBoneChannel("LeftUpperArm") && pxClip->HasBoneChannel("RightUpperArm"),
+			"clip '%s' does not animate both UpperArms -- a T-posed imported human would hold that arm out",
+			xFactory.m_szName);
+
+		// ★ THE ONE FIELD THAT DIFFERS FROM THE GENERATED TWIN, AND IT IS THE
+		// WHOLE POINT (D8). m_bGenerated says "a generator rewrites this file in
+		// full on every tools boot, so editing it in place is pointless" -- which
+		// is true of the file under Meshes/ and false of this one. It is also
+		// what the Animation Editor's open path refuses on.
+		pxClip->GetMetadata().m_bGenerated = false;
+
+		pxClip->Export(strDiskPath);
+		delete pxClip;
+
+		std::error_code xWroteError;
+		if (std::filesystem::exists(strDiskPath, xWroteError))
+		{
+			xReport.m_uWritten++;
+			Zenith_Log(LOG_CATEGORY_ASSET, "  [AuthoredSeed] wrote %s", strDiskPath.c_str());
+		}
+		else
+		{
+			// Export() is void, so the only evidence that the bytes landed is the
+			// file itself. Reporting a write that did not happen would leave the
+			// next boot to seed it silently and this one claiming it had.
+			xReport.m_uFailed++;
+			Zenith_Error(LOG_CATEGORY_ASSET, "[AuthoredSeed] '%s' was not written", strDiskPath.c_str());
+		}
+	}
+
+	Zenith_Assert(xReport.CountsAddUp(),
+		"[AuthoredSeed] %u considered but %u written + %u skipped + %u failed -- a clip was dropped",
+		xReport.m_uConsidered, xReport.m_uWritten, xReport.m_uSkippedExisting, xReport.m_uFailed);
+
+	Zenith_Log(LOG_CATEGORY_ASSET,
+		"[AuthoredSeed] StickFigure authored twins: %u considered, %u written, %u already authored, %u failed (%s)",
+		xReport.m_uConsidered, xReport.m_uWritten, xReport.m_uSkippedExisting, xReport.m_uFailed,
+		strAuthoredDir.c_str());
+
+	return xReport;
+}
 
 void GenerateStickFigureAssets()
 {
@@ -4373,6 +4557,17 @@ void GenerateStickFigureAssets()
 			Zenith_Log(LOG_CATEGORY_ASSET, "  Exported glTF to: %s", strGltfPath.c_str());
 		}
 	}
+
+	// ★ AND THE AUTHORED TWINS, SEEDED ONCE (WU-9.1). AFTER the generated export
+	// and its T-pose gate, deliberately: the files above are this bake's output
+	// and are rewritten every boot, while the ones below are written exactly once
+	// and are committed from then on. The pass is idempotent -- every later boot
+	// finds all seventeen present and writes nothing (D21).
+	//
+	// It re-creates its own clips from the factory table rather than reusing the
+	// locals above, so it cannot leave a cleared m_bGenerated behind on a clip the
+	// glTF export or a later reader still holds.
+	Zenith_Tools_ExportStickFigureAuthoredClips(Zenith_Tools_StickFigureAuthoredDir());
 
 	// Cleanup
 	delete pxReadyStanceClip;

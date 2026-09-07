@@ -4,6 +4,10 @@
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
 
+#include <filesystem>   // the authored-seed fixture writes into a temp directory
+#include <fstream>      // ...and compares the bytes it left behind
+#include <iterator>
+
 // ============================================================================
 // StickFigure procedural-clip tests
 //
@@ -352,43 +356,12 @@ ZENITH_TEST(ProceduralTree, LeafMaterialIsAlphaMasked)
 // how the four tennis clips arrived without the file header's "13 clips" moving.
 // These two iterate the whole export set, so a new factory is covered the moment
 // it is listed and an omitted listing is the only way to escape them.
-
-namespace
-{
-	typedef Flux_AnimationClip* (*StickFigureClipFactoryFn)();
-
-	struct StickFigureClipFactory
-	{
-		StickFigureClipFactoryFn m_pfnCreate;
-		const char*              m_szName;
-	};
-
-	// Exactly the set GenerateStickFigureAssets exports (its axClips table), in the
-	// same order. SEVENTEEN.
-	const StickFigureClipFactory axSTICKFIGURE_CLIP_FACTORIES[] =
-	{
-		{ &CreateIdleAnimation,        "Idle"        },
-		{ &CreateWalkAnimation,        "Walk"        },
-		{ &CreateRunAnimation,         "Run"         },
-		{ &CreateAttack1Animation,     "Attack1"     },
-		{ &CreateAttack2Animation,     "Attack2"     },
-		{ &CreateAttack3Animation,     "Attack3"     },
-		{ &CreateDodgeAnimation,       "Dodge"       },
-		{ &CreateHitAnimation,         "Hit"         },
-		{ &CreateDeathAnimation,       "Death"       },
-		{ &CreateAimAnimation,         "Aim"         },
-		{ &CreateFireAnimation,        "Fire"        },
-		{ &CreateReloadAnimation,      "Reload"      },
-		{ &CreateJumpAnimation,        "Jump"        },
-		{ &CreateServeAnimation,       "Serve"       },
-		{ &CreateForehandAnimation,    "Forehand"    },
-		{ &CreateBackhandAnimation,    "Backhand"    },
-		{ &CreateReadyStanceAnimation, "ReadyStance" },
-	};
-
-	constexpr u_int uSTICKFIGURE_CLIP_COUNT =
-		static_cast<u_int>(sizeof(axSTICKFIGURE_CLIP_FACTORIES) / sizeof(axSTICKFIGURE_CLIP_FACTORIES[0]));
-}
+//
+// ★ THE TABLE THEY WALK — axSTICKFIGURE_CLIP_FACTORIES / uSTICKFIGURE_CLIP_COUNT
+// — LIVES IN THE .cpp ABOVE THIS INCLUDE, not here. It used to be declared in
+// this file, which meant the production seeding phase and the units could walk
+// two different lists; one table is the whole point of the assertion that the
+// count is seventeen.
 
 ZENITH_TEST(StickFigureProcAnim, EveryClipCarriesTheSharedRigIdentity)
 {
@@ -522,4 +495,358 @@ ZENITH_TEST(StickFigureBody, WarpedLoftLandmarksLandOnTheRigsJointPlanes)
 		"...and its wrist at the rig's wrist reach");
 
 	delete pxMesh;
+}
+
+// ============================================================================
+// The AUTHORED TWINS of the seventeen clips (WU-9.1 stage 1).
+//
+// ★ WHAT THESE FOUR ARE FOR. Stage 2 deletes the generators and re-points every
+// consumer at the committed files under Assets/Authored/. Once that happens
+// nothing in the tree can re-derive what the clips were, so the properties that
+// have to survive the deletion are the ones worth pinning NOW, while both halves
+// still exist and can be compared to each other:
+//
+//   1. the twin IS the original (it samples identically, everywhere);
+//   2. every clip drives both UpperArms -- today the export loop's bake-time
+//      assert, tomorrow a property of seventeen committed files;
+//   3. the authored path keeps the root prefix AND the subdirectory;
+//   4. seeding never touches a file that is already there (D21).
+//
+// All four are pure CPU work under the Null backend: a clip is data, the seeding
+// unit writes into a private directory under the OS temp dir and removes it
+// again, and nothing here touches a device, a scene or the asset registry. None
+// is requiresGraphics.
+// ============================================================================
+
+namespace
+{
+	// 20 matched times spanning [0, duration].
+	constexpr u_int uSTICKFIGURE_AUTHORED_SAMPLE_COUNT = 20u;
+
+	// ★ THE COMPARISON IS OF POSES, NOT OF FIELDS. A field-by-field walk would
+	// pass on two clips whose keys agree and whose SAMPLING does not (a tangent
+	// array out of lockstep, a channel left unsorted), and the pose is what a
+	// skeleton actually receives. The whole local matrix is compared as well as
+	// the three tracks separately, so a failure says which one moved.
+	bool StickFigureAuthoredPosesMatch(const Flux_AnimationClip& xGenerated,
+		const Flux_AnimationClip& xAuthored, std::string& strOutWhy)
+	{
+		if (xGenerated.GetBoneChannels().GetSize() != xAuthored.GetBoneChannels().GetSize())
+		{
+			strOutWhy = "the twin carries a different number of bone channels";
+			return false;
+		}
+
+		const float fDuration = xGenerated.GetDuration();
+		for (Zenith_HashMap<std::string, Flux_BoneChannel>::Iterator xIt(xGenerated.GetBoneChannels());
+			!xIt.Done(); xIt.Next())
+		{
+			const std::string strBone = xIt.GetKey();
+			const Flux_BoneChannel* pxTwin = xAuthored.GetBoneChannel(strBone);
+			if (pxTwin == nullptr)
+			{
+				strOutWhy = "the twin has no channel for bone '" + strBone + "'";
+				return false;
+			}
+			const Flux_BoneChannel& xChannel = xIt.GetValue();
+
+			for (u_int u = 0; u < uSTICKFIGURE_AUTHORED_SAMPLE_COUNT; u++)
+			{
+				const float fTime = fDuration
+					* (static_cast<float>(u) / static_cast<float>(uSTICKFIGURE_AUTHORED_SAMPLE_COUNT - 1u));
+
+				if (glm::length(xChannel.SamplePosition(fTime) - pxTwin->SamplePosition(fTime)) > 1e-5f)
+				{
+					strOutWhy = "position diverges on bone '" + strBone + "'";
+					return false;
+				}
+				if (glm::length(xChannel.SampleScale(fTime) - pxTwin->SampleScale(fTime)) > 1e-5f)
+				{
+					strOutWhy = "scale diverges on bone '" + strBone + "'";
+					return false;
+				}
+				// A quaternion and its negation are the same rotation, so compare |dot|.
+				const float fDot = glm::dot(xChannel.SampleRotation(fTime), pxTwin->SampleRotation(fTime));
+				if (std::abs(std::abs(fDot) - 1.0f) > 1e-5f)
+				{
+					strOutWhy = "rotation diverges on bone '" + strBone + "'";
+					return false;
+				}
+
+				const Zenith_Maths::Matrix4 xLocalA = xChannel.Sample(fTime);
+				const Zenith_Maths::Matrix4 xLocalB = pxTwin->Sample(fTime);
+				for (int iCol = 0; iCol < 4; iCol++)
+				{
+					for (int iRow = 0; iRow < 4; iRow++)
+					{
+						if (std::abs(xLocalA[iCol][iRow] - xLocalB[iCol][iRow]) > 1e-5f)
+						{
+							strOutWhy = "the local pose matrix diverges on bone '" + strBone + "'";
+							return false;
+						}
+					}
+				}
+			}
+		}
+
+		return true;
+	}
+
+	//--------------------------------------------------------------------------
+	// Fixture — a private directory under the OS temp dir, removed on the way
+	// out. ★ THE SEEDING UNIT MUST NOT REACH THE REAL TREE: those files are
+	// COMMITTED, and a unit that wrote one would put the checkout in `git status`
+	// and (worse) look identical to a pass whether or not the skip logic works.
+	//--------------------------------------------------------------------------
+	struct StickFigureAuthoredTempDir
+	{
+		std::filesystem::path m_xRoot;
+
+		explicit StickFigureAuthoredTempDir(const char* szLeafDirectory)
+		{
+			std::error_code xError;
+			std::filesystem::path xBase = std::filesystem::temp_directory_path(xError);
+			if (xError)
+			{
+				xBase = ".";
+			}
+			m_xRoot = xBase / szLeafDirectory;
+			std::filesystem::remove_all(m_xRoot, xError);
+		}
+
+		~StickFigureAuthoredTempDir()
+		{
+			std::error_code xError;
+			std::filesystem::remove_all(m_xRoot, xError);
+		}
+
+		StickFigureAuthoredTempDir(const StickFigureAuthoredTempDir&) = delete;
+		StickFigureAuthoredTempDir& operator=(const StickFigureAuthoredTempDir&) = delete;
+
+		// With a trailing separator — what the seeding function concatenates onto.
+		// The directory is deliberately NOT created here: the pass has to create it.
+		std::string Dir() const { return m_xRoot.generic_string() + "/"; }
+	};
+
+	std::string StickFigureAuthoredReadBytes(const std::string& strPath)
+	{
+		std::ifstream xFile(strPath, std::ios::binary);
+		if (!xFile)
+		{
+			return std::string();
+		}
+		return std::string(std::istreambuf_iterator<char>(xFile), std::istreambuf_iterator<char>());
+	}
+
+	bool StickFigureAuthoredParseFile(const std::string& strPath, Flux_AnimationClip& xOut)
+	{
+		Zenith_DataStream xStream;
+		xStream.ReadFromFile(strPath.c_str());
+		if (!xStream.IsValid())
+		{
+			return false;
+		}
+		return xOut.ParseStream(xStream).IsOk();
+	}
+}
+
+ZENITH_TEST(StickFigureAuthored, EveryAuthoredTwinSamplesIdenticallyToItsGeneratedOriginal)
+{
+	// ★ THE TWIN IS THE SAME ANIMATION, AND m_bGenerated IS THE ONLY DIFFERENCE.
+	// That claim is the whole justification for seeding Assets/Authored/ from a
+	// generator: if the twin were even slightly a different clip, stage 2's
+	// re-pointing would silently change how every human in three games moves,
+	// with no gate able to see it (the files are new, so there is nothing to diff
+	// against). Sampled rather than compared field by field — see the helper.
+	ZENITH_ASSERT_EQ(uSTICKFIGURE_CLIP_COUNT, 17u,
+		"the StickFigure clip set is seventeen -- update the export table and the factory table together");
+
+	for (u_int u = 0; u < uSTICKFIGURE_CLIP_COUNT; u++)
+	{
+		const StickFigureClipFactory& xFactory = axSTICKFIGURE_CLIP_FACTORIES[u];
+
+		Flux_AnimationClip* pxGenerated = xFactory.m_pfnCreate();
+		Flux_AnimationClip* pxAuthored  = xFactory.m_pfnCreate();
+
+		// Exactly what the seeding phase does to a clip, and nothing else.
+		pxAuthored->GetMetadata().m_bGenerated = false;
+
+		std::string strWhy;
+		ZENITH_ASSERT_TRUE(StickFigureAuthoredPosesMatch(*pxGenerated, *pxAuthored, strWhy),
+			"clip '%s': the authored twin does not pose like its generated original -- %s",
+			xFactory.m_szName, strWhy.c_str());
+
+		// The rest of the metadata travels untouched: a twin that lost its rig
+		// reference would preview against nothing, and one whose name moved could
+		// not be resolved through a clip collection at all.
+		const Flux_AnimationClipMetadata& xGen = pxGenerated->GetMetadata();
+		const Flux_AnimationClipMetadata& xAuth = pxAuthored->GetMetadata();
+		ZENITH_ASSERT_STREQ(xAuth.m_strName.c_str(), xGen.m_strName.c_str(),
+			"clip '%s': the twin's name moved", xFactory.m_szName);
+		ZENITH_ASSERT_EQ_FLOAT(xAuth.m_fDuration, xGen.m_fDuration, 1e-6f,
+			"clip '%s': the twin's duration moved", xFactory.m_szName);
+		ZENITH_ASSERT_STREQ(xAuth.m_strSkeletonPath.c_str(), xGen.m_strSkeletonPath.c_str(),
+			"clip '%s': the twin names a different rig", xFactory.m_szName);
+		ZENITH_ASSERT_STREQ(xAuth.m_strPreviewModelPath.c_str(), xGen.m_strPreviewModelPath.c_str(),
+			"clip '%s': the twin names a different preview model", xFactory.m_szName);
+		ZENITH_ASSERT_EQ(xAuth.m_uAuthoredFrameRate, xGen.m_uAuthoredFrameRate,
+			"clip '%s': the twin's authored frame rate moved", xFactory.m_szName);
+		ZENITH_ASSERT_EQ(xAuth.m_uTicksPerSecond, xGen.m_uTicksPerSecond,
+			"clip '%s': the twin's import provenance moved", xFactory.m_szName);
+		ZENITH_ASSERT_TRUE(xAuth.m_bLooping == xGen.m_bLooping,
+			"clip '%s': the twin's loop flag moved", xFactory.m_szName);
+		ZENITH_ASSERT_EQ(pxAuthored->GetEvents().GetSize(), pxGenerated->GetEvents().GetSize(),
+			"clip '%s': the twin carries a different number of events", xFactory.m_szName);
+
+		ZENITH_ASSERT_TRUE(xGen.m_bGenerated, "clip '%s': the original must still say it is generated (D8)",
+			xFactory.m_szName);
+		ZENITH_ASSERT_FALSE(xAuth.m_bGenerated, "clip '%s': the twin must NOT say it is generated (D8)",
+			xFactory.m_szName);
+
+		delete pxAuthored;
+		delete pxGenerated;
+	}
+}
+
+ZENITH_TEST(StickFigureAuthored, EveryClipDrivesBothUpperArms)
+{
+	// ★★ THE ONE RIG DEPENDENCY, AS A UNIT RATHER THAN AS A BAKE-TIME ASSERT.
+	// A bone a clip omits keeps its BIND local transform, and the two UpperArms
+	// are the only bones whose T-pose bind rotation is not identity
+	// (Zenith_HumanArmBindRotation) -- so a clip that omits one leaves that arm
+	// sticking straight out sideways for its whole duration, on StickFigure, on
+	// Zenithmon's humans and on every imported artist humanoid alike.
+	//
+	// GenerateStickFigureAssets asserts this in its export loop, which is a
+	// TOOLS-BUILD BOOT: it fires only where the bake runs, and stage 2 deletes
+	// that loop. Here it is a headless unit over the same seventeen clips, so the
+	// invariant survives the generators' deletion and can be re-pointed at the
+	// committed files without losing coverage in between.
+	ZENITH_ASSERT_EQ(uSTICKFIGURE_CLIP_COUNT, 17u,
+		"the StickFigure clip set is seventeen -- update the export table and the factory table together");
+
+	for (u_int u = 0; u < uSTICKFIGURE_CLIP_COUNT; u++)
+	{
+		const StickFigureClipFactory& xFactory = axSTICKFIGURE_CLIP_FACTORIES[u];
+		Flux_AnimationClip* pxClip = xFactory.m_pfnCreate();
+
+		// The bone names are the exporter gate's, spelled the same way.
+		ZENITH_ASSERT_TRUE(pxClip->HasBoneChannel("LeftUpperArm"),
+			"clip '%s' does not animate LeftUpperArm -- a T-posed human would hold that arm out",
+			xFactory.m_szName);
+		ZENITH_ASSERT_TRUE(pxClip->HasBoneChannel("RightUpperArm"),
+			"clip '%s' does not animate RightUpperArm -- a T-posed human would hold that arm out",
+			xFactory.m_szName);
+
+		delete pxClip;
+	}
+}
+
+ZENITH_TEST(StickFigureAuthored, TheAuthoredPathKeepsTheRootPrefixAndTheSubdirectory)
+{
+	// ★ THE PREFIX AND THE SUBDIRECTORY ARE BOTH PART OF THE ASSERTION.
+	// NormalizeAssetPath leaves a bare RELATIVE path exactly as it found it, so a
+	// ref without "engine:" would serialize cleanly, load cleanly and resolve to
+	// nothing; and flattening "Meshes/StickFigure/" away would put every set's
+	// "Walk" on one path, so the next generated set to be promoted would silently
+	// overwrite this one. Same rule as
+	// Zenith_AnimationDocument::BuildAuthoredAssetPath, matched here rather than
+	// called -- Tools may not include Editor.
+
+	// One row spelled out in full, with nothing constructed, so at least one
+	// expectation cannot drift with the helper it is checking.
+	ZENITH_ASSERT_STREQ(Zenith_Tools_StickFigureClipFileName("Idle").c_str(),
+		"StickFigure_Idle.zanim", "the bake's clip file naming moved");
+	ZENITH_ASSERT_STREQ(Zenith_Tools_StickFigureAuthoredPath("StickFigure_Idle.zanim").c_str(),
+		"engine:Authored/Meshes/StickFigure/StickFigure_Idle.zanim",
+		"the authored path for the Idle clip moved");
+
+	for (u_int u = 0; u < uSTICKFIGURE_CLIP_COUNT; u++)
+	{
+		const StickFigureClipFactory& xFactory = axSTICKFIGURE_CLIP_FACTORIES[u];
+
+		const std::string strFileName = Zenith_Tools_StickFigureClipFileName(xFactory.m_szName);
+		const std::string strExpectedFileName = std::string("StickFigure_") + xFactory.m_szName + ".zanim";
+		ZENITH_ASSERT_STREQ(strFileName.c_str(), strExpectedFileName.c_str(),
+			"clip '%s' does not use the bake's own file naming", xFactory.m_szName);
+
+		const std::string strExpectedPath = "engine:Authored/Meshes/StickFigure/" + strFileName;
+		ZENITH_ASSERT_STREQ(Zenith_Tools_StickFigureAuthoredPath(strFileName.c_str()).c_str(),
+			strExpectedPath.c_str(),
+			"clip '%s' does not map into engine:Authored/Meshes/StickFigure/", xFactory.m_szName);
+	}
+
+	// And the DIRECTORY the boot writes into is the same location the asset path
+	// describes -- an asset path nothing writes to would resolve to a file that
+	// never appears.
+	const std::string strDir = Zenith_Tools_StickFigureAuthoredDir();
+	ZENITH_ASSERT_TRUE(strDir.ends_with("Authored/Meshes/StickFigure/"),
+		"the seeding directory '%s' is not the location engine:Authored/Meshes/StickFigure/ resolves to",
+		strDir.c_str());
+}
+
+ZENITH_TEST(StickFigureAuthored, SeedingWritesOnceAndThenNeverTouchesTheDirectoryAgain)
+{
+	// ★ D21, AS THE PROPERTY THAT MAKES THIS PHASE SAFE TO SHIP. The bake never
+	// overwrites authored data; this one-shot seeding is the sanctioned exception
+	// and it is idempotent. The second pass is where that is decided, so the test
+	// HAND-EDITS one of the seeded files first: a pass that merely wrote the same
+	// bytes again would be indistinguishable from a skip by any check that only
+	// counted files, and would destroy an edit in the real tree.
+	StickFigureAuthoredTempDir xTemp("zenith_stickfigure_authored_seed");
+	const std::string strDir = xTemp.Dir();
+
+	const Zenith_Tools_StickFigureAuthoredSeedReport xFirst =
+		Zenith_Tools_ExportStickFigureAuthoredClips(strDir);
+
+	ZENITH_ASSERT_TRUE(xFirst.CountsAddUp(), "the first pass dropped a clip without saying so");
+	ZENITH_ASSERT_EQ(xFirst.m_uConsidered, uSTICKFIGURE_CLIP_COUNT, "all seventeen clips are considered");
+	ZENITH_ASSERT_EQ(xFirst.m_uWritten, uSTICKFIGURE_CLIP_COUNT, "an empty directory is seeded in full");
+	ZENITH_ASSERT_EQ(xFirst.m_uSkippedExisting, 0u, "nothing was already there");
+	ZENITH_ASSERT_EQ(xFirst.m_uFailed, 0u, "and nothing failed");
+
+	for (u_int u = 0; u < uSTICKFIGURE_CLIP_COUNT; u++)
+	{
+		const std::string strPath = strDir
+			+ Zenith_Tools_StickFigureClipFileName(axSTICKFIGURE_CLIP_FACTORIES[u].m_szName);
+		ZENITH_ASSERT_TRUE(std::filesystem::exists(strPath), "'%s' should have been written", strPath.c_str());
+	}
+
+	// What landed is a real .zanim at the CURRENT schema, read back through the
+	// runtime reader — the same verification the authored-clip migrator does, and
+	// for the same reason: these files are committed, so a truncated one would be
+	// committed too.
+	const std::string strIdlePath = strDir + Zenith_Tools_StickFigureClipFileName("Idle");
+	Flux_AnimationClip xSeeded;
+	ZENITH_ASSERT_TRUE(StickFigureAuthoredParseFile(strIdlePath, xSeeded),
+		"the seeded file must parse through the RUNTIME reader");
+	ZENITH_ASSERT_STREQ(xSeeded.GetName().c_str(), "Idle", "and be the clip it claims to be");
+	ZENITH_ASSERT_FALSE(xSeeded.GetMetadata().m_bGenerated,
+		"an authored clip does not claim to be regenerated on every boot (D8)");
+	ZENITH_ASSERT_STREQ(xSeeded.GetMetadata().m_strSkeletonPath.c_str(),
+		"engine:Meshes/StickFigure/StickFigure.zskel", "and still names the one shared rig");
+
+	// The hand edit: a different duration, written back over the seeded file.
+	Flux_AnimationClip xEdited = xSeeded;
+	xEdited.SetDuration(xSeeded.GetDuration() + 1.0f);
+	xEdited.Export(strIdlePath);
+	const std::string strEditedBytes = StickFigureAuthoredReadBytes(strIdlePath);
+	ZENITH_ASSERT_TRUE(!strEditedBytes.empty(), "the hand edit landed on disk");
+
+	const Zenith_Tools_StickFigureAuthoredSeedReport xSecond =
+		Zenith_Tools_ExportStickFigureAuthoredClips(strDir);
+
+	ZENITH_ASSERT_TRUE(xSecond.CountsAddUp(), "the second pass dropped a clip without saying so");
+	ZENITH_ASSERT_EQ(xSecond.m_uConsidered, uSTICKFIGURE_CLIP_COUNT, "all seventeen are still considered");
+	ZENITH_ASSERT_EQ(xSecond.m_uWritten, 0u, "a second pass over a full directory writes NOTHING");
+	ZENITH_ASSERT_EQ(xSecond.m_uSkippedExisting, uSTICKFIGURE_CLIP_COUNT, "every clip is skipped as already authored");
+	ZENITH_ASSERT_EQ(xSecond.m_uFailed, 0u, "and nothing failed");
+
+	ZENITH_ASSERT_TRUE(StickFigureAuthoredReadBytes(strIdlePath) == strEditedBytes,
+		"the hand edit survives the bake, byte for byte (D21)");
+
+	Flux_AnimationClip xAfter;
+	ZENITH_ASSERT_TRUE(StickFigureAuthoredParseFile(strIdlePath, xAfter), "and the edited file still parses");
+	ZENITH_ASSERT_EQ_FLOAT(xAfter.GetDuration(), xSeeded.GetDuration() + 1.0f, 1e-6f,
+		"with the edit in it, not the generator's value");
 }

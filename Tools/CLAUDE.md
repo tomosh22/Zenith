@@ -188,6 +188,24 @@ same rule `ImportGlbsInDirectory` follows. It does **not** go through
 `Zenith_AssetRegistry`: loading a clip through the registry during a boot phase would cache a
 pre-migration asset that every later consumer would then resolve to.
 
+★ **THE ONE THING THAT WRITES INTO `Assets/Authored/` IS `Zenith_Tools_ExportStickFigureAuthoredClips()`,
+AND IT ONLY EVER SEEDS A FILE THAT IS NOT THERE.** It runs at the end of
+`GenerateStickFigureAssets()`, after the generated export and its T-pose gate, and writes the
+AUTHORED TWIN of each of the seventeen StickFigure clips —
+`engine:Authored/Meshes/StickFigure/StickFigure_<Name>.zanim`, resolved through
+`ENGINE_ASSETS_DIR` the same way the migrator resolves the engine root — as the generated clip
+with `m_bGenerated` CLEARED and nothing else changed. Decision D21 (the bake never overwrites
+authored data) is not weakened by it: a path that already holds a file is SKIPPED, whatever is
+in it, so the phase is idempotent and every boot after the first writes nothing at all. That
+skip is the sanctioned exception's whole safety property, so it is pinned by a unit that
+hand-edits a seeded file and re-runs the pass into a temp directory
+(`Zenith_Tools_TestAssetExport.Tests.inl`, `StickFigureAuthored` — which also pins that the twin
+samples identically to its original, that every clip drives both `UpperArm`s, and that the
+authored path keeps the root prefix and the subdirectory). The seeded files land at the current
+schema, so the migration phase above — which runs BEFORE the seeding, at the top of
+`GenerateTestAssets()` — has nothing to do with them until a later schema bump, which is exactly
+the population it exists for.
+
 ---
 
 ## The humanoid pipeline
