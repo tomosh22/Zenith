@@ -97,6 +97,9 @@ void Zenith_EditorPanel_AnimStateMachine::CloseAsset()
 	m_bCloseRefusedDirty = false;
 	m_bExternalConflict = false;
 	m_acPathBuffer[0] = '\0';
+	m_acLayerNameBuffer[0] = '\0';
+	m_acLayerRenameBuffer[0] = '\0';
+	m_acLayerMaskPathBuffer[0] = '\0';
 }
 
 Zenith_AnimCtrlDocCloseResult Zenith_EditorPanel_AnimStateMachine::RequestCloseAsset()
@@ -127,8 +130,17 @@ void Zenith_EditorPanel_AnimStateMachine::OnDocumentOpened()
 	m_fScrollX = 0.0f;
 	m_fScrollY = 0.0f;
 	m_strHighlightedState.clear();
+	// The layer strip's edit fields belong to a SELECTION, and the selection has
+	// just gone back to the top-level machine — leaving the previous document's
+	// layer name in the buffer would offer it as the next "+ Layer".
+	m_acLayerNameBuffer[0] = '\0';
+	m_acLayerRenameBuffer[0] = '\0';
+	m_acLayerMaskPathBuffer[0] = '\0';
 	snprintf(m_acPathBuffer, sizeof(m_acPathBuffer), "%s", m_xDocument.GetAssetPath().c_str());
 	RebuildAutoLayout();
+	// The dope sheet's mask sub-panel targets whichever layer this panel has
+	// selected, and that is now the top-level machine (OVERRIDE).
+	PushSelectedLayerBlendModeToMaskPanel();
 }
 
 //=============================================================================
@@ -261,6 +273,10 @@ void Zenith_EditorPanel_AnimStateMachine::ClearFrameRects()
 	m_xTransitionRects.Clear();
 	m_axRectOwnerOrder.Clear();
 	m_bCanvasRectValid = false;
+	// WU-7.2's strip diagnostics go with them, and for the same reason: a frame
+	// that drew nothing must not keep answering with the last one's facts.
+	m_bLayerStripDrawn = false;
+	m_uDrawnLayerRows = 0;
 
 	// The display bound goes with them: a frame that recorded nothing must not
 	// leave a bound behind that the next query would judge a stale rect against.

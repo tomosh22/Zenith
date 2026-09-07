@@ -119,6 +119,49 @@ struct Zenith_AnimCtrlTransitionList
 };
 
 //-----------------------------------------------------------------------------
+// One layer's SCALAR fields — everything WU-7.2's list edits that is not the
+// layer's state machine.
+//
+// ★ THEY TRAVEL AS A SET RATHER THAN ONE COMMAND PER FIELD, and the set
+// deliberately STOPS SHORT of the state machine. Five small values with an exact
+// inverse need no serialization at all, so a weight slider costs a struct rather
+// than a walk of every blend tree in the layer; and because the layer is
+// addressed by ID, no field command can go stale when the list is reordered
+// underneath it. The heavyweight snapshot below is only for the three edits that
+// genuinely change the LIST.
+//-----------------------------------------------------------------------------
+struct Zenith_AnimCtrlLayerFields
+{
+	std::string m_strName;
+	float m_fWeight = 1.0f;
+	Flux_LayerBlendMode m_eBlendMode = LAYER_BLEND_OVERRIDE;
+	bool m_bEmitEvents = true;
+	std::string m_strBoneMaskAssetPath;
+};
+
+//-----------------------------------------------------------------------------
+// One layer captured WHOLE — its stable id, plus its entire
+// Flux_AnimatorControllerLayerDef payload as bytes.
+//
+// ★ THE UNDO UNIT FOR add / remove / MOVE IS THE WHOLE LIST, for the reason the
+// transition list is: a layer's POSITION is what those three edits change, and a
+// position is not an identity. It is also the only inverse available —
+// Flux_AnimatorControllerDef exposes AddLayer / RemoveLayer(index) and nothing
+// that reorders, so "put the list back the way it was" IS rebuild-in-order.
+//
+// ★ THE PAYLOAD IS BYTES, not a copy, because Flux_AnimatorControllerLayerDef
+// owns a Flux_AnimationStateMachineDef by value and that type is neither
+// copyable nor movable. Write/ReadFromDataStream is the one faithful walk of a
+// polymorphic blend tree that already exists and is already pinned by a test —
+// the same argument Flux_AnimationStateMachineDef::CopyFrom makes.
+//-----------------------------------------------------------------------------
+struct Zenith_AnimCtrlLayerSnapshot
+{
+	u_int m_uLayerId = uFLUX_INVALID_LAYER_ID;
+	Zenith_Vector<char> m_axBytes;
+};
+
+//-----------------------------------------------------------------------------
 // Open / Save / Close results. Each refusal is its own value rather than a bare
 // false, because the panel turns two of them into prompts.
 //-----------------------------------------------------------------------------
@@ -264,11 +307,79 @@ public:
 	// Null when the selection is the top-level machine and the def has none.
 	const Flux_AnimationStateMachineDef* GetSelectedMachineDef() const;
 
-	// Layer ids in BLEND ORDER (index order), which is the order a layer
-	// dropdown lists them in. The list itself is WU-7.2's; this is what the
-	// machine picker needs.
+	// Layer ids in BLEND ORDER (index order), which is the order the layer list
+	// draws them in and the order the runtime composes them in.
 	void GetLayerIds(Zenith_Vector<u_int>& auOut) const;
 	bool GetLayerName(u_int uLayerId, std::string& strOut) const;
+
+	//-------------------------------------------------------------------------
+	// The LAYER LIST (WU-7.2).
+	//
+	// ★ EVERY VERB ADDRESSES A LAYER BY ITS STABLE ID, NEVER BY ITS INDEX
+	// (D43). An index is a POSITION IN THE BLEND ORDER, which is precisely the
+	// thing MoveLayer changes and the thing an insert or a remove renumbers —
+	// so an index-addressed edit would land on a different layer with nothing to
+	// observe. The one place an index legitimately appears is MoveLayer's
+	// DESTINATION, which is a position by definition.
+	//-------------------------------------------------------------------------
+
+	u_int GetLayerCount() const;
+	// Blend order -> id, and back. Both false for something out of range, so a
+	// caller cannot mistake "layer 0" for "no layer".
+	bool GetLayerIdAt(u_int uIndex, u_int& uOut) const;
+	bool GetLayerIndex(u_int uLayerId, u_int& uOut) const;
+
+	bool GetLayerWeight(u_int uLayerId, float& fOut) const;
+	bool GetLayerBlendMode(u_int uLayerId, Flux_LayerBlendMode& eOut) const;
+	bool GetLayerEmitEvents(u_int uLayerId, bool& bOut) const;
+	bool GetLayerMaskAssetPath(u_int uLayerId, std::string& strOut) const;
+
+	// Why the LAST layer verb refused, or empty. Set by the one refusal that is
+	// not a caller error — a mask path on an additive layer — and cleared by
+	// every layer verb on the way in, so it always describes the most recent
+	// call rather than accumulating.
+	const std::string& GetLastLayerDiagnostic() const { return m_strLastLayerDiagnostic; }
+
+	// CREATION. Appends a layer at the END of the blend order carrying a FRESHLY
+	// MINTED id, and returns it — uFLUX_INVALID_LAYER_ID on refusal (a closed
+	// document, or an empty name). Layer NAMES are deliberately not required to
+	// be unique: Flux_AnimationController::GetLayerByName documents itself as
+	// "the FIRST layer with that name", and two "Overlay" layers are ordinary.
+	u_int AddLayer(const std::string& strName);
+
+	// REMOVAL, so a miss is a genuine refusal. Also drops the machine SELECTION
+	// when it pointed at this layer — leaving it would make every subsequent
+	// verb address a machine that no longer exists.
+	bool RemoveLayer(u_int uLayerId);
+
+	// ASSIGNMENTS, all of them (see the mutation block below): re-stating a
+	// value a layer already holds is the caller's intent SATISFIED — true, no
+	// mutation, NO undo entry.
+	bool RenameLayer(u_int uLayerId, const std::string& strName);
+	// CLAMPED to [0,1] before the comparison, exactly as
+	// Flux_AnimationLayer::SetWeight clamps at runtime; a non-finite weight is
+	// refused rather than clamped.
+	bool SetLayerWeight(u_int uLayerId, float fWeight);
+	// ★ CHANGING A MASKED LAYER TO ADDITIVE IS ALLOWED AND DOES NOT CLEAR THE
+	// MASK PATH. The runtime simply ignores it (LayerAcceptsMask), the UI says
+	// so, and switching back to OVERRIDE has to bring the assignment back —
+	// silently deleting an authored path on a mode toggle would be an
+	// unrecoverable edit disguised as a combo box.
+	bool SetLayerBlendMode(u_int uLayerId, Flux_LayerBlendMode eMode);
+	bool SetLayerEmitEvents(u_int uLayerId, bool bEmitEvents);
+	// ★ REFUSED FOR A NON-EMPTY PATH ON AN ADDITIVE LAYER, with
+	// Zenith_BoneMaskDocument::AdditiveLayerMaskNotice() left in
+	// GetLastLayerDiagnostic(). The rule itself is stated ONCE, in
+	// Zenith_BoneMaskDocument::LayerAcceptsMask, and this asks that function —
+	// an additive layer goes straight to Flux_SkeletonPose::AdditiveBlend, whose
+	// signature has no mask in it, so an accepted assignment here would let
+	// somebody author a whole mask, save it, assign it and observe nothing.
+	// CLEARING the path (an empty string) is always allowed.
+	bool SetLayerMaskAssetPath(u_int uLayerId, const std::string& strPath);
+	// Move the layer to uNewIndex in the BLEND ORDER, shifting the rest along.
+	// An index past the end is refused (it is a caller error, not a value);
+	// asking for the index the layer already occupies is satisfied.
+	bool MoveLayer(u_int uLayerId, u_int uNewIndex);
 
 	//-------------------------------------------------------------------------
 	// Inspection (what the graph draws from). All against the SELECTED machine.
@@ -423,6 +534,8 @@ private:
 	friend class Zenith_AnimCtrlCommand_Transitions;
 	friend class Zenith_AnimCtrlCommand_Parameters;
 	friend class Zenith_AnimCtrlCommand_ClipPaths;
+	friend class Zenith_AnimCtrlCommand_Layers;
+	friend class Zenith_AnimCtrlCommand_LayerFields;
 	// Zenith_AnimCtrlCommand_Compound is deliberately NOT a friend: it performs
 	// no edit of its own.
 
@@ -435,6 +548,12 @@ private:
 	bool ApplySetTransitions(u_int uMachineId, const Zenith_AnimCtrlTransitionList& xList);
 	bool ApplySetParameters(u_int uMachineId, const Zenith_Vector<Zenith_AnimCtrlParameterDecl>& axDecls);
 	bool ApplySetClipPaths(const Zenith_Vector<std::string>& axPaths);
+	// Rebuild the WHOLE layer list from snapshots, in the order given. Every
+	// layer is destroyed and re-read from its bytes, so a caller holding a
+	// Flux_AnimatorControllerLayerDef* across this is reading freed memory —
+	// nothing in this document does, and the panel addresses layers by id.
+	bool ApplySetLayers(const Zenith_Vector<Zenith_AnimCtrlLayerSnapshot>& axLayers);
+	bool ApplySetLayerFields(u_int uLayerId, const Zenith_AnimCtrlLayerFields& xFields);
 	void MarkDirty() { m_bDirty = true; }
 
 	//-------------------------------------------------------------------------
@@ -460,6 +579,17 @@ private:
 	void CaptureParameters(u_int uMachineId, Zenith_Vector<Zenith_AnimCtrlParameterDecl>& axOut) const;
 	void CaptureClipPaths(Zenith_Vector<std::string>& axOut) const;
 
+	// Every layer, in blend order, each as its own serialized payload.
+	void CaptureLayers(Zenith_Vector<Zenith_AnimCtrlLayerSnapshot>& axOut) const;
+	bool CaptureLayerFields(u_int uLayerId, Zenith_AnimCtrlLayerFields& xOut) const;
+	// The one body every scalar layer setter shares: validate, compare against
+	// what is there (an ASSIGNMENT no-op pushes nothing), apply, push ONE
+	// command. szDescription is what Ctrl+Z's tooltip says.
+	bool SetLayerFields(u_int uLayerId, const Zenith_AnimCtrlLayerFields& xNew, const char* szDescription);
+	// The one body AddLayer / RemoveLayer / MoveLayer share.
+	bool ApplyLayerListEdit(const Zenith_Vector<Zenith_AnimCtrlLayerSnapshot>& axOld,
+		const Zenith_Vector<Zenith_AnimCtrlLayerSnapshot>& axNew, const char* szDescription);
+
 	void PushCommand(Zenith_UndoCommand* pxCommand);
 	void ResetToClosed();
 
@@ -479,6 +609,9 @@ private:
 	Zenith_AnimCtrlCommand_Compound* m_pxOpenCompound = nullptr;
 
 	u_int m_uSelectedMachineId = uANIMCTRL_TOP_LEVEL_MACHINE;
+
+	// WU-7.2. Why the last layer verb refused; see GetLastLayerDiagnostic.
+	std::string m_strLastLayerDiagnostic;
 
 	u_int64 m_ulRecordedFileHash = 0;
 	bool m_bHasRecordedFile = false;

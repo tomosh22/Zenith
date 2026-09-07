@@ -5,6 +5,9 @@
 
 #include "Editor/Panels/Zenith_EditorPanel_AnimStateMachine.h"
 #include "Editor/Zenith_EditorUI.h"
+// WU-7.2's layer strip asks LayerAcceptsMask / AdditiveLayerMaskNotice — the ONE
+// statement of the additive-layer rule and the ONE wording of its refusal.
+#include "Editor/Zenith_BoneMaskDocument.h"
 #include "Core/Zenith_EditorWindowNames.h"
 #include "Core/Zenith_DragDropPayloads.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
@@ -38,8 +41,14 @@
 namespace
 {
 	// Layout, at 1x DPI. Everything goes through Zenith_EditorUI::Px.
-	constexpr float fANIMSM_SIDE_PANEL_WIDTH_1X = 250.0f;
+	// Widened by WU-7.2: the layer rows carry an index, a name, an id, a blend
+	// mode and a weight, and the detail block under them a full-width path field.
+	constexpr float fANIMSM_SIDE_PANEL_WIDTH_1X = 300.0f;
 	constexpr float fANIMSM_INSPECTOR_HEIGHT_1X = 170.0f;
+	// The layer list's OWN scroll child (see RenderLayerStrip): bounded, so a
+	// controller with twenty layers cannot push the "+ Layer" button and the
+	// selected layer's controls out of reach.
+	constexpr float fANIMSM_LAYER_LIST_HEIGHT_1X = 116.0f;
 	constexpr float fANIMSM_GRID_STEP_1X        = 32.0f;
 	// How near a click has to be to an edge's midpoint marker to pick it.
 	constexpr float fANIMSM_EDGE_GRAB_1X        = 9.0f;
@@ -55,6 +64,9 @@ namespace
 
 	const char* const aszPARAM_TYPE_NAMES[] = { "Float", "Int", "Bool", "Trigger" };
 	const char* const aszCOMPARE_OP_NAMES[] = { "==", "!=", ">", "<", ">=", "<=" };
+	// In Flux_LayerBlendMode's own declaration order, so the combo index IS the
+	// enumerator and no mapping table can drift from the enum.
+	const char* const aszLAYER_BLEND_NAMES[] = { "Override", "Additive" };
 }
 
 //=============================================================================
@@ -127,8 +139,17 @@ void Zenith_EditorPanel_AnimStateMachine::Render(float fDtSeconds)
 
 	const float fInspectorHeight = Zenith_EditorUI::Px(fANIMSM_INSPECTOR_HEIGHT_1X);
 
+	// ★ WU-7.2's LAYER STRIP LIVES INSIDE THE SIDE CHILD, WHICH IS THE WHOLE
+	// POINT OF PUTTING IT THERE. The canvas child below is sized
+	// Vec(0, -fInspectorHeight) out of the MAIN window's remaining region, so
+	// anything emitted into the main window before it comes straight out of the
+	// canvas's height — the dope sheet's "NOTHING SHOWN DRAWS NOTHING" defect,
+	// one panel over. Inside this fixed-width, fixed-height child a layer list of
+	// any length costs the canvas nothing, which is what
+	// `AnimSmPanel::TheLayerStripDrawsNothingWhenClosedAndNeverTakesCanvasHeight`
+	// measures.
 	ImGui::BeginChild("##AnimSmSide", Vec(Zenith_EditorUI::Px(fANIMSM_SIDE_PANEL_WIDTH_1X), -fInspectorHeight), true);
-	RenderMachinePicker();
+	RenderLayerStrip();
 	ImGui::Separator();
 	RenderParameterPanel();
 	ImGui::EndChild();
@@ -245,56 +266,199 @@ void Zenith_EditorPanel_AnimStateMachine::RenderToolbar()
 }
 
 //=============================================================================
-// The machine picker — WHICH graph the canvas shows.
+// The LAYERS strip (WU-7.2) — the machine picker AND the layer list, because
+// they were always one question: "which machine am I editing" is answered by
+// picking a row, and a row carries everything the layer is.
+//
+// ★ IT DRAWS NOTHING WITH NO DOCUMENT OPEN — not a header, not a disabled row,
+// not the word "Layers". The dope sheet paid for that rule twice (Editor/
+// CLAUDE.md → "NOTHING SHOWN DRAWS NOTHING"), and while this panel's canvas is a
+// fixed-height child rather than a "whatever is left" one, the rule costs
+// nothing to keep and the alternative is a height regression that arrives as a
+// flat `false` from a rect accessor a long way from its cause.
+//
+// ★ THE LIST HAS ITS OWN SCROLL CHILD, which is the graph editor's hard-won
+// lesson rather than decoration: sharing a scroll region between a list and the
+// controls under it means scrolling to a row pushes the controls off the top
+// (that panel observed y=-2488), and a clipped ImGui item is not interactable.
 //=============================================================================
 
-void Zenith_EditorPanel_AnimStateMachine::RenderMachinePicker()
+void Zenith_EditorPanel_AnimStateMachine::RenderLayerStrip()
 {
-	ImGui::TextUnformatted("Machine");
 	if (!m_xDocument.IsOpen())
 	{
-		return;
+		return;   // ★ before a single item is submitted
+	}
+	m_bLayerStripDrawn = true;
+
+	ImGui::TextUnformatted("Layers");
+
+	const u_int uSelected = m_xDocument.GetSelectedMachineId();
+
+	ImGui::BeginChild("##AnimSmLayerList", Vec(0.0f, Zenith_EditorUI::Px(fANIMSM_LAYER_LIST_HEIGHT_1X)), true);
+
+	// The def's OWN machine, listed first and marked as what it is. It is not a
+	// layer — no weight, no blend mode, no mask — so it carries no controls.
+	if (ImGui::Selectable("Top-level machine", uSelected == uANIMCTRL_TOP_LEVEL_MACHINE))
+	{
+		Action_SelectLayerMachine(uANIMCTRL_TOP_LEVEL_MACHINE);
 	}
 
 	Zenith_Vector<u_int> auLayerIds;
 	m_xDocument.GetLayerIds(auLayerIds);
-
-	const u_int uSelected = m_xDocument.GetSelectedMachineId();
-	std::string strPreview = "Top-level";
-	if (uSelected != uANIMCTRL_TOP_LEVEL_MACHINE)
+	for (u_int u = 0; u < auLayerIds.GetSize(); ++u)
 	{
+		const u_int uId = auLayerIds.Get(u);
 		std::string strName;
-		m_xDocument.GetLayerName(uSelected, strName);
-		char acBuffer[160];
-		snprintf(acBuffer, sizeof(acBuffer), "Layer %u: %s", uSelected, strName.c_str());
-		strPreview = acBuffer;
-	}
+		m_xDocument.GetLayerName(uId, strName);
+		float fWeight = 1.0f;
+		m_xDocument.GetLayerWeight(uId, fWeight);
+		Flux_LayerBlendMode eMode = LAYER_BLEND_OVERRIDE;
+		m_xDocument.GetLayerBlendMode(uId, eMode);
 
-	ImGui::SetNextItemWidth(-1.0f);
-	if (ImGui::BeginCombo("##AnimSmMachine", strPreview.c_str()))
+		ImGui::PushID(static_cast<int>(3000 + u));
+		char acRow[224];
+		// The INDEX is shown because it is the blend ORDER, which is what the
+		// runtime composes in and what the reorder buttons change; the id is
+		// shown because it is what every verb and every recipe types.
+		snprintf(acRow, sizeof(acRow), "%u. %s  [id %u]  %s  w=%.2f",
+			u, strName.empty() ? "(unnamed)" : strName.c_str(), uId,
+			eMode == LAYER_BLEND_ADDITIVE ? "additive" : "override", fWeight);
+		if (ImGui::Selectable(acRow, uSelected == uId))
+		{
+			Action_SelectLayer(uId);
+		}
+		ImGui::PopID();
+		++m_uDrawnLayerRows;
+	}
+	ImGui::EndChild();
+
+	// ---- add ----------------------------------------------------------------
+	ImGui::SetNextItemWidth(-Zenith_EditorUI::Px(76.0f));
+	ImGui::InputText("##AnimSmLayerName", m_acLayerNameBuffer, sizeof(m_acLayerNameBuffer));
+	ImGui::SameLine();
+	if (ImGui::Button("+ Layer"))
 	{
-		if (ImGui::Selectable("Top-level", uSelected == uANIMCTRL_TOP_LEVEL_MACHINE))
-		{
-			Action_SelectLayerMachine(uANIMCTRL_TOP_LEVEL_MACHINE);
-		}
-		for (u_int u = 0; u < auLayerIds.GetSize(); ++u)
-		{
-			const u_int uId = auLayerIds.Get(u);
-			std::string strName;
-			m_xDocument.GetLayerName(uId, strName);
-			char acBuffer[160];
-			snprintf(acBuffer, sizeof(acBuffer), "Layer %u: %s", uId, strName.c_str());
-			if (ImGui::Selectable(acBuffer, uSelected == uId))
-			{
-				Action_SelectLayerMachine(uId);
-			}
-		}
-		ImGui::EndCombo();
+		Action_AddLayer(std::string(m_acLayerNameBuffer));
 	}
 
-	// The layer LIST and its weights are WU-7.2's; this picker is only what the
-	// graph needs to know which machine it is drawing.
-	ImGui::TextDisabled("(layer weights: WU-7.2)");
+	// ---- the selected layer's own controls -----------------------------------
+	// ★ RE-READ, NOT uSelected. A click on a row above, or the "+ Layer" button,
+	// has already changed the selection THIS frame — drawing the detail block for
+	// the previous one would show a name field belonging to a layer the user has
+	// just stopped looking at, and a commit from it would edit that layer.
+	const u_int uSelectedNow = m_xDocument.GetSelectedMachineId();
+	if (uSelectedNow != uANIMCTRL_TOP_LEVEL_MACHINE)
+	{
+		RenderLayerDetail(uSelectedNow);
+	}
+}
+
+void Zenith_EditorPanel_AnimStateMachine::RenderLayerDetail(u_int uLayerId)
+{
+	u_int uIndex = 0;
+	if (!m_xDocument.GetLayerIndex(uLayerId, uIndex))
+	{
+		return;
+	}
+
+	ImGui::Separator();
+
+	// ---- name (commit on edit-complete) --------------------------------------
+	// ★ EDIT-COMPLETE, NOT PER KEYSTROKE, exactly as the transition inspector's
+	// duration field is: a command per character makes Ctrl+Z walk backwards
+	// through a half-typed name one letter at a time.
+	ImGui::SetNextItemWidth(-1.0f);
+	ImGui::InputText("##AnimSmLayerRename", m_acLayerRenameBuffer, sizeof(m_acLayerRenameBuffer));
+	if (ImGui::IsItemDeactivatedAfterEdit())
+	{
+		Action_RenameLayer(uLayerId, std::string(m_acLayerRenameBuffer));
+	}
+
+	// ---- weight (commit on edit-complete) ------------------------------------
+	float fWeight = 1.0f;
+	m_xDocument.GetLayerWeight(uLayerId, fWeight);
+	ImGui::SetNextItemWidth(-1.0f);
+	ImGui::SliderFloat("##AnimSmLayerWeight", &fWeight, 0.0f, 1.0f, "weight %.3f");
+	if (ImGui::IsItemDeactivatedAfterEdit())
+	{
+		Action_SetLayerWeight(uLayerId, fWeight);
+	}
+
+	// ---- blend mode ----------------------------------------------------------
+	Flux_LayerBlendMode eMode = LAYER_BLEND_OVERRIDE;
+	m_xDocument.GetLayerBlendMode(uLayerId, eMode);
+	int iMode = (eMode == LAYER_BLEND_ADDITIVE) ? 1 : 0;
+	ImGui::SetNextItemWidth(-1.0f);
+	if (ImGui::Combo("##AnimSmLayerBlend", &iMode, aszLAYER_BLEND_NAMES, 2))
+	{
+		Action_SetLayerBlendMode(uLayerId, iMode == 1 ? LAYER_BLEND_ADDITIVE : LAYER_BLEND_OVERRIDE);
+	}
+
+	// ---- emit events (D36) ---------------------------------------------------
+	bool bEmit = true;
+	m_xDocument.GetLayerEmitEvents(uLayerId, bEmit);
+	if (ImGui::Checkbox("Emit animation events", &bEmit))
+	{
+		Action_SetLayerEmitEvents(uLayerId, bEmit);
+	}
+
+	// ---- bone mask -----------------------------------------------------------
+	// ★ DISABLED, WITH THE NOTICE, ON AN ADDITIVE LAYER. The rule is
+	// Zenith_BoneMaskDocument::LayerAcceptsMask's and is not restated here; the
+	// wording is AdditiveLayerMaskNotice()'s, so this strip, the dope sheet's
+	// mask sub-panel and the units cannot describe the refusal three ways.
+	const bool bAcceptsMask = Zenith_BoneMaskDocument::LayerAcceptsMask(eMode);
+	ImGui::BeginDisabled(!bAcceptsMask);
+	ImGui::SetNextItemWidth(-Zenith_EditorUI::Px(60.0f));
+	ImGui::InputText("##AnimSmLayerMask", m_acLayerMaskPathBuffer, sizeof(m_acLayerMaskPathBuffer));
+	if (bAcceptsMask && ImGui::BeginDragDropTarget())
+	{
+		// No registry enumeration of .zanimmask files exists, so the route is the
+		// path field plus a drop from the content browser's generic file payload.
+		const ImGuiPayload* pxPayload = ImGui::AcceptDragDropPayload(DRAGDROP_PAYLOAD_FILE_GENERIC);
+		if (pxPayload != nullptr && pxPayload->Data != nullptr)
+		{
+			const DragDropFilePayload* pxFile = static_cast<const DragDropFilePayload*>(pxPayload->Data);
+			snprintf(m_acLayerMaskPathBuffer, sizeof(m_acLayerMaskPathBuffer), "%s", pxFile->m_szFilePath);
+			Action_SetLayerMaskAssetPath(uLayerId, std::string(m_acLayerMaskPathBuffer));
+		}
+		ImGui::EndDragDropTarget();
+	}
+	ImGui::SameLine();
+	if (ImGui::Button("Mask"))
+	{
+		Action_SetLayerMaskAssetPath(uLayerId, std::string(m_acLayerMaskPathBuffer));
+	}
+	ImGui::EndDisabled();
+	if (!bAcceptsMask)
+	{
+		ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(Zenith_EditorUI::Palette().m_uWarning),
+			"%s", Zenith_BoneMaskDocument::AdditiveLayerMaskNotice());
+	}
+
+	// ---- reorder + remove ----------------------------------------------------
+	// The blend ORDER is what these change, so they move the layer by INDEX while
+	// naming it by ID — the one place an index legitimately appears.
+	ImGui::BeginDisabled(uIndex == 0);
+	if (ImGui::Button("Up"))
+	{
+		Action_MoveLayer(uLayerId, uIndex - 1u);
+	}
+	ImGui::EndDisabled();
+	ImGui::SameLine();
+	ImGui::BeginDisabled(uIndex + 1u >= m_xDocument.GetLayerCount());
+	if (ImGui::Button("Down"))
+	{
+		Action_MoveLayer(uLayerId, uIndex + 1u);
+	}
+	ImGui::EndDisabled();
+	ImGui::SameLine();
+	if (ImGui::Button("Remove Layer"))
+	{
+		Action_RemoveLayer(uLayerId);
+		return;   // the list just moved under us
+	}
 }
 
 //=============================================================================

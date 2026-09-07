@@ -3493,16 +3493,111 @@ ZENITH_TEST(Automation, AnimMaskEnumBlockIsContiguous)
 	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_MASK_EXPECT_WEIGHT) - iFirst, 9,
 		"ANIM_MASK_EXPECT_WEIGHT must END the block — the router compares against it");
 
-	// Both boundaries. SET_NAVMESH_ASSET is a STANDALONE verb that has to keep
-	// reaching ExecuteAction's own switch: swallowed into this range it would land
-	// in ExecuteAnimMaskAction's `default:` assert at boot, which is a run-time
-	// failure for a compile-time mistake.
+	// Both boundaries, from this side.
 	ZENITH_ASSERT_EQ(iFirst - static_cast<int>(Zenith_EditorActionType::ANIM_SM_EXPECT_DEFAULT_STATE), 1,
 		"the ANIM_MASK block must start immediately after the ANIM_SM range ends");
-	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::SET_NAVMESH_ASSET) -
+	// ★ THIS LINE USED TO NAME SET_NAVMESH_ASSET, and it MOVED with WU-7.2 rather
+	// than being deleted — exactly as it moved off SET_NAVMESH_ASSET's neighbour
+	// three times before (WU-4.3, WU-6.5, WU-7.1). What it pins is that the
+	// ANIM_MASK range ENDS where the router thinks it does; the successor being a
+	// fifth animation block instead of the navmesh verb does not weaken that.
+	// SET_NAVMESH_ASSET's own "must stay outside every range" is pinned by
+	// AnimLayerEnumBlockIsContiguous below, which is where its neighbour now is.
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_LAYER_ADD) -
 		static_cast<int>(Zenith_EditorActionType::ANIM_MASK_EXPECT_WEIGHT), 1,
-		"SET_NAVMESH_ASSET must sit immediately after the ANIM_MASK range — inside it, the "
-		"router would hand it to ExecuteAnimMaskAction's default: assert");
+		"the ANIM_LAYER block must start immediately after the ANIM_MASK range ends — inside it, the "
+		"router would hand a layer verb to ExecuteAnimMaskAction's default: assert");
+}
+
+ZENITH_TEST(Automation, AnimLayerEnumBlockIsContiguous)
+{
+	// The youngest block (WU-7.2), pinned the way every block before it is: the
+	// header static_asserts the WIDTH, and this pins each member's POSITION so a
+	// reorder that preserves the width fails here naming the member that moved
+	// rather than at boot inside a neighbour's `default:` assert.
+	const int iFirst = static_cast<int>(Zenith_EditorActionType::ANIM_LAYER_ADD);
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_LAYER_REMOVE) - iFirst, 1,
+		"ANIM_LAYER_REMOVE must be the second member of the block");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_LAYER_RENAME) - iFirst, 2,
+		"ANIM_LAYER_RENAME must be the third member of the block");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_LAYER_SET_WEIGHT) - iFirst, 3,
+		"ANIM_LAYER_SET_WEIGHT must be the fourth member of the block");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_LAYER_SET_BLEND_MODE) - iFirst, 4,
+		"ANIM_LAYER_SET_BLEND_MODE must be the fifth member of the block");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_LAYER_SET_EMIT_EVENTS) - iFirst, 5,
+		"ANIM_LAYER_SET_EMIT_EVENTS must be the sixth member of the block");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_LAYER_SET_MASK_PATH) - iFirst, 6,
+		"ANIM_LAYER_SET_MASK_PATH must be the seventh member of the block");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_LAYER_MOVE) - iFirst, 7,
+		"ANIM_LAYER_MOVE must be the eighth member of the block");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_LAYER_SELECT) - iFirst, 8,
+		"ANIM_LAYER_SELECT must be the ninth member of the block");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_LAYER_EXPECT_ORDER) - iFirst, 9,
+		"ANIM_LAYER_EXPECT_ORDER must END the block — the router compares against it");
+
+	// Both boundaries. SET_NAVMESH_ASSET is a STANDALONE verb that has to keep
+	// reaching ExecuteAction's own switch: swallowed into this range it would land
+	// in ExecuteAnimLayerAction's `default:` assert at boot, which is a run-time
+	// failure for a compile-time mistake.
+	ZENITH_ASSERT_EQ(iFirst - static_cast<int>(Zenith_EditorActionType::ANIM_MASK_EXPECT_WEIGHT), 1,
+		"the ANIM_LAYER block must start immediately after the ANIM_MASK range ends");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::SET_NAVMESH_ASSET) -
+		static_cast<int>(Zenith_EditorActionType::ANIM_LAYER_EXPECT_ORDER), 1,
+		"SET_NAVMESH_ASSET must sit immediately after the ANIM_LAYER range — inside it, the "
+		"router would hand it to ExecuteAnimLayerAction's default: assert");
+}
+
+ZENITH_TEST(Automation, AnimLayerStepsPackTheirPayloads)
+{
+	// The queue is drained MUCH later than it is built, so every argument has to
+	// survive as an OWNED copy in the action struct — a caller may legitimately
+	// pass a pointer into a stack buffer built in a loop. This asserts the packing
+	// contract the executor reads back; the two halves are written from the same
+	// comment block in the .cpp, and this is what stops them drifting.
+	Zenith_EditorAutomation& xAuto = g_xEngine.EditorAutomation();
+	xAuto.Reset();
+
+	xAuto.AddStep_AnimLayerAdd("Aim");
+	xAuto.AddStep_AnimLayerSetWeight(1, 0.25f);
+	xAuto.AddStep_AnimLayerSetBlendMode(1, 1 /* additive */);
+	xAuto.AddStep_AnimLayerSetEmitEvents(1, false);
+	xAuto.AddStep_AnimLayerSetMaskPath(0, "game:Anim/UpperBody.zanimmask");
+	xAuto.AddStep_AnimLayerMove(1, 0);
+	xAuto.AddStep_AnimLayerSelect(1);
+	xAuto.AddStep_AnimLayerExpectOrder(0, "Aim");
+
+	ZENITH_ASSERT_EQ(xAuto.m_axActions.GetSize(), 8u, "eight steps queued");
+
+	const Zenith_EditorAction& xAdd = xAuto.m_axActions.Get(0);
+	ZENITH_ASSERT_TRUE(xAdd.m_eType == Zenith_EditorActionType::ANIM_LAYER_ADD, "step 0 is ANIM_LAYER_ADD");
+	ZENITH_ASSERT_STREQ(xAdd.m_szArg1.c_str(), "Aim", "the layer name is OWNED by the action, not aliased");
+
+	const Zenith_EditorAction& xWeight = xAuto.m_axActions.Get(1);
+	ZENITH_ASSERT_EQ(xWeight.m_aiArgs[0], 1, "aiArgs[0] is the stable LAYER ID — never an index (D43)");
+	ZENITH_ASSERT_EQ_FLOAT(xWeight.m_afArgs[0], 0.25f, 1e-6f, "afArgs[0] is the weight");
+
+	const Zenith_EditorAction& xMode = xAuto.m_axActions.Get(2);
+	ZENITH_ASSERT_EQ(xMode.m_aiArgs[1], 1, "aiArgs[1] carries the blend mode, so aiArgs[0] can stay the id");
+
+	const Zenith_EditorAction& xEmit = xAuto.m_axActions.Get(3);
+	ZENITH_ASSERT_FALSE(xEmit.m_bArg, "bArg carries D36's per-layer emit-events flag");
+
+	const Zenith_EditorAction& xMask = xAuto.m_axActions.Get(4);
+	ZENITH_ASSERT_STREQ(xMask.m_szArg1.c_str(), "game:Anim/UpperBody.zanimmask", "szArg1 is the mask ASSET PATH");
+	ZENITH_ASSERT_EQ(xMask.m_aiArgs[0], 0, "with the layer id beside it");
+
+	const Zenith_EditorAction& xMove = xAuto.m_axActions.Get(5);
+	ZENITH_ASSERT_EQ(xMove.m_aiArgs[0], 1, "MOVE names the layer by id");
+	ZENITH_ASSERT_EQ(xMove.m_aiArgs[1], 0,
+		"★ and its DESTINATION by index — the one index in the family, because a blend-order "
+		"position is what a reorder changes");
+
+	const Zenith_EditorAction& xOrder = xAuto.m_axActions.Get(7);
+	ZENITH_ASSERT_EQ(xOrder.m_aiArgs[0], 0,
+		"★ EXPECT_ORDER's aiArgs[0] is an INDEX, not an id: it asserts about a POSITION");
+	ZENITH_ASSERT_STREQ(xOrder.m_szArg1.c_str(), "Aim", "and names the layer it expects to find there");
+
+	xAuto.Reset();
 }
 
 ZENITH_TEST(Automation, AnimMaskStepsPackTheirPayloads)

@@ -201,3 +201,65 @@ ZENITH_TEST(AnimCtrlCommands, ARolledBackCompoundReachesNeitherTheStackNorTheGra
 
 	xDoc.CloseDiscardingChanges();
 }
+
+ZENITH_TEST(AnimCtrlCommands, TheLayerSnapshotCarriesEachLayersWholeMachineThroughAReorderAndBack)
+{
+	// ★ THE CASE THE CHEAP INVERSE GETS WRONG. A reorder's obvious undo is "move
+	// it back", which is exact for ONE move and wrong the moment a second edit
+	// renumbers the destination — so the command carries the whole list, and the
+	// whole list means each layer's ENTIRE payload, its state machine included.
+	// A snapshot that carried only ids and weights would restore the ORDER and
+	// silently empty every graph, which no order assertion would notice.
+	AnimCtrlCmdFixture xFixture("zenith_animctrlcmd_layers");
+	Zenith_AnimControllerDocument xDoc;
+	ZENITH_ASSERT_TRUE(xDoc.OpenFresh(xFixture.m_strPath) == ZENITH_ANIMCTRLDOC_OPEN_OK, "open fresh");
+
+	const u_int uBase = xDoc.AddLayer("Base");
+	const u_int uAim = xDoc.AddLayer("Aim");
+	ZENITH_ASSERT_TRUE(uBase != uFLUX_INVALID_LAYER_ID && uAim != uFLUX_INVALID_LAYER_ID, "two layers");
+
+	// Author something INSIDE each layer's machine, so the round trip has
+	// content to lose.
+	ZENITH_ASSERT_TRUE(xDoc.SelectMachine(uBase), "select Base's machine");
+	ZENITH_ASSERT_TRUE(xDoc.AddState("Idle"), "Idle");
+	ZENITH_ASSERT_TRUE(xDoc.AddState("Walk"), "Walk");
+	ZENITH_ASSERT_TRUE(xDoc.AddTransition("Idle", "Walk"), "Idle -> Walk");
+	ZENITH_ASSERT_TRUE(xDoc.SelectMachine(uAim), "select Aim's machine");
+	ZENITH_ASSERT_TRUE(xDoc.AddState("Aiming"), "one state in the overlay");
+	ZENITH_ASSERT_TRUE(xDoc.SetLayerWeight(uAim, 0.5f), "and a weight on it");
+	ZENITH_ASSERT_TRUE(xDoc.SetLayerBlendMode(uAim, LAYER_BLEND_ADDITIVE), "and a blend mode");
+
+	// ---- reorder -------------------------------------------------------------
+	ZENITH_ASSERT_TRUE(xDoc.MoveLayer(uAim, 0u), "the overlay becomes the base layer");
+	u_int uIdAt = uFLUX_INVALID_LAYER_ID;
+	ZENITH_ASSERT_TRUE(xDoc.GetLayerIdAt(0u, uIdAt) && uIdAt == uAim, "it is index 0");
+
+	// ★ THE MACHINES CAME THROUGH THE BYTES. This is what a field-only snapshot
+	// would have destroyed, and the ONLY way to see it is to look inside.
+	ZENITH_ASSERT_TRUE(xDoc.SelectMachine(uBase), "look inside Base");
+	ZENITH_ASSERT_EQ(xDoc.GetStateCount(), 2u, "★ both of its states survived the rebuild");
+	ZENITH_ASSERT_EQ(xDoc.GetTransitionCount("Idle"), 1u, "★ and so did its transition");
+	ZENITH_ASSERT_TRUE(xDoc.SelectMachine(uAim), "and inside Aim");
+	ZENITH_ASSERT_EQ(xDoc.GetStateCount(), 1u, "★ whose one state is also there");
+
+	// ---- and back ------------------------------------------------------------
+	xDoc.Undo();
+	ZENITH_ASSERT_TRUE(xDoc.GetLayerIdAt(0u, uIdAt) && uIdAt == uBase, "★ the exact previous order is back");
+	ZENITH_ASSERT_TRUE(xDoc.GetLayerIdAt(1u, uIdAt) && uIdAt == uAim, "id for id");
+
+	Flux_LayerBlendMode eMode = LAYER_BLEND_OVERRIDE;
+	float fWeight = 0.0f;
+	ZENITH_ASSERT_TRUE(xDoc.GetLayerBlendMode(uAim, eMode) && eMode == LAYER_BLEND_ADDITIVE,
+		"★ and payload for payload — the blend mode rode the bytes");
+	ZENITH_ASSERT_TRUE(xDoc.GetLayerWeight(uAim, fWeight), "the weight resolves");
+	ZENITH_ASSERT_EQ_FLOAT(fWeight, 0.5f, 1e-6f, "and is the one that was set");
+
+	// A redo replays the snapshot forwards, so the two directions are the same
+	// operation with two arguments rather than two implementations.
+	xDoc.Redo();
+	ZENITH_ASSERT_TRUE(xDoc.GetLayerIdAt(0u, uIdAt) && uIdAt == uAim, "★ redo puts the reorder back");
+	ZENITH_ASSERT_TRUE(xDoc.SelectMachine(uBase), "and Base is still whole");
+	ZENITH_ASSERT_EQ(xDoc.GetStateCount(), 2u, "with both states");
+
+	xDoc.CloseDiscardingChanges();
+}

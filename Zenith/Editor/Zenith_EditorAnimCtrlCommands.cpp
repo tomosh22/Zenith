@@ -280,6 +280,57 @@ void Zenith_AnimCtrlCommand_ClipPaths::Undo()
 }
 
 //==============================================================================
+// The layer list (WU-7.2)
+//==============================================================================
+
+Zenith_AnimCtrlCommand_Layers::Zenith_AnimCtrlCommand_Layers(Zenith_AnimControllerDocument* pxDocument,
+	const Zenith_Vector<Zenith_AnimCtrlLayerSnapshot>& axOld,
+	const Zenith_Vector<Zenith_AnimCtrlLayerSnapshot>& axNew, const char* szDescription)
+	: Zenith_AnimCtrlCommandBase(pxDocument, uANIMCTRL_TOP_LEVEL_MACHINE, szDescription)
+	, m_axOld(axOld)
+	, m_axNew(axNew)
+{
+}
+
+void Zenith_AnimCtrlCommand_Layers::Execute()
+{
+	m_pxDocument->ApplySetLayers(m_axNew);
+	m_pxDocument->MarkDirty();
+}
+
+void Zenith_AnimCtrlCommand_Layers::Undo()
+{
+	// ★ THE EXACT PREVIOUS ORDER, id for id and payload for payload. That is the
+	// property a reorder needs and the one an "unmove it back" inverse would only
+	// have for a single move: two moves in a row, or a move after a remove, put
+	// the destination index somewhere the second inverse can no longer name.
+	m_pxDocument->ApplySetLayers(m_axOld);
+	m_pxDocument->MarkDirty();
+}
+
+Zenith_AnimCtrlCommand_LayerFields::Zenith_AnimCtrlCommand_LayerFields(Zenith_AnimControllerDocument* pxDocument,
+	u_int uLayerId, const Zenith_AnimCtrlLayerFields& xOld, const Zenith_AnimCtrlLayerFields& xNew,
+	const char* szDescription)
+	: Zenith_AnimCtrlCommandBase(pxDocument, uANIMCTRL_TOP_LEVEL_MACHINE, szDescription)
+	, m_uLayerId(uLayerId)
+	, m_xOld(xOld)
+	, m_xNew(xNew)
+{
+}
+
+void Zenith_AnimCtrlCommand_LayerFields::Execute()
+{
+	m_pxDocument->ApplySetLayerFields(m_uLayerId, m_xNew);
+	m_pxDocument->MarkDirty();
+}
+
+void Zenith_AnimCtrlCommand_LayerFields::Undo()
+{
+	m_pxDocument->ApplySetLayerFields(m_uLayerId, m_xOld);
+	m_pxDocument->MarkDirty();
+}
+
+//==============================================================================
 // Compound
 //==============================================================================
 

@@ -5,6 +5,12 @@
 
 #include "Editor/Zenith_AnimControllerDocument.h"
 #include "Editor/Zenith_EditorAnimCtrlCommands.h"
+// ★ FOR LayerAcceptsMask AND NOTHING ELSE. The additive-layer rule is written
+// down exactly once (WU-7.1), on the bone-mask document, and WU-7.2's layer list
+// ASKS that function rather than restating it — two copies of a rule whose whole
+// point is that nothing observable happens when it is broken is how the two
+// halves of a UI end up disagreeing in silence.
+#include "Editor/Zenith_BoneMaskDocument.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "AssetHandling/Zenith_AnimatorControllerAsset.h"
 #include "DataStream/Zenith_DataStream.h"
@@ -45,6 +51,33 @@ namespace
 		// own copy, which outlives the read.
 		Zenith_DataStream xStream(const_cast<char*>(&axBytes.Get(0)), axBytes.GetSize());
 		xState.ReadFromDataStream(xStream);
+	}
+
+	// One LAYER's whole payload, the same way (WU-7.2). Separate from the state
+	// version rather than a template because the two read different types and a
+	// template would hide which one a call site meant.
+	void ReadLayerFromBytes(Flux_AnimatorControllerLayerDef& xLayer, const Zenith_Vector<char>& axBytes)
+	{
+		if (axBytes.GetSize() == 0)
+		{
+			return;
+		}
+		Zenith_DataStream xStream(const_cast<char*>(&axBytes.Get(0)), axBytes.GetSize());
+		xLayer.ReadFromDataStream(xStream);
+	}
+
+	void WriteLayerToBytes(const Flux_AnimatorControllerLayerDef& xLayer, Zenith_Vector<char>& axOut)
+	{
+		Zenith_DataStream xStream(1);
+		xLayer.WriteToDataStream(xStream);
+		const u_int64 ulSize = xStream.GetCursor();
+		axOut.Clear();
+		axOut.Reserve(static_cast<u_int>(ulSize));
+		const char* pcBytes = static_cast<const char*>(xStream.GetData());
+		for (u_int64 ul = 0; ul < ulSize; ++ul)
+		{
+			axOut.PushBack(pcBytes[ul]);
+		}
 	}
 
 	// Copy every transition out of a Zenith_Vector into another one. Written out
@@ -130,6 +163,7 @@ void Zenith_AnimControllerDocument::ResetToClosed()
 	m_strAssetPath.clear();
 	m_strResolvedPath.clear();
 	m_uSelectedMachineId = uANIMCTRL_TOP_LEVEL_MACHINE;
+	m_strLastLayerDiagnostic.clear();
 	m_ulRecordedFileHash = 0;
 	m_bHasRecordedFile = false;
 	m_bOpen = false;
@@ -608,6 +642,84 @@ bool Zenith_AnimControllerDocument::GetLayerName(u_int uLayerId, std::string& st
 }
 
 //==============================================================================
+// The layer list — inspection (WU-7.2)
+//==============================================================================
+
+u_int Zenith_AnimControllerDocument::GetLayerCount() const
+{
+	return m_xWorkingDef.GetLayerCount();
+}
+
+bool Zenith_AnimControllerDocument::GetLayerIdAt(u_int uIndex, u_int& uOut) const
+{
+	const Flux_AnimatorControllerLayerDef* pxLayer = m_xWorkingDef.GetLayer(uIndex);
+	if (pxLayer == nullptr)
+	{
+		return false;
+	}
+	uOut = pxLayer->GetLayerId();
+	return true;
+}
+
+bool Zenith_AnimControllerDocument::GetLayerIndex(u_int uLayerId, u_int& uOut) const
+{
+	for (u_int u = 0; u < m_xWorkingDef.GetLayerCount(); ++u)
+	{
+		const Flux_AnimatorControllerLayerDef* pxLayer = m_xWorkingDef.GetLayer(u);
+		if (pxLayer != nullptr && pxLayer->GetLayerId() == uLayerId)
+		{
+			uOut = u;
+			return true;
+		}
+	}
+	return false;
+}
+
+bool Zenith_AnimControllerDocument::GetLayerWeight(u_int uLayerId, float& fOut) const
+{
+	const Flux_AnimatorControllerLayerDef* pxLayer = m_xWorkingDef.FindLayerById(uLayerId);
+	if (pxLayer == nullptr)
+	{
+		return false;
+	}
+	fOut = pxLayer->GetWeight();
+	return true;
+}
+
+bool Zenith_AnimControllerDocument::GetLayerBlendMode(u_int uLayerId, Flux_LayerBlendMode& eOut) const
+{
+	const Flux_AnimatorControllerLayerDef* pxLayer = m_xWorkingDef.FindLayerById(uLayerId);
+	if (pxLayer == nullptr)
+	{
+		return false;
+	}
+	eOut = pxLayer->GetBlendMode();
+	return true;
+}
+
+bool Zenith_AnimControllerDocument::GetLayerEmitEvents(u_int uLayerId, bool& bOut) const
+{
+	const Flux_AnimatorControllerLayerDef* pxLayer = m_xWorkingDef.FindLayerById(uLayerId);
+	if (pxLayer == nullptr)
+	{
+		return false;
+	}
+	bOut = pxLayer->GetEmitEvents();
+	return true;
+}
+
+bool Zenith_AnimControllerDocument::GetLayerMaskAssetPath(u_int uLayerId, std::string& strOut) const
+{
+	const Flux_AnimatorControllerLayerDef* pxLayer = m_xWorkingDef.FindLayerById(uLayerId);
+	if (pxLayer == nullptr)
+	{
+		return false;
+	}
+	strOut = pxLayer->GetBoneMaskAssetPath();
+	return true;
+}
+
+//==============================================================================
 // Inspection
 //==============================================================================
 
@@ -933,6 +1045,39 @@ void Zenith_AnimControllerDocument::CaptureClipPaths(Zenith_Vector<std::string>&
 	}
 }
 
+void Zenith_AnimControllerDocument::CaptureLayers(Zenith_Vector<Zenith_AnimCtrlLayerSnapshot>& axOut) const
+{
+	axOut.Clear();
+	axOut.Reserve(m_xWorkingDef.GetLayerCount());
+	for (u_int u = 0; u < m_xWorkingDef.GetLayerCount(); ++u)
+	{
+		const Flux_AnimatorControllerLayerDef* pxLayer = m_xWorkingDef.GetLayer(u);
+		if (pxLayer == nullptr)
+		{
+			continue;
+		}
+		Zenith_AnimCtrlLayerSnapshot xSnapshot;
+		xSnapshot.m_uLayerId = pxLayer->GetLayerId();
+		WriteLayerToBytes(*pxLayer, xSnapshot.m_axBytes);
+		axOut.PushBack(xSnapshot);
+	}
+}
+
+bool Zenith_AnimControllerDocument::CaptureLayerFields(u_int uLayerId, Zenith_AnimCtrlLayerFields& xOut) const
+{
+	const Flux_AnimatorControllerLayerDef* pxLayer = m_xWorkingDef.FindLayerById(uLayerId);
+	if (pxLayer == nullptr)
+	{
+		return false;
+	}
+	xOut.m_strName = pxLayer->GetName();
+	xOut.m_fWeight = pxLayer->GetWeight();
+	xOut.m_eBlendMode = pxLayer->GetBlendMode();
+	xOut.m_bEmitEvents = pxLayer->GetEmitEvents();
+	xOut.m_strBoneMaskAssetPath = pxLayer->GetBoneMaskAssetPath();
+	return true;
+}
+
 //==============================================================================
 // Apply primitives — the commands' half. No validation beyond "does it resolve",
 // no dirty flag, no command push.
@@ -1204,6 +1349,64 @@ bool Zenith_AnimControllerDocument::ApplySetClipPaths(const Zenith_Vector<std::s
 	{
 		m_xWorkingDef.AddClipPath(axPaths.Get(u));
 	}
+	return true;
+}
+
+bool Zenith_AnimControllerDocument::ApplySetLayers(const Zenith_Vector<Zenith_AnimCtrlLayerSnapshot>& axLayers)
+{
+	// Back to front: RemoveLayer is an order-preserving erase, so taking the LAST
+	// one every time moves nothing.
+	while (m_xWorkingDef.GetLayerCount() > 0)
+	{
+		m_xWorkingDef.RemoveLayer(m_xWorkingDef.GetLayerCount() - 1u);
+	}
+
+	for (u_int u = 0; u < axLayers.GetSize(); ++u)
+	{
+		const Zenith_AnimCtrlLayerSnapshot& xSnapshot = axLayers.Get(u);
+		// The name is overwritten by the payload read a line later; AddLayer is
+		// called with it anyway so a layer half-way through this loop is never
+		// nameless in a debugger.
+		Flux_AnimatorControllerLayerDef* pxLayer = m_xWorkingDef.AddLayer(std::string());
+		if (pxLayer == nullptr)
+		{
+			continue;
+		}
+		ReadLayerFromBytes(*pxLayer, xSnapshot.m_axBytes);
+		// ★ AssignLayerId, NOT SetLayerId. The read above has already restored the
+		// id from the bytes, but only AssignLayerId also moves the def's monotonic
+		// counter past it — and AddLayer has just handed out a number of its own.
+		// Without this the counter could sit BELOW an id now in the list and the
+		// next AddLayer would mint a duplicate, at which point FindLayerById
+		// answers with whichever comes first. The counter is never rewound, which
+		// is exactly the property that makes a stale id resolve to nullptr rather
+		// than to somebody else's layer.
+		m_xWorkingDef.AssignLayerId(*pxLayer, xSnapshot.m_uLayerId);
+	}
+
+	// ★ THE SELECTION IS RE-VALIDATED HERE, because this is the one primitive
+	// that can delete the selected machine — an undo of "add a layer" runs while
+	// that layer is very likely selected, and a selector naming a layer that no
+	// longer exists makes every later verb refuse with nothing to point at.
+	if (FindMachine(m_uSelectedMachineId) == nullptr)
+	{
+		m_uSelectedMachineId = uANIMCTRL_TOP_LEVEL_MACHINE;
+	}
+	return true;
+}
+
+bool Zenith_AnimControllerDocument::ApplySetLayerFields(u_int uLayerId, const Zenith_AnimCtrlLayerFields& xFields)
+{
+	Flux_AnimatorControllerLayerDef* pxLayer = m_xWorkingDef.FindLayerById(uLayerId);
+	if (pxLayer == nullptr)
+	{
+		return false;
+	}
+	pxLayer->SetName(xFields.m_strName);
+	pxLayer->SetWeight(xFields.m_fWeight);
+	pxLayer->SetBlendMode(xFields.m_eBlendMode);
+	pxLayer->SetEmitEvents(xFields.m_bEmitEvents);
+	pxLayer->SetBoneMaskAssetPath(xFields.m_strBoneMaskAssetPath);
 	return true;
 }
 
@@ -1750,6 +1953,288 @@ bool Zenith_AnimControllerDocument::RemoveClipPath(const std::string& strPath)
 	MarkDirty();
 	PushCommand(new Zenith_AnimCtrlCommand_ClipPaths(this, axOld, axNew, "Remove Clip"));
 	return true;
+}
+
+//==============================================================================
+// The layer list — mutation (WU-7.2)
+//
+// Two shapes, and the split is the point:
+//   • AddLayer / RemoveLayer / MoveLayer change the LIST, so they push a
+//     whole-list snapshot — the only faithful inverse of a reorder, and the only
+//     one an index cannot make stale.
+//   • Rename / weight / blend mode / emit events / mask path change ONE layer's
+//     scalars, so they push that layer's five fields, addressed by ID. No
+//     serialization, no state machines copied, and a slider drag costs a struct.
+//==============================================================================
+
+bool Zenith_AnimControllerDocument::ApplyLayerListEdit(const Zenith_Vector<Zenith_AnimCtrlLayerSnapshot>& axOld,
+	const Zenith_Vector<Zenith_AnimCtrlLayerSnapshot>& axNew, const char* szDescription)
+{
+	if (!ApplySetLayers(axNew))
+	{
+		return false;
+	}
+	MarkDirty();
+	PushCommand(new Zenith_AnimCtrlCommand_Layers(this, axOld, axNew, szDescription));
+	return true;
+}
+
+bool Zenith_AnimControllerDocument::SetLayerFields(u_int uLayerId, const Zenith_AnimCtrlLayerFields& xNew,
+	const char* szDescription)
+{
+	Zenith_AnimCtrlLayerFields xOld;
+	if (!CaptureLayerFields(uLayerId, xOld))
+	{
+		return false;
+	}
+	// ★ ASSIGNMENT: the value asked for is already in place. TRUE, no mutation,
+	// and NO undo entry — "one edit, one undo step" is the invariant, and a no-op
+	// is not an edit.
+	if (xOld.m_strName == xNew.m_strName
+		&& xOld.m_fWeight == xNew.m_fWeight
+		&& xOld.m_eBlendMode == xNew.m_eBlendMode
+		&& xOld.m_bEmitEvents == xNew.m_bEmitEvents
+		&& xOld.m_strBoneMaskAssetPath == xNew.m_strBoneMaskAssetPath)
+	{
+		return true;
+	}
+	if (!ApplySetLayerFields(uLayerId, xNew))
+	{
+		return false;
+	}
+	MarkDirty();
+	PushCommand(new Zenith_AnimCtrlCommand_LayerFields(this, uLayerId, xOld, xNew, szDescription));
+	return true;
+}
+
+u_int Zenith_AnimControllerDocument::AddLayer(const std::string& strName)
+{
+	m_strLastLayerDiagnostic.clear();
+	if (!m_bOpen || strName.empty())
+	{
+		return uFLUX_INVALID_LAYER_ID;
+	}
+
+	Zenith_Vector<Zenith_AnimCtrlLayerSnapshot> axOld;
+	CaptureLayers(axOld);
+
+	// Minted on the WORKING def so the id in the undo snapshot is the id the
+	// caller is handed — an id invented here and re-minted on the redo would make
+	// the panel's selection name a layer that no longer exists.
+	Flux_AnimatorControllerLayerDef* pxLayer = m_xWorkingDef.AddLayer(strName);
+	if (pxLayer == nullptr)
+	{
+		return uFLUX_INVALID_LAYER_ID;
+	}
+	const u_int uNewId = pxLayer->GetLayerId();
+
+	Zenith_Vector<Zenith_AnimCtrlLayerSnapshot> axNew;
+	CaptureLayers(axNew);
+	if (!ApplyLayerListEdit(axOld, axNew, "Add Layer"))
+	{
+		return uFLUX_INVALID_LAYER_ID;
+	}
+	return uNewId;
+}
+
+bool Zenith_AnimControllerDocument::RemoveLayer(u_int uLayerId)
+{
+	m_strLastLayerDiagnostic.clear();
+	if (!m_bOpen)
+	{
+		return false;
+	}
+	u_int uIndex = 0;
+	if (!GetLayerIndex(uLayerId, uIndex))
+	{
+		return false;   // REMOVAL: a miss is a genuine refusal
+	}
+
+	Zenith_Vector<Zenith_AnimCtrlLayerSnapshot> axOld;
+	CaptureLayers(axOld);
+	Zenith_Vector<Zenith_AnimCtrlLayerSnapshot> axNew;
+	for (u_int u = 0; u < axOld.GetSize(); ++u)
+	{
+		if (u != uIndex)
+		{
+			axNew.PushBack(axOld.Get(u));
+		}
+	}
+
+	// ApplySetLayers drops a selection that pointed at the layer this removes, so
+	// the fallback to the top-level machine is one rule in one place rather than
+	// a second copy here and a third in the command's Execute.
+	return ApplyLayerListEdit(axOld, axNew, "Remove Layer");
+}
+
+bool Zenith_AnimControllerDocument::MoveLayer(u_int uLayerId, u_int uNewIndex)
+{
+	m_strLastLayerDiagnostic.clear();
+	if (!m_bOpen)
+	{
+		return false;
+	}
+	u_int uIndex = 0;
+	if (!GetLayerIndex(uLayerId, uIndex))
+	{
+		return false;
+	}
+	if (uNewIndex >= m_xWorkingDef.GetLayerCount())
+	{
+		// An index past the end is a caller ERROR rather than a value that could
+		// already be in place, so it is refused rather than clamped: clamping
+		// would turn "move it down" at the bottom of the list into a silent no-op
+		// that reports success.
+		return false;
+	}
+	if (uNewIndex == uIndex)
+	{
+		return true;   // ASSIGNMENT: the position asked for is the position held
+	}
+
+	Zenith_Vector<Zenith_AnimCtrlLayerSnapshot> axOld;
+	CaptureLayers(axOld);
+
+	Zenith_Vector<Zenith_AnimCtrlLayerSnapshot> axNew;
+	// Remove-then-insert, which is what "move to index N" means for a list: the
+	// entries between the two positions shift by one and everything else stays.
+	for (u_int u = 0; u < axOld.GetSize(); ++u)
+	{
+		if (u != uIndex)
+		{
+			axNew.PushBack(axOld.Get(u));
+		}
+	}
+	Zenith_Vector<Zenith_AnimCtrlLayerSnapshot> axFinal;
+	for (u_int u = 0; u <= axNew.GetSize(); ++u)
+	{
+		if (u == uNewIndex)
+		{
+			axFinal.PushBack(axOld.Get(uIndex));
+		}
+		if (u < axNew.GetSize())
+		{
+			axFinal.PushBack(axNew.Get(u));
+		}
+	}
+
+	return ApplyLayerListEdit(axOld, axFinal, "Reorder Layer");
+}
+
+bool Zenith_AnimControllerDocument::RenameLayer(u_int uLayerId, const std::string& strName)
+{
+	m_strLastLayerDiagnostic.clear();
+	if (!m_bOpen || strName.empty())
+	{
+		return false;
+	}
+	Zenith_AnimCtrlLayerFields xFields;
+	if (!CaptureLayerFields(uLayerId, xFields))
+	{
+		return false;
+	}
+	xFields.m_strName = strName;
+	return SetLayerFields(uLayerId, xFields, "Rename Layer");
+}
+
+bool Zenith_AnimControllerDocument::SetLayerWeight(u_int uLayerId, float fWeight)
+{
+	m_strLastLayerDiagnostic.clear();
+	if (!m_bOpen)
+	{
+		return false;
+	}
+	// NaN fails every comparison, so this is written as a positive test rather
+	// than as !(fWeight < 0 || fWeight > 1).
+	if (!(fWeight >= -1.0e6f && fWeight <= 1.0e6f))
+	{
+		return false;
+	}
+	Zenith_AnimCtrlLayerFields xFields;
+	if (!CaptureLayerFields(uLayerId, xFields))
+	{
+		return false;
+	}
+	// ★ CLAMPED BEFORE THE COMPARISON, so a second request for 2.0 on a layer
+	// already at 1.0 is recognised as the no-op it is. Flux_AnimationLayer::
+	// SetWeight clamps at runtime; a def that carried 2.0 would read back as 1.0
+	// the moment it was built, which is a value the editor never showed.
+	xFields.m_fWeight = fWeight < 0.0f ? 0.0f : (fWeight > 1.0f ? 1.0f : fWeight);
+	return SetLayerFields(uLayerId, xFields, "Set Layer Weight");
+}
+
+bool Zenith_AnimControllerDocument::SetLayerBlendMode(u_int uLayerId, Flux_LayerBlendMode eMode)
+{
+	m_strLastLayerDiagnostic.clear();
+	if (!m_bOpen)
+	{
+		return false;
+	}
+	Zenith_AnimCtrlLayerFields xFields;
+	if (!CaptureLayerFields(uLayerId, xFields))
+	{
+		return false;
+	}
+	xFields.m_eBlendMode = eMode;
+	if (!SetLayerFields(uLayerId, xFields, "Set Layer Blend Mode"))
+	{
+		return false;
+	}
+	// The mask path is deliberately LEFT ALONE — see the header. It stops being
+	// read while the layer is additive and starts again if the mode goes back, so
+	// the notice is surfaced rather than the assignment being deleted.
+	if (!Zenith_BoneMaskDocument::LayerAcceptsMask(eMode) && !xFields.m_strBoneMaskAssetPath.empty())
+	{
+		m_strLastLayerDiagnostic = Zenith_BoneMaskDocument::AdditiveLayerMaskNotice();
+	}
+	return true;
+}
+
+bool Zenith_AnimControllerDocument::SetLayerEmitEvents(u_int uLayerId, bool bEmitEvents)
+{
+	m_strLastLayerDiagnostic.clear();
+	if (!m_bOpen)
+	{
+		return false;
+	}
+	Zenith_AnimCtrlLayerFields xFields;
+	if (!CaptureLayerFields(uLayerId, xFields))
+	{
+		return false;
+	}
+	xFields.m_bEmitEvents = bEmitEvents;
+	return SetLayerFields(uLayerId, xFields, "Set Layer Emit Events");
+}
+
+bool Zenith_AnimControllerDocument::SetLayerMaskAssetPath(u_int uLayerId, const std::string& strPath)
+{
+	m_strLastLayerDiagnostic.clear();
+	if (!m_bOpen)
+	{
+		return false;
+	}
+	Zenith_AnimCtrlLayerFields xFields;
+	if (!CaptureLayerFields(uLayerId, xFields))
+	{
+		return false;
+	}
+
+	// ★ THE ONE STATEMENT OF THE RULE IS Zenith_BoneMaskDocument::
+	// LayerAcceptsMask, and this ASKS it. An additive layer's mask is never
+	// consulted by anything, so accepting the assignment would be a save that
+	// changes the file and nothing else.
+	if (!strPath.empty() && !Zenith_BoneMaskDocument::LayerAcceptsMask(xFields.m_eBlendMode))
+	{
+		m_strLastLayerDiagnostic = Zenith_BoneMaskDocument::AdditiveLayerMaskNotice();
+		return false;
+	}
+
+	// Normalized on the way in, exactly like a clip path, so an absolute
+	// authoring-machine path never reaches the file.
+	xFields.m_strBoneMaskAssetPath = strPath.empty()
+		? std::string()
+		: Zenith_AssetRegistry::NormalizeAssetPath(strPath);
+	return SetLayerFields(uLayerId, xFields, "Set Layer Bone Mask");
 }
 
 //==============================================================================

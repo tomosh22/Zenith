@@ -56,11 +56,12 @@ struct ImDrawList;
 // ErrorCheckUsingSetCursorPosToExtendParentBoundaries, which in a windowed
 // build is a modal CRT dialog nothing logs: the process simply hangs.
 //
-// ★ SCOPE (WU-6.5). The def's top-level machine AND a selected LAYER's machine
-// — a dropdown chooses which; the layer list and its weights are WU-7.2. A
-// state's blend tree is a SINGLE CLIP LEAF here, and a state holding anything
-// else is refused with BlendTreeRefusalText() rather than flattened; the
-// sub-graph editor is WU-7.3.
+// ★ SCOPE. The def's top-level machine AND a selected LAYER's machine — the
+// "Layers" STRIP chooses which (WU-7.2 replaced WU-6.5's bare dropdown with the
+// list, because "which machine am I editing" and "what are this controller's
+// layers" were always one question). A state's blend tree is a SINGLE CLIP LEAF
+// here, and a state holding anything else is refused with BlendTreeRefusalText()
+// rather than flattened; the sub-graph editor is WU-7.3.
 //=============================================================================
 
 //-----------------------------------------------------------------------------
@@ -248,8 +249,55 @@ public:
 	//=========================================================================
 
 	// uANIMCTRL_TOP_LEVEL_MACHINE, or a layer id. Clears the selection: a state
-	// name means nothing in a different machine.
+	// name means nothing in a different machine. Also pushes the newly selected
+	// layer's BLEND MODE into the dope sheet's mask sub-panel — see
+	// Action_SelectLayer.
 	bool Action_SelectLayerMachine(u_int uLayerId);
+
+	//=========================================================================
+	// THE LAYER LIST (WU-7.2).
+	//
+	// ★ EVERY VERB TAKES A LAYER ID, NEVER AN INDEX (D43), and the one index in
+	// the family is Action_MoveLayer's DESTINATION, which is a position by
+	// definition. The document's rules apply unchanged: Add and Remove are
+	// CREATION / REMOVAL and refuse a miss; everything else is an ASSIGNMENT and
+	// returns true when the value asked for is already in place, pushing nothing.
+	//=========================================================================
+
+	// Appends a layer and SELECTS it (its machine becomes the canvas's), so the
+	// obvious next gesture — give it a state — needs no second click. Returns
+	// false when the document refused; the new id is then GetSelectedLayerId().
+	bool Action_AddLayer(const std::string& strLayerName);
+	bool Action_RemoveLayer(u_int uLayerId);
+	bool Action_RenameLayer(u_int uLayerId, const std::string& strLayerName);
+	bool Action_SetLayerWeight(u_int uLayerId, float fWeight);
+	bool Action_SetLayerBlendMode(u_int uLayerId, Flux_LayerBlendMode eBlendMode);
+	bool Action_SetLayerEmitEvents(u_int uLayerId, bool bEmitEvents);
+	// Refused, with the additive notice in GetLayerNotice(), for a non-empty path
+	// on an additive layer. The rule lives in
+	// Zenith_BoneMaskDocument::LayerAcceptsMask and is not restated here.
+	bool Action_SetLayerMaskAssetPath(u_int uLayerId, const std::string& strAssetPath);
+	bool Action_MoveLayer(u_int uLayerId, u_int uNewIndex);
+
+	// ★ SELECTING A LAYER DOES TWO THINGS, AND THE SECOND IS THE ONE THAT IS EASY
+	// TO FORGET. It selects that layer's state machine on the canvas
+	// (SelectMachine), and it pushes the layer's BLEND MODE into the dope sheet's
+	// bone-mask sub-panel (Zenith_EditorPanel_Animation::
+	// SetMaskTargetLayerBlendMode). Without the second, WU-7.1's section would go
+	// on offering a mask assignment for whichever layer was last looked at — and
+	// an additive layer ignores its mask entirely, so the failure is a mask
+	// authored, saved, assigned and never consulted, with every gate green.
+	//
+	// Refuses uANIMCTRL_TOP_LEVEL_MACHINE and any id the def does not carry: the
+	// top-level machine is not a layer and has no blend mode. Use
+	// Action_SelectLayerMachine for it.
+	bool Action_SelectLayer(u_int uLayerId);
+
+	// The layer whose machine the canvas is showing, or uANIMCTRL_TOP_LEVEL_MACHINE.
+	u_int GetSelectedLayerId() const;
+	// Why the last layer verb refused, or empty — the document's diagnostic,
+	// forwarded so the strip and a unit read one string.
+	const std::string& GetLayerNotice() const;
 
 	bool Action_AddState(const std::string& strStateName);
 	bool Action_RemoveState(const std::string& strStateName);
@@ -390,6 +438,17 @@ public:
 	// empty.
 	u_int GetDrawnNodeCount() const { return m_xNodeRects.GetSize(); }
 
+	// ★ THE LAYER STRIP'S OWN "was it drawn" PAIR (WU-7.2), for the same reason
+	// the dope sheet's mask section has one: a unit has to be able to assert the
+	// ABSENCE of a block directly rather than infer it from a rect that is false
+	// for four other reasons. The strip draws NOTHING — not a header, not a
+	// disabled row — while no document is open.
+	bool WasLayerStripDrawnLastFrame() const { return m_bLayerStripDrawn; }
+	// Layer rows emitted last frame. The "Top-level" machine row is NOT one of
+	// them: it is a machine, not a layer, and counting it would make an empty
+	// controller report one layer.
+	u_int GetDrawnLayerRowCount() const { return m_uDrawnLayerRows; }
+
 	// Live drag state, so a test can tell "the drag never started" apart from
 	// "the drag started and the drop was refused".
 	bool IsDraggingNode() const { return m_bDraggingNode; }
@@ -425,6 +484,16 @@ private:
 	// Ops helpers (Zenith_EditorPanel_AnimStateMachine_Ops.cpp).
 	void RefreshHighlightedState();
 	void DropPreview();
+	// ★ THE ONE PLACE THE DOPE SHEET IS TOLD WHICH LAYER A MASK WOULD LAND ON.
+	// Guarded: Zenith_EditorPanel_Animation::Instance() ASSERTS when the editor
+	// has not allocated its panels, and a unit builds this panel on the stack
+	// with no editor around it.
+	void PushSelectedLayerBlendModeToMaskPanel();
+	// The SELECTED layer's name / mask path, or empty for the top-level machine.
+	// By value: they are copied straight into the strip's edit buffers, and a
+	// reference into a layer the next edit rebuilds would not survive the copy.
+	std::string CurrentLayerName() const;
+	std::string CurrentLayerMaskPath() const;
 
 	// ★ THE ONE PLACE A GRAPH POSITION BECOMES A SCREEN RECT. The edge pass, the
 	// node pass, the hit test and the units all go through it, so "where the
@@ -436,7 +505,11 @@ private:
 	// Render helpers (Zenith_EditorPanel_AnimStateMachine_Render.cpp).
 	void ApplyPendingScroll(const CanvasLayout& xLayout);
 	void RenderToolbar();
-	void RenderMachinePicker();
+	// WU-7.2. REPLACES the bare layer dropdown this panel shipped with: the
+	// "Layers" strip is the machine picker AND the list, because they were always
+	// one question. Draws not one item while no document is open.
+	void RenderLayerStrip();
+	void RenderLayerDetail(u_int uLayerId);
 	void RenderParameterPanel();
 	void RenderInspector();
 	void RenderStateInspector();
@@ -478,6 +551,9 @@ private:
 	Zenith_Vector<std::string> m_axRectOwnerOrder;
 	Zenith_AnimCtrlPanelRect m_xCanvasRect;
 	bool m_bCanvasRectValid = false;
+	// WU-7.2's strip diagnostics, recorded each Render and cleared with the rects.
+	bool m_bLayerStripDrawn = false;
+	u_int m_uDrawnLayerRows = 0;
 	float m_fRecordedDisplayWidth = 0.0f;
 	float m_fRecordedDisplayHeight = 0.0f;
 	u_int m_uRenderedFrames = 0;
@@ -520,6 +596,15 @@ private:
 	char m_acStateNameBuffer[128] = {};
 	char m_acParameterNameBuffer[128] = {};
 	char m_acClipPathBuffer[512] = {};
+	// WU-7.2's strip. ★ THE "NEW LAYER" NAME AND THE SELECTED LAYER'S NAME ARE
+	// TWO BUFFERS, not one. Both InputTexts are submitted in the SAME frame, so a
+	// shared buffer would echo every keystroke of one into the other and the
+	// "+ Layer" button would come pre-loaded with the selected layer's name.
+	// (m_acStateNameBuffer gets away with doubling up because the panel only ever
+	// draws one state-name field.)
+	char m_acLayerNameBuffer[128] = {};
+	char m_acLayerRenameBuffer[128] = {};
+	char m_acLayerMaskPathBuffer[512] = {};
 	int m_iNewParameterType = 0;
 	float m_fNewParameterDefault = 0.0f;
 	int m_iConditionParameterIndex = 0;

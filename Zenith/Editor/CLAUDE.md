@@ -14,8 +14,8 @@ ImGui-based scene editor for creating, editing, and testing game content. Active
 - `Zenith_EditorCommands.h/cpp` - The undo command layer: `Zenith_EditorEntitySnapshot` (a serialised entity subtree that can be destroyed and rebuilt), `Zenith_UndoCommand_EntityLifetime` (delete / create / duplicate), `Zenith_UndoCommand_EntityState` (rename / enable / reparent), `Zenith_UndoCommand_ComponentBytes` (add / remove / edit ONE component by serialised payload), `Zenith_UndoCommand_Composite` (a multi-selection as one step), and `Zenith_EditorInspectorUndoTracker` (turns any Properties-panel edit into a command). Tests in `Zenith_EditorCommands.Tests.inl`
 - `Zenith_EditorUI.h/cpp` - Look and feel: the embedded Roboto font (`Zenith_EditorFontData.generated.h`) at a DPI-aware base size, the theme + palette (sRGB values converted to linear for the sRGB swapchain), the play-mode tint, a vector icon set drawn straight into ImDrawLists, the styled widgets (icon buttons, search box, badges, the inspector component header), and the small helpers every panel shares rather than copying (`ContainsCaseInsensitive`, the `SmoothedFrameMs` frame-time filter)
 - `Zenith_AnimationDocument.h/cpp` - The editable WORKING COPY of one `.zanim`, and its only writer: a deep copy of the asset's clip, a STABLE per-key/per-event id (an index is not an identity — retiming reorders the track), every mutation as one undoable verb, a content-hash check for external modification, and D21's refusal to edit a GENERATED clip in place plus the `PromoteToAuthoredOverride` escape hatch. Tests in `Zenith_AnimationDocument.Tests.inl`
-- `Zenith_AnimControllerDocument.h/cpp` - The editable WORKING COPY of one `.zanimctrl`, and its only writer: a deep copy of the asset's `Flux_AnimatorControllerDef`, a machine SELECTOR (the top-level machine or a stable LAYER ID — never a layer index), every mutation as one undoable verb, a content-hash check for external modification, and the two things the def's own API does not do (a removed state's INBOUND transitions, a renamed state's referrers). Tests in `Zenith_AnimControllerDocument.Tests.inl`
-- `Zenith_EditorAnimCtrlCommands.h/cpp` - That document's OWN undo stack (not the shared editor one, and not the clip document's): state add / remove / rename, default state, state clip, node position, a whole-transition-LIST snapshot, a whole-parameter-TABLE snapshot, the clip-path list, and the compound. Tests in `Zenith_EditorAnimCtrlCommands.Tests.inl`
+- `Zenith_AnimControllerDocument.h/cpp` - The editable WORKING COPY of one `.zanimctrl`, and its only writer: a deep copy of the asset's `Flux_AnimatorControllerDef`, a machine SELECTOR (the top-level machine or a stable LAYER ID — never a layer index), every mutation as one undoable verb, a content-hash check for external modification, WU-7.2's LAYER verbs (add / remove / rename / weight / blend mode / emit events / mask path / **reorder**, all by stable id), and the things the def's own API does not do (a removed state's INBOUND transitions, a renamed state's referrers, and a reorder at all — `Flux_AnimatorControllerDef` has no move verb). Tests in `Zenith_AnimControllerDocument.Tests.inl`
+- `Zenith_EditorAnimCtrlCommands.h/cpp` - That document's OWN undo stack (not the shared editor one, and not the clip document's): state add / remove / rename, default state, state clip, node position, a whole-transition-LIST snapshot, a whole-parameter-TABLE snapshot, the clip-path list, WU-7.2's two LAYER commands (a whole-list snapshot for add/remove/reorder, and one layer's five scalar fields by stable ID — see "The Layers strip" below for why it is two and not one), and the compound. Tests in `Zenith_EditorAnimCtrlCommands.Tests.inl`
 - `Zenith_EditorAnimCommands.h/cpp` - The document's OWN undo stack (not the shared editor one — a scene load clears that, and an animation edit has nothing to do with a scene): key insert / remove / retime / value, duration, and the three event commands. Tests in `Zenith_EditorAnimCommands.Tests.inl`
 - `Zenith_AnimationPreviewSession.h/cpp` - One panel's live preview of one clip: its OWN controller, skeleton instance and clock (D30 — never an entity's, which would double-tick it), a deep copy of the clip, per-clip rig resolution + remembered override (D31), and the shared preview view slot through `Flux_PreviewSlotArbiter` (D32). Tests in `Zenith_AnimationPreviewSession.Tests.inl`
 - `Zenith_BoneMaskDocument.h/cpp` - The editable WORKING COPY of one `.zanimmask`, and its only writer: a deep copy of the asset's `{bone name, weight}` entries plus D47's explicit flag, its OWN undo stack (three small command classes live in the same file), a content-hash check for external modification, and the one place the additive-layer rule is written down (`LayerAcceptsMask`). Tests in `Zenith_BoneMaskDocument.Tests.inl`
@@ -643,12 +643,14 @@ The node graph for `.zanimctrl` animator controllers (the runtime is
 `Flux/MeshAnimation/` — see its CLAUDE.md → *The animator controller asset* and
 *Hot reload*). One window over ONE `Zenith_AnimControllerDocument`:
 
-- **A machine PICKER, not a layer list.** A `Flux_AnimatorControllerDef` holds an
-  optional top-level machine AND N layers, each owning its own, and every layered
-  game reaches its graph through a layer. The dropdown chooses which machine the
-  canvas shows; the layer LIST and its weights are WU-7.2. The selector is a
-  stable **layer ID**, never an index — inserting a layer renumbers every index
-  above it (WU-6.3), and `uANIMCTRL_TOP_LEVEL_MACHINE` is the def's own machine.
+- **A "Layers" STRIP, which is also the machine picker.** A
+  `Flux_AnimatorControllerDef` holds an optional top-level machine AND N layers,
+  each owning its own, and every layered game reaches its graph through a layer.
+  WU-7.2 replaced WU-6.5's bare dropdown with the list (below) because "which
+  machine am I editing" and "what are this controller's layers" were always one
+  question. The selector is a stable **layer ID**, never an index — inserting a
+  layer renumbers every index above it (WU-6.3), and
+  `uANIMCTRL_TOP_LEVEL_MACHINE` is the def's own machine.
 - **Canvas** — states as boxes, transitions as lines with a clickable midpoint
   marker carrying the condition count. Drag a node to move it (one undo step, and
   a click that never moved records nothing); **Ctrl+drag** from one node onto
@@ -712,7 +714,8 @@ twin** (`Action_SelectLayerMachine` / `AddState` / `RemoveState` / `RenameState`
 `RemoveTransition` / `SetTransitionDuration` / `SetTransitionExitTime` /
 `SetTransitionInterruptible` / `AddCondition` / `RemoveCondition` /
 `AddParameter` / `RemoveParameter` / `AddClipPath` / `RemoveClipPath` / `Undo` /
-`Redo` / `Save` / `Apply`, plus the preview verbs). The mouse handlers in
+`Redo` / `Save` / `Apply`, plus WU-7.2's nine layer verbs and the preview
+verbs). The mouse handlers in
 `_Render.cpp` only translate input into those; the actions never read ImGui state.
 Every mutation goes through a `Zenith_AnimControllerDocument` verb, and the
 `AddStep_AnimSm*` automation family calls exactly the same twins.
@@ -761,6 +764,102 @@ are what tell the four causes of a flat `false` apart.
 same rule, same reason as the dope sheet: `DockBuilderDockWindow` hashes the whole
 string, so a decorated title would dock nothing. The dirty and
 changed-on-disk badges are in the toolbar.
+
+### The Layers strip (WU-7.2)
+
+The layer list inside the Animator State Machine panel's side child — the def's
+top-level machine as one row, then every `Flux_AnimatorControllerLayerDef` **in
+blend order**, and the selected layer's controls under it: name, weight slider,
+blend-mode combo, `m_bEmitEvents` checkbox (D36), bone-mask path field, and
+Up / Down / Remove.
+
+**★ IT LIVES HERE AND NOT IN THE DOPE SHEET, and the reason is where the
+document is.** A layer list is a view over one `Flux_AnimatorControllerDef`, and
+the only `Zenith_AnimControllerDocument` in the editor is this panel's. The dope
+sheet's mask sub-panel (WU-7.1) is the *consumer* of one field of it — see the
+push below.
+
+**★ EVERY VERB ADDRESSES A LAYER BY ITS STABLE ID (D43), and the single index in
+the family is `MoveLayer`'s destination.** An index is a *position in the blend
+order*, which is precisely what a reorder changes and what an insert or a remove
+renumbers — an index-addressed edit lands on a different layer with nothing to
+observe. `MoveLayer(id, newIndex)` is the one verb whose argument *is* a
+position, because that is what it sets.
+
+**★ THE UNDO SPLIT IS THE ONE DESIGN DECISION WORTH DEFENDING.** Two commands,
+because the two families of edit have different exact inverses:
+
+| Edit | Command | Why |
+|---|---|---|
+| add / remove / **move** | `Zenith_AnimCtrlCommand_Layers` — the WHOLE list, each layer as its serialized payload | what changes is the ORDER, and "move it back" is exact for one move and wrong for two. It is also the only inverse the def offers: `Flux_AnimatorControllerDef` has `AddLayer` and `RemoveLayer(index)` and **nothing that reorders**, so rebuilding in order IS the operation |
+| name / weight / blend mode / emit events / mask path | `Zenith_AnimCtrlCommand_LayerFields` — five values, by layer ID | a weight slider commits on every edit-complete; snapshotting the list would serialize every layer's entire state machine per drag to record five values. The ID is what makes that safe — it cannot go stale under a reorder, which is exactly the failure an index-addressed field command would have |
+
+The payload is BYTES rather than a copy because `Flux_AnimatorControllerLayerDef`
+owns a `Flux_AnimationStateMachineDef` by value and that type is neither
+copyable nor movable; `Write`/`ReadFromDataStream` is the one faithful walk of a
+polymorphic blend tree that already exists. `ApplySetLayers` re-`AssignLayerId`s
+every rebuilt layer — not `SetLayerId` — so the def's monotonic counter stays
+past every id in the list and the next `AddLayer` cannot mint a duplicate.
+
+**★ SELECTING A LAYER DOES TWO THINGS, AND THE SECOND IS THE ONE THAT IS EASY TO
+FORGET.** It selects that layer's machine on the canvas, **and** it pushes the
+layer's blend mode into the dope sheet's mask sub-panel
+(`Zenith_EditorPanel_Animation::SetMaskTargetLayerBlendMode`).
+`Action_SetLayerBlendMode` re-pushes for the selected layer too, so changing the
+mode is not a way to leave the sub-panel holding a stale one. Without either,
+WU-7.1's section would go on offering a mask assignment for whichever layer was
+last looked at — and an additive layer ignores its mask **entirely**, so the
+failure is a mask authored, saved, assigned and never consulted, with every gate
+green. The push is **guarded** (`g_xEngine.HasEditor()` +
+`TryGetAnimationPanel()`): `Instance()` asserts, and a unit builds this panel on
+the stack with no editor around it. The top-level machine is not a layer and
+pushes `LAYER_BLEND_OVERRIDE`.
+
+**★ A MASK PATH ON AN ADDITIVE LAYER IS REFUSED, and the rule is not restated
+here.** `Zenith_BoneMaskDocument::LayerAcceptsMask` is the ONE statement of it and
+`AdditiveLayerMaskNotice()` the ONE wording; the document asks both and
+`GetLayerNotice()` forwards the answer. Switching a masked layer TO additive is
+allowed and does **not** clear the path — the runtime stops reading it and the
+strip says so, where silently deleting an authored path on a combo-box change
+would be an unrecoverable edit disguised as a toggle. Clearing (an empty path) is
+always allowed.
+
+**★ THE STRIP DRAWS NOTHING WITH NO DOCUMENT OPEN** — not a header, not a
+disabled row — and it lives **inside the side child**, which is what keeps it out
+of the canvas's height. The canvas is a child sized out of the main window's
+remaining region, so anything emitted into the main window before it comes
+straight out of the graph, which is the dope sheet's "NOTHING SHOWN DRAWS
+NOTHING" defect one panel over.
+`AnimSmPanel::TheLayerStripDrawsNothingWhenClosedAndNeverTakesCanvasHeight`
+measures `GetCanvasRect().Height()` with zero layers and with six and asserts
+they are EQUAL — paired, as the rule requires, with a sensitivity check that the
+height genuinely moves when the window does, so the equality cannot be satisfied
+by a constant. That check grows the window rather than shrinking it: shrinking
+far enough to be convincing can drive the canvas below `RenderCanvas`'s 8 px
+floor on a high-DPI machine, which would fail for a reason that has nothing to do
+with what is being tested. `WasLayerStripDrawnLastFrame()` and
+`GetDrawnLayerRowCount()` are what a unit reads for the absence.
+
+**Actions** — `Action_AddLayer` / `RemoveLayer` / `RenameLayer` /
+`SetLayerWeight` / `SetLayerBlendMode` / `SetLayerEmitEvents` /
+`SetLayerMaskAssetPath` / `MoveLayer` / `SelectLayer`, following the panel's
+existing ASSIGNMENT-vs-CREATION rule verbatim: Add and Remove answer *"did I
+create / remove one"*, everything else answers *"is the value what you asked
+for"* and pushes nothing when it already was. The `AddStep_AnimLayer*` automation
+family (the `ANIM_LAYER_*` block, the FIFTH animation range) calls exactly these
+twins; `AddStep_AnimLayerExpectOrder(index, name)` is its assertion verb, because
+the blend order is what the family is about.
+
+**Removing the selected layer falls back to the top-level machine.** The
+document does it in `ApplySetLayers` — one rule in one place, so an undo that
+deletes the selected layer is covered by the same line — and the panel clears its
+state/transition selection to match, because a state name means nothing in a
+different machine.
+
+**Not wired:** there is no enumeration of `.zanimmask` files anywhere in the
+registry, so the mask field is a path text box plus a drop target for the content
+browser's generic file payload. A picker needs an asset-type enumeration that
+does not exist yet.
 
 ### Every backend authors the same scene, and every publish is audited
 

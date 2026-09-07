@@ -4,6 +4,14 @@
 #ifdef ZENITH_TOOLS
 
 #include "Editor/Panels/Zenith_EditorPanel_AnimStateMachine.h"
+// ★ THE DOPE SHEET IS REACHED FOR EXACTLY ONE THING (WU-7.2): telling its bone-
+// mask sub-panel which layer's blend mode a mask assignment would land on. Both
+// includes are in the .cpp, never the header — this panel's declarations need
+// neither type, and pulling the dope sheet's document / preview session /
+// pose-ring vocabulary into every TU that includes this header to reach one
+// setter would be the wrong trade.
+#include "Editor/Zenith_Editor.h"
+#include "Editor/Panels/Zenith_EditorPanel_Animation.h"
 
 #include <cstdio>
 
@@ -96,7 +104,168 @@ bool Zenith_EditorPanel_AnimStateMachine::Action_SelectLayerMachine(u_int uLayer
 	Action_ClearSelection();
 	RebuildAutoLayout();
 	RefreshHighlightedState();
+	PushSelectedLayerBlendModeToMaskPanel();
+	// The DETAIL block's fields follow the selection; the "+ Layer" field does
+	// not, because it is about a layer that does not exist yet.
+	snprintf(m_acLayerRenameBuffer, sizeof(m_acLayerRenameBuffer), "%s", CurrentLayerName().c_str());
+	snprintf(m_acLayerMaskPathBuffer, sizeof(m_acLayerMaskPathBuffer), "%s", CurrentLayerMaskPath().c_str());
 	return true;
+}
+
+//=============================================================================
+// The layer list (WU-7.2)
+//=============================================================================
+
+u_int Zenith_EditorPanel_AnimStateMachine::GetSelectedLayerId() const
+{
+	return m_xDocument.GetSelectedMachineId();
+}
+
+const std::string& Zenith_EditorPanel_AnimStateMachine::GetLayerNotice() const
+{
+	return m_xDocument.GetLastLayerDiagnostic();
+}
+
+std::string Zenith_EditorPanel_AnimStateMachine::CurrentLayerName() const
+{
+	std::string strName;
+	m_xDocument.GetLayerName(m_xDocument.GetSelectedMachineId(), strName);
+	return strName;
+}
+
+std::string Zenith_EditorPanel_AnimStateMachine::CurrentLayerMaskPath() const
+{
+	std::string strPath;
+	m_xDocument.GetLayerMaskAssetPath(m_xDocument.GetSelectedMachineId(), strPath);
+	return strPath;
+}
+
+void Zenith_EditorPanel_AnimStateMachine::PushSelectedLayerBlendModeToMaskPanel()
+{
+	// ★ GUARDED, BECAUSE Instance() ASSERTS. It resolves the EDITOR-owned dope
+	// sheet, and a unit builds this panel on the stack with no editor allocated
+	// at all — an unguarded call would turn every such unit into an assert about
+	// a panel the test never asked for.
+	if (!g_xEngine.HasEditor())
+	{
+		return;
+	}
+	Zenith_EditorPanel_Animation* pxDopeSheet = g_xEngine.Editor().TryGetAnimationPanel();
+	if (pxDopeSheet == nullptr)
+	{
+		return;
+	}
+
+	// ★ THE TOP-LEVEL MACHINE IS NOT A LAYER AND HAS NO BLEND MODE, so it pushes
+	// OVERRIDE — the mode a mask means something to, and the sub-panel's own
+	// default. Pushing "additive" for it would hide the mask control on a
+	// selection that has nothing to do with layering.
+	Flux_LayerBlendMode eMode = LAYER_BLEND_OVERRIDE;
+	m_xDocument.GetLayerBlendMode(m_xDocument.GetSelectedMachineId(), eMode);
+	pxDopeSheet->SetMaskTargetLayerBlendMode(eMode);
+}
+
+bool Zenith_EditorPanel_AnimStateMachine::Action_SelectLayer(u_int uLayerId)
+{
+	// The top-level machine is reached through Action_SelectLayerMachine; this
+	// verb is the LIST's, and a row in it is always a layer.
+	if (uLayerId == uANIMCTRL_TOP_LEVEL_MACHINE)
+	{
+		return false;
+	}
+	u_int uIndex = 0;
+	if (!m_xDocument.GetLayerIndex(uLayerId, uIndex))
+	{
+		return false;
+	}
+	return Action_SelectLayerMachine(uLayerId);
+}
+
+bool Zenith_EditorPanel_AnimStateMachine::Action_AddLayer(const std::string& strLayerName)
+{
+	const u_int uNewId = m_xDocument.AddLayer(strLayerName);
+	if (uNewId == uFLUX_INVALID_LAYER_ID)
+	{
+		return false;
+	}
+	// The new layer becomes the canvas's machine, so the obvious next gesture —
+	// give it a state — needs no second click. Same rule as Action_AddState.
+	Action_SelectLayer(uNewId);
+	return true;
+}
+
+bool Zenith_EditorPanel_AnimStateMachine::Action_RemoveLayer(u_int uLayerId)
+{
+	if (!m_xDocument.RemoveLayer(uLayerId))
+	{
+		return false;
+	}
+	// The document has already dropped a machine selection that pointed at the
+	// removed layer; the panel's own state has to follow it, because a state name
+	// and a transition index mean nothing in the machine it fell back to.
+	Action_ClearSelection();
+	RebuildAutoLayout();
+	RefreshHighlightedState();
+	PushSelectedLayerBlendModeToMaskPanel();
+	return true;
+}
+
+bool Zenith_EditorPanel_AnimStateMachine::Action_RenameLayer(u_int uLayerId, const std::string& strLayerName)
+{
+	return m_xDocument.RenameLayer(uLayerId, strLayerName);
+}
+
+bool Zenith_EditorPanel_AnimStateMachine::Action_SetLayerWeight(u_int uLayerId, float fWeight)
+{
+	return m_xDocument.SetLayerWeight(uLayerId, fWeight);
+}
+
+bool Zenith_EditorPanel_AnimStateMachine::Action_SetLayerBlendMode(u_int uLayerId, Flux_LayerBlendMode eBlendMode)
+{
+	if (!m_xDocument.SetLayerBlendMode(uLayerId, eBlendMode))
+	{
+		return false;
+	}
+	// ★ THE MASK SUB-PANEL HAS TO HEAR ABOUT THIS, not just about a selection
+	// change. Switching the SELECTED layer to additive without re-pushing would
+	// leave WU-7.1's section still offering an assignment that the runtime will
+	// never consult.
+	if (uLayerId == m_xDocument.GetSelectedMachineId())
+	{
+		PushSelectedLayerBlendModeToMaskPanel();
+	}
+	return true;
+}
+
+bool Zenith_EditorPanel_AnimStateMachine::Action_SetLayerEmitEvents(u_int uLayerId, bool bEmitEvents)
+{
+	return m_xDocument.SetLayerEmitEvents(uLayerId, bEmitEvents);
+}
+
+bool Zenith_EditorPanel_AnimStateMachine::Action_SetLayerMaskAssetPath(u_int uLayerId,
+	const std::string& strAssetPath)
+{
+	if (!m_xDocument.SetLayerMaskAssetPath(uLayerId, strAssetPath))
+	{
+		// The refusal already carries its reason in the document's diagnostic,
+		// which GetLayerNotice() forwards and the strip prints. Logged as well so
+		// an authoring recipe's failure names the rule rather than the step.
+		Zenith_Log(LOG_CATEGORY_EDITOR, "[AnimSM] layer %u: %s", uLayerId, GetLayerNotice().c_str());
+		return false;
+	}
+	if (uLayerId == m_xDocument.GetSelectedMachineId())
+	{
+		snprintf(m_acLayerMaskPathBuffer, sizeof(m_acLayerMaskPathBuffer), "%s", CurrentLayerMaskPath().c_str());
+	}
+	return true;
+}
+
+bool Zenith_EditorPanel_AnimStateMachine::Action_MoveLayer(u_int uLayerId, u_int uNewIndex)
+{
+	// ★ THE SELECTION IS AN ID AND SURVIVES THE MOVE UNTOUCHED, which is the
+	// whole reason WU-6.3 exists: reordering renumbers every index and moves no
+	// identity, so there is nothing to repair here.
+	return m_xDocument.MoveLayer(uLayerId, uNewIndex);
 }
 
 //=============================================================================
@@ -293,7 +462,11 @@ bool Zenith_EditorPanel_AnimStateMachine::Action_Undo()
 	m_xDocument.Undo();
 	// An undo can delete the selected state or the selected transition out from
 	// under the inspector, and can change the state set the layout is built on.
+	// It can also delete or re-add the selected LAYER (WU-7.2) — the document
+	// drops a machine selection that no longer resolves, so the blend mode the
+	// mask sub-panel is holding has to be re-pushed from whatever survived.
 	RebuildAutoLayout();
+	PushSelectedLayerBlendModeToMaskPanel();
 	if (!m_strSelectedState.empty() && !m_xDocument.HasState(m_strSelectedState))
 	{
 		Action_ClearSelection();
@@ -317,6 +490,7 @@ bool Zenith_EditorPanel_AnimStateMachine::Action_Redo()
 	}
 	m_xDocument.Redo();
 	RebuildAutoLayout();
+	PushSelectedLayerBlendModeToMaskPanel();
 	if (!m_strSelectedState.empty() && !m_xDocument.HasState(m_strSelectedState))
 	{
 		Action_ClearSelection();

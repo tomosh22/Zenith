@@ -1049,6 +1049,98 @@ void Zenith_EditorAutomation::AddStep_AnimMaskExpectWeight(const char* szBoneNam
 	m_axActions.PushBack(xAction);
 }
 
+// ---- ANIMATOR LAYER steps (WU-7.2) ----
+// The payload contract for the ANIM_LAYER block, in one place so the executor
+// reads it from one place too:
+//   szArg1    — the layer NAME (ADD / RENAME), the mask asset PATH
+//               (SET_MASK_PATH) or the expected name (EXPECT_ORDER)
+//   aiArgs[0] — the stable LAYER ID on every verb except ADD; the INDEX on
+//               EXPECT_ORDER, which addresses a position rather than a layer
+//   aiArgs[1] — the destination INDEX (MOVE) or the blend mode (SET_BLEND_MODE)
+//   afArgs[0] — the weight
+//   bArg      — the emit-events flag
+
+void Zenith_EditorAutomation::AddStep_AnimLayerAdd(const char* szLayerName) { Push(Zenith_EditorAutomation::m_axActions, ActionType::ANIM_LAYER_ADD, szLayerName); }
+
+void Zenith_EditorAutomation::AddStep_AnimLayerRemove(int iLayerId)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::ANIM_LAYER_REMOVE;
+	xAction.m_aiArgs[0] = iLayerId;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimLayerRename(int iLayerId, const char* szNewName)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::ANIM_LAYER_RENAME;
+	xAction.m_szArg1 = SafeStr(szNewName);
+	xAction.m_aiArgs[0] = iLayerId;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimLayerSetWeight(int iLayerId, float fWeight)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::ANIM_LAYER_SET_WEIGHT;
+	xAction.m_aiArgs[0] = iLayerId;
+	xAction.m_afArgs[0] = fWeight;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimLayerSetBlendMode(int iLayerId, int iBlendMode)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::ANIM_LAYER_SET_BLEND_MODE;
+	xAction.m_aiArgs[0] = iLayerId;
+	xAction.m_aiArgs[1] = iBlendMode;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimLayerSetEmitEvents(int iLayerId, bool bEmitEvents)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::ANIM_LAYER_SET_EMIT_EVENTS;
+	xAction.m_aiArgs[0] = iLayerId;
+	xAction.m_bArg = bEmitEvents;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimLayerSetMaskPath(int iLayerId, const char* szMaskAssetPath)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::ANIM_LAYER_SET_MASK_PATH;
+	xAction.m_szArg1 = SafeStr(szMaskAssetPath);
+	xAction.m_aiArgs[0] = iLayerId;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimLayerMove(int iLayerId, int iNewIndex)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::ANIM_LAYER_MOVE;
+	xAction.m_aiArgs[0] = iLayerId;
+	xAction.m_aiArgs[1] = iNewIndex;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimLayerSelect(int iLayerId)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::ANIM_LAYER_SELECT;
+	xAction.m_aiArgs[0] = iLayerId;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimLayerExpectOrder(int iIndex, const char* szExpectedName)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::ANIM_LAYER_EXPECT_ORDER;
+	xAction.m_szArg1 = SafeStr(szExpectedName);
+	xAction.m_aiArgs[0] = iIndex;
+	m_axActions.PushBack(xAction);
+}
+
 void Zenith_EditorAutomation::AddStep_AnimSetAutoKey(bool bEnabled)
 {
 	Zenith_EditorAction xAction = {};
@@ -3391,6 +3483,107 @@ static void ExecuteAnimMaskAction(const Zenith_EditorAction& xAction)
 	}
 }
 
+//-----------------------------------------------------------------------------
+// ANIMATOR LAYER authoring (WU-7.2): ANIM_LAYER_ADD .. ANIM_LAYER_EXPECT_ORDER.
+// Every case ends in one of Zenith_EditorPanel_AnimStateMachine's layer
+// Action_* twins — the SAME call the "Layers" strip's own handler makes — so a
+// recipe and a human's gesture run one code path, and nothing here reaches past
+// the panel into the document except to READ.
+//-----------------------------------------------------------------------------
+namespace
+{
+	// The same contract as AnimSmActionChecked, with its own message so a failing
+	// recipe names the family it came from.
+	void AnimLayerActionChecked(bool bOk, const char* szAction, const char* szArg)
+	{
+		Zenith_Assert(bOk, "EditorAutomation animator-layer step %s('%s') failed", szAction, szArg ? szArg : "");
+		(void)bOk; (void)szAction; (void)szArg;
+	}
+
+	// A LAYER ID out of a step's int. Negative is not a top-level selector here —
+	// every verb in this family addresses a layer — so it is folded to the
+	// never-minted sentinel and the checked wrapper reports it.
+	u_int AnimLayerIdFromAction(const Zenith_EditorAction& xAction)
+	{
+		return xAction.m_aiArgs[0] < 0 ? uFLUX_INVALID_LAYER_ID : static_cast<u_int>(xAction.m_aiArgs[0]);
+	}
+}
+
+static void ExecuteAnimLayerAction(const Zenith_EditorAction& xAction)
+{
+	Zenith_EditorPanel_AnimStateMachine& xPanel = Zenith_EditorPanel_AnimStateMachine::Instance();
+	const u_int uLayerId = AnimLayerIdFromAction(xAction);
+
+	switch (xAction.m_eType)
+	{
+	case Zenith_EditorActionType::ANIM_LAYER_ADD:
+		AnimLayerActionChecked(xPanel.Action_AddLayer(xAction.m_szArg1), "AnimLayerAdd", xAction.m_szArg1.c_str());
+		break;
+
+	case Zenith_EditorActionType::ANIM_LAYER_REMOVE:
+		AnimLayerActionChecked(xPanel.Action_RemoveLayer(uLayerId), "AnimLayerRemove", nullptr);
+		break;
+
+	case Zenith_EditorActionType::ANIM_LAYER_RENAME:
+		AnimLayerActionChecked(xPanel.Action_RenameLayer(uLayerId, xAction.m_szArg1),
+			"AnimLayerRename", xAction.m_szArg1.c_str());
+		break;
+
+	case Zenith_EditorActionType::ANIM_LAYER_SET_WEIGHT:
+		AnimLayerActionChecked(xPanel.Action_SetLayerWeight(uLayerId, xAction.m_afArgs[0]),
+			"AnimLayerSetWeight", nullptr);
+		break;
+
+	case Zenith_EditorActionType::ANIM_LAYER_SET_BLEND_MODE:
+		AnimLayerActionChecked(xPanel.Action_SetLayerBlendMode(uLayerId,
+			xAction.m_aiArgs[1] == 1 ? LAYER_BLEND_ADDITIVE : LAYER_BLEND_OVERRIDE),
+			"AnimLayerSetBlendMode", nullptr);
+		break;
+
+	case Zenith_EditorActionType::ANIM_LAYER_SET_EMIT_EVENTS:
+		AnimLayerActionChecked(xPanel.Action_SetLayerEmitEvents(uLayerId, xAction.m_bArg),
+			"AnimLayerSetEmitEvents", nullptr);
+		break;
+
+	case Zenith_EditorActionType::ANIM_LAYER_SET_MASK_PATH:
+		// The likely failure here is "that layer is additive", which is why the
+		// message carries the PATH: the fix is either the blend mode or the step.
+		AnimLayerActionChecked(xPanel.Action_SetLayerMaskAssetPath(uLayerId, xAction.m_szArg1),
+			"AnimLayerSetMaskPath", xAction.m_szArg1.c_str());
+		break;
+
+	case Zenith_EditorActionType::ANIM_LAYER_MOVE:
+		AnimLayerActionChecked(xPanel.Action_MoveLayer(uLayerId,
+			static_cast<u_int>(xAction.m_aiArgs[1] < 0 ? 0 : xAction.m_aiArgs[1])),
+			"AnimLayerMove", nullptr);
+		break;
+
+	case Zenith_EditorActionType::ANIM_LAYER_SELECT:
+		AnimLayerActionChecked(xPanel.Action_SelectLayer(uLayerId), "AnimLayerSelect", nullptr);
+		break;
+
+	case Zenith_EditorActionType::ANIM_LAYER_EXPECT_ORDER:
+	{
+		// aiArgs[0] is an INDEX here, not an id — this verb addresses a POSITION
+		// in the blend order, which is the whole thing it exists to assert.
+		const u_int uIndex = static_cast<u_int>(xAction.m_aiArgs[0] < 0 ? 0 : xAction.m_aiArgs[0]);
+		u_int uIdAt = uFLUX_INVALID_LAYER_ID;
+		std::string strActual;
+		const bool bResolved = xPanel.Document().GetLayerIdAt(uIndex, uIdAt)
+			&& xPanel.Document().GetLayerName(uIdAt, strActual);
+		Zenith_Assert(bResolved && strActual == xAction.m_szArg1,
+			"EditorAutomation AnimLayerExpectOrder: blend-order index %u expected '%s', found '%s'",
+			uIndex, xAction.m_szArg1.c_str(), bResolved ? strActual.c_str() : "<no layer at that index>");
+		(void)bResolved;
+		break;
+	}
+
+	default:
+		Zenith_Assert(false, "Non-layer action routed to ExecuteAnimLayerAction");
+		break;
+	}
+}
+
 // Particle field edits (SET_PARTICLE_CONFIG .. SET_PARTICLE_EMITTING).
 static void ExecuteParticleAction(const Zenith_EditorAction& xAction)
 {
@@ -3789,6 +3982,16 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 		xAction.m_eType <= Zenith_EditorActionType::ANIM_MASK_EXPECT_WEIGHT)
 	{
 		ExecuteAnimMaskAction(xAction);
+		return;
+	}
+
+	// Animator-LAYER authoring (WU-7.2). A FIFTH animation range, for the reason
+	// the fourth exists: appending into the block above would move the bound both
+	// that line and the header's static_assert compare against.
+	if (xAction.m_eType >= Zenith_EditorActionType::ANIM_LAYER_ADD &&
+		xAction.m_eType <= Zenith_EditorActionType::ANIM_LAYER_EXPECT_ORDER)
+	{
+		ExecuteAnimLayerAction(xAction);
 		return;
 	}
 

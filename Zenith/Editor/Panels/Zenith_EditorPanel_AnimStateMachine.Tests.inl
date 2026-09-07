@@ -23,6 +23,11 @@
 #include "Flux/MeshAnimation/Flux_AnimationClip.h"
 #include "Flux/MeshAnimation/Flux_BlendTree.h"
 #include "DataStream/Zenith_DataStream.h"
+// WU-7.2: the layer strip pushes the selected layer's blend mode into the dope
+// sheet's bone-mask sub-panel, and one unit below reads it back out of the
+// EDITOR-OWNED dope sheet — the same object the push targets.
+#include "Editor/Panels/Zenith_EditorPanel_Animation.h"
+#include "Editor/Zenith_BoneMaskDocument.h"
 
 #include "imgui.h"
 
@@ -522,6 +527,213 @@ ZENITH_TEST(AnimSmPanel, ANodeDragCommitsOneUndoableEditAndTheLayoutFallbackIsNo
 	xPanel.Action_Undo();
 	ZENITH_ASSERT_TRUE(xPanel.Document().GetStateEditorPosition("Walk", xStored), "the undo restores");
 	ZENITH_ASSERT_EQ_FLOAT(xStored.x, 500.0f, 1e-4f, "the previous position");
+
+	xPanel.CloseAsset();
+}
+
+//==============================================================================
+// The Layers strip (WU-7.2)
+//==============================================================================
+
+ZENITH_TEST(AnimSmPanel, TheLayerStripDrawsNothingWhenClosedAndNeverTakesCanvasHeight)
+{
+	// ★ THE HEIGHT GUARD, AND IT MEASURES THE CANVAS RECT RATHER THAN "is a row
+	// visible". Editor/CLAUDE.md's rule was learned on the dope sheet, where an
+	// always-present collapsed header pushed the events row off the bottom and
+	// the failure arrived as a flat `false` from a rect accessor a long way from
+	// its cause. This panel's canvas is a child sized out of the MAIN window's
+	// remaining region, so anything emitted into the main window before it comes
+	// straight out of the canvas — which is exactly why the layer strip lives
+	// inside the fixed-size side child, and exactly what this measures.
+	AnimSmFixture xFixture("zenith_animsm_layerheight");
+	Zenith_EditorPanel_AnimStateMachine xPanel;
+
+	ZENITH_ASSERT_TRUE(xPanel.OpenAssetFresh(xFixture.m_strControllerPath), "a fresh controller opens");
+	xPanel.RequestWindowPlacement(20.0f, 20.0f, 1200.0f, 640.0f);
+	AnimSmRenderFrames(xPanel, 2);
+
+	// The discriminators first: a bare `false` from GetCanvasRect has four causes
+	// and the height below would be meaningless against any of them.
+	ZENITH_ASSERT_TRUE(xPanel.WasCanvasDrawnLastFrame(), "the canvas was drawn");
+	ZENITH_ASSERT_EQ_FLOAT(xPanel.GetRecordedDisplayWidth(), fANIMSM_DISPLAY_W, 0.5f,
+		"and the display bound was captured AT RECORD TIME");
+	ZENITH_ASSERT_TRUE(xPanel.WasLayerStripDrawnLastFrame(), "the layer strip drew (a document is open)");
+	ZENITH_ASSERT_EQ(xPanel.GetDrawnLayerRowCount(), 0u,
+		"with no LAYER rows — the 'Top-level machine' row is a machine, not a layer");
+
+	Zenith_AnimCtrlPanelRect xCanvasEmpty;
+	ZENITH_ASSERT_TRUE(xPanel.GetCanvasRect(xCanvasEmpty), "the canvas publishes");
+	const float fHeightNoLayers = xCanvasEmpty.Height();
+	ZENITH_ASSERT_GT(fHeightNoLayers, 1.0f, "with a real height");
+
+	// ---- six layers, and the canvas must not move ----------------------------
+	for (u_int u = 0; u < 6u; ++u)
+	{
+		char acName[32];
+		snprintf(acName, sizeof(acName), "Layer%u", u);
+		ZENITH_ASSERT_TRUE(xPanel.Action_AddLayer(std::string(acName)), "a layer");
+	}
+	AnimSmRenderFrames(xPanel, 2);
+
+	ZENITH_ASSERT_EQ(xPanel.GetDrawnLayerRowCount(), 6u, "all six rows were emitted");
+	Zenith_AnimCtrlPanelRect xCanvasFull;
+	ZENITH_ASSERT_TRUE(xPanel.GetCanvasRect(xCanvasFull), "the canvas still publishes");
+	ZENITH_ASSERT_EQ_FLOAT(xCanvasFull.Height(), fHeightNoLayers, 0.5f,
+		"★ six layers cost the canvas NOTHING — the strip is inside the side child, so a long list "
+		"cannot push the graph off the bottom the way an always-drawn section did on the dope sheet");
+
+	// ★ AND THE EQUALITY ABOVE IS NOT AN EQUALITY WITH A CONSTANT. A height that
+	// never moved would satisfy it just as well, so this proves the measurement
+	// is live before the guard is believed. Deliberately in the GROWING
+	// direction: shrinking the window far enough to be convincing can drive the
+	// canvas child below RenderCanvas's 8 px floor on a high-DPI machine, and
+	// then the sensitivity check would fail for a reason that has nothing to do
+	// with what it is testing.
+	xPanel.RequestWindowPlacement(20.0f, 20.0f, 1200.0f, 780.0f);
+	AnimSmRenderFrames(xPanel, 2);
+	Zenith_AnimCtrlPanelRect xCanvasTall;
+	ZENITH_ASSERT_TRUE(xPanel.GetCanvasRect(xCanvasTall), "the canvas publishes in the taller window");
+	ZENITH_ASSERT_GT(xCanvasTall.Height(), fHeightNoLayers + 60.0f,
+		"★ and a 140 px taller window really does grow it — the guard measures something");
+
+	// ---- closed: NOTHING -----------------------------------------------------
+	xPanel.CloseAsset();
+	xPanel.RequestWindowPlacement(20.0f, 20.0f, 1200.0f, 640.0f);
+	AnimSmRenderFrames(xPanel, 2);
+	ZENITH_ASSERT_TRUE(xPanel.WasCanvasDrawnLastFrame(), "the panel is still drawing");
+	ZENITH_ASSERT_FALSE(xPanel.WasLayerStripDrawnLastFrame(),
+		"★ but the strip emitted NOT ONE item — not a header, not a disabled row");
+	ZENITH_ASSERT_EQ(xPanel.GetDrawnLayerRowCount(), 0u, "and no rows");
+}
+
+ZENITH_TEST(AnimSmPanel, SelectingALayerSelectsItsMachineAndPushesItsBlendModeToTheMaskSubPanel)
+{
+	// ★ THE SECOND HALF OF "select a layer" IS THE ONE THAT IS EASY TO FORGET,
+	// and the one whose absence is invisible. WU-7.1's mask sub-panel offers an
+	// assignment control only while its TARGET layer accepts a mask; an additive
+	// layer ignores its mask entirely, so a strip that changed the canvas's
+	// machine without telling the dope sheet would go on offering the control for
+	// whichever layer was last looked at — and the result is a mask authored,
+	// saved, assigned and never consulted, with every gate green.
+	AnimSmFixture xFixture("zenith_animsm_layerselect");
+	Zenith_EditorPanel_AnimStateMachine xPanel;
+
+	ZENITH_ASSERT_TRUE(xPanel.OpenAssetFresh(xFixture.m_strControllerPath), "a fresh controller opens");
+	ZENITH_ASSERT_TRUE(xPanel.Action_AddLayer("Base"), "a base layer");
+	u_int uBase = uFLUX_INVALID_LAYER_ID;
+	ZENITH_ASSERT_TRUE(xPanel.Document().GetLayerIdAt(0u, uBase), "which has an id");
+	ZENITH_ASSERT_TRUE(xPanel.Action_AddLayer("Aim"), "and an overlay");
+	u_int uAim = uFLUX_INVALID_LAYER_ID;
+	ZENITH_ASSERT_TRUE(xPanel.Document().GetLayerIdAt(1u, uAim), "which has its own");
+
+	// Adding a layer selects it, so the AnimSm* verbs author ITS machine.
+	ZENITH_ASSERT_EQ(xPanel.GetSelectedLayerId(), uAim, "the new layer is selected");
+	ZENITH_ASSERT_TRUE(xPanel.Action_AddState("Aiming"), "a state authored now lands in it");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetStateCount(), 1u, "one state here");
+	ZENITH_ASSERT_TRUE(xPanel.Action_SelectLayer(uBase), "select the base layer");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetStateCount(), 0u,
+		"★ whose machine is empty — selecting a layer selected its MACHINE, not just a row");
+
+	// The top-level machine is not a layer, and the list's own verb says so.
+	ZENITH_ASSERT_FALSE(xPanel.Action_SelectLayer(uANIMCTRL_TOP_LEVEL_MACHINE),
+		"the top-level machine is not a layer — Action_SelectLayerMachine is its route");
+	ZENITH_ASSERT_FALSE(xPanel.Action_SelectLayer(uFLUX_INVALID_LAYER_ID), "and an unminted id resolves to nothing");
+
+	// ---- the push into the dope sheet ---------------------------------------
+	// ★ THE EDITOR-OWNED dope sheet, because that is the object the push targets.
+	// Guarded rather than assumed: this panel is a STACK object here, and
+	// Zenith_EditorPanel_Animation::Instance() asserts when the editor has not
+	// allocated its panels.
+	Zenith_EditorPanel_Animation* pxDopeSheet =
+		g_xEngine.HasEditor() ? g_xEngine.Editor().TryGetAnimationPanel() : nullptr;
+	ZENITH_ASSERT_NOT_NULL(pxDopeSheet,
+		"the editor's dope sheet is reachable from the unit batch (it is allocated in "
+		"Zenith_Editor::Initialise, which runs long before RunAllTests)");
+	if (pxDopeSheet != nullptr)
+	{
+		const Flux_LayerBlendMode eRestore = pxDopeSheet->GetMaskTargetLayerBlendMode();
+
+		ZENITH_ASSERT_TRUE(xPanel.Action_SetLayerBlendMode(uAim, LAYER_BLEND_ADDITIVE), "make the overlay additive");
+		ZENITH_ASSERT_TRUE(xPanel.Action_SelectLayer(uAim), "and select it");
+		ZENITH_ASSERT_TRUE(pxDopeSheet->GetMaskTargetLayerBlendMode() == LAYER_BLEND_ADDITIVE,
+			"★ the mask sub-panel now targets an ADDITIVE layer, so it will refuse to offer an assignment");
+		ZENITH_ASSERT_FALSE(Zenith_BoneMaskDocument::LayerAcceptsMask(pxDopeSheet->GetMaskTargetLayerBlendMode()),
+			"which is the ONE statement of that rule agreeing with the push");
+
+		ZENITH_ASSERT_TRUE(xPanel.Action_SelectLayer(uBase), "select the override layer");
+		ZENITH_ASSERT_TRUE(pxDopeSheet->GetMaskTargetLayerBlendMode() == LAYER_BLEND_OVERRIDE,
+			"★ and the target follows the selection rather than latching");
+
+		// ★ CHANGING THE SELECTED LAYER'S MODE PUSHES TOO, not only a selection
+		// change: without it the sub-panel would go on offering an assignment for
+		// a layer that had just stopped accepting one.
+		ZENITH_ASSERT_TRUE(xPanel.Action_SetLayerBlendMode(uBase, LAYER_BLEND_ADDITIVE), "make IT additive");
+		ZENITH_ASSERT_TRUE(pxDopeSheet->GetMaskTargetLayerBlendMode() == LAYER_BLEND_ADDITIVE,
+			"★ and the sub-panel hears about it without a re-selection");
+
+		// The top-level machine has no blend mode, so it pushes OVERRIDE — the
+		// sub-panel's own default and the mode a mask means something to.
+		ZENITH_ASSERT_TRUE(xPanel.Action_SelectLayerMachine(uANIMCTRL_TOP_LEVEL_MACHINE), "back to the top level");
+		ZENITH_ASSERT_TRUE(pxDopeSheet->GetMaskTargetLayerBlendMode() == LAYER_BLEND_OVERRIDE,
+			"★ which is not a layer and pushes OVERRIDE rather than whatever was there");
+
+		// This unit writes to an object the whole editor shares; put it back.
+		pxDopeSheet->SetMaskTargetLayerBlendMode(eRestore);
+	}
+
+	xPanel.CloseAsset();
+}
+
+ZENITH_TEST(AnimSmPanel, TheLayerActionsReorderTheListAndRemovingTheSelectedOneFallsBack)
+{
+	AnimSmFixture xFixture("zenith_animsm_layeractions");
+	Zenith_EditorPanel_AnimStateMachine xPanel;
+
+	ZENITH_ASSERT_TRUE(xPanel.OpenAssetFresh(xFixture.m_strControllerPath), "a fresh controller opens");
+	ZENITH_ASSERT_TRUE(xPanel.Action_AddLayer("Base"), "Base");
+	ZENITH_ASSERT_TRUE(xPanel.Action_AddLayer("Aim"), "Aim");
+	ZENITH_ASSERT_TRUE(xPanel.Action_AddLayer("Face"), "Face");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetLayerCount(), 3u, "three layers");
+
+	u_int uBase = uFLUX_INVALID_LAYER_ID;
+	u_int uFace = uFLUX_INVALID_LAYER_ID;
+	ZENITH_ASSERT_TRUE(xPanel.Document().GetLayerIdAt(0u, uBase), "Base's id");
+	ZENITH_ASSERT_TRUE(xPanel.Document().GetLayerIdAt(2u, uFace), "Face's id");
+
+	const u_int uDepth = xPanel.Document().GetUndoStackSize();
+	ZENITH_ASSERT_TRUE(xPanel.Action_MoveLayer(uFace, 0u), "move the top layer to the base");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), uDepth + 1u, "as ONE undo step");
+	u_int uIdAt = uFLUX_INVALID_LAYER_ID;
+	ZENITH_ASSERT_TRUE(xPanel.Document().GetLayerIdAt(0u, uIdAt) && uIdAt == uFace, "★ and it is index 0 now");
+
+	// ★ THE SELECTION IS AN ID AND THE REORDER DID NOT TOUCH IT, which is the
+	// property WU-6.3 exists for: every index moved and no identity did.
+	ZENITH_ASSERT_EQ(xPanel.GetSelectedLayerId(), uFace,
+		"the layer that was selected is still selected, wherever the move put it");
+
+	ZENITH_ASSERT_FALSE(xPanel.Action_MoveLayer(uFace, 9u), "a destination past the end is refused");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), uDepth + 1u, "and pushes nothing");
+
+	// ---- removing the SELECTED layer ----------------------------------------
+	ZENITH_ASSERT_TRUE(xPanel.Action_SelectLayer(uBase), "select Base");
+	ZENITH_ASSERT_TRUE(xPanel.Action_AddState("Idle"), "author a state in it");
+	ZENITH_ASSERT_TRUE(xPanel.Action_SelectState("Idle"), "and select that state");
+	ZENITH_ASSERT_TRUE(xPanel.Action_RemoveLayer(uBase), "now delete the layer out from under it");
+
+	ZENITH_ASSERT_EQ(xPanel.GetSelectedLayerId(), uANIMCTRL_TOP_LEVEL_MACHINE,
+		"★ the machine selection falls back to the top level");
+	ZENITH_ASSERT_TRUE(xPanel.GetSelectedStateName().empty(),
+		"★ and the STATE selection goes with it — a state name means nothing in a different machine");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetLayerCount(), 2u, "two layers left");
+
+	// ---- the additive refusal, through the panel -----------------------------
+	u_int uOverlay = uFLUX_INVALID_LAYER_ID;
+	ZENITH_ASSERT_TRUE(xPanel.Document().GetLayerIdAt(1u, uOverlay), "the second surviving layer");
+	ZENITH_ASSERT_TRUE(xPanel.Action_SetLayerBlendMode(uOverlay, LAYER_BLEND_ADDITIVE), "make it additive");
+	ZENITH_ASSERT_FALSE(xPanel.Action_SetLayerMaskAssetPath(uOverlay, "game:Anim/UpperBody.zanimmask"),
+		"★ a mask assignment on it is refused");
+	ZENITH_ASSERT_EQ(xPanel.GetLayerNotice(), std::string(Zenith_BoneMaskDocument::AdditiveLayerMaskNotice()),
+		"★ and the panel forwards the ONE wording of the reason rather than inventing a second");
 
 	xPanel.CloseAsset();
 }

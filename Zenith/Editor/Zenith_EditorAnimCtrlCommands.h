@@ -260,6 +260,68 @@ private:
 };
 
 //-----------------------------------------------------------------------------
+// The controller's LAYER LIST, before and after (WU-7.2). Add, remove and
+// REORDER push exactly this.
+//
+// ★ THE WHOLE LIST, AND FOR A REASON THE TRANSITION LIST ONLY HALF SHARES. A
+// transition has no identity; a LAYER does — its id — and every scalar edit is
+// addressed by it (see Zenith_AnimCtrlCommand_LayerFields below). What these
+// three edits change is the layer's POSITION, and a position is not an identity
+// either: it is the blend ORDER the runtime composes in, so "put it back" means
+// putting the whole sequence back. It is also the only inverse the def offers —
+// Flux_AnimatorControllerDef has AddLayer and RemoveLayer(index) and nothing
+// that reorders, so rebuilding in order IS the operation.
+//
+// CONTROLLER level, so it carries uANIMCTRL_TOP_LEVEL_MACHINE as its machine id
+// and ignores it, exactly as the clip-path command does.
+//-----------------------------------------------------------------------------
+class Zenith_AnimCtrlCommand_Layers : public Zenith_AnimCtrlCommandBase
+{
+public:
+	Zenith_AnimCtrlCommand_Layers(Zenith_AnimControllerDocument* pxDocument,
+		const Zenith_Vector<Zenith_AnimCtrlLayerSnapshot>& axOld,
+		const Zenith_Vector<Zenith_AnimCtrlLayerSnapshot>& axNew,
+		const char* szDescription);
+
+	void Execute() override;
+	void Undo() override;
+
+private:
+	Zenith_Vector<Zenith_AnimCtrlLayerSnapshot> m_axOld;
+	Zenith_Vector<Zenith_AnimCtrlLayerSnapshot> m_axNew;
+};
+
+//-----------------------------------------------------------------------------
+// ONE layer's scalar fields — name, weight, blend mode, emit-events, bone-mask
+// path — before and after, addressed by the layer's STABLE ID (D43).
+//
+// ★ IT IS NOT A LIST SNAPSHOT, and that is the whole reason it exists beside
+// one. A weight slider commits on every edit-complete; snapshotting the list
+// would serialize every layer's entire state machine — every state, every
+// transition, every blend tree — per drag, to record five values. The id makes
+// that unnecessary: it cannot go stale when the list is reordered underneath the
+// stack, which is exactly the failure an index-addressed field command would
+// have and the reason the transition list is snapshotted instead.
+//-----------------------------------------------------------------------------
+class Zenith_AnimCtrlCommand_LayerFields : public Zenith_AnimCtrlCommandBase
+{
+public:
+	Zenith_AnimCtrlCommand_LayerFields(Zenith_AnimControllerDocument* pxDocument, u_int uLayerId,
+		const Zenith_AnimCtrlLayerFields& xOld, const Zenith_AnimCtrlLayerFields& xNew,
+		const char* szDescription);
+
+	void Execute() override;
+	void Undo() override;
+
+	u_int GetLayerId() const { return m_uLayerId; }
+
+private:
+	u_int m_uLayerId = uFLUX_INVALID_LAYER_ID;
+	Zenith_AnimCtrlLayerFields m_xOld;
+	Zenith_AnimCtrlLayerFields m_xNew;
+};
+
+//-----------------------------------------------------------------------------
 // MANY EDITS, ONE UNDO STEP. Identical in shape and rationale to
 // Zenith_AnimCommand_Compound: Zenith_UndoSystem is a flat LIFO with no
 // transaction of any kind, so the bracket has to live where the commands are

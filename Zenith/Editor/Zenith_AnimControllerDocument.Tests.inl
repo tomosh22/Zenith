@@ -17,6 +17,10 @@
 #include "Core/Zenith_TestFramework.h"
 #include "UnitTests/Zenith_UnitTests.h"
 #include "AssetHandling/Zenith_AssetTypeIds.h"
+// WU-7.2's layer tests do not stop at the document: the reordered def is saved,
+// re-read by the real reader and BUILT into a real Flux_AnimationController, so
+// the blend ORDER is judged where it actually matters.
+#include "Flux/MeshAnimation/Flux_AnimationController.h"
 
 #include <filesystem>
 
@@ -483,6 +487,261 @@ ZENITH_TEST(AnimCtrlDoc, ACompoundIsOneUndoStepAndAnEmptyOneIsNotAnEntry)
 	ZENITH_ASSERT_FALSE(xDoc.AddState(""), "do nothing legal in it");
 	ZENITH_ASSERT_FALSE(xDoc.EndCompound("Nothing"), "and it reports that it pushed nothing");
 	ZENITH_ASSERT_EQ(xDoc.GetUndoStackSize(), 0u, "the stack is untouched");
+
+	xDoc.CloseDiscardingChanges();
+}
+
+//==============================================================================
+// The layer list (WU-7.2)
+//==============================================================================
+
+ZENITH_TEST(AnimCtrlDoc, ReorderingLayersLeavesEveryEditBoundToItsOwnLayerId)
+{
+	// ★ THE FLAGSHIP, AND THE REASON D43 EXISTS. A layer's INDEX is its position
+	// in the BLEND ORDER — the thing a reorder changes and the thing an insert
+	// renumbers — so anything that addressed a layer by index would silently
+	// start editing a different one the moment the list moved. Nothing below
+	// stops at the document: the reordered def is saved, re-read by the real
+	// reader and built into a real Flux_AnimationController, because "the editor
+	// says the order changed" and "the runtime composes in that order" are two
+	// different claims and only the second one animates anything.
+	AnimCtrlDocFixture xFixture("zenith_animctrldoc_layerorder");
+	const std::string strPath = xFixture.PathFor("layers.zanimctrl");
+
+	Zenith_AnimControllerDocument xDoc;
+	ZENITH_ASSERT_TRUE(xDoc.OpenFresh(strPath) == ZENITH_ANIMCTRLDOC_OPEN_OK, "open fresh");
+
+	const u_int uBase = xDoc.AddLayer("Base");
+	const u_int uAim = xDoc.AddLayer("Aim");
+	const u_int uFace = xDoc.AddLayer("Face");
+	ZENITH_ASSERT_TRUE(uBase != uFLUX_INVALID_LAYER_ID, "Base gets an id");
+	ZENITH_ASSERT_TRUE(uAim != uBase, "Aim's is a different one");
+	ZENITH_ASSERT_TRUE(uFace != uAim && uFace != uBase, "and so is Face's");
+	ZENITH_ASSERT_EQ(xDoc.GetLayerCount(), 3u, "three layers");
+
+	ZENITH_ASSERT_TRUE(xDoc.SetLayerWeight(uBase, 1.0f), "Base at full weight");
+	ZENITH_ASSERT_TRUE(xDoc.SetLayerWeight(uAim, 0.5f), "Aim at a half");
+	ZENITH_ASSERT_TRUE(xDoc.SetLayerWeight(uFace, 0.25f), "Face at a quarter");
+
+	u_int uIndex = 0;
+	ZENITH_ASSERT_TRUE(xDoc.GetLayerIndex(uFace, uIndex), "Face has a position");
+	ZENITH_ASSERT_EQ(uIndex, 2u, "at the end of the blend order");
+
+	// ---- the move -----------------------------------------------------------
+	ZENITH_ASSERT_TRUE(xDoc.MoveLayer(uFace, 0u), "move the last layer to the front");
+
+	ZENITH_ASSERT_TRUE(xDoc.GetLayerIndex(uFace, uIndex) && uIndex == 0u, "Face is now the base");
+	ZENITH_ASSERT_TRUE(xDoc.GetLayerIndex(uBase, uIndex) && uIndex == 1u, "Base moved up one");
+	ZENITH_ASSERT_TRUE(xDoc.GetLayerIndex(uAim, uIndex) && uIndex == 2u, "Aim moved up one");
+
+	// ★ EVERY ID STILL REPORTS ITS OWN VALUE. This is the assertion the whole
+	// unit is for: three weights, three ids, and a reorder in between.
+	float fWeight = 0.0f;
+	ZENITH_ASSERT_TRUE(xDoc.GetLayerWeight(uBase, fWeight), "Base resolves");
+	ZENITH_ASSERT_EQ_FLOAT(fWeight, 1.0f, 1e-6f, "★ and still carries ITS weight");
+	ZENITH_ASSERT_TRUE(xDoc.GetLayerWeight(uAim, fWeight), "Aim resolves");
+	ZENITH_ASSERT_EQ_FLOAT(fWeight, 0.5f, 1e-6f, "★ and still carries ITS weight");
+	ZENITH_ASSERT_TRUE(xDoc.GetLayerWeight(uFace, fWeight), "Face resolves");
+	ZENITH_ASSERT_EQ_FLOAT(fWeight, 0.25f, 1e-6f, "★ and still carries ITS weight");
+
+	// ---- and the RUNTIME agrees ---------------------------------------------
+	ZENITH_ASSERT_TRUE(xDoc.Save() == ZENITH_ANIMCTRLDOC_SAVE_OK, "it saves");
+
+	Flux_AnimatorControllerDef xParsed;
+	ZENITH_ASSERT_TRUE(AnimCtrlDocParseFile(strPath, xParsed), "the saved bytes parse as a .zanimctrl");
+	ZENITH_ASSERT_EQ(xParsed.GetLayerCount(), 3u, "carrying all three layers");
+
+	// Heap, not stack: a Flux_AnimationController carries two FLUX_MAX_BONES poses.
+	Flux_AnimationController* pxController = new Flux_AnimationController();
+	ZENITH_ASSERT_TRUE(pxController->BuildFromControllerDef(xParsed, nullptr),
+		"and it builds — a false here is a dangling clip or mask reference, not a style point");
+	ZENITH_ASSERT_EQ(pxController->GetLayerCount(), 3u, "three runtime layers");
+
+	ZENITH_ASSERT_NOT_NULL(pxController->GetLayer(0), "there is a base layer");
+	ZENITH_ASSERT_EQ(pxController->GetLayer(0)->GetName(), std::string("Face"),
+		"★ the runtime composes in the order the editor left, base first");
+	ZENITH_ASSERT_EQ(pxController->GetLayer(1)->GetName(), std::string("Base"), "then Base");
+	ZENITH_ASSERT_EQ(pxController->GetLayer(2)->GetName(), std::string("Aim"), "then Aim");
+
+	// ★ AND THE ID SURVIVED THE ROUND TRIP, which is what makes GetLayerById the
+	// handle a game holds: BuildFromControllerDef ADOPTS the def's id rather than
+	// minting a fresh one, so the number the editor used is the number gameplay
+	// resolves through.
+	const Flux_AnimationLayer* pxRuntimeBase = pxController->GetLayerById(uBase);
+	const Flux_AnimationLayer* pxRuntimeAim = pxController->GetLayerById(uAim);
+	const Flux_AnimationLayer* pxRuntimeFace = pxController->GetLayerById(uFace);
+	ZENITH_ASSERT_NOT_NULL(pxRuntimeBase, "Base resolves by the id the editor minted");
+	ZENITH_ASSERT_NOT_NULL(pxRuntimeAim, "and so does Aim");
+	ZENITH_ASSERT_NOT_NULL(pxRuntimeFace, "and Face");
+	if (pxRuntimeBase != nullptr && pxRuntimeAim != nullptr && pxRuntimeFace != nullptr)
+	{
+		ZENITH_ASSERT_EQ_FLOAT(pxRuntimeAim->GetWeight(), 0.5f, 1e-6f,
+			"★ with the weight that id was given, wherever the reorder put it");
+		ZENITH_ASSERT_EQ_FLOAT(pxRuntimeFace->GetWeight(), 0.25f, 1e-6f, "and so does Face's");
+		ZENITH_ASSERT_EQ_FLOAT(pxRuntimeBase->GetWeight(), 1.0f, 1e-6f, "and Base's");
+	}
+
+	pxController->ReleaseAssetReferences();
+	delete pxController;
+
+	// ---- the undo restores the EXACT order ----------------------------------
+	xDoc.Undo();
+	u_int uIdAt = uFLUX_INVALID_LAYER_ID;
+	ZENITH_ASSERT_TRUE(xDoc.GetLayerIdAt(0u, uIdAt) && uIdAt == uBase, "★ Base is the base again");
+	ZENITH_ASSERT_TRUE(xDoc.GetLayerIdAt(1u, uIdAt) && uIdAt == uAim, "★ Aim is back at 1");
+	ZENITH_ASSERT_TRUE(xDoc.GetLayerIdAt(2u, uIdAt) && uIdAt == uFace, "★ and Face at 2");
+	ZENITH_ASSERT_TRUE(xDoc.GetLayerWeight(uFace, fWeight) && fWeight == 0.25f,
+		"and the payloads came back with the positions — the snapshot is the whole layer, not its index");
+
+	xDoc.CloseDiscardingChanges();
+}
+
+ZENITH_TEST(AnimCtrlDoc, AMaskPathIsRefusedOnAnAdditiveLayerAndSucceedsOnceItIsOverride)
+{
+	// ★ AN ADDITIVE LAYER IGNORES ITS MASK ENTIRELY — Flux_AnimationController's
+	// layer loop tests LAYER_BLEND_ADDITIVE first and goes to
+	// Flux_SkeletonPose::AdditiveBlend, whose signature has no mask in it. So an
+	// accepted assignment here would let somebody author a whole mask, save it,
+	// assign it and observe nothing, with every gate green and nothing to grep
+	// for. The rule is stated ONCE (Zenith_BoneMaskDocument::LayerAcceptsMask)
+	// and this asserts that the document asks it rather than restating it.
+	AnimCtrlDocFixture xFixture("zenith_animctrldoc_layermask");
+	Zenith_AnimControllerDocument xDoc;
+	ZENITH_ASSERT_TRUE(xDoc.OpenFresh(xFixture.PathFor("mask.zanimctrl")) == ZENITH_ANIMCTRLDOC_OPEN_OK, "open fresh");
+
+	const u_int uLayer = xDoc.AddLayer("Overlay");
+	ZENITH_ASSERT_TRUE(uLayer != uFLUX_INVALID_LAYER_ID, "a layer");
+	ZENITH_ASSERT_TRUE(xDoc.SetLayerBlendMode(uLayer, LAYER_BLEND_ADDITIVE), "made additive");
+
+	const u_int uDepth = xDoc.GetUndoStackSize();
+	ZENITH_ASSERT_FALSE(xDoc.SetLayerMaskAssetPath(uLayer, "game:Anim/UpperBody.zanimmask"),
+		"★ a mask path on it is REFUSED");
+	ZENITH_ASSERT_EQ(xDoc.GetUndoStackSize(), uDepth, "and pushes no undo entry");
+	std::string strPath;
+	ZENITH_ASSERT_TRUE(xDoc.GetLayerMaskAssetPath(uLayer, strPath), "the layer still resolves");
+	ZENITH_ASSERT_TRUE(strPath.empty(), "with no mask assigned — a refusal changes NOTHING");
+
+	// ★ AND IT SAYS WHY, IN THE ONE WORDING. "Refused" would send a reader
+	// looking for a broken path; the notice names the blend mode.
+	ZENITH_ASSERT_EQ(xDoc.GetLastLayerDiagnostic(),
+		std::string(Zenith_BoneMaskDocument::AdditiveLayerMaskNotice()),
+		"★ and the diagnostic is the ONE wording of the rule, not a second copy of it");
+
+	// ---- override: the same call succeeds ------------------------------------
+	ZENITH_ASSERT_TRUE(xDoc.SetLayerBlendMode(uLayer, LAYER_BLEND_OVERRIDE), "back to override");
+	ZENITH_ASSERT_TRUE(xDoc.SetLayerMaskAssetPath(uLayer, "game:Anim/UpperBody.zanimmask"),
+		"★ and now the SAME assignment lands — the refusal was the blend mode, not the path");
+	ZENITH_ASSERT_TRUE(xDoc.GetLayerMaskAssetPath(uLayer, strPath) && !strPath.empty(), "the path is stored");
+	ZENITH_ASSERT_TRUE(xDoc.GetLastLayerDiagnostic().empty(), "and the diagnostic is cleared by the success");
+
+	// ★ SWITCHING BACK TO ADDITIVE DOES NOT DELETE THE ASSIGNMENT. The runtime
+	// stops consulting it and the UI says so; silently dropping an authored path
+	// on a combo-box change would be an unrecoverable edit disguised as a toggle.
+	ZENITH_ASSERT_TRUE(xDoc.SetLayerBlendMode(uLayer, LAYER_BLEND_ADDITIVE), "additive again");
+	ZENITH_ASSERT_TRUE(xDoc.GetLayerMaskAssetPath(uLayer, strPath) && !strPath.empty(),
+		"★ the mask path is STILL there");
+	ZENITH_ASSERT_EQ(xDoc.GetLastLayerDiagnostic(),
+		std::string(Zenith_BoneMaskDocument::AdditiveLayerMaskNotice()),
+		"and the notice explains that nothing will read it");
+
+	// Clearing is always allowed, whatever the blend mode.
+	ZENITH_ASSERT_TRUE(xDoc.SetLayerMaskAssetPath(uLayer, std::string()),
+		"★ CLEARING a mask on an additive layer is allowed — the refusal is about assigning one");
+
+	xDoc.CloseDiscardingChanges();
+}
+
+ZENITH_TEST(AnimCtrlDoc, RemovingTheLayerWhoseMachineIsSelectedFallsBackToTheTopLevel)
+{
+	// A selector naming a layer that no longer exists makes FindMachine answer
+	// null, and every verb afterwards refuses with nothing to point at — which
+	// reads as "the editor stopped working" rather than as a dangling selection.
+	AnimCtrlDocFixture xFixture("zenith_animctrldoc_layerselect");
+	Zenith_AnimControllerDocument xDoc;
+	ZENITH_ASSERT_TRUE(xDoc.OpenFresh(xFixture.PathFor("select.zanimctrl")) == ZENITH_ANIMCTRLDOC_OPEN_OK, "open fresh");
+
+	const u_int uKeep = xDoc.AddLayer("Keep");
+	const u_int uDrop = xDoc.AddLayer("Drop");
+	ZENITH_ASSERT_TRUE(uKeep != uFLUX_INVALID_LAYER_ID && uDrop != uFLUX_INVALID_LAYER_ID, "two layers");
+
+	ZENITH_ASSERT_TRUE(xDoc.SelectMachine(uDrop), "select the doomed layer's machine");
+	ZENITH_ASSERT_TRUE(xDoc.AddState("Swing"), "and author a state in it");
+	ZENITH_ASSERT_EQ(xDoc.GetStateCount(), 1u, "which lands there");
+
+	ZENITH_ASSERT_TRUE(xDoc.RemoveLayer(uDrop), "remove the selected layer");
+	ZENITH_ASSERT_EQ(xDoc.GetSelectedMachineId(), uANIMCTRL_TOP_LEVEL_MACHINE,
+		"★ the selection falls back to the top-level machine");
+	ZENITH_ASSERT_TRUE(xDoc.AddState("Idle"), "★ and the document is still editable, which is the point");
+
+	// The surviving layer is untouched, so the fallback is scoped to the removal.
+	ZENITH_ASSERT_EQ(xDoc.GetLayerCount(), 1u, "one layer left");
+	u_int uIdAt = uFLUX_INVALID_LAYER_ID;
+	ZENITH_ASSERT_TRUE(xDoc.GetLayerIdAt(0u, uIdAt) && uIdAt == uKeep, "and it is the one that was kept");
+
+	// ★ A REMOVED ID IS NEVER HANDED OUT AGAIN, which is what makes a stale id
+	// resolve to nothing rather than to somebody else's layer.
+	const u_int uNew = xDoc.AddLayer("Later");
+	ZENITH_ASSERT_TRUE(uNew != uDrop, "★ the next layer does NOT inherit the removed layer's id");
+
+	xDoc.CloseDiscardingChanges();
+}
+
+ZENITH_TEST(AnimCtrlDoc, EveryLayerEditIsOneUndoStepAndAnAssignmentNoOpPushesNothing)
+{
+	// The invariant the ASSIGNMENT-vs-CREATION rule is actually stated on: the
+	// bool says whether the value asked for is in place, and the UNDO DEPTH says
+	// whether an edit happened. A no-op is not an edit.
+	AnimCtrlDocFixture xFixture("zenith_animctrldoc_layerundo");
+	Zenith_AnimControllerDocument xDoc;
+	ZENITH_ASSERT_TRUE(xDoc.OpenFresh(xFixture.PathFor("undo.zanimctrl")) == ZENITH_ANIMCTRLDOC_OPEN_OK, "open fresh");
+
+	const u_int uLayer = xDoc.AddLayer("Aim");
+	ZENITH_ASSERT_TRUE(uLayer != uFLUX_INVALID_LAYER_ID, "a layer");
+	ZENITH_ASSERT_EQ(xDoc.GetUndoStackSize(), 1u, "adding one is a step");
+
+	ZENITH_ASSERT_TRUE(xDoc.SetLayerWeight(uLayer, 0.4f), "set a weight");
+	ZENITH_ASSERT_TRUE(xDoc.SetLayerBlendMode(uLayer, LAYER_BLEND_ADDITIVE), "set a blend mode");
+	ZENITH_ASSERT_TRUE(xDoc.SetLayerEmitEvents(uLayer, false), "silence its events (D36)");
+	ZENITH_ASSERT_TRUE(xDoc.RenameLayer(uLayer, "Overlay"), "rename it");
+	ZENITH_ASSERT_EQ(xDoc.GetUndoStackSize(), 5u, "five edits, five undo steps");
+
+	// ★ RE-STATING EVERY ONE OF THEM IS SATISFACTION, NOT REFUSAL, and pushes
+	// nothing. A recipe that says out loud what it wants must not fail because
+	// the value was already there — that is the defect SetDefaultState cost a red
+	// test for, one family over.
+	ZENITH_ASSERT_TRUE(xDoc.SetLayerWeight(uLayer, 0.4f), "the weight it already has");
+	ZENITH_ASSERT_TRUE(xDoc.SetLayerBlendMode(uLayer, LAYER_BLEND_ADDITIVE), "the mode it already has");
+	ZENITH_ASSERT_TRUE(xDoc.SetLayerEmitEvents(uLayer, false), "the flag it already has");
+	ZENITH_ASSERT_TRUE(xDoc.RenameLayer(uLayer, "Overlay"), "the name it already has");
+	ZENITH_ASSERT_TRUE(xDoc.MoveLayer(uLayer, 0u), "the position it already holds");
+	ZENITH_ASSERT_EQ(xDoc.GetUndoStackSize(), 5u, "★ and NOT ONE of them pushed a step");
+
+	// ★ A CLAMPED WEIGHT IS COMPARED AFTER THE CLAMP, so asking twice for 2.0 on
+	// a layer already pinned at 1.0 is recognised as the no-op it is.
+	ZENITH_ASSERT_TRUE(xDoc.SetLayerWeight(uLayer, 2.0f), "an out-of-range weight is clamped, not refused");
+	float fWeight = 0.0f;
+	ZENITH_ASSERT_TRUE(xDoc.GetLayerWeight(uLayer, fWeight), "it resolves");
+	ZENITH_ASSERT_EQ_FLOAT(fWeight, 1.0f, 1e-6f, "to 1.0 — what Flux_AnimationLayer::SetWeight would store");
+	ZENITH_ASSERT_EQ(xDoc.GetUndoStackSize(), 6u, "that WAS an edit");
+	ZENITH_ASSERT_TRUE(xDoc.SetLayerWeight(uLayer, 2.0f), "asking again is satisfied");
+	ZENITH_ASSERT_EQ(xDoc.GetUndoStackSize(), 6u, "★ and pushes nothing");
+
+	// A miss is a genuine refusal on the two verbs that answer "did I create /
+	// remove one", and on the index MoveLayer cannot reach.
+	ZENITH_ASSERT_TRUE(xDoc.AddLayer("") == uFLUX_INVALID_LAYER_ID, "an unnamed layer is refused");
+	ZENITH_ASSERT_FALSE(xDoc.RemoveLayer(uFLUX_INVALID_LAYER_ID), "so is removing an id nothing carries");
+	ZENITH_ASSERT_FALSE(xDoc.MoveLayer(uLayer, 7u), "and a destination past the end is a caller error");
+	ZENITH_ASSERT_EQ(xDoc.GetUndoStackSize(), 6u, "none of which touched the stack");
+
+	// The undo of one field edit restores that field and leaves the others.
+	xDoc.Undo();   // the clamp
+	xDoc.Undo();   // the rename
+	std::string strName;
+	ZENITH_ASSERT_TRUE(xDoc.GetLayerName(uLayer, strName), "the layer resolves");
+	ZENITH_ASSERT_EQ(strName, std::string("Aim"), "★ the rename came back");
+	bool bEmit = true;
+	ZENITH_ASSERT_TRUE(xDoc.GetLayerEmitEvents(uLayer, bEmit), "and so does its event flag");
+	ZENITH_ASSERT_FALSE(bEmit, "★ which the rename's undo left alone");
 
 	xDoc.CloseDiscardingChanges();
 }

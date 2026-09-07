@@ -411,6 +411,42 @@ enum class Zenith_EditorActionType
 	ANIM_MASK_SAVE,
 	ANIM_MASK_EXPECT_WEIGHT,	// END of the contiguous ANIM_MASK range (see ANIM_MASK_OPEN)
 
+	// ANIMATOR LAYER authoring (WU-7.2). A FIFTH animation block, appended for
+	// the reason the second, third and fourth exist: adding a verb INSIDE the
+	// block above would move ANIM_MASK_EXPECT_WEIGHT, which is the upper bound
+	// BOTH the router's range test and the header's static_assert compare
+	// against, and which `Automation, AnimMaskEnumBlockIsContiguous` pins by
+	// position. A new contiguous block costs one more range test and moves
+	// nothing.
+	//
+	// Each verb performs EXACTLY what one of
+	// Zenith_EditorPanel_AnimStateMachine's layer Action_* twins performs — the
+	// same call the "Layers" strip's own handler ends in — so an authored recipe
+	// and a human's gesture cannot diverge. ANIM_LAYER_EXPECT_ORDER is an
+	// ASSERTION rather than a mutation: the blend ORDER is what this family is
+	// about, so it is what a recipe has to be able to state.
+	//
+	// ★ A LAYER IS ADDRESSED BY ITS STABLE ID, NEVER BY ITS INDEX (D43), and the
+	// single index in the family is ANIM_LAYER_MOVE's DESTINATION, which is a
+	// position by definition. Ids are minted 0, 1, 2 … by the def's monotonic
+	// counter, so a recipe that AnimSmOpenFresh'es and then adds its layers in
+	// order knows them; a wrong one fails at BOOT under the checked wrapper
+	// rather than editing a different layer in silence.
+	//
+	// NOTE: this block must stay CONTIGUOUS (ExecuteAction routes the whole range
+	// to ExecuteAnimLayerAction by a pair of comparisons against its first and
+	// last member).
+	ANIM_LAYER_ADD,
+	ANIM_LAYER_REMOVE,
+	ANIM_LAYER_RENAME,
+	ANIM_LAYER_SET_WEIGHT,
+	ANIM_LAYER_SET_BLEND_MODE,
+	ANIM_LAYER_SET_EMIT_EVENTS,
+	ANIM_LAYER_SET_MASK_PATH,
+	ANIM_LAYER_MOVE,
+	ANIM_LAYER_SELECT,
+	ANIM_LAYER_EXPECT_ORDER,	// END of the contiguous ANIM_LAYER range (see ANIM_LAYER_ADD)
+
 	// NavMesh. Deliberately NOT appended to the Terrain block above, which is
 	// routed by a range comparison: a standalone action sits outside every
 	// range and reaches ExecuteAction's own switch, which is what a
@@ -468,14 +504,22 @@ static_assert(static_cast<int>(Zenith_EditorActionType::ANIM_POSE_EXPECT_BONE_LO
 static_assert(static_cast<int>(Zenith_EditorActionType::ANIM_SM_EXPECT_DEFAULT_STATE) -
 	static_cast<int>(Zenith_EditorActionType::ANIM_SM_OPEN) == 24,
 	"the ANIM_SM block must stay CONTIGUOUS and twenty-five wide — ExecuteAction routes it by range");
-// And the same pin for the ANIM_MASK block (WU-7.1), the FOURTH animation range
-// and now the youngest block in the enum. Width here; the
-// `Automation, AnimMaskEnumBlockIsContiguous` unit pins each member's POSITION
-// and both boundaries — including SET_NAVMESH_ASSET's "must stay outside every
-// range", whose neighbour this block has become.
+// And the same pin for the ANIM_MASK block (WU-7.1), the FOURTH animation range.
+// Width here; the `Automation, AnimMaskEnumBlockIsContiguous` unit pins each
+// member's POSITION and both boundaries.
 static_assert(static_cast<int>(Zenith_EditorActionType::ANIM_MASK_EXPECT_WEIGHT) -
 	static_cast<int>(Zenith_EditorActionType::ANIM_MASK_OPEN) == 9,
 	"the ANIM_MASK block must stay CONTIGUOUS and ten wide — ExecuteAction routes it by range");
+// And the same pin for the ANIM_LAYER block (WU-7.2), the FIFTH animation range
+// and now the youngest block in the enum. Width here; the
+// `Automation, AnimLayerEnumBlockIsContiguous` unit pins each member's POSITION
+// and both boundaries — including SET_NAVMESH_ASSET's "must stay outside every
+// range", whose neighbour this block has become (it was ANIM_MASK's until this
+// one was appended; that assertion has now been re-pointed four times, which is
+// the mechanism working rather than a smell).
+static_assert(static_cast<int>(Zenith_EditorActionType::ANIM_LAYER_EXPECT_ORDER) -
+	static_cast<int>(Zenith_EditorActionType::ANIM_LAYER_ADD) == 9,
+	"the ANIM_LAYER block must stay CONTIGUOUS and ten wide — ExecuteAction routes it by range");
 
 //-----------------------------------------------------------------------------
 // Action Data
@@ -1299,6 +1343,65 @@ void AddStep_AnimMaskSave();
 	// A bone the mask does not name weighs 0, which is the same answer a resolved
 	// Flux_BoneMask gives — so this asserts the WEIGHT and never "is there a row".
 void AddStep_AnimMaskExpectWeight(const char* szBoneName, float fExpectedWeight, float fTolerance);
+
+	//--------------------------------------------------------------------------
+	// ANIMATOR LAYER authoring (WU-7.2), the ANIM_LAYER_* block.
+	//
+	// One step per atomic Zenith_EditorPanel_AnimStateMachine layer Action_*, each
+	// routed through a checked wrapper that asserts on `false` — an authoring typo
+	// (a layer id the def does not carry, a destination index past the end, a mask
+	// path on an additive layer) fires at BOOT on the step that is wrong, rather
+	// than leaving a controller that is quietly not what the recipe said.
+	//
+	// ★ THE STATE-MACHINE DOCUMENT MUST ALREADY BE OPEN. These edit the same
+	// .zanimctrl the ANIM_SM_* family does, through the same panel, so a recipe
+	// begins with AnimSmOpen / AnimSmOpenFresh and ends with AnimSmSave. There is
+	// no separate layer document.
+	//
+	// ★ AND THE ORDER OF THE LIST IS THE BLEND ORDER, which is what
+	// AnimLayerMove changes and what AnimLayerExpectOrder states. Index 0 is the
+	// base; everything above composes on top of it.
+	//
+	// A typical authoring sequence:
+	//   AnimSmOpenFresh("game:Anim/Player.zanimctrl") ->
+	//   AnimLayerAdd("Base") -> AnimLayerAdd("Aim") ->
+	//   AnimLayerSetWeight(1, 0.75f) -> AnimLayerSetBlendMode(1, 1 /* additive */) ->
+	//   AnimLayerSetEmitEvents(1, false) ->
+	//   AnimLayerSelect(0) -> AnimSmAddState("Idle") -> ... -> AnimSmSave().
+	//--------------------------------------------------------------------------
+
+	// Appends a layer at the END of the blend order and SELECTS it, so the
+	// AnimSm* steps that follow author ITS machine. Its id is the def's next
+	// minted one — 0 for the first layer of a fresh controller.
+void AddStep_AnimLayerAdd(const char* szLayerName);
+void AddStep_AnimLayerRemove(int iLayerId);
+void AddStep_AnimLayerRename(int iLayerId, const char* szNewName);
+	// CLAMPED to [0,1] by the document. An ASSIGNMENT: re-stating a weight a layer
+	// already carries SUCCEEDS and pushes no undo entry.
+void AddStep_AnimLayerSetWeight(int iLayerId, float fWeight);
+	// iBlendMode is a Flux_LayerBlendMode (0 Override, 1 Additive), passed as an
+	// int so this header needs neither the layer nor the panel header.
+void AddStep_AnimLayerSetBlendMode(int iLayerId, int iBlendMode);
+	// D36's per-layer event switch.
+void AddStep_AnimLayerSetEmitEvents(int iLayerId, bool bEmitEvents);
+	// ★ REFUSED ON AN ADDITIVE LAYER, which is a real failure and asserts: the
+	// runtime never consults an additive layer's mask, so a step that succeeded
+	// here would author an assignment nothing reads. An EMPTY path CLEARS the
+	// assignment and is always allowed.
+void AddStep_AnimLayerSetMaskPath(int iLayerId, const char* szMaskAssetPath);
+	// iNewIndex is a POSITION IN THE BLEND ORDER. Past the end is refused rather
+	// than clamped — clamping would turn "move it down" at the bottom into a
+	// silent no-op reporting success.
+void AddStep_AnimLayerMove(int iLayerId, int iNewIndex);
+	// Selects the layer's MACHINE for the AnimSm* steps that follow, and pushes
+	// its blend mode into the dope sheet's bone-mask sub-panel. The TOP-LEVEL
+	// machine is not a layer: use AddStep_AnimSmSelectLayer(-1) for it.
+void AddStep_AnimLayerSelect(int iLayerId);
+
+	// ---- assertion step ------------------------------------------------------
+	// The layer at iIndex in the BLEND ORDER is named szExpectedName. This is the
+	// verb a reorder recipe is judged on.
+void AddStep_AnimLayerExpectOrder(int iIndex, const char* szExpectedName);
 
 	//--------------------------------------------------------------------------
 	// Scene Loading Step Helpers
