@@ -103,6 +103,23 @@ constexpr u_int uANIMSM_LAYOUT_COLUMNS   = 4u;
 // the editor: a bool beside the index would give one fact two representations
 // that can disagree.
 constexpr u_int uINVALID_ANIMSM_TRANSITION = 0xFFFFFFFFu;
+// "No blend point selected" (WU-7.3), same shape and for the same reason.
+constexpr u_int uINVALID_ANIMSM_BLEND_POINT = 0xFFFFFFFFu;
+
+// The blend-space strip, at 1x DPI. Public because the pixel<->position mapping,
+// the hit rects and the units all measure against it — a second copy is exactly
+// how a marker ends up drawn somewhere a click does not land.
+constexpr float fANIMSM_BLEND_CANVAS_SIZE_1X = 104.0f;
+// Half the side of a point marker's hit square.
+constexpr float fANIMSM_BLEND_MARKER_HALF_1X = 5.0f;
+// The padding a strip leaves around the outermost points, as a FRACTION of the
+// span they cover — so a space whose points sit at 0 and 1 is not drawn with its
+// two markers welded to the frame.
+constexpr float fANIMSM_BLEND_RANGE_PAD = 0.15f;
+// The smallest span an axis is ever drawn with. Without it, a space whose points
+// are all at one position maps every pixel to that position and the strip
+// becomes an infinitely sensitive drag surface.
+constexpr float fANIMSM_BLEND_MIN_SPAN = 0.5f;
 
 //=============================================================================
 // The panel.
@@ -397,13 +414,112 @@ public:
 	Flux_AnimationController& PreviewController() { return m_xPreviewController; }
 
 	//=========================================================================
-	// The blend-tree gate (WU-7.3's boundary).
+	// THE BLEND-TREE SUB-GRAPH (WU-7.3).
+	//
+	// ★ THE SCOPE IS THE TWO BLEND SPACES, AND THE REFUSAL DID NOT GO AWAY — it
+	// got SMALLER. WU-6.5 answered COMPLEX for a blend space, a composite and a
+	// container alike and refused all three by name; a blend space is now its own
+	// kind with an editor, and BlendTreeRefusalText() names what is left (a
+	// Blend / Additive / Masked / Select nest, or a sub-machine). Those genuinely
+	// have no editor here, and assigning anything to one would delete a sub-graph
+	// and report success.
+	//
+	// ★ THE LIVE DOT IS THE REASON THIS UNIT IS WORTH SHIPPING, and it is only
+	// meaningful because WU-6.1 repaired the binding (D48). Before that,
+	// Flux_AnimationStateMachine::EvaluateState called Evaluate with no parameter
+	// set at all, so a blend space in a running game sat frozen at its
+	// deserialized literal and a dot drawn from it would never have moved.
+	//
+	// ★ EVERY VERB HERE IS ONE UNDO STEP, and the step is a whole-STATE snapshot.
+	// A blend tree has no identity below the state — see
+	// Zenith_AnimCtrlCommand_StateTree.
 	//=========================================================================
 
 	Zenith_AnimCtrlStateTreeKind GetStateTreeKind(const std::string& strStateName) const;
 	// The ONE wording, so the node badge, the inspector and the units cannot
-	// disagree about what a refusal says.
+	// disagree about what a refusal says. Forwards to
+	// Zenith_AnimControllerDocument::BlendTreeRefusalText, which is where the
+	// document's own diagnostic takes it from.
 	static const char* BlendTreeRefusalText();
+
+	// SINGLE_CLIP / BLENDSPACE_1D / BLENDSPACE_2D. Converting CARRIES THE CLIPS
+	// ACROSS (a clip leaf seeds the space's first point), and the undo restores
+	// the previous tree byte for byte. ASSIGNMENT: the kind already in place is
+	// satisfied.
+	bool Action_SetStateTreeKind(const std::string& strStateName, Zenith_AnimCtrlStateTreeKind eKind);
+	// Bind an axis to a DECLARED Float. Refused otherwise, with the reason in
+	// GetBlendNotice(). An empty name UNBINDS.
+	bool Action_SetBlendSpaceParameter(const std::string& strStateName, Zenith_AnimCtrlBlendAxis eAxis,
+		const std::string& strParameterName);
+	// fY is IGNORED on a 1D space — one position shape for both, so the strip,
+	// the command and the automation payload each carry one.
+	bool Action_AddBlendPoint(const std::string& strStateName, const std::string& strClipName,
+		float fX, float fY);
+	bool Action_RemoveBlendPoint(const std::string& strStateName, u_int uIndex);
+	bool Action_SetBlendPointClip(const std::string& strStateName, u_int uIndex, const std::string& strClipName);
+	// ★ A 1D EDIT CAN RENUMBER (the list is kept sorted), so this FOLLOWS THE
+	// SELECTION to wherever the point ended up. A selection left on the index
+	// would silently start naming the point that was dragged past.
+	bool Action_SetBlendPointPosition(const std::string& strStateName, u_int uIndex, float fX, float fY);
+	// Pure panel state. uINVALID_ANIMSM_BLEND_POINT clears it; an index the
+	// selected state does not have is refused.
+	bool Action_SelectBlendPoint(u_int uIndex);
+	// The drag gesture, as a verb: maps a SCREEN pixel through the strip's own
+	// mapping and commits the resulting position. False when the strip was not
+	// drawn last frame — there is no mapping without one, and inventing a range
+	// would drop the point somewhere the strip never showed.
+	bool Action_DragBlendPointToPixel(u_int uIndex, float fPixelX, float fPixelY);
+
+	u_int GetSelectedBlendPoint() const { return m_uSelectedBlendPoint; }
+	// Why the last blend verb refused, or empty — the document's diagnostic,
+	// forwarded so the strip and a unit read one string.
+	const std::string& GetBlendNotice() const;
+
+	// ★ THE LIVE PARAMETER DOT. The value of the bound parameter(s) read from the
+	// PREVIEW controller's one live set (D42) — the same set WU-6.5's parameter
+	// panel drives and the same one the preview's machines resolve their blend
+	// positions through, so the dot and the pose cannot disagree. fOutY is 0 on a
+	// 1D space and on a 2D space whose Y axis is unbound.
+	//
+	// False when there is no preview, when the selected state is not a blend
+	// space, or when NEITHER axis is bound — an unbound space reads no parameter
+	// at all, and a dot pinned at zero would look like a parameter sitting at
+	// zero.
+	bool GetLiveParameterDot(float& fOutX, float& fOutY);
+
+	//-------------------------------------------------------------------------
+	// The strip's PURE mapping, exposed so the drag, the draw and the units read
+	// ONE definition — the dope sheet's Zenith_AnimTimelineMath rule applied to a
+	// blend axis. No ImGui, no member state: a unit asserts the round trip
+	// without a frame open.
+	//-------------------------------------------------------------------------
+
+	static float BlendPositionToPixel(float fPosition, float fPixelMin, float fPixelMax,
+		float fPositionMin, float fPositionMax);
+	static float BlendPixelToPosition(float fPixel, float fPixelMin, float fPixelMax,
+		float fPositionMin, float fPositionMax);
+	// The range an axis is DRAWN with, given the span its points cover: padded by
+	// fANIMSM_BLEND_RANGE_PAD and widened to at least fANIMSM_BLEND_MIN_SPAN, so
+	// a degenerate space (one point, or every point at the same position) still
+	// has a finite axis to drag along.
+	static void ComputeBlendAxisRange(float fPointMin, float fPointMax, float& fOutMin, float& fOutMax);
+
+	//-------------------------------------------------------------------------
+	// The strip's hit rects and diagnostics — the same off-screen contract as
+	// every other accessor on this panel.
+	//-------------------------------------------------------------------------
+
+	bool GetBlendStripRect(Zenith_AnimCtrlPanelRect& xOut) const;
+	bool GetBlendPointRect(u_int uIndex, Zenith_AnimCtrlPanelRect& xOut) const;
+	bool GetLiveDotRect(Zenith_AnimCtrlPanelRect& xOut) const;
+	// ★ THE STRIP DRAWS NOTHING UNLESS THE SELECTED STATE IS A BLEND SPACE — not
+	// a header, not a disabled row. This is what a unit asserts the ABSENCE with,
+	// rather than inferring it from a rect that is false for four other reasons.
+	bool WasBlendStripDrawnLastFrame() const { return m_bBlendStripDrawn; }
+	u_int GetDrawnBlendPointCount() const { return m_xBlendPointRects.GetSize(); }
+	// The axis range the strip was DRAWN with last frame — what
+	// Action_DragBlendPointToPixel maps through.
+	bool GetBlendAxisRange(Zenith_AnimCtrlBlendAxis eAxis, float& fOutMin, float& fOutMax) const;
 
 	//=========================================================================
 	// Hit rects.
@@ -513,6 +629,13 @@ private:
 	void RenderParameterPanel();
 	void RenderInspector();
 	void RenderStateInspector();
+	// WU-7.3. Draws NOT ONE ITEM unless the selected state is a blend space, and
+	// lives inside the INSPECTOR child — which is a FIXED height, so whatever it
+	// emits costs the canvas nothing. That is the same placement argument the
+	// layer strip makes for the side child, and the same rule the dope sheet
+	// learned the expensive way (Editor/CLAUDE.md → "NOTHING SHOWN DRAWS
+	// NOTHING").
+	void RenderBlendStrip(const std::string& strStateName, Zenith_AnimCtrlStateTreeKind eKind);
 	void RenderTransitionInspector();
 	void RenderCanvas();
 	void DrawCanvasBackground(ImDrawList* pxDraw, const CanvasLayout& xLayout);
@@ -554,6 +677,21 @@ private:
 	// WU-7.2's strip diagnostics, recorded each Render and cleared with the rects.
 	bool m_bLayerStripDrawn = false;
 	u_int m_uDrawnLayerRows = 0;
+	// WU-7.3's strip: its frame, its markers (index -> rect, recorded only for
+	// what was painted INSIDE the strip) and the live dot, plus the axis RANGE
+	// the frame was drawn with — which is half of the pixel<->position mapping
+	// and therefore has to be recorded with the rects rather than re-derived at
+	// query time. All cleared with them, for the reason ClearFrameRects gives.
+	bool m_bBlendStripDrawn = false;
+	Zenith_AnimCtrlPanelRect m_xBlendStripRect;
+	bool m_bBlendStripRectValid = false;
+	Zenith_HashMap<u_int, Zenith_AnimCtrlPanelRect> m_xBlendPointRects;
+	Zenith_AnimCtrlPanelRect m_xLiveDotRect;
+	bool m_bLiveDotRectValid = false;
+	float m_fBlendRangeMinX = 0.0f;
+	float m_fBlendRangeMaxX = 0.0f;
+	float m_fBlendRangeMinY = 0.0f;
+	float m_fBlendRangeMaxY = 0.0f;
 	float m_fRecordedDisplayWidth = 0.0f;
 	float m_fRecordedDisplayHeight = 0.0f;
 	u_int m_uRenderedFrames = 0;
@@ -562,6 +700,9 @@ private:
 	std::string m_strSelectedTransitionFrom;
 	u_int m_uSelectedTransition = uINVALID_ANIMSM_TRANSITION;
 	bool m_bHasTransitionSelection = false;
+	// WU-7.3. Scoped to the SELECTED STATE: selecting another state clears it,
+	// because a blend-point index means nothing in a different space.
+	u_int m_uSelectedBlendPoint = uINVALID_ANIMSM_BLEND_POINT;
 
 	// Gestures.
 	bool m_bDraggingNode = false;
@@ -570,6 +711,13 @@ private:
 	Zenith_Maths::Vector2 m_xDragGrabOffset = Zenith_Maths::Vector2(0.0f);
 	bool m_bDraggingTransition = false;
 	std::string m_strTransitionDragFrom;
+	// WU-7.3's marker drag. ★ COMMITTED ON RELEASE, NOT PER FRAME — the same
+	// "preview, then commit" shape the node drag, the layer weight slider and the
+	// dope sheet's key drag all use, and for the same reason: one command per
+	// frame of a drag makes Ctrl+Z crawl back through positions the author was
+	// only passing through. The start pixel is what tells a click from a drag.
+	bool m_bDraggingBlendPoint = false;
+	Zenith_Maths::Vector2 m_xBlendDragStartPixel = Zenith_Maths::Vector2(0.0f);
 
 	// View.
 	float m_fScrollX = 0.0f;
@@ -605,6 +753,10 @@ private:
 	char m_acLayerNameBuffer[128] = {};
 	char m_acLayerRenameBuffer[128] = {};
 	char m_acLayerMaskPathBuffer[512] = {};
+	// WU-7.3's strip. The clip a new blend point would play is picked from the
+	// def's own clip list, so this is an INDEX into that list rather than a
+	// buffer — the same choice the state inspector's clip combo makes.
+	int m_iNewBlendPointClip = 0;
 	int m_iNewParameterType = 0;
 	float m_fNewParameterDefault = 0.0f;
 	int m_iConditionParameterIndex = 0;

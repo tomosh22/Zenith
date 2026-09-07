@@ -347,6 +347,52 @@ void Flux_BlendTreeNode_BlendSpace1D::SortBlendPoints()
 		});
 }
 
+Flux_BlendTreeNode* Flux_BlendTreeNode_BlendSpace1D::GetBlendPointNode(u_int uIndex) const
+{
+	if (uIndex >= m_xBlendPoints.GetSize())
+		return nullptr;
+	return m_xBlendPoints.Get(uIndex).m_pxNode;
+}
+
+bool Flux_BlendTreeNode_BlendSpace1D::GetBlendPointPosition(u_int uIndex, float& fOut) const
+{
+	if (uIndex >= m_xBlendPoints.GetSize())
+		return false;
+	fOut = m_xBlendPoints.Get(uIndex).m_fPosition;
+	return true;
+}
+
+bool Flux_BlendTreeNode_BlendSpace1D::SetBlendPointPosition(u_int uIndex, float fPosition, u_int* puOutNewIndex)
+{
+	if (uIndex >= m_xBlendPoints.GetSize())
+		return false;
+	// Written as a POSITIVE range test: NaN fails every comparison, so this
+	// rejects it without a separate check, and a refusal changes nothing.
+	if (!(fPosition >= -3.0e38f && fPosition <= 3.0e38f))
+		return false;
+
+	// The node pointer is the point's only identity across the sort — the
+	// position is exactly the thing being changed, and an index is what the sort
+	// is about to invalidate.
+	Flux_BlendTreeNode* pxMoved = m_xBlendPoints.Get(uIndex).m_pxNode;
+	m_xBlendPoints.Get(uIndex).m_fPosition = fPosition;
+	SortBlendPoints();
+
+	if (puOutNewIndex)
+	{
+		*puOutNewIndex = uIndex;
+		for (u_int u = 0; u < m_xBlendPoints.GetSize(); u++)
+		{
+			if (m_xBlendPoints.Get(u).m_pxNode == pxMoved)
+			{
+				*puOutNewIndex = u;
+				break;
+			}
+		}
+	}
+	return true;
+}
+
 void Flux_BlendTreeNode_BlendSpace1D::Evaluate(float fDt,
 	Flux_SkeletonPose& xOutPose,
 	const Zenith_SkeletonAsset& xSkeleton)
@@ -542,6 +588,37 @@ void Flux_BlendTreeNode_BlendSpace2D::RemoveBlendPoint(u_int uIndex)
 		delete m_xBlendPoints.Get(uIndex).m_pxNode;
 		m_xBlendPoints.Remove(uIndex);
 	}
+}
+
+Flux_BlendTreeNode* Flux_BlendTreeNode_BlendSpace2D::GetBlendPointNode(u_int uIndex) const
+{
+	if (uIndex >= m_xBlendPoints.GetSize())
+		return nullptr;
+	return m_xBlendPoints.Get(uIndex).m_pxNode;
+}
+
+bool Flux_BlendTreeNode_BlendSpace2D::GetBlendPointPosition(u_int uIndex, Zenith_Maths::Vector2& xOut) const
+{
+	if (uIndex >= m_xBlendPoints.GetSize())
+		return false;
+	xOut = m_xBlendPoints.Get(uIndex).m_xPosition;
+	return true;
+}
+
+bool Flux_BlendTreeNode_BlendSpace2D::SetBlendPointPosition(u_int uIndex, const Zenith_Maths::Vector2& xPosition)
+{
+	if (uIndex >= m_xBlendPoints.GetSize())
+		return false;
+	if (!(xPosition.x >= -3.0e38f && xPosition.x <= 3.0e38f
+	   && xPosition.y >= -3.0e38f && xPosition.y <= 3.0e38f))
+		return false;
+
+	m_xBlendPoints.Get(uIndex).m_xPosition = xPosition;
+	// ★ THE TRIANGULATION IS DERIVED FROM THE POSITIONS, so a move that did not
+	// re-derive it would leave the sampler interpolating over the shape the
+	// points used to make.
+	ComputeTriangulation();
+	return true;
 }
 
 void Flux_BlendTreeNode_BlendSpace2D::ComputeTriangulation()

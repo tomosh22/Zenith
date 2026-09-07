@@ -55,23 +55,49 @@ class Zenith_AnimCtrlCommand_Compound;
 constexpr u_int uANIMCTRL_TOP_LEVEL_MACHINE = 0xFFFFFFFFu;
 
 //-----------------------------------------------------------------------------
-// What is inside a state's blend tree, as far as THIS unit is concerned.
+// What is inside a state's blend tree.
 //
-// WU-6.5 authors a state whose tree is a single clip leaf; the blend-tree
-// sub-graph editor is WU-7.3. A state holding anything else is REPORTED rather
-// than silently flattened — an editor that "assigned a clip" to a 2D blend
-// space would delete the space and every clip in it, and report success.
+// WU-6.5 authored a state whose tree is a single clip leaf and reported
+// EVERYTHING else as COMPLEX. WU-7.3 splits the two BLEND SPACES out of that
+// bucket, because they are now edited here: a state holding one is a sub-graph
+// with points, an axis binding and an editor, not a refusal. What is left in
+// COMPLEX is the set that genuinely has no editor — the composites
+// (Blend / Additive / Masked / Select) and a container state's sub-machine —
+// and it is still REPORTED rather than silently flattened, because an editor
+// that "assigned a clip" to a nest would delete the whole thing and report
+// success.
+//
+// ★ THE VALUES ARE NOT SERIALIZED ANYWHERE. This is a classification the
+// document computes from the live tree on demand (ClassifyBlendTree), so
+// inserting the two new kinds in the middle moves nothing on disk.
 //-----------------------------------------------------------------------------
 enum Zenith_AnimCtrlStateTreeKind : u_int
 {
 	// No blend tree at all — a state that has never been given a clip. Legal:
 	// it poses the bind pose.
 	ZENITH_ANIMCTRL_TREE_EMPTY,
-	// Exactly one Flux_BlendTreeNode_Clip at the root. What this panel edits.
+	// Exactly one Flux_BlendTreeNode_Clip at the root.
 	ZENITH_ANIMCTRL_TREE_SINGLE_CLIP,
-	// A composite, a blend space, or a container state's sub-machine. Refused
-	// here, with the reason named.
+	// A Flux_BlendTreeNode_BlendSpace1D at the root (WU-7.3).
+	ZENITH_ANIMCTRL_TREE_BLENDSPACE_1D,
+	// A Flux_BlendTreeNode_BlendSpace2D at the root (WU-7.3).
+	ZENITH_ANIMCTRL_TREE_BLENDSPACE_2D,
+	// A composite, or a container state's sub-machine. Refused here, with the
+	// reason named.
 	ZENITH_ANIMCTRL_TREE_COMPLEX,
+};
+
+//-----------------------------------------------------------------------------
+// Which axis of a blend space a binding or a position addresses.
+//
+// ★ A 1D SPACE HAS ONLY AN X, and asking it for a Y is a caller ERROR rather
+// than a value: it is refused, not answered with zero. The POSITIONS, by
+// contrast, travel as a Vector2 on both — see AddBlendPoint.
+//-----------------------------------------------------------------------------
+enum Zenith_AnimCtrlBlendAxis : u_int
+{
+	ZENITH_ANIMCTRL_BLEND_AXIS_X,
+	ZENITH_ANIMCTRL_BLEND_AXIS_Y,
 };
 
 //-----------------------------------------------------------------------------
@@ -400,6 +426,37 @@ public:
 	// kind, so a caller cannot mistake "no clip" for "a clip called nothing".
 	bool GetStateClipName(const std::string& strStateName, std::string& strOut) const;
 
+	//-------------------------------------------------------------------------
+	// BLEND-SPACE inspection (WU-7.3). All false for a state whose tree is not a
+	// blend space, so a caller cannot mistake "not a blend space" for "a blend
+	// space with no points".
+	//-------------------------------------------------------------------------
+
+	u_int GetBlendPointCount(const std::string& strStateName) const;
+	// ★ THE POSITION IS A Vector2 ON BOTH SPACES, AND A 1D SPACE IGNORES ITS Y.
+	// One shape rather than an overload pair: the panel, the undo command and the
+	// AddStep_AnimBlend* payload each carry ONE position, and a 1D/2D split would
+	// duplicate all three to save a float. A 1D read always answers y = 0.
+	bool GetBlendPoint(const std::string& strStateName, u_int uIndex,
+		std::string& strOutClipName, Zenith_Maths::Vector2& xOutPosition) const;
+	// The controller parameter this axis tracks, or empty for an unbound one.
+	// False for a 1D space asked for its Y — it has no second axis.
+	bool GetBlendSpaceParameterName(const std::string& strStateName, Zenith_AnimCtrlBlendAxis eAxis,
+		std::string& strOut) const;
+
+	// Why the LAST blend-tree verb refused, or empty. Set by the refusals that
+	// are RULES rather than caller errors — a COMPLEX tree, and a binding to a
+	// parameter that is not a declared Float — and cleared by every blend verb on
+	// the way in, so it always describes the most recent call.
+	const std::string& GetLastBlendTreeDiagnostic() const { return m_strLastBlendTreeDiagnostic; }
+	// The ONE wording of "this tree has no editor here", so the panel's node
+	// badge, its inspector and the units cannot disagree about what a refusal
+	// says. Names the shapes rather than a work-unit number: a Blend/Additive/
+	// Masked/Select nest is what is actually being refused.
+	static const char* BlendTreeRefusalText();
+	// The ONE wording of "that parameter cannot drive a blend axis".
+	static const char* BlendParameterRefusalText();
+
 	u_int GetTransitionCount(const std::string& strFromState) const;
 	bool GetTransition(const std::string& strFromState, u_int uIndex, Flux_StateTransition& xOut) const;
 
@@ -470,9 +527,74 @@ public:
 	bool SetDefaultState(const std::string& strStateName);
 
 	// Give a state's tree a single clip leaf naming strClipName. An EMPTY name
-	// removes the tree. Refused for a ZENITH_ANIMCTRL_TREE_COMPLEX state — see
-	// the enum. ASSIGNMENT.
+	// removes the tree. Refused for a ZENITH_ANIMCTRL_TREE_COMPLEX state and for
+	// a BLEND SPACE — a clip assignment onto a space would delete the space and
+	// every point in it; SetStateTreeKind is the verb that converts. ASSIGNMENT.
 	bool SetStateClip(const std::string& strStateName, const std::string& strClipName);
+
+	//-------------------------------------------------------------------------
+	// BLEND-SPACE editing (WU-7.3).
+	//
+	// ★ EVERY ONE OF THESE IS ONE UNDO STEP, AND THE STEP IS A WHOLE-STATE
+	// SNAPSHOT. A blend tree has NO IDENTITY BELOW THE STATE — a point is a
+	// struct in a Zenith_Vector addressed by index, a node is an owned raw
+	// pointer with no id, and a 1D position edit RE-SORTS the list — so there is
+	// nothing finer than the state for a command to address. The state's own
+	// serializer is the one faithful walk of a polymorphic tree that already
+	// exists and is already pinned, which is the same argument
+	// Zenith_AnimCtrlCommand_StateAdd/Remove make.
+	//
+	// ★ AND THE SNAPSHOT IS WHAT MAKES "UNDO RESTORES THE SINGLE CLIP" EXACT:
+	// converting a clip leaf to a blend space throws away the leaf's playback
+	// rate and its playhead, and only bytes taken before the conversion can put
+	// them back.
+	//-------------------------------------------------------------------------
+
+	// CONVERT a state's tree. eKind must be SINGLE_CLIP, BLENDSPACE_1D or
+	// BLENDSPACE_2D; EMPTY (use SetStateClip("")) and COMPLEX (nothing can
+	// synthesise a nest) are refused.
+	//
+	// ★ THE CONVERSION CARRIES THE CLIPS ACROSS, which is the difference between
+	// a conversion and a delete-and-start-again. A single clip leaf seeds the new
+	// space's FIRST POINT at the origin; a space converted to a clip leaf keeps
+	// its FIRST point's clip; one space converted to the other carries every
+	// point (2D -> 1D drops the y, 1D -> 2D lands them on y = 0).
+	//
+	// ASSIGNMENT: asking for the kind the state already holds is satisfied —
+	// true, no mutation, no undo entry. Refused (false, with a diagnostic) for a
+	// COMPLEX state and for a state the machine does not have.
+	bool SetStateTreeKind(const std::string& strStateName, Zenith_AnimCtrlStateTreeKind eKind);
+
+	// Bind one axis of a blend space to a controller parameter. An EMPTY name
+	// UNBINDS, which is always allowed and leaves the space on its literal.
+	//
+	// ★ THE NAME MUST BE A DECLARED **Float**, and that is a rule rather than a
+	// convenience. Flux_BlendTreeNode_BlendSpace1D::ResolveParameters reads the
+	// binding through Flux_AnimationParameters::GetFloat, so an Int or a Bool
+	// would be read through the wrong union member, and an UNDECLARED name is
+	// left at its literal by the runtime — a binding that silently does nothing.
+	// Refused with BlendParameterRefusalText() in the diagnostic.
+	//
+	// ASSIGNMENT.
+	bool SetBlendSpaceParameter(const std::string& strStateName, Zenith_AnimCtrlBlendAxis eAxis,
+		const std::string& strParameterName);
+
+	// CREATION: appends a point playing strClipName at xPosition (y ignored on a
+	// 1D space). Refused for a state that is not a blend space and for an empty
+	// clip name — a nameless leaf resolves to no clip and poses the bind pose.
+	// puOutIndex receives the point's index AFTER the 1D sort.
+	bool AddBlendPoint(const std::string& strStateName, const std::string& strClipName,
+		const Zenith_Maths::Vector2& xPosition, u_int* puOutIndex = nullptr);
+	// REMOVAL: a miss is a genuine refusal.
+	bool RemoveBlendPoint(const std::string& strStateName, u_int uIndex);
+
+	// ASSIGNMENTS.
+	bool SetBlendPointClip(const std::string& strStateName, u_int uIndex, const std::string& strClipName);
+	// ★ A 1D EDIT MAY RENUMBER, which is why this reports where the point went:
+	// the runtime blends between ADJACENT points, so the list is kept sorted and
+	// dragging one past another swaps their indices. A 2D edit never renumbers.
+	bool SetBlendPointPosition(const std::string& strStateName, u_int uIndex,
+		const Zenith_Maths::Vector2& xPosition, u_int* puOutIndex = nullptr);
 
 	// UI-only, and persisted: Flux_AnimationState::m_xEditorPosition is already
 	// a serialized field of the .zanimctrl, so a laid-out graph survives a round
@@ -530,6 +652,7 @@ private:
 	friend class Zenith_AnimCtrlCommand_StateRename;
 	friend class Zenith_AnimCtrlCommand_DefaultState;
 	friend class Zenith_AnimCtrlCommand_StateClip;
+	friend class Zenith_AnimCtrlCommand_StateTree;
 	friend class Zenith_AnimCtrlCommand_StatePosition;
 	friend class Zenith_AnimCtrlCommand_Transitions;
 	friend class Zenith_AnimCtrlCommand_Parameters;
@@ -544,6 +667,16 @@ private:
 	bool ApplyRenameState(u_int uMachineId, const std::string& strOldName, const std::string& strNewName);
 	bool ApplySetDefaultState(u_int uMachineId, const std::string& strName);
 	bool ApplySetStateClip(u_int uMachineId, const std::string& strName, const std::string& strClipName);
+	// Restore ONE state's whole payload IN PLACE from bytes CaptureStateBytes
+	// produced (WU-7.3's blend-tree undo unit).
+	//
+	// ★ IN PLACE, NOT REMOVE-AND-ADD, because the state has to keep its position
+	// in every transition that names it and its entry in the machine's map. That
+	// is safe precisely because Flux_AnimationState::ReadFromDataStream is a FULL
+	// restore: it deletes the old blend tree, clears the transition list and
+	// rewrites the name, so nothing of the previous contents survives to be
+	// mixed with the restored ones.
+	bool ApplyRestoreState(u_int uMachineId, const std::string& strName, const Zenith_Vector<char>& axBytes);
 	bool ApplySetStatePosition(u_int uMachineId, const std::string& strName, const Zenith_Maths::Vector2& xPos);
 	bool ApplySetTransitions(u_int uMachineId, const Zenith_AnimCtrlTransitionList& xList);
 	bool ApplySetParameters(u_int uMachineId, const Zenith_Vector<Zenith_AnimCtrlParameterDecl>& axDecls);
@@ -590,6 +723,19 @@ private:
 	bool ApplyLayerListEdit(const Zenith_Vector<Zenith_AnimCtrlLayerSnapshot>& axOld,
 		const Zenith_Vector<Zenith_AnimCtrlLayerSnapshot>& axNew, const char* szDescription);
 
+	// The one body every WU-7.3 blend verb shares. The caller has ALREADY
+	// mutated the state; this captures the new bytes, compares them with the
+	// ones taken before, and pushes ONE Zenith_AnimCtrlCommand_StateTree if they
+	// differ. Byte equality IS the assignment no-op test — a verb that re-stated
+	// a value the tree already carried leaves the payload identical, so it marks
+	// nothing dirty and contributes zero undo steps.
+	bool CommitStateTreeEdit(const std::string& strStateName, const Zenith_Vector<char>& axOldBytes,
+		const char* szDescription);
+	// The selected machine's state, or null — plus the blend-space root when the
+	// caller needs one. Both clear m_strLastBlendTreeDiagnostic's caller-error
+	// cases by simply refusing.
+	Flux_AnimationState* FindStateForBlendEdit(const std::string& strStateName);
+
 	void PushCommand(Zenith_UndoCommand* pxCommand);
 	void ResetToClosed();
 
@@ -612,6 +758,8 @@ private:
 
 	// WU-7.2. Why the last layer verb refused; see GetLastLayerDiagnostic.
 	std::string m_strLastLayerDiagnostic;
+	// WU-7.3. Why the last blend-tree verb refused; see GetLastBlendTreeDiagnostic.
+	std::string m_strLastBlendTreeDiagnostic;
 
 	u_int64 m_ulRecordedFileHash = 0;
 	bool m_bHasRecordedFile = false;

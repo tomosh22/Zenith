@@ -158,6 +158,29 @@ namespace
 			return strPath;
 		}
 
+		// WU-7.3: a clip whose ONLY content is a CONSTANT rotation on "Root".
+		//
+		// ★ CONSTANT ON PURPOSE. A blend test has to be able to attribute a pose
+		// difference to the BLEND WEIGHT and to nothing else — a clip whose value
+		// varied with time would make the result depend on where the two leaves'
+		// playheads happened to be, and they run their own clocks (D34).
+		std::string WriteRotationClip(const char* szLeafName, const char* szClipName, float fRadiansAboutY)
+		{
+			const std::string strPath = PathFor(szLeafName);
+			Flux_AnimationClip xClip;
+			xClip.SetName(szClipName);
+			xClip.SetDuration(1.0f);
+			const Zenith_Maths::Quat xRotation =
+				glm::angleAxis(fRadiansAboutY, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
+			Flux_BoneChannel xRoot;
+			xRoot.AddRotationKeyframe(0.0f, xRotation);
+			xRoot.AddRotationKeyframe(1.0f, xRotation);
+			xRoot.SortKeyframes();
+			xClip.AddBoneChannel("Root", std::move(xRoot));
+			xClip.Export(strPath);
+			return strPath;
+		}
+
 		~AnimSmFixture()
 		{
 			for (u_int u = 0; u < m_axTrackedPaths.GetSize(); ++u)
@@ -402,12 +425,18 @@ ZENITH_TEST(AnimSmPanel, ApplyReloadsThePreviewAndKeepsItsCurrentState)
 
 ZENITH_TEST(AnimSmPanel, AStateWhoseTreeIsNotASingleClipLeafIsRefusedAndSaysWhoOwnsIt)
 {
-	// ★ THE WU-7.3 BOUNDARY, AS A REFUSAL RATHER THAN A SILENT FLATTEN. Assigning
-	// a clip to a state holding a blend space would delete the space and every
-	// clip in it, and report success.
+	// ★ THE REFUSAL, AS A REFUSAL RATHER THAN A SILENT FLATTEN. Assigning a clip
+	// to a state holding something else would delete the sub-graph and report
+	// success.
+	//
+	// ★ WU-7.3 MOVED THE BOUNDARY, AND THIS UNIT MOVED WITH IT. A blend SPACE was
+	// COMPLEX here until this unit landed; it is now its own kind with an editor,
+	// so the shape that stands in for "no editor anywhere" is a COMPOSITE — and
+	// the refusal is asserted on that instead. The blend space's own half of the
+	// story is the second block below.
 	AnimSmFixture xFixture("zenith_animsm_complextree");
 
-	// Author a def with a blend SPACE on one state, straight through the engine
+	// Author a def with a COMPOSITE on one state, straight through the engine
 	// types — the panel cannot create one, which is the point.
 	{
 		Flux_AnimatorControllerDef xDef;
@@ -418,7 +447,10 @@ ZENITH_TEST(AnimSmPanel, AStateWhoseTreeIsNotASingleClipLeafIsRefusedAndSaysWhoO
 		pxPlain->SetBlendTree(pxLeaf);
 
 		Flux_AnimationState* pxFancy = xMachine.AddState("Fancy");
-		pxFancy->SetBlendTree(new Flux_BlendTreeNode_BlendSpace1D());
+		pxFancy->SetBlendTree(new Flux_BlendTreeNode_Blend());
+
+		Flux_AnimationState* pxSpace = xMachine.AddState("Space");
+		pxSpace->SetBlendTree(new Flux_BlendTreeNode_BlendSpace1D());
 		xDef.Export(xFixture.m_strControllerPath);
 	}
 
@@ -428,19 +460,32 @@ ZENITH_TEST(AnimSmPanel, AStateWhoseTreeIsNotASingleClipLeafIsRefusedAndSaysWhoO
 	ZENITH_ASSERT_TRUE(xPanel.GetStateTreeKind("Plain") == ZENITH_ANIMCTRL_TREE_SINGLE_CLIP,
 		"the plain state is a single clip leaf");
 	ZENITH_ASSERT_TRUE(xPanel.GetStateTreeKind("Fancy") == ZENITH_ANIMCTRL_TREE_COMPLEX,
-		"★ and the blend space is COMPLEX");
+		"★ and the COMPOSITE is what is left in COMPLEX");
+	ZENITH_ASSERT_TRUE(xPanel.GetStateTreeKind("Space") == ZENITH_ANIMCTRL_TREE_BLENDSPACE_1D,
+		"★ while the blend space is its own kind — WU-7.3 edits it");
 
 	const u_int uDepth = xPanel.Document().GetUndoStackSize();
 	ZENITH_ASSERT_FALSE(xPanel.Action_SetStateClip("Fancy", "IdleClip"),
-		"★ assigning a clip to it is REFUSED");
-	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), uDepth, "and pushes no undo entry");
+		"★ assigning a clip to the composite is REFUSED");
+	ZENITH_ASSERT_FALSE(xPanel.Action_SetStateClip("Space", "IdleClip"),
+		"★ and so is assigning one to the blend space — it would delete every point in it");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), uDepth, "and neither pushes an undo entry");
 	ZENITH_ASSERT_TRUE(xPanel.GetStateTreeKind("Fancy") == ZENITH_ANIMCTRL_TREE_COMPLEX,
-		"★ and the blend space is still there");
+		"★ and the composite is still there");
+	ZENITH_ASSERT_TRUE(xPanel.GetStateTreeKind("Space") == ZENITH_ANIMCTRL_TREE_BLENDSPACE_1D,
+		"★ and so is the space");
 
 	ZENITH_ASSERT_NOT_NULL(Zenith_EditorPanel_AnimStateMachine::BlendTreeRefusalText(),
 		"the refusal has ONE wording, so the node badge and the inspector cannot disagree");
+	// ★ THE PANEL'S WORDING IS THE DOCUMENT'S, not a second copy: the document
+	// puts the same string into GetLastBlendTreeDiagnostic when it refuses, so
+	// the badge, the inspector, the strip and a recipe's log line cannot describe
+	// one refusal four ways.
+	ZENITH_ASSERT_STREQ(Zenith_EditorPanel_AnimStateMachine::BlendTreeRefusalText(),
+		Zenith_AnimControllerDocument::BlendTreeRefusalText(),
+		"and the panel forwards the document's, rather than restating it");
 	ZENITH_ASSERT_TRUE(std::string(Zenith_EditorPanel_AnimStateMachine::BlendTreeRefusalText())
-		.find("WU-7.3") != std::string::npos, "and it names the editor that owns the case");
+		.find("Masked") != std::string::npos, "and it names the SHAPES it is refusing");
 
 	// The plain state is still editable, so the refusal is scoped to the state
 	// and not to the machine.
@@ -734,6 +779,331 @@ ZENITH_TEST(AnimSmPanel, TheLayerActionsReorderTheListAndRemovingTheSelectedOneF
 		"★ a mask assignment on it is refused");
 	ZENITH_ASSERT_EQ(xPanel.GetLayerNotice(), std::string(Zenith_BoneMaskDocument::AdditiveLayerMaskNotice()),
 		"★ and the panel forwards the ONE wording of the reason rather than inventing a second");
+
+	xPanel.CloseAsset();
+}
+
+//==============================================================================
+// The blend-tree sub-graph (WU-7.3)
+//==============================================================================
+
+ZENITH_TEST(AnimSmPanel, DraggingABlendPointChangesTheSampledPose)
+{
+	// ★ THE FLAGSHIP, AND IT IS DELIBERATELY NOT AN ASSERTION ABOUT THE DOCUMENT.
+	// Every link between "the author moved a marker" and "the character poses
+	// differently" is a place an editor can look right and animate nothing: the
+	// verb, the undo snapshot, the re-sort, the Apply, D48's named binding, and
+	// the blend itself. This drives all of them and reads the POSE at the end.
+	//
+	// ★ THE POSE IS SAMPLED AGAINST A REAL ONE-BONE RIG THE TEST OWNS, not
+	// against the panel's zero-bone stub. The stub exists so the panel can tick a
+	// machine without a skeleton (WU-6.5); it produces no pose by design, so a
+	// test that used it would be asserting on an empty one.
+	AnimSmFixture xFixture("zenith_animsm_blenddrag");
+	// A at identity, B at 90° about Y — so "closer to A" is a quaternion dot
+	// against identity, which is monotonic in the blend factor over this range.
+	const std::string strClipA = xFixture.WriteRotationClip("a.zanim", "ClipA", 0.0f);
+	const std::string strClipB = xFixture.WriteRotationClip("b.zanim", "ClipB", 1.5707963f);
+
+	Zenith_EditorPanel_AnimStateMachine xPanel;
+	ZENITH_ASSERT_TRUE(xPanel.OpenAssetFresh(xFixture.m_strControllerPath), "a fresh controller opens");
+	ZENITH_ASSERT_TRUE(xPanel.Action_AddClipPath(strClipA), "clip A is in the def's clip list");
+	ZENITH_ASSERT_TRUE(xPanel.Action_AddClipPath(strClipB), "and clip B");
+	ZENITH_ASSERT_TRUE(xPanel.Action_AddParameter("Speed", Flux_AnimationParameters::ParamType::Float, 0.0f),
+		"Speed is declared");
+	ZENITH_ASSERT_TRUE(xPanel.Action_AddState("Locomotion"), "one state");
+	ZENITH_ASSERT_TRUE(xPanel.Action_SetStateTreeKind("Locomotion", ZENITH_ANIMCTRL_TREE_BLENDSPACE_1D),
+		"whose tree is a 1D blend space");
+	ZENITH_ASSERT_TRUE(xPanel.Action_SetBlendSpaceParameter("Locomotion", ZENITH_ANIMCTRL_BLEND_AXIS_X, "Speed"),
+		"★ bound to Speed — D48's repair is what makes any of this move");
+	ZENITH_ASSERT_TRUE(xPanel.Action_AddBlendPoint("Locomotion", "ClipA", 0.0f, 0.0f), "A at 0");
+	ZENITH_ASSERT_TRUE(xPanel.Action_AddBlendPoint("Locomotion", "ClipB", 1.0f, 0.0f), "B at 1");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_SetPreviewEnabled(true),
+		"★ the preview builds and every clip the def names resolves — a false here is a dangling reference");
+	ZENITH_ASSERT_TRUE(xPanel.Action_SetPreviewFloat("Speed", 0.5f), "Speed sits halfway between the two points");
+
+	// A real rig: one bone called "Root", which is the bone both clips animate.
+	Zenith_SkeletonAsset xSkeleton;
+	xSkeleton.AddBone("Root", -1, Zenith_Maths::Vector3(0.0f), glm::identity<Zenith_Maths::Quat>(),
+		Zenith_Maths::Vector3(1.0f));
+	xSkeleton.ComputeBindPoseMatrices();
+
+	// Heap: a Flux_SkeletonPose carries FLUX_MAX_BONES of transforms and the test
+	// already has a panel holding two.
+	Flux_SkeletonPose* pxPose = new Flux_SkeletonPose();
+	const Zenith_Maths::Quat xIdentity = glm::identity<Zenith_Maths::Quat>();
+
+	Flux_AnimationStateMachine* pxMachine = xPanel.GetPreviewMachine();
+	ZENITH_ASSERT_NOT_NULL(pxMachine, "the preview's machine resolves");
+	// dt 0: both leaves stay at time 0, where each clip's rotation is constant —
+	// so the only thing that can move the pose is the BLEND WEIGHT.
+	pxMachine->Update(0.0f, *pxPose, xSkeleton);
+	const Zenith_Maths::Quat xHalfWay = pxPose->GetLocalPose(0).m_xRotation;
+	const float fDotHalfWay = std::fabs(glm::dot(xHalfWay, xIdentity));
+	ZENITH_ASSERT_LT(fDotHalfWay, 0.999f,
+		"★ at the halfway parameter the pose is genuinely between the two clips, not sitting on A");
+
+	// ---- move B further out --------------------------------------------------
+	// Speed stays at 0.5; with B at 4 instead of 1 the blend factor falls from
+	// 0.5 to 0.125, so the pose must move TOWARDS A.
+	ZENITH_ASSERT_TRUE(xPanel.Action_SetBlendPointPosition("Locomotion", 1, 4.0f, 0.0f), "drag B out to 4");
+	ZENITH_ASSERT_TRUE(xPanel.Action_Apply(),
+		"Apply is a RELOAD (D45), so the preview keeps its state and its live Speed across the edit");
+
+	// ★ RE-FETCHED, NEVER CACHED. ReloadFromControllerDef deletes every layer and
+	// rebuilds every machine, so the pointer taken before the Apply is freed
+	// memory — WU-6.3's D44 rule, one call site over.
+	pxMachine = xPanel.GetPreviewMachine();
+	ZENITH_ASSERT_NOT_NULL(pxMachine, "the reloaded preview's machine resolves");
+	ZENITH_ASSERT_EQ_FLOAT(xPanel.PreviewController().GetParameters().GetFloat("Speed"), 0.5f, 1e-6f,
+		"★ and Speed survived the reload — a rebuild would have reset it to its declared default");
+
+	pxMachine->Update(0.0f, *pxPose, xSkeleton);
+	const Zenith_Maths::Quat xAfter = pxPose->GetLocalPose(0).m_xRotation;
+	const float fDotAfter = std::fabs(glm::dot(xAfter, xIdentity));
+	ZENITH_ASSERT_GT(fDotAfter, fDotHalfWay + 0.01f,
+		"★ THE SAMPLED POSE MOVED TOWARDS CLIP A — dragging a blend point changed what the character does, "
+		"which is the whole claim of this unit");
+
+	// And the undo takes the pose back, so the edit is reversible all the way
+	// through to the sampled result rather than only in the document.
+	ZENITH_ASSERT_TRUE(xPanel.Action_Undo(), "undo the drag");
+	ZENITH_ASSERT_TRUE(xPanel.Action_Apply(), "and apply it");
+	pxMachine = xPanel.GetPreviewMachine();
+	ZENITH_ASSERT_NOT_NULL(pxMachine, "the machine resolves again");
+	pxMachine->Update(0.0f, *pxPose, xSkeleton);
+	ZENITH_ASSERT_EQ_FLOAT(std::fabs(glm::dot(pxPose->GetLocalPose(0).m_xRotation, xIdentity)), fDotHalfWay, 1e-3f,
+		"★ and the pose is back where it was");
+
+	delete pxPose;
+	xPanel.CloseAsset();
+}
+
+ZENITH_TEST(AnimSmPanel, TheLiveParameterDotTracksTheBoundParameterOnThePreview)
+{
+	// ★ THE DOT IS ONLY MEANINGFUL BECAUSE WU-6.1 REPAIRED THE BINDING (D48).
+	// Before that, nothing passed Flux_AnimationParameters into a blend tree at
+	// all — the position was frozen at its deserialized literal — so a dot drawn
+	// from it would have sat still forever and looked like a UI bug.
+	AnimSmFixture xFixture("zenith_animsm_livedot");
+	const std::string strClip = xFixture.WriteClip("walk.zanim", "WalkClip");
+
+	Zenith_EditorPanel_AnimStateMachine xPanel;
+	ZENITH_ASSERT_TRUE(xPanel.OpenAssetFresh(xFixture.m_strControllerPath), "a fresh controller opens");
+	ZENITH_ASSERT_TRUE(xPanel.Action_AddClipPath(strClip), "one clip");
+	ZENITH_ASSERT_TRUE(xPanel.Action_AddParameter("Speed", Flux_AnimationParameters::ParamType::Float, 0.0f),
+		"Speed is declared");
+	ZENITH_ASSERT_TRUE(xPanel.Action_AddState("Locomotion"), "one state");
+	ZENITH_ASSERT_TRUE(xPanel.Action_SetStateTreeKind("Locomotion", ZENITH_ANIMCTRL_TREE_BLENDSPACE_1D), "as a 1D space");
+	ZENITH_ASSERT_TRUE(xPanel.Action_AddBlendPoint("Locomotion", "WalkClip", 0.0f, 0.0f), "with a point");
+
+	float fDotX = 99.0f;
+	float fDotY = 99.0f;
+	// The four things that are NOT a dot, each refused rather than answered with
+	// a zero — a marker at the origin is indistinguishable from a parameter that
+	// happens to be zero.
+	ZENITH_ASSERT_FALSE(xPanel.GetLiveParameterDot(fDotX, fDotY), "no preview, no dot");
+	ZENITH_ASSERT_TRUE(xPanel.Action_SetPreviewEnabled(true), "the preview builds");
+	ZENITH_ASSERT_FALSE(xPanel.GetLiveParameterDot(fDotX, fDotY),
+		"★ an UNBOUND space has no dot — it reads no parameter at all");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_SetBlendSpaceParameter("Locomotion", ZENITH_ANIMCTRL_BLEND_AXIS_X, "Speed"),
+		"bind the axis");
+	ZENITH_ASSERT_TRUE(xPanel.Action_SetPreviewFloat("Speed", 1.25f), "drive the preview's live set");
+	ZENITH_ASSERT_TRUE(xPanel.GetLiveParameterDot(fDotX, fDotY), "★ now there is a dot");
+	ZENITH_ASSERT_EQ_FLOAT(fDotX, 1.25f, 1e-6f, "★ reading the LIVE value of the bound parameter");
+	ZENITH_ASSERT_EQ_FLOAT(fDotY, 0.0f, 1e-6f, "and y is 0 on a 1D space");
+
+	// ★ AND IT TRACKS. A dot that reported the DECLARED default would pass every
+	// assertion above and never move.
+	ZENITH_ASSERT_TRUE(xPanel.Action_SetPreviewFloat("Speed", -0.5f), "move the parameter");
+	ZENITH_ASSERT_TRUE(xPanel.GetLiveParameterDot(fDotX, fDotY), "the dot still resolves");
+	ZENITH_ASSERT_EQ_FLOAT(fDotX, -0.5f, 1e-6f, "★ and it MOVED with the parameter");
+
+	// A state that is not a blend space has no dot, whatever the preview is doing.
+	ZENITH_ASSERT_TRUE(xPanel.Action_AddState("Plain"), "a plain state");
+	ZENITH_ASSERT_TRUE(xPanel.Action_SelectState("Plain"), "selected");
+	ZENITH_ASSERT_FALSE(xPanel.GetLiveParameterDot(fDotX, fDotY), "which has no blend space and therefore no dot");
+
+	xPanel.CloseAsset();
+}
+
+ZENITH_TEST(AnimSmPanel, TheBlendStripDrawsNothingForASingleClipStateAndNeverTakesCanvasHeight)
+{
+	// ★ THE HEIGHT GUARD, MEASURED ON THE CANVAS RECT rather than on "is a marker
+	// visible" — Editor/CLAUDE.md's rule, learned on the dope sheet where an
+	// always-present collapsed header pushed the events row off the bottom and the
+	// failure arrived as a flat `false` a long way from its cause. The strip lives
+	// inside the INSPECTOR child, which is a fixed height, so a blend space with
+	// points must cost the graph exactly nothing.
+	AnimSmFixture xFixture("zenith_animsm_blendheight");
+	const std::string strClip = xFixture.WriteClip("walk.zanim", "WalkClip");
+
+	Zenith_EditorPanel_AnimStateMachine xPanel;
+	ZENITH_ASSERT_TRUE(xPanel.OpenAssetFresh(xFixture.m_strControllerPath), "a fresh controller opens");
+	ZENITH_ASSERT_TRUE(xPanel.Action_AddClipPath(strClip), "a clip in the list");
+	ZENITH_ASSERT_TRUE(xPanel.Action_AddState("Locomotion"), "a state, which becomes the selection");
+	ZENITH_ASSERT_TRUE(xPanel.Action_SetStateClip("Locomotion", "WalkClip"), "playing a single clip");
+
+	xPanel.RequestWindowPlacement(20.0f, 20.0f, 1200.0f, 640.0f);
+	AnimSmRenderFrames(xPanel, 2);
+
+	// The discriminators first: a bare `false` has four causes and the height
+	// below would be meaningless against any of them.
+	ZENITH_ASSERT_TRUE(xPanel.WasCanvasDrawnLastFrame(), "the canvas was drawn");
+	ZENITH_ASSERT_EQ_FLOAT(xPanel.GetRecordedDisplayWidth(), fANIMSM_DISPLAY_W, 0.5f,
+		"and the display bound was captured AT RECORD TIME");
+	ZENITH_ASSERT_FALSE(xPanel.WasBlendStripDrawnLastFrame(),
+		"★ the strip emitted NOT ONE item for a single-clip state — not a header, not a disabled row");
+	ZENITH_ASSERT_EQ(xPanel.GetDrawnBlendPointCount(), 0u, "and no markers");
+	Zenith_AnimCtrlPanelRect xUnused;
+	ZENITH_ASSERT_FALSE(xPanel.GetBlendStripRect(xUnused), "so the strip rect refuses");
+
+	Zenith_AnimCtrlPanelRect xCanvasPlain;
+	ZENITH_ASSERT_TRUE(xPanel.GetCanvasRect(xCanvasPlain), "the canvas publishes");
+	const float fHeightPlain = xCanvasPlain.Height();
+	ZENITH_ASSERT_GT(fHeightPlain, 1.0f, "with a real height");
+
+	// ---- a blend space with four more points, and the canvas must not move ---
+	// ★ A 1D SPACE ON PURPOSE. The strip lives inside the inspector child, which
+	// SCROLLS, and a clipped ImGui item is not interactable — so the marker rects
+	// are recorded only while the surface is visible. A 1D strip is one axis row
+	// tall and fits; a 2D square is deliberately not what a height guard should
+	// hinge on, because then a failure would be about the fixture's layout rather
+	// than about the canvas.
+	ZENITH_ASSERT_TRUE(xPanel.Action_SetStateTreeKind("Locomotion", ZENITH_ANIMCTRL_TREE_BLENDSPACE_1D),
+		"convert to a 1D space");
+	for (u_int u = 0; u < 4u; ++u)
+	{
+		ZENITH_ASSERT_TRUE(xPanel.Action_AddBlendPoint("Locomotion", "WalkClip",
+			static_cast<float>(u) + 1.0f, 0.0f), "a point");
+	}
+	AnimSmRenderFrames(xPanel, 2);
+
+	ZENITH_ASSERT_TRUE(xPanel.WasBlendStripDrawnLastFrame(), "★ now the strip draws");
+	ZENITH_ASSERT_EQ(xPanel.GetDrawnBlendPointCount(), 5u,
+		"with all five markers painted inside it (the seeded one plus the four added)");
+	Zenith_AnimCtrlPanelRect xStrip;
+	ZENITH_ASSERT_TRUE(xPanel.GetBlendStripRect(xStrip), "and the strip rect publishes");
+	ZENITH_ASSERT_GT(xStrip.Width(), 1.0f, "with a real width");
+
+	Zenith_AnimCtrlPanelRect xCanvasSpace;
+	ZENITH_ASSERT_TRUE(xPanel.GetCanvasRect(xCanvasSpace), "the canvas still publishes");
+	ZENITH_ASSERT_EQ_FLOAT(xCanvasSpace.Height(), fHeightPlain, 0.5f,
+		"★ a blend space with five markers costs the canvas NOTHING — the strip is inside the fixed-height "
+		"inspector child, so a sub-graph cannot push the graph off the bottom the way an always-drawn "
+		"section did on the dope sheet");
+
+	// ★ AND THE EQUALITY ABOVE IS NOT AN EQUALITY WITH A CONSTANT. A height that
+	// never moved would satisfy it just as well. Deliberately in the GROWING
+	// direction, for the reason the layer strip's guard grows too: shrinking far
+	// enough to be convincing can drive the canvas below RenderCanvas's 8 px floor
+	// on a high-DPI machine.
+	xPanel.RequestWindowPlacement(20.0f, 20.0f, 1200.0f, 780.0f);
+	AnimSmRenderFrames(xPanel, 2);
+	Zenith_AnimCtrlPanelRect xCanvasTall;
+	ZENITH_ASSERT_TRUE(xPanel.GetCanvasRect(xCanvasTall), "the canvas publishes in the taller window");
+	ZENITH_ASSERT_GT(xCanvasTall.Height(), fHeightPlain + 60.0f,
+		"★ and a 140 px taller window really does grow it — the guard measures something");
+
+	// Deselecting takes the strip away again, so "drawn" tracks the SELECTION and
+	// not merely "a blend space exists somewhere in this machine".
+	ZENITH_ASSERT_TRUE(xPanel.Action_ClearSelection(), "clear the selection");
+	AnimSmRenderFrames(xPanel, 2);
+	ZENITH_ASSERT_FALSE(xPanel.WasBlendStripDrawnLastFrame(),
+		"★ and with nothing selected the strip emits nothing again");
+
+	xPanel.CloseAsset();
+}
+
+ZENITH_TEST(AnimSmPanel, ThePixelToPositionMappingRoundTripsAndTheDragGoesThroughIt)
+{
+	// ★ ONE MAPPING, ASSERTED AS A PURE FUNCTION FIRST. The dope sheet's rule
+	// (Zenith_AnimTimelineMath) applied to a blend axis: the draw places a marker
+	// with BlendPositionToPixel and the drag reads a position back with
+	// BlendPixelToPosition, so if the two are not inverses a marker sits where a
+	// click does not land — and no amount of clicking tells you which half is
+	// wrong.
+	for (u_int u = 0; u <= 10u; ++u)
+	{
+		const float fPosition = -3.0f + static_cast<float>(u) * 0.9f;
+		const float fPixel = Zenith_EditorPanel_AnimStateMachine::BlendPositionToPixel(
+			fPosition, 100.0f, 420.0f, -3.0f, 6.0f);
+		const float fBack = Zenith_EditorPanel_AnimStateMachine::BlendPixelToPosition(
+			fPixel, 100.0f, 420.0f, -3.0f, 6.0f);
+		ZENITH_ASSERT_EQ_FLOAT(fBack, fPosition, 1e-3f, "★ position -> pixel -> position is the identity");
+	}
+	// The two ends land on the two edges, so the range the strip advertises is
+	// the range it actually draws.
+	ZENITH_ASSERT_EQ_FLOAT(Zenith_EditorPanel_AnimStateMachine::BlendPositionToPixel(-3.0f, 100.0f, 420.0f, -3.0f, 6.0f),
+		100.0f, 1e-3f, "the low end is the left edge");
+	ZENITH_ASSERT_EQ_FLOAT(Zenith_EditorPanel_AnimStateMachine::BlendPositionToPixel(6.0f, 100.0f, 420.0f, -3.0f, 6.0f),
+		420.0f, 1e-3f, "and the high end is the right edge");
+	// A DEGENERATE range cannot be divided through, and answering the low edge
+	// would stack every marker on the frame.
+	ZENITH_ASSERT_EQ_FLOAT(Zenith_EditorPanel_AnimStateMachine::BlendPositionToPixel(5.0f, 100.0f, 420.0f, 2.0f, 2.0f),
+		260.0f, 1e-3f, "a zero-span range maps everything to the middle");
+
+	// The range helper: padded, and floored so a one-point space still has an
+	// axis to drag along.
+	float fRangeMin = 0.0f;
+	float fRangeMax = 0.0f;
+	Zenith_EditorPanel_AnimStateMachine::ComputeBlendAxisRange(0.0f, 10.0f, fRangeMin, fRangeMax);
+	ZENITH_ASSERT_LT(fRangeMin, 0.0f, "the range is padded below the lowest point");
+	ZENITH_ASSERT_GT(fRangeMax, 10.0f, "and above the highest");
+	Zenith_EditorPanel_AnimStateMachine::ComputeBlendAxisRange(2.0f, 2.0f, fRangeMin, fRangeMax);
+	ZENITH_ASSERT_GE(fRangeMax - fRangeMin, fANIMSM_BLEND_MIN_SPAN - 1e-4f,
+		"★ and a degenerate span is widened — otherwise every pixel of the strip means one position");
+
+	// ---- and the DRAG goes through exactly that mapping ----------------------
+	AnimSmFixture xFixture("zenith_animsm_blenddragpixel");
+	const std::string strClip = xFixture.WriteClip("walk.zanim", "WalkClip");
+
+	Zenith_EditorPanel_AnimStateMachine xPanel;
+	ZENITH_ASSERT_TRUE(xPanel.OpenAssetFresh(xFixture.m_strControllerPath), "a fresh controller opens");
+	ZENITH_ASSERT_TRUE(xPanel.Action_AddClipPath(strClip), "a clip");
+	ZENITH_ASSERT_TRUE(xPanel.Action_AddState("Locomotion"), "a state");
+	ZENITH_ASSERT_TRUE(xPanel.Action_SetStateTreeKind("Locomotion", ZENITH_ANIMCTRL_TREE_BLENDSPACE_1D), "as a 1D space");
+	ZENITH_ASSERT_TRUE(xPanel.Action_AddBlendPoint("Locomotion", "WalkClip", 0.0f, 0.0f), "one point at 0");
+	ZENITH_ASSERT_TRUE(xPanel.Action_AddBlendPoint("Locomotion", "WalkClip", 4.0f, 0.0f), "and one at 4");
+
+	// ★ BEFORE ANY FRAME, THE DRAG REFUSES. The mapping is (strip rect, axis
+	// range) and BOTH are recorded by the draw — inventing either would drop the
+	// point at a position the strip never showed.
+	ZENITH_ASSERT_TRUE(xPanel.Action_SelectBlendPoint(1u), "select the far point");
+	ZENITH_ASSERT_FALSE(xPanel.Action_DragBlendPointToPixel(1u, 500.0f, 400.0f),
+		"★ a drag with no drawn strip is refused rather than guessed at");
+
+	xPanel.RequestWindowPlacement(20.0f, 20.0f, 1200.0f, 640.0f);
+	AnimSmRenderFrames(xPanel, 2);
+	ZENITH_ASSERT_TRUE(xPanel.WasBlendStripDrawnLastFrame(), "the strip drew");
+
+	Zenith_AnimCtrlPanelRect xStrip;
+	ZENITH_ASSERT_TRUE(xPanel.GetBlendStripRect(xStrip), "and published its frame");
+	float fAxisMin = 0.0f;
+	float fAxisMax = 0.0f;
+	ZENITH_ASSERT_TRUE(xPanel.GetBlendAxisRange(ZENITH_ANIMCTRL_BLEND_AXIS_X, fAxisMin, fAxisMax),
+		"and the axis range it drew with");
+
+	// Drop the point a quarter of the way along the strip and assert the document
+	// holds exactly what the pure mapping says it should.
+	const float fTargetPixel = xStrip.m_fMinX + xStrip.Width() * 0.25f;
+	const float fExpected = Zenith_EditorPanel_AnimStateMachine::BlendPixelToPosition(
+		fTargetPixel, xStrip.m_fMinX, xStrip.m_fMaxX, fAxisMin, fAxisMax);
+	ZENITH_ASSERT_TRUE(xPanel.Action_DragBlendPointToPixel(1u, fTargetPixel, xStrip.Centre().y),
+		"the drag commits");
+
+	// ★ THE POINT MAY HAVE RENUMBERED — the 1D list is kept sorted — so the
+	// SELECTION is what says where it went, and the selection is what a drag
+	// leaves correct.
+	const u_int uNow = xPanel.GetSelectedBlendPoint();
+	ZENITH_ASSERT_TRUE(uNow != uINVALID_ANIMSM_BLEND_POINT, "and the selection followed the point");
+	std::string strFound;
+	Zenith_Maths::Vector2 xFound(0.0f);
+	ZENITH_ASSERT_TRUE(xPanel.Document().GetBlendPoint("Locomotion", uNow, strFound, xFound), "which reads back");
+	ZENITH_ASSERT_EQ_FLOAT(xFound.x, fExpected, 1e-3f,
+		"★ at exactly the position the strip's own mapping puts that pixel at");
 
 	xPanel.CloseAsset();
 }

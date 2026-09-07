@@ -745,3 +745,313 @@ ZENITH_TEST(AnimCtrlDoc, EveryLayerEditIsOneUndoStepAndAnAssignmentNoOpPushesNot
 
 	xDoc.CloseDiscardingChanges();
 }
+
+//==============================================================================
+// The blend-tree sub-graph (WU-7.3)
+//==============================================================================
+
+ZENITH_TEST(AnimCtrlDoc, ABlendSpaceIsItsOwnKindAndOnlyANestIsStillComplex)
+{
+	// ★ THE REFUSAL DID NOT GO AWAY, IT GOT SMALLER — and that distinction is the
+	// whole of this unit. WU-6.5 answered COMPLEX for a blend space, a composite
+	// and a container alike; a blend space is now editable and the other two are
+	// still refused BY NAME, because assigning anything to a nest would delete a
+	// sub-graph nothing can reconstruct and report success.
+	AnimCtrlDocFixture xFixture("zenith_animctrldoc_classify");
+	Zenith_AnimControllerDocument xDoc;
+	ZENITH_ASSERT_TRUE(xDoc.OpenFresh(xFixture.PathFor("kinds.zanimctrl")) == ZENITH_ANIMCTRLDOC_OPEN_OK, "open fresh");
+
+	ZENITH_ASSERT_TRUE(xDoc.ClassifyBlendTree(nullptr) == ZENITH_ANIMCTRL_TREE_EMPTY, "no tree is EMPTY");
+	{
+		Flux_BlendTreeNode_Clip xClip;
+		ZENITH_ASSERT_TRUE(xDoc.ClassifyBlendTree(&xClip) == ZENITH_ANIMCTRL_TREE_SINGLE_CLIP, "a leaf is SINGLE_CLIP");
+	}
+	{
+		Flux_BlendTreeNode_BlendSpace1D xSpace;
+		ZENITH_ASSERT_TRUE(xDoc.ClassifyBlendTree(&xSpace) == ZENITH_ANIMCTRL_TREE_BLENDSPACE_1D,
+			"★ a 1D space is its OWN kind now, not COMPLEX");
+	}
+	{
+		Flux_BlendTreeNode_BlendSpace2D xSpace;
+		ZENITH_ASSERT_TRUE(xDoc.ClassifyBlendTree(&xSpace) == ZENITH_ANIMCTRL_TREE_BLENDSPACE_2D,
+			"★ and so is a 2D space");
+	}
+	{
+		Flux_BlendTreeNode_Blend xNest;
+		ZENITH_ASSERT_TRUE(xDoc.ClassifyBlendTree(&xNest) == ZENITH_ANIMCTRL_TREE_COMPLEX,
+			"★ what is LEFT in COMPLEX is the nests");
+	}
+
+	// And a nest is still refused end to end, through a real state.
+	ZENITH_ASSERT_TRUE(xDoc.AddState("Nested"), "a state");
+	ZENITH_ASSERT_TRUE(xDoc.SetStateClip("Nested", "Idle"), "with a clip leaf to start");
+	{
+		// Reach past the document ONCE, to author the shape the document cannot
+		// create — which is exactly the point of the refusal being tested.
+		Flux_AnimationStateMachineDef* pxMachine =
+			const_cast<Flux_AnimationStateMachineDef*>(xDoc.GetSelectedMachineDef());
+		Flux_AnimationState* pxState = pxMachine->GetState("Nested");
+		Flux_BlendTreeNode* pxOld = pxState->GetBlendTree();
+		pxState->SetBlendTree(new Flux_BlendTreeNode_Additive());
+		delete pxOld;
+	}
+
+	ZENITH_ASSERT_TRUE(xDoc.GetStateTreeKind("Nested") == ZENITH_ANIMCTRL_TREE_COMPLEX, "the state reads as COMPLEX");
+	const u_int uDepth = xDoc.GetUndoStackSize();
+	ZENITH_ASSERT_FALSE(xDoc.SetStateTreeKind("Nested", ZENITH_ANIMCTRL_TREE_BLENDSPACE_1D),
+		"★ converting a nest is REFUSED");
+	ZENITH_ASSERT_TRUE(xDoc.GetLastBlendTreeDiagnostic() == std::string(
+		Zenith_AnimControllerDocument::BlendTreeRefusalText()), "with the ONE wording of the refusal");
+	ZENITH_ASSERT_FALSE(xDoc.SetStateClip("Nested", "Idle"), "and so is assigning a clip to it");
+	ZENITH_ASSERT_EQ(xDoc.GetUndoStackSize(), uDepth, "neither touched the stack");
+	ZENITH_ASSERT_TRUE(xDoc.GetStateTreeKind("Nested") == ZENITH_ANIMCTRL_TREE_COMPLEX, "★ and the nest is still there");
+
+	xDoc.CloseDiscardingChanges();
+}
+
+ZENITH_TEST(AnimCtrlDoc, ConvertingASingleClipSeedsTheFirstPointAndUndoRestoresTheTreeBytes)
+{
+	// ★ THE UNDO IS BYTE-EXACT, NOT APPROXIMATE, and that is why the command is a
+	// whole-state snapshot: converting a clip leaf to a blend space throws the
+	// leaf away — with its playback rate and its playhead — and nothing inside the
+	// space could reconstruct them.
+	AnimCtrlDocFixture xFixture("zenith_animctrldoc_convert");
+	Zenith_AnimControllerDocument xDoc;
+	ZENITH_ASSERT_TRUE(xDoc.OpenFresh(xFixture.PathFor("convert.zanimctrl")) == ZENITH_ANIMCTRLDOC_OPEN_OK, "open fresh");
+	ZENITH_ASSERT_TRUE(xDoc.AddState("Locomotion"), "a state");
+	ZENITH_ASSERT_TRUE(xDoc.SetStateClip("Locomotion", "WalkClip"), "playing one clip");
+
+	// Freeze the tree's bytes BEFORE the conversion. This is the same walk the
+	// undo command captures through, so "identical afterwards" is the exact
+	// property being claimed rather than a field-by-field approximation of it.
+	Zenith_Vector<char> axBefore;
+	{
+		const Flux_AnimationState* pxState = xDoc.GetSelectedMachineDef()->GetState("Locomotion");
+		Zenith_DataStream xStream(1);
+		pxState->WriteToDataStream(xStream);
+		const char* pcBytes = static_cast<const char*>(xStream.GetData());
+		for (u_int64 ul = 0; ul < xStream.GetCursor(); ++ul)
+		{
+			axBefore.PushBack(pcBytes[ul]);
+		}
+	}
+	ZENITH_ASSERT_GT(axBefore.GetSize(), 0u, "the state serializes to something");
+
+	const u_int uDepth = xDoc.GetUndoStackSize();
+	ZENITH_ASSERT_TRUE(xDoc.SetStateTreeKind("Locomotion", ZENITH_ANIMCTRL_TREE_BLENDSPACE_1D), "convert to 1D");
+	ZENITH_ASSERT_EQ(xDoc.GetUndoStackSize(), uDepth + 1u, "as ONE undo step");
+	ZENITH_ASSERT_TRUE(xDoc.GetStateTreeKind("Locomotion") == ZENITH_ANIMCTRL_TREE_BLENDSPACE_1D, "it is a 1D space");
+
+	// ★ THE CLIP CAME WITH IT. A conversion that started from scratch would have
+	// silently deleted the one thing the state was already playing.
+	ZENITH_ASSERT_EQ(xDoc.GetBlendPointCount("Locomotion"), 1u, "★ seeded with ONE point");
+	std::string strClip;
+	Zenith_Maths::Vector2 xPosition(9.0f, 9.0f);
+	ZENITH_ASSERT_TRUE(xDoc.GetBlendPoint("Locomotion", 0, strClip, xPosition), "which reads back");
+	ZENITH_ASSERT_EQ(strClip, std::string("WalkClip"), "★ playing the clip the leaf played");
+	ZENITH_ASSERT_EQ_FLOAT(xPosition.x, 0.0f, 1e-6f, "at the origin");
+	ZENITH_ASSERT_EQ_FLOAT(xPosition.y, 0.0f, 1e-6f,
+		"★ and a 1D read answers y = 0 rather than leaving the caller's value in place");
+
+	// ASSIGNMENT: the kind it already holds is satisfied and pushes nothing.
+	ZENITH_ASSERT_TRUE(xDoc.SetStateTreeKind("Locomotion", ZENITH_ANIMCTRL_TREE_BLENDSPACE_1D),
+		"asking for the kind in place is satisfied");
+	ZENITH_ASSERT_EQ(xDoc.GetUndoStackSize(), uDepth + 1u, "and pushes nothing");
+
+	xDoc.Undo();
+	ZENITH_ASSERT_TRUE(xDoc.GetStateTreeKind("Locomotion") == ZENITH_ANIMCTRL_TREE_SINGLE_CLIP,
+		"the undo puts the clip leaf back");
+	std::string strRestored;
+	ZENITH_ASSERT_TRUE(xDoc.GetStateClipName("Locomotion", strRestored), "which names a clip");
+	ZENITH_ASSERT_EQ(strRestored, std::string("WalkClip"), "the original one");
+
+	Zenith_Vector<char> axAfter;
+	{
+		const Flux_AnimationState* pxState = xDoc.GetSelectedMachineDef()->GetState("Locomotion");
+		Zenith_DataStream xStream(1);
+		pxState->WriteToDataStream(xStream);
+		const char* pcBytes = static_cast<const char*>(xStream.GetData());
+		for (u_int64 ul = 0; ul < xStream.GetCursor(); ++ul)
+		{
+			axAfter.PushBack(pcBytes[ul]);
+		}
+	}
+	ZENITH_ASSERT_EQ(axAfter.GetSize(), axBefore.GetSize(), "the restored state serializes to the same LENGTH");
+	bool bIdentical = (axAfter.GetSize() == axBefore.GetSize());
+	for (u_int u = 0; bIdentical && u < axAfter.GetSize(); ++u)
+	{
+		bIdentical = (axAfter.Get(u) == axBefore.Get(u));
+	}
+	ZENITH_ASSERT_TRUE(bIdentical, "★ and to the same BYTES — the undo is exact, not approximate");
+
+	xDoc.CloseDiscardingChanges();
+}
+
+ZENITH_TEST(AnimCtrlDoc, ABlendAxisBindsOnlyADeclaredFloatAndTheRefusalSaysWhy)
+{
+	// ★ THE RULE IS THE RUNTIME'S, NOT A PREFERENCE.
+	// Flux_BlendTreeNode_BlendSpace1D::ResolveParameters reads its binding through
+	// Flux_AnimationParameters::GetFloat, so an Int declaration would be read
+	// through the wrong union member — and an UNDECLARED name is left at the
+	// literal by the runtime, which is a binding that looks authored and does
+	// nothing at all.
+	AnimCtrlDocFixture xFixture("zenith_animctrldoc_bind");
+	Zenith_AnimControllerDocument xDoc;
+	ZENITH_ASSERT_TRUE(xDoc.OpenFresh(xFixture.PathFor("bind.zanimctrl")) == ZENITH_ANIMCTRLDOC_OPEN_OK, "open fresh");
+	ZENITH_ASSERT_TRUE(xDoc.AddParameter(Zenith_AnimCtrlParameterDecl::Float("Speed", 0.0f)), "a Float");
+	ZENITH_ASSERT_TRUE(xDoc.AddParameter(Zenith_AnimCtrlParameterDecl::Int("Ammo", 3)), "and an Int");
+	ZENITH_ASSERT_TRUE(xDoc.AddState("Locomotion"), "a state");
+	ZENITH_ASSERT_TRUE(xDoc.SetStateTreeKind("Locomotion", ZENITH_ANIMCTRL_TREE_BLENDSPACE_1D), "as a 1D space");
+
+	const u_int uDepth = xDoc.GetUndoStackSize();
+	ZENITH_ASSERT_FALSE(xDoc.SetBlendSpaceParameter("Locomotion", ZENITH_ANIMCTRL_BLEND_AXIS_X, "Ammo"),
+		"★ an INT parameter is refused");
+	ZENITH_ASSERT_TRUE(xDoc.GetLastBlendTreeDiagnostic() == std::string(
+		Zenith_AnimControllerDocument::BlendParameterRefusalText()), "with the ONE wording of the refusal");
+	ZENITH_ASSERT_FALSE(xDoc.SetBlendSpaceParameter("Locomotion", ZENITH_ANIMCTRL_BLEND_AXIS_X, "NoSuchParam"),
+		"★ and so is an UNDECLARED name — the runtime would leave it at the literal, silently");
+	ZENITH_ASSERT_FALSE(xDoc.SetBlendSpaceParameter("Locomotion", ZENITH_ANIMCTRL_BLEND_AXIS_Y, "Speed"),
+		"★ and a 1D space has no Y axis to bind");
+	ZENITH_ASSERT_EQ(xDoc.GetUndoStackSize(), uDepth, "none of the three touched the stack");
+
+	std::string strBound("unset");
+	ZENITH_ASSERT_TRUE(xDoc.GetBlendSpaceParameterName("Locomotion", ZENITH_ANIMCTRL_BLEND_AXIS_X, strBound),
+		"the X axis reads");
+	ZENITH_ASSERT_TRUE(strBound.empty(), "★ and is still UNBOUND — a refusal changed nothing");
+	ZENITH_ASSERT_FALSE(xDoc.GetBlendSpaceParameterName("Locomotion", ZENITH_ANIMCTRL_BLEND_AXIS_Y, strBound),
+		"reading a 1D space's Y refuses rather than answering empty");
+
+	ZENITH_ASSERT_TRUE(xDoc.SetBlendSpaceParameter("Locomotion", ZENITH_ANIMCTRL_BLEND_AXIS_X, "Speed"),
+		"the declared Float binds");
+	ZENITH_ASSERT_EQ(xDoc.GetUndoStackSize(), uDepth + 1u, "as ONE undo step");
+	ZENITH_ASSERT_TRUE(xDoc.GetBlendSpaceParameterName("Locomotion", ZENITH_ANIMCTRL_BLEND_AXIS_X, strBound), "it reads");
+	ZENITH_ASSERT_EQ(strBound, std::string("Speed"), "as the bound name");
+	ZENITH_ASSERT_TRUE(xDoc.SetBlendSpaceParameter("Locomotion", ZENITH_ANIMCTRL_BLEND_AXIS_X, "Speed"),
+		"re-stating it is satisfied");
+	ZENITH_ASSERT_EQ(xDoc.GetUndoStackSize(), uDepth + 1u, "and pushes nothing");
+
+	// UNBINDING is always allowed — a space on its authored literal is a
+	// legitimate state (D48), and an empty name is the only way back to it.
+	ZENITH_ASSERT_TRUE(xDoc.SetBlendSpaceParameter("Locomotion", ZENITH_ANIMCTRL_BLEND_AXIS_X, std::string()),
+		"an empty name UNBINDS");
+	ZENITH_ASSERT_TRUE(xDoc.GetBlendSpaceParameterName("Locomotion", ZENITH_ANIMCTRL_BLEND_AXIS_X, strBound), "it reads");
+	ZENITH_ASSERT_TRUE(strBound.empty(), "back to unbound");
+
+	// A 2D space binds each axis INDEPENDENTLY (D48): an X on "Speed" beside a Y
+	// left on its literal is the common case.
+	ZENITH_ASSERT_TRUE(xDoc.SetStateTreeKind("Locomotion", ZENITH_ANIMCTRL_TREE_BLENDSPACE_2D), "convert to 2D");
+	ZENITH_ASSERT_TRUE(xDoc.SetBlendSpaceParameter("Locomotion", ZENITH_ANIMCTRL_BLEND_AXIS_Y, "Speed"),
+		"★ a 2D space HAS a Y axis, and it takes the same Float");
+	ZENITH_ASSERT_TRUE(xDoc.GetBlendSpaceParameterName("Locomotion", ZENITH_ANIMCTRL_BLEND_AXIS_X, strBound), "X reads");
+	ZENITH_ASSERT_TRUE(strBound.empty(), "★ and X is untouched — the two axes are independent");
+
+	xDoc.CloseDiscardingChanges();
+}
+
+ZENITH_TEST(AnimCtrlDoc, EveryBlendPointEditIsOneUndoStepAndAnAssignmentNoOpPushesNothing)
+{
+	AnimCtrlDocFixture xFixture("zenith_animctrldoc_points");
+	Zenith_AnimControllerDocument xDoc;
+	ZENITH_ASSERT_TRUE(xDoc.OpenFresh(xFixture.PathFor("points.zanimctrl")) == ZENITH_ANIMCTRLDOC_OPEN_OK, "open fresh");
+	ZENITH_ASSERT_TRUE(xDoc.AddState("Locomotion"), "a state");
+	ZENITH_ASSERT_TRUE(xDoc.SetStateTreeKind("Locomotion", ZENITH_ANIMCTRL_TREE_BLENDSPACE_2D), "as a 2D space");
+
+	u_int uDepth = xDoc.GetUndoStackSize();
+	u_int uIndexA = 0xFFFFFFFFu;
+	u_int uIndexB = 0xFFFFFFFFu;
+	ZENITH_ASSERT_TRUE(xDoc.AddBlendPoint("Locomotion", "WalkClip", Zenith_Maths::Vector2(0.0f, 0.0f), &uIndexA),
+		"a point");
+	ZENITH_ASSERT_TRUE(xDoc.AddBlendPoint("Locomotion", "RunClip", Zenith_Maths::Vector2(1.0f, 2.0f), &uIndexB),
+		"and another");
+	ZENITH_ASSERT_EQ(uIndexA, 0u, "the first is index 0");
+	ZENITH_ASSERT_EQ(uIndexB, 1u, "the second is index 1");
+	ZENITH_ASSERT_EQ(xDoc.GetUndoStackSize(), uDepth + 2u, "two edits, two undo steps");
+
+	std::string strClip;
+	Zenith_Maths::Vector2 xPosition(0.0f);
+	ZENITH_ASSERT_TRUE(xDoc.GetBlendPoint("Locomotion", 1, strClip, xPosition), "point 1 reads");
+	ZENITH_ASSERT_EQ(strClip, std::string("RunClip"), "with its clip");
+	ZENITH_ASSERT_EQ_FLOAT(xPosition.y, 2.0f, 1e-6f, "★ and a 2D space KEEPS its y");
+
+	uDepth = xDoc.GetUndoStackSize();
+	// ★ ASSIGNMENT NO-OPS, DETECTED BY BYTE EQUALITY rather than by each verb
+	// growing its own field comparison.
+	ZENITH_ASSERT_TRUE(xDoc.SetBlendPointClip("Locomotion", 1, "RunClip"), "the clip it already plays");
+	ZENITH_ASSERT_TRUE(xDoc.SetBlendPointPosition("Locomotion", 1, Zenith_Maths::Vector2(1.0f, 2.0f)),
+		"the position it already holds");
+	ZENITH_ASSERT_EQ(xDoc.GetUndoStackSize(), uDepth, "★ and NEITHER pushed a step");
+
+	// CREATION / REMOVAL refusals.
+	ZENITH_ASSERT_FALSE(xDoc.AddBlendPoint("Locomotion", std::string(), Zenith_Maths::Vector2(0.0f, 0.0f)),
+		"★ a nameless clip is refused — a leaf with no name poses the bind pose and says nothing");
+	ZENITH_ASSERT_FALSE(xDoc.RemoveBlendPoint("Locomotion", 7u), "removing a point past the end is a refusal");
+	ZENITH_ASSERT_FALSE(xDoc.SetBlendPointPosition("Locomotion", 7u, Zenith_Maths::Vector2(0.0f, 0.0f)),
+		"and so is moving one");
+	ZENITH_ASSERT_EQ(xDoc.GetUndoStackSize(), uDepth, "none of which touched the stack");
+
+	// A state that is not a blend space refuses the whole family, so a caller
+	// cannot half-edit one.
+	ZENITH_ASSERT_TRUE(xDoc.AddState("Plain"), "a second state");
+	ZENITH_ASSERT_TRUE(xDoc.SetStateClip("Plain", "IdleClip"), "with a clip leaf");
+	ZENITH_ASSERT_EQ(xDoc.GetBlendPointCount("Plain"), 0u, "it has no points");
+	ZENITH_ASSERT_FALSE(xDoc.AddBlendPoint("Plain", "WalkClip", Zenith_Maths::Vector2(0.0f, 0.0f)),
+		"★ and a clip leaf takes no blend point");
+	ZENITH_ASSERT_FALSE(xDoc.GetBlendPoint("Plain", 0, strClip, xPosition),
+		"reading one refuses rather than answering an empty point");
+
+	// The removal, and its undo.
+	uDepth = xDoc.GetUndoStackSize();
+	ZENITH_ASSERT_TRUE(xDoc.RemoveBlendPoint("Locomotion", 0u), "remove point 0");
+	ZENITH_ASSERT_EQ(xDoc.GetBlendPointCount("Locomotion"), 1u, "one is left");
+	ZENITH_ASSERT_TRUE(xDoc.GetBlendPoint("Locomotion", 0, strClip, xPosition), "and it renumbered");
+	ZENITH_ASSERT_EQ(strClip, std::string("RunClip"), "to the survivor");
+	xDoc.Undo();
+	ZENITH_ASSERT_EQ(xDoc.GetBlendPointCount("Locomotion"), 2u, "★ the undo brings the point back");
+	ZENITH_ASSERT_TRUE(xDoc.GetBlendPoint("Locomotion", 0, strClip, xPosition), "at index 0");
+	ZENITH_ASSERT_EQ(strClip, std::string("WalkClip"), "★ playing the clip it played");
+
+	xDoc.CloseDiscardingChanges();
+}
+
+ZENITH_TEST(AnimCtrlDoc, A1DPointMovedPastAnotherRenumbersAndTheDocumentSaysWhereItWent)
+{
+	// ★ THE ONE PROPERTY AN INDEX-ADDRESSED BLEND API CAN GET SILENTLY WRONG.
+	// Flux_BlendTreeNode_BlendSpace1D::Evaluate brackets the parameter between
+	// ADJACENT points, so the list is kept sorted — which means a drag past a
+	// neighbour SWAPS two indices, and a caller that went on using the old one
+	// would be editing the point it just dragged past.
+	AnimCtrlDocFixture xFixture("zenith_animctrldoc_renumber");
+	Zenith_AnimControllerDocument xDoc;
+	ZENITH_ASSERT_TRUE(xDoc.OpenFresh(xFixture.PathFor("sorted.zanimctrl")) == ZENITH_ANIMCTRLDOC_OPEN_OK, "open fresh");
+	ZENITH_ASSERT_TRUE(xDoc.AddState("Locomotion"), "a state");
+	ZENITH_ASSERT_TRUE(xDoc.SetStateTreeKind("Locomotion", ZENITH_ANIMCTRL_TREE_BLENDSPACE_1D), "as a 1D space");
+	ZENITH_ASSERT_TRUE(xDoc.AddBlendPoint("Locomotion", "WalkClip", Zenith_Maths::Vector2(0.0f, 0.0f)), "walk at 0");
+	ZENITH_ASSERT_TRUE(xDoc.AddBlendPoint("Locomotion", "RunClip", Zenith_Maths::Vector2(4.0f, 0.0f)), "run at 4");
+
+	std::string strClip;
+	Zenith_Maths::Vector2 xPosition(0.0f);
+	ZENITH_ASSERT_TRUE(xDoc.GetBlendPoint("Locomotion", 0, strClip, xPosition), "point 0 reads");
+	ZENITH_ASSERT_EQ(strClip, std::string("WalkClip"), "and is the walk");
+
+	u_int uNewIndex = 0xFFFFFFFFu;
+	ZENITH_ASSERT_TRUE(xDoc.SetBlendPointPosition("Locomotion", 1, Zenith_Maths::Vector2(-3.0f, 0.0f), &uNewIndex),
+		"drag the run BELOW the walk");
+	ZENITH_ASSERT_EQ(uNewIndex, 0u, "★ and the document says the point is now index 0");
+	ZENITH_ASSERT_TRUE(xDoc.GetBlendPoint("Locomotion", 0, strClip, xPosition), "index 0 reads");
+	ZENITH_ASSERT_EQ(strClip, std::string("RunClip"), "★ which is the point that moved");
+	ZENITH_ASSERT_EQ_FLOAT(xPosition.x, -3.0f, 1e-6f, "at the dropped position");
+	ZENITH_ASSERT_TRUE(xDoc.GetBlendPoint("Locomotion", 1, strClip, xPosition), "index 1 reads");
+	ZENITH_ASSERT_EQ(strClip, std::string("WalkClip"), "★ and is now the walk — the two swapped");
+
+	// ★ ADDING A POINT SORTS TOO, so the reported index is the SORTED one rather
+	// than "the end of the list". A recipe that assumed append order would be
+	// naming a different point from its very next step.
+	u_int uInserted = 0xFFFFFFFFu;
+	ZENITH_ASSERT_TRUE(xDoc.AddBlendPoint("Locomotion", "IdleClip", Zenith_Maths::Vector2(-9.0f, 0.0f), &uInserted),
+		"add one below both");
+	ZENITH_ASSERT_EQ(uInserted, 0u, "★ and it reports index 0, not 2");
+	ZENITH_ASSERT_TRUE(xDoc.GetBlendPoint("Locomotion", 0, strClip, xPosition), "index 0 reads");
+	ZENITH_ASSERT_EQ(strClip, std::string("IdleClip"), "as the new point");
+
+	xDoc.CloseDiscardingChanges();
+}

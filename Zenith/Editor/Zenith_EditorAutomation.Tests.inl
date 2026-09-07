@@ -3535,16 +3535,105 @@ ZENITH_TEST(Automation, AnimLayerEnumBlockIsContiguous)
 	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_LAYER_EXPECT_ORDER) - iFirst, 9,
 		"ANIM_LAYER_EXPECT_ORDER must END the block — the router compares against it");
 
-	// Both boundaries. SET_NAVMESH_ASSET is a STANDALONE verb that has to keep
-	// reaching ExecuteAction's own switch: swallowed into this range it would land
-	// in ExecuteAnimLayerAction's `default:` assert at boot, which is a run-time
-	// failure for a compile-time mistake.
+	// Both boundaries, from this side.
 	ZENITH_ASSERT_EQ(iFirst - static_cast<int>(Zenith_EditorActionType::ANIM_MASK_EXPECT_WEIGHT), 1,
 		"the ANIM_LAYER block must start immediately after the ANIM_MASK range ends");
-	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::SET_NAVMESH_ASSET) -
+	// ★ THIS LINE USED TO NAME SET_NAVMESH_ASSET, and it MOVED with WU-7.3 rather
+	// than being deleted — the fifth time it has moved (WU-4.3, WU-6.5, WU-7.1,
+	// WU-7.2, and now this). What it pins is that the ANIM_LAYER range ENDS where
+	// the router thinks it does; the successor being a sixth animation block
+	// instead of the navmesh verb does not weaken that. SET_NAVMESH_ASSET's own
+	// "must stay outside every range" is pinned by AnimBlendEnumBlockIsContiguous
+	// below, which is where its neighbour now is.
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_BLEND_SET_TREE_KIND) -
 		static_cast<int>(Zenith_EditorActionType::ANIM_LAYER_EXPECT_ORDER), 1,
-		"SET_NAVMESH_ASSET must sit immediately after the ANIM_LAYER range — inside it, the "
-		"router would hand it to ExecuteAnimLayerAction's default: assert");
+		"the ANIM_BLEND block must start immediately after the ANIM_LAYER range ends — inside it, the "
+		"router would hand a blend verb to ExecuteAnimLayerAction's default: assert");
+}
+
+ZENITH_TEST(Automation, AnimBlendEnumBlockIsContiguous)
+{
+	// The youngest block (WU-7.3), pinned the way every block before it is: the
+	// header static_asserts the WIDTH, and this pins each member's POSITION so a
+	// reorder that preserves the width fails here naming the member that moved
+	// rather than at boot inside a neighbour's `default:` assert.
+	const int iFirst = static_cast<int>(Zenith_EditorActionType::ANIM_BLEND_SET_TREE_KIND);
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_BLEND_SET_PARAMETER) - iFirst, 1,
+		"ANIM_BLEND_SET_PARAMETER must be the second member of the block");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_BLEND_ADD_POINT) - iFirst, 2,
+		"ANIM_BLEND_ADD_POINT must be the third member of the block");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_BLEND_REMOVE_POINT) - iFirst, 3,
+		"ANIM_BLEND_REMOVE_POINT must be the fourth member of the block");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_BLEND_SET_POINT_CLIP) - iFirst, 4,
+		"ANIM_BLEND_SET_POINT_CLIP must be the fifth member of the block");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_BLEND_SET_POINT_POSITION) - iFirst, 5,
+		"ANIM_BLEND_SET_POINT_POSITION must be the sixth member of the block");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_BLEND_SELECT_POINT) - iFirst, 6,
+		"ANIM_BLEND_SELECT_POINT must be the seventh member of the block");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_BLEND_EXPECT_POINT_COUNT) - iFirst, 7,
+		"ANIM_BLEND_EXPECT_POINT_COUNT must be the eighth member of the block");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_BLEND_EXPECT_POINT_POSITION) - iFirst, 8,
+		"ANIM_BLEND_EXPECT_POINT_POSITION must END the block — the router compares against it");
+
+	// Both boundaries. SET_NAVMESH_ASSET is a STANDALONE verb that has to keep
+	// reaching ExecuteAction's own switch: swallowed into this range it would land
+	// in ExecuteAnimBlendAction's `default:` assert at boot, which is a run-time
+	// failure for a compile-time mistake.
+	ZENITH_ASSERT_EQ(iFirst - static_cast<int>(Zenith_EditorActionType::ANIM_LAYER_EXPECT_ORDER), 1,
+		"the ANIM_BLEND block must start immediately after the ANIM_LAYER range ends");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::SET_NAVMESH_ASSET) -
+		static_cast<int>(Zenith_EditorActionType::ANIM_BLEND_EXPECT_POINT_POSITION), 1,
+		"SET_NAVMESH_ASSET must sit immediately after the ANIM_BLEND range — inside it, the "
+		"router would hand it to ExecuteAnimBlendAction's default: assert");
+}
+
+ZENITH_TEST(Automation, AnimBlendStepsPackTheirPayloads)
+{
+	// The queue is drained MUCH later than it is built, so every argument has to
+	// survive as an OWNED copy in the action struct. This asserts the packing
+	// contract the executor reads back; the two halves are written from the same
+	// comment block in the .cpp, and this is what stops them drifting.
+	Zenith_EditorAutomation& xAuto = g_xEngine.EditorAutomation();
+	xAuto.Reset();
+
+	xAuto.AddStep_AnimBlendSetTreeKind("Locomotion", 1 /* Blend Space 1D */);
+	xAuto.AddStep_AnimBlendSetParameter("Locomotion", 0 /* X */, "Speed");
+	xAuto.AddStep_AnimBlendAddPoint("Locomotion", "WalkClip", 0.0f, 0.0f);
+	xAuto.AddStep_AnimBlendSetPointPosition("Locomotion", 1, 4.0f, -2.0f);
+	xAuto.AddStep_AnimBlendSelectPoint(-1);
+	xAuto.AddStep_AnimBlendExpectPointPosition("Locomotion", 1, 4.0f, -2.0f, 1.0e-3f);
+
+	ZENITH_ASSERT_EQ(xAuto.m_axActions.GetSize(), 6u, "six steps queued");
+
+	const Zenith_EditorAction& xKind = xAuto.m_axActions.Get(0);
+	ZENITH_ASSERT_TRUE(xKind.m_eType == Zenith_EditorActionType::ANIM_BLEND_SET_TREE_KIND,
+		"step 0 is ANIM_BLEND_SET_TREE_KIND");
+	ZENITH_ASSERT_STREQ(xKind.m_szArg1.c_str(), "Locomotion", "the STATE name is OWNED by the action, not aliased");
+	ZENITH_ASSERT_EQ(xKind.m_aiArgs[0], 1, "aiArgs[0] carries the tree kind as an offset from Single Clip");
+
+	const Zenith_EditorAction& xParam = xAuto.m_axActions.Get(1);
+	ZENITH_ASSERT_STREQ(xParam.m_szArg2.c_str(), "Speed", "szArg2 is the PARAMETER name");
+	ZENITH_ASSERT_EQ(xParam.m_aiArgs[0], 0, "with the axis beside it");
+
+	const Zenith_EditorAction& xAdd = xAuto.m_axActions.Get(2);
+	ZENITH_ASSERT_STREQ(xAdd.m_szArg2.c_str(), "WalkClip",
+		"★ szArg2 is the CLIP NAME on an add — a point plays a clip by name through the collection, "
+		"never by path");
+
+	const Zenith_EditorAction& xMove = xAuto.m_axActions.Get(3);
+	ZENITH_ASSERT_EQ(xMove.m_aiArgs[0], 1, "MOVE names the point by INDEX — a blend point has no other handle");
+	ZENITH_ASSERT_EQ_FLOAT(xMove.m_afArgs[0], 4.0f, 1e-6f, "afArgs[0] is the x");
+	ZENITH_ASSERT_EQ_FLOAT(xMove.m_afArgs[1], -2.0f, 1e-6f,
+		"★ and afArgs[1] is the y, carried even for a 1D space — one position shape for both kinds");
+
+	const Zenith_EditorAction& xSelect = xAuto.m_axActions.Get(4);
+	ZENITH_ASSERT_EQ(xSelect.m_aiArgs[0], -1, "★ -1 is the CLEAR, and it reaches the executor as a negative");
+
+	const Zenith_EditorAction& xExpect = xAuto.m_axActions.Get(5);
+	ZENITH_ASSERT_EQ_FLOAT(xExpect.m_afArgs[2], 1.0e-3f, 1e-9f,
+		"afArgs[2] is the tolerance, in its own slot so the position keeps the first two");
+
+	xAuto.Reset();
 }
 
 ZENITH_TEST(Automation, AnimLayerStepsPackTheirPayloads)

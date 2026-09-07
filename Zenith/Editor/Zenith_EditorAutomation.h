@@ -447,6 +447,50 @@ enum class Zenith_EditorActionType
 	ANIM_LAYER_SELECT,
 	ANIM_LAYER_EXPECT_ORDER,	// END of the contiguous ANIM_LAYER range (see ANIM_LAYER_ADD)
 
+	// BLEND-TREE authoring (WU-7.3). A SIXTH animation block, appended for the
+	// reason the second through fifth exist: adding a verb INSIDE the block above
+	// would move ANIM_LAYER_EXPECT_ORDER, which is the upper bound BOTH the
+	// router's range test and the header's static_assert compare against, and
+	// which `Automation, AnimLayerEnumBlockIsContiguous` pins by position. A new
+	// contiguous block costs one more range test and moves nothing.
+	//
+	// Each verb performs EXACTLY what one of Zenith_EditorPanel_AnimStateMachine's
+	// blend Action_* twins performs — the same call the "Blend Tree" strip's own
+	// handler ends in — so an authored recipe and a human's gesture cannot
+	// diverge. The two EXPECT_* verbs are ASSERTIONS rather than mutations.
+	//
+	// ★ A BLEND POINT IS ADDRESSED BY INDEX, AND THAT IS NOT THE D43 MISTAKE. A
+	// point has no identity to address it by — it is a struct in a vector and its
+	// child is an owned raw pointer with no id — so an index is the only handle
+	// there is. What follows from that is that a 1D SET_POINT_POSITION can
+	// RENUMBER (the list is kept sorted, because Evaluate blends between ADJACENT
+	// points), so a recipe that moves a point past another and then names the old
+	// index is naming a different point. Author the positions in ascending order,
+	// and state the result with EXPECT_POINT_POSITION.
+	//
+	// A typical authoring sequence:
+	//   AnimSmOpenFresh("game:Anim/Player.zanimctrl") ->
+	//   AnimSmAddClipPath(walk) -> AnimSmAddClipPath(run) ->
+	//   AnimSmAddParameter("Speed", Float, 0) -> AnimSmAddState("Locomotion") ->
+	//   AnimBlendSetTreeKind("Locomotion", 1 /* 1D */) ->
+	//   AnimBlendSetParameter("Locomotion", 0 /* X */, "Speed") ->
+	//   AnimBlendAddPoint("Locomotion", "Walk", 0, 0) ->
+	//   AnimBlendAddPoint("Locomotion", "Run", 4, 0) ->
+	//   AnimBlendExpectPointCount("Locomotion", 2) -> AnimSmSave().
+	//
+	// NOTE: this block must stay CONTIGUOUS (ExecuteAction routes the whole range
+	// to ExecuteAnimBlendAction by a pair of comparisons against its first and
+	// last member).
+	ANIM_BLEND_SET_TREE_KIND,
+	ANIM_BLEND_SET_PARAMETER,
+	ANIM_BLEND_ADD_POINT,
+	ANIM_BLEND_REMOVE_POINT,
+	ANIM_BLEND_SET_POINT_CLIP,
+	ANIM_BLEND_SET_POINT_POSITION,
+	ANIM_BLEND_SELECT_POINT,
+	ANIM_BLEND_EXPECT_POINT_COUNT,
+	ANIM_BLEND_EXPECT_POINT_POSITION,	// END of the contiguous ANIM_BLEND range (see ANIM_BLEND_SET_TREE_KIND)
+
 	// NavMesh. Deliberately NOT appended to the Terrain block above, which is
 	// routed by a range comparison: a standalone action sits outside every
 	// range and reaches ExecuteAction's own switch, which is what a
@@ -520,6 +564,16 @@ static_assert(static_cast<int>(Zenith_EditorActionType::ANIM_MASK_EXPECT_WEIGHT)
 static_assert(static_cast<int>(Zenith_EditorActionType::ANIM_LAYER_EXPECT_ORDER) -
 	static_cast<int>(Zenith_EditorActionType::ANIM_LAYER_ADD) == 9,
 	"the ANIM_LAYER block must stay CONTIGUOUS and ten wide — ExecuteAction routes it by range");
+// And the same pin for the ANIM_BLEND block (WU-7.3), the SIXTH animation range
+// and now the youngest block in the enum. Width here; the
+// `Automation, AnimBlendEnumBlockIsContiguous` unit pins each member's POSITION
+// and both boundaries — including SET_NAVMESH_ASSET's "must stay outside every
+// range", whose neighbour this block has become (it was ANIM_LAYER's until this
+// one was appended; that assertion has now been re-pointed five times, which is
+// the mechanism working rather than a smell).
+static_assert(static_cast<int>(Zenith_EditorActionType::ANIM_BLEND_EXPECT_POINT_POSITION) -
+	static_cast<int>(Zenith_EditorActionType::ANIM_BLEND_SET_TREE_KIND) == 8,
+	"the ANIM_BLEND block must stay CONTIGUOUS and nine wide — ExecuteAction routes it by range");
 
 //-----------------------------------------------------------------------------
 // Action Data
@@ -1402,6 +1456,52 @@ void AddStep_AnimLayerSelect(int iLayerId);
 	// The layer at iIndex in the BLEND ORDER is named szExpectedName. This is the
 	// verb a reorder recipe is judged on.
 void AddStep_AnimLayerExpectOrder(int iIndex, const char* szExpectedName);
+
+	//--------------------------------------------------------------------------
+	// BLEND-TREE authoring (WU-7.3), the ANIM_BLEND_* block.
+	//
+	// One step per atomic Zenith_EditorPanel_AnimStateMachine blend Action_*, each
+	// routed through a checked wrapper that asserts on `false` — an authoring typo
+	// (a state that is not a blend space, a parameter that is not a declared
+	// Float, a point index past the end) fires at BOOT on the step that is wrong,
+	// rather than leaving a space that is quietly not what the recipe said.
+	//
+	// ★ THE STATE-MACHINE DOCUMENT MUST ALREADY BE OPEN, and the STATE must
+	// already exist. These edit the same .zanimctrl the ANIM_SM_* family does,
+	// through the same panel, so a recipe begins with AnimSmOpen / AnimSmOpenFresh
+	// plus an AnimSmAddState and ends with AnimSmSave.
+	//
+	// ★ AND A POINT PLAYS A CLIP BY **NAME**, resolved through the controller's
+	// Flux_AnimationClipCollection — so the clip's PATH has to be in the def's
+	// clip list (AnimSmAddClipPath) and the name here is the one the .zanim
+	// carries, exactly as AnimSmSetStateClip's is.
+	//--------------------------------------------------------------------------
+
+	// iKind: 0 Single Clip, 1 Blend Space 1D, 2 Blend Space 2D — an int so this
+	// header needs neither the document nor the panel header, the same choice
+	// AddStep_AnimLayerSetBlendMode makes. CONVERTING CARRIES THE CLIPS ACROSS,
+	// and an ASSIGNMENT to the kind already in place succeeds and edits nothing.
+void AddStep_AnimBlendSetTreeKind(const char* szStateName, int iKind);
+	// iAxis: 0 X, 1 Y. An EMPTY name UNBINDS. Refused for anything that is not a
+	// DECLARED Float, and for a Y on a 1D space.
+void AddStep_AnimBlendSetParameter(const char* szStateName, int iAxis, const char* szParameterName);
+	// fY is IGNORED on a 1D space — one position shape for both, so this payload
+	// and the panel's verb carry the same two floats whichever kind it is.
+void AddStep_AnimBlendAddPoint(const char* szStateName, const char* szClipName, float fX, float fY);
+void AddStep_AnimBlendRemovePoint(const char* szStateName, int iIndex);
+void AddStep_AnimBlendSetPointClip(const char* szStateName, int iIndex, const char* szClipName);
+	// ★ MAY RENUMBER on a 1D space — see the enum block's note.
+void AddStep_AnimBlendSetPointPosition(const char* szStateName, int iIndex, float fX, float fY);
+	// Panel selection only; -1 CLEARS it. Selecting a point the SELECTED state
+	// does not have is a refusal, so a recipe selects the state first.
+void AddStep_AnimBlendSelectPoint(int iIndex);
+
+	// ---- assertion steps -----------------------------------------------------
+void AddStep_AnimBlendExpectPointCount(const char* szStateName, int iExpectedCount);
+	// The position AND the clip are both what a point is, but only the position
+	// can be got wrong by a renumber — which is what this verb exists to catch.
+void AddStep_AnimBlendExpectPointPosition(const char* szStateName, int iIndex, float fX, float fY,
+	float fTolerance);
 
 	//--------------------------------------------------------------------------
 	// Scene Loading Step Helpers

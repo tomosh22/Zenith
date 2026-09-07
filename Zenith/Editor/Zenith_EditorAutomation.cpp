@@ -1141,6 +1141,114 @@ void Zenith_EditorAutomation::AddStep_AnimLayerExpectOrder(int iIndex, const cha
 	m_axActions.PushBack(xAction);
 }
 
+//------------------------------------------------------------------------------
+// BLEND-TREE authoring (WU-7.3), the ANIM_BLEND_* block. The packing contract,
+// stated ONCE here and read back by ExecuteAnimBlendAction:
+//
+//   szArg1    — the STATE name (every verb except SELECT_POINT)
+//   szArg2    — the CLIP name (ADD_POINT / SET_POINT_CLIP) or the PARAMETER name
+//               (SET_PARAMETER)
+//   aiArgs[0] — the point INDEX, or the tree KIND, or the AXIS, or the expected
+//               COUNT — one slot, because no verb needs two of them
+//   afArgs[0] — the position x
+//   afArgs[1] — the position y
+//   afArgs[2] — the tolerance (EXPECT_POINT_POSITION only)
+//------------------------------------------------------------------------------
+
+void Zenith_EditorAutomation::AddStep_AnimBlendSetTreeKind(const char* szStateName, int iKind)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::ANIM_BLEND_SET_TREE_KIND;
+	xAction.m_szArg1 = SafeStr(szStateName);
+	xAction.m_aiArgs[0] = iKind;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimBlendSetParameter(const char* szStateName, int iAxis,
+	const char* szParameterName)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::ANIM_BLEND_SET_PARAMETER;
+	xAction.m_szArg1 = SafeStr(szStateName);
+	xAction.m_szArg2 = SafeStr(szParameterName);
+	xAction.m_aiArgs[0] = iAxis;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimBlendAddPoint(const char* szStateName, const char* szClipName,
+	float fX, float fY)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::ANIM_BLEND_ADD_POINT;
+	xAction.m_szArg1 = SafeStr(szStateName);
+	xAction.m_szArg2 = SafeStr(szClipName);
+	xAction.m_afArgs[0] = fX;
+	xAction.m_afArgs[1] = fY;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimBlendRemovePoint(const char* szStateName, int iIndex)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::ANIM_BLEND_REMOVE_POINT;
+	xAction.m_szArg1 = SafeStr(szStateName);
+	xAction.m_aiArgs[0] = iIndex;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimBlendSetPointClip(const char* szStateName, int iIndex,
+	const char* szClipName)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::ANIM_BLEND_SET_POINT_CLIP;
+	xAction.m_szArg1 = SafeStr(szStateName);
+	xAction.m_szArg2 = SafeStr(szClipName);
+	xAction.m_aiArgs[0] = iIndex;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimBlendSetPointPosition(const char* szStateName, int iIndex,
+	float fX, float fY)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::ANIM_BLEND_SET_POINT_POSITION;
+	xAction.m_szArg1 = SafeStr(szStateName);
+	xAction.m_aiArgs[0] = iIndex;
+	xAction.m_afArgs[0] = fX;
+	xAction.m_afArgs[1] = fY;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimBlendSelectPoint(int iIndex)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::ANIM_BLEND_SELECT_POINT;
+	xAction.m_aiArgs[0] = iIndex;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimBlendExpectPointCount(const char* szStateName, int iExpectedCount)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::ANIM_BLEND_EXPECT_POINT_COUNT;
+	xAction.m_szArg1 = SafeStr(szStateName);
+	xAction.m_aiArgs[0] = iExpectedCount;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimBlendExpectPointPosition(const char* szStateName, int iIndex,
+	float fX, float fY, float fTolerance)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::ANIM_BLEND_EXPECT_POINT_POSITION;
+	xAction.m_szArg1 = SafeStr(szStateName);
+	xAction.m_aiArgs[0] = iIndex;
+	xAction.m_afArgs[0] = fX;
+	xAction.m_afArgs[1] = fY;
+	xAction.m_afArgs[2] = fTolerance;
+	m_axActions.PushBack(xAction);
+}
+
 void Zenith_EditorAutomation::AddStep_AnimSetAutoKey(bool bEnabled)
 {
 	Zenith_EditorAction xAction = {};
@@ -3584,6 +3692,119 @@ static void ExecuteAnimLayerAction(const Zenith_EditorAction& xAction)
 	}
 }
 
+//-----------------------------------------------------------------------------
+// BLEND-TREE authoring (WU-7.3): ANIM_BLEND_SET_TREE_KIND ..
+// ANIM_BLEND_EXPECT_POINT_POSITION. Every case ends in one of
+// Zenith_EditorPanel_AnimStateMachine's blend Action_* twins — the SAME call the
+// "Blend Tree" strip's own handler makes — so a recipe and a human's gesture run
+// one code path, and nothing here reaches past the panel into the document
+// except to READ.
+//-----------------------------------------------------------------------------
+namespace
+{
+	void AnimBlendActionChecked(bool bOk, const char* szAction, const char* szArg)
+	{
+		Zenith_Assert(bOk, "EditorAutomation blend-tree step %s('%s') failed", szAction, szArg ? szArg : "");
+		(void)bOk; (void)szAction; (void)szArg;
+	}
+
+	// A point INDEX out of a step's int. Negative folds to the never-valid
+	// sentinel so the checked wrapper reports it, rather than wrapping to a huge
+	// unsigned that a bounds test would refuse for the wrong stated reason.
+	u_int AnimBlendIndexFromAction(const Zenith_EditorAction& xAction)
+	{
+		return xAction.m_aiArgs[0] < 0 ? uINVALID_ANIMSM_BLEND_POINT : static_cast<u_int>(xAction.m_aiArgs[0]);
+	}
+}
+
+static void ExecuteAnimBlendAction(const Zenith_EditorAction& xAction)
+{
+	Zenith_EditorPanel_AnimStateMachine& xPanel = Zenith_EditorPanel_AnimStateMachine::Instance();
+	const u_int uIndex = AnimBlendIndexFromAction(xAction);
+
+	switch (xAction.m_eType)
+	{
+	case Zenith_EditorActionType::ANIM_BLEND_SET_TREE_KIND:
+	{
+		// ★ THE INT IS AN OFFSET FROM SINGLE_CLIP, matching the strip's combo, so
+		// there is one mapping rather than two that can drift. Anything outside
+		// 0..2 is left as it arrives and the document refuses it — an out-of-range
+		// kind is an authoring typo and has to fail at the step, not be rounded
+		// into a conversion nobody asked for.
+		const Zenith_AnimCtrlStateTreeKind eKind = static_cast<Zenith_AnimCtrlStateTreeKind>(
+			static_cast<u_int>(ZENITH_ANIMCTRL_TREE_SINGLE_CLIP) + static_cast<u_int>(xAction.m_aiArgs[0] < 0 ? 99 : xAction.m_aiArgs[0]));
+		AnimBlendActionChecked(xPanel.Action_SetStateTreeKind(xAction.m_szArg1, eKind),
+			"AnimBlendSetTreeKind", xAction.m_szArg1.c_str());
+		break;
+	}
+
+	case Zenith_EditorActionType::ANIM_BLEND_SET_PARAMETER:
+		AnimBlendActionChecked(xPanel.Action_SetBlendSpaceParameter(xAction.m_szArg1,
+			xAction.m_aiArgs[0] == 1 ? ZENITH_ANIMCTRL_BLEND_AXIS_Y : ZENITH_ANIMCTRL_BLEND_AXIS_X,
+			xAction.m_szArg2),
+			"AnimBlendSetParameter", xAction.m_szArg2.c_str());
+		break;
+
+	case Zenith_EditorActionType::ANIM_BLEND_ADD_POINT:
+		AnimBlendActionChecked(xPanel.Action_AddBlendPoint(xAction.m_szArg1, xAction.m_szArg2,
+			xAction.m_afArgs[0], xAction.m_afArgs[1]),
+			"AnimBlendAddPoint", xAction.m_szArg2.c_str());
+		break;
+
+	case Zenith_EditorActionType::ANIM_BLEND_REMOVE_POINT:
+		AnimBlendActionChecked(xPanel.Action_RemoveBlendPoint(xAction.m_szArg1, uIndex),
+			"AnimBlendRemovePoint", xAction.m_szArg1.c_str());
+		break;
+
+	case Zenith_EditorActionType::ANIM_BLEND_SET_POINT_CLIP:
+		AnimBlendActionChecked(xPanel.Action_SetBlendPointClip(xAction.m_szArg1, uIndex, xAction.m_szArg2),
+			"AnimBlendSetPointClip", xAction.m_szArg2.c_str());
+		break;
+
+	case Zenith_EditorActionType::ANIM_BLEND_SET_POINT_POSITION:
+		AnimBlendActionChecked(xPanel.Action_SetBlendPointPosition(xAction.m_szArg1, uIndex,
+			xAction.m_afArgs[0], xAction.m_afArgs[1]),
+			"AnimBlendSetPointPosition", xAction.m_szArg1.c_str());
+		break;
+
+	case Zenith_EditorActionType::ANIM_BLEND_SELECT_POINT:
+		// -1 is the CLEAR, and AnimBlendIndexFromAction has already folded it onto
+		// the sentinel the panel reads as one.
+		AnimBlendActionChecked(xPanel.Action_SelectBlendPoint(uIndex), "AnimBlendSelectPoint", nullptr);
+		break;
+
+	case Zenith_EditorActionType::ANIM_BLEND_EXPECT_POINT_COUNT:
+	{
+		const u_int uActual = xPanel.Document().GetBlendPointCount(xAction.m_szArg1);
+		Zenith_Assert(uActual == static_cast<u_int>(xAction.m_aiArgs[0] < 0 ? 0 : xAction.m_aiArgs[0]),
+			"EditorAutomation AnimBlendExpectPointCount: '%s' expected %d points, found %u",
+			xAction.m_szArg1.c_str(), xAction.m_aiArgs[0], uActual);
+		(void)uActual;
+		break;
+	}
+
+	case Zenith_EditorActionType::ANIM_BLEND_EXPECT_POINT_POSITION:
+	{
+		std::string strClip;
+		Zenith_Maths::Vector2 xPosition(0.0f);
+		const bool bResolved = xPanel.Document().GetBlendPoint(xAction.m_szArg1, uIndex, strClip, xPosition);
+		const float fTolerance = xAction.m_afArgs[2] > 0.0f ? xAction.m_afArgs[2] : 1.0e-4f;
+		Zenith_Assert(bResolved
+			&& std::fabs(xPosition.x - xAction.m_afArgs[0]) <= fTolerance
+			&& std::fabs(xPosition.y - xAction.m_afArgs[1]) <= fTolerance,
+			"EditorAutomation AnimBlendExpectPointPosition: '%s' point %u expected (%f, %f), found (%f, %f)",
+			xAction.m_szArg1.c_str(), uIndex, xAction.m_afArgs[0], xAction.m_afArgs[1],
+			xPosition.x, xPosition.y);
+		(void)bResolved; (void)fTolerance;
+		break;
+	}
+
+	default:
+		Zenith_Assert(false, "Non-blend-tree action routed to ExecuteAnimBlendAction");
+		break;
+	}
+}
+
 // Particle field edits (SET_PARTICLE_CONFIG .. SET_PARTICLE_EMITTING).
 static void ExecuteParticleAction(const Zenith_EditorAction& xAction)
 {
@@ -3992,6 +4213,16 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 		xAction.m_eType <= Zenith_EditorActionType::ANIM_LAYER_EXPECT_ORDER)
 	{
 		ExecuteAnimLayerAction(xAction);
+		return;
+	}
+
+	// Blend-tree authoring (WU-7.3). A SIXTH animation range, for the reason the
+	// fifth exists: appending into the block above would move the bound both that
+	// line and the header's static_assert compare against.
+	if (xAction.m_eType >= Zenith_EditorActionType::ANIM_BLEND_SET_TREE_KIND &&
+		xAction.m_eType <= Zenith_EditorActionType::ANIM_BLEND_EXPECT_POINT_POSITION)
+	{
+		ExecuteAnimBlendAction(xAction);
 		return;
 	}
 

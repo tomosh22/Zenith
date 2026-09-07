@@ -320,7 +320,15 @@ public:
 	void RemoveBlendPoint(u_int uIndex);
 	void SortBlendPoints();  // Call after adding all points
 
-	// Accessors
+	// Accessors.
+	//
+	// ★ THIS IS ALSO "THE LAST EVALUATED BLEND POSITION", AND THERE IS NO SECOND
+	// NAME FOR IT (WU-7.3). ResolveParameters runs on the root of a state's tree
+	// immediately before Evaluate (D48) and writes m_fParameter from the live set,
+	// so the value read back here is exactly the position the pose that just came
+	// out was blended at. An editor drawing a "live dot" wants this; adding a
+	// GetLastEvaluatedBlendPosition() beside it would be one number with two
+	// spellings that can only ever agree.
 	float GetParameter() const { return m_fParameter; }
 
 	// ★ THE MANUAL OVERRIDE, AND ONLY WHEN NOTHING IS BOUND. A bound name is
@@ -338,6 +346,32 @@ public:
 	bool HasParameterBinding() const { return !m_strParameterName.empty(); }
 
 	const Zenith_Vector<BlendPoint>& GetBlendPoints() const { return m_xBlendPoints; }
+
+	//=========================================================================
+	// Editing / inspection (WU-7.3). ADDITIVE — no field moved and nothing on
+	// the wire changed; these exist so an editor can read and move a point
+	// without reaching into m_xBlendPoints past the const accessor above.
+	//=========================================================================
+
+	u_int GetBlendPointCount() const { return m_xBlendPoints.GetSize(); }
+
+	// The child a blend point plays, or null. A NON-const pointer out of a const
+	// method, exactly as Flux_AnimationState::GetBlendTree hands one out: the
+	// node OWNS its children, and an editor has to reach one to rename its clip.
+	Flux_BlendTreeNode* GetBlendPointNode(u_int uIndex) const;
+	bool GetBlendPointPosition(u_int uIndex, float& fOut) const;
+
+	// ★ IT RE-SORTS, AND THAT IS WHY IT REPORTS WHERE THE POINT ENDED UP.
+	// Evaluate walks this list assuming ASCENDING positions (it scans for the
+	// bracketing pair and clamps at both ends), and ReadFromDataStream sorts on
+	// the way in — so a list left unsorted by an edit would blend the wrong pair
+	// until the next save/load quietly fixed it. Moving a point past a neighbour
+	// therefore RENUMBERS, and puOutNewIndex is the only thing that can tell a
+	// caller holding an index where its point went.
+	//
+	// Refused (false, nothing changed) for an index past the end and for a
+	// non-finite position.
+	bool SetBlendPointPosition(u_int uIndex, float fPosition, u_int* puOutNewIndex = nullptr);
 
 private:
 	Zenith_Vector<BlendPoint> m_xBlendPoints;
@@ -390,7 +424,9 @@ public:
 	// Compute triangulation for efficient sampling
 	void ComputeTriangulation();
 
-	// Accessors
+	// Accessors. As on the 1D space, this IS the last evaluated blend position:
+	// ResolveParameters writes it from the live set immediately before Evaluate,
+	// so it is what an editor's live dot draws and it needs no second spelling.
 	const Zenith_Maths::Vector2& GetParameter() const { return m_xParameter; }
 
 	// The manual override — see Flux_BlendTreeNode_BlendSpace1D::SetParameter for
@@ -407,6 +443,22 @@ public:
 	bool HasParameterBinding() const { return !m_strParameterNameX.empty() || !m_strParameterNameY.empty(); }
 
 	const Zenith_Vector<BlendPoint>& GetBlendPoints() const { return m_xBlendPoints; }
+
+	//=========================================================================
+	// Editing / inspection (WU-7.3). ADDITIVE, as on the 1D space.
+	//=========================================================================
+
+	u_int GetBlendPointCount() const { return m_xBlendPoints.GetSize(); }
+	Flux_BlendTreeNode* GetBlendPointNode(u_int uIndex) const;
+	bool GetBlendPointPosition(u_int uIndex, Zenith_Maths::Vector2& xOut) const;
+
+	// ★ IT RE-TRIANGULATES, AND INDICES ARE STABLE — the opposite of the 1D
+	// space on both counts. A 2D space has no order to keep (FindContainingTriangle
+	// walks m_xTriangles, which ComputeTriangulation derives from the CURRENT
+	// point positions), so a move renumbers nothing and the triangulation is the
+	// thing that has to follow. Skipping it leaves the sampler barycentric over
+	// the positions the points USED to have.
+	bool SetBlendPointPosition(u_int uIndex, const Zenith_Maths::Vector2& xPosition);
 
 private:
 	// Find the triangle containing the parameter point and compute barycentric weights

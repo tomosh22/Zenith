@@ -164,6 +164,7 @@ void Zenith_AnimControllerDocument::ResetToClosed()
 	m_strResolvedPath.clear();
 	m_uSelectedMachineId = uANIMCTRL_TOP_LEVEL_MACHINE;
 	m_strLastLayerDiagnostic.clear();
+	m_strLastBlendTreeDiagnostic.clear();
 	m_ulRecordedFileHash = 0;
 	m_bHasRecordedFile = false;
 	m_bOpen = false;
@@ -785,9 +786,22 @@ Zenith_AnimCtrlStateTreeKind Zenith_AnimControllerDocument::ClassifyBlendTree(co
 	// The type NAME, not RTTI — that string is already this hierarchy's
 	// discriminator (Flux_BlendTreeNode::CreateFromTypeName reads the same
 	// values out of a stream), so there is one vocabulary rather than two.
-	return (std::strcmp(pxRoot->GetNodeTypeName(), "Clip") == 0)
-		? ZENITH_ANIMCTRL_TREE_SINGLE_CLIP
-		: ZENITH_ANIMCTRL_TREE_COMPLEX;
+	const char* szType = pxRoot->GetNodeTypeName();
+	if (std::strcmp(szType, "Clip") == 0)
+	{
+		return ZENITH_ANIMCTRL_TREE_SINGLE_CLIP;
+	}
+	if (std::strcmp(szType, "BlendSpace1D") == 0)
+	{
+		return ZENITH_ANIMCTRL_TREE_BLENDSPACE_1D;
+	}
+	if (std::strcmp(szType, "BlendSpace2D") == 0)
+	{
+		return ZENITH_ANIMCTRL_TREE_BLENDSPACE_2D;
+	}
+	// Blend / Additive / Masked / Select — a NEST, and the one shape with no
+	// editor anywhere. Still reported rather than flattened.
+	return ZENITH_ANIMCTRL_TREE_COMPLEX;
 }
 
 Zenith_AnimCtrlStateTreeKind Zenith_AnimControllerDocument::GetStateTreeKind(const std::string& strStateName) const
@@ -822,6 +836,119 @@ bool Zenith_AnimControllerDocument::GetStateClipName(const std::string& strState
 	const Flux_BlendTreeNode_Clip* pxClip = static_cast<const Flux_BlendTreeNode_Clip*>(pxState->GetBlendTree());
 	strOut = pxClip->GetClipName();
 	return true;
+}
+
+//==============================================================================
+// Blend-space inspection (WU-7.3)
+//==============================================================================
+
+namespace
+{
+	// The clip NAME a blend point plays, or empty. A point's child is a
+	// Flux_BlendTreeNode* and nothing stops a def nesting a composite under one,
+	// so the type is CHECKED rather than assumed — a static_cast onto a Blend
+	// node would read its m_fBlendWeight as a std::string.
+	std::string BlendPointClipName(const Flux_BlendTreeNode* pxNode)
+	{
+		if (pxNode == nullptr || std::strcmp(pxNode->GetNodeTypeName(), "Clip") != 0)
+		{
+			return std::string();
+		}
+		return static_cast<const Flux_BlendTreeNode_Clip*>(pxNode)->GetClipName();
+	}
+}
+
+u_int Zenith_AnimControllerDocument::GetBlendPointCount(const std::string& strStateName) const
+{
+	const Flux_AnimationStateMachineDef* pxMachine = GetSelectedMachineDef();
+	const Flux_AnimationState* pxState = pxMachine != nullptr ? pxMachine->GetState(strStateName) : nullptr;
+	if (pxState == nullptr)
+	{
+		return 0u;
+	}
+	switch (ClassifyBlendTree(pxState->GetBlendTree()))
+	{
+	case ZENITH_ANIMCTRL_TREE_BLENDSPACE_1D:
+		return static_cast<const Flux_BlendTreeNode_BlendSpace1D*>(pxState->GetBlendTree())->GetBlendPointCount();
+	case ZENITH_ANIMCTRL_TREE_BLENDSPACE_2D:
+		return static_cast<const Flux_BlendTreeNode_BlendSpace2D*>(pxState->GetBlendTree())->GetBlendPointCount();
+	default:
+		return 0u;
+	}
+}
+
+bool Zenith_AnimControllerDocument::GetBlendPoint(const std::string& strStateName, u_int uIndex,
+	std::string& strOutClipName, Zenith_Maths::Vector2& xOutPosition) const
+{
+	const Flux_AnimationStateMachineDef* pxMachine = GetSelectedMachineDef();
+	const Flux_AnimationState* pxState = pxMachine != nullptr ? pxMachine->GetState(strStateName) : nullptr;
+	if (pxState == nullptr)
+	{
+		return false;
+	}
+
+	const Flux_BlendTreeNode* pxRoot = pxState->GetBlendTree();
+	switch (ClassifyBlendTree(pxRoot))
+	{
+	case ZENITH_ANIMCTRL_TREE_BLENDSPACE_1D:
+	{
+		const Flux_BlendTreeNode_BlendSpace1D* pxSpace = static_cast<const Flux_BlendTreeNode_BlendSpace1D*>(pxRoot);
+		float fPosition = 0.0f;
+		if (!pxSpace->GetBlendPointPosition(uIndex, fPosition))
+		{
+			return false;
+		}
+		// ★ y IS ZERO, NOT UNTOUCHED. A 1D space has no second axis, and leaving
+		// the caller's value in place would let a read-modify-write round trip
+		// carry a y a 1D space never had.
+		xOutPosition = Zenith_Maths::Vector2(fPosition, 0.0f);
+		strOutClipName = BlendPointClipName(pxSpace->GetBlendPointNode(uIndex));
+		return true;
+	}
+	case ZENITH_ANIMCTRL_TREE_BLENDSPACE_2D:
+	{
+		const Flux_BlendTreeNode_BlendSpace2D* pxSpace = static_cast<const Flux_BlendTreeNode_BlendSpace2D*>(pxRoot);
+		if (!pxSpace->GetBlendPointPosition(uIndex, xOutPosition))
+		{
+			return false;
+		}
+		strOutClipName = BlendPointClipName(pxSpace->GetBlendPointNode(uIndex));
+		return true;
+	}
+	default:
+		return false;
+	}
+}
+
+bool Zenith_AnimControllerDocument::GetBlendSpaceParameterName(const std::string& strStateName,
+	Zenith_AnimCtrlBlendAxis eAxis, std::string& strOut) const
+{
+	const Flux_AnimationStateMachineDef* pxMachine = GetSelectedMachineDef();
+	const Flux_AnimationState* pxState = pxMachine != nullptr ? pxMachine->GetState(strStateName) : nullptr;
+	if (pxState == nullptr)
+	{
+		return false;
+	}
+
+	const Flux_BlendTreeNode* pxRoot = pxState->GetBlendTree();
+	switch (ClassifyBlendTree(pxRoot))
+	{
+	case ZENITH_ANIMCTRL_TREE_BLENDSPACE_1D:
+		if (eAxis != ZENITH_ANIMCTRL_BLEND_AXIS_X)
+		{
+			return false;   // a 1D space has no Y — refused, never answered empty
+		}
+		strOut = static_cast<const Flux_BlendTreeNode_BlendSpace1D*>(pxRoot)->GetParameterName();
+		return true;
+	case ZENITH_ANIMCTRL_TREE_BLENDSPACE_2D:
+	{
+		const Flux_BlendTreeNode_BlendSpace2D* pxSpace = static_cast<const Flux_BlendTreeNode_BlendSpace2D*>(pxRoot);
+		strOut = (eAxis == ZENITH_ANIMCTRL_BLEND_AXIS_X) ? pxSpace->GetParameterNameX() : pxSpace->GetParameterNameY();
+		return true;
+	}
+	default:
+		return false;
+	}
 }
 
 u_int Zenith_AnimControllerDocument::GetTransitionCount(const std::string& strFromState) const
@@ -1264,6 +1391,31 @@ bool Zenith_AnimControllerDocument::ApplySetStateClip(u_int uMachineId, const st
 	return true;
 }
 
+bool Zenith_AnimControllerDocument::ApplyRestoreState(u_int uMachineId, const std::string& strName,
+	const Zenith_Vector<char>& axBytes)
+{
+	Flux_AnimationStateMachineDef* pxMachine = FindMachine(uMachineId);
+	if (pxMachine == nullptr || axBytes.GetSize() == 0)
+	{
+		return false;
+	}
+	Flux_AnimationState* pxState = pxMachine->GetState(strName);
+	if (pxState == nullptr)
+	{
+		return false;
+	}
+	// ★ THE PAYLOAD CARRIES THE NAME, AND IT HAS TO BE THIS ONE. The machine's
+	// map is keyed on the name, so restoring bytes whose name differs would leave
+	// a state answering to one key and calling itself another — and every
+	// transition targeting it would still resolve, through the key, to a state
+	// that now says it is something else.
+	ReadStateFromBytes(*pxState, axBytes);
+	Zenith_Assert(pxState->GetName() == strName,
+		"Zenith_AnimControllerDocument::ApplyRestoreState: payload names '%s', restored onto '%s'",
+		pxState->GetName().c_str(), strName.c_str());
+	return true;
+}
+
 bool Zenith_AnimControllerDocument::ApplySetStatePosition(u_int uMachineId, const std::string& strName,
 	const Zenith_Maths::Vector2& xPos)
 {
@@ -1549,7 +1701,14 @@ bool Zenith_AnimControllerDocument::SetStateClip(const std::string& strStateName
 		return false;
 	}
 	const Zenith_AnimCtrlStateTreeKind eKind = GetStateTreeKind(strStateName);
-	if (!HasState(strStateName) || eKind == ZENITH_ANIMCTRL_TREE_COMPLEX)
+	// ★ ONLY AN EMPTY TREE OR A CLIP LEAF. A BLEND SPACE is refused here as
+	// firmly as a nest is (WU-7.3): "give this state a clip" applied to a space
+	// would delete the space and every point in it and report success, which is
+	// exactly the failure this refusal has always existed to prevent — the space
+	// simply used to be classified as COMPLEX. SetStateTreeKind is the verb that
+	// converts, and it carries the clips across.
+	if (!HasState(strStateName)
+		|| (eKind != ZENITH_ANIMCTRL_TREE_EMPTY && eKind != ZENITH_ANIMCTRL_TREE_SINGLE_CLIP))
 	{
 		return false;
 	}
@@ -1597,6 +1756,485 @@ bool Zenith_AnimControllerDocument::SetStateEditorPosition(const std::string& st
 	}
 	MarkDirty();
 	PushCommand(new Zenith_AnimCtrlCommand_StatePosition(this, m_uSelectedMachineId, strStateName, xOld, xPosition));
+	return true;
+}
+
+//==============================================================================
+// BLEND-SPACE editing (WU-7.3)
+//
+// ★ ONE UNDO UNIT FOR ALL OF IT: THE WHOLE STATE, AS BYTES. A blend tree has no
+// identity below the state — a point is a struct in a vector addressed by index,
+// its child is an owned raw pointer with no id, and a 1D position edit RE-SORTS
+// the list — so an index-addressed command would be holding a number the next
+// edit moves. The state's own serializer is the one faithful walk of a
+// polymorphic tree that exists, which is the same argument the state add/remove
+// commands make.
+//
+// Every verb below therefore has the same five steps: resolve, capture, mutate,
+// commit, report. CommitStateTreeEdit is the last two, and it uses BYTE EQUALITY
+// as the assignment no-op test — re-stating a value the tree already carried
+// leaves the payload identical, so it pushes nothing.
+//==============================================================================
+
+const char* Zenith_AnimControllerDocument::BlendTreeRefusalText()
+{
+	return "a composite blend tree (Blend / Additive / Masked / Select) or a sub-machine — edited elsewhere";
+}
+
+const char* Zenith_AnimControllerDocument::BlendParameterRefusalText()
+{
+	return "a blend axis can only bind a DECLARED Float parameter — the runtime reads it through GetFloat";
+}
+
+Flux_AnimationState* Zenith_AnimControllerDocument::FindStateForBlendEdit(const std::string& strStateName)
+{
+	if (!m_bOpen)
+	{
+		return nullptr;
+	}
+	Flux_AnimationStateMachineDef* pxMachine = FindMachine(m_uSelectedMachineId);
+	return pxMachine != nullptr ? pxMachine->GetState(strStateName) : nullptr;
+}
+
+bool Zenith_AnimControllerDocument::CommitStateTreeEdit(const std::string& strStateName,
+	const Zenith_Vector<char>& axOldBytes, const char* szDescription)
+{
+	Flux_AnimationStateMachineDef* pxMachine = FindMachine(m_uSelectedMachineId);
+	Flux_AnimationState* pxState = pxMachine != nullptr ? pxMachine->GetState(strStateName) : nullptr;
+	if (pxState == nullptr)
+	{
+		return false;
+	}
+
+	Zenith_Vector<char> axNewBytes;
+	CaptureStateBytes(*pxState, axNewBytes);
+
+	// ★ BYTE EQUALITY IS THE ASSIGNMENT NO-OP TEST, and it covers every verb at
+	// once rather than each of them growing its own comparison against a field.
+	// "One edit, one undo step" is the invariant; a no-op is not an edit.
+	if (axNewBytes.GetSize() == axOldBytes.GetSize())
+	{
+		bool bIdentical = true;
+		for (u_int u = 0; u < axNewBytes.GetSize(); ++u)
+		{
+			if (axNewBytes.Get(u) != axOldBytes.Get(u))
+			{
+				bIdentical = false;
+				break;
+			}
+		}
+		if (bIdentical)
+		{
+			return true;
+		}
+	}
+
+	MarkDirty();
+	PushCommand(new Zenith_AnimCtrlCommand_StateTree(this, m_uSelectedMachineId, strStateName,
+		axOldBytes, axNewBytes, szDescription));
+	return true;
+}
+
+namespace
+{
+	// One point's authored content, in the shape both spaces and a clip leaf can
+	// be expressed in. What a CONVERSION carries across.
+	struct AnimCtrlHarvestedPoint
+	{
+		std::string m_strClipName;
+		Zenith_Maths::Vector2 m_xPosition = Zenith_Maths::Vector2(0.0f);
+	};
+
+	// Everything the CURRENT tree has to say in that shape: one point at the
+	// origin for a clip leaf, its own list for either space, nothing for an empty
+	// tree. A nest harvests nothing and is refused by the caller before it gets
+	// here.
+	void HarvestBlendPoints(const Flux_BlendTreeNode* pxRoot, Zenith_Vector<AnimCtrlHarvestedPoint>& axOut)
+	{
+		axOut.Clear();
+		if (pxRoot == nullptr)
+		{
+			return;
+		}
+		const char* szType = pxRoot->GetNodeTypeName();
+		if (std::strcmp(szType, "Clip") == 0)
+		{
+			const std::string strName = static_cast<const Flux_BlendTreeNode_Clip*>(pxRoot)->GetClipName();
+			if (!strName.empty())
+			{
+				AnimCtrlHarvestedPoint xPoint;
+				xPoint.m_strClipName = strName;
+				axOut.PushBack(xPoint);
+			}
+			return;
+		}
+		if (std::strcmp(szType, "BlendSpace1D") == 0)
+		{
+			const Flux_BlendTreeNode_BlendSpace1D* pxSpace = static_cast<const Flux_BlendTreeNode_BlendSpace1D*>(pxRoot);
+			for (u_int u = 0; u < pxSpace->GetBlendPointCount(); ++u)
+			{
+				float fPosition = 0.0f;
+				pxSpace->GetBlendPointPosition(u, fPosition);
+				AnimCtrlHarvestedPoint xPoint;
+				xPoint.m_strClipName = BlendPointClipName(pxSpace->GetBlendPointNode(u));
+				xPoint.m_xPosition = Zenith_Maths::Vector2(fPosition, 0.0f);
+				axOut.PushBack(xPoint);
+			}
+			return;
+		}
+		if (std::strcmp(szType, "BlendSpace2D") == 0)
+		{
+			const Flux_BlendTreeNode_BlendSpace2D* pxSpace = static_cast<const Flux_BlendTreeNode_BlendSpace2D*>(pxRoot);
+			for (u_int u = 0; u < pxSpace->GetBlendPointCount(); ++u)
+			{
+				AnimCtrlHarvestedPoint xPoint;
+				pxSpace->GetBlendPointPosition(u, xPoint.m_xPosition);
+				xPoint.m_strClipName = BlendPointClipName(pxSpace->GetBlendPointNode(u));
+				axOut.PushBack(xPoint);
+			}
+		}
+	}
+
+	Flux_BlendTreeNode_Clip* MakeClipLeaf(const std::string& strClipName)
+	{
+		Flux_BlendTreeNode_Clip* pxLeaf = new Flux_BlendTreeNode_Clip();
+		pxLeaf->SetClipName(strClipName);
+		return pxLeaf;
+	}
+
+	// The state's blend-space root, or null when its tree is not one.
+	Flux_BlendTreeNode_BlendSpace1D* AsBlendSpace1D(Flux_AnimationState* pxState)
+	{
+		Flux_BlendTreeNode* pxRoot = pxState != nullptr ? pxState->GetBlendTree() : nullptr;
+		if (pxRoot == nullptr || std::strcmp(pxRoot->GetNodeTypeName(), "BlendSpace1D") != 0)
+		{
+			return nullptr;
+		}
+		return static_cast<Flux_BlendTreeNode_BlendSpace1D*>(pxRoot);
+	}
+
+	Flux_BlendTreeNode_BlendSpace2D* AsBlendSpace2D(Flux_AnimationState* pxState)
+	{
+		Flux_BlendTreeNode* pxRoot = pxState != nullptr ? pxState->GetBlendTree() : nullptr;
+		if (pxRoot == nullptr || std::strcmp(pxRoot->GetNodeTypeName(), "BlendSpace2D") != 0)
+		{
+			return nullptr;
+		}
+		return static_cast<Flux_BlendTreeNode_BlendSpace2D*>(pxRoot);
+	}
+}
+
+bool Zenith_AnimControllerDocument::SetStateTreeKind(const std::string& strStateName,
+	Zenith_AnimCtrlStateTreeKind eKind)
+{
+	m_strLastBlendTreeDiagnostic.clear();
+	if (eKind != ZENITH_ANIMCTRL_TREE_SINGLE_CLIP
+		&& eKind != ZENITH_ANIMCTRL_TREE_BLENDSPACE_1D
+		&& eKind != ZENITH_ANIMCTRL_TREE_BLENDSPACE_2D)
+	{
+		// EMPTY has its own verb (SetStateClip with an empty name) and COMPLEX
+		// cannot be synthesised — there is no nest to invent.
+		return false;
+	}
+
+	Flux_AnimationState* pxState = FindStateForBlendEdit(strStateName);
+	if (pxState == nullptr)
+	{
+		return false;
+	}
+	// A CONTAINER state's pose comes from a nested machine; giving it a tree
+	// would silently shadow one.
+	if (pxState->IsSubStateMachine())
+	{
+		m_strLastBlendTreeDiagnostic = BlendTreeRefusalText();
+		return false;
+	}
+
+	const Zenith_AnimCtrlStateTreeKind eCurrent = ClassifyBlendTree(pxState->GetBlendTree());
+	if (eCurrent == ZENITH_ANIMCTRL_TREE_COMPLEX)
+	{
+		// ★ CONVERTING A NEST IS THE ONE CASE THAT IS STILL REFUSED. There is no
+		// reading of "make this Masked node a blend space" that does not delete a
+		// sub-graph nothing can reconstruct.
+		m_strLastBlendTreeDiagnostic = BlendTreeRefusalText();
+		return false;
+	}
+	if (eCurrent == eKind)
+	{
+		return true;   // ASSIGNMENT: the kind asked for is the kind in place
+	}
+
+	Zenith_Vector<char> axOldBytes;
+	CaptureStateBytes(*pxState, axOldBytes);
+
+	Zenith_Vector<AnimCtrlHarvestedPoint> axPoints;
+	HarvestBlendPoints(pxState->GetBlendTree(), axPoints);
+
+	Flux_BlendTreeNode* pxOldTree = pxState->GetBlendTree();
+	Flux_BlendTreeNode* pxNewTree = nullptr;
+	switch (eKind)
+	{
+	case ZENITH_ANIMCTRL_TREE_SINGLE_CLIP:
+		// The FIRST point's clip, because a clip leaf holds exactly one and the
+		// first is the only one every source shape has.
+		pxNewTree = MakeClipLeaf(axPoints.GetSize() > 0 ? axPoints.Get(0).m_strClipName : std::string());
+		break;
+	case ZENITH_ANIMCTRL_TREE_BLENDSPACE_1D:
+	{
+		Flux_BlendTreeNode_BlendSpace1D* pxSpace = new Flux_BlendTreeNode_BlendSpace1D();
+		for (u_int u = 0; u < axPoints.GetSize(); ++u)
+		{
+			pxSpace->AddBlendPoint(MakeClipLeaf(axPoints.Get(u).m_strClipName), axPoints.Get(u).m_xPosition.x);
+		}
+		pxSpace->SortBlendPoints();
+		pxNewTree = pxSpace;
+		break;
+	}
+	default:
+	{
+		Flux_BlendTreeNode_BlendSpace2D* pxSpace = new Flux_BlendTreeNode_BlendSpace2D();
+		for (u_int u = 0; u < axPoints.GetSize(); ++u)
+		{
+			pxSpace->AddBlendPoint(MakeClipLeaf(axPoints.Get(u).m_strClipName), axPoints.Get(u).m_xPosition);
+		}
+		pxSpace->ComputeTriangulation();
+		pxNewTree = pxSpace;
+		break;
+	}
+	}
+
+	pxState->SetBlendTree(pxNewTree);
+	// AFTER the swap: Flux_AnimationState's destructor is not involved here, and
+	// deleting first would leave the state holding a dangling pointer for the
+	// length of the construction above.
+	delete pxOldTree;
+
+	return CommitStateTreeEdit(strStateName, axOldBytes, "Convert Blend Tree");
+}
+
+bool Zenith_AnimControllerDocument::SetBlendSpaceParameter(const std::string& strStateName,
+	Zenith_AnimCtrlBlendAxis eAxis, const std::string& strParameterName)
+{
+	m_strLastBlendTreeDiagnostic.clear();
+	Flux_AnimationState* pxState = FindStateForBlendEdit(strStateName);
+	if (pxState == nullptr)
+	{
+		return false;
+	}
+
+	Flux_BlendTreeNode_BlendSpace1D* pxSpace1D = AsBlendSpace1D(pxState);
+	Flux_BlendTreeNode_BlendSpace2D* pxSpace2D = AsBlendSpace2D(pxState);
+	if (pxSpace1D == nullptr && pxSpace2D == nullptr)
+	{
+		return false;
+	}
+	if (pxSpace1D != nullptr && eAxis != ZENITH_ANIMCTRL_BLEND_AXIS_X)
+	{
+		return false;   // a 1D space has no second axis
+	}
+
+	// ★ A DECLARED **Float**, OR NOTHING. An Int or a Bool declaration would be
+	// read back through GetFloat — the wrong union member — and an undeclared
+	// name is left at its literal by ResolveParameters, which is a binding that
+	// looks authored and does nothing. An EMPTY name is the UNBIND and is always
+	// allowed.
+	if (!strParameterName.empty())
+	{
+		Zenith_AnimCtrlParameterDecl xDecl;
+		if (!GetParameter(strParameterName, xDecl)
+			|| xDecl.m_eType != Flux_AnimationParameters::ParamType::Float)
+		{
+			m_strLastBlendTreeDiagnostic = BlendParameterRefusalText();
+			return false;
+		}
+	}
+
+	Zenith_Vector<char> axOldBytes;
+	CaptureStateBytes(*pxState, axOldBytes);
+
+	if (pxSpace1D != nullptr)
+	{
+		pxSpace1D->SetParameterName(strParameterName);
+	}
+	else if (eAxis == ZENITH_ANIMCTRL_BLEND_AXIS_X)
+	{
+		pxSpace2D->SetParameterNameX(strParameterName);
+	}
+	else
+	{
+		pxSpace2D->SetParameterNameY(strParameterName);
+	}
+
+	return CommitStateTreeEdit(strStateName, axOldBytes, "Bind Blend Parameter");
+}
+
+bool Zenith_AnimControllerDocument::AddBlendPoint(const std::string& strStateName, const std::string& strClipName,
+	const Zenith_Maths::Vector2& xPosition, u_int* puOutIndex)
+{
+	m_strLastBlendTreeDiagnostic.clear();
+	if (strClipName.empty())
+	{
+		// A nameless leaf resolves to no clip and poses the bind pose — a point
+		// that exists, contributes nothing, and says nothing about why.
+		return false;
+	}
+	if (!(xPosition.x >= -3.0e38f && xPosition.x <= 3.0e38f
+	   && xPosition.y >= -3.0e38f && xPosition.y <= 3.0e38f))
+	{
+		return false;
+	}
+
+	Flux_AnimationState* pxState = FindStateForBlendEdit(strStateName);
+	Flux_BlendTreeNode_BlendSpace1D* pxSpace1D = AsBlendSpace1D(pxState);
+	Flux_BlendTreeNode_BlendSpace2D* pxSpace2D = AsBlendSpace2D(pxState);
+	if (pxSpace1D == nullptr && pxSpace2D == nullptr)
+	{
+		return false;
+	}
+
+	Zenith_Vector<char> axOldBytes;
+	CaptureStateBytes(*pxState, axOldBytes);
+
+	Flux_BlendTreeNode_Clip* pxLeaf = MakeClipLeaf(strClipName);
+	u_int uIndex = 0;
+	if (pxSpace1D != nullptr)
+	{
+		pxSpace1D->AddBlendPoint(pxLeaf, xPosition.x);
+		// ★ SORTED IMMEDIATELY, because Evaluate brackets the parameter between
+		// ADJACENT points and a load sorts on the way in — an unsorted list would
+		// blend the wrong pair until the next round trip quietly fixed it.
+		pxSpace1D->SortBlendPoints();
+		for (u_int u = 0; u < pxSpace1D->GetBlendPointCount(); ++u)
+		{
+			if (pxSpace1D->GetBlendPointNode(u) == pxLeaf)
+			{
+				uIndex = u;
+				break;
+			}
+		}
+	}
+	else
+	{
+		pxSpace2D->AddBlendPoint(pxLeaf, xPosition);
+		pxSpace2D->ComputeTriangulation();
+		uIndex = pxSpace2D->GetBlendPointCount() - 1u;
+	}
+
+	if (!CommitStateTreeEdit(strStateName, axOldBytes, "Add Blend Point"))
+	{
+		return false;
+	}
+	if (puOutIndex != nullptr)
+	{
+		*puOutIndex = uIndex;
+	}
+	return true;
+}
+
+bool Zenith_AnimControllerDocument::RemoveBlendPoint(const std::string& strStateName, u_int uIndex)
+{
+	m_strLastBlendTreeDiagnostic.clear();
+	Flux_AnimationState* pxState = FindStateForBlendEdit(strStateName);
+	Flux_BlendTreeNode_BlendSpace1D* pxSpace1D = AsBlendSpace1D(pxState);
+	Flux_BlendTreeNode_BlendSpace2D* pxSpace2D = AsBlendSpace2D(pxState);
+	if (pxSpace1D == nullptr && pxSpace2D == nullptr)
+	{
+		return false;
+	}
+	// REMOVAL: a miss is a genuine refusal, so the bound is checked HERE rather
+	// than left to the node's own silent no-op.
+	const u_int uCount = pxSpace1D != nullptr ? pxSpace1D->GetBlendPointCount() : pxSpace2D->GetBlendPointCount();
+	if (uIndex >= uCount)
+	{
+		return false;
+	}
+
+	Zenith_Vector<char> axOldBytes;
+	CaptureStateBytes(*pxState, axOldBytes);
+
+	if (pxSpace1D != nullptr)
+	{
+		pxSpace1D->RemoveBlendPoint(uIndex);
+	}
+	else
+	{
+		pxSpace2D->RemoveBlendPoint(uIndex);
+		pxSpace2D->ComputeTriangulation();
+	}
+
+	return CommitStateTreeEdit(strStateName, axOldBytes, "Remove Blend Point");
+}
+
+bool Zenith_AnimControllerDocument::SetBlendPointClip(const std::string& strStateName, u_int uIndex,
+	const std::string& strClipName)
+{
+	m_strLastBlendTreeDiagnostic.clear();
+	if (strClipName.empty())
+	{
+		return false;   // see AddBlendPoint: a nameless leaf is silence
+	}
+
+	Flux_AnimationState* pxState = FindStateForBlendEdit(strStateName);
+	Flux_BlendTreeNode_BlendSpace1D* pxSpace1D = AsBlendSpace1D(pxState);
+	Flux_BlendTreeNode_BlendSpace2D* pxSpace2D = AsBlendSpace2D(pxState);
+	if (pxSpace1D == nullptr && pxSpace2D == nullptr)
+	{
+		return false;
+	}
+
+	Flux_BlendTreeNode* pxNode = pxSpace1D != nullptr
+		? pxSpace1D->GetBlendPointNode(uIndex)
+		: pxSpace2D->GetBlendPointNode(uIndex);
+	if (pxNode == nullptr || std::strcmp(pxNode->GetNodeTypeName(), "Clip") != 0)
+	{
+		// A point whose child is a composite is not something this editor can
+		// rename — the same refusal a nest gets at the state level.
+		m_strLastBlendTreeDiagnostic = BlendTreeRefusalText();
+		return false;
+	}
+
+	Zenith_Vector<char> axOldBytes;
+	CaptureStateBytes(*pxState, axOldBytes);
+	// Renamed in place, so the leaf keeps its playhead and its playback rate —
+	// what an author swapping a clip on a running preview expects, and the same
+	// choice ApplySetStateClip makes.
+	static_cast<Flux_BlendTreeNode_Clip*>(pxNode)->SetClipName(strClipName);
+
+	return CommitStateTreeEdit(strStateName, axOldBytes, "Set Blend Point Clip");
+}
+
+bool Zenith_AnimControllerDocument::SetBlendPointPosition(const std::string& strStateName, u_int uIndex,
+	const Zenith_Maths::Vector2& xPosition, u_int* puOutIndex)
+{
+	m_strLastBlendTreeDiagnostic.clear();
+	Flux_AnimationState* pxState = FindStateForBlendEdit(strStateName);
+	Flux_BlendTreeNode_BlendSpace1D* pxSpace1D = AsBlendSpace1D(pxState);
+	Flux_BlendTreeNode_BlendSpace2D* pxSpace2D = AsBlendSpace2D(pxState);
+	if (pxSpace1D == nullptr && pxSpace2D == nullptr)
+	{
+		return false;
+	}
+
+	Zenith_Vector<char> axOldBytes;
+	CaptureStateBytes(*pxState, axOldBytes);
+
+	u_int uNewIndex = uIndex;
+	const bool bMoved = pxSpace1D != nullptr
+		? pxSpace1D->SetBlendPointPosition(uIndex, xPosition.x, &uNewIndex)
+		: pxSpace2D->SetBlendPointPosition(uIndex, xPosition);
+	if (!bMoved)
+	{
+		return false;   // an index past the end, or a non-finite position
+	}
+
+	if (!CommitStateTreeEdit(strStateName, axOldBytes, "Move Blend Point"))
+	{
+		return false;
+	}
+	if (puOutIndex != nullptr)
+	{
+		*puOutIndex = uNewIndex;
+	}
 	return true;
 }
 

@@ -64,6 +64,39 @@ namespace
 
 	const char* const aszPARAM_TYPE_NAMES[] = { "Float", "Int", "Bool", "Trigger" };
 	const char* const aszCOMPARE_OP_NAMES[] = { "==", "!=", ">", "<", ">=", "<=" };
+	// WU-7.3's tree-kind combo, in Zenith_AnimCtrlStateTreeKind's own order minus
+	// the two kinds SetStateTreeKind refuses (EMPTY has its own verb, COMPLEX
+	// cannot be synthesised), so the combo index is an OFFSET from SINGLE_CLIP
+	// rather than a mapping table that can drift from the enum.
+	const char* const aszTREE_KIND_NAMES[] = { "Single Clip", "Blend Space 1D", "Blend Space 2D" };
+
+	// A clip's NAME from the def's clip PATH: from the asset when it loads, and
+	// from the file stem when it does not — a path that will not load is still
+	// worth offering, because the fix may be to author the state first. One
+	// definition, because the state inspector's clip combo and the blend strip's
+	// both need it and two would disagree the day a clip's name stopped matching
+	// its stem.
+	std::string AnimSmClipNameForPath(const std::string& strPath)
+	{
+		std::string strName = strPath;
+		const size_t uSlash = strName.find_last_of("/\\");
+		if (uSlash != std::string::npos)
+		{
+			strName = strName.substr(uSlash + 1);
+		}
+		const size_t uDot = strName.find_last_of('.');
+		if (uDot != std::string::npos)
+		{
+			strName = strName.substr(0, uDot);
+		}
+		const Zenith_AnimationAsset* pxClipAsset = Zenith_AssetRegistry::GetView<Zenith_AnimationAsset>(strPath);
+		if (pxClipAsset != nullptr && pxClipAsset->GetClip() != nullptr
+			&& !pxClipAsset->GetClip()->GetName().empty())
+		{
+			strName = pxClipAsset->GetClip()->GetName();
+		}
+		return strName;
+	}
 	// In Flux_LayerBlendMode's own declaration order, so the combo index IS the
 	// enumerator and no mapping table can drift from the enum.
 	const char* const aszLAYER_BLEND_NAMES[] = { "Override", "Additive" };
@@ -823,13 +856,22 @@ void Zenith_EditorPanel_AnimStateMachine::DrawNodes(ImDrawList* pxDraw, const Ca
 
 		pxDraw->AddText(Vec(xRect.m_fMinX + 8.0f, xRect.m_fMinY + 6.0f), xPalette.m_uTextBright, strName.c_str());
 
-		// The second line says what the state PLAYS, and names the WU-7.3
-		// refusal when it is not a single clip leaf.
+		// The second line says what the state PLAYS, and names the refusal when
+		// the tree is one nothing here can edit.
 		char acSubtitle[192];
 		const Zenith_AnimCtrlStateTreeKind eKind = m_xDocument.GetStateTreeKind(strName);
 		if (eKind == ZENITH_ANIMCTRL_TREE_COMPLEX)
 		{
 			snprintf(acSubtitle, sizeof(acSubtitle), "%s", BlendTreeRefusalText());
+		}
+		else if (eKind == ZENITH_ANIMCTRL_TREE_BLENDSPACE_1D || eKind == ZENITH_ANIMCTRL_TREE_BLENDSPACE_2D)
+		{
+			// WU-7.3: a blend space says what it IS and how big it is. The point
+			// COUNT is the one number that distinguishes "a space somebody is
+			// building" from "an empty space that poses the bind pose".
+			snprintf(acSubtitle, sizeof(acSubtitle), "blend space %s (%u points)",
+				eKind == ZENITH_ANIMCTRL_TREE_BLENDSPACE_1D ? "1D" : "2D",
+				m_xDocument.GetBlendPointCount(strName));
 		}
 		else
 		{
@@ -1070,60 +1112,63 @@ void Zenith_EditorPanel_AnimStateMachine::RenderStateInspector()
 	const Zenith_AnimCtrlStateTreeKind eKind = m_xDocument.GetStateTreeKind(strState);
 	if (eKind == ZENITH_ANIMCTRL_TREE_COMPLEX)
 	{
-		// ★ REFUSED, AND THE REASON IS ON SCREEN. A blend space or a sub-machine
-		// is WU-7.3's; assigning a clip here would delete it and report success.
+		// ★ REFUSED, AND THE REASON IS ON SCREEN. A Blend / Additive / Masked /
+		// Select nest, or a container's sub-machine: nothing here can edit one,
+		// and assigning anything would delete it and report success.
 		ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(Zenith_EditorUI::Palette().m_uWarning),
 			"%s", BlendTreeRefusalText());
 		return;
 	}
 
-	std::string strCurrentClip;
-	m_xDocument.GetStateClipName(strState, strCurrentClip);
-
-	// The clip picker is the def's OWN clip list, resolved to clip NAMES: a
-	// state references a clip by name through Flux_AnimationClipCollection, and
-	// the collection is keyed on the name the .zanim carries, not on its path.
-	ImGui::SetNextItemWidth(Zenith_EditorUI::Px(280.0f));
-	if (ImGui::BeginCombo("Clip", strCurrentClip.empty() ? "(none)" : strCurrentClip.c_str()))
+	// ---- what KIND of tree this state has (WU-7.3) ---------------------------
+	// ★ THE COMBO INDEX IS AN OFFSET FROM SINGLE_CLIP, not a lookup table: the
+	// three convertible kinds are contiguous in Zenith_AnimCtrlStateTreeKind, so
+	// there is nothing here to drift from the enum. An EMPTY tree shows as
+	// "Single Clip" because that is what picking anything else converts it from.
+	int iKind = (eKind == ZENITH_ANIMCTRL_TREE_BLENDSPACE_1D) ? 1
+		: (eKind == ZENITH_ANIMCTRL_TREE_BLENDSPACE_2D) ? 2 : 0;
+	ImGui::SetNextItemWidth(Zenith_EditorUI::Px(160.0f));
+	if (ImGui::Combo("Tree", &iKind, aszTREE_KIND_NAMES, 3))
 	{
-		if (ImGui::Selectable("(none)", strCurrentClip.empty()))
+		Action_SetStateTreeKind(strState, static_cast<Zenith_AnimCtrlStateTreeKind>(
+			static_cast<u_int>(ZENITH_ANIMCTRL_TREE_SINGLE_CLIP) + static_cast<u_int>(iKind)));
+	}
+
+	if (eKind == ZENITH_ANIMCTRL_TREE_BLENDSPACE_1D || eKind == ZENITH_ANIMCTRL_TREE_BLENDSPACE_2D)
+	{
+		RenderBlendStrip(strState, eKind);
+	}
+	else
+	{
+		std::string strCurrentClip;
+		m_xDocument.GetStateClipName(strState, strCurrentClip);
+
+		// The clip picker is the def's OWN clip list, resolved to clip NAMES: a
+		// state references a clip by name through Flux_AnimationClipCollection,
+		// and the collection is keyed on the name the .zanim carries, not on its
+		// path.
+		ImGui::SetNextItemWidth(Zenith_EditorUI::Px(280.0f));
+		if (ImGui::BeginCombo("Clip", strCurrentClip.empty() ? "(none)" : strCurrentClip.c_str()))
 		{
-			Action_SetStateClip(strState, std::string());
+			if (ImGui::Selectable("(none)", strCurrentClip.empty()))
+			{
+				Action_SetStateClip(strState, std::string());
+			}
+			for (u_int u = 0; u < m_xDocument.GetClipPathCount(); ++u)
+			{
+				std::string strPath;
+				if (!m_xDocument.GetClipPathAt(u, strPath))
+				{
+					continue;
+				}
+				const std::string strName = AnimSmClipNameForPath(strPath);
+				if (ImGui::Selectable(strName.c_str(), strName == strCurrentClip))
+				{
+					Action_SetStateClip(strState, strName);
+				}
+			}
+			ImGui::EndCombo();
 		}
-		for (u_int u = 0; u < m_xDocument.GetClipPathCount(); ++u)
-		{
-			std::string strPath;
-			if (!m_xDocument.GetClipPathAt(u, strPath))
-			{
-				continue;
-			}
-			// The clip's NAME, from the asset when it loads and from the file
-			// stem when it does not — a path that will not load is still worth
-			// offering, because the fix may be to author the state first.
-			std::string strName = strPath;
-			const size_t uSlash = strName.find_last_of("/\\");
-			if (uSlash != std::string::npos)
-			{
-				strName = strName.substr(uSlash + 1);
-			}
-			const size_t uDot = strName.find_last_of('.');
-			if (uDot != std::string::npos)
-			{
-				strName = strName.substr(0, uDot);
-			}
-			const Zenith_AnimationAsset* pxClipAsset =
-				Zenith_AssetRegistry::GetView<Zenith_AnimationAsset>(strPath);
-			if (pxClipAsset != nullptr && pxClipAsset->GetClip() != nullptr
-				&& !pxClipAsset->GetClip()->GetName().empty())
-			{
-				strName = pxClipAsset->GetClip()->GetName();
-			}
-			if (ImGui::Selectable(strName.c_str(), strName == strCurrentClip))
-			{
-				Action_SetStateClip(strState, strName);
-			}
-		}
-		ImGui::EndCombo();
 	}
 
 	if (ImGui::Button("Set As Default State"))
@@ -1155,6 +1200,351 @@ void Zenith_EditorPanel_AnimStateMachine::RenderStateInspector()
 		}
 		ImGui::PopID();
 	}
+}
+
+//=============================================================================
+// THE BLEND-TREE STRIP (WU-7.3) — a 1D axis or a 2D square, its points as
+// draggable markers, its parameter binding(s), and the LIVE PARAMETER DOT.
+//
+// ★ IT DRAWS NOTHING UNLESS THE SELECTED STATE IS A BLEND SPACE — not a header,
+// not a disabled row, not the word "Blend Tree". Editor/CLAUDE.md's rule, and
+// the caller has already checked the kind; the guard here is what makes the
+// promise true of the FUNCTION rather than of one call site.
+//
+// ★ IT LIVES INSIDE THE INSPECTOR CHILD, WHICH IS A FIXED HEIGHT. The canvas is
+// sized Vec(0, -fInspectorHeight) out of the main window, so nothing emitted
+// inside the inspector can take a pixel from the graph — the same placement
+// argument the layer strip makes for the side child, and the reason
+// `TheBlendStripDrawsNothingForASingleClipStateAndNeverTakesCanvasHeight` can
+// assert an EQUALITY rather than a bound.
+//
+// ★ MARKERS ARE DRAW-LIST DECORATIONS ON ONE InvisibleButton, like the canvas.
+// Placing ImGui items at absolute positions and restoring the cursor trips
+// ErrorCheckUsingSetCursorPosToExtendParentBoundaries, which in a windowed build
+// is a modal CRT dialog nothing logs.
+//=============================================================================
+
+void Zenith_EditorPanel_AnimStateMachine::RenderBlendStrip(const std::string& strStateName,
+	Zenith_AnimCtrlStateTreeKind eKind)
+{
+	const bool bIs2D = (eKind == ZENITH_ANIMCTRL_TREE_BLENDSPACE_2D);
+	if (eKind != ZENITH_ANIMCTRL_TREE_BLENDSPACE_1D && !bIs2D)
+	{
+		return;   // ★ before a single item is submitted
+	}
+	m_bBlendStripDrawn = true;
+
+	const Zenith_EditorPalette& xPalette = Zenith_EditorUI::Palette();
+	const u_int uPointCount = m_xDocument.GetBlendPointCount(strStateName);
+
+	// ---- the axis binding(s) -------------------------------------------------
+	// The list is the def's own FLOAT declarations, because that is the only type
+	// a blend axis can bind (the runtime reads it through GetFloat). Offering the
+	// others would be offering an assignment the document refuses.
+	Zenith_Vector<std::string> axAllParams;
+	m_xDocument.GetParameterNamesSorted(axAllParams);
+	Zenith_Vector<std::string> axFloatParams;
+	for (u_int u = 0; u < axAllParams.GetSize(); ++u)
+	{
+		Zenith_AnimCtrlParameterDecl xDecl;
+		if (m_xDocument.GetParameter(axAllParams.Get(u), xDecl)
+			&& xDecl.m_eType == Flux_AnimationParameters::ParamType::Float)
+		{
+			axFloatParams.PushBack(axAllParams.Get(u));
+		}
+	}
+
+	const u_int uAxisCount = bIs2D ? 2u : 1u;
+	for (u_int uAxis = 0; uAxis < uAxisCount; ++uAxis)
+	{
+		const Zenith_AnimCtrlBlendAxis eAxis = (uAxis == 0)
+			? ZENITH_ANIMCTRL_BLEND_AXIS_X : ZENITH_ANIMCTRL_BLEND_AXIS_Y;
+		std::string strBound;
+		m_xDocument.GetBlendSpaceParameterName(strStateName, eAxis, strBound);
+
+		ImGui::PushID(static_cast<int>(4000 + uAxis));
+		ImGui::SetNextItemWidth(Zenith_EditorUI::Px(150.0f));
+		const char* szLabel = bIs2D ? (uAxis == 0 ? "X parameter" : "Y parameter") : "Parameter";
+		if (ImGui::BeginCombo(szLabel, strBound.empty() ? "(unbound)" : strBound.c_str()))
+		{
+			// ★ UNBINDING IS AN OFFERED CHOICE, not something you achieve by
+			// deleting a parameter. A space left on its authored literal is a
+			// legitimate state (D48), and the only way back to it is an empty name.
+			if (ImGui::Selectable("(unbound)", strBound.empty()))
+			{
+				Action_SetBlendSpaceParameter(strStateName, eAxis, std::string());
+			}
+			for (u_int u = 0; u < axFloatParams.GetSize(); ++u)
+			{
+				if (ImGui::Selectable(axFloatParams.Get(u).c_str(), axFloatParams.Get(u) == strBound))
+				{
+					Action_SetBlendSpaceParameter(strStateName, eAxis, axFloatParams.Get(u));
+				}
+			}
+			ImGui::EndCombo();
+		}
+		ImGui::PopID();
+	}
+	if (axFloatParams.GetSize() == 0)
+	{
+		ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(xPalette.m_uWarning),
+			"declare a Float parameter to drive this space — an unbound one never moves");
+	}
+
+	// ---- the axis RANGE the frame is drawn with -----------------------------
+	// Derived from the points, then padded and floored by the pure helper, and
+	// RECORDED — Action_DragBlendPointToPixel maps through exactly this, so the
+	// drag and the draw cannot use two different ranges.
+	float fMinX = 0.0f;
+	float fMaxX = 0.0f;
+	float fMinY = 0.0f;
+	float fMaxY = 0.0f;
+	bool bAnyPoint = false;
+	for (u_int u = 0; u < uPointCount; ++u)
+	{
+		std::string strClip;
+		Zenith_Maths::Vector2 xPosition(0.0f);
+		if (!m_xDocument.GetBlendPoint(strStateName, u, strClip, xPosition))
+		{
+			continue;
+		}
+		if (!bAnyPoint)
+		{
+			fMinX = fMaxX = xPosition.x;
+			fMinY = fMaxY = xPosition.y;
+			bAnyPoint = true;
+			continue;
+		}
+		fMinX = xPosition.x < fMinX ? xPosition.x : fMinX;
+		fMaxX = xPosition.x > fMaxX ? xPosition.x : fMaxX;
+		fMinY = xPosition.y < fMinY ? xPosition.y : fMinY;
+		fMaxY = xPosition.y > fMaxY ? xPosition.y : fMaxY;
+	}
+	ComputeBlendAxisRange(fMinX, fMaxX, m_fBlendRangeMinX, m_fBlendRangeMaxX);
+	ComputeBlendAxisRange(fMinY, fMaxY, m_fBlendRangeMinY, m_fBlendRangeMaxY);
+
+	// ---- the strip surface ---------------------------------------------------
+	const float fWidth = Zenith_EditorUI::Px(fANIMSM_BLEND_CANVAS_SIZE_1X) * (bIs2D ? 1.0f : 2.4f);
+	const float fHeight = Zenith_EditorUI::Px(bIs2D ? fANIMSM_BLEND_CANVAS_SIZE_1X : 26.0f);
+	const ImVec2 xOrigin = ImGui::GetCursorScreenPos();
+	ImGui::InvisibleButton("##AnimSmBlendSurface", Vec(fWidth, fHeight));
+	const bool bSurfaceHovered = ImGui::IsItemHovered();
+	// ★ THE INSPECTOR CHILD SCROLLS, AND A CLIPPED ImGui ITEM IS NOT
+	// INTERACTABLE. This is the graph editor's palette-row rule: the strip is
+	// drawn whether or not it fits, but nothing is RECORDED when the surface is
+	// scrolled out of the child — a rect handed out for a surface no click can
+	// reach is exactly the y=1768 failure that contract exists to prevent.
+	const bool bSurfaceVisible = ImGui::IsItemVisible();
+
+	m_xBlendStripRect.m_fMinX = xOrigin.x;
+	m_xBlendStripRect.m_fMinY = xOrigin.y;
+	m_xBlendStripRect.m_fMaxX = xOrigin.x + fWidth;
+	m_xBlendStripRect.m_fMaxY = xOrigin.y + fHeight;
+	m_bBlendStripRectValid = bSurfaceVisible;
+
+	ImDrawList* pxDraw = ImGui::GetWindowDrawList();
+	pxDraw->AddRectFilled(Vec(m_xBlendStripRect.m_fMinX, m_xBlendStripRect.m_fMinY),
+		Vec(m_xBlendStripRect.m_fMaxX, m_xBlendStripRect.m_fMaxY), xPalette.m_uPanelBgAlt, 3.0f);
+	pxDraw->AddRect(Vec(m_xBlendStripRect.m_fMinX, m_xBlendStripRect.m_fMinY),
+		Vec(m_xBlendStripRect.m_fMaxX, m_xBlendStripRect.m_fMaxY), xPalette.m_uBorder, 3.0f);
+
+	const float fMarkerHalf = Zenith_EditorUI::Px(fANIMSM_BLEND_MARKER_HALF_1X);
+	const float fRowY = (m_xBlendStripRect.m_fMinY + m_xBlendStripRect.m_fMaxY) * 0.5f;
+
+	// ---- the markers ---------------------------------------------------------
+	for (u_int u = 0; u < uPointCount; ++u)
+	{
+		std::string strClip;
+		Zenith_Maths::Vector2 xPosition(0.0f);
+		if (!m_xDocument.GetBlendPoint(strStateName, u, strClip, xPosition))
+		{
+			continue;
+		}
+		const float fX = BlendPositionToPixel(xPosition.x, m_xBlendStripRect.m_fMinX, m_xBlendStripRect.m_fMaxX,
+			m_fBlendRangeMinX, m_fBlendRangeMaxX);
+		// ★ SCREEN Y IS INVERTED against the blend axis, so the mapping is handed
+		// its pixel bounds the other way round — the same inversion
+		// Action_DragBlendPointToPixel applies, and the reason it is written in
+		// both places rather than baked into the pure helper: the helper is a
+		// linear map between two ranges and knows nothing about which way a
+		// screen grows.
+		const float fY = bIs2D
+			? BlendPositionToPixel(xPosition.y, m_xBlendStripRect.m_fMaxY, m_xBlendStripRect.m_fMinY,
+				m_fBlendRangeMinY, m_fBlendRangeMaxY)
+			: fRowY;
+
+		const bool bSelected = (m_uSelectedBlendPoint == u);
+		pxDraw->AddRectFilled(Vec(fX - fMarkerHalf, fY - fMarkerHalf), Vec(fX + fMarkerHalf, fY + fMarkerHalf),
+			bSelected ? xPalette.m_uAccent : xPalette.m_uFrame, 2.0f);
+		pxDraw->AddRect(Vec(fX - fMarkerHalf, fY - fMarkerHalf), Vec(fX + fMarkerHalf, fY + fMarkerHalf),
+			bSelected ? xPalette.m_uAccentHover : xPalette.m_uBorder, 2.0f);
+
+		Zenith_AnimCtrlPanelRect xMarker;
+		xMarker.m_fMinX = fX - fMarkerHalf;
+		xMarker.m_fMinY = fY - fMarkerHalf;
+		xMarker.m_fMaxX = fX + fMarkerHalf;
+		xMarker.m_fMaxY = fY + fMarkerHalf;
+		// Recorded only when the strip is on screen AND the marker was actually
+		// painted INSIDE it — the half of the off-screen contract PublishRect
+		// cannot supply.
+		if (bSurfaceVisible
+			&& fX >= m_xBlendStripRect.m_fMinX && fX <= m_xBlendStripRect.m_fMaxX
+			&& fY >= m_xBlendStripRect.m_fMinY && fY <= m_xBlendStripRect.m_fMaxY)
+		{
+			m_xBlendPointRects.Insert(u, xMarker);
+		}
+	}
+
+	// ---- THE LIVE PARAMETER DOT ---------------------------------------------
+	// ★ THIS IS THE THING WU-6.1 MADE POSSIBLE. Before D48's repair, nothing
+	// passed the parameter set into a blend tree at all, so the position a dot
+	// would draw could never move — the space sat on its deserialized literal
+	// forever, in the editor and in a shipping game alike.
+	float fDotX = 0.0f;
+	float fDotY = 0.0f;
+	if (GetLiveParameterDot(fDotX, fDotY))
+	{
+		const float fPixelX = BlendPositionToPixel(fDotX, m_xBlendStripRect.m_fMinX, m_xBlendStripRect.m_fMaxX,
+			m_fBlendRangeMinX, m_fBlendRangeMaxX);
+		const float fPixelY = bIs2D
+			? BlendPositionToPixel(fDotY, m_xBlendStripRect.m_fMaxY, m_xBlendStripRect.m_fMinY,
+				m_fBlendRangeMinY, m_fBlendRangeMaxY)
+			: fRowY;
+		pxDraw->AddCircleFilled(Vec(fPixelX, fPixelY), fMarkerHalf * 0.8f, xPalette.m_uPlay);
+
+		m_xLiveDotRect.m_fMinX = fPixelX - fMarkerHalf;
+		m_xLiveDotRect.m_fMinY = fPixelY - fMarkerHalf;
+		m_xLiveDotRect.m_fMaxX = fPixelX + fMarkerHalf;
+		m_xLiveDotRect.m_fMaxY = fPixelY + fMarkerHalf;
+		// Recorded only when the dot landed INSIDE the strip: a parameter well
+		// outside the authored range draws off the frame, and handing out that
+		// coordinate would be the graph editor's y=1768 mistake in miniature.
+		m_bLiveDotRectValid = (bSurfaceVisible
+			&& fPixelX >= m_xBlendStripRect.m_fMinX && fPixelX <= m_xBlendStripRect.m_fMaxX
+			&& fPixelY >= m_xBlendStripRect.m_fMinY && fPixelY <= m_xBlendStripRect.m_fMaxY);
+	}
+
+	// ---- the marker gesture --------------------------------------------------
+	// Press picks the nearest marker under the cursor; release commits, and only
+	// past the click slop, so a click that never moved SELECTS and records
+	// nothing.
+	const ImGuiIO& xIO = ImGui::GetIO();
+	if (bSurfaceHovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+	{
+		u_int uHit = uINVALID_ANIMSM_BLEND_POINT;
+		for (Zenith_HashMap<u_int, Zenith_AnimCtrlPanelRect>::Iterator xIt(m_xBlendPointRects); !xIt.Done(); xIt.Next())
+		{
+			const Zenith_AnimCtrlPanelRect& xRect = xIt.GetValue();
+			if (xIO.MousePos.x >= xRect.m_fMinX && xIO.MousePos.x <= xRect.m_fMaxX
+				&& xIO.MousePos.y >= xRect.m_fMinY && xIO.MousePos.y <= xRect.m_fMaxY)
+			{
+				uHit = xIt.GetKey();
+				break;
+			}
+		}
+		Action_SelectBlendPoint(uHit);
+		m_bDraggingBlendPoint = (uHit != uINVALID_ANIMSM_BLEND_POINT);
+		m_xBlendDragStartPixel = Zenith_Maths::Vector2(xIO.MousePos.x, xIO.MousePos.y);
+	}
+	if (m_bDraggingBlendPoint && ImGui::IsMouseReleased(ImGuiMouseButton_Left))
+	{
+		const float fSlop = Zenith_EditorUI::Px(fANIMSM_CLICK_SLOP_1X);
+		if (m_uSelectedBlendPoint != uINVALID_ANIMSM_BLEND_POINT
+			&& (std::fabs(xIO.MousePos.x - m_xBlendDragStartPixel.x) > fSlop
+			 || std::fabs(xIO.MousePos.y - m_xBlendDragStartPixel.y) > fSlop))
+		{
+			Action_DragBlendPointToPixel(m_uSelectedBlendPoint, xIO.MousePos.x, xIO.MousePos.y);
+		}
+		m_bDraggingBlendPoint = false;
+	}
+
+	// ---- add / remove / re-clip ---------------------------------------------
+	Zenith_Vector<std::string> axClipNames;
+	for (u_int u = 0; u < m_xDocument.GetClipPathCount(); ++u)
+	{
+		std::string strPath;
+		if (m_xDocument.GetClipPathAt(u, strPath))
+		{
+			axClipNames.PushBack(AnimSmClipNameForPath(strPath));
+		}
+	}
+	if (axClipNames.GetSize() == 0)
+	{
+		ImGui::TextDisabled("(add a clip to the controller's clip list first — a point plays one by name)");
+		return;
+	}
+	if (m_iNewBlendPointClip >= static_cast<int>(axClipNames.GetSize()))
+	{
+		m_iNewBlendPointClip = 0;
+	}
+
+	ImGui::SetNextItemWidth(Zenith_EditorUI::Px(150.0f));
+	if (ImGui::BeginCombo("##AnimSmBlendClip", axClipNames.Get(static_cast<u_int>(m_iNewBlendPointClip)).c_str()))
+	{
+		for (u_int u = 0; u < axClipNames.GetSize(); ++u)
+		{
+			if (ImGui::Selectable(axClipNames.Get(u).c_str(), static_cast<int>(u) == m_iNewBlendPointClip))
+			{
+				m_iNewBlendPointClip = static_cast<int>(u);
+			}
+		}
+		ImGui::EndCombo();
+	}
+	ImGui::SameLine();
+	if (ImGui::Button("+ Point"))
+	{
+		// Placed one step past the current maximum so a new point is never on top
+		// of an existing one — two markers at the same pixel cannot be told apart
+		// and only the first is clickable.
+		const float fNewX = bAnyPoint ? fMaxX + 1.0f : 0.0f;
+		Action_AddBlendPoint(strStateName, axClipNames.Get(static_cast<u_int>(m_iNewBlendPointClip)), fNewX, 0.0f);
+	}
+
+	if (m_uSelectedBlendPoint == uINVALID_ANIMSM_BLEND_POINT)
+	{
+		return;
+	}
+
+	std::string strSelectedClip;
+	Zenith_Maths::Vector2 xSelectedPos(0.0f);
+	if (!m_xDocument.GetBlendPoint(strStateName, m_uSelectedBlendPoint, strSelectedClip, xSelectedPos))
+	{
+		return;
+	}
+
+	ImGui::SameLine();
+	if (ImGui::Button("- Point"))
+	{
+		Action_RemoveBlendPoint(strStateName, m_uSelectedBlendPoint);
+		return;   // the point list just moved under us
+	}
+	ImGui::SameLine();
+	if (ImGui::Button("Set Clip"))
+	{
+		Action_SetBlendPointClip(strStateName, m_uSelectedBlendPoint,
+			axClipNames.Get(static_cast<u_int>(m_iNewBlendPointClip)));
+	}
+
+	// The numeric twin of the drag, committed on edit-complete for the reason
+	// every other field on this panel is: one command per keystroke makes Ctrl+Z
+	// walk back through a half-typed number.
+	float afPosition[2] = { xSelectedPos.x, xSelectedPos.y };
+	ImGui::SetNextItemWidth(Zenith_EditorUI::Px(bIs2D ? 150.0f : 90.0f));
+	if (bIs2D)
+	{
+		ImGui::InputFloat2("##AnimSmBlendPos", afPosition, "%.3f");
+	}
+	else
+	{
+		ImGui::InputFloat("##AnimSmBlendPos", &afPosition[0], 0.0f, 0.0f, "%.3f");
+	}
+	if (ImGui::IsItemDeactivatedAfterEdit())
+	{
+		Action_SetBlendPointPosition(strStateName, m_uSelectedBlendPoint, afPosition[0], afPosition[1]);
+	}
+	ImGui::SameLine();
+	ImGui::Text("point %u: %s", m_uSelectedBlendPoint,
+		strSelectedClip.empty() ? "(no clip)" : strSelectedClip.c_str());
 }
 
 void Zenith_EditorPanel_AnimStateMachine::RenderTransitionInspector()

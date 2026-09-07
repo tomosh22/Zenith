@@ -1,6 +1,11 @@
 #include "UnitTests/Zenith_UnitTests.h"
 #include "Flux/MeshAnimation/Flux_BlendTree.h"
 
+// WU-7.3's refusal case feeds SetBlendPointPosition a NaN on purpose: the guard
+// is written as a POSITIVE range test precisely so a NaN falls out of it, and a
+// test that never handed it one would not know.
+#include <limits>
+
 // ============================================================================
 // Flux_BlendTreeNode_BlendSpace1D / 2D nearest-blend-point tests
 //
@@ -279,4 +284,87 @@ ZENITH_TEST(Animation, SelectNodeReportsOnlyTheBranchItEvaluated)
 			}
 		}
 	}
+}
+
+// ============================================================================
+// WU-7.3: the editing accessors.
+//
+// Both cases pin the thing the accessor does BESIDES writing the field, because
+// that is the half an editor cannot see and the runtime silently depends on: the
+// 1D list must stay sorted (Evaluate scans for a bracketing pair) and the 2D
+// triangulation must be re-derived (FindContainingTriangle reads it).
+// ============================================================================
+
+ZENITH_TEST(Animation, BlendSpace1DAPositionEditReSortsAndReportsWhereThePointWent)
+{
+	Flux_BlendTreeNode_BlendSpace1D xBS;
+	xBS.AddBlendPoint(new MockBlendNodeWithTime(0.10f), 0.0f);
+	xBS.AddBlendPoint(new MockBlendNodeWithTime(0.90f), 1.0f);
+	xBS.SortBlendPoints();
+
+	ZENITH_ASSERT_EQ(xBS.GetBlendPointCount(), 2u, "two points");
+	ZENITH_ASSERT_NOT_NULL(xBS.GetBlendPointNode(0), "point 0 carries its child");
+	ZENITH_ASSERT_NULL(xBS.GetBlendPointNode(2), "and an index past the end answers null rather than reading past it");
+
+	float fPosition = -1.0f;
+	ZENITH_ASSERT_TRUE(xBS.GetBlendPointPosition(1, fPosition), "point 1 has a position");
+	ZENITH_ASSERT_EQ_FLOAT(fPosition, 1.0f, 1e-6f, "which is where it was added");
+	ZENITH_ASSERT_FALSE(xBS.GetBlendPointPosition(2, fPosition), "and an index past the end refuses");
+
+	// ★ MOVING POINT 1 BELOW POINT 0 RENUMBERS BOTH. Evaluate brackets the
+	// parameter between two ADJACENT entries, so a list left unsorted would blend
+	// the wrong pair — and a caller holding index 1 would now be holding the other
+	// point.
+	Flux_BlendTreeNode* pxMoved = xBS.GetBlendPointNode(1);
+	u_int uNewIndex = 0xFFFFFFFFu;
+	ZENITH_ASSERT_TRUE(xBS.SetBlendPointPosition(1, -2.0f, &uNewIndex), "the move is accepted");
+	ZENITH_ASSERT_EQ(uNewIndex, 0u, "★ and it reports that the point is now index 0");
+	ZENITH_ASSERT_TRUE(xBS.GetBlendPointNode(0) == pxMoved, "which is where the child actually is");
+
+	float fFirst = 0.0f;
+	float fSecond = 0.0f;
+	ZENITH_ASSERT_TRUE(xBS.GetBlendPointPosition(0, fFirst), "point 0 reads");
+	ZENITH_ASSERT_TRUE(xBS.GetBlendPointPosition(1, fSecond), "point 1 reads");
+	ZENITH_ASSERT_TRUE(fFirst <= fSecond, "★ and the list is still ASCENDING, which is what Evaluate assumes");
+
+	// A refusal changes nothing at all — no clamp, no partial write.
+	ZENITH_ASSERT_FALSE(xBS.SetBlendPointPosition(7, 0.5f), "an index past the end is refused");
+	ZENITH_ASSERT_FALSE(xBS.SetBlendPointPosition(0, std::numeric_limits<float>::quiet_NaN()),
+		"and so is a non-finite position");
+	ZENITH_ASSERT_TRUE(xBS.GetBlendPointPosition(0, fPosition), "point 0 still reads");
+	ZENITH_ASSERT_EQ_FLOAT(fPosition, -2.0f, 1e-6f, "★ carrying the value the accepted move gave it");
+}
+
+ZENITH_TEST(Animation, BlendSpace2DAPositionEditKeepsTheIndexAndReTriangulates)
+{
+	Flux_BlendTreeNode_BlendSpace2D xBS;
+	xBS.AddBlendPoint(new MockBlendNodeWithTime(0.10f), Zenith_Maths::Vector2(0.0f, 0.0f));
+	xBS.AddBlendPoint(new MockBlendNodeWithTime(0.50f), Zenith_Maths::Vector2(1.0f, 0.0f));
+	xBS.AddBlendPoint(new MockBlendNodeWithTime(0.90f), Zenith_Maths::Vector2(0.0f, 1.0f));
+	xBS.ComputeTriangulation();
+
+	ZENITH_ASSERT_EQ(xBS.GetBlendPointCount(), 3u, "three points");
+	Flux_BlendTreeNode* pxSecond = xBS.GetBlendPointNode(1);
+	ZENITH_ASSERT_NOT_NULL(pxSecond, "point 1 carries its child");
+
+	// The nearest-point read is the cheapest observable that depends on the
+	// stored positions, so it is what tells us the write landed.
+	xBS.SetParameter(Zenith_Maths::Vector2(0.95f, 0.0f));
+	ZENITH_ASSERT_TRUE(BlendSpaceFloatEquals(xBS.GetNormalizedTime(), 0.50f),
+		"the parameter sits on top of point 1");
+
+	ZENITH_ASSERT_TRUE(xBS.SetBlendPointPosition(1, Zenith_Maths::Vector2(-4.0f, -4.0f)), "point 1 moves");
+	ZENITH_ASSERT_TRUE(xBS.GetBlendPointNode(1) == pxSecond,
+		"★ and it is STILL index 1 — a 2D space has no order for a move to renumber");
+
+	Zenith_Maths::Vector2 xRead(0.0f);
+	ZENITH_ASSERT_TRUE(xBS.GetBlendPointPosition(1, xRead), "its position reads back");
+	ZENITH_ASSERT_EQ_FLOAT(xRead.x, -4.0f, 1e-6f, "as the value written");
+	ZENITH_ASSERT_EQ_FLOAT(xRead.y, -4.0f, 1e-6f, "on both axes");
+	ZENITH_ASSERT_TRUE(BlendSpaceFloatEquals(xBS.GetNormalizedTime(), 0.10f),
+		"★ and the same parameter now finds point 0 — the sampler sees the NEW position");
+
+	ZENITH_ASSERT_FALSE(xBS.SetBlendPointPosition(9, Zenith_Maths::Vector2(0.0f, 0.0f)),
+		"an index past the end is refused");
+	ZENITH_ASSERT_FALSE(xBS.GetBlendPointPosition(9, xRead), "and reading past the end refuses too");
 }

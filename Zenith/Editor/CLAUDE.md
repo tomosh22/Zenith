@@ -673,12 +673,14 @@ OPEN would dirty a document nobody edited and rewrite a tracked asset for a
 cosmetic reason. `Action_SetStatePosition` nudges a drop at the origin off it, so
 one value cannot mean two things.
 
-**★ A STATE'S TREE IS A SINGLE CLIP LEAF HERE, AND ANYTHING ELSE IS REFUSED BY
-NAME.** `GetStateTreeKind` answers EMPTY / SINGLE_CLIP / COMPLEX, and a COMPLEX
-state (a blend space, a composite, a container with a sub-machine) shows
-`BlendTreeRefusalText()` — *"edited in the blend-tree editor (WU-7.3)"* — on its
-node and in the inspector. Assigning a clip to one would delete the whole
-sub-graph and report success.
+**★ A STATE'S TREE IS A CLIP LEAF OR A BLEND SPACE, AND A NEST IS REFUSED BY
+NAME.** `GetStateTreeKind` answers EMPTY / SINGLE_CLIP / **BLENDSPACE_1D /
+BLENDSPACE_2D** / COMPLEX. The two blend spaces are edited by the *Blend Tree*
+strip below (WU-7.3); what is left in COMPLEX is a **composite**
+(Blend / Additive / Masked / Select) or a container state's sub-machine, and one
+of those shows `BlendTreeRefusalText()` on its node and in the inspector.
+Assigning a clip to any of the three — a nest **or** a blend space — is refused,
+because it would delete the whole sub-graph and report success.
 
 **★ LIVE HIGHLIGHTING RUNS ON A PANEL-OWNED PREVIEW CONTROLLER, NOT ON THE
 SELECTED ENTITY'S, AND THAT IS A PREMISE CORRECTION.** The obvious design is
@@ -714,8 +716,8 @@ twin** (`Action_SelectLayerMachine` / `AddState` / `RemoveState` / `RenameState`
 `RemoveTransition` / `SetTransitionDuration` / `SetTransitionExitTime` /
 `SetTransitionInterruptible` / `AddCondition` / `RemoveCondition` /
 `AddParameter` / `RemoveParameter` / `AddClipPath` / `RemoveClipPath` / `Undo` /
-`Redo` / `Save` / `Apply`, plus WU-7.2's nine layer verbs and the preview
-verbs). The mouse handlers in
+`Redo` / `Save` / `Apply`, plus WU-7.2's nine layer verbs, WU-7.3's eight blend
+verbs and the preview verbs). The mouse handlers in
 `_Render.cpp` only translate input into those; the actions never read ImGui state.
 Every mutation goes through a `Zenith_AnimControllerDocument` verb, and the
 `AddStep_AnimSm*` automation family calls exactly the same twins.
@@ -860,6 +862,128 @@ different machine.
 registry, so the mask field is a path text box plus a drop target for the content
 browser's generic file payload. A picker needs an asset-type enumeration that
 does not exist yet.
+
+### The Blend Tree strip (WU-7.3)
+
+The blend-space sub-graph editor, inside the Animator State Machine panel's
+**inspector**: a 1D axis or a 2D square with the state's blend points as
+draggable markers, the axis parameter binding(s), add / remove / re-clip, and the
+**live parameter dot**.
+
+**★ THE REFUSAL DID NOT GO AWAY — IT GOT SMALLER, and that is the whole shape of
+this unit.** WU-6.5's `ZENITH_ANIMCTRL_TREE_COMPLEX` covered a blend space, a
+composite and a container alike. A blend space is now its own kind with an editor
+(`ZENITH_ANIMCTRL_TREE_BLENDSPACE_1D` / `_2D`), and COMPLEX is exactly the set
+that still has no editor anywhere: a **Blend / Additive / Masked / Select** nest,
+or a sub-machine. `Zenith_AnimControllerDocument::BlendTreeRefusalText()` is the
+ONE wording of that refusal and the panel's static of the same name **forwards**
+it, so the node badge, the inspector, the document's own
+`GetLastBlendTreeDiagnostic()` and an authoring recipe's log line cannot describe
+one refusal four ways. `SetStateClip` refuses a blend space as firmly as it
+refuses a nest — "give this state a clip" applied to a space would delete every
+point in it — and `SetStateTreeKind` is the verb that converts.
+
+**★ A CONVERSION CARRIES THE CLIPS ACROSS.** A clip leaf seeds the new space's
+FIRST point at the origin; a space converted back to a leaf keeps its first
+point's clip; one space converted to the other carries every point (2D→1D drops
+the y, 1D→2D lands them on y = 0). A conversion that started from scratch would
+silently delete the one thing the state was already playing, and report success.
+
+**★ THE UNDO UNIT IS THE WHOLE STATE, AS BYTES** (`Zenith_AnimCtrlCommand_StateTree`),
+and this is the one design decision worth defending. **A blend tree has no
+identity below the state**: a point is a struct in a `Zenith_Vector` addressed by
+index, its child is an owned raw pointer with no id, and a **1D position edit
+RE-SORTS the list** — so an index-addressed command would be holding a number the
+very next edit can move. That is the transition list's problem answered one level
+up, at the first thing that HAS a key. Bytes rather than a copy for the reason the
+layer snapshot gives (a polymorphic tree has no clone verb), and bytes are also
+what makes "undo a conversion" EXACT: a clip leaf turned into a space loses its
+playback rate and its playhead, and nothing inside the space could reconstruct
+them. The state is restored **in place** (`ApplyRestoreState`), never removed and
+re-added — the machine's map is keyed on the name and every transition targeting
+it resolves through that key.
+
+**★ A 1D BLEND POINT EDIT CAN RENUMBER, AND EVERY LAYER SAYS SO.**
+`Flux_BlendTreeNode_BlendSpace1D::Evaluate` brackets the parameter between
+**adjacent** points, and `ReadFromDataStream` sorts on the way in — so the list
+is kept sorted and dragging a point past a neighbour swaps two indices. The Flux
+setter reports where the point went (`SetBlendPointPosition(..., u_int*
+puOutNewIndex)`), the document forwards it, and `Action_SetBlendPointPosition`
+**moves the panel's selection with it**. A selection left on the number would
+silently start naming the point that was dragged past. A 2D space is not sorted,
+so its indices are stable — what it needs instead is a **re-triangulation**, which
+its setter does, because `FindContainingTriangle` reads a triangulation derived
+from the positions.
+
+**★ THE LIVE DOT IS ONLY MEANINGFUL BECAUSE WU-6.1 REPAIRED THE BINDING (D48).**
+Before that, `Flux_AnimationStateMachine::EvaluateState` called `Evaluate` with no
+parameter set at all, so a blend space sat frozen at its deserialized literal in
+the editor and in a shipping game alike — a dot drawn from it would never have
+moved. `GetLiveParameterDot(outX, outY)` reads the bound parameter(s) **by name
+from the panel's PREVIEW controller's one live set** (D42), which is the same set
+the preview's machines resolve their positions through, so the dot and the pose
+cannot disagree. An **unbound** space has NO dot rather than a dot at zero: a
+marker pinned at the origin is indistinguishable from a parameter that happens to
+be zero, and "this axis reads nothing" is exactly what an author staring at a
+space that will not move needs to see.
+
+**★ AN AXIS BINDS ONLY A DECLARED `Float`, and that is the runtime's rule.**
+`ResolveParameters` reads the binding through
+`Flux_AnimationParameters::GetFloat`, so an Int or Bool declaration would be read
+through the wrong union member — and an **undeclared** name is left at the literal
+by the runtime, which is a binding that looks authored and does nothing.
+`BlendParameterRefusalText()` is the ONE wording. An empty name UNBINDS and is
+always allowed. On a 2D space the two axes bind **independently**; a 1D space has
+no Y and asking for one is refused rather than answered with zero.
+
+**★ THE STRIP DRAWS NOTHING UNLESS THE SELECTED STATE IS A BLEND SPACE** — not a
+header, not a disabled row — and it lives **inside the inspector child**, which is
+a FIXED height, so whatever it emits costs the canvas nothing. Same placement
+argument as the layer strip, same rule the dope sheet learned twice.
+`TheBlendStripDrawsNothingForASingleClipStateAndNeverTakesCanvasHeight` measures
+`GetCanvasRect().Height()` with a single-clip state and with a five-point 2D
+space and asserts they are EQUAL — paired, as the rule requires, with a
+sensitivity check that grows the window (shrinking can drive the canvas below
+`RenderCanvas`'s 8 px floor on a high-DPI machine).
+`WasBlendStripDrawnLastFrame()` and `GetDrawnBlendPointCount()` are what a unit
+reads for the absence.
+
+**★ NO COORDINATE MATHS LIVES IN THE STRIP.** `BlendPositionToPixel` /
+`BlendPixelToPosition` / `ComputeBlendAxisRange` are PURE statics — the dope
+sheet's `Zenith_AnimTimelineMath` rule applied to a blend axis — so the draw and
+the drag are one derivation and a unit asserts the round trip with no frame open.
+The **axis range is recorded with the rects**, because it is half of the mapping:
+`Action_DragBlendPointToPixel` refuses outright when the strip was not drawn last
+frame, rather than inventing a range and dropping the point at a position the
+strip never showed. **Screen y is inverted** against the blend axis on both the
+draw and the drag; the pure helper is a linear map between two ranges and knows
+nothing about which way a screen grows.
+
+**Live edit:** every successful blend verb calls `Action_Apply()` when the preview
+is enabled, so a moved point changes the sampled pose immediately. That is cheap
+because blend edits commit on **edit-complete** (a drag commits once, on release),
+so it is one Apply per gesture rather than per frame — and Apply is a RELOAD
+(D45), so the preview keeps its current state, its playhead and its live parameter
+values across the edit, which is precisely what makes dragging while it runs
+legible.
+
+**Actions** — `Action_SetStateTreeKind` / `SetBlendSpaceParameter` /
+`AddBlendPoint` / `RemoveBlendPoint` / `SetBlendPointClip` /
+`SetBlendPointPosition` / `SelectBlendPoint` / `DragBlendPointToPixel`, following
+the panel's ASSIGNMENT-vs-CREATION rule verbatim. The no-op test is **byte
+equality on the state's payload**, which covers every verb at once instead of each
+growing its own field comparison: re-stating a value the tree already carried
+leaves the bytes identical, so it returns true and pushes zero undo steps. The
+`AddStep_AnimBlend*` automation family (the `ANIM_BLEND_*` block, the SIXTH
+animation range) calls exactly these twins;
+`AddStep_AnimBlendExpectPointCount` / `…ExpectPointPosition` are its assertion
+verbs, and the position one exists because a renumber is what a recipe can get
+silently wrong.
+
+**Not wired:** a blend point's child is assumed to be a clip leaf. A def that
+nests a composite under one is READ correctly (the point reports an empty clip
+name) and refused for editing with the same wording a nested state gets — there
+is no editor for a tree inside a tree.
 
 ### Every backend authors the same scene, and every publish is audited
 
@@ -1047,18 +1171,20 @@ assert: `Automation, GrassTypesEnumBlockIsContiguous`,
 `… AnimEnumBlockIsContiguous`, `… AnimPoseEnumBlockIsContiguous` and
 `… AnimSmEnumBlockIsContiguous`.
 
-**FOUR ANIMATION ranges sit at the end of the enum, and they are four rather
-than one for a mechanical reason.** `ANIM_*` (WU-3.4, the dope sheet), `ANIM_POSE_*`
+**SIX ANIMATION ranges sit at the end of the enum, and they are six rather than
+one for a mechanical reason.** `ANIM_*` (WU-3.4, the dope sheet), `ANIM_POSE_*`
 (WU-4.3, the bone manipulator), `ANIM_SM_*` (WU-6.5, the animator-controller
-state machine) and `ANIM_MASK_*` (WU-7.1, the bone-mask sub-panel) each route to
-their own sub-executor, and each new family was
-APPENDED as its own block rather than added to the one before it — because
-appending into an existing block moves its LAST member, which is the upper bound
-both the router's range test and the header's `static_assert` compare against and
-which that block's unit pins by position. `SET_NAVMESH_ASSET` follows all four
-and must stay outside every range; `AnimMaskEnumBlockIsContiguous` is where that is
-now pinned — the assertion has been re-pointed twice (off `ANIM_POSE`'s unit, then
-off `ANIM_SM`'s) rather than deleted, which is the mechanism working.
+state machine), `ANIM_MASK_*` (WU-7.1, the bone-mask sub-panel), `ANIM_LAYER_*`
+(WU-7.2, the layer strip) and `ANIM_BLEND_*` (WU-7.3, the blend-tree strip) each
+route to their own sub-executor, and each new family was APPENDED as its own block
+rather than added to the one before it — because appending into an existing block
+moves its LAST member, which is the upper bound both the router's range test and
+the header's `static_assert` compare against and which that block's unit pins by
+position. `SET_NAVMESH_ASSET` follows all six and must stay outside every range;
+`AnimBlendEnumBlockIsContiguous` is where that is now pinned — the assertion has
+been re-pointed four times (off `ANIM_POSE`'s unit, then `ANIM_SM`'s, then
+`ANIM_MASK`'s, then `ANIM_LAYER`'s) rather than deleted, which is the mechanism
+working.
 
 ## Selection System
 

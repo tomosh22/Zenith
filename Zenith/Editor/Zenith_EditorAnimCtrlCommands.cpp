@@ -191,6 +191,32 @@ void Zenith_AnimCtrlCommand_StateClip::Undo()
 	m_pxDocument->MarkDirty();
 }
 
+Zenith_AnimCtrlCommand_StateTree::Zenith_AnimCtrlCommand_StateTree(Zenith_AnimControllerDocument* pxDocument,
+	u_int uMachineId, const std::string& strStateName,
+	const Zenith_Vector<char>& axOldBytes, const Zenith_Vector<char>& axNewBytes, const char* szDescription)
+	: Zenith_AnimCtrlCommandBase(pxDocument, uMachineId, szDescription)
+	, m_strStateName(strStateName)
+	, m_axOldBytes(axOldBytes)
+	, m_axNewBytes(axNewBytes)
+{
+}
+
+void Zenith_AnimCtrlCommand_StateTree::Execute()
+{
+	m_pxDocument->ApplyRestoreState(m_uMachineId, m_strStateName, m_axNewBytes);
+	m_pxDocument->MarkDirty();
+}
+
+void Zenith_AnimCtrlCommand_StateTree::Undo()
+{
+	// ★ THE WHOLE PAYLOAD GOES BACK, which is what makes an undo of a CONVERSION
+	// exact rather than approximate: a clip leaf that became a blend space lost
+	// its playback rate and its playhead on the way, and there is nothing in the
+	// space that could reconstruct them.
+	m_pxDocument->ApplyRestoreState(m_uMachineId, m_strStateName, m_axOldBytes);
+	m_pxDocument->MarkDirty();
+}
+
 Zenith_AnimCtrlCommand_StatePosition::Zenith_AnimCtrlCommand_StatePosition(Zenith_AnimControllerDocument* pxDocument,
 	u_int uMachineId, const std::string& strStateName,
 	const Zenith_Maths::Vector2& xOld, const Zenith_Maths::Vector2& xNew)

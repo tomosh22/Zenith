@@ -278,6 +278,19 @@ void Zenith_EditorPanel_AnimStateMachine::ClearFrameRects()
 	m_bLayerStripDrawn = false;
 	m_uDrawnLayerRows = 0;
 
+	// WU-7.3's strip, ditto — INCLUDING the axis range, which is half of the
+	// pixel<->position mapping. A drag mapped through a range the frame did not
+	// draw would drop the point somewhere the user never saw, which is the same
+	// class of failure the off-screen gate exists to prevent.
+	m_bBlendStripDrawn = false;
+	m_bBlendStripRectValid = false;
+	m_bLiveDotRectValid = false;
+	m_xBlendPointRects.Clear();
+	m_fBlendRangeMinX = 0.0f;
+	m_fBlendRangeMaxX = 0.0f;
+	m_fBlendRangeMinY = 0.0f;
+	m_fBlendRangeMaxY = 0.0f;
+
 	// The display bound goes with them: a frame that recorded nothing must not
 	// leave a bound behind that the next query would judge a stale rect against.
 	m_fRecordedDisplayWidth = 0.0f;
@@ -349,6 +362,106 @@ bool Zenith_EditorPanel_AnimStateMachine::GetCanvasRect(Zenith_AnimCtrlPanelRect
 	return PublishRect(&m_xCanvasRect, xOut);
 }
 
+bool Zenith_EditorPanel_AnimStateMachine::GetBlendStripRect(Zenith_AnimCtrlPanelRect& xOut) const
+{
+	if (!m_bBlendStripRectValid)
+	{
+		return false;
+	}
+	return PublishRect(&m_xBlendStripRect, xOut);
+}
+
+bool Zenith_EditorPanel_AnimStateMachine::GetBlendPointRect(u_int uIndex, Zenith_AnimCtrlPanelRect& xOut) const
+{
+	return PublishRect(m_xBlendPointRects.TryGet(uIndex), xOut);
+}
+
+bool Zenith_EditorPanel_AnimStateMachine::GetLiveDotRect(Zenith_AnimCtrlPanelRect& xOut) const
+{
+	if (!m_bLiveDotRectValid)
+	{
+		return false;
+	}
+	return PublishRect(&m_xLiveDotRect, xOut);
+}
+
+bool Zenith_EditorPanel_AnimStateMachine::GetBlendAxisRange(Zenith_AnimCtrlBlendAxis eAxis,
+	float& fOutMin, float& fOutMax) const
+{
+	if (!m_bBlendStripDrawn)
+	{
+		return false;
+	}
+	fOutMin = (eAxis == ZENITH_ANIMCTRL_BLEND_AXIS_X) ? m_fBlendRangeMinX : m_fBlendRangeMinY;
+	fOutMax = (eAxis == ZENITH_ANIMCTRL_BLEND_AXIS_X) ? m_fBlendRangeMaxX : m_fBlendRangeMaxY;
+	return true;
+}
+
+//=============================================================================
+// The blend strip's PURE mapping (WU-7.3).
+//
+// ★ NO COORDINATE MATHS LIVES ANYWHERE ELSE, which is the dope sheet's rule
+// (Zenith_AnimTimelineMath) applied to a blend axis. The draw places a marker at
+// BlendPositionToPixel, the drag reads a position back with BlendPixelToPosition
+// and the units assert the round trip — one definition, so the strip cannot grow
+// a second copy that drifts from the first and puts a marker where a click does
+// not land.
+//=============================================================================
+
+float Zenith_EditorPanel_AnimStateMachine::BlendPositionToPixel(float fPosition, float fPixelMin, float fPixelMax,
+	float fPositionMin, float fPositionMax)
+{
+	const float fSpan = fPositionMax - fPositionMin;
+	// A degenerate range maps everything to the middle. It cannot be divided
+	// through, and answering the low edge would put every marker on the frame.
+	if (!(fSpan > 1.0e-6f))
+	{
+		return (fPixelMin + fPixelMax) * 0.5f;
+	}
+	return fPixelMin + (fPosition - fPositionMin) / fSpan * (fPixelMax - fPixelMin);
+}
+
+float Zenith_EditorPanel_AnimStateMachine::BlendPixelToPosition(float fPixel, float fPixelMin, float fPixelMax,
+	float fPositionMin, float fPositionMax)
+{
+	const float fPixelSpan = fPixelMax - fPixelMin;
+	if (!(fPixelSpan > 1.0e-6f))
+	{
+		return fPositionMin;
+	}
+	return fPositionMin + (fPixel - fPixelMin) / fPixelSpan * (fPositionMax - fPositionMin);
+}
+
+void Zenith_EditorPanel_AnimStateMachine::ComputeBlendAxisRange(float fPointMin, float fPointMax,
+	float& fOutMin, float& fOutMax)
+{
+	// A non-finite input is treated as an empty space rather than propagated: the
+	// range is what every marker's pixel is derived from, so one NaN here would
+	// take the whole strip with it.
+	if (!(fPointMin <= fPointMax) || !(fPointMin >= -3.0e38f) || !(fPointMax <= 3.0e38f))
+	{
+		fOutMin = -1.0f;
+		fOutMax = 1.0f;
+		return;
+	}
+
+	const float fPad = (fPointMax - fPointMin) * fANIMSM_BLEND_RANGE_PAD;
+	fOutMin = fPointMin - fPad;
+	fOutMax = fPointMax + fPad;
+
+	// ★ THE MINIMUM SPAN IS NOT COSMETIC. One point (or every point at the same
+	// position) gives a zero span, and a zero span makes the strip a surface on
+	// which every pixel means the same position — a drag that cannot move
+	// anything, which reads as "dragging is broken".
+	const float fSpan = fOutMax - fOutMin;
+	if (fSpan < fANIMSM_BLEND_MIN_SPAN)
+	{
+		const float fCentre = (fOutMin + fOutMax) * 0.5f;
+		fOutMin = fCentre - fANIMSM_BLEND_MIN_SPAN * 0.5f;
+		fOutMax = fCentre + fANIMSM_BLEND_MIN_SPAN * 0.5f;
+	}
+}
+
 //=============================================================================
 // The blend-tree gate
 //=============================================================================
@@ -360,7 +473,11 @@ Zenith_AnimCtrlStateTreeKind Zenith_EditorPanel_AnimStateMachine::GetStateTreeKi
 
 const char* Zenith_EditorPanel_AnimStateMachine::BlendTreeRefusalText()
 {
-	return "edited in the blend-tree editor (WU-7.3)";
+	// ★ FORWARDED, NOT RESTATED. The document sets the same string into its own
+	// diagnostic when it refuses, so the node badge, the inspector, the strip and
+	// the units all read one wording — the rule WU-7.2 applied to the additive
+	// mask notice, applied here.
+	return Zenith_AnimControllerDocument::BlendTreeRefusalText();
 }
 
 #ifdef ZENITH_TESTING

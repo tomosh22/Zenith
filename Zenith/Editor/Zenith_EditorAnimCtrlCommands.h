@@ -174,6 +174,49 @@ private:
 };
 
 //-----------------------------------------------------------------------------
+// ONE state's WHOLE payload, before and after (WU-7.3). Every blend-tree edit —
+// converting the tree's kind, binding an axis, adding / removing / re-clipping /
+// moving a point — pushes exactly this.
+//
+// ★ A BLEND TREE HAS NO IDENTITY BELOW THE STATE, and that is the whole
+// argument. A blend point is a struct in a Zenith_Vector addressed by index; its
+// child is an owned raw pointer with no id; and a 1D position edit RE-SORTS the
+// list, because Evaluate blends between ADJACENT points. So an index-addressed
+// command would be holding a number the very next edit can move — the same
+// problem the transition list has, answered the same way and one level up,
+// because the state is the first thing above it that HAS a key.
+//
+// ★ AND IT IS BYTES RATHER THAN A COPY, for the reason the layer snapshot is:
+// Flux_AnimationState owns a polymorphic blend tree with no clone verb, and
+// Write/ReadFromDataStream is the one faithful walk of it that already exists
+// and is already pinned by a test. It is also what makes "undo a conversion"
+// EXACT — a clip leaf turned into a blend space loses its playback rate and its
+// playhead, and only bytes taken beforehand can put them back.
+//
+// The state is restored IN PLACE (ApplyRestoreState), never removed and re-added:
+// the machine's map is keyed on the name and every transition targeting it
+// resolves through that key.
+//-----------------------------------------------------------------------------
+class Zenith_AnimCtrlCommand_StateTree : public Zenith_AnimCtrlCommandBase
+{
+public:
+	Zenith_AnimCtrlCommand_StateTree(Zenith_AnimControllerDocument* pxDocument, u_int uMachineId,
+		const std::string& strStateName,
+		const Zenith_Vector<char>& axOldBytes, const Zenith_Vector<char>& axNewBytes,
+		const char* szDescription);
+
+	void Execute() override;
+	void Undo() override;
+
+	const std::string& GetStateName() const { return m_strStateName; }
+
+private:
+	std::string m_strStateName;
+	Zenith_Vector<char> m_axOldBytes;
+	Zenith_Vector<char> m_axNewBytes;
+};
+
+//-----------------------------------------------------------------------------
 // A node was dragged. Undoable like everything else — a layout is authored data
 // here (Flux_AnimationState::m_xEditorPosition is serialized into the
 // .zanimctrl), so a drag DIRTIES the document and belongs on the stack.

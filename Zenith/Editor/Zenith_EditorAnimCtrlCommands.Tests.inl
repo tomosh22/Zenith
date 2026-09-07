@@ -263,3 +263,75 @@ ZENITH_TEST(AnimCtrlCommands, TheLayerSnapshotCarriesEachLayersWholeMachineThrou
 
 	xDoc.CloseDiscardingChanges();
 }
+
+ZENITH_TEST(AnimCtrlCommands, TheStateTreeSnapshotCarriesAWholeBlendSpaceBothWays)
+{
+	// ★ THE CASE A FINER-GRAINED BLEND COMMAND GETS WRONG (WU-7.3). A blend point
+	// has no identity — it is a struct in a vector, and a 1D position edit
+	// RE-SORTS the list — so a command holding "point 1 of Locomotion" starts
+	// naming a different point the moment anything moves. The state is the first
+	// thing above it that HAS a key, so that is what the snapshot addresses; and
+	// because the snapshot is the state's whole payload, everything ELSE about
+	// the state has to survive a blend edit's undo untouched.
+	AnimCtrlCmdFixture xFixture("zenith_animctrlcmd_statetree");
+	Zenith_AnimControllerDocument xDoc;
+	ZENITH_ASSERT_TRUE(xDoc.OpenFresh(xFixture.m_strPath) == ZENITH_ANIMCTRLDOC_OPEN_OK, "open fresh");
+	ZENITH_ASSERT_TRUE(xDoc.AddParameter(Zenith_AnimCtrlParameterDecl::Float("Speed", 0.0f)), "a Float parameter");
+	ZENITH_ASSERT_TRUE(xDoc.AddState("Locomotion"), "the state under test");
+	ZENITH_ASSERT_TRUE(xDoc.AddState("Attack"), "and a second one to transition to");
+	ZENITH_ASSERT_TRUE(xDoc.AddTransition("Locomotion", "Attack"), "Locomotion -> Attack");
+	ZENITH_ASSERT_TRUE(xDoc.SetStateEditorPosition("Locomotion", Zenith_Maths::Vector2(120.0f, 64.0f)),
+		"with an authored node position");
+
+	ZENITH_ASSERT_TRUE(xDoc.SetStateTreeKind("Locomotion", ZENITH_ANIMCTRL_TREE_BLENDSPACE_1D), "make it a 1D space");
+	ZENITH_ASSERT_TRUE(xDoc.SetBlendSpaceParameter("Locomotion", ZENITH_ANIMCTRL_BLEND_AXIS_X, "Speed"),
+		"bound to Speed");
+	ZENITH_ASSERT_TRUE(xDoc.AddBlendPoint("Locomotion", "WalkClip", Zenith_Maths::Vector2(0.0f, 0.0f)), "walk at 0");
+	ZENITH_ASSERT_TRUE(xDoc.AddBlendPoint("Locomotion", "RunClip", Zenith_Maths::Vector2(4.0f, 0.0f)), "run at 4");
+
+	// ---- one point edit, undone ---------------------------------------------
+	ZENITH_ASSERT_TRUE(xDoc.SetBlendPointPosition("Locomotion", 1, Zenith_Maths::Vector2(9.0f, 0.0f)), "move the run");
+	std::string strClip;
+	Zenith_Maths::Vector2 xPosition(0.0f);
+	ZENITH_ASSERT_TRUE(xDoc.GetBlendPoint("Locomotion", 1, strClip, xPosition), "it reads");
+	ZENITH_ASSERT_EQ_FLOAT(xPosition.x, 9.0f, 1e-6f, "at the new position");
+
+	xDoc.Undo();
+	ZENITH_ASSERT_TRUE(xDoc.GetBlendPoint("Locomotion", 1, strClip, xPosition), "point 1 still reads");
+	ZENITH_ASSERT_EQ_FLOAT(xPosition.x, 4.0f, 1e-6f, "★ back where it was");
+	ZENITH_ASSERT_EQ(strClip, std::string("RunClip"), "and still playing its clip");
+
+	// ★ AND THE REST OF THE STATE CAME BACK UNCHANGED, which is the thing a
+	// whole-payload snapshot has to be checked on: it restores EVERYTHING, so a
+	// restore that lost the transition list or the node position would be a blend
+	// undo quietly deleting a graph edge.
+	ZENITH_ASSERT_EQ(xDoc.GetTransitionCount("Locomotion"), 1u, "★ its outgoing transition survived");
+	Zenith_Maths::Vector2 xNodePos(0.0f);
+	ZENITH_ASSERT_TRUE(xDoc.GetStateEditorPosition("Locomotion", xNodePos), "and its node position");
+	ZENITH_ASSERT_EQ_FLOAT(xNodePos.x, 120.0f, 1e-4f, "which is the authored one");
+	std::string strBound;
+	ZENITH_ASSERT_TRUE(xDoc.GetBlendSpaceParameterName("Locomotion", ZENITH_ANIMCTRL_BLEND_AXIS_X, strBound),
+		"the axis binding reads");
+	ZENITH_ASSERT_EQ(strBound, std::string("Speed"), "★ and the binding rode the bytes too");
+
+	// A redo replays the same snapshot forwards — two arguments, one operation.
+	xDoc.Redo();
+	ZENITH_ASSERT_TRUE(xDoc.GetBlendPoint("Locomotion", 1, strClip, xPosition), "point 1 reads again");
+	ZENITH_ASSERT_EQ_FLOAT(xPosition.x, 9.0f, 1e-6f, "★ at the moved position");
+
+	// ---- the conversion, undone ---------------------------------------------
+	// The state was a CLIP-LESS state before the conversion, so undoing all the
+	// way past it has to leave an EMPTY tree rather than a space with no points.
+	xDoc.Undo();   // the move
+	xDoc.Undo();   // add run
+	xDoc.Undo();   // add walk
+	xDoc.Undo();   // the binding
+	xDoc.Undo();   // the conversion
+	ZENITH_ASSERT_TRUE(xDoc.GetStateTreeKind("Locomotion") == ZENITH_ANIMCTRL_TREE_EMPTY,
+		"★ every step back, and the state is the empty-tree state it started as");
+	ZENITH_ASSERT_EQ(xDoc.GetBlendPointCount("Locomotion"), 0u, "with no points to read");
+	ZENITH_ASSERT_EQ(xDoc.GetTransitionCount("Locomotion"), 1u,
+		"★ and its transition is STILL there — five tree undos never touched it");
+
+	xDoc.CloseDiscardingChanges();
+}

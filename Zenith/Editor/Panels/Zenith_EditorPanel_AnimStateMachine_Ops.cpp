@@ -46,6 +46,9 @@ bool Zenith_EditorPanel_AnimStateMachine::Action_SelectState(const std::string& 
 	m_bHasTransitionSelection = false;
 	m_uSelectedTransition = uINVALID_ANIMSM_TRANSITION;
 	m_strSelectedTransitionFrom.clear();
+	// WU-7.3: a blend-point index means nothing in a different state's space, and
+	// a stale one would have the strip highlighting whatever now sits at it.
+	m_uSelectedBlendPoint = uINVALID_ANIMSM_BLEND_POINT;
 	snprintf(m_acStateNameBuffer, sizeof(m_acStateNameBuffer), "%s", strStateName.c_str());
 	return true;
 }
@@ -65,6 +68,7 @@ bool Zenith_EditorPanel_AnimStateMachine::Action_SelectTransition(const std::str
 	m_uSelectedTransition = uIndex;
 	m_bHasTransitionSelection = true;
 	m_strSelectedState.clear();
+	m_uSelectedBlendPoint = uINVALID_ANIMSM_BLEND_POINT;
 	return true;
 }
 
@@ -75,6 +79,7 @@ bool Zenith_EditorPanel_AnimStateMachine::Action_ClearSelection()
 	m_strSelectedTransitionFrom.clear();
 	m_uSelectedTransition = uINVALID_ANIMSM_TRANSITION;
 	m_bHasTransitionSelection = false;
+	m_uSelectedBlendPoint = uINVALID_ANIMSM_BLEND_POINT;
 	return bHad;
 }
 
@@ -345,6 +350,216 @@ bool Zenith_EditorPanel_AnimStateMachine::Action_SetStatePosition(const std::str
 }
 
 //=============================================================================
+// THE BLEND-TREE SUB-GRAPH (WU-7.3)
+//
+// ★ EVERY ONE OF THESE ENDS IN A DOCUMENT VERB AND THEN, WHEN THE PREVIEW IS
+// RUNNING, IN Action_Apply. That is the "live edit" path, and it is cheap
+// because a blend edit is committed on EDIT-COMPLETE (a drag commits once, on
+// release) rather than per frame of a drag — so an Apply per edit is an Apply
+// per gesture, not per frame. Without it the strip would let an author move a
+// point and watch the preview go on sampling the tree the last Apply built,
+// which reads as "dragging does nothing".
+//
+// Apply is a RELOAD (D45), so the preview keeps its current state, its playhead
+// and its live parameter values across the edit — which is precisely what makes
+// dragging a point while the preview runs legible: the pose changes and nothing
+// else does.
+//=============================================================================
+
+const std::string& Zenith_EditorPanel_AnimStateMachine::GetBlendNotice() const
+{
+	return m_xDocument.GetLastBlendTreeDiagnostic();
+}
+
+namespace
+{
+	// Ends every successful blend edit: the document has changed, so a running
+	// preview is now sampling a stale tree.
+	void AnimSmReapplyIfPreviewing(Zenith_EditorPanel_AnimStateMachine& xPanel)
+	{
+		if (xPanel.IsPreviewEnabled())
+		{
+			xPanel.Action_Apply();
+		}
+	}
+}
+
+bool Zenith_EditorPanel_AnimStateMachine::Action_SetStateTreeKind(const std::string& strStateName,
+	Zenith_AnimCtrlStateTreeKind eKind)
+{
+	if (!m_xDocument.SetStateTreeKind(strStateName, eKind))
+	{
+		// The refusal already carries its reason in the document's diagnostic,
+		// which GetBlendNotice() forwards and the strip prints.
+		Zenith_Log(LOG_CATEGORY_EDITOR, "[AnimSM] '%s': %s", strStateName.c_str(), GetBlendNotice().c_str());
+		return false;
+	}
+	// The point set has been replaced wholesale, so an index into the old one is
+	// meaningless.
+	m_uSelectedBlendPoint = uINVALID_ANIMSM_BLEND_POINT;
+	AnimSmReapplyIfPreviewing(*this);
+	return true;
+}
+
+bool Zenith_EditorPanel_AnimStateMachine::Action_SetBlendSpaceParameter(const std::string& strStateName,
+	Zenith_AnimCtrlBlendAxis eAxis, const std::string& strParameterName)
+{
+	if (!m_xDocument.SetBlendSpaceParameter(strStateName, eAxis, strParameterName))
+	{
+		Zenith_Log(LOG_CATEGORY_EDITOR, "[AnimSM] '%s': %s", strStateName.c_str(), GetBlendNotice().c_str());
+		return false;
+	}
+	AnimSmReapplyIfPreviewing(*this);
+	return true;
+}
+
+bool Zenith_EditorPanel_AnimStateMachine::Action_AddBlendPoint(const std::string& strStateName,
+	const std::string& strClipName, float fX, float fY)
+{
+	u_int uIndex = uINVALID_ANIMSM_BLEND_POINT;
+	if (!m_xDocument.AddBlendPoint(strStateName, strClipName, Zenith_Maths::Vector2(fX, fY), &uIndex))
+	{
+		return false;
+	}
+	// The new point becomes the selection, so the obvious next gesture — drag it
+	// — needs no second click. Same rule as Action_AddState.
+	m_uSelectedBlendPoint = uIndex;
+	AnimSmReapplyIfPreviewing(*this);
+	return true;
+}
+
+bool Zenith_EditorPanel_AnimStateMachine::Action_RemoveBlendPoint(const std::string& strStateName, u_int uIndex)
+{
+	if (!m_xDocument.RemoveBlendPoint(strStateName, uIndex))
+	{
+		return false;
+	}
+	// ★ CLEARED RATHER THAN DECREMENTED. Every index at or above the removed one
+	// has moved, and "the selection follows the shift" is a guess about what the
+	// author meant; nothing selected is at least true.
+	m_uSelectedBlendPoint = uINVALID_ANIMSM_BLEND_POINT;
+	AnimSmReapplyIfPreviewing(*this);
+	return true;
+}
+
+bool Zenith_EditorPanel_AnimStateMachine::Action_SetBlendPointClip(const std::string& strStateName, u_int uIndex,
+	const std::string& strClipName)
+{
+	if (!m_xDocument.SetBlendPointClip(strStateName, uIndex, strClipName))
+	{
+		return false;
+	}
+	AnimSmReapplyIfPreviewing(*this);
+	return true;
+}
+
+bool Zenith_EditorPanel_AnimStateMachine::Action_SetBlendPointPosition(const std::string& strStateName,
+	u_int uIndex, float fX, float fY)
+{
+	u_int uNewIndex = uIndex;
+	if (!m_xDocument.SetBlendPointPosition(strStateName, uIndex, Zenith_Maths::Vector2(fX, fY), &uNewIndex))
+	{
+		return false;
+	}
+	// ★ THE SELECTION FOLLOWS THE POINT, NOT THE INDEX. A 1D list is kept sorted
+	// because Evaluate blends between ADJACENT points, so dragging one past
+	// another swaps their indices — and a selection left on the number would
+	// silently start naming the point that was dragged past.
+	if (m_uSelectedBlendPoint == uIndex)
+	{
+		m_uSelectedBlendPoint = uNewIndex;
+	}
+	AnimSmReapplyIfPreviewing(*this);
+	return true;
+}
+
+bool Zenith_EditorPanel_AnimStateMachine::Action_SelectBlendPoint(u_int uIndex)
+{
+	if (uIndex == uINVALID_ANIMSM_BLEND_POINT)
+	{
+		m_uSelectedBlendPoint = uINVALID_ANIMSM_BLEND_POINT;
+		return true;   // clearing the selection always succeeds
+	}
+	if (m_strSelectedState.empty() || uIndex >= m_xDocument.GetBlendPointCount(m_strSelectedState))
+	{
+		// Selecting a point the space does not have would leave an index in the
+		// selection that no undo can bring back — the same rule
+		// Action_SelectState follows for a name.
+		return false;
+	}
+	m_uSelectedBlendPoint = uIndex;
+	return true;
+}
+
+bool Zenith_EditorPanel_AnimStateMachine::Action_DragBlendPointToPixel(u_int uIndex, float fPixelX, float fPixelY)
+{
+	// ★ THE STRIP HAS TO HAVE BEEN DRAWN. The mapping is (frame rect, axis
+	// range), both recorded by the draw — inventing either would drop the point
+	// at a position the strip never showed, which is the same failure the
+	// off-screen rect gate exists to prevent one level up.
+	if (!m_bBlendStripDrawn || !m_bBlendStripRectValid || m_strSelectedState.empty())
+	{
+		return false;
+	}
+
+	const float fPosX = BlendPixelToPosition(fPixelX, m_xBlendStripRect.m_fMinX, m_xBlendStripRect.m_fMaxX,
+		m_fBlendRangeMinX, m_fBlendRangeMaxX);
+	// ★ THE Y AXIS IS INVERTED, because screen y grows DOWNWARDS and a blend
+	// space's y grows upwards. Mapping it straight through would make a drag
+	// upward decrease the parameter, which looks like the axis being backwards
+	// and is the kind of thing a round-trip test on ONE axis never catches.
+	const float fPosY = BlendPixelToPosition(fPixelY, m_xBlendStripRect.m_fMaxY, m_xBlendStripRect.m_fMinY,
+		m_fBlendRangeMinY, m_fBlendRangeMaxY);
+
+	return Action_SetBlendPointPosition(m_strSelectedState, uIndex, fPosX, fPosY);
+}
+
+bool Zenith_EditorPanel_AnimStateMachine::GetLiveParameterDot(float& fOutX, float& fOutY)
+{
+	fOutX = 0.0f;
+	fOutY = 0.0f;
+	if (!m_bPreviewEnabled || m_strSelectedState.empty())
+	{
+		return false;
+	}
+
+	const Zenith_AnimCtrlStateTreeKind eKind = m_xDocument.GetStateTreeKind(m_strSelectedState);
+	if (eKind != ZENITH_ANIMCTRL_TREE_BLENDSPACE_1D && eKind != ZENITH_ANIMCTRL_TREE_BLENDSPACE_2D)
+	{
+		return false;
+	}
+
+	// ★ READ FROM THE PREVIEW CONTROLLER'S ONE LIVE SET (D42), BY NAME. That is
+	// the same set the preview's machines resolve their blend positions through
+	// (D48's ResolveParameters), so the dot and the pose cannot disagree — and it
+	// is the reason this dot is worth drawing at all: before WU-6.1 repaired the
+	// binding, nothing moved a blend space's position and the dot would have sat
+	// still forever.
+	bool bAnyBound = false;
+	std::string strNameX;
+	if (m_xDocument.GetBlendSpaceParameterName(m_strSelectedState, ZENITH_ANIMCTRL_BLEND_AXIS_X, strNameX)
+		&& !strNameX.empty())
+	{
+		fOutX = m_xPreviewController.GetParameters().GetFloat(strNameX);
+		bAnyBound = true;
+	}
+	std::string strNameY;
+	if (m_xDocument.GetBlendSpaceParameterName(m_strSelectedState, ZENITH_ANIMCTRL_BLEND_AXIS_Y, strNameY)
+		&& !strNameY.empty())
+	{
+		fOutY = m_xPreviewController.GetParameters().GetFloat(strNameY);
+		bAnyBound = true;
+	}
+
+	// ★ AN UNBOUND SPACE HAS NO DOT, rather than a dot at zero. A marker pinned
+	// at the origin is indistinguishable from a parameter that happens to be
+	// zero, and the difference — "this axis reads nothing" versus "this axis
+	// reads 0" — is exactly what an author looking at a space that will not move
+	// needs to see.
+	return bAnyBound;
+}
+
+//=============================================================================
 // Transitions
 //=============================================================================
 
@@ -479,6 +694,14 @@ bool Zenith_EditorPanel_AnimStateMachine::Action_Undo()
 			Action_ClearSelection();
 		}
 	}
+	// WU-7.3: an undo can take the tree back to a kind with fewer points — or to
+	// no points at all — and a selection past the end would have the strip
+	// highlighting a marker it never drew.
+	if (m_uSelectedBlendPoint != uINVALID_ANIMSM_BLEND_POINT
+		&& (m_strSelectedState.empty() || m_uSelectedBlendPoint >= m_xDocument.GetBlendPointCount(m_strSelectedState)))
+	{
+		m_uSelectedBlendPoint = uINVALID_ANIMSM_BLEND_POINT;
+	}
 	return true;
 }
 
@@ -502,6 +725,11 @@ bool Zenith_EditorPanel_AnimStateMachine::Action_Redo()
 		{
 			Action_ClearSelection();
 		}
+	}
+	if (m_uSelectedBlendPoint != uINVALID_ANIMSM_BLEND_POINT
+		&& (m_strSelectedState.empty() || m_uSelectedBlendPoint >= m_xDocument.GetBlendPointCount(m_strSelectedState)))
+	{
+		m_uSelectedBlendPoint = uINVALID_ANIMSM_BLEND_POINT;
 	}
 	return true;
 }
