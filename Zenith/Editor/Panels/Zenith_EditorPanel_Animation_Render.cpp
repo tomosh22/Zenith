@@ -111,6 +111,11 @@ void Zenith_EditorPanel_Animation::Render(float fDtSeconds)
 		m_bDraggingEvents = false;
 		m_fEventDragDeltaNormalized = 0.0f;
 		m_bEventContextMenuRequested = false;
+		// WU-8.2's handle drag, for the same reason: it commits on RELEASE, and the
+		// release that would have committed it goes to whatever is on screen now.
+		m_bCurveHandleDragActive = false;
+		m_bCurveDragMoved = false;
+		m_uCurveDragKeyId = uINVALID_ANIM_KEY_ID;
 		return;
 	}
 
@@ -249,6 +254,13 @@ void Zenith_EditorPanel_Animation::RenderToolbar()
 		ImGui::SetTooltip("Show the Bone Masks section (.zanimmask authoring). Off by default: while it is off it "
 			"draws no items and takes no height, so the dope sheet below keeps the full window.");
 	}
+
+	// ★ WU-8.2's "Curves" TOGGLE AND ITS FOUR COMPANIONS, ON THIS SAME EXISTING
+	// ROW. The curve view replaces the sheet's ROWS rather than sitting above
+	// them, so it costs the canvas nothing — and its controls must not either,
+	// which is why they are here and not on a line of their own. Drawn in
+	// Zenith_EditorPanel_Animation_Curve.cpp, beside the view they drive.
+	RenderCurveToolbarItems();
 
 	if (!m_xDocument.IsOpen())
 	{
@@ -1140,7 +1152,21 @@ void Zenith_EditorPanel_Animation::RenderSheet()
 
 	DrawSheetBackground(pxDraw, xLayout);
 	DrawRuler(pxDraw, xLayout);
-	DrawRows(pxDraw, xLayout, bCanvasHovered);
+	// ★ ONE OR THE OTHER, NEVER BOTH (WU-8.2). The curve view occupies exactly the
+	// rectangle the rows would have — same canvas, same ruler above it, same X
+	// mapping — so switching views costs the sheet no height and moves neither the
+	// playhead nor the duration shade. It also means the dope-sheet row / key /
+	// event rects are simply NOT RECORDED while the curve view is up, which is the
+	// honest answer: those rows were not painted, and handing out a coordinate for
+	// one would be a click into a row nobody can see.
+	if (m_bShowCurveView)
+	{
+		DrawCurveView(pxDraw, xLayout);
+	}
+	else
+	{
+		DrawRows(pxDraw, xLayout, bCanvasHovered);
+	}
 	DrawPlayhead(pxDraw, xLayout);
 	DrawSelectionOverlays(pxDraw, xLayout);
 
@@ -1167,6 +1193,18 @@ void Zenith_EditorPanel_Animation::RenderSheet()
 	// would have refused to hand out a coordinate for. The cost is that a
 	// mutation made here is not visible until the next frame's draw, which is
 	// exactly the deferral the collapse toggle above already lives with.
+	//
+	// ★ THE CURVE VIEW GETS FIRST REFUSAL, AND ONLY WHEN IT CLAIMS THE GESTURE IS
+	// THE SHEET HANDLER SKIPPED. A press on a tangent handle that also reached
+	// HandleSheetInput would be read there as a click on empty space — i.e. as
+	// "clear the selection" — because the row and key rect maps are empty in this
+	// view. Everything the curve view does NOT claim (the ruler scrub, the
+	// duration handle, the rubber band) still runs, and behaves identically,
+	// because the X axis is the same one.
+	if (m_bShowCurveView && HandleCurveInput(xLayout, bCanvasHovered))
+	{
+		return;
+	}
 	HandleSheetInput(xLayout, bCanvasHovered);
 }
 

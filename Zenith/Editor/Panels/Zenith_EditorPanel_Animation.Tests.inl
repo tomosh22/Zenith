@@ -2561,3 +2561,534 @@ ZENITH_TEST(AnimPanel, TheMaskSectionListsTheSessionRigAndPromptsWithoutOne)
 		xPanel.Shutdown();
 	}
 }
+
+//==============================================================================
+// THE CURVE VIEW (WU-8.2)
+//==============================================================================
+
+namespace
+{
+	// A clip whose Hip carries TWO ROTATION keys — identity at t=0, a quarter turn
+	// about Y at t=2. Two keys is the minimum that has a SEGMENT, which is the
+	// thing a tangent changes: with one key there is nothing between to move, and
+	// with three the middle key's own tangents confound the measurement.
+	void AnimPanelWriteRotationProbe(const std::string& strPath)
+	{
+		Flux_AnimationClip xClip;
+		xClip.SetName("RotationProbe");
+		xClip.SetDuration(2.0f);
+		xClip.GetMetadata().m_uAuthoredFrameRate = 30u;
+
+		Flux_BoneChannel xHip;
+		xHip.AddRotationKeyframe(0.0f, Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f));
+		xHip.AddRotationKeyframe(2.0f, glm::angleAxis(1.5707963f, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f)));
+		xHip.SortKeyframes();
+		xClip.AddBoneChannel("Hip", std::move(xHip));
+
+		xClip.Export(strPath);
+	}
+
+	Zenith_AnimTrackId AnimPanelHipRotation()
+	{
+		return Zenith_AnimTrackId::Bone("Hip", FLUX_ANIM_TRACK_ROTATION);
+	}
+}
+
+//==============================================================================
+// (C1) The curve view REPLACES the rows: nothing of it is drawn while it is off,
+// it costs the sheet NO height while it is on, and the dope-sheet row rects are
+// not recorded while it is up.
+//
+// ★ THE HEIGHT ORACLE IS GetTrackAreaRect().Height(), NOT "is row X visible",
+// and here it is asserted EQUAL on purpose. This panel's standing rule is that
+// anything drawn above RenderSheet comes straight out of the sheet's height and
+// the events row is the sheet's last row — which is exactly why the curve view is
+// painted INSIDE the canvas, in the rectangle the rows would have used, and why
+// its five controls sit on a toolbar row that already exists. So the number that
+// proves it did the right thing is a number that does NOT move.
+//
+// ★ AND THE EQUALITY IS PAIRED WITH TWO THINGS THAT MAKE IT NON-VACUOUS, because
+// an equality that never moves would hold just as well against a constant: the
+// rect population CHANGES OVER (curve rects appear, row rects vanish), and the
+// window is grown at the end to show the oracle is live.
+//==============================================================================
+ZENITH_TEST(AnimPanel, TheCurveViewReplacesTheRowsAndCostsTheSheetNoHeight)
+{
+	AnimPanelFixture xFixture("zenith_animpanel_curveheight");
+	AnimPanelWriteProbe(xFixture.m_strPath, /*bGenerated*/ false);
+
+	Zenith_EditorPanel_Animation xPanel;
+	ZENITH_ASSERT_TRUE(xPanel.OpenClip(xFixture.m_strPath), "the probe clip opens");
+	ZENITH_ASSERT_FALSE(xPanel.IsCurveViewShown(), "the curve view is OFF by default");
+
+	xPanel.RequestWindowPlacement(40.0f, 40.0f, 900.0f, 600.0f);
+	AnimPanelRenderFrames(xPanel, 2u);
+
+	// The diagnostics first, as everywhere on this panel: a flat `false` below has
+	// four causes and the bool names none of them.
+	ZENITH_ASSERT_TRUE(xPanel.WasSheetDrawnLastFrame(),
+		"the sheet pass ran (else every assertion below is about a frame that never happened)");
+	ZENITH_ASSERT_GT(xPanel.GetRecordedDisplayWidth(), 0.0f,
+		"a display bound was captured at record time (else every publish refuses, whatever was drawn)");
+
+	const Zenith_AnimTrackId xTrack = AnimPanelHipPosition();
+
+	Zenith_AnimPanelRect xTrackAreaOff;
+	ZENITH_ASSERT_TRUE(xPanel.GetTrackAreaRect(xTrackAreaOff), "the sheet's canvas was recorded");
+	const float fHeightOff = xTrackAreaOff.Height();
+	ZENITH_ASSERT_GT(fHeightOff, 0.0f, "and it has height to lose");
+
+	Zenith_AnimPanelRect xUnused;
+	ZENITH_ASSERT_FALSE(xPanel.GetCurveViewRect(xUnused),
+		"★ with the view OFF nothing of it is drawn and no curve rect is recorded");
+	ZENITH_ASSERT_EQ(xPanel.GetDrawnCurveTrackCount(), 0u, "no curves either");
+	ZENITH_ASSERT_EQ(xPanel.GetRecordedCurvePointCount(), 0u, "and no curve points");
+	ZENITH_ASSERT_TRUE(xPanel.GetRowTrackRect(xTrack, xUnused), "while the dope-sheet ROW rect is recorded");
+
+	// ---- switch to curves ----------------------------------------------------
+	ZENITH_ASSERT_TRUE(xPanel.Action_SetCurveView(true), "the view switches on");
+	ZENITH_ASSERT_TRUE(xPanel.IsCurveViewShown(), "and says so");
+	AnimPanelRenderFrames(xPanel, 2u);
+
+	Zenith_AnimPanelRect xCurveView;
+	ZENITH_ASSERT_TRUE(xPanel.GetCurveViewRect(xCurveView), "the curve area was recorded");
+	ZENITH_ASSERT_GT(xCurveView.Width(), 0.0f, "and spans the key lane");
+	ZENITH_ASSERT_GT(xPanel.GetDrawnCurveTrackCount(), 0u, "with at least one track drawn");
+	ZENITH_ASSERT_GT(xPanel.GetRecordedCurvePointCount(), 0u, "and its keys as curve points");
+
+	// ★ THE ROWS WERE NOT PAINTED, SO THEIR RECTS ARE NOT HANDED OUT. Answering
+	// with last frame's coordinate would be a click into a row nobody can see —
+	// the same failure the off-screen gate exists for, one view over.
+	ZENITH_ASSERT_FALSE(xPanel.GetRowTrackRect(xTrack, xUnused),
+		"★ the dope-sheet row rects are NOT recorded while the curve view is up");
+	const u_int uKeyAtOne = AnimPanelKeyIdAtTime(xPanel.Document(), xTrack, 1.0f);
+	ZENITH_ASSERT_NE(uKeyAtOne, uINVALID_ANIM_KEY_ID, "the midpoint key resolves to an id");
+	ZENITH_ASSERT_FALSE(xPanel.GetKeyRect(xTrack, uKeyAtOne, xUnused), "and neither are the key diamonds");
+	ZENITH_ASSERT_TRUE(xPanel.GetCurveKeyRect(xTrack, uKeyAtOne, 1u, xUnused),
+		"but that key's y-component CURVE POINT is");
+
+	Zenith_AnimPanelRect xTrackAreaOn;
+	ZENITH_ASSERT_TRUE(xPanel.GetTrackAreaRect(xTrackAreaOn), "the canvas is still recorded");
+	ZENITH_ASSERT_EQ_FLOAT(xTrackAreaOn.Height(), fHeightOff, 0.5f,
+		"★ and the sheet lost NO height — the curve view occupies the rows' own rectangle and its "
+		"controls sit on a toolbar row that already existed");
+
+	// ---- and back ------------------------------------------------------------
+	ZENITH_ASSERT_TRUE(xPanel.Action_SetCurveView(false), "the view switches off");
+	AnimPanelRenderFrames(xPanel, 1u);
+	ZENITH_ASSERT_FALSE(xPanel.GetCurveViewRect(xUnused), "and draws nothing again");
+	ZENITH_ASSERT_EQ(xPanel.GetRecordedCurvePointCount(), 0u, "recording no curve points");
+	ZENITH_ASSERT_TRUE(xPanel.GetRowTrackRect(xTrack, xUnused), "with the rows back");
+
+	Zenith_AnimPanelRect xTrackAreaRestored;
+	ZENITH_ASSERT_TRUE(xPanel.GetTrackAreaRect(xTrackAreaRestored), "the canvas was recorded again");
+	ZENITH_ASSERT_EQ_FLOAT(xTrackAreaRestored.Height(), fHeightOff, 0.5f, "at the height it always had");
+
+	// ★ THE SENSITIVITY CHECK. Without it the three equalities above would be
+	// satisfied just as well by an oracle that returned a constant. The window is
+	// GROWN rather than shrunk: shrinking far enough to be convincing can drive the
+	// canvas below RenderSheet's floor on a high-DPI machine, which would fail for
+	// a reason that has nothing to do with what is being tested.
+	xPanel.RequestWindowPlacement(40.0f, 40.0f, 900.0f, 650.0f);
+	AnimPanelRenderFrames(xPanel, 2u);
+	Zenith_AnimPanelRect xTrackAreaGrown;
+	ZENITH_ASSERT_TRUE(xPanel.GetTrackAreaRect(xTrackAreaGrown), "the canvas was recorded in the bigger window");
+	ZENITH_ASSERT_GT(xTrackAreaGrown.Height(), fHeightOff,
+		"★ the height oracle genuinely MOVES when the window does — so the equalities above are "
+		"assertions and not a constant agreeing with itself");
+
+	xPanel.Shutdown();
+}
+
+//==============================================================================
+// (C2) ONE SELECTION, TWO VIEWS. Switching between the dope sheet and the curve
+// view preserves the selected key ids exactly.
+//
+// ★ A SEPARATE CURVE SELECTION WOULD BE THE OBVIOUS DESIGN AND IS THE WRONG ONE:
+// an "Auto" applied in the curve view would then act on a set the dope sheet was
+// not showing, and a Delete in the sheet would leave the curve view drawing
+// handles for keys that are gone. There is one (track, key id) set and the view
+// only decides which rects it is hit-tested against.
+//==============================================================================
+ZENITH_TEST(AnimPanel, TheKeySelectionSurvivesSwitchingBetweenTheDopeSheetAndTheCurveView)
+{
+	AnimPanelFixture xFixture("zenith_animpanel_curveselection");
+	AnimPanelWriteProbe(xFixture.m_strPath, /*bGenerated*/ false);
+
+	Zenith_EditorPanel_Animation xPanel;
+	ZENITH_ASSERT_TRUE(xPanel.OpenClip(xFixture.m_strPath), "the probe clip opens");
+
+	const Zenith_AnimTrackId xTrack = AnimPanelHipPosition();
+	const u_int uKeyA = AnimPanelKeyIdAtTime(xPanel.Document(), xTrack, 0.0f);
+	const u_int uKeyB = AnimPanelKeyIdAtTime(xPanel.Document(), xTrack, 2.0f);
+	ZENITH_ASSERT_NE(uKeyA, uINVALID_ANIM_KEY_ID, "the first key resolves");
+	ZENITH_ASSERT_NE(uKeyB, uINVALID_ANIM_KEY_ID, "and the last");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_SelectKey(xTrack, uKeyA, ZENITH_ANIMSELECT_REPLACE), "select one");
+	ZENITH_ASSERT_TRUE(xPanel.Action_SelectKey(xTrack, uKeyB, ZENITH_ANIMSELECT_ADD), "and add another");
+	ZENITH_ASSERT_EQ(xPanel.GetSelectedKeyCount(), 2u, "two keys are selected in the dope sheet");
+
+	xPanel.RequestWindowPlacement(40.0f, 40.0f, 900.0f, 600.0f);
+	AnimPanelRenderFrames(xPanel, 2u);
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_SetCurveView(true), "switch to the curve view");
+	AnimPanelRenderFrames(xPanel, 2u);
+	ZENITH_ASSERT_EQ(xPanel.GetSelectedKeyCount(), 2u, "the selection COUNT survived the switch");
+	ZENITH_ASSERT_TRUE(xPanel.IsKeySelected(xTrack, uKeyA), "and the first id still resolves as selected");
+	ZENITH_ASSERT_TRUE(xPanel.IsKeySelected(xTrack, uKeyB), "and the second");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_SetCurveView(false), "switch back");
+	AnimPanelRenderFrames(xPanel, 2u);
+	ZENITH_ASSERT_EQ(xPanel.GetSelectedKeyCount(), 2u, "and it survived the way back too");
+	ZENITH_ASSERT_TRUE(xPanel.IsKeySelected(xTrack, uKeyA), "with the same ids");
+	ZENITH_ASSERT_TRUE(xPanel.IsKeySelected(xTrack, uKeyB), "with the same ids");
+
+	xPanel.Shutdown();
+}
+
+//==============================================================================
+// (C3) THE HANDLE MAPPING ROUND-TRIPS, AND A DRAG THROUGH IT PRODUCES EXACTLY
+// THE TANGENT THE DIRECT ACTION PRODUCES.
+//
+// ★ THE PURE HALF NEEDS NO FRAME AT ALL, which is the point of the mapping being
+// free functions: "which way up the value axis runs" and "what a handle pixel
+// means as a derivative" are the two things a curve editor gets silently wrong,
+// and both are answerable here with no clip, no window and no rig.
+//==============================================================================
+ZENITH_TEST(AnimPanel, TheTangentHandleMappingRoundTripsAndADragReproducesIt)
+{
+	// ---- pure: draw a handle from a tangent, read the tangent back -----------
+	Zenith_AnimTimelineView xTimeView;
+	xTimeView.m_fPixelsPerSecond = 200.0f;
+	xTimeView.m_fScrollSeconds = 0.0f;
+	xTimeView.m_fTrackLeftPixel = 100.0f;
+	xTimeView.m_fTrackWidthPixels = 800.0f;
+
+	Zenith_AnimCurveValueView xValueView;
+	xValueView.m_fValueAtTop = 3.0f;
+	xValueView.m_fPixelsPerUnit = 50.0f;
+	xValueView.m_fTopPixel = 200.0f;
+	xValueView.m_fHeightPixels = 300.0f;
+
+	// The value axis runs UPWARDS: a bigger value is a SMALLER y.
+	const float fPixelAtOne = Zenith_AnimCurveValueToPixel(xValueView, 1.0f);
+	const float fPixelAtTwo = Zenith_AnimCurveValueToPixel(xValueView, 2.0f);
+	ZENITH_ASSERT_LT(fPixelAtTwo, fPixelAtOne, "★ a LARGER value is a SMALLER y — the axis runs upwards");
+	ZENITH_ASSERT_EQ_FLOAT(Zenith_AnimCurvePixelToValue(xValueView, fPixelAtOne), 1.0f, 1e-4f,
+		"and the inverse is the inverse");
+
+	const float afTangents[4] = { 2.5f, -2.5f, 0.0f, 137.0f };
+	for (u_int u = 0; u < 4u; ++u)
+	{
+		for (u_int uEnd = 0; uEnd < 2u; ++uEnd)
+		{
+			const bool bIn = (uEnd == 0u);
+			float fHandleX = 0.0f;
+			float fHandleY = 0.0f;
+			Zenith_AnimCurveHandlePixel(xTimeView, xValueView, 1.0f, 1.0f, afTangents[u], bIn,
+				fANIM_CURVE_HANDLE_SECONDS, fHandleX, fHandleY);
+			const float fBack = Zenith_AnimCurveTangentFromPixel(xTimeView, xValueView, 1.0f, 1.0f,
+				bIn, fHandleX, fHandleY);
+			ZENITH_ASSERT_EQ_FLOAT(fBack, afTangents[u], 1e-2f,
+				"★ a handle drawn from a tangent reads back AS that tangent, at both ends and through "
+				"zero — which is what makes 'drag it back to where it was drawn' a no-op rather than a "
+				"slow drift");
+		}
+	}
+
+	// ---- and the panel's drag agrees with the pure function -------------------
+	AnimPanelFixture xFixture("zenith_animpanel_curvedrag");
+	AnimPanelWriteProbe(xFixture.m_strPath, /*bGenerated*/ false);
+
+	Zenith_EditorPanel_Animation xPanel;
+	ZENITH_ASSERT_TRUE(xPanel.OpenClip(xFixture.m_strPath), "the probe clip opens");
+	ZENITH_ASSERT_TRUE(xPanel.Action_SetCurveView(true), "with the curve view up");
+
+	xPanel.RequestWindowPlacement(40.0f, 40.0f, 900.0f, 600.0f);
+	AnimPanelRenderFrames(xPanel, 2u);
+
+	const Zenith_AnimTrackId xTrack = AnimPanelHipPosition();
+	const u_int uKeyAtOne = AnimPanelKeyIdAtTime(xPanel.Document(), xTrack, 1.0f);
+	ZENITH_ASSERT_NE(uKeyAtOne, uINVALID_ANIM_KEY_ID, "the midpoint key resolves");
+
+	Zenith_AnimPanelRect xHandle;
+	ZENITH_ASSERT_TRUE(xPanel.GetCurveHandleRect(xTrack, uKeyAtOne, 1u /* y */, /*bIn*/ false, xHandle),
+		"its y-component OUT handle was drawn and is on screen");
+
+	// Drop the handle 20 px ABOVE where it was drawn — a steeper positive slope.
+	const float fDropX = xHandle.Centre().x;
+	const float fDropY = xHandle.Centre().y - 20.0f;
+
+	float fKeyValue = 0.0f;
+	float fKeyTime = 0.0f;
+	ZENITH_ASSERT_TRUE(xPanel.Document().GetKeyTime(xTrack, uKeyAtOne, fKeyTime), "the key's time reads back");
+	Zenith_AnimKeyValue xKeyValue;
+	ZENITH_ASSERT_TRUE(xPanel.Document().GetKeyValue(xTrack, uKeyAtOne, xKeyValue), "and its value");
+	fKeyValue = xKeyValue.m_xVector.y;
+
+	// ★ THE ORACLE IS THE PURE FUNCTION, EVALUATED AGAINST THE PANEL'S OWN LIVE
+	// VIEWS. That is the whole claim: the drag verb does no arithmetic of its own.
+	const float fExpected = Zenith_AnimCurveTangentFromPixel(xPanel.View(), xPanel.CurveValueView(),
+		fKeyTime, fKeyValue, /*bIn*/ false, fDropX, fDropY);
+	ZENITH_ASSERT_GT(std::fabs(fExpected), 0.0f, "the drop is far enough to mean something");
+
+	const u_int uStackBefore = xPanel.Document().GetUndoStackSize();
+	ZENITH_ASSERT_TRUE(xPanel.Action_DragTangentHandleToPixel(xTrack, uKeyAtOne, 1u, /*bIn*/ false, fDropX, fDropY),
+		"the drag lands");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), uStackBefore + 1u, "as exactly ONE undo step");
+
+	Flux_KeyTangents xTangents;
+	ZENITH_ASSERT_TRUE(xPanel.Document().GetKeyTangents(xTrack, uKeyAtOne, xTangents), "and the pair reads back");
+	ZENITH_ASSERT_EQ_FLOAT(xTangents.m_xOutTangent.y, fExpected, 1e-3f,
+		"★ the drag produced exactly the tangent the pure mapping says that pixel means");
+	// Unified is the default, so the other half went with it — one key, one slope.
+	ZENITH_ASSERT_TRUE(xPanel.AreTangentsUnified(), "unified is the default");
+	ZENITH_ASSERT_EQ_FLOAT(xTangents.m_xInTangent.y, fExpected, 1e-3f, "so the IN half moved with it");
+	// The two components nobody dragged are untouched, which is what makes a
+	// component a component.
+	ZENITH_ASSERT_EQ_FLOAT(xTangents.m_xOutTangent.x, 0.0f, 0.0f, "the x component was not touched");
+	ZENITH_ASSERT_EQ_FLOAT(xTangents.m_xOutTangent.z, 0.0f, 0.0f, "nor the z");
+
+	xPanel.Shutdown();
+}
+
+//==============================================================================
+// (C4) Auto on the SELECTION is the slope, Linear zeroes it, each is ONE undo
+// step, and the undo leaves the selection still resolving.
+//
+// ★ "THE SELECTION SURVIVES THE UNDO" IS THE HALF THAT NEEDS SAYING. A tangent
+// edit does not move a key, so nothing here reorders — but the same stable ids
+// that make a retime survivable are what let the toolbar's Auto, a Ctrl+Z and a
+// second Auto all name the same three keys.
+//==============================================================================
+ZENITH_TEST(AnimPanel, SelectionAutoIsTheSlopeLinearZeroesAndEachIsOneUndoStep)
+{
+	AnimPanelFixture xFixture("zenith_animpanel_curveauto");
+	// y = 0 / 1 / 2 at t = 0 / 1 / 2 — three COLLINEAR keys, so the centred slope
+	// at the middle and the one-sided slopes at both ends are all exactly 1.
+	AnimPanelWriteProbe(xFixture.m_strPath, /*bGenerated*/ false);
+
+	Zenith_EditorPanel_Animation xPanel;
+	ZENITH_ASSERT_TRUE(xPanel.OpenClip(xFixture.m_strPath), "the probe clip opens");
+
+	const Zenith_AnimTrackId xTrack = AnimPanelHipPosition();
+	for (u_int u = 0; u < 3u; ++u)
+	{
+		ZENITH_ASSERT_TRUE(xPanel.Action_SelectKey(xTrack, xPanel.Document().GetKeyIdAtIndex(xTrack, u),
+			u == 0u ? ZENITH_ANIMSELECT_REPLACE : ZENITH_ANIMSELECT_ADD), "select all three keys");
+	}
+	ZENITH_ASSERT_EQ(xPanel.GetSelectedKeyCount(), 3u, "three keys selected");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_SetSelectionTangentsAuto(), "Auto on the selection");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), 1u,
+		"★ is ONE compound — three keys, one Ctrl+Z");
+
+	for (u_int u = 0; u < 3u; ++u)
+	{
+		Flux_KeyTangents xTangents;
+		ZENITH_ASSERT_TRUE(xPanel.Document().GetKeyTangents(xTrack,
+			xPanel.Document().GetKeyIdAtIndex(xTrack, u), xTangents), "each key's pair reads back");
+		ZENITH_ASSERT_EQ_FLOAT(xTangents.m_xOutTangent.y, 1.0f, 1e-5f,
+			"and Catmull-Rom through three collinear keys IS the line's slope, at both ends too");
+	}
+
+	// The displayed mode follows the numbers, which is all the wire can carry.
+	Zenith_AnimCurveTangentMode eMode = ZENITH_ANIMCURVE_TANGENT_LINEAR;
+	ZENITH_ASSERT_TRUE(xPanel.GetKeyTangentMode(xTrack, xPanel.Document().GetKeyIdAtIndex(xTrack, 1), eMode),
+		"the mode reads back");
+	ZENITH_ASSERT_TRUE(eMode == ZENITH_ANIMCURVE_TANGENT_CUSTOM,
+		"★ a key Auto just wrote displays as CUSTOM, not as 'Auto' — Auto is an OPERATION and nothing "
+		"re-applies it when a neighbour moves");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_SetSelectionTangentsLinear(), "Linear on the same selection");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), 2u, "is one more compound");
+	for (u_int u = 0; u < 3u; ++u)
+	{
+		Flux_KeyTangents xTangents;
+		ZENITH_ASSERT_TRUE(xPanel.Document().GetKeyTangents(xTrack,
+			xPanel.Document().GetKeyIdAtIndex(xTrack, u), xTangents), "reads back");
+		ZENITH_ASSERT_TRUE(Flux_TangentIsUnset(xTangents.m_xInTangent),
+			"★ Linear writes exact ZEROES — the sampler's linear branch. It is NOT a flat handle, which "
+			"this format cannot represent, which is why the control may never be labelled 'Flat'");
+		ZENITH_ASSERT_TRUE(Flux_TangentIsUnset(xTangents.m_xOutTangent), "on both ends");
+	}
+
+	// ---- undo, with the selection intact -------------------------------------
+	ZENITH_ASSERT_TRUE(xPanel.Action_Undo(), "one Ctrl+Z");
+	ZENITH_ASSERT_EQ(xPanel.GetSelectedKeyCount(), 3u, "leaves the selection alone");
+	for (u_int u = 0; u < 3u; ++u)
+	{
+		const u_int uKeyId = xPanel.Document().GetKeyIdAtIndex(xTrack, u);
+		ZENITH_ASSERT_TRUE(xPanel.IsKeySelected(xTrack, uKeyId), "with every id still resolving");
+		Flux_KeyTangents xTangents;
+		ZENITH_ASSERT_TRUE(xPanel.Document().GetKeyTangents(xTrack, uKeyId, xTangents), "and reading back");
+		ZENITH_ASSERT_EQ_FLOAT(xTangents.m_xOutTangent.y, 1.0f, 1e-5f, "the auto slope it had before Linear");
+	}
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_Undo(), "a second Ctrl+Z");
+	for (u_int u = 0; u < 3u; ++u)
+	{
+		const u_int uKeyId = xPanel.Document().GetKeyIdAtIndex(xTrack, u);
+		ZENITH_ASSERT_TRUE(xPanel.IsKeySelected(xTrack, uKeyId), "the selection still resolves");
+		Flux_KeyTangents xTangents;
+		ZENITH_ASSERT_TRUE(xPanel.Document().GetKeyTangents(xTrack, uKeyId, xTangents), "and the pair");
+		ZENITH_ASSERT_TRUE(Flux_TangentIsUnset(xTangents.m_xOutTangent),
+			"★ is back to the EXACT unset pair the file carried");
+	}
+
+	xPanel.Shutdown();
+}
+
+//==============================================================================
+// (C5) The DISPLAYED mode is "Linear" for an unset pair and "Custom" for
+// anything else — and it is the ONLY mode a reader can derive.
+//
+// ★ THE LABELS ARE THE POINT OF THIS TEST, NOT THE ENUM. A per-key tangent MODE
+// is not on the wire (Flux/MeshAnimation/CLAUDE.md → *Tangent sampling*), zero
+// means LINEAR rather than flat, and a genuinely flat handle is unrepresentable —
+// so a UI that showed "Flat" would promise an ease this format cannot store and
+// silently deliver a straight line.
+//==============================================================================
+ZENITH_TEST(AnimPanel, TheDisplayedTangentModeIsLinearForUnsetAndCustomOtherwise)
+{
+	// Pure first — no clip needed to pin what the two words mean.
+	Flux_KeyTangents xUnset;
+	ZENITH_ASSERT_TRUE(Zenith_AnimCurveTangentModeOf(xUnset) == ZENITH_ANIMCURVE_TANGENT_LINEAR,
+		"an all-zero pair displays as LINEAR");
+	ZENITH_ASSERT_STREQ(Zenith_AnimCurveTangentModeLabel(ZENITH_ANIMCURVE_TANGENT_LINEAR), "Linear",
+		"★ and the word is 'Linear' — never 'Flat', which this format cannot represent");
+	ZENITH_ASSERT_STREQ(Zenith_AnimCurveTangentModeLabel(ZENITH_ANIMCURVE_TANGENT_CUSTOM), "Custom",
+		"anything authored displays as Custom");
+
+	Flux_KeyTangents xOneHalf;
+	xOneHalf.m_xOutTangent = Zenith_Maths::Vector3(0.0f, 1.0e-6f, 0.0f);
+	ZENITH_ASSERT_TRUE(Zenith_AnimCurveTangentModeOf(xOneHalf) == ZENITH_ANIMCURVE_TANGENT_CUSTOM,
+		"★ ONE non-zero half is enough, and the compare is EXACT — a tolerance would swallow a "
+		"deliberately tiny authored tangent and report it as untouched");
+
+	// ---- and through the panel, against a real clip ---------------------------
+	AnimPanelFixture xFixture("zenith_animpanel_curvemode");
+	AnimPanelWriteProbe(xFixture.m_strPath, /*bGenerated*/ false);
+
+	Zenith_EditorPanel_Animation xPanel;
+	ZENITH_ASSERT_TRUE(xPanel.OpenClip(xFixture.m_strPath), "the probe clip opens");
+
+	const Zenith_AnimTrackId xTrack = AnimPanelHipPosition();
+	const u_int uKeyId = xPanel.Document().GetKeyIdAtIndex(xTrack, 1);
+
+	Zenith_AnimCurveTangentMode eMode = ZENITH_ANIMCURVE_TANGENT_CUSTOM;
+	ZENITH_ASSERT_TRUE(xPanel.GetKeyTangentMode(xTrack, uKeyId, eMode), "the mode reads back");
+	ZENITH_ASSERT_TRUE(eMode == ZENITH_ANIMCURVE_TANGENT_LINEAR,
+		"a key of a clip nobody authored a tangent on is LINEAR — which is every clip in the tree");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_SetKeyTangents(xTrack, uKeyId,
+		Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f), Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f)),
+		"one tangent edit");
+	ZENITH_ASSERT_TRUE(xPanel.GetKeyTangentMode(xTrack, uKeyId, eMode), "the mode reads back");
+	ZENITH_ASSERT_TRUE(eMode == ZENITH_ANIMCURVE_TANGENT_CUSTOM, "and it displays as Custom");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_Undo(), "undo it");
+	ZENITH_ASSERT_TRUE(xPanel.GetKeyTangentMode(xTrack, uKeyId, eMode), "the mode reads back");
+	ZENITH_ASSERT_TRUE(eMode == ZENITH_ANIMCURVE_TANGENT_LINEAR,
+		"★ and it is Linear again — which is only true because the undo restored EXACT zeroes");
+
+	// A root-motion track has no tangents at all, so it has no mode either.
+	const Zenith_AnimTrackId xRoot = Zenith_AnimTrackId::RootMotion(FLUX_ANIM_TRACK_POSITION);
+	const u_int uRootKeyId = xPanel.Document().InsertKey(xRoot, 0.0f, Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f));
+	ZENITH_ASSERT_NE(uRootKeyId, uINVALID_ANIM_KEY_ID, "a root-motion key exists");
+	ZENITH_ASSERT_FALSE(xPanel.GetKeyTangentMode(xRoot, uRootKeyId, eMode),
+		"★ but it has no tangents (D17), so it has no MODE — refused rather than reported as Linear");
+
+	xPanel.Shutdown();
+}
+
+//==============================================================================
+// (C6) A ROTATION handle writes an ANGULAR VELOCITY, and the sampled quaternion
+// really moves mid-segment.
+//
+// ★ THIS IS THE ONE THAT PROVES THE CURVE VIEW EDITS THE THING THAT PLAYS. A
+// rotation tangent is a body-frame angular velocity (axis * rad/s), not a
+// quaternion control point, and the sampler's cumulative-Bezier form reads it in
+// the key's OWN frame — so the only honest check is: sample the pose in the
+// middle of the segment before and after, and require it to have moved while the
+// two ENDPOINTS stay exactly where they were authored.
+//==============================================================================
+ZENITH_TEST(AnimPanel, ARotationHandleWritesAnAngularVelocityAndMovesTheSampledPose)
+{
+	AnimPanelFixture xFixture("zenith_animpanel_curverotation");
+	AnimPanelWriteRotationProbe(xFixture.m_strPath);
+
+	Zenith_EditorPanel_Animation xPanel;
+	ZENITH_ASSERT_TRUE(xPanel.OpenClip(xFixture.m_strPath), "the rotation probe opens");
+	ZENITH_ASSERT_TRUE(xPanel.Action_SetCurveView(true), "with the curve view up");
+
+	const Zenith_AnimTrackId xTrack = AnimPanelHipRotation();
+	const u_int uFirstKeyId = xPanel.Document().GetKeyIdAtIndex(xTrack, 0);
+	const u_int uLastKeyId = xPanel.Document().GetKeyIdAtIndex(xTrack, 1);
+	ZENITH_ASSERT_NE(uFirstKeyId, uINVALID_ANIM_KEY_ID, "the first rotation key resolves");
+	ZENITH_ASSERT_NE(uLastKeyId, uINVALID_ANIM_KEY_ID, "and the last");
+
+	const Flux_BoneChannel* pxChannel = xPanel.Document().GetClip().GetBoneChannel("Hip");
+	ZENITH_ASSERT_NOT_NULL(pxChannel, "the channel is there to sample");
+	if (pxChannel == nullptr)
+	{
+		return;
+	}
+
+	const Zenith_Maths::Quat xMidBefore = pxChannel->SampleRotation(1.0f);
+	const Zenith_Maths::Quat xStartBefore = pxChannel->SampleRotation(0.0f);
+	const Zenith_Maths::Quat xEndBefore = pxChannel->SampleRotation(2.0f);
+
+	// ★ THROUGH THE SELECTION VERB, which is a HANDLE EDIT expressed as numbers:
+	// Auto on the two keys of a single segment writes each one's angular velocity
+	// in its own body frame, exactly as a drag on its handle would.
+	ZENITH_ASSERT_TRUE(xPanel.Action_SelectKey(xTrack, uFirstKeyId, ZENITH_ANIMSELECT_REPLACE), "select the first");
+	ZENITH_ASSERT_TRUE(xPanel.Action_SetKeyTangents(xTrack, uFirstKeyId,
+		Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f), Zenith_Maths::Vector3(0.0f, 2.0f, 0.0f)),
+		"give its OUT end an angular velocity of 2 rad/s about Y");
+
+	Flux_KeyTangents xTangents;
+	ZENITH_ASSERT_TRUE(xPanel.Document().GetKeyTangents(xTrack, uFirstKeyId, xTangents), "which reads back");
+	ZENITH_ASSERT_EQ_FLOAT(xTangents.m_xOutTangent.y, 2.0f, 1e-6f, "as rad/s about Y, on the OUT end");
+	ZENITH_ASSERT_TRUE(Flux_TangentIsUnset(xTangents.m_xInTangent),
+		"with the IN end left UNSET — which the sampler still reads as slerp's own velocity");
+
+	// Re-fetched rather than reusing the pointer above: nothing in a tangent edit
+	// rehashes the channel map, but a test should not rest on that.
+	pxChannel = xPanel.Document().GetClip().GetBoneChannel("Hip");
+	ZENITH_ASSERT_NOT_NULL(pxChannel, "the channel is still there");
+	const Zenith_Maths::Quat xMidAfter = pxChannel->SampleRotation(1.0f);
+	const Zenith_Maths::Quat xStartAfter = pxChannel->SampleRotation(0.0f);
+	const Zenith_Maths::Quat xEndAfter = pxChannel->SampleRotation(2.0f);
+
+	const float fMidDot = std::fabs(glm::dot(xMidBefore, xMidAfter));
+	ZENITH_ASSERT_LT(fMidDot, 0.9999f,
+		"★ the pose MID-SEGMENT really moved — a tangent that reached the file but not the sampler "
+		"would leave this identical, and nothing else in this test would notice");
+
+	// ★ AND THE ENDPOINTS DID NOT. A Hermite that moved its own endpoints would be
+	// a curve through different keys, which is the loudest possible way for the
+	// segment arithmetic to be wrong and the easiest to miss by only measuring the
+	// middle.
+	ZENITH_ASSERT_EQ_FLOAT(std::fabs(glm::dot(xStartBefore, xStartAfter)), 1.0f, 1e-5f,
+		"the key at t=0 is exactly where it was authored");
+	ZENITH_ASSERT_EQ_FLOAT(std::fabs(glm::dot(xEndBefore, xEndAfter)), 1.0f, 1e-5f,
+		"and so is the key at t=2");
+
+	// The undo puts the segment back on the sampler's bit-identical linear branch.
+	ZENITH_ASSERT_TRUE(xPanel.Action_Undo(), "one Ctrl+Z");
+	ZENITH_ASSERT_TRUE(xPanel.Document().GetKeyTangents(xTrack, uFirstKeyId, xTangents), "the pair reads back");
+	ZENITH_ASSERT_TRUE(Flux_TangentIsUnset(xTangents.m_xOutTangent), "unset again");
+	ZENITH_ASSERT_TRUE(xPanel.IsKeySelected(xTrack, uFirstKeyId), "with the selection intact");
+	pxChannel = xPanel.Document().GetClip().GetBoneChannel("Hip");
+	ZENITH_ASSERT_NOT_NULL(pxChannel, "the channel is still there");
+	if (pxChannel == nullptr)
+	{
+		return;
+	}
+	const Zenith_Maths::Quat xMidUndone = pxChannel->SampleRotation(1.0f);
+	ZENITH_ASSERT_EQ_FLOAT(std::fabs(glm::dot(xMidBefore, xMidUndone)), 1.0f, 1e-5f,
+		"★ and the mid-segment pose is back to the slerp it was — bit-identical, not merely close");
+
+	xPanel.Shutdown();
+}

@@ -329,6 +329,82 @@ public:
 	bool SetKeyValue(const Zenith_AnimTrackId& xTrack, u_int uKeyId, const Zenith_Maths::Quat& xRotation);
 
 	//-------------------------------------------------------------------------
+	// PER-KEY TANGENTS (WU-8.2) — the curve editor's half of the mutation API.
+	//
+	// ★ A TANGENT MODE IS NOT ON THE WIRE AND IS NOT STORED HERE EITHER
+	// (Flux/MeshAnimation/CLAUDE.md, *Tangent sampling*). The clip holds two
+	// Vector3s per key and nothing else; "Auto" is an OPERATION that realises a
+	// shape as numbers, and the only mode a reader can DERIVE afterwards is
+	// "both tangents are unset" (Flux_TangentIsUnset) versus "somebody authored
+	// something". The editor's label for the first of those is **Linear**, never
+	// "Flat": zero IS the linear tangent, a genuinely flat handle is
+	// unrepresentable, and a control labelled "Flat" would promise an ease this
+	// format cannot store.
+	//
+	// ★ AN EXACTLY-ZERO TANGENT IS UNSET IS LINEAR. Nothing here substitutes,
+	// clamps or normalises a tangent: the sampler reads zero as "no authored
+	// derivative at this end of this segment" and uses the segment's own slope,
+	// and any tidying done on the way in would take that meaning away.
+	//
+	// ★ ROOT MOTION HAS NO TANGENTS AND GAINS NONE (D17). Flux_RootMotion carries
+	// no parallel Flux_KeyTangents array — giving it one moves the .zanim layout
+	// — so every verb below REFUSES a root-motion track (false, nothing changed,
+	// no command). That refusal is real rather than defensive: it is what stops a
+	// curve editor offering handles on a track the runtime samples linearly.
+	//
+	// ★ AND THEY ARE ASSIGNMENTS. `true` means "the tangents you asked for are
+	// the tangents in place", whether or not this call was what put them there —
+	// the animator-controller panel's rule, adopted for its reason: re-stating a
+	// value is an ordinary thing for a recipe to do and must not read as a
+	// failure. THE INVARIANT TO ASSERT ON IS THE UNDO-STACK DEPTH; a no-op is not
+	// an edit and pushes nothing.
+	//-------------------------------------------------------------------------
+
+	// False for a key that does not resolve, and for a root-motion track.
+	bool GetKeyTangents(const Zenith_AnimTrackId& xTrack, u_int uKeyId, Flux_KeyTangents& xOut) const;
+
+	// Both tangents of one key, as ONE Zenith_AnimCommand_KeyTangents.
+	bool SetKeyTangents(const Zenith_AnimTrackId& xTrack, u_int uKeyId, const Flux_KeyTangents& xTangents);
+
+	// The two conveniences, each still ONE undo step: they read the key's current
+	// pair, replace one half and go through SetKeyTangents. Written as wrappers
+	// rather than as their own commands so there is one command shape to undo and
+	// one place the "did anything change" test lives.
+	bool SetKeyInTangent(const Zenith_AnimTrackId& xTrack, u_int uKeyId, const Zenith_Maths::Vector3& xInTangent);
+	bool SetKeyOutTangent(const Zenith_AnimTrackId& xTrack, u_int uKeyId, const Zenith_Maths::Vector3& xOutTangent);
+
+	// ★ CATMULL-ROM FOR ONE KEY, COMPUTED HERE. Flux_BoneChannel offers the two
+	// WHOLE-TRACK presets and no per-key helper, and a curve editor's "Auto" acts
+	// on a SELECTION — so the centred-slope formula is reproduced in this file,
+	// deliberately and identically: interior keys get
+	// (v_{k+1} - v_{k-1}) / (t_{k+1} - t_{k-1}), the two endpoints get the
+	// one-sided slope of the single segment they bound, and a non-positive span
+	// gives zero (which is the linear tangent, and the honest answer when there
+	// is no slope to measure). For ROTATION it is the same construction in
+	// angular-velocity terms — shortest arc between the neighbours, then rotated
+	// into key k's OWN body frame by q_k^-1 * q_{k-1}, because that is the frame
+	// the sampler reads a tangent in.
+	bool SetKeyTangentsAuto(const Zenith_AnimTrackId& xTrack, u_int uKeyId);
+
+	// The two WHOLE-TRACK presets, each as ONE compound whose children capture
+	// every key's PREVIOUS pair — so the undo restores the track's tangents
+	// exactly, including the keys the preset happened to leave alone. They call
+	// Flux_BoneChannel::ComputeAutoTangents / ComputeFlatTangents, which is the
+	// one write path into the parallel arrays.
+	//
+	// ★ "Linear" IS ComputeFlatTangents, AND THE NAME DIFFERENCE IS THE POINT.
+	// That function writes zeroes, zero is the LINEAR tangent, and the label a
+	// user sees has to say what the data means rather than what the function is
+	// called.
+	bool SetTrackTangentsAuto(const Zenith_AnimTrackId& xTrack);
+	bool SetTrackTangentsLinear(const Zenith_AnimTrackId& xTrack);
+
+	// PURE. Exact, component by component — the same exactness Flux_TangentIsUnset
+	// uses and for the same reason: these are stored values round-tripped through
+	// a file, not measurements, so a tolerance could only swallow a real edit.
+	static bool TangentsEqual(const Flux_KeyTangents& xA, const Flux_KeyTangents& xB);
+
+	//-------------------------------------------------------------------------
 	// Clip-level
 	//-------------------------------------------------------------------------
 
@@ -396,6 +472,10 @@ private:
 	friend class Zenith_AnimCommand_KeyRemove;
 	friend class Zenith_AnimCommand_KeyTime;
 	friend class Zenith_AnimCommand_KeyValue;
+	// WU-8.2. Same rule as its neighbours: it performs the edit through the
+	// non-recording primitive below, never through the public verb, so a redo
+	// cannot grow the stack it is being replayed from.
+	friend class Zenith_AnimCommand_KeyTangents;
 	friend class Zenith_AnimCommand_Duration;
 	friend class Zenith_AnimCommand_EventAdd;
 	friend class Zenith_AnimCommand_EventRemove;
@@ -411,6 +491,7 @@ private:
 	bool ApplyRemoveKey(const Zenith_AnimTrackId& xTrack, u_int uKeyId);
 	bool ApplySetKeyTime(const Zenith_AnimTrackId& xTrack, u_int uKeyId, float fNewTimeSeconds);
 	bool ApplySetKeyValue(const Zenith_AnimTrackId& xTrack, u_int uKeyId, const Zenith_AnimKeyValue& xValue);
+	bool ApplySetKeyTangents(const Zenith_AnimTrackId& xTrack, u_int uKeyId, const Flux_KeyTangents& xTangents);
 	bool ApplySetDuration(float fDurationSeconds);
 	u_int ApplyAddEvent(const Flux_AnimationEvent& xEvent, u_int uForcedEventId);
 	bool ApplyRemoveEvent(u_int uEventId);
@@ -435,6 +516,17 @@ private:
 
 	static std::string MakeTrackKey(const Zenith_AnimTrackId& xTrack);
 	static bool IsTrackAddressable(const Zenith_AnimTrackId& xTrack);
+
+	//-------------------------------------------------------------------------
+	// Tangent helpers (WU-8.2). All three refuse a root-motion track, which is
+	// the ONE place the "root motion has no tangent array" rule is tested.
+	//-------------------------------------------------------------------------
+	bool ReadKeyTangentsAtIndex(const Zenith_AnimTrackId& xTrack, u_int uKeyIndex, Flux_KeyTangents& xOut) const;
+	bool ComputeAutoTangentForKey(const Zenith_AnimTrackId& xTrack, u_int uKeyIndex, Flux_KeyTangents& xOut) const;
+	// The body SetTrackTangentsAuto and SetTrackTangentsLinear share: capture
+	// every key's pair, run the channel's own preset, then push one command per
+	// key whose pair actually moved, all inside one compound.
+	bool ApplyTrackTangentPreset(const Zenith_AnimTrackId& xTrack, bool bAuto, const char* szDescription);
 
 	TrackIds& GetOrAddTrackIds(const Zenith_AnimTrackId& xTrack);
 	const TrackIds* FindTrackIds(const Zenith_AnimTrackId& xTrack) const;

@@ -673,3 +673,174 @@ ZENITH_TEST(AnimDocument, RootMotionTakesTheSameVerbsAndRefusesAScaleTrack)
 	ZENITH_ASSERT_EQ(xDoc.GetKeyCount(xRootPos), 1u, "the undo removes the second root-motion key");
 	ZENITH_ASSERT_EQ(xDoc.GetKeyIndexForId(xRootPos, uIdA), 0u, "and leaves the first resolvable");
 }
+
+//==============================================================================
+// (14) TANGENTS (WU-8.2): every key of a freshly opened clip reads as LINEAR,
+// one edit is one undo step, and its undo restores the UNSET pair exactly.
+//
+// ★ THE "UNSET" HALF IS THE LOAD-BEARING ONE. WU-8.1's whole change rests on
+// "exactly zero means linear, and a segment bounded by two of them runs the
+// pre-tangent expression verbatim" — so an undo that restored anything OTHER
+// than exact zeroes would take a clip off that branch permanently, with no data
+// visibly wrong and every other unit green.
+//==============================================================================
+ZENITH_TEST(AnimDocument, TangentEditsAreOneStepEachAndUndoRestoresTheUnsetPairExactly)
+{
+	AnimDocFixture xFixture("zenith_animdoc_tangents");
+	AnimDocWriteProbeFile(xFixture.m_strPath, "DocProbe", 1.0f, false);
+
+	Zenith_AnimationDocument xDoc;
+	ZENITH_ASSERT_TRUE(xDoc.Open(xFixture.m_strPath) == ZENITH_ANIMDOC_OPEN_OK, "the probe opens");
+
+	const Zenith_AnimTrackId xTrack = AnimDocHipPositionTrack();
+	const u_int uMiddleId = xDoc.GetKeyIdAtIndex(xTrack, 1);
+
+	Flux_KeyTangents xTangents;
+	ZENITH_ASSERT_TRUE(xDoc.GetKeyTangents(xTrack, uMiddleId, xTangents), "a key's tangent pair reads back");
+	ZENITH_ASSERT_TRUE(Flux_TangentIsUnset(xTangents.m_xInTangent),
+		"★ and every key of a clip nobody authored a tangent on is UNSET — which is LINEAR, not flat");
+	ZENITH_ASSERT_TRUE(Flux_TangentIsUnset(xTangents.m_xOutTangent), "on both ends");
+
+	Flux_KeyTangents xEdited;
+	xEdited.m_xInTangent = Zenith_Maths::Vector3(0.0f, 2.0f, 0.0f);
+	xEdited.m_xOutTangent = Zenith_Maths::Vector3(0.0f, 2.0f, 0.0f);
+	ZENITH_ASSERT_TRUE(xDoc.SetKeyTangents(xTrack, uMiddleId, xEdited), "one tangent edit lands");
+	ZENITH_ASSERT_EQ(xDoc.GetUndoStackSize(), 1u, "as exactly ONE undo step");
+	ZENITH_ASSERT_TRUE(xDoc.IsDirty(), "and it dirties the document");
+
+	// ★ THE ASSIGNMENT RULE: re-stating the same pair is SATISFIED, not refused,
+	// and pushes nothing. The stack DEPTH is the invariant, not the bool.
+	ZENITH_ASSERT_TRUE(xDoc.SetKeyTangents(xTrack, uMiddleId, xEdited), "re-stating it is satisfied");
+	ZENITH_ASSERT_EQ(xDoc.GetUndoStackSize(), 1u, "and pushes nothing");
+
+	// The two conveniences are still one step each, and they touch one half only.
+	ZENITH_ASSERT_TRUE(xDoc.SetKeyInTangent(xTrack, uMiddleId, Zenith_Maths::Vector3(0.0f, 5.0f, 0.0f)),
+		"an in-only edit lands");
+	ZENITH_ASSERT_EQ(xDoc.GetUndoStackSize(), 2u, "as one more step");
+	ZENITH_ASSERT_TRUE(xDoc.GetKeyTangents(xTrack, uMiddleId, xTangents), "and reads back");
+	ZENITH_ASSERT_EQ_FLOAT(xTangents.m_xInTangent.y, 5.0f, 1e-6f, "with the in tangent moved");
+	ZENITH_ASSERT_EQ_FLOAT(xTangents.m_xOutTangent.y, 2.0f, 1e-6f, "and the OUT one left exactly alone");
+
+	xDoc.Undo();
+	xDoc.Undo();
+	ZENITH_ASSERT_TRUE(xDoc.GetKeyTangents(xTrack, uMiddleId, xTangents), "the key still resolves after both undos");
+	ZENITH_ASSERT_TRUE(Flux_TangentIsUnset(xTangents.m_xInTangent),
+		"★ and the pair is back to EXACT zero — the sampler's bit-identical linear branch, not merely close");
+	ZENITH_ASSERT_TRUE(Flux_TangentIsUnset(xTangents.m_xOutTangent), "on both ends");
+
+	xDoc.Redo();
+	ZENITH_ASSERT_TRUE(xDoc.GetKeyTangents(xTrack, uMiddleId, xTangents), "and a redo re-applies");
+	ZENITH_ASSERT_EQ_FLOAT(xTangents.m_xOutTangent.y, 2.0f, 1e-6f, "the pair it recorded");
+}
+
+//==============================================================================
+// (15) Auto on three COLLINEAR keys yields the slope; Linear zeroes; each is ONE
+// compound whose undo restores every key's previous pair.
+//
+// ★ COLLINEAR IS THE FIXTURE THAT MAKES THE ANSWER PREDICTABLE AT BOTH ENDS.
+// The centred slope through key 1 and the one-sided slopes at keys 0 and 2 are
+// all the same number only when the three keys are on a line — so the same
+// expectation covers the interior case and the two endpoint cases, and a wrong
+// endpoint rule fails here rather than passing by looking plausible.
+//==============================================================================
+ZENITH_TEST(AnimDocument, AutoTangentsOnCollinearKeysAreTheSlopeAndLinearZeroesThem)
+{
+	AnimDocFixture xFixture("zenith_animdoc_autotangents");
+	// y = 0 / 1 / 2 at t = 0 / 1 / 2, so the slope is exactly 1 unit per second.
+	AnimDocWriteProbeFile(xFixture.m_strPath, "DocProbe", 1.0f, false);
+
+	Zenith_AnimationDocument xDoc;
+	ZENITH_ASSERT_TRUE(xDoc.Open(xFixture.m_strPath) == ZENITH_ANIMDOC_OPEN_OK, "the probe opens");
+	const Zenith_AnimTrackId xTrack = AnimDocHipPositionTrack();
+
+	ZENITH_ASSERT_TRUE(xDoc.SetTrackTangentsAuto(xTrack), "the whole-track Auto preset runs");
+	ZENITH_ASSERT_EQ(xDoc.GetUndoStackSize(), 1u,
+		"★ as ONE compound, not one step per key — a preset is one gesture");
+
+	for (u_int u = 0; u < 3u; ++u)
+	{
+		Flux_KeyTangents xTangents;
+		ZENITH_ASSERT_TRUE(xDoc.GetKeyTangents(xTrack, xDoc.GetKeyIdAtIndex(xTrack, u), xTangents),
+			"each key's pair reads back");
+		ZENITH_ASSERT_EQ_FLOAT(xTangents.m_xInTangent.y, 1.0f, 1e-5f,
+			"the centred slope through a collinear key IS the line's slope — and so is the one-sided "
+			"slope at either end");
+		ZENITH_ASSERT_EQ_FLOAT(xTangents.m_xOutTangent.y, 1.0f, 1e-5f, "in == out: Auto is a SMOOTH key");
+	}
+
+	// Per-key Auto agrees with the whole-track preset. It has to: the panel's
+	// selection verb uses the per-key one, and a second formula that disagreed
+	// would make "Auto" mean two things depending on which control was clicked.
+	ZENITH_ASSERT_TRUE(xDoc.SetKeyTangentsAuto(xTrack, xDoc.GetKeyIdAtIndex(xTrack, 1)),
+		"per-key Auto is satisfied on a key the preset already did");
+	ZENITH_ASSERT_EQ(xDoc.GetUndoStackSize(), 1u, "and pushes nothing, because nothing changed");
+
+	ZENITH_ASSERT_TRUE(xDoc.SetTrackTangentsLinear(xTrack), "the Linear preset runs");
+	ZENITH_ASSERT_EQ(xDoc.GetUndoStackSize(), 2u, "as one more compound");
+	for (u_int u = 0; u < 3u; ++u)
+	{
+		Flux_KeyTangents xTangents;
+		ZENITH_ASSERT_TRUE(xDoc.GetKeyTangents(xTrack, xDoc.GetKeyIdAtIndex(xTrack, u), xTangents), "reads back");
+		ZENITH_ASSERT_TRUE(Flux_TangentIsUnset(xTangents.m_xInTangent),
+			"★ Linear writes exact ZEROES — which is the sampler's linear branch, and is why the control "
+			"may not be labelled 'Flat': a flat handle is unrepresentable");
+		ZENITH_ASSERT_TRUE(Flux_TangentIsUnset(xTangents.m_xOutTangent), "on both ends");
+	}
+
+	// ★ THE UNDO RESTORES EVERY KEY'S PREVIOUS PAIR, which is the whole reason the
+	// preset captures them per key instead of re-deriving Auto on the way back.
+	xDoc.Undo();
+	for (u_int u = 0; u < 3u; ++u)
+	{
+		Flux_KeyTangents xTangents;
+		ZENITH_ASSERT_TRUE(xDoc.GetKeyTangents(xTrack, xDoc.GetKeyIdAtIndex(xTrack, u), xTangents), "reads back");
+		ZENITH_ASSERT_EQ_FLOAT(xTangents.m_xInTangent.y, 1.0f, 1e-5f, "the auto slope is back on every key");
+	}
+	xDoc.Undo();
+	for (u_int u = 0; u < 3u; ++u)
+	{
+		Flux_KeyTangents xTangents;
+		ZENITH_ASSERT_TRUE(xDoc.GetKeyTangents(xTrack, xDoc.GetKeyIdAtIndex(xTrack, u), xTangents), "reads back");
+		ZENITH_ASSERT_TRUE(Flux_TangentIsUnset(xTangents.m_xOutTangent),
+			"and a second undo is back at the unset pair the file carried");
+	}
+}
+
+//==============================================================================
+// (16) ROOT MOTION HAS NO TANGENTS, AND EVERY VERB REFUSES IT.
+//
+// ★ THIS IS THE ONE THAT STOPS A CURVE EDITOR OFFERING A CONTROL WITH NOTHING
+// BEHIND IT. Flux_RootMotion carries no parallel Flux_KeyTangents array (D17) and
+// is still sampled linearly after WU-8.1 — so a tangent authored on one of its
+// two delta tracks would be a value nothing ever reads, saved into a file and
+// visible in a UI, with every gate green.
+//==============================================================================
+ZENITH_TEST(AnimDocument, RootMotionRefusesEveryTangentVerb)
+{
+	AnimDocFixture xFixture("zenith_animdoc_rootmotiontangents");
+	AnimDocWriteProbeFile(xFixture.m_strPath, "DocProbe", 1.0f, false);
+
+	Zenith_AnimationDocument xDoc;
+	ZENITH_ASSERT_TRUE(xDoc.Open(xFixture.m_strPath) == ZENITH_ANIMDOC_OPEN_OK, "the probe opens");
+
+	const Zenith_AnimTrackId xRootPos = Zenith_AnimTrackId::RootMotion(FLUX_ANIM_TRACK_POSITION);
+	const u_int uRootKeyId = xDoc.InsertKey(xRootPos, 0.0f, Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f));
+	ZENITH_ASSERT_NE(uRootKeyId, uINVALID_ANIM_KEY_ID, "a root-motion key exists to aim at");
+	ZENITH_ASSERT_EQ(xDoc.GetUndoStackSize(), 1u, "one step so far");
+
+	Flux_KeyTangents xTangents;
+	ZENITH_ASSERT_FALSE(xDoc.GetKeyTangents(xRootPos, uRootKeyId, xTangents),
+		"★ reading a root-motion tangent is a REFUSAL, not an all-zero answer — 'this track's tangents "
+		"are zero' and 'this track cannot hold one' are different facts");
+
+	Flux_KeyTangents xEdited;
+	xEdited.m_xOutTangent = Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f);
+	ZENITH_ASSERT_FALSE(xDoc.SetKeyTangents(xRootPos, uRootKeyId, xEdited), "and writing one is refused");
+	ZENITH_ASSERT_FALSE(xDoc.SetKeyInTangent(xRootPos, uRootKeyId, Zenith_Maths::Vector3(1.0f)), "as is the in half");
+	ZENITH_ASSERT_FALSE(xDoc.SetKeyOutTangent(xRootPos, uRootKeyId, Zenith_Maths::Vector3(1.0f)), "and the out half");
+	ZENITH_ASSERT_FALSE(xDoc.SetKeyTangentsAuto(xRootPos, uRootKeyId), "and per-key Auto");
+	ZENITH_ASSERT_FALSE(xDoc.SetTrackTangentsAuto(xRootPos), "and the whole-track presets");
+	ZENITH_ASSERT_FALSE(xDoc.SetTrackTangentsLinear(xRootPos), "both of them");
+
+	ZENITH_ASSERT_EQ(xDoc.GetUndoStackSize(), 1u, "★ and not one of those refusals pushed a command");
+}

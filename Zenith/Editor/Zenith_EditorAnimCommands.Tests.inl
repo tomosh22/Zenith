@@ -379,3 +379,66 @@ ZENITH_TEST(AnimCommands, AnEmptyCompoundPushesNothingAndARollbackReversesWhatLa
 	// authority on a question the content hash already answers exactly.
 	ZENITH_ASSERT_TRUE(xDoc.IsDirty(), "a rollback restores the CONTENT, not the dirty flag");
 }
+
+//==============================================================================
+// (7) Zenith_AnimCommand_KeyTangents (WU-8.2) round-trips, and its undo restores
+// the EXACT previous pair rather than a recomputation of it.
+//
+// ★ THAT DISTINCTION IS THE WHOLE COMMAND. "Put it back to Auto" and "put back
+// the numbers that were there" are the same thing only until a neighbouring key
+// moves — and an undo that re-derived Auto would be a second authority on what
+// the track looked like, disagreeing with the first exactly when a user undid a
+// retime and a tangent edit together.
+//
+// ★ AND AN UNSET PAIR IS PART OF THE ROUND TRIP. Zero is the LINEAR tangent
+// (WU-8.1) and a segment bounded by two of them runs the pre-tangent expression
+// verbatim, so an undo that came back with 1e-8 instead of 0 would move every
+// affected clip off that branch with nothing visibly wrong.
+//==============================================================================
+ZENITH_TEST(AnimCommands, TheTangentCommandRoundTripsAndRestoresTheExactPreviousPair)
+{
+	AnimCmdFixture xFixture("zenith_animcmd_tangents");
+
+	Zenith_AnimationDocument xDoc;
+	ZENITH_ASSERT_TRUE(xDoc.Open(xFixture.m_strPath) == ZENITH_ANIMDOC_OPEN_OK, "the probe opens");
+
+	const Zenith_AnimTrackId xTrack = AnimCmdHipTrack();
+	const u_int uIdB = xDoc.GetKeyIdAtIndex(xTrack, 1);
+
+	Flux_KeyTangents xFirst;
+	xFirst.m_xInTangent = Zenith_Maths::Vector3(0.0f, 3.0f, 0.0f);
+	xFirst.m_xOutTangent = Zenith_Maths::Vector3(0.0f, 3.0f, 0.0f);
+	Flux_KeyTangents xSecond;
+	xSecond.m_xInTangent = Zenith_Maths::Vector3(0.0f, -4.0f, 0.0f);
+	xSecond.m_xOutTangent = Zenith_Maths::Vector3(0.0f, 7.0f, 0.0f);
+
+	ZENITH_ASSERT_TRUE(xDoc.SetKeyTangents(xTrack, uIdB, xFirst), "the first tangent edit lands");
+	ZENITH_ASSERT_TRUE(xDoc.SetKeyTangents(xTrack, uIdB, xSecond), "and a second, BROKEN one on top of it");
+	ZENITH_ASSERT_EQ(xDoc.GetUndoStackSize(), 2u, "two edits, two commands");
+
+	Flux_KeyTangents xRead;
+	ZENITH_ASSERT_TRUE(xDoc.GetKeyTangents(xTrack, uIdB, xRead), "the pair reads back");
+	ZENITH_ASSERT_EQ_FLOAT(xRead.m_xInTangent.y, -4.0f, 1e-6f, "with the two halves independent");
+	ZENITH_ASSERT_EQ_FLOAT(xRead.m_xOutTangent.y, 7.0f, 1e-6f, "which is what a BROKEN key is");
+
+	xDoc.Undo();
+	ZENITH_ASSERT_TRUE(xDoc.GetKeyTangents(xTrack, uIdB, xRead), "the pair still reads back");
+	ZENITH_ASSERT_EQ_FLOAT(xRead.m_xInTangent.y, 3.0f, 1e-6f, "one undo restores the pair before it");
+	ZENITH_ASSERT_EQ_FLOAT(xRead.m_xOutTangent.y, 3.0f, 1e-6f, "both halves of it");
+
+	xDoc.Undo();
+	ZENITH_ASSERT_TRUE(xDoc.GetKeyTangents(xTrack, uIdB, xRead), "and again");
+	ZENITH_ASSERT_TRUE(Flux_TangentIsUnset(xRead.m_xInTangent),
+		"★ back to EXACT zero — the unset pair the file carried, and the sampler's bit-identical branch");
+	ZENITH_ASSERT_TRUE(Flux_TangentIsUnset(xRead.m_xOutTangent), "on both ends");
+
+	// ★ A REDO RE-APPLIES RATHER THAN RE-RECORDS. A command that pushed on redo
+	// would grow the stack it is being replayed from, and the growth only shows up
+	// after a few Ctrl+Y.
+	xDoc.Redo();
+	xDoc.Redo();
+	ZENITH_ASSERT_EQ(xDoc.GetUndoStackSize(), 2u, "two redos put back exactly two commands");
+	ZENITH_ASSERT_EQ(xDoc.GetRedoStackSize(), 0u, "and drained the redo stack");
+	ZENITH_ASSERT_TRUE(xDoc.GetKeyTangents(xTrack, uIdB, xRead), "the pair reads back");
+	ZENITH_ASSERT_EQ_FLOAT(xRead.m_xOutTangent.y, 7.0f, 1e-6f, "at the edited value");
+}

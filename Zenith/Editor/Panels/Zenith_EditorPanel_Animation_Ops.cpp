@@ -337,8 +337,30 @@ bool Zenith_EditorPanel_Animation::Action_BoxSelect(float fX0, float fY0, float 
 		for (u_int u = 0; u < uKeyCount; ++u)
 		{
 			const u_int uKeyId = m_xDocument.GetKeyIdAtIndex(xRow.m_xTrack, u);
-			Zenith_AnimPanelRect xRect;
-			if (!GetKeyRect(xRow.m_xTrack, uKeyId, xRect) || !AnimOpsRectsOverlap(xRect, fMinX, fMinY, fMaxX, fMaxY))
+			// ★ WHICH RECTS DEPENDS ON WHICH VIEW DREW (WU-8.2), AND THE SELECTION
+			// DOES NOT. In the curve view a key is not a diamond on a row lane, it is
+			// up to three POINTS at three different heights, so the band has to
+			// hit-test those instead — but it lands in the SAME (track, key id) set,
+			// which is what makes a selection survive the toggle. One component
+			// inside the band is enough: a user dragging a box around "that key"
+			// means the key.
+			bool bHit = false;
+			if (m_bShowCurveView)
+			{
+				for (u_int uComponent = 0; uComponent < uANIM_CURVE_COMPONENT_COUNT && !bHit; ++uComponent)
+				{
+					Zenith_AnimPanelRect xCurveRect;
+					bHit = GetCurveKeyRect(xRow.m_xTrack, uKeyId, uComponent, xCurveRect)
+						&& AnimOpsRectsOverlap(xCurveRect, fMinX, fMinY, fMaxX, fMaxY);
+				}
+			}
+			else
+			{
+				Zenith_AnimPanelRect xRect;
+				bHit = GetKeyRect(xRow.m_xTrack, uKeyId, xRect)
+					&& AnimOpsRectsOverlap(xRect, fMinX, fMinY, fMaxX, fMaxY);
+			}
+			if (!bHit)
 			{
 				continue;
 			}

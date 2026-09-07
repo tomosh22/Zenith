@@ -1249,6 +1249,106 @@ void Zenith_EditorAutomation::AddStep_AnimBlendExpectPointPosition(const char* s
 	m_axActions.PushBack(xAction);
 }
 
+//------------------------------------------------------------------------------
+// CURVE-EDITOR authoring (WU-8.2), the ANIM_CURVE_* block. The packing contract,
+// stated ONCE here and read back by ExecuteAnimCurveAction:
+//
+//   szArg1    — the BONE name. EMPTY would mean root motion, which every verb in
+//               this family refuses: root motion has no tangent array (D17)
+//   aiArgs[0] — the Flux_AnimTrack
+//   aiArgs[1] — the KEY INDEX, resolved to a stable id at execution time
+//   aiArgs[2] — the COMPONENT (0 x, 1 y, 2 z), DRAG only
+//   bArg      — the toggle's value, or bIn on the drag / expect verbs
+//   afArgs[0..2] — the IN tangent, the expected tangent, or the drop pixel (x, y)
+//   afArgs[3..5] — the OUT tangent
+//   afArgs[6] — the tolerance (EXPECT_KEY_TANGENT only)
+//------------------------------------------------------------------------------
+
+void Zenith_EditorAutomation::AddStep_AnimCurveSetView(bool bShow)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::ANIM_CURVE_SET_VIEW;
+	xAction.m_bArg = bShow;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimCurveSetUnified(bool bUnified)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::ANIM_CURVE_SET_UNIFIED;
+	xAction.m_bArg = bUnified;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimCurveSetKeyTangents(const char* szBone, int iTrack, int iKeyIndex,
+	float fInX, float fInY, float fInZ, float fOutX, float fOutY, float fOutZ)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::ANIM_CURVE_SET_KEY_TANGENTS;
+	xAction.m_szArg1 = SafeStr(szBone);
+	xAction.m_aiArgs[0] = iTrack;
+	xAction.m_aiArgs[1] = iKeyIndex;
+	xAction.m_afArgs[0] = fInX;
+	xAction.m_afArgs[1] = fInY;
+	xAction.m_afArgs[2] = fInZ;
+	xAction.m_afArgs[3] = fOutX;
+	xAction.m_afArgs[4] = fOutY;
+	xAction.m_afArgs[5] = fOutZ;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimCurveSetSelectionAuto()
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::ANIM_CURVE_SET_SELECTION_AUTO;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimCurveSetSelectionLinear()
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::ANIM_CURVE_SET_SELECTION_LINEAR;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimCurveDragHandleToPixel(const char* szBone, int iTrack, int iKeyIndex,
+	int iComponent, bool bIn, float fX, float fY)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::ANIM_CURVE_DRAG_HANDLE_TO_PIXEL;
+	xAction.m_szArg1 = SafeStr(szBone);
+	xAction.m_aiArgs[0] = iTrack;
+	xAction.m_aiArgs[1] = iKeyIndex;
+	xAction.m_aiArgs[2] = iComponent;
+	xAction.m_bArg = bIn;
+	xAction.m_afArgs[0] = fX;
+	xAction.m_afArgs[1] = fY;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimCurveFitToSelection()
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::ANIM_CURVE_FIT_TO_SELECTION;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimCurveExpectKeyTangent(const char* szBone, int iTrack, int iKeyIndex,
+	bool bIn, float fExpectedX, float fExpectedY, float fExpectedZ, float fTolerance)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::ANIM_CURVE_EXPECT_KEY_TANGENT;
+	xAction.m_szArg1 = SafeStr(szBone);
+	xAction.m_aiArgs[0] = iTrack;
+	xAction.m_aiArgs[1] = iKeyIndex;
+	xAction.m_bArg = bIn;
+	xAction.m_afArgs[0] = fExpectedX;
+	xAction.m_afArgs[1] = fExpectedY;
+	xAction.m_afArgs[2] = fExpectedZ;
+	xAction.m_afArgs[6] = fTolerance;
+	m_axActions.PushBack(xAction);
+}
+
 void Zenith_EditorAutomation::AddStep_AnimSetAutoKey(bool bEnabled)
 {
 	Zenith_EditorAction xAction = {};
@@ -3805,6 +3905,112 @@ static void ExecuteAnimBlendAction(const Zenith_EditorAction& xAction)
 	}
 }
 
+//-----------------------------------------------------------------------------
+// CURVE-EDITOR authoring (WU-8.2): ANIM_CURVE_SET_VIEW ..
+// ANIM_CURVE_EXPECT_KEY_TANGENT. Every case ends in one of
+// Zenith_EditorPanel_Animation's curve Action_* twins — the SAME call the curve
+// view's own pointer handler makes — so a recipe and a human's gesture run one
+// code path, and nothing here reaches past the panel into the document except to
+// READ.
+//-----------------------------------------------------------------------------
+namespace
+{
+	void AnimCurveActionChecked(bool bOk, const char* szAction, const char* szArg)
+	{
+		Zenith_Assert(bOk, "EditorAutomation curve step %s('%s') failed", szAction, szArg ? szArg : "");
+		(void)bOk; (void)szAction; (void)szArg;
+	}
+
+	// ★ A BONE NAME IS REQUIRED, unlike the ANIM_* family where an empty one means
+	// root motion. Root motion carries no tangent array (D17), so an empty name
+	// here can only be a typo — and building a root-motion track id out of it
+	// would push the failure one layer down, where the message says "the action
+	// refused" instead of "you named no bone".
+	Zenith_AnimTrackId AnimCurveTrackFromAction(const Zenith_EditorAction& xAction)
+	{
+		return Zenith_AnimTrackId::Bone(xAction.m_szArg1,
+			static_cast<Flux_AnimTrack>(xAction.m_aiArgs[0]));
+	}
+}
+
+static void ExecuteAnimCurveAction(const Zenith_EditorAction& xAction)
+{
+	Zenith_EditorPanel_Animation& xPanel = Zenith_EditorPanel_Animation::Instance();
+
+	switch (xAction.m_eType)
+	{
+	case Zenith_EditorActionType::ANIM_CURVE_SET_VIEW:
+		AnimCurveActionChecked(xPanel.Action_SetCurveView(xAction.m_bArg), "AnimCurveSetView", nullptr);
+		break;
+
+	case Zenith_EditorActionType::ANIM_CURVE_SET_UNIFIED:
+		AnimCurveActionChecked(xPanel.Action_SetTangentsUnified(xAction.m_bArg), "AnimCurveSetUnified", nullptr);
+		break;
+
+	case Zenith_EditorActionType::ANIM_CURVE_SET_KEY_TANGENTS:
+	{
+		const Zenith_AnimTrackId xTrack = AnimCurveTrackFromAction(xAction);
+		const u_int uKeyId = AnimResolveKeyId(xPanel.Document(), xTrack, xAction.m_aiArgs[1]);
+		AnimCurveActionChecked(uKeyId != uINVALID_ANIM_KEY_ID && xPanel.Action_SetKeyTangents(xTrack, uKeyId,
+			Zenith_Maths::Vector3(xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2]),
+			Zenith_Maths::Vector3(xAction.m_afArgs[3], xAction.m_afArgs[4], xAction.m_afArgs[5])),
+			"AnimCurveSetKeyTangents", xAction.m_szArg1.c_str());
+		break;
+	}
+
+	case Zenith_EditorActionType::ANIM_CURVE_SET_SELECTION_AUTO:
+		AnimCurveActionChecked(xPanel.Action_SetSelectionTangentsAuto(), "AnimCurveSetSelectionAuto", nullptr);
+		break;
+
+	case Zenith_EditorActionType::ANIM_CURVE_SET_SELECTION_LINEAR:
+		AnimCurveActionChecked(xPanel.Action_SetSelectionTangentsLinear(), "AnimCurveSetSelectionLinear", nullptr);
+		break;
+
+	case Zenith_EditorActionType::ANIM_CURVE_DRAG_HANDLE_TO_PIXEL:
+	{
+		const Zenith_AnimTrackId xTrack = AnimCurveTrackFromAction(xAction);
+		const u_int uKeyId = AnimResolveKeyId(xPanel.Document(), xTrack, xAction.m_aiArgs[1]);
+		const u_int uComponent = xAction.m_aiArgs[2] < 0
+			? uANIM_CURVE_COMPONENT_COUNT   // never valid, so the wrapper reports it
+			: static_cast<u_int>(xAction.m_aiArgs[2]);
+		AnimCurveActionChecked(uKeyId != uINVALID_ANIM_KEY_ID
+			&& xPanel.Action_DragTangentHandleToPixel(xTrack, uKeyId, uComponent, xAction.m_bArg,
+				xAction.m_afArgs[0], xAction.m_afArgs[1]),
+			"AnimCurveDragHandleToPixel", xAction.m_szArg1.c_str());
+		break;
+	}
+
+	case Zenith_EditorActionType::ANIM_CURVE_FIT_TO_SELECTION:
+		AnimCurveActionChecked(xPanel.Action_FitCurveViewToSelection(), "AnimCurveFitToSelection", nullptr);
+		break;
+
+	case Zenith_EditorActionType::ANIM_CURVE_EXPECT_KEY_TANGENT:
+	{
+		const Zenith_AnimTrackId xTrack = AnimCurveTrackFromAction(xAction);
+		const u_int uKeyId = AnimResolveKeyId(xPanel.Document(), xTrack, xAction.m_aiArgs[1]);
+		Flux_KeyTangents xTangents;
+		const bool bResolved = uKeyId != uINVALID_ANIM_KEY_ID
+			&& xPanel.Document().GetKeyTangents(xTrack, uKeyId, xTangents);
+		const Zenith_Maths::Vector3& xActual = xAction.m_bArg ? xTangents.m_xInTangent : xTangents.m_xOutTangent;
+		const float fTolerance = xAction.m_afArgs[6] > 0.0f ? xAction.m_afArgs[6] : 1.0e-4f;
+		Zenith_Assert(bResolved
+			&& std::fabs(xActual.x - xAction.m_afArgs[0]) <= fTolerance
+			&& std::fabs(xActual.y - xAction.m_afArgs[1]) <= fTolerance
+			&& std::fabs(xActual.z - xAction.m_afArgs[2]) <= fTolerance,
+			"EditorAutomation AnimCurveExpectKeyTangent: '%s' key %d %s expected (%f, %f, %f), found (%f, %f, %f)",
+			xAction.m_szArg1.c_str(), xAction.m_aiArgs[1], xAction.m_bArg ? "in" : "out",
+			xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2],
+			xActual.x, xActual.y, xActual.z);
+		(void)bResolved; (void)fTolerance;
+		break;
+	}
+
+	default:
+		Zenith_Assert(false, "Non-curve action routed to ExecuteAnimCurveAction");
+		break;
+	}
+}
+
 // Particle field edits (SET_PARTICLE_CONFIG .. SET_PARTICLE_EMITTING).
 static void ExecuteParticleAction(const Zenith_EditorAction& xAction)
 {
@@ -4223,6 +4429,16 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 		xAction.m_eType <= Zenith_EditorActionType::ANIM_BLEND_EXPECT_POINT_POSITION)
 	{
 		ExecuteAnimBlendAction(xAction);
+		return;
+	}
+
+	// Curve-editor authoring (WU-8.2). A SEVENTH animation range, for the reason
+	// the sixth exists: appending into the block above would move the bound both
+	// that line and the header's static_assert compare against.
+	if (xAction.m_eType >= Zenith_EditorActionType::ANIM_CURVE_SET_VIEW &&
+		xAction.m_eType <= Zenith_EditorActionType::ANIM_CURVE_EXPECT_KEY_TANGENT)
+	{
+		ExecuteAnimCurveAction(xAction);
 		return;
 	}
 

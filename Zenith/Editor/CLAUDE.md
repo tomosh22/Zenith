@@ -65,7 +65,7 @@ ImGui-based scene editor for creating, editing, and testing game content. Active
   (TOOLS + INPUT_SIMULATOR builds) so automated tests drive editor UI deterministically.
 - `Zenith_Editor.Tests.inl` / `Zenith_EditorAutomation.Tests.inl` - Unit tests for the editor controller and the automation step queue (included into the unit-test TU)
 - `Panels/` - Panel implementations (Animation, Console, ContentBrowser, GraphEditor, Hierarchy, MaterialEditor, Memory, Properties, RenderGraph, StatusBar, TerrainEditor, Toolbar, VariantEditor, Viewport). Toolbar and StatusBar are strips drawn inside the dockspace host window, not dockable windows
-- `Panels/Zenith_EditorPanel_Animation.h/cpp` (+ `_Render.cpp`, `_Ops.cpp`) - The animation DOPE SHEET over one `Zenith_AnimationDocument` and one `Zenith_AnimationPreviewSession`. A CLASS, not a pile of file statics (see "Animation Dope Sheet Panel" below); the `_Render` TU holds the drawing half. Tests in `Zenith_EditorPanel_Animation.Tests.inl`
+- `Panels/Zenith_EditorPanel_Animation.h/cpp` (+ `_Render.cpp`, `_Ops.cpp`, `_Pose.cpp`, `_IK.cpp`, `_Curve.cpp`) - The animation DOPE SHEET over one `Zenith_AnimationDocument` and one `Zenith_AnimationPreviewSession`. A CLASS, not a pile of file statics (see "Animation Dope Sheet Panel" below); the `_Render` TU holds the drawing half and `_Curve` holds WU-8.2's curve view (its pure value↔pixel mapping, its drawing and its input translation — see "The Curve view" below). Tests in `Zenith_EditorPanel_Animation.Tests.inl`
 - `Panels/Zenith_EditorPanel_AnimStateMachine.h/cpp` (+ `_Ops.cpp`, `_Render.cpp`) - The animator-controller STATE-MACHINE GRAPH over one `Zenith_AnimControllerDocument` (see "Animator State Machine Panel" below). A CLASS with undo, like the dope sheet and unlike the graph editor. Tests in `Zenith_EditorPanel_AnimStateMachine.Tests.inl`
 - `../Core/Zenith_ImGuiWidgets.h/cpp` - Layer-0 ImGui widgets (`Vec3Field`, `PropertyLabel`) that component inspectors in EntityComponent may use without including `Editor/`
 - `../Core/Zenith_EditorFontHook.h` - `Zenith_EditorFonts_Load()`, called by the Vulkan and Null backends right after `ImGui::CreateContext` so the editor font is registered before either backend builds the atlas (the Null backend's legacy atlas is locked at the first NewFrame)
@@ -570,6 +570,132 @@ through positions the user was only passing through.
 **Not wired:** double-clicking a `.zanimmask` in the Content Browser still only
 selects and logs it (WU-6.2 left it there). The section's path field + **Open**
 is the route today.
+
+### The Curve view (WU-8.2)
+
+The per-key **tangent** editor, inside the Animation Editor and living in its own
+TU (`Panels/Zenith_EditorPanel_Animation_Curve.cpp`): the selected tracks' x/y/z
+component curves, a point per key, a draggable handle per end, and the two
+presets. A **"Curves"** checkbox on the toolbar's existing first row (beside
+"Masks") turns it on.
+
+**★ IT REPLACES THE SHEET'S ROW AREA; IT IS NOT A SECOND STRIP.** When it is on,
+the canvas paints curves in exactly the rectangle the rows would have used —
+same `InvisibleButton`, same ruler above it, same playhead, same
+`Zenith_AnimTimelineMath` X mapping — and its five controls sit on toolbar rows
+that already exist. So the curve view costs the sheet **zero height either way**,
+which is this panel's standing "NOTHING SHOWN DRAWS NOTHING" rule taken to its
+conclusion rather than merely obeyed: a curve editor drawn as an extra block
+would have taken every pixel it occupied out of a canvas whose LAST ROW is the
+events row. `TheCurveViewReplacesTheRowsAndCostsTheSheetNoHeight` asserts
+`GetTrackAreaRect().Height()` **equal** across the toggle, paired (as the rule
+requires) with a sensitivity check that grows the window, and with the rect
+population changing over: `GetCurveViewRect` is recorded only while the view is
+up, and the dope-sheet row / key / event rects are **not recorded at all** while
+it is — those rows were not painted, and handing out a coordinate for one would
+be a click into a row nobody can see.
+
+**★ ONE SELECTION, TWO VIEWS.** The curve view shares the panel's key selection
+— the same `(track, key id)` set — and switching views only changes which rects
+it is hit-tested against. A separate curve selection was the obvious design and
+is wrong: an *Auto* applied in one view would act on a set the other was not
+showing. Box-select works in both, through `Action_BoxSelect`, which hit-tests
+the curve POINT rects instead of the row diamonds while the curve view is up (one
+component inside the band is enough — a box round "that key" means the key).
+
+**★ WHAT IS DRAWN IS SAMPLED THROUGH `Flux_BoneChannel`'s OWN SAMPLER**, one
+column per pixel, so the curve on screen is the curve that plays. A Hermite
+re-derived in the panel would agree with the runtime right up until one of them
+changed.
+
+**★ TANGENT MODE IS NOT ON THE WIRE, AND THE LABEL IS "Linear" — NEVER "Flat".**
+The clip stores two `Vector3`s per key and no mode
+(`Flux/MeshAnimation/CLAUDE.md` → *Tangent sampling*). An exactly-zero tangent is
+the **linear** one, a genuinely flat handle is unrepresentable, and *Auto* is an
+**operation** rather than a stored state — so the only mode a reader can derive
+is `Zenith_AnimCurveTangentModeOf`: **Linear** when `Flux_TangentIsUnset` holds
+on both halves, **Custom** otherwise, including on a pair *Auto* just wrote.
+A control labelled "Flat" would promise an ease this format cannot store and
+silently deliver a straight line.
+
+**★ THE VALUE AXIS IS A SECOND, PURE MAPPING — the X axis is untouched.**
+`Zenith_AnimCurveValueView` + `Zenith_AnimCurveValueToPixel` / `PixelToValue` /
+`Clamp` / `FitRange` are free functions over numbers, in the panel header beside
+the pose-ring geometry and for its reason: which way up the axis runs, and what a
+handle pixel means as a derivative, are the two things a curve editor gets
+silently wrong, and both are then catchable headless with no frame and no clip.
+Time↔pixels stays `Zenith_AnimTimelineMath`'s and is not shadowed, which is why
+the playhead, the ruler and the duration shade line up with the curves by
+construction.
+
+**★ A HANDLE IS A VELOCITY, WHICH IS WHY ITS LEVER IS IN SECONDS.**
+`fANIM_CURVE_HANDLE_SECONDS` (0.15 s) rather than a pixel length: a tangent is
+units per second, so at a fixed time offset the handle's vertical extent is
+literally "how far this slope carries the value in 0.15 s". `HandlePixel` and
+`TangentFromPixel` are exact inverses at BOTH ends (the in handle sits at
+`-h`, so the two sign flips cancel) and a unit round-trips them — which is what
+makes "drag it back to where it was drawn" a no-op rather than a slow drift.
+
+**★ A ROTATION CURVE IS DRAWN AS EULER ANGLES IN RADIANS AND ITS HANDLE IS AN
+ANGULAR VELOCITY, and that is an approximation stated out loud.** The clip stores
+a rotation tangent as a body-frame angular velocity in axis × rad/s, so radians
+on the value axis makes the units consistent and one handle arithmetic serve both
+kinds. It is a PRESENTATION: an Euler rate and a body-frame angular-velocity
+component agree for a rotation about one axis and diverge as the other two wind
+up, and `glm::eulerAngles` has its own branch cuts, so a tumbling rotation draws
+with seams. The alternative was three quaternion-derivative curves nobody can
+read. `ARotationHandleWritesAnAngularVelocityAndMovesTheSampledPose` is what pins
+that the edit reaches the SAMPLER — it measures the pose mid-segment, and
+requires both endpoints to stay exactly where they were authored.
+
+**★ ROOT MOTION IS NOT DRAWN AND EVERY TANGENT VERB REFUSES IT.**
+`Flux_RootMotion` carries no `Flux_KeyTangents` array (D17) and is still sampled
+linearly after WU-8.1, so a handle there would be a control with nothing behind
+it — a value authored, saved and displayed that nothing ever reads, with every
+gate green. `GetKeyTangents` on a root-motion track is a **refusal**, not an
+all-zero answer: "this track's tangents are zero" and "this track cannot hold
+one" are different facts. A root-motion key inside a mixed selection is SKIPPED
+rather than failing the whole gesture.
+
+**Document verbs** (`Zenith_AnimationDocument`, still the only writer):
+`GetKeyTangents` / `SetKeyTangents` / `SetKeyInTangent` / `SetKeyOutTangent` /
+`SetKeyTangentsAuto` (per key) / `SetTrackTangentsAuto` / `SetTrackTangentsLinear`
+(one compound each), all by stable key id, all **ASSIGNMENTS** — true means "the
+pair you asked for is in place", and a no-op pushes nothing, so the invariant to
+assert on is the undo-stack DEPTH. Undo is one `Zenith_AnimCommand_KeyTangents`
+per key carrying the exact PREVIOUS pair; the whole-track presets capture every
+key's pair before running `Flux_BoneChannel::ComputeAutoTangents` /
+`ComputeFlatTangents`, so an undo restores the track exactly instead of
+recomputing a shape. Restoring the exact **unset** pair is what puts a key back
+on the sampler's bit-identical linear branch.
+
+★ The per-key Catmull-Rom is **computed in the document**, because
+`Flux_BoneChannel` offers the two whole-track presets and no per-key helper while
+a curve editor's *Auto* acts on a SELECTION. The formula is reproduced
+deliberately and identically (centred slope, one-sided at the endpoints, zero on
+a non-positive span; for rotation the same in angular-velocity terms, rotated
+into key k's own body frame). `Flux_AnimationClip.cpp`'s rotation-vector helper
+is in an anonymous namespace, so its eight lines are reproduced too — if it ever
+gains a public home, delete the copy.
+
+**Actions** — `Action_SetCurveView` / `SetTangentsUnified` / `SetKeyTangents` /
+`SetSelectionTangentsAuto` / `SetSelectionTangentsLinear` /
+`DragTangentHandleToPixel` / `FitCurveViewToSelection`, the same three rules as
+every other action here (bool-returning, reading no ImGui state, every mutation
+through a document verb). The two toggles are **assignments** rather than
+`Action_SetAutoKey`'s "the value CHANGED", so the `ANIM_CURVE_*` automation
+family is checked wholesale with no exception list for a later verb to be
+forgotten from. `Action_DragTangentHandleToPixel` **commits** — one call is one
+undo step — so the pointer handler calls it exactly once, on release, and
+previews the intermediate positions as a ghost handle: the same
+preview-then-commit shape as the key drag, the duration handle and the event
+drag. `HandleCurveInput` returns TRUE when it owns the frame's gesture, which is
+what keeps a press on a handle from also reaching `HandleSheetInput` and being
+read there as a click on empty space.
+
+The `AddStep_AnimCurve*` family (the `ANIM_CURVE_*` block, the **seventh**
+animation range) calls exactly these twins, naming a key by (bone, track, INDEX)
+and resolving the stable id at execution time as the `ANIM_*` block does.
 
 ### Behaviour Graph Editor Panel (`Panels/Zenith_EditorPanel_GraphEditor`)
 

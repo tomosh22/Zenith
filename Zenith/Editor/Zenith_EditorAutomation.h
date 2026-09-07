@@ -491,6 +491,47 @@ enum class Zenith_EditorActionType
 	ANIM_BLEND_EXPECT_POINT_COUNT,
 	ANIM_BLEND_EXPECT_POINT_POSITION,	// END of the contiguous ANIM_BLEND range (see ANIM_BLEND_SET_TREE_KIND)
 
+	// CURVE-EDITOR authoring (WU-8.2). A SEVENTH animation block, appended for
+	// the reason the second through sixth exist: adding a verb INSIDE the block
+	// above would move ANIM_BLEND_EXPECT_POINT_POSITION, which is the upper
+	// bound BOTH the router's range test and the header's static_assert compare
+	// against, and which `Automation, AnimBlendEnumBlockIsContiguous` pins by
+	// position. A new contiguous block costs one more range test and moves
+	// nothing.
+	//
+	// Each verb performs EXACTLY what one of Zenith_EditorPanel_Animation's
+	// curve Action_* twins performs — the same call the curve view's own pointer
+	// handler ends in — so an authored recipe and a human's gesture cannot
+	// diverge. ANIM_CURVE_EXPECT_KEY_TANGENT is an ASSERTION rather than a
+	// mutation: a tangent is a number nothing else in a recipe can state.
+	//
+	// ★ A KEY IS NAMED BY (bone, track, INDEX) AND THE EXECUTOR RESOLVES THE
+	// STABLE ID, exactly as the ANIM_* block does and for its reason — a recipe
+	// is written against a clip a human can see, where "the second key on Hip's
+	// rotation track" is the only address that can be typed.
+	//
+	// ★ AND A ROOT-MOTION TRACK IS REFUSED HERE, WHICH IS NOT A GAP. Root motion
+	// carries no tangent array (D17) and is still sampled linearly after WU-8.1,
+	// so an empty szBone on one of these steps asserts at BOOT rather than
+	// authoring a derivative nothing would ever read.
+	//
+	// A typical authoring sequence:
+	//   AnimOpenClip("game:Animations/Sway.zanim") -> AnimCurveSetView(true) ->
+	//   AnimSelectKey("Hip", 0, 1, 0) -> AnimCurveSetSelectionAuto() ->
+	//   AnimCurveExpectKeyTangent("Hip", 0, 1, false, 0, 1, 0, 1e-3f).
+	//
+	// NOTE: this block must stay CONTIGUOUS (ExecuteAction routes the whole
+	// range to ExecuteAnimCurveAction by a pair of comparisons against its first
+	// and last member).
+	ANIM_CURVE_SET_VIEW,
+	ANIM_CURVE_SET_UNIFIED,
+	ANIM_CURVE_SET_KEY_TANGENTS,
+	ANIM_CURVE_SET_SELECTION_AUTO,
+	ANIM_CURVE_SET_SELECTION_LINEAR,
+	ANIM_CURVE_DRAG_HANDLE_TO_PIXEL,
+	ANIM_CURVE_FIT_TO_SELECTION,
+	ANIM_CURVE_EXPECT_KEY_TANGENT,	// END of the contiguous ANIM_CURVE range (see ANIM_CURVE_SET_VIEW)
+
 	// NavMesh. Deliberately NOT appended to the Terrain block above, which is
 	// routed by a range comparison: a standalone action sits outside every
 	// range and reaches ExecuteAction's own switch, which is what a
@@ -574,6 +615,16 @@ static_assert(static_cast<int>(Zenith_EditorActionType::ANIM_LAYER_EXPECT_ORDER)
 static_assert(static_cast<int>(Zenith_EditorActionType::ANIM_BLEND_EXPECT_POINT_POSITION) -
 	static_cast<int>(Zenith_EditorActionType::ANIM_BLEND_SET_TREE_KIND) == 8,
 	"the ANIM_BLEND block must stay CONTIGUOUS and nine wide — ExecuteAction routes it by range");
+// And the same pin for the ANIM_CURVE block (WU-8.2), the SEVENTH animation range
+// and now the youngest block in the enum. Width here; the
+// `Automation, AnimCurveEnumBlockIsContiguous` unit pins each member's POSITION
+// and both boundaries — including SET_NAVMESH_ASSET's "must stay outside every
+// range", whose neighbour this block has become (it was ANIM_BLEND's until this
+// one was appended; that assertion has now been re-pointed six times, which is
+// the mechanism working rather than a smell).
+static_assert(static_cast<int>(Zenith_EditorActionType::ANIM_CURVE_EXPECT_KEY_TANGENT) -
+	static_cast<int>(Zenith_EditorActionType::ANIM_CURVE_SET_VIEW) == 7,
+	"the ANIM_CURVE block must stay CONTIGUOUS and eight wide — ExecuteAction routes it by range");
 
 //-----------------------------------------------------------------------------
 // Action Data
@@ -1502,6 +1553,63 @@ void AddStep_AnimBlendExpectPointCount(const char* szStateName, int iExpectedCou
 	// can be got wrong by a renumber — which is what this verb exists to catch.
 void AddStep_AnimBlendExpectPointPosition(const char* szStateName, int iIndex, float fX, float fY,
 	float fTolerance);
+
+	//--------------------------------------------------------------------------
+	// CURVE-EDITOR authoring (WU-8.2), the ANIM_CURVE_* block.
+	//
+	// One step per atomic Zenith_EditorPanel_Animation curve Action_*, each routed
+	// through a checked wrapper that asserts on `false` — an authoring typo (a key
+	// index past the end of a track, a root-motion track that cannot hold a
+	// tangent, an Auto with nothing selected) fires at BOOT on the step that is
+	// wrong, rather than leaving a clip whose curves are quietly not what the
+	// recipe said.
+	//
+	// ★ THE CLIP DOCUMENT MUST ALREADY BE OPEN, and the SELECTION verbs need a
+	// selection: these edit the same .zanim the ANIM_* family does, through the
+	// same panel, so a recipe begins with AnimOpenClip and selects with
+	// AnimSelectKey / AnimBoxSelect.
+	//
+	// ★ THE DRAG STEP NEEDS A RENDERED FRAME. It goes through the pixel mapping,
+	// whose origin is the canvas geometry — which is exactly what makes it the
+	// verb that proves a human's drag and a recipe's produce the same tangent.
+	//
+	// iTrack is a Flux_AnimTrack (0 = Translation, 1 = Rotation, 2 = Scale) and
+	// iComponent is 0 = x, 1 = y, 2 = z, both passed as ints so this header needs
+	// neither the clip nor the panel header.
+	//--------------------------------------------------------------------------
+
+	// ASSIGNMENTS: re-stating the state the view is already in SUCCEEDS and edits
+	// nothing. Turning the view ON also queues a fit for the next rendered frame.
+void AddStep_AnimCurveSetView(bool bShow);
+	// Unified: a handle drag writes BOTH halves, keeping the key smooth.
+void AddStep_AnimCurveSetUnified(bool bUnified);
+
+	// Both tangents of one key, in value units per second (radians per second on a
+	// rotation track — a rotation tangent is a body-frame ANGULAR VELOCITY).
+void AddStep_AnimCurveSetKeyTangents(const char* szBone, int iTrack, int iKeyIndex,
+	float fInX, float fInY, float fInZ, float fOutX, float fOutY, float fOutZ);
+
+	// The SELECTION, one compound each. Auto is per-key Catmull-Rom; Linear zeroes
+	// both halves — which is the sampler's LINEAR branch and NOT a flat handle
+	// (Flux/MeshAnimation/CLAUDE.md → *Tangent sampling*).
+void AddStep_AnimCurveSetSelectionAuto();
+void AddStep_AnimCurveSetSelectionLinear();
+
+	// Absolute SCREEN coordinates, the space the panel records its rects in — so
+	// this drops the handle exactly where a click would, and needs a rendered
+	// frame. bIn picks which end of the handle pair.
+void AddStep_AnimCurveDragHandleToPixel(const char* szBone, int iTrack, int iKeyIndex, int iComponent,
+	bool bIn, float fX, float fY);
+
+	// Fit the VALUE axis to the sampled extent of what the view is drawing.
+void AddStep_AnimCurveFitToSelection();
+
+	// ---- assertion step ------------------------------------------------------
+	// One END of one key's tangent pair. An all-zero expectation is how a recipe
+	// states "this key is back to LINEAR", which is the thing an undo has to
+	// restore exactly.
+void AddStep_AnimCurveExpectKeyTangent(const char* szBone, int iTrack, int iKeyIndex, bool bIn,
+	float fExpectedX, float fExpectedY, float fExpectedZ, float fTolerance);
 
 	//--------------------------------------------------------------------------
 	// Scene Loading Step Helpers

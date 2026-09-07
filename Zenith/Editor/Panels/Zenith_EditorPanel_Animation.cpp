@@ -176,6 +176,16 @@ void Zenith_EditorPanel_Animation::OnDocumentOpened()
 	m_uInspectorBufferEventId = uINVALID_ANIM_KEY_ID;
 	m_bEventInspectorEditing = false;
 
+	// WU-8.2: the curve view survives an open (it is a way of LOOKING at a clip,
+	// not a property of one), but its in-flight drag cannot — the key id it was
+	// holding was retired with every other id this Open replaced — and its value
+	// axis has to be re-fitted, because the previous clip's extent says nothing
+	// about this one's.
+	m_bCurveHandleDragActive = false;
+	m_bCurveDragMoved = false;
+	m_uCurveDragKeyId = uINVALID_ANIM_KEY_ID;
+	m_bPendingCurveFit = m_bShowCurveView;
+
 	m_fRowScrollPixels = 0.0f;
 	m_bPendingTimeScroll = false;
 	m_bPendingRowScroll = false;
@@ -583,6 +593,16 @@ void Zenith_EditorPanel_Animation::ClearFrameRects()
 	m_xRowTrackRects.Clear();
 	m_xKeyRects.Clear();
 	m_xEventRects.Clear();
+	// WU-8.2's curve rects, cleared with the rest and for the same reason: a frame
+	// the curve view did not draw must answer "not drawn" rather than handing out
+	// the coordinates of a handle that is no longer on screen. This is also what
+	// makes GetCurveViewRect a usable "is the view on" probe — the flag is raised
+	// only inside DrawCurveView.
+	m_xCurveKeyRects.Clear();
+	m_xCurveHandleRects.Clear();
+	m_axCurveTracksDrawn.Clear();
+	m_bCurveViewRectValid = false;
+	m_uCurveTracksDrawn = 0;
 	m_bRulerRectValid = false;
 	m_bPlayheadRectValid = false;
 	m_bTrackAreaRectValid = false;

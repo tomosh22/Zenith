@@ -166,6 +166,49 @@ void Zenith_AnimCommand_KeyValue::Undo()
 }
 
 //------------------------------------------------------------------------------
+// Tangents (WU-8.2). Same two-call body as every other command here, against the
+// document's own non-recording primitive — the tangent arrays are parallel to the
+// key arrays and only the document knows how to reach the right slot from a
+// stable id.
+//------------------------------------------------------------------------------
+
+Zenith_AnimCommand_KeyTangents::Zenith_AnimCommand_KeyTangents(Zenith_AnimationDocument* pxDocument,
+	const Zenith_AnimTrackId& xTrack, u_int uKeyId, const Flux_KeyTangents& xOld, const Flux_KeyTangents& xNew,
+	const char* szDescription)
+	: Zenith_AnimCommandBase(pxDocument, szDescription != nullptr ? szDescription : "Edit Key Tangents")
+	, m_xTrack(xTrack)
+	, m_uKeyId(uKeyId)
+	, m_xOld(xOld)
+	, m_xNew(xNew)
+{
+}
+
+void Zenith_AnimCommand_KeyTangents::Execute()
+{
+	if (m_pxDocument == nullptr)
+	{
+		return;
+	}
+	m_pxDocument->ApplySetKeyTangents(m_xTrack, m_uKeyId, m_xNew);
+	m_pxDocument->MarkDirty();
+}
+
+void Zenith_AnimCommand_KeyTangents::Undo()
+{
+	if (m_pxDocument == nullptr)
+	{
+		return;
+	}
+	// ★ THE EXACT PREVIOUS PAIR, INCLUDING AN UNSET ONE. Restoring "auto" or
+	// "linear" as a recomputation would be a second authority on what the track
+	// looked like; the numbers that were there are the only faithful inverse, and
+	// an all-zero pair restored here is what puts a key back on the sampler's
+	// bit-identical linear branch.
+	m_pxDocument->ApplySetKeyTangents(m_xTrack, m_uKeyId, m_xOld);
+	m_pxDocument->MarkDirty();
+}
+
+//------------------------------------------------------------------------------
 // Duration.
 //------------------------------------------------------------------------------
 

@@ -281,6 +281,175 @@ bool Zenith_AnimPosePickRing(const Zenith_AnimPoseRingSet& xRings, float fX, flo
 	float fTolerancePixels, u_int& uOutAxis);
 
 //=============================================================================
+// THE CURVE EDITOR (WU-8.2) — the VALUE axis, as pure functions.
+//
+// ★ THE X AXIS IS NOT HERE, AND THAT IS THE WHOLE POINT. Time <-> pixels is
+// Zenith_AnimTimelineMath's, unchanged and unshadowed, so the curve view's
+// horizontal geometry IS the dope sheet's: the playhead, the ruler ticks, the
+// duration shade and the events row line up with the curves by construction
+// rather than by two mappings agreeing. What a curve needs on top of that is a
+// SECOND, independent mapping for the vertical axis, and this is it.
+//
+// ★ EVERYTHING BELOW IS FREE FUNCTIONS OVER NUMBERS, for the reason the pose
+// ring geometry above is: the part that is easy to get silently wrong — which
+// way up the value axis runs, what a handle pixel means as a derivative — is
+// then catchable by a headless unit with no frame, no clip and no rig. The panel
+// supplies the view and nothing else.
+//
+// ★ AND NO FUNCTION HERE RETURNS A NaN, whatever it is handed. These results go
+// straight into ImGui draw-list coordinates, where a NaN is an assertion in a
+// windowed build and a corrupt vertex buffer in one without — the same rule, and
+// the same reason, as Zenith_AnimTimelineMath's.
+//=============================================================================
+
+// Vertical zoom limits, in PIXELS PER UNIT of the curve's own value. The range
+// is wide because the values are: a scale track lives in [0, 2] and a position
+// track on a large rig runs to hundreds of centimetres, and one clamp pair has
+// to leave both usable. Both ends are named because three places read them (the
+// wheel handler, the clamp and fit-to-selection), and a second opinion about the
+// floor would let a view exist that the mapping refuses to invert.
+constexpr float fANIM_CURVE_MIN_PPU = 0.01f;
+constexpr float fANIM_CURVE_MAX_PPU = 20000.0f;
+constexpr float fANIM_CURVE_DEFAULT_PPU = 60.0f;
+
+// How long a tangent handle is drawn, IN SECONDS. A fixed time rather than a
+// fixed pixel length, because a tangent IS a velocity (units per second, and
+// radians per second for rotation — Flux/MeshAnimation/CLAUDE.md): at a fixed
+// time offset the handle's vertical extent is literally "how far this key's
+// slope would carry the value in 0.15 s", which is the quantity being edited. A
+// pixel-length handle would instead mean something different at every zoom.
+constexpr float fANIM_CURVE_HANDLE_SECONDS = 0.15f;
+
+// A position/scale/rotation curve is drawn as THREE component curves; this is
+// how many, and the index a component accessor takes (0 = x, 1 = y, 2 = z).
+constexpr u_int uANIM_CURVE_COMPONENT_COUNT = 3u;
+
+// How many tracks the curve view will draw when NOTHING is selected. A curve is
+// sampled per pixel column through the real channel sampler, so "every track in
+// the clip" is a per-frame cost proportional to the rig; with a selection the
+// cap does not apply, because the selection is the user saying which ones.
+constexpr u_int uANIM_CURVE_MAX_UNSELECTED_TRACKS = 8u;
+
+//-----------------------------------------------------------------------------
+// The VALUE axis of one curve view. Four floats, copyable, comparable field by
+// field — the panel owns one and the tests build them by hand, exactly like
+// Zenith_AnimTimelineView.
+//-----------------------------------------------------------------------------
+struct Zenith_AnimCurveValueView
+{
+	// The value at the TOP edge of the curve area. The top rather than the centre
+	// because the pixel axis grows downward from a known top edge, so the mapping
+	// is one subtraction with no half-height term to get the sign of wrong.
+	float m_fValueAtTop = 1.0f;
+
+	// Vertical zoom. Read through Zenith_AnimCurveEffectivePixelsPerUnit, which
+	// clamps into [fANIM_CURVE_MIN_PPU, fANIM_CURVE_MAX_PPU] and substitutes the
+	// floor for a non-finite or non-positive value.
+	float m_fPixelsPerUnit = fANIM_CURVE_DEFAULT_PPU;
+
+	// Screen y of the curve area's top edge, and its height. The height MAY BE
+	// ZERO — a collapsed panel — and that is a legal state meaning "nothing is
+	// visible", not an error.
+	float m_fTopPixel = 0.0f;
+	float m_fHeightPixels = 0.0f;
+};
+
+// The zoom the mapping ACTUALLY uses. Public because a panel drawing a zoom
+// readout must show the number the mapping used, and because it is the one place
+// the sanitisation lives.
+float Zenith_AnimCurveEffectivePixelsPerUnit(const Zenith_AnimCurveValueView& xView);
+
+//-----------------------------------------------------------------------------
+// The mapping and its inverse.
+//
+//   pixel = top + (valueAtTop - v) * ppu        (y grows DOWN, value grows UP)
+//   v     = valueAtTop - (pixel - top) / ppu
+//
+// A non-finite value maps to a pixel a million units outside the area (culled by
+// every visibility test, clipped by every draw) rather than to a NaN; a
+// non-finite pixel maps back to the value at the top edge.
+//-----------------------------------------------------------------------------
+float Zenith_AnimCurveValueToPixel(const Zenith_AnimCurveValueView& xView, float fValue);
+float Zenith_AnimCurvePixelToValue(const Zenith_AnimCurveValueView& xView, float fPixelY);
+
+// Force the view into a legal state: finite top and height (a negative or
+// non-finite height becomes 0), zoom inside the clamps, finite value-at-top.
+// NEVER produces a NaN, for any input — that is the whole point of it existing.
+void Zenith_AnimCurveClamp(Zenith_AnimCurveValueView& xView);
+
+// Fit [fMinValue, fMaxValue] into the area with a 10% margin at each end. A
+// degenerate range (equal, inverted or non-finite bounds) is centred at the
+// default zoom rather than dividing by zero — "one flat curve" is a legal thing
+// to fit, and it has no extent to scale to.
+void Zenith_AnimCurveFitRange(Zenith_AnimCurveValueView& xView, float fMinValue, float fMaxValue);
+
+//-----------------------------------------------------------------------------
+// A tangent HANDLE, both ways round. These two are exact inverses of each other
+// and that is what a unit asserts: a handle drawn at a pixel, read back from
+// that pixel, is the tangent it was drawn from.
+//
+// ★ THE HANDLE'S TIME OFFSET IS SIGNED BY WHICH END IT IS. The out handle sits
+// at (t + h, v + m*h) and the in handle at (t - h, v - m*h), so BOTH lie on the
+// line through the key with slope m — which is what makes the inverse below one
+// expression for both: m = (value(pixelY) - v) / (time(pixelX) - t), with the
+// two sign flips cancelling on the in side.
+//-----------------------------------------------------------------------------
+void Zenith_AnimCurveHandlePixel(const Zenith_AnimTimelineView& xTimeView,
+	const Zenith_AnimCurveValueView& xValueView, float fKeyTimeSeconds, float fKeyValue,
+	float fTangent, bool bIn, float fHandleSeconds, float& fOutPixelX, float& fOutPixelY);
+
+// The tangent a handle dropped at (fPixelX, fPixelY) means, in value units per
+// second. The time offset is taken from the PIXEL rather than assumed to be
+// fHandleSeconds, so dragging a handle sideways changes the lever the same way
+// it does in every other curve editor — but its magnitude is floored at
+// fANIM_CURVE_MIN_HANDLE_SECONDS, because a handle dragged onto its own key's
+// column would otherwise divide by zero and produce an infinite slope.
+//
+// ★ THE SIGN CONVENTION IS THE HANDLE'S, NOT THE CURSOR'S: a drop on the WRONG
+// SIDE of the key (an out handle left of it) yields a tangent of the same
+// magnitude and the slope the line through both points has, which is what a user
+// sees. Nothing is refused here — refusing mid-drag would freeze the handle with
+// no explanation.
+float Zenith_AnimCurveTangentFromPixel(const Zenith_AnimTimelineView& xTimeView,
+	const Zenith_AnimCurveValueView& xValueView, float fKeyTimeSeconds, float fKeyValue,
+	bool bIn, float fPixelX, float fPixelY);
+
+// The shortest lever a handle drag is allowed to have, in seconds. Not a
+// tolerance to tune: it is the divisor's floor, and it exists so a drag onto the
+// key's own column produces a very steep tangent rather than an infinite one.
+constexpr float fANIM_CURVE_MIN_HANDLE_SECONDS = 1.0e-3f;
+
+//-----------------------------------------------------------------------------
+// The tangent MODE the editor DISPLAYS. Two values, because two is all the wire
+// can carry (Flux/MeshAnimation/CLAUDE.md → *Tangent sampling*): a mode is not a
+// stored field, so the only thing a reader can derive from a key is whether
+// anybody authored a derivative on it.
+//
+// ★ "Auto" IS NOT IN THIS ENUM, AND "Flat" MAY NEVER BE. Auto is an OPERATION —
+// it writes numbers and then the key reads back as Custom, which is honest,
+// because nothing re-applies it when a neighbour moves. Flat is UNREPRESENTABLE:
+// the zero vector means linear, so a control offering "flat" would promise an
+// ease the format cannot store and silently deliver a straight line.
+//-----------------------------------------------------------------------------
+enum Zenith_AnimCurveTangentMode : u_int
+{
+	// BOTH tangents are exactly zero — Flux_TangentIsUnset on each. The sampler
+	// runs its pre-WU-8.1 lerp/slerp branch for a segment bounded by two of these,
+	// which is what every clip in the tree does today.
+	ZENITH_ANIMCURVE_TANGENT_LINEAR,
+	// Anything else. Including a pair Auto just wrote: once it is numbers, it is
+	// numbers.
+	ZENITH_ANIMCURVE_TANGENT_CUSTOM,
+};
+
+// The label the UI shows. ONE definition, so the toolbar, the tooltip and the
+// units cannot disagree — and so "Flat" cannot be typed in by accident.
+const char* Zenith_AnimCurveTangentModeLabel(Zenith_AnimCurveTangentMode eMode);
+
+// PURE: the mode a stored pair DISPLAYS as.
+Zenith_AnimCurveTangentMode Zenith_AnimCurveTangentModeOf(const Flux_KeyTangents& xTangents);
+
+//=============================================================================
 // The panel.
 //=============================================================================
 class Zenith_EditorPanel_Animation
@@ -980,6 +1149,151 @@ public:
 	// the same list the section draws rather than rebuilding it.
 	void GetMaskRigBoneNames(Zenith_Vector<std::string>& axOut) const;
 
+	//=========================================================================
+	// THE CURVE VIEW (WU-8.2) — per-key tangent handles over the SAME timeline.
+	//
+	// ★ IT REPLACES THE ROW AREA; IT DOES NOT SIT ABOVE IT. The toggle is a
+	// "Curves" checkbox on the toolbar's EXISTING first row (beside "Masks"),
+	// and when it is on the sheet's canvas draws curves where it drew rows —
+	// same InvisibleButton, same ruler, same playhead, same Zenith_AnimTimeline
+	// X mapping. That is this panel's standing height rule taken to its
+	// conclusion: a curve editor drawn as a SECOND strip would cost the sheet
+	// every pixel it occupied, and the events row is the sheet's last row.
+	// While the toggle is off, nothing of the curve view is drawn and no curve
+	// rect is recorded; while it is ON, the dope sheet's row / key / event rects
+	// are not recorded, because those rows were not painted.
+	//
+	// ★ THE SELECTION IS SHARED, AND SURVIVES THE TOGGLE. There is one key
+	// selection — the same (track, key id) set — and switching views changes
+	// which rects it is hit-tested against, nothing else. A separate curve
+	// selection would mean an Auto applied in one view acted on a set the other
+	// view was not showing.
+	//
+	// ★ WHAT IS DRAWN IS SAMPLED THROUGH THE REAL CHANNEL SAMPLER, one sample
+	// per pixel column, so the curve on screen is the curve that plays. A
+	// re-derivation of the Hermite here would agree with Flux_BoneChannel right
+	// up until one of them changed, and a curve editor that lies about the shape
+	// is worse than none.
+	//
+	// ★ A ROTATION CURVE IS DRAWN AS EULER ANGLES IN RADIANS, AND ITS HANDLE IS
+	// AN ANGULAR VELOCITY. The clip stores rotation tangents as body-frame
+	// angular velocity in axis * rad/s (Flux/MeshAnimation/CLAUDE.md), so the
+	// value axis is radians and the handle slope is rad/s — consistent units,
+	// and the same handle arithmetic as position. It is NOT exact: an Euler
+	// angle's rate and a body-frame angular velocity component agree for a
+	// rotation about one axis and diverge as the other two wind up, so a handle
+	// on a tumbling rotation moves the curve by less (or more) than its drawn
+	// slope suggests. Stated rather than hidden: the alternative is three
+	// separate quaternion-derivative curves nobody can read.
+	//
+	// ★ ROOT MOTION IS NOT DRAWN HERE AT ALL. Its two delta tracks carry no
+	// tangent array (D17) and are still sampled linearly after WU-8.1, so a
+	// handle on one would be a control with nothing behind it.
+	//=========================================================================
+
+	bool IsCurveViewShown() const { return m_bShowCurveView; }
+	// Unified: dragging one handle writes the OTHER to the same value, which is
+	// what keeps a key smooth. Broken (false) edits one side only — the corner.
+	bool AreTangentsUnified() const { return m_bCurveTangentsUnified; }
+
+	// The live value axis. m_fTopPixel / m_fHeightPixels are OVERWRITTEN by every
+	// Render from the canvas geometry; the zoom and the value-at-top are the
+	// panel's own state and survive, exactly as the timeline view's are.
+	const Zenith_AnimCurveValueView& CurveValueView() const { return m_xCurveValueView; }
+	void SetCurveValueView(const Zenith_AnimCurveValueView& xView) { m_xCurveValueView = xView; }
+
+	// The displayed mode of one key — "Linear" when BOTH tangents are unset,
+	// "Custom" otherwise. False when the key does not resolve, or on a
+	// root-motion track (which has no tangents to have a mode).
+	bool GetKeyTangentMode(const Zenith_AnimTrackId& xTrack, u_int uKeyId,
+		Zenith_AnimCurveTangentMode& eOut) const;
+
+	//------------------------------------------------------------------------
+	// Curve hit rects — the SAME off-screen contract as every other rect on this
+	// panel: recorded only when painted inside the canvas this frame, judged
+	// against the display bound captured at record time, and refused rather than
+	// handed out when the centre falls outside it.
+	//------------------------------------------------------------------------
+
+	// The curve area: the key lane, below the ruler. Recorded ONLY while the
+	// curve view is shown, which is what a unit reads to tell "the view is off"
+	// from "the view is on and drew nothing".
+	bool GetCurveViewRect(Zenith_AnimPanelRect& xOut) const;
+	// One key's point on one of its three component curves.
+	bool GetCurveKeyRect(const Zenith_AnimTrackId& xTrack, u_int uKeyId, u_int uComponent,
+		Zenith_AnimPanelRect& xOut) const;
+	// One end of one component's tangent handle.
+	bool GetCurveHandleRect(const Zenith_AnimTrackId& xTrack, u_int uKeyId, u_int uComponent, bool bIn,
+		Zenith_AnimPanelRect& xOut) const;
+
+	// How many TRACKS the curve view drew last frame, and how many curve POINTS
+	// it recorded. Ungated diagnostics, for the reason every other one here is:
+	// a flat `false` from a rect accessor has four causes and the bool names none.
+	u_int GetDrawnCurveTrackCount() const { return m_uCurveTracksDrawn; }
+	u_int GetRecordedCurvePointCount() const { return m_xCurveKeyRects.GetSize(); }
+
+	// The tracks the curve view WOULD draw, in row order: the ones the key
+	// selection names, or — with an empty selection — every bone track carrying a
+	// key, capped at uANIM_CURVE_MAX_UNSELECTED_TRACKS. Exposed so a unit and the
+	// draw read one list rather than two that can drift.
+	void GetCurveTracks(Zenith_Vector<Zenith_AnimTrackId>& axOut) const;
+
+	//------------------------------------------------------------------------
+	// The Action_* twins. Same three rules as every other action on this panel:
+	// bool-returning, reading no ImGui state, every mutation through a DOCUMENT
+	// verb.
+	//
+	// ★ THE THREE TOGGLES ARE ASSIGNMENTS — true means "the value you asked for
+	// is in place", whether or not this call changed it — which is the
+	// animator-controller panel's rule and NOT Action_SetAutoKey's. That is
+	// deliberate: it means the ANIM_CURVE_* automation family can be checked
+	// wholesale, with no exception list for a later verb to be forgotten from.
+	// The invariant to assert on is the undo-stack DEPTH.
+	//------------------------------------------------------------------------
+
+	bool Action_SetCurveView(bool bShow);
+	bool Action_SetTangentsUnified(bool bUnified);
+
+	// Both tangents of one key, as ONE undo step. Refused for a key that does not
+	// resolve and for a root-motion track.
+	bool Action_SetKeyTangents(const Zenith_AnimTrackId& xTrack, u_int uKeyId,
+		const Zenith_Maths::Vector3& xInTangent, const Zenith_Maths::Vector3& xOutTangent);
+
+	// The selection, as ONE compound each. Auto is per-key Catmull-Rom (the
+	// centred slope through each key's own neighbours); Linear zeroes both halves,
+	// which is the sampler's linear branch and NOT a flat handle.
+	//
+	// Root-motion keys in the selection are SKIPPED rather than refusing the
+	// operation: a mixed selection is ordinary, and a user who box-selected across
+	// the root-motion rows did not ask for the whole gesture to fail.
+	bool Action_SetSelectionTangentsAuto();
+	bool Action_SetSelectionTangentsLinear();
+
+	// ★ THE DRAG VERB, AND IT COMMITS. One call is one undo step, so the pointer
+	// handler calls it exactly ONCE — on release — and previews the intermediate
+	// positions as a ghost handle drawn from panel state. That is this panel's
+	// "preview, then commit" shape (the key drag, the duration handle, the event
+	// drag) and it is what keeps a Ctrl+Z from walking back through positions the
+	// user was only passing through.
+	//
+	// (fX, fY) are ABSOLUTE SCREEN coordinates, the space every rect on this panel
+	// is recorded in. Needs a rendered frame: the mapping's pixel origin comes
+	// from the canvas geometry. With AreTangentsUnified() the opposite handle is
+	// written to the same value in the same step.
+	bool Action_DragTangentHandleToPixel(const Zenith_AnimTrackId& xTrack, u_int uKeyId, u_int uComponent,
+		bool bIn, float fX, float fY);
+
+	// Fit the VALUE axis to what is on screen: the sampled extent of the curves
+	// the view is drawing, across the visible time range. False without a rendered
+	// frame, without the curve view shown, or when there is nothing to fit.
+	bool Action_FitCurveViewToSelection();
+
+	//------------------------------------------------------------------------
+	// Live curve-drag state, so a test can tell "the handle was never grabbed"
+	// apart from "the drag ran and produced no tangent".
+	//------------------------------------------------------------------------
+	bool IsDraggingTangentHandle() const { return m_bCurveHandleDragActive; }
+
 	//------------------------------------------------------------------------
 	// Operation diagnostics — UNGATED, for the same reason the rect
 	// diagnostics are: a bare `false` from an action has several causes, and a
@@ -1088,6 +1402,10 @@ private:
 
 	static std::string MakeTrackKey(const Zenith_AnimTrackId& xTrack);
 	static u_int64 MakeKeyRectKey(u_int uRowIndex, u_int uKeyId);
+	// (row, key, component) and (row, key, component, end) packed into one word,
+	// the same trick MakeKeyRectKey plays and for the same reason: a hash keyed on
+	// a string built per lookup would allocate once per curve point per frame.
+	static u_int64 MakeCurveRectKey(u_int uRowIndex, u_int uKeyId, u_int uComponent, bool bIn);
 
 	void ClearFrameRects();
 	void RebuildRows();
@@ -1234,6 +1552,49 @@ private:
 	// one delta applied to a fixed value cannot drift, and feeding the output
 	// back in would accumulate both the float error and the snap's rounding.
 	void ApplyPoseDragAngle();
+	//-------------------------------------------------------------------------
+	// The curve view — Zenith_EditorPanel_Animation_Curve.cpp. Drawing, input
+	// translation and the accessors, beside the pure mapping they all use.
+	//-------------------------------------------------------------------------
+
+	// Paints the curves, their key points and their tangent handles into the
+	// canvas's ROW REGION, and records the curve rects. Called INSTEAD of DrawRows
+	// while the curve view is shown, which is why nothing here has to be undone
+	// when it is not: the rows were never painted, so their rects were never
+	// recorded.
+	void DrawCurveView(ImDrawList* pxDraw, const SheetLayout& xLayout);
+	// The handle drag and the point click. The ONLY curve function that reads
+	// ImGui state, and every branch ends in an Action_*.
+	//
+	// ★ RETURNS TRUE WHEN IT OWNS THIS FRAME'S GESTURE, which is what keeps a
+	// press on a handle from ALSO reaching HandleSheetInput and being read there
+	// as a click on empty space — i.e. as "clear the selection". Same shape, same
+	// reason, as HandlePoseManipulatorInput's return.
+	bool HandleCurveInput(const SheetLayout& xLayout, bool bCanvasHovered);
+	// The sampled extent of everything the curve view is drawing, across the
+	// VISIBLE time range. False when there is nothing drawn to measure.
+	bool ComputeCurveValueRange(float& fOutMin, float& fOutMax) const;
+	// "Curves", "Auto", "Linear", "Unified" and "Fit" — drawn on the toolbar rows
+	// that already exist, so the curve view costs the sheet no height at all.
+	void RenderCurveToolbarItems();
+	// The value the curve view plots for one component of one track at one time,
+	// sampled THROUGH the channel's own sampler. The single definition the draw,
+	// the key points and the fit all read.
+	bool SampleCurveValue(const Zenith_AnimTrackId& xTrack, u_int uComponent, float fTimeSeconds,
+		float& fOutValue) const;
+	// One key's plotted value — the same quantity, at the key's own time, read
+	// from the stored key rather than sampled, so a point sits exactly on its key.
+	bool GetCurveKeyValue(const Zenith_AnimTrackId& xTrack, u_int uKeyId, u_int uComponent,
+		float& fOutValue) const;
+	// The curve area, as of the last sheet pass: the row region of the canvas.
+	void UpdateCurveValueViewGeometry(const SheetLayout& xLayout);
+	// The (track, key, component, end) under a screen pixel, if any. Handles are
+	// tested BEFORE points, because a handle at a very short lever overlaps its own
+	// key and the handle is the thing the user is reaching for.
+	bool FindCurveHandleAtScreenPos(float fX, float fY, Zenith_AnimTrackId& xOutTrack, u_int& uOutKeyId,
+		u_int& uOutComponent, bool& bOutIn) const;
+	bool FindCurvePointAtScreenPos(float fX, float fY, Zenith_AnimTrackId& xOutTrack, u_int& uOutKeyId) const;
+
 	void RenderSheet();
 	void HandleViewInput(const SheetLayout& xLayout, bool bCanvasHovered);
 	void ApplyPendingScrolls(const SheetLayout& xLayout);
@@ -1491,6 +1852,54 @@ private:
 	bool m_bPoseWasUnkeyedAtDragStart = false;
 	u_int m_uPoseHoverAxis = uINVALID_ANIM_POSE_RING;
 	bool m_bPoseAngleSnap = false;
+
+	//-------------------------------------------------------------------------
+	// The curve view (WU-8.2).
+	//
+	// ★ FALSE IS THE DEFAULT AND IT MEANS "DRAW NOTHING". Unlike the mask
+	// section this costs the sheet no height either way — the curves are painted
+	// INSIDE the canvas, in the region the rows would have used — but the rule
+	// the flag serves is the same one: a view that is off draws zero items and
+	// records zero rects, so a rect accessor answering false says "off" and not
+	// "somewhere you cannot see".
+	//-------------------------------------------------------------------------
+	bool m_bShowCurveView = false;
+	// TRUE by default: a smooth key is the common case, and a user who wants a
+	// corner says so. (Nothing is stored per key — see the header block: the wire
+	// has no mode field, so "unified" is a property of the EDITOR's gesture, not
+	// of the clip.)
+	bool m_bCurveTangentsUnified = true;
+	Zenith_AnimCurveValueView m_xCurveValueView;
+	// ★ "Fit the value axis" DEFERRED UNTIL THE CURVE AREA IS KNOWN, exactly as
+	// m_bPendingFrameAll defers the horizontal fit and for the same reason:
+	// Zenith_AnimCurveFitRange needs a height to divide by, and at the moment a
+	// clip is opened (or the view is switched on) the panel has not been laid out.
+	bool m_bPendingCurveFit = false;
+
+	// ★ THE SAME "PREVIEW, THEN COMMIT" SHAPE as the key drag, the duration
+	// handle and the event drag: while the button is down the dragged handle is
+	// drawn as a ghost from the pixel below and NOTHING reaches the document, and
+	// ONE Action_DragTangentHandleToPixel runs on release. A command per frame of
+	// the drag would make every position the user passed through an undo stop.
+	bool m_bCurveHandleDragActive = false;
+	Zenith_AnimTrackId m_xCurveDragTrack;
+	u_int m_uCurveDragKeyId = uINVALID_ANIM_KEY_ID;
+	u_int m_uCurveDragComponent = 0u;
+	bool m_bCurveDragIn = false;
+	bool m_bCurveDragMoved = false;
+	float m_fCurveDragPixelX = 0.0f;
+	float m_fCurveDragPixelY = 0.0f;
+
+	// Live curve rects, cleared with every other rect map at the top of Render.
+	Zenith_HashMap<u_int64, Zenith_AnimPanelRect> m_xCurveKeyRects;
+	Zenith_HashMap<u_int64, Zenith_AnimPanelRect> m_xCurveHandleRects;
+	Zenith_AnimPanelRect m_xCurveViewRect;
+	bool m_bCurveViewRectValid = false;
+	u_int m_uCurveTracksDrawn = 0;
+	// The row index each drawn curve track occupies, so a curve rect key and a
+	// dope-sheet key rect key cannot collide and GetCurveKeyRect can resolve a
+	// track the same way GetKeyRect does.
+	Zenith_Vector<Zenith_AnimTrackId> m_axCurveTracksDrawn;
 };
 
 #endif // ZENITH_TOOLS

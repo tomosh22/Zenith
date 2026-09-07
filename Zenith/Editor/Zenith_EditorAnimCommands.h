@@ -144,6 +144,37 @@ private:
 };
 
 //-----------------------------------------------------------------------------
+// A key's TANGENT PAIR changed (WU-8.2) — a curve-editor handle drag, one of the
+// two whole-track presets, or a per-key Auto.
+//
+// ★ IT STORES BOTH TANGENTS OF ONE KEY, NOT ONE HANDLE. A "unified" drag writes
+// both halves and a broken one writes a single half, and a command per HANDLE
+// would make the first of those two undo steps for one gesture. The pair is also
+// exactly what Flux_KeyTangents is, so there is no unpacking anywhere.
+//
+// ★ AND IT IS A SEPARATE COMMAND FROM Zenith_AnimCommand_KeyValue rather than a
+// wider one. A value edit and a tangent edit have different inverses reaching
+// different arrays, and folding them would mean every value edit carried a
+// tangent pair it never touched — which is how a value undo silently reverts a
+// tangent the user set afterwards.
+//-----------------------------------------------------------------------------
+class Zenith_AnimCommand_KeyTangents : public Zenith_AnimCommandBase
+{
+public:
+	Zenith_AnimCommand_KeyTangents(Zenith_AnimationDocument* pxDocument, const Zenith_AnimTrackId& xTrack,
+		u_int uKeyId, const Flux_KeyTangents& xOld, const Flux_KeyTangents& xNew, const char* szDescription);
+
+	void Execute() override;
+	void Undo() override;
+
+private:
+	Zenith_AnimTrackId m_xTrack;
+	u_int m_uKeyId;
+	Flux_KeyTangents m_xOld;
+	Flux_KeyTangents m_xNew;
+};
+
+//-----------------------------------------------------------------------------
 // The clip's duration. Not a key edit, but it belongs on the same stack: a
 // duration change and a keyframe drag are one editing session to the user.
 //-----------------------------------------------------------------------------

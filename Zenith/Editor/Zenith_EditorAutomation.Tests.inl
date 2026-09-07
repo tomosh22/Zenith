@@ -3575,16 +3575,99 @@ ZENITH_TEST(Automation, AnimBlendEnumBlockIsContiguous)
 	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_BLEND_EXPECT_POINT_POSITION) - iFirst, 8,
 		"ANIM_BLEND_EXPECT_POINT_POSITION must END the block — the router compares against it");
 
-	// Both boundaries. SET_NAVMESH_ASSET is a STANDALONE verb that has to keep
-	// reaching ExecuteAction's own switch: swallowed into this range it would land
-	// in ExecuteAnimBlendAction's `default:` assert at boot, which is a run-time
-	// failure for a compile-time mistake.
+	// Both boundaries, from this side.
 	ZENITH_ASSERT_EQ(iFirst - static_cast<int>(Zenith_EditorActionType::ANIM_LAYER_EXPECT_ORDER), 1,
 		"the ANIM_BLEND block must start immediately after the ANIM_LAYER range ends");
-	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::SET_NAVMESH_ASSET) -
+	// ★ THIS LINE USED TO NAME SET_NAVMESH_ASSET, and it MOVED with WU-8.2 rather
+	// than being deleted — the SIXTH time it has moved (WU-4.3, WU-6.5, WU-7.1,
+	// WU-7.2, WU-7.3, and now this). What it pins is that the ANIM_BLEND range
+	// ENDS where the router thinks it does; the successor being a seventh
+	// animation block instead of the navmesh verb does not weaken that.
+	// SET_NAVMESH_ASSET's own "must stay outside every range" is pinned by
+	// AnimCurveEnumBlockIsContiguous below, which is where its neighbour now is.
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_CURVE_SET_VIEW) -
 		static_cast<int>(Zenith_EditorActionType::ANIM_BLEND_EXPECT_POINT_POSITION), 1,
-		"SET_NAVMESH_ASSET must sit immediately after the ANIM_BLEND range — inside it, the "
-		"router would hand it to ExecuteAnimBlendAction's default: assert");
+		"the ANIM_CURVE block must start immediately after the ANIM_BLEND range ends — inside it, the "
+		"router would hand a curve verb to ExecuteAnimBlendAction's default: assert");
+}
+
+ZENITH_TEST(Automation, AnimCurveEnumBlockIsContiguous)
+{
+	// The youngest block (WU-8.2), pinned the way every block before it is: the
+	// header static_asserts the WIDTH, and this pins each member's POSITION so a
+	// reorder that preserves the width fails here naming the member that moved
+	// rather than at boot inside a neighbour's `default:` assert.
+	const int iFirst = static_cast<int>(Zenith_EditorActionType::ANIM_CURVE_SET_VIEW);
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_CURVE_SET_UNIFIED) - iFirst, 1,
+		"ANIM_CURVE_SET_UNIFIED must be the second member of the block");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_CURVE_SET_KEY_TANGENTS) - iFirst, 2,
+		"ANIM_CURVE_SET_KEY_TANGENTS must be the third member of the block");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_CURVE_SET_SELECTION_AUTO) - iFirst, 3,
+		"ANIM_CURVE_SET_SELECTION_AUTO must be the fourth member of the block");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_CURVE_SET_SELECTION_LINEAR) - iFirst, 4,
+		"ANIM_CURVE_SET_SELECTION_LINEAR must be the fifth member of the block");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_CURVE_DRAG_HANDLE_TO_PIXEL) - iFirst, 5,
+		"ANIM_CURVE_DRAG_HANDLE_TO_PIXEL must be the sixth member of the block");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_CURVE_FIT_TO_SELECTION) - iFirst, 6,
+		"ANIM_CURVE_FIT_TO_SELECTION must be the seventh member of the block");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_CURVE_EXPECT_KEY_TANGENT) - iFirst, 7,
+		"ANIM_CURVE_EXPECT_KEY_TANGENT must END the block — the router compares against it");
+
+	// Both boundaries. SET_NAVMESH_ASSET is a STANDALONE verb that has to keep
+	// reaching ExecuteAction's own switch: swallowed into this range it would land
+	// in ExecuteAnimCurveAction's `default:` assert at boot, which is a run-time
+	// failure for a compile-time mistake.
+	ZENITH_ASSERT_EQ(iFirst - static_cast<int>(Zenith_EditorActionType::ANIM_BLEND_EXPECT_POINT_POSITION), 1,
+		"the ANIM_CURVE block must start immediately after the ANIM_BLEND range ends");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::SET_NAVMESH_ASSET) -
+		static_cast<int>(Zenith_EditorActionType::ANIM_CURVE_EXPECT_KEY_TANGENT), 1,
+		"SET_NAVMESH_ASSET must sit immediately after the ANIM_CURVE range — inside it, the "
+		"router would hand it to ExecuteAnimCurveAction's default: assert");
+}
+
+ZENITH_TEST(Automation, AnimCurveStepsPackTheirPayloads)
+{
+	// The queue is drained MUCH later than it is built, so every argument has to
+	// survive as an OWNED copy in the action struct. This asserts the packing
+	// contract the executor reads back; the two halves are written from the same
+	// comment block in the .cpp, and this is what stops them drifting.
+	Zenith_EditorAutomation& xAuto = g_xEngine.EditorAutomation();
+	xAuto.Reset();
+
+	xAuto.AddStep_AnimCurveSetView(true);
+	xAuto.AddStep_AnimCurveSetKeyTangents("Hip", 0 /* translation */, 1,
+		1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f);
+	xAuto.AddStep_AnimCurveDragHandleToPixel("Hip", 1 /* rotation */, 2, 2 /* z */, true, 400.0f, 250.0f);
+	xAuto.AddStep_AnimCurveExpectKeyTangent("Hip", 0, 1, false, 0.0f, 0.0f, 0.0f, 1.0e-3f);
+
+	ZENITH_ASSERT_EQ(xAuto.m_axActions.GetSize(), 4u, "four steps queued");
+
+	const Zenith_EditorAction& xView = xAuto.m_axActions.Get(0);
+	ZENITH_ASSERT_TRUE(xView.m_eType == Zenith_EditorActionType::ANIM_CURVE_SET_VIEW,
+		"step 0 is ANIM_CURVE_SET_VIEW");
+	ZENITH_ASSERT_TRUE(xView.m_bArg, "and the toggle rides m_bArg");
+
+	const Zenith_EditorAction& xTangents = xAuto.m_axActions.Get(1);
+	ZENITH_ASSERT_STREQ(xTangents.m_szArg1.c_str(), "Hip", "the BONE name is OWNED by the action, not aliased");
+	ZENITH_ASSERT_EQ(xTangents.m_aiArgs[0], 0, "aiArgs[0] carries the Flux_AnimTrack");
+	ZENITH_ASSERT_EQ(xTangents.m_aiArgs[1], 1, "aiArgs[1] carries the KEY INDEX — resolved to an id at execution");
+	ZENITH_ASSERT_EQ_FLOAT(xTangents.m_afArgs[2], 3.0f, 1e-6f, "afArgs[0..2] is the IN tangent");
+	ZENITH_ASSERT_EQ_FLOAT(xTangents.m_afArgs[3], 4.0f, 1e-6f,
+		"★ and afArgs[3..5] is the OUT one — six floats, because a key's tangent pair is what the "
+		"document's verb takes and splitting it would make one gesture two undo steps");
+
+	const Zenith_EditorAction& xDrag = xAuto.m_axActions.Get(2);
+	ZENITH_ASSERT_EQ(xDrag.m_aiArgs[2], 2, "aiArgs[2] is the COMPONENT on a drag");
+	ZENITH_ASSERT_TRUE(xDrag.m_bArg, "m_bArg is bIn — which END of the handle pair");
+	ZENITH_ASSERT_EQ_FLOAT(xDrag.m_afArgs[0], 400.0f, 1e-6f, "afArgs[0..1] is the ABSOLUTE SCREEN pixel");
+	ZENITH_ASSERT_EQ_FLOAT(xDrag.m_afArgs[1], 250.0f, 1e-6f, "afArgs[0..1] is the ABSOLUTE SCREEN pixel");
+
+	const Zenith_EditorAction& xExpect = xAuto.m_axActions.Get(3);
+	ZENITH_ASSERT_EQ_FLOAT(xExpect.m_afArgs[6], 1.0e-3f, 1e-9f,
+		"afArgs[6] is the tolerance, clear of the six tangent slots");
+	ZENITH_ASSERT_FALSE(xExpect.m_bArg, "and m_bArg picks the OUT tangent here");
+
+	xAuto.Reset();
 }
 
 ZENITH_TEST(Automation, AnimBlendStepsPackTheirPayloads)
