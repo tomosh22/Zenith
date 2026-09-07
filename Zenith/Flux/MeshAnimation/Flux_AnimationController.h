@@ -172,6 +172,62 @@ public:
 	bool BuildFromControllerDef(const Flux_AnimatorControllerDef& xDef,
 		const Zenith_SkeletonAsset* pxSkeletonForMasks);
 
+	//=========================================================================
+	// HOT RELOAD (WU-6.4 / D45)
+	//
+	// ★ BuildFromControllerDef IS A DEMOLITION. It deletes every layer, rebuilds
+	// or drops the top-level machine, and re-seeds the parameter set — so a
+	// controller rebuilt from an edited .zanimctrl comes back with the player's
+	// character snapped to every graph's default state at frame 0, every layer
+	// weight back at whatever the file says, and every live parameter value
+	// replaced by its declared default. That is correct for a LOAD and useless
+	// for an EDIT: the whole point of editing a controller with the game running
+	// is to see the change against what the player is currently doing.
+	//
+	// ReloadFromControllerDef is the same rebuild with the playback carried
+	// across it. What survives, and on what key (D45):
+	//
+	//  | thing              | survives on            | otherwise            |
+	//  |--------------------|------------------------|----------------------|
+	//  | parameter VALUE    | name AND type          | the new default      |
+	//  | current state      | name                   | the new default state|
+	//  | normalized time    | its STATE surviving    | 0                    |
+	//  | active transition  | CANCELLED onto target  | default, at time 0   |
+	//  | layer weight       | layer ID               | dropped / def weight |
+	//
+	// ★ NAME **AND** TYPE FOR A PARAMETER. Flux_AnimationParameters::Parameter
+	// holds its value in a UNION, so matching on name alone would hand a float
+	// "Speed" of 4.0 to an int "Speed" as a bit-reinterpreted 1082130432. A
+	// retype is an edit, and an edit gets the new default.
+	//
+	// ★ LAYER ID, NOT INDEX AND NOT NAME (WU-6.3 / D43). An editor reorder moves
+	// every index; two layers may legally share a name. The id is the only thing
+	// that means "this layer" across the edit — which is exactly what it was
+	// introduced for.
+	//
+	// ★ CLIPS ARE RE-ACQUIRED BEFORE THE OLD REFERENCES ARE DROPPED. The clip
+	// collection holds BORROWED pointers pinned by m_xAnimationAssets, and a def
+	// that no longer names a clip must give that reference back — but releasing
+	// first would take a still-wanted asset's refcount through zero between the
+	// two calls. The old handles are therefore held on the stack across the
+	// rebuild and released after it.
+	//
+	// ★ NOT A SYNCHRONISATION POINT (D27's rule again): capture, rebuild and
+	// restore are plain non-atomic writes over live data. THE CALLER GUARANTEES
+	// NO ANIMATION UPDATE IS IN FLIGHT — the editor calls this from the main
+	// thread, between frames.
+	//
+	// ★ THE RETURN VALUE MEANS WHAT BuildFromControllerDef's MEANS, and nothing
+	// about survival: false says a clip or a bone mask the def NAMES did not
+	// resolve, which is a defect the caller must not ignore. A state the edit
+	// deleted is the author's intent, not a failure, so it is not reported here.
+	// (Flux_AnimationStateMachine::ReloadFromDef's bool is the other one — the
+	// machine-level verb has no dangling-reference failure mode, so its bool
+	// reports survival instead. The asymmetry is deliberate and documented at
+	// both ends.)
+	bool ReloadFromControllerDef(const Flux_AnimatorControllerDef& xNewDef,
+		const Zenith_SkeletonAsset* pxSkeletonForMasks);
+
 	// The inverse, and what an editor Save calls. Writes this controller's clip
 	// paths, top-level machine and layers into xOutDef (which is CLEARED first).
 	//
@@ -552,6 +608,15 @@ private:
 	// anything; if it does not, a declaration has appeared since the last publish
 	// (or none has happened yet), so publish now.
 	void EnsureParameterDeclared(const std::string& strName);
+
+	// WU-6.4 (D45). One layer's survivable state: what it is, in terms that
+	// outlive the Flux_AnimationLayer object BuildFromControllerDef deletes.
+	struct LayerReloadSnapshot
+	{
+		u_int m_uLayerId = uFLUX_INVALID_LAYER_ID;
+		float m_fWeight = 1.0f;
+		Flux_AnimationStateMachine::RuntimeSnapshot m_xMachine;
+	};
 
 	// WU-6.3. Take an id chosen elsewhere (a def's, on a BuildFromControllerDef)
 	// onto a layer this controller has just minted one for, and move the counter

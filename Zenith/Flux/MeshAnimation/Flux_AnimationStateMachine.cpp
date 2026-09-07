@@ -1,6 +1,7 @@
 #include "Zenith.h"
 #include "Flux_AnimationStateMachine.h"
 #include "Flux_AnimationClip.h"
+#include <cstring>   // WU-6.4: GetNodeTypeName() dispatch in ApplyNormalizedTimeToTree
 
 //=============================================================================
 // Flux_AnimatorStateInfo
@@ -46,6 +47,218 @@ void Flux_AnimationStateMachine::BuildFromDef(const Flux_AnimationStateMachineDe
 
 	if (pxClipCollection)
 		m_xDef.ResolveClipReferences(pxClipCollection);
+}
+
+//=============================================================================
+// HOT RELOAD (WU-6.4 / D45) — see the header for why the snapshot is names.
+//=============================================================================
+
+float Flux_AnimationStateMachine::ReadStateNormalizedTime(const Flux_AnimationState* pxState)
+{
+	if (pxState == nullptr)
+		return 0.0f;
+
+	const Flux_BlendTreeNode* pxTree = pxState->GetBlendTree();
+	return pxTree ? pxTree->GetNormalizedTime() : 0.0f;
+}
+
+void Flux_AnimationStateMachine::ApplyNormalizedTimeToTree(Flux_BlendTreeNode* pxNode, float fNormalizedTime)
+{
+	if (pxNode == nullptr)
+		return;
+
+	const char* szType = pxNode->GetNodeTypeName();
+
+	if (strcmp(szType, "Clip") == 0)
+	{
+		Flux_BlendTreeNode_Clip* pxLeaf = static_cast<Flux_BlendTreeNode_Clip*>(pxNode);
+		const Flux_AnimationClip* pxClip = pxLeaf->GetClip();
+		const float fDuration = (pxClip != nullptr) ? pxClip->GetDuration() : 0.0f;
+
+		// ★ AN UNRESOLVED OR ZERO-LENGTH LEAF GOES TO 0, NOT TO fNormalizedTime *
+		// 0. Those are the same number, but stating it stops the next reader from
+		// "simplifying" the guard away and multiplying by a duration that is only
+		// zero because the reload has not resolved the clip references yet.
+		pxLeaf->SetCurrentTimestamp(fDuration > 0.0f ? fNormalizedTime * fDuration : 0.0f);
+		return;
+	}
+
+	if (strcmp(szType, "Blend") == 0)
+	{
+		Flux_BlendTreeNode_Blend* pxBlend = static_cast<Flux_BlendTreeNode_Blend*>(pxNode);
+		ApplyNormalizedTimeToTree(pxBlend->GetChildA(), fNormalizedTime);
+		ApplyNormalizedTimeToTree(pxBlend->GetChildB(), fNormalizedTime);
+		return;
+	}
+
+	if (strcmp(szType, "BlendSpace1D") == 0)
+	{
+		Flux_BlendTreeNode_BlendSpace1D* pxSpace = static_cast<Flux_BlendTreeNode_BlendSpace1D*>(pxNode);
+		const Zenith_Vector<Flux_BlendTreeNode_BlendSpace1D::BlendPoint>& xPoints = pxSpace->GetBlendPoints();
+		for (u_int u = 0; u < xPoints.GetSize(); ++u)
+			ApplyNormalizedTimeToTree(xPoints.Get(u).m_pxNode, fNormalizedTime);
+		return;
+	}
+
+	if (strcmp(szType, "BlendSpace2D") == 0)
+	{
+		Flux_BlendTreeNode_BlendSpace2D* pxSpace = static_cast<Flux_BlendTreeNode_BlendSpace2D*>(pxNode);
+		const Zenith_Vector<Flux_BlendTreeNode_BlendSpace2D::BlendPoint>& xPoints = pxSpace->GetBlendPoints();
+		for (u_int u = 0; u < xPoints.GetSize(); ++u)
+			ApplyNormalizedTimeToTree(xPoints.Get(u).m_pxNode, fNormalizedTime);
+		return;
+	}
+
+	if (strcmp(szType, "Additive") == 0)
+	{
+		Flux_BlendTreeNode_Additive* pxAdditive = static_cast<Flux_BlendTreeNode_Additive*>(pxNode);
+		ApplyNormalizedTimeToTree(pxAdditive->GetBaseNode(), fNormalizedTime);
+		ApplyNormalizedTimeToTree(pxAdditive->GetAdditiveNode(), fNormalizedTime);
+		return;
+	}
+
+	if (strcmp(szType, "Masked") == 0)
+	{
+		Flux_BlendTreeNode_Masked* pxMasked = static_cast<Flux_BlendTreeNode_Masked*>(pxNode);
+		ApplyNormalizedTimeToTree(pxMasked->GetBaseNode(), fNormalizedTime);
+		ApplyNormalizedTimeToTree(pxMasked->GetOverrideNode(), fNormalizedTime);
+		return;
+	}
+
+	if (strcmp(szType, "Select") == 0)
+	{
+		Flux_BlendTreeNode_Select* pxSelect = static_cast<Flux_BlendTreeNode_Select*>(pxNode);
+		const Zenith_Vector<Flux_BlendTreeNode*>& xChildren = pxSelect->GetChildren();
+		for (u_int u = 0; u < xChildren.GetSize(); ++u)
+			ApplyNormalizedTimeToTree(xChildren.Get(u), fNormalizedTime);
+		return;
+	}
+}
+
+Flux_AnimationStateMachine::RuntimeSnapshot Flux_AnimationStateMachine::CaptureRuntimeSnapshot() const
+{
+	RuntimeSnapshot xSnapshot;
+
+	if (m_pxCurrentState != nullptr)
+	{
+		xSnapshot.m_strCurrentStateName = m_pxCurrentState->GetName();
+		xSnapshot.m_fCurrentNormalizedTime = ReadStateNormalizedTime(m_pxCurrentState);
+	}
+
+	// ★ THE TARGET CARRIES ITS OWN TIME, and it is a real playhead rather than a
+	// placeholder: UpdateTransition evaluates the TARGET state every frame of the
+	// crossfade (the source contributes a frozen pose snapshot and does not
+	// advance — see CollectEventSpans). Snapping to the target at 0 would rewind
+	// however much of it the fade had already played through.
+	if (m_pxActiveTransition != nullptr && m_pxTransitionTargetState != nullptr)
+	{
+		xSnapshot.m_bTransitioning = true;
+		xSnapshot.m_strTransitionTargetName = m_pxTransitionTargetState->GetName();
+		xSnapshot.m_fTransitionTargetNormalizedTime = ReadStateNormalizedTime(m_pxTransitionTargetState);
+	}
+
+	return xSnapshot;
+}
+
+bool Flux_AnimationStateMachine::RestoreRuntimeSnapshot(const RuntimeSnapshot& xSnapshot)
+{
+	// Which state the machine was HEADED FOR: the transition's target when one
+	// was in flight, the current state otherwise. D45's cancel rule is this one
+	// line — everything else about the transition (its elapsed time, its source
+	// pose, its interruptibility) is deliberately dropped.
+	const std::string& strWanted = xSnapshot.m_bTransitioning
+		? xSnapshot.m_strTransitionTargetName
+		: xSnapshot.m_strCurrentStateName;
+	const float fWantedNormalizedTime = xSnapshot.m_bTransitioning
+		? xSnapshot.m_fTransitionTargetNormalizedTime
+		: xSnapshot.m_fCurrentNormalizedTime;
+
+	if (strWanted.empty())
+	{
+		// Nothing was playing. The first Update enters the new default, which is
+		// what an untouched machine does anyway — so this is a clean survival, not
+		// a fallback.
+		return true;
+	}
+
+	if (HasState(strWanted))
+	{
+		// SetState resets the target's blend tree, so the time goes on AFTER it.
+		SetState(strWanted);
+		ApplyNormalizedTimeToTree(m_pxCurrentState ? m_pxCurrentState->GetBlendTree() : nullptr,
+			fWantedNormalizedTime);
+		return true;
+	}
+
+	// ★ THE STATE IS GONE, SO THE TIME IS MEANINGLESS AND GOES WITH IT (D45). A
+	// normalized time is a fraction OF A PARTICULAR CLIP; carrying 0.8 across to
+	// whatever the new default happens to be would drop the character into the
+	// middle of an unrelated animation, which reads as a glitch nobody can trace
+	// back to the edit that caused it.
+	const std::string& strDefault = GetDefaultStateName();
+	if (!strDefault.empty() && HasState(strDefault))
+	{
+		SetState(strDefault);
+	}
+
+	return false;
+}
+
+void Flux_AnimationStateMachine::RestoreMatchedParameterValues(const Flux_AnimationParameters& xPrevious,
+	Flux_AnimationParameters& xLive)
+{
+	if (&xPrevious == &xLive)
+		return;
+
+	using Parameter = Flux_AnimationParameters::Parameter;
+	using ParamType = Flux_AnimationParameters::ParamType;
+
+	const Zenith_HashMap<std::string, Parameter>& xOld = xPrevious.GetParameters();
+	for (Zenith_HashMap<std::string, Parameter>::Iterator xIt(xOld); !xIt.Done(); xIt.Next())
+	{
+		const Parameter& xParam = xIt.GetValue();
+
+		if (!xLive.HasParameter(xParam.m_strName))
+			continue;
+		if (xLive.GetParameterType(xParam.m_strName) != xParam.m_eType)
+			continue;
+
+		switch (xParam.m_eType)
+		{
+		case ParamType::Float:   xLive.SetFloat(xParam.m_strName, xParam.m_fValue); break;
+		case ParamType::Int:     xLive.SetInt(xParam.m_strName, xParam.m_iValue);   break;
+		case ParamType::Bool:    xLive.SetBool(xParam.m_strName, xParam.m_bValue);  break;
+		case ParamType::Trigger:
+			// Only a PENDING trigger is carried across; an unset one is left as the
+			// rebuild made it. SetTrigger has no "clear" twin here on purpose.
+			if (xParam.m_bValue)
+				xLive.SetTrigger(xParam.m_strName);
+			break;
+		}
+	}
+}
+
+bool Flux_AnimationStateMachine::ReloadFromDef(const Flux_AnimationStateMachineDef& xNewDef,
+	Flux_AnimationClipCollection* pxClipCollection)
+{
+	const RuntimeSnapshot xSnapshot = CaptureRuntimeSnapshot();
+
+	// ★ ONLY WHEN THIS MACHINE OWNS ITS PARAMETERS. Under a controller,
+	// GetParameters() is the controller's ONE live set (D42) — an object
+	// BuildFromDef does not touch and whose values the controller-level reload
+	// restores exactly once. Copying it here as well would be a second, redundant
+	// pass over a set that is already correct.
+	const bool bOwnsParameters = (m_pxSharedParameters == nullptr);
+	Flux_AnimationParameters xPreviousParameters;
+	if (bOwnsParameters)
+		xPreviousParameters = m_xDef.GetParameterDeclarations();
+
+	BuildFromDef(xNewDef, pxClipCollection);
+
+	if (bOwnsParameters)
+		RestoreMatchedParameterValues(xPreviousParameters, m_xDef.GetParameterDeclarations());
+
+	return RestoreRuntimeSnapshot(xSnapshot);
 }
 
 void Flux_AnimationStateMachine::RemoveState(const std::string& strName)

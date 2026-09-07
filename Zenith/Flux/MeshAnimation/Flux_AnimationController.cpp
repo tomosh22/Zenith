@@ -716,6 +716,144 @@ bool Flux_AnimationController::BuildFromControllerDef(const Flux_AnimatorControl
 	return bComplete;
 }
 
+//=============================================================================
+// HOT RELOAD (WU-6.4 / D45) — see the header for the survival table and for
+// why each key is the one it is.
+//=============================================================================
+bool Flux_AnimationController::ReloadFromControllerDef(const Flux_AnimatorControllerDef& xNewDef,
+	const Zenith_SkeletonAsset* pxSkeletonForMasks)
+{
+	//-------------------------------------------------------------------------
+	// (1) CAPTURE, BEFORE ANYTHING IS FREED.
+	//
+	// Every one of these reads touches an object BuildFromControllerDef is about
+	// to delete — the layers, the top-level machine, the states their runtime
+	// pointers name. There is no second chance at it further down.
+	//-------------------------------------------------------------------------
+	const Flux_AnimationParameters xPreviousParameters = m_xParameters;
+
+	const bool bHadTopLevelMachine = (m_pxStateMachine != nullptr);
+	Flux_AnimationStateMachine::RuntimeSnapshot xTopLevelSnapshot;
+	if (bHadTopLevelMachine)
+	{
+		xTopLevelSnapshot = m_pxStateMachine->CaptureRuntimeSnapshot();
+	}
+
+	Zenith_Vector<LayerReloadSnapshot> xLayerSnapshots;
+	xLayerSnapshots.Reserve(m_xLayers.GetSize());
+	for (u_int u = 0; u < m_xLayers.GetSize(); ++u)
+	{
+		const Flux_AnimationLayer* pxLayer = m_xLayers.Get(u);
+		if (pxLayer == nullptr)
+		{
+			continue;
+		}
+
+		LayerReloadSnapshot xSnapshot;
+		xSnapshot.m_uLayerId = pxLayer->GetLayerId();
+		xSnapshot.m_fWeight = pxLayer->GetWeight();
+		if (pxLayer->GetStateMachinePtr() != nullptr)
+		{
+			xSnapshot.m_xMachine = pxLayer->GetStateMachinePtr()->CaptureRuntimeSnapshot();
+		}
+		xLayerSnapshots.PushBack(xSnapshot);
+	}
+
+	//-------------------------------------------------------------------------
+	// (2) CLIPS: HOLD THE OLD REFERENCES, THEN EMPTY THE COLLECTION.
+	//
+	// ★ THE PIN COMES FIRST AND THE RELEASE COMES LAST, and the order is the
+	// whole point. A clip the new def still names has to be re-acquired by the
+	// rebuild below; releasing our reference before that would take a
+	// still-wanted asset's refcount through zero in between, which is exactly
+	// the window Zenith_AssetRegistry::UnloadUnused sweeps. Copying an
+	// AnimationHandle AddRefs, so xPinnedAcrossReload keeps every one of them
+	// alive until it leaves scope at the bottom of this function.
+	//
+	// ★ AND EMPTYING IS WHAT RELEASES A CLIP THE DEF NO LONGER NAMES.
+	// BuildFromControllerDef only ever ADDS (it is a load, and a load starts
+	// empty), so without this a reload would accumulate every clip every
+	// revision of the def ever mentioned.
+	//-------------------------------------------------------------------------
+	Zenith_Vector<AnimationHandle> xPinnedAcrossReload;
+	xPinnedAcrossReload.Reserve(m_xAnimationAssets.GetSize());
+	for (u_int u = 0; u < m_xAnimationAssets.GetSize(); ++u)
+	{
+		xPinnedAcrossReload.PushBack(m_xAnimationAssets.Get(u));
+	}
+
+	// ★ THE EDITOR'S DIRECT-PLAY PREVIEW HOLDS A RAW CLIP POINTER out of the
+	// collection we are about to empty (Flux_BlendTreeNode_Clip::m_pxClip, set by
+	// PlayClip), and nothing on the reload path can re-resolve it — the node is
+	// not in any def. Dropping the preview is the only answer that is not a
+	// use-after-free; re-arming it is the panel's business, and the panel is the
+	// only thing that can have armed it.
+	Stop();
+
+	m_xClipCollection.Clear();
+	for (u_int u = 0; u < m_xAnimationAssets.GetSize(); ++u)
+	{
+		m_xAnimationAssets.Get(u).Clear();
+	}
+	m_xAnimationAssets.Clear();
+
+	//-------------------------------------------------------------------------
+	// (3) THE LIVE PARAMETER SET IS EMPTIED, NOT RE-SEEDED OVER.
+	//
+	// ★ SeedInto NEVER OVERWRITES (D42), which is right for publishing and wrong
+	// for reloading: seeding the new defs on top of the old set would leave a
+	// parameter the edit RENAMED sitting in the live set forever, under its old
+	// name and its old value, invisible to every condition and impossible to
+	// remove. Starting empty makes the set after the rebuild exactly the new
+	// def's declarations at their new defaults, and step (5) then puts back only
+	// what genuinely matched.
+	//-------------------------------------------------------------------------
+	m_xParameters = Flux_AnimationParameters();
+	m_bParametersPublished = false;
+
+	//-------------------------------------------------------------------------
+	// (4) THE REBUILD, unchanged — including its error reporting, which is what
+	// this function's return value is.
+	//-------------------------------------------------------------------------
+	const bool bComplete = BuildFromControllerDef(xNewDef, pxSkeletonForMasks);
+
+	//-------------------------------------------------------------------------
+	// (5) RESTORE.
+	//-------------------------------------------------------------------------
+	Flux_AnimationStateMachine::RestoreMatchedParameterValues(xPreviousParameters, m_xParameters);
+
+	if (bHadTopLevelMachine && m_pxStateMachine != nullptr)
+	{
+		m_pxStateMachine->RestoreRuntimeSnapshot(xTopLevelSnapshot);
+	}
+
+	for (u_int u = 0; u < xLayerSnapshots.GetSize(); ++u)
+	{
+		const LayerReloadSnapshot& xSnapshot = xLayerSnapshots.Get(u);
+
+		// ★ BY ID. A layer whose id the new def does not carry is GONE — it was
+		// deleted by the edit — and GetLayerById answering nullptr is exactly the
+		// right thing to do with its snapshot: drop it. A layer the def has added
+		// carries an id no snapshot names, so nothing overwrites the weight the
+		// def gave it.
+		Flux_AnimationLayer* pxLayer = GetLayerById(xSnapshot.m_uLayerId);
+		if (pxLayer == nullptr)
+		{
+			continue;
+		}
+
+		pxLayer->SetWeight(xSnapshot.m_fWeight);
+		if (pxLayer->GetStateMachinePtr() != nullptr)
+		{
+			pxLayer->GetStateMachine().RestoreRuntimeSnapshot(xSnapshot.m_xMachine);
+		}
+	}
+
+	// xPinnedAcrossReload releases here — after the rebuild has taken its own
+	// reference to everything the new def still names.
+	return bComplete;
+}
+
 bool Flux_AnimationController::ExportControllerDef(Flux_AnimatorControllerDef& xOutDef) const
 {
 	xOutDef.Clear();

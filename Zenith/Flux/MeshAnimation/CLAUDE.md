@@ -623,6 +623,129 @@ Pinned by the four `WU6_3_*` units in `Flux_AnimationController.Tests.inl` and b
 `Animator.LayerIdAddressesTheSameLayerAcrossACrossSceneMove` in
 `Core/Zenith_UnitTests.Tests.inl`.
 
+### Hot reload — a changed def onto a LIVE controller (WU-6.4, D45)
+
+★ **`BuildFromControllerDef` IS A DEMOLITION, AND THAT IS CORRECT FOR A LOAD.**
+It deletes every layer, replaces or drops the top-level machine, and hands each
+machine to `BuildFromDef` — which calls `ResetRuntime` (no current state, no
+transition in flight) and then `CopyFrom` (every blend-tree playhead back at
+zero). Run it against an edited `.zanimctrl` while the game is playing and the
+character snaps to every graph's default state at frame 0, every layer weight
+reverts to whatever the file says, and every live parameter value is replaced by
+its declared default. **Nothing asserts**, because that is precisely what a cold
+load is supposed to do — so the failure looks like "the editor made the character
+twitch" rather than like a missing feature.
+
+| Verb | Does |
+|---|---|
+| `Flux_AnimationController::ReloadFromControllerDef(def, skeletonForMasks)` | the whole-controller reload — what an editor Save/apply calls |
+| `Flux_AnimationStateMachine::ReloadFromDef(def, clips)` | one machine, for a caller that holds one |
+| `Flux_AnimationStateMachine::CaptureRuntimeSnapshot()` / `RestoreRuntimeSnapshot(s)` | the two primitives both of the above are built from |
+| `Flux_AnimationStateMachine::RestoreMatchedParameterValues(prev, live)` | D45's parameter rule, as a pure function over two sets |
+
+**What survives, and on what KEY.** The key is the whole design; each one is the
+only identity that spans the two defs:
+
+| thing | survives on | otherwise |
+|---|---|---|
+| parameter VALUE | **name AND type** | the new declaration's DEFAULT |
+| current state | **name** | the layer's/machine's new DEFAULT state |
+| normalized time | **its STATE surviving** | 0 |
+| an active transition | **CANCELLED onto its TARGET** | the default state, at time 0 |
+| layer weight | **layer ID** (WU-6.3) | a vanished id is dropped; a new id keeps the def's weight |
+
+- **The snapshot holds NAMES AND FRACTIONS, never pointers.** Every runtime
+  pointer on a machine (`m_pxCurrentState`, `m_pxTransitionTargetState`) names a
+  `Flux_AnimationState` that `CopyFrom` is about to delete, so a snapshot
+  carrying them would be a snapshot of freed memory by the time it was used. It
+  is also why *"a renamed state does not survive"* needs no rule of its own.
+- ★ **NAME *AND* TYPE FOR A PARAMETER, because the value is in a UNION.**
+  `Flux_AnimationParameters::Parameter` overlays `float`/`int32_t`/`bool`, so
+  matching on name alone would hand a float `"Speed"` of 4.25 to an int
+  `"Speed"` as `1082130432`. A retype is an edit; an edit gets the new default.
+- ★ **THE LIVE PARAMETER SET IS EMPTIED FIRST, NOT RE-SEEDED OVER.** `SeedInto`
+  **never overwrites** (D42) — right for publishing, wrong for reloading: seeding
+  the new declarations onto the old set leaves a parameter the edit RENAMED in
+  the live set forever, under a name no condition reads and nothing can remove.
+  The reload therefore resets `m_xParameters`, lets the rebuild seed the new
+  declarations at their new defaults, and only then restores what matched.
+- ★ **A PENDING TRIGGER SURVIVES.** A trigger is an input the game has already
+  delivered and not yet spent; dropping it across a reload swallows a jump. A
+  trigger that was not pending is never un-set.
+- ★ **AN ACTIVE TRANSITION IS CANCELLED ONTO ITS TARGET, NOT RESUMED.** Resuming
+  would need the source POSE SNAPSHOT the `Flux_CrossFadeTransition` is holding,
+  over a state set the edit may have changed; landing back on the SOURCE would
+  re-run the transition's conditions from scratch and re-spend a one-shot the
+  player has already paid for. The target's **own** normalized time comes across
+  — `UpdateTransition` evaluates the target every frame of the fade (the source
+  contributes a frozen snapshot and does not advance), so it is a real playhead.
+- ★ **A NORMALIZED TIME DIES WITH ITS STATE.** It is a fraction of a *particular*
+  clip; carrying 0.8 onto whatever the new default happens to be drops the
+  character into the middle of an unrelated animation — a glitch nobody can trace
+  back to the edit that caused it.
+- ★ **THERE IS NO `SetNormalizedTime` ANYWHERE IN THE SYSTEM**, and this is the
+  premise that cost the most. `Flux_BlendTreeNode::GetNormalizedTime` is virtual
+  and const with **no setter at any level**; the only time SETTER in the whole
+  animation system is `Flux_BlendTreeNode_Clip::SetCurrentTimestamp`, in
+  **SECONDS**, on a leaf. So putting a playhead back means walking the tree to
+  its leaves and converting per clip
+  (`Flux_AnimationStateMachine::ApplyNormalizedTimeToTree`). Every leaf is put at
+  the **same** normalized time, which is the only reading that inverts
+  `GetNormalizedTime` for all four composite shapes at once: `Blend` mixes its
+  children's times, both blend spaces report the NEAREST point's, and `Select`
+  reports the selected child's — set them all equal and each returns that value.
+  The walk dispatches on **`GetNodeTypeName()`**, not RTTI, because that string
+  is already this hierarchy's discriminator (`CreateFromTypeName` reads the same
+  values out of a stream); the case list is the whole of that factory, and a node
+  type added without a case keeps the zero its `Reset` left rather than being
+  handed a wrong time.
+- ★ **CLIPS ARE RE-ACQUIRED BEFORE THE OLD REFERENCES ARE DROPPED.** The clip
+  collection holds BORROWED pointers pinned by `m_xAnimationAssets`, and a def
+  that no longer names a clip must give that reference back — but releasing first
+  would take a still-wanted asset's refcount through zero between the two calls,
+  which is the window `UnloadUnused` sweeps. The old handles are COPIED onto the
+  stack (a handle copy AddRefs) and released after the rebuild. Emptying the
+  collection is also the only thing that releases a dropped clip at all:
+  `BuildFromControllerDef` only ever ADDS, so a reload without it would
+  accumulate every clip every revision of the def ever mentioned.
+- ★ **THE EDITOR'S DIRECT-PLAY PREVIEW IS DROPPED (`Stop()`).**
+  `m_pxDirectPlayNode` holds a raw `Flux_AnimationClip*` out of the collection
+  the reload empties, and the node is in no def, so nothing can re-resolve it.
+  Re-arming is the panel's business — the panel is the only thing that can have
+  armed it.
+
+**Two things it does NOT preserve, stated rather than left to be discovered:**
+
+- **A sub-state machine's own current state.** Entering a container state
+  re-enters its child at the child's default (`SetState`), and the child INSTANCE
+  lives inside the def `CopyFrom` just replaced, so there is no object to restore
+  onto. See the WU-6.1 note about the nested-instance residual.
+- **A transition's elapsed time, its source pose and its interruptibility.**
+  Cancellation is the rule, not a limitation — see above.
+
+★ **NOT A SYNCHRONISATION POINT, AND IT DOES NOT CREATE ONE** — the same ruling
+`Flux_AnimationClip::ReplaceContentsFrom` carries (D27). Capture, rebuild and
+restore are three plain non-atomic writes over live data; **the caller guarantees
+no animation update is in flight.** The editor calls it from the main thread,
+between frames.
+
+★ **THE TWO RETURN VALUES MEAN DIFFERENT THINGS, DELIBERATELY.**
+`ReloadFromControllerDef` returns the **BUILD** contract — false when a clip or a
+bone mask the def NAMES did not resolve, a defect the caller must not ignore —
+and says nothing about survival, because a state the edit deleted is the author's
+intent rather than a failure. `ReloadFromDef` has no dangling-reference failure
+mode to report (`BuildFromDef` returns `void`), so its bool reports the one thing
+a caller there can act on: **true** when the machine landed on the state the
+snapshot named, **false** when it fell back to the new default.
+
+Pinned by five `WU64_*` units in `Flux_AnimationStateMachine.Tests.inl` (the
+state / time / transition rows, each with its negative, plus a standalone
+machine's own parameter table) and five in `Flux_AnimationController.Tests.inl`
+(parameter kept by name+type, renamed, retyped; layer weights by id across a
+reorder, and a deleted-plus-added layer pair). Every one of them **drives the
+graph before reloading** — a test that reloaded a machine which had never ticked
+passes against the demolition this work replaces.
+
 ### Update Modes (Flux_AnimationUpdateMode)
 - `ANIMATION_UPDATE_NORMAL` - Uses scaled deltaTime
 - `ANIMATION_UPDATE_FIXED` - For physics-synced animation

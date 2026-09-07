@@ -876,3 +876,259 @@ ZENITH_TEST(Animation, WU6_3_LayersRestoredFromAStreamAreAddressableById)
 	ZENITH_ASSERT_EQ_FLOAT(pxLoadedAim->GetWeight(), 0.25f, 0.001f,
 		"and it is the layer that carried the weight, not merely one with the right name");
 }
+
+//=============================================================================
+// WU-6.4 (D45) — HOT RELOAD AT CONTROLLER LEVEL
+//
+// ★ WHAT THESE EXIST TO CATCH. BuildFromControllerDef is a LOAD, and a load is
+// a demolition: every layer deleted and rebuilt at the file's weight, the
+// top-level machine replaced, every graph's playhead at zero. Running it against
+// an edited .zanimctrl while the game is playing therefore snaps the character
+// to its default state and throws away every live parameter value — which is
+// exactly the behaviour a cold load is supposed to have, so nothing anywhere
+// asserts and no gate could see it.
+//
+// ReloadFromControllerDef is the same rebuild with the playback carried across.
+// The two rows the CONTROLLER owns (the machine-level rows live in
+// Flux_AnimationStateMachine.Tests.inl) are the parameter VALUES — one live set
+// per controller since D42 — and the layer WEIGHTS, keyed by the stable layer id
+// WU-6.3 introduced. Each appears here in both directions.
+//
+// ★ EVERY Flux_AnimationLayer* TAKEN BEFORE A RELOAD IS DANGLING AFTER IT
+// (D43/D44), exactly as it is after a build. Every assertion below therefore
+// re-resolves through GetLayerById — the ids are read off the layers BEFORE the
+// reload and the pointers are never touched again.
+//=============================================================================
+
+namespace
+{
+	// A one-layer controller whose machine declares szParamName as a float. The
+	// smallest thing a .zanimctrl can round-trip that still carries a live value.
+	Flux_AnimationLayer* WU64_AddFloatParamLayer(Flux_AnimationController& xController,
+		const char* szLayerName, const char* szParamName)
+	{
+		Flux_AnimationLayer* pxLayer = xController.AddLayer(szLayerName);
+		Flux_AnimationStateMachine* pxSM = pxLayer->CreateStateMachine("SM");
+		pxSM->GetDef().GetParameterDeclarations().AddFloat(szParamName, 0.0f);
+		pxSM->AddState("Idle");
+		pxSM->SetDefaultState("Idle");
+		return pxLayer;
+	}
+}
+
+//=============================================================================
+// (9) A parameter matched on name AND type keeps the value gameplay put in it.
+//=============================================================================
+ZENITH_TEST(Animation, WU64_ReloadKeepsAParameterMatchedByNameAndType)
+{
+	Flux_AnimationController xController;
+	WU64_AddFloatParamLayer(xController, "Base", "Speed");
+
+	// Set through the CONTROLLER, which is the shape D42 exists for: a layered
+	// controller has a null m_pxStateMachine and one shared live set.
+	xController.SetFloat("Speed", 4.25f);
+	ZENITH_ASSERT_EQ_FLOAT(xController.GetFloat("Speed"), 4.25f, 1e-5f, "gameplay is running on 4.25");
+
+	Flux_AnimatorControllerDef xDef;
+	ZENITH_ASSERT_TRUE(xController.ExportControllerDef(xDef),
+		"a controller with no clips and no hand-set mask exports completely");
+
+	Flux_AnimatorControllerLayerDef* pxLayerDef = xDef.GetLayer(0u);
+	ZENITH_ASSERT_NOT_NULL(pxLayerDef, "the layer reached the def");
+	if (pxLayerDef == nullptr) { return; }
+
+	// ★ THE FILE CARRIES THE DECLARATION, NOT THE LIVE VALUE (D42), which is what
+	// makes this test able to tell "restored" from "re-seeded": the def says 0.
+	ZENITH_ASSERT_EQ_FLOAT(pxLayerDef->GetStateMachineDef().GetParameterDeclarations().GetFloat("Speed"),
+		0.0f, 1e-5f, "the exported DECLARATION carries the authored default, not the running value");
+
+	ZENITH_ASSERT_TRUE(xController.ReloadFromControllerDef(xDef, nullptr),
+		"the def names no clip and no mask, so the reload is complete");
+
+	ZENITH_ASSERT_EQ_FLOAT(xController.GetFloat("Speed"), 4.25f, 1e-5f,
+		"★ the live value survived a whole-controller rebuild — the def's 0.0 did not overwrite it");
+}
+
+//=============================================================================
+// (9b) THE FIRST NEGATIVE. A RENAMED parameter gets the new default, and the
+//      old name does not linger in the live set.
+//=============================================================================
+ZENITH_TEST(Animation, WU64_ReloadGivesARenamedParameterTheNewDefault)
+{
+	Flux_AnimationController xController;
+	WU64_AddFloatParamLayer(xController, "Base", "Speed");
+
+	xController.SetFloat("Speed", 4.25f);
+
+	Flux_AnimatorControllerDef xDef;
+	ZENITH_ASSERT_TRUE(xController.ExportControllerDef(xDef), "exported");
+	Flux_AnimatorControllerLayerDef* pxLayerDef = xDef.GetLayer(0u);
+	ZENITH_ASSERT_NOT_NULL(pxLayerDef, "the layer reached the def");
+	if (pxLayerDef == nullptr) { return; }
+
+	// The edit: "Speed" is renamed to "Velocity", with a different default.
+	Flux_AnimationParameters& xDecls = pxLayerDef->GetStateMachineDef().GetParameterDeclarations();
+	xDecls.RemoveParameter("Speed");
+	xDecls.AddFloat("Velocity", 9.5f);
+
+	ZENITH_ASSERT_TRUE(xController.ReloadFromControllerDef(xDef, nullptr), "the reload is complete");
+
+	// ★ THIS IS THE ONE A RE-SEED CANNOT DO. SeedInto never overwrites (D42), so
+	// seeding the new declarations on top of the old live set would leave "Speed"
+	// in it at 4.25 forever — under a name no condition reads and nothing removes.
+	ZENITH_ASSERT_FALSE(xController.GetParameters().HasParameter("Speed"),
+		"the old name is gone from the live set, not merely shadowed");
+	ZENITH_ASSERT_TRUE(xController.GetParameters().HasParameter("Velocity"), "and the new one is declared");
+	ZENITH_ASSERT_EQ_FLOAT(xController.GetFloat("Velocity"), 9.5f, 1e-5f,
+		"a rename is an EDIT: the new parameter starts at its authored default, not at 4.25");
+}
+
+//=============================================================================
+// (9c) THE SECOND NEGATIVE. A RETYPED parameter (float -> int) gets the new
+//      default. The value lives in a UNION, so a name-only match is not merely
+//      wrong here — it is unrelated.
+//=============================================================================
+ZENITH_TEST(Animation, WU64_ReloadGivesARetypedParameterTheNewDefault)
+{
+	Flux_AnimationController xController;
+	WU64_AddFloatParamLayer(xController, "Base", "Speed");
+
+	xController.SetFloat("Speed", 4.25f);
+
+	Flux_AnimatorControllerDef xDef;
+	ZENITH_ASSERT_TRUE(xController.ExportControllerDef(xDef), "exported");
+	Flux_AnimatorControllerLayerDef* pxLayerDef = xDef.GetLayer(0u);
+	ZENITH_ASSERT_NOT_NULL(pxLayerDef, "the layer reached the def");
+	if (pxLayerDef == nullptr) { return; }
+
+	Flux_AnimationParameters& xDecls = pxLayerDef->GetStateMachineDef().GetParameterDeclarations();
+	xDecls.RemoveParameter("Speed");
+	xDecls.AddInt("Speed", 7);
+
+	ZENITH_ASSERT_TRUE(xController.ReloadFromControllerDef(xDef, nullptr), "the reload is complete");
+
+	ZENITH_ASSERT_TRUE(xController.GetParameters().HasParameter("Speed"), "the name is still declared");
+	ZENITH_ASSERT_TRUE(xController.GetParameters().GetParameterType("Speed") == Flux_AnimationParameters::ParamType::Int,
+		"as the type the edit gave it");
+	ZENITH_ASSERT_EQ(xController.GetInt("Speed"), 7,
+		"★ and holding the new DEFAULT. Matching on name alone would have written 4.25f's bit pattern "
+		"into the int arm of the union and produced 1082130432");
+	ZENITH_ASSERT_EQ_FLOAT(xController.GetFloat("Speed"), 0.0f, 1e-5f,
+		"a float read of an int parameter is the type's default, which is how the getters already behave");
+}
+
+//=============================================================================
+// (10) A layer weight survives matched by ID, across a reorder that moves every
+//      index. This is what the stable id was introduced for (WU-6.3 / D43).
+//=============================================================================
+ZENITH_TEST(Animation, WU64_ReloadKeepsLayerWeightsByIdAcrossAReorder)
+{
+	Flux_AnimationController xController;
+	Flux_AnimationLayer* pxBase = xController.AddLayer("Base");
+	Flux_AnimationLayer* pxAim = xController.AddLayer("Aim");
+	ZENITH_ASSERT_NOT_NULL(pxBase, "AddLayer returned the base layer");
+	ZENITH_ASSERT_NOT_NULL(pxAim, "AddLayer returned the aim layer");
+	if (pxBase == nullptr || pxAim == nullptr) { return; }
+	pxBase->CreateStateMachine("BaseSM");
+	pxAim->CreateStateMachine("AimSM");
+
+	const u_int uBaseId = pxBase->GetLayerId();
+	const u_int uAimId = pxAim->GetLayerId();
+
+	Flux_AnimatorControllerDef xDef;
+	ZENITH_ASSERT_TRUE(xController.ExportControllerDef(xDef), "exported");
+	ZENITH_ASSERT_EQ(xDef.GetLayerCount(), 2u, "both layers reached the def");
+
+	// ★ THE LIVE WEIGHTS ARE SET *AFTER* THE EXPORT, so the def says 1.0 for both
+	// and the only way these numbers can come back is by being restored. A fade
+	// in progress is precisely the state an author must not destroy by saving.
+	pxBase->SetWeight(0.8f);
+	pxAim->SetWeight(0.3f);
+
+	// The edit reorders: Base is dropped off the front and re-stated at the back,
+	// keeping its id — an editor drag, or a layer inserted below an existing one.
+	xDef.RemoveLayer(0u);
+	Flux_AnimatorControllerLayerDef* pxMovedBase = xDef.AddLayer("Base");
+	ZENITH_ASSERT_NOT_NULL(pxMovedBase, "the def accepted the re-added base layer");
+	if (pxMovedBase == nullptr) { return; }
+	xDef.AssignLayerId(*pxMovedBase, uBaseId);
+
+	ZENITH_ASSERT_TRUE(xController.ReloadFromControllerDef(xDef, nullptr), "the reordered def reloaded completely");
+	ZENITH_ASSERT_EQ(xController.GetLayerCount(), 2u, "both layers came back");
+
+	// pxBase / pxAim are freed by now — this is the D44 rule, and it applies to a
+	// reload exactly as it applies to a build.
+	const Flux_AnimationLayer* pxIndexZero = xController.GetLayer(0u);
+	ZENITH_ASSERT_NOT_NULL(pxIndexZero, "layer 0 exists");
+	if (pxIndexZero == nullptr) { return; }
+	ZENITH_ASSERT_STREQ(pxIndexZero->GetName().c_str(), "Aim",
+		"the reorder really did move the indices — otherwise 'by id' proves nothing here");
+
+	const Flux_AnimationLayer* pxAimAfter = xController.GetLayerById(uAimId);
+	ZENITH_ASSERT_NOT_NULL(pxAimAfter, "the aim layer's id still resolves");
+	if (pxAimAfter == nullptr) { return; }
+	ZENITH_ASSERT_EQ_FLOAT(pxAimAfter->GetWeight(), 0.3f, 1e-5f,
+		"★ the live weight followed the ID. The def says 1.0, so a build would have snapped the fade shut");
+
+	const Flux_AnimationLayer* pxBaseAfter = xController.GetLayerById(uBaseId);
+	ZENITH_ASSERT_NOT_NULL(pxBaseAfter, "the base layer's id still resolves");
+	if (pxBaseAfter == nullptr) { return; }
+	ZENITH_ASSERT_STREQ(pxBaseAfter->GetName().c_str(), "Base", "and addresses the layer it named before");
+	ZENITH_ASSERT_EQ_FLOAT(pxBaseAfter->GetWeight(), 0.8f, 1e-5f,
+		"...even though that layer moved from index 0 to index 1");
+}
+
+//=============================================================================
+// (10b) THE NEGATIVE, both halves of it. A layer the edit DELETED is gone and
+//       its snapshot is dropped; a layer the edit ADDED carries the def's
+//       weight, because no snapshot names its id.
+//=============================================================================
+ZENITH_TEST(Animation, WU64_ReloadDropsARemovedLayerAndGivesANewOneTheDefsWeight)
+{
+	Flux_AnimationController xController;
+	Flux_AnimationLayer* pxBase = xController.AddLayer("Base");
+	Flux_AnimationLayer* pxAim = xController.AddLayer("Aim");
+	ZENITH_ASSERT_NOT_NULL(pxBase, "AddLayer returned the base layer");
+	ZENITH_ASSERT_NOT_NULL(pxAim, "AddLayer returned the aim layer");
+	if (pxBase == nullptr || pxAim == nullptr) { return; }
+	pxBase->CreateStateMachine("BaseSM");
+	pxAim->CreateStateMachine("AimSM");
+
+	const u_int uBaseId = pxBase->GetLayerId();
+	const u_int uAimId = pxAim->GetLayerId();
+
+	Flux_AnimatorControllerDef xDef;
+	ZENITH_ASSERT_TRUE(xController.ExportControllerDef(xDef), "exported");
+
+	pxBase->SetWeight(0.8f);
+	pxAim->SetWeight(0.3f);
+
+	// The edit deletes Aim (def index 1) and adds Face at a weight of its own.
+	xDef.RemoveLayer(1u);
+	Flux_AnimatorControllerLayerDef* pxFaceDef = xDef.AddLayer("Face");
+	ZENITH_ASSERT_NOT_NULL(pxFaceDef, "the def accepted the new layer");
+	if (pxFaceDef == nullptr) { return; }
+	pxFaceDef->SetWeight(0.6f);
+	const u_int uFaceId = pxFaceDef->GetLayerId();
+	ZENITH_ASSERT_NE(uFaceId, uAimId,
+		"the def's counter never re-issues a removed layer's id, which is what makes the drop below unambiguous");
+
+	ZENITH_ASSERT_TRUE(xController.ReloadFromControllerDef(xDef, nullptr), "the reload is complete");
+	ZENITH_ASSERT_EQ(xController.GetLayerCount(), 2u, "Base and Face — Aim is gone");
+
+	ZENITH_ASSERT_NULL(xController.GetLayerById(uAimId),
+		"★ a layer the edit deleted is GONE, and its snapshot is dropped rather than applied to a stranger");
+
+	const Flux_AnimationLayer* pxFaceAfter = xController.GetLayerById(uFaceId);
+	ZENITH_ASSERT_NOT_NULL(pxFaceAfter, "the new layer resolves by the id the def minted");
+	if (pxFaceAfter == nullptr) { return; }
+	ZENITH_ASSERT_STREQ(pxFaceAfter->GetName().c_str(), "Face", "and it is the new layer");
+	ZENITH_ASSERT_EQ_FLOAT(pxFaceAfter->GetWeight(), 0.6f, 1e-5f,
+		"★ a NEW id carries the DEF's weight — no snapshot names it, so nothing restores over it");
+
+	const Flux_AnimationLayer* pxBaseAfter = xController.GetLayerById(uBaseId);
+	ZENITH_ASSERT_NOT_NULL(pxBaseAfter, "the surviving layer still resolves");
+	if (pxBaseAfter == nullptr) { return; }
+	ZENITH_ASSERT_EQ_FLOAT(pxBaseAfter->GetWeight(), 0.8f, 1e-5f,
+		"and it kept its live weight while its neighbour was deleted out from under it");
+}

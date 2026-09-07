@@ -79,6 +79,100 @@ public:
 	const Flux_AnimationStateMachineDef& GetDef() const { return m_xDef; }
 
 	//=========================================================================
+	// HOT RELOAD (WU-6.4 / D45)
+	//
+	// ★ BuildFromDef IS A DEMOLITION, AND THAT IS THE WHOLE PROBLEM. It calls
+	// ResetRuntime and then CopyFrom, so a machine rebuilt from an edited def
+	// comes back with NO current state, NO transition in flight and every blend
+	// tree's playhead at zero — the character snaps to the default state at
+	// frame 0 the instant an author touches an unrelated transition's duration.
+	// Reloading is the same rebuild with the playback put back afterwards.
+	//
+	// ★ THE SNAPSHOT HOLDS NAMES AND FRACTIONS, NEVER POINTERS. Every runtime
+	// pointer on this object (m_pxCurrentState, m_pxTransitionTargetState) names
+	// a Flux_AnimationState that CopyFrom is about to delete, so a snapshot
+	// carrying them would be a snapshot of freed memory by the time it was used.
+	// A NAME is the only identity that spans the two defs, which is also what
+	// makes "a renamed state does not survive" fall out of the design rather
+	// than needing a rule of its own.
+	//
+	// ★ NOT A SYNCHRONISATION POINT, AND IT DOES NOT CREATE ONE (the same rule
+	// Flux_AnimationClip::ReplaceContentsFrom carries, D27). Capture, rebuild
+	// and restore are three plain non-atomic writes over live data; THE CALLER
+	// GUARANTEES NO ANIMATION UPDATE IS IN FLIGHT. The editor calls this from
+	// the main thread between frames.
+	//=========================================================================
+
+	// One instance's playback, in terms that outlive the def it points into.
+	struct RuntimeSnapshot
+	{
+		// Empty when the machine had not entered a state yet (nothing has ticked
+		// it) — a restore then does nothing and the first Update enters the new
+		// def's default, which is exactly right.
+		std::string m_strCurrentStateName;
+		float m_fCurrentNormalizedTime = 0.0f;
+
+		// ★ AN ACTIVE TRANSITION IS CANCELLED, NOT RESUMED, and it is cancelled
+		// ONTO ITS TARGET (D45). Resuming would need the source pose snapshot
+		// the Flux_CrossFadeTransition is holding, which is a pose over a
+		// skeleton the reload may have changed the state set of; and landing on
+		// the SOURCE would run the transition's conditions again from scratch,
+		// re-firing a one-shot the player has already spent. The target is where
+		// the machine was going, so that is where it arrives.
+		std::string m_strTransitionTargetName;
+		float m_fTransitionTargetNormalizedTime = 0.0f;
+		bool m_bTransitioning = false;
+	};
+
+	// Read the playback out. Pure — changes nothing.
+	RuntimeSnapshot CaptureRuntimeSnapshot() const;
+
+	// Put it back onto whatever this machine's def now holds. Returns TRUE when
+	// the machine landed on the state the snapshot named (the current state, or
+	// the transition's target when one was in flight) and FALSE when that state
+	// is gone and it fell back to the new def's default state at time 0.
+	//
+	// ★ A SUB-STATE MACHINE'S OWN CURRENT STATE IS NOT PRESERVED. Entering a
+	// container state re-enters its child at the child's default (SetState), and
+	// the child instance lives INSIDE the def CopyFrom just replaced, so there
+	// is no object to restore onto. Documented rather than silently partial.
+	bool RestoreRuntimeSnapshot(const RuntimeSnapshot& xSnapshot);
+
+	// Capture → BuildFromDef → restore, for a caller holding ONE machine.
+	//
+	// ★ THE CONTROLLER-LEVEL RELOAD CANNOT CALL THIS, and the reason is worth
+	// stating: Flux_AnimationController::BuildFromControllerDef DELETES every
+	// layer and therefore every layer's machine, so there is no `this` to reload
+	// — it captures with CaptureRuntimeSnapshot before the rebuild and restores
+	// onto the machines the rebuild created. Same two primitives, applied across
+	// an object-identity boundary this verb does not have to cross.
+	//
+	// Returns what RestoreRuntimeSnapshot returns. ★ NOTE THE ASYMMETRY WITH
+	// Flux_AnimationController::ReloadFromControllerDef, which returns the BUILD
+	// contract (a dangling clip/mask) instead: BuildFromDef has no failure mode
+	// to report, so this bool reports the one thing a caller here can act on.
+	bool ReloadFromDef(const Flux_AnimationStateMachineDef& xNewDef,
+		Flux_AnimationClipCollection* pxClipCollection = nullptr);
+
+	// D45's PARAMETER rule, as a pure function over two sets, because it is
+	// needed at BOTH levels: here for a standalone machine (which owns its
+	// declarations) and on Flux_AnimationController for the shared live set
+	// (D42). Copy xPrevious's value onto every parameter xLive declares under
+	// the SAME NAME AND THE SAME TYPE; leave every other one at the value it
+	// already holds, which after a rebuild is the new def's DEFAULT.
+	//
+	// ★ NAME **AND** TYPE, so a float "Speed" retyped to an int does not get a
+	// bit-reinterpreted 4.0f — the union makes that silent, and the value that
+	// comes out the far side is not merely wrong but unrelated. A renamed
+	// parameter is simply a name xLive does not carry.
+	//
+	// ★ A PENDING TRIGGER SURVIVES. A trigger is an input the game has already
+	// delivered and not yet spent; dropping it across a reload swallows a jump.
+	// A trigger that was NOT pending is left alone (it is never un-set here).
+	static void RestoreMatchedParameterValues(const Flux_AnimationParameters& xPrevious,
+		Flux_AnimationParameters& xLive);
+
+	//=========================================================================
 	// Imperative authoring — forwards into the owned def
 	//=========================================================================
 
@@ -180,6 +274,31 @@ private:
 	// Drop every pointer into the def and cancel any transition in flight. Called
 	// whenever the def underneath is replaced.
 	void ResetRuntime();
+
+	// WU-6.4. The normalized time a state is showing, read from exactly where
+	// GetCurrentStateInfo reads it — the ROOT of the state's blend tree. A
+	// container state has no tree and therefore no time of its own; it answers 0.
+	static float ReadStateNormalizedTime(const Flux_AnimationState* pxState);
+
+	// WU-6.4. The inverse, and there was no verb for it: the only time SETTER in
+	// the whole animation system is Flux_BlendTreeNode_Clip::SetCurrentTimestamp,
+	// in SECONDS, on a leaf. Flux_BlendTreeNode exposes GetNormalizedTime and no
+	// setter at any level, so putting a playhead back means walking down to the
+	// leaves and converting per clip.
+	//
+	// ★ EVERY LEAF IS PUT AT THE SAME NORMALIZED TIME, which is the only reading
+	// that inverts GetNormalizedTime for all four composite shapes: Blend mixes
+	// its children's times, the two blend spaces report the NEAREST point's, and
+	// Select reports the selected child's — set them all equal and each of those
+	// returns that value. A per-leaf restore would need a per-leaf snapshot, and
+	// the leaf set is exactly what an edit is allowed to change.
+	//
+	// ★ DISPATCHED ON GetNodeTypeName(), NOT ON RTTI, because that string is
+	// already this hierarchy's discriminator — Flux_BlendTreeNode::
+	// CreateFromTypeName reads the same values back out of a stream. The list
+	// below is the whole of that factory; a node type added without a case here
+	// keeps the zero its Reset left, rather than being handed a wrong time.
+	static void ApplyNormalizedTimeToTree(Flux_BlendTreeNode* pxNode, float fNormalizedTime);
 
 	// WU-5A: one state's spans — its blend tree's, or its sub-state machine's.
 	static void CollectStateEventSpans(Flux_AnimationState* pxState, Zenith_Vector<Flux_ClipEventSpan>* pxOutSpans);
