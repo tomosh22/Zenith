@@ -11,6 +11,7 @@
 #include "AssetHandling/Zenith_MeshAsset.h"             // Stage 5: bind-pose vertex arrays for the skinned-pose store
 #include "Flux/Skybox/Flux_SkyboxImpl.h"
 #include "Flux/Terrain/Flux_TerrainImpl.h"
+#include "Flux/RenderViews/Flux_ViewPassNames.h"        // per-view pass-name pool (+ its force-link anchor)
 #ifdef ZENITH_WINDOWS
 #include "Flux/Slang/Flux_SlangCompiler.h"
 #endif
@@ -318,6 +319,13 @@ Flux_PipelineSpecification Flux_PipelineHelper::CreateFullscreenSpecMRT(
 void Flux_RendererImpl::EarlyInitialise()
 {
 	ZENITH_PROFILE_SCOPE("Boot Flux EarlyInitialise");
+
+	// Anchors the per-view pass-name TU (and its ZENITH_TEST registrars) against
+	// /OPT:REF. Nothing else references Flux_ViewPassNames yet — the per-view
+	// AddPass call sites move onto it in later units — so without a CALL (a
+	// declaration anchors nothing) the linker drops the object file whole.
+	static const bool ls_bViewPassNamesLinked = Flux_ViewPassNames_ForceLink();
+	(void)ls_bViewPassNamesLinked;
 
 	// Flux_PerFrame must initialise BEFORE backend Initialise so backends can
 	// register their begin/end-frame callbacks during their own setup. The
