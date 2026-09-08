@@ -323,22 +323,29 @@ void Flux_SSAOImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	const Flux_SSAOSelection xSelection = GetLiveSSAOSelection();
 
 	// Main view at swapchain dims (byte-equivalent to the historical
-	// single-view path), then the preview view at its fixed 512² dims — only
-	// while active, so its transients exist exactly when its passes do (the
-	// graph's unused-transient validation demands this).
+	// single-view path), then the preview view at its own dims — only while
+	// active, so its transients exist exactly when its passes do (the graph's
+	// unused-transient validation demands this). Both come from GetViewSetupDims,
+	// the ONE derivation SetupTransients sized each view's G-buffer/depth with, so
+	// these passes can never disagree with the targets they read; the preview slot
+	// is active inside this branch, hence its dims are staged.
+	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
 	SetupViewPasses(
 		xGraph,
 		kuFluxViewSlotMain,
-		g_xEngine.FluxGraphics().GetRenderWidth(),
-		g_xEngine.FluxGraphics().GetRenderHeight(),
+		xGraphics.GetRenderWidth(),
+		xGraphics.GetRenderHeight(),
 		xSelection);
-	if (g_xEngine.FluxGraphics().RenderViews().IsViewActive(kuFluxViewSlotPreview))
+	if (xGraphics.RenderViews().IsViewActive(kuFluxViewSlotPreview))
+	{
+		const Zenith_Maths::UVector2 xPreviewDims = xGraphics.GetViewSetupDims(kuFluxViewSlotPreview);
 		SetupViewPasses(
 			xGraph,
 			kuFluxViewSlotPreview,
-			kuFLUX_PREVIEW_VIEW_SIZE,
-			kuFLUX_PREVIEW_VIEW_SIZE,
+			xPreviewDims.x,
+			xPreviewDims.y,
 			xSelection);
+	}
 }
 
 void Flux_SSAOImpl::ApplySelectionToGraph(Flux_RenderGraph& /*xGraph*/)

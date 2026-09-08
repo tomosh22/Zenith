@@ -223,12 +223,19 @@ void Flux_HiZImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	m_pxGraph = &xGraph;
 
 	// Main view at swapchain dims (byte-equivalent to the historical
-	// single-view path), then the preview view at its fixed 512² dims — only
-	// while active, so its transients exist exactly when its passes do (the
-	// graph's unused-transient validation demands this).
-	SetupViewPasses(xGraph, kuFluxViewSlotMain, g_xEngine.FluxGraphics().GetRenderWidth(), g_xEngine.FluxGraphics().GetRenderHeight());
-	if (g_xEngine.FluxGraphics().RenderViews().IsViewActive(kuFluxViewSlotPreview))
-		SetupViewPasses(xGraph, kuFluxViewSlotPreview, kuFLUX_PREVIEW_VIEW_SIZE, kuFLUX_PREVIEW_VIEW_SIZE);
+	// single-view path), then the preview view at its own dims — only while
+	// active, so its transients exist exactly when its passes do (the graph's
+	// unused-transient validation demands this). Both come from GetViewSetupDims,
+	// the ONE derivation SetupTransients sized each view's depth buffer with, so
+	// the HiZ chain can never disagree with the depth it reduces; the preview slot
+	// is active inside this branch, hence its dims are staged.
+	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
+	SetupViewPasses(xGraph, kuFluxViewSlotMain, xGraphics.GetRenderWidth(), xGraphics.GetRenderHeight());
+	if (xGraphics.RenderViews().IsViewActive(kuFluxViewSlotPreview))
+	{
+		const Zenith_Maths::UVector2 xPreviewDims = xGraphics.GetViewSetupDims(kuFluxViewSlotPreview);
+		SetupViewPasses(xGraph, kuFluxViewSlotPreview, xPreviewDims.x, xPreviewDims.y);
+	}
 }
 
 Flux_RenderAttachment& Flux_HiZImpl::GetHiZAttachment(u_int uViewSlot)

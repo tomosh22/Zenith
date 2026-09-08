@@ -573,9 +573,12 @@ void Flux_DecalsImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// references it, and ValidateOrphanedReads sees an enabled writer.
 	if (xGraphics.RenderViews().IsViewActive(kuFluxViewSlotPreview))
 	{
+		// Same derivation SetupTransients sized the preview normals MRT with — the
+		// clone is a copy of it, so a mismatch would be a silent rescale.
+		const Zenith_Maths::UVector2 xPreviewDims = xGraphics.GetViewSetupDims(kuFluxViewSlotPreview);
 		Flux_TransientTextureDesc xPreviewDesc;
-		xPreviewDesc.m_uWidth       = kuFLUX_PREVIEW_VIEW_SIZE;
-		xPreviewDesc.m_uHeight      = kuFLUX_PREVIEW_VIEW_SIZE;
+		xPreviewDesc.m_uWidth       = xPreviewDims.x;
+		xPreviewDesc.m_uHeight      = xPreviewDims.y;
 		xPreviewDesc.m_eFormat      = k_eNormalsCopyFormat;
 		xPreviewDesc.m_uMemoryFlags = (1u << MEMORY_FLAGS__SHADER_READ);
 		m_xPreviewNormalsCopyHandle = xGraph.CreateTransient(xPreviewDesc);

@@ -37,6 +37,36 @@
 // list-set on the static array now live in a small initialiser routine
 // called from Flux_Graphics::Initialise.
 
+// The view slots that own a PERSISTENT preview LDR (see GetPreviewLDR). Both the
+// Initialise builder and the Shutdown release walk THIS list, so a slot can never
+// be built without a matching destroy. Slot 6 is spelled `6u` rather than named
+// because D2-a is the unit that adds kuFluxViewSlotPreviewAnim = 6 to
+// Flux_RenderViews.h; its LDR is built here AHEAD of that so the animation panel
+// can register it, and until D1-e/D2-a land NOTHING WRITES IT — that is expected,
+// not a bug. An unwritten persistent attachment simply samples as its cleared
+// contents; it is not a graph transient, so the unused-transient validation never
+// sees it.
+static constexpr u_int kuFLUX_PREVIEW_LDR_SLOTS[]  = { kuFluxViewSlotPreview, 6u };
+// Parallel to the slot list — the backend's only handle on which LDR is which in a
+// capture, so each name carries its SLOT rather than its role (slot 6 has no role
+// until D1-e wires one).
+static const char* const kaszFLUX_PREVIEW_LDR_NAMES[] = { "Preview View LDR 5", "Preview View LDR 6" };
+static constexpr u_int kuFLUX_NUM_PREVIEW_LDR_SLOTS = sizeof(kuFLUX_PREVIEW_LDR_SLOTS) / sizeof(kuFLUX_PREVIEW_LDR_SLOTS[0]);
+static_assert(sizeof(kaszFLUX_PREVIEW_LDR_NAMES) / sizeof(kaszFLUX_PREVIEW_LDR_NAMES[0]) == kuFLUX_NUM_PREVIEW_LDR_SLOTS,
+	"one debug name per preview-LDR slot");
+static_assert(kuFLUX_PREVIEW_LDR_SLOTS[kuFLUX_NUM_PREVIEW_LDR_SLOTS - 1u] < FLUX_MAX_RENDER_VIEWS,
+	"every preview-LDR slot must index m_axPreviewLDR[FLUX_MAX_RENDER_VIEWS]");
+
+// True iff the slot owns one of the persistent preview LDRs above.
+static bool Flux_SlotHasPreviewLDR(u_int uSlot)
+{
+	for (u_int u = 0; u < kuFLUX_NUM_PREVIEW_LDR_SLOTS; u++)
+	{
+		if (kuFLUX_PREVIEW_LDR_SLOTS[u] == uSlot) { return true; }
+	}
+	return false;
+}
+
 Zenith_Maths::Matrix4 Flux_GraphicsImpl::GetViewProjMatrix()    { return m_xFrameConstants.m_xViewProjMat; }
 Zenith_Maths::Matrix4 Flux_GraphicsImpl::GetInvViewProjMatrix() { return m_xFrameConstants.m_xInvViewProjMat; }
 
@@ -210,17 +240,29 @@ void Flux_GraphicsImpl::Initialise()
 		xVulkanMemory.InitialiseDynamicConstantBuffer(nullptr, sizeof(ViewConstants), m_axViewConstantsBuffers[u]);
 	}
 
-	// Persistent preview-view LDR output — survives graph rebuilds so the SRV
-	// the editor registers with ImGui stays valid (transients would dangle it).
-	// FINAL_RT_FORMAT so the HDR feature's existing tonemap pipeline (built
-	// against the final-RT format) can render straight into it.
+	// Persistent preview-view LDR outputs, one per preview-class slot — they
+	// survive graph rebuilds so the SRV the editor registers with ImGui stays valid
+	// (transients would dangle it). FINAL_RT_FORMAT so the HDR feature's existing
+	// tonemap pipeline (built against the final-RT format) can render straight in.
+	//
+	// ★ EACH ENTRY IS BUILT EXACTLY ONCE HERE AND IS NEVER REBUILT. Both editor
+	// registrations are ONE-SHOT LATCHES over a descriptor captured from the
+	// attachment's image view — Zenith_EditorPanel_Animation_Render.cpp's
+	// m_bPreviewImageRegistered and Zenith_EditorPanel_MaterialEditor.cpp's
+	// ls_bPreviewHandleRegistered — and BuildColour DESTROYS the previous views. A
+	// rebuild (on resize, on a view (de)activation, on anything) would leave ImGui
+	// sampling a dead view for the rest of the run, with nothing to say so. The
+	// dims are the fixed kuFLUX_PREVIEW_VIEW_SIZE² precisely so there is never a
+	// reason to rebuild; the per-view TRANSIENTS follow GetViewSetupDims instead.
+	for (u_int u = 0; u < kuFLUX_NUM_PREVIEW_LDR_SLOTS; u++)
 	{
+		const u_int uSlot = kuFLUX_PREVIEW_LDR_SLOTS[u];
 		Flux_RenderAttachmentBuilder xBuilder;
 		xBuilder.m_uWidth       = kuFLUX_PREVIEW_VIEW_SIZE;
 		xBuilder.m_uHeight      = kuFLUX_PREVIEW_VIEW_SIZE;
 		xBuilder.m_uMemoryFlags = 1u << MEMORY_FLAGS__SHADER_READ;
 		xBuilder.m_eFormat      = FINAL_RT_FORMAT;
-		xBuilder.BuildColour(m_xPreviewLDR, "Preview View LDR");
+		xBuilder.BuildColour(m_axPreviewLDR[uSlot], kaszFLUX_PREVIEW_LDR_NAMES[u]);
 	}
 
 	// Render targets are graph-owned transients, created in SetupTransients.
@@ -598,8 +640,6 @@ void Flux_GraphicsImpl::SetupTransients(Flux_RenderGraph& xGraph)
 	m_xRenderDimsThisBuild = m_bUpscalingActive
 		? Flux_TAAComputeRenderDims(uOutputWidth, uOutputHeight, m_fRenderScaleActive)
 		: Zenith_Maths::UVector2(uOutputWidth, uOutputHeight);
-	const u_int uRenderWidth  = m_xRenderDimsThisBuild.x;
-	const u_int uRenderHeight = m_xRenderDimsThisBuild.y;
 
 	// G-buffer MRTs / depth / HDR scene are created PER ACTIVE FULL-PIPELINE VIEW
 	// (slot 0 = main camera at RENDER dims — below output when upscaling; the preview
@@ -611,10 +651,13 @@ void Flux_GraphicsImpl::SetupTransients(Flux_RenderGraph& xGraph)
 	{
 		const Flux_RenderView& xView = m_xRenderViews.View(uView);
 		if (!xView.m_bActive || !xView.m_bFullPipeline) { continue; }
-		const u_int uViewW = (uView == kuFluxViewSlotMain) ? uRenderWidth  : xView.m_xTargetDims.x;
-		const u_int uViewH = (uView == kuFluxViewSlotMain) ? uRenderHeight : xView.m_xTargetDims.y;
-		Zenith_Assert(uViewW > 0 && uViewH > 0,
-			"Flux_Graphics::SetupTransients: view slot %u has zero target dims", uView);
+		// ONE derivation of a view's dims, shared with every per-view feature setup
+		// (see GetViewSetupDims) — which also carries the zero-dims assert this loop
+		// used to spell out inline. Slot 0 resolves to the render dims just latched
+		// above; the rest to the owner-staged m_xTargetDims.
+		const Zenith_Maths::UVector2 xViewDims = GetViewSetupDims(uView);
+		const u_int uViewW = xViewDims.x;
+		const u_int uViewH = xViewDims.y;
 
 		// Core MRT colour attachments (0..CORE-1, always present). The optional
 		// velocity MRT (MRT_INDEX_VELOCITY) is created separately below — main view
@@ -668,7 +711,7 @@ void Flux_GraphicsImpl::SetupTransients(Flux_RenderGraph& xGraph)
 	}
 
 	// Final render target — main view only (the preview tonemaps into the
-	// persistent m_xPreviewLDR instead). Stays at OUTPUT dims: the TAA resolve upscales
+	// persistent m_axPreviewLDR entry instead). Stays at OUTPUT dims: the TAA resolve upscales
 	// into it and the tonemap / UI / present all operate at full output resolution.
 	{
 		Flux_TransientTextureDesc xDesc;
@@ -834,6 +877,19 @@ Flux_RenderAttachment& Flux_GraphicsImpl::GetFinalRenderTarget()
 	return m_pxGraph->GetTransientAttachment(m_xFinalRTHandle);
 }
 
+Flux_RenderAttachment& Flux_GraphicsImpl::GetPreviewLDR(u_int uViewSlot)
+{
+	// Only the preview-class slots have a BUILT entry; every other element of
+	// m_axPreviewLDR is default-constructed, so handing one out would fail a bind
+	// validity check somewhere far from the mistake. Zenith_Assert logs and breaks
+	// but does NOT return, so the fall-through still has to produce a usable
+	// reference — the material-preview slot's, the same shape every other per-slot
+	// getter in this file uses (see GetMRTAttachment).
+	const bool bHasLDR = Flux_SlotHasPreviewLDR(uViewSlot);
+	Zenith_Assert(bHasLDR, "Flux_Graphics::GetPreviewLDR: view slot %u owns no persistent LDR (preview-class slots only)", uViewSlot);
+	return m_axPreviewLDR[bHasLDR ? uViewSlot : kuFluxViewSlotPreview];
+}
+
 // --- Temporal upscaling: the render/output resolution split (Stage 5) ---------
 Zenith_Maths::UVector2 Flux_GraphicsImpl::GetOutputDims() const
 {
@@ -849,6 +905,30 @@ Zenith_Maths::UVector2 Flux_GraphicsImpl::GetRenderDims() const
 	// dims THIS frame's graph was built at, so a consumer running during Execute (the TAA resolve CB,
 	// HiZ/SSAO/SSR SetupViewPasses) matches the live transient sizes.
 	return m_bUpscalingActive ? m_xRenderDimsThisBuild : GetOutputDims();
+}
+
+Zenith_Maths::UVector2 Flux_GraphicsImpl::GetViewSetupDims(u_int uSlot) const
+{
+	Zenith_Assert(uSlot < FLUX_MAX_RENDER_VIEWS, "Flux_Graphics::GetViewSetupDims: view slot %u out of range", uSlot);
+	if (uSlot >= FLUX_MAX_RENDER_VIEWS) { return GetRenderDims(); }
+
+	// Slot 0 goes through GetRenderDims() rather than the registry so the MAIN view
+	// keeps the temporal-upscaling render-scale latch (m_xRenderDimsThisBuild while
+	// active, the swapchain dims verbatim otherwise) — the registry's slot-0
+	// m_xTargetDims is not staged by anyone. Every other slot is sized by its OWNER,
+	// which stages m_xTargetDims before requesting the rebuild that lands here; the
+	// preview owners stage exactly kuFLUX_PREVIEW_VIEW_SIZE².
+	const Zenith_Maths::UVector2 xDims = (uSlot == kuFluxViewSlotMain)
+		? GetRenderDims()
+		: m_xRenderViews.View(uSlot).m_xTargetDims;
+
+	// Zero dims mean an owner activated a view without staging its size — every
+	// consumer downstream would create a 0×0 transient or divide by zero, far from
+	// the mistake. (This absorbed the inline assert SetupTransients' loop used to
+	// carry, so the check now covers the feature setups too.)
+	Zenith_Assert(xDims.x > 0u && xDims.y > 0u,
+		"Flux_Graphics::GetViewSetupDims: view slot %u has zero target dims", uSlot);
+	return xDims;
 }
 
 Zenith_Maths::UVector2 Flux_GraphicsImpl::GetPendingRenderDims() const
@@ -938,11 +1018,19 @@ void Flux_GraphicsImpl::Shutdown()
 		xVulkanMemory.DestroyDynamicConstantBuffer(m_axViewConstantsBuffers[u]);
 	}
 
-	// Destroy the persistent preview-view LDR.
-	Flux_RenderAttachmentBuilder::Destroy(m_xPreviewLDR);
+	// Destroy the persistent preview-view LDRs. This walks the SAME slot list the
+	// Initialise builder walked — the singular attachment had a matching release
+	// and the array must too, or every slot past the first leaks its VRAM and its
+	// image views on shutdown with nothing to report it.
+	for (u_int u = 0; u < kuFLUX_NUM_PREVIEW_LDR_SLOTS; u++)
+	{
+		Flux_RenderAttachmentBuilder::Destroy(m_axPreviewLDR[kuFLUX_PREVIEW_LDR_SLOTS[u]]);
+	}
 
 	// Destroy the GPU material table buffer.
 	m_xMaterialTable.Shutdown();
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Graphics shut down");
 }
+
+#include "Flux/Flux_Graphics.Tests.inl"

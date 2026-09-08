@@ -620,8 +620,8 @@ static void ExecutePreviewTonemap(Flux_CommandBuffer* pxCommandList, void*)
 	pxCommandList->DrawIndexed(6);
 }
 
-// No-op record: the .Reads(m_xPreviewLDR) declaration makes the graph leave the
-// persistent preview LDR in SHADER_READ_ONLY for the editor's ImGui sample
+// No-op record: the .Reads(GetPreviewLDR(slot)) declaration makes the graph leave
+// that slot's persistent preview LDR in SHADER_READ_ONLY for the editor's ImGui sample
 // (mirrors the Present feature's final-RT layout-transition pass).
 static void ExecutePreviewLDRTransition(Flux_CommandBuffer*, void*)
 {
@@ -745,19 +745,23 @@ void Flux_HDRImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
 	if (xGraphics.RenderViews().IsViewActive(kuFluxViewSlotPreview))
 	{
-		SetupBloomViewPasses(xGraph, kuFluxViewSlotPreview, kuFLUX_PREVIEW_VIEW_SIZE, kuFLUX_PREVIEW_VIEW_SIZE);
+		// The view's dims come from the same derivation SetupTransients sized the
+		// preview HDR scene target with, so the bloom chain can never disagree with
+		// the target it reads.
+		const Zenith_Maths::UVector2 xPreviewDims = xGraphics.GetViewSetupDims(kuFluxViewSlotPreview);
+		SetupBloomViewPasses(xGraph, kuFluxViewSlotPreview, xPreviewDims.x, xPreviewDims.y);
 
 		xGraph.AddPass("HDR_ToneMapping (Preview)", ExecutePreviewTonemap)
 			.View(kuFluxViewSlotPreview)
 			.ClearTargets()
 			.Reads         (xGraphics.GetHDRSceneTarget(kuFluxViewSlotPreview),        RESOURCE_ACCESS_READ_SRV)
-			.Writes        (xGraphics.GetPreviewLDR(),                                 RESOURCE_ACCESS_WRITE_RTV)
+			.Writes        (xGraphics.GetPreviewLDR(kuFluxViewSlotPreview),            RESOURCE_ACCESS_WRITE_RTV)
 			.ReadsBuffer   (m_xHistogramBuffer.GetBuffer(),                            RESOURCE_ACCESS_READWRITE_UAV)
 			.ReadsBuffer   (m_xExposureBuffer.GetBuffer(),                             RESOURCE_ACCESS_READWRITE_UAV)
 			.ReadsTransient(m_aaxBloomChainHandles[kuFluxViewSlotPreview][0],          RESOURCE_ACCESS_READ_SRV);
 
 		xGraph.AddPass("Preview LDR Transition", ExecutePreviewLDRTransition)
-			.Reads(xGraphics.GetPreviewLDR(), RESOURCE_ACCESS_READ_SRV);
+			.Reads(xGraphics.GetPreviewLDR(kuFluxViewSlotPreview), RESOURCE_ACCESS_READ_SRV);
 	}
 }
 

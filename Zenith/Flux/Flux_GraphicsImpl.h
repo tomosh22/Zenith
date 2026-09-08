@@ -121,6 +121,16 @@ public:
 	Zenith_Maths::UVector2 GetPendingRenderDims() const;
 	u_int GetRenderWidth()  const { return GetRenderDims().x; }
 	u_int GetRenderHeight() const { return GetRenderDims().y; }
+	// The dims ONE view slot's per-view chain is set up at — the single derivation
+	// every consumer shares. Slot 0 returns GetRenderDims(), so the main view keeps
+	// the TAA render-scale latch; every other slot returns the registry's
+	// m_xTargetDims, which the slot's owner stages before requesting the rebuild
+	// that re-runs SetupTransients. SetupTransients itself uses this for its
+	// transient loop, and each per-view feature setup (SSR / SSGI / SSAO / HiZ /
+	// the HDR bloom chain / the Decals normals copy) uses it for the preview slot —
+	// so a view can never be sized two different ways within one graph build.
+	// Asserts the slot is in range and that the resolved dims are non-zero.
+	Zenith_Maths::UVector2 GetViewSetupDims(u_int uSlot) const;
 	bool  IsUpscalingActive() const { return m_bUpscalingActive; }
 	float GetRenderScale()    const { return m_fRenderScaleActive; }
 
@@ -167,10 +177,14 @@ public:
 	Flux_RenderTargetView*   GetGBufferRTV(MRTIndex eIndex);
 	Flux_DepthStencilView*   GetDepthStencilDSV();
 
-	// The material-preview view's persistent LDR output (512², RGBA8). Persistent —
-	// NOT a transient — so the SRV handed to ImGui stays valid across graph
-	// rebuilds. Written by the HDR feature's preview tonemap pass.
-	Flux_RenderAttachment& GetPreviewLDR() { return m_xPreviewLDR; }
+	// One preview-class view's persistent LDR output: kuFLUX_PREVIEW_VIEW_SIZE²
+	// (512²) in FINAL_RT_FORMAT — R16G16B16A16_UNORM, ~2 MiB each, NOT RGBA8.
+	// Persistent — NOT a transient — so the SRV handed to ImGui stays valid across
+	// graph rebuilds. Written by the HDR feature's per-view preview tonemap pass.
+	// Only the preview-class slots have a built entry (see the builder in
+	// Initialise); any other slot asserts and falls through to the material-preview
+	// slot's attachment, as every other per-slot getter here does.
+	Flux_RenderAttachment& GetPreviewLDR(u_int uViewSlot);
 
 #ifdef ZENITH_TOOLS
 	const Flux_ShaderResourceView* GetDebugSRV_MRTDiffuse();
@@ -307,13 +321,18 @@ public:
 	// depth/HDR are PER FULL-PIPELINE VIEW SLOT (created in SetupTransients only
 	// for slots active this compile — slot 0 always, at swapchain dims; the
 	// preview slot at its own dims when its view is active). Final RT is
-	// main-view-only (the preview tonemaps into the persistent m_xPreviewLDR).
+	// main-view-only (each preview view tonemaps into its own persistent
+	// m_axPreviewLDR entry instead).
 	Flux_TransientHandle        m_aaxMRTHandles[FLUX_MAX_RENDER_VIEWS][MRT_INDEX_COUNT];
 	Flux_TransientHandle        m_xFinalRTHandle;
 	Flux_TransientHandle        m_axDepthHandles[FLUX_MAX_RENDER_VIEWS];
 	Flux_TransientHandle        m_axHDRSceneTargetHandles[FLUX_MAX_RENDER_VIEWS];
 	Flux_RenderGraph*           m_pxGraph = nullptr;
 
-	// Persistent preview LDR output (see GetPreviewLDR).
-	Flux_RenderAttachment       m_xPreviewLDR;
+	// Persistent preview LDR outputs, INDEXED BY VIEW SLOT (see GetPreviewLDR).
+	// Only the preview-class slots are ever built; every other element stays
+	// default-constructed (invalid VRAM handle) and is never bound. Indexing by
+	// slot rather than packing means the array index IS the view slot, so the
+	// per-view HDR tonemap can hand its recording pass's slot straight in.
+	Flux_RenderAttachment       m_axPreviewLDR[FLUX_MAX_RENDER_VIEWS];
 };

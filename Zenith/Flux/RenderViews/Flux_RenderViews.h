@@ -49,8 +49,19 @@ inline constexpr u_int kuFluxViewSlotPreview     = 1u + kuFluxViewNumShadowSlots
 static_assert(kuFluxViewSlotPreview < FLUX_MAX_RENDER_VIEWS,
 	"FLUX_MAX_RENDER_VIEWS must fit main + all shadow cascades + the preview view");
 
-// The material-preview view's fixed square target size (G-buffer/HDR transients
-// + the persistent LDR the editor samples).
+// The preview views' fixed square target size.
+//
+// TWO THINGS ARE SIZED FROM THIS CONSTANT DIRECTLY and must keep agreeing: the
+// persistent preview LDRs (built once at Flux_Graphics::Initialise and never
+// rebuilt) and Flux_PreviewBuildViewConstants' screen dims. Everything else —
+// every per-view TRANSIENT, and every per-view feature setup (SSR/SSGI/SSAO/HiZ/
+// bloom/decals) — reads Flux_GraphicsImpl::GetViewSetupDims, which returns the
+// m_xTargetDims the view's OWNER staged. The owners
+// (Flux_MaterialPreviewController::Update and
+// Zenith_AnimationPreviewSession::UpdatePreviewView) stage
+// exactly this constant, which is what makes the two paths agree today; changing
+// it in one place only would resize the transients but not the LDR the tonemap
+// writes into.
 inline constexpr u_int kuFLUX_PREVIEW_VIEW_SIZE = 512u;
 
 // Per-view feature flags (mirrored to shaders as g_uViewFlags in ViewConstants /

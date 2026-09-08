@@ -83,7 +83,7 @@ const Flux_ShaderResourceView& Flux_MaterialPreviewController::GetPreviewSRV()
 {
 	// The persistent preview LDR (written by the per-view tonemap pass) — NOT a
 	// transient, so the reference handed to ImGui stays valid across rebuilds.
-	return g_xEngine.FluxGraphics().GetPreviewLDR().SRV();
+	return g_xEngine.FluxGraphics().GetPreviewLDR(kuFluxViewSlotPreview).SRV();
 }
 
 Zenith_Maths::Matrix4 Flux_MaterialPreviewController::GetActiveMeshModelMatrix() const
