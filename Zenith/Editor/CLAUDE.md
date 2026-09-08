@@ -64,7 +64,7 @@ ImGui-based scene editor for creating, editing, and testing game content. Active
 - `Zenith_ImGuiInputBridge.h/cpp` - Pumps `Zenith_InputSimulator` state into ImGui
   (TOOLS + INPUT_SIMULATOR builds) so automated tests drive editor UI deterministically.
 - `Zenith_Editor.Tests.inl` / `Zenith_EditorAutomation.Tests.inl` - Unit tests for the editor controller and the automation step queue (included into the unit-test TU)
-- `Panels/` - Panel implementations (Animation, Console, ContentBrowser, GraphEditor, Hierarchy, MaterialEditor, Memory, Properties, RenderGraph, StatusBar, TerrainEditor, Toolbar, VariantEditor, Viewport). Toolbar and StatusBar are strips drawn inside the dockspace host window, not dockable windows
+- `Panels/` - Panel implementations (AnimStateMachine, Animation, Console, ContentBrowser, GraphEditor, Hierarchy, MaterialEditor, Memory, Properties, RenderGraph, StatusBar, TerrainEditor, Toolbar, VariantEditor, Viewport). Toolbar and StatusBar are strips drawn inside the dockspace host window, not dockable windows
 - `Panels/Zenith_EditorPanel_Animation.h/cpp` (+ `_Render.cpp`, `_Ops.cpp`, `_Pose.cpp`, `_IK.cpp`, `_Curve.cpp`) - The animation DOPE SHEET over one `Zenith_AnimationDocument` and one `Zenith_AnimationPreviewSession`. A CLASS, not a pile of file statics (see "Animation Dope Sheet Panel" below); the `_Render` TU holds the drawing half and `_Curve` holds WU-8.2's curve view (its pure value↔pixel mapping, its drawing and its input translation — see "The Curve view" below). Tests in `Zenith_EditorPanel_Animation.Tests.inl`
 - `Panels/Zenith_EditorPanel_AnimStateMachine.h/cpp` (+ `_Ops.cpp`, `_Render.cpp`) - The animator-controller STATE-MACHINE GRAPH over one `Zenith_AnimControllerDocument` (see "Animator State Machine Panel" below). A CLASS with undo, like the dope sheet and unlike the graph editor. Tests in `Zenith_EditorPanel_AnimStateMachine.Tests.inl`
 - `../Core/Zenith_ImGuiWidgets.h/cpp` - Layer-0 ImGui widgets (`Vec3Field`, `PropertyLabel`) that component inspectors in EntityComponent may use without including `Editor/`
@@ -1258,11 +1258,14 @@ asserts at boot via `GrassTypeActionChecked`. `GrassTypesSave` writes
 `game:Vegetation/GrassTypes.zdata` through `Zenith_GrassTypeTableAsset` and then
 applies, so a file that reached disk but never took effect cannot go unnoticed.
 
-### The split dispatcher: twelve contiguous ranges
+### The split dispatcher: nineteen contiguous ranges
 
 `ExecuteAction` is a **router, not a switch**. Before its (now small) main switch
-it forwards **twelve CONTIGUOUS enum ranges** to twelve sub-executors, which is
-what keeps the dispatcher inside the complexity gate:
+it forwards **nineteen CONTIGUOUS enum ranges** to nineteen sub-executors
+(`Zenith_EditorAutomation.cpp:4281..4441`), which is what keeps the dispatcher
+inside the complexity gate. The table below is the **twelve non-animation**
+ranges, in router order; the seven animation ranges follow them and are described
+under "SEVEN ANIMATION ranges" below:
 
 | Range | Sub-executor |
 |---|---|
@@ -1279,6 +1282,19 @@ what keeps the dispatcher inside the complexity gate:
 | `SET_TERRAIN_MATERIAL` .. `SET_TERRAIN_SPLATMAP_PATH` | `ExecuteTerrainMaterialAction` |
 | `CREATE_PREFAB_FROM_SELECTED` .. `INSTANTIATE_PREFAB` | `ExecutePrefabAction` |
 
+...and the seven animation ranges that follow them, in router order
+(`:4376..:4441`):
+
+| Range | Sub-executor |
+|---|---|
+| `ANIM_OPEN_CLIP` .. `ANIM_EXPECT_SELECTED_COUNT` | `ExecuteAnimationAction` |
+| `ANIM_POSE_SELECT_BONE` .. `ANIM_POSE_EXPECT_BONE_LOCAL_ROTATION` | `ExecuteAnimationPoseAction` |
+| `ANIM_SM_OPEN` .. `ANIM_SM_EXPECT_DEFAULT_STATE` | `ExecuteAnimStateMachineAction` |
+| `ANIM_MASK_OPEN` .. `ANIM_MASK_EXPECT_WEIGHT` | `ExecuteAnimMaskAction` |
+| `ANIM_LAYER_ADD` .. `ANIM_LAYER_EXPECT_ORDER` | `ExecuteAnimLayerAction` |
+| `ANIM_BLEND_SET_TREE_KIND` .. `ANIM_BLEND_EXPECT_POINT_POSITION` | `ExecuteAnimBlendAction` |
+| `ANIM_CURVE_SET_VIEW` .. `ANIM_CURVE_EXPECT_KEY_TANGENT` | `ExecuteAnimCurveAction` |
+
 **Ranges are COMPARED, never numbered.** Each row is a pair of `>=` / `<=` tests
 against its block's first and last member, so:
 
@@ -1293,23 +1309,27 @@ member. **Every block added since is pinned twice** — a `static_assert` on its
 WIDTH in `Zenith_EditorAutomation.h`, and a unit test on each member's POSITION
 plus both neighbouring boundaries, so a reorder that preserves the width fails
 naming the member that moved instead of at boot inside a neighbour's `default:`
-assert: `Automation, GrassTypesEnumBlockIsContiguous`,
-`… AnimEnumBlockIsContiguous`, `… AnimPoseEnumBlockIsContiguous` and
-`… AnimSmEnumBlockIsContiguous`.
+assert — eight of them now: `Automation, GrassTypesEnumBlockIsContiguous`,
+`… AnimEnumBlockIsContiguous`, `… AnimPoseEnumBlockIsContiguous`,
+`… AnimSmEnumBlockIsContiguous`, `… AnimMaskEnumBlockIsContiguous`,
+`… AnimLayerEnumBlockIsContiguous`, `… AnimBlendEnumBlockIsContiguous` and
+`… AnimCurveEnumBlockIsContiguous`.
 
-**SIX ANIMATION ranges sit at the end of the enum, and they are six rather than
-one for a mechanical reason.** `ANIM_*` (WU-3.4, the dope sheet), `ANIM_POSE_*`
-(WU-4.3, the bone manipulator), `ANIM_SM_*` (WU-6.5, the animator-controller
-state machine), `ANIM_MASK_*` (WU-7.1, the bone-mask sub-panel), `ANIM_LAYER_*`
-(WU-7.2, the layer strip) and `ANIM_BLEND_*` (WU-7.3, the blend-tree strip) each
-route to their own sub-executor, and each new family was APPENDED as its own block
-rather than added to the one before it — because appending into an existing block
-moves its LAST member, which is the upper bound both the router's range test and
-the header's `static_assert` compare against and which that block's unit pins by
-position. `SET_NAVMESH_ASSET` follows all six and must stay outside every range;
-`AnimBlendEnumBlockIsContiguous` is where that is now pinned — the assertion has
-been re-pointed four times (off `ANIM_POSE`'s unit, then `ANIM_SM`'s, then
-`ANIM_MASK`'s, then `ANIM_LAYER`'s) rather than deleted, which is the mechanism
+**SEVEN ANIMATION ranges sit at the end of the enum, and they are seven rather
+than one for a mechanical reason.** `ANIM_*` (WU-3.4, the dope sheet),
+`ANIM_POSE_*` (WU-4.3, the bone manipulator), `ANIM_SM_*` (WU-6.5, the
+animator-controller state machine), `ANIM_MASK_*` (WU-7.1, the bone-mask
+sub-panel), `ANIM_LAYER_*` (WU-7.2, the layer strip), `ANIM_BLEND_*` (WU-7.3, the
+blend-tree strip) and `ANIM_CURVE_*` (WU-8.2, the curve view) each route to their
+own sub-executor, and each new family was APPENDED as its own block rather than
+added to the one before it — because appending into an existing block moves its
+LAST member, which is the upper bound both the router's range test and the
+header's `static_assert` compare against and which that block's unit pins by
+position. `SET_NAVMESH_ASSET` follows all seven and must stay outside every range;
+`AnimCurveEnumBlockIsContiguous` is where that is now pinned — the assertion has
+been re-pointed six times (off `ANIM`'s unit, then `ANIM_POSE`'s, then `ANIM_SM`'s,
+then `ANIM_MASK`'s, then `ANIM_LAYER`'s, then `ANIM_BLEND`'s: WU-4.3, WU-6.5,
+WU-7.1, WU-7.2, WU-7.3, WU-8.2) rather than deleted, which is the mechanism
 working.
 
 ## Selection System

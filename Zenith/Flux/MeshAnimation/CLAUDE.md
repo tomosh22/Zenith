@@ -1061,7 +1061,13 @@ MeshAnimation/
                                        WU6_3_* stable-layer-id units (minting + monotonicity,
                                        an id surviving a def rebuild that REORDERS layers,
                                        GetLayerByName hit/miss/first-wins, and ids minted
-                                       for layers restored from a stream)
+                                       for layers restored from a stream); plus the five
+                                       WU64_* reload units (D26/D28) —
+                                       ReloadKeepsAParameterMatchedByNameAndType,
+                                       ReloadGivesARenamedParameterTheNewDefault,
+                                       ReloadGivesARetypedParameterTheNewDefault,
+                                       ReloadKeepsLayerWeightsByIdAcrossAReorder,
+                                       ReloadDropsARemovedLayerAndGivesANewOneTheDefsWeight
   Flux_BlendTree.Tests.inl           - Unit tests for blend tree nodes (incl. span collection)
   Flux_AnimatorControllerDef.Tests.inl - Unit tests for WU-6.2's def: the envelope round trip
                                        (top-level machine AND layers), the three refusal modes,
@@ -1070,7 +1076,13 @@ MeshAnimation/
                                        machines posing identically over 60 ticks, the D48 bound
                                        and UNBOUND blend spaces, D42's controller parameter
                                        reaching a sub-machine condition AND a layer's machine
-                                       (the Zenithmon no-op), and the def's stream round trip
+                                       (the Zenithmon no-op), and the def's stream round trip;
+                                       plus the five WU64_* reload units (D26/D28) —
+                                       ReloadKeepsTheCurrentStateAndItsNormalizedTime,
+                                       ReloadDropsADeletedCurrentStateToTheNewDefaultAtTimeZero,
+                                       ReloadCancelsAnInFlightTransitionOntoItsTarget,
+                                       ReloadFallsToTheDefaultWhenTheTransitionTargetIsGone,
+                                       ReloadKeepsAStandaloneMachinesParameterValuesByNameAndType
 ```
 
 ## Constants

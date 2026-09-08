@@ -16,11 +16,19 @@ the reference it points at.
 ## 1. The shared rig
 
 **There is exactly one humanoid skeleton in this engine:**
-`Zenith/Assets/Meshes/StickFigure/StickFigure.zskel` — 51 bones, written by
-`GenerateStickFigureAssets()`. StickFigure, Zenithmon's NPCs, Combat's
-characters, RenderTest's player and every imported artist humanoid all reference
-it, byte for byte, and all seventeen `StickFigure_*.zanim` clips drive all of
-them.
+`Zenith/Assets/Meshes/StickFigure/StickFigure.zskel` — 51 bones, bake output
+written by `GenerateStickFigureAssets()`. StickFigure, Zenithmon's NPCs,
+Combat's characters, RenderTest's player and every imported artist humanoid all
+reference it, byte for byte, and all seventeen `StickFigure_*.zanim` clips drive
+all of them.
+
+★ **THE CLIPS ARE NOT BESIDE THE RIG, AND NOTHING GENERATES THEM.** The `.zskel`
+and `.zmodel` are bake output under `Zenith/Assets/Meshes/StickFigure/`; the
+seventeen `StickFigure_*.zanim` clips are **committed authored data** under
+`Zenith/Assets/Authored/Meshes/StickFigure/`, hand-edited in the Animation Editor
+and written by no exporter (WU-9.1 — see `Tools/CLAUDE.md`). Two lifecycles, two
+roots: a clip path left pointing at the old location loads NOTHING, and the
+character stands in its bind pose with no error reported.
 
 ### 1.1 It is T-POSED, and that is the load-bearing fact
 
@@ -81,13 +89,18 @@ survives only in the inverse-bind matrices, where it belongs.
 **The one dependency:** a bone a clip does *not* animate keeps its bind local
 transform. The two `UpperArm`s are the only non-identity ones, so a clip that
 omitted them would leave that arm sticking straight out for its whole duration.
-All seventeen animate both, and `GenerateStickFigureAssets` asserts it at bake
-time:
+All seventeen animate both, and that is checked by a **unit over the committed
+files**, not at bake time: `StickFigureAuthored.EveryClipDrivesBothUpperArms`
+(`Tools/Zenith_Tools_TestAssetExport.Tests.inl`) loads each of the seventeen
+`.zanim` off disk and asserts `HasBoneChannel("LeftUpperArm")` and
+`HasBoneChannel("RightUpperArm")` on it, naming the offending clip.
 
-```
-Zenith_Assert(xExport.pxClip->HasBoneChannel("LeftUpperArm") &&
-              xExport.pxClip->HasBoneChannel("RightUpperArm"), ...)
-```
+This used to be a `Zenith_Assert` inside `GenerateStickFigureAssets`' export
+loop, on a clip that had just been built in memory. That loop went with the
+generators at WU-9.1 (`Tools/Zenith_Tools_TestAssetExport.cpp`: *"THIS EXPORTER
+WRITES NO CLIPS ANY MORE"*), and reading the file is the wider net anyway — it is
+the only form that catches the way these clips actually change now, which is
+somebody deleting a channel in the Animation Editor.
 
 The clips: `Idle Walk Run Attack1 Attack2 Attack3 Dodge Hit Death Aim Fire Reload
 Jump Serve Forehand Backhand ReadyStance`.
@@ -185,7 +198,12 @@ ExportAllMeshes()          Assimp walk (game tree, engine tree),
                            then ImportGlbsInDirectory (game tree, engine tree)
 ExportAllTextures()
 ExportDefaultFontAtlas()
-GenerateTestAssets()       GenerateStickFigureAssets()      <-- writes the RIG
+GenerateTestAssets()       Zenith_Tools_MigrateAuthoredClipsAtBoot()
+                                                            <-- FIRST. Carries the committed
+                                                                Assets/Authored/*.zanim forward to
+                                                                the current schema before anything
+                                                                reads one
+                           GenerateStickFigureAssets()      <-- writes the RIG (no clips)
                            ExportBoundHumanModels()         <-- the human binder
                            GenerateProceduralTreeAssets()
                            GenerateProceduralRockAssets()
@@ -560,7 +578,9 @@ Break any of these and the failure is quiet:
 
 1. **`GenerateStickFigureAssets()` runs before `ExportBoundHumanModels()`.** The
    rig must be on disk before anything binds to it.
-2. **Every clip animates both `UpperArm`s.** Asserted at bake time.
+2. **Every clip animates both `UpperArm`s.** Asserted by the
+   `StickFigureAuthored.EveryClipDrivesBothUpperArms` unit, on the committed
+   files — no bake writes a clip (§1.3).
 3. **The mesh's rest pose matches the rig's.** One skeleton, one rest pose — a
    second rest pose means a second skeleton, which is the thing this design exists
    to avoid.
@@ -585,7 +605,8 @@ Break any of these and the failure is quiet:
 | `Tools/Zenith_Tools_GlbImport.{h,cpp}` | `LoadGlbMesh`, `ExportGlbMaterials`, the generic walk, the winding fix |
 | `Tools/Zenith_Tools_HumanSkinBind.{h,cpp}` | orientation, normalise, sanity, fit check, weight solve |
 | `Tools/Zenith_Tools_HumanModelExport.{h,cpp}` | the call site, routing, publication |
-| `Tools/Zenith_Tools_TestAssetExport.cpp` | the rig, the clips, StickFigure's geometry |
+| `Tools/Zenith_Tools_TestAssetExport.cpp` | the rig, StickFigure's geometry. **Writes no clips** |
+| `Zenith/Assets/Authored/Meshes/StickFigure/` | the seventeen committed `StickFigure_*.zanim` clips — authored data, written by nothing |
 | `Games/Zenithmon/Source/Gen/ZM_HumanMesh.cpp` | Zenithmon's ring-form humans |
 
 Tests: `Zenith_SkinDeform.Tests.inl`, `Zenith_Tools_HumanSkinBind.Tests.inl`,

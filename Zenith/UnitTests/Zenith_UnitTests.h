@@ -889,22 +889,6 @@ public:
 	// IK helper robustness — fixture has no animator, helper must early-out cleanly
 	static void TestRenderTestIKHelperEarlyOutsWithoutAnimator();
 
-	// StickFigure procedural-clip tests (Aim/Fire/Reload/Jump animation factories
-	// in Tools/Zenith_Tools_TestAssetExport.cpp). Each test constructs the clip,
-	// asserts on metadata + bone-channel presence + a representative sample.
-	static void TestStickFigureAimClipMetadata();
-	static void TestStickFigureAimClipBoneChannelsExist();
-	static void TestStickFigureAimClipRightArmRotation();
-	static void TestStickFigureFireClipMetadata();
-	static void TestStickFigureFireClipReturnsToAimPoseAtEnd();
-	static void TestStickFigureFireClipPeakRecoil();
-	static void TestStickFigureReloadClipMetadata();
-	static void TestStickFigureReloadClipFiveKeyframesOnLeftArm();
-	static void TestStickFigureReloadClipReturnsToAimPoseAtEnd();
-	static void TestStickFigureJumpClipMetadata();
-	static void TestStickFigureJumpClipBothLegsHaveKeyframes();
-	static void TestStickFigureJumpClipReturnsToIdentityAtEnd();
-
 	// StickFigure human body mesh contracts (the lofted, atlas-textured,
 	// smooth-skinned body in Tools/Zenith_Tools_TestAssetExport.cpp).
 	static void TestStickFigureBodyMeshInvariants();

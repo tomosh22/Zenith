@@ -514,7 +514,7 @@ rather than a game's assets because more than one game consumes them.
 
 | Set | Generator | Output |
 |---|---|---|
-| StickFigure | `Zenith_Tools_TestAssetExport.cpp` | the shared 51-bone T-posed humanoid rig, lofted body, painted atlas, 17 clips (key times in SECONDS; each clip names its rig and is flagged `m_bGenerated`) |
+| StickFigure | `Zenith_Tools_TestAssetExport.cpp` | the shared 51-bone T-posed humanoid rig, lofted body, painted atlas, material and model bundle. **No clips** — see below |
 | ProceduralTree | `Zenith_Tools_TreeAssetExport.cpp` | branching trunk + leaf cards, bark PBR set (albedo/normal/RM/AO), leaf albedo+normal+AO, sway VATs |
 | **Rocks** | `Zenith_Tools_RockAssetExport.cpp` | 4 stone meshes + granite/sandstone PBR sets |
 | **FallenTrees** | `Zenith_Tools_FallenTreeAssetExport.cpp` | 4 deadwood meshes + bark/mossy-bark PBR sets |
@@ -523,6 +523,18 @@ rather than a game's assets because more than one game consumes them.
 
 Every one of them is SEEDED: a re-boot rewrites the same bytes, so a generator that
 drifts shows up as churn rather than as a silent visual change.
+
+★ **THE 17 `StickFigure_*.zanim` CLIPS ARE NOT IN THAT TABLE, AND ARE NOT
+GENERATED.** They are AUTHORED data — committed files under
+`Zenith/Assets/Authored/Meshes/StickFigure/`, hand-edited in the Animation Editor
+and written by no exporter (WU-9.1). Their metadata says so: `m_bGenerated` is
+**false** on every one, asserted by
+`StickFigureAuthored.EveryAuthoredClipLoadsAndCarriesTheRigContract`
+(`Tools/Zenith_Tools_TestAssetExport.Tests.inl`), because a consumer reads that
+flag as "editing this file is pointless". Only the rig, body, atlas, material and
+model bundle above are regenerated on every tools boot. The one thing the boot
+does to a clip is `Zenith_Tools_MigrateAuthoredClipsAtBoot()`, which carries the
+committed bytes forward to the current schema before anything reads one.
 
 **The grass set is the one exception to "rewritten in full", and deliberately.**
 Its textures are rewritten like everything else, but the `GrassTypes.zdata` it

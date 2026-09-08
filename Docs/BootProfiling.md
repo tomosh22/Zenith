@@ -223,6 +223,14 @@ the fix is caching, not finer attribution.
 both games. `Textures` is content-proportional — 4× larger for RenderTest. These
 run **unconditionally** on every tools boot with no staleness check.
 
+> ★ **THAT ~5.3 s FIGURE PREDATES WU-9.1** (`a77d30bd`), which DELETED the
+> StickFigure clip generators — the seventeen clips are committed authored data
+> now and `GenerateStickFigureAssets` writes none of them, while
+> `Zenith_Tools_MigrateAuthoredClipsAtBoot()` was added ahead of it. `Test Assets`
+> therefore does different work than it did when this was measured. **No
+> re-measurement has been taken**, so treat the number as stale rather than as an
+> upper bound on the current cost; re-profile before sizing any work against it.
+
 ### 4. Cutoff → first present, including frame 1
 
 `Zenith_Init` returning is not the end of the wait. Measured gap from the boot
