@@ -3,6 +3,7 @@
 #include "Flux_BlendTree.h"
 #include "Flux_AnimationStateMachineDef.h"
 #include "Collections/Zenith_HashMap.h"
+#include "Collections/Zenith_Vector.h"
 
 // Forward declarations
 class Flux_AnimationClipCollection;
@@ -103,12 +104,13 @@ public:
 	// the main thread between frames.
 	//=========================================================================
 
-	// One instance's playback, in terms that outlive the def it points into.
-	struct RuntimeSnapshot
+	// ONE LEVEL of one instance's playback, in terms that outlive the def it
+	// points into.
+	struct RuntimeLevelSnapshot
 	{
-		// Empty when the machine had not entered a state yet (nothing has ticked
-		// it) — a restore then does nothing and the first Update enters the new
-		// def's default, which is exactly right.
+		// Empty when the machine at this level had not entered a state yet
+		// (nothing has ticked it) — a restore then does nothing and the first
+		// Update enters the new def's default, which is exactly right.
 		std::string m_strCurrentStateName;
 		float m_fCurrentNormalizedTime = 0.0f;
 
@@ -124,18 +126,56 @@ public:
 		bool m_bTransitioning = false;
 	};
 
-	// Read the playback out. Pure — changes nothing.
+	// One instance's playback, THROUGH THE CONTAINER STATES IT WAS INSIDE.
+	//
+	// ★ INDEX 0 IS THIS MACHINE AND INDEX n IS n CONTAINERS DOWN, which is the
+	// only shape that keeps the snapshot free of pointers at every depth: a
+	// nested machine's identity is "the container state its parent was in", and
+	// that container is named by the level above. A flat vector therefore IS the
+	// path, and a level with nothing below it simply ends the vector.
+	//
+	// ★ THE CHAIN FOLLOWS THE SAME TARGET RULE AS THE LEVEL ITSELF: the level
+	// below a transitioning machine is the TARGET state's sub-machine, because
+	// the target is the state the reload is going to arrive on.
+	//
+	// ★ CAPACITY 0, DELIBERATELY. A default-constructed Zenith_Vector eagerly
+	// allocates 8, and a RuntimeSnapshot is default-constructed on paths that
+	// may never fill it (Flux_AnimationController::ReloadFromControllerDef
+	// declares one before it knows whether there is a top-level machine at all).
+	struct RuntimeSnapshot
+	{
+		Zenith_Vector<RuntimeLevelSnapshot> m_xLevels{ 0u };
+	};
+
+	// Read the playback out, this machine's level first and then one level per
+	// container state it was inside. Pure — changes nothing.
 	RuntimeSnapshot CaptureRuntimeSnapshot() const;
 
 	// Put it back onto whatever this machine's def now holds. Returns TRUE when
-	// the machine landed on the state the snapshot named (the current state, or
-	// the transition's target when one was in flight) and FALSE when that state
-	// is gone and it fell back to the new def's default state at time 0.
+	// THIS machine landed on the state the snapshot named at level 0 (the
+	// current state, or the transition's target when one was in flight) and
+	// FALSE when that state is gone and it fell back to the new def's default
+	// state at time 0.
 	//
-	// ★ A SUB-STATE MACHINE'S OWN CURRENT STATE IS NOT PRESERVED. Entering a
-	// container state re-enters its child at the child's default (SetState), and
-	// the child instance lives INSIDE the def CopyFrom just replaced, so there
-	// is no object to restore onto. Documented rather than silently partial.
+	// ★ A SUB-STATE MACHINE'S CURRENT STATE, ITS TIME AND ITS IN-FLIGHT
+	// TRANSITION TARGET ARE PRESERVED TOO, DOWN THE WHOLE CHAIN — the child
+	// instance the def CopyFrom just replaced has been re-made by the rebuild
+	// (Flux_AnimationState::ReadFromDataStream re-news it), so there IS an
+	// object to restore onto, reached by name from the level above.
+	//
+	// ★ THE DESCENT STOPS AT THE FIRST ANCESTOR THAT FELL BACK, and that is the
+	// load-bearing rule rather than an optimisation. A level that did not land
+	// on its NAMED state is a level whose child chain describes a machine that
+	// is no longer there; carrying level n+1 into whatever the default happens
+	// to contain would TRANSPLANT a state name into an unrelated sub-graph —
+	// silently, since SetState on an unknown name simply returns. The same stop
+	// applies when the matched state is no longer a container at all.
+	//
+	// ★ THE CHILD IS ALWAYS REACHED THROUGH THIS LEVEL'S SetState (D42), which
+	// is what re-publishes the shared parameter set onto it. A child restored
+	// without that has m_pxSharedParameters == nullptr and reads its own
+	// authored declaration defaults, so every condition inside it goes blind to
+	// values the game is still setting.
 	bool RestoreRuntimeSnapshot(const RuntimeSnapshot& xSnapshot);
 
 	// Capture → BuildFromDef → restore, for a caller holding ONE machine.
@@ -274,6 +314,16 @@ private:
 	// Drop every pointer into the def and cancel any transition in flight. Called
 	// whenever the def underneath is replaced.
 	void ResetRuntime();
+
+	// WU-6.4. Restore ONE level of a snapshot onto this machine, then descend
+	// into the container it landed in. Returns what this LEVEL did — true when it
+	// landed on the state the level named (or had no state to restore), false
+	// when it fell back to the default — which is what the public
+	// RestoreRuntimeSnapshot reports for level 0. A level below is restored on a
+	// best-effort basis and its result is deliberately not folded in: a deleted
+	// state two containers down is the author's intent, and reporting it as this
+	// machine's failure would tell a caller its own state had been lost.
+	bool RestoreLevel(const Zenith_Vector<RuntimeLevelSnapshot>& xLevels, u_int uLevel);
 
 	// WU-6.4. The normalized time a state is showing, read from exactly where
 	// GetCurrentStateInfo reads it — the ROOT of the state's blend tree. A

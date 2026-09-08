@@ -65,10 +65,12 @@ Flux_AnimationStateMachine::RuntimeSnapshot Flux_AnimationStateMachine::CaptureR
 {
 	RuntimeSnapshot xSnapshot;
 
+	RuntimeLevelSnapshot xLevel;
+
 	if (m_pxCurrentState != nullptr)
 	{
-		xSnapshot.m_strCurrentStateName = m_pxCurrentState->GetName();
-		xSnapshot.m_fCurrentNormalizedTime = ReadStateNormalizedTime(m_pxCurrentState);
+		xLevel.m_strCurrentStateName = m_pxCurrentState->GetName();
+		xLevel.m_fCurrentNormalizedTime = ReadStateNormalizedTime(m_pxCurrentState);
 	}
 
 	// ★ THE TARGET CARRIES ITS OWN TIME, and it is a real playhead rather than a
@@ -78,57 +80,134 @@ Flux_AnimationStateMachine::RuntimeSnapshot Flux_AnimationStateMachine::CaptureR
 	// however much of it the fade had already played through.
 	if (m_pxActiveTransition != nullptr && m_pxTransitionTargetState != nullptr)
 	{
-		xSnapshot.m_bTransitioning = true;
-		xSnapshot.m_strTransitionTargetName = m_pxTransitionTargetState->GetName();
-		xSnapshot.m_fTransitionTargetNormalizedTime = ReadStateNormalizedTime(m_pxTransitionTargetState);
+		xLevel.m_bTransitioning = true;
+		xLevel.m_strTransitionTargetName = m_pxTransitionTargetState->GetName();
+		xLevel.m_fTransitionTargetNormalizedTime = ReadStateNormalizedTime(m_pxTransitionTargetState);
+	}
+
+	xSnapshot.m_xLevels.PushBack(xLevel);
+
+	// ★ THE DESCENT FOLLOWS THE TARGET RULE, for exactly the reason the level
+	// itself does: a restore of a transitioning machine ARRIVES on the target, so
+	// the sub-machine worth carrying is the target's, not the source's. During a
+	// crossfade into a container it is also the only one the parent is ticking
+	// (UpdateTransition evaluates the target side alone).
+	const Flux_AnimationState* pxLevelState = xLevel.m_bTransitioning
+		? m_pxTransitionTargetState
+		: m_pxCurrentState;
+
+	// ★ AND IT RECURSES THROUGH THE MEMBER FUNCTION rather than reading the
+	// child's runtime pointers from here. Same-class access would reach them, but
+	// the child's own capture is where the target rule, the container check and
+	// the time read are already stated once.
+	if (pxLevelState != nullptr && pxLevelState->IsSubStateMachine())
+	{
+		const Flux_AnimationStateMachine* pxSubSM = pxLevelState->GetSubStateMachine();
+		if (pxSubSM != nullptr)
+		{
+			const RuntimeSnapshot xChild = pxSubSM->CaptureRuntimeSnapshot();
+			for (u_int u = 0; u < xChild.m_xLevels.GetSize(); ++u)
+			{
+				xSnapshot.m_xLevels.PushBack(xChild.m_xLevels.Get(u));
+			}
+		}
 	}
 
 	return xSnapshot;
 }
 
-bool Flux_AnimationStateMachine::RestoreRuntimeSnapshot(const RuntimeSnapshot& xSnapshot)
+bool Flux_AnimationStateMachine::RestoreLevel(const Zenith_Vector<RuntimeLevelSnapshot>& xLevels, u_int uLevel)
 {
-	// Which state the machine was HEADED FOR: the transition's target when one
-	// was in flight, the current state otherwise. D45's cancel rule is this one
-	// line — everything else about the transition (its elapsed time, its source
-	// pose, its interruptibility) is deliberately dropped.
-	const std::string& strWanted = xSnapshot.m_bTransitioning
-		? xSnapshot.m_strTransitionTargetName
-		: xSnapshot.m_strCurrentStateName;
-	const float fWantedNormalizedTime = xSnapshot.m_bTransitioning
-		? xSnapshot.m_fTransitionTargetNormalizedTime
-		: xSnapshot.m_fCurrentNormalizedTime;
+	if (uLevel >= xLevels.GetSize())
+	{
+		// Nothing was recorded at this depth — the chain ended above us, which is
+		// what a machine that had never been entered looks like. The first Update
+		// enters this level's default, exactly as an untouched machine does.
+		return true;
+	}
+
+	const RuntimeLevelSnapshot& xLevel = xLevels.Get(uLevel);
+
+	// Which state this level was HEADED FOR: the transition's target when one was
+	// in flight, the current state otherwise. D45's cancel rule is this one line —
+	// everything else about the transition (its elapsed time, its source pose, its
+	// interruptibility) is deliberately dropped.
+	const std::string& strWanted = xLevel.m_bTransitioning
+		? xLevel.m_strTransitionTargetName
+		: xLevel.m_strCurrentStateName;
+	const float fWantedNormalizedTime = xLevel.m_bTransitioning
+		? xLevel.m_fTransitionTargetNormalizedTime
+		: xLevel.m_fCurrentNormalizedTime;
 
 	if (strWanted.empty())
 	{
 		// Nothing was playing. The first Update enters the new default, which is
 		// what an untouched machine does anyway — so this is a clean survival, not
 		// a fallback.
+		//
+		// ★ AND IT IS A SURVIVAL WITH NO CURRENT STATE, which is precisely why the
+		// descent below cannot be driven by this function's return value.
 		return true;
 	}
+
+	bool bLevelRestored = false;
+	bool bNamedStateRestored = false;
 
 	if (HasState(strWanted))
 	{
 		// SetState resets the target's blend tree, so the time goes on AFTER it.
+		// It is also what re-publishes the shared parameter set onto a container's
+		// child (D42) — the child restore below depends on having gone through it.
 		SetState(strWanted);
 		Flux_BlendTreeNode* pxTree = m_pxCurrentState ? m_pxCurrentState->GetBlendTree() : nullptr;
 		if (pxTree)
 			pxTree->SetNormalizedTime(fWantedNormalizedTime);
-		return true;
-	}
 
-	// ★ THE STATE IS GONE, SO THE TIME IS MEANINGLESS AND GOES WITH IT (D45). A
-	// normalized time is a fraction OF A PARTICULAR CLIP; carrying 0.8 across to
-	// whatever the new default happens to be would drop the character into the
-	// middle of an unrelated animation, which reads as a glitch nobody can trace
-	// back to the edit that caused it.
-	const std::string& strDefault = GetDefaultStateName();
-	if (!strDefault.empty() && HasState(strDefault))
+		// ★ ASKED OF THE MACHINE, NOT INFERRED FROM HasState. SetState returns
+		// void and no-ops on anything it cannot enter, so the only honest answer to
+		// "did this level land on its named state" is the state the machine is
+		// actually in now.
+		bNamedStateRestored = (m_pxCurrentState != nullptr && m_pxCurrentState->GetName() == strWanted);
+		bLevelRestored = true;
+	}
+	else
 	{
-		SetState(strDefault);
+		// ★ THE STATE IS GONE, SO THE TIME IS MEANINGLESS AND GOES WITH IT (D45). A
+		// normalized time is a fraction OF A PARTICULAR CLIP; carrying 0.8 across to
+		// whatever the new default happens to be would drop the character into the
+		// middle of an unrelated animation, which reads as a glitch nobody can trace
+		// back to the edit that caused it.
+		const std::string& strDefault = GetDefaultStateName();
+		if (!strDefault.empty() && HasState(strDefault))
+		{
+			SetState(strDefault);
+		}
 	}
 
-	return false;
+	// ★ DESCEND ONLY THROUGH A LEVEL THAT LANDED ON ITS NAMED STATE. A fallback
+	// put this machine somewhere the levels below do not describe; pushing them
+	// into whatever the default happens to contain TRANSPLANTS a state name into
+	// an unrelated sub-graph, and a wrong-branch descent is silent because
+	// SetState returns on a name it does not know. A matched state that is no
+	// longer a container ends the chain for the same reason.
+	if (bNamedStateRestored && m_pxCurrentState->IsSubStateMachine())
+	{
+		Flux_AnimationStateMachine* pxSubSM = m_pxCurrentState->GetSubStateMachine();
+		if (pxSubSM != nullptr)
+		{
+			// The child is the one SetState just entered at its default and just
+			// published the shared parameters onto — never a pointer taken before
+			// the rebuild, every one of which names a machine CopyFrom deleted.
+			pxSubSM->RestoreLevel(xLevels, uLevel + 1);
+		}
+	}
+
+	return bLevelRestored;
+}
+
+bool Flux_AnimationStateMachine::RestoreRuntimeSnapshot(const RuntimeSnapshot& xSnapshot)
+{
+	return RestoreLevel(xSnapshot.m_xLevels, 0u);
 }
 
 void Flux_AnimationStateMachine::RestoreMatchedParameterValues(const Flux_AnimationParameters& xPrevious,

@@ -801,3 +801,542 @@ ZENITH_TEST(Animation, A3_ParametersClearEmptiesTheTable)
 	ZENITH_ASSERT_FALSE(xParams.HasParameter("Grounded"), "the bool is gone");
 	ZENITH_ASSERT_FALSE(xParams.HasParameter("Hit"), "the trigger is gone");
 }
+
+// ============================================================================
+// F-b — A CONTAINER STATE'S SUB-MACHINE SURVIVES A RELOAD (D45, extended)
+//
+// ★ WHAT THESE EXIST TO CATCH. The snapshot used to be ONE level deep, so a
+// reload put the top-level machine back exactly where it was and then entered
+// its container state at the child's DEFAULT — a character three seconds into a
+// "Run" inside a "Loco" container came back walking, and the machine-level
+// assertions all passed because the level they assert on really was restored.
+// The header said so out loud ("a sub-state machine's own current state is not
+// preserved"), which is why nothing failed: the gap was documented, not tested.
+//
+// ★ AND THE DANGEROUS HALF IS THE DESCENT, NOT THE DEPTH. A level that fell
+// back to the default is a level whose children describe a machine that is no
+// longer there, and SetState no-ops on a name it does not know — so a descent
+// through the wrong branch writes nothing, asserts nothing, and leaves a child
+// at a default that looks exactly like a correct restore. Fb_Ancestor* are the
+// two tests that can see it.
+//
+// ★ EVERY POINTER TAKEN BEFORE A RELOAD DANGLES, including the child machines:
+// CopyFrom deletes every Flux_AnimationState and each container state owns its
+// sub-machine, so Flux_AnimationState::ReadFromDataStream deletes and re-news
+// one. Every assertion below re-resolves through GetState(...)->
+// GetSubStateMachine() AFTER the reload — the same rule the controller tests
+// state for Flux_AnimationLayer*.
+// ============================================================================
+
+namespace
+{
+	// "Loco" is a CONTAINER whose sub-machine plays "Walk" (its default) or
+	// "Run"; "Idle" beside it is a plain clip state and the root's default, so a
+	// fallback at the root can be told apart from staying where we were.
+	//
+	// The sub-machine also carries Walk -> Run on "Speed" > 3, which is what the
+	// D42 test drives: a condition INSIDE the container, reading a value only the
+	// shared set can carry.
+	void Fb_AuthorContainerLoco(Flux_AnimationStateMachineDef& xDef,
+		Flux_AnimationClip* pxIdleClip, Flux_AnimationClip* pxWalkClip,
+		Flux_AnimationClip* pxRunClip, bool bIncludeRun)
+	{
+		xDef.GetParameterDeclarations().AddFloat("Speed", 0.0f);
+
+		xDef.AddState("Idle")->SetBlendTree(new Flux_BlendTreeNode_Clip(pxIdleClip));
+
+		Flux_AnimationStateMachine* pxSub = xDef.AddState("Loco")->CreateSubStateMachine("LocoSM");
+		pxSub->GetParameters().AddFloat("Speed", 0.0f);
+		pxSub->AddState("Walk")->SetBlendTree(new Flux_BlendTreeNode_Clip(pxWalkClip));
+		pxSub->SetDefaultState("Walk");
+
+		if (bIncludeRun)
+		{
+			pxSub->AddState("Run")->SetBlendTree(new Flux_BlendTreeNode_Clip(pxRunClip));
+
+			Flux_StateTransition xToRun;
+			xToRun.m_strTargetStateName = "Run";
+			xToRun.m_fTransitionDuration = 0.1f;
+
+			Flux_TransitionCondition xCond;
+			xCond.m_strParameterName = "Speed";
+			xCond.m_eCompareOp = Flux_TransitionCondition::CompareOp::Greater;
+			xCond.m_eParamType = Flux_AnimationParameters::ParamType::Float;
+			xCond.m_fThreshold = 3.0f;
+			xToRun.m_xConditions.PushBack(xCond);
+
+			pxSub->GetState("Walk")->AddTransition(xToRun);
+		}
+
+		xDef.SetDefaultState("Idle");
+	}
+
+	// ★ THE ONLY LEGAL WAY TO NAME A CHILD MACHINE AFTER A RELOAD. Resolve it
+	// from the machine, through the container state, every single time.
+	Flux_AnimationStateMachine* Fb_Child(Flux_AnimationStateMachine& xSM, const char* szContainerState)
+	{
+		Flux_AnimationState* pxState = xSM.GetState(szContainerState);
+		return pxState ? pxState->GetSubStateMachine() : nullptr;
+	}
+
+	// The normalized time a machine's CURRENT state is showing — read from the
+	// state's own blend tree, which is where GetCurrentStateInfo reads it.
+	float Fb_ChildNormalizedTime(Flux_AnimationStateMachine* pxSM)
+	{
+		return pxSM ? pxSM->GetCurrentStateInfo().m_fNormalizedTime : -1.0f;
+	}
+}
+
+//=============================================================================
+// (F-b 1) The child's own current state comes back.
+//=============================================================================
+ZENITH_TEST(Animation, Fb_NestedCurrentStateSurvivesReload)
+{
+	Flux_AnimationClip* pxIdle = WU61_MakeConstantClip("Idle", Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f));
+	Flux_AnimationClip* pxWalk = WU61_MakeConstantClip("Walk", Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
+	Flux_AnimationClip* pxRun  = WU61_MakeConstantClip("Run",  Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f));
+	Flux_AnimationClipCollection xClips;
+	xClips.AddClip(pxIdle);
+	xClips.AddClip(pxWalk);
+	xClips.AddClip(pxRun);
+
+	Flux_AnimationStateMachineDef xDef("Root");
+	Fb_AuthorContainerLoco(xDef, pxIdle, pxWalk, pxRun, true);
+
+	Flux_AnimationStateMachine xSM;
+	xSM.BuildFromDef(xDef, &xClips);
+
+	xSM.SetState("Loco");
+	Flux_AnimationStateMachine* pxChild = Fb_Child(xSM, "Loco");
+	ZENITH_ASSERT_NOT_NULL(pxChild, "the container state really owns a sub-machine");
+	if (pxChild)
+	{
+		ZENITH_ASSERT_EQ(pxChild->GetCurrentStateName(), "Walk",
+			"entering the container put the child at its DEFAULT — which is exactly what a reload used to leave it at");
+		pxChild->SetState("Run");
+		ZENITH_ASSERT_EQ(pxChild->GetCurrentStateName(), "Run", "and gameplay drove it off that default");
+	}
+
+	const bool bSurvived = xSM.ReloadFromDef(xDef, &xClips);
+
+	// ★ RE-RESOLVE. pxChild above names a machine CopyFrom deleted.
+	pxChild = Fb_Child(xSM, "Loco");
+
+	ZENITH_ASSERT_TRUE(bSurvived, "the container state still exists, so level 0 survived");
+	ZENITH_ASSERT_EQ(xSM.GetCurrentStateName(), "Loco", "the root is still in its container state");
+	ZENITH_ASSERT_NOT_NULL(pxChild, "and the rebuild made a fresh child to restore onto");
+	if (pxChild)
+	{
+		ZENITH_ASSERT_EQ(pxChild->GetCurrentStateName(), "Run",
+			"★ the CHILD's own current state survived the reload — entering the container re-entered it at "
+			"'Walk', and the restore then put it back where the player was");
+	}
+}
+
+//=============================================================================
+// (F-b 2) ...and so does the child's playhead.
+//=============================================================================
+ZENITH_TEST(Animation, Fb_NestedNormalizedTimeSurvivesReload)
+{
+	Flux_AnimationClip* pxIdle = WU61_MakeConstantClip("Idle", Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f));
+	Flux_AnimationClip* pxWalk = WU61_MakeConstantClip("Walk", Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
+	Flux_AnimationClip* pxRun  = WU61_MakeConstantClip("Run",  Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f));
+	Flux_AnimationClipCollection xClips;
+	xClips.AddClip(pxIdle);
+	xClips.AddClip(pxWalk);
+	xClips.AddClip(pxRun);
+
+	Flux_AnimationStateMachineDef xDef("Root");
+	Fb_AuthorContainerLoco(xDef, pxIdle, pxWalk, pxRun, true);
+
+	Flux_AnimationStateMachine xSM;
+	xSM.BuildFromDef(xDef, &xClips);
+
+	xSM.SetState("Loco");
+	Flux_AnimationStateMachine* pxChild = Fb_Child(xSM, "Loco");
+	ZENITH_ASSERT_NOT_NULL(pxChild, "the container state really owns a sub-machine");
+	if (pxChild)
+	{
+		pxChild->SetState("Run");
+		Flux_AnimationState* pxRunState = pxChild->GetCurrentState();
+		ZENITH_ASSERT_NOT_NULL(pxRunState, "the child entered Run");
+		if (pxRunState && pxRunState->GetBlendTree())
+		{
+			// 0.4 of a 1s looping clip: a value neither a Reset (0.0) nor a wrap
+			// could produce by accident.
+			pxRunState->GetBlendTree()->SetNormalizedTime(0.4f);
+		}
+		ZENITH_ASSERT_EQ_FLOAT(Fb_ChildNormalizedTime(pxChild), 0.4f, 1e-4f,
+			"the child's playhead really is at 0.4 before the reload");
+	}
+
+	xSM.ReloadFromDef(xDef, &xClips);
+
+	pxChild = Fb_Child(xSM, "Loco");   // ★ re-resolve
+	ZENITH_ASSERT_NOT_NULL(pxChild, "a fresh child machine came out of the rebuild");
+	if (pxChild)
+	{
+		ZENITH_ASSERT_EQ(pxChild->GetCurrentStateName(), "Run", "the child is back on Run");
+		ZENITH_ASSERT_EQ_FLOAT(Fb_ChildNormalizedTime(pxChild), 0.4f, 1e-4f,
+			"★ and 0.4 of the way through it — the nested time is put back through the same "
+			"Flux_BlendTreeNode::SetNormalizedTime walk the top level uses");
+	}
+}
+
+//=============================================================================
+// (F-b 3) THE NEGATIVE, one level down. A nested state the edit deleted falls to
+//         the CHILD's default, at time 0 — and level 0 still reports success,
+//         because level 0 really did survive.
+//=============================================================================
+ZENITH_TEST(Animation, Fb_DeletedNestedStateFallsBackToTheChildDefaultAtZero)
+{
+	Flux_AnimationClip* pxIdle = WU61_MakeConstantClip("Idle", Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f));
+	Flux_AnimationClip* pxWalk = WU61_MakeConstantClip("Walk", Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
+	Flux_AnimationClip* pxRun  = WU61_MakeConstantClip("Run",  Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f));
+	Flux_AnimationClipCollection xClips;
+	xClips.AddClip(pxIdle);
+	xClips.AddClip(pxWalk);
+	xClips.AddClip(pxRun);
+
+	Flux_AnimationStateMachineDef xDef("Root");
+	Fb_AuthorContainerLoco(xDef, pxIdle, pxWalk, pxRun, true);
+
+	Flux_AnimationStateMachine xSM;
+	xSM.BuildFromDef(xDef, &xClips);
+
+	xSM.SetState("Loco");
+	Flux_AnimationStateMachine* pxChild = Fb_Child(xSM, "Loco");
+	if (pxChild)
+	{
+		pxChild->SetState("Run");
+		Flux_AnimationState* pxRunState = pxChild->GetCurrentState();
+		if (pxRunState && pxRunState->GetBlendTree())
+			pxRunState->GetBlendTree()->SetNormalizedTime(0.4f);
+		ZENITH_ASSERT_EQ(pxChild->GetCurrentStateName(), "Run", "the child was driven off its default");
+	}
+
+	// The edit deletes "Run" from INSIDE the container. Nothing about the root
+	// moved.
+	Flux_AnimationStateMachineDef xEdited("Root");
+	Fb_AuthorContainerLoco(xEdited, pxIdle, pxWalk, pxRun, false);
+
+	const bool bSurvived = xSM.ReloadFromDef(xEdited, &xClips);
+
+	pxChild = Fb_Child(xSM, "Loco");   // ★ re-resolve
+
+	ZENITH_ASSERT_TRUE(bSurvived,
+		"★ the return value is still LEVEL 0's answer: the root landed on the container it named. "
+		"A deleted state two levels down is the author's intent, not this machine's failure");
+	ZENITH_ASSERT_EQ(xSM.GetCurrentStateName(), "Loco", "and the root really did land there");
+	ZENITH_ASSERT_NOT_NULL(pxChild, "the child machine exists");
+	if (pxChild)
+	{
+		ZENITH_ASSERT_FALSE(pxChild->HasState("Run"), "the edit really did delete the nested state");
+		ZENITH_ASSERT_EQ(pxChild->GetCurrentStateName(), "Walk",
+			"a deleted nested state falls to the CHILD's default (D45, one level down)");
+		ZENITH_ASSERT_EQ_FLOAT(Fb_ChildNormalizedTime(pxChild), 0.0f, 1e-5f,
+			"★ at time 0 — a normalized time is a fraction of a PARTICULAR clip and dies with its state");
+	}
+}
+
+//=============================================================================
+// (F-b 4) A transition in flight INSIDE the container is cancelled onto its
+//         target, carrying the target's own playhead — the same rule as level 0.
+//=============================================================================
+ZENITH_TEST(Animation, Fb_NestedTransitionRestoresToItsTarget)
+{
+	WU61_Rig xRig;
+
+	Flux_AnimationClip* pxIdle = WU61_MakeConstantClip("Idle", Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f));
+	Flux_AnimationClip* pxWalk = WU61_MakeConstantClip("Walk", Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
+	Flux_AnimationClip* pxRun  = WU61_MakeConstantClip("Run",  Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f));
+	Flux_AnimationClipCollection xClips;
+	xClips.AddClip(pxIdle);
+	xClips.AddClip(pxWalk);
+	xClips.AddClip(pxRun);
+
+	Flux_AnimationStateMachineDef xDef("Root");
+	Fb_AuthorContainerLoco(xDef, pxIdle, pxWalk, pxRun, true);
+
+	Flux_AnimationStateMachine xSM;
+	xSM.BuildFromDef(xDef, &xClips);
+
+	Flux_SkeletonPose xPose;
+	xPose.Initialize(2);
+
+	xSM.SetState("Loco");
+	Flux_AnimationStateMachine* pxChild = Fb_Child(xSM, "Loco");
+	ZENITH_ASSERT_NOT_NULL(pxChild, "the container state owns a sub-machine");
+	if (pxChild)
+	{
+		pxChild->CrossFade("Run", 0.25f);
+	}
+
+	// One tick through the PARENT, which is what advances a container's child.
+	xSM.Update(0.05f, xPose, *xRig.m_pxSkeleton);
+
+	pxChild = Fb_Child(xSM, "Loco");
+	if (pxChild)
+	{
+		ZENITH_ASSERT_TRUE(pxChild->IsTransitioning(), "the nested transition is genuinely in flight");
+		ZENITH_ASSERT_EQ(pxChild->GetCurrentStateName(), "Walk",
+			"and the child's CURRENT state is still the source — which is why 'snap to the target' is a rule");
+	}
+
+	xSM.ReloadFromDef(xDef, &xClips);
+
+	pxChild = Fb_Child(xSM, "Loco");   // ★ re-resolve
+	ZENITH_ASSERT_NOT_NULL(pxChild, "a fresh child came out of the rebuild");
+	if (pxChild)
+	{
+		ZENITH_ASSERT_FALSE(pxChild->IsTransitioning(), "the nested transition is CANCELLED, not resumed");
+		ZENITH_ASSERT_EQ(pxChild->GetCurrentStateName(), "Run",
+			"★ and cancelled onto its TARGET, exactly as level 0 is — landing back on 'Walk' would re-run "
+			"the nested condition from scratch");
+		// CrossFade Reset the target's tree; the single 0.05s parent tick then
+		// advanced it through UpdateTransition.
+		ZENITH_ASSERT_EQ_FLOAT(Fb_ChildNormalizedTime(pxChild), 0.05f, 1e-4f,
+			"carrying the nested TARGET's own playhead, which the crossfade had already been advancing");
+	}
+}
+
+//=============================================================================
+// (F-b 5) A container inside a container: BOTH levels come back.
+//=============================================================================
+ZENITH_TEST(Animation, Fb_DepthTwoSurvives)
+{
+	Flux_AnimationClip* pxWalk = WU61_MakeConstantClip("Walk", Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
+	Flux_AnimationClip* pxJump = WU61_MakeConstantClip("Jump", Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f));
+	Flux_AnimationClip* pxFall = WU61_MakeConstantClip("Fall", Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f));
+	Flux_AnimationClipCollection xClips;
+	xClips.AddClip(pxWalk);
+	xClips.AddClip(pxJump);
+	xClips.AddClip(pxFall);
+
+	// Root -> "Loco" (container) -> "Air" (container) -> "Jump" / "Fall".
+	Flux_AnimationStateMachineDef xDef("Root");
+	Flux_AnimationStateMachine* pxLocoDef = xDef.AddState("Loco")->CreateSubStateMachine("LocoSM");
+	xDef.SetDefaultState("Loco");
+	pxLocoDef->AddState("Walk")->SetBlendTree(new Flux_BlendTreeNode_Clip(pxWalk));
+	pxLocoDef->SetDefaultState("Walk");
+	Flux_AnimationStateMachine* pxAirDef = pxLocoDef->AddState("Air")->CreateSubStateMachine("AirSM");
+	pxAirDef->AddState("Jump")->SetBlendTree(new Flux_BlendTreeNode_Clip(pxJump));
+	pxAirDef->AddState("Fall")->SetBlendTree(new Flux_BlendTreeNode_Clip(pxFall));
+	pxAirDef->SetDefaultState("Jump");
+
+	Flux_AnimationStateMachine xSM;
+	xSM.BuildFromDef(xDef, &xClips);
+
+	xSM.SetState("Loco");
+	Flux_AnimationStateMachine* pxLevel1 = Fb_Child(xSM, "Loco");
+	ZENITH_ASSERT_NOT_NULL(pxLevel1, "level 1 exists");
+	Flux_AnimationStateMachine* pxLevel2 = nullptr;
+	if (pxLevel1)
+	{
+		pxLevel1->SetState("Air");
+		pxLevel2 = Fb_Child(*pxLevel1, "Air");
+		ZENITH_ASSERT_NOT_NULL(pxLevel2, "level 2 exists");
+	}
+	if (pxLevel2)
+	{
+		pxLevel2->SetState("Fall");
+		Flux_AnimationState* pxFallState = pxLevel2->GetCurrentState();
+		if (pxFallState && pxFallState->GetBlendTree())
+			pxFallState->GetBlendTree()->SetNormalizedTime(0.25f);
+		ZENITH_ASSERT_EQ(pxLevel2->GetCurrentStateName(), "Fall", "the deepest machine was driven off its default");
+	}
+
+	xSM.ReloadFromDef(xDef, &xClips);
+
+	// ★ RE-RESOLVE BOTH, top down. Nothing from before the reload is addressable.
+	pxLevel1 = Fb_Child(xSM, "Loco");
+	pxLevel2 = pxLevel1 ? Fb_Child(*pxLevel1, "Air") : nullptr;
+
+	ZENITH_ASSERT_EQ(xSM.GetCurrentStateName(), "Loco", "level 0 came back");
+	ZENITH_ASSERT_NOT_NULL(pxLevel1, "level 1 was rebuilt");
+	if (pxLevel1)
+	{
+		ZENITH_ASSERT_EQ(pxLevel1->GetCurrentStateName(), "Air",
+			"★ level 1 is back in its own container state, not at 'Walk'");
+	}
+	ZENITH_ASSERT_NOT_NULL(pxLevel2, "level 2 was rebuilt");
+	if (pxLevel2)
+	{
+		ZENITH_ASSERT_EQ(pxLevel2->GetCurrentStateName(), "Fall",
+			"★ and level 2 with it — the chain is walked the whole way down, not one hop");
+		ZENITH_ASSERT_EQ_FLOAT(Fb_ChildNormalizedTime(pxLevel2), 0.25f, 1e-4f,
+			"carrying the deepest playhead");
+	}
+}
+
+//=============================================================================
+// (F-b 6) ★ THE TRANSPLANT REGRESSION. An ancestor that FELL BACK ends the
+//         descent — even when the sub-graph it fell into happens to contain a
+//         state with the same name the level below names.
+//
+//         Asserting the child's EXACT default is the whole point: a wrong-branch
+//         descent writes nothing observable on its own, because SetState returns
+//         immediately on a name it does not know.
+//=============================================================================
+ZENITH_TEST(Animation, Fb_AncestorFallbackStopsTheDescentEvenWhenASameNamedStateExists)
+{
+	Flux_AnimationClip* pxIdle = WU61_MakeConstantClip("Idle", Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f));
+	Flux_AnimationClip* pxWalk = WU61_MakeConstantClip("Walk", Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
+	Flux_AnimationClip* pxRun  = WU61_MakeConstantClip("Run",  Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f));
+	Flux_AnimationClipCollection xClips;
+	xClips.AddClip(pxIdle);
+	xClips.AddClip(pxWalk);
+	xClips.AddClip(pxRun);
+
+	Flux_AnimationStateMachineDef xDef("Root");
+	Fb_AuthorContainerLoco(xDef, pxIdle, pxWalk, pxRun, true);
+
+	Flux_AnimationStateMachine xSM;
+	xSM.BuildFromDef(xDef, &xClips);
+
+	xSM.SetState("Loco");
+	Flux_AnimationStateMachine* pxChild = Fb_Child(xSM, "Loco");
+	if (pxChild)
+	{
+		pxChild->SetState("Run");
+		Flux_AnimationState* pxRunState = pxChild->GetCurrentState();
+		if (pxRunState && pxRunState->GetBlendTree())
+			pxRunState->GetBlendTree()->SetNormalizedTime(0.4f);
+	}
+
+	// The edit DELETES "Loco" entirely, and makes the default "Idle" a container
+	// of its own — one that happens to hold a state called "Run".
+	Flux_AnimationStateMachineDef xEdited("Root");
+	Flux_AnimationStateMachine* pxIdleSubDef = xEdited.AddState("Idle")->CreateSubStateMachine("IdleSM");
+	xEdited.SetDefaultState("Idle");
+	pxIdleSubDef->AddState("Stand")->SetBlendTree(new Flux_BlendTreeNode_Clip(pxIdle));
+	pxIdleSubDef->SetDefaultState("Stand");
+	pxIdleSubDef->AddState("Run")->SetBlendTree(new Flux_BlendTreeNode_Clip(pxRun));
+
+	const bool bSurvived = xSM.ReloadFromDef(xEdited, &xClips);
+
+	Flux_AnimationStateMachine* pxIdleChild = Fb_Child(xSM, "Idle");   // ★ re-resolve
+
+	ZENITH_ASSERT_FALSE(bSurvived, "the state the root was in is gone, and the return value says so");
+	ZENITH_ASSERT_FALSE(xSM.HasState("Loco"), "the edit really did delete the container");
+	ZENITH_ASSERT_EQ(xSM.GetCurrentStateName(), "Idle", "the root fell back to the new default");
+	ZENITH_ASSERT_NOT_NULL(pxIdleChild, "which is itself a container");
+	if (pxIdleChild)
+	{
+		ZENITH_ASSERT_TRUE(pxIdleChild->HasState("Run"),
+			"and it DOES hold a state called 'Run' — otherwise the assertion below proves nothing");
+		ZENITH_ASSERT_EQ(pxIdleChild->GetCurrentStateName(), "Stand",
+			"★ the descent STOPPED at the fallback: level 1's 'Run' belonged to a container that no longer "
+			"exists, and pushing it into an unrelated sub-graph would transplant a name across graphs");
+		ZENITH_ASSERT_EQ_FLOAT(Fb_ChildNormalizedTime(pxIdleChild), 0.0f, 1e-5f,
+			"at the child's default, at time 0 — 0.4 was a fraction of a clip in a graph that is gone");
+	}
+}
+
+//=============================================================================
+// (F-b 7) The other stop: the level matched its named state, but that state is
+//         no longer a container at all.
+//=============================================================================
+ZENITH_TEST(Animation, Fb_AncestorNoLongerAContainerStopsTheDescent)
+{
+	Flux_AnimationClip* pxIdle = WU61_MakeConstantClip("Idle", Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f));
+	Flux_AnimationClip* pxWalk = WU61_MakeConstantClip("Walk", Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
+	Flux_AnimationClip* pxRun  = WU61_MakeConstantClip("Run",  Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f));
+	Flux_AnimationClipCollection xClips;
+	xClips.AddClip(pxIdle);
+	xClips.AddClip(pxWalk);
+	xClips.AddClip(pxRun);
+
+	Flux_AnimationStateMachineDef xDef("Root");
+	Fb_AuthorContainerLoco(xDef, pxIdle, pxWalk, pxRun, true);
+
+	Flux_AnimationStateMachine xSM;
+	xSM.BuildFromDef(xDef, &xClips);
+
+	xSM.SetState("Loco");
+	Flux_AnimationStateMachine* pxChild = Fb_Child(xSM, "Loco");
+	if (pxChild)
+		pxChild->SetState("Run");
+
+	// The edit turns the container into a PLAIN clip state under the same name.
+	Flux_AnimationStateMachineDef xEdited("Root");
+	xEdited.AddState("Idle")->SetBlendTree(new Flux_BlendTreeNode_Clip(pxIdle));
+	xEdited.AddState("Loco")->SetBlendTree(new Flux_BlendTreeNode_Clip(pxWalk));
+	xEdited.SetDefaultState("Idle");
+
+	const bool bSurvived = xSM.ReloadFromDef(xEdited, &xClips);
+
+	ZENITH_ASSERT_TRUE(bSurvived, "level 0 landed on the state it named");
+	ZENITH_ASSERT_EQ(xSM.GetCurrentStateName(), "Loco", "under the same name it always had");
+	ZENITH_ASSERT_NULL(Fb_Child(xSM, "Loco"),
+		"★ but it is not a container any more, so there is nothing below to descend into");
+	ZENITH_ASSERT_EQ_FLOAT(xSM.GetCurrentStateInfo().m_fNormalizedTime, 0.0f, 1e-5f,
+		"and the level carried no time of its own — a container state has no blend tree and reports 0");
+}
+
+//=============================================================================
+// (F-b 8) ★ D42 — THE RESTORED CHILD KEEPS THE SHARED PARAMETER SET, because it
+//         is reached through the parent's SetState and never any other way. A
+//         child restored by reaching straight into it has
+//         m_pxSharedParameters == nullptr and reads its own authored defaults,
+//         so every condition inside it goes blind to values the game is setting.
+//=============================================================================
+ZENITH_TEST(Animation, Fb_RestoredChildKeepsTheSharedParameterSet)
+{
+	WU61_Rig xRig;
+
+	Flux_AnimationClip* pxIdle = WU61_MakeConstantClip("Idle", Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f));
+	Flux_AnimationClip* pxWalk = WU61_MakeConstantClip("Walk", Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
+	Flux_AnimationClip* pxRun  = WU61_MakeConstantClip("Run",  Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f));
+	Flux_AnimationClipCollection xClips;
+	xClips.AddClip(pxIdle);
+	xClips.AddClip(pxWalk);
+	xClips.AddClip(pxRun);
+
+	Flux_AnimationStateMachineDef xDef("Root");
+	Fb_AuthorContainerLoco(xDef, pxIdle, pxWalk, pxRun, true);
+
+	Flux_AnimationStateMachine xSM;
+	xSM.BuildFromDef(xDef, &xClips);
+
+	// The ONE live set a controller owns and publishes (D42). Held outside the
+	// machine, exactly as the controller holds it, so BuildFromDef cannot touch it.
+	Flux_AnimationParameters xShared;
+	xShared.AddFloat("Speed", 0.0f);
+	xSM.SetSharedParameters(&xShared);
+
+	xSM.SetState("Loco");
+	Flux_AnimationStateMachine* pxChild = Fb_Child(xSM, "Loco");
+	ZENITH_ASSERT_NOT_NULL(pxChild, "the container owns a sub-machine");
+	if (pxChild)
+	{
+		ZENITH_ASSERT_EQ(pxChild->GetCurrentStateName(), "Walk", "the child starts on its default");
+	}
+
+	xSM.ReloadFromDef(xDef, &xClips);
+
+	pxChild = Fb_Child(xSM, "Loco");   // ★ re-resolve
+	ZENITH_ASSERT_NOT_NULL(pxChild, "a fresh child came out of the rebuild");
+	if (pxChild)
+	{
+		ZENITH_ASSERT_TRUE(pxChild->GetSharedParameters() == &xShared,
+			"★ the restored child is pointed at the SHARED set — the parent's SetState is what publishes it, "
+			"and the restore goes through that call rather than around it");
+	}
+
+	// The value is set on the shared set and named nowhere else. A child holding
+	// its own def's declarations would read the authored 0 and never leave Walk.
+	xShared.SetFloat("Speed", 5.0f);
+
+	Flux_SkeletonPose xPose;
+	xPose.Initialize(2);
+	for (u_int u = 0; u < 30; ++u)
+		xSM.Update(1.0f / 60.0f, xPose, *xRig.m_pxSkeleton);
+
+	pxChild = Fb_Child(xSM, "Loco");
+	if (pxChild)
+	{
+		ZENITH_ASSERT_EQ(pxChild->GetCurrentStateName(), "Run",
+			"★ a condition INSIDE the restored container still sees a value set on the shared parameter set");
+	}
+}

@@ -858,6 +858,7 @@ only identity that spans the two defs:
 | current state | **name** | the layer's/machine's new DEFAULT state |
 | normalized time | **its STATE surviving** | 0 |
 | an active transition | **CANCELLED onto its TARGET** | the default state, at time 0 |
+| a NESTED current state, its time and its in-flight target | **every ancestor landing on its NAMED state**, then the same three rules one level down | the child's own DEFAULT at time 0 — and the descent STOPS at the first ancestor that fell back |
 | layer weight | **layer ID** (WU-6.3) | a vanished id is dropped; a new id keeps the def's weight |
 
 - **The snapshot holds NAMES AND FRACTIONS, never pointers.** Every runtime
@@ -944,14 +945,53 @@ only identity that spans the two defs:
   Re-arming is the panel's business — the panel is the only thing that can have
   armed it.
 
-**Two things it does NOT preserve, stated rather than left to be discovered:**
+★ **THE SNAPSHOT IS A PATH, NOT A POINT — ONE LEVEL PER CONTAINER STATE.**
+`RuntimeSnapshot` is a `Zenith_Vector<RuntimeLevelSnapshot>`: index 0 is the
+machine itself and index *n* is *n* containers down, which is the only shape
+that stays pointer-free at every depth (a nested machine's identity is *the
+container state its parent was in*, and that container is named by the level
+above). The capture recurses through the **target** state when a level is
+transitioning, for the same reason the level itself carries the target: that is
+where the reload arrives, and during a crossfade into a container it is the only
+child the parent is ticking. The child INSTANCE the def `CopyFrom` replaced has
+been re-made by the rebuild — `Flux_AnimationState::ReadFromDataStream` deletes
+and re-`new`s it — so there IS an object to restore onto, reached by name from
+the level above.
 
-- **A sub-state machine's own current state.** Entering a container state
-  re-enters its child at the child's default (`SetState`), and the child INSTANCE
-  lives inside the def `CopyFrom` just replaced, so there is no object to restore
-  onto. See the WU-6.1 note about the nested-instance residual.
+- ★ **THE DESCENT STOPS AT THE FIRST ANCESTOR THAT FELL BACK**, and this is a
+  correctness rule rather than an optimisation. A level that did not land on its
+  NAMED state is a level whose children describe a graph that is no longer
+  there; pushing level *n+1* into whatever the default happens to contain
+  TRANSPLANTS a state name across sub-graphs, and does it **silently**, because
+  `SetState` returns immediately on a name it does not know. The same stop
+  applies when the matched state is no longer a container at all.
+- ★ **"DID THIS LEVEL LAND ON ITS NAMED STATE" IS ASKED OF THE MACHINE, NOT
+  INFERRED FROM THE FUNCTION'S BOOL.** The empty-name branch returns **true**
+  with **no current state at all** ("nothing was playing" is a clean survival),
+  so driving the descent off the return value would dereference a null current
+  state. The condition is: the name was non-empty, `HasState` said yes, and the
+  machine's current state now answers to that name.
+- ★ **THE CHILD IS REACHED THROUGH THE PARENT'S `SetState`, NEVER AROUND IT
+  (D42).** That call is what re-publishes the shared parameter set onto the
+  child (`pxSub->SetSharedParameters(&GetParameters())`); a child restored by
+  reaching straight into it would come back with `m_pxSharedParameters ==
+  nullptr` and read its own authored declaration defaults, so every condition
+  inside the container would go blind to values the game is still setting.
+- ★ **EVERY POINTER TAKEN BEFORE A RELOAD DANGLES, THE CHILD MACHINES INCLUDED.**
+  A container state owns its sub-machine, and `CopyFrom` deletes every state;
+  re-resolve through `GetState(name)->GetSubStateMachine()` after the reload,
+  exactly as the layer tests re-resolve through `GetLayerById`.
+- **The nested levels do NOT change what `ReloadFromDef` returns.** It is still
+  level 0's answer, because a state deleted two containers down is the author's
+  intent and reporting it as this machine's failure would tell a caller its own
+  state had been lost.
+
+**One thing it does NOT preserve, stated rather than left to be discovered:**
+
 - **A transition's elapsed time, its source pose and its interruptibility.**
-  Cancellation is the rule, not a limitation — see above.
+  Cancellation is the rule, not a limitation — see above. (It used to be two
+  things: a sub-state machine's own current state was the other, and that gap is
+  now closed by the level chain above.)
 
 ★ **NOT A SYNCHRONISATION POINT, AND IT DOES NOT CREATE ONE** — the same ruling
 `Flux_AnimationClip::ReplaceContentsFrom` carries (D27). Capture, rebuild and
@@ -975,6 +1015,15 @@ machine's own parameter table) and five in `Flux_AnimationController.Tests.inl`
 reorder, and a deleted-plus-added layer pair). Every one of them **drives the
 graph before reloading** — a test that reloaded a machine which had never ticked
 passes against the demolition this work replaces.
+
+The nested chain adds eight `Fb_*` units in the same state-machine file: the
+child's state and its time surviving, a deleted nested state falling to the
+child's default at 0, a nested transition cancelled onto its target, a
+depth-two chain, the two descent STOPS (an ancestor that fell back — asserted
+against a sub-graph that *does* hold a same-named state, because a wrong-branch
+descent writes nothing observable on its own — and an ancestor that is no
+longer a container), and the D42 regression that the restored child still holds
+the shared parameter set.
 
 ### Update Modes (Flux_AnimationUpdateMode)
 - `ANIMATION_UPDATE_NORMAL` - Uses scaled deltaTime
