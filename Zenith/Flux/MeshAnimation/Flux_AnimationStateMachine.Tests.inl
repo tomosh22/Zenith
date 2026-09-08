@@ -541,8 +541,8 @@ ZENITH_TEST(Animation, WU64_ReloadKeepsTheCurrentStateAndItsNormalizedTime)
 	ZENITH_ASSERT_EQ(xSM.GetCurrentStateName(), "Idle",
 		"★ the reload did NOT snap the character back to the default state at frame 0");
 	ZENITH_ASSERT_EQ_FLOAT(xSM.GetCurrentStateInfo().m_fNormalizedTime, 0.4f, 1e-4f,
-		"★ and the playhead came with it — there is no SetNormalizedTime anywhere in the system, "
-		"so this had to be put back through the leaf's SECONDS timestamp");
+		"★ and the playhead came with it — Flux_BlendTreeNode::SetNormalizedTime walks the tree "
+		"and puts it back through the leaf's SECONDS timestamp");
 	ZENITH_ASSERT_TRUE(xEdited.HasState("Sprint"), "and the edit really was applied");
 	ZENITH_ASSERT_TRUE(xSM.HasState("Sprint"), "to the machine, not only to the def on the stack");
 }

@@ -837,22 +837,46 @@ only identity that spans the two defs:
   clip; carrying 0.8 onto whatever the new default happens to be drops the
   character into the middle of an unrelated animation — a glitch nobody can trace
   back to the edit that caused it.
-- ★ **THERE IS NO `SetNormalizedTime` ANYWHERE IN THE SYSTEM**, and this is the
-  premise that cost the most. `Flux_BlendTreeNode::GetNormalizedTime` is virtual
-  and const with **no setter at any level**; the only time SETTER in the whole
-  animation system is `Flux_BlendTreeNode_Clip::SetCurrentTimestamp`, in
-  **SECONDS**, on a leaf. So putting a playhead back means walking the tree to
-  its leaves and converting per clip
-  (`Flux_AnimationStateMachine::ApplyNormalizedTimeToTree`). Every leaf is put at
-  the **same** normalized time, which is the only reading that inverts
-  `GetNormalizedTime` for all four composite shapes at once: `Blend` mixes its
-  children's times, both blend spaces report the NEAREST point's, and `Select`
-  reports the selected child's — set them all equal and each returns that value.
-  The walk dispatches on **`GetNodeTypeName()`**, not RTTI, because that string
-  is already this hierarchy's discriminator (`CreateFromTypeName` reads the same
-  values out of a stream); the case list is the whole of that factory, and a node
-  type added without a case keeps the zero its `Reset` left rather than being
-  handed a wrong time.
+- ★ **THE INVERSE OF `GetNormalizedTime` IS A VIRTUAL, `Flux_BlendTreeNode::
+  SetNormalizedTime`, WITH PER-NODE SEMANTICS.** It did not always exist — this
+  used to read *"there is no `SetNormalizedTime` anywhere in the system"*, and the
+  restore was a private static on the state machine
+  (`ApplyNormalizedTimeToTree`) dispatching on `GetNodeTypeName()` with `strcmp`
+  over the seven node types. `Flux_AnimationStateMachineDef` carried a second,
+  structurally identical `strcmp` walk for clip resolution; both are gone, and
+  clip resolution is the matching virtual `ResolveClips`. The bottom of the walk
+  is unchanged: a normalized time becomes **SECONDS** at the leaf, through
+  `Flux_BlendTreeNode_Clip::SetCurrentTimestamp` — still the only place a
+  playhead is written, and still a **D40 scrub** (the previous-timestamp mark
+  follows and any pending span is dropped, so a restore does not fire every event
+  the playhead was dropped past).
+
+  Every leaf is put at the **same** normalized time, which is the only reading
+  that inverts `GetNormalizedTime` across the **six** composite shapes at once:
+
+  | Node | `GetNormalizedTime` reads | `SetNormalizedTime` writes |
+  |---|---|---|
+  | `Clip` | its own seconds ÷ duration | `SetCurrentTimestamp(f × duration)`, 0 if unresolved or zero-length |
+  | `Blend` | `mix(A, B, weight)` | **both** children |
+  | `BlendSpace1D` | the NEAREST point's | **every** point's node |
+  | `BlendSpace2D` | the NEAREST point's | **every** point's node |
+  | `Additive` | the base's only | base **and** additive |
+  | `Masked` | the base's only | base **and** override |
+  | `Select` | the SELECTED child's | **every** child |
+
+  ★ **The write side mirrors `Reset()`, not the read side, and the three
+  asymmetries are deliberate.** An unselected `Select` branch and an `Additive`
+  node's additive branch are exactly the ones nothing else moves, and either
+  becomes the pose the moment an index or a weight changes; leaving them where a
+  `Reset` left them puts the layers a playthrough apart. ★ **Nor is the inversion
+  exact for a half-populated `Blend`** — `GetNormalizedTime` substitutes 0 for a
+  null child, so `mix(0, T, w)` reads back below `T`.
+
+  The base declarations are **non-pure, defaulting to a no-op**: a node type
+  added without an override keeps the zero its `Reset` left rather than being
+  handed a wrong time, which is the same behaviour the old case list had by
+  omission — now stated once, in the class it belongs to, instead of being a
+  property of two separate `strcmp` lists staying in step.
 - ★ **CLIPS ARE RE-ACQUIRED BEFORE THE OLD REFERENCES ARE DROPPED.** The clip
   collection holds BORROWED pointers pinned by `m_xAnimationAssets`, and a def
   that no longer names a clip must give that reference back — but releasing first

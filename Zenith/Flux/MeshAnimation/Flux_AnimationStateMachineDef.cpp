@@ -675,59 +675,13 @@ void Flux_AnimationStateMachineDef::SeedParametersInto(Flux_AnimationParameters&
 
 //=============================================================================
 // Clip reference resolution — by NAME, through the collection.
+//
+// ★ THE RECURSION IS THE NODES' OWN (Flux_BlendTreeNode::ResolveClips). This
+// used to be a file-static walk here dispatching on GetNodeTypeName() with
+// strcmp, structurally identical to the one the state machine used for
+// normalized time: two separately-maintained descriptions of one hierarchy, each
+// silently skipping any node type whose name was missing from its case list.
 //=============================================================================
-static void ResolveClipReferencesRecursive(Flux_BlendTreeNode* pxNode, Flux_AnimationClipCollection* pxCollection)
-{
-	if (!pxNode)
-		return;
-
-	const char* szType = pxNode->GetNodeTypeName();
-
-	if (strcmp(szType, "Clip") == 0)
-	{
-		static_cast<Flux_BlendTreeNode_Clip*>(pxNode)->ResolveClip(pxCollection);
-	}
-	else if (strcmp(szType, "Blend") == 0)
-	{
-		Flux_BlendTreeNode_Blend* pxBlend = static_cast<Flux_BlendTreeNode_Blend*>(pxNode);
-		ResolveClipReferencesRecursive(pxBlend->GetChildA(), pxCollection);
-		ResolveClipReferencesRecursive(pxBlend->GetChildB(), pxCollection);
-	}
-	else if (strcmp(szType, "BlendSpace1D") == 0)
-	{
-		Flux_BlendTreeNode_BlendSpace1D* pxBS = static_cast<Flux_BlendTreeNode_BlendSpace1D*>(pxNode);
-		const Zenith_Vector<Flux_BlendTreeNode_BlendSpace1D::BlendPoint>& xPoints = pxBS->GetBlendPoints();
-		for (uint32_t i = 0; i < xPoints.GetSize(); ++i)
-			ResolveClipReferencesRecursive(xPoints.Get(i).m_pxNode, pxCollection);
-	}
-	else if (strcmp(szType, "BlendSpace2D") == 0)
-	{
-		Flux_BlendTreeNode_BlendSpace2D* pxBS = static_cast<Flux_BlendTreeNode_BlendSpace2D*>(pxNode);
-		const Zenith_Vector<Flux_BlendTreeNode_BlendSpace2D::BlendPoint>& xPoints = pxBS->GetBlendPoints();
-		for (uint32_t i = 0; i < xPoints.GetSize(); ++i)
-			ResolveClipReferencesRecursive(xPoints.Get(i).m_pxNode, pxCollection);
-	}
-	else if (strcmp(szType, "Additive") == 0)
-	{
-		Flux_BlendTreeNode_Additive* pxAdditive = static_cast<Flux_BlendTreeNode_Additive*>(pxNode);
-		ResolveClipReferencesRecursive(pxAdditive->GetBaseNode(), pxCollection);
-		ResolveClipReferencesRecursive(pxAdditive->GetAdditiveNode(), pxCollection);
-	}
-	else if (strcmp(szType, "Masked") == 0)
-	{
-		Flux_BlendTreeNode_Masked* pxMasked = static_cast<Flux_BlendTreeNode_Masked*>(pxNode);
-		ResolveClipReferencesRecursive(pxMasked->GetBaseNode(), pxCollection);
-		ResolveClipReferencesRecursive(pxMasked->GetOverrideNode(), pxCollection);
-	}
-	else if (strcmp(szType, "Select") == 0)
-	{
-		Flux_BlendTreeNode_Select* pxSelect = static_cast<Flux_BlendTreeNode_Select*>(pxNode);
-		const Zenith_Vector<Flux_BlendTreeNode*>& xChildren = pxSelect->GetChildren();
-		for (uint32_t i = 0; i < xChildren.GetSize(); ++i)
-			ResolveClipReferencesRecursive(xChildren.Get(i), pxCollection);
-	}
-}
-
 void Flux_AnimationStateMachineDef::ResolveClipReferences(Flux_AnimationClipCollection* pxCollection)
 {
 	for (Zenith_HashMap<std::string, Flux_AnimationState*>::Iterator xIt(m_xStates); !xIt.Done(); xIt.Next())
@@ -738,7 +692,7 @@ void Flux_AnimationStateMachineDef::ResolveClipReferences(Flux_AnimationClipColl
 
 		if (pxState->GetBlendTree())
 		{
-			ResolveClipReferencesRecursive(pxState->GetBlendTree(), pxCollection);
+			pxState->GetBlendTree()->ResolveClips(pxCollection);
 		}
 
 		// ★ AND INTO CONTAINER STATES. The pre-WU-6.1 walk stopped at the top

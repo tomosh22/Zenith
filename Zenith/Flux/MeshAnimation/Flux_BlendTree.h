@@ -140,6 +140,38 @@ public:
 	//=========================================================================
 	virtual void ResolveParameters(const Flux_AnimationParameters& xParams) { (void)xParams; }
 
+	//=========================================================================
+	// The INVERSE of GetNormalizedTime (WU-6.4 / D45)
+	//
+	// ★ EVERY LEAF IS PUT AT THE SAME NORMALIZED TIME, which is the only reading
+	// that inverts GetNormalizedTime for the composite shapes at once: Blend
+	// mixes its children's times, both blend spaces report the NEAREST point's,
+	// and Select reports the selected child's — set them all equal and each of
+	// those returns that value. A per-leaf restore would need a per-leaf
+	// snapshot, and the leaf set is exactly what an edit is allowed to change.
+	//
+	// ★ THE INVERSION IS NOT EXACT FOR A HALF-POPULATED Blend. Its read
+	// substitutes 0 for a null child — mix(0, T, w) — so a Blend holding only
+	// child B and set to T reads back (1-w)*0 + w*T, not T. Every other shape
+	// round-trips.
+	//
+	// ★ THE RECURSION MIRRORS Reset(), NOT GetNormalizedTime(). Select's read
+	// looks at the selected child only; its WRITE goes to every child, for the
+	// same reason ResolveParameters does — a branch that becomes selected next
+	// frame must already be holding the value, not the one from the last frame
+	// it happened to be selected on. Additive and Masked read only their base
+	// and write both branches.
+	//
+	// NON-PURE and a no-op by default, deliberately: a node type that has no
+	// time of its own keeps whatever its Reset() left rather than being handed a
+	// wrong one, and adding a node type is not made to touch this walk.
+	virtual void SetNormalizedTime(float fNormalizedTime) { (void)fNormalizedTime; }
+
+	// Bind every clip leaf under this node to a clip out of the collection, by
+	// the NAME the leaf was deserialized with. Same shape and same default as
+	// SetNormalizedTime above: a node with no clip references resolves nothing.
+	virtual void ResolveClips(Flux_AnimationClipCollection* pxCollection) { (void)pxCollection; }
+
 	// Factory method for creating nodes from type name
 	static Flux_BlendTreeNode* CreateFromTypeName(const std::string& strTypeName);
 
@@ -184,6 +216,11 @@ public:
 
 	// WU-5A: hand over (and clear) the span this leaf's last Evaluate produced.
 	void CollectEventSpans(Zenith_Vector<Flux_ClipEventSpan>* pxOutSpans) override;
+
+	// The leaf is where a normalized time becomes SECONDS — see SetCurrentTimestamp
+	// below for why this is a scrub rather than a field write.
+	void SetNormalizedTime(float fNormalizedTime) override;
+	void ResolveClips(Flux_AnimationClipCollection* pxCollection) override;
 
 	// Accessors
 	Flux_AnimationClip* GetClip() const { return m_pxClip; }
@@ -258,6 +295,8 @@ public:
 
 	void CollectEventSpans(Zenith_Vector<Flux_ClipEventSpan>* pxOutSpans) override;
 	void ResolveParameters(const Flux_AnimationParameters& xParams) override;
+	void SetNormalizedTime(float fNormalizedTime) override;
+	void ResolveClips(Flux_AnimationClipCollection* pxCollection) override;
 
 	// Accessors
 	Flux_BlendTreeNode* GetChildA() const { return m_pxChildA; }
@@ -314,6 +353,11 @@ public:
 	// D48: read m_fParameter from the named controller parameter, then forward
 	// to every blend point's child.
 	void ResolveParameters(const Flux_AnimationParameters& xParams) override;
+
+	// Every blend point's node, in index order — the space's own position is not
+	// a time and is left exactly where it was.
+	void SetNormalizedTime(float fNormalizedTime) override;
+	void ResolveClips(Flux_AnimationClipCollection* pxCollection) override;
 
 	// Add/remove blend points
 	void AddBlendPoint(Flux_BlendTreeNode* pxNode, float fPosition);
@@ -417,6 +461,10 @@ public:
 	// bound independently), then forward to every blend point's child.
 	void ResolveParameters(const Flux_AnimationParameters& xParams) override;
 
+	// Every blend point's node, as on the 1D space.
+	void SetNormalizedTime(float fNormalizedTime) override;
+	void ResolveClips(Flux_AnimationClipCollection* pxCollection) override;
+
 	// Add/remove blend points
 	void AddBlendPoint(Flux_BlendTreeNode* pxNode, const Zenith_Maths::Vector2& xPosition);
 	void RemoveBlendPoint(u_int uIndex);
@@ -513,6 +561,13 @@ public:
 	void CollectEventSpans(Zenith_Vector<Flux_ClipEventSpan>* pxOutSpans) override;
 	void ResolveParameters(const Flux_AnimationParameters& xParams) override;
 
+	// ★ BOTH BRANCHES, even though GetNormalizedTime reads only the base. The
+	// asymmetry is deliberate: the base is the one whose playhead a time is a
+	// fraction OF, but leaving the additive branch where a Reset left it would
+	// put the two layers a whole playthrough apart after a reload.
+	void SetNormalizedTime(float fNormalizedTime) override;
+	void ResolveClips(Flux_AnimationClipCollection* pxCollection) override;
+
 	// Accessors
 	Flux_BlendTreeNode* GetBaseNode() const { return m_pxBaseNode; }
 	Flux_BlendTreeNode* GetAdditiveNode() const { return m_pxAdditiveNode; }
@@ -564,6 +619,10 @@ public:
 	void CollectEventSpans(Zenith_Vector<Flux_ClipEventSpan>* pxOutSpans) override;
 	void ResolveParameters(const Flux_AnimationParameters& xParams) override;
 
+	// Base AND override, for the same reason the additive node writes both.
+	void SetNormalizedTime(float fNormalizedTime) override;
+	void ResolveClips(Flux_AnimationClipCollection* pxCollection) override;
+
 	// Accessors
 	Flux_BlendTreeNode* GetBaseNode() const { return m_pxBaseNode; }
 	Flux_BlendTreeNode* GetOverrideNode() const { return m_pxOverrideNode; }
@@ -611,6 +670,13 @@ public:
 	// cleared, and only the selected one has a fresh pending span to report.
 	void CollectEventSpans(Zenith_Vector<Flux_ClipEventSpan>* pxOutSpans) override;
 	void ResolveParameters(const Flux_AnimationParameters& xParams) override;
+
+	// ★ EVERY CHILD, NOT ONLY THE SELECTED ONE — the opposite of what
+	// GetNormalizedTime reads, and the same rule CollectEventSpans and
+	// ResolveParameters follow: an unselected branch is exactly the one nothing
+	// else updates, and it becomes the pose the frame the index changes.
+	void SetNormalizedTime(float fNormalizedTime) override;
+	void ResolveClips(Flux_AnimationClipCollection* pxCollection) override;
 
 	// Add children
 	void AddChild(Flux_BlendTreeNode* pxChild);

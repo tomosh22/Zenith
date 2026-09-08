@@ -280,25 +280,20 @@ private:
 	// container state has no tree and therefore no time of its own; it answers 0.
 	static float ReadStateNormalizedTime(const Flux_AnimationState* pxState);
 
-	// WU-6.4. The inverse, and there was no verb for it: the only time SETTER in
-	// the whole animation system is Flux_BlendTreeNode_Clip::SetCurrentTimestamp,
-	// in SECONDS, on a leaf. Flux_BlendTreeNode exposes GetNormalizedTime and no
-	// setter at any level, so putting a playhead back means walking down to the
-	// leaves and converting per clip.
+	// The inverse of ReadStateNormalizedTime is NOT a method here: it is
+	// Flux_BlendTreeNode::SetNormalizedTime, a VIRTUAL on the node hierarchy with
+	// per-node semantics (see Flux_BlendTree.h). RestoreRuntimeSnapshot calls it
+	// on the root of the state's tree and the tree walks itself down to the leaves,
+	// where a fraction becomes SECONDS through
+	// Flux_BlendTreeNode_Clip::SetCurrentTimestamp — still the only place in the
+	// animation system a playhead is written.
 	//
-	// ★ EVERY LEAF IS PUT AT THE SAME NORMALIZED TIME, which is the only reading
-	// that inverts GetNormalizedTime for all four composite shapes: Blend mixes
-	// its children's times, the two blend spaces report the NEAREST point's, and
-	// Select reports the selected child's — set them all equal and each of those
-	// returns that value. A per-leaf restore would need a per-leaf snapshot, and
-	// the leaf set is exactly what an edit is allowed to change.
-	//
-	// ★ DISPATCHED ON GetNodeTypeName(), NOT ON RTTI, because that string is
-	// already this hierarchy's discriminator — Flux_BlendTreeNode::
-	// CreateFromTypeName reads the same values back out of a stream. The list
-	// below is the whole of that factory; a node type added without a case here
-	// keeps the zero its Reset left, rather than being handed a wrong time.
-	static void ApplyNormalizedTimeToTree(Flux_BlendTreeNode* pxNode, float fNormalizedTime);
+	// It used to be a private static here dispatching on GetNodeTypeName() with
+	// strcmp, which is what made the recursion a SECOND, separately-maintained
+	// description of the same hierarchy — the def's clip resolution had a third.
+	// A node type added without a case silently kept the zero its Reset left; a
+	// node type added now inherits the base's no-op, which is the same behaviour
+	// stated once, in the class it belongs to.
 
 	// WU-5A: one state's spans — its blend tree's, or its sub-state machine's.
 	static void CollectStateEventSpans(Flux_AnimationState* pxState, Zenith_Vector<Flux_ClipEventSpan>* pxOutSpans);

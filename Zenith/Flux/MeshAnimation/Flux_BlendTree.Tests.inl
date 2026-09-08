@@ -368,3 +368,251 @@ ZENITH_TEST(Animation, BlendSpace2DAPositionEditKeepsTheIndexAndReTriangulates)
 		"an index past the end is refused");
 	ZENITH_ASSERT_FALSE(xBS.GetBlendPointPosition(9, xRead), "and reading past the end refuses too");
 }
+
+// ============================================================================
+// SetNormalizedTime — the inverse of GetNormalizedTime, one virtual per node.
+//
+// These pin the RECURSION SHAPE, which is the half a strcmp walk got wrong by
+// omission: a node type missing from its case list was silently left at zero.
+// Each case therefore asserts on the child the READ side would never look at —
+// an unselected Select branch, an Additive node's additive layer, a blend point
+// the parameter is nowhere near — because that is the assertion a walk written
+// from GetNormalizedTime would fail.
+// ============================================================================
+
+ZENITH_TEST(Animation, SetNormalizedTime_ClipDelegatesToSetCurrentTimestamp)
+{
+	Flux_AnimationClip xClip;
+	WU5A_InitSpanClip(xClip, "Scrub", 2.0f, true);
+
+	Flux_BlendTreeNode_Clip xNode(&xClip, 1.0f);
+	Flux_SkeletonPose xPose;
+	Zenith_SkeletonAsset xSkeleton;
+
+	// Advance first, so there IS a mark behind the playhead and a span pending —
+	// the two things a raw write to m_fCurrentTimestamp would leave stale.
+	xNode.SetEvalWeight(1.0f);
+	xNode.Evaluate(0.5f, xPose, xSkeleton);
+	ZENITH_ASSERT_EQ_FLOAT(xNode.GetCurrentTimestamp(), 0.5f, 1e-5f,
+		"the playhead moved, otherwise the scrub below proves nothing");
+
+	xNode.SetNormalizedTime(0.75f);
+
+	ZENITH_ASSERT_EQ_FLOAT(xNode.GetCurrentTimestamp(), 1.5f, 1e-5f,
+		"0.75 of a 2s clip is 1.5 SECONDS — the leaf is where the fraction is converted");
+	ZENITH_ASSERT_EQ_FLOAT(xNode.GetNormalizedTime(), 0.75f, 1e-5f,
+		"and it reads back as the fraction that was asked for");
+	ZENITH_ASSERT_EQ_FLOAT(xNode.GetPreviousTimestamp(), 1.5f, 1e-5f,
+		"★ the MARK came with it (D40) — this is a scrub, not a step");
+
+	Zenith_Vector<Flux_ClipEventSpan> xSpans;
+	xNode.CollectEventSpans(&xSpans);
+	ZENITH_ASSERT_EQ(xSpans.GetSize(), 0u,
+		"★ and the pending span was dropped — leaving it would replay every event the playhead was dropped past");
+
+	// ★ AN UNRESOLVED LEAF GOES TO 0, not to fNormalizedTime * 0. Same number,
+	// different reason, and the reason is what stops the guard being simplified
+	// away once a reload starts resolving clip names later than it does today.
+	Flux_BlendTreeNode_Clip xUnresolved;
+	xUnresolved.SetNormalizedTime(0.75f);
+	ZENITH_ASSERT_EQ_FLOAT(xUnresolved.GetCurrentTimestamp(), 0.0f, 1e-5f,
+		"a leaf with no clip has no duration to be a fraction of");
+}
+
+ZENITH_TEST(Animation, SetNormalizedTime_BlendWritesBothChildren)
+{
+	Flux_AnimationClip xClipA;
+	Flux_AnimationClip xClipB;
+	WU5A_InitSpanClip(xClipA, "A", 2.0f, true);
+	WU5A_InitSpanClip(xClipB, "B", 4.0f, true);
+
+	// Deliberately different durations: one fraction, two conversions.
+	Flux_BlendTreeNode_Clip* pxA = new Flux_BlendTreeNode_Clip(&xClipA);
+	Flux_BlendTreeNode_Clip* pxB = new Flux_BlendTreeNode_Clip(&xClipB);
+	Flux_BlendTreeNode_Blend xBlend(pxA, pxB, 0.25f);
+
+	xBlend.SetNormalizedTime(0.5f);
+
+	ZENITH_ASSERT_EQ_FLOAT(pxA->GetCurrentTimestamp(), 1.0f, 1e-5f, "0.5 of the 2s child");
+	ZENITH_ASSERT_EQ_FLOAT(pxB->GetCurrentTimestamp(), 2.0f, 1e-5f, "0.5 of the 4s child");
+	ZENITH_ASSERT_EQ_FLOAT(xBlend.GetNormalizedTime(), 0.5f, 1e-5f,
+		"★ and the composite reads back what was written: mix(0.5, 0.5, w) is 0.5 for ANY blend weight");
+}
+
+ZENITH_TEST(Animation, SetNormalizedTime_BlendSpace1DWritesEveryPoint)
+{
+	Flux_AnimationClip xWalk;
+	Flux_AnimationClip xRun;
+	WU5A_InitSpanClip(xWalk, "Walk", 2.0f, true);
+	WU5A_InitSpanClip(xRun, "Run", 5.0f, true);
+
+	Flux_BlendTreeNode_Clip* pxWalk = new Flux_BlendTreeNode_Clip(&xWalk);
+	Flux_BlendTreeNode_Clip* pxRun = new Flux_BlendTreeNode_Clip(&xRun);
+
+	Flux_BlendTreeNode_BlendSpace1D xBS;
+	xBS.AddBlendPoint(pxWalk, 0.0f);
+	xBS.AddBlendPoint(pxRun, 1.0f);
+	xBS.SortBlendPoints();
+
+	// The parameter sits ON point 0, so GetNormalizedTime can only ever see that
+	// one — which is exactly why the interesting assertion below is on point 1.
+	xBS.SetParameter(0.0f);
+	xBS.SetNormalizedTime(0.4f);
+
+	ZENITH_ASSERT_EQ_FLOAT(pxWalk->GetCurrentTimestamp(), 0.8f, 1e-5f, "0.4 of the 2s point");
+	ZENITH_ASSERT_EQ_FLOAT(pxRun->GetCurrentTimestamp(), 2.0f, 1e-5f,
+		"★ and the point the parameter is nowhere near moved too — 0.4 of 5s");
+	ZENITH_ASSERT_EQ_FLOAT(xBS.GetNormalizedTime(), 0.4f, 1e-5f,
+		"the nearest-point read gives back the fraction that was written");
+}
+
+ZENITH_TEST(Animation, SetNormalizedTime_BlendSpace2DWritesEveryPoint)
+{
+	Flux_AnimationClip xIdle;
+	Flux_AnimationClip xStrafe;
+	Flux_AnimationClip xSprint;
+	WU5A_InitSpanClip(xIdle, "Idle", 1.0f, true);
+	WU5A_InitSpanClip(xStrafe, "Strafe", 2.0f, true);
+	WU5A_InitSpanClip(xSprint, "Sprint", 8.0f, true);
+
+	Flux_BlendTreeNode_Clip* pxIdle = new Flux_BlendTreeNode_Clip(&xIdle);
+	Flux_BlendTreeNode_Clip* pxStrafe = new Flux_BlendTreeNode_Clip(&xStrafe);
+	Flux_BlendTreeNode_Clip* pxSprint = new Flux_BlendTreeNode_Clip(&xSprint);
+
+	Flux_BlendTreeNode_BlendSpace2D xBS;
+	xBS.AddBlendPoint(pxIdle, Zenith_Maths::Vector2(0.0f, 0.0f));
+	xBS.AddBlendPoint(pxStrafe, Zenith_Maths::Vector2(10.0f, 0.0f));
+	xBS.AddBlendPoint(pxSprint, Zenith_Maths::Vector2(0.0f, 10.0f));
+	xBS.ComputeTriangulation();
+
+	xBS.SetParameter(Zenith_Maths::Vector2(0.0f, 0.0f));  // sitting on point 0
+	xBS.SetNormalizedTime(0.25f);
+
+	ZENITH_ASSERT_EQ_FLOAT(pxIdle->GetCurrentTimestamp(), 0.25f, 1e-5f, "0.25 of the 1s point");
+	ZENITH_ASSERT_EQ_FLOAT(pxStrafe->GetCurrentTimestamp(), 0.5f, 1e-5f, "★ 0.25 of the 2s point, ten units away");
+	ZENITH_ASSERT_EQ_FLOAT(pxSprint->GetCurrentTimestamp(), 2.0f, 1e-5f, "★ and 0.25 of the 8s point");
+	ZENITH_ASSERT_EQ_FLOAT(xBS.GetNormalizedTime(), 0.25f, 1e-5f, "the space reads back the fraction");
+}
+
+ZENITH_TEST(Animation, SetNormalizedTime_AdditiveWritesBaseAndAdditive)
+{
+	Flux_AnimationClip xBase;
+	Flux_AnimationClip xAdd;
+	WU5A_InitSpanClip(xBase, "Base", 2.0f, true);
+	WU5A_InitSpanClip(xAdd, "Aim", 4.0f, true);
+
+	Flux_BlendTreeNode_Clip* pxBase = new Flux_BlendTreeNode_Clip(&xBase);
+	Flux_BlendTreeNode_Clip* pxAdd = new Flux_BlendTreeNode_Clip(&xAdd);
+
+	Flux_BlendTreeNode_Additive xAdditive;
+	xAdditive.SetBaseNode(pxBase);
+	xAdditive.SetAdditiveNode(pxAdd);
+
+	xAdditive.SetNormalizedTime(0.5f);
+
+	ZENITH_ASSERT_EQ_FLOAT(pxBase->GetCurrentTimestamp(), 1.0f, 1e-5f, "the base moved");
+	ZENITH_ASSERT_EQ_FLOAT(pxAdd->GetCurrentTimestamp(), 2.0f, 1e-5f,
+		"★ and so did the ADDITIVE layer, which GetNormalizedTime never reads — "
+		"a walk mirroring the read would leave the two a playthrough apart");
+	ZENITH_ASSERT_EQ_FLOAT(xAdditive.GetNormalizedTime(), 0.5f, 1e-5f, "the base's time is the node's time");
+}
+
+ZENITH_TEST(Animation, SetNormalizedTime_MaskedWritesBaseAndOverride)
+{
+	Flux_AnimationClip xBase;
+	Flux_AnimationClip xOverride;
+	WU5A_InitSpanClip(xBase, "Base", 2.0f, true);
+	WU5A_InitSpanClip(xOverride, "UpperBody", 4.0f, true);
+
+	Flux_BlendTreeNode_Clip* pxBase = new Flux_BlendTreeNode_Clip(&xBase);
+	Flux_BlendTreeNode_Clip* pxOverride = new Flux_BlendTreeNode_Clip(&xOverride);
+
+	Flux_BlendTreeNode_Masked xMasked;
+	xMasked.SetBaseNode(pxBase);
+	xMasked.SetOverrideNode(pxOverride);
+
+	// The mask is left EMPTY on purpose: the override branch contributes nothing
+	// to the pose, and its playhead must still be put back.
+	xMasked.SetNormalizedTime(0.5f);
+
+	ZENITH_ASSERT_EQ_FLOAT(pxBase->GetCurrentTimestamp(), 1.0f, 1e-5f, "the base moved");
+	ZENITH_ASSERT_EQ_FLOAT(pxOverride->GetCurrentTimestamp(), 2.0f, 1e-5f,
+		"★ and so did the OVERRIDE branch, which GetNormalizedTime never reads");
+	ZENITH_ASSERT_EQ_FLOAT(xMasked.GetNormalizedTime(), 0.5f, 1e-5f, "the base's time is the node's time");
+}
+
+ZENITH_TEST(Animation, SetNormalizedTime_SelectWritesEveryChildNotOnlySelected)
+{
+	Flux_AnimationClip xAttackA;
+	Flux_AnimationClip xAttackB;
+	WU5A_InitSpanClip(xAttackA, "AttackA", 2.0f, false);
+	WU5A_InitSpanClip(xAttackB, "AttackB", 4.0f, false);
+
+	Flux_BlendTreeNode_Clip* pxA = new Flux_BlendTreeNode_Clip(&xAttackA);
+	Flux_BlendTreeNode_Clip* pxB = new Flux_BlendTreeNode_Clip(&xAttackB);
+
+	Flux_BlendTreeNode_Select xSelect;
+	xSelect.AddChild(pxA);
+	xSelect.AddChild(pxB);
+	// The default index is 0; SetSelectedIndex RESETS the branch it moves to, so
+	// switching after the write would prove nothing about the write.
+	ZENITH_ASSERT_EQ(xSelect.GetSelectedIndex(), 0, "branch 0 is the selected one");
+
+	xSelect.SetNormalizedTime(0.5f);
+
+	ZENITH_ASSERT_EQ_FLOAT(pxA->GetCurrentTimestamp(), 1.0f, 1e-5f, "the selected branch moved");
+	ZENITH_ASSERT_EQ_FLOAT(pxB->GetCurrentTimestamp(), 2.0f, 1e-5f,
+		"★ and so did the UNSELECTED one — it is the pose the frame the index changes, "
+		"and nothing else in the system moves it");
+	ZENITH_ASSERT_EQ_FLOAT(xSelect.GetNormalizedTime(), 0.5f, 1e-5f,
+		"the read still reports only the selected branch, which is the deliberate asymmetry");
+}
+
+ZENITH_TEST(Animation, SetNormalizedTime_DefaultIsNoOp)
+{
+	// ★ THE DEFAULTS ARE NON-PURE FOR THIS CASE. MockBlendNodeWithTime overrides
+	// neither new virtual — a node type with no time and no clips of its own keeps
+	// what it had rather than being handed a wrong value, which is exactly what the
+	// old strcmp walk did by OMITTING it from the case list. Making either virtual
+	// pure would also stop this TU compiling.
+	MockBlendNodeWithTime xMock(0.42f);
+	Flux_AnimationClipCollection xCollection;
+
+	xMock.SetNormalizedTime(0.9f);
+	ZENITH_ASSERT_EQ_FLOAT(xMock.GetNormalizedTime(), 0.42f, 1e-5f,
+		"a node that does not override keeps its own time");
+
+	xMock.ResolveClips(&xCollection);
+	ZENITH_ASSERT_EQ_FLOAT(xMock.GetNormalizedTime(), 0.42f, 1e-5f,
+		"and resolving clips it does not have changes nothing");
+}
+
+ZENITH_TEST(Animation, ResolveClips_SelectResolvesEveryLeafFromTheCollection)
+{
+	Flux_AnimationClipCollection xCollection;
+	Flux_AnimationClip* pxIdleClip = new Flux_AnimationClip();
+	pxIdleClip->SetName("Idle");
+	Flux_AnimationClip* pxWalkClip = new Flux_AnimationClip();
+	pxWalkClip->SetName("Walk");
+	xCollection.AddClip(pxIdleClip);
+	xCollection.AddClip(pxWalkClip);
+
+	Flux_BlendTreeNode_Clip* pxLeafA = new Flux_BlendTreeNode_Clip();
+	pxLeafA->SetClipName("Idle");
+	Flux_BlendTreeNode_Clip* pxLeafB = new Flux_BlendTreeNode_Clip();
+	pxLeafB->SetClipName("Walk");
+
+	Flux_BlendTreeNode_Select xSelect;
+	xSelect.AddChild(pxLeafA);
+	xSelect.AddChild(pxLeafB);
+
+	ZENITH_ASSERT_NULL(pxLeafA->GetClip(), "a deserialized leaf starts holding a NAME and no clip");
+	ZENITH_ASSERT_NULL(pxLeafB->GetClip(), "including the branch the index does not select");
+
+	xSelect.ResolveClips(&xCollection);
+
+	ZENITH_ASSERT_TRUE(pxLeafA->GetClip() == pxIdleClip, "the selected leaf found its clip by name");
+	ZENITH_ASSERT_TRUE(pxLeafB->GetClip() == pxWalkClip,
+		"★ and so did the UNSELECTED one — an unresolved branch poses the bind pose, silently, "
+		"the first frame it is selected");
+}

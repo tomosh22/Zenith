@@ -208,12 +208,33 @@ bool Flux_BlendTreeNode_Clip::IsFinished() const
 	return m_fCurrentTimestamp >= m_pxClip->GetDuration();
 }
 
+void Flux_BlendTreeNode_Clip::SetNormalizedTime(float fNormalizedTime)
+{
+	const float fDuration = m_pxClip ? m_pxClip->GetDuration() : 0.0f;
+
+	// ★ AN UNRESOLVED OR ZERO-LENGTH LEAF GOES TO 0, NOT TO fNormalizedTime * 0.
+	// Those are the same number, but stating it stops the next reader from
+	// "simplifying" the guard away and multiplying by a duration that is only zero
+	// because a reload has not resolved the clip references yet.
+	//
+	// ★ AND IT GOES THROUGH SetCurrentTimestamp, never at the field. That is the
+	// D40 scrub: the previous-timestamp mark follows the new time and any pending
+	// span is dropped, so the next Evaluate reports [new time, next) instead of
+	// firing every event the playhead was dropped past.
+	SetCurrentTimestamp(fDuration > 0.0f ? fNormalizedTime * fDuration : 0.0f);
+}
+
 void Flux_BlendTreeNode_Clip::ResolveClip(Flux_AnimationClipCollection* pxCollection)
 {
 	if (pxCollection && !m_strClipName.empty())
 	{
 		m_pxClip = pxCollection->GetClip(m_strClipName);
 	}
+}
+
+void Flux_BlendTreeNode_Clip::ResolveClips(Flux_AnimationClipCollection* pxCollection)
+{
+	ResolveClip(pxCollection);
 }
 
 void Flux_BlendTreeNode_Clip::WriteToDataStream(Zenith_DataStream& xStream) const
@@ -291,6 +312,18 @@ void Flux_BlendTreeNode_Blend::Reset()
 {
 	if (m_pxChildA) m_pxChildA->Reset();
 	if (m_pxChildB) m_pxChildB->Reset();
+}
+
+void Flux_BlendTreeNode_Blend::SetNormalizedTime(float fNormalizedTime)
+{
+	if (m_pxChildA) m_pxChildA->SetNormalizedTime(fNormalizedTime);
+	if (m_pxChildB) m_pxChildB->SetNormalizedTime(fNormalizedTime);
+}
+
+void Flux_BlendTreeNode_Blend::ResolveClips(Flux_AnimationClipCollection* pxCollection)
+{
+	if (m_pxChildA) m_pxChildA->ResolveClips(pxCollection);
+	if (m_pxChildB) m_pxChildB->ResolveClips(pxCollection);
 }
 
 bool Flux_BlendTreeNode_Blend::IsFinished() const
@@ -527,6 +560,24 @@ void Flux_BlendTreeNode_BlendSpace1D::Reset()
 	{
 		if (m_xBlendPoints.Get(u).m_pxNode)
 			m_xBlendPoints.Get(u).m_pxNode->Reset();
+	}
+}
+
+void Flux_BlendTreeNode_BlendSpace1D::SetNormalizedTime(float fNormalizedTime)
+{
+	for (u_int u = 0; u < m_xBlendPoints.GetSize(); u++)
+	{
+		if (m_xBlendPoints.Get(u).m_pxNode)
+			m_xBlendPoints.Get(u).m_pxNode->SetNormalizedTime(fNormalizedTime);
+	}
+}
+
+void Flux_BlendTreeNode_BlendSpace1D::ResolveClips(Flux_AnimationClipCollection* pxCollection)
+{
+	for (u_int u = 0; u < m_xBlendPoints.GetSize(); u++)
+	{
+		if (m_xBlendPoints.Get(u).m_pxNode)
+			m_xBlendPoints.Get(u).m_pxNode->ResolveClips(pxCollection);
 	}
 }
 
@@ -848,6 +899,24 @@ void Flux_BlendTreeNode_BlendSpace2D::Reset()
 	}
 }
 
+void Flux_BlendTreeNode_BlendSpace2D::SetNormalizedTime(float fNormalizedTime)
+{
+	for (u_int u = 0; u < m_xBlendPoints.GetSize(); u++)
+	{
+		if (m_xBlendPoints.Get(u).m_pxNode)
+			m_xBlendPoints.Get(u).m_pxNode->SetNormalizedTime(fNormalizedTime);
+	}
+}
+
+void Flux_BlendTreeNode_BlendSpace2D::ResolveClips(Flux_AnimationClipCollection* pxCollection)
+{
+	for (u_int u = 0; u < m_xBlendPoints.GetSize(); u++)
+	{
+		if (m_xBlendPoints.Get(u).m_pxNode)
+			m_xBlendPoints.Get(u).m_pxNode->ResolveClips(pxCollection);
+	}
+}
+
 void Flux_BlendTreeNode_BlendSpace2D::WriteToDataStream(Zenith_DataStream& xStream) const
 {
 	xStream << m_xParameter.x;
@@ -941,6 +1010,20 @@ void Flux_BlendTreeNode_Additive::Reset()
 	if (m_pxAdditiveNode) m_pxAdditiveNode->Reset();
 }
 
+void Flux_BlendTreeNode_Additive::SetNormalizedTime(float fNormalizedTime)
+{
+	// Both branches, although GetNormalizedTime above reads only the base — see
+	// the header for why the asymmetry is deliberate.
+	if (m_pxBaseNode) m_pxBaseNode->SetNormalizedTime(fNormalizedTime);
+	if (m_pxAdditiveNode) m_pxAdditiveNode->SetNormalizedTime(fNormalizedTime);
+}
+
+void Flux_BlendTreeNode_Additive::ResolveClips(Flux_AnimationClipCollection* pxCollection)
+{
+	if (m_pxBaseNode) m_pxBaseNode->ResolveClips(pxCollection);
+	if (m_pxAdditiveNode) m_pxAdditiveNode->ResolveClips(pxCollection);
+}
+
 void Flux_BlendTreeNode_Additive::WriteToDataStream(Zenith_DataStream& xStream) const
 {
 	xStream << m_fAdditiveWeight;
@@ -1011,6 +1094,18 @@ void Flux_BlendTreeNode_Masked::Reset()
 {
 	if (m_pxBaseNode) m_pxBaseNode->Reset();
 	if (m_pxOverrideNode) m_pxOverrideNode->Reset();
+}
+
+void Flux_BlendTreeNode_Masked::SetNormalizedTime(float fNormalizedTime)
+{
+	if (m_pxBaseNode) m_pxBaseNode->SetNormalizedTime(fNormalizedTime);
+	if (m_pxOverrideNode) m_pxOverrideNode->SetNormalizedTime(fNormalizedTime);
+}
+
+void Flux_BlendTreeNode_Masked::ResolveClips(Flux_AnimationClipCollection* pxCollection)
+{
+	if (m_pxBaseNode) m_pxBaseNode->ResolveClips(pxCollection);
+	if (m_pxOverrideNode) m_pxOverrideNode->ResolveClips(pxCollection);
 }
 
 void Flux_BlendTreeNode_Masked::WriteToDataStream(Zenith_DataStream& xStream) const
@@ -1110,6 +1205,27 @@ void Flux_BlendTreeNode_Select::Reset()
 	{
 		if (m_xChildren.Get(u))
 			m_xChildren.Get(u)->Reset();
+	}
+}
+
+void Flux_BlendTreeNode_Select::SetNormalizedTime(float fNormalizedTime)
+{
+	// EVERY child, not the selected one GetNormalizedTime above reads: an
+	// unselected branch is the one nothing else moves, and it is the pose the
+	// frame the index changes.
+	for (u_int u = 0; u < m_xChildren.GetSize(); u++)
+	{
+		if (m_xChildren.Get(u))
+			m_xChildren.Get(u)->SetNormalizedTime(fNormalizedTime);
+	}
+}
+
+void Flux_BlendTreeNode_Select::ResolveClips(Flux_AnimationClipCollection* pxCollection)
+{
+	for (u_int u = 0; u < m_xChildren.GetSize(); u++)
+	{
+		if (m_xChildren.Get(u))
+			m_xChildren.Get(u)->ResolveClips(pxCollection);
 	}
 }
 

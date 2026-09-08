@@ -1,7 +1,6 @@
 #include "Zenith.h"
 #include "Flux_AnimationStateMachine.h"
 #include "Flux_AnimationClip.h"
-#include <cstring>   // WU-6.4: GetNodeTypeName() dispatch in ApplyNormalizedTimeToTree
 
 //=============================================================================
 // Flux_AnimatorStateInfo
@@ -62,79 +61,6 @@ float Flux_AnimationStateMachine::ReadStateNormalizedTime(const Flux_AnimationSt
 	return pxTree ? pxTree->GetNormalizedTime() : 0.0f;
 }
 
-void Flux_AnimationStateMachine::ApplyNormalizedTimeToTree(Flux_BlendTreeNode* pxNode, float fNormalizedTime)
-{
-	if (pxNode == nullptr)
-		return;
-
-	const char* szType = pxNode->GetNodeTypeName();
-
-	if (strcmp(szType, "Clip") == 0)
-	{
-		Flux_BlendTreeNode_Clip* pxLeaf = static_cast<Flux_BlendTreeNode_Clip*>(pxNode);
-		const Flux_AnimationClip* pxClip = pxLeaf->GetClip();
-		const float fDuration = (pxClip != nullptr) ? pxClip->GetDuration() : 0.0f;
-
-		// ★ AN UNRESOLVED OR ZERO-LENGTH LEAF GOES TO 0, NOT TO fNormalizedTime *
-		// 0. Those are the same number, but stating it stops the next reader from
-		// "simplifying" the guard away and multiplying by a duration that is only
-		// zero because the reload has not resolved the clip references yet.
-		pxLeaf->SetCurrentTimestamp(fDuration > 0.0f ? fNormalizedTime * fDuration : 0.0f);
-		return;
-	}
-
-	if (strcmp(szType, "Blend") == 0)
-	{
-		Flux_BlendTreeNode_Blend* pxBlend = static_cast<Flux_BlendTreeNode_Blend*>(pxNode);
-		ApplyNormalizedTimeToTree(pxBlend->GetChildA(), fNormalizedTime);
-		ApplyNormalizedTimeToTree(pxBlend->GetChildB(), fNormalizedTime);
-		return;
-	}
-
-	if (strcmp(szType, "BlendSpace1D") == 0)
-	{
-		Flux_BlendTreeNode_BlendSpace1D* pxSpace = static_cast<Flux_BlendTreeNode_BlendSpace1D*>(pxNode);
-		const Zenith_Vector<Flux_BlendTreeNode_BlendSpace1D::BlendPoint>& xPoints = pxSpace->GetBlendPoints();
-		for (u_int u = 0; u < xPoints.GetSize(); ++u)
-			ApplyNormalizedTimeToTree(xPoints.Get(u).m_pxNode, fNormalizedTime);
-		return;
-	}
-
-	if (strcmp(szType, "BlendSpace2D") == 0)
-	{
-		Flux_BlendTreeNode_BlendSpace2D* pxSpace = static_cast<Flux_BlendTreeNode_BlendSpace2D*>(pxNode);
-		const Zenith_Vector<Flux_BlendTreeNode_BlendSpace2D::BlendPoint>& xPoints = pxSpace->GetBlendPoints();
-		for (u_int u = 0; u < xPoints.GetSize(); ++u)
-			ApplyNormalizedTimeToTree(xPoints.Get(u).m_pxNode, fNormalizedTime);
-		return;
-	}
-
-	if (strcmp(szType, "Additive") == 0)
-	{
-		Flux_BlendTreeNode_Additive* pxAdditive = static_cast<Flux_BlendTreeNode_Additive*>(pxNode);
-		ApplyNormalizedTimeToTree(pxAdditive->GetBaseNode(), fNormalizedTime);
-		ApplyNormalizedTimeToTree(pxAdditive->GetAdditiveNode(), fNormalizedTime);
-		return;
-	}
-
-	if (strcmp(szType, "Masked") == 0)
-	{
-		Flux_BlendTreeNode_Masked* pxMasked = static_cast<Flux_BlendTreeNode_Masked*>(pxNode);
-		ApplyNormalizedTimeToTree(pxMasked->GetBaseNode(), fNormalizedTime);
-		ApplyNormalizedTimeToTree(pxMasked->GetOverrideNode(), fNormalizedTime);
-		return;
-	}
-
-	if (strcmp(szType, "Select") == 0)
-	{
-		Flux_BlendTreeNode_Select* pxSelect = static_cast<Flux_BlendTreeNode_Select*>(pxNode);
-		const Zenith_Vector<Flux_BlendTreeNode*>& xChildren = pxSelect->GetChildren();
-		for (u_int u = 0; u < xChildren.GetSize(); ++u)
-			ApplyNormalizedTimeToTree(xChildren.Get(u), fNormalizedTime);
-		return;
-	}
-}
-
 Flux_AnimationStateMachine::RuntimeSnapshot Flux_AnimationStateMachine::CaptureRuntimeSnapshot() const
 {
 	RuntimeSnapshot xSnapshot;
@@ -185,8 +111,9 @@ bool Flux_AnimationStateMachine::RestoreRuntimeSnapshot(const RuntimeSnapshot& x
 	{
 		// SetState resets the target's blend tree, so the time goes on AFTER it.
 		SetState(strWanted);
-		ApplyNormalizedTimeToTree(m_pxCurrentState ? m_pxCurrentState->GetBlendTree() : nullptr,
-			fWantedNormalizedTime);
+		Flux_BlendTreeNode* pxTree = m_pxCurrentState ? m_pxCurrentState->GetBlendTree() : nullptr;
+		if (pxTree)
+			pxTree->SetNormalizedTime(fWantedNormalizedTime);
 		return true;
 	}
 
