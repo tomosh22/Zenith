@@ -874,19 +874,47 @@ satisfaction instead means `AnimSmActionChecked` covers **every** `ANIM_SM_*`
 verb with no exception list for a later verb to be forgotten from.
 
 **★ AN EMPTY from-state ADDRESSES THE MACHINE'S ANY-STATE LIST** on every
-transition verb and every automation step. Note the residual: those transitions
-are *editable* but are **not drawn on the canvas** — the edge pass walks states
-only — so an any-state graph authored here is currently inspected through the
-transition inspector rather than seen.
+transition verb, every automation step **and now on the canvas**. The list is
+drawn as a **pseudo-node** labelled `<Any State>`: always present (it is the only
+handle the first any-state edge can be drawn from), anchored to the canvas's
+bottom-left corner rather than to a graph position, and therefore
+**scroll-independent** — there is no verb that could store a position for it, and
+a node that scrolled away would take the handle with it. It is out of
+`RebuildAutoLayout`'s slot 0 at the top-left on purpose, because the hit test
+checks it FIRST and an overlap would stop slot 0 taking clicks. Ctrl-drag from it
+adds an any-state transition; a drop **onto** it is refused explicitly (nothing
+transitions *into* the list), and rename/delete are drawn **disabled with a
+tooltip** rather than omitted.
+
+**The owner shift is ONE edit, and that is the thing not to "fix".**
+`DrawTransitions` pushes `""` into `m_axRectOwnerOrder` before the sorted state
+names, so owner 0 is the any-state list and every state's index moves up by one
+in the single place indices are assigned. Both readers —
+`GetTransitionMidpointRect` and `FindTransitionAtScreenPos` — resolve an owner by
+scanning that vector **by name**, so they follow for free; adding a `+ 1` to
+either would double-shift every key and hand out a neighbour's edge.
+`AnimSmPanel::StateTransitionKeysStillResolveAfterTheOwnerShift` is the test that
+catches exactly that, and it exists because nothing pinned a state-owned edge's
+midpoint before.
+
+**Its selection is its own flag** (`IsAnyStateSelected`), not an empty
+`m_strSelectedState`: "nothing is selected" and "the any-state list is selected"
+are both the empty string, and the inspector branch, the node context menu and
+"Rename Selected" all read an empty name as *nothing*. Its RECT is its own member
+too (`GetAnyStateRect`), not an entry in `m_xNodeRects`: `GetDrawnNodeCount()`
+counts **state** nodes and is asserted to reach zero once every state has been
+scrolled away, which a canvas-anchored entry would break forever.
+`GetStateNodeRect("")` still refuses, because `""` is not a state.
 
 **Hit rects and the off-screen contract** are the dope sheet's, verbatim, and for
 the same reason: `GetStateNodeRect` / `GetTransitionMidpointRect` /
-`GetCanvasRect` hand out only what was painted inside the canvas this frame, and
-judge it against the display bound **captured when the rect was recorded** rather
-than `ImGui::GetIO().DisplaySize` re-read at query time (which is (-1, -1) outside
-a frame, i.e. for every unit assertion). `WasCanvasDrawnLastFrame`,
-`GetRecordedDisplayWidth/Height`, `GetRenderedFrameCount` and `GetDrawnNodeCount`
-are what tell the four causes of a flat `false` apart.
+`GetCanvasRect` / `GetAnyStateRect` hand out only what was painted inside the
+canvas this frame, and judge it against the display bound **captured when the rect
+was recorded** rather than `ImGui::GetIO().DisplaySize` re-read at query time
+(which is (-1, -1) outside a frame, i.e. for every unit assertion).
+`WasCanvasDrawnLastFrame`, `GetRecordedDisplayWidth/Height`,
+`GetRenderedFrameCount`, `GetDrawnNodeCount` and `GetDrawnTransitionCount` are
+what tell the four causes of a flat `false` apart.
 
 **The window title is the bare constant** `szEDITOR_WINDOW_ANIM_STATE_MACHINE` —
 same rule, same reason as the dope sheet: `DockBuilderDockWindow` hashes the whole

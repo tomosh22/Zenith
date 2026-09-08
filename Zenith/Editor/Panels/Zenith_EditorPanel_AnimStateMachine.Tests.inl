@@ -1107,3 +1107,298 @@ ZENITH_TEST(AnimSmPanel, ThePixelToPositionMappingRoundTripsAndTheDragGoesThroug
 
 	xPanel.CloseAsset();
 }
+
+//==============================================================================
+// ANY-STATE TRANSITIONS ON THE CANVAS (WU-8.x)
+//
+// ★ THE RESIDUAL THESE CLOSE. An EMPTY from-state has always addressed the
+// machine's any-state list on every document verb and every ANIM_SM_* automation
+// step, and the edge pass walked STATES only — so an any-state graph was
+// editable through the inspector and invisible on the canvas, with no handle to
+// author the first one from.
+//
+// ★ THE OWNER SHIFT IS ONE EDIT AND THESE PIN BOTH HALVES OF IT. DrawTransitions
+// pushes "" before the sorted state names, which makes owner 0 the any-state list
+// and moves every state up by one; the two readers resolve an owner by scanning
+// that vector BY NAME, so nothing else may add a `+ 1`. One test below asserts
+// the new key resolves and one asserts the OLD ones still do — the second is the
+// one that catches a double shift, and nothing pinned it before.
+//==============================================================================
+
+ZENITH_TEST(AnimSmPanel, AnyStateNodePublishesItsRectOutsideTheStateSet)
+{
+	AnimSmFixture xFixture("zenith_animsm_anystaterect");
+	Zenith_EditorPanel_AnimStateMachine xPanel;
+
+	ZENITH_ASSERT_TRUE(xPanel.OpenAssetFresh(xFixture.m_strControllerPath), "a fresh controller opens");
+	ZENITH_ASSERT_TRUE(xPanel.Action_AddState("Idle"), "Idle");
+	ZENITH_ASSERT_TRUE(xPanel.Action_AddState("Walk"), "Walk");
+	ZENITH_ASSERT_TRUE(xPanel.Action_AddState("Run"), "Run");
+
+	xPanel.RequestWindowPlacement(20.0f, 20.0f, 1200.0f, 640.0f);
+	AnimSmRenderFrames(xPanel, 2);
+
+	// The discriminators first, as everywhere else here: a bare `false` from a
+	// rect accessor has four causes and none of the assertions below would tell
+	// them apart on their own.
+	ZENITH_ASSERT_TRUE(xPanel.WasCanvasDrawnLastFrame(), "the canvas was drawn");
+	ZENITH_ASSERT_EQ_FLOAT(xPanel.GetRecordedDisplayWidth(), fANIMSM_DISPLAY_W, 0.5f,
+		"and the display bound was captured AT RECORD TIME");
+
+	Zenith_AnimCtrlPanelRect xCanvas;
+	ZENITH_ASSERT_TRUE(xPanel.GetCanvasRect(xCanvas), "the canvas publishes its frame");
+
+	Zenith_AnimCtrlPanelRect xAny;
+	ZENITH_ASSERT_TRUE(xPanel.GetAnyStateRect(xAny), "★ and the any-state pseudo-node publishes its box");
+	ZENITH_ASSERT_GT(xAny.Width(), 1.0f, "with a real width");
+	ZENITH_ASSERT_GE(xAny.m_fMinX, xCanvas.m_fMinX - 0.5f, "inside the canvas on the left");
+	ZENITH_ASSERT_LE(xAny.m_fMaxX, xCanvas.m_fMaxX + 0.5f, "and on the right");
+	ZENITH_ASSERT_GE(xAny.m_fMinY, xCanvas.m_fMinY - 0.5f, "and at the top");
+	ZENITH_ASSERT_LE(xAny.m_fMaxY, xCanvas.m_fMaxY + 0.5f, "and at the bottom");
+
+	// ★ IT IS NOT A STATE, AND THE TWO WAYS THAT SHOWS ARE BOTH PINNED HERE.
+	// GetDrawnNodeCount counts STATE nodes, and GetStateNodeRect("") keeps
+	// refusing — an entry in m_xNodeRects would quietly break both.
+	ZENITH_ASSERT_EQ(xPanel.GetDrawnNodeCount(), 3u, "three states were painted, and only three");
+	Zenith_AnimCtrlPanelRect xEmptyName;
+	ZENITH_ASSERT_FALSE(xPanel.GetStateNodeRect("", xEmptyName),
+		"★ and \"\" is still not a STATE, so the state accessor refuses it");
+
+	// ★ AND IT IS CANVAS-ANCHORED, NOT GRAPH-ANCHORED. Scrolling every state out
+	// of the world leaves the pseudo-node exactly where it was — otherwise the one
+	// handle an any-state edge can be drawn from could be scrolled away, and the
+	// off-screen contract asserted at :286 would have nothing left to protect.
+	xPanel.SetCanvasScroll(100000.0f, 0.0f);
+	AnimSmRenderFrames(xPanel, 2);
+	ZENITH_ASSERT_TRUE(xPanel.WasCanvasDrawnLastFrame(), "the canvas is still being drawn");
+	ZENITH_ASSERT_EQ(xPanel.GetDrawnNodeCount(), 0u, "every state node was scrolled away");
+	Zenith_AnimCtrlPanelRect xAnyScrolled;
+	ZENITH_ASSERT_TRUE(xPanel.GetAnyStateRect(xAnyScrolled), "★ but the pseudo-node is still there");
+	ZENITH_ASSERT_EQ_FLOAT(xAnyScrolled.m_fMinX, xAny.m_fMinX, 0.5f, "at the same x");
+	ZENITH_ASSERT_EQ_FLOAT(xAnyScrolled.m_fMinY, xAny.m_fMinY, 0.5f, "and the same y");
+
+	xPanel.CloseAsset();
+}
+
+ZENITH_TEST(AnimSmPanel, AnyStateTransitionIsDrawnFromThePseudoNode)
+{
+	AnimSmFixture xFixture("zenith_animsm_anystateedge");
+	Zenith_EditorPanel_AnimStateMachine xPanel;
+
+	ZENITH_ASSERT_TRUE(xPanel.OpenAssetFresh(xFixture.m_strControllerPath), "a fresh controller opens");
+	ZENITH_ASSERT_TRUE(xPanel.Action_AddState("Idle"), "one state");
+	ZENITH_ASSERT_TRUE(xPanel.Action_AddTransition("", "Idle"), "and an ANY-STATE edge into it");
+
+	xPanel.RequestWindowPlacement(20.0f, 20.0f, 1200.0f, 640.0f);
+	AnimSmRenderFrames(xPanel, 2);
+	ZENITH_ASSERT_TRUE(xPanel.WasCanvasDrawnLastFrame(), "the canvas was drawn");
+
+	// ★ THE EDGE IS DRAWN, which is what "not drawn on the canvas" used to mean:
+	// the owner-order writer swallowed owner 0 because ComputeNodeScreenRect had
+	// no answer for the empty name.
+	ZENITH_ASSERT_EQ(xPanel.GetDrawnTransitionCount(), 1u, "★ one edge midpoint was painted");
+
+	Zenith_AnimCtrlPanelRect xMid;
+	ZENITH_ASSERT_TRUE(xPanel.GetTransitionMidpointRect("", 0, xMid),
+		"★ and it publishes under the EMPTY from-state — the same key every verb takes");
+
+	Zenith_AnimCtrlPanelRect xAny;
+	Zenith_AnimCtrlPanelRect xIdle;
+	ZENITH_ASSERT_TRUE(xPanel.GetAnyStateRect(xAny), "the pseudo-node published");
+	ZENITH_ASSERT_TRUE(xPanel.GetStateNodeRect("Idle", xIdle), "and so did Idle");
+
+	// ★ THE MIDPOINT IS THE MIDPOINT OF THOSE TWO BOXES, not merely "somewhere
+	// between them". An edge drawn from a second derivation of the pseudo-node's
+	// position would sit between them too, and would drift the day the anchor moved.
+	const Zenith_Maths::Vector2 xMidCentre = xMid.Centre();
+	const Zenith_Maths::Vector2 xAnyCentre = xAny.Centre();
+	const Zenith_Maths::Vector2 xIdleCentre = xIdle.Centre();
+	ZENITH_ASSERT_EQ_FLOAT(xMidCentre.x, (xAnyCentre.x + xIdleCentre.x) * 0.5f, 0.5f,
+		"★ the edge's midpoint is halfway between the pseudo-node and the target, in x");
+	ZENITH_ASSERT_EQ_FLOAT(xMidCentre.y, (xAnyCentre.y + xIdleCentre.y) * 0.5f, 0.5f, "and in y");
+
+	// And the edge is selectable by the same (from, index) pair.
+	ZENITH_ASSERT_TRUE(xPanel.Action_SelectTransition("", 0u), "the any-state edge selects");
+	std::string strFrom = "unset";
+	u_int uIndex = uINVALID_ANIMSM_TRANSITION;
+	ZENITH_ASSERT_TRUE(xPanel.GetSelectedTransition(strFrom, uIndex), "and reads back");
+	ZENITH_ASSERT_TRUE(strFrom.empty(), "from the any-state list");
+	ZENITH_ASSERT_EQ(uIndex, 0u, "at index 0");
+
+	xPanel.CloseAsset();
+}
+
+ZENITH_TEST(AnimSmPanel, StateTransitionKeysStillResolveAfterTheOwnerShift)
+{
+	// ★ THE HALF THAT CATCHES A DOUBLE SHIFT, and nothing pinned it before this.
+	// Owner 0 became the any-state list with ONE push in DrawTransitions; both
+	// readers scan the recorded order BY NAME, so they follow for free. A `+ 1`
+	// added to either "to account for the any-state row" would move every state's
+	// key one further and hand out a neighbour's edge — or nothing at all — while
+	// the any-state assertions above stayed green.
+	AnimSmFixture xFixture("zenith_animsm_ownershift");
+	Zenith_EditorPanel_AnimStateMachine xPanel;
+
+	ZENITH_ASSERT_TRUE(xPanel.OpenAssetFresh(xFixture.m_strControllerPath), "a fresh controller opens");
+	ZENITH_ASSERT_TRUE(xPanel.Action_AddState("Idle"), "Idle");
+	ZENITH_ASSERT_TRUE(xPanel.Action_AddState("Walk"), "Walk");
+	ZENITH_ASSERT_TRUE(xPanel.Action_AddTransition("Idle", "Walk"), "Idle -> Walk");
+
+	xPanel.RequestWindowPlacement(20.0f, 20.0f, 1200.0f, 640.0f);
+	AnimSmRenderFrames(xPanel, 2);
+	ZENITH_ASSERT_TRUE(xPanel.WasCanvasDrawnLastFrame(), "the canvas was drawn");
+	ZENITH_ASSERT_EQ(xPanel.GetDrawnTransitionCount(), 1u, "one edge was painted");
+
+	Zenith_AnimCtrlPanelRect xMid;
+	ZENITH_ASSERT_TRUE(xPanel.GetTransitionMidpointRect("Idle", 0u, xMid),
+		"★ a STATE-owned edge still resolves under its own name");
+
+	Zenith_AnimCtrlPanelRect xIdle;
+	Zenith_AnimCtrlPanelRect xWalk;
+	ZENITH_ASSERT_TRUE(xPanel.GetStateNodeRect("Idle", xIdle), "Idle published");
+	ZENITH_ASSERT_TRUE(xPanel.GetStateNodeRect("Walk", xWalk), "and Walk");
+	const Zenith_Maths::Vector2 xMidCentre = xMid.Centre();
+	ZENITH_ASSERT_EQ_FLOAT(xMidCentre.x, (xIdle.Centre().x + xWalk.Centre().x) * 0.5f, 0.5f,
+		"★ and it is the midpoint of THOSE two nodes — not of the pseudo-node and one of them");
+	ZENITH_ASSERT_EQ_FLOAT(xMidCentre.y, (xIdle.Centre().y + xWalk.Centre().y) * 0.5f, 0.5f, "in y too");
+
+	// An index the owner does not have refuses, so the key is the pair and not the
+	// owner alone.
+	ZENITH_ASSERT_FALSE(xPanel.GetTransitionMidpointRect("Idle", 1u, xMid), "index 1 does not exist");
+	ZENITH_ASSERT_FALSE(xPanel.GetTransitionMidpointRect("Walk", 0u, xMid), "and Walk owns no edge");
+
+	xPanel.CloseAsset();
+}
+
+ZENITH_TEST(AnimSmPanel, SelectingAnyStateIsDistinctFromSelectingNothing)
+{
+	// ★ "NOTHING IS SELECTED" AND "THE ANY-STATE LIST IS SELECTED" ARE BOTH THE
+	// EMPTY STRING, which is exactly why the pseudo-node's selection is its own
+	// flag. Every consumer of GetSelectedStateName reads empty as "nothing".
+	AnimSmFixture xFixture("zenith_animsm_anystatesel");
+	Zenith_EditorPanel_AnimStateMachine xPanel;
+
+	ZENITH_ASSERT_TRUE(xPanel.OpenAssetFresh(xFixture.m_strControllerPath), "a fresh controller opens");
+	ZENITH_ASSERT_TRUE(xPanel.Action_AddState("Idle"), "Idle");
+	ZENITH_ASSERT_TRUE(xPanel.Action_AddTransition("", "Idle"), "and an any-state edge to select later");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_ClearSelection(), "the new edge was a selection");
+	ZENITH_ASSERT_FALSE(xPanel.IsAnyStateSelected(), "and nothing is selected now");
+	ZENITH_ASSERT_FALSE(xPanel.Action_ClearSelection(), "clearing nothing reports nothing");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_SelectAnyState(), "the pseudo-node selects");
+	ZENITH_ASSERT_TRUE(xPanel.IsAnyStateSelected(), "★ and says so through its own flag");
+	ZENITH_ASSERT_TRUE(xPanel.GetSelectedStateName().empty(),
+		"★ while the state name stays empty — the two facts are not the same fact");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_SelectState("Idle"), "selecting a state");
+	ZENITH_ASSERT_FALSE(xPanel.IsAnyStateSelected(), "clears the pseudo-node's selection");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_SelectAnyState(), "select it again");
+	ZENITH_ASSERT_TRUE(xPanel.Action_SelectTransition("", 0u), "and select one of its OWN transitions");
+	ZENITH_ASSERT_FALSE(xPanel.IsAnyStateSelected(),
+		"★ which clears it too — the inspector shows exactly one thing");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_SelectAnyState(), "select it once more");
+	ZENITH_ASSERT_TRUE(xPanel.Action_ClearSelection(),
+		"★ and clearing it reports TRUE — there WAS a selection to clear");
+	ZENITH_ASSERT_FALSE(xPanel.IsAnyStateSelected(), "and it is gone");
+
+	xPanel.CloseAsset();
+}
+
+ZENITH_TEST(AnimSmPanel, AnyStateRefusesRenameAndDelete)
+{
+	// The pseudo-node is not a state and has no verbs of its own: the document
+	// already refuses both, and the canvas draws the refusal DISABLED rather than
+	// leaving the menu items out. This pins the half a gate can see.
+	AnimSmFixture xFixture("zenith_animsm_anystaterefuse");
+	Zenith_EditorPanel_AnimStateMachine xPanel;
+
+	ZENITH_ASSERT_TRUE(xPanel.OpenAssetFresh(xFixture.m_strControllerPath), "a fresh controller opens");
+	ZENITH_ASSERT_TRUE(xPanel.Action_AddState("Idle"), "one real state");
+	ZENITH_ASSERT_TRUE(xPanel.Action_SelectAnyState(), "with the pseudo-node selected");
+
+	const u_int uDepth = xPanel.Document().GetUndoStackSize();
+	ZENITH_ASSERT_FALSE(xPanel.Action_RenameState("", "X"), "★ the any-state list cannot be renamed");
+	ZENITH_ASSERT_FALSE(xPanel.Action_RemoveState(""), "★ nor deleted");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), uDepth,
+		"★ and neither refusal pushed an undo step — a refusal that recorded one would "
+		"make Ctrl+Z walk back through edits that never happened");
+	ZENITH_ASSERT_TRUE(xPanel.Document().HasState("Idle"), "the real state is untouched");
+
+	xPanel.CloseAsset();
+}
+
+ZENITH_TEST(AnimSmPanel, ZeroTransitionMachineDrawsNoEdgesAndStatesAreUnshifted)
+{
+	// ★ THE PSEUDO-NODE COSTS THE STATE NODES NOTHING. It is drawn on a canvas
+	// with no edges at all, and the state boxes still sit exactly where the layout
+	// puts them — the failure this rules out is an anchor that consumed a layout
+	// slot, or an owner row that shifted the node pass as well as the edge pass.
+	AnimSmFixture xFixture("zenith_animsm_noedges");
+	Zenith_EditorPanel_AnimStateMachine xPanel;
+
+	ZENITH_ASSERT_TRUE(xPanel.OpenAssetFresh(xFixture.m_strControllerPath), "a fresh controller opens");
+	ZENITH_ASSERT_TRUE(xPanel.Action_AddState("Idle"), "Idle");
+	ZENITH_ASSERT_TRUE(xPanel.Action_AddState("Walk"), "Walk");
+	ZENITH_ASSERT_TRUE(xPanel.Action_AddState("Run"), "Run");
+
+	xPanel.RequestWindowPlacement(20.0f, 20.0f, 1200.0f, 640.0f);
+	AnimSmRenderFrames(xPanel, 2);
+
+	ZENITH_ASSERT_TRUE(xPanel.WasCanvasDrawnLastFrame(), "the canvas was drawn");
+	ZENITH_ASSERT_EQ(xPanel.GetDrawnTransitionCount(), 0u, "★ no edges, because there are none");
+	ZENITH_ASSERT_EQ(xPanel.GetDrawnNodeCount(), 3u, "all three state nodes were painted");
+
+	Zenith_AnimCtrlPanelRect xAny;
+	ZENITH_ASSERT_TRUE(xPanel.GetAnyStateRect(xAny),
+		"★ and the pseudo-node is drawn ANYWAY — it is the handle the first any-state edge is made with");
+
+	Zenith_AnimCtrlPanelRect xCanvas;
+	Zenith_AnimCtrlPanelRect xIdle;
+	ZENITH_ASSERT_TRUE(xPanel.GetCanvasRect(xCanvas), "the canvas publishes its frame");
+	ZENITH_ASSERT_TRUE(xPanel.GetStateNodeRect("Idle", xIdle), "and Idle its node");
+
+	// The DPI scale is recovered from the node box, so this asserts the panel's two
+	// derivations agreeing rather than what display the test ran on.
+	const float fScaleFromRect = xIdle.Width() / fANIMSM_NODE_WIDTH_1X;
+	ZENITH_ASSERT_GT(fScaleFromRect, 0.0f, "the node box has a positive scale");
+	Zenith_Maths::Vector2 xIdlePos(0.0f);
+	ZENITH_ASSERT_TRUE(xPanel.GetNodePosition("Idle", xIdlePos), "Idle has a layout position");
+	ZENITH_ASSERT_EQ_FLOAT(xIdle.m_fMinX, xCanvas.m_fMinX + xIdlePos.x * fScaleFromRect, 0.5f,
+		"★ Idle's box is the canvas origin plus its layout position — unshifted by the pseudo-node");
+	ZENITH_ASSERT_EQ_FLOAT(xIdle.m_fMinY, xCanvas.m_fMinY + xIdlePos.y * fScaleFromRect, 0.5f, "in y too");
+
+	xPanel.CloseAsset();
+}
+
+ZENITH_TEST(AnimSmPanel, CtrlDragTwinCreatesTheFirstAnyStateTransition)
+{
+	// ★ THE GESTURE THROUGH ITS ATOMIC TWIN. The ImGui frame parks the mouse off
+	// world so nothing can be hovered or clicked; what the Ctrl-drag does on
+	// release is Action_AddTransition(m_strTransitionDragFrom, target), and
+	// m_strTransitionDragFrom is "" when the press landed on the pseudo-node.
+	AnimSmFixture xFixture("zenith_animsm_anystatedrag");
+	Zenith_EditorPanel_AnimStateMachine xPanel;
+
+	ZENITH_ASSERT_TRUE(xPanel.OpenAssetFresh(xFixture.m_strControllerPath), "a fresh controller opens");
+	ZENITH_ASSERT_TRUE(xPanel.Action_AddState("Idle"), "one state");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetTransitionCount(""), 0u, "the any-state list starts empty");
+	ZENITH_ASSERT_FALSE(xPanel.IsDraggingTransition(), "and no drag is in flight");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_AddTransition("", "Idle"), "★ the drop makes the first any-state edge");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetTransitionCount(""), 1u, "which the machine now carries");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetTransitionCount("Idle"), 0u,
+		"★ and it is NOT on the state — an any-state edge belongs to the machine");
+
+	// ★ AND THE OTHER DIRECTION IS REFUSED. Nothing transitions INTO the any-state
+	// list; the release handler drops an empty target rather than leaning on the
+	// document's refusal, so that a target that was not found and a target that
+	// cannot be one do not look like the same thing to the next reader.
+	ZENITH_ASSERT_FALSE(xPanel.Action_AddTransition("Idle", ""),
+		"★ a drop ONTO the pseudo-node is refused");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetTransitionCount("Idle"), 0u, "and wrote nothing");
+
+	xPanel.CloseAsset();
+}

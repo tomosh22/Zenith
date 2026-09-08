@@ -124,6 +124,7 @@ void Zenith_EditorPanel_AnimStateMachine::OnDocumentOpened()
 	m_bCloseRefusedDirty = false;
 	m_bExternalConflict = false;
 	m_strSelectedState.clear();
+	m_bAnyStateSelected = false;
 	m_strSelectedTransitionFrom.clear();
 	m_uSelectedTransition = uINVALID_ANIMSM_TRANSITION;
 	m_bHasTransitionSelection = false;
@@ -208,6 +209,23 @@ bool Zenith_EditorPanel_AnimStateMachine::GetNodePosition(const std::string& str
 bool Zenith_EditorPanel_AnimStateMachine::ComputeNodeScreenRect(const CanvasLayout& xLayout,
 	const std::string& strStateName, Zenith_AnimCtrlPanelRect& xOut) const
 {
+	// ★ THE ANY-STATE PSEUDO-NODE, AND IT IS THE ONE NODE WITH NO GRAPH POSITION.
+	// An EMPTY name addresses the machine's any-state transition list on every
+	// document verb, so it is what the edge pass, the hit test and the Ctrl-drag
+	// all carry — but GetNodePosition asks the def for a state called "" and
+	// rightly answers false. It is anchored to the CANVAS instead: same box, a
+	// fixed inset from the bottom-left corner, scroll-independent, and out of
+	// RebuildAutoLayout's slot 0 at the top-left. See fANIMSM_ANY_STATE_INSET_1X.
+	if (strStateName.empty())
+	{
+		const float fInset = Zenith_EditorUI::Px(fANIMSM_ANY_STATE_INSET_1X);
+		xOut.m_fMinX = xLayout.m_fLeft + fInset;
+		xOut.m_fMaxY = xLayout.m_fBottom - fInset;
+		xOut.m_fMaxX = xOut.m_fMinX + xLayout.m_fNodeWidth;
+		xOut.m_fMinY = xOut.m_fMaxY - xLayout.m_fNodeHeight;
+		return true;
+	}
+
 	Zenith_Maths::Vector2 xGraph(0.0f);
 	if (!GetNodePosition(strStateName, xGraph))
 	{
@@ -270,6 +288,12 @@ bool Zenith_EditorPanel_AnimStateMachine::ScrollStateIntoView(const std::string&
 void Zenith_EditorPanel_AnimStateMachine::ClearFrameRects()
 {
 	m_xNodeRects.Clear();
+	// The any-state pseudo-node goes with them. It is canvas-anchored rather than
+	// graph-anchored, which makes it tempting to leave standing — but a frame that
+	// drew no canvas at all (hidden, collapsed, unselected tab) drew no pseudo-node
+	// either, and answering with the last one's box would hand out a coordinate no
+	// click can reach.
+	m_bAnyStateRectValid = false;
 	m_xTransitionRects.Clear();
 	m_axRectOwnerOrder.Clear();
 	m_bCanvasRectValid = false;
@@ -329,6 +353,15 @@ bool Zenith_EditorPanel_AnimStateMachine::GetStateNodeRect(const std::string& st
 	Zenith_AnimCtrlPanelRect& xOut) const
 {
 	return PublishRect(m_xNodeRects.TryGet(strStateName), xOut);
+}
+
+bool Zenith_EditorPanel_AnimStateMachine::GetAnyStateRect(Zenith_AnimCtrlPanelRect& xOut) const
+{
+	if (!m_bAnyStateRectValid)
+	{
+		return false;
+	}
+	return PublishRect(&m_xAnyStateRect, xOut);
 }
 
 bool Zenith_EditorPanel_AnimStateMachine::GetTransitionMidpointRect(const std::string& strFromState, u_int uIndex,

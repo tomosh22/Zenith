@@ -99,6 +99,23 @@ constexpr float fANIMSM_LAYOUT_STEP_X_1X = 200.0f;
 constexpr float fANIMSM_LAYOUT_STEP_Y_1X = 92.0f;
 constexpr u_int uANIMSM_LAYOUT_COLUMNS   = 4u;
 
+// The ANY-STATE pseudo-node's inset from the canvas's BOTTOM-LEFT corner, at 1x
+// DPI.
+//
+// ★ IT IS ANCHORED TO THE CANVAS, NOT TO THE GRAPH, and it is therefore
+// SCROLL-INDEPENDENT. The any-state list is a property of the MACHINE rather
+// than of a place in it, there is no verb that could store a position for it
+// (SetStatePosition takes a state name, and "" is not a state), and a node that
+// could be scrolled away would take the only handle an any-state edge can be
+// drawn from with it.
+//
+// ★ AND IT IS THE BOTTOM-LEFT RATHER THAN THE TOP-LEFT because RebuildAutoLayout
+// puts the first unplaced state at graph (40, 40) — the canvas's top-left corner
+// at zero scroll. Sharing that corner would put the pseudo-node on top of slot 0
+// of every freshly authored machine, and the hit test checks the pseudo-node
+// FIRST, so slot 0's node would stop taking clicks.
+constexpr float fANIMSM_ANY_STATE_INSET_1X = 16.0f;
+
 // "No transition selected." Same shape as every other invalid-index sentinel in
 // the editor: a bool beside the index would give one fact two representations
 // that can disagree.
@@ -233,6 +250,16 @@ public:
 	bool Action_SelectTransition(const std::string& strFromState, u_int uIndex);
 	// True iff there WAS a selection to clear.
 	bool Action_ClearSelection();
+
+	// ★ THE ANY-STATE PSEUDO-NODE'S SELECTION IS ITS OWN FLAG, NOT AN EMPTY
+	// m_strSelectedState. "Nothing is selected" and "the any-state list is
+	// selected" are both the empty string, and every consumer of
+	// GetSelectedStateName() — the inspector's three-way branch, the node context
+	// menu, "Rename Selected" — already reads an empty name as "nothing". Making
+	// the pseudo-node reuse it would have those verbs quietly acting on a state
+	// that does not exist.
+	bool Action_SelectAnyState();
+	bool IsAnyStateSelected() const { return m_bAnyStateSelected; }
 
 	const std::string& GetSelectedStateName() const { return m_strSelectedState; }
 	bool GetSelectedTransition(std::string& strOutFrom, u_int& uOutIndex) const;
@@ -532,6 +559,16 @@ public:
 	//=========================================================================
 
 	bool GetStateNodeRect(const std::string& strStateName, Zenith_AnimCtrlPanelRect& xOut) const;
+	// The ANY-STATE pseudo-node's box.
+	//
+	// ★ ITS OWN ACCESSOR AND ITS OWN STORAGE, NOT AN ENTRY IN m_xNodeRects.
+	// GetDrawnNodeCount() counts STATE nodes and
+	// AnimSmPanel::AnOffScreenNodeRefusesRatherThanHandingOutACoordinate asserts
+	// it is 0 once every state has been scrolled away; a pseudo-node that cannot
+	// be scrolled away would make that count 1 forever and turn the off-screen
+	// contract into something nothing pins. GetStateNodeRect("") keeps refusing,
+	// because "" is not a state.
+	bool GetAnyStateRect(Zenith_AnimCtrlPanelRect& xOut) const;
 	// The midpoint of a transition's edge — what a click on an edge hit-tests
 	// against, and where the condition count is painted.
 	bool GetTransitionMidpointRect(const std::string& strFromState, u_int uIndex,
@@ -551,8 +588,13 @@ public:
 	u_int GetRenderedFrameCount() const { return m_uRenderedFrames; }
 	// How many state nodes were PAINTED inside the canvas last frame. Zero with
 	// a non-zero state count means every node was culled, not that the graph is
-	// empty.
+	// empty. The any-state pseudo-node is NOT one of them — see GetAnyStateRect.
 	u_int GetDrawnNodeCount() const { return m_xNodeRects.GetSize(); }
+	// Edge midpoints painted inside the canvas last frame, any-state edges
+	// included. The twin of GetDrawnNodeCount, and what a unit asserts the
+	// ABSENCE of edges with rather than inferring it from a rect accessor that is
+	// false for four other reasons.
+	u_int GetDrawnTransitionCount() const { return m_xTransitionRects.GetSize(); }
 
 	// ★ THE LAYER STRIP'S OWN "was it drawn" PAIR (WU-7.2), for the same reason
 	// the dope sheet's mask section has one: a unit has to be able to assert the
@@ -629,6 +671,9 @@ private:
 	void RenderParameterPanel();
 	void RenderInspector();
 	void RenderStateInspector();
+	// The any-state pseudo-node's inspector: its transition list, and the REFUSAL
+	// of rename/delete written out rather than left as an absence.
+	void RenderAnyStateInspector();
 	// WU-7.3. Draws NOT ONE ITEM unless the selected state is a blend space, and
 	// lives inside the INSPECTOR child — which is a FIXED height, so whatever it
 	// emits costs the canvas nothing. That is the same placement argument the
@@ -667,10 +712,20 @@ private:
 
 	// Recorded THIS frame, cleared at the top of every Render.
 	Zenith_HashMap<std::string, Zenith_AnimCtrlPanelRect> m_xNodeRects;
+	// The ANY-STATE pseudo-node, kept apart from m_xNodeRects on purpose — see
+	// GetAnyStateRect.
+	Zenith_AnimCtrlPanelRect m_xAnyStateRect;
+	bool m_bAnyStateRectValid = false;
 	Zenith_HashMap<u_int64, Zenith_AnimCtrlPanelRect> m_xTransitionRects;
 	// The owner index a transition rect key was built from, so a lookup can
-	// rebuild the same key. Index 0 is the any-state list; a state's index is
-	// its position in GetStateNamesSorted + 1.
+	// rebuild the same key.
+	//
+	// ★ INDEX 0 IS THE ANY-STATE LIST, and that is ONE edit in DrawTransitions:
+	// it pushes "" before the sorted state names, so a state's index is its
+	// position in GetStateNamesSorted plus one WITHOUT anything adding one.
+	// GetTransitionMidpointRect and FindTransitionAtScreenPos both resolve an
+	// owner by scanning this vector BY NAME, so the shift reaches them for free —
+	// adding a `+ 1` to either would double-shift every key.
 	Zenith_Vector<std::string> m_axRectOwnerOrder;
 	Zenith_AnimCtrlPanelRect m_xCanvasRect;
 	bool m_bCanvasRectValid = false;
@@ -697,6 +752,9 @@ private:
 	u_int m_uRenderedFrames = 0;
 
 	std::string m_strSelectedState;
+	// The any-state pseudo-node's selection. A separate flag, not an empty
+	// m_strSelectedState — see Action_SelectAnyState.
+	bool m_bAnyStateSelected = false;
 	std::string m_strSelectedTransitionFrom;
 	u_int m_uSelectedTransition = uINVALID_ANIMSM_TRANSITION;
 	bool m_bHasTransitionSelection = false;

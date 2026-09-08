@@ -55,6 +55,18 @@ namespace
 	// A press-and-release inside this many pixels is a CLICK, not a drag.
 	constexpr float fANIMSM_CLICK_SLOP_1X       = 3.0f;
 
+	// ★ ONE WORDING FOR THE ANY-STATE LIST, everywhere it is named. The transition
+	// inspector already showed "<Any State>" for an empty from-state; the
+	// pseudo-node's label, the inspector header and the refusal below now read the
+	// same string, so the canvas and the inspector cannot end up calling the same
+	// thing two names.
+	const char* const szANIMSM_ANY_STATE_LABEL = "<Any State>";
+	// ★ THE REFUSAL IS DRAWN, NOT OMITTED. The node context menu and "Rename
+	// Selected" are gated on a non-empty state selection, so with the pseudo-node
+	// selected they would simply show nothing — indistinguishable from a bug. They
+	// are drawn DISABLED with this on the tooltip instead.
+	const char* const szANIMSM_ANY_STATE_REFUSAL = "Any State cannot be renamed or deleted";
+
 	ImVec2 Vec(float fX, float fY) { return ImVec2(fX, fY); }
 
 	bool IsFiniteFloat(float fValue)
@@ -741,7 +753,16 @@ void Zenith_EditorPanel_AnimStateMachine::DrawTransitions(ImDrawList* pxDraw, co
 	// looks a from-state up in this list to rebuild the key the draw used, so a
 	// state added between the draw and the query cannot silently shift the key
 	// and hand out a different edge's rect.
+	//
+	// ★ AND THE ANY-STATE LIST IS OWNER 0 — THIS PUSH IS THE WHOLE SHIFT. An
+	// EMPTY from-state addresses it on every document verb, so pushing "" here
+	// makes owner 0 the any-state list and moves every state's index up by one in
+	// the ONE place indices are assigned. Both readers (GetTransitionMidpointRect
+	// and FindTransitionAtScreenPos) resolve an owner by scanning this vector BY
+	// NAME, so they follow for free; adding a `+ 1` to either would double-shift
+	// every key and hand out the wrong edge's rect.
 	m_axRectOwnerOrder.Clear();
+	m_axRectOwnerOrder.PushBack(std::string());
 	for (u_int u = 0; u < axStates.GetSize(); ++u)
 	{
 		m_axRectOwnerOrder.PushBack(axStates.Get(u));
@@ -890,6 +911,49 @@ void Zenith_EditorPanel_AnimStateMachine::DrawNodes(ImDrawList* pxDraw, const Ca
 
 		m_xNodeRects.Insert(strName, xRect);
 	}
+
+	// ---- the ANY-STATE pseudo-node ------------------------------------------
+	//
+	// ★ ALWAYS DRAWN, WHATEVER THE MACHINE HOLDS. It is the only handle an
+	// any-state transition can be started from, so a node that appeared once the
+	// list was non-empty would make the first one unauthorable on the canvas —
+	// which is the residual this unit exists to remove.
+	//
+	// ★ PAINTED LAST, SO THE PAINT ORDER MATCHES THE HIT ORDER.
+	// FindStateAtScreenPos checks it BEFORE the state nodes; drawing it under
+	// them would give a state node that overlapped it the pixels while the
+	// pseudo-node took the clicks.
+	//
+	// ★ AND IT IS NOT PUT IN m_xNodeRects. See GetAnyStateRect: GetDrawnNodeCount
+	// counts state nodes, and a scroll-independent entry in that map would make it
+	// never reach zero.
+	Zenith_AnimCtrlPanelRect xAnyRect;
+	if (ComputeNodeScreenRect(xLayout, std::string(), xAnyRect))
+	{
+		// The same "painted inside the canvas" cull every state node runs through.
+		// A canvas too small to hold the box is the only way this fails, and the
+		// contract is the same either way: what was not painted is not published.
+		if (!(xAnyRect.m_fMaxX < xLayout.m_fLeft || xAnyRect.m_fMinX > xLayout.m_fRight
+			|| xAnyRect.m_fMaxY < xLayout.m_fTop || xAnyRect.m_fMinY > xLayout.m_fBottom))
+		{
+			pxDraw->AddRectFilled(Vec(xAnyRect.m_fMinX, xAnyRect.m_fMinY), Vec(xAnyRect.m_fMaxX, xAnyRect.m_fMaxY),
+				xPalette.m_uPanelBg, 4.0f);
+			pxDraw->AddRect(Vec(xAnyRect.m_fMinX, xAnyRect.m_fMinY), Vec(xAnyRect.m_fMaxX, xAnyRect.m_fMaxY),
+				m_bAnyStateSelected ? xPalette.m_uAccent : xPalette.m_uTextDim, 4.0f, 0,
+				m_bAnyStateSelected ? 2.5f : 1.0f);
+			pxDraw->AddText(Vec(xAnyRect.m_fMinX + 8.0f, xAnyRect.m_fMinY + 6.0f), xPalette.m_uTextBright,
+				szANIMSM_ANY_STATE_LABEL);
+
+			char acAnySubtitle[64];
+			snprintf(acAnySubtitle, sizeof(acAnySubtitle), "%u transition(s)",
+				m_xDocument.GetTransitionCount(std::string()));
+			pxDraw->AddText(Vec(xAnyRect.m_fMinX + 8.0f, xAnyRect.m_fMinY + 24.0f), xPalette.m_uTextDim,
+				acAnySubtitle);
+
+			m_xAnyStateRect = xAnyRect;
+			m_bAnyStateRectValid = true;
+		}
+	}
 }
 
 //=============================================================================
@@ -899,6 +963,21 @@ void Zenith_EditorPanel_AnimStateMachine::DrawNodes(ImDrawList* pxDraw, const Ca
 
 bool Zenith_EditorPanel_AnimStateMachine::FindStateAtScreenPos(float fX, float fY, std::string& strOut) const
 {
+	// ★ THE ANY-STATE PSEUDO-NODE IS CHECKED FIRST, AND EXPLICITLY. It is not in
+	// m_xNodeRects (see GetAnyStateRect), so nothing below could ever find it; and
+	// it is checked BEFORE the state scan because that scan runs in
+	// Zenith_HashMap's slot order, which would make "who wins an overlap" depend on
+	// a hash. It answers the EMPTY name — the same name every transition verb takes
+	// for the any-state list — so the Ctrl-drag and the selection below need no
+	// second vocabulary.
+	if (m_bAnyStateRectValid
+		&& fX >= m_xAnyStateRect.m_fMinX && fX <= m_xAnyStateRect.m_fMaxX
+		&& fY >= m_xAnyStateRect.m_fMinY && fY <= m_xAnyStateRect.m_fMaxY)
+	{
+		strOut.clear();
+		return true;
+	}
+
 	for (Zenith_HashMap<std::string, Zenith_AnimCtrlPanelRect>::Iterator xIt(m_xNodeRects); !xIt.Done(); xIt.Next())
 	{
 		const Zenith_AnimCtrlPanelRect& xRect = xIt.GetValue();
@@ -953,15 +1032,31 @@ void Zenith_EditorPanel_AnimStateMachine::HandleCanvasInput(const CanvasLayout& 
 		std::string strState;
 		if (FindStateAtScreenPos(fMouseX, fMouseY, strState))
 		{
-			Action_SelectState(strState);
+			// An EMPTY name is the any-state pseudo-node, and it has its own
+			// selection flag: Action_SelectState("") would refuse (the machine has
+			// no state called ""), leaving the click doing nothing at all.
+			if (strState.empty())
+			{
+				Action_SelectAnyState();
+			}
+			else
+			{
+				Action_SelectState(strState);
+			}
 			if (xIO.KeyCtrl)
 			{
 				// Ctrl-drag from a node draws a TRANSITION rather than moving it.
+				// From the pseudo-node that is strState == "", which is exactly
+				// what Action_AddTransition takes for the any-state list.
 				m_bDraggingTransition = true;
 				m_strTransitionDragFrom = strState;
 			}
 			else
 			{
+				// ★ AND THE PLAIN DRAG NEVER STARTS FOR THE PSEUDO-NODE. Its box is
+				// canvas-anchored and there is no verb that could store a position
+				// for it — GetNodePosition("") answers false, which is the gate, and
+				// it is a gate on purpose rather than an accident to be tidied away.
 				Zenith_Maths::Vector2 xGraph(0.0f);
 				if (GetNodePosition(strState, xGraph))
 				{
@@ -1009,7 +1104,13 @@ void Zenith_EditorPanel_AnimStateMachine::HandleCanvasInput(const CanvasLayout& 
 		if (m_bDraggingTransition)
 		{
 			std::string strTarget;
-			if (FindStateAtScreenPos(fMouseX, fMouseY, strTarget))
+			// ★ A DROP ONTO THE PSEUDO-NODE IS REFUSED, AND THE REFUSAL IS WRITTEN
+			// HERE RATHER THAN LEFT TO THE DOCUMENT. AddTransition(from, "") already
+			// returns false — nothing transitions INTO the any-state list, it is a
+			// source only — but relying on that would make an empty target look like
+			// a target that was simply not found, and the next reader would "fix"
+			// the emptiness check.
+			if (FindStateAtScreenPos(fMouseX, fMouseY, strTarget) && !strTarget.empty())
 			{
 				Action_AddTransition(m_strTransitionDragFrom, strTarget);
 			}
@@ -1043,13 +1144,36 @@ void Zenith_EditorPanel_AnimStateMachine::HandleCanvasInput(const CanvasLayout& 
 		std::string strState;
 		if (FindStateAtScreenPos(fMouseX, fMouseY, strState))
 		{
-			Action_SelectState(strState);
+			if (strState.empty())
+			{
+				Action_SelectAnyState();
+			}
+			else
+			{
+				Action_SelectState(strState);
+			}
 			ImGui::OpenPopup("##AnimSmNodeMenu");
 		}
 	}
 	if (ImGui::BeginPopup("##AnimSmNodeMenu"))
 	{
-		if (!m_strSelectedState.empty())
+		if (m_bAnyStateSelected)
+		{
+			// ★ DISABLED AND EXPLAINED, NOT ABSENT. Both verbs refuse an empty name
+			// in the document (RemoveState finds no such state, RenameState finds no
+			// such state to rename), so the pseudo-node cannot be renamed or deleted
+			// either way — but a popup that simply showed nothing reads as a broken
+			// menu, and this is a rule worth stating where it bites.
+			ImGui::BeginDisabled();
+			ImGui::MenuItem("Set As Default");
+			ImGui::MenuItem("Delete State");
+			ImGui::EndDisabled();
+			if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip | ImGuiHoveredFlags_AllowWhenDisabled))
+			{
+				ImGui::SetTooltip("%s", szANIMSM_ANY_STATE_REFUSAL);
+			}
+		}
+		else if (!m_strSelectedState.empty())
 		{
 			if (ImGui::MenuItem("Set As Default")) { Action_SetDefaultState(m_strSelectedState); }
 			if (ImGui::MenuItem("Delete State"))   { Action_RemoveState(m_strSelectedState); }
@@ -1081,7 +1205,20 @@ void Zenith_EditorPanel_AnimStateMachine::RenderInspector()
 		Action_AddState(std::string(m_acStateNameBuffer));
 	}
 	ImGui::SameLine();
-	if (ImGui::Button("Rename Selected") && !m_strSelectedState.empty())
+	if (m_bAnyStateSelected)
+	{
+		// The same refusal the node context menu draws, in the other place it
+		// bites. RenameState("") is refused by the document; showing the button
+		// live would offer an edit that silently does nothing.
+		ImGui::BeginDisabled();
+		ImGui::Button("Rename Selected");
+		ImGui::EndDisabled();
+		if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip | ImGuiHoveredFlags_AllowWhenDisabled))
+		{
+			ImGui::SetTooltip("%s", szANIMSM_ANY_STATE_REFUSAL);
+		}
+	}
+	else if (ImGui::Button("Rename Selected") && !m_strSelectedState.empty())
 	{
 		Action_RenameState(m_strSelectedState, std::string(m_acStateNameBuffer));
 	}
@@ -1093,6 +1230,14 @@ void Zenith_EditorPanel_AnimStateMachine::RenderInspector()
 	{
 		RenderTransitionInspector();
 	}
+	else if (m_bAnyStateSelected)
+	{
+		// ★ BEFORE THE NON-EMPTY TEST, AND THAT ORDER IS THE POINT. The any-state
+		// selection carries an EMPTY state name, so the branch below would fall
+		// through to "Select a state or a transition." and the pseudo-node would
+		// look unselectable.
+		RenderAnyStateInspector();
+	}
 	else if (!m_strSelectedState.empty())
 	{
 		RenderStateInspector();
@@ -1102,6 +1247,41 @@ void Zenith_EditorPanel_AnimStateMachine::RenderInspector()
 		ImGui::TextDisabled("Select a state or a transition.");
 	}
 	ImGui::EndChild();
+}
+
+void Zenith_EditorPanel_AnimStateMachine::RenderAnyStateInspector()
+{
+	ImGui::Text("%s", szANIMSM_ANY_STATE_LABEL);
+	ImGui::SameLine();
+	ImGui::TextDisabled("%s", szANIMSM_ANY_STATE_REFUSAL);
+
+	// ★ THE LIST IS READ WITH AN EMPTY OWNER, exactly as every document verb
+	// addresses it. There is no second query shape for the any-state list, which
+	// is what lets the transition inspector below edit one of these with the very
+	// same (from, index) pair the state inspector produces.
+	const u_int uCount = m_xDocument.GetTransitionCount(std::string());
+	ImGui::Text("Outgoing transitions: %u", uCount);
+	for (u_int u = 0; u < uCount; ++u)
+	{
+		Flux_StateTransition xTransition;
+		if (!m_xDocument.GetTransition(std::string(), u, xTransition))
+		{
+			continue;
+		}
+		ImGui::PushID(static_cast<int>(u));
+		char acLabel[224];
+		snprintf(acLabel, sizeof(acLabel), "-> %s (%u condition(s))",
+			xTransition.m_strTargetStateName.c_str(), xTransition.m_xConditions.GetSize());
+		if (ImGui::Selectable(acLabel))
+		{
+			Action_SelectTransition(std::string(), u);
+		}
+		ImGui::PopID();
+	}
+	if (uCount == 0u)
+	{
+		ImGui::TextDisabled("(Ctrl+drag from the %s node onto a state to add one)", szANIMSM_ANY_STATE_LABEL);
+	}
 }
 
 void Zenith_EditorPanel_AnimStateMachine::RenderStateInspector()
@@ -1558,7 +1738,7 @@ void Zenith_EditorPanel_AnimStateMachine::RenderTransitionInspector()
 		return;
 	}
 
-	ImGui::Text("Transition: %s -> %s", strFrom.empty() ? "<Any State>" : strFrom.c_str(),
+	ImGui::Text("Transition: %s -> %s", strFrom.empty() ? szANIMSM_ANY_STATE_LABEL : strFrom.c_str(),
 		xTransition.m_strTargetStateName.c_str());
 
 	// ★ COMMITTED ON EDIT-COMPLETE, NOT PER KEYSTROKE. A command per character

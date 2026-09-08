@@ -43,6 +43,7 @@ bool Zenith_EditorPanel_AnimStateMachine::Action_SelectState(const std::string& 
 		return false;
 	}
 	m_strSelectedState = strStateName;
+	m_bAnyStateSelected = false;
 	m_bHasTransitionSelection = false;
 	m_uSelectedTransition = uINVALID_ANIMSM_TRANSITION;
 	m_strSelectedTransitionFrom.clear();
@@ -68,14 +69,42 @@ bool Zenith_EditorPanel_AnimStateMachine::Action_SelectTransition(const std::str
 	m_uSelectedTransition = uIndex;
 	m_bHasTransitionSelection = true;
 	m_strSelectedState.clear();
+	// ★ AND THE ANY-STATE PSEUDO-NODE'S SELECTION TOO. Selecting one of its OWN
+	// transitions goes through here (Action_AddTransition("", to) auto-selects the
+	// new edge), so leaving the flag standing would have the inspector's three-way
+	// branch keep showing the pseudo-node's list instead of the edge just made.
+	m_bAnyStateSelected = false;
+	m_uSelectedBlendPoint = uINVALID_ANIMSM_BLEND_POINT;
+	return true;
+}
+
+bool Zenith_EditorPanel_AnimStateMachine::Action_SelectAnyState()
+{
+	if (!m_xDocument.IsOpen())
+	{
+		return false;
+	}
+	// No document check beyond "open": the any-state list is a property of the
+	// MACHINE and every machine has one, empty or not. There is nothing here that
+	// could be missing the way a state name can be.
+	m_bAnyStateSelected = true;
+	m_strSelectedState.clear();
+	m_bHasTransitionSelection = false;
+	m_uSelectedTransition = uINVALID_ANIMSM_TRANSITION;
+	m_strSelectedTransitionFrom.clear();
 	m_uSelectedBlendPoint = uINVALID_ANIMSM_BLEND_POINT;
 	return true;
 }
 
 bool Zenith_EditorPanel_AnimStateMachine::Action_ClearSelection()
 {
-	const bool bHad = !m_strSelectedState.empty() || m_bHasTransitionSelection;
+	// ★ THE ANY-STATE FLAG JOINS THE DISJUNCTION. "True iff there WAS a selection
+	// to clear" is the whole contract of this verb, and a pseudo-node selection is
+	// one — without the term, clicking empty canvas after clicking the pseudo-node
+	// would report "nothing was selected" while visibly deselecting it.
+	const bool bHad = !m_strSelectedState.empty() || m_bHasTransitionSelection || m_bAnyStateSelected;
 	m_strSelectedState.clear();
+	m_bAnyStateSelected = false;
 	m_strSelectedTransitionFrom.clear();
 	m_uSelectedTransition = uINVALID_ANIMSM_TRANSITION;
 	m_bHasTransitionSelection = false;
