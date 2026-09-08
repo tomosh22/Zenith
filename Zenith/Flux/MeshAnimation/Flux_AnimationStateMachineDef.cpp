@@ -170,6 +170,11 @@ void Flux_AnimationParameters::RemoveParameter(const std::string& strName)
 	m_xParameters.Remove(strName);
 }
 
+void Flux_AnimationParameters::Clear()
+{
+	m_xParameters.Clear();
+}
+
 void Flux_AnimationParameters::SeedInto(Flux_AnimationParameters& xOutLive) const
 {
 	if (&xOutLive == this)
@@ -569,6 +574,12 @@ void Flux_AnimationStateMachineDef::Clear()
 	m_xStates.Clear();
 	m_strDefaultStateName.clear();
 	m_xAnyStateTransitions.Clear();
+
+	// No-op on every reachable path today (the only caller is ReadFromDataStream,
+	// which overwrites both) — Clear() is public, so the first external caller must
+	// not inherit the previous def's name or declarations.
+	m_strName.clear();
+	m_xParameterDeclarations.Clear();
 }
 
 void Flux_AnimationStateMachineDef::CopyFrom(const Flux_AnimationStateMachineDef& xSource)

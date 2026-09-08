@@ -78,6 +78,9 @@ public:
 	// Remove parameter
 	void RemoveParameter(const std::string& strName);
 
+	// Forget every parameter — the table is empty afterwards.
+	void Clear();
+
 	// Get all parameters
 	const Zenith_HashMap<std::string, Parameter>& GetParameters() const { return m_xParameters; }
 
@@ -265,7 +268,11 @@ public:
 	// re-resolve clips through the collection afterwards.
 	void CopyFrom(const Flux_AnimationStateMachineDef& xSource);
 
-	// Delete every state (and nested def) and forget the default state.
+	// Reset ALL FIVE members — the def is empty afterwards, exactly as a
+	// default-constructed one is: every state is DELETED (and with it every nested
+	// def), the state map, the default-state name, the any-state transitions, the
+	// def's own name and the parameter DECLARATIONS are all cleared. Any
+	// Flux_AnimationState* kept from AddState/GetState dangles after this call.
 	void Clear();
 
 	// Name

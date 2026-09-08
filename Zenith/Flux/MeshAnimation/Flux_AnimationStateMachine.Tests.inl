@@ -729,3 +729,75 @@ ZENITH_TEST(Animation, WU64_ReloadKeepsAStandaloneMachinesParameterValuesByNameA
 	ZENITH_ASSERT_EQ_FLOAT(xSM.GetParameters().GetFloat("Endurance"), 1.5f, 1e-5f,
 		"★ carrying the new DEFAULT, not the 7.25 the old name was holding — a rename is an edit");
 }
+
+// ============================================================================
+// A3 — Clear() MEANS EMPTY
+//
+// ★ WHAT THIS EXISTS TO CATCH. Clear() used to reset three of the def's five
+// members and leave m_strName and m_xParameterDeclarations standing. Nothing
+// observed it, because the only caller is ReadFromDataStream, which overwrites
+// both on the very next lines — so the omission was invisible on every reachable
+// path while the verb stayed public. The first external caller would have got a
+// def carrying the PREVIOUS def's name and its whole declaration table: a
+// controller seeded from it would declare parameters no state ever reads, and a
+// saved def would come back under a name its author never typed.
+// ============================================================================
+ZENITH_TEST(Animation, A3_DefClearResetsEveryMember)
+{
+	Flux_AnimationStateMachineDef xDef("Seeded");
+	xDef.GetParameterDeclarations().AddFloat("Speed", 2.5f);
+	xDef.GetParameterDeclarations().AddTrigger("Hit");
+
+	// States FIRST: SetDefaultState silently no-ops on a name that is not a state
+	// yet, and AddState auto-assigns the default when none is set.
+	xDef.AddState("A");
+	xDef.AddState("B");
+	xDef.SetDefaultState("B");
+
+	Flux_StateTransition xAnyToB;
+	xAnyToB.m_strTargetStateName = "B";
+	xDef.AddAnyStateTransition(xAnyToB);
+
+	Flux_StateTransition xAToB;
+	xAToB.m_strTargetStateName = "B";
+	xDef.GetState("A")->AddTransition(xAToB);
+
+	// Sanity: the def really is populated before the call under test.
+	ZENITH_ASSERT_EQ(xDef.GetName(), "Seeded", "seeded name");
+	ZENITH_ASSERT_EQ(static_cast<uint32_t>(xDef.GetStates().GetSize()), 2u, "seeded states");
+
+	// ★ Every Flux_AnimationState* taken above is DELETED by this call.
+	xDef.Clear();
+
+	ZENITH_ASSERT_TRUE(xDef.GetName().empty(),
+		"★ the def's own NAME is forgotten — it is the member Clear() used to leave behind");
+	ZENITH_ASSERT_EQ(static_cast<uint32_t>(xDef.GetStates().GetSize()), 0u, "every state is gone");
+	ZENITH_ASSERT_FALSE(xDef.HasState("A"), "and gone by name too");
+	ZENITH_ASSERT_TRUE(xDef.GetDefaultStateName().empty(), "no default state survives");
+	ZENITH_ASSERT_EQ(static_cast<uint32_t>(xDef.GetAnyStateTransitions().GetSize()), 0u,
+		"no any-state transition survives");
+	ZENITH_ASSERT_EQ(static_cast<uint32_t>(xDef.GetParameterDeclarations().GetParameters().GetSize()), 0u,
+		"★ the DECLARATION table is emptied — the other member Clear() used to leave behind");
+	ZENITH_ASSERT_FALSE(xDef.GetParameterDeclarations().HasParameter("Speed"),
+		"the float declaration is gone by name");
+	ZENITH_ASSERT_FALSE(xDef.GetParameterDeclarations().HasParameter("Hit"),
+		"and so is the trigger declaration");
+}
+
+ZENITH_TEST(Animation, A3_ParametersClearEmptiesTheTable)
+{
+	Flux_AnimationParameters xParams;
+	xParams.AddFloat("Speed", 2.5f);
+	xParams.AddInt("Combo", 3);
+	xParams.AddBool("Grounded", true);
+	xParams.AddTrigger("Hit");
+	ZENITH_ASSERT_EQ(static_cast<uint32_t>(xParams.GetParameters().GetSize()), 4u, "seeded table");
+
+	xParams.Clear();
+
+	ZENITH_ASSERT_EQ(static_cast<uint32_t>(xParams.GetParameters().GetSize()), 0u, "the table is empty");
+	ZENITH_ASSERT_FALSE(xParams.HasParameter("Speed"), "the float is gone");
+	ZENITH_ASSERT_FALSE(xParams.HasParameter("Combo"), "the int is gone");
+	ZENITH_ASSERT_FALSE(xParams.HasParameter("Grounded"), "the bool is gone");
+	ZENITH_ASSERT_FALSE(xParams.HasParameter("Hit"), "the trigger is gone");
+}

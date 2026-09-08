@@ -408,6 +408,13 @@ through `Flux_AnimationStateMachine.h` exactly as before.
   level before, so every clip leaf inside a nested machine stayed unresolved after a load
   and posed the bind pose forever — silently, because an unresolved leaf resets rather
   than asserting.
+- `Flux_AnimationStateMachineDef::Clear()` resets **all five** members — it deletes every
+  state (and with it every nested def), then clears the state map, the default-state name,
+  the any-state transitions, the def's **own name** and the **parameter declarations** — so
+  a cleared def is indistinguishable from a default-constructed one. The name and the
+  declarations used to survive it, which was invisible because the only caller is
+  `ReadFromDataStream` (it overwrites both immediately); `Clear()` is public, and the first
+  external caller would have inherited the previous def's identity.
 
 **Serialization is the def, and the byte layout did not move.** `Flux_AnimationStateMachine::WriteToDataStream`
 is `m_xDef.WriteToDataStream`, field-for-field what it always wrote (name, default state,
