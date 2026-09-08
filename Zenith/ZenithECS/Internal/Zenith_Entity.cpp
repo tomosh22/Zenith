@@ -602,7 +602,7 @@ void Zenith_Entity::WriteToDataStream(Zenith_DataStream& xStream, const Zenith_E
 	Zenith_ComponentMetaRegistry::Get().SerializeEntityComponents(*this, xStream);
 }
 
-void Zenith_Entity::ReadFromDataStream(Zenith_DataStream& xStream)
+bool Zenith_Entity::ReadFromDataStream(Zenith_DataStream& xStream)
 {
 	// Symmetric counterpart to WriteToDataStream (current/v7 format). NOTE: the on-disk
 	// scene loader does NOT call this -- it uses Zenith_SceneData::ReadEntityFromDataStream,
@@ -633,7 +633,11 @@ void Zenith_Entity::ReadFromDataStream(Zenith_DataStream& xStream)
 
 	// Deserialize all components using the ComponentMeta registry. The owning component's
 	// versioned reader (schema 7) reads its own payload only; the parent already came from the record above.
-	Zenith_ComponentMetaRegistry::Get().DeserializeEntityComponents(*this, xStream);
+	//
+	// The registry's verdict is this method's return value: false when some component
+	// refused its payload. The record is read to its end either way, so a caller that
+	// ignores the result behaves exactly as it did before the channel existed.
+	return Zenith_ComponentMetaRegistry::Get().DeserializeEntityComponents(*this, xStream);
 }
 
 //------------------------------------------------------------------------------

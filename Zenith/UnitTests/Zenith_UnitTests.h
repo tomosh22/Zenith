@@ -84,6 +84,10 @@ public:
 	static void TestSceneLoadValidation();
 	static void TestSceneBodyCorruptionFailsGracefully();
 	static void TestSceneComponentSchemaVersion();
+	// Member form (not an inline ZENITH_TEST body) for ONE reason: it needs
+	// Zenith_SceneData::SerializeToDataStream, which is private and friended to
+	// Zenith_UnitTests. Every other refusal-channel unit is an inline body.
+	static void TestRefusalChannelCleanSceneRoundTrip();
 	static void TestSceneDisableDestroyHelpers();
 
 	// Animation system tests

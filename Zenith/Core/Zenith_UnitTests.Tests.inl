@@ -22079,3 +22079,414 @@ ZENITH_TEST(SceneWorldReset, BackToBackResetsAreIdempotent)
 		"a double reset must hand out the same scene slot as a single reset");
 	ZENITH_ASSERT_GT(xEntTwice.GetEntityID().m_uGeneration, 0u, "generations keep climbing regardless");
 }
+
+//==============================================================================
+// The component-deserialization REFUSAL channel
+//
+// A component can now say "these bytes are not mine": its versioned reader
+// returns bool, ComponentDeserializeFn carries the verdict, and it travels
+// DeserializeEntityComponents -> ReadEntityFromDataStream -> LoadFromDataStream.
+// Before this, the thunk was void and a component handed a schema it could not
+// read was indistinguishable from a clean read all the way up to the loader.
+//
+// The design is RECORD AND CONTINUE, and that is the part worth pinning: a
+// refusal must not cost the entity its other components, must not cost the FILE
+// its other entities, and must not desync the stream. The bounded per-component
+// realign (SetCursor(payloadStart + declaredSize)) is what makes that safe, so
+// the throwaway component below refuses WITHOUT CONSUMING A BYTE — the harshest
+// case the realign has to absorb, and the shape a real versioned reader takes
+// (branch on the version word, bail before touching the payload).
+//
+// These units live here rather than in ZenithECS because that library is a strict
+// L1 leaf with no test framework of its own — see
+// ../EntityComponent/Zenith_ComponentMetaRegistry.Tests.inl for the same note.
+//==============================================================================
+
+class Zenith_RefusingTestComponent
+{
+public:
+	// The ONLY schema this component will read. A payload stamped with anything
+	// else is refused — which is exactly the shape a versioned reader takes once
+	// a component's on-disk layout has moved on.
+	static constexpr u_int uSchemaVersion = 2u;
+
+	explicit Zenith_RefusingTestComponent(Zenith_Entity& xEntity) : m_xParentEntity(xEntity) {}
+	~Zenith_RefusingTestComponent() = default;
+
+	// The pool move-constructs live elements on Grow() and on swap-and-pop removal.
+	Zenith_RefusingTestComponent(Zenith_RefusingTestComponent&& xOther) noexcept
+		: m_xParentEntity(xOther.m_xParentEntity)
+		, m_uValue(xOther.m_uValue)
+	{
+	}
+	Zenith_RefusingTestComponent(const Zenith_RefusingTestComponent&) = delete;
+	Zenith_RefusingTestComponent& operator=(const Zenith_RefusingTestComponent&) = delete;
+
+	void WriteToDataStream(Zenith_DataStream& xStream) const { xStream << m_uValue; }
+
+	// THE REFUSAL CHANNEL: a bool-returning VERSIONED reader
+	// (HasBoolVersionedReadFromDataStream). Returning false is the component's only
+	// way to reject a payload.
+	bool ReadFromDataStream(Zenith_DataStream& xStream, u_int uPersistedSchemaVersion)
+	{
+		++s_uReadAttempts;
+		if (s_bForceRefuse || uPersistedSchemaVersion != uSchemaVersion)
+		{
+			// Refuse WITHOUT reading — the cursor is left short of the declared payload
+			// size on purpose, so that anything downstream that survives proves the
+			// bounded realign in DeserializeEntityComponents ran.
+			++s_uRefusals;
+			return false;
+		}
+		xStream >> m_uValue;
+		return true;
+	}
+
+#ifdef ZENITH_TOOLS
+	void RenderPropertiesPanel() {}
+#endif
+
+	uint32_t m_uValue = 0u;
+
+	// Observation, not decoration: the engine has no test-visible log sink, so the
+	// Zenith_Error the registry emits on a refusal cannot be asserted on. These
+	// counters are how a unit proves the refusing reader RAN and refused, rather
+	// than inferring it from a false that some unrelated guard could also produce.
+	static inline u_int s_uReadAttempts = 0u;
+	static inline u_int s_uRefusals     = 0u;
+	// Forces a refusal at the CORRECT schema version. Needed by the prefab unit,
+	// whose blob is produced by this same build (so its stamped version always
+	// matches) and therefore has no other way to reach the refusal path.
+	static inline bool s_bForceRefuse   = false;
+
+private:
+	Zenith_Entity m_xParentEntity;
+};
+
+namespace
+{
+	// Serialization order 990. Free: the engine built-ins occupy 0..96 (AI at 90),
+	// every shipped game 100..150, the two other test-only components 201/202, and
+	// the 2-arg ZENITH_REGISTER_COMPONENT default of 1000 is unused by any
+	// registration in the tree. ECSComponentMeta::DuplicateOrders_LiveRegistryHasNoCollisions
+	// runs against the LIVE registry and would fail if this collided.
+	//
+	// Registered LAZILY behind a function-local static rather than at file scope:
+	// the registry has no unregister, so the cheapest correct thing is to add the
+	// type exactly once, on first use, and leave it. RegisterComponent re-Finalizes
+	// when the registry is already sealed, which rebuilds the sorted list (and the
+	// pointers into it) — so a post-boot registration is supported by design.
+	void RefusingTest_EnsureRegistered()
+	{
+		static bool s_bRegistered = false;
+		if (!s_bRegistered)
+		{
+			Zenith_ComponentMetaRegistry::Get().RegisterComponent<Zenith_RefusingTestComponent>("RefusingTest", 990u);
+			s_bRegistered = true;
+		}
+	}
+
+	// One [typeName][schemaVersion][size][payload] component record, framed exactly
+	// as Zenith_ComponentMetaRegistry::SerializeEntityComponents writes it (scene v6+).
+	void RefusalFixture_WriteComponent(Zenith_DataStream& xStream, const std::string& strTypeName,
+		u_int uStampedSchemaVersion, const void* pPayload, u_int uPayloadSize)
+	{
+		xStream << strTypeName;
+		xStream << uStampedSchemaVersion;
+		xStream << uPayloadSize;
+		if (uPayloadSize > 0u)
+		{
+			xStream.WriteData(pPayload, uPayloadSize);
+		}
+	}
+
+	// A real Transform payload for a known position — the bytes that sit between a
+	// component's size prefix and the next component. Captured from a LIVE component
+	// so the fixture cannot drift from the Transform's field layout.
+	u_int RefusalFixture_CaptureTransformPayload(Zenith_SceneData* pxSceneData,
+		const Zenith_Maths::Vector3& xPos, Zenith_DataStream& xOut)
+	{
+		Zenith_Entity xScratch = g_xEngine.Scenes().CreateEntity(pxSceneData, "RefusalPayloadScratch");
+		xScratch.GetComponent<Zenith_TransformComponent>().SetPosition(xPos);
+		xScratch.GetComponent<Zenith_TransformComponent>().WriteToDataStream(xOut);
+		return static_cast<u_int>(xOut.GetCursor());
+	}
+
+	// Frames a scene v7 stream: entity "A" carrying ONE RefusingTest component stamped
+	// with uStampedSchema, then entity "B" carrying a Transform. B comes AFTER A on
+	// purpose — it is the evidence that the load continued past the refusal.
+	// Returns the total bytes written and rewinds the cursor to 0.
+	//
+	// The version is the LITERAL 7, not uSCENE_VERSION_CURRENT: this hand-framed
+	// stream writes the v7 entity record ([fileIndex][name][parentFileIndex]), and a
+	// future version bump that changes that layout must not silently relabel these
+	// bytes as something they are not.
+	uint64_t RefusalFixture_BuildAThenB(Zenith_DataStream& xStream, u_int uStampedSchema,
+		const void* pTransformPayload, u_int uTransformPayloadSize)
+	{
+		xStream << (u_int)Zenith_SceneData::uSCENE_MAGIC;
+		xStream << (u_int)7u;
+		xStream << (u_int)2u;
+
+		// -- Entity A: the refusing component --
+		xStream << (uint32_t)0u;                                      // file index
+		xStream << std::string("A");                                  // name
+		xStream << (uint32_t)Zenith_EntityID::INVALID_INDEX;          // no parent (v7 record)
+		xStream << (u_int)1u;                                         // component count
+		const uint32_t uRefusingPayload = 0xD00Du;
+		RefusalFixture_WriteComponent(xStream, "RefusingTest", uStampedSchema,
+			&uRefusingPayload, (u_int)sizeof(uRefusingPayload));
+
+		// -- Entity B: a plain Transform, AFTER the refusal --
+		xStream << (uint32_t)1u;
+		xStream << std::string("B");
+		xStream << (uint32_t)Zenith_EntityID::INVALID_INDEX;
+		xStream << (u_int)1u;
+		RefusalFixture_WriteComponent(xStream, "Transform",
+			Zenith_TransformComponent::uSchemaVersion, pTransformPayload, uTransformPayloadSize);
+
+		// Trailer: main camera file index (none).
+		xStream << (uint32_t)Zenith_EntityID::INVALID_INDEX;
+
+		const uint64_t ulTotal = xStream.GetCursor();
+		xStream.SetCursor(0);
+		return ulTotal;
+	}
+}
+
+// T1. The ~90 shipped components all have VOID readers, and none of them was
+// touched by this change — so the one thing that must never regress is that a void
+// reader still means success. A Transform-only v7 stream loads true.
+ZENITH_TEST(ECS, RefusalChannel_VoidReaderImpliesSuccess)
+{
+	Zenith_Scene xScratchScene = g_xEngine.Scenes().LoadScene("RefusalVoidReaderScratch", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
+	Zenith_SceneData* pxScratch = g_xEngine.Scenes().GetSceneData(xScratchScene);
+
+	const Zenith_Maths::Vector3 xKnownPos(3.5f, -11.0f, 0.25f);
+	Zenith_DataStream xTransformPayload;
+	const u_int uTransformPayloadSize = RefusalFixture_CaptureTransformPayload(pxScratch, xKnownPos, xTransformPayload);
+	ZENITH_ASSERT_GT(uTransformPayloadSize, 0u, "VoidReaderImpliesSuccess: captured Transform payload is empty");
+
+	Zenith_DataStream xStream;
+	xStream << (u_int)Zenith_SceneData::uSCENE_MAGIC;
+	xStream << (u_int)7u;
+	xStream << (u_int)1u;
+	xStream << (uint32_t)0u;
+	xStream << std::string("VoidOnly");
+	xStream << (uint32_t)Zenith_EntityID::INVALID_INDEX;
+	xStream << (u_int)1u;
+	RefusalFixture_WriteComponent(xStream, "Transform",
+		Zenith_TransformComponent::uSchemaVersion, xTransformPayload.GetData(), uTransformPayloadSize);
+	xStream << (uint32_t)Zenith_EntityID::INVALID_INDEX;
+	xStream.SetCursor(0);
+
+	Zenith_Scene xLoadScene = g_xEngine.Scenes().LoadScene("RefusalVoidReaderLoad", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
+	Zenith_SceneData* pxLoad = g_xEngine.Scenes().GetSceneData(xLoadScene);
+
+	ZENITH_ASSERT_TRUE(pxLoad->LoadFromDataStream(xStream),
+		"a scene whose every component has a VOID reader must still load true");
+
+	Zenith_Entity xLoaded = pxLoad->FindEntityByName("VoidOnly");
+	ZENITH_ASSERT_TRUE(xLoaded.IsValid(), "VoidReaderImpliesSuccess: entity not found after load");
+	ZENITH_ASSERT_TRUE(xLoaded.HasComponent<Zenith_TransformComponent>(), "VoidReaderImpliesSuccess: entity missing Transform");
+	Zenith_Maths::Vector3 xLoadedPos;
+	xLoaded.GetComponent<Zenith_TransformComponent>().GetPosition(xLoadedPos);
+	ZENITH_ASSERT_EQ(xLoadedPos, xKnownPos, "VoidReaderImpliesSuccess: Transform did not round-trip");
+
+	g_xEngine.Scenes().UnloadSceneForced(xLoadScene);
+	g_xEngine.Scenes().UnloadSceneForced(xScratchScene);
+}
+
+// T2. THE ONE THE CHANGE EXISTS FOR. A component refuses its payload, the load
+// reports FALSE — and the entity that comes AFTER it still loads. Both halves
+// matter: a false alone would also be produced by an early return, which is
+// precisely the design this rejects.
+ZENITH_TEST(ECS, RefusalChannel_BoolReaderFalsePropagates)
+{
+	RefusingTest_EnsureRegistered();
+
+	Zenith_Scene xScratchScene = g_xEngine.Scenes().LoadScene("RefusalPropagateScratch", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
+	Zenith_SceneData* pxScratch = g_xEngine.Scenes().GetSceneData(xScratchScene);
+
+	const Zenith_Maths::Vector3 xKnownPos(-1.5f, 6.0f, 9.75f);
+	Zenith_DataStream xTransformPayload;
+	const u_int uTransformPayloadSize = RefusalFixture_CaptureTransformPayload(pxScratch, xKnownPos, xTransformPayload);
+
+	// Stamp schema 1 — the component only reads 2, so its reader refuses.
+	Zenith_DataStream xStream;
+	RefusalFixture_BuildAThenB(xStream, 1u, xTransformPayload.GetData(), uTransformPayloadSize);
+
+	const u_int uRefusalsBefore = Zenith_RefusingTestComponent::s_uRefusals;
+	const u_int uAttemptsBefore = Zenith_RefusingTestComponent::s_uReadAttempts;
+
+	Zenith_Scene xLoadScene = g_xEngine.Scenes().LoadScene("RefusalPropagateLoad", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
+	Zenith_SceneData* pxLoad = g_xEngine.Scenes().GetSceneData(xLoadScene);
+
+	ZENITH_ASSERT_FALSE(pxLoad->LoadFromDataStream(xStream),
+		"a refused component payload must make LoadFromDataStream report false");
+	ZENITH_ASSERT_EQ(Zenith_RefusingTestComponent::s_uReadAttempts, uAttemptsBefore + 1u,
+		"the bool reader must be invoked exactly ONCE per component record (two hits would "
+		"mean the wrapper ran both versioned branches)");
+	ZENITH_ASSERT_EQ(Zenith_RefusingTestComponent::s_uRefusals, uRefusalsBefore + 1u,
+		"...and it must have REFUSED — the false above cannot then be some other guard's. "
+		"(The registry's Zenith_Error naming 'RefusingTest' has no test-visible log sink to "
+		"assert on; these counters are the substitute.)");
+
+	// RECORD AND CONTINUE, part 1: the SECOND entity still loaded, intact.
+	Zenith_Entity xB = pxLoad->FindEntityByName("B");
+	ZENITH_ASSERT_TRUE(xB.IsValid(), "the entity AFTER the refusing one must still load");
+	ZENITH_ASSERT_TRUE(xB.HasComponent<Zenith_TransformComponent>(), "...and must still have its Transform");
+	Zenith_Maths::Vector3 xLoadedPos;
+	xB.GetComponent<Zenith_TransformComponent>().GetPosition(xLoadedPos);
+	ZENITH_ASSERT_EQ(xLoadedPos, xKnownPos,
+		"...with its payload uncorrupted — which can only be true if the realign absorbed "
+		"the bytes the refusing reader left unread");
+
+	// RECORD AND CONTINUE, part 2: the refusing entity itself is not discarded. The
+	// thunk adds the component before calling the reader, and the reader refused
+	// before consuming anything, so the value is untouched.
+	Zenith_Entity xA = pxLoad->FindEntityByName("A");
+	ZENITH_ASSERT_TRUE(xA.IsValid(), "the refusing entity is still created");
+	ZENITH_ASSERT_TRUE(xA.HasComponent<Zenith_RefusingTestComponent>(),
+		"the deserialize thunk adds the component before the reader gets a say");
+	ZENITH_ASSERT_EQ(xA.GetComponent<Zenith_RefusingTestComponent>().m_uValue, 0u,
+		"a reader that refuses before reading must leave its component untouched");
+
+	g_xEngine.Scenes().UnloadSceneForced(xLoadScene);
+	g_xEngine.Scenes().UnloadSceneForced(xScratchScene);
+}
+
+// T3. The stream ends where the file ends. The refusing reader consumed NONE of
+// its payload, so if the per-component realign did not run for it the cursor would
+// finish short by exactly that payload — and every read after it (entity B's whole
+// record, then the camera trailer) would have been taken from the wrong offset.
+ZENITH_TEST(ECS, RefusalChannel_CursorAtRecordEndOnRefusal)
+{
+	RefusingTest_EnsureRegistered();
+
+	Zenith_Scene xScratchScene = g_xEngine.Scenes().LoadScene("RefusalCursorScratch", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
+	Zenith_SceneData* pxScratch = g_xEngine.Scenes().GetSceneData(xScratchScene);
+
+	Zenith_DataStream xTransformPayload;
+	const u_int uTransformPayloadSize =
+		RefusalFixture_CaptureTransformPayload(pxScratch, Zenith_Maths::Vector3(2.0f, 4.0f, 8.0f), xTransformPayload);
+
+	Zenith_DataStream xStream;
+	const uint64_t ulTotalWritten =
+		RefusalFixture_BuildAThenB(xStream, 1u, xTransformPayload.GetData(), uTransformPayloadSize);
+	ZENITH_ASSERT_GT(ulTotalWritten, 16u, "CursorAtRecordEndOnRefusal: the fixture wrote no bytes");
+
+	Zenith_Scene xLoadScene = g_xEngine.Scenes().LoadScene("RefusalCursorLoad", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
+	Zenith_SceneData* pxLoad = g_xEngine.Scenes().GetSceneData(xLoadScene);
+	pxLoad->LoadFromDataStream(xStream);
+
+	ZENITH_ASSERT_EQ(xStream.GetCursor(), ulTotalWritten,
+		"after a load containing a refusal the cursor must sit at the END of the fixture "
+		"— i.e. the camera trailer was consumed, so the bounded realign ran for the "
+		"refusing component too");
+
+	g_xEngine.Scenes().UnloadSceneForced(xLoadScene);
+	g_xEngine.Scenes().UnloadSceneForced(xScratchScene);
+}
+
+// T4. The channel must be INERT for a clean scene. Serialize, load, serialize
+// again, and require the two byte streams to be identical: whatever the bool
+// plumbing does, it must not have moved a single byte of the format.
+ZENITH_TEST(ECS, RefusalChannel_CleanSceneRoundTripsByteIdentical) { Zenith_UnitTests::TestRefusalChannelCleanSceneRoundTrip(); }
+void Zenith_UnitTests::TestRefusalChannelCleanSceneRoundTrip(){
+
+	Zenith_Scene xSrcScene = g_xEngine.Scenes().LoadScene("RefusalRoundTripSrc", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
+	Zenith_SceneData* pxSrc = g_xEngine.Scenes().GetSceneData(xSrcScene);
+
+	// A parented pair, so the entity record's parent field and the hierarchy rebuild
+	// are both inside the compared bytes.
+	Zenith_Entity xParent = g_xEngine.Scenes().CreateEntity(pxSrc, "RoundTripParent");
+	xParent.SetTransient(false);
+	xParent.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(1.5f, -2.0f, 3.25f));
+
+	Zenith_Entity xChild = g_xEngine.Scenes().CreateEntity(pxSrc, "RoundTripChild");
+	xChild.SetTransient(false);
+	xChild.SetParent(xParent.GetEntityID());
+	xChild.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(-7.0f, 0.5f, 12.0f));
+
+	// SerializeToDataStream is the write half of SaveToFile, minus the disk write.
+	// It is private; this unit uses the Zenith_UnitTests member form to reach it.
+	Zenith_DataStream xFirst;
+	pxSrc->SerializeToDataStream(xFirst);
+	const uint64_t ulFirstSize = xFirst.GetCursor();
+	ZENITH_ASSERT_GT(ulFirstSize, 16u, "RoundTrip: the source scene serialized no bytes");
+
+	xFirst.SetCursor(0);
+	Zenith_Scene xDstScene = g_xEngine.Scenes().LoadScene("RefusalRoundTripDst", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
+	Zenith_SceneData* pxDst = g_xEngine.Scenes().GetSceneData(xDstScene);
+	ZENITH_ASSERT_TRUE(pxDst->LoadFromDataStream(xFirst),
+		"RoundTrip: a scene of void-reader components must load true");
+
+	Zenith_DataStream xSecond;
+	pxDst->SerializeToDataStream(xSecond);
+	const uint64_t ulSecondSize = xSecond.GetCursor();
+	ZENITH_ASSERT_EQ(ulSecondSize, ulFirstSize, "RoundTrip: re-serialized scene changed size");
+
+	const uint8_t* pFirst  = static_cast<const uint8_t*>(xFirst.GetData());
+	const uint8_t* pSecond = static_cast<const uint8_t*>(xSecond.GetData());
+	uint64_t ulFirstDiff = ulFirstSize;
+	for (uint64_t ul = 0; ul < ulFirstSize; ++ul)
+	{
+		if (pFirst[ul] != pSecond[ul])
+		{
+			ulFirstDiff = ul;
+			break;
+		}
+	}
+	ZENITH_ASSERT_EQ(ulFirstDiff, ulFirstSize,
+		"RoundTrip: serialize -> load -> serialize is not byte-identical (first differing offset reported)");
+
+	g_xEngine.Scenes().UnloadSceneForced(xDstScene);
+	g_xEngine.Scenes().UnloadSceneForced(xSrcScene);
+}
+
+// T5. Prefab instantiation must STILL RETURN THE ENTITY on a refusal. Returning an
+// invalid handle instead reads to every caller as "the scene had no room", which
+// loses the object AND the spawn intent; a half-populated entity is visible,
+// nameable and destroyable.
+//
+// The blob is produced by THIS build, so its stamped schema always matches and the
+// version-mismatch path is unreachable here — hence the explicit s_bForceRefuse.
+ZENITH_TEST(ECS, RefusalChannel_PrefabInstantiateStillReturnsEntity)
+{
+	RefusingTest_EnsureRegistered();
+
+	Zenith_Scene xScene = g_xEngine.Scenes().LoadScene("RefusalPrefabScene", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xScene);
+
+	Zenith_Entity xSource = g_xEngine.Scenes().CreateEntity(pxSceneData, "RefusingPrefabSource");
+	xSource.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(1.0f, 2.0f, 3.0f));
+	xSource.AddComponent<Zenith_RefusingTestComponent>().m_uValue = 0xBEEFu;
+
+	Zenith_Prefab xPrefab;
+	ZENITH_ASSERT_TRUE(xPrefab.CreateFromEntity(xSource, "RefusingPrefab"),
+		"PrefabInstantiateStillReturnsEntity: CreateFromEntity failed");
+
+	const u_int uRefusalsBefore = Zenith_RefusingTestComponent::s_uRefusals;
+	Zenith_RefusingTestComponent::s_bForceRefuse = true;
+	Zenith_Entity xInstance = xPrefab.Instantiate(pxSceneData, "RefusedInstance",
+		Zenith_Maths::Vector3(4.0f, 5.0f, 6.0f));
+	Zenith_RefusingTestComponent::s_bForceRefuse = false;
+
+	ZENITH_ASSERT_EQ(Zenith_RefusingTestComponent::s_uRefusals, uRefusalsBefore + 1u,
+		"PrefabInstantiateStillReturnsEntity: the prefab blob's component did not refuse");
+	ZENITH_ASSERT_TRUE(xInstance.IsValid(),
+		"a refused component must NOT cost the caller its instantiated entity");
+
+	// Transform has serialization order 0 and RefusingTest 990, so the Transform was
+	// read BEFORE the refusal — its survival is the record-and-continue evidence at
+	// the prefab layer, and the spawn transform was still applied afterwards.
+	ZENITH_ASSERT_TRUE(xInstance.HasComponent<Zenith_TransformComponent>(),
+		"the components that read before the refusal must survive it");
+	Zenith_Maths::Vector3 xInstancePos;
+	xInstance.GetComponent<Zenith_TransformComponent>().GetPosition(xInstancePos);
+	ZENITH_ASSERT_EQ(xInstancePos, Zenith_Maths::Vector3(4.0f, 5.0f, 6.0f),
+		"...and Instantiate still applied the spawn transform");
+
+	g_xEngine.Scenes().UnloadSceneForced(xScene);
+}

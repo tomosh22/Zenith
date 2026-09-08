@@ -138,7 +138,19 @@ Zenith_EntityID Zenith_EditorEntitySnapshot::Restore(Zenith_EntityID xParentOver
 		{
 			// Wrap (not copy): the stream reads the record's bytes in place.
 			Zenith_DataStream xStream(const_cast<uint8_t*>(xRecord.m_axComponentBytes.GetDataPointer()), xRecord.m_axComponentBytes.GetSize());
-			Zenith_ComponentMetaRegistry::Get().DeserializeEntityComponents(xEntity, xStream);
+			if (!Zenith_ComponentMetaRegistry::Get().DeserializeEntityComponents(xEntity, xStream))
+			{
+				// A component refused the captured bytes. Log once and KEEP GOING: this
+				// loop is rebuilding a whole selection subtree, and abandoning it here
+				// would leave the earlier records restored and the later ones missing --
+				// a worse world than a restore with one component short, and one the user
+				// cannot undo their way out of. These bytes were written by THIS build in
+				// this session, so a refusal here means a genuine reader bug, not a
+				// version skew.
+				Zenith_Warning(LOG_CATEGORY_EDITOR,
+					"[UndoSystem] entity '%s': a component refused its captured bytes; "
+					"restoring the rest of the subtree anyway", xRecord.m_strName.c_str());
+			}
 		}
 		xEntity.SetTransient(xRecord.m_bTransient);
 
@@ -395,8 +407,17 @@ void Zenith_UndoCommand_ComponentBytes::ApplyBytes(Zenith_EntityID xEntityID, co
 	if (axBytes.GetSize() > 0)
 	{
 		Zenith_DataStream xStream(const_cast<uint8_t*>(axBytes.GetDataPointer()), axBytes.GetSize());
-		// The deserialise wrapper adds the component when absent, then reads.
-		pxMeta->m_pfnDeserialize(xEntity, xStream, pxMeta->m_uSchemaVersion);
+		// The deserialise wrapper adds the component when absent, then reads. Its bool is
+		// the component's verdict on the bytes; the thunk is not [[nodiscard]] precisely
+		// so this call site can stay a statement, but a refusal is worth one line: these
+		// bytes were captured by THIS build at the schema version passed straight back in,
+		// so a false here is a reader bug, not version skew.
+		if (!pxMeta->m_pfnDeserialize(xEntity, xStream, pxMeta->m_uSchemaVersion))
+		{
+			Zenith_Warning(LOG_CATEGORY_EDITOR,
+				"[UndoSystem] component '%s' refused its own captured bytes (schema %u)",
+				szTypeName, pxMeta->m_uSchemaVersion);
+		}
 	}
 	if (Zenith_SceneData* pxSceneData = xEntity.GetSceneData())
 	{

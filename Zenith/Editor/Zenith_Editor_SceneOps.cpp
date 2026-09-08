@@ -296,12 +296,22 @@ void Zenith_Editor::LoadPendingSceneIntoActiveScene(bool bWaitForGPU, const char
 	}
 
 	// Load the scene file into the active scene (backup restore or explicit load).
+	// The bool is NOT decoration: LoadFromFile reports false for a malformed body and
+	// now also for a component that REFUSED its persisted schema
+	// (Zenith_ComponentMetaRegistry::DeserializeEntityComponents). This site used to
+	// discard it and log "Scene loaded from ..." unconditionally, so a scene that only
+	// half-loaded looked identical in the editor log to one that loaded cleanly.
 	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetActiveSceneData();
-	if (pxSceneData)
-	{
+	const bool bLoaded = pxSceneData != nullptr &&
 		Zenith_EditorSceneAccess::LoadFromFile(pxSceneData, m_xEditorState.m_xDeferredOps.m_strPendingSceneLoadPath);
+	if (bLoaded)
+	{
+		Zenith_Log(LOG_CATEGORY_EDITOR, "%sScene loaded from %s", szLogPrefix, m_xEditorState.m_xDeferredOps.m_strPendingSceneLoadPath.c_str());
 	}
-	Zenith_Log(LOG_CATEGORY_EDITOR, "%sScene loaded from %s", szLogPrefix, m_xEditorState.m_xDeferredOps.m_strPendingSceneLoadPath.c_str());
+	else
+	{
+		Zenith_Error(LOG_CATEGORY_EDITOR, "%sScene FAILED to load from %s", szLogPrefix, m_xEditorState.m_xDeferredOps.m_strPendingSceneLoadPath.c_str());
+	}
 
 	// Selection, undo history and the cached game camera are all keyed by
 	// EntityIDs that the load just invalidated.

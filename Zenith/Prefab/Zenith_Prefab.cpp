@@ -404,7 +404,19 @@ Zenith_Entity Zenith_Prefab::InstantiateInternal(
 	// Non-variant path: create entity from this prefab's component data.
 	std::string strName = strEntityName.empty() ? m_strName : strEntityName;
 	Zenith_Entity xEntity = g_xEngine.Scenes().CreateEntity(pxSceneData, strName);
-	DeserializeComponents(xEntity);
+	if (!DeserializeComponents(xEntity))
+	{
+		// A component refused its persisted schema. Log it ONCE and STILL RETURN THE
+		// ENTITY: Instantiate's contract is an entity handle, and the caller has already
+		// been handed nothing it can clean up. A half-populated entity the caller can see,
+		// name and destroy is strictly better than destroying it here and returning an
+		// invalid handle -- which reads to every caller as "the scene had no room" and
+		// leaks the spawn intent instead of the object. The refusal is already named,
+		// per component, in the [ComponentMetaRegistry] errors above.
+		Zenith_Error(LOG_CATEGORY_PREFAB,
+			"Prefab '%s': at least one component refused its payload; instantiating '%s' "
+			"with the components that did read.", m_strName.c_str(), strName.c_str());
+	}
 
 	// Apply the spawn transform as the BASE transform (variant overrides, applied
 	// by the caller above, then replace individual properties). Order matters:
@@ -465,11 +477,10 @@ bool Zenith_Prefab::ApplyToEntity(Zenith_Entity& xEntity) const
 		return true;
 	}
 
-	DeserializeComponents(xEntity);
-	return true;
+	return DeserializeComponents(xEntity);
 }
 
-void Zenith_Prefab::DeserializeComponents(Zenith_Entity& xEntity) const
+bool Zenith_Prefab::DeserializeComponents(Zenith_Entity& xEntity) const
 {
 	Zenith_DataStream& xStream = const_cast<Zenith_DataStream&>(m_xComponentData);
 	xStream.SetCursor(0);
@@ -483,8 +494,9 @@ void Zenith_Prefab::DeserializeComponents(Zenith_Entity& xEntity) const
 	xStream >> uVersion;
 	xStream >> strName;
 
-	// Use the ComponentMeta registry to deserialize all components
-	Zenith_ComponentMetaRegistry::Get().DeserializeEntityComponents(xEntity, xStream);
+	// Use the ComponentMeta registry to deserialize all components. Its verdict is
+	// this method's: false when a component refused its persisted schema.
+	return Zenith_ComponentMetaRegistry::Get().DeserializeEntityComponents(xEntity, xStream);
 }
 
 void Zenith_Prefab::AddOverride(Zenith_PropertyOverride xOverride)

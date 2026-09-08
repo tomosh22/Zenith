@@ -201,7 +201,7 @@ bool Zenith_SceneData::LoadFromFile(const std::string& strFilename)
 	return true;
 }
 
-Zenith_EntityID Zenith_SceneData::ReadEntityFromDataStream(Zenith_DataStream& xStream, u_int uVersion,
+bool Zenith_SceneData::ReadEntityFromDataStream(Zenith_DataStream& xStream, u_int uVersion,
 	Zenith_HashMap<uint32_t, Zenith_EntityID>& xFileIndexToNewID)
 {
 	uint32_t uFileIndex;
@@ -265,7 +265,13 @@ Zenith_EntityID Zenith_SceneData::ReadEntityFromDataStream(Zenith_DataStream& xS
 	// consume the per-component schemaVersion field (scene v6+). Pre-v6 files
 	// carry no such field; the version gate keeps them byte-aligned. The owning
 	// component's versioned reader migrates the in-payload parent for legacy (schema < 7) blobs.
-	Zenith_ComponentMetaRegistry::Get().DeserializeEntityComponents(xEntity, xStream, uVersion);
+	//
+	// A false here means some component refused its payload; it is RECORDED and
+	// returned, not acted on. The record has been read to its end either way (the
+	// per-component realign guarantees it), so the rest of this function -- and the
+	// caller's next entity -- proceed exactly as they would on a clean read.
+	const bool bComponentsOk =
+		Zenith_ComponentMetaRegistry::Get().DeserializeEntityComponents(xEntity, xStream, uVersion);
 
 	if (bParentFromRecord && uFileParentIndex != Zenith_EntityID::INVALID_INDEX)
 	{
@@ -276,7 +282,7 @@ Zenith_EntityID Zenith_SceneData::ReadEntityFromDataStream(Zenith_DataStream& xS
 		xEntity.SetPendingParentFileIndex(uFileParentIndex);
 	}
 
-	return xNewID;
+	return bComponentsOk;
 }
 
 bool Zenith_SceneData::ValidateSceneStream(Zenith_DataStream& xStream)
@@ -380,6 +386,16 @@ bool Zenith_SceneData::LoadFromDataStream(Zenith_DataStream& xStream)
 	Zenith_HashMap<uint32_t, Zenith_EntityID> xFileIndexToNewID;
 	xFileIndexToNewID.Reserve(uNumEntities);
 
+	// Component-level refusals are RECORDED here and reported once at the very end.
+	// They are NOT one of the early `return false` guards below: those three describe a
+	// stream this loader cannot make sense of at all (a wild entity count, a stalled
+	// cursor, a missing camera trailer), where continuing would build junk. A refusal is
+	// the opposite -- the framing is intact and every OTHER entity and component in the
+	// file is readable, so the load finishes, the hierarchy and cross-entity references
+	// are rebuilt over what did load, and only the verdict is false. The caller
+	// (Zenith_SceneSystem::LoadScene) rolls the scene back with UnloadSceneForced.
+	bool bAllEntitiesOk = true;
+
 	for (u_int u = 0; u < uNumEntities; u++)
 	{
 		// Wave9.1 (a) guard 2: detect a stalled cursor. A malformed entity record
@@ -388,7 +404,9 @@ bool Zenith_SceneData::LoadFromDataStream(Zenith_DataStream& xStream)
 		// the body is corrupt. The u+1<uNumEntities gate avoids falsely rejecting a
 		// final, well-formed entity that legitimately ends exactly at EOF.
 		const uint64_t ulBefore = xStream.GetCursor();
-		ReadEntityFromDataStream(xStream, uVersion, xFileIndexToNewID);
+		// Non-short-circuiting &=: every entity in the file is read regardless of what
+		// an earlier one reported.
+		bAllEntitiesOk &= ReadEntityFromDataStream(xStream, uVersion, xFileIndexToNewID);
 		if (xStream.GetCursor() <= ulBefore && u + 1 < uNumEntities)
 		{
 			Zenith_Error(LOG_CATEGORY_SCENE, "Malformed scene body: no read progress at entity %u/%u", u, uNumEntities);
@@ -461,5 +479,17 @@ bool Zenith_SceneData::LoadFromDataStream(Zenith_DataStream& xStream)
 	// transitions to LOADED only after Awake/OnEnable dispatch, so
 	// IsActivated() correctly reports false while lifecycle is running.
 	ClearDirty();
-	return true;
+
+	if (!bAllEntitiesOk)
+	{
+		// Every entity, the hierarchy pass, the reference-resolve pass and the camera
+		// trailer have all run by now -- the file was read to its end. The per-component
+		// errors naming the offending types were already logged by
+		// DeserializeEntityComponents; this is the one line that says the scene as a
+		// whole is not what the file describes.
+		Zenith_Error(LOG_CATEGORY_SCENE,
+			"LoadFromDataStream: scene loaded with at least one REFUSED component payload "
+			"(see the [ComponentMetaRegistry] errors above). Reporting failure.");
+	}
+	return bAllEntitiesOk;
 }

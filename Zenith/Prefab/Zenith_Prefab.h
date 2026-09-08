@@ -71,6 +71,14 @@ public:
 		const Zenith_Maths::Quat&    xRotation     = Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f),
 		const Zenith_Maths::Vector3& xScale        = Zenith_Maths::Vector3(1.0f)) const;
 
+	/**
+	 * Apply this prefab's components onto an EXISTING entity.
+	 * Returns false if the prefab is invalid, if a base prefab in the variant chain
+	 * could not be resolved, or if a component REFUSED its persisted schema (see
+	 * Zenith_ComponentMetaRegistry::DeserializeEntityComponents). In the refusal case
+	 * the entity still receives every component that did read — the false is a report,
+	 * not a rollback.
+	 */
 	bool ApplyToEntity(Zenith_Entity& xEntity) const;
 
 	//--------------------------------------------------------------------------
@@ -131,7 +139,12 @@ private:
 	static constexpr u_int PREFAB_MAGIC = 0x5A505242; // "ZPRB"
 
 	void SerializeComponents(Zenith_Entity& xEntity);
-	void DeserializeComponents(Zenith_Entity& xEntity) const;
+
+	// Returns whether every component in the prefab blob accepted its payload (see
+	// Zenith_ComponentMetaRegistry::DeserializeEntityComponents). False means a
+	// component refused a schema this build cannot read; the entity still receives
+	// every component that DID read.
+	bool DeserializeComponents(Zenith_Entity& xEntity) const;
 
 	// Recursive helper for Instantiate. Walks the base-prefab chain, applies the
 	// caller transform at the non-variant leaf and overrides on top, and tracks

@@ -270,9 +270,18 @@ void Zenith_ComponentMetaRegistry::SerializeEntityComponents(Zenith_Entity& xEnt
 	}
 }
 
-void Zenith_ComponentMetaRegistry::DeserializeEntityComponents(Zenith_Entity& xEntity, Zenith_DataStream& xStream, u_int uSceneVersion) const
+bool Zenith_ComponentMetaRegistry::DeserializeEntityComponents(Zenith_Entity& xEntity, Zenith_DataStream& xStream, u_int uSceneVersion) const
 {
 	EnsureInitialized();
+
+	// RECORD AND CONTINUE. A component that refuses its payload (a bool versioned
+	// reader returning false -- see ComponentDeserializeFn) sets this to false and
+	// nothing else changes: the loop below still visits every remaining component and
+	// the bounded realign still runs for the refusing one, so a single bad component
+	// cannot cost the entity its other components or desync the entity that follows.
+	// The verdict travels up to Zenith_SceneData::LoadFromDataStream, whose caller
+	// (Zenith_SceneSystem::LoadScene) is the layer that owns the rollback decision.
+	bool bAllOk = true;
 
 	// Read component count
 	u_int uNumComponents;
@@ -312,10 +321,33 @@ void Zenith_ComponentMetaRegistry::DeserializeEntityComponents(Zenith_Entity& xE
 		const Zenith_ComponentMeta* pxMeta = GetMetaByName(strComponentType);
 		if (pxMeta && pxMeta->m_pfnDeserialize)
 		{
-			pxMeta->m_pfnDeserialize(xEntity, xStream, uComponentSchemaVersion);
+			// Non-short-circuiting &=, deliberately: a plain && would stop CALLING the
+			// thunk for every component after the first refusal, which is exactly the
+			// early-return this design exists to avoid.
+			const bool bComponentOk = pxMeta->m_pfnDeserialize(xEntity, xStream, uComponentSchemaVersion);
+			bAllOk &= bComponentOk;
+			if (!bComponentOk)
+			{
+				// ONE error per refusing component, naming the type and the entity, so a
+				// failed load is diagnosable from the log alone. Not an assert: a refusal is
+				// data the build legitimately cannot read (a component schema newer than
+				// this build's reader), not a programming error, and it must not break into
+				// the debugger in every config.
+				Zenith_Error(LOG_CATEGORY_ECS,
+					"[ComponentMetaRegistry] Component '%s' on entity '%s' REFUSED its payload "
+					"(persisted schemaVersion %u, this build reads %u). The entity keeps its "
+					"other components; the load reports failure.",
+					strComponentType.c_str(), xEntity.GetName().c_str(),
+					uComponentSchemaVersion, pxMeta->m_uSchemaVersion);
+			}
 		}
 		else
 		{
+			// NOT a refusal. An unknown type means the file was written by a build that
+			// had a component this one does not -- the read/write asymmetry documented on
+			// Zenith_SceneData's version history -- and the size prefix exists precisely so
+			// it can be skipped. Turning this into a false would fail every scene loaded by
+			// a cut-down build.
 			Zenith_Log(LOG_CATEGORY_ECS, "[ComponentMetaRegistry] WARNING: Unknown component type '%s', skipping %u bytes", strComponentType.c_str(), uComponentDataSize);
 		}
 
@@ -324,8 +356,15 @@ void Zenith_ComponentMetaRegistry::DeserializeEntityComponents(Zenith_Entity& xE
 		// for an unknown component it skips the whole blob; for a shrunk/grown known
 		// payload it absorbs the difference. SetCursor clamps + asserts on a corrupt
 		// (out-of-range) size, exactly as the former SkipBytes(size) did.
+		//
+		// It runs for a REFUSING component too, and that is what makes record-and-continue
+		// safe: a reader that bails on the version word without consuming its payload
+		// leaves the cursor short, and this line puts it back on the boundary so the next
+		// component -- and the next entity -- read intact.
 		xStream.SetCursor(ulDataStart + uComponentDataSize);
 	}
+
+	return bAllOk;
 }
 
 //------------------------------------------------------------------------------

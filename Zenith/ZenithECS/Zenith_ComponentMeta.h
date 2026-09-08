@@ -70,7 +70,9 @@ struct Zenith_PropertyDescriptor
 //     Zenith_ComponentMeta below;
 //   * the C++20 lifecycle-detection concepts (HasOnAwake/Start/Enable/Disable/
 //     Update/LateUpdate/FixedUpdate/Destroy, HasRegisterProperties,
-//     HasSchemaVersion, HasVersionedReadFromDataStream) and ComponentSchemaVersion<T>();
+//     HasSchemaVersion, HasVersionedReadFromDataStream and its bool-returning
+//     sibling HasBoolVersionedReadFromDataStream -- the component-level REFUSAL
+//     channel) and ComponentSchemaVersion<T>();
 //   * the per-type free wrapper templates (Component*Wrapper / On*Wrapper).
 // They are implementation detail of RegisterComponent<T> (below) only.
 //------------------------------------------------------------------------------
@@ -159,7 +161,15 @@ public:
 	// caller (prefab data, Zenith_Entity::ReadFromDataStream, the serialization unit
 	// tests) pairs with SerializeEntityComponents, which now ALWAYS writes the field;
 	// only the on-disk scene loader passes an older version for legacy v3/4/5 files.
-	void DeserializeEntityComponents(Zenith_Entity& xEntity, Zenith_DataStream& xStream,
+	//
+	// RETURNS false if ANY component refused its payload (see ComponentDeserializeFn),
+	// true otherwise. The refusal is RECORDED, never acted on: the loop still visits
+	// every remaining component, the bounded realign still runs for the refusing one,
+	// and the caller gets one aggregate verdict at the end. An UNKNOWN component type
+	// (no meta registered) is NOT a refusal -- it stays warn-and-skip, because a scene
+	// written by a build with more components than this one is a supported read
+	// (see the read/write asymmetry note on Zenith_SceneData's version history).
+	bool DeserializeEntityComponents(Zenith_Entity& xEntity, Zenith_DataStream& xStream,
 		u_int uSceneVersion = Zenith_SceneData::uSCENE_VERSION_CURRENT) const;
 
 	// Get all registered component metas (sorted by serialization order)

@@ -240,7 +240,10 @@ public:
 	//   SaveToFile, LoadFromDataStream.
 	// All of them reference these constants — no magic numbers elsewhere.
 	//
-	// Version history (read/write asymmetry is intentional — see DeserializeEntityComponents):
+	// Version history (read/write asymmetry is intentional — see DeserializeEntityComponents:
+	// an UNKNOWN component type is skipped by its size prefix and does NOT fail the load,
+	// whereas a KNOWN component that REFUSES its payload — a bool versioned reader
+	// returning false — makes LoadFromDataStream report false after finishing the file):
 	//   v3      legacy entity layout (explicit per-entity child-index list); the parent
 	//           file-index lives in the entity RECORD.
 	//   v4/v5   compact entity layout [fileIndex][name]; per-component [typeName][size][payload].
@@ -662,8 +665,16 @@ private:
 	// Clears per-scene state vectors and flags after destruction completes.
 	void ClearSceneStateAfterReset();
 
-	// Shared deserialization helper
-	Zenith_EntityID ReadEntityFromDataStream(Zenith_DataStream& xStream, u_int uVersion,
+	// Shared deserialization helper. Reads ONE entity record (and its whole component
+	// list) and returns whether every component accepted its payload -- see
+	// Zenith_ComponentMetaRegistry::DeserializeEntityComponents. A false does NOT mean
+	// the record was abandoned: the entity is created, named, parented and given every
+	// component that did read, and the stream is left exactly at the end of the record
+	// either way, so the caller can carry on with the next entity.
+	//
+	// It used to return the new Zenith_EntityID; its only caller discarded that, and the
+	// id is published through xFileIndexToNewID before this returns regardless.
+	bool ReadEntityFromDataStream(Zenith_DataStream& xStream, u_int uVersion,
 		Zenith_HashMap<uint32_t, Zenith_EntityID>& xFileIndexToNewID);
 
 	// Shared helper: dispatch OnAwake for a single entity if not already awoken

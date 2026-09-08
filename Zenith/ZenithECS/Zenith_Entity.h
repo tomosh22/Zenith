@@ -324,8 +324,11 @@ public:
 	// file, so the same scene authored by two differently-shaped boots would
 	// produce different bytes. An entity whose parent is absent from the map
 	// (e.g. a transient parent excluded from this save) writes INVALID_INDEX.
+	// ReadFromDataStream returns whether every component accepted its payload (see
+	// Zenith_ComponentMetaRegistry::DeserializeEntityComponents). A false does not
+	// abandon the record — the entity is fully read either way.
 	void WriteToDataStream(Zenith_DataStream& xStream, const Zenith_EntityFileIndexMap& xFileIndices);
-	void ReadFromDataStream(Zenith_DataStream& xStream);
+	bool ReadFromDataStream(Zenith_DataStream& xStream);
 
 	//--------------------------------------------------------------------------
 	// Comparison Operators

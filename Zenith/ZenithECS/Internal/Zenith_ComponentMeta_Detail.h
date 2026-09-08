@@ -74,7 +74,21 @@ using ComponentSerializeFn = void(*)(Zenith_Entity&, Zenith_DataStream&);
 // per-component schemaVersion read from the scene file (scene v6+); it is 1 for
 // pre-v6 files / callers that don't track a schema. Components opt in to seeing
 // it via HasVersionedReadFromDataStream<T>; the rest ignore it (see wrapper).
-using ComponentDeserializeFn = void(*)(Zenith_Entity&, Zenith_DataStream&, u_int);
+//
+// RETURNS THE COMPONENT'S VERDICT ON THE PAYLOAD -- true when it read the blob (or
+// does not care about the version), false when it REFUSED a schema it cannot
+// migrate. This is the ONLY channel a component has to say "these bytes are not
+// mine": before it existed the thunk was void and a mismatched schema was
+// indistinguishable from a clean read, all the way up through
+// DeserializeEntityComponents and the scene loader. A component opts in by giving
+// its versioned reader a bool return (HasBoolVersionedReadFromDataStream<T>);
+// every void reader is wrapped as an unconditional true, which is why no shipped
+// component needed changing.
+//
+// Deliberately NOT [[nodiscard]]: the editor's undo/redo byte-restore path
+// (Zenith_UndoCommand_ComponentBytes::ApplyBytes, Editor/Zenith_EditorCommands.cpp)
+// calls the thunk as a statement and logs the refusal itself.
+using ComponentDeserializeFn = bool(*)(Zenith_Entity&, Zenith_DataStream&, u_int);
 
 // Transfer (move-construct) a component from source scene to target scene
 using ComponentTransferFn = void(*)(Zenith_EntityID, Zenith_SceneData*, Zenith_SceneData*);
@@ -184,9 +198,33 @@ static constexpr u_int ComponentSchemaVersion()
 // without breaking the single-arg signature every current component uses. The
 // deserialize wrapper prefers this overload when present (see
 // ComponentDeserializeWrapper); otherwise it falls back to the single-arg form.
+//
+// ★ THE RETURN TYPE IS PART OF THE CONCEPT, and that is load-bearing. This used to
+// be return-UNCONSTRAINED (`t.ReadFromDataStream(s, v);`), which meant a component
+// whose versioned reader returns bool satisfied it too -- so an if-constexpr chain
+// testing this branch first would have called the refusing reader, thrown its
+// verdict away and reported success. Constraining it to void makes this concept and
+// HasBoolVersionedReadFromDataStream below DISJOINT, so no chain ordering can
+// silently swallow a refusal.
 template<typename T>
 concept HasVersionedReadFromDataStream = requires(T& t, Zenith_DataStream& s, u_int v) {
-	t.ReadFromDataStream(s, v);
+	{ t.ReadFromDataStream(s, v) } -> std::same_as<void>;
+};
+
+// Optional: the REFUSAL channel. A component whose schema-version-aware reader
+// returns BOOL is stating a verdict on the payload -- false means "this schema is
+// not one I can read", and the wrapper propagates it to ComponentDeserializeFn,
+// DeserializeEntityComponents and (for a scene load) Zenith_SceneData::
+// LoadFromDataStream. A reader that returns void can only succeed.
+//
+// The refusal is RECORD-AND-CONTINUE, never an early return: the reader is expected
+// to leave the cursor wherever it likes (typically untouched, refusing before
+// reading a byte), because the bounded per-component realign in
+// DeserializeEntityComponents forces the stream back to the declared payload
+// boundary either way. Every later component and every later entity still loads.
+template<typename T>
+concept HasBoolVersionedReadFromDataStream = requires(T& t, Zenith_DataStream& s, u_int v) {
+	{ t.ReadFromDataStream(s, v) } -> std::same_as<bool>;
 };
 
 //------------------------------------------------------------------------------
@@ -218,8 +256,11 @@ static void ComponentSerializeWrapper(Zenith_Entity& xEntity, Zenith_DataStream&
 	xEntity.GetComponent<T>().WriteToDataStream(xStream);
 }
 
+// Returns the component's verdict on the payload (see ComponentDeserializeFn):
+// false ONLY when the component implements a bool versioned reader and that reader
+// refused the persisted schema. Every void reader yields an unconditional true.
 template<typename T>
-static void ComponentDeserializeWrapper(Zenith_Entity& xEntity, Zenith_DataStream& xStream, u_int uSchemaVersion)
+static bool ComponentDeserializeWrapper(Zenith_Entity& xEntity, Zenith_DataStream& xStream, u_int uSchemaVersion)
 {
 	// Create the component if the entity doesn't already have it. Phase 7a: scene
 	// load creates entities BARE, so even the owning component is added here from the stream
@@ -232,14 +273,25 @@ static void ComponentDeserializeWrapper(Zenith_Entity& xEntity, Zenith_DataStrea
 	// otherwise call the single-arg form and drop the version on the floor.
 	// A concrete engine component opts in (uSchemaVersion = 7) to migrate the pre-v7
 	// parent-in-blob layout; the rest still use the single-arg form.
-	if constexpr (HasVersionedReadFromDataStream<T>)
+	//
+	// The BOOL versioned reader is tested first. The two versioned concepts are
+	// disjoint by construction (one requires a void return, the other bool), so the
+	// order is belt-and-braces rather than load-bearing -- but it is the order that
+	// stays correct if either constraint is ever loosened again.
+	if constexpr (HasBoolVersionedReadFromDataStream<T>)
+	{
+		return xEntity.GetComponent<T>().ReadFromDataStream(xStream, uSchemaVersion);
+	}
+	else if constexpr (HasVersionedReadFromDataStream<T>)
 	{
 		xEntity.GetComponent<T>().ReadFromDataStream(xStream, uSchemaVersion);
+		return true;
 	}
 	else
 	{
 		xEntity.GetComponent<T>().ReadFromDataStream(xStream);
 		(void)uSchemaVersion;
+		return true;
 	}
 }
 
