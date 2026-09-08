@@ -7,6 +7,7 @@
 #include "Core/Zenith_Engine.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_RenderTargets.h"
+#include "Flux/RenderViews/Flux_ViewPassNames.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
@@ -17,6 +18,26 @@
 
 // HiZ format (constexpr stays here).
 static constexpr TextureFormat HIZ_FORMAT = TEXTURE_FORMAT_R32G32_SFLOAT;
+
+// The ONE per-mip pass-name table, and it holds BASES only.
+//
+// A render-graph pass name must be unique across the graph AND have static
+// lifetime (the graph and the GPU timer table keep the pointer instead of
+// copying the bytes — see Flux/RenderViews/Flux_ViewPassNames.h). Per-view
+// uniqueness comes from Flux_ViewPassName(base, uViewSlot), NOT from a second
+// hand-written table: slot 0 gets the base pointer back verbatim, so the main
+// view keeps these exact historical spellings (profiling labels / FindPass /
+// SetPassForceDisabled all key off them), and every other slot gets an interned
+// "<base> (<suffix>)" — the preview slot composing exactly the
+// "HiZ Mip N (Preview)" names the deleted second table used to spell out.
+static const char* const s_aszHiZPassNames[] = {
+	"HiZ Mip 0",  "HiZ Mip 1",  "HiZ Mip 2",  "HiZ Mip 3",
+	"HiZ Mip 4",  "HiZ Mip 5",  "HiZ Mip 6",  "HiZ Mip 7",
+	"HiZ Mip 8",  "HiZ Mip 9",  "HiZ Mip 10", "HiZ Mip 11"
+};
+static constexpr u_int uHIZ_NUM_PASS_NAMES = sizeof(s_aszHiZPassNames) / sizeof(s_aszHiZPassNames[0]);
+static_assert(uHIZ_NUM_PASS_NAMES == Flux_HiZImpl::uHIZ_MAX_MIPS,
+	"one HiZ pass-name base per mip — the per-mip loop indexes this table by mip");
 
 // Push constants for Hi-Z generation
 struct HiZPushConstants
@@ -159,13 +180,25 @@ static void ExecuteHiZMip(Flux_CommandBuffer* pxCommandList, void* pUserData)
 	pxCommandList->Dispatch(uGroupsX, uGroupsY, 1);
 
 	// The "final mip → SHADER_READ_ONLY" transition is now emitted by the
-	// graph as part of the next consumer's prologue (SSR / SSAO / SSGI all
-	// declare a Read on the HiZ chain, which triggers SynthesizeBarriers to
-	// transition every mip from WRITE_UAV → READ_SRV). Removed from here.
+	// graph as part of the next consumer's prologue. The consumers are exactly
+	// TWO — SSR (Flux_SSR.cpp:658) and SSGI (Flux_SSGI.cpp:439) — each declaring
+	// .Reads(GetHiZAttachment(uViewSlot), READ_SRV, 0, GetMipCount(uViewSlot)) at
+	// setup time for the slot it is building, which triggers SynthesizeBarriers to
+	// transition every mip from WRITE_UAV → READ_SRV. SSAO does NOT read the HiZ
+	// chain (it samples scene depth directly); it is merely declared alongside
+	// SSR/SSGI in the feature order (Flux_FeatureRegistry.cpp:384-386 registers
+	// HiZ, then SSR, then SSGI, with SSAO next). Removed from here.
 }
 
 void Flux_HiZImpl::SetupViewPasses(Flux_RenderGraph& xGraph, u_int uViewSlot, u_int uWidth, u_int uHeight)
 {
+	// ComputeMipCount(0, 0) is UB — floor(log2(0)) — and a 0×0 transient would
+	// fail far from its cause. GetViewSetupDims already refuses zero dims for the
+	// slot it resolves; this pins the same contract at the consumer, so any future
+	// caller that computes dims itself trips here rather than in the mip loop.
+	Zenith_Assert(uWidth > 0u && uHeight > 0u,
+		"Flux_HiZ::SetupViewPasses: view slot %u has zero dims (%ux%u)", uViewSlot, uWidth, uHeight);
+
 	// Per-view dims + mip count — ExecuteHiZMip derives its per-mip dispatch
 	// sizes from these via the recording pass's view slot. Recomputing each
 	// setup keeps them consistent with the current framebuffer size.
@@ -181,24 +214,16 @@ void Flux_HiZImpl::SetupViewPasses(Flux_RenderGraph& xGraph, u_int uViewSlot, u_
 	xHiZDesc.m_uMemoryFlags = (1u << MEMORY_FLAGS__UNORDERED_ACCESS) | (1u << MEMORY_FLAGS__SHADER_READ);
 	m_axHiZBufferHandles[uViewSlot] = xGraph.CreateTransient(xHiZDesc);
 
-	// Pass names must be per-view unique + static-lifetime (duplicate names are
-	// a hard assert). View 0 keeps the historical names (profiling / FindPass
-	// stability); the preview gets its own " (Preview)" table.
-	static const char* s_aszHiZPassNames[] = {
-		"HiZ Mip 0",  "HiZ Mip 1",  "HiZ Mip 2",  "HiZ Mip 3",
-		"HiZ Mip 4",  "HiZ Mip 5",  "HiZ Mip 6",  "HiZ Mip 7",
-		"HiZ Mip 8",  "HiZ Mip 9",  "HiZ Mip 10", "HiZ Mip 11"
-	};
-	static const char* s_aszHiZPreviewPassNames[] = {
-		"HiZ Mip 0 (Preview)",  "HiZ Mip 1 (Preview)",  "HiZ Mip 2 (Preview)",  "HiZ Mip 3 (Preview)",
-		"HiZ Mip 4 (Preview)",  "HiZ Mip 5 (Preview)",  "HiZ Mip 6 (Preview)",  "HiZ Mip 7 (Preview)",
-		"HiZ Mip 8 (Preview)",  "HiZ Mip 9 (Preview)",  "HiZ Mip 10 (Preview)", "HiZ Mip 11 (Preview)"
-	};
-	const char* const* pszPassNames = (uViewSlot == kuFluxViewSlotMain) ? s_aszHiZPassNames : s_aszHiZPreviewPassNames;
-
+	// Pass names come from the ONE base table (s_aszHiZPassNames, above) through
+	// Flux_ViewPassName, which supplies the per-view uniqueness the graph's
+	// duplicate-name assert demands: slot 0 gets the base literal back by pointer
+	// identity, so the main view's names are unchanged; a preview-class slot gets
+	// the interned "<base> (<suffix>)" — "HiZ Mip 3 (Preview)" for slot 5. No
+	// per-slot branch here: the naming is a property of the slot, resolved by the
+	// pool, not a ternary this function has to keep in step with the registry.
 	for (u_int uMip = 0; uMip < m_auMipCounts[uViewSlot]; uMip++)
 	{
-		Zenith_Assert(uMip < sizeof(s_aszHiZPassNames) / sizeof(s_aszHiZPassNames[0]),
+		Zenith_Assert(uMip < uHIZ_NUM_PASS_NAMES,
 			"HiZ mip count exceeds pass name array size");
 
 		// Mip 0 reads the view's depth buffer; mip N>0 reads the SINGLE prior
@@ -206,7 +231,7 @@ void Flux_HiZImpl::SetupViewPasses(Flux_RenderGraph& xGraph, u_int uViewSlot, u_
 		// pass's write of mip N). UserData(uMip) carries the mip; ExecuteHiZMip
 		// recovers it via Flux_UnpackUserData<u_int> and derives the view from
 		// the recording pass's slot (declared via .View below).
-		const Flux_PassHandle xPass = xGraph.AddPass(pszPassNames[uMip], ExecuteHiZMip)
+		const Flux_PassHandle xPass = xGraph.AddPass(Flux_ViewPassName(s_aszHiZPassNames[uMip], uViewSlot), ExecuteHiZMip)
 			.UserData(uMip)
 			.View(uViewSlot)
 			.WritesTransient(m_axHiZBufferHandles[uViewSlot], RESOURCE_ACCESS_WRITE_UAV, uMip, 1);
@@ -220,22 +245,44 @@ void Flux_HiZImpl::SetupViewPasses(Flux_RenderGraph& xGraph, u_int uViewSlot, u_
 
 void Flux_HiZImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
+	// The graph back-ref is per-BUILD, not per-view — GetHiZBuffer resolves EVERY
+	// view's transient through it — so it is set once, first, and outside the walk.
 	m_pxGraph = &xGraph;
 
-	// Main view at swapchain dims (byte-equivalent to the historical
-	// single-view path), then the preview view at its own dims — only while
-	// active, so its transients exist exactly when its passes do (the graph's
-	// unused-transient validation demands this). Both come from GetViewSetupDims,
-	// the ONE derivation SetupTransients sized each view's depth buffer with, so
-	// the HiZ chain can never disagree with the depth it reduces; the preview slot
-	// is active inside this branch, hence its dims are staged.
+	// ONE chain per ACTIVE FULL-PIPELINE view, in ascending slot order. The
+	// registry decides membership by view PROPERTIES, never by slot number:
+	// slot 0 always qualifies (active + full-pipeline from construction), the
+	// preview slot joins while its owner has it up (so its transients exist
+	// exactly when its passes do — the graph's unused-transient validation
+	// demands that), and depth-only shadow cascades are never full-pipeline and
+	// never get a chain. Today that set is exactly {main} ∪ {preview if active},
+	// which is what the two hand-written calls this replaced produced.
+	//
+	// Every view's dims come from GetViewSetupDims — the ONE derivation
+	// SetupTransients sized that view's depth buffer with — so a HiZ chain can
+	// never disagree with the depth it reduces (slot 0 resolves to the render
+	// dims, keeping the temporal-upscaling latch the old GetRenderWidth/Height
+	// pair read).
+	//
+	// The callback is a CAPTURELESS LAMBDA written here rather than a file-static
+	// free function on purpose: SetupViewPasses is private, and a closure declared
+	// inside a member body inherits the class's access. Being captureless (so it
+	// converts to the registry's plain fn-pointer), `this`, the graph and the
+	// hoisted graphics reference all travel through pCtx.
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
-	SetupViewPasses(xGraph, kuFluxViewSlotMain, xGraphics.GetRenderWidth(), xGraphics.GetRenderHeight());
-	if (xGraphics.RenderViews().IsViewActive(kuFluxViewSlotPreview))
+	struct SetupCtx
 	{
-		const Zenith_Maths::UVector2 xPreviewDims = xGraphics.GetViewSetupDims(kuFluxViewSlotPreview);
-		SetupViewPasses(xGraph, kuFluxViewSlotPreview, xPreviewDims.x, xPreviewDims.y);
-	}
+		Flux_HiZImpl*      m_pxThis;
+		Flux_RenderGraph*  m_pxGraph;
+		Flux_GraphicsImpl* m_pxGraphics;
+	};
+	SetupCtx xCtx{ this, &xGraph, &xGraphics };
+	xGraphics.RenderViews().ForEachActiveFullPipelineView(+[](u_int uSlot, const Flux_RenderView&, void* pCtx)
+	{
+		SetupCtx& xSetup = *static_cast<SetupCtx*>(pCtx);
+		const Zenith_Maths::UVector2 xDims = xSetup.m_pxGraphics->GetViewSetupDims(uSlot);
+		xSetup.m_pxThis->SetupViewPasses(*xSetup.m_pxGraph, uSlot, xDims.x, xDims.y);
+	}, &xCtx);
 }
 
 Flux_RenderAttachment& Flux_HiZImpl::GetHiZAttachment(u_int uViewSlot)
@@ -264,3 +311,5 @@ bool Flux_HiZImpl::IsEnabled() const
 {
 	return Zenith_GraphicsOptions::Get().m_bHiZEnabled && m_bInitialised;
 }
+
+#include "Flux/HiZ/Flux_HiZ.Tests.inl"

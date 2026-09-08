@@ -10,10 +10,14 @@
 // state-method split is gone. Cross-subsystem deps (swapchain, graphics,
 // renderer) are reached via g_xEngine at point of use.
 //
-// S5b: the HiZ chain is per-render-view — slot 0 (main) builds from the
-// swapchain-sized depth buffer as before; the preview view builds its own
-// chain from its 512² depth when active. Consumers (SSR/SSGI) index the
-// accessors by view slot; the defaults keep single-view callers unchanged.
+// The HiZ chain is per-render-view: SetupRenderGraph walks
+// Flux_RenderViewRegistry::ForEachActiveFullPipelineView and builds ONE chain
+// per active full-pipeline view, from that view's own depth buffer at that
+// view's own GetViewSetupDims. Slot 0 (main, always active) reduces the
+// render-res scene depth as before; the preview slot joins the walk while its
+// owner has it up; depth-only shadow cascades are never full-pipeline and never
+// get a chain. Consumers (SSR/SSGI) index the accessors by view slot; the
+// defaults keep single-view callers unchanged.
 class Flux_HiZImpl
 {
 public:
@@ -43,11 +47,20 @@ public:
 
 	bool IsEnabled() const;
 
+	// Mip count for a view of the given base dims: log2 of the max dimension,
+	// clamped to uHIZ_MAX_MIPS. A pure function of its arguments (no state), so
+	// it is public: Flux_HiZ.Tests.inl pins the formula directly, and the chain
+	// length a view will get is derivable by anyone holding its dims.
+	// PRECONDITION: both dims > 0 — floor(log2(0)) is UB.
+	static u_int ComputeMipCount(u_int uWidth, u_int uHeight);
+
 	// Data members.
-	// Per-view mip counts + base dims (S5b): slot 0 tracks the swapchain, the
-	// preview slot is fixed at kuFLUX_PREVIEW_VIEW_SIZE². Filled by
-	// SetupViewPasses; ExecuteHiZMip reads them via the recording pass's view
-	// slot to size its per-mip dispatches.
+	// Per-view mip counts + base dims. Each entry is filled by SetupViewPasses
+	// from that slot's GetViewSetupDims (slot 0 tracks the render resolution;
+	// every other slot tracks the target dims its owner staged); ExecuteHiZMip
+	// reads them via the recording pass's view slot to size its per-mip
+	// dispatches. Slots that are not active full-pipeline views are never
+	// written and stay zero.
 	u_int                 m_auMipCounts[FLUX_MAX_RENDER_VIEWS]   = {};
 	u_int                 m_auViewWidths[FLUX_MAX_RENDER_VIEWS]  = {};
 	u_int                 m_auViewHeights[FLUX_MAX_RENDER_VIEWS] = {};
@@ -63,17 +76,17 @@ public:
 	Flux_RootSig          m_xComputeRootSig;
 
 private:
-	// Mip count for a view of the given base dims: log2 of the max dimension,
-	// clamped to uHIZ_MAX_MIPS.
-	static u_int ComputeMipCount(u_int uWidth, u_int uHeight);
-
 	// Recompute the MAIN view's mip count from the swapchain resolution. Shared
-	// by Initialise + the resize callback.
+	// by Initialise + the resize callback. Stays OUTSIDE the per-view setup walk:
+	// it is the pre-first-frame / resize seed for slot 0 only.
 	void UpdateMipCountFromSwapchain();
 
-	// Per-view transient + per-mip pass chain (S5b): called for the main view
-	// at swapchain dims, then for the preview view at kuFLUX_PREVIEW_VIEW_SIZE²
-	// only while it is active — so the main path stays byte-equivalent.
+	// Per-view transient + per-mip pass chain: called once per ACTIVE FULL-PIPELINE
+	// view by SetupRenderGraph's ForEachActiveFullPipelineView walk, at the dims
+	// Flux_GraphicsImpl::GetViewSetupDims resolves for that slot. PRIVATE — the
+	// walk's callback is therefore a captureless lambda written inside
+	// SetupRenderGraph (a closure declared in a member body inherits the class's
+	// access), not a file-static free function.
 	void SetupViewPasses(Flux_RenderGraph& xGraph, u_int uViewSlot, u_int uWidth, u_int uHeight);
 
 	// Attachment accessor — resolves through the graph's transient slot. Was a
